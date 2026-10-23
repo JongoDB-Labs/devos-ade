@@ -311,7 +311,7 @@ test_setup_stopped_while_turning_the_code_page_on_by_default_undoes_it() {
   setup_done "keys created"; setup_step "building and starting the browser terminal and the Code page"; SETUP_CODE_DEFAULT=2
   if (_setup_interrupted INT) 2> "$TMP/err"; then return 1; fi
   assert_eq "$(get_env CODE_ENABLED)|$(get_env TERMINAL_ENABLED)" "|"
-  assert_contains "$(cat "$TMP/dc")" "dc rm -sf code terminal terminal-gateway"
+  assert_contains "$(cat "$TMP/dc")" "dc rm -sf code subs-chat terminal terminal-gateway"
   [ ! -e "$STATE_DIR/code-default-failed" ] || { echo "an interrupted default counted as a failure" >&2; return 1; }
   out="$(cat "$TMP/err")"
   assert_contains "$out" "setup stopped (Ctrl-C) while building and starting the browser terminal and the Code page"
@@ -320,7 +320,7 @@ test_setup_stopped_while_turning_the_code_page_on_by_default_undoes_it() {
   : > "$TMP/dc"; printf 'CODE_ENABLED=true\nTERMINAL_ENABLED=true\n' > "$ENV_FILE"; SETUP_CODE_DEFAULT=1
   if (_setup_interrupted INT) 2> "$TMP/err"; then return 1; fi
   assert_eq "$(get_env CODE_ENABLED)|$(get_env TERMINAL_ENABLED)" "|true"
-  assert_contains "$(cat "$TMP/dc")" "dc rm -sf code"; assert_not_contains "$(cat "$TMP/dc")" "terminal-gateway"
+  assert_contains "$(cat "$TMP/dc")" "dc rm -sf code subs-chat"; assert_not_contains "$(cat "$TMP/dc")" "terminal-gateway"
   # settled (it came up, or code_default_settle undid it): a Ctrl-C later leaves it as it is
   printf 'CODE_ENABLED=true\n' > "$ENV_FILE"; SETUP_CODE_DEFAULT=0
   if (_setup_interrupted INT) 2> "$TMP/err"; then return 1; fi

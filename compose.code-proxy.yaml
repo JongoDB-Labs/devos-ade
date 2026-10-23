@@ -1,0 +1,16 @@
+# Chat's sandbox's way out (compose.code.yaml subs-chat) while the terminal's is its egress proxy (TERMINAL_EGRESS=internet,
+# the default: compose.terminal-proxy.yaml): the same proxy, the same rules — public addresses only, never this
+# computer's services or your network. Added with compose.code.yaml only then (lib/common.sh compose_overlays).
+services:
+  subs-chat:
+    networks: [subs-chat, terminal-proxy]
+    environment:
+      HTTP_PROXY: http://egress:3128
+      HTTPS_PROXY: http://egress:3128
+      http_proxy: http://egress:3128
+      https_proxy: http://egress:3128
+      NO_PROXY: localhost,127.0.0.1,::1,0.0.0.0
+      no_proxy: localhost,127.0.0.1,::1,0.0.0.0
+      NODE_USE_ENV_PROXY: "1"
+    depends_on:
+      terminal-egress: { condition: service_started }

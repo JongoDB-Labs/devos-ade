@@ -12,7 +12,7 @@ import { short, str } from '../validate.mjs';
 import { SessionError } from '../session-error.mjs';
 import { SandboxError } from '../spawn-client.mjs';
 import { HARNESSES } from './tools.mjs';
-import { AcpAgent, NotSignedIn } from './acp.mjs';
+import { AcpAgent, NotSignedIn, UnsafeMode } from './acp.mjs';
 import { CodexAgent, rateLimits } from './codex.mjs';
 import { said } from './jsonrpc.mjs';
 
@@ -80,6 +80,8 @@ export class AgentSession {
     this.starting = (async () => {
       let agent = null;
       try {
+        // (its folder's own settings, Claude Code's and the other tools': trusted or none — asked anew at every start)
+        await this.mgr.agentSettingsCheck?.(this.cwd, this.name);
         const proc = this.mgr.spawnAgent({ tool: this.harness, mode: 'code', cwd: this.cwd },
           { onStderr: (s) => this.mgr.logStderr(this.id, `${this.harness} ${this.id.slice(0, 8)} stderr: ${short(s, 300)}`) });
         const opts = { tool: this.harness, log: (m) => this.mgr.log(`${this.harness} ${this.id.slice(0, 8)}: ${m}`), clientVersion: this.mgr.versions?.server ?? '0',
@@ -104,11 +106,14 @@ export class AgentSession {
       } catch (e) {
         if (this.agent === agent) this.agent = null;
         try { agent?.close(); } catch { /* gone */ }
+        if (e instanceof SessionError) { this.setState('ended', e.message); throw e; }
         const why = e instanceof NotSignedIn
           ? `${this.name} is not signed in in the sandbox: open a terminal (Open: ${this.name}) and sign in with its own login, then send your prompt again`
-          : e instanceof SandboxError || e?.code === -32099 ? `could not start ${this.name}: ${short(e.message, 200)}` : `could not start ${this.name}`;
+          : e instanceof UnsafeMode ? e.message
+            : e instanceof SandboxError || e?.code === -32099 ? `could not start ${this.name}: ${short(e.message, 200)}` : `could not start ${this.name}`;
         this.setState('ended', why);
-        throw new SessionError(why, e instanceof NotSignedIn ? 409 : 502, e instanceof NotSignedIn || e instanceof SandboxError ? {} : { said: said(e?.message || String(e), 300), saidBy: 'sandbox' });
+        const ours = e instanceof NotSignedIn || e instanceof UnsafeMode;
+        throw new SessionError(why, ours ? 409 : 502, ours || e instanceof SandboxError ? {} : { said: said(e?.message || String(e), 300), saidBy: 'sandbox' });
       } finally { this.starting = null; }
     })();
     return this.starting;
@@ -176,7 +181,7 @@ export class AgentSession {
             turns: 1, duration: Date.now() - t0, usage: r.usage, consumed: [], text: r.stop === 'cancelled' ? 'Stopped.' : r.stop === 'refusal' ? `${this.name} declined to answer.` : '' });
           this.record();
         } catch (e) {
-          const msg = e instanceof SessionError ? e.message : `${this.name}: ${short(e?.message || String(e), 300)}`;
+          const msg = e instanceof SessionError || e instanceof UnsafeMode ? e.message : `${this.name}: ${short(e?.message || String(e), 300)}`;
           this.emit({ type: 'error', message: msg, text: msg, ...(e?.said ? { said: e.said, saidBy: e.saidBy } : {}) });
           this.emit({ type: 'result', subtype: 'error_during_execution', is_error: true, turns: 0, duration: Date.now() - t0, usage: null, consumed: [], text: '' });
         } finally {

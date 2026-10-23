@@ -28,7 +28,7 @@ import { Setup } from './import-setup.mjs';
 import { makeSetupApi } from './setup-api.mjs';
 import { AgentStore } from './agents/store.mjs';
 import { makeStatus, harnessList } from './agents/status.mjs';
-import { harnessOk, AGENT_TOOLS } from './agents/tools.mjs';
+import { harnessOk, AGENT_TOOLS, HARNESSES } from './agents/tools.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // what a failed WebSocket message was (its type): the sentence of ours its failure is told with — the operation, never
@@ -352,8 +352,10 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
       }
       // a conversation resumed here that runs in the terminal (or anywhere else in the sandbox) right now: refused
       if (!agent && isUuid(b.resume) && b.fork !== true && !mgr.get(b.resume)?.open) await api.notRunning(b.resume);
-      // what of the folder's own Claude Code settings its process gets (trusted, or not applied): decided now, for it
+      // what of the folder's own Claude Code settings its process gets (trusted, or not applied): decided now, for it; an
+      // agent of your subscriptions: none of that — it starts only while they apply (trusted, or none), asked at each start
       if (!agent) await mgr.prepare(base.cwd);
+      else await mgr.agentSettingsCheck(base.cwd, HARNESSES[base.harness].name);
       // a session copied from this computer (or a fork of one) opens in Manual the first time — its history is what a
       // past session saw — forks of it too; it counts as opened once it did open (not when the open failed)
       let first = false;
@@ -782,7 +784,7 @@ function readVersions() {
 
 if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { query } = await import('@anthropic-ai/claude-agent-sdk');
-  const { sandboxProcess, sandboxCall, sandboxBroker, sandboxTunnel, sandboxAgent } = await import('./spawn-client.mjs');
+  const { sandboxProcess, sandboxCall, sandboxBroker, sandboxTunnel, sandboxAgent, CHAT_SOCK } = await import('./spawn-client.mjs');
   const on = (v) => /^(true|1|yes|on)$/i.test(String(v ?? '').trim());
   // TERMINAL_EGRESS as the stack reads it (lib/common.sh egress_mode): host, off (false/0/no/off), else internet
   const egress = (v) => { const s = String(v ?? '').trim().toLowerCase(); return s === 'host' ? 'host' : /^(false|0|no|off)$/.test(s) ? 'off' : 'internet'; };
@@ -805,8 +807,10 @@ if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import
   let chat = null;
   if (/^[0-9a-f]{32,}$/.test(process.env.CODE_CHAT_KEY || '')) {
     const { createChatServer, CHAT_PORT } = await import('./chat.mjs');
-    chat = createChatServer({ key: process.env.CODE_CHAT_KEY, status, planAllowed: on(process.env.CODE_CLAUDE_PLAN), spawnAgent: sandboxAgent, query,
-      spawn: sandboxProcess, log, clientVersion: readVersions().sdk || '0' });
+    // (Chat's own sandbox, subs-chat: its socket — the workspace's sandbox never runs a Chat conversation)
+    chat = createChatServer({ key: process.env.CODE_CHAT_KEY, planAllowed: on(process.env.CODE_CLAUDE_PLAN), query, log, clientVersion: readVersions().sdk || '0',
+      status: makeStatus({ call: (req, o) => sandboxCall(req, { ...o, sock: CHAT_SOCK }), log }),
+      spawnAgent: (a, o) => sandboxAgent(a, { ...o, sock: CHAT_SOCK }), spawn: (a, o) => sandboxProcess(a, { ...o, sock: CHAT_SOCK }) });
     // (on plan-chat's own address — this container's code-chat alias — so that nothing on code-link reaches it; its key
     // is required either way)
     let addr = '0.0.0.0';

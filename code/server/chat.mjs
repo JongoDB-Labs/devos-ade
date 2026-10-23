@@ -1,10 +1,14 @@
 // Your subscriptions as Chat models: an OpenAI-compatible endpoint (GET /v1/models, POST /v1/chat/completions) that
 // Open WebUI uses as a connection of its own — on an internal network only the two of them share (plan-chat), with a
 // key only Open WebUI has (CODE_CHAT_KEY). Each signed-in subscription is a model there (plan-claude, plan-codex …),
-// answering in the same chat pane; each answer is the provider's own agent in the sandbox, signed in with its own login,
-// through its interface for other apps — the Claude Agent SDK (Claude Code, `--tools=` : no tool), Codex's app server
-// (read-only, never asking), ACP (Copilot, Cursor, Grok; every permission request refused) — in an empty folder of the
-// conversation's own. Nothing of a login passes here; what comes back is the sandbox's text, sent on as plain text.
+// answering in the same chat pane; each answer is the provider's own agent, signed in with its own login, through its
+// interface for other apps — the Claude Agent SDK (Claude Code, `--tools=` : no tool), Codex's app server, ACP (Copilot,
+// Cursor, Grok) — in Chat's own sandbox (subs-chat: the terminal's image and home, no workspace, no project folder),
+// in an empty folder of the conversation's own, each tool started with its tools switched off (bn-coded's AGENTS.chat).
+// No tool in Chat, whatever a tool's switches let through: every permission request is refused, and the first sign of
+// a tool call (ACP's tool_call, a Codex item that is not an answer) stops the turn at once — the answer says so, and
+// that agent session is dropped (the chat goes on in a new one). Nothing of a login passes here; what comes back is
+// the sandbox's text, sent on as plain text.
 //
 // A conversation is one of the agent's own sessions, taken up again each turn (its context, compaction and limits are the
 // provider's): a conversation is known by the prompts of yours it has had so far (a hash: conversations.json in this
@@ -16,9 +20,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { HARNESSES, chatModelId, toolOfChatModel } from './agents/tools.mjs';
-import { AcpAgent, NotSignedIn } from './agents/acp.mjs';
+import { AcpAgent, NotSignedIn, UnsafeMode } from './agents/acp.mjs';
 import { CodexAgent } from './agents/codex.mjs';
 import { said } from './agents/jsonrpc.mjs';
+import { quoted, defang } from './agents/quote.mjs';
 import { STATE_DIR } from './githosts.mjs';
 import { IMAGE_TYPES } from './protocol.mjs';
 
@@ -33,7 +38,6 @@ const KEEP_RUNNING = 4;              // agents kept at once (each a process in t
 const MAX_RECORDS = 500;
 // What Claude is told in a Chat conversation (its own system prompt, recorded with the conversation)
 export const CHAT_SYSTEM = 'You are Claude, made by Anthropic, answering in a chat app (Open WebUI) on the user\'s own Claude plan. Reply to the conversation in Markdown. You have no tools, files or web access here.';
-export const PREFACE_HEAD = 'This conversation started earlier; here it is so far, for context:';
 
 const obj = (v) => (v !== null && typeof v === 'object' && !Array.isArray(v) ? v : {});
 // Open WebUI's own additions to an earlier answer: its reasoning and tool blocks (<details …>), and bedrock-now's cost line
@@ -76,14 +80,14 @@ export function readMessages(list) {
 // the key of a conversation as far as its sessions go: the tool and your prompts so far (whitespace kept apart)
 export const convKey = (tool, prompts) => crypto.createHash('sha256').update(JSON.stringify([tool, ...prompts.map((p) => p.replace(/\s+/g, ' ').trim())])).digest('hex').slice(0, 40);
 
-// the conversation so far as a preface for a new session (its last MAX_PREFACE characters)
-export function prefaceOf(system, turns) {
-  const lines = turns.slice(0, -1).map((t) => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`);
-  if (!lines.length && !system) return null;
-  let body = lines.join('\n\n');
-  if (body.length > MAX_PREFACE) body = `…${body.slice(-MAX_PREFACE)}`;
-  return [system ? `Instructions from the chat app:\n${system}` : '', body ? `${PREFACE_HEAD}\n\n<conversation>\n${body}\n</conversation>` : '']
-    .filter(Boolean).join('\n\n');
+// firstPrompt(system, turns, prompt) -> what a new session's first prompt says: the chat app's instructions (Open WebUI's
+// system prompt: yours, as instructions — its tag-like delimiters defanged all the same), the conversation so far
+// quoted for context only (agents/quote.mjs: its last MAX_PREFACE characters), then your new message
+export function firstPrompt(system, turns, prompt) {
+  const q = quoted(turns.slice(0, -1).map((t) => ({ who: t.role, text: t.text })), { max: MAX_PREFACE });
+  const head = system ? `Instructions from the chat app:\n${defang(system)}` : '';
+  if (!q && !head) return prompt;
+  return [head, q ?? 'The user\'s message:', prompt].filter(Boolean).join('\n\n');
 }
 
 /** The record of which conversation is which session (conversations.json, mode 600, the most recent MAX_RECORDS). */
@@ -104,11 +108,12 @@ export class ChatStore {
     return this.map;
   }
   get(key) { return this.load().get(key) ?? null; }
-  // a conversation's session after a turn: under its new key (the old one goes: a regenerate starts anew)
+  // a conversation's session after a turn: under its new key (the old one goes: a regenerate starts anew); rec null: the
+  // session is forgotten (the next turn starts a new one, with the conversation so far quoted)
   move(oldKey, rec) {
     const m = this.load();
     if (oldKey) m.delete(oldKey);
-    m.set(rec.key, { ...rec, at: this.now() });
+    if (rec) m.set(rec.key, { ...rec, at: this.now() });
     while (m.size > MAX_RECORDS) m.delete([...m.values()].sort((a, b) => a.at - b.at)[0].key);
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 });
@@ -209,7 +214,10 @@ export function createChatServer({ key, status, planAllowed = false, spawnAgent,
     signal.addEventListener('abort', abort, { once: true });
     try {
       const res = await r.agent.prompt(text, images);
-      return { ref: r.ref, usage: res.usage, stop: res.stop, error: res.error, fresh: Boolean(ref) && !r.resumed };
+      // a tool reached for (and stopped): this session is not used again — whatever the tool did or saw stays out of
+      // the conversation's next turns, which start a new session
+      if (res.tried) release(folder);
+      return { ref: r.ref, usage: res.usage, stop: res.stop, error: res.error, tried: res.tried ?? null, fresh: Boolean(ref) && !r.resumed };
     } finally {
       signal.removeEventListener('abort', abort);
       r.busy = false; r.onEvent = null;
@@ -270,9 +278,8 @@ export function createChatServer({ key, status, planAllowed = false, spawnAgent,
     const rec = prompts.length > 1 ? store.get(oldKey) : null;
     const folder = rec && rec.tool === tool ? rec.folder : crypto.randomBytes(16).toString('hex');
     const ref = rec && rec.tool === tool ? rec.ref : null;
-    // a new session: the conversation so far (and the chat app's instructions) as its preface
-    const preface = rec ? null : prefaceOf(msgs.system, msgs.turns);
-    const text = preface ? `${preface}\n\nNow the user says:\n${msgs.prompt}` : msgs.prompt;
+    // a new session: the conversation so far (quoted) and the chat app's instructions before your message
+    const text = rec ? msgs.prompt : firstPrompt(msgs.system, msgs.turns, msgs.prompt);
     const stream = body.stream === true;
     const id = `chatcmpl-${crypto.randomBytes(12).toString('hex')}`, created = Math.floor(Date.now() / 1000);
     let answer = '', thinking = '', sent = 0, started = false;
@@ -303,16 +310,20 @@ export function createChatServer({ key, status, planAllowed = false, spawnAgent,
         : await agentTurn({ tool, folder, ref, text, images: msgs.images, out, signal: ac.signal });
     } catch (e) {
       const msg = e instanceof NotSignedIn ? `${h.name} is not signed in: open the Terminal tab (Open › ${h.name}) and sign in with its own sign-in, then ask again`
-        : e?.status ? e.message : `${h.name} did not answer (${said(e?.message || String(e), 200)})`;
+        : e instanceof UnsafeMode ? e.message
+          : e?.status ? e.message : `${h.name} did not answer (${said(e?.message || String(e), 200)})`;
       log(`chat ${tool}: ${said(e?.message || String(e), 300)}`);
       if (started) { sse(res, { error: { message: msg } }); res.end('data: [DONE]\n\n'); return undefined; }
-      return fail(res, e instanceof NotSignedIn ? 409 : e?.status || 502, msg);
+      return fail(res, e instanceof NotSignedIn || e instanceof UnsafeMode ? 409 : e?.status || 502, msg);
     }
-    // the conversation's session, under the prompts it has had now
-    if (r.ref) store.move(rec ? oldKey : null, { key: convKey(tool, prompts), tool, folder, ref: r.ref });
+    // the conversation's session, under the prompts it has had now — or, a tool reached for, none (said in the answer)
+    if (r.tried) {
+      store.move(rec ? oldKey : null, null);
+      out.text(`${sent ? '\n\n' : ''}*${h.name} reached for one of its tools (${said(r.tried, 80)}) and was stopped: in Chat it has none. This chat goes on in a new session of it. To work with files, use ${h.name} in the Code page.*`);
+    } else if (r.ref) store.move(rec ? oldKey : null, { key: convKey(tool, prompts), tool, folder, ref: r.ref });
     const u = r.usage ?? { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0 };
     const usage = { prompt_tokens: u.input_tokens + u.cache_read_input_tokens, completion_tokens: u.output_tokens, total_tokens: u.input_tokens + u.cache_read_input_tokens + u.output_tokens };
-    if (r.stop === 'error' && !sent) {
+    if (r.stop === 'error' && !sent && !r.tried) {
       const msg = `${h.name} reported: ${said(r.error || 'an error', 300)}`;
       if (started) { sse(res, { error: { message: msg } }); res.end('data: [DONE]\n\n'); return undefined; }
       return fail(res, 502, msg);

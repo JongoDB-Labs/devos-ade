@@ -3,7 +3,8 @@
 #
 # The code container serves the page and runs the Agent SDK; Claude Code itself runs in the terminal's sandbox, started
 # by bn-coded (terminal/bin/bn-coded.mjs) on a UNIX socket in the code-socket volume — both are the terminal's
-# (compose.terminal.yaml), so this file never changes the terminal container. The code container mounts no
+# (compose.terminal.yaml), so this file never changes the terminal container. Chat's conversations with your
+# subscriptions run in a sandbox of their own (subs-chat, below: the terminal's image without your files). The code container mounts no
 # folder of yours and holds no LiteLLM key: files, sessions and plugins are ops of bn-coded, spend and model prices
 # come from the portal (/.bn/spend, /.bn/models on the code host). Its network code-link (internal) it shares
 # with the main Caddy alone, which asks the portal first (session, a fresh unlock, the Origin) and then adds the secret
@@ -60,6 +61,7 @@ services:
       GIT_GITLAB_CLIENT_ID: ${GIT_GITLAB_CLIENT_ID:-}
     volumes:
       - code-socket:/run/bn-code:ro   # (the terminal's volume) connecting needs no write access; it never listens there
+      - chat-socket:/run/bn-chat:ro   # Chat's sandbox (subs-chat, below): the same, for Chat's conversations
       # Git hosts (the Code page's Git panel; code/server/githosts.mjs): the tokens and SSH keys of the git servers you
       # connect, the host keys you trusted and the last uses — in a folder of mode 700, a file of mode 600. This
       # container's alone: never the sandbox's, never in .env, the portal or a backup (a token is entered again, a key
@@ -82,6 +84,66 @@ services:
         aliases: [code-chat]
     depends_on:
       terminal: { condition: service_healthy }
+    logging:   # (YAML anchors do not reach across compose files: same values as x-logging in compose.yaml)
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # Chat's own sandbox: where your subscriptions answer as Chat models (code/server/chat.mjs). The terminal's image and
+  # its home — the tools' sign-ins (~/.codex, ~/.copilot, ~/.cursor, ~/.grok, claude-sub's ~/.claude-subscription) — and
+  # nothing of your files: no workspace, no project folder, no LiteLLM key, no MCP token, not on the terminal's network
+  # (its gateway, LiteLLM and shared-mcp are out of reach). Its one program is bn-coded in Chat's role
+  # (terminal/bin/bn-coded.mjs roleOf): Chat's conversations, each in an empty folder of its own
+  # (~/.bn-chat/<id>), each tool started with its tools switched off — and nothing else. The code container connects to
+  # its socket (chat-socket). Its way out is the sandbox's, as Settings › Claude Code › Sandbox internet access says:
+  # the egress proxy (compose.code-proxy.yaml), the direct one (compose.code-egress.yaml), or none.
+  subs-chat:
+    build:   # (the terminal's own build: the same image, built with it — never pulled)
+      context: ./terminal
+      args:
+        BN_UID: ${TERMINAL_UID:-10104}
+        BN_GID: ${TERMINAL_GID:-10104}
+    image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/terminal:local
+    restart: unless-stopped
+    hostname: subs-chat
+    user: "${TERMINAL_UID:-10104}:${TERMINAL_GID:-10104}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:size=256m,mode=1777"]
+    mem_limit: 2g
+    pids_limit: 512
+    init: true
+    entrypoint: ["node", "/usr/local/bin/bn-coded.mjs"]
+    command: []
+    environment:
+      BN_CODED_ROLE: chat
+      BN_CODE_SOCK_DIR: /run/bn-chat
+      HOME: /home/claude
+      DISABLE_AUTOUPDATER: "1"
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+    extra_hosts:   # (as the terminal's: Docker Desktop's names for your computer point nowhere)
+      - "host.docker.internal:192.0.2.1"
+      - "host.docker.internal:100::1"
+      - "gateway.docker.internal:192.0.2.1"
+      - "gateway.docker.internal:100::1"
+    volumes:
+      - terminal-home:/home/claude   # (the terminal's: the tools' sign-ins live there)
+      - chat-socket:/run/bn-chat
+      # Claude Code's managed settings, as the terminal has them (Claude on your plan answers here too, without tools)
+      - type: bind
+        source: ./terminal/managed/${TERMINAL_CLAUDE_POLICY:-off}.json
+        target: /etc/claude-code/managed-settings.json
+        read_only: true
+        bind: { create_host_path: false, selinux: z }
+    networks: [subs-chat]
+    healthcheck:
+      test: ["CMD", "test", "-S", "/run/bn-chat/coded.sock"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    depends_on:
+      terminal: { condition: service_healthy }   # (its home: the terminal's volume, made by the terminal)
     logging:   # (YAML anchors do not reach across compose files: same values as x-logging in compose.yaml)
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
@@ -136,6 +198,9 @@ networks:
     internal: true
   plan-chat:
     internal: true
+  subs-chat:   # (subs-chat alone: its way out is added by compose.code-proxy.yaml or compose.code-egress.yaml)
+    internal: true
 
 volumes:
   code-state:
+  chat-socket:

@@ -42,6 +42,8 @@ after(() => { server.close(); fs.rmSync(ROOT, { recursive: true, force: true });
 const FIXED = ['--output-format', 'stream-json', '--verbose', '--input-format', 'stream-json'];
 const said = (frames) => JSON.parse(stdout(frames).toString('utf8').split('\n')[0]);
 const run = (req) => talk(SOCK, [open(req), frame(T.STDIN_END, Buffer.alloc(0))]);
+// Chat's sandbox (subs-chat: BN_CODED_ROLE=chat) for what fn runs
+async function asChat(fn) { process.env.BN_CODED_ROLE = 'chat'; try { return await fn(); } finally { delete process.env.BN_CODED_ROLE; } }
 
 test('Claude on your plan: claude-sub\'s folder, none of the stack\'s variables, no spend tag, no stack MCP server, no budget stop', async () => {
   const f = await run({ op: 'claude', plan: true, args: [...FIXED, `--project-config-root=${WS}`], cwd: WS, env: { CLAUDE_CODE_ENTRYPOINT: 'sdk-ts', EVIL: 'x' }, litellmSession: '3f2a1b4c-5d6e-4f70-8192-a3b4c5d6e7f8' });
@@ -56,7 +58,7 @@ test('Claude on your plan: claude-sub\'s folder, none of the stack\'s variables,
   assert.match(result(await run({ op: 'claude', plan: true, args: [...FIXED, '--max-budget-usd=1', `--project-config-root=${WS}`], cwd: WS })).error, /no budget stop for a session on your plan/);
 });
 
-test('Chat with Claude on your plan: its own empty folder, no tool and no MCP server, or nothing', async () => {
+test('Chat with Claude on your plan: its own empty folder, no tool and no MCP server, or nothing', async () => asChat(async () => {
   const id = 'ab'.repeat(16);
   const s = said(await run({ op: 'claude', plan: true, chat: id, args: [...FIXED, '--tools=', '--strict-mcp-config', '--setting-sources='] }));
   assert.equal(s.cwd, fs.realpathSync(path.join(HOME, '.bn-chat', id)));
@@ -76,6 +78,21 @@ test('Chat with Claude on your plan: its own empty folder, no tool and no MCP se
   fs.symlinkSync(ROOT, path.join(HOME, '.bn-chat'));
   assert.match(result(await run({ op: 'claude', plan: true, chat: id, args: [...FIXED, '--tools=', '--strict-mcp-config'] })).error, /not a folder/);
   fs.unlinkSync(path.join(HOME, '.bn-chat'));
+}));
+
+test('two sandboxes: Chat\'s runs Chat\'s conversations only, the workspace\'s never one of them', async () => {
+  const id = 'ef'.repeat(16);
+  const chatClaude = { op: 'claude', plan: true, chat: id, args: [...FIXED, '--tools=', '--strict-mcp-config'] };
+  const chatAgent = { op: 'agent', tool: 'codex', mode: 'chat', chat: id };
+  for (const req of [chatClaude, chatAgent]) assert.match(result(await run(req)).error, /Chat's conversations run in their own sandbox/);
+  await asChat(async () => {
+    assert.equal(said(await run(chatAgent)).bin, 'codex');
+    for (const req of [{ op: 'claude', args: [...FIXED, `--project-config-root=${WS}`], cwd: WS }, { op: 'agent', tool: 'codex', mode: 'code', cwd: WS },
+      { op: 'fs.list', path: '' }, { op: 'project.settings' }, { op: 'sessions.list' }, { op: 'git.status' }, { op: 'cli', args: ['plugin', 'list'] }]) {
+      assert.match(result(await run(req)).error, /not in Chat's sandbox/, req.op);
+    }
+    assert.ok(result(await talk(SOCK, [open({ op: 'subscriptions.status' })])).tools);
+  });
 });
 
 test('an agent: its launcher with fixed arguments, in a folder of the workspace or its conversation\'s, without the stack\'s variables', async () => {
@@ -86,12 +103,27 @@ test('an agent: its launcher with fixed arguments, in a folder of the workspace 
     assert.equal(s.cwd, fs.realpathSync(path.join(WS, 'app')));
     assert.deepEqual(s.env, { HTTPS_PROXY: 'http://egress:3128' }, tool);
   }
-  const c = said(await run({ op: 'agent', tool: 'copilot', mode: 'chat', chat: 'cd'.repeat(16) }));
-  assert.deepEqual(c.args, ['--acp', '--stdio', '--disable-builtin-mcps']);
-  assert.equal(c.cwd, fs.realpathSync(path.join(HOME, '.bn-chat', 'cd'.repeat(16))));
+  // Chat's: every switch the tool has that turns its tools off, in the conversation's own folder (Chat's sandbox)
+  const chatWant = {
+    codex: ['app-server', '--disable', 'shell_tool', '--disable', 'unified_exec', '--disable', 'shell_snapshot', '--disable', 'apps', '--disable', 'plugins',
+      '--disable', 'browser_use', '--disable', 'browser_use_external', '--disable', 'computer_use', '--disable', 'in_app_browser', '--disable', 'image_generation',
+      '--disable', 'view_image', '--disable', 'skill_search', '--disable', 'skill_mcp_dependency_install', '--disable', 'tool_suggest', '--disable', 'goals',
+      '--disable', 'code_mode_host', '--disable', 'sleep_tool', '-c', 'web_search="disabled"', '-c', 'mcp_servers={}', '-c', 'project_doc_max_bytes=0'],
+    copilot: ['--acp', '--stdio', '--disable-builtin-mcps', '--no-custom-instructions', '--no-ask-user', '--disallow-temp-dir', '--available-tools=',
+      '--deny-tool=shell', '--deny-tool=write', '--deny-tool=url'],
+    cursor: ['--mode', 'ask', 'acp'],
+    grok: ['--tools=', '--disable-web-search', '--no-subagents', 'agent', '--no-leader', 'stdio'] };
+  await asChat(async () => {
+    for (const [tool, args] of Object.entries(chatWant)) {
+      const c = said(await run({ op: 'agent', tool, mode: 'chat', chat: 'cd'.repeat(16), args: ['--yolo'] }));
+      assert.deepEqual(c.args, args, tool);
+      assert.equal(c.cwd, fs.realpathSync(path.join(HOME, '.bn-chat', 'cd'.repeat(16))));
+      assert.deepEqual(c.env, { HTTPS_PROXY: 'http://egress:3128' }, tool);
+    }
+    assert.match(result(await run({ op: 'agent', tool: 'codex', mode: 'chat', chat: 'x' })).error, /bad conversation id/);
+  });
   for (const [req, why] of [[{ op: 'agent', tool: 'gemini', mode: 'code' }, /no such tool/], [{ op: 'agent', tool: 'toString', mode: 'code' }, /no such tool/],
-    [{ op: 'agent', tool: 'codex', mode: 'yolo' }, /mode: code or chat/], [{ op: 'agent', tool: 'codex', mode: 'code', cwd: '/etc' }, /must be in \/workspace/],
-    [{ op: 'agent', tool: 'codex', mode: 'chat', chat: 'x' }, /bad conversation id/]]) {
+    [{ op: 'agent', tool: 'codex', mode: 'yolo' }, /mode: code or chat/], [{ op: 'agent', tool: 'codex', mode: 'code', cwd: '/etc' }, /must be in \/workspace/]]) {
     assert.match(result(await run(req)).error, why);
   }
   fs.unlinkSync(path.join(BIN, 'grok'));

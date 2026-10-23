@@ -14,6 +14,10 @@
 //                   (AGENTS: fixed arguments, through its launcher), in a folder of the workspace (code) or in an empty
 //                   folder of Chat's (chat), without the stack's variables (agentEnv)
 //   subscriptions.status  which of those tools are here and signed in (words only)
+// Chat's conversations (claude with chat, agent with mode chat) run in Chat's own sandbox only: the same program as
+// subs-chat's spawn server (BN_CODED_ROLE=chat, its socket in the chat-socket volume; compose.code.yaml), a container
+// of this image with the same home — the tools' sign-ins — and no workspace or project folder. There it does nothing
+// else (subscriptions.status aside); here it never runs one of them (roleOf).
 // Roots: a project of the Code page is a folder the sandbox sees — /workspace itself, or a folder of it. Every op that
 // takes a path takes a `root` too ("/workspace" or "/workspace/<folder>", checked here: a real folder of the workspace,
 // never through a link; none: /workspace): a relative path is relative to it, and what comes back is relative to it.
@@ -130,14 +134,28 @@ const PLAN_DIR = process.env.BN_PLAN_CONFIG_DIR || path.join(os.homedir(), '.cla
 const CHAT_DIR = process.env.BN_CHAT_DIR || path.join(os.homedir(), '.bn-chat');
 // The tools of your subscriptions as the Code page and Chat run them: each one's own interface for other apps, through
 // its launcher in /usr/local/bin (its own config folder, updates off: terminal/bin/<name>). Fixed argument lists, none
-// of which approves anything by itself (--yolo, --always-approve, --allow-all-tools, --force are never passed). chat:
-// for Chat's conversations, without what reaches beyond the conversation where the tool has a switch for it.
+// of which approves anything by itself (--yolo, --always-approve, --allow-all-tools, --force are never passed).
+// chat: for Chat's conversations (Chat's own sandbox, subs-chat: no workspace, no project folder), with every switch
+// the tool has that turns its tools off — Codex: no shell, no MCP server, no web search, no apps, plugins, skills,
+// browser or images, no AGENTS.md; Copilot: an empty list of available tools, no MCP server of its own, no
+// instructions files, no temp folder, shell, writes and URLs denied; Cursor: its Ask mode; Grok: an empty list of
+// tools, no web search, no subagents. What a tool still reaches for, the code container stops at once
+// (code/server/agents: the turn interrupted, the session dropped).
+const CODEX_CHAT_OFF = ['shell_tool', 'unified_exec', 'shell_snapshot', 'apps', 'plugins', 'browser_use', 'browser_use_external', 'computer_use',
+  'in_app_browser', 'image_generation', 'view_image', 'skill_search', 'skill_mcp_dependency_install', 'tool_suggest', 'goals', 'code_mode_host', 'sleep_tool'];
 export const AGENTS = Object.freeze({
-  codex: { bin: 'codex', code: ['app-server'], chat: ['app-server'] },
-  copilot: { bin: 'copilot', code: ['--acp', '--stdio'], chat: ['--acp', '--stdio', '--disable-builtin-mcps'] },
-  cursor: { bin: 'cursor-agent', code: ['acp'], chat: ['acp'] },
-  grok: { bin: 'grok', code: ['agent', '--no-leader', 'stdio'], chat: ['agent', '--no-leader', 'stdio'] },
+  codex: { bin: 'codex', code: ['app-server'],
+    chat: ['app-server', ...CODEX_CHAT_OFF.flatMap((f) => ['--disable', f]), '-c', 'web_search="disabled"', '-c', 'mcp_servers={}', '-c', 'project_doc_max_bytes=0'] },
+  copilot: { bin: 'copilot', code: ['--acp', '--stdio'],
+    chat: ['--acp', '--stdio', '--disable-builtin-mcps', '--no-custom-instructions', '--no-ask-user', '--disallow-temp-dir', '--available-tools=',
+      '--deny-tool=shell', '--deny-tool=write', '--deny-tool=url'] },
+  cursor: { bin: 'cursor-agent', code: ['acp'], chat: ['--mode', 'ask', 'acp'] },
+  grok: { bin: 'grok', code: ['agent', '--no-leader', 'stdio'], chat: ['--tools=', '--disable-web-search', '--no-subagents', 'agent', '--no-leader', 'stdio'] },
 });
+// This spawn server's role: the terminal's (everything here: the Code page's sessions in the workspace) or Chat's
+// (BN_CODED_ROLE=chat: the subs-chat container — the same image and home, the tools' sign-ins; no workspace, no
+// project folder mounted): Chat's conversations and which tools are signed in, nothing else. Each refuses the other's.
+export const roleOf = (env = process.env) => (env.BN_CODED_ROLE === 'chat' ? 'chat' : 'terminal');
 const AGENT_BIN_DIR = process.env.BN_AGENT_BIN_DIR || '/usr/local/bin';
 const CHAT_ID = /^[0-9a-f]{32}$/;
 
@@ -2403,6 +2421,14 @@ export function projectCheck(req) {
 export const CONFIG_FILES = 500, CONFIG_BYTES = 2 << 20, CONFIG_FILE = 256 << 10, CONFIG_DEPTH = 12, CONFIG_SHOWN = 3 << 20;
 // the .claude/ trees Claude Code reads from the folders above the project's (to the git root)
 export const CONFIG_SURFACES = Object.freeze(['commands', 'agents', 'output-styles', 'skills', 'workflows', 'routines']);
+// Other tools' own configuration in the folder itself — your subscriptions' agents start there from the Code page and
+// read it as it is: Codex's .codex/ (config.toml: MCP servers, hooks), Cursor's .cursor/ (mcp.json, hooks.json, rules,
+// cli.json), Grok's .grok/, Gemini CLI's .gemini/, Copilot's .copilot/ and .github/{hooks,skills,agents,copilot}/, the
+// agents' shared .agents/ (skills), VS Code's .vscode/mcp.json (Copilot reads it). Listed and hashed with Claude Code's:
+// one trust covers both, and an agent starts in a project's folder only while it holds (code/server). Instructions
+// alone (AGENTS.md, .cursorrules, copilot-instructions.md) are read as instructions, as CLAUDE.md is: not listed.
+export const AGENT_TREES = Object.freeze(['.codex', '.cursor', '.grok', '.gemini', '.copilot', '.agents']);
+export const AGENT_GITHUB = Object.freeze(['hooks', 'skills', 'agents', 'copilot']);
 // settingsFiles(abs, {text}) -> {files: [{name, type: file|link|big|other, size, sha256, target, text}], hash,
 // verifiable, over}: every file of abs/.claude and abs/.mcp.json (names relative to abs), and of the six trees above it
 // (names absolute: /workspace/…), sorted; hash: the SHA-256 of what is there (null when nothing is); verifiable: each
@@ -2477,6 +2503,17 @@ export function settingsFiles(abs, { text = false } = {}) {
   // the folder's own .claude/ and .mcp.json
   for (const n of named(abs, '.claude')) tree(path.join(abs, n), n);
   for (const n of named(abs, '.mcp.json')) one(n, path.join(abs, n));
+  // and the other tools' (AGENT_TREES …): in the folder itself. A .github or .vscode that is a link is named as one
+  // (never read through: never trustable)
+  for (const top of AGENT_TREES) for (const n of named(abs, top)) tree(path.join(abs, n), n);
+  const folderOf = (n) => {
+    let st;
+    try { st = fs.lstatSync(path.join(abs, n)); } catch { return false; }
+    if (st.isSymbolicLink()) { tree(path.join(abs, n), n); return false; }
+    return st.isDirectory();
+  };
+  for (const g of named(abs, '.github')) if (folderOf(g)) for (const sub of AGENT_GITHUB) for (const n of named(path.join(abs, g), sub)) tree(path.join(abs, g, n), `${g}/${n}`);
+  for (const v of named(abs, '.vscode')) if (folderOf(v)) for (const n of named(path.join(abs, v), 'mcp.json')) one(`${v}/${n}`, path.join(abs, v, n));
   // the folders above it, to the git root (else the workspace itself): their six trees. Above a folder of this computer
   // (its path in the sandbox: folders Docker made for its mount, or what else is mounted there), up to / — anything
   // there is read by Claude Code too, so it is listed (outside every top: never verifiable, never trusted)
@@ -4584,6 +4621,9 @@ export function serve(sock) {
 
   function open(req) {
     if (!req || typeof req !== 'object' || typeof req.op !== 'string') return fail('bad open');
+    const chatOp = (req.op === 'claude' && req.chat !== undefined) || (req.op === 'agent' && req.mode === 'chat');
+    if (roleOf() === 'chat' && !chatOp && req.op !== 'subscriptions.status') return fail('not in Chat\'s sandbox: it runs Chat\'s conversations only');
+    if (roleOf() !== 'chat' && chatOp) return fail('Chat\'s conversations run in their own sandbox, not in the workspace\'s');
     if (req.op === 'claude') {
       const why = checkClaudeArgs(req.args);
       if (why) return fail(why);

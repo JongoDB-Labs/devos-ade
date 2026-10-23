@@ -13,6 +13,9 @@ const arr = (v) => (Array.isArray(v) ? v : []);
 const DELTA = 100000;
 // What a Chat conversation tells Codex (developer instructions): it answers there, without its tools
 export const CHAT_NOTE = 'You are answering in a chat app, not in a project: reply to the conversation in text. You have no files or tools to use here.';
+// Chat: the items a turn may have — its answer, its reasoning, its plan; anything else is a tool (a command, a change to
+// files, an MCP or web call, an image …), which Chat has none of: the turn is interrupted at its start
+const CHAT_ITEMS = new Set(['userMessage', 'agentMessage', 'reasoning', 'plan', 'contextCompaction']);
 // the notifications this side has no use for (Codex leaves them out)
 const QUIET = ['item/commandExecution/outputDelta', 'item/fileChange/outputDelta', 'item/fileChange/patchUpdated', 'command/exec/outputDelta',
   'thread/realtime/outputAudio/delta', 'rawResponseItem/completed', 'rawResponse/completed', 'fuzzyFileSearch/sessionUpdated'];
@@ -25,6 +28,7 @@ export class CodexAgent {
     this.models = []; this.model = null; this.modes = []; this.mode = null; this.commands = [];
     this.pageMode = 'default';
     this.usage = null; this.limits = null; this.text = ''; this.thought = '';
+    this.toolTried = null; this.interruptWanted = false;
   }
 
   get closed() { return this.peer.closed; }
@@ -50,8 +54,10 @@ export class CodexAgent {
     } catch (e) { this.log(`codex: no model list (${said(e.message, 200)})`); }
   }
 
+  // Chat: Codex started without its tools (bn-coded's chat arguments: no shell, no MCP server, no web search, no apps or
+  // plugins), asking before anything it does not count as safe — every question refused and the turn interrupted
   policy() {
-    return this.chat ? { approvalPolicy: 'never', sandbox: 'read-only' } : { approvalPolicy: 'untrusted' };
+    return this.chat ? { approvalPolicy: 'untrusted', sandbox: 'read-only' } : { approvalPolicy: 'untrusted' };
   }
 
   /** A thread in cwd: the one named (thread/resume) or a new one -> {ref, resumed} */
@@ -82,25 +88,36 @@ export class CodexAgent {
   /** One prompt -> {stop, usage}: a turn, until turn/completed. images: [{media_type, data}] */
   async prompt(text, images = []) {
     const input = [...images.map((im) => ({ type: 'image', url: `data:${im.media_type};base64,${im.data}` })), { type: 'text', text, text_elements: [] }];
-    this.text = ''; this.thought = ''; this.usage = null;
+    this.text = ''; this.thought = ''; this.usage = null; this.toolTried = null; this.interruptWanted = false;
     const done = new Promise((resolve) => { this.turnDone = resolve; });
     try {
       const sandboxPolicy = this.chat ? undefined : { type: 'externalSandbox', networkAccess: 'enabled' };
       const r = obj(await this.peer.request('turn/start', { threadId: this.threadId, input, ...(this.model ? { model: this.model } : {}),
-        ...(this.chat ? { approvalPolicy: 'never' } : { approvalPolicy: 'untrusted', sandboxPolicy }) }, { timeoutMs: 120000 }));
+        approvalPolicy: 'untrusted', ...(this.chat ? {} : { sandboxPolicy }) }, { timeoutMs: 120000 }));
       this.turnId = typeof obj(r.turn).id === 'string' ? r.turn.id : null;
+      if (this.interruptWanted) this.cancel();   // (a tool reached for before the turn's id came)
     } catch (e) { this.turnDone = null; throw e; }
     const end = await Promise.race([done, this.peer.closed.then(() => ({ status: 'failed', error: 'Codex ended' }))]);
     this.flush();
     this.turnId = null; this.turnDone = null;
     const u = obj(this.usage);
     const usage = usageOf({ input: u.inputTokens, output: u.outputTokens, cached: u.cachedInputTokens });
-    if (end.status === 'interrupted') return { stop: 'cancelled', usage };
-    if (end.status === 'failed') return { stop: 'error', usage, error: end.error || 'Codex reported an error' };
-    return { stop: 'end_turn', usage };
+    const tried = this.toolTried ? { tried: this.toolTried } : {};
+    if (end.status === 'interrupted') return { stop: 'cancelled', usage, ...tried };
+    if (end.status === 'failed') return { stop: 'error', usage, error: end.error || 'Codex reported an error', ...tried };
+    return { stop: 'end_turn', usage, ...tried };
   }
 
-  cancel() { if (this.threadId && this.turnId) this.peer.request('turn/interrupt', { threadId: this.threadId, turnId: this.turnId }, { timeoutMs: 15000 }).catch(() => {}); }
+  cancel() {
+    if (this.threadId && this.turnId) this.peer.request('turn/interrupt', { threadId: this.threadId, turnId: this.turnId }, { timeoutMs: 15000 }).catch(() => {});
+    else this.interruptWanted = true;
+  }
+  stopTool(what) {
+    if (this.toolTried) return;
+    this.toolTried = what;
+    this.log(`codex: reached for a tool in Chat (${what}): its turn interrupted`);
+    this.cancel();
+  }
   close() { this.peer.kill(); }
 
   flush() {
@@ -120,6 +137,11 @@ export class CodexAgent {
         if (typeof p.delta === 'string' && p.delta) { if (this.thought.length < DELTA) this.thought += p.delta; this.onEvent({ type: 'thinking_delta', text: str(p.delta, DELTA), parent: null }); }
         return;
       case 'item/started': {
+        const it = obj(p.item);
+        if (this.chat) {
+          if (!CHAT_ITEMS.has(it.type)) this.stopTool(short(typeof it.type === 'string' ? it.type : 'a tool', 60));
+          return;
+        }
         const evs = codexStarted(p.item);
         if (evs.length) this.flush();
         for (const ev of evs) this.onEvent(ev);
@@ -160,7 +182,7 @@ export class CodexAgent {
   async requested(method, p) {
     const decline = { decision: 'decline' };
     if (method !== 'item/commandExecution/requestApproval' && method !== 'item/fileChange/requestApproval') throw new RpcError(-32601, 'not offered by this client');
-    if (this.chat) return decline;
+    if (this.chat) { this.stopTool(method === 'item/fileChange/requestApproval' ? 'a change to files' : 'a command'); return decline; }
     const edit = method === 'item/fileChange/requestApproval';
     if (this.pageMode === 'readOnly' || this.pageMode === 'plan') {
       this.onEvent({ type: 'local', text: `${this.pageMode === 'plan' ? 'Plan' : 'Read only'}: ${edit ? 'a change to files' : 'a command'} was refused without asking.` });

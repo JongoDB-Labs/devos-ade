@@ -31,7 +31,7 @@
 code_on() { flag_on "$(get_env CODE_ENABLED)"; }
 # code_ready -> 0 while it is on and the terminal is ready (its sandbox is where Claude Code runs)
 code_ready() { code_on && terminal_ready; }
-code_services() { ! code_ready || echo code; }
+code_services() { ! code_ready || echo "code subs-chat"; }
 # code_workspace -> the folder the Code page's sandbox sees: the terminal's, or the one enable would give it
 code_workspace() {
   local ws; ws="$(get_env TERMINAL_WORKSPACE)"
@@ -101,9 +101,13 @@ code_preview_domain() {
 code_build() { fix_checkout_modes; building "the Code page image" dc build -q code; }
 # The portal (the Code tab, the unlock), the main Caddy (the code site: a changed Caddyfile is read only at start), the
 # terminal's gateway (it is recreated only when its PREVIEW_PROXY_SECRET changed: at enable — ttyd's connections then
-# drop for a moment and reconnect), then the code container. The terminal is not touched: it runs bn-coded and
+# drop for a moment and reconnect), then the code container and Chat's sandbox (subs-chat: your subscriptions as Chat
+# models — not starting says so, and the Code page still comes up). The terminal is not touched: it runs bn-coded and
 # bn-preview already.
-_code_up() { _code_front && dc up -d --wait terminal-gateway && dc up -d --wait code; }
+_code_up() {
+  _code_front && dc up -d --wait terminal-gateway && dc up -d --wait code || return 1
+  dc up -d --wait subs-chat || warn "Chat's sandbox (subs-chat) did not start: your subscriptions cannot answer in Chat until it does — ./stack logs subs-chat"
+}
 _code_front() { dc up -d --wait portal && recreate_caddy; }
 # code_spawn_ready — bn-coded listens in the running terminal (a terminal container started by a version without it
 # has to be recreated once)
@@ -156,7 +160,7 @@ code_disable() {
   ! stack_lock_ours || own=0
   stack_lock code
   check_prereqs
-  dc rm -sf code >/dev/null 2>&1 || true   # with the overlay still on: compose knows it
+  dc rm -sf code subs-chat >/dev/null 2>&1 || true   # with the overlay still on: compose knows it
   set_env CODE_ENABLED false
   code_remote_sync
   run_phase "Portal + Caddy (Code page off)" "portal caddy" _code_front
@@ -170,16 +174,18 @@ code_disable() {
 # while the overlay still knows it; its network and volume once the terminal has left them)
 code_terminal_off() {
   code_on || return 0
-  dc rm -sf code >/dev/null 2>&1 || true
+  dc rm -sf code subs-chat >/dev/null 2>&1 || true
   set_env CODE_ENABLED false
   code_remote_sync
   log "the Code page is off too (it runs in the terminal's sandbox): ./stack code enable turns both on again"
 }
 
-# code_network_cleanup — its network, once nothing uses it (never fatal; the socket volume is the terminal's)
+# code_network_cleanup — its networks and Chat's socket volume, once nothing uses them (never fatal; the code-socket
+# volume is the terminal's)
 code_network_cleanup() {
   local p; p="$(project_name)"
-  docker network rm "${p}_code-link" >/dev/null 2>&1 || true
+  docker network rm "${p}_code-link" "${p}_plan-chat" "${p}_subs-chat" >/dev/null 2>&1 || true
+  docker volume rm "${p}_chat-socket" >/dev/null 2>&1 || true
 }
 
 # code_remote_sync — REMOTE_CODE_HOST in .env: the Code page's remote name while it is on, the terminal is shared
@@ -369,7 +375,10 @@ code_setup_hook() {
   out="$(mktemp)"; start="$(_now)"
   # (the gateway again: a no-op, unless the previews' secret was made just now — the first setup after an update)
   if { code_build && dc up -d --wait terminal-gateway && dc up -d --wait code; } > "$out" 2>&1; then
-    rm -f "$out"; log "$(phase_line "Code page" $(($(_now) - start)))"; return 0
+    rm -f "$out"; log "$(phase_line "Code page" $(($(_now) - start)))"
+    # Chat's sandbox (subs-chat): its own, after (not starting is said; the Code page and setup go on)
+    dc up -d --wait subs-chat > /dev/null 2>&1 || warn "Chat's sandbox (subs-chat) did not start: your subscriptions cannot answer in Chat until it does — ./stack logs subs-chat"
+    return 0
   fi
   CODE_SETUP_FAILED=1; CODE_SETUP_WHY="the Code page's image did not build or its container did not start"
   warn "Code page: could not build or start it — its last messages:"
@@ -397,8 +406,8 @@ code_default_settle() {
       "The next ./stack setup or update tries once more; ./stack code enable tries now (./stack code disable: keep it off)"
   fi
   # (while compose still knows them)
-  if [ "$both" = 1 ]; then dc rm -sf code terminal terminal-gateway >/dev/null 2>&1 || true
-  else dc rm -sf code >/dev/null 2>&1 || true; fi
+  if [ "$both" = 1 ]; then dc rm -sf code subs-chat terminal terminal-gateway >/dev/null 2>&1 || true
+  else dc rm -sf code subs-chat >/dev/null 2>&1 || true; fi
   set_env CODE_ENABLED ''
   [ "$both" = 0 ] || set_env TERMINAL_ENABLED ''
   terminal_remote_sync
@@ -423,8 +432,8 @@ code_default_rollback() {
   case "${1:-}" in 1 | 2) ;; *) return 1 ;; esac
   ! flag_on "$(get_env CODE_ENABLED)" || code=1
   [ "$1" != 2 ] || ! flag_on "$(get_env TERMINAL_ENABLED)" || term=1
-  if [ "$term" = 1 ]; then dc rm -sf code terminal terminal-gateway >/dev/null 2>&1 || true
-  elif [ "$code" = 1 ]; then dc rm -sf code >/dev/null 2>&1 || true; fi
+  if [ "$term" = 1 ]; then dc rm -sf code subs-chat terminal terminal-gateway >/dev/null 2>&1 || true
+  elif [ "$code" = 1 ]; then dc rm -sf code subs-chat >/dev/null 2>&1 || true; fi
   [ "$code" = 0 ] || set_env CODE_ENABLED ''
   [ "$term" = 0 ] || set_env TERMINAL_ENABLED ''
   [ "$1" != 2 ] || [ "${2:-new}" != new ] || set_env LITELLM_KEY_TERMINAL ''
@@ -568,11 +577,13 @@ code_image_refs() { ! code_on || printf '%s/code:local\n' "$(project_name)"; }
 # code_rollback_cleanup — ./stack rollback to a version without the Code page: its container goes (by its Compose
 # labels; that version's compose files do not know it). .env keeps CODE_*: ./stack update brings it back.
 code_rollback_cleanup() {
-  local p ids
+  local p ids s
   p="$(project_name)"
-  ids="$(docker ps -aq --filter "label=com.docker.compose.project=$p" --filter "label=com.docker.compose.service=code" 2>/dev/null || true)"
-  # shellcheck disable=SC2086  # one id per word
-  [ -z "$ids" ] || docker rm -f $ids >/dev/null 2>&1 || warn "could not remove the code container — docker rm -f $p-code-1"
+  for s in code subs-chat; do
+    ids="$(docker ps -aq --filter "label=com.docker.compose.project=$p" --filter "label=com.docker.compose.service=$s" 2>/dev/null || true)"
+    # shellcheck disable=SC2086  # one id per word
+    [ -z "$ids" ] || docker rm -f $ids >/dev/null 2>&1 || warn "could not remove the $s container — docker rm -f $p-$s-1"
+  done
   code_on || return 0
   log "code: the version you rolled back to has no Code page (./stack update brings it back)"
 }

@@ -22,7 +22,7 @@ Usage: ./stack <command> [--yes]
   open         The installed bedrock-now app, else the portal in your browser, where
                "Install app" installs it (setup and up open it too; BEDROCK_NOW_NO_OPEN=1
                turns that off)
-  logs [svc]   Follow logs (litellm, open-webui, rustfs, postgres, shared-mcp, portal, caddy, stt, terminal, code)
+  logs [svc]   Follow logs (litellm, open-webui, rustfs, postgres, shared-mcp, portal, caddy, stt, terminal, code, subs-chat)
   test         Smoke-test every service end to end (~$0.0001 Bedrock)
   costs        Bedrock prices for your enabled models + spend per key
   prices       Check Bedrock prices now (public price lists; daily anyway)
@@ -479,8 +479,8 @@ setup_done() { SETUP_DONE="${SETUP_DONE:+$SETUP_DONE; }$1"; SETUP_STEP=''; }   #
 # code_default_settle's), its containers stopped while compose still knows them, the update's record and Home's notice
 # without it. (Caddy and the portal may still name it until ./stack setup or ./stack up.) Never fatal.
 _setup_undo_code_default() {
-  if [ "$1" = 2 ]; then dc rm -sf code terminal terminal-gateway >/dev/null 2>&1 || true
-  else dc rm -sf code >/dev/null 2>&1 || true; fi
+  if [ "$1" = 2 ]; then dc rm -sf code subs-chat terminal terminal-gateway >/dev/null 2>&1 || true
+  else dc rm -sf code subs-chat >/dev/null 2>&1 || true; fi
   if [ "$1" = 2 ]; then (set_env_batch CODE_ENABLED '' TERMINAL_ENABLED '') 2>/dev/null || true
   else (set_env CODE_ENABLED '') 2>/dev/null || true; fi
   (terminal_remote_sync; code_remote_sync) >/dev/null 2>&1 || true

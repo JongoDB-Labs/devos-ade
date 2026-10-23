@@ -2,6 +2,7 @@
 // agent (Copilot, Cursor, Grok) and Codex's app server, each a Node process speaking JSON lines on stdin/stdout, driven
 // by FAKE (a scenario) — the tests' sandboxAgent. Run: node fake-agents.mjs acp|codex
 import readline from 'node:readline';
+import fs from 'node:fs';
 
 const kind = process.argv[2];
 const scenario = process.env.FAKE || 'ok';
@@ -12,6 +13,12 @@ const waiting = new Map();
 const ask = (method, params) => new Promise((resolve) => { const id = next++; waiting.set(id, resolve); send({ id, method, params }); });
 let signedIn = scenario !== 'signed-out';
 const sessions = new Map();   // ACP: sessionId -> {cwd, history: [text]}
+const cancelled = new Set();  // ACP: sessions told to stop their turn; Codex: turns interrupted
+// what a tool of the agent's would do when nobody stops it in time: FAKE_MARK gets a line (the tests look for none)
+const ran = (what) => { if (process.env.FAKE_MARK) fs.appendFileSync(process.env.FAKE_MARK, `${what}\n`); };
+// waitStop(key) -> true when the client stopped it within 400 ms (what a tool's own start-up takes, at least)
+const waitStop = async (key) => { for (let i = 0; i < 40; i++) { if (cancelled.has(key)) return true; await new Promise((r) => setTimeout(r, 10)); } return false; };
+const MODES = [{ id: 'agent', name: 'Agent' }, { id: 'plan', name: 'Plan' }, { id: 'ask', name: 'Ask' }, { id: 'yolo', name: 'YOLO' }];
 
 const rl = readline.createInterface({ input: process.stdin });
 rl.on('line', async (line) => {
@@ -40,7 +47,10 @@ async function acp(m) {
       if (!signedIn || scenario === 'cursor-auth' && !signedIn) return { error: { code: -32000, message: 'Authentication required' } };
       const id = `sess-${Object.keys(Object.fromEntries(sessions)).length + 1}`;
       sessions.set(id, { cwd: m.params.cwd, history: [] });
-      return { result: { sessionId: id, modes: { currentModeId: 'agent', availableModes: [{ id: 'agent', name: 'Agent' }, { id: 'plan', name: 'Plan' }, { id: 'ask', name: 'Ask' }, { id: 'yolo', name: 'YOLO' }] },
+      // (yolo-only: its one mode approves everything; yolo-start: it starts there, and has others)
+      const modes = scenario === 'yolo-only' ? { currentModeId: 'yolo', availableModes: [{ id: 'yolo', name: 'YOLO' }] }
+        : { currentModeId: scenario === 'yolo-start' ? 'yolo' : 'agent', availableModes: MODES };
+      return { result: { sessionId: id, modes,
         models: { currentModelId: 'fast-1', availableModels: [{ modelId: 'fast-1', name: 'Fast' }, { modelId: 'smart-2', name: 'Smart' }] } } };
     }
     case 'session/load': {
@@ -50,15 +60,27 @@ async function acp(m) {
       for (const h of s.history) update(m.params.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `replayed ${h}` } });
       return { result: { modes: { currentModeId: 'agent', availableModes: [{ id: 'agent', name: 'Agent' }] } } };
     }
-    case 'session/set_mode': return { result: {} };
+    case 'session/set_mode': log(`set_mode ${m.params.modeId}`); return { result: {} };
     case 'session/set_model': return { result: {} };
-    case 'session/cancel': return undefined;
+    case 'session/cancel': cancelled.add(m.params.sessionId); return undefined;
     case 'session/prompt': {
       const sid = m.params.sessionId;
       const text = (m.params.prompt.find((b) => b.type === 'text') || {}).text || '';
       const s = sessions.get(sid);
       if (s) s.history.push(text);
       if (scenario === 'long-line') { process.stdout.write(`${'x'.repeat(17 << 20)}\n`); return undefined; }
+      cancelled.delete(sid);
+      // grab: it reaches for a file of yours (no permission asked: a read it would run by itself); yolo-switch: it switches
+      // itself to its approve-everything mode, then would run a command
+      if (scenario === 'grab' || scenario === 'yolo-switch') {
+        update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Let me look. ' } });
+        if (scenario === 'grab') update(sid, { sessionUpdate: 'tool_call', toolCallId: 'g1', title: 'Read ~/.ssh/id_ed25519', kind: 'read', status: 'pending', locations: [{ path: '/home/claude/.ssh/id_ed25519' }] });
+        else update(sid, { sessionUpdate: 'current_mode_update', currentModeId: 'yolo' });
+        if (await waitStop(sid)) return { result: { stopReason: 'cancelled' } };
+        ran(scenario === 'grab' ? 'read the key' : 'ran a command in yolo');
+        update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Here it is: (secret)' } });
+        return { result: { stopReason: 'end_turn' } };
+      }
       update(sid, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'thinking…' } });
       update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Hello ' } });
       update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `you said: ${text.slice(-40)}` } });
@@ -102,8 +124,19 @@ async function codex(m) {
       const tid = 'turn-1';
       const text = (p.input || []).find((x) => x.type === 'text')?.text || '';
       log(`turn/start ${JSON.stringify({ approvalPolicy: p.approvalPolicy, sandboxPolicy: p.sandboxPolicy ?? null })}`);
+      cancelled.delete(tid);
       setTimeout(async () => {
         const n = (method, params) => send({ method, params: { threadId: thread.id, turnId: tid, ...params } });
+        if (scenario === 'grab') {
+          // a command it would run (shell on, never asking): the client interrupts the turn at its start
+          n('item/agentMessage/delta', { itemId: 'm0', delta: 'Let me look. ' });
+          n('item/started', { item: { type: 'commandExecution', id: 'c9', command: 'cat ~/.ssh/id_ed25519', cwd: '/home/claude', status: 'inProgress' } });
+          if (await waitStop(tid)) { n('turn/completed', { turn: { id: tid, status: 'interrupted', error: null } }); return; }
+          ran('cat the key');
+          n('item/completed', { item: { type: 'commandExecution', id: 'c9', command: 'cat ~/.ssh/id_ed25519', status: 'completed', exitCode: 0, aggregatedOutput: 'KEY' } });
+          n('turn/completed', { turn: { id: tid, status: 'completed', error: null } });
+          return;
+        }
         n('item/reasoning/summaryTextDelta', { itemId: 'r1', delta: 'hmm', summaryIndex: 0 });
         n('item/agentMessage/delta', { itemId: 'm1', delta: 'Sure: ' });
         n('item/agentMessage/delta', { itemId: 'm1', delta: text.slice(-30) });
@@ -125,7 +158,7 @@ async function codex(m) {
       }, 10);
       return { result: { turn: { id: tid, status: 'inProgress' } } };
     }
-    case 'turn/interrupt': return { result: {} };
+    case 'turn/interrupt': cancelled.add(p.turnId); return { result: {} };
     default: return { error: { code: -32601, message: 'not here' } };
   }
 }

@@ -6,12 +6,16 @@
 import { Peer, RpcError, said } from './jsonrpc.mjs';
 import { acpCall, acpPlan, callId, contentText, usageOf } from './map.mjs';
 import { str, short, int } from '../validate.mjs';
+import { HARNESSES } from './tools.mjs';
 
 const obj = (v) => (v !== null && typeof v === 'object' && !Array.isArray(v) ? v : {});
 const arr = (v) => (Array.isArray(v) ? v : []);
 const TEXT = 200000, DELTA = 100000;
 export class NotSignedIn extends Error {}
-// an agent mode this side never switches to: one that approves by itself
+// an agent in a mode that approves by itself, with no other to leave it for (or one it switched to by itself): its
+// session is closed, never prompted in it
+export class UnsafeMode extends Error {}
+// an agent mode this side never switches to, and never prompts in: one that approves by itself
 export const MODE_NEVER = /yolo|autopilot|bypass|full.?access|always|dangerous|auto(?![-_ ]?edit)/i;
 // the agent's own login, used where the agent asks a client to name it: Cursor's (after `agent login` in the terminal)
 // and the one an agent names as its default (Grok, once signed in) — never a method that starts a sign-in here
@@ -29,9 +33,14 @@ export class AcpAgent {
     this.loading = false;     // a session/load replays the past: not shown again (the page has it)
     this.text = ''; this.thought = '';
     this.pageMode = 'default';
+    this.unsafe = null;       // the name of a mode that approves by itself the agent switched to: the session ends
+    this.prompting = false;
+    this.toolTried = null;    // Chat: the tool the agent reached for in this turn (the turn is stopped at once)
   }
 
   get closed() { return this.peer.closed; }
+  modeName(id) { return short(this.modes.find((m) => m.id === id)?.name || id, 100); }
+  never(id) { return typeof id === 'string' && MODE_NEVER.test(`${id} ${this.modes.find((m) => m.id === id)?.name ?? ''}`); }
 
   async init() {
     const r = obj(await this.peer.request('initialize', {
@@ -88,10 +97,11 @@ export class AcpAgent {
         const r = obj(await this.withLogin(() => this.peer.request('session/load', { sessionId: resume, cwd, mcpServers: [] }, { timeoutMs: 120000 })));
         this.sessionId = resume;
         this.takeSession(r);
+        await this.leaveUnsafe();
         this.firstMode ??= this.mode;
         return { ref: resume, resumed: true };
       } catch (e) {
-        if (e instanceof NotSignedIn) throw e;
+        if (e instanceof NotSignedIn || e instanceof UnsafeMode) throw e;
         this.log(`${this.tool}: session ${short(resume, 40)} not resumed (${said(e.message, 200)}): a new one`);
       } finally { this.loading = false; this.calls.clear(); }
     }
@@ -99,8 +109,28 @@ export class AcpAgent {
     if (typeof r.sessionId !== 'string' || !/^[\x21-\x7e]{1,200}$/.test(r.sessionId)) throw new Error(`${this.tool} gave no session id`);
     this.sessionId = r.sessionId;
     this.takeSession(r);
+    await this.leaveUnsafe();
     this.firstMode ??= this.mode;
     return { ref: r.sessionId, resumed: false };
+  }
+
+  // a session that starts in a mode approving by itself (the agent's own default, or a resumed session's): left at once
+  // for a safe one — the page's, else any other the agent offers; none, or the agent will not leave it: closed
+  async leaveUnsafe() {
+    if (!this.never(this.mode)) return;
+    const was = this.modeName(this.mode);
+    const m = this.agentModeFor(this.pageMode);
+    const to = (typeof m === 'string' ? m : m?.id) ?? this.modes.find((x) => !this.never(x.id))?.id ?? null;
+    if (to) {
+      try { await this.peer.request('session/set_mode', { sessionId: this.sessionId, modeId: to }, { timeoutMs: 30000 }); this.mode = to; } catch (e) { this.log(`${this.tool}: mode ${short(to, 40)} not set: ${said(e.message, 200)}`); }
+    }
+    if (this.never(this.mode)) {
+      this.close();
+      throw new UnsafeMode(`${HARNESSES[this.tool]?.name ?? this.tool} started in its "${was}" mode, which approves everything by itself, ${to ? 'and did not leave it' : 'and offers no other'}: not used (its own settings in the terminal choose its default mode)`);
+    }
+  }
+  unsafeError() {
+    return new UnsafeMode(`${HARNESSES[this.tool]?.name ?? this.tool} switched itself to its "${this.unsafe}" mode, which approves everything by itself: its turn was stopped and its session closed (your next prompt starts it again)`);
   }
 
   // the page's mode as one of the agent's: Plan and Read only to its planning or asking mode where it has one (this side
@@ -118,7 +148,7 @@ export class AcpAgent {
     this.pageMode = page;
     const m = this.agentModeFor(page);
     const id = typeof m === 'string' ? m : m?.id;
-    if (!id || id === this.mode || !this.sessionId) return this.mode;
+    if (!id || id === this.mode || !this.sessionId || this.never(id)) return this.mode;
     try {
       await this.peer.request('session/set_mode', { sessionId: this.sessionId, modeId: id }, { timeoutMs: 30000 });
       this.mode = id;
@@ -128,7 +158,7 @@ export class AcpAgent {
 
   // Chat: the agent's asking mode where it has one (Cursor's ask: questions and answers, read only); else its own
   async chatMode() {
-    const m = this.modes.find((x) => /^ask$/i.test(x.id) || /^ask$/i.test(x.name));
+    const m = this.modes.find((x) => (/^ask$/i.test(x.id) || /^ask$/i.test(x.name)) && !this.never(x.id));
     if (!m || m.id === this.mode || !this.sessionId) return;
     try { await this.peer.request('session/set_mode', { sessionId: this.sessionId, modeId: m.id }, { timeoutMs: 30000 }); this.mode = m.id; } catch { /* its own mode */ }
   }
@@ -145,18 +175,31 @@ export class AcpAgent {
     const blocks = [];
     if (obj(this.caps.promptCapabilities).image === true) for (const im of images) blocks.push({ type: 'image', mimeType: im.media_type, data: im.data });
     blocks.push({ type: 'text', text });
-    this.text = ''; this.thought = '';
+    this.text = ''; this.thought = ''; this.toolTried = null;
+    // never a turn in a mode that approves by itself (the agent's own switch to one ends the session: notified())
+    if (this.unsafe || this.never(this.mode)) { this.unsafe ??= this.modeName(this.mode); this.close(); throw this.unsafeError(); }
     let r;
+    this.prompting = true;
     try {
       r = obj(await this.peer.request('session/prompt', { sessionId: this.sessionId, prompt: blocks }, { timeoutMs: 6 * 3600000 }));
-    } finally { this.flush(); }
+    } catch (e) {
+      if (this.unsafe) { this.close(); throw this.unsafeError(); }
+      throw e;
+    } finally { this.prompting = false; this.flush(); }
+    if (this.unsafe) { this.close(); throw this.unsafeError(); }
     const u = obj(r.usage);
     const usage = usageOf({ input: u.inputTokens ?? u.input_tokens, output: u.outputTokens ?? u.output_tokens, cached: u.cachedReadTokens ?? u.cachedInputTokens ?? u.cache_read_input_tokens });
     const stop = ['end_turn', 'max_tokens', 'max_turn_requests', 'refusal', 'cancelled'].includes(r.stopReason) ? r.stopReason : 'end_turn';
-    return { stop, usage };
+    return { stop, usage, ...(this.toolTried ? { tried: this.toolTried } : {}) };
   }
 
   cancel() { if (this.sessionId) this.peer.notify('session/cancel', { sessionId: this.sessionId }); }
+  stopTool(title) {
+    if (this.toolTried) return;
+    this.toolTried = title;
+    this.log(`${this.tool}: reached for a tool in Chat (${title}): its turn stopped`);
+    this.cancel();
+  }
   close() { this.peer.kill(); }
 
   // the text and thinking streamed since the last tool call, as whole blocks (what the history keeps)
@@ -185,7 +228,12 @@ export class AcpAgent {
         return;
       }
       case 'tool_call':
-      case 'tool_call_update': this.call(u); return;
+      case 'tool_call_update':
+        // Chat: no tool, whatever the agent's own switches let through — the turn is stopped at the first sign of one
+        // (before it asks, or runs it), its answer says so, and chat.mjs drops this session (a new one next time)
+        if (this.chat) { this.stopTool(short(u.title || u.kind || 'a tool', 120)); return; }
+        this.call(u);
+        return;
       case 'plan':
         this.flush();
         this.onEvent({ type: 'tool_use', id: callId(`plan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`), name: 'TodoWrite', input: acpPlan(u.entries), parent: null });
@@ -194,7 +242,10 @@ export class AcpAgent {
         this.commands = arr(u.availableCommands).map(obj).filter((c) => typeof c.name === 'string').slice(0, 200).map((c) => short(c.name, 100));
         return;
       case 'current_mode_update':
-        if (typeof u.currentModeId === 'string') this.mode = short(u.currentModeId, 100);
+        if (typeof u.currentModeId !== 'string') return;
+        this.mode = short(u.currentModeId, 100);
+        // a switch of its own to a mode that approves by itself: the turn under way stops, the session ends (prompt())
+        if (this.never(this.mode) && !this.unsafe) { this.unsafe = this.modeName(this.mode); if (this.prompting) this.cancel(); }
         return;
       case 'usage_update': {
         const used = int(u.used, 0, 1e12), size = int(u.size, 0, 1e12);
@@ -239,10 +290,12 @@ export class AcpAgent {
     const opts = arr(p.options).map(obj).filter((o) => typeof o.optionId === 'string');
     const pick = (...kinds) => { for (const k of kinds) { const o = opts.find((x) => x.kind === k); if (o) return { outcome: { outcome: 'selected', optionId: o.optionId } }; } return { outcome: { outcome: 'cancelled' } }; };
     const tc = obj(p.toolCall);
+    // Chat: refused without a word to you, and the turn stopped; a session gone to a mode that approves by itself: refused
+    if (this.chat) { this.stopTool(short(tc.title || tc.kind || 'a tool', 120)); return pick('reject_once', 'reject_always'); }
+    if (this.unsafe) return pick('reject_once', 'reject_always');
     const id = typeof tc.toolCallId === 'string' ? tc.toolCallId : null;
     const merged = { ...(id ? this.calls.get(id) : {}), ...tc };
     if (id && !merged.shown && this.calls.size < 2000) { this.calls.set(id, merged); this.show(id, merged); }
-    if (this.chat) return pick('reject_once', 'reject_always');
     const kind = typeof merged.kind === 'string' ? merged.kind : 'other';
     const changes = ['edit', 'delete', 'move', 'execute'].includes(kind) || arr(merged.content).some((c) => obj(c).type === 'diff');
     if ((this.pageMode === 'readOnly' || this.pageMode === 'plan') && (changes || !['read', 'search', 'think', 'fetch'].includes(kind))) {

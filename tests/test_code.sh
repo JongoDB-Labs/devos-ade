@@ -32,9 +32,9 @@ test_code_is_off_by_default_and_needs_the_terminal() {
   assert_eq "$(code_services)" ""
   mkdir -p "$TMP/ws"
   printf 'CODE_ENABLED=true\nTERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=%s\n' "$TMP/ws" > "$ENV_FILE"
-  assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml compose.terminal-proxy.yaml compose.code.yaml "
-  assert_eq "$(code_services)" "code"
-  assert_eq "$(optional_services)" "terminal-egress terminal-gateway terminal code"
+  assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml compose.terminal-proxy.yaml compose.code.yaml compose.code-proxy.yaml "
+  assert_eq "$(code_services)" "code subs-chat"
+  assert_eq "$(optional_services)" "terminal-egress terminal-gateway terminal code subs-chat"
   printf 'CODE_ENABLED=false\nTERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=%s\n' "$TMP/ws" > "$ENV_FILE"
   assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml compose.terminal-proxy.yaml "
   [ -f "$STACK_DIR/compose.code.yaml" ] || return 1
@@ -129,7 +129,7 @@ test_a_default_that_did_not_come_up_is_off_again_and_tried_next_time() {
   : > "$TMP/dc"; : > "$TMP/docker"; TERMINAL_SETUP_FAILED=1
   code_default_settle > "$TMP/out" 2>&1 || return 1
   assert_eq "$(get_env CODE_ENABLED)" ""; assert_eq "$(get_env TERMINAL_ENABLED)" ""
-  assert_eq "$(head -n 1 "$TMP/dc")" "dc rm -sf code terminal terminal-gateway"
+  assert_eq "$(head -n 1 "$TMP/dc")" "dc rm -sf code subs-chat terminal terminal-gateway"
   assert_contains "$(cat "$TMP/dc")" "dc up -d --wait --force-recreate caddy"
   assert_contains "$(cat "$TMP/dc")" "dc up -d --wait --no-deps litellm shared-mcp"
   assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_code-link"
@@ -143,7 +143,7 @@ test_a_default_that_did_not_come_up_is_off_again_and_tried_next_time() {
   : > "$TMP/dc"; TERMINAL_SETUP_FAILED=0; CODE_SETUP_FAILED=1
   code_default_settle > /dev/null 2>&1 || return 1
   assert_eq "$(get_env CODE_ENABLED)" ""; assert_eq "$(get_env TERMINAL_ENABLED)" true
-  assert_eq "$(head -n 1 "$TMP/dc")" "dc rm -sf code"
+  assert_eq "$(head -n 1 "$TMP/dc")" "dc rm -sf code subs-chat"
   assert_not_contains "$(cat "$TMP/dc")" "terminal"
   # a failure with the Code page on by choice (not this run's default): untouched, as before
   set_env CODE_ENABLED true; CODE_DEFAULT_ON=0; CODE_SETUP_FAILED=1; : > "$TMP/dc"
@@ -162,7 +162,7 @@ test_rollback_of_the_update_that_turned_it_on_turns_it_off_again() {
   code_default_rollback "$(_record_get code_default)" "$(_record_get code_default_key)" > "$TMP/out" 2>&1 || return 1
   assert_eq "$(get_env CODE_ENABLED)" ""; assert_eq "$(get_env TERMINAL_ENABLED)" ""
   assert_eq "$(get_env LITELLM_KEY_TERMINAL)" ""   # (the data restored has no such key)
-  assert_eq "$(head -n 1 "$TMP/dc")" "dc rm -sf code terminal terminal-gateway"
+  assert_eq "$(head -n 1 "$TMP/dc")" "dc rm -sf code subs-chat terminal terminal-gateway"
   assert_contains "$(cat "$TMP/out")" "that update turned the Code page and its terminal on by default — off again"
   code_default_wanted || return 1   # the next update turns them on again
   # turned off since the update (false): rollback keeps it false, so no later update turns it on again
@@ -185,7 +185,7 @@ test_rollback_of_the_update_that_turned_it_on_turns_it_off_again() {
   set_env TERMINAL_ENABLED true; set_env CODE_ENABLED true; set_env LITELLM_KEY_TERMINAL sk-term; : > "$TMP/dc"
   code_default_rollback 1 > /dev/null 2>&1 || return 1
   assert_eq "$(get_env CODE_ENABLED)" ""; assert_eq "$(get_env TERMINAL_ENABLED)" true; assert_eq "$(get_env LITELLM_KEY_TERMINAL)" sk-term
-  assert_eq "$(cat "$TMP/dc")" "dc rm -sf code"
+  assert_eq "$(cat "$TMP/dc")" "dc rm -sf code subs-chat"
   # an update that did not turn it on (nothing recorded): nothing changes
   set_env CODE_ENABLED true; : > "$TMP/dc"
   if code_default_rollback "" > /dev/null 2>&1; then return 1; fi
@@ -315,8 +315,8 @@ test_enable_turns_the_terminal_on_first_then_builds_and_starts_the_code_page() {
   assert_contains "$calls" "dc build -q --build-arg APT_REFRESH=$(date -u +%G-%V) --build-arg BN_AI_TOOLS=all terminal"
   assert_contains "$calls" "dc build -q code"
   # after the terminal's own steps: terminal, portal, Caddy, then the code container
-  assert_eq "$(printf '%s\n' "$calls" | grep '^dc up' | tail -n 5 | tr '\n' '|')" \
-    "dc up -d --wait terminal|dc up -d --wait portal|dc up -d --wait --force-recreate caddy|dc up -d --wait terminal-gateway|dc up -d --wait code|"
+  assert_eq "$(printf '%s\n' "$calls" | grep '^dc up' | tail -n 6 | tr '\n' '|')" \
+    "dc up -d --wait terminal|dc up -d --wait portal|dc up -d --wait --force-recreate caddy|dc up -d --wait terminal-gateway|dc up -d --wait code|dc up -d --wait subs-chat|"
   out="$(cat "$TMP/out")"
   assert_contains "$out" "turning the terminal on first"
   assert_contains "$out" "Code page: on — http://code.bedrock-now.localhost"
@@ -332,7 +332,7 @@ test_enable_turns_the_terminal_on_first_then_builds_and_starts_the_code_page() {
   assert_eq "$(grep -E '^dc (build|up|rm|stop|restart).*terminal( |$)' "$TMP/dc")" ""   # (only asked whether bn-coded listens)
   assert_contains "$(cat "$TMP/dc")" "dc exec -T terminal timeout 10 test -S /run/bn-code/coded.sock"
   # (the gateway: recreated by compose only because the previews' secret is new)
-  assert_eq "$(grep '^dc up' "$TMP/dc" | tr '\n' '|')" "dc up -d --wait portal|dc up -d --wait --force-recreate caddy|dc up -d --wait terminal-gateway|dc up -d --wait code|"
+  assert_eq "$(grep '^dc up' "$TMP/dc" | tr '\n' '|')" "dc up -d --wait portal|dc up -d --wait --force-recreate caddy|dc up -d --wait terminal-gateway|dc up -d --wait code|dc up -d --wait subs-chat|"
   # a terminal started by a version without the spawn server: recreated once (and says so)
   dc() { echo "dc $*" >> "$TMP/dc"; case "$*" in *"test -S /run/bn-code/coded.sock"*) return 1 ;; esac; return 0; }
   : > "$TMP/dc"
@@ -366,11 +366,12 @@ test_disable_removes_the_code_page_and_keeps_the_terminal() {
   assert_eq "$(get_env CODE_ENABLED)" false
   assert_eq "$(get_env TERMINAL_ENABLED)" true
   calls="$(cat "$TMP/dc")"
-  assert_eq "$(printf '%s\n' "$calls" | head -n 1)" "dc rm -sf code"   # while compose still knows it
+  assert_eq "$(printf '%s\n' "$calls" | head -n 1)" "dc rm -sf code subs-chat"   # while compose still knows it
   assert_not_contains "$calls" "terminal"                                # the terminal (and its tmux session) untouched
   assert_contains "$calls" "dc up -d --wait --force-recreate caddy"
-  assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_code-link"
-  assert_not_contains "$(cat "$TMP/docker")" "docker volume rm"           # the socket volume is the terminal's
+  assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_code-link bedrock-now_plan-chat bedrock-now_subs-chat"
+  # (the code-socket volume is the terminal's; Chat's socket volume goes, its Git hosts' volume stays)
+  assert_eq "$(grep 'docker volume rm' "$TMP/docker")" "docker volume rm bedrock-now_chat-socket"
   assert_contains "$(cat "$TMP/out")" "the terminal and its workspace stay"
   code_disable > "$TMP/out" 2>&1 || return 1
   assert_contains "$(cat "$TMP/out")" "already off"
@@ -383,7 +384,7 @@ test_terminal_disable_turns_the_code_page_off_too() {
   terminal_disable > "$TMP/out" 2>&1 || { cat "$TMP/out" >&2; return 1; }
   assert_eq "$(get_env CODE_ENABLED)" false
   assert_eq "$(get_env TERMINAL_ENABLED)" false
-  assert_eq "$(head -n 1 "$TMP/dc")" "dc rm -sf code"
+  assert_eq "$(head -n 1 "$TMP/dc")" "dc rm -sf code subs-chat"
   assert_contains "$(cat "$TMP/out")" "the Code page is off too"
   assert_contains "$(cat "$TMP/docker")" "docker volume rm bedrock-now_terminal-socket bedrock-now_code-socket"
 }
@@ -443,7 +444,7 @@ test_help_and_dispatcher() {
   assert_contains "$(code_usage)" "Usage: ./stack code <command>"
   assert_contains "$(sed -n '/^if \[ "$want_help" = 1 \]/,/^fi/p' "$STACK_DIR/stack")" "code) code_usage; exit 0 ;;"
   assert_contains "$(cat "$STACK_DIR/stack")" 'code) [ ! -f "$ENV_FILE" ] || guard_project; cmd_code "$@" ;;'
-  assert_contains "$(cmd_help)" "logs [svc]   Follow logs (litellm, open-webui, rustfs, postgres, shared-mcp, portal, caddy, stt, terminal, code)"
+  assert_contains "$(cmd_help)" "logs [svc]   Follow logs (litellm, open-webui, rustfs, postgres, shared-mcp, portal, caddy, stt, terminal, code, subs-chat)"
   for k in CODE_ENABLED CODE_HOST CODE_PROXY_SECRET REMOTE_CODE_HOST; do assert_contains "$(cat "$STACK_DIR/.env.example")" "$k="; done
 }
 
@@ -463,7 +464,7 @@ test_setup_hook_builds_and_starts_it_and_never_stops_setup() {
   code_enable > /dev/null 2>&1 || return 1
   : > "$TMP/dc"
   code_setup_hook > "$TMP/out" 2>&1 || return 1
-  assert_eq "$(cat "$TMP/dc" | tr '\n' '|')" "dc build -q code|dc up -d --wait terminal-gateway|dc up -d --wait code|"
+  assert_eq "$(cat "$TMP/dc" | tr '\n' '|')" "dc build -q code|dc up -d --wait terminal-gateway|dc up -d --wait code|dc up -d --wait subs-chat|"
   dc() { echo "boom"; return 1; }
   code_setup_hook > "$TMP/out" 2>&1 || return 1
   assert_contains "$(cat "$TMP/out")" "Code page: setup goes on without it"
@@ -498,7 +499,7 @@ test_images_rollback_and_uninstall() {
 # --- the files: the overlay, Caddy, the spawn server, the pins ---
 
 test_compose_code_is_a_sandboxed_container_on_its_own_network() {
-  c="$(awk '/^  code:$/,/^  caddy:$/' "$STACK_DIR/compose.code.yaml")"
+  c="$(awk '/^  code:$/,/^  subs-chat:$/' "$STACK_DIR/compose.code.yaml")"
   for want in "read_only: true" "cap_drop: [ALL]" 'security_opt: ["no-new-privileges:true"]' 'user: "${TERMINAL_UID:-10104}:${TERMINAL_GID:-10104}"' \
               "pids_limit:" "mem_limit:" "init: true" "- code-socket:/run/bn-code:ro" "aliases: [code-upstream]" \
               'CODE_PROXY_SECRET: ${CODE_PROXY_SECRET:-}' "terminal: { condition: service_healthy }"; do
@@ -523,16 +524,34 @@ test_compose_code_is_a_sandboxed_container_on_its_own_network() {
   # and the spawn server are the terminal's own
   assert_not_contains "$(cat "$STACK_DIR/compose.code.yaml")" "  terminal:
     environment"
-  assert_not_contains "$(cat "$STACK_DIR/compose.code.yaml")" "BN_CODE"
+  assert_not_contains "$(sed '/^  subs-chat:$/,/^  caddy:$/d' "$STACK_DIR/compose.code.yaml")" "BN_CODE"   # (subs-chat: its own bn-coded's)
   assert_contains "$(awk '/^  terminal:$/,/^  terminal-gateway:$/' "$STACK_DIR/compose.terminal.yaml")" "- code-socket:/run/bn-code"
   assert_contains "$(awk '/^  caddy:$/,/^  portal:$/' "$STACK_DIR/compose.code.yaml")" "networks: [default, terminal-link, code-link]"
-  assert_eq "$(grep -c 'internal: true' "$STACK_DIR/compose.code.yaml")" 2
+  assert_eq "$(grep -c 'internal: true' "$STACK_DIR/compose.code.yaml")" 3
   # Chat's models on your subscriptions: Open WebUI's own connection to it, on plan-chat (the two of them alone), with
   # its key; the switch for Claude on your plan reaches it and the portal, never the sandbox
   assert_contains "$c" "aliases: [code-chat]"
   assert_contains "$c" 'CODE_CHAT_KEY: ${CODE_CHAT_KEY:-}'
   assert_contains "$c" 'CODE_CLAUDE_PLAN: ${CODE_CLAUDE_PLAN:-false}'
   assert_contains "$(awk '/^  open-webui:$/,/^  portal:$/' "$STACK_DIR/compose.code.yaml")" "networks: [default, plan-chat]"
+  assert_contains "$c" "- chat-socket:/run/bn-chat:ro"
+  # Chat's sandbox (subs-chat): the terminal's image and home, bn-coded in Chat's role — none of your files, no key, no
+  # token, not on the terminal's network; its way out only through the overlays (the terminal's own way)
+  sc="$(awk '/^  subs-chat:$/,/^  caddy:$/' "$STACK_DIR/compose.code.yaml")"
+  for want in "read_only: true" "cap_drop: [ALL]" 'security_opt: ["no-new-privileges:true"]' 'user: "${TERMINAL_UID:-10104}:${TERMINAL_GID:-10104}"' \
+              'image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/terminal:local' 'entrypoint: ["node", "/usr/local/bin/bn-coded.mjs"]' "BN_CODED_ROLE: chat" \
+              "BN_CODE_SOCK_DIR: /run/bn-chat" "- terminal-home:/home/claude" "- chat-socket:/run/bn-chat" "networks: [subs-chat]" "pids_limit:" "mem_limit:"; do
+    assert_contains "$sc" "$want"
+  done
+  for bad in "/workspace" "TERMINAL_WORKSPACE" "LITELLM" "ANTHROPIC" "SHARED_MCP_TOKEN" "BN_MCP_URL" "AWS_" "code-socket" "docker.sock" "privileged" \
+             "ports:" "cap_add" "network_mode" "@projects" "terminal-link"; do
+    assert_not_contains "$sc" "$bad"
+  done
+  assert_eq "$(printf '%s\n' "$sc" | grep -c 'type: bind')" 1   # (the managed settings, read-only: below)
+  assert_contains "$sc" "target: /etc/claude-code/managed-settings.json"
+  assert_contains "$(cat "$STACK_DIR/compose.code-proxy.yaml")" "networks: [subs-chat, terminal-proxy]"
+  assert_contains "$(cat "$STACK_DIR/compose.code-egress.yaml")" "networks: [subs-chat, terminal-out]"
+  assert_eq "$(grep -c '^  [a-z]' "$STACK_DIR/compose.code-egress.yaml")" 1   # subs-chat: alone
   for want in 'CODE_MODE: "on"' 'REMOTE_CODE_HOST: ${REMOTE_CODE_HOST:-code.remote.invalid}' 'CODE_ENABLED: "true"'; do
     assert_contains "$(cat "$STACK_DIR/compose.code.yaml")" "$want"
   done
@@ -549,6 +568,20 @@ import json, sys
 d = json.load(sys.stdin)
 s = d["services"]; c, t, k = s["code"], s["terminal"], s["caddy"]
 assert list(c["networks"]) == ["code-link", "plan-chat"] and c["networks"]["code-link"]["aliases"] == ["code-upstream"], c["networks"]
+# Chat sandbox: the image and home of the terminal, no folder of yours (the managed settings alone, read-only), its own
+# internal network and the one of the egress proxy, bn-coded in the chat role, none of the keys of the stack
+x = s["subs-chat"]
+assert x["image"] == t["image"] and x["user"] == "501:20" and x["read_only"] and x["cap_drop"] == ["ALL"] and "ports" not in x
+assert x["entrypoint"] == ["node", "/usr/local/bin/bn-coded.mjs"] and x["environment"]["BN_CODED_ROLE"] == "chat", x
+assert sorted(x["networks"]) == ["subs-chat", "terminal-proxy"], x["networks"]
+assert d["networks"]["subs-chat"]["internal"] is True
+assert sorted(n for n, y in s.items() if "subs-chat" in (y.get("networks") or {})) == ["subs-chat"]
+assert [(v["type"], v.get("source", "").rsplit("/", 1)[-1], v["target"], v.get("read_only")) for v in x["volumes"]] == [
+  ("volume", "terminal-home", "/home/claude", None), ("volume", "chat-socket", "/run/bn-chat", None),
+  ("bind", "off.json", "/etc/claude-code/managed-settings.json", True)], x["volumes"]
+assert not any(k.startswith(("ANTHROPIC", "LITELLM", "AWS_", "SHARED_MCP", "BN_MCP")) for k in x["environment"]), x["environment"]
+assert x["environment"]["HTTPS_PROXY"] == "http://egress:3128"
+assert ("chat-socket", "/run/bn-chat", True) in [(v.get("source"), v["target"], v.get("read_only")) for v in c["volumes"]], c["volumes"]
 assert c["networks"]["plan-chat"]["aliases"] == ["code-chat"], c["networks"]
 assert d["networks"]["code-link"]["internal"] is True and d["networks"]["plan-chat"]["internal"] is True
 # plan-chat: the code container and Open WebUI alone; Open WebUI gets a second connection (LiteLLM first), with the key
@@ -557,9 +590,10 @@ o = s["open-webui"]
 assert o["environment"]["OPENAI_API_BASE_URLS"] == "http://litellm:4000/v1;http://code-chat:8096/v1", o["environment"]
 assert o["environment"]["OPENAI_API_KEYS"].startswith(";") or o["environment"]["OPENAI_API_KEYS"].count(";") == 1
 assert c["user"] == "501:20" and c["read_only"] and c["cap_drop"] == ["ALL"] and "ports" not in c
-assert [(v["source"], v["target"], v.get("read_only")) for v in c["volumes"]][:2] == [("code-socket", "/run/bn-code", True), ("code-state", "/var/lib/bn-code", None)], c["volumes"]
+assert [(v["source"], v["target"], v.get("read_only")) for v in c["volumes"]][:3] == [("code-socket", "/run/bn-code", True), ("chat-socket", "/run/bn-chat", True),
+  ("code-state", "/var/lib/bn-code", None)], c["volumes"]
 # (the project folders public list: a folder of the stack, read-only, never created by Docker)
-assert [(v["type"], v["source"].endswith("/.state/projects/public"), v["target"], v.get("read_only"), bool(v["bind"].get("create_host_path"))) for v in c["volumes"][2:]] == [
+assert [(v["type"], v["source"].endswith("/.state/projects/public"), v["target"], v.get("read_only"), bool(v["bind"].get("create_host_path"))) for v in c["volumes"][3:]] == [
   ("bind", True, "/etc/bn-code/projects", True, False)], c["volumes"]
 # (Git hosts: the code container's own volume, never the sandbox's)
 assert not any(v.get("source") == "code-state" for n, x in s.items() if n != "code" for v in x.get("volumes") or [])

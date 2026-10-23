@@ -203,6 +203,8 @@ export const SANDBOX_REFUSALS = Object.freeze([
   // (your subscriptions: Claude on your plan, the agents of the Code page and of Chat, which tools are signed in)
   'no budget stop for a session on your plan',
   'a Chat conversation runs on your plan only',
+  'not in Chat\'s sandbox: it runs Chat\'s conversations only',
+  'Chat\'s conversations run in their own sandbox, not in the workspace\'s',
   'a Chat conversation has no tools: --tools= and --strict-mcp-config',
   'not for a Chat conversation',
   'no such tool',

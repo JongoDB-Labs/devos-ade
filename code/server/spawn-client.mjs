@@ -17,6 +17,8 @@ import { Duplex, PassThrough, Writable } from 'node:stream';
 import { T, FrameParser, frame, dataFrames, json } from './frames.mjs';
 
 export const SOCK = process.env.BN_CODE_SOCK || '/run/bn-code/coded.sock';
+// Chat's own sandbox (subs-chat: bn-coded in Chat's role, no workspace): Chat's conversations go there only
+export const CHAT_SOCK = process.env.BN_CHAT_SOCK || '/run/bn-chat/coded.sock';
 export const MAX_LINE = 32 << 20;      // a stdout line without a newline
 export const MAX_RESULT = 8 << 20;     // a RESULT / ERROR / a cli op's output
 // bytes written to the sandbox's stdin that it has not read yet: more than the largest prompt leaves for a moment

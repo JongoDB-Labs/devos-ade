@@ -19,6 +19,7 @@ import { reasonOf, answerOf, GIT_LOG_FAILED } from './gitreasons.mjs';
 import { watched } from './watch.mjs';
 import { WS, WORKSPACE_ID, PROJECTS_MAX, TRUST_EPOCH, absOf, cwdOk, hostRoots, nameOk, rootOk } from './projects.mjs';
 import { BYPASS_ASK, READ_ONLY_DENY } from './modes.mjs';
+import { quoted, QUOTE_MAX } from './agents/quote.mjs';
 
 export class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -83,9 +84,9 @@ const baseName = (p) => String(p).split('/').filter(Boolean).pop() ?? '';
 export const inRoot = (root, p) => (root?.rel ? `${root.rel}/${p}` : p);
 
 // carry: what of a conversation a session with another harness gets before its first prompt (the picker's switch of who
-// answers): the last CARRY_CHARS of its prompts and answers, as plain text
-export const CARRY_CHARS = 60000;
-export const CARRY_HEAD = 'Earlier in this folder you (or another assistant) had this conversation with the user; it continues here:';
+// answers): the last CARRY_CHARS of its prompts and answers, quoted (agents/quote.mjs: it says it holds no instructions,
+// its tag-like delimiters defanged — an earlier answer cannot close the quote and speak as you)
+export const CARRY_CHARS = QUOTE_MAX;
 
 // agentStore: the page's record of the sessions with your subscriptions' agents (agents/store.mjs); plan(): whether
 // Claude on your plan may be used (Settings' switch: its sessions are listed and resumed only then)
@@ -165,13 +166,10 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     else events = (await messages(id, undefined, undefined, 400)).events;
     const lines = [];
     for (const e of events) {
-      if (e.type === 'user' && typeof e.text === 'string') lines.push(`User: ${e.text}`);
-      else if (e.type === 'text' && typeof e.text === 'string' && !e.parent) lines.push(`Assistant: ${e.text}`);
+      if (e.type === 'user' && typeof e.text === 'string') lines.push({ who: 'user', text: e.text });
+      else if (e.type === 'text' && typeof e.text === 'string' && !e.parent) lines.push({ who: 'assistant', text: e.text });
     }
-    let text = lines.join('\n\n');
-    if (!text) return null;
-    if (text.length > CARRY_CHARS) text = `…${text.slice(-CARRY_CHARS)}`;
-    return `${CARRY_HEAD}\n\n<earlier-conversation>\n${text}\n</earlier-conversation>`;
+    return quoted(lines, { max: CARRY_CHARS });
   }
 
   /** cwdFor(id) -> a session's working folder: its process's here, else the last list's (listed again once when it is

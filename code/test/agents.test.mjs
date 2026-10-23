@@ -3,7 +3,10 @@
 // their permission questions and the page's modes, a sign-in that is missing, and what a hostile agent cannot do.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AcpAgent, NotSignedIn } from '../server/agents/acp.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { AcpAgent, NotSignedIn, UnsafeMode } from '../server/agents/acp.mjs';
 import { CodexAgent, rateLimits } from '../server/agents/codex.mjs';
 import { acpCall, parseDiff, callId, codexPlan } from '../server/agents/map.mjs';
 import { toolOfChatModel, chatModelId, harnessOk } from '../server/agents/tools.mjs';
@@ -82,10 +85,6 @@ test('ACP: Always, Deny; Read only and Plan refuse changes without asking; Accep
     assert.equal(events.find((e) => e.type === 'tool_result').text, mode === 'acceptEdits' ? 'permission: ok1' : 'permission: no1', mode);
     if (mode !== 'acceptEdits') assert.ok(events.some((e) => e.type === 'local' && /refused without asking/.test(e.text)), mode);
   }
-  const { agent, events, asked } = acp('chat-tools', { chat: true });
-  try { await agent.init(); await agent.open({ cwd: '/home/claude/.bn-chat/x' }); await agent.prompt('x'); } finally { agent.close(); }
-  assert.equal(asked.length, 0);
-  assert.equal(events.find((e) => e.type === 'tool_result').text, 'permission: no1');
 });
 
 test('ACP: its own login only — Cursor\'s existing one named back; a method that would start a sign-in never: not signed in', async () => {
@@ -175,8 +174,68 @@ test('Codex: a command asks through the page; a file change shown with its diff;
   assert.equal(ro.asked.length, 0);
   const ch = codex('ok', { chat: true });
   try { await ch.agent.init(); await ch.agent.open({ cwd: '/home/claude/.bn-chat/x' }); await ch.agent.prompt('x'); } finally { ch.agent.close(); }
-  assert.match(ch.err(), /thread\/start \{"approvalPolicy":"never","sandbox":"read-only","dev":true\}/);
-  assert.match(ch.err(), /turn\/start \{"approvalPolicy":"never","sandboxPolicy":null\}/);
+  assert.match(ch.err(), /thread\/start \{"approvalPolicy":"untrusted","sandbox":"read-only","dev":true\}/);
+  assert.match(ch.err(), /turn\/start \{"approvalPolicy":"untrusted","sandboxPolicy":null\}/);
+});
+
+test('Chat: a tool reached for stops the turn at once — nothing runs — and the answer says what was tried', async () => {
+  const mark = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'bn-grab-')), 'ran');
+  process.env.FAKE_MARK = mark;
+  try {
+    const a = acp('grab', { chat: true });
+    let r;
+    try { await a.agent.init(); await a.agent.open({ cwd: '/home/claude/.bn-chat/x' }); r = await a.agent.prompt('show me my key'); } finally { a.agent.close(); }
+    assert.equal(r.stop, 'cancelled');
+    assert.equal(r.tried, 'Read ~/.ssh/id_ed25519');
+    assert.ok(!a.events.some((e) => e.type === 'tool_use' || e.type === 'tool_result'));
+    assert.equal(a.events.filter((e) => e.type === 'text').map((e) => e.text).join(''), 'Let me look. ');
+    // a permission request in Chat: refused, and the turn stopped all the same (chat-tools asks before its edit)
+    const b = acp('chat-tools', { chat: true });
+    let rb;
+    try { await b.agent.init(); await b.agent.open({ cwd: '/home/claude/.bn-chat/y' }); rb = await b.agent.prompt('x'); } finally { b.agent.close(); }
+    assert.equal(b.asked.length, 0);
+    assert.equal(rb.tried, 'Edit app.js');
+    assert.ok(!b.events.some((e) => e.type === 'tool_use' && e.name !== 'TodoWrite'));   // (its plan is no tool)
+    const c = codex('grab', { chat: true });
+    let rc;
+    try { await c.agent.init(); await c.agent.open({ cwd: '/home/claude/.bn-chat/z' }); rc = await c.agent.prompt('show me my key'); } finally { c.agent.close(); }
+    assert.equal(rc.stop, 'cancelled');
+    assert.equal(rc.tried, 'commandExecution');
+    // (the same agent in the Code page is not stopped: its cards are the page's)
+    const d = acp('grab');
+    let rd;
+    try { await d.agent.init(); await d.agent.open({ cwd: '/workspace' }); rd = await d.agent.prompt('x'); } finally { d.agent.close(); }
+    assert.equal(rd.tried, undefined);
+    assert.deepEqual(fs.readFileSync(mark, 'utf8').trim().split('\n'), ['read the key']);   // (that one ran: nobody stopped it)
+  } finally { delete process.env.FAKE_MARK; }
+});
+
+test('ACP: never a turn in a mode that approves everything by itself', async () => {
+  // starts in one, has others: left for a safe one before anything else
+  const a = acp('yolo-start');
+  try { await a.agent.init(); await a.agent.open({ cwd: '/workspace' }); assert.equal(a.agent.mode, 'agent'); assert.equal((await a.agent.prompt('x')).stop, 'end_turn'); } finally { a.agent.close(); }
+  const ch = acp('yolo-start', { chat: true });
+  try { await ch.agent.init(); await ch.agent.open({ cwd: '/home/claude/.bn-chat/x' }); await ch.agent.chatMode(); assert.equal(ch.agent.mode, 'ask'); } finally { ch.agent.close(); }
+  // its only mode: not used at all
+  const b = acp('yolo-only');
+  try {
+    await b.agent.init();
+    await assert.rejects(b.agent.open({ cwd: '/workspace' }), (e) => e instanceof UnsafeMode && /started in its "YOLO" mode, which approves everything by itself, and offers no other/.test(e.message));
+    await b.agent.closed;
+  } finally { b.agent.close(); }
+  // it switches itself to one during a turn: the turn stops, the session ends, nothing runs
+  const mark = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'bn-yolo-')), 'ran');
+  process.env.FAKE_MARK = mark;
+  const c = acp('yolo-switch');
+  try {
+    await c.agent.init(); await c.agent.open({ cwd: '/workspace' });
+    await assert.rejects(c.agent.prompt('x'), (e) => e instanceof UnsafeMode && /switched itself to its "YOLO" mode/.test(e.message));
+    await c.agent.closed;
+    assert.ok(!fs.existsSync(mark));
+    // the page's own modes never map to one either
+    c.agent.modes = [{ id: 'yolo', name: 'YOLO' }];
+    assert.equal(await c.agent.setMode('default'), 'yolo');   // (unchanged: nothing set, and prompt() refuses in it)
+  } finally { c.agent.close(); delete process.env.FAKE_MARK; }
 });
 
 test('Codex: a failed turn says so; a thread it no longer has: a new one', async () => {

@@ -292,7 +292,7 @@ test_the_compose_file_joins_every_compose_call_while_the_terminal_is_on() {
   local a; a="$(_dir app)"
   project_add "$a" --later 2>/dev/null || return 1
   . "$STACK_DIR/lib/common.sh"   # (the real dc again)
-  assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml @projects compose.terminal-proxy.yaml compose.code.yaml "
+  assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml @projects compose.terminal-proxy.yaml compose.code.yaml compose.code-proxy.yaml "
   docker() { printf '%s\n' "$@" > "$TMP/args"; env | grep '^BN_PROJECTS_PUBLIC=' >> "$TMP/args"; return 0; }
   dc ps >/dev/null
   assert_contains "$(cat "$TMP/args")" "$(projects_compose_file)"

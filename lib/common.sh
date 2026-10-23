@@ -386,7 +386,14 @@ compose_overlays() {
       internet) echo compose.terminal-proxy.yaml ;;
       host) echo compose.terminal-egress.yaml ;;
     esac
-    ! flag_on "$(get_env CODE_ENABLED)" || echo compose.code.yaml
+    if flag_on "$(get_env CODE_ENABLED)"; then
+      echo compose.code.yaml
+      # (Chat's sandbox's way out: the terminal's — compose.code.yaml subs-chat)
+      case "$(egress_mode "$(get_env TERMINAL_EGRESS)")" in
+        internet) echo compose.code-proxy.yaml ;;
+        host) echo compose.code-egress.yaml ;;
+      esac
+    fi
   fi
   return 0
 }

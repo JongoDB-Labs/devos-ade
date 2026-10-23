@@ -1204,7 +1204,8 @@ export function switchHarness(h: Harness): Promise<string | null> {
   const v = activeView(s);
   const carry = v && v.items.some((it) => it.t === 'user') && v.harness !== h ? v.id : undefined;
   const mode = v?.mode && v.mode !== 'auto' && v.mode !== 'bypassPermissions' ? v.mode : undefined;
-  return newSession({ harness: h, carry, noAsk: h !== 'bedrock' && h !== 'claude', ...(mode ? { mode } : {}) }).then((id) => {
+  // (a project's own settings not trusted: shown first — an agent of your subscriptions starts there only once they are)
+  return newSession({ harness: h, carry, ...(mode ? { mode } : {}) }).then((id) => {
     if (id && carry) toast(`${harnessName(h)} answers in a new session here; your conversation so far goes with your first prompt.`, 'info');
     return id;
   });

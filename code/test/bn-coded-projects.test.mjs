@@ -565,3 +565,35 @@ test('sessions in a folder of this computer: placed by their folder; one no long
   assert.match((await call({ op: 'sessions.title', id: gone, cwd: UNMOUNTED, title: 'x' })).error, /bad session folder/, 'never written');
   assert.match((await call({ op: 'terminal.resume', id: gone, cwd: UNMOUNTED })).error, /bad session folder|no such session/, 'never resumed');
 });
+
+test('project.settings: the other tools\' own configuration in the folder too (your subscriptions\' agents read it); instructions alone not', async () => {
+  const D = path.join(WS, 'agents-repo');
+  const put = (rel, text) => { fs.mkdirSync(path.dirname(path.join(D, rel)), { recursive: true }); fs.writeFileSync(path.join(D, rel), text); };
+  put('.codex/config.toml', '[mcp_servers.x]\ncommand = "evil"\n');
+  put('.cursor/mcp.json', '{"mcpServers":{}}');
+  put('.cursor/rules/a.mdc', 'rule');
+  put('.grok/settings.json', '{}');
+  put('.gemini/settings.json', '{}');
+  put('.copilot/mcp-config.json', '{}');
+  put('.agents/skills/s/SKILL.md', '---\nname: s\n---\n');
+  put('.github/hooks/pre.json', '{}');
+  put('.github/agents/a.md', 'agent');
+  put('.github/workflows/ci.yml', 'on: push');
+  put('.github/copilot-instructions.md', 'be nice');
+  put('.vscode/mcp.json', '{"servers":{}}');
+  put('.vscode/settings.json', '{}');
+  put('AGENTS.md', 'instructions');
+  put('.cursorrules', 'instructions');
+  let r = await call({ op: 'project.settings', root: D });
+  assert.deepEqual(r.files.map((f) => f.name), ['.agents/skills/s/SKILL.md', '.codex/config.toml', '.copilot/mcp-config.json', '.cursor/mcp.json', '.cursor/rules/a.mdc',
+    '.gemini/settings.json', '.github/agents/a.md', '.github/hooks/pre.json', '.grok/settings.json', '.vscode/mcp.json']);
+  assert.equal(r.verifiable, true);
+  assert.match(r.hash, /^[0-9a-f]{64}$/);
+  // a .github that is a link: named as one, never read through (never trustable)
+  fs.rmSync(path.join(D, '.github'), { recursive: true });
+  fs.mkdirSync(path.join(WS, 'elsewhere/hooks'), { recursive: true });
+  fs.writeFileSync(path.join(WS, 'elsewhere/hooks/x.json'), '{}');
+  fs.symlinkSync(path.join(WS, 'elsewhere'), path.join(D, '.github'));
+  r = await call({ op: 'project.settings', root: D });
+  assert.deepEqual(r.files.filter((f) => f.name.startsWith('.github')).map((f) => [f.name, f.type]), [['.github', 'link']]);
+});
