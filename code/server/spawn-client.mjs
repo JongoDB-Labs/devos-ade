@@ -34,8 +34,10 @@ export class SandboxError extends Error {
 // (a refusal's text as it reaches here: printable ASCII only — gitreasons.mjs's lists are written so they still match)
 export const printable = (s, n = 300) => String(s ?? '').replace(/[^\x20-\x7e]/g, '?').slice(0, n);
 
-/** Agent SDK spawnClaudeCodeProcess(SpawnOptions) -> SpawnedProcess, in the sandbox. */
-export function sandboxProcess(opts, { litellmSession, onStderr, sock = SOCK } = {}) {
+/** Agent SDK spawnClaudeCodeProcess(SpawnOptions) -> SpawnedProcess, in the sandbox. plan: Claude on your plan (bn-coded's
+ *  planEnv: claude-sub's folder, none of the stack's variables, no spend tag). open: another process op's OPEN frame
+ *  instead (sandboxAgent). A refusal of bn-coded's is `refusal` (and a 'refused' event) before the exit. */
+export function sandboxProcess(opts, { litellmSession, onStderr, sock = SOCK, plan = false, chat = null, open = null } = {}) {
   const ee = new EventEmitter();
   ee.on('error', () => {});   // an 'error' nobody listens to would throw; the SDK adds its own listener
   const conn = net.connect(sock);
@@ -70,8 +72,11 @@ export function sandboxProcess(opts, { litellmSession, onStderr, sock = SOCK } =
   const env = {};
   for (const k of SDK_ENV) if (typeof opts?.env?.[k] === 'string') env[k] = opts.env[k];
   // opts.command is ignored: the sandbox always runs its own claude. Only the arguments, the cwd, the SDK's few
-  // variables and the session id (for LiteLLM's spend tag) travel.
-  conn.write(frame(T.OPEN, { op: 'claude', args: Array.isArray(opts?.args) ? opts.args : [], cwd: opts?.cwd || '/workspace', env, litellmSession }));
+  // variables and the session id (for LiteLLM's spend tag) travel — on your plan, no session id (no LiteLLM).
+  const args = Array.isArray(opts?.args) ? opts.args : [], cwd = opts?.cwd || '/workspace';
+  // (chat: one of Chat's conversations on your plan — its own empty folder in the sandbox, no tools: bn-coded checks)
+  conn.write(frame(T.OPEN, open ?? (plan === true ? { op: 'claude', plan: true, args, cwd, env, ...(chat ? { chat } : {}) } : { op: 'claude', args, cwd, env, litellmSession })));
+  let refusal = null;
   conn.on('data', (chunk) => {
     let frames;
     try { frames = parser.push(chunk); } catch (e) { return fail(new SandboxError(e.message, 'too-large')); }
@@ -88,7 +93,11 @@ export function sandboxProcess(opts, { litellmSession, onStderr, sock = SOCK } =
         const code = Number.isInteger(e.code) && e.code >= 0 && e.code <= 255 ? e.code : null;
         const sig = typeof e.signal === 'string' && /^SIG[A-Z0-9]{1,10}$/.test(e.signal) ? e.signal : null;
         finish(code, sig ?? (code === null ? 'SIGKILL' : null));
-      } else if (type === T.ERROR) onStderr?.(`bn-coded: ${printable(json(p).error || 'error')}`);
+      } else if (type === T.ERROR) {
+        refusal = printable(json(p).error || 'error');
+        onStderr?.(`bn-coded: ${refusal}`);
+        ee.emit('refused', refusal);
+      }
     }
     return undefined;
   });
@@ -101,6 +110,7 @@ export function sandboxProcess(opts, { litellmSession, onStderr, sock = SOCK } =
     get killed() { return killed; },
     get exitCode() { return exitCode; },
     get signalCode() { return signalCode; },
+    get refusal() { return refusal; },
     kill(signal) {
       killed = true;
       if (!conn.destroyed) conn.write(frame(T.SIGNAL, { signal: SIGNALS.includes(signal) ? signal : 'SIGTERM' }));
@@ -111,6 +121,14 @@ export function sandboxProcess(opts, { litellmSession, onStderr, sock = SOCK } =
     off: (e, l) => { ee.off(e, l); return api; },
   };
   return api;
+}
+
+/** A tool of your subscriptions in the sandbox (bn-coded's agent op): {tool: codex|copilot|cursor|grok, mode: code
+ *  (cwd: a folder of the workspace) | chat (chat: the conversation's 32-hex id: its own empty folder)} -> a process
+ *  (stdin, stdout, kill, exit) speaking the tool's interface for other apps. */
+export function sandboxAgent({ tool, mode, cwd, chat }, { onStderr, sock = SOCK } = {}) {
+  const open = mode === 'chat' ? { op: 'agent', tool, mode, chat } : { op: 'agent', tool, mode: 'code', cwd: cwd || '/workspace' };
+  return sandboxProcess({}, { onStderr, sock, open });
 }
 
 // answerAsks(conn, p, onAsk): an ASK frame's question (a JSON object with a numeric id) to onAsk, and its answer back as

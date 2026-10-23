@@ -15,10 +15,16 @@ import { gitNote } from './gitnote.mjs';
 import { SandboxError } from './spawn-client.mjs';
 import { plainRefusal } from './gitreasons.mjs';
 import { sandboxWords } from './said.mjs';
+import { SessionError } from './session-error.mjs';
+import { AgentSession, AGENT_MODES } from './agents/session.mjs';
+import { AGENT_TOOLS, HARNESSES, harnessOk } from './agents/tools.mjs';
 
 const KEEP = 16;   // session objects kept (open or ended) for re-attaching; the oldest ended ones go first
 const STDERR_LINES = 20, STDERR_WINDOW_MS = 10000;   // Claude Code's stderr in the log: at most this much per session
 const ALIAS_REFUSED = 'name the model in full (claude-…), not by an alias: with an alias Claude Code may run another model (Plan mode on Haiku plans on Sonnet)';
+// Claude on your plan: Settings' switch (CODE_CLAUDE_PLAN) is what lets a session use it
+export const PLAN_OFF = 'Claude on your plan is off: Settings › Claude Code › Your AI subscriptions has the switch (from the computer running this app)';
+const PLAN_NO_BUDGET = 'This session runs on your Claude plan: no budget in dollars (its usage counts against your plan\'s own limits)';
 const AUTO_OFF_MS = 15000;   // how long the first prompt waits for the start's flag settings (auto mode off …) and, in Auto, the switch to it
 const WATCH_MS = 5000;       // how long a turn's first prompt waits for the watched files' snapshot (then it goes anyway)
 const REVERTS_KEPT = 10;     // watch events per session whose Revert stays possible (the oldest go) …
@@ -73,21 +79,22 @@ const WORKSPACE_SETTINGS = Object.freeze({ state: 'workspace', sources: ALL_SOUR
 const NOT_DECIDED = Object.freeze({ state: 'unchecked', sources: ['user'], strictMcp: true, project: null, hash: null });
 
 // (said, saidBy: the sandbox's or Claude Code's own words in it — apart, never in the message: said.mjs)
-export class SessionError extends Error {
-  constructor(message, status = 400, { said = null, saidBy = null } = {}) {
-    super(message); this.status = status;
-    if (typeof said === 'string' && said) { this.said = said; this.saidBy = saidBy === 'sandbox' ? 'sandbox' : 'claude'; }
-  }
-}
+export { SessionError };
 
 // pluginsKey(list) -> a comparable summary of a session's loaded plugins (what a reload is waiting to see change)
 const pluginsKey = (list) => (Array.isArray(list) ? list.filter((p) => p && typeof p === 'object')
   .map((p) => `${short(p.name, 200)}@${short(p.version, 60)}`).sort().join('\n') : null);
 
 export class Session {
-  constructor(mgr, { id, model, mode, effort, resume, fork, at, taskStop, hasTranscript, budget, cwd = WS }) {
+  constructor(mgr, { id, model, mode, effort, resume, fork, at, taskStop, hasTranscript, budget, cwd = WS, plan = false, preface = null }) {
     this.mgr = mgr;
     this.id = id;
+    // Claude on your plan (Settings' switch): claude-sub's folder and login, no LiteLLM, no spend tag, no budget in
+    // dollars — else Claude Code on Bedrock through LiteLLM, as the Code page always ran it
+    this.plan = plan === true;
+    this.harness = this.plan ? 'claude' : 'bedrock';
+    // the conversation carried over from another session (the picker's switch of who answers): before the first prompt
+    this.preface = typeof preface === 'string' && preface ? preface : null;
     // The folder Claude Code runs in (its project's, or — a resumed session — the one its transcript records: Claude Code
     // finds a session by the folder it runs in). Always a folder of the workspace; bn-coded confines it there again.
     this.cwd = cwdOk(cwd) ? cwd : WS;
@@ -145,7 +152,8 @@ export class Session {
   info() {
     return { id: this.id, state: this.state, model: this.model, mode: this.mode, effort: this.effort, title: this.title, open: this.open,
       pending: this.mgr.broker.forSession(this.id).length, lastActive: this.lastActive, error: this.error, epoch: this.epoch,
-      budget: this.budget ? { ...this.budget } : null, terminal: this.inTerminal !== null, cwd: this.cwd, settings: this.settingsInfo() };
+      budget: this.budget ? { ...this.budget } : null, terminal: this.inTerminal !== null, cwd: this.cwd, settings: this.settingsInfo(),
+      harness: this.harness, ...(this.plan ? { plan: { ...(this.planUsage ?? { input: 0, output: 0, cached: 0, turns: 0 }), limits: this.planLimits ?? null } } : {}) };
   }
   /** {state, project} of the running (or last) process's folder settings (trust.mjs), or null */
   settingsInfo() { return this.settings ? { state: this.settings.state, project: this.settings.project ?? null } : null; }
@@ -181,6 +189,7 @@ export class Session {
    *  process so that the new stop applies). Throws for a bad request. */
   setBudget(b, { quiet = false } = {}) {
     if (!b || typeof b !== 'object') throw new SessionError('budget: {usd, hard}');
+    if (this.plan && b.usd !== null) throw new SessionError(PLAN_NO_BUDGET, 409);
     // everything checked first: a refused request changes nothing
     if (b.usd !== null && (typeof b.usd !== 'number' || !Number.isFinite(b.usd) || b.usd < BUDGET_MIN || b.usd > BUDGET_MAX)) throw new SessionError(`budget: ${BUDGET_MIN} to ${BUDGET_MAX} USD`);
     if (b.hard !== undefined && b.hard !== null && typeof b.hard !== 'boolean') throw new SessionError('hard: true or false');
@@ -246,7 +255,8 @@ export class Session {
     const options = {
       cwd: this.cwd,
       pathToClaudeCodeExecutable: '/usr/local/bin/claude',   // a path in the sandbox: only the arguments travel
-      spawnClaudeCodeProcess: (o) => this.mgr.spawn(o, { litellmSession: this.id, onStderr: (s) => this.mgr.logStderr(this.id, `claude ${this.id.slice(0, 8)} stderr: ${short(s, 300)}`) }),
+      spawnClaudeCodeProcess: (o) => this.mgr.spawn(o, { ...(this.plan ? { plan: true } : { litellmSession: this.id }),
+        onStderr: (s) => this.mgr.logStderr(this.id, `claude ${this.id.slice(0, 8)} stderr: ${short(s, 300)}`) }),
       env: {},                                                 // nothing of this container's environment
       // (the SDK's default is an empty system prompt)
       systemPrompt: { type: 'preset', preset: 'claude_code', ...(this.gitNote !== null ? { append: this.gitNote } : {}) },
@@ -267,7 +277,7 @@ export class Session {
     if (this.effort) options.effort = this.effort;
     // stop at the budget: Claude Code's own limit for this process, what is left of it now
     this.limit = this.budget ? { ...this.budget, est: this.estimates() } : null; this.budgetHit = false;
-    if (this.budget?.hard && this.estimates()) options.maxBudgetUsd = limitFor(this.left());
+    if (!this.plan && this.budget?.hard && this.estimates()) options.maxBudgetUsd = limitFor(this.left());
     // CODE_ALLOW_BYPASS on: Bypass permissions can be switched to in this process (--allow-dangerously-skip-permissions;
     // never --dangerously-skip-permissions: it starts in its own mode, as before)
     if (this.bypassable) options.allowDangerouslySkipPermissions = true;
@@ -463,6 +473,7 @@ export class Session {
           if (m.state === 'idle') this.setState('idle'); else if (m.state === 'running') this.setState('busy');
         }
         this.observe(m);
+        if (this.plan) this.notePlan(m);
         this.noteToolUses(m);
         for (const ev of fromSdk(m)) this.emit(ev.type === 'blocked' ? this.decorateBlocked(ev) : ev);
         if (m?.type === 'result') {
@@ -476,6 +487,30 @@ export class Session {
     } catch (e) {
       if (this.q === q) this.ended(short(e?.message || String(e), 500));
     }
+  }
+
+  // On your plan: the tokens of each turn (never Claude Code's dollar estimate — an API price, not what the plan costs)
+  // and the plan's own limits as Claude Code reports them (rate_limit_event), said when one is near or reached
+  notePlan(m) {
+    if (m?.type === 'result') {
+      const u = m.usage && typeof m.usage === 'object' ? m.usage : {};
+      const n = (v) => (Number.isInteger(v) && v >= 0 && v < 1e12 ? v : 0);
+      const p = this.planUsage ?? { input: 0, output: 0, cached: 0, turns: 0 };
+      this.planUsage = { input: p.input + n(u.input_tokens) + n(u.cache_creation_input_tokens), output: p.output + n(u.output_tokens),
+        cached: p.cached + n(u.cache_read_input_tokens), turns: p.turns + 1 };
+      return;
+    }
+    if (m?.type !== 'rate_limit_event' || !m.rate_limit_info || typeof m.rate_limit_info !== 'object') return;
+    const r = m.rate_limit_info;
+    const LABEL = { five_hour: '5-hour', seven_day: 'weekly', seven_day_opus: 'weekly Opus', seven_day_sonnet: 'weekly Sonnet', overage: 'extra usage' };
+    const label = LABEL[r.rateLimitType] ?? 'usage';
+    const resets = Number.isInteger(r.resetsAt) && r.resetsAt > 0 ? (r.resetsAt < 1e11 ? r.resetsAt * 1000 : r.resetsAt) : null;
+    const used = typeof r.utilization === 'number' && Number.isFinite(r.utilization) && r.utilization >= 0 && r.utilization <= 10 ? Math.round(r.utilization * 100) : null;
+    this.planLimits = [{ label, usedPercent: used, resetsAt: resets, status: ['allowed', 'allowed_warning', 'rejected'].includes(r.status) ? r.status : 'allowed' }];
+    const when = resets ? ` (it resets ${new Date(resets).toISOString().replace('T', ' ').slice(0, 16)} UTC)` : '';
+    if (r.status === 'rejected') this.emit({ type: 'local', text: `Your Claude plan's ${label} limit is reached${when}.` });
+    else if (r.status === 'allowed_warning') this.emit({ type: 'local', text: `Your Claude plan: ${used !== null ? `${used}% of ` : 'near '}its ${label} limit used${when}.` });
+    this.mgr.onState(this);
   }
 
   // A turn's result: Claude Code's estimate of the session's cost so far (its total_cost_usd counts earlier processes
@@ -511,7 +546,9 @@ export class Session {
       if (im.data.length * 3 / 4 > LIMITS.maxImageBytes) throw new SessionError('image too large');
       content.push({ type: 'image', source: { type: 'base64', media_type: im.media_type, data: im.data } });
     }
-    content.push({ type: 'text', text });
+    // (the conversation carried over from another session, before the first prompt: Claude gets it, the page shows yours)
+    const sent = this.preface ? `${this.preface}\n\n${text}` : text;
+    content.push({ type: 'text', text: sent });
     if (this.resetTo) throw new SessionError('this conversation continues in a new session (Claude Code started one): send it there', 409);
     // the stop at the budget: nothing is sent once it is reached (by the page's figure or Claude Code's estimate), and
     // a process whose stop no longer matches the budget is restarted first, between turns
@@ -527,7 +564,8 @@ export class Session {
     const id = isUuid(uuid) ? uuid : crypto.randomUUID();
     // typed in the page: a human origin, stamped explicitly (absent, the CLI's strict trust gates fail closed)
     const feed = this.feed;
-    const msg = { type: 'user', message: { role: 'user', content: images.length ? content : text }, parent_tool_use_id: null,
+    this.preface = null;
+    const msg = { type: 'user', message: { role: 'user', content: images.length ? content : sent }, parent_tool_use_id: null,
       session_id: '', uuid: id, origin: { kind: 'human' } };
     const deliver = () => {
       if (feed.closed) { this.emit({ type: 'local', text: 'That prompt was not delivered: the session\'s process ended meanwhile. Send it again.' }); return; }
@@ -557,7 +595,7 @@ export class Session {
   // more. A refused switch says so, and the pages get the model that runs (a status).
   async setModel(model) {
     if (!isModel(model)) throw new SessionError('bad model');
-    if (!isFullModel(model)) throw new SessionError(ALIAS_REFUSED);
+    if (!this.plan && !isFullModel(model)) throw new SessionError(ALIAS_REFUSED);   // (on your plan Anthropic's own names are Claude Code's own)
     const q = this.q;
     if (q) {
       try {
@@ -883,6 +921,9 @@ export class Session {
   }
 }
 
+// An agent session's watchlist is Session's own: the same checks before and after each turn, the same cards and Revert
+for (const k of ['snapshot', 'watchFailed', 'watchStart', 'watchNow', 'watchEnd', 'reportWatch', 'revertWatch']) AgentSession.prototype[k] = Session.prototype[k];
+
 export class SessionManager {
   // allowBypass: CODE_ALLOW_BYPASS (processes start allowing Bypass permissions; set_mode may switch to it)
   // allowAuto: CODE_AUTO_MODE (Claude Code's auto mode is not turned off; set_mode may switch to it, a session may
@@ -896,11 +937,14 @@ export class SessionManager {
   // workspace's
   // gitHosts() -> the Git hosts as the page sees them (GitHosts.list: no secret), for the note at the end of every
   // process's system prompt (gitnote.mjs); none: no note
+  // spawnAgent({tool, mode, cwd}, {onStderr}) -> a process of a subscription's agent in the sandbox (spawn-client's
+  // sandboxAgent); agentStore: the page's record of those sessions (agents/store.mjs); planAllowed: CODE_CLAUDE_PLAN
+  // (Claude on your plan may be used here)
   constructor({ query, spawn, broker, log = () => {}, onEvent = () => {}, onState = () => {}, onReload = () => {}, onReset = () => {},
     transcriptExists = async () => false, maxOpen = LIMITS.maxOpen, idleMs = LIMITS.idleMinutes * 60000, allowBypass = false, allowAuto = false, watcher = null,
-    watchRootOf = () => null, decideSettings = null, gitHosts = null }) {
+    watchRootOf = () => null, decideSettings = null, gitHosts = null, spawnAgent = null, agentStore = null, planAllowed = false, versions = {} }) {
     Object.assign(this, { query, spawn, broker, log, onEvent, onState, onReload, onReset, transcriptExists, maxOpen, idleMs, allowBypass: allowBypass === true,
-      allowAuto: allowAuto === true, watcher, watchRootOf, decideSettings, gitHosts });
+      allowAuto: allowAuto === true, watcher, watchRootOf, decideSettings, gitHosts, spawnAgent, agentStore, planAllowed: planAllowed === true, versions });
     this.decisions = new Map();   // cwd -> {d, at}: made just before a start (prepare), taken by it (takeSettings)
     this.sessions = new Map();
     this.stderrSeen = new Map();   // session -> {from, n, dropped}
@@ -953,10 +997,17 @@ export class SessionManager {
 
   /** POST /api/sessions -> {id, existing}. cwd: the folder a new (or forked) session runs in — its project's; a resumed
    *  one, its own (the caller reads it from the transcript's list) */
-  open({ model, mode, effort, resume, fork, at, taskStop, budget, cwd } = {}) {
+  open({ model, mode, effort, resume, fork, at, taskStop, budget, cwd, harness, preface } = {}) {
     if (cwd !== undefined && cwd !== null && !cwdOk(cwd)) throw new SessionError('bad folder: /workspace or a folder of it, or a folder of this computer the sandbox sees (one no longer added is read only)');
+    // who answers: Claude Code on Bedrock (as always), Claude on your plan (the switch), or a subscription's agent
+    const h = harness === undefined || harness === null ? (isUuid(resume) && this.sessions.get(resume)?.harness) || 'bedrock' : harness;
+    if (!harnessOk(h)) throw new SessionError('bad harness: bedrock, claude, codex, copilot, cursor or grok');
+    if (preface !== undefined && preface !== null && (typeof preface !== 'string' || preface.length > LIMITS.maxPromptChars)) throw new SessionError('bad preface');
+    if (AGENT_TOOLS.includes(h)) return this.openAgent({ harness: h, model, mode, resume, fork, at, cwd, preface });
+    if (h === 'claude' && this.planAllowed !== true) throw new SessionError(PLAN_OFF, 409);
     if (model !== undefined && model !== null && !isModel(model)) throw new SessionError('bad model');
-    if (model !== undefined && model !== null && !isFullModel(model)) throw new SessionError(ALIAS_REFUSED);
+    if (h !== 'claude' && model !== undefined && model !== null && !isFullModel(model)) throw new SessionError(ALIAS_REFUSED);
+    if (h === 'claude' && budget) budget = undefined;   // (no budget in dollars on your plan)
     // auto: a session in Auto starts in Manual and is switched before its first prompt — while Settings allow it; else
     // it starts in Manual (as Claude Code's own apps do when auto mode is not available)
     if (mode === 'auto' && this.allowAuto !== true) mode = 'default';
@@ -971,6 +1022,7 @@ export class SessionManager {
     if (resume && !fork) {
       const s = this.sessions.get(resume);
       if (s && s.open) return { id: s.id, existing: true };   // never two processes on one transcript
+      if (s && s.harness !== h) throw new SessionError(`that session is ${s.harness === 'claude' ? 'on your Claude plan' : 'Claude Code on Bedrock'}: it is resumed as it ran`, 409);
       if (s) {
         if (model) s.model = model; if (mode) s.mode = normMode(mode); if (effort) s.effort = effort; if (taskStop === true) s.taskStop = true;
         if (budget) s.setBudget(budget, { quiet: true });
@@ -979,10 +1031,37 @@ export class SessionManager {
       }
     }
     const id = resume && !fork ? resume : crypto.randomUUID();
-    const s = new Session(this, { id, model, mode, effort, resume, fork, at, taskStop, budget: budget || undefined, cwd: cwd ?? WS });
+    const s = new Session(this, { id, model, mode, effort, resume, fork, at, taskStop, budget: budget || undefined, cwd: cwd ?? WS, plan: h === 'claude', preface: preface ?? null });
     this.sessions.set(id, s);
     this.trim();
     return { id, existing: false };
+  }
+
+  // A session with a subscription's agent: new, or one of the page's record taken up again (the tool resumes its own
+  // session where it can). Its tool starts at once (a sign-in that is missing shows before the first prompt).
+  openAgent({ harness, model, mode, resume, fork, at, cwd, preface }) {
+    if (!this.spawnAgent) throw new SessionError('the subscriptions\' agents are not available here', 501);
+    if (fork || at) throw new SessionError(`${HARNESSES[harness].name} sessions cannot be forked here`);
+    if (model !== undefined && model !== null && (typeof model !== 'string' || !/^[\x21-\x7e]{1,200}$/.test(model))) throw new SessionError('bad model');
+    if (mode !== undefined && mode !== null && !AGENT_MODES.includes(mode === 'dontAsk' ? 'readOnly' : mode)) {
+      mode = 'default';   // (Auto and Bypass are Claude Code's: an agent session starts in Manual)
+    }
+    let s = resume ? this.sessions.get(resume) : null;
+    if (s && !(s instanceof AgentSession)) throw new SessionError('that session is Claude Code\'s', 409);
+    if (s && s.harness !== harness) throw new SessionError(`that session is ${HARNESSES[s.harness]?.name ?? s.harness}'s`, 409);
+    if (s?.open) return { id: s.id, existing: true };
+    if (!s && resume) {
+      const row = this.agentStore?.get(resume);
+      if (!row) throw new SessionError('no such session (its record is gone)', 404);
+      if (row.harness !== harness) throw new SessionError(`that session is ${HARNESSES[row.harness]?.name ?? row.harness}'s`, 409);
+      s = new AgentSession(this, { id: row.id, harness: row.harness, model: model ?? row.model, mode, cwd: row.cwd, ref: row.ref, title: row.title });
+    }
+    if (!s) s = new AgentSession(this, { id: crypto.randomUUID(), harness, model, mode, cwd: cwd ?? WS, preface });
+    else { if (model) s.model = model; if (mode) s.mode = mode === 'dontAsk' ? 'readOnly' : mode; }
+    this.sessions.set(s.id, s);
+    this.trim();
+    s.start().catch(() => { /* (said: its state's error, and on its next prompt) */ });
+    return { id: s.id, existing: false };
   }
 
   // handover(s) — Claude Code started a new conversation in s's process (conversation_reset): once the turn is over,
@@ -999,11 +1078,11 @@ export class SessionManager {
       if (this.sessions.has(id)) throw new Error('already a session here');
       s.close('reset');
       let has = false;
-      try { has = (await this.transcriptExists(id, s.cwd)) === true; } catch { has = false; }
+      try { has = (await this.transcriptExists(id, s.cwd, s.plan)) === true; } catch { has = false; }
       await this.prepare(s.cwd).catch(() => {});   // (its folder's settings decided for the new process; failing: not applied)
       if (this.sessions.has(id)) throw new Error('already a session here');   // (one opened meanwhile)
       const ns = new Session(this, { id, model: s.model, mode: s.mode, effort: s.effort, taskStop: s.taskStop, resume: has ? id : undefined, hasTranscript: has,
-        budget: s.budget ? { ...s.budget } : undefined, cwd: s.cwd });
+        budget: s.budget ? { ...s.budget } : undefined, cwd: s.cwd, plan: s.plan });
       this.sessions.set(id, ns);
       this.trim();
       this.onReset(s, ns);
@@ -1038,7 +1117,7 @@ export class SessionManager {
    *  sessions whose plugin list the first reload left as it was reload again every pollMs (in the background) until it
    *  changes, for at most maxMs; each reload sends the pages the new lists. */
   async reloadPlugins({ untilChanged = false, pollMs = 1000, maxMs = 10000, timeoutMs = 30000 } = {}) {
-    const running = [...this.sessions.values()].filter((s) => s.open);
+    const running = [...this.sessions.values()].filter((s) => s.open && s instanceof Session);
     const before = new Map(running.map((s) => [s, s.pluginsKey]));
     const within = (p) => new Promise((resolve, reject) => {
       const t = setTimeout(() => reject(new Error('timeout')), timeoutMs);

@@ -82,7 +82,15 @@ const baseName = (p) => String(p).split('/').filter(Boolean).pop() ?? '';
 // a path bn-coded answered relative to a root, as a path of the workspace (the page's)
 export const inRoot = (root, p) => (root?.rel ? `${root.rel}/${p}` : p);
 
-export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, reloadMaxMs = 10000, log = () => {}, settingsKnown = () => null }) {
+// carry: what of a conversation a session with another harness gets before its first prompt (the picker's switch of who
+// answers): the last CARRY_CHARS of its prompts and answers, as plain text
+export const CARRY_CHARS = 60000;
+export const CARRY_HEAD = 'Earlier in this folder you (or another assistant) had this conversation with the user; it continues here:';
+
+// agentStore: the page's record of the sessions with your subscriptions' agents (agents/store.mjs); plan(): whether
+// Claude on your plan may be used (Settings' switch: its sessions are listed and resumed only then)
+export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, reloadMaxMs = 10000, log = () => {}, settingsKnown = () => null,
+  agentStore = null, plan = () => false }) {
   const need = (v, what) => { if (v === null) throw new HttpError(400, `bad ${what}`); return v; };
   const okPath = (v) => short(v, 4096);
 
@@ -92,8 +100,14 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
   // it. A folder outside the workspace is never placed, shown or resumed.
   const cwds = new Map();
   const noteCwd = (id, cwd) => { if (cwds.size >= 5000 && !cwds.has(id)) cwds.clear(); cwds.set(id, cwd); };
+  // which sessions are Claude on your plan's (their transcripts are in its own folder): from the last list of them
+  const planIds = new Set();
   async function listSessions(q) {
     const { result } = await call({ op: 'sessions.list' });
+    let planned = [];
+    if (plan()) {
+      try { planned = (await call({ op: 'sessions.list', store: 'plan' })).result?.sessions ?? []; } catch (e) { log(`plan sessions not listed: ${short(e?.message || String(e), 200)}`); }
+    }
     // (a records file that cannot be read: every session by its folder in the Workspace, said in the log — the list
     // itself never fails for it)
     let place = () => WORKSPACE_ID;
@@ -105,27 +119,68 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     try { gone = projects ? projects.list().filter((p) => p.gone).map((p) => p.root) : []; } catch { gone = []; }
     const inGone = (cwd) => typeof cwd === 'string' && gone.some((g) => cwd === g || cwd.startsWith(`${g}/`));
     const rows = [];
-    for (const raw of (Array.isArray(result.sessions) ? result.sessions : []).slice(0, SESSIONS_MAX)) {
+    const both = [...(Array.isArray(result.sessions) ? result.sessions : []).slice(0, SESSIONS_MAX).map((x) => [x, 'bedrock']),
+      ...(Array.isArray(planned) ? planned : []).slice(0, SESSIONS_MAX).map((x) => [x, 'claude'])];
+    for (const [raw, harness] of both) {
       const r = sessionRow(raw);
       if (!r) continue;
+      if (harness === 'claude') { if (planIds.size >= 5000) planIds.clear(); planIds.add(r.id); }
       // (a sandbox from before projects names no folder: its sessions are the workspace's, as they were)
       const cwd = raw.cwd === undefined || raw.cwd === null ? WS : raw.cwd;
       const outside = !cwdOk(cwd);
       if (outside && !inGone(cwd)) continue;
       noteCwd(r.id, cwd);
-      rows.push({ ...r, cwd, project: place(r.id, cwd), ...(outside ? { gone: true } : {}) });
+      rows.push({ ...r, cwd, project: place(r.id, cwd), harness, ...(outside ? { gone: true } : {}) });
     }
+    // the sessions with your subscriptions' agents (the page's own record of them)
+    for (const a of agentStore ? agentStore.list().slice(0, SESSIONS_MAX) : []) {
+      if (!cwdOk(a.cwd)) continue;
+      noteCwd(a.id, a.cwd);
+      rows.push({ id: a.id, title: a.title, first_prompt: a.title, branch: '', firstPrompt: a.title, lastPrompt: '', customTitle: '', gitBranch: '',
+        modified: a.modified, size: a.size, created: a.created, cwd: a.cwd, project: place(a.id, a.cwd), harness: a.harness });
+    }
+    rows.sort((a, b) => b.modified - a.modified);
     const open = new Map(sessions.list().map((s) => [s.id, s]));
     const needle = typeof q === 'string' ? q.trim().toLowerCase().slice(0, 200) : '';
     const out = rows.filter((r) => !needle || `${r.title}\n${r.firstPrompt}\n${r.lastPrompt}`.toLowerCase().includes(needle))
       .map((r) => ({ ...r, state: open.get(r.id)?.state || null }));
     return { sessions: out };
   }
+  /** harnessOf(id) -> who answers in a session: open here (its own), the page's record (an agent's), the last list of
+   *  your plan's, else Claude Code on Bedrock */
+  function harnessOf(id) {
+    const s = sessions.get?.(id);
+    if (s?.harness) return s.harness;
+    const a = agentStore?.get(id);
+    if (a) return a.harness;
+    return planIds.has(id) ? 'claude' : 'bedrock';
+  }
+  const storeField = (id) => (harnessOf(id) === 'claude' ? { store: 'plan' } : {});
+  /** carryText(id) -> the conversation of a session as a preface for one with another harness (its last CARRY_CHARS) */
+  async function carryText(id) {
+    if (!isUuid(id)) throw new HttpError(400, 'bad session id');
+    let events = [];
+    const a = agentStore?.get(id);
+    if (a) events = agentStore.events(id)?.events ?? [];
+    else events = (await messages(id, undefined, undefined, 400)).events;
+    const lines = [];
+    for (const e of events) {
+      if (e.type === 'user' && typeof e.text === 'string') lines.push(`User: ${e.text}`);
+      else if (e.type === 'text' && typeof e.text === 'string' && !e.parent) lines.push(`Assistant: ${e.text}`);
+    }
+    let text = lines.join('\n\n');
+    if (!text) return null;
+    if (text.length > CARRY_CHARS) text = `…${text.slice(-CARRY_CHARS)}`;
+    return `${CARRY_HEAD}\n\n<earlier-conversation>\n${text}\n</earlier-conversation>`;
+  }
+
   /** cwdFor(id) -> a session's working folder: its process's here, else the last list's (listed again once when it is
    *  not in it), else the workspace (a session of the workspace from before projects). */
   async function cwdFor(id) {
     const s = sessions.get?.(id);
     if (s?.cwd) return s.cwd;
+    const a = agentStore?.get(id);
+    if (a) return a.cwd;
     if (cwds.has(id)) return cwds.get(id);
     try { await listSessions(''); } catch { /* the workspace's, below */ }
     return cwds.get(id) ?? WS;
@@ -140,7 +195,7 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
       truncated: false,
       async load(key) {
         if (key?.sessionId !== id) return null;
-        const { result } = await call({ op: 'sessions.load', id, ...cwdField(cwd) });
+        const { result } = await call({ op: 'sessions.load', id, ...cwdField(cwd), ...storeField(id) });
         if (!Array.isArray(result.entries)) return null;
         const { list, cut } = capEntries(result.entries);
         store.truncated = result.truncated === true || cut;
@@ -155,7 +210,7 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
   // there. null: it was the conversation's first prompt. 404: no such prompt in the transcript.
   async function parentOf(id, prompt) {
     if (!isUuid(id) || !isUuid(prompt)) throw new HttpError(400, 'bad session or prompt id');
-    const { result } = await call({ op: 'sessions.load', id, ...cwdField(await cwdFor(id)) });
+    const { result } = await call({ op: 'sessions.load', id, ...cwdField(await cwdFor(id)), ...storeField(id) });
     const e = (Array.isArray(result.entries) ? result.entries : []).find((x) => x && typeof x === 'object' && x.uuid === prompt && x.type === 'user');
     if (!e) throw new HttpError(404, 'that prompt is not in the session\'s transcript (only its last 3 MiB are read)');
     return isUuid(e.parentUuid) ? e.parentUuid : null;
@@ -165,6 +220,16 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
   // or more events (`messages` and `events` are the same list). tail: the last `tail` messages (more: earlier ones)
   async function messages(id, offset, limit, tail) {
     if (!isUuid(id)) throw new HttpError(400, 'bad session id');
+    // a session with a subscription's agent: what the page showed of it (the page's record), counted in events
+    const kept = agentStore?.get(id) ? agentStore.events(id) : null;
+    if (kept) {
+      const all = kept.events;
+      const t = int(tail, 1, 2000);
+      const lim = t ?? int(limit, 1, 2000) ?? 500;
+      const off = t !== null ? Math.max(0, all.length - t) : int(offset, 0, 1e6) ?? 0;
+      const events = all.slice(off, off + lim);
+      return { messages: events, events, total: all.length, offset: off, limit: lim, more: t !== null ? off > 0 : off + lim < all.length, truncated: kept.truncated };
+    }
     const cwd = await cwdFor(id);
     const store = storeFor(id, cwd);
     const all = await getSessionMessages(id, { dir: cwd, sessionStore: store, includeSystemMessages: true });
@@ -185,8 +250,9 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     if (!t || t.length > 200 || /[\x00-\x1f\x7f]/.test(t)) throw new HttpError(400, 'a title of 1 to 200 characters, one line');
     const s = sessions.get?.(id);
     if (s) s.title = t;
+    if (agentStore?.get(id)) { agentStore.put(id, { title: t }); return { ok: true }; }
     if (s && !s.hasTranscript) { s.pendingTitle = t; return { ok: true, pending: true }; }
-    await call({ op: 'sessions.title', id, title: t, ...cwdField(await cwdFor(id)) });
+    await call({ op: 'sessions.title', id, title: t, ...cwdField(await cwdFor(id)), ...storeField(id) });
     return { ok: true };
   }
 
@@ -198,12 +264,14 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
   async function toTerminal(id) {
     if (!isUuid(id)) throw new HttpError(400, 'bad session id');
     if (handing.has(id)) throw new HttpError(409, 'this session is being opened in the terminal already');
+    const harness = harnessOf(id);
+    if (harness !== 'bedrock' && harness !== 'claude') throw new HttpError(409, 'only Claude Code\'s sessions open in the terminal from here: open the tool there and resume it with its own command');
     handing.add(id);
     let result;
     try {
       const s = sessions.get?.(id);
       if (s) await s.toTerminal();
-      ({ result } = await call({ op: 'terminal.resume', id, ...cwdField(await cwdFor(id)) }, { timeoutMs: 20000 }));
+      ({ result } = await call({ op: 'terminal.resume', id, ...cwdField(await cwdFor(id)), ...(harness === 'claude' ? { plan: true } : {}) }, { timeoutMs: 20000 }));
     } catch (e) {
       handing.delete(id);
       // (a status of ours; the text: bn-coded's fixed one plainly, anything else its words apart — said.mjs)
@@ -214,7 +282,7 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     }
     setTimeout(() => handing.delete(id), 10000).unref?.();
     const window = typeof result?.window === 'string' && /^resume-[0-9a-f]{8}$/.test(result.window) ? result.window : null;
-    return { ok: true, window, command: `claude-bedrock --resume ${id}` };
+    return { ok: true, window, command: `${harness === 'claude' ? 'claude-sub' : 'claude-bedrock'} --resume ${id}` };
   }
   // notRunning(id) — throws 409 while a process in the sandbox other than this side's runs that conversation (resumed
   // in the terminal): the page never resumes it a second time. This side's own process for it, just closed, is waited
@@ -817,7 +885,7 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     return { ok: true };
   }
 
-  return { listSessions, messages, parentOf, title, toTerminal, notRunning, cwdFor, permissions, permissionRemove, list, readFile, download, writeFile, upload, mkdir, rename, remove, find, grep, gitDiff,
+  return { listSessions, messages, parentOf, title, toTerminal, notRunning, cwdFor, harnessOf, carryText, permissions, permissionRemove, list, readFile, download, writeFile, upload, mkdir, rename, remove, find, grep, gitDiff,
     gitStatus, gitLog, gitFile, gitStage, gitUnstage, gitCommit, gitDiscard, gitDraft, memory, memoryWrite, plugins, available, pluginAction,
     marketplaces: async () => ({ marketplaces: (await plugins()).marketplaces }), marketplaceAdd, marketplaceRemove, marketplaceUpdate, mcpAdd, mcpRemove,
     ports, stopPort, launch, launchStart, runTasks, runStart, runResults, runShow, terminalCapture,

@@ -26,6 +26,9 @@ import { Imports, ImportError } from './import-sessions.mjs';
 import { makeImportsApi } from './imports-api.mjs';
 import { Setup } from './import-setup.mjs';
 import { makeSetupApi } from './setup-api.mjs';
+import { AgentStore } from './agents/store.mjs';
+import { makeStatus, harnessList } from './agents/status.mjs';
+import { harnessOk, AGENT_TOOLS } from './agents/tools.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // what a failed WebSocket message was (its type): the sentence of ours its failure is told with — the operation, never
@@ -126,7 +129,7 @@ export function ownOrigin(req) {
 export function createServer({ secret, query, spawn, call, distDir = path.join(HERE, '../web/dist'), plainDir = path.join(HERE, '../plain'), versions = {}, logger = log,
   reloadPollMs, reloadMaxMs, maxBufferedBytes = LIMITS.wsMaxBufferedBytes, maxSocketAgeMs = LIMITS.wsMaxAgeHours * 3600000, broker: brokerOpts = {},
   allowBypass = false, allowAuto = false, sandbox = {}, watch = true, gitHosts = null, openBroker = null, gitConnect = null, gitApps = {}, gitOAuthDelay = null,
-  projects = null, imports = null, setup = null }) {
+  projects = null, imports = null, setup = null, spawnAgent = null, agentStore = null, planAllowed = false, subsStatus = null }) {
   if (!/^[0-9a-f]{32,}$/.test(secret || '')) throw new Error('CODE_PROXY_SECRET missing or weak (32+ hex characters)');
   const want = Buffer.from(secret);
   const proxied = (req) => {
@@ -162,7 +165,12 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     onCount: (count) => toAll({ type: 'pending', count }),
   });
   const stateMsg = (s) => ({ type: 'session_state', session: s.id, state: s.state, model: s.model, mode: s.mode, effort: s.effort, error: s.error,
-    budget: s.budget ? { ...s.budget } : null, lastActive: s.lastActive, settings: s.settingsInfo() });
+    budget: s.budget ? { ...s.budget } : null, lastActive: s.lastActive, settings: s.settingsInfo(), harness: s.harness ?? 'bedrock',
+    ...(s.harness && s.harness !== 'bedrock' ? { plan: s.info().plan ?? null } : {}) });
+  // your subscriptions: the page's record of the agents' sessions (made on first use), and which tools are signed in
+  // (the sandbox's own `subscriptions status`, kept a minute)
+  const agents = agentStore ?? (spawnAgent ? new AgentStore() : null);
+  const subs = subsStatus ?? makeStatus({ call, log: logger });
   // the project records (projects.mjs): made on first use, as Git hosts are
   let projectStore = projects;
   const proj = () => (projectStore ??= new Projects());
@@ -185,6 +193,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
   const hostStore = gitHosts || new GitHosts();
   const mgr = new SessionManager({
     query, spawn, broker, log: logger, allowBypass: allowBypass === true, allowAuto: allowAuto === true, watcher, watchRootOf, decideSettings: trust.decide,
+    spawnAgent, agentStore: agents, planAllowed: planAllowed === true, versions: { server: versions.sdk || '0' },
     gitHosts: () => hostStore.list(),
     onEvent: (s, seq, ev) => {
       toAttached(s.id, { type: 'event', session: s.id, epoch: s.epoch, seq, ev });
@@ -192,7 +201,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
       if (ev.type === 'result' && s.pendingTitle && s.hasTranscript) {
         const title = s.pendingTitle;
         s.pendingTitle = null;
-        call({ op: 'sessions.title', id: s.id, title, ...(s.cwd !== WS ? { cwd: s.cwd } : {}) }).catch((e) => logger(`title ${s.id.slice(0, 8)}: ${short(e?.message || String(e), 200)}`));
+        call({ op: 'sessions.title', id: s.id, title, ...(s.cwd !== WS ? { cwd: s.cwd } : {}), ...(s.plan ? { store: 'plan' } : {}) }).catch((e) => logger(`title ${s.id.slice(0, 8)}: ${short(e?.message || String(e), 200)}`));
       }
     },
     onState: (s) => toAll(stateMsg(s)),
@@ -206,8 +215,8 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
       onStateBoth(old, ns);
     },
     // is there a transcript for this session in the sandbox already?
-    transcriptExists: async (id, cwd) => {
-      const { result } = await call({ op: 'sessions.load', id, ...(cwd && cwd !== WS ? { cwd } : {}) });
+    transcriptExists: async (id, cwd, plan = false) => {
+      const { result } = await call({ op: 'sessions.load', id, ...(cwd && cwd !== WS ? { cwd } : {}), ...(plan ? { store: 'plan' } : {}) });
       return Array.isArray(result?.entries) && result.entries.length > 0;
     },
     // a plugin reload: the pages showing that session get its new commands, plugins and MCP servers
@@ -221,7 +230,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
   const api = makeApi({ call, sessions: mgr, projects: { list: () => proj().list(), get: (id) => proj().get(id), add: (b) => proj().add(b), rename: (id, n) => proj().rename(id, n),
     remove: (id) => proj().remove(id), file: (ids, pid) => proj().file(ids, pid), placer: () => proj().placer(), syncHosts: () => proj().syncHosts() },
     reloadPollMs, reloadMaxMs, log: logger,
-    settingsKnown: (id) => trust.known(id) });
+    settingsKnown: (id) => trust.known(id), agentStore: agents, plan: () => planAllowed === true });
   // rootFor(v) -> the project a request names (?project= or {project}): its {id, rel, abs} from the records — never a
   // folder the page names; null (none, or the Workspace): the workspace, as every call was before projects
   const rootFor = (v) => {
@@ -296,9 +305,17 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
         limits: { ...LIMITS, sessions: LIMITS.maxOpen, upload: LIMITS.maxUploadBytes, image: LIMITS.maxImageBytes },
         sessions: listed(), pending: broker.count, portal_origin: portalOrigin(req) || null, terminal_url: terminalUrl(req),
         bypass: { allowed: mgr.allowBypass }, auto: { allowed: mgr.allowAuto }, sandbox: sandboxInfo,
+        // your subscriptions in the Code page: whether their agents run here, and Claude on your plan (Settings' switch)
+        subscriptions: { agents: Boolean(spawnAgent), plan: planAllowed === true },
         // over remote access (Caddy's remote sites say 1, the local one 0; a client's copy never gets here)
         remote: req.headers['x-bn-remote'] === '1',
       });
+    }
+    // who may answer a new session: Claude Code on Bedrock, and each of your subscriptions — there, signed in, allowed
+    if (p === '/api/harnesses' && m === 'GET') {
+      if (!spawnAgent) return send(res, 200, { harnesses: [], checked: null });
+      const st = await subs({ fresh: q.get('fresh') === '1' });
+      return send(res, 200, { harnesses: harnessList(st, { planAllowed }), checked: st.checked ?? null, ...(st.error ? { error: st.error } : {}) });
     }
     if (p === '/api/sessions' && m === 'GET') {
       const out = await api.listSessions(q.get('q'));
@@ -319,6 +336,12 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     if (p === '/api/sessions' && m === 'POST') {
       const b = await readJson(req);
       const base = { model: b.model ?? undefined, mode: b.mode ?? undefined, effort: b.effort ?? undefined, taskStop: b.taskStop === true, budget: b.budget ?? undefined };
+      // who answers: a resumed session as it ran (its own harness), a new one as asked (bedrock when not said)
+      if (b.harness !== undefined && b.harness !== null && !harnessOk(b.harness)) throw new HttpError(400, 'bad harness: bedrock, claude, codex, copilot, cursor or grok');
+      base.harness = isUuid(b.resume) ? api.harnessOf(b.resume) : (b.harness ?? 'bedrock');
+      const agent = AGENT_TOOLS.includes(base.harness);
+      // the conversation carried over from another session (the picker's switch of who answers), before its first prompt
+      if (isUuid(b.carry) && !isUuid(b.resume)) base.preface = await api.carryText(b.carry);
       // the folder it runs in: a resumed or forked session's own (its transcript's, as the sandbox's list says — a folder
       // of the workspace), a new one's its project's (?project: from the records; its folder must be there)
       if (isUuid(b.resume)) base.cwd = await api.cwdFor(b.resume);
@@ -328,9 +351,9 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
         base.cwd = root ? root.abs : WS;
       }
       // a conversation resumed here that runs in the terminal (or anywhere else in the sandbox) right now: refused
-      if (isUuid(b.resume) && b.fork !== true && !mgr.get(b.resume)?.open) await api.notRunning(b.resume);
+      if (!agent && isUuid(b.resume) && b.fork !== true && !mgr.get(b.resume)?.open) await api.notRunning(b.resume);
       // what of the folder's own Claude Code settings its process gets (trusted, or not applied): decided now, for it
-      await mgr.prepare(base.cwd);
+      if (!agent) await mgr.prepare(base.cwd);
       // a session copied from this computer (or a fork of one) opens in Manual the first time — its history is what a
       // past session saw — forks of it too; it counts as opened once it did open (not when the open failed)
       let first = false;
@@ -630,14 +653,15 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
         if (m.spent !== undefined && m.spent !== null) s.noteSpent(m.spent);   // (the page's spend figure: the budget's stop)
         // a prompt that resumes the session here while the conversation runs in the terminal (Open in the terminal, or
         // claude --resume typed there): refused. Checks of one session run in order, so its prompts keep theirs.
-        if (!s.open) {
+        const claude = !AGENT_TOOLS.includes(s.harness);
+        if (claude && !s.open) {
           const check = s.resumeCheck = (s.resumeCheck ?? Promise.resolve()).catch(() => {}).then(() => (s.open ? null : api.notRunning(s.id)));
           await check;
         }
         // its folder's own configuration decided now: for a process that may start (resumed, restarted for its budget),
         // and for a running one in a project's folder (changed since it started — a pull, an edited hook —: it restarts
         // with the configuration as it now applies)
-        if (!s.open || s.cwd !== WS || s.budgetRestart() || s.settingsRestart()) await mgr.prepare(s.cwd);
+        if (claude && (!s.open || s.cwd !== WS || s.budgetRestart() || s.settingsRestart())) await mgr.prepare(s.cwd);
         s.prompt({ text: m.text, images: m.images ?? [], uuid: m.uuid });
         c.attached.add(s.id);
         return reply({});
@@ -758,10 +782,12 @@ function readVersions() {
 
 if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { query } = await import('@anthropic-ai/claude-agent-sdk');
-  const { sandboxProcess, sandboxCall, sandboxBroker, sandboxTunnel } = await import('./spawn-client.mjs');
+  const { sandboxProcess, sandboxCall, sandboxBroker, sandboxTunnel, sandboxAgent } = await import('./spawn-client.mjs');
   const on = (v) => /^(true|1|yes|on)$/i.test(String(v ?? '').trim());
   // TERMINAL_EGRESS as the stack reads it (lib/common.sh egress_mode): host, off (false/0/no/off), else internet
   const egress = (v) => { const s = String(v ?? '').trim().toLowerCase(); return s === 'host' ? 'host' : /^(false|0|no|off)$/.test(s) ? 'off' : 'internet'; };
+  // which of your subscriptions' tools are signed in: one cache for the Code page and Chat
+  const status = makeStatus({ call: sandboxCall, log });
   const { server, mgr, closeGit } = createServer({ secret: process.env.CODE_PROXY_SECRET, query, spawn: sandboxProcess, call: sandboxCall, versions: readVersions(), openBroker: sandboxBroker,
     // (a Git host sign-in reaches its provider through the sandbox's way out; Settings' application IDs, public values)
     gitConnect: (host, port) => sandboxTunnel({ host, port }),
@@ -769,11 +795,27 @@ if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import
     // (compose.code.yaml: the stack's .env values, read at the container's start — a change restarts the container)
     allowBypass: on(process.env.CODE_ALLOW_BYPASS), allowAuto: on(process.env.CODE_AUTO_MODE),
     sandbox: { egress: egress(process.env.TERMINAL_EGRESS) !== 'off', egressHost: egress(process.env.TERMINAL_EGRESS) === 'host',
-      workspace: process.env.CODE_WORKSPACE_LABEL || '' } });
-  log(`code: Bypass permissions ${mgr.allowBypass ? 'allowed (CODE_ALLOW_BYPASS)' : 'off'}; Auto mode ${mgr.allowAuto ? 'allowed (CODE_AUTO_MODE)' : 'off'}`);
+      workspace: process.env.CODE_WORKSPACE_LABEL || '' },
+    // your subscriptions' agents in the sandbox (Codex, Copilot, Cursor, Grok), and Claude on your plan (Settings' switch)
+    spawnAgent: sandboxAgent, planAllowed: on(process.env.CODE_CLAUDE_PLAN), subsStatus: status });
+  log(`code: Bypass permissions ${mgr.allowBypass ? 'allowed (CODE_ALLOW_BYPASS)' : 'off'}; Auto mode ${mgr.allowAuto ? 'allowed (CODE_AUTO_MODE)' : 'off'}; Claude on your plan ${mgr.planAllowed ? 'allowed (CODE_CLAUDE_PLAN)' : 'off'}`);
   const port = Number(process.env.CODE_PORT || 8095);
   server.listen(port, '0.0.0.0', () => log(`code: listening on :${port}`));
-  const stop = () => { log('code: stopping'); mgr.closeAll(); closeGit(); server.close(); setTimeout(() => process.exit(0), 3000).unref(); };
+  // Chat's models on your subscriptions: Open WebUI's own connection, on the plan-chat network, with its key
+  let chat = null;
+  if (/^[0-9a-f]{32,}$/.test(process.env.CODE_CHAT_KEY || '')) {
+    const { createChatServer, CHAT_PORT } = await import('./chat.mjs');
+    chat = createChatServer({ key: process.env.CODE_CHAT_KEY, status, planAllowed: on(process.env.CODE_CLAUDE_PLAN), spawnAgent: sandboxAgent, query,
+      spawn: sandboxProcess, log, clientVersion: readVersions().sdk || '0' });
+    // (on plan-chat's own address — this container's code-chat alias — so that nothing on code-link reaches it; its key
+    // is required either way)
+    let addr = '0.0.0.0';
+    try { addr = (await (await import('node:dns/promises')).lookup('code-chat', { family: 4 })).address; } catch { /* not on plan-chat: every address */ }
+    const chatPort = Number(process.env.CODE_CHAT_PORT || CHAT_PORT);
+    chat.on('error', (e) => { log(`code: Chat's models not on ${addr}:${chatPort} (${e.code || e.message}): on every address`); if (addr !== '0.0.0.0') { addr = '0.0.0.0'; chat.listen(chatPort, addr); } });
+    chat.listen(chatPort, addr, () => log(`code: Chat's models on your subscriptions on ${addr}:${chatPort}`));
+  }
+  const stop = () => { log('code: stopping'); mgr.closeAll(); closeGit(); server.close(); chat?.closeAgents(); chat?.close(); setTimeout(() => process.exit(0), 3000).unref(); };
   process.on('SIGTERM', stop);
   process.on('SIGINT', stop);
 }
