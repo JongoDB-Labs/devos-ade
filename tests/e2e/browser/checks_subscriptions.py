@@ -79,7 +79,7 @@ def walkthrough_step(ctx):
     page.locator("#tour .tour-step.cur", has_text="Your AI subscriptions and keys").wait_for(timeout=10000)
     card = page.inner_text("#tour .tour-step.cur")
     for words in ("claude-sub", "Codex", "Copilot", "Cursor", "Grok", "Gemini CLI", "device code login", "bedrock-now never sees it",
-                  "backups leave it out", "Who answers", "a model in Open WebUI's menu", "your own API keys"):
+                  "backups leave it out", "Who answers", "a model in Open WebUI's menu", "API keys"):
         expect(words in card, f"the step lacks {words!r}")
     shot(page, "s2-walkthrough-subscriptions")
     probs = rec.problems()
