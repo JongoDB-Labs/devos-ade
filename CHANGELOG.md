@@ -12,15 +12,17 @@ All notable changes to bedrock-now are documented here. The format follows
 
 - **Your subscriptions as Chat models.** Each one signed in — Codex (ChatGPT), GitHub Copilot, Cursor, Grok, and Claude
   on your plan while its switch is on — is a model in Open WebUI's menu, answering in the same chat, streamed, with
-  its thinking: the provider's own agent in the sandbox through the interface it ships for other apps (Codex's app
-  server, ACP; the Claude Agent SDK), with its own login, without tools, in an empty folder of the conversation's own.
+  its thinking: the provider's own agent through the interface it ships for other apps (Codex's app server, ACP; the
+  Claude Agent SDK), with its own login, without tools, in Chat's own sandbox (none of your files there), in an empty
+  folder of the conversation's own.
   A chat is one of the agent's own sessions, taken up again each turn. Under each answer: *on your ChatGPT plan ·
   tokens in / out* — never dollars. Chat's *Who answers* lists them too.
 - **Who answers on the Code page.** The model picker switches a session to Claude on your plan, Codex, Copilot,
   Cursor or Grok (a new session in the project's folder, your conversation so far going with it), with the tool's own
   models: its answers, tool cards and diffs, its permission questions on the same cards, the modes (Read only and Plan
   refuse its changes, Accept edits allows its edits), the watchlist, files, Git, Review, history in the list with a
-  badge, and usage *on your plan* (tokens, the plan's own limits), no budget in dollars.
+  badge, and usage *on your plan* (tokens, the plan's own limits), no budget in dollars. In a project, once its own
+  settings are trusted.
 - **Settings › Claude Code › Use my Claude plan in the Code page and Chat** (`CODE_CLAUDE_PLAN`, off by default):
   Anthropic's support article allows the Agent SDK on a plan; its legal page says other apps may not route requests
   through one on their users' behalf — your choice, quoted where you make it.
@@ -56,11 +58,23 @@ All notable changes to bedrock-now are documented here. The format follows
 
 ### Security
 
-- Chat's models on your plans: a connection of Open WebUI's own (`plan-chat`, an internal network the code container
-  and Open WebUI share alone; `CODE_CHAT_KEY`); no tool in a Chat conversation (Claude Code with `--tools=` and no MCP
-  server, Codex read-only and never asking, every ACP permission refused), bn-coded refusing a Chat conversation
-  without those; no login read, refreshed or passed on; the agents' tool calls on the Code page through your
-  permission cards, never a tool's own "approve everything" mode.
+- **Chat's own sandbox for your subscriptions' Chat models** (`subs-chat`): the sandbox's image, a home of its own, and
+  of the sandbox only the tools' sign-in folders (volumes of their own now, in the terminal too: `subs-claude`,
+  `subs-codex`, `subs-copilot`, `subs-cursor`, `subs-cursor-login`, `subs-grok`); no workspace, no project folder, no
+  LiteLLM key or MCP token, not on the terminal's network; each tool
+  started there with its tools switched off where it has a switch, every permission refused, and a turn stopped at
+  the first sign of a tool call (the answer says so; that session is dropped). Open WebUI reaches Chat's models on a
+  network of its own with the code container (`plan-chat`) and a key (`CODE_CHAT_KEY`); no login is read, refreshed or
+  passed on.
+- The Code page's agents: their tool calls on your permission cards; never in a mode that approves by itself (an ACP
+  agent that starts in one is moved to a safe one, one that has no other or switches itself to one ends its session);
+  in a project's folder only while its own settings are trusted — Claude Code's and now also the other tools'
+  (`.codex/`, `.cursor/`, `.grok/`, `.gemini/`, `.copilot/`, `.agents/`, `.github/{hooks,skills,agents,copilot}/`,
+  `.vscode/mcp.json`, in its folder and the folders above it to the git root, with a `.mcp.json` there), listed whole in
+  the trust dialog. A project trusted under v0.21.1 that holds such files is
+  asked about again (its hash covers them now).
+- A conversation carried to another harness (or to a Chat model's new session) goes in as a quote that holds no
+  instructions, its role-like tags defanged: an earlier answer cannot speak as you.
 - A login made in the sandbox can be read by anything running there (Claude, a command it runs, a page it reads):
   said by `subscriptions login` and `./stack subscriptions login`, in Settings › Your AI subscriptions, the walkthrough,
   the README and [docs/security.md](docs/security.md#your-ai-subscriptions), with how to sign out and where to revoke it.

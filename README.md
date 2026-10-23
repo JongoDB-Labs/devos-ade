@@ -558,7 +558,7 @@ It is a sandbox, not a shell on your computer:
   open the folder. Treat what the terminal wrote like code from someone else.
 
 `./stack terminal disable` removes the container and turns the Code page off too; the folder, Claude Code's history
-(the `terminal-home` volume, with your AI subscriptions' logins: [below](#your-ai-subscriptions)) and the key stay
+(the `terminal-home` volume, and your AI subscriptions' logins in their own `subs-*` volumes: [below](#your-ai-subscriptions)) and the key stay
 (delete the key in Admin to revoke it). Every `enable` and `disable`
 restarts the portal and Caddy (open apps reload), and the first `enable`, and `disable`, also LiteLLM and the shared
 MCP server (they join or leave the terminal's gateway network): Chat answers, `claude-bedrock` requests and MCP
@@ -569,7 +569,8 @@ sessions in progress drop for a few seconds. Details and what was weighed:
 
 Your own AI plans work in the sandbox too, each through **its provider's own, unmodified app**, signed in with **that
 app's own sign-in** — a link and a code you open in your own browser. bedrock-now never reads, copies, keeps or
-passes on a login: each stays in its own app's file in the sandbox's home folder (the `terminal-home` volume), and
+passes on a login: each stays in its own app's file in the sandbox's home folder (its folder a volume of its own —
+`subs-codex`, `subs-copilot` … — so Chat's sandbox can mount it alone; Gemini CLI's in the `terminal-home` volume), and
 backups leave it out.
 
 | Tool | Your plan | Type in the terminal | Sign in | Sign out |
@@ -611,8 +612,10 @@ plan in the Code page and Chat** (off by default; turning it on works from the c
   *GitHub Copilot · your Copilot plan*, *Cursor*, *Grok*, and *Claude · your Claude plan* while its switch is on —
   answering in the same chat, streamed, with its thinking. Each answer is the provider's own agent in the sandbox,
   signed in with its own login, through the interface it ships for other apps (the Claude Agent SDK, Codex's app
-  server, the ACP mode of Copilot, Cursor and Grok), in an empty folder of the conversation's own and **without tools**:
-  Claude gets none, Codex runs read-only and never asks, and every tool Copilot, Cursor or Grok asks for is refused. A
+  server, the ACP mode of Copilot, Cursor and Grok) — in **Chat's own sandbox** (the sandbox's image and your tools'
+  sign-in folders, but a home of its own, no workspace and no project folder), in an empty folder of the conversation's own, and **without
+  tools**: each starts with every switch it has that turns its tools off, and a tool it still reaches for stops its
+  answer at once (the answer says so; the chat goes on in a new session of it). A
   conversation is one of the agent's own sessions, taken up again at each turn (its context, compaction and limits are
   the provider's); an edited or regenerated message starts a new session with the conversation so far. Under each
   answer: *on your ChatGPT plan · 1,240 in / 380 out* — tokens, never dollars. *Who answers* above Chat lists them too
@@ -622,7 +625,7 @@ plan in the Code page and Chat** (off by default; turning it on works from the c
   other providers' keys (OpenAI, Anthropic, xAI, Mistral).
 - **Code page**: the model picker's **Who answers** — Claude Code on Bedrock (as before), *Claude · your plan*, Codex,
   Copilot, Cursor or Grok. Choosing one starts a session with it in the project's folder (your conversation so far
-  goes with your first prompt there); its own models in the same picker. It works like a Claude session: its answers,
+  goes with your first prompt there, quoted as an earlier conversation); its own models in the same picker. It works like a Claude session: its answers,
   its tool cards (commands, edits with their diffs, to-dos), its questions on the same permission cards (*Allow once*,
   *Always* for this session, *Deny*), the watchlist after each turn, the same files, Git, Review and previews, and its
   history in the session list (a badge: *Codex*, *Plan* …), taken up again later with the tool's own session. Modes:
@@ -631,7 +634,10 @@ plan in the Code page and Chat** (off by default; turning it on works from the c
   limits where the tool reports them (Codex's 5-hour and weekly windows, Claude's), never dollars and no budget.
   Codex runs with its own sandbox off (the sandbox container is the boundary) and asks before what it does not count as
   safe. Claude Code's commands, plugins and MCP switches are Claude's; the tools' own (AGENTS.md, their project
-  configuration) apply as in the terminal.
+  configuration) apply as in the terminal — so in a project whose own settings (Claude Code's, or a tool's: `.codex/`,
+  `.cursor/`, `.grok/`, `.github/hooks/` …, there or in a folder above it to the git root) you have not trusted, an
+  agent does not start: the project's *Claude Code
+  settings…* shows them all, the other tools' files whole, to trust first.
 
 Settings › Claude Code › **Your AI subscriptions** shows each tool, whether it said it is signed in and which kind
 (*ChatGPT*, *Claude Max* …: its own status command, or for Gemini CLI and Grok whether their login file is there —

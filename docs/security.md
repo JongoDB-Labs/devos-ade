@@ -859,6 +859,8 @@ spawn server, Claude Code or any file at will.
 5. *Open WebUI ⇄ code container*: your subscriptions as Chat models — the `plan-chat` network (internal; Open WebUI and
    the code container only), the code container's `:8096` bound to its address there, and `CODE_CHAT_KEY` (new at
    every `./stack code enable`), which Open WebUI's connection carries ([Your AI subscriptions](#your-ai-subscriptions)).
+6. *Code container ⇄ Chat's sandbox* (`subs-chat`): one UNIX socket in the `chat-socket` volume, as 3. above —
+   Chat's conversations only, in a container without your workspace.
 
 - [x] **A container that holds nothing worth taking.** The code container (`code/`, built locally on the
   terminal's pinned Node base; the Agent SDK pinned by version and SHA-512 in lock-step with the terminal's Claude
@@ -3077,8 +3079,10 @@ never reads, copies, keeps, passes on or relays a login.**
 - [x] **Its own sign-in, in the sandbox.** Each signs in there with a flow that needs no callback into the sandbox:
   Codex's and Grok's device codes, Copilot's GitHub device flow, Cursor's link that the app polls, Claude Code's and
   Gemini CLI's link with the code pasted back. Your browser talks to the provider; the sandbox talks to the provider;
-  bedrock-now's other containers see none of it. Their logins stay in each app's own file in the `terminal-home`
-  volume: `~/.claude-subscription/.credentials.json`, `~/.codex/auth.json`, `~/.gemini/oauth_creds.json`,
+  bedrock-now's other containers see none of it, Chat's sandbox aside (below: the same folders, for Chat's models).
+  Their logins stay in each app's own file in its own folder of the sandbox's home — a volume of its own each
+  (`subs-claude`, `subs-codex`, `subs-copilot`, `subs-cursor`, `subs-cursor-login`, `subs-grok`; Gemini CLI's in
+  `terminal-home`): `~/.claude-subscription/.credentials.json`, `~/.codex/auth.json`, `~/.gemini/oauth_creds.json`,
   `~/.copilot/` (plaintext once you agree, as the app asks: there is no keychain in the container),
   `~/.config/cursor/auth.json`, `~/.grok/auth.json`. They survive restarts, updates, rollbacks and `./stack terminal
   disable`; `./stack uninstall` (or `docker volume rm <project>_terminal-home`) removes them. **Backups never hold
@@ -3146,21 +3150,54 @@ never reads, copies, keeps, passes on or relays a login.**
   nothing else) with a key only they have (`CODE_CHAT_KEY`, made by `./stack code enable`, never in the sandbox or on a
   command line); the endpoint lists only the subscriptions signed in now (the sandbox's own `subscriptions status`,
   words only), caps requests (24 MiB) and answers (2 MiB), and treats what comes back as plain text.
+- [x] **Chat's own sandbox: none of your files.** Chat's conversations never run where your workspace is. They run in
+  `subs-chat`, a container of the sandbox's image with a home of its own (a tmpfs, new at each start: none of the
+  sandbox's dotfiles, shell files or `~/.config`) and, of the sandbox, only the tools' sign-in folders — volumes of
+  their own, mounted at the same places in both: `~/.claude-subscription`, `~/.codex`, `~/.copilot`, `~/.cursor` and
+  `~/.config/cursor`, `~/.grok`. Those are writable, because each tool writes there: its login when it renews it, and
+  the sessions a conversation takes up again (Codex's rollouts, Copilot's session state, Cursor's chats, Grok's
+  sessions, Claude's transcripts); a Chat turn can so change what that tool keeps, never anything else the terminal
+  runs. Nothing else of yours: no workspace, no project folder (neither is mounted), no LiteLLM key, no MCP token, not on
+  the terminal's network (its gateway, LiteLLM, shared-mcp: no name resolves there), `read_only`, `cap_drop: ALL`,
+  `no-new-privileges`, 2 GB, 512 processes; its way out is the sandbox's (the egress proxy by default). Its one program
+  is bn-coded in Chat's role, which runs Chat's conversations and nothing else (no file, Git, project or session op);
+  the workspace's bn-coded refuses a Chat conversation. The code container reaches it on one socket of its own
+  (`chat-socket`).
 - [x] **No tools in Chat.** Each conversation runs in an empty folder of its own (`~/.bn-chat/<32 hex>`, made by
-  bn-coded, never through a link): Claude Code with `--tools=` (no built-in tool), `--strict-mcp-config` and no MCP
-  server, no settings files, a system prompt that says so (bn-coded refuses a Chat conversation without those flags);
-  Codex in its read-only sandbox, never asking (`approvalPolicy: never`); Copilot without its built-in MCP servers,
-  Cursor in its ask mode, and every permission Copilot, Cursor or Grok asks for refused. A pasted link or document can
-  therefore not steer reads, commands or edits in your workspace from Chat. What a conversation was is kept as a hash
-  of your prompts (`conversations.json` in the code container's volume: which session goes on); the sessions
-  themselves are the tools' own, in the sandbox.
+  bn-coded, never through a link), each tool with every switch it has that turns its tools off: Claude Code with
+  `--tools=` (no built-in tool), `--strict-mcp-config` and no MCP server, no settings files (bn-coded refuses a Chat
+  conversation without those flags); Codex without its shell, MCP servers, web search, apps, plugins, skills, browser
+  and images, no AGENTS.md, asking before anything it does not count as safe; Copilot with an empty list of available
+  tools, no MCP server of its own, no instructions files, no temp folder, its shell, writes and URLs denied; Cursor in
+  its Ask mode; Grok with an empty list of tools, no web search, no subagents. Those switches are the vendors'; what
+  holds whatever they let through is this side: every permission question is refused, and the first sign of a tool
+  call — ACP's `tool_call`, a Codex item that is not an answer — stops the turn at once (before what it fetched goes
+  back to the model), the answer says so, and that agent session is dropped: the chat goes on in a new one, with the
+  conversation quoted. Of what a tool could still read without asking, there is the empty folder and the home's
+  sign-ins — never a file of your workspace. What a conversation was is kept as a hash of your prompts
+  (`conversations.json` in the code container's volume: which session goes on); the sessions themselves are the
+  tools' own, in Chat's sandbox.
 - [x] **The Code page's agents ask you.** A Codex, Copilot, Cursor or Grok session asks through the same permission
   cards (*Allow once*, *Always* for this session — the tool's own "allow always" —, *Deny*; unanswered: denied after
   the usual minutes); Read only and Plan refuse its changes and commands without asking, Accept edits allows its file
-  changes only; a tool's own "approve everything" modes are never chosen. Codex runs with its own sandbox off (the
-  container is the boundary) and its "untrusted" approvals. The watchlist checks the files that run on your computer
+  changes only; a tool's own "approve everything" modes are never chosen — an ACP agent that starts in one is moved to
+  a safe one before anything, and one that has no other, or switches itself to one, ends its session: no turn runs in
+  such a mode. Codex runs with its own sandbox off (the container is the boundary) and its "untrusted" approvals. The watchlist checks the files that run on your computer
   after each turn, with Revert. Its tool cards, its text and its history (kept by the code container: `agents/` in its
   volume, at most 2 MiB a session, 300 sessions) are the sandbox's words, shown as data.
+- [x] **A project's own tool settings: trusted first.** An agent reads a project's own configuration as it is —
+  Codex's `.codex/config.toml` (MCP servers, hooks), Cursor's `.cursor/` (MCP servers, hooks, rules), Grok's `.grok/`,
+  Copilot's `.github/hooks/`, `.github/skills/`, `.github/agents/`, `.copilot/`, the agents' `.agents/`,
+  `.vscode/mcp.json` — in its folder and in the folders above it to the git root (a `.mcp.json` there too), with no
+  switch of ours to leave it out. So bn-coded lists those files with the project's Claude Code settings, from the same
+  folders as Claude Code's `.claude/` trees (one hash, one trust), the trust dialog shows each whole, and an agent session starts in a project's
+  folder only while that trust holds (trusted, or nothing there); not trusted, changed, unverifiable or from before
+  v0.21.1: refused with why, at every start. AGENTS.md and the like are instructions, as CLAUDE.md is.
+- [x] **A carried conversation is quoted, not yours.** When you switch who answers (or Chat starts a new agent session
+  for a conversation), the conversation so far goes in front of your next prompt as a quote that says it holds no
+  instructions, every role-like tag in it (`</earlier-conversation>`, `<system>`, `<|im_start|>` …) defanged, its last
+  60,000 characters: an earlier answer cannot close the quote and speak as you. None of the harnesses takes earlier
+  turns from a client, so a quote is the only way.
 - [x] **Claude on your plan behind a switch.** Off by default; on, the Agent SDK runs the same Claude Code with
   claude-sub's folder and none of the stack's variables (no LiteLLM, no spend tag, no budget stop, no stack MCP
   server) — bn-coded starts it so only when the code container asks with `plan: true`, which it does only while
