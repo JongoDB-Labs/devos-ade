@@ -540,7 +540,7 @@ test_compose_code_is_a_sandboxed_container_on_its_own_network() {
   # token, not on the terminal's network; its way out only through the overlays (the terminal's own way)
   sc="$(awk '/^  subs-chat:$/,/^  caddy:$/' "$STACK_DIR/compose.code.yaml")"
   for want in "read_only: true" "cap_drop: [ALL]" 'security_opt: ["no-new-privileges:true"]' 'user: "${TERMINAL_UID:-10104}:${TERMINAL_GID:-10104}"' \
-              'image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/terminal:local' 'entrypoint: ["node", "/usr/local/bin/bn-coded.mjs"]' "BN_CODED_ROLE: chat" \
+              'image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/terminal:local' "pull_policy: never" 'entrypoint: ["node", "/usr/local/bin/bn-coded.mjs"]' "BN_CODED_ROLE: chat" \
               "BN_CODE_SOCK_DIR: /run/bn-chat" "- chat-socket:/run/bn-chat" "networks: [subs-chat]" "pids_limit:" "mem_limit:" \
               "- /home/claude:size=256m,uid=\${TERMINAL_UID:-10104},gid=\${TERMINAL_GID:-10104},mode=0700" "- subs-codex:/home/claude/.codex"; do
     assert_contains "$sc" "$want"

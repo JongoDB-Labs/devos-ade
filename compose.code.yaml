@@ -101,12 +101,10 @@ services:
   # its socket (chat-socket). Its way out is the sandbox's, as Settings › Claude Code › Sandbox internet access says:
   # the egress proxy (compose.code-proxy.yaml), the direct one (compose.code-egress.yaml), or none.
   subs-chat:
-    build:   # (the terminal's own build: the same image, built with it — never pulled)
-      context: ./terminal
-      args:
-        BN_UID: ${TERMINAL_UID:-10104}
-        BN_GID: ${TERMINAL_GID:-10104}
+    # the terminal's own image, as the terminal's build made it (./stack builds it for the terminal): never built for
+    # this service with other arguments, never pulled
     image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/terminal:local
+    pull_policy: never
     restart: unless-stopped
     hostname: subs-chat
     user: "${TERMINAL_UID:-10104}:${TERMINAL_GID:-10104}"
