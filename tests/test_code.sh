@@ -540,11 +540,12 @@ test_compose_code_is_a_sandboxed_container_on_its_own_network() {
   sc="$(awk '/^  subs-chat:$/,/^  caddy:$/' "$STACK_DIR/compose.code.yaml")"
   for want in "read_only: true" "cap_drop: [ALL]" 'security_opt: ["no-new-privileges:true"]' 'user: "${TERMINAL_UID:-10104}:${TERMINAL_GID:-10104}"' \
               'image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/terminal:local' 'entrypoint: ["node", "/usr/local/bin/bn-coded.mjs"]' "BN_CODED_ROLE: chat" \
-              "BN_CODE_SOCK_DIR: /run/bn-chat" "- terminal-home:/home/claude" "- chat-socket:/run/bn-chat" "networks: [subs-chat]" "pids_limit:" "mem_limit:"; do
+              "BN_CODE_SOCK_DIR: /run/bn-chat" "- chat-socket:/run/bn-chat" "networks: [subs-chat]" "pids_limit:" "mem_limit:" \
+              "- /home/claude:size=256m,uid=\${TERMINAL_UID:-10104},gid=\${TERMINAL_GID:-10104},mode=0700" "- subs-codex:/home/claude/.codex"; do
     assert_contains "$sc" "$want"
   done
   for bad in "/workspace" "TERMINAL_WORKSPACE" "LITELLM" "ANTHROPIC" "SHARED_MCP_TOKEN" "BN_MCP_URL" "AWS_" "code-socket" "docker.sock" "privileged" \
-             "ports:" "cap_add" "network_mode" "@projects" "terminal-link"; do
+             "ports:" "cap_add" "network_mode" "@projects" "terminal-link" "- terminal-home"; do
     assert_not_contains "$sc" "$bad"
   done
   assert_eq "$(printf '%s\n' "$sc" | grep -c 'type: bind')" 1   # (the managed settings, read-only: below)
@@ -576,9 +577,16 @@ assert x["entrypoint"] == ["node", "/usr/local/bin/bn-coded.mjs"] and x["environ
 assert sorted(x["networks"]) == ["subs-chat", "terminal-proxy"], x["networks"]
 assert d["networks"]["subs-chat"]["internal"] is True
 assert sorted(n for n, y in s.items() if "subs-chat" in (y.get("networks") or {})) == ["subs-chat"]
+# (of the sandbox home: the sign-in folders alone, the same volumes as the terminal has at the same places; a home of
+# its own, a tmpfs)
+SUBS = [("subs-claude", "/home/claude/.claude-subscription"), ("subs-codex", "/home/claude/.codex"), ("subs-copilot", "/home/claude/.copilot"),
+  ("subs-cursor", "/home/claude/.cursor"), ("subs-cursor-login", "/home/claude/.config/cursor"), ("subs-grok", "/home/claude/.grok")]
 assert [(v["type"], v.get("source", "").rsplit("/", 1)[-1], v["target"], v.get("read_only")) for v in x["volumes"]] == [
-  ("volume", "terminal-home", "/home/claude", None), ("volume", "chat-socket", "/run/bn-chat", None),
+  ("volume", s, t, None) for s, t in SUBS] + [("volume", "chat-socket", "/run/bn-chat", None),
   ("bind", "off.json", "/etc/claude-code/managed-settings.json", True)], x["volumes"]
+assert all((s, t) in [(v.get("source"), v["target"]) for v in t_vols] for s, t in SUBS) if (t_vols := t["volumes"]) else False
+assert ("terminal-home", "/home/claude") in [(v.get("source"), v["target"]) for v in t["volumes"]]
+assert sorted(x["tmpfs"]) == ["/home/claude/.config:size=16m,uid=501,gid=20,mode=0700", "/home/claude:size=256m,uid=501,gid=20,mode=0700", "/tmp:size=256m,mode=1777"], x["tmpfs"]
 assert not any(k.startswith(("ANTHROPIC", "LITELLM", "AWS_", "SHARED_MCP", "BN_MCP")) for k in x["environment"]), x["environment"]
 assert x["environment"]["HTTPS_PROXY"] == "http://egress:3128"
 assert ("chat-socket", "/run/bn-chat", True) in [(v.get("source"), v["target"], v.get("read_only")) for v in c["volumes"]], c["volumes"]

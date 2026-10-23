@@ -346,7 +346,7 @@ terminal_disable() {
   docker volume rm "$(project_name)_terminal-socket" "$(project_name)_code-socket" "$(project_name)_preview-socket" >/dev/null 2>&1 || true
   [ "$own" = 0 ] || stack_unlock
   log "the terminal is off: no Terminal tab, no terminal host, no container"
-  log "kept: the workspace folder $(get_env TERMINAL_WORKSPACE), Claude Code's settings and history (volume $(project_name)_terminal-home; docker volume rm $(project_name)_terminal-home forgets them) and its LiteLLM key claude-code-terminal (spend history; delete it in Admin to revoke it)"
+  log "kept: the workspace folder $(get_env TERMINAL_WORKSPACE), Claude Code's settings and history (volume $(project_name)_terminal-home; docker volume rm $(project_name)_terminal-home forgets them), your subscriptions' sign-ins (volumes $(project_name)_subs-*) and its LiteLLM key claude-code-terminal (spend history; delete it in Admin to revoke it)"
 }
 
 # terminal_network_cleanup — the terminal's four networks, once nothing is attached (never fatal)
@@ -656,7 +656,8 @@ terminal_rollback_cleanup() {
 # on): its volume, networks and images by their exact names, whether or not it is on now. The workspace folder stays.
 terminal_uninstall_cleanup() {
   local p; p="$(project_name)"
-  docker volume rm "${p}_terminal-home" "${p}_terminal-socket" "${p}_code-socket" "${p}_preview-socket" >/dev/null 2>&1 || true
+  docker volume rm "${p}_terminal-home" "${p}_terminal-socket" "${p}_code-socket" "${p}_preview-socket" "${p}_subs-claude" "${p}_subs-codex" \
+    "${p}_subs-copilot" "${p}_subs-cursor" "${p}_subs-cursor-login" "${p}_subs-grok" >/dev/null 2>&1 || true
   terminal_network_cleanup
   docker image rm "$p/terminal:local" "$p/terminal:previous" >/dev/null 2>&1 || true
   docker image rm "$p/terminal-egress:local" "$p/terminal-egress:previous" >/dev/null 2>&1 || true

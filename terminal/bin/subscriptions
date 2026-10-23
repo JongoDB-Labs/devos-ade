@@ -1,7 +1,7 @@
 #!/bin/bash
 # subscriptions: your AI subscriptions' tools in the bedrock-now sandbox — each provider's own, unmodified client (the
 # image's, pinned: terminal/Dockerfile), signed in with that client's own flow, its login kept in its own file in the
-# terminal-home volume. bedrock-now never opens those files: a status is what the tool's own status command says,
+# sandbox's home (its folder a volume of its own, compose.terminal.yaml subs-*; Gemini CLI's in terminal-home). bedrock-now never opens those files: a status is what the tool's own status command says,
 # reduced to "signed in: yes / no / not known here" and which kind (ChatGPT, Claude Max, an API key …) — never more.
 #
 #   subscriptions [status]        each tool: in this sandbox (its version), signed in?

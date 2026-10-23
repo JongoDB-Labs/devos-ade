@@ -2,7 +2,7 @@
 # Your AI subscriptions (./stack subscriptions; README "Your AI subscriptions"): each provider's own, unmodified client
 # — Claude Code on your Claude plan (claude-sub), Codex, Gemini CLI, Copilot CLI, Cursor CLI, Grok Build — in the
 # sandbox's image (terminal/Dockerfile's ai-tools stage), signed in THERE with its own flow, its login in its own file in
-# the terminal-home volume. This side never sees a login: it asks the sandbox's `subscriptions status --tsv` (each
+# the sandbox's home (its folder a volume of its own: compose.terminal.yaml subs-*). This side never sees a login: it asks the sandbox's `subscriptions status --tsv` (each
 # tool's own status command, reduced to words) and keeps only what passes the checks below, in
 # .state/status/subscriptions.json for Settings › Claude Code › Your AI subscriptions.
 #

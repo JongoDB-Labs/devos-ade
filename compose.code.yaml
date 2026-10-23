@@ -88,10 +88,14 @@ services:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
 
-  # Chat's own sandbox: where your subscriptions answer as Chat models (code/server/chat.mjs). The terminal's image and
-  # its home — the tools' sign-ins (~/.codex, ~/.copilot, ~/.cursor, ~/.grok, claude-sub's ~/.claude-subscription) — and
-  # nothing of your files: no workspace, no project folder, no LiteLLM key, no MCP token, not on the terminal's network
-  # (its gateway, LiteLLM and shared-mcp are out of reach). Its one program is bn-coded in Chat's role
+  # Chat's own sandbox: where your subscriptions answer as Chat models (code/server/chat.mjs). The terminal's image, a
+  # home of its own (a tmpfs: nothing of the sandbox's home — no dotfiles, shell files, ~/.config of the terminal's),
+  # and of the sandbox only the tools' sign-in folders, its volumes (compose.terminal.yaml): claude-sub's
+  # ~/.claude-subscription, ~/.codex, ~/.copilot, ~/.cursor and ~/.config/cursor, ~/.grok — writable, as each tool
+  # writes there: its login when it renews it, and the sessions a conversation takes up again (Codex's rollouts,
+  # Copilot's session state, Cursor's chats, Grok's sessions, Claude's transcripts). Nothing of your files: no
+  # workspace, no project folder, no LiteLLM key, no MCP token, not on the terminal's network (its gateway, LiteLLM
+  # and shared-mcp are out of reach). Its one program is bn-coded in Chat's role
   # (terminal/bin/bn-coded.mjs roleOf): Chat's conversations, each in an empty folder of its own
   # (~/.bn-chat/<id>), each tool started with its tools switched off — and nothing else. The code container connects to
   # its socket (chat-socket). Its way out is the sandbox's, as Settings › Claude Code › Sandbox internet access says:
@@ -109,7 +113,11 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    tmpfs: ["/tmp:size=256m,mode=1777"]
+    # its home: its own, gone at each start (~/.config a tmpfs too, its owner yours: Cursor's sign-in folder is in it)
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+      - /home/claude:size=256m,uid=${TERMINAL_UID:-10104},gid=${TERMINAL_GID:-10104},mode=0700
+      - /home/claude/.config:size=16m,uid=${TERMINAL_UID:-10104},gid=${TERMINAL_GID:-10104},mode=0700
     mem_limit: 2g
     pids_limit: 512
     init: true
@@ -127,7 +135,13 @@ services:
       - "gateway.docker.internal:192.0.2.1"
       - "gateway.docker.internal:100::1"
     volumes:
-      - terminal-home:/home/claude   # (the terminal's: the tools' sign-ins live there)
+      # the tools' sign-in folders (the sandbox's volumes), each at its place in this home
+      - subs-claude:/home/claude/.claude-subscription
+      - subs-codex:/home/claude/.codex
+      - subs-copilot:/home/claude/.copilot
+      - subs-cursor:/home/claude/.cursor
+      - subs-cursor-login:/home/claude/.config/cursor
+      - subs-grok:/home/claude/.grok
       - chat-socket:/run/bn-chat
       # Claude Code's managed settings, as the terminal has them (Claude on your plan answers here too, without tools)
       - type: bind
@@ -143,7 +157,7 @@ services:
       retries: 6
       start_period: 5s
     depends_on:
-      terminal: { condition: service_healthy }   # (its home: the terminal's volume, made by the terminal)
+      terminal: { condition: service_healthy }   # (the sign-in folders: the terminal's volumes, made with it)
     logging:   # (YAML anchors do not reach across compose files: same values as x-logging in compose.yaml)
       driver: json-file
       options: { max-size: "10m", max-file: "3" }

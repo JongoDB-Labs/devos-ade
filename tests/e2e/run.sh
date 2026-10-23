@@ -1208,6 +1208,10 @@ c.on("data", (d) => { buf = Buffer.concat([buf, d]); if (buf.length >= 5 && buf.
 setTimeout(() => { console.log("timeout"); process.exit(0); }, 20000);'
     mounts="$(docker exec "$sc" sh -c 'test -e /workspace && echo workspace-there; grep -c " /workspace" /proc/self/mountinfo' 2>&1 | tr '\n' ' ')"
     names="$(docker exec "$sc" sh -c 'for h in gateway terminal litellm shared-mcp portal; do getent hosts "$h" >/dev/null 2>&1 && printf "%s " "$h"; done; true' 2>&1)"
+    # its home is its own: a file the terminal puts in its home is not there, one in a sign-in folder (~/.codex) is
+    docker exec "$tc" sh -c 'touch ~/.bn-e2e-home-mark ~/.codex/.bn-e2e-codex-mark' >/dev/null 2>&1
+    homes="$(docker exec "$sc" sh -c 'test -e ~/.bn-e2e-home-mark && echo terminal-home-seen; test -e ~/.codex/.bn-e2e-codex-mark && echo codex-shared; test -e ~/.config/bedrock-now && echo terminal-config-seen; true' 2>&1 | tr '\n' ' ')"
+    docker exec "$tc" sh -c 'rm -f ~/.bn-e2e-home-mark ~/.codex/.bn-e2e-codex-mark' >/dev/null 2>&1
     chat_refuses="$(docker exec "$sc" node --input-type=module -e "$bnc_ask" /run/bn-chat/coded.sock '{"op":"fs.list","path":""}' 2>&1)"
     term_refuses="$(docker exec "$tc" node --input-type=module -e "$bnc_ask" /run/bn-code/coded.sock '{"op":"agent","tool":"codex","mode":"chat","chat":"abababababababababababababababab"}' 2>&1)"
     codex_cfg="$(docker exec -i "$sc" node --input-type=module - <<'JS' 2>&1
@@ -1224,11 +1228,11 @@ send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'e2e', title: 
 setTimeout(() => { console.log('timeout'); p.kill(); process.exit(0); }, 30000);
 JS
 )"
-    if [ "$(printf '%s' "$mounts" | tr -d ' ')" = 0 ] && [ -z "$names" ] && printf '%s' "$chat_refuses" | grep -q "not in Chat's sandbox" \
+    if [ "$(printf '%s' "$mounts" | tr -d ' ')" = 0 ] && [ -z "$names" ] && [ "$homes" = "codex-shared " ] && printf '%s' "$chat_refuses" | grep -q "not in Chat's sandbox" \
       && printf '%s' "$term_refuses" | grep -q "run in their own sandbox" \
       && printf '%s' "$codex_cfg" | grep -q '"shell":false,"exec":false,"web":"disabled","mcp":{},"apps":false,"plugins":false'; then
-      record subscriptions chat-sandbox PASS "$(( $(now) - t0 ))" "Chat's sandbox: no workspace, none of the stack's names; it refuses the workspace's ops and the workspace refuses Chat's; Codex there: shell, web search, MCP, apps, plugins off"
-    else record subscriptions chat-sandbox FAIL "$(( $(now) - t0 ))" "mounts: $mounts; names: ${names:-none}; chat: $(printf '%s' "$chat_refuses" | tail -c 150); terminal: $(printf '%s' "$term_refuses" | tail -c 150); codex: $(printf '%s' "$codex_cfg" | tail -c 200)"; fi
+      record subscriptions chat-sandbox PASS "$(( $(now) - t0 ))" "Chat's sandbox: no workspace, a home of its own with the sign-in folders alone, none of the stack's names; it refuses the workspace's ops and the workspace refuses Chat's; Codex there: shell, web search, MCP, apps, plugins off"
+    else record subscriptions chat-sandbox FAIL "$(( $(now) - t0 ))" "mounts: $mounts; names: ${names:-none}; homes: $homes; chat: $(printf '%s' "$chat_refuses" | tail -c 150); terminal: $(printf '%s' "$term_refuses" | tail -c 150); codex: $(printf '%s' "$codex_cfg" | tail -c 200)"; fi
   else record subscriptions chat-sandbox SKIP 0 "needs the Code page (Chat's sandbox)"; fi
   # claude-sub: the image's claude without the stack's variables (a stand-in in the workspace prints its environment)
   ws="$(get_env TERMINAL_WORKSPACE)"; t0="$(now)"

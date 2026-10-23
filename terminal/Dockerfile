@@ -100,15 +100,19 @@ COPY tools/gemini-settings.json /etc/gemini-cli/settings.json
 # the terminal's gateway alone.
 # You, inside: the same uid/gid as on your computer (TERMINAL_UID/GID from ./stack), so files in the workspace
 # folder stay yours. The node image's own user (uid 1000) goes first. The home folder is the terminal-home volume
-# (Claude Code's settings and history, shell history); it starts empty: the settings below live in /etc.
+# (Claude Code's settings and history, shell history); it starts empty: the settings below live in /etc. Your
+# subscriptions' sign-in folders are volumes of their own (compose.terminal.yaml: Chat's sandbox mounts those alone),
+# so each is a folder of yours here, mode 700, for a new volume to take its owner from; /run/bn-chat is Chat's
+# sandbox's socket folder (compose.code.yaml subs-chat).
 ARG BN_UID=10104
 ARG BN_GID=10104
 RUN set -eu; userdel -r node 2>/dev/null || true; \
     getent group "$BN_GID" >/dev/null || groupadd -g "$BN_GID" claude; \
     useradd -o -M -d /home/claude -s /bin/bash -u "$BN_UID" -g "$BN_GID" claude; \
-    mkdir -p /home/claude /workspace /run/bn-ttyd /run/bn-code /run/bn-preview; \
-    chown "$BN_UID:$BN_GID" /home/claude /workspace /run/bn-ttyd /run/bn-code /run/bn-preview; \
-    chmod 700 /home/claude /run/bn-ttyd /run/bn-code /run/bn-preview
+    subs="/home/claude/.claude-subscription /home/claude/.codex /home/claude/.copilot /home/claude/.cursor /home/claude/.config/cursor /home/claude/.grok"; \
+    mkdir -p /home/claude /workspace /run/bn-ttyd /run/bn-code /run/bn-preview /run/bn-chat $subs; \
+    chown "$BN_UID:$BN_GID" /home/claude /home/claude/.config /workspace /run/bn-ttyd /run/bn-code /run/bn-preview /run/bn-chat $subs; \
+    chmod 700 /home/claude /run/bn-ttyd /run/bn-code /run/bn-preview /run/bn-chat $subs
 COPY tmux.conf /etc/tmux.conf
 COPY bashrc /etc/bedrock-now.bashrc
 COPY ssh_config /etc/ssh/ssh_config.d/bedrock-now.conf
