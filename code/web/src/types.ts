@@ -36,6 +36,40 @@ export interface InitInfo {
   commands: string[];
   plugins: { name: string; version: string }[];
   mcp: { name: string; status: string }[];
+  /** who answers (a subscription's agent says so at its start), and the models it offers there */
+  harness?: Harness;
+  models?: { id: string; name: string }[];
+}
+
+// ---------------------------------------------------------------- who answers: your subscriptions
+
+/** Who answers in a session: Claude Code on Bedrock (as the Code page always ran it), Claude on your plan (Settings'
+ *  switch), or one of your subscriptions' agents through its own interface for other apps. */
+export type Harness = 'bedrock' | 'claude' | 'codex' | 'copilot' | 'cursor' | 'grok';
+export const HARNESS_IDS: readonly Harness[] = ['bedrock', 'claude', 'codex', 'copilot', 'cursor', 'grok'];
+/** One of your subscriptions as the picker offers it (GET /api/harnesses): there, signed in, allowed here */
+export interface HarnessInfo {
+  id: Exclude<Harness, 'bedrock'>;
+  name: string;
+  provider: string;
+  plan: string;
+  installed: boolean;
+  signed: 'yes' | 'no' | 'unknown';
+  allowed: boolean;
+}
+/** A plan's own limit as its tool reports it (Codex's 5-hour and weekly windows, Claude's) */
+export interface PlanLimit {
+  label: string;
+  usedPercent: number | null;
+  resetsAt: number | null;
+}
+/** What a session on your plan used: tokens and turns (never dollars), and the plan's limits as last reported */
+export interface PlanUsage {
+  input: number;
+  output: number;
+  cached: number;
+  turns: number;
+  limits: PlanLimit[];
 }
 
 export interface Usage {
@@ -269,6 +303,8 @@ export interface SessionInfo {
   /** copied from Claude Code (CC) or claude-bedrock (CB) on the computer running bedrock-now; forked: as a new
    *  session (its copy here had been continued) */
   imported?: ImportedFrom | null;
+  /** who answered in it: Claude Code on Bedrock (also when not said), Claude on your plan, a subscription's agent */
+  harness?: Harness;
 }
 
 // ---------------------------------------------------------------- sessions of this computer (the Import sheet)
@@ -443,6 +479,9 @@ export interface OpenSession {
   project: string;
   /** what of its folder's own Claude Code settings its process got (null: not said) */
   settings: SessionSettings | null;
+  /** who answers in it, and (on your plan) what it used */
+  harness: Harness;
+  plan: PlanUsage | null;
 }
 
 export interface ServerState {
@@ -470,6 +509,9 @@ export interface ServerState {
   workspace: string | null;
   /** this page came over remote access (Caddy's remote sites tell the code container; never from the browser) */
   remote: boolean;
+  /** your subscriptions' agents run here (Codex, Copilot, Cursor, Grok), and Claude on your plan may (Settings' switch) */
+  agents: boolean;
+  planAllowed: boolean;
 }
 
 export interface FsEntry {
@@ -519,7 +561,7 @@ export type ServerMsg =
   | { kind: 'permission'; req: PermissionReq }
   | { kind: 'permission_done'; id: string; session: string | null }
   | { kind: 'session_state'; session: string; state: SessionState; model: string | null; mode: Mode | null; budget?: Budget | null; lastActive?: number;
-      settings?: SessionSettings | null }
+      settings?: SessionSettings | null; harness?: Harness; plan?: PlanUsage | null }
   /** the answer to `attach`: replayed events start at `from`; `gap`: some after the page's `since` are gone (or the
    *  process changed: another `epoch`) */
   | { kind: 'attached'; session: string; from: number; last: number; gap: boolean; epoch: string | null }

@@ -9,7 +9,7 @@ import { appendMemory, memoryLine } from './palette';
 import { fullModel, modelCommand } from './models';
 import { sentence } from './permission';
 import { remembered, startMode } from './modes';
-import type { Ev, FsEntry, Hunk, ImageBlock, KeyBudget, LaunchEntry, LaunchList, Mode, PortInfo, PreviewInfo, PreviewLink, RunList, RunResult, RunTask, ServerMsg, ServerState, SessionInfo } from './types';
+import type { Ev, FsEntry, Harness, HarnessInfo, Hunk, ImageBlock, KeyBudget, LaunchEntry, LaunchList, Mode, PortInfo, PreviewInfo, PreviewLink, RunList, RunResult, RunTask, ServerMsg, ServerState, SessionInfo } from './types';
 import { approveRun, approvedRun, askDraft, outcome, outcomeText, plainCommand } from './run';
 import { approveLaunch, approvedLaunch, switchedAway, type Viewport } from './devpreview';
 import { loadPrefs, savePrefs, type Layout, type Prefs } from './prefs';
@@ -263,6 +263,8 @@ export interface AppState {
   serverError: string | null;
   models: BnModels | null;
   modelsError: string | null;
+  /** your subscriptions, as the picker offers them (null: not asked yet, or none here) */
+  harnesses: HarnessInfo[] | null;
   sessions: SessionInfo[];
   sessionsLoading: boolean;
   sessionsError: string | null;
@@ -351,6 +353,7 @@ export const store: Store<AppState> = createStore<AppState>({
   serverError: null,
   models: null,
   modelsError: null,
+  harnesses: null,
   sessions: [],
   sessionsLoading: false,
   sessionsError: null,
@@ -566,6 +569,8 @@ const infoAsked = new Set<string>();
 function askInfo(id: string): void {
   const v = get().views[id];
   if (!v || v.state === 'ended' || v.state === 'closed' || v.state === 'error' || infoAsked.has(id)) return;
+  // (a subscription's agent has none of Claude Code's commands, model list or context: its models come with its start)
+  if (v.harness !== 'bedrock' && v.harness !== 'claude') return;
   infoAsked.add(id);
   socket.send({ type: 'commands', session: id });
   socket.send({ type: 'models', session: id });
@@ -574,6 +579,8 @@ function askInfo(id: string): void {
 
 const spendTimers = new Map<string, ReturnType<typeof setTimeout>[]>();
 function scheduleSpend(id: string, delays = [1500, 5000, 15000, 40000]): void {
+  // (on your plan: no spend to look up — its meter is tokens and the plan's limits)
+  if ((get().views[id]?.harness ?? 'bedrock') !== 'bedrock') return;
   for (const t of spendTimers.get(id) ?? []) clearTimeout(t);
   spendTimers.set(
     id,
@@ -796,7 +803,7 @@ function handle(m: ServerMsg): void {
       if (!get().views[m.session]) {
         // a session another tab or device opened: it gets a view (attached, so its prompts reach this page too)
         if (m.state === 'ended' || m.state === 'closed') return;
-        ensureView(m.session, { state: m.state, model: m.model ?? '', mode: m.mode ?? 'default', budget: m.budget ?? null });
+        ensureView(m.session, { state: m.state, model: m.model ?? '', mode: m.mode ?? 'default', budget: m.budget ?? null, harness: m.harness ?? 'bedrock', plan: m.plan ?? null });
         attach(m.session);
         announce();
         return;
@@ -807,7 +814,8 @@ function handle(m: ServerMsg): void {
       updateView(m.session, (v) => {
         const w = over ? endedMidTurn(v) : v;
         return { ...w, state: m.state, seq: over ? 0 : w.seq, model: m.model ?? w.model, mode: m.mode ?? w.mode, budget: m.budget === undefined ? w.budget : m.budget,
-          lastActive: m.lastActive ?? w.lastActive, settings: m.settings === undefined ? w.settings : m.settings };
+          lastActive: m.lastActive ?? w.lastActive, settings: m.settings === undefined ? w.settings : m.settings,
+          harness: m.harness ?? w.harness, plan: m.plan === undefined ? w.plan : m.plan };
       });
       // the backend's budget is the one its stop uses: this browser remembers it (another device may have changed it)
       if (m.budget !== undefined) keepBudget(m.session, m.budget);
@@ -1020,9 +1028,11 @@ export async function boot(): Promise<void> {
   if (st.status === 'fulfilled') {
     const server = st.value;
     set((s) => ({ ...s, server }));
+    if (server.agents) void refreshHarnesses();
     noteWhere(server.sessions);
     for (const o of server.sessions) {
-      ensureView(o.id, { state: o.state, model: o.model ?? '', mode: o.mode ?? 'default', title: o.title, budget: o.budget, lastActive: o.lastActive, settings: o.settings });
+      ensureView(o.id, { state: o.state, model: o.model ?? '', mode: o.mode ?? 'default', title: o.title, budget: o.budget, lastActive: o.lastActive, settings: o.settings,
+        harness: o.harness, plan: o.plan });
     }
     const shown = link.session ? await showLinked(link.session) : false;
     // (a link's draft without a session: no session shown — sending it starts a new one, in Manual)
@@ -1165,8 +1175,46 @@ function whileOpening<T>(p: Promise<T>): Promise<T> {
   return tracked;
 }
 
+/** Your subscriptions as the picker offers them, asked anew (fresh: the sandbox asked again, not its last minute's). */
+export async function refreshHarnesses(fresh = false): Promise<void> {
+  try {
+    const harnesses = await api.getHarnesses(fresh);
+    set((s) => ({ ...s, harnesses }));
+  } catch {
+    /* (the picker says the subscriptions could not be listed) */
+  }
+}
+
+/** A harness's name as the page shows it ("Codex", "Claude · your plan"); Bedrock's: "Claude Code on Bedrock". */
+export function harnessName(h: Harness, s: AppState = get()): string {
+  if (h === 'bedrock') return 'Claude Code on Bedrock';
+  const i = s.harnesses?.find((x) => x.id === h);
+  return h === 'claude' ? 'Claude · your plan' : i?.name ?? h;
+}
+/** Whose plan a session's usage counts against ("your ChatGPT plan"), or null for Bedrock's. */
+export function planOf(h: Harness, s: AppState = get()): string | null {
+  if (h === 'bedrock') return null;
+  return s.harnesses?.find((x) => x.id === h)?.plan ?? 'your plan';
+}
+
+/** The picker's switch of who answers: a new session with that harness in the project shown — with the conversation
+ *  of the session shown, when it has one, carried over (it goes with the first prompt there). */
+export function switchHarness(h: Harness): Promise<string | null> {
+  const s = get();
+  const v = activeView(s);
+  const carry = v && v.items.some((it) => it.t === 'user') && v.harness !== h ? v.id : undefined;
+  const mode = v?.mode && v.mode !== 'auto' && v.mode !== 'bypassPermissions' ? v.mode : undefined;
+  return newSession({ harness: h, carry, noAsk: h !== 'bedrock' && h !== 'claude', ...(mode ? { mode } : {}) }).then((id) => {
+    if (id && carry) toast(`${harnessName(h)} answers in a new session here; your conversation so far goes with your first prompt.`, 'info');
+    return id;
+  });
+}
+
 /** Settings for a new session (the browser's choices when left out). */
 export interface NewSessionOptions {
+  /** who answers (none: Claude Code on Bedrock); carry: a session whose conversation goes with the first prompt */
+  harness?: Harness;
+  carry?: string;
   model?: string;
   mode?: Mode;
   effort?: string | null;
@@ -1223,17 +1271,22 @@ async function openNew(opts: NewSessionOptions): Promise<string | null> {
   if (s.opening) return null;
   set((x) => ({ ...x, opening: true }));
   try {
-    const model = sendModel(opts.model, s) || defaultModel(s);
-    const mode = startMode(opts.mode ?? s.startWith, s.prefs.mode, autoOk(s));   // never Bypass (switched to per session); Auto only while allowed
-    const effort = opts.effort === undefined ? s.prefs.effort : opts.effort;
-    // the budget new sessions start with (this browser's; ⋯ › Budget sets it)
-    const budget = opts.budget === undefined ? s.budgetNext : opts.budget;
+    const harness: Harness = opts.harness ?? 'bedrock';
+    const bedrock = harness === 'bedrock';
+    // (Bedrock's models by their full ids; on your plan or with an agent, its own model names — none: its default)
+    const model = bedrock ? sendModel(opts.model, s) || defaultModel(s) : opts.model ?? '';
+    let mode = startMode(opts.mode ?? s.startWith, s.prefs.mode, autoOk(s));   // never Bypass (switched to per session); Auto only while allowed
+    if (!bedrock && mode === 'auto') mode = 'default';
+    const effort = bedrock || harness === 'claude' ? (opts.effort === undefined ? s.prefs.effort : opts.effort) : null;
+    // the budget new sessions start with (this browser's; ⋯ › Budget sets it) — none on your plan (no dollars there)
+    const budget = bedrock ? (opts.budget === undefined ? s.budgetNext : opts.budget) : null;
     const proj = s.projects.find((p) => p.id === (opts.project ?? s.project)) ?? currentProject(s);
     if (proj.id !== s.project) setProject(proj.id, { keepSession: true });
-    const { id } = await api.openSession({ model: sendModel(model, s), mode, effort, budget, project: proj.id });
+    const { id } = await api.openSession({ model: bedrock ? sendModel(model, s) : model || undefined, mode, effort, budget, project: proj.id,
+      ...(bedrock ? {} : { harness }), ...(opts.carry ? { carry: opts.carry } : {}) });
     set((x) => ({ ...x, startWith: null, where: { ...x.where, [id]: { project: proj.id, cwd: proj.path } } }));
     loadedHistory.add(id);
-    ensureView(id, { state: 'idle', model, mode, effort, budget });
+    ensureView(id, { state: 'idle', model, mode, effort, budget, harness });
     if (budget) rememberBudget(id, budget);
     set((x) => ({ ...x, active: id, sheet: null }));
     setPrefs((p) => ({ ...p, lastSession: id }));
@@ -1303,10 +1356,16 @@ async function openExisting(id: string, fork: boolean, before?: string, text = '
   try {
     const info = s.sessions.find((x) => x.id === id);
     const src = s.views[id];
-    const model = (fork && sendModel(src?.model, s)) || defaultModel(s);
-    // its budget goes with it (a fork starts with the one new sessions get)
-    const budget = fork ? s.budgetNext : (src?.budget ?? storedBudget(id));
-    const { id: newId, existing, fresh } = await api.openSession({ model: sendModel(model, s), mode: startMode(s.prefs.mode, 'default', autoOk(s)), effort: s.prefs.effort, resume: id, fork, before,
+    // who answered in it: it is taken up again with the same (the backend knows; Bedrock's choices only for Bedrock's)
+    const harness = info?.harness ?? src?.harness ?? 'bedrock';
+    const bedrock = harness === 'bedrock';
+    const model = bedrock ? (fork && sendModel(src?.model, s)) || defaultModel(s) : '';
+    // its budget goes with it (a fork starts with the one new sessions get) — none on your plan
+    const budget = bedrock ? (fork ? s.budgetNext : (src?.budget ?? storedBudget(id))) : null;
+    let startIn = startMode(s.prefs.mode, 'default', autoOk(s));
+    if (!bedrock && startIn === 'auto') startIn = 'default';
+    const { id: newId, existing, fresh } = await api.openSession({ model: bedrock ? sendModel(model, s) : undefined, mode: startIn,
+      effort: bedrock || harness === 'claude' ? s.prefs.effort : null, resume: id, fork, before,
       budget: budget ? { ...budget, ...(fork ? {} : spentOf(src)) } : null });
     if (existing) {
       // open already (another tab, another device): the same process — attach to it; its history merges after the replay
@@ -1331,7 +1390,7 @@ async function openExisting(id: string, fork: boolean, before?: string, text = '
       const views = { ...x.views };
       delete views[newId];
       const name = info?.title || src?.title || info?.firstPrompt || id.slice(0, 8);
-      views[newId] = newView(newId, { state: 'idle', model, mode: startMode(x.prefs.mode, 'default', autoOk(x)), title: fork ? label(`Fork of ${name}`, 200) : info?.title ?? '', budget });
+      views[newId] = newView(newId, { state: 'idle', model, mode: startIn, title: fork ? label(`Fork of ${name}`, 200) : info?.title ?? '', budget, harness });
       return { ...x, views, active: newId, sheet: null };
     });
     setPrefs((p) => ({ ...p, lastSession: newId }));
@@ -1586,6 +1645,19 @@ export function interrupt(): void {
 /** Switch the model (by its full id). A switch Claude Code refuses (its model check can fail on a slow API) is taken
  *  back here — the model that runs stays shown, and remembered — and said. -> whether it switched */
 export async function setModel(name: string): Promise<boolean> {
+  // a session on your plan or with an agent: the model as its tool names it (the backend checks it against its list)
+  const av = activeView();
+  if (av && av.harness !== 'bedrock') {
+    if (av.state === 'closed') return false;
+    const prev = av.model;
+    updateView(av.id, (x) => ({ ...x, model: name }));
+    const r = await wsRequest({ type: 'set_model', session: av.id, model: name }, 60_000);
+    if (r.ok) return true;
+    updateView(av.id, (x) => (x.model === name ? { ...x, model: prev } : x));
+    if (r.said) toast(`Still on ${prev || 'its model'}`, 'error', undefined, r.said);
+    else toast(`Still on ${prev || 'its model'}: ${r.error || 'the switch did not go through'}`, 'error');
+    return false;
+  }
   const model = sendModel(name);
   if (!model) {
     toast(`"${label(name, 40)}" is not a model bedrock-now serves here.`, 'error');

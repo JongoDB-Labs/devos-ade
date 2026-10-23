@@ -20,10 +20,10 @@ import {
   readOnlyTopOf,
   safe,
 } from './text';
-import type { AvailablePlugin, BnModel, Compat, Catalog, KeyBudget, RuleLine, CliModel, Command, ContextUsage, EditInfo, Ev, FileData, FsEntry, GitBranch, GitCommit, GitEntry, GitEvent, GitFile, GitFileDiff, GitHostRef, GitHostView, GitImported, GitOAuthView, GitSignInConfig, GitSignInFlow, GitIdentity, GitPlan, GitRemote, GitRemoteState, GitRemoteUrl, GitReview, GitRunResult, GitScope, GitStatus, GrepResult, Hunk, ImageBlock, InitInfo, InstalledPlugin, LoadedPlugin, Marketplace, McpServer, Mode, LaunchEntry, LaunchList, OpenSession, Outcome, PermissionReq, PortInfo, PreviewInfo, PreviewLink, RunList, RunResult, RunSource, RunSourceInfo, RunTask, ServerMsg, ServerState, SessionInfo, SessionState, SpendRow, Suggestion, WatchChange, SandboxWords, ImportTool, ImportedFrom, ImportRow, ImportView, ImportFinding,
+import type { Harness, HarnessInfo, PlanUsage, AvailablePlugin, BnModel, Compat, Catalog, KeyBudget, RuleLine, CliModel, Command, ContextUsage, EditInfo, Ev, FileData, FsEntry, GitBranch, GitCommit, GitEntry, GitEvent, GitFile, GitFileDiff, GitHostRef, GitHostView, GitImported, GitOAuthView, GitSignInConfig, GitSignInFlow, GitIdentity, GitPlan, GitRemote, GitRemoteState, GitRemoteUrl, GitReview, GitRunResult, GitScope, GitStatus, GrepResult, Hunk, ImageBlock, InitInfo, InstalledPlugin, LoadedPlugin, Marketplace, McpServer, Mode, LaunchEntry, LaunchList, OpenSession, Outcome, PermissionReq, PortInfo, PreviewInfo, PreviewLink, RunList, RunResult, RunSource, RunSourceInfo, RunTask, ServerMsg, ServerState, SessionInfo, SessionState, SpendRow, Suggestion, WatchChange, SandboxWords, ImportTool, ImportedFrom, ImportRow, ImportView, ImportFinding,
   ImportPreview, ImportResult, ImportRequest, ImportCounts, ProjectSuggestion, SetupTool, SetupKind, SetupRow, SetupView, SetupCounts, SetupPreview, SetupFlag, SetupWrite,
   SetupSecret, SetupFinding, SetupResult } from './types';
-import { MODES, COMPATS } from './types';
+import { MODES, COMPATS, HARNESS_IDS } from './types';
 import { normBudget, type Budget as SessionBudget } from './budget';
 import { promptTitle } from './mentions';
 import { cwdOk, goneCwdOk, normProject, normProjects, normSessionSettings, normSettingsView, projectIdOk, WORKSPACE_ID, WORKSPACE_PATH, type Project, type SettingsView } from './projects';
@@ -168,8 +168,22 @@ function normEdit(v: unknown): EditInfo | null {
   return { path, original, hunks: normHunks(o.hunks ?? o.structuredPatch), complete: o.complete !== false, created: o.created === true };
 }
 
+const HARNESS_SET = new Set<string>(HARNESS_IDS);
+export const harnessOf = (v: unknown): Harness => (typeof v === 'string' && HARNESS_SET.has(v) ? (v as Harness) : 'bedrock');
+/** a session's use of your plan, as the backend counts it: tokens and turns (never dollars), the plan's own limits */
+export function normPlan(v: unknown): PlanUsage | null {
+  const o = obj(v);
+  if (!o) return null;
+  const n = (x: unknown) => Math.floor(nonneg(x) ?? 0);
+  return { input: n(o.input), output: n(o.output), cached: n(o.cached), turns: n(o.turns),
+    limits: arr(o.limits, 4).map((x) => obj(x)).filter((x): x is Obj => x !== null && typeof x.label === 'string')
+      .map((x) => ({ label: label(x.label, 30), usedPercent: x.usedPercent === null ? null : Math.min(1000, Math.round(nonneg(x.usedPercent) ?? 0)), resetsAt: time(x.resetsAt) || null })) };
+}
 function normInit(o: Obj): InitInfo {
   return {
+    ...(o.harness !== undefined ? { harness: harnessOf(o.harness) } : {}),
+    ...(Array.isArray(o.models) ? { models: arr(o.models, 200).map((m) => obj(m)).filter((m): m is Obj => m !== null && typeof m.id === 'string' && MODEL_ID.test(m.id))
+      .map((m) => ({ id: m.id as string, name: label(m.name || m.id, 120) })) } : {}),
     model: label(o.model, 128),
     mode: mode(o.permissionMode ?? o.mode),
     cwd: label(o.cwd, 500),
@@ -467,7 +481,8 @@ export function normServerMsg(raw: string): ServerMsg | null {
         ? { kind: 'session_state', session, state, model: typeof o.model === 'string' && MODEL_ID.test(o.model) ? o.model : null, mode: mode(o.mode),
           // (an older backend says nothing about budgets: no key, not "none")
           ...(o.budget === undefined ? {} : { budget: normBudget(o.budget) }), ...(time(o.lastActive) ? { lastActive: time(o.lastActive) } : {}),
-          ...(o.settings === undefined ? {} : { settings: normSessionSettings(o.settings) }) }
+          ...(o.settings === undefined ? {} : { settings: normSessionSettings(o.settings) }),
+          ...(o.harness === undefined ? {} : { harness: harnessOf(o.harness) }), ...(o.plan === undefined ? {} : { plan: normPlan(o.plan) }) }
         : null;
     }
     case 'reset': {
@@ -601,6 +616,8 @@ function normOpen(v: unknown): OpenSession | null {
     cwd: cwdOk(o.cwd) ? o.cwd : WORKSPACE_PATH,
     project: projectIdOk(o.project) ? o.project : WORKSPACE_ID,
     settings: normSessionSettings(o.settings),
+    harness: harnessOf(o.harness),
+    plan: normPlan(o.plan),
   };
 }
 
@@ -636,7 +653,23 @@ export async function getState(): Promise<ServerState> {
     egressHost: typeof obj(o.sandbox)?.egressHost === 'boolean' ? (obj(o.sandbox)?.egressHost as boolean) : null,
     workspace: typeof obj(o.sandbox)?.workspace === 'string' ? label(obj(o.sandbox)?.workspace, 1000) || null : null,
     remote: o.remote === true,
+    agents: obj(o.subscriptions)?.agents === true,
+    planAllowed: obj(o.subscriptions)?.plan === true,
   };
+}
+
+/** Who may answer a new session (GET /api/harnesses): each of your subscriptions, there, signed in, allowed here. */
+export async function getHarnesses(fresh = false): Promise<HarnessInfo[]> {
+  const o = await request('GET', '/api/harnesses' + q({ fresh: fresh ? 1 : undefined }));
+  const out: HarnessInfo[] = [];
+  for (const v of arr(o.harnesses, 10)) {
+    const h = obj(v);
+    const id = harnessOf(h?.id);
+    if (!h || id === 'bedrock' || out.some((x) => x.id === id)) continue;
+    const signed = h.signed === 'yes' || h.signed === 'no' ? h.signed : 'unknown';
+    out.push({ id, name: label(h.name, 40) || id, provider: label(h.provider, 40), plan: label(h.plan, 80), installed: h.installed === true, signed, allowed: h.allowed === true });
+  }
+  return out;
 }
 
 export function normSessionInfo(v: unknown): SessionInfo | null {
@@ -657,6 +690,7 @@ export function normSessionInfo(v: unknown): SessionInfo | null {
     cwd,
     project: projectIdOk(o.project) ? o.project : WORKSPACE_ID,
     imported: importedFrom(o.imported),
+    harness: harnessOf(o.harness),
   };
 }
 const IMPORT_TOOLS: readonly ImportTool[] = ['claude', 'claude-bedrock'];
@@ -710,6 +744,9 @@ export interface OpenOptions {
   budget?: (SessionBudget & { spent?: number }) | null;
   /** a new session's project (its folder: the backend's records); a resumed or forked one runs in its own folder */
   project?: string;
+  /** who answers in a new session (none: Claude Code on Bedrock); carry: a session whose conversation goes with it */
+  harness?: Harness;
+  carry?: string;
 }
 /** POST /api/sessions -> its id, and `existing` when the backend already had that session open (then it is the
  *  same process: attach to it, never start a second one). A full house answers 409 (shown as the error). */
@@ -723,6 +760,8 @@ export async function openSession(opts: OpenOptions): Promise<{ id: string; exis
   if (opts.before) body.before = opts.before;
   if (opts.budget) body.budget = { usd: opts.budget.usd, hard: opts.budget.hard, ...(opts.budget.spent !== undefined ? { spent: opts.budget.spent } : {}) };
   if (!opts.resume && opts.project && opts.project !== WORKSPACE_ID && projectIdOk(opts.project)) body.project = opts.project;
+  if (!opts.resume && opts.harness && opts.harness !== 'bedrock') body.harness = opts.harness;
+  if (!opts.resume && opts.carry && isUuid(opts.carry)) body.carry = opts.carry;
   // this page has a Stop per background task, so an interrupt spares them (the backend's taskStop)
   body.taskStop = true;
   const o = await request('POST', '/api/sessions', body);

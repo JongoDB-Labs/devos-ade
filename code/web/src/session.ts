@@ -6,10 +6,12 @@ import type {
   ContextUsage,
   EditInfo,
   Ev,
+  Harness,
   InitInfo,
   McpServer,
   Mode,
   PermissionReq,
+  PlanUsage,
   SessionState,
   SpendRow,
   Task,
@@ -93,6 +95,9 @@ export interface SessionView {
   budget: Budget | null;
   /** what of its folder's own Claude Code settings its process got (null: not said) */
   settings: SessionSettings | null;
+  /** who answers in it (bedrock: Claude Code on Bedrock), and what a session on your plan used */
+  harness: Harness;
+  plan: PlanUsage | null;
   /** the backend's last activity of this session (its lastActive), for the cold-cache line */
   lastActive: number | null;
   /** the session's spend when it was last looked at (budget warnings fire when it crosses a level) */
@@ -122,6 +127,8 @@ export function newView(id: string, init: Partial<SessionView> = {}): SessionVie
     cliModels: [],
     mcp: [],
     init: null,
+    harness: 'bedrock',
+    plan: null,
     turns: [],
     spend: null,
     context: null,
@@ -193,6 +200,7 @@ export function applyEvent(v: SessionView, ev: Ev, now = Date.now()): SessionVie
         init: ev.init,
         model: ev.init.model || v.model,
         mode: ev.init.mode ?? v.mode,
+        harness: ev.init.harness ?? v.harness,
       };
       if (prev && prev.model && ev.init.model && prev.model !== ev.init.model) {
         next = push(next, { t: 'notice', k: next.nextKey, text: `Model: ${ev.init.model}`, level: 'info' });

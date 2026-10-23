@@ -41,7 +41,7 @@ import * as api from '../api';
 import { GROUP_LABEL, groupOf, type Group } from '../groups';
 import { needsLook, RECHECK_TEXT, rootOk, sessionsByProject, settingsApplied, visibleWs, WORKSPACE_ID, type Project, type SettingsView } from '../projects';
 import type { SessionView } from '../session';
-import type { ImportedFrom, SessionInfo } from '../types';
+import type { Harness, ImportedFrom, SessionInfo } from '../types';
 import { ago, label } from '../text';
 import { Icon, Spinner } from './icons';
 import { SandboxSaid } from './Said';
@@ -65,8 +65,11 @@ function StateDot({ v }: { v: SessionView | undefined }) {
   return <span class="sdot live" title="open" />;
 }
 
+// who answered in a session, as its row says it (Claude Code on Bedrock: nothing)
+export const HARNESS_BADGE: Record<Harness, string> = { bedrock: '', claude: 'Plan', codex: 'Codex', copilot: 'Copilot', cursor: 'Cursor', grok: 'Grok' };
+
 function Row(props: { id: string; title: string; sub: string; view?: SessionView; active: boolean; picking: boolean; picked: boolean; onPick: (on: boolean) => void;
-  gone?: boolean; imported?: ImportedFrom | null; continueTo?: { id: string; name: string } | null }) {
+  gone?: boolean; imported?: ImportedFrom | null; continueTo?: { id: string; name: string } | null; harness?: Harness }) {
   const [renaming, setRenaming] = useState(false);
   const [val, setVal] = useState(props.title);
   const input = useRef<HTMLInputElement>(null);
@@ -104,6 +107,11 @@ function Row(props: { id: string; title: string; sub: string; view?: SessionView
         <button type="button" class="sess-main" onClick={() => (props.picking ? props.onPick(!props.picked) : void (open ? activate(props.id) : resumeSession(props.id)))}
           title={props.gone ? 'Show this session (read only: its folder is no longer added)' : open ? 'Show this session' : 'Resume this session'}>
           <span class="sess-title">
+            {props.harness && props.harness !== 'bedrock' && (
+              <span class="imp-badge plan" title={props.harness === 'claude' ? 'Claude on your plan' : `${HARNESS_BADGE[props.harness]} on your plan`} data-testid="session-harness">
+                {HARNESS_BADGE[props.harness]}
+              </span>
+            )}
             {props.imported && (
               <span class="imp-badge" title={`Copied from ${TOOL_LABEL[props.imported.tool]} on the computer running bedrock-now${props.imported.forked ? ' (as a new session)' : ''}`}
                 data-testid="session-imported">{TOOL_BADGE[props.imported.tool]}</span>
@@ -275,7 +283,7 @@ export function ProjectsPanel() {
   };
   const row = (id: string, title: string, sub: string, v?: SessionView, gone = false, p?: Project) => (
     <Row key={id} id={id} view={v} active={id === active} title={title} sub={sub} picking={picking && !gone} picked={picked.includes(id)} onPick={(on) => pick(id, on)}
-      gone={gone} imported={info.get(id)?.imported ?? null} continueTo={p && !gone ? continueTo(id, p) : null} />
+      gone={gone} imported={info.get(id)?.imported ?? null} continueTo={p && !gone ? continueTo(id, p) : null} harness={v?.harness ?? info.get(id)?.harness} />
   );
   const live = projects.filter((p) => !p.gone);
   const gone = projects.filter((p) => p.gone);

@@ -2,12 +2,12 @@
 // (/.bn/models), never from the CLI; costs come from bedrock-now's spend logs (/.bn/spend).
 import { useState } from 'preact/hooks';
 import { useSel } from '../store';
-import { store, setModel, setMode, setEffort, activeView, defaultModel, refreshSpend, autoOk, setPrefs, toast } from '../app';
+import { store, setModel, setMode, setEffort, activeView, defaultModel, refreshSpend, autoOk, setPrefs, toast, switchHarness, harnessName, planOf, refreshHarnesses } from '../app';
 import { COMPAT_INFO, GROUP_TITLE, compatWarning, findModel, hiddenCount, modelSections } from '../models';
 import { STARRED_MAX } from '../prefs';
 import { meter } from '../spend';
 import { percent } from '../budget';
-import type { BnModel } from '../types';
+import type { BnModel, Harness, HarnessInfo, PlanUsage } from '../types';
 import { MODE_INFO, offeredModes, startMode } from '../modes';
 import { label, money, perMtok, tokens } from '../text';
 import { Dropdown, MenuItem } from './ui';
@@ -41,7 +41,93 @@ function pick(m: BnModel): void {
   });
 }
 
+// Claude on your plan's models: Claude Code's own names there (what your plan offers; its default when none)
+const PLAN_MODELS = [{ id: 'default', name: "Your plan's default" }, { id: 'opus', name: 'Opus' }, { id: 'sonnet', name: 'Sonnet' }, { id: 'haiku', name: 'Haiku' }];
+
+/** a subscription in the picker: whether it can start here, in words */
+export function harnessState(h: HarnessInfo): { ok: boolean; says: string } {
+  if (!h.installed) return { ok: false, says: 'not in the sandbox' };
+  if (!h.allowed) return { ok: false, says: 'off: Settings › Claude Code › Your AI subscriptions' };
+  if (h.signed === 'no') return { ok: false, says: `sign in first: the terminal's Open › ${h.name}` };
+  return { ok: true, says: h.signed === 'yes' ? 'signed in' : 'sign-in not known here' };
+}
+
+/** "Who answers" in the model picker: Claude Code on Bedrock, and each of your subscriptions (a switch: a new session
+ *  with it here, the conversation so far carried over) */
+function WhoAnswers({ current, close }: { current: Harness; close: () => void }) {
+  const list = useSel(store, (s) => s.harnesses);
+  const agents = useSel(store, (s) => s.server?.agents === true);
+  if (!agents) return null;
+  return (
+    <div class="mp-group" role="group" aria-label="Who answers" data-testid="who-answers">
+      <div class="mp-group-head">Who answers</div>
+      <MenuItem checked={current === 'bedrock'} testid="harness-bedrock" onSelect={() => { close(); if (current !== 'bedrock') void switchHarness('bedrock'); }}>
+        <span class="mi-title">Claude Code on Bedrock</span>
+        <span class="mi-desc">the models below, billed as bedrock-now bills them</span>
+      </MenuItem>
+      {(list ?? []).map((h) => {
+        const st = harnessState(h);
+        return (
+          <MenuItem key={h.id} checked={current === h.id} disabled={!st.ok && current !== h.id} testid={`harness-${h.id}`}
+            onSelect={() => { close(); if (current !== h.id && st.ok) void switchHarness(h.id); }}>
+            <span class="mi-title">{h.id === 'claude' ? 'Claude · your plan' : h.name}<span class="mp-badge tone-info">your plan</span></span>
+            <span class="mi-desc">{h.plan} · {st.says}</span>
+          </MenuItem>
+        );
+      })}
+      {list === null && <div class="panel-note">Your subscriptions are being listed…</div>}
+      <div class="panel-note">
+        Each answers through its own app in the sandbox, signed in there with its own sign-in; usage counts against your plan (no $). Switching starts a new session in
+        this project's folder with your conversation so far.{' '}
+        <button type="button" class="link" onClick={() => void refreshHarnesses(true)}>Check again</button>
+      </div>
+    </div>
+  );
+}
+
 export function ModelPicker({ compact }: { compact?: boolean }) {
+  const harness = useSel(store, (s) => activeView(s)?.harness ?? 'bedrock');
+  if (harness !== 'bedrock') return <PlanModelPicker compact={compact} />;
+  return <BedrockModelPicker compact={compact} />;
+}
+
+/** A session on your plan or with an agent: who answers, and the models its own tool offers */
+function PlanModelPicker({ compact }: { compact?: boolean }) {
+  const v = useSel(store, (s) => activeView(s));
+  const names = useSel(store, (s) => (v ? harnessName(v.harness, s) : ''));
+  if (!v) return null;
+  const models = v.harness === 'claude' ? PLAN_MODELS : v.init?.models ?? [];
+  const cur = models.find((m) => m.id === v.model)?.name ?? (v.model || 'its default');
+  return (
+    <Dropdown title={`Who answers: ${names} · ${cur}`} class="picker" panelClass="model-panel" testid="model-picker"
+      trigger={
+        <>
+          <Icon name="model" size={15} />
+          <span class="picker-value">{compact ? names.replace(/ · your plan$/, '') : `${names} · ${cur}`}</span>
+          <span class="mp-badge tone-info">your plan</span>
+          <Icon name="chevronDown" size={13} class="picker-chev" />
+        </>
+      }>
+      {(close) => (
+        <>
+          <WhoAnswers current={v.harness} close={close} />
+          <div class="mp-group" role="group" aria-label={`${names}'s models`} data-testid="plan-models">
+            <div class="mp-group-head">{names}'s models</div>
+            {models.map((m) => (
+              <MenuItem key={m.id} checked={m.id === v.model} testid={`plan-model-${m.id}`} onSelect={() => { close(); void setModel(m.id); }}>
+                <span class="mi-title">{m.name}</span>
+                <span class="mi-desc">{m.id}</span>
+              </MenuItem>
+            ))}
+            {!models.length && <div class="panel-note">Its models are listed once it has started (send a prompt).</div>}
+          </div>
+        </>
+      )}
+    </Dropdown>
+  );
+}
+
+function BedrockModelPicker({ compact }: { compact?: boolean }) {
   const bn = useSel(store, (s) => s.models);
   const err = useSel(store, (s) => s.modelsError);
   const viewModel = useSel(store, (s) => activeView(s)?.model ?? '');
@@ -80,6 +166,7 @@ export function ModelPicker({ compact }: { compact?: boolean }) {
     >
       {(close) => (
         <>
+          <WhoAnswers current="bedrock" close={close} />
           <div class="panel-head mp-head">
             <span>Model</span>
             {bn?.scope && bn.scope.mode !== 'all' && (
@@ -203,8 +290,10 @@ export function toggleStar(id: string): void {
 export function ModePicker({ compact }: { compact?: boolean }) {
   // (no session: the mode the next one starts in — a remembered Auto shows as Manual while Settings do not allow it)
   const mode = useSel(store, (s) => activeView(s)?.mode ?? startMode(s.startWith ?? s.prefs.mode, 'default', autoOk(s)));
-  const allowBypass = useSel(store, (s) => s.server?.allowBypass === true);
-  const allowAuto = useSel(store, (s) => s.server?.allowAuto === true);
+  // (a subscription's agent: Read only, Plan, Manual, Accept edits — its own "approve everything" modes are never used)
+  const agent = useSel(store, (s) => { const h = activeView(s)?.harness; return h !== undefined && h !== 'bedrock' && h !== 'claude'; });
+  const allowBypass = useSel(store, (s) => s.server?.allowBypass === true) && !agent;
+  const allowAuto = useSel(store, (s) => s.server?.allowAuto === true) && !agent;
   const signal = useSel(store, (s) => s.modeMenu);
   const info = MODE_INFO[mode] ?? MODE_INFO.default;
   const name = compact && mode === 'bypassPermissions' ? 'Bypass' : info.label;
@@ -247,7 +336,8 @@ export function ModePicker({ compact }: { compact?: boolean }) {
               </MenuItem>
             );
           })}
-          {(!allowAuto || !allowBypass) && (
+          {agent && <div class="panel-note" data-testid="mode-agent">This tool's own sessions take Read only, Plan, Manual and Accept edits: what it asks goes to you; Read only and Plan refuse its changes.</div>}
+          {!agent && (!allowAuto || !allowBypass) && (
             <div class="panel-note" data-testid={allowBypass ? 'mode-auto-off' : 'mode-bypass-off'}>
               {!allowAuto && !allowBypass ? 'Auto and Bypass permissions are off' : !allowAuto ? 'Auto is off' : 'Bypass permissions is off'}. Settings › Claude Code turns{' '}
               {!allowAuto && !allowBypass ? 'them' : 'it'} on (from the computer running bedrock-now).
@@ -318,10 +408,29 @@ export function EffortPicker() {
   );
 }
 
+/** a session on your plan: its tokens and turns, and the plan's own limits as its tool reported them — never dollars */
+export function planText(p: PlanUsage | null, plan: string): { short: string; long: string } {
+  const u = p ?? { input: 0, output: 0, cached: 0, turns: 0, limits: [] };
+  const lim = u.limits.map((l) => `${l.label}: ${l.usedPercent === null ? '?' : `${l.usedPercent}%`} used${l.resetsAt ? ` (resets ${new Date(l.resetsAt).toLocaleString()})` : ''}`);
+  return { short: `${tokens(u.input + u.cached)} in · ${tokens(u.output)} out`,
+    long: `On ${plan}: ${tokens(u.input + u.cached)} tokens in (${tokens(u.cached)} cached), ${tokens(u.output)} out, ${u.turns} turn${u.turns === 1 ? '' : 's'} in this session. No dollars: it counts against your plan's own limits.${lim.length ? `\n${lim.join('\n')}` : ''}` };
+}
+
 export function CostMeter() {
   const v = useSel(store, (s) => activeView(s));
   const budget = useSel(store, (s) => s.budget);
+  const plan = useSel(store, (s) => (v ? planOf(v.harness, s) : null));
   if (!v) return null;
+  if (v.harness !== 'bedrock') {
+    const t = planText(v.plan, plan ?? 'your plan');
+    const near = v.plan?.limits.some((l) => (l.usedPercent ?? 0) >= 80);
+    return (
+      <span class={`meter-btn plan${near ? ' warn' : ''}`} title={t.long} data-testid="cost-plan">
+        <span class="meter-label">on {plan ?? 'your plan'} · </span>
+        <span class="meter-fig">{t.short}</span>
+      </span>
+    );
+  }
   const { turn, session } = meter(v.turns, v.spend);
   const pct = v.budget ? percent(session, v.budget) : 0;
   const level = !v.budget ? '' : pct >= 100 ? ' over' : pct >= 80 ? ' warn' : '';
