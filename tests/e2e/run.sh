@@ -1194,8 +1194,9 @@ SH
       record subscriptions chat-models PASS "$(( $(now) - t0 ))" "Open WebUI's connection: plan-copilot listed (others not signed in), its real ACP agent answered \"not signed in\" (409); no key 401; Claude on your plan off (403); the main Caddy cannot reach it"
     else record subscriptions chat-models FAIL "$(( $(now) - t0 ))" "models: $(printf '%s' "$models" | head -c 200); no key: $nokey; ask: $(printf '%s' "$ask" | tr '\n' ' ' | tail -c 200); claude: $(printf '%s' "$off" | tail -n 1); caddy: $from_caddy"; fi
   else record subscriptions chat-models SKIP 0 "needs the Code page and its Chat key"; fi
-  # Chat's own sandbox (subs-chat): the terminal's image and home, no workspace or project folder, none of the stack's
-  # names (gateway, terminal, LiteLLM) resolvable, bn-coded in Chat's role refusing the workspace's ops — and the
+  # Chat's own sandbox (subs-chat): the terminal's image, a home of its own, no workspace or project folder mounted, none
+  # of the stack's names (gateway, LiteLLM, shared-mcp, the portal, Open WebUI, the code container) resolvable — the
+  # terminal's is, on the egress proxy's network they share —, bn-coded in Chat's role refusing the workspace's ops — and the
   # workspace's bn-coded refusing a Chat conversation; Codex as Chat starts it, asked for its own configuration (no
   # sign-in needed): shell, MCP servers and web search off
   sc="$(svc_id subs-chat)"
@@ -1206,10 +1207,11 @@ SH
 const [sock, req] = [process.argv[1], process.argv[2]];
 const c = net.connect(sock); const b = Buffer.from(req); const h = Buffer.alloc(5); h[0] = 1; h.writeUInt32BE(b.length, 1);
 c.write(Buffer.concat([h, b])); let buf = Buffer.alloc(0);
-c.on("data", (d) => { buf = Buffer.concat([buf, d]); if (buf.length >= 5 && buf.length >= 5 + buf.readUInt32BE(1)) { console.log(buf[0], buf.subarray(5, 5 + buf.readUInt32BE(1)).toString()); c.destroy(); } });
+c.on("data", (d) => { buf = Buffer.concat([buf, d]); if (buf.length >= 5 && buf.length >= 5 + buf.readUInt32BE(1)) { console.log(buf[0], buf.subarray(5, 5 + buf.readUInt32BE(1)).toString()); process.exit(0); } });
 setTimeout(() => { console.log("timeout"); process.exit(0); }, 20000);'
-    mounts="$(docker exec "$sc" sh -c 'test -e /workspace && echo workspace-there; grep -c " /workspace" /proc/self/mountinfo' 2>&1 | tr '\n' ' ')"
-    names="$(docker exec "$sc" sh -c 'for h in gateway terminal litellm shared-mcp portal; do getent hosts "$h" >/dev/null 2>&1 && printf "%s " "$h"; done; true' 2>&1)"
+    # (/workspace: the image's empty folder, nothing mounted there)
+    mounts="$(docker exec "$sc" sh -c 'grep -c " /workspace" /proc/self/mountinfo; ls -A /workspace 2>/dev/null | wc -l' 2>&1 | tr '\n' ' ')"
+    names="$(docker exec "$sc" sh -c 'for h in gateway litellm shared-mcp portal open-webui code code-upstream code-chat postgres; do getent hosts "$h" >/dev/null 2>&1 && printf "%s " "$h"; done; true' 2>&1)"
     # its home is its own: a file the terminal puts in its home is not there, one in a sign-in folder (~/.codex) is
     docker exec "$tc" sh -c 'touch ~/.bn-e2e-home-mark ~/.codex/.bn-e2e-codex-mark' >/dev/null 2>&1
     homes="$(docker exec "$sc" sh -c 'test -e ~/.bn-e2e-home-mark && echo terminal-home-seen; test -e ~/.codex/.bn-e2e-codex-mark && echo codex-shared; test -e ~/.config/bedrock-now && echo terminal-config-seen; true' 2>&1 | tr '\n' ' ')"
@@ -1230,7 +1232,7 @@ send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'e2e', title: 
 setTimeout(() => { console.log('timeout'); p.kill(); process.exit(0); }, 30000);
 JS
 )"
-    if [ "$(printf '%s' "$mounts" | tr -d ' ')" = 0 ] && [ -z "$names" ] && [ "$homes" = "codex-shared " ] && printf '%s' "$chat_refuses" | grep -q "not in Chat's sandbox" \
+    if [ "$(printf '%s' "$mounts" | tr -d ' ')" = 00 ] && [ -z "$names" ] && [ "$homes" = "codex-shared " ] && printf '%s' "$chat_refuses" | grep -q "not in Chat's sandbox" \
       && printf '%s' "$term_refuses" | grep -q "run in their own sandbox" \
       && printf '%s' "$codex_cfg" | grep -q '"shell":false,"exec":false,"web":"disabled","mcp":{},"apps":false,"plugins":false'; then
       record subscriptions chat-sandbox PASS "$(( $(now) - t0 ))" "Chat's sandbox: no workspace, a home of its own with the sign-in folders alone, none of the stack's names; it refuses the workspace's ops and the workspace refuses Chat's; Codex there: shell, web search, MCP, apps, plugins off"

@@ -4942,7 +4942,9 @@ export function start() {
   return server;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) {
+// (run as a program, not imported — a script read from stdin, `node -`, imports it with "-" there: not this file)
+const isMain = (() => { try { return Boolean(process.argv[1]) && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href; } catch { return false; } })();
+if (isMain) {
   // (--run-task: the runner of a Run & test task, in its tmux window — runStart above; --run-tty: a launch.json entry's)
   if (process.argv[2] === '--run-task') {
     const [dir, id, sep, ...argv] = process.argv.slice(3);

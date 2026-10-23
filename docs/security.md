@@ -3159,7 +3159,7 @@ never reads, copies, keeps, passes on or relays a login.**
   the sessions a conversation takes up again (Codex's rollouts, Copilot's session state, Cursor's chats, Grok's
   sessions, Claude's transcripts); a Chat turn can so change what that tool keeps, never anything else the terminal
   runs. Nothing else of yours: no workspace, no project folder (neither is mounted), no LiteLLM key, no MCP token, not on
-  the terminal's network (its gateway, LiteLLM, shared-mcp: no name resolves there), `read_only`, `cap_drop: ALL`,
+  the terminal's network (its gateway, LiteLLM, shared-mcp: no name resolves there; its one network is the egress proxy's, which the terminal is on too — a dev server of yours listening on every address in the terminal answers it there, and Chat's agents have no tool to ask), `read_only`, `cap_drop: ALL`,
   `no-new-privileges`, 2 GB, 512 processes; its way out is the sandbox's (the egress proxy by default). Its one program
   is bn-coded in Chat's role, which runs Chat's conversations and nothing else (no file, Git, project or session op);
   the workspace's bn-coded refuses a Chat conversation. The code container reaches it on one socket of its own
