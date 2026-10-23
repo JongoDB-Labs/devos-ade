@@ -31,9 +31,21 @@ const segsOk = (segs) => segs.every((x) => x !== '' && x !== '.' && x !== '..');
 // tool each name is for, or null (Claude Code's own, or not one of them)
 const AGENT_TOOLS_OF = { '.codex': 'Codex', '.cursor': 'Cursor', '.grok': 'Grok', '.gemini': 'Gemini CLI', '.copilot': 'GitHub Copilot', '.agents': 'Codex and GitHub Copilot' };
 const AGENT_GITHUB = ['hooks', 'skills', 'agents', 'copilot'];
+// (a name relative to the project's folder, or — a folder above it, to the git root — absolute in the workspace: its
+// part from the first .claude or tool folder on decides)
+const startsConfig = (s, k) => s[k] === '.claude' || Object.hasOwn(AGENT_TOOLS_OF, s[k]) || (s[k] === '.github' && (k === s.length - 1 || AGENT_GITHUB.includes(s[k + 1])))
+  || (s[k] === '.vscode' && (k === s.length - 1 || (k === s.length - 2 && s[k + 1] === 'mcp.json'))) || (s[k] === '.mcp.json' && k === s.length - 1);
 export function agentToolOf(n) {
-  if (typeof n !== 'string' || n.startsWith('/')) return null;
-  const s = n.toLowerCase().split('/');
+  if (typeof n !== 'string') return null;
+  let s = n.toLowerCase().split('/');
+  if (n.startsWith('/')) {
+    if (!n.startsWith(`${WS}/`)) return null;
+    s = s.slice(2);
+    const k = s.findIndex((x, i) => startsConfig(s, i));
+    if (k < 0 || s[k] === '.claude') return null;
+    s = s.slice(k);
+    if (s[0] === '.mcp.json') return 'other tools (a folder above)';
+  }
   if (Object.hasOwn(AGENT_TOOLS_OF, s[0])) return AGENT_TOOLS_OF[s[0]];
   if (s[0] === '.github' && (s.length === 1 || AGENT_GITHUB.includes(s[1]))) return 'GitHub Copilot';
   if (s[0] === '.vscode' && (s.length === 1 || (s.length === 2 && s[1] === 'mcp.json'))) return 'GitHub Copilot';
@@ -41,7 +53,8 @@ export function agentToolOf(n) {
 }
 const nameOk = (n) => typeof n === 'string' && n.length <= 1024 && !/[\x00-\x1f\x7f]/.test(n) && (n.toLowerCase() === '.mcp.json'
   || (!n.startsWith('/') && n.split('/')[0].toLowerCase() === '.claude' && segsOk(n.split('/')))
-  || (agentToolOf(n) !== null && segsOk(n.split('/')))
+  || (!n.startsWith('/') && agentToolOf(n) !== null && segsOk(n.split('/')))
+  || (n.startsWith(`${WS}/`) && agentToolOf(n) !== null && segsOk(n.slice(WS.length + 1).split('/')))
   || (n.startsWith(`${WS}/`) && n.slice(WS.length + 1).toLowerCase().split('/').includes('.claude') && segsOk(n.slice(WS.length + 1).split('/'))));
 
 /** checkFiles(project.settings' RESULT) -> {files: [{name, type, size, sha256, target, text}], ok}: ok false when the

