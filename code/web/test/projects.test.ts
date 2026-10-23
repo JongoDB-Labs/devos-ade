@@ -160,6 +160,15 @@ test('a project\'s own Claude Code settings: its state in the list, a session\'s
     assert.equal(x?.hash, null, what);
   }
   assert.ok(over({ allow: Array.from({ length: 201 }, (_, i) => `Bash(c${i})`) })?.summary.missing.includes('more than this page shows'));
+  // other tools' files (your subscriptions' agents read them): whole, each with its tool; a long one needs a look; one
+  // longer than the page shows: incomplete
+  const tools = over({ tools: [{ file: '.codex/config.toml', tool: 'Codex', text: '[mcp_servers.x]\ncommand = "evil"', careful: false }, 9,
+    { file: '.cursor/mcp.json', tool: 'Cursor', text: '{\n1\n2\n3\n4\n5\n6}' }] });
+  assert.deepEqual(tools?.summary.tools.map((t) => [t.file, t.tool, t.careful]), [['.codex/config.toml', 'Codex', false], ['.cursor/mcp.json', 'Cursor', true]]);
+  assert.equal(tools?.summary.tools[0].text, '[mcp_servers.x]\ncommand = "evil"');
+  assert.equal(tools?.summary.complete, true);
+  assert.equal(over({ tools: [{ file: '.grok/x.json', tool: 'Grok', text: 'x'.repeat(16200) }] })?.summary.complete, false);
+  assert.deepEqual(over({})?.summary.tools, [], 'an older backend: none');
 });
 
 test('the trust dialog\'s text: whitespace made visible, a value that could hide something asks for a look, every entry whole', () => {

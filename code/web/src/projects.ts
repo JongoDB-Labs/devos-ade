@@ -258,6 +258,8 @@ export interface SettingsSummary {
   notes: { file: string; note: string }[];
   /** every file under .claude/ but the two settings files, with the front matter keys that grant something */
   files: { name: string; size: number | null; grants: { key: string; value: string }[] }[];
+  /** other tools' files in the folder (.codex/, .cursor/, .github/hooks/ …: your subscriptions' agents read them), whole */
+  tools: { file: string; tool: string; text: string; careful: boolean }[];
   /** every key and value of the files is above, whole (else: never trustable — what was left out, in `missing`) */
   complete: boolean;
   missing: string[];
@@ -295,6 +297,8 @@ const FILES_MAX = 500;
 // the backend shows at most 200 entries a section and 2,000 characters a value (with its own "… more characters not
 // shown"): anything beyond that here, too, makes the summary incomplete — never trustable
 const LIST_MAX = 200, TEXT_MAX = 2100;
+// (another tool's file: shown whole up to 16,000 characters, its "… more characters not shown" beside)
+const TOOL_TEXT_MAX = 16100;
 /** The backend's view of a project's settings, checked (everything as text); null when it does not fit. Nothing is cut
  *  silently: whatever does not fit makes it incomplete. */
 export function normSettingsView(v: unknown): SettingsView | null {
@@ -339,6 +343,12 @@ export function normSettingsView(v: unknown): SettingsView | null {
       return s.files.slice(0, FILES_MAX).map((f) => obj(f)).filter((f): f is Obj => !!f)
         .map((f) => ({ name: many(f.name), size: typeof f.size === 'number' && f.size >= 0 ? f.size : null, grants: rows(f.grants, (g) => ({ key: many(g.key), value: many(g.value) })) }));
     })(),
+    tools: rows(s.tools, (t) => {
+      const text = typeof t.text === 'string' ? t.text : '';
+      if (text.length > TOOL_TEXT_MAX) cut = true;
+      const shown = text.slice(0, TOOL_TEXT_MAX);
+      return { file: many(t.file), tool: one(t.tool, 60), text: shown, careful: t.careful === true || needsLook(shown) };
+    }),
     complete: false,
     missing: Array.isArray(s.missing) ? s.missing.slice(0, 20).filter((x) => typeof x === 'string').map((x) => label(x, 200)) : [],
   };

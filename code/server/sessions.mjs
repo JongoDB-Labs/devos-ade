@@ -10,7 +10,7 @@ import { isUuid, isModel, isFullModel, str, short, capped, num } from './validat
 import { START_MODES, SET_MODES, normMode, cliMode, pageMode, permissionsFor, unionPermissions, samePermissions, startFlags } from './modes.mjs';
 import { checkSnapshot, diffSnapshots, mergeSnapshots, watchEvent, revertOf } from './watch.mjs';
 import { WS, cwdOk } from './projects.mjs';
-import { ALL_SOURCES, APPLIED as APPLIED_STATES, withheldText } from './trust.mjs';
+import { ALL_SOURCES, APPLIED as APPLIED_STATES, RECHECK_TEXT, withheldText } from './trust.mjs';
 import { gitNote } from './gitnote.mjs';
 import { SandboxError } from './spawn-client.mjs';
 import { plainRefusal } from './gitreasons.mjs';
@@ -980,6 +980,7 @@ export class SessionManager {
     if (APPLIED_STATES.includes(d.state)) return;
     const what = 'this project\'s own settings (Claude Code\'s and other tools\': .codex/, .cursor/, .grok/, .github/hooks/ …)';
     const why = d.state === 'changed' ? `${what} changed since you trusted them`
+      : d.state === 'recheck' ? `${what} are not applied: ${RECHECK_TEXT}`
       : d.state === 'unverifiable' ? `one of ${what} cannot be checked (a link out of the workspace, too large to show, or not a file), so they cannot be trusted`
         : d.state === 'unchecked' ? `the sandbox did not say what ${what} hold`
           : `${what} are not trusted`;

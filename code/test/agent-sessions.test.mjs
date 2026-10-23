@@ -137,6 +137,7 @@ test('a carried conversation goes in quoted: an earlier answer cannot close the 
 test('an agent starts in a project\'s folder only while its own settings — Claude Code\'s and the other tools\' — are trusted (or none)', async () => {
   const crypto = await import('node:crypto');
   const { makeTrust, hashOf } = await import('../server/trust.mjs');
+  const { TRUST_EPOCH } = await import('../server/projects.mjs');
   const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
   const filesOf = (named) => Object.entries(named).sort(([a], [b]) => (a < b ? -1 : 1))
     .map(([name, text]) => ({ name, type: 'file', size: Buffer.byteLength(text), sha256: sha(text), text, target: null }));
@@ -149,7 +150,7 @@ test('an agent starts in a project\'s folder only while its own settings — Cla
     const files = filesOf({ [name]: text, 'AGENTS.md': 'x' }).filter((f) => f.name !== 'AGENTS.md');
     const rec = { id: 'p1', root: 'proj', name: 'proj', trust: null };
     const call = async (req) => ({ result: req.op === 'project.settings' ? { files: req.text === false ? files.map(({ text: _t, ...f }) => f) : files, hash: hashOf(files), verifiable: true, over: null } : {} });
-    const trust = makeTrust({ call, store: () => ({ list: () => [rec], trust: (id, hash) => { rec.trust = hash ? { hash, at: 1 } : null; } }) });
+    const trust = makeTrust({ call, store: () => ({ list: () => [rec], trust: (id, hash) => { rec.trust = hash ? { hash, at: 1, epoch: TRUST_EPOCH } : null; } }) });
     const { mgr, agents, events } = manager({ scenario: 'ok', more: { decideSettings: trust.decide } });
     try {
       // the page's view lists it whole, as that tool's
@@ -171,6 +172,9 @@ test('an agent starts in a project\'s folder only while its own settings — Cla
       await wait(() => agents.length === 1);
       // the Workspace itself: as always (the folder you chose)
       await mgr.agentSettingsCheck('/workspace', tool);
+      // a trust from before the stricter reading (an earlier epoch): looked at again first, as for Claude Code
+      rec.trust = { hash: v.hash, at: 1 };
+      await assert.rejects(mgr.agentSettingsCheck('/workspace/proj', tool), (e) => e.status === 409 && /are not applied: .*look at them again/.test(e.message), tool);
     } finally { mgr.closeAll(); }
   }
 });

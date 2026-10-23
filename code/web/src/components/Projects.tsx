@@ -36,6 +36,7 @@ import {
   type NewSessionOptions,
   type ProjectDialog,
   type Problem,
+  harnessName,
 } from '../app';
 import * as api from '../api';
 import { GROUP_LABEL, groupOf, type Group } from '../groups';
@@ -861,7 +862,7 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
     recheck: `${RECHECK_TEXT[0].toUpperCase()}${RECHECK_TEXT.slice(1)}: you trusted them${when ? ` ${when}` : ''}, as the page showed them then — it now finds front matter where Claude Code finds it and lists the shell commands skills run. Not applied until you trust them again.`,
     trusted: `Trusted${when ? ` ${when}` : ''}: they apply to sessions in this folder while they stay exactly as they are.`,
     unverifiable: 'One of these files cannot be checked (a link out of the workspace, too large to show, or not a file): they are not applied, and cannot be trusted until it is a plain file of the project.',
-    none: 'This project has no Claude Code configuration of its own (no file under .claude/, no .mcp.json): nothing to trust. Its CLAUDE.md, if any, is read as instructions.',
+    none: 'This project has no configuration of its own for Claude Code or the other tools (no file under .claude/, no .mcp.json, no .codex/, .cursor/ …): nothing to trust. Its CLAUDE.md or AGENTS.md, if any, is read as instructions.',
     workspace: 'The Workspace\'s own settings always apply, as they did before projects.',
     unchecked: 'The sandbox did not say what they hold: they are not applied.',
   };
@@ -886,6 +887,8 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
     ['Other settings', sm.other.map((o) => ({ text: `${o.key}: ${o.value}` })), 'settings-other'],
     ['Skills, commands, agents … — this folder\'s .claude/ and the folders\' above it to the git root: what their front matter grants, and the shell commands they run when used', sm.files.flatMap((f) => (f.grants.length
       ? f.grants.map((g) => ({ text: `${f.name}: ${g.key}: ${g.value}` })) : [{ text: `${f.name}: grants nothing in its front matter, runs no shell command` }])), 'settings-tree'],
+    ['Other tools\' settings — read as they are by your subscriptions\' agents (Codex, Copilot, Cursor, Grok) when they start here: their hooks, MCP servers and rules',
+      sm.tools.map((t) => ({ text: `${t.file} (${t.tool}):\n${t.text}`, careful: t.careful })), 'settings-tools'],
     ['Notes', sm.notes.map((n) => ({ text: `${n.file}: ${n.note}` })), 'settings-notes'],
   ] : [];
   const all = sections.flatMap(([title, rows]) => rowsOf(title, rows));
@@ -949,7 +952,11 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
               packages a trusted hook or MCP server runs (bash scripts/x.sh, npx some-package) — read those too before you trust them.
             </p>
           )}
-          {!settingsApplied(v.state) && (
+          {!settingsApplied(v.state) && start?.harness && start.harness !== 'bedrock' && start.harness !== 'claude' ? (
+            <p class="warn-text small" data-testid="settings-agent-waits">{harnessName(start.harness)} starts in this folder only once you trust them: it reads them as they
+              are — its own and Claude Code&apos;s — with no switch here to leave them out. Every project is in the one sandbox: trusting runs these hooks there, not on your
+              computer.</p>
+          ) : !settingsApplied(v.state) && (
             <p class="muted small">Until then a session here runs with your own settings only (the sandbox&apos;s ~/.claude) and, of MCP servers, the stack&apos;s own; this
               project&apos;s CLAUDE.md, commands and agents are not read either. Every project is in the one sandbox: trusting runs these hooks there, not on your computer.</p>
           )}
@@ -965,7 +972,7 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
         <button type="button" class="btn" onClick={onClose}>
           {start ? 'Cancel' : 'Close'}
         </button>
-        {start && v && !settingsApplied(v.state) && (
+        {start && v && !settingsApplied(v.state) && (!start.harness || start.harness === 'bedrock' || start.harness === 'claude') && (
           <button type="button" class="btn" disabled={busy} onClick={() => void go(null)} data-testid="settings-start-without">
             Start without them
           </button>

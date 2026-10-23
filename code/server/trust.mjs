@@ -10,6 +10,10 @@
 // a .mcp.json needs nothing (a lone CLAUDE.md is read as instructions; it grants nothing). The Workspace (/workspace
 // itself) keeps applying its own, as before projects: it is the folder you chose for the sandbox. Everything here came
 // from the sandbox: shown as text, capped.
+// Other tools' configuration in the folder (.codex/, .cursor/, .grok/, .gemini/, .copilot/, .agents/,
+// .github/{hooks,skills,agents,copilot}/, .vscode/mcp.json: agentToolOf) is listed and hashed with it — one trust for
+// the folder — and shown whole: your subscriptions' agents read it as it is, with no flag that turns it off, so an
+// agent session starts in a project's folder only while that trust holds (SessionManager.agentSettingsCheck).
 import crypto from 'node:crypto';
 import { short, str } from './validate.mjs';
 import { WS, WORKSPACE_ID, absOf, TRUST_EPOCH } from './projects.mjs';
@@ -23,8 +27,21 @@ export const FILES_MAX = 500;
 // a name bn-coded may list: the project's own .mcp.json, its .claude (a link, not a folder) or a path under it —
 // relative —, or a path under a .claude above it, absolute in /workspace; one line, no "." or ".." part
 const segsOk = (segs) => segs.every((x) => x !== '' && x !== '.' && x !== '..');
+// Other tools' configuration in the folder itself (bn-coded's AGENT_TREES …: your subscriptions' agents read it): the
+// tool each name is for, or null (Claude Code's own, or not one of them)
+const AGENT_TOOLS_OF = { '.codex': 'Codex', '.cursor': 'Cursor', '.grok': 'Grok', '.gemini': 'Gemini CLI', '.copilot': 'GitHub Copilot', '.agents': 'Codex and GitHub Copilot' };
+const AGENT_GITHUB = ['hooks', 'skills', 'agents', 'copilot'];
+export function agentToolOf(n) {
+  if (typeof n !== 'string' || n.startsWith('/')) return null;
+  const s = n.toLowerCase().split('/');
+  if (Object.hasOwn(AGENT_TOOLS_OF, s[0])) return AGENT_TOOLS_OF[s[0]];
+  if (s[0] === '.github' && (s.length === 1 || AGENT_GITHUB.includes(s[1]))) return 'GitHub Copilot';
+  if (s[0] === '.vscode' && (s.length === 1 || (s.length === 2 && s[1] === 'mcp.json'))) return 'GitHub Copilot';
+  return null;
+}
 const nameOk = (n) => typeof n === 'string' && n.length <= 1024 && !/[\x00-\x1f\x7f]/.test(n) && (n.toLowerCase() === '.mcp.json'
   || (!n.startsWith('/') && n.split('/')[0].toLowerCase() === '.claude' && segsOk(n.split('/')))
+  || (agentToolOf(n) !== null && segsOk(n.split('/')))
   || (n.startsWith(`${WS}/`) && n.slice(WS.length + 1).toLowerCase().split('/').includes('.claude') && segsOk(n.slice(WS.length + 1).split('/'))));
 
 /** checkFiles(project.settings' RESULT) -> {files: [{name, type, size, sha256, target, text}], ok}: ok false when the
@@ -54,6 +71,8 @@ const PERM_KNOWN = new Set(['allow', 'ask', 'deny', 'defaultMode', 'additionalDi
 // what the page shows of them: at most this many entries per section, this many characters per value — beyond that
 // the summary is incomplete, and incomplete settings are never trusted (nothing you were not shown can apply)
 export const LIST_MAX = 200, TEXT_MAX = 2000;
+// another tool's file is shown whole up to this many characters (beyond: not trustable)
+export const TOOL_TEXT_MAX = 16000;
 // A value of the trust summary that could hide something in plain sight: any character but printable ASCII, a tab or a
 // line break (the page shows each as ⟨U+XXXX⟩), a run of 20+ whitespace characters, more than 60 of them in all, or
 // more than 5 lines — the page folds it until you open it in full, and Trust waits for that.
@@ -257,7 +276,7 @@ const canonical = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object'
  *  runs of whitespace or many lines (the page asks you to look at them in full). */
 export function summarize(files) {
   const out = { hooks: [], allow: [], ask: [], deny: [], defaultMode: null, directories: [], env: [], commands: [], mcp: [], mcpServers: [], other: [], notes: [],
-    files: [], complete: true, missing: [], careful: 0 };
+    files: [], tools: [], complete: true, missing: [], careful: 0 };
   const why = new Map();
   const incomplete = (reason) => { out.complete = false; why.set(reason, (why.get(reason) ?? 0) + 1); };
   // text(v) -> a value as the page shows it (a string as is; anything else as JSON), whole or said
@@ -276,10 +295,11 @@ export function summarize(files) {
     const note = (t) => out.notes.push({ file: f.name, note: t });
     // (names as a case-insensitive workspace reads them: .CLAUDE/settings.json is .claude/settings.json)
     const lower = f.name.toLowerCase();
-    const settings = lower === '.mcp.json' || SETTINGS_FILES.includes(lower);
+    const tool = agentToolOf(f.name);
+    const settings = !tool && (lower === '.mcp.json' || SETTINGS_FILES.includes(lower));
     // every other file under a .claude/ is listed — each text file with the front matter keys that grant something,
     // whatever its name (one that starts with --- but does not read plainly: not trustable)
-    if (!settings) {
+    if (!settings && !tool) {
       const fm = f.text !== null ? frontMatter(f.text) : { grants: [], plain: true };
       if (!fm.plain) { note('front matter this page cannot read the way Claude Code does (only `key: value` lines and `- item` lists)'); incomplete('front matter beyond plain key: value lines'); }
       // (and the shell commands Claude Code runs each time a skill or command is used: !`…` and ```! blocks — listed with
@@ -295,6 +315,15 @@ export function summarize(files) {
     if (f.type === 'big') { note('too large to show (over 256 KiB)'); incomplete('a file too large to show'); continue; }
     if (f.type === 'other') { note('not a file it could read (a FIFO, a folder through a link …)'); incomplete('a file that could not be read'); continue; }
     if (f.text === null) { note('not shown (not text, or too much in all)'); incomplete('a file that could not be shown'); continue; }
+    // another tool's file: shown whole (its hooks, MCP servers and rules in its own format), up to TOOL_TEXT_MAX
+    if (tool) {
+      const whole = f.text.length <= TOOL_TEXT_MAX;
+      if (!whole) incomplete(`another tool's file over ${TOOL_TEXT_MAX.toLocaleString('en')} characters`);
+      const t = whole ? f.text : `${f.text.slice(0, TOOL_TEXT_MAX)}… (${f.text.length - TOOL_TEXT_MAX} more characters not shown)`;
+      if (careful(t)) out.careful++;
+      add('tools', { file: f.name, tool, text: t, careful: careful(t) });
+      continue;
+    }
     if (!settings) continue;
     let v;
     try { v = JSON.parse(f.text); } catch { note('not valid JSON (Claude Code may still read parts of it)'); incomplete('a file that is not valid JSON'); continue; }
