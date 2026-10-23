@@ -414,3 +414,22 @@ def test_write_subs_action_is_exact(tmp_path):
     for bad in (("subscriptions-check", "codex"), ("subscriptions-signout", None), ("subscriptions-signout", "gemini"), ("x", None)):
         with pytest.raises(ValueError):
             st.write_subs_action(tmp_path, "pw", *bad)
+
+
+def test_your_subscriptions_as_chat_models_while_they_can_answer(s):
+    _status(s, {"version": 1, "written_at": 1792760000, "terminal": "running", "tools": [
+        {"id": "claude", "installed": True, "version": "2.1.309", "signed_in": "yes", "kind": "claude-max", "how": "command"},
+        {"id": "codex", "installed": True, "version": "0.163.0", "signed_in": "yes", "kind": "chatgpt", "how": "command"},
+        {"id": "copilot", "installed": True, "version": "1.0.103", "signed_in": "unknown", "kind": "", "how": "none"},
+        {"id": "cursor", "installed": True, "version": "1", "signed_in": "no", "kind": "", "how": "command"},
+        {"id": "grok", "installed": False, "version": "", "signed_in": "no", "kind": "", "how": "none"},
+        {"id": "gemini", "installed": True, "version": "0.65.0", "signed_in": "yes", "kind": "google", "how": "file"}]})
+    rows = answers.tools(s.catalog_dir, s.status_dir)["tools"]
+    pm = {m["tool"]: m for m in answers.plan_models(s, False, rows)}
+    assert list(pm) == ["claude", "codex", "copilot", "cursor", "grok"]   # (Gemini: Google's plans no longer work in it)
+    assert pm["codex"]["ok"] and pm["codex"]["id"] == "plan-codex" and pm["copilot"]["ok"]
+    assert not pm["claude"]["ok"] and "Use my Claude plan" in pm["claude"]["why"]
+    assert not pm["cursor"]["ok"] and "sign in first" in pm["cursor"]["why"]
+    assert not pm["grok"]["ok"] and pm["grok"]["why"] == "not in the sandbox"
+    assert answers.plan_models(replace(s, claude_plan=True), False, rows)[0]["ok"]
+    assert not any(m["ok"] for m in answers.plan_models(replace(s, code=False), False, rows))

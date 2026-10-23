@@ -125,6 +125,9 @@ class Settings:
     # no remote Code page); remote_preview (REMOTE_PREVIEW=true) says which, for the Code page's message.
     remote_preview_host: str = ""
     remote_preview: bool = False
+    # Settings › Claude Code › Your AI subscriptions › Use my Claude plan in the Code page and Chat (CODE_CLAUDE_PLAN,
+    # compose.code.yaml): whether Claude on your plan is offered as a Chat model (the code container enforces it)
+    claude_plan: bool = False
 
     def password_where(self) -> str:
         """"~/bn/.env (project bn-dev)", or "" when ./stack did not say."""
@@ -303,6 +306,7 @@ def from_env(env: dict | None = None) -> Settings:
         preview_domain=preview,
         remote_preview_host=r_preview,
         remote_preview=_on(env.get("REMOTE_PREVIEW")),
+        claude_plan=code and _on(env.get("CODE_CLAUDE_PLAN")),
         tailscale_allowed_login=(env.get("TAILSCALE_ALLOWED_LOGIN") or "").strip().lower(),
         proxy_secret=env.get("PORTAL_PROXY_SECRET", ""),
         env_file=(env.get("PORTAL_ENV_FILE") or "").strip(),

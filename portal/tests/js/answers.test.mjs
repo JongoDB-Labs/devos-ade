@@ -56,3 +56,12 @@ test("the saved choice is read back checked", () => {
     assert.deepEqual(plain(A.parseSaved(bad)), { chat: "owui", folder: "" }, String(bad));
   }
 });
+
+test("the Chat tab: your subscriptions as models while they can answer (Open WebUI's own model ids), else greyed with why", () => {
+  const g = plain(A.chatOptions({ ...data, plan_models: [{ id: "plan-codex", tool: "codex", label: "Codex · your ChatGPT plan", ok: true, why: "" },
+    { id: "plan-claude", tool: "claude", label: "Claude Code · your Claude plan", ok: false, why: "off: Settings" }] }));
+  const models = g.find((x) => x.label === "Your AI subscriptions as Chat models").items;
+  assert.deepEqual(models.slice(0, 2).map((i) => [i.value, i.disabled]), [["model:plan-codex", false], ["model:plan-claude", true]]);
+  assert.match(models[1].label, /off: Settings$/);
+  assert.match(models[0].title, /no \$/);
+});

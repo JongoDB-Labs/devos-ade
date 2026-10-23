@@ -422,3 +422,25 @@ def test_outlet_free_model_without_paid_version():
     content = run(f.outlet(body))["messages"][-1]["content"]
     assert content == "A\n\n*free · 1,240 in / 380 out · Free Models Router (OpenRouter) · chat ≈ $0.00*"
     assert run(f.inlet({"messages": [{"role": "assistant", "content": content}]}))["messages"][0]["content"] == "A"
+
+
+def test_outlet_your_plan_shows_tokens_and_whose_plan_never_dollars():
+    f = make_filter()
+    body = {"model": "plan-codex", "messages": [
+        {"role": "assistant", "content": "earlier\n\n*≈ $0.0100 · 10 in / 5 out · Claude Sonnet 5.5 · chat ≈ $0.0100*", "usage": {"prompt_tokens": 10, "completion_tokens": 5}},
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "Sure.", "usage": {"prompt_tokens": 1240, "completion_tokens": 380}}]}
+    out = run(f.outlet(body, __model__={"name": "Codex · your ChatGPT plan"}))
+    last = out["messages"][-1]["content"]
+    assert last == "Sure.\n\n*on your ChatGPT plan · 1,240 in / 380 out · Codex*"
+    assert "$" not in last.split("\n\n")[-1]
+    # recognised as a footer: stripped before it goes back to a model, and it counts $0 in a chat's total
+    assert bc.strip_footer(last) == "Sure."
+    assert bc.footer_cost(last) == 0.0
+    again = run(f.outlet(out, __model__={"name": "Codex · your ChatGPT plan"}))
+    assert again["messages"][-1]["content"].count("*on your ChatGPT plan") == 1
+    # a Bedrock answer after it: its own cost, the plan answer counting nothing in the chat's total
+    body2 = {"model": "claude-sonnet-5-5", "messages": out["messages"] + [
+        {"role": "user", "content": "x"}, {"role": "assistant", "content": "B", "usage": {"prompt_tokens": 1000, "completion_tokens": 100}}]}
+    last2 = run(f.outlet(body2))["messages"][-1]["content"]
+    assert "chat ≈ $0.0133" in last2   # this answer's $0.0033 + the earlier Bedrock footer's $0.0100, the plan's $0

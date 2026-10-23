@@ -2,7 +2,7 @@
 title: Bedrock cost
 author: bedrock-now
 description: Adds a small cost line under every answer (this message and the whole chat), priced from bedrock-now's Bedrock price list. Installed and updated by ./stack setup.
-version: 4
+version: 5
 """
 
 # Installed into Open WebUI by ./stack setup (lib/owui.sh) as a global filter function with id
@@ -18,8 +18,9 @@ import re
 from pydantic import BaseModel, Field
 
 # The exact shapes footer() writes: one line in italics, "*≈ $0.0069 · 1,240 in / 380 out · Model · chat ≈ $0.04*",
-# and for a free model (price 0) "*free · 1,240 in / 380 out · Model · ≈ $0.0012 at paid rates · chat ≈ $0.04*"
-# (version 4; the paid-rates part only when the model has a paid version). Open WebUI's Markdown renderer shows
+# for a free model (price 0) "*free · 1,240 in / 380 out · Model · ≈ $0.0012 at paid rates · chat ≈ $0.04*"
+# (the paid-rates part only when the model has a paid version), and for one of your subscriptions as a Chat model
+# (plan-…: no dollars at all, it counts against your plan) "*on your ChatGPT plan · 1,240 in / 380 out · Codex*" (version 5). Open WebUI's Markdown renderer shows
 # HTML such as <sub> as literal text, so the footer is plain Markdown; a "$" is always followed by a digit, so its
 # KaTeX "$…$" rule never turns the line into math. Footers written by version 2 used <sub>…</sub> instead; every
 # shape is recognised so old answers still get stripped and summed (a free footer counts $0).
@@ -33,7 +34,8 @@ _COST = r"(?:\$[0-9][0-9,]*\.[0-9]+|<\$0\.0001)"
 _TOKENS = r"[0-9,]+ in(?: \([0-9,]+ cached\))? / [0-9,]+ out · "
 _BODY = r"(?:≈ (" + _COST + ") · )?" + _TOKENS
 _SHAPES = (r"(?:\*" + _BODY + r"[^*\n]*\*|<sub>" + _BODY + r"[^<\n]*</sub>"   # italic | legacy <sub>
-           r"|\*free · " + _TOKENS + r"[^*\n]*\*)")                             # | free model (no cost group)
+           r"|\*free · " + _TOKENS + r"[^*\n]*\*"                               # | free model (no cost group)
+           r"|\*on your [^*\n·]{1,60} · " + _TOKENS + r"[^*\n]*\*)")            # | your plan (no cost group)
 _FOOTER_RE = re.compile(r"[ \t]*\n*[ \t]*" + _SHAPES + r"(?:[ \t]*(?=\n|\Z))?")
 _FOOTER_COST_RE = re.compile(_SHAPES)
 
@@ -145,11 +147,18 @@ def equivalent_cost(tokens, price):
     return message_cost(tokens, paid)
 
 
-def footer(cost, tokens, name, chat_total, free=False, equivalent=None):
+# Your subscriptions as Chat models (the code container's connection: plan-<tool>) and whose plan each counts against
+PLANS = {"plan-claude": "your Claude plan", "plan-codex": "your ChatGPT plan", "plan-copilot": "your Copilot plan",
+         "plan-cursor": "your Cursor plan", "plan-grok": "your SuperGrok or X plan"}
+
+
+def footer(cost, tokens, name, chat_total, free=False, equivalent=None, plan=None):
     toks = fmt_int(tokens["input"]) + " in"
     if tokens.get("cache_read"):
         toks += " (" + fmt_int(tokens["cache_read"]) + " cached)"
     toks += " / " + fmt_int(tokens["output"]) + " out"
+    if plan:  # your own plan: never a dollar figure, never in the chat's total
+        return "*on %s · %s · %s*" % (plan, toks, name)
     if cost is None:
         return "*%s · %s · price unknown*" % (toks, name)
     if free:  # nothing is charged: no "≈ $…" up front, the paid-rates figure is for comparison only
@@ -173,7 +182,7 @@ def footer_cost(text):
     found = _FOOTER_COST_RE.findall(text)
     if not found:
         return None
-    last = found[-1][0] or found[-1][1]  # one group per shape: italic, legacy <sub> (a free footer has none)
+    last = found[-1][0] or found[-1][1]  # one group per shape: italic, legacy <sub> (a free or plan footer has none)
     if not last or last.startswith("<"):
         return 0.0
     return float(last[1:].replace(",", ""))
@@ -267,6 +276,14 @@ class Filter:
         if tokens is None:
             return
         model_id = body.get("model") if isinstance(body.get("model"), str) else ""
+        if model_id in PLANS:
+            name = (model or {}).get("name") if isinstance(model, dict) else None
+            name = name.split(" · ")[0] if isinstance(name, str) and name else model_id
+            foot = footer(None, tokens, name, None, plan=PLANS[model_id])
+            text = strip_footer(_text(last)).rstrip()
+            last["content"] = (text + "\n\n" if text else "") + foot
+            _set_output_text(last, foot)
+            return
         prices = self._prices()
         price = prices.get(model_id) if isinstance(prices.get(model_id), dict) else None
         if price is None and isinstance(model, dict) and isinstance(model.get("info"), dict):

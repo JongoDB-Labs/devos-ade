@@ -69,6 +69,7 @@ CODE_AUTO_MODE	code	main	CODE_ENABLED	Offer Auto mode: a reviewer model approves
 +sessions-consent	code	main	CODE_ENABLED	What bedrock-now may read of your Claude Code and claude-bedrock sessions and setup on this computer.
 +bring-setup	code	main	CODE_ENABLED	Your Claude Code setup and Git name and email from this computer, copied into the Code page's sandbox.
 +subscriptions	code	main	TERMINAL_ENABLED	Your plans' own tools in the sandbox (Claude, Codex, Gemini, Copilot, Cursor, Grok) and their sign-ins.
+CODE_CLAUDE_PLAN	code	main	CODE_ENABLED	Use your own Claude plan in the Code page and as a Chat model (off by default: Anthropic's two texts pull apart).
 TERMINAL_ENABLED	code	main	-	The Terminal tab: a shell with Claude Code in a sandbox container that sees one folder of yours.
 TERMINAL_WORKSPACE	code	with	TERMINAL_ENABLED	-
 TERMINAL_EGRESS	code	main	TERMINAL_ENABLED	The sandbox's internet: public addresses only (the default), with this computer's services too, or off.
@@ -180,3 +181,4 @@ TERMINAL_GID	about	main	-	Your group id in the sandbox.
 TERMINAL_PROXY_SECRET	about	main	-	Internal: proves to the Terminal that a request came through Caddy.
 CODE_PROXY_SECRET	about	main	-	Internal: proves to the Code page that a request came through Caddy.
 PREVIEW_PROXY_SECRET	about	main	-	Internal: proves to previews that a request came through Caddy.
+CODE_CHAT_KEY	about	main	-	Internal: the key Open WebUI's connection to your subscriptions' Chat models carries.

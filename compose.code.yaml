@@ -5,9 +5,10 @@
 # by bn-coded (terminal/bin/bn-coded.mjs) on a UNIX socket in the code-socket volume — both are the terminal's
 # (compose.terminal.yaml), so this file never changes the terminal container. The code container mounts no
 # folder of yours and holds no LiteLLM key: files, sessions and plugins are ops of bn-coded, spend and model prices
-# come from the portal (/.bn/spend, /.bn/models on the code host). Its only network, code-link (internal), it shares
+# come from the portal (/.bn/spend, /.bn/models on the code host). Its network code-link (internal) it shares
 # with the main Caddy alone, which asks the portal first (session, a fresh unlock, the Origin) and then adds the secret
-# header (CODE_PROXY_SECRET) the code container requires. It reaches nothing else: not the internet, not LiteLLM, not
+# header (CODE_PROXY_SECRET) the code container requires; its other one, plan-chat (internal), with Open WebUI alone,
+# which connects to its :8096 with CODE_CHAT_KEY (your subscriptions as Chat models). It reaches nothing else: not the internet, not LiteLLM, not
 # the portal, not the sandbox's network — a Git host sign-in's requests to GitHub or GitLab go through a byte tunnel of
 # bn-coded's (the sandbox's own way out), with TLS from end to end in this container. Everything that comes back from the sandbox is treated as untrusted data.
 # Its previews of dev servers in the sandbox (caddy/preview-on.caddy; over remote access remote_preview) do not pass
@@ -39,6 +40,13 @@ services:
       # Settings › Claude Code › Auto mode (enforced here too: set_mode accepts auto, and sessions are not started with
       # auto mode off). The sandbox's managed settings must allow it as well (compose.terminal.yaml passes it there).
       CODE_AUTO_MODE: ${CODE_AUTO_MODE:-false}
+      # Settings › Claude Code › Your AI subscriptions › Use my Claude plan in the Code page and Chat (enforced here: a
+      # session or a Chat answer on your plan is started only while it is on; off by default — Anthropic's two texts
+      # pull apart, README "Your AI subscriptions"). A change recreates this container.
+      CODE_CLAUDE_PLAN: ${CODE_CLAUDE_PLAN:-false}
+      # Chat's models on your subscriptions: the key Open WebUI's connection to :8096 carries (below), never on a
+      # command line, never in the sandbox
+      CODE_CHAT_KEY: ${CODE_CHAT_KEY:-}
       # What the page's Bypass dialog says about the sandbox: its internet access, and the folder of yours it sees (a
       # label only: this container mounts no folder)
       TERMINAL_EGRESS: ${TERMINAL_EGRESS:-}
@@ -68,6 +76,10 @@ services:
     networks:
       code-link:
         aliases: [code-upstream]
+      # Open WebUI's only way here: Chat's models on your subscriptions (:8096, its key); it shares nothing else with
+      # this container, and this one reaches nothing through it
+      plan-chat:
+        aliases: [code-chat]
     depends_on:
       terminal: { condition: service_healthy }
     logging:   # (YAML anchors do not reach across compose files: same values as x-logging in compose.yaml)
@@ -98,12 +110,22 @@ services:
       PREVIEW_DOMAIN: ${PREVIEW_DOMAIN:-bedrock-now-preview.localhost}
       PREVIEW_PROXY_SECRET: ${PREVIEW_PROXY_SECRET:-}
 
+  # Open WebUI: a second connection besides LiteLLM — your subscriptions as Chat models (the code container's :8096, on
+  # plan-chat; code/server/chat.mjs). Its model list is the subscriptions signed in now (none: an empty list).
+  open-webui:
+    environment:
+      OPENAI_API_BASE_URLS: "http://litellm:4000/v1;http://code-chat:8096/v1"
+      OPENAI_API_KEYS: "${LITELLM_KEY_OPENWEBUI:-};${CODE_CHAT_KEY:-}"
+    networks: [default, plan-chat]
+
   # The portal: the Code tab, the unlock, the code host's checks, its models and spend (/.bn/models, /.bn/spend), and
   # the previews' links (/.bn/preview) and their checks.
   portal:
     environment:
       CODE_ENABLED: "true"
       CODE_HOST: ${CODE_HOST:-}
+      # (Chat's Who answers offers Claude on your plan as a model only while this is on; the code container enforces it)
+      CODE_CLAUDE_PLAN: ${CODE_CLAUDE_PLAN:-false}
       REMOTE_CODE_HOST: ${REMOTE_CODE_HOST:-}
       PREVIEW_DOMAIN: ${PREVIEW_DOMAIN:-bedrock-now-preview.localhost}
       REMOTE_PREVIEW_HOST: ${REMOTE_PREVIEW_HOST:-}
@@ -111,6 +133,8 @@ services:
 
 networks:
   code-link:
+    internal: true
+  plan-chat:
     internal: true
 
 volumes:

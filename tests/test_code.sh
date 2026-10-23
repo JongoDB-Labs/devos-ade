@@ -526,7 +526,13 @@ test_compose_code_is_a_sandboxed_container_on_its_own_network() {
   assert_not_contains "$(cat "$STACK_DIR/compose.code.yaml")" "BN_CODE"
   assert_contains "$(awk '/^  terminal:$/,/^  terminal-gateway:$/' "$STACK_DIR/compose.terminal.yaml")" "- code-socket:/run/bn-code"
   assert_contains "$(awk '/^  caddy:$/,/^  portal:$/' "$STACK_DIR/compose.code.yaml")" "networks: [default, terminal-link, code-link]"
-  assert_eq "$(grep -c 'internal: true' "$STACK_DIR/compose.code.yaml")" 1
+  assert_eq "$(grep -c 'internal: true' "$STACK_DIR/compose.code.yaml")" 2
+  # Chat's models on your subscriptions: Open WebUI's own connection to it, on plan-chat (the two of them alone), with
+  # its key; the switch for Claude on your plan reaches it and the portal, never the sandbox
+  assert_contains "$c" "aliases: [code-chat]"
+  assert_contains "$c" 'CODE_CHAT_KEY: ${CODE_CHAT_KEY:-}'
+  assert_contains "$c" 'CODE_CLAUDE_PLAN: ${CODE_CLAUDE_PLAN:-false}'
+  assert_contains "$(awk '/^  open-webui:$/,/^  portal:$/' "$STACK_DIR/compose.code.yaml")" "networks: [default, plan-chat]"
   for want in 'CODE_MODE: "on"' 'REMOTE_CODE_HOST: ${REMOTE_CODE_HOST:-code.remote.invalid}' 'CODE_ENABLED: "true"'; do
     assert_contains "$(cat "$STACK_DIR/compose.code.yaml")" "$want"
   done
@@ -542,8 +548,14 @@ test_compose_render_with_the_code_page() {
 import json, sys
 d = json.load(sys.stdin)
 s = d["services"]; c, t, k = s["code"], s["terminal"], s["caddy"]
-assert list(c["networks"]) == ["code-link"] and c["networks"]["code-link"]["aliases"] == ["code-upstream"], c["networks"]
-assert d["networks"]["code-link"]["internal"] is True
+assert list(c["networks"]) == ["code-link", "plan-chat"] and c["networks"]["code-link"]["aliases"] == ["code-upstream"], c["networks"]
+assert c["networks"]["plan-chat"]["aliases"] == ["code-chat"], c["networks"]
+assert d["networks"]["code-link"]["internal"] is True and d["networks"]["plan-chat"]["internal"] is True
+# plan-chat: the code container and Open WebUI alone; Open WebUI gets a second connection (LiteLLM first), with the key
+assert sorted(n for n, x in s.items() if "plan-chat" in (x.get("networks") or {})) == ["code", "open-webui"]
+o = s["open-webui"]
+assert o["environment"]["OPENAI_API_BASE_URLS"] == "http://litellm:4000/v1;http://code-chat:8096/v1", o["environment"]
+assert o["environment"]["OPENAI_API_KEYS"].startswith(";") or o["environment"]["OPENAI_API_KEYS"].count(";") == 1
 assert c["user"] == "501:20" and c["read_only"] and c["cap_drop"] == ["ALL"] and "ports" not in c
 assert [(v["source"], v["target"], v.get("read_only")) for v in c["volumes"]][:2] == [("code-socket", "/run/bn-code", True), ("code-state", "/var/lib/bn-code", None)], c["volumes"]
 # (the project folders public list: a folder of the stack, read-only, never created by Docker)
@@ -551,8 +563,9 @@ assert [(v["type"], v["source"].endswith("/.state/projects/public"), v["target"]
   ("bind", True, "/etc/bn-code/projects", True, False)], c["volumes"]
 # (Git hosts: the code container's own volume, never the sandbox's)
 assert not any(v.get("source") == "code-state" for n, x in s.items() if n != "code" for v in x.get("volumes") or [])
-assert sorted(c["environment"]) == ["CODE_ALLOW_BYPASS", "CODE_AUTO_MODE", "CODE_PROXY_SECRET", "CODE_WORKSPACE_LABEL", "GIT_GITHUB_APP_SLUG", "GIT_GITHUB_CLIENT_ID",
-  "GIT_GITLAB_CLIENT_ID", "HOME", "TERMINAL_EGRESS"], c["environment"]
+assert sorted(c["environment"]) == ["CODE_ALLOW_BYPASS", "CODE_AUTO_MODE", "CODE_CHAT_KEY", "CODE_CLAUDE_PLAN", "CODE_PROXY_SECRET", "CODE_WORKSPACE_LABEL",
+  "GIT_GITHUB_APP_SLUG", "GIT_GITHUB_CLIENT_ID", "GIT_GITLAB_CLIENT_ID", "HOME", "TERMINAL_EGRESS"], c["environment"]
+assert c["environment"]["CODE_CLAUDE_PLAN"] == "false" and "CODE_CLAUDE_PLAN" not in t["environment"]
 # (Git hosts sign-in: public application IDs, blank by default: the apps of bedrock-now; no network of its own for it)
 assert c["environment"]["GIT_GITHUB_CLIENT_ID"] == "" and c["environment"]["GIT_GITLAB_CLIENT_ID"] == "" 
 assert c["environment"]["CODE_PROXY_SECRET"] == "fedcba9876543210fedcba9876543210"

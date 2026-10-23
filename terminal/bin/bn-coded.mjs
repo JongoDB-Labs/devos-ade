@@ -1282,7 +1282,7 @@ const SUBS_LINE = /^(claude|codex|gemini|copilot|cursor|grok)\t(yes|no)\t(-|[0-9
 export function parseSubsStatus(text) {
   const seen = new Map();
   for (const line of String(text).split('\n').slice(0, 50)) {
-    const m = SUBS_LINE.exec(line);
+    const m = line.match(SUBS_LINE);
     if (m && !seen.has(m[1])) seen.set(m[1], { id: m[1], installed: m[2] === 'yes', signed: m[2] === 'yes' ? m[4] : 'no' });
   }
   return { tools: SUBS_TOOLS.map((id) => seen.get(id) ?? { id, installed: false, signed: 'unknown' }) };

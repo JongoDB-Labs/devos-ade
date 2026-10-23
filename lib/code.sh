@@ -67,11 +67,12 @@ cmd_code() {
 
 # code_secrets [rotate] — CODE_PROXY_SECRET (32 hex characters): the header the main Caddy adds after the portal's
 # check and the code container requires on every request; PREVIEW_PROXY_SECRET likewise, the header the main Caddy adds
-# to a preview's requests and the terminal's gateway requires before bn-preview; generated when missing or weak, and
-# anew with "rotate". And the previews' site (code_preview_domain).
+# to a preview's requests and the terminal's gateway requires before bn-preview; CODE_CHAT_KEY, the key of Open WebUI's
+# connection to your subscriptions' Chat models (the code container's :8096, on the plan-chat network the two share
+# alone); generated when missing or weak, and anew with "rotate". And the previews' site (code_preview_domain).
 code_secrets() {
   local k v
-  for k in CODE_PROXY_SECRET PREVIEW_PROXY_SECRET; do
+  for k in CODE_PROXY_SECRET PREVIEW_PROXY_SECRET CODE_CHAT_KEY; do
     v="$(get_env "$k")"
     case "$v" in *[!0-9a-f]* | '') v='' ;; *) [ "${#v}" -ge 32 ] || v='' ;; esac
     [ -n "$v" ] && [ "${1:-}" != rotate ] || set_env "$k" "$(gen_hex 16)"

@@ -130,9 +130,31 @@ def folders(status_dir: Path) -> list[dict]:
     return [{"name": f["name"], "path": f["path"]} for f in st.project_folders(status_dir).get("folders", []) if f.get("ok")]
 
 
+def plan_models(s, remote: bool, rows: list[dict]) -> list[dict]:
+    """Your subscriptions as Chat models (the code container's connection in Open WebUI: plan-<id>): {id, tool, label,
+    ok, why} for each tool the catalog offers as one — ok while the Code page runs here, the tool is in the sandbox and
+    does not say it is signed out (Claude: also Settings' switch, and signed in)."""
+    out = []
+    for t in rows:
+        if t.get("chat_model") != "yes":
+            continue
+        why = ""
+        if not s.code_on(remote):
+            why = "needs the Code page (it runs your subscriptions' agents)"
+        elif t["installed"] is False:
+            why = "not in the sandbox"
+        elif t["id"] == "claude" and not getattr(s, "claude_plan", False):
+            why = "off: Settings › Claude Code › Your AI subscriptions › Use my Claude plan in the Code page and Chat"
+        elif t["signed_in"] == "no" or (t["id"] == "claude" and t["signed_in"] != "yes"):
+            why = f"sign in first: the Terminal tab's Open › {t['name']}"
+        out.append({"id": f"plan-{t['id']}", "tool": t["id"], "label": f"{t['name']} · {t['plan']}", "ok": not why, "why": why})
+    return out
+
+
 def build(s, remote: bool, models: dict | None = None) -> dict:
     """The pickers' JSON for this site (remote: the terminal only where REMOTE_TERMINAL lets it be)."""
     t = tools(s.catalog_dir, s.status_dir)
+    t["plan_models"] = plan_models(s, remote, t["tools"])
     return {"terminal": {"enabled": bool(s.terminal), "here": s.terminal_on(remote)},
             "basics": list(BASICS), **t, "models": chat_models(models) if models is not None else [],
             "folders": folders(s.status_dir)}

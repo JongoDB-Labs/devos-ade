@@ -40,7 +40,7 @@
       { label: "Your AI subscriptions — each signs in with its own flow", items: tools }].filter((g) => g.items.length);
   }
   // chatOptions(DATA) -> the Chat tab's groups: Open WebUI, Bedrock and OpenRouter models, your API keys (next), the
-  // tools themselves (they open here), and the subscriptions as Chat models (greyed: planned, each saying how and under which terms)
+  // tools themselves (they open here), and the subscriptions as Chat models (each while it can answer; else greyed, saying why)
   function chatOptions(d) {
     const here = Boolean(d && d.terminal && d.terminal.here);
     const models = d && Array.isArray(d.models) ? d.models : [];
@@ -55,8 +55,12 @@
         const s = toolState(t, here);
         return { value: `tool:${t.id}`, label: `${t.name} · ${s.word}`, disabled: !s.ok, title: s.why || `${t.provider}: ${t.plan}. You type into ${t.name} itself.` };
       }) },
-      { label: "Your AI subscriptions as Chat models", items: tools.filter((t) => t.chat_model !== "yes").map((t) => (
-        { value: `as-model:${t.id}`, label: `${t.name} — as a Chat model: planned`, disabled: true, title: t.chat_why || "" })) },
+      { label: "Your AI subscriptions as Chat models", items: [
+        ...(d && Array.isArray(d.plan_models) ? d.plan_models : []).map((m) => (
+          { value: `model:${m.id}`, label: `${m.label}${m.ok ? "" : ` — ${m.why}`}`, disabled: !m.ok, title: m.ok ? `A model in Open WebUI's list too; it answers in the same chat, on your plan (no $).` : m.why })),
+        ...tools.filter((t) => t.chat_model !== "yes").map((t) => (
+          { value: `as-model:${t.id}`, label: `${t.name} — as a Chat model: planned`, disabled: true, title: t.chat_why || "" })),
+      ] },
     ].filter((g) => g.items.length);
   }
   const bare = (base) => String(base).split(/[?#]/)[0];
@@ -162,7 +166,7 @@
     if (tf) tf.hidden = !tool;
     cFolderWrap.hidden = !tool;
     const t = tool && data.tools.find((x) => `tool:${x.id}` === saved.chat);
-    cNote.textContent = t ? `${t.name} itself, on ${t.plan}: you type into it. Its own sign-in; bedrock-now never sees it. As a Chat model: ${t.chat_model === "yes" ? "yes" : t.chat_why || "planned"}`
+    cNote.textContent = t ? `${t.name} itself, on ${t.plan}: you type into it. Its own sign-in; bedrock-now never sees it. As a Chat model: ${t.chat_model === "yes" ? "yes — in Who answers and in Open WebUI's model menu while it is signed in" : t.chat_why || "planned"}`
       : saved.chat.startsWith("model:") ? "A new chat with this model in Open WebUI." : "";
   }
   function openTool(id) {
