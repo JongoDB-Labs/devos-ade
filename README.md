@@ -707,7 +707,8 @@ Settings**, which opens Settings at the Code page's switch, with `./stack code e
 from the Code page's host. Over remote access without `REMOTE_TERMINAL=true` it says how to allow it there.
 
 The first `enable` builds the page's image (a few minutes; with the terminal off, the stack must be running to turn
-it on). `enable` and `disable` restart the portal and Caddy (open apps reload) but not the terminal: its tmux session
+it on). `enable` and `disable` restart the portal, Caddy and Open WebUI (open apps reload; Open WebUI for its
+connection to your subscriptions as Chat models: chats in progress drop for a few seconds) but not the terminal: its tmux session
 goes on (only a terminal container from before v0.5.0, without the page's spawn server, is restarted once, and
 `--workspace` with another folder recreates it).
 

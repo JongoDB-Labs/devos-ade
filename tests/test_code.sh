@@ -316,7 +316,7 @@ test_enable_turns_the_terminal_on_first_then_builds_and_starts_the_code_page() {
   assert_contains "$calls" "dc build -q code"
   # after the terminal's own steps: terminal, portal, Caddy, then the code container
   assert_eq "$(printf '%s\n' "$calls" | grep '^dc up' | tail -n 6 | tr '\n' '|')" \
-    "dc up -d --wait terminal|dc up -d --wait portal|dc up -d --wait --force-recreate caddy|dc up -d --wait terminal-gateway|dc up -d --wait code|dc up -d --wait subs-chat|"
+    "dc up -d --wait terminal|dc up -d --wait portal open-webui|dc up -d --wait --force-recreate caddy|dc up -d --wait terminal-gateway|dc up -d --wait code|dc up -d --wait subs-chat|"
   out="$(cat "$TMP/out")"
   assert_contains "$out" "turning the terminal on first"
   assert_contains "$out" "Code page: on — http://code.bedrock-now.localhost"
@@ -332,7 +332,8 @@ test_enable_turns_the_terminal_on_first_then_builds_and_starts_the_code_page() {
   assert_eq "$(grep -E '^dc (build|up|rm|stop|restart).*terminal( |$)' "$TMP/dc")" ""   # (only asked whether bn-coded listens)
   assert_contains "$(cat "$TMP/dc")" "dc exec -T terminal timeout 10 test -S /run/bn-code/coded.sock"
   # (the gateway: recreated by compose only because the previews' secret is new)
-  assert_eq "$(grep '^dc up' "$TMP/dc" | tr '\n' '|')" "dc up -d --wait portal|dc up -d --wait --force-recreate caddy|dc up -d --wait terminal-gateway|dc up -d --wait code|dc up -d --wait subs-chat|"
+  # (Open WebUI with the portal: its connection to the code container, with the new CODE_CHAT_KEY)
+  assert_eq "$(grep '^dc up' "$TMP/dc" | tr '\n' '|')" "dc up -d --wait portal open-webui|dc up -d --wait --force-recreate caddy|dc up -d --wait terminal-gateway|dc up -d --wait code|dc up -d --wait subs-chat|"
   # a terminal started by a version without the spawn server: recreated once (and says so)
   dc() { echo "dc $*" >> "$TMP/dc"; case "$*" in *"test -S /run/bn-code/coded.sock"*) return 1 ;; esac; return 0; }
   : > "$TMP/dc"
@@ -464,7 +465,7 @@ test_setup_hook_builds_and_starts_it_and_never_stops_setup() {
   code_enable > /dev/null 2>&1 || return 1
   : > "$TMP/dc"
   code_setup_hook > "$TMP/out" 2>&1 || return 1
-  assert_eq "$(cat "$TMP/dc" | tr '\n' '|')" "dc build -q code|dc up -d --wait terminal-gateway|dc up -d --wait code|dc up -d --wait subs-chat|"
+  assert_eq "$(cat "$TMP/dc" | tr '\n' '|')" "dc build -q code|dc up -d --wait terminal-gateway|dc up -d --wait code|dc up -d --wait subs-chat|dc up -d --wait open-webui|"
   dc() { echo "boom"; return 1; }
   code_setup_hook > "$TMP/out" 2>&1 || return 1
   assert_contains "$(cat "$TMP/out")" "Code page: setup goes on without it"

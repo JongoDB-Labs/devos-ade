@@ -244,8 +244,9 @@ _terminal_egress_build_up() {
 _terminal_egress_up() {
   if [ "$(terminal_egress_mode)" = internet ]; then dc up -d --wait terminal-egress; else terminal_proxy_rm; fi
 }
+# (Open WebUI too: with the terminal the Code page may go, and with it Open WebUI's connection to your subscriptions)
 _terminal_front() {
-  dc up -d --wait portal && recreate_caddy && dc up -d --wait --no-deps litellm shared-mcp
+  dc up -d --wait portal && recreate_caddy && dc up -d --wait --no-deps litellm shared-mcp open-webui
 }
 
 # terminal_secrets [rotate] — what the terminal needs besides the stack's own: the secret header the main Caddy adds

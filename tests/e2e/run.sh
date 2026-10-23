@@ -617,11 +617,13 @@ if [ "$CODE" = 1 ]; then
   if [ -z "$cc" ] || [ -z "$tc" ]; then record code code-isolation FAIL 0 "no running code or terminal container"
   else
     probe="$(code_probe "$cc" 2>&1)"; printf '%s\n' "$probe" > "$LOGS/code-isolation.log"; redact "$LOGS/code-isolation.log"
-    for k in litellm:4000 portal:8000 open-webui:8080 postgres:5432 rustfs:9000 shared-mcp:8000 stt:8000 terminal:7681 gateway:8091 \
+    # (Open WebUI: on plan-chat it connects here, and so its port answers from here too — its own login required)
+    for k in litellm:4000 portal:8000 postgres:5432 rustfs:9000 shared-mcp:8000 stt:8000 terminal:7681 gateway:8091 \
              terminal-upstream:7681 1.1.1.1:443 host.docker.internal:80; do
       printf '%s\n' "$probe" | grep -q "^$k	closed" || bad="$bad $k-reachable"
     done
-    for kv in caddy:8080=open secrets-in-env=CODE_PROXY_SECRET workspace=absent mounts=/etc/bn-code/projects,/run/bn-code,/run/bn-import-stage,/tmp,/usr/sbin/docker-init,/var/lib/bn-code rootfs-writable=no \
+    for kv in caddy:8080=open secrets-in-env=CODE_CHAT_KEY,CODE_PROXY_SECRET workspace=absent \
+              mounts=/etc/bn-code/projects,/run/bn-chat,/run/bn-code,/run/bn-import-stage,/tmp,/usr/sbin/docker-init,/var/lib/bn-code rootfs-writable=no \
               socket-dir-writable=no claude-binary=absent; do
       printf '%s\n' "$probe" | grep -q "^${kv%%=*}	${kv#*=}\$" || bad="$bad ${kv%%=*}:$(printf '%s\n' "$probe" | awk -F'\t' -v k="${kv%%=*}" '$1 == k { print $2 }')"
     done
@@ -637,7 +639,7 @@ if [ "$CODE" = 1 ]; then
     for k in LITELLM_KEY_TERMINAL LITELLM_KEY_CLAUDE_CODE LITELLM_MASTER_KEY SHARED_MCP_TOKEN TERMINAL_PROXY_SECRET; do ! env_has "$k" "$ins" || bad="$bad has-$k"; done
     unset ins
     if [ -z "$bad" ]; then
-      record code code-isolation PASS "$(( $(now) - t0 ))" "code container: only Caddy (code-link), no LiteLLM, portal, Open WebUI, data, stt, sandbox, gateway or internet; no workspace mount (mounts: the socket folder :ro, the project folders' list :ro, /tmp, Docker's init, its own state volume for Git hosts), read-only, no Claude Code binary, its only secret CODE_PROXY_SECRET, your uid; 407 without the secret; the sandbox cannot reach it; bn-coded's socket folder 700"
+      record code code-isolation PASS "$(( $(now) - t0 ))" "code container: only Caddy (code-link) and Open WebUI (plan-chat), no LiteLLM, portal, data, stt, sandbox, gateway or internet; no workspace mount (mounts: the two socket folders :ro, the project folders' list :ro, /tmp, Docker's init, its own state volume for Git hosts), read-only, no Claude Code binary, its secrets CODE_PROXY_SECRET and CODE_CHAT_KEY, your uid; 407 without the secret; the sandbox cannot reach it; bn-coded's socket folder 700"
     else record code code-isolation FAIL "$(( $(now) - t0 ))" "unexpected:$bad (log $LOGS/code-isolation.log)"; fi
   fi
 fi

@@ -103,12 +103,21 @@ code_build() { fix_checkout_modes; building "the Code page image" dc build -q co
 # terminal's gateway (it is recreated only when its PREVIEW_PROXY_SECRET changed: at enable — ttyd's connections then
 # drop for a moment and reconnect), then the code container and Chat's sandbox (subs-chat: your subscriptions as Chat
 # models — not starting says so, and the Code page still comes up). The terminal is not touched: it runs bn-coded and
-# bn-preview already.
+# bn-preview already. Open WebUI is recreated when its connections change (the code container's, with a new
+# CODE_CHAT_KEY at each enable; none once it is off): chats in progress drop for a few seconds.
 _code_up() {
   _code_front && dc up -d --wait terminal-gateway && dc up -d --wait code || return 1
-  dc up -d --wait subs-chat || warn "Chat's sandbox (subs-chat) did not start: your subscriptions cannot answer in Chat until it does — ./stack logs subs-chat"
+  _subs_chat_up
 }
-_code_front() { dc up -d --wait portal && recreate_caddy; }
+_code_front() { dc up -d --wait portal open-webui && recreate_caddy; }
+# _subs_chat_up — Chat's sandbox; when it does not start, its last words and how to look (never fatal)
+_subs_chat_up() {
+  local out
+  out="$(dc up -d --wait subs-chat 2>&1)" && return 0
+  warn "Chat's sandbox (subs-chat) did not start: your subscriptions cannot answer in Chat until it does — ./stack logs subs-chat"
+  printf '%s\n' "$out" | tail -n 8 | sed 's/^/    /' >&2
+  return 0
+}
 # code_spawn_ready — bn-coded listens in the running terminal (a terminal container started by a version without it
 # has to be recreated once)
 code_spawn_ready() { _with_deadline 15 dc exec -T terminal timeout 10 test -S /run/bn-code/coded.sock >/dev/null 2>&1; }
@@ -163,7 +172,7 @@ code_disable() {
   dc rm -sf code subs-chat >/dev/null 2>&1 || true   # with the overlay still on: compose knows it
   set_env CODE_ENABLED false
   code_remote_sync
-  run_phase "Portal + Caddy (Code page off)" "portal caddy" _code_front
+  run_phase "Portal, Open WebUI + Caddy (Code page off)" "portal open-webui caddy" _code_front
   code_network_cleanup
   [ "$own" = 0 ] || stack_unlock
   log "the Code page is off: no Code tab, no code host, no code container (the terminal and its workspace stay)"
@@ -376,8 +385,10 @@ code_setup_hook() {
   # (the gateway again: a no-op, unless the previews' secret was made just now — the first setup after an update)
   if { code_build && dc up -d --wait terminal-gateway && dc up -d --wait code; } > "$out" 2>&1; then
     rm -f "$out"; log "$(phase_line "Code page" $(($(_now) - start)))"
-    # Chat's sandbox (subs-chat): its own, after (not starting is said; the Code page and setup go on)
-    dc up -d --wait subs-chat > /dev/null 2>&1 || warn "Chat's sandbox (subs-chat) did not start: your subscriptions cannot answer in Chat until it does — ./stack logs subs-chat"
+    # Chat's sandbox (subs-chat): its own, after (not starting is said; the Code page and setup go on); Open WebUI with
+    # its connection to the code container (recreated: its connections changed)
+    _subs_chat_up
+    dc up -d --wait open-webui > /dev/null 2>&1 || warn "Open WebUI did not restart with its connection to your subscriptions — ./stack up"
     return 0
   fi
   CODE_SETUP_FAILED=1; CODE_SETUP_WHY="the Code page's image did not build or its container did not start"

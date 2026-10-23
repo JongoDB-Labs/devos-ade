@@ -79,7 +79,7 @@ def walkthrough_step(ctx):
     page.locator("#tour .tour-step.cur", has_text="Your AI subscriptions and keys").wait_for(timeout=10000)
     card = page.inner_text("#tour .tour-step.cur")
     for words in ("claude-sub", "Codex", "Copilot", "Cursor", "Grok", "Gemini CLI", "device code login", "bedrock-now never sees it",
-                  "backups leave it out", "Who answers", "greyed out", "your own API keys"):
+                  "backups leave it out", "Who answers", "a model in Open WebUI's menu", "your own API keys"):
         expect(words in card, f"the step lacks {words!r}")
     shot(page, "s2-walkthrough-subscriptions")
     probs = rec.problems()
@@ -143,7 +143,12 @@ def chat_embed(ctx):
     expect(vals.get("owui") is False, "no Open WebUI entry")
     expect(any(v.startswith("model:") and not d for v, d in opts), "no Bedrock model entry")
     expect(all(vals.get(f"tool:{t}") is False for t in TOOLS), f"the tools are not all offered: {opts}")
-    expect(all(vals.get(f"as-model:{t}") is True for t in TOOLS), "the subscriptions as Chat models are not greyed out")
+    # as Chat models: each the catalog offers as one, greyed until it can answer (none signed in; Claude: its switch off) —
+    # Copilot, which cannot say, listed; Gemini CLI planned through your own key
+    for t in ("claude", "codex", "cursor", "grok"):
+        expect(vals.get(f"model:plan-{t}") is True, f"{t} as a Chat model is not greyed out (not signed in): {opts}")
+    expect(vals.get("model:plan-copilot") is False, f"Copilot as a Chat model is not listed: {opts}")
+    expect(vals.get("as-model:gemini") is True, f"Gemini CLI as a Chat model is not greyed out (planned): {opts}")
     page.select_option("#answers-chat", "tool:grok")
     page.wait_for_selector("iframe[data-app=chat-tool]:not([hidden])", timeout=10000)
     expect(page.locator("iframe[data-app=chat]").is_hidden(), "Open WebUI still shows with a tool chosen")

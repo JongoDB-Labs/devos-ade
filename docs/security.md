@@ -867,7 +867,8 @@ spawn server, Claude Code or any file at will.
   Code — 0.3.N ↔ 2.1.N, a test enforces it — and `ws`; no peer dependencies and no bundled Claude Code binaries,
   which the image build checks) runs as your user id, read-only, `cap_drop: ALL`, `no-new-privileges`, 768 MB, 128
   processes. It holds **no LiteLLM key** (not the terminal's, not the master key), **mounts no folder of yours**
-  and is on **no network but `code-link` and `plan-chat`** (Open WebUI's way in, above): no internet, no LiteLLM, no portal, no sandbox network (a Git host
+  and is on **no network but `code-link` and `plan-chat`** (Open WebUI's way in, above — and so Open WebUI's port
+  answers it too, behind Open WebUI's own login): no internet, no LiteLLM, no portal, no sandbox network (a Git host
   sign-in's requests go through the sandbox's way out in a tunnel, with TLS from end to end in the code container:
   [below](#signing-in-to-a-git-host-oauth)). Its secrets
   are `CODE_PROXY_SECRET` and `CODE_CHAT_KEY`, in its environment only. Prices and spend come from the portal (`/.bn/models`,
