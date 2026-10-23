@@ -11,7 +11,7 @@
 // itself) keeps applying its own, as before projects: it is the folder you chose for the sandbox. Everything here came
 // from the sandbox: shown as text, capped.
 // Other tools' configuration in the folder (.codex/, .cursor/, .grok/, .gemini/, .copilot/, .agents/,
-// .github/{hooks,skills,agents,copilot}/, .vscode/mcp.json: agentToolOf) is listed and hashed with it — one trust for
+// .github/{hooks,skills,agents,copilot}/, .vscode/mcp.json; and above it to the git root: placeOf) is listed and hashed with it — one trust for
 // the folder — and shown whole: your subscriptions' agents read it as it is, with no flag that turns it off, so an
 // agent session starts in a project's folder only while that trust holds (SessionManager.agentSettingsCheck).
 import crypto from 'node:crypto';
@@ -24,51 +24,61 @@ const SHA = /^[0-9a-f]{64}$/;
 export const SETTINGS_FILES = Object.freeze(['.claude/settings.json', '.claude/settings.local.json']);
 const TYPES = ['file', 'link', 'big', 'other'];
 export const FILES_MAX = 500;
-// a name bn-coded may list: the project's own .mcp.json, its .claude (a link, not a folder) or a path under it —
-// relative —, or a path under a .claude above it, absolute in /workspace; one line, no "." or ".." part
+// a name bn-coded may list (bn-coded from before rows said where they came from): the project's own .mcp.json, its
+// .claude (a link, not a folder) or a path under it — relative —, or a path under a .claude above it, absolute in
+// /workspace; one line, no "." or ".." part
 const segsOk = (segs) => segs.every((x) => x !== '' && x !== '.' && x !== '..');
-// Other tools' configuration in the folder itself (bn-coded's AGENT_TREES …: your subscriptions' agents read it): the
-// tool each name is for, or null (Claude Code's own, or not one of them)
+const legacyNameOk = (n) => n.toLowerCase() === '.mcp.json'
+  || (!n.startsWith('/') && n.split('/')[0].toLowerCase() === '.claude' && segsOk(n.split('/')))
+  || (n.startsWith(`${WS}/`) && n.slice(WS.length + 1).toLowerCase().split('/').includes('.claude') && segsOk(n.slice(WS.length + 1).split('/')));
+// Where a row came from, as bn-coded says (at: '' for the project's folder itself, else the folder above it that was
+// read; surface: what was read there, named as in that folder) — checked against the row's name and the project's
+// folder, and the only thing that says whose configuration a row is: never a search of its name. The surfaces, in
+// lower case, and whose they are (null: Claude Code's): the .claude/ tree (above the folder: its six trees, or a
+// .claude that is no folder), .mcp.json, and the other tools' (bn-coded's AGENT_TREES …: your subscriptions' agents
+// read them, in the folder and above it to the git root).
+const CLAUDE_TREES = ['commands', 'agents', 'output-styles', 'skills', 'workflows', 'routines'];
 const AGENT_TOOLS_OF = { '.codex': 'Codex', '.cursor': 'Cursor', '.grok': 'Grok', '.gemini': 'Gemini CLI', '.copilot': 'GitHub Copilot', '.agents': 'Codex and GitHub Copilot' };
 const AGENT_GITHUB = ['hooks', 'skills', 'agents', 'copilot'];
-// (a name relative to the project's folder, or — a folder above it, to the git root — absolute in the workspace: its
-// part from the first .claude or tool folder on decides)
-const startsConfig = (s, k) => s[k] === '.claude' || Object.hasOwn(AGENT_TOOLS_OF, s[k]) || (s[k] === '.github' && (k === s.length - 1 || AGENT_GITHUB.includes(s[k + 1])))
-  || (s[k] === '.vscode' && (k === s.length - 1 || (k === s.length - 2 && s[k + 1] === 'mcp.json'))) || (s[k] === '.mcp.json' && k === s.length - 1);
-export function agentToolOf(n) {
-  if (typeof n !== 'string') return null;
-  let s = n.toLowerCase().split('/');
-  if (n.startsWith('/')) {
-    if (!n.startsWith(`${WS}/`)) return null;
-    s = s.slice(2);
-    const k = s.findIndex((x, i) => startsConfig(s, i));
-    if (k < 0 || s[k] === '.claude') return null;
-    s = s.slice(k);
-    if (s[0] === '.mcp.json') return 'other tools (a folder above)';
-  }
-  if (Object.hasOwn(AGENT_TOOLS_OF, s[0])) return AGENT_TOOLS_OF[s[0]];
-  if (s[0] === '.github' && (s.length === 1 || AGENT_GITHUB.includes(s[1]))) return 'GitHub Copilot';
-  if (s[0] === '.vscode' && (s.length === 1 || (s.length === 2 && s[1] === 'mcp.json'))) return 'GitHub Copilot';
-  return null;
+const SURFACES = new Map([['.claude', null], ['.mcp.json', null], ...CLAUDE_TREES.map((t) => [`.claude/${t}`, null]), ...Object.entries(AGENT_TOOLS_OF),
+  ['.github', 'GitHub Copilot'], ...AGENT_GITHUB.map((t) => [`.github/${t}`, 'GitHub Copilot']), ['.vscode', 'GitHub Copilot'], ['.vscode/mcp.json', 'GitHub Copilot']]);
+// surfaces that are one entry (a file, or a folder that is a link): the row's name is the surface itself
+const SINGLE = new Set(['.mcp.json', '.vscode/mcp.json', '.github', '.vscode']);
+/** placeOf(row, root) -> {tool} (whose configuration it is; null: Claude Code's), or null when the row's at, surface and
+ *  name do not fit together for a project in root — then nothing of the listing can be trusted */
+export function placeOf(f, root) {
+  if (typeof f.surface !== 'string' || typeof f.at !== 'string' || f.surface.length > 300 || f.at.length > 1024 || !segsOk(f.surface.split('/'))) return null;
+  const kind = f.surface.toLowerCase();
+  if (!SURFACES.has(kind)) return null;
+  if (f.at !== '') {
+    // a real folder above the project's, in the workspace (the workspace itself included)
+    if (!(f.at === WS || (f.at.startsWith(`${WS}/`) && segsOk(f.at.slice(WS.length + 1).split('/')))) || typeof root !== 'string' || !root.startsWith(`${f.at}/`)) return null;
+  } else if (kind.startsWith('.claude/')) return null;   // (the project's own .claude/ is read whole: its surface is .claude)
+  const base = f.at ? `${f.at}/${f.surface}` : f.surface;
+  const one = SINGLE.has(kind) || (f.at !== '' && kind === '.claude');   // (above: a .claude only as an entry of its own)
+  if (one ? f.name !== base : f.name !== base && !f.name.startsWith(`${base}/`)) return null;
+  if (!segsOk(f.name.slice(f.at ? f.at.length + 1 : 0).split('/'))) return null;
+  if (kind === '.mcp.json') return { tool: f.at ? 'other tools (a folder above)' : null };
+  return { tool: SURFACES.get(kind) };
 }
-const nameOk = (n) => typeof n === 'string' && n.length <= 1024 && !/[\x00-\x1f\x7f]/.test(n) && (n.toLowerCase() === '.mcp.json'
-  || (!n.startsWith('/') && n.split('/')[0].toLowerCase() === '.claude' && segsOk(n.split('/')))
-  || (!n.startsWith('/') && agentToolOf(n) !== null && segsOk(n.split('/')))
-  || (n.startsWith(`${WS}/`) && agentToolOf(n) !== null && segsOk(n.slice(WS.length + 1).split('/')))
-  || (n.startsWith(`${WS}/`) && n.slice(WS.length + 1).toLowerCase().split('/').includes('.claude') && segsOk(n.slice(WS.length + 1).split('/'))));
 
-/** checkFiles(project.settings' RESULT) -> {files: [{name, type, size, sha256, target, text}], ok}: ok false when the
- *  list does not fit what bn-coded lists (a bad name, the same name twice, out of order, too many): then unverifiable */
-export function checkFiles(r) {
+/** checkFiles(project.settings' RESULT, root) -> {files: [{name, type, size, sha256, target, text, at, tool}], ok}: ok
+ *  false when the list does not fit what bn-coded lists for a project in root (a bad name, a row whose place does not
+ *  fit its name, rows that say where they came from beside rows that do not, the same name twice, out of order, too
+ *  many): then unverifiable */
+export function checkFiles(r, root) {
   const rows = Array.isArray(r?.files) ? r.files : [];
   let ok = rows.length <= FILES_MAX;
+  const placed = rows.some((f) => f && typeof f === 'object' && (f.surface !== undefined || f.at !== undefined));
   const files = [];
   for (const f of rows.slice(0, FILES_MAX)) {
-    if (!f || typeof f !== 'object' || !nameOk(f.name) || (files.length && files.at(-1).name >= f.name)) { ok = false; continue; }
+    const nameShape = f && typeof f === 'object' && typeof f.name === 'string' && f.name.length <= 1024 && !/[\x00-\x1f\x7f]/.test(f.name);
+    const place = !nameShape ? null : placed ? placeOf(f, root) : legacyNameOk(f.name) ? { tool: null } : null;
+    if (!place || (files.length && files.at(-1).name >= f.name)) { ok = false; continue; }
     files.push({
       name: f.name, type: TYPES.includes(f.type) ? f.type : 'other', size: Number.isInteger(f.size) && f.size >= 0 ? f.size : null,
       sha256: SHA.test(f.sha256 ?? '') ? f.sha256 : null, target: typeof f.target === 'string' ? short(f.target, 1000) : null,
-      text: typeof f.text === 'string' && f.text.length <= 256 << 10 ? f.text : null,
+      text: typeof f.text === 'string' && f.text.length <= 256 << 10 ? f.text : null, at: placed ? f.at : null, tool: place.tool,
     });
   }
   return { files, ok };
@@ -308,8 +318,8 @@ export function summarize(files) {
     const note = (t) => out.notes.push({ file: f.name, note: t });
     // (names as a case-insensitive workspace reads them: .CLAUDE/settings.json is .claude/settings.json)
     const lower = f.name.toLowerCase();
-    const tool = agentToolOf(f.name);
-    const settings = !tool && (lower === '.mcp.json' || SETTINGS_FILES.includes(lower));
+    const tool = f.tool ?? null;   // (checkFiles: from where it was read, never from its name)
+    const settings = !tool && !f.at && (lower === '.mcp.json' || SETTINGS_FILES.includes(lower));
     // every other file under a .claude/ is listed — each text file with the front matter keys that grant something,
     // whatever its name (one that starts with --- but does not read plainly: not trustable)
     if (!settings && !tool) {
@@ -447,7 +457,7 @@ export function makeTrust({ call, store, log = () => {} }) {
   // the same files, compared with the trusted one
   async function read(abs, { text = true } = {}) {
     const { result } = await call({ op: 'project.settings', ...(abs === WS ? {} : { root: abs }), ...(text ? {} : { text: false }) }, { timeoutMs: 20000 });
-    const { files, ok } = checkFiles(result);
+    const { files, ok } = checkFiles(result, abs);
     for (const f of files) if (f.text !== null && (!f.sha256 || sha256(Buffer.from(f.text, 'utf8')) !== f.sha256)) f.text = null;
     const present = files.length > 0 || !ok || (result?.over !== null && result?.over !== undefined);
     const hash = hashOf(files);

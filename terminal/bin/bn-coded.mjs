@@ -2502,23 +2502,33 @@ export function settingsFiles(abs, { text = false } = {}) {
     }
     return null;
   };
+  // where each row came from (the code container checks it against the row's name and the project's folder, and takes
+  // whose configuration it is from the surface, never from a search of the name): at — '' for the folder itself, else
+  // the folder above it that was read —, surface — the .claude/ tree (or one of its six above), .mcp.json, or another
+  // tool's folder or file there (.codex, .github/hooks, .vscode/mcp.json …), as named in that folder
+  const from = (at, surface, fn) => { const k = files.length; fn(); for (const f of files.slice(k)) { f.at = at; f.surface = surface; } };
   // the folder's own .claude/ and .mcp.json
-  for (const n of named(abs, '.claude')) tree(path.join(abs, n), n);
-  for (const n of named(abs, '.mcp.json')) one(n, path.join(abs, n));
-  // and the other tools' (AGENT_TREES …) in a folder: dir's, named by nameOf. A .github or .vscode that is a link is
-  // named as one (never read through: never trustable)
-  const agentConfig = (dir, nameOf) => {
-    for (const top of AGENT_TREES) for (const n of named(dir, top)) tree(path.join(dir, n), nameOf(n));
+  for (const n of named(abs, '.claude')) from('', n, () => tree(path.join(abs, n), n));
+  for (const n of named(abs, '.mcp.json')) from('', n, () => one(n, path.join(abs, n)));
+  // and the other tools' (AGENT_TREES …) in a folder: dir's (at: '' for the project's own, else that folder). A .github
+  // or .vscode that is a link is named as one (never read through: never trustable)
+  const agentConfig = (dir, at) => {
+    const nameOf = (n) => (at ? path.join(at, n) : n);
+    for (const top of AGENT_TREES) for (const n of named(dir, top)) from(at, n, () => tree(path.join(dir, n), nameOf(n)));
     const folderOf = (n) => {
       let st;
       try { st = fs.lstatSync(path.join(dir, n)); } catch { return false; }
-      if (st.isSymbolicLink()) { tree(path.join(dir, n), nameOf(n)); return false; }
+      if (st.isSymbolicLink()) { from(at, n, () => tree(path.join(dir, n), nameOf(n))); return false; }
       return st.isDirectory();
     };
-    for (const g of named(dir, '.github')) if (folderOf(g)) for (const sub of AGENT_GITHUB) for (const n of named(path.join(dir, g), sub)) tree(path.join(dir, g, n), nameOf(`${g}/${n}`));
-    for (const v of named(dir, '.vscode')) if (folderOf(v)) for (const n of named(path.join(dir, v), 'mcp.json')) one(nameOf(`${v}/${n}`), path.join(dir, v, n));
+    for (const g of named(dir, '.github')) {
+      if (folderOf(g)) for (const sub of AGENT_GITHUB) for (const n of named(path.join(dir, g), sub)) from(at, `${g}/${n}`, () => tree(path.join(dir, g, n), nameOf(`${g}/${n}`)));
+    }
+    for (const v of named(dir, '.vscode')) {
+      if (folderOf(v)) for (const n of named(path.join(dir, v), 'mcp.json')) from(at, `${v}/${n}`, () => one(nameOf(`${v}/${n}`), path.join(dir, v, n)));
+    }
   };
-  agentConfig(abs, (n) => n);
+  agentConfig(abs, '');
   // the folders above it, to the git root (else the workspace itself): their six trees. Above a folder of this computer
   // (its path in the sandbox: folders Docker made for its mount, or what else is mounted there), up to / — anything
   // there is read by Claude Code too, so it is listed (outside every top: never verifiable, never trusted)
@@ -2532,16 +2542,16 @@ export function settingsFiles(abs, { text = false } = {}) {
       const cp = path.join(d, c);
       let st;
       try { st = fs.lstatSync(cp); } catch { continue; }
-      if (!st.isDirectory()) { tree(cp, cp); continue; }
+      if (!st.isDirectory()) { from(d, c, () => tree(cp, cp)); continue; }
       for (const sname of (() => { try { return fs.readdirSync(cp).sort(); } catch { return []; } })()) {
-        if (CONFIG_SURFACES.includes(sname.toLowerCase())) tree(path.join(cp, sname), path.join(cp, sname));
+        if (CONFIG_SURFACES.includes(sname.toLowerCase())) from(d, `${c}/${sname}`, () => tree(path.join(cp, sname), path.join(cp, sname)));
       }
     }
     // the other tools' configuration above it too — Codex, Gemini CLI, Copilot and Cursor read theirs from the folders
     // up to the git root as well —, and a .mcp.json there (Claude Code reads only the project's own; others may not):
     // the same trees as in the folder itself, named by their path
-    agentConfig(d, (n) => path.join(d, n));
-    for (const n of named(d, '.mcp.json')) one(path.join(d, n), path.join(d, n));
+    agentConfig(d, d);
+    for (const n of named(d, '.mcp.json')) from(d, n, () => one(path.join(d, n), path.join(d, n)));
     if (d === WORKSPACE || d === '/') break;
   }
   files.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));

@@ -391,7 +391,8 @@ test('project.settings: everything under a folder\'s .claude/ and its .mcp.json,
   fs.rmSync(path.join(D, 'linked-dir'));
   fs.rmSync(path.join(D, 'packages'), { recursive: true });
   // the folders above it, to the git root: their six trees (commands, agents, output styles, skills, workflows,
-  // routines) — not their settings or .mcp.json; a monorepo's skill counts for a project inside it
+  // routines) — not their settings; their .mcp.json for the other tools (your subscriptions' agents may read it); a
+  // monorepo's skill counts for a project inside it
   const M = path.join(WS, 'mono'), A = path.join(M, 'packages/app');
   fs.mkdirSync(path.join(M, '.git'), { recursive: true });
   fs.mkdirSync(path.join(M, '.claude/skills/x'), { recursive: true });
@@ -407,8 +408,10 @@ test('project.settings: everything under a folder\'s .claude/ and its .mcp.json,
   fs.mkdirSync(path.join(WS, '.claude/commands'), { recursive: true });
   fs.writeFileSync(path.join(WS, '.claude/commands/ws.md'), 'x');
   r = await call({ op: 'project.settings', root: A });
-  assert.deepEqual(r.files.map((f) => f.name), [path.join(M, '.claude/agents/a.md'), path.join(M, '.claude/skills/x/SKILL.md'), path.join(M, 'packages/.Claude/Commands/c.md')],
-    'the two folders above it (any case), to the git root: their six trees only');
+  assert.deepEqual(r.files.map((f) => f.name), [path.join(M, '.claude/agents/a.md'), path.join(M, '.claude/skills/x/SKILL.md'), path.join(M, '.mcp.json'),
+    path.join(M, 'packages/.Claude/Commands/c.md')], 'the two folders above it (any case), to the git root: their six trees and .mcp.json only');
+  // each row says the folder that was read and its surface there (the code container checks both against the name)
+  assert.deepEqual(r.files.map((f) => [f.at, f.surface]), [[M, '.claude/agents'], [M, '.claude/skills'], [M, '.mcp.json'], [path.join(M, 'packages'), '.Claude/Commands']]);
   assert.match(r.hash, /^[0-9a-f]{64}$/);
   // a project outside any repository: the trees of every folder above it, the workspace's own included
   const N = path.join(WS, 'plain/sub');
@@ -570,6 +573,7 @@ test('project.settings: the other tools\' own configuration in the folder too (y
   const D = path.join(WS, 'agents-repo');
   const put = (rel, text) => { fs.mkdirSync(path.dirname(path.join(D, rel)), { recursive: true }); fs.writeFileSync(path.join(D, rel), text); };
   put('.codex/config.toml', '[mcp_servers.x]\ncommand = "evil"\n');
+  put('.codex/x/.claude/skills/s.md', 'a .claude inside .codex/: Codex\'s');
   put('.cursor/mcp.json', '{"mcpServers":{}}');
   put('.cursor/rules/a.mdc', 'rule');
   put('.grok/settings.json', '{}');
@@ -585,8 +589,11 @@ test('project.settings: the other tools\' own configuration in the folder too (y
   put('AGENTS.md', 'instructions');
   put('.cursorrules', 'instructions');
   let r = await call({ op: 'project.settings', root: D });
-  assert.deepEqual(r.files.map((f) => f.name), ['.agents/skills/s/SKILL.md', '.codex/config.toml', '.copilot/mcp-config.json', '.cursor/mcp.json', '.cursor/rules/a.mdc',
-    '.gemini/settings.json', '.github/agents/a.md', '.github/hooks/pre.json', '.grok/settings.json', '.vscode/mcp.json']);
+  assert.deepEqual(r.files.map((f) => [f.name, f.surface]), [['.agents/skills/s/SKILL.md', '.agents'], ['.codex/config.toml', '.codex'],
+    ['.codex/x/.claude/skills/s.md', '.codex'], ['.copilot/mcp-config.json', '.copilot'], ['.cursor/mcp.json', '.cursor'], ['.cursor/rules/a.mdc', '.cursor'],
+    ['.gemini/settings.json', '.gemini'], ['.github/agents/a.md', '.github/agents'], ['.github/hooks/pre.json', '.github/hooks'], ['.grok/settings.json', '.grok'],
+    ['.vscode/mcp.json', '.vscode/mcp.json']]);
+  assert.ok(r.files.every((f) => f.at === ''));
   assert.equal(r.verifiable, true);
   assert.match(r.hash, /^[0-9a-f]{64}$/);
   // a .github that is a link: named as one, never read through (never trustable)
@@ -595,7 +602,7 @@ test('project.settings: the other tools\' own configuration in the folder too (y
   fs.writeFileSync(path.join(WS, 'elsewhere/hooks/x.json'), '{}');
   fs.symlinkSync(path.join(WS, 'elsewhere'), path.join(D, '.github'));
   r = await call({ op: 'project.settings', root: D });
-  assert.deepEqual(r.files.filter((f) => f.name.startsWith('.github')).map((f) => [f.name, f.type]), [['.github', 'link']]);
+  assert.deepEqual(r.files.filter((f) => f.name.startsWith('.github')).map((f) => [f.name, f.type, f.surface]), [['.github', 'link', '.github']]);
 });
 
 test('project.settings: the other tools\' configuration in the folders above it too, to the git root (named by their path)', async () => {
