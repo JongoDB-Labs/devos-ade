@@ -597,7 +597,9 @@ Claude plan*, 2026-10-07) says *"You can still use the Claude Agent SDK, `claude
 subscription limits"*; its legal and compliance page still says developers may not *"offer Claude.ai login into their
 own applications, or … route requests through Free, Pro, or Max plan credentials on behalf of their users"*.
 `claude-sub` is Claude Code itself, signed in by you with Anthropic's own flow on your own computer; bedrock-now offers
-no Claude login and never holds the token.
+no Claude login and never holds the token. Claude on your plan in the Code page and as a Chat model — the Agent SDK
+running that same Claude Code, with its own login — waits for your choice: Settings › Claude Code › **Use my Claude
+plan in the Code page and Chat** (off by default; turning it on works from the computer running the stack).
 
 **Who answers** — one menu on each page:
 
@@ -605,15 +607,31 @@ no Claude login and never holds the token.
   own (one that is not signed in starts with its sign-in). The Code page's terminal panel has the same *Open…* menu,
   in the project's folder. A tool starts only on your click there: the portal then makes a short-lived launch token for
   exactly that; a link to the terminal with a tool in it but no such token only asks *Open … here?*.
-- **Chat**: *Who answers* above it — a Bedrock or OpenRouter model (a new chat with it in Open WebUI), or one of your
-  tools **itself**, in place of Open WebUI, in the folder you pick (the workspace or a project folder): you type into
-  the real app, with its own history (`/resume`) and its own usage display. *Open WebUI* brings Chat back. As Chat
-  *models* answering in the same conversation view — each through the interface its provider ships for other apps
-  (the Claude Agent SDK, Codex's app server, the ACP mode of Copilot, Cursor and Grok) — your subscriptions are
-  planned, each under its provider's own terms for that use (Anthropic's two texts below; OpenAI's *Sign in with
-  ChatGPT* terms for other apps; xAI's acceptable use policy); they are listed greyed out, each with its reason, until
-  then. Google's plans no longer work in Gemini CLI: Gemini in Chat is planned through your own Gemini API key, like the
+- **Chat**: each subscription that is signed in is **a model in Open WebUI's own menu** — *Codex · your ChatGPT plan*,
+  *GitHub Copilot · your Copilot plan*, *Cursor*, *Grok*, and *Claude · your Claude plan* while its switch is on —
+  answering in the same chat, streamed, with its thinking. Each answer is the provider's own agent in the sandbox,
+  signed in with its own login, through the interface it ships for other apps (the Claude Agent SDK, Codex's app
+  server, the ACP mode of Copilot, Cursor and Grok), in an empty folder of the conversation's own and **without tools**:
+  Claude gets none, Codex runs read-only and never asks, and every tool Copilot, Cursor or Grok asks for is refused. A
+  conversation is one of the agent's own sessions, taken up again at each turn (its context, compaction and limits are
+  the provider's); an edited or regenerated message starts a new session with the conversation so far. Under each
+  answer: *on your ChatGPT plan · 1,240 in / 380 out* — tokens, never dollars. *Who answers* above Chat lists them too
+  (greyed, with why, when one cannot answer), next to the Bedrock and OpenRouter models and each tool **itself** in
+  place of Open WebUI, in the folder you pick (you type into the real app, its own history and usage display).
+  Google's plans no longer work in Gemini CLI: Gemini in Chat is planned through your own Gemini API key, like the
   other providers' keys (OpenAI, Anthropic, xAI, Mistral).
+- **Code page**: the model picker's **Who answers** — Claude Code on Bedrock (as before), *Claude · your plan*, Codex,
+  Copilot, Cursor or Grok. Choosing one starts a session with it in the project's folder (your conversation so far
+  goes with your first prompt there); its own models in the same picker. It works like a Claude session: its answers,
+  its tool cards (commands, edits with their diffs, to-dos), its questions on the same permission cards (*Allow once*,
+  *Always* for this session, *Deny*), the watchlist after each turn, the same files, Git, Review and previews, and its
+  history in the session list (a badge: *Codex*, *Plan* …), taken up again later with the tool's own session. Modes:
+  Read only and Plan refuse its changes without asking, Accept edits allows its edits, Manual asks — a tool's own
+  "approve everything" mode is never used. The meter says *on your ChatGPT plan · tokens in / out* and the plan's own
+  limits where the tool reports them (Codex's 5-hour and weekly windows, Claude's), never dollars and no budget.
+  Codex runs with its own sandbox off (the sandbox container is the boundary) and asks before what it does not count as
+  safe. Claude Code's commands, plugins and MCP switches are Claude's; the tools' own (AGENTS.md, their project
+  configuration) apply as in the terminal.
 
 Settings › Claude Code › **Your AI subscriptions** shows each tool, whether it said it is signed in and which kind
 (*ChatGPT*, *Claude Max* …: its own status command, or for Gemini CLI and Grok whether their login file is there —

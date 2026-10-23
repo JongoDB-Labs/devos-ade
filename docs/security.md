@@ -856,16 +856,19 @@ spawn server, Claude Code or any file at will.
    runs there, idle until the code container — the only other container mounting it, read-only — connects);
    everything inbound is untrusted data.
 4. *Sandbox ⇄ LiteLLM and shared-mcp*: the terminal's gateway, key routes and budget — unchanged.
+5. *Open WebUI ⇄ code container*: your subscriptions as Chat models — the `plan-chat` network (internal; Open WebUI and
+   the code container only), the code container's `:8096` bound to its address there, and `CODE_CHAT_KEY` (new at
+   every `./stack code enable`), which Open WebUI's connection carries ([Your AI subscriptions](#your-ai-subscriptions)).
 
 - [x] **A container that holds nothing worth taking.** The code container (`code/`, built locally on the
   terminal's pinned Node base; the Agent SDK pinned by version and SHA-512 in lock-step with the terminal's Claude
   Code — 0.3.N ↔ 2.1.N, a test enforces it — and `ws`; no peer dependencies and no bundled Claude Code binaries,
   which the image build checks) runs as your user id, read-only, `cap_drop: ALL`, `no-new-privileges`, 768 MB, 128
   processes. It holds **no LiteLLM key** (not the terminal's, not the master key), **mounts no folder of yours**
-  and is on **no network but `code-link`**: no internet, no LiteLLM, no portal, no sandbox network (a Git host
+  and is on **no network but `code-link` and `plan-chat`** (Open WebUI's way in, above): no internet, no LiteLLM, no portal, no sandbox network (a Git host
   sign-in's requests go through the sandbox's way out in a tunnel, with TLS from end to end in the code container:
-  [below](#signing-in-to-a-git-host-oauth)). Its one secret
-  is `CODE_PROXY_SECRET`, in its environment only. Prices and spend come from the portal (`/.bn/models`,
+  [below](#signing-in-to-a-git-host-oauth)). Its secrets
+  are `CODE_PROXY_SECRET` and `CODE_CHAT_KEY`, in its environment only. Prices and spend come from the portal (`/.bn/models`,
   `/.bn/spend` on the code host, answered after the same check; the master key stays in the portal, and a
   session's spend is filtered to the terminal key's rows). It can reach the main Caddy (its only peer): with no
   cookie, only the portal's login page and Caddy's internal speech-to-text site — the same reach as Open WebUI's.
@@ -3129,12 +3132,42 @@ never reads, copies, keeps, passes on or relays a login.**
   looked at whole is not read either. Never by a program's name (a tool runs as `node`, `claude`, a renamed binary).
   **A guard against reading such a screen by accident, not a boundary**: anything in the sandbox can unset the mark or
   hide a process, and can read those screens itself.
-- [x] **No login behind an API.** In this release none of these logins is used by LiteLLM, Open WebUI or the Code page's
-  sessions (Chat lists them as planned models); the Chat tab can show the app itself (its own screen, in the
-  terminal frame) — you type into the real app. If they come as Chat models and Code page sessions, it will be through
-  each provider's own interface for other apps (the Claude Agent SDK, Codex's app server, ACP), the app itself making
-  every request with its own login in the sandbox, reachable only from Chat — never a token held or relayed by
-  bedrock-now.
+- [x] **No login behind an API: the vendors' own interfaces for other apps.** Your plans answer in Chat and on the Code
+  page only through the interface each vendor ships for other apps — the Claude Agent SDK (the same, unmodified Claude
+  Code), Codex's app server (`codex app-server`), the ACP mode of Copilot CLI, Cursor CLI and Grok Build — run in the
+  sandbox by bn-coded's `agent` op (fixed argument lists through the launchers, none that approves anything by itself:
+  no `--yolo`, `--always-approve`, `--allow-all-tools`, `--force`; the stack's variables out), the app itself making
+  every request with its own login there. Nothing on this side reads, refreshes or passes on a login: Codex's request
+  to refresh its tokens is refused, ACP's `authenticate` is called only to name a login the tool already has (Cursor's,
+  Grok's default), never one that would start a sign-in. LiteLLM never sees these requests (no key of it is used, no
+  dollar is counted).
+- [x] **Chat: a separate connection, Open WebUI's alone.** Open WebUI reaches the code container's
+  OpenAI-compatible endpoint (`:8096`, bound to its address on `plan-chat`, an internal network the two share with
+  nothing else) with a key only they have (`CODE_CHAT_KEY`, made by `./stack code enable`, never in the sandbox or on a
+  command line); the endpoint lists only the subscriptions signed in now (the sandbox's own `subscriptions status`,
+  words only), caps requests (24 MiB) and answers (2 MiB), and treats what comes back as plain text.
+- [x] **No tools in Chat.** Each conversation runs in an empty folder of its own (`~/.bn-chat/<32 hex>`, made by
+  bn-coded, never through a link): Claude Code with `--tools=` (no built-in tool), `--strict-mcp-config` and no MCP
+  server, no settings files, a system prompt that says so (bn-coded refuses a Chat conversation without those flags);
+  Codex in its read-only sandbox, never asking (`approvalPolicy: never`); Copilot without its built-in MCP servers,
+  Cursor in its ask mode, and every permission Copilot, Cursor or Grok asks for refused. A pasted link or document can
+  therefore not steer reads, commands or edits in your workspace from Chat. What a conversation was is kept as a hash
+  of your prompts (`conversations.json` in the code container's volume: which session goes on); the sessions
+  themselves are the tools' own, in the sandbox.
+- [x] **The Code page's agents ask you.** A Codex, Copilot, Cursor or Grok session asks through the same permission
+  cards (*Allow once*, *Always* for this session — the tool's own "allow always" —, *Deny*; unanswered: denied after
+  the usual minutes); Read only and Plan refuse its changes and commands without asking, Accept edits allows its file
+  changes only; a tool's own "approve everything" modes are never chosen. Codex runs with its own sandbox off (the
+  container is the boundary) and its "untrusted" approvals. The watchlist checks the files that run on your computer
+  after each turn, with Revert. Its tool cards, its text and its history (kept by the code container: `agents/` in its
+  volume, at most 2 MiB a session, 300 sessions) are the sandbox's words, shown as data.
+- [x] **Claude on your plan behind a switch.** Off by default; on, the Agent SDK runs the same Claude Code with
+  claude-sub's folder and none of the stack's variables (no LiteLLM, no spend tag, no budget stop, no stack MCP
+  server) — bn-coded starts it so only when the code container asks with `plan: true`, which it does only while
+  `CODE_CLAUDE_PLAN` is on. Its usage counts against your plan; the meter shows tokens and the plan's own limit
+  messages, never Claude Code's dollar estimate.
+- [ ] **Whoever reaches Chat uses your plans.** A Chat model on your plan answers anyone who can use Open WebUI here —
+  the portal is single-user, so that is you; sign out of a tool to take it out of the list.
 - [ ] **Anything in the sandbox can read those files.** Claude, a command it runs, a web page it reads, a plugin or an
   MCP server there runs as the same user and can copy a login out and use your plan elsewhere until you sign out **and
   revoke it at the provider** (your account's settings at Anthropic, OpenAI, GitHub, Cursor or xAI). The sandbox

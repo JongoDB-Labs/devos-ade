@@ -206,3 +206,43 @@ def link_alone(ctx):
 def origin_portal() -> str:
     from common import origin
     return origin()
+
+
+@check("browser", "subscriptions-code-harness")
+def code_harness(ctx):
+    """The Code page's Who answers: the subscriptions listed with whether each can start (none signed in here); a Copilot
+    session started for real — Copilot's own ACP mode in the sandbox, in the project's folder — ends at its sign-in
+    ("not signed in", its own sign-in in the terminal); Claude on your plan refused while its switch is off; the picker
+    shows them greyed with why."""
+    need_on()
+    if not FULL:
+        raise Skip("only with tests/e2e/run.sh --subscriptions (it starts the tools' own agents in the sandbox)")
+    if ENV.get("CODE_ENABLED") != "true":
+        raise Skip("the Code page is off in this throwaway")
+    from checks_code import Code, ui_page
+    from playwright.sync_api import expect as see
+    c = Code(ctx, "subscriptions-code-harness")
+    r = c.api("GET", "/api/harnesses?fresh=1")
+    expect(r["status"] == 200, f"/api/harnesses: {r}")
+    hs = {h["id"]: h for h in r["json"]["harnesses"]}
+    expect(list(hs) == ["claude", "codex", "copilot", "cursor", "grok"], f"harnesses {list(hs)}")
+    expect(hs["codex"]["signed"] == "no" and hs["copilot"]["signed"] == "unknown" and hs["claude"]["allowed"] is False, f"{hs}")
+    r = c.api("POST", "/api/sessions", {"harness": "claude", "mode": "default"})
+    expect(r["status"] == 409 and "Claude on your plan is off" in json.dumps(r["json"]), f"Claude on your plan: {r}")
+    r = c.api("POST", "/api/sessions", {"harness": "copilot", "mode": "default"})
+    expect(r["status"] == 200, f"a Copilot session: {r}")
+    sid = r["json"]["id"]
+    c.send({"type": "attach", "session": sid, "since": 0})
+    st = c.wait(lambda m: m.get("type") == "session_state" and m.get("session") == sid and m.get("state") == "ended", "the Copilot session's end", 120)
+    expect("GitHub Copilot is not signed in in the sandbox" in (st.get("error") or ""), f"its state: {st}")
+    expect(st.get("harness") == "copilot", f"its harness: {st}")
+    # the picker: Who answers, each subscription with whether it can start
+    page, rec = ui_page(ctx, "subscriptions-code-picker")
+    page.get_by_test_id("model-picker").click()
+    group = page.get_by_test_id("who-answers")
+    see(group).to_be_visible(timeout=10000)
+    see(page.get_by_test_id("harness-codex")).to_contain_text("sign in first")
+    see(page.get_by_test_id("harness-claude")).to_contain_text("off")
+    shot(page, "s5-code-who-answers")
+    page.keyboard.press("Escape")
+    return "Who answers: five subscriptions listed (none signed in); Copilot's real ACP agent started and ended at \"not signed in\"; Claude on your plan off (409)"

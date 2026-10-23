@@ -770,7 +770,8 @@
         p(b("Who answers"), ", on each page:"),
         list("ul", [
           [b("Terminal"), ": the ", b("Open"), " menu above it — Claude Code on Bedrock, a tool of yours, or a shell, each in a window of its own (the Code page's terminal panel has the same)."],
-          [b("Chat"), ": the ", b("Who answers"), " menu above it — a Bedrock or OpenRouter model in Open WebUI, or one of your tools ", b("itself"), ", right there, in the folder you pick. As Chat ", b("models"), " in the same conversation view, your subscriptions are planned — greyed out until then, each saying how and under which of its provider's terms (Google's plans no longer work in Gemini CLI: your own Gemini key instead); so are your own API keys (OpenAI, Anthropic, xAI, Google, Mistral)."]]),
+          [b("Chat"), ": the ", b("Who answers"), " menu above it — a Bedrock or OpenRouter model in Open WebUI, or one of your tools ", b("itself"), ", right there, in the folder you pick. Each subscription that is signed in is also ", b("a model in Open WebUI's menu"), " (Codex, Copilot, Cursor, Grok, and Claude on your plan once you turn its switch on): it answers in the same chat, without tools, on your plan — under each answer its tokens, never dollars. Google's plans no longer work in Gemini CLI: your own Gemini key is planned instead, like your other API keys."],
+          [b("Code page"), ": the model picker's ", b("Who answers"), " switches to one of them — a new session in the project's folder with your conversation so far; its questions come as the usual permission cards."]]),
         note("Usage counts against each plan's own limits; bedrock-now shows no $ for it. ", settings("Claude Code", "+subscriptions"), " › ",
           b("Your AI subscriptions"), " lists each tool, whether it says it is signed in, ", b("Sign out"), " and ", b("Check again"), "; ", code("./stack subscriptions"), " in a terminal."),
       ],

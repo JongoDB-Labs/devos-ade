@@ -1174,6 +1174,62 @@ SH
   states="$(docker exec "$tc" subscriptions status --tsv 2>/dev/null | awk -F'\t' '$4 == "yes" { printf "%s ", $1 }')"
   if [ -z "$states" ]; then record subscriptions still-not-signed-in PASS 0 "no tool signed in after its sign-in was ended"
   else record subscriptions still-not-signed-in FAIL 0 "signed in: $states"; fi
+  # Chat's models on your subscriptions: Open WebUI's own connection to the code container (plan-chat, its key) — the
+  # list says which can answer (none signed in; Copilot cannot say: listed), a request reaches the real tool in the
+  # sandbox (Copilot's ACP mode, in a Chat conversation's folder) and comes back "not signed in"; without the key: 401;
+  # the main Caddy (not on plan-chat) cannot even resolve it
+  ow="$(svc_id open-webui)"; cad="$(svc_id caddy)"; ck="$(get_env CODE_CHAT_KEY)"
+  if [ -n "$ow" ] && [ -n "$ck" ] && [ "$(get_env CODE_ENABLED)" = true ]; then
+    t0="$(now)"
+    models="$(docker exec -e K="$ck" "$ow" sh -c 'curl -s -m 60 -H "Authorization: Bearer $K" http://code-chat:8096/v1/models' 2>/dev/null)"
+    nokey="$(docker exec "$ow" sh -c 'curl -s -o /dev/null -w "%{http_code}" -m 20 http://code-chat:8096/v1/models' 2>/dev/null)"
+    ask="$(docker exec -e K="$ck" "$ow" sh -c 'curl -s -m 120 -w "\n%{http_code}" -H "Authorization: Bearer $K" -H "Content-Type: application/json" -d "{\"model\":\"plan-copilot\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}" http://code-chat:8096/v1/chat/completions' 2>/dev/null)"
+    off="$(docker exec -e K="$ck" "$ow" sh -c 'curl -s -m 60 -w "\n%{http_code}" -H "Authorization: Bearer $K" -H "Content-Type: application/json" -d "{\"model\":\"plan-claude\",\"messages\":[{\"role\":\"user\",\"content\":\"x\"}]}" http://code-chat:8096/v1/chat/completions' 2>/dev/null)"
+    from_caddy="$( { docker exec "$cad" wget -q -O- -T 5 http://code-chat:8096/v1/models >/dev/null 2>&1 && echo reached; } || echo refused)"
+    if printf '%s' "$models" | grep -q '"id":"plan-copilot"' && ! printf '%s' "$models" | grep -Eq 'plan-(codex|cursor|grok|claude)' && [ "$nokey" = 401 ] \
+      && [ "$(printf '%s' "$ask" | tail -n 1)" = 409 ] && printf '%s' "$ask" | grep -q 'GitHub Copilot is not signed in' \
+      && [ "$(printf '%s' "$off" | tail -n 1)" = 403 ] && [ "$from_caddy" = refused ]; then
+      record subscriptions chat-models PASS "$(( $(now) - t0 ))" "Open WebUI's connection: plan-copilot listed (others not signed in), its real ACP agent answered \"not signed in\" (409); no key 401; Claude on your plan off (403); the main Caddy cannot reach it"
+    else record subscriptions chat-models FAIL "$(( $(now) - t0 ))" "models: $(printf '%s' "$models" | head -c 200); no key: $nokey; ask: $(printf '%s' "$ask" | tr '\n' ' ' | tail -c 200); claude: $(printf '%s' "$off" | tail -n 1); caddy: $from_caddy"; fi
+  else record subscriptions chat-models SKIP 0 "needs the Code page and its Chat key"; fi
+  # Chat's own sandbox (subs-chat): the terminal's image and home, no workspace or project folder, none of the stack's
+  # names (gateway, terminal, LiteLLM) resolvable, bn-coded in Chat's role refusing the workspace's ops — and the
+  # workspace's bn-coded refusing a Chat conversation; Codex as Chat starts it, asked for its own configuration (no
+  # sign-in needed): shell, MCP servers and web search off
+  sc="$(svc_id subs-chat)"
+  if [ -n "$sc" ] && [ -n "$tc" ]; then
+    t0="$(now)"
+    # ask SOCK OP-JSON -> bn-coded's first answer frame there (type and JSON), in the container
+    bnc_ask='import net from "node:net";
+const [sock, req] = [process.argv[1], process.argv[2]];
+const c = net.connect(sock); const b = Buffer.from(req); const h = Buffer.alloc(5); h[0] = 1; h.writeUInt32BE(b.length, 1);
+c.write(Buffer.concat([h, b])); let buf = Buffer.alloc(0);
+c.on("data", (d) => { buf = Buffer.concat([buf, d]); if (buf.length >= 5 && buf.length >= 5 + buf.readUInt32BE(1)) { console.log(buf[0], buf.subarray(5, 5 + buf.readUInt32BE(1)).toString()); c.destroy(); } });
+setTimeout(() => { console.log("timeout"); process.exit(0); }, 20000);'
+    mounts="$(docker exec "$sc" sh -c 'test -e /workspace && echo workspace-there; grep -c " /workspace" /proc/self/mountinfo' 2>&1 | tr '\n' ' ')"
+    names="$(docker exec "$sc" sh -c 'for h in gateway terminal litellm shared-mcp portal; do getent hosts "$h" >/dev/null 2>&1 && printf "%s " "$h"; done; true' 2>&1)"
+    chat_refuses="$(docker exec "$sc" node --input-type=module -e "$bnc_ask" /run/bn-chat/coded.sock '{"op":"fs.list","path":""}' 2>&1)"
+    term_refuses="$(docker exec "$tc" node --input-type=module -e "$bnc_ask" /run/bn-code/coded.sock '{"op":"agent","tool":"codex","mode":"chat","chat":"abababababababababababababababab"}' 2>&1)"
+    codex_cfg="$(docker exec -i "$sc" node --input-type=module - <<'JS' 2>&1
+const { AGENTS } = await import('/usr/local/bin/bn-coded.mjs');
+const { spawn } = await import('node:child_process');
+const p = spawn('/usr/local/bin/codex', AGENTS.codex.chat, { cwd: '/tmp', stdio: ['pipe', 'pipe', 'ignore'] });
+let buf = '';
+const send = (o) => p.stdin.write(`${JSON.stringify(o)}\n`);
+p.stdout.on('data', (d) => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1); let m; try { m = JSON.parse(l); } catch { continue; }
+  if (m.id === 1) { send({ method: 'initialized' }); send({ id: 2, method: 'config/read', params: {} }); }
+  if (m.id === 2) { const c = m.result?.config ?? {}; const f = c.features ?? {};
+    console.log(JSON.stringify({ shell: f.shell_tool, exec: f.unified_exec, web: c.web_search, mcp: c.mcp_servers, apps: f.apps, plugins: f.plugins })); p.kill(); process.exit(0); } } });
+send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'e2e', title: 'e2e', version: '0' }, capabilities: null } });
+setTimeout(() => { console.log('timeout'); p.kill(); process.exit(0); }, 30000);
+JS
+)"
+    if [ "$(printf '%s' "$mounts" | tr -d ' ')" = 0 ] && [ -z "$names" ] && printf '%s' "$chat_refuses" | grep -q "not in Chat's sandbox" \
+      && printf '%s' "$term_refuses" | grep -q "run in their own sandbox" \
+      && printf '%s' "$codex_cfg" | grep -q '"shell":false,"exec":false,"web":"disabled","mcp":{},"apps":false,"plugins":false'; then
+      record subscriptions chat-sandbox PASS "$(( $(now) - t0 ))" "Chat's sandbox: no workspace, none of the stack's names; it refuses the workspace's ops and the workspace refuses Chat's; Codex there: shell, web search, MCP, apps, plugins off"
+    else record subscriptions chat-sandbox FAIL "$(( $(now) - t0 ))" "mounts: $mounts; names: ${names:-none}; chat: $(printf '%s' "$chat_refuses" | tail -c 150); terminal: $(printf '%s' "$term_refuses" | tail -c 150); codex: $(printf '%s' "$codex_cfg" | tail -c 200)"; fi
+  else record subscriptions chat-sandbox SKIP 0 "needs the Code page (Chat's sandbox)"; fi
   # claude-sub: the image's claude without the stack's variables (a stand-in in the workspace prints its environment)
   ws="$(get_env TERMINAL_WORKSPACE)"; t0="$(now)"
   printf '#!/bin/sh\nenv | sort\n' > "$ws/.e2e-envstub"; chmod 755 "$ws/.e2e-envstub"
@@ -1184,7 +1240,7 @@ SH
     record subscriptions claude-sub-env PASS "$(( $(now) - t0 ))" "claude-sub: none of the sandbox's $inside ANTHROPIC_* variables, its own config folder"
   else record subscriptions claude-sub-env FAIL "$(( $(now) - t0 ))" "$(printf '%s' "$out" | grep -E '^(ANTHROPIC_|CLAUDE_CONFIG_DIR)' | cut -d= -f1 | tr '\n' ' ')"; fi
   if part_on browser; then
-    E2E_SUBSCRIPTIONS=1 browser_run "your AI subscriptions: the pickers" 'browser/subscriptions-(terminal-open|chat-embed)$' subs runner-subs
+    E2E_SUBSCRIPTIONS=1 browser_run "your AI subscriptions: the pickers" 'browser/subscriptions-(terminal-open|chat-embed|code-harness)$' subs runner-subs
     wins="$(docker exec "$tc" tmux list-windows -a -F '#{session_name}:#{window_name}' 2>/dev/null | tr '\n' ' ')"
     case " $wins " in *" claude:codex "*) case " $wins " in *" chat-grok:grok "*) wins="ok $wins" ;; esac ;; esac
     case "$wins" in ok*) record subscriptions picker-windows PASS 0 "tmux: ${wins#ok }" ;;

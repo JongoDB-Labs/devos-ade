@@ -10,6 +10,20 @@ All notable changes to bedrock-now are documented here. The format follows
 
 ### Added
 
+- **Your subscriptions as Chat models.** Each one signed in — Codex (ChatGPT), GitHub Copilot, Cursor, Grok, and Claude
+  on your plan while its switch is on — is a model in Open WebUI's menu, answering in the same chat, streamed, with
+  its thinking: the provider's own agent in the sandbox through the interface it ships for other apps (Codex's app
+  server, ACP; the Claude Agent SDK), with its own login, without tools, in an empty folder of the conversation's own.
+  A chat is one of the agent's own sessions, taken up again each turn. Under each answer: *on your ChatGPT plan ·
+  tokens in / out* — never dollars. Chat's *Who answers* lists them too.
+- **Who answers on the Code page.** The model picker switches a session to Claude on your plan, Codex, Copilot,
+  Cursor or Grok (a new session in the project's folder, your conversation so far going with it), with the tool's own
+  models: its answers, tool cards and diffs, its permission questions on the same cards, the modes (Read only and Plan
+  refuse its changes, Accept edits allows its edits), the watchlist, files, Git, Review, history in the list with a
+  badge, and usage *on your plan* (tokens, the plan's own limits), no budget in dollars.
+- **Settings › Claude Code › Use my Claude plan in the Code page and Chat** (`CODE_CLAUDE_PLAN`, off by default):
+  Anthropic's support article allows the Agent SDK on a plan; its legal page says other apps may not route requests
+  through one on their users' behalf — your choice, quoted where you make it.
 - **Your AI subscriptions, in the sandbox.** Your own plans through each provider's own, unmodified app, signed in
   with that app's own sign-in (a link and a code in your browser): **Claude Code on your Claude plan** (`claude-sub`:
   the same Claude Code in its own config folder, `~/.claude-subscription`, started without the stack's `ANTHROPIC_*`
@@ -42,6 +56,11 @@ All notable changes to bedrock-now are documented here. The format follows
 
 ### Security
 
+- Chat's models on your plans: a connection of Open WebUI's own (`plan-chat`, an internal network the code container
+  and Open WebUI share alone; `CODE_CHAT_KEY`); no tool in a Chat conversation (Claude Code with `--tools=` and no MCP
+  server, Codex read-only and never asking, every ACP permission refused), bn-coded refusing a Chat conversation
+  without those; no login read, refreshed or passed on; the agents' tool calls on the Code page through your
+  permission cards, never a tool's own "approve everything" mode.
 - A login made in the sandbox can be read by anything running there (Claude, a command it runs, a page it reads):
   said by `subscriptions login` and `./stack subscriptions login`, in Settings › Your AI subscriptions, the walkthrough,
   the README and [docs/security.md](docs/security.md#your-ai-subscriptions), with how to sign out and where to revoke it.
