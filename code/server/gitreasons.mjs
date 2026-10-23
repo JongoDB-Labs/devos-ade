@@ -200,6 +200,21 @@ export const SANDBOX_REFUSALS = Object.freeze([
   '~/.gitconfig is not a regular file: change it in the terminal',
   'git config failed',
   'too many names',
+  // (your subscriptions: Claude on your plan, the agents of the Code page and of Chat, which tools are signed in)
+  'no budget stop for a session on your plan',
+  'a Chat conversation runs on your plan only',
+  'a Chat conversation has no tools: --tools= and --strict-mcp-config',
+  'not for a Chat conversation',
+  'no such tool',
+  'mode: code or chat',
+  'that tool is not in this sandbox',
+  'too many subscription agents at once',
+  'bad conversation id',
+  'the conversations folder is not a folder',
+  "that conversation's folder is not a folder",
+  'bad store',
+  'no subscriptions command in this sandbox',
+  'the tools did not answer in time',
   // (@terminal: a window of one of your subscriptions' tools is never read)
   "that window runs one of your AI subscriptions' tools, whose screen may show a sign-in code: it is not read (copy what you need from it yourself)",
 ]);

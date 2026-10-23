@@ -8,7 +8,12 @@
 //   claude          Claude Code in stream-json mode (the Agent SDK's arguments, checked against an allowlist), with
 //                   this container's environment (LiteLLM through the gateway, the terminal key) and the shared MCP
 //                   server (~/.config/bedrock-now/mcp.json, written by bn-terminal)
+//                   — or, plan: true, Claude on your plan: claude-sub's folder and none of the stack's variables (planEnv)
 //   cli             a plugin / marketplace / MCP listing or change (`claude plugin …`, `claude mcp …`: fixed shapes)
+//   agent           a tool of your subscriptions (Codex, Copilot, Cursor, Grok) on its interface for other apps
+//                   (AGENTS: fixed arguments, through its launcher), in a folder of the workspace (code) or in an empty
+//                   folder of Chat's (chat), without the stack's variables (agentEnv)
+//   subscriptions.status  which of those tools are here and signed in (words only)
 // Roots: a project of the Code page is a folder the sandbox sees — /workspace itself, or a folder of it. Every op that
 // takes a path takes a `root` too ("/workspace" or "/workspace/<folder>", checked here: a real folder of the workspace,
 // never through a link; none: /workspace): a relative path is relative to it, and what comes back is relative to it.
@@ -117,12 +122,32 @@ const CLAUDE = process.env.BN_CLAUDE_BIN || '/usr/local/bin/claude';
 const CHILDREN = process.env.BN_CODE_CHILDREN || '/tmp/bn-coded/children';
 const MCP_CONFIG = path.join(os.homedir(), '.config/bedrock-now/mcp.json');
 const CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+// Claude on your plan (Settings › Your AI subscriptions › the switch; the code container asks for it only while the
+// switch is on): Claude Code with claude-sub's folder — its own login, its own transcripts — and none of the stack's
+// variables (planEnv). Nothing here opens that folder beyond its projects/ (the Code page's list of those sessions).
+const PLAN_DIR = process.env.BN_PLAN_CONFIG_DIR || path.join(os.homedir(), '.claude-subscription');
+// Chat's conversations with your subscriptions' agents (agent op, mode chat): an empty folder each, made here
+const CHAT_DIR = process.env.BN_CHAT_DIR || path.join(os.homedir(), '.bn-chat');
+// The tools of your subscriptions as the Code page and Chat run them: each one's own interface for other apps, through
+// its launcher in /usr/local/bin (its own config folder, updates off: terminal/bin/<name>). Fixed argument lists, none
+// of which approves anything by itself (--yolo, --always-approve, --allow-all-tools, --force are never passed). chat:
+// for Chat's conversations, without what reaches beyond the conversation where the tool has a switch for it.
+export const AGENTS = Object.freeze({
+  codex: { bin: 'codex', code: ['app-server'], chat: ['app-server'] },
+  copilot: { bin: 'copilot', code: ['--acp', '--stdio'], chat: ['--acp', '--stdio', '--disable-builtin-mcps'] },
+  cursor: { bin: 'cursor-agent', code: ['acp'], chat: ['acp'] },
+  grok: { bin: 'grok', code: ['agent', '--no-leader', 'stdio'], chat: ['agent', '--no-leader', 'stdio'] },
+});
+const AGENT_BIN_DIR = process.env.BN_AGENT_BIN_DIR || '/usr/local/bin';
+const CHAT_ID = /^[0-9a-f]{32}$/;
 
 export const MAX_FRAME = 4 << 20;          // one frame from the code container
 const MAX_READ = 25 << 20;                 // fs.read: at most this much (the code side asks for less: 2 MiB for text)
 const MAX_WRITE = 25 << 20;                // fs.write: a file (upload or editor save) of at most this much
-const MAX_PROCS = { claude: 6, cli: 4 };   // processes at once: Claude Code sessions, and plugin/MCP listings or changes
-                                           // (a slow listing never keeps a session from starting, nor the other way)
+// processes at once: Claude Code sessions, plugin/MCP listings or changes, and your subscriptions' agents (the Code
+// page's sessions and Chat's conversations with them) — a slow listing never keeps a session from starting, nor the
+// other way
+const MAX_PROCS = { claude: 6, cli: 4, agent: 8 };
 const MAX_CONNECTIONS = 32;
 const MAX_LIST = 5000;                     // directory entries
 const MAX_SESSIONS = 300;                  // sessions.list rows (the most recent, of every folder)
@@ -302,6 +327,42 @@ export function childEnv(extra, litellmSession, base = process.env) {
   } else delete env.ANTHROPIC_CUSTOM_HEADERS;
   return env;
 }
+// The stack's variables a tool of your subscriptions never gets: its gateway, keys and models, Claude Code's switches
+// for Bedrock, the MCP token (in mcp.json), this server's own — what claude-sub leaves out too, and AWS's
+const STACK_VAR = /^(ANTHROPIC_[A-Z0-9_]*|CLAUDE_CODE_USE_[A-Z0-9_]*|CLAUDE_CODE_OAUTH_[A-Z0-9_]*|CLAUDE_BEDROCK_[A-Z0-9_]*|CLAUDE_CODE_SIMPLE|CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS|CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC|CLAUDE_CONFIG_DIR|SHARED_MCP_TOKEN|BN_MCP_URL|BN_[A-Z0-9_]*|AWS_[A-Z0-9_]*)$/;
+// planEnv(extra, base) -> the environment of Claude on your plan: this container's without the stack's variables
+// (STACK_VAR: no LiteLLM, no Bedrock, no terminal key, no spend tag), plus the SDK's few (checked), and claude-sub's
+// folder — Claude Code then uses its own stored login there, which nothing here reads
+export function planEnv(extra, base = process.env) {
+  const env = {};
+  for (const [k, v] of Object.entries(base)) if (!STACK_VAR.test(k)) env[k] = v;
+  for (const [k, v] of Object.entries(extra && typeof extra === 'object' ? extra : {})) {
+    if (SDK_ENV.test(k) && typeof v === 'string' && /^[\x20-\x7e]{0,200}$/.test(v)) env[k] = v;
+  }
+  env.CLAUDE_CONFIG_DIR = PLAN_DIR;
+  env.DISABLE_AUTOUPDATER = '1';
+  return env;
+}
+// agentEnv(base) -> a subscription agent's environment (Codex, Copilot, Cursor, Grok): this container's without the
+// stack's variables; nothing added (each launcher sets its tool's own folder and switches)
+export function agentEnv(base = process.env) {
+  const env = {};
+  for (const [k, v] of Object.entries(base)) if (!STACK_VAR.test(k) && !/^(CLAUDECODE|CLAUDE_CODE_[A-Z0-9_]*|CLAUDE_AGENT_SDK_VERSION)$/.test(k)) env[k] = v;
+  return env;
+}
+// chatFolder(id) -> Chat's folder for one conversation (CHAT_DIR/<32 hex>), made (mode 700) when not there yet: a real
+// folder, never through a link
+export function chatFolder(id, root = CHAT_DIR) {
+  if (!CHAT_ID.test(String(id))) throw new Error('bad conversation id');
+  fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+  const top = fs.lstatSync(root);
+  if (!top.isDirectory() || top.isSymbolicLink()) throw new Error('the conversations folder is not a folder');
+  const dir = path.join(root, id);
+  try { fs.mkdirSync(dir, { mode: 0o700 }); } catch (e) { if (e.code !== 'EEXIST') throw e; }
+  const st = fs.lstatSync(dir);
+  if (!st.isDirectory() || st.isSymbolicLink()) throw new Error('that conversation\'s folder is not a folder');
+  return dir;
+}
 // The environment of a `claude plugin|mcp …` run: the same, and never a Claude Code session's own markers — the CLI
 // ignores --accept-command inside a session (an agent must not accept a command for itself); here a person accepted
 // it in the page, by its sha256.
@@ -472,7 +533,9 @@ export const encodeCwd = (cwd) => {
   for (let i = 0; i < cwd.length; i++) h = ((h << 5) - h + cwd.charCodeAt(i)) | 0;
   return `${n.slice(0, 200)}-${Math.abs(h).toString(36)}`;
 };
-const PROJECTS = () => path.join(CONFIG_DIR, 'projects');
+// store: 'plan' — Claude on your plan's transcripts (PLAN_DIR); else the stack's Claude Code's (CONFIG_DIR)
+const PROJECTS = (store) => path.join(store === 'plan' ? PLAN_DIR : CONFIG_DIR, 'projects');
+export const storeArg = (v) => { if (v === undefined || v === null || v === 'bedrock') return 'bedrock'; if (v === 'plan') return 'plan'; throw new Error('bad store'); };
 // cwdOk(v): a working folder a session may have — in the workspace or a folder of this computer; absolute,
 // normalized, one line (it need not exist)
 export const cwdOk = (v) => typeof v === 'string' && v.length <= 1024 && topOf(v) !== null
@@ -484,11 +547,11 @@ const storeCwdOk = (v) => typeof v === 'string' && v.length <= 1024 && v.startsW
 // transcriptFile(id, cwd, {any}) -> the path of a session's transcript in the store folder of its working folder (none:
 // the workspace), or null when that folder is not a real folder; throws for a bad id or folder (any: a folder outside
 // every top too — reading only)
-function transcriptFile(id, cwd, { any = false } = {}) {
+function transcriptFile(id, cwd, { any = false, store } = {}) {
   if (!UUID.test(String(id))) throw new Error('bad session id');
   const c = cwd === undefined || cwd === null || cwd === '' ? WORKSPACE : cwd;
   if (!(any ? storeCwdOk(c) : cwdOk(c))) throw new Error('bad session folder');
-  const dir = path.join(PROJECTS(), encodeCwd(c));
+  const dir = path.join(PROJECTS(store), encodeCwd(c));
   try { if (!fs.lstatSync(dir).isDirectory()) return null; } catch { return null; }
   return path.join(dir, `${id}.jsonl`);
 }
@@ -519,23 +582,23 @@ const humanPrompt = (e) => {
 // through a link; each transcript's `cwd` is the working folder it records at its start — kept only when it is a folder
 // of the workspace whose store folder is the one the transcript is in (two folders' sessions sharing a store folder are
 // told apart this way); the workspace's own folder's are the workspace's.
-export function sessionsList() {
+export function sessionsList(store) {
   const own = encodeCwd(WORKSPACE);
   // the store folders of the workspace and its folders, of the folders of this computer (their own names), and any
   // other (a folder of this computer no longer added: its sessions marked outside — read, never resumed)
   const mine = (n) => n === own || n.startsWith(`${own}-`) || HOST_TOPS.some((t) => n === encodeCwd(t) || n.startsWith(`${encodeCwd(t)}-`));
   let dirs = [];
   try {
-    const all = fs.readdirSync(PROJECTS(), { withFileTypes: true }).filter((d) => d.isDirectory() && d.name.startsWith('-')).map((d) => d.name).sort();
+    const all = fs.readdirSync(PROJECTS(store), { withFileTypes: true }).filter((d) => d.isDirectory() && d.name.startsWith('-')).map((d) => d.name).sort();
     dirs = [...all.filter(mine), ...all.filter((n) => !mine(n))].slice(0, SESSION_DIRS);
   } catch { return []; }
   const stats = [];
   for (const dir of dirs) {
     let names = [];
-    try { names = fs.readdirSync(path.join(PROJECTS(), dir)).filter((n) => /^[0-9a-f-]{36}\.jsonl$/.test(n) && UUID.test(n.slice(0, 36))); } catch { continue; }
+    try { names = fs.readdirSync(path.join(PROJECTS(store), dir)).filter((n) => /^[0-9a-f-]{36}\.jsonl$/.test(n) && UUID.test(n.slice(0, 36))); } catch { continue; }
     for (const n of names) {
       if (stats.length >= SESSION_FILES) break;
-      try { const st = fs.lstatSync(path.join(PROJECTS(), dir, n)); if (st.isFile()) stats.push([dir, n, st]); } catch { /* gone */ }
+      try { const st = fs.lstatSync(path.join(PROJECTS(store), dir, n)); if (st.isFile()) stats.push([dir, n, st]); } catch { /* gone */ }
     }
   }
   stats.sort((a, b) => b[2].mtimeMs - a[2].mtimeMs);
@@ -544,7 +607,7 @@ export function sessionsList() {
     if (rows.length >= MAX_SESSIONS) break;
     let fd;
     try {
-      fd = fs.openSync(path.join(PROJECTS(), dir, n), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+      fd = fs.openSync(path.join(PROJECTS(store), dir, n), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
       const size = fs.fstatSync(fd).size, span = 64 << 10;
       const head = lines(readSlice(fd, 0, Math.min(size, span)));
       const tail = size > span ? lines(readSlice(fd, Math.max(span, size - span), Math.min(span, size - span))) : [];
@@ -577,8 +640,8 @@ export function sessionsList() {
 
 // One transcript's entries (the SDK's SessionStore.load shape): no symlink, at most its last 3 MiB. cwd: the session's
 // working folder (its store folder; none: the workspace's)
-export function sessionsLoad(id, cwd) {
-  const file = transcriptFile(id, cwd, { any: true });
+export function sessionsLoad(id, cwd, store) {
+  const file = transcriptFile(id, cwd, { any: true, store });
   if (!file) return { entries: null };
   let fd;
   try { fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK); } catch { return { entries: null }; }
@@ -592,8 +655,8 @@ export function sessionsLoad(id, cwd) {
 
 // A title for a session (what /rename writes): one custom-title line appended (O_APPEND: a single small write, so
 // it never interleaves with Claude Code's own lines).
-export function sessionsTitle(id, title, cwd) {
-  const file = transcriptFile(id, cwd);
+export function sessionsTitle(id, title, cwd, store) {
+  const file = transcriptFile(id, cwd, { store });
   if (typeof title !== 'string' || !/^[^\x00-\x1f\x7f]{1,200}$/u.test(title)) throw new Error('bad title');
   if (!file) throw new Error('no such session');
   const fd = fs.openSync(file, fs.constants.O_RDWR | fs.constants.O_APPEND | fs.constants.O_NOFOLLOW);
@@ -1207,6 +1270,30 @@ function runCapped(bin, args, { cwd = WORKSPACE, env, timeoutMs = 10000, maxOut 
   });
 }
 const firstFile = (list) => list.find((f) => { try { return fs.statSync(f).isFile(); } catch { return false; } }) || list[0];
+
+// --- subscriptions.status: which tools of your subscriptions are here and signed in — `subscriptions status --tsv`
+// --- (terminal/bin/subscriptions: each tool's own status command, or its own file's presence, reduced to words). Its
+// --- lines are checked here word by word: only these words leave (no version string, no account detail).
+const SUBS_BIN = process.env.BN_SUBS_BIN_PATH || '/usr/local/bin/subscriptions';
+export const SUBS_TOOLS = ['claude', 'codex', 'gemini', 'copilot', 'cursor', 'grok'];
+const SUBS_LINE = /^(claude|codex|gemini|copilot|cursor|grok)\t(yes|no)\t(-|[0-9A-Za-z][0-9A-Za-z.+-]{0,39})\t(yes|no|unknown)\t(-|[a-z0-9.-]{1,30})\t(command|file|none)$/;
+// parseSubsStatus(text) -> {tools: [{id, installed, signed}]}: one row per known tool, a tool without a valid line
+// "unknown" (never signed in by default)
+export function parseSubsStatus(text) {
+  const seen = new Map();
+  for (const line of String(text).split('\n').slice(0, 50)) {
+    const m = SUBS_LINE.exec(line);
+    if (m && !seen.has(m[1])) seen.set(m[1], { id: m[1], installed: m[2] === 'yes', signed: m[2] === 'yes' ? m[4] : 'no' });
+  }
+  return { tools: SUBS_TOOLS.map((id) => seen.get(id) ?? { id, installed: false, signed: 'unknown' }) };
+}
+export async function subscriptionsStatus({ bin = SUBS_BIN, timeoutMs = 60000 } = {}) {
+  // (the system's programs only: never one of the same name a folder of the home puts first on PATH)
+  const r = await runCapped(bin, ['status', '--tsv'], { cwd: os.homedir(), env: { ...agentEnv(), PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' }, timeoutMs, maxOut: 64 << 10 });
+  if (r.missing) throw new Error('no subscriptions command in this sandbox');
+  if (r.timedOut) throw new Error('the tools did not answer in time');
+  return parseSubsStatus(r.out.toString('utf8'));
+}
 
 // --- git.diff: what changed in /workspace since its last commit, for the page's Review pane — `git` run read-only
 // --- with fixed arguments, so that no program a repository's configuration names runs (a hostile repo: its
@@ -3291,10 +3378,11 @@ export async function launchStart(name, digest, { tmux = tmuxBin(), root = WS_RO
 // workspace; none: the workspace — Claude Code finds a session by the folder it runs in), and `claude-bedrock --resume
 // <id>` typed into its fresh shell and run — there, in your shell's history. Only a checked UUID of a transcript that is
 // there is ever part of what is typed (the page's own process for that session is closed first, by the code container).
-const RESUME_CMD = (id) => `claude-bedrock --resume ${id}`;
-export async function terminalResume(id, { tmux = tmuxBin(), procDir = '/proc', cwd = null } = {}) {
+// plan: a session of Claude on your plan — `claude-sub --resume <id>` (its own folder's transcript)
+const RESUME_CMD = (id, plan = false) => `${plan ? 'claude-sub' : 'claude-bedrock'} --resume ${id}`;
+export async function terminalResume(id, { tmux = tmuxBin(), procDir = '/proc', cwd = null, plan = false } = {}) {
   if (typeof id !== 'string' || !UUID.test(id)) throw new Error('bad session id');
-  const file = transcriptFile(id, cwd);
+  const file = transcriptFile(id, cwd, { store: plan ? 'plan' : 'bedrock' });
   let st;
   try { st = file && fs.lstatSync(file); } catch { st = null; }
   if (!st) throw new Error('no such session in this workspace (it has no prompts yet?)');
@@ -3310,10 +3398,10 @@ export async function terminalResume(id, { tmux = tmuxBin(), procDir = '/proc', 
   const pane = w.out.trim();
   if (!/^%[0-9]{1,6}$/.test(pane)) throw new Error('tmux: no pane for the new window');
   // -l: the text as it is (no key names); then Enter on its own
-  const t = await run(tmux, ['send-keys', '-t', pane, '-l', RESUME_CMD(id)]);
+  const t = await run(tmux, ['send-keys', '-t', pane, '-l', RESUME_CMD(id, plan)]);
   const e = t.code === 0 ? await run(tmux, ['send-keys', '-t', pane, 'Enter']) : t;
   if (e.code !== 0) throw new Error(`tmux: ${printable(e.err, 200) || `exit ${e.code}`}`);
-  return { ok: true, window, command: RESUME_CMD(id) };
+  return { ok: true, window, command: RESUME_CMD(id, plan) };
 }
 
 // terminalWindow(root) — a project's terminal: a new window of the terminal's tmux session in its folder (a shell of
@@ -4416,7 +4504,7 @@ function fsWriteAbort(w) {
   try { fs.unlinkSync(w.tmp); } catch { /* gone or renamed */ }
 }
 
-// --- orphans: a killed bn-coded leaves its claude children running (reparented to tini). They finish what was
+// --- orphans: a killed bn-coded leaves its claude children (and subscription agents) running (reparented to tini). They finish what was
 // --- already approved, but no new tool call can be approved without the code container; a resume meanwhile would
 // --- have two processes appending to one transcript. So each child is recorded with its start time, and a new
 // --- bn-coded ends the recorded ones that are still `claude … stream-json`.
@@ -4440,15 +4528,16 @@ export function sweepOrphans({ kill = process.kill } = {}) {
     if (!pid || !want || procStart(pid) !== want) continue;   // gone, or the PID now belongs to something else
     let cmd = '';
     try { cmd = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8'); } catch { continue; }
-    if (!cmd.includes('stream-json')) continue;
+    // (a Claude Code session's, or a subscription agent's: its interface for other apps — AGENTS' argument lists)
+    if (!cmd.includes('stream-json') && !/(^|\0)(app-server|--acp|acp|stdio)(\0|$)/.test(cmd)) continue;
     try { kill(pid, 'SIGTERM'); ended.push(pid); } catch { /* gone */ }
   }
   return ended;
 }
 
 // --- one connection, one op ---
-const running = { claude: 0, cli: 0 };
-const helpers = { git: 0, grep: 0, gitRead: 0, gitWrite: 0, gitNet: 0, capture: 0 };
+const running = { claude: 0, cli: 0, agent: 0 };
+const helpers = { git: 0, grep: 0, gitRead: 0, gitWrite: 0, gitNet: 0, capture: 0, subs: 0 };
 let brokerSock = null;
 export function serve(sock) {
   const parser = new FrameParser();
@@ -4469,13 +4558,15 @@ export function serve(sock) {
     send(T.ASK, { ...q, id });
   });
 
-  function startProcess(args, cwd, env, { noStdin = false, kind = 'claude' } = {}) {
-    if (running[kind] >= MAX_PROCS[kind]) return fail(kind === 'cli' ? 'too many plugin or MCP commands at once' : 'too many Claude Code processes');
+  function startProcess(args, cwd, env, { noStdin = false, kind = 'claude', bin = CLAUDE } = {}) {
+    if (running[kind] >= MAX_PROCS[kind]) {
+      return fail(kind === 'cli' ? 'too many plugin or MCP commands at once' : kind === 'agent' ? 'too many subscription agents at once' : 'too many Claude Code processes');
+    }
     running[kind]++;
     let counted = true;
     const uncount = () => { if (counted) { counted = false; running[kind]--; } };
     try {
-      child = spawn(CLAUDE, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+      child = spawn(bin, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (e) { uncount(); return fail(`spawn failed: ${e.code || e.message}`); }
     const c = child;
     if (c.pid) recordChild(c.pid);
@@ -4496,6 +4587,16 @@ export function serve(sock) {
     if (req.op === 'claude') {
       const why = checkClaudeArgs(req.args);
       if (why) return fail(why);
+      // chat: one of Chat's conversations with Claude on your plan — in its own empty folder, with no built-in tool
+      // (--tools= ), no MCP server (--strict-mcp-config, and the stack's not added) and no folder configuration
+      if (req.chat !== undefined) {
+        if (req.plan !== true) return fail('a Chat conversation runs on your plan only');
+        if (!req.args.includes('--tools=') || !req.args.includes('--strict-mcp-config')) return fail('a Chat conversation has no tools: --tools= and --strict-mcp-config');
+        if (req.args.some((a) => typeof a === 'string' && (a.startsWith('--project-config-root') || a.startsWith('--max-budget-usd')))) return fail('not for a Chat conversation');
+        let dir;
+        try { dir = chatFolder(req.chat); } catch (e) { return fail(e.message); }
+        return startProcess([...FIXED, ...req.args.slice(FIXED.length)], dir, planEnv(req.env));
+      }
       const cwd = confine(typeof req.cwd === 'string' ? req.cwd : WORKSPACE);
       if (!cwd) return fail('cwd must be in /workspace');
       // --project-config-root: always, once, and the folder the process runs in (real paths) — Claude Code then reads the
@@ -4504,7 +4605,31 @@ export function serve(sock) {
       if (pcr.length !== 1 || !pcr[0].startsWith('--project-config-root=')) return fail('--project-config-root: exactly once, as the folder Claude Code runs in');
       if (confine(pcr[0].slice('--project-config-root='.length)) !== cwd) return fail('--project-config-root must be the folder Claude Code runs in');
       const args = [...FIXED, ...(fs.existsSync(MCP_CONFIG) ? [`--mcp-config=${MCP_CONFIG}`] : []), ...req.args.slice(FIXED.length)];
+      // plan: Claude on your plan (the code container asks for it only while Settings' switch is on) — its own folder,
+      // none of the stack's variables, no spend tag (LiteLLM is not on its way), and not the stack's shared MCP server
+      // (Chat's knowledge bases and the shared bucket would reach your plan: claude-sub leaves it out too)
+      if (req.plan === true) {
+        if (req.args.some((a) => typeof a === 'string' && a.startsWith('--max-budget-usd'))) return fail('no budget stop for a session on your plan');
+        return startProcess([...FIXED, ...req.args.slice(FIXED.length)], cwd, planEnv(req.env));
+      }
       return startProcess(args, cwd, childEnv(req.env, req.litellmSession));
+    }
+    // A tool of your subscriptions (AGENTS): code — a Code page session in a folder of the workspace; chat — one of
+    // Chat's conversations, in its own empty folder (chatFolder). Its interface for other apps on stdin/stdout.
+    if (req.op === 'agent') {
+      const a = typeof req.tool === 'string' && Object.hasOwn(AGENTS, req.tool) ? AGENTS[req.tool] : null;
+      if (!a) return fail('no such tool');
+      if (req.mode !== 'code' && req.mode !== 'chat') return fail('mode: code or chat');
+      let cwd;
+      if (req.mode === 'code') {
+        cwd = confine(typeof req.cwd === 'string' ? req.cwd : WORKSPACE);
+        if (!cwd) return fail('cwd must be in /workspace');
+      } else {
+        try { cwd = chatFolder(req.chat); } catch (e) { return fail(e.message); }
+      }
+      const bin = path.join(AGENT_BIN_DIR, a.bin);
+      if (!fs.existsSync(bin)) return fail('that tool is not in this sandbox');
+      return startProcess([...a[req.mode]], cwd, agentEnv(), { kind: 'agent', bin });
     }
     if (req.op === 'cli') {
       const why = checkCliArgs(req.args);
@@ -4515,9 +4640,16 @@ export function serve(sock) {
       // (the project folder an op works in: checked here — a real folder of the workspace, never through a link)
       const root = () => rootArg(req.root);
       switch (req.op) {
-        case 'sessions.list': return finish(T.RESULT, { sessions: sessionsList() });
-        case 'sessions.load': return finish(T.RESULT, sessionsLoad(req.id, req.cwd));
-        case 'sessions.title': return finish(T.RESULT, sessionsTitle(req.id, req.title, req.cwd));
+        // which tools of your subscriptions are signed in (each one's own status, through `subscriptions status --tsv`)
+        case 'subscriptions.status':
+          if (helpers.subs >= 1) return fail('busy: try again in a moment');
+          helpers.subs++;
+          subscriptionsStatus().then((r) => finish(T.RESULT, r), (e) => fail(e.message)).finally(() => { helpers.subs--; });
+          return undefined;
+        // (store: plan — Claude on your plan's transcripts, in its own folder)
+        case 'sessions.list': return finish(T.RESULT, { sessions: sessionsList(storeArg(req.store)) });
+        case 'sessions.load': return finish(T.RESULT, sessionsLoad(req.id, req.cwd, storeArg(req.store)));
+        case 'sessions.title': return finish(T.RESULT, sessionsTitle(req.id, req.title, req.cwd, storeArg(req.store)));
         // (a copy into the store — its data follows as STDIN frames; and one read whole, for a fork into another folder)
         case 'sessions.import': writer = sessionsImportBegin(req); return undefined;
         case 'sessions.export': return finish(T.RESULT, sessionsExport(send, req.id, req.cwd));
@@ -4632,7 +4764,7 @@ export function serve(sock) {
         case 'perm.read': return finish(T.RESULT, permRead(root()));
         case 'perm.remove': return finish(T.RESULT, permRemove(req));
         case 'terminal.resume':
-          terminalResume(req.id, { cwd: req.cwd ?? null }).then((r) => finish(T.RESULT, r), (e) => fail(e.message));
+          terminalResume(req.id, { cwd: req.cwd ?? null, plan: req.plan === true }).then((r) => finish(T.RESULT, r), (e) => fail(e.message));
           return undefined;
         case 'terminal.window': {
           const r0 = root();
