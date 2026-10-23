@@ -3,7 +3,7 @@
 # computer's services or your network. Added with compose.code.yaml only then (lib/common.sh compose_overlays).
 services:
   subs-chat:
-    networks: [subs-chat, terminal-proxy]
+    networks: [terminal-proxy]
     environment:
       HTTP_PROXY: http://egress:3128
       HTTPS_PROXY: http://egress:3128

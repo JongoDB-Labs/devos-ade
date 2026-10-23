@@ -1,6 +1,6 @@
 # Chat's sandbox's way out (compose.code.yaml subs-chat) while the terminal's is the direct one (TERMINAL_EGRESS=host:
 # compose.terminal-egress.yaml): the same network. Added with compose.code.yaml only then (lib/common.sh
-# compose_overlays); with TERMINAL_EGRESS=off neither file: no way out (your subscriptions cannot answer in Chat then).
+# compose_overlays); with TERMINAL_EGRESS=off compose.code-offline.yaml instead (no network at all).
 services:
   subs-chat:
-    networks: [subs-chat, terminal-out]
+    networks: [terminal-out]

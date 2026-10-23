@@ -1,0 +1,6 @@
+# Chat's sandbox (compose.code.yaml subs-chat) while the sandbox has no way out (TERMINAL_EGRESS=off): no network at all
+# (your subscriptions cannot answer in Chat then; the code container still reaches it on its socket). Added with
+# compose.code.yaml only then (lib/common.sh compose_overlays).
+services:
+  subs-chat:
+    network_mode: none

@@ -392,6 +392,7 @@ compose_overlays() {
       case "$(egress_mode "$(get_env TERMINAL_EGRESS)")" in
         internet) echo compose.code-proxy.yaml ;;
         host) echo compose.code-egress.yaml ;;
+        *) echo compose.code-offline.yaml ;;
       esac
     fi
   fi

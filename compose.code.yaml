@@ -98,8 +98,9 @@ services:
   # and shared-mcp are out of reach). Its one program is bn-coded in Chat's role
   # (terminal/bin/bn-coded.mjs roleOf): Chat's conversations, each in an empty folder of its own
   # (~/.bn-chat/<id>), each tool started with its tools switched off — and nothing else. The code container connects to
-  # its socket (chat-socket). Its way out is the sandbox's, as Settings › Claude Code › Sandbox internet access says:
-  # the egress proxy (compose.code-proxy.yaml), the direct one (compose.code-egress.yaml), or none.
+  # its socket (chat-socket). Its one network is the sandbox's way out, as Settings › Claude Code › Sandbox internet
+  # access says: the egress proxy's (compose.code-proxy.yaml), the direct one (compose.code-egress.yaml), or none
+  # (compose.code-offline.yaml) — never this stack's default network (it lists none here: an overlay always says).
   subs-chat:
     # the terminal's own image, as the terminal's build made it (./stack builds it for the terminal): never built for
     # this service with other arguments, never pulled
@@ -147,7 +148,6 @@ services:
         target: /etc/claude-code/managed-settings.json
         read_only: true
         bind: { create_host_path: false, selinux: z }
-    networks: [subs-chat]
     healthcheck:
       test: ["CMD", "test", "-S", "/run/bn-chat/coded.sock"]
       interval: 10s
@@ -209,8 +209,6 @@ networks:
   code-link:
     internal: true
   plan-chat:
-    internal: true
-  subs-chat:   # (subs-chat alone: its way out is added by compose.code-proxy.yaml or compose.code-egress.yaml)
     internal: true
 
 volumes:

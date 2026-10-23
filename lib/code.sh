@@ -193,7 +193,7 @@ code_terminal_off() {
 # volume is the terminal's)
 code_network_cleanup() {
   local p; p="$(project_name)"
-  docker network rm "${p}_code-link" "${p}_plan-chat" "${p}_subs-chat" >/dev/null 2>&1 || true
+  docker network rm "${p}_code-link" "${p}_plan-chat" >/dev/null 2>&1 || true
   docker volume rm "${p}_chat-socket" >/dev/null 2>&1 || true
 }
 
