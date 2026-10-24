@@ -5,7 +5,6 @@ lib/brand.sh	PRODUCT_LEGACY_NAME="bedrock-now"	the name before v0.25.0: ./stack 
 lib/brand.sh	PRODUCT_LEGACY_REPO="JongoDB-Labs/bedrock-now"	the repository's name before v0.25.0 (GitHub redirects it)
 portal/portal/brand.py	LEGACY_NAME = "bedrock-now"	the name before v0.25.0
 portal/portal/brand.py	LEGACY_REPO = "JongoDB-Labs/bedrock-now"	the repository's name before v0.25.0 (GitHub redirects it)
-code/server/oauth.mjs	export const GITHUB_APP_SLUG = 'bedrock-now';	the GitHub App's slug until its new one is set here at release (the one place: tests/test_brand.sh)
 install.sh	PRODUCT_LEGACY_NAME="bedrock-now"	install.sh's own copy of lib/brand.sh: it finds an install made before v0.25.0 in ~/bedrock-now
 install.sh	PRODUCT_LEGACY_REPO="JongoDB-Labs/bedrock-now"	install.sh's own copy of lib/brand.sh
 install.sh	~/bedrock-now when an install made before v0.25.0	the folder of installs made before v0.25.0, found and kept

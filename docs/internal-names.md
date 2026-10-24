@@ -58,3 +58,4 @@ Python regular expression; the old name must lie inside what it matches.
 | The installed app's link scheme | `web\+bedrocknow\w*` | *Open in the app* |
 | The pages' `X-Requested-With` | `[Xx]-[Rr]equested-[Ww]ith[^\n]{0,24}?bedrock-now` | the portal checks it |
 | The old name, said as such | `(?i:formerly) bedrock-now` | so people can find it |
+| The GitHub App's slug, until its new one is set | `GITHUB_APP_SLUG = 'bedrock-now'` | code/server/oauth.mjs: the one place it is written |
