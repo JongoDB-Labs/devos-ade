@@ -150,6 +150,21 @@ test('a project\'s own Claude Code settings: its state in the list, a session\'s
   assert.equal(listed?.files.length, 500);
   assert.equal(listed?.filesMore, 200);
   assert.equal(normSettingsView(whole)?.filesMore, 0);
+  // the other tools' notes and tools have the page's cut of their own: 201 of theirs make their part incomplete — never
+  // Claude Code's, whose hash stays; 201 of Claude Code's own do
+  const notes = (n: number, who: string) => Array.from({ length: n }, (_, i) => ({ file: `${who}/f${i}`, note: 'a note' }));
+  const crowded = normSettingsView({ ...whole, summary: { ...whole.summary, agentsComplete: true, agentNotes: notes(201, '.codex'), agentTools: [] } });
+  assert.equal(crowded?.summary.complete, true);
+  assert.match(crowded?.hash ?? '', /^[0-9a-f]{64}$/, 'Claude Code\'s part trustable from the dialog');
+  assert.equal(crowded?.summary.agentsComplete, false);
+  assert.equal(crowded?.summary.notes.length, 200);
+  assert.deepEqual(crowded?.summary.agentsMissing.at(-1), 'more than this page shows');
+  const fine = normSettingsView({ ...whole, summary: { ...whole.summary, agentsComplete: true, agentNotes: notes(200, '.codex'), notes: notes(200, '.claude') } });
+  assert.deepEqual([fine?.summary.complete, fine?.summary.agentsComplete, fine?.summary.notes.length], [true, true, 400]);
+  const ours = normSettingsView({ ...whole, summary: { ...whole.summary, notes: notes(201, '.claude') } });
+  assert.deepEqual([ours?.summary.complete, ours?.hash], [false, null]);
+  const longTool = normSettingsView({ ...whole, summary: { ...whole.summary, agentsComplete: true, agentTools: [{ file: '.codex/config.toml', tool: 'Codex', text: 'x'.repeat(20000) }] } });
+  assert.deepEqual([longTool?.summary.complete, longTool?.summary.agentsComplete], [true, false]);
   assert.equal(normSettingsView({ ...whole, state: 'mine' }), null);
   assert.equal(normSettingsView({ ...whole, project: '/etc' }), null);
   // the two parts' states: Claude on your plan's and an agent's beside Claude Code's (an older backend: Claude Code's for
@@ -323,4 +338,18 @@ test('the settings dialog of a new session: Stop trusting starts nothing and say
   const agent = afterSettingsChoice(true, 'codex', false);
   assert.equal(agent.start, false);
   assert.match(agent.why ?? '', /did not start: the other tools' settings here are not trusted/);
+});
+
+test('a session of an agent of your subscriptions waits for the settings dialog where the backend would refuse it', async () => {
+  const { holdForSettings } = await import('../src/projects');
+  const project = { workspace: false }, ws = { workspace: true };
+  for (const state of ['untrusted', 'changed', 'recheck', 'unverifiable', 'unchecked', 'failed'] as const) {
+    assert.equal(holdForSettings('codex', project, state), true, `an agent: ${state}`);
+    assert.equal(holdForSettings('bedrock', project, state), false, `Claude Code on Bedrock starts without them: ${state}`);
+    assert.equal(holdForSettings('claude', project, state), false, `Claude on your plan starts without them: ${state}`);
+    assert.equal(holdForSettings(undefined, project, state), false);
+    assert.equal(holdForSettings('codex', ws, state), false, 'the Workspace: its settings always apply');
+    assert.equal(holdForSettings('codex', undefined, state), false, 'no such project');
+  }
+  for (const state of ['trusted', 'none', 'workspace'] as const) assert.equal(holdForSettings('copilot', project, state), false, state);
 });

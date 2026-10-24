@@ -2436,6 +2436,9 @@ export function projectCheck(req) {
 // never trusted: the other tools' rows past their cap never cost Claude Code's part); in a linked git worktree or a
 // submodule (Claude Code reads another checkout's configuration then), neither can.
 export const CONFIG_FILES = 500, CONFIG_BYTES = 2 << 20, CONFIG_FILE = 256 << 10, CONFIG_DEPTH = 12, CONFIG_SHOWN = 3 << 20;
+// both parts' rows with their texts, in one answer to the code container (one frame): room left for the rest of it
+// (the plugins, the hashes, the frame's own)
+export const SETTINGS_TEXT_MAX = MAX_FRAME - (256 << 10);
 // the .claude/ trees Claude Code reads from the folders above the project's (to the git root)
 export const CONFIG_SURFACES = Object.freeze(['commands', 'agents', 'output-styles', 'skills', 'workflows', 'routines']);
 // Other tools' own configuration in the folder itself — your subscriptions' agents start there from the Code page and
@@ -2648,6 +2651,20 @@ export function settingsFiles(abs, { text = false } = {}) {
   }
   const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
   claude.files.sort(byName); agent.files.sort(byName);
+  // (both parts' texts go to the code container in one answer, at most MAX_FRAME: when they would not fit, the other
+  // tools' texts are left out first — their part cannot be shown then, and agents do not start there, Claude Code's
+  // part untouched —, Claude Code's only when they alone would not fit)
+  if (text) {
+    const size = () => JSON.stringify(claude.files).length + JSON.stringify(agent.files).length;
+    if (size() > SETTINGS_TEXT_MAX) {
+      for (const f of agent.files) if (f.text !== undefined) f.text = null;
+      agent.over ??= 'too much to show';
+      if (size() > SETTINGS_TEXT_MAX) {
+        for (const f of claude.files) if (f.text !== undefined) f.text = null;
+        claude.over ??= 'too much to show';
+      }
+    }
+  }
   // the plugins the folder's own settings turn on, with what the sandbox has installed of each (the code container
   // lists each one installed, and never trusts one that is not: Claude Code could fetch it) — in Claude Code's hash, so
   // a plugin updated or removed since is looked at again. Claude on your plan has a record of its own (claude-sub's

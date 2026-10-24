@@ -47,6 +47,15 @@ export function afterSettingsChoice(choice: boolean | null, harness?: string | n
   }
   return { start: true, why: null };
 }
+/** holdForSettings(harness, project, state) -> whether a session by this harness in that project waits for its settings
+ *  dialog first (the backend would refuse it otherwise: 409): an agent of your subscriptions, in a project (not the
+ *  Workspace), whose settings are not applied for it — or could not be read ('failed': the dialog says why). Claude
+ *  Code on Bedrock and Claude on your plan start without them, said in their session: never held here. */
+export function holdForSettings(harness: string | null | undefined, project: { workspace?: boolean } | null | undefined, state: SettingsState | 'failed'): boolean {
+  if (!harness || harness === 'bedrock' || harness === 'claude') return false;
+  if (!project || project.workspace) return false;
+  return state === 'failed' || !settingsApplied(state);
+}
 /** a session's process: what of its folder's settings it got */
 export interface SessionSettings {
   state: SettingsState;
@@ -336,13 +345,16 @@ export function normSettingsView(v: unknown): SettingsView | null {
   const o = obj(v);
   const state = settingsState(o?.state);
   if (!o || !state || !projectIdOk(o.project)) return null;
-  let cut = false;
-  const one = (x: unknown, max = 300): string => { if (typeof x !== 'string') return ''; if (x.length > max) cut = true; return label(x, max); };
+  // (what does not fit: cut — Claude Code's part, which the hash needs whole —, or agentCut while the other tools' own
+  // notes and tools are read: their part alone)
+  let cut = false, agentCut = false, theirs = false;
+  const mark = () => { if (theirs) agentCut = true; else cut = true; };
+  const one = (x: unknown, max = 300): string => { if (typeof x !== 'string') return ''; if (x.length > max) mark(); return label(x, max); };
   // (a value as it is — the dialog shows every character but printable ASCII as an escape: visibleWs)
-  const many = (x: unknown): string => { if (typeof x !== 'string') return ''; if (x.length > TEXT_MAX) cut = true; return x.slice(0, TEXT_MAX); };
+  const many = (x: unknown): string => { if (typeof x !== 'string') return ''; if (x.length > TEXT_MAX) mark(); return x.slice(0, TEXT_MAX); };
   const rows = <T>(x: unknown, f: (r: Obj) => T): T[] => {
     if (!Array.isArray(x)) return [];
-    if (x.length > LIST_MAX) cut = true;
+    if (x.length > LIST_MAX) mark();
     return x.slice(0, LIST_MAX).map((r) => (obj(r) ? f(obj(r) as Obj) : null)).filter((r): r is T => r !== null);
   };
   const texts = (x: unknown): string[] => {
@@ -357,6 +369,17 @@ export function normSettingsView(v: unknown): SettingsView | null {
     return { json, mixed: r.mixed === true, careful: r.careful === true || needsLook(json) };
   };
   const s = obj(o.summary) ?? {};
+  const toolRow = (t: Obj) => {
+    const text = typeof t.text === 'string' ? t.text : '';
+    if (text.length > TOOL_TEXT_MAX) mark();
+    const shown = text.slice(0, TOOL_TEXT_MAX);
+    return { file: many(t.file), tool: one(t.tool, 60), text: shown, careful: t.careful === true || needsLook(shown) };
+  };
+  const noteRow = (x: Obj) => ({ file: many(x.file), note: one(x.note, 1200) });
+  // (the other tools' part's own notes and tools, each within the page's cut of its own: shown with Claude Code's)
+  theirs = true;
+  const agentNotes = rows(s.agentNotes, noteRow), agentTools = rows(s.agentTools, toolRow);
+  theirs = false;
   const summary: SettingsSummary = {
     hooks: rows(s.hooks, (h) => ({ file: one(h.file, 60), event: one(h.event, 200), matcher: many(h.matcher), command: many(h.command), ...entry(h) })),
     allow: texts(s.allow), ask: texts(s.ask), deny: texts(s.deny),
@@ -367,7 +390,7 @@ export function normSettingsView(v: unknown): SettingsView | null {
     mcp: rows(s.mcp, (c) => ({ file: one(c.file, 60), key: one(c.key, 60), value: many(c.value) })),
     mcpServers: rows(s.mcpServers, (m) => ({ name: many(m.name), run: many(m.run), ...entry(m) })),
     other: rows(s.other, (x) => ({ file: one(x.file, 60), key: many(x.key), value: many(x.value) })),
-    notes: rows(s.notes, (x) => ({ file: many(x.file), note: one(x.note, 1200) })),
+    notes: [...rows(s.notes, noteRow), ...agentNotes],
     plugins: rows(s.plugins, (x) => ({ file: one(x.file, 60), id: many(x.id), on: x.on === true, version: typeof x.version === 'string' ? many(x.version) : null,
       planVersion: typeof x.planVersion === 'string' ? many(x.planVersion) : null })),
     files: (() => {
@@ -376,12 +399,7 @@ export function normSettingsView(v: unknown): SettingsView | null {
       return s.files.slice(0, FILES_MAX).map((f) => obj(f)).filter((f): f is Obj => !!f)
         .map((f) => ({ name: many(f.name), size: typeof f.size === 'number' && f.size >= 0 ? f.size : null, grants: rows(f.grants, (g) => ({ key: many(g.key), value: many(g.value) })) }));
     })(),
-    tools: rows(s.tools, (t) => {
-      const text = typeof t.text === 'string' ? t.text : '';
-      if (text.length > TOOL_TEXT_MAX) cut = true;
-      const shown = text.slice(0, TOOL_TEXT_MAX);
-      return { file: many(t.file), tool: one(t.tool, 60), text: shown, careful: t.careful === true || needsLook(shown) };
-    }),
+    tools: [...rows(s.tools, toolRow), ...agentTools],
     complete: false,
     missing: Array.isArray(s.missing) ? s.missing.slice(0, 20).filter((x) => typeof x === 'string').map((x) => label(x, 200)) : [],
     agentsComplete: false,
@@ -389,9 +407,9 @@ export function normSettingsView(v: unknown): SettingsView | null {
   };
   summary.complete = s.complete === true && !cut;
   // (an older backend without the split: the other tools' files were in the one part)
-  summary.agentsComplete = (s.agentsComplete === undefined ? s.complete === true : s.agentsComplete === true) && !cut;
+  summary.agentsComplete = (s.agentsComplete === undefined ? s.complete === true : s.agentsComplete === true) && !cut && !agentCut;
   if (cut) summary.missing.push('more than this page shows');
-  if (cut) summary.agentsMissing.push('more than this page shows');
+  if (cut || agentCut) summary.agentsMissing.push('more than this page shows');
   return {
     project: o.project, path: cwdOk(o.path) ? o.path : WORKSPACE_PATH, state,
     planState: settingsState(o.planState) ?? state, planReason: o.planReason === 'plan-plugins' ? 'plan-plugins' : null,

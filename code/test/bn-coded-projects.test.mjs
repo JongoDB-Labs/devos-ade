@@ -341,6 +341,30 @@ test('project.settings: the other tools\' rows have a cap of their own — 1,000
   }
 });
 
+test('project.settings: both parts\' texts fit one answer — past it the other tools\' texts are left out first, Claude Code\'s part whole', async () => {
+  const D = path.join(WS, 'big-texts');
+  // (quotes and line breaks: each takes two characters in the answer — 1.4 MiB a part on disk, nearly 3 MiB a part sent)
+  const text = (c) => `${c}${'"\n'.repeat(88 * 1024)}`;
+  for (let i = 0; i < 8; i++) {
+    fs.mkdirSync(path.join(D, `.claude/skills/s${i}`), { recursive: true });
+    fs.writeFileSync(path.join(D, `.claude/skills/s${i}/SKILL.md`), `---\nname: s${i}\n---\n${text('a')}`);
+    fs.mkdirSync(path.join(D, `.agents/skills/a${i}`), { recursive: true });
+    fs.writeFileSync(path.join(D, `.agents/skills/a${i}/SKILL.md`), `---\nname: a${i}\n---\n${text('b')}`);
+  }
+  const r = await call({ op: 'project.settings', root: D });
+  assert.ok(Buffer.byteLength(JSON.stringify(r)) < coded.MAX_FRAME, 'one frame');
+  const own = r.files.filter((f) => f.name.startsWith('.claude/')), theirs = r.files.filter((f) => f.name.startsWith('.agents/'));
+  assert.equal(own.length, 8);
+  assert.ok(own.every((f) => typeof f.text === 'string' && f.text.length > 170000), 'Claude Code\'s texts all there');
+  assert.deepEqual([r.verifiable, r.over], [true, null]);
+  assert.ok(theirs.length === 8 && theirs.every((f) => f.text === null), 'the other tools\' texts left out');
+  assert.deepEqual([r.agentVerifiable, r.agentOver], [false, 'too much to show']);
+  // (their hashes as they are: what a start compares is the same)
+  const light = await call({ op: 'project.settings', root: D, text: false });
+  assert.deepEqual([light.hash, light.agentHash], [r.hash, r.agentHash]);
+  fs.rmSync(D, { recursive: true, force: true });
+});
+
 test('project.settings: everything under a folder\'s .claude/ and its .mcp.json, as Claude Code reads them; bounded; their hash in project.check', async () => {
   const D = path.join(WS, 'cloned');
   const by = (r) => Object.fromEntries(r.files.map((f) => [f.name, f]));

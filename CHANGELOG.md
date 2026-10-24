@@ -16,6 +16,17 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   against Pyodide's lock: Chat's page still talks only to itself, so any other package is not available, and says so.
   `./stack status` says what is ready and what was left out; a build that could not download a wheel goes on without
   it and tries again at the next `./stack up`.
+- **A project's settings dialog with long files in both parts** (Claude Code's and the other tools') could not open or
+  trust: both parts' texts went to the code container in one answer, which could pass its 4 MiB. When they would not
+  fit, the other tools' texts are left out first (agents do not start there, said), Claude Code's part shown whole.
+- **More than 200 notes or files of the other tools** no longer keep the dialog from trusting Claude Code's part: the
+  page cuts each part on its own.
+- **A session of an agent of your subscriptions taken up again** — from the list, as a fork, or when its process
+  ended — in a project whose settings its tool cannot use yet opens the settings dialog first, as a new one does, and
+  goes on once you trust them; it no longer stops at "not trusted". A new one whose settings could not be read opens
+  the dialog too.
+- **A project trusted in v0.23.0 that cannot be carried over** (its settings not shown whole today) no longer reads
+  its settings a second time, with their texts, at every start there.
 
 ## [0.25.0] - 2026-10-24
 

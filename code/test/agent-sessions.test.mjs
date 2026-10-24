@@ -181,7 +181,7 @@ test('an agent starts in a project\'s folder only while its own settings — Cla
       const v = await trust.view(rec);
       assert.equal(v.state, 'none', tool);
       assert.equal(v.agentState, 'untrusted', tool);
-      assert.deepEqual(v.summary.tools.map((t) => [t.file, t.text]), [[name, text]], tool);
+      assert.deepEqual([...v.summary.tools, ...v.summary.agentTools].map((t) => [t.file, t.text]), [[name, text]], tool);
       assert.equal(v.summary.complete, true, tool);
       assert.equal(v.summary.agentsComplete, true, tool);
       assert.equal((await trust.decide('/workspace/proj')).state, 'none', `${tool}: Claude Code sessions decide on their part alone`);
@@ -271,8 +271,8 @@ test('a project below its git root: the other tools\' files above it are in its 
   const { mgr } = manager({ scenario: 'ok', more: { decideSettings: trust.decide } });
   try {
     const v = await trust.view(rec);
-    assert.deepEqual(v.summary.tools.map((t) => [t.file, t.tool]), [['/workspace/mono/.codex/config.toml', 'Codex'], ['/workspace/mono/.vscode/mcp.json', 'VS Code (older GitHub Copilot CLIs)']]);
-    assert.equal(v.summary.tools[0].text, codex);
+    assert.deepEqual([...v.summary.tools, ...v.summary.agentTools].map((t) => [t.file, t.tool]), [['/workspace/mono/.codex/config.toml', 'Codex'], ['/workspace/mono/.vscode/mcp.json', 'VS Code (older GitHub Copilot CLIs)']]);
+    assert.equal(v.summary.agentTools[0].text, codex);
     assert.equal(v.summary.complete, true);
     await assert.rejects(mgr.agentSettingsCheck('/workspace/mono/app', 'Codex'), /not trusted/);
     assert.deepEqual(await trust.trust(rec, v.hash), { conflict: null });
@@ -340,7 +340,7 @@ test('the project\'s own .claude/plugins/: in Claude Code\'s hash (as v0.23.0), 
     let v = await trust.view(rec);
     assert.equal(v.summary.complete, true, 'Claude Code\'s part: its own settings, shown whole');
     assert.equal(v.summary.agentsComplete, false, 'the plugin file too long to show: the other tools\' part');
-    assert.deepEqual(v.summary.tools.map((t) => t.file), ['.claude/plugins/p/hooks.json'], 'shown with the other tools\' files');
+    assert.deepEqual([...v.summary.tools, ...v.summary.agentTools].map((t) => t.file), ['.claude/plugins/p/hooks.json'], 'shown with the other tools\' files');
     assert.deepEqual(await trust.trust(rec, v.hash), { conflict: null, agents: 'not trusted' });
     assert.equal((await trust.decide('/workspace/plug')).state, 'trusted', 'Claude Code on Bedrock: trusted');
     await assert.rejects(mgr.agentSettingsCheck('/workspace/plug', 'Grok'), /not trusted/);
@@ -364,7 +364,15 @@ test('a trust of v0.23.0 (the reading before): carried over for Claude Code when
   const own = [row('.claude/settings.json', '{"permissions": {"allow": ["Bash(npm test)"]}}')];
   const files = [...own, row('.codex/config.toml', '[mcp_servers.x]\ncommand = "a"\n', '.codex')];
   const rec = { id: 'p6', root: 'old', name: 'old', trust: { hash: hashOf(own), at: 1234, epoch: 2 } };
-  const call = async (req) => ({ result: req.op === 'project.settings' ? await settingsReply(files, '/workspace/old', { text: req.text !== false }) : {} });
+  const reads = [];
+  let failTexts = false;
+  const call = async (req) => {
+    if (req.op === 'project.settings') {
+      reads.push(req.text !== false);
+      if (failTexts && req.text !== false) throw new Error('the sandbox did not answer');
+    }
+    return { result: req.op === 'project.settings' ? await settingsReply(files, '/workspace/old', { text: req.text !== false }) : {} };
+  };
   const trust = makeTrust({ call, store: () => storeOf(rec, TRUST_EPOCH) });
   const { mgr } = manager({ scenario: 'ok', more: { decideSettings: trust.decide } });
   try {
@@ -383,6 +391,19 @@ test('a trust of v0.23.0 (the reading before): carried over for Claude Code when
     files.splice(0, 1, own[0]);
     rec.trust = { hash: hashOf(own), at: 1, epoch: 2 };
     assert.equal((await trust.decide('/workspace/old')).state, 'recheck', 'not shown whole today (front matter with a line separator)');
+    // (that answer kept: the next starts read the settings once each — never again with their texts)
+    const texts = () => reads.filter((x) => x !== false).length;
+    const before = texts();
+    for (let i = 0; i < 3; i++) assert.equal((await trust.decide('/workspace/old')).state, 'recheck');
+    assert.equal(texts(), before, 'no second read with the texts');
+    // (a read with the texts that fails: decided as it is — looked at again —, never a failure of the start)
+    own[0] = row('.claude/settings.json', '{"permissions": {"allow": ["Bash(ls)"]}}');
+    files.splice(0, 1, own[0]);
+    rec.trust = { hash: hashOf(own), at: 7, epoch: 2 };
+    failTexts = true;
+    assert.equal((await trust.decide('/workspace/old')).state, 'recheck');
+    failTexts = false;
+    assert.equal((await trust.decide('/workspace/old')).state, 'trusted', 'carried once the read works (a failure is not remembered)');
   } finally { mgr.closeAll(); }
 });
 

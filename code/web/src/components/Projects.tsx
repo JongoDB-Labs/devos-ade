@@ -15,6 +15,7 @@ import {
   activate,
   addToProject,
   closeSessionById,
+  continueAfterSettings,
   continueHere,
   connectGitRepo,
   createProject,
@@ -859,7 +860,7 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
     // (Stop trusting: nothing starts; an agent where the other tools' settings could not be trusted: neither — it would
     // be refused. Said, never silent)
     const next = afterSettingsChoice(trust, start.harness, v?.summary.agentsComplete);
-    if (next.start) void newSession({ ...start, noAsk: true });
+    if (next.start) void (start.resume ? continueAfterSettings(start.resume) : newSession({ ...start, noAsk: true }));
     else toast(`${harnessName(start.harness ?? 'bedrock')} ${next.why}.`);
   };
   const when = v?.trustedAt ? new Date(v.trustedAt).toLocaleString() : '';

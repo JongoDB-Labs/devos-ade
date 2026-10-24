@@ -849,14 +849,21 @@ export function makeTrust({ call, store, log = () => {} }) {
   // is still the one read here (compared and written in one update): a Stop trusting or a new Trust given meanwhile
   // stands, and the record as the store has it then is the one decided on. texts: a reading with the files' texts
   // (else one is made, only then)
-  const CARRIED_EPOCH = 2;
+  // (a carry-over that cannot be made — not shown whole today, plugins, not as it was — is not tried again for the same
+  // trust: Claude Code's part is the same then (its hash), and so is the answer. Without it every start there would read
+  // the settings twice, once with their texts)
+  const CARRIED_EPOCH = 2, NO_CARRY_MAX = 500;
+  const noCarry = new Set();
+  const cannotCarry = (key) => { if (noCarry.size >= NO_CARRY_MAX) noCarry.clear(); noCarry.add(key); };
   async function carryOver(rec, r, texts = null) {
     const t = rec?.trust;
     if (!t || t.epoch !== CARRIED_EPOCH || !r.hash || t.hash !== r.hash || r.planPlugins) return rec;
-    const full = texts ?? await read(absOf(rec.root));
-    if (full.hash !== t.hash || full.planPlugins) return rec;
-    if (!summaries(full).summary.complete) return rec;
+    const key = `${rec.id}\n${t.hash}\n${t.at}`;
+    if (noCarry.has(key)) return rec;
     try {
+      const full = texts ?? await read(absOf(rec.root));
+      if (full.hash !== t.hash) return rec;
+      if (full.planPlugins || !summaries(full).summary.complete) { cannotCarry(key); return rec; }
       const updated = store().carryTrust(rec.id, t);
       if (updated?.trust) {
         log(`settings of project ${short(rec.id, 40)}: a trust of the reading before carried over for Claude Code (unchanged, shown whole)`);
@@ -924,7 +931,8 @@ export function makeTrust({ call, store, log = () => {} }) {
       project: rec.id, path: abs, state: st.state, planState: st.planState, planReason: st.planReason, agentState: st.agentState, hash,
       trustedAt: rec.trust?.at ?? null,
       files: [...r.files, ...r.agentFiles].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).map(({ name, type, size, target }) => ({ name, type, size, target })),
-      summary: { ...summary, tools: [...summary.tools, ...agents.tools], notes: [...summary.notes, ...agents.notes], careful: summary.careful + agents.careful,
+      // (each part's notes and tools apart, each within the page's own cut: the other tools' never cost Claude Code's)
+      summary: { ...summary, agentTools: agents.tools, agentNotes: agents.notes, careful: summary.careful + agents.careful,
         agentsComplete: othersOk, agentsMissing: othersOk ? [] : [...agents.missing, ...(agentsJudged(r).verifiable ? [] : ['a file of theirs that cannot be checked'])] },
       ...(said ? { said, saidBy: 'sandbox' } : {}),
     };

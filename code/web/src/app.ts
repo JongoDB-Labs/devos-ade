@@ -24,7 +24,7 @@ import { crossed, nextBudget, rememberBudget, storedBudget, type Budget } from '
 import { pageTitle, waitingSessions } from './groups';
 import { parseDeepLink, withoutDeepLink } from './deeplink';
 import { sessionCost } from './spend';
-import { RECHECK_TEXT, WORKSPACE, WORKSPACE_ID, goneTops, inProject, liveHostTops, mentionPath, projectFor, projectIdOk, projectOfCwd, readOnlyTops, settingsApplied, settingsStateFor, type Project, type SettingsState, type Where } from './projects';
+import { RECHECK_TEXT, WORKSPACE, WORKSPACE_ID, goneTops, holdForSettings, inProject, liveHostTops, mentionPath, projectFor, projectIdOk, projectOfCwd, readOnlyTops, settingsApplied, settingsStateFor, type Project, type SettingsState, type Where } from './projects';
 import { PRODUCT } from './brand';
 
 export interface Toast {
@@ -1226,6 +1226,17 @@ export interface NewSessionOptions {
   project?: string;
   /** start it without first showing a project's own settings that would not apply (a prompt typed, /clear …) */
   noAsk?: boolean;
+  /** not a new session: this one taken up again (or forked, or its process started again) once the settings dialog
+   *  allows it (settingsHold) */
+  resume?: ResumeAfter;
+}
+export interface ResumeAfter {
+  session: string;
+  fork: boolean;
+  before?: string;
+  text?: string;
+  /** its process started again (revive), not opened from the list */
+  revive?: boolean;
 }
 
 export function newSession(opts: NewSessionOptions = {}): Promise<string | null> {
@@ -1240,6 +1251,9 @@ export function newSession(opts: NewSessionOptions = {}): Promise<string | null>
  *  plan by its own state, an agent by both parts — shown first, to trust or to start without; else the session starts
  *  (never a start the backend would refuse with no dialog first). */
 async function askThenOpen(id: string, opts: NewSessionOptions): Promise<string | null> {
+  // (an agent of your subscriptions: refused by the backend unless both parts apply — the dialog first, also when the
+  // settings could not be read)
+  if (opts.harness && opts.harness !== 'bedrock' && opts.harness !== 'claude') return (await settingsHold(opts.harness, id, opts)) ? null : openNew(opts);
   let state: SettingsState | null = null;
   try {
     const v = await api.getProjectSettings(id);
@@ -1253,6 +1267,30 @@ async function askThenOpen(id: string, opts: NewSessionOptions): Promise<string 
     return null;
   }
   return openNew(opts);
+}
+/** settingsHold(harness, project, start) -> true when a session by this harness in that project would be refused (its
+ *  settings not applied for it, or not readable: holdForSettings) — the settings dialog is opened instead, with what to
+ *  do once it allows it (start: a new session, or start.resume: this one taken up again). */
+async function settingsHold(harness: Harness | undefined, project: string, start: NewSessionOptions): Promise<boolean> {
+  const p = get().projects.find((x) => x.id === project);
+  // (only an agent of your subscriptions in a project can be held: nothing to look at otherwise)
+  if (!holdForSettings(harness, p, 'failed')) return false;
+  let state: SettingsState | 'failed' = 'failed';
+  try {
+    const v = await api.getProjectSettings(project);
+    noteProjectSettings(project, v.state);
+    state = settingsStateFor(v, harness);
+  } catch {
+    state = 'failed';
+  }
+  if (!holdForSettings(harness, p, state)) return false;
+  openProjectDialog({ kind: 'settings', id: project, start: { ...start, harness, project } });
+  return true;
+}
+/** continueAfterSettings(r) — what the settings dialog was opened for, once it allows it: the session taken up again
+ *  (from the list, a fork, or its process started again), without asking again. */
+export function continueAfterSettings(r: ResumeAfter): Promise<unknown> {
+  return r.revive ? revive(r.session, true) : whileOpening(openExisting(r.session, r.fork, r.before, r.text, true));
 }
 /** What a project's own configuration was when last looked at (the Projects tab's marker). */
 export function noteProjectSettings(id: string, state: SettingsState): void {
@@ -1352,7 +1390,7 @@ function noteGone(id: string): void {
   });
 }
 
-async function openExisting(id: string, fork: boolean, before?: string, text = ''): Promise<void> {
+async function openExisting(id: string, fork: boolean, before?: string, text = '', noAsk = false): Promise<void> {
   const s = get();
   if (!fork && s.views[id] && s.views[id].state !== 'closed') return activate(id);
   // (a session of a folder no longer added: its transcript, read only — it runs nowhere until the folder is back)
@@ -1364,6 +1402,8 @@ async function openExisting(id: string, fork: boolean, before?: string, text = '
     const src = s.views[id];
     // who answered in it: it is taken up again with the same (the backend knows; Bedrock's choices only for Bedrock's)
     const harness = info?.harness ?? src?.harness ?? 'bedrock';
+    // (an agent's session in a project whose settings are not applied for it: the dialog first, then this)
+    if (!noAsk && (await settingsHold(harness, sessionProject(id, s), { resume: { session: id, fork, before, text } }))) return;
     const bedrock = harness === 'bedrock';
     const model = bedrock ? (fork && sendModel(src?.model, s)) || defaultModel(s) : '';
     // its budget goes with it (a fork starts with the one new sessions get) — none on your plan
@@ -1494,13 +1534,17 @@ export async function renameSessionById(id: string, title: string): Promise<void
 }
 
 /** A closed or ended session in view: open its process again (same id), keeping what the page shows. */
-async function revive(id: string): Promise<string | null> {
+async function revive(id: string, noAsk = false): Promise<string | null> {
   const s = get();
   const gone = goneFolderOf(id, s);
   if (gone) {
     toast(goneNote(gone), 'error');
     return null;
   }
+  // (an agent's session in a project whose settings are not applied for it: the dialog first — its process is started
+  // again once it allows it; what you were sending is still in the prompt box)
+  const harness = s.views[id]?.harness ?? s.sessions.find((x) => x.id === id)?.harness ?? 'bedrock';
+  if (!noAsk && (await settingsHold(harness, sessionProject(id, s), { resume: { session: id, fork: false, revive: true } }))) return null;
   try {
     const v = s.views[id];
     // (the same session: Plan goes on; Bypass ended with its process — Manual)
