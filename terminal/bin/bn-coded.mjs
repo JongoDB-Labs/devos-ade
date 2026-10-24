@@ -2579,10 +2579,52 @@ export function settingsFiles(abs, { text = false } = {}) {
     if (d === WORKSPACE || d === '/') break;
   }
   files.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  const hash = files.length ? sha256(JSON.stringify(files.map((f) => [f.name, f.type, f.sha256 ?? null, f.target ?? null]))) : null;
+  // the plugins the folder's own settings turn on, with what the sandbox has installed of each (the code container
+  // lists each one installed, and never trusts one that is not: Claude Code could fetch it) — in the hash, so a
+  // plugin updated or removed since is looked at again
+  const pl = enabledPluginsOf(abs, files);
+  const rows = files.map((f) => [f.name, f.type, f.sha256 ?? null, f.target ?? null]);
+  const hash = files.length ? sha256(JSON.stringify(pl ? { files: rows, plugins: pl.plugins, registry: pl.registry } : rows)) : null;
   const verifiable = !over && files.every((f) => f.readable === true);
   for (const f of files) delete f.readable;
-  return { files, hash, verifiable, over };
+  return { files, hash, verifiable, over, ...(pl ?? {}) };
+}
+// The sandbox's own plugins (Claude Code's record of what is installed, in its folder)
+export const PLUGIN_RECORD = () => path.join(CONFIG_DIR, 'plugins', 'installed_plugins.json');
+// enabledPluginsOf(abs, files) -> {plugins: [{id, installed, versions: [{version, commit}]}] (by id), registry: ok |
+// none | unreadable}, or null when the folder's own .claude/settings*.json turn no plugin on (enabledPlugins, in any
+// case, at the top level: an object's keys whose value is not false, an array's strings — as the code container reads
+// them). Installed: for every user, or for this folder (a project or local install of it).
+export function enabledPluginsOf(abs, files, record = PLUGIN_RECORD()) {
+  const ids = new Set();
+  for (const f of files) {
+    if (f.at !== '' || f.type !== 'file' || !/^\.claude\/settings(\.local)?\.json$/i.test(f.name)) continue;
+    let v;
+    try { v = JSON.parse(fs.readFileSync(path.join(abs, f.name), 'utf8')); } catch { continue; }   // (not JSON: the code container never trusts it)
+    if (!v || typeof v !== 'object' || Array.isArray(v)) continue;
+    for (const [k, x] of Object.entries(v)) {
+      if (k.toLowerCase() !== 'enabledplugins') continue;
+      if (Array.isArray(x)) { for (const id of x) if (typeof id === 'string') ids.add(id); } else if (x && typeof x === 'object') { for (const [id, on] of Object.entries(x)) if (on !== false) ids.add(id); }
+    }
+  }
+  if (!ids.size) return null;
+  let registry = 'ok', installed = {};
+  try {
+    const st = fs.statSync(record);
+    if (!st.isFile() || st.size > 4 << 20) throw new Error('not a file');
+    const v = JSON.parse(fs.readFileSync(record, 'utf8'));
+    if (!v || typeof v !== 'object' || !v.plugins || typeof v.plugins !== 'object' || Array.isArray(v.plugins)) throw new Error('not a record');
+    installed = v.plugins;
+  } catch (e) { registry = e?.code === 'ENOENT' ? 'none' : 'unreadable'; installed = {}; }
+  const vs = (x) => (typeof x === 'string' ? printable(x, 100) : null);
+  const plugins = [...ids].filter((id) => /^[\x20-\x7e]{1,300}$/.test(id)).sort().slice(0, 200).map((id) => {
+    const e = Object.hasOwn(installed, id) ? installed[id] : null;
+    const mine = (Array.isArray(e) ? e : e ? [e] : []).filter((w) => w && typeof w === 'object'
+      && (w.scope === undefined || w.scope === 'user' || ((w.scope === 'project' || w.scope === 'local') && w.projectPath === abs)));
+    const versions = mine.slice(0, 20).map((w) => ({ version: vs(w.version), commit: vs(w.gitCommitSha) }));
+    return { id, installed: versions.length > 0, versions };
+  });
+  return { plugins, registry };
 }
 const isUtf8Buf = (b) => { try { new TextDecoder('utf-8', { fatal: true }).decode(b); return true; } catch { return false; } };
 // project.settings {root?} -> {files (with their text, ≤ 256 KiB each), hash, verifiable, over}: a project's folder

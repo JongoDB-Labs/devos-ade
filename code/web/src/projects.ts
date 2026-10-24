@@ -261,6 +261,8 @@ export interface SettingsSummary {
   files: { name: string; size: number | null; grants: { key: string; value: string }[] }[];
   /** other tools' files in the folder (.codex/, .cursor/, .github/hooks/ …: your subscriptions' agents read them), whole */
   tools: { file: string; tool: string; text: string; careful: boolean }[];
+  /** the plugins the settings turn on (each installed in the sandbox: its version) or off */
+  plugins: { file: string; id: string; on: boolean; version: string | null }[];
   /** every key and value of the files is above, whole (else: never trustable — what was left out, in `missing`) */
   complete: boolean;
   missing: string[];
@@ -338,6 +340,7 @@ export function normSettingsView(v: unknown): SettingsView | null {
     mcpServers: rows(s.mcpServers, (m) => ({ name: many(m.name), run: many(m.run), ...entry(m) })),
     other: rows(s.other, (x) => ({ file: one(x.file, 60), key: many(x.key), value: many(x.value) })),
     notes: rows(s.notes, (x) => ({ file: many(x.file), note: one(x.note, 1200) })),
+    plugins: rows(s.plugins, (x) => ({ file: one(x.file, 60), id: many(x.id), on: x.on === true, version: typeof x.version === 'string' ? many(x.version) : null })),
     files: (() => {
       if (!Array.isArray(s.files)) return [];
       if (s.files.length > FILES_MAX) cut = true;

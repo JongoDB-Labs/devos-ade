@@ -1304,12 +1304,20 @@ direction-changing character; a record that does not fit (a file someone changed
     one recorded before the current reading (v0.21.1's could miss front matter Claude Code reads; before v0.24.0 the
     other tools' files were not all listed) is not applied until you look at the settings again (*recheck*; said once
     per project and reading). The settings files and `.mcp.json` are summarised whole or not at all: more
-    than 200 entries in a section, a value over 2,000 characters or invalid JSON leave no hash to trust. Plugins and
-    plugin marketplaces — Claude Code's `enabledPlugins` and `extraKnownMarketplaces`, or another tool's — bring
-    folders of their own (hooks, MCP and language servers) that are not listed, so settings that declare one are never
-    trusted: a JSON or JSONC file is parsed and every key at every depth looked at, in any case (a key spelled with
-    `\u` escapes is the same key once parsed; another tool's `.json` that does not parse leaves the summary incomplete
-    too), a TOML or YAML file is searched whole with its escapes decoded, and a `marketplace.json` counts by its name. Each hook and
+    than 200 entries in a section, a value over 2,000 characters or invalid JSON leave no hash to trust. Plugins bring
+    folders of their own (hooks, MCP and language servers) that are not listed. Of Claude Code's own keys (2.1.309
+    reads them at the top level of `.claude/settings*.json`; matched here after parsing, in any case, so a `\u`-escaped
+    spelling is the same key): `extraKnownMarketplaces` (and its alias `additionalMarketplaces`) adds a marketplace —
+    code nobody here has looked at — and is never trusted; each plugin `enabledPlugins` turns on is listed when it is
+    installed in the sandbox already (Claude Code's own record, `~/.claude/plugins/installed_plugins.json`, for every
+    user or for that folder), its version and commit in the hash, so an update there is looked at again; one that is
+    not installed (Claude Code could fetch it), or a record that cannot be read, is never trusted. Other keys
+    (`pluginConfigs`, `.mcp.json`'s server names …) are shown as they are. Another tool's file is its own
+    configuration, read more broadly: a JSON or JSONC file is parsed and any key naming plugins or a marketplace, at
+    any depth, in any case, makes it untrustable, as does one that does not parse — or a line break JSON and JSONC
+    readers do not agree on (a CR alone, U+2028, U+2029) or a comment left open; there is no TOML or YAML parser here,
+    so such a file is searched whole and one with a backslash (an escape or a folded line), or in YAML a complex key,
+    a merge, an alias as a key or a tag, is untrustable too; a `marketplace.json` counts by its name. Each hook and
     MCP server is shown whole (its entry as JSON with sorted keys, beside a friendly line; one naming more than one of
     a command, a URL and a prompt is marked); every character but printable ASCII, a tab or a line break is shown as
     `⟨U+…⟩` (line breaks, tabs and runs of spaces as ⏎, →, ·), and a value with such a character, a long run of

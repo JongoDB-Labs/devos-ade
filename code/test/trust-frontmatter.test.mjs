@@ -5,7 +5,7 @@
 // command runs — ```! blocks and !`…` after whitespace, inline code blanked first — each listed. All of it linear.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { frontMatter, ccFrontMatterBlock, shellBlocks, summarize, stripJsonc, pluginsOf } from '../server/trust.mjs';
+import { frontMatter, ccFrontMatterBlock, shellBlocks, summarize, stripJsonc, pluginsOf, hashOf, checkPlugins } from '../server/trust.mjs';
 import { assertLinear } from './linear.mjs';
 
 const BASH = { key: 'allowed-tools', value: 'Bash(*)' };
@@ -175,9 +175,8 @@ test('M-b and the rest: linear in the text — distinct keys in a closed block, 
   assertLinear((n) => ' !`x`'.repeat(n), (t) => shellBlocks(t, 1e9), 'many commands, every one listed');
 });
 
-test('plugins and plugin marketplaces a file declares: found by its parsed keys (any depth, any case, \\u escapes), never trusted; a .json that does not parse neither', () => {
+test('another tool\'s file: plugins and marketplaces found by its parsed keys (any depth, any case, \\u escapes); one that cannot be read the way the tool does: never trusted', () => {
   const tool = (name, text, owner = 'GitHub Copilot') => ({ name, size: text.length, type: 'file', text, tool: owner, at: '' });
-  const own = (name, text) => ({ name, size: text.length, type: 'file', text, tool: null, at: '' });
   const verdict = (f) => { const sm = summarize([f]); return { complete: sm.complete, notes: sm.notes.map((n) => n.note).join('; ') }; };
   // a key spelled with \u escapes is the same key once parsed (a regex on the raw text missed it)
   let v = verdict(tool('.github/mcp.json', '{"\\u0065xtraKnownMarketplaces": {"m": {"source": {"source": "directory", "path": "./m"}}}}'));
@@ -190,24 +189,76 @@ test('plugins and plugin marketplaces a file declares: found by its parsed keys 
   v = verdict(tool('.cursor/mcp.json', '{"mcpServers": {', 'Cursor'));
   assert.equal(v.complete, false); assert.match(v.notes, /not valid JSON or JSONC/);
   // JSONC as the tools read it (comments, trailing commas): parsed, and a key in it found
-  assert.equal(verdict(tool('.vscode/mcp.json', '// servers\n{"servers": {"x": {"command": "a"},},}', 'VS Code (older GitHub Copilot CLIs)')).complete, true, 'control');
+  assert.equal(verdict(tool('.vscode/mcp.json', '// servers\r\n{"servers": {"x": {"command": "a"},},}', 'VS Code (older GitHub Copilot CLIs)')).complete, true, 'control');
   assert.equal(verdict(tool('.vscode/mcp.json', '{/* c */ "servers": {}, "plugins": [],}')).complete, false);
   assert.equal(stripJsonc('{"a": "x // not a comment, ]", /* c */ "b": [1,],}'), '{"a": "x // not a comment, ]",   "b": [1]}');
+  // a line comment ends at \r, U+2028 and U+2029 for JSONC parsers (the key after it is read): a line break JSON and
+  // JSONC readers do not agree on, outside a string, is never looked past; an open /* neither
+  for (const br of ['\r', '\u2028', '\u2029']) {
+    const t = `{// x${br}"extraKnownMarketplaces": {"m": {}}}`;
+    assert.equal(stripJsonc(t), null, JSON.stringify(br));
+    assert.equal(verdict(tool('.github/mcp.json', t)).complete, false, JSON.stringify(br));
+  }
   assert.equal(stripJsonc('{"a": 1 /* open'), null);
-  // TOML (Codex): looked at whole, its escapes decoded; a marketplace.json by its name
+  assert.equal(verdict(tool('.github/mcp.json', '{"a": 1} /* "extraKnownMarketplaces": {} ')).complete, false);
+  assert.equal(stripJsonc('{"a": "line\u2028sep"}'), '{"a": "line\u2028sep"}', 'inside a string: JSON\'s own');
+  // TOML (Codex) and YAML: no parser here — anything that could spell a key otherwise than as written cannot be looked
+  // at; the rest searched whole
   assert.equal(verdict(tool('.codex/config.toml', '[mcp_servers.x]\ncommand = "a"\n', 'Codex')).complete, true, 'control');
-  assert.equal(verdict(tool('.codex/config.toml', '["\\u006Darketplaces".m]\npath = "./m"\n', 'Codex')).complete, false);
+  assert.equal(verdict(tool('.codex/config.toml', '["\\x6Darketplaces".m]\npath = "./m"\n', 'Codex')).complete, false, 'a \\x escape');
+  assert.equal(verdict(tool('.codex/config.toml', '["\\u006Darketplaces".m]\npath = "./m"\n', 'Codex')).complete, false, 'a \\u escape');
   assert.equal(verdict(tool('.codex/config.toml', '[plugins."p@m"]\nenabled = true\n', 'Codex')).complete, false);
+  assert.equal(verdict(tool('.grok/config.yaml', 'model: x\nservers:\n  - name: a\n', 'Grok')).complete, true, 'control');
+  v = verdict(tool('.grok/config.yaml', '"mar\\\n  ketplaces": {m: 1}\n', 'Grok'));
+  assert.equal(v.complete, false, 'a folded line'); assert.match(v.notes, /a backslash/);
+  assert.equal(verdict(tool('.grok/config.yaml', '? x\n: 1\n', 'Grok')).complete, false, 'a complex key');
+  v = verdict(tool('.grok/config.yml', 'base: &b {a: 1}\nmine:\n  <<: *b\n', 'Grok'));
+  assert.equal(v.complete, false, 'a merge'); assert.match(v.notes, /a merge key/);
+  assert.equal(verdict(tool('.grok/config.yml', 'k: &k x\n*k : 1\n', 'Grok')).complete, false, 'an alias as a key');
+  assert.equal(verdict(tool('.grok/config.yml', 'a: !!binary bWFya2V0cGxhY2Vz\n', 'Grok')).complete, false, 'a tag');
   assert.equal(verdict(tool('.agents/plugins/marketplace.json', '{"name": "m"}', 'Codex, Cursor, Grok and GitHub Copilot')).complete, false);
-  assert.deepEqual(pluginsOf('.github/hooks/h.json', '{"hooks": {}}'), { key: null, unreadable: false });
+  assert.deepEqual(pluginsOf('.github/hooks/h.json', '{"hooks": {}}'), { key: null, unreadable: null });
   // the raw text's "marketplaces": stays a trigger where nothing parses it (a Markdown file)
   assert.equal(pluginsOf('.agents/skills/s/SKILL.md', 'see "marketplaces": x').key, 'marketplace');
-  // parity: the project's own Claude Code settings — enabledPlugins, extraKnownMarketplaces (escaped), at any depth
-  v = verdict(own('.claude/settings.json', '{"enabledPlugins": {"p@m": true}}'));
-  assert.equal(v.complete, false); assert.match(v.notes, /\(enabledPlugins\)/);
-  assert.equal(verdict(own('.claude/settings.local.json', '{"\\u0065xtraKnownMarketplaces": {}}')).complete, false);
-  assert.equal(verdict(own('.claude/settings.json', '{"permissions": {"x": {"MarketPlace": 1}}}')).complete, false);
-  assert.equal(verdict(own('.claude/settings.json', '{"hooks": {}, "permissions": {"allow": ["Read"]}}')).complete, true, 'control');
+});
+
+test('Claude Code\'s own settings: a marketplace the project adds is never trusted; a plugin it turns on is listed when installed in the sandbox (its version in the hash), never trusted when not; .mcp.json names never count', () => {
+  const own = (name, text) => ({ name, size: text.length, type: 'file', text, tool: null, at: '', sha256: 'a'.repeat(64), target: null });
+  const installed = (id, version = '1.0.0') => ({ id, installed: true, versions: [{ version, commit: null }] });
+  const reg = (list, registry = 'ok') => ({ list, registry });
+  const verdict = (f, p = null) => { const sm = summarize([f], p); return { complete: sm.complete, notes: sm.notes.map((n) => n.note).join('; '), plugins: sm.plugins }; };
+  // an MCP server, or anything of .mcp.json, named like a plugin: an MCP server, as before
+  assert.equal(verdict(own('.mcp.json', '{"mcpServers": {"my-plugin-server": {"command": "node", "args": ["plugin.js"]}}}')).complete, true);
+  assert.equal(verdict(own('.claude/settings.json', '{"env": {"PLUGIN_DIR": "x"}, "pluginConfigs": {"p@m": {"a": 1}}}')).complete, true, 'other keys naming plugins: shown, as before');
+  // enabledPlugins: a plugin installed in the sandbox — listed, trustable
+  let v = verdict(own('.claude/settings.json', '{"enabledPlugins": {"fmt@acme": true, "old@acme": false}}'), reg([installed('fmt@acme')]));
+  assert.equal(v.complete, true, v.notes);
+  assert.deepEqual(v.plugins.map((p) => [p.id, p.on, p.version]), [['fmt@acme', true, '1.0.0'], ['old@acme', false, null]]);
+  // its version is in the hash: updated in the sandbox, looked at again
+  const files = [own('.claude/settings.json', '{"enabledPlugins": {"fmt@acme": true}}')];
+  assert.notEqual(hashOf(files, reg([installed('fmt@acme', '1.0.0')])), hashOf(files, reg([installed('fmt@acme', '1.1.0')])));
+  assert.equal(hashOf(files, null), hashOf(files), 'no plugin turned on: the files\' hash alone, as before');
+  // not installed there (Claude Code could fetch it), the sandbox's record unreadable, or nothing said: never trusted
+  v = verdict(own('.claude/settings.json', '{"enabledPlugins": {"fmt@acme": true}}'), reg([{ id: 'fmt@acme', installed: false, versions: [] }], 'none'));
+  assert.equal(v.complete, false); assert.match(v.notes, /not installed in the sandbox/);
+  assert.equal(verdict(own('.claude/settings.json', '{"enabledPlugins": {"fmt@acme": true}}'), reg([], 'unreadable')).complete, false);
+  assert.equal(verdict(own('.claude/settings.json', '{"enabledPlugins": {"fmt@acme": true}}'), null).complete, false);
+  assert.equal(verdict(own('.claude/settings.json', '{"enabledPlugins": "fmt@acme"}'), reg([])).complete, false, 'not a list of plugins');
+  // escaped and differently-cased spellings of each key: caught
+  assert.equal(verdict(own('.claude/settings.json', '{"\\u0065nabledPlugins": {"x@m": true}}'), reg([])).complete, false);
+  assert.equal(verdict(own('.claude/settings.local.json', '{"ENABLEDPLUGINS": ["x@m"]}'), reg([])).complete, false);
+  // extraKnownMarketplaces (and its alias): code nobody here has looked at — never trusted
+  for (const t of ['{"extraKnownMarketplaces": {"m": {"source": {"source": "github", "repo": "a/b"}}}}', '{"\\u0065xtraKnownMarketplaces": {}}',
+    '{"EXTRAKNOWNMARKETPLACES": {}}', '{"additionalMarketplaces": {}}']) {
+    v = verdict(own('.claude/settings.json', t), reg([]));
+    assert.equal(v.complete, false, t); assert.match(v.notes, /adds a plugin marketplace/, t);
+  }
+  // checkPlugins: what bn-coded says fits, or the listing is unverifiable
+  assert.deepEqual(checkPlugins({}), { plugins: null, ok: true });
+  assert.equal(checkPlugins({ plugins: [installed('b@m'), installed('a@m')], registry: 'ok' }).ok, false, 'out of order');
+  assert.equal(checkPlugins({ plugins: [{ id: 'a@m', installed: true, versions: [] }], registry: 'ok' }).ok, false, 'installed with no version');
+  assert.equal(checkPlugins({ plugins: [installed('a@m')], registry: 'maybe' }).ok, false);
+  assert.equal(checkPlugins({ plugins: [installed('a@m')], registry: 'ok' }).ok, true);
 });
 
 test('stripJsonc and pluginsOf: linear in the text', () => {

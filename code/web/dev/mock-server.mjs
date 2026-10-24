@@ -760,7 +760,7 @@ function settingsView(pr) {
   const state = settingsStateOf(pr);
   const files = Object.keys(st?.files ?? {}).sort().map((name) => ({ name, type: st.unverifiable && name === '.mcp.json' ? 'link' : 'file',
     size: Buffer.byteLength(st.files[name]), target: st.unverifiable && name === '.mcp.json' ? '/home/claude/elsewhere.json' : null }));
-  const summary = { hooks: [], allow: [], ask: [], deny: [], defaultMode: null, directories: [], env: [], commands: [], mcp: [], mcpServers: [], other: [], notes: [],
+  const summary = { hooks: [], allow: [], ask: [], deny: [], defaultMode: null, directories: [], env: [], commands: [], mcp: [], mcpServers: [], other: [], notes: [], plugins: [],
     files: [], complete: true, missing: [] };
   for (const name of Object.keys(st?.files ?? {}).sort()) {
     if (name === '.mcp.json' || name === '.claude/settings.json' || name === '.claude/settings.local.json') continue;
@@ -2315,7 +2315,7 @@ async function api(req, res, url) {
       return json(res, 200, { ok: true, window: host.name });
     }
     if (host && what === 'settings' && m === 'GET') return json(res, 200, { project: id, path: host.root, state: 'none', hash: null, trustedAt: null, files: [], summary: { hooks: [], allow: [], ask: [], deny: [],
-      defaultMode: null, directories: [], env: [], commands: [], mcp: [], mcpServers: [], other: [], notes: [], files: [], complete: true, missing: [] } });
+      defaultMode: null, directories: [], env: [], commands: [], mcp: [], mcpServers: [], other: [], notes: [], plugins: [], files: [], complete: true, missing: [] } });
     const pr = id === 'ws' ? { id: 'ws', name: 'Workspace', root: '' } : projectsMock.find((x) => x.id === id);
     if (!pr) return json(res, 404, { error: 'no such project (it was removed?)' });
     if (what === 'settings' && m === 'GET') return json(res, 200, settingsView(pr));

@@ -650,3 +650,39 @@ test('project.settings: the other tools\' configuration in the folders above it 
   assert.notEqual(r.hash, before, 'a change above changes the hash');
   fs.rmSync(path.join(WS, '.codex'), { recursive: true });
 });
+
+test('project.settings: the plugins a folder\'s own settings turn on, with what the sandbox has installed of each — in the hash, as the code container recomputes it', async () => {
+  const { checkFiles, checkPlugins, hashOf } = await import('../server/trust.mjs');
+  const D = path.join(WS, 'plug'), REC = path.join(CONF, 'plugins', 'installed_plugins.json');
+  fs.mkdirSync(path.join(D, '.claude'), { recursive: true });
+  fs.mkdirSync(path.dirname(REC), { recursive: true });
+  const record = (plugins) => fs.writeFileSync(REC, JSON.stringify({ version: 2, plugins }));
+  fs.writeFileSync(path.join(D, '.claude/settings.json'), JSON.stringify({ enabledPlugins: { 'fmt@acme': true, 'gone@acme': true, 'off@acme': false, 'mine@acme': true } }));
+  record({ 'fmt@acme': [{ scope: 'user', installPath: '/x', version: '1.0.0', gitCommitSha: 'abc' }], 'off@acme': [{ scope: 'user', version: '2' }],
+    'mine@acme': [{ scope: 'project', projectPath: path.join(WS, 'other'), version: '1' }] });
+  let r = await call({ op: 'project.settings', root: D });
+  assert.equal(r.registry, 'ok');
+  // (turned off: not asked about; installed for another project only: not installed here)
+  assert.deepEqual(r.plugins, [{ id: 'fmt@acme', installed: true, versions: [{ version: '1.0.0', commit: 'abc' }] }, { id: 'gone@acme', installed: false, versions: [] },
+    { id: 'mine@acme', installed: false, versions: [] }]);
+  const recompute = (res) => hashOf(checkFiles(res, D).files, checkPlugins(res).plugins);
+  assert.equal(recompute(r), r.hash, 'the code container\'s hash is bn-coded\'s');
+  const before = r.hash;
+  record({ 'fmt@acme': [{ scope: 'user', version: '1.1.0' }], 'mine@acme': [{ scope: 'local', projectPath: D, version: '1' }] });
+  r = await call({ op: 'project.settings', root: D });
+  assert.notEqual(r.hash, before, 'a plugin updated in the sandbox: another hash');
+  assert.deepEqual(r.plugins.filter((p) => p.installed).map((p) => p.id), ['fmt@acme', 'mine@acme'], 'installed for this folder');
+  assert.equal(recompute(r), r.hash);
+  // no record: none; one that cannot be read: unreadable
+  fs.rmSync(REC);
+  assert.equal((await call({ op: 'project.settings', root: D })).registry, 'none');
+  fs.writeFileSync(REC, '{not json');
+  assert.equal((await call({ op: 'project.settings', root: D })).registry, 'unreadable');
+  // no plugin turned on: nothing said, the files' hash as before
+  fs.writeFileSync(path.join(D, '.claude/settings.json'), '{"enabledPlugins": {"fmt@acme": false}, "pluginConfigs": {}}');
+  r = await call({ op: 'project.settings', root: D });
+  assert.equal(r.plugins, undefined);
+  assert.equal(hashOf(checkFiles(r, D).files), r.hash);
+  fs.rmSync(path.join(CONF, 'plugins'), { recursive: true });
+  fs.rmSync(D, { recursive: true });
+});

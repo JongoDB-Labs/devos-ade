@@ -307,15 +307,21 @@ export function shellBlocks(text, max = 1000) {
   if (fm && fm.body > 0) scan(t.slice(fm.body), fm.body);
   return { list: out, more };
 }
-// Plugins and plugin marketplaces a file declares: the plugins' own folders (their hooks, MCP and language servers) are
-// not listed here, so a listing with one is incomplete — never trusted. Found by what the tools read, not by its
-// spelling: a JSON (or JSONC) file is parsed and every key at every depth looked at, in any case (a key spelled with
-// \u escapes is the same key once parsed); a .json that does not parse, even as JSONC, cannot be looked at (incomplete
-// too); a TOML or YAML file is looked at whole, its \u and \U escapes decoded; a marketplace.json is one by its name.
-// The raw text's "marketplace": key is a trigger as well, never the only one.
+// Plugins and plugin marketplaces another tool's file declares: the plugins' own folders (their hooks, MCP and
+// language servers) are not listed here, so a listing with one is incomplete — never trusted. Found by what the tools
+// read, not by its spelling: a JSON (or JSONC) file is parsed and every key at every depth looked at, in any case (a key
+// spelled with \u escapes is the same key once parsed); a .json that does not parse, even as JSONC, cannot be looked
+// at (incomplete too). There is no TOML or YAML parser here: such a file is searched whole, and one with anything that
+// could spell a key otherwise than as written — a backslash anywhere (an escape: \u, \x, \N, a folded line …), and in
+// YAML a complex key (?), a merge (<<), an alias as a key or a tag — cannot be looked at. A marketplace.json is one by
+// its name. The raw text's "marketplace": key is a trigger as well, never the only one. (Claude Code's own settings
+// follow a narrower rule: summarize.)
 const PLUGIN_KEY = /plugin|marketplace/i;
-// stripJsonc(t) -> the text without // and /* */ comments and trailing commas (outside strings), or null (a comment
-// left open)
+// a line break as JSONC parsers read one (jsonc-parser: \n, \r, U+2028, U+2029)
+const JSONC_BREAK = /[\n\r\u2028\u2029]/;
+// stripJsonc(t) -> the text without // and /* */ comments and trailing commas (outside strings), or null: a comment
+// left open, or a line break JSON parsers and JSONC parsers do not agree on — a CR alone, U+2028 or U+2029 — outside a
+// string (what one tool reads as the end of a comment another reads as part of it)
 export function stripJsonc(t) {
   let out = '', i = 0;
   while (i < t.length) {
@@ -325,8 +331,13 @@ export function stripJsonc(t) {
       while (j < t.length && t[j] !== '"') j += t[j] === '\\' ? 2 : 1;
       out += t.slice(i, j + 1); i = j + 1; continue;
     }
-    if (c === '/' && t[i + 1] === '/') { while (i < t.length && t[i] !== '\n') i++; continue; }
-    if (c === '/' && t[i + 1] === '*') { const e = t.indexOf('*/', i + 2); if (e < 0) return null; out += ' '; i = e + 2; continue; }
+    if ((c === '\r' && t[i + 1] !== '\n') || c === '\u2028' || c === '\u2029') return null;
+    if (c === '/' && t[i + 1] === '/') { while (i < t.length && !JSONC_BREAK.test(t[i])) i++; continue; }
+    if (c === '/' && t[i + 1] === '*') {
+      const e = t.indexOf('*/', i + 2);
+      if (e < 0 || /\r(?!\n)|[\u2028\u2029]/.test(t.slice(i, e))) return null;
+      out += ' '; i = e + 2; continue;
+    }
     out += c; i++;
   }
   // (a comma before a closing bracket, outside strings: the second pass, comments gone)
@@ -356,32 +367,42 @@ export function pluginKeyIn(v, depth = 0) {
   }
   return null;
 }
-const parseJsonish = (t) => {
-  try { return { v: JSON.parse(t) }; } catch { /* JSONC? */ }
+// parseJsonc(t) -> {v}, or null: the text as JSON with JSONC's comments and trailing commas (stripJsonc first: one that
+// is only JSON comes out the same)
+export const parseJsonc = (t) => {
   const s = stripJsonc(t);
   if (s === null) return null;
   try { return { v: JSON.parse(s) }; } catch { return null; }
 };
-const decodeEscapes = (t) => t.replace(/\\u([0-9a-fA-F]{4})|\\U([0-9a-fA-F]{8})/g, (m, a, b) => { try { return String.fromCodePoint(parseInt(a ?? b, 16)); } catch { return m; } });
-/** pluginsOf(name, text) -> {key: what declares plugins or a marketplace, or null; unreadable: a .json(c) that does not
- *  parse} — for another tool's file */
+// TOML and YAML: what could spell a key otherwise than as written (no parser here to read it)
+const YAML_ODD = [[/\\/, 'a backslash (an escape or a folded line)'], [/(^|[\s{,[-])\?(\s|$)/m, 'a complex key (?)'], [/<</, 'a merge key (<<)'],
+  [/(^|[\s{,[?-])\*[^\s,[\]{}]+\s*:/m, 'an alias as a key'], [/(^|[\s{,[?:-])!/m, 'a tag']];
+/** pluginsOf(name, text) -> {key: what declares plugins or a marketplace, or null; unreadable: why it cannot be looked
+ *  at, or null} — for another tool's file */
 export function pluginsOf(name, text) {
   const base = String(name).toLowerCase().split('/').pop();
-  if (base === 'marketplace.json') return { key: 'a marketplace.json', unreadable: false };
+  if (base === 'marketplace.json') return { key: 'a marketplace.json', unreadable: null };
   const raw = /"(extraKnownMarketplaces|marketplaces?)"\s*:/i.test(text) ? 'marketplace' : null;
   if (/\.jsonc?$/.test(base)) {
-    const p = parseJsonish(text);
-    if (!p) return { key: raw, unreadable: true };
+    const p = parseJsonc(text);
+    if (!p) return { key: raw, unreadable: 'not valid JSON or JSONC (or a line break the tools read differently: a CR alone, U+2028, U+2029)' };
     let k = null;
     try { k = pluginKeyIn(p.v); } catch { k = '(could not be looked at)'; }
-    return { key: k ?? raw, unreadable: false };
+    return { key: k ?? raw, unreadable: null };
   }
   if (/\.(toml|ya?ml)$/.test(base)) {
-    const m = decodeEscapes(text).match(PLUGIN_KEY);
-    return { key: m ? m[0] : raw, unreadable: false };
+    const odd = (base.endsWith('.toml') ? YAML_ODD.slice(0, 1) : YAML_ODD).find(([re]) => re.test(text));
+    const m = text.match(PLUGIN_KEY);
+    return { key: m ? m[0] : raw, unreadable: odd ? `${odd[1]}: a key could be spelled otherwise than as written, and this page has no ${base.endsWith('.toml') ? 'TOML' : 'YAML'} parser to read it` : null };
   }
-  return { key: raw, unreadable: false };
+  return { key: raw, unreadable: null };
 }
+// Claude Code's own plugin keys in a project's .claude/settings*.json (2.1.309 reads them at the top level; in any case
+// here): a marketplace the project adds (extraKnownMarketplaces, and its alias additionalMarketplaces) is code nobody
+// here has looked at — never trusted; enabledPlugins turns plugins on — each one installed in the sandbox is listed
+// (its id and version are in the hash: bn-coded's plugins), one that is not could be fetched — never trusted
+const CC_MARKETPLACE_KEYS = ['extraknownmarketplaces', 'additionalmarketplaces'];
+const CC_ENABLED_KEY = 'enabledplugins';
 
 // canonical(v) -> JSON with sorted keys (every field, whatever the friendly line shows)
 const canonical = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((key) => [key, x[key]])) : x));
@@ -390,14 +411,17 @@ const canonical = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object'
  *  every file under .claude/ but the two settings files, with its front matter keys that grant something; {hooks: [{file, event, matcher, command,
  *  json, mixed, careful}], allow, ask, deny, defaultMode, directories, env: [{file, name, value}], commands: [{file,
  *  key, command}], mcp: [{file, key, value}], mcpServers: [{file, name, run, json, mixed, careful}], other: [{file,
- *  key, value}], notes: [{file, note}], complete, missing: [why …], careful} — complete: every key and value of the
+ *  key, value}], notes: [{file, note}], plugins: [{file, id, on, version}] (the plugins the settings turn on, each
+ *  installed in the sandbox, or off), complete, missing: [why …], careful} — complete: every key and value of the
  *  files is in it, whole (no list or value cut, no hidden character, no file that could not be read as JSON). A hook
  *  and an MCP server come with their whole entry as canonical JSON (json: every field, sorted), a friendly line beside
  *  it (command, run), mixed when it names more than one of a command, a URL and a prompt; careful: values with long
- *  runs of whitespace or many lines (the page asks you to look at them in full). */
-export function summarize(files) {
+ *  runs of whitespace or many lines (the page asks you to look at them in full). plugins: what the sandbox says of the
+ *  plugins the settings turn on ({list: [{id, installed, versions}], registry}: checkPlugins), or null when it said
+ *  nothing (then a plugin turned on is never trusted). */
+export function summarize(files, plugins = null) {
   const out = { hooks: [], allow: [], ask: [], deny: [], defaultMode: null, directories: [], env: [], commands: [], mcp: [], mcpServers: [], other: [], notes: [],
-    files: [], tools: [], complete: true, missing: [], careful: 0 };
+    files: [], tools: [], plugins: [], complete: true, missing: [], careful: 0 };
   const why = new Map();
   const incomplete = (reason) => { out.complete = false; why.set(reason, (why.get(reason) ?? 0) + 1); };
   // text(v) -> a value as the page shows it (a string as is; anything else as JSON), whole or said
@@ -443,7 +467,7 @@ export function summarize(files) {
       // (plugins or a plugin marketplace the repository declares: their folders are not looked at here — never trusted;
       // a .json that cannot be parsed cannot be looked at either)
       const pl = pluginsOf(f.name, f.text);
-      if (pl.unreadable) { note('not valid JSON or JSONC: what it declares cannot be looked at here'); incomplete('another tool\'s .json file that does not parse'); }
+      if (pl.unreadable) { note(`${pl.unreadable}: what it declares cannot be looked at here`); incomplete('another tool\'s file this page cannot read the way the tool does'); }
       if (pl.key) {
         note(`declares plugins or a plugin marketplace (${short(pl.key, 100)}): the plugins it points at are not looked at here`);
         incomplete('plugins or a plugin marketplace declared in the project');
@@ -457,16 +481,6 @@ export function summarize(files) {
     let v;
     try { v = JSON.parse(f.text); } catch { note('not valid JSON (Claude Code may still read parts of it)'); incomplete('a file that is not valid JSON'); continue; }
     if (!obj(v)) { note('not a JSON object'); incomplete('a file that is not a JSON object'); continue; }
-    // (Claude Code's own plugins and marketplaces — enabledPlugins, extraKnownMarketplaces …, at any depth: the same rule
-    // as for the other tools' files)
-    {
-      let k = null;
-      try { k = pluginKeyIn(v); } catch { k = '(could not be looked at)'; }
-      if (k) {
-        note(`declares plugins or a plugin marketplace (${short(k, 100)}): the plugins it points at are not looked at here`);
-        incomplete('plugins or a plugin marketplace declared in the project');
-      }
-    }
     if (lower === '.mcp.json') {
       if (v.mcpServers !== undefined && !obj(v.mcpServers)) add('other', { file: f.name, key: 'mcpServers', value: text(v.mcpServers) });
       for (const [name, c] of Object.entries(obj(v.mcpServers) ?? {})) {
@@ -523,7 +537,33 @@ export function summarize(files) {
     for (const [name, value] of Object.entries(obj(v.env) ?? {})) add('env', { file: f.name, name: text(name), value: text(value) });
     for (const k of COMMAND_KEYS) if (v[k] !== undefined) add('commands', { file: f.name, key: k, command: text(typeof v[k] === 'string' ? v[k] : v[k]) });
     for (const k of MCP_KEYS) if (v[k] !== undefined) add('mcp', { file: f.name, key: k, value: text(v[k]) });
-    for (const k of Object.keys(v).filter((k) => !KNOWN.has(k))) add('other', { file: f.name, key: text(k), value: text(v[k]) });
+    // Claude Code's plugin keys (top level, any case): a marketplace the project adds — never trusted; the plugins it turns
+    // on — each one installed in the sandbox listed, one that is not never trusted
+    for (const k of Object.keys(v)) {
+      const low = k.toLowerCase();
+      if (CC_MARKETPLACE_KEYS.includes(low)) {
+        note(`adds a plugin marketplace (${short(k, 60)}): its plugins are code nobody here has looked at — not trustable`);
+        incomplete('a plugin marketplace the project adds');
+      }
+      if (low !== CC_ENABLED_KEY) continue;
+      const x = v[k];
+      const list = Array.isArray(x) ? x.map((id) => [id, true]) : obj(x) ? Object.entries(x) : null;
+      if (!list) { note(`${short(k, 60)} is not a list of plugins`); incomplete('plugins turned on in a form this page does not read'); add('other', { file: f.name, key: text(k), value: text(x) }); continue; }
+      for (const [id, on] of list) {
+        if (typeof id !== 'string') { note(`${short(k, 60)} names something that is not a plugin id`); incomplete('plugins turned on in a form this page does not read'); continue; }
+        // (turned off: nothing runs — listed as such)
+        if (on === false) { add('plugins', { file: f.name, id: text(id), on: false, version: null }); continue; }
+        const got = plugins?.list.find((p) => p.id === id);
+        if (!plugins || plugins.registry === 'unreadable') {
+          note(`turns on plugin ${short(id, 200)}: the sandbox's list of installed plugins could not be read`);
+          incomplete('a plugin turned on, and the sandbox\'s installed plugins could not be read');
+        } else if (!got?.installed) {
+          note(`turns on plugin ${short(id, 200)}, which is not installed in the sandbox: Claude Code could fetch it — not trustable`);
+          incomplete('a plugin the project turns on that is not installed in the sandbox');
+        } else add('plugins', { file: f.name, id: text(id), on: true, version: text(got.versions.map((w) => [w.version ?? '?', w.commit ? `(${w.commit.slice(0, 12)})` : ''].join(' ').trim()).join(', ')) });
+      }
+    }
+    for (const k of Object.keys(v).filter((k) => !KNOWN.has(k) && k.toLowerCase() !== CC_ENABLED_KEY)) add('other', { file: f.name, key: text(k), value: text(v[k]) });
   }
   out.missing = [...why].map(([reason, n]) => (n > 1 ? `${reason} (${n} times)` : reason));
   return out;
@@ -546,8 +586,28 @@ export const stateOf = ({ workspace = false, present, hash, trust, verifiable = 
 };
 export const RECHECK_TEXT = 'bedrock-now reads a project\'s settings more strictly since you trusted them (the other tools\' too) — look at them again';
 const sha256 = (b) => crypto.createHash('sha256').update(b).digest('hex');
-/** hashOf(files) -> the hash bn-coded's settingsFiles makes, from the checked rows (null when none is there) */
-export const hashOf = (files) => (files.length ? sha256(JSON.stringify(files.map((f) => [f.name, f.type, f.sha256 ?? null, f.target ?? null]))) : null);
+/** hashOf(files, plugins) -> the hash bn-coded's settingsFiles makes, from the checked rows and the plugins the
+ *  settings turn on with what the sandbox has of them (checkPlugins; null when none: the files' alone) — null when
+ *  there is no file */
+export const hashOf = (files, plugins = null) => {
+  if (!files.length) return null;
+  const rows = files.map((f) => [f.name, f.type, f.sha256 ?? null, f.target ?? null]);
+  return sha256(JSON.stringify(plugins ? { files: rows, plugins: plugins.list, registry: plugins.registry } : rows));
+};
+const PLUGIN_ID = /^[\x20-\x7e]{1,300}$/;
+const vstr = (x) => x === null || (typeof x === 'string' && x.length <= 100);
+/** checkPlugins(project.settings' RESULT) -> {plugins: {list: [{id, installed, versions: [{version, commit}]}], registry:
+ *  ok|none|unreadable} or null (none said), ok}: ok false when what it says does not fit (then unverifiable) */
+export function checkPlugins(r) {
+  if (r?.plugins === undefined && r?.registry === undefined) return { plugins: null, ok: true };
+  const l = r.plugins;
+  const ok = Array.isArray(l) && l.length <= 200 && ['ok', 'none', 'unreadable'].includes(r.registry)
+    && l.every((p, i) => p && typeof p === 'object' && typeof p.id === 'string' && PLUGIN_ID.test(p.id) && (i === 0 || l[i - 1].id < p.id)
+      && typeof p.installed === 'boolean' && Array.isArray(p.versions) && p.versions.length <= 20 && p.installed === p.versions.length > 0
+      && p.versions.every((w) => w && typeof w === 'object' && vstr(w.version) && vstr(w.commit)));
+  if (!ok) return { plugins: null, ok: false };
+  return { plugins: { list: l.map((p) => ({ id: p.id, installed: p.installed, versions: p.versions.map((w) => ({ version: w.version, commit: w.commit })) })), registry: r.registry }, ok: true };
+}
 
 /** What a session says when its folder's own settings are not applied (a `local` event at its process's start). */
 export function withheldText(d) {
@@ -582,12 +642,13 @@ export function makeTrust({ call, store, log = () => {} }) {
   async function read(abs, { text = true } = {}) {
     const { result } = await call({ op: 'project.settings', ...(abs === WS ? {} : { root: abs }), ...(text ? {} : { text: false }) }, { timeoutMs: 20000 });
     const { files, ok } = checkFiles(result, abs);
+    const { plugins, ok: pok } = checkPlugins(result);
     for (const f of files) if (f.text !== null && (!f.sha256 || sha256(Buffer.from(f.text, 'utf8')) !== f.sha256)) f.text = null;
     const present = files.length > 0 || !ok || (result?.over !== null && result?.over !== undefined);
-    const hash = hashOf(files);
-    const verifiable = ok && present && result?.verifiable === true && !result?.over && hash !== null && result?.hash === hash
+    const hash = hashOf(files, plugins);
+    const verifiable = ok && pok && present && result?.verifiable === true && !result?.over && hash !== null && result?.hash === hash
       && files.every((f) => (f.type === 'file' || f.type === 'link') && (!text || f.text !== null));
-    return { files, present, hash: verifiable ? hash : null, verifiable, over: typeof result?.over === 'string' ? short(result.over, 200) : null };
+    return { files, plugins, present, hash: verifiable ? hash : null, verifiable, over: typeof result?.over === 'string' ? short(result.over, 200) : null };
   }
   /** decide(cwd) -> {state, sources, strictMcp, project, hash}: what a Claude Code process started there now gets.
    *  Anything that cannot be decided (the records, the sandbox): not applied. */
@@ -612,7 +673,7 @@ export function makeTrust({ call, store, log = () => {} }) {
     const abs = absOf(rec.root);
     const r = await read(abs);
     const state = stateOf({ workspace: rec.id === WORKSPACE_ID, present: r.present, hash: r.hash, trust: rec.trust, verifiable: r.verifiable });
-    const summary = summarize(r.files);
+    const summary = summarize(r.files, r.plugins);
     const own = r.over && OVER.test(r.over);
     if (r.over) { summary.complete = false; summary.missing.push(own ? r.over : 'a reason of the sandbox\'s own (below)'); }
     note(rec.id, state);
@@ -631,7 +692,7 @@ export function makeTrust({ call, store, log = () => {} }) {
     if (!r.present) return { conflict: 'this project has no settings of its own (nothing to trust)' };
     if (!r.verifiable) return { conflict: 'its settings cannot be checked (a file there is a link out of the workspace, too large to show, or not a file): they are never trusted' };
     if (r.hash !== hash) return { conflict: 'its settings changed since you looked: review them again' };
-    const sm = summarize(r.files);
+    const sm = summarize(r.files, r.plugins);
     if (!sm.complete) return { conflict: `its settings cannot all be shown here (${sm.missing.join('; ')}): they are not trusted — shorten them, or use the folder without them` };
     store().trust(rec.id, hash);
     note(rec.id, 'trusted');
