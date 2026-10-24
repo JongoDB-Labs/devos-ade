@@ -112,12 +112,17 @@ os.remove(os.path.join(dest, "pyodide-lock.json"))
 assert v.main(["vendor.py", dest, lst]) == 0
 assert "pyodide-lock.json" not in os.listdir(dest)
 assert all(x["why"] == "the image's pyodide-lock.json has no packages" for x in json.load(open(os.path.join(dest, "vendored.json")))["left_out"])
+# with a folder of its own for what was done (the Dockerfile's: outside what Open WebUI serves): nothing of it beside the wheels
+dest2, rd = tempfile.mkdtemp(), os.path.join(tempfile.mkdtemp(), "bn-vendor")
+json.dump(lock, open(os.path.join(dest2, "pyodide-lock.json"), "w"))
+assert v.main(["vendor.py", dest2, lst, rd]) == 0
+assert sorted(os.listdir(rd)) == ["vendored.json", "vendored.txt"] and not [f for f in os.listdir(dest2) if f.startswith("vendored")], os.listdir(dest2)
 PY
 }
 
 test_vendor_downloads_are_bounded_https_only() {
   _vendor_py <<'PY' || return $?
-import hashlib, io, tempfile, urllib.request
+import hashlib, io, os, tempfile, time, urllib.error, urllib.request
 for url in ["http://cdn.example/a.whl", "file:///etc/passwd", "ftp://x/a.whl", "data:,x"]:
     try:
         v.fetch_url(url, 10)
@@ -128,12 +133,47 @@ class Body(io.BytesIO):
     def __enter__(self): return self
     def __exit__(self, *a): return False
 seen = {}
-def opener(url, timeout):
-    seen["timeout"] = timeout
-    return Body(b"x" * 1000)
-urllib.request.urlopen = opener
+body = {"b": b"x" * 1000}
+class Opener:
+    def __init__(self, handlers): seen["handlers"] = handlers
+    def open(self, url, timeout):
+        seen["timeout"] = timeout
+        return Body(body["b"])
+urllib.request.build_opener = lambda *h: Opener(h)
 assert v.fetch_url("https://cdn.example/a.whl", 1000) == b"x" * 1000
 assert seen["timeout"] == v.DOWNLOAD_TIMEOUT_S
+# (redirects: only to https on the lock's own host and port)
+same = [h for h in seen["handlers"] if isinstance(h, v._SameHost)][0]
+class Req:
+    full_url = "https://cdn.example/full/a.whl"
+    def get_method(self): return "GET"
+    headers = {}
+    unredirected_hdrs = {}
+    origin_req_host = "cdn.example"
+    unverifiable = False
+    data = None
+for bad in ["http://cdn.example/a.whl", "https://evil.example/a.whl", "https://cdn.example:8443/a.whl", "//evil.example/a.whl", "ftp://cdn.example/a"]:
+    try:
+        same.redirect_request(Req(), None, 302, "Found", {}, bad)
+        raise AssertionError("followed " + bad)
+    except urllib.error.HTTPError as e:
+        assert "away from the lock" in str(e.msg), e
+assert same.redirect_request(Req(), None, 302, "Found", {}, "https://cdn.example/other/a.whl").full_url == "https://cdn.example/other/a.whl"
+assert same.redirect_request(Req(), None, 302, "Found", {}, "https://CDN.example/b.whl") is not None
+# (a whole download: within DOWNLOAD_DEADLINE_S, however slowly each read comes)
+clock = {"t": 0.0}
+def tick():
+    clock["t"] += 100.0
+    return clock["t"]
+v.time.monotonic = tick
+body["b"] = b"x" * (1 << 20)
+try:
+    v.fetch_url("https://cdn.example/a.whl", 2 << 20)
+    raise AssertionError("past the deadline")
+except TimeoutError as e:
+    assert "within" in str(e)
+v.time.monotonic = time.monotonic
+body["b"] = b"x" * 1000
 try:
     v.fetch_url("https://cdn.example/a.whl", 999)
     raise AssertionError("past the cap")
@@ -145,6 +185,16 @@ got = []
 lock = {"packages": {n: {"file_name": f"https://c/{n}-1-py3-none-any.whl", "sha256": hashlib.sha256(b"z").hexdigest(), "depends": []} for n in "pq"}}
 v.vendor(lock, ["p", "q"], tempfile.mkdtemp(), fetch=lambda url, limit: got.append(limit) or b"z", tmp=tempfile.mkdtemp())
 assert got == [v.FILE_MAX, min(v.FILE_MAX, v.TOTAL_MAX - 1)], got
+# a file name two packages of the lock name: both left out, said — never a crash, nothing moved over another
+z = hashlib.sha256(b"z").hexdigest()
+lock = {"packages": {"p": {"file_name": "https://c/a/same-1-py3-none-any.whl", "sha256": z, "depends": []},
+                     "q": {"file_name": "https://c/b/same-1-py3-none-any.whl", "sha256": z, "depends": []},
+                     "r": {"file_name": "https://c/r-1-py3-none-any.whl", "sha256": z, "depends": []}}}
+dest = tempfile.mkdtemp()
+new, rep = v.vendor(lock, ["p", "q", "r"], dest, fetch=lambda url, limit: b"z", tmp=tempfile.mkdtemp())
+assert [r["name"] for r in rep["ready"]] == ["r"], rep
+assert {x["name"]: x["why"] for x in rep["left_out"]} == {"p": "its file name is another package's in the lock too", "q": "its file name is another package's in the lock too"}
+assert new["packages"]["p"]["file_name"].startswith("https://") and os.listdir(dest) == ["r-1-py3-none-any.whl"]
 PY
 }
 
@@ -168,7 +218,9 @@ test_open_webui_one_pin_everywhere_and_a_local_image_no_pull_replaces() {
   # no other reference to Open WebUI's registry image anywhere in compose files
   assert_eq "$(grep -h 'open-webui/open-webui' "$STACK_DIR"/compose*.yaml | wc -l | tr -d ' ')" 1
   # what the build runs: vendor.py, isolated, on Pyodide's folder; nothing else copied in
-  assert_contains "$(cat "$OWUI/Dockerfile")" 'python3 -I /tmp/bn-vendor/vendor.py /app/build/pyodide /tmp/bn-vendor/packages.txt'
+  assert_contains "$(cat "$OWUI/Dockerfile")" 'python3 -I /tmp/bn-vendor/vendor.py /app/build/pyodide /tmp/bn-vendor/packages.txt /opt/bn-vendor'
+  # (Pyodide's console pages: never on the public route)
+  assert_contains "$(cat "$OWUI/Dockerfile")" 'rm -f /app/build/pyodide/console.html /app/build/pyodide/console-v2.html'
   assert_eq "$(grep -c '^COPY' "$OWUI/Dockerfile" | tr -d ' ')" 1
   assert_contains "$(cat "$OWUI/Dockerfile")" 'COPY vendor.py packages.txt /tmp/bn-vendor/'
   # the default packages
@@ -199,6 +251,32 @@ test_owui_build_tries_again_only_after_a_failed_download_and_keeps_its_try() {
   assert_eq "$(cat "$TMP/dc")" "dc build -q --build-arg BN_VENDOR_TRY=2026102509 open-webui"
   dc() { return 1; }
   if owui_build; then echo "a failed build must fail" >&2; return 1; fi
+}
+
+# python_runner_status: what the image's build did, from its own folder (outside what Open WebUI serves) — an image
+# of an earlier build had it beside the wheels: read there then — once per image
+test_python_runner_status_reads_the_report_outside_the_served_folder() {
+  STATE_DIR="$TMP/state"; mkdir -p "$STATE_DIR/status"
+  docker() {
+    echo "docker $*" >> "$TMP/docker"
+    case "$*" in
+      "image inspect"*) echo sha256:img1 ;;
+      *"cat bn-t/open-webui:local /opt/bn-vendor/vendored.txt") [ -e "$TMP/old" ] && return 1; printf 'ready\tmicropip\t1\n' ;;
+      *"cat bn-t/open-webui:local /app/build/pyodide/vendored.txt") printf 'ready\tnumpy\t2\n' ;;
+      *) return 1 ;;
+    esac
+  }
+  project_name() { echo bn-t; }
+  python_runner_status
+  assert_eq "$(cat "$STATE_DIR/status/python-runner.txt")" "$(printf 'ready\tmicropip\t1')"
+  assert_not_contains "$(cat "$TMP/docker")" "/app/build/pyodide/vendored.txt"
+  # (the same image again: not read again)
+  : > "$TMP/docker"; python_runner_status
+  assert_not_contains "$(cat "$TMP/docker")" "docker run"
+  # an image of an earlier build: its list beside the wheels
+  rm -f "$STATE_DIR/status/python-runner.id"; : > "$TMP/old"
+  python_runner_status
+  assert_eq "$(cat "$STATE_DIR/status/python-runner.txt")" "$(printf 'ready\tnumpy\t2')"
 }
 
 test_python_runner_line_says_what_is_ready_and_what_is_left_out() {

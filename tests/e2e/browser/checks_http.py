@@ -411,9 +411,11 @@ def chat_python_runtime(ctx):
         bad.append(f"lock: vendored {vendored[:8]}")
     if any("/" not in str(p.get("file_name", "")) and n not in vendored for n, p in pk.items()):
         bad.append("lock: a relative name for a package not vendored")
-    r = http("GET", "chat", "/pyodide/vendored.json", {})
-    if r.status != 200 or not {x["name"] for x in json.loads(r.body).get("ready", [])} >= {"micropip", "numpy"}:
-        bad.append(f"vendored.json -> {r.status}")
+    # (what was vendored is ./stack status's, never served: no list of it, and none of Pyodide's own console pages)
+    for name in ("vendored.json", "vendored.txt", "console.html", "console-v2.html"):
+        r = http("GET", "chat", f"/pyodide/{name}", {})
+        if r.status == 200 and (name.endswith(".json") or name.endswith(".txt") or b"pyodide" in r.body.lower()):
+            bad.append(f"{name} served")
     # behind the session as before: another method, a folder, a dot first — and the same spelled with escapes
     # (each sent exactly as written — no client cleans ../ or // here: Caddy's own path matchers would)
     for method, path in (("POST", "/pyodide/pyodide.js"), ("PUT", "/pyodide/pyodide.js"), ("GET", "/pyodide/a/b.js"), ("GET", "/pyodide/.env"),
@@ -421,7 +423,9 @@ def chat_python_runtime(ctx):
                          ("GET", "/pyodide/a%2Fb"), ("GET", "/pyodide//a"), ("GET", "/api/../pyodide/a"), ("GET", "/pyodide/a;b"),
                          ("GET", "/pyodide/pyodide.js?x=1"), ("GET", "/api/v1/x/../../../pyodide/a"), ("GET", "/api/v1/auths/../../../pyodide/pyodide.js"),
                          ("GET", "/pyodide/%61.js"), ("GET", "/pyodide/./pyodide.js"), ("HEAD", "/pyodide//pyodide.js"),
-                         ("GET", "/pyodide/%2epyodide.js"), ("GET", "/pyodide/"), ("GET", "/pyodide"), ("GET", "/api/v1/auths/")):
+                         ("GET", "/pyodide/%2epyodide.js"), ("GET", "/pyodide/"), ("GET", "/pyodide"), ("GET", "/api/v1/auths/"),
+                         # (Caddy's placeholders in the target: never expanded into the path sent on)
+                         ("GET", "/pyodide/{env.PORTAL_PROXY_SECRET}"), ("GET", "/pyodide/a{?x=1}")):
         r = http(method, "chat", path, {"Accept": "application/json"}, "{}" if method in ("POST", "PUT") else None)
         if r.status != 401 or r.header("access-control-allow-origin") == "*":
             bad.append(f"{method} {path} -> {r.status} (not the session check)")

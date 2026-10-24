@@ -58,7 +58,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   under `/pyodide/`, matched on the request target exactly as it arrived (never a cleaned or decoded path: any `%`,
   `..`, `//`, `;` or query and it is the signed-in route as before), sent on as exactly that path, with no cookie,
   `Authorization` or `X-Portal-*` header passed on and nothing set in return; what is there is public and the same for
-  everyone (docs/security.md).
+  everyone — Pyodide's console pages and the build's report of what it vendored are not there (docs/security.md). The
+  build downloads each wheel over https only, follows a redirect only to https on the lock's own host, gives each
+  download a deadline, and leaves out a file name two packages of the lock share.
 - **Accept edits asks where a remote's URL could run a program:** a transport helper (`<name>::…`, a name that starts
   with a digit and an empty one included: `1abc::…`, `::…`), or a scheme other than git's own (`https://`, `http://`,
   `ssh://`, `git://`, `file://`, `git+ssh://`, `ssh+git://`, exactly so, in lower case; `9x://` is another) in a

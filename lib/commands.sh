@@ -302,7 +302,9 @@ python_runner_status() {
   [ -n "$id" ] || return 0
   [ "$(cat "$d/python-runner.id" 2>/dev/null || true)" != "$id" ] || return 0
   f="$(mktemp "$d/.python-runner.XXXXXX" 2>/dev/null)" || return 0
-  if docker run --rm --network none --entrypoint cat "$img" /app/build/pyodide/vendored.txt > "$f" 2>/dev/null; then
+  # (/opt/bn-vendor: outside what Open WebUI serves — an image of an earlier build had it beside the wheels)
+  if docker run --rm --network none --entrypoint cat "$img" /opt/bn-vendor/vendored.txt > "$f" 2>/dev/null ||
+     docker run --rm --network none --entrypoint cat "$img" /app/build/pyodide/vendored.txt > "$f" 2>/dev/null; then
     LC_ALL=C tr -cd '\t\n -~' < "$f" | head -n 400 > "$d/python-runner.txt"
     chmod 644 "$d/python-runner.txt" 2>/dev/null || true
     printf '%s\n' "$id" > "$d/python-runner.id"

@@ -12,11 +12,13 @@ that needs it: the lock keeps their CDN URLs, the build goes on (an offline buil
 and the reason is printed and written to vendored.json (./stack status says it). Nothing downloaded is run: wheels
 are bytes put in a folder, for the browser.
 
-Bounds: https URLs only, DOWNLOAD_TIMEOUT_S each, FILE_MAX each, TOTAL_MAX in all; a plain file name
-(NAME); never one of the folder's own files; downloads go to a temp folder of their own, and only the folder's
-wheels, the lock, vendored.json and vendored.txt (the same, a line a package, for ./stack status) are written.
+Bounds: https URLs only, and a redirect only to https on the same host; DOWNLOAD_TIMEOUT_S for each network
+operation and DOWNLOAD_DEADLINE_S for a whole download; FILE_MAX each, TOTAL_MAX in all; a plain file name (NAME),
+never one of the folder's own files nor one two packages of the lock name (each left out); downloads go to a temp
+folder of their own, and only the folder's wheels and the lock are written there — vendored.json and vendored.txt
+(the same, a line a package, for ./stack status) in REPORT_DIR (the Dockerfile's: outside what Open WebUI serves).
 
-Usage: python3 -I vendor.py PYODIDE_DIR PACKAGES_FILE
+Usage: python3 -I vendor.py PYODIDE_DIR PACKAGES_FILE [REPORT_DIR]
 """
 import hashlib
 import json
@@ -25,10 +27,13 @@ import re
 import shutil
 import sys
 import tempfile
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
 DOWNLOAD_TIMEOUT_S = 60
+DOWNLOAD_DEADLINE_S = 300
 FILE_MAX = 40 << 20
 TOTAL_MAX = 120 << 20
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,200}\.(whl|zip|tar)$")
@@ -69,13 +74,37 @@ def closure(packages, names):
     return order, missing
 
 
-def fetch_url(url, limit):
-    """The bytes at an https URL, at most limit of them (more: an error), within DOWNLOAD_TIMEOUT_S."""
-    if urllib.parse.urlsplit(url).scheme != "https":
+def _origin(url):
+    u = urllib.parse.urlsplit(url)
+    return (u.scheme, (u.hostname or "").lower(), u.port or 443)
+
+
+class _SameHost(urllib.request.HTTPRedirectHandler):
+    """Redirects only to https on the host the lock named (its port too): anything else is a failed download."""
+
+    def __init__(self, origin):
+        super().__init__()
+        self.origin = origin
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if _origin(urllib.parse.urljoin(req.full_url, newurl)) != self.origin:
+            raise urllib.error.HTTPError(req.full_url, code, "a redirect away from the lock's https host", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def fetch_url(url, limit, deadline_s=DOWNLOAD_DEADLINE_S):
+    """The bytes at an https URL, at most limit of them (more: an error), each network operation within
+    DOWNLOAD_TIMEOUT_S and the whole within deadline_s; redirects only to https on the same host."""
+    origin = _origin(url)
+    if origin[0] != "https" or not origin[1]:
         raise ValueError("not an https URL")
-    with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT_S) as r:
+    end = time.monotonic() + deadline_s
+    opener = urllib.request.build_opener(_SameHost(origin))
+    with opener.open(url, timeout=DOWNLOAD_TIMEOUT_S) as r:
         chunks, size = [], 0
         while True:
+            if time.monotonic() > end:
+                raise TimeoutError(f"not done within {deadline_s} s")
             b = r.read(1 << 16)
             if not b:
                 break
@@ -97,10 +126,17 @@ def vendor(lock, names, dest, fetch=None, tmp=None):
     order, missing = closure(packages, names)
     own = set(os.listdir(dest))
     got, why, total = {}, {n: "not in the image's pyodide-lock.json" for n in missing}, 0
+    base_of = lambda p: os.path.basename(urllib.parse.urlsplit(p.get("file_name")).path) if isinstance(p, dict) and isinstance(p.get("file_name"), str) else ""  # noqa: E731
+    # (a file name two packages of the lock name: neither is vendored — one would take the other's place)
+    uses = {}
+    for p in packages.values():
+        b = base_of(p)
+        if b:
+            uses[b] = uses.get(b, 0) + 1
     for name in order:
         p = packages[name]
         url, sha = p.get("file_name"), p.get("sha256")
-        base = os.path.basename(urllib.parse.urlsplit(url).path) if isinstance(url, str) else ""
+        base = base_of(p)
         if not isinstance(sha, str) or not SHA.match(sha):
             why[name] = "no sha256 in the lock"
             continue
@@ -109,6 +145,9 @@ def vendor(lock, names, dest, fetch=None, tmp=None):
             continue
         if base in own:
             why[name] = "its file name is one of the runtime's own files"
+            continue
+        if uses.get(base, 0) > 1:
+            why[name] = "its file name is another package's in the lock too"
             continue
         try:
             b = fetch(url, min(FILE_MAX, TOTAL_MAX - total))
@@ -166,6 +205,9 @@ def write(dest, name, text):
 
 def main(argv):
     dest, listfile = argv[1], argv[2]
+    # (what was done: beside the wheels only when no folder of its own is named — Open WebUI serves dest)
+    report_dir = argv[3] if len(argv) > 3 else dest
+    os.makedirs(report_dir, mode=0o755, exist_ok=True)
     names = wanted(open(listfile, encoding="utf-8").read())
     lockpath = os.path.join(dest, "pyodide-lock.json")
     try:
@@ -181,8 +223,8 @@ def main(argv):
     if lock is not None and report["ready"]:
         write(dest, "pyodide-lock.json", json.dumps(new, separators=(",", ":")))
     report = {"version": 1, "pyodide": (lock or {}).get("info") if isinstance(lock, dict) else None, **report}
-    write(dest, "vendored.json", json.dumps(report, indent=1) + "\n")
-    write(dest, "vendored.txt", summary(report))
+    write(report_dir, "vendored.json", json.dumps(report, indent=1) + "\n")
+    write(report_dir, "vendored.txt", summary(report))
     print(f"vendor: {len(report['ready'])} package(s) ready ({report['bytes'] / 1e6:.1f} MB): "
           + (", ".join(r["name"] for r in report["ready"]) or "none"), flush=True)
     for x in report["left_out"]:

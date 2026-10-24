@@ -383,7 +383,9 @@ def run(b, ctx, page, reqs, resps, by_frame):
                              ("GET", "/pyodide/%2e%2e/api/bn-probe"), ("GET", "/pyodide/.bn-probe"), ("GET", "/api/bn-probe"),
                              ("GET", "/pyodide/a%2Fbn-probe"), ("GET", "/pyodide//bn-probe.js"), ("GET", "/api/../pyodide/bn-probe.js"),
                              ("GET", "/pyodide/bn-probe;x"), ("GET", "/pyodide/bn-probe.js?x=1"), ("GET", "/api/v1/x/../../../pyodide/bn-probe.js"),
-                             ("GET", "/pyodide/%62n-probe.js"), ("HEAD", "/pyodide//bn-probe.js")):
+                             ("GET", "/pyodide/%62n-probe.js"), ("HEAD", "/pyodide//bn-probe.js"),
+                             # (Caddy's placeholders in the target: never expanded into the path sent on)
+                             ("GET", "/pyodide/{env.PORTAL_PROXY_SECRET}"), ("GET", "/pyodide/a{?x=1}")):
             st[f"{method} {path}"] = raw(method, path)
         reached = [c["path"] for c in seen_chat[n0:]]
         check("chat-runtime-remote-exact", all(v == 401 for v in st.values()) and not reached,

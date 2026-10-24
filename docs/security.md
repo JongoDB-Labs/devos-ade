@@ -3308,7 +3308,9 @@ never reads, copies, keeps, passes on or relays a login.**
   them as it answers anyone; nothing it
   sets comes back; the answer allows any origin to read it, never with credentials; and Chat's policy holds there as
   everywhere. What is there is public and static, the same for everyone: Pyodide's runtime from the Open WebUI image,
-  the wheels our build vendored into it, and the lists of them (`pyodide-lock.json`, `vendored.json`); an unknown name
+  the wheels our build vendored into it, and Pyodide's lock of them (`pyodide-lock.json`) — never Pyodide's console
+  pages (`console.html`, `console-v2.html`: the build removes them) nor the build's own report of what it vendored
+  (`/opt/bn-vendor`, outside what Open WebUI serves: `./stack status` reads it); an unknown name
   gets Open WebUI's own not-found answer, which holds nothing of anyone. Everything else under `/pyodide/` — another method, a
   folder, a dot first — is behind the session check, and an opaque origin is still refused everywhere else.
   The packages: Pyodide's lock names its CDN for every one, which Chat's page never reaches (its policy: requests to
@@ -3317,8 +3319,10 @@ never reads, copies, keeps, passes on or relays a login.**
   wheels of `open-webui/packages.txt` (micropip, numpy, pandas, matplotlib) and what they need from the lock's own
   URLs, checks each against the lock's sha256, puts them beside Pyodide and names them in the lock by their bare names
   — and only those, and only with everything they need: a wheel that fails or does not match is left out and said
-  (the build goes on; `./stack status`), and nothing downloaded is run at build time (`python3 -I`, a timeout each, a
-  cap each and in all; it writes only Pyodide's folder). Any other package keeps its CDN URL, and its import fails
+  (the build goes on; `./stack status`), and nothing downloaded is run at build time (`python3 -I`; https only, a
+  redirect only to https on the lock's own host; a timeout for each network operation and a deadline for each
+  download; a cap each and in all; a file name two packages of the lock share is left out; it writes Pyodide's folder
+  and its report's alone). Any other package keeps its CDN URL, and its import fails
   with Chat's policy refusing the request (the e2e: `browser/chat-python-runner`, `-numpy`, `-not-vendored`,
   `http/chat-python-runtime-public-and-exact`; the remote harness checks that no cookie reaches Open WebUI there).
 - [ ] **What Chat's page and an artifact can still do.** A name the browser looks up on its own for a host a document
