@@ -2831,15 +2831,17 @@ export function gitConfigStrict(text) {
   return out;
 }
 // gitUrlPlain(v) -> whether a remote's, a submodule's or a branch's remote URL (or a remote's name) makes git run no
-// program of its own for it: an https://, http://, ssh://, git:// or file:// URL, a scp-like [user@]host:path, a local
-// path or a remote's name — never <helper>::<address> (git runs git-remote-<helper>), nor any other scheme:// (the same:
-// git-remote-<scheme>), nor a control character
-const GIT_URL_SCHEMES = new Set(['https', 'http', 'ssh', 'git', 'file']);
+// program of its own for it: a URL that starts with one of git's own transports exactly as git compares them — case
+// and all (git picks a transport by these prefixes; SSH:// or Https:// is another scheme to it, whose helper a disk
+// that folds names could find under another name) —, a scp-like [user@]host:path, a local path or a remote's name;
+// never <helper>::<address> (git runs git-remote-<helper>), nor any other scheme:// (the same: git-remote-<scheme>),
+// nor a control character
+const GIT_URL_PREFIXES = ['https://', 'http://', 'ssh://', 'git://', 'file://', 'git+ssh://', 'ssh+git://'];
 const gitUrlPlain = (v) => {
   if (typeof v !== 'string' || v === '' || /[\x00-\x1f\x7f]/.test(v)) return false;
   if (/^[A-Za-z][A-Za-z0-9+.-]*::/.test(v)) return false;
-  const m = v.match(/^([A-Za-z][A-Za-z0-9+.-]*):\/\//);
-  return m ? GIT_URL_SCHEMES.has(m[1].toLowerCase()) : true;
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(v)) return GIT_URL_PREFIXES.some((p) => v.startsWith(p));
+  return true;
 };
 // a plain relative path inside the work tree: no ~, not absolute, no "." or ".." part, printable
 const plainRel = (v) => typeof v === 'string' && v !== '' && !v.startsWith('~') && !v.startsWith('/') && !/[\x00-\x1f\x7f\\]/.test(v)

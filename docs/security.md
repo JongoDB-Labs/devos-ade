@@ -3341,8 +3341,9 @@ never reads, copies, keeps, passes on or relays a login.**
   comments, a `[section]` or `[section "sub"]` header alone on its line, `key = value` or a bare key; no `\`, `#`, `;`,
   continuation or inner quotes; printable ASCII), and every key must be one that never names a program or a path git or
   a tool of your computer loads: core's format and file-system flags, a remote's URL (an `https://`, `http://`,
-  `ssh://`, `git://` or `file://` URL, a scp-like `host:path` or a local path — never a transport helper,
-  `<name>::…`, nor another scheme: git runs `git-remote-<name>` for those), fetch and push refspecs, a branch's
+  `ssh://`, `git://`, `file://`, `git+ssh://` or `ssh+git://` URL — those prefixes exactly, in lower case, as git
+  compares them —, a scp-like `host:path` or a local path; never a transport helper, `<name>::…`, nor another scheme
+  or another case of one: git runs `git-remote-<name>` for those), fetch and push refspecs, a branch's
   tracking (its remote and push remote checked the same way when they hold a URL; VS Code's and the GitHub PR
   extension's keys included), your name, email and signing key, pull, push, fetch, gc's numbers, booleans and dates
   (never `gc.recentObjectsHook`, a command, nor `gc.repackFilterTo`, a path), colours (each command's slots by their

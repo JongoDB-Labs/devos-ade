@@ -25,9 +25,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   ended — in a project whose settings its tool cannot use yet opens the settings dialog first, as a new one does, and
   goes on once you trust them; it no longer stops at "not trusted". A new one whose settings could not be read opens
   the dialog too.
-- **Accept edits asks where a remote's URL could run a program:** a transport helper (`<name>::…`) or a scheme other
-  than https, http, ssh, git and file in a remote's, a submodule's or a branch's remote URL (git runs
-  `git-remote-<name>` for those), and a colour setting under a slot git does not document.
+- **Accept edits asks where a remote's URL could run a program:** a transport helper (`<name>::…`), or a scheme other
+  than git's own (`https://`, `http://`, `ssh://`, `git://`, `file://`, `git+ssh://`, `ssh+git://`, exactly so, in
+  lower case) in a remote's, a submodule's or a branch's remote URL (git runs `git-remote-<name>` for those), and a
+  colour setting under a slot git does not document.
 - **Chat's sweep stops everything first:** it used to freeze what it found one process at a time, so a process that
   forked fast enough could start one the sweep had not seen yet. Now every process in Chat's sandbox but bn-coded and
   the init is stopped at once, the sandbox sorted while nothing runs, what is not spared killed, and the rest let go
