@@ -2802,8 +2802,8 @@ function gitKeyWhy({ section, sub, key, value }) {
 // no repository in it: nothing is plain either (a repository on your computer around it is not visible here).
 export function gitPlainVerdict(root, look = folderLook()) {
   // (why: one of PLAIN_WHY — the page's words for it are its own —, detail: what the repository named, said apart)
-  const no = (why, detail = null) => ({ why, detail: detail === null ? null : printable(detail, 200), guarded: [], workTree: null });
-  if (root.abs === WORKSPACE) return no('workspace');
+  const deny = (why, detail = null) => ({ why, detail: detail === null ? null : printable(detail, 200), guarded: [], workTree: null });
+  if (root.abs === WORKSPACE) return deny('workspace');
   const host = root.top !== WORKSPACE;
   const stop = host ? root.abs : WORKSPACE;
   // a real folder in the workspace (a folder of this computer: in it), no link on its way
@@ -2828,14 +2828,14 @@ export function gitPlainVerdict(root, look = folderLook()) {
   let workTree = null, gitdir = null;
   for (let d = root.abs; ; d = path.dirname(d)) {
     const names = look.names(d);
-    if (names === null) return no('git-unreadable');
+    if (names === null) return deny('git-unreadable');
     const git = names.filter((n) => fold(n) === '.git');
-    if (git.length > 1) return no('git-unreadable', 'more than one .git');
+    if (git.length > 1) return deny('git-unreadable', 'more than one .git');
     if (git.length === 1) {
       const g = path.join(d, git[0]);
       let st;
-      try { st = fs.lstatSync(g); } catch { return no('git-unreadable', '.git'); }
-      if (st.isSymbolicLink()) return no('guarded-link', '.git');
+      try { st = fs.lstatSync(g); } catch { return deny('git-unreadable', '.git'); }
+      if (st.isSymbolicLink()) return deny('guarded-link', '.git');
       if (st.isDirectory()) {
         let head = null;
         try { head = fs.lstatSync(path.join(g, 'HEAD')); } catch { /* none: not a repository — git goes on up */ }
@@ -2843,22 +2843,22 @@ export function gitPlainVerdict(root, look = folderLook()) {
       } else if (st.isFile()) {
         const m = (small(g) || '').match(/^gitdir:[ \t]*([^\r\n]+?)[ \t]*\r?\n?$/);
         const to = m ? path.resolve(d, m[1]) : null;
-        if (!to || !realFolder(to)) return no('gitdir-outside');
+        if (!to || !realFolder(to)) return deny('gitdir-outside');
         workTree = d; gitdir = to;
         break;
-      } else return no('git-unreadable', '.git');
+      } else return deny('git-unreadable', '.git');
     }
     if (d === stop || d === '/' || d === WORKSPACE) break;
   }
-  if (!gitdir) return host ? no('host-outer-repo') : { why: null, detail: null, guarded: [], workTree: null };
+  if (!gitdir) return host ? deny('host-outer-repo') : { why: null, detail: null, guarded: [], workTree: null };
   // its commondir (a linked worktree's): the same rules
   let common = gitdir;
   const cd = small(path.join(gitdir, 'commondir'));
-  if (cd === null) return no('git-unreadable', 'commondir');
+  if (cd === null) return deny('git-unreadable', 'commondir');
   if (cd !== '') {
     const m = cd.match(/^([^\r\n]+?)[ \t]*\r?\n?$/);
     const to = m ? path.resolve(gitdir, m[1]) : null;
-    if (!to || !realFolder(to)) return no('gitdir-outside', 'commondir');
+    if (!to || !realFolder(to)) return deny('gitdir-outside', 'commondir');
     common = to;
   }
   const guarded = [...new Set([gitdir, common])];
@@ -2882,23 +2882,23 @@ export function gitPlainVerdict(root, look = folderLook()) {
     }
     return true;
   };
-  if (!modules(common, 0)) return no('git-unreadable', 'modules');
+  if (!modules(common, 0)) return deny('git-unreadable', 'modules');
   for (const c of [...new Set(configs)]) {
     const text = small(c);
-    if (text === null) return no('git-unreadable', 'config');
+    if (text === null) return deny('git-unreadable', 'config');
     const entries = gitConfigStrict(text);
-    if (entries === null) return no('git-config-syntax');
+    if (entries === null) return deny('git-config-syntax');
     for (const e of entries) {
       const why = gitKeyWhy(e);
-      if (why) return no('git-config-key', why);
+      if (why) return deny('git-config-key', why);
       if (e.section === 'core' && e.key === 'hookspath') {
         // (its folders as far as they are there: real ones, never a link)
         let at = workTree;
         for (const part of e.value.split('/')) {
           at = path.join(at, part);
           let st;
-          try { st = fs.lstatSync(at); } catch (x) { if (x.code === 'ENOENT') break; return no('git-unreadable', 'core.hooksPath'); }
-          if (st.isSymbolicLink() || !st.isDirectory()) return no('guarded-link', 'core.hooksPath');
+          try { st = fs.lstatSync(at); } catch (x) { if (x.code === 'ENOENT') break; return deny('git-unreadable', 'core.hooksPath'); }
+          if (st.isSymbolicLink() || !st.isDirectory()) return deny('guarded-link', 'core.hooksPath');
         }
         guarded.push(path.join(workTree, e.value.split('/')[0]));
       }
