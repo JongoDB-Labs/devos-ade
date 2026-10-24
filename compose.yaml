@@ -168,7 +168,16 @@ services:
       ENABLE_VERSION_UPDATE_CHECK: "false"
       # No changelog popup / update toast; read-aloud uses the browser's system voices. The microphone follows
       # AUDIO_STT_ENGINE (no per-user STT default, so turning server speech-to-text on reaches every user).
-      DEFAULT_INTERFACE_SETTINGS: '{"showChangelog":false,"showUpdateToast":false,"audio":{"tts":{"engine":""}}}'
+      # detectArtifacts off: an answer's html code block opens in the Artifacts panel (a sandbox that runs its
+      # scripts) only when you click its Preview, never by itself — each user can turn it back on (Settings ›
+      # Interface).
+      DEFAULT_INTERFACE_SETTINGS: '{"showChangelog":false,"showUpdateToast":false,"detectArtifacts":false,"audio":{"tts":{"engine":""}}}'
+      # The policy Open WebUI writes into an artifact's own document (and a citation's or a file's preview): the Code
+      # page's artifact viewer's (caddy/artifact-on.caddy, its HTML runner — tests/test_portal.sh keeps the two the
+      # same): its own scripts and styles run, nothing reaches the network (connect-src 'none'), no form, frame or
+      # plugin. (Without the runner's sandbox and frame-ancestors, which a policy in a document cannot set: Open WebUI's
+      # frame is sandboxed itself, and Chat's own policy — Caddyfile chat_csp — applies to it as well.)
+      IFRAME_CSP: "default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data:; style-src 'unsafe-inline' data: blob:; img-src data: blob:; font-src data: blob:; media-src data: blob:; connect-src 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'; webrtc 'block'"
       # Speech-to-text: "web" = the browser's Web Speech API (the slim image has no local Whisper; Call is then
       # unavailable). "openai" (OWUI_STT_ENGINE, set by ./stack setup / ./stack stt) = an OpenAI-compatible server
       # called with Open WebUI's own key, so it counts on that key's budget (lib/stt.sh): the stt container for

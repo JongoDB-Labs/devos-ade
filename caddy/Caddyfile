@@ -143,6 +143,20 @@
 	}
 }
 
+# Chat (Open WebUI, which sends no CSP of its own): what an answer — the model's text, which a document it read can steer
+# — can make the browser fetch. Images, audio and video only from Open WebUI itself, data: and blob:, frames only its
+# own, no plugins, forms posted only to it, no <base>, no Referer: a markdown image, a <video>, an <iframe> or a form in
+# an answer cannot carry what a model read to another server. Requests (fetch, beacons, WebSockets) and fonts only to
+# Open WebUI itself too: everything its own page connects to is there. An artifact (an html code block Open WebUI shows
+# in a sandboxed srcdoc frame) has this policy too — a srcdoc document inherits its parent's — and IFRAME_CSP's
+# (compose.yaml: the artifact viewer's, connect-src 'none'), which Open WebUI writes into the document's own <head>.
+# Not covered (docs/security.md "Chat"): an artifact's scripts and styles from another server, and its frame navigating
+# itself away. {args[0]}: the origin that may frame Chat — the portal's.
+(chat_csp) {
+	header_down Content-Security-Policy "frame-ancestors {args[0]}; img-src 'self' data: blob:; media-src 'self' data: blob:; frame-src 'self' blob:; object-src 'none'; form-action 'self'; base-uri 'self'; connect-src 'self' ws://{http.request.host}:* wss://{http.request.host}:*; font-src 'self' data:"
+	header_down Referrer-Policy no-referrer
+}
+
 # Replaces whatever framing policy the app sends (LiteLLM: X-Frame-Options DENY + CSP frame-ancestors 'none';
 # Open WebUI and RustFS: none) with "only the portal may frame this".
 (frame_by_portal_only) {
@@ -198,9 +212,8 @@ http://{$CHAT_HOST} {
 		reverse_proxy open-webui:8080 {
 			import drop_session_cookie
 			import frame_by_portal_only
-			# (and images from Open WebUI itself, data: and blob: only: an answer's markdown image cannot carry what a
-			# model read to another server — the classic way out of a chat; Open WebUI sends no CSP of its own)
-			header_down Content-Security-Policy "frame-ancestors {$PORTAL_ORIGIN}; img-src 'self' data: blob:"
+			# (and what an answer can make the browser fetch: chat_csp)
+			import chat_csp {$PORTAL_ORIGIN}
 		}
 	}
 }

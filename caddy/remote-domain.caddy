@@ -76,6 +76,8 @@ https://{$REMOTE_HOST}:8443, https://*.{$REMOTE_HOST}:8443 {
 		import portal_auth
 		reverse_proxy open-webui:8080 {
 			import remote_upstream
+			# (Chat: what an answer can make the browser fetch — Caddyfile chat_csp, as on the local site)
+			import chat_csp {$REMOTE_ORIGIN}
 		}
 	}
 

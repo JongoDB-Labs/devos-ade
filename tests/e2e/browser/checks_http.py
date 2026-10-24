@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from urllib.parse import quote, urlencode
 
-from common import ENV, HOST, LITELLM_PORT, PORT, Skip, check, expect, http, origin, portal_login, real_helper_running
+from common import CHAT_CSP, ENV, HOST, LITELLM_PORT, PORT, Skip, check, csp_differs, expect, host_of, http, origin, portal_login, real_helper_running
 
 APPS = {"chat": "/", "admin": "/ui/", "files": "/rustfs/console/"}
 PUBLIC = ["/login", "/healthz", "/favicon.svg", "/static/login.css", "/static/logo.svg", "/manifest.webmanifest", "/sw.js"]
@@ -325,10 +325,18 @@ def headers(ctx):
         r = http("GET", sub, path, HTML, cookie=s + past_sso.get(sub, ""))
         if r.status not in (200, 301, 302, 307, 308):
             bad.append(f"{sub}: HTTP {r.status}")
-        # (Open WebUI's site: images from itself only, too — chat-images-own-only checks it still works)
-        want_csp = f"frame-ancestors {origin()}" + ("; img-src 'self' data: blob:" if sub == "chat" else "")
-        if r.header("content-security-policy") != want_csp:
-            bad.append(f"{sub}: CSP {r.header('content-security-policy')!r}")
+        # (Open WebUI's site: what an answer can make the browser fetch, too — chat-images-own-only checks it still
+        # works; no Referer)
+        # (Chat: each of its directives with exactly its sources — more may come; the others: exactly the frame rule)
+        csp = r.header("content-security-policy") or ""
+        if sub == "chat":
+            differs = csp_differs(csp, CHAT_CSP.format(origin=origin(), host=host_of("chat")))
+            if differs:
+                bad.append(f"chat: CSP {', '.join(differs)} missing or other in {csp!r}")
+        elif csp != f"frame-ancestors {origin()}":
+            bad.append(f"{sub}: CSP {csp!r}")
+        if sub == "chat" and r.header("referrer-policy") != "no-referrer":
+            bad.append(f"chat: Referrer-Policy {r.header('referrer-policy')!r}")
         if r.header("x-frame-options"):
             bad.append(f"{sub}: X-Frame-Options {r.header('x-frame-options')}")
         if any(c.startswith("bn_session=") for c in r.headers_all("set-cookie")):

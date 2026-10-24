@@ -272,6 +272,70 @@ test_caddy_keeps_litellms_cookie_from_litellm_and_files_objects_inert() {
   for r in "$f" "$t" "$d"; do assert_eq "$(grep -c 'import files_inert' "$r" | tr -d ' ')" 1; done
 }
 
+test_caddy_chat_policy_one_definition_local_and_remote() {
+  # Chat's site (Open WebUI sends no CSP of its own): what an answer can make the browser fetch — one snippet, on the
+  # local site and on both remote ones; every copy of its text (./stack test, the e2e, the remote harness) the same.
+  local f="$STACK_DIR/caddy/Caddyfile" t="$STACK_DIR/caddy/remote-tailscale.caddy" d="$STACK_DIR/caddy/remote-domain.caddy" snip line want r
+  snip="$(sed -n '/^(chat_csp) {/,/^}/p' "$f")"
+  assert_eq "$(grep -c '^(chat_csp) {' "$f" | tr -d ' ')" 1
+  line="$(printf '%s\n' "$snip" | sed -n 's/^	header_down Content-Security-Policy "\(.*\)"$/\1/p')"
+  assert_eq "$line" "$(chat_csp '{args[0]}' '{http.request.host}')"
+  assert_contains "$snip" "header_down Referrer-Policy no-referrer"
+  for want in "img-src 'self' data: blob:" "media-src 'self' data: blob:" "frame-src 'self' blob:" "object-src 'none'" "form-action 'self'" \
+              "base-uri 'self'" "connect-src 'self' ws://{http.request.host}:* wss://{http.request.host}:*" "font-src 'self' data:"; do
+    assert_contains "$line" "$want"
+  done
+  assert_contains "$(sed -n '/^http:\/\/{\$CHAT_HOST} {/,/^}/p' "$f")" 'import chat_csp {$PORTAL_ORIGIN}'
+  assert_contains "$(sed -n '/^http:\/\/{\$REMOTE_CHAT_HOST}:8081 {/,/^}/p' "$t")" 'import chat_csp {$REMOTE_ORIGIN}'
+  assert_contains "$(sed -n '/@chat host {\$REMOTE_CHAT_HOST}/,/^	}/p' "$d")" 'import chat_csp {$REMOTE_ORIGIN}'
+  for r in "$f" "$t" "$d"; do assert_eq "$(grep -c 'import chat_csp' "$r" | tr -d ' ')" 1; done
+  # (after remote_upstream's frame-ancestors-only policy: the later one is what Caddy sends)
+  for r in "$(sed -n '/^http:\/\/{\$REMOTE_CHAT_HOST}:8081 {/,/^}/p' "$t")" "$(sed -n '/@chat host {\$REMOTE_CHAT_HOST}/,/^	}/p' "$d")"; do
+    assert_eq "$(printf '%s\n' "$r" | grep -oE 'import (remote_upstream|chat_csp)' | tr '\n' ' ')" "import remote_upstream import chat_csp "
+  done
+  # the copies: the e2e's (checks_http, the remote harness) — filled in the same way
+  local py
+  py="$(sed -n '/^CHAT_CSP = (/,/)$/p' "$STACK_DIR/tests/e2e/remote/harness.py")"
+  assert_eq "$(python3 -c 'import sys; ns = {}; exec(sys.stdin.read(), ns); print(ns["CHAT_CSP"].format(origin="{args[0]}", host="{http.request.host}"))' <<< "$py")" "$line"
+  py="$(sed -n '/^CHAT_CSP = (/,/)$/p' "$STACK_DIR/tests/e2e/browser/common.py")"
+  assert_eq "$(python3 -c 'import sys; ns = {}; exec(sys.stdin.read(), ns); print(ns["CHAT_CSP"].format(origin="{args[0]}", host="{http.request.host}"))' <<< "$py")" "$line"
+}
+
+test_chat_csp_check_takes_each_directive_whole() {
+  # ./stack test and the e2e: each of Chat's directives with exactly its sources — more may come (one added later does
+  # not break it), in any order; one left out, loosened, or given twice with a looser first: a failure
+  local w o=http://p.localhost h=chat.p.localhost
+  w="$(chat_csp "$o" "$h")"
+  chat_csp_check "$w" "$o" "$h" || return 1
+  chat_csp_check "$w; report-to x" "$o" "$h" || return 1
+  chat_csp_check "default-src 'self'; $(printf '%s' "$w" | tr ';' '\n' | sort | tr '\n' ';')" "$o" "$h" || return 1
+  chat_csp_check "$(printf '%s' "$w" | tr -s ' ' | sed 's/; /;   /g')" "$o" "$h" || return 1   # (spacing)
+  assert_eq "$(chat_csp_check "$(printf '%s' "$w" | sed "s/img-src 'self' data: blob:;/img-src 'self' data: blob: https:;/")" "$o" "$h")" "img-src"
+  assert_eq "$(chat_csp_check "$(printf '%s' "$w" | sed "s/img-src 'self' data: blob:; //")" "$o" "$h")" "img-src"
+  assert_eq "$(chat_csp_check "img-src *; $w" "$o" "$h")" "img-src"
+  assert_eq "$(chat_csp_check "$(printf '%s' "$w" | sed "s/connect-src 'self' /connect-src * /")" "$o" "$h")" "connect-src"
+  assert_eq "$(chat_csp_check "frame-ancestors *" "$o" "$h")" "frame-ancestors"
+  if chat_csp_check "" "$o" "$h" >/dev/null; then echo "an empty policy passed" >&2; return 1; fi
+  # (./stack test uses it, and wants no Referer there)
+  local t; t="$(sed -n '/^_test_portal()/,/^}/p' "$STACK_DIR/lib/commands.sh")"
+  assert_contains "$t" 'chat_csp_check "$csp" "$origin" "$(app_host chat)"'
+  assert_contains "$t" "want_ref='|no-referrer'"
+}
+
+test_compose_open_webui_artifacts_policy_is_the_artifact_viewers() {
+  # Open WebUI writes IFRAME_CSP into an artifact's document: the Code page's artifact viewer's policy (its HTML
+  # runner's, caddy/artifact-on.caddy) without what a policy in a document cannot set (sandbox, frame-ancestors).
+  # An html code block opens there only on a click (detectArtifacts off by default).
+  local c runner got
+  c="$(sed -n '/^  open-webui:/,/^  [a-z-]*:$/p' "$STACK_DIR/compose.yaml")"
+  got="$(printf '%s\n' "$c" | sed -n 's/^      IFRAME_CSP: "\(.*\)"$/\1/p')"
+  runner="$(sed -n '/reverse_proxy @runner /,/^		}$/p' "$STACK_DIR/caddy/artifact-on.caddy" | sed -n 's/^			header_down Content-Security-Policy "\(.*\)"$/\1/p')"
+  assert_contains "$runner" "connect-src 'none'"
+  assert_eq "$got" "$(printf '%s\n' "$runner" | sed 's/^sandbox allow-scripts; //; s/; frame-ancestors [^;]*$//')"
+  assert_contains "$got" "connect-src 'none'"
+  assert_contains "$c" '"detectArtifacts":false'
+}
+
 test_compose_litellm_ui_sessions_for_the_automatic_sign_in() {
   local c; c="$(sed -n '/^  litellm:/,/^  [a-z-]*:$/p' "$STACK_DIR/compose.yaml")"
   assert_contains "$c" "PROXY_LOGOUT_URL: /ui/login/?sso=off"   # LiteLLM's own Logout shows its form
@@ -415,7 +479,7 @@ _fake_caddy() {
       chat:/api/v1/auths/signin:) code=401 ;;
       nope:*) code=404 ;;
       :/login\?next=*) code=303; h="Location: /" ;;
-      chat:/*) h="Content-Security-Policy: ${FRAME_CSP:-frame-ancestors $(portal_url); img-src 'self' data: blob:}" ;;
+      chat:/*) h="Content-Security-Policy: ${FRAME_CSP:-$(chat_csp "$(portal_url)" "$(app_host chat)")}"$'\r\n'"Referrer-Policy: no-referrer" ;;
       admin:/*|files:/*) h="Content-Security-Policy: ${FRAME_CSP:-frame-ancestors $(portal_url)}" ;;
     esac
     [ -z "$hdr" ] || printf '%s\r\n' "$h" > "$hdr"

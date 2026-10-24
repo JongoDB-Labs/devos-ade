@@ -74,6 +74,26 @@ def host_of(sub: str | None) -> str:
     return f"{(sub + '.') if sub else ''}{HOST}"
 
 
+# What Chat's site may make the browser fetch (caddy/Caddyfile chat_csp; tests/test_portal.sh keeps this copy the same)
+CHAT_CSP = ("frame-ancestors {origin}; img-src 'self' data: blob:; media-src 'self' data: blob:; frame-src 'self' blob:; object-src 'none'; "
+            "form-action 'self'; base-uri 'self'; connect-src 'self' ws://{host}:* wss://{host}:*; font-src 'self' data:")
+
+
+def csp_differs(served: str, wanted: str) -> list[str]:
+    """The directives of the policy wanted that the one served lacks or gives other sources (the first of one given twice
+    counts, as for browsers); others may come with it: one added later does not break a check (lib/portal.sh
+    chat_csp_check: the same rule)."""
+    def parse(p):
+        out = {}
+        for d in (p or "").split(";"):
+            parts = d.split()
+            if parts and parts[0].lower() not in out:
+                out[parts[0].lower()] = " ".join(parts[1:])
+        return out
+    have = parse(served)
+    return [k for k, v in parse(wanted).items() if have.get(k) != v]
+
+
 class Resp:
     def __init__(self, status: int, headers: list[tuple[str, str]], body: bytes):
         self.status, self.headers_list, self.body = status, headers, body

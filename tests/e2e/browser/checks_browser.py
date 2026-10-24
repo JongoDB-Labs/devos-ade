@@ -13,7 +13,7 @@ from urllib.parse import quote
 
 from playwright.sync_api import Error as PwError
 
-from common import (CHECKS_RE, ENV, HOST, NET, OUT, PORT, SHOTS, Skip, check, expect, host_of, http, need, origin, portal_login,
+from common import (CHAT_CSP, CHECKS_RE, ENV, HOST, NET, OUT, PORT, SHOTS, Skip, check, csp_differs, expect, host_of, http, need, origin, portal_login,
                     real_helper_running, redact, url_path)
 
 STATE = Path("/state")
@@ -1029,15 +1029,21 @@ def chat_models(ctx):
 
 @check("browser", "chat-images-own-only")
 def chat_images(ctx):
-    """Open WebUI's site loads images from itself only (img-src 'self' data: blob:, caddy/Caddyfile): what it shows
-    itself — its logo, the models' icons, avatars — still loads, with no CSP error; an image of another site (what an
-    answer could carry a sign-in's words out in) is refused."""
+    """Open WebUI's site loads images from itself only (img-src 'self' data: blob:, caddy/Caddyfile chat_csp): what it
+    shows itself — its logo, the models' icons, avatars — still loads, with no CSP error; an image of another site (what
+    an answer could carry a sign-in's words out in) is refused, and so are a video, a frame and a request to another
+    site. An artifact (a sandboxed srcdoc frame, as Open WebUI's Artifacts panel makes one, with its IFRAME_CSP written
+    into the document's <head>): its request and image to another site refused — also when the document hides its
+    <head> in a comment, so that Open WebUI's policy lands there (Chat's own policy holds it then); html code blocks
+    open there only on a click (detectArtifacts off)."""
     need("open-webui")
     page, rec = ctx.page("chat-images")
     login(page)
     fl, f = chat_frame(page)
     csp = f.evaluate("async () => (await fetch(location.href, {cache: 'no-store'})).headers.get('content-security-policy') || ''")
-    expect("img-src 'self' data: blob:" in csp, f"Open WebUI's CSP: {csp!r}")
+    # (each of Chat's directives as Caddy sends them, exactly: one loosened — img-src with https: — is a failure)
+    differs = csp_differs(csp, CHAT_CSP.format(origin=origin(), host=host_of("chat")))
+    expect(not differs, f"Open WebUI's CSP: {', '.join(differs)} missing or other in {csp!r}")
     page.wait_for_timeout(3000)
     broken = f.evaluate("""() => [...document.images].filter((i) => i.complete && i.naturalWidth === 0 && i.src)
         .map((i) => i.src.slice(0, 120))""")
@@ -1047,13 +1053,55 @@ def chat_images(ctx):
         const i = new Image(); i.src = 'https://example.com/bn-e2e.png?' + Date.now(); document.body.append(i);
         setTimeout(() => r(null), 8000); })""")
     expect(refused and refused.startswith("img-src"), f"an image of another site was not refused: {refused!r}")
+    # a video, a frame and a request to another site: refused too
+    for kind, want in (("video", "media-src"), ("iframe", "frame-src"), ("fetch", "connect-src")):
+        got = f.evaluate("""(kind) => new Promise((r) => {
+            const on = (e) => { if (String(e.blockedURI).includes('example.com')) { document.removeEventListener('securitypolicyviolation', on); r(e.violatedDirective); } };
+            document.addEventListener('securitypolicyviolation', on);
+            const u = 'https://example.com/bn-e2e-' + kind + '?' + Date.now();
+            if (kind === 'fetch') fetch(u).catch(() => {});
+            else { const x = document.createElement(kind); x.src = u; document.body.append(x); }
+            setTimeout(() => r(null), 8000); })""", kind)
+        expect(got and got.startswith(want), f"a {kind} of another site was not refused by {want}: {got!r}")
+    # an artifact, as Open WebUI's Artifacts panel frames one (its sandbox, IFRAME_CSP written in after the first <head>)
+    art = f.evaluate("""async () => {
+        const auth = { headers: { Authorization: 'Bearer ' + localStorage.token } };
+        const cfg = await (await fetch('/api/config', auth)).json();
+        const user = await (await fetch('/api/v1/users' + '/user/settings', auth)).json();   // (your settings, with the defaults)
+        const csp = (cfg && cfg.ui && cfg.ui.iframe_csp) || '';
+        const run = (html) => new Promise((r) => {
+            const x = document.createElement('iframe');
+            x.setAttribute('sandbox', 'allow-scripts allow-downloads allow-forms');
+            const tag = '<meta http-equiv="Content-Security-Policy" content="' + csp.replace(/"/g, '&quot;') + '">';
+            const i = html.indexOf('<head>');
+            x.srcdoc = i !== -1 ? html.slice(0, i + 6) + tag + html.slice(i + 6) : tag + html;
+            const on = (e) => { if (e.source === x.contentWindow) { window.removeEventListener('message', on); x.remove(); r(e.data); } };
+            window.addEventListener('message', on);
+            document.body.append(x);
+            setTimeout(() => r('no answer'), 12000);
+        });
+        const probe = '<script>const seen = [];'
+            + "document.addEventListener('securitypolicyviolation', (e) => seen.push(e.violatedDirective.split(' ')[0]));"
+            + "fetch('https://example.com/bn-e2e-artifact?' + Date.now()).catch(() => {});"
+            + "const i = new Image(); i.src = 'https://example.com/bn-e2e-artifact.png?' + Date.now(); document.body.append(i);"
+            + "setTimeout(() => parent.postMessage([...new Set(seen)].sort().join(','), '*'), 3000);<" + "/script>";
+        return { csp, detect: user && user.ui ? user.ui.detectArtifacts : undefined,
+            plain: await run('<html><head></head><body>' + probe + '</body></html>'),
+            hidden: await run('<!--<head>--><html><body>' + probe + '</body></html>') };
+    }""")
+    expect("connect-src 'none'" in art["csp"], f"Open WebUI's IFRAME_CSP: {art['csp']!r}")
+    expect(art["detect"] is False, f"detectArtifacts by default: {art['detect']!r}")
+    for k in ("plain", "hidden"):
+        got = set(str(art[k]).split(","))
+        expect({"connect-src", "img-src"} <= got, f"an artifact ({k} <head>): refused {art[k]!r}, want its request and image to another site refused")
     shot(page, "07b-chat-images")
-    probs = rec.problems(allow=[r"No token found in localStorage", r"example\.com/bn-e2e\.png", r"Content Security Policy"])
-    own = [p for p in rec.problems(allow=[r"No token found in localStorage", r"example\.com/bn-e2e\.png"]) if "Content Security Policy" in p and "example.com" not in p]
+    probs = rec.problems(allow=[r"No token found in localStorage", r"example\.com/bn-e2e", r"Content Security Policy"])
+    own = [p for p in rec.problems(allow=[r"No token found in localStorage", r"example\.com/bn-e2e"]) if "Content Security Policy" in p and "example.com" not in p]
     rec.save()
     expect(not own, f"CSP refused something of Open WebUI's own: {own[:4]}")
     expect(not probs, f"errors: {probs}")
-    return "Open WebUI's site: images from itself only (img-src 'self' data: blob:); its own load, another site's is refused"
+    return ("Open WebUI's site: images, media, frames and requests from itself only — its own load, another site's are refused; "
+            "an artifact's request and image too (its <head> hidden or not); artifacts open on a click")
 
 
 def _last_answer(f):
@@ -1630,32 +1678,32 @@ def apps_portal_login_first(ctx):
 @check("browser", "same-site-guard")
 def same_site_guard(ctx):
     """Every app host refuses a script's request from another host of the same site — what a preview over remote access
-    is (every Service of a tailnet is one site), and what the stack's own hosts are to each other here. From the Chat
-    page, signed in (Caddy gives it no connect-src of its own; the portal's own page allows none to other hosts): fetches
-    to the portal, Files and the Code page, a no-cors POST and a form post to Admin — each with the session cookie
-    (same-site: SameSite=Strict sends it), each refused by Caddy before the app. A plain image from the portal still
-    passes (page loads too: every other check here runs with the guard on). Chromium reports no response for a fetch
-    whose answer CORS refuses, so the raw network events (CDP) are read."""
+    is (every Service of a tailnet is one site), and what the stack's own hosts are to each other here. From a page of
+    another host of the site with no policy of its own (Caddy's own "unknown host" page: any name under the site),
+    signed in: fetches to the portal, Files and the Code page, a no-cors POST and a form post to Admin — each with the
+    session cookie (same-site: SameSite=Strict sends it), each refused by Caddy before the app; a plain image from the
+    portal passes (page loads too: every other check here runs with the guard on); an opaque origin (a sandboxed frame
+    the page makes) is refused too. From the Chat page, Chat's own policy (caddy/Caddyfile chat_csp) stops the same
+    image, fetch and form post before any request goes out — and a style sheet from the portal, which it allows,
+    passes the guard. Chromium reports no response for a fetch whose answer CORS refuses, so the raw network events
+    (CDP) are read."""
     page, rec = ctx.page("same-site-guard")
     login(page)
-    page.goto(origin("chat") + "/")
-    page.wait_for_load_state("load")
-    cdp = page.context.new_cdp_session(page)
-    cdp.send("Network.enable")
     urls, sent, got = {}, {}, {}
 
-    def will(e):
-        urls.setdefault(e["request"]["url"], e["requestId"])
+    def watch(pg):
+        cdp = pg.context.new_cdp_session(pg)
+        cdp.send("Network.enable")
+        cdp.on("Network.requestWillBeSent", lambda e: urls.setdefault(e["request"]["url"], e["requestId"]))
+        cdp.on("Network.requestWillBeSentExtraInfo", lambda e: sent.__setitem__(e["requestId"], {k.lower(): v for k, v in (e.get("headers") or {}).items()}))
+        cdp.on("Network.responseReceivedExtraInfo", lambda e: got.__setitem__(e["requestId"], (e.get("statusCode"), {k.lower(): v for k, v in (e.get("headers") or {}).items()})))
+        return cdp
 
-    def sent_x(e):
-        sent[e["requestId"]] = {k.lower(): v for k, v in (e.get("headers") or {}).items()}
-
-    def got_x(e):
-        got[e["requestId"]] = (e.get("statusCode"), {k.lower(): v for k, v in (e.get("headers") or {}).items()})
-
-    cdp.on("Network.requestWillBeSent", will)
-    cdp.on("Network.requestWillBeSentExtraInfo", sent_x)
-    cdp.on("Network.responseReceivedExtraInfo", got_x)
+    # (a host of the site no app answers: Caddy's own 404 page, no policy — the page a preview's script would be on)
+    src = origin("bn-guard-src") + "/"
+    page.goto(src)
+    page.wait_for_load_state("load")
+    cdp = watch(page)
     targets = {"portal fetch": origin() + "/api/summary?bn-guard=1", "files fetch": origin("files") + "/rustfs/console/?bn-guard=1",
                "admin no-cors POST": origin("admin") + "/key/generate?bn-guard=1",
                # (Check for updates: were it let through, the portal would still refuse it — no X-Requested-With)
@@ -1664,7 +1712,7 @@ def same_site_guard(ctx):
         targets["code fetch"] = origin("code") + "/api/state?bn-guard=1"
     form_url = origin("admin") + "/key/delete?bn-guard=form"
     img_url = origin() + "/static/logo.svg?bn-guard=img"
-    page.evaluate("""async ([t, formUrl, imgUrl]) => {
+    run_js = """async ([t, formUrl, imgUrl]) => {
         for (const [k, u] of Object.entries(t)) {
           try { await fetch(u, k.includes('POST') ? { method: 'POST', mode: 'no-cors', credentials: 'include', body: 'x' } : { credentials: 'include' }); }
           catch (e) { /* refused: no CORS answer */ }
@@ -1675,7 +1723,8 @@ def same_site_guard(ctx):
         document.body.append(form); form.submit();
         // the control: a plain image from another host of the site passes the guard
         await new Promise((r) => { const i = new Image(); i.onload = i.onerror = r; i.src = imgUrl; });
-    }""", [targets, form_url, img_url])
+    }"""
+    page.evaluate(run_js, [targets, form_url, img_url])
     page.wait_for_timeout(2500)
     seen = {}
     for what, u in [*targets.items(), ("admin form post", form_url), ("control image", img_url)]:
@@ -1707,9 +1756,45 @@ def same_site_guard(ctx):
         refused = (r.header_value("x-bn-refused") if r else None) or ""
         expect(r is not None and r.status == 403 and "opaque origin" in refused, f"{what}: {r.status if r else 'not seen'} {refused!r}")
         seen[what] = r.status
+    cdp.detach()
+    # From the Chat page: its own policy stops the image, the fetch and the form post before anything is sent (a
+    # securitypolicyviolation each, no request); a style sheet from the portal, which it allows, passes the guard
+    page.goto(origin("chat") + "/")
+    page.wait_for_load_state("load")
+    watch(page)
+    chat_img, chat_fetch, chat_form = (origin() + "/static/logo.svg?bn-guard=chat-img", origin() + "/api/summary?bn-guard=chat-fetch",
+                                       origin("admin") + "/key/delete?bn-guard=chat-form")
+    css_url = origin() + "/static/login.css?bn-guard=css"
+    blocked = page.evaluate("""async ([img, f, form, css]) => {
+        const seen = [];
+        document.addEventListener('securitypolicyviolation', (e) => seen.push([e.violatedDirective.split(' ')[0], String(e.blockedURI)]));
+        try { await fetch(f, { credentials: 'include' }); } catch (e) { /* refused */ }
+        await new Promise((r) => { const i = new Image(); i.onload = i.onerror = r; i.src = img; });
+        const fr = document.createElement('iframe'); fr.name = 'bnguardchat'; fr.hidden = true; document.body.append(fr);
+        const fo = document.createElement('form'); fo.method = 'post'; fo.target = 'bnguardchat'; fo.action = form; document.body.append(fo); fo.submit();
+        await new Promise((r) => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.onload = l.onerror = r; l.href = css; document.head.append(l); });
+        await new Promise((r) => setTimeout(r, 1500));
+        return seen;
+    }""", [chat_img, chat_fetch, chat_form, css_url])
+    page.wait_for_timeout(1000)
+    by = {}
+    for d, u in blocked:
+        by.setdefault(u.split("?bn-guard=")[-1] if "?bn-guard=" in u else u, d)
+    for tag, want, u in (("chat-img", "img-src", chat_img), ("chat-fetch", "connect-src", chat_fetch), ("chat-form", "form-action", chat_form)):
+        expect(by.get(tag) == want, f"Chat's policy: {tag} not refused by {want} ({blocked})")
+        expect(urls.get(u) is None, f"Chat's policy: {tag} was requested all the same")
+        seen[f"Chat: {tag}"] = want
+    rid = urls.get(css_url)
+    h = sent.get(rid) or {}
+    st, rh = got.get(rid) or (None, {})
+    expect(rid is not None and st == 200 and not rh.get("x-bn-refused") and h.get("sec-fetch-site") == "same-site",
+           f"the control from Chat (a same-site style sheet from the portal): {st} {rh.get('x-bn-refused')!r} {h.get('sec-fetch-site')!r}")
+    seen["Chat: control style sheet"] = st
     rec.save()
-    return (f"from the Chat page, same-site, with the session cookie: {', '.join(f'{k} {v}' for k, v in seen.items() if k != 'control image')} "
-            f"(Caddy's guard, X-Bn-Refused); the control, a same-site image from the portal: {seen['control image']}")
+    return (f"from a same-site page of no app's, with the session cookie: "
+            f"{', '.join(f'{k} {v}' for k, v in seen.items() if k != 'control image' and not k.startswith('Chat'))} (Caddy's guard, X-Bn-Refused); "
+            f"the control, a same-site image from the portal: {seen['control image']}; from the Chat page, its policy refuses the image, "
+            f"the fetch and the form post before they are sent, and a same-site style sheet from the portal passes: {seen['Chat: control style sheet']}")
 
 
 # --- phone / tablet ---

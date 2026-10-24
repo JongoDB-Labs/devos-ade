@@ -84,6 +84,30 @@ app_host() {
   printf '%s\n' "${k:-$1.$h}"
 }
 
+# chat_csp FRAME_ORIGIN CHAT_HOST -> the Content-Security-Policy Caddy sends on Chat's site, framed by FRAME_ORIGIN
+# (caddy/Caddyfile chat_csp, with {args[0]} and {http.request.host} filled in: tests/test_portal.sh keeps the two the same)
+chat_csp() {
+  printf "frame-ancestors %s; img-src 'self' data: blob:; media-src 'self' data: blob:; frame-src 'self' blob:; object-src 'none'; form-action 'self'; base-uri 'self'; connect-src 'self' ws://%s:* wss://%s:*; font-src 'self' data:\n" "$1" "$2" "$2"
+}
+
+# chat_csp_check SERVED FRAME_ORIGIN CHAT_HOST -> 0, printing nothing, when the policy SERVED has each of chat_csp's
+# directives with exactly its sources (others may come with it: one added later does not break the check); else the
+# first directive missing or different (img-src left out, or loosened), and 1. The first of a directive given twice
+# counts, as it does for browsers.
+chat_csp_check() {
+  local served want d name got
+  served="$(printf '%s\n' "$1" | tr ';' '\n' | tr -s ' \t' '  ' | sed 's/^ //; s/ $//')"
+  want="$(chat_csp "$2" "$3" | tr ';' '\n' | sed 's/^ //; s/ $//')"
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    name="${d%% *}"
+    got="$(printf '%s\n' "$served" | awk -v n="$name" '!f && tolower($1) == tolower(n) { print; f = 1 }')"
+    [ "$got" = "$d" ] || { printf '%s\n' "$name"; return 1; }
+  done <<WANT
+$want
+WANT
+}
+
 # portal_url [SUB] -> http://<app_host SUB>[:PORTAL_PORT] — ":80" is left out
 portal_url() {
   local h p; h="$(app_host "${1:-}")"; p="$(portal_port)"

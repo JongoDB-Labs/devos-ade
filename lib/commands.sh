@@ -1192,13 +1192,20 @@ _test_portal() {
   else
     _skip "open-webui sees litellm models" "no Claude model enabled"
   fi
-  # (Open WebUI's site also loads images from itself only: an answer's markdown image cannot carry words to another site)
-  local want_csp
+  # (Open WebUI's site also limits what an answer can make the browser fetch — images, media, frames, requests, forms:
+  # chat_csp — and sends no Referer)
+  local want_csp ref want_ref bad
   for k in chat:/ admin:/ui/ files:/rustfs/console/; do
     code="$(portal_curl "${k%%:*}" "${k#*:}" -s -m 20 -o /dev/null -D "$hdr" -w '%{http_code}' || true)"
-    csp="$(_hdr content-security-policy < "$hdr")"
-    want_csp="frame-ancestors $origin"; [ "${k%%:*}" != chat ] || want_csp="$want_csp; img-src 'self' data: blob:"
-    _check "${k%%:*}. loads, framable only by the portal" "$code|$csp|$(_hdr x-frame-options < "$hdr")" "200|$want_csp|"
+    csp="$(_hdr content-security-policy < "$hdr")"; ref=''; want_ref=''
+    want_csp="frame-ancestors $origin"
+    # (Chat: each of its directives there with exactly its sources — chat_csp_check —, and no Referer)
+    if [ "${k%%:*}" = chat ]; then
+      want_csp="Chat's policy"
+      if bad="$(chat_csp_check "$csp" "$origin" "$(app_host chat)")"; then csp="Chat's policy"; else csp="$bad differs in: $csp"; fi
+      ref="|$(_hdr referrer-policy < "$hdr")"; want_ref='|no-referrer'
+    fi
+    _check "${k%%:*}. loads, framable only by the portal" "$code|$csp|$(_hdr x-frame-options < "$hdr")$ref" "200|$want_csp|$want_ref"
   done
   portal_session_end; rm -f "$hdr"
 }

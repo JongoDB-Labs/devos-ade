@@ -31,7 +31,24 @@ PORTAL, CODE, CHAT, PREVIEW = (f"https://{h}.{TN}" for h in ("bn", "bn-code", "b
 GUARD = "bedrock-now's same-site guard"
 SANDBOX = "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads"
 
+# What Chat's site may make the browser fetch (caddy/Caddyfile chat_csp; tests/test_portal.sh keeps this copy the same)
+CHAT_CSP = ("frame-ancestors {origin}; img-src 'self' data: blob:; media-src 'self' data: blob:; frame-src 'self' blob:; object-src 'none'; "
+            "form-action 'self'; base-uri 'self'; connect-src 'self' ws://{host}:* wss://{host}:*; font-src 'self' data:")
+
 results: dict = {"label": LABEL, "checks": [], "observed": {}}
+
+
+def csp_differs(served: str, wanted: str) -> list[str]:
+    """The directives of wanted that served lacks or gives other sources (tests/e2e/browser/common.py: the same)."""
+    def parse(p):
+        out = {}
+        for d in (p or "").split(";"):
+            parts = d.split()
+            if parts and parts[0].lower() not in out:
+                out[parts[0].lower()] = " ".join(parts[1:])
+        return out
+    have = parse(served)
+    return [k for k, v in parse(wanted).items() if have.get(k) != v]
 seen_preview: list[dict] = []
 seen_chat: list[dict] = []
 seen_code: list[dict] = []
@@ -296,6 +313,13 @@ def run(b, ctx, page, reqs, resps, by_frame):
         page.goto(CHAT + "/")
         page.wait_for_selector("#chat", timeout=20000)
         check("chat-hand-off", "signed in as admin@" in page.inner_text("#chat"), page.inner_text("#chat"))
+        # Chat's policy over remote access too (remote-tailscale.caddy imports chat_csp): the same as on the local site,
+        # framed only by the remote portal, no Referer
+        r = ctx.request.get(CHAT + "/", max_redirects=0)
+        want = CHAT_CSP.format(origin=PORTAL, host=CHAT.split("://", 1)[1])
+        got = r.headers.get("content-security-policy", "")
+        check("chat-csp-remote", r.status == 200 and not csp_differs(got, want) and r.headers.get("referrer-policy") == "no-referrer",
+              f"{r.status}: CSP {got!r}, Referrer-Policy {r.headers.get('referrer-policy')!r}")
         page.goto(CODE + "/")
         page.wait_for_selector("#password", timeout=20000)
         # the unlock page loads the portal's style sheet and logo: same-site plain assets, which the guard lets through
