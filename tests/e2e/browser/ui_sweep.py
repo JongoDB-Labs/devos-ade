@@ -92,7 +92,37 @@ KNOWN_UPSTREAM = [
      "preload hint React adds to the page shown, which never applies it. LiteLLM's /ui/ HTML has no such preload, Caddy "
      "adds no Link header and passes /litellm-asset-prefix through unchanged."),
 ]
+KNOWN_UPSTREAM += [
+    ("admin.", re.compile(r"Field name=enable_public_model_hub is not set"),
+     "LiteLLM 1.105.0's AI Hub page asks GET /config/field/info?field_name=enable_public_model_hub; a field set neither in "
+     "the config nor in its database is answered 400 {\"error\": \"Field name=… is not set\"} (proxy_server.py, "
+     "get_config_general_settings), which the page logs as \"Failed to set callbacks\"."),
+    ("admin.", re.compile(r"The width\(0\) and height\(0\) of chart should be greater than 0"),
+     "LiteLLM 1.105.0's Usage page (chunks/2h05w0no0km-v.js): recharts' ResponsiveContainer measured at 0×0 for charts of "
+     "tabs not shown yet; the charts draw once their tab is opened."),
+]
+# 4xx answers of the bundled apps that are their way of saying "nothing here" (traced on a throwaway, bodies quoted)
+KNOWN_HTTP = [
+    ("admin.", 400, re.compile(r"/config/field/info\?field_name=enable_public_model_hub$"),
+     "LiteLLM: an optional general setting not set (see the AI Hub page above)."),
+    ("files.", 404, re.compile(r"/rustfs/admin/v3/rebalance/status$"),
+     "RustFS 1.0.1: the Rebalance page's status call answers 404 <Code>NoSuchResource</Code> \"pool rebalance is not "
+     "started\" when no rebalance runs (one pool here); Chrome logs every 4xx answer to the console."),
+]
 KNOWN_SEEN: dict[str, dict] = {}
+
+
+def known_http(url: str, status: int | None = None) -> str | None:
+    host = urlsplit(url).hostname or ""
+    for prefix, st, rx, why in KNOWN_HTTP:
+        if host.startswith(prefix) and (status is None or status == st) and rx.search(url):
+            return why
+    return None
+
+
+def note_known(text: str, url: str, why: str):
+    count("known upstream messages and answers")
+    KNOWN_SEEN.setdefault(text[:200], {"first": where(), "url": redact(url[:160]), "cause": why, "times": 0})["times"] += 1
 LINKS: dict[str, dict] = {}       # url -> {where, text}
 IMAGES: dict[str, dict] = {}      # url -> {where}
 CUR = {"page": "-", "state": "-", "width": "-", "theme": "-"}
@@ -140,7 +170,8 @@ COLLECT = r"""() => {
   const inter = [...document.querySelectorAll('button, [role=button], a[href], input:not([type=hidden]), select, textarea, summary')];
   const shown = inter.filter(vis);
   const dialogs = [...document.querySelectorAll('dialog[open], [role=dialog]:not([hidden]), .sheet:not([hidden]), #tour:not([hidden]), .terminal.drawer:not(.hidden), [role=menu], [role=listbox]')].filter(vis);
-  const top = dialogs.length ? dialogs[dialogs.length - 1] : null;
+  const above = dialogs.filter((d) => !d.matches('.terminal.drawer'));   // (a menu or dialog opened over the drawer is above it)
+  const top = above.length ? above[above.length - 1] : (dialogs[0] || null);
   const covered = [];
   for (const e of shown) {
     if (top && !top.contains(e)) continue;
@@ -312,10 +343,13 @@ def attach(ctx):
                 count("fetch errors logged as our navigation left a page")
                 ABORTED.append({"kind": "console " + m.type, "where": where(), "text": redact(t[:300]), "url": redact(u[:160])})
                 return   # (a page's fetch cut short as the sweep moved on: recorded in aborted.json, not a fault)
+            if t == "Service Worker registration blocked by Playwright":
+                return   # (the off pages' own context: the sweep blocks the service worker there)
             known = next((why for host, rx, why in KNOWN_UPSTREAM if (urlsplit(u).hostname or "").startswith(host) and rx.search(t)), None)
+            if known is None and t.startswith("Failed to load resource"):
+                known = known_http(u)
             if known:
-                count("known upstream console messages")
-                KNOWN_SEEN.setdefault(t[:200], {"first": where(), "url": redact(u[:160]), "cause": known, "times": 0})["times"] += 1
+                note_known(t, u, known)
                 return
             third = urlsplit(u).hostname not in OUR_HOSTS if u else False
             find("console " + m.type + (" (third-party app)" if third else ""), t[:400], url=u[:160])
@@ -329,24 +363,32 @@ def attach(ctx):
         # (the deliberate ones: the error and refusal pages, a wrong password)
         locked = st == 401 and urlsplit(r.url).hostname in (f"code.{HOST}", f"terminal.{HOST}") and urlsplit(r.url).path in ("/", "")
         if st >= 400 and CUR["page"] != "error" and not locked and not (CUR["state"] == "wrong-password" and st == 401):
+            why = known_http(r.url, st)
+            if why:
+                note_known(f"HTTP {st} {urlsplit(r.url).path}", r.url, why)
+                return
             find(f"HTTP {st}", f"{r.request.method} {r.url[:200]}")
 
     ctx.on("response", on_response)
 
+    started: dict = {}
+
     def on_request(rq):
+        started[rq] = time.time()
         try:
             if rq.is_navigation_request():
                 NAV["at"] = time.time()
         except Exception:  # noqa: BLE001
             pass
     ctx.on("request", on_request)
+    ctx.on("requestfinished", lambda rq: started.pop(rq, None))
 
     def on_failed(rq):
         err = rq.failure or ""
         if "ERR_ABORTED" in err:
             # a load cut short: by a navigation (ours: the sweep moving on, a frame given a new address) or by the page
             # itself (a search superseded, a stream closed): counted apart, never a fault
-            ours = time.time() - NAV["at"] < 5
+            ours = NAV["at"] >= started.pop(rq, 0.0)   # (a navigation began after it did: ours cut it short)
             count("requests aborted by our navigation" if ours else "requests a page cancelled itself")
             ABORTED.append({"kind": "request" if ours else "request (the page's own)", "where": where(), "url": redact(rq.url[:200])})
             return
