@@ -3442,8 +3442,10 @@ never reads, copies, keeps, passes on or relays a login.**
   Claude Code's hash, exactly as v0.23.0 lists it, but what it sets is judged — and shown in the dialog — with the
   other tools' part (Grok and Copilot load its hooks and MCP servers; Claude Code a plugin only when it is installed
   and turned on), with bounds of its own (500 rows): a plugin file the dialog cannot show whole — or cannot read or
-  show at all (binary, too large, a link out, a FIFO), or more of them than that — keeps agents from starting, never
-  Claude Code. The git
+  show at all (binary, too large, a link out, a FIFO, a name with a control character or too long to show), a
+  `.claude/plugins` that is no folder, or more of them than that — keeps agents from starting, never Claude Code. Past
+  what the dialog can show (3 MiB of texts a part), the texts are cut and never the rows: the dialog lists every row a
+  start lists, so its hash is the one a start compares. The git
   root is the first folder with a `.git` that holds a `HEAD` (an empty `.git` a repository carries does not end the
   walk). The walk stops below the workspace itself — outside a repository, and when the workspace is the git root:
   the workspace's own `.claude` trees and the tools' settings there are the Workspace's, yours, applied as they always

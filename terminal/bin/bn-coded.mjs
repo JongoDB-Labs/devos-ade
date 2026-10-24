@@ -2479,8 +2479,9 @@ const IMAGE = /\.(png|jpe?g|gif|svg|webp|ico)$/i;
 // (a link out of the workspace, a big file, a FIFO, a link to a folder, a .claude that is a link, a folder that cannot
 // be listed are not); over: why not (null: fine). text false: no texts (the hashes alone — what a start compares)
 export function settingsFiles(abs, { text = false } = {}) {
-  // one part's rows and bounds
-  const part = () => ({ files: [], over: null, bytes: 0, shown: 0 });
+  // one part's rows and bounds (cut: its texts no longer shown — past CONFIG_SHOWN, in an answer with texts only: the
+  // walk goes on, every row listed as a start lists it, so the hash the dialog trusts is the one a start compares)
+  const part = () => ({ files: [], over: null, cut: null, bytes: 0, shown: 0 });
   // (plug: the project's own .claude/plugins/ — in Claude Code's hash, as v0.23.0 lists it, but judged with the other
   // tools' part, with bounds of its own: a plugin file that cannot be read or shown, or too many of them, never costs
   // Claude Code's part)
@@ -2508,10 +2509,10 @@ export function settingsFiles(abs, { text = false } = {}) {
     const row = { name, type: target ? 'link' : 'file', target, size: b.length, sha256: sha256(b), readable };
     if (text) {
       row.text = null;
-      if (readable && !P.over) {
+      if (readable && !P.over && !P.cut) {
         const t = b.toString('utf8');
         P.shown += JSON.stringify(t).length;
-        if (P.shown > CONFIG_SHOWN) P.over ??= 'too much to show'; else row.text = t;
+        if (P.shown > CONFIG_SHOWN) P.cut = 'too much to show'; else row.text = t;
       }
     }
     add(P, row);
@@ -2678,12 +2679,13 @@ export function settingsFiles(abs, { text = false } = {}) {
   const hashWith = (x) => (own.length ? sha256(JSON.stringify(x ? { files: rowsOf(own), plugins: x.plugins, registry: x.registry } : rowsOf(own))) : null);
   const hash = hashWith(pl);
   const agentHash = agent.files.length ? sha256(JSON.stringify(rowsOf(agent.files))) : null;
+  // (a part whose texts were cut is not shown whole: not verifiable in this answer, its rows all there)
   const answer = () => ({
     files: [...own, ...agent.files].sort(byName).map(({ readable: _r, ...f }) => f), hash,
-    verifiable: !claude.over && claude.files.every((f) => f.readable === true), over: claude.over,
+    verifiable: !claude.over && !claude.cut && claude.files.every((f) => f.readable === true), over: claude.over ?? claude.cut,
     // (the other tools' part as judged: theirs and the plugin rows)
-    agentHash, agentVerifiable: !agent.over && !plug.over && agent.files.every((f) => f.readable === true) && plug.files.every((f) => f.readable === true),
-    agentOver: agent.over ?? plug.over,
+    agentHash, agentVerifiable: !agent.over && !plug.over && !agent.cut && !plug.cut && agent.files.every((f) => f.readable === true) && plug.files.every((f) => f.readable === true),
+    agentOver: agent.over ?? plug.over ?? agent.cut ?? plug.cut,
     ...(pl ? { ...pl, planPlugins: pp.plugins, planRegistry: pp.registry, planHash: hashWith(pp) } : {}),
   });
   let out = answer();
@@ -2694,11 +2696,11 @@ export function settingsFiles(abs, { text = false } = {}) {
   const fits = () => Buffer.byteLength(JSON.stringify(out)) <= MAX_FRAME;
   if (text && !fits()) {
     for (const f of [...agent.files, ...plug.files]) if (f.text !== undefined) f.text = null;
-    agent.over ??= 'too much to show';
+    agent.cut ??= 'too much to show';
     out = answer();
     if (!fits()) {
       for (const f of claude.files) if (f.text !== undefined) f.text = null;
-      claude.over ??= 'too much to show';
+      claude.cut ??= 'too much to show';
       out = answer();
     }
   }

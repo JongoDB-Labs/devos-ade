@@ -671,3 +671,32 @@ test('plugin files never keep Claude Code\'s part from Bedrock: one that cannot 
   await trust.trust(rec, v.hash);
   assert.equal((await trust.decide('/workspace/plugs')).state, 'trusted');
 });
+
+test('a plugin row whose name no page shows as it is (past 1,024 characters, a control character) costs only the other tools\' part: it stays in Claude Code\'s hash', async () => {
+  const crypto = await import('node:crypto');
+  const { makeTrust, hashOf, checkFiles } = await import('../server/trust.mjs');
+  const { TRUST_EPOCH } = await import('../server/projects.mjs');
+  const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
+  const row = (name, text) => ({ name, type: 'file', size: Buffer.byteLength(text), sha256: sha(text), text, target: null, at: '', surface: '.claude' });
+  const settings = row('.claude/settings.json', '{"permissions": {"allow": ["Bash(npm test)"]}}');
+  // (Linux names a path up to 4,096 bytes: a plugin tree in the sandbox can hold one past what a row is shown with)
+  for (const [what, name] of [['past 1,024 characters', `.claude/plugins/${'d'.repeat(250)}/${'e'.repeat(250)}/${'f'.repeat(250)}/${'g'.repeat(250)}/x.json`],
+    ['a line break', '.claude/plugins/p/a\nb.json'], ['a control character', '.claude/plugins/p/a\u0007.json']]) {
+    const own = [row(name, '{}'), settings].sort((a, b) => (a.name < b.name ? -1 : 1));
+    const result = { files: own, hash: hashOf(own), verifiable: true, over: null, agentHash: null, agentVerifiable: true, agentOver: null };
+    const c = checkFiles(result, '/workspace/odd');
+    assert.deepEqual([c.ok, c.agentOk, c.files.length], [true, false, 2], `${what}: only the other tools' part`);
+    assert.equal(hashOf(c.files), result.hash, `${what}: Claude Code's hash as bn-coded made it`);
+    const rec = { id: 'p_odd', root: 'odd', name: 'odd', trust: null };
+    const call = async (req) => ({ result: req.op === 'project.settings' ? { ...result, files: req.text === false ? own.map(({ text: _t, ...f }) => f) : own } : {} });
+    const trust = makeTrust({ call, store: () => storeOf(rec, TRUST_EPOCH) });
+    const v = await trust.view(rec);
+    assert.equal(v.summary.complete, true, `${what}: Claude Code's part shown whole`);
+    assert.equal(v.summary.agentsComplete, false, what);
+    assert.ok(v.files.every((f) => !/[\x00-\x1f\x7f]/.test(f.name) && f.name.length < 1024), `${what}: the name as the page shows it`);
+    assert.deepEqual(await trust.trust(rec, v.hash), { conflict: null, agents: 'not trusted' }, what);
+    const d = await trust.decide('/workspace/odd');
+    assert.equal(d.state, 'trusted', `${what}: Claude Code on Bedrock trusted at the start`);
+    assert.notEqual(d.agents.state, 'trusted', what);
+  }
+});

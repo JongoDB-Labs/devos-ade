@@ -40,6 +40,11 @@ const ROWS_MAX = 20 * FILES_MAX;
 // .claude (a link, not a folder) or a path under it — relative —, or a path under a .claude above it, absolute in
 // /workspace; one line, no "." or ".." part
 const segsOk = (segs) => segs.every((x) => x !== '' && x !== '.' && x !== '..');
+// a row of the project's own .claude/plugins (the folder's entry itself, or a path under it), named in any case
+const plugName = (n) => typeof n === 'string' && (fold(n) === '.claude/plugins' || fold(n).startsWith('.claude/plugins/'));
+// a plugin row's name bn-coded may list though no page shows it as it is (a control character, a line break, longer
+// than a name may be shown): kept for the hash, which is Claude Code's, its part — the other tools' — not trusted
+const PLUG_NAME_MAX = 4096;
 const legacyNameOk = (n) => fold(n) === '.mcp.json'
   || (!n.startsWith('/') && fold(n.split('/')[0]) === '.claude' && segsOk(n.split('/')))
   || (n.startsWith(`${WS}/`) && fold(n.slice(WS.length + 1)).split('/').includes('.claude') && segsOk(n.slice(WS.length + 1).split('/')));
@@ -105,11 +110,15 @@ export function placeOf(f, root) {
   // one for what Copilot reads there, a folder or a file: its place fits, the other tools' part is not believed)
   if (f.type === 'name' && (!/^\.github\/[^/]+$/.test(kind) || f.name !== base)) return null;
   if (f.type === 'name' && NEVER_BY_NAME.has(kind.slice(8))) return { tool: s.tool, claude: false, refused: true };
-  // (the project's own .claude/plugins/: other tools load them too — shown whole, said whose)
-  if (kind === '.claude' && f.at === '' && fold(f.name).startsWith('.claude/plugins/')) return { tool: CLAUDE_PLUGINS, claude };
+  // (the project's own .claude/plugins/: other tools load them too — shown whole, said whose; and a .claude/plugins that
+  // is no folder, a link or a file: the same part's)
+  if (kind === '.claude' && f.at === '' && plugName(f.name)) return { tool: CLAUDE_PLUGINS, claude };
   return { tool: s.tool, claude };
 }
 
+// shownName(row) -> its name as the page shows it (a plugin row's that cannot be shown as it is: cut, its control
+// characters as spaces, said so)
+const shownName = (f) => (f.badName ? `${short(f.name, 300)} (a name with control characters, or too long to show)` : f.name);
 /** checkFiles(project.settings' RESULT, root) -> {files: [{name, type, size, sha256, target, text, at, tool, claude,
  *  surface}], ok, agentOk}: each part checked on its own — whose part a row is, from where it says it was read (its
  *  surface: the project's .claude or .mcp.json, a .claude tree above it: Claude Code's; anything else: the other
@@ -143,19 +152,22 @@ export function checkFiles(r, root) {
   // shape cost only that part)
   for (const f of rows.slice(0, ROWS_MAX + 1)) {
     const own = !(f && typeof f === 'object') || claudeRow(f);
-    const part = !own ? 'agent' : f.at === '' && typeof f.name === 'string' && fold(f.name).startsWith('.claude/plugins/') ? 'plug' : 'claude';
+    const part = !own ? 'agent' : f && typeof f === 'object' && f.at === '' && plugName(f.name) ? 'plug' : 'claude';
     const bad = () => { if (part === 'claude') ok = false; else agentOk = false; };
     if (++count[part] > FILES_MAX) { bad(); continue; }
     const nameShape = f && typeof f === 'object' && typeof f.name === 'string' && f.name.length <= 1024 && !/[\x00-\x1f\x7f]/.test(f.name);
-    const place = !nameShape ? null : placed ? placeOf(f, root) : legacyNameOk(f.name) ? { tool: null, claude: true } : null;
+    // (a plugin row whose name cannot be shown: in the list for Claude Code's hash, never shown or trusted — it costs
+    // the other tools' part alone)
+    const badName = !nameShape && part === 'plug' && f.name.length <= PLUG_NAME_MAX;
+    const place = !nameShape && !badName ? null : placed ? placeOf(f, root) : legacyNameOk(f.name) ? { tool: null, claude: true } : null;
     if (!place || place.claude !== (part !== 'agent') || (last[part] !== null && last[part] >= f.name)) { bad(); continue; }
-    if (place.refused) agentOk = false;
+    if (place.refused || badName) agentOk = false;
     last[part] = f.name;
     files.push({
       name: f.name, type: TYPES.includes(f.type) ? f.type : 'other', size: Number.isInteger(f.size) && f.size >= 0 ? f.size : null,
       sha256: SHA.test(f.sha256 ?? '') ? f.sha256 : null, target: typeof f.target === 'string' ? short(f.target, 1000) : null,
-      text: typeof f.text === 'string' && f.text.length <= 256 << 10 ? f.text : null, at: placed ? f.at : null, tool: place.tool,
-      claude: place.claude, surface: placed && typeof f.surface === 'string' ? f.surface : null,
+      text: !badName && typeof f.text === 'string' && f.text.length <= 256 << 10 ? f.text : null, at: placed ? f.at : null, tool: place.tool,
+      claude: place.claude, surface: placed && typeof f.surface === 'string' ? f.surface : null, ...(badName ? { badName: true } : {}),
     });
   }
   if (rows.length > ROWS_MAX) { ok = false; agentOk = false; }
@@ -529,7 +541,7 @@ export function summarize(files, plugins = null, planPlugins = null) {
   const canon = (v) => { try { return canonical(v); } catch { incomplete('an entry nested too deeply to show'); return '?'; } };
   for (const f of files) {
     // (notes within the page's cut of a section, as every other: past it the summary is incomplete, here as there)
-    const note = (t) => add('notes', { file: f.name, note: t });
+    const note = (t) => add('notes', { file: shownName(f), note: t });
     // (names as a case-insensitive workspace reads them, folded: .CLAUDE/ſettings.json is .claude/settings.json)
     const lower = fold(f.name);
     const tool = f.tool ?? null;   // (checkFiles: from where it was read, never from its name)
@@ -945,7 +957,7 @@ export function makeTrust({ call, store, log = () => {} }) {
       project: rec.id, path: abs, state: st.state, planState: st.planState, planReason: st.planReason, agentState: st.agentState, hash,
       ...(claudeHash ? { claudeHash } : {}),
       trustedAt: rec.trust?.at ?? null,
-      files: [...r.files, ...r.agentFiles].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).map(({ name, type, size, target }) => ({ name, type, size, target })),
+      files: [...r.files, ...r.agentFiles].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).map((f) => ({ name: shownName(f), type: f.type, size: f.size, target: f.target })),
       // (each part's notes and tools apart, each within the page's own cut: the other tools' never cost Claude Code's)
       summary: { ...summary, agentTools: agents.tools, agentNotes: agents.notes, careful: summary.careful + agents.careful,
         agentsComplete: othersOk, agentsMissing: othersOk ? [] : [...agents.missing, ...(agentsJudged(r).verifiable ? [] : ['a file of theirs that cannot be checked'])] },

@@ -387,6 +387,86 @@ test('project.settings: the project\'s own .claude/plugins/ has bounds of its ow
   fs.rmSync(D, { recursive: true, force: true });
 });
 
+// trustThenStart(NAME) -> what the code container decides for a session's start in WS/NAME after the page's Trust of
+// what its dialog showed (the code container's own trust code over this bn-coded's socket)
+async function trustThenStart(name) {
+  const { makeTrust } = await import('../server/trust.mjs');
+  const { TRUST_EPOCH } = await import('../server/projects.mjs');
+  const rec = { id: `p_${name.replace(/[^a-z0-9]/g, '')}`, root: name, name, trust: null };
+  const store = { list: () => [rec], carryTrust: () => null, trust: (id, hash, planHash, agentHash) => {
+    rec.trust = hash ? { hash, at: 1, epoch: TRUST_EPOCH, ...(planHash === undefined ? {} : { planHash }), ...(agentHash === undefined ? {} : { agentHash }) } : null;
+  } };
+  // (the code container names it /workspace/NAME; here the workspace is WS)
+  const tcall = async (req) => ({ result: await call({ ...req, ...(typeof req.root === 'string' ? { root: req.root.replace(/^\/workspace(?=\/|$)/, WS) } : {}) }) });
+  const trust = makeTrust({ call: tcall, store: () => store });
+  const v = await trust.view(rec);
+  const t = v.hash ? await trust.trust(rec, v.hash) : { conflict: 'nothing to trust' };
+  return { view: v, trusted: t, start: await trust.decide(`/workspace/${name}`) };
+}
+
+test('project.settings: past what can be shown, the texts are cut — never the rows: every plugin row listed as a start lists it, and a Trust holds at the start', async () => {
+  const D = path.join(WS, 'plugin-texts');
+  fs.mkdirSync(path.join(D, '.claude/plugins/p'), { recursive: true });
+  fs.writeFileSync(path.join(D, '.claude/settings.json'), '{"permissions": {"allow": ["Bash(npm test)"]}}');
+  // (8 files of 240 KiB: under each file's cap and the part's 2 MiB; quotes and line breaks take two characters each
+  // when sent — past the 3 MiB shown, at the seventh)
+  const body = '"\n'.repeat(120 * 1024);
+  for (let i = 0; i < 8; i++) fs.writeFileSync(path.join(D, `.claude/plugins/p/f${i}.md`), body);
+  const r = coded.settingsFiles(D, { text: true }), light = coded.settingsFiles(D, { text: false });
+  const plugs = r.files.filter((f) => f.name.startsWith('.claude/plugins/'));
+  assert.equal(plugs.length, 8, 'every plugin row');
+  assert.ok(plugs.some((f) => f.text === null) && plugs.some((f) => typeof f.text === 'string'), 'texts cut past what can be shown');
+  assert.equal(r.hash, light.hash, 'the dialog\'s hash is the one a start compares');
+  assert.deepEqual([r.verifiable, r.over], [true, null], 'Claude Code\'s part');
+  assert.deepEqual([r.agentVerifiable, r.agentOver], [false, 'too much to show'], 'the plugin rows: the other tools\' part');
+  // (and Claude Code's own part past it: its rows all there, its texts cut — not shown whole, the hash the start's)
+  for (let i = 0; i < 8; i++) { fs.mkdirSync(path.join(D, `.claude/skills/s${i}`), { recursive: true }); fs.writeFileSync(path.join(D, `.claude/skills/s${i}/SKILL.md`), body); }
+  const r2 = coded.settingsFiles(D, { text: true });
+  assert.equal(r2.files.filter((f) => f.name.startsWith('.claude/skills/')).length, 8);
+  assert.deepEqual([r2.verifiable, r2.over, r2.hash], [false, 'too much to show', coded.settingsFiles(D, { text: false }).hash]);
+  for (let i = 0; i < 8; i++) fs.rmSync(path.join(D, `.claude/skills/s${i}`), { recursive: true });
+  // Trust in the dialog, then a start: trusted (Claude Code's part; the plugins' texts were not all shown: agents not)
+  const { view, trusted, start } = await trustThenStart('plugin-texts');
+  assert.equal(view.summary.complete, true);
+  assert.deepEqual(trusted, { conflict: null, agents: 'not trusted' });
+  assert.equal(start.state, 'trusted', 'the start: trusted');
+  assert.notEqual(start.agents.state, 'trusted');
+  fs.rmSync(D, { recursive: true, force: true });
+});
+
+test('project.settings: a .claude/plugins that is no folder (a link, a FIFO, a file), or a plugin file whose name cannot be shown, costs only the other tools\' part', async () => {
+  const D = path.join(WS, 'plugin-odd');
+  const fresh = () => {
+    fs.rmSync(D, { recursive: true, force: true });
+    fs.mkdirSync(path.join(D, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(D, '.claude/settings.json'), '{"permissions": {"allow": ["Bash(npm test)"]}}');
+  };
+  for (const [what, make, shownWhole = false] of [
+    ['a link to a folder', () => { fs.mkdirSync(path.join(D, 'real-plugins')); fs.symlinkSync('../real-plugins', path.join(D, '.claude/plugins')); }],
+    ['a link out of the workspace', () => fs.symlinkSync('/etc', path.join(D, '.claude/plugins'))],
+    ['a FIFO', () => execFileSync('mkfifo', [path.join(D, '.claude/plugins')])],
+    // (a plain file there is read and shown whole, as any plugin row: the other tools' part may be trusted with it)
+    ['a file', () => fs.writeFileSync(path.join(D, '.claude/plugins'), '{}'), true],
+    ['a plugin file with a line break in its name', () => { fs.mkdirSync(path.join(D, '.claude/plugins/p'), { recursive: true }); fs.writeFileSync(path.join(D, '.claude/plugins/p/a\nb.json'), '{}'); }],
+    ['a plugin file with a control character in its name', () => { fs.mkdirSync(path.join(D, '.claude/plugins/p'), { recursive: true }); fs.writeFileSync(path.join(D, '.claude/plugins/p/a\u0007.json'), '{}'); }],
+  ]) {
+    fresh();
+    make();
+    const r = coded.settingsFiles(D, { text: true });
+    assert.ok(r.files.some((f) => f.name.startsWith('.claude/plugins')), `${what}: listed`);
+    assert.equal(r.hash, coded.settingsFiles(D, { text: false }).hash, `${what}: the dialog's hash is the start's`);
+    assert.equal(r.verifiable, true, `${what}: Claude Code's part, for bn-coded`);
+    const { view, trusted, start } = await trustThenStart('plugin-odd');
+    assert.equal(view.summary.complete, true, `${what}: Claude Code's part shown whole`);
+    assert.equal(view.summary.agentsComplete, shownWhole, `${what}: the other tools' part`);
+    assert.deepEqual(trusted, shownWhole ? { conflict: null } : { conflict: null, agents: 'not trusted' }, what);
+    assert.equal(start.state, 'trusted', `${what}: Claude Code on Bedrock trusted`);
+    assert.equal(start.agents.state === 'trusted', shownWhole, `${what}: agents`);
+    assert.ok(view.files.every((f) => !/[\x00-\x1f\x7f]/.test(f.name)), `${what}: no control character in a name the page shows`);
+  }
+  fs.rmSync(D, { recursive: true, force: true });
+});
+
 test('project.settings: the answer is measured in bytes, as it is framed — three-byte characters under the old count, over the frame', async () => {
   const D = path.join(WS, 'cjk-texts');
   // (漢 is one UTF-16 unit and three UTF-8 bytes: 8 files a part of 262,140 bytes — under each file's and each part's cap —
