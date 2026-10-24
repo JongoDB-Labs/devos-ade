@@ -216,7 +216,7 @@ const Thinking = memo(function Thinking({ it }: { it: Extract<Item, { t: 'thinki
   );
 });
 
-function ResultLine({ it, cost }: { it: Extract<Item, { t: 'result' }>; cost: number | null | undefined }) {
+function ResultLine({ it, cost, plan }: { it: Extract<Item, { t: 'result' }>; cost: number | null | undefined; plan: boolean }) {
   const interrupted = it.subtype === 'error_during_execution';
   const bn = useSel(store, (s) => s.models?.models);
   // what ran when it is not the model picked (Claude Code chose another one): bedrock-now's name for it, never the
@@ -237,7 +237,9 @@ function ResultLine({ it, cost }: { it: Extract<Item, { t: 'result' }>; cost: nu
           ran on {other.map((m) => modelLabel(bn, m) || 'another model').join(', ')}
         </span>
       )}
-      <span class="turn-cost" title="From bedrock-now's spend logs (what this turn cost on Bedrock)">{cost === undefined ? '' : money(cost)}</span>
+      {/* (a turn on one of your subscriptions: its plan's own limits, never dollars — no Bedrock spend to show) */}
+      {plan ? <span class="turn-cost" title="On your subscription: its plan's own limits, no Bedrock spend" data-testid="turn-plan">on your subscription</span>
+        : <span class="turn-cost" title="From bedrock-now's spend logs (what this turn cost on Bedrock)">{cost === undefined ? '' : money(cost)}</span>}
     </div>
   );
 }
@@ -376,7 +378,7 @@ export function MessageList({ view }: { view: SessionView | undefined }) {
           </div>
         );
       case 'result':
-        return <ResultLine key={it.k} it={it} cost={costs ? shownCost(view?.turns[it.turn], costs[it.turn]) : null} />;
+        return <ResultLine key={it.k} it={it} cost={costs ? shownCost(view?.turns[it.turn], costs[it.turn]) : null} plan={(view?.harness ?? 'bedrock') !== 'bedrock'} />;
       case 'watch':
         return <WatchCard key={it.k} session={view?.id ?? ''} id={it.id} when={it.when} changes={it.changes} incomplete={it.incomplete} />;
       case 'blocked':

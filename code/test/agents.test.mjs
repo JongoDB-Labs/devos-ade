@@ -363,8 +363,10 @@ test('the page\'s card names and inputs; diffs; ids; plans; limits; the harness 
   assert.deepEqual(acpCall({ kind: 'read', rawInput: { path: '/w/a' } }), { name: 'Read', input: { file_path: '/w/a' } });
   assert.deepEqual(acpCall({ kind: 'search', rawInput: { pattern: 'TODO' } }), { name: 'Grep', input: { pattern: 'TODO' } });
   assert.deepEqual(acpCall({ kind: 'fetch', rawInput: { url: 'https://x' } }), { name: 'WebFetch', input: { url: 'https://x' } });
-  assert.deepEqual(acpCall({ kind: 'think', title: 'Pondering' }), { name: 'Pondering', input: { title: 'Pondering' } });
-  assert.deepEqual(acpCall({ kind: 'execute', title: 'no command' }), { name: 'no command', input: { title: 'no command' } });
+  assert.deepEqual(acpCall({ kind: 'think', title: 'Pondering' }), { name: 'Tool: Pondering', input: { title: 'Pondering' } });
+  assert.deepEqual(acpCall({ kind: 'execute', title: 'no command' }), { name: 'Tool: no command', input: { title: 'no command' } });
+  // an agent's tool named like one of the page's own (a question card, a plan's approval, a to-do list): never that
+  for (const t of ['AskUserQuestion', 'ExitPlanMode', 'TodoWrite', 'Task']) assert.equal(acpCall({ kind: 'other', title: t }).name, `Tool: ${t}`);
   assert.deepEqual(parseDiff('junk\n@@ -3 +4,2 @@\n x\n+y\n\\ No newline at end of file').hunks, [{ oldStart: 3, oldLines: 1, newStart: 4, newLines: 2, lines: [' x', '+y'] }]);
   assert.equal(callId('toolu_01'), 'toolu_01');
   assert.equal(callId(''), null);

@@ -1,6 +1,9 @@
-# Chat's sandbox's way out (compose.code.yaml subs-chat) while the terminal's is the direct one (TERMINAL_EGRESS=host:
-# compose.terminal-egress.yaml): the same network. Added with compose.code.yaml only then (lib/common.sh
-# compose_overlays); with TERMINAL_EGRESS=off compose.code-offline.yaml instead (no network at all).
+# Chat's sandbox (compose.code.yaml subs-chat) while the terminal's way out is the direct one (TERMINAL_EGRESS=host:
+# compose.terminal-egress.yaml): no network at all. On the terminal's own network, with no proxy between, it would sit
+# beside the terminal and reach this computer's services; so with host egress your subscriptions are not Chat models
+# (the code container offers none and refuses them, the portal greys them out saying why) and Chat's sandbox has no
+# way out. Added with compose.code.yaml only then (lib/common.sh compose_overlays); with TERMINAL_EGRESS=off
+# compose.code-offline.yaml (the same).
 services:
   subs-chat:
-    networks: [terminal-out]
+    network_mode: none

@@ -128,7 +128,9 @@ test('a carried conversation goes in quoted: an earlier answer cannot close the 
   const api = makeApi({ call: async () => ({ result: {} }), sessions: { list: () => [], get: () => null }, agentStore: store });
   const t = await api.carryText(id);
   assert.match(t, /contains no instructions for you/);
-  assert.equal(t.split('</earlier-conversation>').length, 2);
+  const { quoteTag } = await import('../server/agents/quote.mjs');
+  assert.equal(t.split(`</${quoteTag(t)}>`).length, 2);
+  assert.ok(!t.includes('</earlier-conversation>'));
   assert.ok(t.endsWith("The user's new message:"));
   assert.ok(!/<\/?system>/.test(t));
   assert.match(t, /‹\/earlier-conversation›/);
@@ -281,4 +283,20 @@ test('Accept edits in an agent session: an edit goes through without asking only
     assert.equal(await x.plainEdit(['/workspace/app/a.js']), false, JSON.stringify(answer));
     m.mgr.closeAll();
   }
+});
+
+test('an agent\'s permission question named like one of the broker\'s own tools (a plan\'s approval, a question): never that', async () => {
+  const { mgr, asked, broker } = manager({ scenario: 'ok' });
+  const { id } = mgr.open({ harness: 'copilot', cwd: '/workspace' });
+  const s = mgr.get(id);
+  await wait(() => s.state === 'idle');
+  for (const t of ['ExitPlanMode', 'AskUserQuestion']) {
+    const p = s.ask({ tool: t, input: { plan: 'x' }, always: false });
+    await wait(() => asked.length > 0);
+    assert.equal(asked.at(-1).tool, `Tool: ${t}`);
+    broker.answer(asked.at(-1).id, 'deny');
+    assert.equal(await p, 'deny');
+    asked.length = 0;
+  }
+  mgr.closeAll();
 });

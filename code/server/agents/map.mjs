@@ -73,8 +73,12 @@ export function acpCall(tc) {
     const q = firstString(raw, ['query', 'q']);
     if (q) return { name: 'WebSearch', input: { query: short(q, 2000) } };
   }
-  return { name: title || (kind ? `${kind[0].toUpperCase()}${kind.slice(1, 40)}` : 'Tool'), input: plain(Object.keys(raw).length ? raw : { title }, 64 << 10) };
+  // (any other: the agent's own words, prefixed — never one of the page's own tool names, which the page and the
+  // permission broker treat as Claude Code's: AskUserQuestion's answer card, ExitPlanMode's plan approval, a to-do list …)
+  return { name: agentToolName(title || (kind ? `${kind[0].toUpperCase()}${kind.slice(1, 40)}` : 'Tool')), input: plain(Object.keys(raw).length ? raw : { title }, 64 << 10) };
 }
+// agentToolName(words) -> a tool card's name for an agent's own tool: "Tool: …" (no name of Claude Code's tools)
+export const agentToolName = (words) => `Tool: ${short(String(words ?? ''), 120)}`;
 
 // acpPlan(entries) -> the page's to-do card input (TodoWrite's shape)
 export function acpPlan(entries) {
@@ -117,7 +121,8 @@ export function codexStarted(item) {
         type: 'tool_use', id: callId(`${id}_${i}`), name: obj(c.kind).type === 'add' ? 'Write' : 'Edit',
         input: { file_path: short(c.path, PATH), ...(obj(c.kind).type === 'add' ? { content: '' } : {}) }, parent: null }));
     case 'mcpToolCall':
-      return [{ type: 'tool_use', id, name: `mcp__${short(it.server, 60).replace(/[^A-Za-z0-9_-]/g, '_')}__${short(it.tool, 60).replace(/[^A-Za-z0-9_-]/g, '_')}`, input: plain(it.arguments ?? {}, 64 << 10), parent: null }];
+      // (an MCP server of Codex's own, named as one — prefixed: never taken for one of the stack's, bedrock-shared …)
+      return [{ type: 'tool_use', id, name: `mcp__codex-${short(it.server, 60).replace(/[^A-Za-z0-9_-]/g, '_')}__${short(it.tool, 60).replace(/[^A-Za-z0-9_-]/g, '_')}`, input: plain(it.arguments ?? {}, 64 << 10), parent: null }];
     case 'webSearch':
       return [{ type: 'tool_use', id, name: 'WebSearch', input: { query: short(it.query, 2000) }, parent: null }];
     default: return [];

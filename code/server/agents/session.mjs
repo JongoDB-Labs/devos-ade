@@ -16,6 +16,9 @@ import { AcpAgent, NotSignedIn, UnsafeMode } from './acp.mjs';
 import { CodexAgent, rateLimits } from './codex.mjs';
 import { said } from './jsonrpc.mjs';
 
+// tool names the permission broker and the page treat as Claude Code's own (AskUserQuestion: its answers; ExitPlanMode:
+// a plan's approval and a mode switch; the others: cards of their own)
+const BROKER_SPECIAL = Object.freeze(['AskUserQuestion', 'ExitPlanMode', 'EnterPlanMode', 'TodoWrite', 'Task', 'Agent', 'Skill', 'SlashCommand']);
 // the page's modes an agent session takes (never Auto or Bypass: the tools' own "approve everything" modes are never used)
 export const AGENT_MODES = Object.freeze(['readOnly', 'plan', 'default', 'acceptEdits']);
 const START_MS = 120000;
@@ -146,7 +149,10 @@ export class AgentSession {
   }
 
   // a permission question of the tool's: the page's card (Allow once, Always for this session, Deny)
-  async ask({ tool, input, always }) {
+  async ask({ tool: asked, input, always }) {
+    // (the broker's own tools — a plan's approval, a question's answers, Claude Code's tools — never named by an agent:
+    // whatever it says, such a name is an agent tool's, prefixed)
+    const tool = BROKER_SPECIAL.includes(asked) ? `Tool: ${asked}` : asked;
     // "Always": the tool's own "allow always" for this kind of call — shown as <tool>:<call> (no rule file of Claude Code's)
     const sugg = always ? [{ type: 'addRules', rules: [{ toolName: `${this.harness}:${short(tool, 100)}`.replace(/[^A-Za-z0-9_.:*-]/g, '_').slice(0, 200) }], behavior: 'allow', destination: 'session' }] : [];
     const r = await this.mgr.broker.ask(this.id, tool, input, { suggestions: sugg });

@@ -811,6 +811,7 @@ if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import
     const { createChatServer, CHAT_PORT } = await import('./chat.mjs');
     // (Chat's own sandbox, subs-chat: its socket — the workspace's sandbox never runs a Chat conversation)
     chat = createChatServer({ key: process.env.CODE_CHAT_KEY, planAllowed: on(process.env.CODE_CLAUDE_PLAN), query, log, clientVersion: readVersions().sdk || '0',
+      egressHost: egress(process.env.TERMINAL_EGRESS) === 'host',
       status: makeStatus({ call: (req, o) => sandboxCall(req, { ...o, sock: CHAT_SOCK }), log }),
       spawnAgent: (a, o) => sandboxAgent(a, { ...o, sock: CHAT_SOCK }), spawn: (a, o) => sandboxProcess(a, { ...o, sock: CHAT_SOCK }) });
     // (Caddy alone reaches it — code-link is Caddy's and this container's — and its key is required either way)
