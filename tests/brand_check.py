@@ -9,6 +9,8 @@ from v0.25.0 on are read. docs/internal-names.md itself (the list of the names t
 Usage: tests/brand_check.py [--root DIR] [PATH-PREFIX...]
   Prints each occurrence left (path:line: text) and exits 1 when there is one; with no PATH-PREFIX also each
   exemption that no longer matches anything (stale). PATH-PREFIX limits the look to files under it (a surface).
+       tests/brand_check.py --stdin LABEL < PAGE
+  The same look at a text (a page the stack served: tests/e2e/upgrade.sh), with the patterns only.
 Reads the files git knows of, and new ones it does not ignore (git ls-files --cached --others --exclude-standard).
 """
 
@@ -105,10 +107,24 @@ def check(root: Path, prefixes: list[str]) -> tuple[list[str], list[str]]:
     return left, stale
 
 
+def check_text(root: Path, label: str, text: str) -> list[str]:
+    pats = patterns(root)
+    left = []
+    for n, line in enumerate(text.splitlines(), 1):
+        covered = [s for p in pats for s in spans(p, line)]
+        if any(not any(a <= s and e <= b for a, b in covered) for s, e in spans(OLD, line)):
+            left.append(f"{label}:{n}: {line.strip()[:200]}")
+    return left
+
+
 def main(argv: list[str]) -> int:
     root = Path(__file__).resolve().parent.parent
     if argv[:1] == ["--root"]:
         root, argv = Path(argv[1]).resolve(), argv[2:]
+    if argv[:1] == ["--stdin"] and len(argv) == 2:
+        left = check_text(root, argv[1], sys.stdin.read())
+        print("\n".join(left)) if left else None
+        return 1 if left else 0
     left, stale = check(root, argv)
     for line in left:
         print(line)
