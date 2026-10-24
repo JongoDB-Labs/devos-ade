@@ -185,7 +185,7 @@ body.resizing-x iframe, body.resizing-y iframe { pointer-events: none; }
 .seg button[aria-pressed="true"] { background: var(--active); color: var(--ink); font-weight: 500; }
 
 /* status bar */
-.statusbar { display: flex; align-items: center; gap: 12px; height: 34px; padding: 0 4px 0 10px; background: var(--chrome); border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; min-width: 0; }
+.statusbar { display: flex; align-items: center; gap: 12px; height: var(--statusbar-h, 34px); padding: 0 4px 0 10px; background: var(--chrome); border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; min-width: 0; }
 /* the status bar's quick actions (Terminal, Run, Ports, mode, model): 28 px targets, an icon and a label, a styled tip */
 .sb-actions { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
 .sb-act, .sb-actdd .dd-trigger { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid transparent; border-radius: 7px; background: none;
@@ -683,7 +683,8 @@ body.resizing-x iframe, body.resizing-y iframe { pointer-events: none; }
 /* terminal */
 .terminal { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--surface); }
 .term-frame { flex: 1; width: 100%; min-height: 0; border: 0; background: #111820; }
-.terminal.drawer { position: fixed; left: 0; right: 0; bottom: 24px; height: 46vh; z-index: 30; border-top: 1px solid var(--line); box-shadow: 0 -8px 24px rgb(0 0 0 / 0.18); }
+/* (the tablet's terminal: a drawer that ends at the status bar's top edge, never over it) */
+.terminal.drawer { position: fixed; left: 0; right: 0; bottom: var(--statusbar-h, 34px); height: 46vh; z-index: 30; border-top: 1px solid var(--line); box-shadow: 0 -8px 24px rgb(0 0 0 / 0.18); }
 
 /* dialogs, sheets, toasts */
 .dlg { width: min(520px, calc(100vw - 32px)); max-height: min(80vh, 720px); padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
@@ -809,7 +810,7 @@ body.resizing-x iframe, body.resizing-y iframe { pointer-events: none; }
   .icon-btn { width: 40px; height: 40px; }
   .icon-btn.tiny { width: 36px; height: 36px; }
   .dd-trigger, .btn, .meter-btn, .seg button { min-height: 40px; }
-  .statusbar { height: 46px; }
+  :root { --statusbar-h: 46px; }
   .sb-act, .sb-actdd .dd-trigger { height: 40px; min-height: 40px; padding: 0 12px; }
   .mp-star { width: 40px; height: 40px; }
   .btn.small { min-height: 36px; }

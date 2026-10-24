@@ -1009,6 +1009,9 @@ def tablet(browser):
     expect(page.get_by_test_id("terminal")).to_be_visible()
     p.shot("tablet-files-terminal.png")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "horizontal overflow"
+    # the drawer ends at the status bar's top edge (46 px on touch screens), never over its buttons
+    over = page.evaluate("() => document.querySelector('.terminal.drawer').getBoundingClientRect().bottom - document.querySelector('.statusbar').getBoundingClientRect().top")
+    assert over <= 1, f"the terminal drawer covers {over:.0f} px of the status bar"
     p.assert_clean()
     p.close()
 
