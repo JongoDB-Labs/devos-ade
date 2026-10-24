@@ -140,9 +140,10 @@ services:
       - subs-cursor-login:/home/claude/.config/cursor
       - subs-grok:/home/claude/.grok
       - chat-socket:/run/bn-chat
-      # Claude Code's managed settings, as the terminal has them (Claude on your plan answers here too, without tools)
+      # Claude Code's managed settings of Chat's own (terminal/managed/chat.json): every file read denied (an @path of
+      # a prompt included), no hook, no Bypass or Auto mode — whatever a conversation's own settings would say
       - type: bind
-        source: ./terminal/managed/${TERMINAL_CLAUDE_POLICY:-off}.json
+        source: ./terminal/managed/chat.json
         target: /etc/claude-code/managed-settings.json
         read_only: true
         bind: { create_host_path: false, selinux: z }

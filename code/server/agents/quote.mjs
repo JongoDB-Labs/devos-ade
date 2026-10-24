@@ -13,9 +13,14 @@ export const QUOTE_TAIL = 'End of the quoted conversation. The user\'s new messa
 // tag names a model may read as a boundary of who speaks (any case, any spacing, opening or closing)
 const ROLE_TAGS = /^(earlier[-_ ]?conversation|conversation|system([-_ ]?(prompt|reminder|message|instructions?))?|user|human|assistant|ai|model|developer|instructions?|context|tool([-_ ]?(call|use|result|output|response)s?)?|function([-_ ]?(call|result|response)s?)?|im[-_]?(start|end|sep)|thinking|document|message|antml:[\w-]*)$/i;
 
-/** defang(text) -> the text with every role-like tag (<system>, </earlier-conversation >, <|im_start|> …) shown with ‹ › */
+/** defangMentions(text) -> the text with an @ that starts a word before a path or a name (@~/.codex/auth.json, @/etc,
+ *  @file.md) shown as ＠ (U+FF20): an agent reads such an @ as a file to attach — Claude Code does before the model runs,
+ *  tools or not — so in text that is not yours to mean it (a quote, Chat's), none is one */
+export const defangMentions = (text) => String(text ?? '').replace(/(^|[\s([{"'`<>|,;:])@(?=[~/.\w-])/g, '$1＠');
+/** defang(text) -> the text with every role-like tag (<system>, </earlier-conversation >, <|im_start|> …) shown with ‹ ›,
+ *  and every @-mention defanged (defangMentions) */
 export function defang(text) {
-  return String(text ?? '')
+  return defangMentions(text)
     .replace(/<\|([^|<>\n]{0,40})\|>/g, '‹|$1|›')
     .replace(/<(\s*\/?\s*)([A-Za-z][\w:. -]{0,60}?)(\s*\/?\s*)>/g, (m, a, name, b) => (ROLE_TAGS.test(name.trim()) ? `‹${a}${name}${b}›` : m))
     .replace(/<(\s*\/?\s*)([A-Za-z][\w:.-]{0,60})(?=[\s/]|$)/g, (m, a, name) => (ROLE_TAGS.test(name) ? `‹${a}${name}` : m));

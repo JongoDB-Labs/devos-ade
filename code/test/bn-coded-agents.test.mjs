@@ -15,7 +15,7 @@ for (const d of [WS, HOME, BIN, path.join(WS, 'app')]) fs.mkdirSync(d, { recursi
 // a stand-in for Claude Code and for each agent's launcher: its arguments, cwd and the variables that matter
 const SAY = `#!/usr/bin/env node
 const pick = ['ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_CUSTOM_HEADERS', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_USE_BEDROCK', 'SHARED_MCP_TOKEN',
-  'BN_MCP_URL', 'AWS_SECRET_ACCESS_KEY', 'DISABLE_AUTOUPDATER', 'HTTPS_PROXY', 'CLAUDE_CODE_ENTRYPOINT', 'BN_CODE_WORKSPACE'];
+  'BN_MCP_URL', 'AWS_SECRET_ACCESS_KEY', 'DISABLE_AUTOUPDATER', 'HTTPS_PROXY', 'CLAUDE_CODE_ENTRYPOINT', 'BN_CODE_WORKSPACE', 'CLAUDE_CODE_DISABLE_ATTACHMENTS'];
 process.stdout.write(JSON.stringify({ bin: require('path').basename(process.argv[1]), args: process.argv.slice(2), cwd: process.cwd(),
   env: Object.fromEntries(pick.filter((k) => k in process.env).map((k) => [k, process.env[k]])) }) + '\\n');
 process.stdin.on('data', () => {}); process.stdin.on('end', () => process.exit(0));
@@ -65,24 +65,34 @@ test('Chat with Claude on your plan: its own empty folder, no tool and no MCP se
   assert.equal((fs.statSync(path.join(HOME, '.bn-chat', id)).mode & 0o777), 0o700);
   assert.ok(!s.args.some((a) => a.startsWith('--mcp-config')));
   assert.equal(s.env.CLAUDE_CONFIG_DIR, path.join(HOME, '.claude-subscription'));
+  // (no @-file attachments: Claude Code would read an @path in the prompt before the model runs, tools or not)
+  assert.equal(s.env.CLAUDE_CODE_DISABLE_ATTACHMENTS, '1');
+  const C = [...FIXED, '--tools=', '--strict-mcp-config', '--setting-sources='];
   for (const [req, why] of [
+    [{ op: 'claude', plan: true, chat: id, args: [...FIXED, '--tools=', '--strict-mcp-config'] }, /has no tools/],
+    [{ op: 'claude', plan: true, chat: id, args: [...FIXED, '--tools=', '--strict-mcp-config', '--setting-sources=user'] }, /has no tools/],
+    [{ op: 'claude', plan: true, chat: id, args: [...FIXED, '--tools=Read', '--strict-mcp-config', '--setting-sources='] }, /has no tools|argument refused/],
+    [{ op: 'claude', plan: true, chat: id, args: [...C, '--setting-sources=user'] }, /given twice|has no tools/],
+    [{ op: 'claude', plan: true, chat: id, args: [...C, '--mcp-config={}'] }, /has no tools|argument refused/],
+    [{ op: 'claude', plan: true, chat: id, args: [...C, '--allowedTools=Read'] }, /has no tools|argument refused/],
+    [{ op: 'claude', plan: true, chat: id, args: [...C, '--settings={"permissions":{}}'] }, /has no tools|argument refused/],
     [{ op: 'claude', chat: id, args: [...FIXED, '--tools=', '--strict-mcp-config'] }, /runs on your plan only/],
     [{ op: 'claude', plan: true, chat: id, args: [...FIXED, '--strict-mcp-config'] }, /has no tools/],
     [{ op: 'claude', plan: true, chat: id, args: [...FIXED, '--tools='] }, /has no tools/],
-    [{ op: 'claude', plan: true, chat: id, args: [...FIXED, '--tools=', '--strict-mcp-config', `--project-config-root=${WS}`] }, /not for a Chat conversation/],
-    [{ op: 'claude', plan: true, chat: '../../etc', args: [...FIXED, '--tools=', '--strict-mcp-config'] }, /bad conversation id/]]) {
+    [{ op: 'claude', plan: true, chat: id, args: [...C, `--project-config-root=${WS}`] }, /not for a Chat conversation/],
+    [{ op: 'claude', plan: true, chat: '../../etc', args: C }, /bad conversation id/]]) {
     assert.match(result(await run(req)).error, why, JSON.stringify(req).slice(0, 80));
   }
   // a link where the conversations' folder would be: refused
   fs.rmSync(path.join(HOME, '.bn-chat'), { recursive: true });
   fs.symlinkSync(ROOT, path.join(HOME, '.bn-chat'));
-  assert.match(result(await run({ op: 'claude', plan: true, chat: id, args: [...FIXED, '--tools=', '--strict-mcp-config'] })).error, /not a folder/);
+  assert.match(result(await run({ op: 'claude', plan: true, chat: id, args: [...FIXED, '--tools=', '--strict-mcp-config', '--setting-sources='] })).error, /not a folder/);
   fs.unlinkSync(path.join(HOME, '.bn-chat'));
 }));
 
 test('two sandboxes: Chat\'s runs Chat\'s conversations only, the workspace\'s never one of them', async () => {
   const id = 'ef'.repeat(16);
-  const chatClaude = { op: 'claude', plan: true, chat: id, args: [...FIXED, '--tools=', '--strict-mcp-config'] };
+  const chatClaude = { op: 'claude', plan: true, chat: id, args: [...FIXED, '--tools=', '--strict-mcp-config', '--setting-sources='] };
   const chatAgent = { op: 'agent', tool: 'codex', mode: 'chat', chat: id };
   for (const req of [chatClaude, chatAgent]) assert.match(result(await run(req)).error, /Chat's conversations run in their own sandbox/);
   await asChat(async () => {

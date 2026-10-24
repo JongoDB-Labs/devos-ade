@@ -23,7 +23,7 @@ import { HARNESSES, chatModelId, toolOfChatModel } from './agents/tools.mjs';
 import { AcpAgent, NotSignedIn, UnsafeMode } from './agents/acp.mjs';
 import { CodexAgent } from './agents/codex.mjs';
 import { said } from './agents/jsonrpc.mjs';
-import { quoted, defang } from './agents/quote.mjs';
+import { quoted, defang, defangMentions } from './agents/quote.mjs';
 import { STATE_DIR } from './githosts.mjs';
 import { IMAGE_TYPES } from './protocol.mjs';
 
@@ -278,8 +278,9 @@ export function createChatServer({ key, status, planAllowed = false, spawnAgent,
     const rec = prompts.length > 1 ? store.get(oldKey) : null;
     const folder = rec && rec.tool === tool ? rec.folder : crypto.randomBytes(16).toString('hex');
     const ref = rec && rec.tool === tool ? rec.ref : null;
-    // a new session: the conversation so far (quoted) and the chat app's instructions before your message
-    const text = rec ? msgs.prompt : firstPrompt(msgs.system, msgs.turns, msgs.prompt);
+    // a new session: the conversation so far (quoted) and the chat app's instructions before your message; an @ that
+    // would attach a file (@~/.codex/auth.json …) shown as ＠ in all of it — pasted text is not yours to mean it
+    const text = defangMentions(rec ? msgs.prompt : firstPrompt(msgs.system, msgs.turns, msgs.prompt));
     const stream = body.stream === true;
     const id = `chatcmpl-${crypto.randomBytes(12).toString('hex')}`, created = Math.floor(Date.now() / 1000);
     let answer = '', thinking = '', sent = 0, started = false;

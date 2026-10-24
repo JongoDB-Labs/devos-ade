@@ -597,7 +597,7 @@ SUBS = [("subs-claude", "/home/claude/.claude-subscription"), ("subs-codex", "/h
   ("subs-cursor", "/home/claude/.cursor"), ("subs-cursor-login", "/home/claude/.config/cursor"), ("subs-grok", "/home/claude/.grok")]
 assert [(v["type"], v.get("source", "").rsplit("/", 1)[-1], v["target"], v.get("read_only")) for v in x["volumes"]] == [
   ("volume", s, t, None) for s, t in SUBS] + [("volume", "chat-socket", "/run/bn-chat", None),
-  ("bind", "off.json", "/etc/claude-code/managed-settings.json", True)], x["volumes"]
+  ("bind", "chat.json", "/etc/claude-code/managed-settings.json", True)], x["volumes"]
 assert all((s, t) in [(v.get("source"), v["target"]) for v in t_vols] for s, t in SUBS) if (t_vols := t["volumes"]) else False
 assert ("terminal-home", "/home/claude") in [(v.get("source"), v["target"]) for v in t["volumes"]]
 assert sorted(x["tmpfs"]) == ["/home/claude/.config:size=16m,uid=501,gid=20,mode=0700", "/home/claude:size=256m,uid=501,gid=20,mode=0700", "/tmp:size=256m,mode=1777"], x["tmpfs"]
@@ -845,4 +845,19 @@ test_the_trust_summarys_text_rule_is_the_same_in_the_backend_and_the_page() {
   assert_eq "$(printf '%s\n' "$a" | wc -l | tr -d ' ')" 2
   assert_contains "$a" 'const NOT_PLAIN = /[^\x20-\x7e\t\n]/;'
   assert_eq "$b" "$a"
+}
+
+test_chats_claude_has_managed_settings_of_its_own() {
+  command -v python3 >/dev/null 2>&1 || return 77
+  # Chat's sandbox: every file read denied (an @path of a prompt is a Read), no hook, no Bypass, no Auto mode
+  python3 - "$STACK_DIR/terminal/managed/chat.json" <<'PY' || return 1
+import json, sys
+m = json.load(open(sys.argv[1]))
+assert m["disableAllHooks"] is True and m["disableAutoMode"] == "disable", m
+p = m["permissions"]
+assert p["disableBypassPermissionsMode"] == "disable", p
+for rule in ("Read(//**)", "Read(~/**)", "Edit(//**)", "Write(//**)", "Bash", "WebFetch", "WebSearch"):
+    assert rule in p["deny"], rule
+PY
+  assert_contains "$(awk '/^  subs-chat:$/,/^  caddy:$/' "$STACK_DIR/compose.code.yaml")" "source: ./terminal/managed/chat.json"
 }

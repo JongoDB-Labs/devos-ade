@@ -4651,11 +4651,17 @@ export function serve(sock) {
       // (--tools= ), no MCP server (--strict-mcp-config, and the stack's not added) and no folder configuration
       if (req.chat !== undefined) {
         if (req.plan !== true) return fail('a Chat conversation runs on your plan only');
-        if (!req.args.includes('--tools=') || !req.args.includes('--strict-mcp-config')) return fail('a Chat conversation has no tools: --tools= and --strict-mcp-config');
+        // (each exactly once and only so: no built-in tool, no MCP server, no settings file; and no @-file attachments —
+        // Claude Code otherwise reads an @path in the prompt into it before the model runs, tools or not)
+        const only = (prefix, want) => { const got = req.args.filter((a) => typeof a === 'string' && a.startsWith(prefix)); return got.length === 1 && got[0] === want; };
+        if (!only('--tools', '--tools=') || !only('--strict-mcp-config', '--strict-mcp-config') || !only('--setting-sources', '--setting-sources=')
+          || req.args.some((a) => typeof a === 'string' && /^--(mcp-config|allowed-?tools|allowedTools|add-dir|plugin-dir|settings)\b/i.test(a))) {
+          return fail('a Chat conversation has no tools: --tools=, --strict-mcp-config and --setting-sources=, once each');
+        }
         if (req.args.some((a) => typeof a === 'string' && (a.startsWith('--project-config-root') || a.startsWith('--max-budget-usd')))) return fail('not for a Chat conversation');
         let dir;
         try { dir = chatFolder(req.chat); } catch (e) { return fail(e.message); }
-        return startProcess([...FIXED, ...req.args.slice(FIXED.length)], dir, planEnv(req.env));
+        return startProcess([...FIXED, ...req.args.slice(FIXED.length)], dir, { ...planEnv(req.env), CLAUDE_CODE_DISABLE_ATTACHMENTS: '1' });
       }
       const cwd = confine(typeof req.cwd === 'string' ? req.cwd : WORKSPACE);
       if (!cwd) return fail('cwd must be in /workspace');

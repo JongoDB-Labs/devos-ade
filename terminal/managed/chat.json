@@ -1,0 +1,1 @@
+{"disableAutoMode":"disable","disableAllHooks":true,"permissions":{"disableBypassPermissionsMode":"disable","deny":["Read(//**)","Read(~/**)","Edit(//**)","Write(//**)","Bash","WebFetch","WebSearch"]}}

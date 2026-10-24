@@ -198,6 +198,9 @@ http://{$CHAT_HOST} {
 		reverse_proxy open-webui:8080 {
 			import drop_session_cookie
 			import frame_by_portal_only
+			# (and images from Open WebUI itself, data: and blob: only: an answer's markdown image cannot carry what a
+			# model read to another server — the classic way out of a chat; Open WebUI sends no CSP of its own)
+			header_down Content-Security-Policy "frame-ancestors {$PORTAL_ORIGIN}; img-src 'self' data: blob:"
 		}
 	}
 }
