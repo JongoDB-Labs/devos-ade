@@ -3,7 +3,7 @@
 // their previews, Stop and the workspace's .claude/launch.json entries, and the "Open preview" chips.
 //
 // The frame shows sandbox content from a site of its own (p<port>-<capability>.<preview domain>; the portal mints the
-// link): it gets none of bedrock-now's cookies, and its sandbox flags leave out allow-top-navigation, so it cannot
+// link): it gets none of DevOS ADE's cookies, and its sandbox flags leave out allow-top-navigation, so it cannot
 // take this page away. Nothing here reads from or posts to the frame. Over remote access the frame loads the remote
 // preview host through a single-use hand-off for its port (each load a new one); that host is on the portal's site
 // there, and every app host refuses its requests (the same-site guard, caddy/Caddyfile not_from_preview).
@@ -18,6 +18,7 @@ import { label, visible } from '../text';
 import { SandboxSaid } from './Said';
 import { Icon, Spinner } from './icons';
 import { Dialog, copyText, useMedia } from './ui';
+import { PRODUCT } from '../brand';
 
 /** What the preview frame may do: run its scripts on its own origin (another site), forms, popups (as new tabs, outside
  *  the sandbox flags: an OAuth window or "open in a new tab" works), alerts, downloads — never navigate this page. */
@@ -83,8 +84,8 @@ export function PreviewPane({ tab, active }: { tab: PreviewTab; active: boolean 
         <span
           class="pv-badge"
           title={tab.link?.handoff
-            ? `Sandbox content: the server on port ${tab.port} in the sandbox, shown from the preview address (${new URL(tab.link.origin).host}), which gets none of bedrock-now's cookies; over remote access this browser previews one port at a time`
-            : `Sandbox content: the server on port ${tab.port} in the sandbox, shown from a site of its own${tab.link ? ` (${new URL(tab.link.origin).host})` : ''} that gets none of bedrock-now's cookies`}
+            ? `Sandbox content: the server on port ${tab.port} in the sandbox, shown from the preview address (${new URL(tab.link.origin).host}), which gets none of ${PRODUCT}'s cookies; over remote access this browser previews one port at a time`
+            : `Sandbox content: the server on port ${tab.port} in the sandbox, shown from a site of its own${tab.link ? ` (${new URL(tab.link.origin).host})` : ''} that gets none of ${PRODUCT}'s cookies`}
         >
           <Icon name="window" size={14} /> sandbox
         </span>
@@ -433,7 +434,7 @@ export function LaunchConfirm({ entry }: { entry: LaunchEntry }) {
               <code>
                 {v.name}={visible(v.value)}
               </code>
-              {v.name === 'PORT' && <span class="muted small"> (set by bedrock-now)</span>}
+              {v.name === 'PORT' && <span class="muted small"> (set by {PRODUCT})</span>}
               {why && (
                 <span class="loader-why">
                   <Icon name="alert" size={13} /> {why}

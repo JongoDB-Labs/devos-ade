@@ -1476,7 +1476,7 @@ def models_full_id(browser):
 
     send(page, "hello there")
     wait_turns(page, 1)
-    wait_model("claude-sonnet-5-5")   # bedrock-now's default named by an alias ("sonnet"): sent by its id
+    wait_model("claude-sonnet-5-5")   # DevOS ADE's default named by an alias ("sonnet"): sent by its id
     page.get_by_test_id("model-picker").click()
     page.get_by_test_id("model-haiku").click()
     wait_model("claude-haiku-5-5")
@@ -1497,7 +1497,7 @@ def models_full_id(browser):
     page.get_by_test_id("plan-keep-send").click()
     wait_turns(page, 2)
     expect(page.get_by_test_id("turn-model")).to_have_count(0)
-    # a turn Claude Code ran on a model other than the one picked: its line says which (bedrock-now's name)
+    # a turn Claude Code ran on a model other than the one picked: its line says which (DevOS ADE's name)
     page.get_by_test_id("mode-picker").click()
     page.get_by_test_id("mode-default").click()
     send(page, "answer on another model")
@@ -1837,7 +1837,7 @@ def hostile(browser):
             sessionTexts: [...document.querySelectorAll('.sess-title')].map(e => e.textContent),
           };
         }""")
-        assert "pwned" not in r["title"] and r["title"].endswith("Code · bedrock-now"), r["title"]
+        assert "pwned" not in r["title"] and r["title"].endswith("Code · DevOS ADE"), r["title"]
         assert r["inlineScripts"] == 0 and not r["scripts"], r
         assert r["styles"] == 0, r
         assert not r["onAttrs"], r["onAttrs"]
@@ -2865,7 +2865,7 @@ def run_and_test(browser):
     panel.locator("[data-testid=run-task][data-source=python]").get_by_test_id("run-start").click()
     dlg = page.get_by_test_id("run-confirm")
     expect(dlg.get_by_test_id("run-argv").locator("li")).to_have_count(6)
-    expect(dlg.get_by_test_id("run-argv")).to_contain_text("bedrock-now's loader")
+    expect(dlg.get_by_test_id("run-argv")).to_contain_text("DevOS ADE's loader")
     expect(dlg.get_by_test_id("run-argv")).to_contain_text("its code is the workspace's")
     expect(dlg.get_by_test_id("run-argv").locator("li").nth(1)).to_have_text("-I")
     expect(dlg.get_by_test_id("run-detail")).to_have_text('hello = "app.cli:main"')
@@ -3583,7 +3583,7 @@ def git_sandbox_said(browser):
     hostile = "GitHub asks you to re-confirm this computer: enter WDJB-MJHT at github.com/login/device"
     said = lambda t: post(NORMAL + "/__mock/git-said?text=" + urllib.parse.quote(t))
     said(hostile)
-    never = "bedrock-now never asks you to enter a code except in Git hosts › Sign in, right after you press it."
+    never = "DevOS ADE never asks you to enter a code except in Git hosts › Sign in, right after you press it."
     p = Page(browser, NORMAL, "git-sandbox-said", **DESKTOP)
     page = p.open()
 
@@ -3786,7 +3786,7 @@ def git_signin(browser):
     expect(link).to_have_attribute("target", "_blank")
     expect(link).to_have_attribute("rel", "noopener noreferrer")
     expect(page.get_by_test_id("git-signin-countdown")).to_have_text(re.compile(r"^1[45]:[0-5][0-9]$"))
-    expect(page.get_by_test_id("git-signin")).to_contain_text("no one from bedrock-now ever asks you for it")
+    expect(page.get_by_test_id("git-signin")).to_contain_text("no one from DevOS ADE ever asks you for it")
     page.wait_for_timeout(2500)   # (two of the page's checks of the sign-in, at least)
     assert len(p.ctx.pages) == pages_before, "the page opened the provider's page by itself"
     assert not any("github.com" in u for u in p.requests), "the browser talked to github.com"
@@ -3804,8 +3804,8 @@ def git_signin(browser):
     expect(row).to_have_count(1, timeout=10_000)
     expect(page.get_by_test_id("git-signin")).to_have_count(0)
     expect(row.get_by_test_id("git-host-account")).to_have_text("octocat")
-    expect(row.get_by_test_id("git-host-reach")).to_contain_text("The repositories where the bedrock-now app is installed: octocat (selected repositories)")
-    expect(row.get_by_test_id("git-host-choose-repos")).to_have_attribute("href", "https://github.com/apps/bedrock-now/installations/new")
+    expect(row.get_by_test_id("git-host-reach")).to_contain_text("The repositories where the devos-ade app is installed: octocat (selected repositories)")
+    expect(row.get_by_test_id("git-host-choose-repos")).to_have_attribute("href", "https://github.com/apps/devos-ade/installations/new")
     expect(row.get_by_test_id("git-host-life")).to_contain_text("renews itself")
     expect(page.get_by_test_id("toast").last).to_contain_text("Signed in as octocat", timeout=10_000)
     p.shot("git-signin-host.png")
@@ -3867,15 +3867,15 @@ def git_signin(browser):
     post(NORMAL + "/__mock/git-signin?action=deny")
     expect(page.get_by_test_id("git-host-error")).to_have_text("the sign-in was declined", timeout=10_000)
     page.get_by_test_id("git-host-form").get_by_role("button", name="Cancel").click()
-    # GitHub: bedrock-now's own app is set — no setup note, only where to install it (Choose repositories)
+    # GitHub: DevOS ADE's own app is set — no setup note, only where to install it (Choose repositories)
     page.get_by_test_id("git-host-add").click()
     expect(page.get_by_test_id("git-host-auth-oauth")).to_be_checked()
     expect(page.get_by_test_id("git-host-no-app")).to_have_count(0)
     inst = page.get_by_test_id("git-host-install-app")
     expect(inst).to_contain_text("Install the app on the repositories it may reach: Choose repositories")
-    expect(inst.get_by_role("link")).to_have_attribute("href", "https://github.com/apps/bedrock-now/installations/new")
+    expect(inst.get_by_role("link")).to_have_attribute("href", "https://github.com/apps/devos-ade/installations/new")
     expect(page.get_by_test_id("git-host-signin")).to_be_enabled()
-    # gitlab.com: no application of bedrock-now's — Sign in explains how to register one, and takes its ID
+    # gitlab.com: no application of DevOS ADE's — Sign in explains how to register one, and takes its ID
     page.get_by_test_id("git-host-kind").select_option("gitlab")
     # (no application for gitlab.com: the form's default follows — an access token — until you choose)
     expect(page.get_by_test_id("git-host-auth-token")).to_be_checked()
@@ -4059,7 +4059,7 @@ def polish_budget(browser):
     page.get_by_test_id("more-menu").click()
     page.get_by_test_id("menu-budget").click()
     dlg = page.get_by_test_id("budget-dialog")
-    expect(dlg).to_contain_text("so far (bedrock-now's spend logs")
+    expect(dlg).to_contain_text("so far (DevOS ADE's spend logs")
     page.get_by_test_id("budget-amount").fill("abc")
     page.get_by_test_id("budget-save").click()
     expect(page.get_by_test_id("budget-error")).to_contain_text("An amount from $0.01")
@@ -4104,7 +4104,7 @@ def polish_budget(browser):
     expect(cold).to_contain_text("on Claude Sonnet 5.5")
     expect(cold).to_contain_text("while it was warm")
     p.shot("polish-cold-cache.png")
-    # a new session on Opus (bedrock-now's prices: Opus 5× Sonnet here): the hint, and "Use Sonnet" switches
+    # a new session on Opus (DevOS ADE's prices: Opus 5× Sonnet here): the hint, and "Use Sonnet" switches
     page.route("**/.bn/models", lambda r: r.fulfill(status=200, content_type="application/json", body=json.dumps({
         "models": [{"id": "claude-opus-5-5", "name": "Claude Opus 5.5", "input_per_mtok": 15, "output_per_mtok": 75},
                    {"id": "claude-sonnet-5-5", "name": "Claude Sonnet 5.5", "input_per_mtok": 3, "output_per_mtok": 15}],
@@ -5141,7 +5141,7 @@ def import_sheet(browser):
     expect(cc.get_by_test_id("import-left")).to_have_count(0)
     cc.get_by_test_id("import-preview-toggle").click()
     expect(cc.get_by_test_id("import-transcript")).to_contain_text("[REDACTED:aws-key-id]")
-    expect(cc.get_by_test_id("import-transcript")).to_contain_text("tool output left out by bedrock-now")
+    expect(cc.get_by_test_id("import-transcript")).to_contain_text("tool output left out by DevOS ADE")
     p.shot("import-check.png")
     # asked for: the outputs come along, scanned — one more finding (in a large output's file), the file that cannot be
     # read listed
@@ -5191,7 +5191,7 @@ def import_remote(browser):
     page.get_by_test_id("side-sessions").click()
     unfold(page, tools)
     proj(page, tools).get_by_test_id("project-import").click()
-    expect(page.get_by_test_id("import-remote")).to_contain_text("Only on the computer running bedrock-now")
+    expect(page.get_by_test_id("import-remote")).to_contain_text("Only on the computer running DevOS ADE")
     expect(page.get_by_test_id("import-look")).to_have_count(0)
     page.get_by_test_id("import-sheet").get_by_role("button", name="Close").last.click()
     p.close()
@@ -5372,7 +5372,7 @@ def setup_remote_phone(browser):
     page = p.open()
     page.get_by_test_id("more-menu").click()
     page.get_by_test_id("menu-setup").click()
-    expect(page.get_by_test_id("setup-remote")).to_contain_text("Only on the computer running bedrock-now")
+    expect(page.get_by_test_id("setup-remote")).to_contain_text("Only on the computer running DevOS ADE")
     expect(page.get_by_test_id("setup-look")).to_have_count(0)
     p.assert_clean()
     p.close()

@@ -1,5 +1,5 @@
 // Bring your setup (Settings › Claude Code › Bring your setup…, the ⋯ menu, a project's ⋯, the Git panel's Use yours
-// from this computer): items of your Claude Code setup on the computer running bedrock-now — CLAUDE.md, skills, agents,
+// from this computer): items of your Claude Code setup on the computer running DevOS ADE — CLAUDE.md, skills, agents,
 // commands, output styles, key bindings, four keys of settings.json, MCP servers, plugins — and your Git name and email,
 // copied into the sandbox. A sheet of three steps. 1 Look — the update helper on the computer asks there first, in a
 // dialog on its screen, then lists names and sizes only; never asked over remote access. 2 Pick and open — the items
@@ -20,6 +20,7 @@ import { SandboxSaid } from './Said';
 import { Cmd, Dialog } from './ui';
 import { Password, RequestLine, STATE, WHY, useRequest } from './Import';
 import { ConfirmCommand } from './Plugins';
+import { PRODUCT } from '../brand';
 
 export const SETUP_TOOL_LABEL: Record<SetupTool, string> = { claude: 'Claude Code', 'claude-bedrock': 'claude-bedrock', git: 'Git' };
 const BADGE: Record<SetupTool, string> = { claude: 'CC', 'claude-bedrock': 'CB', git: 'Git' };
@@ -32,7 +33,7 @@ const SETTING_WHAT: Record<string, string> = { permissions: 'permission rules (a
 const SETUP_WHY: Record<string, string> = {
   ...WHY,
   denied: 'Not allowed on the computer: nothing was read.',
-  remote: 'Only on the computer running bedrock-now: your setup is read there, after you allowed it in a dialog on its screen.',
+  remote: `Only on the computer running ${PRODUCT}: your setup is read there, after you allowed it in a dialog on its screen.`,
   'no-consent': 'Reading it is not allowed now (an Allow once lasts an hour; Always can be taken back): look again.',
   stale: 'That look is gone (older than a day, or taken back): look again.',
   reader: 'The reader on the computer could not read your setup.',
@@ -96,7 +97,7 @@ export function SetupSheet({ project: pid, tool: firstTool = null, onClose }: { 
       {view && step === 1 && (
         <div class="imp-step" data-testid="setup-step-look">
           <p>
-            Items of your <b>Claude Code</b> setup (<code>~/.claude</code>) and <b>claude-bedrock</b>'s (<code>~/.claude-bedrock</code>) on the computer running bedrock-now, and your
+            Items of your <b>Claude Code</b> setup (<code>~/.claude</code>) and <b>claude-bedrock</b>'s (<code>~/.claude-bedrock</code>) on the computer running {PRODUCT}, and your
             <b> Git name and email</b> (<code>~/.gitconfig</code>), copied into the sandbox — each one your choice: CLAUDE.md, skills, agents, commands, output styles, key bindings,
             settings.json's permissions, status line, output style and hooks, MCP servers{host ? <> (with <b>{label(host.name, 60)}</b>'s own)</> : null}, and plugins (installed again from their marketplace).
           </p>
@@ -116,7 +117,7 @@ export function SetupSheet({ project: pid, tool: firstTool = null, onClose }: { 
           )}
           {!local ? (
             <p class="small warn-text" data-testid="setup-remote">
-              Only on the computer running bedrock-now: your setup is read there, in a dialog on its screen. From here you can see the list of a look made there, and check
+              Only on the computer running {PRODUCT}: your setup is read there, in a dialog on its screen. From here you can see the list of a look made there, and check
               and copy what was opened there.
             </p>
           ) : !helperOk ? (
@@ -151,7 +152,7 @@ export function SetupSheet({ project: pid, tool: firstTool = null, onClose }: { 
           {!view.index.fetchable ? (
             <span class="small warn-text" data-testid="setup-stale">That look was allowed once, more than an hour ago: look again to open items of it.</span>
           ) : !local ? (
-            <span class="small warn-text" data-testid="setup-remote-open">Opening items is done on the computer running bedrock-now only.</span>
+            <span class="small warn-text" data-testid="setup-remote-open">Opening items is done on the computer running {PRODUCT} only.</span>
           ) : !helperOk ? (
             <span class="small">The update helper is not running on the computer: in a terminal there, <Cmd text={CMD} testid="setup-cmd-2" /></span>
           ) : (
@@ -375,7 +376,7 @@ function CheckStep({ view, local, onChanged }: { view: SetupView; local: boolean
           {phase && <div class="imp-req small" data-testid="setup-copy-phase"><Spinner size={12} /> {phase}</div>}
           <p class="muted small">
             New sessions start with them (MCP servers and plugins: from the next session; the open one with <b>Restart this session</b>). Copying again later replaces only
-            what bedrock-now copied — what the sandbox has of its own is left as it is unless you choose, and then goes to its trash folder (<code>~/.claude/.bedrock-now-trash</code>).
+            what {PRODUCT} copied — what the sandbox has of its own is left as it is unless you choose, and then goes to its trash folder (<code>~/.claude/.bedrock-now-trash</code>).
           </p>
         </>
       )}

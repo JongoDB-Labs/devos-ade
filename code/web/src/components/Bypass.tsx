@@ -7,6 +7,7 @@ import { store, activeView, cancelBypass, confirmBypass, setMode } from '../app'
 import { money } from '../text';
 import { Dialog } from './ui';
 import { Icon } from './icons';
+import { PRODUCT } from '../brand';
 
 export function BypassDialog() {
   const asking = useSel(store, (s) => s.bypassAsk !== null);
@@ -28,7 +29,7 @@ export function BypassDialog() {
           <li data-testid="bypass-risk-folder">
             It runs in the sandbox, not on your computer, but <strong>the workspace is your folder{folder ? ' ' : ''}</strong>
             {folder ? <code>{folder}</code> : null}. Git hooks, git config, package.json scripts, <code>.vscode/tasks.json</code>, <code>.envrc</code> and Claude
-            Code settings in it run on your computer when you use the folder there. bedrock-now flags changes to those files after each turn, with
+            Code settings in it run on your computer when you use the folder there. {PRODUCT} flags changes to those files after each turn, with
             Revert.
           </li>
           <li data-testid="bypass-risk-egress">
@@ -56,7 +57,7 @@ export function BypassDialog() {
           <li>It ends with this session's process: a resumed or restarted session goes on in Manual. New sessions start in your usual mode, never in Bypass.</li>
           {remote && (
             <li data-testid="bypass-risk-remote">
-              <strong>You're using bedrock-now over remote access.</strong> Everything runs on the computer running bedrock-now, in its sandbox and its folder —
+              <strong>You're using {PRODUCT} over remote access.</strong> Everything runs on the computer running {PRODUCT}, in its sandbox and its folder —
               not on this device.
             </li>
           )}

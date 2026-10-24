@@ -129,9 +129,9 @@ test('session groups: needs you, working, done; the tab title says how many wait
   assert.equal(waitingSessions(views), 2);
   assert.equal(waitingSessions({}, 3), 1, 'prompts in sessions this page does not show yet');
   assert.equal(waitingSessions({}, 0), 0);
-  assert.equal(pageTitle(2, false), '(2) waiting · Code · bedrock-now');
-  assert.equal(pageTitle(0, true), '⏵⏵ Code · bedrock-now');
-  assert.equal(pageTitle(500, false), '(99) waiting · Code · bedrock-now');
+  assert.equal(pageTitle(2, false), '(2) waiting · Code · DevOS ADE');
+  assert.equal(pageTitle(0, true), '⏵⏵ Code · DevOS ADE');
+  assert.equal(pageTitle(500, false), '(99) waiting · Code · DevOS ADE');
 });
 
 test('the Permissions view\'s data: rules as text, a hash only when it is one, everything capped', () => {

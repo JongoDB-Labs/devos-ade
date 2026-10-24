@@ -8,6 +8,7 @@
 // Kept free of DOM and network (test/projects.test.ts).
 import { goneTopOf, label, hostTopOf } from './text';
 import type { SandboxWords, SessionInfo } from './types';
+import { PRODUCT } from './brand';
 
 export const WORKSPACE_ID = 'ws';
 export const WORKSPACE_PATH = '/workspace';
@@ -22,11 +23,11 @@ export type FolderState = 'dir' | 'missing' | 'link' | 'other' | 'unmounted';
 /** A project's own Claude Code settings (.claude/settings*.json, .mcp.json): the Workspace's always apply; a project's
  *  only once trusted as they are (none: nothing to trust; changed: trusted once, different now; unverifiable: a file
  *  there cannot be checked — never trusted; unchecked: the sandbox did not say — not applied). */
-// recheck: trusted before bedrock-now read a project's settings the way it does now (projects.mjs's TRUST_EPOCH):
+// recheck: trusted before DevOS ADE read a project's settings the way it does now (projects.mjs's TRUST_EPOCH):
 // looked at again first
 export type SettingsState = 'workspace' | 'none' | 'trusted' | 'untrusted' | 'changed' | 'recheck' | 'unverifiable' | 'unchecked';
 const SETTINGS: SettingsState[] = ['workspace', 'none', 'trusted', 'untrusted', 'changed', 'recheck', 'unverifiable', 'unchecked'];
-export const RECHECK_TEXT = 'bedrock-now reads a project\'s settings more strictly since you trusted them (the other tools\' too) — look at them again';
+export const RECHECK_TEXT = `${PRODUCT} reads a project's settings more strictly since you trusted them (the other tools' too) — look at them again`;
 export const settingsState = (v: unknown): SettingsState | null => (SETTINGS.includes(v as SettingsState) ? (v as SettingsState) : null);
 /** they apply (or there is nothing to apply; null: not said) */
 export const settingsApplied = (v: SettingsState | null): boolean => v === null || v === 'workspace' || v === 'none' || v === 'trusted';

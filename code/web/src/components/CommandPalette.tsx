@@ -51,6 +51,7 @@ import { Icon } from './icons';
 import { Sheet, useMedia } from './ui';
 import { mentionSelection } from './EditorArea';
 import { addDiff, addProblems, addTerminal } from '../attach';
+import { PRODUCT } from '../brand';
 
 type Group = 'Recent' | 'Actions' | 'Sessions' | 'Files';
 interface Item {
@@ -138,7 +139,7 @@ function actions(s: AppState): Item[] {
   for (const e of ['low', 'medium', 'high', 'xhigh', 'max']) list.push(a(`effort:${e}`, `Effort: ${e}`, () => setEffort(e), 'gauge'));
   list.push(a('effort:default', "Effort: the model's default", () => setEffort(null), 'gauge'));
   if (portal) {
-    list.push(a('settings', 'bedrock-now Settings (Code page, Bypass, terminal)…', () => window.open(`${portal}/#settings`, '_blank', 'noopener,noreferrer'), 'external', 'opens the portal in a new tab'));
+    list.push(a('settings', `${PRODUCT} Settings (Code page, Bypass, terminal)…`, () => window.open(`${portal}/#settings`, '_blank', 'noopener,noreferrer'), 'external', 'opens the portal in a new tab'));
   }
   return list;
 }

@@ -162,7 +162,7 @@ export interface Command {
   argumentHint: string;
 }
 
-/** A model as the CLI's supportedModels() describes it (used for effort levels only; prices come from bedrock-now). */
+/** A model as the CLI's supportedModels() describes it (used for effort levels only; prices come from DevOS ADE). */
 export interface CliModel {
   value: string;
   displayName: string;
@@ -175,7 +175,7 @@ export interface CliModel {
 export type Compat = 'works' | 'chat-only' | 'fails' | 'untested';
 export const COMPATS: readonly Compat[] = ['works', 'chat-only', 'fails', 'untested'];
 
-/** A model as bedrock-now serves it (`/.bn/models`): the only source of names and prices shown. */
+/** A model as DevOS ADE serves it (`/.bn/models`): the only source of names and prices shown. */
 export interface BnModel {
   id: string;
   name: string;
@@ -300,7 +300,7 @@ export interface SessionInfo {
   cwd: string;
   /** the project it is shown in, as the backend says (projects.ts: only one of the list counts) */
   project: string;
-  /** copied from Claude Code (CC) or claude-bedrock (CB) on the computer running bedrock-now; forked: as a new
+  /** copied from Claude Code (CC) or claude-bedrock (CB) on the computer running DevOS ADE; forked: as a new
    *  session (its copy here had been continued) */
   imported?: ImportedFrom | null;
   /** who answered in it: Claude Code on Bedrock (also when not said), Claude on your plan, a subscription's agent */
@@ -327,7 +327,7 @@ export interface ImportRow {
   version: string | null;
   /** the Claude Code version that wrote it: one these imports were tested with, another, or none said */
   format: 'tested' | 'other' | 'unknown';
-  /** where its model calls went: bedrock-now (claude-bedrock), Bedrock, Anthropic (its thinking blocks come out) */
+  /** where its model calls went: DevOS ADE (claude-bedrock), Bedrock, Anthropic (its thinking blocks come out) */
   source: 'bedrock-now' | 'bedrock' | 'anthropic' | 'unknown';
   thinking: number | null;
   branch: string | null;
@@ -343,7 +343,7 @@ export interface ImportRequest {
 }
 export interface ImportView {
   project: string;
-  /** on the computer running bedrock-now (a look can be asked only there) */
+  /** on the computer running DevOS ADE (a look can be asked only there) */
   local: boolean;
   helper: { running: boolean; actions: string[]; screen: boolean };
   index: { scan: string; at: number; consent: 'once' | 'always'; fetchable: boolean; rows: ImportRow[]; counts: Partial<Record<ImportTool, ImportCounts>> } | null;
@@ -764,7 +764,7 @@ export interface GitEntry {
 export interface GitIdentity {
   name: string;
   email: string;
-  /** the repository's user.name/email, the sandbox's ~/.gitconfig, or bedrock-now's fixed one */
+  /** the repository's user.name/email, the sandbox's ~/.gitconfig, or DevOS ADE's fixed one */
   from: 'repository' | 'sandbox' | 'default';
 }
 export interface GitStatus {
@@ -844,7 +844,7 @@ export interface GitHostView {
   username: string;
   hasToken: boolean;
   tokenSetAt: number | null;
-  /** an access token imported from a gh / glab login on the computer running bedrock-now (./stack git-host import) */
+  /** an access token imported from a gh / glab login on the computer running DevOS ADE (./stack git-host import) */
   imported: GitImported | null;
   /** auth 'oauth': the sign-in (account, scopes, expiry) */
   oauth: GitOAuthView | null;
@@ -891,7 +891,7 @@ export interface GitHostRef {
   source?: 'gh' | 'glab';
   account?: string | null;
 }
-/** Whether Sign in with GitHub / GitLab has an application ID for github.com / gitlab.com (Settings, or bedrock-now's own). */
+/** Whether Sign in with GitHub / GitLab has an application ID for github.com / gitlab.com (Settings, or DevOS ADE's own). */
 export interface GitSignInConfig {
   github: { host: string; clientId: string | null; appSlug: string | null; configured: boolean };
   gitlab: { host: string; clientId: string | null; configured: boolean };

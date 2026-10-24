@@ -36,6 +36,7 @@ import { inProject } from '../projects';
 import { ago, label } from '../text';
 import { Icon, Spinner } from './icons';
 import { Dialog } from './ui';
+import { PRODUCT } from '../brand';
 
 /** How a credential is named: "HTTPS token", "SSH key", "sign-in". */
 const authName = (auth: GitAuth): string => (auth === 'token' ? 'HTTPS token' : auth === 'ssh' ? 'SSH key' : 'sign-in');
@@ -479,8 +480,8 @@ export function GitHostsDialog({ onClose }: { onClose: () => void }) {
       </p>
       {!local && view && (
         <div class="banner warn small" data-testid="git-hosts-remote">
-          Over remote access: adding a host, signing in, a token or a key, trusting a host key and letting Claude use a host work only from the computer running
-          bedrock-now. Removing a host and turning Claude's use off work here too.
+          Over remote access: adding a host, signing in, a token or a key, trusting a host key and letting Claude use a host work only from the computer
+          running {PRODUCT}. Removing a host and turning Claude's use off work here too.
         </div>
       )}
       {!view ? (
@@ -713,7 +714,7 @@ function HostCard({ h, local, remote }: { h: GitHostView; local: boolean; remote
         </button>
         <span>
           Let Claude use this host {h.claude ? <strong>(on{h.claudeSince ? `, since ${ago(h.claudeSince)}` : ''})</strong> : '(off)'} — its own git{ghToo ? ' and gh' : ''} in the sandbox {ghToo ? 'get' : 'gets'} this {h.auth === 'token' ? 'token' : h.auth === 'oauth' ? 'sign-in\'s token' : 'key\'s logins'} too, each use in Activity.
-          {!local && !h.claude && <span class="muted"> Turned on only from the computer running bedrock-now.</span>}
+          {!local && !h.claude && <span class="muted"> Turned on only from the computer running {PRODUCT}.</span>}
         </span>
       </div>
       {claudeAsk && (
@@ -731,7 +732,7 @@ function HostCard({ h, local, remote }: { h: GitHostView; local: boolean; remote
           )}
           {githubHttps && !ghToo && (
             <p class="small" data-testid="git-claude-gh-none">
-              gh in the sandbox gets no login for this host from here (bedrock-now gives gh one for github.com and *.ghe.com only): for a GitHub Enterprise
+              gh in the sandbox gets no login for this host from here ({PRODUCT} gives gh one for github.com and *.ghe.com only): for a GitHub Enterprise
               Server, run <code>gh auth login --hostname {label(h.host, 120)}</code> in the terminal.
             </p>
           )}
@@ -827,8 +828,8 @@ export function SignInPanel({ flow: first, onEnd }: { flow: GitSignInFlow; onEnd
         <Spinner size={12} /> Waiting for you to approve it there… The code expires in <span data-testid="git-signin-countdown">{left}</span>.
       </p>
       <p class="muted small">
-        Enter the code only on {label(where, 120)}'s own page, opened from here — no one from bedrock-now ever asks you for it. Approving signs this
-        computer's bedrock-now in to your {name} account.
+        Enter the code only on {label(where, 120)}'s own page, opened from here — no one from {PRODUCT} ever asks you for it. Approving signs this
+        computer's {PRODUCT} in to your {name} account.
       </p>
       <div class="dlg-actions">
         <button type="button" class="btn" onClick={() => void cancel()} data-testid="git-signin-cancel">
@@ -839,7 +840,7 @@ export function SignInPanel({ flow: first, onEnd }: { flow: GitSignInFlow; onEnd
   );
 }
 
-/** For people who use gh or glab already: the command that imports that login (on the computer running bedrock-now). */
+/** For people who use gh or glab already: the command that imports that login (on the computer running DevOS ADE). */
 function ImportHint({ kind, host }: { kind: 'github' | 'gitlab'; host: string }) {
   const cmd = importCommand(kind, host);
   const [copied, setCopied] = useState(false);
@@ -849,7 +850,7 @@ function ImportHint({ kind, host }: { kind: 'github' | 'gitlab'; host: string })
       <button type="button" class="linkish" onClick={() => { void navigator.clipboard?.writeText(cmd).then(() => setCopied(true), () => setCopied(false)); }} data-testid="git-host-import-copy">
         {copied ? 'Copied' : 'Copy'}
       </button>{' '}
-      — run in the bedrock-now folder, it imports that login (
+      — run in the {PRODUCT} folder, it imports that login (
       {kind === 'github' ? "gh's token reaches every repository your account can, and gh goes on using it" : "a personal access token only; an OAuth login of glab's: sign in here instead"}).
     </p>
   );
@@ -878,8 +879,8 @@ function SignInSetup({ kind }: { kind: 'github' | 'gitlab' }) {
             <li>
               Under <em>Repository permissions</em>, set <strong>Contents: Read and write</strong> (and <em>Workflows: Read and write</em> only to push
               changes to <code>.github/workflows</code>). Create it — no client secret.
-              GitHub asks for a private key before the app can be installed: generate one and delete the downloaded .pem file —
-              bedrock-now never uses it.
+              GitHub asks for a private key before the app can be installed: generate one and delete the downloaded .pem file
+              — {PRODUCT} never uses it.
             </li>
             <li>
               For an organization's repositories, create the app under the organization, or choose <em>Any account</em> (GitHub's default is <em>Only on
@@ -945,7 +946,7 @@ function AddHost({ onDone, signIn }: { onDone: () => void; signIn: GitSignInConf
   }, [signIn]);
   const choose = (a: GitAuth) => { setChosen(true); setAuth(a); };
   const defaultHost = !host.trim() || host.trim().toLowerCase() === (kind === 'gitlab' ? 'gitlab.com' : 'github.com');
-  // Sign in waits for an app ID while bedrock-now has none set up here (or for a host of your own)
+  // Sign in waits for an app ID while DevOS ADE has none set up here (or for a host of your own)
   const needsId = !clientId.trim() && (!ready || !defaultHost);
   const pickKind = (k: GitHostKind) => {
     setKind(k);
@@ -1086,7 +1087,7 @@ function AddHost({ onDone, signIn }: { onDone: () => void; signIn: GitSignInConf
             </label>
             {auth === 'oauth' && ready && defaultHost && (
               <label class="wide">
-                Your own app's {kind === 'github' ? 'client ID' : 'application ID'} (blank: bedrock-now's)
+                Your own app's {kind === 'github' ? 'client ID' : 'application ID'} (blank: {PRODUCT}'s)
                 <input type="text" value={clientId} spellcheck={false} maxLength={128} onInput={(e) => setClientId((e.currentTarget as HTMLInputElement).value)} data-testid="git-host-client-id" />
               </label>
             )}

@@ -16,6 +16,7 @@ import { Icon, Spinner } from './icons';
 import { addProblems } from '../attach';
 import { Dialog, Dropdown } from './ui';
 import { keysFor } from '../shortcuts';
+import { PRODUCT } from '../brand';
 
 const GROUPS: { source: RunSource; title: string }[] = [
   { source: 'npm', title: 'Scripts' },
@@ -295,7 +296,7 @@ export function RunConfirm({ task }: { task: RunTask }) {
             {task.source === 'python' && i === 3 && (
               <span class="muted small">
                 {' '}
-                — bedrock-now's loader: it imports the module from the workspace (its code is the workspace's, which anything in the sandbox can change) and
+                — {PRODUCT}'s loader: it imports the module from the workspace (its code is the workspace's, which anything in the sandbox can change) and
                 calls the function, as the script pip installs for it would
               </span>
             )}

@@ -7,7 +7,7 @@ import type { GitHostKind, GitHostView, GitRemote, GitRemoteState, GitSignInConf
 export const PROPOSAL_MAX = 8_000;
 
 /** Shown above anything the sandbox said: its words could be worded as ours ("enter … at github.com/login/device"). */
-export const NEVER_ASKS = 'bedrock-now never asks you to enter a code except in Git hosts › Sign in, right after you press it.';
+export const NEVER_ASKS = 'DevOS ADE never asks you to enter a code except in Git hosts › Sign in, right after you press it.';
 /** The label before the sandbox's words (SandboxWords.by): whose words they are. */
 export const SAID_BY = { git: 'git in the sandbox said:', claude: 'Claude Code in the sandbox said:', sandbox: 'the sandbox said:', agent: 'the agent said:' } as const;
 
@@ -190,7 +190,7 @@ export function signInLife(h: GitHostView, now = Date.now()): string {
 }
 // --- an access token imported from gh / glab (./stack git-host import) ---
 
-/** The CLI command that imports an existing gh / glab login (from the computer running bedrock-now). */
+/** The CLI command that imports an existing gh / glab login (from the computer running DevOS ADE). */
 export const importCommand = (kind: 'github' | 'gitlab', host = ''): string => {
   const h = (host || '').trim().toLowerCase();
   const extra = h && h !== (kind === 'github' ? 'github.com' : 'gitlab.com') && HOSTNAME.test(h) ? ` --host ${h}` : '';
@@ -211,7 +211,7 @@ export function importedReach(h: GitHostView, now = Date.now()): string {
   return `What this personal access token may do${scopes}, on every project your account can reach. glab uses the same token.${api}${until}`;
 }
 /** Whether Sign in is ready for a host the dialog names (blank: github.com / gitlab.com): that host's application ID
- *  is known (Settings, or bedrock-now's own) — another server takes its own. */
+ *  is known (Settings, or DevOS ADE's own) — another server takes its own. */
 export function signInReady(cfg: GitSignInConfig | null | undefined, kind: GitHostKind, host: string): boolean {
   if (!cfg || kind === 'other') return false;
   const h = (host || '').trim().toLowerCase();

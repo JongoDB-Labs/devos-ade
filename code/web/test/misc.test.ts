@@ -301,7 +301,7 @@ test('models: sessions run a model named in full — aliases mapped through /.bn
   assert.equal(fullModel('haiku', bn), 'claude-haiku-5-5');
   assert.equal(fullModel('Sonnet', bn), 'claude-sonnet-5-5');
   assert.equal(fullModel('claude-haiku-5-5', bn), 'claude-haiku-5-5');
-  assert.equal(fullModel('opus', bn), '', 'an alias bedrock-now does not map is never sent');
+  assert.equal(fullModel('opus', bn), '', 'an alias DevOS ADE does not map is never sent');
   assert.equal(fullModel('haiku', null), '');
   assert.equal(fullModel('', bn), '');
   for (const a of ['haiku', 'opusplan', 'opus[1m]', 'default', 'best']) assert.ok(isAlias(a), a);

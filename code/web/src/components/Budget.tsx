@@ -1,4 +1,4 @@
-// ⋯ › Budget for this session: an amount for the session shown (warnings at 50 % and 80 % of it from bedrock-now's spend
+// ⋯ › Budget for this session: an amount for the session shown (warnings at 50 % and 80 % of it from DevOS ADE's spend
 // logs, and at 100 %), an optional stop (Claude Code's own: it ends a turn after the request that reaches the budget, by
 // its own estimate; the page also stops a turn the spend logs show past it), and whether new sessions start with the
 // same budget. Off by default.
@@ -9,6 +9,7 @@ import { BUDGET_MAX, BUDGET_MIN, parseUsd, percent } from '../budget';
 import { sessionCost } from '../spend';
 import { money } from '../text';
 import { Dialog } from './ui';
+import { PRODUCT } from '../brand';
 
 export function BudgetDialog({ onClose }: { onClose: () => void }) {
   const v = useSel(store, (s) => activeView(s));
@@ -53,7 +54,7 @@ export function BudgetDialog({ onClose }: { onClose: () => void }) {
         <p class="muted">
           {v ? (
             <>
-              This session has cost {spent === null ? 'nothing known yet' : money(spent)} so far (bedrock-now's spend logs: what Bedrock billed).
+              This session has cost {spent === null ? 'nothing known yet' : money(spent)} so far ({PRODUCT}'s spend logs: what Bedrock billed).
               {cur && spent !== null ? ` That is ${Math.round(percent(spent, cur))} % of its ${money(cur.usd, 2)} budget.` : ''}
             </>
           ) : (

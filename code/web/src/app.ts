@@ -25,6 +25,7 @@ import { pageTitle, waitingSessions } from './groups';
 import { parseDeepLink, withoutDeepLink } from './deeplink';
 import { sessionCost } from './spend';
 import { RECHECK_TEXT, WORKSPACE, WORKSPACE_ID, goneTops, inProject, liveHostTops, mentionPath, projectFor, projectIdOk, projectOfCwd, readOnlyTops, settingsApplied, settingsStateFor, type Project, type SettingsState, type Where } from './projects';
+import { PRODUCT } from './brand';
 
 export interface Toast {
   id: number;
@@ -185,7 +186,7 @@ export interface GitState {
   /** a dialog of the panel's: Git hosts, Clone, a remote's URL, the branches */
   dialog: null | 'hosts' | 'clone' | 'remote' | 'branches';
   /** Git hosts (GET /api/git/hosts), loaded when the dialog opens; local: this page is on the computer running
-   *  bedrock-now (hosts, tokens and keys can be added) */
+   *  DevOS ADE (hosts, tokens and keys can be added) */
   hosts: api.GitHostsView | null;
   /** the recent uses of Git hosts (Activity) */
   events: GitEvent[];
@@ -466,12 +467,12 @@ export function activeView(s: AppState = get()): SessionView | undefined {
   return s.active ? s.views[s.active] : undefined;
 }
 
-/** The model to use for new sessions, by its full id: the browser's last choice, else bedrock-now's default, else the
+/** The model to use for new sessions, by its full id: the browser's last choice, else DevOS ADE's default, else the
  *  first (an alias remembered from before becomes its id). */
 export function defaultModel(s: AppState = get()): string {
   const m = s.models;
   const pref = fullModel(s.prefs.model, m);
-  // (the browser's last pick while bedrock-now still serves it, and Settings › Claude Code › Models lists it or "Show all" is on)
+  // (the browser's last pick while DevOS ADE still serves it, and Settings › Claude Code › Models lists it or "Show all" is on)
   const known = m?.models.find((x) => x.id === pref);
   if (pref && (!m || !m.models.length || (known && (known.listed || s.prefs.allModels)))) return pref;
   const def = fullModel(m?.defaultModel, m);
@@ -480,7 +481,7 @@ export function defaultModel(s: AppState = get()): string {
 }
 
 /** A model as it goes to the backend: its full id (an alias the page holds from a session or an older version is
- *  mapped; one bedrock-now does not map is left out, so the backend's default — never an alias — applies). */
+ *  mapped; one DevOS ADE does not map is left out, so the backend's default — never an alias — applies). */
 function sendModel(m: string | null | undefined, s: AppState = get()): string | undefined {
   return fullModel(m, s.models) || undefined;
 }
@@ -613,7 +614,7 @@ function addNotice(id: string, text: string, level: 'info' | 'warn' | 'error' = 
 
 /** Sessions the page stopped at their budget in this turn (one interrupt per turn). */
 const budgetStopped = new Set<string>();
-/** The session's spend (bedrock-now's spend logs) moved from `before` to `total`: a warning when it crossed 50 %, 80 %
+/** The session's spend (DevOS ADE's spend logs) moved from `before` to `total`: a warning when it crossed 50 %, 80 %
  *  or all of its budget; with the stop on, a turn still running at the budget is interrupted here too (the backend's
  *  stop is Claude Code's own estimate, and a budget changed mid-turn applies from its next start). */
 function onSpend(id: string, before: number | null, total: number): void {
@@ -621,7 +622,7 @@ function onSpend(id: string, before: number | null, total: number): void {
   const b = v?.budget ?? null;
   if (!v || !b) return;
   const level = crossed(before, total, b);
-  const of = `its ${money(b.usd, 2)} budget (${money(total)} so far, from bedrock-now's spend logs)`;
+  const of = `its ${money(b.usd, 2)} budget (${money(total)} so far, from ${PRODUCT}'s spend logs)`;
   if (level === 50) addNotice(id, `This session has used half of ${of}.`, 'info');
   else if (level === 80) addNotice(id, `This session has used 80 % of ${of}.`, 'warn');
   else if (level === 100) {
@@ -631,7 +632,7 @@ function onSpend(id: string, before: number | null, total: number): void {
   if (b.hard && total >= b.usd && (v.state === 'busy' || v.state === 'starting') && !budgetStopped.has(id)) {
     budgetStopped.add(id);
     socket.send({ type: 'interrupt', session: id });
-    addNotice(id, `Stopped: this session's spend reached its ${money(b.usd, 2)} budget (${money(total)}, from bedrock-now's spend logs).`, 'warn');
+    addNotice(id, `Stopped: this session's spend reached its ${money(b.usd, 2)} budget (${money(total)}, from ${PRODUCT}'s spend logs).`, 'warn');
   }
 }
 
@@ -1258,7 +1259,7 @@ export function noteProjectSettings(id: string, state: SettingsState): void {
   set((x) => ({ ...x, projects: x.projects.map((p) => (p.id === id && !p.workspace && p.settings !== state ? { ...p, settings: state } : p)) }));
   if (state === 'recheck') sayRecheck(get().projects);
 }
-// A project trusted before bedrock-now read a project's settings the way it does now: said once per project and epoch
+// A project trusted before DevOS ADE read a project's settings the way it does now: said once per project and epoch
 // (the key names it: a project said for the last one is said again) — this browser remembers it (and says it again
 // when it cannot) — with the way to look at them again
 const RECHECK_SAID = 'bn.recheck-said.3';
@@ -1586,7 +1587,7 @@ export async function sendPrompt(text: string, images: ImageBlock[]): Promise<bo
     showSessions();
     return true;
   }
-  // /model with a model bedrock-now serves: switched by its full id (Claude Code given an alias may run another model)
+  // /model with a model DevOS ADE serves: switched by its full id (Claude Code given an alias may run another model)
   const picked = images.length ? null : modelCommand(t, get().models);
   if (picked) {
     if (await setModel(picked)) toast(`Model: ${get().models?.models.find((m) => m.id === picked)?.name ?? picked}`, 'ok');
@@ -1665,7 +1666,7 @@ export async function setModel(name: string): Promise<boolean> {
   }
   const model = sendModel(name);
   if (!model) {
-    toast(`"${label(name, 40)}" is not a model bedrock-now serves here.`, 'error');
+    toast(`"${label(name, 40)}" is not a model ${PRODUCT} serves here.`, 'error');
     return false;
   }
   const prevPref = get().prefs.model;
@@ -1690,7 +1691,7 @@ export async function setModel(name: string): Promise<boolean> {
 let queuedMode: { session: string; mode: Mode } | null = null;
 export function setMode(mode: Mode): void {
   if (mode === 'auto' && !autoOk()) {
-    toast('Auto mode is off: turn it on in Settings › Claude Code, from the computer running bedrock-now.', 'error');
+    toast(`Auto mode is off: turn it on in Settings › Claude Code, from the computer running ${PRODUCT}.`, 'error');
     return;
   }
   const v = activeView();
@@ -1704,7 +1705,7 @@ export function setMode(mode: Mode): void {
   }
   if (mode === 'bypassPermissions') {
     if (!get().server?.allowBypass) {
-      toast('Bypass permissions is off: turn it on in Settings › Claude Code, from the computer running bedrock-now.', 'error');
+      toast(`Bypass permissions is off: turn it on in Settings › Claude Code, from the computer running ${PRODUCT}.`, 'error');
       return;
     }
     if (v?.mode !== 'bypassPermissions') {

@@ -1,4 +1,4 @@
-// Cost per turn and per session from LiteLLM's spend logs (`/.bn/spend`), which is what bedrock-now bills — not the
+// Cost per turn and per session from LiteLLM's spend logs (`/.bn/spend`), which is what DevOS ADE bills — not the
 // CLI's own estimate, which can be wrong or (from a hostile sandbox) anything. Rows carry only a start time, so each
 // row belongs to the turn whose [prompt, end] interval contains its start time, or else the nearest one (clock skew
 // between the browser and LiteLLM moves rows a little; the session total is right either way).

@@ -51,6 +51,7 @@ import { Cmd, Dialog, Dropdown, MenuItem } from './ui';
 import { ImportSheet, Suggestions, TOOL_BADGE, TOOL_LABEL } from './Import';
 import { SetupSheet } from './Setup';
 import { modelLabel } from './Pickers';
+import { PRODUCT } from '../brand';
 
 function StateDot({ v }: { v: SessionView | undefined }) {
   if (!v) return null;
@@ -115,7 +116,7 @@ function Row(props: { id: string; title: string; sub: string; view?: SessionView
               </span>
             )}
             {props.imported && (
-              <span class="imp-badge" title={`Copied from ${TOOL_LABEL[props.imported.tool]} on the computer running bedrock-now${props.imported.forked ? ' (as a new session)' : ''}`}
+              <span class="imp-badge" title={`Copied from ${TOOL_LABEL[props.imported.tool]} on the computer running ${PRODUCT}${props.imported.forked ? ' (as a new session)' : ''}`}
                 data-testid="session-imported">{TOOL_BADGE[props.imported.tool]}</span>
             )}
             {props.title || 'Untitled session'}
@@ -678,7 +679,7 @@ function ComputerFolder({ portal }: { portal: string | null }) {
   return (
     <span class="np-fields np-computer" data-testid="new-project-computer-info">
       <span class="small">
-        It is added on the computer running bedrock-now: in Settings › Claude Code › Project folders, <b>Choose on this computer…</b> opens a folder chooser
+        It is added on the computer running {PRODUCT}: in Settings › Claude Code › Project folders, <b>Choose on this computer…</b> opens a folder chooser
         on its screen — or in a terminal there:
       </span>
       <Cmd text="./stack project add ~/src/my-app" testid="new-project-computer-cmd" />
@@ -687,7 +688,7 @@ function ComputerFolder({ portal }: { portal: string | null }) {
         folder (git hooks, .envrc, VS Code tasks, npm scripts). Read-only for Claude is offered (--read-only).
       </span>
       <span class="muted small">
-        The sandbox restarts to see it (~15 s): open sessions resume with your next prompt.{portal ? '' : ' (Settings is on the bedrock-now portal.)'}
+        The sandbox restarts to see it (~15 s): open sessions resume with your next prompt.{portal ? '' : ` (Settings is on the ${PRODUCT} portal.)`}
       </span>
     </span>
   );

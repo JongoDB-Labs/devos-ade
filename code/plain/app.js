@@ -200,7 +200,7 @@
     costTimer = setTimeout(next, 4000);
   }
 
-  // --- models (bedrock-now's, with its prices) ---
+  // --- models (DevOS ADE's, with its prices) ---
   async function loadModels() {
     try {
       const r = await api("/.bn/models");

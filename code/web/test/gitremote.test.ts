@@ -8,7 +8,7 @@ import { ApiError, normGitFileDiff, normGitLog, normGitReview, normGitStatus, no
 import type { GitHostView } from '../src/types';
 
 const host = (over: Record<string, unknown> = {}) => ({ id: 'h_0123456789ab', kind: 'github', label: 'GitHub', host: 'github.com', port: null, auth: 'ssh', username: 'git',
-  publicKey: `ssh-ed25519 ${'A'.repeat(68)} bedrock-now-GitHub`, fingerprint: 'SHA256:x', knownHosts: [], builtinHostKeys: true, claude: false, ...over });
+  publicKey: `ssh-ed25519 ${'A'.repeat(68)} devos-ade-GitHub`, fingerprint: 'SHA256:x', knownHosts: [], builtinHostKeys: true, claude: false, ...over });
 
 test('a host: only what the page may show (a token or private key sent by mistake is dropped), names checked', () => {
   const h = normGitHost({ ...host(), token: 'should-never-be-here', privatePem: ['-----BEGIN', 'PRIVATE KEY-----'].join(' '), label: 'Git\nHub‮' }) as GitHostView;
@@ -117,16 +117,16 @@ test('an imported login: where it came from, its account and scopes (never a tok
 test('a signed-in host: its sign-in as the page may show it (never a token), the flow checked, links only to the host itself', () => {
   const tok = ['secret', 'never', 'here'].join('-');
   const h = normGitHost(host({ auth: 'oauth', username: 'x-access-token', publicKey: null, hasToken: true,
-    oauth: { provider: 'github', source: 'signed-in', clientId: 'Iv23abc', account: 'octo', scopes: ['repo', 'x y'], app: 'github-app', appSlug: 'bedrock-now', accessToken: tok, refreshToken: tok,
+    oauth: { provider: 'github', source: 'signed-in', clientId: 'Iv23abc', account: 'octo', scopes: ['repo', 'x y'], app: 'github-app', appSlug: 'devos-ade', accessToken: tok, refreshToken: tok,
       installations: [{ account: 'octo', selection: 'all' }, { account: '<b>', selection: 'all' }], expiresAt: Date.now() + 3600000, refreshable: true, needsSignIn: false } })) as GitHostView;
   assert.equal(h.auth, 'oauth');
   assert.ok(!JSON.stringify(h).includes(tok), 'a token sent by mistake is dropped');
   assert.deepEqual(h.oauth?.installations, [{ account: 'octo', selection: 'all' }]);
-  assert.equal(h.oauth?.appSlug, 'bedrock-now');
-  assert.equal(chooseRepos(h), 'https://github.com/apps/bedrock-now/installations/new');
+  assert.equal(h.oauth?.appSlug, 'devos-ade');
+  assert.equal(chooseRepos(h), 'https://github.com/apps/devos-ade/installations/new');
   assert.equal(chooseRepos({ ...h, host: 'ghe.example', oauth: { ...h.oauth!, appSlug: null } }), 'https://ghe.example/settings/installations');
-  assert.equal(chooseRepos({ ...h, host: 'ghe.example' }), 'https://ghe.example/github-apps/bedrock-now/installations/new');
-  assert.match(signInReach(h), /^The repositories where the bedrock-now app is installed: octo \(all repositories\)/);
+  assert.equal(chooseRepos({ ...h, host: 'ghe.example' }), 'https://ghe.example/github-apps/devos-ade/installations/new');
+  assert.match(signInReach(h), /^The repositories where the devos-ade app is installed: octo \(all repositories\)/);
   assert.match(signInLife(h), /^Its token lasts (1 h|60 min|59 min) more and renews itself when it is used near its end\.$/);
   const ended = normGitHost(host({ auth: 'oauth', oauth: { provider: 'gitlab', source: 'signed-in', needsSignIn: true, why: 'revoked' } })) as GitHostView;
   assert.equal(signInLife(ended), 'The sign-in ended (revoked).');
@@ -196,7 +196,7 @@ test('the sandbox\'s own words: only from the server\'s said (never the message)
   assert.deepEqual(SAID_BY, { git: 'git in the sandbox said:', claude: 'Claude Code in the sandbox said:', sandbox: 'the sandbox said:', agent: 'the agent said:' });
   // an agent's words (a tool's title, its error): labelled as the agent's
   assert.deepEqual(saidOf(new ApiError(502, 'x', { said: hostile, saidBy: 'agent' })), { said: hostile, by: 'agent' });
-  assert.equal(NEVER_ASKS, 'bedrock-now never asks you to enter a code except in Git hosts › Sign in, right after you press it.');
+  assert.equal(NEVER_ASKS, 'DevOS ADE never asks you to enter a code except in Git hosts › Sign in, right after you press it.');
 });
 
 test('the sandbox\'s words on every route and over the WebSocket: whose they are (the sandbox\'s, Claude Code\'s), apart', () => {

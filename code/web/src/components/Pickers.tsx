@@ -1,5 +1,5 @@
-// Model / mode / effort pickers and the cost and context meters. Model names and prices come from bedrock-now
-// (/.bn/models), never from the CLI; costs come from bedrock-now's spend logs (/.bn/spend).
+// Model / mode / effort pickers and the cost and context meters. Model names and prices come from DevOS ADE
+// (/.bn/models), never from the CLI; costs come from DevOS ADE's spend logs (/.bn/spend).
 import { useState } from 'preact/hooks';
 import { useSel } from '../store';
 import { store, setModel, setMode, setEffort, activeView, defaultModel, refreshSpend, autoOk, setPrefs, toast, switchHarness, harnessName, planOf, refreshHarnesses } from '../app';
@@ -12,6 +12,7 @@ import { MODE_INFO, offeredModes, startMode } from '../modes';
 import { label, money, perMtok, tokens } from '../text';
 import { Dropdown, MenuItem } from './ui';
 import { Icon } from './icons';
+import { PRODUCT } from '../brand';
 
 /** ~30k tokens are written to the prompt cache on a new session or a model switch (measured on Bedrock). */
 const CACHE_TOKENS = 30_000;
@@ -22,7 +23,7 @@ export function currentModel(models: BnModel[], current: string): BnModel | unde
   return findModel(models, current);
 }
 
-/** bedrock-now's name for a model the session reports, or '' (never the reported string itself). */
+/** DevOS ADE's name for a model the session reports, or '' (never the reported string itself). */
 export function modelLabel(models: BnModel[] | undefined, reported: string): string {
   return (models && currentModel(models, reported)?.name) || '';
 }
@@ -63,7 +64,7 @@ function WhoAnswers({ current, close }: { current: Harness; close: () => void })
       <div class="mp-group-head">Who answers</div>
       <MenuItem checked={current === 'bedrock'} testid="harness-bedrock" onSelect={() => { close(); if (current !== 'bedrock') void switchHarness('bedrock'); }}>
         <span class="mi-title">Claude Code on Bedrock</span>
-        <span class="mi-desc">the models below, billed as bedrock-now bills them</span>
+        <span class="mi-desc">the models below, billed as {PRODUCT} bills them</span>
       </MenuItem>
       {(list ?? []).map((h) => {
         const st = harnessState(h);
@@ -138,7 +139,7 @@ function BedrockModelPicker({ compact }: { compact?: boolean }) {
   const signal = useSel(store, (s) => s.modelMenu);
   const [query, setQuery] = useState('');
   const models = bn?.models ?? [];
-  // the sandbox reports the session's model (init); only bedrock-now's own names are shown in the page's chrome
+  // the sandbox reports the session's model (init); only DevOS ADE's own names are shown in the page's chrome
   const cur = currentModel(models, viewModel) ?? currentModel(models, prefModel);
   const current = cur?.id ?? '';
   const name = cur?.name ?? (models.length ? 'Choose a model' : 'Model');
@@ -265,7 +266,7 @@ function BedrockModelPicker({ compact }: { compact?: boolean }) {
             </label>
           )}
           <div class="panel-note">
-            Prices per million input / output tokens, as bedrock-now bills them; free models cost $0. Claude Code speaks Anthropic's API with tools: other
+            Prices per million input / output tokens, as {PRODUCT} bills them; free models cost $0. Claude Code speaks Anthropic's API with tools: other
             providers' models answer through LiteLLM's translation, and tool use, thinking, prompt caching and long contexts vary —{' '}
             <strong>works</strong> means a tool-using turn was checked, <strong>chat only</strong> that it cannot use tools.
             {hasSession
@@ -340,7 +341,7 @@ export function ModePicker({ compact }: { compact?: boolean }) {
           {!agent && (!allowAuto || !allowBypass) && (
             <div class="panel-note" data-testid={allowBypass ? 'mode-auto-off' : 'mode-bypass-off'}>
               {!allowAuto && !allowBypass ? 'Auto and Bypass permissions are off' : !allowAuto ? 'Auto is off' : 'Bypass permissions is off'}. Settings › Claude Code turns{' '}
-              {!allowAuto && !allowBypass ? 'them' : 'it'} on (from the computer running bedrock-now).
+              {!allowAuto && !allowBypass ? 'them' : 'it'} on (from the computer running {PRODUCT}).
             </div>
           )}
           <div class="panel-note">
@@ -442,7 +443,7 @@ export function CostMeter() {
     <button
       type="button"
       class={`meter-btn${level}`}
-      title={`Cost from bedrock-now's spend logs (what Bedrock or OpenRouter billed; a free model costs $0). Turns appear a few seconds after they end. Click to refresh.${v.budget ? `\nThis session's budget: ${money(v.budget.usd, 2)}${v.budget.hard ? ', stop on' : ' (warnings only)'} — ⋯ › Budget.` : ''}${key}`}
+      title={`Cost from ${PRODUCT}'s spend logs (what Bedrock or OpenRouter billed; a free model costs $0). Turns appear a few seconds after they end. Click to refresh.${v.budget ? `\nThis session's budget: ${money(v.budget.usd, 2)}${v.budget.hard ? ', stop on' : ' (warnings only)'} — ⋯ › Budget.` : ''}${key}`}
       onClick={() => void refreshSpend(v.id)}
       data-testid="cost"
     >

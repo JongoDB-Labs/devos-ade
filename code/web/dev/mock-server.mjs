@@ -34,7 +34,7 @@
 // glab's login, its account and scopes).
 // /__mock/git-signin?action=approve|deny|expire|end&account= plays the user (and the provider) for the Git hosts
 // dialog's sign-in in progress: approved (as account), declined, expired; end: a signed-in host's sign-in ended (Sign in
-// again); /__mock/git-signin?app=0 is a stack with no GitHub App set up (bedrock-now's own is the default, as in
+// again); /__mock/git-signin?app=0 is a stack with no GitHub App set up (DevOS ADE's own is the default, as in
 // oauth.mjs: this plays a Settings value that is not one, or a build without it).
 // /__mock/git-said?text= is a hostile sandbox: push, pull, fetch, clone, Test connection, stage and commit fail in its
 // words (as main.mjs answers them: a fixed sentence of ours, its words apart — said); /__mock/git-said ends it.
@@ -290,7 +290,7 @@ const outcomeOf = (o) => (o && typeof o.message === 'string' && o.failureCode !=
 // a hostile sandbox's words (/__mock/git-said): its failures answered as main.mjs does — a fixed sentence of ours, its
 // words apart (said) — never in a sentence of ours
 let gitSaid = '';
-const NEVER_ASKS = 'bedrock-now never asks you to enter a code except in Git hosts › Sign in, right after you press it.';
+const NEVER_ASKS = 'DevOS ADE never asks you to enter a code except in Git hosts › Sign in, right after you press it.';
 const GIT_SAID = 'git in the sandbox refused';
 const sandboxWords = (said) => ({ error: GIT_SAID, said, saidBy: 'git', neverAsks: NEVER_ASKS });
 const hostId = () => `h_${crypto.randomBytes(6).toString('hex')}`;
@@ -302,13 +302,13 @@ const mockHost = (scheme) => gitHostsMock.find((h) => h.host === 'github.com' &&
 // Sign in with GitHub / GitLab: the flows (the device code never leaves the "code container"), and whether an app is set
 const signInFlows = new Map();
 let signInApp = true;
-const signInConfig = () => ({ github: { host: 'github.com', clientId: signInApp ? 'Iv23li9eDUUgicar7aTx' : null, appSlug: signInApp ? 'bedrock-now' : null, configured: signInApp },
+const signInConfig = () => ({ github: { host: 'github.com', clientId: signInApp ? 'Iv23li9eDUUgicar7aTx' : null, appSlug: signInApp ? 'devos-ade' : null, configured: signInApp },
   gitlab: { host: 'gitlab.com', clientId: null, configured: false } });
 const flowView = (f) => ({ flowId: f.id, provider: f.provider, host: f.host, port: null, label: f.label, state: f.state, userCode: f.state === 'pending' ? f.userCode : null,
   verificationUri: f.provider === 'github' ? `https://${f.host}/login/device` : `https://${f.host}/oauth/device`, verificationUriComplete: null, expiresAt: f.expiresAt, interval: 5,
   error: f.error ?? null, gitHost: f.gitHost ? hostView(f.gitHost) : null, again: Boolean(f.hostId) });
 const oauthOf = (provider, account) => ({ provider, source: 'signed-in', clientId: provider === 'github' ? 'Iv23li9eDUUgicar7aTx' : 'gl-mock-app', account,
-  scopes: provider === 'github' ? [] : ['read_repository', 'write_repository', 'read_user'], app: provider === 'github' ? 'github-app' : null, appSlug: provider === 'github' ? 'bedrock-now' : null,
+  scopes: provider === 'github' ? [] : ['read_repository', 'write_repository', 'read_user'], app: provider === 'github' ? 'github-app' : null, appSlug: provider === 'github' ? 'devos-ade' : null,
   installations: provider === 'github' ? [{ account, selection: 'selected' }] : [], expiresAt: Date.now() + 8 * 3600000, refreshExpiresAt: Date.now() + 180 * 86400000, refreshable: true,
   needsSignIn: false, why: null, signedInAt: Date.now(), refreshedAt: null });
 const MOCK_URL = 'https://github.com/mock/app.git';
@@ -370,7 +370,7 @@ async function gitRemotePanel(p, m, url, req) {
     if (!host) return [400, { error: 'a host name, please' }];
     const label = b.label || (host === 'github.com' ? 'GitHub' : host === 'gitlab.com' ? 'GitLab' : host);
     const h = { id: hostId(), kind: b.kind, label, host, port: b.port ?? null, auth: b.auth, username: b.username || (b.auth === 'ssh' ? 'git' : b.kind === 'gitlab' ? 'oauth2' : 'x-access-token'), createdAt: Date.now() };
-    if (b.auth === 'ssh') { h.publicKey = `ssh-ed25519 ${Buffer.from(`\0\0\0\x0bssh-ed25519\0\0\0\x20${crypto.randomBytes(32).toString('binary')}`, 'binary').toString('base64')} bedrock-now-${label}`; h.fingerprint = `SHA256:${crypto.randomBytes(32).toString('base64').replace(/=+$/, '')}`; }
+    if (b.auth === 'ssh') { h.publicKey = `ssh-ed25519 ${Buffer.from(`\0\0\0\x0bssh-ed25519\0\0\0\x20${crypto.randomBytes(32).toString('binary')}`, 'binary').toString('base64')} devos-ade-${label}`; h.fingerprint = `SHA256:${crypto.randomBytes(32).toString('base64').replace(/=+$/, '')}`; }
     gitHostsMock.push(h);
     gitEvent({ action: 'host', host: label, target: host, text: `connected with ${b.auth === 'token' ? 'an access token' : 'a new SSH key'}` });
     return [200, { host: hostView(h) }];
@@ -1367,7 +1367,7 @@ async function slash(s, cmd) {
   if (name === 'context') {
     s.emit({ type: 'local', text: `## Context usage\n\n**claude-${s.model}-5-5** · 31.2k / 200k tokens (16%)\n\n| Category | Tokens | % |\n|---|--:|--:|\n| System prompt | 3.1k | 1.6% |\n| System tools | 14.8k | 7.4% |\n| MCP tools | 2.2k | 1.1% |\n| Memory files | 0.9k | 0.5% |\n| Messages | 10.2k | 5.1% |\n| Free space | 168.8k | 84.4% |` });
   } else if (name === 'cost') {
-    s.emit({ type: 'local', text: `Total cost (CLI estimate): $0.0123\nTotal duration (API): 14.2s\nTotal code changes: 4 lines added, 1 line removed\n\nbedrock-now's own figure is in the cost meter.` });
+    s.emit({ type: 'local', text: `Total cost (CLI estimate): $0.0123\nTotal duration (API): 14.2s\nTotal code changes: 4 lines added, 1 line removed\n\nDevOS ADE's own figure is in the cost meter.` });
   } else if (name === 'model') {
     if (rest[0]) s.model = rest[0];
     s.emit({ type: 'local', text: `Set model to **${s.model}** (${s.resolvedModel()})` });
@@ -1813,7 +1813,7 @@ function importPreviewOf(r, host, thinking, outputs = false) {
     bad: 0, rewritten: 0, hidden: host.startsWith('/projects/'), parts: 1, left: r.tool === 'claude' && outputs ? [{ part: 'tool-results/image.bin', why: 'not text (not UTF-8)' }] : [],
     outputs: { included: outputs, left: outputs ? 0 : left, bytes: outputs ? 0 : left * 6144, dropped: r.tool === 'claude' ? 2 : 0 }, format: r.format, version: r.version ?? null, again: null,
     events: [{ type: 'user', text: `${r.first} — and deploy with [REDACTED:aws-key-id]`, uuid: crypto.randomUUID() }, { type: 'tool_use', id: 'toolu_01', name: 'Read', input: { file_path: `${host}/src/login.ts` } },
-      { type: 'tool_result', id: 'toolu_01', text: outputs ? 'export const login = () => true;' : '[tool output left out by bedrock-now — 6.0 KB; re-import with "Include tool outputs" to bring it]', isError: false }, { type: 'text', text: HOSTILE_MODE ? hostileMarkdown().slice(0, 2000) : 'Fixed: **login** works again.', model: 'claude-sonnet-4-5' }],
+      { type: 'tool_result', id: 'toolu_01', text: outputs ? 'export const login = () => true;' : '[tool output left out by DevOS ADE — 6.0 KB; re-import with "Include tool outputs" to bring it]', isError: false }, { type: 'text', text: HOSTILE_MODE ? hostileMarkdown().slice(0, 2000) : 'Fixed: **login** works again.', model: 'claude-sonnet-4-5' }],
     total: 4, _row: r };
 }
 function importRequest(action, project, then) {
@@ -1842,7 +1842,7 @@ async function bnSessions(req, res) {
   const hostOf = (id) => hostMock.find((x) => x.id === id && !x.gone);
   const st = (id) => { if (!importMock.has(id)) importMock.set(id, { index: null, staged: new Map() }); return importMock.get(id); };
   if (typeof b.password !== 'string' || b.password !== 'correct horse') return json(res, 403, { error: 'That password is not right. It is the portal password (PORTAL_PASSWORD in .env).' });
-  if ((b.action === 'sessions-scan' || b.action === 'sessions-suggest') && remote) return json(res, 403, { error: 'Only on the computer running bedrock-now: a look at its sessions is allowed in a dialog on its screen (or ./stack sessions in a terminal there).' });
+  if ((b.action === 'sessions-scan' || b.action === 'sessions-suggest') && remote) return json(res, 403, { error: 'Only on the computer running DevOS ADE: a look at its sessions is allowed in a dialog on its screen (or ./stack sessions in a terminal there).' });
   if (!importHelper) return json(res, 503, { error: 'The update helper is not running on the computer: in a terminal there, ./stack sessions (./stack helper install keeps it running).' });
   if (b.action === 'sessions-scan') {
     const h = hostOf(b.project);
@@ -1861,7 +1861,7 @@ async function bnSessions(req, res) {
       { path: '/home/you/src/tools', claude: 2, 'claude-bedrock': 0, last: Date.now() }]; }) });
   }
   if (b.action === 'setup-scan' || b.action === 'setup-fetch') {
-    if (remote) return json(res, 403, { error: 'Only on the computer running bedrock-now: your setup there is read only after you allowed it in a dialog on its screen (or ./stack sessions config import in a terminal there).' });
+    if (remote) return json(res, 403, { error: 'Only on the computer running DevOS ADE: your setup there is read only after you allowed it in a dialog on its screen (or ./stack sessions config import in a terminal there).' });
     if (b.action === 'setup-scan') {
       if (!['all', 'claude', 'claude-bedrock', 'git'].includes(b.tool) || !(b.project === '-' || /^p_[0-9a-f]{8}$/.test(String(b.project)))) return json(res, 400, { error: 'bad request' });
       return json(res, 202, { request: importRequest('setup-scan', null, () => { setupMock.index = { scan: crypto.randomBytes(16).toString('hex'), at: Date.now(), consent: 'once', fetchable: true,
@@ -2917,7 +2917,7 @@ function bn(req, res, url) {
 }
 
 const TERMINAL_HTML = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/__terminal.css"><title>terminal (mock)</title></head>
-<body><pre>bedrock-now terminal (mock: ttyd + tmux live here)
+<body><pre>DevOS ADE terminal (mock: ttyd + tmux live here)
 
 coder@sandbox:/workspace$ claude --resume
 coder@sandbox:/workspace$ npm test
@@ -3243,7 +3243,7 @@ server.on('upgrade', (req, sock, head) => {
           // "Allow, and switch to Auto": the switch first (Settings must allow Auto), then the command once
           if (m.decision === 'once_auto') {
             const rq = typeof m.req === 'string' ? m.req : undefined;
-            const no = !allowAuto ? 'Auto mode is off: turn it on in Settings › Claude Code, from the computer running bedrock-now'
+            const no = !allowAuto ? 'Auto mode is off: turn it on in Settings › Claude Code, from the computer running DevOS ADE'
               : p.msg.tool !== 'Bash' || p.msg.reasonType === 'rule' ? 'this prompt cannot switch to Auto' : !['default', 'acceptEdits'].includes(x.mode) ? '"Allow, and switch to Auto" is for Manual and Accept edits' : '';
             if (no) return rq ? reply({ type: 'reply', req: rq, ok: false, error: no }) : refuse(no);
             x.mode = 'auto';
@@ -3341,8 +3341,8 @@ server.on('upgrade', (req, sock, head) => {
           // as the backend: Bypass only where Settings allow it and with the page's confirmation; Auto where they allow it
           const mode = m.mode === 'dontAsk' ? 'readOnly' : m.mode;
           const no = !['readOnly', 'plan', 'default', 'acceptEdits', 'bypassPermissions', 'auto'].includes(mode) ? 'bad mode'
-            : mode === 'auto' && !allowAuto ? 'Auto mode is off: turn it on in Settings › Claude Code, from the computer running bedrock-now'
-              : mode === 'bypassPermissions' && !allowBypass ? 'Bypass permissions is off: turn it on in Settings › Claude Code, from the computer running bedrock-now'
+            : mode === 'auto' && !allowAuto ? 'Auto mode is off: turn it on in Settings › Claude Code, from the computer running DevOS ADE'
+              : mode === 'bypassPermissions' && !allowBypass ? 'Bypass permissions is off: turn it on in Settings › Claude Code, from the computer running DevOS ADE'
                 : mode === 'bypassPermissions' && m.confirmed !== true ? 'Bypass permissions needs your confirmation in the Code page (confirmed: true)' : '';
           if (no) {
             if (req) reply({ type: 'reply', req, ok: false, error: no });

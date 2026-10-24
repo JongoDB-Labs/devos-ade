@@ -20,6 +20,7 @@ import { Icon, Spinner } from './icons';
 import { MarkdownView } from './MarkdownView';
 import { SandboxSaid } from './Said';
 import { Cmd, Dialog } from './ui';
+import { PRODUCT } from '../brand';
 
 export const TOOL_LABEL: Record<ImportTool, string> = { claude: 'Claude Code', 'claude-bedrock': 'claude-bedrock' };
 export const TOOL_BADGE: Record<ImportTool, string> = { claude: 'CC', 'claude-bedrock': 'CB' };
@@ -31,7 +32,7 @@ export const WHY: Record<string, string> = {
   limit: 'The helper asks at most once a minute (10 times a day): try again in a moment.',
   denied: 'Not allowed on the computer: nothing was read.',
   'no-screen': 'No dialog can be shown on the computer (no screen): in a terminal there, ./stack sessions import.',
-  remote: 'Only on the computer running bedrock-now: a look is allowed in a dialog on its screen.',
+  remote: `Only on the computer running ${PRODUCT}: a look is allowed in a dialog on its screen.`,
   'no-consent': 'Reading them is not allowed now (an Allow once lasts an hour; Always can be taken back): look again.',
   'no-project': 'That folder is not added as a project (any more) on the computer.',
   'no-store': 'There is no store of sessions for this folder on the computer.',
@@ -152,7 +153,7 @@ export function ImportSheet({ id, onClose }: { id: string; onClose: () => void }
         <div class="imp-step" data-testid="import-step-look">
           <p>
             Your sessions of <b>Claude Code</b> (<code>~/.claude</code>) and <b>claude-bedrock</b> (<code>~/.claude-bedrock</code>) in this folder on the computer
-            running bedrock-now: <code data-testid="import-folder">{where}</code>.
+            running {PRODUCT}: <code data-testid="import-folder">{where}</code>.
           </p>
           <p class="small">
             The update helper on the computer asks you there first, in a dialog on its screen — <b>Allow once</b>, or <b>Always for this folder</b> — then lists
@@ -167,7 +168,7 @@ export function ImportSheet({ id, onClose }: { id: string; onClose: () => void }
           )}
           {remote || !view.local ? (
             <p class="small warn-text" data-testid="import-remote">
-              Only on the computer running bedrock-now: a look is allowed there, in a dialog on its screen. From here you can read and copy sessions of a look
+              Only on the computer running {PRODUCT}: a look is allowed there, in a dialog on its screen. From here you can read and copy sessions of a look
               already allowed there.
             </p>
           ) : !helperOk ? (
@@ -549,14 +550,14 @@ export function Suggestions() {
                 </span>
                 <details class="small">
                   <summary data-testid="suggestion-add">Add…</summary>
-                  Add it on the computer running bedrock-now: Settings › Claude Code › Project folders › <b>Choose on this computer…</b>, or in a terminal there:
+                  Add it on the computer running {PRODUCT}: Settings › Claude Code › Project folders › <b>Choose on this computer…</b>, or in a terminal there:
                   <Cmd text={`./stack project add '${r.path.replace(/'/g, `'\\''`)}'`} testid="suggestion-cmd" />
                 </details>
               </li>
             ))}
           </ul>
           {remote ? (
-            <div class="side-note small">Looking for them is asked only on the computer running bedrock-now.</div>
+            <div class="side-note small">Looking for them is asked only on the computer running {PRODUCT}.</div>
           ) : (
             <div class="imp-ask small">
               <span>The names of the folders Claude Code and claude-bedrock keep sessions for (no session is read; the computer asks you first):</span>

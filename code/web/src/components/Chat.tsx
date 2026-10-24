@@ -13,6 +13,7 @@ import { PermissionCard } from './PermissionCard';
 import { Composer } from './Composer';
 import { BypassBanner } from './Bypass';
 import { Icon, Spinner } from './icons';
+import { PRODUCT } from '../brand';
 
 function TaskList() {
   const v = useSel(store, (s) => activeView(s));
@@ -126,7 +127,7 @@ function BudgetBanner() {
       <Icon name="alert" size={15} />
       <span>
         The Code page's key (claude-code-terminal) reached its budget{figures}
-        {when ? `, until ${when}` : ''}. Raise BUDGET_TERMINAL in Settings (from the computer running bedrock-now), or wait for the reset.
+        {when ? `, until ${when}` : ''}. Raise BUDGET_TERMINAL in Settings (from the computer running {PRODUCT}), or wait for the reset.
       </span>
     </div>
   );

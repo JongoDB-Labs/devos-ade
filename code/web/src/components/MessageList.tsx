@@ -1,5 +1,5 @@
 // The conversation: user prompts, Claude's answers (markdown), thinking (collapsed), tool cards (Task calls hold
-// their subagent's calls), local command output, the turn footer with its cost from bedrock-now's spend logs, and
+// their subagent's calls), local command output, the turn footer with its cost from DevOS ADE's spend logs, and
 // notices. Sticks to the bottom while you are at the bottom.
 import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
@@ -19,6 +19,7 @@ import { otherModels } from '../models';
 import { Icon, Spinner } from './icons';
 import { memo } from './ui';
 import { splitContext } from '../mentions';
+import { PRODUCT } from '../brand';
 
 const PAGE = 300;
 
@@ -219,7 +220,7 @@ const Thinking = memo(function Thinking({ it }: { it: Extract<Item, { t: 'thinki
 function ResultLine({ it, cost, plan }: { it: Extract<Item, { t: 'result' }>; cost: number | null | undefined; plan: boolean }) {
   const interrupted = it.subtype === 'error_during_execution';
   const bn = useSel(store, (s) => s.models?.models);
-  // what ran when it is not the model picked (Claude Code chose another one): bedrock-now's name for it, never the
+  // what ran when it is not the model picked (Claude Code chose another one): DevOS ADE's name for it, never the
   // string the sandbox reported
   const other = otherModels(it.models, it.picked);
   return (
@@ -239,7 +240,7 @@ function ResultLine({ it, cost, plan }: { it: Extract<Item, { t: 'result' }>; co
       )}
       {/* (a turn on one of your subscriptions: its plan's own limits, never dollars — no Bedrock spend to show) */}
       {plan ? <span class="turn-cost" title="On your subscription: its plan's own limits, no Bedrock spend" data-testid="turn-plan">on your subscription</span>
-        : <span class="turn-cost" title="From bedrock-now's spend logs (what this turn cost on Bedrock)">{cost === undefined ? '' : money(cost)}</span>}
+        : <span class="turn-cost" title={`From ${PRODUCT}'s spend logs (what this turn cost on Bedrock)`}>{cost === undefined ? '' : money(cost)}</span>}
     </div>
   );
 }

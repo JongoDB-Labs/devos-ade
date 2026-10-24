@@ -2,6 +2,7 @@
 // question or a plan waiting), sessions at work, and the rest (done or idle, with a dot when one finished while you were
 // elsewhere) — as Claude Code's agent view and VS Code's tab dots do.
 import type { SessionView } from './session';
+import { PRODUCT } from './brand';
 
 export type Group = 'needs' | 'working' | 'done';
 export const GROUP_LABEL: Record<Group, string> = { needs: 'Needs you', working: 'Working', done: 'Done' };
@@ -28,5 +29,5 @@ export function waitingSessions(views: Record<string, SessionView>, pendingTotal
 
 /** The tab's title: ⏵⏵ while a session runs without asking, "(2) waiting" while sessions need you. */
 export function pageTitle(waiting: number, bypass: boolean): string {
-  return `${bypass ? '⏵⏵ ' : ''}${waiting > 0 ? `(${Math.min(waiting, 99)}) waiting · ` : ''}Code · bedrock-now`;
+  return `${bypass ? '⏵⏵ ' : ''}${waiting > 0 ? `(${Math.min(waiting, 99)}) waiting · ` : ''}Code · ${PRODUCT}`;
 }

@@ -1,4 +1,4 @@
-/* The Code page. Colour tokens are bedrock-now's (portal/portal/static/login.css), extended with the few an IDE
+/* The Code page. Colour tokens are DevOS ADE's (portal/portal/static/login.css), extended with the few an IDE
    needs (editor, syntax, diff). Light and dark follow the system, like the portal. Layout is IDE-dense: 13 px chrome,
    14 px conversation, 12.5 px code. */
 :root {

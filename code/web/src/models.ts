@@ -1,4 +1,4 @@
-// Which model a session runs: always one named in full (bedrock-now's id, e.g. claude-haiku-5-5). Given one of Claude
+// Which model a session runs: always one named in full (DevOS ADE's id, e.g. claude-haiku-5-5). Given one of Claude
 // Code's aliases (haiku, sonnet, opus) Claude Code picks the model itself — with "haiku" it plans on Sonnet (its "haiku
 // plan upgrade") — so what you picked and what it bills would differ. The backend refuses aliases too.
 import type { BnModels } from './api';
@@ -8,8 +8,8 @@ const ALIAS = /^(haiku|sonnet|opus|fable|opusplan|best|default)(\[1m\])?$/i;
 
 export const isAlias = (m: string): boolean => ALIAS.test(m.trim());
 
-/** The full id for a model the page or you name: an alias becomes the model bedrock-now maps it to (`aliases` of
- *  /.bn/models), an id stays as it is. '' when it is an alias bedrock-now does not map (or nothing). */
+/** The full id for a model the page or you name: an alias becomes the model DevOS ADE maps it to (`aliases` of
+ *  /.bn/models), an id stays as it is. '' when it is an alias DevOS ADE does not map (or nothing). */
 export function fullModel(name: string | null | undefined, bn: BnModels | null | undefined): string {
   const m = (name ?? '').trim();
   if (!m) return '';
@@ -29,7 +29,7 @@ export function otherModels(ran: string[] | undefined, picked: string | undefine
   return picked ? (ran ?? []).filter((m) => !sameModel(m, picked)) : [];
 }
 
-/** "/model NAME" typed as a prompt: the model it names, when bedrock-now serves it (by id, alias or display name) —
+/** "/model NAME" typed as a prompt: the model it names, when DevOS ADE serves it (by id, alias or display name) —
  *  the page switches to it by its full id instead of sending the command; null otherwise (it goes to Claude Code). */
 export function modelCommand(prompt: string, bn: BnModels | null | undefined): string | null {
   const m = /^\/model\s+(\S[^\n]*?)\s*$/.exec(prompt.trim());

@@ -1,5 +1,5 @@
 // Cost guardrails, kept free of DOM and network (test/polish.test.ts): a session's budget (warnings at 50 % and 80 %
-// of it from bedrock-now's spend logs; an optional stop — Claude Code's own, set by the backend), the cold prompt cache
+// of it from DevOS ADE's spend logs; an optional stop — Claude Code's own, set by the backend), the cold prompt cache
 // (after ~5 idle minutes the next prompt writes the whole conversation to the cache again: what that costs on the
 // session's model), and a hint on a new session's first turn on Opus. Budgets are remembered per browser
 // (localStorage, validated; the backend's copy wins: it is what its stop uses).
@@ -128,14 +128,14 @@ export interface CacheNotice {
   model: BnModel | null;
 }
 
-/** The cache write price per million tokens: bedrock-now's, else 1.25 × input (Bedrock's 5-minute cache writes). */
+/** The cache write price per million tokens: DevOS ADE's, else 1.25 × input (Bedrock's 5-minute cache writes). */
 export const writePrice = (m: BnModel | null): number | null => m?.cacheWrite ?? (m?.input != null ? m.input * 1.25 : null);
 export const readPrice = (m: BnModel | null): number | null => m?.cacheRead ?? (m?.input != null ? m.input * 0.1 : null);
 
 /** A notice when the cache has gone cold: idle beyond CACHE_TTL_MS since the session's last activity, and a context
  *  worth naming (or not known). null: warm, nothing to say, or no activity known. */
 /** Whether a model writes Claude Code's prompt cache at a price: one with a cache-write price, or an Anthropic model
- *  (Bedrock's 5-minute writes, priced from its input price when bedrock-now names none). A model of another provider
+ *  (Bedrock's 5-minute writes, priced from its input price when DevOS ADE names none). A model of another provider
  *  without one — Llama, Mistral, a free OpenRouter model — has no cold-cache cost to warn about. */
 export const caches = (m: BnModel | null): boolean => !m || m.cacheWrite !== null || (!m.free && m.vendor === 'Anthropic');
 
@@ -159,7 +159,7 @@ export interface OpusHint {
 const isOpus = (m: BnModel) => /opus/i.test(m.id) || /opus/i.test(m.name);
 const isSonnet = (m: BnModel) => /sonnet/i.test(m.id) || /sonnet/i.test(m.name);
 
-/** A hint for a new session's first turn on an Opus model: Sonnet (bedrock-now's, by price) does most work for less.
+/** A hint for a new session's first turn on an Opus model: Sonnet (DevOS ADE's, by price) does most work for less.
  *  null when the model is not Opus, no Sonnet is served, or the prices are not known or not that different. */
 export function opusHint(modelId: string, models: BnModel[]): OpusHint | null {
   const model = models.find((m) => m.id === modelId);

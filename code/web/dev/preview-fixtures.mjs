@@ -411,7 +411,7 @@ export function previewFiles({ big = true } = {}) {
     'previews/table.tsv': 'key\tvalue\nalpha\t1\nbeta\t2\n',
     'previews/wide.csv': 'a,b,c\n' + ','.repeat(300_000) + '\n1,2,3\n',
     'previews/bigcell.csv': 'note,size\n"' + 'x'.repeat(3 * 1024 * 1024) + '",3MiB\nsmall,1\n',
-    'previews/config.json': JSON.stringify({ name: 'bedrock-now', version: '0.5.0', __proto__: null, features: { previews: true, kinds: ['md', 'pdf', 'csv'] }, limits: { pdf: 26214400, ratio: 0.5, none: null } }, null, 2).replace('"version"', '"__proto__": {"polluted": "yes"},\n  "constructor": {"prototype": {"polluted": "yes"}},\n  "version"') + '\n',
+    'previews/config.json': JSON.stringify({ name: 'devos-ade', version: '0.5.0', __proto__: null, features: { previews: true, kinds: ['md', 'pdf', 'csv'] }, limits: { pdf: 26214400, ratio: 0.5, none: null } }, null, 2).replace('"version"', '"__proto__": {"polluted": "yes"},\n  "constructor": {"prototype": {"polluted": "yes"}},\n  "version"') + '\n',
     'previews/deep.json': deepJson(5000),
     'previews/events.jsonl': '{"t":1,"event":"start"}\n{"t":2,"event":"tick"}\nnot json at all\n{"t":3,"event":"stop"}\n',
     'previews/config.yaml': 'service: code\nports:\n  - 8095\n  - 8096\nlimits: {pdf: 25MiB, yaml: 5MiB}\nanchors:\n  base: &base {retries: 3}\n  copy: *base\n',

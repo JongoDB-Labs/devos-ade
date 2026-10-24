@@ -12,6 +12,7 @@ import { Icon, Spinner } from './icons';
 import { pairs } from '../forms';
 import { SandboxSaid } from './Said';
 import type { SandboxWords } from '../types';
+import { PRODUCT } from '../brand';
 
 const DOT: Record<string, string> = { connected: 'live', failed: 'err', 'needs-auth': 'warn', pending: 'warn' };
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
@@ -31,7 +32,7 @@ function ServerRow({ s, busy, onBusy }: { s: McpServer; busy: boolean; onBusy: (
           <span class={`mcp-status st-${s.status}`} data-testid="mcp-status">
             {s.status}
           </span>
-          {(s.source || s.scope) && <span class="tag">{s.source === 'dynamic' && s.name === 'bedrock-shared' ? 'bedrock-now' : s.source || s.scope}</span>}
+          {(s.source || s.scope) && <span class="tag">{s.source === 'dynamic' && s.name === 'bedrock-shared' ? PRODUCT : s.source || s.scope}</span>}
           {s.tools !== null && (
             <button type="button" class="linkish small" onClick={() => setOpen(!open)} aria-expanded={open}>
               {s.tools} tool{s.tools === 1 ? '' : 's'}

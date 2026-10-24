@@ -63,12 +63,13 @@ import { MemoryDialog } from './Memory';
 import { Icon, Spinner } from './icons';
 import { LaunchConfirm, PortsPanel } from './DevPreview';
 import { RunConfirm, RunPanel, RunStatus } from './Run';
+import { PRODUCT } from '../brand';
 
 // ---------------------------------------------------------------- pieces
 
 function Brand() {
   return (
-    <span class="brand" title="bedrock-now · Code">
+    <span class="brand" title={`${PRODUCT} · Code`}>
       <span class="brand-mark">
         <Icon name="code" size={15} />
       </span>
@@ -291,7 +292,7 @@ function ToolMenu({ onOpen }: { onOpen: (src: string) => void }) {
     <select
       class="term-open"
       aria-label="Open in the terminal: Claude Code on Bedrock, a shell, or one of your AI subscriptions' tools"
-      title="A window of its own, in this project's folder. Each tool signs in with its own flow there; bedrock-now never sees the login."
+      title={`A window of its own, in this project's folder. Each tool signs in with its own flow there; ${PRODUCT} never sees the login.`}
       value=""
       onChange={(e) => {
         const v = (e.currentTarget as HTMLSelectElement).value;

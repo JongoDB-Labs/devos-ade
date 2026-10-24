@@ -1368,7 +1368,7 @@ export function normGitEvent(v: unknown): GitEvent | null {
 export interface GitHostsView {
   hosts: GitHostView[];
   events: GitEvent[];
-  /** this page is on the computer running bedrock-now (not over remote access): hosts, tokens, keys can be added */
+  /** this page is on the computer running DevOS ADE (not over remote access): hosts, tokens, keys can be added */
   local: boolean;
   /** Sign in with GitHub / GitLab: whether github.com's and gitlab.com's applications are set */
   signIn: GitSignInConfig;
@@ -1414,7 +1414,7 @@ export interface NewSignIn {
   /** Sign in again: this host's sign-in replaced */
   hostId?: string;
 }
-/** Start a sign-in (the device flow): the code to enter, where. Only from the computer running bedrock-now. */
+/** Start a sign-in (the device flow): the code to enter, where. Only from the computer running DevOS ADE. */
 export const startGitSignIn = async (b: NewSignIn): Promise<GitSignInFlow> => normSignInFlow(await request('POST', '/api/git/oauth', b));
 export const getGitSignIn = async (id: string): Promise<GitSignInFlow> => normSignInFlow(await request('GET', `/api/git/oauth/${id}`));
 export const cancelGitSignIn = async (id: string): Promise<void> => void (await request('DELETE', `/api/git/oauth/${id}`));
