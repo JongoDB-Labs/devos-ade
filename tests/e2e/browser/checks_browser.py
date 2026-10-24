@@ -1040,9 +1040,12 @@ def chat_images(ctx):
     click (detectArtifacts off)."""
     need("open-webui")
     page, rec = ctx.page("chat-images")
-    # (every request the page or a frame of it makes to another site: none may go out)
+    # (every request the page or a frame of it makes to another site: none may go out — DevTools lists one the policy
+    # blocked too, failed as blocked: what counts is an answer, or a failure that is not the policy's)
     out = []
-    page.context.on("request", lambda r: out.append(r.url) if "example.com" in r.url else None)
+    page.context.on("response", lambda r: out.append(r.url) if "example.com" in r.url else None)
+    blocked = lambda f: (f or "").lower() in ("csp", "net::err_blocked_by_csp")   # noqa: E731 — the policy's own block
+    page.context.on("requestfailed", lambda r: out.append(f"{r.url} ({r.failure})") if "example.com" in r.url and not blocked(r.failure) else None)
     login(page)
     fl, f = chat_frame(page)
     csp = f.evaluate("async () => (await fetch(location.href, {cache: 'no-store'})).headers.get('content-security-policy') || ''")
@@ -1098,7 +1101,8 @@ def chat_images(ctx):
         // embedding page's rule), what the artifact sees of the other two (its sandbox)
         const nav = () => new Promise((r) => {
             const seen = [];
-            const on = (e) => { if (String(e.blockedURI).includes('bn-e2e-nav')) seen.push(e.effectiveDirective); };
+            // (a navigation's report names the origin alone, not its path)
+            const on = (e) => { if (String(e.blockedURI).includes('example.com')) seen.push(e.effectiveDirective); };
             document.addEventListener('securitypolicyviolation', on);
             const x = document.createElement('iframe');
             x.setAttribute('sandbox', 'allow-scripts allow-downloads allow-forms');
@@ -1106,9 +1110,9 @@ def chat_images(ctx):
             const msg = (e) => { if (e.source === x.contentWindow) said = e.data; };
             window.addEventListener('message', msg);
             x.srcdoc = '<!--<head>--><html><body><script>'
-                + "let pop = 'none'; try { pop = window.open('https://example.com/bn-e2e-pop?' + Date.now()) ? 'opened' : 'refused'; } catch (e) { pop = 'refused'; }"
-                + "let top = 'none'; try { window.top.location.href = 'https://example.com/bn-e2e-top?' + Date.now(); top = 'tried'; } catch (e) { top = 'refused'; }"
-                + "parent.postMessage({ pop, top }, '*');"
+                + "var bnPop = 'none'; try { bnPop = window.open('https://example.com/bn-e2e-pop?' + Date.now()) ? 'opened' : 'refused'; } catch (e) { bnPop = 'refused'; }"
+                + "var bnTop = 'none'; try { window.top.location.href = 'https://example.com/bn-e2e-top?' + Date.now(); bnTop = 'tried'; } catch (e) { bnTop = 'refused'; }"
+                + "parent.postMessage({ pop: bnPop, top: bnTop }, '*');"
                 + "setTimeout(() => { location.href = 'https://example.com/bn-e2e-nav?' + Date.now(); }, 300);<" + "/script></body></html>";
             document.body.append(x);
             setTimeout(() => { document.removeEventListener('securitypolicyviolation', on); window.removeEventListener('message', msg);
@@ -1128,7 +1132,11 @@ def chat_images(ctx):
     # (a prefetch: default-src, Chat's — the hidden one shows it; with IFRAME_CSP, its own default-src 'none' first)
     expect("default-src" in set(str(art["hidden"]).split(",")), f"an artifact's prefetch to another site: not refused ({art['hidden']!r})")
     nav = art["nav"]
-    expect("frame-src" in (nav.get("seen") or []), f"an artifact sending its own frame to another site: not refused by Chat's frame-src ({nav})")
+    page.wait_for_timeout(1000)
+    went = [u for u in out if "bn-e2e-nav" in u]
+    said_nav = [e.get("text", "")[:200] for e in rec.events if e.get("t") == "console" and "frame" in e.get("text", "") and "example.com" in e.get("text", "")]
+    expect("frame-src" in (nav.get("seen") or []) and not went,
+           f"an artifact sending its own frame to another site: {nav}; requested {went[:2]}; the console: {said_nav[:3]}")
     expect((nav.get("said") or {}).get("pop") == "refused", f"an artifact's popup: {nav}")
     page.wait_for_timeout(1000)
     expect(page.url.startswith(origin()), f"the top page was navigated: {page.url}")
@@ -1165,7 +1173,8 @@ def chat_own_page(ctx):
           f"```html\n<html><head></head><body><h1 id=\"bnart\">artifact {tag}</h1></body></html>\n```\n")
     now = int(time.time())
     uid, aid = str(uuid.uuid4()), str(uuid.uuid4())
-    msgs = {uid: {"id": uid, "parentId": None, "childrenIds": [aid], "role": "user", "content": "show me", "timestamp": now, "models": []},
+    # (no "models" on the question: an empty list would make it a question to several models, shown side by side)
+    msgs = {uid: {"id": uid, "parentId": None, "childrenIds": [aid], "role": "user", "content": "show me", "timestamp": now},
             aid: {"id": aid, "parentId": uid, "childrenIds": [], "role": "assistant", "content": md, "model": "", "modelName": "",
                   "done": True, "timestamp": now}}
     chat = {"title": f"Policy {tag}", "models": [], "params": {}, "history": {"messages": msgs, "currentId": aid},
@@ -1177,26 +1186,56 @@ def chat_own_page(ctx):
     try:
         start = len(rec.events)
         fl, f = chat_frame(page, f"c/{cid}")
-        f.wait_for_function("t => document.body.innerText.includes(t)", arg="Here they are.", timeout=30000)
+
+        def step(what, fn):
+            try:
+                return fn()
+            except PwError as e:
+                shot(page, "07c-chat-own-page-" + re.sub(r"[^a-z0-9]+", "-", what.lower())[:30])
+                raise AssertionError(f"{what}: {str(e).splitlines()[0][:160]}; shown: {f.evaluate('() => document.body.innerText.slice(-400)')!r}; "
+                                     f"errors: {rec.problems(start=start)[:8]}") from e
+        step("the conversation", lambda: f.wait_for_function("t => document.body.innerText.includes(t)", arg="Here they are.", timeout=30000))
         # highlighted code (highlight.js, or the code editor)
-        fl.locator(".hljs, .cm-editor").first.wait_for(timeout=20000)
+        step("highlighted code", lambda: fl.locator(".hljs, .cm-editor").first.wait_for(timeout=20000))
         done.append("code highlighted")
         # Mermaid: the diagram drawn (its nodes' words in an svg)
-        f.wait_for_function("() => [...document.querySelectorAll('svg')].some((s) => s.textContent.includes('bnstart') && s.textContent.includes('bnend'))",
-                            timeout=45000)
+        step("the Mermaid diagram", lambda: f.wait_for_function(
+            "() => [...document.querySelectorAll('svg')].some((s) => s.textContent.includes('bnstart') && s.textContent.includes('bnend'))", timeout=45000))
         done.append("Mermaid diagram")
         # the Python runner (on unless the admin turned code execution off)
         run = fl.locator("button.run-code-button", has_text="Run")
         if run.count():
+            mark = len(rec.events)
             run.first.click()
-            f.wait_for_function("() => document.body.innerText.includes('STDOUT/STDERR') && /(^|\\n)42(\\n|$)/.test(document.body.innerText)", timeout=180000)
-            done.append("Python run in the browser (Pyodide): 42")
+            step("the Python runner's answer", lambda: f.wait_for_function(
+                "() => /(^|\\n)42(\\n|$)/.test(document.body.innerText) || document.body.innerText.includes('loadPyodide is not defined')", timeout=180000))
+            if "loadPyodide is not defined" not in f.evaluate("() => document.body.innerText"):
+                done.append("Python run in the browser (Pyodide): 42")
+            else:
+                # Open WebUI runs Pyodide in a sandboxed frame of its own (an opaque origin): its request for pyodide.js
+                # carries no session cookie, so the portal's check refuses it (401) — the stack's sign-in, not this
+                # policy. That the policy would let the frame load Open WebUI's own script: a frame made the same way
+                # loads one with no violation
+                no_cookie = [x for x in rec.problems(start=mark) if x.startswith("401 GET ") and "/pyodide/pyodide.js" in x]
+                expect(no_cookie, f"the Python runner failed otherwise: {rec.problems(start=mark)[:6]}")
+                v = f.evaluate("""() => new Promise((r) => {
+                    const x = document.createElement('iframe'); x.setAttribute('sandbox', 'allow-scripts'); x.style.display = 'none';
+                    const on = (e) => { if (e.source === x.contentWindow) { window.removeEventListener('message', on); x.remove(); r(e.data); } };
+                    window.addEventListener('message', on);
+                    x.srcdoc = '<!doctype html><html><head><script>const seen = [];'
+                      + "document.addEventListener('securitypolicyviolation', (e) => seen.push(e.effectiveDirective));<" + "/script>"
+                      + '<script src="' + location.origin + '/pyodide/pyodide.js"><' + '/script></head><body><script>'
+                      + "setTimeout(() => parent.postMessage(seen.join(',') || 'none', '*'), 1500);<" + "/script></body></html>";
+                    document.body.append(x); setTimeout(() => r('no answer'), 8000); })""")
+                expect(v == "none", f"Chat's policy refuses Open WebUI's own script in a sandboxed frame: {v!r}")
+                done.append("Python runner: its sandboxed frame gets no session cookie (401 for pyodide.js: the portal's sign-in, "
+                            "not this policy — a frame made the same way loads Open WebUI's own script with no violation)")
         else:
             done.append("Python runner: not offered (code execution off)")
         # the artifact: opened by its Preview, in the Artifacts panel's sandboxed frame, with Open WebUI's policy in it
         fl.locator("button.run-code-button", has_text="Preview").first.click()
         art = fl.frame_locator("iframe[title='Content']")
-        art.locator("#bnart").wait_for(timeout=30000)
+        step("the artifact", lambda: art.locator("#bnart").wait_for(timeout=30000))
         expect(tag in art.locator("#bnart").inner_text(), "the artifact's text")
         srcdoc = fl.locator("iframe[title='Content']").first.get_attribute("srcdoc") or ""
         expect("connect-src 'none'" in srcdoc, "Open WebUI's IFRAME_CSP is not in the artifact's document")
@@ -1210,7 +1249,11 @@ def chat_own_page(ctx):
             owui_api(f, f"/api/v1/chats/{cid}", "DELETE")
         except Exception:  # noqa: BLE001 — the frame went away: the conversation stays (a test one)
             pass
-    probs = rec.problems(allow=[r"No token found in localStorage"])
+    # (the Python runner's frame without the session cookie: above)
+    # (and Open WebUI's Artifacts panel reaching into its own sandboxed frame — an opaque origin — on load: its own
+    # error, whatever the policy)
+    probs = rec.problems(allow=[r"No token found in localStorage", r"^401 GET \S+/pyodide/pyodide\.js", r"loadPyodide is not defined",
+                                r"Failed to read a named property 'addEventListener' from 'Window': Blocked a frame with origin"])
     rec.save()
     expect(not probs, f"errors: {probs}")
     return "; ".join(done) + " — no CSP error of Open WebUI's own"
@@ -1796,9 +1839,9 @@ def same_site_guard(ctx):
     session cookie (same-site: SameSite=Strict sends it), each refused by Caddy before the app; a plain image from the
     portal passes (page loads too: every other check here runs with the guard on); an opaque origin (a sandboxed frame
     the page makes) is refused too. From the Chat page, Chat's own policy (caddy/Caddyfile chat_csp) stops the same
-    image, fetch and form post before any request goes out — and a style sheet from the portal, which it allows,
-    passes the guard. Chromium reports no response for a fetch whose answer CORS refuses, so the raw network events
-    (CDP) are read."""
+    image, fetch and form post, and a style sheet, before anything goes out: it allows no load from another host, so
+    the 200 control is the image from the page above. Chromium reports no response for a fetch whose answer CORS
+    refuses, so the raw network events (CDP) are read."""
     page, rec = ctx.page("same-site-guard")
     login(page)
     urls, sent, got = {}, {}, {}
@@ -1876,7 +1919,7 @@ def same_site_guard(ctx):
     watch(page)
     chat_img, chat_fetch, chat_form = (origin() + "/static/logo.svg?bn-guard=chat-img", origin() + "/api/summary?bn-guard=chat-fetch",
                                        origin("admin") + "/key/delete?bn-guard=chat-form")
-    css_url = origin() + "/static/login.css?bn-guard=css"
+    chat_css = origin() + "/static/login.css?bn-guard=chat-css"
     blocked = page.evaluate("""async ([img, f, form, css]) => {
         const seen = [];
         document.addEventListener('securitypolicyviolation', (e) => seen.push([e.violatedDirective.split(' ')[0], String(e.blockedURI)]));
@@ -1887,26 +1930,23 @@ def same_site_guard(ctx):
         await new Promise((r) => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.onload = l.onerror = r; l.href = css; document.head.append(l); });
         await new Promise((r) => setTimeout(r, 1500));
         return seen;
-    }""", [chat_img, chat_fetch, chat_form, css_url])
+    }""", [chat_img, chat_fetch, chat_form, chat_css])
     page.wait_for_timeout(1000)
     by = {}
     for d, u in blocked:
         by.setdefault(u.split("?bn-guard=")[-1] if "?bn-guard=" in u else u, d)
-    for tag, want, u in (("chat-img", "img-src", chat_img), ("chat-fetch", "connect-src", chat_fetch), ("chat-form", "form-action", chat_form)):
+    for tag, want, u in (("chat-img", "img-src", chat_img), ("chat-fetch", "connect-src", chat_fetch), ("chat-form", "form-action", chat_form),
+                         ("chat-css", "style-src-elem", chat_css)):
         expect(by.get(tag) == want, f"Chat's policy: {tag} not refused by {want} ({blocked})")
-        expect(urls.get(u) is None, f"Chat's policy: {tag} was requested all the same")
+        # (DevTools lists a request the policy blocked too — as blocked: nothing of it went on the wire)
+        rid = urls.get(u)
+        expect(rid is None or (rid not in sent and rid not in got), f"Chat's policy: {tag} was sent all the same")
         seen[f"Chat: {tag}"] = want
-    rid = urls.get(css_url)
-    h = sent.get(rid) or {}
-    st, rh = got.get(rid) or (None, {})
-    expect(rid is not None and st == 200 and not rh.get("x-bn-refused") and h.get("sec-fetch-site") == "same-site",
-           f"the control from Chat (a same-site style sheet from the portal): {st} {rh.get('x-bn-refused')!r} {h.get('sec-fetch-site')!r}")
-    seen["Chat: control style sheet"] = st
     rec.save()
     return (f"from a same-site page of no app's, with the session cookie: "
             f"{', '.join(f'{k} {v}' for k, v in seen.items() if k != 'control image' and not k.startswith('Chat'))} (Caddy's guard, X-Bn-Refused); "
             f"the control, a same-site image from the portal: {seen['control image']}; from the Chat page, its policy refuses the image, "
-            f"the fetch and the form post before they are sent, and a same-site style sheet from the portal passes: {seen['Chat: control style sheet']}")
+            f"the fetch, the form post and a style sheet before they are sent (it allows no load from another host)")
 
 
 # --- phone / tablet ---

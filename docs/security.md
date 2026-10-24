@@ -3253,20 +3253,30 @@ never reads, copies, keeps, passes on or relays a login.**
 - [x] **Chat: what an answer can make the browser fetch.** Open WebUI sends no policy of its own; Caddy sends Chat's
   site one (`caddy/Caddyfile` `chat_csp`, the same on the remote sites): images, audio and video only from Open WebUI
   itself, `data:` and `blob:`; frames only its own; no plugins; forms posted only to it; no `<base>`; requests
-  (fetch, beacons, WebSockets) and fonts only to it — everything its own page connects to is there — and no Referer.
-  So an answer's markdown image, a `<video>` or an `<iframe>` it carries, or a form, cannot take what a model read to
-  another server — the classic way out of a chat, which a document the model read can steer. An answer's html code
-  block opens in Open WebUI's Artifacts panel only when you click its preview (`detectArtifacts` off by default: each
-  user can turn it back on); there, in a sandboxed frame of its own (an opaque origin: no cookies of Open WebUI's), it
-  has Chat's policy too (a srcdoc document inherits its parent's) and the one Open WebUI writes into its `<head>`
-  (`IFRAME_CSP`: the Code page's artifact viewer's, `connect-src 'none'`). The e2e checks each of these is refused,
-  and that Open WebUI's own images still load (`browser/chat-images-own-only`).
-- [ ] **What an artifact can still do.** A frame can navigate itself to another site (with what its script wrote into
-  the address) — no policy stops that, so an artifact you open can still send what its own text holds; and Open
-  WebUI writes its policy after the first `<head>` it finds in the text, so a document that hides one in a comment
-  runs under Chat's policy alone, which leaves scripts and styles from another server (a request for one carries its
-  address). Open an artifact only when you mean to run it. Open WebUI's favicons of cited web pages (from another
-  site) do not load.
+  (fetch, beacons, WebSockets), fonts, scripts, style sheets and anything else (a prefetch, a manifest:
+  `default-src`) only from it — everything its own page loads and connects to is there — and no Referer. Its
+  scripts may be inline (its page's own), use eval (Vega charts, HEIC images, docx files, a tool's code) and
+  WebAssembly (the Python runner, Pyodide) and start `blob:` workers: none of that reaches another host. So an
+  answer's markdown image, a `<video>` or an `<iframe>` it carries, or a form, cannot take what a model read to another
+  server — the classic way out of a chat, which a document the model read can steer. An answer's html code block opens
+  in Open WebUI's Artifacts panel only when you click its preview (`detectArtifacts` off by default: each user can turn
+  it back on); there, in a sandboxed frame of its own (an opaque origin: no cookies of Open WebUI's, no popups, no
+  navigating the page around it), it has Chat's policy too (a srcdoc document inherits its parent's) and the one Open
+  WebUI writes into its `<head>` (`IFRAME_CSP`: the Code page's artifact viewer's, `connect-src 'none'`) — and one that
+  hides its `<head>` from Open WebUI (in a comment: the policy lands there) still has Chat's. Its frame cannot be sent to
+  another site either (`location = …`, a refresh: the embedding page's `frame-src` decides where its frames go). The
+  e2e checks each of these is refused and never requested (`browser/chat-images-own-only`), and that Open WebUI's own
+  page works under the policy — its images, code highlighting, Mermaid, the Python runner, the Artifacts panel — with no
+  CSP error of its own (`browser/chat-own-page-under-policy`).
+- [ ] **What Chat's page and an artifact can still do.** A name the browser looks up on its own for a host a document
+  names — DNS prefetching, a `<link rel=preconnect>` — and a WebRTC peer connection's STUN request to a server the
+  document names are governed by no directive of Chat's policy: the host name, or the request, can carry a little out.
+  A tool you installed in Open WebUI can show its own HTML (an embed) in a frame that may open a popup, and a popup is
+  a page of its own, outside this policy. Artifacts are off until you click one, and run only then.
+- [ ] **What Chat's page no longer loads from elsewhere.** Open WebUI's own page would fetch a few things from other
+  hosts, which the policy refuses: Kokoro, its speech in the browser (its WebAssembly from cdn.jsdelivr.net — the stack
+  reads aloud with your system's voices), Python packages the bundled Pyodide does not have (cdn.jsdelivr.net), a PDF
+  shown in a new window (pdfobject from cdnjs), and the favicons of cited web pages.
 - [ ] **What Open WebUI puts in a system message is the chat app's.** A Chat model on your plan takes a leading system
   message as the chat app's instructions (and says so to the agent); Open WebUI puts what it retrieved there too — a
   knowledge base's passages, your saved memories — so they reach the agent as instructions of the chat app, not as

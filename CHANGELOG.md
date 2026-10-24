@@ -86,9 +86,11 @@ All notable changes to bedrock-now are documented here. The format follows
   file read denied, no hooks, no Bypass or Auto); an `@` in Chat's text is no file's name (`＠`, a quoted path's and one
   after CJK punctuation too).
 - **What an answer can make your browser fetch, in Chat:** Open WebUI's site (locally and over remote access) loads
-  images, audio, video, frames and fonts, and sends requests and forms, to itself only, with no Referer; an html code
-  block opens in Open WebUI's Artifacts panel only on a click, under the Code page's artifact viewer's policy
-  (`connect-src 'none'`) as well. An artifact can still navigate itself away (docs/security.md says what is left).
+  images, audio, video, frames, fonts, scripts and style sheets, and sends requests and forms, to itself only, with no
+  Referer; an html code block opens in Open WebUI's Artifacts panel only on a click, under the Code page's artifact
+  viewer's policy (`connect-src 'none'`) as well, and its frame cannot be sent to another site. What Open WebUI's page
+  itself would load from elsewhere no longer loads: Kokoro's in-browser speech, Python packages Pyodide does not bundle,
+  favicons of cited pages.
 
 (Dev installs that ran a pre-release of this version kept the terminal's sign-ins in volumes of their own,
 `<project>_subs-*`: those are not carried over — the terminal's sign-ins are in its home again, so sign in once more
