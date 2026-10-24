@@ -42,7 +42,10 @@ All notable changes to bedrock-now are documented here. The format follows
   reads, images and instructions, a `lsp.json`, Claude Code's plugins, `.vscode/mcp.json`, in its folder and the folders
   above it to the git root, with a `.mcp.json` and `.claude/settings*.json` there), listed whole in the trust dialog,
   and checked again before every turn (a running agent ends when they change). The git root is a `.git` with a `HEAD`:
-  an empty `.git` folder no longer ends the walk up. Every project trusted before is asked about again.
+  an empty `.git` folder no longer ends the walk up. Every project trusted before is asked about again. Settings that
+  declare plugins or a plugin marketplace (Claude Code's `enabledPlugins` or `extraKnownMarketplaces`, or another
+  tool's, found by their parsed keys at any depth; another tool's `.json` that does not parse) cannot be trusted: the
+  plugins' own folders are not looked at.
 - A conversation carried to another harness (or to a Chat model's new session) goes in as a quote that holds no
   instructions, its role-like tags defanged: an earlier answer cannot speak as you.
 

@@ -307,6 +307,82 @@ export function shellBlocks(text, max = 1000) {
   if (fm && fm.body > 0) scan(t.slice(fm.body), fm.body);
   return { list: out, more };
 }
+// Plugins and plugin marketplaces a file declares: the plugins' own folders (their hooks, MCP and language servers) are
+// not listed here, so a listing with one is incomplete — never trusted. Found by what the tools read, not by its
+// spelling: a JSON (or JSONC) file is parsed and every key at every depth looked at, in any case (a key spelled with
+// \u escapes is the same key once parsed); a .json that does not parse, even as JSONC, cannot be looked at (incomplete
+// too); a TOML or YAML file is looked at whole, its \u and \U escapes decoded; a marketplace.json is one by its name.
+// The raw text's "marketplace": key is a trigger as well, never the only one.
+const PLUGIN_KEY = /plugin|marketplace/i;
+// stripJsonc(t) -> the text without // and /* */ comments and trailing commas (outside strings), or null (a comment
+// left open)
+export function stripJsonc(t) {
+  let out = '', i = 0;
+  while (i < t.length) {
+    const c = t[i];
+    if (c === '"') {
+      let j = i + 1;
+      while (j < t.length && t[j] !== '"') j += t[j] === '\\' ? 2 : 1;
+      out += t.slice(i, j + 1); i = j + 1; continue;
+    }
+    if (c === '/' && t[i + 1] === '/') { while (i < t.length && t[i] !== '\n') i++; continue; }
+    if (c === '/' && t[i + 1] === '*') { const e = t.indexOf('*/', i + 2); if (e < 0) return null; out += ' '; i = e + 2; continue; }
+    out += c; i++;
+  }
+  // (a comma before a closing bracket, outside strings: the second pass, comments gone)
+  let res = '', k = 0;
+  while (k < out.length) {
+    const c = out[k];
+    if (c === '"') {
+      let j = k + 1;
+      while (j < out.length && out[j] !== '"') j += out[j] === '\\' ? 2 : 1;
+      res += out.slice(k, j + 1); k = j + 1; continue;
+    }
+    if (c === ',') { let j = k + 1; while (j < out.length && /\s/.test(out[j])) j++; if (out[j] === '}' || out[j] === ']') { k++; continue; } }
+    res += c; k++;
+  }
+  return res;
+}
+// pluginKeyIn(v) -> the first key (at any depth) that names plugins or a marketplace, or null
+export function pluginKeyIn(v, depth = 0) {
+  if (depth > 100) return '(nested deeper than this page looks)';
+  if (Array.isArray(v)) { for (const x of v) { const k = pluginKeyIn(x, depth + 1); if (k) return k; } return null; }
+  if (v && typeof v === 'object') {
+    for (const [k, x] of Object.entries(v)) {
+      if (PLUGIN_KEY.test(k)) return k;
+      const r = pluginKeyIn(x, depth + 1);
+      if (r) return r;
+    }
+  }
+  return null;
+}
+const parseJsonish = (t) => {
+  try { return { v: JSON.parse(t) }; } catch { /* JSONC? */ }
+  const s = stripJsonc(t);
+  if (s === null) return null;
+  try { return { v: JSON.parse(s) }; } catch { return null; }
+};
+const decodeEscapes = (t) => t.replace(/\\u([0-9a-fA-F]{4})|\\U([0-9a-fA-F]{8})/g, (m, a, b) => { try { return String.fromCodePoint(parseInt(a ?? b, 16)); } catch { return m; } });
+/** pluginsOf(name, text) -> {key: what declares plugins or a marketplace, or null; unreadable: a .json(c) that does not
+ *  parse} — for another tool's file */
+export function pluginsOf(name, text) {
+  const base = String(name).toLowerCase().split('/').pop();
+  if (base === 'marketplace.json') return { key: 'a marketplace.json', unreadable: false };
+  const raw = /"(extraKnownMarketplaces|marketplaces?)"\s*:/i.test(text) ? 'marketplace' : null;
+  if (/\.jsonc?$/.test(base)) {
+    const p = parseJsonish(text);
+    if (!p) return { key: raw, unreadable: true };
+    let k = null;
+    try { k = pluginKeyIn(p.v); } catch { k = '(could not be looked at)'; }
+    return { key: k ?? raw, unreadable: false };
+  }
+  if (/\.(toml|ya?ml)$/.test(base)) {
+    const m = decodeEscapes(text).match(PLUGIN_KEY);
+    return { key: m ? m[0] : raw, unreadable: false };
+  }
+  return { key: raw, unreadable: false };
+}
+
 // canonical(v) -> JSON with sorted keys (every field, whatever the friendly line shows)
 const canonical = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((key) => [key, x[key]])) : x));
 
@@ -364,10 +440,13 @@ export function summarize(files) {
     if (tool) {
       const whole = f.text.length <= TOOL_TEXT_MAX;
       if (!whole) incomplete(`another tool's file over ${TOOL_TEXT_MAX.toLocaleString('en')} characters`);
-      // (a plugin marketplace the repository declares: its plugins' folders are not looked at here — never trusted)
-      if (/"(extraKnownMarketplaces|marketplaces?)"\s*:/i.test(f.text)) {
-        note('declares a plugin marketplace: the plugins it points at are not looked at here');
-        incomplete('a plugin marketplace declared in the project');
+      // (plugins or a plugin marketplace the repository declares: their folders are not looked at here — never trusted;
+      // a .json that cannot be parsed cannot be looked at either)
+      const pl = pluginsOf(f.name, f.text);
+      if (pl.unreadable) { note('not valid JSON or JSONC: what it declares cannot be looked at here'); incomplete('another tool\'s .json file that does not parse'); }
+      if (pl.key) {
+        note(`declares plugins or a plugin marketplace (${short(pl.key, 100)}): the plugins it points at are not looked at here`);
+        incomplete('plugins or a plugin marketplace declared in the project');
       }
       const t = whole ? f.text : `${f.text.slice(0, TOOL_TEXT_MAX)}… (${f.text.length - TOOL_TEXT_MAX} more characters not shown)`;
       if (careful(t)) out.careful++;
@@ -378,6 +457,16 @@ export function summarize(files) {
     let v;
     try { v = JSON.parse(f.text); } catch { note('not valid JSON (Claude Code may still read parts of it)'); incomplete('a file that is not valid JSON'); continue; }
     if (!obj(v)) { note('not a JSON object'); incomplete('a file that is not a JSON object'); continue; }
+    // (Claude Code's own plugins and marketplaces — enabledPlugins, extraKnownMarketplaces …, at any depth: the same rule
+    // as for the other tools' files)
+    {
+      let k = null;
+      try { k = pluginKeyIn(v); } catch { k = '(could not be looked at)'; }
+      if (k) {
+        note(`declares plugins or a plugin marketplace (${short(k, 100)}): the plugins it points at are not looked at here`);
+        incomplete('plugins or a plugin marketplace declared in the project');
+      }
+    }
     if (lower === '.mcp.json') {
       if (v.mcpServers !== undefined && !obj(v.mcpServers)) add('other', { file: f.name, key: 'mcpServers', value: text(v.mcpServers) });
       for (const [name, c] of Object.entries(obj(v.mcpServers) ?? {})) {
