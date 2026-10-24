@@ -246,7 +246,12 @@ test('a project below its git root: the other tools\' files above it are in its 
     ['a .claude/ tree of the folder itself as a surface', row('.claude/skills/s.md', 'x', '', '.claude/skills')],
     ['..', row('/workspace/mono/../x/.codex/c', 'x', '/workspace/mono/../x', '.codex')],
     ['a single file with more under it', row('/workspace/mono/.mcp.json/x', 'x', '/workspace/mono', '.mcp.json')]]) {
-    assert.equal(one(bad).ok, false, what);
+    // (a row of the other tools' part that does not fit: their part not believed — Claude Code's still is; one of
+    // Claude Code's: its part)
+    const c = one(bad);
+    const claude = what.includes('.claude/');
+    assert.equal(claude ? c.ok : c.agentOk, false, what);
+    if (!claude) assert.equal(c.ok, true, `${what}: Claude Code's part untouched`);
   }
   // rows that say where they came from beside one that does not: nothing trusted; a list of the older shape: Claude
   // Code's names only, all of them Claude Code's
@@ -373,6 +378,49 @@ test('a trust of v0.23.0 (the reading before): carried over for Claude Code when
     rec.trust = { hash: hashOf(own), at: 1, epoch: TRUST_EPOCH - 1 };
     assert.equal((await trust.decide('/workspace/old')).state, 'recheck', 'not shown whole today (front matter with a line separator)');
   } finally { mgr.closeAll(); }
+});
+
+test('the other tools\' rows never keep Claude Code\'s part from Bedrock: their count, a control character or an over-long name in their trees touch only theirs', async () => {
+  const crypto = await import('node:crypto');
+  const { makeTrust, hashOf } = await import('../server/trust.mjs');
+  const { TRUST_EPOCH } = await import('../server/projects.mjs');
+  const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
+  const row = (name, text, surface) => ({ name, type: 'file', size: Buffer.byteLength(text), sha256: sha(text), text, target: null, at: '', surface });
+  const own = Array.from({ length: 21 }, (_, i) => row(`.claude/skills/s${String(i).padStart(2, '0')}/SKILL.md`, '---\nname: s\n---\nGo.\n', '.claude'));
+  for (const [what, others, agentsOk] of [
+    // (490 of theirs fit the listing; their summary shows at most 200 entries a section: not trustable — theirs alone)
+    ['21 of Claude Code\'s and 490 of .agents/skills', Array.from({ length: 490 }, (_, i) => row(`.agents/skills/a${String(i).padStart(3, '0')}/SKILL.md`, '---\nname: a\n---\n', '.agents')), false],
+    ['21 of Claude Code\'s and 150 of .agents/skills', Array.from({ length: 150 }, (_, i) => row(`.agents/skills/a${String(i).padStart(3, '0')}/SKILL.md`, '---\nname: a\n---\n', '.agents')), true],
+    ['.github/a<TAB>b.yml', [row('.github/a\tb.yml', 'x: 1', '.github/a\tb.yml')], false],
+    ['.cursor/rules/x<LF>y.mdc', [row('.cursor/rules/x\ny.mdc', 'rule', '.cursor')], false],
+    ['.codex/<DEL>.toml', [row('.codex/\x7f.toml', 'a = 1', '.codex')], false],
+    ['a name over 1,024 characters', [row(`.codex/${'x'.repeat(1100)}.toml`, 'a = 1', '.codex')], false],
+    ['more than 500 of theirs', Array.from({ length: 501 }, (_, i) => row(`.agents/skills/a${String(i).padStart(3, '0')}/SKILL.md`, '---\nname: a\n---\n', '.agents')), false],
+  ]) {
+    const files = [...own, ...others].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    const result = { files, hash: hashOf(own), verifiable: true, over: null, agentHash: hashOf(others), agentVerifiable: true, agentOver: null };
+    const rec = { id: 'p7', root: 'many', name: 'many', trust: null };
+    const call = async (req) => ({ result: req.op === 'project.settings' ? { ...result, files: req.text === false ? files.map(({ text: _t, ...f }) => f) : files } : {} });
+    const trust = makeTrust({ call, store: () => storeOf(rec, TRUST_EPOCH) });
+    const v = await trust.view(rec);
+    assert.equal(v.summary.complete, true, what);
+    assert.match(v.hash ?? '', /^[0-9a-f]{64}$/, `${what}: Claude Code's part trustable`);
+    assert.equal(v.summary.agentsComplete, agentsOk, what);
+    assert.deepEqual(await trust.trust(rec, v.hash), agentsOk ? { conflict: null } : { conflict: null, agents: 'not trusted' }, what);
+    const d = await trust.decide('/workspace/many');
+    assert.equal(d.state, 'trusted', `${what}: Claude Code on Bedrock trusted`);
+    assert.equal(d.agents.state === 'trusted', agentsOk, what);
+  }
+  // a sandbox that says nothing of the other tools' part (an older bn-coded): not "nothing of theirs" — not known
+  const rec = { id: 'p8', root: 'older', name: 'older', trust: null };
+  const call = async (req) => ({ result: req.op === 'project.settings' ? { files: own, hash: hashOf(own), verifiable: true, over: null } : {} });
+  const trust = makeTrust({ call, store: () => storeOf(rec, TRUST_EPOCH) });
+  const v = await trust.view(rec);
+  assert.equal(v.summary.agentsComplete, false);
+  await trust.trust(rec, v.hash);
+  const d = await trust.decide('/workspace/older');
+  assert.equal(d.state, 'trusted');
+  assert.notEqual(d.agents.state, 'trusted');
 });
 
 test('an agent\'s folder settings changed while it started (what it read then): checked again once it opened — no turn runs', async () => {

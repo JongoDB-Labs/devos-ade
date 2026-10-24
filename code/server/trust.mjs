@@ -109,20 +109,41 @@ export function placeOf(f, root) {
 }
 
 /** checkFiles(project.settings' RESULT, root) -> {files: [{name, type, size, sha256, target, text, at, tool, claude,
- *  surface}], ok, agentOk}: ok false when the list does not fit what bn-coded lists for a project in root (a bad name, a
- *  row whose place does not fit its name, rows that say where they came from beside rows that do not, the same name
- *  twice, out of order, too many): then unverifiable; agentOk false when a row of the other tools' part cannot be
- *  believed (a row by its name alone for what Copilot reads): that part unverifiable, never Claude Code's */
+ *  surface}], ok, agentOk}: each part checked on its own — whose part a row is, from where it says it was read (its
+ *  surface: the project's .claude or .mcp.json, a .claude tree above it: Claude Code's; anything else: the other
+ *  tools') — so a row of the other tools' part never touches Claude Code's: ok false when Claude Code's rows do not fit
+ *  what bn-coded lists for a project in root (a bad name, a row whose place does not fit its name, rows that say where
+ *  they came from beside rows that do not, the same name twice, out of order, more than FILES_MAX), then Claude Code's
+ *  part is unverifiable; agentOk false when the other tools' rows do not (the same, and a row by its name alone for
+ *  what Copilot reads), then theirs is */
+// claudeRow(f) -> whether a row says it is of Claude Code's part (its surface and folder alone: what is checked of it
+// is its place, below)
+const claudeRow = (f) => {
+  const kind = typeof f?.surface === 'string' ? fold(f.surface) : null;
+  if (kind === null) return true;   // (a list of the older shape: Claude Code's names only)
+  if (f.at === '' || f.at === undefined) {
+    // (and a row of the folder's own .claude/ or .mcp.json by its name, whatever surface it says: Claude Code's — one
+    // that does not fit is Claude Code's part's to fail)
+    const first = typeof f.name === 'string' ? fold(f.name.split('/')[0]) : '';
+    return kind === '.claude' || kind === '.mcp.json' || first === '.claude' || first === '.mcp.json';
+  }
+  return kind === '.claude' || (kind.startsWith('.claude/') && surfaceOf(kind, true)?.tool === null);
+};
 export function checkFiles(r, root) {
   const rows = Array.isArray(r?.files) ? r.files : [];
-  let ok = rows.length <= FILES_MAX, agentOk = true;
+  let ok = true, agentOk = true;
   const placed = rows.some((f) => f && typeof f === 'object' && (f.surface !== undefined || f.at !== undefined));
   const files = [];
-  for (const f of rows.slice(0, FILES_MAX)) {
+  const count = { claude: 0, agent: 0 }, last = { claude: null, agent: null };
+  for (const f of rows.slice(0, 2 * FILES_MAX + 1)) {
+    const part = f && typeof f === 'object' && !claudeRow(f) ? 'agent' : 'claude';
+    const bad = () => { if (part === 'agent') agentOk = false; else ok = false; };
+    if (++count[part] > FILES_MAX) { bad(); continue; }
     const nameShape = f && typeof f === 'object' && typeof f.name === 'string' && f.name.length <= 1024 && !/[\x00-\x1f\x7f]/.test(f.name);
     const place = !nameShape ? null : placed ? placeOf(f, root) : legacyNameOk(f.name) ? { tool: null, claude: true } : null;
-    if (!place || (files.length && files.at(-1).name >= f.name)) { ok = false; continue; }
+    if (!place || place.claude !== (part === 'claude') || (last[part] !== null && last[part] >= f.name)) { bad(); continue; }
     if (place.refused) agentOk = false;
+    last[part] = f.name;
     files.push({
       name: f.name, type: TYPES.includes(f.type) ? f.type : 'other', size: Number.isInteger(f.size) && f.size >= 0 ? f.size : null,
       sha256: SHA.test(f.sha256 ?? '') ? f.sha256 : null, target: typeof f.target === 'string' ? short(f.target, 1000) : null,
@@ -130,6 +151,9 @@ export function checkFiles(r, root) {
       claude: place.claude, surface: placed && typeof f.surface === 'string' ? f.surface : null,
     });
   }
+  if (rows.length > 2 * FILES_MAX) { ok = false; agentOk = false; }
+  // (the same name twice — in either part —: the listing cannot be believed)
+  if (new Set(files.map((f) => f.name)).size !== files.length) { ok = false; agentOk = false; }
   return { files, ok, agentOk };
 }
 
@@ -765,7 +789,8 @@ export function makeTrust({ call, store, log = () => {} }) {
       && (!planPlugins || result?.planHash === planHash) && files.every((f) => f.type !== 'name') && shown(files);
     // the other tools' part (an agent of your subscriptions needs it as well)
     const agentOver = typeof result?.agentOver === 'string' ? short(result.agentOver, 200) : null;
-    const agentPresent = agentFiles.length > 0 || !ok || agentOver !== null;
+    // (a sandbox that says nothing of the other tools' part — an older bn-coded — is not "nothing of theirs": not known)
+    const agentPresent = agentFiles.length > 0 || !ok || !agentOk || agentOver !== null || typeof result?.agentVerifiable !== 'boolean';
     const agentHash = hashOf(agentFiles);
     const agentVerifiable = ok && agentOk && agentPresent && result?.agentVerifiable === true && !result?.agentOver && agentHash !== null
       && result?.agentHash === agentHash && shown(agentFiles);
