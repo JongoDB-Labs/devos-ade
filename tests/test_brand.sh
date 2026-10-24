@@ -12,20 +12,87 @@ test_no_old_name_left_where_a_person_reads_it() {
 
 test_the_brand_check_finds_an_old_name_and_takes_the_allowed_ones() {
   local r="$TMP/repo"; mkdir -p "$r/docs" "$r/tests/fixtures" "$r/lib"; git -C "$r" init -q
-  cp "$T_ROOT/docs/internal-names.md" "$r/docs/"
+  printf '| Name | Pattern | Files | Why |\n|---|---|---|---|\n| hosts | `bedrock-now\\.localhost` | * | x |\n| env | `\\bBEDROCK_NOW_[A-Z]+\\b` | lib/*.sh | x |\n' > "$r/docs/internal-names.md"
   printf 'lib/x.sh\tkeep bedrock-now here\twhy\n' > "$r/tests/fixtures/brand-allow.txt"
   printf 'log "DevOS ADE is up"\nhost=bedrock-now.localhost v=$BEDROCK_NOW_DIR\n# keep bedrock-now here\n' > "$r/lib/x.sh"
-  printf '## [Unreleased]\n- DevOS ADE (formerly bedrock-now)\n## [0.24.0]\n- bedrock-now did\n' > "$r/CHANGELOG.md"
+  printf '## [Unreleased]\n- DevOS ADE\n## [0.24.0]\n- bedrock-now did\n' > "$r/CHANGELOG.md"
   printf 'echo bedrock-now\n' > "$r/tests/t.sh"   # the tests are not read
   python3 "$T_ROOT/tests/brand_check.py" --root "$r" > "$TMP/out" 2>&1 || { cat "$TMP/out" >&2; return 1; }
+  # a pattern applies only in its files: BEDROCK_NOW_DIR in a doc is left
+  printf 'set BEDROCK_NOW_DIR\n' > "$r/README.md"
   printf 'echo "Bedrock Now is up"\n' > "$r/lib/y.sh"; printf '## [0.25.0]\n- bedrock-now here\n' >> "$r/CHANGELOG.md"
   if python3 "$T_ROOT/tests/brand_check.py" --root "$r" > "$TMP/out" 2>&1; then echo "missed an old name" >&2; return 1; fi
   assert_contains "$(cat "$TMP/out")" "lib/y.sh:1: echo \"Bedrock Now is up\""
+  assert_contains "$(cat "$TMP/out")" "README.md:1: set BEDROCK_NOW_DIR"
   assert_not_contains "$(cat "$TMP/out")" "0.24.0"
-  # an exemption that matches nothing any more fails too
-  rm "$r/lib/y.sh"; printf '## [0.24.0]\n' > "$r/CHANGELOG.md"; printf 'log ok\n' > "$r/lib/x.sh"
+  # an exemption or a pattern that matches nothing any more fails too
+  rm "$r/lib/y.sh" "$r/README.md"; printf '## [0.24.0]\n' > "$r/CHANGELOG.md"; printf 'log ok\n' > "$r/lib/x.sh"
   if python3 "$T_ROOT/tests/brand_check.py" --root "$r" > "$TMP/out" 2>&1; then echo "kept a stale exemption" >&2; return 1; fi
-  assert_contains "$(cat "$TMP/out")" "stale exemption"
+  assert_contains "$(cat "$TMP/out")" "stale (matches nothing): tests/fixtures/brand-allow.txt: lib/x.sh"
+  assert_contains "$(cat "$TMP/out")" "stale (matches nothing): docs/internal-names.md: the pattern \`bedrock-now\\.localhost\`"
+  # a check that cannot run is never "nothing left"
+  printf 'not a table\n' > "$r/docs/internal-names.md"
+  local rc=0; python3 "$T_ROOT/tests/brand_check.py" --root "$r" > "$TMP/out" 2>&1 || rc=$?; assert_eq "$rc" 2
+  rc=0; printf 'x' | python3 "$T_ROOT/tests/brand_check.py" --root "$r" --stdin page > "$TMP/out" 2>&1 || rc=$?; assert_eq "$rc" 2
+}
+
+test_the_brand_check_catches_each_probe_with_the_real_allowlist() {
+  # the real allowlist and exemptions, a copy of the repository's surfaces, and probes of the old name where a person
+  # would read it: each one is caught; the control lines (internal names in their own files) are not
+  local r="$TMP/repo" f line n=0 out
+  mkdir -p "$r/docs" "$r/tests/fixtures"; git -C "$r" init -q
+  cp "$T_ROOT/docs/internal-names.md" "$r/docs/"; cp "$T_ROOT/tests/fixtures/brand-allow.txt" "$r/tests/fixtures/"
+  while IFS="$(printf '\t')" read -r f line; do
+    [ -n "$f" ] || continue
+    mkdir -p "$r/$(dirname "$f")"; printf '%s\n' "$line" >> "$r/$f"
+  done <<'PROBES'
+lib/p.sh	log "bedrock-now is up"
+lib/p.sh	die "not a bedrock-now setting"
+lib/p.sh	echo "bedrock_now is up"
+lib/p.sh	echo "BEDROCK_NOW is up"
+lib/p.sh	echo "name: bedrock-now"
+lib/p.sh	printf 'Type bedrock-now to confirm'
+portal/portal/p.py	msg = "the computer running bedrock-now"
+portal/portal/p.py	UA = "bedrock-now-update-check"
+portal/portal/static/p.js	toast("bedrock-now could not start")
+portal/portal/static/p.html	<title>bedrock-now</title>
+code/web/src/p.ts	throw new Error('bedrock-now' + ' could not start')
+code/web/src/p.tsx	<span>Bedrock-Now</span>
+code/server/p.mjs	const t = `Bedrock Now says ${x}`
+code/server/p2.mjs	export const GITHUB_APP_SLUG = 'bedrock-now';
+terminal/bin/p	echo "BedrockNow"
+README.md	Install bedrock-now with one command
+README.md	the default `~/bedrock-now-workspace` for a new install
+README.md	https://github.com/JongoDB-Labs/bedrock-now
+docs/p.md	bedrock now runs on your Mac
+docs/p.md	the `bedrock-now-chat` Service
+docs/p.md	set BEDROCK_NOW_ to anything
+catalog/settings.tsv	KEY	label	bedrock-now's setting
+compose.p.yaml	OR_APP_NAME: bedrock-now
+compose.p.yaml	name: bedrock-now
+caddy/Caddyfile	respond "bedrock-now's guard" 403
+owui/functions/p.py	author: bedrock-now
+.env.example	# the bedrock-now folder
+install.sh	say "installing bedrock-now into $dir"
+CHANGELOG.md	## [Unreleased]
+CHANGELOG.md	- bedrock-now did a thing
+PROBES
+  # controls: internal names, each in a file its row names
+  printf 'name: bedrock-now\n' > "$r/compose.yaml"
+  printf 'h=bedrock-now.localhost v=$BEDROCK_NOW_DIR\n# DevOS ADE (formerly bedrock-now)\nx=~/devos-ade-workspace, or ~/bedrock-now-workspace\n' > "$r/lib/c.sh"
+  out="$(python3 "$T_ROOT/tests/brand_check.py" --root "$r" 2>&1)" || true
+  for f in lib/p.sh:1 lib/p.sh:2 lib/p.sh:3 lib/p.sh:4 lib/p.sh:5 lib/p.sh:6 portal/portal/p.py:1 portal/portal/p.py:2 \
+           portal/portal/static/p.js:1 portal/portal/static/p.html:1 code/web/src/p.ts:1 code/web/src/p.tsx:1 \
+           code/server/p.mjs:1 code/server/p2.mjs:1 terminal/bin/p:1 README.md:1 README.md:2 README.md:3 docs/p.md:1 \
+           docs/p.md:2 docs/p.md:3 catalog/settings.tsv:1 compose.p.yaml:1 compose.p.yaml:2 caddy/Caddyfile:1 \
+           owui/functions/p.py:1 .env.example:1 install.sh:1 CHANGELOG.md:2; do
+    n=$((n + 1))
+    printf '%s\n' "$out" | grep -q "^$f: " || { echo "probe $f was not caught" >&2; return 1; }
+  done
+  assert_eq "$n" 29
+  for f in compose.yaml lib/c.sh; do
+    if printf '%s\n' "$out" | grep -q "^$f:"; then echo "a control line was taken for the old name: $(printf '%s\n' "$out" | grep "^$f:")" >&2; return 1; fi
+  done
 }
 
 # _py_const FILE NAME -> NAME = "value" of a Python file; _js_const FILE NAME -> export const NAME = 'value'
@@ -56,6 +123,8 @@ test_the_github_apps_slug_is_written_in_one_place() {
   # GITHUB_APP_SLUG in code/server/oauth.mjs: the App's address (github.com/apps/<slug>) and every link built from it
   local o="$T_ROOT/code/server/oauth.mjs" hits
   assert_eq "$(grep -c "^export const GITHUB_APP_SLUG = '[a-z0-9][a-z0-9-]*';\$" "$o")" 1
+  # ... there and nowhere else (outside the tests)
+  assert_eq "$(cd "$T_ROOT" && git grep -l "GITHUB_APP_SLUG = " -- . ':!tests' ':!code/test' ':!code/web/test' ':!code/web/e2e' ':!portal/tests' ':!docs' ':!CHANGELOG.md')" code/server/oauth.mjs
   assert_contains "$(grep '^export const DEFAULT_APPS' "$o")" "appSlug: GITHUB_APP_SLUG"
   # no other slug in the code, and no App address with a slug in it in the docs (they name the App, not its address)
   hits="$(cd "$T_ROOT" && git grep -nE "appSlug: '[a-z0-9-]+'|apps/[a-z0-9][a-z0-9-]*/installations|github\.com/apps/[a-z0-9][a-z0-9-]*([^a-z0-9<-]|\$)" \

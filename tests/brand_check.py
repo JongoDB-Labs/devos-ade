@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
 """The product's old name where a person reads it: every occurrence of bedrock-now (bedrock now, bedrock_now,
 BedrockNow, BEDROCK_NOW, in any case) in the repository's files outside the tests must be an internal name — one the
-allowlist of docs/internal-names.md matches (its table's Pattern column: a regular expression each, the old name
-inside what it matches) — or an exemption of tests/fixtures/brand-allow.txt (a file, the text on its line that holds
-the old name, and why it stays). CHANGELOG.md's entries before v0.25.0 are history: only its header and the entries
-from v0.25.0 on are read. docs/internal-names.md itself (the list of the names that stay) is not read.
+allowlist of docs/internal-names.md matches (its table: a regular expression each, the old name inside what it
+matches, and the files it may match in) — or an exemption of tests/fixtures/brand-allow.txt (a file, the text on its
+line that holds the old name, and why it stays). CHANGELOG.md's entries before v0.25.0 are history: only its header
+and the entries from v0.25.0 on are read. docs/internal-names.md itself (the list of the names that stay) is not read.
 
 Usage: tests/brand_check.py [--root DIR] [PATH-PREFIX...]
-  Prints each occurrence left (path:line: text) and exits 1 when there is one; with no PATH-PREFIX also each
-  exemption that no longer matches anything (stale). PATH-PREFIX limits the look to files under it (a surface).
+  Prints each occurrence left (path:line: text) and exits 1 when there is one; with no PATH-PREFIX also each pattern
+  and each exemption that no longer matches anything (stale). PATH-PREFIX limits the look to files under it.
        tests/brand_check.py --stdin LABEL < PAGE
-  The same look at a text (a page the stack served: tests/e2e/upgrade.sh), with the patterns only.
+  The same look at a text (a page the stack served: tests/e2e/upgrade.sh), with the patterns that may match anywhere.
+  Exit status: 0 nothing left, 1 something left, 2 the check itself could not run.
 Reads the files git knows of, and new ones it does not ignore (git ls-files --cached --others --exclude-standard).
 """
 
 from __future__ import annotations
 
+import fnmatch
 import re
 import subprocess
 import sys
@@ -26,19 +28,31 @@ OLD = re.compile(r"bedrock[-_ ]?now", re.I)
 SKIP = ("tests/", "portal/tests/", "code/test/", "code/web/test/", "code/web/e2e/", "portal/e2e/")
 DOC = "docs/internal-names.md"
 ALLOW = "tests/fixtures/brand-allow.txt"
-# A row of the allowlist table: | name | `pattern` | why | (a "|" of the pattern written \| in the table)
-ROW = re.compile(r"^\|[^|]*\|\s*`([^`]+)`\s*\|")
+# A row of the allowlist table: | name | `pattern` | files | why | — files: globs (`lib/*.sh`, `compose*.yaml`, a
+# comma between), or `*` for any file; a "|" of the pattern is written \| in the table
+ROW = re.compile(r"^\|[^|]*\|\s*`((?:[^`\\]|\\.)+)`\s*\|\s*([^|]+?)\s*\|")
 RELEASE = re.compile(r"^## \[(\d+)\.(\d+)\.(\d+)\]")
 
 
-def patterns(root: Path) -> list[re.Pattern]:
+class Pattern:
+    def __init__(self, rx: str, files: str):
+        self.text = rx
+        self.rx = re.compile(rx.replace("\\|", "|"))
+        self.globs = [g.strip().strip("`") for g in files.split(",") if g.strip()]
+        self.used = False
+
+    def applies(self, path: str) -> bool:
+        return any(g == "*" or fnmatch.fnmatchcase(path, g) for g in self.globs)
+
+
+def patterns(root: Path) -> list[Pattern]:
     out = []
     for line in (root / DOC).read_text(encoding="utf-8").splitlines():
         m = ROW.match(line)
         if m:
-            out.append(re.compile(m.group(1).replace("\\|", "|")))
+            out.append(Pattern(m.group(1), m.group(2)))
     if not out:
-        raise SystemExit(f"{DOC}: no patterns found (a table row: | name | `pattern` | why |)")
+        raise SystemExit(f"{DOC}: no patterns found (a table row: | name | `pattern` | files | why |)")
     return out
 
 
@@ -73,6 +87,23 @@ def spans(rx: re.Pattern, text: str) -> list[tuple[int, int]]:
     return [m.span() for m in rx.finditer(text)]
 
 
+def uncovered(line: str, pats: list[Pattern], extra=()) -> bool:
+    """True when an occurrence of the old name on LINE lies outside what the patterns (and the EXTRA spans) match;
+    marks the patterns that covered one as used."""
+    occ = spans(OLD, line)
+    if not occ:
+        return False
+    covered = [(s, p) for p in pats for s in spans(p.rx, line)] + [(s, None) for s in extra]
+    left = False
+    for s, e in occ:
+        hit = [p for (a, b), p in covered if a <= s and e <= b]
+        left = left or not hit
+        for p in hit:
+            if p is not None:
+                p.used = True
+    return left
+
+
 def check(root: Path, prefixes: list[str]) -> tuple[list[str], list[str]]:
     pats, allow = patterns(root), exemptions(root)
     used = [False] * len(allow)
@@ -80,9 +111,8 @@ def check(root: Path, prefixes: list[str]) -> tuple[list[str], list[str]]:
     for path in files(root):
         if path.startswith(SKIP) or path == DOC or (prefixes and not path.startswith(tuple(prefixes))):
             continue
-        f = root / path
         try:
-            data = f.read_bytes()
+            data = (root / path).read_bytes()
         except OSError:
             continue   # (listed but gone: a deleted file not yet staged)
         if b"\0" in data[:8192]:
@@ -91,30 +121,27 @@ def check(root: Path, prefixes: list[str]) -> tuple[list[str], list[str]]:
         if path == "CHANGELOG.md":
             lines = changelog_lines(lines)
         mine = [(i, a) for i, a in enumerate(allow) if a[0] == path]
+        here = [p for p in pats if p.applies(path)]
         for n, line in enumerate(lines, 1):
-            occ = spans(OLD, line)
-            if not occ:
+            if not OLD.search(line):
                 continue
-            covered = [s for p in pats for s in spans(p, line)]
+            extra = []
             for i, (_, text, _) in mine:
                 at = [(m.start(), m.start() + len(text)) for m in re.finditer(re.escape(text), line)]
                 if at:
                     used[i] = True
-                    covered += at
-            if any(not any(a <= s and e <= b for a, b in covered) for s, e in occ):
+                    extra += at
+            if uncovered(line, here, extra):
                 left.append(f"{path}:{n}: {line.strip()[:200]}")
     stale = [f"{ALLOW}: {p}\t{t}" for (p, t, _), u in zip(allow, used) if not u and (not prefixes or p.startswith(tuple(prefixes)))]
+    if not prefixes:
+        stale += [f"{DOC}: the pattern `{p.text}`" for p in pats if not p.used]
     return left, stale
 
 
 def check_text(root: Path, label: str, text: str) -> list[str]:
-    pats = patterns(root)
-    left = []
-    for n, line in enumerate(text.splitlines(), 1):
-        covered = [s for p in pats for s in spans(p, line)]
-        if any(not any(a <= s and e <= b for a, b in covered) for s, e in spans(OLD, line)):
-            left.append(f"{label}:{n}: {line.strip()[:200]}")
-    return left
+    pats = [p for p in patterns(root) if "*" in p.globs]
+    return [f"{label}:{n}: {line.strip()[:200]}" for n, line in enumerate(text.splitlines(), 1) if uncovered(line, pats)]
 
 
 def main(argv: list[str]) -> int:
@@ -123,20 +150,28 @@ def main(argv: list[str]) -> int:
         root, argv = Path(argv[1]).resolve(), argv[2:]
     if argv[:1] == ["--stdin"] and len(argv) == 2:
         left = check_text(root, argv[1], sys.stdin.read())
-        print("\n".join(left)) if left else None
+        if left:
+            print("\n".join(left))
         return 1 if left else 0
     left, stale = check(root, argv)
     for line in left:
         print(line)
-    for line in stale if not argv else []:
-        print(f"stale exemption (matches nothing): {line}")
-    if left or (stale and not argv):
-        print(f"{len(left)} occurrence(s) of the old name left, {len(stale)} stale exemption(s): change the text to "
-              f"DevOS ADE, or — for an internal name — add a pattern to {DOC} or an exemption to {ALLOW}",
+    for line in stale:
+        print(f"stale (matches nothing): {line}")
+    if left or stale:
+        print(f"{len(left)} occurrence(s) of the old name left, {len(stale)} stale pattern(s) or exemption(s): change "
+              f"the text to DevOS ADE, or — for an internal name — add a pattern to {DOC} or an exemption to {ALLOW}",
               file=sys.stderr)
         return 1
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except SystemExit as e:
+        # (a malformed allowlist: the check could not run — never "nothing left")
+        sys.exit(e.code if isinstance(e.code, int) else (print(e.code, file=sys.stderr) or 2))
+    except Exception as e:  # noqa: BLE001
+        print(f"brand_check: {type(e).__name__}: {e}", file=sys.stderr)
+        sys.exit(2)
