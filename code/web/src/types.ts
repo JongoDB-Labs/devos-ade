@@ -90,7 +90,7 @@ export type Ev =
   | { kind: 'tool_use'; id: string; name: string; input: unknown; parent: string | null }
   | { kind: 'tool_result'; id: string; text: string; isError: boolean; edit: EditInfo | null; parent: string | null }
   | { kind: 'task'; id: string; status: string; summary: string; toolUseId: string | null }
-  | { kind: 'local'; text: string }
+  | { kind: 'local'; text: string; said?: SandboxWords }
   | { kind: 'status'; text: string; mode: Mode | null; model: string | null }
   | { kind: 'result'; subtype: string; turns: number; durationMs: number; usage: Usage; isError: boolean; consumed?: string[] }
   | { kind: 'error'; text: string; said?: SandboxWords }

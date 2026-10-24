@@ -36,7 +36,7 @@ export type Item =
       result: { text: string; isError: boolean; edit: EditInfo | null } | null;
       parent: string | null;
     }
-  | { t: 'local'; k: number; text: string }
+  | { t: 'local'; k: number; text: string; said?: SandboxWords }
   | { t: 'result'; k: number; subtype: string; turns: number; durationMs: number; usage: Usage; isError: boolean; turn: number; models?: string[]; picked?: string }
   | { t: 'notice'; k: number; text: string; level: 'info' | 'warn' | 'error'; said?: SandboxWords | null }
   /** files that run on your computer changed: the card with diffs and Revert */
@@ -280,7 +280,7 @@ export function applyEvent(v: SessionView, ev: Ev, now = Date.now()): SessionVie
       return { ...v, tasks };
     }
     case 'local':
-      return push(endStreaming(v), { t: 'local', k: v.nextKey, text: ev.text });
+      return push(endStreaming(v), { t: 'local', k: v.nextKey, text: ev.text, ...(ev.said ? { said: ev.said } : {}) });
     case 'status':
       return { ...v, status: ev.text, mode: ev.mode ?? v.mode, model: ev.model ?? v.model };
     case 'result': {

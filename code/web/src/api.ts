@@ -256,7 +256,8 @@ export function normEvent(v: unknown): Ev | null {
       };
     }
     case 'local':
-      return { kind: 'local', text: cap(o.text, LIMITS.text) };
+      // (said: what the repository named, in the sandbox's words — shown apart, under our sentence)
+      return { kind: 'local', text: cap(o.text, LIMITS.text), ...saidIn(o) };
     case 'status':
       return {
         kind: 'status',

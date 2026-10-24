@@ -375,6 +375,7 @@ export function MessageList({ view }: { view: SessionView | undefined }) {
         return (
           <div key={it.k} class="local" data-testid="local">
             <MarkdownView text={it.text} />
+            {it.said && <SandboxSaid words={it.said} compact />}
           </div>
         );
       case 'result':
