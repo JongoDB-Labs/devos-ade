@@ -160,6 +160,36 @@
 	header_down Referrer-Policy no-referrer
 }
 
+# Open WebUI's Python runner — a deliberate, public, static exception. The runner loads Pyodide's runtime, and the wheels
+# our Open WebUI image vendors (open-webui/Dockerfile), from /pyodide/ inside a sandboxed frame of its own: an opaque
+# origin, which sends no cookie (the session check would answer 401) and says Origin: null (the same-site guard would
+# refuse its fetches and its module import). Those files are the image's own, the same for everyone — no user data; an
+# unknown name gets Open WebUI's page shell, which holds none either. So exactly these requests are answered without
+# the guard and the session check: GET or HEAD of one file name directly under /pyodide/ (on the decoded path — no
+# folder, no dot first: nothing escaped can name another path), with no cookie, no X-Portal-User, no proxy secret and
+# no Authorization passed on (Open WebUI answers them as it answers anyone), nothing it sets passed back, CORS open to
+# any origin (never with credentials), and Chat's own policy. Anything else under /pyodide/ — another method, a folder,
+# a dot first — is behind both, like the rest of Chat. {args[0]}: the origin that may frame Chat. Imported first on
+# each Chat site (here and on the remote ones), before the guard.
+(chat_runtime) {
+	@chat_runtime {
+		method GET HEAD
+		path_regexp ^/pyodide/[A-Za-z0-9][A-Za-z0-9._-]*$
+	}
+	request_header @chat_runtime -Cookie
+	request_header @chat_runtime -Authorization
+	request_header @chat_runtime -X-Portal-User
+	request_header @chat_runtime -X-Portal-Proxy
+	request_header @chat_runtime -X-Portal-Remote
+	reverse_proxy @chat_runtime open-webui:8080 {
+		header_down -Set-Cookie
+		header_down -X-Frame-Options
+		header_down Access-Control-Allow-Origin *
+		header_down -Access-Control-Allow-Credentials
+		import chat_csp {args[0]}
+	}
+}
+
 # Replaces whatever framing policy the app sends (LiteLLM: X-Frame-Options DENY + CSP frame-ancestors 'none';
 # Open WebUI and RustFS: none) with "only the portal may frame this".
 (frame_by_portal_only) {
@@ -210,6 +240,8 @@ http://{$PORTAL_HOST} {
 http://{$CHAT_HOST} {
 	route {
 		import local_request
+		# (Open WebUI's Python runner's static files: public, no session — chat_runtime)
+		import chat_runtime {$PORTAL_ORIGIN}
 		import not_from_preview
 		import portal_auth
 		reverse_proxy open-webui:8080 {

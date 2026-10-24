@@ -35,7 +35,7 @@ test_admin_calls_still_use_master_key() {
 test_setup_key_created_before_probe() {
   STACK_DIR="$TMP"; mkdir -p "$TMP/litellm"
   printf 'BUDGET_SETUP=5\n' > "$ENV_FILE"
-  render_config() { :; }; ensure_images() { :; }; run_phase() { :; }; choose_defaults() { :; }
+  render_config() { :; }; ensure_images() { :; }; owui_build() { :; }; run_phase() { :; }; choose_defaults() { :; }
   dc() { :; }; refresh_prices() { :; }   # never a real build/run in a (possibly live) Compose project
   ensure_virtual_key() { echo "KEY $*" >> "$TMP/calls"; }
   probe_models() { echo "PROBE" >> "$TMP/calls"; echo big > "$1"; }

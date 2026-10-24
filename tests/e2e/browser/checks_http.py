@@ -382,6 +382,62 @@ def chat_cors(ctx):
     return f"Access-Control-Allow-Origin only for {chat}; none for the portal, admin, files, terminal or another site"
 
 
+@check("http", "chat-python-runtime-public-and-exact")
+def chat_python_runtime(ctx):
+    """Chat's one public route (caddy/Caddyfile chat_runtime: Open WebUI's Python runner loads Pyodide from a sandboxed
+    frame — no cookie, Origin: null): GET and HEAD of one file name under /pyodide/ answer without a session, with
+    Access-Control-Allow-Origin * (never with credentials), Chat's own policy, nothing set; the lock names the vendored
+    wheels by their bare names. Everything else under /pyodide/ — a POST, a folder, a dot first, the same encoded — is
+    behind the session check as before; an opaque origin is still refused elsewhere. An unknown name gets Open WebUI's
+    page shell, which says nothing of anyone."""
+    bad = []
+    want_csp = CHAT_CSP.format(origin=origin(), host=host_of("chat"))
+    for method in ("GET", "HEAD"):
+        r = http(method, "chat", "/pyodide/pyodide.js", {"Origin": "null", "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "cors"},
+                 cookie="bn_session=not-a-session; other=1")
+        if r.status != 200:
+            bad.append(f"{method} pyodide.js -> {r.status}")
+        if r.header("access-control-allow-origin") != "*" or r.header("access-control-allow-credentials"):
+            bad.append(f"{method} CORS: {r.header('access-control-allow-origin')!r} credentials {r.header('access-control-allow-credentials')!r}")
+        if csp_differs(r.header("content-security-policy") or "", want_csp):
+            bad.append(f"{method} CSP differs: {csp_differs(r.header('content-security-policy') or '', want_csp)}")
+        if r.header("set-cookie"):
+            bad.append(f"{method} sets a cookie")
+    r = http("GET", "chat", "/pyodide/pyodide-lock.json", {"Origin": "null"})
+    lock = json.loads(r.body) if r.status == 200 else {}
+    pk = lock.get("packages", {})
+    vendored = sorted(n for n, p in pk.items() if "/" not in str(p.get("file_name", "/")))
+    if not {"micropip", "numpy"} <= set(vendored):
+        bad.append(f"lock: vendored {vendored[:8]}")
+    if any("/" not in str(p.get("file_name", "")) and n not in vendored for n, p in pk.items()):
+        bad.append("lock: a relative name for a package not vendored")
+    r = http("GET", "chat", "/pyodide/vendored.json", {})
+    if r.status != 200 or not {x["name"] for x in json.loads(r.body).get("ready", [])} >= {"micropip", "numpy"}:
+        bad.append(f"vendored.json -> {r.status}")
+    # behind the session as before: another method, a folder, a dot first — and the same spelled with escapes
+    for method, path in (("POST", "/pyodide/pyodide.js"), ("PUT", "/pyodide/pyodide.js"), ("GET", "/pyodide/a/b.js"), ("GET", "/pyodide/.env"),
+                         ("GET", "/pyodide/..%2fapi%2fconfig"), ("GET", "/pyodide/%2e%2e/api/config"), ("GET", "/pyodide/a%2fb.js"),
+                         ("GET", "/pyodide/%2epyodide.js"), ("GET", "/pyodide/"), ("GET", "/pyodide"), ("GET", "/api/v1/auths/")):
+        r = http(method, "chat", path, {"Accept": "application/json"}, "{}" if method in ("POST", "PUT") else None)
+        if r.status != 401:
+            bad.append(f"{method} {path} -> {r.status} (not the session check)")
+    # the same-site guard steps back for that route only: an opaque origin's request to Chat's API is still refused
+    r = http("GET", "chat", "/api/config", {"Origin": "null", "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "cors"})
+    if r.status != 403 or "opaque origin" not in (r.header("x-bn-refused") or ""):
+        bad.append(f"opaque origin on /api/config -> {r.status} {r.header('x-bn-refused')!r}")
+    # an unknown name: Open WebUI's page shell, the same for everyone — nothing of the admin, no session, no key
+    r = http("GET", "chat", "/pyodide/bn-no-such-file.js", {})
+    text = r.body.decode("utf-8", "replace")
+    secrets_in = [k for k in ("OPENWEBUI_ADMIN_EMAIL", "OPENWEBUI_API_KEY", "LITELLM_MASTER_KEY", "PORTAL_PASSWORD", "WEBUI_SECRET_KEY")
+                  if ENV.get(k) and ENV[k] in text]
+    if r.status != 200 or secrets_in or "bn_session" in text:
+        bad.append(f"unknown name -> {r.status}, holds {secrets_in}")
+    expect(not bad, "; ".join(bad))
+    return ("/pyodide/<one name>: GET/HEAD public (CORS *, no credentials, Chat's policy, nothing set; micropip and numpy "
+            "vendored by name); POST, folders, dots, escapes → the session check; opaque origins still refused elsewhere; "
+            "an unknown name → the page shell, nothing of anyone")
+
+
 @check("final", "logout-csrf-and-revocation")
 def logout(ctx):
     s = portal_login()

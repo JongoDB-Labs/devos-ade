@@ -369,6 +369,12 @@ so a phone needs remote access (HTTPS) turned on first; a tablet or a small brow
   Settings, not live: `./stack costs` and Home always show the current spend.
 - **Knowledge:** Workspace → Knowledge to create a knowledge base and upload documents; type `#` in a chat to
   attach one.
+- **Python runner:** a Python block's **Run** runs it in your browser (Pyodide), with **numpy, pandas and matplotlib**
+  (and micropip): the stack builds its own Open WebUI image with their wheels in it (`open-webui/packages.txt`), each
+  checked against the hash Open WebUI's Pyodide lists for it. Any other package is not available: Chat's page talks
+  only to Open WebUI itself, so a package from Pyodide's CDN is refused and the block says so. `./stack status` says
+  how many are ready, and which were left out and why (a build that could not download one goes on without it and
+  tries again at the next `./stack up`).
 - **Voice:** read-aloud uses your system's voices. The microphone and voice **calls** (the sound-wave button)
   use [server speech-to-text](#voice-speech-to-text): Mistral Voxtral on Bedrock, on by default when your AWS
   key can use it (AWS no longer accepts its audio since October 2026), or your own OpenAI or Groq key. Without
@@ -2387,6 +2393,8 @@ code/                         the Code page: its backend (server/, Agent SDK pin
 shared-mcp/                   MCP server for shared files and knowledge (Python; tests: docker build --target test shared-mcp)
 stt/                          the speech-to-text service for Voxtral on Bedrock (Python, ffmpeg; tests in stt/tests)
 owui/functions/               the Open WebUI cost filter (tests in owui/tests)
+open-webui/                   our Open WebUI image: the pinned one, with the Python runner's packages (packages.txt,
+                              vendor.py; tests in tests/test_openwebui.sh)
 catalog/                      models, prices, display names, icons, AWS price map; settings.tsv: every setting
                               (the Settings page, ./stack config and the update helper's allowlist),
                               settings-layout.tsv where the page shows each; code-models.tsv: how each model works

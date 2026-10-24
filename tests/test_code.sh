@@ -483,7 +483,7 @@ test_images_rollback_and_uninstall() {
   assert_eq "$(code_image_refs)" "bedrock-now/code:local"
   assert_contains "$(sed -n '/^images_snapshot_before() {/,/^}/p' "$STACK_DIR/lib/images.sh")" "code_image_refs"
   case " $LOCAL_BUILDS " in *" code "*) ;; *) echo "code is not a local build" >&2; return 1 ;; esac
-  dc() { printf 'caddy:2\nbedrock-now/code:local\n'; }
+  dc() { printf 'caddy:2\nbedrock-now/code:local\n'; }; compose_refs() { :; }   # (compose.yaml's own: test_phases.sh)
   docker() { return 1; }
   assert_eq "$(missing_images)" "caddy:2"
   docker() { echo "docker $*" >> "$TMP/docker"; return 0; }

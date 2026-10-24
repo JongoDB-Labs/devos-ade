@@ -137,7 +137,11 @@ class Chat(Base):
 
     def handle_any(self):
         user = self.headers.get("X-Portal-User")
-        seen_chat.append({"path": self.path, "method": self.command, "user": user, "origin": self.headers.get("Origin")})
+        seen_chat.append({"path": self.path, "method": self.command, "user": user, "origin": self.headers.get("Origin"),
+                          "headers": {k.lower(): v for k, v in self.headers.items()}})
+        if self.path.startswith("/pyodide/"):
+            # (like Open WebUI's static files — and a cookie of its own in the answer, which Caddy must not pass on)
+            return self.send(200, "/* pyodide stand-in */", "text/javascript", [("Set-Cookie", "owui_static=1; Path=/")])
         if self.path.startswith("/api/"):
             self.body()
             return self.send(200, json.dumps({"user": user, "chats": ["the chat about the merger"]}), "application/json", self.cors())
@@ -333,6 +337,38 @@ def run(b, ctx, page, reqs, resps, by_frame):
         got = r.headers.get("content-security-policy", "")
         check("chat-csp-remote", r.status == 200 and not csp_differs(got, want) and r.headers.get("referrer-policy") == "no-referrer",
               f"{r.status}: CSP {got!r}, Referrer-Policy {r.headers.get('referrer-policy')!r}")
+        # Chat's one public route (Caddyfile chat_runtime, Open WebUI's Python runner's static files): signed in, with a
+        # spoofed X-Portal-User and an Authorization too — none of it, no cookie (the session's included) and no proxy
+        # secret reaches Open WebUI; nothing it sets comes back; CORS open without credentials; Chat's policy
+        n0 = len(seen_chat)
+        r = ctx.request.get(CHAT + "/pyodide/bn-probe.js", max_redirects=0,
+                            headers={"X-Portal-User": "intruder@example.com", "Authorization": "Bearer bn-probe", "Origin": "null"})
+        got_rt = [c for c in seen_chat[n0:] if c["path"] == "/pyodide/bn-probe.js"]
+        h = got_rt[0]["headers"] if got_rt else {}
+        leaked = [k for k in ("cookie", "x-portal-user", "x-portal-proxy", "x-portal-remote", "authorization") if k in h]
+        cookies_sent = [c["name"] for c in ctx.cookies(CHAT + "/")]
+        check("chat-runtime-remote-no-cookie-reaches-open-webui",
+              r.status == 200 and len(got_rt) == 1 and not leaked and bool(cookies_sent)
+              and r.headers.get("access-control-allow-origin") == "*" and "access-control-allow-credentials" not in r.headers
+              and "set-cookie" not in r.headers and not csp_differs(r.headers.get("content-security-policy", ""), want),
+              f"{r.status}; the browser holds {cookies_sent} for Chat; Open WebUI saw {sorted(h)} (leaked: {leaked}); "
+              f"ACAO {r.headers.get('access-control-allow-origin')!r}, Set-Cookie {r.headers.get('set-cookie')!r}")
+        # anything else under /pyodide/ — another method, a folder, a dot first, the same escaped — is behind the session
+        # check: without a session Open WebUI never sees it
+        anon = b.new_context(ignore_https_errors=True)
+        try:
+            n0 = len(seen_chat)
+            st = {}
+            for method, path in (("POST", "/pyodide/bn-probe.js"), ("GET", "/pyodide/a/bn-probe.js"), ("GET", "/pyodide/..%2fapi%2fbn-probe"),
+                                 ("GET", "/pyodide/%2e%2e/api/bn-probe"), ("GET", "/pyodide/.bn-probe"), ("GET", "/api/bn-probe")):
+                rr = anon.request.fetch(CHAT + path, method=method, max_redirects=0, headers={"Accept": "application/json"},
+                                        data="{}" if method == "POST" else None)
+                st[f"{method} {path}"] = rr.status
+            reached = [c["path"] for c in seen_chat[n0:]]
+            check("chat-runtime-remote-exact", all(v == 401 for v in st.values()) and not reached,
+                  f"{st}; Open WebUI saw {reached}")
+        finally:
+            anon.close()
         page.goto(CODE + "/")
         page.wait_for_selector("#password", timeout=20000)
         # the unlock page loads the portal's style sheet and logo: same-site plain assets, which the guard lets through

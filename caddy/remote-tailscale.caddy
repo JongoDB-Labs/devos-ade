@@ -60,6 +60,8 @@ http://{$REMOTE_HOST}:8081 {
 http://{$REMOTE_CHAT_HOST}:8081 {
 	route {
 		import remote_request
+		# (Open WebUI's Python runner's static files: public, no session — Caddyfile chat_runtime)
+		import chat_runtime {$REMOTE_ORIGIN}
 		import not_from_preview
 		import handoff_callback
 		import portal_auth

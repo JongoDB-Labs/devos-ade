@@ -121,8 +121,8 @@ test_cmd_test_reports_every_failure_on_closed_ports() {
   # run like ./stack does: errexit + pipefail active, not in a conditional context
   set +e; (set -eo pipefail; cmd_test) > "$TMP/o" 2>&1; rc=$?; set -e; out="$(cat "$TMP/o")"
   [ "$rc" -ne 0 ] || { echo "cmd_test should fail" >&2; return 1; }
-  assert_eq "$(printf '%s\n' "$out" | grep -c '  FAIL ')" 12
-  assert_contains "$out" "12 check(s) failed"
+  assert_eq "$(printf '%s\n' "$out" | grep -c '  FAIL ')" 14
+  assert_contains "$out" "14 check(s) failed"
   assert_contains "$out" "skip  checks behind the portal login"
 }
 

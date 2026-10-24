@@ -3285,12 +3285,29 @@ never reads, copies, keeps, passes on or relays a login.**
   another site either (`location = …`, a refresh: the embedding page's `frame-src` decides where its frames go). The
   e2e checks each of these is refused and never requested (`browser/chat-images-own-only`), and that Open WebUI's own
   page works under the policy — its images, code highlighting, Mermaid, the Artifacts panel — with no CSP error of its
-  own (`browser/chat-own-page-under-policy`). **Open WebUI's Python runner does not work in this stack yet:** it runs
-  Pyodide in a sandboxed frame of its own, whose request for `pyodide.js` carries no session cookie, so the portal's
-  sign-in refuses it (401) and a Python block's *Run* fails. That predates this release — Chat's policy is not the
-  cause (a frame made the same way requests the script with no CSP violation, and gets the same 401) — and is to be
-  fixed in v0.24.1; the e2e reports that 401 as a known issue (`browser/chat-python-runner`, XFAIL), never as
-  working, and any other failure there as a failure.
+  own (`browser/chat-own-page-under-policy`).
+- [x] **Chat's one public route: the Python runner's static files — a deliberate exception.** Open WebUI runs Python
+  blocks with Pyodide in a sandboxed frame of its own (an opaque origin), which sends no cookie and says
+  `Origin: null`, so the session check and the same-site guard would refuse what it loads. Caddy answers exactly
+  these requests without either (`caddy/Caddyfile` `chat_runtime`, first on every Chat site, local and remote): GET or
+  HEAD of one file name directly under `/pyodide/`, matched on the decoded path (no folder, no dot first: an escaped
+  `..` or `/` names no other path). Nothing that says who you are is passed on — no cookie (the session's included),
+  no `X-Portal-User`, no proxy secret, no `Authorization` — so Open WebUI answers them as it answers anyone; nothing it
+  sets comes back; the answer allows any origin to read it, never with credentials; and Chat's policy holds there as
+  everywhere. What is there is public and static, the same for everyone: Pyodide's runtime from the Open WebUI image,
+  the wheels our build vendored into it, and the lists of them (`pyodide-lock.json`, `vendored.json`); an unknown name
+  gets Open WebUI's page shell, which holds nothing of anyone. Everything else under `/pyodide/` — another method, a
+  folder, a dot first — is behind the session check, and an opaque origin is still refused everywhere else.
+  The packages: Pyodide's lock names its CDN for every one, which Chat's page never reaches (its policy: requests to
+  itself only — unchanged). So the stack builds its own Open WebUI image (`open-webui/`: the pinned image, by digest,
+  as its base; `<project>/open-webui:local`, never pulled), whose build reads the image's own lock, downloads the
+  wheels of `open-webui/packages.txt` (micropip, numpy, pandas, matplotlib) and what they need from the lock's own
+  URLs, checks each against the lock's sha256, puts them beside Pyodide and names them in the lock by their bare names
+  — and only those, and only with everything they need: a wheel that fails or does not match is left out and said
+  (the build goes on; `./stack status`), and nothing downloaded is run at build time (`python3 -I`, a timeout each, a
+  cap each and in all; it writes only Pyodide's folder). Any other package keeps its CDN URL, and its import fails
+  with Chat's policy refusing the request (the e2e: `browser/chat-python-runner`, `-numpy`, `-not-vendored`,
+  `http/chat-python-runtime-public-and-exact`; the remote harness checks that no cookie reaches Open WebUI there).
 - [ ] **What Chat's page and an artifact can still do.** A name the browser looks up on its own for a host a document
   names — DNS prefetching, a `<link rel=preconnect>` — and a WebRTC peer connection's STUN request to a server the
   document names are governed by no directive of Chat's policy: the host name, or the request, can carry a little out.
@@ -3299,7 +3316,7 @@ never reads, copies, keeps, passes on or relays a login.**
   (`detectArtifacts`: a user who turns it back on has them open, and run, as an answer arrives).
 - [ ] **What Chat's page no longer loads from elsewhere.** Open WebUI's own page would fetch a few things from other
   hosts, which the policy refuses: Kokoro, its speech in the browser (its WebAssembly from cdn.jsdelivr.net — the stack
-  reads aloud with your system's voices), Python packages the bundled Pyodide does not have (cdn.jsdelivr.net), a PDF
+  reads aloud with your system's voices), Python packages our Open WebUI image does not vendor (cdn.jsdelivr.net), a PDF
   shown in a new window (pdfobject from cdnjs), and the favicons of cited web pages.
 - [ ] **What Open WebUI puts in a system message is the chat app's.** A Chat model on your plan takes a leading system
   message as the chat app's instructions (and says so to the agent); Open WebUI puts what it retrieved there too — a

@@ -109,7 +109,17 @@ services:
     logging: *logging
 
   open-webui:
-    image: ghcr.io/open-webui/open-webui:v0.12.0-slim
+    # Open WebUI as pinned (the base below), with the Python runner's packages vendored into it (open-webui/: Chat's
+    # page reaches only Open WebUI itself) — built here, never pulled (no registry image can take its name); ./stack
+    # setup, update and up build it
+    build:
+      context: ./open-webui
+      args:
+        # the pinned Open WebUI, by digest: its pyodide-lock.json pins every vendored wheel (open-webui/Dockerfile's
+        # default is the same: tests/test_openwebui.sh)
+        image: ghcr.io/open-webui/open-webui:v0.12.0-slim@sha256:a1edc483ff9e92c974875ca8a10c76ea7c9d462835cff1f1215318873f14f0ee
+    image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/open-webui:local   # per project, like portal
+    pull_policy: never
     restart: unless-stopped
     environment:
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?run ./stack setup}

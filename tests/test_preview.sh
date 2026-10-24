@@ -158,20 +158,26 @@ test_every_app_host_has_the_same_site_guard_first() {
   # first thing in the portal's routes
   assert_eq "$(awk '/^\(portal_routes\)/,/^}/' "$STACK_DIR/caddy/Caddyfile" | sed -n 2p | tr -d '\t')" "import not_from_preview"
   # every app site, local and remote: right after the local/remote rules (the portal: its routes, which start with
-  # it); the preview sites never
+  # it; Chat: right after Open WebUI's Python runner's public static files — chat_runtime, GET/HEAD of one name under
+  # /pyodide/, tests/test_portal.sh —, the one route before it); the preview sites never
   for f in Caddyfile terminal-on.caddy code-on.caddy remote-tailscale.caddy remote-domain.caddy remote-domain-preview-own.caddy preview-on.caddy; do
     got="$(awk '/import (local|remote)_request$/ { getline n; while (n ~ /^[[:space:]]*#/) getline n; sub(/^[[:space:]]+/, "", n); print n }' \
       "$STACK_DIR/caddy/$f" | sort | uniq -c | awk '{ $1 = $1; print }' | tr '\n' '|')"
     case "$f" in
-      Caddyfile) want="3 import not_from_preview|1 import portal_routes|" ;;                       # chat admin files, portal
+      Caddyfile) want='1 import chat_runtime {$PORTAL_ORIGIN}|2 import not_from_preview|1 import portal_routes|' ;;   # chat, admin files, portal
       terminal-on.caddy | code-on.caddy) want="1 import not_from_preview|" ;;
       remote-*-own.caddy) want='1 import remote_preview "https://{$REMOTE_CODE_HOST:code.remote.invalid} {$REMOTE_ORIGIN}"|' ;;
-      remote-*) want='5 import not_from_preview|1 import portal_routes|1 import remote_preview "https://{$REMOTE_CODE_HOST:code.remote.invalid} {$REMOTE_ORIGIN}"|' ;;
+      remote-*) want='1 import chat_runtime {$REMOTE_ORIGIN}|4 import not_from_preview|1 import portal_routes|1 import remote_preview "https://{$REMOTE_CODE_HOST:code.remote.invalid} {$REMOTE_ORIGIN}"|' ;;
       preview-on.caddy) want="1 request_header -X-Bn-Preview-*|" ;;
     esac
     assert_eq "$got" "$want"
   done
   assert_eq "$(grep -c 'not_from_preview' "$STACK_DIR/caddy/preview-on.caddy" "$STACK_DIR/caddy/remote-domain-preview-own.caddy" | awk -F: '{ s += $2 } END { print s }')" 1   # (a comment)
+  # (and on Chat's sites the guard right after chat_runtime)
+  for f in Caddyfile remote-tailscale.caddy remote-domain.caddy; do
+    got="$(awk '/import chat_runtime/ { getline n; while (n ~ /^[[:space:]]*#/) getline n; sub(/^[[:space:]]+/, "", n); print n }' "$STACK_DIR/caddy/$f")"
+    assert_eq "$got" "import not_from_preview"
+  done
 }
 
 test_the_remote_preview_host_follows_the_remote_code_page() {

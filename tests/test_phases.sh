@@ -111,9 +111,11 @@ RUN
 }
 
 test_missing_images_skips_local_builds_and_present_images() {
-  dc() { printf 'pgvector/pgvector:0.8.7-pg17\nghcr.io/berriai/litellm:1.105.0\nbedrock-now/shared-mcp:local\n'; }
+  dc() { printf 'pgvector/pgvector:0.8.7-pg17\nghcr.io/berriai/litellm:1.105.0\nbedrock-now/shared-mcp:local\nbedrock-now/open-webui:local\n'; }
+  # (compose.yaml's own references: the bases of its local builds too — Open WebUI's — each once)
+  compose_refs() { printf 'ghcr.io/berriai/litellm:1.105.0\nghcr.io/open-webui/open-webui:v9-slim@sha256:%064d\nbedrock-now/open-webui:local\n' 0; }
   docker() { case "$*" in "image inspect pgvector/pgvector:0.8.7-pg17") return 0 ;; *) return 1 ;; esac; }
-  assert_eq "$(missing_images | tr '\n' ' ')" "ghcr.io/berriai/litellm:1.105.0 "
+  assert_eq "$(missing_images | tr '\n' ' ')" "ghcr.io/berriai/litellm:1.105.0 ghcr.io/open-webui/open-webui:v9-slim@sha256:$(printf '%064d' 0) "
 }
 
 test_ensure_images_announces_size_and_pulls_only_missing() {

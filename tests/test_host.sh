@@ -318,7 +318,7 @@ test_aws_auth_check_role_mode_only_on_ec2() {
 test_cmd_up_runs_the_aws_preflight_first() {
   printf 'AWS_REGION_NAME=us-east-1\n' > "$ENV_FILE"
   aws_auth_check() { echo checked >> "$TMP/calls"; exit 3; }
-  ensure_images() { echo images >> "$TMP/calls"; }
+  ensure_images() { echo images >> "$TMP/calls"; }; owui_build() { :; }
   rc=0; (cmd_up) 2>/dev/null || rc=$?
   assert_eq "$rc" "3"
   assert_eq "$(cat "$TMP/calls")" "checked"
@@ -502,7 +502,7 @@ test_serve_keeps_the_mac_awake_without_holding_the_lock() {   # the real cmd_up 
   _serve_stubs; host_os() { echo Darwin; }
   eval "$(sed -n '/^cmd_up() {/,/^}/p' "$T_ROOT/lib/commands.sh")"   # (_serve_stubs stubs it)
   for f in aws_auth_check check_portal_host save_portal_origin ensure_portal_password_hash owner_email_lowercase \
-    settings_pending_check ensure_portal_dirs write_version_file ensure_images refresh_prices openrouter_up_hook \
+    settings_pending_check ensure_portal_dirs write_version_file ensure_images owui_build refresh_prices openrouter_up_hook \
     stt_before_up remote_up_hook ensure_portal_reachable cmd_status maybe_auto_open portal_session_end run_phase; do eval "$f() { :; }"; done
   config_prices_line() { echo p; }; stt_up_hook() { return 1; }; reprice_litellm_config() { return 1; }
   portal_session_start() { return 1; }; remote_on() { return 1; }; stt_services() { :; }

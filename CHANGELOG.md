@@ -6,6 +6,17 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Fixed
+
+- **Chat's Python runner works**, with numpy, pandas and matplotlib. Open WebUI runs Python blocks with Pyodide in a
+  sandboxed frame of its own, which sends no cookie: the portal answered its `pyodide.js` with 401 (before this
+  release too). Chat now serves Open WebUI's static `/pyodide/` files without the session check — GET and HEAD of one
+  file name, nothing that says who you are passed on, Chat's own policy (docs/security.md, *Chat's one public route*)
+  — and the stack builds its own Open WebUI image with the wheels of `open-webui/packages.txt` in it, each checked
+  against Pyodide's lock: Chat's page still talks only to itself, so any other package is not available, and says so.
+  `./stack status` says what is ready and what was left out; a build that could not download a wheel goes on without
+  it and tries again at the next `./stack up`.
+
 ## [0.25.0] - 2026-10-24
 
 ### Changed

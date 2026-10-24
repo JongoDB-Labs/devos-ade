@@ -1177,10 +1177,8 @@ def chat_own_page(ctx):
     from itself only): an answer with a highlighted code block, a Mermaid diagram and an html block opened in the
     Artifacts panel by its Preview button (detectArtifacts is off) — each works, with no CSP error of Open WebUI's own;
     and a sandboxed frame made as Open WebUI's Python runner makes its own requests Open WebUI's pyodide.js with no CSP
-    violation (the request goes out: the policy allows it — its answer is the portal's 401, so the script never runs).
-    The Python runner itself does not work in this stack yet — a known issue that
-    predates this release, to be fixed in v0.24.1: browser/chat-python-runner. No model call: the conversation is made
-    through Open WebUI's own API."""
+    violation (the policy allows it; the runner itself: browser/chat-python-runner and the checks after it). No model
+    call: the conversation is made through Open WebUI's own API."""
     import secrets
     need("open-webui")
     page, rec = ctx.page("chat-own-page")
@@ -1212,8 +1210,7 @@ def chat_own_page(ctx):
         done.append("Mermaid diagram")
         # the Python runner's way of loading Pyodide (a sandboxed frame of its own, an opaque origin, asking for Open
         # WebUI's pyodide.js): the policy lets the request go — a frame made the same way requests the script with no
-        # CSP violation. That is all this shows: the answer is the portal's 401 (such a frame carries no session
-        # cookie — chat-python-runner, a known issue), so the script never runs
+        # CSP violation (Chat's public route answers it: chat-python-runtime-public-and-exact)
         v = f.evaluate("""() => new Promise((r) => {
             const x = document.createElement('iframe'); x.setAttribute('sandbox', 'allow-scripts'); x.style.display = 'none';
             const on = (e) => { if (e.source === x.contentWindow) { window.removeEventListener('message', on); x.remove(); r(e.data); } };
@@ -1252,22 +1249,24 @@ def chat_own_page(ctx):
     return "; ".join(done) + " — no CSP error of Open WebUI's own"
 
 
-@check("browser", "chat-python-runner")
-def chat_python_runner(ctx):
-    """Open WebUI's Python runner: a Python block's Run prints 42. A KNOWN ISSUE (tests/e2e/known-issues.tsv: reported
-    as XFAIL): the runner does not work in this stack yet. Open WebUI runs Pyodide in a sandboxed frame of its own (an
-    opaque origin), whose request for pyodide.js carries no session cookie, so the portal's sign-in refuses it (401)
-    and the block shows "loadPyodide is not defined". This predates this release (Chat's policy is not what refuses
-    it: in chat-own-page-under-policy a frame made the same way requests the script with no CSP violation, and gets the
-    same 401) and is to be fixed in v0.24.1. Fails while it does not print 42 — saying whether it failed that way or otherwise — so it never reads as
-    working; skips when the admin turned code execution off (no Run button). No model call."""
+def _run_python(ctx, name: str, code: str, want: str, shot_name: str):
+    """A conversation whose answer is CODE in a Python block, made through Open WebUI's own API (no model call); its
+    Run clicked, then (page, rec, mark, shown) once the block shows WANT on a line of its own, or an error (the runner's
+    stderr), or 180 s passed. Skips when the admin turned code execution off (no Run button). The conversation is
+    deleted afterwards (cleanup: called by the check through the returned function)."""
     import secrets
     need("open-webui")
-    page, rec = ctx.page("chat-python-runner")
+    page, rec = ctx.page(name)
     login(page)
     fl, f = chat_frame(page)
     tag = f"bnpy{secrets.token_hex(4)}"
-    cid = _owui_chat(f, "Here it is.\n\n```python\nprint(6 * 7)\n```\n", f"Python {tag}")
+    cid = _owui_chat(f, f"Here it is.\n\n```python\n{code}\n```\n", f"Python {tag}")
+
+    def cleanup():
+        try:
+            owui_api(f, f"/api/v1/chats/{cid}", "DELETE")
+        except Exception:  # noqa: BLE001 — the frame went away: the conversation stays (a test one)
+            pass
     try:
         fl, f = chat_frame(page, f"c/{cid}")
         f.wait_for_function("t => document.body.innerText.includes(t)", arg="Here it is.", timeout=30000)
@@ -1277,25 +1276,97 @@ def chat_python_runner(ctx):
         mark = len(rec.events)
         run.first.click()
         try:
-            f.wait_for_function("() => /(^|\\n)42(\\n|$)/.test(document.body.innerText) || document.body.innerText.includes('loadPyodide is not defined')",
-                                timeout=180000)
+            f.wait_for_function("""w => document.body.innerText.split('\\n').some((l) => l.trim() === w)
+                || /Error|Traceback|loadPyodide is not defined/.test(document.body.innerText.split('Here it is.').pop())""",
+                                arg=want, timeout=180000)
         except PwError:
             pass
-        shot(page, "07d-chat-python-runner")
-        if re.search(r"(^|\n)42(\n|$)", f.evaluate("() => document.body.innerText")):
-            rec.save()
-            return "Python run in the browser (Pyodide): 42"
-        no_cookie = [x for x in rec.problems(start=mark) if x.startswith("401 GET ") and "/pyodide/pyodide.js" in x]
+        page.wait_for_timeout(1500)
+        shot(page, shot_name)
+        shown = f.evaluate("() => document.body.innerText.split('Here it is.').pop()")
+        return page, rec, mark, shown, cleanup
+    except BaseException:
+        cleanup()
+        raise
+
+
+def _away(events) -> list[str]:
+    """The requests (answered or refused) to a host that is not one of the stack's own (HOST and its subdomains)."""
+    from urllib.parse import urlsplit
+    out = []
+    for e in events:
+        if e.get("t") in ("resp", "failed") and not e["url"].startswith(("data:", "blob:")):
+            h = (urlsplit(e["url"]).hostname or "").lower()
+            if h != HOST and not h.endswith("." + HOST):
+                out.append(e["url"])
+    return out
+
+
+def _line(shown: str, want: str) -> bool:
+    return any(x.strip() == want for x in shown.splitlines())
+
+
+@check("browser", "chat-python-runner")
+def chat_python_runner(ctx):
+    """Open WebUI's Python runner: a Python block's Run prints 42. The runner runs Pyodide in a sandboxed frame of its
+    own (an opaque origin: no cookie, Origin: null), which loads Pyodide's runtime and micropip from /pyodide/ — Chat's
+    one public route (caddy/Caddyfile chat_runtime), served from our Open WebUI image (open-webui/: the wheels vendored
+    into it, so nothing comes from another host). Before v0.24.1 the frame got the portal's 401 for pyodide.js. No model
+    call."""
+    page, rec, mark, shown, cleanup = _run_python(ctx, "chat-python-runner", "print(6 * 7)", "42", "07d-chat-python-runner")
+    try:
+        own = [x for x in rec.problems(start=mark) if "/pyodide/" in x]
+        if not _line(shown, "42"):
+            raise AssertionError(f"the Python runner did not print 42: {shown[-300:]!r}; its /pyodide/ answers: {own[:6]}; "
+                                 f"errors: {rec.problems(start=mark)[:6]}")
+        loaded = sorted({e["url"].rsplit("/", 1)[1] for e in rec.events[mark:] if e.get("t") == "resp" and "/pyodide/" in e["url"] and e["status"] == 200})
+        expect(any(n.startswith("micropip-") for n in loaded), f"micropip not loaded from /pyodide/: {loaded}")
+        away = _away(rec.events[mark:])
+        expect(not away, f"the runner asked another host: {away[:4]}")
         rec.save()
-        if no_cookie:
-            raise AssertionError("the Python runner does not work in this stack yet: its sandboxed frame's request for pyodide.js "
-                                 "carries no session cookie (401) — predates this release, to be fixed in v0.24.1")
-        raise AssertionError(f"the Python runner failed otherwise (not the known 401): {rec.problems(start=mark)[:6]}")
+        return f"Python run in the browser (Pyodide): 42 — loaded from Chat itself: {', '.join(loaded)}"
     finally:
-        try:
-            owui_api(f, f"/api/v1/chats/{cid}", "DELETE")
-        except Exception:  # noqa: BLE001 — the frame went away: the conversation stays (a test one)
-            pass
+        cleanup()
+
+
+@check("browser", "chat-python-numpy")
+def chat_python_numpy(ctx):
+    """A vendored package works: `import numpy` in a Python block (Open WebUI installs it through micropip, from the
+    wheel our image vendors under /pyodide/), and its answer is printed. No request leaves Chat."""
+    code = "import numpy as np\nprint(int(np.arange(7).sum()) * 2)"
+    page, rec, mark, shown, cleanup = _run_python(ctx, "chat-python-numpy", code, "42", "07e-chat-python-numpy")
+    try:
+        expect(_line(shown, "42"), f"numpy did not answer 42: {shown[-300:]!r}; errors: {rec.problems(start=mark)[:6]}")
+        wheel = [e["url"] for e in rec.events[mark:] if e.get("t") == "resp" and "/pyodide/numpy-" in e["url"] and e["status"] == 200]
+        expect(wheel, "numpy's wheel was not loaded from /pyodide/")
+        away = _away(rec.events[mark:])
+        expect(not away, f"the runner asked another host: {away[:4]}")
+        rec.save()
+        return "import numpy: 42, its wheel from /pyodide/"
+    finally:
+        cleanup()
+
+
+@check("browser", "chat-python-not-vendored")
+def chat_python_not_vendored(ctx):
+    """A package our image does not vendor stays out of reach: `import requests` makes Open WebUI install it through
+    micropip, whose lock names Pyodide's CDN for it — Chat's policy refuses that (connect-src: Chat itself only), so the
+    block shows an error, the browser says it refused (a CSP violation), and no request to the CDN goes out."""
+    page, rec, mark, shown, cleanup = _run_python(ctx, "chat-python-not-vendored", "import requests\nprint('bnrequests')", "bnrequests",
+                                                  "07f-chat-python-not-vendored")
+    try:
+        expect(not _line(shown, "bnrequests"), "a package that is not vendored was imported")
+        cdn = [e for e in rec.events[mark:] if e.get("t") in ("resp", "failed") and "cdn.jsdelivr.net" in e.get("url", "")]
+        answered = [e["url"] for e in cdn if e["t"] == "resp"]
+        expect(not answered, f"a request to the CDN was answered: {answered[:3]}")
+        refused = [e for e in cdn if e["t"] == "failed" and "csp" in (e.get("error") or "").lower()]
+        said = [e["text"] for e in rec.events[mark:] if e.get("t") == "console" and "cdn.jsdelivr.net" in e.get("text", "")
+                and ("Content Security Policy" in e["text"] or "Refused to connect" in e["text"])]
+        expect(refused or said, f"no CSP refusal seen for the CDN: {[e.get('error') for e in cdn][:3]} {rec.problems(start=mark)[:4]}")
+        rec.save()
+        return f"import requests: not available — the CDN refused by Chat's policy ({'blocked: csp' if refused else 'a CSP violation'}), nothing answered"
+    finally:
+        cleanup()
 
 
 def _last_answer(f):

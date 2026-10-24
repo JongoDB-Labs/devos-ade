@@ -1,0 +1,8 @@
+# The Python packages Chat's Python runner (Open WebUI's, Pyodide) can import: vendor.py puts each one's wheel, and
+# its dependencies' (from the image's own pyodide-lock.json), into the image's /app/build/pyodide/, so the runner loads
+# them from Open WebUI itself. Any other package stays on the CDN the lock names, which Chat's page never reaches
+# (its policy: requests to itself only), so importing it fails. One name per line, as pyodide-lock.json names it.
+micropip
+numpy
+pandas
+matplotlib

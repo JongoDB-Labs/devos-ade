@@ -252,11 +252,12 @@ image_size_mb() { # rough on-disk size of a pinned image, for the first-run down
   esac
 }
 
-# missing_images -> compose images not present locally (locally built ones excluded)
+# missing_images -> compose images not present locally (locally built ones excluded; the bases compose.yaml pins for
+# them — Open WebUI's — included: lib/images.sh compose_refs)
 missing_images() {
   local img
-  dc config --images 2>/dev/null | while IFS= read -r img; do
-    case "$img" in '' | */shared-mcp:local | */portal:local | */stt:local | */caddy-dns:local | */terminal:local | */terminal-egress:local | */code:local) continue ;; esac
+  { dc config --images 2>/dev/null; compose_refs < "$STACK_DIR/compose.yaml" 2>/dev/null; } | awk '!seen[$0]++' | while IFS= read -r img; do
+    case "$img" in '' | */shared-mcp:local | */portal:local | */stt:local | */caddy-dns:local | */terminal:local | */terminal-egress:local | */code:local | */open-webui:local) continue ;; esac
     docker image inspect "$img" >/dev/null 2>&1 || printf '%s\n' "$img"
   done
 }
@@ -271,6 +272,52 @@ ensure_images() {
   for img in $missing; do
     docker pull "$img" || die "could not download $img — check your network / registry access and re-run $rerun"
   done
+}
+
+
+# --- Open WebUI's own image: the pinned Open WebUI with the Python runner's packages (open-webui/) ---
+
+# owui_build — builds <project>/open-webui:local (open-webui/Dockerfile; from Docker's cache unless its inputs
+# changed), then records what its Python runner has (python_runner_status). A build whose vendoring could not download
+# a package (vendored.txt: "download failed" — a network failure) is tried again by the next one, at most once an
+# hour: a new BN_VENDOR_TRY, kept for the builds after it (Docker's cache then holds that result, never the old one).
+owui_build() {
+  local d try
+  d="$(status_dir)"; mkdir -p "$d" 2>/dev/null || true
+  try="$(cat "$d/python-runner.try" 2>/dev/null || true)"
+  case "$try" in '' | *[!0-9]*) try=0 ;; esac
+  if grep -q 'download failed' "$d/python-runner.txt" 2>/dev/null; then try="$(date -u +%Y%m%d%H)"; fi
+  building "Open WebUI's image (with the Python runner's packages)" dc build -q --build-arg "BN_VENDOR_TRY=$try" open-webui || return 1
+  printf '%s\n' "$try" > "$d/python-runner.try" 2>/dev/null || true
+  python_runner_status
+}
+
+# python_runner_status — the image's vendored.txt (vendor.py: a line a package, ready or left out and why) into
+# .state/status/python-runner.txt, once per build (the image's ID is kept beside it): printable ASCII and tabs only,
+# at most 400 lines. Never fatal.
+python_runner_status() {
+  local d img id f
+  d="$(status_dir)"; img="$(project_name)/open-webui:local"
+  id="$(docker image inspect --format '{{.Id}}' "$img" 2>/dev/null || true)"
+  [ -n "$id" ] || return 0
+  [ "$(cat "$d/python-runner.id" 2>/dev/null || true)" != "$id" ] || return 0
+  f="$(mktemp "$d/.python-runner.XXXXXX" 2>/dev/null)" || return 0
+  if docker run --rm --network none --entrypoint cat "$img" /app/build/pyodide/vendored.txt > "$f" 2>/dev/null; then
+    LC_ALL=C tr -cd '\t\n -~' < "$f" | head -n 400 > "$d/python-runner.txt"
+    chmod 644 "$d/python-runner.txt" 2>/dev/null || true
+    printf '%s\n' "$id" > "$d/python-runner.id"
+  fi
+  rm -f "$f"
+}
+
+# python_runner_line -> "Python runner (Chat): N packages ready; left out: NAME (why), …" (./stack status), or nothing
+# before a build said
+python_runner_line() {
+  local f; f="$(status_dir)/python-runner.txt"
+  [ -s "$f" ] || return 0
+  awk -F'\t' '$1 == "ready" { n++ } $1 == "left" { l = l (l != "" ? ", " : "") $2 " (" $3 ")" }
+    END { printf "Python runner (Chat): %d package%s ready", n, (n == 1 ? "" : "s"); if (l != "") printf "; left out: %s", l; printf "\n" }' "$f" |
+    cut -c1-600
 }
 
 # fix_checkout_modes — every tracked file and folder readable by all, as a clone made with umask 022 has them. The
@@ -677,6 +724,7 @@ setup_bringup_and_probe() {
   render_config ""
   setup_step "downloading images"
   ensure_images
+  owui_build || die "could not build Open WebUI's image (./stack logs is empty for a build: run ./stack setup again and read its output)"
   setup_step "starting Postgres + RustFS"
   run_phase "Postgres + RustFS" "postgres rustfs" _up_data_services
   setup_done "Postgres + RustFS started"
@@ -1023,6 +1071,7 @@ cmd_up() {
   settings_pending_check        # a settings change cut short: reconciled below
   ensure_portal_dirs; write_version_file   # lib/version.sh
   ensure_images "./stack up"
+  owui_build || die "could not build Open WebUI's image — run ./stack up again and read its output"
   # Prices (lib/prices.sh): refresh if the last check is older than 12 h (fast: LiteLLM's list only, at most
   # 20 s; the portal's daily run does the AWS cross-check). OpenRouter's hook comes next: when its models
   # changed it re-renders (with these prices) and recreates LiteLLM itself, so reprice_litellm_config then finds
@@ -1121,7 +1170,7 @@ status_table() {
 
 # shellcheck disable=SC2120  # arguments come from the ./stack dispatcher
 cmd_status() {
-  local ps upd fresh='' O_RED O_GRN O_YEL O_OFF
+  local ps upd py fresh='' O_RED O_GRN O_YEL O_OFF
   case "${1:-}" in '') ;; --disk) fresh=--fresh ;; *) die "usage: ./stack status [--disk]   (--disk: measure disk use now)" ;; esac
   out_colors
   check_docker_daemon   # a stopped daemon would otherwise look like "not created" everywhere
@@ -1141,6 +1190,7 @@ cmd_status() {
     printf '  %sUpdate available: %s%s (you have %s) — ./stack update   (release notes on Home)\n' "$O_YEL" "$upd" "$O_OFF" "$(installed_version)"
   fi
   printf '  %s\n' "$(helper_status_line)"   # lib/helper.sh: one-click and automatic updates
+  py="$(python_runner_line)"; [ -z "$py" ] || printf '  %s\n' "$py"   # lib/owui.sh: what Chat's Python runner can import
   # lib/stt.sh: Bedrock speech-to-text turned off because AWS refuses its audio — said until a voice choice is made
   ! stt_notice_on || printf '  %sVoice: %s%s\n' "$O_YEL" "$STT_REFUSED_NOTICE" "$O_OFF"
 }
@@ -1176,6 +1226,11 @@ _test_portal() {
   _check "spoofed X-Portal-User without a session is refused" "$code" 401
   code="$(portal_curl nope / -s -m 10 -o /dev/null -w '%{http_code}' || true)"
   _check "unknown host name is refused" "$code" 404
+  # Chat's one public route (Caddyfile chat_runtime: Open WebUI's Python runner's static files), and only it
+  code="$(portal_curl chat /pyodide/pyodide.js -s -m 10 -o /dev/null -D "$hdr" -w '%{http_code}' -H 'Origin: null' || true)"
+  _check "chat's Python runner files without a session (/pyodide/)" "$code $(_hdr access-control-allow-origin < "$hdr")" "200 *"
+  code="$(portal_curl chat /pyodide/a/b.js -s -m 10 -o /dev/null -w '%{http_code}' -H 'Accept: application/json' || true)"
+  _check "anything else under /pyodide/ needs a session" "$code" 401
   if ! portal_session_start; then
     _check "portal login (PORTAL_PASSWORD)" "${PORTAL_LOGIN_CODE:-}" 303
     _skip "checks behind the portal login" "login failed"

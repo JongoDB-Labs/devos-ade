@@ -71,6 +71,8 @@ https://{$REMOTE_HOST}:8443, https://*.{$REMOTE_HOST}:8443 {
 	@chat host {$REMOTE_CHAT_HOST}
 	route @chat {
 		import remote_request
+		# (Open WebUI's Python runner's static files: public, no session — Caddyfile chat_runtime)
+		import chat_runtime {$REMOTE_ORIGIN}
 		import not_from_preview
 		import handoff_callback
 		import portal_auth

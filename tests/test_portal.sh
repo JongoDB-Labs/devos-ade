@@ -61,7 +61,7 @@ test_migrate_direct_ports_drops_only_the_old_keys() {
 # --- cmd_up keeps PORTAL_ORIGIN in sync with hand-edited PORTAL_HOST / PORTAL_PORT ---
 
 _stub_up() {
-  ensure_images() { :; }; run_phase() { :; }; sync_budget_banner() { :; }; cmd_status() { :; }; maybe_auto_open() { :; }
+  ensure_images() { :; }; owui_build() { :; }; run_phase() { :; }; sync_budget_banner() { :; }; cmd_status() { :; }; maybe_auto_open() { :; }
   portal_login() { echo 303; }; aws_auth_check() { :; }   # (tested in test_host.sh)
   dc() { :; }; refresh_prices() { :; }   # never the real Compose project (it may be a live install)
   owui_apply_hidden() { :; }   # (lib/owui.sh: tested in test_settings.sh)
@@ -289,7 +289,10 @@ test_caddy_chat_policy_one_definition_local_and_remote() {
   assert_contains "$(sed -n '/^http:\/\/{\$CHAT_HOST} {/,/^}/p' "$f")" 'import chat_csp {$PORTAL_ORIGIN}'
   assert_contains "$(sed -n '/^http:\/\/{\$REMOTE_CHAT_HOST}:8081 {/,/^}/p' "$t")" 'import chat_csp {$REMOTE_ORIGIN}'
   assert_contains "$(sed -n '/@chat host {\$REMOTE_CHAT_HOST}/,/^	}/p' "$d")" 'import chat_csp {$REMOTE_ORIGIN}'
-  for r in "$f" "$t" "$d"; do assert_eq "$(grep -c 'import chat_csp' "$r" | tr -d ' ')" 1; done
+  # (once on each Chat site, and once in chat_runtime — Pyodide's static files get the same policy)
+  assert_eq "$(grep -c 'import chat_csp' "$f" | tr -d ' ')" 2
+  assert_contains "$(sed -n '/^(chat_runtime) {/,/^}/p' "$f")" 'import chat_csp {args[0]}'
+  for r in "$t" "$d"; do assert_eq "$(grep -c 'import chat_csp' "$r" | tr -d ' ')" 1; done
   # (after remote_upstream's frame-ancestors-only policy: the later one is what Caddy sends)
   for r in "$(sed -n '/^http:\/\/{\$REMOTE_CHAT_HOST}:8081 {/,/^}/p' "$t")" "$(sed -n '/@chat host {\$REMOTE_CHAT_HOST}/,/^	}/p' "$d")"; do
     assert_eq "$(printf '%s\n' "$r" | grep -oE 'import (remote_upstream|chat_csp)' | tr '\n' ' ')" "import remote_upstream import chat_csp "
@@ -300,6 +303,45 @@ test_caddy_chat_policy_one_definition_local_and_remote() {
   assert_eq "$(python3 -c 'import sys; ns = {}; exec(sys.stdin.read(), ns); print(ns["CHAT_CSP"].format(origin="{args[0]}", host="{http.request.host}"))' <<< "$py")" "$line"
   py="$(sed -n '/^CHAT_CSP = (/,/)$/p' "$STACK_DIR/tests/e2e/browser/common.py")"
   assert_eq "$(python3 -c 'import sys; ns = {}; exec(sys.stdin.read(), ns); print(ns["CHAT_CSP"].format(origin="{args[0]}", host="{http.request.host}"))' <<< "$py")" "$line"
+}
+
+test_caddy_chat_runtime_is_one_exact_public_route_before_the_guard() {
+  # Open WebUI's Python runner's static files (a sandboxed frame: no cookie, Origin: null): GET/HEAD of one file name
+  # directly under /pyodide/, nothing passed on that says who you are, CORS open without credentials, Chat's policy —
+  # imported on every Chat site (local and both remote ones) right after the request's own headers, before the guard
+  local f="$STACK_DIR/caddy/Caddyfile" t="$STACK_DIR/caddy/remote-tailscale.caddy" d="$STACK_DIR/caddy/remote-domain.caddy" snip site want
+  snip="$(sed -n '/^(chat_runtime) {/,/^}/p' "$f")"
+  assert_eq "$(grep -c '^(chat_runtime) {' "$f" | tr -d ' ')" 1
+  for want in "method GET HEAD" 'path_regexp ^/pyodide/[A-Za-z0-9][A-Za-z0-9._-]*$' "request_header @chat_runtime -Cookie" \
+              "request_header @chat_runtime -Authorization" "request_header @chat_runtime -X-Portal-User" "request_header @chat_runtime -X-Portal-Proxy" \
+              "request_header @chat_runtime -X-Portal-Remote" "reverse_proxy @chat_runtime open-webui:8080 {" "header_down -Set-Cookie" \
+              "header_down Access-Control-Allow-Origin *" "header_down -Access-Control-Allow-Credentials" "import chat_csp {args[0]}"; do
+    assert_contains "$snip" "$want"
+  done
+  # (nothing else in it: no other matcher, no other upstream, no session check)
+  assert_eq "$(printf '%s\n' "$snip" | grep -c '@' | tr -d ' ')" 7
+  assert_not_contains "$snip" "portal_auth"
+  assert_not_contains "$snip" "forward_auth"
+  # the pattern on the decoded path: one name, no folder, no dot first — what an escaped path decodes to included
+  local re='^/pyodide/[A-Za-z0-9][A-Za-z0-9._-]*$' p
+  for p in /pyodide/pyodide.js /pyodide/pyodide.asm.wasm /pyodide/python_stdlib.zip /pyodide/pyodide-lock.json /pyodide/numpy-2.2.5-cp314-cp314-pyodide_2026_0_wasm32.whl; do
+    printf '%s\n' "$p" | grep -qE "$re" || { echo "should be the runtime: $p" >&2; return 1; }
+  done
+  for p in /pyodide/ /pyodide/.. /pyodide/../api/v1/chats /pyodide/a/b /pyodide/.env /pyodide/x%2e /pyodide/a/../../api /pyodide /pyodidex/a /api/pyodide/x '/pyodide/a b' /PYODIDE/x; do
+    if printf '%s\n' "$p" | grep -qE "$re"; then echo "should stay behind the guard and the session: $p" >&2; return 1; fi
+  done
+  # on every Chat site: right after the request's own headers, before the guard and the session check
+  site="$(sed -n '/^http:\/\/{\$CHAT_HOST} {/,/^}/p' "$f")"
+  assert_eq "$(printf '%s\n' "$site" | grep -oE 'import (local_request|chat_runtime \{\$PORTAL_ORIGIN\}|not_from_preview|portal_auth)' | tr '\n' '|')" \
+    'import local_request|import chat_runtime {$PORTAL_ORIGIN}|import not_from_preview|import portal_auth|'
+  site="$(sed -n '/^http:\/\/{\$REMOTE_CHAT_HOST}:8081 {/,/^}/p' "$t")"
+  assert_eq "$(printf '%s\n' "$site" | grep -oE 'import (remote_request|chat_runtime \{\$REMOTE_ORIGIN\}|not_from_preview|portal_auth)' | tr '\n' '|')" \
+    'import remote_request|import chat_runtime {$REMOTE_ORIGIN}|import not_from_preview|import portal_auth|'
+  site="$(sed -n '/@chat host {\$REMOTE_CHAT_HOST}/,/^	}/p' "$d")"
+  assert_eq "$(printf '%s\n' "$site" | grep -oE 'import (remote_request|chat_runtime \{\$REMOTE_ORIGIN\}|not_from_preview|portal_auth)' | tr '\n' '|')" \
+    'import remote_request|import chat_runtime {$REMOTE_ORIGIN}|import not_from_preview|import portal_auth|'
+  # and nowhere else
+  assert_eq "$(cat "$f" "$t" "$d" "$STACK_DIR"/caddy/*-on.caddy 2>/dev/null | grep -c 'import chat_runtime' | tr -d ' ')" 3
 }
 
 test_chat_csp_check_takes_each_directive_whole() {
@@ -490,6 +532,8 @@ _fake_caddy() {
       ':/login:'*) code=200 ;;
       chat:/:) code=302; h="Location: $(portal_url)/login?next=x" ;;
       chat:/api/v1/auths/signin:) code=401 ;;
+      chat:/pyodide/pyodide.js:) h="Access-Control-Allow-Origin: *" ;;
+      chat:/pyodide/*:) code=401 ;;
       nope:*) code=404 ;;
       :/login\?next=*) code=303; h="Location: /" ;;
       chat:/*) h="Content-Security-Policy: ${FRAME_CSP:-$(chat_csp "$(portal_url)" "$(app_host chat)")}"$'\r\n'"Referrer-Policy: no-referrer" ;;
