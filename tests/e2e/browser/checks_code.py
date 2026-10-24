@@ -304,9 +304,10 @@ def tab(ctx):
 @check("browser", "code-terminal-typed-address")
 def terminal_typed(ctx):
     """The code host's /.bn/terminal opened as a person does outside the Code page: the address typed into a new tab (or
-    a bookmark: Sec-Fetch-Site none, a user's navigation) opens the terminal like the panel's own link; a link on
-    another site or on another of the portal's hosts gets the portal's card, "Open the terminal from the Code page",
-    whose button leads back to the Code page — never the hand-off."""
+    a bookmark: Sec-Fetch-Site none, a user's navigation) opens the terminal like the panel's own link. A link on
+    another site arrives without the session's SameSite=Strict cookies, so Caddy's check sends it to the portal's
+    sign-in; one on another of the portal's hosts (same-site, the cookies go) gets the portal's card, "Open the
+    terminal from the Code page", whose button leads back to the Code page — never the hand-off."""
     need_on()
     page, rec = ctx.page("code-terminal-typed")
     login(page)
@@ -326,7 +327,7 @@ def terminal_typed(ctx):
     expect(tab.locator("h1", has_text="Unlock").count() == 0, "the terminal asked for its password after the typed address")
     shot(tab, "code-terminal-typed")
     tab.close()
-    # a link on another site: the card, and its button back to the Code page
+    # a link on another site: no session cookie goes with it (SameSite=Strict), so the sign-in, never the terminal
     evil = "http://evil.example/"
     other = rec.attach(page.context.new_page())
     other.route(evil + "**", lambda r: r.fulfill(status=200, content_type="text/html",
@@ -335,12 +336,9 @@ def terminal_typed(ctx):
     with other.expect_navigation():
         other.click("#x")
     expect(not other.url.startswith(term), f"another site's link reached the terminal host: {other.url}")
-    other.locator("h1", has_text="Open the terminal from the Code page").wait_for(timeout=15000)
-    shot(other, "code-terminal-refused")
-    other.click("#terminal-to-code")
-    other.wait_for_function("() => document.querySelector('meta[name=bn-csp-nonce]') !== null", timeout=20000)
-    expect(other.url.rstrip("/") == CODE, f"the card's button led to {other.url}")
-    # a link on another of the portal's hosts (same-site): the card too
+    expect(other.url.startswith(origin() + "/login"), f"another site's link ended on {other.url}, not the portal's sign-in")
+    shot(other, "code-terminal-cross-site")
+    # a link on another of the portal's hosts (same-site: the cookies go): the card, and its button back to the Code page
     other.goto(origin() + "/")
     other.wait_for_selector(".shell")
     other.evaluate("u => { const a = document.createElement('a'); a.id = 'bn-e2e-x'; a.href = u; a.textContent = 'x'; document.body.append(a); }",
@@ -349,11 +347,15 @@ def terminal_typed(ctx):
         other.click("#bn-e2e-x")
     expect(not other.url.startswith(term), f"a same-site link reached the terminal host: {other.url}")
     other.locator("h1", has_text="Open the terminal from the Code page").wait_for(timeout=15000)
+    shot(other, "code-terminal-refused")
+    other.click("#terminal-to-code")
+    other.wait_for_function("() => document.querySelector('meta[name=bn-csp-nonce]') !== null", timeout=20000)
+    expect(other.url.rstrip("/") == CODE, f"the card's button led to {other.url}")
     sites = [r.all_headers().get("sec-fetch-site") for r in sent]
     probs = rec.problems(allow=LOCKED_OK + [r"^403 GET " + re.escape(CODE) + r"/\.bn/terminal$"])
     rec.save()
     expect(not probs, f"errors: {probs}")
-    return f"typed (Sec-Fetch-Site none, ?1) → the terminal, no second password; cross-site and same-site links → the card, its button → the Code page; sent {sites}"
+    return f"typed (Sec-Fetch-Site none, ?1) → the terminal, no second password; another site's link → the sign-in; a same-site link → the card, its button → the Code page; sent {sites}"
 
 
 @check("http", "code-host-locked-policy-origin")
