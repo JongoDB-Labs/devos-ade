@@ -534,13 +534,20 @@ test_compose_code_is_a_sandboxed_container_on_its_own_network() {
   assert_not_contains "$(sed '/^  subs-chat:$/,/^  caddy:$/d' "$STACK_DIR/compose.code.yaml")" "BN_CODE"   # (subs-chat: its own bn-coded's)
   assert_contains "$(awk '/^  terminal:$/,/^  terminal-gateway:$/' "$STACK_DIR/compose.terminal.yaml")" "- code-socket:/run/bn-code"
   assert_contains "$(awk '/^  caddy:$/,/^  portal:$/' "$STACK_DIR/compose.code.yaml")" "networks: [default, terminal-link, code-link]"
-  assert_eq "$(grep -c 'internal: true' "$STACK_DIR/compose.code.yaml")" 2
-  # Chat's models on your subscriptions: Open WebUI's own connection to it, on plan-chat (the two of them alone), with
+  assert_eq "$(grep -c 'internal: true' "$STACK_DIR/compose.code.yaml")" 1
+  # Chat's models on your subscriptions: Open WebUI's own connection to it through the main Caddy's internal site
+  # (:8098, code-on.caddy), never a network shared with Open WebUI (which signs in by X-Portal-User from any peer), with
   # its key; the switch for Claude on your plan reaches it and the portal, never the sandbox
-  assert_contains "$c" "aliases: [code-chat]"
+  assert_not_contains "$(cat "$STACK_DIR/compose.code.yaml")" "plan-chat"
   assert_contains "$c" 'CODE_CHAT_KEY: ${CODE_CHAT_KEY:-}'
   assert_contains "$c" 'CODE_CLAUDE_PLAN: ${CODE_CLAUDE_PLAN:-false}'
-  assert_contains "$(awk '/^  open-webui:$/,/^  portal:$/' "$STACK_DIR/compose.code.yaml")" "networks: [default, plan-chat]"
+  assert_not_contains "$(awk '/^  open-webui:$/,/^  portal:$/' "$STACK_DIR/compose.code.yaml")" "networks:"
+  site="$(awk '/^http:\/\/:8098 \{/,/^}/' "$STACK_DIR/caddy/code-on.caddy")"
+  for want in "request_header -X-Portal-User" "request_header -Cookie" "request_header -X-Bn-Code-Proxy" "@chat path /v1/models /v1/chat/completions" \
+              "reverse_proxy @chat code-upstream:8096" "respond 404" "max_size 24MB"; do
+    assert_contains "$site" "$want"
+  done
+  assert_not_contains "$(grep -n '8098' "$STACK_DIR/compose.yaml" "$STACK_DIR/compose.code.yaml" | grep -i 'ports')" "8098"
   assert_contains "$c" "- chat-socket:/run/bn-chat:ro"
   # Chat's sandbox (subs-chat): the terminal's image and home, bn-coded in Chat's role — none of your files, no key, no
   # token, not on the terminal's network; its way out only through the overlays (the terminal's own way)
@@ -577,7 +584,7 @@ test_compose_render_with_the_code_page() {
 import json, sys
 d = json.load(sys.stdin)
 s = d["services"]; c, t, k = s["code"], s["terminal"], s["caddy"]
-assert list(c["networks"]) == ["code-link", "plan-chat"] and c["networks"]["code-link"]["aliases"] == ["code-upstream"], c["networks"]
+assert list(c["networks"]) == ["code-link"] and c["networks"]["code-link"]["aliases"] == ["code-upstream"], c["networks"]
 # Chat sandbox: the image of the terminal, no folder of yours (the managed settings alone, read-only), the network of the
 # egress proxy as its only one, bn-coded in the chat role, none of the keys of the stack
 x = s["subs-chat"]
@@ -597,12 +604,12 @@ assert sorted(x["tmpfs"]) == ["/home/claude/.config:size=16m,uid=501,gid=20,mode
 assert not any(k.startswith(("ANTHROPIC", "LITELLM", "AWS_", "SHARED_MCP", "BN_MCP")) for k in x["environment"]), x["environment"]
 assert x["environment"]["HTTPS_PROXY"] == "http://egress:3128"
 assert ("chat-socket", "/run/bn-chat", True) in [(v.get("source"), v["target"], v.get("read_only")) for v in c["volumes"]], c["volumes"]
-assert c["networks"]["plan-chat"]["aliases"] == ["code-chat"], c["networks"]
-assert d["networks"]["code-link"]["internal"] is True and d["networks"]["plan-chat"]["internal"] is True
-# plan-chat: the code container and Open WebUI alone; Open WebUI gets a second connection (LiteLLM first), with the key
-assert sorted(n for n, x in s.items() if "plan-chat" in (x.get("networks") or {})) == ["code", "open-webui"]
+assert d["networks"]["code-link"]["internal"] is True and "plan-chat" not in d["networks"]
+# Open WebUI and the code container share no network (Open WebUI signs in by X-Portal-User from any peer); Open WebUI gets
+# a second connection (LiteLLM first) through the main Caddy, with the key
 o = s["open-webui"]
-assert o["environment"]["OPENAI_API_BASE_URLS"] == "http://litellm:4000/v1;http://code-chat:8096/v1", o["environment"]
+assert not set(o.get("networks") or {}) & set(c["networks"]), (o.get("networks"), c["networks"])
+assert o["environment"]["OPENAI_API_BASE_URLS"] == "http://litellm:4000/v1;http://caddy:8098/v1", o["environment"]
 assert o["environment"]["OPENAI_API_KEYS"].startswith(";") or o["environment"]["OPENAI_API_KEYS"].count(";") == 1
 assert c["user"] == "501:20" and c["read_only"] and c["cap_drop"] == ["ALL"] and "ports" not in c
 assert [(v["source"], v["target"], v.get("read_only")) for v in c["volumes"]][:3] == [("code-socket", "/run/bn-code", True), ("chat-socket", "/run/bn-chat", True),

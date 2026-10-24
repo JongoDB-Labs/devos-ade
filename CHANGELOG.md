@@ -63,9 +63,9 @@ All notable changes to bedrock-now are documented here. The format follows
   `subs-codex`, `subs-copilot`, `subs-cursor`, `subs-cursor-login`, `subs-grok`); no workspace, no project folder, no
   LiteLLM key or MCP token, not on the terminal's network; each tool
   started there with its tools switched off where it has a switch, every permission refused, and a turn stopped at
-  the first sign of a tool call (the answer says so; that session is dropped). Open WebUI reaches Chat's models on a
-  network of its own with the code container (`plan-chat`) and a key (`CODE_CHAT_KEY`); no login is read, refreshed or
-  passed on.
+  the first sign of a tool call (the answer says so; that session is dropped). Open WebUI reaches Chat's models
+  through the main Caddy's internal site (`caddy:8098`) with a key (`CODE_CHAT_KEY`) — the code container shares no
+  network with Open WebUI; no login is read, refreshed or passed on.
 - The Code page's agents: their tool calls on your permission cards; never in a mode that approves by itself (an ACP
   agent that starts in one is moved to a safe one, one that has no other or switches itself to one ends its session);
   in a project's folder only while its own settings are trusted — Claude Code's and now also the other tools'

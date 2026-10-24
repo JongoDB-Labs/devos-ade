@@ -16,3 +16,30 @@ http://{$CODE_HOST} {
 		}
 	}
 }
+
+# Your subscriptions as Chat models (code/server/chat.mjs): Open WebUI's connection to the code container goes through
+# this site, so the code container shares no network with Open WebUI — which signs in by X-Portal-User from any peer —
+# a one-way hop, as the stt site's. Port 8098 is not published; it answers on Caddy's container networks. Two paths
+# only; nothing that only Caddy, the portal or the sidecar may set is passed on, and no secret is added: the chat
+# server requires CODE_CHAT_KEY itself. A request of at most 24 MB (the whole conversation, with its images).
+http://:8098 {
+	route {
+		request_header -X-Portal-User
+		request_header -X-Portal-Remote
+		request_header -X-Portal-Proxy
+		request_header -X-Bn-Code-Proxy
+		request_header -Tailscale-User-Login
+		request_header -Tailscale-User-Name
+		request_header -Tailscale-User-Profile-Pic
+		request_header -Tailscale-Headers-Info
+		request_header -Cookie
+		request_body {
+			max_size 24MB
+		}
+		@chat path /v1/models /v1/chat/completions
+		reverse_proxy @chat code-upstream:8096 {
+			flush_interval -1
+		}
+		respond 404
+	}
+}

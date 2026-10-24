@@ -577,9 +577,10 @@ fi
 # --- 1c. the Code page (--code): on, in the terminal's sandbox ---
 # code_probe CONTAINER — inside the code container (its own node): what it reaches and what it holds. "name<TAB>result".
 code_probe() {
-  docker exec -i "$1" node --input-type=module - <<'JS'
+  docker exec -i -e CHAT_HOST="chat.$HOST" -e OWNER="$(get_env OPENWEBUI_ADMIN_EMAIL)" "$1" node --input-type=module - <<'JS'
 import net from 'node:net';
 import fs from 'node:fs';
+import http from 'node:http';
 const tcp = (host, port) => new Promise((r) => { const s = net.connect({ host, port, timeout: 4000 });
   const d = (x) => { s.destroy(); r(x); }; s.on('connect', () => d('open')); s.on('timeout', () => d('closed')); s.on('error', () => d('closed')); });
 for (const [h, p] of [['litellm', 4000], ['portal', 8000], ['open-webui', 8080], ['postgres', 5432], ['rustfs', 9000], ['shared-mcp', 8000],
@@ -596,6 +597,12 @@ let s = 'no'; try { fs.writeFileSync('/run/bn-code/x', 'x'); s = 'yes'; } catch 
 console.log(`socket-dir-writable\t${s}`);
 console.log(`uid\t${process.getuid()}`);
 console.log(`claude-binary\t${fs.existsSync('/usr/local/bin/claude') || fs.readdirSync('/opt/code/node_modules/@anthropic-ai').some((n) => n !== 'claude-agent-sdk') ? 'present' : 'absent'}`);
+// a forged X-Portal-User for Open WebUI's sign-in, through the main Caddy (the only way this container could reach it):
+// Caddy asks the portal first — no session here — so it never reaches Open WebUI
+const forged = await new Promise((r) => { const q = http.request({ host: 'caddy', port: 80, method: 'POST', path: '/api/v1/auths/signin', timeout: 8000,
+  headers: { host: process.env.CHAT_HOST, 'x-portal-user': process.env.OWNER, 'content-type': 'application/json' } }, (res) => { res.resume(); r(String(res.statusCode)); });
+  q.on('timeout', () => { q.destroy(); r('timeout'); }); q.on('error', () => r('closed')); q.end('{}'); });
+console.log(`forged-signin\t${forged}`);
 JS
 }
 if [ "$CODE" = 1 ]; then
@@ -617,8 +624,9 @@ if [ "$CODE" = 1 ]; then
   if [ -z "$cc" ] || [ -z "$tc" ]; then record code code-isolation FAIL 0 "no running code or terminal container"
   else
     probe="$(code_probe "$cc" 2>&1)"; printf '%s\n' "$probe" > "$LOGS/code-isolation.log"; redact "$LOGS/code-isolation.log"
-    # (Open WebUI: on plan-chat it connects here, and so its port answers from here too — its own login required)
-    for k in litellm:4000 portal:8000 postgres:5432 rustfs:9000 shared-mcp:8000 stt:8000 terminal:7681 gateway:8091 \
+    # (Open WebUI among them: it signs in by X-Portal-User from any peer, so the code container never shares a network
+    # with it — Chat's models are reached through the main Caddy's internal site)
+    for k in litellm:4000 portal:8000 open-webui:8080 postgres:5432 rustfs:9000 shared-mcp:8000 stt:8000 terminal:7681 gateway:8091 \
              terminal-upstream:7681 1.1.1.1:443 host.docker.internal:80; do
       printf '%s\n' "$probe" | grep -q "^$k	closed" || bad="$bad $k-reachable"
     done
@@ -628,6 +636,7 @@ if [ "$CODE" = 1 ]; then
       printf '%s\n' "$probe" | grep -q "^${kv%%=*}	${kv#*=}\$" || bad="$bad ${kv%%=*}:$(printf '%s\n' "$probe" | awk -F'\t' -v k="${kv%%=*}" '$1 == k { print $2 }')"
     done
     [ "$(printf '%s\n' "$probe" | awk -F'\t' '$1 == "uid" { print $2 }')" = "$(id -u)" ] || bad="$bad not-your-uid"
+    case "$(printf '%s\n' "$probe" | awk -F'\t' '$1 == "forged-signin" { print $2 }')" in 302 | 401 | 403) ;; *) bad="$bad forged-signin:$(printf '%s\n' "$probe" | awk -F'\t' '$1 == "forged-signin" { print $2 }')" ;; esac
     # From the sandbox: no route to the code container; bn-coded's socket in a folder of its own (mode 700)
     out="$(docker exec "$tc" sh -c 'curl --noproxy "*" -s -m 4 -o /dev/null -w "%{http_code}" http://code-upstream:8095/ || true; printf " %s" "$(stat -c %a /run/bn-code)"; test -S /run/bn-code/coded.sock && printf " socket"' 2>&1)"
     [ "$out" = "000 700 socket" ] || bad="$bad sandbox:$out"
@@ -639,7 +648,7 @@ if [ "$CODE" = 1 ]; then
     for k in LITELLM_KEY_TERMINAL LITELLM_KEY_CLAUDE_CODE LITELLM_MASTER_KEY SHARED_MCP_TOKEN TERMINAL_PROXY_SECRET; do ! env_has "$k" "$ins" || bad="$bad has-$k"; done
     unset ins
     if [ -z "$bad" ]; then
-      record code code-isolation PASS "$(( $(now) - t0 ))" "code container: only Caddy (code-link) and Open WebUI (plan-chat), no LiteLLM, portal, data, stt, sandbox, gateway or internet; no workspace mount (mounts: the two socket folders :ro, the project folders' list :ro, /tmp, Docker's init, its own state volume for Git hosts), read-only, no Claude Code binary, its secrets CODE_PROXY_SECRET and CODE_CHAT_KEY, your uid; 407 without the secret; the sandbox cannot reach it; bn-coded's socket folder 700"
+      record code code-isolation PASS "$(( $(now) - t0 ))" "code container: only Caddy (code-link), no LiteLLM, portal, Open WebUI (a forged X-Portal-User through Caddy: refused), data, stt, sandbox, gateway or internet; no workspace mount (mounts: the two socket folders :ro, the project folders' list :ro, /tmp, Docker's init, its own state volume for Git hosts), read-only, no Claude Code binary, its secrets CODE_PROXY_SECRET and CODE_CHAT_KEY, your uid; 407 without the secret; the sandbox cannot reach it; bn-coded's socket folder 700"
     else record code code-isolation FAIL "$(( $(now) - t0 ))" "unexpected:$bad (log $LOGS/code-isolation.log)"; fi
   fi
 fi
@@ -1176,23 +1185,24 @@ SH
   states="$(docker exec "$tc" subscriptions status --tsv 2>/dev/null | awk -F'\t' '$4 == "yes" { printf "%s ", $1 }')"
   if [ -z "$states" ]; then record subscriptions still-not-signed-in PASS 0 "no tool signed in after its sign-in was ended"
   else record subscriptions still-not-signed-in FAIL 0 "signed in: $states"; fi
-  # Chat's models on your subscriptions: Open WebUI's own connection to the code container (plan-chat, its key) — the
-  # list says which can answer (none signed in; Copilot cannot say: listed), a request reaches the real tool in the
-  # sandbox (Copilot's ACP mode, in a Chat conversation's folder) and comes back "not signed in"; without the key: 401;
-  # the main Caddy (not on plan-chat) cannot even resolve it
-  ow="$(svc_id open-webui)"; cad="$(svc_id caddy)"; ck="$(get_env CODE_CHAT_KEY)"
+  # Chat's models on your subscriptions: Open WebUI's own connection, through the main Caddy's internal site (:8098,
+  # its key) — the list says which can answer (none signed in; Copilot cannot say: listed), a request reaches the real
+  # tool in Chat's sandbox and comes back "not signed in"; without the key: 401; any other path of that site: 404; and
+  # Open WebUI shares no network with the code container (it cannot even resolve it)
+  ow="$(svc_id open-webui)"; ck="$(get_env CODE_CHAT_KEY)"
   if [ -n "$ow" ] && [ -n "$ck" ] && [ "$(get_env CODE_ENABLED)" = true ]; then
     t0="$(now)"
-    models="$(docker exec -e K="$ck" "$ow" sh -c 'curl -s -m 60 -H "Authorization: Bearer $K" http://code-chat:8096/v1/models' 2>/dev/null)"
-    nokey="$(docker exec "$ow" sh -c 'curl -s -o /dev/null -w "%{http_code}" -m 20 http://code-chat:8096/v1/models' 2>/dev/null)"
-    ask="$(docker exec -e K="$ck" "$ow" sh -c 'curl -s -m 120 -w "\n%{http_code}" -H "Authorization: Bearer $K" -H "Content-Type: application/json" -d "{\"model\":\"plan-copilot\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}" http://code-chat:8096/v1/chat/completions' 2>/dev/null)"
-    off="$(docker exec -e K="$ck" "$ow" sh -c 'curl -s -m 60 -w "\n%{http_code}" -H "Authorization: Bearer $K" -H "Content-Type: application/json" -d "{\"model\":\"plan-claude\",\"messages\":[{\"role\":\"user\",\"content\":\"x\"}]}" http://code-chat:8096/v1/chat/completions' 2>/dev/null)"
-    from_caddy="$( { docker exec "$cad" wget -q -O- -T 5 http://code-chat:8096/v1/models >/dev/null 2>&1 && echo reached; } || echo refused)"
-    if printf '%s' "$models" | grep -q '"id":"plan-copilot"' && ! printf '%s' "$models" | grep -Eq 'plan-(codex|cursor|grok|claude)' && [ "$nokey" = 401 ] \
+    models="$(docker exec -e K="$ck" "$ow" sh -c 'curl -s -m 60 -H "Authorization: Bearer $K" http://caddy:8098/v1/models' 2>/dev/null)"
+    nokey="$(docker exec "$ow" sh -c 'curl -s -o /dev/null -w "%{http_code}" -m 20 http://caddy:8098/v1/models' 2>/dev/null)"
+    other="$(docker exec -e K="$ck" "$ow" sh -c 'curl -s -o /dev/null -w "%{http_code}" -m 20 -H "Authorization: Bearer $K" http://caddy:8098/api/state' 2>/dev/null)"
+    ask="$(docker exec -e K="$ck" "$ow" sh -c 'curl -s -m 120 -w "\n%{http_code}" -H "Authorization: Bearer $K" -H "Content-Type: application/json" -d "{\"model\":\"plan-copilot\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}" http://caddy:8098/v1/chat/completions' 2>/dev/null)"
+    off="$(docker exec -e K="$ck" "$ow" sh -c 'curl -s -m 60 -w "\n%{http_code}" -H "Authorization: Bearer $K" -H "Content-Type: application/json" -d "{\"model\":\"plan-claude\",\"messages\":[{\"role\":\"user\",\"content\":\"x\"}]}" http://caddy:8098/v1/chat/completions' 2>/dev/null)"
+    sees="$(docker exec "$ow" sh -c 'for h in code code-upstream code-chat; do getent hosts "$h" >/dev/null 2>&1 && printf "%s " "$h"; done; true' 2>&1)"
+    if printf '%s' "$models" | grep -q '"id":"plan-copilot"' && ! printf '%s' "$models" | grep -Eq 'plan-(codex|cursor|grok|claude)' && [ "$nokey" = 401 ] && [ "$other" = 404 ] \
       && [ "$(printf '%s' "$ask" | tail -n 1)" = 409 ] && printf '%s' "$ask" | grep -q 'GitHub Copilot is not signed in' \
-      && [ "$(printf '%s' "$off" | tail -n 1)" = 403 ] && [ "$from_caddy" = refused ]; then
-      record subscriptions chat-models PASS "$(( $(now) - t0 ))" "Open WebUI's connection: plan-copilot listed (others not signed in), its real ACP agent answered \"not signed in\" (409); no key 401; Claude on your plan off (403); the main Caddy cannot reach it"
-    else record subscriptions chat-models FAIL "$(( $(now) - t0 ))" "models: $(printf '%s' "$models" | head -c 200); no key: $nokey; ask: $(printf '%s' "$ask" | tr '\n' ' ' | tail -c 200); claude: $(printf '%s' "$off" | tail -n 1); caddy: $from_caddy"; fi
+      && [ "$(printf '%s' "$off" | tail -n 1)" = 403 ] && [ -z "$sees" ]; then
+      record subscriptions chat-models PASS "$(( $(now) - t0 ))" "Open WebUI's connection through caddy:8098: plan-copilot listed (others not signed in), its real ACP agent answered \"not signed in\" (409); no key 401; another path 404; Claude on your plan off (403); Open WebUI cannot resolve the code container"
+    else record subscriptions chat-models FAIL "$(( $(now) - t0 ))" "models: $(printf '%s' "$models" | head -c 200); no key: $nokey; other: $other; ask: $(printf '%s' "$ask" | tr '\n' ' ' | tail -c 200); claude: $(printf '%s' "$off" | tail -n 1); resolves: ${sees:-none}"; fi
   else record subscriptions chat-models SKIP 0 "needs the Code page and its Chat key"; fi
   # Chat's own sandbox (subs-chat): the terminal's image, a home of its own, no workspace or project folder mounted, none
   # of the stack's names (gateway, LiteLLM, shared-mcp, the portal, Open WebUI, the code container) resolvable — the

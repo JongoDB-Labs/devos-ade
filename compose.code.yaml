@@ -8,8 +8,8 @@
 # folder of yours and holds no LiteLLM key: files, sessions and plugins are ops of bn-coded, spend and model prices
 # come from the portal (/.bn/spend, /.bn/models on the code host). Its network code-link (internal) it shares
 # with the main Caddy alone, which asks the portal first (session, a fresh unlock, the Origin) and then adds the secret
-# header (CODE_PROXY_SECRET) the code container requires; its other one, plan-chat (internal), with Open WebUI alone,
-# which connects to its :8096 with CODE_CHAT_KEY (your subscriptions as Chat models). It reaches nothing else: not the internet, not LiteLLM, not
+# header (CODE_PROXY_SECRET) the code container requires — and through which Open WebUI's connection to your
+# subscriptions as Chat models reaches its :8096 (Caddy's internal site :8098, with CODE_CHAT_KEY). It reaches nothing else: not the internet, not LiteLLM, not
 # the portal, not the sandbox's network — a Git host sign-in's requests to GitHub or GitLab go through a byte tunnel of
 # bn-coded's (the sandbox's own way out), with TLS from end to end in this container. Everything that comes back from the sandbox is treated as untrusted data.
 # Its previews of dev servers in the sandbox (caddy/preview-on.caddy; over remote access remote_preview) do not pass
@@ -45,7 +45,7 @@ services:
       # session or a Chat answer on your plan is started only while it is on; off by default — Anthropic's two texts
       # pull apart, README "Your AI subscriptions"). A change recreates this container.
       CODE_CLAUDE_PLAN: ${CODE_CLAUDE_PLAN:-false}
-      # Chat's models on your subscriptions: the key Open WebUI's connection to :8096 carries (below), never on a
+      # Chat's models on your subscriptions: the key Open WebUI's connection to :8096 carries (through caddy:8098), never on a
       # command line, never in the sandbox
       CODE_CHAT_KEY: ${CODE_CHAT_KEY:-}
       # What the page's Bypass dialog says about the sandbox: its internet access, and the folder of yours it sees (a
@@ -75,13 +75,11 @@ services:
         target: /etc/bn-code/projects
         read_only: true
         bind: { create_host_path: false, selinux: z }
+    # (one network: Open WebUI's way to Chat's models is the main Caddy's internal site, code-on.caddy :8098 — never a
+    # network shared with Open WebUI, which signs in by X-Portal-User from any peer)
     networks:
       code-link:
         aliases: [code-upstream]
-      # Open WebUI's only way here: Chat's models on your subscriptions (:8096, its key); it shares nothing else with
-      # this container, and this one reaches nothing through it
-      plan-chat:
-        aliases: [code-chat]
     depends_on:
       terminal: { condition: service_healthy }
     logging:   # (YAML anchors do not reach across compose files: same values as x-logging in compose.yaml)
@@ -184,13 +182,13 @@ services:
       PREVIEW_DOMAIN: ${PREVIEW_DOMAIN:-bedrock-now-preview.localhost}
       PREVIEW_PROXY_SECRET: ${PREVIEW_PROXY_SECRET:-}
 
-  # Open WebUI: a second connection besides LiteLLM — your subscriptions as Chat models (the code container's :8096, on
-  # plan-chat; code/server/chat.mjs). Its model list is the subscriptions signed in now (none: an empty list).
+  # Open WebUI: a second connection besides LiteLLM — your subscriptions as Chat models (the code container's :8096,
+  # through the main Caddy's internal site caddy:8098 — code-on.caddy; code/server/chat.mjs). Its model list is the
+  # subscriptions signed in for Chat now (none: an empty list).
   open-webui:
     environment:
-      OPENAI_API_BASE_URLS: "http://litellm:4000/v1;http://code-chat:8096/v1"
+      OPENAI_API_BASE_URLS: "http://litellm:4000/v1;http://caddy:8098/v1"
       OPENAI_API_KEYS: "${LITELLM_KEY_OPENWEBUI:-};${CODE_CHAT_KEY:-}"
-    networks: [default, plan-chat]
 
   # The portal: the Code tab, the unlock, the code host's checks, its models and spend (/.bn/models, /.bn/spend), and
   # the previews' links (/.bn/preview) and their checks.
@@ -207,8 +205,6 @@ services:
 
 networks:
   code-link:
-    internal: true
-  plan-chat:
     internal: true
 
 volumes:

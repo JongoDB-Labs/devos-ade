@@ -856,9 +856,12 @@ spawn server, Claude Code or any file at will.
    runs there, idle until the code container — the only other container mounting it, read-only — connects);
    everything inbound is untrusted data.
 4. *Sandbox ⇄ LiteLLM and shared-mcp*: the terminal's gateway, key routes and budget — unchanged.
-5. *Open WebUI ⇄ code container*: your subscriptions as Chat models — the `plan-chat` network (internal; Open WebUI and
-   the code container only), the code container's `:8096` bound to its address there, and `CODE_CHAT_KEY` (new at
-   every `./stack code enable`), which Open WebUI's connection carries ([Your AI subscriptions](#your-ai-subscriptions)).
+5. *Open WebUI → code container*: your subscriptions as Chat models — through the main Caddy's internal site (`:8098`,
+   not published; two paths, `/v1/models` and `/v1/chat/completions`, the portal's and the proxy's headers taken off),
+   which reaches the code container's `:8096` over `code-link`, and `CODE_CHAT_KEY` (new at every `./stack code
+   enable`), which Open WebUI's connection carries ([Your AI subscriptions](#your-ai-subscriptions)). A one-way hop, as
+   the speech-to-text site's: the code container shares no network with Open WebUI, which signs in by `X-Portal-User`
+   from any peer.
 6. *Code container ⇄ Chat's sandbox* (`subs-chat`): one UNIX socket in the `chat-socket` volume, as 3. above —
    Chat's conversations only, in a container without your workspace.
 
@@ -867,8 +870,7 @@ spawn server, Claude Code or any file at will.
   Code — 0.3.N ↔ 2.1.N, a test enforces it — and `ws`; no peer dependencies and no bundled Claude Code binaries,
   which the image build checks) runs as your user id, read-only, `cap_drop: ALL`, `no-new-privileges`, 768 MB, 128
   processes. It holds **no LiteLLM key** (not the terminal's, not the master key), **mounts no folder of yours**
-  and is on **no network but `code-link` and `plan-chat`** (Open WebUI's way in, above — and so Open WebUI's port
-  answers it too, behind Open WebUI's own login): no internet, no LiteLLM, no portal, no sandbox network (a Git host
+  and is on **no network but `code-link`**: no internet, no LiteLLM, no portal, no Open WebUI, no sandbox network (a Git host
   sign-in's requests go through the sandbox's way out in a tunnel, with TLS from end to end in the code container:
   [below](#signing-in-to-a-git-host-oauth)). Its secrets
   are `CODE_PROXY_SECRET` and `CODE_CHAT_KEY`, in its environment only. Prices and spend come from the portal (`/.bn/models`,
@@ -3147,9 +3149,10 @@ never reads, copies, keeps, passes on or relays a login.**
   Grok's default), never one that would start a sign-in. LiteLLM never sees these requests (no key of it is used, no
   dollar is counted).
 - [x] **Chat: a separate connection, Open WebUI's alone.** Open WebUI reaches the code container's
-  OpenAI-compatible endpoint (`:8096`, bound to its address on `plan-chat`, an internal network the two share with
-  nothing else) with a key only they have (`CODE_CHAT_KEY`, made by `./stack code enable`, never in the sandbox or on a
-  command line); the endpoint lists only the subscriptions signed in now (the sandbox's own `subscriptions status`,
+  OpenAI-compatible endpoint (`:8096`) through the main Caddy's internal site (`caddy:8098`, unpublished, those two
+  paths only) — never over a network the two share: Open WebUI signs a request's `X-Portal-User` in by email alone,
+  so a container beside it could sign in as you — with a key only they have (`CODE_CHAT_KEY`, made by `./stack code
+  enable`, never in the sandbox or on a command line); the endpoint lists only the subscriptions signed in now (the sandbox's own `subscriptions status`,
   words only), caps requests (24 MiB) and answers (2 MiB), and treats what comes back as plain text.
 - [x] **Chat's own sandbox: none of your files.** Chat's conversations never run where your workspace is. They run in
   `subs-chat`, a container of the sandbox's image with a home of its own (a tmpfs, new at each start: none of the

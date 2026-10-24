@@ -803,7 +803,8 @@ if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import
   log(`code: Bypass permissions ${mgr.allowBypass ? 'allowed (CODE_ALLOW_BYPASS)' : 'off'}; Auto mode ${mgr.allowAuto ? 'allowed (CODE_AUTO_MODE)' : 'off'}; Claude on your plan ${mgr.planAllowed ? 'allowed (CODE_CLAUDE_PLAN)' : 'off'}`);
   const port = Number(process.env.CODE_PORT || 8095);
   server.listen(port, '0.0.0.0', () => log(`code: listening on :${port}`));
-  // Chat's models on your subscriptions: Open WebUI's own connection, on the plan-chat network, with its key
+  // Chat's models on your subscriptions: Open WebUI's own connection — through the main Caddy's internal site (:8098,
+  // code-on.caddy) over code-link, this container's one network — with its key
   let chat = null;
   if (/^[0-9a-f]{32,}$/.test(process.env.CODE_CHAT_KEY || '')) {
     const { createChatServer, CHAT_PORT } = await import('./chat.mjs');
@@ -811,13 +812,9 @@ if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import
     chat = createChatServer({ key: process.env.CODE_CHAT_KEY, planAllowed: on(process.env.CODE_CLAUDE_PLAN), query, log, clientVersion: readVersions().sdk || '0',
       status: makeStatus({ call: (req, o) => sandboxCall(req, { ...o, sock: CHAT_SOCK }), log }),
       spawnAgent: (a, o) => sandboxAgent(a, { ...o, sock: CHAT_SOCK }), spawn: (a, o) => sandboxProcess(a, { ...o, sock: CHAT_SOCK }) });
-    // (on plan-chat's own address — this container's code-chat alias — so that nothing on code-link reaches it; its key
-    // is required either way)
-    let addr = '0.0.0.0';
-    try { addr = (await (await import('node:dns/promises')).lookup('code-chat', { family: 4 })).address; } catch { /* not on plan-chat: every address */ }
+    // (Caddy alone reaches it — code-link is Caddy's and this container's — and its key is required either way)
     const chatPort = Number(process.env.CODE_CHAT_PORT || CHAT_PORT);
-    chat.on('error', (e) => { log(`code: Chat's models not on ${addr}:${chatPort} (${e.code || e.message}): on every address`); if (addr !== '0.0.0.0') { addr = '0.0.0.0'; chat.listen(chatPort, addr); } });
-    chat.listen(chatPort, addr, () => log(`code: Chat's models on your subscriptions on ${addr}:${chatPort}`));
+    chat.listen(chatPort, '0.0.0.0', () => log(`code: Chat's models on your subscriptions on :${chatPort}`));
   }
   const stop = () => { log('code: stopping'); mgr.closeAll(); closeGit(); server.close(); chat?.closeAgents(); chat?.close(); setTimeout(() => process.exit(0), 3000).unref(); };
   process.on('SIGTERM', stop);

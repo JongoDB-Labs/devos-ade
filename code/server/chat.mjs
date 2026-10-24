@@ -1,6 +1,6 @@
 // Your subscriptions as Chat models: an OpenAI-compatible endpoint (GET /v1/models, POST /v1/chat/completions) that
-// Open WebUI uses as a connection of its own — on an internal network only the two of them share (plan-chat), with a
-// key only Open WebUI has (CODE_CHAT_KEY). Each signed-in subscription is a model there (plan-claude, plan-codex …),
+// Open WebUI uses as a connection of its own — through the main Caddy's internal site (caddy:8098, code-on.caddy:
+// this container shares no network with Open WebUI), with a key only Open WebUI has (CODE_CHAT_KEY). Each signed-in subscription is a model there (plan-claude, plan-codex …),
 // answering in the same chat pane; each answer is the provider's own agent, signed in with its own login, through its
 // interface for other apps — the Claude Agent SDK (Claude Code, `--tools=` : no tool), Codex's app server, ACP (Copilot,
 // Cursor, Grok) — in Chat's own sandbox (subs-chat: the terminal's image and home, no workspace, no project folder),
