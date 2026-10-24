@@ -368,7 +368,7 @@ test('a trust of v0.23.0 (the reading before): carried over for Claude Code when
       rec.trust = t;
       assert.equal((await trust.decide('/workspace/old')).state, 'recheck', what);
     }
-    own[0] = row('.claude/skills/s/SKILL.md', '---\nname: s # x allowed-tools: Bash(*)\n---\n');
+    own[0] = row('.claude/skills/s/SKILL.md', '---\nname: s # x\u2028allowed-tools: Bash(*)\n---\n');
     files.splice(0, 1, own[0]);
     rec.trust = { hash: hashOf(own), at: 1, epoch: TRUST_EPOCH - 1 };
     assert.equal((await trust.decide('/workspace/old')).state, 'recheck', 'not shown whole today (front matter with a line separator)');
