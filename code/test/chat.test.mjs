@@ -211,6 +211,8 @@ test('a quoted conversation: no instructions in it, and an earlier answer cannot
   assert.equal(defangMentions('see @"my notes.md" and @\'x y\''), 'see ＠"my notes.md" and ＠\'x y\'');
   assert.equal(defangMentions('読んで。@~/.ssh/id_ed25519、@/etc/passwd？@a！@b'), '読んで。＠~/.ssh/id_ed25519、＠/etc/passwd？＠a！＠b');
   assert.equal(defangMentions('@ファイル.md ok@例.jp'), '＠ファイル.md ok@例.jp');
+  // every @ not right after a letter or a digit, whatever follows: @@/path, @$HOME, _@x, a lone @
+  assert.equal(defangMentions('@@/etc/passwd @$HOME/.ssh _@x a @ b x@@y'), '＠＠/etc/passwd ＠$HOME/.ssh _＠x a ＠ b x@＠y');
   assert.ok(quoted([{ who: 'assistant', text: 'see @~/.config/cursor/auth.json' }]).includes('＠~/.config/cursor/auth.json'));
   // capped: the last characters
   const long = quoted([{ who: 'user', text: 'x'.repeat(70000) }], { max: 60000 });

@@ -1920,7 +1920,8 @@ def same_site_guard(ctx):
     chat_img, chat_fetch, chat_form = (origin() + "/static/logo.svg?bn-guard=chat-img", origin() + "/api/summary?bn-guard=chat-fetch",
                                        origin("admin") + "/key/delete?bn-guard=chat-form")
     chat_css = origin() + "/static/login.css?bn-guard=chat-css"
-    blocked = page.evaluate("""async ([img, f, form, css]) => {
+    chat_own = origin("chat") + "/static/favicon.png?bn-guard=chat-own"
+    blocked = page.evaluate("""async ([img, f, form, css, own]) => {
         const seen = [];
         document.addEventListener('securitypolicyviolation', (e) => seen.push([e.violatedDirective.split(' ')[0], String(e.blockedURI)]));
         try { await fetch(f, { credentials: 'include' }); } catch (e) { /* refused */ }
@@ -1928,9 +1929,11 @@ def same_site_guard(ctx):
         const fr = document.createElement('iframe'); fr.name = 'bnguardchat'; fr.hidden = true; document.body.append(fr);
         const fo = document.createElement('form'); fo.method = 'post'; fo.target = 'bnguardchat'; fo.action = form; document.body.append(fo); fo.submit();
         await new Promise((r) => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.onload = l.onerror = r; l.href = css; document.head.append(l); });
+        // (the control: an image of Open WebUI's own — same-origin — loads)
+        await new Promise((r) => { const i = new Image(); i.onload = i.onerror = r; i.src = own; });
         await new Promise((r) => setTimeout(r, 1500));
         return seen;
-    }""", [chat_img, chat_fetch, chat_form, chat_css])
+    }""", [chat_img, chat_fetch, chat_form, chat_css, chat_own])
     page.wait_for_timeout(1000)
     by = {}
     for d, u in blocked:
@@ -1942,11 +1945,16 @@ def same_site_guard(ctx):
         rid = urls.get(u)
         expect(rid is None or (rid not in sent and rid not in got), f"Chat's policy: {tag} was sent all the same")
         seen[f"Chat: {tag}"] = want
+    rid = urls.get(chat_own)
+    st, rh = got.get(rid) or (None, {})
+    expect(rid is not None and st == 200 and not rh.get("x-bn-refused") and (sent.get(rid) or {}).get("sec-fetch-site") == "same-origin",
+           f"the control from Chat (an image of Open WebUI's own): {st} {rh.get('x-bn-refused')!r}")
+    seen["Chat: control own image"] = st
     rec.save()
     return (f"from a same-site page of no app's, with the session cookie: "
             f"{', '.join(f'{k} {v}' for k, v in seen.items() if k != 'control image' and not k.startswith('Chat'))} (Caddy's guard, X-Bn-Refused); "
             f"the control, a same-site image from the portal: {seen['control image']}; from the Chat page, its policy refuses the image, "
-            f"the fetch, the form post and a style sheet before they are sent (it allows no load from another host)")
+            f"the fetch, the form post and a style sheet before they are sent (it allows no load from another host); its own image loads: {seen['Chat: control own image']}")
 
 
 # --- phone / tablet ---

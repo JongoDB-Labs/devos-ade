@@ -319,6 +319,13 @@ test_chat_csp_check_takes_each_directive_whole() {
   assert_eq "$(chat_csp_check "$(printf '%s' "$w" | sed "s/script-src 'self' /script-src 'self' https:\/\/cdn.example /")" "$o" "$h")" "script-src"
   assert_eq "$(chat_csp_check "$(printf '%s' "$w" | sed "s/; style-src 'self' 'unsafe-inline'/; style-src 'self' 'unsafe-inline' https:/")" "$o" "$h")" "style-src"
   assert_eq "$(chat_csp_check "$(printf '%s' "$w" | sed "s/; default-src [^;]*//")" "$o" "$h")" "default-src"
+  # (and nothing added that widens it: a directive that would widen one of them, or another allowing another host)
+  local extra
+  for extra in "script-src-elem 'self' https://cdn.example" "script-src-attr 'unsafe-inline'" "style-src-elem *" "worker-src 'self'" "child-src blob:" \
+               "fenced-frame-src https:" "manifest-src https://x.example" "media-src-x http:"; do
+    assert_eq "$(chat_csp_check "$w; $extra" "$o" "$h")" "${extra%% *}"
+  done
+  chat_csp_check "$w; manifest-src 'self'; sandbox allow-scripts; upgrade-insecure-requests; report-to g" "$o" "$h" || return 1
   assert_eq "$(chat_csp_check "$(printf '%s' "$w" | sed "s/; script-src [^;]*//")" "$o" "$h")" "script-src"
   assert_eq "$(chat_csp_check "frame-ancestors *" "$o" "$h")" "frame-ancestors"
   if chat_csp_check "" "$o" "$h" >/dev/null; then echo "an empty policy passed" >&2; return 1; fi

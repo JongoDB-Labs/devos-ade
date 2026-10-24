@@ -91,21 +91,39 @@ chat_csp() {
 }
 
 # chat_csp_check SERVED FRAME_ORIGIN CHAT_HOST -> 0, printing nothing, when the policy SERVED has each of chat_csp's
-# directives with exactly its sources (others may come with it: one added later does not break the check); else the
-# first directive missing or different (img-src left out, or loosened), and 1. The first of a directive given twice
-# counts, as it does for browsers.
+# directives with exactly its sources, and nothing else that widens it: no directive that would widen one of them
+# (script-src-elem / -attr, style-src-elem / -attr, worker-src, child-src, fenced-frame-src, prefetch-src), and any other
+# directive with only keywords ('none', 'self' …), data: or blob: — never *, http:, https: or a host (one that only
+# narrows, added later, does not break the check); else the first directive missing, different or widening, and 1.
+# The first of a directive given twice counts, as it does for browsers.
+CHAT_CSP_WIDENING="script-src-elem script-src-attr style-src-elem style-src-attr worker-src child-src fenced-frame-src prefetch-src"
+CHAT_CSP_NO_SOURCES="sandbox report-to upgrade-insecure-requests block-all-mixed-content require-trusted-types-for trusted-types"
 chat_csp_check() {
-  local served want d name got
+  local served want d name got wanted='' t toks
   served="$(printf '%s\n' "$1" | tr ';' '\n' | tr -s ' \t' '  ' | sed 's/^ //; s/ $//')"
   want="$(chat_csp "$2" "$3" | tr ';' '\n' | sed 's/^ //; s/ $//')"
   while IFS= read -r d; do
     [ -n "$d" ] || continue
-    name="${d%% *}"
+    name="${d%% *}"; wanted="$wanted $name"
     got="$(printf '%s\n' "$served" | awk -v n="$name" '!f && tolower($1) == tolower(n) { print; f = 1 }')"
     [ "$got" = "$d" ] || { printf '%s\n' "$name"; return 1; }
   done <<WANT
 $want
 WANT
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    name="$(printf '%s' "${d%% *}" | tr '[:upper:]' '[:lower:]')"
+    case " $wanted " in *" $name "*) continue ;; esac
+    case " $CHAT_CSP_WIDENING " in *" $name "*) printf '%s\n' "$name"; return 1 ;; esac
+    case " $CHAT_CSP_NO_SOURCES " in *" $name "*) continue ;; esac
+    # (its sources as words, never as patterns: a * stays a *)
+    read -r -a toks <<< "${d#"${d%% *}"}"
+    for t in ${toks[@]+"${toks[@]}"}; do
+      case "$t" in "'"*"'" | data: | blob:) ;; *) printf '%s\n' "$name"; return 1 ;; esac
+    done
+  done <<SERVED
+$served
+SERVED
 }
 
 # portal_url [SUB] -> http://<app_host SUB>[:PORTAL_PORT] — ":80" is left out

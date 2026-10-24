@@ -91,8 +91,18 @@ def csp_differs(served: str, wanted: str) -> list[str]:
             if parts and parts[0].lower() not in out:
                 out[parts[0].lower()] = " ".join(parts[1:])
         return out
-    have = parse(served)
-    return [k for k, v in parse(wanted).items() if have.get(k) != v]
+    have, want = parse(served), parse(wanted)
+    bad = [k for k, v in want.items() if have.get(k) != v]
+    # (and nothing else that widens it: a directive that would widen one of them, or another with *, http:, https: or a
+    # host — only keywords, data: and blob:; lib/portal.sh chat_csp_check: the same)
+    widening = {"script-src-elem", "script-src-attr", "style-src-elem", "style-src-attr", "worker-src", "child-src", "fenced-frame-src", "prefetch-src"}
+    no_sources = {"sandbox", "report-to", "upgrade-insecure-requests", "block-all-mixed-content", "require-trusted-types-for", "trusted-types"}
+    for k, v in have.items():
+        if k in want or k in no_sources:
+            continue
+        if k in widening or any(not (t.startswith("'") and t.endswith("'")) and t not in ("data:", "blob:") for t in v.split()):
+            bad.append(k)
+    return bad
 
 
 class Resp:
