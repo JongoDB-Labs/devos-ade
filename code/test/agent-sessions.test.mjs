@@ -459,6 +459,8 @@ test('the other tools\' rows never keep Claude Code\'s part from Bedrock: their 
     ['.codex/<DEL>.toml', [row('.codex/\x7f.toml', 'a = 1', '.codex')], false],
     ['a name over 1,024 characters', [row(`.codex/${'x'.repeat(1100)}.toml`, 'a = 1', '.codex')], false],
     ['more than 500 of theirs', Array.from({ length: 501 }, (_, i) => row(`.agents/skills/a${String(i).padStart(3, '0')}/SKILL.md`, '---\nname: a\n---\n', '.agents')), false],
+    // (past 1,000 rows in all — theirs: theirs alone; a sandbox caps them, this is one that did not)
+    ['1,100 of theirs, before Claude Code\'s by name', Array.from({ length: 1100 }, (_, i) => row(`.agents/skills/a${String(i).padStart(4, '0')}/SKILL.md`, '---\nname: a\n---\n', '.agents')), false],
   ]) {
     const files = [...own, ...others].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     const result = { files, hash: hashOf(own), verifiable: true, over: null, agentHash: hashOf(others), agentVerifiable: true, agentOver: null };

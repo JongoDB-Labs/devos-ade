@@ -303,6 +303,44 @@ test('project.create: a new folder of the workspace, git init without a template
   assert.match((await call({ op: 'git.init', repo: '../outside' })).error, /not a folder/);
 });
 
+test('project.settings: the other tools\' rows have a cap of their own — 1,000 files or folders directly in .github/ leave Claude Code\'s part, and Bedrock, trusted', async () => {
+  const { makeTrust } = await import('../server/trust.mjs');
+  const { TRUST_EPOCH } = await import('../server/projects.mjs');
+  for (const kind of ['files', 'folders']) {
+    const D = path.join(WS, `crowded-${kind}`);
+    for (let i = 0; i < 21; i++) {
+      fs.mkdirSync(path.join(D, `.claude/skills/s${String(i).padStart(2, '0')}`), { recursive: true });
+      fs.writeFileSync(path.join(D, `.claude/skills/s${String(i).padStart(2, '0')}/SKILL.md`), '---\nname: s\n---\nGo.\n');
+    }
+    fs.mkdirSync(path.join(D, '.github'), { recursive: true });
+    for (let i = 0; i < 1000; i++) {
+      const n = path.join(D, '.github', `w${String(i).padStart(4, '0')}${kind === 'files' ? '.yml' : ''}`);
+      if (kind === 'files') fs.writeFileSync(n, 'on: push\n'); else fs.mkdirSync(n);
+    }
+    const r = await call({ op: 'project.settings', root: D });
+    const own = r.files.filter((f) => f.name.startsWith('.claude/')), theirs = r.files.filter((f) => f.name.startsWith('.github/'));
+    assert.equal(own.length, 21, kind);
+    assert.equal(theirs.length, coded.CONFIG_FILES, `${kind}: theirs stop at their cap`);
+    assert.deepEqual([r.verifiable, r.over], [true, null], `${kind}: Claude Code's part whole`);
+    assert.equal(r.agentVerifiable, false, kind);
+    assert.match(r.agentOver ?? '', /more than 500 files/, kind);
+    // the code container on that listing: Claude Code's part trusted for Bedrock, the agents' not
+    const rec = { id: `p_${kind}`, root: `crowded-${kind}`, name: kind, trust: null };
+    const store = { list: () => [rec], trust: (id, hash, planHash, agentHash, { at = 1 } = {}) => {
+      rec.trust = hash ? { hash, at, epoch: TRUST_EPOCH, ...(planHash === undefined ? {} : { planHash }), ...(agentHash === undefined ? {} : { agentHash }) } : null;
+    } };
+    const trust = makeTrust({ call: async (req) => ({ result: req.op === 'project.settings' ? await call({ ...req, root: D }) : {} }), store: () => store });
+    const v = await trust.view(rec);
+    assert.equal(v.summary.complete, true, kind);
+    assert.match(v.hash ?? '', /^[0-9a-f]{64}$/, `${kind}: Claude Code's part trustable`);
+    assert.equal(v.summary.agentsComplete, false, kind);
+    assert.deepEqual(await trust.trust(rec, v.hash), { conflict: null, agents: 'not trusted' }, kind);
+    const d = await trust.decide(`/workspace/crowded-${kind}`);
+    assert.equal(d.state, 'trusted', `${kind}: Claude Code on Bedrock trusted`);
+    assert.notEqual(d.agents.state, 'trusted', kind);
+  }
+});
+
 test('project.settings: everything under a folder\'s .claude/ and its .mcp.json, as Claude Code reads them; bounded; their hash in project.check', async () => {
   const D = path.join(WS, 'cloned');
   const by = (r) => Object.fromEntries(r.files.map((f) => [f.name, f]));

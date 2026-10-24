@@ -3371,9 +3371,10 @@ never reads, copies, keeps, passes on or relays a login.**
   `.claude/settings*.json` and `.claude/plugins/` that Grok and Copilot read there and Claude Code does not), with no
   switch of ours to leave it out. So bn-coded lists them as a part of their own beside Claude Code's, which is exactly
   the listing of v0.23.0 (the project's `.claude/` and `.mcp.json`, the six `.claude` trees above it): each part with
-  its own hash and bounds, both shown in the trust dialog, each file whole. Claude Code on Bedrock and Claude on your
-  plan decide on Claude Code's part alone — a cloned repository's `.github/` or `.cursor/rules/` changes nothing for
-  them; an agent session starts in a project's folder only while both apply (trusted, or nothing there) — checked when
+  its own hash and bounds (at most 500 rows each — files, links, folders listed by their name alone: past that, that
+  part alone cannot be verified), both shown in the trust dialog, each file whole. Claude Code on Bedrock and Claude on
+  your plan decide on Claude Code's part alone — a cloned repository's `.github/` or `.cursor/rules/`, however many
+  entries it has and whatever their names, changes nothing for them; an agent session starts in a project's folder only while both apply (trusted, or nothing there) — checked when
   it starts, again once it has opened (what it read while starting), and before every turn, so a running agent ends
   when they change under it; not trusted, changed, unverifiable or trusted before v0.24.0 (the listing grew: look
   again — a v0.23.0 trust carried over for Claude Code covers Claude Code's part alone): refused with why. When the other tools' part cannot all be shown (a file over 16,000 characters, one that

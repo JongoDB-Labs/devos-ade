@@ -2431,9 +2431,10 @@ export function projectCheck(req) {
 // run commands or silence the page's permission cards, so the code container applies them only once you trusted exactly
 // these files (their hash). Read as Claude Code reads them — through links, but only what is in the workspace (a link
 // out of it is named, never read), names in any case (a macOS workspace is case-insensitive); a FIFO or device is never
-// opened. Bounded: at most CONFIG_FILES files, CONFIG_BYTES in all, CONFIG_FILE each, CONFIG_DEPTH folders deep — beyond
-// that, or in a linked git worktree or a submodule (Claude Code reads another checkout's configuration then), it cannot
-// be verified (and is never trusted).
+// opened. Bounded, each part on its own: at most CONFIG_FILES rows (files, links, folders by their name alone …),
+// CONFIG_BYTES in all, CONFIG_FILE each, CONFIG_DEPTH folders deep — beyond that, that part cannot be verified (and is
+// never trusted: the other tools' rows past their cap never cost Claude Code's part); in a linked git worktree or a
+// submodule (Claude Code reads another checkout's configuration then), neither can.
 export const CONFIG_FILES = 500, CONFIG_BYTES = 2 << 20, CONFIG_FILE = 256 << 10, CONFIG_DEPTH = 12, CONFIG_SHOWN = 3 << 20;
 // the .claude/ trees Claude Code reads from the folders above the project's (to the git root)
 export const CONFIG_SURFACES = Object.freeze(['commands', 'agents', 'output-styles', 'skills', 'workflows', 'routines']);
@@ -2481,18 +2482,23 @@ export function settingsFiles(abs, { text = false } = {}) {
   // one part's rows and bounds
   const part = () => ({ files: [], over: null, bytes: 0, shown: 0 });
   const claude = part(), agent = part();
+  // add(P, row): a row of that part — at most CONFIG_FILES each, whatever kind (a file, a link, a folder by its name
+  // alone …): beyond, that part alone is over (the other's rows are its own); full(P): no room left (said so)
+  const full = (P) => { if (P.files.length < CONFIG_FILES) return false; P.over ??= `more than ${CONFIG_FILES} files`; return true; };
+  const add = (P, row) => { if (!full(P)) P.files.push(row); };
   const one = (P, name, p) => {
+    if (full(P)) return;
     let lst;
     try { lst = fs.lstatSync(p); } catch (e) { if (e.code !== 'ENOENT') P.over ??= 'a folder that could not be read'; return; }
     const target = lst.isSymbolicLink() ? (() => { try { return printable(fs.readlinkSync(p), 1000); } catch { return '?'; } })() : null;
     const real = confine(p);
     let st = null;
     try { st = real ? fs.statSync(real) : null; } catch { st = null; }
-    if (target !== null && (!real || !st)) { P.files.push({ name, type: 'link', target, sha256: sha256(`link:${target}`) }); return; }
-    if (!st || !st.isFile()) { P.files.push({ name, type: 'other', target, sha256: sha256(`other:${target ?? ''}`) }); return; }
-    if (st.size > CONFIG_FILE) { P.files.push({ name, type: 'big', target, size: st.size, sha256: sha256(`big:${st.size}:${st.mtimeMs}`) }); return; }
+    if (target !== null && (!real || !st)) { add(P, { name, type: 'link', target, sha256: sha256(`link:${target}`) }); return; }
+    if (!st || !st.isFile()) { add(P, { name, type: 'other', target, sha256: sha256(`other:${target ?? ''}`) }); return; }
+    if (st.size > CONFIG_FILE) { add(P, { name, type: 'big', target, size: st.size, sha256: sha256(`big:${st.size}:${st.mtimeMs}`) }); return; }
     const b = readRegular(real, CONFIG_FILE);
-    if (!b) { P.files.push({ name, type: 'other', target, sha256: sha256(`other:${target ?? ''}`) }); return; }
+    if (!b) { add(P, { name, type: 'other', target, sha256: sha256(`other:${target ?? ''}`) }); return; }
     P.bytes += b.length;
     if (P.bytes > CONFIG_BYTES) P.over ??= `more than ${CONFIG_BYTES >> 20} MiB in all`;
     const readable = isUtf8Buf(b);
@@ -2505,7 +2511,7 @@ export function settingsFiles(abs, { text = false } = {}) {
         if (P.shown > CONFIG_SHOWN) P.over ??= 'too much to show'; else row.text = t;
       }
     }
-    P.files.push(row);
+    add(P, row);
   };
   const walk = (P, dir, rel, depth) => {
     let list;
@@ -2518,7 +2524,7 @@ export function settingsFiles(abs, { text = false } = {}) {
         walk(P, p, name, depth + 1);
         continue;
       }
-      if (P.files.length >= CONFIG_FILES) { P.over = `more than ${CONFIG_FILES} files`; return; }
+      if (full(P)) return;
       one(P, name, p);
     }
   };
@@ -2530,11 +2536,11 @@ export function settingsFiles(abs, { text = false } = {}) {
     if (c?.isDirectory()) walk(P, p, name, 1);
     else if (c?.isSymbolicLink()) {
       const target = (() => { try { return printable(fs.readlinkSync(p), 1000); } catch { return '?'; } })();
-      P.files.push({ name, type: 'link', target, sha256: sha256(`link:${target}`) });
-    } else if (c) P.files.push({ name, type: 'other', target: null, sha256: sha256('other:') });
+      add(P, { name, type: 'link', target, sha256: sha256(`link:${target}`) });
+    } else if (c) add(P, { name, type: 'other', target: null, sha256: sha256('other:') });
   };
   // a folder by its name alone (no tool reads what it holds): its name in the hash
-  const nameOnly = (P, name) => P.files.push({ name, type: 'name', target: null, sha256: sha256('name:'), readable: true });
+  const nameOnly = (P, name) => add(P, { name, type: 'name', target: null, sha256: sha256('name:'), readable: true });
   // the folder's real entries (never a lookup by spelling: a disk that folds names opens .curſor as .cursor), each
   // compared folded; a folder that is there but cannot be listed: the parts it belongs to unverifiable (what it holds
   // is not known) — both by default, the other tools' part alone for a folder of their own trees
@@ -2579,6 +2585,8 @@ export function settingsFiles(abs, { text = false } = {}) {
     for (const g of of('.github')) {
       if (!folderOf(g)) continue;
       for (const n of entries(path.join(dir, g), [agent])) {
+        // (its entries count as the other tools' rows: past their cap, nothing more is looked at — theirs alone is over)
+        if (full(agent)) break;
         const f = fold(n), p = path.join(dir, g, n), rowName = nameOf(`${g}/${n}`);
         // (each entry looked at once, never through a link: lstat)
         let st = null;

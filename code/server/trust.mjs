@@ -34,6 +34,8 @@ export const fold = (name) => {
   return s;
 };
 export const FILES_MAX = 500;
+// a listing of more rows than this is not one bn-coded makes (each part at most FILES_MAX: it says it is over beyond)
+const ROWS_MAX = 20 * FILES_MAX;
 // a name bn-coded may list (bn-coded from before rows said where they came from): the project's own .mcp.json, its
 // .claude (a link, not a folder) or a path under it — relative —, or a path under a .claude above it, absolute in
 // /workspace; one line, no "." or ".." part
@@ -135,7 +137,9 @@ export function checkFiles(r, root) {
   const placed = rows.some((f) => f && typeof f === 'object' && (f.surface !== undefined || f.at !== undefined));
   const files = [];
   const count = { claude: 0, agent: 0 }, last = { claude: null, agent: null };
-  for (const f of rows.slice(0, 2 * FILES_MAX + 1)) {
+  // (every row is placed in its part, and each part's cap is its own: the other tools' rows past theirs never cost Claude
+  // Code's part — only a listing past any the sandbox makes, ROWS_MAX, is not believed at all)
+  for (const f of rows.slice(0, ROWS_MAX + 1)) {
     const part = f && typeof f === 'object' && !claudeRow(f) ? 'agent' : 'claude';
     const bad = () => { if (part === 'agent') agentOk = false; else ok = false; };
     if (++count[part] > FILES_MAX) { bad(); continue; }
@@ -151,7 +155,7 @@ export function checkFiles(r, root) {
       claude: place.claude, surface: placed && typeof f.surface === 'string' ? f.surface : null,
     });
   }
-  if (rows.length > 2 * FILES_MAX) { ok = false; agentOk = false; }
+  if (rows.length > ROWS_MAX) { ok = false; agentOk = false; }
   // (the same name twice — in either part —: the listing cannot be believed)
   if (new Set(files.map((f) => f.name)).size !== files.length) { ok = false; agentOk = false; }
   return { files, ok, agentOk };
