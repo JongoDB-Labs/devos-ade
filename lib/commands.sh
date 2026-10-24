@@ -19,7 +19,7 @@ Usage: ./stack <command> [--yes]
   up | down    Start / stop the stack
   status       Services, health, URLs and disk use (the portal: one login for every browser UI)
                --disk measures disk use now (otherwise reused for 5 minutes)
-  open         The installed bedrock-now app, else the portal in your browser, where
+  open         The installed DevOS ADE app, else the portal in your browser, where
                "Install app" installs it (setup and up open it too; BEDROCK_NOW_NO_OPEN=1
                turns that off)
   logs [svc]   Follow logs (litellm, open-webui, rustfs, postgres, shared-mcp, portal, caddy, stt, terminal, code, subs-chat)
@@ -72,7 +72,7 @@ Usage: ./stack <command> [--yes]
                your Git name and email) brought into the sandbox: config import | scan | open | consent
   subscriptions   Your AI subscriptions' own tools in the sandbox: Claude Code on your Claude plan,
                Codex, Gemini CLI, Copilot, Cursor, Grok — status | login TOOL | logout TOOL (each signs in
-               with its own flow there; bedrock-now never sees the login)
+               with its own flow there; DevOS ADE never sees the login)
   password     Where the portal password is (PORTAL_PASSWORD in this folder's .env)
                --show prints it (only to a terminal)
   config       Every setting in .env, secrets masked (the portal's Settings tab shows the same):
@@ -929,7 +929,7 @@ print_summary() {
   cb="$(claude_bedrock_cmd)"; haiku="$(get_env CLAUDE_BEDROCK_HAIKU_MODEL)"
   cat <<SUMMARY
 
-  ${O_GRN}bedrock-now is up.${O_OFF}
+  ${O_GRN}$PRODUCT_NAME is up.${O_OFF}
 
   Portal          $(portal_url)   $login
                   Home, Chat (Open WebUI), Admin (LiteLLM) and Files (RustFS) behind one login
@@ -1046,7 +1046,7 @@ cmd_up() {
   stt_before_up   # lib/stt.sh: removes a stt container left from Bedrock speech-to-text
   # The stack's own services only: the Tailscale sidecar (remote access) is started afterwards without waiting.
   # shellcheck disable=SC2086  # word-split the service list on purpose
-  run_phase "bedrock-now" "$STACK_SERVICES" dc up -d --wait $STACK_SERVICES
+  run_phase "$PRODUCT_NAME" "$STACK_SERVICES" dc up -d --wait $STACK_SERVICES
   # lib/stt.sh: Bedrock refusing audio turns Bedrock speech-to-text off once (the notice); the list follows
   stt_up_check; extra="$(optional_services)"; STACK_SERVICES="$STACK_BASE_SERVICES${extra:+ $extra}"
   terminal_after_up   # TERMINAL_EGRESS: what its way out no longer uses goes once the container has left it
@@ -1374,7 +1374,7 @@ _is_backup() { [ -f "$1/litellm.dump" ] && [ -f "$1/openwebui.dump" ]; }
 
 # backup_dir_arg DIR -> the backup DIR names, as an absolute path: an absolute DIR as given; a relative one from the
 # current folder, or else inside this checkout — every message says "./stack restore backups/<ts>" and ./stack can
-# be run from any folder (e.g. ~/bedrock-now/stack restore …). Dies when a relative DIR is a backup in both places
+# be run from any folder (e.g. ~/devos-ade/stack restore …). Dies when a relative DIR is a backup in both places
 # and they are different folders. Prints DIR unchanged when it is no backup at all (the caller prints its usage).
 backup_dir_arg() {
   local d="$1" here='' there=''
@@ -1830,7 +1830,8 @@ cmd_rotate_aws() {
 cmd_uninstall() {
   local target="$HOME/.local/bin/claude-bedrock"
   warn "This deletes all containers AND data volumes (chats, knowledge bases, files, spend history) and this install's built images."
-  [ "$(ask "Type 'bedrock-now' to confirm" "")" = bedrock-now ] || die "aborted — nothing was removed"
+  # (the project's name before v0.25.0 is taken too)
+  case "$(ask "Type '$PRODUCT_SLUG' to confirm" "")" in "$PRODUCT_SLUG" | "$PRODUCT_LEGACY_NAME") ;; *) die "aborted — nothing was removed" ;; esac
   if confirm "Take a backup first?"; then cmd_backup; fi
   dc down -v --remove-orphans
   code_uninstall_cleanup       # lib/code.sh: its network, socket volume and image (before the terminal's)

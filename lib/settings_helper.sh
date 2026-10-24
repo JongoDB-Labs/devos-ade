@@ -18,7 +18,7 @@
 #                                        project-remove / project-mode-ro  {…,"when":"now|idle","project":"p_<8 hex>"}
 #                                                        by the project's id in folders.tsv (narrowing: from anywhere)
 #                                        sessions-revoke {…,"project":"p_<8 hex>|all","tool":"claude|claude-bedrock|both|suggest|setup-…"}
-#                                                        what bedrock-now may read of your sessions here, taken back
+#                                                        what DevOS ADE may read of your sessions here, taken back
 #                                                        (narrowing: from anywhere; lib/sessions.sh) — setup-claude,
 #                                                        setup-claude-bedrock, setup-git, setup-all: of your setup
 #                                                        (Bring your setup; lib/sessions_config.sh)
@@ -138,7 +138,7 @@ settings_request_allowed() {
                  continue ;;
     esac
     k="${line#set }"; k="${k%% *}"
-    setting_known "$k" || { echo "$k is not a bedrock-now setting" >&2; return 1; }
+    setting_known "$k" || { echo "$k is not a $PRODUCT_NAME setting" >&2; return 1; }
     v="$(_b64_decode "${line##* }")"
     setting_allowed "$k" "$v" "$SREQ_ORIGIN" || { echo "$SV_ERR" >&2; return 1; }
     setting_validate "$k" "$v" || { echo "$SV_ERR" >&2; return 1; }
@@ -253,7 +253,7 @@ act_check_request() {
   elif _sv_re "$body" '^\{"action":"(project-remove|project-mode-ro)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})","when":"(now|idle)","project":"(p_[0-9a-f]{8})"\}$'; then
     action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="${BASH_REMATCH[4]}"
     when="${BASH_REMATCH[5]}"; project="${BASH_REMATCH[6]}"
-  # (what bedrock-now may read of your sessions here: taken back by the project's id, or all — the tool in mode's place)
+  # (what DevOS ADE may read of your sessions here: taken back by the project's id, or all — the tool in mode's place)
   # (setup-*: what may be read of your setup — Bring your setup, lib/sessions_config.sh —, by tool, with project all)
   elif _sv_re "$body" '^\{"action":"(sessions-revoke)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})","project":"(p_[0-9a-f]{8}|all)","tool":"(claude|claude-bedrock|both|suggest|setup-claude|setup-claude-bedrock|setup-git|setup-all)"\}$'; then
     action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="${BASH_REMATCH[4]}"
@@ -290,7 +290,7 @@ helper_screen() {
 
 # helper_pick_folder -> the folder chosen in a folder chooser on this computer's screen (its path, one line), nothing
 # when cancelled; 3 when no dialog can be shown here. The text is fixed; nothing of the request reaches it.
-HELPER_PICK_PROMPT="bedrock-now: choose a folder for the Code page. Claude — and anything it runs in the sandbox — will be able to read it, and change it unless you chose read-only."
+HELPER_PICK_PROMPT="$PRODUCT_NAME: choose a folder for the Code page. Claude — and anything it runs in the sandbox — will be able to read it, and change it unless you chose read-only."
 helper_pick_folder() {
   local out
   helper_screen || return 3
@@ -440,7 +440,7 @@ helper_run_diag() {
       [ "$hide" != true ] || set -- "$@" --hide-path ;;
     project-remove) helper_write_status running "Removing the folder from the sandbox"; set -- project remove "$project" "$flag" ;;
     project-mode-ro) helper_write_status running "Making the folder read-only in the sandbox"; set -- project mode "$project" ro "$flag" ;;
-    sessions-revoke) helper_write_status running "Taking back what bedrock-now may read of your sessions"
+    sessions-revoke) helper_write_status running "Taking back what $PRODUCT_NAME may read of your sessions"
       case "$mode" in
         suggest) set -- sessions consent --suggest --revoke ;;
         setup-*) set -- sessions config consent --tool "${mode#setup-}" --revoke ;;
@@ -495,7 +495,7 @@ helper_run_diag() {
     test) msg="All $(grep -c '^  ok' "$logf" | tr -d ' ') checks passed" ;;
     report) msg="Status report ready" ;;
     restart-*) msg="${action#restart-} restarted" ;;
-    sessions-revoke) msg="Taken back: bedrock-now no longer reads those sessions on this computer (what the Code page's container read is forgotten; sessions already copied into the sandbox stay there)" ;;
+    sessions-revoke) msg="Taken back: $PRODUCT_NAME no longer reads those sessions on this computer (what the Code page's container read is forgotten; sessions already copied into the sandbox stay there)" ;;
     subscriptions-check) msg="Checked: $(subs_count '"signed_in":"yes"') of your AI tools in the sandbox say they are signed in" ;;
     subscriptions-signout) msg="$(subs_name "$mode") signed out in the sandbox (its own sign-out; revoke it at the provider too if the sandbox may have been read)" ;;
     subscriptions-check-chat) msg="Checked: $(SUBS_WHERE=chat subs_count '"signed_in":"yes"') of your AI tools say they are signed in for Chat" ;;

@@ -9,7 +9,7 @@
 
 # The project's GitHub releases (install.sh and portal/portal/updates.py name the same repository)
 # shellcheck disable=SC2034  # used by lib/commands.sh (update_whats_new)
-BEDROCK_NOW_RELEASES_URL="https://github.com/JongoDB-Labs/bedrock-now/releases"
+BEDROCK_NOW_RELEASES_URL="https://github.com/$PRODUCT_REPO/releases"
 
 status_dir()       { printf '%s/status\n' "$STATE_DIR"; }
 update_check_dir() { printf '%s/update-check\n' "$STATE_DIR"; }

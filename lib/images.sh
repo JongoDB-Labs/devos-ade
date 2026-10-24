@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Precise image cleanup and disk reporting (./stack update, ./stack clean, ./stack status). Sourced by
 # lib/commands.sh. Removes ONLY images this project used, never anything another container (any project)
-# uses or another bedrock-now checkout's compose.yaml names, and never runs a global prune.
+# uses or another DevOS ADE checkout's compose.yaml names, and never runs a global prune.
 #
 # Snapshots in .state/images/ (one "ID<TAB>REF" line per image):
 #   before.tsv    the images in use when the running update started (written before 3/4 images)
@@ -94,7 +94,7 @@ images_used_by_containers() {
   return 1
 }
 
-# images_of_other_checkouts -> IDs of the images other bedrock-now checkouts' compose.yaml files name (found
+# images_of_other_checkouts -> IDs of the images other DevOS ADE checkouts' compose.yaml files name (found
 # through their owner markers), so a stopped install never loses an image it will need at its next start
 images_of_other_checkouts() {
   local me d dirs

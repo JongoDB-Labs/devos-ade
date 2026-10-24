@@ -26,7 +26,7 @@ Usage: ./stack git-host import gh [--host HOST] [--yes]
 
   The token is read from the CLI here and handed to the code container on stdin: never on a command
   line, in an environment variable or a file; nothing prints it. You confirm first (--yes: no question).
-  Only on the computer running bedrock-now, with the Code page running.
+  Only on the computer running DevOS ADE, with the Code page running.
 EOF
 }
 

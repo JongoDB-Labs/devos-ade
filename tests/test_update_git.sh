@@ -349,7 +349,7 @@ test_whats_new_points_at_voice_remote_helper_and_the_release_notes() {
   assert_contains "$out" "Voice: Bedrock speech-to-text is on (./stack stt status)"
   assert_contains "$out" "Remote access: off — ./stack remote enable tailscale (docs/remote.md)"
   assert_contains "$out" "One-click updates from Home: ./stack helper install"
-  assert_contains "$out" "Release notes: https://github.com/JongoDB-Labs/bedrock-now/releases/tag/v0.2.0"
+  assert_contains "$out" "Release notes: https://github.com/JongoDB-Labs/devos-ade/releases/tag/v0.2.0"
   [ "$(printf '%s\n' "$out" | grep -c .)" -le 5 ] || { echo "too long: $out" >&2; return 1; }
   # a branch (no release tag), remote on, helper installed, voice off
   git -C "$STACK_DIR" checkout -q main
@@ -382,13 +382,13 @@ test_whats_new_after_a_jump_lists_every_release_it_brought() {
   v0.7.0
   v0.6.0 — permission modes and previews
   v0.5.0 — the Code page"
-  assert_contains "$out" "  Release notes: https://github.com/JongoDB-Labs/bedrock-now/releases"
+  assert_contains "$out" "  Release notes: https://github.com/JongoDB-Labs/devos-ade/releases"
   assert_not_contains "$out" "v0.8.0"; assert_not_contains "$out" "rc"; assert_not_contains "$out" "v0.4.1 —"
   # one release: its line, and its own release page
   out="$(update_whats_new "$(git -C "$STACK_DIR" rev-parse 'v0.6.0^{commit}')")"
   assert_contains "$out" "What's new in v0.7.0:
   v0.7.0"
-  assert_contains "$out" "Release notes: https://github.com/JongoDB-Labs/bedrock-now/releases/tag/v0.7.0"
+  assert_contains "$out" "Release notes: https://github.com/JongoDB-Labs/devos-ade/releases/tag/v0.7.0"
   # ./stack update passes the commit it came from
   assert_contains "$(sed -n '/^cmd_update() {/,/^}/p' "$T_ROOT/lib/commands.sh")" 'update_whats_new "$from"'
 }

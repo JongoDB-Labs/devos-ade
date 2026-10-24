@@ -30,7 +30,7 @@ _stub_docker() {
     esac
   }
 }
-_mk_install() { # _mk_install DIR [.env content] — a folder that looks like a set-up bedrock-now checkout
+_mk_install() { # _mk_install DIR [.env content] — a folder that looks like a set-up checkout made before v0.25.0
   mkdir -p "$1"; : > "$1/compose.yaml"; printf '#!/usr/bin/env bash\n# bedrock-now CLI\n' > "$1/stack"
   printf '%s\n' "${2:-POSTGRES_PASSWORD=theirs}" > "$1/.env"
 }
@@ -124,7 +124,7 @@ test_foreign_compose_project_is_not_called_a_bedrock_now_install() {
   WANT=bedrock-now OWNERS="$TMP/elsewhere" VOLS=''; _stub_docker
   if out="$( (guard_project) 2>&1)"; then return 1; fi
   assert_contains "$out" "already used by another Compose project in $TMP/elsewhere"
-  assert_not_contains "$out" "bedrock-now install"
+  assert_not_contains "$out" "DevOS ADE install"
   assert_not_contains "$out" "./stack uninstall"
   assert_contains "$out" "COMPOSE_PROJECT_NAME=bedrock-now-2 ./setup.sh"
   printf 'POSTGRES_PASSWORD=p\n' > "$ENV_FILE"

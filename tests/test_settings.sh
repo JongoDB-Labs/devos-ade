@@ -169,7 +169,7 @@ test_policy_rules() {
   _env
   setting_allowed BUDGET_SETUP 5 remote
   if setting_allowed AWS_ACCESS_KEY_ID x remote; then return 1; fi
-  assert_contains "$SV_ERR" "computer running bedrock-now"
+  assert_contains "$SV_ERR" "computer running DevOS ADE"
   setting_allowed AWS_ACCESS_KEY_ID x local
   setting_allowed REMOTE_ADMIN_ACTIONS false remote
   if setting_allowed REMOTE_ADMIN_ACTIONS true remote; then return 1; fi
@@ -386,7 +386,7 @@ test_apply_refuses_bad_input_before_anything_changes() {
     if (_lines "$case" | _apply) >/dev/null 2>&1; then echo "accepted: ${case%%=*}" >&2; return 1; fi
   done
   if out="$( (_lines ALERT_WEBHOOK_URL=https://x.example/h | _apply --origin remote) 2>&1)"; then return 1; fi
-  assert_contains "$out" "only be changed from the computer running bedrock-now"
+  assert_contains "$out" "only be changed from the computer running DevOS ADE"
   if out="$( (printf 'set BUDGET_SETUP %s\n' 'not base64!' | _apply) 2>&1)"; then return 1; fi
   assert_contains "$out" "not base64"
   if (printf 'set BUDGET_SETUP %s\n' "$(printf '5\0001' | openssl base64 -A)" | _apply) 2>/dev/null; then return 1; fi
@@ -566,7 +566,7 @@ test_code_page_policy_on_only_locally_off_from_anywhere() {
   assert_eq "$(setting_field CODE_ENABLED 4)/$(setting_field CODE_ENABLED 5)/$(setting_field CODE_ENABLED 6)" "widen-local/bool/code"
   set_env CODE_ENABLED false
   if setting_allowed CODE_ENABLED true remote; then return 1; fi
-  assert_contains "$SV_ERR" "CODE_ENABLED can only be turned on from the computer running bedrock-now"
+  assert_contains "$SV_ERR" "CODE_ENABLED can only be turned on from the computer running DevOS ADE"
   setting_allowed CODE_ENABLED true local
   set_env CODE_ENABLED true
   setting_allowed CODE_ENABLED false remote
@@ -580,13 +580,13 @@ test_code_allow_bypass_on_only_locally_and_it_recreates_the_code_container() {
   assert_eq "$(setting_field CODE_ALLOW_BYPASS 4)/$(setting_field CODE_ALLOW_BYPASS 5)/$(setting_field CODE_ALLOW_BYPASS 6)" "widen-local/bool/code-env"
   set_env CODE_ALLOW_BYPASS false
   if setting_allowed CODE_ALLOW_BYPASS true remote; then return 1; fi
-  assert_contains "$SV_ERR" "CODE_ALLOW_BYPASS can only be turned on from the computer running bedrock-now"
+  assert_contains "$SV_ERR" "CODE_ALLOW_BYPASS can only be turned on from the computer running DevOS ADE"
   setting_allowed CODE_ALLOW_BYPASS true local
   if setting_validate CODE_ALLOW_BYPASS yes; then return 1; fi
   # remotely: refused, nothing changes
   cp "$ENV_FILE" "$TMP/before"
   if out="$( (_lines CODE_ALLOW_BYPASS=true | _apply --origin remote) 2>&1)"; then return 1; fi
-  assert_contains "$out" "can only be turned on from the computer running bedrock-now"
+  assert_contains "$out" "can only be turned on from the computer running DevOS ADE"
   assert_eq "$(cat "$ENV_FILE")" "$(cat "$TMP/before")"
   # here, with the Code page on: .env, then the code container recreated (it reads the value at its start), nothing else
   set_env_batch CODE_ENABLED true TERMINAL_ENABLED true
@@ -615,14 +615,14 @@ test_auto_mode_settings_on_only_locally_and_they_restart_the_sandbox() {
   for k in CODE_AUTO_MODE TERMINAL_AUTO_MODE; do
     set_env "$k" false
     if setting_allowed "$k" true remote; then return 1; fi
-    assert_contains "$SV_ERR" "$k can only be turned on from the computer running bedrock-now"
+    assert_contains "$SV_ERR" "$k can only be turned on from the computer running DevOS ADE"
     setting_allowed "$k" true local
     setting_allowed "$k" false remote
     if setting_validate "$k" yes; then return 1; fi
     # remotely: refused, nothing changes
     cp "$ENV_FILE" "$TMP/before"
     if out="$( (_lines "$k=true" | _apply --origin remote) 2>&1)"; then return 1; fi
-    assert_contains "$out" "can only be turned on from the computer running bedrock-now"
+    assert_contains "$out" "can only be turned on from the computer running DevOS ADE"
     assert_eq "$(cat "$ENV_FILE")" "$(cat "$TMP/before")"
   done
   # here, with the Code page on: the terminal, then the code container, recreated together (one compose call)
@@ -660,7 +660,7 @@ test_sandbox_internet_access_opens_further_only_locally_and_recreates_the_sandbo
   done
   set_env TERMINAL_EGRESS ''
   if setting_allowed TERMINAL_EGRESS host remote; then return 1; fi
-  assert_contains "$SV_ERR" "TERMINAL_EGRESS can only be opened further from the computer running bedrock-now"
+  assert_contains "$SV_ERR" "TERMINAL_EGRESS can only be opened further from the computer running DevOS ADE"
   setting_allowed TERMINAL_EGRESS host local || return 1
   setting_allowed TERMINAL_EGRESS off remote || return 1
   # the egress proxy's lists: .env only (read-only here)
@@ -680,7 +680,7 @@ test_sandbox_internet_access_opens_further_only_locally_and_recreates_the_sandbo
   assert_eq "$(get_env TERMINAL_EGRESS)" off
   cp "$ENV_FILE" "$TMP/before"
   if out="$( (_lines TERMINAL_EGRESS=internet | _apply --origin remote) 2>&1)"; then return 1; fi
-  assert_contains "$out" "can only be opened further from the computer running bedrock-now"
+  assert_contains "$out" "can only be opened further from the computer running DevOS ADE"
   assert_eq "$(cat "$ENV_FILE")" "$(cat "$TMP/before")"
   # back to internet here: the proxy built and up before the terminal
   : > "$TMP/calls"
@@ -702,7 +702,7 @@ test_remote_previews_are_opt_in_on_only_locally_and_they_restart_portal_and_cadd
   setting_weakens REMOTE_PREVIEW true false || return 1
   if setting_weakens REMOTE_PREVIEW false ''; then return 1; fi
   if setting_allowed REMOTE_PREVIEW true remote; then return 1; fi
-  assert_contains "$SV_ERR" "REMOTE_PREVIEW can only be turned on from the computer running bedrock-now"
+  assert_contains "$SV_ERR" "REMOTE_PREVIEW can only be turned on from the computer running DevOS ADE"
   setting_allowed REMOTE_PREVIEW true local
   setting_allowed REMOTE_PREVIEW false remote
   # any change that may turn them on: blank is on in own-domain mode with a preview domain of its own
@@ -770,7 +770,7 @@ test_apply_code_page_on_is_refused_remotely() {
   set_env CODE_ENABLED false
   cp "$ENV_FILE" "$TMP/before"
   if out="$( (_lines CODE_ENABLED=true | _apply --origin remote) 2>&1)"; then return 1; fi
-  assert_contains "$out" "can only be turned on from the computer running bedrock-now"
+  assert_contains "$out" "can only be turned on from the computer running DevOS ADE"
   assert_eq "$(cat "$ENV_FILE")" "$(cat "$TMP/before")"
   [ ! -e "$TMP/calls" ] || assert_not_contains "$(cat "$TMP/calls")" "code "
 }
@@ -789,7 +789,7 @@ test_apply_code_page_on_with_the_terminal_off_turns_it_on_with_a_checked_folder(
   assert_contains "$(_settings_choices)" "\"code_workspace\": \"$STACK_DIR/inside\""
   cp "$ENV_FILE" "$TMP/before"
   if out="$( (_lines CODE_ENABLED=true | _apply) 2>&1)"; then return 1; fi
-  assert_contains "$out" "CODE_ENABLED: the terminal's folder $STACK_DIR/inside cannot be its workspace: it is this bedrock-now folder or inside it"
+  assert_contains "$out" "CODE_ENABLED: the terminal's folder $STACK_DIR/inside cannot be its workspace: it is this DevOS ADE folder or inside it"
   assert_contains "$out" "./stack code enable --workspace DIR"
   assert_contains "$out" "nothing was changed"
   assert_eq "$(cat "$ENV_FILE")" "$(cat "$TMP/before")"
@@ -943,7 +943,7 @@ test_helper_applies_its_own_allowlist_and_origin_rules() {
   _checkout
   _cfg_req 0 remote 'correct horse battery' "$NONCE" "$(_lines AWS_ACCESS_KEY_ID=${FAKE_AWS_2})"
   if settings_poll_once 2>/dev/null; then return 1; fi
-  assert_contains "$(cat "$(helper_status_file)")" "can only be changed from the computer running bedrock-now"
+  assert_contains "$(cat "$(helper_status_file)")" "can only be changed from the computer running DevOS ADE"
   _cfg_req 0 local 'correct horse battery' 22222222222222222222222222222222 "$(_lines BEDROCK_NOW_HELPER_ALLOW_BRANCH=1)"
   if settings_poll_once 2>/dev/null; then return 1; fi
   assert_contains "$(cat "$(helper_status_file)")" "is read-only here"
@@ -1078,7 +1078,7 @@ test_helper_project_pick_opens_a_chooser_and_adds_what_was_chosen() {
   _pact '"project-pick"' '"when":"idle","mode":"ro","hide":true,"origin":"local"'
   settings_poll_once 2>/dev/null
   assert_eq "$(cat "$CALLS")" "project add $TMP/my app --when-idle --read-only --hide-path"
-  assert_contains "$(cat "$TMP/dialog.log")" "bedrock-now: choose a folder for the Code page. Claude — and anything it runs in the sandbox — will be able to read it"
+  assert_contains "$(cat "$TMP/dialog.log")" "DevOS ADE: choose a folder for the Code page. Claude — and anything it runs in the sandbox — will be able to read it"
   assert_contains "$(cat "$(helper_status_file)")" "\"action\": \"project-pick\", \"phase\": \"done\", \"message\": \"Added: my app: $TMP/my app → $TMP/my app in the sandbox (read-write); the sandbox restarted"
   # a linked worktree: added, and said that git won't work on it there
   export FAKE_LINKED=1 DIALOG_ANSWER="$TMP/wt"; mkdir -p "$TMP/wt"
@@ -1254,7 +1254,7 @@ test_up_and_restore_reconcile_and_hash_the_password() {
   assert_contains "$up" "settings_reconcile; budget_sync_quiet"
   assert_contains "$restore" "settings_reconcile_with_session"
   # the hash before anything starts the portal
-  [ "$(printf '%s\n' "$up" | grep -n ensure_portal_password_hash | cut -d: -f1)" -lt "$(printf '%s\n' "$up" | grep -n 'run_phase "bedrock-now"' | cut -d: -f1)" ]
+  [ "$(printf '%s\n' "$up" | grep -n ensure_portal_password_hash | cut -d: -f1)" -lt "$(printf '%s\n' "$up" | grep -n 'run_phase "$PRODUCT_NAME"' | cut -d: -f1)" ]
   assert_contains "$(sed -n '/^setup_secrets()/,/^}/p' "$T_ROOT/lib/commands.sh")" "ensure_portal_password_hash"
 }
 
@@ -1568,7 +1568,7 @@ test_less_protection_only_from_this_computer() {
     if setting_allowed "${kv%%=*}" "${kv#*=}" remote; then echo "$kv allowed remotely" >&2; return 1; fi
     setting_allowed "${kv%%=*}" "${kv#*=}" local
   done
-  setting_allowed BACKUP_KEEP 3 remote || assert_contains "$SV_ERR" "can only be lowered from the computer running bedrock-now"
+  setting_allowed BACKUP_KEEP 3 remote || assert_contains "$SV_ERR" "can only be lowered from the computer running DevOS ADE"
   set_env_batch BUDGET_OPENWEBUI 50 BUDGET_ALERT_PCT '' AUTO_UPDATE on UPDATE_CHECK ''
   setting_allowed BUDGET_OPENWEBUI 20 remote; setting_allowed BUDGET_ALERT_PCT 70 remote
   setting_allowed AUTO_UPDATE on remote; setting_allowed UPDATE_CHECK true remote

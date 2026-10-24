@@ -166,7 +166,7 @@ project_find() {
 # _project_secrets DIR -> what of a home folder's secrets DIR holds (printed, relative to DIR; 0), else 1 — a heuristic
 # for an old home folder's copy, a backup, another install: keys and logins in DIR or a folder right in it (.ssh, .aws,
 # .gnupg, .kube, .docker, .azure, the gh, glab and gcloud logins under .config, Library/Keychains, .netrc,
-# .git-credentials), down to 3 levels another bedrock-now folder (stack, .env and compose.yaml side by side: its .env
+# .git-credentials), down to 3 levels another DevOS ADE folder (stack, .env and compose.yaml side by side: its .env
 # holds this computer's keys) or a Time Machine backup, and — only when it is added (_PC_RECHECK unset) — an .npmrc or
 # .pypirc at its top with a token or password in it.
 # By names only (find -P: no link is ever followed, nothing opened; node_modules, .git and vendor not entered): in a
@@ -201,7 +201,7 @@ _project_secrets() {
       fi
     done
   fi
-  # another bedrock-now folder: stack, .env and compose.yaml (or .yml) in one folder; a Time Machine store
+  # another DevOS ADE folder: stack, .env and compose.yaml (or .yml) in one folder; a Time Machine store
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     case "$f" in
@@ -212,7 +212,7 @@ _project_secrets() {
             case $'\n'"$hit"$'\n' in
               *$'\n'"$dir/compose.yaml"$'\n'* | *$'\n'"$dir/compose.yml"$'\n'*)
                 rel="${dir#"$1"}"; rel="${rel#/}"
-                echo "another bedrock-now folder ($(plain_text "${rel:+$rel/}").env holds that install's keys)"; return 0 ;;
+                echo "another $PRODUCT_NAME folder ($(plain_text "${rel:+$rel/}").env holds that install's keys)"; return 0 ;;
             esac ;;
         esac ;;
       */Backups.backupdb | *.backupbundle | */.timemachine) echo "a Time Machine backup ($(plain_text "${f#"$1"/}"))"; return 0 ;;

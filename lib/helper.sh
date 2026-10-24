@@ -104,7 +104,7 @@ EOF
 helper_unit_text() {
   cat <<EOF
 [Unit]
-Description=bedrock-now update helper ($(project_name)): one-click Update/Rollback/Clean from the portal
+Description=$PRODUCT_NAME update helper ($(project_name)): one-click Update/Rollback/Clean from the portal
 
 [Service]
 ExecStart=/bin/bash $(_sd_exec_quote "$STACK_DIR/bin/bedrock-now-helper") $(_sd_exec_quote "$STACK_DIR")
@@ -768,7 +768,7 @@ _keep_awake() {
   case "$(_helper_os)" in
     Darwin) if command -v caffeinate >/dev/null 2>&1; then caffeinate -i -w "$1" >/dev/null 2>&1 & fi ;;
     *) if command -v systemd-inhibit >/dev/null 2>&1; then
-         systemd-inhibit --what=sleep --who=bedrock-now --why="bedrock-now update or rollback" --mode=block \
+         systemd-inhibit --what=sleep --who="$PRODUCT_NAME" --why="$PRODUCT_NAME update or rollback" --mode=block \
            /bin/sh -c 'while kill -0 "$1" 2>/dev/null; do sleep 5; done' sh "$1" >/dev/null 2>&1 &
        fi ;;
   esac

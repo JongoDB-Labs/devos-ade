@@ -1,5 +1,5 @@
 #!/bin/sh
-# Test shim: real curl, except towards this computer (127.0.0.1, *.localhost), where a live bedrock-now may
+# Test shim: real curl, except towards this computer (127.0.0.1, *.localhost), where a live DevOS ADE may
 # listen. Only the closed port 9 is allowed there; anything else is refused, logged, and fails the suite.
 for a in "$@"; do
   case "$a" in

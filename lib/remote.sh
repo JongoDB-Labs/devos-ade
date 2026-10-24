@@ -25,8 +25,9 @@ remote_mode() {
 }
 remote_on() { [ "$(remote_mode)" != off ]; }
 
-# ts_base -> the Tailscale Service base label: TS_SERVICE in .env, else bedrock-now for the default project and
-# bedrock-now-<project> for a second copy (so two copies never advertise the same Services).
+# ts_base -> the Tailscale Service base label: TS_SERVICE in .env, else svc:bedrock-now's label for the default project
+# and bedrock-now-<project> for a second copy (so two copies never advertise the same Services). Internal names, kept
+# from before v0.25.0: the remote addresses are made from them (docs/internal-names.md).
 ts_base() {
   local b p
   b="$(get_env TS_SERVICE)"
@@ -344,7 +345,7 @@ One-time steps in the Tailscale admin console (https://login.tailscale.com/admin
 
 $(ts_policy_snippet "$mode")
 
-     This grant is the ONLY access to bedrock-now only if your policy has no allow-all rule. A new tailnet's
+     This grant is the ONLY access to DevOS ADE only if your policy has no allow-all rule. A new tailnet's
      default policy lets every device reach every other on every port ("src": ["*"], "dst": ["*"]) — remove or
      narrow that rule, or the snippet adds access without limiting it.
   3. Keys (https://login.tailscale.com/admin/settings/keys): generate a one-off auth key — not reusable, not
@@ -360,7 +361,7 @@ EOF
      The sidecar ($(ts_node_name)) advertises them on start; with the autoApprovers above they are approved
      at once — otherwise approve it under "Service hosts" of each Service.$(if [ -n "$(code_remote_preview_app)" ]; then printf '
      %s-preview shows the dev servers running in the sandbox: sandbox content, on the same site as every other
-     Service and app of your tailnet (bedrock-now'"'"'s refuse its requests; docs/remote.md). Off: ./stack config set REMOTE_PREVIEW (then: false).' "$b"
+     Service and app of your tailnet (DevOS ADE'"'"'s refuse its requests; docs/remote.md). Off: ./stack config set REMOTE_PREVIEW (then: false).' "$b"
      elif [ -n "$(code_remote_app)" ]; then printf '
      (The Code page'"'"'s previews over remote access, %s-preview, are off: read docs/remote.md before you turn
      them on — define and approve that Service first, then ./stack config set REMOTE_PREVIEW (then: true).)' "$b"; fi)
@@ -686,7 +687,7 @@ remote_test() {
 
 Then, from your phone or laptop (Tailscale on, signed in$( [ -n "$(get_env TAILSCALE_ALLOWED_LOGIN)" ] && printf ' as %s' "$(get_env TAILSCALE_ALLOWED_LOGIN)")):
 
-  [ ] open $(remote_url) — a padlock (valid certificate), the bedrock-now login page
+  [ ] open $(remote_url) — a padlock (valid certificate), the DevOS ADE login page
   [ ] sign in with PORTAL_PASSWORD — Home loads; Chat, Admin and Files open in their tabs
   [ ] Chat answers a short question
   [ ] ./stack remote status → "Identity" names your login (Tailscale-User-Login was sent)

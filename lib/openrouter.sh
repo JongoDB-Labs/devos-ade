@@ -817,7 +817,7 @@ or_plan_notes() {
 # Asked once: after the first interactive setup (.state/openrouter-asked) it is not asked again.
 _or_env_key_wanted() {
   if [ "${ASSUME_YES:-0}" != 1 ] && _have_tty && [ ! -e "$STATE_DIR/openrouter-asked" ]; then
-    case "$(ask "found OPENROUTER_API_KEY in your environment — use it for bedrock-now (prompts to or/… models go to openrouter.ai)? [y/N]" "n")" in
+    case "$(ask "found OPENROUTER_API_KEY in your environment — use it for $PRODUCT_NAME (prompts to or/… models go to openrouter.ai)? [y/N]" "n")" in
       [Yy]*) return 0 ;; *) return 1 ;;
     esac
   fi

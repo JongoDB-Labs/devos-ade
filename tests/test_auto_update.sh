@@ -473,7 +473,7 @@ test_the_computer_stays_awake_while_an_update_or_rollback_runs() {   # review I6
   assert_eq "$(cat "$TMP/awake")" "caffeinate -i -w 4242"
   mkdir -p "$TMP/bin"; printf '#!/bin/sh\necho "systemd-inhibit $*" >> "%s"\n' "$TMP/awake" > "$TMP/bin/systemd-inhibit"; chmod +x "$TMP/bin/systemd-inhibit"
   PATH="$TMP/bin:$PATH" HELPER_OS=Linux _keep_awake 4343; wait
-  assert_contains "$(cat "$TMP/awake")" "systemd-inhibit --what=sleep --who=bedrock-now"
+  assert_contains "$(cat "$TMP/awake")" "systemd-inhibit --what=sleep --who=DevOS ADE --why=DevOS ADE update or rollback"
   assert_contains "$(cat "$TMP/awake")" "sh 4343"
   : > "$TMP/awake"; _keep_awake() { echo "awake $1" >> "$TMP/awake"; }
   _req clean

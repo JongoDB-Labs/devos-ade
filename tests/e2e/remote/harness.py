@@ -28,7 +28,7 @@ LOGIN = os.environ["RH_LOGIN"]
 CODE_SECRET = os.environ["RH_CODE_SECRET"]
 PREVIEW_SECRET = os.environ["RH_PREVIEW_SECRET"]
 PORTAL, CODE, CHAT, PREVIEW = (f"https://{h}.{TN}" for h in ("bn", "bn-code", "bn-chat", "bn-preview"))
-GUARD = "bedrock-now's same-site guard"
+GUARD = "DevOS ADE's same-site guard"
 SANDBOX = "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads"
 
 # What Chat's site may make the browser fetch (caddy/Caddyfile chat_csp; tests/test_portal.sh keeps this copy the same)
@@ -368,7 +368,7 @@ def run(b, ctx, page, reqs, resps, by_frame):
             results["fatal"] = "no preview frame"
             return
         page.screenshot(path=f"/out/shots/{LABEL}-code-page-preview.png")
-        # what reached the dev server: the port, its own Host, none of bedrock-now's cookies or your Tailscale identity
+        # what reached the dev server: the port, its own Host, none of DevOS ADE's cookies or your Tailscale identity
         info = f.evaluate("async () => (await fetch('/info')).json()")
         hh = info["headers"]
         check("dev-server-sees-nothing-of-bedrock-now", info["port"] == "5173" and hh.get("host") == "localhost:5173"

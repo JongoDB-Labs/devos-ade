@@ -1,4 +1,4 @@
-# bedrock-now stack. All host ports bind to 127.0.0.1. Browsers reach every UI through caddy (the portal);
+# DevOS ADE stack. All host ports bind to 127.0.0.1. Browsers reach every UI through caddy (the portal);
 # only the LiteLLM API and the shared MCP server are published directly, for command-line tools.
 # Values come from .env (written by ./stack setup).
 # Vars marked :? are created before the first compose call; the :- ones are filled in later setup steps.
@@ -88,9 +88,9 @@ services:
       # Optional; blank = no OpenRouter models are rendered (lib/openrouter.sh).
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       # LiteLLM sends these to OpenRouter as X-Title / HTTP-Referer, so OpenRouter's Activity and Logs show the
-      # requests as "bedrock-now" (not "liteLLM"). They name this project only, nothing about you or this install.
-      OR_APP_NAME: bedrock-now
-      OR_SITE_URL: https://github.com/JongoDB-Labs/bedrock-now
+      # requests as "DevOS ADE" (not "liteLLM"). They name this project only, nothing about you or this install.
+      OR_APP_NAME: DevOS ADE
+      OR_SITE_URL: https://github.com/JongoDB-Labs/devos-ade
       # Optional speech-to-text provider key (OpenAI or Groq); blank = no "stt" model is rendered (lib/stt.sh).
       STT_API_KEY: ${STT_API_KEY:-}
     volumes:
@@ -320,7 +320,7 @@ services:
       # Daily price update from public price lists (no credentials); the region picks the regional AWS prices.
       AWS_REGION_NAME: ${AWS_REGION_NAME:-us-east-1}
       PRICE_UPDATES: ${PRICE_UPDATES:-true}
-      # Daily check for a newer bedrock-now release (GitHub's public releases API; nothing about you is sent).
+      # Daily check for a newer DevOS ADE release (GitHub's public releases API; nothing about you is sent).
       UPDATE_CHECK: ${UPDATE_CHECK:-true}
       # One-click Update/Rollback/Clean from a remote (non-localhost) browser: off unless set to true.
       REMOTE_ADMIN_ACTIONS: ${REMOTE_ADMIN_ACTIONS:-false}

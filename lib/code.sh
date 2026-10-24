@@ -229,7 +229,7 @@ code_remote_preview_app() { [ -z "$(get_env REMOTE_PREVIEW_HOST)" ] || echo prev
 # code_remote_preview_wanted -> 0 when previews over remote access are on: REMOTE_PREVIEW=true. Blank (the default) is
 # off — on Tailscale the preview host is the same site as every other Service and machine name of your tailnet, in domain
 # mode preview.<your domain> the same site as everything under your registrable domain, and a page your sandbox serves
-# could send those other apps requests with their cookies (bedrock-now's own hosts refuse them; theirs need not) — except
+# could send those other apps requests with their cookies (DevOS ADE's own hosts refuse them; theirs need not) — except
 # with a REMOTE_PREVIEW_DOMAIN of its own in domain mode (another site): there blank is on. false is always off.
 code_remote_preview_wanted() {
   local v; v="$(get_env REMOTE_PREVIEW)"
@@ -246,7 +246,7 @@ code_remote_preview_tradeoff() {
 Previews of dev servers over remote access put a page your sandbox serves on the same site as every other app of
 your tailnet (all of <tailnet>.ts.net: other Tailscale Services, Serve apps, NAS or Home Assistant pages) — or, in
 own-domain mode, of your whole registrable domain. Its script could send those apps requests that carry their
-SameSite cookies, and set or flood cookies for the whole site. bedrock-now's own hosts refuse such requests (the
+SameSite cookies, and set or flood cookies for the whole site. DevOS ADE's own hosts refuse such requests (the
 same-site guard); other apps on your tailnet or domain may not. In own-domain mode a REMOTE_PREVIEW_DOMAIN of their
 own (another registrable domain) avoids this.
 EOF

@@ -39,7 +39,7 @@ icon_url() {
   return 0
 }
 
-# sha256 of the data: URIs of the generic two-letter badges bedrock-now 0.1.x-0.2.0 sent (catalog/icons/
+# sha256 of the data: URIs of the generic two-letter badges this project's 0.1.x-0.2.0 sent (catalog/icons/
 # {amazon,anthropic,cohere,meta,mistral,openai,stability,xai}.png and the .svg ones before that). Models
 # still showing one of them get the real logo; an icon the user picked is never one of these.
 OWUI_LEGACY_ICON_HASHES='7504a6fae0e5521cc79d58e0c69a39af32ae357c5e984decc912e118427a0c2d
@@ -62,7 +62,7 @@ a5f161255ef7a5ad3ac4246fc69030669eb285c5b031e3b0386763f40a867638
 # icon_data_uri FILE -> data:image/png;base64,… (FILE is a PNG)
 icon_data_uri() { printf 'data:image/png;base64,%s' "$(openssl base64 -A < "$1")"; }
 
-# owui_our_icon_hashes -> the sha256 of every data: URI bedrock-now sends (catalog/icons/*.png and
+# owui_our_icon_hashes -> the sha256 of every data: URI DevOS ADE sends (catalog/icons/*.png and
 # catalog/icons/or/*.png) or used to send (OWUI_LEGACY_ICON_HASHES), space-separated: how owui_merge_model
 # and the OpenRouter sync tell our icons from one the user picked.
 owui_our_icon_hashes() {
@@ -353,7 +353,7 @@ owui_install_cost_filter() {
   fi
   [ "$(get_env OWUI_COST_FILTER_INSTALLED)" = true ] || first=1
   if [ -n "$path" ]; then
-    if ! body="$(owui_function_json "Cost of each answer and of the whole chat, from bedrock-now's Bedrock prices" < "$COST_FILTER_FILE")" || [ -z "$body" ]; then
+    if ! body="$(owui_function_json "Cost of each answer and of the whole chat, from $PRODUCT_NAME's Bedrock prices" < "$COST_FILTER_FILE")" || [ -z "$body" ]; then
       rm -f "$tmp"; warn "Open WebUI: could not prepare the cost filter — answers won't show their cost"; return 0
     fi
     code="$(_owui_post "$path" "$body" "$tmp")"

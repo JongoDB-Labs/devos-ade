@@ -9,7 +9,7 @@ die()  { printf 'xx  %s\n' "$*" >&2; exit 1; }
 now()  { date +%s; }
 
 # valid_project NAME -> 0 for the suite's own project names only: bne2e or bne2e-<lowercase letters/digits/->.
-# Anything else (bedrock-now, another copy's name) could be a real install; teardown deletes volumes by name.
+# Anything else (bedrock-now — the default Compose project —, another copy's name) could be a real install; teardown deletes volumes by name.
 valid_project() {
   case "$1" in
     bne2e) return 0 ;;

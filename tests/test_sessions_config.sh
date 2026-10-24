@@ -98,7 +98,7 @@ test_a_look_asks_first_never_remotely_and_mounts_each_item_alone_never_credentia
   assert_contains "$(cat "$TMP/err")" "not allowed yet"
   # over remote access: never asked, refused
   if (sessions_config_scan --origin remote --screen --request "$NONCE" 2>"$TMP/err"); then return 1; fi
-  assert_contains "$(cat "$TMP/err")" "only on the computer running bedrock-now"
+  assert_contains "$(cat "$TMP/err")" "only on the computer running DevOS ADE"
   [ ! -e "$TMP/dialog.log" ] && [ ! -e "$TMP/docker" ]
   assert_contains "$(cat "$TMP/dc")" "request --id $NONCE --state refused --why remote --action setup-scan"
   # Don't allow: nothing read

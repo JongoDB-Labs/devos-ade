@@ -180,8 +180,8 @@ terminal_workspace_check() {
   [ -n "$real" ] || { echo "cannot open it"; return 1; }
   if p="$(env_value_problem "$real")"; then echo "its path $p"; return 1; fi
   r="$(_fold "$real")"; h="$(_fold "$(_phys "$HOME")")"; s="$(_fold "$(_phys "$STACK_DIR")")"
-  case "$r/" in "$s/"*) echo "it is this bedrock-now folder or inside it"; return 1 ;; esac
-  case "$s/" in "$r/"*) echo "it contains this bedrock-now folder (and its .env)"; return 1 ;; esac
+  case "$r/" in "$s/"*) echo "it is this $PRODUCT_NAME folder or inside it"; return 1 ;; esac
+  case "$s/" in "$r/"*) echo "it contains this $PRODUCT_NAME folder (and its .env)"; return 1 ;; esac
   if [ -n "$h" ]; then
     case "$h/" in "$r/"*) echo "it is your home folder or a folder around it — pick a folder inside it"; return 1 ;; esac
     case "$r" in "$h"/.*) echo "it is a hidden folder of your home folder (keys and settings live there)"; return 1 ;; esac

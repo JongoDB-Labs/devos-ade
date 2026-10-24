@@ -1,4 +1,4 @@
-"""bedrock-now's one LiteLLM hook (litellm/config.yaml: litellm_settings.callbacks, rendered by lib/models.sh). Its
+"""DevOS ADE's one LiteLLM hook (litellm/config.yaml: litellm_settings.callbacks, rendered by lib/models.sh). Its
 source lives here; ./stack copies it into litellm/ (LiteLLM's config folder) whenever it renders the config, so a
 checkout of a version without it (./stack rollback) never deletes a file a running config still names.
 

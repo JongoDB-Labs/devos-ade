@@ -112,7 +112,7 @@ test_a_look_asks_first_never_over_remote_access_and_reads_only_that_projects_sto
   assert_contains "$(cat "$TMP/err")" "not allowed yet"
   # over remote access: never asked, refused
   if (sessions_scan --project app --origin remote --screen --request "$NONCE" 2>"$TMP/err"); then return 1; fi
-  assert_contains "$(cat "$TMP/err")" "only on the computer running bedrock-now"
+  assert_contains "$(cat "$TMP/err")" "only on the computer running DevOS ADE"
   [ ! -e "$TMP/dialog.log" ] && [ ! -e "$TMP/docker" ]
   assert_contains "$(cat "$TMP/dc")" "request --id $NONCE --state refused --why remote"
   # the dialog on the screen: Don't allow — nothing read
@@ -385,7 +385,7 @@ test_settings_takes_back_through_the_helper_by_id_never_a_path() {
   assert_eq "$(cat "$CALLS")" "sessions consent --revoke --project p_0000aaaa --tool claude
 sessions consent --revoke --project all --tool both
 sessions consent --suggest --revoke"
-  assert_contains "$(cat "$(helper_status_file)")" '"message": "Taken back: bedrock-now no longer reads those sessions on this computer'
+  assert_contains "$(cat "$(helper_status_file)")" '"message": "Taken back: DevOS ADE no longer reads those sessions on this computer'
   _ra 44444444444444444444444444444444 '"project":"/home/x","tool":"both"'
   if settings_poll_once 2>/dev/null; then return 1; fi
   _ra 55555555555555555555555555555555 '"project":"p_0000aaaa","tool":"both","path":"/x"'

@@ -307,7 +307,7 @@ docker_autostart_off() {
 # docker_autostart_hint — warns while "Start when you sign in" is off (./stack serve: every time)
 docker_autostart_hint() {
   docker_autostart_off || return 0
-  warn "Docker Desktop doesn't start by itself: turn on Docker Desktop › Settings › General › \"Start Docker Desktop when you sign in to your computer\", so bedrock-now comes back after a restart"
+  warn "Docker Desktop doesn't start by itself: turn on Docker Desktop › Settings › General › \"Start Docker Desktop when you sign in to your computer\", so $PRODUCT_NAME comes back after a restart"
 }
 
 # docker_autostart_hint_weekly — the same after setup (and so after every update), at most once in 7 days:
@@ -344,7 +344,7 @@ _serve_mac() {
     log "keeping this Mac awake in the background (caffeinate, pid $pid) — ./stack serve --stop lets it sleep again"
     return 0
   fi
-  log "keeping this Mac awake while bedrock-now serves (caffeinate -i -s). Ctrl-C stops that; the stack keeps running (./stack down stops it)."
+  log "keeping this Mac awake while $PRODUCT_NAME serves (caffeinate -i -s). Ctrl-C stops that; the stack keeps running (./stack down stops it)."
   trap 'interrupted=1' INT
   caffeinate -i -s || [ "$interrupted" = 1 ] || warn "caffeinate stopped unexpectedly — the Mac may sleep again"
   trap - INT
@@ -360,16 +360,16 @@ _serve_linux() {
     return 0
   fi
   if ! have_cmd systemd-inhibit; then
-    log "this Linux laptop has no systemd-inhibit: turn off suspend in its power settings while it serves bedrock-now"
+    log "this Linux laptop has no systemd-inhibit: turn off suspend in its power settings while it serves $PRODUCT_NAME"
     return 0
   fi
   if [ "$1" = bg ]; then
     log "Linux: --background isn't supported; run ./stack serve in tmux to hold the sleep inhibitor"
     return 0
   fi
-  log "holding a sleep inhibitor while bedrock-now serves (systemd-inhibit). Ctrl-C releases it; the stack keeps running."
+  log "holding a sleep inhibitor while $PRODUCT_NAME serves (systemd-inhibit). Ctrl-C releases it; the stack keeps running."
   trap 'interrupted=1' INT
-  if ! systemd-inhibit --what=sleep:idle --who=bedrock-now --why="serving bedrock-now" --mode=block sleep infinity &&
+  if ! systemd-inhibit --what=sleep:idle --who="$PRODUCT_NAME" --why="serving $PRODUCT_NAME" --mode=block sleep infinity &&
     [ "$interrupted" != 1 ]; then
     trap - INT
     warn "could not hold a sleep inhibitor (systemd-inhibit failed; polkit may not allow it for your user) — the laptop can still suspend"

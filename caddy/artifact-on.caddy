@@ -5,7 +5,7 @@
 # What has to run a workspace file's own script or parse HTML — an HTML file, a Mermaid diagram, a notebook's HTML or
 # JavaScript output — is shown by a fixed viewer (code/web/src/artifact: two pages and their scripts, served by the
 # code container) on a host of its own, a<capability>.artifact.<PREVIEW_DOMAIN>: the previews' site, another site than
-# the portal's, so no cookie of bedrock-now reaches it and its requests to bedrock-now's hosts are cross-site. The
+# the portal's, so no cookie of DevOS ADE reaches it and its requests to DevOS ADE's hosts are cross-site. The
 # capability (the portal mints it on the code host, /.bn/artifact, from the Code page's unlock) is checked on every
 # request (/auth/verify?app=artifact): GET/HEAD only, framed — never opened as a page of its own.
 #

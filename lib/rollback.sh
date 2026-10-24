@@ -97,7 +97,7 @@ _rollback_redate_backup_files() {
   warn "to be sure afterwards: make the files yours (sudo chown -R \"\$(id -un)\" $b), then find $b/s3 -type f -exec touch {} + && ./stack restore $b --yes"
 }
 
-# _rollback_litellm_hook — litellm/config.yaml without its `callbacks:` line naming bedrock-now's hook (atomically, the
+# _rollback_litellm_hook — litellm/config.yaml without its `callbacks:` line naming DevOS ADE's hook (atomically, the
 # file's mode kept 644); nothing to do without one
 _rollback_litellm_hook() {
   local cfg="$STACK_DIR/litellm/config.yaml" tmp

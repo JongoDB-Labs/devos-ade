@@ -984,10 +984,10 @@ test_refresh_falls_back_to_the_public_list_when_the_key_is_rejected() {
 
 # --- OpenRouter attribution ---
 
-test_compose_names_bedrock_now_to_openrouter() {
+test_compose_names_devos_ade_to_openrouter() {
   litellm="$(sed -n '/^  litellm:/,/^  open-webui:/p' "$STACK_DIR/compose.yaml")"
-  assert_contains "$litellm" "OR_APP_NAME: bedrock-now"
-  assert_contains "$litellm" "OR_SITE_URL: https://github.com/JongoDB-Labs/bedrock-now"
+  assert_contains "$litellm" "OR_APP_NAME: DevOS ADE"
+  assert_contains "$litellm" "OR_SITE_URL: https://github.com/JongoDB-Labs/devos-ade"
   assert_eq "$(grep -c 'OR_APP_NAME\|OR_SITE_URL' "$STACK_DIR/compose.yaml")" 2   # LiteLLM only
 }
 
@@ -1001,7 +1001,7 @@ test_compose_renders_attribution_and_an_empty_key_as_off() {
   _env() { OPENROUTER_API_KEY=sk-or-v1-shell dc config --format json 2>/dev/null |
     python3 -c 'import json, sys; s = json.load(sys.stdin)["services"]; l, p = s["litellm"]["environment"], s["portal"]["environment"]
 print(l["OR_APP_NAME"], l["OR_SITE_URL"], repr(l["OPENROUTER_API_KEY"]), repr(p["OPENROUTER_API_KEY"]))'; }
-  assert_eq "$(_env)" "bedrock-now https://github.com/JongoDB-Labs/bedrock-now '' ''"
+  assert_eq "$(_env)" "DevOS ADE https://github.com/JongoDB-Labs/devos-ade '' ''"
 }
 
 # --- review follow-ups ---

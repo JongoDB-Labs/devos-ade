@@ -187,7 +187,7 @@ test_main_once_without_requests_only_beats() {
 
 test_helper_entrypoint_refuses_a_non_checkout() {
   if out="$("$BASH" "$T_ROOT/bin/bedrock-now-helper" "$TMP" --once 2>&1)"; then return 1; fi
-  assert_contains "$out" "not a bedrock-now checkout"
+  assert_contains "$out" "not a DevOS ADE checkout"
   [ -x "$T_ROOT/bin/bedrock-now-helper" ] || { echo "bin/bedrock-now-helper must be executable" >&2; return 1; }
 }
 

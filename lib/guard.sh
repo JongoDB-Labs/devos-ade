@@ -98,7 +98,7 @@ guard_project() {
   elif [ -z "$(get_env POSTGRES_PASSWORD)" ]; then
     vols="$(_project_volumes "$name")"
     [ -z "$vols" ] ||
-      msg="project '$name' already has data volumes ($vols) from another or an earlier bedrock-now install, and this checkout's .env is new — its database password would not match. Either use that install, give this copy its own name: COMPOSE_PROJECT_NAME=$name-2 ./setup.sh, or, if you no longer need that data: docker volume rm $vols."
+      msg="project '$name' already has data volumes ($vols) from another or an earlier $PRODUCT_NAME install, and this checkout's .env is new — its database password would not match. Either use that install, give this copy its own name: COMPOSE_PROJECT_NAME=$name-2 ./setup.sh, or, if you no longer need that data: docker volume rm $vols."
   fi
   if [ -n "$msg" ]; then
     [ "$mode" != warn ] || { warn "$msg"; return 0; }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bedrock-now update helper: runs ONLY ./stack update|rollback|clean --yes (or ./stack helper auto on|off) in one
+# DevOS ADE update helper: runs ONLY ./stack update|rollback|clean --yes (or ./stack helper auto on|off) in one
 # checkout, when the portal asks for it through .state/requests/, and ./stack update --yes for a new release in the
 # nightly window when AUTO_UPDATE=on (see lib/helper.sh and docs/security.md#the-update-helper).
 # Started by launchd / systemd --user (./stack helper install). Usage: bedrock-now-helper CHECKOUT_DIR [--once]
@@ -8,7 +8,7 @@ set -euo pipefail
 STACK_DIR="$(cd "$1" && pwd)"
 export STACK_DIR
 shift
-[ -f "$STACK_DIR/stack" ] && [ -f "$STACK_DIR/lib/helper.sh" ] || { echo "bedrock-now-helper: $STACK_DIR is not a bedrock-now checkout" >&2; exit 2; }
+[ -f "$STACK_DIR/stack" ] && [ -f "$STACK_DIR/lib/helper.sh" ] || { echo "bedrock-now-helper: $STACK_DIR is not a DevOS ADE checkout" >&2; exit 2; }
 umask 077
 . "$STACK_DIR/lib/common.sh"
 . "$STACK_DIR/lib/ports.sh"

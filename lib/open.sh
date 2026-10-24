@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# ./stack open: the installed bedrock-now app if there is one (Chrome/Edge "Install app": own window, Dock or
+# ./stack open: the installed DevOS ADE app if there is one (Chrome/Edge "Install app": own window, Dock or
 # taskbar icon, Cmd-Tab); otherwise the portal as a tab in your everyday browser, where the sidebar's
 # "Install app" button can install it. BEDROCK_NOW_OPEN_MODE=window keeps the old behaviour: a separate
 # Chrome-family --app window with its own profile (no Dock icon of its own).
@@ -13,7 +13,8 @@ OPEN_LINUX_BINS="google-chrome microsoft-edge brave-browser chromium chromium-br
 open_os() { uname -s; }   # overridable in tests
 
 # open_profile_dir -> the browser profile for BEDROCK_NOW_OPEN_MODE=window: one per project, so its logins stay
-# separate from your everyday browser and from a second bedrock-now copy.
+# separate from your everyday browser and from a second copy. The folder keeps its name from before v0.25.0 (an
+# internal name: its sign-ins are there).
 open_profile_dir() {
   local p name=bedrock-now
   p="$(project_name)"; [ "$p" = "$DEFAULT_PROJECT" ] || name="bedrock-now-$p"
@@ -143,7 +144,7 @@ _install_tip() {
     *) menu="in Chrome or Edge (Safari: File → Add to Dock)" ;;
   esac
   log "tip: click \"Install app\" in the portal's sidebar $menu"
-  log "     to give bedrock-now its own window and Dock icon; ./stack open then opens the app"
+  log "     to give $PRODUCT_NAME its own window and Dock icon; ./stack open then opens the app"
   { mkdir -p "$STATE_DIR" && : > "$mark"; } 2>/dev/null || true
 }
 

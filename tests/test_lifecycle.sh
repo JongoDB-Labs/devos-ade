@@ -243,6 +243,23 @@ test_uninstall_aborts_on_wrong_confirmation() {
   assert_eq "$(cat "$TMP/calls" 2>/dev/null)" ""
 }
 
+test_uninstall_asks_for_devos_ade_and_takes_the_old_name_too() {
+  printf 'X=1\n' > "$ENV_FILE"; _stub_dc; HOME="$TMP/home"; STACK_DIR="$TMP/stack"; mkdir -p "$HOME" "$STACK_DIR"
+  confirm() { return 1; }; docker() { :; }
+  local w
+  for w in "DevOS ADE" "devos ade" "bedrock now" "Bedrock-Now" ""; do
+    ask() { echo "$1" > "$TMP/asked"; echo "$w"; }; : > "$TMP/calls"
+    if (cmd_uninstall) >/dev/null 2>&1; then echo "took '$w'" >&2; return 1; fi
+    assert_eq "$(cat "$TMP/calls")" ""
+  done
+  assert_eq "$(cat "$TMP/asked")" "Type 'devos-ade' to confirm"
+  for w in devos-ade bedrock-now; do   # (its name before v0.25.0, too)
+    ask() { echo "$w"; }; : > "$TMP/calls"
+    cmd_uninstall 2>/dev/null || { echo "refused '$w'" >&2; return 1; }
+    assert_contains "$(cat "$TMP/calls")" "dc down -v --remove-orphans"
+  done
+}
+
 test_uninstall_aborts_under_assume_yes() {
   printf 'X=1\n' > "$ENV_FILE"; _stub_dc; ASSUME_YES=1
   if (cmd_uninstall) >/dev/null 2>&1; then return 1; fi
@@ -278,7 +295,7 @@ test_uninstall_confirmed_removes_volumes_and_own_symlink_only() {
 
 test_uninstall_removes_this_installs_built_images_by_exact_name() {
   printf 'COMPOSE_PROJECT_NAME=bn-x\n' > "$ENV_FILE"; _stub_dc; HOME="$TMP/home"; STACK_DIR="$TMP/stack"; mkdir -p "$HOME" "$STACK_DIR"
-  ask() { echo "bedrock-now"; }; confirm() { return 1; }
+  ask() { echo "devos-ade"; }; confirm() { return 1; }
   # present: portal:local and :previous, stt:local, shared-mcp:local (still used by something: its rm fails)
   docker() {
     echo "docker $*" >> "$TMP/calls"

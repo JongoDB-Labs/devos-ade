@@ -103,7 +103,7 @@ stt_model_reason() {
 }
 
 # --- Bedrock refusing audio (since October 2026) ---
-# Bedrock now answers every audio request to both Voxtral models with HTTP 400 "The model returned the following
+# Bedrock answers every audio request to both Voxtral models with HTTP 400 "The model returned the following
 # errors: Model does not support audio modality" (Converse and Invoke, in every region tried); text still works, so
 # the model check's 1-token text request alone says ok. AWS lists both as Legacy (end of life 2027-03-30), without
 # audio. That answer is a state of its own: Bedrock speech-to-text goes off once, said plainly (the notice: Home,

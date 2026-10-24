@@ -9,7 +9,7 @@
 # portal or the sandbox — which scans them for secrets (redacted by default), shows them on the Code page and, when you
 # say Copy, writes them into the sandbox's own store.
 #
-#   list                                      what bedrock-now may read here, and the last looks
+#   list                                      what DevOS ADE may read here, and the last looks
 #   scan --project NAME [--tool T]            a list of the project's sessions (T: claude, claude-bedrock or both)
 #   fetch --project NAME --rows 1,3-5|--all   read those sessions into the code container (checked on the Code page)
 #   import --project NAME [--tool T] [--rows …|--all] [--keep-secrets] [--keep-thinking] [--with-tool-outputs] [--rescan]
@@ -31,7 +31,7 @@
 #   scans/<nonce>.tsv  the helper's own record of a look: the project, its folder, the store folders it read, and each
 #                   row's tool and session id — a read names rows of it, never a path or an id
 #   forget.tsv      what the code container must still forget (consent taken back while it did not run)
-# and .state/status/sessions.json (for Settings › Claude Code › What bedrock-now may read on this computer), and
+# and .state/status/sessions.json (for Settings › Claude Code › What DevOS ADE may read on this computer), and
 # .state/projects/public/helper.json (what the helper offers the Code page: read-only there). Each folder has one
 # direction (docs/security.md): the portal writes the requests (the helper reads them and never writes there), ./stack
 # and the helper write only folders no container can write.
@@ -66,7 +66,7 @@ Usage: ./stack sessions <command>
   folder added as a project (./stack project add), only after you allowed it here, and never the other way:
   nothing is ever written to ~/.claude or ~/.claude-bedrock.
 
-  list                          What bedrock-now may read on this computer, and the last looks
+  list                          What DevOS ADE may read on this computer, and the last looks
   scan --project NAME           A list of the project's sessions (titles, dates, sizes): on the Code page's
       [--tool claude|claude-bedrock|both]   Import sheet, or ./stack sessions import
   fetch --project NAME --rows 1,3-5|--all   Read those sessions into the Code page's container, to check and
@@ -80,7 +80,7 @@ Usage: ./stack sessions <command>
                                 redacted (left out otherwise, each one line saying so: the scan is best effort, and
                                 command output often holds secrets)
       --rescan                  look again even when a list of the last hour is there
-  consent                       What bedrock-now may read (the same as list); change it with:
+  consent                       What DevOS ADE may read (the same as list); change it with:
       --project NAME [--tool T] --always | --once | --revoke
       --suggest --always | --once | --revoke   the names of the folders your tools kept sessions for
       --revoke-all              take back everything, your setup's too (what the Code page's container read goes
@@ -263,7 +263,7 @@ _ss_forget_pending() {
   done < "$f"
   if [ -n "$left" ]; then printf '%s' "$left" > "$f.tmp" && mv -f "$f.tmp" "$f"; else rm -f "$f"; fi
 }
-# sessions_status_sync — .state/status/sessions.json for Settings: what bedrock-now may read here (always, and an Allow
+# sessions_status_sync — .state/status/sessions.json for Settings: what DevOS ADE may read here (always, and an Allow
 # once while it holds), by project (its name and folder) — no session, no title
 sessions_status_sync() {
   local k t p s a n h rows='' sug='' setup='' name host rec
@@ -295,13 +295,13 @@ _ss_dialog() {
   else
     t="$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
     case "$(_helper_os)" in
-      Darwin) out="$(_with_deadline "$SESSIONS_DIALOG_S" osascript -e "button returned of (display dialog \"$t\" with title \"bedrock-now\" buttons {\"Don't allow\", \"Allow once\", \"$al\"} default button \"Don't allow\" cancel button \"Don't allow\" with icon caution giving up after 120)" 2>/dev/null)" || out='' ;;
+      Darwin) out="$(_with_deadline "$SESSIONS_DIALOG_S" osascript -e "button returned of (display dialog \"$t\" with title \"$PRODUCT_NAME\" buttons {\"Don't allow\", \"Allow once\", \"$al\"} default button \"Don't allow\" cancel button \"Don't allow\" with icon caution giving up after 120)" 2>/dev/null)" || out='' ;;
       *) if command -v zenity >/dev/null 2>&1; then
-           out="$(_with_deadline "$SESSIONS_DIALOG_S" zenity --question --title bedrock-now --no-wrap --text "$1" --ok-label 'Allow once' --cancel-label "Don't allow" --extra-button "$al" --timeout 120 2>/dev/null)" || rc=$?
+           out="$(_with_deadline "$SESSIONS_DIALOG_S" zenity --question --title "$PRODUCT_NAME" --no-wrap --text "$1" --ok-label 'Allow once' --cancel-label "Don't allow" --extra-button "$al" --timeout 120 2>/dev/null)" || rc=$?
            [ "$rc" != 0 ] || out='Allow once'
            [ "$rc" != 124 ] || out=''
          else
-           _with_deadline "$SESSIONS_DIALOG_S" kdialog --title bedrock-now --yesnocancel "$1" --yes-label 'Allow once' --no-label "$al" --cancel-label "Don't allow" >/dev/null 2>&1 || rc=$?
+           _with_deadline "$SESSIONS_DIALOG_S" kdialog --title "$PRODUCT_NAME" --yesnocancel "$1" --yes-label 'Allow once' --no-label "$al" --cancel-label "Don't allow" >/dev/null 2>&1 || rc=$?
            case "$rc" in 0) out='Allow once' ;; 1) out="$al" ;; *) out='' ;; esac
          fi ;;
     esac
@@ -313,7 +313,7 @@ _ss_dialog() {
 # request of the helper's) in a dialog on this computer's screen; else this command ends saying how to allow it
 _ss_ask() {
   local ans rc
-  [ "$2" != remote ] || _ss_fail remote "only on the computer running bedrock-now: a request over remote access may read sessions of a look already allowed there, never allow one"
+  [ "$2" != remote ] || _ss_fail remote "only on the computer running $PRODUCT_NAME: a request over remote access may read sessions of a look already allowed there, never allow one"
   if [ "$3" != 1 ] && _have_tty && [ "${ASSUME_YES:-0}" != 1 ]; then
     printf '\n%b\n\n' "$1" > /dev/tty
     case "$(ask "Allow it? [o]nce / [a]lways${4:+ $4} / [N]o" n)" in
@@ -724,7 +724,7 @@ sessions_import() {
   while IFS=$'\t' read -r id okv as red kept left oleft by why; do
     case "$id" in [0-9a-f]*-*) ;; *) continue ;; esac
     if [ "$okv" = ok ]; then log "copied: $id$([ "$as" = "$id" ] || echo " as a new session $as (the copy in the sandbox was continued since)") — ${red:-0} redaction(s)$([ "${kept:-0}" = 0 ] || echo ", $kept kept")$([ "${left:-0}" = 0 ] || echo ", $left file(s) beside it not copied")$([ "${oleft:-0}" = 0 ] || echo ", $oleft tool output(s) left out")"
-    # (the sandbox's own words are shown apart, labelled as the sandbox's — never as a sentence of bedrock-now's)
+    # (the sandbox's own words are shown apart, labelled as the sandbox's — never as a sentence of DevOS ADE's)
     elif [ "$by" = sandbox ]; then warn "not copied: $id — the sandbox refused it. What it said:"; printf '      | %s\n' "$(plain_text "$why" | head -c 300)" >&2
     else warn "not copied: $id — $(plain_text "$why" | head -c 300)"; fi
   done < <(_ss_code --secs "$SESSIONS_COPY_S" copy --project "$SS_ID" --ids "$ids" --tsv $([ "$keep" = 1 ] && echo --keep-secrets) $([ "$think_keep" = 1 ] && echo --keep-thinking) $([ "$outputs" = 1 ] && echo --with-tool-outputs) 2>/dev/null)
@@ -753,7 +753,7 @@ sessions_consent() {
     _ss_consent_take folder both all; _ss_consent_take suggest both all
     # (everything: your setup's too — lib/sessions_config.sh)
     if declare -F _sc_consent_take >/dev/null; then for t in $SETUP_TOOLS; do _sc_consent_take "$t"; done; _ss_forget setup all; sessions_status_sync; fi
-    log "taken back: bedrock-now may read nothing of Claude Code's or claude-bedrock's on this computer now (sessions already copied into the sandbox stay there)"
+    log "taken back: $PRODUCT_NAME may read nothing of Claude Code's or claude-bedrock's on this computer now (sessions already copied into the sandbox stay there)"
     return 0
   fi
   _ss_tools "$tool" >/dev/null || die "--tool: claude, claude-bedrock or both"
@@ -769,7 +769,7 @@ sessions_consent() {
   # (every project's, taken back: Settings' Take back all, by the helper)
   if [ "$ref" = all ] && [ "$what" = revoke ]; then
     for t in $(_ss_tools "$tool"); do _ss_consent_take folder "$t" all; done
-    log "taken back: bedrock-now no longer reads $(_ss_labels "$tool")'s sessions of any folder here (sessions already copied into the sandbox stay there)"
+    log "taken back: $PRODUCT_NAME no longer reads $(_ss_labels "$tool")'s sessions of any folder here (sessions already copied into the sandbox stay there)"
     return 0
   fi
   # (taking back works for a folder removed since too: by its id)
@@ -783,7 +783,7 @@ sessions_consent() {
   done
   sessions_status_sync
   case "$what" in
-    revoke) log "$SS_NAME: bedrock-now no longer reads $(_ss_labels "$tool")'s sessions of $(owner_text "$SS_HOST") (what the Code page's container read is forgotten; sessions already copied into the sandbox stay there)" ;;
+    revoke) log "$SS_NAME: $PRODUCT_NAME no longer reads $(_ss_labels "$tool")'s sessions of $(owner_text "$SS_HOST") (what the Code page's container read is forgotten; sessions already copied into the sandbox stay there)" ;;
     always) log "$SS_NAME: the Code page may list and read $(_ss_labels "$tool")'s sessions of $(owner_text "$SS_HOST") without asking again (./stack sessions consent --project $SS_NAME --revoke takes it back)" ;;
     once) log "$SS_NAME: one look at $(_ss_labels "$tool")'s sessions of $(owner_text "$SS_HOST") allowed (within the hour)" ;;
   esac
@@ -791,7 +791,7 @@ sessions_consent() {
 
 sessions_list() {
   local k t p s a n h rec name found=0 f
-  printf 'What bedrock-now may read on this computer (./stack sessions consent changes it):\n'
+  printf 'What %s may read on this computer (./stack sessions consent changes it):\n' "$PRODUCT_NAME"
   while IFS=$'\t' read -r k t p s a n h; do
     [ "$k" != setup ] || continue   # (your setup's: ./stack sessions config list)
     found=1

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Opt-in end-to-end suite (run by hand; not part of tests/run.sh or CI). Builds a THROWAWAY bedrock-now stack from
+# Opt-in end-to-end suite (run by hand; not part of tests/run.sh or CI). Builds a THROWAWAY DevOS ADE stack from
 # this checkout under its own Compose project and ports, drives every page in a pinned Playwright container, runs
 # the safe ./stack subcommands against it, then removes it again. Costs real Bedrock money: about half a cent per
 # full run (measured; every key of the throwaway has a budget of a few cents, and the run fails at $0.10).
@@ -243,7 +243,7 @@ START_TS="$(now)"
 # st [--aws] ARGS... — the throwaway's ./stack with a clean environment and no controlling terminal (notty), run in
 # its folder (ST_CWD=DIR: from DIR instead; ST_TIMEOUT=SECS: ended after SECS); stdin is /dev/null.
 st() {
-  # Never let a command default to the bedrock-now project: the throwaway .env must name ours.
+  # Never let a command default to the bedrock-now project (the default Compose project): the throwaway .env must name ours.
   [ "$(get_env COMPOSE_PROJECT_NAME)" = "$PROJECT" ] || { echo "xx  throwaway .env does not name project $PROJECT" >&2; return 99; }
   local cwd="${ST_CWD:-$STACK}" timeout=()   # read before clean_env, which unexports them with everything else
   [ -z "${ST_TIMEOUT:-}" ] || timeout=(--timeout "$ST_TIMEOUT")
@@ -364,7 +364,7 @@ if [ "$REUSE" = 1 ]; then
 else
   stage
   say "setup (non-interactive; a few minutes; log: $LOGS/cli-setup.log)"
-  cli setup 0 'bedrock-now is up' --aws setup --yes || {
+  cli setup 0 'DevOS ADE is up' --aws setup --yes || {
     tail -n 40 "$LOGS/cli-setup.log" >&2; die "setup failed — see $LOGS/cli-setup.log (redacted)"; }
 fi
 [ -n "$(get_env PORTAL_PASSWORD)" ] || die "the throwaway .env has no PORTAL_PASSWORD"
@@ -1403,7 +1403,7 @@ else
     record claude claude-bedrock PASS "$(( $(now) - t0 ))" "answered ok via $haiku; cost line shown; lean config folder (700)"
   else record claude claude-bedrock FAIL "$(( $(now) - t0 ))" "exit $rc: $(tail -n 3 "$log" | tr '\n' ' ')"; fi
   t0="$(now)"; out="$( (clean_env; cd "$OUT/claude-cwd" && exec "$NOTTY" "$STACK/bin/claude-bedrock" --help) 2>&1 </dev/null)"
-  if printf '%s' "$out" | grep -q 'claude-bedrock: Claude Code on AWS Bedrock via bedrock-now'; then
+  if printf '%s' "$out" | grep -q 'claude-bedrock: Claude Code on AWS Bedrock via DevOS ADE'; then
     record claude claude-bedrock-help PASS "$(( $(now) - t0 ))" "wrapper header + claude --help"
   else record claude claude-bedrock-help FAIL "$(( $(now) - t0 ))" "no wrapper header"; fi
 fi
@@ -1448,7 +1448,7 @@ else
       record cli restore-same-size-change PASS "$(( $(now) - t0 ))" "$CANARY: '$c_bk' in the backup, overwritten with '$c_before' (same size), '$c_after' after the restore"
     else record cli restore-same-size-change FAIL "$(( $(now) - t0 ))" "$CANARY: '$c_bk' in the backup (want '$canary_a'), '$c_before' before the restore (want '$canary_b'), '$c_after' after it (want '$canary_a')"; fi
     # The path ./stack prints ("./stack restore backups/<ts>") and ./stack rollback passes on is relative to the
-    # checkout: it must work from another folder too (e.g. ~/bedrock-now/stack restore run from $HOME).
+    # checkout: it must work from another folder too (e.g. ~/devos-ade/stack restore run from $HOME).
     ST_CWD=/ cli restore-from-another-folder 0 'all checks passed' restore "backups/${bk##*/}" --yes
     spend_resume
   else record cli backup-contents FAIL 0 "no complete backup directory (${bk:-none}; missing:${miss:- all})"; fi

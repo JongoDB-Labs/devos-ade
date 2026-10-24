@@ -54,7 +54,7 @@ Usage: ./stack subscriptions <command> [--chat]
 
   TOOL: claude (Claude Code on your Claude plan), codex, gemini, copilot, cursor, grok. In the sandbox's terminal:
   claude-sub, codex, gemini, copilot, cursor-agent, grok, and `subscriptions` (the same commands). Each login stays
-  in that tool's own file in the sandbox: bedrock-now never opens it, and backups leave it out.
+  in that tool's own file in the sandbox: DevOS ADE never opens it, and backups leave it out.
   .env: TERMINAL_AI_TOOLS=all (default) | none | codex,copilot,…  — which go into the sandbox (next ./stack update or
   ./stack terminal enable).
 EOF

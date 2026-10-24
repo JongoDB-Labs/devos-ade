@@ -46,7 +46,7 @@ Usage: ./stack sessions config <command>
   servers (a secret-shaped value of theirs is left out unless you keep it) and plugins (installed again from their
   marketplace). Never: logins, credentials, the account, ~/.ssh, ~/.aws or anything else.
 
-  list                          What bedrock-now may read of your setup, and the last look
+  list                          What DevOS ADE may read of your setup, and the last look
   scan [--tool T] [--project NAME]
                                 A look: what your setup holds — names and sizes only (with --project: that folder's
                                 local MCP servers too); the Code page shows it (Bring your setup…)
@@ -178,7 +178,7 @@ sessions_config_scan() {
   if [ -n "$ref" ] && [ "$ref" != - ]; then _ss_project "$ref"; pid="$SS_ID"; host="$SS_HOST"; SS_REQ_PROJECT="$SS_ID"; fi
   _ss_need_code
   # (over remote access: never asked, never read — refused before anything else)
-  [ "$origin" != remote ] || _ss_fail remote "only on the computer running bedrock-now: a look at your setup is allowed there, never over remote access"
+  [ "$origin" != remote ] || _ss_fail remote "only on the computer running $PRODUCT_NAME: a look at your setup is allowed there, never over remote access"
   for t in $tools; do
     s="$(_ss_consent_scope setup "$t" - -)"
     [ -n "$s" ] || need="$need $t"
@@ -280,7 +280,7 @@ sessions_config_open() {
   case "$origin" in local | remote) ;; *) _ss_fail bad-request "--origin: local or remote" ;; esac
   [ -f "$ENV_FILE" ] || die "run ./stack setup first"
   _ss_forget_pending
-  [ "$origin" != remote ] || _ss_fail remote "only on the computer running bedrock-now: opening items of your setup is done there, never over remote access"
+  [ "$origin" != remote ] || _ss_fail remote "only on the computer running $PRODUCT_NAME: opening items of your setup is done there, never over remote access"
   [ -n "$scan" ] || scan="$(_sc_last_scan)"
   case "$scan" in *[!0-9a-f]* | '') _ss_fail stale "no look at your setup to open items of: ./stack sessions config scan" ;; esac
   [ "${#scan}" = 32 ] || _ss_fail bad-request "bad look"
@@ -479,7 +479,7 @@ sessions_config_consent() {
   [ "$what" != revoke ] || [ "$tool" != all ] || _ss_forget setup all
   sessions_status_sync
   case "$what" in
-    revoke) log "taken back: bedrock-now no longer reads your $(for t in $(_sc_tools "$tool"); do _sc_short "$t"; done | paste -sd'&' - | sed 's/&/, /g') setup on this computer (what the Code page's container read is forgotten; what was copied into the sandbox stays there)" ;;
+    revoke) log "taken back: $PRODUCT_NAME no longer reads your $(for t in $(_sc_tools "$tool"); do _sc_short "$t"; done | paste -sd'&' - | sed 's/&/, /g') setup on this computer (what the Code page's container read is forgotten; what was copied into the sandbox stays there)" ;;
     always) log "the Code page may look at and open your $(for t in $(_sc_tools "$tool"); do _sc_short "$t"; done | paste -sd'&' - | sed 's/&/, /g') setup without asking again (./stack sessions config consent --revoke takes it back)" ;;
     once) log "one look at your $(for t in $(_sc_tools "$tool"); do _sc_short "$t"; done | paste -sd'&' - | sed 's/&/, /g') setup allowed (within the hour)" ;;
   esac
@@ -499,7 +499,7 @@ _sc_consent_take() {
 }
 sessions_config_list() {
   local k t p s a n h found=0 f
-  printf 'What bedrock-now may read of your setup on this computer (./stack sessions config consent changes it):\n'
+  printf 'What %s may read of your setup on this computer (./stack sessions config consent changes it):\n' "$PRODUCT_NAME"
   while IFS=$'\t' read -r k t p s a n h; do
     [ "$k" = setup ] || continue
     found=1

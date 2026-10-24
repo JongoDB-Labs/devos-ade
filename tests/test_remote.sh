@@ -201,7 +201,7 @@ TAILSCALE_ALLOWED_LOGIN=me@example.com
 
 test_up_waits_only_for_the_stack_services() {
   grep -q 'dc up -d --wait \$STACK_SERVICES$' "$STACK_DIR/lib/commands.sh" || { echo "cmd_up must not wait on every service" >&2; return 1; }
-  assert_eq "$(grep -c 'run_phase "bedrock-now" "\$STACK_SERVICES" dc up -d --wait \$STACK_SERVICES' "$STACK_DIR/lib/commands.sh")" 1
+  assert_eq "$(grep -c 'run_phase "\$PRODUCT_NAME" "\$STACK_SERVICES" dc up -d --wait \$STACK_SERVICES' "$STACK_DIR/lib/commands.sh")" 1
   assert_eq "$(grep -c '^  remote_up_hook$' "$STACK_DIR/lib/commands.sh")" 2   # up and restore
   assert_not_contains "$STACK_SERVICES" tailscale
 }

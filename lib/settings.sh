@@ -188,9 +188,9 @@ _sv_code_models() {
   valid_code_models "$1" && [ "${#1}" -le "$SETTINGS_MAX_VALUE" ] || { SV_ERR="must be all, anthropic or a comma list of model ids"; return 1; }
 }
 _sv_code_model() { valid_code_model "$1" || { SV_ERR="must be a model id (blank = the main model)"; return 1; }; }
-# a Git host sign-in's application (client) ID, and a GitHub App's name in its URL (public values; blank: bedrock-now's own)
+# a Git host sign-in's application (client) ID, and a GitHub App's name in its URL (public values; blank: DevOS ADE's own)
 _sv_oauth_client_id() {
-  [ -z "$1" ] || _sv_re "$1" '^[A-Za-z0-9._-]{1,128}$' || { SV_ERR="must be an application (client) ID: letters, digits, ., _ and - (blank = bedrock-now's own app)"; return 1; }
+  [ -z "$1" ] || _sv_re "$1" '^[A-Za-z0-9._-]{1,128}$' || { SV_ERR="must be an application (client) ID: letters, digits, ., _ and - (blank = $PRODUCT_NAME's own app)"; return 1; }
 }
 _sv_app_slug() {
   [ -z "$1" ] || _sv_re "$1" '^[a-z0-9]([a-z0-9-]{0,98}[a-z0-9])?$' || { SV_ERR="must be the app's name as its URL has it: lowercase letters, digits and - (github.com/apps/NAME)"; return 1; }
@@ -225,7 +225,7 @@ setting_validate() {
 }
 
 # setting_weakens KEY NEW OLD -> 0 when NEW protects less than OLD (policy widen-local: that direction only from the
-# computer running bedrock-now). portal/portal/settings.py weakens() is the same.
+# computer running DevOS ADE). portal/portal/settings.py weakens() is the same.
 setting_weakens() {
   case "$1" in   # both values as they take effect (blank or nonsense = the default)
     BACKUP_KEEP) [ "$(_eff_int "$2" 1 60 7)" -lt "$(_eff_int "$3" 1 60 7)" ] ;;                 # fewer backups kept
@@ -272,12 +272,12 @@ setting_allowed() {
   case "$p" in
     edit) return 0 ;;
     companion) return 0 ;;   # checked with its key (settings_check_batch)
-    local) [ "$3" = local ] && return 0; SV_ERR="$1 can only be changed from the computer running bedrock-now" ;;
+    local) [ "$3" = local ] && return 0; SV_ERR="$1 can only be changed from the computer running $PRODUCT_NAME" ;;
     regen) SV_ERR="$1 can only be regenerated (a new random value made by ./stack): $(setting_field "$1" 9)" ;;
     on-only) [ "$2" = true ] && return 0; SV_ERR="$1 can only be turned on here (turning it off is a terminal step: edit .env)" ;;
     widen-local) { [ "$3" = local ] || ! setting_weakens "$1" "$2" "$(get_env "$1")"; } && return 0
-                 SV_ERR="$1 can only be $(_weaken_word "$1") from the computer running bedrock-now (the other way works everywhere)" ;;
-    '') SV_ERR="$1 is not a bedrock-now setting" ;;
+                 SV_ERR="$1 can only be $(_weaken_word "$1") from the computer running $PRODUCT_NAME (the other way works everywhere)" ;;
+    '') SV_ERR="$1 is not a $PRODUCT_NAME setting" ;;
     *) SV_ERR="$1 is read-only here: $(setting_field "$1" 9)" ;;
   esac
   return 1
@@ -317,7 +317,7 @@ settings_check_batch() {
   for k in $CFG_ORDER; do
     n=$((n + 1))
     case "$k" in *[!A-Z0-9_]*) die "not a setting name" ;; esac
-    setting_known "$k" || die "$k is not a bedrock-now setting"
+    setting_known "$k" || die "$k is not a $PRODUCT_NAME setting"
     if [ "$(setting_field "$k" 4)" = regen ]; then
       cfg_regenerated "$k" || { setting_allowed "$k" x "$origin"; die "$SV_ERR"; }
       continue
@@ -520,7 +520,7 @@ settings_snapshot_write() {
         }
         for (j = 1; j <= no; j++) {
           k = order[j]; if (k in known || k !~ /^[A-Z][A-Z0-9_]*$/) continue
-          printf ",\n{\"key\": %s, \"group\": \"advanced\", \"secret\": \"S\", \"policy\": \"ro\", \"validator\": \"-\", \"apply\": \"-\", \"label\": %s, \"note\": \"Not a bedrock-now setting; kept as it is.\", \"cli\": \"edit .env\", \"present\": true, \"set\": %s, \"unknown\": true}",
+          printf ",\n{\"key\": %s, \"group\": \"advanced\", \"secret\": \"S\", \"policy\": \"ro\", \"validator\": \"-\", \"apply\": \"-\", \"label\": %s, \"note\": \"Not a DevOS ADE setting; kept as it is.\", \"cli\": \"edit .env\", \"present\": true, \"set\": %s, \"unknown\": true}",
             js(k), js(k), (val[k] != "" ? "true" : "false")
         }
         printf "\n"
@@ -588,7 +588,7 @@ _settings_policy_mark() {   # _settings_policy_mark POLICY -> what may change th
 
 config_get() {
   local code
-  setting_known "$1" || die "$1 is not a bedrock-now setting (./stack config lists them)"
+  setting_known "$1" || die "$1 is not a $PRODUCT_NAME setting (./stack config lists them)"
   code="$(setting_field "$1" 3)"
   case "$code" in
     - | s) printf '%s\n' "$(get_env "$1")" ;;
@@ -604,7 +604,7 @@ config_set() {
   _have_tty && [ "${ASSUME_YES:-0}" != 1 ] || die "./stack config set asks for the values in a terminal (scripts: ./stack config apply --stdin)"
   for k in "$@"; do
     case "$k" in *=*) die "give the name only (./stack config set $(printf '%s' "${k%%=*}")): values are never taken from the command line" ;; esac
-    setting_known "$k" || die "$k is not a bedrock-now setting (./stack config lists them)"
+    setting_known "$k" || die "$k is not a $PRODUCT_NAME setting (./stack config lists them)"
     pol="$(setting_field "$k" 4)"
     case "$pol" in edit | local | on-only | widen-local) ;; *) die "$k is read-only here: $(setting_field "$k" 9)" ;; esac
     code="$(setting_field "$k" 3)"
@@ -1355,7 +1355,7 @@ config_report() {
   local out
   out="$(mktemp)"
   {
-    printf 'bedrock-now status report (%s)\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf '%s status report (%s)\n' "$PRODUCT_NAME" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'version %s · %s · docker %s\n\n' "$(installed_version)" "$(uname -sr)" "$(docker version --format '{{.Server.Version}}' 2>/dev/null || echo '?')"
     ( cmd_status ) 2>&1 || true
     printf '\n'; ( helper_status_text ) 2>&1 || true
