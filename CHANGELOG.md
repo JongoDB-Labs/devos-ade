@@ -28,16 +28,26 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   ended — in a project whose settings its tool cannot use yet opens the settings dialog first, as a new one does, and
   goes on once you trust them; it no longer stops at "not trusted". A new one whose settings could not be read opens
   the dialog too.
-- **Accept edits asks where a remote's URL could run a program:** a transport helper (`<name>::…`), or a scheme other
-  than git's own (`https://`, `http://`, `ssh://`, `git://`, `file://`, `git+ssh://`, `ssh+git://`, exactly so, in
-  lower case) in a remote's, a submodule's or a branch's remote URL (git runs `git-remote-<name>` for those), and a
-  colour setting under a slot git does not document.
 - **Plugin files never keep Claude Code on Bedrock from a project:** a file under the project's `.claude/plugins/`
   that cannot be read or shown (binary, over 256 KiB, a link out, a FIFO), or a plugin tree past its bounds, made
   Claude Code's part unverifiable (as in v0.23.0). The plugin files are still in Claude Code's hash, but judged with the
   other tools' part, with bounds of their own: such a file now keeps agents from starting there, and only them.
 - **`./stack test` and the e2e's check of Chat's policy** accept a `report-uri` of Chat's own origin (a path), and
   still refuse one that names another host; a `report-to` group, as before.
+- **A project trusted in v0.23.0 that cannot be carried over** (its settings not shown whole today) no longer reads
+  its settings a second time, with their texts, at every start there.
+
+### Security
+
+- **Chat's one public route, deliberately:** the Python runner's static files — GET or HEAD of one plain file name
+  under `/pyodide/`, matched on the request target exactly as it arrived (never a cleaned or decoded path: any `%`,
+  `..`, `//`, `;` or query and it is the signed-in route as before), sent on as exactly that path, with no cookie,
+  `Authorization` or `X-Portal-*` header passed on and nothing set in return; what is there is public and the same for
+  everyone (docs/security.md).
+- **Accept edits asks where a remote's URL could run a program:** a transport helper (`<name>::…`), or a scheme other
+  than git's own (`https://`, `http://`, `ssh://`, `git://`, `file://`, `git+ssh://`, `ssh+git://`, exactly so, in
+  lower case) in a remote's, a submodule's or a branch's remote URL (git runs `git-remote-<name>` for those), and a
+  colour setting under a slot git does not document.
 - **The watchlist says when it cannot read a repository's git layout whole** — a `gitdir:` or `commondir` that leads
   outside the folder, a `.git` that is a link, a config git reads that is a link or too large, an include outside the
   folder — and the cards say that not every file could be checked, instead of taking what it saw as all there is.
@@ -45,8 +55,6 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   forked fast enough could start one the sweep had not seen yet. Now every process in Chat's sandbox but bn-coded and
   the init is stopped at once, the sandbox sorted while nothing runs, what is not spared killed, and the rest let go
   on.
-- **A project trusted in v0.23.0 that cannot be carried over** (its settings not shown whole today) no longer reads
-  its settings a second time, with their texts, at every start there.
 
 ## [0.25.0] - 2026-10-24
 
