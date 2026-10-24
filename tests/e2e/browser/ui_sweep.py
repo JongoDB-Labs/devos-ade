@@ -377,6 +377,14 @@ def sweep_portal(browser, width, theme):
     login(p)
     home_ready(p)
     step("home", capture, p, "home")
+
+    def home_details():   # Home's folded parts open: the credentials (keys, the API address), About this check, …
+        p.evaluate("() => document.querySelectorAll('#home details').forEach((d) => { d.open = true; })")
+        p.wait_for_timeout(600)
+        if p.locator("#logins-more").count():
+            p.locator("#logins-more").scroll_into_view_if_needed()
+        capture(p, "home-details")
+    step("home-details", home_details)
     # the update card's states (the update check's answer file, put back afterwards)
     up = STATE / "update-check" / "latest.json"
     saved = up.read_bytes() if up.exists() else None
