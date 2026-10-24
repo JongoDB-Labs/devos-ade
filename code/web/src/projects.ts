@@ -316,6 +316,8 @@ export interface SettingsView {
   hash: string | null;
   trustedAt: number | null;
   files: SettingsFile[];
+  /** rows the backend listed past the first FILES_MAX (both parts together can have more): not listed here, said so */
+  filesMore: number;
   summary: SettingsSummary;
   /** why not all of them could be shown, in the sandbox's own words (not one of bn-coded's): apart (SandboxSaid) */
   said: SandboxWords | null;
@@ -399,6 +401,7 @@ export function normSettingsView(v: unknown): SettingsView | null {
     files: Array.isArray(o.files) ? o.files.slice(0, FILES_MAX).map((f) => obj(f)).filter((f): f is Obj => !!f && typeof f.name === 'string' && FILE_TYPES.includes(f.type as string))
       .map((f) => ({ name: f.name as string, type: f.type as SettingsFile['type'], size: typeof f.size === 'number' && f.size >= 0 ? f.size : null, target: typeof f.target === 'string' ? label(f.target, 300) : null }))
       : [],
+    filesMore: Array.isArray(o.files) ? Math.max(0, o.files.length - FILES_MAX) : 0,
     summary,
     said: typeof o.said === 'string' && o.said ? { said: label(o.said, 300), by: 'sandbox' } : null,
   };

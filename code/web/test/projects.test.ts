@@ -144,6 +144,12 @@ test('a project\'s own Claude Code settings: its state in the list, a session\'s
   assert.deepEqual(tree?.files.map((f) => f.name), ['.claude/skills/setup/SKILL.md']);
   const many = normSettingsView({ ...whole, summary: { ...whole.summary, files: Array.from({ length: 501 }, (_, i) => ({ name: `.claude/f${i}.md`, size: 1, grants: [] })) } });
   assert.equal(many?.summary.complete, false);
+  // the files listed: both parts can have more than this page lists — the rest said, never cut silently
+  const rows = Array.from({ length: 700 }, (_, i) => ({ name: `.github/w${String(i).padStart(3, '0')}.yml`, type: 'file', size: 1 }));
+  const listed = normSettingsView({ ...whole, files: rows });
+  assert.equal(listed?.files.length, 500);
+  assert.equal(listed?.filesMore, 200);
+  assert.equal(normSettingsView(whole)?.filesMore, 0);
   assert.equal(normSettingsView({ ...whole, state: 'mine' }), null);
   assert.equal(normSettingsView({ ...whole, project: '/etc' }), null);
   // the two parts' states: Claude on your plan's and an agent's beside Claude Code's (an older backend: Claude Code's for

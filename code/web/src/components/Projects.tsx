@@ -970,6 +970,7 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
               {v.files.slice(0, 500).map((f) => (
                 <li key={f.name}><code>{visibleWs(f.name)}</code> — {label(fileNote(f), 300)}</li>
               ))}
+              {v.filesMore > 0 && <li class="muted" data-testid="settings-files-more">… and {v.filesMore.toLocaleString()} more, not listed here</li>}
             </ul>
           )}
           {sm && <div class="ps-body">{sections.map(([title, rows, testid]) => section(title, rows, testid))}</div>}
