@@ -45,6 +45,12 @@ WIDTHS = {
 }
 ONLY_WIDTHS = [w for w in os.environ.get("SWEEP_WIDTHS", "desktop,tablet,phone").split(",") if w in WIDTHS]
 THEMES = [t for t in os.environ.get("SWEEP_THEMES", "light,dark").split(",") if t in ("light", "dark")]
+# SWEEP_ONLY=code,off_pages,…: just those parts (signin portal off_pages walkthrough code errors manifest links); all when empty
+ONLY = {x for x in os.environ.get("SWEEP_ONLY", "").split(",") if x}
+
+
+def wanted(part: str) -> bool:
+    return not ONLY or part in ONLY
 CODE = origin("code")
 TERM = origin("terminal")
 PORTAL_TABS = {"home", "chat", "code", "admin", "files", "settings", "terminal"}
@@ -112,7 +118,7 @@ COLLECT = r"""() => {
   const scroller = (e) => { for (let p = e.parentElement; p && p !== document.body; p = p.parentElement) { const o = getComputedStyle(p).overflowX; if (o === 'auto' || o === 'scroll' || o === 'hidden' || o === 'clip') return true; } return false; };
   const inter = [...document.querySelectorAll('button, [role=button], a[href], input:not([type=hidden]), select, textarea, summary')];
   const shown = inter.filter(vis);
-  const dialogs = [...document.querySelectorAll('dialog[open], [role=dialog]:not([hidden]), .sheet:not([hidden]), [role=menu], [role=listbox]')].filter(vis);
+  const dialogs = [...document.querySelectorAll('dialog[open], [role=dialog]:not([hidden]), .sheet:not([hidden]), #tour:not([hidden]), [role=menu], [role=listbox]')].filter(vis);
   const top = dialogs.length ? dialogs[dialogs.length - 1] : null;
   const covered = [];
   for (const e of shown) {
@@ -233,7 +239,7 @@ def check_logo(d):
             find("logo missing", f"no .brand img on {d['url'][:100]}")
         return
     count("logos checked")
-    if not b["vis"] and not (CUR["width"] == "phone" and CUR["page"] == "portal"):   # (phones: the sidebar is the tab bar)
+    if not b["vis"] and not (CUR["width"] == "phone" and CUR["page"] in ("portal", "walkthrough")):   # (phones: the sidebar is the tab bar)
         find("logo not visible", b["src"])
     if b["nw"] == 0:
         find("logo broken", b["src"])
@@ -416,14 +422,17 @@ def sweep_portal(browser, width, theme):
 
     def settings():
         p.goto(origin() + "/#settings")
-        p.wait_for_selector("#settings:not([hidden]) .set-nav-item", timeout=30000)
+        p.wait_for_selector("#settings:not([hidden]) .set-nav-item", state="attached", timeout=30000)
         p.wait_for_timeout(1500)
         capture(p, "settings")
         ids = p.eval_on_selector_all(".set-nav-item", "bs => bs.map(b => b.dataset.section)")
         count("settings sections", len(ids))
         for s in ids:
             def one(s=s):
-                p.evaluate("s => document.querySelector(`.set-nav-item[data-section=\"${s}\"]`).click()", s)
+                if p.locator("#set-picker").is_visible():   # (phones: the section picker)
+                    p.select_option("#set-picker", s)
+                else:
+                    p.evaluate("s => document.querySelector(`.set-nav-item[data-section=\"${s}\"]`).click()", s)
                 p.wait_for_timeout(600)
                 p.evaluate("s => { const c = document.getElementById('set-' + s); if (c) c.querySelectorAll('details').forEach(d => d.open = true); }", s)
                 p.wait_for_timeout(300)
@@ -466,6 +475,8 @@ def sweep_portal(browser, width, theme):
         step(tab, app)
 
     def terminal():
+        if width == "phone":
+            return   # (phones: the portal has no Terminal tab; mobile.js shows Chat instead)
         p.goto(origin() + "/#terminal")
         p.wait_for_selector("iframe[data-app=terminal]", timeout=20000)
         f = None
@@ -488,6 +499,8 @@ def sweep_portal(browser, width, theme):
     step("terminal", terminal)
 
     def code_tab():
+        if width == "phone":
+            return   # (phones: no Code tab in the portal either; the Code page is swept on its own host)
         p.goto(origin() + "/#code")
         p.wait_for_selector("iframe[data-app=code]", timeout=20000)
         p.wait_for_timeout(4000)
@@ -511,7 +524,7 @@ def sweep_off_pages(browser, width, theme):
     p.route(lambda u: u.startswith(origin() + "/") and urlsplit(u).path == "/", rewrite)
     for tab in ("code", "terminal"):
         def one(tab=tab):
-            p.goto(origin() + f"/#{tab}")
+            p.goto(origin() + f"/?sweep={tab}-off#{tab}")
             p.wait_for_timeout(2500)
             capture(p, f"{tab}-off")
         step(f"{tab}-off", one)
@@ -669,11 +682,6 @@ def sweep_code(browser, width, theme):
                 add.first.click()
                 p.wait_for_timeout(1200)
                 capture(p, "git-host-connect")
-                gh = p.get_by_role("dialog").last.get_by_text(re.compile(r"^GitHub$"))
-                if gh.count():
-                    gh.first.click()
-                    p.wait_for_timeout(1000)
-                    capture(p, "git-host-github")
                 apps = [u for u in LINKS if "github.com/apps/" in u]
                 (OUT / "app-links.txt").open("a").write("".join(f"{where()} {u}\n" for u in apps))
     step("git", git)
@@ -685,13 +693,18 @@ def sweep_code(browser, width, theme):
             t.first.click()
             p.wait_for_timeout(5000)
             capture(p, "terminal-panel", full=False, frame_hosts=(f"terminal.{HOST}",))
-        else:
+        elif width != "phone":   # (phones: the Session sheet's "Open the terminal" opens a tab of its own)
             find("state not reached", "the terminal panel: no toggle-terminal at this width")
     step("terminal-panel", term)
 
     def model():
         code_fresh(p)
-        p.get_by_test_id("model-picker").first.click()
+        if width == "phone":
+            p.get_by_test_id("phone-menu-btn").click()
+            p.wait_for_timeout(400)
+            p.get_by_test_id("phone-menu").get_by_test_id("model-picker").first.click()
+        else:
+            p.get_by_test_id("model-picker").first.click()
         p.wait_for_timeout(1200)
         capture(p, "model-picker")
     step("model-picker", model)
@@ -981,7 +994,8 @@ def main() -> int:
         args = [f"--host-resolver-rules=MAP {HOST} {TARGET_IP}, MAP *.{HOST} {TARGET_IP}"]
         browser = pw.chromium.launch(args=args)
         try:
-            sweep_manifest(browser)
+            if wanted("manifest"):
+                sweep_manifest(browser)
         except Exception as e:  # noqa: BLE001
             find("state not reached", f"manifest: {e}")
         for width in ONLY_WIDTHS:
@@ -989,15 +1003,18 @@ def main() -> int:
                 CUR.update(width=width, theme=theme)
                 print(f"sweep: {width} {theme} ({int(time.time() - t0)} s)", flush=True)
                 for fn in (sweep_signin, sweep_portal, sweep_off_pages, sweep_walkthrough, sweep_code, sweep_errors):
+                    if not wanted(fn.__name__.removeprefix("sweep_")):
+                        continue
                     CUR.update(page=fn.__name__.removeprefix("sweep_"), state="-")
                     try:
                         fn(browser, width, theme)
                     except Exception as e:  # noqa: BLE001
                         find("state not reached", f"{fn.__name__}: {type(e).__name__}: {str(e).splitlines()[0][:300]}")
                         (OUT / "tracebacks.txt").open("a").write(f"--- {where()} {fn.__name__}\n{traceback.format_exc()}\n")
-        docs_static()
         try:
-            check_links(browser)
+            if wanted("links"):
+                docs_static()
+                check_links(browser)
         except Exception as e:  # noqa: BLE001
             find("state not reached", f"links: {type(e).__name__}: {e}")
             (OUT / "tracebacks.txt").open("a").write(f"--- links\n{traceback.format_exc()}\n")
