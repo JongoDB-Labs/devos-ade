@@ -896,7 +896,11 @@ test_sandbox_managed_settings_are_a_read_only_repo_file_chosen_here() {
   assert_eq "$(tr -d '\n' < "$STACK_DIR/terminal/managed/off.json")" '{"disableAutoMode":"disable"}'
   assert_eq "$(tr -d '\n' < "$STACK_DIR/terminal/managed/code-auto.json")" '{"permissions":{"defaultMode":"default"},"useAutoModeDuringPlan":false}'
   assert_eq "$(tr -d '\n' < "$STACK_DIR/terminal/managed/on.json")" '{}'
-  assert_eq "$(ls "$STACK_DIR/terminal/managed" | tr '\n' ' ')" "code-auto.json off.json on.json "
+  # (and Chat's sandbox's own, never one the switches choose: compose.code.yaml subs-chat mounts it — every file read
+  # denied, no hooks, no Bypass or Auto)
+  assert_eq "$(ls "$STACK_DIR/terminal/managed" | tr '\n' ' ')" "chat.json code-auto.json off.json on.json "
+  assert_contains "$(tr -d '\n' < "$STACK_DIR/terminal/managed/chat.json")" '"disableAllHooks":true'
+  assert_contains "$(tr -d '\n' < "$STACK_DIR/terminal/managed/chat.json")" '"Read(//**)"'
   for f in "$STACK_DIR"/terminal/managed/*.json; do python3 -c 'import json, sys; json.load(open(sys.argv[1]))' "$f" || return 1; done
   pol() { set_env TERMINAL_AUTO_MODE "$1"; set_env CODE_AUTO_MODE "$2"; claude_policy; }
   for v in "" false off no 0 nonsense; do assert_eq "$(pol "$v" "$v")" off; done

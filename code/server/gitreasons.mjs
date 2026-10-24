@@ -209,6 +209,7 @@ export const SANDBOX_REFUSALS = Object.freeze([
   'not for a Chat conversation',
   'no such tool',
   'mode: code or chat',
+  'not in Chat: it has no switch that turns its tools off',
   'that tool is not in this sandbox',
   'too many subscription agents at once',
   'bad conversation id',

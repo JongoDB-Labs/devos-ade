@@ -323,36 +323,51 @@ const JSONC_BREAK = /[\n\r\u2028\u2029]/;
 // left open, or a line break JSON parsers and JSONC parsers do not agree on — a CR alone, U+2028 or U+2029 — outside a
 // string (what one tool reads as the end of a comment another reads as part of it)
 export function stripJsonc(t) {
-  let out = '', i = 0;
+  // (runs of plain text kept as slices, joined once: linear in the text)
+  const parts = [];
+  let i = 0, from = 0;
   while (i < t.length) {
     const c = t[i];
     if (c === '"') {
       let j = i + 1;
       while (j < t.length && t[j] !== '"') j += t[j] === '\\' ? 2 : 1;
-      out += t.slice(i, j + 1); i = j + 1; continue;
+      i = j + 1; continue;
     }
     if ((c === '\r' && t[i + 1] !== '\n') || c === '\u2028' || c === '\u2029') return null;
-    if (c === '/' && t[i + 1] === '/') { while (i < t.length && !JSONC_BREAK.test(t[i])) i++; continue; }
+    if (c === '/' && t[i + 1] === '/') {
+      parts.push(t.slice(from, i));
+      while (i < t.length && !JSONC_BREAK.test(t[i])) i++;
+      from = i; continue;
+    }
     if (c === '/' && t[i + 1] === '*') {
       const e = t.indexOf('*/', i + 2);
       if (e < 0 || /\r(?!\n)|[\u2028\u2029]/.test(t.slice(i, e))) return null;
-      out += ' '; i = e + 2; continue;
+      parts.push(t.slice(from, i), ' ');
+      i = e + 2; from = i; continue;
     }
-    out += c; i++;
+    i++;
   }
+  parts.push(t.slice(from));
+  const out = parts.join('');
   // (a comma before a closing bracket, outside strings: the second pass, comments gone)
-  let res = '', k = 0;
+  const res = [];
+  let k = 0, start = 0;
   while (k < out.length) {
     const c = out[k];
     if (c === '"') {
       let j = k + 1;
       while (j < out.length && out[j] !== '"') j += out[j] === '\\' ? 2 : 1;
-      res += out.slice(k, j + 1); k = j + 1; continue;
+      k = j + 1; continue;
     }
-    if (c === ',') { let j = k + 1; while (j < out.length && /\s/.test(out[j])) j++; if (out[j] === '}' || out[j] === ']') { k++; continue; } }
-    res += c; k++;
+    if (c === ',') {
+      let j = k + 1;
+      while (j < out.length && /\s/.test(out[j])) j++;
+      if (out[j] === '}' || out[j] === ']') { res.push(out.slice(start, k)); start = k + 1; }
+    }
+    k++;
   }
-  return res;
+  res.push(out.slice(start));
+  return res.join('');
 }
 // pluginKeyIn(v) -> the first key (at any depth) that names plugins or a marketplace, or null
 export function pluginKeyIn(v, depth = 0) {

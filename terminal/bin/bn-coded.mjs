@@ -2615,13 +2615,12 @@ export function enabledPluginsOf(abs, files, record = PLUGIN_RECORD()) {
     }
   }
   if (!ids.size) return null;
-  let registry = 'ok', installed = {};
+  // (none there: none installed; one that is not a plain file of at most 4 MiB holding a record: unreadable)
+  let registry = 'unreadable', installed = {};
   try {
     const st = fs.statSync(record);
-    if (!st.isFile() || st.size > 4 << 20) throw new Error('not a file');
-    const v = JSON.parse(fs.readFileSync(record, 'utf8'));
-    if (!v || typeof v !== 'object' || !v.plugins || typeof v.plugins !== 'object' || Array.isArray(v.plugins)) throw new Error('not a record');
-    installed = v.plugins;
+    const v = st.isFile() && st.size <= 4 << 20 ? JSON.parse(fs.readFileSync(record, 'utf8')) : null;
+    if (v && typeof v === 'object' && v.plugins && typeof v.plugins === 'object' && !Array.isArray(v.plugins)) { installed = v.plugins; registry = 'ok'; }
   } catch (e) { registry = e?.code === 'ENOENT' ? 'none' : 'unreadable'; installed = {}; }
   const vs = (x) => (typeof x === 'string' ? printable(x, 100) : null);
   const plugins = [...ids].filter((id) => /^[\x20-\x7e]{1,300}$/.test(id)).sort().slice(0, 200).map((id) => {
