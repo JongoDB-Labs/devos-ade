@@ -165,6 +165,7 @@ clock = {"t": 0.0}
 def tick():
     clock["t"] += 100.0
     return clock["t"]
+real_monotonic = time.monotonic   # (the module is the test's own too: put back below)
 v.time.monotonic = tick
 body["b"] = b"x" * (1 << 20)
 try:
@@ -172,8 +173,31 @@ try:
     raise AssertionError("past the deadline")
 except TimeoutError as e:
     assert "within" in str(e)
-v.time.monotonic = time.monotonic
+v.time.monotonic = real_monotonic
 body["b"] = b"x" * 1000
+# (a server that drips a byte at a time, each read well within its timeout: the watchdog ends it at the deadline)
+class Drip(Body):
+    def read(self, n=-1):
+        time.sleep(0.25)
+        return b"x"
+class DripOpener:
+    def __init__(self, handlers): pass
+    def open(self, url, timeout):
+        seen["drip_timeout"] = timeout
+        return Drip(b"")
+urllib.request.build_opener = lambda *h: DripOpener(h)
+t0 = time.monotonic()
+try:
+    v.fetch_url("https://cdn.example/a.whl", 1 << 20, deadline_s=1)
+    raise AssertionError("a drip outlasted the deadline")
+except TimeoutError as e:
+    assert "within 1 s" in str(e), e
+assert time.monotonic() - t0 < 2, time.monotonic() - t0
+assert seen["drip_timeout"] <= 1, seen["drip_timeout"]   # (the socket's timeout: never past the time left)
+import signal
+assert signal.getitimer(signal.ITIMER_REAL)[0] == 0.0, "the watchdog left running"
+assert signal.getsignal(signal.SIGALRM) == signal.SIG_DFL, "SIGALRM's handler not put back"
+urllib.request.build_opener = lambda *h: Opener(h)
 try:
     v.fetch_url("https://cdn.example/a.whl", 999)
     raise AssertionError("past the cap")

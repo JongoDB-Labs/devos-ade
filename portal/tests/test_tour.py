@@ -193,7 +193,8 @@ def test_the_code_steps_name_what_a_developer_uses():
                       "claude-code-terminal"),
         "code-modes": ("Read only", "Plan", "Manual", "Accept edits", "Shift+Tab", "Alt+M", "Allow once", "Always", "Deny", "Permissions",
                        "Auto", "Bypass permissions", '"CODE_AUTO_MODE"', "with Claude Code, file edits in the workspace and file commands there",
-                       'code("mkdir")', 'code("sed")', "Claude Code's own Accept edits", "With an agent of your subscriptions",
+                       'code("mkdir")', 'code("sed")', "Claude Code's own Accept edits", "except its protected paths", 'code(".husky")', "which still ask",
+                       "With an agent of your subscriptions",
                        "edits to ordinary files of the project go ahead", "git's folder",
                        'code(".github")', "links", "for every edit in a repository whose git settings can run a program", "the note under the agent's turn says why"),
         # (a project's own settings: what is in each part, who needs which, Trust in the dialog, v0.23.0's carried over)

@@ -48,7 +48,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 ### Changed
 
 - **The walkthrough is up to date with v0.24:** Accept edits as it works now — with Claude Code, its own (file edits
-  and file commands in the workspace go ahead); with an agent of your subscriptions, ordinary files of the project, and
+  and file commands in the workspace go ahead, its protected paths still asked); with an agent of your subscriptions, ordinary files of the project, and
   always asked for git's folder, `.github`, editor, hook and tool settings and links, every edit asked where the
   repository's git settings can run a program, and why, under the agent's turn; a new Code step, *A project's own
   settings* (what Claude Code's part and the other tools' part hold, who needs which, *Trust* in the dialog for what it
@@ -64,7 +64,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   `Authorization` or `X-Portal-*` header passed on and nothing set in return; what is there is public and the same for
   everyone — Pyodide's console pages and the build's report of what it vendored are not there (docs/security.md). The
   build downloads each wheel over https only, follows a redirect only to https on the lock's own host, gives each
-  download a deadline, and leaves out a file name two packages of the lock share.
+  download a deadline a watchdog keeps (a server that drips a byte at a time cannot outlast it), and leaves out a file
+  name two packages of the lock share.
 - **Accept edits asks where a remote's URL could run a program:** a transport helper (`<name>::…`, a name that starts
   with a digit and an empty one included: `1abc::…`, `::…`), or a scheme other than git's own (`https://`, `http://`,
   `ssh://`, `git://`, `file://`, `git+ssh://`, `ssh+git://`, exactly so, in lower case; `9x://` is another) in a

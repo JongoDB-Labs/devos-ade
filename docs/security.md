@@ -3320,8 +3320,9 @@ never reads, copies, keeps, passes on or relays a login.**
   URLs, checks each against the lock's sha256, puts them beside Pyodide and names them in the lock by their bare names
   — and only those, and only with everything they need: a wheel that fails or does not match is left out and said
   (the build goes on; `./stack status`), and nothing downloaded is run at build time (`python3 -I`; https only, a
-  redirect only to https on the lock's own host; a timeout for each network operation and a deadline for each
-  download; a cap each and in all; a file name two packages of the lock share is left out; it writes Pyodide's folder
+  redirect only to https on the lock's own host; a timeout for each network operation, never past the time left, and
+  a deadline for each download, kept by a watchdog — a server that drips a byte at a time cannot outlast it; a cap each
+  and in all; a file name two packages of the lock share is left out; it writes Pyodide's folder
   and its report's alone). Any other package keeps its CDN URL, and its import fails
   with Chat's policy refusing the request (the e2e: `browser/chat-python-runner`, `-numpy`, `-not-vendored`,
   `http/chat-python-runtime-public-and-exact`; the remote harness checks that no cookie reaches Open WebUI there).

@@ -25,8 +25,10 @@ import json
 import os
 import re
 import shutil
+import signal
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -92,27 +94,49 @@ class _SameHost(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
+def _late(deadline_s):
+    def on_alarm(signum, frame):
+        raise TimeoutError(f"not done within {deadline_s} s")
+    return on_alarm
+
+
 def fetch_url(url, limit, deadline_s=DOWNLOAD_DEADLINE_S):
     """The bytes at an https URL, at most limit of them (more: an error), each network operation within
-    DOWNLOAD_TIMEOUT_S and the whole within deadline_s; redirects only to https on the same host."""
+    DOWNLOAD_TIMEOUT_S and the whole within deadline_s — the socket's timeout never past the time left, and a watchdog
+    (SIGALRM, where this runs on the main thread: the build) at the deadline itself, so a server that drips a byte at a
+    time cannot outlast it; redirects only to https on the same host."""
     origin = _origin(url)
     if origin[0] != "https" or not origin[1]:
         raise ValueError("not an https URL")
     end = time.monotonic() + deadline_s
-    opener = urllib.request.build_opener(_SameHost(origin))
-    with opener.open(url, timeout=DOWNLOAD_TIMEOUT_S) as r:
-        chunks, size = [], 0
-        while True:
-            if time.monotonic() > end:
-                raise TimeoutError(f"not done within {deadline_s} s")
-            b = r.read(1 << 16)
-            if not b:
-                break
-            size += len(b)
-            if size > limit:
-                raise ValueError(f"larger than {limit >> 20} MiB")
-            chunks.append(b)
-        return b"".join(chunks)
+    left = lambda: max(0.001, min(DOWNLOAD_TIMEOUT_S, end - time.monotonic()))  # noqa: E731
+    watchdog = threading.current_thread() is threading.main_thread() and hasattr(signal, "setitimer")
+    if watchdog:
+        before = signal.signal(signal.SIGALRM, _late(deadline_s))
+        signal.setitimer(signal.ITIMER_REAL, deadline_s)
+    try:
+        opener = urllib.request.build_opener(_SameHost(origin))
+        with opener.open(url, timeout=left()) as r:
+            # (the connection's socket, where there is one: its timeout the time left, before each read)
+            sock = getattr(getattr(getattr(r, "fp", None), "raw", None), "_sock", None)
+            chunks, size = [], 0
+            while True:
+                if time.monotonic() > end:
+                    raise TimeoutError(f"not done within {deadline_s} s")
+                if sock is not None and hasattr(sock, "settimeout"):
+                    sock.settimeout(left())
+                b = r.read(1 << 16)
+                if not b:
+                    break
+                size += len(b)
+                if size > limit:
+                    raise ValueError(f"larger than {limit >> 20} MiB")
+                chunks.append(b)
+            return b"".join(chunks)
+    finally:
+        if watchdog:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, before)
 
 
 def vendor(lock, names, dest, fetch=None, tmp=None):
