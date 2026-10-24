@@ -222,6 +222,94 @@ assert new["packages"]["p"]["file_name"].startswith("https://") and os.listdir(d
 PY
 }
 
+# Downloads over real HTTPS (http.client, a local server with a certificate made here): a body with a Content-Length,
+# and a chunked one, read to their end (the socket closed under it by then: nothing touches it after); a server that
+# drips a byte every 0.25 s cut at the deadline, 64 KiB reads and all; a name whose every address hangs, cut at the
+# deadline too (the watchdog's exception is no OSError: socket.create_connection's loop over addresses cannot swallow
+# it); and a timer of the caller's put back after
+test_vendor_downloads_over_real_https_end_and_are_cut_at_the_deadline() {
+  command -v openssl >/dev/null || { echo "no openssl" >&2; return 77; }
+  local d; d="$(mktemp -d "$TMP/tls.XXXXXX")"
+  openssl req -x509 -newkey rsa:2048 -nodes -subj /CN=localhost -addext "subjectAltName=DNS:localhost" -days 1 \
+    -keyout "$d/k" -out "$d/c" >/dev/null 2>&1 || { echo "openssl could not make a certificate" >&2; return 77; }
+  BN_TEST_CERT="$d/c" BN_TEST_KEY="$d/k" _vendor_py <<'PY' || return $?
+import http.server, os, signal, socket, ssl, threading, time
+BODY = os.urandom(300 * 1024)
+class H(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    def log_message(self, *a): pass
+    def do_GET(self):
+        if self.path == "/cl.whl":
+            self.send_response(200); self.send_header("Content-Length", str(len(BODY))); self.end_headers(); self.wfile.write(BODY)
+        elif self.path == "/chunked.whl":
+            self.send_response(200); self.send_header("Transfer-Encoding", "chunked"); self.end_headers()
+            for i in range(0, len(BODY), 40000):
+                part = BODY[i:i + 40000]
+                self.wfile.write(b"%x\r\n" % len(part) + part + b"\r\n")
+            self.wfile.write(b"0\r\n\r\n")
+        elif self.path == "/drip.whl":
+            self.send_response(200); self.send_header("Content-Length", str(1 << 20)); self.end_headers()
+            try:
+                for _ in range(40):
+                    self.wfile.write(b"x"); self.wfile.flush(); time.sleep(0.25)
+            except OSError:
+                pass
+        else:
+            self.send_response(404); self.send_header("Content-Length", "0"); self.end_headers()
+srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+srv.daemon_threads = True
+sctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER); sctx.load_cert_chain(os.environ["BN_TEST_CERT"], os.environ["BN_TEST_KEY"])
+srv.socket = sctx.wrap_socket(srv.socket, server_side=True)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+port = srv.server_address[1]
+# (this certificate trusted for the test's own requests: what urllib's default context would be)
+ssl._create_default_https_context = lambda *a, **k: ssl.create_default_context(cafile=os.environ["BN_TEST_CERT"])
+base = f"https://localhost:{port}"
+# a caller's timer (the build has none: the test checks it is put back)
+signal.signal(signal.SIGALRM, lambda *a: None)
+signal.setitimer(signal.ITIMER_REAL, 50)
+# read to their end — a Content-Length body and a chunked one (http.client closes the socket under each)
+assert v.fetch_url(base + "/cl.whl", 1 << 20) == BODY
+assert v.fetch_url(base + "/chunked.whl", 1 << 20) == BODY
+# (the caller's timer goes on with what was left of it)
+left, _ = signal.getitimer(signal.ITIMER_REAL)
+assert 40 < left <= 50, left
+# a byte every 0.25 s, 64 KiB reads: cut at the deadline
+t0 = time.monotonic()
+try:
+    v.fetch_url(base + "/drip.whl", 2 << 20, deadline_s=1)
+    raise AssertionError("a drip outlasted the deadline")
+except TimeoutError as e:
+    assert "within 1 s" in str(e), e
+took = time.monotonic() - t0
+assert 0.9 < took < 2.5, took
+# a name whose every address hangs (nine of them, 1 s each): cut at the deadline, never one address after another
+real_gai, real_connect = socket.getaddrinfo, socket.socket.connect
+def gai(host, *a, **k):
+    if host == "hang.test":
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 9))] * 9
+    return real_gai(host, *a, **k)
+def hang(self, addr):
+    time.sleep(1)
+    raise TimeoutError("timed out")
+socket.getaddrinfo, socket.socket.connect = gai, hang
+t0 = time.monotonic()
+try:
+    v.fetch_url("https://hang.test/a.whl", 1 << 20, deadline_s=1.5)
+    raise AssertionError("a hanging name was not cut")
+except TimeoutError as e:
+    assert "within 1.5 s" in str(e), e
+finally:
+    socket.getaddrinfo, socket.socket.connect = real_gai, real_connect
+took = time.monotonic() - t0
+assert took < 2.5, f"{took:.1f} s: the addresses were tried one after another"
+left, _ = signal.getitimer(signal.ITIMER_REAL)
+assert 0 < left <= 50, left
+signal.setitimer(signal.ITIMER_REAL, 0)
+srv.shutdown()
+PY
+}
+
 test_open_webui_one_pin_everywhere_and_a_local_image_no_pull_replaces() {
   local pin dflt tag svc
   # compose.yaml's build argument, the Dockerfile's default, the e2e's tested version: one pin, a tag and a digest

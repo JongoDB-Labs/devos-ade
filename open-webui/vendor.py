@@ -94,37 +94,40 @@ class _SameHost(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def _late(deadline_s):
-    def on_alarm(signum, frame):
-        raise TimeoutError(f"not done within {deadline_s} s")
-    return on_alarm
+class DownloadDeadline(BaseException):
+    """The watchdog's: a download past its deadline. A BaseException, so nothing on the way — socket.create_connection's
+    loop over a name's addresses, urllib's `except OSError`, a retry — can swallow it and go on; fetch_url turns it into
+    a TimeoutError (a failed download, left out and said) at its top."""
 
 
 def fetch_url(url, limit, deadline_s=DOWNLOAD_DEADLINE_S):
-    """The bytes at an https URL, at most limit of them (more: an error), each network operation within
-    DOWNLOAD_TIMEOUT_S and the whole within deadline_s — the socket's timeout never past the time left, and a watchdog
-    (SIGALRM, where this runs on the main thread: the build) at the deadline itself, so a server that drips a byte at a
-    time cannot outlast it; redirects only to https on the same host."""
+    """The bytes at an https URL, at most limit of them (more: an error), the connection's timeout never past the time
+    left, and the whole within deadline_s — kept by a watchdog (SIGALRM, where this runs on the main thread: the build;
+    a timer of the caller's put back after), so neither a server that drips a byte at a time nor a name whose addresses
+    each hang can outlast it; redirects only to https on the same host."""
     origin = _origin(url)
     if origin[0] != "https" or not origin[1]:
         raise ValueError("not an https URL")
-    end = time.monotonic() + deadline_s
-    left = lambda: max(0.001, min(DOWNLOAD_TIMEOUT_S, end - time.monotonic()))  # noqa: E731
+    t0 = time.monotonic()
+    end = t0 + deadline_s
     watchdog = threading.current_thread() is threading.main_thread() and hasattr(signal, "setitimer")
+    armed = [False]
+
+    def on_alarm(signum, frame):
+        if armed[0]:
+            raise DownloadDeadline()
+
     if watchdog:
-        before = signal.signal(signal.SIGALRM, _late(deadline_s))
-        signal.setitimer(signal.ITIMER_REAL, deadline_s)
+        before = signal.signal(signal.SIGALRM, on_alarm)
+        armed[0] = True
+        old_delay, old_interval = signal.setitimer(signal.ITIMER_REAL, deadline_s)
     try:
         opener = urllib.request.build_opener(_SameHost(origin))
-        with opener.open(url, timeout=left()) as r:
-            # (the connection's socket, where there is one: its timeout the time left, before each read)
-            sock = getattr(getattr(getattr(r, "fp", None), "raw", None), "_sock", None)
+        with opener.open(url, timeout=max(0.001, min(DOWNLOAD_TIMEOUT_S, end - time.monotonic()))) as r:
             chunks, size = [], 0
             while True:
                 if time.monotonic() > end:
                     raise TimeoutError(f"not done within {deadline_s} s")
-                if sock is not None and hasattr(sock, "settimeout"):
-                    sock.settimeout(left())
                 b = r.read(1 << 16)
                 if not b:
                     break
@@ -133,10 +136,16 @@ def fetch_url(url, limit, deadline_s=DOWNLOAD_DEADLINE_S):
                     raise ValueError(f"larger than {limit >> 20} MiB")
                 chunks.append(b)
             return b"".join(chunks)
+    except DownloadDeadline:
+        raise TimeoutError(f"not done within {deadline_s} s") from None
     finally:
         if watchdog:
+            armed[0] = False   # (an alarm from here on does nothing)
             signal.setitimer(signal.ITIMER_REAL, 0)
             signal.signal(signal.SIGALRM, before)
+            # (a timer of the caller's goes on with what was left of it)
+            if old_delay > 0:
+                signal.setitimer(signal.ITIMER_REAL, max(0.001, old_delay - (time.monotonic() - t0)), old_interval)
 
 
 def vendor(lock, names, dest, fetch=None, tmp=None):
