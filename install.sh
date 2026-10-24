@@ -72,17 +72,20 @@ target_decision() {
   echo refuse
 }
 
-# default_dir -> where to install when no folder is given: ~/devos-ade, unless that is not there and ~/bedrock-now
-# holds an install made before v0.25.0 (a checkout of the project, or a set-up one: stack and a .env with its database
-# password) — then that one, which main says is installed already. Nothing is ever moved or renamed.
+# legacy_install -> 0 when ~/bedrock-now holds an install made before v0.25.0: a checkout of the project, or a set-up
+# one (stack and a .env with its database password)
+legacy_install() {
+  local old="$HOME/$PRODUCT_LEGACY_NAME"
+  [ -d "$old" ] && { [ "$(target_decision "$old")" = update ] || { [ -x "$old/stack" ] && grep -q '^POSTGRES_PASSWORD=.' "$old/.env" 2>/dev/null; }; }
+}
+
+# default_dir -> where to install when no folder is given: ~/devos-ade, unless that is not there (or empty) and
+# ~/bedrock-now holds an install made before v0.25.0 — then that one, which main says is installed already. Nothing is
+# ever moved or renamed.
 default_dir() {
-  local new="$HOME/$PRODUCT_SLUG" old="$HOME/$PRODUCT_LEGACY_NAME"
-  if [ ! -e "$new" ] && [ -d "$old" ] && { [ "$(target_decision "$old")" = update ] ||
-     { [ -x "$old/stack" ] && grep -q '^POSTGRES_PASSWORD=.' "$old/.env" 2>/dev/null; }; }; then
-    printf '%s\n' "$old"
-  else
-    printf '%s\n' "$new"
-  fi
+  local new="$HOME/$PRODUCT_SLUG"
+  if [ "$(target_decision "$new")" = clone ] && legacy_install; then printf '%s\n' "$HOME/$PRODUCT_LEGACY_NAME"
+  else printf '%s\n' "$new"; fi
 }
 
 # latest_release_tag GIT_DIR -> newest vX.Y.Z tag, pre-releases (anything with "-") excluded.
@@ -106,8 +109,13 @@ main() {
     say "To update it (backup first, then the newest release): cd $qdir && ./stack update"
     return 0
   fi
-  [ "$(target_decision "$dir")" = clone ] ||
-    fail "$dir exists and is not a $PRODUCT_NAME checkout — move it away or choose another folder with BEDROCK_NOW_DIR=/path"
+  if [ "$(target_decision "$dir")" != clone ]; then
+    # (no folder given, ~/devos-ade something else, and an install in ~/bedrock-now: that one is what to update)
+    if [ -z "${DEVOS_ADE_DIR:-}${BEDROCK_NOW_DIR:-}" ] && legacy_install; then
+      fail "$dir exists and is not a $PRODUCT_NAME checkout; $PRODUCT_NAME is already installed in $HOME/$PRODUCT_LEGACY_NAME — to update it: cd $(printf '%q' "$HOME/$PRODUCT_LEGACY_NAME") && ./stack update (or install another copy with DEVOS_ADE_DIR=/path)"
+    fi
+    fail "$dir exists and is not a $PRODUCT_NAME checkout — move it away or choose another folder with DEVOS_ADE_DIR=/path (BEDROCK_NOW_DIR works too; DEVOS_ADE_DIR wins)"
+  fi
   say "installing $PRODUCT_NAME into $dir (from $repo)"
   say "setup then downloads ~5 GB of Docker images on the first run (5-15 minutes) and asks for your AWS key"
   git clone --quiet "$repo" "$dir" || fail "git clone of $repo failed (network?)"

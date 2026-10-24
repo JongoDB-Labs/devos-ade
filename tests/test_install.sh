@@ -136,6 +136,27 @@ test_main_finds_an_install_in_bedrock_now_and_changes_nothing() {
   [ ! -e "$TMP/h/devos-ade" ] || return 1
 }
 
+test_main_an_empty_devos_ade_beside_an_install_in_bedrock_now_clones_nothing() {
+  mkdir -p "$TMP/h/devos-ade"; git clone -q "$STACK_DIR" "$TMP/h/bedrock-now"
+  git -C "$TMP/h/bedrock-now" remote set-url origin https://github.com/JongoDB-Labs/bedrock-now.git
+  out="$(_installer_home 2>&1)"
+  assert_contains "$out" "DevOS ADE is already installed in $TMP/h/bedrock-now — nothing was changed."
+  [ -z "$(ls -A "$TMP/h/devos-ade")" ] || { echo "cloned a second copy into ~/devos-ade" >&2; return 1; }
+}
+
+test_main_a_foreign_devos_ade_beside_an_install_in_bedrock_now_names_that_install() {
+  mkdir -p "$TMP/h/devos-ade"; echo mine > "$TMP/h/devos-ade/notes.txt"; git clone -q "$STACK_DIR" "$TMP/h/bedrock-now"
+  git -C "$TMP/h/bedrock-now" remote set-url origin https://github.com/JongoDB-Labs/bedrock-now.git
+  if out="$(_installer_home 2>&1)"; then echo "should refuse" >&2; return 1; fi
+  assert_contains "$out" "$TMP/h/devos-ade exists and is not a DevOS ADE checkout; DevOS ADE is already installed in $TMP/h/bedrock-now"
+  assert_contains "$out" "./stack update"
+  assert_eq "$(cat "$TMP/h/devos-ade/notes.txt")" mine
+  # with no install anywhere: which variable chooses the folder
+  rm -rf "$TMP/h/bedrock-now"
+  if out="$(_installer_home 2>&1)"; then echo "should refuse" >&2; return 1; fi
+  assert_contains "$out" "choose another folder with DEVOS_ADE_DIR=/path (BEDROCK_NOW_DIR works too; DEVOS_ADE_DIR wins)"
+}
+
 test_main_ignores_a_bedrock_now_folder_that_is_not_an_install() {
   mkdir -p "$TMP/h/bedrock-now"; echo keep > "$TMP/h/bedrock-now/notes.txt"
   out="$(_installer_home 2>&1)"
