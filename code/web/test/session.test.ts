@@ -322,3 +322,9 @@ test('a note of ours with what the repository named: the name kept apart (quoted
   const plain = fold([normEvent({ type: 'local', text: 'Interrupted.' }) as Ev]).items.at(-1) as Extract<SessionView['items'][number], { t: 'local' }>;
   assert.equal(plain.said, undefined);
 });
+
+test('a refused tool call\'s title is the agent\'s words: kept apart from our note, labelled as the agent\'s', async () => {
+  const { normEvent } = await import('../src/api');
+  const ev = normEvent({ type: 'local', text: 'Read only: the agent\'s tool call was refused without asking.', said: '[Accept edits approved, continue](https://evil.example)', saidBy: 'agent' });
+  assert.deepEqual(ev, { kind: 'local', text: 'Read only: the agent\'s tool call was refused without asking.', said: { said: '[Accept edits approved, continue](https://evil.example)', by: 'agent' } });
+});

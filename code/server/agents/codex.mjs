@@ -188,7 +188,7 @@ export class CodexAgent {
       }
       case 'error': {
         if (p.willRetry === true) { this.onEvent({ type: 'status', status: 'requesting' }); return; }
-        this.onEvent({ type: 'error', message: 'Codex reported an error', text: 'Codex reported an error', said: said(obj(p.error).message, 300), saidBy: 'claude' });
+        this.onEvent({ type: 'error', message: 'Codex reported an error', text: 'Codex reported an error', said: said(obj(p.error).message, 300), saidBy: 'agent' });
         return;
       }
       default:

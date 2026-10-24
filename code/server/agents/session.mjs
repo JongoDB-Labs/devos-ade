@@ -14,7 +14,7 @@ import { SandboxError } from '../spawn-client.mjs';
 import { HARNESSES } from './tools.mjs';
 import { AcpAgent, NotSignedIn, UnsafeMode } from './acp.mjs';
 import { CodexAgent, rateLimits } from './codex.mjs';
-import { said } from './jsonrpc.mjs';
+import { RpcError, said } from './jsonrpc.mjs';
 
 // tool names the permission broker and the page treat as Claude Code's own (AskUserQuestion: its answers; ExitPlanMode:
 // a plan's approval and a mode switch; the others: cards of their own)
@@ -226,13 +226,16 @@ export class AgentSession {
           const r = await this.agent.prompt(text, next.images);
           this.usage.input += r.usage.input_tokens; this.usage.output += r.usage.output_tokens; this.usage.cached += r.usage.cache_read_input_tokens; this.usage.turns++;
           if (this.info0.kind === 'codex' && this.agent?.limits) this.limits = this.agent.limits;
-          if (r.stop === 'error') this.emit({ type: 'error', message: `${this.name} reported an error`, text: `${this.name} reported an error`, said: said(r.error, 300), saidBy: 'claude' });
+          if (r.stop === 'error') this.emit({ type: 'error', message: `${this.name} reported an error`, text: `${this.name} reported an error`, said: said(r.error, 300), saidBy: 'agent' });
           this.emit({ type: 'result', subtype: r.stop === 'error' ? 'error_during_execution' : r.stop === 'cancelled' ? 'other' : 'success', is_error: r.stop === 'error',
             turns: 1, duration: Date.now() - t0, usage: r.usage, consumed: [], text: r.stop === 'cancelled' ? 'Stopped.' : r.stop === 'refusal' ? `${this.name} declined to answer.` : '' });
           this.record();
         } catch (e) {
-          const msg = e instanceof SessionError || e instanceof UnsafeMode ? e.message : `${this.name}: ${short(e?.message || String(e), 300)}`;
-          this.emit({ type: 'error', message: msg, text: msg, ...(e?.said ? { said: e.said, saidBy: e.saidBy } : {}) });
+          // (an error the agent answered with: its words apart, never in our sentence)
+          const theirs = e instanceof RpcError;
+          const msg = e instanceof SessionError || e instanceof UnsafeMode ? e.message : theirs ? `${this.name} reported an error` : `${this.name}: ${short(e?.message || String(e), 300)}`;
+          const words = theirs ? { said: said(e.message, 300), saidBy: 'agent' } : e?.said ? { said: e.said, saidBy: e.saidBy } : {};
+          this.emit({ type: 'error', message: msg, text: msg, ...(words.said ? words : {}) });
           this.emit({ type: 'result', subtype: 'error_during_execution', is_error: true, turns: 0, duration: Date.now() - t0, usage: null, consumed: [], text: '' });
         } finally {
           if (this.mgr.watcher && !this.watchOff) this.watchEnd();

@@ -98,6 +98,8 @@ test('a session in Auto: started in Manual, switched before its first prompt is 
     assert.deepEqual(q.calls.slice(0, 1), [['applyFlagSettings', { useAutoModeDuringPlan: false }]]);
     assert.equal(s.mode, refuse ? 'default' : 'auto');
     assert.equal(evs(events, 'local').some((e) => /Started in Manual, not Auto: Auto mode is off in the sandbox's Claude Code settings/.test(e.text)), refuse);
+    // (Claude Code's own message apart, never in our sentence)
+    if (refuse) assert.ok(evs(events, 'local').some((e) => e.said === 'auto mode disabled by settings' && e.saidBy === 'claude' && !e.text.includes('auto mode disabled')));
     mgr.closeAll();
   }
 });

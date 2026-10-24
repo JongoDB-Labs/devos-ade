@@ -15,6 +15,7 @@ import { gitNote } from './gitnote.mjs';
 import { SandboxError } from './spawn-client.mjs';
 import { plainRefusal } from './gitreasons.mjs';
 import { sandboxWords } from './said.mjs';
+import { said } from './agents/jsonrpc.mjs';
 import { SessionError } from './session-error.mjs';
 import { AgentSession, AGENT_MODES } from './agents/session.mjs';
 import { AGENT_TOOLS, HARNESSES, harnessOk } from './agents/tools.mjs';
@@ -33,11 +34,14 @@ const BYPASS_OFF = 'Bypass permissions is off: turn it on in Settings › Claude
 const AUTO_OFF = 'Auto mode is off: turn it on in Settings › Claude Code, from the computer running bedrock-now';
 // Claude Code refused auto mode: the sandbox's managed settings (from TERMINAL_AUTO_MODE / CODE_AUTO_MODE at the
 // terminal container's start) still say off, or the session's model is not one auto mode supports
+// autoRefused(e) -> {text, said}: why Claude Code did not start in Auto, in our words where we know it — its own message
+// apart (said: shown as its words, never in our sentence)
 const autoRefused = (e) => {
   const m = short(e?.message || String(e), 300);
-  if (/disabled by settings/i.test(m)) return `Auto mode is off in the sandbox's Claude Code settings: the terminal container has not taken Settings › Claude Code › Auto mode yet (./stack up restarts it). (${m})`;
-  if (/unavailable|not available|not supported/i.test(m)) return `Claude Code does not offer Auto mode for this session (on Bedrock: Sonnet 5 or later, Opus 4.7 or later, Haiku 5.5). (${m})`;
-  return m;
+  const text = /disabled by settings/i.test(m) ? 'Auto mode is off in the sandbox\'s Claude Code settings: the terminal container has not taken Settings › Claude Code › Auto mode yet (./stack up restarts it).'
+    : /unavailable|not available|not supported/i.test(m) ? 'Claude Code does not offer Auto mode for this session (on Bedrock: Sonnet 5 or later, Opus 4.7 or later, Haiku 5.5).'
+      : 'Claude Code refused it.';
+  return { text, said: said(m, 300) };
 };
 const ALLOW_ONCE_MS = 10 * 60000;   // an "Allow once" for a blocked action holds this long (the retry comes right after)
 const BLOCKS_KEPT = 20;             // blocked actions per session that "Allow once" can still reach (the oldest go)
@@ -354,7 +358,8 @@ export class Session {
       this.mgr.log(`session ${this.id.slice(0, 8)}: not started in auto: ${short(e?.message || String(e), 200)}`);
       if (this.q !== q) return;
       if (this.mode === 'auto') this.mode = 'default';
-      this.emit({ type: 'local', text: `Started in Manual, not Auto: ${autoRefused(e)}` });
+      const why = autoRefused(e);
+      this.emit({ type: 'local', text: `Started in Manual, not Auto: ${why.text}`, ...(why.said ? { said: why.said, saidBy: 'claude' } : {}) });
       this.status();
     }
   }
@@ -698,7 +703,9 @@ export class Session {
         if (!samePermissions(from, this.flagPerms)) {
           await q.applyFlagSettings({ permissions: from }).then(() => { this.flagPerms = from; }, () => {});
         }
-        throw mode === 'auto' ? new SessionError(autoRefused(e), 409) : e;
+        if (mode !== 'auto') throw e;
+        const why = autoRefused(e);
+        throw new SessionError(why.text, 409, { said: why.said, saidBy: 'claude' });
       }
       if (!samePermissions(to, this.flagPerms)) { await q.applyFlagSettings({ permissions: to }); this.flagPerms = to; }
     } finally { this.switching = false; }
@@ -747,7 +754,8 @@ export class Session {
       this.watchOff = true;
       this.emit({ type: 'local', text: old
         ? 'Changes to files that run on your computer (git hooks, .envrc …) are not checked in this session: the sandbox is older than this Code page (./stack up restarts it).'
-        : `Changes to files that run on your computer (git hooks, .envrc …) are not checked in this session: the sandbox did not list them (${msg}).` });
+        : 'Changes to files that run on your computer (git hooks, .envrc …) are not checked in this session: the sandbox did not list them.',
+        ...(old || !said(msg, 200) ? {} : { said: said(msg, 200), saidBy: 'sandbox' }) });
     }
   }
   // a turn starts: the watched files as they are now (and what changed since the last turn ended)
@@ -833,7 +841,8 @@ export class Session {
     const out = picked.map((c) => results.get(c.path)).filter(Boolean);
     if (!out.length) throw new SessionError('no such file in that change', 404);
     const done = out.filter((r) => r.ok && r.action !== 'already').map((r) => r.path);
-    if (done.length) this.emit({ type: 'local', text: `Put back as before the change: ${done.join(', ')}.` });
+    // (their names: the folder's, shown apart as text — never in our sentence, where a name could read as a link)
+    if (done.length) this.emit({ type: 'local', text: `Put back as before the change: ${done.length === 1 ? 'one file' : `${done.length} files`}.`, said: said(done.join(', '), 300), saidBy: 'sandbox' });
     // the next turn compares with the files as they are now
     if (this.watchLast && done.length && !this.watchOff) this.watchChain = this.watchChain.then(() => this.snapshot().then((s) => { this.watchLast = s; this.watchBase = s; }, () => {}));
     return out;

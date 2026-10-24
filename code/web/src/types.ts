@@ -879,7 +879,8 @@ export interface GitEvent {
  *  never as a sentence of ours. by: whose words — git's, Claude Code's, or the sandbox's (bn-coded's). */
 export interface SandboxWords {
   said: string;
-  by: 'git' | 'claude' | 'sandbox';
+  /** agent: one of your subscriptions' agents (Codex, Copilot, Cursor, Grok) — its words, such as a tool's title */
+  by: 'git' | 'claude' | 'sandbox' | 'agent';
 }
 export interface GitHostRef {
   id: string;

@@ -1449,7 +1449,7 @@ export async function removeGitHost(id: string): Promise<{ revoked: boolean | nu
 }
 /** wordsOf(o) -> the sandbox's own words in an answer (said, saidBy), or null */
 function wordsOf(o: Obj | null | undefined): SandboxWords | null {
-  return o && typeof o.said === 'string' && o.said ? { said: label(o.said, 300), by: o.saidBy === 'claude' || o.saidBy === 'sandbox' ? o.saidBy : 'git' } : null;
+  return o && typeof o.said === 'string' && o.said ? { said: label(o.said, 300), by: o.saidBy === 'claude' || o.saidBy === 'sandbox' || o.saidBy === 'agent' ? o.saidBy : 'git' } : null;
 }
 /** saidIn(o) -> {said} when an answer carries the sandbox's own words, else nothing (shapes stay as they were) */
 function saidIn(o: Obj | null | undefined): { said?: SandboxWords } {

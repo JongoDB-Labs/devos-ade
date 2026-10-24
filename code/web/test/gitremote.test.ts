@@ -193,7 +193,9 @@ test('the sandbox\'s own words: only from the server\'s said (never the message)
   assert.deepEqual(normGitFileDiff({ repo: false, reason: 'git could not answer', said: hostile }, 'staged', null).said, { said: hostile, by: 'git' });
   assert.deepEqual(normGitReview({ repo: false, reason: 'git could not answer', said: hostile }).said, { said: hostile, by: 'git' });
   // the labels and the fixed line, word for word (the server's and the mock's the same: tests/test_code.sh)
-  assert.deepEqual(SAID_BY, { git: 'git in the sandbox said:', claude: 'Claude Code in the sandbox said:', sandbox: 'the sandbox said:' });
+  assert.deepEqual(SAID_BY, { git: 'git in the sandbox said:', claude: 'Claude Code in the sandbox said:', sandbox: 'the sandbox said:', agent: 'the agent said:' });
+  // an agent's words (a tool's title, its error): labelled as the agent's
+  assert.deepEqual(saidOf(new ApiError(502, 'x', { said: hostile, saidBy: 'agent' })), { said: hostile, by: 'agent' });
   assert.equal(NEVER_ASKS, 'bedrock-now never asks you to enter a code except in Git hosts › Sign in, right after you press it.');
 });
 

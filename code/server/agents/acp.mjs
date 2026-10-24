@@ -429,7 +429,10 @@ export class AcpAgent {
     const kind = typeof merged.kind === 'string' ? merged.kind : 'other';
     const changes = ['edit', 'delete', 'move', 'execute'].includes(kind) || arr(merged.content).some((c) => obj(c).type === 'diff');
     if ((this.pageMode === 'readOnly' || this.pageMode === 'plan') && (changes || !['read', 'search', 'think', 'fetch'].includes(kind))) {
-      this.onEvent({ type: 'local', text: `${this.pageMode === 'plan' ? 'Plan' : 'Read only'}: ${short(merged.title || kind, 120)} was refused without asking.` });
+      // (the agent's title for it — its words, never in ours: shown apart, as text)
+      const title = said(merged.title || kind, 120);
+      this.onEvent({ type: 'local', text: `${this.pageMode === 'plan' ? 'Plan' : 'Read only'}: the agent's tool call was refused without asking.`,
+        ...(title ? { said: title, saidBy: 'agent' } : {}) });
       return pick('reject_once', 'reject_always');
     }
     // Accept edits: an edit or a delete goes through without asking only when every path it names is a plain file of
