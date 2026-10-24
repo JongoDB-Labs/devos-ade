@@ -411,7 +411,8 @@
 //          .mcp.json, package.json, package manager and dev container files) changed during a turn ("turn") or since the last
 //          one ended ("between": a background command, the terminal, you); in every mode. before/after: the texts to
 //          diff (≤ LIMITS.watchShownChars each; cut: more), null for a file that is not there or not text. incomplete:
-//          the sandbox could not list every watched file (a text to show; once with no changes, then on each card)
+//          the sandbox could not list every watched file, and why (a text to show, watch.mjs incompleteText; once with
+//          no changes, then on each card)
 // No cost is ever taken from the sandbox: the page asks /.bn/spend (LiteLLM's spend logs, through the portal).
 
 export const LIMITS = Object.freeze({

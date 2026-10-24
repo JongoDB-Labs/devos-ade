@@ -808,7 +808,7 @@ export class Session {
     this.reverts.set(id, changes.map(revertOf));
     const bytes = () => [...this.reverts.values()].flat().reduce((n, c) => n + (c.before?.data?.length ?? 0), 0);
     while (this.reverts.size && (this.reverts.size > REVERTS_KEPT || bytes() > REVERT_BYTES)) this.reverts.delete(this.reverts.keys().next().value);
-    this.emit(watchEvent(id, when, changes, incomplete));
+    this.emit(watchEvent(id, when, changes, incomplete ? (after.why ?? []) : false));
   }
   /** Revert: the watched files of a `watch` event (or one of them) put back as they were at its start — each only
    *  while it is still as the event saw it (bn-coded checks the hash). -> [{path, ok, action | error}] */

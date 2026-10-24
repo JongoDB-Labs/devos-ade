@@ -2564,9 +2564,14 @@ folders first, at most 256 entries and 64 files per hook folder, a SHA-256 of ea
 time), a copy of each up to 1 MiB (2 MiB in all, which the code container enforces again), never through a link and
 never a path with a `.` or `..` part; when it leaves anything out (more includes, hook files, submodules or entries
 than these limits, or more than the 300 entries the code container takes) — or cannot read the git layout whole: a
-`gitdir:` or `commondir` that leads outside the folder or to no folder, a `.git` that is a link, a config git reads
-that is there but a link or too large, an include that names a file outside the folder — it says so, and the cards say that not
-every file could be checked (once on its own, then on every card) — never a silent cut — when a turn starts (before
+`gitdir:` or `commondir` that leads outside the folder or to no folder, or through a link on any part of its way, a
+`.git` or a `modules/` that is a link, a `core.hooksPath` or `core.fsmonitor` reached through a link, a config git reads
+that is there but a link, too large or not in the plain grammar Accept edits reads (a key on a section's line, a
+continued line, a comment after a value, more than 5,000 lines: what git's own reading finds in it is still followed),
+an include that names a file outside the folder, a submodule folder it cannot read or name (submodules are followed
+at any depth, `modules/` within `modules/`, names with spaces and `/` included, 16 in all) — it says so, and the cards
+say that not every file could be checked, and why, in the code container's words (once on its own, then on every
+card) — never a silent cut — when a turn starts (before
 its first prompt is sent, ≤ 5 s) and when it ends; the code container compares the two (and the end of the last turn
 with the start of the next: a background command, the terminal, you) and decides what changed and why it matters —
 from the path, or for git's own files only the sandbox can place (a gitdir, a hooks path, an include, an fsmonitor

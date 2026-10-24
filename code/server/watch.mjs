@@ -70,20 +70,37 @@ const MAX_FILE = 1 << 20, MAX_FILES = 300, MAX_DATA = 2 << 20;
 const SHA = /^[0-9a-f]{64}$/;
 const B64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
-/** What a card says when the sandbox could not list every watched file (more includes, hook files or submodules than
- *  it follows, or more entries than this server takes): the files beyond were not checked. */
-export const INCOMPLETE = 'Not every file git runs from here could be checked (too many git config includes, hook files or ' +
-  'submodules): review .git and the hook folders yourself.';
+/** Why the sandbox could not list every watched file (bn-coded's WATCH_WHY codes), in this server's own words: more
+ *  includes, hook files or submodules than it follows, or more entries than this server takes (many); a git folder it
+ *  could not read whole (layout); a config it could not read whole (config); an include outside the folder (include);
+ *  a submodule it could not name (module). */
+export const INCOMPLETE_WHY = Object.freeze({
+  many: 'too many git config includes, hook files or submodules',
+  layout: 'a git folder that is a link, outside this folder, or reached through a link',
+  config: 'a git config file that is a link, too large, or not written plainly enough to read whole',
+  include: 'a git config include of a file outside this folder',
+  module: 'a submodule whose folder could not be read or named',
+});
+/** incompleteText(WHY codes) -> what a card says then: the files beyond were not checked, and why (each known code in
+ *  its order above; none known: too many) */
+export function incompleteText(why = []) {
+  const known = Object.keys(INCOMPLETE_WHY).filter((k) => Array.isArray(why) && why.includes(k));
+  return `Not every file git runs from here could be checked (${(known.length ? known : ['many']).map((k) => INCOMPLETE_WHY[k]).join('; ')}): ` +
+    'review .git and the hook folders yourself.';
+}
+export const INCOMPLETE = incompleteText(['many']);
 
 /** checkSnapshot(ws.sensitive's RESULT) -> Map(path -> entry), or null when it is no snapshot at all.
  *  entry: {path, kind, why, type: file|symlink|dir, size, mode, sha256, data: Buffer|null, target}; entries that do not
  *  fit the list or the limits are dropped, and copies beyond 2 MiB in all are left out (that file: no diff, no Revert).
  *  The map's `incomplete` is true when the sandbox left files out (truncated) or listed more than MAX_FILES: never a
- *  silent cut — the cards say so (INCOMPLETE). */
+ *  silent cut — the cards say so, and why (`why`: the known codes it gave, incompleteText). */
 export function checkSnapshot(r) {
   if (!r || typeof r !== 'object' || !Array.isArray(r.files)) return null;
   const out = new Map();
   out.incomplete = r.truncated === true || r.files.length > MAX_FILES;
+  out.why = Array.isArray(r.why) ? Object.keys(INCOMPLETE_WHY).filter((k) => r.why.includes(k)) : [];
+  if (r.files.length > MAX_FILES && !out.why.includes('many')) out.why.push('many');
   let left = MAX_DATA;
   for (const f of r.files.slice(0, MAX_FILES)) {
     const w = f && typeof f === 'object' ? watched(f.path, f.kind) : null;
@@ -111,8 +128,10 @@ export function checkSnapshot(r) {
 export function mergeSnapshots(parts) {
   const out = new Map();
   out.incomplete = false;
+  out.why = [];
   for (const { root, snap } of parts) {
     out.incomplete ||= snap.incomplete === true;
+    for (const w of snap.why ?? []) if (!out.why.includes(w)) out.why.push(w);
     for (const [p, e] of snap) {
       const key = root?.rel ? `${root.rel}/${p}` : p;
       if (!out.has(key)) out.set(key, { ...e, path: key, rel: p, root: root?.rel ? root : null });
@@ -204,7 +223,8 @@ export function revertable(c) {
 /** The `watch` event the page gets (texts capped), for changes of diffSnapshots. */
 export function watchEvent(id, when, changes, incomplete = false) {
   return {
-    type: 'watch', id, when, ...(incomplete ? { incomplete: INCOMPLETE } : {}),
+    // (incomplete: true, or the codes of why — incompleteText)
+    type: 'watch', id, when, ...(incomplete ? { incomplete: incompleteText(Array.isArray(incomplete) ? incomplete : []) } : {}),
     changes: changes.slice(0, 50).map((c) => {
       const b = shown(c.before), a = shown(c.after);
       return { path: c.path, kind: c.kind, why: c.why, change: c.change, before: b.text ?? describe(c.before), after: a.text ?? describe(c.after),

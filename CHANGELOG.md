@@ -63,8 +63,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   remote's, a submodule's or a branch's remote URL (git runs `git-remote-<name>` for those), and a colour setting under
   a slot git does not document. The Code page's Git panel refuses those names in a URL you give it, as before.
 - **The watchlist says when it cannot read a repository's git layout whole** — a `gitdir:` or `commondir` that leads
-  outside the folder, a `.git` that is a link, a config git reads that is a link or too large, an include outside the
-  folder — and the cards say that not every file could be checked, instead of taking what it saw as all there is.
+  outside the folder, to no folder or through a link on its way, a `.git` or `modules/` that is a link, a config git
+  reads that is a link, too large or not plainly written (as Accept edits reads one: no key on a section's line, no
+  continued line, no comment after a value, at most 5,000 lines), an include outside the folder — and the cards say
+  that not every file could be checked, and why, instead of taking what it saw as all there is. Submodules are
+  followed at any depth (`modules/` within `modules/`, names with spaces or `/`), 16 in all.
 - **Chat's sweep stops everything first:** it used to freeze what it found one process at a time, so a process that
   forked fast enough could start one the sweep had not seen yet. Now every process in Chat's sandbox but bn-coded and
   the init is stopped at once, the sandbox sorted while nothing runs, what is not spared killed, and the rest let go

@@ -80,7 +80,8 @@
 //   ws.sensitive / ws.restore
 //                   the watchlist: the files of /workspace that run on your computer later (git hooks and config,
 //                   husky hooks, .envrc, VS Code tasks and settings, Claude Code's workspace settings, .mcp.json,
-//                   package.json, dev container files) with their SHA-256 and a copy up to 1 MiB; and one of them put
+//                   package.json, dev container files) with their SHA-256 and a copy up to 1 MiB (truncated, and why:
+//                   gitLayout's WATCH_WHY, when it could not list them all); and one of them put
 //                   back as a turn's start saw it, only while it is still as its end saw it (the code container decides
 //                   what changed: code/server/watch.mjs)
 //   perm.read / perm.remove
@@ -4987,29 +4988,54 @@ export function gitConfigLines(text) {
 // includeIf targets in /workspace: 3 levels, WATCH_MAX_INCLUDES in all), the hook folders git may use (every distinct
 // core.hooksPath in /workspace, the last one first: which one git applies depends on includeIf conditions this does
 // not evaluate; and .git/hooks), .husky, the core.fsmonitor programs in /workspace (every distinct value), and
-// submodules (their config and hooks, listed last). truncated: something was left out (too many includes, values or
-// modules) — or the layout could not be read whole: a .git file whose gitdir is outside the folder or not one, a
-// commondir the same, a .git that is a link, a config git reads that is there but not a plain file this can read whole
-// (a link, too large), an include that names a file outside the folder. Then the page says not everything could be
-// checked (A.6), never a layout taken as harmless because part of it was not seen.
+// submodules (every git folder under a git folder's modules/, at any depth — a submodule's name may hold / and
+// spaces —: their config and hooks, listed last). truncated: something was left out, and why (WATCH_WHY codes, which
+// the code container says in its own words): too many includes, values or submodules (many); a layout that could not
+// be read whole (layout: a .git that is a link, a gitdir or commondir outside the folder, not a folder, or reached
+// through a link on any part of its way, a modules/ that is a link, a hooksPath or fsmonitor reached through a link);
+// a config git reads that is there but not a plain file this reads whole — a link, too large, or not in the plain
+// grammar Accept edits reads (gitConfigStrict: no key on a header's line, no continued line, no comment after a value,
+// at most WATCH_MAX_CONFIG_LINES lines) — what can be seen of it is still followed (config); an include that names a
+// file outside the folder (include); a submodule this list cannot name (module). Then the page says not everything
+// could be checked, and why (A.6): never a layout taken as harmless because part of it was not seen.
+export const WATCH_WHY = Object.freeze(['many', 'layout', 'config', 'include', 'module']);
+const WATCH_MAX_CONFIG_LINES = 5000, WATCH_MODULE_DEPTH = 8;
 function gitLayout(root = WS_ROOT) {
-  const out = { gitdirs: [], configs: [], hookDirs: [], moduleConfigs: [], moduleHookDirs: [], fsmonitor: [], truncated: false };
-  // (there(rel): something is at that path — what a read that came back empty may have missed)
-  const there = (rel) => { const a = watchPath(rel, false, root); try { return !!a && !!fs.lstatSync(a); } catch { return false; } };
+  const out = { gitdirs: [], configs: [], hookDirs: [], moduleConfigs: [], moduleHookDirs: [], fsmonitor: [], truncated: false, why: [] };
+  const cut = (why) => { out.truncated = true; if (!out.why.includes(why)) out.why.push(why); };
+  // (there(rel): something is at that path, whatever is on the way — what a read that came back empty may have missed)
+  const there = (rel) => { if (!watchRel(rel)) return false; try { fs.lstatSync(path.join(root.abs, rel)); return true; } catch { return false; } };
+  // (linked(rel, last): a link on the way to rel — rel itself too with last — that git would follow and this list never does)
+  const linked = (rel, last = true) => {
+    const segs = rel.split('/');
+    let p = root.abs;
+    for (let i = 0; i < segs.length - (last ? 0 : 1); i++) {
+      p = path.join(p, segs[i]);
+      try { if (fs.lstatSync(p).isSymbolicLink()) return true; } catch { return false; }
+    }
+    return false;
+  };
+  // a git folder a .git file or a commondir names: in the folder, a real folder all the way — else null
+  const gitdirOf = (value, base) => {
+    const g = gitPathRel(value, base, root);
+    if (!g || linked(g)) return null;
+    try { return fs.lstatSync(path.join(root.abs, g)).isDirectory() ? g : null; } catch { return null; }
+  };
   const top = watchPath('.git', false, root);
   let st = null;
   try { st = top && fs.lstatSync(top); } catch { st = null; }
   if (st && st.isDirectory()) out.gitdirs.push('.git');
   else if (st && st.isFile()) {
     const m = (readSmall('.git', 4096, root) || '').match(/^gitdir:\s*(.+)$/m);
-    const g = m && gitPathRel(m[1], '.', root);
-    if (g) out.gitdirs.push(g); else out.truncated = true;
-  } else if (st) out.truncated = true;
+    const g = m && gitdirOf(m[1], '.');
+    if (g) out.gitdirs.push(g); else cut('layout');
+  } else if (st) cut('layout');
   for (const g of [...out.gitdirs]) {
     const common = readSmall(`${g}/commondir`, 4096, root);
-    const c = common && gitPathRel(common.split('\n')[0], g, root);
-    if (c && !out.gitdirs.includes(c)) out.gitdirs.push(c);
-    else if (!c && there(`${g}/commondir`)) out.truncated = true;
+    if (common === null) { if (there(`${g}/commondir`)) cut('layout'); continue; }
+    const c = gitdirOf(common.split('\n')[0], g);
+    if (!c) cut('layout');
+    else if (!out.gitdirs.includes(c)) out.gitdirs.push(c);
   }
   // the configs git reads for this worktree: the common one (or the gitdir's), then config.worktree; includes inline
   const seen = new Set();
@@ -5021,16 +5047,20 @@ function gitLayout(root = WS_ROOT) {
     seen.add(rel);
     (main ? out.configs : out.moduleConfigs).push(rel);
     const text = readSmall(rel, WATCH_MAX_FILE, root);
-    if (text === null) { if (there(rel)) out.truncated = true; return; }
-    for (const { section, key, value } of gitConfigLines(text)) {
+    if (text === null) { if (there(rel)) cut('config'); return; }
+    // (read as Accept edits reads a config, whole or not at all: one it cannot is said — and what git's own reading
+    // finds in it is still followed)
+    let lines = text.split('\n').length > WATCH_MAX_CONFIG_LINES ? null : gitConfigStrict(text);
+    if (lines === null) { cut('config'); lines = gitConfigLines(text); } else lines = lines.map((l) => ({ ...l, value: l.value ?? 'true' }));
+    for (const { section, key, value } of lines) {
       if (main && section === 'core' && key === 'hookspath' && value.trim() !== '') note(hooksPaths, value);
       if (main && section === 'core' && key === 'fsmonitor' && !isFlag(value)) note(fsmonitors, value);
       if (main && section === 'extensions' && key === 'worktreeconfig') worktreeConfig = /^(true|yes|on|1)$/i.test(value);
       if ((section === 'include' || section === 'includeif') && key === 'path') {
         const f = gitPathRel(value, path.dirname(rel), root);
-        if (!f) { if (value.trim() !== '') out.truncated = true; continue; }
+        if (!f) { if (value.trim() !== '') cut('include'); continue; }
         if (seen.has(f)) continue;
-        if (depth >= 3 || includes >= WATCH_MAX_INCLUDES) { out.truncated = true; continue; }
+        if (depth >= 3 || includes >= WATCH_MAX_INCLUDES) { cut('many'); continue; }
         includes++;
         walk(f, depth + 1, main);
       }
@@ -5041,20 +5071,49 @@ function gitLayout(root = WS_ROOT) {
   if (own && own !== common) walk(`${own}/config`, 0, true);   // (git reads only the common one; a stray one here still counts)
   if (own && worktreeConfig) walk(`${own}/config.worktree`, 0, true);
   // git applies the last value whose include applies: all of them are watched (the last read first), up to the cap
-  if (hooksPaths.length > WATCH_MAX_GIT_VALUES || fsmonitors.length > WATCH_MAX_GIT_VALUES) out.truncated = true;
+  if (hooksPaths.length > WATCH_MAX_GIT_VALUES || fsmonitors.length > WATCH_MAX_GIT_VALUES) cut('many');
   for (const v of hooksPaths.slice(-WATCH_MAX_GIT_VALUES).reverse()) {
     const d = gitPathRel(v, '.', root);
+    if (d && linked(d, false)) cut('layout');   // (a folder on its way that is a link: what git reads there is not seen)
     if (d && !out.hookDirs.includes(d)) out.hookDirs.push(d);   // (outside the root: not this folder's)
   }
   if (common && !out.hookDirs.includes(`${common}/hooks`)) out.hookDirs.push(`${common}/hooks`);   // (with no hooksPath, or a later config dropping it)
   out.hookDirs.push('.husky');
-  for (const v of fsmonitors.slice(-WATCH_MAX_GIT_VALUES).reverse()) { const f = gitPathRel(v, '.', root); if (f && !out.fsmonitor.includes(f)) out.fsmonitor.push(f); }
-  for (const g of out.gitdirs) {
-    let mods = [];
-    try { mods = fs.readdirSync(path.join(root.abs, g, 'modules')).filter((n) => WATCH_NAME.test(n) && n !== '.' && n !== '..').sort(); } catch { /* none */ }
-    if (mods.length > WATCH_MAX_MODULES) { out.truncated = true; mods = mods.slice(0, WATCH_MAX_MODULES); }
-    for (const n of mods) { walk(`${g}/modules/${n}/config`, 0, false); out.moduleHookDirs.push(`${g}/modules/${n}/hooks`); }
+  for (const v of fsmonitors.slice(-WATCH_MAX_GIT_VALUES).reverse()) {
+    const f = gitPathRel(v, '.', root);
+    if (f && linked(f, false)) cut('layout');
+    if (f && !out.fsmonitor.includes(f)) out.fsmonitor.push(f);
   }
+  // submodules: every git folder (a HEAD or a config in it) under a git folder's modules/ — a name with / is folders
+  // on the way, one with spaces is named as it is —, and under each its own modules/; WATCH_MAX_MODULES in all,
+  // WATCH_MODULE_DEPTH folders deep. A modules/ that is a link, a link among them, a name this list cannot name: said
+  let found = 0, looked = 0;
+  const isGitDir = (rel) => ['HEAD', 'config'].some((n) => { try { return fs.lstatSync(path.join(root.abs, rel, n)).isFile(); } catch { return false; } });
+  const modules = (dir, depth) => {
+    let lst;
+    try { lst = fs.lstatSync(path.join(root.abs, dir)); } catch { return; }
+    if (lst.isSymbolicLink() || linked(dir)) { cut('layout'); return; }
+    if (!lst.isDirectory()) return;
+    // (folders looked into, in all: a tree of folders that hold no submodule is bounded too)
+    if (++looked > WATCH_MAX_MODULES * 16) { cut('many'); return; }
+    let list;
+    try { list = fs.readdirSync(path.join(root.abs, dir), { withFileTypes: true }); } catch { cut('module'); return; }
+    for (const d of list.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+      if (found > WATCH_MAX_MODULES) return;
+      const rel = `${dir}/${d.name}`;
+      if (d.isSymbolicLink()) { cut('layout'); continue; }
+      if (!d.isDirectory()) continue;
+      if (!watchRel(rel)) { cut('module'); continue; }
+      if (isGitDir(rel)) {
+        if (++found > WATCH_MAX_MODULES) { cut('many'); return; }
+        walk(`${rel}/config`, 0, false);
+        out.moduleHookDirs.push(`${rel}/hooks`);
+        if (depth < WATCH_MODULE_DEPTH) modules(`${rel}/modules`, depth + 1); else if (there(`${rel}/modules`)) cut('many');
+      } else if (depth < WATCH_MODULE_DEPTH) modules(rel, depth + 1);
+      else cut('many');
+    }
+  };
+  for (const g of out.gitdirs) modules(`${g}/modules`, 1);
   return out;
 }
 // what is watched at this moment: the hook folders (git's own first), single files (git's configs and fsmonitor
@@ -5062,14 +5121,16 @@ function gitLayout(root = WS_ROOT) {
 function watchTargets(root = WS_ROOT) {
   const g = gitLayout(root);
   let truncated = g.truncated;
+  const why = [...g.why];
+  const many = () => { truncated = true; if (!why.includes('many')) why.push('many'); };
   const files = [...g.configs, ...g.fsmonitor, ...WATCH_FILES];
   let subs = [];
   try { subs = fs.readdirSync(path.join(root.abs, '.devcontainer'), { withFileTypes: true }).filter((d) => d.isDirectory() && WATCH_NAME.test(d.name) && d.name !== '.' && d.name !== '..').map((d) => d.name).sort(); } catch { /* none */ }
-  if (subs.length > 16) { truncated = true; subs = subs.slice(0, 16); }
+  if (subs.length > 16) { many(); subs = subs.slice(0, 16); }
   for (const n of subs) files.push(`.devcontainer/${n}/devcontainer.json`);
   let ws = [];
   try { ws = fs.readdirSync(root.abs).filter((n) => /^[A-Za-z0-9._-]{1,100}\.code-workspace$/.test(n)).sort(); } catch { /* none */ }
-  if (ws.length > 16) { truncated = true; ws = ws.slice(0, 16); }
+  if (ws.length > 16) { many(); ws = ws.slice(0, 16); }
   // (and of each git folder, the files beside its config that change what git does there: the attributes that pick a
   // filter, diff or merge driver, the commondir that names the folder whose config and hooks apply, a rebase's to-do
   // list — its exec lines run at `git rebase --continue`. The rest of it — objects, refs, the index, logs — changes
@@ -5077,7 +5138,7 @@ function watchTargets(root = WS_ROOT) {
   for (const d of g.gitdirs) files.push(`${d}/info/attributes`, `${d}/commondir`, `${d}/rebase-merge/git-rebase-todo`);
   files.push(...ws, ...g.moduleConfigs);
   return { files: [...new Set(files)], hookDirs: [...new Set(g.hookDirs)], moduleHookDirs: g.moduleHookDirs, gitdirs: g.gitdirs,
-    configs: [...g.configs, ...g.moduleConfigs], fsmonitor: g.fsmonitor, truncated, root };
+    configs: [...g.configs, ...g.moduleConfigs], fsmonitor: g.fsmonitor, truncated, why, root };
 }
 export function isWatched(rel, t = watchTargets()) {
   if (!watchRel(rel)) return false;
@@ -5127,13 +5188,16 @@ function watchEntry(rel, budget, kind, root = WS_ROOT) {
     return out;
   } finally { fs.closeSync(fd); }
 }
-// ws.sensitive -> {files, truncated?}: the hook folders and their files first (what runs at every commit), then the
-// single files, the submodules last; at most WATCH_MAX_ENTRIES entries — truncated: true when anything was left out
+// ws.sensitive -> {files, truncated?, why?}: the hook folders and their files first (what runs at every commit), then
+// the single files, the submodules last; at most WATCH_MAX_ENTRIES entries — truncated: true when anything was left
+// out, why: which of WATCH_WHY (gitLayout)
 export function wsSensitive(root = WS_ROOT) {
   const t = watchTargets(root);
   const files = [], budget = { left: WATCH_MAX_DATA }, seen = new Set();
   let truncated = t.truncated;
-  const room = () => (files.length < WATCH_MAX_ENTRIES ? true : ((truncated = true), false));
+  const why = [...t.why];
+  const many = () => { truncated = true; if (!why.includes('many')) why.push('many'); };
+  const room = () => (files.length < WATCH_MAX_ENTRIES ? true : (many(), false));
   const add = (rel, kind) => { if (seen.has(rel) || !room()) return; seen.add(rel); const e = watchEntry(rel, budget, kind, root); if (e) files.push(e); };
   const addDir = (dir) => {
     if (seen.has(dir) || !room()) return;
@@ -5144,7 +5208,7 @@ export function wsSensitive(root = WS_ROOT) {
     if (d.type !== 'dir') return;
     let names = [];
     try { names = fs.readdirSync(path.join(root.abs, dir)).filter((n) => WATCH_NAME.test(n) && n !== '.' && n !== '..' && !n.endsWith('.sample')).sort(); } catch { /* gone */ }
-    if (names.length > WATCH_MAX_DIR) { truncated = true; names = names.slice(0, WATCH_MAX_DIR); }
+    if (names.length > WATCH_MAX_DIR) { many(); names = names.slice(0, WATCH_MAX_DIR); }
     for (const n of names) {
       const rel = `${dir}/${n}`;
       if (seen.has(rel) || !room()) continue;
@@ -5157,7 +5221,7 @@ export function wsSensitive(root = WS_ROOT) {
   // (the kinds the code container cannot tell from the path: where git's own files are this time)
   for (const rel of t.files) add(rel, t.fsmonitor.includes(rel) ? 'fsmonitor' : t.configs.includes(rel) ? 'git-config' : undefined);
   for (const dir of t.moduleHookDirs) addDir(dir);
-  return truncated ? { files, truncated: true } : { files };
+  return truncated ? { files, truncated: true, why: why.length ? why : ['many'] } : { files };
 }
 // ws.restore {path, ifSha256, data: base64 | null, mode}: a watched file put back — data null: it was not there, so it
 // goes to the workspace trash — only while its SHA-256 is still ifSha256 (null: still not there)
