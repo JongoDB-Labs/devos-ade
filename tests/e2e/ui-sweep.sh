@@ -62,7 +62,8 @@ if [ "$REUSE" = 0 ]; then
 fi
 # shellcheck disable=SC2034  # (HELPER_PID: read by lib.sh's teardown)
 HELPER_PID=''
-trap 'rc=$?; trap - EXIT INT TERM HUP; if [ "$KEEP" = 0 ]; then teardown; else say "kept: tests/e2e/ui-sweep.sh --teardown --project $PROJECT$([ "$LONG" = 0 ] || printf ' --long-path')"; fi; exit $rc' EXIT
+LONG_OPT=''; [ "$LONG" = 0 ] || LONG_OPT=' --long-path'
+trap 'rc=$?; trap - EXIT INT TERM HUP; if [ "$KEEP" = 0 ]; then teardown; else say "kept: tests/e2e/ui-sweep.sh --teardown --project $PROJECT$LONG_OPT"; fi; exit $rc' EXIT
 trap 'warn "interrupted"; exit 130' INT TERM HUP
 
 st() { # the throwaway's ./stack, clean environment, no terminal
