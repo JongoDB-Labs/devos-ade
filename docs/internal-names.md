@@ -58,6 +58,6 @@ globs (`*`: any file). A pattern or an exemption that no longer matches anything
 | Stack-owned names | `bedrock-now-(?:owner\|admin\|budget)\b` | lib/*.sh, docs/*.md | the owner marker volume, LiteLLM's admin, the budget banners |
 | Signing salts | `bedrock-now\.(?:portal\.[\w{}.-]+\|terminal-launch)` | portal/portal/*.py | a new salt signs everyone out |
 | The settings request | `bedrock-now-settings 1\b` | lib/settings_helper.sh, portal/portal/settings.py, docs/security.md | the portal and the helper speak it |
-| The installed app's link scheme | `web\+bedrocknow\w*` | portal/portal/webapp.py, README.md, docs/*.md | *Open in the app* |
+| The installed app's link scheme | `web\+bedrocknow\w*` | * | *Open in the app* (a page's meta tag names it too) |
 | The pages' `X-Requested-With` | `[Xx]-[Rr]equested-[Ww]ith[^\n]{0,24}?bedrock-now` | * | the portal checks it |
 | The old name, said as such | `(?i:formerly) bedrock-now` | * | so people can find it |
