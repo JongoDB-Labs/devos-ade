@@ -2929,16 +2929,23 @@ export function gitPlainVerdict(root, look = folderLook()) {
   }
   return { why: null, detail: null, guarded: guarded.map(fold), workTree };
 }
-// folderLook() -> a request's view of folders: each listed once (its names, and their folded forms), null when it
-// cannot be
+// folderLook() -> a request's view of folders, each listed once: names(dir) its names (null when it cannot be listed);
+// has(dir, name) and hasFolded(dir, folded) whether it holds an entry by that exact name or folded form (false when
+// it cannot be listed) — looked up in sets, not walked along the listing each time
 function folderLook() {
   const seen = new Map();
-  const names = (dir) => {
-    if (!seen.has(dir)) { let l = null; try { l = fs.readdirSync(dir); } catch { l = null; } seen.set(dir, l && { list: l, folded: l.map(fold) }); }
-    return seen.get(dir)?.list ?? null;
+  const of = (dir) => {
+    if (!seen.has(dir)) {
+      let l = null;
+      try { l = fs.readdirSync(dir); } catch { l = null; }
+      seen.set(dir, l && { list: l, exact: new Set(l), folded: new Set(l.map(fold)) });
+    }
+    return seen.get(dir);
   };
-  const folded = (dir) => (names(dir) === null ? null : seen.get(dir).folded);
-  return { names, folded };
+  const names = (dir) => of(dir)?.list ?? null;
+  const has = (dir, name) => of(dir)?.exact.has(name) ?? false;
+  const hasFolded = (dir, name) => of(dir)?.folded.has(name) ?? false;
+  return { names, has, hasFolded };
 }
 
 // Why a path is not plain, as codes (the page says each in words of its own — what the repository named is said
@@ -2994,7 +3001,7 @@ export function pathsPlain(req, { now = Date.now } = {}) {
     .map(fold);
   // has(dir, name) -> an entry of that folded name in dir, on the disk or among the request's paths
   const has = (dir, name) => {
-    if ((look.folded(dir) ?? []).includes(name)) return true;
+    if (look.hasFolded(dir, name)) return true;
     const at = `${fold(dir)}/${name}`;
     return asked.some((q) => q === at || q.startsWith(`${at}/`));
   };
@@ -3006,7 +3013,7 @@ export function pathsPlain(req, { now = Date.now } = {}) {
     for (let i = 0; i < parts.length; i++) {
       // (a folder of the way — the project's own, and every one below it to the path's: a .git below the project's,
       // a bare repository's shape in any)
-      if (i > 0 && (look.folded(dir) ?? []).includes('.git')) return 'nested-repo';
+      if (i > 0 && look.hasFolded(dir, '.git')) return 'nested-repo';
       if (has(dir, 'head') && has(dir, 'objects') && has(dir, 'refs')) return 'nested-repo';
       const name = fold(parts[i]);
       // (put together piece by piece: HEAD or config beside objects/ or refs/; objects/ or refs/ beside a HEAD)
@@ -3028,11 +3035,10 @@ export function pathsPlain(req, { now = Date.now } = {}) {
     if (nested) return nested;
     let at = root.abs;
     for (let i = 0; i < parts.length; i++) {
-      const names = look.names(at), folded = look.folded(at);
-      if (names === null) return false;
+      if (look.names(at) === null) return false;
       // (not there by this spelling: a new name — unless the disk would open another entry by it; nothing further is
       // there either)
-      if (!names.includes(parts[i])) return !folded.includes(fold(parts[i]));
+      if (!look.has(at, parts[i])) return !look.hasFolded(at, fold(parts[i]));
       at = path.join(at, parts[i]);
       let st;
       try { st = fs.lstatSync(at); } catch { return false; }
@@ -3047,7 +3053,7 @@ export function pathsPlain(req, { now = Date.now } = {}) {
     if (typeof p === 'string' && p.startsWith('/') && inRoot(p, root) && p !== root.abs && path.resolve(p) === p) {
       let at = root.abs;
       for (const part of p.slice(root.abs.length + 1).split('/').slice(0, -1).slice(0, PLAIN_DEPTH_MAX)) {
-        if (!(look.names(at) ?? []).includes(part)) break;
+        if (!look.has(at, part)) break;
         at = path.join(at, part);
         let st = null;
         try { st = fs.lstatSync(at); } catch { st = null; }
