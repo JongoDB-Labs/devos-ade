@@ -784,7 +784,9 @@ test('project.settings: the plugins a folder\'s own settings turn on, with what 
 test('paths.plain: what an agent\'s change may touch without asking (Accept edits) — plain files of the folder, outside git\'s and the tools\' own configuration, no link on the way, no hard link', async () => {
   const D = path.join(WS, 'edits');
   const put = (rel, text = 'x') => { fs.mkdirSync(path.dirname(path.join(D, rel)), { recursive: true }); fs.writeFileSync(path.join(D, rel), text); };
-  put('src/a.js'); put('.git/hooks/pre-commit'); put('sub/.codex/config.toml'); put('lsp.json', '{}');
+  put('src/a.js'); put('.git/hooks/pre-commit'); put('sub/.codex/config.toml'); put('lsp.json', '{}'); put('src/Readme.md');
+  // (git runs hooks from core.hooksPath: that folder too, in any case)
+  put('.git/config', '[core]\n\thooksPath = tools/hooks\n');
   fs.mkdirSync(path.join(D, 'dir'), { recursive: true });
   fs.writeFileSync(path.join(OUT, 'h'), 'outside');
   fs.symlinkSync(OUT, path.join(D, 'link'));
@@ -798,6 +800,15 @@ test('paths.plain: what an agent\'s change may touch without asking (Accept edit
     [`${D}/link/x.js`, false, 'a link on the way'], [`${D}/linkfile`, false, 'a link at the end'], [`${D}/hard`, false, 'a hard link'],
     [`${D}/dir`, false, 'a folder'], [`${D}/src/a.js/x`, false, 'below a file'], [`${D}/src/../.git/config`, false, 'not normalized'],
     ['src/a.js', false, 'relative'], [`${WS}/p1/a.js`, false, 'another folder'], [D, false, 'the folder itself'], [`${D}/a\0b`, false], [42, false],
+    // names a disk that folds them opens as a guarded one (ſ is s, ﬂ is fl, ß is ss): guarded too
+    [`${D}/.curſor/hooks.json`, false, 'folded'], [`${D}/.vſcode/tasks.json`, false, 'folded'], [`${D}/.huſky/pre-commit`, false, 'folded'],
+    [`${D}/.mcp.jſon`, false, 'folded'], [`${D}/lſp.json`, false, 'folded'], [`${D}/.agentſ/x.md`, false, 'folded'],
+    // an entry there by another spelling (the disk could open it by this one): asked
+    [`${D}/src/README.md`, false, 'another spelling of an entry'], [`${D}/SRC/a.js`, false, 'another spelling of a folder'],
+    // other editors' folders and what runs on a commit
+    [`${D}/.idea/workspace.xml`, false], [`${D}/.zed/settings.json`, false], [`${D}/app.code-workspace`, false], [`${D}/.pre-commit-config.yaml`, false],
+    [`${D}/lefthook.yml`, false], [`${D}/sub/lefthook-local.yaml`, false], [`${D}/tools/hooks/pre-commit`, false, 'core.hooksPath'],
+    [`${D}/Tools/Hooks/pre-push`, false, 'core.hooksPath, folded'], [`${D}/tools/build.js`, true, 'beside it'],
   ];
   const r = await call({ op: 'paths.plain', root: D, paths: cases.map((c) => c[0]) });
   assert.deepEqual(r.plain, cases.map((c) => c[1]), JSON.stringify(cases.map((c, i) => [c[0], r.plain?.[i]]).filter(([, got], i) => got !== cases[i][1])));

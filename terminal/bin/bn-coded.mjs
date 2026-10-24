@@ -2681,30 +2681,45 @@ const isUtf8Buf = (b) => { try { new TextDecoder('utf-8', { fatal: true }).decod
 export function projectSettings(req) {
   return settingsFiles(rootArg(req?.root).abs, { text: req?.text !== false });
 }
-// The names an agent's change approved by Accept edits never touches, in any case and at any depth: git's folder and
-// what runs on your computer when you open the folder (Claude Code's own protected list), and every tool's own
-// configuration (what the trust step lists)
+// The names an agent's change approved by Accept edits never touches, folded (fold) and at any depth: git's folder and
+// what runs on your computer when you open the folder or commit (Claude Code's own protected list, other editors'
+// folders, pre-commit and lefthook files), and every tool's own configuration (what the trust step lists); a
+// *.code-workspace file too, and the folders git runs hooks from (core.hooksPath: gitLayout)
 export const EDIT_GUARDED = Object.freeze(['.git', '.claude', '.mcp.json', '.vscode', '.husky', '.devcontainer', '.devcontainer.json', '.envrc',
-  '.github', ...AGENT_TREES, ...AGENT_FILES]);
+  '.github', '.idea', '.zed', '.pre-commit-config.yaml', '.pre-commit-config.yml', 'lefthook.yml', 'lefthook.yaml', '.lefthook.yml',
+  '.lefthook.yaml', 'lefthook-local.yml', 'lefthook-local.yaml', ...AGENT_TREES, ...AGENT_FILES]);
 export const PLAIN_PATHS_MAX = 200;
 // paths.plain {root, paths} -> {plain: [bool]}: whether each path an agent says its change touches may be changed
-// without asking (the page's Accept edits): absolute, in the project's folder, no part of it in EDIT_GUARDED, no link on
+// without asking (the page's Accept edits): absolute, in the project's folder, no part of it in EDIT_GUARDED (folded:
+// a disk that folds names opens .curſor as .cursor), not in a folder git runs hooks from, each part that is there
+// spelled exactly as the folder lists it (never another entry the disk would open by a folded spelling), no link on
 // its way or at its end (a repository's link could lead to ~/.codex or .git/hooks), and — when it is there — a plain
-// file with no other name (a hard link). Anything else: false, and the page asks.
+// file with no other name (a hard link). Anything else: false, and the page asks. (Checked, then the agent writes: what
+// changes in between is the watchlist's to see.)
 export function pathsPlain(req) {
   const root = rootArg(req?.root);
   const list = Array.isArray(req?.paths) ? req.paths : null;
   if (!list || list.length > PLAIN_PATHS_MAX) throw new Error(`paths: a list of at most ${PLAIN_PATHS_MAX}`);
   const guarded = new Set(EDIT_GUARDED);
+  const guardedName = (x) => { const f = fold(x); return guarded.has(f) || f.endsWith('.code-workspace'); };
+  // the folders git runs hooks from here (core.hooksPath, .git/hooks, .husky): none of them, at any depth below
+  const layout = (() => { try { return gitLayout(root); } catch { return null; } })();
+  const hooks = layout ? [...layout.hookDirs, ...layout.moduleHookDirs].map(fold) : null;
   const one = (p) => {
     if (typeof p !== 'string' || !p.startsWith('/') || p.length > 4096 || p.includes('\0') || path.resolve(p) !== p || !inRoot(p, root) || p === root.abs) return false;
-    const parts = p.slice(root.abs.length + 1).split('/');
-    if (parts.some((x) => guarded.has(x.toLowerCase()))) return false;
+    const rel = p.slice(root.abs.length + 1), parts = rel.split('/');
+    if (parts.some(guardedName)) return false;
+    if (!hooks || layout.truncated || hooks.some((h) => fold(rel) === h || fold(rel).startsWith(`${h}/`))) return false;
     let at = root.abs;
     for (let i = 0; i < parts.length; i++) {
+      let names;
+      try { names = fs.readdirSync(at); } catch { return false; }
+      // (not there by this spelling: a new name — unless the disk would open another entry by it; nothing further is
+      // there either)
+      if (!names.includes(parts[i])) return !names.some((n) => fold(n) === fold(parts[i]));
       at = path.join(at, parts[i]);
       let st;
-      try { st = fs.lstatSync(at); } catch (e) { return e.code === 'ENOENT'; }   // (not there yet: a new file — nothing further is either)
+      try { st = fs.lstatSync(at); } catch { return false; }
       if (st.isSymbolicLink()) return false;
       if (i < parts.length - 1 ? !st.isDirectory() : !(st.isFile() && st.nlink === 1)) return false;
     }
