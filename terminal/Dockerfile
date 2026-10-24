@@ -70,7 +70,7 @@ RUN set -eu; \
     install -D -m 755 "/tmp/$d/bin/gh" /usr/local/lib/gh/gh; rm -rf /tmp/gh.tgz "/tmp/$d"; \
     /usr/local/lib/gh/gh --version | grep -qF "gh version $GH_VERSION "
 
-# ttyd's own page, served with --index: the same page plus a viewport for phones and a bedrock-now icon (ttyd-page.py).
+# ttyd's own page, served with --index: the same page plus a viewport for phones and a DevOS ADE icon (ttyd-page.py).
 # Its inline script must hash to this: the main Caddy's CSP for the terminal host allows that script alone
 # (caddy/Caddyfile, terminal_page — the same value), so a new ttyd stops the build until both are updated.
 ARG TTYD_PAGE_SCRIPT_SHA256=qpCL1JTmm6ktW0DnjpSILM7GnS2fO8/e+XjSlYJuQzQ=
@@ -137,7 +137,7 @@ RUN chmod 755 /etc/claude-code && chmod 644 /etc/claude-code/managed-settings.js
  && chmod 755 /etc/gemini-cli && chmod 644 /etc/gemini-cli/settings.json \
  && ln -s bn-gh /usr/local/bin/gh && gh --version | grep -qF "gh version $GH_VERSION " \
  && make --version >/dev/null && test -x /usr/bin/nc.openbsd \
- && printf '\n# bedrock-now terminal\n[ -r /etc/bedrock-now.bashrc ] && . /etc/bedrock-now.bashrc\n' >> /etc/bash.bashrc
+ && printf '\n# DevOS ADE terminal\n[ -r /etc/bedrock-now.bashrc ] && . /etc/bedrock-now.bashrc\n' >> /etc/bash.bashrc
 
 ENV LANG=C.UTF-8 HOME=/home/claude SHELL=/bin/bash NPM_CONFIG_PREFIX=/home/claude/.local \
     PATH=/home/claude/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

@@ -206,7 +206,7 @@ test('a project\'s sessions copied: listed, picked, checked (secrets redacted, t
   const uses = lines.flatMap((e) => (e.type === 'assistant' && Array.isArray(e.message.content) ? e.message.content.filter((b) => b.type === 'tool_use').map((b) => b.id) : []));
   const results = lines.flatMap((e) => (e.type === 'user' && Array.isArray(e.message.content) ? e.message.content.filter((b) => b.type === 'tool_result') : []));
   assert.deepEqual(results.map((b) => b.tool_use_id), uses);
-  assert.ok(results.every((b) => /^\[tool output left out by bedrock-now — [0-9.]+ (bytes|KB); re-import with "Include tool outputs" to bring it\]$/.test(b.content)));
+  assert.ok(results.every((b) => /^\[tool output left out by DevOS ADE — [0-9.]+ (bytes|KB); re-import with "Include tool outputs" to bring it\]$/.test(b.content)));
   assert.ok(lines.filter((e) => e.toolUseResult !== undefined).every((e) => typeof e.toolUseResult === 'string' && e.toolUseResult.startsWith('[tool output left out')));
   assert.ok(!ca.includes('export const main'), 'what the tool read is not in the copy');
   assert.equal(res[0].outputsLeft, 3);
@@ -525,7 +525,7 @@ test('tool outputs left out by default — a large output\'s file one line too (
   assert.deepEqual(pv.findings, [], 'nothing found: the outputs are not looked at');
   assert.deepEqual([pv.outputs.included, pv.outputs.left], [false, 3 + 2], 'three results in the transcript, two large outputs');
   assert.ok(!JSON.stringify(pv).includes(out) && !JSON.stringify(pv).includes(big));
-  assert.ok(pv.events.some((ev) => ev.type === 'tool_result' && /tool output left out by bedrock-now/.test(ev.text)), 'the preview shows the line');
+  assert.ok(pv.events.some((ev) => ev.type === 'tool_result' && /tool output left out by DevOS ADE/.test(ev.text)), 'the preview shows the line');
   // the CLI says so too (the column: how many left out, their bytes), and with --with-tool-outputs scans them
   const lines = [];
   await cli(['findings', '--project', 'p_00000001', '--ids', id, '--tsv'], { imports, line: (l) => lines.push(l) });
@@ -541,8 +541,8 @@ test('tool outputs left out by default — a large output\'s file one line too (
   const text = fs.readFileSync(path.join(storeOf(APP), `${id}.jsonl`), 'utf8');
   assert.ok(!text.includes(out));
   const base = path.join(storeOf(APP), id, 'tool-results');
-  assert.match(fs.readFileSync(path.join(base, 'toolu_big.txt'), 'utf8'), /^\[tool output left out by bedrock-now — [0-9]+ bytes; re-import with "Include tool outputs" to bring it\]$/);
-  assert.match(JSON.parse(fs.readFileSync(path.join(base, 'toolu_j.json'), 'utf8')), /^\[tool output left out by bedrock-now/);
+  assert.match(fs.readFileSync(path.join(base, 'toolu_big.txt'), 'utf8'), /^\[tool output left out by DevOS ADE — [0-9]+ bytes; re-import with "Include tool outputs" to bring it\]$/);
+  assert.match(JSON.parse(fs.readFileSync(path.join(base, 'toolu_j.json'), 'utf8')), /^\[tool output left out by DevOS ADE/);
   // it resumes: the SDK reads the copy whole — every call with its result, in order — and forks it
   const { getSessionMessages } = await import('@anthropic-ai/claude-agent-sdk');
   const entries = parseLines(fs.readFileSync(path.join(storeOf(APP), `${id}.jsonl`))).entries;
@@ -646,7 +646,7 @@ test('allowlist: a marker in every place an output can be — none in the copy b
   assert.ok(!JSON.stringify(pv).includes('leakmarker'), 'nothing of an output in the preview');
   assert.ok(pv.outputs.left >= 20 && pv.outputs.dropped >= 6, JSON.stringify(pv.outputs));
   // (the preview shows every entry the copy writes — an attachment, a note — not only what the SDK's history shows)
-  assert.ok(pv.events.some((ev) => ev.type === 'local' && /^Attachment \(file: .*a\.txt\): \[tool output left out by bedrock-now/.test(ev.text)));
+  assert.ok(pv.events.some((ev) => ev.type === 'local' && /^Attachment \(file: .*a\.txt\): \[tool output left out by DevOS ADE/.test(ev.text)));
   assert.ok(pv.events.some((ev) => ev.type === 'local' && /^Claude Code's note to the model: \[tool output left out/.test(ev.text)));
   assert.ok(pv.events.some((ev) => ev.type === 'local' && /SUMMARYKEPT/.test(ev.text)));
   const r = await copy(imports, call, 'p_00000001', [{ id, digest: pv.digest }]);
@@ -658,7 +658,7 @@ test('allowlist: a marker in every place an output can be — none in the copy b
   }
   const text = fs.readFileSync(files[0], 'utf8');
   for (const k of ['OWNERKEPT', 'OWNERKEPT2', 'CLAUDEKEPT', 'CLAUDEKEPT2', 'CLAUDEKEPT3', 'INPUTKEPT', 'SUMMARYKEPT', 'TITLEKEPT', '<bash-input>ls</bash-input><bash-stdout>[tool output left out',
-    '"content":"[tool output left out by bedrock-now', '"type":"tool_reference","tool_name":"mcp__srv__deferred"', '"structuredContentOmitted":true', '"_meta":{"claude/endTurn":true}', '"error_code":"unavailable"', '"snippet":""']) {
+    '"content":"[tool output left out by DevOS ADE', '"type":"tool_reference","tool_name":"mcp__srv__deferred"', '"structuredContentOmitted":true', '"_meta":{"claude/endTurn":true}', '"error_code":"unavailable"', '"snippet":""']) {
     assert.ok(text.includes(k), k);
   }
   const lines = text.trim().split('\n').map((l) => JSON.parse(l));
@@ -738,7 +738,7 @@ test('what counts as yours, by allowlist too: Claude Code\'s wrapper tags (any, 
   await imports.stageBundle('p_00000001', scan, Readable.from([bundle(APP, dir, [id])]));
   const pv = await preview(imports, 'p_00000001', id);
   assert.ok(!JSON.stringify(pv).includes('leakmarker'), (/leakmarker-[a-z0-9-]+/.exec(JSON.stringify(pv)) ?? [''])[0]);
-  assert.ok(pv.events.some((ev) => ev.type === 'user' && /^\[tool output left out by bedrock-now/.test(ev.text)), 'a wrapper\'s entry shows the line, not its words');
+  assert.ok(pv.events.some((ev) => ev.type === 'user' && /^\[tool output left out by DevOS ADE/.test(ev.text)), 'a wrapper\'s entry shows the line, not its words');
   assert.ok(pv.events.some((ev) => ev.type === 'local' && /written by Claude; it may quote command output/.test(ev.text)));
   const r = await copy(imports, call, 'p_00000001', [{ id, digest: pv.digest }]);
   assert.equal(r[0].ok, true, JSON.stringify(r));

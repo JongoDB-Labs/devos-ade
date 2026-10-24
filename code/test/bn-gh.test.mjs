@@ -65,7 +65,7 @@ function gh(args, { env = {}, cwd = WORK } = {}) {
     p.on('close', (code) => { let v = null; try { v = JSON.parse(out); } catch { /* none */ } resolve({ code, out: v, err }); });
   });
 }
-const NO_LOGIN_LINE = /^gh: no login for github\.com from bedrock-now — to give gh yours, connect that host in the Code page's Git panel › Hosts and turn on Let Claude use this host \(gh goes on without one\)\n$/;
+const NO_LOGIN_LINE = /^gh: no login for github\.com from DevOS ADE — to give gh yours, connect that host in the Code page's Git panel › Hosts and turn on Let Claude use this host \(gh goes on without one\)\n$/;
 
 test('allowed: the token in gh\'s environment only, never on disk; the question says gh and its command', async () => {
   await broker(); allow = new Set(['github.com']); asked.length = 0;
@@ -158,7 +158,7 @@ test('never asked: help, version, completion, auth (but auth status without the 
 
 test('the host gh goes to, as gh takes it; a token for github.com and *.ghe.com only (GH_TOKEN), never GitHub Enterprise Server\'s', async () => {
   await broker(); allow = new Set(['github.com', 'ghe.example.com', 'acme.ghe.com']); asked.length = 0;
-  const GHES_LINE = (h) => new RegExp(`^gh: bedrock-now gives gh a login for github\\.com and \\*\\.ghe\\.com only, not for ${h.replace(/\./g, '\\.')} — run gh auth login --hostname ${h.replace(/\./g, '\\.')} in the terminal for it \\(gh goes on without one\\)\\n$`);
+  const GHES_LINE = (h) => new RegExp(`^gh: DevOS ADE gives gh a login for github\\.com and \\*\\.ghe\\.com only, not for ${h.replace(/\./g, '\\.')} — run gh auth login --hostname ${h.replace(/\./g, '\\.')} in the terminal for it \\(gh goes on without one\\)\\n$`);
   // GitHub Enterprise Server: nothing asked (gh would send GH_ENTERPRISE_TOKEN to any host a command names), one line
   let r = await gh(['repo', 'list'], { env: { GH_HOST: 'GHE.example.com' } });
   assert.equal(r.out.GH_ENTERPRISE_TOKEN, null); assert.equal(r.out.GH_TOKEN, null);

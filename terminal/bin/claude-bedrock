@@ -1,5 +1,5 @@
 #!/bin/bash
-# claude-bedrock in the bedrock-now terminal: Claude Code on AWS Bedrock through this stack's LiteLLM, reached through
+# claude-bedrock in the DevOS ADE terminal: Claude Code on AWS Bedrock through this stack's LiteLLM, reached through
 # the terminal's gateway on its own network (compose.terminal.yaml sets the environment). The same settings as
 # bin/claude-bedrock on your computer — model mapping, no telemetry, the shared MCP server — plus its launch line
 # (price and budget) and a session cost on exit. That cost is the terminal key's spend after the session minus
@@ -115,7 +115,7 @@ case "${1:-}" in
     exit 0 ;;
   -h | --help)
     cat <<EOT
-claude-bedrock: Claude Code on AWS Bedrock via bedrock-now, in the browser terminal
+claude-bedrock: Claude Code on AWS Bedrock via DevOS ADE, in the browser terminal
   Model    ${CLAUDE_BEDROCK_OPUS_MODEL:-not set up} (main, unless Settings › Claude Code › Models names a default); --model <id or name> or
            CLAUDE_BEDROCK_MODEL=<name> picks another, claude-bedrock --models lists them
   Proxy    LiteLLM through the stack's gateway ($gw), key 'claude-code-terminal' (BUDGET_TERMINAL; Home shows it)

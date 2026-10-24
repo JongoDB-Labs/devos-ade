@@ -9,7 +9,7 @@ import { SandboxError } from './spawn-client.mjs';
 import { plainRefusal } from './gitreasons.mjs';
 import { short } from './validate.mjs';
 
-export const NEVER_ASKS = 'bedrock-now never asks you to enter a code except in Git hosts › Sign in, right after you press it.';
+export const NEVER_ASKS = 'DevOS ADE never asks you to enter a code except in Git hosts › Sign in, right after you press it.';
 export const GIT_SAID = 'git in the sandbox refused';
 export const CLAUDE_SAID = 'Claude Code in the sandbox stopped';
 export const SANDBOX_SAID = 'the sandbox refused';

@@ -1,4 +1,4 @@
-// Your Claude Code and claude-bedrock sessions from the computer running bedrock-now, copied into the sandbox (the Code
+// Your Claude Code and claude-bedrock sessions from the computer running DevOS ADE, copied into the sandbox (the Code
 // page's Import sheet; ./stack sessions, lib/sessions.sh). The computer's stores are read on the computer only — by the
 // reader (harness/claude.mjs) in a throwaway container, after you allowed it there — and what it read arrives here on
 // stdin of `docker compose exec -T code node server/import-sessions.mjs …` (never a command line, the portal or the

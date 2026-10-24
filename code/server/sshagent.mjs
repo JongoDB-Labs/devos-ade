@@ -53,11 +53,11 @@ export function knownHostFingerprint(line) {
 }
 
 // newKey(comment) -> {privatePem, publicKey: "ssh-ed25519 AAAA… comment", fingerprint}: a new ed25519 key
-export function newKey(comment = 'bedrock-now') {
+export function newKey(comment = 'devos-ade') {   // (brand.mjs's PRODUCT_SLUG: this file stands alone in the image's gitnew stage)
   const { privateKey, publicKey } = crypto.generateKeyPairSync('ed25519');
   const pub = Buffer.from(publicKey.export({ format: 'jwk' }).x, 'base64url');
   const blob = keyBlob(pub);
-  const safe = String(comment).replace(/[^A-Za-z0-9._@:-]+/g, '-').slice(0, 80) || 'bedrock-now';
+  const safe = String(comment).replace(/[^A-Za-z0-9._@:-]+/g, '-').slice(0, 80) || 'devos-ade';
   return { privatePem: privateKey.export({ format: 'pem', type: 'pkcs8' }), publicKey: `ssh-ed25519 ${blob.toString('base64')} ${safe}`, fingerprint: fingerprint(blob) };
 }
 // loadKey(privatePem) -> {privateKey, blob} or null (an ed25519 key in PKCS#8 PEM)

@@ -20,6 +20,7 @@ import tls from 'node:tls';
 import net from 'node:net';
 import crypto from 'node:crypto';
 import { HostError, TOKEN, DEFAULTS, CLIENT_ID, SLUG, checkCa, httpsAuth } from './githosts.mjs';
+import { PRODUCT_SLUG } from './brand.mjs';
 
 export const REFRESH_EARLY_MS = 5 * 60000;   // a token that expires within this is renewed before an operation
 const SAVE_TRIES = 4;                         // a renewed pair's save: tried this often before it is given up
@@ -113,7 +114,7 @@ export async function request(connect, target, { method = 'POST', path = '/', fo
     const timer = setTimeout(() => end(reject, new OAuthError(`${target.host} did not answer in time`, 'network')), timeoutMs);
     sock.on('error', (e) => end(reject, new OAuthError(connWhy(e, target.host), 'network')));
     const body = form ? new URLSearchParams(form).toString() : null;
-    const headers = { Host: target.port && target.port !== 443 ? `${target.host}:${target.port}` : target.host, Accept: accept, 'User-Agent': 'bedrock-now',
+    const headers = { Host: target.port && target.port !== 443 ? `${target.host}:${target.port}` : target.host, Accept: accept, 'User-Agent': PRODUCT_SLUG,
       ...(body !== null ? { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) } : {}),
       ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}) };
     const req = http.request({ createConnection: () => sock, method, path, headers, setHost: false }, (res) => {

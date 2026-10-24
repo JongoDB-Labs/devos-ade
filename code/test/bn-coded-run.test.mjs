@@ -292,7 +292,7 @@ test('run.start: the task\'s fixed wrapper in a new tmux window (the session mad
   const nw = c.find((x) => x[0] === 'new-window');
   assert.deepEqual(nw, ['new-window', '-d', '-P', '-F', '#{window_id}', '-t', '=claude:', '-n', 'run-test', '-c', fs.realpathSync(WS),
     '-e', 'LD_PRELOAD=', '-e', 'LD_AUDIT=', '-e', 'LD_LIBRARY_PATH=', '-e', 'GCONV_PATH=', '-e', 'GLIBC_TUNABLES=', '--',
-    ...coded.windowCommand('bedrock-now run', coded.taskEnv(), [P.node, SELF, '--run-task', RUNS, r.id, '--', ...npmArgv('test')])]);
+    ...coded.windowCommand('DevOS ADE run', coded.taskEnv(), [P.node, SELF, '--run-task', RUNS, r.id, '--', ...npmArgv('test')])]);
   // bash without the variables that run code first; the runner and the wrapper in an environment made here
   const at = nw.indexOf('--') + 1;
   assert.deepEqual(nw.slice(at, at + 16), ['/usr/bin/env', '-u', 'BASH_ENV', '-u', 'ENV', '-u', 'SHELLOPTS', '-u', 'BASHOPTS', '-u', 'PS4', '/bin/bash', '--noprofile', '--norc',

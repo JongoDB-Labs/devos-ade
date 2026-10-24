@@ -2,7 +2,7 @@
 # The sandbox's own AI tools (terminal/Dockerfile's ai-tools stage; README "Your AI subscriptions"): each provider's
 # unmodified command-line client, pinned here and checked before anything of it is kept — npm packages by `npm ci`
 # against their lockfile (SHA-512 per tarball, the platform's native package included; no install scripts run), release
-# tarballs by SHA-256: Codex's and Copilot's as their GitHub releases list them, Cursor's as bedrock-now saw it on
+# tarballs by SHA-256: Codex's and Copilot's as their GitHub releases list them, Cursor's as DevOS ADE saw it on
 # 2026-10-23 (Cursor publishes no checksum: a file that changed since is not kept). Nothing here signs in, and nothing
 # is changed in what is installed. Each lands in /out/<tool>/, owned by root and read-only to everyone else, and
 # /out/VERSIONS says which version. A tool whose download or check fails is left out of the image — said here and in

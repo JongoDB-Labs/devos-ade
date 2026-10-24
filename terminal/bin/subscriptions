@@ -1,8 +1,8 @@
 #!/bin/bash
-# subscriptions: your AI subscriptions' tools in the bedrock-now sandbox — each provider's own, unmodified client (the
+# subscriptions: your AI subscriptions' tools in the DevOS ADE sandbox — each provider's own, unmodified client (the
 # image's, pinned: terminal/Dockerfile), signed in with that client's own flow, its login kept in its own file in the
 # sandbox's home (the terminal's; in Chat's sandbox, Chat's own sign-in volumes: compose.code.yaml subs-chat-*).
-# bedrock-now never opens those files: a status is what the tool's own status command says,
+# DevOS ADE never opens those files: a status is what the tool's own status command says,
 # reduced to "signed in: yes / no / not known here" and which kind (ChatGPT, Claude Max, an API key …) — never more.
 #
 #   subscriptions [status]        each tool: in this sandbox (its version), signed in?
@@ -134,7 +134,7 @@ cmd_status() {
     esac
     printf '%-20s %-19s %-34s %s\n' "$(field "$id" 3)" "$v" "$s" "$(field "$id" 2)"
   done
-  printf '\nEach signs in with its own flow, here in the sandbox; its login stays in its own file, which bedrock-now never opens.\n'
+  printf '\nEach signs in with its own flow, here in the sandbox; its login stays in its own file, which DevOS ADE never opens.\n'
 }
 
 need_tool() {

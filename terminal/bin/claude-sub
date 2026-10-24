@@ -1,15 +1,15 @@
 #!/bin/bash
-# claude-sub in the bedrock-now sandbox: Claude Code on YOUR Claude plan (Pro, Max, Team or Enterprise) — the image's
+# claude-sub in the DevOS ADE sandbox: Claude Code on YOUR Claude plan (Pro, Max, Team or Enterprise) — the image's
 # own, unmodified Claude Code (/usr/local/bin/claude), signed in with Anthropic's own flow: /login in it, or
 # `claude-sub auth login` (it prints a link; you sign in in your browser and paste the code it shows back here). Its
 # config folder is its own, ~/.claude-subscription (the terminal-home volume): Claude Code keeps the login there
-# (.credentials.json, which bedrock-now never opens) next to its settings and history, apart from ~/.claude (Bedrock's).
+# (.credentials.json, which DevOS ADE never opens) next to its settings and history, apart from ~/.claude (Bedrock's).
 # The stack's own variables are left out of its environment — the gateway and the terminal's LiteLLM key
 # (ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN), Bedrock's model ids, the switches made for Bedrock — so Claude Code uses
 # that login and Anthropic's own models; only its updates stay off (the image pins its version). claude and
 # claude-bedrock here stay on Bedrock. Every option of Claude Code works; `claude-sub auth status|logout` too.
 # Usage counts against your plan's limits (Anthropic: "You can still use the Claude Agent SDK, claude -p, and
-# third-party apps with your subscription limits" — support.claude.com/en/articles/15036540); bedrock-now bills none
+# third-party apps with your subscription limits" — support.claude.com/en/articles/15036540); DevOS ADE bills none
 # of it and shows no $ for it.
 set -euo pipefail
 
@@ -41,8 +41,8 @@ case "${1:-}" in
 claude-sub: Claude Code on your own Claude plan (Pro, Max, Team or Enterprise), in this sandbox
   Sign in  /login in Claude Code, or: claude-sub auth login (a link to open in your browser, then paste the code)
   Check    claude-sub auth status          Sign out  claude-sub auth logout (or /logout)
-  Config   ~/.claude-subscription — your login stays there, in Claude Code's own file; bedrock-now never reads it
-  Usage    counts against your plan's limits; bedrock-now bills none of it
+  Config   ~/.claude-subscription — your login stays there, in Claude Code's own file; DevOS ADE never reads it
+  Usage    counts against your plan's limits; DevOS ADE bills none of it
   Bedrock  claude and claude-bedrock here stay on Bedrock, with the stack's key
   MCP      the stack's shared MCP server is not given to it (CLAUDE_SUB_STACK_MCP=1 gives it, said each time)
   Below    Claude Code's own help

@@ -3,7 +3,7 @@
 // declined; expired; a verification page elsewhere refused), the stored sign-in (mode 600, never a token in an answer,
 // an event, a log line or an error), the token renewed before an operation (once for operations at the same time,
 // written before git gets it, the old one void), a renewal refused → "Sign in again" (no retry loop), a question for
-// another host gets nothing, a GitLab sign-in revoked on Remove, sign-in only from the computer running bedrock-now; and
+// another host gets nothing, a GitLab sign-in revoked on Remove, sign-in only from the computer running DevOS ADE; and
 // bn-coded's net.tunnel: the requests through the sandbox (directly, and through a CONNECT proxy that sees only TLS).
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -84,7 +84,7 @@ async function signIn(g, b, { account = 'alice', polls = 1 } = {}) {
   return { start: v, end: g.signInStatus(v.flowId, false) };
 }
 
-test('which app a sign-in uses: Settings\' value, else the project\'s own — bedrock-now\'s GitHub App; none for gitlab.com', () => {
+test('which app a sign-in uses: Settings\' value, else the project\'s own — DevOS ADE\'s GitHub App; none for gitlab.com', () => {
   assert.deepEqual(DEFAULT_APPS, { github: { clientId: 'Iv23li9eDUUgicar7aTx', appSlug: GITHUB_APP_SLUG }, gitlab: { clientId: '' } });
   assert.match(GITHUB_APP_SLUG, /^[a-z0-9][a-z0-9-]{0,99}$/);
   assert.deepEqual(resolveApp('github', {}), { clientId: 'Iv23li9eDUUgicar7aTx', appSlug: GITHUB_APP_SLUG });
@@ -97,7 +97,7 @@ test('which app a sign-in uses: Settings\' value, else the project\'s own — be
   assert.deepEqual(resolveApp('gitlab', {}, blank), { clientId: '' });
   // a value that is not an ID: none (never another app in its place)
   assert.deepEqual(resolveApp('github', { github: { clientId: 'a b', appSlug: 'Bad Slug' } }), { clientId: '', appSlug: '' });
-  // with no Settings, the page is offered bedrock-now's app on github.com
+  // with no Settings, the page is offered DevOS ADE's app on github.com
   const o = makeOAuth({ store: new GitHosts({ dir: path.join(ROOT, 'defaults') }), connect });
   assert.deepEqual(o.config(), { github: { host: 'github.com', clientId: 'Iv23li9eDUUgicar7aTx', appSlug: GITHUB_APP_SLUG, configured: true },
     gitlab: { host: 'gitlab.com', clientId: null, configured: false } });
@@ -228,8 +228,8 @@ test('declined, expired (by the provider, or before an answer), a provider that 
   await assert.rejects(g2.startSignIn({ provider: 'gitlab', host: 'gitlab.test', clientId: GL, ca: ev.ca }, false), /not on gitlab.test: refused/);
   await new Promise((r) => { evil.closeAllConnections?.(); evil.close(() => r()); });
   assert.equal(store.list().length, 0, 'nothing kept');
-  // started only from the computer running bedrock-now; followed there too; cancelled from anywhere
-  await assert.rejects(g.startSignIn({ provider: 'gitlab', host: 'gitlab.test', clientId: GL, ca: CA }, true), /only from the computer running bedrock-now/);
+  // started only from the computer running DevOS ADE; followed there too; cancelled from anywhere
+  await assert.rejects(g.startSignIn({ provider: 'gitlab', host: 'gitlab.test', clientId: GL, ca: CA }, true), /only from the computer running DevOS ADE/);
   v = await g.startSignIn({ provider: 'gitlab', host: 'gitlab.test', clientId: GL, ca: CA }, false);
   assert.throws(() => g.signInStatus(v.flowId, true), /only from the computer/);
   assert.equal(g.cancelSignIn(v.flowId).state, 'cancelled');
@@ -397,7 +397,7 @@ test('net.tunnel: directly, and through the egress proxy (CONNECT) — the proxy
   const proxy = http.createServer();
   proxy.on('connect', (req, c, head) => {
     seen.connects.push(req.url);
-    if (req.url.startsWith('blocked.test')) { c.end("HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\n\r\nbedrock-now's sandbox proxy: refused — a private address.\n"); return; }
+    if (req.url.startsWith('blocked.test')) { c.end("HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\n\r\nDevOS ADE's sandbox proxy: refused — a private address.\n"); return; }
     const up = net.connect(port, '127.0.0.1', () => { c.write('HTTP/1.1 200 Connection established\r\n\r\n'); if (head.length) up.write(head); c.pipe(up); up.pipe(c); });
     c.on('data', (d) => seen.bytes.push(d));
     up.on('error', () => c.destroy()); c.on('error', () => up.destroy());
@@ -409,7 +409,7 @@ test('net.tunnel: directly, and through the egress proxy (CONNECT) — the proxy
     assert.equal(r.json.error, 'invalid_grant');
     assert.deepEqual(seen.connects, ['gitlab.test:443']);
     assert.ok(!Buffer.concat(seen.bytes).includes('secret-refresh-probe'), 'the proxy sees ciphertext only');
-    await assert.rejects(via('blocked.test', 443), /the sandbox's egress proxy: refused . a private address/);
+    await assert.rejects(via('blocked.test', 443), /the sandbox's egress proxy: refused . a private address\.$/);
     await assert.rejects(via('bad host', 443), /not a host name/);
     await assert.rejects(via('gitlab.test', 70000), /not a port/);
   } finally { delete process.env.HTTPS_PROXY; proxy.close(); }
@@ -418,7 +418,7 @@ test('net.tunnel: directly, and through the egress proxy (CONNECT) — the proxy
 });
 
 // --- the routes ---
-test('the routes: a sign-in only from the computer running bedrock-now; its status there; nothing secret in any answer', async () => {
+test('the routes: a sign-in only from the computer running DevOS ADE; its status there; nothing secret in any answer', async () => {
   const SECRET = 'ab'.repeat(16);
   const store = new GitHosts({ dir: path.join(ROOT, 'routes'), now });
   const dist = tmp('bndist');

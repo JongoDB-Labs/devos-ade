@@ -1,7 +1,7 @@
 {
   "name": "bedrock-now-terminal-grok-build",
   "private": true,
-  "description": "xAI's Grok Build CLI for the bedrock-now sandbox, pinned (npm ci checks every tarball against package-lock.json)",
+  "description": "xAI's Grok Build CLI for the DevOS ADE sandbox, pinned (npm ci checks every tarball against package-lock.json)",
   "dependencies": {
     "@xai-official/grok": "1.0.67"
   }

@@ -11,3 +11,33 @@ install.sh	PRODUCT_LEGACY_REPO="JongoDB-Labs/bedrock-now"	install.sh's own copy 
 install.sh	~/bedrock-now when an install made before v0.25.0	the folder of installs made before v0.25.0, found and kept
 install.sh	unless that is not there and ~/bedrock-now	the folder of installs made before v0.25.0, found and kept
 lib/guard.sh	grep -qE 'bedrock-now|DevOS ADE'	a checkout under either name (its stack file says one)
+code/server/harness/claude.mjs	'bedrock-now'	the stored import source of a claude-bedrock session (read back from records)
+code/server/import-plan.mjs	'bedrock-now'	the stored import source of a claude-bedrock session
+code/server/import-sessions.mjs	'bedrock-now'	the stored import source of a claude-bedrock session
+.env.example	Service base name (bedrock-now[-<project>])	the Tailscale Service base name (an internal name: the remote addresses are made from it)
+lib/claude_config.sh	.bedrock-now-claude-md-hint	a marker file in your claude-bedrock config folder (renaming it would show the hint again)
+lib/portal.sh	${p:-bedrock-now-2}	the portal host of a second copy whose name has no letters left (an internal host name)
+lib/remote.sh	if [ "$p" = "$DEFAULT_PROJECT" ]; then b=bedrock-now	the Tailscale Service base name (an internal name: the remote addresses are made from it)
+lib/remote.sh	else b="bedrock-now-	the Tailscale Service base name of a second copy (an internal name)
+lib/open.sh	local p name=bedrock-now	the browser profile folder of BEDROCK_NOW_OPEN_MODE=window (its sign-ins are there)
+lib/open.sh	name="bedrock-now-$p"	the browser profile folder of a second copy (its sign-ins are there)
+README.md	also for an install made before v0.25.0 in `~/bedrock-now`	the folder of installs made before v0.25.0 (the installer finds it there)
+README.md	an app installed before v0.25.0 is named `bedrock-now`	the installed app keeps its old name until its new one is accepted
+README.md	`bedrock-now`; at most 54 characters	TS_SERVICE's default: the Tailscale Service name (remote addresses depend on it)
+README.md	(`~/bedrock-now`), its addresses	the folder of installs made before v0.25.0
+docs/advanced.md	project name (default `bedrock-now`	the Compose project keeps its name (data volumes)
+docs/advanced.md	(`project 'bedrock-now' is already used	the Compose project name, quoted from the message
+docs/advanced.md	`.bedrock-now-claude-md-hint`	claude-bedrock's marker file in its config folder
+code/web/src/api.ts	source: o.source === 'bedrock-now'	the import source a copied session is stored with (claude-bedrock's): a stored value, not shown
+code/web/src/types.ts	source: 'bedrock-now' | 'bedrock'	the import source a copied session is stored with (claude-bedrock's): a stored value, not shown
+docs/cloud-vm.md	PROJECT=bedrock-now	the Compose project keeps its name (its containers carry it)
+terminal/bin/bn-coded.mjs	(?:DevOS ADE|bedrock-now)'s sandbox proxy	the egress proxy's refusal prefix before v0.25.0, still taken off (an image of either version may meet the other)
+code/web/dev/mock-server.mjs	format: 'tested', source: 'bedrock-now' }	the mock's copy of the stored import source (claude-bedrock's sessions)
+code/web/dev/mock-server.mjs	r.source !== 'bedrock-now'	the mock's copy of the stored import source (claude-bedrock's sessions)
+docs/openrouter.md	(as bedrock-now before v0.25.0)	OpenRouter's earlier requests carry the old name
+docs/phone-claude-code.md	(~/bedrock-now if you installed before v0.25.0)	the folder of installs made before v0.25.0
+docs/remote.md	four times — `bedrock-now`,	the Tailscale Service names stay (remote addresses depend on them)
+CHANGELOG.md	is found in `~/bedrock-now`	the folder of installs made before v0.25.0
+CHANGELOG.md	IAM condition on `bedrock-now-portal`	the AWS session name before v0.25.0, for a filter that needs editing
+CHANGELOG.md	from `JongoDB-Labs/bedrock-now` to	the repository's name before v0.25.0 (origin is moved from it)
+CHANGELOG.md	(`bedrock-now` still works)	uninstall still takes the old name as its confirmation

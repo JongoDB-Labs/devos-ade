@@ -186,9 +186,9 @@ if (wants(args) && !OWN_TOKENS.some((k) => process.env[k])) {
       env.GH_TOKEN = token;
       if (host !== 'github.com' && !env.GH_HOST) env.GH_HOST = host;
     } else if (cloud(host)) {
-      process.stderr.write(`gh: no login for ${host} from bedrock-now — to give gh yours, connect that host in the Code page's Git panel › Hosts and turn on Let Claude use this host (gh goes on without one)\n`);
+      process.stderr.write(`gh: no login for ${host} from DevOS ADE — to give gh yours, connect that host in the Code page's Git panel › Hosts and turn on Let Claude use this host (gh goes on without one)\n`);
     } else {
-      process.stderr.write(`gh: bedrock-now gives gh a login for github.com and *.ghe.com only, not for ${host} — run gh auth login --hostname ${host} in the terminal for it (gh goes on without one)\n`);
+      process.stderr.write(`gh: DevOS ADE gives gh a login for github.com and *.ghe.com only, not for ${host} — run gh auth login --hostname ${host} in the terminal for it (gh goes on without one)\n`);
     }
   }
 }

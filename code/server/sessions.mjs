@@ -19,6 +19,7 @@ import { said } from './agents/jsonrpc.mjs';
 import { SessionError } from './session-error.mjs';
 import { AgentSession, AGENT_MODES } from './agents/session.mjs';
 import { AGENT_TOOLS, HARNESSES, harnessOk } from './agents/tools.mjs';
+import { PRODUCT } from './brand.mjs';
 
 const KEEP = 16;   // session objects kept (open or ended) for re-attaching; the oldest ended ones go first
 const STDERR_LINES = 20, STDERR_WINDOW_MS = 10000;   // Claude Code's stderr in the log: at most this much per session
@@ -30,8 +31,8 @@ const AUTO_OFF_MS = 15000;   // how long the first prompt waits for the start's 
 const WATCH_MS = 5000;       // how long a turn's first prompt waits for the watched files' snapshot (then it goes anyway)
 const REVERTS_KEPT = 10;     // watch events per session whose Revert stays possible (the oldest go) …
 const REVERT_BYTES = 4 << 20; // … and at most this much of their copies
-const BYPASS_OFF = 'Bypass permissions is off: turn it on in Settings › Claude Code, from the computer running bedrock-now';
-const AUTO_OFF = 'Auto mode is off: turn it on in Settings › Claude Code, from the computer running bedrock-now';
+const BYPASS_OFF = `Bypass permissions is off: turn it on in Settings › Claude Code, from the computer running ${PRODUCT}`;
+const AUTO_OFF = `Auto mode is off: turn it on in Settings › Claude Code, from the computer running ${PRODUCT}`;
 // Claude Code refused auto mode: the sandbox's managed settings (from TERMINAL_AUTO_MODE / CODE_AUTO_MODE at the
 // terminal container's start) still say off, or the session's model is not one auto mode supports
 // autoRefused(e) -> {text, said}: why Claude Code did not start in Auto, in our words where we know it — its own message

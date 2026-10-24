@@ -1,4 +1,4 @@
-// The reader of Claude Code's and claude-bedrock's session stores on the computer running bedrock-now (./stack sessions,
+// The reader of Claude Code's and claude-bedrock's session stores on the computer running DevOS ADE (./stack sessions,
 // lib/sessions.sh). It runs in a throwaway container of the code image — no network, read-only, no capability, as you
 // — with only the store folder(s) of one project mounted, read-only: ~/.claude/projects/<folder> (Claude Code) and
 // ~/.claude-bedrock/projects/<folder> (claude-bedrock), the folder named after the project's path as Claude Code names
@@ -229,7 +229,7 @@ export function parts(dir, id) {
   return { list: out, skipped };
 }
 
-// source(tool, models): where the session's model calls went — bedrock-now (claude-bedrock: LiteLLM, the stack's own
+// source(tool, models): where the session's model calls went — 'bedrock-now' (claude-bedrock: LiteLLM, the stack's own
 // models), Bedrock (Claude Code with Bedrock's own model ids), or anthropic (any other: Anthropic's API, a Claude
 // subscription — thinking blocks signed there may not be accepted on Bedrock)
 export function sourceOf(tool, models) {

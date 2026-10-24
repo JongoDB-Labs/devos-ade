@@ -2,7 +2,7 @@
 // page flags) read by the reader, taken in by the code container (import-setup.mjs: only items of the last look, each
 // file whole, each value by allowlist), checked (setup-plan.mjs: flags, findings, secret choices, tokens, the exact
 // bytes — a preview never holds a secret) and copied into a fake sandbox by a real bn-coded on a socket of its own,
-// whose `claude` is a stand-in that keeps MCP servers and plugins in files: replaced only what bedrock-now copied
+// whose `claude` is a stand-in that keeps MCP servers and plugins in files: replaced only what DevOS ADE copied
 // before, the sandbox's own left unless you choose (then into its trash), merged settings, secrets left out unless
 // kept, a digest that refuses a copy of anything that changed since the check. Never a real home or sandbox.
 import { test, before, after } from 'node:test';
@@ -108,7 +108,7 @@ test('the look: names and sizes in the list; an open takes in only items of it, 
   assert.equal(setup.staged().length, 3);
 });
 
-test('CLAUDE.md: sent with every request (tokens said), its secret redacted, replaced only while it is bedrock-now\'s; appended; the sandbox\'s own left unless you choose', async () => {
+test('CLAUDE.md: sent with every request (tokens said), its secret redacted, replaced only while it is DevOS ADE\'s; appended; the sandbox\'s own left unless you choose', async () => {
   const k = [keyOf(row('memory', 'CLAUDE.md'))];
   const p = await setup.preview(k, {});
   assert.ok(p.tokens.every > 9000 && p.tokens.every < 14000, `≈ 10k tokens, not ${p.tokens.every}`);
@@ -132,7 +132,7 @@ test('CLAUDE.md: sent with every request (tokens said), its secret redacted, rep
   fs.appendFileSync(path.join(CONF, 'CLAUDE.md'), '\nmy own line in the sandbox\n');
   await openRows([row('memory', 'CLAUDE.md')]);
   o = await copyOne(k);
-  assert.match(o.p.conflict.why, /changed in the sandbox since bedrock-now copied it/);
+  assert.match(o.p.conflict.why, /changed in the sandbox since DevOS ADE copied it/);
   assert.equal(o.r.nothing, true);
   assert.match(fs.readFileSync(path.join(CONF, 'CLAUDE.md'), 'utf8'), /my own line/);
   await openRows([row('memory', 'CLAUDE.md')]);
@@ -176,7 +176,7 @@ test('a skill: its programs and paths of the computer flagged, its binary file l
   setup.drop(k[0]);
 });
 
-test('settings: four keys only, merged into the sandbox\'s own — what bedrock-now added before replaced, env never; flags for rules and programs', async () => {
+test('settings: four keys only, merged into the sandbox\'s own — what DevOS ADE added before replaced, env never; flags for rules and programs', async () => {
   fs.writeFileSync(path.join(CONF, 'settings.json'), JSON.stringify({ theme: 'dark', permissions: { allow: ['Read'], defaultMode: 'acceptEdits' }, hooks: { Stop: [{ hooks: [{ type: 'command', command: 'mine' }] }] } }, null, 2));
   look();
   const rows = ['permissions', 'hooks', 'statusLine', 'outputStyle'].map((n) => row('setting', n));
@@ -201,7 +201,7 @@ test('settings: four keys only, merged into the sandbox\'s own — what bedrock-
   assert.match(j.hooks.SessionStart[0].hooks[0].command, /Authorization: Bearer \[REDACTED/);
   assert.ok(!('env' in j) && !('apiKeyHelper' in j) && !('model' in j) && !('BogusEvent' in j.hooks));
   assert.equal(j.statusLine.command, '~/.claude/statusline.sh');
-  // a rule of the sandbox's own added since stays; a rule bedrock-now added that is gone on the computer goes
+  // a rule of the sandbox's own added since stays; a rule DevOS ADE added that is gone on the computer goes
   j.permissions.allow.push('Bash(make:*)');
   fs.writeFileSync(path.join(CONF, 'settings.json'), JSON.stringify(j, null, 2));
   const hs = JSON.parse(fs.readFileSync(path.join(F.claude, 'settings.json'), 'utf8'));
@@ -214,7 +214,7 @@ test('settings: four keys only, merged into the sandbox\'s own — what bedrock-
   // (a rule it still brings keeps its place)
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(CONF, 'settings.json'), 'utf8')).permissions.allow, ['Read', 'Bash(npm run test:*)', 'Bash(make:*)']);
   // (and the rules it no longer brings are said before they go)
-  assert.ok(o.p.flags.some((f) => /2 rules bedrock-now copied from Claude Code before.*taken out/.test(f.text) && f.items.includes('allow: Bash(rm:*)') && f.items.includes('allow: Read(/home/alex/**)')),
+  assert.ok(o.p.flags.some((f) => /2 rules DevOS ADE copied from Claude Code before.*taken out/.test(f.text) && f.items.includes('allow: Bash(rm:*)') && f.items.includes('allow: Read(/home/alex/**)')),
     JSON.stringify(o.p.flags));
   // the status line changed in the sandbox: a conflict, left by default
   const j2 = JSON.parse(fs.readFileSync(path.join(CONF, 'settings.json'), 'utf8'));

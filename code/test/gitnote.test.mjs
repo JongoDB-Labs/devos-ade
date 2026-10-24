@@ -18,7 +18,7 @@ const ROOT = tmp('bnnote');
 after(() => fs.rmSync(ROOT, { recursive: true, force: true }));
 const TOKEN = ['secret', crypto.randomBytes(8).toString('hex')].join('-');   // (made here: no token-shaped literal)
 const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
-const HEAD = '# Git in this sandbox (bedrock-now)\nYou run in bedrock-now\'s sandbox. Git logins here are not in ~/.gitconfig, ~/.ssh or the environment, '
+const HEAD = '# Git in this sandbox (DevOS ADE)\nYou run in DevOS ADE\'s sandbox. Git logins here are not in ~/.gitconfig, ~/.ssh or the environment, '
   + 'nor normally in ~/.config/gh (a gh auth login the user made in the terminal is used as it is), and need not be: for a Git host the user lets you use, '
   + 'git\'s credential helper (bn-git-credential, set in /etc/gitconfig) and the sandbox\'s SSH agent get the user\'s login from the Code page each time git '
   + 'needs one, and the user sees each use in Activity. Never ask the user for a token, and never put one in a file, a remote URL or a command.\n\n';

@@ -148,7 +148,7 @@ test('a read done by the helper waits here; the preview never has the secret, an
   const withOutputs = (await req('GET', `/api/imports/preview?project=${ID}&id=${A}&outputs=1`)).json;
   assert.deepEqual([withOutputs.outputs.included, withOutputs.outputs.left], [true, 0]);
   assert.ok(withOutputs.events.some((e) => e.type === 'tool_result' && /export const main/.test(e.text)));
-  assert.ok(r.json.events.some((e) => e.type === 'tool_result' && /tool output left out by bedrock-now/.test(e.text)));
+  assert.ok(r.json.events.some((e) => e.type === 'tool_result' && /tool output left out by DevOS ADE/.test(e.text)));
 });
 
 test('the copy: nothing kept here (keeping needs the password: the portal), the digest checked; badged; its first open in Manual — a fork\'s too, marked once it opened', async () => {

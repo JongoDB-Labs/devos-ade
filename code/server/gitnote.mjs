@@ -8,6 +8,7 @@
 // It says what the hosts were when the session's process started: a change restarts that process at the session's
 // next prompt (sessions.mjs, gitRestart).
 import { HOST, ACCOUNT, HOSTS_MAX } from './githosts.mjs';
+import { PRODUCT } from './brand.mjs';
 
 const KIND = { github: 'GitHub', gitlab: 'GitLab' };
 const WHERE = 'the Git panel › Hosts';
@@ -16,8 +17,8 @@ const ACCOUNT_MAX = 64;
 const ghCloud = (h) => (h.host === 'github.com' || /\.ghe\.com$/.test(h.host)) && (h.port ?? 443) === 443;
 
 const HEAD = [
-  '# Git in this sandbox (bedrock-now)',
-  'You run in bedrock-now\'s sandbox. Git logins here are not in ~/.gitconfig, ~/.ssh or the environment, nor normally in '
+  `# Git in this sandbox (${PRODUCT})`,
+  `You run in ${PRODUCT}'s sandbox. Git logins here are not in ~/.gitconfig, ~/.ssh or the environment, nor normally in `
     + '~/.config/gh (a gh auth login the user made in the terminal is used as it is), and need not be: for a Git host the '
     + 'user lets you use, git\'s credential helper (bn-git-credential, set in /etc/gitconfig) and the sandbox\'s SSH agent get '
     + 'the user\'s login from the Code page each time git needs one, and the user sees each use in Activity. Never ask the '

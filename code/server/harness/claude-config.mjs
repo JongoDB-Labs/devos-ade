@@ -1,4 +1,4 @@
-// The reader of your Claude Code setup on the computer running bedrock-now (./stack sessions config; lib/sessions_config.sh)
+// The reader of your Claude Code setup on the computer running DevOS ADE (./stack sessions config; lib/sessions_config.sh)
 // — Bring your setup on the Code page. It runs in a throwaway container of the code image, as the session reader does
 // (harness/claude.mjs): no network, read-only, no capability, as you — with only the items of the setup it may offer
 // mounted, each read-only, each one by one (never ~/.claude whole): CLAUDE.md, settings.json, keybindings.json, the

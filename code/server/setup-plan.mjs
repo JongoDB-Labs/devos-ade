@@ -14,9 +14,9 @@
 // not written; a server whose URL, arguments or command would have to be changed is not copied unless it is kept.
 // Keeping one needs the portal password (the page asks the portal; the update helper makes that copy).
 //
-// Merges keep what is the sandbox's own: settings.json's permissions and hooks get yours added (what bedrock-now added
+// Merges keep what is the sandbox's own: settings.json's permissions and hooks get yours added (what DevOS ADE added
 // before replaced, never the sandbox's own rules), statusLine and outputStyle and every file are replaced only when they
-// are what bedrock-now copied before — else that is a conflict, left as it is unless you choose to replace it (and what
+// are what DevOS ADE copied before — else that is a conflict, left as it is unless you choose to replace it (and what
 // is replaced goes to the sandbox's trash folder, never deleted: bn-coded setup.write).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,6 +26,7 @@ import { processEntries, scan as scanText, isSecretName, masked, keepToken, reda
 import { frontmatter, listed, tokens, mcpOf, keybindingsOf, SETTING_KEYS, SETTING_OF, PLAIN, FILE_PART, MCP_NAME, PLUGIN_ID } from './harness/claude-config.mjs';
 import { ImportError } from './import-plan.mjs';
 import { frontMatter, shellBlocks } from './trust.mjs';
+import { PRODUCT } from './brand.mjs';
 
 // (the import's own error: a status and fixed words — the worker hands it back as it is)
 export const SetupError = ImportError;
@@ -393,7 +394,7 @@ function scanValue(value, keep, key) {
 // findingsOut(list) -> what the page shows of findings: never a whole secret (masked; words around it with it masked)
 const findingsOut = (list) => list.slice(0, 500).map((f) => ({ id: f.id, kind: f.kind, label: f.label, file: f.file ?? null, preview: f.preview, context: f.context, keepable: f.keepable }));
 const fileWrite = (dest, text, cur) => ({ dest, type: 'file', if: cur?.exists ? cur.sha256 : 'absent', text, sha256: sha256(Buffer.from(text, 'utf8')), size: Buffer.byteLength(text) });
-// (the other tool whose settings bedrock-now may have copied too: its rules are never taken out by this one's copy)
+// (the other tool whose settings DevOS ADE may have copied too: its rules are never taken out by this one's copy)
 const SETTINGS_TOOLS = ['claude', 'claude-bedrock'];
 const strList = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
 // the hook groups a record names, as the page says them: "Event: command; command"
@@ -432,10 +433,10 @@ export function planUnit(job) {
   const m = first;
   const tool = m.tool;
   const found = (n) => (Object.hasOwn(which, n) ? which[n] === true : null);
-  const conflictOf = (dest, rec, own = 'the sandbox has one of its own') => conflicts.push({ dest, why: rec ? 'it changed in the sandbox since bedrock-now copied it' : own });
-  // (what bedrock-now copied there before from the other tool: replaced, and said)
+  const conflictOf = (dest, rec, own = 'the sandbox has one of its own') => conflicts.push({ dest, why: rec ? `it changed in the sandbox since ${PRODUCT} copied it` : own });
+  // (what DevOS ADE copied there before from the other tool: replaced, and said)
   const otherTool = (rec, dest) => {
-    if (rec && typeof rec.tool === 'string' && rec.tool !== tool && TOOL_LABEL[rec.tool]) flags.push(flag('warn', `It replaces the ${dest} bedrock-now copied from ${TOOL_LABEL[rec.tool]} before.`));
+    if (rec && typeof rec.tool === 'string' && rec.tool !== tool && TOOL_LABEL[rec.tool]) flags.push(flag('warn', `It replaces the ${dest} ${PRODUCT} copied from ${TOOL_LABEL[rec.tool]} before.`));
   };
   // a program a command runs, as the sandbox may have it: there, missing, unknown (named through a variable, or a path
   // the sandbox is never asked about), in the project's folder — and in a folder Claude can write
@@ -497,7 +498,7 @@ export function planUnit(job) {
       }
     }
   };
-  // a file's destination: new, bedrock-now's own copy (replaced), the same already, or the sandbox's own (a conflict)
+  // a file's destination: new, DevOS ADE's own copy (replaced), the same already, or the sandbox's own (a conflict)
   const fileTarget = (dest, text, cur, rec) => {
     if (cur && cur.exists && (cur.type !== 'file' || !/^[0-9a-f]{64}$/.test(String(cur.sha256)))) { blocked = `${dest} in the sandbox is not a regular file of at most 1 MiB: change it in the terminal`; return; }
     if (cur && cur.exists && cur.sha256 === sha256(Buffer.from(text, 'utf8'))) { action = 'none'; flags.push(flag('info', 'The sandbox has exactly this already: nothing to copy.')); return; }
@@ -528,7 +529,7 @@ export function planUnit(job) {
         if (v0 === undefined) { blocked = 'a setting that is not one of the shapes copied'; break; }
         const sv = scanValue(v0, keep, it.meta.hmac);
         findings.push(...sv.findings); redacted += sv.redacted; kept += sv.kept;
-        // (what bedrock-now copied before is kept apart by tool: one tool's copy never takes out the other's rules)
+        // (what DevOS ADE copied before is kept apart by tool: one tool's copy never takes out the other's rules)
         const v = sv.value, recKey = (t) => `settings.json#${k}@${t}`, rec = records[recKey(tool)] ?? null;
         const others = SETTINGS_TOOLS.filter((t) => t !== tool).map((t) => records[recKey(t)]).filter(isObj);
         if (k === 'permissions') {
@@ -553,7 +554,7 @@ export function planUnit(job) {
           if (blocked) break;
           j.permissions = p;
           record[recKey(tool)] = { added, wanted, tool };
-          if (removed.length) flags.push(flag('warn', `${removed.length} rule${removed.length === 1 ? '' : 's'} bedrock-now copied from ${TOOL_LABEL[tool]} before, which your computer's settings no longer have: taken out of the sandbox's settings.`, removed));
+          if (removed.length) flags.push(flag('warn', `${removed.length} rule${removed.length === 1 ? '' : 's'} ${PRODUCT} copied from ${TOOL_LABEL[tool]} before, which your computer's settings no longer have: taken out of the sandbox's settings.`, removed));
           const allow = strList(v.allow);
           // (a whole tool allowed: said in its own words, and from another device only with the password)
           const said = new Set();
@@ -594,7 +595,7 @@ export function planUnit(job) {
           }
           j.hooks = h;
           record[recKey(tool)] = { added, wanted, tool };
-          if (removed.length) flags.push(flag('warn', `${removed.length} hook group${removed.length === 1 ? '' : 's'} bedrock-now copied from ${TOOL_LABEL[tool]} before, which your computer's settings no longer have: taken out of the sandbox's settings.`, removed));
+          if (removed.length) flags.push(flag('warn', `${removed.length} hook group${removed.length === 1 ? '' : 's'} ${PRODUCT} copied from ${TOOL_LABEL[tool]} before, which your computer's settings no longer have: taken out of the sandbox's settings.`, removed));
           const cmds = Object.values(v).flatMap((gs) => gs.flatMap((g) => g.hooks.map((x) => x.command)));
           flags.push(flag('warn', `${cmds.length} hook${cmds.length === 1 ? '' : 's'} run programs in the sandbox on their own, at ${Object.keys(v).join(', ')}.`, cmds.map((c) => redactText(c).slice(0, 200))));
           grants.push('hooks run programs on their own');
@@ -602,7 +603,7 @@ export function planUnit(job) {
           pathFlags(cmds);
           if (it.meta.dropped) flags.push(flag('info', `${it.meta.dropped} hook${it.meta.dropped === 1 ? '' : 's'} or setting${it.meta.dropped === 1 ? '' : 's'} of other kinds (prompt or agent hooks, unknown events) left out.`));
         } else {
-          // statusLine, outputStyle: one value — the sandbox's own is a conflict; bedrock-now's copy from the other tool, said
+          // statusLine, outputStyle: one value — the sandbox's own is a conflict; DevOS ADE's copy from the other tool, said
           const single = records[`settings.json#${k}`] ?? null;
           const curv = j[k];
           if (curv === undefined || stable(curv) === stable(v) || (single && stable(curv) === single.value)) {

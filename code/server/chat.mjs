@@ -44,7 +44,7 @@ const MAX_RECORDS = 500;
 export const CHAT_SYSTEM = 'You are Claude, made by Anthropic, answering in a chat app (Open WebUI) on the user\'s own Claude plan. Reply to the conversation in Markdown. You have no tools, files or web access here.';
 
 const obj = (v) => (v !== null && typeof v === 'object' && !Array.isArray(v) ? v : {});
-// Open WebUI's own additions to an earlier answer: its reasoning and tool blocks (<details …>), and bedrock-now's cost line
+// Open WebUI's own additions to an earlier answer: its reasoning and tool blocks (<details …>), and DevOS ADE's cost line
 const stripAnswer = (t) => t.replace(/<details\b[^>]*>[\s\S]*?<\/details>/gi, '').replace(/\n*\*(?:≈ |free · |on your )[^*\n]*\*\s*$/u, '').trim();
 
 /** messages -> {system, turns: [{role, text}], prompt, images} or {error} (the last message must be yours) */

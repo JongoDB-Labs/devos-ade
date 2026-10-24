@@ -114,7 +114,7 @@ test('the dev server never sees hop-by-hop headers, the port header or the proxi
   const h = seen.at(-1).headers;
   for (const k of ['x-forwarded-host', 'x-forwarded-for', 'x-forwarded-proto', 'forwarded', 'x-real-ip', 'via', 'x-bn-preview-port',
     'x-bn-preview-0abc', 'x-secret-hop', 'proxy-authorization', 'te', 'keep-alive']) assert.equal(h[k], undefined, k);
-  assert.equal(h.cookie, 'app=1');          // the app's own cookies pass (bedrock-now's never come here: another site)
+  assert.equal(h.cookie, 'app=1');          // the app's own cookies pass (DevOS ADE's never come here: another site)
   assert.equal(h['x-app'], 'kept');
   assert.equal(h.host, `localhost:${devPort}`);
 });
@@ -207,7 +207,7 @@ test('an app\'s own frame-ancestors goes (the main Caddy adds the previews\' one
   assert.equal(pv.withoutFrameAncestors("default-src 'self'; frame-ancestors-x y"), "default-src 'self'; frame-ancestors-x y");
 });
 
-test('what is left of the Cookie header after the main Caddy took bedrock-now\'s cookies out: tidied, or none', async () => {
+test('what is left of the Cookie header after the main Caddy took DevOS ADE\'s cookies out: tidied, or none', async () => {
   seen.length = 0;
   await req('GET', '/c1', { headers: { Cookie: '; app=1' } });
   await req('GET', '/c2', { headers: { Cookie: ';  ' } });

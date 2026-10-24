@@ -1,6 +1,6 @@
 // Git hosts (the Code page's Git panel › Git hosts; Settings › Claude Code links here): the git servers you connect
 // for clone, fetch, pull and push — GitHub, GitLab or any https/ssh host — each with an HTTPS access token (one may come
-// from a gh / glab login on the computer running bedrock-now: ./stack git-host import, import-host.mjs — its source,
+// from a gh / glab login on the computer running DevOS ADE: ./stack git-host import, import-host.mjs — its source,
 // account and scopes kept with it, for the page), an SSH key made here, or a sign-in (auth "oauth": GitHub's or
 // GitLab's device flow, oauth.mjs), whose token is handed to git like an access token and renewed before it expires.
 // They are kept in this container's own volume (code-state, at /var/lib/bn-code: compose.code.yaml), in one file of
@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { newKey, loadKey, knownHostFingerprint, KNOWN_HOSTS } from './sshagent.mjs';
+import { PRODUCT_SLUG } from './brand.mjs';
 
 export const STATE_DIR = process.env.BN_CODE_STATE || '/var/lib/bn-code';
 export const KINDS = ['github', 'gitlab', 'other'];
@@ -224,7 +225,7 @@ export class GitHosts {
       if (imported) h.imported = imported;
       if (b.ca !== undefined && b.ca !== null && b.ca !== '') h.ca = checkCa(b.ca);
     } else {
-      const k = newKey(`bedrock-now ${label}`);
+      const k = newKey(`${PRODUCT_SLUG} ${label}`);
       h.ssh = { privatePem: k.privatePem, publicKey: k.publicKey, fingerprint: k.fingerprint, createdAt: this.now() };
       if (b.knownHosts !== undefined) h.knownHosts = checkKnown(b.knownHosts, host, port);
     }
@@ -237,7 +238,7 @@ export class GitHosts {
     });
   }
   // addImport({source, host, label, token, account, scopes, expiresAt}) -> the new host (public): a gh / glab login of
-  // the computer running bedrock-now (import-host.mjs), kept as an access token like any other — with where it came
+  // the computer running DevOS ADE (import-host.mjs), kept as an access token like any other — with where it came
   // from, its account and scopes for the page (and a glab token's expiry), never renewed (gh's does not expire)
   addImport(b) {
     const source = IMPORT_SOURCES.includes(b?.source) ? b.source : null;
@@ -313,7 +314,7 @@ export class GitHosts {
   newKey(id) {
     return this.change(id, (h) => {
       if (h.auth !== 'ssh') throw new HostError(400, h.auth === 'oauth' ? 'that host is signed in (https)' : 'that host uses a token');
-      const k = newKey(`bedrock-now ${h.label}`);
+      const k = newKey(`${PRODUCT_SLUG} ${h.label}`);
       h.ssh = { privatePem: k.privatePem, publicKey: k.publicKey, fingerprint: k.fingerprint, createdAt: this.now() };
     });
   }
@@ -362,7 +363,7 @@ export class GitHosts {
     const builtIn = !port || port === 22 ? KNOWN_HOSTS[h.host] || [] : [];
     return [...builtIn, ...(h.knownHosts || [])];
   }
-  static key(h) { const k = h.ssh ? loadKey(h.ssh.privatePem) : null; return k ? { ...k, comment: `bedrock-now ${h.label}` } : null; }
+  static key(h) { const k = h.ssh ? loadKey(h.ssh.privatePem) : null; return k ? { ...k, comment: `${PRODUCT_SLUG} ${h.label}` } : null; }
 
   // a remote URL you fetched or pulled from before (and confirmed the first time)
   fetchedBefore(url) { return Boolean(this.read().fetched[url]); }

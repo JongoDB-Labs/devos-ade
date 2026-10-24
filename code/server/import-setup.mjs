@@ -1,4 +1,4 @@
-// Your Claude Code setup from the computer running bedrock-now, copied into the sandbox (Bring your setup: the Code
+// Your Claude Code setup from the computer running DevOS ADE, copied into the sandbox (Bring your setup: the Code
 // page's sheet; ./stack sessions config, lib/sessions_config.sh). The computer's ~/.claude, ~/.claude-bedrock and
 // ~/.gitconfig are read on the computer only — by the reader (harness/claude-config.mjs) in a throwaway container,
 // after you allowed it there — and what it read arrives here on stdin of `docker compose exec -T code node
@@ -12,7 +12,7 @@
 //
 //   /var/lib/bn-code/imports/     (code-state; mode 700, files 600)
 //     setup-index.json            the last look: what your setup holds (replaced by the next look; forgotten on revoke)
-//     setup-copied.json           what bedrock-now copied into the sandbox, by destination (a later copy replaces only that)
+//     setup-copied.json           what DevOS ADE copied into the sandbox, by destination (a later copy replaces only that)
 //   /run/bn-import-stage/setup/<item>/   (tmpfs) the items opened, until copied, dropped, or an hour old
 import fs from 'node:fs';
 import path from 'node:path';
@@ -316,7 +316,7 @@ export class Setup {
     return { items: done.length, skipped: skipped.filter((s) => s.n !== null) };
   }
 
-  // --- what was copied: by destination (a later copy replaces only what bedrock-now wrote), and by item (the list) ---
+  // --- what was copied: by destination (a later copy replaces only what DevOS ADE wrote), and by item (the list) ---
   records() {
     const v = readJsonFile(path.join(this.dir, 'setup-copied.json'), 16 << 20);
     return { dests: isObj(v?.dests) ? v.dests : {}, items: isObj(v?.items) ? v.items : {} };

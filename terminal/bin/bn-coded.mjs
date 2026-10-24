@@ -1575,7 +1575,7 @@ export const GIT_PANEL_CONFIG = [
   ['commit.cleanup', 'whitespace'], ['commit.status', 'false'], ['commit.verbose', 'false'], ['status.showStash', 'false'],
   ['status.submoduleSummary', 'false'], ['status.relativePaths', 'false'],
 ];
-export const GIT_DEFAULT_IDENTITY = { name: 'bedrock-now Code page', email: 'code-page@bedrock-now.invalid' };
+export const GIT_DEFAULT_IDENTITY = { name: 'DevOS ADE Code page', email: 'code-page@devos-ade.invalid' };
 const GIT_MESSAGE_MAX = 64 << 10, GIT_PATHS_MAX = 100, GIT_PATHS_BYTES = 64 << 10, GIT_LOG_N = 20, GIT_FILE_PATCH_MAX = 2 << 20;
 // the Git panel's argument lists (a test checks that nothing else is ever run)
 export const GIT_PANEL_PRE = [...GIT_PRE, '--literal-pathspecs'];
@@ -3400,6 +3400,9 @@ export async function gitTest(req, { git = GIT, deadlineMs = 60000, ask } = {}) 
 // to it (STDIN_END: its half closed), EXIT when it closed. At most TUNNEL_MAX at once, TUNNEL_BYTES each way, for
 // TUNNEL_MS.
 const TUNNEL_MAX = 4, TUNNEL_BYTES = 2 << 20, TUNNEL_MS = 120000, TUNNEL_CONNECT_MS = 15000;
+// bn-egress's refusals start with its name, taken off here: "DevOS ADE's sandbox proxy: " — or the name before v0.25.0's,
+// from a proxy of an image built before it (the code container and the sandbox may be of two versions for a moment)
+const PROXY_PREFIX = /^(?:DevOS ADE|bedrock-now)'s sandbox proxy: /;
 let tunnels = 0;
 // tunnelConnect(host, port) -> a connected socket (after the proxy's 200, when there is one), or throws why not
 export function tunnelConnect(host, port, { proxy = egressProxy(), connectMs = TUNNEL_CONNECT_MS } = {}) {
@@ -3425,7 +3428,7 @@ export function tunnelConnect(host, port, { proxy = egressProxy(), connectMs = T
       s.removeListener('data', onData);
       const lines = head.subarray(0, i).toString('latin1').split('\r\n');
       if (!/^HTTP\/1\.[01] 200( |$)/.test(lines[0])) {
-        const body = head.subarray(i + 4).toString('utf8').split('\n')[0].replace(/^bedrock-now's sandbox proxy: /, '');
+        const body = head.subarray(i + 4).toString('utf8').split('\n')[0].replace(PROXY_PREFIX, '');
         fail(`the sandbox's egress proxy: ${printable(body || lines[0], 200)}`);
         return;
       }
@@ -3968,7 +3971,7 @@ export async function launchStart(name, digest, { tmux = tmuxBin(), root = WS_RO
   // the command as its own arguments (no shell parses them), the program file shown before Start, in the window's
   // terminal; this file's runner (--run-tty) says how it ended; then bash stays as the window's shell
   const args = ['new-window', '-d', '-t', `=${TMUX_SESSION}:`, '-n', window, '-c', tmuxDir(cwd), ...WINDOW_CLEAR, '--',
-    ...windowCommand('bedrock-now launch', env, [node, SELF, '--run-tty', `launch.json "${c.name}"`.slice(0, 120), '--', c.program, ...c.argv.slice(1)])];
+    ...windowCommand('DevOS ADE launch', env, [node, SELF, '--run-tty', `launch.json "${c.name}"`.slice(0, 120), '--', c.program, ...c.argv.slice(1)])];
   const r = await run(tmux, args);
   if (r.code !== 0) throw new Error(`tmux: ${printable(r.err, 200) || `exit ${r.code}`}`);
   return { ok: true, name: c.name, window, port: c.port, command: c.command };
@@ -4552,7 +4555,7 @@ export async function runStart(source, name, digest, { tmux = tmuxBin(), procDir
   // the runner and the wrapper as their own arguments (no shell parses them), in the environment made here (taskEnv;
   // windowCommand: bash without BASH_ENV and the like only starts it, then stays as the window's shell)
   const args = ['new-window', '-d', '-P', '-F', '#{window_id}', '-t', `=${TMUX_SESSION}:`, '-n', window, '-c', tmuxDir(top), ...WINDOW_CLEAR, '--',
-    ...windowCommand('bedrock-now run', taskEnv(), [node, SELF, '--run-task', RUN_DIR, id, '--', ...t.argv])];
+    ...windowCommand('DevOS ADE run', taskEnv(), [node, SELF, '--run-task', RUN_DIR, id, '--', ...t.argv])];
   const r = await run(tmux, args);
   if (r.code !== 0) {
     for (const f of runFiles(id)) { try { fs.unlinkSync(path.join(RUN_DIR, f)); } catch { /* gone */ } }
@@ -4602,7 +4605,7 @@ export function runTask(dir, id, argv, { out = process.stdout, procDir = '/proc'
     const t0 = Date.now();
     const save = (name, obj) => { try { writeRunFile(dir, name, obj); } catch { /* the list then says the run was lost */ } };
     save(`${id}.pid.json`, { pid: process.pid, start: procStartIn(process.pid, procDir) });
-    out.write(`\x1b[2m▶ ${argv.map(shq).join(' ')}\n  (bedrock-now's Run: its exit status and the last 64 KiB of its output go to the Code page's Problems list)\x1b[0m\n\n`);
+    out.write(`\x1b[2m▶ ${argv.map(shq).join(' ')}\n  (DevOS ADE's Run: its exit status and the last 64 KiB of its output go to the Code page's Problems list)\x1b[0m\n\n`);
     const chunks = [];
     let size = 0, total = 0, done = false, child = null;
     const keep = (d) => {

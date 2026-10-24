@@ -463,7 +463,7 @@ test('the identity: the repository\'s, else the sandbox\'s ~/.gitconfig (no incl
     const c = await coded.gitCommit({ message: 'who' }, O);
     return [c.author.from, git(WS, 'log', '-1', '--format=%an <%ae> / %cn <%ce>').trim()];
   };
-  assert.deepEqual(await commitAs(), ['default', 'bedrock-now Code page <code-page@bedrock-now.invalid> / bedrock-now Code page <code-page@bedrock-now.invalid>']);
+  assert.deepEqual(await commitAs(), ['default', 'DevOS ADE Code page <code-page@devos-ade.invalid> / DevOS ADE Code page <code-page@devos-ade.invalid>']);
   fs.writeFileSync(path.join(ROOT, 'inc-identity.cfg'), '[user]\n  name = From An Include\n  email = inc@example.invalid\n');
   fs.writeFileSync(path.join(HOME, '.gitconfig'), `[user]\n  name = Sandbox User\n  email = sandbox@example.invalid\n[include]\n  path = ${path.join(ROOT, 'inc-identity.cfg')}\n`);
   assert.deepEqual(await commitAs(), ['sandbox', 'Sandbox User <sandbox@example.invalid> / Sandbox User <sandbox@example.invalid>']);

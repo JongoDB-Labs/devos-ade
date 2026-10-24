@@ -46,7 +46,7 @@ fi
 # sandbox may use anyway.
 exec env -u SHARED_MCP_TOKEN ttyd --interface "$sock" --writable --check-origin --url-arg \
   --ping-interval 20 --index /usr/local/share/bedrock-now/ttyd.html \
-  -t 'titleFixed=Terminal · bedrock-now' -t fontSize=14 -t disableLeaveAlert=true -t disableResizeOverlay=true \
+  -t 'titleFixed=Terminal · DevOS ADE' -t fontSize=14 -t disableLeaveAlert=true -t disableResizeOverlay=true \
   -t rendererType=dom -t macOptionClickForcesSelection=true \
   -t 'fontFamily=ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace' \
   -t 'theme={"background":"#111820","foreground":"#e4e9ee","cursor":"#73b6cd","cursorAccent":"#111820","selectionBackground":"#2c4f5d"}' \

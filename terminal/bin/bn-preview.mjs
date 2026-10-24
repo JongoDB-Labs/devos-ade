@@ -8,7 +8,7 @@
 // the dev servers Claude, a background task or the terminal tab started, bound to the sandbox's own localhost.
 //
 // Nothing here is a boundary for the sandbox (anything in it can replace this process, and preview content is the
-// sandbox's anyway): it only carries bytes. What keeps preview content away from bedrock-now's cookies and pages is
+// sandbox's anyway): it only carries bytes. What keeps preview content away from DevOS ADE's cookies and pages is
 // the main Caddy's site of its own and the portal's capability (docs/security.md "Previews of dev servers"). What it does do:
 //   - connects only to the sandbox's own loopback, never anywhere else, and never listens on TCP
 //   - leaves out what the dev server must not see or need: hop-by-hop headers, the port header, X-Forwarded-*
@@ -64,7 +64,7 @@ function connectionTokens(raw) {
   return out;
 }
 
-// tidyCookie(value) -> the Cookie header without empty pairs (what is left where the main Caddy took bedrock-now's
+// tidyCookie(value) -> the Cookie header without empty pairs (what is left where the main Caddy took DevOS ADE's
 // own cookies out: "; app=1" becomes "app=1"); '' when nothing is left
 export function tidyCookie(v) {
   return String(v).split(';').map((x) => x.trim()).filter((x) => x && x !== '=').join('; ');

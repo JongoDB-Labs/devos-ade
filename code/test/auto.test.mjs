@@ -59,7 +59,7 @@ test('the gate: setting off → 403 (nothing sent to Claude Code); on → switch
   {
     const { mgr, queries } = manager();
     const s = mgr.get(mgr.open({}).id);
-    await assert.rejects(s.setMode('auto'), (e) => e.status === 403 && /Auto mode is off: turn it on in Settings › Claude Code, from the computer running bedrock-now/.test(e.message));
+    await assert.rejects(s.setMode('auto'), (e) => e.status === 403 && /Auto mode is off: turn it on in Settings › Claude Code, from the computer running DevOS ADE/.test(e.message));
     assert.ok(!queries[0].calls.some((c) => Array.isArray(c) && c[0] === 'setPermissionMode'));
     assert.equal(s.mode, 'default');
     mgr.closeAll();

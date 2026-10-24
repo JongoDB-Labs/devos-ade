@@ -692,7 +692,7 @@ export function summarize(files, plugins = null, planPlugins = null) {
  *  link out of the workspace, too large, a FIFO —, so no hash covers what Claude Code would read: never trusted) |
  *  unchecked (the sandbox did not say: not applied). */
 export const APPLIED = Object.freeze(['workspace', 'none', 'trusted']);
-// recheck: trusted before bedrock-now read Claude Code settings the way it does now (a trust of an earlier epoch,
+// recheck: trusted before DevOS ADE read Claude Code settings the way it does now (a trust of an earlier epoch,
 // projects.mjs TRUST_EPOCH) — not applied until you look at them again, whatever they hold
 export const stateOf = ({ workspace = false, present, hash, trust, verifiable = true }) => {
   if (workspace) return 'workspace';
@@ -702,7 +702,7 @@ export const stateOf = ({ workspace = false, present, hash, trust, verifiable = 
   if (trust && trust.hash === hash) return 'trusted';
   return trust ? 'changed' : 'untrusted';
 };
-export const RECHECK_TEXT = 'bedrock-now reads a project\'s settings more strictly since you trusted them (the other tools\' too) — look at them again';
+export const RECHECK_TEXT = 'DevOS ADE reads a project\'s settings more strictly since you trusted them (the other tools\' too) — look at them again';
 const sha256 = (b) => crypto.createHash('sha256').update(b).digest('hex');
 /** hashOf(files, plugins) -> the hash bn-coded's settingsFiles makes, from the checked rows and the plugins the
  *  settings turn on with what the sandbox has of them (checkPlugins; null when none: the files' alone) — null when

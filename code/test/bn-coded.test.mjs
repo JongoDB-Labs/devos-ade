@@ -530,3 +530,14 @@ test('the watchlist: an includeIf git does not apply cannot steer which hooksPat
   w('.git/config', [0, 1, 2, 3, 4].map((i) => `[core]\n\thooksPath = h${i}\n`).join(''));
   assert.equal(result(await talk(SOCK, [open({ op: 'ws.sensitive' })])).truncated, true);
 });
+
+test('net.tunnel through the egress proxy: its refusal said without its name, of this version or the one before v0.25.0', async () => {
+  for (const name of ['DevOS ADE', 'bedrock-now']) {
+    const proxy = net.createServer((c) => c.once('data', () => c.end(`HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\n\r\n${name}'s sandbox proxy: refused — a private address.\n`)));
+    await new Promise((r) => proxy.listen(0, '127.0.0.1', r));
+    try {
+      await assert.rejects(coded.tunnelConnect('blocked.test', 443, { proxy: `http://127.0.0.1:${proxy.address().port}` }),
+        (e) => /^the sandbox's egress proxy: refused . a private address\.$/.test(e.message));   // (its own words: ASCII only)
+    } finally { proxy.close(); }
+  }
+});

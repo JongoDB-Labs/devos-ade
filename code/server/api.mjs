@@ -20,6 +20,7 @@ import { watched } from './watch.mjs';
 import { WS, WORKSPACE_ID, PROJECTS_MAX, TRUST_EPOCH, absOf, cwdOk, hostRoots, nameOk, rootOk } from './projects.mjs';
 import { BYPASS_ASK, READ_ONLY_DENY } from './modes.mjs';
 import { quoted, QUOTE_MAX } from './agents/quote.mjs';
+import { PRODUCT } from './brand.mjs';
 
 export class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -1287,7 +1288,7 @@ export function runTaskRow(x) {
   const bad = (why) => ({ source, name, error: why });
   const argv = x.argv;
   if (!(Array.isArray(argv) && argv.every((a) => typeof a === 'string' && a.length <= 2000 && ONE_LINE.test(a)) && wrapperOk(source, name, argv))) {
-    return bad('not run the way bedrock-now runs tasks: run it in the terminal');
+    return bad(`not run the way ${PRODUCT} runs tasks: run it in the terminal`);
   }
   const detail = Array.isArray(x.detail) && x.detail.length >= 1 && x.detail.length <= 4 && x.detail.every((d) => d && typeof d === 'object'
     && typeof d.name === 'string' && d.name.length <= 300 && ONE_LINE.test(d.name) && typeof d.text === 'string' && d.text.length <= RUN_TEXT) ? x.detail : null;

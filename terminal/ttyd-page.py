@@ -1,6 +1,6 @@
 """ttyd's own page (fetched from ttyd at image build) → the page bn-terminal serves with --index: the same page plus a
 viewport for phones (without one they lay it out 980 px wide; the on-screen keyboard then resizes it instead of
-covering the prompt), the terminal's background as theme colour, and a bedrock-now icon instead of ttyd's.
+covering the prompt), the terminal's background as theme colour, and a DevOS ADE icon instead of ttyd's.
 Then the page's one inline script must hash to SHA256 (the main Caddy's Content-Security-Policy for the terminal
 host allows only that script: caddy/Caddyfile, terminal_page): a new ttyd fails the build here, not in browsers.
 Usage: python3 ttyd-page.py IN OUT SHA256"""

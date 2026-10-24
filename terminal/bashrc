@@ -1,4 +1,4 @@
-# Interactive shells in the bedrock-now terminal (sourced from /etc/bash.bashrc; tmux starts non-login shells, so
+# Interactive shells in the DevOS ADE terminal (sourced from /etc/bash.bashrc; tmux starts non-login shells, so
 # bash reads your own ~/.bashrc, kept in the terminal-home volume, right after this).
 case $- in *i*) ;; *) return ;; esac
 PS1='\[\e[36m\]terminal\[\e[0m\] \w \$ '

@@ -124,7 +124,7 @@ def wait_xterm(frame):
     t0 = time.time()
     while time.time() - t0 < 20 and not frame.evaluate("() => !!(window.term && window.term.buffer)"):
         time.sleep(0.25)
-    return wait_text(frame, r"bedrock-now", 30)   # tmux's status line
+    return wait_text(frame, r"DevOS ADE", 30)   # tmux's status line
 
 
 def type_line(page, frame, text: str):

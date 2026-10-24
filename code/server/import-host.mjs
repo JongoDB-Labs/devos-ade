@@ -1,5 +1,5 @@
 // ./stack git-host import gh | glab (lib/githost.sh): a login of the GitHub CLI or the GitLab CLI on the computer
-// running bedrock-now, read there from the CLI and handed to this script on its stdin (`docker compose exec -T`: never
+// running DevOS ADE, read there from the CLI and handed to this script on its stdin (`docker compose exec -T`: never
 // a command line, an environment variable, a file on the computer, the browser or the portal), added to Git hosts as
 // an access token like any other (githosts.mjs addImport), with its source, account and scopes for the page — never
 // renewed: gh's OAuth token does not expire; glab's is a personal access token (an OAuth login of glab's is refused

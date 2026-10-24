@@ -166,7 +166,7 @@ test('launch.start: the file\'s command in a new window of the terminal\'s tmux 
   // bash without BASH_ENV & co. starts `env -i <an environment made here, the entry's own variables, PORT> node
   // bn-coded --run-tty <label> -- <the program found> <its arguments>` — arguments, never parsed by a shell
   assert.deepEqual(w, ['new-window', '-d', '-t', '=claude:', '-n', 'web-app', '-c', path.join(fs.realpathSync(WS), 'web'), ...coded.WINDOW_CLEAR, '--',
-    ...coded.windowCommand('bedrock-now launch', coded.taskEnv({ NODE_ENV: 'development', PORT: '5173' }),
+    ...coded.windowCommand('DevOS ADE launch', coded.taskEnv({ NODE_ENV: 'development', PORT: '5173' }),
       [coded.imageProgram('node'), path.join(TERMINAL_DIR, 'bin/bn-coded.mjs'), '--run-tty', 'launch.json "web app"', '--', listed.program, 'run', 'dev', '$(touch /tmp/pwned)'])]);
   assert.equal(listed.program, fs.realpathSync(coded.imageProgram('npm')));
   assert.ok(w.includes('NPM_CONFIG_USERCONFIG=/dev/null') && w.includes('PORT=5173') && w.includes('NODE_ENV=development'));

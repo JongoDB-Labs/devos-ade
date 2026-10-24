@@ -1741,7 +1741,7 @@ def claude_git_access(ctx):
         tail = (run or {}).get("tail", "")
         expect(run and run.get("exitCode") == 0 and re.search(r"[0-9a-f]{40}\s+refs/heads/main", tail), f"git ls-remote through the broker: {run and run.get('exitCode')} {tail[-600:]}")
         expect("gh version 2.102.0" in tail, f"gh in the image: {tail[-600:]}")
-        expect("gh: bedrock-now gives gh a login for github.com and *.ghe.com only, not for gitsrv" in tail, f"gh's one line: {tail[-600:]}")
+        expect("gh: DevOS ADE gives gh a login for github.com and *.ghe.com only, not for gitsrv" in tail, f"gh's one line: {tail[-600:]}")
         expect(token not in tail, "the token in the run's output")
         events = c.api("GET", "/api/git/hosts")["json"]["events"]
         used = [e for e in events if e["who"] == "claude" and e["action"] == "credential" and e["ok"]]

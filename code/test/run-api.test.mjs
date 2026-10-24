@@ -71,10 +71,10 @@ test('GET /api/run: tasks whole (the fixed wrapper, the texts shown, the files b
   assert.deepEqual(r.json.tasks[0], want);
   assert.notEqual(r.json.tasks[0].digest, digest);
   assert.deepEqual(r.json.tasks.slice(1).map((t) => [t.name, t.error ?? t.digest.length]), [
-    ['sneaky', 'not run the way bedrock-now runs tasks: run it in the terminal'],
+    ['sneaky', 'not run the way DevOS ADE runs tasks: run it in the terminal'],
     ['<img src=x onerror=alert(1)>', 'not a name the Run menu passes on (letters, digits and _ . / + -): run it in the terminal'],
     ['check', 64], ['hello', 64],
-    ['evil', 'not run the way bedrock-now runs tasks: run it in the terminal'],
+    ['evil', 'not run the way DevOS ADE runs tasks: run it in the terminal'],
     ['far', 'not run in the workspace\'s top folder: run it in the terminal']]);
   assert.deepEqual(r.json.tasks[2].notes, undefined);
   assert.deepEqual(r.json.tasks.find((t) => t.name === 'check').notes, ['Makefile includes other files']);

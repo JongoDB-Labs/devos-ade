@@ -4,7 +4,9 @@
 // another platform (their signatures are that platform's: Bedrock may refuse them on resume — the text stays), and a
 // folder's path rewritten where the copy runs in another folder (a folder of this computer shown at /projects/<name>,
 // or another project's), only where it stands as a path of its own: bounded by the start, a slash, a quote or the end.
-// Node built-ins only.
+// Node built-ins only (and brand.mjs: the product's name).
+
+import { PRODUCT } from './brand.mjs';
 
 export const MAX_LINE = 16 << 20;
 
@@ -158,4 +160,4 @@ export function outsidePaths(entries, roots, max = 30) {
 /** sizeLabel(n) -> 512 bytes, 12.3 KB, 4.0 MB */
 export const sizeLabel = (n) => (n < 1024 ? `${n} byte${n === 1 ? '' : 's'}` : n < 1 << 20 ? `${(n / 1024).toFixed(1)} KB` : `${(n / (1 << 20)).toFixed(1)} MB`);
 /** outputLeft(bytes) -> the line that stands for a tool output left out */
-export const outputLeft = (bytes) => `[tool output left out by bedrock-now — ${sizeLabel(bytes)}; re-import with "Include tool outputs" to bring it]`;
+export const outputLeft = (bytes) => `[tool output left out by ${PRODUCT} — ${sizeLabel(bytes)}; re-import with "Include tool outputs" to bring it]`;

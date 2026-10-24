@@ -3,7 +3,7 @@
 // and the operation itself in the sandbox (bn-coded's git.net / git.clone / git.test), whose credential questions
 // are answered here: only for the host of the URL you confirmed, only while that operation runs, a token at most 3
 // times and one SSH login signed (askFor). Claude's own git gets nothing unless you let it use a host (off by
-// default; turned on only from the computer running bedrock-now): then git.broker answers for that host — and, for a
+// default; turned on only from the computer running DevOS ADE): then git.broker answers for that host — and, for a
 // GitHub host, the sandbox's gh (bn-gh) too — each use noted in Activity. Everything the sandbox says is checked here
 // first (its answers are data). A signed-in host's token (oauth.mjs) is renewed here before an operation that uses
 // it, and is then given like an access token.
@@ -15,6 +15,7 @@ import { agentAnswer, FAILURE, knownHostFingerprint, KNOWN_HOSTS } from './sshag
 import { short, int } from './validate.mjs';
 import { reasonOf } from './gitreasons.mjs';
 import { SandboxSaid, sandboxFailure, NEVER_ASKS } from './said.mjs';
+import { PRODUCT } from './brand.mjs';
 
 // --- the URL rules (bn-coded's parseRemoteUrl, the same: the sandbox checks again, and re-reads the URL itself) ---
 const HOST_NAME = /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}[A-Za-z0-9])?)*$/;
@@ -138,7 +139,7 @@ const err = (status, m) => new HostError(status, m);
 export { NEVER_ASKS, GIT_SAID, CLAUDE_SAID, SandboxSaid, sandboxFailure, sandboxWords } from './said.mjs';
 // failNote(e) -> what Activity notes of a failure: ours as it is; the sandbox's words apart (said)
 const failNote = (e, n = 300) => (e instanceof SandboxSaid ? { text: e.message, said: short(e.said, n) } : { text: short(e?.message, n) });
-const localOnly = (remote, what) => { if (remote) throw err(403, `${what} only from the computer running bedrock-now (not over remote access)`); };
+const localOnly = (remote, what) => { if (remote) throw err(403, `${what} only from the computer running ${PRODUCT} (not over remote access)`); };
 
 // makeGitRemote({call, openBroker, store, onEvent, connect, apps}) -> the API of Git hosts and remote operations (main.mjs
 // routes): call(req, opts) — sandboxCall; openBroker({onAsk}) — sandboxBroker; onEvent(event) — a use, for the pages;
@@ -209,7 +210,7 @@ export function makeGitRemote({ call: sandboxCall, openBroker = null, store = ne
     void syncBroker();
     return h;
   }
-  // a sign-in (the device flow): started only from the computer running bedrock-now; its state read there too;
+  // a sign-in (the device flow): started only from the computer running DevOS ADE; its state read there too;
   // cancelled from anywhere
   async function startSignIn(b, remote) { localOnly(remote, 'A sign-in is started'); return oauth.start(b); }
   function signInStatus(id, remote) { localOnly(remote, 'A sign-in is followed'); const v = oauth.status(id); if (v.state === 'done') void syncBroker(); return v; }
@@ -241,7 +242,7 @@ export function makeGitRemote({ call: sandboxCall, openBroker = null, store = ne
     return h;
   }
   // Test connection: git ls-remote of a repository on that host with its credential; an ssh host key not known yet is
-  // learned and kept — only from the computer running bedrock-now (you see its fingerprint)
+  // learned and kept — only from the computer running DevOS ADE (you see its fingerprint)
   async function testHost(id, b, remote) {
     let h = store.get(id);
     if (!h) throw err(404, 'no such git host');
@@ -249,7 +250,7 @@ export function makeGitRemote({ call: sandboxCall, openBroker = null, store = ne
     try { p = parseRemoteUrl(b?.url); } catch (e) { throw err(400, e.message); }
     if (store.match(p, [h]) !== h) throw err(400, `that URL is not on ${h.host}${h.port ? `:${h.port}` : ''} over ${httpsAuth(h.auth) ? 'https' : 'ssh'} (this host's ${httpsAuth(h.auth) ? 'token is for https://' : 'key is for ssh'} URLs)`);
     try { h = await fresh(h); } catch (e) { event({ action: 'test', host: h.label, target: p.display, ok: false, ...failNote(e) }); throw e; }
-    // (a key is learned only from the computer running bedrock-now, and never for a host whose keys are built in)
+    // (a key is learned only from the computer running DevOS ADE, and never for a host whose keys are built in)
     const learn = h.auth === 'ssh' && !remote && !((p.port ?? 22) === 22 && (KNOWN_HOSTS[h.host] || []).length);
     let result;
     try {
