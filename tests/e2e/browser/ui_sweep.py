@@ -51,6 +51,8 @@ ONLY = {x for x in os.environ.get("SWEEP_ONLY", "").split(",") if x}
 
 def wanted(part: str) -> bool:
     return not ONLY or part in ONLY
+
+
 CODE = origin("code")
 TERM = origin("terminal")
 PORTAL_TABS = {"home", "chat", "code", "admin", "files", "settings", "terminal"}
@@ -72,6 +74,25 @@ def local_paths_out(text: str) -> str:
 OLD_LOGO = os.environ.get("SWEEP_OLD_LOGO_SHA", "")
 
 FINDINGS: list[dict] = []
+NAV = {"at": 0.0}                 # when a navigation last started (the sweep's goto, reload, a click on a link)
+ABORTED: list[dict] = []          # requests and fetch errors a navigation of ours cut short: recorded, not findings
+FOLLOWED: dict[str, str] = {}     # links followed by a click, as a person does (the Code page's "Open the terminal…")
+CUT_SHORT = re.compile(r"Failed to fetch|NetworkError|AbortError|aborted|Load failed", re.I)
+# Console messages of the bundled apps whose cause is theirs, traced on a throwaway (not our hosts, Caddy or headers):
+# listed in known-upstream.json with the cause, not as findings. Anything else they log still is one.
+KNOWN_UPSTREAM = [
+    ("chat.", re.compile(r"^No token found in localStorage, user-join event not emitted$"),
+     "Open WebUI v0.12.0: its root layout (+layout.svelte, nodes/0) connects the socket on mount, at the same moment it "
+     "starts the trusted-header sign-in (POST /api/v1/auths/signin) that stores localStorage.token; on a browser's first "
+     "load the socket's connect handler finds no token yet and warns. The sign-in then emits user-join itself; a second "
+     "load has the token and logs nothing."),
+    ("admin.", re.compile(r"litellm-asset-prefix/_next/static/chunks/[\w.-]+\.css was preloaded using link preload but not used"),
+     "LiteLLM 1.105.0's dashboard (a Next.js static export): its sidebar links prefetch their routes, and the prefetched "
+     "segments of logs, lens, guardrails-monitor and tool-policies carry their stylesheet (chunks/1pbkw-….css) as a "
+     "preload hint React adds to the page shown, which never applies it. LiteLLM's /ui/ HTML has no such preload, Caddy "
+     "adds no Link header and passes /litellm-asset-prefix through unchanged."),
+]
+KNOWN_SEEN: dict[str, dict] = {}
 LINKS: dict[str, dict] = {}       # url -> {where, text}
 IMAGES: dict[str, dict] = {}      # url -> {where}
 CUR = {"page": "-", "state": "-", "width": "-", "theme": "-"}
@@ -118,7 +139,7 @@ COLLECT = r"""() => {
   const scroller = (e) => { for (let p = e.parentElement; p && p !== document.body; p = p.parentElement) { const o = getComputedStyle(p).overflowX; if (o === 'auto' || o === 'scroll' || o === 'hidden' || o === 'clip') return true; } return false; };
   const inter = [...document.querySelectorAll('button, [role=button], a[href], input:not([type=hidden]), select, textarea, summary')];
   const shown = inter.filter(vis);
-  const dialogs = [...document.querySelectorAll('dialog[open], [role=dialog]:not([hidden]), .sheet:not([hidden]), #tour:not([hidden]), [role=menu], [role=listbox]')].filter(vis);
+  const dialogs = [...document.querySelectorAll('dialog[open], [role=dialog]:not([hidden]), .sheet:not([hidden]), #tour:not([hidden]), .terminal.drawer:not(.hidden), [role=menu], [role=listbox]')].filter(vis);
   const top = dialogs.length ? dialogs[dialogs.length - 1] : null;
   const covered = [];
   for (const e of shown) {
@@ -287,6 +308,15 @@ def attach(ctx):
             if CUR["page"] == "error" or (" 401 " in t and urlsplit(u).hostname in (f"code.{HOST}", f"terminal.{HOST}")) \
                     or (CUR["state"] == "wrong-password" and " 401 " in t):
                 return   # (locked until unlocked: the unlock page; a deliberate refusal)
+            if CUT_SHORT.search(t) and time.time() - NAV["at"] < 5:
+                count("fetch errors logged as our navigation left a page")
+                ABORTED.append({"kind": "console " + m.type, "where": where(), "text": redact(t[:300]), "url": redact(u[:160])})
+                return   # (a page's fetch cut short as the sweep moved on: recorded in aborted.json, not a fault)
+            known = next((why for host, rx, why in KNOWN_UPSTREAM if (urlsplit(u).hostname or "").startswith(host) and rx.search(t)), None)
+            if known:
+                count("known upstream console messages")
+                KNOWN_SEEN.setdefault(t[:200], {"first": where(), "url": redact(u[:160]), "cause": known, "times": 0})["times"] += 1
+                return
             third = urlsplit(u).hostname not in OUR_HOSTS if u else False
             find("console " + m.type + (" (third-party app)" if third else ""), t[:400], url=u[:160])
     ctx.on("console", on_console)
@@ -303,16 +333,30 @@ def attach(ctx):
 
     ctx.on("response", on_response)
 
+    def on_request(rq):
+        try:
+            if rq.is_navigation_request():
+                NAV["at"] = time.time()
+        except Exception:  # noqa: BLE001
+            pass
+    ctx.on("request", on_request)
+
     def on_failed(rq):
         err = rq.failure or ""
         if "ERR_ABORTED" in err:
-            return   # (a load the page itself ended: switching tabs or pages, a frame given a new address)
+            # a load cut short: by a navigation (ours: the sweep moving on, a frame given a new address) or by the page
+            # itself (a search superseded, a stream closed): counted apart, never a fault
+            ours = time.time() - NAV["at"] < 5
+            count("requests aborted by our navigation" if ours else "requests a page cancelled itself")
+            ABORTED.append({"kind": "request" if ours else "request (the page's own)", "where": where(), "url": redact(rq.url[:200])})
+            return
         find("request failed", f"{rq.method} {rq.url[:200]}: {err}")
     ctx.on("requestfailed", on_failed)
 
 
-def new_ctx(browser, width, theme, tour=False):
-    c = browser.new_context(locale="en-US", timezone_id="UTC", color_scheme=theme, **WIDTHS[width])
+def new_ctx(browser, width, theme, tour=False, sw=True):
+    c = browser.new_context(locale="en-US", timezone_id="UTC", color_scheme=theme, **WIDTHS[width],
+                            **({} if sw else {"service_workers": "block"}))
     c.add_init_script(CSP_GUARD)
     if not tour:
         c.add_init_script("(o => { try { if (location.origin === o && !localStorage.getItem('bn.tour')) "
@@ -553,7 +597,7 @@ def sweep_portal(browser, width, theme):
 
 def sweep_off_pages(browser, width, theme):
     """The Code tab's and the terminal's off pages: Home's own page with its bn-code / bn-terminal state saying off."""
-    c, p = new_ctx(browser, width, theme)
+    c, p = new_ctx(browser, width, theme, sw=False)   # (the portal's service worker fetches "/" itself: no route sees it)
     CUR["page"] = "portal"
     login(p)
 
@@ -610,13 +654,14 @@ def sweep_walkthrough(browser, width, theme):
 
 # --- the Code page (its own host, unlocked) ---
 
-def code_open(browser, width, theme):
+def code_open(browser, width, theme, shoot=True):
     c, p = new_ctx(browser, width, theme)
     login(p)
     p.goto(CODE + "/")
     p.locator("h1", has_text="Unlock the Code page").wait_for(timeout=20000)
-    CUR["page"] = "code"
-    capture(p, "unlock")
+    if shoot:
+        CUR["page"] = "code"
+        capture(p, "unlock")
     p.fill("#password", ENV["PORTAL_PASSWORD"])
     p.click("form[action='/.bn/unlock'] button[type=submit]")
     p.get_by_test_id("conn").wait_for(timeout=30000)
@@ -647,6 +692,33 @@ def menu(p, width, item):
     it.first.click()
     p.wait_for_timeout(1200)
     return True
+
+
+def follow_terminal_link(p, shoot=True):
+    """The terminal panel's "Open the terminal in a new tab", clicked as a person does: the code host's /.bn/terminal hands
+    the unlock over to the terminal host only for a navigation from the Code page itself (Sec-Fetch-Site: same-origin),
+    so a plain GET of the address is refused by design. Records the outcome for the link check."""
+    link = p.locator("a[aria-label='Open the terminal in a new tab']")
+    if not link.count() or not link.first.is_visible():
+        return
+    href = link.first.evaluate("a => a.href")
+    try:
+        with p.context.expect_page(timeout=30000) as pi:
+            link.first.click()
+        tp = pi.value
+        tp.wait_for_load_state("load", timeout=30000)
+        tp.wait_for_timeout(3000)
+        at = urlsplit(tp.url)
+        ok = at.hostname == f"terminal.{HOST}"
+        FOLLOWED[href] = f"200 (followed by a click: {at.hostname}{at.path})" if ok else f"ended on {tp.url[:120]}"
+        if not ok:
+            find("terminal link", f"the panel's new-tab link ended on {tp.url[:160]}")
+        elif shoot:
+            capture(tp, "terminal-new-tab", full=False)
+        tp.close()
+    except PwError as e:
+        FOLLOWED[href] = f"failed: {str(e).splitlines()[0][:120]}"
+        find("terminal link", f"the panel's new-tab link: {str(e).splitlines()[0][:200]}")
 
 
 def code_fresh(p):
@@ -735,6 +807,7 @@ def sweep_code(browser, width, theme):
             t.first.click()
             p.wait_for_timeout(5000)
             capture(p, "terminal-panel", full=False, frame_hosts=(f"terminal.{HOST}",))
+            follow_terminal_link(p)
         elif width != "phone":   # (phones: the Session sheet's "Open the terminal" opens a tab of its own)
             find("state not reached", "the terminal panel: no toggle-terminal at this width")
     step("terminal-panel", term)
@@ -889,18 +962,64 @@ def get(url: str, method="GET"):
         return 0, url, f"{type(e).__name__}: {e}"
 
 
+CHALLENGE = re.compile(r"just a moment|attention required|access denied|are you a robot|verify(ing)? you are human|security check|"
+                       r"captcha|forbidden|too many requests|^\s*(403|429|error)\b", re.I)
+BROWSER_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+TITLES: dict[str, str] = {}
+
+
+def in_browser(browser, url: str) -> str:
+    """A page a plain GET could not get past (a bot wall's 403 or 429), loaded as a browser does: its title once the
+    page settles ("" when it never loads). A challenge page's title ("Just a moment…") does not count as the page."""
+    if url in TITLES:
+        return TITLES[url]
+    c = browser.new_context(locale="en-US", user_agent=BROWSER_UA)
+    title = ""
+    try:
+        pg = c.new_page()
+        pg.goto(url, wait_until="domcontentloaded", timeout=45000)
+        for _ in range(10):   # (a challenge that clears itself: up to ~10 s)
+            title = (pg.title() or "").strip()
+            if title and not CHALLENGE.search(title):
+                break
+            pg.wait_for_timeout(1000)
+    except PwError:
+        pass
+    finally:
+        c.close()
+    TITLES[url] = title
+    return title
+
+
 def check_links(browser):
+    c, p = code_open(browser, "desktop", "light", shoot=False)   # (signed in on every host, the Code page unlocked)
     CUR.update(page="links", state="-", width="-", theme="-")
-    c, p = code_open(browser, "desktop", "light")   # (signed in on every host, the Code page unlocked)
     internal = {u: w for u, w in LINKS.items() if (urlsplit(u).hostname or "").endswith(HOST)}
     external = {u: w for u, w in LINKS.items() if u not in internal and u.startswith("http")}
     pending, results = [], []
     lp = c.new_page()   # (each internal link as the browser follows it: a navigation, its own headers)
     for u, w in sorted(internal.items()):
         count("internal links")
+        if urlsplit(u).hostname == f"code.{HOST}" and urlsplit(u).path == "/.bn/terminal":
+            if u not in FOLLOWED:   # (not seen on a Code page state of this run: follow it from this one)
+                try:
+                    p.get_by_test_id("toggle-terminal").first.click()
+                    p.wait_for_timeout(4000)
+                    follow_terminal_link(p, shoot=False)
+                except PwError as e:
+                    FOLLOWED[u] = f"failed: {str(e).splitlines()[0][:120]}"
+            st = FOLLOWED.get(u, "not followed: no new-tab link on the Code page")
+            results.append({"url": u, "status": st, **w})
+            if not str(st).startswith("200"):
+                find("internal link", f"{u} -> {st} ({w['text']!r}, first on {w['where']})")
+            continue
         try:
             resp = lp.goto(u, wait_until="domcontentloaded", timeout=30000)
             st = resp.status if resp else 0
+            try:   # (leave a page only once it is quiet: an app's own fetches are never cut short by the next link)
+                lp.wait_for_load_state("networkidle", timeout=15000)
+            except PwError:
+                count("pages not network-idle within 15 s")
             if st == 401 and urlsplit(u).hostname in (f"code.{HOST}", f"terminal.{HOST}") and "Unlock" in lp.content():
                 st = "200 (its unlock page)"
         except PwError as e:
@@ -974,7 +1093,13 @@ def check_links(browser):
             if gh and gh.group(1).lower() == "devos-ade":
                 find("GitHub link", f"{u} -> {st} (first on {w['where']})")
             elif st in (401, 403, 429, 999):
-                find("external link unverifiable", f"{u} -> {st} (first on {w['where']})")
+                title = in_browser(browser, base)   # (a bot wall: the page as a browser gets it, and its title)
+                rec["browser_title"] = title
+                if title and not CHALLENGE.search(title):
+                    rec["status"] = f"200 (in a browser: {title[:80]!r}; a plain GET got {st})"
+                    count("external links verified in a browser")
+                else:
+                    find("external link unverifiable", f"{u} -> {st}, in a browser {title!r} (first on {w['where']})")
             else:
                 find("external link", f"{u} -> {st} (first on {w['where']})")
         elif not anchor_ok:
@@ -1062,6 +1187,8 @@ def main() -> int:
             (OUT / "tracebacks.txt").open("a").write(f"--- links\n{traceback.format_exc()}\n")
         browser.close()
     (OUT / "findings.json").write_text(json.dumps(FINDINGS, indent=1))
+    (OUT / "aborted.json").write_text(json.dumps(ABORTED, indent=1))
+    (OUT / "known-upstream.json").write_text(json.dumps(KNOWN_SEEN, indent=1))
     with (OUT / "findings.tsv").open("w") as fh:
         fh.write("check\tpage\tstate\twidth\ttheme\tdetail\n")
         for f in FINDINGS:
