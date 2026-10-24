@@ -29,7 +29,8 @@ test('the URL rules are bn-coded\'s: the same answers for the same URLs', async 
   const coded = await import(path.join(TERMINAL_DIR, 'bin/bn-coded.mjs'));
   const urls = ['https://github.com/o/r.git', 'git@github.com:o/r.git', 'ssh://git@h.example:2222/x/y', 'https://u@bitbucket.org/o/r', 'https://GitLab.com/g/s/r',
     'http://x/y', 'file:///etc', 'ext::sh', 'https://u:p@h/r', 'ssh://-oProxyCommand=x/y', '/srv/r', 'h:22:r', 'https://h/../x', 'https://h/r\n', 'https://xn--e1a.com/r',
-    'https://h:0/r', 'https://h:65536/r', 'git@h:-x', 'git@h:~u/r.git', 'https://h', 'https://h/', 'evil::https://h/r', 'https://h/a%2f..%2fb'];
+    'https://h:0/r', 'https://h:65536/r', 'git@h:-x', 'git@h:~u/r.git', 'https://h', 'https://h/', 'evil::https://h/r', 'https://h/a%2f..%2fb',
+    '9x://h/p', '1abc::x', '::x', '0::https://h/r', '9https://h/r'];
   for (const u of urls) {
     let a, b;
     try { a = parseRemoteUrl(u); } catch (e) { a = { error: true }; }

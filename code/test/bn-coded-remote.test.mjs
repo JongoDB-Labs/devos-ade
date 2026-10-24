@@ -145,7 +145,8 @@ test('remote URLs: https and ssh only; never a transport helper, a local path, a
   const bad = ['http://github.com/o/r', 'git://github.com/o/r', 'file:///etc', '/srv/r.git', './r', '../r', 'ext::sh -c touch% /tmp/x', 'fd::17', 'evil::https://x/y',
     'https://u:pw@github.com/o/r', 'https://-oProxyCommand=x/r', 'ssh://-oProxyCommand=touch/r', 'git@-oProxyCommand=x:r', 'https://github.com/-r',
     'https://github.com/../etc', 'https://git hub.com/r', 'https://github.com/o/r\n', 'ssh://host:99999/r', 'https://github.com', 'github.com:22:r',
-    'https://gith\u00fcb.com/r', 'C:\\repo', '\\\\server\\share', 'https://[::1]/r', 'https://h.example/o/%2e%2e/x', 'https://h.example/o/%2F/x', ''];
+    'https://gith\u00fcb.com/r', 'C:\\repo', '\\\\server\\share', 'https://[::1]/r', 'https://h.example/o/%2e%2e/x', 'https://h.example/o/%2F/x', '',
+    '9x://h/p', '1abc::x', '::x', '0::https://h/r'];
   for (const u of bad) assert.throws(() => coded.parseRemoteUrl(u), `${u} refused`);
   // (an IDN host in ASCII is a host name: allowed; the Unicode one is not)
   assert.equal(coded.parseRemoteUrl('https://xn--80ak6aa92e.com/r').host, 'xn--80ak6aa92e.com');

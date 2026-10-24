@@ -1025,6 +1025,9 @@ test('paths.plain: what an agent\'s change may touch without asking (Accept edit
     ['SSH:// in capitals', '[remote "o"]\n\turl = SSH://git@h/p\n'], ['Https://', '[remote "o"]\n\turl = Https://h/p\n'],
     ['a x:: helper', '[remote "o"]\n\turl = x::https://h/p\n'], ['an X:: helper', '[remote "o"]\n\turl = X::https://h/p\n'],
     ['a branch remote SSH://', '[branch "main"]\n\tpushremote = SSH://h/p\n'], ['rsync://', '[remote "o"]\n\turl = rsync://h/p\n'],
+    // (git's scheme and helper names may start with a digit, and a helper's may be empty: git-remote-9x, -1abc, -)
+    ['9x://', '[remote "o"]\n\turl = 9x://h/p\n'], ['1abc::x', '[remote "o"]\n\turl = 1abc::x\n'], ['::x', '[remote "o"]\n\turl = ::x\n'],
+    ['a submodule 0::', '[submodule "s"]\n\turl = 0::h/p\n'], ['a branch remote 9+x://', '[branch "main"]\n\tremote = 9+x://h/p\n'],
   ]) {
     fs.writeFileSync(path.join(D, '.git/config'), config + text);
     await asked(what);

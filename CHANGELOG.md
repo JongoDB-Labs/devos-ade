@@ -54,10 +54,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   `..`, `//`, `;` or query and it is the signed-in route as before), sent on as exactly that path, with no cookie,
   `Authorization` or `X-Portal-*` header passed on and nothing set in return; what is there is public and the same for
   everyone (docs/security.md).
-- **Accept edits asks where a remote's URL could run a program:** a transport helper (`<name>::…`), or a scheme other
-  than git's own (`https://`, `http://`, `ssh://`, `git://`, `file://`, `git+ssh://`, `ssh+git://`, exactly so, in
-  lower case) in a remote's, a submodule's or a branch's remote URL (git runs `git-remote-<name>` for those), and a
-  colour setting under a slot git does not document.
+- **Accept edits asks where a remote's URL could run a program:** a transport helper (`<name>::…`, a name that starts
+  with a digit and an empty one included: `1abc::…`, `::…`), or a scheme other than git's own (`https://`, `http://`,
+  `ssh://`, `git://`, `file://`, `git+ssh://`, `ssh+git://`, exactly so, in lower case; `9x://` is another) in a
+  remote's, a submodule's or a branch's remote URL (git runs `git-remote-<name>` for those), and a colour setting under
+  a slot git does not document. The Code page's Git panel refuses those names in a URL you give it, as before.
 - **The watchlist says when it cannot read a repository's git layout whole** — a `gitdir:` or `commondir` that leads
   outside the folder, a `.git` that is a link, a config git reads that is a link or too large, an include outside the
   folder — and the cards say that not every file could be checked, instead of taking what it saw as all there is.

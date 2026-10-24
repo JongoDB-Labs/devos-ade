@@ -2075,8 +2075,8 @@ const URL_PATH = /^[A-Za-z0-9._~/@%+=,-]{1,1000}$/;
 export function parseRemoteUrl(u) {
   if (typeof u !== 'string' || !u || u.length > 1200) throw new Error('a remote URL, please (https:// or ssh://, or user@host:path)');
   if (/[\x00-\x20\x7f-￿\\]/.test(u)) throw new Error('the URL has spaces, control or non-ASCII characters');
-  if (/^[A-Za-z][A-Za-z0-9+.-]*::/.test(u)) throw new Error('a transport helper (name::address) is never used from here');
-  let m = String(u).match(/^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^/?#]*)(\/[^?#]*)?$/);
+  if (GIT_HELPER.test(u)) throw new Error('a transport helper (name::address) is never used from here');
+  let m = String(u).match(/^([A-Za-z0-9][A-Za-z0-9+.-]*):\/\/([^/?#]*)(\/[^?#]*)?$/);
   let scheme, auth, path, form = 'url';
   if (m) {
     scheme = m[1].toLowerCase();
@@ -2859,10 +2859,14 @@ export function gitConfigStrict(text) {
 // never <helper>::<address> (git runs git-remote-<helper>), nor any other scheme:// (the same: git-remote-<scheme>),
 // nor a control character
 const GIT_URL_PREFIXES = ['https://', 'http://', 'ssh://', 'git://', 'file://', 'git+ssh://', 'ssh+git://'];
+// (as git reads them, url.c is_urlschemechar: a name of letters and digits — a digit first too — then + . -; and a
+// helper's name may be empty: "::x" runs git-remote-)
+const GIT_HELPER = /^([A-Za-z0-9][A-Za-z0-9+.-]*)?::/;
+const GIT_SCHEME = /^[A-Za-z0-9][A-Za-z0-9+.-]*:\/\//;
 const gitUrlPlain = (v) => {
   if (typeof v !== 'string' || v === '' || /[\x00-\x1f\x7f]/.test(v)) return false;
-  if (/^[A-Za-z][A-Za-z0-9+.-]*::/.test(v)) return false;
-  if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(v)) return GIT_URL_PREFIXES.some((p) => v.startsWith(p));
+  if (GIT_HELPER.test(v)) return false;
+  if (GIT_SCHEME.test(v)) return GIT_URL_PREFIXES.some((p) => v.startsWith(p));
   return true;
 };
 // a plain relative path inside the work tree: no ~, not absolute, no "." or ".." part, printable

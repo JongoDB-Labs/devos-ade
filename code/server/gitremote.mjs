@@ -29,8 +29,9 @@ export function parseRemoteUrl(u) {
   if (typeof u !== 'string' || !u || u.length > 1200) no('a remote URL, please (https:// or ssh://, or user@host:path)');
   // eslint-disable-next-line no-control-regex
   if (/[\x00-\x20\x7f-￿\\]/.test(u)) no('the URL has spaces, control or non-ASCII characters');
-  if (/^[A-Za-z][A-Za-z0-9+.-]*::/.test(u)) no('a transport helper (name::address) is never used from here');
-  let m = u.match(/^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^/?#]*)(\/[^?#]*)?$/);
+  // (git's own reading, url.c is_urlschemechar: a digit first too; a helper's name may be empty: "::x")
+  if (/^([A-Za-z0-9][A-Za-z0-9+.-]*)?::/.test(u)) no('a transport helper (name::address) is never used from here');
+  let m = u.match(/^([A-Za-z0-9][A-Za-z0-9+.-]*):\/\/([^/?#]*)(\/[^?#]*)?$/);
   let scheme, auth, path, form = 'url';
   if (m) {
     scheme = m[1].toLowerCase();
