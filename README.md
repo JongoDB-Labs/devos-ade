@@ -636,16 +636,18 @@ plan in the Code page and Chat** (off by default; turning it on works from the c
   *Always* for this session, *Deny*), the watchlist after each turn, the same files, Git, Review and previews, and its
   history in the session list (a badge: *Codex*, *Plan* …), taken up again later with the tool's own session. Modes:
   Read only and Plan refuse its changes without asking, Accept edits allows its edits to plain files of the folder (one
-  to `.git/`, `.github/`, `.vscode/`, `.claude/`, `.mcp.json` or a tool's own settings, through a link, or outside it is
-  asked), Manual asks — a tool's own
+  to `.git/`, `.github/`, `.vscode/`, `.idea/`, `.zed/`, `.claude/`, `.mcp.json`, git's hooks or a commit hook's file,
+  or a tool's own settings, through a link, or outside it is asked), Manual asks — a tool's own
   "approve everything" mode is never used. The meter says *on your ChatGPT plan · tokens in / out* and the plan's own
   limits where the tool reports them (Codex's 5-hour and weekly windows, Claude's), never dollars and no budget.
   Codex runs with its own sandbox off (the sandbox container is the boundary) and asks before what it does not count as
   safe. Claude Code's commands, plugins and MCP switches are Claude's; the tools' own (AGENTS.md, their project
   configuration) apply as in the terminal — so in a project whose own settings (Claude Code's, or a tool's: `.codex/`,
-  `.cursor/`, `.grok/`, `.github/` (but GitHub's own files), a `lsp.json`, Claude Code's plugins …, there or in a
-  folder above it to the git root) you have not trusted, an agent does not start, and one running ends when they
-  change: the project's *Claude Code settings…* shows them all, the other tools' files whole, to trust first.
+  `.cursor/`, `.grok/`, what Copilot reads of `.github/`, a `lsp.json`, Claude Code's plugins …, there or in a folder
+  above it to the git root) you have not trusted, an agent does not start, and one running ends when they change: the
+  project's *Claude Code settings…* shows them all, the other tools' files whole, to trust first. The other tools'
+  files are a part of their own there: Claude Code on Bedrock and on your plan decide on Claude Code's part alone, as
+  before, so a repository's `.github/` never keeps its CLAUDE.md and settings from them.
 
 Settings › Claude Code › **Your AI subscriptions** shows each tool, whether it said it is signed in and which kind
 (*ChatGPT*, *Claude Max* …: its own status command, or for Gemini CLI and Grok whether their login file is there —

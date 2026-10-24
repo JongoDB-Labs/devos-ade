@@ -455,8 +455,10 @@ portal's check and before the app:
   the portal frames the apps, the hand-offs (`/auth/handoff`, `/.bn/callback`, the Code page → terminal and → preview
   hand-offs) are redirects, and the unlock and sign-in pages load the portal's logo and style sheet; each app's own
   requests are same-origin. The e2e suite runs every app's flows with the guard on (here the stack's hosts are
-  same-site with each other), and `browser/same-site-guard` sends fetches, a no-cors `POST` and a form post from the
-  Chat page to the other hosts — each with the session cookie, each refused.
+  same-site with each other), and `browser/same-site-guard` sends fetches, a no-cors `POST` and a form post from a page
+  of another host of the site with no policy of its own (Caddy's "unknown host" page) to the other hosts — each with
+  the session cookie, each refused; from the Chat page, Chat's own policy stops them before they are sent, and a style
+  sheet from the portal passes.
 - [x] **A refusal says so**: `403` with a body naming the guard and `X-Bn-Refused` (shown in the browser's developer
   tools). Requests without `Sec-Fetch-Site` (curl, `./stack`, old browsers) and requests from other sites are left to
   what handled them before — the cookies' `SameSite`, the portal's own `Origin` checks, the apps' own.
@@ -876,7 +878,8 @@ spawn server, Claude Code or any file at will.
   are `CODE_PROXY_SECRET` and `CODE_CHAT_KEY`, in its environment only. Prices and spend come from the portal (`/.bn/models`,
   `/.bn/spend` on the code host, answered after the same check; the master key stays in the portal, and a
   session's spend is filtered to the terminal key's rows). It can reach the main Caddy (its only peer): with no
-  cookie, only the portal's login page and Caddy's internal speech-to-text site — the same reach as Open WebUI's.
+  cookie, only the portal's login page and Caddy's internal speech-to-text site — the same reach as Open WebUI's — and
+  Chat's internal site (`caddy:8098`), which leads back to itself.
 - [x] **Files only through the sandbox.** The editor, the file tree, uploads, downloads and the session history are
   ops of the spawn server (`bn-coded`), which resolves paths in the sandbox's own view and keeps them under
   `/workspace` (Node has no `openat`/`RESOLVE_BENEATH`: a check-then-open in the code container would race a sandbox
@@ -1264,8 +1267,9 @@ direction-changing character; a record that does not fit (a file someone changed
   the Workspace it only turns off the discovery of `.claude/` folders below, its own applying as before). Then it
   reads the folder's `.claude/` — `settings.json` and `settings.local.json`, and the commands, agents, output styles,
   skills, workflows and routines whose front matter can grant tools (`allowed-tools`), declare hooks or MCP servers —
-  and its `.mcp.json`; from every folder above it up to the git root (the first with a `.git`; outside a repository,
-  up to `/workspace` itself) those six `.claude/` trees as well — a monorepo's skill counts for a package inside it;
+  and its `.mcp.json`; from every folder above it up to the git root (the first with a `.git` that holds a `HEAD`;
+  outside a repository, up to but not including `/workspace` itself) those six `.claude/` trees as well — a monorepo's
+  skill counts for a package inside it;
   and nothing from `.claude/` folders below it (the flag turns that discovery off). A cloned repository's
   `SessionStart` hook would run, its allow rules or a skill's `allowed-tools` would silence the permission cards, its
   `env` would change what runs, its MCP servers would start. So a process in a project's folder starts with your own
@@ -1280,12 +1284,19 @@ direction-changing character; a record that does not fit (a file someone changed
   here or in the monorepo above: not applied until you look again. A folder with nothing of it (no file in those
   places, no `.mcp.json`) needs nothing (its `CLAUDE.md` is read: instructions, it grants nothing). Trusting works
   from anywhere the page does (like answering a permission card: it runs things in the sandbox, not on your
-  computer). The Workspace's own `.claude/` applies to the Workspace by policy, as before projects; for a project
-  outside any repository it is one of the folders above, and so part of what you trust there.
+  computer). The Workspace's own `.claude/` applies to the Workspace by policy, as before projects; it is yours, not a
+  project's, so a project outside any repository does not list it (it applies there as it does everywhere).
+  The other tools' files of a project (Codex's, Copilot's, Cursor's, Grok's …: [Your AI
+  subscriptions](#your-ai-subscriptions)) are listed in the same dialog as a part of their own, with a hash of their
+  own: they change nothing for Claude Code on Bedrock or on your plan, which decide on Claude Code's part alone — the
+  listing v0.23.0 made.
   - *What you were shown, and what not.* The code container recomputes the hash from the texts it read (each text's
     own SHA-256 checked against the sandbox's; the list itself checked: the project's `.claude/` and `.mcp.json`, and
     paths under a `.claude` above it, sorted, once each). bn-coded reads at most 500 files, 2 MiB in all, 256 KiB each,
-    12 folders deep, names in any case (a macOS workspace reads `.Claude` as `.claude`). Beyond that, a linked git
+    12 folders deep, names in any case — compared compatibility-normalized and case-folded in full, as a disk that
+    folds names opens them (a macOS workspace reads `.Claude` as `.claude`, and `.claude/ſettings.json` as
+    `.claude/settings.json`), from each folder's own entries, never by looking a spelling up; a folder that can be
+    entered but not listed makes it unverifiable (what it holds is not known). Beyond that, a linked git
     worktree or a submodule (a `.git` that is a file, here or above: Claude Code reads another checkout's
     configuration then), or a file that cannot be read whole as text — a link out of the workspace, a link to a
     folder, a FIFO, a `.claude` that is a link — and it is *unverifiable*, never trusted. Front matter — of every text
@@ -1295,7 +1306,8 @@ direction-changing character; a record that does not fit (a file someone changed
     lists, a grant key's value a plain scalar (its key in any case). A grant found in Claude Code's block or in this
     page's plain one is listed; anything off — a text that starts with `---` where the two do not read the same block
     (another opener, a `---` inside a value, a closer not on a line of its own, no closing `---`), a CR alone, another
-    control character or a NEL in the block, more than one BOM before it, a block over 64 KiB, or anything a YAML parser could read differently (flow style, quotes, anchors and aliases, tags,
+    control character or a NEL, U+2028 or U+2029 in the block (YAML readers take each as a line break: a key after one
+    in a `#` comment is read), more than one BOM before it, a block over 64 KiB, or anything a YAML parser could read differently (flow style, quotes, anchors and aliases, tags,
     explicit keys, block scalars, a key twice) — leaves the summary incomplete, never trusted. The shell commands a
     skill or command runs each time it is used (``!`…` `` after whitespace and ```` ```! ```` blocks, read as Claude
     Code reads them — in the body after the front matter, as Claude Code does, and in the whole text —, inline code
@@ -1318,16 +1330,22 @@ direction-changing character; a record that does not fit (a file someone changed
     what the dialog showed of both records: either one changed between the dialog and the click is a conflict, and
     nothing is stored. Of the other keys,
     `pluginConfigs` (the options of plugins already on) and `strictKnownMarketplaces` / `allowedMarketplaces` (read
-    from managed settings only, and they only narrow) are shown as they are; any other key naming plugins or a
-    marketplace, at any depth — a later Claude Code's, an `env` variable that could steer how plugins load — makes
-    the settings untrustable. `.mcp.json` is not read for plugins (its server names are names). A `.claude/settings*.json`
-    in a folder above the project is Grok's and Copilot's (Claude Code does not read it there): under the broader rule
-    below, one that turns on plugins makes the project untrustable, and the dialog says which folder. Another tool's file is its own
-    configuration, read more broadly: a JSON or JSONC file is parsed and any key naming plugins or a marketplace, at
-    any depth, in any case, makes it untrustable, as does one that does not parse — or a line break JSON and JSONC
-    readers do not agree on (a CR alone, U+2028, U+2029) or a comment left open; there is no TOML or YAML parser here,
-    so such a file is searched whole and one with a backslash (an escape or a folded line), or in YAML a complex key,
-    a merge, an alias as a key or a tag, is untrustable too; a `marketplace.json` counts by its name. Each hook and
+    from managed settings only, and they only narrow) are shown as they are; those that bring plugins or a place to
+    fetch them from, by their exact names (`plugins`, `pluginDirs`, `pluginDirectories`, `additionalPlugins`,
+    `syncClaudeAiPlugins`, `prependPlugins`, `appendPlugins`, `pluginSuggestionMarketplaces`), and an `env` variable of
+    Claude Code's about plugins (`CLAUDE…PLUGIN…`: a seed or cache folder) make the settings untrustable; any other key
+    is shown under Other settings, as every key is. `.mcp.json` is not read for plugins (its server names are names). A
+    `.claude/settings*.json` in a folder above the project is Grok's and Copilot's (Claude Code does not read it there):
+    it is in the other tools' part, under the broader rule below. Another tool's file is its own
+    configuration, read more broadly: a JSON or JSONC file is parsed and a key that is one of the tools' own plugin or
+    marketplace keys (`plugins`, `marketplaces`, `enabledPlugins`, `extraKnownMarketplaces`, `additionalPlugins`,
+    `pluginDirs` …: their exact names, in any case, `-` and `_` aside — never a word that only holds one, as a
+    dependency named `eslint-plugin-react` does), at any depth, makes it untrustable, as does one that does not parse —
+    or a line break JSON and JSONC readers do not agree on (a CR alone, U+2028, U+2029) or a comment left open; there is
+    no TOML or YAML parser here, so such a file's words are looked at whole (each pattern linear in the text) and one
+    with a backslash (an escape or a folded line), or in YAML a complex key, a merge, an alias or a tag (after any line
+    break YAML knows, NEL, U+2028 and U+2029 too), is untrustable too; a `marketplace.json` counts by its name; a file
+    not shown whole is not looked into (it is incomplete already). Each hook and
     MCP server is shown whole (its entry as JSON with sorted keys, beside a friendly line; one naming more than one of
     a command, a URL and a prompt is marked); every character but printable ASCII, a tab or a line break is shown as
     `⟨U+…⟩` (line breaks, tabs and runs of spaces as ⏎, →, ·), and a value with such a character, a long run of
@@ -2514,7 +2532,10 @@ values, beyond that the cards say not everything was checked), and `.git/hooks/*
 —, `.git/config`, `config.worktree` (with `extensions.worktreeConfig`) and the files their `include.path` /
 `includeIf` name inside the workspace (3 levels, 16 in all; read as git reads them: a `#` or `;` inside quotes is
 part of the value), the `core.fsmonitor` programs inside the workspace (every distinct value, up to 4; git runs it at
-every `git status`), and submodules (`.git/modules/*/config`, `…/hooks/*`, listed last); a hook that is a link counts
+every `git status`), each git folder's `info/attributes` (it picks filter, diff and merge drivers), `commondir` and a
+rebase's to-do list (its `exec` lines run at `git rebase --continue`) — the rest of a git folder (objects, refs, the
+index, logs) changes with every git command and runs nothing —, and submodules (`.git/modules/*/config`, `…/hooks/*`,
+listed last); a hook that is a link counts
 with the content of what it points to when that is in the workspace (read without blocking: a FIFO there is not
 read). Then `.husky/*` and the git hook managers' configuration (`.pre-commit-config.yaml`, `lefthook*.yml`,
 `.lintstagedrc*`, `lint-staged.config.*`), `.envrc` (direnv), `.vscode/tasks.json`, `settings.json` and top-level
@@ -3188,7 +3209,11 @@ never reads, copies, keeps, passes on or relays a login.**
   writes there: its login when it renews it, and the sessions a conversation takes up again (Codex's rollouts, Copilot's
   session state, Grok's sessions, Claude's transcripts). Nothing else of yours: no workspace, no project folder (neither is mounted), no LiteLLM key, no MCP token, not on
   the terminal's network (its gateway, LiteLLM, shared-mcp: no name resolves there; its one network is the egress proxy's, which the terminal is on too — a dev server of yours listening on every address in the terminal answers it there, and Chat's agents have no tool to ask), `read_only`, `cap_drop: ALL`,
-  `no-new-privileges`, 2 GB, 512 processes; its way out is the sandbox's (the egress proxy by default). Its one program
+  `no-new-privileges`, 2 GB, 512 processes; its way out is the sandbox's (the egress proxy by default). Without that
+  overlay (a run of compose that lacks it) it is on a network of its own with nothing else on it and no way out
+  (`subs-chat-internal`), never the stack's default one; and bn-coded in Chat's role does not start where one of the
+  stack's own names resolves — or where a lookup of one does not answer in time, twice: not known to be out of reach
+  counts as reachable. Its one program
   is bn-coded in Chat's role, which runs Chat's conversations and nothing else (no file, Git, project or session op);
   the workspace's bn-coded refuses a Chat conversation. The code container reaches it on one socket of its own
   (`chat-socket`).
@@ -3199,9 +3224,9 @@ never reads, copies, keeps, passes on or relays a login.**
   conversation otherwise) — and `CLAUDE_CODE_DISABLE_ATTACHMENTS=1` (Claude Code otherwise reads an `@path` of a prompt
   into it before the model runs, tools or not), under managed settings of Chat's own (`terminal/managed/chat.json`:
   every file read and write denied, shell and web fetch denied, no hooks, no Bypass or Auto mode); an `@` in Chat's text
-  that would name a file reaches every agent as `＠`, and so in a quoted conversation; Open WebUI's site loads images
-  from itself only (`img-src 'self' data: blob:`), so an answer's markdown image cannot carry words out to another
-  site; Codex without its shell, MCP servers, web search, apps, plugins, skills, browser
+  that would name a file reaches every agent as `＠` (after a space, a bracket, a quote or CJK punctuation such as
+  `。、？！`, before a path, a name or a quoted one: `@"my notes.md"`), and so in a quoted conversation; what an answer
+  can make your browser fetch is limited by Chat's page (below); Codex without its shell, MCP servers, web search, apps, plugins, skills, browser
   and images, no AGENTS.md, asking before anything it does not count as safe; Copilot with an empty list of available
   tools, no MCP server of its own, no instructions files, no temp folder, its shell, writes and URLs denied; Grok with
   an empty list of tools, no web search, no subagents. Cursor is not a Chat model: it has no switch that turns its
@@ -3209,48 +3234,114 @@ never reads, copies, keeps, passes on or relays a login.**
   are their documented flags, which this page cannot see work without a sign-in (the e2e checks stop at the sign-in) —
   and they are what keeps a tool from running: what holds whatever they let through is this side, after the fact.
   Every permission question is refused, and at the first sign of a tool call — ACP's `tool_call` or a permission
-  question, a Codex item that is not an answer — the agent's process is killed there and then, with what it started
-  (its own process group in the sandbox), not asked to stop; nothing it says after that sign reaches the answer. A
-  tool that runs by itself before any sign of it reaches here (one its switches let through and it approves itself)
-  is not stopped by this. The answer says what was tried, and that agent session is dropped: the chat goes on in a new
+  question, a Codex item that is not an answer (when it starts, or only once it is done) — the agent's process is
+  killed there and then, with what it started (its own process group in the sandbox), not asked to stop; nothing it
+  says after that sign reaches the answer. What left its group (a process started with `setsid`, `forkpty` or
+  `setpgid`) is killed too: no tool ever runs in Chat's sandbox, so whatever is there in no session of bn-coded's own,
+  of a check it runs or of an agent running now is killed — when an agent is killed, when one ends, and every 5
+  seconds —, each by its exact pid, its start time read again just before (never a pid that names another process
+  since), never the container's init or what `docker exec` put in (a health check). An agent's end is its end: 2
+  seconds after it exits the code container hears so, even while something it started holds its output open; and a
+  turn waits at most 10 seconds after a tool's first sign before it stops waiting and closes that agent's
+  connection. A tool that runs by itself before any sign of it reaches here (one its switches let through and it
+  approves itself) is not stopped by this. The answer says that a tool was reached for — never the tool's title, the
+  agent's own words (the code container's log has it) — and that agent session is dropped: the chat goes on in a new
   one, with the conversation quoted. Of what a tool could still read without asking, there is the empty folder and the home's
   sign-ins — never a file of your workspace. What a conversation was is kept as a hash of your prompts
   (`conversations.json` in the code container's volume: which session goes on); the sessions themselves are the
   tools' own, in Chat's sandbox.
+- [x] **Chat: what an answer can make the browser fetch.** Open WebUI sends no policy of its own; Caddy sends Chat's
+  site one (`caddy/Caddyfile` `chat_csp`, the same on the remote sites): images, audio and video only from Open WebUI
+  itself, `data:` and `blob:`; frames only its own; no plugins; forms posted only to it; no `<base>`; requests
+  (fetch, beacons, WebSockets) and fonts only to it — everything its own page connects to is there — and no Referer.
+  So an answer's markdown image, a `<video>` or an `<iframe>` it carries, or a form, cannot take what a model read to
+  another server — the classic way out of a chat, which a document the model read can steer. An answer's html code
+  block opens in Open WebUI's Artifacts panel only when you click its preview (`detectArtifacts` off by default: each
+  user can turn it back on); there, in a sandboxed frame of its own (an opaque origin: no cookies of Open WebUI's), it
+  has Chat's policy too (a srcdoc document inherits its parent's) and the one Open WebUI writes into its `<head>`
+  (`IFRAME_CSP`: the Code page's artifact viewer's, `connect-src 'none'`). The e2e checks each of these is refused,
+  and that Open WebUI's own images still load (`browser/chat-images-own-only`).
+- [ ] **What an artifact can still do.** A frame can navigate itself to another site (with what its script wrote into
+  the address) — no policy stops that, so an artifact you open can still send what its own text holds; and Open
+  WebUI writes its policy after the first `<head>` it finds in the text, so a document that hides one in a comment
+  runs under Chat's policy alone, which leaves scripts and styles from another server (a request for one carries its
+  address). Open an artifact only when you mean to run it. Open WebUI's favicons of cited web pages (from another
+  site) do not load.
+- [ ] **What Open WebUI puts in a system message is the chat app's.** A Chat model on your plan takes a leading system
+  message as the chat app's instructions (and says so to the agent); Open WebUI puts what it retrieved there too — a
+  knowledge base's passages, your saved memories — so they reach the agent as instructions of the chat app, not as
+  your words.
 - [x] **The Code page's agents ask you.** A Codex, Copilot, Cursor or Grok session asks through the same permission
   cards (*Allow once*, *Always* for this session — the tool's own "allow always" —, *Deny*; unanswered: denied after
   the usual minutes); Read only and Plan refuse its changes and commands without asking; Accept edits lets a file
   change through without asking only when the sandbox (bn-coded's `paths.plain`) says every path it names is a plain
-  file of the session's folder — absolute, inside it, no part of it `.git`, `.github`, `.vscode`, `.claude`,
-  `.mcp.json`, `.husky`, `.devcontainer`, `.envrc`, a `lsp.json` or a tool's own folder (`.codex`, `.cursor`, `.grok`,
-  `.gemini`, `.copilot`, `.agents`), in any case, no link on its way or at its end, no other name for the file (a hard
-  link) — and asks for everything else: a move (its destination is not always said), a change naming no path, Codex's
-  request for a folder of its own to write in (`grantRoot`), a path that is not plain. An ACP agent runs only in the modes of
+  file of the session's folder — absolute, inside it, no part of it `.git`, `.github`, `.vscode`, `.idea`, `.zed`,
+  `.claude`, `.mcp.json`, `.husky`, `.devcontainer`, `.envrc`, `.pre-commit-config.yaml`, a lefthook file
+  (`lefthook.yml`, `.lefthook.yml`, `lefthook-local.yml` …), a `*.code-workspace`, a `lsp.json` or a tool's own folder
+  (`.codex`, `.cursor`, `.grok`, `.gemini`, `.copilot`, `.agents`, `.claude-plugin`), nothing git on your computer
+  runs code from (what the watchlist follows of git: a git folder wherever a `gitdir:` file or a `commondir` puts it,
+  whole; a folder it runs hooks from — `core.hooksPath`, `.git/hooks`, a submodule's —, a `core.fsmonitor` program, and
+  anything below them; a config file it reads, an `include.path` or `includeIf` target too, there yet or not, a
+  submodule's config; a layout it could not read whole makes no path plain), each name compared as a disk that folds names opens it
+  (compatibility-normalized and case-folded in full: `.curſor` is `.cursor`, `lſp.json` is `lsp.json`), each part that
+  is there spelled exactly as its folder lists it (never another entry the disk would open by that spelling), no link
+  on its way or at its end, no other name for the file (a hard link) — and asks for everything else: a move (its
+  destination is not always said), a change naming no path, Codex's request for a folder of its own to write in
+  (`grantRoot`), a path that is not plain. An ACP agent runs only in the modes of
   an allowlist per tool, by the ids the pinned version reports — Cursor's `agent`, `plan`, `ask`; Copilot's
   protocol `#agent` and `#plan` (its `#autopilot` turns allow-all on); Grok's `default`, `ask`, `plan` (its
   `acceptEdits` writes without asking; Grok's ACP ids are not confirmed without a sign-in, so another id ends the
-  session) — whether it gives its mode as a mode or as a config option of the mode category, and only while a config
-  option about permissions says default or ask. One that starts elsewhere (an approve-everything mode, a mode added
-  later, none reported) is moved to an allowed one, taken only once the agent reports it (a `current_mode_update`, or
+  session) — whether it gives its mode as a mode or as a config option of the mode category, and only while every
+  other config option but its model's, its model's parameters' and its thinking level's (an allowlist: an "Auto-run"
+  switch, or one a later version adds, whatever its name, counts) says default or ask. One that starts elsewhere (an
+  approve-everything mode, a mode added later, none reported — a session taken up again too: its report is taken once
+  its past is replayed) is moved to an allowed one, taken only once the agent reports it (a `current_mode_update`, or
   a config option's answer); one it cannot leave, or one it switches itself to (`current_mode_update`,
   `config_option_update`), ends its session: no turn runs outside the list. Codex runs with its own sandbox off (the container is the boundary) and its "untrusted" approvals. The watchlist checks the files that run on your computer
   after each turn, with Revert. Its tool cards, its text and its history (kept by the code container: `agents/` in its
   volume, at most 2 MiB a session, 300 sessions) are the sandbox's words, shown as data.
-- [x] **A project's own tool settings: trusted first.** An agent reads a project's own configuration as it is —
-  Codex's `.codex/config.toml` (MCP servers, hooks), Cursor's `.cursor/` (MCP servers, hooks, rules), Grok's `.grok/`,
-  Copilot's `.copilot/` and its `.github/` (hooks, skills, agents, MCP servers, extensions …), the agents' `.agents/`,
-  a `lsp.json` (language servers Copilot and Grok start), Claude Code's plugins (their hooks and MCP servers: Grok and
-  Copilot load them), `.vscode/mcp.json` — in its folder and in the folders above it to the git root (a `.mcp.json`
-  there too, and the `.claude/settings*.json` and `.claude/plugins/` that Grok and Copilot read there and Claude Code
-  does not), with no switch of ours to leave it out. Of `.github/`, everything is listed but what GitHub alone reads
-  (workflows, issue and pull-request templates, CODEOWNERS, dependabot …), images and instruction files: a kind no
-  tool is known to read yet is listed too, so a new one is never missed. The git root is the first folder with a
-  `.git` that holds a `HEAD` (an empty `.git` a repository carries does not end the walk). So bn-coded lists those
-  files with the project's Claude Code settings, from the same folders as Claude Code's `.claude/` trees (one hash,
-  one trust), the trust dialog shows each whole, and an agent session starts in a project's folder only while that
-  trust holds (trusted, or nothing there) — checked again before every turn, so a running agent ends when they change
-  under it; not trusted, changed, unverifiable or trusted before v0.24.0 (the listing grew: look again): refused with
-  why. AGENTS.md and the like are instructions, as CLAUDE.md is.
+- [ ] **Accept edits checks, then the agent writes.** `paths.plain` answers for the paths as they are when it looks;
+  the agent writes after that, so what changes in between — a link put on the way, a folder swapped — is not stopped by
+  it (the sandbox can change its own files at any moment anyway). The watchlist checks the files that run on your
+  computer after each turn, with Revert.
+- [ ] **Approvals a tool saved in its own home settings skip the card.** Cursor's `~/.cursor/cli-config.json` allow
+  list, Copilot's saved approvals and Grok's settings in the sandbox's home are the tools' own: what they allow runs
+  without asking you, in any mode that asks. They are in the sandbox's home, which anything in the sandbox can write
+  (as it can write your workspace), not in a project's folder, so the trust step does not list them. Look at them in
+  the terminal if you let a tool save an approval.
+- [x] **A project's own tool settings: trusted first, in two parts.** An agent reads a project's own configuration as
+  it is — Codex's `.codex/config.toml` (MCP servers, hooks), Cursor's `.cursor/` (MCP servers, hooks, rules), Grok's
+  `.grok/`, Copilot's `.copilot/` and what it reads of `.github/` (hooks, skills, agents, MCP servers, extensions …),
+  the agents' `.agents/`, a `.claude-plugin/` (a plugin marketplace Grok and Copilot read), a `lsp.json` (language
+  servers Copilot and Grok start), Claude Code's plugins (their hooks and MCP servers: Grok and Copilot load them),
+  `.vscode/mcp.json` — in its folder and in the folders above it to the git root (a `.mcp.json` there too, and the
+  `.claude/settings*.json` and `.claude/plugins/` that Grok and Copilot read there and Claude Code does not), with no
+  switch of ours to leave it out. So bn-coded lists them as a part of their own beside Claude Code's, which is exactly
+  the listing of v0.23.0 (the project's `.claude/` and `.mcp.json`, the six `.claude` trees above it): each part with
+  its own hash and bounds, both shown in the trust dialog, each file whole. Claude Code on Bedrock and Claude on your
+  plan decide on Claude Code's part alone — a cloned repository's `.github/` or `.cursor/rules/` changes nothing for
+  them; an agent session starts in a project's folder only while both apply (trusted, or nothing there) — checked when
+  it starts, again once it has opened (what it read while starting), and before every turn, so a running agent ends
+  when they change under it; not trusted, changed, unverifiable or trusted before v0.24.0 (the listing grew: look
+  again): refused with why. When the other tools' part cannot all be shown (a file over 16,000 characters, one that
+  cannot be read the way its tool reads it), *Trust* covers Claude Code's part alone, and the dialog says agents do not
+  start there.
+  Of `.github/`, what the pinned Copilot CLI reads (audited for 1.0.103: `agents/`, `copilot/`, `extensions/`,
+  `hooks/`, `skills/` and `plugin/`, and every file directly in `.github/` — a test fails when the image's pin moves,
+  so a new version means a new audit) is listed whole, but GitHub's own files (CODEOWNERS, dependabot, release, labeler
+  and stale settings …), images and the instruction files (`copilot-instructions.md`, `instructions/`: instructions,
+  as CLAUDE.md is); any other real folder there (workflows, actions, scripts, issue templates …) is listed by its name
+  alone — its name in the hash, not what it holds (no pinned tool reads it) — and is trustable; anything else there —
+  a link, whatever its name (an instruction file's or one of GitHub's own too), a FIFO, a socket, a device — is listed
+  as such and never trusted, and the code container refuses a row by its name alone for anything Copilot reads there
+  (its folders, `mcp.json`, `lsp.json`, `allowed_models.txt`, `plugin.json`, the instruction files). Names are compared as
+  a disk that folds them opens them (compatibility-normalized and case-folded in full: on the Mac `.curſor/mcp.json`
+  opens `.cursor/mcp.json`, and is listed as Cursor's), from each folder's own entries; a folder that can be entered
+  but not listed makes both parts unverifiable. The git root is the first folder with a `.git` that holds a `HEAD` (an
+  empty `.git` a repository carries does not end the walk); outside a repository the walk stops below the workspace
+  itself (its settings are yours). A project that is a linked git worktree or a submodule cannot be checked (the
+  tools read another checkout's configuration then): the dialog says so, and agents do not start there — add the main
+  checkout as a project. AGENTS.md and the like are instructions, as CLAUDE.md is.
 - [x] **A carried conversation is quoted, not yours.** When you switch who answers (or Chat starts a new agent session
   for a conversation), the conversation so far goes in front of your next prompt as a quote that says it holds no
   instructions, every role-like tag in it (`</earlier-conversation>`, `<system>`, `<|im_start|>` …) defanged, its last

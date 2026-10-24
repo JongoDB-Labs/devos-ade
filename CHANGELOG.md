@@ -40,32 +40,55 @@ All notable changes to bedrock-now are documented here. The format follows
   subscriptions are not Chat models then, greyed out saying why); each tool
   started there with its tools switched off, every permission refused, and at the first sign of a tool call the
   agent's process killed there and then, with what it started, nothing it says after reaching the answer (which says
-  so; that session is dropped). Open WebUI reaches Chat's models
+  so, never naming the tool: its title is the agent's words; that session is dropped) — and whatever left its process
+  group (`setsid`, `setpgid`) is killed too, by pid with its start time checked again; an agent's end reaches the code
+  container 2 s after it exits even while something it started holds its output, and a turn waits at most 10 s after
+  a tool's first sign. Without its overlay Chat's sandbox is on a network of its own with no way out, and it does not
+  start where a lookup of one of the stack's names does not answer. Open WebUI reaches Chat's models
   through the main Caddy's internal site (`caddy:8098`) with a key (`CODE_CHAT_KEY`) — the code container shares no
   network with Open WebUI; no login is read, refreshed or passed on.
 - The Code page's agents: their tool calls on your permission cards; only in the modes that ask, by an allowlist of
   each tool's own mode ids (an ACP agent that starts in another — or reports none — is moved to an allowed one, taken
   once it reports it; one that cannot leave, or switches itself away, ends its session);
-  in a project's folder only while its own settings are trusted — Claude Code's and now also the other tools'
-  (`.codex/`, `.cursor/`, `.grok/`, `.gemini/`, `.copilot/`, `.agents/`, all of `.github/` but the files GitHub alone
-  reads, images and instructions, a `lsp.json`, Claude Code's plugins, `.vscode/mcp.json`, in its folder and the folders
-  above it to the git root, with a `.mcp.json` and `.claude/settings*.json` there), listed whole in the trust dialog,
-  and checked again before every turn (a running agent ends when they change). The git root is a `.git` with a `HEAD`:
-  an empty `.git` folder no longer ends the walk up. Every project trusted before is asked about again. A project's
-  Claude Code settings that add a plugin marketplace (`extraKnownMarketplaces`) cannot be trusted; each plugin its
-  `enabledPlugins` turns on is listed in the dialog when it is installed in the sandbox already (its version is part
-  of what you trust), and one that is not installed there cannot be trusted; any other setting naming plugins or a
-  marketplace cannot be trusted either. Claude on your plan checks its own installed plugins: a plugin it has not
-  installed, and its sessions there start with your own settings only, saying why. Another tool's file that names plugins or
-  a marketplace (its parsed keys, at any depth), or that cannot be read the way the tool reads it, cannot be trusted
-  either.
+  in a project's folder only while its own settings are trusted — Claude Code's and the other tools' (`.codex/`,
+  `.cursor/`, `.grok/`, `.gemini/`, `.copilot/`, `.agents/`, `.claude-plugin/`, what the pinned Copilot CLI reads of
+  `.github/` — its folders whole, any file directly there but GitHub's own, images and instructions, any other folder
+  by its name alone —, a `lsp.json`, Claude Code's plugins, `.vscode/mcp.json`, in its folder and the folders above it
+  to the git root, with a `.mcp.json` and `.claude/settings*.json` there), listed whole in the trust dialog, checked
+  when it starts, once it has opened, and before every turn (a running agent ends when they change). The other tools'
+  files are a part of their own, with a hash of their own: **Claude Code on Bedrock and on your plan decide on Claude
+  Code's part alone**, exactly the listing of v0.23.0, so a cloned repository's `.github/` or `.cursor/` never takes a
+  project's CLAUDE.md and settings away from them; when the other tools' part cannot all be shown, *Trust* covers
+  Claude Code's part alone and agents do not start there, the dialog says so — as it shows Claude on your plan's own
+  state, and a linked worktree or submodule. Names are compared as a disk that folds them opens them (`.curſor` is
+  `.cursor`, `.mcp.jſon` is `.mcp.json`), from each folder's own entries; a folder that cannot be listed is
+  unverifiable; outside a repository the walk up stops below the workspace (its settings are yours). The git root is
+  a `.git` with a `HEAD`: an empty `.git` folder no longer ends the walk up. Every project trusted before is asked about
+  again. A project's Claude Code settings that add a plugin marketplace (`extraKnownMarketplaces`), or bring plugins by
+  another of Claude Code's keys, cannot be trusted; each plugin its `enabledPlugins` turns on is listed in the dialog
+  when it is installed in the sandbox already (its version is part of what you trust), and one that is not installed
+  there cannot be trusted. Claude on your plan checks its own installed plugins: a plugin it has not installed, and its
+  sessions there start with your own settings only, saying why. Another tool's file that names plugins or a
+  marketplace by the tools' exact keys (parsed, at any depth — never a dependency named `eslint-plugin-react`), or that
+  cannot be read the way the tool reads it, cannot be trusted either. What *Trust* confirms names the project and the
+  reading. A link in `.github/` (whatever its name) is never trusted; only a real folder no pinned tool reads is
+  listed by its name alone. Accept edits also asks for `.idea/`, `.zed/`, `*.code-workspace`,
+  `.pre-commit-config.yaml`, lefthook's files and whatever git runs code from — a git folder wherever a `gitdir:`
+  file puts it, its hooks, configs and include targets, an fsmonitor program —, in any spelling a folding disk opens;
+  the watchlist also sees a git folder's `info/attributes`, `commondir` and a rebase's to-do list. An agent's config option other than
+  its mode, model and thinking level must say *ask*, whatever its name, and a session taken up again leaves an
+  approve-everything mode as a new one does.
 - A conversation carried to another harness (or to a Chat model's new session) goes in as a quote that holds no
   instructions, its role-like tags defanged and its tags marked with a random mark of their own: an earlier answer
   cannot speak as you.
 - Chat's Claude attaches no file and reads none: `CLAUDE_CODE_DISABLE_ATTACHMENTS=1`, `--tools=`,
   `--strict-mcp-config` and `--setting-sources=` (each required by bn-coded), managed settings of Chat's own (every
-  file read denied, no hooks, no Bypass or Auto); an `@` in Chat's text is no file's name (`＠`); Open WebUI's site
-  loads images from itself only.
+  file read denied, no hooks, no Bypass or Auto); an `@` in Chat's text is no file's name (`＠`, a quoted path's and one
+  after CJK punctuation too).
+- **What an answer can make your browser fetch, in Chat:** Open WebUI's site (locally and over remote access) loads
+  images, audio, video, frames and fonts, and sends requests and forms, to itself only, with no Referer; an html code
+  block opens in Open WebUI's Artifacts panel only on a click, under the Code page's artifact viewer's policy
+  (`connect-src 'none'`) as well. An artifact can still navigate itself away (docs/security.md says what is left).
 
 (Dev installs that ran a pre-release of this version kept the terminal's sign-ins in volumes of their own,
 `<project>_subs-*`: those are not carried over — the terminal's sign-ins are in its home again, so sign in once more
