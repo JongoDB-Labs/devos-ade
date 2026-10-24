@@ -296,9 +296,10 @@ export function PortsPanel({ onDone }: { onDone?: () => void }) {
           <Icon name="refresh" size={14} />
         </button>
       </div>
-      {info && !info.available && <div class="banner warn small" data-testid="preview-unavailable">{label(info.reason, 300) || 'Previews are off here.'}</div>}
-      {/* (over remote access: where they are turned on — setuplinks.ts) */}
-      {info && !info.available && info.routing === 'cookie' && (
+      {info && !info.available && <div class="banner warn small" data-testid="preview-unavailable">{label(info.reason, 300) || 'Previews are not available here.'}</div>}
+      {/* (over remote access, off by its setting: where they are turned on — setuplinks.ts; on but with no address yet,
+          the reason above says what is missing, and there is no setting to go to) */}
+      {info && !info.available && info.setup === 'remote-preview' && (
         <button type="button" class="linkish setup-link" data-setup="remote-preview" data-testid="preview-remote-setup" onClick={() => (onDone?.(), goSetup('remote-preview'))}>
           {SETUP_LINKS['remote-preview'].says}
         </button>

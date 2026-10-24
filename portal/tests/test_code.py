@@ -207,6 +207,19 @@ def test_a_greyed_item_of_the_code_page_opens_settings_from_the_code_tabs_own_fr
     if table.exists():
         rows = {l.split("\t")[0]: l.split("\t")[1] for l in table.read_text(encoding="utf-8").splitlines() if l and not l.startswith("#")}
         assert {r: f"setting:{p}" for r, p in lst.items()} == {r: rows[r] for r in lst}, lst
+        # every reason the Code page can send (any of the table's reasons its sources name — a SetupReason is always
+        # written out somewhere: a greyed item's, a link's, a harness status's) whose place is a Settings row is in
+        # the list: none is dropped by the portal on its way
+        code = table.parent.parent / "code"
+        if code.is_dir():
+            sent = set()
+            for f in code.rglob("*"):
+                if f.suffix not in (".ts", ".tsx", ".mjs", ".js") or "node_modules" in f.parts or "test" in f.parts or "dist" in f.parts or f.name == "setuplinks.ts":
+                    continue
+                text = f.read_text(encoding="utf-8", errors="replace")
+                sent |= {r for r in rows if re.search(r"""['"`]%s['"`]""" % re.escape(r), text)}
+            wanted = {r for r in sent if rows[r].startswith("setting:")}
+            assert len(wanted) >= 8 and wanted <= set(lst), sorted(wanted - set(lst))
 
 
 def test_code_tabs_frame_is_made_when_idle_on_big_screens_for_its_badge():

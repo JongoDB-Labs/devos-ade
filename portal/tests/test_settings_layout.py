@@ -277,7 +277,13 @@ def test_the_address_keeps_a_place_inside_a_page():
     # a section id or a key the layout knows; a key shown inside another row opens that row; nothing else is used
     assert "if (sectionOf(part)) sec = part;" in go and "KEY_NAME.test(part)" in go and "&& rowOf[part]" in go
     assert 'rowOf[key].place === "with"' in go and "more.open = true;" in go and 'classList.add("set-forced")' in go
-    assert "const KEY_NAME = /^[A-Z][A-Z0-9_]{1,40}$/;" in js
+    # (the same names as every setup link's target: answers.py, answers.js and the Code page's setuplinks.ts)
+    assert "const KEY_NAME = /^[A-Z][A-Z0-9_]{1,60}$/;" in js
+    from portal import answers
+    assert "[A-Z][A-Z0-9_]{1,60}" in answers.SETUP_TARGET.pattern
+    assert "[A-Z][A-Z0-9_]{1,60}" in _js("answers.js")
+    ts = REPO / "code" / "web" / "src" / "setuplinks.ts"
+    assert not ts.is_file() or "[A-Z][A-Z0-9_]{1,60}" in ts.read_text()
     assert 'history.replaceState(null, "", `#settings/${id}`)' in js and "history.pushState" not in js
 
 

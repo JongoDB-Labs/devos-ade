@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cleanPreviewPath, fitScale, localLink, localPorts, VIEWPORTS, switchedAway } from '../src/devpreview';
-import { normLaunchEntry, normPort, previewLinkOk, previewTabUrl } from '../src/api';
+import { normLaunchEntry, normPort, normPreviewInfo, previewLinkOk, previewTabUrl } from '../src/api';
 
 test('localPorts: the local URLs a dev server prints, colours and all; not other hosts or ports without a number', () => {
   const vite = '\n  VITE v7.1.5  ready in 312 ms\n\n  ➜  Local:   http://localhost:5173/\n  ➜  Network: use --host to expose\n';
@@ -145,4 +145,17 @@ test('launch.json: loaders flagged; an entry shown whole or not at all; approval
   for (let i = 0; i < 60; i++) approveLaunch(i.toString(16).padStart(64, '0'));
   assert.equal(JSON.parse(mem.get('bn.code.launch.v1') ?? '[]').length, 50);
   delete (globalThis as unknown as { localStorage?: unknown }).localStorage;
+});
+
+test('previews over remote access: a link to their setting only when that setting is what is off', () => {
+  // REMOTE_PREVIEW off: Settings › Remote access › Previews over remote access (setuplinks.ts)
+  assert.equal(normPreviewInfo({ available: false, reason: 'Previews over remote access are off (the default) …', routing: 'cookie', setup: 'remote-preview' }).setup, 'remote-preview');
+  // turned on, but no address yet: what is missing is a step on that computer — no link, the reason says it
+  const noAddress = normPreviewInfo({ available: false, reason: 'Previews over remote access have no address yet: ./stack up …', routing: 'cookie', setup: '' });
+  assert.equal(noAddress.setup, '');
+  assert.match(noAddress.reason, /no address yet/);
+  // (anything else, or with previews available, never a link)
+  for (const o of [{ available: false, routing: 'cookie' }, { available: false, setup: 'terminal-off' }, { available: true, routing: 'cookie', setup: 'remote-preview' }]) {
+    assert.equal(normPreviewInfo(o).setup, '', JSON.stringify(o));
+  }
 });

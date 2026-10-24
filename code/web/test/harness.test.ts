@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { harnessOf, normEvent, normPlan, normServerMsg } from '../src/api';
 import { planText, harnessState } from '../src/components/Pickers';
 import { SETUP_LINKS, settingsRoute, setupTarget, type SetupReason } from '../src/setuplinks';
@@ -62,4 +63,29 @@ test('greyed items: every reason has a target, none dead — a setting of the po
   assert.deepEqual(settingsRoute('folder-read-only', 'https://p.example', false), { open: 'https://p.example/#settings/+project-folders' });
   assert.equal(settingsRoute('tool-signin', 'https://p.example', true), null, 'a sign-in: no Settings place');
   for (const origin of [null, 'javascript:alert(1)', 'not a url']) assert.equal(settingsRoute('auto-off', origin, true), null, String(origin));
+});
+
+test("the terminal panel's Open…: every choice acts on the button beside it, never on the menu's change", () => {
+  const src = readFileSync(new URL('../src/components/Shell.tsx', import.meta.url), 'utf8');
+  const menu = src.split('function ToolMenu(')[1].split('\nfunction ')[0];
+  // (the change only keeps the choice: arrowing through a closed menu changes it on some systems)
+  const change = /onChange=\{\(e\) => ([^\n]+)\}\n/.exec(menu.split('<select')[1])?.[1] ?? '';
+  assert.equal(change, 'setChoice((e.currentTarget as HTMLSelectElement).value)');
+  // the buttons act: Open (a launch) or Go to Settings (where it is turned on), each named for what it does
+  const act = menu.split('const act = () => {')[1].split('\n  };')[0];
+  assert.match(act, /goSetup\(s\.reason, s\.tool\)/);
+  assert.match(act, /terminalLaunch\(id,/);
+  assert.equal((menu.match(/onClick=\{act\}/g) ?? []).length, 2);
+  assert.match(menu, /aria-label=\{`Go to \$\{SETUP_LINKS\[setup\.reason\]\.where\}`\}/);
+  assert.match(menu, /aria-label=\{`Open \$\{named\(choice\)\} in the terminal`\}/);
+});
+
+test('a read-only project folder links where that is changed: the file tree, the Git panel, an open file, a gone project', () => {
+  for (const [file, id] of [['FileTree', 'tree-read-only-setup'], ['GitPanel', 'git-read-only-setup'], ['EditorArea', 'file-read-only-setup'], ['Projects', 'project-gone-setup']]) {
+    const src = readFileSync(new URL(`../src/components/${file}.tsx`, import.meta.url), 'utf8');
+    const at = src.indexOf(`data-testid="${id}"`);
+    assert.ok(at > 0, `${file}: ${id}`);
+    assert.match(src.slice(at - 200, at + 400), /onClick=\{\(\) => goSetup\('folder-read-only'\)\}/, file);
+  }
+  assert.equal(SETUP_LINKS['folder-read-only'].target, 'setting:+project-folders');
 });

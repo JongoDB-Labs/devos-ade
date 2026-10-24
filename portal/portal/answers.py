@@ -7,7 +7,7 @@ kind from the list below. Nothing of a login is ever in it.
 
 GET /api/answers (any signed-in device) and /.bn/answers on the Code page's host (Caddy → /auth/code-answers, after its
 check): {"terminal": {"enabled", "here", "reason"}, "sandbox", "checked_at", "tools": [...], "models": [...],
-"plan_models": [...], "openrouter", "setup": {reason: {"target", "says"}}} — setup: catalog/setup-links.tsv, what each
+"plan_models": [...], "openrouter", "setup": {reason: {"target", "where", "says"}}} — setup: catalog/setup-links.tsv, what each
 greyed item says and where it takes you (setup_links)."""
 
 from __future__ import annotations
@@ -85,7 +85,8 @@ def read_tools(catalog_dir: Path) -> list[dict]:
 
 
 def setup_links(catalog_dir: Path) -> dict:
-    """catalog/setup-links.tsv: {reason: {"target", "says"}} in its order, each field checked ({} without the file)."""
+    """catalog/setup-links.tsv: {reason: {"target", "where", "says"}} in its order, each field checked ({} without the
+    file)."""
     try:
         p = catalog_dir / SETUP_FILE
         if p.stat().st_size > MAX_TABLE:
@@ -98,11 +99,11 @@ def setup_links(catalog_dir: Path) -> dict:
         if not line or line.startswith("#"):
             continue
         f = line.split("\t")
-        if len(f) != 3 or not SETUP_REASON.fullmatch(f[0]) or not SETUP_TARGET.fullmatch(f[1]) or f[0] in out:
+        if len(f) != 4 or not SETUP_REASON.fullmatch(f[0]) or not SETUP_TARGET.fullmatch(f[1]) or f[0] in out:
             continue
-        says = _text(f[2], 300)
-        if says:
-            out[f[0]] = {"target": f[1], "says": says}
+        where, says = _text(f[2], 120), _text(f[3], 300)
+        if where and says:
+            out[f[0]] = {"target": f[1], "where": where, "says": says}
     return out
 
 

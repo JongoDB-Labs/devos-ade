@@ -487,6 +487,8 @@ def _keys_and_layout():
 def test_every_greyed_reason_has_a_live_target():
     links = answers.setup_links(SETUP.parent)
     keys, layout = _keys_and_layout()
+    policy = {l.split("\t")[0]: l.split("\t")[3] for l in (CATALOG.parent / "settings.tsv").read_text(encoding="utf-8").splitlines()
+              if l and not l.startswith("#") and len(l.split("\t")) > 3}
     assert links, "the table is there and read"
     for reason, l in links.items():
         kind, _, what = l["target"].partition(":")
@@ -500,8 +502,21 @@ def test_every_greyed_reason_has_a_live_target():
                 assert row[3] in layout and layout[row[3]][2] != "with", (reason, row)
         else:
             assert kind == "signin" and what in ("terminal", "chat"), (reason, l)
-        # (what it says names where it goes: a setting by its place in Settings, a sign-in by where it starts)
+        # (what it says names where it goes: a setting by its place in Settings, a sign-in by where it starts; a button's
+        # name the same)
         assert "Settings ›" in l["says"] or "terminal" in l["says"], (reason, l["says"])
+        assert l["where"].startswith("Settings ›") or "terminal" in l["where"], (reason, l["where"])
+        if l["where"].startswith("Settings ›"):
+            assert l["where"].split(" › ")[1] in l["says"], (reason, l["where"])
+        # (a read-only row shows how, never "turns it on"; whatever only the computer running bedrock-now may do — a
+        # read-only row's step, a local setting, one turned on only there, Chat's sign-in command — says so, the same
+        # words each time)
+        pol = policy.get(what) if kind == "setting" else None
+        if pol == "ro":
+            assert "shows how" in l["says"] and "turns it on" not in l["says"], (reason, l["says"])
+        if pol in ("ro", "local", "widen-local") or l["target"] == "signin:chat":
+            assert ", from the computer running bedrock-now." in l["says"], (reason, l["says"])
+        assert "on the computer running" not in l["says"], (reason, l["says"])
     # every reason the portal gives is in the table: plan_models' and the terminal's (answers.js's: tests/js)
     s = types.SimpleNamespace
     rows = [{"id": "claude", "name": "Claude", "plan": "p", "chat_model": "yes", "installed": True, "chat": {"installed": True, "signed_in": "no"}},
@@ -524,12 +539,15 @@ def test_every_greyed_reason_has_a_live_target():
 
 
 def test_setup_links_reads_only_plain_rows(tmp_path):
+    zw = chr(0x200b)
     (tmp_path / "setup-links.tsv").write_text(
-        "# a comment\nok-one\tsetting:CODE_ENABLED\tSays.\nBad\tsetting:X_Y\tx\nno-target\tsetting:lower\tx\n"
-        "bad-kind\tsignin:portal\tx\nfour\tsetting:A_B\tx\textra\nok-one\tsignin:chat\tagain\nempty\tsignin:chat\t​\n"
-        "chat\tsignin:chat\tSign in \u0007for Chat.\n", encoding="utf-8")
-    assert answers.setup_links(tmp_path) == {"ok-one": {"target": "setting:CODE_ENABLED", "says": "Says."},
-                                             "chat": {"target": "signin:chat", "says": "Sign in for Chat."}}
+        "# a comment\nok-one\tsetting:CODE_ENABLED\tSettings › Code page\tSays.\nBad\tsetting:X_Y\tw\tx\nno-target\tsetting:lower\tw\tx\n"
+        "bad-kind\tsignin:portal\tw\tx\nthree\tsetting:A_B\tx\nfive\tsetting:A_B\tw\tx\textra\nok-one\tsignin:chat\tw\tagain\n"
+        f"empty\tsignin:chat\tw\t{zw}\nnowhere\tsignin:chat\t{zw}\tx\nchat\tsignin:chat\tSettings › Chat\tSign in \u0007for Chat.\n"
+        "own\tsetting:+project-folders\tSettings › Project folders\tRead-only.\n", encoding="utf-8")
+    assert answers.setup_links(tmp_path) == {"ok-one": {"target": "setting:CODE_ENABLED", "where": "Settings › Code page", "says": "Says."},
+                                             "chat": {"target": "signin:chat", "where": "Settings › Chat", "says": "Sign in for Chat."},
+                                             "own": {"target": "setting:+project-folders", "where": "Settings › Project folders", "says": "Read-only."}}
     assert answers.setup_links(tmp_path / "none") == {}
 
 

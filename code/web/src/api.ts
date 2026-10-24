@@ -2000,8 +2000,12 @@ export async function captureTerminal(lines: number = CAPTURE_LINES): Promise<Te
 /** Whether previews work here, and how they are routed (the portal: a capability per host on this computer, one host
  *  and a cookie over remote access). */
 export async function getPreviewInfo(): Promise<PreviewInfo> {
-  const o = await request('GET', '/.bn/preview' + q({ format: 'json' }));
-  return { available: o.available === true, reason: label(o.reason, 300), routing: o.routing === 'cookie' ? 'cookie' : 'host' };
+  return normPreviewInfo(await request('GET', '/.bn/preview' + q({ format: 'json' })));
+}
+/** (the portal's answer as this page uses it: a link to a setting only when one is what is off) */
+export function normPreviewInfo(o: Record<string, unknown>): PreviewInfo {
+  return { available: o.available === true, reason: label(o.reason, 300), routing: o.routing === 'cookie' ? 'cookie' : 'host',
+    setup: o.available !== true && o.setup === 'remote-preview' ? 'remote-preview' : '' };
 }
 
 /** A preview link only when it is one: http, a host p<port>-<capability>.<domain> for this port, no credentials — or,

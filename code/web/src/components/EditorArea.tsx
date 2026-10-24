@@ -5,7 +5,8 @@
 // one click away, and Split for Markdown (the preview follows your unsaved edits).
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useSel } from '../store';
-import { store, closeTab, setActiveTab, saveFile, reloadFile, markDirty, setCursor, openFile, openDiff, setPrefs, keepMine, toast, type Tab, type FileTab, type DiffTab } from '../app';
+import { store, closeTab, setActiveTab, saveFile, reloadFile, markDirty, setCursor, openFile, openDiff, setPrefs, keepMine, toast, goSetup, type Tab, type FileTab, type DiffTab } from '../app';
+import { SETUP_LINKS } from '../setuplinks';
 import { addLines, insertIntoPrompt } from '../attach';
 import { RANGE_MAX, lineToken } from '../mentions';
 import * as api from '../api';
@@ -196,7 +197,8 @@ function FilePane({ tab, active }: { tab: FileTab; active: boolean }) {
       {locked && (
         <div class="banner subtle" data-testid="file-read-only">
           <Icon name="eye" size={15} />
-          <span>Read-only: {label(locked, 200)} is a folder of this computer listed read-only (Settings › Claude Code › Project folders).</span>
+          <span>Read-only: {label(locked, 200)} is a folder of this computer listed read-only (<button type="button" class="linkish setup-link" data-setup="folder-read-only" data-testid="file-read-only-setup"
+                aria-label={`Go to ${SETUP_LINKS['folder-read-only'].where}`} onClick={() => goSetup('folder-read-only')}>{SETUP_LINKS['folder-read-only'].where}</button>).</span>
         </div>
       )}
       {phone && canMount && !tab.truncated && !locked && view !== 'preview' && (

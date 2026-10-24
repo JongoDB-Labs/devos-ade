@@ -701,6 +701,9 @@ export interface PreviewInfo {
   /** host: each preview's own host carries its capability (this computer); cookie: one preview host for every port, whose
    *  cookie a single-use hand-off sets (over remote access: a browser previews one port at a time there) */
   routing: 'host' | 'cookie';
+  /** off because of a setting (REMOTE_PREVIEW, over remote access): where it is turned on — setuplinks.ts; '' when
+   *  something else is missing (no address yet: the reason says what) */
+  setup: 'remote-preview' | '';
 }
 
 /** A preview link from the portal: the preview's own origin, p<port>-<capability>.<preview domain> — or, over remote

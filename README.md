@@ -621,7 +621,7 @@ from the computer running the stack).
 
 - **Terminal**: *Open* above it — Claude Code on Bedrock, a shell, or one of your tools, each in a tmux window of its
   own (one that is not signed in starts with its sign-in). The Code page's terminal panel has the same *Open…* menu,
-  in the project's folder. A tool starts only on your click there: the portal then makes a short-lived launch token for
+  in the project's folder. A tool starts only on your click of the button beside the menu (*Open*), never on a choice: the portal then makes a short-lived launch token for
   exactly that; a link to the terminal with a tool in it but no such token only asks *Open … here?*.
 - **Chat**: each subscription that is signed in is **a model in Open WebUI's own menu** — *Codex · your ChatGPT plan*,
   *GitHub Copilot · your Copilot plan*, *Grok*, and *Claude · your Claude plan* while its switch is on (not Cursor: it
@@ -638,8 +638,10 @@ from the computer running the stack).
   conversation is one of the agent's own sessions, taken up again at each turn (its context, compaction and limits are
   the provider's); an edited or regenerated message starts a new session with the conversation so far. Under each
   answer: *on your ChatGPT plan · 1,240 in / 380 out* — tokens, never dollars. *Who answers* above Chat lists them too
-  (greyed when one cannot answer — a link to where that is turned on), next to the Bedrock and OpenRouter models and each tool **itself** in
-  place of Open WebUI, in the folder you pick (you type into the real app, its own history and usage display).
+  (greyed when one cannot answer — *Go to Settings* beside it, where that is turned on), next to the Bedrock and OpenRouter models and each tool **itself** in
+  place of Open WebUI, in the folder you pick (you type into the real app, its own history and usage display); each
+  choice there acts on the button beside the menu (*Use this model*, *Open it here*, *Use Open WebUI*, *Open it in …*
+  for another folder), never on the choice alone.
   Google's plans no longer work in Gemini CLI: Gemini in Chat is planned through your own Gemini API key, like the
   other providers' keys (OpenAI, Anthropic, xAI, Mistral).
 - **Code page**: the model picker's **Who answers** — Claude Code on Bedrock (as before), *Claude · your plan*, Codex,
@@ -689,7 +691,8 @@ plan's own limits: bedrock-now bills none of it and shows no $ for it.
 
 **Greyed out means "set it up here".** Anything greyed because of a setting or a sign-in says where it is turned on,
 and takes you there: in a menu — the Terminal's *Open*, Chat's *Who answers*, the Code page's terminal panel's
-*Open…* — choosing it shows a button beside the menu (*Go to Settings*; nothing moves until you press it); elsewhere it
+*Open…* — choosing it shows a button beside the menu (*Go to Settings*, named for where it goes; nothing moves until
+you press it, and the same for every choice there: a model, a tool, Open WebUI, the folder a tool works in); elsewhere it
 is a link or a menu item of its own — the Code page's *Who answers*, its Auto and Bypass modes, its model list's scope,
 its previews over remote access, a read-only project folder, Home's update tools and the Terminal and Code cards on
 your devices, Home's voice note. It goes to the Settings row that turns it on (scrolled to and highlighted; a switch

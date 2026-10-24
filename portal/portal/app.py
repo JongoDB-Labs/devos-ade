@@ -757,8 +757,12 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         raw_port = request.query_params.get("port")
         if raw_port is None and wants_json(request):
             domain = (settings.remote_preview_host if rem else settings.preview_domain) if settings.preview_on(rem) else ""
+            # (setup: a reason of catalog/setup-links.tsv when a setting is what is missing — REMOTE_PREVIEW off over
+            # remote access, where the Code page links Settings › Remote access; turned on but with no address yet, a
+            # step on that computer instead: none, the reason says it)
+            setup = "remote-preview" if rem and not settings.preview_on(True) and not settings.remote_preview else ""
             return _no_store(JSONResponse({"available": settings.preview_on(rem), "domain": domain,
-                                           "routing": "cookie" if rem else "host", "reason": preview_reason(rem)}))
+                                           "routing": "cookie" if rem else "host", "reason": preview_reason(rem), "setup": setup}))
         if not settings.preview_on(rem):
             return _no_store(JSONResponse({"error": preview_reason(rem)}, status_code=403 if rem else 404))
         if request.headers.get("sec-fetch-site") != "same-origin":

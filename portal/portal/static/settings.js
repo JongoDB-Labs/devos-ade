@@ -25,7 +25,7 @@
     openrouter: ["LiteLLM", "portal"], rustfs: ["Files", "Chat", "shared-mcp", "portal"], mcp: ["shared-mcp", "portal"],
     code: ["portal", "Caddy"], "code-env": ["Code page"], "terminal-env": ["Terminal"], "terminal-egress": ["Terminal"], "remote-preview": ["portal", "Caddy"] };
   const ON_VALUES = ["true", "1", "yes", "on"], OFF_VALUES = ["false", "0", "no", "off"];
-  const KEY_NAME = /^[A-Z][A-Z0-9_]{1,40}$/;
+  const KEY_NAME = /^[A-Z][A-Z0-9_]{1,60}$/;   // (as the setup links' targets: catalog/setup-links.tsv)
   const SECTION_MEMO = "bn.settings.section";
   // a row that stands for more than its key: named for what it shows
   const ROW_LABEL = { RUSTFS_ACCESS_KEY: "Files (RustFS) key pair", STT_PROVIDER: "Speech-to-text", TERMINAL_ENABLED: "Browser terminal",
@@ -238,8 +238,8 @@
     // what takes the focus: a Chat sign-in asked for (Sign in for Chat…: that tool's Chat row, its Sign in); else the
     // setting — its switch, when it has one: a setting's own row, or a setting shown inside a row ([data-for]); a row
     // of the page's own (Your AI subscriptions …) is focused as a whole, never a switch inside it
-    const chat = chatSigninWanted();
-    const signin = key === "+subscriptions" && chat ? r.querySelector(`#set-subs-chat-${chat} [data-act="subscriptions-chat-signin"]`) : null;
+    const chat = chatAsk.take(key === "+subscriptions" && !inner);
+    const signin = chat ? r.querySelector(`#set-subs-chat-${chat} [data-act="subscriptions-chat-signin"]`) : null;
     const at = signin ? signin.closest(".set-subs-where") : (inner && r.querySelector(`[data-for="${inner}"]`)) || r;
     const sw = !signin && (inner || !key.startsWith("+")) ? at.querySelector('button[role="switch"]:not(:disabled)') : null;
     at.setAttribute("tabindex", "-1");
@@ -248,14 +248,28 @@
     at.classList.add("set-flash");
     setTimeout(() => at.classList.remove("set-flash"), 2400);
   }
-  // A Chat sign-in asked for from Chat's picker (answers.js sets window.bnSubsChatSignin): that tool, for a few seconds
-  // — kept across the page's redraws until then (Settings may load twice on its way there), its command shown each time
-  let chatSignin = { tool: "", until: 0 };
-  function chatSigninWanted() {
-    const w = window.bnSubsChatSignin;
-    if (typeof w === "string" && /^[a-z]{2,10}$/.test(w)) { chatSignin = { tool: w, until: Date.now() + 5000 }; window.bnSubsChatSignin = ""; }
-    return chatSignin.tool && Date.now() < chatSignin.until ? chatSignin.tool : "";
-  }
+  // A Chat sign-in asked for from Chat's picker (answers.js sets window.bnSubsChatSignin, then goes to
+  // #settings/+subscriptions): taken once, by that arrival alone — goTo at Your AI subscriptions with nothing inside it
+  // named — which focuses that tool's Sign in; its command stays shown through the page's redraws for a few seconds
+  // from then. Any other arrival (#settings/CODE_CLAUDE_PLAN, a row inside it, too), or leaving Settings, drops it.
+  // chatAsk:begin
+  const chatAsk = {
+    tool: "", until: 0,
+    asked() { const w = window.bnSubsChatSignin; return typeof w === "string" && /^[a-z]{2,10}$/.test(w) ? w : ""; },
+    // (the subscriptions row as it is drawn: the tool whose command shows — asked for, or taken a moment ago)
+    shown() { return this.asked() || (this.tool && Date.now() < this.until ? this.tool : ""); },
+    // (goTo: the tool whose Sign in takes the focus — only when this arrival is the one asked for; else dropped)
+    take(here) {
+      const w = this.asked();
+      window.bnSubsChatSignin = "";
+      this.drop();
+      if (!here || !w) return "";
+      this.tool = w; this.until = Date.now() + 5000;
+      return w;
+    },
+    drop() { this.tool = ""; this.until = 0; },
+  };
+  // chatAsk:end
 
   // --- what is shown: one section, or every match of the search / "Changed from default" with its section ---
   function changedFromDefault(k) {
@@ -554,8 +568,10 @@
   const codeFolder = () => terminalOn() ? (keys.TERMINAL_WORKSPACE && keys.TERMINAL_WORKSPACE.value) || ""
     : (data.snapshot && data.snapshot.choices.code_workspace) || "";
 
-  function copyButton(cmd) {
+  // (NAME: its name for a screen reader where a page shows more than one of the kind — "Copy Codex's Chat sign-in command")
+  function copyButton(cmd, name) {
     const b = el("button", { type: "button", class: "copy", text: "Copy" });
+    if (name) b.setAttribute("aria-label", name);
     b.addEventListener("click", () => copy(cmd.replace(/\s+\(.*\)$/, ""), "the command"));
     return b;
   }
@@ -1327,8 +1343,10 @@
     const stateOf = (t, s) => (s.installed === false ? ["not in the sandbox", ""] : s.installed == null ? ["not checked yet", ""]
       : s.signed_in === "yes" ? [`signed in${s.kind_words ? ` · ${s.kind_words}` : ""}${s.how === "file" ? " (its login file is there)" : ""}`, "badge-local"]
         : s.signed_in === "no" ? ["not signed in", ""] : [t.id === "copilot" ? "not known here — /user in Copilot says" : "not known here", ""]);
-    const checkButton = (action, title, body) => {
+    // (each with a name of its own: the tool's row it is in — the check asks every tool of that sandbox)
+    const checkButton = (action, title, body, name) => {
       const b = el("button", { type: "button", class: "action", text: "Check again", "data-act": action });
+      if (name) b.setAttribute("aria-label", name);
       b.disabled = !can(action);
       b.addEventListener("click", () => askPassword({ kind: "subscriptions", action }, title, body, "Check again"));
       return b;
@@ -1365,7 +1383,8 @@
       }
       // (shown whenever the tool is there: a sandbox that says "signed out" may still hold a login — its sign-out removes it)
       if (t.signout === "cli" && t.installed !== false) {
-        const out = el("button", { type: "button", class: "action", text: "Sign out", "data-act": "subscriptions-signout" });
+        const out = el("button", { type: "button", class: "action", text: "Sign out", "data-act": "subscriptions-signout",
+          "aria-label": `Sign out: ${t.name} in the sandbox (terminal and Code page)` });
         out.disabled = !can("subscriptions-signout");
         out.addEventListener("click", () => askPassword({ kind: "subscriptions", action: "subscriptions-signout", tool: t.id },
           `Sign ${t.name} out in the sandbox?`,
@@ -1375,7 +1394,8 @@
         term.append(el("p", { class: "note", text: `${t.name} signs out inside it: ${t.id === "gemini" ? "/auth signout" : "/logout"} (Open in the terminal).` }));
       }
       acts.append(checkButton("subscriptions-check", "Ask the sandbox's AI tools again?",
-        "Each tool's own status command runs in the sandbox (about a second each); only signed in or not, and which kind, is kept."));
+        "Each tool's own status command runs in the sandbox (about a second each); only signed in or not, and which kind, is kept.",
+        `Check again: ${t.name} and the sandbox's other tools (terminal and Code page)`));
       term.append(acts);
       li.append(term);
       // Chat's own sign-in (a Chat model only: catalog chat_model yes)
@@ -1389,11 +1409,12 @@
         const signin = el("button", { type: "button", class: chatIn ? "action" : "action primary", text: "Sign in (Chat)", "aria-expanded": "false",
           "aria-label": `Sign in (Chat): ${t.name}'s command for a terminal on this computer`, "data-act": "subscriptions-chat-signin" });
         const how = el("p", { class: "set-cli", hidden: true }, el("span", { class: "note", text: `Chat's own sign-in, apart from the terminal's — in a terminal on this computer (its link and code show there): ` }),
-          el("code", { text: cmd }), " ", copyButton(cmd));
+          el("code", { text: cmd }), " ", copyButton(cmd, `Copy ${t.name}'s Chat sign-in command`));
         signin.addEventListener("click", () => { how.hidden = !how.hidden; signin.setAttribute("aria-expanded", String(!how.hidden)); });
         cacts.append(signin);
         if (SUBS_CHAT_SIGNOUT.includes(t.id) && t.chat.installed !== false) {
-          const out = el("button", { type: "button", class: "action", text: "Sign out", "data-act": "subscriptions-signout-chat" });
+          const out = el("button", { type: "button", class: "action", text: "Sign out", "data-act": "subscriptions-signout-chat",
+            "aria-label": `Sign out: ${t.name} for Chat` });
           out.disabled = !can("subscriptions-signout-chat");
           out.addEventListener("click", () => askPassword({ kind: "subscriptions", action: "subscriptions-signout-chat", tool: t.id },
             `Sign ${t.name} out for Chat?`,
@@ -1403,7 +1424,8 @@
           chat.append(el("p", { class: "note", text: "Copilot signs out inside it, and Chat has no screen of it: ./stack subscriptions logout copilot --chat says how." }));
         }
         cacts.append(checkButton("subscriptions-check-chat", "Ask Chat's sandbox again?",
-          "Each Chat tool's own status command runs in Chat's sandbox; only signed in or not, and which kind, is kept."));
+          "Each Chat tool's own status command runs in Chat's sandbox; only signed in or not, and which kind, is kept.",
+          `Check again: ${t.name} and Chat's other tools`));
         chat.append(cacts, how);
         li.append(chat);
       }
@@ -1443,7 +1465,7 @@
       copyButton("./stack subscriptions")));
     // (from Chat's picker: "Sign in for Chat…" — that tool's Chat row, its Sign in pressed: the command shown; goTo
     // then focuses it, the row highlighted)
-    const want = chatSigninWanted();
+    const want = chatAsk.shown();
     const c = want ? rw.querySelector(`#set-subs-chat-${want}`) : null;
     if (c) {
       c.querySelector(".set-cli").hidden = false;
@@ -1799,7 +1821,7 @@
 
   document.addEventListener("bn:tab", (e) => {
     if (e.detail === "settings") load().then(placeFromAddress);
-    else if (e.detail === "home" && data) renderNotice();
+    else { chatAsk.drop(); window.bnSubsChatSignin = ""; if (e.detail === "home" && data) renderNotice(); }
   });
   document.addEventListener("DOMContentLoaded", () => {
     // the More sheet on phones: Settings is a page of the portal, not a new tab

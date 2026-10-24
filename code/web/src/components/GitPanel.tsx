@@ -24,10 +24,12 @@ import {
   writeCommitMessage,
   openProjectDialog,
   type GitDiffTab,
+  goSetup,
 } from '../app';
 import { codeTitle, commitBlocker } from '../git';
 import { MOD } from '../shortcuts';
 import { ago, label, readOnlyTopOf } from '../text';
+import { SETUP_LINKS } from '../setuplinks';
 import type { GitEntry, GitScope, GitStatus } from '../types';
 import { Icon, Spinner } from './icons';
 import { ReadOnlyHunks } from './Review';
@@ -91,8 +93,9 @@ export function GitPanel() {
           )}
           {ro ? (
             <div class="banner subtle small" data-testid="git-read-only">
-              {label(ro, 300)} is a folder of this computer listed read-only: its changes are shown here; staging, commits and discards are off (Settings ›
-              Claude Code › Project folders).
+              {label(ro, 300)} is a folder of this computer listed read-only: its changes are shown here; staging, commits and discards are off
+              (<button type="button" class="linkish setup-link" data-setup="folder-read-only" data-testid="git-read-only-setup"
+                aria-label={`Go to ${SETUP_LINKS['folder-read-only'].where}`} onClick={() => goSetup('folder-read-only')}>{SETUP_LINKS['folder-read-only'].where}</button>).
             </div>
           ) : (
             <CommitBox st={st} />

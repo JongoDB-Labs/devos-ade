@@ -12,11 +12,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   turned on and takes you there: in the Terminal's *Open* menu, Chat's *Who answers* and the Code page's terminal panel's
   *Open…* (a tool not in the sandbox, the terminal off or not over remote access, the Code page off, no internet,
   Claude on your plan off, a Chat sign-in missing, OpenRouter without a key) choosing it shows *Go to Settings* beside
-  the menu — nothing moves on a change of the menu itself —; the Code page's *Who answers* (a tool that is not signed in
-  opens in its terminal panel, where its own sign-in starts), its Auto and Bypass notes, its model list's scope, its
-  previews over remote access and a read-only project folder; Home's update tools, Terminal and Code cards on your
-  devices, and its voice note. Settings opens at the row, highlighted, a switch of its own focused. One table says
-  what each says and where it goes (`catalog/setup-links.tsv`).
+  the menu, named for where it goes; elsewhere it is a link or an item of its own — the Code page's *Who answers* (a
+  tool that is not signed in opens in its terminal panel, where its own sign-in starts), its Auto and Bypass notes, its
+  model list's scope, its previews over remote access (when their setting is what is off) and a read-only project
+  folder; Home's update tools, Terminal and Code cards on your devices, and its voice note. Settings opens at the row,
+  highlighted, a switch of its own focused. One table says what each says and where it goes
+  (`catalog/setup-links.tsv`).
+- **Every choice in those menus acts on the button beside it** — *Open*, *Use this model*, *Open it here*, *Use Open
+  WebUI*, and *Open it in …* for the folder a tool works in —, never on a change of the menu: arrowing through a closed
+  menu changes it on some systems, which opened Claude Code from the Code page's *Open…* or started a tool in Chat.
 - **Your AI subscriptions, one place to connect them:** each tool's row has its next step — *Sign in (terminal and
   Code page)*, *Sign in (Chat)*, or the setting that puts it in the sandbox — and Claude's row has the switch for
   Claude on your plan (it was a row of its own). Its note on where logins live and how to sign out is shorter. The
@@ -76,7 +80,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   directly"). Chat's sandbox now goes out through an egress proxy of its own then — the terminal proxy's image and
   rules, public addresses only, never this computer's services or your network (`compose.code-egress.yaml`; `./stack
   test` checks it) — and the terminal's own way out is not changed. With no internet (`off`) they are greyed, saying
-  why.
+  why. Leaving the direct way removes Chat's proxy before anything starts again (`./stack up`, the terminal's and the
+  Code page's setup and update, `./stack restore`), even when that start fails.
 
 ### Changed
 

@@ -284,19 +284,24 @@ function ToolMenu({ onOpen }: { onOpen: (src: string) => void }) {
   }, []);
   const state = (t: BnTool) => (t.installed === false ? 'not in the sandbox' : t.signedIn === 'yes' ? `signed in${t.kindWords ? ` · ${t.kindWords}` : ''}`
     : t.signedIn === 'no' ? 'sign in first' : t.installed === null ? 'not checked yet' : 'sign-in not known');
-  // (one that cannot open here: a choice whose words say where that is turned on — setuplinks.ts. Choosing it only
-  // shows "Go to Settings" beside the menu: nothing moves on a change — arrowing through a closed menu changes it on
-  // some systems —, only on that button)
+  // (every choice acts on the button beside the menu — "Open", or "Go to Settings" for one that cannot open here, whose
+  // words say where that is turned on: setuplinks.ts —, never on the menu's change: arrowing through a closed menu
+  // changes it on some systems)
   const off = (t: BnTool): SetupReason | null => (!answers?.here ? 'terminal-remote-off' : t.installed === false ? 'tool-left-out' : null);
-  const [setup, setSetup] = useState<{ reason: SetupReason; tool: string } | null>(null);
-  const pick = (id: string) => {
-    setSetup(null);
-    if (!id) return;
+  const [choice, setChoice] = useState('');
+  const setupOf = (id: string): { reason: SetupReason; tool: string } | null => {
     const m = /^setup:([a-z-]+):([a-z]*)$/.exec(id);
-    if (m) {
-      if (Object.hasOwn(SETUP_LINKS, m[1])) setSetup({ reason: m[1] as SetupReason, tool: m[2] });
-      return;
-    }
+    return m && Object.hasOwn(SETUP_LINKS, m[1]) ? { reason: m[1] as SetupReason, tool: m[2] } : null;
+  };
+  const setup = setupOf(choice);
+  const named = (id: string) => (id === 'bedrock' ? 'Claude Code (Bedrock)' : id === 'shell' ? 'a shell' : answers?.tools.find((t) => t.id === id)?.name ?? id);
+  const act = () => {
+    const id = choice;
+    setChoice('');
+    if (!id) return;
+    const s = setupOf(id);
+    if (s) { goSetup(s.reason, s.tool); return; }
+    if (id.startsWith('setup:')) return;
     terminalLaunch(id, folder && folder !== '/workspace' ? folder : null).then(
       (url) => onOpen(`${url}&t=${Date.now()}`),   // (the same tool again loads again: its window is selected anew)
       (e: unknown) => toast(`Not opened: ${e instanceof Error ? e.message : String(e)}`, 'error'),
@@ -308,12 +313,8 @@ function ToolMenu({ onOpen }: { onOpen: (src: string) => void }) {
       class="term-open"
       aria-label="Open in the terminal: Claude Code on Bedrock, a shell, or one of your AI subscriptions' tools"
       title={`A window of its own, in this project's folder. Each tool signs in with its own flow there; ${PRODUCT} never sees the login.`}
-      value={setup ? `setup:${setup.reason}:${setup.tool}` : ''}
-      onChange={(e) => {
-        const v = (e.currentTarget as HTMLSelectElement).value;
-        if (!v.startsWith('setup:')) (e.currentTarget as HTMLSelectElement).value = '';
-        pick(v);
-      }}
+      value={choice}
+      onChange={(e) => setChoice((e.currentTarget as HTMLSelectElement).value)}
       data-testid="terminal-open-tool"
     >
       <option value="">Open…</option>
@@ -338,12 +339,17 @@ function ToolMenu({ onOpen }: { onOpen: (src: string) => void }) {
         </optgroup>
       )}
     </select>
-    {setup && (
-      <button type="button" class="btn small" title={SETUP_LINKS[setup.reason].says} data-testid="terminal-open-setup" data-setup={setup.reason}
-        onClick={() => { const s = setup; setSetup(null); goSetup(s.reason, s.tool); }}>
+    {choice && (setup ? (
+      <button type="button" class="btn small" title={SETUP_LINKS[setup.reason].says} aria-label={`Go to ${SETUP_LINKS[setup.reason].where}`}
+        data-testid="terminal-open-setup" data-setup={setup.reason} onClick={act}>
         Go to Settings
       </button>
-    )}
+    ) : !choice.startsWith('setup:') && (
+      <button type="button" class="btn small" title="A window of its own, in this project's folder" aria-label={`Open ${named(choice)} in the terminal`}
+        data-testid="terminal-open-go" onClick={act}>
+        Open
+      </button>
+    ))}
     </>
   );
 }

@@ -169,7 +169,7 @@ def test_the_code_page_mints_a_link_for_its_unlock(ps):
         assert r.status_code == 303 and r.headers["location"] == d["origin"] + "/x" and r.headers["referrer-policy"] == "no-referrer"
         # the page asks whether previews work here
         info = c.get("/auth/code-preview?format=json", headers={"Host": CODE_HOST, "Cookie": f"{COOKIE}={tok}; {CODE_COOKIE}={ut}"}).json()
-        assert info == {"available": True, "domain": DOMAIN, "routing": "host", "reason": ""}
+        assert info == {"available": True, "domain": DOMAIN, "routing": "host", "reason": "", "setup": ""}
         assert d["handoff"] is False
         assert len(label) <= 40
 
@@ -336,7 +336,7 @@ def test_previews_over_remote_access_hand_off_this_unlock_once(rps):
     with _client(rps) as c:
         rtok, rut = remote_unlocked(c)
         info = rmint(c, rtok, rut, "format=json").json()
-        assert info == {"available": True, "domain": R_PREVIEW, "routing": "cookie", "reason": ""}
+        assert info == {"available": True, "domain": R_PREVIEW, "routing": "cookie", "reason": "", "setup": ""}
         r = rmint(c, rtok, rut, "port=5173&path=/about%3Fx%3D1&format=json")
         assert r.status_code == 200 and r.headers["cache-control"] == "no-store", r.text
         d = r.json()
@@ -464,12 +464,15 @@ def test_previews_over_remote_access_can_be_off(rps):
         rtok, rut = remote_unlocked(c)
         info = rmint(c, rtok, rut, "format=json").json()
         assert info["available"] is False and "off (the default)" in info["reason"] and "same site" in info["reason"] and info["domain"] == ""
+        assert info["setup"] == "remote-preview"   # (the Code page links Settings › Remote access › Previews over remote access)
         r = rmint(c, rtok, rut)
         assert r.status_code == 403 and "off (the default)" in r.json()["error"]
         assert rcheck(c, "x").status_code == 404
     with _client(replace(rps, remote_preview_host="", remote_preview=True)) as c:   # on, but no address written yet (./stack up)
         rtok, rut = remote_unlocked(c)
-        assert "./stack up" in rmint(c, rtok, rut, "format=json").json()["reason"]
+        info = rmint(c, rtok, rut, "format=json").json()
+        assert "./stack up" in info["reason"] and "no address yet" in info["reason"]
+        assert info["setup"] == ""   # (the setting is on: no link to it, the reason says what is missing)
         # this computer's previews are untouched
         tok, ut = unlocked(c)
         assert mint(c, tok, ut).status_code == 200

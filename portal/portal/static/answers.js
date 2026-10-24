@@ -12,9 +12,10 @@
 //   terminal's, in the folder chosen beside it. You type into the real, unmodified client. "Open WebUI" brings it back.
 // Greyed items (catalog/setup-links.tsv, served as the answers' `setup`): each is a choice of its own whose words say
 // where it is turned on — Settings at that row (the Settings address of its key: settings.js goTo), Chat's sign-in row,
-// or the tool in the terminal. Choosing one only changes the button beside the menu ("Go to Settings"): nothing moves
-// on a change (arrowing through a closed menu changes it on some systems), only on that button; the menu then goes back
-// to what it was. Only a reason the table has: else greyed, as before.
+// or the tool in the terminal. No choice in these menus acts on a change of the menu (arrowing through a closed menu
+// changes it on some systems): a choice only sets the button beside it — Open, Use this model, Open it here, Go to
+// Settings (named after where: "Go to Settings › …") — and that button acts; a greyed item's menu then goes back to
+// what it was. Only a reason the table has: else greyed, as before.
 // The choice is a per-browser convenience in localStorage (bn.answers). Loaded after app.js, mobile.js and terminal.js.
 "use strict";
 
@@ -87,7 +88,7 @@
         // (one that only lacks Chat's own sign-in: "Sign in for Chat…", which goes to Settings' row for it; one that is
         // off for another reason: the choice that goes where that is turned on)
         ...(d && Array.isArray(d.plan_models) ? d.plan_models : []).map((m) => (m.signin === true && /^[a-z]{2,10}$/.test(m.tool || "")
-          ? { value: `signin:${m.tool}`, label: `${m.label} — Sign in for Chat…`, disabled: false, title: (setupOf(d, "chat-signin") || {}).says || "Chat has sign-ins of its own, apart from the terminal's: Settings › Claude Code › Your AI subscriptions shows how." }
+          ? { value: `signin:${m.tool}`, label: `${m.label} — Sign in for Chat…`, disabled: false, title: (setupOf(d, "chat-signin") || {}).says || "Chat has sign-ins of its own, apart from the terminal's: Settings › Claude Code › Your AI subscriptions shows how, from the computer running bedrock-now." }
           : m.ok ? { value: `model:${m.id}`, label: m.label, disabled: false, title: "A model in Open WebUI's list too; it answers in the same chat, on your plan (no $)." }
             : greyed(d, m.reason, m.tool, m.label, { value: `model:${m.id}`, label: `${m.label} — ${m.why}`, title: m.why }))),
         ...tools.filter((t) => t.chat_model !== "yes").map((t) => (
@@ -175,12 +176,18 @@
   // goSetup(VALUE) — a greyed item's button pressed (setup:REASON:TOOL): where it is turned on (Settings at that row;
   // Chat's sign-in row with its Sign in open; the tool itself in the terminal). -> whether it was one
   // goLabel(VALUE) -> the button's words for a greyed item (or a sign-in for Chat), "" for any other choice
+  // (and goName(VALUE): its name for a screen reader — where it goes, "Go to Settings › Claude Code › …")
   function goLabel(v) {
     const m = /^setup:([a-z][a-z-]{1,40}):([a-z]{0,10})$/.exec(v || "");
     if (/^signin:[a-z]{2,10}$/.test(v || "")) return "Go to Settings";
     if (!m) return "";
     const where = setupPlace(setupOf(data, m[1]), m[2]);
     return where && where.open ? "Open it to sign in" : "Go to Settings";
+  }
+  function goName(v) {
+    const m = /^setup:([a-z][a-z-]{1,40}):/.exec(v || "");
+    const s = m ? setupOf(data, m[1]) : /^signin:[a-z]{2,10}$/.test(v || "") ? setupOf(data, "chat-signin") : null;
+    return s && s.where ? `${goLabel(v) === "Open it to sign in" ? "Open it to sign in:" : "Go to"} ${s.where}` : "";
   }
   function goSetup(v) {
     const m = /^setup:([a-z][a-z-]{1,40}):([a-z]{0,10})$/.exec(v || "");
@@ -207,13 +214,15 @@
   root.bnAnswers.goSetup = goSetup;
   let tLast = "bedrock";
   // (a greyed item chosen: the button says where it goes — nothing moves until it is pressed)
-  tSelect.addEventListener("change", () => {
+  const tLabel = () => {
     const go = goLabel(tSelect.value);
     tOpen.textContent = go || "Open";
-    if (!go) tLast = tSelect.value;
-  });
+    if (go) tOpen.setAttribute("aria-label", goName(tSelect.value) || go); else tOpen.removeAttribute("aria-label");
+    return go;
+  };
+  tSelect.addEventListener("change", () => { if (!tLabel()) tLast = tSelect.value; });
   tOpen.addEventListener("click", () => {
-    if (goSetup(tSelect.value)) { tSelect.value = tLast; tOpen.textContent = "Open"; return; }
+    if (goSetup(tSelect.value)) { tSelect.value = tLast; tLabel(); return; }
     const f = document.querySelector('#frames iframe[data-app="terminal"]');
     if (!f || !tSelect.value || tSelect.selectedOptions[0]?.disabled) return;
     tOpen.disabled = true;
@@ -228,7 +237,8 @@
   // a tool chosen before this page loaded is not started again by itself: "Reopen …" (a click, as everything that starts)
   const cReopen = el("button", { type: "button", class: "action", id: "answers-chat-reopen" });
   cReopen.hidden = true;
-  // a greyed item (or a sign-in for Chat) chosen: this button goes there — never the change itself
+  // a choice made: this button acts on it — a model, Open WebUI, a tool here, or a greyed item's (or a sign-in's) way to
+  // Settings — never the change itself
   const cGo = el("button", { type: "button", class: "action", id: "answers-chat-go", "aria-describedby": "answers-chat-go-says" });
   const cGoSays = el("span", { class: "answers-note", id: "answers-chat-go-says" });
   cGo.hidden = true; cGoSays.hidden = true;
@@ -276,20 +286,26 @@
   cGo.addEventListener("click", () => {
     const v = cSelect.value;
     goHide();
-    cSelect.value = saved.chat;
-    if (goSetup(v)) return;
-    if (/^signin:[a-z]{2,10}$/.test(v)) { root.bnSubsChatSignin = v.slice(7); goHash("#settings/+subscriptions"); }
-  });
-  cSelect.addEventListener("change", () => {
-    const v = cSelect.value;
-    const go = goLabel(v);
-    if (go) {
-      cGo.textContent = go;
-      cGoSays.textContent = cSelect.selectedOptions[0]?.title || "";
-      cGo.hidden = false; cGoSays.hidden = !cGoSays.textContent;
+    if (goLabel(v)) {
+      cSelect.value = saved.chat;
+      if (goSetup(v)) return;
+      if (/^signin:[a-z]{2,10}$/.test(v)) { root.bnSubsChatSignin = v.slice(7); goHash("#settings/+subscriptions"); }
       return;
     }
-    goHide();
+    useChat(v);
+  });
+  // (a change only names the button: what it will do, and for a greyed item where it goes)
+  cSelect.addEventListener("change", () => {
+    const v = cSelect.value;
+    if (v === saved.chat) { goHide(); return; }
+    const go = goLabel(v);
+    cGo.textContent = go || (v.startsWith("model:") ? "Use this model" : v.startsWith("tool:") ? "Open it here" : "Use Open WebUI");
+    if (go) cGo.setAttribute("aria-label", goName(v) || go); else cGo.removeAttribute("aria-label");
+    cGoSays.textContent = go ? cSelect.selectedOptions[0]?.title || "" : "";
+    cGo.hidden = false; cGoSays.hidden = !cGoSays.textContent;
+  });
+  // useChat(VALUE) — the choice made: a model (a new chat with it in Open WebUI), a tool here, or Open WebUI
+  function useChat(v) {
     cReopen.hidden = true;
     if (v.startsWith("model:")) {
       saved.chat = v; save();
@@ -301,10 +317,14 @@
     } else {
       saved.chat = "owui"; save(); showChat();
     }
-  });
+  }
+  // (another folder: the open tool starts again there on its button — "Open it in …" —, not on the change)
   cFolder.addEventListener("change", () => {
     saved.folder = cFolder.value === "/workspace" ? "" : cFolder.value; save();
-    if (saved.chat.startsWith("tool:")) openTool(saved.chat.slice(5));
+    if (!saved.chat.startsWith("tool:")) return;
+    cReopen.dataset.tool = saved.chat.slice(5);
+    cReopen.textContent = `Open it in ${cFolder.selectedOptions[0]?.textContent || "this folder"}`;
+    cReopen.hidden = false;
   });
 
   function folders(d) {

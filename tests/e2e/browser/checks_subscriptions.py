@@ -42,7 +42,7 @@ def answers_api(ctx):
     expect(d["terminal"] == {"enabled": True, "here": True, "reason": None}, f"terminal {d['terminal']}")
     # (what greyed items say and where they go: catalog/setup-links.tsv, each a setting or a sign-in)
     setup = d.get("setup") or {}
-    expect(len(setup) >= 10 and all(re.fullmatch(r"setting:[A-Z][A-Z0-9_]+|signin:(terminal|chat)", x["target"]) and x["says"] for x in setup.values()),
+    expect(len(setup) >= 10 and all(re.fullmatch(r"setting:([A-Z][A-Z0-9_]+|\+[a-z-]{2,20})|signin:(terminal|chat)", x["target"]) and x["says"] for x in setup.values()),
            f"setup links: {setup}")
     expect(all(t["signed_in"] != "yes" for t in d["tools"]), "a tool says it is signed in in a fresh throwaway")
     if d["checked_at"]:
@@ -93,7 +93,8 @@ def walkthrough_step(ctx):
     card = page.inner_text("#tour .tour-step.cur")
     for words in ("claude-sub", "Codex", "Copilot", "Cursor", "Grok", "Gemini CLI", "device code login", "DevOS ADE never sees it",
                   "backups leave it out", "Who answers", "a model in Open WebUI's menu", "API keys",
-                  "Greyed out?", "it is a link: choosing it takes you straight to its setting", "the one place to connect them"):
+                  "Greyed out?", "Its words say where it is turned on", "then Go to Settings beside the menu",
+                  "A menu never acts by itself", "the one place to connect them"):
         expect(words in card, f"the step lacks {words!r}")
     shot(page, "s2-walkthrough-subscriptions")
     probs = rec.problems()
@@ -175,6 +176,7 @@ def chat_embed(ctx):
     page.wait_for_timeout(500)
     expect(page.evaluate("location.hash") == "" or not page.evaluate("location.hash").startswith("#settings"), "a change of the menu moved")
     see(page.locator("#answers-chat-go")).to_have_text("Go to Settings")
+    expect((page.get_attribute("#answers-chat-go", "aria-label") or "").startswith("Go to Settings › Claude Code › Your AI subscriptions"), "the button's name says where")
     page.click("#answers-chat-go")
     page.locator("#set-subs-chat-codex .set-cli").wait_for(state="visible", timeout=15000)
     page.wait_for_function("() => document.activeElement && document.activeElement.matches('#set-subs-chat-codex [data-act=subscriptions-chat-signin]')", timeout=10000)
@@ -188,7 +190,10 @@ def chat_embed(ctx):
     expect(page.evaluate("location.hash") == "#settings/CODE_CLAUDE_PLAN", "not Settings' address for it")
     page.click(".tab[data-tab=chat]")
     page.locator("#answers-chat").wait_for(timeout=15000)
+    # (every choice acts on its button, never on the menu's change)
     page.select_option("#answers-chat", "tool:grok")
+    see(page.locator("#answers-chat-go")).to_have_text("Open it here")
+    page.click("#answers-chat-go")
     page.wait_for_selector("iframe[data-app=chat-tool]:not([hidden])", timeout=10000)
     expect(page.locator("iframe[data-app=chat]").is_hidden(), "Open WebUI still shows with a tool chosen")
     f = tool_frame(page)
@@ -200,6 +205,7 @@ def chat_embed(ctx):
     expect("Grok Build itself" in note and "never sees it" in note, f"the note says {note!r}")
     shot(page, "s4-chat-embedded-grok")
     page.select_option("#answers-chat", "owui")
+    page.click("#answers-chat-go")
     page.wait_for_selector("iframe[data-app=chat]:not([hidden])", timeout=10000)
     expect(page.locator("iframe[data-app=chat-tool]").is_hidden(), "the tool still shows after choosing Open WebUI")
     probs = rec.problems(allow=LOCKED_OK + [r"^401 GET " + re.escape(TERM) + r"/\?arg="])

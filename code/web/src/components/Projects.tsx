@@ -53,6 +53,7 @@ import { Cmd, Dialog, Dropdown, MenuItem } from './ui';
 import { ImportSheet, Suggestions, TOOL_BADGE, TOOL_LABEL } from './Import';
 import { SetupSheet } from './Setup';
 import { modelLabel } from './Pickers';
+import { SETUP_LINKS } from '../setuplinks';
 import { PRODUCT } from '../brand';
 
 function StateDot({ v }: { v: SessionView | undefined }) {
@@ -390,7 +391,8 @@ export function ProjectsPanel() {
             )}
             {p.gone ? (
               <div class="side-note small" data-testid="project-gone-note">
-                Read only: add {p.path} again on this computer (Settings › Claude Code › Project folders, or ./stack project add) to go on with these sessions.
+                Read only: add {p.path} again on this computer (<button type="button" class="linkish setup-link" data-setup="folder-read-only" data-testid="project-gone-setup"
+                aria-label={`Go to ${SETUP_LINKS['folder-read-only'].where}`} onClick={() => goSetup('folder-read-only')}>{SETUP_LINKS['folder-read-only'].where}</button>, or ./stack project add) to go on with these sessions.
               </div>
             ) : (
               <>

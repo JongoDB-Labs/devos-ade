@@ -4,7 +4,8 @@
 // provider's reason) — the terminal's address with the pickers' words, and the saved choice read back.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { load, plain } from "./load.mjs";
+import vm from "node:vm";
+import { load, plain, source } from "./load.mjs";
 
 const A = load("answers.js").bnAnswers._pure;
 const tools = [
@@ -76,16 +77,16 @@ import fs from "node:fs";
 import path from "node:path";
 // (the repository's table where it is here — the image's test stage has none: the same rows, written out)
 const TSV = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "..", "..", "catalog", "setup-links.tsv");
-const parse = (text) => Object.fromEntries(text.split("\n").filter((l) => l && !l.startsWith("#")).map((l) => l.split("\t")).map(([r, target, says]) => [r, { target, says }]));
+const parse = (text) => Object.fromEntries(text.split("\n").filter((l) => l && !l.startsWith("#")).map((l) => l.split("\t")).map(([r, target, where, says]) => [r, { target, where, says }]));
 const SETUP = fs.existsSync(TSV) ? parse(fs.readFileSync(TSV, "utf8")) : {
-  "terminal-off": { target: "setting:TERMINAL_ENABLED", says: "The browser terminal is off: Settings › Claude Code › Browser terminal turns it on." },
-  "terminal-remote-off": { target: "setting:REMOTE_TERMINAL", says: "Not over remote access: Settings › Remote access › …" },
-  "tool-left-out": { target: "setting:TERMINAL_AI_TOOLS", says: "Not in the sandbox: Settings › Claude Code › Tools in the sandbox puts it in." },
-  "code-off": { target: "setting:CODE_ENABLED", says: "Needs the Code page: Settings › Claude Code › Code page turns it on." },
-  "chat-egress-off": { target: "setting:TERMINAL_EGRESS", says: "Off while the sandbox has no internet: Settings › Claude Code › Sandbox internet access." },
-  "claude-plan-off": { target: "setting:CODE_CLAUDE_PLAN", says: "Off: Settings › Claude Code › Your AI subscriptions › Use my Claude plan in the Code page and Chat." },
-  "chat-signin": { target: "signin:chat", says: "Sign in for Chat: Settings › Claude Code › Your AI subscriptions shows how." },
-  "openrouter-off": { target: "setting:OPENROUTER_API_KEY", says: "OpenRouter's models need your OpenRouter key: Settings › Chat & voice › OpenRouter API key." },
+  "terminal-off": { target: "setting:TERMINAL_ENABLED", where: "Settings", says: "The browser terminal is off: Settings › Claude Code › Browser terminal turns it on." },
+  "terminal-remote-off": { target: "setting:REMOTE_TERMINAL", where: "Settings", says: "Not over remote access: Settings › Remote access › …" },
+  "tool-left-out": { target: "setting:TERMINAL_AI_TOOLS", where: "Settings", says: "Not in the sandbox: Settings › Claude Code › Tools in the sandbox puts it in." },
+  "code-off": { target: "setting:CODE_ENABLED", where: "Settings", says: "Needs the Code page: Settings › Claude Code › Code page turns it on." },
+  "chat-egress-off": { target: "setting:TERMINAL_EGRESS", where: "Settings", says: "Off while the sandbox has no internet: Settings › Claude Code › Sandbox internet access." },
+  "claude-plan-off": { target: "setting:CODE_CLAUDE_PLAN", where: "Settings", says: "Off: Settings › Claude Code › Your AI subscriptions › Use my Claude plan in the Code page and Chat." },
+  "chat-signin": { target: "signin:chat", where: "Settings", says: "Sign in for Chat: Settings › Claude Code › Your AI subscriptions shows how." },
+  "openrouter-off": { target: "setting:OPENROUTER_API_KEY", where: "Settings", says: "OpenRouter's models need your OpenRouter key: Settings › Chat & voice › OpenRouter API key." },
 };
 
 test("greyed items: each a choice that goes where it is turned on, saying where — none dead, none greyed while the table has its reason", () => {
@@ -125,8 +126,8 @@ test("where a greyed item goes: Settings at its row, Chat's sign-in row for that
   assert.equal(A.setupPlace({ target: "signin:terminal" }, ""), null);
   assert.equal(A.setupPlace(null, "codex"), null);
   // (the table's rows checked: a target of another kind, a missing reason, an inherited name — none)
-  assert.equal(A.setupOf({ setup: { x: { target: "javascript:alert(1)", says: "s" } } }, "x"), null);
-  assert.equal(A.setupOf({ setup: { x: { target: "setting:lower", says: "s" } } }, "x"), null);
+  assert.equal(A.setupOf({ setup: { x: { target: "javascript:alert(1)", where: "Settings", says: "s" } } }, "x"), null);
+  assert.equal(A.setupOf({ setup: { x: { target: "setting:lower", where: "Settings", says: "s" } } }, "x"), null);
   assert.equal(A.setupOf({ setup: {} }, "toString"), null);
   assert.equal(A.setupOf({ setup: SETUP }, "nope"), null);
   // (without the table: greyed as before, saying why)
@@ -134,14 +135,21 @@ test("where a greyed item goes: Settings at its row, Chat's sign-in row for that
   assert.ok(g.every((i) => i.disabled && !i.value.startsWith("setup:")));
 });
 
-test("a menu's change never moves: a greyed item (or a sign-in for Chat) goes only from the button beside the menu", async () => {
+test("a menu's change never acts: every choice — a greyed item, a sign-in for Chat, a model, a tool — acts only from the button beside the menu", async () => {
   const { source } = await import("./load.mjs");
   const js = source("answers.js");
-  const handler = (sel) => js.split(`${sel}.addEventListener("change", () => {`)[1].split("\n  });")[0];
+  // (the change listener's body, to its own closing: a one-line one or a block)
+  const handler = (sel) => /^([\s\S]*?)\}\);/.exec(js.split(`${sel}.addEventListener("change", () => {`)[1])[1];
   for (const sel of ["tSelect", "cSelect"]) {
     const h = handler(sel);
-    assert.ok(!/goSetup\(|goHash\(|location\.hash|bnSubsChatSignin|launch\(/.test(h.split("goHide();")[0]), `${sel}'s change moves before the button`);
+    assert.ok(!/goSetup\(|goHash\(|location\.hash|bnSubsChatSignin|launch\(|openTool\(|useChat\(|\.src\s*=|save\(\)/.test(h), `${sel}'s change acts: ${h}`);
   }
+  assert.match(js.split('cGo.addEventListener("click", () => {')[1].split("\n  });")[0], /useChat\(v\)/);
+  // (the folder a tool works in: kept, and the tool starts again there only from its button)
+  const f = handler("cFolder");
+  assert.ok(!/goSetup\(|goHash\(|launch\(|openTool\(|useChat\(|\.src\s*=/.test(f), `cFolder's change acts: ${f}`);
+  assert.match(f, /cReopen\.hidden = false/);
+  assert.match(js.split('cReopen.addEventListener("click", () => {')[1].split("\n  });")[0], /openTool\(id\)/);
   // (the buttons do)
   assert.match(js.split('tOpen.addEventListener("click", () => {')[1].split("\n  });")[0], /goSetup\(tSelect\.value\)/);
   assert.match(js.split('cGo.addEventListener("click", () => {')[1].split("\n  });")[0], /goSetup\(v\)[\s\S]*bnSubsChatSignin/);
@@ -150,9 +158,80 @@ test("a menu's change never moves: a greyed item (or a sign-in for Chat) goes on
 test("Settings on arrival: a Chat sign-in asked for takes the focus; a row of the page's own never focuses a switch inside it", async () => {
   const { source } = await import("./load.mjs");
   const go = source("settings.js").split("function goTo(place) {")[1].split("\n  }\n")[0];
-  assert.match(go, /const signin = key === "\+subscriptions" && chat \?/);
+  // (taken by the arrival it was asked for alone: Your AI subscriptions, nothing inside it named)
+  assert.match(go, /const chat = chatAsk\.take\(key === "\+subscriptions" && !inner\);/);
   assert.match(go, /const sw = !signin && \(inner \|\| !key\.startsWith\("\+"\)\) \?/);
   assert.match(go, /\(signin \|\| sw \|\| at\)\.focus/);
-  // (the sign-in asked for lasts across the page's redraws, a few seconds: never taken away by a second arrival)
-  assert.match(source("settings.js"), /chatSignin = \{ tool: w, until: Date\.now\(\) \+ 5000 \}/);
+  assert.doesNotMatch(source("settings.js"), /chatSigninWanted|chatSignin\b/);
+});
+
+// chatAsk, as settings.js has it, in a context of its own: a window and a clock of the test's
+function chatAsk() {
+  const js = source("settings.js");
+  const body = js.split("// chatAsk:begin")[1].split("// chatAsk:end")[0];
+  const ctx = vm.createContext({ window: {}, Date: { now: () => ctx.now }, now: 1000 });
+  vm.runInContext(`${body}; this.chatAsk = chatAsk;`, ctx);
+  return ctx;
+}
+
+test("a Chat sign-in asked for goes to its own arrival alone: Sign in for Chat, back, the Claude-plan item — the switch, not the sign-in", () => {
+  const c = chatAsk();
+  const { chatAsk: ask, window } = c;
+  // Sign in for Chat… (Codex): answers.js asks, Settings draws the row (its command shown), goTo takes it — once
+  window.bnSubsChatSignin = "codex";
+  assert.equal(ask.shown(), "codex");
+  assert.equal(ask.take(true), "codex");
+  assert.equal(window.bnSubsChatSignin, "");
+  c.now += 1000;
+  assert.equal(ask.shown(), "codex", "a redraw a moment later still shows its command");
+  assert.equal(ask.take(true), "", "a second arrival does not take it again");
+  // (taken, then back to Chat: leaving Settings drops it — settings.js's bn:tab)
+  window.bnSubsChatSignin = "grok";
+  assert.equal(ask.take(true), "grok");
+  ask.drop(); window.bnSubsChatSignin = "";
+  // the Claude-plan item at once (within the few seconds): #settings/CODE_CLAUDE_PLAN — a row inside Your AI
+  // subscriptions: goTo's inner is set, so nothing is taken and nothing shows; its switch takes the focus
+  assert.equal(ask.shown(), "");
+  assert.equal(ask.take(false), "");
+  // (even were it still asked for: an arrival with a row inside named ignores it and drops it)
+  window.bnSubsChatSignin = "codex";
+  assert.equal(ask.take(false), "");
+  assert.equal(ask.shown(), "");
+  assert.equal(window.bnSubsChatSignin, "");
+  // the window starts when goTo takes it, not when the row is drawn
+  window.bnSubsChatSignin = "codex";
+  c.now += 60000;
+  assert.equal(ask.shown(), "codex");
+  assert.equal(ask.take(true), "codex");
+  c.now += 4900;
+  assert.equal(ask.shown(), "codex");
+  c.now += 200;
+  assert.equal(ask.shown(), "", "a few seconds from goTo, then gone");
+  // (a tool name that is not one: nothing)
+  window.bnSubsChatSignin = "Codex<x>";
+  assert.equal(ask.shown(), "");
+  assert.equal(ask.take(true), "");
+});
+
+test("leaving Settings drops a Chat sign-in asked for", () => {
+  const js = source("settings.js");
+  const tab = js.split('document.addEventListener("bn:tab", (e) => {')[1].split("\n  });")[0];
+  assert.match(tab, /if \(e\.detail === "settings"\) load\(\)\.then\(placeFromAddress\);\s*else \{ chatAsk\.drop\(\); window\.bnSubsChatSignin = "";/);
+});
+
+test("Your AI subscriptions: each tool's Sign out, Check again and Copy has a name of its own (the tool's, and which sign-in)", () => {
+  const js = source("settings.js");
+  const row = js.split("function subscriptionsRow(r) {")[1].split("\n  function ")[0];
+  const names = [...row.matchAll(/"aria-label": `([^`]+)`|setAttribute\("aria-label", name\)|copyButton\(cmd, `([^`]+)`\)|`(Check again: [^`]+)`/g)]
+    .map((m) => m[1] || m[2] || m[3]).filter(Boolean);
+  for (const want of ["Sign out: ${t.name} in the sandbox (terminal and Code page)", "Sign out: ${t.name} for Chat",
+    "Check again: ${t.name} and the sandbox's other tools (terminal and Code page)", "Check again: ${t.name} and Chat's other tools",
+    "Copy ${t.name}'s Chat sign-in command"]) {
+    assert.ok(names.includes(want), `${want} — not in ${JSON.stringify(names)}`);
+  }
+  // (every button of a tool's row named: no bare "Sign out" or "Check again" without its tool)
+  assert.match(row, /const checkButton = \(action, title, body, name\) => \{[\s\S]*?if \(name\) b\.setAttribute\("aria-label", name\);/);
+  assert.equal([...row.matchAll(/checkButton\("subscriptions-check(-chat)?",/g)].length, 2);
+  assert.equal([...row.matchAll(/text: "Sign out", "data-act": "subscriptions-signout(-chat)?",\s*"aria-label": `Sign out: \$\{t\.name\}/g)].length, 2);
+  assert.match(js, /function copyButton\(cmd, name\) \{[\s\S]*?if \(name\) b\.setAttribute\("aria-label", name\);/);
 });
