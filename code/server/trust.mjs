@@ -812,6 +812,23 @@ export function makeTrust({ call, store, log = () => {} }) {
    *  holds for it only while the plugins the settings turn on are installed there too, as trusted; reason plan-plugins
    *  when they are not) — and agents: {state, part} whether an agent of your subscriptions may start there (both parts
    *  applied; part: which one is not). Anything that cannot be decided (the records, the sandbox): not applied. */
+  // carryOver(rec, r, texts) -> the record to decide on: a trust of the reading before this one (TRUST_EPOCH - 1:
+  // v0.23.0's) whose hash is Claude Code's part as it is now, its summary complete under today's reading, carried over
+  // — recorded anew at this epoch, its time kept, no plan hash (there was none), the other tools' part not trusted (an
+  // agent's first start there asks for it) — so Claude Code on Bedrock and on your plan are not asked again for what
+  // they were trusted with. texts: a reading with the files' texts (else one is made, only then)
+  async function carryOver(rec, r, texts = null) {
+    const t = rec?.trust;
+    if (!t || t.epoch !== TRUST_EPOCH - 1 || !r.hash || t.hash !== r.hash || r.planPlugins) return rec;
+    const full = texts ?? await read(absOf(rec.root));
+    if (full.hash !== t.hash || full.planPlugins) return rec;
+    if (!summaries(full).summary.complete) return rec;
+    try {
+      const updated = store().trust(rec.id, full.hash, undefined, null, { at: t.at });
+      log(`settings of project ${short(rec.id, 40)}: a trust of the reading before carried over for Claude Code (unchanged, shown whole)`);
+      return updated?.trust ? updated : rec;
+    } catch { return rec; }
+  }
   async function decide(cwd) {
     if (cwd === WS) {
       const ws = { state: 'workspace', sources: ALL_SOURCES, strictMcp: false, project: WORKSPACE_ID, hash: null };
@@ -823,6 +840,7 @@ export function makeTrust({ call, store, log = () => {} }) {
     try {
       rec = recordAt(cwd);
       const r = await read(cwd, { text: false });
+      rec = await carryOver(rec, r);
       const st = statesOf(rec, r);
       note(rec?.id, st.state);
       // (not applied: your own settings, and of MCP servers only the stack's own — whatever Claude Code would read)
@@ -852,9 +870,10 @@ export function makeTrust({ call, store, log = () => {} }) {
    *  showing them all is not one of its own (OVER), the sandbox's words apart (said). The summary is Claude Code's part
    *  with the other tools' files beside it (tools); complete: Claude Code's part shown whole; agentsComplete: the other
    *  tools' too (else Trust covers Claude Code's part alone, and agents do not start there) */
-  async function view(rec) {
-    const abs = absOf(rec.root);
+  async function view(rec0) {
+    const abs = absOf(rec0.root);
     const r = await read(abs);
+    const rec = rec0.id === WORKSPACE_ID ? rec0 : await carryOver(rec0, r, r);
     const ws = rec.id === WORKSPACE_ID;
     const st = statesOf(rec, r, ws);
     const { summary, agents, said } = summaries(r);

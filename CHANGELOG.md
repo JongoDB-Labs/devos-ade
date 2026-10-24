@@ -63,8 +63,10 @@ All notable changes to bedrock-now are documented here. The format follows
   state, and a linked worktree or submodule. Names are compared as a disk that folds them opens them (`.curſor` is
   `.cursor`, `.mcp.jſon` is `.mcp.json`), from each folder's own entries; a folder that cannot be listed is
   unverifiable; outside a repository the walk up stops below the workspace (its settings are yours). The git root is
-  a `.git` with a `HEAD`: an empty `.git` folder no longer ends the walk up. Every project trusted before is asked about
-  again. A project's Claude Code settings that add a plugin marketplace (`extraKnownMarketplaces`), or bring plugins by
+  a `.git` with a `HEAD`: an empty `.git` folder no longer ends the walk up. A project trusted in v0.23.0 stays trusted for
+  Claude Code on Bedrock and on your plan while its Claude Code settings are as they were and read whole today
+  (without plugins turned on); otherwise it is asked about again. The other tools' settings are asked about the first
+  time an agent starts there. A project's Claude Code settings that add a plugin marketplace (`extraKnownMarketplaces`), or bring plugins by
   another of Claude Code's keys, cannot be trusted; each plugin its `enabledPlugins` turns on is listed in the dialog
   when it is installed in the sandbox already (its version is part of what you trust), and one that is not installed
   there cannot be trusted. Claude on your plan checks its own installed plugins: a plugin it has not installed, and its

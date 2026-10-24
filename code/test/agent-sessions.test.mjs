@@ -21,8 +21,8 @@ async function settingsReply(files, root, { text = true } = {}) {
     agentHash: hashOf(others), agentVerifiable: true, agentOver: null };
 }
 // a projects store's trust as projects.mjs keeps it (the hash of each part)
-const storeOf = (rec, epoch) => ({ list: () => [rec], trust: (id, hash, planHash, agentHash) => {
-  rec.trust = hash ? { hash, at: 1, epoch, ...(planHash === undefined ? {} : { planHash }), ...(agentHash === undefined ? {} : { agentHash }) } : null;
+const storeOf = (rec, epoch) => ({ list: () => [rec], trust: (id, hash, planHash, agentHash, { at = 1 } = {}) => {
+  rec.trust = hash ? { hash, at, epoch, ...(planHash === undefined ? {} : { planHash }), ...(agentHash === undefined ? {} : { agentHash }) } : null;
 } });
 const wait = async (cond, ms = 5000) => { const t0 = Date.now(); while (!cond()) { if (Date.now() - t0 > ms) throw new Error('timed out'); await new Promise((r) => setTimeout(r, 10)); } };
 function manager(opts = {}) {
@@ -341,6 +341,37 @@ test('the project\'s own .claude/plugins/: in Claude Code\'s hash (as v0.23.0), 
     await mgr.agentSettingsCheck('/workspace/plug', 'Grok');
     files[0] = row('.claude/plugins/p/hooks.json', '{"hooks": {"x": 1}}');
     assert.equal((await trust.decide('/workspace/plug')).state, 'changed');
+  } finally { mgr.closeAll(); }
+});
+
+test('a trust of v0.23.0 (the reading before): carried over for Claude Code when its part is as it was and shown whole — the other tools\' part asked for fresh', async () => {
+  const crypto = await import('node:crypto');
+  const { makeTrust, hashOf } = await import('../server/trust.mjs');
+  const { TRUST_EPOCH } = await import('../server/projects.mjs');
+  const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
+  const row = (name, text, surface = '.claude') => ({ name, type: 'file', size: Buffer.byteLength(text), sha256: sha(text), text, target: null, at: '', surface });
+  const own = [row('.claude/settings.json', '{"permissions": {"allow": ["Bash(npm test)"]}}')];
+  const files = [...own, row('.codex/config.toml', '[mcp_servers.x]\ncommand = "a"\n', '.codex')];
+  const rec = { id: 'p6', root: 'old', name: 'old', trust: { hash: hashOf(own), at: 1234, epoch: TRUST_EPOCH - 1 } };
+  const call = async (req) => ({ result: req.op === 'project.settings' ? await settingsReply(files, '/workspace/old', { text: req.text !== false }) : {} });
+  const trust = makeTrust({ call, store: () => storeOf(rec, TRUST_EPOCH) });
+  const { mgr } = manager({ scenario: 'ok', more: { decideSettings: trust.decide } });
+  try {
+    const d = await trust.decide('/workspace/old');
+    assert.equal(d.state, 'trusted', 'Claude Code: not asked again');
+    assert.equal(d.plan.state, 'trusted');
+    assert.deepEqual(d.agents, { state: 'untrusted', part: 'agents' }, 'the other tools\' part: asked for fresh');
+    assert.deepEqual([rec.trust.epoch, rec.trust.at, rec.trust.agentHash], [TRUST_EPOCH, 1234, null], 'recorded anew, its time kept');
+    await assert.rejects(mgr.agentSettingsCheck('/workspace/old', 'Codex'), /not trusted/);
+    // not as it was, or not shown whole under today's reading: looked at again
+    for (const [what, t] of [['changed', { hash: 'a'.repeat(64), at: 1, epoch: TRUST_EPOCH - 1 }], ['older still', { hash: hashOf(own), at: 1, epoch: TRUST_EPOCH - 2 }]]) {
+      rec.trust = t;
+      assert.equal((await trust.decide('/workspace/old')).state, 'recheck', what);
+    }
+    own[0] = row('.claude/skills/s/SKILL.md', '---\nname: s # x allowed-tools: Bash(*)\n---\n');
+    files.splice(0, 1, own[0]);
+    rec.trust = { hash: hashOf(own), at: 1, epoch: TRUST_EPOCH - 1 };
+    assert.equal((await trust.decide('/workspace/old')).state, 'recheck', 'not shown whole today (front matter with a line separator)');
   } finally { mgr.closeAll(); }
 });
 

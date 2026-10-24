@@ -1315,7 +1315,9 @@ direction-changing character; a record that does not fit (a file someone changed
     2,000 characters, leaves the summary incomplete. A trust is recorded with the epoch of the reading it was made under (`TRUST_EPOCH`):
     one recorded before the current reading (v0.21.1's could miss front matter Claude Code reads; before v0.24.0 the
     other tools' files were not all listed) is not applied until you look at the settings again (*recheck*; said once
-    per project and reading). The settings files and `.mcp.json` are summarised whole or not at all: more
+    per project and reading) — but one of v0.23.0's whose hash is Claude Code's part as it is now (no plugin turned
+    on), and whose summary is complete under today's reading, is carried over for Claude Code: recorded anew, its time
+    kept, the other tools' part not trusted with it (an agent's first start there asks for it). The settings files and `.mcp.json` are summarised whole or not at all: more
     than 200 entries in a section, a value over 2,000 characters or invalid JSON leave no hash to trust. Plugins bring
     folders of their own (hooks, MCP and language servers) that are not listed. Of Claude Code's own keys (2.1.309
     reads them at the top level of `.claude/settings*.json`; matched here after parsing, in any case, so a `\u`-escaped
@@ -3360,7 +3362,7 @@ never reads, copies, keeps, passes on or relays a login.**
   them; an agent session starts in a project's folder only while both apply (trusted, or nothing there) — checked when
   it starts, again once it has opened (what it read while starting), and before every turn, so a running agent ends
   when they change under it; not trusted, changed, unverifiable or trusted before v0.24.0 (the listing grew: look
-  again): refused with why. When the other tools' part cannot all be shown (a file over 16,000 characters, one that
+  again — a v0.23.0 trust carried over for Claude Code covers Claude Code's part alone): refused with why. When the other tools' part cannot all be shown (a file over 16,000 characters, one that
   cannot be read the way its tool reads it), *Trust* covers Claude Code's part alone, and the dialog says agents do not
   start there.
   Of `.github/`, what the pinned Copilot CLI reads (audited for 1.0.103: `agents/`, `copilot/`, `extensions/`,
