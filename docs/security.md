@@ -3381,7 +3381,9 @@ never reads, copies, keeps, passes on or relays a login.**
   such as zero-width ones when it compares names, is not supported: those are not folded here), or cannot be listed
   whole (past 512 entries or 4 folders deep). Not looked into: the hooks of another repository inside the project (a
   nested one, or one whose git folder was made apart with `--separate-git-dir`) — a link there to a file of the
-  project leaves that file plain; git runs those hooks only when you commit in that repository. **Edits to scripts a
+  project leaves that file plain; git runs those hooks when you commit, check out, merge, rebase or push in that
+  repository. Nor a `core.hooksPath` in your computer's own git config that names another folder: the sandbox does not
+  see that config (`.githooks`, `.husky` and `.husky/_` are looked at whatever any config says). **Edits to scripts a
   hook calls by name go ahead without asking** (`npm test`, a `make` target, `scripts/check.sh` …) — those scripts stay
   plain files, as with Claude Code's own Accept edits: the watchlist shows a change to them only where it watches them
   (`package.json` when a hook runs package scripts). The Workspace itself has no trust step, so there every edit asks; a folder of this computer

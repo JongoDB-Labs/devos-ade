@@ -654,7 +654,10 @@ plan in the Code page and Chat** (off by default; turning it on works from the c
   (`.git/hooks/pre-commit -> ../../scripts/pre-commit.sh` would make that script a hook; `.githooks` and `.husky` are
   looked at whatever the config says); otherwise every edit asks, and the session says why, quoting the key. **Edits to
   scripts a hook calls by name** (`npm test`, `make lint`, `scripts/check.sh` …) **go ahead without asking**, as with
-  Claude Code's own Accept edits: what they do runs at your next commit. A project of the workspace with no repository at all is approved too (git runs nothing there);
+  Claude Code's own Accept edits: what they do runs at your next commit. Not looked into either: the hooks of another
+  repository inside the project (nested, or made with `--separate-git-dir`; git runs them when you commit, check out,
+  merge, rebase or push there), and a `core.hooksPath` in your computer's own git config naming another folder (the
+  sandbox does not see it). A project of the workspace with no repository at all is approved too (git runs nothing there);
   never the Workspace itself, nor a folder of your computer with no repository visible (one around it could be). Where it does allow them, an edit to `.git/`, `.github/`,
   `.vscode/`, `.idea/`, `.zed/`, `.claude/`, `.mcp.json`, git's hooks or a commit hook's file, a tool's own settings,
   another repository inside the folder, through a link, or outside it is still asked. Manual asks — a tool's own

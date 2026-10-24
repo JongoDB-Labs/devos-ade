@@ -219,6 +219,11 @@ new, rep = v.vendor(lock, ["p", "q", "r"], dest, fetch=lambda url, limit: b"z", 
 assert [r["name"] for r in rep["ready"]] == ["r"], rep
 assert {x["name"]: x["why"] for x in rep["left_out"]} == {"p": "its file name is another package's in the lock too", "q": "its file name is another package's in the lock too"}
 assert new["packages"]["p"]["file_name"].startswith("https://") and os.listdir(dest) == ["r-1-py3-none-any.whl"]
+# (a deadline that reaches the loop itself — the watchdog's own exception: a failed download, never out of vendor())
+def late(url, limit):
+    raise v.DownloadDeadline()
+_, rep = v.vendor({"packages": {"p": {"file_name": "https://c/p-1-py3-none-any.whl", "sha256": z, "depends": []}}}, ["p"], tempfile.mkdtemp(), fetch=late, tmp=tempfile.mkdtemp())
+assert rep["ready"] == [] and rep["left_out"][0]["why"].startswith("download failed (DownloadDeadline"), rep
 PY
 }
 

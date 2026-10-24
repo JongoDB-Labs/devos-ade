@@ -117,11 +117,14 @@ def fetch_url(url, limit, deadline_s=DOWNLOAD_DEADLINE_S):
         if armed[0]:
             raise DownloadDeadline()
 
-    if watchdog:
-        before = signal.signal(signal.SIGALRM, on_alarm)
-        armed[0] = True
-        old_delay, old_interval = signal.setitimer(signal.ITIMER_REAL, deadline_s)
+    before, old_delay, old_interval = None, 0.0, 0.0
     try:
+        # (armed inside the try: an alarm of the caller's timer firing as ours is set is a deadline here too, never an
+        # exception out of this function)
+        if watchdog:
+            before = signal.signal(signal.SIGALRM, on_alarm)
+            armed[0] = True
+            old_delay, old_interval = signal.setitimer(signal.ITIMER_REAL, deadline_s)
         opener = urllib.request.build_opener(_SameHost(origin))
         with opener.open(url, timeout=max(0.001, min(DOWNLOAD_TIMEOUT_S, end - time.monotonic()))) as r:
             chunks, size = [], 0
@@ -139,7 +142,7 @@ def fetch_url(url, limit, deadline_s=DOWNLOAD_DEADLINE_S):
     except DownloadDeadline:
         raise TimeoutError(f"not done within {deadline_s} s") from None
     finally:
-        if watchdog:
+        if watchdog and before is not None:
             armed[0] = False   # (an alarm from here on does nothing)
             signal.setitimer(signal.ITIMER_REAL, 0)
             signal.signal(signal.SIGALRM, before)
@@ -184,7 +187,7 @@ def vendor(lock, names, dest, fetch=None, tmp=None):
             continue
         try:
             b = fetch(url, min(FILE_MAX, TOTAL_MAX - total))
-        except Exception as e:  # noqa: BLE001 — any failure leaves it out, said
+        except (Exception, DownloadDeadline) as e:  # noqa: BLE001 — any failure leaves it out, said (a deadline too)
             why[name] = f"download failed ({type(e).__name__}: {plain(str(e), 120)})"
             continue
         if hashlib.sha256(b).hexdigest() != sha:

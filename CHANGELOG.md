@@ -80,7 +80,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   your computer's own git config is not visible to the sandbox), in any spelling a disk that folds names opens — and no
   edit there is plain; a hooks folder that cannot be listed whole neither. `core.hooksPath` is plain only in printable
   ASCII. Edits to scripts a hook calls by name (`npm test`, `make lint`, `scripts/check.sh` …) still go ahead without
-  asking, as with Claude Code's own Accept edits. The watchlist says a hooks folder that is a link, or holds one, too.
+  asking, as with Claude Code's own Accept edits. Not looked into: the hooks of another repository inside the project
+  (a nested one, or one made with `--separate-git-dir`; git runs them when you commit, check out, merge, rebase or push
+  there), and a `core.hooksPath` in your computer's own git config naming another folder (the sandbox does not see
+  it). The watchlist says when a hooks folder it watches — `.git`'s, a `core.hooksPath` a config here names, and
+  `.husky` — is a link, or holds a link directly in it.
 - **The watchlist says when it cannot read a repository's git layout whole** — a `gitdir:` or `commondir` that leads
   outside the folder, to no folder or through a link on its way, a `.git` or `modules/` that is a link, a config git
   reads that is a link, too large or not plainly written (as Accept edits reads one: no key on a section's line, no
