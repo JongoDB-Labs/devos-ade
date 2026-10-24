@@ -143,9 +143,9 @@ def folders(status_dir: Path) -> list[dict]:
 
 def plan_models(s, remote: bool, rows: list[dict]) -> list[dict]:
     """Your subscriptions as Chat models (the code container's connection in Open WebUI: plan-<id>): {id, tool, label,
-    ok, why, signin} for each tool the catalog offers as one — ok while the Code page runs here, the sandbox's way out
-    is not the direct one (TERMINAL_EGRESS=host: none then), the tool is in Chat's sandbox and does not say it is
-    signed out there — Chat's own sign-in, never the terminal's (Claude: also Settings' switch, and signed in).
+    ok, why, signin} for each tool the catalog offers as one — ok while the Code page runs here, the sandbox has a way
+    out (TERMINAL_EGRESS=off: none then; with host Chat's sandbox has a proxy of its own, compose.code-egress.yaml),
+    the tool is in Chat's sandbox and does not say it is signed out there — Chat's own sign-in, never the terminal's (Claude: also Settings' switch, and signed in).
     signin: what is missing is that sign-in (the picker's "Sign in for Chat…" goes to Settings' row for it)."""
     out = []
     for t in rows:
@@ -155,9 +155,8 @@ def plan_models(s, remote: bool, rows: list[dict]) -> list[dict]:
         why, signin = "", False
         if not s.code_on(remote):
             why = "needs the Code page (it runs your subscriptions' agents)"
-        elif getattr(s, "terminal_egress", "internet") == "host":
-            why = ("off while the sandbox reaches the internet directly (Settings › Claude Code › Sandbox internet access): "
-                   "Chat's own sandbox would sit beside the terminal with no proxy between")
+        elif getattr(s, "terminal_egress", "internet") == "off":
+            why = "off while the sandbox has no internet (Settings › Claude Code › Sandbox internet access: Off)"
         elif t["installed"] is False or c["installed"] is False:
             why = "not in the sandbox"
         elif t["id"] == "claude" and not getattr(s, "claude_plan", False):

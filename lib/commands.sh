@@ -531,6 +531,7 @@ setup_done() { SETUP_DONE="${SETUP_DONE:+$SETUP_DONE; }$1"; SETUP_STEP=''; }   #
 _setup_undo_code_default() {
   if [ "$1" = 2 ]; then dc rm -sf code subs-chat terminal terminal-gateway >/dev/null 2>&1 || true
   else dc rm -sf code subs-chat >/dev/null 2>&1 || true; fi
+  ! declare -F chat_proxy_rm >/dev/null || chat_proxy_rm   # (Chat's own egress proxy too, with host egress: lib/terminal.sh)
   if [ "$1" = 2 ]; then (set_env_batch CODE_ENABLED '' TERMINAL_ENABLED '') 2>/dev/null || true
   else (set_env CODE_ENABLED '') 2>/dev/null || true; fi
   (terminal_remote_sync; code_remote_sync) >/dev/null 2>&1 || true
@@ -1141,6 +1142,7 @@ status_url() { # status_url SERVICE -> where to open it (browser UIs: through th
     terminal) echo "$(portal_url terminal)   (the Terminal tab; ./stack terminal status)" ;;
     terminal-gateway) echo "- (the terminal's only way into the stack)" ;;
     terminal-egress) echo "- (the terminal's way out: public internet addresses only)" ;;
+    chat-egress) echo "- (Chat's way out while the terminal's is direct: public internet addresses only)" ;;
     code) echo "$(portal_url code)   (the Code tab; ./stack code status)" ;;
     *) echo "- (internal only)" ;;
   esac

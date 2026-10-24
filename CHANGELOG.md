@@ -55,6 +55,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   agent's every edit ask in Accept edits (nor the watchlist say it could not check everything): UTF-8 text in a value
   is plain. A control character, a line separator or a direction override in a value still is not, and keys, section
   and subsection names stay ASCII.
+- **Your subscriptions are Chat models whatever the terminal's way out is.** With *Sandbox internet access* on the
+  direct way (`TERMINAL_EGRESS=host`) they were greyed in Chat ("off while the sandbox reaches the internet
+  directly"). Chat's sandbox now goes out through an egress proxy of its own then — the terminal proxy's image and
+  rules, public addresses only, never this computer's services or your network (`compose.code-egress.yaml`; `./stack
+  test` checks it) — and the terminal's own way out is not changed. With no internet (`off`) they are greyed, saying
+  why.
 
 ### Changed
 

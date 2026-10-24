@@ -235,7 +235,28 @@ terminal_ids() {
 terminal_build() {
   # (TERMINAL_AI_TOOLS: which of your AI subscriptions' tools go in — lib/subscriptions.sh)
   building "the terminal image" dc build -q --build-arg "APT_REFRESH=$(date -u +%G-%V)" --build-arg "BN_AI_TOOLS=$(subs_tools_arg)" terminal || return 1
-  [ "$(terminal_egress_mode)" != internet ] || building "the egress proxy's image" dc build -q terminal-egress
+  egress_image_wanted || return 0
+  if [ "$(terminal_egress_mode)" = internet ]; then building "the egress proxy's image" dc build -q terminal-egress
+  else building "Chat's egress proxy's image" dc build -q chat-egress; fi
+}
+# egress_image_wanted -> 0 while an egress proxy runs: the terminal's (TERMINAL_EGRESS=internet), or Chat's own (host,
+# with the Code page on: compose.code-egress.yaml — the same image)
+egress_image_wanted() {
+  case "$(terminal_egress_mode)" in
+    internet) return 0 ;;
+    host) flag_on "$(get_env CODE_ENABLED)" ;;
+    *) return 1 ;;
+  esac
+}
+# chat_proxy_rm — Chat's own egress proxy (compose.code-egress.yaml chat-egress), by its Compose labels, and its two
+# networks: once Chat's sandbox no longer goes out that way (TERMINAL_EGRESS other than host, or the Code page off),
+# so no orphan stays running. Never fatal.
+chat_proxy_rm() {
+  local ids p; p="$(project_name)"
+  ids="$(docker ps -aq --filter "label=com.docker.compose.project=$p" --filter label=com.docker.compose.service=chat-egress 2>/dev/null || true)"
+  # shellcheck disable=SC2086  # one id per word
+  [ -z "$ids" ] || docker rm -f $ids >/dev/null 2>&1 || warn "could not remove Chat's egress proxy's container — docker rm -f $p-chat-egress-1"
+  docker network rm "${p}_chat-proxy" "${p}_chat-out" >/dev/null 2>&1 || true
 }
 _terminal_build_and_up() { terminal_build && _terminal_up; }
 # Portal (the tab, the unlock) and Caddy (the terminal site: a changed Caddyfile is read only at start), LiteLLM and
@@ -384,6 +405,11 @@ terminal_egress_apply() {
     terminal_proxy_rm
   fi
   run_phase "Terminal (its way to the internet)" terminal dc up -d --no-deps --wait terminal || return 1
+  # Chat's sandbox on its new way out too (with host: its own proxy, built when needed; otherwise the terminal's, or none)
+  if code_ready 2>/dev/null; then
+    if [ "$(terminal_egress_mode)" = host ]; then building "Chat's egress proxy's image" dc build -q chat-egress || return 1; fi
+    run_phase "Chat's sandbox (its way to the internet)" subs-chat dc up -d --wait subs-chat || return 1
+  fi
   terminal_after_up
 }
 
@@ -493,6 +519,8 @@ terminal_after_up() {
     host) terminal_proxy_rm; docker network rm "${p}_terminal-proxy" >/dev/null 2>&1 || true ;;
     off) terminal_proxy_rm; docker network rm "${p}_terminal-proxy" "${p}_terminal-out" >/dev/null 2>&1 || true ;;
   esac
+  # (Chat's own proxy: only while the terminal's way out is the direct one and the Code page is on)
+  { [ "$(terminal_egress_mode)" = host ] && flag_on "$(get_env CODE_ENABLED)"; } || chat_proxy_rm
   return 0
 }
 

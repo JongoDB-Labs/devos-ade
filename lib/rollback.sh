@@ -109,7 +109,7 @@ _rollback_litellm_hook() {
 
 # shellcheck disable=SC2120  # arguments come from the ./stack dispatcher
 cmd_rollback() {
-  local from branch fromv backup result at now_imgs d no_helper=0 no_stt=0 no_terminal=0 no_egress=0 q quiet=()
+  local from branch fromv backup result at now_imgs d no_helper=0 no_stt=0 no_terminal=0 no_egress=0 no_chat_proxy=0 q quiet=()
   [ $# -eq 0 ] || die "usage: ./stack rollback [--yes]   (goes back to the version before the last ./stack update)"
   [ -f "$ENV_FILE" ] || die "run ./stack setup first"
   stack_lock rollback
@@ -170,6 +170,13 @@ cmd_rollback() {
         warn "${fromv:-$from} has no egress proxy: the sandbox reaches the internet directly again — this computer's own services and your network included. TERMINAL_EGRESS=off in .env, then ./stack up, closes both; ./stack update brings the proxy back"
     fi
   fi
+  # A version from before Chat's own egress proxy (compose.code-egress.yaml chat-egress: Chat's way out while the
+  # terminal's is the direct one), while the Code page is on: its container goes now (that version's compose does not
+  # know it; Chat's sandbox is on no network there with host), its networks after the up.
+  if declare -F chat_proxy_rm >/dev/null && declare -F code_on >/dev/null && code_on &&
+     ! git -C "$STACK_DIR" show "$from:compose.code-egress.yaml" 2>/dev/null | grep -q '^  chat-egress:'; then
+    no_chat_proxy=1; chat_proxy_rm
+  fi
   # A version from before the Code page, while it is on: its container goes (lib/code.sh); its network and volume
   # after the up.
   no_code=0
@@ -196,6 +203,7 @@ cmd_rollback() {
   [ "$no_stt" = 0 ] || stt_rollback_network_cleanup
   [ "$no_code" = 0 ] || code_network_cleanup
   [ "$no_terminal" = 0 ] || terminal_network_cleanup
+  [ "$no_chat_proxy" = 0 ] || chat_proxy_rm
   [ "$no_egress" = 0 ] || docker network rm "$(project_name)_terminal-proxy" >/dev/null 2>&1 || true
   _record_set result rolled-back
   # The images of the version rolled back from are now the "previous version": kept until the next update

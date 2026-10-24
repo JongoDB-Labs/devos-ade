@@ -1,10 +1,52 @@
 # Chat's sandbox (compose.code.yaml subs-chat) while the terminal's way out is the direct one (TERMINAL_EGRESS=host:
-# compose.terminal-egress.yaml): no network at all. On the terminal's own network, with no proxy between, it would sit
-# beside the terminal and reach this computer's services; so with host egress your subscriptions are not Chat models
-# (the code container offers none and refuses them, the portal greys them out saying why) and Chat's sandbox has no
-# way out. Added with compose.code.yaml only then (lib/common.sh compose_overlays); with TERMINAL_EGRESS=off
-# compose.code-offline.yaml (the same).
+# compose.terminal-egress.yaml): a way out of its own, through an egress proxy of its own. The terminal itself is on
+# "terminal-out" then, beside this computer's services; Chat's sandbox never is: it sits on "chat-proxy" (internal) with
+# its proxy alone, and only the proxy is also on "chat-out", the internet — the terminal's proxy's rules exactly (the
+# same image, terminal/egress: public addresses only, on ports 80, 443 and 22, checked after its own DNS lookup — never
+# this computer's services, your network, private or link-local addresses; TERMINAL_EGRESS_ALLOW / _DENY narrow it as
+# they narrow the terminal's proxy). Your subscriptions answer in Chat as with the proxy's way, and the terminal's own
+# way out is not changed. Added with compose.code.yaml only then (lib/common.sh compose_overlays); with
+# TERMINAL_EGRESS=off compose.code-offline.yaml (no network at all).
 services:
+  chat-egress:
+    # the terminal's egress proxy's own image (./stack builds it for Chat's sandbox too while this is its way out)
+    build:
+      context: ./terminal/egress
+    image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/terminal-egress:local   # per project, like the terminal
+    restart: unless-stopped
+    user: "65534:65534"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 192m
+    pids_limit: 64
+    init: true
+    environment:
+      TERMINAL_EGRESS_ALLOW: ${TERMINAL_EGRESS_ALLOW:-}
+      TERMINAL_EGRESS_DENY: ${TERMINAL_EGRESS_DENY:-}
+      BN_EGRESS_BIND: egress   # it listens on its address on chat-proxy alone, never on the internet's side
+    networks:
+      chat-proxy:
+        aliases: [egress]
+      chat-out: {}
+    logging:   # (YAML anchors do not reach across compose files: same values as x-logging in compose.yaml)
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
   subs-chat:
-    networks: !reset []   # (not even its own: compose.code.yaml)
-    network_mode: none
+    networks: !override [chat-proxy]   # (in place of its own: compose.code.yaml)
+    environment:
+      HTTP_PROXY: http://egress:3128
+      HTTPS_PROXY: http://egress:3128
+      http_proxy: http://egress:3128
+      https_proxy: http://egress:3128
+      NO_PROXY: localhost,127.0.0.1,::1,0.0.0.0
+      no_proxy: localhost,127.0.0.1,::1,0.0.0.0
+      NODE_USE_ENV_PROXY: "1"
+    depends_on:
+      chat-egress: { condition: service_started }
+
+networks:
+  chat-proxy:
+    internal: true
+  chat-out:

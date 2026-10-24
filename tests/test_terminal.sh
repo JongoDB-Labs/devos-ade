@@ -358,9 +358,17 @@ test_up_makes_a_missing_key_and_drops_the_way_out_when_asked() {
   assert_contains "$(cat "$TMP/docker")" "docker rm -f c0ffee"
   assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_terminal-proxy"
   assert_not_contains "$(cat "$TMP/docker")" "terminal-out"
-  # internet (the default): nothing goes
+  # internet (the default): the terminal's proxy stays; only Chat's own (host's, compose.code-egress.yaml) goes
   set_env TERMINAL_EGRESS ''; : > "$TMP/docker"; terminal_after_up || return 1
-  assert_eq "$(cat "$TMP/docker")" ""
+  assert_not_contains "$(cat "$TMP/docker")" "terminal-"
+  assert_contains "$(cat "$TMP/docker")" "label=com.docker.compose.service=chat-egress"
+  assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_chat-proxy bedrock-now_chat-out"
+  # host with the Code page on: Chat's own proxy stays (its way out); off, it goes
+  set_env TERMINAL_EGRESS host; set_env CODE_ENABLED true; : > "$TMP/docker"; terminal_after_up || return 1
+  assert_not_contains "$(cat "$TMP/docker")" "chat-"
+  set_env CODE_ENABLED false; : > "$TMP/docker"; terminal_after_up || return 1
+  assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_chat-proxy bedrock-now_chat-out"
+  set_env CODE_ENABLED ''
   # ./stack up, before compose: a proxy left from internet goes once the choice is host or off (never an orphan)
   set_env TERMINAL_EGRESS host; : > "$TMP/docker"; terminal_up_hook 2>/dev/null || return 1
   assert_contains "$(cat "$TMP/docker")" "docker rm -f c0ffee"
@@ -387,7 +395,23 @@ dc up -d --no-deps --wait terminal"
   assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_terminal-proxy"
   # host: no proxy to build at enable or setup
   : > "$TMP/dc"; terminal_build || return 1
+  assert_not_contains "$(cat "$TMP/dc")" "egress"
+  # host with the Code page on: Chat's own proxy (the same image) built, and Chat's sandbox brought to its way out
+  set_env CODE_ENABLED true
+  : > "$TMP/dc"; terminal_build || return 1
+  assert_contains "$(cat "$TMP/dc")" "dc build -q chat-egress"
   assert_not_contains "$(cat "$TMP/dc")" "terminal-egress"
+  code_ready() { return 0; }
+  : > "$TMP/dc"; terminal_egress_apply || return 1
+  assert_eq "$(cat "$TMP/dc")" "dc up -d --no-deps --wait terminal
+dc build -q chat-egress
+dc up -d --wait subs-chat"
+  # off: Chat's sandbox on no network (no proxy built), and Chat's proxy gone
+  set_env TERMINAL_EGRESS off; : > "$TMP/dc"; : > "$TMP/docker"; terminal_egress_apply || return 1
+  assert_eq "$(cat "$TMP/dc")" "dc up -d --no-deps --wait terminal
+dc up -d --wait subs-chat"
+  assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_chat-proxy bedrock-now_chat-out"
+  set_env CODE_ENABLED ''; unset -f code_ready
   # the terminal off: nothing at all
   set_env TERMINAL_ENABLED false; : > "$TMP/dc"
   terminal_egress_apply || return 1

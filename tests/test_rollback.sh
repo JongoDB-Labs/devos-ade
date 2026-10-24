@@ -422,6 +422,38 @@ test_rollback_to_a_version_without_the_egress_proxy_removes_it() {
   assert_contains "$(cat "$TMP/err")" "has no egress proxy: the sandbox reaches the internet directly again — this computer's own services and your network included"
 }
 
+# A version from before Chat's own egress proxy (host: compose.code-egress.yaml chat-egress), the Code page on: the
+# proxy's container goes before that version's ./stack up, its networks after; a version with it keeps it
+test_rollback_to_a_version_without_chats_own_proxy_removes_it() {
+  local with
+  for with in no yes; do
+    _fixture
+    mkdir -p "$TMP/origin/terminal/egress" "$TMP/origin/code/server"
+    : > "$TMP/origin/terminal/Dockerfile"; : > "$TMP/origin/terminal/egress/bn-egress.mjs"; : > "$TMP/origin/code/server/main.mjs"
+    if [ "$with" = yes ]; then printf 'services:\n  chat-egress:\n    image: x\n' > "$TMP/origin/compose.code-egress.yaml"
+    else printf 'services:\n  subs-chat:\n    network_mode: none\n' > "$TMP/origin/compose.code-egress.yaml"; fi
+    git -C "$TMP/origin" add terminal code compose.code-egress.yaml; git -C "$TMP/origin" commit -qm code
+    git -C "$TMP/origin" tag "v0.3.1-$with"; git -C "$STACK_DIR" fetch -q --tags
+    OLD="$(git -C "$TMP/origin" rev-parse "v0.3.1-$with")"
+    _record
+    mkdir -p "$TMP/ws"
+    printf 'POSTGRES_PASSWORD=p\nCOMPOSE_PROJECT_NAME=bn-t\nTERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=%s\nCODE_ENABLED=true\nTERMINAL_EGRESS=host\n' "$TMP/ws" > "$ENV_FILE"
+    docker() { echo "docker $*" >> "$TMP/docker"; case "$*" in "ps -aq"*chat-egress) echo c0ffee ;; esac; return 0; }
+    : > "$TMP/docker"
+    ASSUME_YES=1 cmd_rollback > /dev/null 2> "$TMP/err" || { cat "$TMP/err" >&2; return 1; }
+    d="$(cat "$TMP/docker")"
+    if [ "$with" = no ]; then
+      assert_contains "$d" "docker ps -aq --filter label=com.docker.compose.project=bn-t --filter label=com.docker.compose.service=chat-egress"
+      assert_contains "$d" "docker rm -f c0ffee"
+      assert_eq "$(grep -c 'docker network rm bn-t_chat-proxy bn-t_chat-out' "$TMP/docker")" 2   # (before the up, and after it)
+    else
+      assert_not_contains "$d" "chat-egress"
+      assert_not_contains "$d" "chat-proxy"
+    fi
+    rm -rf "$TMP/origin" "$TMP/stack" "$STATE_DIR" "$TMP/calls"* "$TMP/docker"
+  done
+}
+
 # the words that version does not know become blank (it would warn at every up), off stays off and nothing is said
 test_rollback_before_the_egress_proxy_keeps_off_and_blanks_the_new_words() {
   for v in internet host off; do

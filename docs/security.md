@@ -3228,7 +3228,14 @@ never reads, copies, keeps, passes on or relays a login.**
   writes there: its login when it renews it, and the sessions a conversation takes up again (Codex's rollouts, Copilot's
   session state, Grok's sessions, Claude's transcripts). Nothing else of yours: no workspace, no project folder (neither is mounted), no LiteLLM key, no MCP token, not on
   the terminal's network (its gateway, LiteLLM, shared-mcp: no name resolves there; its one network is the egress proxy's, which the terminal is on too — a dev server of yours listening on every address in the terminal answers it there, and Chat's agents have no tool to ask), `read_only`, `cap_drop: ALL`,
-  `no-new-privileges`, 2 GB, 512 processes; its way out is the sandbox's (the egress proxy by default). Without that
+  `no-new-privileges`, 2 GB, 512 processes; its way out is always through an egress proxy: the terminal's by default;
+  while the terminal's way out is the direct one (`TERMINAL_EGRESS=host`, which puts the terminal beside this
+  computer's services) one of its own instead — `chat-egress` (`compose.code-egress.yaml`): the terminal proxy's image
+  and rules (public addresses only, on ports 80, 443 and 22, checked after its own lookup; `TERMINAL_EGRESS_ALLOW` /
+  `_DENY` narrow it alike), hardened alike (a test keeps the two definitions equal), Chat's sandbox alone with it on
+  `chat-proxy` (internal) and only the proxy also on `chat-out` — so Chat's sandbox never shares a network with the
+  terminal there, nor reaches this computer's services or your network; with no way out (`off`) no network at all,
+  and Chat's models are greyed, saying why. Without that
   overlay (a run of compose that lacks it) it is on a network of its own with nothing else on it and no way out
   (`subs-chat-internal`), never the stack's default one; and bn-coded in Chat's role does not start where one of the
   stack's own names resolves — or where a lookup of one does not answer in time, twice: not known to be out of reach

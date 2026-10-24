@@ -677,10 +677,11 @@ Settings › Claude Code › **Your AI subscriptions** shows each tool, whether 
 never opened; Copilot has no way to say: `/user` in it), **Sign out** (its own sign-out) and **Check again** (both
 through the update helper, with the password) — two rows for each Chat model: *Terminal & Code page* and *Chat*, each
 sign-in its own (Chat's *Sign in* shows the command for it; a tool not signed in for Chat shows as *Sign in for
-Chat…* in Chat's picker, which leads there). While the sandbox's way out is the direct one (`TERMINAL_EGRESS=host`),
-your subscriptions are not Chat models (greyed, saying why): Chat's sandbox would sit beside the terminal with no
-proxy between. Usage counts against each plan's own limits: DevOS ADE bills none of
-it and shows no $ for it.
+Chat…* in Chat's picker, which leads there). Chat's sandbox always goes out through an egress proxy: the terminal's,
+or — while the terminal's way out is the direct one (`TERMINAL_EGRESS=host`) — one of its own with the same rules
+(public addresses only; never this computer's services or your network), so your subscriptions stay Chat models
+whatever the terminal's way out is; with none (`off`) they are greyed, saying why. Usage counts against each plan's
+own limits: DevOS ADE bills none of it and shows no $ for it.
 
 The tools are in the sandbox's image, each **pinned and checked** when it is built on your computer: Codex's and
 Copilot's release files by the SHA-256 their GitHub releases list, Gemini CLI and Grok Build by their npm lockfiles,

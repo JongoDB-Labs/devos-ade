@@ -171,6 +171,7 @@ code_disable() {
   stack_lock code
   check_prereqs
   dc rm -sf code subs-chat >/dev/null 2>&1 || true   # with the overlay still on: compose knows it
+  ! declare -F chat_proxy_rm >/dev/null || chat_proxy_rm   # (Chat's own egress proxy too, with host egress: lib/terminal.sh)
   set_env CODE_ENABLED false
   code_remote_sync
   run_phase "Portal, Open WebUI + Caddy (Code page off)" "portal open-webui caddy" _code_front
@@ -186,6 +187,7 @@ code_disable() {
 code_terminal_off() {
   code_on || return 0
   dc rm -sf code subs-chat >/dev/null 2>&1 || true
+  ! declare -F chat_proxy_rm >/dev/null || chat_proxy_rm   # (Chat's own egress proxy too, with host egress: lib/terminal.sh)
   set_env CODE_ENABLED false
   code_remote_sync
   log "the Code page is off too (it runs in the terminal's sandbox): ./stack code enable turns both on again"
@@ -197,6 +199,8 @@ code_network_cleanup() {
   local p; p="$(project_name)"
   # (plan-chat: a network of a version before Chat's models went through Caddy — gone when nothing uses it)
   docker network rm "${p}_code-link" "${p}_plan-chat" >/dev/null 2>&1 || true
+  # (Chat's own way out with host egress: compose.code-egress.yaml)
+  docker network rm "${p}_chat-proxy" "${p}_chat-out" >/dev/null 2>&1 || true
   docker volume rm "${p}_chat-socket" >/dev/null 2>&1 || true
 }
 
@@ -423,6 +427,7 @@ code_default_settle() {
   # (while compose still knows them)
   if [ "$both" = 1 ]; then dc rm -sf code subs-chat terminal terminal-gateway >/dev/null 2>&1 || true
   else dc rm -sf code subs-chat >/dev/null 2>&1 || true; fi
+  ! declare -F chat_proxy_rm >/dev/null || chat_proxy_rm   # (Chat's own egress proxy too, with host egress: lib/terminal.sh)
   set_env CODE_ENABLED ''
   [ "$both" = 0 ] || set_env TERMINAL_ENABLED ''
   terminal_remote_sync
@@ -449,6 +454,7 @@ code_default_rollback() {
   [ "$1" != 2 ] || ! flag_on "$(get_env TERMINAL_ENABLED)" || term=1
   if [ "$term" = 1 ]; then dc rm -sf code subs-chat terminal terminal-gateway >/dev/null 2>&1 || true
   elif [ "$code" = 1 ]; then dc rm -sf code subs-chat >/dev/null 2>&1 || true; fi
+  [ "$code" = 0 ] || ! declare -F chat_proxy_rm >/dev/null || chat_proxy_rm   # (Chat's own egress proxy too)
   [ "$code" = 0 ] || set_env CODE_ENABLED ''
   [ "$term" = 0 ] || set_env TERMINAL_ENABLED ''
   [ "$1" != 2 ] || [ "${2:-new}" != new ] || set_env LITELLM_KEY_TERMINAL ''
@@ -546,6 +552,18 @@ code_test_checks() {
   # (directly: through its egress proxy, TERMINAL_EGRESS=internet, a container's name is refused anyway)
   out="$(_probe dc exec -T terminal timeout 20 sh -c 'curl --noproxy "*" -s -m 3 -o /dev/null -w "%{http_code}" http://code-upstream:8095/ || true; printf " %s" "$(stat -c %a /run/bn-code)"; test -S /run/bn-code/coded.sock && printf " socket"' 2>/dev/null || true)"
   _check "the sandbox cannot reach the code container; bn-coded listens in its own folder (mode 700)" "$out" "000 700 socket"
+  # Chat's own egress proxy, while the terminal's way out is the direct one (TERMINAL_EGRESS=host:
+  # compose.code-egress.yaml): healthy; Chat's sandbox has no route around it (a public address, the terminal: directly,
+  # nothing answers); through it, refused before any connection: this computer by Docker's name and LiteLLM's port on
+  # its loopback, the metadata address, a private address, the IPv6 loopback and the stack's containers by name
+  if [ "$(terminal_egress_mode)" = host ]; then
+    code="$(dc ps --format '{{.Health}}' chat-egress 2>/dev/null | head -n 1 || true)"
+    _check "Chat's own egress proxy healthy (the terminal's way out is the direct one)" "$code" healthy
+    # shellcheck disable=SC2016  # expanded in the container
+    out="$(PROBE_DEADLINE_S=90 _probe dc exec -T -e LP="$(get_env LITELLM_PORT)" subs-chat timeout 80 sh -c 'for u in http://1.1.1.1/ http://terminal:7681/; do curl --noproxy "*" -s -m 4 -o /dev/null -w "%{http_code} " "$u" || true; done; for u in "http://host.docker.internal:$LP/" "http://127.0.0.1:$LP/v1/models" http://169.254.169.254/latest/meta-data/ http://10.0.0.1/ "http://[::1]/" http://terminal:7681/ http://litellm:4000/health/liveliness; do env -u NO_PROXY -u no_proxy curl -g -x http://egress:3128 -s -m 10 -o /dev/null -w "%{http_code} " "$u" || true; done' 2>/dev/null || true)"
+    _check "Chat's sandbox: no route around its own proxy; through it no host.docker.internal, LiteLLM's port, metadata, private or ::1 address, no container" \
+      "$(printf '%s' "$out" | tr -s ' ' | sed 's/ $//')" "000 000 403 403 403 403 403 403 403"
+  fi
   code_preview_checks
 }
 
@@ -594,7 +612,7 @@ code_image_refs() { ! code_on || printf '%s/code:local\n' "$(project_name)"; }
 code_rollback_cleanup() {
   local p ids s
   p="$(project_name)"
-  for s in code subs-chat; do
+  for s in code subs-chat chat-egress; do
     ids="$(docker ps -aq --filter "label=com.docker.compose.project=$p" --filter "label=com.docker.compose.service=$s" 2>/dev/null || true)"
     # shellcheck disable=SC2086  # one id per word
     [ -z "$ids" ] || docker rm -f $ids >/dev/null 2>&1 || warn "could not remove the $s container — docker rm -f $p-$s-1"

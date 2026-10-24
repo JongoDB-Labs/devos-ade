@@ -98,8 +98,9 @@ services:
   # and shared-mcp are out of reach). Its one program is bn-coded in Chat's role
   # (terminal/bin/bn-coded.mjs roleOf): Chat's conversations, each in an empty folder of its own
   # (~/.bn-chat/<id>), each tool started with its tools switched off — and nothing else. The code container connects to
-  # its socket (chat-socket). Its one network is the sandbox's way out, as Settings › Claude Code › Sandbox internet
-  # access says: the egress proxy's (compose.code-proxy.yaml), the direct one (compose.code-egress.yaml), or none
+  # its socket (chat-socket). Its one network is a way out through an egress proxy, as Settings › Claude Code › Sandbox
+  # internet access says: the terminal's proxy (compose.code-proxy.yaml); with the terminal's direct way out, a proxy of
+  # its own with the same rules (compose.code-egress.yaml — never this computer's services); or none
   # (compose.code-offline.yaml) — never this stack's default network. Here, a network of its own with nothing else on
   # it and no way out (subs-chat-internal): where it is should a run of compose lack the overlay, which replaces it.
   subs-chat:

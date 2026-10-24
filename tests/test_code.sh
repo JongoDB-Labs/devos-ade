@@ -574,12 +574,22 @@ test_compose_code_is_a_sandboxed_container_on_its_own_network() {
   assert_contains "$sc" "target: /etc/claude-code/managed-settings.json"
   # (its one network: the sandbox's way out, in place of its own — never the stack's default network)
   assert_contains "$(cat "$STACK_DIR/compose.code-proxy.yaml")" "networks: !override [terminal-proxy]"
-  # (host egress: Chat's sandbox off the network too — no Chat models then)
-  assert_contains "$(cat "$STACK_DIR/compose.code-egress.yaml")" "network_mode: none"
-  assert_not_contains "$(cat "$STACK_DIR/compose.code-egress.yaml")" "terminal-out"
+  # (host egress: Chat's sandbox through an egress proxy of its own — never on the terminal's networks, never beside
+  # this computer's services; no egress at all: off the network)
+  local ce; ce="$(sed 's/[[:space:]]*#.*$//' "$STACK_DIR/compose.code-egress.yaml")"   # (its lines, not its comments)
+  assert_contains "$ce" "networks: !override [chat-proxy]"
+  assert_not_contains "$ce" "terminal-out"
+  assert_not_contains "$ce" "terminal-proxy"
+  assert_not_contains "$ce" "network_mode"
+  assert_contains "$ce" "$(printf '  chat-proxy:\n    internal: true')"
   assert_contains "$(cat "$STACK_DIR/compose.code-offline.yaml")" "network_mode: none"
-  for f in compose.code-egress.yaml compose.code-offline.yaml; do assert_contains "$(cat "$STACK_DIR/$f")" "networks: !reset []"; done
-  for f in compose.code-egress.yaml compose.code-offline.yaml; do assert_eq "$(grep -c '^  [a-z]' "$STACK_DIR/$f")" 1; done   # subs-chat: alone
+  assert_contains "$(cat "$STACK_DIR/compose.code-offline.yaml")" "networks: !reset []"
+  assert_eq "$(grep -c '^  [a-z]' "$STACK_DIR/compose.code-offline.yaml")" 1   # subs-chat: alone
+  # (Chat's proxy hardened exactly as the terminal's: the same lines from build to its networks, but its networks)
+  local tp cp
+  tp="$(sed -n '/^  terminal-egress:/,/^    networks:/p' "$STACK_DIR/compose.terminal-proxy.yaml" | sed '1d;$d' | grep -v '^[[:space:]]*#')"
+  cp="$(sed -n '/^  chat-egress:/,/^    networks:/p' "$STACK_DIR/compose.code-egress.yaml" | sed '1d;$d' | grep -v '^[[:space:]]*#')"
+  assert_eq "$(printf '%s\n' "$cp" | sed 's/  *#.*$//')" "$(printf '%s\n' "$tp" | sed 's/  *#.*$//')"
   for want in 'CODE_MODE: "on"' 'REMOTE_CODE_HOST: ${REMOTE_CODE_HOST:-code.remote.invalid}' 'CODE_ENABLED: "true"'; do
     assert_contains "$(cat "$STACK_DIR/compose.code.yaml")" "$want"
   done
@@ -657,15 +667,30 @@ on_link = sorted(n for n, v in s.items() if "code-link" in (v.get("networks") or
 assert on_link == ["caddy", "code"], on_link
 assert s["portal"]["environment"]["CODE_ENABLED"] == "true" and "fedcba98" not in json.dumps(s["portal"])
 assert c["depends_on"]["terminal"]["condition"] == "service_healthy"' || return 1
-  # Chat's sandbox with the other ways out: no network at all (host egress, or none); and with no overlay, its own alone
-  local eg
-  for eg in host off; do
-    set_env TERMINAL_EGRESS "$eg"
-    dc config --format json 2>/dev/null | python3 -c '
+  # Chat's sandbox with the other ways out: host egress — a proxy of its own, the terminal on its direct way still; no
+  # egress — no network at all; and with no overlay, its own alone
+  set_env TERMINAL_EGRESS host
+  dc config --format json 2>/dev/null | python3 -c '
 import json, sys
-x = json.load(sys.stdin)["services"]["subs-chat"]
-assert x.get("network_mode") == "none" and not x.get("networks"), x.get("networks")' || { echo "TERMINAL_EGRESS=$eg" >&2; return 1; }
-  done
+d = json.load(sys.stdin)
+s = d["services"]; x, p, t = s["subs-chat"], s["chat-egress"], s["terminal"]
+assert list(x["networks"]) == ["chat-proxy"] and "network_mode" not in x, x.get("networks")
+assert x["environment"]["HTTPS_PROXY"] == "http://egress:3128" and x["depends_on"]["chat-egress"]["condition"] == "service_started"
+assert sorted(p["networks"]) == ["chat-out", "chat-proxy"] and p["networks"]["chat-proxy"]["aliases"] == ["egress"], p["networks"]
+assert p["image"].endswith("/terminal-egress:local") and p["read_only"] and p["cap_drop"] == ["ALL"] and p["user"] == "65534:65534" and "ports" not in p
+assert p["environment"]["BN_EGRESS_BIND"] == "egress"
+assert d["networks"]["chat-proxy"]["internal"] is True and not d["networks"]["chat-out"].get("internal")
+# (the terminal: its own direct way out, unchanged — and on no network of Chat'"'"'s)
+assert sorted(t["networks"]) == ["terminal", "terminal-out"], t["networks"]
+assert "terminal-egress" not in s
+on = lambda n: sorted(k for k, v in s.items() if n in (v.get("networks") or {}))
+assert on("chat-proxy") == ["chat-egress", "subs-chat"] and on("chat-out") == ["chat-egress"], (on("chat-proxy"), on("chat-out"))' || { echo "TERMINAL_EGRESS=host" >&2; return 1; }
+  set_env TERMINAL_EGRESS off
+  dc config --format json 2>/dev/null | python3 -c '
+import json, sys
+s = json.load(sys.stdin)["services"]
+x = s["subs-chat"]
+assert x.get("network_mode") == "none" and not x.get("networks") and "chat-egress" not in s, x.get("networks")' || { echo "TERMINAL_EGRESS=off" >&2; return 1; }
   set_env TERMINAL_EGRESS internet
   # (a run without the way-out overlays: the terminal's and the Code page's files alone)
   ( compose_overlays() { printf 'compose.terminal.yaml\ncompose.code.yaml\n'; }; dc config --format json 2>/dev/null ) | python3 -c '
@@ -863,6 +888,18 @@ test_test_checks_report_health_unlock_secret_and_isolation() {
   assert_contains "$out" "FAIL  the code container reaches nothing but Caddy"
   assert_contains "$out" "FAIL  the code container reaches bn-coded"
   assert_contains "$out" "FAIL  the sandbox cannot reach the code container"
+  assert_not_contains "$out" "Chat's own egress proxy"   # (internet: Chat's sandbox uses the terminal's proxy)
+  # host: Chat's own proxy healthy, and Chat's sandbox with no way around it
+  set_env TERMINAL_EGRESS host
+  dc() { case "$*" in *"exec -T -e LP="*" subs-chat timeout 80 sh"*) printf '000 000 403 403 403 403 403 403 403 \n' ;; *) ok_dc "$@" ;; esac; }
+  out="$(code_test_checks)"
+  assert_contains "$out" "ok    Chat's own egress proxy healthy"
+  assert_contains "$out" "ok    Chat's sandbox: no route around its own proxy"
+  dc() { case "$*" in *"exec -T -e LP="*" subs-chat timeout 80 sh"*) printf '200 000 403 403 403 403 403 403 200 \n' ;; *"ps --format"*"chat-egress"*) echo unhealthy ;; *) ok_dc "$@" ;; esac; }
+  out="$(code_test_checks)"
+  assert_contains "$out" "FAIL  Chat's own egress proxy healthy"
+  assert_contains "$out" "FAIL  Chat's sandbox: no route around its own proxy"
+  set_env TERMINAL_EGRESS ''
 }
 
 # the trust summary of a project's own Claude Code settings: the backend (code/server/trust.mjs, its careful flag) and

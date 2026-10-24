@@ -417,7 +417,8 @@ compose_overlays() {
     esac
     if flag_on "$(get_env CODE_ENABLED)"; then
       echo compose.code.yaml
-      # (Chat's sandbox's way out: the terminal's — compose.code.yaml subs-chat)
+      # (Chat's sandbox's way out: the terminal's proxy; with the direct one, a proxy of its own; none with none —
+      # compose.code.yaml subs-chat)
       case "$(egress_mode "$(get_env TERMINAL_EGRESS)")" in
         internet) echo compose.code-proxy.yaml ;;
         host) echo compose.code-egress.yaml ;;

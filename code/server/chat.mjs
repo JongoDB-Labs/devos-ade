@@ -138,15 +138,16 @@ export class ChatStore {
 const sse = (res, o) => res.write(`data: ${JSON.stringify(o)}\n\n`);
 
 /**
- * createChatServer({key, status, planAllowed, egressHost, spawnAgent, query, spawn, store, log}) -> http.Server
- *   egressHost: TERMINAL_EGRESS=host — the sandbox on the internet directly: no Chat model then (Chat's sandbox has no
- *   network then either: compose.code-egress.yaml), each refused with why
+ * createChatServer({key, status, planAllowed, egressOff, spawnAgent, query, spawn, store, log}) -> http.Server
+ *   egressOff: TERMINAL_EGRESS=off — the sandbox has no internet: no Chat model then (Chat's sandbox has no network
+ *   either: compose.code-offline.yaml), each refused with why. With TERMINAL_EGRESS=host Chat's sandbox goes out through
+ *   an egress proxy of its own (compose.code-egress.yaml): its models answer as with the proxy's way
  *   status() -> {tools: {id: {installed, signed}}} (agents/status.mjs)
  *   spawnAgent({tool, mode: 'chat', chat}) -> a process (spawn-client's sandboxAgent)
  *   query: the Agent SDK's query; spawn: its spawnClaudeCodeProcess (sandboxProcess, with {plan, chat})
  */
-export const HOST_EGRESS_OFF = 'Your subscriptions are not Chat models while the sandbox reaches the internet directly (Settings › Claude Code › Sandbox internet access: this computer\'s services too): Chat\'s own sandbox would sit beside the terminal with no proxy between. The proxy\'s way (the default) turns them on again.';
-export function createChatServer({ key, status, planAllowed = false, egressHost = false, spawnAgent, query, spawn, store = new ChatStore(), log = () => {},
+export const EGRESS_OFF = 'Your subscriptions are not Chat models while the sandbox has no internet (Settings › Claude Code › Sandbox internet access: Off): they could not reach their providers.';
+export function createChatServer({ key, status, planAllowed = false, egressOff = false, spawnAgent, query, spawn, store = new ChatStore(), log = () => {},
   clientVersion = '0', sandboxChatDir = process.env.BN_SANDBOX_CHAT_DIR || '/home/claude/.bn-chat' }) {
   if (!/^[0-9a-f]{32,}$/.test(key || '')) throw new Error('CODE_CHAT_KEY missing or weak (32+ hex characters)');
   const want = Buffer.from(`Bearer ${key}`);
@@ -165,7 +166,7 @@ export function createChatServer({ key, status, planAllowed = false, egressHost 
   // which models Open WebUI lists: the subscriptions whose tool is here and says it is signed in (Copilot cannot say:
   // listed while it is there); Claude only while Settings' switch is on
   async function models() {
-    if (egressHost) return [];
+    if (egressOff) return [];
     const st = await status();
     const out = [];
     for (const h of Object.values(HARNESSES)) {
@@ -280,7 +281,7 @@ export function createChatServer({ key, status, planAllowed = false, egressHost 
   async function completions(req, res, body) {
     const tool = toolOfChatModel(body.model);
     if (!tool) return fail(res, 404, 'no such model here');
-    if (egressHost) return fail(res, 409, HOST_EGRESS_OFF);
+    if (egressOff) return fail(res, 409, EGRESS_OFF);
     const st = await status();
     const t = st?.tools?.[tool];
     const h = HARNESSES[tool];

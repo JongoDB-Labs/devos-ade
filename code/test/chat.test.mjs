@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createChatServer, ChatStore, readMessages, convKey, firstPrompt } from '../server/chat.mjs';
+import { createChatServer, ChatStore, readMessages, convKey, firstPrompt, EGRESS_OFF } from '../server/chat.mjs';
 import { defang, defangMentions, quoted, quoteTag, QUOTE_HEAD, QUOTE_TAG } from '../server/agents/quote.mjs';
 import { fakeProc } from './fake-agent-proc.mjs';
 
@@ -19,7 +19,7 @@ const ALL = { claude: { installed: true, signed: 'yes' }, codex: { installed: tr
   cursor: { installed: true, signed: 'no' }, grok: { installed: false, signed: 'no' }, gemini: { installed: true, signed: 'yes' } };
 
 function server(opts = {}) {
-  const s = createChatServer({ key: KEY, status: statusOf(opts.tools ?? ALL), planAllowed: opts.plan === true, egressHost: opts.egressHost === true,
+  const s = createChatServer({ key: KEY, status: statusOf(opts.tools ?? ALL), planAllowed: opts.plan === true, egressOff: opts.egressOff === true,
     store: new ChatStore({ file: path.join(dir, `c-${Math.random()}.json`) }),
     spawnAgent: (o) => { spawned.push(o); return fakeProc(o.tool === 'codex' ? 'codex' : 'acp', opts.scenario ?? 'ok', o.tool); },
     query: opts.query ?? (() => { throw new Error('no SDK here'); }), spawn: () => null });
@@ -232,14 +232,23 @@ test('an @ that would attach a file reaches the agent as ＠ (pasted text is not
   } finally { s.closeAgents(); s.close(); }
 });
 
-test('the sandbox on the internet directly (TERMINAL_EGRESS=host): no Chat model, each refused with why', async () => {
-  const { s, url } = await server({ egressHost: true });
+test('the sandbox with no internet (TERMINAL_EGRESS=off): no Chat model, each refused with why', async () => {
+  const { s, url } = await server({ egressOff: true });
   const before = spawned.length;
   try {
     assert.deepEqual((await (await call(url, '/v1/models')).json()).data, []);
     const res = await call(url, '/v1/chat/completions', { model: 'plan-codex', messages: [{ role: 'user', content: 'x' }] });
     assert.equal(res.status, 409);
-    assert.match((await res.json()).error.message, /not Chat models while the sandbox reaches the internet directly/);
+    assert.equal((await res.json()).error.message, EGRESS_OFF);
+    assert.match(EGRESS_OFF, /Sandbox internet access: Off/);
     assert.equal(spawned.length, before, 'no agent started');
+  } finally { s.closeAgents(); s.close(); }
+});
+
+test('the terminal on the internet directly (TERMINAL_EGRESS=host): Chat has its models still (its own proxy: compose.code-egress.yaml)', async () => {
+  const { s, url } = await server();   // (host is not off: nothing of the terminal's way out reaches this server)
+  try {
+    const ids = (await (await call(url, '/v1/models')).json()).data.map((m) => m.id);
+    assert.ok(ids.includes('plan-codex') && ids.includes('plan-copilot'), ids.join(' '));
   } finally { s.closeAgents(); s.close(); }
 });

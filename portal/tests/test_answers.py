@@ -452,9 +452,12 @@ def test_your_subscriptions_as_chat_models_while_they_can_answer(s):
     on = answers.plan_models(replace(s, claude_plan=True), False, rows)
     assert not on[0]["ok"] and on[0]["signin"] is True and on[0]["why"].startswith("Sign in for Chat")
     assert not any(m["ok"] for m in answers.plan_models(replace(s, code=False), False, rows))
-    # the sandbox on the internet directly: none, saying why
+    # the sandbox with no internet: none, saying why; on the internet directly (host), Chat's own proxy: as with internet
+    off = answers.plan_models(replace(s, terminal_egress="off"), False, rows)
+    assert not any(m["ok"] for m in off) and all("has no internet" in m["why"] for m in off)
     host = answers.plan_models(replace(s, terminal_egress="host"), False, rows)
-    assert not any(m["ok"] for m in host) and all("reaches the internet directly" in m["why"] for m in host)
+    assert [(m["ok"], m["why"]) for m in host] == [(m["ok"], m["why"]) for m in answers.plan_models(s, False, rows)]
+    assert any(m["ok"] for m in host)
     # Chat's own check not made yet: not known — a Chat model not offered as signed out, nor as signed in for Claude
     (s.status_dir / "subscriptions-chat.json").unlink()
     rows = answers.tools(s.catalog_dir, s.status_dir)["tools"]
