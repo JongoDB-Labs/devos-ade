@@ -31,7 +31,11 @@
 code_on() { flag_on "$(get_env CODE_ENABLED)"; }
 # code_ready -> 0 while it is on and the terminal is ready (its sandbox is where Claude Code runs)
 code_ready() { code_on && terminal_ready; }
-code_services() { ! code_ready || echo "code subs-chat"; }
+# (and Chat's own egress proxy while it has one: ./stack status lists it)
+code_services() {
+  code_ready || return 0
+  if declare -F chat_proxy_wanted >/dev/null && chat_proxy_wanted; then echo "code subs-chat chat-egress"; else echo "code subs-chat"; fi
+}
 # code_workspace -> the folder the Code page's sandbox sees: the terminal's, or the one enable would give it
 code_workspace() {
   local ws; ws="$(get_env TERMINAL_WORKSPACE)"
@@ -113,6 +117,12 @@ _code_front() { dc up -d --wait portal open-webui && recreate_caddy; }
 # _subs_chat_up — Chat's sandbox; when it does not start, its last words and how to look (never fatal)
 _subs_chat_up() {
   local out
+  # (with the terminal's direct way out: Chat's own egress proxy built first — Docker's cache, unless its inputs
+  # changed — never an image of an earlier build reused as it is; compose.code-egress.yaml)
+  if declare -F chat_proxy_wanted >/dev/null && chat_proxy_wanted; then
+    building "Chat's egress proxy's image" dc build -q chat-egress ||
+      { warn "Chat's egress proxy did not build: your subscriptions cannot answer in Chat until it does — ./stack up"; return 0; }
+  fi
   # (then what its own sign-ins say, for Settings and Chat's picker — never fatal; lib/subscriptions.sh)
   out="$(dc up -d --wait subs-chat 2>&1)" && { (SUBS_WHERE=chat; subs_refresh >/dev/null 2>&1) || true; return 0; }
   warn "Chat's sandbox (subs-chat) did not start: your subscriptions cannot answer in Chat until it does — ./stack logs subs-chat"

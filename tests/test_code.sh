@@ -585,11 +585,8 @@ test_compose_code_is_a_sandboxed_container_on_its_own_network() {
   assert_contains "$(cat "$STACK_DIR/compose.code-offline.yaml")" "network_mode: none"
   assert_contains "$(cat "$STACK_DIR/compose.code-offline.yaml")" "networks: !reset []"
   assert_eq "$(grep -c '^  [a-z]' "$STACK_DIR/compose.code-offline.yaml")" 1   # subs-chat: alone
-  # (Chat's proxy hardened exactly as the terminal's: the same lines from build to its networks, but its networks)
-  local tp cp
-  tp="$(sed -n '/^  terminal-egress:/,/^    networks:/p' "$STACK_DIR/compose.terminal-proxy.yaml" | sed '1d;$d' | grep -v '^[[:space:]]*#')"
-  cp="$(sed -n '/^  chat-egress:/,/^    networks:/p' "$STACK_DIR/compose.code-egress.yaml" | sed '1d;$d' | grep -v '^[[:space:]]*#')"
-  assert_eq "$(printf '%s\n' "$cp" | sed 's/  *#.*$//')" "$(printf '%s\n' "$tp" | sed 's/  *#.*$//')"
+  # (Chat's proxy the same as the terminal's but its networks: test_compose_render_with_the_code_page compares the two
+  # as compose renders them)
   for want in 'CODE_MODE: "on"' 'REMOTE_CODE_HOST: ${REMOTE_CODE_HOST:-code.remote.invalid}' 'CODE_ENABLED: "true"'; do
     assert_contains "$(cat "$STACK_DIR/compose.code.yaml")" "$want"
   done
@@ -668,11 +665,22 @@ assert on_link == ["caddy", "code"], on_link
 assert s["portal"]["environment"]["CODE_ENABLED"] == "true" and "fedcba98" not in json.dumps(s["portal"])
 assert c["depends_on"]["terminal"]["condition"] == "service_healthy"' || return 1
   # Chat's sandbox with the other ways out: host egress — a proxy of its own, the terminal on its direct way still; no
-  # egress — no network at all; and with no overlay, its own alone
+  # egress — no network at all; and with no overlay, its own alone. (Chat's proxy is the terminal's, as rendered —
+  # the whole service but its networks: the same image, user, limits, capabilities, environment, logging …)
+  dc config --format json 2>/dev/null > "$TMP/render-internet.json" || return 1
   set_env TERMINAL_EGRESS host
-  dc config --format json 2>/dev/null | python3 -c '
+  dc config --format json 2>/dev/null > "$TMP/render-host.json" || return 1
+  python3 - "$TMP/render-internet.json" "$TMP/render-host.json" <<'PY' || { echo "chat-egress is not terminal-egress but its networks" >&2; return 1; }
 import json, sys
-d = json.load(sys.stdin)
+t = json.load(open(sys.argv[1]))["services"]["terminal-egress"]
+c = json.load(open(sys.argv[2]))["services"]["chat-egress"]
+for x in (t, c):
+    x.pop("networks")
+assert c == t, json.dumps({k: (t.get(k), c.get(k)) for k in set(t) | set(c) if t.get(k) != c.get(k)})
+PY
+  python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
 s = d["services"]; x, p, t = s["subs-chat"], s["chat-egress"], s["terminal"]
 assert list(x["networks"]) == ["chat-proxy"] and "network_mode" not in x, x.get("networks")
 assert x["environment"]["HTTPS_PROXY"] == "http://egress:3128" and x["depends_on"]["chat-egress"]["condition"] == "service_started"
@@ -684,7 +692,7 @@ assert d["networks"]["chat-proxy"]["internal"] is True and not d["networks"]["ch
 assert sorted(t["networks"]) == ["terminal", "terminal-out"], t["networks"]
 assert "terminal-egress" not in s
 on = lambda n: sorted(k for k, v in s.items() if n in (v.get("networks") or {}))
-assert on("chat-proxy") == ["chat-egress", "subs-chat"] and on("chat-out") == ["chat-egress"], (on("chat-proxy"), on("chat-out"))' || { echo "TERMINAL_EGRESS=host" >&2; return 1; }
+assert on("chat-proxy") == ["chat-egress", "subs-chat"] and on("chat-out") == ["chat-egress"], (on("chat-proxy"), on("chat-out"))' "$TMP/render-host.json" || { echo "TERMINAL_EGRESS=host" >&2; return 1; }
   set_env TERMINAL_EGRESS off
   dc config --format json 2>/dev/null | python3 -c '
 import json, sys
@@ -942,4 +950,20 @@ for m in re.finditer(r"^  \"([a-z-]+)\": \{ target: \"([^\"]+)\", says: \"([^\"]
   assert_eq "$ts" "$tsv"
   # (every row of the copy read: nothing written another way that the comparison would skip)
   assert_eq "$(grep -c 'target: "' "$STACK_DIR/code/web/src/setuplinks.ts" | tr -d ' ')" "$(printf '%s\n' "$tsv" | wc -l | tr -d ' ')"
+}
+
+# With the terminal's direct way out: Chat's own egress proxy built before Chat's sandbox comes up (never an image of
+# an earlier build reused as it is), and listed by ./stack status
+test_chats_own_proxy_is_built_before_chats_sandbox_and_listed() {
+  _stubs
+  code_enable > /dev/null 2>&1 || return 1
+  set_env TERMINAL_EGRESS host
+  : > "$TMP/dc"; _subs_chat_up 2>/dev/null
+  assert_eq "$(head -n 2 "$TMP/dc")" "dc build -q chat-egress
+dc up -d --wait subs-chat"
+  assert_eq "$(code_services)" "code subs-chat chat-egress"
+  set_env TERMINAL_EGRESS internet
+  : > "$TMP/dc"; _subs_chat_up 2>/dev/null
+  assert_not_contains "$(cat "$TMP/dc")" "chat-egress"
+  assert_eq "$(code_services)" "code subs-chat"
 }

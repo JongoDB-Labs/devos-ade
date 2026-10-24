@@ -411,6 +411,27 @@ dc up -d --wait subs-chat"
   assert_eq "$(cat "$TMP/dc")" "dc up -d --no-deps --wait terminal
 dc up -d --wait subs-chat"
   assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_chat-proxy bedrock-now_chat-out"
+  # leaving host (the Code page on): Chat's own proxy goes before anything comes up — an up that fails leaves Chat's
+  # sandbox with no way out, never with the one it had (Chat's sandbox's or the terminal's own up failing)
+  local failing
+  for failing in "--wait subs-chat" "--wait terminal"; do
+    set_env TERMINAL_EGRESS host; terminal_egress_apply >/dev/null 2>&1 || return 1
+    set_env TERMINAL_EGRESS internet
+    dc() { echo "dc $*" >> "$TMP/dc"; case "$*" in *"$failing") return 1 ;; esac; return 0; }
+    docker() { echo "docker $*" >> "$TMP/docker"; case "$*" in "ps -aq"*chat-egress) echo c0ffee ;; esac; return 0; }
+    : > "$TMP/dc"; : > "$TMP/docker"
+    if terminal_egress_apply 2>/dev/null; then echo "a failed up ($failing) was not said" >&2; return 1; fi
+    assert_contains "$(cat "$TMP/docker")" "docker rm -f c0ffee"
+    dc() { echo "dc $*" >> "$TMP/dc"; return 0; }; docker() { echo "docker $*" >> "$TMP/docker"; return 0; }
+  done
+  # ./stack up, before compose: the same once the choice is no longer host (or the Code page is off)
+  set_env TERMINAL_EGRESS internet
+  docker() { echo "docker $*" >> "$TMP/docker"; case "$*" in "ps -aq"*chat-egress) echo c0ffee ;; esac; return 0; }
+  : > "$TMP/docker"; terminal_up_hook 2>/dev/null || return 1
+  assert_contains "$(cat "$TMP/docker")" "docker rm -f c0ffee"
+  set_env TERMINAL_EGRESS host; : > "$TMP/docker"; terminal_up_hook 2>/dev/null || return 1
+  assert_not_contains "$(cat "$TMP/docker")" "chat-egress"
+  docker() { echo "docker $*" >> "$TMP/docker"; return 0; }
   set_env CODE_ENABLED ''; unset -f code_ready
   # the terminal off: nothing at all
   set_env TERMINAL_ENABLED false; : > "$TMP/dc"

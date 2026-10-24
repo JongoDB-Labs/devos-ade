@@ -248,6 +248,9 @@ egress_image_wanted() {
     *) return 1 ;;
   esac
 }
+# chat_proxy_wanted -> 0 while Chat's sandbox goes out through a proxy of its own: the terminal's way out the direct one
+# (TERMINAL_EGRESS=host) and the Code page on (compose.code-egress.yaml)
+chat_proxy_wanted() { [ "$(terminal_egress_mode)" = host ] && flag_on "$(get_env CODE_ENABLED)"; }
 # chat_proxy_rm — Chat's own egress proxy (compose.code-egress.yaml chat-egress), by its Compose labels, and its two
 # networks: once Chat's sandbox no longer goes out that way (TERMINAL_EGRESS other than host, or the Code page off),
 # so no orphan stays running. Never fatal.
@@ -404,6 +407,9 @@ terminal_egress_apply() {
   else
     terminal_proxy_rm
   fi
+  # (leaving host: Chat's own proxy goes before anything is brought up — should an up below fail, Chat's sandbox is
+  # left with no way out, never with the one it had)
+  chat_proxy_wanted || chat_proxy_rm
   run_phase "Terminal (its way to the internet)" terminal dc up -d --no-deps --wait terminal || return 1
   # Chat's sandbox on its new way out too (with host: its own proxy, built when needed; otherwise the terminal's, or none)
   if code_ready 2>/dev/null; then
@@ -489,8 +495,11 @@ terminal_up_hook() {
   terminal_on || return 0
   terminal_flag_warnings
   terminal_secrets
-  # TERMINAL_EGRESS no longer internet: its egress proxy goes before compose would find it an orphan
+  # TERMINAL_EGRESS no longer internet: its egress proxy goes before compose would find it an orphan; no longer host
+  # (or the Code page off): Chat's own proxy goes first too — Chat's sandbox never keeps a way out it no longer has,
+  # whether or not what comes up after does
   [ "$(terminal_egress_mode)" = internet ] || terminal_proxy_rm
+  chat_proxy_wanted || chat_proxy_rm
   why="$(terminal_why_out)"
   if [ -z "$why" ]; then
     # (any other socket in the workspace: said, never a reason to leave it out — a sandbox process may have made it)
@@ -520,7 +529,7 @@ terminal_after_up() {
     off) terminal_proxy_rm; docker network rm "${p}_terminal-proxy" "${p}_terminal-out" >/dev/null 2>&1 || true ;;
   esac
   # (Chat's own proxy: only while the terminal's way out is the direct one and the Code page is on)
-  { [ "$(terminal_egress_mode)" = host ] && flag_on "$(get_env CODE_ENABLED)"; } || chat_proxy_rm
+  chat_proxy_wanted || chat_proxy_rm
   return 0
 }
 
