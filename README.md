@@ -231,7 +231,8 @@ phone it is under **More**.
 5. **Your own tools:** `claude-bedrock` in your terminal, [the models from your own
    code](#the-models-from-your-own-code) (this install's API address, a key per tool, curl and Python examples to
    copy), [your AI subscriptions and keys](#your-ai-subscriptions) (which tools, how each signs in, the *who answers*
-   menu on each page, the switch for your Claude plan, what is greyed out and why) and the store Claude Code and Chat
+   menu on each page, the switch for your Claude plan, what is greyed out — a link to where it is turned on) and the
+   store Claude Code and Chat
    share.
 6. **Keep it running:** Home, Activity and search, where the money went, updates, backups and rollback, and the portal
    from your phone.
@@ -612,8 +613,9 @@ subscription limits"*; its legal and compliance page still says developers may n
 own applications, or … route requests through Free, Pro, or Max plan credentials on behalf of their users"*.
 `claude-sub` is Claude Code itself, signed in by you with Anthropic's own flow on your own computer; DevOS ADE offers
 no Claude login and never holds the token. Claude on your plan in the Code page and as a Chat model — the Agent SDK
-running that same Claude Code, with its own login — waits for your choice: Settings › Claude Code › **Use my Claude
-plan in the Code page and Chat** (off by default; turning it on works from the computer running the stack).
+running that same Claude Code, with its own login — waits for your choice: Settings › Claude Code › Your AI
+subscriptions, on Claude's row: **Use my Claude plan in the Code page and Chat** (off by default; turning it on works
+from the computer running the stack).
 
 **Who answers** — one menu on each page:
 
@@ -636,7 +638,7 @@ plan in the Code page and Chat** (off by default; turning it on works from the c
   conversation is one of the agent's own sessions, taken up again at each turn (its context, compaction and limits are
   the provider's); an edited or regenerated message starts a new session with the conversation so far. Under each
   answer: *on your ChatGPT plan · 1,240 in / 380 out* — tokens, never dollars. *Who answers* above Chat lists them too
-  (greyed, with why, when one cannot answer), next to the Bedrock and OpenRouter models and each tool **itself** in
+  (greyed when one cannot answer — a link to where that is turned on), next to the Bedrock and OpenRouter models and each tool **itself** in
   place of Open WebUI, in the folder you pick (you type into the real app, its own history and usage display).
   Google's plans no longer work in Gemini CLI: Gemini in Chat is planned through your own Gemini API key, like the
   other providers' keys (OpenAI, Anthropic, xAI, Mistral).
@@ -672,12 +674,20 @@ plan in the Code page and Chat** (off by default; turning it on works from the c
   files are a part of their own there: Claude Code on Bedrock and on your plan decide on Claude Code's part alone, as
   before, so a repository's `.github/` never keeps its CLAUDE.md and settings from them.
 
-Settings › Claude Code › **Your AI subscriptions** shows each tool, whether it said it is signed in and which kind
-(*ChatGPT*, *Claude Max* …: its own status command, or for Gemini CLI and Grok whether their login file is there —
-never opened; Copilot has no way to say: `/user` in it), **Sign out** (its own sign-out) and **Check again** (both
-through the update helper, with the password) — two rows for each Chat model: *Terminal & Code page* and *Chat*, each
-sign-in its own (Chat's *Sign in* shows the command for it; a tool not signed in for Chat shows as *Sign in for
-Chat…* in Chat's picker, which leads there). Chat's sandbox always goes out through an egress proxy: the terminal's,
+Settings › Claude Code › **Your AI subscriptions** is the one place to connect them. It shows each tool, whether it
+said it is signed in and which kind (*ChatGPT*, *Claude Max* …: its own status command, or for Gemini CLI and Grok
+whether their login file is there — never opened; Copilot has no way to say: `/user` in it), its next step — **Sign in
+(terminal and Code page)**, which opens it in the terminal where its own sign-in starts, or for a tool left out of the
+sandbox the setting that puts it in — **Sign out** (its own sign-out) and **Check again** (both through the update
+helper, with the password); two rows for each Chat model: *Terminal & Code page* and *Chat*, each sign-in its own
+(Chat's **Sign in (Chat)** shows the command for a terminal on this computer: Chat's sandbox has no screen to sign in
+on); and on Claude's row the switch for Claude on your plan.
+
+**Greyed out means "set it up here".** Anything a picker greys because of a setting or a sign-in — in the Terminal's
+*Open* menu, Chat's *Who answers*, the Code page's *Who answers*, its terminal panel's *Open…*, its Auto and Bypass
+modes — is a link: choosing it goes at once to the Settings row that turns it on (scrolled to, highlighted, its switch
+focused), to Chat's sign-in row with its *Sign in* open, or to the tool itself in the terminal, where its own sign-in
+starts; its words say where (`catalog/setup-links.tsv`). Chat's sandbox always goes out through an egress proxy: the terminal's,
 or — while the terminal's way out is the direct one (`TERMINAL_EGRESS=host`) — one of its own with the same rules
 (public addresses only; never this computer's services or your network), so your subscriptions stay Chat models
 whatever the terminal's way out is; with none (`off`) they are greyed, saying why. Usage counts against each plan's

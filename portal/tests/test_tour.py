@@ -236,6 +236,10 @@ def test_chat_and_subscriptions_steps_say_what_v0_24_changed():
     for words in ('settings("Claude Code", "CODE_CLAUDE_PLAN")', 'b("Use my Claude plan in the Code page and Chat")', "off by default",
                   "the choice is yours", "the row says what Anthropic's support article and its legal page each say", 'b("A project\'s own settings")'):
         assert words in subs, words
+    # greyed items: links to where each is turned on, said in the subscriptions step; Your AI subscriptions, one place
+    for words in ('b("Greyed out?")', "it is a link: choosing it takes you straight to its setting", "to where that sign-in starts",
+                  "is the one place to connect them", 'b("Sign in (terminal and Code page)")', 'b("Sign in (Chat)")', "on Claude's row the switch for your plan"):
+        assert words in subs, words
     # (no sentence of the old Accept edits)
     assert "file edits in the workspace go ahead" not in js
 

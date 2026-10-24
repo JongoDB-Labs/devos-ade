@@ -6,6 +6,20 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+
+- **Greyed out means "set it up here".** Everything a picker greys because of a setting or a sign-in is now a link
+  that goes there at once, its words saying where: in the Terminal's *Open* menu and Chat's *Who answers* (a tool not
+  in the sandbox, the terminal off or not over remote access, the Code page off, no internet, Claude on your plan off,
+  a Chat sign-in missing, OpenRouter without a key), and in the Code page's *Who answers* (a tool that is not signed in
+  opens in its terminal panel, where its own sign-in starts), its terminal panel's *Open…*, its Auto and Bypass notes
+  and its model list's scope. Settings opens at the row, highlighted, its switch focused. Home's voice note links to
+  speech-to-text. One table says what each says and where it goes (`catalog/setup-links.tsv`).
+- **Your AI subscriptions, one place to connect them:** each tool's row has its next step — *Sign in (terminal and
+  Code page)*, *Sign in (Chat)*, or the setting that puts it in the sandbox — and Claude's row has the switch for
+  Claude on your plan (it was a row of its own). Its note on where logins live and how to sign out is shorter. The
+  walkthrough's subscriptions step says that greyed items take you to their setting.
+
 ## [0.25.2] - 2026-10-25
 
 ### Fixed
