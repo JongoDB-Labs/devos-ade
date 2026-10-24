@@ -39,7 +39,11 @@ def answers_api(ctx):
     expect(r.status == 200, f"/api/answers: HTTP {r.status}")
     d = json.loads(r.body)
     expect([t["id"] for t in d["tools"]] == TOOLS, f"tools {[t['id'] for t in d['tools']]}")
-    expect(d["terminal"] == {"enabled": True, "here": True}, f"terminal {d['terminal']}")
+    expect(d["terminal"] == {"enabled": True, "here": True, "reason": None}, f"terminal {d['terminal']}")
+    # (what greyed items say and where they go: catalog/setup-links.tsv, each a setting or a sign-in)
+    setup = d.get("setup") or {}
+    expect(len(setup) >= 10 and all(re.fullmatch(r"setting:[A-Z][A-Z0-9_]+|signin:(terminal|chat)", x["target"]) and x["says"] for x in setup.values()),
+           f"setup links: {setup}")
     expect(all(t["signed_in"] != "yes" for t in d["tools"]), "a tool says it is signed in in a fresh throwaway")
     if d["checked_at"]:
         expect(all(t["installed"] is True and t["version"] for t in d["tools"]), f"not every tool is in the sandbox: {d['tools']}")
@@ -88,7 +92,8 @@ def walkthrough_step(ctx):
     page.locator("#tour .tour-step.cur", has_text="Your AI subscriptions and keys").wait_for(timeout=10000)
     card = page.inner_text("#tour .tour-step.cur")
     for words in ("claude-sub", "Codex", "Copilot", "Cursor", "Grok", "Gemini CLI", "device code login", "DevOS ADE never sees it",
-                  "backups leave it out", "Who answers", "a model in Open WebUI's menu", "API keys"):
+                  "backups leave it out", "Who answers", "a model in Open WebUI's menu", "API keys",
+                  "Greyed out?", "it is a link: choosing it takes you straight to its setting", "the one place to connect them"):
         expect(words in card, f"the step lacks {words!r}")
     shot(page, "s2-walkthrough-subscriptions")
     probs = rec.problems()
@@ -159,12 +164,22 @@ def chat_embed(ctx):
     # switch that turns its tools off) and Gemini CLI (planned through your own key) not Chat models
     for t in ("codex", "grok"):
         expect(vals.get(f"signin:{t}") is False, f"{t}: no 'Sign in for Chat…' entry: {opts}")
-    expect(vals.get("model:plan-claude") is True, f"Claude as a Chat model is not greyed out (its switch off): {opts}")
+    # (greyed out: a choice that goes where it is turned on — catalog/setup-links.tsv)
+    expect(vals.get("setup:claude-plan-off:claude") is False and "model:plan-claude" not in vals,
+           f"Claude as a Chat model is not a link to its switch (its switch off): {opts}")
     expect(vals.get("model:plan-copilot") is False, f"Copilot as a Chat model is not listed: {opts}")
     expect(vals.get("as-model:gemini") is True and vals.get("as-model:cursor") is True, f"Gemini CLI or Cursor offered as a Chat model: {opts}")
-    # Sign in for Chat…: Settings' row for it, its command shown
+    # Sign in for Chat…: Settings' row for it, its command shown, its Sign in focused
     page.select_option("#answers-chat", "signin:codex")
     page.locator("#set-subs-chat-codex .set-cli").wait_for(state="visible", timeout=15000)
+    page.wait_for_function("() => document.activeElement && document.activeElement.matches('#set-subs-chat-codex [data-act=subscriptions-chat-signin]')", timeout=10000)
+    # the greyed Claude-plan item: Settings, at the switch on Claude's row of Your AI subscriptions, focused
+    page.click(".tab[data-tab=chat]")
+    page.locator("#answers-chat").wait_for(timeout=15000)
+    page.wait_for_function("() => [...document.querySelectorAll('#answers-chat option')].some((o) => o.value === 'setup:claude-plan-off:claude')", timeout=20000)
+    page.select_option("#answers-chat", "setup:claude-plan-off:claude")
+    page.wait_for_function("() => document.activeElement && document.activeElement.closest('[data-for=CODE_CLAUDE_PLAN]') && document.activeElement.getAttribute('role') === 'switch'", timeout=15000)
+    expect(page.evaluate("location.hash") == "#settings/CODE_CLAUDE_PLAN", "not Settings' address for it")
     page.click(".tab[data-tab=chat]")
     page.locator("#answers-chat").wait_for(timeout=15000)
     page.select_option("#answers-chat", "tool:grok")
@@ -264,8 +279,9 @@ def code_harness(ctx):
     page.get_by_test_id("model-picker").click()
     group = page.get_by_test_id("who-answers")
     see(group).to_be_visible(timeout=10000)
-    see(page.get_by_test_id("harness-codex")).to_contain_text("sign in first")
-    see(page.get_by_test_id("harness-claude")).to_contain_text("off")
+    # (one that cannot start: a link to where that is turned on, saying where — catalog/setup-links.tsv)
+    see(page.get_by_test_id("harness-codex")).to_contain_text("Not signed in: it opens in the terminal")
+    see(page.get_by_test_id("harness-claude")).to_contain_text("Off: Settings › Claude Code › Your AI subscriptions › Use my Claude plan")
     shot(page, "s5-code-who-answers")
     page.keyboard.press("Escape")
     return "Who answers: five subscriptions listed (none signed in); Copilot's real ACP agent started and ended at \"not signed in\"; Claude on your plan off (409)"
