@@ -34,6 +34,18 @@ export const settingsApplied = (v: SettingsState | null): boolean => v === null 
  *  plan's (its own plugin record), an agent of your subscriptions' (both parts) */
 export const settingsStateFor = (v: { state: SettingsState; planState?: SettingsState; agentState?: SettingsState }, harness?: string | null): SettingsState =>
   !harness || harness === 'bedrock' ? v.state : harness === 'claude' ? (v.planState ?? v.state) : (v.agentState ?? v.state);
+/** afterSettingsChoice(choice, harness, agentsComplete) -> whether the new session asked for starts after the settings
+ *  dialog (choice: true — you trusted them; false — you stopped trusting them; null — start without them), else why
+ *  not, said to you. After Stop trusting nothing starts (it would start without what you just took back, or an agent
+ *  would be refused); after a Trust that could not cover the other tools' part, an agent does not either. */
+export function afterSettingsChoice(choice: boolean | null, harness?: string | null, agentsComplete?: boolean): { start: boolean; why: string | null } {
+  const agent = !!harness && harness !== 'bedrock' && harness !== 'claude';
+  if (choice === false) return { start: false, why: 'did not start: you stopped trusting this project\'s settings' };
+  if (choice === true && agent && agentsComplete === false) {
+    return { start: false, why: 'did not start: the other tools\' settings here are not trusted (they could not all be shown), and an agent needs both parts' };
+  }
+  return { start: true, why: null };
+}
 /** a session's process: what of its folder's settings it got */
 export interface SessionSettings {
   state: SettingsState;

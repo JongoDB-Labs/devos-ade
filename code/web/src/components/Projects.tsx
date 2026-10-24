@@ -33,6 +33,7 @@ import {
   setProject,
   setProjectTrust,
   showGit,
+  toast,
   type NewSessionOptions,
   type ProjectDialog,
   type Problem,
@@ -40,7 +41,7 @@ import {
 } from '../app';
 import * as api from '../api';
 import { GROUP_LABEL, groupOf, type Group } from '../groups';
-import { needsLook, RECHECK_TEXT, rootOk, sessionsByProject, settingsApplied, visibleWs, WORKSPACE_ID, type Project, type SettingsView } from '../projects';
+import { afterSettingsChoice, needsLook, RECHECK_TEXT, rootOk, sessionsByProject, settingsApplied, visibleWs, WORKSPACE_ID, type Project, type SettingsView } from '../projects';
 import type { SessionView } from '../session';
 import type { Harness, ImportedFrom, SessionInfo } from '../types';
 import { ago, label } from '../text';
@@ -853,10 +854,12 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
     setBusy(false);
     if (e) return setErr(e);
     onClose();
-    // (an agent of your subscriptions where the other tools' settings could not be trusted with them: no start — it
-    // would be refused)
-    const agentWaits = trust === true && !!start?.harness && start.harness !== 'bedrock' && start.harness !== 'claude' && v?.summary.agentsComplete === false;
-    if (start && !agentWaits) void newSession({ ...start, noAsk: true });
+    if (!start) return;
+    // (Stop trusting: nothing starts; an agent where the other tools' settings could not be trusted: neither — it would
+    // be refused. Said, never silent)
+    const next = afterSettingsChoice(trust, start.harness, v?.summary.agentsComplete);
+    if (next.start) void newSession({ ...start, noAsk: true });
+    else toast(`${harnessName(start.harness ?? 'bedrock')} ${next.why}.`);
   };
   const when = v?.trustedAt ? new Date(v.trustedAt).toLocaleString() : '';
   const lead: Record<string, string> = {

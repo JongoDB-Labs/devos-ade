@@ -300,3 +300,21 @@ test('folders of this computer: page paths, a session\'s folder, @-mentions and 
   assert.equal(cleanPath('/Volumes/x/src/app/a'), null, 'no longer named: no longer the page\'s');
   assert.equal(cwdOk('/Volumes/x/src/app'), false);
 });
+
+test('the settings dialog of a new session: Stop trusting starts nothing and says so; Trust starts it, an agent only with both parts', async () => {
+  const { afterSettingsChoice } = await import('../src/projects');
+  for (const harness of [undefined, 'bedrock', 'claude', 'codex', 'copilot']) {
+    for (const complete of [true, false]) {
+      const off = afterSettingsChoice(false, harness, complete);
+      assert.equal(off.start, false, `Stop trusting never starts a session (${harness})`);
+      assert.match(off.why ?? '', /did not start: you stopped trusting/);
+      assert.deepEqual(afterSettingsChoice(null, harness, complete), { start: true, why: null }, 'Start without them');
+    }
+    assert.deepEqual(afterSettingsChoice(true, harness, true), { start: true, why: null });
+  }
+  assert.deepEqual(afterSettingsChoice(true, 'bedrock', false), { start: true, why: null }, 'Claude Code needs its own part alone');
+  assert.deepEqual(afterSettingsChoice(true, 'claude', false), { start: true, why: null });
+  const agent = afterSettingsChoice(true, 'codex', false);
+  assert.equal(agent.start, false);
+  assert.match(agent.why ?? '', /did not start: the other tools' settings here are not trusted/);
+});
