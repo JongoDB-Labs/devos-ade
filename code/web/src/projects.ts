@@ -30,6 +30,10 @@ export const RECHECK_TEXT = 'bedrock-now reads a project\'s settings more strict
 export const settingsState = (v: unknown): SettingsState | null => (SETTINGS.includes(v as SettingsState) ? (v as SettingsState) : null);
 /** they apply (or there is nothing to apply; null: not said) */
 export const settingsApplied = (v: SettingsState | null): boolean => v === null || v === 'workspace' || v === 'none' || v === 'trusted';
+/** the state a new session by this harness goes by: Claude Code on Bedrock's (Claude Code's part), Claude on your
+ *  plan's (its own plugin record), an agent of your subscriptions' (both parts) */
+export const settingsStateFor = (v: { state: SettingsState; planState?: SettingsState; agentState?: SettingsState }, harness?: string | null): SettingsState =>
+  !harness || harness === 'bedrock' ? v.state : harness === 'claude' ? (v.planState ?? v.state) : (v.agentState ?? v.state);
 /** a session's process: what of its folder's settings it got */
 export interface SessionSettings {
   state: SettingsState;

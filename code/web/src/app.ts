@@ -24,7 +24,7 @@ import { crossed, nextBudget, rememberBudget, storedBudget, type Budget } from '
 import { pageTitle, waitingSessions } from './groups';
 import { parseDeepLink, withoutDeepLink } from './deeplink';
 import { sessionCost } from './spend';
-import { RECHECK_TEXT, WORKSPACE, WORKSPACE_ID, goneTops, inProject, liveHostTops, mentionPath, projectFor, projectIdOk, projectOfCwd, readOnlyTops, settingsApplied, type Project, type SettingsState, type Where } from './projects';
+import { RECHECK_TEXT, WORKSPACE, WORKSPACE_ID, goneTops, inProject, liveHostTops, mentionPath, projectFor, projectIdOk, projectOfCwd, readOnlyTops, settingsApplied, settingsStateFor, type Project, type SettingsState, type Where } from './projects';
 
 export interface Toast {
   id: number;
@@ -1235,12 +1235,15 @@ export function newSession(opts: NewSessionOptions = {}): Promise<string | null>
   return whileOpening(openNew(opts));
 }
 /** A project's own Claude Code configuration, looked at before a new session there: not applied as it is (never
- *  trusted, changed, cannot be checked) — shown first, to trust or to start without; else the session starts. */
+ *  trusted, changed, cannot be checked) for who answers — Claude Code on Bedrock by Claude Code's part, Claude on your
+ *  plan by its own state, an agent by both parts — shown first, to trust or to start without; else the session starts
+ *  (never a start the backend would refuse with no dialog first). */
 async function askThenOpen(id: string, opts: NewSessionOptions): Promise<string | null> {
   let state: SettingsState | null = null;
   try {
-    state = (await api.getProjectSettings(id)).state;
-    noteProjectSettings(id, state);
+    const v = await api.getProjectSettings(id);
+    noteProjectSettings(id, v.state);
+    state = settingsStateFor(v, opts.harness);
   } catch {
     state = null;   // (not said: the backend decides at the start, and a session without them says so)
   }

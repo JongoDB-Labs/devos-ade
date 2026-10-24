@@ -5,7 +5,7 @@
 // resolves them, and a ?project= link (an id's shape only: nothing is created by a link).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cwdOk, hostPathOk, inProject, liveHostTops, mentionPath, nameOk, needsLook, normProjects, readOnlyTops, normSessionSettings, normSettingsView, projectFor, projectOfCwd, rootOk, sessionsByProject, settingsApplied, shownIn, visibleWs, workspacePath, WORKSPACE_ID } from '../src/projects';
+import { cwdOk, hostPathOk, inProject, liveHostTops, mentionPath, nameOk, needsLook, normProjects, readOnlyTops, normSessionSettings, normSettingsView, projectFor, projectOfCwd, rootOk, sessionsByProject, settingsApplied, settingsStateFor, shownIn, visibleWs, workspacePath, WORKSPACE_ID } from '../src/projects';
 import { parseDeepLink, withoutDeepLink } from '../src/deeplink';
 import { normSessionInfo } from '../src/api';
 import type { SessionInfo } from '../src/types';
@@ -156,6 +156,19 @@ test('a project\'s own Claude Code settings: its state in the list, a session\'s
   assert.deepEqual(split?.files.map((f) => [f.name, f.type]), [['.github/workflows', 'name']]);
   assert.equal(normSettingsView({ ...whole, planState: 'evil', planReason: '<b>' })?.planState, 'untrusted', 'not one of the states: Claude Code\'s');
   assert.equal(normSettingsView({ ...whole, planReason: '<b>' })?.planReason, null);
+  // a new session goes by who answers: Claude Code's part (Bedrock), its own (your plan), both parts (an agent) — so a
+  // Claude-only or carried-over trust, or a folder with only .github/, opens the dialog for an agent (never a 409)
+  const carried = { state: 'trusted' as const, planState: 'trusted' as const, agentState: 'untrusted' as const };
+  assert.equal(settingsStateFor(carried), 'trusted');
+  assert.equal(settingsStateFor(carried, 'bedrock'), 'trusted');
+  assert.equal(settingsStateFor(carried, 'claude'), 'trusted');
+  for (const h of ['codex', 'copilot', 'cursor', 'grok']) assert.equal(settingsApplied(settingsStateFor(carried, h)), false, h);
+  const githubOnly = { state: 'none' as const, planState: 'none' as const, agentState: 'untrusted' as const };
+  assert.equal(settingsApplied(settingsStateFor(githubOnly, 'bedrock')), true);
+  assert.equal(settingsApplied(settingsStateFor(githubOnly, 'codex')), false);
+  const planMissing = { state: 'trusted' as const, planState: 'untrusted' as const, agentState: 'trusted' as const };
+  assert.equal(settingsApplied(settingsStateFor(planMissing, 'claude')), false);
+  assert.equal(settingsStateFor({ state: 'changed' as const }, 'codex'), 'changed', 'an older backend: Claude Code\'s');
   assert.equal(normSettingsView({ ...whole, hash: 'zz' })?.hash, null, 'a hash that is not one: nothing to trust');
   // nothing cut silently: a section longer than shown, an over-long value, or the backend's own "incomplete" — then no
   // hash to trust, and what was left out is said
