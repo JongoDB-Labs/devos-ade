@@ -47,7 +47,7 @@ test_target_decision() {
 }
 
 test_target_decision_knows_a_checkout_under_either_name() {
-  # the project's repository is being renamed (lib/brand.sh): a checkout of either name is an install to update
+  # the project's repository was renamed in v0.25.0 (lib/brand.sh): a checkout of either name is an install to update
   local url n=0
   for url in https://github.com/JongoDB-Labs/bedrock-now.git https://github.com/JongoDB-Labs/devos-ade.git \
              git@github.com:JongoDB-Labs/devos-ade.git ssh://git@github.com/JongoDB-Labs/devos-ade; do
@@ -91,7 +91,7 @@ test_main_honours_ref() {
 test_main_refuses_foreign_dir_and_keeps_it() {
   mkdir -p "$TMP/inst"; echo keep > "$TMP/inst/mine.txt"
   if out="$( (unset AWS_ACCESS_KEY_ID; _installer) 2>&1)"; then return 1; fi
-  assert_contains "$out" "is not a bedrock-now checkout"
+  assert_contains "$out" "is not a DevOS ADE checkout"
   assert_eq "$(cat "$TMP/inst/mine.txt")" "keep"
 }
 
@@ -100,8 +100,65 @@ test_main_existing_checkout_points_to_update() {
   git -C "$TMP/inst" remote set-url origin https://github.com/JongoDB-Labs/bedrock-now.git
   git -C "$TMP/inst" remote add local "$STACK_DIR"
   out="$(_installer 2>&1)"
-  assert_contains "$out" "already installed"
+  assert_contains "$out" "DevOS ADE is already installed in $TMP/inst"
   assert_contains "$out" "./stack update"
+}
+
+# --- where a new install goes: ~/devos-ade; an install made before v0.25.0 stays in ~/bedrock-now ---
+
+_installer_home() { # main with HOME=$TMP/h and no folder given (as the one-liner runs it)
+  ( has_tty() { return 1; }; check_prereqs() { :; }; unset BEDROCK_NOW_DIR DEVOS_ADE_DIR AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+    HOME="$TMP/h" BEDROCK_NOW_REPO="$STACK_DIR" BEDROCK_NOW_REF="" main "$@" )
+}
+
+test_main_installs_into_devos_ade_by_default() {
+  mkdir -p "$TMP/h"
+  out="$(_installer_home 2>&1)"
+  [ -x "$TMP/h/devos-ade/stack" ] || { echo "not cloned into ~/devos-ade: $out" >&2; return 1; }
+  [ ! -e "$TMP/h/bedrock-now" ] || { echo "made ~/bedrock-now" >&2; return 1; }
+  assert_contains "$out" "installing DevOS ADE into $TMP/h/devos-ade"
+}
+
+test_main_finds_an_install_in_bedrock_now_and_changes_nothing() {
+  mkdir -p "$TMP/h"; git clone -q "$STACK_DIR" "$TMP/h/bedrock-now"
+  git -C "$TMP/h/bedrock-now" remote set-url origin https://github.com/JongoDB-Labs/bedrock-now.git
+  printf 'POSTGRES_PASSWORD=mine\n' > "$TMP/h/bedrock-now/.env"
+  before="$(ls -la "$TMP/h"; git -C "$TMP/h/bedrock-now" status --porcelain; git -C "$TMP/h/bedrock-now" remote -v)"
+  out="$(_installer_home 2>&1)"
+  assert_contains "$out" "DevOS ADE is already installed in $TMP/h/bedrock-now — nothing was changed."
+  assert_contains "$out" "./stack update"
+  [ ! -e "$TMP/h/devos-ade" ] || { echo "made ~/devos-ade beside it" >&2; return 1; }
+  assert_eq "$(ls -la "$TMP/h"; git -C "$TMP/h/bedrock-now" status --porcelain; git -C "$TMP/h/bedrock-now" remote -v)" "$before"
+  # its origin a fork or a mirror: still an install there (stack and its .env), never a second one beside it
+  git -C "$TMP/h/bedrock-now" remote set-url origin https://example.com/mirror.git
+  out="$(_installer_home 2>&1)"
+  assert_contains "$out" "already installed in $TMP/h/bedrock-now"
+  [ ! -e "$TMP/h/devos-ade" ] || return 1
+}
+
+test_main_ignores_a_bedrock_now_folder_that_is_not_an_install() {
+  mkdir -p "$TMP/h/bedrock-now"; echo keep > "$TMP/h/bedrock-now/notes.txt"
+  out="$(_installer_home 2>&1)"
+  [ -x "$TMP/h/devos-ade/stack" ] || { echo "not cloned: $out" >&2; return 1; }
+  assert_eq "$(cat "$TMP/h/bedrock-now/notes.txt")" keep
+}
+
+test_main_prefers_an_install_in_devos_ade() {
+  mkdir -p "$TMP/h"; git clone -q "$STACK_DIR" "$TMP/h/devos-ade"; git clone -q "$STACK_DIR" "$TMP/h/bedrock-now"
+  git -C "$TMP/h/devos-ade" remote set-url origin https://github.com/JongoDB-Labs/devos-ade.git
+  git -C "$TMP/h/bedrock-now" remote set-url origin https://github.com/JongoDB-Labs/bedrock-now.git
+  assert_contains "$(_installer_home 2>&1)" "already installed in $TMP/h/devos-ade"
+}
+
+test_main_honours_either_folder_variable() {
+  mkdir -p "$TMP/h"
+  ( has_tty() { return 1; }; check_prereqs() { :; }; unset DEVOS_ADE_DIR AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+    HOME="$TMP/h" BEDROCK_NOW_REPO="$STACK_DIR" BEDROCK_NOW_REF="" BEDROCK_NOW_DIR="$TMP/a" main ) > /dev/null 2>&1
+  [ -x "$TMP/a/stack" ] || { echo "BEDROCK_NOW_DIR not used" >&2; return 1; }
+  ( has_tty() { return 1; }; check_prereqs() { :; }; unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+    HOME="$TMP/h" BEDROCK_NOW_REPO="$STACK_DIR" BEDROCK_NOW_REF="" BEDROCK_NOW_DIR="$TMP/c" DEVOS_ADE_DIR="$TMP/b" main ) > /dev/null 2>&1
+  [ -x "$TMP/b/stack" ] && [ ! -e "$TMP/c" ] || { echo "DEVOS_ADE_DIR not used first" >&2; return 1; }
+  [ ! -e "$TMP/h/devos-ade" ] || return 1
 }
 
 test_main_bad_ref_explains_recovery() {

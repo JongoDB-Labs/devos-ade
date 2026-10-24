@@ -48,16 +48,18 @@ live_before="$(_live_state)"
 # claude-bedrock creates ~/.claude-bedrock (its own Claude Code config folder): tests run it with a throwaway HOME.
 # Only its appearance is checked — a claude-bedrock of yours running meanwhile may change what is inside.
 cb_home_before=0; [ ! -e "${HOME:-/nonexistent}/.claude-bedrock" ] || cb_home_before=1
-# Setup turns the Code page on by default with the workspace ~/bedrock-now-workspace (lib/code.sh code_default_on):
-# a test that runs it unstubbed must not create that folder in your real home.
+# Setup turns the Code page on by default with the workspace ~/devos-ade-workspace (~/bedrock-now-workspace for an
+# install made before v0.25.0: lib/terminal.sh terminal_default_workspace): a test that runs it unstubbed must not
+# create that folder in your real home.
 ws_home_before=0; [ ! -e "${HOME:-/nonexistent}/bedrock-now-workspace" ] || ws_home_before=1
+wsn_home_before=0; [ ! -e "${HOME:-/nonexistent}/devos-ade-workspace" ] || wsn_home_before=1
 
 # The guards, after every test too, so the test that tripped one fails by name (the checks at the end only say that
 # the suite did): what it wrote in this checkout's .env, .state/, litellm/ or backups/ — a file, or a temp file made
 # and removed there (its folder's time) — even when the bytes stayed the same, a call it made that the shims refused,
 # a folder it created in your real home. A write that changes nothing but a time stamp still fails: a test that
 # writes there only when the checkout's files differ from what it writes (right after a pull) fails on every run.
-BN_LIVE_STAMP="$(mktemp)"; shim_seen=0; cb_seen="$cb_home_before"; ws_seen="$ws_home_before"
+BN_LIVE_STAMP="$(mktemp)"; shim_seen=0; cb_seen="$cb_home_before"; ws_seen="$ws_home_before"; wsn_seen="$wsn_home_before"
 _guards_after_test() { # sets g: what the test just run did outside its own folders, a line each ("" = nothing)
   local w n; g=''
   w="$( (cd "$ROOT" && find .env .state litellm backups -newer "$BN_LIVE_STAMP" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ') || true)"
@@ -75,6 +77,10 @@ $(tail -c "+$((shim_seen + 1))" "$BN_SHIM_LOG")
   fi
   if [ "$ws_seen" = 0 ] && [ -e "${HOME:-/nonexistent}/bedrock-now-workspace" ]; then
     ws_seen=1; g="${g}live-state guard: ~/bedrock-now-workspace appeared in your real home while it ran
+"
+  fi
+  if [ "$wsn_seen" = 0 ] && [ -e "${HOME:-/nonexistent}/devos-ade-workspace" ]; then
+    wsn_seen=1; g="${g}live-state guard: ~/devos-ade-workspace appeared in your real home while it ran
 "
   fi
 }
@@ -119,6 +125,10 @@ fi
 if [ "$ws_home_before" = 0 ] && [ -e "${HOME:-/nonexistent}/bedrock-now-workspace" ]; then
   fail=$((fail + 1)); _failed "live-state guard (~/bedrock-now-workspace)"
   printf 'FAIL live-state guard: the suite created ~/bedrock-now-workspace in your real home (remove it)\n'
+fi
+if [ "$wsn_home_before" = 0 ] && [ -e "${HOME:-/nonexistent}/devos-ade-workspace" ]; then
+  fail=$((fail + 1)); _failed "live-state guard (~/devos-ade-workspace)"
+  printf 'FAIL live-state guard: the suite created ~/devos-ade-workspace in your real home (remove it)\n'
 fi
 if [ -s "$BN_SHIM_LOG" ]; then
   fail=$((fail + 1)); _failed "isolation guard"

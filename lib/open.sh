@@ -40,8 +40,8 @@ open_headless() {
 #          Exec= starts the browser with --app-id= counts.
 open_installed_app() {
   local name d f
-  # the app's name today, then the name the project is being renamed to (an app installed from a renamed portal)
-  for name in "$(portal_app_name)" "$(portal_app_name "$PRODUCT_NAME_NEXT")"; do
+  # the app's name, then its name before v0.25.0 (an app installed then keeps it until you accept the new one)
+  for name in "$(portal_app_name)" "$(portal_app_name "$PRODUCT_LEGACY_NAME")"; do
     if [ "$(open_os)" = Darwin ]; then
       for d in "$HOME/Applications/"*" Apps.localized"; do
         [ -d "$d/$name.app" ] && { printf '%s\n' "$d/$name.app"; return 0; }

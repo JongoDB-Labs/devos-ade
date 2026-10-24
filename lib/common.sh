@@ -18,7 +18,7 @@ STACK_DIR="${STACK_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 ENV_FILE="${ENV_FILE:-$STACK_DIR/.env}"
 STATE_DIR="${STATE_DIR:-$STACK_DIR/.state}"
 CATALOG="${CATALOG:-$STACK_DIR/catalog/models.tsv}"
-# The project's names (PRODUCT_NAME, PRODUCT_REPO and the names it is being renamed to).
+# The project's names (PRODUCT_NAME, PRODUCT_SLUG, PRODUCT_REPO, and its names before v0.25.0).
 . "$STACK_DIR/lib/brand.sh"
 # shellcheck disable=SC2034  # used by lib/commands.sh
 AWS_CLI_IMAGE="amazon/aws-cli:2.37.12"

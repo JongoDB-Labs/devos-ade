@@ -79,11 +79,15 @@ cmd_terminal() {
   esac
 }
 
-# terminal_default_workspace -> ~/bedrock-now-workspace (another Compose project: ~/bedrock-now-<project>-workspace)
+# terminal_default_workspace -> the workspace folder when none was chosen: ~/devos-ade-workspace (another Compose
+# project: ~/devos-ade-<project>-workspace) — or the folder an install made before v0.25.0 used, when it is there
+# (~/bedrock-now-workspace, ~/bedrock-now-<project>-workspace): its files stay where they are. Once chosen it is in .env
+# (TERMINAL_WORKSPACE) and this is not asked again.
 terminal_default_workspace() {
-  local p; p="$(project_name)"
-  if [ "$p" = "$DEFAULT_PROJECT" ]; then printf '%s/bedrock-now-workspace\n' "$HOME"
-  else printf '%s/bedrock-now-%s-workspace\n' "$HOME" "$(printf '%s' "$p" | tr '_' '-')"; fi
+  local p s=""; p="$(project_name)"
+  [ "$p" = "$DEFAULT_PROJECT" ] || s="-$(printf '%s' "$p" | tr '_' '-')"
+  if [ -d "$HOME/$PRODUCT_LEGACY_NAME$s-workspace" ]; then printf '%s/%s%s-workspace\n' "$HOME" "$PRODUCT_LEGACY_NAME" "$s"
+  else printf '%s/%s%s-workspace\n' "$HOME" "$PRODUCT_SLUG" "$s"; fi
 }
 
 # _phys DIR -> DIR with every symlink resolved, in its on-disk spelling (the external pwd: on macOS the shell's own

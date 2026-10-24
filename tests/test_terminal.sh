@@ -116,7 +116,7 @@ test_dc_never_takes_terminal_settings_from_the_shell() {
 test_enable_creates_the_default_workspace_its_key_and_secret() {
   _stubs
   terminal_enable > "$TMP/out" 2>&1 || { cat "$TMP/out" >&2; return 1; }
-  ws="$(cd "$HOME/bedrock-now-workspace" && /bin/pwd -P)"
+  ws="$(cd "$HOME/devos-ade-workspace" && /bin/pwd -P)"
   assert_eq "$(_perm "$ws")" 700
   assert_eq "$(get_env TERMINAL_ENABLED)" true
   assert_eq "$(get_env TERMINAL_WORKSPACE)" "$ws"
@@ -149,7 +149,22 @@ test_enable_creates_the_default_workspace_its_key_and_secret() {
   s3="$(get_env TERMINAL_PROXY_SECRET)"; [ "${#s3}" -ge 32 ] || return 1
   # a second copy of the stack gets a folder of its own
   printf 'COMPOSE_PROJECT_NAME=bn_dev\n' >> "$ENV_FILE"
+  assert_eq "$(terminal_default_workspace)" "$HOME/devos-ade-bn-dev-workspace"
+}
+
+test_the_default_workspace_of_an_install_before_v0_25_stays_where_it_is() {
+  # new installs: ~/devos-ade-workspace; the folder an install made before v0.25.0 used is kept when it is there
+  : > "$ENV_FILE"
+  assert_eq "$(terminal_default_workspace)" "$HOME/devos-ade-workspace"
+  mkdir -p "$HOME/bedrock-now-workspace"
+  assert_eq "$(terminal_default_workspace)" "$HOME/bedrock-now-workspace"
+  printf 'COMPOSE_PROJECT_NAME=bn_dev\n' > "$ENV_FILE"
+  assert_eq "$(terminal_default_workspace)" "$HOME/devos-ade-bn-dev-workspace"
+  mkdir -p "$HOME/bedrock-now-bn-dev-workspace"
   assert_eq "$(terminal_default_workspace)" "$HOME/bedrock-now-bn-dev-workspace"
+  # a file of that name is not a folder: the new name
+  rm -rf "$HOME/bedrock-now-workspace"; : > "$HOME/bedrock-now-workspace"; : > "$ENV_FILE"
+  assert_eq "$(terminal_default_workspace)" "$HOME/devos-ade-workspace"
 }
 
 test_enable_keeps_an_existing_folder_as_it_is() {
@@ -220,7 +235,7 @@ test_enable_needs_setup_a_running_stack_and_a_key() {
   _stubs; ensure_virtual_key() { die "could not create LiteLLM key"; }
   if (terminal_enable) > "$TMP/out" 2>&1; then return 1; fi
   assert_contains "$(cat "$TMP/out")" "could not create the terminal's LiteLLM key"
-  [ ! -e "$HOME/bedrock-now-workspace" ] || return 1
+  [ ! -e "$HOME/devos-ade-workspace" ] || return 1
   assert_eq "$(get_env TERMINAL_ENABLED)" ""
   if (cmd_terminal enable --bogus) > "$TMP/out" 2>&1; then return 1; fi
   if (cmd_terminal frobnicate) > "$TMP/out" 2>&1; then return 1; fi

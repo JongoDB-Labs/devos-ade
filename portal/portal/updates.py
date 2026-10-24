@@ -1,7 +1,8 @@
-"""Daily "is there a newer bedrock-now release?" check, for the update card on Home.
+"""Daily "is there a newer DevOS ADE release?" check, for the update card on Home.
 
 Asks GitHub's public releases API (unauthenticated, https only, a size cap and a timeout; the ETag makes repeat
-checks cheap; no redirect but one: GitHub's, from the repository's old name to its new one — _redirect_target) for the project's recent releases (one request: the list, newest PER_PAGE) and,
+checks cheap; no redirect but one: GitHub's, from the repository's old name to its new one — _redirect_target) for the project's recent releases (one request: the list, newest PER_PAGE; under the repository's old name
+once more when its name answers 404 — before GitHub's rename, or a mirror of it — _releases_answer) and,
 only when the newest is newer than the installed version, the new release's compose.yaml from
 raw.githubusercontent.com to estimate the download. The newest release is the highest vX.Y.Z tag — what
 ./stack update installs — and Home shows the notes of every release between the installed one and it, so a jump
@@ -40,22 +41,23 @@ from pathlib import Path
 
 import httpx
 
-from . import hostfiles
+from . import brand, hostfiles
 
 log = logging.getLogger("portal.updates")
 
-REPO = "JongoDB-Labs/bedrock-now"
-# The name the repository is being renamed to (PRODUCT_REPO_NEXT in lib/brand.sh): GitHub then redirects REPO there —
-# followed once (_redirect_target) — and its release pages are under it.
-REPO_NEXT = "JongoDB-Labs/devos-ade"
-REPOS = (REPO, REPO_NEXT)
+REPO = brand.REPO
+# The repository's name before v0.25.0 (brand.LEGACY_REPO): GitHub redirects it to REPO — followed once
+# (_redirect_target) — and release pages under either name are taken.
+LEGACY_REPO = brand.LEGACY_REPO
+REPOS = (REPO, LEGACY_REPO)
 # The repository's numeric id on GitHub (it never changes, a rename included): GitHub's API sends the old name of a
 # renamed repository to /repositories/<id> — only this id is followed.
 REPO_ID = 1415949652
 REDIRECTS = (301, 302, 307, 308)
 PER_PAGE = 30  # the newest releases: a jump over more than this shows the newest PER_PAGE (and says so)
 RELEASES_URL = f"https://api.github.com/repos/{REPO}/releases?per_page={PER_PAGE}"
-RAW_URL = "https://raw.githubusercontent.com/" + REPO + "/{tag}/compose.yaml"
+LEGACY_RELEASES_URL = f"https://api.github.com/repos/{LEGACY_REPO}/releases?per_page={PER_PAGE}"
+RAW_URL = "https://raw.githubusercontent.com/{repo}/{tag}/compose.yaml"
 MAX_JSON = 2 * 1024 * 1024
 MAX_COMPOSE = 256 * 1024
 MAX_NOTES = 20000
@@ -110,9 +112,10 @@ class CheckError(Exception):
     limited: ... for its rate limit; retry_at: when it said it allows the next request (epoch seconds; None when it did
     not say)."""
 
-    def __init__(self, message: str, limited: bool = False, retry_at: float | None = None, refused: bool = False):
+    def __init__(self, message: str, limited: bool = False, retry_at: float | None = None, refused: bool = False,
+                 status: int | None = None):
         super().__init__(message)
-        self.limited, self.retry_at, self.refused = limited, retry_at, refused or limited
+        self.limited, self.retry_at, self.refused, self.status = limited, retry_at, refused or limited, status
 
 
 def _digits(v) -> str:
@@ -261,7 +264,7 @@ async def _get(client: httpx.AsyncClient, url: str, cap: int, headers: dict | No
     target = httpx.URL(url)
     try:
         # identity only: the size cap counts the bytes on the wire, so no decompression bomb gets past it
-        hdrs = {"User-Agent": "bedrock-now-update-check", **(headers or {}), "Accept-Encoding": "identity"}
+        hdrs = {"User-Agent": f"{brand.SLUG}-update-check", **(headers or {}), "Accept-Encoding": "identity"}
         for hop in range(2):  # the request and at most one redirect (_redirect_target)
             async with client.stream("GET", target, headers=hdrs, timeout=TIMEOUT, follow_redirects=False) as r:
                 if hop == 0 and r.status_code in REDIRECTS:
@@ -279,7 +282,7 @@ async def _get(client: httpx.AsyncClient, url: str, cap: int, headers: dict | No
                                          limited=True, retry_at=_limit_reset(r.headers, time.time()))
                     raise CheckError(f"{host} refused the request (HTTP {r.status_code})", refused=True)
                 if r.status_code != 200:
-                    raise CheckError(f"{host} answered HTTP {r.status_code}")
+                    raise CheckError(f"{host} answered HTTP {r.status_code}", status=r.status_code)
                 enc = (r.headers.get("content-encoding") or "identity").strip().lower()
                 if enc != "identity":
                     raise CheckError(f"{host}: unexpected content encoding {enc}")
@@ -344,7 +347,7 @@ def headline(tag: str, name: str, body: str) -> str:
     """One line about a release: its name without the tag ("v0.9.0 — Git panel and Run & test" -> "Git panel and
     Run & test"), else the first line of its notes (a bullet's bold lead when it starts with one), else ""."""
     rest = _plain((name or "").replace(tag, "", 1)).strip(" —–-:·|")
-    if rest and rest.lower() not in ("bedrock-now", "release"):
+    if rest and rest.lower() not in (brand.NAME.lower(), brand.SLUG, brand.LEGACY_NAME, "release"):
         return _cut(rest)
     for raw in (body or "").replace("\r", "").split("\n")[:80]:
         line = raw.strip()
@@ -423,6 +426,17 @@ async def check(client: httpx.AsyncClient, paths: Paths, total_timeout: float = 
         return rec
 
 
+async def _releases_answer(client: httpx.AsyncClient, hdrs: dict) -> tuple[int, bytes, dict, str]:
+    """GitHub's answer for the release list, and the repository name that gave it: REPO's; when that name answers 404
+    (GitHub's rename not done yet), the same request once more under LEGACY_REPO."""
+    try:
+        return (*await _get(client, RELEASES_URL, MAX_JSON, hdrs), REPO)
+    except CheckError as e:
+        if e.status != 404:
+            raise
+    return (*await _get(client, LEGACY_RELEASES_URL, MAX_JSON, hdrs), LEGACY_REPO)
+
+
 async def _check(client: httpx.AsyncClient, paths: Paths, by: str = "daily") -> dict:
     prev = read_latest(paths)
     rec = dict(prev)
@@ -433,7 +447,7 @@ async def _check(client: httpx.AsyncClient, paths: Paths, by: str = "daily") -> 
         # (an answer from before the list, without "releases", is asked for again in full)
         if isinstance(prev.get("etag"), str) and prev.get("tag") and isinstance(prev.get("releases"), list):
             hdrs["If-None-Match"] = prev["etag"]
-        code, body, headers = await _get(client, RELEASES_URL, MAX_JSON, hdrs)
+        code, body, headers, repo = await _releases_answer(client, hdrs)
         if code == 200:
             try:
                 d = json.loads(body)
@@ -453,7 +467,7 @@ async def _check(client: httpx.AsyncClient, paths: Paths, by: str = "daily") -> 
             inst = installed(paths)["version"]
             if newer(rec["tag"], inst) is not False:  # only download the compose file when it can matter
                 try:
-                    _, text, _ = await _get(client, RAW_URL.format(tag=rec["tag"]), MAX_COMPOSE)
+                    _, text, _ = await _get(client, RAW_URL.format(repo=repo, tag=rec["tag"]), MAX_COMPOSE)
                     rec["images"] = compose_images(text.decode("utf-8", "replace"))
                 except CheckError as e:
                     log.info("update check: no download estimate (%s)", e)

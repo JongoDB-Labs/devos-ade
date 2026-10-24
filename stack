@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bedrock-now CLI. Run `./stack help`.
+# DevOS ADE CLI (formerly bedrock-now: lib/guard.sh of an install of either name looks for that). Run `./stack help`.
 set -euo pipefail
 STACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export STACK_DIR

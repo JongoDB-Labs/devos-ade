@@ -1,12 +1,12 @@
 # shellcheck shell=bash
-# The project's repository is being renamed on GitHub (PRODUCT_REPO -> PRODUCT_REPO_NEXT, lib/brand.sh). GitHub keeps
-# the old address working (git fetch follows its redirect), so nothing breaks on rename day; this moves a checkout's
-# origin to the new address once, when it safely can (origin_follow_rename, after ./stack update fetched):
+# The project's repository was renamed on GitHub in v0.25.0 (PRODUCT_LEGACY_REPO -> PRODUCT_REPO, lib/brand.sh). GitHub
+# keeps the old address working (git fetch follows its redirect), so nothing breaks; this moves a checkout's origin to
+# the new address once, when it safely can (origin_follow_rename, after ./stack update fetched):
 #   - only when origin is EXACTLY one of the old address's forms: https://github.com/<old>[.git],
 #     ssh://git@github.com/<old>[.git] or git@github.com:<old>[.git] (as stored in .git/config — a fork, a mirror, a
 #     local path, any other host or spelling is never touched, and nothing is asked of the network for it);
-#   - only once the new repository exists: git ls-remote of the new address must answer (until the rename it does
-#     not, and this does nothing);
+#   - only once the new repository answers: git ls-remote of the new address must answer (before the rename it did
+#     not, and this did nothing);
 #   - only when the new address has every tag the old one has, each at the same commit (the same repository, not
 #     another one of that name);
 #   - the new address in the same form as the old (https stays https, ssh stays ssh); said once: a second run finds
@@ -17,12 +17,12 @@
 
 REPO_RENAME_EVERY_S=86400
 
-# repo_url_next URL -> the same address with the new repository name (exact old forms only); exit 1 for anything else
+# repo_url_next URL -> the same address with the repository's new name (exact old forms only); exit 1 for anything else
 repo_url_next() {
   local u="$1" pre suf
   for pre in "https://github.com/" "ssh://git@github.com/" "git@github.com:"; do
     for suf in "" ".git"; do
-      [ "$u" = "$pre$PRODUCT_REPO$suf" ] && { printf '%s%s%s\n' "$pre" "$PRODUCT_REPO_NEXT" "$suf"; return 0; }
+      [ "$u" = "$pre$PRODUCT_LEGACY_REPO$suf" ] && { printf '%s%s%s\n' "$pre" "$PRODUCT_REPO" "$suf"; return 0; }
     done
   done
   return 1
@@ -64,8 +64,8 @@ origin_follow_rename() {
   next="$(repo_url_next "$url")" || return 0   # (two origin URLs: never one of the exact forms)
   _repo_rename_due || return 0
   { mkdir -p "$STATE_DIR" && date +%s > "$(_repo_rename_stamp)"; } 2>/dev/null || true
-  new_tags="$(_repo_tags "$PRODUCT_REPO_NEXT")" || return 0
-  old_tags="$(_repo_tags "$PRODUCT_REPO")" || return 0
+  new_tags="$(_repo_tags "$PRODUCT_REPO")" || return 0
+  old_tags="$(_repo_tags "$PRODUCT_LEGACY_REPO")" || return 0
   # every tag of the old address, at the same commit, in the new one (comm -23: the lines only the old one has)
   [ -z "$(LC_ALL=C comm -23 <(printf '%s\n' "$old_tags") <(printf '%s\n' "$new_tags"))" ] || return 0
   git -C "$STACK_DIR" remote set-url origin "$next" 2>/dev/null || return 0

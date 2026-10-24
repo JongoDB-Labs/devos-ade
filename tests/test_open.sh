@@ -172,74 +172,74 @@ test_setup_and_up_end_with_auto_open_and_open_is_wired() {
 
 test_portal_app_name_matches_the_manifest_rule() {
   # Same table as portal/tests/test_pwa.py (app_name): the installed app is found by this name.
-  : > "$ENV_FILE"; assert_eq "$(portal_app_name)" "bedrock-now"
-  printf 'COMPOSE_PROJECT_NAME=bn-dev\n' > "$ENV_FILE"; assert_eq "$(portal_app_name)" "bedrock-now (bn-dev)"
-  printf 'COMPOSE_PROJECT_NAME=bn-dev\nPORTAL_PORT=8800\n' > "$ENV_FILE"; assert_eq "$(portal_app_name)" "bedrock-now (bn-dev, port 8800)"
-  printf 'PORTAL_PORT=8800\n' > "$ENV_FILE"; assert_eq "$(portal_app_name)" "bedrock-now (port 8800)"
-  printf 'PORTAL_HOST=ai.example.com\n' > "$ENV_FILE"; assert_eq "$(portal_app_name)" "bedrock-now (ai.example.com)"
-  # the same rule for another name (the name the project is being renamed to)
-  assert_eq "$(portal_app_name "DevOS ADE")" "DevOS ADE (ai.example.com)"
-  : > "$ENV_FILE"; assert_eq "$(portal_app_name "DevOS ADE")" "DevOS ADE"
+  : > "$ENV_FILE"; assert_eq "$(portal_app_name)" "DevOS ADE"
+  printf 'COMPOSE_PROJECT_NAME=bn-dev\n' > "$ENV_FILE"; assert_eq "$(portal_app_name)" "DevOS ADE (bn-dev)"
+  printf 'COMPOSE_PROJECT_NAME=bn-dev\nPORTAL_PORT=8800\n' > "$ENV_FILE"; assert_eq "$(portal_app_name)" "DevOS ADE (bn-dev, port 8800)"
+  printf 'PORTAL_PORT=8800\n' > "$ENV_FILE"; assert_eq "$(portal_app_name)" "DevOS ADE (port 8800)"
+  printf 'PORTAL_HOST=ai.example.com\n' > "$ENV_FILE"; assert_eq "$(portal_app_name)" "DevOS ADE (ai.example.com)"
+  # the same rule for another name (the project's name before v0.25.0)
+  assert_eq "$(portal_app_name bedrock-now)" "bedrock-now (ai.example.com)"
+  : > "$ENV_FILE"; assert_eq "$(portal_app_name bedrock-now)" "bedrock-now"
 }
 
 test_installed_app_mac_is_found_by_name_in_any_browser_apps_folder() {
   : > "$ENV_FILE"; _mac
   if open_installed_app >/dev/null; then echo "found an app that is not there" >&2; return 1; fi
-  mkdir -p "$HOME/Applications/Chrome Apps.localized/bedrock-now (bn-dev).app"
-  if open_installed_app >/dev/null; then echo "took bn-dev's app for the default project's" >&2; return 1; fi
-  mkdir -p "$HOME/Applications/Edge Apps.localized/bedrock-now.app"
-  assert_eq "$(open_installed_app)" "$HOME/Applications/Edge Apps.localized/bedrock-now.app"
-  printf 'COMPOSE_PROJECT_NAME=bn-dev\n' > "$ENV_FILE"
-  assert_eq "$(open_installed_app)" "$HOME/Applications/Chrome Apps.localized/bedrock-now (bn-dev).app"
-}
-
-test_installed_app_is_found_under_the_projects_next_name_too() {
-  # an app installed from a portal after the rename is named DevOS ADE[ (label)]; today's name comes first
-  : > "$ENV_FILE"; _mac
   mkdir -p "$HOME/Applications/Chrome Apps.localized/DevOS ADE (bn-dev).app"
   if open_installed_app >/dev/null; then echo "took bn-dev's app for the default project's" >&2; return 1; fi
-  mkdir -p "$HOME/Applications/Chrome Apps.localized/DevOS ADE.app"
-  assert_eq "$(open_installed_app)" "$HOME/Applications/Chrome Apps.localized/DevOS ADE.app"
-  mkdir -p "$HOME/Applications/Edge Apps.localized/bedrock-now.app"
-  assert_eq "$(open_installed_app)" "$HOME/Applications/Edge Apps.localized/bedrock-now.app"
+  mkdir -p "$HOME/Applications/Edge Apps.localized/DevOS ADE.app"
+  assert_eq "$(open_installed_app)" "$HOME/Applications/Edge Apps.localized/DevOS ADE.app"
   printf 'COMPOSE_PROJECT_NAME=bn-dev\n' > "$ENV_FILE"
   assert_eq "$(open_installed_app)" "$HOME/Applications/Chrome Apps.localized/DevOS ADE (bn-dev).app"
+}
+
+test_installed_app_is_found_under_the_projects_name_before_v0_25_too() {
+  # an app installed before v0.25.0 is named bedrock-now[ (label)] until its new name is accepted; the new name comes first
+  : > "$ENV_FILE"; _mac
+  mkdir -p "$HOME/Applications/Chrome Apps.localized/bedrock-now (bn-dev).app"
+  if open_installed_app >/dev/null; then echo "took bn-dev's app for the default project's" >&2; return 1; fi
+  mkdir -p "$HOME/Applications/Chrome Apps.localized/bedrock-now.app"
+  assert_eq "$(open_installed_app)" "$HOME/Applications/Chrome Apps.localized/bedrock-now.app"
+  mkdir -p "$HOME/Applications/Edge Apps.localized/DevOS ADE.app"
+  assert_eq "$(open_installed_app)" "$HOME/Applications/Edge Apps.localized/DevOS ADE.app"
+  printf 'COMPOSE_PROJECT_NAME=bn-dev\n' > "$ENV_FILE"
+  assert_eq "$(open_installed_app)" "$HOME/Applications/Chrome Apps.localized/bedrock-now (bn-dev).app"
   _linux; : > "$ENV_FILE"
   local d="$HOME/.local/share/applications"; mkdir -p "$d"
-  printf '[Desktop Entry]\nName=DevOS ADE (bn-dev)\nExec=c --app-id=a\n' > "$d/chrome-aaa-Default.desktop"
+  printf '[Desktop Entry]\nName=bedrock-now (bn-dev)\nExec=c --app-id=a\n' > "$d/chrome-aaa-Default.desktop"
   if open_installed_app >/dev/null; then echo "took bn-dev's app for the default project's" >&2; return 1; fi
-  printf '[Desktop Entry]\nName=DevOS ADE\nExec=/opt/google/chrome/google-chrome --app-id=ddd %%U\n' > "$d/chrome-ddd-Default.desktop"
+  printf '[Desktop Entry]\nName=bedrock-now\nExec=/opt/google/chrome/google-chrome --app-id=ddd %%U\n' > "$d/chrome-ddd-Default.desktop"
   assert_eq "$(open_installed_app)" "$d/chrome-ddd-Default.desktop"
 }
 
 test_installed_app_linux_is_the_browser_desktop_entry_with_that_name() {
   : > "$ENV_FILE"; _linux
   local d="$HOME/.local/share/applications"; mkdir -p "$d"
-  printf '[Desktop Entry]\nName=bedrock-now\nExec=/bin/true --app-id=x\n' > "$d/my-notes.desktop"   # not a browser's: ignored
-  printf '[Desktop Entry]\nName=bedrock-now (bn-dev)\nExec=c --app-id=a\n' > "$d/chrome-aaa-Default.desktop"
-  printf '[Desktop Entry]\nName=bedrock-now\nExec=/usr/bin/google-chrome\n' > "$d/chrome-ccc-Default.desktop"  # no --app-id
-  printf '[Desktop Entry]\nName=bedrock-now\nExec=c --app-id=l\n' > "$TMP/elsewhere.desktop"
+  printf '[Desktop Entry]\nName=DevOS ADE\nExec=/bin/true --app-id=x\n' > "$d/my-notes.desktop"   # not a browser's: ignored
+  printf '[Desktop Entry]\nName=DevOS ADE (bn-dev)\nExec=c --app-id=a\n' > "$d/chrome-aaa-Default.desktop"
+  printf '[Desktop Entry]\nName=DevOS ADE\nExec=/usr/bin/google-chrome\n' > "$d/chrome-ccc-Default.desktop"  # no --app-id
+  printf '[Desktop Entry]\nName=DevOS ADE\nExec=c --app-id=l\n' > "$TMP/elsewhere.desktop"
   ln -s "$TMP/elsewhere.desktop" "$d/chrome-lll-Default.desktop"                                        # a symlink
   if open_installed_app >/dev/null; then echo "wrong entry accepted: $(open_installed_app)" >&2; return 1; fi
-  printf '[Desktop Entry]\nName=bedrock-now\nExec=/opt/google/chrome/google-chrome --profile-directory=Default --app-id=bbb %%U\n' \
+  printf '[Desktop Entry]\nName=DevOS ADE\nExec=/opt/google/chrome/google-chrome --profile-directory=Default --app-id=bbb %%U\n' \
     > "$d/chrome-bbb-Default.desktop"
   assert_eq "$(open_installed_app)" "$d/chrome-bbb-Default.desktop"
   export XDG_DATA_HOME="$TMP/xdg"; mkdir -p "$XDG_DATA_HOME/applications"
   if open_installed_app >/dev/null; then echo "XDG_DATA_HOME not used" >&2; return 1; fi
   # Flatpak Chrome / Edge name their entries <flatpak id>.flextop.<browser>-<app id>-<profile>.desktop
-  printf '[Desktop Entry]\nName=bedrock-now\nExec=/usr/bin/flatpak run --command=chrome com.google.Chrome --app-id=fff\n' \
+  printf '[Desktop Entry]\nName=DevOS ADE\nExec=/usr/bin/flatpak run --command=chrome com.google.Chrome --app-id=fff\n' \
     > "$XDG_DATA_HOME/applications/com.google.Chrome.flextop.chrome-fff-Default.desktop"
   assert_eq "$(open_installed_app)" "$XDG_DATA_HOME/applications/com.google.Chrome.flextop.chrome-fff-Default.desktop"
 }
 
 test_cmd_open_mac_prefers_the_installed_app() {
   : > "$ENV_FILE"; _mac
-  mkdir -p "$HOME/Applications/Chrome Apps.localized/bedrock-now.app"
+  mkdir -p "$HOME/Applications/Chrome Apps.localized/DevOS ADE.app"
   open() { printf '%s\n' "$@" > "$TMP/args"; }
   open_choose_browser() { echo "CHOSE" > "$TMP/chose"; echo "app:Google Chrome"; }
   out="$(cmd_open 2>&1)"
-  assert_eq "$(tr '\n' '|' < "$TMP/args")" "-a|$HOME/Applications/Chrome Apps.localized/bedrock-now.app|"
-  assert_contains "$out" "opening the installed bedrock-now app"
+  assert_eq "$(tr '\n' '|' < "$TMP/args")" "-a|$HOME/Applications/Chrome Apps.localized/DevOS ADE.app|"
+  assert_contains "$out" "opening the installed DevOS ADE app"
   [ ! -f "$TMP/chose" ] || { echo "looked for a browser although the app is installed" >&2; return 1; }
 }
 
@@ -259,7 +259,7 @@ test_cmd_open_mac_without_app_opens_a_tab_in_the_everyday_profile_and_tips_once(
 test_cmd_open_linux_launches_the_installed_app() {
   : > "$ENV_FILE"; _linux; export DISPLAY=:0 OPEN_CHECK_DELAY=0.2
   local d="$HOME/.local/share/applications"; mkdir -p "$d" "$TMP/bin"
-  printf '[Desktop Entry]\nName=bedrock-now\nExec=%s/bin/fakechrome --app-id=bbb --x=100%%%% %%U\n' "$TMP" > "$d/chrome-bbb-Default.desktop"
+  printf '[Desktop Entry]\nName=DevOS ADE\nExec=%s/bin/fakechrome --app-id=bbb --x=100%%%% %%U\n' "$TMP" > "$d/chrome-bbb-Default.desktop"
   printf '#!/bin/sh\necho "$*" > "%s/ran"\n' "$TMP" > "$TMP/bin/fakechrome"; chmod +x "$TMP/bin/fakechrome"
   # neither gio nor gtk-launch: its Exec line as argv, field codes dropped, %% -> %
   PATH="$TMP/bin:/usr/bin:/bin" cmd_open 2>/dev/null
@@ -285,7 +285,7 @@ test_desktop_exec_never_runs_a_shell() {
   printf '#!/bin/sh\n' > "$TMP/bin/chromium"; chmod +x "$TMP/bin/chromium"   # the browser-tab fallback
   for bad in '; touch $TMP/pwned' '$(touch $TMP/pwned)' '`touch $TMP/pwned`' '| touch $TMP/pwned' '&& touch $TMP/pwned' \
              '> $TMP/pwned' '"x" y' "'x'" '\\x' '(x)' '<x' '& x'; do
-    printf '[Desktop Entry]\nName=bedrock-now\nExec=%s/bin/fakechrome --app-id=bbb %s\n' "$TMP" "$bad" > "$d/chrome-bbb-Default.desktop"
+    printf '[Desktop Entry]\nName=DevOS ADE\nExec=%s/bin/fakechrome --app-id=bbb %s\n' "$TMP" "$bad" > "$d/chrome-bbb-Default.desktop"
     rm -f "$TMP/ran"
     out="$(PATH="$TMP/bin:/usr/bin:/bin" cmd_open 2>&1)"
     sleep 0.3
@@ -307,7 +307,7 @@ test_cmd_open_linux_without_app_opens_a_tab() {
 
 test_window_mode_ignores_the_installed_app_and_profile_dirs_only_in_window_mode() {
   : > "$ENV_FILE"; _mac; _window
-  mkdir -p "$HOME/Applications/Chrome Apps.localized/bedrock-now.app"
+  mkdir -p "$HOME/Applications/Chrome Apps.localized/DevOS ADE.app"
   open_choose_browser() { echo "app:Google Chrome"; }
   open() { printf '%s\n' "$@" > "$TMP/args"; }
   cmd_open 2>/dev/null

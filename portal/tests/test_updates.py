@@ -33,8 +33,8 @@ def write_version(paths, version="v0.2.1", images=("ghcr.io/berriai/litellm:1.10
 
 
 def release(tag="v0.3.0", body="## Changes\n- **Faster** updates\n<script>alert(1)</script>", **kw):
-    return {"tag_name": tag, "name": f"bedrock-now {tag}", "body": body, "draft": False, "prerelease": False,
-            "html_url": f"https://github.com/JongoDB-Labs/bedrock-now/releases/tag/{tag}",
+    return {"tag_name": tag, "name": f"DevOS ADE {tag}", "body": body, "draft": False, "prerelease": False,
+            "html_url": f"https://github.com/JongoDB-Labs/devos-ade/releases/tag/{tag}",
             "published_at": "2026-10-20T10:00:00Z", **kw}
 
 
@@ -49,7 +49,7 @@ class GitHub:
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.seen.append(request)
         if request.url.host == "api.github.com":
-            assert request.url.path == "/repos/JongoDB-Labs/bedrock-now/releases"
+            assert request.url.path == "/repos/JongoDB-Labs/devos-ade/releases"
             if self.etag and request.headers.get("if-none-match") == self.etag:
                 return httpx.Response(304, headers={"etag": self.etag})
             if self.raw is not None:
@@ -93,7 +93,8 @@ def test_check_finds_a_newer_release_and_estimates_the_download(paths):
     assert rec["tag"] == "v0.3.0" and rec["error"] is None
     assert [r.url.host for r in gh.seen] == ["api.github.com", "raw.githubusercontent.com"]
     assert all(r.url.scheme == "https" for r in gh.seen)
-    assert str(gh.seen[1].url).endswith("/JongoDB-Labs/bedrock-now/v0.3.0/compose.yaml")
+    assert str(gh.seen[1].url).endswith("/JongoDB-Labs/devos-ade/v0.3.0/compose.yaml")
+    assert gh.seen[0].headers["user-agent"] == "devos-ade-update-check"
     # nothing about this install is sent
     assert "abc1234" not in str(gh.seen[0].url) and "cookie" not in gh.seen[0].headers
     assert paths.txt.read_text().startswith("latest=v0.3.0\n")
@@ -161,7 +162,7 @@ def test_untrusted_release_fields_are_bounded(paths):
     run_check(paths, GitHub(rel=rel))
     st = updates.status(paths, True)
     assert len(st["notes"]) == updates.MAX_NOTES
-    assert st["url"] == "https://github.com/JongoDB-Labs/bedrock-now/releases"
+    assert st["url"] == "https://github.com/JongoDB-Labs/devos-ade/releases"
 
 
 class Renamed:
@@ -191,6 +192,79 @@ class Renamed:
         return httpx.Response(404)
 
 
+def get_old_name(gh, url=None):
+    """What an install before v0.25.0 asks — the release list under the repository's old name (this one asks it only
+    after a 404 of the new name): (status, body) after at most one redirect, or the CheckError."""
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(gh)) as c:
+            try:
+                code, body, _ = await updates._get(c, url or updates.LEGACY_RELEASES_URL, updates.MAX_JSON)
+                return code, body
+            except updates.CheckError as e:
+                return e
+    return asyncio.run(go())
+
+
+def test_the_names_are_the_projects_both():
+    assert updates.REPO == "JongoDB-Labs/devos-ade" and updates.LEGACY_REPO == "JongoDB-Labs/bedrock-now"
+    assert updates.RELEASES_URL == "https://api.github.com/repos/JongoDB-Labs/devos-ade/releases?per_page=30"
+    assert updates.LEGACY_RELEASES_URL == "https://api.github.com/repos/JongoDB-Labs/bedrock-now/releases?per_page=30"
+
+
+def test_after_the_rename_the_new_name_is_asked_and_answers(paths):
+    write_version(paths)
+    gh = Renamed()
+    rec = run_check(paths, gh)
+    assert rec["error"] is None and rec["tag"] == "v0.3.0"
+    assert [(r.url.host, r.url.path) for r in gh.seen] == [
+        ("api.github.com", "/repos/JongoDB-Labs/devos-ade/releases"),
+        ("raw.githubusercontent.com", "/JongoDB-Labs/devos-ade/v0.3.0/compose.yaml")]
+    st = updates.status(paths, True)
+    assert st["url"] == "https://github.com/JongoDB-Labs/devos-ade/releases/tag/v0.3.0"
+    assert st["estimate"]["images"] == ["ghcr.io/berriai/litellm:1.106.0"]
+
+
+class BeforeRename(GitHub):
+    """GitHub before the rename: the new name is a 404, the old one answers (its release pages under the old name)."""
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        if request.url.host == "api.github.com" and request.url.path == "/repos/JongoDB-Labs/devos-ade/releases":
+            self.seen.append(request)
+            return httpx.Response(404, json={"message": "Not Found"})
+        if request.url.host == "api.github.com":
+            assert request.url.path == "/repos/JongoDB-Labs/bedrock-now/releases"
+            self.seen.append(request)
+            return httpx.Response(200, json=self.rels, headers={"etag": self.etag})
+        if request.url.host == "raw.githubusercontent.com":
+            assert request.url.path == "/JongoDB-Labs/bedrock-now/v0.3.0/compose.yaml"
+        return super().__call__(request)
+
+
+def test_before_the_rename_the_old_name_is_asked_after_the_new_ones_404(paths):
+    write_version(paths)
+    gh = BeforeRename(rel=release(html_url="https://github.com/JongoDB-Labs/bedrock-now/releases/tag/v0.3.0"))
+    rec = run_check(paths, gh)
+    assert rec["error"] is None and rec["tag"] == "v0.3.0"
+    assert [(r.url.host, r.url.path) for r in gh.seen] == [
+        ("api.github.com", "/repos/JongoDB-Labs/devos-ade/releases"), ("api.github.com", "/repos/JongoDB-Labs/bedrock-now/releases"),
+        ("raw.githubusercontent.com", "/JongoDB-Labs/bedrock-now/v0.3.0/compose.yaml")]
+    st = updates.status(paths, True)
+    assert st["url"] == "https://github.com/JongoDB-Labs/bedrock-now/releases/tag/v0.3.0"   # the old name's page: kept
+    assert st["estimate"]["images"] == ["ghcr.io/berriai/litellm:1.106.0"]
+
+
+@pytest.mark.parametrize("status", [500, 403, 301])
+def test_only_a_404_of_the_new_name_asks_the_old_one(paths, status):
+    write_version(paths)
+    seen = []
+
+    def gh(request):
+        seen.append(request.url.path)
+        return httpx.Response(status)
+    rec = run_check(paths, gh)
+    assert f"HTTP {status}" in rec["error"] and seen == ["/repos/JongoDB-Labs/devos-ade/releases"]
+
+
 @pytest.mark.parametrize("api_to,status", [
     ("https://api.github.com/repositories/1415949652/releases?per_page=30", 301),    # what GitHub's API answers
     ("/repositories/1415949652/releases?per_page=30", 301),                          # ... relative
@@ -198,21 +272,18 @@ class Renamed:
     ("https://api.github.com/repos/JongoDB-Labs/devos-ade/releases?per_page=30", 301),  # the new name
     ("https://api.github.com/repos/jongodb-labs/DevOS-ADE/releases?per_page=30", 301),  # ... in any case, as GitHub takes it
 ])
-def test_one_redirect_to_the_renamed_repository_is_followed(paths, api_to, status):
-    write_version(paths)
+def test_one_redirect_to_the_renamed_repository_is_followed(api_to, status):
     gh = Renamed(api_to=api_to, status=status)
-    rec = run_check(paths, gh)
-    assert rec["error"] is None and rec["tag"] == "v0.3.0"
+    code, body = get_old_name(gh)
+    assert code == 200 and json.loads(body)[0]["tag_name"] == "v0.3.0"
     assert [(r.url.host, r.url.path) for r in gh.seen] == [
-        ("api.github.com", "/repos/JongoDB-Labs/bedrock-now/releases"), ("api.github.com", httpx.URL(api_to).path),
-        ("raw.githubusercontent.com", "/JongoDB-Labs/bedrock-now/v0.3.0/compose.yaml"),
-        ("raw.githubusercontent.com", "/JongoDB-Labs/devos-ade/v0.3.0/compose.yaml")]
+        ("api.github.com", "/repos/JongoDB-Labs/bedrock-now/releases"), ("api.github.com", httpx.URL(api_to).path)]
     assert all(r.url.scheme == "https" for r in gh.seen)
-    st = updates.status(paths, True)
-    # the release page under the new name is kept (not replaced by the generic link)
-    assert st["url"] == "https://github.com/JongoDB-Labs/devos-ade/releases/tag/v0.3.0"
-    assert [r["url"] for r in st["releases"]] == ["https://github.com/JongoDB-Labs/devos-ade/releases/tag/v0.3.0"]
-    assert st["estimate"]["images"] == ["ghcr.io/berriai/litellm:1.106.0"]
+    # the raw host's redirect too (the download estimate of a release found under the old name)
+    gh = Renamed()
+    code, body = get_old_name(gh, updates.RAW_URL.format(repo=updates.LEGACY_REPO, tag="v0.3.0"))
+    assert code == 200 and body.decode() == COMPOSE_NEW
+    assert [r.url.path for r in gh.seen] == ["/JongoDB-Labs/bedrock-now/v0.3.0/compose.yaml", "/JongoDB-Labs/devos-ade/v0.3.0/compose.yaml"]
 
 
 @pytest.mark.parametrize("api_to", [
@@ -235,31 +306,33 @@ def test_one_redirect_to_the_renamed_repository_is_followed(paths, api_to, statu
     "",                                                                    # an empty Location
     None,                                                                  # none at all
 ])
-def test_any_other_redirect_is_refused_and_not_asked(paths, api_to):
-    write_version(paths)
+def test_any_other_redirect_is_refused_and_not_asked(api_to):
     gh = Renamed(api_to=api_to)
-    rec = run_check(paths, gh)
+    e = get_old_name(gh)
     # (a malformed Location: some httpx versions refuse the answer themselves)
-    assert "HTTP 301" in rec["error"] or (api_to == "javascript:alert(1)" and "did not answer (InvalidURL)" in rec["error"])
-    assert rec.get("tag") is None
+    assert isinstance(e, updates.CheckError)
+    assert "HTTP 301" in str(e) or (api_to == "javascript:alert(1)" and "did not answer (InvalidURL)" in str(e))
     assert len(gh.seen) == 1  # the place it pointed to was never asked
 
 
-def test_a_second_redirect_is_not_followed(paths):
-    write_version(paths)
+def test_a_second_redirect_is_not_followed():
     gh = Renamed(api_to="https://api.github.com/repos/JongoDB-Labs/devos-ade/releases?per_page=30",
                  new_redirects_to="https://api.github.com/repositories/1415949652/releases?per_page=30")
-    rec = run_check(paths, gh)
-    assert "HTTP 301" in rec["error"]
+    e = get_old_name(gh)
+    assert "HTTP 301" in str(e)
     assert [r.url.path for r in gh.seen] == ["/repos/JongoDB-Labs/bedrock-now/releases", "/repos/JongoDB-Labs/devos-ade/releases"]
 
 
 def test_a_refused_raw_redirect_only_loses_the_estimate(paths):
     write_version(paths)
-    gh = Renamed(raw_to="https://raw.githubusercontent.com/someone/fork/v0.3.0/compose.yaml")
-    rec = run_check(paths, gh)
-    assert rec["tag"] == "v0.3.0"
-    assert len(gh.seen) == 3  # the fork's compose file was never asked for
+    gh = BeforeRename()
+    gh_raw = Renamed(raw_to="https://raw.githubusercontent.com/someone/fork/v0.3.0/compose.yaml")
+
+    def route(request):
+        return gh_raw(request) if request.url.host == "raw.githubusercontent.com" else gh(request)
+    rec = run_check(paths, route)
+    assert rec["tag"] == "v0.3.0" and rec.get("images") is None
+    assert [r.url.path for r in gh_raw.seen] == ["/JongoDB-Labs/bedrock-now/v0.3.0/compose.yaml"]  # the fork's: never asked
 
 
 def test_release_pages_of_either_name_are_the_projects():
@@ -287,7 +360,7 @@ def test_release_pages_of_either_name_are_the_projects():
 def test_a_release_link_out_of_the_repository_is_replaced(paths):
     write_version(paths)
     run_check(paths, GitHub(rel=release(html_url="https://github.com/JongoDB-Labs/devos-ade/../../evil/x/releases")))
-    assert updates.status(paths, True)["url"] == "https://github.com/JongoDB-Labs/bedrock-now/releases"
+    assert updates.status(paths, True)["url"] == "https://github.com/JongoDB-Labs/devos-ade/releases"
 
 
 def test_disabled_reports_nothing(paths):
@@ -415,13 +488,13 @@ def test_status_always_names_the_installed_version_and_its_page(paths):
     for enabled in (False, True):  # the check off, or on with no answer yet (no network)
         st = updates.status(paths, enabled)
         assert st["installed"] == "v0.3.0" and st["commit"] == "1a2b3c4" and st["commit_date"] == "2026-10-13T09:15:00-04:00"
-        assert st["release_url"] == "https://github.com/JongoDB-Labs/bedrock-now/releases/tag/v0.3.0"
+        assert st["release_url"] == "https://github.com/JongoDB-Labs/devos-ade/releases/tag/v0.3.0"
     run_check(paths, GitHub(status=500))  # a failed check changes nothing about it
     assert updates.status(paths, True)["installed"] == "v0.3.0"
     paths.version.write_text(json.dumps({"version": "v0.3.0-7-g1a2b3c4", "branch": "main", "images": []}))
     st = updates.status(paths, True)
     assert st["installed"] == "v0.3.0-7-g1a2b3c4" and st["branch"] == "main"
-    assert st["release_url"] == "https://github.com/JongoDB-Labs/bedrock-now/blob/main/CHANGELOG.md"  # a dev build
+    assert st["release_url"] == "https://github.com/JongoDB-Labs/devos-ade/blob/main/CHANGELOG.md"  # a dev build
     assert st["commit"] is None and st["commit_date"] is None  # an older ./stack wrote no date
 
 
@@ -495,7 +568,7 @@ def test_a_jump_over_several_releases_lists_each_newest_first(paths):
     assert [r["tag"] for r in st["releases"]] == ["v0.9.0", "v0.8.0", "v0.7.0", "v0.6.0", "v0.5.0"]
     assert [r["headline"] for r in st["releases"]][:2] == ["Git panel and Run & test", "Auto mode (opt-in), cost guardrails"]
     assert st["releases"][4]["notes"].startswith("Notes of v0.5.0.")
-    assert all(r["url"] == f"https://github.com/JongoDB-Labs/bedrock-now/releases/tag/{r['tag']}" for r in st["releases"])
+    assert all(r["url"] == f"https://github.com/JongoDB-Labs/devos-ade/releases/tag/{r['tag']}" for r in st["releases"])
     # the card's own fields are the newest release's
     assert st["name"] == NAMES["v0.9.0"] and st["notes"].startswith("Notes of v0.9.0.")
     # one release behind: just that one
@@ -521,7 +594,8 @@ def test_older_releases_than_the_list_holds_are_said_to_be_missing(paths, monkey
 def test_headlines_come_from_the_name_else_the_notes():
     h = updates.headline
     assert h("v0.9.0", "v0.9.0 — Git panel and Run & test", "x") == "Git panel and Run & test"
-    assert h("v0.9.0", "bedrock-now v0.9.0", "") == ""
+    assert h("v0.9.0", "DevOS ADE v0.9.0", "") == ""
+    assert h("v0.9.0", "devos-ade v0.9.0", "") == "" and h("v0.9.0", "bedrock-now v0.9.0", "") == ""   # (its names before)
     assert h("v0.2.1", "v0.2.1", "\n### Changed\n\n- **Real provider logos** instead of badges") == "Real provider logos"
     assert h("v0.2.0", "v0.2.0", "\nOne portal with one login for everything, and `costs` [everywhere](https://x/y).") == \
         "One portal with one login for everything, and costs everywhere."
@@ -538,7 +612,7 @@ def test_release_fields_are_checked_and_bounded(paths, monkeypatch):
     run_check(paths, GitHub(rels=rels))
     st = updates.status(paths, True)
     by = {r["tag"]: r for r in st["releases"]}
-    assert by["v0.7.0"]["url"] == "https://github.com/JongoDB-Labs/bedrock-now/releases"
+    assert by["v0.7.0"]["url"] == "https://github.com/JongoDB-Labs/devos-ade/releases"
     # past the cap of all notes together: the headline and the link stay, the notes go
     assert by["v0.9.0"]["notes"] and not by["v0.5.0"]["notes"] and by["v0.5.0"]["headline"]
     # latest.json itself is re-checked when read (it is a file in a folder the portal writes)

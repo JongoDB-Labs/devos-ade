@@ -26,10 +26,12 @@ _project_owner() {
 _project_container_dirs() {
   docker ps -a --filter "label=com.docker.compose.project=$1" --format '{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null | sort -u
 }
-_is_bedrock_now_dir() { [ -f "$1/compose.yaml" ] && [ -f "$1/stack" ] && grep -q 'bedrock-now' "$1/stack" 2>/dev/null; }
+# _is_bedrock_now_dir DIR -> 0 for a checkout of this project, under either of its names (its stack file says one:
+# since v0.25.0 "DevOS ADE (formerly bedrock-now)", so a guard of an earlier version still knows it)
+_is_bedrock_now_dir() { [ -f "$1/compose.yaml" ] && [ -f "$1/stack" ] && grep -qE 'bedrock-now|DevOS ADE' "$1/stack" 2>/dev/null; }
 _guard_where() { # _guard_where DIR -> how to name what lives in DIR
   if [ ! -e "$1" ]; then printf 'containers started from %s, a folder that no longer exists' "$1"
-  elif _is_bedrock_now_dir "$1"; then printf 'the bedrock-now install in %s' "$1"
+  elif _is_bedrock_now_dir "$1"; then printf 'the %s install in %s' "$PRODUCT_NAME" "$1"
   else printf 'another Compose project in %s' "$1"; fi
 }
 

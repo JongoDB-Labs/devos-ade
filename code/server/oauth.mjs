@@ -29,12 +29,17 @@ const DEVICE_CODE = /^[\x21-\x7e]{8,2048}$/;
 const ERROR_CODE = /^[a-z_]{1,64}$/;
 const HOST = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)*$/;
 
-// The project's own applications — public values, no secret: bedrock-now's GitHub App (github.com/apps/bedrock-now:
+// The project's GitHub App's slug — its address is github.com/apps/<slug>, and Git hosts' "Choose repositories" and
+// "install it" links are built from it. The ONE place it is written (tests/test_brand.sh checks): when the App is renamed
+// on GitHub, its new slug goes here.
+export const GITHUB_APP_SLUG = 'bedrock-now';
+
+// The project's own applications — public values, no secret: DevOS ADE's GitHub App (github.com/apps/<GITHUB_APP_SLUG>:
 // Contents read and write and Metadata, on the repositories you install it on; user tokens that expire in 8 hours,
 // renewed with a refresh token). gitlab.com has none (blank: sign-in there needs an application of yours; a GitLab of
 // your own always takes its own ID in the Git hosts dialog). Settings › Claude Code › More (GIT_GITHUB_CLIENT_ID,
 // GIT_GITHUB_APP_SLUG, GIT_GITLAB_CLIENT_ID) replace them.
-export const DEFAULT_APPS = Object.freeze({ github: Object.freeze({ clientId: 'Iv23li9eDUUgicar7aTx', appSlug: 'bedrock-now' }), gitlab: Object.freeze({ clientId: '' }) });
+export const DEFAULT_APPS = Object.freeze({ github: Object.freeze({ clientId: 'Iv23li9eDUUgicar7aTx', appSlug: GITHUB_APP_SLUG }), gitlab: Object.freeze({ clientId: '' }) });
 
 // Where each provider's endpoints are, for a Git host {host, port}: web (device code, token), the API (the account)
 export const PROVIDERS = Object.freeze({

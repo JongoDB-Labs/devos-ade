@@ -37,7 +37,7 @@ test_guard_refuses_project_owned_by_other_dir() {
   STACK_DIR="$TMP/new"; mkdir -p "$STACK_DIR"; _mk_install "$TMP/dev"; printf 'X=1\n' > "$ENV_FILE"
   WANT=bedrock-now OWNERS="$TMP/dev" VOLS=bedrock-now_pgdata; _stub_docker
   if out="$( (guard_project) 2>&1)"; then echo "should refuse" >&2; return 1; fi
-  assert_contains "$out" "project 'bedrock-now' is already used by the bedrock-now install in $TMP/dev"
+  assert_contains "$out" "project 'bedrock-now' is already used by the DevOS ADE install in $TMP/dev"
   assert_contains "$out" "cd $TMP/dev"
   assert_contains "$out" "./stack uninstall"
   assert_contains "$out" "COMPOSE_PROJECT_NAME=bedrock-now-2 ./setup.sh"
@@ -79,7 +79,7 @@ test_setup_runs_guard_after_project_name_and_before_any_change() {
   setup_aws_creds() { echo touched >> "$TMP/calls"; }; dc() { echo touched >> "$TMP/calls"; }
   STATE_DIR="$TMP/state"
   if out="$( (cmd_setup) 2>&1)"; then return 1; fi
-  assert_contains "$out" "already used by the bedrock-now install in $TMP/dev"
+  assert_contains "$out" "already used by the DevOS ADE install in $TMP/dev"
   assert_eq "$(cat "$ENV_FILE")" "$before"
   assert_eq "$(cat "$TMP/calls" 2>/dev/null)" ""
 }
@@ -95,7 +95,7 @@ test_first_setup_with_shell_name_is_guarded_before_it_is_saved() {
   WANT=bn-dev OWNERS="$TMP/dev"; _stub_docker
   check_prereqs() { :; }; setup_aws_creds() { echo touched >> "$TMP/calls"; }; STATE_DIR="$TMP/state"
   if out="$( (COMPOSE_PROJECT_NAME=bn-dev cmd_setup) 2>&1)"; then return 1; fi
-  assert_contains "$out" "project 'bn-dev' is already used by the bedrock-now install in $TMP/dev"
+  assert_contains "$out" "project 'bn-dev' is already used by the DevOS ADE install in $TMP/dev"
   assert_eq "$(get_env COMPOSE_PROJECT_NAME)" ""
   assert_eq "$(cat "$TMP/calls" 2>/dev/null)" ""
 }

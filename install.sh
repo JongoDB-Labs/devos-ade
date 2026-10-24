@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
-# bedrock-now one-line installer:
-#   curl -fsSL https://raw.githubusercontent.com/JongoDB-Labs/bedrock-now/main/install.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/JongoDB-Labs/bedrock-now/main/install.sh | bash -s -- --yes
-# Env: BEDROCK_NOW_DIR (default ~/bedrock-now), BEDROCK_NOW_REF (tag/branch/commit; default: latest release),
+# DevOS ADE (formerly bedrock-now) one-line installer:
+#   curl -fsSL https://raw.githubusercontent.com/JongoDB-Labs/devos-ade/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/JongoDB-Labs/devos-ade/main/install.sh | bash -s -- --yes
+# Env: BEDROCK_NOW_DIR (or DEVOS_ADE_DIR; default ~/devos-ade — or ~/bedrock-now when an install made before v0.25.0
+#      is there: it is found, never moved), BEDROCK_NOW_REF (tag/branch/commit; default: latest release),
 #      BEDROCK_NOW_REPO (git URL or path to clone from; default the GitHub repo — for forks and tests).
 # Everything is inside functions and main runs on the last line, so a truncated download does nothing.
 set -euo pipefail
 
-BN_REPO_URL="https://github.com/JongoDB-Labs/bedrock-now"
+# The project's names: this file's own copy of lib/brand.sh's (it runs before there is a checkout; tests/test_brand.sh
+# checks that they agree)
+PRODUCT_NAME="DevOS ADE"
+PRODUCT_SLUG="devos-ade"
+PRODUCT_REPO="JongoDB-Labs/devos-ade"
+PRODUCT_LEGACY_NAME="bedrock-now"
+PRODUCT_LEGACY_REPO="JongoDB-Labs/bedrock-now"
+BN_REPO_URL="https://github.com/$PRODUCT_REPO"
 
 say()  { printf '==> %s\n' "$*" >&2; }
 fail() { printf 'xx  %s\n' "$*" >&2; exit 1; }
@@ -58,10 +66,23 @@ target_decision() {
   [ -n "$(ls -A "$d" 2>/dev/null)" ] || { echo clone; return; }
   url="$(git -C "$d" remote get-url origin 2>/dev/null || true)"
   if [ -d "$d/.git" ] && [ -x "$d/stack" ]; then
-    # a checkout of the project under its name or the name it is being renamed to (lib/brand.sh)
-    case "$url" in *bedrock-now* | *devos-ade*) echo update; return ;; esac
+    # a checkout of the project's repository under its name or its name before v0.25.0 (GitHub redirects that)
+    case "$url" in *"$PRODUCT_SLUG"* | *"$PRODUCT_LEGACY_NAME"*) echo update; return ;; esac
   fi
   echo refuse
+}
+
+# default_dir -> where to install when no folder is given: ~/devos-ade, unless that is not there and ~/bedrock-now
+# holds an install made before v0.25.0 (a checkout of the project, or a set-up one: stack and a .env with its database
+# password) — then that one, which main says is installed already. Nothing is ever moved or renamed.
+default_dir() {
+  local new="$HOME/$PRODUCT_SLUG" old="$HOME/$PRODUCT_LEGACY_NAME"
+  if [ ! -e "$new" ] && [ -d "$old" ] && { [ "$(target_decision "$old")" = update ] ||
+     { [ -x "$old/stack" ] && grep -q '^POSTGRES_PASSWORD=.' "$old/.env" 2>/dev/null; }; }; then
+    printf '%s\n' "$old"
+  else
+    printf '%s\n' "$new"
+  fi
 }
 
 # latest_release_tag GIT_DIR -> newest vX.Y.Z tag, pre-releases (anything with "-") excluded.
@@ -76,17 +97,18 @@ pick_ref() {
 }
 
 main() {
-  local dir="${BEDROCK_NOW_DIR:-$HOME/bedrock-now}" repo="${BEDROCK_NOW_REPO:-$BN_REPO_URL}" ref tag qdir
+  local dir="${DEVOS_ADE_DIR:-${BEDROCK_NOW_DIR:-}}" repo="${BEDROCK_NOW_REPO:-$BN_REPO_URL}" ref tag qdir found=0
+  [ -n "$dir" ] || { dir="$(default_dir)"; [ "$dir" = "$HOME/$PRODUCT_SLUG" ] || found=1; }
   check_prereqs "$(uname -s)"
   qdir="$(printf '%q' "$dir")"
-  case "$(target_decision "$dir")" in
-    refuse) fail "$dir exists and is not a bedrock-now checkout — move it away or choose another folder with BEDROCK_NOW_DIR=/path" ;;
-    update)
-      say "bedrock-now is already installed in $dir — nothing was changed."
-      say "To update it (backup first, then the newest release): cd $qdir && ./stack update"
-      return 0 ;;
-  esac
-  say "installing bedrock-now into $dir (from $repo)"
+  if [ "$found" = 1 ] || [ "$(target_decision "$dir")" = update ]; then
+    say "$PRODUCT_NAME is already installed in $dir — nothing was changed."
+    say "To update it (backup first, then the newest release): cd $qdir && ./stack update"
+    return 0
+  fi
+  [ "$(target_decision "$dir")" = clone ] ||
+    fail "$dir exists and is not a $PRODUCT_NAME checkout — move it away or choose another folder with BEDROCK_NOW_DIR=/path"
+  say "installing $PRODUCT_NAME into $dir (from $repo)"
   say "setup then downloads ~5 GB of Docker images on the first run (5-15 minutes) and asks for your AWS key"
   git clone --quiet "$repo" "$dir" || fail "git clone of $repo failed (network?)"
   tag="$(latest_release_tag "$dir")"

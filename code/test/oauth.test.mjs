@@ -14,7 +14,7 @@ import https from 'node:https';
 import http from 'node:http';
 import { GitHosts, HostError } from '../server/githosts.mjs';
 import { makeGitRemote, revokeAt } from '../server/gitremote.mjs';
-import { request, verificationUrl, tokensOf, REFRESH_EARLY_MS, DEFAULT_APPS, resolveApp, makeOAuth } from '../server/oauth.mjs';
+import { request, verificationUrl, tokensOf, REFRESH_EARLY_MS, DEFAULT_APPS, GITHUB_APP_SLUG, resolveApp, makeOAuth } from '../server/oauth.mjs';
 import { createServer } from '../server/main.mjs';
 import { sandboxTunnel } from '../server/spawn-client.mjs';
 import { createOAuthMock } from './oauth-mock.mjs';
@@ -85,8 +85,9 @@ async function signIn(g, b, { account = 'alice', polls = 1 } = {}) {
 }
 
 test('which app a sign-in uses: Settings\' value, else the project\'s own — bedrock-now\'s GitHub App; none for gitlab.com', () => {
-  assert.deepEqual(DEFAULT_APPS, { github: { clientId: 'Iv23li9eDUUgicar7aTx', appSlug: 'bedrock-now' }, gitlab: { clientId: '' } });
-  assert.deepEqual(resolveApp('github', {}), { clientId: 'Iv23li9eDUUgicar7aTx', appSlug: 'bedrock-now' });
+  assert.deepEqual(DEFAULT_APPS, { github: { clientId: 'Iv23li9eDUUgicar7aTx', appSlug: GITHUB_APP_SLUG }, gitlab: { clientId: '' } });
+  assert.match(GITHUB_APP_SLUG, /^[a-z0-9][a-z0-9-]{0,99}$/);
+  assert.deepEqual(resolveApp('github', {}), { clientId: 'Iv23li9eDUUgicar7aTx', appSlug: GITHUB_APP_SLUG });
   assert.deepEqual(resolveApp('gitlab', {}), { clientId: '' }, 'gitlab.com: no app of the project\'s');
   assert.deepEqual(resolveApp('github', { github: { clientId: ' Iv23mine0000000000 ', appSlug: 'my-app' } }), { clientId: 'Iv23mine0000000000', appSlug: 'my-app' });
   assert.deepEqual(resolveApp('gitlab', { gitlab: { clientId: 'gl-mine' } }), { clientId: 'gl-mine' });
@@ -98,7 +99,7 @@ test('which app a sign-in uses: Settings\' value, else the project\'s own — be
   assert.deepEqual(resolveApp('github', { github: { clientId: 'a b', appSlug: 'Bad Slug' } }), { clientId: '', appSlug: '' });
   // with no Settings, the page is offered bedrock-now's app on github.com
   const o = makeOAuth({ store: new GitHosts({ dir: path.join(ROOT, 'defaults') }), connect });
-  assert.deepEqual(o.config(), { github: { host: 'github.com', clientId: 'Iv23li9eDUUgicar7aTx', appSlug: 'bedrock-now', configured: true },
+  assert.deepEqual(o.config(), { github: { host: 'github.com', clientId: 'Iv23li9eDUUgicar7aTx', appSlug: GITHUB_APP_SLUG, configured: true },
     gitlab: { host: 'gitlab.com', clientId: null, configured: false } });
 });
 

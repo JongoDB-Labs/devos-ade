@@ -190,6 +190,10 @@ const options = {
   logLevel: 'warning',
 };
 
+// The project's name for the page's title, from src/brand.ts (the page's own copy of it)
+const PRODUCT = /export const PRODUCT = '([^'\\]+)';/.exec(fs.readFileSync(path.join(here, 'src/brand.ts'), 'utf8'))?.[1];
+if (!PRODUCT) throw new Error('build: no PRODUCT in src/brand.ts');
+
 const FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#1d6a84"/><path d="M12 10l-6 6 6 6M20 10l6 6-6 6M17.5 8l-3 16" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
 `;
 
@@ -206,7 +210,7 @@ function writeIndex(metafile) {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="color-scheme" content="light dark">
 <meta name="referrer" content="same-origin">
-<title>Code · bedrock-now</title>
+<title>Code · ${PRODUCT}</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="${rel(css)}">
 <script type="module" src="${rel(js)}"></script>

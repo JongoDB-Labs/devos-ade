@@ -562,9 +562,3 @@ test_update_moves_origin_after_its_fetch() {
   assert_eq "$(grep -c 'now fetches from' "$TMP/err")" 0
 }
 
-test_brand_names_agree_with_the_portal() {
-  local py; py="$(cat "$T_ROOT/portal/portal/updates.py")"
-  assert_contains "$py" "REPO = \"$PRODUCT_REPO\""
-  assert_contains "$py" "REPO_NEXT = \"$PRODUCT_REPO_NEXT\""
-  assert_contains "$(cat "$T_ROOT/install.sh")" "BN_REPO_URL=\"https://github.com/$PRODUCT_REPO\""
-}

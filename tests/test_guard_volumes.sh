@@ -37,13 +37,24 @@ _mk_install() { # _mk_install DIR [.env content] — a folder that looks like a 
 _mark() { mkdir -p "$TMP/markers"; _real_dir "$2" > "$TMP/markers/${1}_bedrock-now-owner"; }   # _mark PROJECT DIR
 _marker() { cat "$TMP/markers/${1}_bedrock-now-owner" 2>/dev/null || true; }
 
+test_an_install_of_either_name_is_known_as_one() {
+  # a checkout made before v0.25.0 (its stack file says bedrock-now), one of v0.25.0 on (DevOS ADE), and this one — whose
+  # stack file must keep saying "formerly bedrock-now": the guard of an install before v0.25.0 looks for that
+  _mk_install "$TMP/old"; mkdir -p "$TMP/new"; : > "$TMP/new/compose.yaml"; printf '# DevOS ADE CLI\n' > "$TMP/new/stack"
+  mkdir -p "$TMP/other"; : > "$TMP/other/compose.yaml"; printf '# another project\n' > "$TMP/other/stack"
+  _is_bedrock_now_dir "$TMP/old" && _is_bedrock_now_dir "$TMP/new" && _is_bedrock_now_dir "$GV_ROOT"
+  if _is_bedrock_now_dir "$TMP/other"; then echo "took another project for an install" >&2; return 1; fi
+  grep -q 'bedrock-now' "$GV_ROOT/stack"
+  assert_eq "$(_guard_where "$TMP/new")" "the DevOS ADE install in $TMP/new"
+}
+
 # --- finding 1: a stopped install keeps its volumes ---
 
 test_stopped_install_keeps_its_volumes_from_a_set_up_checkout() {
   _mk_install "$TMP/a"; STACK_DIR="$TMP/b"; mkdir -p "$STACK_DIR"; printf 'POSTGRES_PASSWORD=mine\n' > "$ENV_FILE"
   WANT=bedrock-now OWNERS='' VOLS="$(printf 'bedrock-now_pgdata\nbedrock-now_owui')"; _stub_docker; _mark bedrock-now "$TMP/a"
   if out="$( (guard_project) 2>&1)"; then echo "should refuse" >&2; return 1; fi
-  assert_contains "$out" "project 'bedrock-now' is already used by the bedrock-now install in $(_real_dir "$TMP/a")"
+  assert_contains "$out" "project 'bedrock-now' is already used by the DevOS ADE install in $(_real_dir "$TMP/a")"
   assert_contains "$out" "Nothing was changed"
   assert_eq "$(_marker bedrock-now)" "$(_real_dir "$TMP/a")"
 }
@@ -128,7 +139,7 @@ test_status_guard_warns_and_continues_without_claiming() {
   _mk_install "$TMP/a"; STACK_DIR="$TMP/b"; mkdir -p "$STACK_DIR"; printf 'POSTGRES_PASSWORD=mine\n' > "$ENV_FILE"
   WANT=bedrock-now OWNERS="$TMP/a" VOLS=''; _stub_docker
   guard_project --warn 2> "$TMP/err"
-  assert_contains "$(cat "$TMP/err")" "already used by the bedrock-now install in $TMP/a"
+  assert_contains "$(cat "$TMP/err")" "already used by the DevOS ADE install in $TMP/a"
   [ ! -f "$TMP/dcalls" ] || { echo "status must not claim" >&2; return 1; }
   OWNERS=''; guard_project --warn 2>/dev/null
   [ ! -f "$TMP/dcalls" ] || { echo "status must not claim" >&2; return 1; }
@@ -147,7 +158,7 @@ test_uninstall_refuses_volumes_owned_by_a_stopped_install() {
   _mk_install "$TMP/a"; STACK_DIR="$TMP/b"; mkdir -p "$STACK_DIR"; printf 'POSTGRES_PASSWORD=mine\n' > "$ENV_FILE"
   WANT=bedrock-now OWNERS='' VOLS=bedrock-now_pgdata; _stub_docker; _mark bedrock-now "$TMP/a"
   if out="$( (guard_uninstall) 2>&1)"; then return 1; fi
-  assert_contains "$out" "would delete project 'bedrock-now', which belongs to the bedrock-now install in $(_real_dir "$TMP/a")"
+  assert_contains "$out" "would delete project 'bedrock-now', which belongs to the DevOS ADE install in $(_real_dir "$TMP/a")"
   assert_contains "$out" "Nothing was removed"
 }
 
@@ -211,7 +222,7 @@ test_concurrent_claim_loser_dies_and_keeps_the_winner() {   # I1
   _mk_install "$TMP/a"; STACK_DIR="$TMP/b"; mkdir -p "$STACK_DIR"; printf 'POSTGRES_PASSWORD=mine\n' > "$ENV_FILE"
   WANT=bedrock-now OWNERS='' VOLS=''; _stub_docker; RACE_DIR="$(_real_dir "$TMP/a")"
   if out="$( (guard_project) 2>&1)"; then echo "should refuse" >&2; return 1; fi
-  assert_contains "$out" "project 'bedrock-now' was just claimed by the bedrock-now install in $(_real_dir "$TMP/a")"
+  assert_contains "$out" "project 'bedrock-now' was just claimed by the DevOS ADE install in $(_real_dir "$TMP/a")"
   assert_contains "$out" "Nothing was changed"
   assert_eq "$(_marker bedrock-now)" "$(_real_dir "$TMP/a")"
 }
@@ -230,7 +241,7 @@ test_claim_replaces_only_the_record_the_guard_judged() {   # final review 1
   me="$(_real_dir "$STACK_DIR")"; c="$(_real_dir "$TMP/c")"
   _mark bedrock-now "$TMP/c"   # the guard saw a stale record ($TMP/gone); C replaced it before our claim
   if out="$( (claim_project bedrock-now "$me" "$TMP/gone") 2>&1)"; then echo "should refuse" >&2; return 1; fi
-  assert_contains "$out" "project 'bedrock-now' was just claimed by the bedrock-now install in $c"
+  assert_contains "$out" "project 'bedrock-now' was just claimed by the DevOS ADE install in $c"
   assert_contains "$out" "Nothing was changed"
   assert_eq "$(_marker bedrock-now)" "$c"
   [ ! -f "$TMP/dcalls" ] || { echo "touched the marker: $(cat "$TMP/dcalls")" >&2; return 1; }

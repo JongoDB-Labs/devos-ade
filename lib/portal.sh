@@ -132,9 +132,9 @@ portal_url() {
   if [ "$p" = 80 ]; then printf 'http://%s\n' "$h"; else printf 'http://%s:%s\n' "$h" "$p"; fi
 }
 
-# portal_app_name [NAME] -> the installed web app's name: "bedrock-now" for the default address, else
-# "bedrock-now (<project>[, port N])" (no ":" or "/": the name becomes a file name). Same rule as app_name in portal/portal/webapp.py (the manifest).
-# NAME instead of bedrock-now (PRODUCT_NAME): the same rule for another name (PRODUCT_NAME_NEXT, lib/open.sh).
+# portal_app_name [NAME] -> the installed web app's name: "DevOS ADE" (PRODUCT_NAME) for the default address, else
+# "DevOS ADE (<project>[, port N])" (no ":" or "/": the name becomes a file name). Same rule as app_name in portal/portal/webapp.py (the manifest).
+# NAME instead of PRODUCT_NAME: the same rule for another name (PRODUCT_LEGACY_NAME, lib/open.sh).
 portal_app_name() {
   local h p label="" base="${1:-$PRODUCT_NAME}"
   h="$(portal_host)"; p="$(portal_port)"
