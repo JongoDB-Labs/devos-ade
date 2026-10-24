@@ -352,8 +352,9 @@ you type into the search travels from your device to the portal, as every reques
   index of README.md and `docs/*.md` (headings, GitHub's anchors, a line of text each) built when the portal's image
   is built (`portal/Dockerfile`, stage `docs`; `compose.portal-docs.yaml` gives BuildKit this checkout as a named
   context, and BuildKit sends only the files the Dockerfile names — never `.env`, `.state` or `backups/`). `./stack`
-  adds that file only where Docker Compose reads `additional_contexts` (2.17 or newer): with an older Compose the
-  portal is built without it, its docs index is empty and the search says so. A docs result opens the section on github.com in a new tab
+  adds that file wherever Docker Compose reads `additional_contexts` (2.17 or newer: every Compose this version runs
+  with, since it needs 2.24.4 — `./stack setup` and `./stack update` stop on an older one); a portal built without it
+  has an empty docs index, and the search says so. A docs result opens the section on github.com in a new tab
   (`noopener,noreferrer`) — a link you click, like the release notes' — at your release's tag.
 - **Matching is linear.** Every query and candidate is capped (64 and 256 characters, 5,000 candidates per search)
   and matched by one greedy pass plus a Knuth–Morris–Pratt substring search (`static/fuzzy.js`, the Code palette's
@@ -3249,7 +3250,10 @@ never reads, copies, keeps, passes on or relays a login.**
   seconds after it exits the code container hears so, even while something it started holds its output open; and a
   turn waits at most 10 seconds after a tool's first sign before it stops waiting and closes that agent's
   connection. A tool that runs by itself before any sign of it reaches here (one its switches let through and it
-  approves itself) is not stopped by this. The answer says that a tool was reached for — never the tool's title, the
+  approves itself) is not stopped by this. Nor is what it does to a spared session: a process that is there while you
+  sign in for Chat (at most until the next sweep, 5 seconds) could attach to `./stack subscriptions login TOOL --chat`
+  or the sign-in it runs (`ptrace`, `/proc/<pid>/mem`: the same user, as the kernel allows it) and act inside it —
+  read that sign-in, or start what it likes as part of that session, which the sweep spares until the login ends. The answer says that a tool was reached for — never the tool's title, the
   agent's own words (the code container's log has it) — and that agent session is dropped: the chat goes on in a new
   one, with the conversation quoted. Of what a tool could still read without asking, there is the empty folder and the home's
   sign-ins — never a file of your workspace. What a conversation was is kept as a hash of your prompts
@@ -3263,21 +3267,26 @@ never reads, copies, keeps, passes on or relays a login.**
   scripts may be inline (its page's own), use eval (Vega charts, HEIC images, docx files, a tool's code) and
   WebAssembly (the Python runner, Pyodide) and start `blob:` workers: none of that reaches another host. So an
   answer's markdown image, a `<video>` or an `<iframe>` it carries, or a form, cannot take what a model read to another
-  server — the classic way out of a chat, which a document the model read can steer. An answer's html code block opens
-  in Open WebUI's Artifacts panel only when you click its preview (`detectArtifacts` off by default: each user can turn
-  it back on); there, in a sandboxed frame of its own (an opaque origin: no cookies of Open WebUI's, no popups, no
+  server — the classic way out of a chat, which a document the model read can steer. By default an answer's html code
+  block opens in Open WebUI's Artifacts panel only when you click its preview (`detectArtifacts` off: each user can
+  turn it back on, and then one opens as the answer arrives); there, in a sandboxed frame of its own (an opaque origin: no cookies of Open WebUI's, no popups, no
   navigating the page around it), it has Chat's policy too (a srcdoc document inherits its parent's) and the one Open
   WebUI writes into its `<head>` (`IFRAME_CSP`: the Code page's artifact viewer's, `connect-src 'none'`) — and one that
   hides its `<head>` from Open WebUI (in a comment: the policy lands there) still has Chat's. Its frame cannot be sent to
   another site either (`location = …`, a refresh: the embedding page's `frame-src` decides where its frames go). The
   e2e checks each of these is refused and never requested (`browser/chat-images-own-only`), and that Open WebUI's own
-  page works under the policy — its images, code highlighting, Mermaid, the Python runner, the Artifacts panel — with no
-  CSP error of its own (`browser/chat-own-page-under-policy`).
+  page works under the policy — its images, code highlighting, Mermaid, the Artifacts panel — with no CSP error of its
+  own (`browser/chat-own-page-under-policy`). **Open WebUI's Python runner does not work in this stack yet:** it runs
+  Pyodide in a sandboxed frame of its own, whose request for `pyodide.js` carries no session cookie, so the portal's
+  sign-in refuses it (401) and a Python block's *Run* fails. That predates this release — Chat's policy is not the
+  cause (it lets a frame made the same way load the script) — and is to be fixed in v0.24.1; the e2e reports it as a
+  known issue (`browser/chat-python-runner`, XFAIL), never as working.
 - [ ] **What Chat's page and an artifact can still do.** A name the browser looks up on its own for a host a document
   names — DNS prefetching, a `<link rel=preconnect>` — and a WebRTC peer connection's STUN request to a server the
   document names are governed by no directive of Chat's policy: the host name, or the request, can carry a little out.
   A tool you installed in Open WebUI can show its own HTML (an embed) in a frame that may open a popup, and a popup is
-  a page of its own, outside this policy. Artifacts are off until you click one, and run only then.
+  a page of its own, outside this policy. By default artifacts are off until you click one, and run only then
+  (`detectArtifacts`: a user who turns it back on has them open, and run, as an answer arrives).
 - [ ] **What Chat's page no longer loads from elsewhere.** Open WebUI's own page would fetch a few things from other
   hosts, which the policy refuses: Kokoro, its speech in the browser (its WebAssembly from cdn.jsdelivr.net — the stack
   reads aloud with your system's voices), Python packages the bundled Pyodide does not have (cdn.jsdelivr.net), a PDF
@@ -3381,9 +3390,19 @@ never reads, copies, keeps, passes on or relays a login.**
   (its folders, `mcp.json`, `lsp.json`, `allowed_models.txt`, `plugin.json`, the instruction files). Names are compared as
   a disk that folds them opens them (compatibility-normalized and case-folded in full: on the Mac `.curſor/mcp.json`
   opens `.cursor/mcp.json`, and is listed as Cursor's), from each folder's own entries; a folder that can be entered
-  but not listed makes both parts unverifiable. The git root is the first folder with a `.git` that holds a `HEAD` (an
-  empty `.git` a repository carries does not end the walk); outside a repository the walk stops below the workspace
-  itself (its settings are yours). A project that is a linked git worktree or a submodule cannot be checked (the
+  but not listed makes unverifiable the part it belongs to: one in another tool's own tree (in `.codex/`, `.cursor/`,
+  `.github/skills/` …) the other tools' part alone — agents do not start there, Claude Code is not touched —; any other
+  (the project's folder, a folder above it, a `.claude` folder or one of its trees) Claude Code's part, and with it
+  every agent, which needs both. The project's own `.claude/plugins/` stays in
+  Claude Code's hash, exactly as v0.23.0 lists it, but what it sets is judged — and shown in the dialog — with the
+  other tools' part (Grok and Copilot load its hooks and MCP servers; Claude Code a plugin only when it is installed
+  and turned on): a plugin file whose settings the dialog cannot show whole keeps agents from starting, not Claude
+  Code; one that cannot be read or shown at all still makes Claude Code's part unverifiable, as in v0.23.0. The git
+  root is the first folder with a `.git` that holds a `HEAD` (an empty `.git` a repository carries does not end the
+  walk). The walk stops below the workspace itself — outside a repository, and when the workspace is the git root:
+  the workspace's own `.claude` trees and the tools' settings there are the Workspace's, yours, applied as they always
+  were, never a project's. v0.23.0 listed the workspace's `.claude` trees for such a project, so where they hold
+  anything its v0.23.0 trust no longer matches, and it is asked about again. A project that is a linked git worktree or a submodule cannot be checked (the
   tools read another checkout's configuration then): the dialog says so, and agents do not start there — add the main
   checkout as a project. AGENTS.md and the like are instructions, as CLAUDE.md is.
 - [x] **A carried conversation is quoted, not yours.** When you switch who answers (or Chat starts a new agent session

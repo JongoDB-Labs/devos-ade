@@ -2536,7 +2536,8 @@ export function settingsFiles(abs, { text = false } = {}) {
   // a folder by its name alone (no tool reads what it holds): its name in the hash
   const nameOnly = (P, name) => P.files.push({ name, type: 'name', target: null, sha256: sha256('name:'), readable: true });
   // the folder's real entries (never a lookup by spelling: a disk that folds names opens .curſor as .cursor), each
-  // compared folded; a folder that is there but cannot be listed: both parts unverifiable (what it holds is not known)
+  // compared folded; a folder that is there but cannot be listed: the parts it belongs to unverifiable (what it holds
+  // is not known) — both by default, the other tools' part alone for a folder of their own trees
   const entries = (dir, parts = [claude, agent]) => {
     try { return fs.readdirSync(dir).sort(); } catch (e) {
       if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') for (const P of parts) P.over ??= 'a folder that could not be read';

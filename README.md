@@ -40,8 +40,7 @@ disable` the Code page alone; either stays off across updates).
 
 - macOS or Linux, with **Docker Desktop** (macOS) or **Docker Engine 28+ with Compose v2** (Linux), **Compose 2.24.4 or
   newer** (2024 on: its compose files use `!override` and `!reset`; `./stack setup` and `./stack update` say so and stop
-  on an older one). Compose 2.17 or newer (2023 on) also gives the portal's Search its index of this README and `docs/`; with an older one everything
-  else works, and `./stack` says so when it builds the portal. Docker Desktop 4.29 or newer (Engine 26+) also keeps
+  on an older one). Docker Desktop 4.29 or newer (Engine 26+) also keeps
   the sandbox from looking up outside names, a way out by DNS; with an older one `./stack test` says so
 - `git`, `curl`, `openssl` (macOS's built-in bash 3.2 is fine). Nothing else on your computer: no Node or Python
   (the browser terminal and the Code page bring Claude Code in their own image)
@@ -270,8 +269,7 @@ you type: the portal's pages and **Check for updates**, every Settings section a
 it, lit up), Code
 sessions and **workspace file names** (asked from the Code tab while this browser has it open; Enter opens the file in
 its editor), **Chat conversations** (Open WebUI's own search), the walkthrough's steps, and the sections of this README
-and `docs/` (on GitHub, as of your release; indexed when the portal's image is built, with Docker Compose 2.17 or
-newer). ↑ ↓ choose, Enter opens, Esc closes. Ctrl/⌘+K works while the focus is in the portal itself: inside the Chat
+and `docs/` (on GitHub, as of your release; indexed when the portal's image is built). ↑ ↓ choose, Enter opens, Esc closes. Ctrl/⌘+K works while the focus is in the portal itself: inside the Chat
 or Code tab the key goes to that app (Open WebUI and the Code page have a Ctrl+K of their own) — click the sidebar's
 search box there. Nothing typed there is sent outside your stack (over remote access it goes from your device to the
 portal, like everything else); [docs/security.md](docs/security.md#activity-and-search) says what each part reads.
@@ -636,9 +634,13 @@ plan in the Code page and Chat** (off by default; turning it on works from the c
   its tool cards (commands, edits with their diffs, to-dos), its questions on the same permission cards (*Allow once*,
   *Always* for this session, *Deny*), the watchlist after each turn, the same files, Git, Review and previews, and its
   history in the session list (a badge: *Codex*, *Plan* …), taken up again later with the tool's own session. Modes:
-  Read only and Plan refuse its changes without asking, Accept edits allows its edits to plain files of the folder (one
-  to `.git/`, `.github/`, `.vscode/`, `.idea/`, `.zed/`, `.claude/`, `.mcp.json`, git's hooks or a commit hook's file,
-  or a tool's own settings, through a link, or outside it is asked), Manual asks — a tool's own
+  Read only and Plan refuse its changes without asking, Accept edits allows its edits to plain files of the folder
+  only where the repository's git config is plainly harmless — written plainly, every key one that never names a
+  program or a path git or git-lfs loads (by its exact name: an include, an fsmonitor, a filter, a hook command … is
+  not); otherwise every edit asks, and the session says why, quoting the key — and never in the Workspace itself or
+  in a folder of your computer with no repository visible. Where it does allow them, an edit to `.git/`, `.github/`,
+  `.vscode/`, `.idea/`, `.zed/`, `.claude/`, `.mcp.json`, git's hooks or a commit hook's file, a tool's own settings,
+  another repository inside the folder, through a link, or outside it is still asked. Manual asks — a tool's own
   "approve everything" mode is never used. The meter says *on your ChatGPT plan · tokens in / out* and the plan's own
   limits where the tool reports them (Codex's 5-hour and weekly windows, Claude's), never dollars and no budget.
   Codex runs with its own sandbox off (the sandbox container is the boundary) and asks before what it does not count as
@@ -2217,7 +2219,7 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
 | On the Code page or in `claude-bedrock`, a model answers but never reads, edits or runs anything (or writes its tool calls out as text) | It is marked **chat only** (Llama 3.3 70B; OpenRouter models whose listing names no tool use): it cannot use Claude Code's tools. Pick a Claude model or one marked **works** — in the picker, with `/model`, or `claude-bedrock --model` (`claude-bedrock --models` says how each works); a **not tested** one may do the same ([Models for Claude Code](#models-for-claude-code)). |
 | In the sandbox, a download, `npm install` or `git clone` fails with 403 from the proxy (curl: `CONNECT tunnel failed, response 403`) | The egress proxy refused it: `./stack logs terminal-egress` says why. A name left out by `TERMINAL_EGRESS_ALLOW` or listed in `TERMINAL_EGRESS_DENY`: change the list in `.env`, then `./stack up`; a port other than 80, 443 and 22: `TERMINAL_EGRESS_ALLOW=*,name:PORT`. Something on this computer or your network (a dev server or registry on your Mac, a git server on your LAN) is never reached through the proxy: Settings › Claude Code › Sandbox internet access › **+ this computer** (`host`, from this computer only; [what it opens](#claude-code-in-the-browser)). |
 | Ctrl/⌘+K opens Chat's search or the Code page's command palette, not the portal's Search (or Ctrl/⌘+\\ does not fold the sidebar) | While the focus is inside an app's tab, the key goes to that app (Chat and the Code page have a Ctrl/⌘+K of their own). Click the search box at the top of the sidebar (on a phone **More → Search**) or the button above it, or click the sidebar first. |
-| Search finds no sections of the README or `docs/` ("this portal's image has no index of them") | Docker Compose older than 2.17 builds the portal without that index (`./stack` says so when it builds it). Update Docker Compose (`docker compose version` shows yours), then `./stack setup` rebuilds the portal. Meanwhile the docs are on GitHub. |
+| Search finds no sections of the README or `docs/` ("this portal's image has no index of them") | The portal was built without that index, by a Docker Compose older than 2.17 with an earlier release. This version needs Docker Compose 2.24.4 or newer (`docker compose version` shows yours; `./stack setup` and `./stack update` stop on an older one and say so): update it, then `./stack setup` rebuilds the portal with the index. Meanwhile the docs are on GitHub. |
 | Speech-to-text error in Chat | Your browser has no speech recognition (e.g. Firefox), or you use an installed / home-screen app. [Server speech-to-text](#voice-speech-to-text) works there: `./stack stt set bedrock`. |
 | "Call feature is not supported when using Web STT engine" | Voice calls need [server speech-to-text](#voice-speech-to-text): `./stack stt set bedrock` (no key; `./stack stt status` says why it is off), or `openai` / `groq`. |
 | "Error transcribing chunk: External: …" | The message after it says what failed (budget, model access, throttling, a too-long recording); see [docs/voice.md](docs/voice.md#troubleshooting). |
@@ -2352,7 +2354,7 @@ compose.domain.yaml           remote access under your own domain: Caddy with a 
 compose.terminal*.yaml        the browser terminal and its gateway (only while ./stack terminal is on; on by default);
                               -proxy: its egress proxy (TERMINAL_EGRESS=internet), -egress: host mode
 compose.code.yaml             the Code page (only while ./stack code is on, with the terminal; on by default)
-compose.portal-docs.yaml      the portal's search index of README and docs/ (added with Docker Compose 2.17+)
+compose.portal-docs.yaml      the portal's search index of README and docs/ (a build context of those files only)
 caddy/Caddyfile               the reverse proxy (no secrets); caddy/remote-*.caddy the remote site,
                               caddy/terminal-*.caddy the terminal's site and its gateway, caddy/code-*.caddy
                               the Code page's site, caddy/preview-*.caddy and artifact-*.caddy its previews' and

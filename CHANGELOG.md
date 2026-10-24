@@ -47,7 +47,10 @@ All notable changes to bedrock-now are documented here. The format follows
   started there with its tools switched off, every permission refused, and at the first sign of a tool call the
   agent's process killed there and then, with what it started, nothing it says after reaching the answer (which says
   so, never naming the tool: its title is the agent's words; that session is dropped) — and whatever left its process
-  group (`setsid`, `setpgid`) is killed too, by pid with its start time checked again; an agent's end reaches the code
+  group (`setsid`, `setpgid`) is killed too, when an agent is killed or ends and every 5 seconds: each frozen first,
+  the sandbox looked at again until nothing new appears, then killed by pid with its start time checked again — all but
+  bn-coded's own, an agent running now (never the one being ended) and what `docker exec` put in (`./stack
+  subscriptions login TOOL --chat` and the sign-in it runs, a health check); an agent's end reaches the code
   container 2 s after it exits even while something it started holds its output, and a turn waits at most 10 s after
   a tool's first sign. Without its overlay Chat's sandbox is on a network of its own with no way out, and it does not
   start where a lookup of one of the stack's names does not answer. Open WebUI reaches Chat's models
@@ -63,15 +66,19 @@ All notable changes to bedrock-now are documented here. The format follows
   to the git root, with a `.mcp.json` and `.claude/settings*.json` there), listed whole in the trust dialog, checked
   when it starts, once it has opened, and before every turn (a running agent ends when they change). The other tools'
   files are a part of their own, with a hash of their own: **Claude Code on Bedrock and on your plan decide on Claude
-  Code's part alone**, exactly the listing of v0.23.0, so a cloned repository's `.github/` or `.cursor/` never takes a
-  project's CLAUDE.md and settings away from them; when the other tools' part cannot all be shown, *Trust* covers
+  Code's part alone**, exactly the listing of v0.23.0, so a cloned repository's `.github/` or `.cursor/` — however many
+  files, whatever their names — never takes a project's CLAUDE.md and settings away from them; when the other tools' part cannot all be shown, *Trust* covers
   Claude Code's part alone and agents do not start there, the dialog says so — as it shows Claude on your plan's own
   state, and a linked worktree or submodule. Names are compared as a disk that folds them opens them (`.curſor` is
-  `.cursor`, `.mcp.jſon` is `.mcp.json`), from each folder's own entries; a folder that cannot be listed is
-  unverifiable; outside a repository the walk up stops below the workspace (its settings are yours). The git root is
+  `.cursor`, `.mcp.jſon` is `.mcp.json`), from each folder's own entries; a folder that cannot be listed makes its part
+  unverifiable (one in another tool's own tree: theirs alone); outside a repository, and when the workspace itself is
+  the git root, the walk up stops below the workspace (its settings are yours: such a project is asked about again
+  where v0.23.0 listed the workspace's `.claude` trees). The git root is
   a `.git` with a `HEAD`: an empty `.git` folder no longer ends the walk up. A project trusted in v0.23.0 stays trusted for
   Claude Code on Bedrock and on your plan while its Claude Code settings are as they were and read whole today
-  (without plugins turned on); otherwise it is asked about again. The other tools' settings are asked about the first
+  (without plugins turned on): until it is first looked at — its settings dialog, or a session started there — the
+  project list still marks it (the shield: *look at them again*); that first look carries the trust over without
+  asking and the mark goes. Otherwise it is asked about again. The other tools' settings are asked about the first
   time an agent starts there. A project's Claude Code settings that add a plugin marketplace (`extraKnownMarketplaces`), or bring plugins by
   another of Claude Code's keys, cannot be trusted; each plugin its `enabledPlugins` turns on is listed in the dialog
   when it is installed in the sandbox already (its version is part of what you trust), and one that is not installed
@@ -101,10 +108,13 @@ All notable changes to bedrock-now are documented here. The format follows
   after a letter or a digit).
 - **What an answer can make your browser fetch, in Chat:** Open WebUI's site (locally and over remote access) loads
   images, audio, video, frames, fonts, scripts and style sheets, and sends requests and forms, to itself only, with no
-  Referer; an html code block opens in Open WebUI's Artifacts panel only on a click, under the Code page's artifact
-  viewer's policy (`connect-src 'none'`) as well, and its frame cannot be sent to another site. What Open WebUI's page
-  itself would load from elsewhere no longer loads: Kokoro's in-browser speech, Python packages Pyodide does not bundle,
-  favicons of cited pages.
+  Referer; by default an html code block opens in Open WebUI's Artifacts panel only on a click, under the Code page's
+  artifact viewer's policy (`connect-src 'none'`) as well, and its frame cannot be sent to another site. What Open
+  WebUI's page itself would load from elsewhere no longer loads: Kokoro's in-browser speech, Python packages Pyodide
+  does not bundle, favicons of cited pages. (Open WebUI's Python runner does not work in this stack yet — nor did it
+  before this release: its frame's request for Pyodide is refused by the portal's sign-in; v0.24.1 is to fix it.) What a page can still do — a name the browser looks up on its own, a
+  WebRTC request, a popup from a tool's embed — is in docs/security.md (*What Chat's page and an artifact can still
+  do*).
 
 (Dev installs that ran a pre-release of this version kept the terminal's sign-ins in volumes of their own,
 `<project>_subs-*`: those are not carried over — the terminal's sign-ins are in its home again, so sign in once more
