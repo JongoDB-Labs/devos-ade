@@ -8,6 +8,8 @@
 #   tests/e2e/ui-sweep.sh --aws-env FILE [--src DIR] [--project bne2e-uisweep] [--out DIR] [--keep]
 #   tests/e2e/ui-sweep.sh --reuse [--project bne2e-uisweep] [--keep]   the sweep again on a throwaway kept by --keep
 #   tests/e2e/ui-sweep.sh --teardown [--project bne2e-uisweep]
+#   --long-path (with each of these) stages the throwaway under a deliberately long folder name with no break in it,
+#               so every path the pages show (the sign-in hint, Settings, Home, the walkthrough) has to wrap
 #
 #   --src DIR   the checkout to set up, at its HEAD (default: this one) — e.g. a detached worktree of a release
 #   --out DIR   results (default tests/e2e/out/ui-sweep): sweep/shots/<page>-<state>-<width>-<theme>.png,
@@ -25,7 +27,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 AVOID_PORTS=" 80 443 3000 3009 4000 8080 8081 8090 8765 8800 "
 BUDGETS="BUDGET_CLAUDE_CODE=0.04 BUDGET_OPENWEBUI=0.04 BUDGET_SETUP=0.02"
 NOTTY="$HERE/notty"
-PROJECT=bne2e-uisweep; SRC="$ROOT"; AWS_ENV_FILE=''; KEEP=0; TEARDOWN_ONLY=0; OUT_DIR=''; REUSE=0
+PROJECT=bne2e-uisweep; SRC="$ROOT"; AWS_ENV_FILE=''; KEEP=0; TEARDOWN_ONLY=0; OUT_DIR=''; REUSE=0; LONG=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --aws-env) AWS_ENV_FILE="${2:?}"; shift 2 ;;
@@ -34,6 +36,7 @@ while [ $# -gt 0 ]; do
     --out) OUT_DIR="${2:?}"; shift 2 ;;
     --keep) KEEP=1; shift ;;
     --reuse) REUSE=1; shift ;;
+    --long-path) LONG=1; shift ;;
     --teardown) TEARDOWN_ONLY=1; shift ;;
     -h | --help) sed -n '2,/^set -uo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1 (--help)" >&2; exit 2 ;;
@@ -45,7 +48,9 @@ done
 valid_project "$PROJECT" || die "--project must be bne2e or bne2e-<letters, digits, ->: $PROJECT (never a real install's)"
 OUT="${OUT_DIR:-$ROOT/tests/e2e/out/ui-sweep}"; mkdir -p "$OUT"; OUT="$(cd "$OUT" && pwd -P)"
 LOGS="$OUT/logs"; RESULTS="$OUT/results.tsv"; mkdir -p "$LOGS"; : > "$RESULTS"
-WORK="$ROOT/tests/e2e/work/$PROJECT"; mkdir -p "$(dirname "$WORK")"
+WORK="$ROOT/tests/e2e/work/$PROJECT"
+[ "$LONG" = 0 ] || WORK="$ROOT/tests/e2e/work/ADeliberatelyLongInstallFolderNameWithNoBreakForTheUISweep/$PROJECT"
+mkdir -p "$(dirname "$WORK")"
 STACK="$(cd "$(dirname "$WORK")" && pwd -P)/$(basename "$WORK")"
 HOST="$PROJECT.localhost"
 command -v docker >/dev/null && docker info >/dev/null 2>&1 || die "Docker is required, and its daemon running"
@@ -57,7 +62,7 @@ if [ "$REUSE" = 0 ]; then
 fi
 # shellcheck disable=SC2034  # (HELPER_PID: read by lib.sh's teardown)
 HELPER_PID=''
-trap 'rc=$?; trap - EXIT INT TERM HUP; if [ "$KEEP" = 0 ]; then teardown; else say "kept: tests/e2e/ui-sweep.sh --teardown --project $PROJECT"; fi; exit $rc' EXIT
+trap 'rc=$?; trap - EXIT INT TERM HUP; if [ "$KEEP" = 0 ]; then teardown; else say "kept: tests/e2e/ui-sweep.sh --teardown --project $PROJECT$([ "$LONG" = 0 ] || printf ' --long-path')"; fi; exit $rc' EXIT
 trap 'warn "interrupted"; exit 130' INT TERM HUP
 
 st() { # the throwaway's ./stack, clean environment, no terminal

@@ -127,6 +127,37 @@ COLLECT = r"""() => {
     const x = r.left + r.width / 2, y = r.top + r.height / 2; const t = document.elementFromPoint(x, y);
     if (t && t !== e && !e.contains(t) && !t.contains(e) && !(t.closest && t.closest('[role=tooltip], .toast, .tooltip'))) covered.push(desc(e) + ' under ' + desc(t));
   }
+  // Past its box: a run of text whose line boxes end outside the nearest box around it (a card, a dialog, a note, a code
+  // chip: an ancestor with a border, a background or a shadow), or an in-flow element wider than that box; a scroller
+  // on the way (overflow auto, scroll, hidden, clip) ends the search, as its content may be wider by design.
+  const memo = new Map();
+  const kind = (e) => { if (memo.has(e)) return memo.get(e); const s = getComputedStyle(e); let k = '';
+    if (/(auto|scroll|hidden|clip)/.test(s.overflowX)) k = 'scroll';
+    else if (s.display !== 'inline' && s.display !== 'contents' && (e.tagName === 'DIALOG' || e.getAttribute('role') === 'dialog'
+      || parseFloat(s.borderLeftWidth) > 0 || parseFloat(s.borderRightWidth) > 0 || s.boxShadow !== 'none'
+      || !/^(transparent|rgba\(0, 0, 0, 0\))$/.test(s.backgroundColor))) k = 'box';
+    memo.set(e, k); return k; };
+  const boxOf = (e) => { for (let p = e; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+    const k = kind(p); if (k === 'scroll') return null; if (k === 'box') return p; } return null; };
+  const spill = [], spilt = new Set();
+  const tw = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT,
+    { acceptNode: (n) => (n.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT) });
+  for (let n = tw.nextNode(); n && spill.length < 30; n = tw.nextNode()) {
+    const el = n.parentElement; if (!el || spilt.has(el) || ['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'OPTION'].includes(el.tagName)) continue;
+    const box = boxOf(el); if (!box) continue;
+    const range = document.createRange(); range.selectNodeContents(n);
+    const b = box.getBoundingClientRect();
+    const r = [...range.getClientRects()].find((q) => q.width > 0 && (q.right > b.right + 1 || q.left < b.left - 1));
+    if (r && vis(el)) { spilt.add(el); spill.push(`${desc(el)} runs ${Math.round(Math.max(r.right - b.right, b.left - r.left))} px past ${desc(box)}`); }
+  }
+  for (const e of document.querySelectorAll('body *')) {
+    if (spill.length >= 30) break;
+    const s = getComputedStyle(e); if (s.position === 'absolute' || s.position === 'fixed' || s.display === 'inline' || s.display === 'contents' || s.float !== 'none') continue;
+    const box = e.parentElement && boxOf(e.parentElement); if (!box) continue;
+    const r = e.getBoundingClientRect(), b = box.getBoundingClientRect();
+    if (r.width > 0 && (r.right > b.right + 1 || r.left < b.left - 1) && !spilt.has(e) && vis(e)) {
+      spilt.add(e); spill.push(`${desc(e)} is ${Math.round(Math.max(r.right - b.right, b.left - r.left))} px wider than ${desc(box)}`); }
+  }
   const bgs = new Set();
   for (const e of document.querySelectorAll('body *')) { const b = getComputedStyle(e).backgroundImage;
     if (b && b.includes('url(')) for (const m of b.matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/g)) { try { bgs.add(new URL(m[1], location.href).href); } catch (_) {} } }
@@ -140,6 +171,7 @@ COLLECT = r"""() => {
     overflow: document.scrollingElement ? document.scrollingElement.scrollWidth - W : 0,
     outside: shown.filter(e => { const r = e.getBoundingClientRect(); return (r.right > W + 2 || r.left < -2) && !scroller(e); }).map(desc).slice(0, 30),
     covered: covered.slice(0, 30),
+    spill,
     empty: [...document.querySelectorAll('section, .card, [class*="-card"]')].filter(vis).filter(e => !e.innerText.trim() && !e.querySelector('img, svg, canvas, iframe, video, input, textarea')).map(desc).slice(0, 20),
     brand: (() => { const i = document.querySelector('.brand img'); return i ? { src: i.currentSrc || i.src, vis: vis(i), nw: i.naturalWidth } : null; })(),
     csp: (window.__csp || []).slice(0, 30),
@@ -219,6 +251,8 @@ def capture(page, state: str, full: bool = True, frame_hosts: tuple[str, ...] = 
             find("cut off", x, frame=d["url"][:120])
         for x in d["covered"] if ours else []:
             find("covered", x, frame=d["url"][:120])
+        for x in d["spill"] if ours else []:
+            find("past its box", local_paths_out(x), frame=d["url"][:120])
         for x in d["empty"] if ours else []:
             find("empty container", x, frame=d["url"][:120])
         for x in d["unnamed"] if ours else []:
