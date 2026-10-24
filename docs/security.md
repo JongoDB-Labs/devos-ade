@@ -3284,19 +3284,40 @@ never reads, copies, keeps, passes on or relays a login.**
 - [x] **The Code page's agents ask you.** A Codex, Copilot, Cursor or Grok session asks through the same permission
   cards (*Allow once*, *Always* for this session — the tool's own "allow always" —, *Deny*; unanswered: denied after
   the usual minutes); Read only and Plan refuse its changes and commands without asking; Accept edits lets a file
-  change through without asking only when the sandbox (bn-coded's `paths.plain`) says every path it names is a plain
-  file of the session's folder — absolute, inside it, no part of it `.git`, `.github`, `.vscode`, `.idea`, `.zed`,
-  `.claude`, `.mcp.json`, `.husky`, `.devcontainer`, `.envrc`, `.pre-commit-config.yaml`, a lefthook file
-  (`lefthook.yml`, `.lefthook.yml`, `lefthook-local.yml` …), a `*.code-workspace`, a `lsp.json` or a tool's own folder
-  (`.codex`, `.cursor`, `.grok`, `.gemini`, `.copilot`, `.agents`, `.claude-plugin`), nothing git on your computer
-  runs code from (what the watchlist follows of git: a git folder wherever a `gitdir:` file or a `commondir` puts it,
-  whole; a folder it runs hooks from — `core.hooksPath`, `.git/hooks`, a submodule's —, a `core.fsmonitor` program, and
-  anything below them; a config file it reads, an `include.path` or `includeIf` target too, there yet or not, a
-  submodule's config; a layout it could not read whole makes no path plain), each name compared as a disk that folds names opens it
-  (compatibility-normalized and case-folded in full: `.curſor` is `.cursor`, `lſp.json` is `lsp.json`), each part that
-  is there spelled exactly as its folder lists it (never another entry the disk would open by that spelling), no link
-  on its way or at its end, no other name for the file (a hard link) — and asks for everything else: a move (its
-  destination is not always said), a change naming no path, Codex's request for a folder of its own to write in
+  change through without asking only when the sandbox (bn-coded's `paths.plain`) says every path it names is plain —
+  and first, that nothing git on your computer would run there could be steered by the edit. That is decided from the
+  repository's own config, not by listing what git runs (that list does not end: include targets, fsmonitor commands,
+  an absolute hooks path …): the repository is the first folder with a `.git` from the project's up to the workspace (a
+  `.git` folder with its `HEAD`, or a `gitdir:` file followed only to a real folder of the workspace, its `commondir`
+  the same way; a folder of this computer: itself alone); every config git reads for that checkout — the common one,
+  the gitdir's, `config.worktree`, each submodule's — is read with a grammar stricter than git's (blank lines, whole-line
+  comments, a `[section]` or `[section "sub"]` header alone on its line, `key = value` or a bare key; no `\`, `#`, `;`,
+  continuation or inner quotes; printable ASCII), and every key must be one that never names a program or a path git or
+  a tool of your computer loads: core's format and file-system flags, a remote's URL (never `ext::` or `fd::`), fetch
+  and push refspecs, a branch's tracking (VS Code's and the GitHub PR extension's keys included), your name, email and
+  signing key, pull, push, fetch, gc, color, rerere, the conflict style, commit signing, a submodule's URL, branch and
+  `update` (checkout, rebase, merge or none), the object format, git-lfs's own settings and its filter exactly as `git
+  lfs install` writes it (never its custom transfers or extensions), and `core.hooksPath` only as a plain relative
+  folder of the repository (its top folder is then guarded). Anything else — an include, an fsmonitor, a filter, a
+  diff driver, an alias, an editor, a pager, `sshCommand`, a credential helper, `gpg.program`, `core.worktree` …, a
+  config that cannot be read whole or plainly, a link on the way — and no path is plain: every edit asks, and the
+  session says why once. The Workspace itself has no trust step, so there every edit asks; a folder of this computer
+  with no repository in it here asks too (a repository around it on your computer is not visible in the sandbox;
+  `./stack project` could note one when you add the folder — it does not yet). Then nothing is plain either while an
+  entry named like a guarded one (below) is a link in the project's folder, the git root, a folder between them or a
+  folder on a path's way. A path is then plain when it is absolute, inside the folder, at most 64 parts, no part of it
+  `.git`, `.github`, `.vscode`, `.idea`, `.zed`, `.claude`, `.mcp.json`, `.husky`, `.githooks`, `.devcontainer`,
+  `.envrc`, `.pre-commit-config.yaml`, lefthook's files and folders (`lefthook` or `.lefthook`, `-local` or not, any of
+  `.yml` `.yaml` `.toml` `.json` `.jsonc`), lint-staged's (`.lintstagedrc*`, `lint-staged.config.*`), `.yarnrc.yml`,
+  `.pnpmfile.cjs`, a `*.code-workspace`, a `lsp.json`, another agent's folder or file (`.roo`, `.kiro`, `.continue`,
+  `.amazonq`, `opencode.json`) or a tool's own folder (`.codex`, `.cursor`, `.grok`, `.gemini`, `.copilot`, `.agents`,
+  `.claude-plugin`), not at or below a git folder or `core.hooksPath`'s top folder, each name compared as a disk that
+  folds names opens it (compatibility-normalized and case-folded in full, to a fixpoint: `.curſor` is `.cursor`, `claẞ`
+  is `class`), each part that is there spelled exactly as its folder lists it (never another entry the disk would open
+  by that spelling), no link on its way or at its end, no other name for the file (a hard link); each folder is read
+  once per request, and a request answers within 2 seconds (past them: the rest is not plain). It asks for everything
+  else: a move (its destination is not always said), a change naming no path, Codex's request for a folder of its own
+  to write in
   (`grantRoot`), a path that is not plain. An ACP agent runs only in the modes of
   an allowlist per tool, by the ids the pinned version reports — Cursor's `agent`, `plan`, `ask`; Copilot's
   protocol `#agent` and `#plan` (its `#autopilot` turns allow-all on); Grok's `default`, `ask`, `plan` (its
@@ -3313,7 +3334,8 @@ never reads, copies, keeps, passes on or relays a login.**
 - [ ] **Accept edits checks, then the agent writes.** `paths.plain` answers for the paths as they are when it looks;
   the agent writes after that, so what changes in between — a link put on the way, a folder swapped — is not stopped by
   it (the sandbox can change its own files at any moment anyway). The watchlist checks the files that run on your
-  computer after each turn, with Revert.
+  computer after each turn, with Revert. A `.envrc` deeper in the folder that is a link is left to direnv's own
+  `allow` (it asks again whenever the file's content changes), and a deeper `*.code-workspace` is one you open by hand.
 - [ ] **Approvals a tool saved in its own home settings skip the card.** Cursor's `~/.cursor/cli-config.json` allow
   list, Copilot's saved approvals and Grok's settings in the sandbox's home are the tools' own: what they allow runs
   without asking you, in any mode that asks. They are in the sandbox's home, which anything in the sandbox can write

@@ -355,6 +355,15 @@ test('Accept edits in an agent session: an edit goes through without asking only
     assert.equal(await x.plainEdit(['/workspace/app/a.js']), false, JSON.stringify(answer));
     m.mgr.closeAll();
   }
+  // nothing plain there (the repository's git config may run programs): asked, and why said once in the session
+  const m = manager({ more: { plainPaths: async (root, paths) => ({ plain: paths.map(() => false), why: 'this repository\'s git settings may run programs (core.fsmonitor)' }) } });
+  const x = m.mgr.get(m.mgr.open({ harness: 'copilot', cwd: '/workspace/app', mode: 'acceptEdits' }).id);
+  assert.equal(await x.plainEdit(['/workspace/app/a.js']), false);
+  assert.equal(await x.plainEdit(['/workspace/app/b.js']), false);
+  const said = m.events.filter(([, ev]) => ev.type === 'local' && /Accept edits asks for every edit here/.test(ev.text));
+  assert.equal(said.length, 1);
+  assert.match(said[0][1].text, /core\.fsmonitor/);
+  m.mgr.closeAll();
 });
 
 test('an agent\'s permission question named like one of the broker\'s own tools (a plan\'s approval, a question): never that', async () => {

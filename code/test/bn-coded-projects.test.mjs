@@ -823,14 +823,21 @@ test('project.settings: the plugins a folder\'s own settings turn on, with what 
 test('paths.plain: what an agent\'s change may touch without asking (Accept edits) — plain files of the folder, outside git\'s and the tools\' own configuration, no link on the way, no hard link', async () => {
   const D = path.join(WS, 'edits');
   const put = (rel, text = 'x') => { fs.mkdirSync(path.dirname(path.join(D, rel)), { recursive: true }); fs.writeFileSync(path.join(D, rel), text); };
-  put('src/a.js'); put('.git/hooks/pre-commit'); put('sub/.codex/config.toml'); put('lsp.json', '{}'); put('src/Readme.md');
-  // (git runs hooks from core.hooksPath: that folder too, in any case)
-  put('.git/config', '[core]\n\thooksPath = tools/hooks\n');
+  put('src/a.js'); put('.git/HEAD', 'ref: refs/heads/main\n'); put('.git/hooks/pre-commit'); put('sub/.codex/config.toml'); put('lsp.json', '{}'); put('src/Readme.md');
+  // (a config as a clone writes it, with core.hooksPath as a plain folder of the repository: its top folder guarded)
+  put('.git/config', '[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n\tignorecase = true\n'
+    + '\tprecomposeunicode = true\n\thooksPath = tools/hooks\n[remote "origin"]\n\turl = https://example.com/a/b.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n'
+    + '[branch "main"]\n\tremote = origin\n\tmerge = refs/heads/main\n\tvscode-merge-base = origin/main\n[user]\n\tname = "A B"\n\temail = a@b.c\n'
+    + '[lfs]\n\trepositoryformatversion = 0\n[filter "lfs"]\n\tclean = git-lfs clean -- %f\n\tsmudge = git-lfs smudge -- %f\n\tprocess = git-lfs filter-process\n\trequired = true\n'
+    + '[pull]\n\trebase = false\n[color "diff"]\n\tmeta = yellow\n# a comment\n; another\n');
   fs.mkdirSync(path.join(D, 'dir'), { recursive: true });
   fs.writeFileSync(path.join(OUT, 'h'), 'outside');
   fs.symlinkSync(OUT, path.join(D, 'link'));
   fs.symlinkSync(path.join(OUT, 'h'), path.join(D, 'linkfile'));
   fs.linkSync(path.join(OUT, 'h'), path.join(D, 'hard'));
+  // (a link a disk that folds names opens by another spelling: docs/claẞ is docs/class there)
+  fs.mkdirSync(path.join(D, 'docs'));
+  fs.symlinkSync('../.git/hooks', path.join(D, 'docs/class'));
   const cases = [
     [`${D}/src/a.js`, true], [`${D}/src/new.js`, true, 'a new file'], [`${D}/newdir/deeper/new.js`, true, 'in folders to be made'],
     [`${D}/.git/hooks/pre-commit`, false], [`${D}/.GIT/config`, false, 'any case'], [`${D}/.GitHub/workflows/x.yml`, false],
@@ -839,45 +846,126 @@ test('paths.plain: what an agent\'s change may touch without asking (Accept edit
     [`${D}/link/x.js`, false, 'a link on the way'], [`${D}/linkfile`, false, 'a link at the end'], [`${D}/hard`, false, 'a hard link'],
     [`${D}/dir`, false, 'a folder'], [`${D}/src/a.js/x`, false, 'below a file'], [`${D}/src/../.git/config`, false, 'not normalized'],
     ['src/a.js', false, 'relative'], [`${WS}/p1/a.js`, false, 'another folder'], [D, false, 'the folder itself'], [`${D}/a\0b`, false], [42, false],
-    // names a disk that folds them opens as a guarded one (ſ is s, ﬂ is fl, ß is ss): guarded too
+    // names a disk that folds them opens as a guarded one (ſ is s, ﬂ is fl, ß and ẞ are ss): guarded too
     [`${D}/.curſor/hooks.json`, false, 'folded'], [`${D}/.vſcode/tasks.json`, false, 'folded'], [`${D}/.huſky/pre-commit`, false, 'folded'],
     [`${D}/.mcp.jſon`, false, 'folded'], [`${D}/lſp.json`, false, 'folded'], [`${D}/.agentſ/x.md`, false, 'folded'],
+    [`${D}/docs/claẞ/pre-commit`, false, 'ẞ: another spelling of the link docs/class'], [`${D}/docs/claß/pre-commit`, false, 'ß the same'],
     // an entry there by another spelling (the disk could open it by this one): asked
     [`${D}/src/README.md`, false, 'another spelling of an entry'], [`${D}/SRC/a.js`, false, 'another spelling of a folder'],
-    // other editors' folders and what runs on a commit
+    // other editors' and agents' folders, what runs on a commit or an install
     [`${D}/.idea/workspace.xml`, false], [`${D}/.zed/settings.json`, false], [`${D}/app.code-workspace`, false], [`${D}/.pre-commit-config.yaml`, false],
-    [`${D}/lefthook.yml`, false], [`${D}/sub/lefthook-local.yaml`, false], [`${D}/tools/hooks/pre-commit`, false, 'core.hooksPath'],
-    [`${D}/Tools/Hooks/pre-push`, false, 'core.hooksPath, folded'], [`${D}/tools/build.js`, true, 'beside it'],
+    [`${D}/lefthook.yml`, false], [`${D}/sub/lefthook-local.yaml`, false], [`${D}/.lefthook-local.toml`, false], [`${D}/lefthook.jsonc`, false],
+    [`${D}/.lefthook/pre-commit/x.sh`, false], [`${D}/.githooks/pre-push`, false], [`${D}/.lintstagedrc.cjs`, false], [`${D}/lint-staged.config.mjs`, false],
+    [`${D}/.yarnrc.yml`, false], [`${D}/.pnpmfile.cjs`, false], [`${D}/.roo/rules.md`, false], [`${D}/.kiro/x`, false], [`${D}/.continue/config.json`, false],
+    [`${D}/.amazonq/x`, false], [`${D}/opencode.json`, false], [`${D}/opencode.jsonc`, false],
+    // core.hooksPath's top folder, in any case — and a path deeper than 64 parts
+    [`${D}/tools/hooks/pre-commit`, false, 'core.hooksPath'], [`${D}/Tools/Hooks/pre-push`, false, 'core.hooksPath, folded'], [`${D}/tools/build.js`, false, 'its top folder'],
+    [`${D}/${Array(65).fill('d').join('/')}/x.js`, false, 'deeper than 64 parts'], [`${D}/${Array(60).fill('d').join('/')}/x.js`, true, '61 parts'],
   ];
   const r = await call({ op: 'paths.plain', root: D, paths: cases.map((c) => c[0]) });
-  assert.deepEqual(r.plain, cases.map((c) => c[1]), JSON.stringify(cases.map((c, i) => [c[0], r.plain?.[i]]).filter(([, got], i) => got !== cases[i][1])));
-  // what git runs code from wherever its layout puts it: a "gitdir:" file's folder (its config, hooks, info/ …), the
-  // include.path and includeIf targets of its config (there yet or not), its core.fsmonitor program (and below it),
-  // a submodule's config — each in any spelling a folding disk opens
+  assert.deepEqual(r.plain, cases.map((c) => c[1]), JSON.stringify(cases.map((c, i) => [c[2] ?? c[0], r.plain?.[i]]).filter(([, got], i) => got !== cases[i][1])));
+  assert.equal(r.why, undefined);
+  // git's config not plainly harmless — or not read whole, or not as plainly written: nothing is plain, and why
+  const config = fs.readFileSync(path.join(D, '.git/config'), 'utf8');
+  const asked = async (what) => {
+    const x = await call({ op: 'paths.plain', root: D, paths: [`${D}/src/a.js`, `${D}/src/new.js`] });
+    assert.deepEqual(x.plain, [false, false], what);
+    assert.match(x.why ?? '', /./, what);
+    return x.why;
+  };
+  for (const [what, text] of [
+    ['an include', '[include]\n\tpath = ../x.inc\n'], ['an includeIf', '[includeIf "gitdir:/x/"]\n\tpath = x.inc\n'],
+    ['a key on the header line', '[core] hooksPath = githooks\n'], ['an fsmonitor command', '[core]\n\tfsmonitor = sh tools/mon.sh\n'],
+    ['an absolute hooksPath', `[core]\n\thooksPath = ${D}/hooks\n`], ['a hooksPath in ~', '[core]\n\thooksPath = ~/hooks\n'], ['a hooksPath with ..', '[core]\n\thooksPath = ../hooks\n'],
+    ['an alias', '[alias]\n\tst = !sh -c x\n'], ['a filter', '[filter "x"]\n\tclean = sh x\n'], ['git-lfs\'s filter, changed', '[filter "lfs"]\n\tclean = sh x\n'],
+    ['a diff driver', '[diff "x"]\n\ttextconv = sh x\n'], ['sshCommand', '[core]\n\tsshCommand = sh x\n'], ['a pager', '[core]\n\tpager = sh x\n'],
+    ['an ext:: url', '[remote "o"]\n\turl = ext::sh -c x\n'], ['uploadpack', '[remote "o"]\n\tuploadpack = sh x\n'],
+    ['a submodule update command', '[submodule "s"]\n\tupdate = !sh x\n'], ['git-lfs\'s custom transfer', '[lfs "customtransfer.x"]\n\tpath = sh\n'],
+    ['a continuation', '[core]\n\tfilemode = \\\ntrue\n'], ['an escape', '[user]\n\tname = a\\tb\n'], ['an inline comment', '[user]\n\tname = a # b\n'],
+    ['a quote inside', '[user]\n\tname = "a"b"\n'], ['the old [section.sub]', '[remote.origin]\n\turl = x\n'], ['not ASCII', '[user]\n\tname = Zoë\n'],
+    ['a bare CR', '[user]\r\tname = x\n'], ['credential', '[credential]\n\thelper = store\n'], ['gpg.program', '[gpg]\n\tprogram = sh\n'],
+    ['core.worktree', '[core]\n\tworktree = /x\n'], ['an editor', '[core]\n\teditor = vi\n'],
+  ]) {
+    fs.writeFileSync(path.join(D, '.git/config'), config + text);
+    await asked(what);
+  }
+  fs.writeFileSync(path.join(D, '.git/config'), config);
+  // the other configs git reads: config.worktree, a submodule's (any depth); each not a plain file (a link): the same
+  fs.writeFileSync(path.join(D, '.git/config.worktree'), '[core]\n\tfsmonitor = x\n');
+  assert.match(await asked('config.worktree'), /git settings may run programs/);
+  fs.rmSync(path.join(D, '.git/config.worktree'));
+  put('.git/modules/a/modules/b/config', '[alias]\n\tx = !x\n');
+  await asked('a submodule\'s submodule');
+  fs.rmSync(path.join(D, '.git/modules'), { recursive: true });
+  fs.renameSync(path.join(D, '.git/config'), path.join(D, '.git/config.real'));
+  fs.symlinkSync('config.real', path.join(D, '.git/config'));
+  assert.match(await asked('a config that is a link'), /could not be read whole/);
+  fs.rmSync(path.join(D, '.git/config'));
+  fs.renameSync(path.join(D, '.git/config.real'), path.join(D, '.git/config'));
+  assert.deepEqual((await call({ op: 'paths.plain', root: D, paths: [`${D}/src/a.js`] })).plain, [true], 'as it was');
+  // a link named like a guarded entry in the folder, or on a path's way: nothing of the request is plain
+  fs.symlinkSync(OUT, path.join(D, '.vscode'));
+  assert.match(await asked('.vscode a link in the folder'), /link named like/);
+  fs.rmSync(path.join(D, '.vscode'));
+  fs.symlinkSync(OUT, path.join(D, 'src/.husky'));
+  assert.match(await asked('.husky a link on the way'), /link named like/);
+  fs.rmSync(path.join(D, 'src/.husky'));
+  // the request's time is bounded: past it, the rest is not plain
+  let t = 0;
+  const paths = [`${D}/src/a.js`, `${D}/src/b.js`, `${D}/src/c.js`];
+  assert.deepEqual(coded.pathsPlain({ root: D, paths }, { now: () => (t += 1500) }).plain, [true, false, false]);
+  // a .git file followed only to a real folder of the workspace: its folder guarded whole; its config read the same way
   const E = path.join(WS, 'edits-gitdir');
   const putE = (rel, text = 'x') => { fs.mkdirSync(path.dirname(path.join(E, rel)), { recursive: true }); fs.writeFileSync(path.join(E, rel), text); };
   putE('.git', 'gitdir: tools/repo\n');
   putE('tools/repo/HEAD', 'ref: refs/heads/main\n');
-  putE('tools/repo/config', '[include]\n\tpath = ../../docs/git.inc\n[includeIf "gitdir:/x/"]\n\tpath = ../../conf/cond.inc\n[core]\n\tfsmonitor = scripts/fsmon.sh\n');
-  putE('tools/repo/hooks/pre-commit'); putE('tools/repo/modules/sub/config'); putE('scripts/fsmon.sh'); putE('src/a.js'); putE('tools/build.js');
+  putE('tools/repo/config', '[core]\n\tbare = false\n');
+  putE('src/a.js'); putE('tools/build.js');
   const gitCases = [
     [`${E}/tools/repo/config`, false, 'the gitdir\'s config'], [`${E}/tools/repo/hooks/pre-commit`, false, 'its hooks'],
-    [`${E}/tools/repo/info/attributes`, false, 'anything of its folder'], [`${E}/tools/repo/modules/sub/config`, false, 'a submodule\'s config'],
-    [`${E}/docs/git.inc`, false, 'an include.path target, not there yet'], [`${E}/conf/cond.inc`, false, 'an includeIf target'],
-    [`${E}/scripts/fsmon.sh`, false, 'the fsmonitor program'], [`${E}/scripts/fsmon.sh/x`, false, 'below it'],
-    [`${E}/DOCS/Git.inc`, false, 'an include target, folded'], [`${E}/conf/COND.inc`, false, 'folded'], [`${E}/tools/repo/ınfo/x`, false, 'below the gitdir, another spelling'],
-    [`${E}/src/a.js`, true, 'a plain file'], [`${E}/tools/build.js`, true, 'beside the gitdir'], [`${E}/docs/other.md`, true, 'beside an include target'],
+    [`${E}/tools/repo/info/attributes`, false, 'anything of its folder'], [`${E}/TOOLS/Repo/ınfo/x`, false, 'below the gitdir, another spelling'],
+    [`${E}/src/a.js`, true, 'a plain file'], [`${E}/tools/build.js`, true, 'beside the gitdir'],
   ];
   const g = await call({ op: 'paths.plain', root: E, paths: gitCases.map((c) => c[0]) });
   assert.deepEqual(g.plain, gitCases.map((c) => c[1]), JSON.stringify(gitCases.map((c, i) => [c[2], g.plain?.[i]]).filter(([, got], i) => got !== gitCases[i][1])));
+  putE('tools/repo/config', '[include]\n\tpath = ../../docs/git.inc\n');
+  assert.deepEqual((await call({ op: 'paths.plain', root: E, paths: [`${E}/src/a.js`] })).plain, [false], 'its config read the same way');
+  fs.writeFileSync(path.join(E, '.git'), `gitdir: ${OUT}\n`);
+  assert.match((await call({ op: 'paths.plain', root: E, paths: [`${E}/src/a.js`] })).why, /no real folder of the workspace/);
   fs.rmSync(E, { recursive: true });
-  // the workspace itself as the root: its projects' .git and configuration guarded the same way
+  // a monorepo's package: the repository above it decides; a project in no repository at all: its own paths alone
+  const M = path.join(WS, 'mono-edits'), P = path.join(M, 'pkg');
+  fs.mkdirSync(path.join(M, '.git'), { recursive: true });
+  fs.writeFileSync(path.join(M, '.git/HEAD'), 'ref: refs/heads/main\n');
+  fs.writeFileSync(path.join(M, '.git/config'), '[core]\n\tfsmonitor = sh mon.sh\n');
+  fs.mkdirSync(P);
+  assert.deepEqual((await call({ op: 'paths.plain', root: P, paths: [`${P}/a.js`] })).plain, [false], 'the repository above');
+  fs.writeFileSync(path.join(M, '.git/config'), '[core]\n\tbare = false\n');
+  fs.symlinkSync(OUT, path.join(M, '.github'));
+  assert.match((await call({ op: 'paths.plain', root: P, paths: [`${P}/a.js`] })).why, /link named like/, 'a guarded link at the git root');
+  fs.rmSync(path.join(M, '.github'));
+  assert.deepEqual((await call({ op: 'paths.plain', root: P, paths: [`${P}/a.js`] })).plain, [true]);
+  fs.rmSync(M, { recursive: true });
+  const N = path.join(WS, 'no-repo');
+  fs.mkdirSync(N);
+  assert.deepEqual((await call({ op: 'paths.plain', root: N, paths: [`${N}/a.js`] })).plain, [true], 'no repository: its own paths alone');
+  fs.rmSync(N, { recursive: true });
+  // the Workspace itself (no trust step there): nothing is plain
   const w = await call({ op: 'paths.plain', paths: [`${D}/src/a.js`, `${D}/.git/HEAD`] });
-  assert.deepEqual(w.plain, [true, false]);
+  assert.deepEqual(w.plain, [false, false]);
+  assert.match(w.why, /Workspace itself/);
   // refusals: a root that is not a project folder, too many paths, no list
   assert.ok((await call({ op: 'paths.plain', root: `${D}/link`, paths: [] })).error);
   assert.ok((await call({ op: 'paths.plain', root: D, paths: Array.from({ length: 201 }, () => `${D}/a`) })).error);
   assert.ok((await call({ op: 'paths.plain', root: D })).error);
   fs.rmSync(D, { recursive: true });
   fs.rmSync(path.join(OUT, 'h'));
+});
+
+test('gitConfigStrict: only what it reads plainly, the way git does', () => {
+  assert.deepEqual(coded.gitConfigStrict('[core]\r\n\tbare = false\r\n[remote "o"]\n\turl = "https://x"\n\tprune\n'),
+    [{ section: 'core', sub: null, key: 'bare', value: 'false' }, { section: 'remote', sub: 'o', key: 'url', value: 'https://x' }, { section: 'remote', sub: 'o', key: 'prune', value: null }]);
+  for (const bad of ['[core] bare = x\n', '[core]\n\tx = a\\\nb\n', '[core]\n\tx = "a" "b"\n', '[core\n', '[a "b\\"c"]\n', 'x = 1\n', '[core]\n\tx = é\n', '[core]\n\t1x = a\n']) {
+    assert.equal(coded.gitConfigStrict(bad), null, JSON.stringify(bad));
+  }
 });

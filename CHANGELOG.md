@@ -72,10 +72,15 @@ All notable changes to bedrock-now are documented here. The format follows
   marketplace by the tools' exact keys (parsed, at any depth — never a dependency named `eslint-plugin-react`), or that
   cannot be read the way the tool reads it, cannot be trusted either. What *Trust* confirms names the project and the
   reading. A link in `.github/` (whatever its name) is never trusted; only a real folder no pinned tool reads is
-  listed by its name alone. Accept edits also asks for `.idea/`, `.zed/`, `*.code-workspace`,
-  `.pre-commit-config.yaml`, lefthook's files and whatever git runs code from — a git folder wherever a `gitdir:`
-  file puts it, its hooks, configs and include targets, an fsmonitor program —, in any spelling a folding disk opens;
-  the watchlist also sees a git folder's `info/attributes`, `commondir` and a rebase's to-do list. An agent's config option other than
+  listed by its name alone. **Accept edits approves an agent's edit only where the
+  repository's git config is plainly harmless** — read with a strict grammar, every key one that never names a program
+  (`core.hooksPath` only as a plain folder of the repository) — and asks for every edit otherwise, saying why; never in
+  the Workspace itself, nor in a folder of your computer with no repository visible. It also asks for `.idea/`,
+  `.zed/`, `*.code-workspace`, `.pre-commit-config.yaml`, `.githooks/`, lefthook's and lint-staged's files,
+  `.yarnrc.yml`, `.pnpmfile.cjs`, other agents' folders (`.roo`, `.kiro`, `.continue`, `.amazonq`, `opencode.json`),
+  git's folders wherever a `gitdir:` file puts them, in any spelling a folding disk opens (to a fixpoint: `claẞ` is
+  `class`), and whenever an entry named like one of those is a link on the way; the watchlist also sees a git folder's
+  `info/attributes`, `commondir` and a rebase's to-do list. An agent's config option other than
   its mode, model and thinking level must say *ask*, whatever its name, and a session taken up again leaves an
   approve-everything mode as a new one does.
 - A conversation carried to another harness (or to a Chat model's new session) goes in as a quote that holds no

@@ -26,8 +26,13 @@ export const SETTINGS_FILES = Object.freeze(['.claude/settings.json', '.claude/s
 // (name: a folder listed by its name alone — no tool reads what it holds)
 const TYPES = ['file', 'link', 'big', 'other', 'name'];
 // fold(name) -> a name as a case-insensitive disk may match it (bn-coded's fold, the same): compatibility-normalized
-// (NFKC: ſ is s, ﬁ is fi) and case-folded in full (ß is ss) — every name here is compared folded
-export const fold = (name) => String(name).normalize('NFKC').toUpperCase().toLowerCase().normalize('NFKC');
+// (NFKC: ſ is s, ﬁ is fi) and case-folded in full (ß is ss) — every name here is compared folded — to a fixpoint (ẞ is ss)
+export const fold = (name) => {
+  // (again until nothing changes — ẞ lowers to ß, which folds to ss only on the next round —, at most 8 rounds)
+  let s = String(name), prev = null;
+  for (let i = 0; i < 8 && s !== prev; i++) { prev = s; s = s.replace(/\u1E9E/g, 'ss').normalize('NFKC').toUpperCase().toLowerCase().normalize('NFKC'); }
+  return s;
+};
 export const FILES_MAX = 500;
 // a name bn-coded may list (bn-coded from before rows said where they came from): the project's own .mcp.json, its
 // .claude (a link, not a folder) or a path under it — relative —, or a path under a .claude above it, absolute in

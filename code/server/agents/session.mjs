@@ -126,12 +126,17 @@ export class AgentSession {
 
   // plainEdit(paths) -> whether a change to these paths (absolute, as the agent names them) may go through without
   // asking in Accept edits: each one in the session's folder, outside .git/, .github, .vscode, .claude, .mcp.json and
-  // every tool's own configuration, no link on its way (bn-coded's paths.plain, in the sandbox). Anything it cannot
+  // every tool's own configuration, no link on its way, and the repository's git config plainly harmless (bn-coded's
+  // paths.plain, in the sandbox — its why, when nothing is plain there, said once in the session). Anything it cannot
   // say: no — the page asks.
   async plainEdit(paths) {
     if (!Array.isArray(paths) || !paths.length || paths.length > 200 || typeof this.mgr.plainPaths !== 'function') return false;
     try {
       const r = await this.mgr.plainPaths(this.cwd, paths);
+      if (typeof r?.why === 'string' && r.why && this.plainWhy !== r.why) {
+        this.plainWhy = r.why;
+        this.emit({ type: 'local', text: `Accept edits asks for every edit here: ${short(r.why, 300)}.`, said: short(r.why, 300), saidBy: 'sandbox' });
+      }
       return Array.isArray(r?.plain) && r.plain.length === paths.length && r.plain.every((x) => x === true);
     } catch (e) { this.mgr.log(`${this.harness} ${this.id.slice(0, 8)}: paths not checked (${short(e?.message || String(e), 200)}): asked`); return false; }
   }

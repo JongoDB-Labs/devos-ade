@@ -462,6 +462,21 @@ test('fold: the same in the code container as in bn-coded (names a disk that fol
   assert.equal(fold('.curſor'), '.cursor');
   assert.equal(fold('.ﬂ'), '.fl');
   assert.equal(fold('ß'), 'ss');
+  // to a fixpoint: ẞ lowers to ß, which folds to ss only on a second round (a disk that folds names opens claẞ as class)
+  assert.equal(fold('ẞ'), 'ss');
+  assert.equal(fold('claẞ'), 'class');
+  assert.equal(bnFold('claẞ'), 'class');
+  // every code point of planes 0–3 and 14: a fold is folded already, and the same whatever the case or the
+  // decomposition it was written in (what a disk that folds names in full and normalizes treats as one name)
+  const bad = [];
+  for (const [a, b] of [[0, 0x40000], [0xE0000, 0xF0000]]) {
+    for (let c = a; c < b; c++) {
+      if (c >= 0xD800 && c <= 0xDFFF) continue;
+      const x = String.fromCodePoint(c), f = fold(x);
+      if (fold(f) !== f || fold(x.toLowerCase()) !== f || fold(x.toUpperCase()) !== f || fold(x.normalize('NFD')) !== f || bnFold(x) !== f) bad.push(c.toString(16));
+    }
+  }
+  assert.deepEqual(bad.slice(0, 20), []);
   // and the folders of .github/ the pinned Copilot reads: the same list
   const t = await import('../server/trust.mjs');
   const b = await bnCoded();

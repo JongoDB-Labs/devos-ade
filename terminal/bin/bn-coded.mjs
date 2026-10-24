@@ -404,8 +404,13 @@ const TRASH = '.bedrock-now-trash';
 // --- the paths it works on to the folders it was given. ---
 // fold(name) -> a name as a case-insensitive disk may match it: compatibility-normalized (NFKC: ſ is s, ﬁ is fi …) and
 // case-folded in full (ß is ss) — more than one disk folds rather than less: every name here is compared folded, so a
-// spelling the Mac's disk opens as .cursor or lsp.json is read as that (code/server/trust.mjs fold: the same)
-export const fold = (name) => String(name).normalize('NFKC').toUpperCase().toLowerCase().normalize('NFKC');
+// spelling the Mac's disk opens as .cursor or lsp.json is read as that (code/server/trust.mjs fold: the same) — to a fixpoint (ẞ is ss)
+export const fold = (name) => {
+  // (again until nothing changes — ẞ lowers to ß, which folds to ss only on the next round —, at most 8 rounds)
+  let s = String(name), prev = null;
+  for (let i = 0; i < 8 && s !== prev; i++) { prev = s; s = s.replace(/\u1E9E/g, 'ss').normalize('NFKC').toUpperCase().toLowerCase().normalize('NFKC'); }
+  return s;
+};
 const SANDBOX_OWN = ['/home', '/workspace', '/tmp', '/run', '/etc', '/usr', '/opt', '/proc', '/sys', '/dev', '/var', '/srv', '/root', '/bin', '/sbin',
   '/lib', '/lib32', '/lib64', '/libx32', '/boot'];
 // claudePartsOk(p) -> false when a part of p is .claude (any case, folded) other than as …/.claude/worktrees/<name>[/…] (a
@@ -2696,48 +2701,272 @@ export function projectSettings(req) {
   return settingsFiles(rootArg(req?.root).abs, { text: req?.text !== false });
 }
 // The names an agent's change approved by Accept edits never touches, folded (fold) and at any depth: git's folder and
-// what runs on your computer when you open the folder or commit (Claude Code's own protected list, other editors'
-// folders, pre-commit and lefthook files), and every tool's own configuration (what the trust step lists); a
-// *.code-workspace file too, and whatever git runs code from (its folders, hooks, configs: gitLayout, pathsPlain)
+// what runs on your computer when you open the folder, commit or install (Claude Code's own protected list, other
+// editors' and agents' folders, git hook managers' and package managers' files), and every tool's own configuration
+// (what the trust step lists); and by pattern (EDIT_GUARDED_PATTERNS) lefthook's, lint-staged's and *.code-workspace
+// files. Whatever else git runs code from is decided from the repository's own config (gitPlainVerdict).
 export const EDIT_GUARDED = Object.freeze(['.git', '.claude', '.mcp.json', '.vscode', '.husky', '.devcontainer', '.devcontainer.json', '.envrc',
-  '.github', '.idea', '.zed', '.pre-commit-config.yaml', '.pre-commit-config.yml', 'lefthook.yml', 'lefthook.yaml', '.lefthook.yml',
-  '.lefthook.yaml', 'lefthook-local.yml', 'lefthook-local.yaml', ...AGENT_TREES, ...AGENT_FILES]);
+  '.github', '.idea', '.zed', '.pre-commit-config.yaml', '.pre-commit-config.yml', '.githooks', '.lefthook', '.lefthook-local', '.yarnrc.yml',
+  '.pnpmfile.cjs', '.roo', '.kiro', '.continue', '.amazonq', 'opencode.json', 'opencode.jsonc', ...AGENT_TREES, ...AGENT_FILES]);
+export const EDIT_GUARDED_PATTERNS = Object.freeze([/^\.?lefthook(-local)?\.(yml|yaml|toml|json|jsonc)$/, /^\.lintstagedrc/, /^lint-staged\.config\./,
+  /\.code-workspace$/]);
+const EDIT_GUARDED_SET = new Set(EDIT_GUARDED);
+export const guardedName = (x) => { const f = fold(x); return EDIT_GUARDED_SET.has(f) || EDIT_GUARDED_PATTERNS.some((re) => re.test(f)); };
 export const PLAIN_PATHS_MAX = 200;
-// paths.plain {root, paths} -> {plain: [bool]}: whether each path an agent says its change touches may be changed
-// without asking (the page's Accept edits): absolute, in the project's folder, no part of it in EDIT_GUARDED (folded:
-// a disk that folds names opens .curſor as .cursor), nothing git runs code from (a git folder wherever a "gitdir:"
-// file points, a hook folder, an fsmonitor program, a config file or an include target of one), each part that is there
-// spelled exactly as the folder lists it (never another entry the disk would open by a folded spelling), no link on
-// its way or at its end (a repository's link could lead to ~/.codex or .git/hooks), and — when it is there — a plain
-// file with no other name (a hard link). Anything else: false, and the page asks. (Checked, then the agent writes: what
-// changes in between is the watchlist's to see.)
-export function pathsPlain(req) {
+// a request's bounds: path parts (deeper: not plain), time (past it: the rest not plain), git's configs read
+export const PLAIN_DEPTH_MAX = 64, PLAIN_TIME_MS = 2000, GIT_CONFIGS_MAX = 64, GIT_CONFIG_BYTES = 64 << 10;
+
+// --- what git on your computer would run here, decided from the repository's own config: Accept edits approves an
+// --- edit only while that config is plainly harmless (gitPlainVerdict). Listing everything git runs code from does
+// --- not converge (include targets, fsmonitor commands, absolute hooks paths …); a config whose every key is one that
+// --- never names a program or a path git loads, read with a grammar stricter than git's, does.
+// The keys (section.key, or section.*.key for a subsection; ASCII-folded) whose value never names a program or a path
+// git or a tool of your computer loads — what clones, git itself, VS Code and the GitHub PR extension write
+const GIT_KEYS = new Set(['core.repositoryformatversion', 'core.filemode', 'core.bare', 'core.logallrefupdates', 'core.ignorecase',
+  'core.precomposeunicode', 'core.symlinks', 'core.autocrlf', 'core.eol', 'core.safecrlf', 'core.hookspath',
+  'remote.*.url', 'remote.*.pushurl', 'remote.*.fetch', 'remote.*.push', 'remote.*.tagopt', 'remote.*.prune', 'remote.*.mirror',
+  'remote.*.gh-resolved',
+  'branch.*.remote', 'branch.*.merge', 'branch.*.rebase', 'branch.*.pushremote', 'branch.*.description', 'branch.*.vscode-merge-base',
+  'branch.*.github-pr-owner-number', 'branch.*.github-pr-base-branch',
+  'user.name', 'user.email', 'user.signingkey',
+  'init.defaultbranch', 'pull.rebase', 'pull.ff', 'push.default', 'push.autosetupremote', 'fetch.prune', 'rerere.enabled',
+  'merge.conflictstyle', 'commit.gpgsign',
+  'submodule.*.url', 'submodule.*.active', 'submodule.*.branch', 'submodule.*.update',
+  'extensions.objectformat', 'extensions.refstorage', 'extensions.worktreeconfig',
+  'filter.lfs.clean', 'filter.lfs.smudge', 'filter.lfs.process', 'filter.lfs.required']);
+// (gc.* and color.* whole; lfs.* but the keys that name a program git-lfs runs)
+const GIT_KEY_SECTIONS = new Set(['gc', 'color', 'lfs']);
+const GIT_LFS_PROGRAMS = /^lfs\.(customtransfer|extension)\./;
+const GIT_LFS_FILTER = Object.freeze({ clean: 'git-lfs clean -- %f', smudge: 'git-lfs smudge -- %f', process: 'git-lfs filter-process', required: 'true' });
+const asciiLower = (s) => s.replace(/[A-Z]/g, (c) => c.toLowerCase());
+// gitConfigStrict(text) -> [{section, sub, key, value}] or null: only blank lines, whole-line # or ; comments, a header
+// alone on its line ([section] or [section "sub"], sub without \ or "), and key = value or a bare key; a value with no
+// \, # or ;, and " only as one fully quoted value; printable characters and tabs, CRLF or LF line ends
+export function gitConfigStrict(text) {
+  if (typeof text !== 'string' || /[^\x20-\x7e\t\r\n]/.test(text)) return null;
+  const out = [];
+  let section = null, sub = null;
+  for (const raw of text.split('\n')) {
+    if (raw.includes('\r') && !/^[^\r]*\r$/.test(raw)) return null;
+    const line = raw.replace(/\r$/, '').trim();
+    if (line === '' || /^[#;]/.test(line)) continue;
+    let m = line.match(/^\[([A-Za-z0-9-]+)(?:\s+"([^"\\]*)")?\]$/);
+    if (m) { section = asciiLower(m[1]); sub = m[2] ?? null; continue; }
+    if (line.startsWith('[') || section === null) return null;
+    m = line.match(/^([A-Za-z][A-Za-z0-9-]*)(?:\s*=\s*(.*))?$/);
+    if (!m) return null;
+    let value = m[2] === undefined ? null : m[2];
+    if (value !== null) {
+      if (/[\\#;]/.test(value)) return null;
+      if (value.includes('"')) {
+        const q = value.match(/^"([^"]*)"$/);
+        if (!q) return null;
+        value = q[1];
+      }
+    }
+    out.push({ section, sub, key: asciiLower(m[1]), value });
+  }
+  return out;
+}
+// a plain relative path inside the work tree: no ~, not absolute, no "." or ".." part, printable
+const plainRel = (v) => typeof v === 'string' && v !== '' && !v.startsWith('~') && !v.startsWith('/') && !/[\x00-\x1f\x7f\\]/.test(v)
+  && v.split('/').every((p) => p !== '' && p !== '.' && p !== '..');
+// gitKeyWhy(entry) -> why a config entry is not plainly harmless, or null; hooksPath: {hooksPath} when it is plain
+function gitKeyWhy({ section, sub, key, value }) {
+  const name = sub === null ? `${section}.${key}` : `${section}.*.${key}`;
+  const full = printable(sub === null ? `${section}.${key}` : `${section}.${sub}.${key}`, 100);
+  // (git-lfs's own filter, exactly as `git lfs install` writes it; any other filter runs a program)
+  if (section === 'filter') {
+    if (sub !== 'lfs' || !Object.hasOwn(GIT_LFS_FILTER, key)) return `${full}: a filter runs a program`;
+    return (value ?? 'true') === GIT_LFS_FILTER[key] ? null : `${full} is not git-lfs's own`;
+  }
+  if (section === 'lfs' && sub !== null && GIT_LFS_PROGRAMS.test(`lfs.${asciiLower(sub)}.`)) return `${full} names a program git-lfs runs`;
+  if (!GIT_KEYS.has(name) && !GIT_KEY_SECTIONS.has(section)) return `${full}: a setting this page does not know runs nothing`;
+  if ((name === 'remote.*.url' || name === 'remote.*.pushurl' || name === 'submodule.*.url') && /^\s*(ext|fd)::/i.test(value ?? '')) return `${full} runs a command (ext:: or fd::)`;
+  if (name === 'submodule.*.update' && !['checkout', 'rebase', 'merge', 'none'].includes(value ?? '')) return `${full} runs a command`;
+  if (name === 'core.hookspath') return plainRel(value) ? null : 'core.hooksPath is not a plain folder of the repository';
+  return null;
+}
+
+// gitPlainVerdict(root, look) -> {why: null | the reason no path is plain here, guarded: [absolute folded prefixes no
+// path may be at or below]} — what git on your computer would run here, from the repository's own config:
+//   - the repository: the first folder with a .git, from the project's up to the workspace (a folder of this
+//     computer: itself alone); a .git folder with its HEAD, or a "gitdir:" file followed only to a real folder in the
+//     workspace (and its commondir the same way); each such folder guarded whole
+//   - every config git reads for this checkout — the common one, the gitdir's, config.worktree, each submodule's
+//     (modules/**, at most GIT_CONFIGS_MAX) — read with gitConfigStrict, every key one of GIT_KEYS (core.hooksPath only
+//     as a plain relative path: its top folder guarded)
+// Anything else — another key, a file that cannot be read whole, a link, more than the caps — and nothing is plain:
+// the why is said to the page. The Workspace itself: nothing is plain (no trust there); a folder of this computer with
+// no repository in it: nothing is plain either (a repository on your computer around it is not visible here).
+export function gitPlainVerdict(root, look = folderLook()) {
+  const no = (why) => ({ why, guarded: [] });
+  if (root.abs === WORKSPACE) return no('in the Workspace itself every edit asks (it has no trust step)');
+  const host = root.top !== WORKSPACE;
+  const stop = host ? root.abs : WORKSPACE;
+  // a real folder in the workspace (a folder of this computer: in it), no link on its way
+  const realFolder = (abs) => {
+    const t = root.top;
+    if (abs !== t && !abs.startsWith(`${t}/`)) return false;
+    let at = t;
+    for (const part of abs.slice(t.length).split('/').filter(Boolean)) {
+      at = path.join(at, part);
+      let st;
+      try { st = fs.lstatSync(at); } catch { return false; }
+      if (st.isSymbolicLink() || !st.isDirectory()) return false;
+    }
+    return true;
+  };
+  const small = (abs) => {
+    let st;
+    try { st = fs.lstatSync(abs); } catch (e) { return e.code === 'ENOENT' ? '' : null; }
+    if (!st.isFile() || st.size > GIT_CONFIG_BYTES) return null;
+    try { return fs.readFileSync(abs, 'utf8'); } catch { return null; }
+  };
+  let workTree = null, gitdir = null;
+  for (let d = root.abs; ; d = path.dirname(d)) {
+    const names = look.names(d);
+    if (names === null) return no('a folder of the repository\'s could not be read');
+    const git = names.filter((n) => fold(n) === '.git');
+    if (git.length > 1) return no('more than one .git spelling in a folder');
+    if (git.length === 1) {
+      const g = path.join(d, git[0]);
+      let st;
+      try { st = fs.lstatSync(g); } catch { return no('its .git could not be read'); }
+      if (st.isSymbolicLink()) return no('its .git is a link');
+      if (st.isDirectory()) {
+        let head = null;
+        try { head = fs.lstatSync(path.join(g, 'HEAD')); } catch { /* none: not a repository — git goes on up */ }
+        if (head?.isFile()) { workTree = d; gitdir = g; break; }
+      } else if (st.isFile()) {
+        const m = (small(g) || '').match(/^gitdir:[ \t]*([^\r\n]+?)[ \t]*\r?\n?$/);
+        const to = m ? path.resolve(d, m[1]) : null;
+        if (!to || !realFolder(to)) return no('its .git file leads to no real folder of the workspace');
+        workTree = d; gitdir = to;
+        break;
+      } else return no('its .git is not a folder or a file');
+    }
+    if (d === stop || d === '/' || d === WORKSPACE) break;
+  }
+  if (!gitdir) return host ? no('a folder of your computer with no repository in it here: one around it there is not visible') : { why: null, guarded: [] };
+  // its commondir (a linked worktree's): the same rules
+  let common = gitdir;
+  const cd = small(path.join(gitdir, 'commondir'));
+  if (cd === null) return no('its commondir could not be read');
+  if (cd !== '') {
+    const m = cd.match(/^([^\r\n]+?)[ \t]*\r?\n?$/);
+    const to = m ? path.resolve(gitdir, m[1]) : null;
+    if (!to || !realFolder(to)) return no('its commondir leads to no real folder of the workspace');
+    common = to;
+  }
+  const guarded = [...new Set([gitdir, common])];
+  // every config git reads for this checkout — and a stray one beside it, and every submodule's
+  const configs = [path.join(common, 'config'), path.join(gitdir, 'config'), path.join(gitdir, 'config.worktree'), path.join(common, 'config.worktree')];
+  const modules = (dir, depth) => {
+    const m = path.join(dir, 'modules');
+    let st;
+    try { st = fs.lstatSync(m); } catch { return true; }
+    if (st.isSymbolicLink() || !st.isDirectory() || depth > 8) return false;
+    let names;
+    try { names = fs.readdirSync(m); } catch { return false; }
+    for (const n of names) {
+      const sub = path.join(m, n);
+      let s;
+      try { s = fs.lstatSync(sub); } catch { return false; }
+      if (s.isSymbolicLink()) return false;
+      if (!s.isDirectory()) continue;
+      configs.push(path.join(sub, 'config'));
+      if (configs.length > GIT_CONFIGS_MAX || !modules(sub, depth + 1)) return false;
+    }
+    return true;
+  };
+  if (!modules(common, 0)) return no('its submodules\' folders could not all be read (or are too many)');
+  for (const c of [...new Set(configs)]) {
+    const text = small(c);
+    if (text === null) return no('a git config of it could not be read whole (a link, too large, not a file)');
+    const entries = gitConfigStrict(text);
+    if (entries === null) return no('a git config of it is written in a way this page does not read (include, continuation lines, quoting, escapes …)');
+    for (const e of entries) {
+      const why = gitKeyWhy(e);
+      if (why) return no(`this repository's git settings may run programs (${why})`);
+      if (e.section === 'core' && e.key === 'hookspath') {
+        // (its folders as far as they are there: real ones, never a link)
+        let at = workTree;
+        for (const part of e.value.split('/')) {
+          at = path.join(at, part);
+          let st;
+          try { st = fs.lstatSync(at); } catch (x) { if (x.code === 'ENOENT') break; return no('core.hooksPath could not be read'); }
+          if (st.isSymbolicLink() || !st.isDirectory()) return no('core.hooksPath leads through a link or a file');
+        }
+        guarded.push(path.join(workTree, e.value.split('/')[0]));
+      }
+    }
+  }
+  return { why: null, guarded: guarded.map(fold) };
+}
+// folderLook() -> a request's view of folders: each listed once (its names, and their folded forms), null when it
+// cannot be
+function folderLook() {
+  const seen = new Map();
+  const names = (dir) => {
+    if (!seen.has(dir)) { let l = null; try { l = fs.readdirSync(dir); } catch { l = null; } seen.set(dir, l && { list: l, folded: l.map(fold) }); }
+    return seen.get(dir)?.list ?? null;
+  };
+  const folded = (dir) => (names(dir) === null ? null : seen.get(dir).folded);
+  return { names, folded };
+}
+
+// paths.plain {root, paths} -> {plain: [bool], why?}: whether each path an agent says its change touches may be changed
+// without asking (the page's Accept edits). Nothing is plain — why says so, for the page — when git's config here is
+// not plainly harmless (gitPlainVerdict), or when an entry named like a guarded one (guardedName) is a link in the
+// project's folder, the git root, a folder between them or a folder on a path's way. Else a path is plain when it is
+// absolute, in the project's folder, at most PLAIN_DEPTH_MAX parts, no part of it guarded (folded: a disk that folds
+// names opens .curſor as .cursor), not at or below a git folder or core.hooksPath's top folder, each part that is
+// there spelled exactly as its folder lists it (never another entry the disk would open by a folded spelling), no link
+// on its way or at its end, and — when it is there — a plain file with no other name (a hard link); a request answered
+// within PLAIN_TIME_MS (past it: the rest not plain). (Checked, then the agent writes: what changes in between is the
+// watchlist's to see — docs/security.md.)
+export function pathsPlain(req, { now = Date.now } = {}) {
   const root = rootArg(req?.root);
   const list = Array.isArray(req?.paths) ? req.paths : null;
   if (!list || list.length > PLAIN_PATHS_MAX) throw new Error(`paths: a list of at most ${PLAIN_PATHS_MAX}`);
-  const guarded = new Set(EDIT_GUARDED);
-  const guardedName = (x) => { const f = fold(x); return guarded.has(f) || f.endsWith('.code-workspace'); };
-  // what git on your computer runs code from here (gitLayout, folded): every git folder — a "gitdir:" file's, wherever
-  // it points in the folder, and its commondir — whole, the folders it runs hooks from (core.hooksPath, .git/hooks,
-  // .husky, a submodule's) and each core.fsmonitor program, and anything below them; each config file it reads (its
-  // include.path and includeIf targets, there yet or not, a submodule's config). Not known (gitLayout failed, or left
-  // something out): nothing is plain
-  const layout = (() => { try { return gitLayout(root); } catch { return null; } })();
-  const below = layout ? [...layout.gitdirs, ...layout.hookDirs, ...layout.moduleHookDirs, ...layout.fsmonitor].map(fold) : null;
-  const exact = layout ? new Set([...layout.configs, ...layout.moduleConfigs].map(fold)) : null;
-  const gits = (rel) => { const f = fold(rel); return exact.has(f) || below.some((h) => f === h || f.startsWith(`${h}/`)); };
+  const t0 = now();
+  const look = folderLook();
+  const none = (why) => ({ plain: list.map(() => false), why });
+  const git = gitPlainVerdict(root, look);
+  if (git.why) return none(git.why);
+  // a link named like a guarded entry in this folder: nothing is plain (it could lead an edit into .git or ~/.codex)
+  const linked = (dir) => {
+    const names = look.names(dir);
+    if (names === null) return 'a folder on the way could not be read';
+    for (const n of names) {
+      if (!guardedName(n)) continue;
+      let st;
+      try { st = fs.lstatSync(path.join(dir, n)); } catch { return 'an entry on the way could not be read'; }
+      if (st.isSymbolicLink()) return `${printable(n, 60)} is a link`;
+    }
+    return null;
+  };
+  // the project's folder, and the folders above it to the git root (the first with a .git; none: itself alone)
+  for (let d = root.abs; ; d = path.dirname(d)) {
+    const why = linked(d);
+    if (why) return none(`a link named like git's or a tool's own folder (${why})`);
+    if ((look.names(d) ?? []).some((n) => fold(n) === '.git') || d === root.top || d === '/' || d === WORKSPACE) break;
+  }
   const one = (p) => {
+    if (now() - t0 > PLAIN_TIME_MS) return false;
     if (typeof p !== 'string' || !p.startsWith('/') || p.length > 4096 || p.includes('\0') || path.resolve(p) !== p || !inRoot(p, root) || p === root.abs) return false;
     const rel = p.slice(root.abs.length + 1), parts = rel.split('/');
-    if (parts.some(guardedName)) return false;
-    if (!layout || layout.truncated || gits(rel)) return false;
+    if (parts.length > PLAIN_DEPTH_MAX || parts.some(guardedName)) return false;
+    const f = fold(p);
+    if (git.guarded.some((g) => f === g || f.startsWith(`${g}/`))) return false;
     let at = root.abs;
     for (let i = 0; i < parts.length; i++) {
-      let names;
-      try { names = fs.readdirSync(at); } catch { return false; }
+      const names = look.names(at), folded = look.folded(at);
+      if (names === null) return false;
       // (not there by this spelling: a new name — unless the disk would open another entry by it; nothing further is
       // there either)
-      if (!names.includes(parts[i])) return !names.some((n) => fold(n) === fold(parts[i]));
+      if (!names.includes(parts[i])) return !folded.includes(fold(parts[i]));
       at = path.join(at, parts[i]);
       let st;
       try { st = fs.lstatSync(at); } catch { return false; }
@@ -2746,7 +2975,25 @@ export function pathsPlain(req) {
     }
     return true;
   };
-  return { plain: list.map(one) };
+  const plain = [];
+  for (const p of list) {
+    // (a folder on this path's way with a link named like a guarded entry: nothing of the request is plain)
+    if (typeof p === 'string' && p.startsWith('/') && inRoot(p, root) && p !== root.abs && path.resolve(p) === p) {
+      let at = root.abs;
+      for (const part of p.slice(root.abs.length + 1).split('/').slice(0, -1).slice(0, PLAIN_DEPTH_MAX)) {
+        at = path.join(at, part);
+        if ((look.names(path.dirname(at)) ?? []).includes(part)) {
+          let st = null;
+          try { st = fs.lstatSync(at); } catch { st = null; }
+          if (!st?.isDirectory()) break;
+          const why = linked(at);
+          if (why) return none(`a link named like git's or a tool's own folder (${why})`);
+        } else break;
+      }
+    }
+    plain.push(one(p));
+  }
+  return { plain };
 }
 // project.trash {root} -> {trash}: Remove from Code with its folder — the project's folder itself (a real folder of
 // the workspace, every part of its path too: never through a link, never the workspace) moved to the workspace's trash
