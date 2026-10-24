@@ -291,3 +291,58 @@ def code_harness(ctx):
     shot(page, "s5-code-who-answers")
     page.keyboard.press("Escape")
     return "Who answers: five subscriptions listed (none signed in); Copilot's real ACP agent started and ended at \"not signed in\"; Claude on your plan off (409)"
+
+
+# --- the terminal's way out the direct one (TERMINAL_EGRESS=host: tests/e2e/run.sh --host-egress, its own throwaway
+# --- bne2e-hostegress): Chat's sandbox goes out through a proxy of its own, so your subscriptions stay Chat models ---
+HOST_EGRESS = (ENV.get("TERMINAL_EGRESS") or "").strip().lower() == "host"
+
+
+def need_host_egress():
+    need_on()
+    if not HOST_EGRESS:
+        raise Skip("needs TERMINAL_EGRESS=host (tests/e2e/run.sh --host-egress, project bne2e-hostegress)")
+    if ENV.get("CODE_ENABLED") != "true":
+        raise Skip("needs the Code page (it runs your subscriptions' agents)")
+
+
+@check("http", "subscriptions-chat-host-egress")
+def chat_host_egress(ctx):
+    """With the terminal on the internet directly: no Chat model is "off" for it (chat-egress-off) — one not signed in
+    for Chat says so (Sign in for Chat…), Claude on your plan is off by its own switch, the terminal is here."""
+    need_host_egress()
+    r = http("GET", None, "/api/answers", H, cookie=ctx.session())
+    expect(r.status == 200, f"/api/answers: HTTP {r.status}")
+    d = json.loads(r.body)
+    expect(d["terminal"] == {"enabled": True, "here": True, "reason": None}, f"terminal {d['terminal']}")
+    expect(d.get("chat_checked_at"), "Chat's own sign-ins were not checked (subs-chat's status): nothing to tell signed in from not")
+    pm = {m["tool"]: m for m in d["plan_models"]}
+    expect(set(pm) == {"claude", "codex", "copilot", "grok"}, f"Chat models {sorted(pm)}")
+    off = [t for t, m in pm.items() if m.get("reason") == "chat-egress-off" or "no internet" in (m.get("why") or "")]
+    expect(not off, f"greyed as off with host egress: {off}")
+    for t in ("codex", "grok"):
+        expect(pm[t]["reason"] == "chat-signin" and pm[t]["signin"] is True and pm[t]["why"].startswith("Sign in for Chat"),
+               f"{t}: {pm[t]}")
+    expect(pm["claude"]["reason"] == "claude-plan-off", f"claude: {pm['claude']}")
+    return "with TERMINAL_EGRESS=host: codex and grok \"Sign in for Chat\" (not \"off\"), claude off by its switch, copilot " + \
+        ("listed" if pm["copilot"]["ok"] else pm["copilot"]["why"])
+
+
+@check("browser", "subscriptions-chat-host-egress-picker")
+def chat_host_egress_picker(ctx):
+    """The same in Chat's Who answers: Sign in for Chat… for Codex and Grok, never a greyed "no internet" item."""
+    need_host_egress()
+    page, rec = ctx.page("subscriptions-chat-host-egress")
+    login(page)
+    page.click(".tab[data-tab=chat]")
+    page.locator("#answers-chat").wait_for(timeout=15000)
+    page.wait_for_function("() => document.querySelectorAll('#answers-chat option').length > 0", timeout=20000)
+    vals = dict(page.eval_on_selector_all("#answers-chat option", "os => os.map(o => [o.value, o.disabled])"))
+    for t in ("codex", "grok"):
+        expect(vals.get(f"signin:{t}") is False, f"{t}: no 'Sign in for Chat…' entry: {sorted(vals)}")
+    expect(not any(v.startswith("setup:chat-egress-off:") for v in vals), f"a greyed 'no internet' item: {sorted(vals)}")
+    shot(page, "s6-chat-host-egress")
+    probs = rec.problems()
+    rec.save()
+    expect(not probs, f"errors: {probs[:6]}")
+    return "Chat's Who answers with host egress: Sign in for Chat… for Codex and Grok, no \"no internet\" item"

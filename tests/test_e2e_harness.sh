@@ -379,3 +379,26 @@ test_e2e_host_folders_a_parent_stack_project_refuses_is_said_at_once() {
   out="$(E2E_HOST_FOLDERS_DIR="$TMP/there" bash "$STACK_DIR/tests/e2e/run.sh" --host-folders --project bne2e-hf --aws-env /nonexistent 2>&1)" && return 1
   assert_contains "$out" "is there already"
 }
+
+# --host-egress: a throwaway of its own (bne2e-hostegress), with the Code page, never with --git-server — refused before
+# anything is set up (no docker, no setup); its checks after the browser part, TERMINAL_EGRESS=off last
+test_host_egress_runs_in_its_own_throwaway() {
+  local out rc
+  for args in "--project bne2e-x" "--no-code" "--git-server"; do
+    rc=0
+    # shellcheck disable=SC2086  # the words of one case
+    out="$(cd "$TMP" && bash "$STACK_DIR/tests/e2e/run.sh" --host-egress $args --aws-env /nonexistent 2>&1)" || rc=$?
+    assert_eq "$rc" 2
+    assert_contains "$out" "--host-egress"
+  done
+  local r; r="$(cat "$STACK_DIR/tests/e2e/run.sh")"
+  assert_contains "$r" '[ "$PROJECT_GIVEN" = 1 ] || PROJECT=bne2e-hostegress'
+  assert_contains "$r" '[ "$GIT_SERVER" = 0 ] && [ "$HOST_EGRESS" = 0 ] || set_env TERMINAL_EGRESS host'
+  # (its section after the browser part; the switch to off by the scripted apply, its order from Docker's events)
+  local b h
+  b="$(grep -n '^# --- 3\. the browser suite' "$STACK_DIR/tests/e2e/run.sh" | cut -d: -f1)"
+  h="$(grep -n '^# --- 3a5\. the terminal' "$STACK_DIR/tests/e2e/run.sh" | cut -d: -f1)"
+  [ -n "$b" ] && [ -n "$h" ] && [ "$h" -gt "$b" ] || { echo "the host-egress checks are not after the browser part ($b, $h)" >&2; return 1; }
+  assert_contains "$r" 'config apply --stdin < "$LOGS/hostegress-off.in"'
+  assert_contains "$r" '[ "$gone" -lt "$back" ]'
+}

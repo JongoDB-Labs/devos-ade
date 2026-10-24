@@ -103,6 +103,16 @@
 #                    copy that keeps one). From inside the sandbox: the first secret nowhere, the kept one in its MCP
 #                    configuration, the skill there, the Git name and email its ~/.gitconfig's; the fake home
 #                    unchanged; consent --revoke forgets; an open after it refused. The fake home goes at the end.
+#   --host-egress    the terminal's way out the direct one (E2E_HOST_EGRESS=1 does the same; needs the Code page), in a
+#                    throwaway of its own: project bne2e-hostegress (the default with this option; no other name is
+#                    taken). Chat's sandbox then goes out through an egress proxy of its own (compose.code-egress.yaml):
+#                    hostegress/chat-egress-healthy (up and healthy), hostegress/chat-sandbox-routes (subs-chat on
+#                    chat-proxy alone; ./stack test's checks of it: no route around the proxy, 403 through it for this
+#                    computer, the metadata and private addresses and the stack's containers), browser/subscriptions-
+#                    chat-host-egress and -picker (Chat's models say "Sign in for Chat", never "off"), and last
+#                    hostegress/off-removes-chat-egress-first (./stack config apply TERMINAL_EGRESS=off: chat-egress gone —
+#                    by Docker's own events — before subs-chat is started again, with no network; the proxy's
+#                    networks gone). terminal-isolation (the terminal's proxy's checks) skips. Run it only when asked.
 #   --helper         also run the throwaway's update helper (E2E_HELPER=1 does the same), so the settings/* checks run:
 #                    its own bin/bedrock-now-helper in the foreground, as a background child of this run (never
 #                    ./stack helper install: no launchd agent, no systemd unit), SETTINGS_MIN_INTERVAL_S=5, log in
@@ -137,11 +147,13 @@ HOST_FOLDERS=0; [ "${E2E_HOST_FOLDERS:-0}" != 1 ] || HOST_FOLDERS=1
 HOST_SESSIONS=0; [ "${E2E_HOST_SESSIONS:-0}" != 1 ] || HOST_SESSIONS=1
 HOST_CONFIG=0; [ "${E2E_HOST_CONFIG:-0}" != 1 ] || HOST_CONFIG=1
 SUBSCRIPTIONS=0; [ "${E2E_SUBSCRIPTIONS:-0}" != 1 ] || SUBSCRIPTIONS=1
+HOST_EGRESS=0; [ "${E2E_HOST_EGRESS:-0}" != 1 ] || HOST_EGRESS=1
+PROJECT_GIVEN=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --out) OUT="${2:?--out needs a directory}"; shift 2 ;;
     --work) WORK="${2:?--work needs a directory}"; shift 2 ;;
-    --project) PROJECT="${2:?--project needs a name}"; shift 2 ;;
+    --project) PROJECT="${2:?--project needs a name}"; PROJECT_GIVEN=1; shift 2 ;;
     --aws-env) AWS_ENV_FILE="${2:?--aws-env needs a file}"; shift 2 ;;
     --keep) KEEP=1; shift ;;
     --reuse) REUSE=1; KEEP=1; shift ;;
@@ -158,6 +170,7 @@ while [ $# -gt 0 ]; do
     --host-sessions) HOST_SESSIONS=1; shift ;;
     --host-config) HOST_CONFIG=1; shift ;;
     --subscriptions) SUBSCRIPTIONS=1; shift ;;
+    --host-egress) HOST_EGRESS=1; shift ;;
     --only) ONLY="${2:?--only needs a list (cli,browser,voice,claude,mutating)}"; shift 2 ;;
     -h | --help) awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) echo "unknown option: $1 (tests/e2e/run.sh --help)" >&2; exit 2 ;;
@@ -165,6 +178,13 @@ while [ $# -gt 0 ]; do
 done
 
 [ "$CODE" = 0 ] || TERMINAL=1   # (the Code page runs in the terminal's sandbox)
+# --host-egress: a throwaway of its own (bne2e-hostegress), never the others' — and with the Code page (Chat's sandbox)
+if [ "$HOST_EGRESS" = 1 ]; then
+  [ "$PROJECT_GIVEN" = 1 ] || PROJECT=bne2e-hostegress
+  [ "$PROJECT" = bne2e-hostegress ] || { echo "--host-egress runs in its own throwaway: --project bne2e-hostegress (or none), not '$PROJECT'" >&2; exit 2; }
+  [ "$CODE" = 1 ] || { echo "--host-egress needs the Code page (Chat's sandbox runs with it): not with --no-code" >&2; exit 2; }
+  [ "$GIT_SERVER" = 0 ] || { echo "--host-egress and --git-server: one at a time" >&2; exit 2; }
+fi
 
 # shellcheck source=tests/e2e/lib.sh
 . "$HERE/lib.sh"
@@ -345,8 +365,9 @@ stage() {
     set_env CODE_ENABLED false
     [ "$TERMINAL" = 1 ] || set_env TERMINAL_ENABLED false
   fi
-  # --git-server: the sandbox on the terminal-out network, where the suite's git server joins it
-  [ "$GIT_SERVER" = 0 ] || set_env TERMINAL_EGRESS host
+  # --git-server: the sandbox on the terminal-out network, where the suite's git server joins it; --host-egress: the
+  # same way out, Chat's sandbox through a proxy of its own
+  [ "$GIT_SERVER" = 0 ] && [ "$HOST_EGRESS" = 0 ] || set_env TERMINAL_EGRESS host
   ( umask 022; mkdir -p "$STACK/.state/update-check" )
   chmod 700 "$STACK/.state"; : > "$STACK/.state/portal-password-shown"
   # The portal's daily release check counts as done: no GitHub call during the run, and nothing races the update
@@ -478,6 +499,7 @@ if [ "$TERMINAL" = 1 ]; then
   t0="$(now)"
   tc="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=terminal)"
   if [ "$GIT_SERVER" = 1 ]; then record terminal terminal-isolation SKIP 0 "TERMINAL_EGRESS=host for the suite's git server (--git-server): the egress proxy's checks do not apply"
+  elif [ "$HOST_EGRESS" = 1 ]; then record terminal terminal-isolation SKIP 0 "TERMINAL_EGRESS=host (--host-egress): the terminal's egress proxy's checks do not apply (Chat's own: hostegress/*)"
   elif [ -z "$tc" ]; then record terminal terminal-isolation FAIL 0 "no running terminal container"
   else
     # (on Docker's default bridge: with --network none, --add-host writes no hosts entry)
@@ -1280,6 +1302,44 @@ JS
     case " $wins " in *" claude:codex "*) case " $wins " in *" chat-grok:grok "*) wins="ok $wins" ;; esac ;; esac
     case "$wins" in ok*) record subscriptions picker-windows PASS 0 "tmux: ${wins#ok }" ;;
       *) record subscriptions picker-windows FAIL 0 "tmux: $wins (want claude:codex and chat-grok:grok)" ;; esac
+  fi
+fi
+
+# --- 3a5. the terminal's way out the direct one (--host-egress): Chat's own egress proxy, then off ---
+# (after the browser part, whose subscriptions-chat-host-egress checks need host egress; off is the last of the run's
+# changes to the way out)
+if [ "$HOST_EGRESS" = 1 ]; then
+  say "host egress: Chat's own proxy, Chat's sandbox's routes, then TERMINAL_EGRESS=off"
+  t0="$(now)"
+  ce="$(svc_id chat-egress | head -n 1)"; sc="$(svc_id subs-chat | head -n 1)"
+  h="$( [ -n "$ce" ] && docker inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' "$ce" 2>/dev/null)"
+  if [ "$h" = "running healthy" ]; then record hostegress chat-egress-healthy PASS "$(( $(now) - t0 ))" "chat-egress running and healthy"
+  else record hostegress chat-egress-healthy FAIL "$(( $(now) - t0 ))" "chat-egress: ${h:-no container}"; fi
+  t0="$(now)"
+  nets="$( [ -n "$sc" ] && docker inspect --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$sc" 2>/dev/null | tr -s ' ' | sed 's/ $//')"
+  st test > "$LOGS/hostegress-test.log" 2>&1; redact "$LOGS/hostegress-test.log"
+  okp="$(grep -c -E '^ *ok +Chat'"'"'s (own egress proxy healthy|sandbox: no route around its own proxy)' "$LOGS/hostegress-test.log" || true)"
+  if [ "$nets" = "${PROJECT}_chat-proxy" ] && [ "$okp" = 2 ]; then
+    record hostegress chat-sandbox-routes PASS "$(( $(now) - t0 ))" "subs-chat on ${PROJECT}_chat-proxy alone; ./stack test: no route around Chat's proxy, 403 through it for this computer, LiteLLM's port, the metadata and private addresses, ::1 and the stack's containers"
+  else record hostegress chat-sandbox-routes FAIL "$(( $(now) - t0 ))" "subs-chat's networks: '${nets:-?}'; ./stack test's Chat checks ok: $okp of 2 ($LOGS/hostegress-test.log)"; fi
+  # off: Chat's proxy gone before Chat's sandbox is started again (Docker's own events, by the Compose service label)
+  t0="$(now)"; since="$(date +%s)"
+  sleep 1
+  printf 'set TERMINAL_EGRESS %s\n' "$(printf off | openssl base64 -A)" > "$LOGS/hostegress-off.in"
+  ( clean_env; cd "$STACK" && "$NOTTY" "$STACK/stack" config apply --stdin < "$LOGS/hostegress-off.in" ) > "$LOGS/hostegress-off.log" 2>&1; rc=$?
+  redact "$LOGS/hostegress-off.log"
+  sleep 1
+  docker events --since "$since" --until "$(date +%s)" --filter "label=com.docker.compose.project=$PROJECT" --filter type=container \
+    --format '{{.TimeNano}} {{index .Actor.Attributes "com.docker.compose.service"}} {{.Action}}' > "$LOGS/hostegress-events.log" 2>&1 || true
+  gone="$(awk '$2 == "chat-egress" && ($3 == "kill" || $3 == "die" || $3 == "stop" || $3 == "destroy") { print $1; exit }' "$LOGS/hostegress-events.log")"
+  back="$(awk '$2 == "subs-chat" && $3 == "start" { print $1; exit }' "$LOGS/hostegress-events.log")"
+  sc="$(svc_id subs-chat | head -n 1)"
+  mode="$( [ -n "$sc" ] && docker inspect --format '{{.HostConfig.NetworkMode}}' "$sc" 2>/dev/null)"
+  left="$(svc_id chat-egress | head -n 1)$(docker network ls --format '{{.Name}}' 2>/dev/null | grep -E "^${PROJECT}_chat-(proxy|out)\$" | tr '\n' ' ')"
+  if [ "$rc" = 0 ] && [ -n "$gone" ] && [ -n "$back" ] && [ "$gone" -lt "$back" ] && [ "$mode" = none ] && [ -z "$left" ]; then
+    record hostegress off-removes-chat-egress-first PASS "$(( $(now) - t0 ))" "TERMINAL_EGRESS=off: chat-egress gone $(( (back - gone) / 1000000 )) ms before subs-chat started again, with no network; chat-egress and its networks gone"
+  else
+    record hostegress off-removes-chat-egress-first FAIL "$(( $(now) - t0 ))" "apply exit $rc; chat-egress gone at ${gone:-never}, subs-chat started at ${back:-never}; subs-chat's network mode '${mode:-?}'; left: '${left}' ($LOGS/hostegress-events.log, $LOGS/hostegress-off.log)"
   fi
 fi
 
