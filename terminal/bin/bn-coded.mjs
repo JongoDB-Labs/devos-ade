@@ -2582,15 +2582,20 @@ export function settingsFiles(abs, { text = false } = {}) {
   // the plugins the folder's own settings turn on, with what the sandbox has installed of each (the code container
   // lists each one installed, and never trusts one that is not: Claude Code could fetch it) — in the hash, so a
   // plugin updated or removed since is looked at again
+  // Claude on your plan has a record of its own (claude-sub's folder): the same plugins, as installed there, with a hash
+  // of their own (planHash) — its sessions apply the folder's settings only while that one is trusted
   const pl = enabledPluginsOf(abs, files);
+  const pp = pl ? enabledPluginsOf(abs, files, PLAN_PLUGIN_RECORD()) : null;
   const rows = files.map((f) => [f.name, f.type, f.sha256 ?? null, f.target ?? null]);
-  const hash = files.length ? sha256(JSON.stringify(pl ? { files: rows, plugins: pl.plugins, registry: pl.registry } : rows)) : null;
+  const hashWith = (x) => (files.length ? sha256(JSON.stringify(x ? { files: rows, plugins: x.plugins, registry: x.registry } : rows)) : null);
+  const hash = hashWith(pl);
   const verifiable = !over && files.every((f) => f.readable === true);
   for (const f of files) delete f.readable;
-  return { files, hash, verifiable, over, ...(pl ?? {}) };
+  return { files, hash, verifiable, over, ...(pl ? { ...pl, planPlugins: pp.plugins, planRegistry: pp.registry, planHash: hashWith(pp) } : {}) };
 }
 // The sandbox's own plugins (Claude Code's record of what is installed, in its folder)
 export const PLUGIN_RECORD = () => path.join(CONFIG_DIR, 'plugins', 'installed_plugins.json');
+export const PLAN_PLUGIN_RECORD = () => path.join(PLAN_DIR, 'plugins', 'installed_plugins.json');
 // enabledPluginsOf(abs, files) -> {plugins: [{id, installed, versions: [{version, commit}]}] (by id), registry: ok |
 // none | unreadable}, or null when the folder's own .claude/settings*.json turn no plugin on (enabledPlugins, in any
 // case, at the top level: an object's keys whose value is not false, an array's strings — as the code container reads

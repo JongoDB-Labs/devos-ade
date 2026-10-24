@@ -45,7 +45,9 @@ All notable changes to bedrock-now are documented here. The format follows
   an empty `.git` folder no longer ends the walk up. Every project trusted before is asked about again. A project's
   Claude Code settings that add a plugin marketplace (`extraKnownMarketplaces`) cannot be trusted; each plugin its
   `enabledPlugins` turns on is listed in the dialog when it is installed in the sandbox already (its version is part
-  of what you trust), and one that is not installed there cannot be trusted. Another tool's file that names plugins or
+  of what you trust), and one that is not installed there cannot be trusted; any other setting naming plugins or a
+  marketplace cannot be trusted either. Claude on your plan checks its own installed plugins: a plugin it has not
+  installed, and its sessions there start with your own settings only, saying why. Another tool's file that names plugins or
   a marketplace (its parsed keys, at any depth), or that cannot be read the way the tool reads it, cannot be trusted
   either.
 - A conversation carried to another harness (or to a Chat model's new session) goes in as a quote that holds no

@@ -227,11 +227,19 @@ test('Claude Code\'s own settings: a marketplace the project adds is never trust
   const installed = (id, version = '1.0.0') => ({ id, installed: true, versions: [{ version, commit: null }] });
   const reg = (list, registry = 'ok') => ({ list, registry });
   const verdict = (f, p = null) => { const sm = summarize([f], p); return { complete: sm.complete, notes: sm.notes.map((n) => n.note).join('; '), plugins: sm.plugins }; };
+  let v;
   // an MCP server, or anything of .mcp.json, named like a plugin: an MCP server, as before
   assert.equal(verdict(own('.mcp.json', '{"mcpServers": {"my-plugin-server": {"command": "node", "args": ["plugin.js"]}}}')).complete, true);
-  assert.equal(verdict(own('.claude/settings.json', '{"env": {"PLUGIN_DIR": "x"}, "pluginConfigs": {"p@m": {"a": 1}}}')).complete, true, 'other keys naming plugins: shown, as before');
+  // the keys known to be harmless in a project's file: shown, trustable
+  assert.equal(verdict(own('.claude/settings.json', '{"pluginConfigs": {"p@m": {"a": 1}}, "strictKnownMarketplaces": [], "allowedMarketplaces": []}')).complete, true);
+  // anything else naming plugins or a marketplace, at any depth — a key of a later Claude Code, an env variable that
+  // could steer how plugins load: never trusted, the key named
+  v = verdict(own('.claude/settings.json', '{"pluginMarketplaces": {"m": {}}}'));
+  assert.equal(v.complete, false); assert.match(v.notes, /names plugins or a marketplace \(pluginMarketplaces\)/);
+  v = verdict(own('.claude/settings.json', '{"env": {"CLAUDE_CODE_PLUGIN_X": "1"}}'));
+  assert.equal(v.complete, false); assert.match(v.notes, /\(env › CLAUDE_CODE_PLUGIN_X\)/);
   // enabledPlugins: a plugin installed in the sandbox — listed, trustable
-  let v = verdict(own('.claude/settings.json', '{"enabledPlugins": {"fmt@acme": true, "old@acme": false}}'), reg([installed('fmt@acme')]));
+  v = verdict(own('.claude/settings.json', '{"enabledPlugins": {"fmt@acme": true, "old@acme": false}}'), reg([installed('fmt@acme')]));
   assert.equal(v.complete, true, v.notes);
   assert.deepEqual(v.plugins.map((p) => [p.id, p.on, p.version]), [['fmt@acme', true, '1.0.0'], ['old@acme', false, null]]);
   // its version is in the hash: updated in the sandbox, looked at again
@@ -254,11 +262,14 @@ test('Claude Code\'s own settings: a marketplace the project adds is never trust
     assert.equal(v.complete, false, t); assert.match(v.notes, /adds a plugin marketplace/, t);
   }
   // checkPlugins: what bn-coded says fits, or the listing is unverifiable
-  assert.deepEqual(checkPlugins({}), { plugins: null, ok: true });
-  assert.equal(checkPlugins({ plugins: [installed('b@m'), installed('a@m')], registry: 'ok' }).ok, false, 'out of order');
-  assert.equal(checkPlugins({ plugins: [{ id: 'a@m', installed: true, versions: [] }], registry: 'ok' }).ok, false, 'installed with no version');
-  assert.equal(checkPlugins({ plugins: [installed('a@m')], registry: 'maybe' }).ok, false);
-  assert.equal(checkPlugins({ plugins: [installed('a@m')], registry: 'ok' }).ok, true);
+  assert.deepEqual(checkPlugins({}), { plugins: null, planPlugins: null, ok: true });
+  const both = (l, registry = 'ok', pl = l, planRegistry = 'ok') => ({ plugins: l, registry, planPlugins: pl, planRegistry });
+  assert.equal(checkPlugins(both([installed('b@m'), installed('a@m')])).ok, false, 'out of order');
+  assert.equal(checkPlugins(both([{ id: 'a@m', installed: true, versions: [] }])).ok, false, 'installed with no version');
+  assert.equal(checkPlugins(both([installed('a@m')], 'maybe')).ok, false);
+  assert.equal(checkPlugins({ plugins: [installed('a@m')], registry: 'ok' }).ok, false, 'your plan\'s record not said');
+  assert.equal(checkPlugins(both([installed('a@m')], 'ok', [installed('b@m')])).ok, false, 'not the same plugins');
+  assert.equal(checkPlugins(both([installed('a@m')], 'ok', [{ id: 'a@m', installed: false, versions: [] }], 'none')).ok, true);
 });
 
 test('stripJsonc and pluginsOf: linear in the text', () => {
@@ -268,4 +279,53 @@ test('stripJsonc and pluginsOf: linear in the text', () => {
   assertLinear((n) => `"${'\\"'.repeat(n)}`, stripJsonc, 'an open string of escapes');
   assertLinear((n) => `${'\\u0061'.repeat(n)}`, (t) => pluginsOf('a.toml', t), 'escapes in TOML');
   assertLinear((n) => `${'['.repeat(n)}`, (t) => pluginsOf('a.json', t), 'an open nesting');
+});
+
+test('Claude on your plan has its own plugin record: a plugin installed for Bedrock but not on your plan — Bedrock sessions get the project\'s settings, plan sessions start with your own, said why', async () => {
+  const crypto = await import('node:crypto');
+  const { makeTrust, hashOf, withheldText, ALL_SOURCES, USER_SOURCES } = await import('../server/trust.mjs');
+  const { TRUST_EPOCH } = await import('../server/projects.mjs');
+  const { Session } = await import('../server/sessions.mjs');
+  const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
+  const text = '{"enabledPlugins": {"fmt@acme": true}}';
+  const files = [{ name: '.claude/settings.json', type: 'file', size: text.length, sha256: sha(text), text, target: null, at: '', surface: '.claude' }];
+  const inst = (version) => ({ id: 'fmt@acme', installed: true, versions: [{ version, commit: null }] });
+  const bed = { list: [inst('1.0.0')], registry: 'ok' };
+  let plan = { list: [{ id: 'fmt@acme', installed: false, versions: [] }], registry: 'ok' };
+  const call = async (req) => ({ result: { files: req.text === false ? files.map(({ text: _t, ...f }) => f) : files, hash: hashOf(files, bed), verifiable: true, over: null,
+    plugins: bed.list, registry: bed.registry, planPlugins: plan.list, planRegistry: plan.registry, planHash: hashOf(files, plan) } });
+  const rec = { id: 'p1', root: 'proj', name: 'proj', trust: null };
+  const trust = makeTrust({ call, store: () => ({ list: () => [rec],
+    trust: (id, hash, planHash) => { rec.trust = hash ? { hash, at: 1, epoch: TRUST_EPOCH, ...(planHash === undefined ? {} : { planHash }) } : null; } }) });
+  let v = await trust.view(rec);
+  assert.equal(v.summary.complete, true, v.summary.missing.join('; '));
+  assert.match(v.summary.notes.map((n) => n.note).join('; '), /Claude on your plan has not installed: its sessions here start with your own settings only/);
+  assert.deepEqual(v.summary.plugins.map((p) => [p.id, p.version, p.planVersion]), [['fmt@acme', '1.0.0', null]]);
+  assert.equal((await trust.trust(rec, v.hash)).conflict, null);
+  assert.equal(rec.trust.planHash, null, 'no trust for your plan');
+  let d = await trust.decide('/workspace/proj');
+  assert.equal(d.state, 'trusted'); assert.deepEqual(d.sources, ALL_SOURCES);
+  assert.equal(d.plan.state, 'untrusted'); assert.deepEqual(d.plan.sources, USER_SOURCES); assert.equal(d.plan.strictMcp, true); assert.equal(d.plan.reason, 'plan-plugins');
+  assert.match(withheldText(d.plan), /turns on plugins Claude on your plan hasn't installed — started with your own settings only/);
+  // each session takes its own: a Bedrock one the project's settings, one on your plan its own decision
+  const s = Object.create(Session.prototype);
+  s.plan = true; assert.equal(s.ownSettings(d), d.plan);
+  s.plan = false; assert.equal(s.ownSettings(d), d);
+  // installed on your plan too: not applied until trusted again — then both
+  plan = { list: [inst('1.0.0')], registry: 'ok' };
+  d = await trust.decide('/workspace/proj');
+  assert.equal(d.state, 'trusted'); assert.equal(d.plan.state, 'changed'); assert.equal(d.plan.reason, undefined);
+  v = await trust.view(rec);
+  assert.deepEqual(v.summary.plugins.map((p) => p.planVersion), ['1.0.0']);
+  assert.equal((await trust.trust(rec, v.hash)).conflict, null);
+  d = await trust.decide('/workspace/proj');
+  assert.equal(d.plan.state, 'trusted'); assert.deepEqual(d.plan.sources, ALL_SOURCES);
+  // updated on your plan only: looked at again there, Bedrock's trust holds
+  plan = { list: [inst('1.1.0')], registry: 'ok' };
+  d = await trust.decide('/workspace/proj');
+  assert.equal(d.state, 'trusted'); assert.equal(d.plan.state, 'changed');
+  // its record unreadable: not applied, said why
+  plan = { list: [{ id: 'fmt@acme', installed: false, versions: [] }], registry: 'unreadable' };
+  d = await trust.decide('/workspace/proj');
+  assert.equal(d.plan.reason, 'plan-plugins'); assert.deepEqual(d.plan.sources, USER_SOURCES);
 });

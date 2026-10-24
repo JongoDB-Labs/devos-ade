@@ -125,7 +125,8 @@ export class Projects {
       const rec = { id: p.id, name: p.name, root: p.root, created: Number.isInteger(p.created) && p.created > 0 ? p.created : null };
       // its own Claude Code settings, trusted as they were then (their hash: bn-coded's project.settings)
       if (p.trust && SHA.test(p.trust.hash) && Number.isInteger(p.trust.at) && p.trust.at > 0) {
-        rec.trust = { hash: p.trust.hash, at: p.trust.at, ...(Number.isInteger(p.trust.epoch) ? { epoch: p.trust.epoch } : {}) };
+        rec.trust = { hash: p.trust.hash, at: p.trust.at, ...(Number.isInteger(p.trust.epoch) ? { epoch: p.trust.epoch } : {}),
+          ...(p.trust.planHash === null || SHA.test(p.trust.planHash ?? '') ? { planHash: p.trust.planHash } : {}) };
       }
       projects.push(rec);
     }
@@ -133,7 +134,10 @@ export class Projects {
     const hostTrust = {};
     const ht = v.hostTrust && typeof v.hostTrust === 'object' && !Array.isArray(v.hostTrust) ? v.hostTrust : {};
     for (const [k, t] of Object.entries(ht).slice(0, HOSTS_MAX * 4)) {
-      if (ID.test(k) && t && SHA.test(t.hash) && Number.isInteger(t.at) && t.at > 0) hostTrust[k] = { hash: t.hash, at: t.at, ...(Number.isInteger(t.epoch) ? { epoch: t.epoch } : {}) };
+      if (ID.test(k) && t && SHA.test(t.hash) && Number.isInteger(t.at) && t.at > 0) {
+        hostTrust[k] = { hash: t.hash, at: t.at, ...(Number.isInteger(t.epoch) ? { epoch: t.epoch } : {}),
+          ...(t.planHash === null || SHA.test(t.planHash ?? '') ? { planHash: t.planHash } : {}) };
+      }
     }
     const gone = [];
     for (const g of Array.isArray(v.gone) ? v.gone.slice(0, GONE_MAX) : []) {
@@ -252,22 +256,26 @@ export class Projects {
       return p;
     });
   }
-  /** trust(id, hash) -> the record: its folder's own Claude Code settings applied while they are exactly these
-   *  (hash); null hash: no longer (the Workspace's always are: it has no record). */
-  trust(id, hash) {
+  /** trust(id, hash, planHash) -> the record: its folder's own Claude Code settings applied while they are exactly these
+   *  (hash); null hash: no longer (the Workspace's always are: it has no record). planHash: the same files with the
+   *  plugins Claude on your plan has installed (its own record), or null — the plugins they turn on are not all
+   *  installed there: its sessions start with your own settings only; undefined: the same as hash (no plugin) */
+  trust(id, hash, planHash = undefined) {
     if (id === WORKSPACE_ID) throw new ProjectError(400, 'the Workspace\'s own settings always apply (as they did before projects)');
     if (hash !== null && !SHA.test(hash ?? '')) throw new ProjectError(400, 'bad hash');
+    if (planHash !== undefined && planHash !== null && !SHA.test(planHash)) throw new ProjectError(400, 'bad hash');
+    const plan = planHash === undefined ? {} : { planHash };
     const h = this.hostRecords().find((x) => x.id === id && !x.gone);
     if (h) {
       return this.update((v) => {
-        if (hash === null) delete v.hostTrust[id]; else v.hostTrust[id] = { hash, at: this.now(), epoch: TRUST_EPOCH };
+        if (hash === null) delete v.hostTrust[id]; else v.hostTrust[id] = { hash, at: this.now(), epoch: TRUST_EPOCH, ...plan };
         return { ...h, ...(hash === null ? { trust: undefined } : { trust: { ...v.hostTrust[id] } }) };
       });
     }
     return this.update((v) => {
       const p = v.projects.find((x) => x.id === id);
       if (!p) throw new ProjectError(404, 'no such project (it was removed?)');
-      if (hash === null) delete p.trust; else p.trust = { hash, at: this.now(), epoch: TRUST_EPOCH };
+      if (hash === null) delete p.trust; else p.trust = { hash, at: this.now(), epoch: TRUST_EPOCH, ...plan };
       return { ...p };
     });
   }

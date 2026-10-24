@@ -667,6 +667,19 @@ test('project.settings: the plugins a folder\'s own settings turn on, with what 
     { id: 'mine@acme', installed: false, versions: [] }]);
   const recompute = (res) => hashOf(checkFiles(res, D).files, checkPlugins(res).plugins);
   assert.equal(recompute(r), r.hash, 'the code container\'s hash is bn-coded\'s');
+  // Claude on your plan's own record (claude-sub's folder): none yet — the same plugins, none installed, a hash of its own
+  assert.equal(r.planRegistry, 'none');
+  assert.deepEqual(r.planPlugins.map((p) => [p.id, p.installed]), [['fmt@acme', false], ['gone@acme', false], ['mine@acme', false]]);
+  assert.equal(hashOf(checkFiles(r, D).files, checkPlugins(r).planPlugins), r.planHash);
+  const PREC = path.join(HOME, '.claude-subscription', 'plugins', 'installed_plugins.json');
+  fs.mkdirSync(path.dirname(PREC), { recursive: true });
+  fs.writeFileSync(PREC, JSON.stringify({ version: 2, plugins: { 'fmt@acme': [{ scope: 'user', version: '0.9.0' }] } }));
+  r = await call({ op: 'project.settings', root: D });
+  assert.equal(r.planRegistry, 'ok');
+  assert.deepEqual(r.planPlugins[0], { id: 'fmt@acme', installed: true, versions: [{ version: '0.9.0', commit: null }] });
+  assert.equal(hashOf(checkFiles(r, D).files, checkPlugins(r).planPlugins), r.planHash);
+  assert.equal(recompute(r), r.hash, 'Bedrock\'s hash: its own record only');
+  fs.rmSync(path.join(HOME, '.claude-subscription'), { recursive: true });
   const before = r.hash;
   record({ 'fmt@acme': [{ scope: 'user', version: '1.1.0' }], 'mine@acme': [{ scope: 'local', projectPath: D, version: '1' }] });
   r = await call({ op: 'project.settings', root: D });

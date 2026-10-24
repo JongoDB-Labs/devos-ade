@@ -1311,8 +1311,16 @@ direction-changing character; a record that does not fit (a file someone changed
     code nobody here has looked at — and is never trusted; each plugin `enabledPlugins` turns on is listed when it is
     installed in the sandbox already (Claude Code's own record, `~/.claude/plugins/installed_plugins.json`, for every
     user or for that folder), its version and commit in the hash, so an update there is looked at again; one that is
-    not installed (Claude Code could fetch it), or a record that cannot be read, is never trusted. Other keys
-    (`pluginConfigs`, `.mcp.json`'s server names …) are shown as they are. Another tool's file is its own
+    not installed (Claude Code could fetch it), or a record that cannot be read, is never trusted. Claude on your plan
+    has a record of its own (claude-sub's folder): the trust keeps a second hash, of the same files with the plugins
+    as installed there, and a session on your plan applies the settings only while that one holds — a plugin it has
+    not installed (or its record unreadable): it starts with your own settings only, and says so. Of the other keys,
+    `pluginConfigs` (the options of plugins already on) and `strictKnownMarketplaces` / `allowedMarketplaces` (read
+    from managed settings only, and they only narrow) are shown as they are; any other key naming plugins or a
+    marketplace, at any depth — a later Claude Code's, an `env` variable that could steer how plugins load — makes
+    the settings untrustable. `.mcp.json` is not read for plugins (its server names are names). A `.claude/settings*.json`
+    in a folder above the project is Grok's and Copilot's (Claude Code does not read it there): under the broader rule
+    below, one that turns on plugins makes the project untrustable, and the dialog says which folder. Another tool's file is its own
     configuration, read more broadly: a JSON or JSONC file is parsed and any key naming plugins or a marketplace, at
     any depth, in any case, makes it untrustable, as does one that does not parse — or a line break JSON and JSONC
     readers do not agree on (a CR alone, U+2028, U+2029) or a comment left open; there is no TOML or YAML parser here,

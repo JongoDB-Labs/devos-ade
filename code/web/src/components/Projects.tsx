@@ -885,7 +885,8 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
     ['MCP servers (.mcp.json)', sm.mcpServers.map((m) => ({ text: `${m.name}: ${m.run}`, json: m.json, mixed: m.mixed, careful: m.careful })), 'settings-mcp'],
     ['MCP settings', sm.mcp.map((m) => ({ text: `${m.key}: ${m.value}` })), 'settings-mcp-keys'],
     ['Plugins it turns on — installed in the sandbox already: their hooks, MCP servers and commands run in this project\'s sessions',
-      sm.plugins.map((p) => ({ text: p.on ? `turns on your installed plugin ${p.id}${p.version ? ` (${p.version})` : ''}` : `turns off ${p.id}` })), 'settings-plugins'],
+      sm.plugins.map((p) => ({ text: !p.on ? `turns off ${p.id}` : `turns on your installed plugin ${p.id}${p.version ? ` (${p.version})` : ''}${p.planVersion === null
+        ? ' — not installed for Claude on your plan: its sessions here start with your own settings only' : p.planVersion !== p.version ? ` — on your plan: ${p.planVersion}` : ''}` })), 'settings-plugins'],
     ['Other settings', sm.other.map((o) => ({ text: `${o.key}: ${o.value}` })), 'settings-other'],
     ['Skills, commands, agents … — this folder\'s .claude/ and the folders\' above it to the git root: what their front matter grants, and the shell commands they run when used', sm.files.flatMap((f) => (f.grants.length
       ? f.grants.map((g) => ({ text: `${f.name}: ${g.key}: ${g.value}` })) : [{ text: `${f.name}: grants nothing in its front matter, runs no shell command` }])), 'settings-tree'],

@@ -155,6 +155,9 @@ export class Session {
       budget: this.budget ? { ...this.budget } : null, terminal: this.inTerminal !== null, cwd: this.cwd, settings: this.settingsInfo(),
       harness: this.harness, ...(this.plan ? { plan: { ...(this.planUsage ?? { input: 0, output: 0, cached: 0, turns: 0 }), limits: this.planLimits ?? null } } : {}) };
   }
+  // ownSettings(d) -> a decision (trust.mjs's decide) as it is for this session: Claude on your plan's own (its plugin
+  // record differs from the sandbox's: d.plan), or the decision itself
+  ownSettings(d) { return d && this.plan && d.plan ? d.plan : d; }
   /** {state, project} of the running (or last) process's folder settings (trust.mjs), or null */
   settingsInfo() { return this.settings ? { state: this.settings.state, project: this.settings.project ?? null } : null; }
   /** its process restarts at the next prompt to take the folder's own configuration anew: the decision made just
@@ -163,7 +166,7 @@ export class Session {
    *  (settingsDirty, set by main.mjs) */
   settingsRestart() {
     if (this.settingsDirty === true) return true;
-    const d = this.mgr.peekSettings(this.cwd);
+    const d = this.ownSettings(this.mgr.peekSettings(this.cwd));
     return Boolean(d && this.settings && (d.sources.join() !== this.settings.sources.join() || Boolean(d.strictMcp) !== Boolean(this.settings.strictMcp)
       || (APPLIED_STATES.includes(this.settings.state) && (d.state !== this.settings.state || d.hash !== this.settings.hash))));
   }
@@ -247,7 +250,7 @@ export class Session {
     const feed = { inbox: [], wake: null, closed: false, ready: null };
     // this folder's own Claude Code settings: applied, or (not trusted) only your own settings and the stack's MCP server
     // — the decision made for this start (mgr.prepare); none: not applied
-    const settings = this.mgr.takeSettings(this.cwd);
+    const settings = this.ownSettings(this.mgr.takeSettings(this.cwd));
     this.settings = settings;
     this.settingsDirty = false;
     // how git gets a login here, and the Git hosts Claude may use now (gitnote.mjs): at the end of the system prompt
@@ -892,7 +895,8 @@ export class Session {
     if (!this.mgr.decideSettings) return;
     Promise.resolve(typeof q?.initializationResult === 'function' ? q.initializationResult() : null).catch(() => null)
       .then(() => (this.q === q ? this.mgr.decideSettings(this.cwd) : null))
-      .then((d) => {
+      .then((d0) => {
+        const d = this.ownSettings(d0);
         if (!d || this.q !== q) return;
         if (d.state !== settings.state || d.hash !== settings.hash) this.close('settings-changed');
       })

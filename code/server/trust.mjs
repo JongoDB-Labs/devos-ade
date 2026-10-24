@@ -403,6 +403,11 @@ export function pluginsOf(name, text) {
 // (its id and version are in the hash: bn-coded's plugins), one that is not could be fetched — never trusted
 const CC_MARKETPLACE_KEYS = ['extraknownmarketplaces', 'additionalmarketplaces'];
 const CC_ENABLED_KEY = 'enabledplugins';
+// Plugin keys that are harmless in a project's file (shown as they are, under Other settings): pluginConfigs — the
+// options of plugins already turned on (values a plugin reads, not a plugin or a place to fetch one from);
+// strictKnownMarketplaces and its alias allowedMarketplaces — read from managed settings only, and only narrow which
+// marketplaces may be added. Any other key naming plugins or a marketplace, at any depth: never trusted.
+const CC_PLUGIN_HARMLESS = ['pluginconfigs', 'strictknownmarketplaces', 'allowedmarketplaces'];
 
 // canonical(v) -> JSON with sorted keys (every field, whatever the friendly line shows)
 const canonical = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((key) => [key, x[key]])) : x));
@@ -419,7 +424,7 @@ const canonical = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object'
  *  runs of whitespace or many lines (the page asks you to look at them in full). plugins: what the sandbox says of the
  *  plugins the settings turn on ({list: [{id, installed, versions}], registry}: checkPlugins), or null when it said
  *  nothing (then a plugin turned on is never trusted). */
-export function summarize(files, plugins = null) {
+export function summarize(files, plugins = null, planPlugins = null) {
   const out = { hooks: [], allow: [], ask: [], deny: [], defaultMode: null, directories: [], env: [], commands: [], mcp: [], mcpServers: [], other: [], notes: [],
     files: [], tools: [], plugins: [], complete: true, missing: [], careful: 0 };
   const why = new Map();
@@ -469,7 +474,9 @@ export function summarize(files, plugins = null) {
       const pl = pluginsOf(f.name, f.text);
       if (pl.unreadable) { note(`${pl.unreadable}: what it declares cannot be looked at here`); incomplete('another tool\'s file this page cannot read the way the tool does'); }
       if (pl.key) {
-        note(`declares plugins or a plugin marketplace (${short(pl.key, 100)}): the plugins it points at are not looked at here`);
+        // (Claude Code's settings in a folder above: Claude Code does not read them there; Grok and Copilot do)
+        note(tool === CLAUDE_ABOVE ? `a settings file above this project, in ${short(f.at || '?', 300)}, turns on plugins (${short(pl.key, 100)}) — Grok and Copilot read it, and what they install isn't checked here`
+          : `declares plugins or a plugin marketplace (${short(pl.key, 100)}): the plugins it points at are not looked at here`);
         incomplete('plugins or a plugin marketplace declared in the project');
       }
       const t = whole ? f.text : `${f.text.slice(0, TOOL_TEXT_MAX)}… (${f.text.length - TOOL_TEXT_MAX} more characters not shown)`;
@@ -560,7 +567,27 @@ export function summarize(files, plugins = null) {
         } else if (!got?.installed) {
           note(`turns on plugin ${short(id, 200)}, which is not installed in the sandbox: Claude Code could fetch it — not trustable`);
           incomplete('a plugin the project turns on that is not installed in the sandbox');
-        } else add('plugins', { file: f.name, id: text(id), on: true, version: text(got.versions.map((w) => [w.version ?? '?', w.commit ? `(${w.commit.slice(0, 12)})` : ''].join(' ').trim()).join(', ')) });
+        } else {
+          const vtext = (x) => text(x.versions.map((w) => [w.version ?? '?', w.commit ? `(${w.commit.slice(0, 12)})` : ''].join(' ').trim()).join(', '));
+          const onPlan = planPlugins?.list.find((p) => p.id === id);
+          // (Claude on your plan: its own record — not installed there, its sessions start without these settings)
+          if (planPlugins && (planPlugins.registry === 'unreadable' || !onPlan?.installed)) {
+            note(`turns on plugin ${short(id, 200)}, which Claude on your plan has not installed: its sessions here start with your own settings only`);
+          }
+          add('plugins', { file: f.name, id: text(id), on: true, version: vtext(got), planVersion: onPlan?.installed ? vtext(onPlan) : null });
+        }
+      }
+    }
+    // and anything else that names plugins or a marketplace, at any depth (a key of a later Claude Code, an env variable
+    // that steers how plugins load …): never trusted — but the keys above, already looked at, and CC_PLUGIN_HARMLESS
+    for (const k of Object.keys(v)) {
+      const low = k.toLowerCase();
+      if (low === CC_ENABLED_KEY || CC_MARKETPLACE_KEYS.includes(low) || CC_PLUGIN_HARMLESS.includes(low)) continue;
+      let found = null;
+      try { found = PLUGIN_KEY.test(k) ? k : pluginKeyIn(v[k]); } catch { found = '(could not be looked at)'; }
+      if (found) {
+        note(`names plugins or a marketplace (${short(k, 60)}${found !== k ? ` › ${short(found, 60)}` : ''}): not something this page reads — not trustable`);
+        incomplete('a setting about plugins this page does not read');
       }
     }
     for (const k of Object.keys(v).filter((k) => !KNOWN.has(k) && k.toLowerCase() !== CC_ENABLED_KEY)) add('other', { file: f.name, key: text(k), value: text(v[k]) });
@@ -596,21 +623,30 @@ export const hashOf = (files, plugins = null) => {
 };
 const PLUGIN_ID = /^[\x20-\x7e]{1,300}$/;
 const vstr = (x) => x === null || (typeof x === 'string' && x.length <= 100);
-/** checkPlugins(project.settings' RESULT) -> {plugins: {list: [{id, installed, versions: [{version, commit}]}], registry:
- *  ok|none|unreadable} or null (none said), ok}: ok false when what it says does not fit (then unverifiable) */
-export function checkPlugins(r) {
-  if (r?.plugins === undefined && r?.registry === undefined) return { plugins: null, ok: true };
-  const l = r.plugins;
-  const ok = Array.isArray(l) && l.length <= 200 && ['ok', 'none', 'unreadable'].includes(r.registry)
+const pluginList = (l, registry) => {
+  const ok = Array.isArray(l) && l.length <= 200 && ['ok', 'none', 'unreadable'].includes(registry)
     && l.every((p, i) => p && typeof p === 'object' && typeof p.id === 'string' && PLUGIN_ID.test(p.id) && (i === 0 || l[i - 1].id < p.id)
       && typeof p.installed === 'boolean' && Array.isArray(p.versions) && p.versions.length <= 20 && p.installed === p.versions.length > 0
       && p.versions.every((w) => w && typeof w === 'object' && vstr(w.version) && vstr(w.commit)));
-  if (!ok) return { plugins: null, ok: false };
-  return { plugins: { list: l.map((p) => ({ id: p.id, installed: p.installed, versions: p.versions.map((w) => ({ version: w.version, commit: w.commit })) })), registry: r.registry }, ok: true };
+  return ok ? { list: l.map((p) => ({ id: p.id, installed: p.installed, versions: p.versions.map((w) => ({ version: w.version, commit: w.commit })) })), registry } : null;
+};
+/** checkPlugins(project.settings' RESULT) -> {plugins: {list: [{id, installed, versions: [{version, commit}]}], registry:
+ *  ok|none|unreadable} or null (none said), planPlugins (the same plugins in Claude on your plan's own record), ok}: ok
+ *  false when what it says does not fit (then unverifiable) */
+export function checkPlugins(r) {
+  if (r?.plugins === undefined && r?.registry === undefined && r?.planPlugins === undefined && r?.planRegistry === undefined) return { plugins: null, planPlugins: null, ok: true };
+  const plugins = pluginList(r.plugins, r.registry), planPlugins = pluginList(r.planPlugins, r.planRegistry);
+  // (the same plugins, the ones the settings turn on, in both)
+  if (!plugins || !planPlugins || plugins.list.map((p) => p.id).join('\n') !== planPlugins.list.map((p) => p.id).join('\n')) return { plugins: null, planPlugins: null, ok: false };
+  return { plugins, planPlugins, ok: true };
 }
+// planMissing(planPlugins) -> whether Claude on your plan lacks a plugin the settings turn on (or its record could not
+// be read)
+const planMissing = (pp) => Boolean(pp) && (pp.registry === 'unreadable' || pp.list.some((p) => !p.installed));
 
 /** What a session says when its folder's own settings are not applied (a `local` event at its process's start). */
 export function withheldText(d) {
+  if (d.reason === 'plan-plugins') return 'This project turns on plugins Claude on your plan hasn\'t installed — started with your own settings only (of MCP servers, only the stack\'s own). Install them in Claude on your plan (claude-sub in the terminal), then trust the project\'s settings again: its ⋯ › Claude Code settings….';
   const what = 'its own Claude Code configuration (everything under .claude/ — settings, skills, commands, agents … — and .mcp.json; with it, its CLAUDE.md)';
   const why = 'its hooks, permission rules, granted tools, environment and MCP servers could run commands or silence the permission cards';
   if (d.state === 'unverifiable') return `This ${d.project ? 'project' : 'folder'}'s ${what.slice(4)} are not applied in this session: one of these files cannot be checked (a link out of the workspace, too large to show, or not a file), so they cannot be trusted either. Your own settings apply; of MCP servers, only the stack's own (bedrock-shared).`;
@@ -642,29 +678,45 @@ export function makeTrust({ call, store, log = () => {} }) {
   async function read(abs, { text = true } = {}) {
     const { result } = await call({ op: 'project.settings', ...(abs === WS ? {} : { root: abs }), ...(text ? {} : { text: false }) }, { timeoutMs: 20000 });
     const { files, ok } = checkFiles(result, abs);
-    const { plugins, ok: pok } = checkPlugins(result);
+    const { plugins, planPlugins, ok: pok } = checkPlugins(result);
     for (const f of files) if (f.text !== null && (!f.sha256 || sha256(Buffer.from(f.text, 'utf8')) !== f.sha256)) f.text = null;
     const present = files.length > 0 || !ok || (result?.over !== null && result?.over !== undefined);
-    const hash = hashOf(files, plugins);
+    const hash = hashOf(files, plugins), planHash = planPlugins ? hashOf(files, planPlugins) : hash;
     const verifiable = ok && pok && present && result?.verifiable === true && !result?.over && hash !== null && result?.hash === hash
+      && (!planPlugins || result?.planHash === planHash)
       && files.every((f) => (f.type === 'file' || f.type === 'link') && (!text || f.text !== null));
-    return { files, plugins, present, hash: verifiable ? hash : null, verifiable, over: typeof result?.over === 'string' ? short(result.over, 200) : null };
+    return { files, plugins, planPlugins, present, hash: verifiable ? hash : null, planHash: verifiable ? planHash : null, verifiable,
+      over: typeof result?.over === 'string' ? short(result.over, 200) : null };
   }
-  /** decide(cwd) -> {state, sources, strictMcp, project, hash}: what a Claude Code process started there now gets.
-   *  Anything that cannot be decided (the records, the sandbox): not applied. */
+  /** decide(cwd) -> {state, sources, strictMcp, project, hash, plan}: what a Claude Code process started there now gets
+   *  — plan: the same for Claude on your plan (its own plugin record: a trust holds for it only while the plugins the
+   *  settings turn on are installed there too, as trusted; reason plan-plugins when they are not). Anything that cannot
+   *  be decided (the records, the sandbox): not applied. */
   async function decide(cwd) {
-    if (cwd === WS) return { state: 'workspace', sources: ALL_SOURCES, strictMcp: false, project: WORKSPACE_ID, hash: null };
+    if (cwd === WS) {
+      const ws = { state: 'workspace', sources: ALL_SOURCES, strictMcp: false, project: WORKSPACE_ID, hash: null };
+      return { ...ws, plan: { ...ws } };
+    }
     let rec = null;
+    const of = (state, hash, extra = {}) => ({ state, project: rec?.id ?? null, sources: APPLIED.includes(state) ? ALL_SOURCES : USER_SOURCES,
+      strictMcp: !APPLIED.includes(state), hash, ...extra });
     try {
       rec = recordAt(cwd);
       const r = await read(cwd, { text: false });
       const state = stateOf({ present: r.present, hash: r.hash, trust: rec?.trust, verifiable: r.verifiable });
       note(rec?.id, state);
+      // Claude on your plan: the trust's own plan hash (none recorded: the same as its hash — no plugin then)
+      const planTrust = rec?.trust ? { ...rec.trust, hash: rec.trust.planHash === undefined ? rec.trust.hash : rec.trust.planHash } : rec?.trust;
+      let pstate = stateOf({ present: r.present, hash: r.planHash, trust: planTrust, verifiable: r.verifiable });
+      const missing = planMissing(r.planPlugins);
+      // (a plugin turned on that it has not installed: never applied for it, whatever the trust — said why)
+      if (missing && !['unverifiable', 'none'].includes(pstate)) pstate = 'untrusted';
       // (not applied: your own settings, and of MCP servers only the stack's own — whatever Claude Code would read)
-      return { state, project: rec?.id ?? null, sources: APPLIED.includes(state) ? ALL_SOURCES : USER_SOURCES, strictMcp: !APPLIED.includes(state), hash: r.hash };
+      return { ...of(state, r.hash), plan: of(pstate, r.planHash, missing ? { reason: 'plan-plugins' } : {}) };
     } catch (e) {
       log(`settings of ${short(cwd, 200)}: not checked (${short(e?.message || String(e), 200)}): not applied`);
-      return { state: 'unchecked', project: rec?.id ?? null, sources: USER_SOURCES, strictMcp: true, hash: null };
+      const no = { state: 'unchecked', project: rec?.id ?? null, sources: USER_SOURCES, strictMcp: true, hash: null };
+      return { ...no, plan: { ...no } };
     }
   }
   /** view(rec) -> GET /api/projects/ID/settings: the files, what they set, the hash to trust, the state — and, when
@@ -673,7 +725,7 @@ export function makeTrust({ call, store, log = () => {} }) {
     const abs = absOf(rec.root);
     const r = await read(abs);
     const state = stateOf({ workspace: rec.id === WORKSPACE_ID, present: r.present, hash: r.hash, trust: rec.trust, verifiable: r.verifiable });
-    const summary = summarize(r.files, r.plugins);
+    const summary = summarize(r.files, r.plugins, r.planPlugins);
     const own = r.over && OVER.test(r.over);
     if (r.over) { summary.complete = false; summary.missing.push(own ? r.over : 'a reason of the sandbox\'s own (below)'); }
     note(rec.id, state);
@@ -692,9 +744,10 @@ export function makeTrust({ call, store, log = () => {} }) {
     if (!r.present) return { conflict: 'this project has no settings of its own (nothing to trust)' };
     if (!r.verifiable) return { conflict: 'its settings cannot be checked (a file there is a link out of the workspace, too large to show, or not a file): they are never trusted' };
     if (r.hash !== hash) return { conflict: 'its settings changed since you looked: review them again' };
-    const sm = summarize(r.files, r.plugins);
+    const sm = summarize(r.files, r.plugins, r.planPlugins);
     if (!sm.complete) return { conflict: `its settings cannot all be shown here (${sm.missing.join('; ')}): they are not trusted — shorten them, or use the folder without them` };
-    store().trust(rec.id, hash);
+    // (Claude on your plan: the same trust while its own record has every plugin they turn on — else none for it)
+    store().trust(rec.id, hash, r.planPlugins ? (planMissing(r.planPlugins) ? null : r.planHash) : undefined);
     note(rec.id, 'trusted');
     return { conflict: null };
   }
