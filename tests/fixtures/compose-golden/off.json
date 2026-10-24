@@ -1,0 +1,465 @@
+{
+ "name": "bedrock-now",
+ "networks": {
+  "code-link": {
+   "external": false,
+   "name": "bedrock-now_code-link"
+  },
+  "default": {
+   "external": false,
+   "name": "bedrock-now_default"
+  },
+  "remote": {
+   "external": false,
+   "name": "bedrock-now_remote"
+  },
+  "stt": {
+   "external": false,
+   "name": "bedrock-now_stt"
+  },
+  "terminal": {
+   "external": false,
+   "name": "bedrock-now_terminal"
+  },
+  "terminal-link": {
+   "external": false,
+   "name": "bedrock-now_terminal-link"
+  }
+ },
+ "services": {
+  "caddy": {
+   "container_name": null,
+   "image": "bedrock-now/caddy-dns:local",
+   "labels": {},
+   "networks": [
+    "code-link",
+    "default",
+    "remote",
+    "stt",
+    "terminal-link"
+   ],
+   "ports": [
+    {
+     "host_ip": "127.0.0.1",
+     "protocol": "tcp",
+     "published": "80",
+     "target": "8080"
+    }
+   ],
+   "volumes": [
+    {
+     "read_only": true,
+     "source": "<STACK>/caddy",
+     "target": "/etc/caddy",
+     "type": "bind"
+    },
+    {
+     "source": "caddy-data",
+     "target": "/data",
+     "type": "volume"
+    }
+   ]
+  },
+  "code": {
+   "container_name": null,
+   "image": "bedrock-now/code:local",
+   "labels": {},
+   "networks": [
+    "code-link"
+   ],
+   "ports": [],
+   "volumes": [
+    {
+     "read_only": true,
+     "source": "code-socket",
+     "target": "/run/bn-code",
+     "type": "volume"
+    },
+    {
+     "read_only": true,
+     "source": "chat-socket",
+     "target": "/run/bn-chat",
+     "type": "volume"
+    },
+    {
+     "source": "code-state",
+     "target": "/var/lib/bn-code",
+     "type": "volume"
+    },
+    {
+     "read_only": true,
+     "source": "<STATE>/projects/public",
+     "target": "/etc/bn-code/projects",
+     "type": "bind"
+    }
+   ]
+  },
+  "litellm": {
+   "container_name": null,
+   "image": "ghcr.io/berriai/litellm:1.105.0",
+   "labels": {},
+   "networks": [
+    "default",
+    "stt",
+    "terminal-link"
+   ],
+   "ports": [
+    {
+     "host_ip": "127.0.0.1",
+     "protocol": "tcp",
+     "published": "4000",
+     "target": "4000"
+    }
+   ],
+   "volumes": [
+    {
+     "read_only": true,
+     "source": "<STACK>/litellm",
+     "target": "/app/config",
+     "type": "bind"
+    }
+   ]
+  },
+  "open-webui": {
+   "container_name": null,
+   "image": "ghcr.io/open-webui/open-webui:v0.12.0-slim",
+   "labels": {},
+   "networks": [
+    "default"
+   ],
+   "ports": [],
+   "volumes": [
+    {
+     "source": "owui",
+     "target": "/app/backend/data",
+     "type": "volume"
+    }
+   ]
+  },
+  "portal": {
+   "container_name": null,
+   "image": "bedrock-now/portal:local",
+   "labels": {},
+   "networks": [
+    "default"
+   ],
+   "ports": [],
+   "volumes": [
+    {
+     "read_only": true,
+     "source": "<STACK>/litellm",
+     "target": "/data/litellm",
+     "type": "bind"
+    },
+    {
+     "source": "<STACK>/litellm/prices",
+     "target": "/data/prices",
+     "type": "bind"
+    },
+    {
+     "read_only": true,
+     "source": "<STACK>/catalog",
+     "target": "/data/catalog",
+     "type": "bind"
+    },
+    {
+     "read_only": true,
+     "source": "<STACK>/.state/status",
+     "target": "/data/status",
+     "type": "bind"
+    },
+    {
+     "source": "<STACK>/.state/update-check",
+     "target": "/data/update-check",
+     "type": "bind"
+    },
+    {
+     "source": "<STACK>/.state/requests",
+     "target": "/data/requests",
+     "type": "bind"
+    },
+    {
+     "source": "portal-state",
+     "target": "/state",
+     "type": "volume"
+    }
+   ]
+  },
+  "postgres": {
+   "container_name": null,
+   "image": "pgvector/pgvector:0.8.7-pg17",
+   "labels": {},
+   "networks": [
+    "default"
+   ],
+   "ports": [],
+   "volumes": [
+    {
+     "source": "pgdata",
+     "target": "/var/lib/postgresql/data",
+     "type": "volume"
+    },
+    {
+     "read_only": true,
+     "source": "<STACK>/postgres/init.sql",
+     "target": "/docker-entrypoint-initdb.d/10-init.sql",
+     "type": "bind"
+    }
+   ]
+  },
+  "rustfs": {
+   "container_name": null,
+   "image": "rustfs/rustfs:1.0.1",
+   "labels": {},
+   "networks": [
+    "default"
+   ],
+   "ports": [],
+   "volumes": [
+    {
+     "source": "s3data",
+     "target": "/data",
+     "type": "volume"
+    }
+   ]
+  },
+  "rustfs-init": {
+   "container_name": null,
+   "image": "amazon/aws-cli:2.37.12",
+   "labels": {},
+   "networks": [
+    "default"
+   ],
+   "ports": [],
+   "volumes": []
+  },
+  "shared-mcp": {
+   "container_name": null,
+   "image": "bedrock-now/shared-mcp:local",
+   "labels": {},
+   "networks": [
+    "default",
+    "terminal-link"
+   ],
+   "ports": [
+    {
+     "host_ip": "127.0.0.1",
+     "protocol": "tcp",
+     "published": "8765",
+     "target": "8000"
+    }
+   ],
+   "volumes": []
+  },
+  "stt": {
+   "container_name": null,
+   "image": "bedrock-now/stt:local",
+   "labels": {},
+   "networks": [
+    "stt"
+   ],
+   "ports": [],
+   "volumes": []
+  },
+  "subs-chat": {
+   "container_name": null,
+   "image": "bedrock-now/terminal:local",
+   "labels": {},
+   "networks": [],
+   "ports": [],
+   "volumes": [
+    {
+     "source": "subs-chat-claude",
+     "target": "/home/claude/.claude-subscription",
+     "type": "volume"
+    },
+    {
+     "source": "subs-chat-codex",
+     "target": "/home/claude/.codex",
+     "type": "volume"
+    },
+    {
+     "source": "subs-chat-copilot",
+     "target": "/home/claude/.copilot",
+     "type": "volume"
+    },
+    {
+     "source": "subs-chat-grok",
+     "target": "/home/claude/.grok",
+     "type": "volume"
+    },
+    {
+     "source": "chat-socket",
+     "target": "/run/bn-chat",
+     "type": "volume"
+    },
+    {
+     "read_only": true,
+     "source": "<STACK>/terminal/managed/chat.json",
+     "target": "/etc/claude-code/managed-settings.json",
+     "type": "bind"
+    }
+   ]
+  },
+  "tailscale": {
+   "container_name": null,
+   "image": "tailscale/tailscale:v1.102.5@sha256:c507f3a2a6ab1cabd8d809b98edeb41edbd5c3fb6ad9632ffd098b4c7d0b4065",
+   "labels": {},
+   "networks": [
+    "remote"
+   ],
+   "ports": [],
+   "volumes": [
+    {
+     "source": "tailscale-state",
+     "target": "/var/lib/tailscale",
+     "type": "volume"
+    },
+    {
+     "read_only": true,
+     "source": "<STACK>/tailscale",
+     "target": "/config",
+     "type": "bind"
+    }
+   ]
+  },
+  "terminal": {
+   "container_name": null,
+   "image": "bedrock-now/terminal:local",
+   "labels": {},
+   "networks": [
+    "terminal"
+   ],
+   "ports": [],
+   "volumes": [
+    {
+     "source": "terminal-home",
+     "target": "/home/claude",
+     "type": "volume"
+    },
+    {
+     "source": "terminal-socket",
+     "target": "/run/bn-ttyd",
+     "type": "volume"
+    },
+    {
+     "source": "code-socket",
+     "target": "/run/bn-code",
+     "type": "volume"
+    },
+    {
+     "source": "preview-socket",
+     "target": "/run/bn-preview",
+     "type": "volume"
+    },
+    {
+     "read_only": true,
+     "source": "<STACK>/terminal/managed/off.json",
+     "target": "/etc/claude-code/managed-settings.json",
+     "type": "bind"
+    },
+    {
+     "source": "<WORKSPACE>",
+     "target": "/workspace",
+     "type": "bind"
+    }
+   ]
+  },
+  "terminal-gateway": {
+   "container_name": null,
+   "image": "caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f",
+   "labels": {},
+   "networks": [
+    "terminal",
+    "terminal-link"
+   ],
+   "ports": [],
+   "volumes": [
+    {
+     "read_only": true,
+     "source": "<STACK>/caddy",
+     "target": "/etc/caddy",
+     "type": "bind"
+    },
+    {
+     "read_only": true,
+     "source": "terminal-socket",
+     "target": "/run/bn-ttyd",
+     "type": "volume"
+    },
+    {
+     "read_only": true,
+     "source": "preview-socket",
+     "target": "/run/bn-preview",
+     "type": "volume"
+    }
+   ]
+  }
+ },
+ "volumes": {
+  "caddy-data": {
+   "external": false,
+   "name": "bedrock-now_caddy-data"
+  },
+  "chat-socket": {
+   "external": false,
+   "name": "bedrock-now_chat-socket"
+  },
+  "code-socket": {
+   "external": false,
+   "name": "bedrock-now_code-socket"
+  },
+  "code-state": {
+   "external": false,
+   "name": "bedrock-now_code-state"
+  },
+  "owui": {
+   "external": false,
+   "name": "bedrock-now_owui"
+  },
+  "pgdata": {
+   "external": false,
+   "name": "bedrock-now_pgdata"
+  },
+  "portal-state": {
+   "external": false,
+   "name": "bedrock-now_portal-state"
+  },
+  "preview-socket": {
+   "external": false,
+   "name": "bedrock-now_preview-socket"
+  },
+  "s3data": {
+   "external": false,
+   "name": "bedrock-now_s3data"
+  },
+  "subs-chat-claude": {
+   "external": false,
+   "name": "bedrock-now_subs-chat-claude"
+  },
+  "subs-chat-codex": {
+   "external": false,
+   "name": "bedrock-now_subs-chat-codex"
+  },
+  "subs-chat-copilot": {
+   "external": false,
+   "name": "bedrock-now_subs-chat-copilot"
+  },
+  "subs-chat-grok": {
+   "external": false,
+   "name": "bedrock-now_subs-chat-grok"
+  },
+  "tailscale-state": {
+   "external": false,
+   "name": "bedrock-now_tailscale-state"
+  },
+  "terminal-home": {
+   "external": false,
+   "name": "bedrock-now_terminal-home"
+  },
+  "terminal-socket": {
+   "external": false,
+   "name": "bedrock-now_terminal-socket"
+  }
+ }
+}

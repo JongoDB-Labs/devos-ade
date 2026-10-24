@@ -1,0 +1,13 @@
+# Lines that keep the product's old name, which no pattern of docs/internal-names.md covers: PATH<TAB>TEXT<TAB>WHY.
+# TEXT is the part of a line of PATH (the old name inside it) that stays; tests/brand_check.py fails on an entry
+# that no longer matches anything.
+lib/brand.sh	PRODUCT_LEGACY_NAME="bedrock-now"	the name before v0.25.0: ./stack open finds an app installed under it
+lib/brand.sh	PRODUCT_LEGACY_REPO="JongoDB-Labs/bedrock-now"	the repository's name before v0.25.0 (GitHub redirects it)
+portal/portal/brand.py	LEGACY_NAME = "bedrock-now"	the name before v0.25.0
+portal/portal/brand.py	LEGACY_REPO = "JongoDB-Labs/bedrock-now"	the repository's name before v0.25.0 (GitHub redirects it)
+code/server/oauth.mjs	export const GITHUB_APP_SLUG = 'bedrock-now';	the GitHub App's slug until its new one is set here at release (the one place: tests/test_brand.sh)
+install.sh	PRODUCT_LEGACY_NAME="bedrock-now"	install.sh's own copy of lib/brand.sh: it finds an install made before v0.25.0 in ~/bedrock-now
+install.sh	PRODUCT_LEGACY_REPO="JongoDB-Labs/bedrock-now"	install.sh's own copy of lib/brand.sh
+install.sh	~/bedrock-now when an install made before v0.25.0	the folder of installs made before v0.25.0, found and kept
+install.sh	unless that is not there and ~/bedrock-now	the folder of installs made before v0.25.0, found and kept
+lib/guard.sh	grep -qE 'bedrock-now|DevOS ADE'	a checkout under either name (its stack file says one)
