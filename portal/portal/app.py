@@ -205,8 +205,12 @@ def from_the_code_page_or_typed(headers) -> bool:
     """The code host's /.bn/terminal hands the Code page's unlock over to the terminal host only for a navigation the
     person made: from the Code page itself (Sec-Fetch-Site: same-origin: the panel's frame, its new-tab link, the ⋯
     menu), or one they started in the browser, typed or from a bookmark or the history (Sec-Fetch-Site: none, which
-    browsers send only with a top-level document navigation by the user: Mode navigate, Dest document, User ?1). Another
-    page or site can never send either (it gets same-site or cross-site), and no header at all is refused."""
+    browsers send only with a top-level document navigation by the user: Mode navigate, Dest document, User ?1). A link
+    opened from another app (mail, chat, a PDF reader) counts as typed: it opens your terminal page or its "Open … here?"
+    question, never a launch (that needs the panel's own launch token). A link on another website gets the sign-in (the
+    session cookie is SameSite=Strict) or, on another of the portal's hosts (same-site), the card; no header at all is
+    refused. Safari may not send Sec-Fetch-User, so a typed address there can show the card: that fails closed and only
+    costs convenience."""
     site = headers.get("sec-fetch-site")
     if site == "same-origin":
         return True

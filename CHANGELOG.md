@@ -30,9 +30,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 - **The Code page's terminal address, typed or from a bookmark** (`code.<host>/.bn/terminal`): it opens the terminal
   like the Code page's own *Open the terminal in a new tab*, instead of a blank page saying "open the terminal from
-  the Code page". Only a navigation you start in the browser does (`Sec-Fetch-Site: none` with a user's navigation);
-  a link on another of the portal's hosts gets a card with a button to the Code page, one on another site the
-  sign-in (it carries no session cookie), never the terminal. The session and the Code page's unlock are still needed.
+  the Code page". Only a navigation you start does (`Sec-Fetch-Site: none` with a user's navigation). A link opened
+  from another app (mail, chat, a PDF reader) counts as typed: it opens your terminal page or its *Open … here?*
+  question, never a launch. A link on another website gets the sign-in or a card with a button to the Code page. The
+  session and the Code page's unlock are still needed. Safari may not send `Sec-Fetch-User`, so a typed address there
+  can show the card: that fails closed and only costs convenience.
 
 ## [0.25.2] - 2026-10-25
 

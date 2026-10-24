@@ -1187,9 +1187,13 @@ spawn server, Claude Code or any file at will.
   checks the session, the Code page's unlock and the request's fetch metadata: `Sec-Fetch-Site: same-origin` (the
   Code page itself), or `none` together with `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document` and
   `Sec-Fetch-User: ?1` — the address typed, or opened from a bookmark or the history, which browsers send only for a
-  navigation the person started; no page can send either for another site's link, or for one on another of the
-  portal's hosts (`cross-site`, `same-site`), and a request without them is refused too. A refused one gets a card
-  (403: "Open the terminal from the Code page", a button to the Code page), never the hand-off. Then it redirects to the terminal host's `/.bn/unlock-callback` with a token: signed with a salt
+  navigation the person started. A link opened from another app (mail, chat, a PDF reader) counts as typed: it
+  opens your terminal page or its *Open … here?* question, never a launch (that needs the panel's own launch token).
+  A link on another website gets the sign-in (the session cookie is `SameSite=Strict`) or, from another of the
+  portal's hosts (`same-site`), the card; `cross-site`, `same-site` and a request without the headers are refused. A
+  refused one gets a card (403: "Open the terminal from the Code page", a button to the Code page), never the
+  hand-off. Safari may not send `Sec-Fetch-User`, so a typed address there can show the card: that fails closed and
+  only costs convenience. Then it redirects to the terminal host's `/.bn/unlock-callback` with a token: signed with a salt
   of its own, for exactly this site's terminal host, valid 60 seconds, single-use (its nonce is remembered), void
   after a portal restart or a new password, carrying the Code page unlock's time and the Tailscale login. Caddy
   sends that path to the portal before the terminal host's check; the portal redeems the token there and sets the
