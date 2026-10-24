@@ -92,19 +92,15 @@ KNOWN_UPSTREAM = [
      "preload hint React adds to the page shown, which never applies it. LiteLLM's /ui/ HTML has no such preload, Caddy "
      "adds no Link header and passes /litellm-asset-prefix through unchanged."),
 ]
+# (LiteLLM's AI Hub page asked for enable_public_model_hub and got a 400 while no config declared it: since v0.25.0 the
+# stack's config declares it, so that 400 or its "Failed to set callbacks" is a finding again)
 KNOWN_UPSTREAM += [
-    ("admin.", re.compile(r"Field name=enable_public_model_hub is not set"),
-     "LiteLLM 1.105.0's AI Hub page asks GET /config/field/info?field_name=enable_public_model_hub; a field set neither in "
-     "the config nor in its database is answered 400 {\"error\": \"Field name=… is not set\"} (proxy_server.py, "
-     "get_config_general_settings), which the page logs as \"Failed to set callbacks\"."),
     ("admin.", re.compile(r"The width\(0\) and height\(0\) of chart should be greater than 0"),
      "LiteLLM 1.105.0's Usage page (chunks/2h05w0no0km-v.js): recharts' ResponsiveContainer measured at 0×0 for charts of "
      "tabs not shown yet; the charts draw once their tab is opened."),
 ]
 # 4xx answers of the bundled apps that are their way of saying "nothing here" (traced on a throwaway, bodies quoted)
 KNOWN_HTTP = [
-    ("admin.", 400, re.compile(r"/config/field/info\?field_name=enable_public_model_hub$"),
-     "LiteLLM: an optional general setting not set (see the AI Hub page above)."),
     ("files.", 404, re.compile(r"/rustfs/admin/v3/rebalance/status$"),
      "RustFS 1.0.1: the Rebalance page's status call answers 404 <Code>NoSuchResource</Code> \"pool rebalance is not "
      "started\" when no rebalance runs (one pool here); Chrome logs every 4xx answer to the console."),
