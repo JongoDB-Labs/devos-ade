@@ -252,16 +252,29 @@ test('Chat\'s sweep: whatever is in no session of bn-coded\'s, its helpers\' or 
   put(200, { ppid: 100, sid: 200 });                    // an agent (its own session)
   put(201, { ppid: 200, pgrp: 201, sid: 200 });         // what it started, out of its group (setpgid): its session still
   put(300, { ppid: 1, sid: 300 });                      // what it started with setsid, now the init's
-  put(400, { ppid: 0, sid: 400 });                      // docker exec (a health check)
+  put(400, { ppid: 0, sid: 400 });                      // docker exec: ./stack subscriptions login --chat
+  put(401, { ppid: 400, sid: 400 });                    // what it runs: the tool's own sign-in (its session)
   put(500, { ppid: 100, sid: 500 });                    // a helper of bn-coded's (the status check)
   fs.mkdirSync(path.join(proc, 'self'));
   const killed = [];
   const kill = (pid, sig) => { killed.push([pid, sig]); };
+  // (frozen first, then killed; a sign-in docker exec started survives)
   assert.deepEqual(coded.sweepChat({ procDir: proc, self: 100, agents: [200], helpers: [500], kill }), [300]);
-  assert.deepEqual(killed, [[300, 'SIGKILL']]);
-  // the agent ended: its session goes, whatever left its group
+  assert.deepEqual(killed, [[300, 'SIGSTOP'], [300, 'SIGKILL']]);
+  // the agent ended: its session goes, whatever left its group — never spared, even named a live one
   killed.length = 0;
   assert.deepEqual(coded.sweepChat({ procDir: proc, self: 100, agents: [], helpers: [500], kill }).sort(), [200, 201, 300]);
+  killed.length = 0;
+  assert.deepEqual(coded.sweepChat({ procDir: proc, self: 100, agents: [200], helpers: [500], ending: [200], kill }).sort(), [200, 201, 300]);
+  // a process that keeps starting others: each new one frozen as it appears, the sandbox looked at again, then all
+  // killed (at most CHAT_SWEEP_ROUNDS rounds)
+  killed.length = 0;
+  let next = 600;
+  const forking = (pid, sig) => { killed.push([pid, sig]); if (sig === 'SIGSTOP' && next < 603) put(next++, { ppid: pid, sid: 300 }); };
+  assert.deepEqual(coded.sweepChat({ procDir: proc, self: 100, agents: [200], helpers: [500], kill: forking }).sort(), [300, 600, 601, 602]);
+  assert.deepEqual(killed.filter(([, sig]) => sig === 'SIGKILL').map(([p]) => p).sort(), [300, 600, 601, 602]);
+  assert.ok(killed.findIndex(([, sig]) => sig === 'SIGKILL') > killed.findLastIndex(([, sig]) => sig === 'SIGSTOP'), 'killed only once all are frozen');
+  for (const p of [600, 601, 602]) fs.rmSync(path.join(proc, String(p)), { recursive: true });
   // no bn-coded found: nothing
   assert.deepEqual(coded.sweepChat({ procDir: proc, self: 999, agents: [], helpers: [], kill }), []);
   // killGroup: the leader with its start — the group; the pid taken by another process since — not; the leader gone — its group still

@@ -5085,24 +5085,50 @@ export const statOf = (pid, procDir = '/proc') => {
     return { ppid: Number(f[1]), pgrp: Number(f[2]), sid: Number(f[3]), start: f[19] || '' };
   } catch { return null; }
 };
-// sweepChat({procDir, self, agents, helpers, kill}) -> the pids killed: every process of the sandbox but its init (pid
-// 1), bn-coded and what docker exec put in, whose session is neither bn-coded's, one of its helpers' (runCapped: the
-// status check), nor a live agent's
-export function sweepChat({ procDir = '/proc', self = process.pid, agents = liveAgents, helpers = helperSessions, kill = process.kill } = {}) {
+// sweepChat({procDir, self, agents, helpers, ending, kill}) -> the pids killed: every process of the sandbox but its init
+// (pid 1), bn-coded and what docker exec put in, whose session is not spared — bn-coded's, one of its helpers'
+// (runCapped: the status check), a live agent's, or that of a process docker exec put in (a parent 0 here but pid 1:
+// ./stack subscriptions login --chat, a health check — and what they start) — never the session of an agent being
+// ended (ending). Each is frozen first (SIGSTOP: it starts nothing more), the sandbox looked at again until no new one
+// appears (at most CHAT_SWEEP_ROUNDS), then each killed — by its exact pid, its start time read again just before.
+export const CHAT_SWEEP_ROUNDS = 5;
+export function sweepChat({ procDir = '/proc', self = process.pid, agents = liveAgents, helpers = helperSessions, ending = [], kill = process.kill } = {}) {
   const own = statOf(self, procDir);
   if (!own) return [];
-  const allowed = new Set([own.sid, ...helpers, ...agents]);
+  const scan = () => {
+    let names = [];
+    try { names = fs.readdirSync(procDir); } catch { return []; }
+    const out = [];
+    for (const n of names) {
+      if (!/^[1-9][0-9]{0,9}$/.test(n)) continue;
+      const pid = Number(n);
+      if (pid === 1 || pid === self) continue;
+      const st = statOf(pid, procDir);
+      if (st) out.push({ pid, st });
+    }
+    return out;
+  };
+  const spared = (procs) => {
+    const ok = new Set([own.sid, ...helpers, ...agents]);
+    for (const { st } of procs) if (st.ppid === 0) ok.add(st.sid);
+    for (const e of ending) ok.delete(e);
+    return ok;
+  };
+  const frozen = new Map();
+  for (let round = 0; round < CHAT_SWEEP_ROUNDS; round++) {
+    const procs = scan(), ok = spared(procs);
+    let fresh = 0;
+    for (const { pid, st } of procs) {
+      if (st.ppid === 0 || ok.has(st.sid) || frozen.has(pid)) continue;
+      // (its start time again, just before: the same process, never one that took its pid since)
+      if (statOf(pid, procDir)?.start !== st.start) continue;
+      try { kill(pid, 'SIGSTOP'); frozen.set(pid, st.start); fresh++; } catch { /* gone */ }
+    }
+    if (!fresh) break;
+  }
   const killed = [];
-  let names = [];
-  try { names = fs.readdirSync(procDir); } catch { return killed; }
-  for (const n of names) {
-    if (!/^[1-9][0-9]{0,9}$/.test(n)) continue;
-    const pid = Number(n);
-    if (pid === 1 || pid === self) continue;
-    const st = statOf(pid, procDir);
-    if (!st || st.ppid === 0 || allowed.has(st.sid)) continue;
-    // (its start time again, just before: the same process, never one that took its pid since)
-    if (statOf(pid, procDir)?.start !== st.start) continue;
+  for (const [pid, start] of frozen) {
+    if (statOf(pid, procDir)?.start !== start) continue;
     try { kill(pid, 'SIGKILL'); killed.push(pid); } catch { /* gone */ }
   }
   return killed;
@@ -5180,7 +5206,7 @@ export function serve(sock) {
       c.on('exit', (code, signal) => {
         liveAgents.delete(c.pid);
         killGroup(c.pid, groupStart);
-        if (roleOf() === 'chat') sweepChat();
+        if (roleOf() === 'chat') sweepChat({ ending: [c.pid] });
         setTimeout(() => {
           if (child !== c) return;
           try { c.stdout.destroy(); c.stderr.destroy(); } catch { /* closed */ }
@@ -5463,7 +5489,7 @@ export function serve(sock) {
       let s = {}; try { s = JSON.parse(payload.toString('utf8')); } catch { /* ignored */ }
       if (['SIGINT', 'SIGTERM', 'SIGKILL'].includes(s.signal)) signalChild(child, s.signal);
       // (Chat: an agent killed at a tool's first sign — what left its group goes now, not at the next sweep)
-      if (s.signal === 'SIGKILL' && group && roleOf() === 'chat') sweepChat({ agents: [...liveAgents].filter((p) => p !== child.pid) });
+      if (s.signal === 'SIGKILL' && group && roleOf() === 'chat') sweepChat({ agents: [...liveAgents].filter((p) => p !== child.pid), ending: [child.pid] });
     }
     return undefined;
   }
