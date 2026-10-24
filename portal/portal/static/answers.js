@@ -10,6 +10,9 @@
 //   Chat tab: a model keeps Open WebUI (?models=ID: a new chat with it); a subscription's tool replaces Open WebUI's
 //   frame with the tool's own screen — the terminal frame with ?arg=chat&…: a session of its own grouped with the
 //   terminal's, in the folder chosen beside it. You type into the real, unmodified client. "Open WebUI" brings it back.
+// Greyed items (catalog/setup-links.tsv, served as the answers' `setup`): each is a choice of its own that goes where it
+// is turned on — Settings at that row (the Settings address of its key: settings.js goTo), or Chat's sign-in row — at once, the choice in
+// the menu going back to what it was; its words say where. Only a reason the table has: else greyed, as before.
 // The choice is a per-browser convenience in localStorage (bn.answers). Loaded after app.js, mobile.js and terminal.js.
 "use strict";
 
@@ -18,23 +21,42 @@
 
   // --- pure parts (portal/tests/js/answers.test.mjs runs these in Node) ---
 
-  // toolState(TOOL, TERMINAL_HERE) -> {ok, word, why}: whether the tool can open here, a short state for its option,
-  // and why not (its option is then greyed)
-  function toolState(t, here) {
-    if (!here) return { ok: false, word: "terminal off here", why: "The browser terminal is off on this site (remote access: REMOTE_TERMINAL=true)." };
-    if (t.installed === false) return { ok: false, word: "not in the sandbox", why: "TERMINAL_AI_TOOLS in .env leaves it out (Settings › Claude Code › More)." };
+  // setupOf(DATA, REASON) -> {reason, target, says} of the answers' table (catalog/setup-links.tsv), or null
+  function setupOf(d, reason) {
+    const s = d && d.setup && typeof d.setup === "object" && typeof reason === "string" && Object.hasOwn(d.setup, reason) ? d.setup[reason] : null;
+    return s && typeof s.says === "string" && typeof s.target === "string" && /^(setting:[A-Z][A-Z0-9_]{1,60}|signin:(terminal|chat))$/.test(s.target)
+      ? { reason, target: s.target, says: s.says } : null;
+  }
+  // toolState(TOOL, TERMINAL_HERE, TERMINAL_REASON) -> {ok, word, why, reason}: whether the tool can open here, a short
+  // state for its option, and why not with its reason (setup-links: where it is turned on)
+  function toolState(t, here, termReason) {
+    if (!here) return { ok: false, word: "terminal off here", why: "The browser terminal is off on this site (remote access: REMOTE_TERMINAL=true).", reason: termReason === "terminal-off" ? "terminal-off" : "terminal-remote-off" };
+    if (t.installed === false) return { ok: false, word: "not in the sandbox", why: "TERMINAL_AI_TOOLS in .env leaves it out (Settings › Claude Code › More).", reason: "tool-left-out" };
     if (t.installed === null || t.installed === undefined) return { ok: true, word: "not checked yet", why: "" };
     if (t.signed_in === "yes") return { ok: true, word: t.kind_words ? `signed in · ${t.kind_words}` : "signed in", why: "" };
     if (t.signed_in === "no") return { ok: true, word: "sign in first", why: "" };
     return { ok: true, word: t.id === "copilot" ? "/user in it says who" : "sign-in not known here", why: "" };
   }
+  // greyed(DATA, REASON, TOOL, NAME, item) -> a greyed item as the choice that goes where it is turned on (value
+  // setup:REASON:TOOL; its words: NAME — what the table says), or ITEM greyed as before when the table has no such reason
+  function greyed(d, reason, tool, name, item) {
+    const s = setupOf(d, reason);
+    if (!s) return { ...item, disabled: true };
+    return { value: `setup:${reason}:${/^[a-z]{2,10}$/.test(tool || "") ? tool : ""}`, label: `${name} — ${s.says}`, disabled: false, title: s.says, setup: s };
+  }
+  const termReasonOf = (d) => (d && d.terminal && typeof d.terminal.reason === "string" ? d.terminal.reason : "");
   // terminalOptions(DATA) -> [{label, items: [{value, label, disabled, title}]}] for the Terminal tab
   function terminalOptions(d) {
     const here = Boolean(d && d.terminal && d.terminal.here);
-    const basics = (d && Array.isArray(d.basics) ? d.basics : []).map((b) => ({ value: b.id, label: `${b.name} — ${b.command}`, disabled: !here, title: "" }));
+    const off = toolState({}, false, termReasonOf(d));
+    const basics = (d && Array.isArray(d.basics) ? d.basics : []).map((b) => {
+      const item = { value: b.id, label: `${b.name} — ${b.command}`, disabled: false, title: "" };
+      return here ? item : greyed(d, off.reason, "", b.name, item);
+    });
     const tools = (d && Array.isArray(d.tools) ? d.tools : []).map((t) => {
-      const s = toolState(t, here);
-      return { value: t.id, label: `${t.name} (${t.command}) · ${s.word}`, disabled: !s.ok, title: s.why || `${t.provider}: ${t.plan}` };
+      const s = toolState(t, here, termReasonOf(d));
+      const item = { value: t.id, label: `${t.name} (${t.command}) · ${s.word}`, disabled: false, title: s.why || `${t.provider}: ${t.plan}` };
+      return s.ok ? item : greyed(d, s.reason, t.id, `${t.name} (${t.command})`, item);
     });
     return [{ label: "Claude Code on Bedrock, and a shell", items: basics },
       { label: "Your AI subscriptions — each signs in with its own flow", items: tools }].filter((g) => g.items.length);
@@ -46,20 +68,26 @@
     const models = d && Array.isArray(d.models) ? d.models : [];
     const tools = d && Array.isArray(d.tools) ? d.tools : [];
     const by = (p) => models.filter((m) => m.provider === p).map((m) => ({ value: `model:${m.id}`, label: m.label, disabled: false, title: m.id }));
+    // (no OpenRouter key: where it goes in, in place of its models)
+    const or = by("OpenRouter");
+    if (!or.length && d && d.openrouter === false && setupOf(d, "openrouter-off")) or.push(greyed(d, "openrouter-off", "", "OpenRouter models", {}));
     return [
       { label: "", items: [{ value: "owui", label: "Open WebUI — its own model menu", disabled: false, title: "" }] },
       { label: "Bedrock", items: by("Bedrock") },
-      { label: "OpenRouter", items: by("OpenRouter") },
+      { label: "OpenRouter", items: or },
       { label: "Your API keys", items: [{ value: "keys", label: "Your own OpenAI, Anthropic, xAI, Google or Mistral key — coming next", disabled: true, title: "Billed by each provider, with budgets, through LiteLLM (as OpenRouter is)." }] },
       { label: "Your AI subscriptions — the tool itself, here", items: tools.map((t) => {
-        const s = toolState(t, here);
-        return { value: `tool:${t.id}`, label: `${t.name} · ${s.word}`, disabled: !s.ok, title: s.why || `${t.provider}: ${t.plan}. You type into ${t.name} itself.` };
+        const s = toolState(t, here, termReasonOf(d));
+        const item = { value: `tool:${t.id}`, label: `${t.name} · ${s.word}`, disabled: false, title: s.why || `${t.provider}: ${t.plan}. You type into ${t.name} itself.` };
+        return s.ok ? item : greyed(d, s.reason, t.id, t.name, item);
       }) },
       { label: "Your AI subscriptions as Chat models", items: [
-        // (one that only lacks Chat's own sign-in: "Sign in for Chat…", which goes to Settings' row for it)
+        // (one that only lacks Chat's own sign-in: "Sign in for Chat…", which goes to Settings' row for it; one that is
+        // off for another reason: the choice that goes where that is turned on)
         ...(d && Array.isArray(d.plan_models) ? d.plan_models : []).map((m) => (m.signin === true && /^[a-z]{2,10}$/.test(m.tool || "")
-          ? { value: `signin:${m.tool}`, label: `${m.label} — Sign in for Chat…`, disabled: false, title: "Chat has sign-ins of its own, apart from the terminal's: Settings › Claude Code › Your AI subscriptions shows how." }
-          : { value: `model:${m.id}`, label: `${m.label}${m.ok ? "" : ` — ${m.why}`}`, disabled: !m.ok, title: m.ok ? `A model in Open WebUI's list too; it answers in the same chat, on your plan (no $).` : m.why })),
+          ? { value: `signin:${m.tool}`, label: `${m.label} — Sign in for Chat…`, disabled: false, title: (setupOf(d, "chat-signin") || {}).says || "Chat has sign-ins of its own, apart from the terminal's: Settings › Claude Code › Your AI subscriptions shows how." }
+          : m.ok ? { value: `model:${m.id}`, label: m.label, disabled: false, title: "A model in Open WebUI's list too; it answers in the same chat, on your plan (no $)." }
+            : greyed(d, m.reason, m.tool, m.label, { value: `model:${m.id}`, label: `${m.label} — ${m.why}`, title: m.why }))),
         ...tools.filter((t) => t.chat_model !== "yes").map((t) => (
           { value: `as-model:${t.id}`, label: `${t.name} — not a Chat model`, disabled: true, title: t.chat_why || "" })),
       ] },
@@ -78,7 +106,17 @@
     if (typeof raw.folder === "string" && raw.folder.length <= 512 && /^\/[^\u0000-\u001f\u007f]*$/.test(raw.folder)) out.folder = raw.folder;
     return out;
   }
-  root.bnAnswers = { _pure: { toolState, terminalOptions, chatOptions, chatSrc, parseSaved } };
+  // setupPlace(SETUP, TOOL) -> where a greyed item goes: {hash: "#settings/…", chat: TOOL (Chat's sign-in row)} or
+  // {open: TOOL} (the tool itself in the terminal: its own sign-in starts there), or null
+  function setupPlace(s, tool) {
+    if (!s || typeof s.target !== "string") return null;
+    const okTool = /^[a-z]{2,10}$/.test(tool || "") ? tool : "";
+    if (s.target.startsWith("setting:")) return { hash: `#settings/${s.target.slice(8)}` };
+    if (s.target === "signin:chat") return { hash: "#settings/+subscriptions", chat: okTool };
+    if (s.target === "signin:terminal" && okTool) return { open: okTool };
+    return null;
+  }
+  root.bnAnswers = { _pure: { toolState, terminalOptions, chatOptions, chatSrc, parseSaved, setupOf, setupPlace } };
   if (typeof document === "undefined" || typeof document.querySelector !== "function") return;
 
   const PHONE = window.matchMedia("(max-width: 767.98px)");
@@ -115,6 +153,7 @@
         const o = el("option", { value: it.value, text: it.label });
         if (it.disabled) o.disabled = true;
         if (it.title) o.title = it.title;
+        if (it.setup) o.dataset.setup = it.setup.reason;   // (a greyed item: it goes where that is turned on)
         parent.append(o);
       }
       if (parent !== select) select.append(parent);
@@ -131,9 +170,35 @@
   const tOpen = el("button", { type: "button", class: "action", id: "answers-terminal-open", text: "Open" });
   const tNote = el("span", { class: "answers-note", text: "A window of its own; each tool signs in with its own flow there." });
   const tWrap = el("span", { class: "answers-group" }, el("label", { for: "answers-terminal", text: "Open" }), tSelect, tOpen, tNote);
+  // goSetup(VALUE) — a greyed item chosen (setup:REASON:TOOL): where it is turned on, at once (Settings at that row; Chat's
+  // sign-in row with its Sign in open; the tool itself in the terminal). -> whether it was one
+  function goSetup(v) {
+    const m = /^setup:([a-z][a-z-]{1,40}):([a-z]{0,10})$/.exec(v || "");
+    if (!m) return false;
+    const where = setupPlace(setupOf(data, m[1]), m[2]);
+    if (!where) return true;
+    if (where.open) {
+      launch("open", where.open).then((url) => {
+        root.showTab("terminal");
+        const f = document.querySelector('#frames iframe[data-app="terminal"]');
+        if (f) { f.src = url; f.focus(); }
+      }, failed);
+      return true;
+    }
+    if (where.chat !== undefined) root.bnSubsChatSignin = where.chat;
+    if (location.hash === where.hash && typeof root.showTab === "function") root.showTab("settings");
+    else location.hash = where.hash;
+    return true;
+  }
+  root.bnAnswers.goSetup = goSetup;
+  let tLast = "bedrock";
+  tSelect.addEventListener("change", () => {
+    if (goSetup(tSelect.value)) { tSelect.value = tLast; return; }
+    tLast = tSelect.value;
+  });
   tOpen.addEventListener("click", () => {
     const f = document.querySelector('#frames iframe[data-app="terminal"]');
-    if (!f || !tSelect.value || tSelect.selectedOptions[0]?.disabled) return;
+    if (!f || !tSelect.value || tSelect.value.startsWith("setup:") || tSelect.selectedOptions[0]?.disabled) return;
     tOpen.disabled = true;
     launch("open", tSelect.value).then((url) => { f.src = url; f.focus(); }, failed).finally(() => { tOpen.disabled = false; });
   });
@@ -186,6 +251,8 @@
   });
   cSelect.addEventListener("change", () => {
     const v = cSelect.value;
+    // a greyed item: where it is turned on (the choice goes back to what it was)
+    if (goSetup(v)) { cSelect.value = saved.chat; return; }
     // Sign in for Chat…: Settings' row for that tool's Chat sign-in (the choice goes back to what it was)
     if (v.startsWith("signin:")) {
       cSelect.value = saved.chat;
@@ -229,7 +296,7 @@
     if (tab === "chat" && data) showChat();   // (at once, from what this page knows: no flash of Open WebUI)
     const d = await load(false);
     if (current !== tab) return;
-    if (tab === "terminal") fill(tSelect, terminalOptions(d), tSelect.value || "bedrock");
+    if (tab === "terminal") { fill(tSelect, terminalOptions(d), tSelect.value || "bedrock"); if (!tSelect.value.startsWith("setup:")) tLast = tSelect.value; }
     else {
       fill(cSelect, chatOptions(d), saved.chat);
       // (a choice this page no longer offers — a model turned off, a tool left out — is Open WebUI again)

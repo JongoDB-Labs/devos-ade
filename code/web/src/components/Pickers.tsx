@@ -2,7 +2,8 @@
 // (/.bn/models), never from the CLI; costs come from DevOS ADE's spend logs (/.bn/spend).
 import { useState } from 'preact/hooks';
 import { useSel } from '../store';
-import { store, setModel, setMode, setEffort, activeView, defaultModel, refreshSpend, autoOk, setPrefs, toast, switchHarness, harnessName, planOf, refreshHarnesses } from '../app';
+import { store, setModel, setMode, setEffort, activeView, defaultModel, refreshSpend, autoOk, setPrefs, toast, switchHarness, harnessName, planOf, refreshHarnesses, goSetup } from '../app';
+import { SETUP_LINKS, type SetupReason } from '../setuplinks';
 import { COMPAT_INFO, GROUP_TITLE, compatWarning, findModel, hiddenCount, modelSections } from '../models';
 import { STARRED_MAX } from '../prefs';
 import { meter } from '../spend';
@@ -45,11 +46,13 @@ function pick(m: BnModel): void {
 // Claude on your plan's models: Claude Code's own names there (what your plan offers; its default when none)
 const PLAN_MODELS = [{ id: 'default', name: "Your plan's default" }, { id: 'opus', name: 'Opus' }, { id: 'sonnet', name: 'Sonnet' }, { id: 'haiku', name: 'Haiku' }];
 
-/** a subscription in the picker: whether it can start here, in words */
-export function harnessState(h: HarnessInfo): { ok: boolean; says: string } {
-  if (!h.installed) return { ok: false, says: 'not in the sandbox' };
-  if (!h.allowed) return { ok: false, says: 'off: Settings › Claude Code › Your AI subscriptions' };
-  if (h.signed === 'no') return { ok: false, says: `sign in first: the terminal's Open › ${h.name}` };
+/** a subscription in the picker: whether it can start here, in words — and when not, why (setuplinks.ts: its item goes
+ *  where that is turned on, saying where) */
+export function harnessState(h: HarnessInfo): { ok: boolean; says: string; reason?: SetupReason } {
+  const off = (reason: SetupReason) => ({ ok: false, says: SETUP_LINKS[reason].says, reason });
+  if (!h.installed) return off('tool-left-out');
+  if (!h.allowed) return off('claude-plan-off');
+  if (h.signed === 'no') return off('tool-signin');
   return { ok: true, says: h.signed === 'yes' ? 'signed in' : 'sign-in not known here' };
 }
 
@@ -68,9 +71,10 @@ function WhoAnswers({ current, close }: { current: Harness; close: () => void })
       </MenuItem>
       {(list ?? []).map((h) => {
         const st = harnessState(h);
+        // (one that cannot start here: a choice that goes where that is turned on — at once, its words saying where)
         return (
-          <MenuItem key={h.id} checked={current === h.id} disabled={!st.ok && current !== h.id} testid={`harness-${h.id}`}
-            onSelect={() => { close(); if (current !== h.id && st.ok) void switchHarness(h.id); }}>
+          <MenuItem key={h.id} checked={current === h.id} testid={`harness-${h.id}`} setup={!st.ok && current !== h.id ? st.reason : undefined}
+            onSelect={() => { close(); if (current === h.id) return; if (st.ok) void switchHarness(h.id); else if (st.reason) goSetup(st.reason, h.id); }}>
             <span class="mi-title">{h.id === 'claude' ? 'Claude · your plan' : h.name}<span class="mp-badge tone-info">your plan</span></span>
             <span class="mi-desc">{h.plan} · {st.says}</span>
           </MenuItem>
@@ -171,9 +175,10 @@ function BedrockModelPicker({ compact }: { compact?: boolean }) {
           <div class="panel-head mp-head">
             <span>Model</span>
             {bn?.scope && bn.scope.mode !== 'all' && (
-              <span class="mp-scope" data-testid="model-scope">
+              <button type="button" class="linkish mp-scope setup-link" data-testid="model-scope" data-setup="models-scope" title={SETUP_LINKS['models-scope'].says}
+                onClick={() => { close(); goSetup('models-scope'); }}>
                 {bn.scope.mode === 'anthropic' ? 'Anthropic only' : 'your list'} · Settings › Claude Code
-              </span>
+              </button>
             )}
           </div>
           <div class="mp-searchbox">
@@ -340,8 +345,10 @@ export function ModePicker({ compact }: { compact?: boolean }) {
           {agent && <div class="panel-note" data-testid="mode-agent">This tool's own sessions take Read only, Plan, Manual and Accept edits: what it asks goes to you; Read only and Plan refuse its changes.</div>}
           {!agent && (!allowAuto || !allowBypass) && (
             <div class="panel-note" data-testid={allowBypass ? 'mode-auto-off' : 'mode-bypass-off'}>
-              {!allowAuto && !allowBypass ? 'Auto and Bypass permissions are off' : !allowAuto ? 'Auto is off' : 'Bypass permissions is off'}. Settings › Claude Code turns{' '}
-              {!allowAuto && !allowBypass ? 'them' : 'it'} on (from the computer running {PRODUCT}).
+              {/* (each a link to its setting: setuplinks.ts) */}
+              {(['auto-off', 'bypass-off'] as const).filter((r) => (r === 'auto-off' ? !allowAuto : !allowBypass)).map((r) => (
+                <button type="button" class="linkish setup-link" data-setup={r} key={r} onClick={() => { close(); goSetup(r); }}>{SETUP_LINKS[r].says}</button>
+              ))}
             </div>
           )}
           <div class="panel-note">

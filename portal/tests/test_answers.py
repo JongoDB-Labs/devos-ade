@@ -6,6 +6,7 @@ as bn-session's), and Settings' two actions for the update helper (Check again, 
 import json
 import os
 import shutil
+import types
 from dataclasses import replace
 from pathlib import Path
 from urllib.parse import quote
@@ -27,6 +28,7 @@ CODE_HOST = "code.bedrock-now.localhost"
 CODE = f"http://{CODE_HOST}"
 # (the repository's, or the copy the image's test stage gets: portal/Dockerfile, BN_REPO_DIR)
 CATALOG = Path(os.environ.get("BN_REPO_DIR") or Path(__file__).resolve().parents[2]) / "catalog" / "ai-tools.tsv"
+SETUP = CATALOG.parent / "setup-links.tsv"
 H = {"X-Requested-With": "bedrock-now"}
 
 
@@ -40,6 +42,8 @@ def s(settings, tmp_path):
     req = tmp_path / "requests"; req.mkdir()
     if CATALOG.exists():
         shutil.copy(CATALOG, settings.catalog_dir / "ai-tools.tsv")
+    if SETUP.exists():
+        shutil.copy(SETUP, settings.catalog_dir / "setup-links.tsv")
     return replace(settings, terminal=True, code=True, status_dir=status, request_dir=req)
 
 
@@ -110,13 +114,13 @@ def test_api_answers_needs_a_session_and_says_where_the_terminal_is(s):
         assert c.get("/api/answers", headers=H).status_code == 401
         session(c)
         d = c.get("/api/answers", headers=H).json()
-        assert d["terminal"] == {"enabled": True, "here": True} and d["sandbox"] == "running"
+        assert d["terminal"] == {"enabled": True, "here": True, "reason": None} and d["sandbox"] == "running"
         assert [b["id"] for b in d["basics"]] == ["bedrock", "shell"]
         assert next(t for t in d["tools"] if t["id"] == "codex")["signed_in"] == "no"
         assert d["models"] == [] and d["folders"] == []
     with _client(replace(s, terminal=False, code=False)) as c:
         session(c)
-        assert c.get("/api/answers", headers=H).json()["terminal"] == {"enabled": False, "here": False}
+        assert c.get("/api/answers", headers=H).json()["terminal"] == {"enabled": False, "here": False, "reason": "terminal-off"}
 
 
 TOK = "1792760000-0123456789abcdef-" + "0" * 32   # a launch token's form (not a valid one)
@@ -463,3 +467,65 @@ def test_your_subscriptions_as_chat_models_while_they_can_answer(s):
     rows = answers.tools(s.catalog_dir, s.status_dir)["tools"]
     pm = {m["tool"]: m for m in answers.plan_models(replace(s, claude_plan=True), False, rows)}
     assert pm["codex"]["ok"] and not pm["claude"]["ok"] and pm["claude"]["signin"]
+
+
+# --- what greyed items say and where they go (catalog/setup-links.tsv) ---
+
+def _keys_and_layout():
+    cat = CATALOG.parent
+    keys = {l.split("\t")[0] for l in (cat / "settings.tsv").read_text(encoding="utf-8").splitlines() if l and not l.startswith("#")}
+    layout = {}
+    for l in (cat / "settings-layout.tsv").read_text(encoding="utf-8").splitlines():
+        if l and not l.startswith("#") and not l.startswith("@"):
+            f = l.split("\t")
+            layout[f[0]] = f
+    return keys, layout
+
+
+@pytest.mark.skipif(not SETUP.exists(), reason="the repository's catalog is not here")
+def test_every_greyed_reason_has_a_live_target():
+    links = answers.setup_links(SETUP.parent)
+    keys, layout = _keys_and_layout()
+    assert links, "the table is there and read"
+    for reason, l in links.items():
+        kind, _, what = l["target"].partition(":")
+        if kind == "setting":
+            # (a key of settings.tsv the Settings page shows: its own row, or inside a row that is shown — goTo finds it)
+            assert what in keys, (reason, what)
+            row = layout.get(what)
+            assert row is not None, (reason, what)
+            if row[2] == "with":
+                assert row[3] in layout and layout[row[3]][2] != "with", (reason, row)
+        else:
+            assert kind == "signin" and what in ("terminal", "chat"), (reason, l)
+        # (what it says names where it goes: a setting by its place in Settings, a sign-in by where it starts)
+        assert "Settings ›" in l["says"] or "terminal" in l["says"], (reason, l["says"])
+    # every reason the portal gives is in the table: plan_models' and the terminal's (answers.js's: tests/js)
+    s = types.SimpleNamespace
+    rows = [{"id": "claude", "name": "Claude", "plan": "p", "chat_model": "yes", "installed": True, "chat": {"installed": True, "signed_in": "no"}},
+            {"id": "codex", "name": "Codex", "plan": "p", "chat_model": "yes", "installed": False, "chat": {"installed": True, "signed_in": "no"}},
+            {"id": "grok", "name": "Grok", "plan": "p", "chat_model": "yes", "installed": True, "chat": {"installed": True, "signed_in": "no"}}]
+    seen = set()
+    for code, terminal, egress, plan in [(False, True, "internet", False), (True, True, "off", False), (True, True, "internet", False),
+                                         (True, True, "internet", True)]:
+        st = s(code=code, terminal=terminal, terminal_egress=egress, claude_plan=plan, code_on=lambda r, c=code: c)
+        for m in answers.plan_models(st, False, rows, links):
+            if m["reason"]:
+                seen.add(m["reason"])
+                assert m["why"] == links[m["reason"]]["says"]
+    st = s(terminal=True, code=True, terminal_egress="internet", claude_plan=False, code_on=lambda r: not r)
+    seen |= {m["reason"] for m in answers.plan_models(st, True, rows, links) if m["reason"]}
+    for st, rem in [(s(terminal=False, terminal_on=lambda r: False), False), (s(terminal=True, terminal_on=lambda r: not r), True)]:
+        seen.add(answers.terminal_reason(st, rem))
+    assert seen == {"code-off", "terminal-remote-off", "chat-egress-off", "tool-left-out", "claude-plan-off", "chat-signin", "terminal-off"}, seen
+    assert seen <= set(links)
+
+
+def test_setup_links_reads_only_plain_rows(tmp_path):
+    (tmp_path / "setup-links.tsv").write_text(
+        "# a comment\nok-one\tsetting:CODE_ENABLED\tSays.\nBad\tsetting:X_Y\tx\nno-target\tsetting:lower\tx\n"
+        "bad-kind\tsignin:portal\tx\nfour\tsetting:A_B\tx\textra\nok-one\tsignin:chat\tagain\nempty\tsignin:chat\t​\n"
+        "chat\tsignin:chat\tSign in \u0007for Chat.\n", encoding="utf-8")
+    assert answers.setup_links(tmp_path) == {"ok-one": {"target": "setting:CODE_ENABLED", "says": "Says."},
+                                             "chat": {"target": "signin:chat", "says": "Sign in for Chat."}}
+    assert answers.setup_links(tmp_path / "none") == {}

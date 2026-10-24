@@ -214,14 +214,17 @@
   }
 
   // goTo PLACE — "section", "KEY" or "section/KEY" from the address: the section, and the setting opened (More
-  // unfolded, a setting whose switch is off shown anyway), scrolled to and highlighted
+  // unfolded, a setting whose switch is off shown anyway), scrolled to and highlighted — its switch focused when it has
+  // one (a greyed item elsewhere links here: catalog/setup-links.tsv); a setting shown inside another row: that row,
+  // at the setting (its [data-for]), its switch focused
   function goTo(place) {
     let sec = null, key = null;
     for (const part of String(place || "").split("/")) {
       if (sectionOf(part)) sec = part;
       else if ((KEY_NAME.test(part) || /^\+[a-z-]{2,20}$/.test(part)) && rowOf[part]) key = part;
     }
-    if (key && rowOf[key].place === "with" && rowOf[rowOf[key].parent]) key = rowOf[key].parent;
+    const inner = key && rowOf[key].place === "with" && rowOf[rowOf[key].parent] ? key : null;
+    if (inner) key = rowOf[key].parent;
     if (key) sec = rowOf[key].section;
     if (!sec) return;
     showSection(sec, { address: false, scroll: !key });
@@ -232,11 +235,13 @@
     if (more) more.open = true;
     for (let d = r.closest(".set-dep"); d; d = d.parentElement.closest(".set-dep")) d.classList.add("set-forced");
     applyView();
-    r.setAttribute("tabindex", "-1");
-    r.scrollIntoView({ block: "center" });
-    r.focus({ preventScroll: true });
-    r.classList.add("set-flash");
-    setTimeout(() => r.classList.remove("set-flash"), 2400);
+    const at = (inner && r.querySelector(`[data-for="${inner}"]`)) || r;
+    const sw = at.querySelector('button[role="switch"]:not(:disabled)');
+    at.setAttribute("tabindex", "-1");
+    at.scrollIntoView({ block: "center" });
+    (sw || at).focus({ preventScroll: true });
+    at.classList.add("set-flash");
+    setTimeout(() => at.classList.remove("set-flash"), 2400);
   }
 
   // --- what is shown: one section, or every match of the search / "Changed from default" with its section ---
@@ -530,6 +535,7 @@
   // The Code page runs in the browser terminal's sandbox: with the terminal off, turning it on turns the terminal on
   // too, with the folder ./stack names in the snapshot (choices.code_workspace; settings_check_batch checks it)
   const terminalOn = () => Boolean(keys.TERMINAL_ENABLED && keys.TERMINAL_ENABLED.value === "true");
+  const codeOn = () => Boolean(keys.CODE_ENABLED && keys.CODE_ENABLED.value === "true");
   const codeFolder = () => terminalOn() ? (keys.TERMINAL_WORKSPACE && keys.TERMINAL_WORKSPACE.value) || ""
     : (data.snapshot && data.snapshot.choices.code_workspace) || "";
 
@@ -1316,13 +1322,19 @@
       const li = el("li", { class: "set-project", "data-tool": t.id },
         el("span", { class: "set-project-name", text: t.name }), " ",
         el("span", { class: "note", text: `${t.provider} · ${t.plan}${t.version ? ` · ${t.version}` : ""} · ${t.command}` }));
-      // the terminal's and the Code page's sign-in
+      // the terminal's and the Code page's sign-in — its one next step first: Sign in (it opens in the terminal), or the
+      // setting that puts it in the sandbox
       const st = stateOf(t, t);
       const term = el("div", { class: "set-subs-where", "data-where": "terminal" },
         el("span", { class: "note", text: t.chat ? "Terminal & Code page: " : "" }), el("span", { class: `badge ${st[1]}`.trim(), text: st[0] }));
       const acts = el("span", { class: "set-project-actions" });
+      if (t.installed === false) {
+        acts.append(el("a", { class: "action", href: "#settings/TERMINAL_AI_TOOLS", "data-act": "subscriptions-left-out", text: "Put it in the sandbox (Tools in the sandbox)" }));
+      }
       if (t.installed !== false && termHere) {
-        const open = el("button", { type: "button", class: "action", text: t.signed_in === "yes" ? "Open in the terminal" : "Sign in in the terminal", "data-act": "subscriptions-open" });
+        const signedIn = t.signed_in === "yes";
+        const open = el("button", { type: "button", class: signedIn ? "action" : "action primary", text: signedIn ? "Open in the terminal" : "Sign in (terminal and Code page)",
+          "aria-label": signedIn ? `Open ${t.name} in the terminal` : `Sign ${t.name} in: it opens in the terminal, where its own sign-in starts`, "data-act": "subscriptions-open" });
         open.addEventListener("click", () => {
           // (a launch token for exactly this, made on this click: answers.js launch)
           if (!window.bnAnswers || !window.bnAnswers.launch) return;
@@ -1356,10 +1368,12 @@
           el("span", { class: "note", text: "Chat: " }), el("span", { class: `badge ${cs[1]}`.trim(), text: cs[0] }));
         const cacts = el("span", { class: "set-project-actions" });
         const cmd = `./stack subscriptions login ${t.id} --chat`;
-        const signin = el("button", { type: "button", class: "action", text: "Sign in for Chat", "data-act": "subscriptions-chat-signin" });
+        const chatIn = t.chat.signed_in === "yes";
+        const signin = el("button", { type: "button", class: chatIn ? "action" : "action primary", text: "Sign in (Chat)", "aria-expanded": "false",
+          "aria-label": `Sign ${t.name} in for Chat: shows the command for a terminal on this computer`, "data-act": "subscriptions-chat-signin" });
         const how = el("p", { class: "set-cli", hidden: true }, el("span", { class: "note", text: `Chat's own sign-in, apart from the terminal's — in a terminal on this computer (its link and code show there): ` }),
           el("code", { text: cmd }), " ", copyButton(cmd));
-        signin.addEventListener("click", () => { how.hidden = !how.hidden; });
+        signin.addEventListener("click", () => { how.hidden = !how.hidden; signin.setAttribute("aria-expanded", String(!how.hidden)); });
         cacts.append(signin);
         if (SUBS_CHAT_SIGNOUT.includes(t.id) && t.chat.installed !== false) {
           const out = el("button", { type: "button", class: "action", text: "Sign out", "data-act": "subscriptions-signout-chat" });
@@ -1376,6 +1390,21 @@
         chat.append(cacts, how);
         li.append(chat);
       }
+      // Claude: the switch for Claude on your plan in the Code page and Chat (CODE_CLAUDE_PLAN, shown here: its row is
+      // this one — settings-layout.tsv), off by default
+      const pk = keys.CODE_CLAUDE_PLAN;
+      if (t.id === "claude" && pk) {
+        const plan = el("div", { class: "set-subs-where set-subs-plan", "data-for": "CODE_CLAUDE_PLAN", id: "set-row-CODE_CLAUDE_PLAN" },
+          el("span", { class: "set-name", id: "set-name-CODE_CLAUDE_PLAN", text: pk.label || "Use my Claude plan in the Code page and Chat" }));
+        if (!codeOn()) {
+          plan.append(" ", el("a", { href: "#settings/CODE_ENABLED", class: "note", text: "Needs the Code page: Settings › Claude Code › Code page" }));
+        } else if (editable(pk)) {
+          plan.append(el("span", { class: "set-project-actions" }, toggle(pk, shown(pk), "set-name-CODE_CLAUDE_PLAN")));
+        } else plan.append(" ", el("span", { class: "badge", text: display(pk) || "Off" }));
+        plan.append(el("p", { class: "note", id: "set-sum-CODE_CLAUDE_PLAN", text: "Off by default: Anthropic's support article and its legal page pull apart on apps like this one — your choice (Details)." }),
+          el("details", { class: "set-details" }, el("summary", {}, "Details"), el("p", { class: "note", text: pk.note || "" })));
+        li.append(plan);
+      }
       list.append(li);
     }
     if (!(sb.tools || []).length) list.append(el("li", { class: "note", text: "No tools listed (catalog/ai-tools.tsv is missing)." }));
@@ -1384,7 +1413,7 @@
     const chatWhen = sb.chat_checked_at ? new Date(sb.chat_checked_at * 1000).toLocaleString() : "";
     const SB = { off: "The sandbox is off: ./stack terminal enable.", down: "The sandbox is not running: ./stack up.", error: "The sandbox did not answer at the last check." };
     const CSB = { off: "Chat's sandbox is off (it runs with the Code page).", down: "Chat's sandbox is not running: ./stack up.", error: "Chat's sandbox did not answer at the last check." };
-    rw._main.append(el("p", { class: "note set-extra", text: `${SB[sb.sandbox] || ""}${SB[sb.sandbox] ? " " : ""}${when ? `Checked ${when}.` : "Not checked yet."} ${CSB[sb.chat_sandbox] || ""}${chatWhen ? ` Chat's checked ${chatWhen}.` : ""} Each tool signs in with its own flow, in the terminal (a link and a code for your browser) — and once more for Chat, whose sandbox has sign-ins of its own (nothing is copied between the two); each login stays in that tool's own file there — DevOS ADE never opens it, and backups leave it out. Anything in that sandbox can read those files: sign out (and revoke at the provider) if that worries you.` }));
+    rw._main.append(el("p", { class: "note set-extra", text: `${SB[sb.sandbox] || ""}${SB[sb.sandbox] ? " " : ""}${when ? `Checked ${when}.` : "Not checked yet."} ${CSB[sb.chat_sandbox] || ""}${chatWhen ? ` Chat's checked ${chatWhen}.` : ""} Each sign-in is the tool's own, and stays in its own file in that sandbox (Chat's apart from the terminal's): DevOS ADE never opens it, backups leave it out. Anything in that sandbox can read it — Sign out, and revoke it at the provider, if that worries you.` }));
     if (!can("subscriptions-check")) {
       rw._main.append(el("p", { class: "note set-extra", text: !data.helper.running ? "Check again and Sign out need the update helper (./stack helper install)." : !canChange() ? "Settings changes are off for remote access (REMOTE_ADMIN_ACTIONS)." : "This update helper does not offer them yet: ./stack helper install refreshes it." }));
     }
@@ -1395,7 +1424,18 @@
     if (want) {
       window.bnSubsChatSignin = "";
       const c = rw.querySelector(`#set-subs-chat-${want}`);
-      if (c) { c.querySelector(".set-cli").hidden = false; requestAnimationFrame(() => c.scrollIntoView({ block: "center" })); }
+      if (c) {
+        // (its Sign in, pressed: the command shown, the button focused, the row highlighted)
+        c.querySelector(".set-cli").hidden = false;
+        const b = c.querySelector('[data-act="subscriptions-chat-signin"]');
+        if (b) b.setAttribute("aria-expanded", "true");
+        requestAnimationFrame(() => {
+          c.scrollIntoView({ block: "center" });
+          if (b) b.focus({ preventScroll: true });
+          c.classList.add("set-flash");
+          setTimeout(() => c.classList.remove("set-flash"), 2400);
+        });
+      }
     }
     return rw;
   }

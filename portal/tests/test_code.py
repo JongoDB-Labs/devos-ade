@@ -185,6 +185,19 @@ def test_code_tab_is_always_there_and_explains_itself_while_off():
     assert "innerHTML" not in js
 
 
+def test_a_greyed_item_of_the_code_page_opens_settings_from_the_code_tabs_own_frame_only():
+    # (catalog/setup-links.tsv: the Code page's {type: "bn-code-setup", place} — Settings at that place, nothing else)
+    js = open("portal/static/code.js", encoding="utf-8").read()
+    handler = js.split('e.data.type !== "bn-code-setup") return;', 1)
+    assert len(handler) == 2
+    check = handler[0].rsplit('window.addEventListener("message", (e) => {', 1)[1]
+    assert "e.origin !== codeOrigin" in check and "e.source !== f.contentWindow" in check
+    body = handler[1].split("});", 1)[0]
+    assert '!/^([A-Z][A-Z0-9_]{1,60}|\\+[a-z-]{2,20})$/.test(place)) return;' in body
+    # (only the portal's own address for it: the hash of its Settings place — never a URL from the message)
+    assert body.count("location.hash = `#settings/${place}`") == 1 and "location.href" not in body and "assign(" not in body
+
+
 def test_code_tabs_frame_is_made_when_idle_on_big_screens_for_its_badge():
     js = open("portal/static/code.js", encoding="utf-8").read()
     app = open("portal/static/app.js", encoding="utf-8").read()

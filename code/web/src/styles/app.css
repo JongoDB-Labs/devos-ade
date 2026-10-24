@@ -167,6 +167,10 @@ body.resizing-x iframe, body.resizing-y iframe { pointer-events: none; }
 .mi-desc { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mi-hint { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mi-check { color: var(--accent); }
+/* a greyed item that goes where it is turned on (setuplinks.ts): greyed in look, its words a link's colour, whole */
+.mi-setup .mi-title { color: var(--muted); }
+.mi-setup .mi-desc { color: var(--accent); white-space: normal; }
+.panel-note .setup-link { display: block; text-align: left; margin: 2px 0; font-size: 12px; }
 
 /* meters */
 .meter-btn { flex: none; display: inline-flex; align-items: baseline; gap: 4px; height: 28px; padding: 0 9px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); white-space: nowrap; }

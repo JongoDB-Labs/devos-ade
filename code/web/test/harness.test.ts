@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { harnessOf, normEvent, normPlan, normServerMsg } from '../src/api';
 import { planText, harnessState } from '../src/components/Pickers';
+import { SETUP_LINKS, settingsRoute, setupTarget, type SetupReason } from '../src/setuplinks';
 import { applyEvent, newView } from '../src/session';
 
 const S = '3f2a7c1e-9b4d-4e8a-a1c2-0d9e8f7a6b5c';
@@ -39,7 +40,25 @@ test('the picker: a subscription that can start, and why one cannot', () => {
   const h = { id: 'codex' as const, name: 'Codex', provider: 'OpenAI', plan: 'your ChatGPT plan', installed: true, signed: 'yes' as const, allowed: true };
   assert.deepEqual(harnessState(h), { ok: true, says: 'signed in' });
   assert.deepEqual(harnessState({ ...h, signed: 'unknown' }), { ok: true, says: 'sign-in not known here' });
-  assert.match(harnessState({ ...h, signed: 'no' }).says, /sign in first: the terminal's Open › Codex/);
-  assert.equal(harnessState({ ...h, installed: false }).ok, false);
-  assert.match(harnessState({ ...h, allowed: false }).says, /Settings › Claude Code › Your AI subscriptions/);
+  // (one that cannot start: why, as setuplinks.ts says it — its item goes where that is turned on)
+  assert.deepEqual(harnessState({ ...h, signed: 'no' }), { ok: false, says: SETUP_LINKS['tool-signin'].says, reason: 'tool-signin' });
+  assert.deepEqual(harnessState({ ...h, installed: false }), { ok: false, says: SETUP_LINKS['tool-left-out'].says, reason: 'tool-left-out' });
+  assert.deepEqual(harnessState({ ...h, allowed: false }), { ok: false, says: SETUP_LINKS['claude-plan-off'].says, reason: 'claude-plan-off' });
+  assert.match(harnessState({ ...h, allowed: false }).says, /Settings › Claude Code › Your AI subscriptions › Use my Claude plan/);
+});
+
+test('greyed items: every reason has a target, none dead — a setting of the portal or a sign-in; and how Settings is reached', () => {
+  for (const [r, l] of Object.entries(SETUP_LINKS)) {
+    assert.match(l.target, /^(setting:[A-Z][A-Z0-9_]{1,60}|signin:(terminal|chat))$/, r);
+    assert.ok(l.says.length > 10 && l.says.length <= 300 && /Settings ›|terminal/.test(l.says), r);
+    const t = setupTarget(r as SetupReason);
+    assert.ok('setting' in t ? l.target === `setting:${t.setting}` : l.target === `signin:${t.signin}`, r);
+  }
+  // the ones this page gives
+  for (const r of ['tool-left-out', 'claude-plan-off', 'tool-signin', 'auto-off', 'bypass-off', 'models-scope', 'terminal-remote-off']) assert.ok(Object.hasOwn(SETUP_LINKS, r), r);
+  assert.deepEqual(settingsRoute('CODE_AUTO_MODE', 'http://bedrock-now.localhost:80/x?y', true), { post: { type: 'bn-code-setup', place: 'CODE_AUTO_MODE' }, to: 'http://bedrock-now.localhost' });
+  assert.deepEqual(settingsRoute('CODE_AUTO_MODE', 'https://p.example', false), { open: 'https://p.example/#settings/CODE_AUTO_MODE' });
+  for (const [place, origin] of [['CODE_AUTO_MODE', null], ['code_auto', 'https://p.example'], ['A/../B', 'https://p.example'], ['CODE_AUTO_MODE', 'javascript:alert(1)'], ['CODE_AUTO_MODE', 'not a url']] as const) {
+    assert.equal(settingsRoute(place, origin, true), null, `${place} ${origin}`);
+  }
 });

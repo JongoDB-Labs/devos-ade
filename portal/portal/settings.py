@@ -196,7 +196,9 @@ def layout(catalog_dir: Path) -> dict:
             continue
         if len(c) < 5 or c[0] in seen_k or not (NAME.fullmatch(c[0]) or c[0] in OWN_ROWS):
             continue
-        if c[1] not in seen_s or c[2] not in PLACES or not (c[3] == "-" or NAME.fullmatch(c[3])):
+        # (a parent: a key — or, for a setting shown inside it, one of the page's own rows: the Claude plan switch on
+        # Claude's row of Your AI subscriptions)
+        if c[1] not in seen_s or c[2] not in PLACES or not (c[3] == "-" or NAME.fullmatch(c[3]) or (c[2] == "with" and c[3] in OWN_ROWS)):
             continue
         if c[2] == "with" and c[3] == "-":
             continue

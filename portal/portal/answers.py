@@ -6,7 +6,9 @@ say anything: only its words are kept here — an id of the catalog, yes/no/unkn
 kind from the list below. Nothing of a login is ever in it.
 
 GET /api/answers (any signed-in device) and /.bn/answers on the Code page's host (Caddy → /auth/code-answers, after its
-check): {"terminal": {"enabled", "here"}, "sandbox", "checked_at", "tools": [...], "models": [...]}."""
+check): {"terminal": {"enabled", "here", "reason"}, "sandbox", "checked_at", "tools": [...], "models": [...],
+"plan_models": [...], "openrouter", "setup": {reason: {"target", "says"}}} — setup: catalog/setup-links.tsv, what each
+greyed item says and where it takes you (setup_links)."""
 
 from __future__ import annotations
 
@@ -19,6 +21,10 @@ from urllib.parse import parse_qsl, unquote_plus, urlencode
 from . import hostfiles
 
 TOOLS_FILE = "ai-tools.tsv"
+# what a greyed item says and where it goes (code/web/src/setuplinks.ts has the same rows: tests compare)
+SETUP_FILE = "setup-links.tsv"
+SETUP_REASON = re.compile(r"[a-z][a-z-]{1,40}")
+SETUP_TARGET = re.compile(r"setting:[A-Z][A-Z0-9_]{1,60}|signin:(?:terminal|chat)")
 STATUS_FILE = "subscriptions.json"
 # Chat's sandbox's own sign-ins (./stack subscriptions status --chat): the Chat models', apart from the terminal's
 CHAT_STATUS_FILE = "subscriptions-chat.json"
@@ -76,6 +82,35 @@ def read_tools(catalog_dir: Path) -> list[dict]:
                     "plan": _text(row["plan"], 120), "command": _text(row["command"], 30), "signout": row["signout"],
                     "chat_model": row["chat_model"], "chat_why": _text(row["chat_why"], 400), "terms": row["terms"]})
     return out
+
+
+def setup_links(catalog_dir: Path) -> dict:
+    """catalog/setup-links.tsv: {reason: {"target", "says"}} in its order, each field checked ({} without the file)."""
+    try:
+        p = catalog_dir / SETUP_FILE
+        if p.stat().st_size > MAX_TABLE:
+            return {}
+        text = p.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return {}
+    out = {}
+    for line in text.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        f = line.split("\t")
+        if len(f) != 3 or not SETUP_REASON.fullmatch(f[0]) or not SETUP_TARGET.fullmatch(f[1]) or f[0] in out:
+            continue
+        says = _text(f[2], 300)
+        if says:
+            out[f[0]] = {"target": f[1], "says": says}
+    return out
+
+
+def terminal_reason(s, remote: bool) -> str | None:
+    """Why the terminal is not here (setup_links' reason), or None: off, or not shared over remote access."""
+    if s.terminal_on(remote):
+        return None
+    return "terminal-off" if not s.terminal else "terminal-remote-off"
 
 
 def read_status(status_dir: Path, name: str = STATUS_FILE) -> dict:
@@ -141,40 +176,50 @@ def folders(status_dir: Path) -> list[dict]:
     return [{"name": f["name"], "path": f["path"]} for f in st.project_folders(status_dir).get("folders", []) if f.get("ok")]
 
 
-def plan_models(s, remote: bool, rows: list[dict]) -> list[dict]:
+def plan_models(s, remote: bool, rows: list[dict], links: dict | None = None) -> list[dict]:
     """Your subscriptions as Chat models (the code container's connection in Open WebUI: plan-<id>): {id, tool, label,
-    ok, why, signin} for each tool the catalog offers as one — ok while the Code page runs here, the sandbox has a way
+    ok, why, reason, signin} for each tool the catalog offers as one — ok while the Code page runs here, the sandbox has a way
     out (TERMINAL_EGRESS=off: none then; with host Chat's sandbox has a proxy of its own, compose.code-egress.yaml),
     the tool is in Chat's sandbox and does not say it is signed out there — Chat's own sign-in, never the terminal's (Claude: also Settings' switch, and signed in).
-    signin: what is missing is that sign-in (the picker's "Sign in for Chat…" goes to Settings' row for it)."""
+    signin: what is missing is that sign-in (the picker's "Sign in for Chat…" goes to Settings' row for it). reason: why
+    it is off (setup_links' — why: its words there, or these when the table is not there)."""
+    links = links if links is not None else {}
+    fallback = {"code-off": "needs the Code page (it runs your subscriptions' agents)",
+                "terminal-remote-off": "not over remote access (Terminal and Code page over remote access)",
+                "chat-egress-off": "off while the sandbox has no internet (Settings › Claude Code › Sandbox internet access: Off)",
+                "tool-left-out": "not in the sandbox",
+                "claude-plan-off": "off: Settings › Claude Code › Your AI subscriptions › Use my Claude plan in the Code page and Chat",
+                "chat-signin": "Sign in for Chat… (a sign-in of its own, apart from the terminal's)"}
     out = []
     for t in rows:
         if t.get("chat_model") != "yes":
             continue
         c = t.get("chat") or {"installed": None, "signed_in": "unknown"}
-        why, signin = "", False
+        reason = None
         if not s.code_on(remote):
-            why = "needs the Code page (it runs your subscriptions' agents)"
+            reason = "code-off" if not s.code else "terminal-remote-off"
         elif getattr(s, "terminal_egress", "internet") == "off":
-            why = "off while the sandbox has no internet (Settings › Claude Code › Sandbox internet access: Off)"
+            reason = "chat-egress-off"
         elif t["installed"] is False or c["installed"] is False:
-            why = "not in the sandbox"
+            reason = "tool-left-out"
         elif t["id"] == "claude" and not getattr(s, "claude_plan", False):
-            why = "off: Settings › Claude Code › Your AI subscriptions › Use my Claude plan in the Code page and Chat"
+            reason = "claude-plan-off"
         elif c["signed_in"] == "no" or (t["id"] == "claude" and c["signed_in"] != "yes"):
-            why, signin = "Sign in for Chat… (a sign-in of its own, apart from the terminal's)", True
-        out.append({"id": f"plan-{t['id']}", "tool": t["id"], "label": f"{t['name']} · {t['plan']}", "ok": not why, "why": why,
-                    "signin": signin})
+            reason = "chat-signin"
+        why = (links.get(reason) or {}).get("says") or fallback[reason] if reason else ""
+        out.append({"id": f"plan-{t['id']}", "tool": t["id"], "label": f"{t['name']} · {t['plan']}", "ok": not reason, "why": why,
+                    "reason": reason, "signin": reason == "chat-signin"})
     return out
 
 
 def build(s, remote: bool, models: dict | None = None) -> dict:
     """The pickers' JSON for this site (remote: the terminal only where REMOTE_TERMINAL lets it be)."""
     t = tools(s.catalog_dir, s.status_dir)
-    t["plan_models"] = plan_models(s, remote, t["tools"])
-    return {"terminal": {"enabled": bool(s.terminal), "here": s.terminal_on(remote)},
+    links = setup_links(s.catalog_dir)
+    t["plan_models"] = plan_models(s, remote, t["tools"], links)
+    return {"terminal": {"enabled": bool(s.terminal), "here": s.terminal_on(remote), "reason": terminal_reason(s, remote)},
             "basics": list(BASICS), **t, "models": chat_models(models) if models is not None else [],
-            "folders": folders(s.status_dir)}
+            "folders": folders(s.status_dir), "openrouter": bool(getattr(s, "openrouter_api_key", "")), "setup": links}
 
 
 # --- the terminal's words: what the pickers add to its address (?arg=MODE&arg=TOOL&arg=TOKEN[&arg=FOLDER]), which ttyd

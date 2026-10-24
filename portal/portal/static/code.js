@@ -191,6 +191,16 @@
         document.dispatchEvent(new CustomEvent("bn:code-status", { detail: { waiting: reported.waiting, sessions: reported.sessions.map((x) => ({ ...x })), git: reported.git.map((x) => ({ ...x })), hosts: reported.hosts } }));
       }
     });
+    // A greyed item of the Code page chosen ({type: "bn-code-setup", place: KEY or +row}: catalog/setup-links.tsv —
+    // its model picker's Who answers, its modes): Settings at that place (settings.js goTo), from the same frame only
+    window.addEventListener("message", (e) => {
+      const f = codeFrame();
+      if (e.origin !== codeOrigin || !f || e.source !== f.contentWindow || !e.data || e.data.type !== "bn-code-setup") return;
+      const place = e.data.place;
+      if (typeof place !== "string" || !/^([A-Z][A-Z0-9_]{1,60}|\+[a-z-]{2,20})$/.test(place)) return;
+      if (location.hash === `#settings/${place}` && typeof window.showTab === "function") window.showTab("settings");
+      else location.hash = `#settings/${place}`;
+    });
   }
   const hooked = new WeakSet();
   let reportedAt = 0, loadedAt = 0;

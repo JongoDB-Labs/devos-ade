@@ -154,7 +154,7 @@ def test_every_key_has_one_place_in_a_known_section():
         if r["parent"]:
             p = rows[r["parent"]]
             assert p["section"] == r["section"], r          # a switch of the same section
-            assert p["place"] != "with" and not p["key"].startswith("+"), r
+            assert p["place"] != "with" and (not p["key"].startswith("+") or r["place"] == "with"), r
         if r["place"] == "with":
             assert r["parent"] and not r["summary"], r
         else:
@@ -191,8 +191,11 @@ def test_sections_hold_what_their_task_needs():
         if r["section"] == "about":
             assert table[k][3] == "derived", k
     editable = [k for k, t in table.items() if t[3] in ("edit", "local", "on-only", "widen-local", "regen")]
-    assert all(rows[k]["place"] in ("main", "more") or k in ("AWS_SECRET_ACCESS_KEY", "STT_API_KEY", "STT_MODEL", "RUSTFS_SECRET_KEY", "GIT_GITHUB_APP_SLUG")
+    assert all(rows[k]["place"] in ("main", "more") or k in ("AWS_SECRET_ACCESS_KEY", "STT_API_KEY", "STT_MODEL", "RUSTFS_SECRET_KEY", "GIT_GITHUB_APP_SLUG",
+                                                            "CODE_CLAUDE_PLAN")
                for k in editable)
+    # the Claude plan switch on Claude's row of Your AI subscriptions (where each tool is connected), not a row of its own
+    assert where("CODE_CLAUDE_PLAN") == ("code", "with", "+subscriptions")
     # Git hosts' sign-in: the apps' IDs under the Code page's More (the GitHub App's name with its client ID)
     assert where("GIT_GITHUB_CLIENT_ID") == ("code", "more", "CODE_ENABLED") and where("GIT_GITLAB_CLIENT_ID") == ("code", "more", "CODE_ENABLED")
     assert where("GIT_GITHUB_APP_SLUG") == ("code", "with", "GIT_GITHUB_CLIENT_ID")
@@ -205,7 +208,7 @@ def test_links_into_settings_name_a_section_or_a_setting():
     lay = st.layout(REAL.parent)
     places = {s["id"] for s in lay["sections"]} | {r["key"] for r in lay["rows"]}
     found = []
-    for f in ("code.js", "index.html", "settings.js"):
+    for f in ("code.js", "index.html", "settings.js", "app.js", "answers.js"):
         found += re.findall(r'#settings/([A-Za-z_+-]+)', (STATIC / f).read_text(encoding="utf-8"))
     tour = (STATIC / "tour.js").read_text(encoding="utf-8")
     names = dict(re.findall(r'"([^"]+)": "([A-Za-z_]+)"', tour[tour.index("const PLACES = {"):tour.index("const settings = (where, place)")]))

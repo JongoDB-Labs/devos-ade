@@ -929,3 +929,17 @@ for rule in ("Read(//**)", "Read(~/**)", "Edit(//**)", "Write(//**)", "Bash", "W
 PY
   assert_contains "$(awk '/^  subs-chat:$/,/^  caddy:$/' "$STACK_DIR/compose.code.yaml")" "source: ./terminal/managed/chat.json"
 }
+
+# What greyed items say and where they go: catalog/setup-links.tsv (the portal's pickers, through /api/answers) and the
+# Code page's copy (code/web/src/setuplinks.ts) — the same rows, in the same order, word for word
+test_setup_links_are_the_same_for_the_portal_and_the_code_page() {
+  local tsv ts
+  tsv="$(grep -v '^#' "$STACK_DIR/catalog/setup-links.tsv" | grep .)"
+  ts="$(python3 -c 'import re, sys
+for m in re.finditer(r"^  \"([a-z-]+)\": \{ target: \"([^\"]+)\", says: \"([^\"]+)\" \},$", open(sys.argv[1], encoding="utf-8").read(), re.M):
+    print("\t".join(m.groups()))' "$STACK_DIR/code/web/src/setuplinks.ts")"
+  [ -n "$tsv" ] || { echo "no rows in catalog/setup-links.tsv" >&2; return 1; }
+  assert_eq "$ts" "$tsv"
+  # (every row of the copy read: nothing written another way that the comparison would skip)
+  assert_eq "$(grep -c 'target: "' "$STACK_DIR/code/web/src/setuplinks.ts" | tr -d ' ')" "$(printf '%s\n' "$tsv" | wc -l | tr -d ' ')"
+}

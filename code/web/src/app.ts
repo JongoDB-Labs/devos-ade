@@ -9,6 +9,7 @@ import { appendMemory, memoryLine } from './palette';
 import { fullModel, modelCommand } from './models';
 import { sentence } from './permission';
 import { remembered, startMode } from './modes';
+import { SETUP_LINKS, settingsRoute, setupTarget, type SetupReason } from './setuplinks';
 import type { Ev, FsEntry, Harness, HarnessInfo, Hunk, ImageBlock, KeyBudget, LaunchEntry, LaunchList, Mode, PortInfo, PreviewInfo, PreviewLink, RunList, RunResult, RunTask, ServerMsg, ServerState, SessionInfo } from './types';
 import { approveRun, approvedRun, askDraft, outcome, outcomeText, plainCommand } from './run';
 import { approveLaunch, approvedLaunch, switchedAway, type Viewport } from './devpreview';
@@ -318,6 +319,8 @@ export interface AppState {
   bypassAsk: string | null;
   /** bumped to open the mode menu (Alt+M) */
   modeMenu: number;
+  /** what the terminal panel loads next (a tool opened there from elsewhere: goSetup), with when it was asked */
+  terminalLink: { src: string; at: number } | null;
   /** bumped to open the model picker (the status bar's model) */
   modelMenu: number;
   /** a mode picked while no session is open: the next new session starts in it (Plan too, which is not remembered) */
@@ -388,6 +391,7 @@ export const store: Store<AppState> = createStore<AppState>({
   runConfirm: null,
   bypassAsk: null,
   modeMenu: 0,
+  terminalLink: null,
   modelMenu: 0,
   startWith: null,
   modeSwitching: false,
@@ -2173,6 +2177,53 @@ export async function continueHere(id: string, pid: string): Promise<void> {
   } catch (e) {
     failed(e, 'Not continued');
   }
+}
+
+/** A greyed item chosen (setuplinks.ts): where it is turned on, at once — the portal's Settings at that row, or the
+ *  tool itself in the terminal panel (its own sign-in starts there). */
+export function goSetup(reason: SetupReason, tool = ''): void {
+  const t = setupTarget(reason);
+  if ('setting' in t) openPortalSettings(t.setting, SETUP_LINKS[reason].says);
+  else if (t.signin === 'terminal') void openToolInTerminal(tool);
+}
+
+/** The portal's Settings at PLACE (a key of catalog/settings.tsv): through the portal that frames this page (its
+ *  code.js takes {type: 'bn-code-setup', place} from this frame only), else in a tab of its own; with no portal known,
+ *  what it says. */
+export function openPortalSettings(place: string, says: string, win: Window = window): void {
+  const framed = win.parent !== win;
+  let r = settingsRoute(place, get().server?.portalOrigin, framed);
+  if (r && 'post' in r) {
+    try {
+      win.parent.postMessage(r.post, r.to);
+      return;
+    } catch {
+      r = settingsRoute(place, get().server?.portalOrigin, false);   // (not the portal's frame after all: a tab of its own)
+    }
+  }
+  if (r && 'open' in r) win.open(r.open, '_blank', 'noopener');
+  else toast(says, 'info');
+}
+
+/** One of your subscriptions' tools in the terminal panel, in the project's folder (a launch token this page asks the
+ *  portal for: /.bn/terminal-launch), where its own sign-in starts when it is not signed in; on a phone, a tab of its
+ *  own — opened by a tap on the toast (no popup blocker stops it). */
+export async function openToolInTerminal(tool: string): Promise<void> {
+  if (!/^[a-z]{2,10}$/.test(tool)) return;
+  const folder = currentProject().path;
+  let url: string;
+  try {
+    url = await api.terminalLaunch(tool, folder && folder !== '/workspace' ? folder : null);
+  } catch (e) {
+    toast(`Not opened: ${errText(e)}`, 'error');
+    return;
+  }
+  if (isPhone()) {
+    toast('In the terminal, where its own sign-in starts.', 'ok', { label: 'Open the terminal', run: () => void window.open(url, '_blank', 'noopener,noreferrer') });
+    return;
+  }
+  set((s) => ({ ...s, terminalLink: { src: `${url}&t=${Date.now()}`, at: Date.now() } }));
+  setLayout({ terminal: true });
 }
 
 /** A terminal in the project's folder: a new window of the terminal panel (a new tab on a phone). */

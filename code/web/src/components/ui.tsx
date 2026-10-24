@@ -216,15 +216,20 @@ export function MenuItem(props: {
   hint?: ComponentChildren;
   danger?: boolean;
   testid?: string;
+  /** a greyed item's reason (setuplinks.ts): choosing it goes where that is turned on — a plain menu item, never a
+   *  choice of this menu's, its words saying where */
+  setup?: string;
 }) {
+  const setup = props.setup !== undefined;
   return (
     <button
       type="button"
-      class={`mi${props.danger ? ' danger' : ''}`}
-      role={props.checked === undefined ? 'menuitem' : 'menuitemradio'}
-      aria-checked={props.checked === undefined ? undefined : props.checked}
+      class={`mi${props.danger ? ' danger' : ''}${setup ? ' mi-setup' : ''}`}
+      role={props.checked === undefined || setup ? 'menuitem' : 'menuitemradio'}
+      aria-checked={props.checked === undefined || setup ? undefined : props.checked}
       disabled={props.disabled}
       data-testid={props.testid}
+      data-setup={props.setup}
       onClick={props.onSelect}
     >
       {props.icon !== undefined && <span class="mi-icon">{props.icon ? <Icon name={props.icon} /> : null}</span>}

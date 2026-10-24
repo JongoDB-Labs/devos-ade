@@ -70,3 +70,66 @@ test("the Chat tab: your subscriptions as models while they can answer (Open Web
   assert.deepEqual(s.slice(0, 2).map((i) => [i.value, i.disabled]), [["signin:grok", false], ["model:plan-x", true]]);
   assert.match(s[0].label, /Sign in for Chat…$/);
 });
+
+// --- greyed items go where they are turned on (catalog/setup-links.tsv, served as the answers' `setup`) ---
+import fs from "node:fs";
+import path from "node:path";
+// (the repository's table where it is here — the image's test stage has none: the same rows, written out)
+const TSV = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "..", "..", "catalog", "setup-links.tsv");
+const parse = (text) => Object.fromEntries(text.split("\n").filter((l) => l && !l.startsWith("#")).map((l) => l.split("\t")).map(([r, target, says]) => [r, { target, says }]));
+const SETUP = fs.existsSync(TSV) ? parse(fs.readFileSync(TSV, "utf8")) : {
+  "terminal-off": { target: "setting:TERMINAL_ENABLED", says: "The browser terminal is off: Settings › Claude Code › Browser terminal turns it on." },
+  "terminal-remote-off": { target: "setting:REMOTE_TERMINAL", says: "Not over remote access: Settings › Remote access › …" },
+  "tool-left-out": { target: "setting:TERMINAL_AI_TOOLS", says: "Not in the sandbox: Settings › Claude Code › Tools in the sandbox puts it in." },
+  "code-off": { target: "setting:CODE_ENABLED", says: "Needs the Code page: Settings › Claude Code › Code page turns it on." },
+  "chat-egress-off": { target: "setting:TERMINAL_EGRESS", says: "Off while the sandbox has no internet: Settings › Claude Code › Sandbox internet access." },
+  "claude-plan-off": { target: "setting:CODE_CLAUDE_PLAN", says: "Off: Settings › Claude Code › Your AI subscriptions › Use my Claude plan in the Code page and Chat." },
+  "chat-signin": { target: "signin:chat", says: "Sign in for Chat: Settings › Claude Code › Your AI subscriptions shows how." },
+  "openrouter-off": { target: "setting:OPENROUTER_API_KEY", says: "OpenRouter's models need your OpenRouter key: Settings › Chat & voice › OpenRouter API key." },
+};
+
+test("greyed items: each a choice that goes where it is turned on, saying where — none dead, none greyed while the table has its reason", () => {
+  const pm = [{ id: "plan-claude", tool: "claude", label: "Claude · your Claude plan", ok: false, why: "w", reason: "claude-plan-off" },
+    { id: "plan-codex", tool: "codex", label: "Codex · ChatGPT", ok: false, why: "w", reason: "code-off" },
+    { id: "plan-grok", tool: "grok", label: "Grok · x", ok: false, why: "w", reason: "chat-egress-off" },
+    { id: "plan-copilot", tool: "copilot", label: "Copilot · x", ok: false, why: "w", reason: "tool-left-out" }];
+  const all = [];
+  for (const term of [{ here: true }, { here: false, reason: "terminal-off" }, { here: false, reason: "terminal-remote-off" }]) {
+    const d = { ...data, terminal: term, setup: SETUP, plan_models: pm, openrouter: false, models: data.models.filter((m) => m.provider !== "OpenRouter") };
+    all.push(...plain(A.terminalOptions(d)).flatMap((g) => g.items), ...plain(A.chatOptions(d)).flatMap((g) => g.items));
+  }
+  const greyed = all.filter((i) => i.disabled);
+  // (left greyed: what no setting turns on — your own keys, next; a tool that is no Chat model)
+  assert.ok(greyed.every((i) => i.value === "keys" || i.value.startsWith("as-model:")), JSON.stringify(greyed.map((i) => i.value)));
+  const setups = all.filter((i) => i.value.startsWith("setup:"));
+  const reasons = new Set(setups.map((i) => i.value.split(":")[1]));
+  assert.deepEqual([...reasons].sort(), ["chat-egress-off", "claude-plan-off", "code-off", "openrouter-off", "terminal-off", "terminal-remote-off", "tool-left-out"]);
+  for (const i of setups) {
+    const r = i.value.split(":")[1];
+    assert.ok(Object.hasOwn(SETUP, r), r);
+    assert.equal(i.title, SETUP[r].says);
+    assert.ok(i.label.endsWith(SETUP[r].says), i.label);   // (its words say where it goes)
+    assert.ok(A.setupPlace(A.setupOf({ setup: SETUP }, r), i.value.split(":")[2]), `${r}: a place to go`);
+  }
+  // Sign in for Chat… says where too
+  const sign = plain(A.chatOptions({ ...data, setup: SETUP, plan_models: [{ id: "plan-grok", tool: "grok", label: "Grok · x", ok: false, why: "w", reason: "chat-signin", signin: true }] }))
+    .flatMap((g) => g.items).find((i) => i.value === "signin:grok");
+  assert.equal(sign.title, SETUP["chat-signin"].says);
+});
+
+test("where a greyed item goes: Settings at its row, Chat's sign-in row for that tool, or the tool itself in the terminal", () => {
+  assert.deepEqual(plain(A.setupPlace({ target: "setting:CODE_CLAUDE_PLAN" }, "claude")), { hash: "#settings/CODE_CLAUDE_PLAN" });
+  assert.deepEqual(plain(A.setupPlace({ target: "signin:chat" }, "codex")), { hash: "#settings/+subscriptions", chat: "codex" });
+  assert.deepEqual(plain(A.setupPlace({ target: "signin:chat" }, "../x")), { hash: "#settings/+subscriptions", chat: "" });
+  assert.deepEqual(plain(A.setupPlace({ target: "signin:terminal" }, "codex")), { open: "codex" });
+  assert.equal(A.setupPlace({ target: "signin:terminal" }, ""), null);
+  assert.equal(A.setupPlace(null, "codex"), null);
+  // (the table's rows checked: a target of another kind, a missing reason, an inherited name — none)
+  assert.equal(A.setupOf({ setup: { x: { target: "javascript:alert(1)", says: "s" } } }, "x"), null);
+  assert.equal(A.setupOf({ setup: { x: { target: "setting:lower", says: "s" } } }, "x"), null);
+  assert.equal(A.setupOf({ setup: {} }, "toString"), null);
+  assert.equal(A.setupOf({ setup: SETUP }, "nope"), null);
+  // (without the table: greyed as before, saying why)
+  const g = plain(A.terminalOptions({ ...data, terminal: { here: false } })).flatMap((x) => x.items);
+  assert.ok(g.every((i) => i.disabled && !i.value.startsWith("setup:")));
+});

@@ -321,10 +321,12 @@ function renderVoice(v) {
   if (!v) { box.hidden = true; return; }
   box.hidden = false;
   if (!v.on) {
-    // Bedrock refusing audio (since October 2026): the notice ./stack recorded, or what to use instead
-    box.textContent = typeof v.notice === "string" && v.notice ? `Voice: ${v.notice.slice(0, 400)}`
-      : v.bedrock_refused ? "Voice: browser speech recognition (Call is unavailable). AWS no longer accepts audio for the Voxtral models; your own OpenAI or Groq key turns on speech-to-text (Settings › Voice)."
-        : "Voice: browser speech recognition (Call is unavailable). ./stack stt set bedrock turns on Bedrock speech-to-text (no extra key).";
+    // Bedrock refusing audio (since October 2026): the notice ./stack recorded, or what to use instead — and where speech-
+    // to-text is turned on (catalog/setup-links.tsv voice-off: Settings at its row)
+    box.replaceChildren(typeof v.notice === "string" && v.notice ? `Voice: ${v.notice.slice(0, 400)} `
+      : v.bedrock_refused ? "Voice: browser speech recognition (Call is unavailable). AWS no longer accepts audio for the Voxtral models; your own OpenAI or Groq key turns on speech-to-text. "
+        : "Voice: browser speech recognition (Call is unavailable). ./stack stt set bedrock turns on Bedrock speech-to-text (no extra key). ",
+    el("a", { href: "#settings/STT_PROVIDER", "data-setup": "voice-off", text: "Settings › Chat & voice › Speech-to-text" }));
     return;
   }
   const price = v.per_minute != null ? ` (~$${v.per_minute.toPrecision(2)} per minute of audio${v.estimated ? ", estimated" : ""})` : "";

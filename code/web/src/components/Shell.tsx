@@ -33,7 +33,9 @@ import {
   openProjectDialog,
   currentProject,
   toast,
+  goSetup,
 } from '../app';
+import { SETUP_LINKS, type SetupReason } from '../setuplinks';
 import { GitPanel } from './GitPanel';
 import { SandboxSaid } from './Said';
 import { changedCount } from '../git';
@@ -281,8 +283,15 @@ function ToolMenu({ onOpen }: { onOpen: (src: string) => void }) {
   }, []);
   const state = (t: BnTool) => (t.installed === false ? 'not in the sandbox' : t.signedIn === 'yes' ? `signed in${t.kindWords ? ` · ${t.kindWords}` : ''}`
     : t.signedIn === 'no' ? 'sign in first' : t.installed === null ? 'not checked yet' : 'sign-in not known');
+  // (one that cannot open here: a choice that goes where that is turned on — setuplinks.ts)
+  const off = (t: BnTool): SetupReason | null => (!answers?.here ? 'terminal-remote-off' : t.installed === false ? 'tool-left-out' : null);
   const pick = (id: string) => {
     if (!id) return;
+    const m = /^setup:([a-z-]+):([a-z]*)$/.exec(id);
+    if (m) {
+      if (Object.hasOwn(SETUP_LINKS, m[1])) goSetup(m[1] as SetupReason, m[2]);
+      return;
+    }
     terminalLaunch(id, folder && folder !== '/workspace' ? folder : null).then(
       (url) => onOpen(`${url}&t=${Date.now()}`),   // (the same tool again loads again: its window is selected anew)
       (e: unknown) => toast(`Not opened: ${e instanceof Error ? e.message : String(e)}`, 'error'),
@@ -308,11 +317,18 @@ function ToolMenu({ onOpen }: { onOpen: (src: string) => void }) {
       </optgroup>
       {answers && answers.tools.length > 0 && (
         <optgroup label="Your AI subscriptions — each signs in with its own flow">
-          {answers.tools.map((t) => (
-            <option value={t.id} disabled={!answers.here || t.installed === false} title={`${t.plan}`}>
-              {`${t.name} (${t.command}) · ${state(t)}`}
-            </option>
-          ))}
+          {answers.tools.map((t) => {
+            const r = off(t);
+            return r ? (
+              <option value={`setup:${r}:${t.id}`} title={SETUP_LINKS[r].says} data-setup={r}>
+                {`${t.name} (${t.command}) — ${SETUP_LINKS[r].says}`}
+              </option>
+            ) : (
+              <option value={t.id} title={`${t.plan}`}>
+                {`${t.name} (${t.command}) · ${state(t)}`}
+              </option>
+            );
+          })}
         </optgroup>
       )}
     </select>
@@ -323,6 +339,11 @@ function TerminalPanel({ drawer }: { drawer?: boolean }) {
   const open = useSel(store, (s) => s.prefs.layout.terminal);
   const base = useSel(store, (s) => terminalUrl(s));
   const [src, setSrc] = useState<string | null>(null);
+  // (a tool opened here from elsewhere — a greyed item's sign-in: app.ts openToolInTerminal)
+  const link = useSel(store, (s) => s.terminalLink);
+  useEffect(() => {
+    if (link) setSrc(link.src);
+  }, [link]);
   const url = src ?? base;
   const [loaded, setLoaded] = useState(open);
   useEffect(() => {
