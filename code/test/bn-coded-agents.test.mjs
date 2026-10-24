@@ -198,7 +198,78 @@ test('Chat\'s sandbox does not start where the stack\'s own services resolve (a 
   const lookup = (resolves) => async (n) => { if (resolves.includes(n)) return { address: '172.18.0.2' }; throw Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' }); };
   assert.deepEqual(await coded.chatNetworkGuard({ lookup: lookup([]) }), []);
   assert.deepEqual(await coded.chatNetworkGuard({ lookup: lookup(['portal', 'litellm']) }), ['litellm', 'portal']);
-  // (a lookup that never answers: not taken as resolving, within its deadline)
-  assert.deepEqual(await coded.chatNetworkGuard({ lookup: () => new Promise(() => {}), timeoutMs: 50 }), []);
+  // (a lookup that never answers, twice: counted as reachable — what is not known to be out of reach does not start)
+  assert.deepEqual(await coded.chatNetworkGuard({ lookup: () => new Promise(() => {}), names: ['portal'], timeoutMs: 50 }), ['portal (no answer)']);
+  // (late once, then an answer: that answer)
+  let n = 0;
+  const lateOnce = async () => { if (n++ === 0) await new Promise(() => {}); throw Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' }); };
+  assert.deepEqual(await coded.chatNetworkGuard({ lookup: lateOnce, names: ['portal'], timeoutMs: 50 }), []);
   assert.ok(coded.STACK_NAMES.includes('open-webui') && coded.STACK_NAMES.includes('litellm'));
+});
+
+test('an agent that exits while something it started (out of its group) holds its output: its EXIT comes all the same, after a short grace', async () => {
+  const net = await import('node:net');
+  const { FrameParser } = await import('../server/frames.mjs');
+  const bin = path.join(BIN, 'grok');
+  // (a grandchild in a session of its own — node's detached: setsid —, its output the agent's)
+  fs.writeFileSync(bin, `#!/bin/sh\n"${process.execPath}" -e "const c = require('child_process').spawn('sleep', ['300'], { detached: true, stdio: ['ignore', 'inherit', 'inherit'] }); console.log('ready ' + c.pid); c.unref();"\nexit 0\n`, { mode: 0o755 });
+  let pid = 0;
+  try {
+    const t0 = Date.now();
+    const exit = await new Promise((resolve, reject) => {
+      const c = net.connect(SOCK);
+      const parser = new FrameParser(1 << 20);
+      let out = '';
+      const timer = setTimeout(() => { c.destroy(); reject(new Error(`no EXIT; ${out}`)); }, 15000);
+      c.on('connect', () => c.write(open({ op: 'agent', tool: 'grok', mode: 'code', cwd: path.join(WS, 'app') })));
+      c.on('data', (d) => {
+        for (const [t, p] of parser.push(d)) {
+          if (t === T.STDOUT) { out += p.toString('utf8'); const m = /ready (\d+)/.exec(out); if (m) pid = Number(m[1]); }
+          if (t === T.EXIT) { clearTimeout(timer); resolve(JSON.parse(p.toString('utf8'))); c.destroy(); }
+        }
+      });
+      c.on('error', () => {});
+    });
+    assert.equal(exit.code, 0);
+    assert.ok(Date.now() - t0 < coded.EXIT_GRACE_MS + 8000, `${Date.now() - t0} ms`);
+    assert.ok(pid > 0, 'the grandchild ran');
+  } finally {
+    fs.writeFileSync(bin, SAY, { mode: 0o755 });
+    if (pid) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone (Chat's sweep, or the group's kill) */ } }
+  }
+});
+
+test('Chat\'s sweep: whatever is in no session of bn-coded\'s, its helpers\' or a live agent\'s is killed, by its pid, its start time read again; never the init, bn-coded or what docker exec put in', () => {
+  const proc = tmp('bnproc');
+  const put = (pid, { ppid, pgrp = pid, sid, start = `${pid}00` }) => {
+    fs.mkdirSync(path.join(proc, String(pid)), { recursive: true });
+    const f = ['S', ppid, pgrp, sid, ...Array(15).fill(0), start, 0, 0];
+    fs.writeFileSync(path.join(proc, String(pid), 'stat'), `${pid} (a (b) c) ${f.join(' ')}\n`);
+  };
+  put(1, { ppid: 0, sid: 1 });                          // the init (tini)
+  put(100, { ppid: 1, sid: 1 });                        // bn-coded
+  put(110, { ppid: 100, sid: 1 });                      // a Claude Code of Chat's, in bn-coded's session
+  put(200, { ppid: 100, sid: 200 });                    // an agent (its own session)
+  put(201, { ppid: 200, pgrp: 201, sid: 200 });         // what it started, out of its group (setpgid): its session still
+  put(300, { ppid: 1, sid: 300 });                      // what it started with setsid, now the init's
+  put(400, { ppid: 0, sid: 400 });                      // docker exec (a health check)
+  put(500, { ppid: 100, sid: 500 });                    // a helper of bn-coded's (the status check)
+  fs.mkdirSync(path.join(proc, 'self'));
+  const killed = [];
+  const kill = (pid, sig) => { killed.push([pid, sig]); };
+  assert.deepEqual(coded.sweepChat({ procDir: proc, self: 100, agents: [200], helpers: [500], kill }), [300]);
+  assert.deepEqual(killed, [[300, 'SIGKILL']]);
+  // the agent ended: its session goes, whatever left its group
+  killed.length = 0;
+  assert.deepEqual(coded.sweepChat({ procDir: proc, self: 100, agents: [], helpers: [500], kill }).sort(), [200, 201, 300]);
+  // no bn-coded found: nothing
+  assert.deepEqual(coded.sweepChat({ procDir: proc, self: 999, agents: [], helpers: [], kill }), []);
+  // killGroup: the leader with its start — the group; the pid taken by another process since — not; the leader gone — its group still
+  const sent = [];
+  const k = (pid, sig) => { sent.push([pid, sig]); };
+  assert.equal(coded.killGroup(200, '20000', 'SIGKILL', { procDir: proc, kill: k }), true);
+  assert.equal(coded.killGroup(200, '12345', 'SIGKILL', { procDir: proc, kill: k }), false);
+  assert.equal(coded.killGroup(777, '77700', 'SIGTERM', { procDir: proc, kill: k }), true);
+  assert.deepEqual(sent, [[-200, 'SIGKILL'], [-777, 'SIGTERM']]);
+  fs.rmSync(proc, { recursive: true });
 });

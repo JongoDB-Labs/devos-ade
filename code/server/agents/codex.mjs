@@ -4,7 +4,7 @@
 // page's mode decides the rest here (requested()). Its login is Codex's own (`codex login` in the terminal): this side
 // only asks whether there is one (account/read), never reads, refreshes or passes it on.
 import path from 'node:path';
-import { Peer, RpcError, said } from './jsonrpc.mjs';
+import { Peer, RpcError, said, TOOL_STOP_MS } from './jsonrpc.mjs';
 import { codexStarted, codexCompleted, codexPlan, callId, usageOf } from './map.mjs';
 import { NotSignedIn } from './acp.mjs';
 import { str, short, int, num } from '../validate.mjs';
@@ -22,8 +22,9 @@ const QUIET = ['item/commandExecution/outputDelta', 'item/fileChange/outputDelta
   'thread/realtime/outputAudio/delta', 'rawResponseItem/completed', 'rawResponse/completed', 'fuzzyFileSearch/sessionUpdated'];
 
 export class CodexAgent {
-  constructor(proc, { onEvent = () => {}, onPermission = async () => 'deny', log = () => {}, chat = false, clientVersion = '0', plainEdit = async () => false }) {
-    Object.assign(this, { tool: 'codex', onEvent, onPermission, log, chat, clientVersion, plainEdit });
+  constructor(proc, { onEvent = () => {}, onPermission = async () => 'deny', log = () => {}, chat = false, clientVersion = '0', plainEdit = async () => false,
+    toolStopMs = TOOL_STOP_MS }) {
+    Object.assign(this, { tool: 'codex', onEvent, onPermission, log, chat, clientVersion, plainEdit, toolStopMs });
     this.cwd = null;
     this.changes = new Map();   // a fileChange item's id -> the paths it changes (item/started), for its approval
     this.peer = new Peer(proc, { jsonrpc: false, log, onNotify: (m, p) => this.notified(m, p), onRequest: (m, p) => this.requested(m, p) });
@@ -129,6 +130,8 @@ export class CodexAgent {
     this.toolTried = what;
     this.log(`codex: reached for a tool in Chat (${what}): killed`);
     this.peer.kill('SIGKILL');
+    // (the turn waits for its end at most TOOL_STOP_MS: what it started may hold its output open)
+    setTimeout(() => { if (!this.peer.done) this.peer.drop(); }, this.toolStopMs).unref?.();
   }
   close() { this.peer.kill(); }
 
@@ -162,6 +165,8 @@ export class CodexAgent {
       }
       case 'item/completed': {
         const it = obj(p.item);
+        // (Chat: a tool seen only once it is done — no item/started came for it — is a tool's sign all the same)
+        if (this.chat && !CHAT_ITEMS.has(it.type)) { this.stopTool(short(typeof it.type === 'string' ? it.type : 'a tool', 60)); return; }
         // (a message or reasoning streamed already: its deltas are its text; the whole one only when none came)
         if (it.type === 'agentMessage' || it.type === 'reasoning') {
           if ((it.type === 'agentMessage' && this.text) || (it.type === 'reasoning' && this.thought)) { this.flush(); return; }

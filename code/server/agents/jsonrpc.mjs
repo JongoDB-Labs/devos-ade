@@ -119,6 +119,15 @@ export class Peer {
     try { this.proc.kill(signal); } catch { /* gone */ }
     try { this.proc.stdin.end(); } catch { /* gone */ }
   }
+  // drop() — no more waiting for the tool: its connection to the sandbox closed (bn-coded kills what is left), and
+  // every request still waiting ended now
+  drop() {
+    try { this.proc.destroy?.(); } catch { /* gone */ }
+    this.ended({ code: null, signal: 'SIGKILL', dropped: true });
+  }
 }
+// Chat: how long a turn waits after a tool's first sign for the killed agent's end (bn-coded's EXIT) before it stops
+// waiting — what the agent started could hold its output open
+export const TOOL_STOP_MS = 10000;
 
 export const isEnded = (e) => e instanceof RpcError && e.code === ENDED;

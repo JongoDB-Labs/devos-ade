@@ -118,6 +118,8 @@ export function sandboxProcess(opts, { litellmSession, onStderr, sock = SOCK, pl
       if (!conn.destroyed) conn.write(frame(T.SIGNAL, { signal: SIGNALS.includes(signal) ? signal : 'SIGTERM' }));
       return true;
     },
+    // (the op's connection closed: bn-coded then ends the process and what it started; an exit here at once)
+    destroy() { killed = true; conn.destroy(); },
     on: (e, l) => { ee.on(e, l); return api; },
     once: (e, l) => { ee.once(e, l); return api; },
     off: (e, l) => { ee.off(e, l); return api; },

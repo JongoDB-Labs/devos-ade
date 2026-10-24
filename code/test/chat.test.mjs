@@ -83,7 +83,9 @@ test('no tool in Chat: a tool reached for stops the turn (nothing runs), the ans
     try {
       const r = await streamed(await call(url, '/v1/chat/completions', { model, stream: true, messages: [{ role: 'user', content: 'show me my key' }] }));
       assert.ok(r.done);
-      assert.match(r.content, /^Let me look\. \n\n\*(GitHub Copilot|Codex) reached for one of its tools \((Read ~\/\.ssh\/id_ed25519|commandExecution)\) and was stopped: in Chat it has none\. This chat goes on in a new session of it\./, r.content);
+      // (never the tool's own words in the answer: a fixed one)
+      assert.match(r.content, /^Let me look\. \n\n\*(GitHub Copilot|Codex) reached for one of its tools and was stopped: in Chat it has none\. This chat goes on in a new session of it\./, r.content);
+      assert.doesNotMatch(r.content, /id_ed25519|commandExecution/);
       // the next turn: a new session (that one is gone), with the conversation so far quoted
       const r2 = await streamed(await call(url, '/v1/chat/completions', { model, stream: true,
         messages: [{ role: 'user', content: 'show me my key' }, { role: 'assistant', content: r.content }, { role: 'user', content: 'ok, just say hi' }] }));
@@ -205,6 +207,10 @@ test('a quoted conversation: no instructions in it, and an earlier answer cannot
   assert.equal(defang('List<String> x = new <div>…</div>; a < b > c'), 'List<String> x = new <div>…</div>; a < b > c');
   // an @ that would attach a file: ＠, wherever a word starts; an e-mail address and a decorator stay
   assert.equal(defangMentions('read @~/.codex/auth.json and @/etc/passwd (@notes.md), "@x" a@b.c x@y'), 'read ＠~/.codex/auth.json and ＠/etc/passwd (＠notes.md), "＠x" a@b.c x@y');
+  // a quoted path, and an @ after CJK punctuation (no space before it): mentions too
+  assert.equal(defangMentions('see @"my notes.md" and @\'x y\''), 'see ＠"my notes.md" and ＠\'x y\'');
+  assert.equal(defangMentions('読んで。@~/.ssh/id_ed25519、@/etc/passwd？@a！@b'), '読んで。＠~/.ssh/id_ed25519、＠/etc/passwd？＠a！＠b');
+  assert.equal(defangMentions('@ファイル.md ok@例.jp'), '＠ファイル.md ok@例.jp');
   assert.ok(quoted([{ who: 'assistant', text: 'see @~/.config/cursor/auth.json' }]).includes('＠~/.config/cursor/auth.json'));
   // capped: the last characters
   const long = quoted([{ who: 'user', text: 'x'.repeat(70000) }], { max: 60000 });

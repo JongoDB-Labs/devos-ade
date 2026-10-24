@@ -28,7 +28,13 @@ const modeOption = (current) => ({ id: 'mode', name: 'Mode', category: 'mode', t
 let configMode = M.agent, perm = scenario === 'perm-approve' ? 'approve' : 'ask';
 const configOptions = () => [...(scenario === 'config-mode' || scenario === 'config-later' ? [modeOption(configMode)] : []),
   ...(scenario.startsWith('perm-') ? [{ id: 'permission', name: 'Permission mode', category: 'other', type: 'select', currentValue: perm,
-    options: [{ value: 'ask', name: 'Ask' }, { value: 'approve', name: 'Always approve' }] }] : [])];
+    options: [{ value: 'ask', name: 'Ask' }, { value: 'approve', name: 'Always approve' }] }] : []),
+  // (opt-autorun: an option named like nothing about permissions, set to run by itself; opt-model: only the model's,
+  // its parameters' and the thinking level's)
+  ...(scenario === 'opt-autorun' ? [{ id: 'auto', name: 'Auto-run', type: 'select', currentValue: 'always', options: [{ value: 'always' }, { value: 'never' }] }] : []),
+  ...(scenario === 'opt-model' ? [{ id: 'effort', name: 'Effort', category: 'thought_level', type: 'select', currentValue: 'high', options: [{ value: 'high' }, { value: 'low' }] },
+    { id: 'fast', name: 'Fast', category: 'model_config', type: 'select', currentValue: 'on', options: [{ value: 'on' }, { value: 'off' }] },
+    { id: 'm', name: 'Model', category: 'model', type: 'select', currentValue: 'fast-1', options: [{ value: 'fast-1' }] }] : [])];
 
 const rl = readline.createInterface({ input: process.stdin });
 rl.on('line', async (line) => {
@@ -67,10 +73,12 @@ async function acp(m) {
         models: { currentModelId: 'fast-1', availableModels: [{ modelId: 'fast-1', name: 'Fast' }, { modelId: 'smart-2', name: 'Smart' }] } } };
     }
     case 'session/load': {
-      const s = sessions.get(m.params.sessionId) ?? (scenario === 'remembers' ? { cwd: m.params.cwd, history: ['(earlier)'] } : null);
+      const s = sessions.get(m.params.sessionId) ?? (scenario === 'remembers' || scenario === 'remembers-yolo' ? { cwd: m.params.cwd, history: ['(earlier)'] } : null);
       if (!s) return { error: { code: -32002, message: 'no such session' } };
       sessions.set(m.params.sessionId, s);
       for (const h of s.history) update(m.params.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `replayed ${h}` } });
+      // (remembers-yolo: the session taken up was left in its approve-everything mode)
+      if (scenario === 'remembers-yolo') return { result: { modes: { currentModeId: M.yolo, availableModes: MODES } } };
       return { result: { modes: { currentModeId: M.agent, availableModes: [{ id: M.agent, name: 'Agent' }] } } };
     }
     // a mode asked for: reported (current_mode_update) — but by silent-set and quiet-modes, which say yes and stay where

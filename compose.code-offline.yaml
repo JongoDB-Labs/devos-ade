@@ -3,4 +3,5 @@
 # compose.code.yaml only then (lib/common.sh compose_overlays).
 services:
   subs-chat:
+    networks: !reset []   # (not even its own: compose.code.yaml)
     network_mode: none

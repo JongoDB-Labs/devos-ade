@@ -1262,11 +1262,15 @@ export function fsFind(q, limit, root = WS_ROOT) {
 // --- (the program was killed), timedOut}. onData(chunk) may return false to stop it early (killed; `stopped`).
 // --- fd3(stream): the program gets a 4th descriptor (a socket pair; its children inherit it) — a remote git
 // --- operation's credential channel (gitNet). errTail: keep the last 8,000 characters of stderr (not the first 4,000).
+// (each one's session, while it runs: bn-coded's own — Chat's sweep leaves it alone, sweepChat)
+const helperSessions = new Set();
 function runCapped(bin, args, { cwd = WORKSPACE, env, timeoutMs = 10000, maxOut = 1 << 20, onData, input, fd3, errTail = false } = {}) {
   return new Promise((resolve) => {
     let c;
     // (its own process group: a stop ends whatever it started too)
     try { c = spawn(bin, args, { cwd, env, stdio: [input ? 'pipe' : 'ignore', 'pipe', 'pipe', ...(fd3 ? ['pipe'] : [])], detached: true }); } catch (e) { resolve({ code: -1, signal: null, out: Buffer.alloc(0), err: e.code || e.message, missing: e.code === 'ENOENT' }); return; }
+    const sid = c.pid;
+    if (sid) helperSessions.add(sid);
     if (fd3 && c.stdio[3]) { c.stdio[3].on('error', () => {}); fd3(c.stdio[3]); }
     if (input) { c.stdin.on('error', () => {}); c.stdin.end(input); }
     const parts = [];
@@ -1287,6 +1291,7 @@ function runCapped(bin, args, { cwd = WORKSPACE, env, timeoutMs = 10000, maxOut 
     const end = (code, signal, extra = {}) => {
       if (done) return;
       done = true; clearTimeout(timer);
+      if (sid) helperSessions.delete(sid);
       resolve({ code, signal, out: Buffer.concat(parts), err: errTail ? err : err.slice(0, 4000), cut, timedOut, stopped, ...extra });
     };
     c.on('error', (e) => end(-1, null, { err: e.code || e.message, missing: e.code === 'ENOENT' }));
@@ -4753,6 +4758,54 @@ export function sweepOrphans({ kill = process.kill } = {}) {
   return ended;
 }
 
+// --- Chat's sandbox: nothing an agent started outlives it. A subscription's agent runs in a session of its own (spawn's
+// --- detached: setsid — its session id is its pid); what it starts with setsid, forkpty or setpgid leaves its process
+// --- group, and the group kill misses it. In Chat's role (no tool ever runs there), whatever is in no session of
+// --- bn-coded's own or of an agent running now is killed: at an agent's end, at each kill, and every few seconds —
+// --- each by its exact pid, its start time read again just before (never a pid that now names another process); a
+// --- process docker exec put in (its parent 0 here: a health check) is not one of them.
+const liveAgents = new Set();
+// statOf(pid) -> {ppid, pgrp, sid, start} of /proc/PID/stat, or null
+export const statOf = (pid, procDir = '/proc') => {
+  try {
+    const f = fs.readFileSync(`${procDir}/${pid}/stat`, 'utf8').replace(/^.*\) /s, '').split(' ');
+    return { ppid: Number(f[1]), pgrp: Number(f[2]), sid: Number(f[3]), start: f[19] || '' };
+  } catch { return null; }
+};
+// sweepChat({procDir, self, agents, helpers, kill}) -> the pids killed: every process of the sandbox but its init (pid
+// 1), bn-coded and what docker exec put in, whose session is neither bn-coded's, one of its helpers' (runCapped: the
+// status check), nor a live agent's
+export function sweepChat({ procDir = '/proc', self = process.pid, agents = liveAgents, helpers = helperSessions, kill = process.kill } = {}) {
+  const own = statOf(self, procDir);
+  if (!own) return [];
+  const allowed = new Set([own.sid, ...helpers, ...agents]);
+  const killed = [];
+  let names = [];
+  try { names = fs.readdirSync(procDir); } catch { return killed; }
+  for (const n of names) {
+    if (!/^[1-9][0-9]{0,9}$/.test(n)) continue;
+    const pid = Number(n);
+    if (pid === 1 || pid === self) continue;
+    const st = statOf(pid, procDir);
+    if (!st || st.ppid === 0 || allowed.has(st.sid)) continue;
+    // (its start time again, just before: the same process, never one that took its pid since)
+    if (statOf(pid, procDir)?.start !== st.start) continue;
+    try { kill(pid, 'SIGKILL'); killed.push(pid); } catch { /* gone */ }
+  }
+  return killed;
+}
+// killGroup(pid, start, sig) — an agent's whole process group, unless its pid names another process now (its leader
+// gone and the pid taken: then that one's group, never ours); a leader gone with no process taking its pid: its
+// group's members are still ours (Linux gives no process a pid its group still uses)
+export function killGroup(pid, start, sig = 'SIGKILL', { procDir = '/proc', kill = process.kill } = {}) {
+  const now = statOf(pid, procDir);
+  if (now && now.start !== start) return false;
+  try { kill(-pid, sig); return true; } catch { return false; }
+}
+// how long an agent's output may stay open after it exited (what it started holding it): then its EXIT all the same
+export const EXIT_GRACE_MS = 2000;
+export const CHAT_SWEEP_MS = 5000;
+
 // --- one connection, one op ---
 const running = { claude: 0, cli: 0, agent: 0 };
 const helpers = { git: 0, grep: 0, gitRead: 0, gitWrite: 0, gitNet: 0, capture: 0, subs: 0 };
@@ -4762,9 +4815,9 @@ export function serve(sock) {
   let child = null, opened = false, writer = null, done = false, tunnel = null;
   // (a subscription's agent runs in a process group of its own: a signal reaches whatever it started too — Chat kills
   // one at the first sign of a tool, and a shell it started dies with it)
-  let group = false;
+  let group = false, groupStart = '';
   const signalChild = (c, sig) => {
-    if (group && c.pid) { try { process.kill(-c.pid, sig); return; } catch { /* gone, or no group: the process itself */ } }
+    if (group && c.pid && killGroup(c.pid, groupStart, sig)) return;   // (gone, or no group: the process itself)
     try { c.kill(sig); } catch { /* gone */ }
   };
   const send = (t, p) => (sock.destroyed ? false : sock.write(frame(t, p)));
@@ -4796,16 +4849,32 @@ export function serve(sock) {
     } catch (e) { uncount(); return fail(`spawn failed: ${e.code || e.message}`); }
     const c = child;
     if (c.pid) recordChild(c.pid);
+    if (group && c.pid) { groupStart = procStart(c.pid); liveAgents.add(c.pid); }
     const pipe = (stream, type) => stream.on('data', (d) => { if (!send(type, d)) { stream.pause(); sock.once('drain', () => stream.resume()); } });
     pipe(c.stdout, T.STDOUT); pipe(c.stderr, T.STDERR);
     c.stdin.on('error', () => {});
     if (noStdin) c.stdin.end();   // a `cli` op reads nothing: no TTY, no stdin (the CLI's non-interactive paths)
     c.on('error', (e) => { uncount(); fail(`spawn failed: ${e.code || e.message}`); });
-    c.on('close', (code, signal) => {
+    const ended = (code, signal) => {
       uncount(); if (c.pid) forgetChild(c.pid);
       if (child === c) child = null;
       finish(T.EXIT, { code, signal });
-    });
+    };
+    c.on('close', ended);
+    // an agent: its exit is the end, whatever it started — the rest of its group killed, and in Chat's role whatever
+    // left it (sweepChat); its EXIT goes after a short grace even when something it started still holds its output
+    if (group && c.pid) {
+      c.on('exit', (code, signal) => {
+        liveAgents.delete(c.pid);
+        killGroup(c.pid, groupStart);
+        if (roleOf() === 'chat') sweepChat();
+        setTimeout(() => {
+          if (child !== c) return;
+          try { c.stdout.destroy(); c.stderr.destroy(); } catch { /* closed */ }
+          ended(code, signal);
+        }, EXIT_GRACE_MS).unref();
+      });
+    }
   }
 
   function open(req) {
@@ -5080,6 +5149,8 @@ export function serve(sock) {
     else if (type === T.SIGNAL) {
       let s = {}; try { s = JSON.parse(payload.toString('utf8')); } catch { /* ignored */ }
       if (['SIGINT', 'SIGTERM', 'SIGKILL'].includes(s.signal)) signalChild(child, s.signal);
+      // (Chat: an agent killed at a tool's first sign — what left its group goes now, not at the next sweep)
+      if (s.signal === 'SIGKILL' && group && roleOf() === 'chat') sweepChat({ agents: [...liveAgents].filter((p) => p !== child.pid) });
     }
     return undefined;
   }
@@ -5103,8 +5174,12 @@ export function serve(sock) {
     try { c.stdin.end(); } catch { /* gone */ }
     setTimeout(() => { if (c.exitCode === null && c.signalCode === null) signalChild(c, 'SIGTERM'); }, 3000).unref();
     setTimeout(() => { if (c.exitCode === null && c.signalCode === null) signalChild(c, 'SIGKILL'); }, 8000).unref();
-    // (an agent's group: whatever it started is killed even when the agent itself is gone)
-    if (group && c.pid) setTimeout(() => { try { process.kill(-c.pid, 'SIGKILL'); } catch { /* gone */ } }, 8000).unref();
+    // (an agent's group: whatever it started is killed even when the agent itself is gone — its start time checked:
+    // never a group a process that took its pid since leads)
+    if (group && c.pid) {
+      const start = groupStart;
+      setTimeout(() => { killGroup(c.pid, start); if (roleOf() === 'chat') sweepChat(); }, 8000).unref();
+    }
   });
   sock.on('error', () => {});
 }
@@ -5115,6 +5190,8 @@ export function start() {
   const ended = sweepOrphans();
   if (ended.length) process.stderr.write(`bn-coded: ended ${ended.length} Claude Code process(es) left by the last run\n`);
   try { fs.unlinkSync(SOCK); } catch { /* none */ }
+  // (Chat's role: what left an agent's session, every few seconds too — sweepChat)
+  if (roleOf() === 'chat') setInterval(() => { try { sweepChat(); } catch { /* next time */ } }, CHAT_SWEEP_MS).unref();
   const server = net.createServer({ allowHalfOpen: false }, serve);
   server.maxConnections = MAX_CONNECTIONS;
   server.listen(SOCK, () => process.stderr.write(`bn-coded: listening on ${SOCK}\n`));
@@ -5123,15 +5200,25 @@ export function start() {
 
 // Chat's sandbox's guard: it must never be on the stack's own network (a compose run without its overlay —
 // compose.code-proxy/-egress/-offline.yaml, lib/common.sh compose_overlays — would put it on the default one, beside
-// LiteLLM, the portal and Open WebUI). In Chat's role, if any of the stack's own services' names resolves here, it does
-// not start: no Chat conversation runs there.
+// LiteLLM, the portal and Open WebUI). In Chat's role, if any of the stack's own services' names resolves here — or
+// its lookup does not answer within its deadline, twice (what is not known to be out of reach counts as reachable) —,
+// it does not start: no Chat conversation runs there.
 export const STACK_NAMES = Object.freeze(['litellm', 'portal', 'open-webui', 'caddy', 'gateway', 'shared-mcp', 'postgres', 'code']);
-export async function chatNetworkGuard({ lookup = (n) => dns.promises.lookup(n), names = STACK_NAMES, timeoutMs = 3000 } = {}) {
+export async function chatNetworkGuard({ lookup = (n) => dns.promises.lookup(n), names = STACK_NAMES, timeoutMs = 3000, tries = 2 } = {}) {
   const seen = [];
-  await Promise.all(names.map((n) => Promise.race([
-    Promise.resolve().then(() => lookup(n)).then(() => { seen.push(n); }, () => {}),
-    new Promise((r) => { setTimeout(r, timeoutMs).unref?.(); }),
-  ])));
+  // one name: 'yes' (it resolves), 'no' (a lookup said it does not), 'late' (no answer in time)
+  const once = (n) => Promise.race([
+    Promise.resolve().then(() => lookup(n)).then(() => 'yes', () => 'no'),
+    new Promise((r) => { setTimeout(() => r('late'), timeoutMs).unref?.(); }),
+  ]);
+  await Promise.all(names.map(async (n) => {
+    for (let i = 0; i < tries; i++) {
+      const r = await once(n);
+      if (r === 'no') return;
+      if (r === 'yes') { seen.push(n); return; }
+    }
+    seen.push(`${n} (no answer)`);
+  }));
   return seen.sort();
 }
 
@@ -5148,7 +5235,7 @@ if (isMain) {
   } else if (roleOf() === 'chat') {
     chatNetworkGuard().then((seen) => {
       if (seen.length) {
-        process.stderr.write(`bn-coded (Chat's sandbox): the stack's own services are reachable here (${seen.join(', ')}): not starting — Chat's sandbox runs only with its overlay (./stack up adds it)\n`);
+        process.stderr.write(`bn-coded (Chat's sandbox): the stack's own services are reachable here, or could be (${seen.join(', ')}): not starting — Chat's sandbox runs only with its overlay (./stack up adds it)\n`);
         process.exit(1);
       }
       start();

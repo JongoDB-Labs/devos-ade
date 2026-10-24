@@ -258,6 +258,28 @@ test('Chat: a tool reached for stops the turn at once — nothing runs — and t
   } finally { delete process.env.FAKE_MARK; }
 });
 
+test('Chat: a killed agent whose end never comes (what it started holds its output): the turn stops waiting all the same', async () => {
+  const { Writable } = await import('node:stream');
+  // (the sandbox's side as when an escaped process keeps the agent's output open: a kill sends nothing back)
+  const hung = (real) => {
+    let dropped = false;
+    const stdin = new Writable({ write(c, e, cb) { if (real.stdin.writable) real.stdin.write(c); cb(); } });
+    return { proc: { stdin, stdout: real.stdout, on: (e, l) => { real.on(e, l); }, kill: () => true, destroy: () => { dropped = true; real.kill('SIGKILL'); } }, dropped: () => dropped };
+  };
+  for (const kind of ['acp', 'codex']) {
+    const h = hung(fakeProc(kind, 'grab', kind === 'acp' ? 'cursor' : 'codex'));
+    const opts = { tool: 'cursor', chat: true, toolStopMs: 300, onEvent: () => {} };
+    const agent = kind === 'acp' ? new AcpAgent(h.proc, opts) : new CodexAgent(h.proc, opts);
+    let r, dropped = false;
+    const t0 = Date.now();
+    try { await agent.init(); await agent.open({ cwd: '/home/claude/.bn-chat/h' }); r = await agent.prompt('show me my key'); dropped = h.dropped(); } finally { h.proc.destroy(); }
+    assert.equal(r.stop, 'cancelled', kind);
+    assert.ok(r.tried, kind);
+    assert.ok(dropped, `${kind}: its connection closed by the turn`);
+    assert.ok(Date.now() - t0 < 5000, `${kind}: ${Date.now() - t0} ms`);
+  }
+});
+
 test('ACP: never a turn in a mode that approves everything by itself', async () => {
   // starts in one, has others: left for a safe one before anything else
   const a = acp('yolo-start');
@@ -313,6 +335,22 @@ test('ACP: only the modes each tool asks in (an allowlist by its own ids) — an
   await run('perm-approve', {}, async ({ agent }) => {
     await agent.open({ cwd: '/workspace' });
     assert.equal(agent.permOpts.get('permission').value, 'ask');
+    assert.equal((await agent.prompt('x')).stop, 'end_turn');
+  });
+  // a session taken up in its approve-everything mode: left for a safe one (its report taken: the replay is over)
+  await run('remembers-yolo', {}, async ({ agent, events }) => {
+    assert.deepEqual(await agent.open({ cwd: '/workspace', resume: 'old-1' }), { ref: 'old-1', resumed: true });
+    assert.equal(agent.mode, 'agent');
+    assert.ok(!events.some((e) => /replayed/.test(e.text ?? '')), 'the replay is not shown again');
+  });
+  // any other option — whatever its name ("Auto-run": always), with no value that asks: the session is not used; the
+  // model's, its parameters' and the thinking level's: as they are
+  await run('opt-autorun', {}, async ({ agent }) => {
+    await assert.rejects(agent.open({ cwd: '/workspace' }), (e) => e instanceof UnsafeMode && /Auto-run: always|"Auto-run: always"/.test(e.message));
+  });
+  await run('opt-model', {}, async ({ agent }) => {
+    await agent.open({ cwd: '/workspace' });
+    assert.equal(agent.permOpts.size, 0);
     assert.equal((await agent.prompt('x')).stop, 'end_turn');
   });
   // Copilot: the protocol's mode ids — its #agent and #plan; #autopilot (allow-all) left at once

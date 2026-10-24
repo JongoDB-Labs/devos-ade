@@ -17,10 +17,12 @@ export const QUOTE_TAIL = 'End of the quoted conversation';
 // tag names a model may read as a boundary of who speaks (any case, any spacing, opening or closing)
 const ROLE_TAGS = /^(earlier[-_ ]?conversation([-_ ]?[\w-]{0,40})?|conversation|system([-_ ]?(prompt|reminder|message|instructions?))?|user|human|assistant|ai|model|developer|instructions?|context|tool([-_ ]?(call|use|result|output|response)s?)?|function([-_ ]?(call|result|response)s?)?|im[-_]?(start|end|sep)|thinking|document|message|antml:[\w-]*)$/i;
 
-/** defangMentions(text) -> the text with an @ that starts a word before a path or a name (@~/.codex/auth.json, @/etc,
- *  @file.md) shown as ＠ (U+FF20): an agent reads such an @ as a file to attach — Claude Code does before the model runs,
- *  tools or not — so in text that is not yours to mean it (a quote, Chat's), none is one */
-export const defangMentions = (text) => String(text ?? '').replace(/(^|[\s([{"'`<>|,;:])@(?=[~/.\w-])/g, '$1＠');
+/** defangMentions(text) -> the text with an @ that starts a word — after anything but a letter, a digit, _ or @ (an
+ *  e-mail address's stays): a space, a bracket, a quote, CJK punctuation (。、？！) … — before a path, a name or a quoted
+ *  one (@~/.codex/auth.json, @/etc, @file.md, @"my notes.md") shown as ＠ (U+FF20): an agent reads such an @ as a file to
+ *  attach — Claude Code does before the model runs, tools or not — so in text that is not yours to mean it (a quote,
+ *  Chat's), none is one */
+export const defangMentions = (text) => String(text ?? '').replace(/(^|[^\p{L}\p{N}_@])@(?=["'~/.\p{L}\p{N}_-])/gu, '$1＠');
 /** defang(text) -> the text with every role-like tag (<system>, </earlier-conversation >, <|im_start|> …) shown with ‹ ›,
  *  and every @-mention defanged (defangMentions) */
 export function defang(text) {

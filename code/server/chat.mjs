@@ -337,7 +337,8 @@ export function createChatServer({ key, status, planAllowed = false, egressHost 
     // the conversation's session, under the prompts it has had now — or, a tool reached for, none (said in the answer)
     if (r.tried) {
       store.move(rec ? oldKey : null, null);
-      out.text(`${sent ? '\n\n' : ''}*${h.name} reached for one of its tools (${said(r.tried, 80)}) and was stopped: in Chat it has none. This chat goes on in a new session of it. To work with files, use ${h.name} in the Code page.*`);
+      // (never the tool's own title in the answer: words the agent chose, as markdown — the log has it)
+      out.text(`${sent ? '\n\n' : ''}*${h.name} reached for one of its tools and was stopped: in Chat it has none. This chat goes on in a new session of it. To work with files, use ${h.name} in the Code page.*`);
     } else if (r.ref) store.move(rec ? oldKey : null, { key: convKey(tool, [...msgs.turns, { role: 'assistant', text: stripAnswer(spoken) }]), tool, folder, ref: r.ref });
     const u = r.usage ?? { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0 };
     const usage = { prompt_tokens: u.input_tokens + u.cache_read_input_tokens, completion_tokens: u.output_tokens, total_tokens: u.input_tokens + u.cache_read_input_tokens + u.output_tokens };

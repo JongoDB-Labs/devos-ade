@@ -3,7 +3,7 @@
 // its own (the agent reads and writes in the sandbox itself, where it runs), answers its permission requests through
 // onPermission, and turns its session/update notifications into the page's events (map.mjs). Its login is the tool's
 // own: a session that needs one is "not signed in" here — the tool's own sign-in runs in the terminal, never here.
-import { Peer, RpcError, said } from './jsonrpc.mjs';
+import { Peer, RpcError, said, TOOL_STOP_MS } from './jsonrpc.mjs';
 import { acpCall, acpPlan, callId, contentText, usageOf } from './map.mjs';
 import { str, short, int } from '../validate.mjs';
 import { HARNESSES } from './tools.mjs';
@@ -39,9 +39,11 @@ export const SAFE_MODES = Object.freeze({
   copilot: Object.freeze([`${ACP_MODE}agent`, `${ACP_MODE}plan`]),
   grok: Object.freeze(['default', 'ask', 'plan']),
 });
-// a select config option about permissions (not a mode's): only these values — anything else approves by itself or is
-// not known
-const PERM_OPTION = /permission|approv|yolo|autonom|trust/i;
+// the config options known to be about something else than permissions (an allowlist): the model's (Cursor's
+// model_config: its parameters) and the thinking level — the mode's is checked as a mode. Any other option (an
+// "Auto-run" switch, one a later version adds, whatever its name) must say one of PERM_SAFE's values, or the session is
+// moved off it or not used
+const OTHER_OPTIONS = new Set(['model', 'model_config', 'thought_level']);
 const PERM_SAFE = /^(default|ask|manual|prompt)$/i;
 // how long a mode asked for may take to be reported (current_mode_update): not reported, not taken
 const MODE_REPORT_MS = 5000;
@@ -54,8 +56,9 @@ export class AcpAgent {
   // proc: sandboxAgent's process. onEvent(ev): the page's events. onPermission({tool, input, kind}) -> 'once' |
   // 'always' | 'deny'. chat: one of Chat's conversations (every permission request is refused there without asking).
   // plainEdit(paths) -> whether a change to these paths may go through without asking (Accept edits: session.mjs)
-  constructor(proc, { tool, onEvent = () => {}, onPermission = async () => 'deny', log = () => {}, chat = false, clientVersion = '0', plainEdit = async () => false }) {
-    Object.assign(this, { tool, onEvent, onPermission, log, chat, clientVersion, plainEdit });
+  constructor(proc, { tool, onEvent = () => {}, onPermission = async () => 'deny', log = () => {}, chat = false, clientVersion = '0', plainEdit = async () => false,
+    toolStopMs = TOOL_STOP_MS }) {
+    Object.assign(this, { tool, onEvent, onPermission, log, chat, clientVersion, plainEdit, toolStopMs });
     this.peer = new Peer(proc, { jsonrpc: true, log, onNotify: (m, p) => this.notified(m, p), onRequest: (m, p) => this.requested(m, p) });
     this.sessionId = null; this.caps = {}; this.authMethods = []; this.defaultAuth = null;
     this.modes = []; this.mode = null; this.models = []; this.model = null; this.commands = [];
@@ -100,7 +103,7 @@ export class AcpAgent {
           .map((x) => ({ id: x.value, name: short(x.name || x.value, 100), description: short(x.description, 300) }));
       }
     }
-    this.permOpts = new Map(opts.filter((o) => o !== mo && o.category !== 'model' && PERM_OPTION.test(`${o.id} ${o.name ?? ''}`))
+    this.permOpts = new Map(opts.filter((o) => o !== mo && !OTHER_OPTIONS.has(o.category))
       .map((o) => [o.id, { name: short(o.name || o.id, 60), value: typeof o.currentValue === 'string' ? o.currentValue : null,
         options: arr(o.options).map(obj).map((x) => x.value).filter((x) => typeof x === 'string') }]));
     return Boolean(mo);
@@ -161,6 +164,9 @@ export class AcpAgent {
       this.loading = true;
       try {
         const r = obj(await this.withLogin(() => this.peer.request('session/load', { sessionId: resume, cwd, mcpServers: [] }, { timeoutMs: 120000 })));
+        // (the past replayed — it came before the answer: what the agent reports from now on is the session's, its
+        // mode's report to leaving an unsafe one included)
+        this.loading = false;
         this.sessionId = resume;
         this.takeSession(r);
         await this.leaveUnsafe();
@@ -318,6 +324,8 @@ export class AcpAgent {
     this.toolTried = title;
     this.log(`${this.tool}: reached for a tool in Chat (${title}): killed`);
     this.peer.kill('SIGKILL');
+    // (the turn waits for its end at most TOOL_STOP_MS: what it started may hold its output open)
+    setTimeout(() => { if (!this.peer.done) this.peer.drop(); }, this.toolStopMs).unref?.();
   }
   close() { this.peer.kill(); }
 

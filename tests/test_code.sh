@@ -537,7 +537,8 @@ test_compose_code_is_a_sandboxed_container_on_its_own_network() {
   assert_not_contains "$(sed '/^  subs-chat:$/,/^  caddy:$/d' "$STACK_DIR/compose.code.yaml")" "BN_CODE"   # (subs-chat: its own bn-coded's)
   assert_contains "$(awk '/^  terminal:$/,/^  terminal-gateway:$/' "$STACK_DIR/compose.terminal.yaml")" "- code-socket:/run/bn-code"
   assert_contains "$(awk '/^  caddy:$/,/^  portal:$/' "$STACK_DIR/compose.code.yaml")" "networks: [default, terminal-link, code-link]"
-  assert_eq "$(grep -c 'internal: true' "$STACK_DIR/compose.code.yaml")" 1
+  # (internal networks: the code container's link, and Chat's sandbox's own)
+  assert_eq "$(grep -c 'internal: true' "$STACK_DIR/compose.code.yaml")" 2
   # Chat's models on your subscriptions: Open WebUI's own connection to it through the main Caddy's internal site
   # (:8098, code-on.caddy), never a network shared with Open WebUI (which signs in by X-Portal-User from any peer), with
   # its key; the switch for Claude on your plan reaches it and the portal, never the sandbox
@@ -558,21 +559,26 @@ test_compose_code_is_a_sandboxed_container_on_its_own_network() {
   for want in "read_only: true" "cap_drop: [ALL]" 'security_opt: ["no-new-privileges:true"]' 'user: "${TERMINAL_UID:-10104}:${TERMINAL_GID:-10104}"' \
               'image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/terminal:local' "pull_policy: never" 'entrypoint: ["node", "/usr/local/bin/bn-coded.mjs"]' "BN_CODED_ROLE: chat" \
               "BN_CODE_SOCK_DIR: /run/bn-chat" "- chat-socket:/run/bn-chat" "pids_limit:" "mem_limit:" \
-              "- /home/claude:size=256m,uid=\${TERMINAL_UID:-10104},gid=\${TERMINAL_GID:-10104},mode=0700" "- subs-chat-codex:/home/claude/.codex"; do
+              "- /home/claude:size=256m,uid=\${TERMINAL_UID:-10104},gid=\${TERMINAL_GID:-10104},mode=0700" "- subs-chat-codex:/home/claude/.codex" \
+              "networks: [subs-chat-internal]"; do
     assert_contains "$sc" "$want"
   done
   for bad in "/workspace" "TERMINAL_WORKSPACE" "LITELLM" "ANTHROPIC" "SHARED_MCP_TOKEN" "BN_MCP_URL" "AWS_" "code-socket" "docker.sock" "privileged" \
-             "ports:" "cap_add" "network_mode" "networks:" "@projects" "terminal-link" "- terminal-home"; do
+             "ports:" "cap_add" "network_mode" "@projects" "terminal-link" "- terminal-home"; do
     assert_not_contains "$sc" "$bad"
   done
+  # (a network of its own when no overlay says otherwise: nothing else on it, no way out)
+  assert_eq "$(grep -v '^[[:space:]]*#' "$STACK_DIR/compose.code.yaml" | grep -c 'subs-chat-internal' | tr -d ' ')" 2
+  assert_contains "$(sed -n '/^networks:/,/^volumes:/p' "$STACK_DIR/compose.code.yaml")" "$(printf '  subs-chat-internal:\n    internal: true')"
   assert_eq "$(printf '%s\n' "$sc" | grep -c 'type: bind')" 1   # (the managed settings, read-only: below)
   assert_contains "$sc" "target: /etc/claude-code/managed-settings.json"
-  # (its one network: the sandbox's way out — never the stack's default network, nor one of its own)
-  assert_contains "$(cat "$STACK_DIR/compose.code-proxy.yaml")" "networks: [terminal-proxy]"
+  # (its one network: the sandbox's way out, in place of its own — never the stack's default network)
+  assert_contains "$(cat "$STACK_DIR/compose.code-proxy.yaml")" "networks: !override [terminal-proxy]"
   # (host egress: Chat's sandbox off the network too — no Chat models then)
   assert_contains "$(cat "$STACK_DIR/compose.code-egress.yaml")" "network_mode: none"
   assert_not_contains "$(cat "$STACK_DIR/compose.code-egress.yaml")" "terminal-out"
   assert_contains "$(cat "$STACK_DIR/compose.code-offline.yaml")" "network_mode: none"
+  for f in compose.code-egress.yaml compose.code-offline.yaml; do assert_contains "$(cat "$STACK_DIR/$f")" "networks: !reset []"; done
   for f in compose.code-egress.yaml compose.code-offline.yaml; do assert_eq "$(grep -c '^  [a-z]' "$STACK_DIR/$f")" 1; done   # subs-chat: alone
   for want in 'CODE_MODE: "on"' 'REMOTE_CODE_HOST: ${REMOTE_CODE_HOST:-code.remote.invalid}' 'CODE_ENABLED: "true"'; do
     assert_contains "$(cat "$STACK_DIR/compose.code.yaml")" "$want"
@@ -651,6 +657,23 @@ on_link = sorted(n for n, v in s.items() if "code-link" in (v.get("networks") or
 assert on_link == ["caddy", "code"], on_link
 assert s["portal"]["environment"]["CODE_ENABLED"] == "true" and "fedcba98" not in json.dumps(s["portal"])
 assert c["depends_on"]["terminal"]["condition"] == "service_healthy"' || return 1
+  # Chat's sandbox with the other ways out: no network at all (host egress, or none); and with no overlay, its own alone
+  local eg
+  for eg in host off; do
+    set_env TERMINAL_EGRESS "$eg"
+    dc config --format json 2>/dev/null | python3 -c '
+import json, sys
+x = json.load(sys.stdin)["services"]["subs-chat"]
+assert x.get("network_mode") == "none" and not x.get("networks"), x.get("networks")' || { echo "TERMINAL_EGRESS=$eg" >&2; return 1; }
+  done
+  set_env TERMINAL_EGRESS internet
+  # (a run without the way-out overlays: the terminal's and the Code page's files alone)
+  ( compose_overlays() { printf 'compose.terminal.yaml\ncompose.code.yaml\n'; }; dc config --format json 2>/dev/null ) | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+x = d["services"]["subs-chat"]
+assert list(x["networks"]) == ["subs-chat-internal"] and "network_mode" not in x, x
+assert d["networks"]["subs-chat-internal"]["internal"] is True' || return 1
   printf 'CODE_ENABLED=false\n' >> "$ENV_FILE"
   dc config --format json 2>/dev/null | python3 -c '
 import json, sys

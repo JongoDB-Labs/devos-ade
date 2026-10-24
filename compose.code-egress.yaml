@@ -6,4 +6,5 @@
 # compose.code-offline.yaml (the same).
 services:
   subs-chat:
+    networks: !reset []   # (not even its own: compose.code.yaml)
     network_mode: none

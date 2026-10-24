@@ -100,7 +100,8 @@ services:
   # (~/.bn-chat/<id>), each tool started with its tools switched off — and nothing else. The code container connects to
   # its socket (chat-socket). Its one network is the sandbox's way out, as Settings › Claude Code › Sandbox internet
   # access says: the egress proxy's (compose.code-proxy.yaml), the direct one (compose.code-egress.yaml), or none
-  # (compose.code-offline.yaml) — never this stack's default network (it lists none here: an overlay always says).
+  # (compose.code-offline.yaml) — never this stack's default network. Here, a network of its own with nothing else on
+  # it and no way out (subs-chat-internal): where it is should a run of compose lack the overlay, which replaces it.
   subs-chat:
     # the terminal's own image, as the terminal's build made it (./stack builds it for the terminal): never built for
     # this service with other arguments, never pulled
@@ -121,6 +122,7 @@ services:
     init: true
     entrypoint: ["node", "/usr/local/bin/bn-coded.mjs"]
     command: []
+    networks: [subs-chat-internal]
     environment:
       BN_CODED_ROLE: chat
       BN_CODE_SOCK_DIR: /run/bn-chat
@@ -153,7 +155,7 @@ services:
       retries: 6
       start_period: 5s
     depends_on:
-      terminal: { condition: service_healthy }   # (the sign-in folders: the terminal's volumes, made with it)
+      terminal: { condition: service_healthy }   # (its image is the terminal's: built, and the terminal up, first)
     logging:   # (YAML anchors do not reach across compose files: same values as x-logging in compose.yaml)
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
@@ -208,6 +210,9 @@ services:
 
 networks:
   code-link:
+    internal: true
+  # Chat's sandbox's alone (subs-chat): nothing else on it, no way out
+  subs-chat-internal:
     internal: true
 
 volumes:
