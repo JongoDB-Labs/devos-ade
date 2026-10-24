@@ -455,7 +455,7 @@ const BUILD = /^(v\d+\.\d+\.\d+)(?:-(\d+)-g([0-9a-f]{4,40}))?$/;
 function renderVersion(u) {
   if (!u) return;
   const v = u.installed || "", m = BUILD.exec(v), avail = Boolean(u.available);
-  const tip = [`bedrock-now ${v || "(version unknown: ./stack up records it)"}`];
+  const tip = [`DevOS ADE ${v || "(version unknown: ./stack up records it)"}`];
   if (m && m[2]) tip.push(`${m[2]} commit${m[2] === "1" ? "" : "s"} after the release ${m[1]}${u.branch ? `, branch ${u.branch}` : ""}`);
   else if (u.branch) tip.push(`branch ${u.branch}`);
   const when = u.commit_date ? new Date(u.commit_date) : null;
@@ -652,8 +652,8 @@ function renderAuto(a, usable) {
 // The update card's line while automatic updates are on. The helper reads the portal's release check only inside its
 // window, so Home combines what the helper says (switch, state, what it tried) with the release this card shows.
 function updateHint(a, usable) {
-  if (!a.allowed) return `Run it in your bedrock-now folder. ${REMOTE_OFF}`;
-  if (!usable) return "Run it in your bedrock-now folder.";
+  if (!a.allowed) return `Run it in your DevOS ADE folder. ${REMOTE_OFF}`;
+  if (!usable) return "Run it in your DevOS ADE folder.";
   const auto = a.auto || {}, latest = lastUpdate && lastUpdate.latest, last = auto.last || {};
   // while a job runs, the update it is doing looks "unfinished" to the helper: the progress card speaks then
   if (auto.supported && auto.on && !(a.in_progress && auto.state === "unfinished")) {

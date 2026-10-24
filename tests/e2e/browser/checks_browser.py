@@ -126,7 +126,7 @@ def login_page(ctx):
     page, rec = ctx.page("login-page")
     page.goto(origin() + "/")
     page.wait_for_url(re.compile(r"/login"))
-    expect(page.title() == "Sign in · bedrock-now", f"title {page.title()!r}")
+    expect(page.title() == "Sign in · DevOS ADE", f"title {page.title()!r}")
     icons = page.eval_on_selector_all("link[rel=icon], link[rel=manifest], link[rel=apple-touch-icon]", "els => els.map(e => e.href)")
     expect(len(icons) == 4, f"head links {icons}")
     for href in icons:  # pre-login: every icon/manifest the page links must load without a session
@@ -259,7 +259,7 @@ def update_card(ctx):
         # rehearsal's v0.4.1 → v0.9.0 showed only v0.9.0's notes)
         rels = [{"tag": t, "name": f"{t} — {h}", "headline": h,
                  "notes": f"## {t}\n- **fake** release {t} for the e2e suite\n<script>alert(1)</script>",
-                 "url": f"https://github.com/JongoDB-Labs/bedrock-now/releases/tag/{t}", "published_at": now}
+                 "url": f"https://github.com/JongoDB-Labs/devos-ade/releases/tag/{t}", "published_at": now}
                 for t, h in (("v99.0.0", "the newest fake release"), ("v98.0.0", "a fake release in between"),
                              ("v97.0.0", "the oldest fake release"))]
         _write_json(up, {"tag": "v99.0.0", "name": "v99.0.0 (e2e)", "notes": rels[0]["notes"], "url": rels[0]["url"],
@@ -370,7 +370,7 @@ def update_check_button(ctx):
         expect(m, f"the installed version {inst!r} is not a release or a build after one (./stack setup records it)")
         tag = m.group(0)
         rel = lambda t: {"tag": t, "name": t, "headline": f"the fake release {t}", "notes": f"- fake {t}",   # noqa: E731
-                         "url": f"https://github.com/JongoDB-Labs/bedrock-now/releases/tag/{t}", "published_at": iso(now)}
+                         "url": f"https://github.com/JongoDB-Labs/devos-ade/releases/tag/{t}", "published_at": iso(now)}
         current = {"tag": tag, "name": tag, "checked_at": iso(now), "error": None, "releases": [rel(tag)], "by": "daily"}
         newer = {**current, "tag": "v99.0.0", "name": "v99.0.0", "releases": [rel("v99.0.0"), rel(tag)], "by": "manual",
                  "images": []}
@@ -387,7 +387,7 @@ def update_check_button(ctx):
         page.click("#release-line .rl-more summary")
         why = page.locator("#release-line .rl-why")
         wtext = why.inner_text() if why.is_visible() else ""
-        expect("is the newest release" in wtext and "public list of bedrock-now releases" in wtext
+        expect("is the newest release" in wtext and "public list of DevOS ADE releases" in wtext
                and "sends nothing about this install" in wtext, f"About this check: {wtext!r}")
         expect(btn.get_attribute("aria-describedby") == why.get_attribute("id"), "the button is not described by About this check")
         page.click("#release-line .rl-more summary")
@@ -633,7 +633,7 @@ def auto_switch(ctx):
         states.append("no helper: hint in Maintenance")
         # ... and in the update card while an update is available
         _write_json(up, {"tag": "v99.0.0", "name": "v99.0.0 (e2e)", "notes": "e2e", "checked_at": now, "error": None,
-                         "url": "https://github.com/JongoDB-Labs/bedrock-now/releases/tag/v99.0.0"})
+                         "url": "https://github.com/JongoDB-Labs/devos-ade/releases/tag/v99.0.0"})
         page.click("#refresh")
         page.wait_for_selector("#update-card #helper-off:not([hidden])", timeout=15000)
         expect(page.locator("#maint").is_hidden(), "Maintenance shown twice")
@@ -853,7 +853,7 @@ def pwa_app_states(ctx):
     # handler for the scheme, so the click itself goes nowhere: the answer is sent the way the app would.)
     page.click("#app-note [data-open-app]")
     href = page.get_attribute("#app-note [data-open-app]", "href")
-    expect(page.evaluate(NOTE_TEXT).startswith("Opening bedrock-now"), f"after click: {page.evaluate(NOTE_TEXT)!r}")
+    expect(page.evaluate(NOTE_TEXT).startswith("Opening DevOS ADE"), f"after click: {page.evaluate(NOTE_TEXT)!r}")
     side = _side(page)
     _answer(side, "not-this-one")
     page.wait_for_timeout(500)
@@ -2540,7 +2540,7 @@ def walkthrough_git_hosts(ctx):
     _to_step(page, "git-hosts")
     card = page.inner_text("#tour .tour-step.cur")
     for words in ("Connect a git host…", "Sign in with GitHub", "Sign in with GitLab", "./stack git-host import gh", "Contents: Read and write",
-                  "read_repository", "write_repository", "SSH key", "Test connection", "Let Claude use this host", "only from the computer running bedrock-now"):
+                  "read_repository", "write_repository", "SSH key", "Test connection", "Let Claude use this host", "only from the computer running DevOS ADE"):
         expect(words in card, f"the step lacks {words!r}")
     shot(page, "w14-walkthrough-git-hosts")
     page.click("#tour [data-k=open-git-hosts]")
@@ -3082,9 +3082,9 @@ def _helper_answer(nonce: str, timeout=120) -> dict:
 def settings_refusals(ctx):
     d = _need_helper(ctx)
     base = d["snapshot"]["base"]
-    # a remote-marked request for the AWS key: only ever from the computer running bedrock-now
+    # a remote-marked request for the AWS key: only ever from the computer running DevOS ADE
     st = _helper_answer(_cfg_file([("AWS_ACCESS_KEY_ID", "AKIAABCDEFGHIJKLMNOP"), ("AWS_SECRET_ACCESS_KEY", "a" * 40)], base, "remote"))
-    expect(st["phase"] == "failed" and "computer running bedrock-now" in st["message"], f"remote AWS key: {st['message']}")
+    expect(st["phase"] == "failed" and "computer running DevOS ADE" in st["message"], f"remote AWS key: {st['message']}")
     time.sleep(2)
     # a request made against an older .env (another change, or an edit by hand, in between)
     st2 = _helper_answer(_cfg_file([("BUDGET_SETUP", "0.04")], "0" * 64))

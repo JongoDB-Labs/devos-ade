@@ -45,6 +45,8 @@ from pathlib import Path
 
 import httpx
 
+from . import brand
+
 log = logging.getLogger("portal.prices")
 
 LITELLM_URL = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
@@ -499,7 +501,7 @@ def download(client: httpx.Client, url: str, etag: str | None = None,
     left = deadline.left()
     if left <= 1:
         raise PriceError(f"{host}: out of time")
-    headers = {"Accept-Encoding": "gzip", "User-Agent": "bedrock-now-price-update"}
+    headers = {"Accept-Encoding": "gzip", "User-Agent": f"{brand.SLUG}-price-update"}
     if etag:
         headers["If-None-Match"] = etag
     too_big = PriceError(f"{host}: file is larger than {MAX_BYTES // 2**20} MB")

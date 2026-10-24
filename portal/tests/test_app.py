@@ -264,7 +264,7 @@ def test_install_location_is_escaped(settings):
 
 def test_wrong_password_falls_back_without_a_location(client):
     r = login(client, password="nope")
-    assert "It is PORTAL_PASSWORD in the .env file of your bedrock-now folder." in r.text
+    assert "It is PORTAL_PASSWORD in the .env file of your DevOS ADE folder." in r.text
     assert "{{" not in client.get("/login").text
 
 

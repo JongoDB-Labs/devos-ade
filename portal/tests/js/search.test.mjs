@@ -30,12 +30,12 @@ test("Settings: sections and settings, each opening its place (#settings/<id> or
 
 test("Docs: the installed release's docs on GitHub (else main), a page and its sections; odd files and anchors dropped", () => {
   const e = plain(S.docEntries(INDEX, "v0.10.0"));
-  assert.deepEqual(e.map((x) => x.url), ["https://github.com/JongoDB-Labs/bedrock-now/blob/v0.10.0/README.md",
-    "https://github.com/JongoDB-Labs/bedrock-now/blob/v0.10.0/README.md#costs--budgets",
-    "https://github.com/JongoDB-Labs/bedrock-now/blob/v0.10.0/docs/security.md"]);
-  assert.equal(S.docsBase("v0.10.0-3-gabc1234"), "https://github.com/JongoDB-Labs/bedrock-now/blob/main/");
-  assert.equal(S.docsBase(""), "https://github.com/JongoDB-Labs/bedrock-now/blob/main/");
-  assert.equal(S.docsBase("main/../../evil"), "https://github.com/JongoDB-Labs/bedrock-now/blob/main/");
+  assert.deepEqual(e.map((x) => x.url), ["https://github.com/JongoDB-Labs/devos-ade/blob/v0.10.0/README.md",
+    "https://github.com/JongoDB-Labs/devos-ade/blob/v0.10.0/README.md#costs--budgets",
+    "https://github.com/JongoDB-Labs/devos-ade/blob/v0.10.0/docs/security.md"]);
+  assert.equal(S.docsBase("v0.10.0-3-gabc1234"), "https://github.com/JongoDB-Labs/devos-ade/blob/main/");
+  assert.equal(S.docsBase(""), "https://github.com/JongoDB-Labs/devos-ade/blob/main/");
+  assert.equal(S.docsBase("main/../../evil"), "https://github.com/JongoDB-Labs/devos-ade/blob/main/");
 });
 
 test("the Code tab's frame's answer: only the one asked for, sessions by UUID, files as clean relative paths", () => {

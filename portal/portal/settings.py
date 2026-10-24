@@ -12,7 +12,7 @@ Request file REQUEST_DIR/cfg-<nonce>.req (at most 8 KB, ASCII, one item per line
 Diagnostics: REQUEST_DIR/act-<nonce>.json = {"action","requested_at","nonce"} (like admin.py's req-*.json).
 Project folders (lib/projects.sh): act-<nonce>.json too, every field fixed and none a path — project-pick (a folder
 chooser on the computer's screen; only from a local session), project-remove and project-mode-ro (by the project's id).
-What bedrock-now may read of your sessions on this computer (lib/sessions.sh): sessions-revoke, by a project's id (or
+What DevOS ADE may read of your sessions on this computer (lib/sessions.sh): sessions-revoke, by a project's id (or
 all) and a tool — narrowing, from anywhere; consent itself is given only on the computer (its screen, or its terminal).
 """
 
@@ -27,7 +27,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from . import hostfiles
+from . import brand, hostfiles
 
 # Settings › Voice when Bedrock refuses audio for its speech-to-text models (lib/stt.sh: since October 2026; the stack
 # says the same, with the command to use)
@@ -80,7 +80,7 @@ NONCE32 = re.compile(r"[0-9a-f]{32}")
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 DIGEST_RE = re.compile(r"[0-9a-f]{64}")
 KEEP_RE = re.compile(r"(main|(subagents|tool-results)/[A-Za-z0-9][A-Za-z0-9._-]{0,199})#[0-9a-f]{16}")
-SESSIONS = "sessions.json"                     # what bedrock-now may read of your sessions here (lib/sessions.sh)
+SESSIONS = "sessions.json"                     # what DevOS ADE may read of your sessions here (lib/sessions.sh)
 SESSIONS_TOOLS = ("claude", "claude-bedrock")
 # Your AI subscriptions (lib/subscriptions.sh): ask the sandbox again, or a tool's own sign-out — by its id, never more
 # (…-chat: the same for Chat's sandbox, its own sign-ins: --chat — of the Chat models with a sign-out command)
@@ -228,7 +228,7 @@ def capability(status_dir: Path, now: float | None = None) -> dict:
 
 
 def sessions_consent(status_dir: Path) -> dict:
-    """What bedrock-now may read of your Claude Code and claude-bedrock sessions here (lib/sessions.sh): per project
+    """What DevOS ADE may read of your Claude Code and claude-bedrock sessions here (lib/sessions.sh): per project
     folder and tool, always (or once, within the hour), and the folder names for suggestions — every field checked."""
     d = _read_json(status_dir / SESSIONS, 64 * 1024)
     folders, suggest = [], []
@@ -468,7 +468,7 @@ def _code_model(v, remote_on=False):
 
 def _oauth_client_id(v, remote_on=False):
     return None if v == "" or re.fullmatch(r"[A-Za-z0-9._-]{1,128}", v) else \
-        "must be an application (client) ID: letters, digits, ., _ and - (blank = bedrock-now's own app)"
+        f"must be an application (client) ID: letters, digits, ., _ and - (blank = {brand.NAME}'s own app)"
 
 
 def _app_slug(v, remote_on=False):
@@ -589,13 +589,13 @@ def policy_error(row: dict, value: str, local: bool, ctx: dict | None = None) ->
     if p == "regen":
         return "can only be regenerated (Regenerate makes a new random value)"
     if p == "local":
-        return None if local else "can only be changed from the computer running bedrock-now"
+        return None if local else f"can only be changed from the computer running {brand.NAME}"
     if p == "on-only":
         return None if value == "true" else "can only be turned on here (turning it off is a terminal step: edit .env)"
     if p == "widen-local":
         if local or not weakens(row.get("key", ""), value, row.get("value") or "", ctx):
             return None
-        return f"can only be {_WEAKEN_WORD.get(row.get('key'), 'turned on')} from the computer running bedrock-now (the other way works everywhere)"
+        return f"can only be {_WEAKEN_WORD.get(row.get('key'), 'turned on')} from the computer running {brand.NAME} (the other way works everywhere)"
     return f"is read-only here: {row.get('cli') or 'see ./stack config'}"
 
 
@@ -699,7 +699,7 @@ def write_project_action(request_dir: Path, action: str, password: str, when: st
 
 
 def write_sessions_action(request_dir: Path, password: str, project: str, tool: str, now: float | None = None) -> str:
-    """REQUEST_DIR/act-<nonce>.json: what bedrock-now may read of your sessions here, taken back — by a project's id (or
+    """REQUEST_DIR/act-<nonce>.json: what DevOS ADE may read of your sessions here, taken back — by a project's id (or
     all) and a tool (claude, claude-bedrock, both, or suggest: the folder names). Never a path. -> nonce"""
     if not (project == "all" or (isinstance(project, str) and PROJECT_ID.fullmatch(project))) or tool not in REVOKE_TOOLS \
             or (tool.startswith("setup-") and project != "all"):

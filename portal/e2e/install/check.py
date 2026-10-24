@@ -29,7 +29,7 @@ import websocket
 
 PORT, HOST = os.environ["PORTAL_PORT"], os.environ["PORTAL_HOST"]
 ORIGIN = f"http://{HOST}:{PORT}"
-NAME = "bedrock-now (port 8000)"
+NAME = "DevOS ADE (port 8000)"
 DEVTOOLS = "http://127.0.0.1:9222"
 
 
@@ -199,7 +199,7 @@ time.sleep(2)
 r["first click: tab has focus during the browser's question"] = tab.js("document.hasFocus()")
 if os.path.isdir("/out"):
     subprocess.run(["import", "-window", "root", "/out/open-dialog.png"], stderr=subprocess.DEVNULL)
-tick_and_accept()    # "Open bedrock-now (port 8000)?" + Always allow
+tick_and_accept()    # "Open DevOS ADE (port 8000)?" + Always allow
 time.sleep(3)
 tick_and_accept()    # "Allow app to open web+… links?" + Remember this choice
 r["first click: app window tab"] = wait_js(app, f"{CUR_TAB} === 'chat' && {CUR_TAB}") or app.js(CUR_TAB)

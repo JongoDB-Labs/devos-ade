@@ -79,7 +79,7 @@
 
   // Where the app is, for when no link opens it.
   const elsewhere = () => (android ? "Open it from your home screen or app list, or with ⋮ → Open in app."
-    : "Open bedrock-now from your Dock, Launchpad, Start menu or applications menu"
+    : "Open DevOS ADE from your Dock, Launchpad, Start menu or applications menu"
       + (location.protocol === "http:" ? ", run ./stack open" : "") + ", or use Open in app in the address bar.");
   const currentTab = () => { const t = location.hash.slice(1); return /^[a-z]+$/.test(t) ? t : "home"; };
   const nonce = () => Array.from(crypto.getRandomValues(new Uint32Array(2)), (x) => x.toString(36)).join("");
@@ -148,7 +148,7 @@
       channel = new BroadcastChannel("bn.app");
       channel.onmessage = answered;
     }
-    say("Opening bedrock-now… The first time, your browser asks twice: choose Open, then Allow (tick the box each time and it stops asking).");
+    say("Opening DevOS ADE… The first time, your browser asks twice: choose Open, then Allow (tick the box each time and it stops asking).");
     clearTimeout(answerTimer);
     const until = Date.now() + ANSWER_MAX_MS;
     const check = () => {
@@ -233,7 +233,7 @@
     deferred = null; store.set(APP_KEY, "1");
     settling = true; render();
     setTimeout(() => { settling = false; known = true; render(); }, SETTLE_MS);
-    tell("Installed: bedrock-now now opens in its own window.");
+    tell("Installed: DevOS ADE now opens in its own window.");
   });
 
   for (const b of document.querySelectorAll("[data-install]")) b.addEventListener("click", install);

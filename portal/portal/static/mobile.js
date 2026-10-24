@@ -153,7 +153,7 @@
     const usable = Boolean(a.running && a.allowed);
     document.body.classList.toggle("admin-off", !usable);
     if (!PHONE.matches || usable) return;
-    const where = "on the computer running bedrock-now";
+    const where = "on the computer running DevOS ADE";
     if (a.running) $("#maint-state").textContent = `Update, Rollback and Clean are off on this device: use a desktop browser ${where}.`;
     $("#update-hint").textContent = `To update, run ./stack update ${where}, or use Home in a desktop browser there.`;
   }

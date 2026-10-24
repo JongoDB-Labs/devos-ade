@@ -1,4 +1,4 @@
-"""bedrock-now portal: one login for every browser UI (Caddy asks /auth/verify), plus the Home page."""
+"""DevOS ADE portal: one login for every browser UI (Caddy asks /auth/verify), plus the Home page."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainT
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import activity, admin, answers, appicons, appsso, chatsearch, icons, prices, searchindex, settings_api, summary, updates, webapp
+from . import activity, admin, answers, appicons, appsso, brand, chatsearch, icons, prices, searchindex, settings_api, summary, updates, webapp
 from . import code as codepage
 from . import settings as settings_mod
 from .config import CODE, TERMINAL, Settings
@@ -79,7 +79,7 @@ def _no_store(resp: Response) -> Response:
 def _error_page(message: str, status: int, link: str, link_text: str) -> HTMLResponse:
     """A small page for the hand-off's dead ends (no script, no external resources)."""
     page = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>"
-            "<title>bedrock-now</title><body style='font-family:system-ui;max-width:32rem;margin:3rem auto;padding:0 1rem'>"
+            f"<title>{brand.NAME}</title><body style='font-family:system-ui;max-width:32rem;margin:3rem auto;padding:0 1rem'>"
             f"<h1 style='font-size:1.2rem'>Could not sign you in here</h1><p>{html.escape(message)}</p>"
             f"<p><a href='{html.escape(link, quote=True)}'>{html.escape(link_text)}</a></p>")
     resp = HTMLResponse(page, status_code=status)
@@ -105,7 +105,7 @@ HANDOFF_LOOP_COOKIE = "__Host-bn_handoffs_"   # + the app (chat/admin/files): on
 HANDOFF_LOOP_MAX = 4   # hand-offs to one app host within a minute before the portal stops and explains
 
 
-GENERIC_WHERE = "the .env file of your bedrock-now folder"
+GENERIC_WHERE = f"the .env file of your {brand.NAME} folder"
 
 
 def _login_page(next_url: str, error: str = "", status: int = 200, retry_after: int = 0,
@@ -185,7 +185,7 @@ def _launch_page(s: Settings, rem: bool, mode: str, tool: str, folder: str) -> H
         what = f"{name} in a window of its own in this terminal (the sandbox)"
     else:
         what = (f"{name} ({t['provider']}) on {t['plan']}, in a window of its own in this terminal (the sandbox) — its own "
-                f"sign-in first if it has none; bedrock-now never sees the login")
+                f"sign-in first if it has none; {brand.NAME} never sees the login")
     where = f", in {folder}" if folder else ""
     what += where + (". In Chat, in place of Open WebUI." if mode == "chat" else ".")
     page = (STATIC / "terminal-launch.html").read_text(encoding="utf-8").replace("{{portal}}", html.escape(portal, quote=True))
@@ -309,7 +309,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             return None
         log.warning("remote request from another Tailscale login refused")
         return _no_store(PlainTextResponse(
-            "This bedrock-now is not shared with your Tailscale login (TAILSCALE_ALLOWED_LOGIN).", status_code=403))
+            f"This {brand.NAME} is not shared with your Tailscale login (TAILSCALE_ALLOWED_LOGIN).", status_code=403))
 
     async def healthz(request: Request) -> Response:
         return PlainTextResponse("ok")
@@ -652,11 +652,11 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         if act not in settings_mod.SESSIONS_REQUESTS:
             return sessions_err(400, "unknown action")
         if act in ("sessions-scan", "sessions-suggest") and rem:
-            return sessions_err(403, "Only on the computer running bedrock-now: a look at its sessions is allowed in a dialog on its screen "
+            return sessions_err(403, f"Only on the computer running {brand.NAME}: a look at its sessions is allowed in a dialog on its screen "
                                      "(or ./stack sessions in a terminal there).")
         # (Bring your setup: a look and an open only on the computer itself — never started from another device)
         if act in ("setup-scan", "setup-fetch") and rem:
-            return sessions_err(403, "Only on the computer running bedrock-now: your setup there is read only after you allowed it in a dialog on its "
+            return sessions_err(403, f"Only on the computer running {brand.NAME}: your setup there is read only after you allowed it in a dialog on its "
                                      "screen (or ./stack sessions config import in a terminal there).")
         state = admin.helper_state(settings.status_dir)
         if not state["running"]:
@@ -734,9 +734,9 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             return "previews are off"
         if not settings.remote_preview:
             return ("Previews over remote access are off (the default): over Tailscale or your own domain a preview would be "
-                    "on the same site as your other apps there. Open the preview on the computer running bedrock-now, or turn "
+                    f"on the same site as your other apps there. Open the preview on the computer running {brand.NAME}, or turn "
                     "them on there (Settings › Remote access; docs/remote.md says what it means).")
-        return ("Previews over remote access have no address yet: ./stack up on the computer running bedrock-now writes "
+        return (f"Previews over remote access have no address yet: ./stack up on the computer running {brand.NAME} writes "
                 "it (REMOTE_PREVIEW_HOST), and with Tailscale the Service <name>-preview must be defined in its admin console.")
 
     def wants_json(request: Request) -> bool:
@@ -868,7 +868,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
     # --- The viewer runs HTML files, Mermaid diagrams and notebooks' HTML outputs there: another site than the portal's,
     # --- sandboxed, no network.
     ARTIFACT_REMOTE = ("HTML files, diagrams and notebooks' HTML outputs are drawn on a sandboxed site that is not available "
-                       "over remote access yet: open the Code page on the computer that runs bedrock-now, or Download.")
+                       f"over remote access yet: open the Code page on the computer that runs {brand.NAME}, or Download.")
 
     async def code_artifact(request: Request) -> Response:
         if (deny := code_guard(request)) is not None:

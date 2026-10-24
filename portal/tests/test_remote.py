@@ -408,21 +408,21 @@ def test_home_gets_the_app_urls_of_its_site(rclient):
 
 def test_remote_app_name_rule():
     from portal import webapp
-    assert webapp.app_name("bedrock-now.localhost", 80, remote=True) == "bedrock-now (remote)"
-    assert webapp.app_name("bn-dev.localhost", 8800, remote=True) == "bedrock-now (bn-dev, remote)"   # port: local only
-    assert webapp.app_name("bn-dev.localhost", 8800) == "bedrock-now (bn-dev, port 8800)"
+    assert webapp.app_name("bedrock-now.localhost", 80, remote=True) == "DevOS ADE (remote)"
+    assert webapp.app_name("bn-dev.localhost", 8800, remote=True) == "DevOS ADE (bn-dev, remote)"   # port: local only
+    assert webapp.app_name("bn-dev.localhost", 8800) == "DevOS ADE (bn-dev, port 8800)"
 
 
 def test_manifest_sw_and_icons_are_public_on_the_remote_site(rclient):
     r = rclient.get("/manifest.webmanifest", headers=REMOTE)
     assert r.status_code == 200
     m = r.json()
-    assert m["name"] == "bedrock-now (remote)" and m["short_name"] == "remote"
+    assert m["name"] == "DevOS ADE (remote)" and m["short_name"] == "remote"
     assert m["start_url"] == "/" and m["scope"] == "/"
     # The remote app is another app: its own id, manifest URL and link scheme.
     assert m["related_applications"] == [{"platform": "webapp", "url": f"{R_ORIGIN}/manifest.webmanifest", "id": f"{R_ORIGIN}/"}]
     local = rclient.get("/manifest.webmanifest").json()
-    assert local["name"] == "bedrock-now"
+    assert local["name"] == "DevOS ADE"
     assert local["related_applications"][0]["id"] == "http://bedrock-now.localhost/"
     assert local["protocol_handlers"][0]["protocol"] == "web+bedrocknow"
     assert m["protocol_handlers"][0]["protocol"].startswith("web+bedrocknow") and m["protocol_handlers"] != local["protocol_handlers"]

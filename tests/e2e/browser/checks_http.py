@@ -54,7 +54,7 @@ def manifest(ctx):
     expect(any("maskable" in (i.get("purpose") or "") for i in m["icons"]), "no maskable icon")
     sw = http("GET", None, "/sw.js")
     expect(sw.status == 200 and "javascript" in (sw.header("content-type") or ""), f"sw.js {sw.status} {sw.header('content-type')}")
-    expect(m["name"].startswith("bedrock-now"), f"name {m['name']}")
+    expect(m["name"].startswith("DevOS ADE"), f"name {m['name']}")
     return f"name '{m['name']}', display {m['display']}, {len(m['icons'])} icons; sw.js served"
 
 

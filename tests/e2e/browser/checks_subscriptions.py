@@ -61,7 +61,7 @@ def settings_row(ctx):
     items = page.locator("#set-subscriptions li[data-tool]")
     expect(items.count() == len(TOOLS), f"{items.count()} tools listed")
     text = row.inner_text()
-    for words in ("Your AI subscriptions", "Codex", "Grok Build", "Check again", "bedrock-now never opens it", "./stack subscriptions"):
+    for words in ("Your AI subscriptions", "Codex", "Grok Build", "Check again", "DevOS ADE never opens it", "./stack subscriptions"):
         expect(words in text, f"the row lacks {words!r}")
     # two rows for each Chat model — the terminal's and the Code page's sign-in, and Chat's own — none for the others
     for t in ("claude", "codex", "copilot", "grok"):
@@ -87,7 +87,7 @@ def walkthrough_step(ctx):
     page.evaluate("() => window.bnTour.open('subscriptions')")
     page.locator("#tour .tour-step.cur", has_text="Your AI subscriptions and keys").wait_for(timeout=10000)
     card = page.inner_text("#tour .tour-step.cur")
-    for words in ("claude-sub", "Codex", "Copilot", "Cursor", "Grok", "Gemini CLI", "device code login", "bedrock-now never sees it",
+    for words in ("claude-sub", "Codex", "Copilot", "Cursor", "Grok", "Gemini CLI", "device code login", "DevOS ADE never sees it",
                   "backups leave it out", "Who answers", "a model in Open WebUI's menu", "API keys"):
         expect(words in card, f"the step lacks {words!r}")
     shot(page, "s2-walkthrough-subscriptions")

@@ -177,7 +177,7 @@
       badge.hidden = !n && !bypass;
       badge.classList.toggle("bypass", bypass);
       badge.title = bypass ? "A Code session runs without asking (Bypass permissions)" : "";
-      document.title = n ? `(${n}) bedrock-now` : "bedrock-now";
+      document.title = n ? `(${n}) DevOS ADE` : "DevOS ADE";
       if (e.data.type === "bn-code-status") {
         reported = { waiting: Number.isInteger(e.data.waiting) && e.data.waiting > 0 ? Math.min(e.data.waiting, 99) : 0, sessions: takeSessions(e.data.sessions), git: takeGit(e.data.git),
           // how many Git hosts are connected (a number only; the walkthrough's "Connect a git host" step), null: not known
@@ -280,22 +280,22 @@
     const card = el("div", { class: "code-off-card" });
     if (remoteOnly) {
       card.append(
-        el("p", { class: "code-off-lede", text: "The Code page is on, on the computer running bedrock-now: open the portal there and this tab opens it. Over remote access it stays off unless you allow it, because Claude runs commands on that computer." }),
+        el("p", { class: "code-off-lede", text: "The Code page is on, on the computer running DevOS ADE: open the portal there and this tab opens it. Over remote access it stays off unless you allow it, because Claude runs commands on that computer." }),
         el("p", { class: "note", text: "It is Claude Code in your browser, like its desktop app:" }), features,
         el("h2", { text: "Using it from your devices too" }),
         el("ol", { class: "code-off-list" },
-          item("On the computer running bedrock-now, set ", code("REMOTE_TERMINAL=true"), " in ", code(".env"), ", then run ", code("./stack up"), "."),
+          item("On the computer running DevOS ADE, set ", code("REMOTE_TERMINAL=true"), " in ", code(".env"), ", then run ", code("./stack up"), "."),
           item("The same switch shares the browser terminal over remote access too (a shell from your phone), so it is a step in a terminal on purpose: Settings shows it, read-only."),
           item("With Tailscale, approve the new Services (", code("…-terminal"), " and ", code("…-code"), ") in the admin console like the others; ", code("./stack remote status"), " lists them."),
           item("Both still ask for the portal password again before they open.")));
     } else {
-      const ws = code("~/bedrock-now-workspace", "code-off-ws");
+      const ws = code("~/devos-ade-workspace", "code-off-ws");
       const other = code("./stack code enable --workspace DIR", "code-off-other");
       const turnOn = el("button", { type: "button", class: "action primary", id: "code-off-settings", text: "Turn on in Settings" });
       turnOn.addEventListener("click", toSettings);
       card.append(
         el("p", { class: "code-off-lede", text: "Claude Code in your browser, like its desktop app: a chat with Claude beside your project's files, and every command and file change shown to you first." }),
-        el("p", { class: "code-off-actions" }, turnOn, el("span", { class: "note", text: "on the computer running bedrock-now" })),
+        el("p", { class: "code-off-actions" }, turnOn, el("span", { class: "note", text: "on the computer running DevOS ADE" })),
         features,
         el("h2", { text: "What turning it on does" }),
         el("ul", { class: "code-off-list" },
@@ -306,7 +306,7 @@
           item("It asks for the portal password again before it opens, because it runs commands. The sandbox reaches ", el("strong", { text: "public internet addresses only" }), ", through its egress proxy: not this computer's own services, your local network or private addresses. Settings › Claude Code › Sandbox internet access changes that (", code("TERMINAL_EGRESS=off"), " in ", code(".env"), ": no internet at all)."),
           item("The first time, it builds the Code page's image: a few minutes.")),
         el("h2", { text: "Turning it on" }),
-        el("p", { class: "note", text: "Turn on in Settings works only on the computer running bedrock-now: from another device, Settings shows the switch but leaves it to that computer. Or in a terminal, in your bedrock-now folder:" }),
+        el("p", { class: "note", text: "Turn on in Settings works only on the computer running DevOS ADE: from another device, Settings shows the switch but leaves it to that computer. Or in a terminal, in your DevOS ADE folder:" }),
         copyCmd("./stack code enable"),
         el("p", { class: "note", text: "Once it is on, reload this page: this tab then opens Claude Code. Turning it off again works from anywhere and keeps the terminal." }));
     }
@@ -351,7 +351,7 @@
         " in ", code(".env"), " turns it on with the terminal).");
     } else {
       line = el("p", { class: "note code-line" }, "Or in the browser with a chat: the ", tab, ", off for now. ",
-        settingsLink("Settings › Claude Code"), " (on the computer running bedrock-now) or ", code("./stack code enable"), " turns it on.");
+        settingsLink("Settings › Claude Code"), " (on the computer running DevOS ADE) or ", code("./stack code enable"), " turns it on.");
     }
     card.append(line);
   }

@@ -244,7 +244,7 @@ def test_the_page_and_the_server_say_less_protection_the_same_way():
     assert words == st._WEAKEN_WORD
     form = js[js.index("const weak = Object.keys(values).find("):js.index("confirmApply(values, `Save ${k.label}?`")]
     assert 'keys[n].policy === "widen-local" && localOnlyHere(keys[n], values[n])' in form
-    assert "from the computer running bedrock-now (the other way works everywhere)" in form
+    assert "from the computer running DevOS ADE (the other way works everywhere)" in form
 
 
 def test_without_a_layout_every_setting_keeps_its_row():

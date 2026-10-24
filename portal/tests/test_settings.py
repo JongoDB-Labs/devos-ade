@@ -446,7 +446,7 @@ def test_remote_sessions_never_change_exfiltration_keys(make, dirs):
                    {"REMOTE_ADMIN_ACTIONS": "true"}):
         r = apply(c, values, headers=RH)
         assert r.status_code == 400, values
-        assert any("computer running bedrock-now" in m for m in r.json()["fields"].values())
+        assert any("computer running DevOS ADE" in m for m in r.json()["fields"].values())
     assert apply(c, {"REMOTE_ADMIN_ACTIONS": "false"}, headers=RH).status_code == 202   # narrowing is fine anywhere
     req = next(rq.iterdir()).read_text()
     assert "\norigin remote\n" in req
@@ -686,7 +686,7 @@ def test_project_pick_only_from_this_computer_and_with_a_screen(make, dirs):
     projects_up(sd)
     rc = remote_client(make, True)
     r = project(rc, "project-pick", headers=RH)
-    assert r.status_code == 403 and "only from the computer running bedrock-now" in r.json()["error"]
+    assert r.status_code == 403 and "only from the computer running DevOS ADE" in r.json()["error"]
     # narrowing works from anywhere (with remote admin actions)
     assert project(rc, "project-mode-ro", headers=RH, project="p_0123abcd").status_code == 202
     assert project(remote_client(make, False), "project-remove", headers=RH, project="p_0123abcd").status_code == 403
@@ -695,7 +695,7 @@ def test_project_pick_only_from_this_computer_and_with_a_screen(make, dirs):
     assert project(make(), "project-remove", project="p_0123abcd").status_code == 409
 
 
-# --- what bedrock-now may read of your sessions on this computer (lib/sessions.sh): the list, and taking it back ---
+# --- what DevOS ADE may read of your sessions on this computer (lib/sessions.sh): the list, and taking it back ---
 
 def sessions_up(sd, folders=None):
     helper_up(sd)
@@ -783,8 +783,8 @@ def test_report_is_read_from_the_status_folder(make, dirs):
     sd, _ = dirs
     c = make()
     assert c.get("/api/settings/report", headers=API).json() == {"text": "", "written_at": None}
-    (sd / "report.txt").write_text("bedrock-now status report\n")
-    assert c.get("/api/settings/report", headers=API).json()["text"].startswith("bedrock-now status report")
+    (sd / "report.txt").write_text("DevOS ADE status report\n")
+    assert c.get("/api/settings/report", headers=API).json()["text"].startswith("DevOS ADE status report")
     assert remote_client(make, False).get("/api/settings/report", headers={**API, **REMOTE}).status_code == 403
 
 
@@ -1033,7 +1033,7 @@ def test_code_page_turns_on_here_with_or_without_the_terminal_and_off_from_anywh
             (rq / f).unlink()
     # the policy, as lib/settings.sh setting_allowed: turning it on weakens (this computer only), off never does
     code = row("CODE_ENABLED", policy="widen-local", validator="bool", value="false")
-    assert "can only be turned on from the computer running bedrock-now" in st.policy_error(code, "true", local=False)
+    assert "can only be turned on from the computer running DevOS ADE" in st.policy_error(code, "true", local=False)
     assert st.policy_error(code, "true", local=True) is None
     assert st.policy_error(row("CODE_ENABLED", policy="widen-local", validator="bool", value="true"), "false", local=False) is None
 
@@ -1049,7 +1049,7 @@ def test_code_allow_bypass_on_only_here_off_from_anywhere(make, dirs):
         (rq / f).unlink()
     c = remote_client(make, True)
     r = apply(c, {"CODE_ALLOW_BYPASS": "true"}, headers=RH)
-    assert r.status_code == 400 and "computer running bedrock-now" in r.json()["fields"]["CODE_ALLOW_BYPASS"]
+    assert r.status_code == 400 and "computer running DevOS ADE" in r.json()["fields"]["CODE_ALLOW_BYPASS"]
     write_snapshot(sd, keys=KEYS + [row("CODE_ALLOW_BYPASS", "advanced", "-", "widen-local", "bool", "code-env", value="true")])
     r = apply(c, {"CODE_ALLOW_BYPASS": "false"}, headers=RH)
     assert r.status_code == 202, r.text
@@ -1067,7 +1067,7 @@ def test_auto_mode_switches_on_only_here_off_from_anywhere(make, dirs, key, appl
         (rq / f).unlink()
     c = remote_client(make, True)
     r = apply(c, {key: "true"}, headers=RH)
-    assert r.status_code == 400 and "computer running bedrock-now" in r.json()["fields"][key]
+    assert r.status_code == 400 and "computer running DevOS ADE" in r.json()["fields"][key]
     r = apply(c, {key: "maybe"}, headers=RH)
     assert r.status_code == 400
     write_snapshot(sd, keys=KEYS + [row(key, "advanced", "-", "widen-local", "bool", apply_, value="true")])
@@ -1094,7 +1094,7 @@ def test_sandbox_internet_access_opens_further_only_here_and_closes_from_anywher
         (rq / f).unlink()
     c = remote_client(make, True)
     r = apply(c, {key: "host"}, headers=RH)
-    assert r.status_code == 400 and "can only be opened further from the computer running bedrock-now" in r.json()["fields"][key]
+    assert r.status_code == 400 and "can only be opened further from the computer running DevOS ADE" in r.json()["fields"][key]
     for bad in ("on", "lan", "Internet"):
         r = apply(c, {key: bad}, headers=RH)
         assert r.status_code == 400 and "must be internet, host or off" in r.json()["fields"][key]
@@ -1123,7 +1123,7 @@ def test_code_page_from_remote_access_only_off(make, dirs):
     write_snapshot(sd, keys=code_rows(code="false", terminal="true")); helper_up(sd)
     c = remote_client(make, True)
     r = apply(c, {"CODE_ENABLED": "true"}, headers=RH)
-    assert r.status_code == 400 and "computer running bedrock-now" in r.json()["fields"]["CODE_ENABLED"]
+    assert r.status_code == 400 and "computer running DevOS ADE" in r.json()["fields"]["CODE_ENABLED"]
     write_snapshot(sd, keys=code_rows(code="true", terminal="true"))
     r = apply(c, {"CODE_ENABLED": "false"}, headers=RH)
     assert r.status_code == 202, r.text

@@ -1,4 +1,4 @@
-// Walkthrough: takes a developer through all of bedrock-now — setting it up (AWS models, OpenRouter, voice, Claude Code,
+// Walkthrough: takes a developer through all of DevOS ADE — setting it up (AWS models, OpenRouter, voice, Claude Code,
 // a git host, budgets), its apps behind the one portal sign-in, Chat, coding with Claude on the Code page (modes, models,
 // the workspace, @-mentions, clone, review and push, run and preview, what the sandbox reaches, plugins), the models from
 // your own tools (claude-bedrock, the LiteLLM API, the shared store) and keeping it running (Home, Activity and search,
@@ -142,7 +142,7 @@
   // beside it
   const rail = () => (root.bnNav && root.bnNav.rail ? root.bnNav.rail() : TABLET.matches);
   const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)");
-  const REPO = "https://github.com/JongoDB-Labs/bedrock-now";
+  const REPO = "https://github.com/JongoDB-Labs/devos-ade";
   const NAMES = { chat: "Chat", admin: "Admin", files: "Files" };
   const PROMPT = 'Write notes/hello.md to the shared store with a two-line summary of this folder, and ingest it into knowledge base "Claude Code".';
   // The Code page (code.js reads the same): {enabled, here} — on at all, and usable on this site (remote access needs
@@ -239,7 +239,7 @@
     }
     if (CODE.enabled) return note("The ", b("Code"), " tab is off for remote access (", code("REMOTE_TERMINAL=true"), " in ", code(".env"), " turns it on with the terminal).");
     return note(use ? "Prefer the browser? The " : "Claude Code in the browser, nothing to install: the ", b("Code"), " tab, off for now, says what it does; ",
-      settings("Claude Code", "CODE_ENABLED"), " turns it on (from the computer running bedrock-now; it turns the browser terminal on too, as ", code("./stack code enable"), " does).");
+      settings("Claude Code", "CODE_ENABLED"), " turns it on (from the computer running DevOS ADE; it turns the browser terminal on too, as ", code("./stack code enable"), " does).");
   }
   // Chat, Admin and Files sign you in by themselves: opening one (its tab, or on a phone its new-tab link) is the step.
   function opened(app) {
@@ -320,7 +320,7 @@
     welcome: {
       title: "Welcome", info: true,
       body: () => [
-        p("bedrock-now is your AI workbench: models run on Amazon Bedrock in your own AWS account (and on OpenRouter, if you turn it on). Where you work:"),
+        p("DevOS ADE is your AI workbench: models run on Amazon Bedrock in your own AWS account (and on OpenRouter, if you turn it on). Where you work:"),
         list("ul", [
           CODE.here ? [b("Code"), ": Claude Code in the browser — a chat beside your files, Git, previews, Run & test — in a sandbox that sees one folder."]
             : [b("Code"), ": Claude Code in the browser, once it is on (its step says how)."],
@@ -329,7 +329,7 @@
           [b("Your own tools"), ": scripts and apps use the same models through one OpenAI- and Anthropic-compatible API."],
           [b("Admin"), " (keys, budgets, logs) and ", b("Files"), " (the store Claude Code and Chat share)."]]),
         p("One sign-in, the portal's, opens all of them, and every answer shows what it cost."),
-        note("Six parts; skip what you do not need (each part folds away). Trying everything costs a few cents. Commands here run in a terminal, in your bedrock-now folder."),
+        note("Six parts; skip what you do not need (each part folds away). Trying everything costs a few cents. Commands here run in a terminal, in your DevOS ADE folder."),
       ],
     },
     aws: {
@@ -365,7 +365,7 @@
         p("Hundreds of other models, some free. Prompts to them go to openrouter.ai and the model's provider, not to your AWS account."),
         list("ol", [
           ["Create a key at ", ext("https://openrouter.ai/settings/keys", "openrouter.ai › Settings › API Keys"),
-            ". Name it bedrock-now; a credit limit is optional (it caps what the key can spend). It is shown once: copy it then."],
+            ". Name it DevOS ADE; a credit limit is optional (it caps what the key can spend). It is shown once: copy it then."],
           ["Paste it into ", code(".env"), " after ", code("OPENROUTER_API_KEY="), " and run", cmd("./stack openrouter apply"),
             "or run", cmd("./stack openrouter set"), "(it asks for the key, hidden), or paste it in ", settings("Chat & voice", "OPENROUTER_API_KEY"), " on this computer. Either way the key is checked with OpenRouter and what needs it restarts (~30 s)."],
           ["An account without credits can only use free models, so apply and set then offer just those (",
@@ -404,7 +404,7 @@
         p(code("claude-bedrock"), " is Claude Code pointed at this stack, so Claude Code (", code("claude"), ") must be installed (",
           doc("quickstart", "prerequisites"), ")."),
         p("Setup offers to link it into ", code("~/.local/bin"), ". If your terminal says “command not found”, run ",
-          code("./bin/claude-bedrock"), " from your bedrock-now folder, or re-run ", code("./stack setup"), " and answer y."),
+          code("./bin/claude-bedrock"), " from your DevOS ADE folder, or re-run ", code("./stack setup"), " and answer y."),
         cmd(command()),
         p("It keeps its own config folder, ", code("~/.claude-bedrock"), ": your ", code("~/.claude"),
           " plugins, hooks and MCP servers are not loaded, which makes a prompt on Bedrock about 100× cheaper (",
@@ -427,15 +427,15 @@
         p("For private repositories, and to push: GitHub, GitLab or any git server over https or ssh, connected once on the Code page."),
         list("ol", [
           [b("Open Git hosts"), " → ", b("Connect a git host…"), ": GitHub, GitLab or another server."],
-          [b("Sign in with GitHub"), " (no setup: bedrock-now's own GitHub App) or ", b("Sign in with GitLab"), " (an app of yours): the dialog shows a code — open the host's page it links to, enter the code there and approve (the page never opens it for you). ",
-            "On GitHub it reaches only the repositories you install the app on (", b("Choose repositories"), ", or github.com/apps/bedrock-now), with ", b("Contents: Read and write"), "; its token renews itself."],
+          [b("Sign in with GitHub"), " (no setup: DevOS ADE's own GitHub App) or ", b("Sign in with GitLab"), " (an app of yours): the dialog shows a code — open the host's page it links to, enter the code there and approve (the page never opens it for you). ",
+            "On GitHub it reaches only the repositories you install the app on (", b("Choose repositories"), ", or the app's own page on GitHub), with ", b("Contents: Read and write"), "; its token renews itself."],
           ["Or an ", b("access token"), " for https:// URLs (the dialog links to where you make one): on GitHub a fine-grained token for only the repositories you need, with ",
             b("Contents: Read and write"), "; on GitLab ", code("read_repository"), " and ", code("write_repository"), ". Paste it once: it is never shown again."],
           ["Or an ", b("SSH key"), " the Code page makes, for git@… URLs: add its public half to your account, or as a deploy key of the repository (",
             b("Allow write access"), " to push)."],
-          ["Already use gh or glab on this computer? ", code("./stack git-host import gh"), " (or ", code("glab"), "), in the bedrock-now folder, imports that login as the token (glab: a personal access token only)."],
+          ["Already use gh or glab on this computer? ", code("./stack git-host import gh"), " (or ", code("glab"), "), in the DevOS ADE folder, imports that login as the token (glab: a personal access token only)."],
           [b("Test connection"), " lists a repository's branches with it."]]),
-        note("Claude's own git gets nothing from it unless you turn on ", b("Let Claude use this host"), " (off by default; each use shows in Activity). Adding a host, a sign-in, a token or a key works only from the computer running bedrock-now",
+        note("Claude's own git gets nothing from it unless you turn on ", b("Let Claude use this host"), " (off by default; each use shows in Activity). Adding a host, a sign-in, a token or a key works only from the computer running DevOS ADE",
           onlyHere(), ". ", doc("remote-repositories-git-hosts-clone-push-and-pull", "More")),
       ],
       actions: () => [openGit("hosts")],
@@ -542,7 +542,7 @@
     "code-off": {
       title: CODE.enabled ? "The Code page from this device" : "Turn on the Code page", optional: true, when: () => !CODE.here,
       body: () => CODE.enabled ? [
-        p("The Code page — Claude Code in the browser, with a chat, your files, Git and previews — is on, on the computer running bedrock-now. Over remote access it stays off unless you allow it, because Claude runs commands there:"),
+        p("The Code page — Claude Code in the browser, with a chat, your files, Git and previews — is on, on the computer running DevOS ADE. Over remote access it stays off unless you allow it, because Claude runs commands there:"),
         list("ol", [
           ["On that computer, set ", code("REMOTE_TERMINAL=true"), " in ", code(".env"), ", then run ", code("./stack up"), " (it shares the browser terminal too)."],
           ["With Tailscale, approve its new Services (", code("…-terminal"), ", ", code("…-code"), "); ", code("./stack remote status"), " lists them."]]),
@@ -551,7 +551,7 @@
         p("Claude Code in the browser, like its desktop app: a chat beside your project's files, Git with your git hosts, previews of dev servers, Run & test — and every command and file change shown to you first."),
         list("ul", [
           ["It runs in a sandbox that sees one folder of yours, with its own key and budget."],
-          [settings("Claude Code", "CODE_ENABLED"), " › ", b("Code page: On"), " (from the computer running bedrock-now), or in a terminal:"]]),
+          [settings("Claude Code", "CODE_ENABLED"), " › ", b("Code page: On"), " (from the computer running DevOS ADE), or in a terminal:"]]),
         cmd("./stack code enable"),
         note("Once it is on, reload the portal: this part of the walkthrough then shows its steps (", doc("the-code-page", "the Code page"), ")."),
       ],
@@ -582,7 +582,7 @@
         p("A card says exactly what would run or change: ", b("Allow once"), ", ", b("Always"), " (the rule is shown first) or ", b("Deny"),
           " (with a note for Claude). ⋯ › ", b("Permissions"), " lists the rules, with Remove."),
         note(b("Auto"), " (a reviewer model decides; about $0.13 per 5 minutes in use) and ", b("Bypass permissions"), " stay off until ",
-          settings("Claude Code", "CODE_AUTO_MODE"), " allows them, from the computer running bedrock-now (", doc("permissions-and-modes", "details"), ")."),
+          settings("Claude Code", "CODE_AUTO_MODE"), " allows them, from the computer running DevOS ADE (", doc("permissions-and-modes", "details"), ")."),
       ],
       actions: () => [openCode()],
     },
@@ -697,7 +697,7 @@
             [b("Off"), ": only LiteLLM and the shared MCP server."]]),
           p("Narrower, in ", code(".env"), " and then ", code("./stack up"), ": ", code("TERMINAL_EGRESS_ALLOW"), " (only these names) and ",
             code("TERMINAL_EGRESS_DENY"), " (never these). What the proxy refused: ", code("./stack logs terminal-egress"), "."),
-          note("Opening it further works only from the computer running bedrock-now; a change restarts the terminal (its shells and open Code sessions end)."),
+          note("Opening it further works only from the computer running DevOS ADE; a change restarts the terminal (its shells and open Code sessions end)."),
         ];
       },
     },
@@ -765,14 +765,14 @@
             b("Grok"), " (SuperGrok or the X Subscription) and ", b("Gemini CLI"), " (an organisation's Gemini Code Assist, or your own Gemini API key — Google AI Pro and Ultra no longer work in it)."],
           [b("Signing in"), ": pick the tool in the terminal's ", b("Open"), " menu (or type its name there). It shows a link (and for most a code): open the link in your browser and sign in with the provider. Codex, Copilot, Cursor and Grok then finish by themselves; ",
             b("Claude Code"), " and ", b("Gemini CLI"), " show a code in your browser that you paste back into the terminal. Codex needs ", b("device code login"), " turned on in ChatGPT's Security settings first."],
-          ["Each login stays in that tool's own file in the sandbox: ", b("bedrock-now never sees it"), ", and backups leave it out. Anything running in the sandbox could read it: sign out and revoke it at the provider if that ever worries you — Settings' ",
+          ["Each login stays in that tool's own file in the sandbox: ", b("DevOS ADE never sees it"), ", and backups leave it out. Anything running in the sandbox could read it: sign out and revoke it at the provider if that ever worries you — Settings' ",
             b("Sign out"), " for Claude Code, Codex, Cursor and Grok; Gemini CLI and Copilot sign out inside themselves (", code("/auth signout"), ", ", code("/logout"), ")."]]),
         p(b("Who answers"), ", on each page:"),
         list("ul", [
           [b("Terminal"), ": the ", b("Open"), " menu above it — Claude Code on Bedrock, a tool of yours, or a shell, each in a window of its own (the Code page's terminal panel has the same)."],
           [b("Chat"), ": the ", b("Who answers"), " menu above it — a Bedrock or OpenRouter model in Open WebUI, or one of your tools ", b("itself"), ", right there, in the folder you pick. Each subscription that is signed in is also ", b("a model in Open WebUI's menu"), " (Codex, Copilot, Grok, and Claude on your plan once you turn its switch on): it answers in the same chat, without tools, on your plan — under each answer its tokens, never dollars. Chat has ", b("sign-ins of its own"), " (its own sandbox, apart from the terminal's): sign each in once more for Chat — the picker's ", b("Sign in for Chat…"), " leads to Settings, which shows the command (", code("./stack subscriptions login codex --chat"), "). Cursor is not a Chat model (it has no switch that turns its tools off). Google's plans no longer work in Gemini CLI: your own Gemini key is planned instead, like your other API keys."],
           [b("Code page"), ": the model picker's ", b("Who answers"), " switches to one of them — a new session in the project's folder with your conversation so far; its questions come as the usual permission cards."]]),
-        note("Usage counts against each plan's own limits; bedrock-now shows no $ for it. ", settings("Claude Code", "+subscriptions"), " › ",
+        note("Usage counts against each plan's own limits; DevOS ADE shows no $ for it. ", settings("Claude Code", "+subscriptions"), " › ",
           b("Your AI subscriptions"), " lists each tool, whether it says it is signed in — the terminal's and the Code page's sign-in, and Chat's — ", b("Sign out"), " and ", b("Check again"), "; ", code("./stack subscriptions"), " in a terminal."),
       ],
       actions: () => (TERM.here ? [openTerminal()] : []),

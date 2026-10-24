@@ -26,7 +26,7 @@ PORTAL_SESSION_DAYS	account	main	-	How long a sign-in lasts on each browser and 
 +devices	account	main	-	Every browser, phone and installed app that signed in with the portal password.
 LITELLM_STORE_PROMPTS	account	main	-	Keep the text of every prompt and answer in LiteLLM's logs (90 days, and in backups).
 
-@aws	AWS & models	The AWS key bedrock-now calls Bedrock with, and which models that key can use.	README.md#models--access
+@aws	AWS & models	The AWS key DevOS ADE calls Bedrock with, and which models that key can use.	README.md#models--access
 AWS_ACCESS_KEY_ID	aws	main	-	The IAM user key LiteLLM calls Bedrock with. A new one is checked with AWS first (free).
 AWS_SECRET_ACCESS_KEY	aws	with	AWS_ACCESS_KEY_ID	-
 AWS_REGION_NAME	aws	main	-	The AWS region your Bedrock models run in.
@@ -66,7 +66,7 @@ CODE_ALLOW_BYPASS	code	main	CODE_ENABLED	Offer Bypass permissions: Claude runs e
 CODE_AUTO_MODE	code	main	CODE_ENABLED	Offer Auto mode: a reviewer model approves routine actions and blocks risky ones (it costs extra).
 +git-hosts	code	main	CODE_ENABLED	Git hosts for the Code page's push, pull and clone: GitHub, GitLab or any git server — a sign-in, a token or an SSH key.
 +project-folders	code	main	CODE_ENABLED	Folders of this computer as Code page projects: mounted into its sandbox, read-write or read-only.
-+sessions-consent	code	main	CODE_ENABLED	What bedrock-now may read of your Claude Code and claude-bedrock sessions and setup on this computer.
++sessions-consent	code	main	CODE_ENABLED	What DevOS ADE may read of your Claude Code and claude-bedrock sessions and setup on this computer.
 +bring-setup	code	main	CODE_ENABLED	Your Claude Code setup and Git name and email from this computer, copied into the Code page's sandbox.
 +subscriptions	code	main	TERMINAL_ENABLED	Your plans' own tools in the sandbox (Claude, Codex, Gemini, Copilot, Cursor, Grok) and their sign-ins.
 CODE_CLAUDE_PLAN	code	main	CODE_ENABLED	Use your own Claude plan in the Code page and as a Chat model (off by default: Anthropic's two texts pull apart).
@@ -86,7 +86,7 @@ CLAUDE_MODEL_HAIKU	code	more	-	Claude Code's haiku slot: quick background tasks.
 CLAUDE_BEDROCK_HAIKU_MODEL	code	with	CLAUDE_MODEL_HAIKU	-
 TERMINAL_MEM_LIMIT	code	more	TERMINAL_ENABLED	The sandbox container's memory limit.
 TERMINAL_AI_TOOLS	code	more	TERMINAL_ENABLED	Which of your AI subscriptions' own tools the sandbox holds.
-GIT_GITHUB_CLIENT_ID	code	more	CODE_ENABLED	Sign in with GitHub (Git hosts): the GitHub App's client ID (blank: bedrock-now's own).
+GIT_GITHUB_CLIENT_ID	code	more	CODE_ENABLED	Sign in with GitHub (Git hosts): the GitHub App's client ID (blank: DevOS ADE's own).
 GIT_GITHUB_APP_SLUG	code	with	GIT_GITHUB_CLIENT_ID	-
 GIT_GITLAB_CLIENT_ID	code	more	CODE_ENABLED	Sign in with GitLab (Git hosts): the gitlab.com application's ID (blank: none — yours, for gitlab.com).
 
@@ -101,7 +101,7 @@ TAILSCALE_ALLOWED_LOGIN	remote	main	REMOTE_MODE	The only Tailscale login whose r
 REMOTE_ADMIN_ACTIONS	remote	main	REMOTE_MODE	Let your devices use Update, Settings and Diagnostics too (off: they can look, not change).
 REMOTE_TERMINAL	remote	main	REMOTE_MODE	The Terminal and the Code page over remote access too: a shell from your phone.
 REMOTE_PREVIEW	remote	main	REMOTE_TERMINAL	Previews of your dev servers over remote access too. A trade-off: read Details first.
-TS_HOSTNAME	remote	more	REMOTE_MODE	The Tailscale machine name of bedrock-now's sidecar.
+TS_HOSTNAME	remote	more	REMOTE_MODE	The Tailscale machine name of DevOS ADE's sidecar.
 TS_SERVICE	remote	more	REMOTE_MODE	The base name of the Tailscale Services (every remote address starts with it).
 TS_TAG	remote	more	REMOTE_MODE	The sidecar's Tailscale tag; it must match your tailnet policy.
 TS_AUTHKEY	remote	more	REMOTE_MODE	The one-time enrollment key; removed once the sidecar has signed in.
@@ -110,7 +110,7 @@ REMOTE_PREVIEW_DOMAIN	remote	more	REMOTE_MODE	Own-domain mode: a domain of its o
 REMOTE_SUBNET	remote	more	REMOTE_MODE	The sidecar's small Docker network; change it only if ./stack says it collides.
 
 @updates	Updates & backups	New releases, automatic updates at night, and backups of your chats, keys and files.	README.md#updating
-UPDATE_CHECK	updates	main	-	Ask GitHub once a day whether a newer bedrock-now exists (nothing about you is sent).
+UPDATE_CHECK	updates	main	-	Ask GitHub once a day whether a newer DevOS ADE exists (nothing about you is sent).
 AUTO_UPDATE	updates	main	-	Install a new release by itself at night, after a backup.
 AUTO_UPDATE_HOUR	updates	main	AUTO_UPDATE	When the three-hour nightly window starts (this computer's time).
 BACKUP_NIGHTLY	updates	main	-	Back up every night, keeping the newest few.

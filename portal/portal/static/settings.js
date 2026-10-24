@@ -9,7 +9,7 @@
 "use strict";
 
 (() => {
-  const REPO = "https://github.com/JongoDB-Labs/bedrock-now/blob/main/";
+  const REPO = "https://github.com/JongoDB-Labs/devos-ade/blob/main/";
   // a budget and the alias of its LiteLLM key (this period's spend under it); the key itself is the row's "with" key
   const BUDGET_ALIAS = { BUDGET_CLAUDE_CODE: "claude-code", BUDGET_OPENWEBUI: "open-webui", BUDGET_SETUP: "setup",
     BUDGET_TERMINAL: "claude-code-terminal" };
@@ -328,7 +328,7 @@
     const box = el("div", { class: "set-helper" });
     if (!data.here.allowed) {
       box.append(el("p", { class: "helper-off-title", text: "Changes are off for remote access" }),
-        el("p", { class: "note" }, "Settings, Reveal and Diagnostics work from the computer running bedrock-now. To use them from your devices too, turn on ",
+        el("p", { class: "note" }, "Settings, Reveal and Diagnostics work from the computer running DevOS ADE. To use them from your devices too, turn on ",
           el("a", { href: "#settings/REMOTE_ADMIN_ACTIONS", text: "Remote access › Update, settings and diagnostics from your devices" }), " there."));
       box.classList.add("helper-off");
       return box;
@@ -516,7 +516,7 @@
       g.append(b);
     }
     const wrap = el("div", { class: "set-toggle" }, g);
-    if (data.here.remote && cur !== "host") wrap.append(el("span", { class: "note", text: "Opening it further only from the computer running bedrock-now." }));
+    if (data.here.remote && cur !== "host") wrap.append(el("span", { class: "note", text: "Opening it further only from the computer running DevOS ADE." }));
     return wrap;
   }
   // portal/portal/settings.py _WEAKEN_WORD: how the less protective direction is said
@@ -548,7 +548,7 @@
   function badges(k) {
     const out = el("span", { class: "set-badges" });
     const add = (text, cls, title) => out.append(el("span", { class: `badge ${cls}`, text, ...(title ? { title } : {}) }));
-    if (k.policy === "local") add("This computer only", "badge-local", "Changed only from the computer running bedrock-now: from your devices it could send your data elsewhere.");
+    if (k.policy === "local") add("This computer only", "badge-local", "Changed only from the computer running DevOS ADE: from your devices it could send your data elsewhere.");
     if (k.policy === "on-only") add("On only", "badge-local", "Can be turned on here; turning it off is a terminal step.");
     if (k.secret === "S" || k.secret === "h") add("Secret", "badge-secret");
     if (k.policy === "ro" || k.policy === "derived") add("Read-only", "badge-ro");
@@ -639,7 +639,7 @@
     }
     if (!editable(k)) return finish(rw, k, true);
     if (localOnlyHere(k, "true") && k.policy === "local") {
-      rw.append(el("p", { class: "note set-remote", text: "Change this from the computer running bedrock-now: from your devices it could send your data elsewhere." }));
+      rw.append(el("p", { class: "note set-remote", text: "Change this from the computer running DevOS ADE: from your devices it could send your data elsewhere." }));
       return finish(rw, k, true);
     }
     const v = shown(k);
@@ -686,7 +686,7 @@
     const wrap = el("div", { class: "set-toggle" }, b);
     if (k.policy === "on-only" && cur === on) wrap.append(el("span", { class: "note", text: "Turning it off is a terminal step." }));
     if (k.policy === "widen-local" && data.here.remote && weakens(k, other)) {
-      wrap.append(el("span", { class: "note", text: `${other === on ? "On" : "Off"} only from the computer running bedrock-now.` }));
+      wrap.append(el("span", { class: "note", text: `${other === on ? "On" : "Off"} only from the computer running DevOS ADE.` }));
     }
     return wrap;
   }
@@ -1002,7 +1002,7 @@
       // (the portal's settings.policy_error and the helper refuse it too, with the same words)
       const weak = Object.keys(values).find((n) => keys[n] && keys[n].policy === "widen-local" && localOnlyHere(keys[n], values[n]));
       if (weak) {
-        err.textContent = `${keys[weak].label} can only be ${WEAKEN_WORD[weak] || "turned on"} from the computer running bedrock-now (the other way works everywhere).`;
+        err.textContent = `${keys[weak].label} can only be ${WEAKEN_WORD[weak] || "turned on"} from the computer running DevOS ADE (the other way works everywhere).`;
         err.hidden = false;
         return;
       }
@@ -1032,7 +1032,7 @@
     const r = frame(pk, lr, { value: now });
     const actions = r._actions;
     if (data.here.remote) {
-      r.append(el("p", { class: "note set-remote", text: "Change this from the computer running bedrock-now: from your devices it could send your voice elsewhere." }));
+      r.append(el("p", { class: "note set-remote", text: "Change this from the computer running DevOS ADE: from your devices it could send your voice elsewhere." }));
       return finish(r, pk, true);
     }
     const b = el("button", { type: "button", class: "action", text: "Change", "aria-describedby": `set-name-${pk.key}` });
@@ -1116,7 +1116,7 @@
   function gitHostsRow(r) {
     const rw = ownFrame(r, "Git hosts");
     rw._main.append(el("p", { class: "note set-extra",
-      text: "Connect GitHub, GitLab or any https/ssh git server: Sign in with GitHub or GitLab, an access token, or an SSH key the Code page makes. The Code page keeps them, apart from the sandbox: one push, pull or clone you start gets its host's credential while it runs; Claude's own git gets none unless you let it use a host there (off by default). Adding a host, a sign-in, a token or a key works only from the computer running bedrock-now." }));
+      text: "Connect GitHub, GitLab or any https/ssh git server: Sign in with GitHub or GitLab, an access token, or an SSH key the Code page makes. The Code page keeps them, apart from the sandbox: one push, pull or clone you start gets its host's credential while it runs; Claude's own git gets none unless you let it use a host there (off by default). Adding a host, a sign-in, a token or a key works only from the computer running DevOS ADE." }));
     const open = el("button", { type: "button", class: "action", text: "Open Git hosts" });
     open.addEventListener("click", () => {
       if (window.bnCode && window.bnCode.openGitHosts) window.bnCode.openGitHosts();
@@ -1191,13 +1191,13 @@
     pick.disabled = !local || !helperDoes("project-pick") || !data.helper.screen || pf.folders.length >= (pf.max || 16);
     pick.addEventListener("click", () => askPassword({ kind: "project", action: "project-pick", when: when.value, mode: ro.checked ? "ro" : "rw", hide: hide.checked },
       "Choose a folder on this computer's screen?",
-      `A folder chooser opens on the screen of the computer running bedrock-now; nothing is added unless you pick a folder there. ${ro.checked ? "Claude may read it, never change it." : "Read-write: Claude — and anything it runs, or text it reads and follows — can change its files, and what it writes can run on this computer when your own tools open the folder (git hooks, .envrc, VS Code tasks, package.json scripts)."} Every project shares one sandbox: a session in one can read and change the others. ${RESTART_ENDS}`,
+      `A folder chooser opens on the screen of the computer running DevOS ADE; nothing is added unless you pick a folder there. ${ro.checked ? "Claude may read it, never change it." : "Read-write: Claude — and anything it runs, or text it reads and follows — can change its files, and what it writes can run on this computer when your own tools open the folder (git hooks, .envrc, VS Code tasks, package.json scripts)."} Every project shares one sandbox: a session in one can read and change the others. ${RESTART_ENDS}`,
       "Open the folder chooser"));
     add.append(el("label", { class: "set-inline" }, ro, " Read-only for Claude"), " ",
       el("label", { class: "set-inline", title: "At /projects/<name> in the sandbox: its path on this computer stays out of what Claude Code sends the model and off the Code page; programs in the sandbox can still find it (/proc/self/mountinfo)" },
         hide, " Hide its path (/projects/<name> in the sandbox)"), " ", pick);
     rw._main.append(add);
-    const why = !local ? "Adding a folder works only on the computer running bedrock-now (its folder chooser opens on that screen)."
+    const why = !local ? "Adding a folder works only on the computer running DevOS ADE (its folder chooser opens on that screen)."
       : !data.helper.running ? "Choose on this computer… needs the update helper (./stack helper install)."
         : !(data.helper.projects || []).includes("project-pick") ? "This update helper does not offer project folders yet: ./stack helper install refreshes it."
           : !data.helper.screen ? "The update helper cannot show a dialog on this computer's screen: add a folder in a terminal there." : "";
@@ -1209,20 +1209,20 @@
     return rw;
   }
 
-  // What bedrock-now may read on this computer: your Claude Code and claude-bedrock sessions of a project folder (the
+  // What DevOS ADE may read on this computer: your Claude Code and claude-bedrock sessions of a project folder (the
   // Code page's Import sheet; ./stack sessions, lib/sessions.sh). Allowed only on this computer — in a dialog on its
   // screen when the Code page asks, or ./stack sessions in a terminal there; taken back from anywhere (narrowing), by the
   // project's id, through the update helper. Names and folders are yours (folders.tsv); nothing of a session is here.
   function sessionsConsentRow(r) {
-    const rw = ownFrame(r, "What bedrock-now may read on this computer");
+    const rw = ownFrame(r, "What DevOS ADE may read on this computer");
     const sc = data.sessions || { folders: [], suggest: [], setup: [] };
     const setup = sc.setup || [];
     const SETUP = { claude: "your Claude Code setup (~/.claude)", "claude-bedrock": "claude-bedrock's setup (~/.claude-bedrock)", git: "your Git name and email (~/.gitconfig)" };
     const can = canChange() && (data.helper.sessions || []).includes("sessions-revoke");
     const TOOL = { claude: "Claude Code (~/.claude)", "claude-bedrock": "claude-bedrock (~/.claude-bedrock)" };
     const take = (project, tool, what) => askPassword({ kind: "sessions", action: "sessions-revoke", project, tool },
-      `Take back what bedrock-now may read: ${what}?`,
-      "bedrock-now then reads none of it on this computer until you allow it again there; what the Code page's container read of it (the lists, sessions waiting to be copied) is forgotten. Sessions already copied into the sandbox stay there.",
+      `Take back what DevOS ADE may read: ${what}?`,
+      "DevOS ADE then reads none of it on this computer until you allow it again there; what the Code page's container read of it (the lists, sessions waiting to be copied) is forgotten. Sessions already copied into the sandbox stay there.",
       "Take back");
     const list = el("ul", { class: "set-projects", id: "set-sessions-consent" });
     for (const f of sc.folders) {
@@ -1247,8 +1247,8 @@
       const b = el("button", { type: "button", class: "action", text: "Take back", "data-act": "sessions-revoke" });
       b.disabled = !can;
       b.addEventListener("click", () => askPassword({ kind: "sessions", action: "sessions-revoke", project: "all", tool: `setup-${x.tool}` },
-        `Take back what bedrock-now may read: ${SETUP[x.tool]}?`,
-        "bedrock-now then reads none of it on this computer until you allow it again there; what the Code page's container read of it (the list, items waiting to be copied) is forgotten. What was copied into the sandbox stays there.",
+        `Take back what DevOS ADE may read: ${SETUP[x.tool]}?`,
+        "DevOS ADE then reads none of it on this computer until you allow it again there; what the Code page's container read of it (the list, items waiting to be copied) is forgotten. What was copied into the sandbox stays there.",
         "Take back"));
       list.append(el("li", { class: "set-project", "data-tool": `setup-${x.tool}` },
         el("span", { class: "set-project-name", text: "Bring your setup" }), " ", el("span", { class: "note", text: SETUP[x.tool] }), " ",
@@ -1262,7 +1262,7 @@
       all.addEventListener("click", () => take("all", "both", "everything, for every folder"));
       rw._actions.append(all);
     }
-    rw._main.append(el("p", { class: "note set-extra", text: "Only on the computer running bedrock-now is anything allowed: the Code page asks in a dialog on its screen (Allow once, or Always). Nothing is ever written back to ~/.claude, ~/.claude-bedrock or ~/.gitconfig; logins, credentials and env settings there are never read — your setup (memory, skills, MCP servers, plugins …) only under Bring your setup's own consent, above." }));
+    rw._main.append(el("p", { class: "note set-extra", text: "Only on the computer running DevOS ADE is anything allowed: the Code page asks in a dialog on its screen (Allow once, or Always). Nothing is ever written back to ~/.claude, ~/.claude-bedrock or ~/.gitconfig; logins, credentials and env settings there are never read — your setup (memory, skills, MCP servers, plugins …) only under Bring your setup's own consent, above." }));
     if (!can && (sc.folders.length || sc.suggest.length || setup.length)) {
       rw._main.append(el("p", { class: "note set-extra", text: !data.helper.running ? "Taking back from here needs the update helper (./stack helper install)." : "Taking back from here needs a newer update helper: ./stack helper install refreshes it." }));
     }
@@ -1384,7 +1384,7 @@
     const chatWhen = sb.chat_checked_at ? new Date(sb.chat_checked_at * 1000).toLocaleString() : "";
     const SB = { off: "The sandbox is off: ./stack terminal enable.", down: "The sandbox is not running: ./stack up.", error: "The sandbox did not answer at the last check." };
     const CSB = { off: "Chat's sandbox is off (it runs with the Code page).", down: "Chat's sandbox is not running: ./stack up.", error: "Chat's sandbox did not answer at the last check." };
-    rw._main.append(el("p", { class: "note set-extra", text: `${SB[sb.sandbox] || ""}${SB[sb.sandbox] ? " " : ""}${when ? `Checked ${when}.` : "Not checked yet."} ${CSB[sb.chat_sandbox] || ""}${chatWhen ? ` Chat's checked ${chatWhen}.` : ""} Each tool signs in with its own flow, in the terminal (a link and a code for your browser) — and once more for Chat, whose sandbox has sign-ins of its own (nothing is copied between the two); each login stays in that tool's own file there — bedrock-now never opens it, and backups leave it out. Anything in that sandbox can read those files: sign out (and revoke at the provider) if that worries you.` }));
+    rw._main.append(el("p", { class: "note set-extra", text: `${SB[sb.sandbox] || ""}${SB[sb.sandbox] ? " " : ""}${when ? `Checked ${when}.` : "Not checked yet."} ${CSB[sb.chat_sandbox] || ""}${chatWhen ? ` Chat's checked ${chatWhen}.` : ""} Each tool signs in with its own flow, in the terminal (a link and a code for your browser) — and once more for Chat, whose sandbox has sign-ins of its own (nothing is copied between the two); each login stays in that tool's own file there — DevOS ADE never opens it, and backups leave it out. Anything in that sandbox can read those files: sign out (and revoke at the provider) if that worries you.` }));
     if (!can("subscriptions-check")) {
       rw._main.append(el("p", { class: "note set-extra", text: !data.helper.running ? "Check again and Sign out need the update helper (./stack helper install)." : !canChange() ? "Settings changes are off for remote access (REMOTE_ADMIN_ACTIONS)." : "This update helper does not offer them yet: ./stack helper install refreshes it." }));
     }

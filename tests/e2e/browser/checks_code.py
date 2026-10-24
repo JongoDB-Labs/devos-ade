@@ -220,7 +220,7 @@ def _off_page(ctx) -> str:
     text = page.inner_text("#code")
     for words in ("Claude Code in your browser", "Permission prompts", "Previews", "Run & test", "What turning it on does",
                   "one folder", "its own key and budget", "Manual mode", "Bypass permissions and Auto mode stay off",
-                  "Turn on in Settings", "on the computer running bedrock-now", "./stack code enable"):
+                  "Turn on in Settings", "on the computer running DevOS ADE", "./stack code enable"):
         expect(words in text, f"the off page lacks {words!r}")
     # the folder as Settings names it (from the portal's own /api/settings)
     page.wait_for_function("() => /-workspace$/.test(document.querySelector('#code-off-ws').textContent) && document.querySelector('#code-off-ws').textContent.startsWith('/')", timeout=15000)

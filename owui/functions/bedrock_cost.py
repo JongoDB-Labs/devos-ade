@@ -1,7 +1,7 @@
 """
 title: Bedrock cost
-author: bedrock-now
-description: Adds a small cost line under every answer (this message and the whole chat), priced from bedrock-now's Bedrock price list. Installed and updated by ./stack setup.
+author: DevOS ADE
+description: Adds a small cost line under every answer (this message and the whole chat), priced from DevOS ADE's Bedrock price list. Installed and updated by ./stack setup.
 version: 5
 """
 

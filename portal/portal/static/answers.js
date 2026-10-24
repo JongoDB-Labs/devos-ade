@@ -168,7 +168,7 @@
     if (tf) tf.hidden = !tool;
     cFolderWrap.hidden = !tool;
     const t = tool && data.tools.find((x) => `tool:${x.id}` === saved.chat);
-    cNote.textContent = t ? `${t.name} itself, on ${t.plan}: you type into it. Its own sign-in; bedrock-now never sees it. As a Chat model: ${t.chat_model === "yes" ? "yes — in Who answers and in Open WebUI's model menu while it is signed in" : t.chat_why || "planned"}`
+    cNote.textContent = t ? `${t.name} itself, on ${t.plan}: you type into it. Its own sign-in; DevOS ADE never sees it. As a Chat model: ${t.chat_model === "yes" ? "yes — in Who answers and in Open WebUI's model menu while it is signed in" : t.chat_why || "planned"}`
       : saved.chat.startsWith("model:") ? "A new chat with this model in Open WebUI." : "";
   }
   function openTool(id) {

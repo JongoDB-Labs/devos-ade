@@ -1,10 +1,11 @@
 """The web app manifest: what Chrome, Edge, Android and iOS need to install the portal as an app.
 
-An installed web app belongs to one origin (http://PORTAL_HOST[:PORTAL_PORT]), so a second bedrock-now copy is a
-second app. Its name says which: "bedrock-now" for the default address, "bedrock-now (bn-dev)" otherwise.
+An installed web app belongs to one origin (http://PORTAL_HOST[:PORTAL_PORT]), so a second DevOS ADE copy is a
+second app. Its name says which: "DevOS ADE" (brand.NAME) for the default address, "DevOS ADE (bn-dev)" otherwise; an
+app installed before v0.25.0 keeps its old name until you accept the new one in the browser (lib/open.sh finds both).
 lib/portal.sh's portal_app_name gives the same name, so `./stack open` can find the installed app.
-The remote address (./stack remote: https://<remote host>) is another origin, so another app: "bedrock-now
-(remote)", or "bedrock-now (bn-dev, remote)" for a second copy (the local port plays no part there).
+The remote address (./stack remote: https://<remote host>) is another origin, so another app: "DevOS ADE
+(remote)", or "DevOS ADE (bn-dev, remote)" for a second copy (the local port plays no part there).
 
 Each app also names itself, so a browser tab can tell whether it is installed and open it (install.js):
 related_applications lists the app itself (navigator.getInstalledRelatedApps), and protocol_handlers gives it a
@@ -16,17 +17,18 @@ from __future__ import annotations
 
 import hashlib
 
+from . import brand
 from .appicons import ICON_DIR
 from .config import Settings
 
 DEFAULT_HOST = "bedrock-now.localhost"
-BASE = "bedrock-now"
+BASE = brand.NAME
 SCHEME = "web+bedrocknow"
 
 
 def app_name(host: str, port: int = 80, remote: bool = False) -> str:
-    """bedrock-now, or bedrock-now (<project>[, port N]) for any other address; the remote site's app is
-    bedrock-now ([<project>, ]remote). host and port are always the LOCAL ones (they name the copy)."""
+    """DevOS ADE, or DevOS ADE (<project>[, port N]) for any other address; the remote site's app is
+    DevOS ADE ([<project>, ]remote). host and port are always the LOCAL ones (they name the copy)."""
     label = "" if host == DEFAULT_HOST else host.removesuffix(".localhost")
     if remote:
         label = f"{label}, remote" if label else "remote"

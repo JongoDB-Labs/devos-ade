@@ -20,7 +20,7 @@
 "use strict";
 
 (function (root) {
-  const REPO = "https://github.com/JongoDB-Labs/bedrock-now/blob/";
+  const REPO = "https://github.com/JongoDB-Labs/devos-ade/blob/";
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   const RELEASE = /^v\d{1,4}\.\d{1,4}\.\d{1,4}$/;
   const HASH = /^#[a-z]+(?:\/[A-Za-z0-9_+-]{1,64}){0,2}$/;
@@ -149,7 +149,7 @@
     if (window.bnActivity && window.bnActivity.open) out.push({ group: "pages", key: "page:activity", title: "Activity", sub: "Budgets, updates, jobs, Code sessions that need you", alt: "notifications bell", run: () => window.bnActivity.open() });
     if (window.bnTour && window.bnTour.open) out.push({ group: "pages", key: "page:tour", title: "Walkthrough", sub: "Set up, Chat, Code, your own tools", alt: "tour", run: () => window.bnTour.open() });
     // a command: Home, and a release check now (updatecheck.js; the result is said there)
-    if (window.bnUpdateCheck && window.bnUpdateCheck.run) out.push({ group: "pages", key: "page:update-check", title: "Check for updates", sub: "Ask GitHub now whether a newer bedrock-now is out", alt: "update release new version upgrade", run: () => window.bnUpdateCheck.run({ home: true }) });
+    if (window.bnUpdateCheck && window.bnUpdateCheck.run) out.push({ group: "pages", key: "page:update-check", title: "Check for updates", sub: "Ask GitHub now whether a newer DevOS ADE is out", alt: "update release new version upgrade", run: () => window.bnUpdateCheck.run({ home: true }) });
     return out;
   }
   function openTab(id) {

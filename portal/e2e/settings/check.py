@@ -305,7 +305,7 @@ def check_forms(page, remote, failures, label):
             page.wait_for_timeout(150)
             dialog = page.locator("#set-confirm[open]").count() == 1
             err = form.locator(".error:not([hidden])")
-            said = err.count() == 1 and "from the computer running bedrock-now" in err.inner_text()
+            said = err.count() == 1 and "from the computer running DevOS ADE" in err.inner_text()
             if refused and (dialog or not said):
                 failures.append(f"{label}: {key}={value} remotely: dialog={dialog}, said={said}")
             if not refused and (not dialog or said):

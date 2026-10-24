@@ -122,7 +122,7 @@ def test_an_update_from_the_release_check(s):
     s = replace(s, update_check=True)
     write(s.status_dir, "version.json", {"version": "v0.10.0", "images": []})
     rel = lambda tag, head: {"tag": tag, "name": tag, "headline": head, "notes": "", "published_at": "2026-10-20T10:00:00Z",  # noqa: E731
-                             "url": f"https://github.com/JongoDB-Labs/bedrock-now/releases/tag/{tag}"}
+                             "url": f"https://github.com/JongoDB-Labs/devos-ade/releases/tag/{tag}"}
     write(s.update_dir, "latest.json", {"tag": "v0.11.1", "name": "v0.11.1", "notes": "", "published_at": "2026-10-20T10:00:00Z",
                                         "checked_at": "2026-10-20T11:00:00+00:00",
                                         "releases": [rel("v0.11.1", "Fixes"), rel("v0.11.0", "Activity and search")]})

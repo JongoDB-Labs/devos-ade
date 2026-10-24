@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<title>bedrock-now</title>
+<title>DevOS ADE</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/icons/app-32.png" type="image/png" sizes="32x32">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/app-touch-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="bedrock-now">
+<meta name="apple-mobile-web-app-title" content="DevOS ADE">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#e3e8ec" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#141c25" media="(prefers-color-scheme: dark)">
@@ -38,7 +38,7 @@
 </head>
 <body class="shell">
 <nav class="sidebar" id="sidebar" aria-label="Apps">
-  <div class="brand"><img src="/static/logo.svg" alt="" width="28" height="28"><span>bedrock-now</span></div>
+  <div class="brand"><img src="/static/logo.svg" alt="" width="28" height="28"><span>DevOS ADE</span></div>
   <a class="version-label" id="version" target="_blank" rel="noopener noreferrer" hidden></a>
   <button type="button" class="nav-toggle" id="nav-toggle" aria-label="Sidebar" aria-controls="sidebar" aria-expanded="true" hidden>
     <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M8 4v12"/><path class="nav-chev" d="m13.5 8-2 2 2 2"/></svg></button>
@@ -69,9 +69,9 @@
     <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="m12.8 7.2-1.7 3.9-3.9 1.7 1.7-3.9z"/></svg><span class="tour-btn-text">Walkthrough</span> <span id="tour-count" class="tour-count"></span>
     <span class="tour-btn-bar" aria-hidden="true"><i></i></span></button>
   <div id="tour" class="tour" role="region" aria-labelledby="tour-title" hidden></div>
-  <button type="button" class="install-btn" data-install title="Install bedrock-now as an app" hidden>
+  <button type="button" class="install-btn" data-install title="Install DevOS ADE as an app" hidden>
     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-4-4 4 4 4-4M4 14v2h12v-2"/></svg>Install app</button>
-  <a class="install-btn" data-open-app title="Open bedrock-now in its own app window" hidden>
+  <a class="install-btn" data-open-app title="Open DevOS ADE in its own app window" hidden>
     <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M11 4h5v5M16 4l-7 7M14 12v4H4V6h4"/></svg>Open in the app</a>
   <form method="post" action="/logout" class="logout"><button type="submit">Sign out</button></form>
 </nav>
@@ -106,7 +106,7 @@
     <section id="install-note" class="install-note" aria-labelledby="install-title" hidden>
       <img src="/icons/app-48.png" alt="" width="40" height="40">
       <div>
-        <h2 id="install-title">Install bedrock-now as an app</h2>
+        <h2 id="install-title">Install DevOS ADE as an app</h2>
         <p class="note">Its own window and Dock or taskbar icon, in Cmd-Tab and Alt-Tab, and it stays put when minimized. Chat's microphone keeps working.</p>
       </div>
       <p class="install-actions"><button type="button" class="action primary" data-install hidden>Install app</button>
@@ -115,7 +115,7 @@
     <section id="app-note" class="install-note app-note" aria-labelledby="app-note-title" hidden>
       <img src="/icons/app-48.png" alt="" width="32" height="32">
       <div>
-        <h2 id="app-note-title">bedrock-now is installed as an app</h2>
+        <h2 id="app-note-title">DevOS ADE is installed as an app</h2>
         <p class="note" id="app-note-text" aria-live="polite"></p>
       </div>
       <p class="install-actions"><a class="action primary" data-open-app hidden>Open in the app</a>
@@ -138,7 +138,7 @@
       <ol id="update-steps" class="update-steps"></ol>
       <p class="cmdline"><code id="update-cmd">./stack update</code> <button type="button" class="copy" id="copy-update">Copy</button>
         <button type="button" class="action primary" id="update-now" data-action="update" hidden>Update now</button></p>
-      <p class="note" id="update-hint">Run it in your bedrock-now folder.</p>
+      <p class="note" id="update-hint">Run it in your DevOS ADE folder.</p>
       <div id="update-helper-slot"></div>
     </section>
 
@@ -219,7 +219,7 @@
           <div id="helper-off" class="helper-off" hidden>
             <p class="helper-off-title" id="helper-off-title">One-click updates are off</p>
             <p class="cmdline"><code id="helper-cmd">./stack helper install</code> <button type="button" class="copy" id="copy-helper">Copy</button></p>
-            <p class="note" id="helper-off-why">The portal cannot install software on your computer (by design), so this one step runs in a terminal, in your bedrock-now folder; then Update, Roll back, Clean up and automatic updates work from Home.</p>
+            <p class="note" id="helper-off-why">The portal cannot install software on your computer (by design), so this one step runs in a terminal, in your DevOS ADE folder; then Update, Roll back, Clean up and automatic updates work from Home.</p>
           </div>
         </div>
         <p class="note" id="maint-state"></p>

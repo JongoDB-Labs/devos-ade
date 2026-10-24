@@ -126,7 +126,7 @@ test("a browser notification says fixed words only: no session title, prompt, jo
     "Budget used up: Setup and tests", "OpenRouter requests failed", "A model check could not check every model",
     "Voice changed to browser speech"]);
   for (const n of got) {
-    assert.equal(n.body, "Details in Activity, in the bedrock-now portal.");
+    assert.equal(n.body, "Details in Activity, in the DevOS ADE portal.");
     assert.ok(!JSON.stringify(n).includes("SECRET") && !JSON.stringify(n).includes("sk-live"), JSON.stringify(n));
   }
   assert.equal(A.notificationText({ kind: "whatever", title: secret }).title, "Something new in Activity");

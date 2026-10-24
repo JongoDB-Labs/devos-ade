@@ -172,7 +172,7 @@
   // prompt, a job's message, a model name or an error would otherwise show on a lock screen or in the system's
   // notification history. The details stay in the Activity panel, behind the portal's sign-in. A budget names its
   // key's label (this stack's own wording: "Chat (Open WebUI)") and the percentage.
-  const NOTE_BODY = "Details in Activity, in the bedrock-now portal.";
+  const NOTE_BODY = "Details in Activity, in the DevOS ADE portal.";
   function notificationText(it) {
     const d = it && it.data && typeof it.data === "object" ? it.data : {};
     let title = "Something new in Activity";
@@ -182,7 +182,7 @@
     } else if (it && it.kind === "code") title = "A Code session needs you";
     else if (it && it.kind === "git") title = "A Git host was used";
     else if (it && it.kind === "job") title = d.phase === "failed" ? "A job failed" : d.phase === "skipped" ? "A job was skipped" : "A job finished";
-    else if (it && it.kind === "update") title = "A bedrock-now update is available";
+    else if (it && it.kind === "update") title = "A DevOS ADE update is available";
     else if (it && it.kind === "code-default") title = "The Code page was turned on";
     else if (it && it.kind === "models") title = "A model check could not check every model";
     else if (it && it.kind === "openrouter") title = "OpenRouter requests failed";

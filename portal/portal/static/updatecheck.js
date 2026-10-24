@@ -10,7 +10,7 @@
 "use strict";
 
 (function (root) {
-  const PRIVACY = "Check for updates asks GitHub's public list of bedrock-now releases now. It sends nothing about this install.";
+  const PRIVACY = "Check for updates asks GitHub's public list of DevOS ADE releases now. It sends nothing about this install.";
   const OFF = "The daily release check is off (Settings › Updates & backups): a click asks once.";
   const FRESH_MS = 15000;   // a click's answer outranks an older status for this long (a summary asked mid-check)
 

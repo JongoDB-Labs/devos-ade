@@ -19,7 +19,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from . import admin, answers
+from . import admin, answers, brand
 from . import settings as st
 from .security import NEXT_MAX_AGE, Sessions, cookie_params, hash_password, same_origin, verify_password
 
@@ -143,7 +143,7 @@ def routes(ctx: Ctx) -> list[Route]:
                        "in_progress": admin.job_in_progress(state), "job": state["job"]},
             # the folders of this computer the Code page's sandbox sees (./stack project; lib/projects.sh)
             "projects": st.project_folders(s.status_dir),
-            # what bedrock-now may read of your Claude Code and claude-bedrock sessions here (lib/sessions.sh)
+            # what DevOS ADE may read of your Claude Code and claude-bedrock sessions here (lib/sessions.sh)
             "sessions": st.sessions_consent(s.status_dir),
             # your AI subscriptions' tools in the sandbox and what each says of its own login (answers.py; never a login)
             "subscriptions": answers.tools(s.catalog_dir, s.status_dir),
@@ -160,7 +160,7 @@ def routes(ctx: Ctx) -> list[Route]:
         for k, v in values.items():
             row = rows.get(k)
             if row is None or row["policy"] not in st.EDITABLE:
-                fields[k] = st.policy_error(row, v, local, ctx) if row else "is not a bedrock-now setting"
+                fields[k] = st.policy_error(row, v, local, ctx) if row else f"is not a {brand.NAME} setting"
                 continue
             e = st.policy_error(row, v, local, ctx) or st.validate(row["validator"], v, snap["remote_on"])
             if e:
@@ -325,7 +325,7 @@ def routes(ctx: Ctx) -> list[Route]:
         if act not in st.PROJECT_ACTIONS or when not in ("now", "idle"):
             return err(400, "unknown action")
         if act == "project-pick" and is_remote(request):
-            return err(403, "A folder is added only from the computer running bedrock-now: its folder chooser opens on that screen.")
+            return err(403, f"A folder is added only from the computer running {brand.NAME}: its folder chooser opens on that screen.")
         project = data.get("project")
         if act != "project-pick":
             if not isinstance(project, str) or not st.PROJECT_ID.fullmatch(project):
@@ -357,7 +357,7 @@ def routes(ctx: Ctx) -> list[Route]:
         return _no_store(JSONResponse({"id": nonce, "action": act}, status_code=202))
 
     async def sessions_action(request: Request) -> Response:
-        """What bedrock-now may read of your sessions on this computer, taken back (narrowing: from anywhere; given only
+        """What DevOS ADE may read of your sessions on this computer, taken back (narrowing: from anywhere; given only
         on the computer itself): by a project's id, or all, and a tool — never a path."""
         st.sweep_requests(s.request_dir)
         got = await front_door(request)

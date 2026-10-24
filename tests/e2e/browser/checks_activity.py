@@ -253,7 +253,7 @@ def activity_notifications(ctx):
         page.wait_for_function("() => window.__notes.length > 0", timeout=15000)
         notes = page.evaluate("window.__notes")
         # fixed words only: nothing of the job's message (it could be on a lock screen)
-        expect(len(notes) == 1 and notes[0]["title"] == "A job failed" and notes[0]["body"] == "Details in Activity, in the bedrock-now portal."
+        expect(len(notes) == 1 and notes[0]["title"] == "A job failed" and notes[0]["body"] == "Details in Activity, in the DevOS ADE portal."
                and notes[0]["tag"] == f"bn-job:terminal:{jid}:failed" and "e2e" not in json.dumps(notes), f"notifications {notes}")
         # the same item again (another poll): no second one; with the focus: none
         page.evaluate("() => window.bnActivity.refresh()")

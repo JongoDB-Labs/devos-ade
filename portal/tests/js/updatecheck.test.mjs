@@ -18,7 +18,7 @@ test("up to date: when it checked, and the button; Details say why, GitHub's pub
   assert.equal(d.text, "Up to date");
   assert.equal(d.when, "checked 12 min ago");
   assert.equal(d.disabled, false);
-  assert.equal(d.why, "v0.9.0 is the newest release, and this install has it. Check for updates asks GitHub's public list of bedrock-now releases now. It sends nothing about this install.");
+  assert.equal(d.why, "v0.9.0 is the newest release, and this install has it. Check for updates asks GitHub's public list of DevOS ADE releases now. It sends nothing about this install.");
   assert.equal(say({ ...base, checked_at: iso(20000) }).when, "checked just now");
   assert.equal(say({ ...base, checked_at: iso(3 * 3600000) }).when, "checked 3 h ago");
   assert.equal(say({ ...base, checked_at: iso(26 * 3600000) }).when, "checked yesterday");

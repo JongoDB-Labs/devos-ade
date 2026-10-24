@@ -46,6 +46,7 @@ import httpx
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from starlette.responses import HTMLResponse
 
+from . import brand
 from .config import Settings
 
 log = logging.getLogger("portal")
@@ -491,7 +492,7 @@ async def rustfs_session(http: httpx.AsyncClient, s: Settings, clock=time.time) 
     STS AssumeRole with the key pair the portal holds — the call RustFS's console makes when you sign in."""
     url = s.rustfs_url.rstrip("/") + "/"
     body = urlencode({"Action": "AssumeRole", "Version": "2011-06-15", "RoleArn": "arn:aws:iam::*:role/Admin",
-                      "RoleSessionName": "bedrock-now-portal", "DurationSeconds": str(STS_SECONDS)}).encode()
+                      "RoleSessionName": f"{brand.SLUG}-portal", "DurationSeconds": str(STS_SECONDS)}).encode()
     now = datetime.datetime.fromtimestamp(clock(), datetime.timezone.utc)
     try:
         r = await http.post(url, content=body, headers=sigv4_headers(url, body, s.rustfs_access_key, s.rustfs_secret_key, now),
