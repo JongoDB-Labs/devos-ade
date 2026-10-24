@@ -251,6 +251,10 @@ egress_image_wanted() {
 # chat_proxy_wanted -> 0 while Chat's sandbox goes out through a proxy of its own: the terminal's way out the direct one
 # (TERMINAL_EGRESS=host) and the Code page on (compose.code-egress.yaml)
 chat_proxy_wanted() { [ "$(terminal_egress_mode)" = host ] && flag_on "$(get_env CODE_ENABLED)"; }
+# chat_proxy_leave — before anything is brought up: Chat's own egress proxy goes unless it is still Chat's way out
+# (host, the Code page on). Every path that ups — Settings' apply, ./stack up, setup and update, restore — calls it first:
+# an up that fails then leaves Chat's sandbox with no way out, never with the one it had.
+chat_proxy_leave() { chat_proxy_wanted || chat_proxy_rm; }
 # chat_proxy_rm — Chat's own egress proxy (compose.code-egress.yaml chat-egress), by its Compose labels, and its two
 # networks: once Chat's sandbox no longer goes out that way (TERMINAL_EGRESS other than host, or the Code page off),
 # so no orphan stays running. Never fatal.
@@ -345,6 +349,7 @@ terminal_enable() {
   log "LiteLLM and shared-mcp restart once as they join the terminal's gateway network (the first enable): Chat" \
     "answers, claude-bedrock requests and MCP sessions in progress drop for a few seconds"
   projects_up_hook   # lib/projects.sh: the project folders' mounts (kept from before), each folder checked again
+  chat_proxy_leave   # (Chat's own proxy, no longer its way out: gone before any up)
   run_phase "Terminal image (build; the first one takes a few minutes)" terminal terminal_build
   run_phase "Terminal + its gateway + portal + Caddy" "terminal terminal-gateway portal caddy litellm shared-mcp" _terminal_up
   terminal_after_up
@@ -401,15 +406,14 @@ terminal_proxy_rm() {
 # recreates a container only when those changed), then the networks no longer used go. The terminal's shells and the
 # Code page's sessions end with its container.
 terminal_egress_apply() {
+  # (the proxies no longer wanted go first, whatever comes after — the terminal not ready included: should an up below
+  # fail, or none run, Chat's sandbox and the terminal are left with no way out, never with the one they had)
+  [ "$(terminal_egress_mode)" = internet ] || terminal_proxy_rm
+  chat_proxy_leave
   terminal_ready || return 0
   if [ "$(terminal_egress_mode)" = internet ]; then
     run_phase "Terminal: its egress proxy" terminal-egress _terminal_egress_build_up || return 1
-  else
-    terminal_proxy_rm
   fi
-  # (leaving host: Chat's own proxy goes before anything is brought up — should an up below fail, Chat's sandbox is
-  # left with no way out, never with the one it had)
-  chat_proxy_wanted || chat_proxy_rm
   run_phase "Terminal (its way to the internet)" terminal dc up -d --no-deps --wait terminal || return 1
   # Chat's sandbox on its new way out too (with host: its own proxy, built when needed; otherwise the terminal's, or none)
   if code_ready 2>/dev/null; then
@@ -493,13 +497,14 @@ terminal_up_hook() {
   local why
   terminal_remote_sync
   terminal_on || return 0
+  # (no longer host, or the Code page off: Chat's own proxy goes first — its folder missing too: Chat's sandbox never
+  # keeps a way out it no longer has, whether or not what comes up after does. With the terminal off nothing of Chat's
+  # comes up: ./stack terminal disable removed it)
+  chat_proxy_leave
   terminal_flag_warnings
   terminal_secrets
-  # TERMINAL_EGRESS no longer internet: its egress proxy goes before compose would find it an orphan; no longer host
-  # (or the Code page off): Chat's own proxy goes first too — Chat's sandbox never keeps a way out it no longer has,
-  # whether or not what comes up after does
+  # TERMINAL_EGRESS no longer internet: its egress proxy goes before compose would find it an orphan
   [ "$(terminal_egress_mode)" = internet ] || terminal_proxy_rm
-  chat_proxy_wanted || chat_proxy_rm
   why="$(terminal_why_out)"
   if [ -z "$why" ]; then
     # (any other socket in the workspace: said, never a reason to leave it out — a sandbox process may have made it)
@@ -529,7 +534,7 @@ terminal_after_up() {
     off) terminal_proxy_rm; docker network rm "${p}_terminal-proxy" "${p}_terminal-out" >/dev/null 2>&1 || true ;;
   esac
   # (Chat's own proxy: only while the terminal's way out is the direct one and the Code page is on)
-  chat_proxy_wanted || chat_proxy_rm
+  chat_proxy_leave
   return 0
 }
 
@@ -542,6 +547,7 @@ terminal_setup_hook() {
   local out start why
   TERMINAL_SETUP_FAILED=0; TERMINAL_SETUP_WHY=''
   terminal_remote_sync
+  chat_proxy_leave   # (before any up: setup and update)
   terminal_on || return 0
   terminal_secrets
   projects_up_hook   # lib/projects.sh: the project folders' mounts, each folder checked again

@@ -1528,6 +1528,8 @@ cmd_restore() {
   write_mcp_config
   # .env may have changed: recreate the containers that read these keys, then start everything else.
   remote_net_preflight
+  # (Chat's own egress proxy, should the restored .env no longer make it Chat's way out: gone before any up)
+  ! declare -F chat_proxy_leave >/dev/null || chat_proxy_leave
   log "starting the services again (waits until each one is healthy)"
   dc up -d --wait --force-recreate open-webui shared-mcp
   # shellcheck disable=SC2046  # word-split the service list on purpose

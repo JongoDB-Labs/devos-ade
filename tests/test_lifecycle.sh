@@ -17,6 +17,7 @@ _stub_dc() { # logs every dc call; pg_dump prints a fake dump unless PG_FAIL=1
     return 0
   }
   s3_job() { echo "s3 $*" >> "$TMP/calls"; mkdir -p "$1/s3/shared"; }
+  chat_proxy_rm() { echo "chat_proxy_rm" >> "$TMP/calls"; }   # (Chat's own egress proxy: lib/terminal.sh, by its labels)
 }
 
 test_backup_writes_dumps_env_and_buckets() {
@@ -472,4 +473,27 @@ test_write_mcp_config_writes_port_and_token() {
   assert_contains "$(cat "$STATE_DIR/mcp.json")" '"url":"http://127.0.0.1:8765/mcp"'
   assert_contains "$(cat "$STATE_DIR/mcp.json")" '"Bearer t0k"'
   assert_eq "$(ls -l "$STATE_DIR/mcp.json" | cut -c1-10)" "-rw-------"
+}
+
+# ./stack restore: Chat's own egress proxy, should the restored .env no longer make it Chat's way out, goes before the
+# services come up — an up that fails leaves Chat's sandbox with no way out, never with the one it had
+test_restore_removes_chats_own_proxy_before_any_up() {
+  local first
+  for env in 'TERMINAL_EGRESS=internet\nCODE_ENABLED=true\n' 'TERMINAL_EGRESS=host\nCODE_ENABLED=false\n' 'TERMINAL_EGRESS=host\nCODE_ENABLED=true\n'; do
+    printf "LITELLM_SALT_KEY=a\nWEBUI_SECRET_KEY=b\nSHARED_MCP_PORT=8765\nSHARED_MCP_TOKEN=t0k\n$env" > "$ENV_FILE"
+    _mk_backup "LITELLM_SALT_KEY=a\nWEBUI_SECRET_KEY=b\n$env"; _stub_dc; : > "$TMP/calls"
+    # (the services' up failing: restore stops there)
+    dc() { echo "dc $*" >> "$TMP/calls"; case "$*" in "up -d --wait --force-recreate"*) return 1 ;; *pg_dump*) printf 'PGDMP' ;; *"pg_restore --list"*) cat > /dev/null; echo "1; 0 0 ENCODING - ENCODING" ;; *pg_restore*) cat > /dev/null ;; esac; return 0; }
+    confirm() { case "$1" in *"backup of the current state"*) return 1 ;; *) return 0 ;; esac; }
+    cmd_test() { :; }; ASSUME_YES=1
+    (cmd_restore "$B") > /dev/null 2>&1 || true
+    # (the services' ups, once the restored .env decides — the data services' up before it starts no sandbox)
+    first="$(grep -n -m1 '^dc up -d --wait --force-recreate' "$TMP/calls" | cut -d: -f1 || true)"
+    case "$env" in
+      *host*CODE_ENABLED=true*) assert_not_contains "$(cat "$TMP/calls")" "chat_proxy_rm" ;;
+      *) [ -n "$first" ] && [ "$(grep -n -m1 '^chat_proxy_rm' "$TMP/calls" | cut -d: -f1 || echo 9999)" -lt "$first" ] ||
+           { echo "Chat's proxy not removed before the first up ($env): $(tr '\n' '|' < "$TMP/calls")" >&2; return 1; } ;;
+    esac
+    rm -rf "$B"
+  done
 }

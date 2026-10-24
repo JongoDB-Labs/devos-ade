@@ -667,6 +667,8 @@ assert c["depends_on"]["terminal"]["condition"] == "service_healthy"' || return 
   # Chat's sandbox with the other ways out: host egress — a proxy of its own, the terminal on its direct way still; no
   # egress — no network at all; and with no overlay, its own alone. (Chat's proxy is the terminal's, as rendered —
   # the whole service but its networks: the same image, user, limits, capabilities, environment, logging …)
+  # (lists of names of their own in .env, so that a list written into either file — an empty one too — differs)
+  set_env TERMINAL_EGRESS_ALLOW allow-sentinel.invalid,github.com; set_env TERMINAL_EGRESS_DENY deny-sentinel.invalid
   dc config --format json 2>/dev/null > "$TMP/render-internet.json" || return 1
   set_env TERMINAL_EGRESS host
   dc config --format json 2>/dev/null > "$TMP/render-host.json" || return 1
@@ -676,8 +678,11 @@ t = json.load(open(sys.argv[1]))["services"]["terminal-egress"]
 c = json.load(open(sys.argv[2]))["services"]["chat-egress"]
 for x in (t, c):
     x.pop("networks")
+    assert x["environment"]["TERMINAL_EGRESS_ALLOW"] == "allow-sentinel.invalid,github.com", x["environment"]
+    assert x["environment"]["TERMINAL_EGRESS_DENY"] == "deny-sentinel.invalid", x["environment"]
 assert c == t, json.dumps({k: (t.get(k), c.get(k)) for k in set(t) | set(c) if t.get(k) != c.get(k)})
 PY
+  set_env TERMINAL_EGRESS_ALLOW ''; set_env TERMINAL_EGRESS_DENY ''
   python3 -c '
 import json, sys
 d = json.load(open(sys.argv[1]))
@@ -944,7 +949,7 @@ test_setup_links_are_the_same_for_the_portal_and_the_code_page() {
   local tsv ts
   tsv="$(grep -v '^#' "$STACK_DIR/catalog/setup-links.tsv" | grep .)"
   ts="$(python3 -c 'import re, sys
-for m in re.finditer(r"^  \"([a-z-]+)\": \{ target: \"([^\"]+)\", says: \"([^\"]+)\" \},$", open(sys.argv[1], encoding="utf-8").read(), re.M):
+for m in re.finditer(r"^  \"([a-z-]+)\": \{ target: \"([^\"]+)\", where: \"([^\"]+)\", says: \"([^\"]+)\" \},$", open(sys.argv[1], encoding="utf-8").read(), re.M):
     print("\t".join(m.groups()))' "$STACK_DIR/code/web/src/setuplinks.ts")"
   [ -n "$tsv" ] || { echo "no rows in catalog/setup-links.tsv" >&2; return 1; }
   assert_eq "$ts" "$tsv"
@@ -966,4 +971,31 @@ dc up -d --wait subs-chat"
   : > "$TMP/dc"; _subs_chat_up 2>/dev/null
   assert_not_contains "$(cat "$TMP/dc")" "chat-egress"
   assert_eq "$(code_services)" "code subs-chat"
+}
+
+# The Code page's setup hook: Chat's own egress proxy, no longer Chat's way out, goes before its ups — with them failing
+test_code_setup_hook_removes_chats_own_proxy_before_its_ups() {
+  _stubs
+  code_enable > /dev/null 2>&1 || return 1
+  set_env TERMINAL_EGRESS internet
+  : > "$TMP/order"
+  dc() { echo "dc $*" >> "$TMP/dc"; case "$*" in *build*|*" up "*) echo up >> "$TMP/order"; return 1 ;; esac; return 0; }
+  docker() { echo "docker $*" >> "$TMP/docker"; case "$*" in "ps -aq"*chat-egress) echo c0ffee ;; "rm -f c0ffee") echo rm >> "$TMP/order" ;; esac; return 0; }
+  code_setup_hook > /dev/null 2>&1 || true
+  assert_eq "$(head -n 1 "$TMP/order")" "rm"
+  # (host: it stays)
+  set_env TERMINAL_EGRESS host; : > "$TMP/order"; : > "$TMP/docker"
+  code_setup_hook > /dev/null 2>&1 || true
+  assert_not_contains "$(cat "$TMP/docker")" "chat-egress"
+  # Chat's sandbox brought up on its own (code enable: _subs_chat_up) — not host: gone before its up, which fails here
+  dc() { echo "dc $*" >> "$TMP/dc"; case "$*" in *build*|up*|*" up "*) echo up >> "$TMP/order"; return 1 ;; esac; return 0; }
+  set_env TERMINAL_EGRESS internet; : > "$TMP/order"
+  _subs_chat_up > /dev/null 2>&1 || true
+  assert_eq "$(head -n 1 "$TMP/order")" "rm"
+  assert_contains "$(cat "$TMP/order")" "up"
+  # (host: built, never removed)
+  set_env TERMINAL_EGRESS host; : > "$TMP/order"; : > "$TMP/docker"
+  _subs_chat_up > /dev/null 2>&1 || true
+  assert_not_contains "$(cat "$TMP/docker")" "chat-egress"
+  set_env TERMINAL_EGRESS ''
 }

@@ -3234,7 +3234,11 @@ never reads, copies, keeps, passes on or relays a login.**
   and rules (public addresses only, on ports 80, 443 and 22, checked after its own lookup; `TERMINAL_EGRESS_ALLOW` /
   `_DENY` narrow it alike), hardened alike (a test keeps the two definitions equal), Chat's sandbox alone with it on
   `chat-proxy` (internal) and only the proxy also on `chat-out` — so Chat's sandbox never shares a network with the
-  terminal there, and the proxy refuses this computer's services and your network; on Linux, as from every internal
+  terminal there, and the proxy refuses this computer's services and your network (once the terminal's way out is no
+  longer `host`, or the Code page is off — `./stack code disable` and `./stack terminal disable` remove it
+  themselves —, `chat-egress` is removed before anything of the stack starts again —
+  `./stack up`, the terminal's and the Code page's setup and update, `./stack restore` — even when that start then
+  fails, or the terminal's folder is missing); on Linux, as from every internal
   network here (the terminal's `terminal-proxy` too), this computer itself stays reachable at the network's gateway
   address — services listening on `0.0.0.0` — (Docker Desktop on macOS has no such path); with no way out (`off`) no
   network at all, and Chat's models are greyed, saying why. Without that

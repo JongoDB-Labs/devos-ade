@@ -118,10 +118,13 @@ _code_front() { dc up -d --wait portal open-webui && recreate_caddy; }
 _subs_chat_up() {
   local out
   # (with the terminal's direct way out: Chat's own egress proxy built first — Docker's cache, unless its inputs
-  # changed — never an image of an earlier build reused as it is; compose.code-egress.yaml)
+  # changed — never an image of an earlier build reused as it is; compose.code-egress.yaml. Any other way out: one
+  # left from before goes first, whether or not the up below succeeds)
   if declare -F chat_proxy_wanted >/dev/null && chat_proxy_wanted; then
     building "Chat's egress proxy's image" dc build -q chat-egress ||
       { warn "Chat's egress proxy did not build: your subscriptions cannot answer in Chat until it does — ./stack up"; return 0; }
+  elif declare -F chat_proxy_rm >/dev/null; then
+    chat_proxy_rm
   fi
   # (then what its own sign-ins say, for Settings and Chat's picker — never fatal; lib/subscriptions.sh)
   out="$(dc up -d --wait subs-chat 2>&1)" && { (SUBS_WHERE=chat; subs_refresh >/dev/null 2>&1) || true; return 0; }
@@ -397,6 +400,8 @@ code_setup_hook() {
   local out start
   CODE_SETUP_FAILED=0; CODE_SETUP_WHY=''
   code_remote_sync
+  # (Chat's own proxy, no longer its way out: gone before any up — lib/terminal.sh)
+  ! declare -F chat_proxy_leave >/dev/null || chat_proxy_leave
   code_ready || return 0
   code_secrets
   out="$(mktemp)"; start="$(_now)"

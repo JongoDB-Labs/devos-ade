@@ -1146,3 +1146,39 @@ test_check_shows_what_it_read_quoted_and_printable() {
   out="$(_check "long" "$(printf 'a%.0s' $(seq 1 400))" ok)"
   assert_eq "$(printf '%s' "$out" | sed 's/.*«\(a*\)».*/\1/' | awk '{ print length($0) }')" 160
 }
+
+# Chat's own egress proxy goes before every up that no longer makes it Chat's way out — Settings' apply with the
+# terminal not ready (its folder gone), setup's hook with its up failing or its folder gone, ./stack up's hook — so
+# Chat's sandbox is never left with a way out it no longer has
+test_chats_own_proxy_goes_before_every_up_that_no_longer_wants_it() {
+  _stubs
+  terminal_enable > /dev/null 2>&1 || return 1
+  set_env CODE_ENABLED true; set_env TERMINAL_EGRESS internet
+  docker() { echo "docker $*" >> "$TMP/docker"; case "$*" in "ps -aq"*chat-egress) echo c0ffee ;; esac; return 0; }
+  local ws; ws="$(get_env TERMINAL_WORKSPACE)"
+  # Settings' apply, the terminal's folder gone (nothing comes up): the proxies go all the same
+  mv "$ws" "$ws.away"
+  : > "$TMP/docker"; : > "$TMP/dc"; terminal_egress_apply > /dev/null 2>&1 || true
+  assert_contains "$(cat "$TMP/docker")" "docker rm -f c0ffee"
+  assert_not_contains "$(cat "$TMP/dc")" "up "
+  # setup's hook, its folder gone: the same, before it says the terminal is left out
+  : > "$TMP/docker"; terminal_setup_hook > /dev/null 2>&1 || true
+  assert_contains "$(cat "$TMP/docker")" "docker rm -f c0ffee"
+  mv "$ws.away" "$ws"
+  # setup's hook, its build or up failing: gone before it
+  dc() { echo "dc $*" >> "$TMP/dc"; case "$*" in *build*|*" up "*) echo up >> "$TMP/order"; return 1 ;; esac; return 0; }
+  docker() { echo "docker $*" >> "$TMP/docker"; case "$*" in "ps -aq"*chat-egress) echo c0ffee ;; "rm -f c0ffee") echo rm >> "$TMP/order" ;; esac; return 0; }
+  : > "$TMP/order"; terminal_setup_hook > /dev/null 2>&1 || true
+  assert_eq "$(head -n 1 "$TMP/order")" "rm"
+  # ./stack terminal enable, its build failing (it stops there): gone before it
+  : > "$TMP/order"; ( terminal_enable ) > /dev/null 2>&1 || true
+  assert_eq "$(head -n 1 "$TMP/order")" "rm"
+  assert_contains "$(cat "$TMP/order")" "up"
+  # host with the Code page on: it stays (Chat's way out)
+  dc() { echo "dc $*" >> "$TMP/dc"; return 0; }
+  set_env TERMINAL_EGRESS host
+  : > "$TMP/docker"; terminal_setup_hook > /dev/null 2>&1 || true
+  assert_not_contains "$(cat "$TMP/docker")" "chat-egress"
+  docker() { echo "docker $*" >> "$TMP/docker"; return 0; }
+  set_env CODE_ENABLED ''; set_env TERMINAL_EGRESS ''
+}
