@@ -871,12 +871,20 @@ test('paths.plain: what an agent\'s change may touch without asking (Accept edit
   const r = await call({ op: 'paths.plain', root: D, paths: cases.map((c) => c[0]) });
   assert.deepEqual(r.plain, cases.map((c) => c[1]), JSON.stringify(cases.map((c, i) => [c[2] ?? c[0], r.plain?.[i]]).filter(([, got], i) => got !== cases[i][1])));
   assert.equal(r.why, undefined);
+  assert.equal(r.each[cases.findIndex((c) => c[2] === 'deeper than 64 parts')], 'too-deep');
+  // (a key the repository names comes back apart, as its detail: never the code)
+  fs.writeFileSync(path.join(D, '.git/config'), fs.readFileSync(path.join(D, '.git/config'), 'utf8') + '[x "y. Approved"]\n\tall = edits\n');
+  const k = await call({ op: 'paths.plain', root: D, paths: [`${D}/src/a.js`] });
+  assert.deepEqual([k.why, k.detail], ['git-config-key', 'x.y. Approved.all']);
+  fs.writeFileSync(path.join(D, '.git/config'), fs.readFileSync(path.join(D, '.git/config'), 'utf8').replace('[x "y. Approved"]\n\tall = edits\n', ''));
   // git's config not plainly harmless — or not read whole, or not as plainly written: nothing is plain, and why
   const config = fs.readFileSync(path.join(D, '.git/config'), 'utf8');
   const asked = async (what) => {
     const x = await call({ op: 'paths.plain', root: D, paths: [`${D}/src/a.js`, `${D}/src/new.js`] });
     assert.deepEqual(x.plain, [false, false], what);
-    assert.match(x.why ?? '', /./, what);
+    assert.ok(coded.PLAIN_WHY.includes(x.why), `${what}: ${x.why}`);
+    // (what the repository named: printable, capped — apart from the code)
+    assert.ok(x.detail === undefined || /^[\x20-\x7e]{1,200}$/.test(x.detail), what);
     return x.why;
   };
   for (const [what, text] of [
@@ -898,23 +906,23 @@ test('paths.plain: what an agent\'s change may touch without asking (Accept edit
   fs.writeFileSync(path.join(D, '.git/config'), config);
   // the other configs git reads: config.worktree, a submodule's (any depth); each not a plain file (a link): the same
   fs.writeFileSync(path.join(D, '.git/config.worktree'), '[core]\n\tfsmonitor = x\n');
-  assert.match(await asked('config.worktree'), /git settings may run programs/);
+  assert.equal(await asked('config.worktree'), 'git-config-key');
   fs.rmSync(path.join(D, '.git/config.worktree'));
   put('.git/modules/a/modules/b/config', '[alias]\n\tx = !x\n');
   await asked('a submodule\'s submodule');
   fs.rmSync(path.join(D, '.git/modules'), { recursive: true });
   fs.renameSync(path.join(D, '.git/config'), path.join(D, '.git/config.real'));
   fs.symlinkSync('config.real', path.join(D, '.git/config'));
-  assert.match(await asked('a config that is a link'), /could not be read whole/);
+  assert.equal(await asked('a config that is a link'), 'git-unreadable');
   fs.rmSync(path.join(D, '.git/config'));
   fs.renameSync(path.join(D, '.git/config.real'), path.join(D, '.git/config'));
   assert.deepEqual((await call({ op: 'paths.plain', root: D, paths: [`${D}/src/a.js`] })).plain, [true], 'as it was');
   // a link named like a guarded entry in the folder, or on a path's way: nothing of the request is plain
   fs.symlinkSync(OUT, path.join(D, '.vscode'));
-  assert.match(await asked('.vscode a link in the folder'), /link named like/);
+  assert.equal(await asked('.vscode a link in the folder'), 'guarded-link');
   fs.rmSync(path.join(D, '.vscode'));
   fs.symlinkSync(OUT, path.join(D, 'src/.husky'));
-  assert.match(await asked('.husky a link on the way'), /link named like/);
+  assert.equal(await asked('.husky a link on the way'), 'guarded-link');
   fs.rmSync(path.join(D, 'src/.husky'));
   // the request's time is bounded: past it, the rest is not plain
   let t = 0;
@@ -937,7 +945,7 @@ test('paths.plain: what an agent\'s change may touch without asking (Accept edit
   putE('tools/repo/config', '[include]\n\tpath = ../../docs/git.inc\n');
   assert.deepEqual((await call({ op: 'paths.plain', root: E, paths: [`${E}/src/a.js`] })).plain, [false], 'its config read the same way');
   fs.writeFileSync(path.join(E, '.git'), `gitdir: ${OUT}\n`);
-  assert.match((await call({ op: 'paths.plain', root: E, paths: [`${E}/src/a.js`] })).why, /no real folder of the workspace/);
+  assert.equal((await call({ op: 'paths.plain', root: E, paths: [`${E}/src/a.js`] })).why, 'gitdir-outside');
   fs.rmSync(E, { recursive: true });
   // a monorepo's package: the repository above it decides; a project in no repository at all: its own paths alone
   const M = path.join(WS, 'mono-edits'), P = path.join(M, 'pkg');
@@ -948,7 +956,7 @@ test('paths.plain: what an agent\'s change may touch without asking (Accept edit
   assert.deepEqual((await call({ op: 'paths.plain', root: P, paths: [`${P}/a.js`] })).plain, [false], 'the repository above');
   fs.writeFileSync(path.join(M, '.git/config'), '[core]\n\tbare = false\n');
   fs.symlinkSync(OUT, path.join(M, '.github'));
-  assert.match((await call({ op: 'paths.plain', root: P, paths: [`${P}/a.js`] })).why, /link named like/, 'a guarded link at the git root');
+  assert.equal((await call({ op: 'paths.plain', root: P, paths: [`${P}/a.js`] })).why, 'guarded-link', 'a guarded link at the git root');
   fs.rmSync(path.join(M, '.github'));
   assert.deepEqual((await call({ op: 'paths.plain', root: P, paths: [`${P}/a.js`] })).plain, [true]);
   fs.rmSync(M, { recursive: true });
@@ -959,7 +967,7 @@ test('paths.plain: what an agent\'s change may touch without asking (Accept edit
   // the Workspace itself (no trust step there): nothing is plain
   const w = await call({ op: 'paths.plain', paths: [`${D}/src/a.js`, `${D}/.git/HEAD`] });
   assert.deepEqual(w.plain, [false, false]);
-  assert.match(w.why, /Workspace itself/);
+  assert.equal(w.why, 'workspace');
   // refusals: a root that is not a project folder, too many paths, no list
   assert.ok((await call({ op: 'paths.plain', root: `${D}/link`, paths: [] })).error);
   assert.ok((await call({ op: 'paths.plain', root: D, paths: Array.from({ length: 201 }, () => `${D}/a`) })).error);
@@ -974,4 +982,35 @@ test('gitConfigStrict: only what it reads plainly, the way git does', () => {
   for (const bad of ['[core] bare = x\n', '[core]\n\tx = a\\\nb\n', '[core]\n\tx = "a" "b"\n', '[core\n', '[a "b\\"c"]\n', 'x = 1\n', '[core]\n\tx = é\n', '[core]\n\t1x = a\n']) {
     assert.equal(coded.gitConfigStrict(bad), null, JSON.stringify(bad));
   }
+});
+
+test('paths.plain: never inside another repository on the way — a .git below the project\'s, or a bare one\'s shape, nor one put together piece by piece (the request\'s own paths count)', async () => {
+  const D = path.join(WS, 'nested');
+  const put = (rel, text = 'x') => { fs.mkdirSync(path.dirname(path.join(D, rel)), { recursive: true }); fs.writeFileSync(path.join(D, rel), text); };
+  put('.git/HEAD', 'ref: refs/heads/main\n'); put('.git/config', '[core]\n\tbare = false\n'); put('src/a.js');
+  const ask = async (paths) => call({ op: 'paths.plain', root: D, paths: paths.map((p) => `${D}/${p}`) });
+  // a vendored repository (its .git a file pointing anywhere, or a folder), a bare repository's shape
+  put('vendor/lib/.git', 'gitdir: ../../tools/x\n'); put('vendor/lib/a.js');
+  put('third/.GIT/HEAD', 'x'); put('bare/HEAD', 'ref: refs/heads/main\n'); fs.mkdirSync(path.join(D, 'bare/objects')); fs.mkdirSync(path.join(D, 'bare/refs'));
+  let r = await ask(['src/a.js', 'vendor/lib/a.js', 'vendor/lib/new/b.js', 'third/x.js', 'bare/x.txt', 'vendorx/a.js']);
+  assert.deepEqual(r.plain, [true, false, false, false, false, true]);
+  assert.deepEqual(r.each, [null, 'nested-repo', 'nested-repo', 'nested-repo', 'nested-repo', null]);
+  // put together piece by piece: every order of {config, HEAD, objects/x, refs/x}, in one request and across requests
+  const pieces = ['config', 'HEAD', 'objects/x', 'refs/x'];
+  const orders = (l) => (l.length <= 1 ? [l] : l.flatMap((x, i) => orders([...l.slice(0, i), ...l.slice(i + 1)]).map((o) => [x, ...o])));
+  let n = 0;
+  for (const order of orders(pieces)) {
+    const F = `asm${n++}`;
+    // one request: none of them plain together (HEAD or config beside objects/ or refs/ the request makes, and back)
+    r = await ask(order.map((p) => `${F}/${p}`));
+    assert.deepEqual(r.plain, order.map(() => false), `one request: ${order.join(', ')}`);
+    // across requests: what is plain is written; never all three of a bare repository's shape
+    for (const p of order) {
+      if ((await ask([`${F}/${p}`])).plain[0]) put(`${F}/${p}`);
+    }
+    const there = (x) => fs.existsSync(path.join(D, F, x));
+    assert.ok(!(there('HEAD') && there('objects') && there('refs')), `across requests: ${order.join(', ')} made ${['config', 'HEAD', 'objects', 'refs'].filter(there)}`);
+    assert.ok(!(there('HEAD') && (there('objects') || there('refs'))), `across requests: ${order.join(', ')}: HEAD beside objects or refs`);
+  }
+  fs.rmSync(D, { recursive: true });
 });

@@ -23,6 +23,21 @@ const BROKER_SPECIAL = Object.freeze(['AskUserQuestion', 'ExitPlanMode', 'EnterP
 export const AGENT_MODES = Object.freeze(['readOnly', 'plan', 'default', 'acceptEdits']);
 const START_MS = 120000;
 
+// Accept edits: why bn-coded's paths.plain found nothing (or a path) plain, as its code (PLAIN_WHY) — in our words alone;
+// what the repository named comes apart, as the sandbox's
+export const PLAIN_SAID = Object.freeze({
+  'git-config-key': 'Accept edits asks for every edit here: this repository\'s git settings include one that can run a program on your computer.',
+  'git-config-syntax': 'Accept edits asks for every edit here: this repository\'s git settings are written in a way the page does not read plainly.',
+  'git-unreadable': 'Accept edits asks for every edit here: a part of this repository\'s git folder could not be read whole.',
+  'gitdir-outside': 'Accept edits asks for every edit here: this repository\'s git folder is outside the workspace, or reached through a link.',
+  'guarded-link': 'Accept edits asks for every edit here: a link is named like git\'s or a tool\'s own folder.',
+  'nested-repo': 'Accept edits asks for an edit inside another git repository in this folder (or one that would become one).',
+  workspace: 'Accept edits asks for every edit in the Workspace itself (it has no trust step): use a project for edits without asking.',
+  'host-outer-repo': 'Accept edits asks for every edit here: a repository around this folder of your computer would not be visible to the page.',
+  'too-deep': 'Accept edits asks for an edit deeper than 64 folders.',
+  timeout: 'Accept edits asks for the rest of these edits: checking them took too long.',
+});
+
 export class AgentSession {
   constructor(mgr, { id, harness, model, mode, cwd = WS, ref = null, title = '', preface = null }) {
     this.mgr = mgr;
@@ -133,9 +148,14 @@ export class AgentSession {
     if (!Array.isArray(paths) || !paths.length || paths.length > 200 || typeof this.mgr.plainPaths !== 'function') return false;
     try {
       const r = await this.mgr.plainPaths(this.cwd, paths);
-      if (typeof r?.why === 'string' && r.why && this.plainWhy !== r.why) {
-        this.plainWhy = r.why;
-        this.emit({ type: 'local', text: `Accept edits asks for every edit here: ${short(r.why, 300)}.`, said: short(r.why, 300), saidBy: 'sandbox' });
+      // (why, as a code: said once in our own words — what the repository named, apart, as the sandbox's)
+      const codes = [r?.why, ...(Array.isArray(r?.each) ? r.each : [])].filter((c) => typeof c === 'string' && Object.hasOwn(PLAIN_SAID, c));
+      this.plainSaid ??= new Set();
+      for (const c of new Set(codes)) {
+        if (this.plainSaid.has(c)) continue;
+        this.plainSaid.add(c);
+        const detail = c === r.why && typeof r.detail === 'string' ? r.detail.replace(/[^\x20-\x7e]/g, '?').slice(0, 200) : '';
+        this.emit({ type: 'local', text: PLAIN_SAID[c], ...(detail ? { said: detail, saidBy: 'sandbox' } : {}) });
       }
       return Array.isArray(r?.plain) && r.plain.length === paths.length && r.plain.every((x) => x === true);
     } catch (e) { this.mgr.log(`${this.harness} ${this.id.slice(0, 8)}: paths not checked (${short(e?.message || String(e), 200)}): asked`); return false; }

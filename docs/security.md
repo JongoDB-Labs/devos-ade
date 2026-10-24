@@ -3301,11 +3301,16 @@ never reads, copies, keeps, passes on or relays a login.**
   folder of the repository (its top folder is then guarded). Anything else — an include, an fsmonitor, a filter, a
   diff driver, an alias, an editor, a pager, `sshCommand`, a credential helper, `gpg.program`, `core.worktree` …, a
   config that cannot be read whole or plainly, a link on the way — and no path is plain: every edit asks, and the
-  session says why once. The Workspace itself has no trust step, so there every edit asks; a folder of this computer
+  session says why once, in the page's own words (what the repository named — a key, a name — is shown apart, as the
+  sandbox's: a key cannot speak in the page's voice). The Workspace itself has no trust step, so there every edit asks; a folder of this computer
   with no repository in it here asks too (a repository around it on your computer is not visible in the sandbox;
   `./stack project` could note one when you add the folder — it does not yet). Then nothing is plain either while an
   entry named like a guarded one (below) is a link in the project's folder, the git root, a folder between them or a
-  folder on a path's way. A path is then plain when it is absolute, inside the folder, at most 64 parts, no part of it
+  folder on a path's way. A path is never plain inside another repository on its way — a folder below the project's
+  with a `.git` (a vendored or nested repository, a submodule: git runs that one's hooks and config when you commit
+  there), or one shaped like a bare repository (`HEAD`, `objects/` and `refs/`) — nor when it would put one together: a
+  `HEAD` or `config` beside `objects/` or `refs/`, `objects/` or `refs/` beside a `HEAD` (the request's own paths
+  count as there, and what earlier requests wrote is there). A path is then plain when it is absolute, inside the folder, at most 64 parts, no part of it
   `.git`, `.github`, `.vscode`, `.idea`, `.zed`, `.claude`, `.mcp.json`, `.husky`, `.githooks`, `.devcontainer`,
   `.envrc`, `.pre-commit-config.yaml`, lefthook's files and folders (`lefthook` or `.lefthook`, `-local` or not, any of
   `.yml` `.yaml` `.toml` `.json` `.jsonc`), lint-staged's (`.lintstagedrc*`, `lint-staged.config.*`), `.yarnrc.yml`,

@@ -2772,20 +2772,20 @@ export function gitConfigStrict(text) {
 // a plain relative path inside the work tree: no ~, not absolute, no "." or ".." part, printable
 const plainRel = (v) => typeof v === 'string' && v !== '' && !v.startsWith('~') && !v.startsWith('/') && !/[\x00-\x1f\x7f\\]/.test(v)
   && v.split('/').every((p) => p !== '' && p !== '.' && p !== '..');
-// gitKeyWhy(entry) -> why a config entry is not plainly harmless, or null; hooksPath: {hooksPath} when it is plain
+// gitKeyWhy(entry) -> the key (section.sub.key, printable) of a config entry that is not plainly harmless, or null
 function gitKeyWhy({ section, sub, key, value }) {
   const name = sub === null ? `${section}.${key}` : `${section}.*.${key}`;
   const full = printable(sub === null ? `${section}.${key}` : `${section}.${sub}.${key}`, 100);
   // (git-lfs's own filter, exactly as `git lfs install` writes it; any other filter runs a program)
   if (section === 'filter') {
-    if (sub !== 'lfs' || !Object.hasOwn(GIT_LFS_FILTER, key)) return `${full}: a filter runs a program`;
-    return (value ?? 'true') === GIT_LFS_FILTER[key] ? null : `${full} is not git-lfs's own`;
+    if (sub !== 'lfs' || !Object.hasOwn(GIT_LFS_FILTER, key)) return full;
+    return (value ?? 'true') === GIT_LFS_FILTER[key] ? null : full;
   }
-  if (section === 'lfs' && sub !== null && GIT_LFS_PROGRAMS.test(`lfs.${asciiLower(sub)}.`)) return `${full} names a program git-lfs runs`;
-  if (!GIT_KEYS.has(name) && !GIT_KEY_SECTIONS.has(section)) return `${full}: a setting this page does not know runs nothing`;
-  if ((name === 'remote.*.url' || name === 'remote.*.pushurl' || name === 'submodule.*.url') && /^\s*(ext|fd)::/i.test(value ?? '')) return `${full} runs a command (ext:: or fd::)`;
-  if (name === 'submodule.*.update' && !['checkout', 'rebase', 'merge', 'none'].includes(value ?? '')) return `${full} runs a command`;
-  if (name === 'core.hookspath') return plainRel(value) ? null : 'core.hooksPath is not a plain folder of the repository';
+  if (section === 'lfs' && sub !== null && GIT_LFS_PROGRAMS.test(`lfs.${asciiLower(sub)}.`)) return full;
+  if (!GIT_KEYS.has(name) && !GIT_KEY_SECTIONS.has(section)) return full;
+  if ((name === 'remote.*.url' || name === 'remote.*.pushurl' || name === 'submodule.*.url') && /^\s*(ext|fd)::/i.test(value ?? '')) return full;
+  if (name === 'submodule.*.update' && !['checkout', 'rebase', 'merge', 'none'].includes(value ?? '')) return full;
+  if (name === 'core.hookspath') return plainRel(value) ? null : full;
   return null;
 }
 
@@ -2801,8 +2801,9 @@ function gitKeyWhy({ section, sub, key, value }) {
 // the why is said to the page. The Workspace itself: nothing is plain (no trust there); a folder of this computer with
 // no repository in it: nothing is plain either (a repository on your computer around it is not visible here).
 export function gitPlainVerdict(root, look = folderLook()) {
-  const no = (why) => ({ why, guarded: [] });
-  if (root.abs === WORKSPACE) return no('in the Workspace itself every edit asks (it has no trust step)');
+  // (why: one of PLAIN_WHY — the page's words for it are its own —, detail: what the repository named, said apart)
+  const no = (why, detail = null) => ({ why, detail: detail === null ? null : printable(detail, 200), guarded: [], workTree: null });
+  if (root.abs === WORKSPACE) return no('workspace');
   const host = root.top !== WORKSPACE;
   const stop = host ? root.abs : WORKSPACE;
   // a real folder in the workspace (a folder of this computer: in it), no link on its way
@@ -2827,14 +2828,14 @@ export function gitPlainVerdict(root, look = folderLook()) {
   let workTree = null, gitdir = null;
   for (let d = root.abs; ; d = path.dirname(d)) {
     const names = look.names(d);
-    if (names === null) return no('a folder of the repository\'s could not be read');
+    if (names === null) return no('git-unreadable');
     const git = names.filter((n) => fold(n) === '.git');
-    if (git.length > 1) return no('more than one .git spelling in a folder');
+    if (git.length > 1) return no('git-unreadable', 'more than one .git');
     if (git.length === 1) {
       const g = path.join(d, git[0]);
       let st;
-      try { st = fs.lstatSync(g); } catch { return no('its .git could not be read'); }
-      if (st.isSymbolicLink()) return no('its .git is a link');
+      try { st = fs.lstatSync(g); } catch { return no('git-unreadable', '.git'); }
+      if (st.isSymbolicLink()) return no('guarded-link', '.git');
       if (st.isDirectory()) {
         let head = null;
         try { head = fs.lstatSync(path.join(g, 'HEAD')); } catch { /* none: not a repository — git goes on up */ }
@@ -2842,22 +2843,22 @@ export function gitPlainVerdict(root, look = folderLook()) {
       } else if (st.isFile()) {
         const m = (small(g) || '').match(/^gitdir:[ \t]*([^\r\n]+?)[ \t]*\r?\n?$/);
         const to = m ? path.resolve(d, m[1]) : null;
-        if (!to || !realFolder(to)) return no('its .git file leads to no real folder of the workspace');
+        if (!to || !realFolder(to)) return no('gitdir-outside');
         workTree = d; gitdir = to;
         break;
-      } else return no('its .git is not a folder or a file');
+      } else return no('git-unreadable', '.git');
     }
     if (d === stop || d === '/' || d === WORKSPACE) break;
   }
-  if (!gitdir) return host ? no('a folder of your computer with no repository in it here: one around it there is not visible') : { why: null, guarded: [] };
+  if (!gitdir) return host ? no('host-outer-repo') : { why: null, detail: null, guarded: [], workTree: null };
   // its commondir (a linked worktree's): the same rules
   let common = gitdir;
   const cd = small(path.join(gitdir, 'commondir'));
-  if (cd === null) return no('its commondir could not be read');
+  if (cd === null) return no('git-unreadable', 'commondir');
   if (cd !== '') {
     const m = cd.match(/^([^\r\n]+?)[ \t]*\r?\n?$/);
     const to = m ? path.resolve(gitdir, m[1]) : null;
-    if (!to || !realFolder(to)) return no('its commondir leads to no real folder of the workspace');
+    if (!to || !realFolder(to)) return no('gitdir-outside', 'commondir');
     common = to;
   }
   const guarded = [...new Set([gitdir, common])];
@@ -2881,29 +2882,29 @@ export function gitPlainVerdict(root, look = folderLook()) {
     }
     return true;
   };
-  if (!modules(common, 0)) return no('its submodules\' folders could not all be read (or are too many)');
+  if (!modules(common, 0)) return no('git-unreadable', 'modules');
   for (const c of [...new Set(configs)]) {
     const text = small(c);
-    if (text === null) return no('a git config of it could not be read whole (a link, too large, not a file)');
+    if (text === null) return no('git-unreadable', 'config');
     const entries = gitConfigStrict(text);
-    if (entries === null) return no('a git config of it is written in a way this page does not read (include, continuation lines, quoting, escapes …)');
+    if (entries === null) return no('git-config-syntax');
     for (const e of entries) {
       const why = gitKeyWhy(e);
-      if (why) return no(`this repository's git settings may run programs (${why})`);
+      if (why) return no('git-config-key', why);
       if (e.section === 'core' && e.key === 'hookspath') {
         // (its folders as far as they are there: real ones, never a link)
         let at = workTree;
         for (const part of e.value.split('/')) {
           at = path.join(at, part);
           let st;
-          try { st = fs.lstatSync(at); } catch (x) { if (x.code === 'ENOENT') break; return no('core.hooksPath could not be read'); }
-          if (st.isSymbolicLink() || !st.isDirectory()) return no('core.hooksPath leads through a link or a file');
+          try { st = fs.lstatSync(at); } catch (x) { if (x.code === 'ENOENT') break; return no('git-unreadable', 'core.hooksPath'); }
+          if (st.isSymbolicLink() || !st.isDirectory()) return no('guarded-link', 'core.hooksPath');
         }
         guarded.push(path.join(workTree, e.value.split('/')[0]));
       }
     }
   }
-  return { why: null, guarded: guarded.map(fold) };
+  return { why: null, detail: null, guarded: guarded.map(fold), workTree };
 }
 // folderLook() -> a request's view of folders: each listed once (its names, and their folded forms), null when it
 // cannot be
@@ -2917,50 +2918,91 @@ function folderLook() {
   return { names, folded };
 }
 
-// paths.plain {root, paths} -> {plain: [bool], why?}: whether each path an agent says its change touches may be changed
-// without asking (the page's Accept edits). Nothing is plain — why says so, for the page — when git's config here is
-// not plainly harmless (gitPlainVerdict), or when an entry named like a guarded one (guardedName) is a link in the
-// project's folder, the git root, a folder between them or a folder on a path's way. Else a path is plain when it is
-// absolute, in the project's folder, at most PLAIN_DEPTH_MAX parts, no part of it guarded (folded: a disk that folds
-// names opens .curſor as .cursor), not at or below a git folder or core.hooksPath's top folder, each part that is
-// there spelled exactly as its folder lists it (never another entry the disk would open by a folded spelling), no link
-// on its way or at its end, and — when it is there — a plain file with no other name (a hard link); a request answered
-// within PLAIN_TIME_MS (past it: the rest not plain). (Checked, then the agent writes: what changes in between is the
-// watchlist's to see — docs/security.md.)
+// Why a path is not plain, as codes (the page says each in words of its own — what the repository named is said
+// apart, as the sandbox's): its git config may run programs, is not written plainly, or could not be read whole; a
+// git folder leads out of the workspace; a link named like a guarded entry; another repository (or what would become
+// one) on the path's way; the Workspace itself; a folder of this computer whose repository is not visible; a path too
+// deep; past the request's time
+export const PLAIN_WHY = Object.freeze(['git-config-key', 'git-config-syntax', 'git-unreadable', 'gitdir-outside', 'guarded-link', 'nested-repo',
+  'workspace', 'host-outer-repo', 'too-deep', 'timeout']);
+// paths.plain {root, paths} -> {plain: [bool], why?, detail?, each?: [code|null]}: whether each path an agent says its
+// change touches may be changed without asking (the page's Accept edits). Nothing is plain — why: a PLAIN_WHY code,
+// detail: what the repository named (a key, a name: printable, capped) — when git's config here is not plainly
+// harmless (gitPlainVerdict), or when an entry named like a guarded one (guardedName) is a link in the project's
+// folder, the git root, a folder between them or a folder on a path's way. Else a path is plain when it is absolute,
+// in the project's folder, at most PLAIN_DEPTH_MAX parts, no part of it guarded (folded: a disk that folds names opens
+// .curſor as .cursor), not at or below a git folder or core.hooksPath's top folder, no other repository on its way
+// (a folder below the project's with a .git, or one shaped like a bare repository — HEAD, objects/ and refs/ — none
+// put together by this request or the ones before it: a HEAD or config beside objects/ or refs/, objects/ or refs/
+// beside a HEAD; the request's own paths count as there), each part that is there spelled exactly as its folder lists
+// it (never another entry the disk would open by a folded spelling), no link on its way or at its end, and — when it
+// is there — a plain file with no other name (a hard link); a request answered within PLAIN_TIME_MS (past it: the rest
+// not plain). each: a path's own code when it is not plain for one (nested-repo, too-deep, timeout). (Checked, then
+// the agent writes: what changes in between is the watchlist's to see — docs/security.md.)
 export function pathsPlain(req, { now = Date.now } = {}) {
   const root = rootArg(req?.root);
   const list = Array.isArray(req?.paths) ? req.paths : null;
   if (!list || list.length > PLAIN_PATHS_MAX) throw new Error(`paths: a list of at most ${PLAIN_PATHS_MAX}`);
   const t0 = now();
   const look = folderLook();
-  const none = (why) => ({ plain: list.map(() => false), why });
+  const none = (why, detail = null) => ({ plain: list.map(() => false), why, ...(detail ? { detail: printable(detail, 200) } : {}) });
   const git = gitPlainVerdict(root, look);
-  if (git.why) return none(git.why);
+  if (git.why) return none(git.why, git.detail);
   // a link named like a guarded entry in this folder: nothing is plain (it could lead an edit into .git or ~/.codex)
   const linked = (dir) => {
     const names = look.names(dir);
-    if (names === null) return 'a folder on the way could not be read';
+    if (names === null) return '';
     for (const n of names) {
       if (!guardedName(n)) continue;
       let st;
-      try { st = fs.lstatSync(path.join(dir, n)); } catch { return 'an entry on the way could not be read'; }
-      if (st.isSymbolicLink()) return `${printable(n, 60)} is a link`;
+      try { st = fs.lstatSync(path.join(dir, n)); } catch { return n; }
+      if (st.isSymbolicLink()) return n;
     }
     return null;
   };
-  // the project's folder, and the folders above it to the git root (the first with a .git; none: itself alone)
+  // the project's folder, and the folders above it to the git root (none: up to the workspace)
   for (let d = root.abs; ; d = path.dirname(d)) {
-    const why = linked(d);
-    if (why) return none(`a link named like git's or a tool's own folder (${why})`);
-    if ((look.names(d) ?? []).some((n) => fold(n) === '.git') || d === root.top || d === '/' || d === WORKSPACE) break;
+    const n = linked(d);
+    if (n !== null) return none('guarded-link', n);
+    if (d === git.workTree || d === root.top || d === '/' || d === WORKSPACE) break;
   }
+  // the request's own paths (absolute, in the folder, normalized), folded: what it creates counts as there
+  const asked = list.filter((p) => typeof p === 'string' && p.startsWith('/') && !p.includes('\0') && path.resolve(p) === p && inRoot(p, root) && p !== root.abs)
+    .map(fold);
+  // has(dir, name) -> an entry of that folded name in dir, on the disk or among the request's paths
+  const has = (dir, name) => {
+    if ((look.folded(dir) ?? []).includes(name)) return true;
+    const at = `${fold(dir)}/${name}`;
+    return asked.some((q) => q === at || q.startsWith(`${at}/`));
+  };
+  // nestedWhy(p) -> 'nested-repo' when another repository is on p's way (or this request, or the ones before it, would
+  // put one together there), else null
+  const nestedWhy = (p) => {
+    const parts = p.slice(root.abs.length + 1).split('/');
+    let dir = root.abs;
+    for (let i = 0; i < parts.length; i++) {
+      // (a folder of the way — the project's own, and every one below it to the path's: a .git below the project's,
+      // a bare repository's shape in any)
+      if (i > 0 && (look.folded(dir) ?? []).includes('.git')) return 'nested-repo';
+      if (has(dir, 'head') && has(dir, 'objects') && has(dir, 'refs')) return 'nested-repo';
+      const name = fold(parts[i]);
+      // (put together piece by piece: HEAD or config beside objects/ or refs/; objects/ or refs/ beside a HEAD)
+      if (i === parts.length - 1 && (name === 'head' || name === 'config') && (has(dir, 'objects') || has(dir, 'refs'))) return 'nested-repo';
+      if (i < parts.length - 1 && (name === 'objects' || name === 'refs') && has(dir, 'head')) return 'nested-repo';
+      dir = path.join(dir, parts[i]);
+    }
+    return null;
+  };
   const one = (p) => {
-    if (now() - t0 > PLAIN_TIME_MS) return false;
+    if (now() - t0 > PLAIN_TIME_MS) return 'timeout';
     if (typeof p !== 'string' || !p.startsWith('/') || p.length > 4096 || p.includes('\0') || path.resolve(p) !== p || !inRoot(p, root) || p === root.abs) return false;
     const rel = p.slice(root.abs.length + 1), parts = rel.split('/');
-    if (parts.length > PLAIN_DEPTH_MAX || parts.some(guardedName)) return false;
+    if (parts.length > PLAIN_DEPTH_MAX) return 'too-deep';
+    if (parts.some(guardedName)) return false;
     const f = fold(p);
     if (git.guarded.some((g) => f === g || f.startsWith(`${g}/`))) return false;
+    const nested = nestedWhy(p);
+    if (nested) return nested;
     let at = root.abs;
     for (let i = 0; i < parts.length; i++) {
       const names = look.names(at), folded = look.folded(at);
@@ -2976,25 +3018,26 @@ export function pathsPlain(req, { now = Date.now } = {}) {
     }
     return true;
   };
-  const plain = [];
+  const plain = [], each = [];
   for (const p of list) {
     // (a folder on this path's way with a link named like a guarded entry: nothing of the request is plain)
     if (typeof p === 'string' && p.startsWith('/') && inRoot(p, root) && p !== root.abs && path.resolve(p) === p) {
       let at = root.abs;
       for (const part of p.slice(root.abs.length + 1).split('/').slice(0, -1).slice(0, PLAIN_DEPTH_MAX)) {
+        if (!(look.names(at) ?? []).includes(part)) break;
         at = path.join(at, part);
-        if ((look.names(path.dirname(at)) ?? []).includes(part)) {
-          let st = null;
-          try { st = fs.lstatSync(at); } catch { st = null; }
-          if (!st?.isDirectory()) break;
-          const why = linked(at);
-          if (why) return none(`a link named like git's or a tool's own folder (${why})`);
-        } else break;
+        let st = null;
+        try { st = fs.lstatSync(at); } catch { st = null; }
+        if (!st?.isDirectory()) break;
+        const n = linked(at);
+        if (n !== null) return none('guarded-link', n);
       }
     }
-    plain.push(one(p));
+    const r = one(p);
+    plain.push(r === true);
+    each.push(typeof r === 'string' ? r : null);
   }
-  return { plain };
+  return { plain, ...(each.some((x) => x !== null) ? { each } : {}) };
 }
 // project.trash {root} -> {trash}: Remove from Code with its folder — the project's folder itself (a real folder of
 // the workspace, every part of its path too: never through a link, never the workspace) moved to the workspace's trash
