@@ -138,3 +138,33 @@ test('trust: a project keeps the hash of its own settings you trusted (or none);
   fs.writeFileSync(s.jsonFile, JSON.stringify(v));
   assert.equal(s.get(a.id).trust, undefined, 'a trust that does not fit is dropped');
 });
+
+test('carryTrust: v0.23.0\'s trust (epoch 2) carried over only while it is still the one stored — compared and written at once', () => {
+  const s = store();
+  const a = s.add({ root: 'old' });
+  const H = 'c'.repeat(64), A = 'd'.repeat(64);
+  const plant = (t) => { const v = JSON.parse(fs.readFileSync(s.jsonFile, 'utf8')); v.projects[0].trust = t; fs.writeFileSync(s.jsonFile, JSON.stringify(v)); };
+  const was = { hash: H, at: 1234, epoch: 2 };
+  plant(was);
+  assert.deepEqual(s.carryTrust(a.id, { ...was }).trust, { hash: H, at: 1234, epoch: TRUST_EPOCH, agentHash: null });
+  assert.deepEqual(s.get(a.id).trust, { hash: H, at: 1234, epoch: TRUST_EPOCH, agentHash: null }, 'its time kept, the other tools\' part not trusted');
+  // Stop trusting since it was read: stands
+  plant(was);
+  s.trust(a.id, null);
+  assert.equal(s.carryTrust(a.id, { ...was }), null);
+  assert.equal(s.get(a.id).trust, undefined);
+  // a Trust since: stands
+  plant(was);
+  s.trust(a.id, H, undefined, A);
+  assert.equal(s.carryTrust(a.id, { ...was }), null);
+  assert.deepEqual(s.get(a.id).trust, { hash: H, at: 1_700_000_000_000, epoch: TRUST_EPOCH, agentHash: A });
+  // not the one read (another time, another hash), or not epoch 2: nothing written
+  for (const [stored, read] of [[{ ...was, at: 99 }, was], [{ ...was, hash: 'e'.repeat(64) }, was], [{ ...was, epoch: 1 }, { ...was, epoch: 1 }],
+    [{ ...was, epoch: TRUST_EPOCH }, { ...was, epoch: TRUST_EPOCH }], [was, null]]) {
+    plant(stored);
+    assert.equal(s.carryTrust(a.id, read), null, JSON.stringify([stored, read]));
+    assert.deepEqual(s.get(a.id).trust, stored);
+  }
+  assert.equal(s.carryTrust('ws', was), null, 'the Workspace has no trust');
+  assert.equal(s.carryTrust('p_00000000', was), null, 'no such project');
+});

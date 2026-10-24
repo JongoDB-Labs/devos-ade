@@ -79,6 +79,16 @@ test('the records: a folder of this computer is a project; renamed, removed, tru
   // its own settings: trusted by id (a folder of this computer has no record of the workspace's to keep it in)
   s.trust(ID.app, 'a'.repeat(64));
   assert.deepEqual(s.get(ID.app).trust, { hash: 'a'.repeat(64), at: now, epoch: TRUST_EPOCH });
+  // v0.23.0's trust of it (epoch 2): carried over only while it is still the one stored
+  const plantHost = (t) => { const v = JSON.parse(fs.readFileSync(s.jsonFile, 'utf8')); v.hostTrust[ID.app] = t; fs.writeFileSync(s.jsonFile, JSON.stringify(v)); };
+  const was = { hash: 'a'.repeat(64), at: 1234, epoch: 2 };
+  plantHost(was);
+  s.trust(ID.app, null);
+  assert.equal(s.carryTrust(ID.app, was), null, 'a Stop trusting since: stands');
+  assert.equal(s.get(ID.app).trust, undefined);
+  plantHost(was);
+  assert.deepEqual(s.carryTrust(ID.app, was).trust, { hash: 'a'.repeat(64), at: 1234, epoch: TRUST_EPOCH, agentHash: null });
+  s.trust(ID.app, 'a'.repeat(64));
   s.file([crypto.randomUUID()], ID.notes);
   // ./stack removes old: remembered as no longer added, with its sessions' place; added again: not
   now += 1000;

@@ -837,21 +837,29 @@ export function makeTrust({ call, store, log = () => {} }) {
    *  holds for it only while the plugins the settings turn on are installed there too, as trusted; reason plan-plugins
    *  when they are not) — and agents: {state, part} whether an agent of your subscriptions may start there (both parts
    *  applied; part: which one is not). Anything that cannot be decided (the records, the sandbox): not applied. */
-  // carryOver(rec, r, texts) -> the record to decide on: a trust of the reading before this one (TRUST_EPOCH - 1:
-  // v0.23.0's) whose hash is Claude Code's part as it is now, its summary complete under today's reading, carried over
-  // — recorded anew at this epoch, its time kept, no plan hash (there was none), the other tools' part not trusted (an
-  // agent's first start there asks for it) — so Claude Code on Bedrock and on your plan are not asked again for what
-  // they were trusted with. texts: a reading with the files' texts (else one is made, only then)
+  // carryOver(rec, r, texts) -> the record to decide on: a trust of v0.23.0's reading (epoch 2, that release's —
+  // pinned: not whatever came before this one) whose hash is Claude Code's part as it is now, its summary complete
+  // under today's reading, carried over — recorded anew at this epoch, its time kept, no plan hash (there was none),
+  // the other tools' part not trusted (an agent's first start there asks for it) — so Claude Code on Bedrock and on
+  // your plan are not asked again for what they were trusted with. The store writes it only while the trust it holds
+  // is still the one read here (compared and written in one update): a Stop trusting or a new Trust given meanwhile
+  // stands, and the record as the store has it then is the one decided on. texts: a reading with the files' texts
+  // (else one is made, only then)
+  const CARRIED_EPOCH = 2;
   async function carryOver(rec, r, texts = null) {
     const t = rec?.trust;
-    if (!t || t.epoch !== TRUST_EPOCH - 1 || !r.hash || t.hash !== r.hash || r.planPlugins) return rec;
+    if (!t || t.epoch !== CARRIED_EPOCH || !r.hash || t.hash !== r.hash || r.planPlugins) return rec;
     const full = texts ?? await read(absOf(rec.root));
     if (full.hash !== t.hash || full.planPlugins) return rec;
     if (!summaries(full).summary.complete) return rec;
     try {
-      const updated = store().trust(rec.id, full.hash, undefined, null, { at: t.at });
-      log(`settings of project ${short(rec.id, 40)}: a trust of the reading before carried over for Claude Code (unchanged, shown whole)`);
-      return updated?.trust ? updated : rec;
+      const updated = store().carryTrust(rec.id, t);
+      if (updated?.trust) {
+        log(`settings of project ${short(rec.id, 40)}: a trust of the reading before carried over for Claude Code (unchanged, shown whole)`);
+        return updated;
+      }
+      // (changed meanwhile: decided on as it is now — none, or the new trust)
+      return store().list().find((p) => p.id === rec.id) ?? { ...rec, trust: undefined };
     } catch { return rec; }
   }
   async function decide(cwd) {

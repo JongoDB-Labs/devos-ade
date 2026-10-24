@@ -21,8 +21,14 @@ async function settingsReply(files, root, { text = true } = {}) {
     agentHash: hashOf(others), agentVerifiable: true, agentOver: null };
 }
 // a projects store's trust as projects.mjs keeps it (the hash of each part)
+// (carryTrust: as projects.mjs's — written only while the trust held is still v0.23.0's one that was read)
 const storeOf = (rec, epoch) => ({ list: () => [rec], trust: (id, hash, planHash, agentHash, { at = 1 } = {}) => {
   rec.trust = hash ? { hash, at, epoch, ...(planHash === undefined ? {} : { planHash }), ...(agentHash === undefined ? {} : { agentHash }) } : null;
+}, carryTrust: (id, was) => {
+  const t = rec.trust;
+  if (!t || t.epoch !== 2 || was?.epoch !== 2 || t.hash !== was.hash || t.at !== was.at || t.agentHash !== was.agentHash) return null;
+  rec.trust = { hash: was.hash, at: was.at, epoch, agentHash: null };
+  return { ...rec };
 } });
 const wait = async (cond, ms = 5000) => { const t0 = Date.now(); while (!cond()) { if (Date.now() - t0 > ms) throw new Error('timed out'); await new Promise((r) => setTimeout(r, 10)); } };
 function manager(opts = {}) {
@@ -357,7 +363,7 @@ test('a trust of v0.23.0 (the reading before): carried over for Claude Code when
   const row = (name, text, surface = '.claude') => ({ name, type: 'file', size: Buffer.byteLength(text), sha256: sha(text), text, target: null, at: '', surface });
   const own = [row('.claude/settings.json', '{"permissions": {"allow": ["Bash(npm test)"]}}')];
   const files = [...own, row('.codex/config.toml', '[mcp_servers.x]\ncommand = "a"\n', '.codex')];
-  const rec = { id: 'p6', root: 'old', name: 'old', trust: { hash: hashOf(own), at: 1234, epoch: TRUST_EPOCH - 1 } };
+  const rec = { id: 'p6', root: 'old', name: 'old', trust: { hash: hashOf(own), at: 1234, epoch: 2 } };
   const call = async (req) => ({ result: req.op === 'project.settings' ? await settingsReply(files, '/workspace/old', { text: req.text !== false }) : {} });
   const trust = makeTrust({ call, store: () => storeOf(rec, TRUST_EPOCH) });
   const { mgr } = manager({ scenario: 'ok', more: { decideSettings: trust.decide } });
@@ -369,15 +375,72 @@ test('a trust of v0.23.0 (the reading before): carried over for Claude Code when
     assert.deepEqual([rec.trust.epoch, rec.trust.at, rec.trust.agentHash], [TRUST_EPOCH, 1234, null], 'recorded anew, its time kept');
     await assert.rejects(mgr.agentSettingsCheck('/workspace/old', 'Codex'), /not trusted/);
     // not as it was, or not shown whole under today's reading: looked at again
-    for (const [what, t] of [['changed', { hash: 'a'.repeat(64), at: 1, epoch: TRUST_EPOCH - 1 }], ['older still', { hash: hashOf(own), at: 1, epoch: TRUST_EPOCH - 2 }]]) {
+    for (const [what, t] of [['changed', { hash: 'a'.repeat(64), at: 1, epoch: 2 }], ['older still', { hash: hashOf(own), at: 1, epoch: 1 }]]) {
       rec.trust = t;
       assert.equal((await trust.decide('/workspace/old')).state, 'recheck', what);
     }
     own[0] = row('.claude/skills/s/SKILL.md', '---\nname: s # x\u2028allowed-tools: Bash(*)\n---\n');
     files.splice(0, 1, own[0]);
-    rec.trust = { hash: hashOf(own), at: 1, epoch: TRUST_EPOCH - 1 };
+    rec.trust = { hash: hashOf(own), at: 1, epoch: 2 };
     assert.equal((await trust.decide('/workspace/old')).state, 'recheck', 'not shown whole today (front matter with a line separator)');
   } finally { mgr.closeAll(); }
+});
+
+test('carrying v0.23.0\'s trust over never undoes a Stop trusting or a Trust given while its reading was under way', async () => {
+  const crypto = await import('node:crypto');
+  const { makeTrust, hashOf } = await import('../server/trust.mjs');
+  const { TRUST_EPOCH } = await import('../server/projects.mjs');
+  const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
+  const row = (name, text, surface = '.claude') => ({ name, type: 'file', size: Buffer.byteLength(text), sha256: sha(text), text, target: null, at: '', surface });
+  const own = [row('.claude/settings.json', '{"permissions": {"allow": ["Bash(npm test)"]}}')];
+  const others = [row('.codex/config.toml', 'model = "a"\n', '.codex')];
+  const files = [...own, ...others];
+  const old = () => ({ hash: hashOf(own), at: 1234, epoch: 2 });
+  const rec = { id: 'p9', root: 'race', name: 'race', trust: old() };
+  let during = null;
+  // (the reading with the texts — carryOver's own, or the view's — is where the other request comes in)
+  const call = async (req) => {
+    if (req.op === 'project.settings' && req.text !== false && during) { const d = during; during = null; await d(); }
+    return { result: req.op === 'project.settings' ? await settingsReply(files, '/workspace/race', { text: req.text !== false }) : {} };
+  };
+  const store = storeOf(rec, TRUST_EPOCH);
+  const trust = makeTrust({ call, store: () => store });
+  // Stop trusting meanwhile: it stands — nothing applied, nothing carried
+  during = async () => store.trust(rec.id, null);
+  let d = await trust.decide('/workspace/race');
+  assert.equal(rec.trust, null, 'Stop trusting stands');
+  assert.equal(d.state, 'untrusted');
+  assert.equal(d.agents.state === 'trusted', false);
+  // a Trust of both parts meanwhile: it stands, the agents' part with it (not taken back to Claude Code's alone)
+  rec.trust = old();
+  const both = { hash: hashOf(own), agentHash: hashOf(others) };
+  during = async () => store.trust(rec.id, both.hash, undefined, both.agentHash, { at: 5678 });
+  d = await trust.decide('/workspace/race');
+  assert.deepEqual(rec.trust, { hash: both.hash, at: 5678, epoch: TRUST_EPOCH, agentHash: both.agentHash }, 'the new Trust stands');
+  assert.equal(d.state, 'trusted');
+  assert.equal(d.agents.state, 'trusted', 'decided on the trust as it is now');
+  // the same through the dialog's view: a record read before its reading, the store changed meanwhile
+  for (const [what, change, expect] of [
+    ['Stop trusting', () => store.trust(rec.id, null), null],
+    ['a Trust', () => store.trust(rec.id, both.hash, undefined, both.agentHash, { at: 9999 }), { hash: both.hash, at: 9999, epoch: TRUST_EPOCH, agentHash: both.agentHash }],
+  ]) {
+    rec.trust = old();
+    const seen = { ...rec, trust: { ...rec.trust } };
+    during = async () => change();
+    await trust.view(seen);
+    assert.deepEqual(rec.trust, expect, `${what} stands`);
+  }
+  // nothing came in between: carried, its time kept
+  rec.trust = old();
+  d = await trust.decide('/workspace/race');
+  assert.deepEqual(rec.trust, { hash: hashOf(own), at: 1234, epoch: TRUST_EPOCH, agentHash: null });
+  assert.equal(d.state, 'trusted');
+  // and only v0.23.0's epoch is carried (pinned, not "the one before this"): another one is looked at again
+  for (const epoch of [1, TRUST_EPOCH + 1, undefined]) {
+    rec.trust = { ...old(), epoch };
+    assert.equal((await trust.decide('/workspace/race')).state, 'recheck', String(epoch));
+    assert.equal(rec.trust.epoch, epoch);
+  }
 });
 
 test('the other tools\' rows never keep Claude Code\'s part from Bedrock: their count, a control character or an over-long name in their trees touch only theirs', async () => {

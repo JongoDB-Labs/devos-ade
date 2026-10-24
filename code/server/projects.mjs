@@ -286,6 +286,30 @@ export class Projects {
       return { ...p };
     });
   }
+  /** carryTrust(id, was) -> the record with v0.23.0's trust `was` (epoch 2, as it was read) carried over to this
+   *  epoch for Claude Code's part alone (same hash, the time it was given, the other tools' part not trusted) — or
+   *  null when the stored trust is no longer `was` (a Stop trusting or a new Trust came in between): compared and
+   *  written in one update, so neither is undone */
+  carryTrust(id, was) {
+    if (id === WORKSPACE_ID || !was || was.epoch !== 2 || !SHA.test(was.hash ?? '')) return null;
+    const same = (t) => !!t && t.epoch === 2 && t.hash === was.hash && t.at === was.at
+      && t.planHash === was.planHash && t.agentHash === was.agentHash;
+    const carried = () => ({ hash: was.hash, at: Number.isFinite(was.at) && was.at > 0 ? was.at : this.now(), epoch: TRUST_EPOCH, agentHash: null });
+    const h = this.hostRecords().find((x) => x.id === id && !x.gone);
+    if (h) {
+      return this.update((v) => {
+        if (!same(v.hostTrust[id])) return null;
+        v.hostTrust[id] = carried();
+        return { ...h, trust: { ...v.hostTrust[id] } };
+      });
+    }
+    return this.update((v) => {
+      const p = v.projects.find((x) => x.id === id);
+      if (!p || !same(p.trust)) return null;
+      p.trust = carried();
+      return { ...p };
+    });
+  }
   /** file(ids, pid): these sessions shown in that project (a label: each still runs in its own folder). */
   file(ids, pid) {
     if (!Array.isArray(ids) || !ids.length || ids.length > 100 || !ids.every(isUuid)) throw new ProjectError(400, 'ids: 1 to 100 session ids');
