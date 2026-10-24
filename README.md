@@ -681,17 +681,23 @@ whether their login file is there — never opened; Copilot has no way to say: `
 sandbox the setting that puts it in — **Sign out** (its own sign-out) and **Check again** (both through the update
 helper, with the password); two rows for each Chat model: *Terminal & Code page* and *Chat*, each sign-in its own
 (Chat's **Sign in (Chat)** shows the command for a terminal on this computer: Chat's sandbox has no screen to sign in
-on); and on Claude's row the switch for Claude on your plan.
+on); and on Claude's row the switch for Claude on your plan. Chat's sandbox always goes out through an egress proxy:
+the terminal's, or — while the terminal's way out is the direct one (`TERMINAL_EGRESS=host`) — one of its own with the
+same rules (public addresses only; never this computer's services or your network), so your subscriptions stay Chat
+models whatever the terminal's way out is; with none (`off`) they are greyed, saying why. Usage counts against each
+plan's own limits: bedrock-now bills none of it and shows no $ for it.
 
-**Greyed out means "set it up here".** Anything a picker greys because of a setting or a sign-in — in the Terminal's
-*Open* menu, Chat's *Who answers*, the Code page's *Who answers*, its terminal panel's *Open…*, its Auto and Bypass
-modes — is a link: choosing it goes at once to the Settings row that turns it on (scrolled to, highlighted, its switch
-focused), to Chat's sign-in row with its *Sign in* open, or to the tool itself in the terminal, where its own sign-in
-starts; its words say where (`catalog/setup-links.tsv`). Chat's sandbox always goes out through an egress proxy: the terminal's,
-or — while the terminal's way out is the direct one (`TERMINAL_EGRESS=host`) — one of its own with the same rules
-(public addresses only; never this computer's services or your network), so your subscriptions stay Chat models
-whatever the terminal's way out is; with none (`off`) they are greyed, saying why. Usage counts against each plan's
-own limits: DevOS ADE bills none of it and shows no $ for it.
+**Greyed out means "set it up here".** Anything greyed because of a setting or a sign-in says where it is turned on,
+and takes you there: in a menu — the Terminal's *Open*, Chat's *Who answers*, the Code page's terminal panel's
+*Open…* — choosing it shows a button beside the menu (*Go to Settings*; nothing moves until you press it); elsewhere it
+is a link or a menu item of its own — the Code page's *Who answers*, its Auto and Bypass modes, its model list's scope,
+its previews over remote access, a read-only project folder, Home's update tools and the Terminal and Code cards on
+your devices, Home's voice note. It goes to the Settings row that turns it on (scrolled to and highlighted; a switch
+of its own focused), to Chat's sign-in row with its *Sign in* open and focused, or to the tool itself in the terminal,
+where its own sign-in starts (`catalog/setup-links.tsv`). Not links, on purpose: *Your own API keys* (coming next),
+Cursor and Gemini CLI as Chat models (nothing turns them on), what needs the update helper (`./stack helper install`,
+a step in a terminal) and switches that open things further, which work only from the computer running DevOS ADE
+(on your devices their rows say so, with the command).
 
 The tools are in the sandbox's image, each **pinned and checked** when it is built on your computer: Codex's and
 Copilot's release files by the SHA-256 their GitHub releases list, Gemini CLI and Grok Build by their npm lockfiles,

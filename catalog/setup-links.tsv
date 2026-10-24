@@ -5,9 +5,10 @@
 # the two). Each greyed item is a link or a button there: choosing it goes to its target at once.
 #
 # reason  target  says
-#   target   setting:KEY — the portal's Settings at that row (scrolled to, highlighted, its switch focused; a key of
-#            catalog/settings.tsv) | signin:terminal — the tool itself in the terminal, where its own sign-in starts |
-#            signin:chat — Settings › Your AI subscriptions, at that tool's Chat row with its Sign in open
+#   target   setting:KEY — the portal's Settings at that row (scrolled to, highlighted; a switch of its own focused:
+#            a key of catalog/settings.tsv), or at one of the page's own rows (setting:+project-folders …: the row) |
+#            signin:terminal — the tool itself in the terminal, where its own sign-in starts | signin:chat — Settings ›
+#            Your AI subscriptions, at that tool's Chat row with its Sign in open
 #   says     one sentence: what is off, and where it is turned on (the page shows it as the item's words)
 terminal-off	setting:TERMINAL_ENABLED	The browser terminal is off: Settings › Claude Code › Browser terminal turns it on.
 terminal-remote-off	setting:REMOTE_TERMINAL	Not over remote access: Settings › Remote access › Terminal and Code page over remote access turns it on, from the computer running bedrock-now.
@@ -22,3 +23,6 @@ bypass-off	setting:CODE_ALLOW_BYPASS	Bypass permissions is off: Settings › Cla
 openrouter-off	setting:OPENROUTER_API_KEY	OpenRouter's models need your OpenRouter key: Settings › Chat & voice › OpenRouter API key, on the computer running bedrock-now.
 voice-off	setting:STT_PROVIDER	Voice calls need speech-to-text: Settings › Chat & voice › Speech-to-text.
 models-scope	setting:CODE_MODELS	Settings › Claude Code › Models for Claude Code picks the models listed here.
+remote-preview	setting:REMOTE_PREVIEW	Previews are off over remote access: Settings › Remote access › Previews over remote access turns them on, from the computer running bedrock-now.
+folder-read-only	setting:+project-folders	Read-only: a folder of this computer added read-only — Settings › Claude Code › Project folders changes that, from the computer running bedrock-now.
+remote-admin-off	setting:REMOTE_ADMIN_ACTIONS	Off for remote access: Settings › Remote access › Update, settings and diagnostics from your devices turns it on, from the computer running bedrock-now.

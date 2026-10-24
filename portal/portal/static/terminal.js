@@ -51,7 +51,8 @@
         ". It runs in a sandbox that sees only your workspace folder, and asks for the portal password again.");
     } else if (state.enabled) {
       line = el("p", { class: "note terminal-line" }, "Or in the browser: the Terminal tab is off for remote access (",
-        el("code", { text: "REMOTE_TERMINAL=true" }), " in ", el("code", { text: ".env" }), " turns it on).");
+        el("code", { text: "REMOTE_TERMINAL=true" }), " in ", el("code", { text: ".env" }), " turns it on: ",
+        el("a", { href: "#settings/REMOTE_TERMINAL", "data-setup": "terminal-remote-off", text: "Settings › Remote access" }), ").");
     } else {
       line = el("p", { class: "note terminal-line" }, "Or in the browser: ", el("code", { text: "./stack terminal enable" }),
         " adds a Terminal tab (Claude Code in a sandbox; only the folder you choose).");

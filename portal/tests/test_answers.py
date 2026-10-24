@@ -5,6 +5,7 @@ as bn-session's), and Settings' two actions for the update helper (Check again, 
 
 import json
 import os
+import re
 import shutil
 import types
 from dataclasses import replace
@@ -490,8 +491,9 @@ def test_every_greyed_reason_has_a_live_target():
     for reason, l in links.items():
         kind, _, what = l["target"].partition(":")
         if kind == "setting":
-            # (a key of settings.tsv the Settings page shows: its own row, or inside a row that is shown — goTo finds it)
-            assert what in keys, (reason, what)
+            # (a key of settings.tsv the Settings page shows: its own row, or inside a row that is shown — goTo finds it;
+            # or one of the page's own rows, +project-folders …)
+            assert what in keys or what.startswith("+"), (reason, what)
             row = layout.get(what)
             assert row is not None, (reason, what)
             if row[2] == "with":
@@ -529,3 +531,34 @@ def test_setup_links_reads_only_plain_rows(tmp_path):
     assert answers.setup_links(tmp_path) == {"ok-one": {"target": "setting:CODE_ENABLED", "says": "Says."},
                                              "chat": {"target": "signin:chat", "says": "Sign in for Chat."}}
     assert answers.setup_links(tmp_path / "none") == {}
+
+
+@pytest.mark.skipif(not SETUP.exists(), reason="the repository's catalog is not here")
+def test_the_portals_own_setup_links_go_where_the_table_says():
+    # every link of the portal's pages marked with a reason (data-setup) goes where catalog/setup-links.tsv sends it
+    links = answers.setup_links(SETUP.parent)
+    static = Path(__file__).resolve().parents[1] / "portal" / "static"
+    found = []
+    for f in ("app.js", "code.js", "settings.js", "terminal.js"):
+        found += re.findall(r'href: "#settings/([A-Za-z_+-]+)",\s*"data-act": "[a-z-]+",\s*"data-setup": "([a-z-]+)"|href: "#settings/([A-Za-z_+-]+)", "data-setup": "([a-z-]+)"',
+                            (static / f).read_text(encoding="utf-8"))
+    pairs = [(a or c, b or d) for a, b, c, d in found]
+    assert len(pairs) >= 7, pairs
+    for place, reason in pairs:
+        assert links[reason]["target"] == f"setting:{place}", (reason, place)
+
+
+def test_chat_models_follow_the_sandboxs_way_out_as_env_has_it_now(s):
+    # (a change from Settings writes ./stack's snapshot at once; the portal is not restarted: /api/answers reads it)
+    _status(s, {"written_at": 1, "terminal": "running", "tools": [{"id": "codex", "installed": True, "version": "1", "signed_in": "yes", "kind": "chatgpt", "how": "command"}]})
+    (s.status_dir / "subscriptions-chat.json").write_text(json.dumps({"version": 1, "written_at": 1, "terminal": "running", "tools": [
+        {"id": "codex", "installed": True, "version": "1", "signed_in": "yes", "kind": "chatgpt", "how": "command"}]}))
+    snap = lambda v: (s.status_dir / "settings.json").write_text(json.dumps({"version": 1, "keys": [
+        {"key": "TERMINAL_EGRESS", "group": "advanced", "secret": "-", "policy": "widen-local", "validator": "egress", "apply": "terminal-egress",
+         "label": "Sandbox internet access", "note": "n", "cli": "", "present": True, "set": True, "value": v}]}))
+    codex = lambda: next(m for m in answers.build(s, False)["plan_models"] if m["tool"] == "codex")
+    assert s.terminal_egress == "internet" and codex()["ok"], "as the portal started"
+    snap("off")
+    assert codex()["reason"] == "chat-egress-off", "turned off from Settings: said at once"
+    snap("host")
+    assert codex()["ok"], "host: Chat's own proxy"

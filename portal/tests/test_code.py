@@ -7,8 +7,10 @@ spend (LiteLLM's logs, the terminal key's rows only), and offers the Code tab on
 import hashlib
 import html
 import json
+import os
 import re
 from dataclasses import replace
+from pathlib import Path
 
 import httpx
 import pytest
@@ -193,9 +195,18 @@ def test_a_greyed_item_of_the_code_page_opens_settings_from_the_code_tabs_own_fr
     check = handler[0].rsplit('window.addEventListener("message", (e) => {', 1)[1]
     assert "e.origin !== codeOrigin" in check and "e.source !== f.contentWindow" in check
     body = handler[1].split("});", 1)[0]
-    assert '!/^([A-Z][A-Z0-9_]{1,60}|\\+[a-z-]{2,20})$/.test(place)) return;' in body
-    # (only the portal's own address for it: the hash of its Settings place — never a URL from the message)
-    assert body.count("location.hash = `#settings/${place}`") == 1 and "location.href" not in body and "assign(" not in body
+    # (a reason the portal knows, its place from the portal's own list — never one the frame names — and the portal's
+    # own address for it: the hash of its Settings place, never a URL)
+    assert 'if (typeof reason !== "string" || !Object.hasOwn(CODE_SETUP, reason)) return;' in body
+    assert "e.data.place" not in js and "const hash = `#settings/${CODE_SETUP[reason]}`;" in body
+    assert body.count("location.hash = hash") == 1 and "location.href" not in body and "assign(" not in body
+    # the list: each reason's place as catalog/setup-links.tsv has it
+    table = Path(os.environ.get("BN_REPO_DIR") or Path(__file__).resolve().parents[2]) / "catalog" / "setup-links.tsv"
+    lst = dict(re.findall(r'"([a-z-]+)": "([A-Z][A-Z0-9_]+|\+[a-z-]+)"', js.split("const CODE_SETUP = Object.freeze({", 1)[1].split("});", 1)[0]))
+    assert len(lst) >= 8
+    if table.exists():
+        rows = {l.split("\t")[0]: l.split("\t")[1] for l in table.read_text(encoding="utf-8").splitlines() if l and not l.startswith("#")}
+        assert {r: f"setting:{p}" for r, p in lst.items()} == {r: rows[r] for r in lst}, lst
 
 
 def test_code_tabs_frame_is_made_when_idle_on_big_screens_for_its_badge():

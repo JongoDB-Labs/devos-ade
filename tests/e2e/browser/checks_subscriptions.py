@@ -169,8 +169,13 @@ def chat_embed(ctx):
            f"Claude as a Chat model is not a link to its switch (its switch off): {opts}")
     expect(vals.get("model:plan-copilot") is False, f"Copilot as a Chat model is not listed: {opts}")
     expect(vals.get("as-model:gemini") is True and vals.get("as-model:cursor") is True, f"Gemini CLI or Cursor offered as a Chat model: {opts}")
-    # Sign in for Chat…: Settings' row for it, its command shown, its Sign in focused
+    # Sign in for Chat…: choosing it moves nothing (a menu's change never does); its button goes to Settings' row for
+    # it, its command shown, its Sign in focused
     page.select_option("#answers-chat", "signin:codex")
+    page.wait_for_timeout(500)
+    expect(page.evaluate("location.hash") == "" or not page.evaluate("location.hash").startswith("#settings"), "a change of the menu moved")
+    see(page.locator("#answers-chat-go")).to_have_text("Go to Settings")
+    page.click("#answers-chat-go")
     page.locator("#set-subs-chat-codex .set-cli").wait_for(state="visible", timeout=15000)
     page.wait_for_function("() => document.activeElement && document.activeElement.matches('#set-subs-chat-codex [data-act=subscriptions-chat-signin]')", timeout=10000)
     # the greyed Claude-plan item: Settings, at the switch on Claude's row of Your AI subscriptions, focused
@@ -178,6 +183,7 @@ def chat_embed(ctx):
     page.locator("#answers-chat").wait_for(timeout=15000)
     page.wait_for_function("() => [...document.querySelectorAll('#answers-chat option')].some((o) => o.value === 'setup:claude-plan-off:claude')", timeout=20000)
     page.select_option("#answers-chat", "setup:claude-plan-off:claude")
+    page.click("#answers-chat-go")
     page.wait_for_function("() => document.activeElement && document.activeElement.closest('[data-for=CODE_CLAUDE_PLAN]') && document.activeElement.getAttribute('role') === 'switch'", timeout=15000)
     expect(page.evaluate("location.hash") == "#settings/CODE_CLAUDE_PLAN", "not Settings' address for it")
     page.click(".tab[data-tab=chat]")

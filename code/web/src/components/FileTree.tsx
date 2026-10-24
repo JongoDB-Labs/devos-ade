@@ -19,7 +19,9 @@ import {
   uploadFiles,
   activeView,
   currentProject,
+  goSetup,
 } from '../app';
+import { SETUP_LINKS } from '../setuplinks';
 import { downloadUrl } from '../api';
 import { changedFiles } from '../session';
 import type { FsEntry } from '../types';
@@ -184,6 +186,13 @@ export function FileTree({ onOpen }: { onOpen?: () => void }) {
         <button type="button" class="icon-btn tiny" title="Collapse folders" aria-label="Collapse folders" onClick={collapseAll}>
           <Icon name="collapse" size={15} />
         </button>
+        {/* (a folder of this computer added read-only: where that is changed — setuplinks.ts) */}
+        {ro && (
+          <button type="button" class="linkish setup-link tree-ro" data-setup="folder-read-only" data-testid="tree-read-only-setup" title={SETUP_LINKS['folder-read-only'].says}
+            aria-label={SETUP_LINKS['folder-read-only'].says} onClick={() => goSetup('folder-read-only')}>
+            read-only
+          </button>
+        )}
         <input
           ref={upload}
           type="file"

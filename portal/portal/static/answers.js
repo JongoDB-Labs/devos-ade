@@ -10,9 +10,11 @@
 //   Chat tab: a model keeps Open WebUI (?models=ID: a new chat with it); a subscription's tool replaces Open WebUI's
 //   frame with the tool's own screen — the terminal frame with ?arg=chat&…: a session of its own grouped with the
 //   terminal's, in the folder chosen beside it. You type into the real, unmodified client. "Open WebUI" brings it back.
-// Greyed items (catalog/setup-links.tsv, served as the answers' `setup`): each is a choice of its own that goes where it
-// is turned on — Settings at that row (the Settings address of its key: settings.js goTo), or Chat's sign-in row — at once, the choice in
-// the menu going back to what it was; its words say where. Only a reason the table has: else greyed, as before.
+// Greyed items (catalog/setup-links.tsv, served as the answers' `setup`): each is a choice of its own whose words say
+// where it is turned on — Settings at that row (the Settings address of its key: settings.js goTo), Chat's sign-in row,
+// or the tool in the terminal. Choosing one only changes the button beside the menu ("Go to Settings"): nothing moves
+// on a change (arrowing through a closed menu changes it on some systems), only on that button; the menu then goes back
+// to what it was. Only a reason the table has: else greyed, as before.
 // The choice is a per-browser convenience in localStorage (bn.answers). Loaded after app.js, mobile.js and terminal.js.
 "use strict";
 
@@ -24,7 +26,7 @@
   // setupOf(DATA, REASON) -> {reason, target, says} of the answers' table (catalog/setup-links.tsv), or null
   function setupOf(d, reason) {
     const s = d && d.setup && typeof d.setup === "object" && typeof reason === "string" && Object.hasOwn(d.setup, reason) ? d.setup[reason] : null;
-    return s && typeof s.says === "string" && typeof s.target === "string" && /^(setting:[A-Z][A-Z0-9_]{1,60}|signin:(terminal|chat))$/.test(s.target)
+    return s && typeof s.says === "string" && typeof s.target === "string" && /^(setting:([A-Z][A-Z0-9_]{1,60}|\+[a-z-]{2,20})|signin:(terminal|chat))$/.test(s.target)
       ? { reason, target: s.target, says: s.says } : null;
   }
   // toolState(TOOL, TERMINAL_HERE, TERMINAL_REASON) -> {ok, word, why, reason}: whether the tool can open here, a short
@@ -170,8 +172,16 @@
   const tOpen = el("button", { type: "button", class: "action", id: "answers-terminal-open", text: "Open" });
   const tNote = el("span", { class: "answers-note", text: "A window of its own; each tool signs in with its own flow there." });
   const tWrap = el("span", { class: "answers-group" }, el("label", { for: "answers-terminal", text: "Open" }), tSelect, tOpen, tNote);
-  // goSetup(VALUE) — a greyed item chosen (setup:REASON:TOOL): where it is turned on, at once (Settings at that row; Chat's
-  // sign-in row with its Sign in open; the tool itself in the terminal). -> whether it was one
+  // goSetup(VALUE) — a greyed item's button pressed (setup:REASON:TOOL): where it is turned on (Settings at that row;
+  // Chat's sign-in row with its Sign in open; the tool itself in the terminal). -> whether it was one
+  // goLabel(VALUE) -> the button's words for a greyed item (or a sign-in for Chat), "" for any other choice
+  function goLabel(v) {
+    const m = /^setup:([a-z][a-z-]{1,40}):([a-z]{0,10})$/.exec(v || "");
+    if (/^signin:[a-z]{2,10}$/.test(v || "")) return "Go to Settings";
+    if (!m) return "";
+    const where = setupPlace(setupOf(data, m[1]), m[2]);
+    return where && where.open ? "Open it to sign in" : "Go to Settings";
+  }
   function goSetup(v) {
     const m = /^setup:([a-z][a-z-]{1,40}):([a-z]{0,10})$/.exec(v || "");
     if (!m) return false;
@@ -186,19 +196,26 @@
       return true;
     }
     if (where.chat !== undefined) root.bnSubsChatSignin = where.chat;
-    if (location.hash === where.hash && typeof root.showTab === "function") root.showTab("settings");
-    else location.hash = where.hash;
+    goHash(where.hash);
     return true;
+  }
+  // (an address already shown: the tab shown again, as a change of it would — app.js's hashchange)
+  function goHash(hash) {
+    if (location.hash === hash && typeof root.showTab === "function") root.showTab(hash.slice(1));
+    else location.hash = hash;
   }
   root.bnAnswers.goSetup = goSetup;
   let tLast = "bedrock";
+  // (a greyed item chosen: the button says where it goes — nothing moves until it is pressed)
   tSelect.addEventListener("change", () => {
-    if (goSetup(tSelect.value)) { tSelect.value = tLast; return; }
-    tLast = tSelect.value;
+    const go = goLabel(tSelect.value);
+    tOpen.textContent = go || "Open";
+    if (!go) tLast = tSelect.value;
   });
   tOpen.addEventListener("click", () => {
+    if (goSetup(tSelect.value)) { tSelect.value = tLast; tOpen.textContent = "Open"; return; }
     const f = document.querySelector('#frames iframe[data-app="terminal"]');
-    if (!f || !tSelect.value || tSelect.value.startsWith("setup:") || tSelect.selectedOptions[0]?.disabled) return;
+    if (!f || !tSelect.value || tSelect.selectedOptions[0]?.disabled) return;
     tOpen.disabled = true;
     launch("open", tSelect.value).then((url) => { f.src = url; f.focus(); }, failed).finally(() => { tOpen.disabled = false; });
   });
@@ -211,7 +228,11 @@
   // a tool chosen before this page loaded is not started again by itself: "Reopen …" (a click, as everything that starts)
   const cReopen = el("button", { type: "button", class: "action", id: "answers-chat-reopen" });
   cReopen.hidden = true;
-  const cWrap = el("span", { class: "answers-group" }, el("label", { for: "answers-chat", text: PHONE.matches ? "" : "Who answers" }), cSelect, cReopen, cFolderWrap, cNote);
+  // a greyed item (or a sign-in for Chat) chosen: this button goes there — never the change itself
+  const cGo = el("button", { type: "button", class: "action", id: "answers-chat-go", "aria-describedby": "answers-chat-go-says" });
+  const cGoSays = el("span", { class: "answers-note", id: "answers-chat-go-says" });
+  cGo.hidden = true; cGoSays.hidden = true;
+  const cWrap = el("span", { class: "answers-group" }, el("label", { for: "answers-chat", text: PHONE.matches ? "" : "Who answers" }), cSelect, cGo, cReopen, cFolderWrap, cGoSays, cNote);
   bar.append(tWrap, cWrap);
 
   function toolFrame() {
@@ -249,18 +270,26 @@
     saved.chat = `tool:${id}`; save(); cSelect.value = saved.chat;
     openTool(id);
   });
+  // (Go: a greyed item — where it is turned on; Sign in for Chat… — Settings' row for that tool's Chat sign-in; then the
+  // menu goes back to what it was)
+  const goHide = () => { cGo.hidden = true; cGoSays.hidden = true; };
+  cGo.addEventListener("click", () => {
+    const v = cSelect.value;
+    goHide();
+    cSelect.value = saved.chat;
+    if (goSetup(v)) return;
+    if (/^signin:[a-z]{2,10}$/.test(v)) { root.bnSubsChatSignin = v.slice(7); goHash("#settings/+subscriptions"); }
+  });
   cSelect.addEventListener("change", () => {
     const v = cSelect.value;
-    // a greyed item: where it is turned on (the choice goes back to what it was)
-    if (goSetup(v)) { cSelect.value = saved.chat; return; }
-    // Sign in for Chat…: Settings' row for that tool's Chat sign-in (the choice goes back to what it was)
-    if (v.startsWith("signin:")) {
-      cSelect.value = saved.chat;
-      root.bnSubsChatSignin = v.slice(7);
-      if (location.hash === "#settings/+subscriptions" && typeof root.showTab === "function") root.showTab("settings");
-      else location.hash = "#settings/+subscriptions";
+    const go = goLabel(v);
+    if (go) {
+      cGo.textContent = go;
+      cGoSays.textContent = cSelect.selectedOptions[0]?.title || "";
+      cGo.hidden = false; cGoSays.hidden = !cGoSays.textContent;
       return;
     }
+    goHide();
     cReopen.hidden = true;
     if (v.startsWith("model:")) {
       saved.chat = v; save();
@@ -296,9 +325,12 @@
     if (tab === "chat" && data) showChat();   // (at once, from what this page knows: no flash of Open WebUI)
     const d = await load(false);
     if (current !== tab) return;
-    if (tab === "terminal") { fill(tSelect, terminalOptions(d), tSelect.value || "bedrock"); if (!tSelect.value.startsWith("setup:")) tLast = tSelect.value; }
-    else {
+    if (tab === "terminal") {
+      fill(tSelect, terminalOptions(d), tLast);
+      tOpen.textContent = goLabel(tSelect.value) || "Open";
+    } else {
       fill(cSelect, chatOptions(d), saved.chat);
+      goHide();
       // (a choice this page no longer offers — a model turned off, a tool left out — is Open WebUI again)
       if (d && cSelect.value !== saved.chat) { saved.chat = cSelect.value || "owui"; save(); }
       folders(d);

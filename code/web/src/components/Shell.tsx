@@ -34,6 +34,7 @@ import {
   currentProject,
   toast,
   goSetup,
+  takeTerminalLink,
 } from '../app';
 import { SETUP_LINKS, type SetupReason } from '../setuplinks';
 import { GitPanel } from './GitPanel';
@@ -283,13 +284,17 @@ function ToolMenu({ onOpen }: { onOpen: (src: string) => void }) {
   }, []);
   const state = (t: BnTool) => (t.installed === false ? 'not in the sandbox' : t.signedIn === 'yes' ? `signed in${t.kindWords ? ` · ${t.kindWords}` : ''}`
     : t.signedIn === 'no' ? 'sign in first' : t.installed === null ? 'not checked yet' : 'sign-in not known');
-  // (one that cannot open here: a choice that goes where that is turned on — setuplinks.ts)
+  // (one that cannot open here: a choice whose words say where that is turned on — setuplinks.ts. Choosing it only
+  // shows "Go to Settings" beside the menu: nothing moves on a change — arrowing through a closed menu changes it on
+  // some systems —, only on that button)
   const off = (t: BnTool): SetupReason | null => (!answers?.here ? 'terminal-remote-off' : t.installed === false ? 'tool-left-out' : null);
+  const [setup, setSetup] = useState<{ reason: SetupReason; tool: string } | null>(null);
   const pick = (id: string) => {
+    setSetup(null);
     if (!id) return;
     const m = /^setup:([a-z-]+):([a-z]*)$/.exec(id);
     if (m) {
-      if (Object.hasOwn(SETUP_LINKS, m[1])) goSetup(m[1] as SetupReason, m[2]);
+      if (Object.hasOwn(SETUP_LINKS, m[1])) setSetup({ reason: m[1] as SetupReason, tool: m[2] });
       return;
     }
     terminalLaunch(id, folder && folder !== '/workspace' ? folder : null).then(
@@ -298,14 +303,15 @@ function ToolMenu({ onOpen }: { onOpen: (src: string) => void }) {
     );
   };
   return (
+    <>
     <select
       class="term-open"
       aria-label="Open in the terminal: Claude Code on Bedrock, a shell, or one of your AI subscriptions' tools"
       title={`A window of its own, in this project's folder. Each tool signs in with its own flow there; ${PRODUCT} never sees the login.`}
-      value=""
+      value={setup ? `setup:${setup.reason}:${setup.tool}` : ''}
       onChange={(e) => {
         const v = (e.currentTarget as HTMLSelectElement).value;
-        (e.currentTarget as HTMLSelectElement).value = '';
+        if (!v.startsWith('setup:')) (e.currentTarget as HTMLSelectElement).value = '';
         pick(v);
       }}
       data-testid="terminal-open-tool"
@@ -332,6 +338,13 @@ function ToolMenu({ onOpen }: { onOpen: (src: string) => void }) {
         </optgroup>
       )}
     </select>
+    {setup && (
+      <button type="button" class="btn small" title={SETUP_LINKS[setup.reason].says} data-testid="terminal-open-setup" data-setup={setup.reason}
+        onClick={() => { const s = setup; setSetup(null); goSetup(s.reason, s.tool); }}>
+        Go to Settings
+      </button>
+    )}
+    </>
   );
 }
 
@@ -342,7 +355,9 @@ function TerminalPanel({ drawer }: { drawer?: boolean }) {
   // (a tool opened here from elsewhere — a greyed item's sign-in: app.ts openToolInTerminal)
   const link = useSel(store, (s) => s.terminalLink);
   useEffect(() => {
-    if (link) setSrc(link.src);
+    if (!link) return;
+    setSrc(link.src);
+    takeTerminalLink();   // (once: a panel drawn again later never loads it again)
   }, [link]);
   const url = src ?? base;
   const [loaded, setLoaded] = useState(open);

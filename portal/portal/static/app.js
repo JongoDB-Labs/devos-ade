@@ -677,8 +677,11 @@ function updateHint(a, usable) {
 function renderAdmin(a) {
   adminState = a;
   const usable = a.running && a.allowed;
-  $("#maint-state").textContent = !a.allowed ? REMOTE_OFF
-    : `The update helper is running on this computer${a.version ? ` (installed version ${a.version})` : ""}.`;
+  // (off for remote access: where that is turned on — catalog/setup-links.tsv remote-admin-off)
+  if (!a.allowed) {
+    $("#maint-state").replaceChildren(`${REMOTE_OFF} `, el("a", { href: "#settings/REMOTE_ADMIN_ACTIONS", "data-setup": "remote-admin-off",
+      text: "Settings › Remote access › Update, settings and diagnostics from your devices" }));
+  } else $("#maint-state").textContent = `The update helper is running on this computer${a.version ? ` (installed version ${a.version})` : ""}.`;
   $("#maint-state").hidden = $("#maint-actions").hidden = $("#maint-note").hidden = !a.running;
   for (const b of document.querySelectorAll("button.action[data-action]")) b.disabled = !usable || a.in_progress;
   const rb = $("#rollback-now");

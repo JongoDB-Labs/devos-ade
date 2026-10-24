@@ -161,6 +161,11 @@
   // The framed page says how many permission prompts wait ({type: "bn-code-status", pending: N, busy, bypass, waiting,
   // sessions}, or the plain page's {bn: "code", pending: N}); only the code host may. bypass: a session runs without
   // asking (Bypass permissions) — the badge turns red and says ⏵⏵ (the CLI's marker) while nothing waits.
+  // the Settings place of each greyed item the Code page has (catalog/setup-links.tsv: portal/tests/test_code.py
+  // checks each against it)
+  const CODE_SETUP = Object.freeze({ "tool-left-out": "TERMINAL_AI_TOOLS", "claude-plan-off": "CODE_CLAUDE_PLAN", "auto-off": "CODE_AUTO_MODE",
+    "bypass-off": "CODE_ALLOW_BYPASS", "models-scope": "CODE_MODELS", "terminal-remote-off": "REMOTE_TERMINAL", "remote-preview": "REMOTE_PREVIEW",
+    "folder-read-only": "+project-folders" });
   function listen() {
     let codeOrigin = "";
     try { codeOrigin = new URL(appUrl("code")).origin; } catch (_) { return; }
@@ -191,15 +196,17 @@
         document.dispatchEvent(new CustomEvent("bn:code-status", { detail: { waiting: reported.waiting, sessions: reported.sessions.map((x) => ({ ...x })), git: reported.git.map((x) => ({ ...x })), hosts: reported.hosts } }));
       }
     });
-    // A greyed item of the Code page chosen ({type: "bn-code-setup", place: KEY or +row}: catalog/setup-links.tsv —
-    // its model picker's Who answers, its modes): Settings at that place (settings.js goTo), from the same frame only
+    // A greyed item of the Code page chosen ({type: "bn-code-setup", reason}: catalog/setup-links.tsv — its Who
+    // answers, terminal panel, modes, previews, folders): Settings where that is turned on (settings.js goTo), from the
+    // same frame only — the place looked up here (CODE_SETUP), never one the frame names
     window.addEventListener("message", (e) => {
       const f = codeFrame();
       if (e.origin !== codeOrigin || !f || e.source !== f.contentWindow || !e.data || e.data.type !== "bn-code-setup") return;
-      const place = e.data.place;
-      if (typeof place !== "string" || !/^([A-Z][A-Z0-9_]{1,60}|\+[a-z-]{2,20})$/.test(place)) return;
-      if (location.hash === `#settings/${place}` && typeof window.showTab === "function") window.showTab("settings");
-      else location.hash = `#settings/${place}`;
+      const reason = e.data.reason;
+      if (typeof reason !== "string" || !Object.hasOwn(CODE_SETUP, reason)) return;
+      const hash = `#settings/${CODE_SETUP[reason]}`;
+      if (location.hash === hash && typeof window.showTab === "function") window.showTab(hash.slice(1));
+      else location.hash = hash;
     });
   }
   const hooked = new WeakSet();
@@ -295,7 +302,8 @@
         el("h2", { text: "Using it from your devices too" }),
         el("ol", { class: "code-off-list" },
           item("On the computer running DevOS ADE, set ", code("REMOTE_TERMINAL=true"), " in ", code(".env"), ", then run ", code("./stack up"), "."),
-          item("The same switch shares the browser terminal over remote access too (a shell from your phone), so it is a step in a terminal on purpose: Settings shows it, read-only."),
+          item("The same switch shares the browser terminal over remote access too (a shell from your phone), so it is a step in a terminal on purpose: ",
+            el("a", { href: "#settings/REMOTE_TERMINAL", "data-setup": "terminal-remote-off", text: "Settings › Remote access" }), " shows it, read-only."),
           item("With Tailscale, approve the new Services (", code("…-terminal"), " and ", code("…-code"), ") in the admin console like the others; ", code("./stack remote status"), " lists them."),
           item("Both still ask for the portal password again before they open.")));
     } else {
@@ -361,7 +369,8 @@
         ". Claude runs in the terminal's sandbox; it asks for the portal password again.");
     } else if (state.enabled) {
       line = el("p", { class: "note code-line" }, "The ", tab, " is off for remote access (", code("REMOTE_TERMINAL=true"),
-        " in ", code(".env"), " turns it on with the terminal).");
+        " in ", code(".env"), " turns it on with the terminal: ",
+        el("a", { href: "#settings/REMOTE_TERMINAL", "data-setup": "terminal-remote-off", text: "Settings › Remote access" }), ").");
     } else {
       line = el("p", { class: "note code-line" }, "Or in the browser with a chat: the ", tab, ", off for now. ",
         settingsLink("Settings › Claude Code"), " (on the computer running DevOS ADE) or ", code("./stack code enable"), " turns it on.");

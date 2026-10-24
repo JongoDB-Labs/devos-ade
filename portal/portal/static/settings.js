@@ -214,9 +214,9 @@
   }
 
   // goTo PLACE — "section", "KEY" or "section/KEY" from the address: the section, and the setting opened (More
-  // unfolded, a setting whose switch is off shown anyway), scrolled to and highlighted — its switch focused when it has
-  // one (a greyed item elsewhere links here: catalog/setup-links.tsv); a setting shown inside another row: that row,
-  // at the setting (its [data-for]), its switch focused
+  // unfolded, a setting whose switch is off shown anyway), scrolled to and highlighted — a setting's own switch focused
+  // when it has one (a greyed item elsewhere links here: catalog/setup-links.tsv); a setting shown inside another row:
+  // that row, at the setting (its [data-for]), its switch focused; a row of the page's own: the row itself
   function goTo(place) {
     let sec = null, key = null;
     for (const part of String(place || "").split("/")) {
@@ -235,13 +235,26 @@
     if (more) more.open = true;
     for (let d = r.closest(".set-dep"); d; d = d.parentElement.closest(".set-dep")) d.classList.add("set-forced");
     applyView();
-    const at = (inner && r.querySelector(`[data-for="${inner}"]`)) || r;
-    const sw = at.querySelector('button[role="switch"]:not(:disabled)');
+    // what takes the focus: a Chat sign-in asked for (Sign in for Chat…: that tool's Chat row, its Sign in); else the
+    // setting — its switch, when it has one: a setting's own row, or a setting shown inside a row ([data-for]); a row
+    // of the page's own (Your AI subscriptions …) is focused as a whole, never a switch inside it
+    const chat = chatSigninWanted();
+    const signin = key === "+subscriptions" && chat ? r.querySelector(`#set-subs-chat-${chat} [data-act="subscriptions-chat-signin"]`) : null;
+    const at = signin ? signin.closest(".set-subs-where") : (inner && r.querySelector(`[data-for="${inner}"]`)) || r;
+    const sw = !signin && (inner || !key.startsWith("+")) ? at.querySelector('button[role="switch"]:not(:disabled)') : null;
     at.setAttribute("tabindex", "-1");
     at.scrollIntoView({ block: "center" });
-    (sw || at).focus({ preventScroll: true });
+    (signin || sw || at).focus({ preventScroll: true });
     at.classList.add("set-flash");
     setTimeout(() => at.classList.remove("set-flash"), 2400);
+  }
+  // A Chat sign-in asked for from Chat's picker (answers.js sets window.bnSubsChatSignin): that tool, for a few seconds
+  // — kept across the page's redraws until then (Settings may load twice on its way there), its command shown each time
+  let chatSignin = { tool: "", until: 0 };
+  function chatSigninWanted() {
+    const w = window.bnSubsChatSignin;
+    if (typeof w === "string" && /^[a-z]{2,10}$/.test(w)) { chatSignin = { tool: w, until: Date.now() + 5000 }; window.bnSubsChatSignin = ""; }
+    return chatSignin.tool && Date.now() < chatSignin.until ? chatSignin.tool : "";
   }
 
   // --- what is shown: one section, or every match of the search / "Changed from default" with its section ---
@@ -336,7 +349,7 @@
     if (!data.here.allowed) {
       box.append(el("p", { class: "helper-off-title", text: "Changes are off for remote access" }),
         el("p", { class: "note" }, "Settings, Reveal and Diagnostics work from the computer running DevOS ADE. To use them from your devices too, turn on ",
-          el("a", { href: "#settings/REMOTE_ADMIN_ACTIONS", text: "Remote access › Update, settings and diagnostics from your devices" }), " there."));
+          el("a", { href: "#settings/REMOTE_ADMIN_ACTIONS", "data-setup": "remote-admin-off", text: "Remote access › Update, settings and diagnostics from your devices" }), " there."));
       box.classList.add("helper-off");
       return box;
     }
@@ -1331,7 +1344,8 @@
         el("span", { class: "note", text: t.chat ? "Terminal & Code page: " : "" }), el("span", { class: `badge ${st[1]}`.trim(), text: st[0] }));
       const acts = el("span", { class: "set-project-actions" });
       if (t.installed === false) {
-        acts.append(el("a", { class: "action", href: "#settings/TERMINAL_AI_TOOLS", "data-act": "subscriptions-left-out", text: "Put it in the sandbox (Tools in the sandbox)" }));
+        acts.append(el("a", { class: "action", href: "#settings/TERMINAL_AI_TOOLS", "data-act": "subscriptions-left-out", "data-setup": "tool-left-out",
+          text: "Put it in the sandbox (Tools in the sandbox)", "aria-label": `Put it in the sandbox (Tools in the sandbox): ${t.name}` }));
       }
       if (t.installed !== false && termHere) {
         const signedIn = t.signed_in === "yes";
@@ -1404,6 +1418,8 @@
         } else if (editable(pk)) {
           plan.append(el("span", { class: "set-project-actions" }, toggle(pk, shown(pk), "set-name-CODE_CLAUDE_PLAN")));
         } else plan.append(" ", el("span", { class: "badge", text: display(pk) || "Off" }));
+        // (from your devices, or with changes off here: the way in a terminal on the computer running bedrock-now)
+        if (codeOn() && (data.here.remote || !canChange() || !editable(pk))) plan.append(cliLine(pk, "On the computer running bedrock-now, in a terminal: "));
         plan.append(el("p", { class: "note", id: "set-sum-CODE_CLAUDE_PLAN", text: "Off by default: Anthropic's support article and its legal page pull apart on apps like this one — your choice (Details)." }),
           el("details", { class: "set-details" }, el("summary", {}, "Details"), el("p", { class: "note", text: pk.note || "" })));
         li.append(plan);
@@ -1418,27 +1434,21 @@
     const CSB = { off: "Chat's sandbox is off (it runs with the Code page).", down: "Chat's sandbox is not running: ./stack up.", error: "Chat's sandbox did not answer at the last check." };
     rw._main.append(el("p", { class: "note set-extra", text: `${SB[sb.sandbox] || ""}${SB[sb.sandbox] ? " " : ""}${when ? `Checked ${when}.` : "Not checked yet."} ${CSB[sb.chat_sandbox] || ""}${chatWhen ? ` Chat's checked ${chatWhen}.` : ""} Each sign-in is the tool's own, and stays in its own file in that sandbox (Chat's apart from the terminal's): DevOS ADE never opens it, backups leave it out. Anything in that sandbox can read it — Sign out, and revoke it at the provider, if that worries you.` }));
     if (!can("subscriptions-check")) {
-      rw._main.append(el("p", { class: "note set-extra", text: !data.helper.running ? "Check again and Sign out need the update helper (./stack helper install)." : !canChange() ? "Settings changes are off for remote access (REMOTE_ADMIN_ACTIONS)." : "This update helper does not offer them yet: ./stack helper install refreshes it." }));
+      rw._main.append(!data.helper.running ? el("p", { class: "note set-extra", text: "Check again and Sign out need the update helper (./stack helper install)." })
+        : !canChange() ? el("p", { class: "note set-extra" }, "Settings changes are off for remote access: ",
+          el("a", { href: "#settings/REMOTE_ADMIN_ACTIONS", "data-setup": "remote-admin-off", text: "Remote access › Update, settings and diagnostics from your devices" }), ".")
+          : el("p", { class: "note set-extra", text: "This update helper does not offer them yet: ./stack helper install refreshes it." }));
     }
     rw._main.append(el("p", { class: "set-cli" }, el("span", { class: "note", text: "In a terminal on this computer: " }), el("code", { text: "./stack subscriptions" }), " ",
       copyButton("./stack subscriptions")));
-    // (from Chat's picker: "Sign in for Chat…" — that tool's Chat row, its command shown: answers.js sets which)
-    const want = typeof window.bnSubsChatSignin === "string" && /^[a-z]{2,10}$/.test(window.bnSubsChatSignin) ? window.bnSubsChatSignin : "";
-    if (want) {
-      window.bnSubsChatSignin = "";
-      const c = rw.querySelector(`#set-subs-chat-${want}`);
-      if (c) {
-        // (its Sign in, pressed: the command shown, the button focused, the row highlighted)
-        c.querySelector(".set-cli").hidden = false;
-        const b = c.querySelector('[data-act="subscriptions-chat-signin"]');
-        if (b) b.setAttribute("aria-expanded", "true");
-        requestAnimationFrame(() => {
-          c.scrollIntoView({ block: "center" });
-          if (b) b.focus({ preventScroll: true });
-          c.classList.add("set-flash");
-          setTimeout(() => c.classList.remove("set-flash"), 2400);
-        });
-      }
+    // (from Chat's picker: "Sign in for Chat…" — that tool's Chat row, its Sign in pressed: the command shown; goTo
+    // then focuses it, the row highlighted)
+    const want = chatSigninWanted();
+    const c = want ? rw.querySelector(`#set-subs-chat-${want}`) : null;
+    if (c) {
+      c.querySelector(".set-cli").hidden = false;
+      const b = c.querySelector('[data-act="subscriptions-chat-signin"]');
+      if (b) b.setAttribute("aria-expanded", "true");
     }
     return rw;
   }

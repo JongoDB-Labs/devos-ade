@@ -49,16 +49,17 @@ test('the picker: a subscription that can start, and why one cannot', () => {
 
 test('greyed items: every reason has a target, none dead — a setting of the portal or a sign-in; and how Settings is reached', () => {
   for (const [r, l] of Object.entries(SETUP_LINKS)) {
-    assert.match(l.target, /^(setting:[A-Z][A-Z0-9_]{1,60}|signin:(terminal|chat))$/, r);
+    assert.match(l.target, /^(setting:([A-Z][A-Z0-9_]{1,60}|\+[a-z-]{2,20})|signin:(terminal|chat))$/, r);
     assert.ok(l.says.length > 10 && l.says.length <= 300 && /Settings ›|terminal/.test(l.says), r);
     const t = setupTarget(r as SetupReason);
     assert.ok('setting' in t ? l.target === `setting:${t.setting}` : l.target === `signin:${t.signin}`, r);
   }
   // the ones this page gives
-  for (const r of ['tool-left-out', 'claude-plan-off', 'tool-signin', 'auto-off', 'bypass-off', 'models-scope', 'terminal-remote-off']) assert.ok(Object.hasOwn(SETUP_LINKS, r), r);
-  assert.deepEqual(settingsRoute('CODE_AUTO_MODE', 'http://bedrock-now.localhost:80/x?y', true), { post: { type: 'bn-code-setup', place: 'CODE_AUTO_MODE' }, to: 'http://bedrock-now.localhost' });
-  assert.deepEqual(settingsRoute('CODE_AUTO_MODE', 'https://p.example', false), { open: 'https://p.example/#settings/CODE_AUTO_MODE' });
-  for (const [place, origin] of [['CODE_AUTO_MODE', null], ['code_auto', 'https://p.example'], ['A/../B', 'https://p.example'], ['CODE_AUTO_MODE', 'javascript:alert(1)'], ['CODE_AUTO_MODE', 'not a url']] as const) {
-    assert.equal(settingsRoute(place, origin, true), null, `${place} ${origin}`);
-  }
+  for (const r of ['tool-left-out', 'claude-plan-off', 'tool-signin', 'auto-off', 'bypass-off', 'models-scope', 'terminal-remote-off', 'remote-preview', 'folder-read-only']) assert.ok(Object.hasOwn(SETUP_LINKS, r), r);
+  // (framed: the reason alone goes to the portal — never a place; a tab of its own: the place's address)
+  assert.deepEqual(settingsRoute('auto-off', 'http://bedrock-now.localhost:80/x?y', true), { post: { type: 'bn-code-setup', reason: 'auto-off' }, to: 'http://bedrock-now.localhost' });
+  assert.deepEqual(settingsRoute('auto-off', 'https://p.example', false), { open: 'https://p.example/#settings/CODE_AUTO_MODE' });
+  assert.deepEqual(settingsRoute('folder-read-only', 'https://p.example', false), { open: 'https://p.example/#settings/+project-folders' });
+  assert.equal(settingsRoute('tool-signin', 'https://p.example', true), null, 'a sign-in: no Settings place');
+  for (const origin of [null, 'javascript:alert(1)', 'not a url']) assert.equal(settingsRoute('auto-off', origin, true), null, String(origin));
 });

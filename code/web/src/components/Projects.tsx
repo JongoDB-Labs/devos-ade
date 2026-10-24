@@ -39,6 +39,7 @@ import {
   type ProjectDialog,
   type Problem,
   harnessName,
+  goSetup,
 } from '../app';
 import * as api from '../api';
 import { GROUP_LABEL, groupOf, type Group } from '../groups';
@@ -211,8 +212,10 @@ function ProjectMenu({ p, onRename }: { p: Project; onRename: () => void }) {
           <MenuItem icon="terminal" onSelect={() => (close(), void openProjectTerminal(p.id))} testid="project-menu-terminal">
             Open a terminal here
           </MenuItem>
-          <MenuItem icon="branch" disabled={p.readOnly} onSelect={() => (close(), void connectGitRepo(p.id))} testid="project-menu-git">
-            {p.readOnly ? 'Connect a git repository (read-only folder)' : 'Connect a git repository'}
+          {/* (a read-only folder: where that is changed — setuplinks.ts) */}
+          <MenuItem icon="branch" setup={p.readOnly ? 'folder-read-only' : undefined} testid="project-menu-git"
+            onSelect={() => (close(), p.readOnly ? goSetup('folder-read-only') : void connectGitRepo(p.id))}>
+            {p.readOnly ? 'Connect a git repository — read-only folder: Settings › Claude Code › Project folders' : 'Connect a git repository'}
           </MenuItem>
           <MenuItem icon="shield" onSelect={() => (close(), openProjectDialog({ kind: 'settings', id: p.id }))} testid="project-menu-settings">
             Claude Code settings…

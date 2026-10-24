@@ -10,7 +10,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { useSel } from '../store';
 import { store, currentProject, navigatePreview, openPreview, reloadPreview, setPreviewViewport, stopServer, loadLaunch, loadPreviewInfo, refreshPorts, requestLaunch,
-  confirmLaunch, setDialog, type PreviewTab } from '../app';
+  confirmLaunch, setDialog, goSetup, type PreviewTab } from '../app';
+import { SETUP_LINKS } from '../setuplinks';
 import { previewTabUrl } from '../api';
 import { VIEWPORTS, cleanPreviewPath, fitScale, loaderWhy } from '../devpreview';
 import type { LaunchEntry, PortInfo } from '../types';
@@ -296,6 +297,12 @@ export function PortsPanel({ onDone }: { onDone?: () => void }) {
         </button>
       </div>
       {info && !info.available && <div class="banner warn small" data-testid="preview-unavailable">{label(info.reason, 300) || 'Previews are off here.'}</div>}
+      {/* (over remote access: where they are turned on — setuplinks.ts) */}
+      {info && !info.available && info.routing === 'cookie' && (
+        <button type="button" class="linkish setup-link" data-setup="remote-preview" data-testid="preview-remote-setup" onClick={() => (onDone?.(), goSetup('remote-preview'))}>
+          {SETUP_LINKS['remote-preview'].says}
+        </button>
+      )}
       {info?.available && info.routing === 'cookie' && (
         <p class="muted small" data-testid="preview-one-port">
           Over remote access a browser previews one port at a time: opening another port's preview switches the one shown.

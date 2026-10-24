@@ -24,7 +24,7 @@ TOOLS_FILE = "ai-tools.tsv"
 # what a greyed item says and where it goes (code/web/src/setuplinks.ts has the same rows: tests compare)
 SETUP_FILE = "setup-links.tsv"
 SETUP_REASON = re.compile(r"[a-z][a-z-]{1,40}")
-SETUP_TARGET = re.compile(r"setting:[A-Z][A-Z0-9_]{1,60}|signin:(?:terminal|chat)")
+SETUP_TARGET = re.compile(r"setting:(?:[A-Z][A-Z0-9_]{1,60}|\+[a-z-]{2,20})|signin:(?:terminal|chat)")
 STATUS_FILE = "subscriptions.json"
 # Chat's sandbox's own sign-ins (./stack subscriptions status --chat): the Chat models', apart from the terminal's
 CHAT_STATUS_FILE = "subscriptions-chat.json"
@@ -106,6 +106,16 @@ def setup_links(catalog_dir: Path) -> dict:
     return out
 
 
+def current_egress(s) -> str:
+    """TERMINAL_EGRESS as .env has it now — ./stack's snapshot of it, which a change from Settings writes at once
+    (the portal is not restarted for one) — else what the portal started with."""
+    from . import settings as st   # (settings imports nothing of this module)
+    k = st.by_key(st.snapshot(s.status_dir)).get("TERMINAL_EGRESS")
+    if k and isinstance(k.get("value"), str):
+        return st.egress_mode(k["value"])
+    return getattr(s, "terminal_egress", "internet")
+
+
 def terminal_reason(s, remote: bool) -> str | None:
     """Why the terminal is not here (setup_links' reason), or None: off, or not shared over remote access."""
     if s.terminal_on(remote):
@@ -176,7 +186,7 @@ def folders(status_dir: Path) -> list[dict]:
     return [{"name": f["name"], "path": f["path"]} for f in st.project_folders(status_dir).get("folders", []) if f.get("ok")]
 
 
-def plan_models(s, remote: bool, rows: list[dict], links: dict | None = None) -> list[dict]:
+def plan_models(s, remote: bool, rows: list[dict], links: dict | None = None, egress: str | None = None) -> list[dict]:
     """Your subscriptions as Chat models (the code container's connection in Open WebUI: plan-<id>): {id, tool, label,
     ok, why, reason, signin} for each tool the catalog offers as one — ok while the Code page runs here, the sandbox has a way
     out (TERMINAL_EGRESS=off: none then; with host Chat's sandbox has a proxy of its own, compose.code-egress.yaml),
@@ -198,7 +208,7 @@ def plan_models(s, remote: bool, rows: list[dict], links: dict | None = None) ->
         reason = None
         if not s.code_on(remote):
             reason = "code-off" if not s.code else "terminal-remote-off"
-        elif getattr(s, "terminal_egress", "internet") == "off":
+        elif (egress or getattr(s, "terminal_egress", "internet")) == "off":
             reason = "chat-egress-off"
         elif t["installed"] is False or c["installed"] is False:
             reason = "tool-left-out"
@@ -216,7 +226,7 @@ def build(s, remote: bool, models: dict | None = None) -> dict:
     """The pickers' JSON for this site (remote: the terminal only where REMOTE_TERMINAL lets it be)."""
     t = tools(s.catalog_dir, s.status_dir)
     links = setup_links(s.catalog_dir)
-    t["plan_models"] = plan_models(s, remote, t["tools"], links)
+    t["plan_models"] = plan_models(s, remote, t["tools"], links, current_egress(s))
     return {"terminal": {"enabled": bool(s.terminal), "here": s.terminal_on(remote), "reason": terminal_reason(s, remote)},
             "basics": list(BASICS), **t, "models": chat_models(models) if models is not None else [],
             "folders": folders(s.status_dir), "openrouter": bool(getattr(s, "openrouter_api_key", "")), "setup": links}

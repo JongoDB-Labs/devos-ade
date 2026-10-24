@@ -133,3 +133,26 @@ test("where a greyed item goes: Settings at its row, Chat's sign-in row for that
   const g = plain(A.terminalOptions({ ...data, terminal: { here: false } })).flatMap((x) => x.items);
   assert.ok(g.every((i) => i.disabled && !i.value.startsWith("setup:")));
 });
+
+test("a menu's change never moves: a greyed item (or a sign-in for Chat) goes only from the button beside the menu", async () => {
+  const { source } = await import("./load.mjs");
+  const js = source("answers.js");
+  const handler = (sel) => js.split(`${sel}.addEventListener("change", () => {`)[1].split("\n  });")[0];
+  for (const sel of ["tSelect", "cSelect"]) {
+    const h = handler(sel);
+    assert.ok(!/goSetup\(|goHash\(|location\.hash|bnSubsChatSignin|launch\(/.test(h.split("goHide();")[0]), `${sel}'s change moves before the button`);
+  }
+  // (the buttons do)
+  assert.match(js.split('tOpen.addEventListener("click", () => {')[1].split("\n  });")[0], /goSetup\(tSelect\.value\)/);
+  assert.match(js.split('cGo.addEventListener("click", () => {')[1].split("\n  });")[0], /goSetup\(v\)[\s\S]*bnSubsChatSignin/);
+});
+
+test("Settings on arrival: a Chat sign-in asked for takes the focus; a row of the page's own never focuses a switch inside it", async () => {
+  const { source } = await import("./load.mjs");
+  const go = source("settings.js").split("function goTo(place) {")[1].split("\n  }\n")[0];
+  assert.match(go, /const signin = key === "\+subscriptions" && chat \?/);
+  assert.match(go, /const sw = !signin && \(inner \|\| !key\.startsWith\("\+"\)\) \?/);
+  assert.match(go, /\(signin \|\| sw \|\| at\)\.focus/);
+  // (the sign-in asked for lasts across the page's redraws, a few seconds: never taken away by a second arrival)
+  assert.match(source("settings.js"), /chatSignin = \{ tool: w, until: Date\.now\(\) \+ 5000 \}/);
+});

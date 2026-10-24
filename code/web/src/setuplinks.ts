@@ -17,6 +17,9 @@ export const SETUP_LINKS = {
   "openrouter-off": { target: "setting:OPENROUTER_API_KEY", says: "OpenRouter's models need your OpenRouter key: Settings › Chat & voice › OpenRouter API key, on the computer running bedrock-now." },
   "voice-off": { target: "setting:STT_PROVIDER", says: "Voice calls need speech-to-text: Settings › Chat & voice › Speech-to-text." },
   "models-scope": { target: "setting:CODE_MODELS", says: "Settings › Claude Code › Models for Claude Code picks the models listed here." },
+  "remote-preview": { target: "setting:REMOTE_PREVIEW", says: "Previews are off over remote access: Settings › Remote access › Previews over remote access turns them on, from the computer running bedrock-now." },
+  "folder-read-only": { target: "setting:+project-folders", says: "Read-only: a folder of this computer added read-only — Settings › Claude Code › Project folders changes that, from the computer running bedrock-now." },
+  "remote-admin-off": { target: "setting:REMOTE_ADMIN_ACTIONS", says: "Off for remote access: Settings › Remote access › Update, settings and diagnostics from your devices turns it on, from the computer running bedrock-now." },
 } as const;
 /** A reason something here is off (a key of SETUP_LINKS: a reason the table does not have does not compile). */
 export type SetupReason = keyof typeof SETUP_LINKS;
@@ -25,12 +28,15 @@ export function setupTarget(r: SetupReason): { setting: string } | { signin: 'te
   const t: string = SETUP_LINKS[r].target;
   return t.startsWith('setting:') ? { setting: t.slice(8) } : { signin: t === 'signin:chat' ? 'chat' : 'terminal' };
 }
-/** How the portal's Settings at PLACE (a key of catalog/settings.tsv) is reached from this page: a message to the
- *  portal that frames it (its code.js takes {type: 'bn-code-setup', place} from that frame only), a tab of its own, or
- *  null — no portal known (or no such place): the item's words say where, then. */
-export function settingsRoute(place: string, portalOrigin: string | null | undefined, framed: boolean):
-  { post: { type: 'bn-code-setup'; place: string }; to: string } | { open: string } | null {
-  if (!/^[A-Z][A-Z0-9_]{1,60}$/.test(place) || !portalOrigin) return null;
+/** How the portal's Settings for REASON (a setting's: setupTarget) is reached from this page: a message to the portal
+ *  that frames it — the reason alone: the portal's code.js looks its place up in a fixed list of its own, from this
+ *  frame only, and takes no place from here —, a tab of its own at that place, or null — no portal known (or no such
+ *  place): the item's words say where, then. */
+export function settingsRoute(reason: SetupReason, portalOrigin: string | null | undefined, framed: boolean):
+  { post: { type: 'bn-code-setup'; reason: SetupReason }; to: string } | { open: string } | null {
+  const t = setupTarget(reason);
+  const place = 'setting' in t ? t.setting : '';
+  if (!/^([A-Z][A-Z0-9_]{1,60}|\+[a-z-]{2,20})$/.test(place) || !portalOrigin) return null;
   let portal: string;
   try {
     const u = new URL(portalOrigin);
@@ -39,5 +45,5 @@ export function settingsRoute(place: string, portalOrigin: string | null | undef
   } catch {
     return null;
   }
-  return framed ? { post: { type: 'bn-code-setup', place }, to: portal } : { open: `${portal}/#settings/${place}` };
+  return framed ? { post: { type: 'bn-code-setup', reason }, to: portal } : { open: `${portal}/#settings/${place}` };
 }

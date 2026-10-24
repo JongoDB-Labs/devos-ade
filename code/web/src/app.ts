@@ -2183,26 +2183,25 @@ export async function continueHere(id: string, pid: string): Promise<void> {
  *  tool itself in the terminal panel (its own sign-in starts there). */
 export function goSetup(reason: SetupReason, tool = ''): void {
   const t = setupTarget(reason);
-  if ('setting' in t) openPortalSettings(t.setting, SETUP_LINKS[reason].says);
+  if ('setting' in t) openPortalSettings(reason);
   else if (t.signin === 'terminal') void openToolInTerminal(tool);
 }
 
-/** The portal's Settings at PLACE (a key of catalog/settings.tsv): through the portal that frames this page (its
- *  code.js takes {type: 'bn-code-setup', place} from this frame only), else in a tab of its own; with no portal known,
- *  what it says. */
-export function openPortalSettings(place: string, says: string, win: Window = window): void {
+/** The portal's Settings where REASON is turned on: through the portal that frames this page (the reason alone: its
+ *  code.js looks the place up, from this frame only), else in a tab of its own; with no portal known, what it says. */
+export function openPortalSettings(reason: SetupReason, win: Window = window): void {
   const framed = win.parent !== win;
-  let r = settingsRoute(place, get().server?.portalOrigin, framed);
+  let r = settingsRoute(reason, get().server?.portalOrigin, framed);
   if (r && 'post' in r) {
     try {
       win.parent.postMessage(r.post, r.to);
       return;
     } catch {
-      r = settingsRoute(place, get().server?.portalOrigin, false);   // (not the portal's frame after all: a tab of its own)
+      r = settingsRoute(reason, get().server?.portalOrigin, false);   // (not the portal's frame after all: a tab of its own)
     }
   }
   if (r && 'open' in r) win.open(r.open, '_blank', 'noopener');
-  else toast(says, 'info');
+  else toast(SETUP_LINKS[reason].says, 'info');
 }
 
 /** One of your subscriptions' tools in the terminal panel, in the project's folder (a launch token this page asks the
@@ -2224,6 +2223,11 @@ export async function openToolInTerminal(tool: string): Promise<void> {
   }
   set((s) => ({ ...s, terminalLink: { src: `${url}&t=${Date.now()}`, at: Date.now() } }));
   setLayout({ terminal: true });
+}
+
+/** The terminal panel took what it was to load (openToolInTerminal): gone, so a panel drawn again never loads it again. */
+export function takeTerminalLink(): void {
+  if (get().terminalLink) set((s) => ({ ...s, terminalLink: null }));
 }
 
 /** A terminal in the project's folder: a new window of the terminal panel (a new tab on a phone). */
