@@ -78,7 +78,7 @@ All notable changes to bedrock-now are documented here. The format follows
   Claude Code on Bedrock and on your plan while its Claude Code settings are as they were and read whole today
   (without plugins turned on): until it is first looked at — its settings dialog, or a session started there — the
   project list still marks it (the shield: *look at them again*); that first look carries the trust over without
-  asking and the mark goes. Otherwise it is asked about again. The other tools' settings are asked about the first
+  asking and the mark goes (never over a Stop trusting or a Trust given meanwhile). Otherwise it is asked about again. The other tools' settings are asked about the first
   time an agent starts there. A project's Claude Code settings that add a plugin marketplace (`extraKnownMarketplaces`), or bring plugins by
   another of Claude Code's keys, cannot be trusted; each plugin its `enabledPlugins` turns on is listed in the dialog
   when it is installed in the sandbox already (its version is part of what you trust), and one that is not installed

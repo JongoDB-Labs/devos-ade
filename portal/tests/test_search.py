@@ -275,10 +275,12 @@ def test_the_search_page_builds_text_only_and_talks_to_the_code_frame_on_its_ori
 
 
 def test_an_image_without_the_docs_index_says_where_the_docs_are():
-    # Docker Compose older than 2.17 builds the portal without compose.portal-docs.yaml: an empty index, said so
+    # a portal built without compose.portal-docs.yaml (an earlier release with a Compose older than 2.17, a plain docker
+    # build): an empty index, said so — and how to get it (this version needs Compose 2.24.4, which builds it)
     js = (STATIC / "search.js").read_text(encoding="utf-8")
     assert "if (index && !((index.docs && index.docs.pages) || []).length) out.push(\"Docs: this portal's image has no index" in js
-    assert "Docker Compose older than 2.17" in js
+    assert "./stack setup builds it with one" in js
+    assert "2.17" not in js.split("out.push(\"Docs: this portal's image has no index", 1)[1].split("\n", 1)[0]
 
 
 def test_ctrl_k_never_opens_over_the_password_dialogs():

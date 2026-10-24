@@ -252,8 +252,9 @@
     const out = [];
     if (indexErr) out.push(indexErr);
     if (q.length < MIN_ASYNC) return out;
-    // an image built without the docs (Docker Compose older than 2.17, or a plain docker build): say where they are
-    if (index && !((index.docs && index.docs.pages) || []).length) out.push("Docs: this portal's image has no index of them (Docker Compose older than 2.17 builds it without): README and docs/ are on GitHub.");
+    // an image built without the docs (by an earlier release with Docker Compose older than 2.17, or a plain docker
+    // build): say where they are
+    if (index && !((index.docs && index.docs.pages) || []).length) out.push("Docs: this portal's image has no index of them (./stack setup builds it with one): README and docs/ are on GitHub.");
     if (PHONE.matches) out.push("Workspace files: search them in the Code page itself (More → Code).");
     else if (!APP_URLS.code) { /* the Code page is off here: nothing to say */ }
     else if (!codeReady()) out.push("Workspace files and every Code session: open the Code tab once (unlocked), and it answers here too.");

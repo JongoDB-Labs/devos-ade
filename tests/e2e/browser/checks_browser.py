@@ -1176,8 +1176,9 @@ def chat_own_page(ctx):
     """Open WebUI's own page under Chat's policy (caddy/Caddyfile chat_csp: scripts, styles, workers and WebAssembly
     from itself only): an answer with a highlighted code block, a Mermaid diagram and an html block opened in the
     Artifacts panel by its Preview button (detectArtifacts is off) — each works, with no CSP error of Open WebUI's own;
-    and a sandboxed frame made as Open WebUI's Python runner makes its own loads Open WebUI's pyodide.js with no
-    violation (the policy allows it). The Python runner itself does not work in this stack yet — a known issue that
+    and a sandboxed frame made as Open WebUI's Python runner makes its own requests Open WebUI's pyodide.js with no CSP
+    violation (the request goes out: the policy allows it — its answer is the portal's 401, so the script never runs).
+    The Python runner itself does not work in this stack yet — a known issue that
     predates this release, to be fixed in v0.24.1: browser/chat-python-runner. No model call: the conversation is made
     through Open WebUI's own API."""
     import secrets
@@ -1209,9 +1210,10 @@ def chat_own_page(ctx):
         step("the Mermaid diagram", lambda: f.wait_for_function(
             "() => [...document.querySelectorAll('svg')].some((s) => s.textContent.includes('bnstart') && s.textContent.includes('bnend'))", timeout=45000))
         done.append("Mermaid diagram")
-        # the Python runner's way of loading Pyodide (a sandboxed frame of its own, an opaque origin, loading
-        # Open WebUI's pyodide.js): the policy lets it — a frame made the same way loads the script with no violation
-        # (its answer is the portal's 401: such a frame carries no session cookie — chat-python-runner, a known issue)
+        # the Python runner's way of loading Pyodide (a sandboxed frame of its own, an opaque origin, asking for Open
+        # WebUI's pyodide.js): the policy lets the request go — a frame made the same way requests the script with no
+        # CSP violation. That is all this shows: the answer is the portal's 401 (such a frame carries no session
+        # cookie — chat-python-runner, a known issue), so the script never runs
         v = f.evaluate("""() => new Promise((r) => {
             const x = document.createElement('iframe'); x.setAttribute('sandbox', 'allow-scripts'); x.style.display = 'none';
             const on = (e) => { if (e.source === x.contentWindow) { window.removeEventListener('message', on); x.remove(); r(e.data); } };
@@ -1255,9 +1257,9 @@ def chat_python_runner(ctx):
     """Open WebUI's Python runner: a Python block's Run prints 42. A KNOWN ISSUE (tests/e2e/known-issues.tsv: reported
     as XFAIL): the runner does not work in this stack yet. Open WebUI runs Pyodide in a sandboxed frame of its own (an
     opaque origin), whose request for pyodide.js carries no session cookie, so the portal's sign-in refuses it (401)
-    and the block shows "loadPyodide is not defined". This predates this release (Chat's policy is not the cause:
-    chat-own-page-under-policy loads the script in a frame made the same way with no violation) and is to be fixed in
-    v0.24.1. Fails while it does not print 42 — saying whether it failed that way or otherwise — so it never reads as
+    and the block shows "loadPyodide is not defined". This predates this release (Chat's policy is not what refuses
+    it: in chat-own-page-under-policy a frame made the same way requests the script with no CSP violation, and gets the
+    same 401) and is to be fixed in v0.24.1. Fails while it does not print 42 — saying whether it failed that way or otherwise — so it never reads as
     working; skips when the admin turned code execution off (no Run button). No model call."""
     import secrets
     need("open-webui")

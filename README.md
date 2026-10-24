@@ -23,7 +23,7 @@ disable` the Code page alone; either stays off across updates).
 | [**`claude-bedrock`**](#claude-code-claude-bedrock) | Claude Code in your own terminal, billed to Bedrock (or to OpenRouter for its models), with a lean config folder and each session's cost; any chat model of the catalog (`--models` lists them and how each works, `--model` picks one) | on (needs `claude`) | setup offers to put it on your `PATH` |
 | [**Home, Admin, Files**](#the-portal-one-login-for-everything) | health, spend and budgets; LiteLLM's UI; the shared file store (also an MCP server for Claude Code) | on | — |
 | [**The API for your tools**](#the-models-from-your-own-code) | the same models for your own scripts and apps: OpenAI- and Anthropic-compatible, on `127.0.0.1`, a key and budget per tool (Admin › Virtual Keys) | on | — |
-| [**Activity & search**](#activity-and-search) | a bell for budget alerts, updates, Code sessions that need you and jobs; **Ctrl/⌘+K** finds pages, settings, Code sessions and workspace files, Chat conversations, the walkthrough and these docs | on (the docs part with Docker Compose 2.17+) | — |
+| [**Activity & search**](#activity-and-search) | a bell for budget alerts, updates, Code sessions that need you and jobs; **Ctrl/⌘+K** finds pages, settings, Code sessions and workspace files, Chat conversations, the walkthrough and these docs | on | — |
 | [**Settings**](#settings) | every setting of `.env`, shown in the portal | on (read-only until the update helper is installed) | `./stack helper install` makes it editable |
 | [**Terminal**](#claude-code-in-the-browser) | Claude Code in the browser, in a sandbox that sees one folder of yours (`~/bedrock-now-workspace`) and reaches public internet addresses through an egress proxy of its own — not this computer's services or your network | on, as the Code page's sandbox (internet: public addresses only) | `./stack terminal disable` / `enable` (disable turns the Code page off too); its internet: Settings › Claude Code › Sandbox internet access |
 | [**Code page**](#the-code-page) | Claude Code as an IDE-like page: chat with any chat model of the catalog, @-mentions of the terminal, the changes, failed runs and file lines, permission modes, comments on a plan's lines, editor, file and dev-server previews, review changes, Git with remotes (Git hosts: clone, fetch, pull, push), Run & test | on (Bypass, Auto and remote access to it: off) | `./stack code disable` / `enable`, or Settings › Claude Code; the Code tab stays and says how while it is off |
@@ -636,9 +636,11 @@ plan in the Code page and Chat** (off by default; turning it on works from the c
   history in the session list (a badge: *Codex*, *Plan* …), taken up again later with the tool's own session. Modes:
   Read only and Plan refuse its changes without asking, Accept edits allows its edits to plain files of the folder
   only where the repository's git config is plainly harmless — written plainly, every key one that never names a
-  program or a path git or git-lfs loads (by its exact name: an include, an fsmonitor, a filter, a hook command … is
-  not); otherwise every edit asks, and the session says why, quoting the key — and never in the Workspace itself or
-  in a folder of your computer with no repository visible. Where it does allow them, an edit to `.git/`, `.github/`,
+  program or a path git or git-lfs loads, by its exact name (an include, an fsmonitor, a filter, a hook command … is
+  not; the git-lfs filter exactly as `git lfs install` writes it, and `core.hooksPath` as a relative folder of the
+  repository, which is then asked about like `.git/`, are); otherwise every edit asks, and the session says why,
+  quoting the key. A project of the workspace with no repository at all is approved too (git runs nothing there);
+  never the Workspace itself, nor a folder of your computer with no repository visible (one around it could be). Where it does allow them, an edit to `.git/`, `.github/`,
   `.vscode/`, `.idea/`, `.zed/`, `.claude/`, `.mcp.json`, git's hooks or a commit hook's file, a tool's own settings,
   another repository inside the folder, through a link, or outside it is still asked. Manual asks — a tool's own
   "approve everything" mode is never used. The meter says *on your ChatGPT plan · tokens in / out* and the plan's own

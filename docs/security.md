@@ -458,8 +458,8 @@ portal's check and before the app:
   requests are same-origin. The e2e suite runs every app's flows with the guard on (here the stack's hosts are
   same-site with each other), and `browser/same-site-guard` sends fetches, a no-cors `POST` and a form post from a page
   of another host of the site with no policy of its own (Caddy's "unknown host" page) to the other hosts — each with
-  the session cookie, each refused; from the Chat page, Chat's own policy stops them before they are sent, and a style
-  sheet from the portal passes.
+  the session cookie, each refused; from the Chat page, Chat's own policy stops them — and a style sheet from the portal
+  — before they are sent, while an image of Open WebUI's own loads.
 - [x] **A refusal says so**: `403` with a body naming the guard and `X-Bn-Refused` (shown in the browser's developer
   tools). Requests without `Sec-Fetch-Site` (curl, `./stack`, old browsers) and requests from other sites are left to
   what handled them before — the cookies' `SameSite`, the portal's own `Origin` checks, the apps' own.
@@ -3279,8 +3279,9 @@ never reads, copies, keeps, passes on or relays a login.**
   own (`browser/chat-own-page-under-policy`). **Open WebUI's Python runner does not work in this stack yet:** it runs
   Pyodide in a sandboxed frame of its own, whose request for `pyodide.js` carries no session cookie, so the portal's
   sign-in refuses it (401) and a Python block's *Run* fails. That predates this release — Chat's policy is not the
-  cause (it lets a frame made the same way load the script) — and is to be fixed in v0.24.1; the e2e reports it as a
-  known issue (`browser/chat-python-runner`, XFAIL), never as working.
+  cause (a frame made the same way requests the script with no CSP violation, and gets the same 401) — and is to be
+  fixed in v0.24.1; the e2e reports that 401 as a known issue (`browser/chat-python-runner`, XFAIL), never as
+  working, and any other failure there as a failure.
 - [ ] **What Chat's page and an artifact can still do.** A name the browser looks up on its own for a host a document
   names — DNS prefetching, a `<link rel=preconnect>` — and a WebRTC peer connection's STUN request to a server the
   document names are governed by no directive of Chat's policy: the host name, or the request, can carry a little out.
@@ -3377,7 +3378,9 @@ never reads, copies, keeps, passes on or relays a login.**
   entries it has and whatever their names, changes nothing for them; an agent session starts in a project's folder only while both apply (trusted, or nothing there) — checked when
   it starts, again once it has opened (what it read while starting), and before every turn, so a running agent ends
   when they change under it; not trusted, changed, unverifiable or trusted before v0.24.0 (the listing grew: look
-  again — a v0.23.0 trust carried over for Claude Code covers Claude Code's part alone): refused with why. When the other tools' part cannot all be shown (a file over 16,000 characters, one that
+  again — a v0.23.0 trust carried over for Claude Code covers Claude Code's part alone, and is written only while the
+  stored trust is still the one read, compared and written in one step, so a Stop trusting or a new Trust given
+  meanwhile stands): refused with why. When the other tools' part cannot all be shown (a file over 16,000 characters, one that
   cannot be read the way its tool reads it), *Trust* covers Claude Code's part alone, and the dialog says agents do not
   start there.
   Of `.github/`, what the pinned Copilot CLI reads (audited for 1.0.103: `agents/`, `copilot/`, `extensions/`,

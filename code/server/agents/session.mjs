@@ -26,7 +26,7 @@ const START_MS = 120000;
 // Accept edits: why bn-coded's paths.plain found nothing (or a path) plain, as its code (PLAIN_WHY) — in our words alone;
 // what the repository named comes apart, as the sandbox's
 export const PLAIN_SAID = Object.freeze({
-  'git-config-key': 'Accept edits asks for every edit here: this repository\'s git settings include one that can run a program on your computer.',
+  'git-config-key': 'Accept edits asks for every edit here: this repository\'s git settings include one this check does not know, or one that can run a program on your computer.',
   'git-config-syntax': 'Accept edits asks for every edit here: this repository\'s git settings are written in a way the page does not read plainly.',
   'git-unreadable': 'Accept edits asks for every edit here: a part of this repository\'s git folder could not be read whole.',
   'gitdir-outside': 'Accept edits asks for every edit here: this repository\'s git folder is outside the workspace, or reached through a link.',
