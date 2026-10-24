@@ -123,10 +123,15 @@ everyday browser, but has no Dock icon of its own and cannot be installed.
 throwaway container (Debian's Chromium on a virtual display; it prints the version): installable, the Install
 button, a real install, and `./stack open` opening the app.
 
-The app icons are drawn by `portal/portal/appicons.py` (`python -m portal.appicons` writes the SVGs) and
-rendered by `portal/render-icons.sh` (rsvg-convert and optipng in a digest-pinned Alpine container). It records
-the tool versions and the sha256 of every SVG and PNG in `static/icons/SOURCES`; the portal tests fail if a
-PNG no longer matches. Caddy makes exactly those PNGs public, by name.
+The app icons are the DevOS torus with its ribbon in teal on a black tile. Their source is
+`portal/brand/AppIcon.icon` (an Icon Composer bundle: `icon.json` and `Assets/torus-teal.png`, the same as the DevOS
+apps' with the teal ribbon — for a macOS app); `portal/render-icons.sh` (`python -m portal.appicons`, with Pillow)
+composes every size from it: the PWA's 192, 512 and 1024 px icons on macOS's 824 px tile, the maskable ones (the
+torus inside the safe circle), the monochrome one, the 180 px Apple touch icon, the 16-48 px favicons, and the
+sidebar's logo and `/favicon.svg` (the small icon as an SVG around a PNG). Chrome and Edge make the Dock, Start-menu
+and Linux desktop icons from the manifest's. It records the Pillow version and the sha256 of the source and of every
+file in `static/icons/SOURCES`; the portal tests fail if one no longer matches. Caddy makes exactly those PNGs public,
+by name.
 
 ## Verbose output
 

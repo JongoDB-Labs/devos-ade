@@ -82,7 +82,7 @@ def test_manifest_is_public_installable_and_hardened(client):
     assert r.headers["content-type"].startswith("application/manifest+json")
     assert r.headers["x-content-type-options"] == "nosniff" and "frame-ancestors 'none'" in r.headers["content-security-policy"]
     m = json.loads(r.text)
-    assert m["name"] == "bedrock-now" and m["short_name"] == "bedrock-now"
+    assert m["name"] == "DevOS ADE" and m["short_name"] == "DevOS ADE"
     assert m["id"] == "/" and m["start_url"] == "/" and m["scope"] == "/"
     assert m["display"] == "standalone"
     assert m["launch_handler"] == {"client_mode": "focus-existing"}
@@ -104,11 +104,11 @@ def test_manifest_is_public_installable_and_hardened(client):
 
 
 @pytest.mark.parametrize("host,port,name", [
-    ("bedrock-now.localhost", 80, "bedrock-now"),
-    ("bn-dev.localhost", 80, "bedrock-now (bn-dev)"),
-    ("bn-dev.localhost", 8800, "bedrock-now (bn-dev, port 8800)"),
-    ("bedrock-now.localhost", 8800, "bedrock-now (port 8800)"),
-    ("ai.example.com", 80, "bedrock-now (ai.example.com)"),
+    ("bedrock-now.localhost", 80, "DevOS ADE"),
+    ("bn-dev.localhost", 80, "DevOS ADE (bn-dev)"),
+    ("bn-dev.localhost", 8800, "DevOS ADE (bn-dev, port 8800)"),
+    ("bedrock-now.localhost", 8800, "DevOS ADE (port 8800)"),
+    ("ai.example.com", 80, "DevOS ADE (ai.example.com)"),
 ])
 def test_app_name_tells_copies_apart(host, port, name):
     # Same table as tests/test_open.sh: ./stack open looks for the installed app by this name.
@@ -121,7 +121,7 @@ def test_manifest_name_follows_the_portal_address(settings):
         m = c.get("/manifest.webmanifest").json()
         c.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://bn-dev.localhost:8800"})
         page = c.get("/").text
-    assert m["name"] == "bedrock-now (bn-dev, port 8800)" and m["short_name"] == "bn-dev, port 8800"
+    assert m["name"] == "DevOS ADE (bn-dev, port 8800)" and m["short_name"] == "bn-dev, port 8800"
     # The app id Chrome computes ("id": "/" on this origin) and this site's manifest URL: what getInstalledRelatedApps
     # matches (desktop: id, Android: url).
     assert m["related_applications"] == [{"platform": "webapp", "url": "http://bn-dev.localhost:8800/manifest.webmanifest",
@@ -150,24 +150,27 @@ def test_each_copy_has_a_link_scheme_of_its_own(settings):
 # --- the icons -------------------------------------------------------------------------------------------------------
 
 def test_app_icons_are_public_hardened_and_shaped_right(client):
-    for name, (size, src) in appicons.FILES.items():
+    for name, (size, kind) in appicons.FILES.items():
         r = client.get(f"/icons/{name}")
         assert r.status_code == 200, name
         assert r.headers["x-content-type-options"] == "nosniff"
         w, h, rows = png_rgba(r.content)
         assert (w, h) == (size, size)
         corner_alpha = rows[0][3]
-        kind = appicons.SOURCES[STATIC / src]
         # maskable and apple are full-bleed (opaque to the edge, the platform cuts the shape); the rest keep their
         # own rounded tile (or the bare silhouette) with transparent corners.
         assert corner_alpha == (255 if kind in appicons.FULL_BLEED else 0), name
-        assert rows[size // 2][4 * (size // 2) + 3] == 255, name  # the mark (or tile) covers the centre
+        if kind == "mono":   # the torus's ring: opaque where it is, its hole (the centre) transparent
+            assert rows[size // 2][4 * (size // 2) + 3] == 0 and max(rows[size // 2][4 * x + 3] for x in range(size // 4)) == 255, name
+        else:                # the tile covers the centre: black, in the torus's hole
+            assert rows[size // 2][4 * (size // 2):4 * (size // 2) + 4] == bytearray((0, 0, 0, 255)), name
 
 
 def test_icon_set_has_every_size_the_platforms_ask_for():
     sizes = {s for s, _ in appicons.FILES.values()}
     assert {16, 32, 48, 180, 192, 512, 1024} <= sizes
     assert {"app-maskable-192.png", "app-maskable-512.png", "app-monochrome-512.png", "app-touch-180.png"} <= set(appicons.FILES)
+    assert set(k for _, k in appicons.FILES.values()) == set(appicons.PLACE)
 
 
 def test_master_icon_keeps_the_macos_safe_area():
@@ -177,13 +180,40 @@ def test_master_icon_keeps_the_macos_safe_area():
     assert alpha_row[90] == 0 and alpha_row[110] == 255 and alpha_row[1024 - 91] == 0 and alpha_row[1024 - 111] == 255
 
 
-def test_committed_svgs_match_the_generator():
-    for path, kind in appicons.SOURCES.items():
-        assert path.read_text() == appicons.svg(kind) + "\n", f"{path.name} is stale: run python -m portal.appicons"
+def test_the_teal_ribbon_is_there_at_every_size():
+    # The DevOS torus with its ribbon in teal (the DevOS apps' lavender one hue-shifted): teal pixels, no lavender ones,
+    # down to the 16 px favicon
+    for name, (size, kind) in appicons.FILES.items():
+        if kind == "mono":
+            continue
+        _, _, rows = png_rgba((STATIC / "icons" / name).read_bytes())
+        teal = lavender = 0
+        for row in rows:
+            for x in range(size):
+                r, g, b, a = row[4 * x:4 * x + 4]
+                if a < 200 or max(r, g, b) < 60:
+                    continue
+                if g > r + 15 and abs(g - b) < 40:
+                    teal += 1
+                if b > g + 20 and r > g + 10:
+                    lavender += 1
+        assert teal >= max(3, size * size // 400), (name, teal)
+        assert lavender <= teal // 20, (name, lavender, teal)
 
 
-def test_committed_pngs_are_the_ones_rendered_from_the_current_svgs():
-    # render-icons.sh records the renderer, each SVG it read and each PNG it wrote.
+def test_maskable_icons_keep_the_torus_in_the_safe_circle():
+    # every mask keeps the central circle of radius 40 %: nothing of the torus (lighter than the black tile) outside it
+    for name in ("app-maskable-192.png", "app-maskable-512.png"):
+        w, _, rows = png_rgba((STATIC / "icons" / name).read_bytes())
+        c, r = (w - 1) / 2, 0.40 * w
+        for y, row in enumerate(rows):
+            for x in range(w):
+                if (x - c) ** 2 + (y - c) ** 2 > r * r:
+                    assert max(row[4 * x:4 * x + 3]) < 24, (name, x, y)
+
+
+def test_committed_icons_are_the_ones_rendered_from_the_source():
+    # render-icons.sh (python -m portal.appicons) records Pillow's version, the source's sha256 and each file it wrote
     recorded, renderer = {}, ""
     for line in (STATIC / "icons" / "SOURCES").read_text().splitlines():
         if line.startswith("# "):
@@ -191,12 +221,24 @@ def test_committed_pngs_are_the_ones_rendered_from_the_current_svgs():
             continue
         digest, name = line.split()
         recorded[name] = digest
-    assert "rsvg-convert version" in renderer and "optipng" in renderer.lower()
+    assert "Pillow" in renderer
     sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()  # noqa: E731
-    for name, (_, src) in appicons.FILES.items():
-        assert recorded.get(src) == sha(STATIC / src), f"PNGs from {src} are stale: run portal/render-icons.sh"
+    if appicons.SOURCE.exists():   # (the repository's portal/brand/: not in the image's test stage)
+        assert recorded.get("brand/AppIcon.icon/Assets/torus-teal.png") == sha(appicons.SOURCE), "the icons are stale: run portal/render-icons.sh"
+        assert json.loads((appicons.SOURCE.parent.parent / "icon.json").read_text())["groups"][0]["layers"][0]["image-name"] == appicons.SOURCE.name
+    for name in appicons.FILES:
         assert recorded.get(f"icons/{name}") == sha(STATIC / "icons" / name), f"{name} was changed after rendering"
-    assert set(recorded) == {f"icons/{n}" for n in appicons.FILES} | {src for _, src in appicons.FILES.values()}
+    assert recorded.get("brand/glyph.svg") == sha(STATIC / "brand" / "glyph.svg"), "glyph.svg was changed after rendering"
+    assert set(recorded) == {f"icons/{n}" for n in appicons.FILES} | {"brand/glyph.svg", "brand/AppIcon.icon/Assets/torus-teal.png"}
+
+
+def test_the_logo_is_the_small_icon_in_an_svg():
+    svg = (STATIC / "brand" / "glyph.svg").read_text()
+    m = re.fullmatch(r'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 (\d+) \1"><image width="\1" height="\1" '
+                     r'href="data:image/png;base64,([A-Za-z0-9+/=]+)"/></svg>\n', svg)
+    assert m, "glyph.svg: an SVG around one PNG, nothing else"
+    w, h, _ = png_rgba(__import__("base64").b64decode(m.group(2)))
+    assert (w, h) == (appicons.GLYPH_SVG_PX,) * 2
 
 
 def test_manifest_icon_urls_carry_the_file_version(client):
