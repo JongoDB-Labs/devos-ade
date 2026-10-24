@@ -83,8 +83,11 @@ KEEP_RE = re.compile(r"(main|(subagents|tool-results)/[A-Za-z0-9][A-Za-z0-9._-]{
 SESSIONS = "sessions.json"                     # what bedrock-now may read of your sessions here (lib/sessions.sh)
 SESSIONS_TOOLS = ("claude", "claude-bedrock")
 # Your AI subscriptions (lib/subscriptions.sh): ask the sandbox again, or a tool's own sign-out — by its id, never more
-SUBS_ACTIONS = ("subscriptions-check", "subscriptions-signout")
+# (…-chat: the same for Chat's sandbox, its own sign-ins: --chat — of the Chat models with a sign-out command)
+SUBS_ACTIONS = ("subscriptions-check", "subscriptions-signout", "subscriptions-check-chat", "subscriptions-signout-chat")
 SUBS_SIGNOUT_TOOLS = ("claude", "codex", "cursor", "grok")   # (Gemini CLI and Copilot sign out inside them)
+SUBS_SIGNOUT_CHAT_TOOLS = ("claude", "codex", "grok")
+SUBS_SIGNOUT = {"subscriptions-signout": SUBS_SIGNOUT_TOOLS, "subscriptions-signout-chat": SUBS_SIGNOUT_CHAT_TOOLS}
 MAX_PROJECTS_FILE = 64 * 1024
 PROJECT_ID = re.compile(r"p_[0-9a-f]{8}")
 PROJECT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
@@ -714,9 +717,10 @@ def write_sessions_action(request_dir: Path, password: str, project: str, tool: 
 
 def write_subs_action(request_dir: Path, password: str, action: str, tool: str | None = None, now: float | None = None) -> str:
     """REQUEST_DIR/act-<nonce>.json: your AI subscriptions — ask the sandbox again (subscriptions-check), or one tool's
-    own sign-out (subscriptions-signout, by its id). Never a path, never more than these words. -> nonce"""
-    if action not in SUBS_ACTIONS or (action == "subscriptions-signout") != (tool is not None) \
-            or (tool is not None and tool not in SUBS_SIGNOUT_TOOLS):
+    own sign-out (subscriptions-signout, by its id); -chat: the same for Chat's sandbox. Never a path, never more than
+    these words. -> nonce"""
+    if action not in SUBS_ACTIONS or (action in SUBS_SIGNOUT) != (tool is not None) \
+            or (tool is not None and tool not in SUBS_SIGNOUT[action]):
         raise ValueError("bad request")
     if len(password.encode("utf-8", "surrogatepass")) > MAX_AUTH:
         raise ValueError("password too long")

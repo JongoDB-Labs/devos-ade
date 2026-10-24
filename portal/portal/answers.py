@@ -20,6 +20,8 @@ from . import hostfiles
 
 TOOLS_FILE = "ai-tools.tsv"
 STATUS_FILE = "subscriptions.json"
+# Chat's sandbox's own sign-ins (./stack subscriptions status --chat): the Chat models', apart from the terminal's
+CHAT_STATUS_FILE = "subscriptions-chat.json"
 TOOL_IDS = ("claude", "codex", "gemini", "copilot", "cursor", "grok")
 COLUMNS = ("id", "name", "provider", "plan", "command", "signout", "chat_model", "chat_why", "terms")
 KINDS = {"claude-pro": "Claude Pro", "claude-max": "Claude Max", "claude-team": "Claude Team",
@@ -76,9 +78,10 @@ def read_tools(catalog_dir: Path) -> list[dict]:
     return out
 
 
-def read_status(status_dir: Path) -> dict:
-    """STATUS_DIR/subscriptions.json, every field checked: {"written_at", "sandbox", "tools": {id: {...}}}."""
-    d = hostfiles.read_json(status_dir / STATUS_FILE, MAX_STATUS)
+def read_status(status_dir: Path, name: str = STATUS_FILE) -> dict:
+    """STATUS_DIR/subscriptions.json (or Chat's: CHAT_STATUS_FILE), every field checked: {"written_at", "sandbox",
+    "tools": {id: {...}}}."""
+    d = hostfiles.read_json(status_dir / name, MAX_STATUS)
     at = d.get("written_at") if isinstance(d.get("written_at"), int) and d.get("written_at") > 0 else None
     tools = {}
     for t in d.get("tools") or []:
@@ -99,13 +102,21 @@ def read_status(status_dir: Path) -> dict:
 def tools(catalog_dir: Path, status_dir: Path) -> dict:
     """The catalog's tools, each with what the last check said (installed: None = not checked yet)."""
     st = read_status(status_dir)
+    ch = read_status(status_dir, CHAT_STATUS_FILE)
     rows = []
     for t in read_tools(catalog_dir):
         s = st["tools"].get(t["id"])
-        rows.append({**t, "installed": s["installed"] if s else None, "version": s["version"] if s else "",
-                     "signed_in": s["signed_in"] if s else "unknown", "kind": s["kind"] if s else "",
-                     "kind_words": KINDS.get(s["kind"], "") if s else "", "how": s["how"] if s else "none"})
-    return {"checked_at": st["written_at"], "sandbox": st["sandbox"], "tools": rows}
+        row = {**t, "installed": s["installed"] if s else None, "version": s["version"] if s else "",
+               "signed_in": s["signed_in"] if s else "unknown", "kind": s["kind"] if s else "",
+               "kind_words": KINDS.get(s["kind"], "") if s else "", "how": s["how"] if s else "none"}
+        # (a Chat model: its own sign-in in Chat's sandbox — never the terminal's — as Chat's last check said)
+        if t["chat_model"] == "yes":
+            c = ch["tools"].get(t["id"])
+            row["chat"] = {"installed": c["installed"] if c else None, "signed_in": c["signed_in"] if c else "unknown",
+                           "kind_words": KINDS.get(c["kind"], "") if c else "", "how": c["how"] if c else "none"}
+        rows.append(row)
+    return {"checked_at": st["written_at"], "sandbox": st["sandbox"], "chat_checked_at": ch["written_at"],
+            "chat_sandbox": ch["sandbox"], "tools": rows}
 
 
 def chat_models(models: dict) -> list[dict]:
@@ -132,22 +143,29 @@ def folders(status_dir: Path) -> list[dict]:
 
 def plan_models(s, remote: bool, rows: list[dict]) -> list[dict]:
     """Your subscriptions as Chat models (the code container's connection in Open WebUI: plan-<id>): {id, tool, label,
-    ok, why} for each tool the catalog offers as one — ok while the Code page runs here, the tool is in the sandbox and
-    does not say it is signed out (Claude: also Settings' switch, and signed in)."""
+    ok, why, signin} for each tool the catalog offers as one — ok while the Code page runs here, the sandbox's way out
+    is not the direct one (TERMINAL_EGRESS=host: none then), the tool is in Chat's sandbox and does not say it is
+    signed out there — Chat's own sign-in, never the terminal's (Claude: also Settings' switch, and signed in).
+    signin: what is missing is that sign-in (the picker's "Sign in for Chat…" goes to Settings' row for it)."""
     out = []
     for t in rows:
         if t.get("chat_model") != "yes":
             continue
-        why = ""
+        c = t.get("chat") or {"installed": None, "signed_in": "unknown"}
+        why, signin = "", False
         if not s.code_on(remote):
             why = "needs the Code page (it runs your subscriptions' agents)"
-        elif t["installed"] is False:
+        elif getattr(s, "terminal_egress", "internet") == "host":
+            why = ("off while the sandbox reaches the internet directly (Settings › Claude Code › Sandbox internet access): "
+                   "Chat's own sandbox would sit beside the terminal with no proxy between")
+        elif t["installed"] is False or c["installed"] is False:
             why = "not in the sandbox"
         elif t["id"] == "claude" and not getattr(s, "claude_plan", False):
             why = "off: Settings › Claude Code › Your AI subscriptions › Use my Claude plan in the Code page and Chat"
-        elif t["signed_in"] == "no" or (t["id"] == "claude" and t["signed_in"] != "yes"):
-            why = f"sign in first: the Terminal tab's Open › {t['name']}"
-        out.append({"id": f"plan-{t['id']}", "tool": t["id"], "label": f"{t['name']} · {t['plan']}", "ok": not why, "why": why})
+        elif c["signed_in"] == "no" or (t["id"] == "claude" and c["signed_in"] != "yes"):
+            why, signin = "Sign in for Chat… (a sign-in of its own, apart from the terminal's)", True
+        out.append({"id": f"plan-{t['id']}", "tool": t["id"], "label": f"{t['name']} · {t['plan']}", "ok": not why, "why": why,
+                    "signin": signin})
     return out
 
 

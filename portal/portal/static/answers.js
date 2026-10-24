@@ -56,10 +56,12 @@
         return { value: `tool:${t.id}`, label: `${t.name} · ${s.word}`, disabled: !s.ok, title: s.why || `${t.provider}: ${t.plan}. You type into ${t.name} itself.` };
       }) },
       { label: "Your AI subscriptions as Chat models", items: [
-        ...(d && Array.isArray(d.plan_models) ? d.plan_models : []).map((m) => (
-          { value: `model:${m.id}`, label: `${m.label}${m.ok ? "" : ` — ${m.why}`}`, disabled: !m.ok, title: m.ok ? `A model in Open WebUI's list too; it answers in the same chat, on your plan (no $).` : m.why })),
+        // (one that only lacks Chat's own sign-in: "Sign in for Chat…", which goes to Settings' row for it)
+        ...(d && Array.isArray(d.plan_models) ? d.plan_models : []).map((m) => (m.signin === true && /^[a-z]{2,10}$/.test(m.tool || "")
+          ? { value: `signin:${m.tool}`, label: `${m.label} — Sign in for Chat…`, disabled: false, title: "Chat has sign-ins of its own, apart from the terminal's: Settings › Claude Code › Your AI subscriptions shows how." }
+          : { value: `model:${m.id}`, label: `${m.label}${m.ok ? "" : ` — ${m.why}`}`, disabled: !m.ok, title: m.ok ? `A model in Open WebUI's list too; it answers in the same chat, on your plan (no $).` : m.why })),
         ...tools.filter((t) => t.chat_model !== "yes").map((t) => (
-          { value: `as-model:${t.id}`, label: `${t.name} — as a Chat model: planned`, disabled: true, title: t.chat_why || "" })),
+          { value: `as-model:${t.id}`, label: `${t.name} — not a Chat model`, disabled: true, title: t.chat_why || "" })),
       ] },
     ].filter((g) => g.items.length);
   }
@@ -184,6 +186,14 @@
   });
   cSelect.addEventListener("change", () => {
     const v = cSelect.value;
+    // Sign in for Chat…: Settings' row for that tool's Chat sign-in (the choice goes back to what it was)
+    if (v.startsWith("signin:")) {
+      cSelect.value = saved.chat;
+      root.bnSubsChatSignin = v.slice(7);
+      if (location.hash === "#settings/+subscriptions" && typeof root.showTab === "function") root.showTab("settings");
+      else location.hash = "#settings/+subscriptions";
+      return;
+    }
     cReopen.hidden = true;
     if (v.startsWith("model:")) {
       saved.chat = v; save();

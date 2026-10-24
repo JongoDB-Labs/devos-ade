@@ -558,7 +558,7 @@ It is a sandbox, not a shell on your computer:
   open the folder. Treat what the terminal wrote like code from someone else.
 
 `./stack terminal disable` removes the container and turns the Code page off too; the folder, Claude Code's history
-(the `terminal-home` volume, and your AI subscriptions' logins in their own `subs-*` volumes: [below](#your-ai-subscriptions)) and the key stay
+(the `terminal-home` volume, your AI subscriptions' logins with it: [below](#your-ai-subscriptions)) and the key stay
 (delete the key in Admin to revoke it). Every `enable` and `disable`
 restarts the portal and Caddy (open apps reload), and the first `enable`, and `disable`, also LiteLLM and the shared
 MCP server (they join or leave the terminal's gateway network): Chat answers, `claude-bedrock` requests and MCP
@@ -569,9 +569,9 @@ sessions in progress drop for a few seconds. Details and what was weighed:
 
 Your own AI plans work in the sandbox too, each through **its provider's own, unmodified app**, signed in with **that
 app's own sign-in** — a link and a code you open in your own browser. bedrock-now never reads, copies, keeps or
-passes on a login: each stays in its own app's file in the sandbox's home folder (its folder a volume of its own —
-`subs-codex`, `subs-copilot` … — so Chat's sandbox can mount it alone; Gemini CLI's in the `terminal-home` volume), and
-backups leave it out.
+passes on a login: each stays in its own app's file in the sandbox's home folder (the `terminal-home` volume: the
+terminal's and the Code page's), and backups leave it out. Chat's sandbox has sign-ins of its own, apart (below: sign
+in once more for Chat).
 
 | Tool | Your plan | Type in the terminal | Sign in | Sign out |
 |---|---|---|---|---|
@@ -585,7 +585,9 @@ backups leave it out.
 `subscriptions` in the terminal (or `./stack subscriptions` on this computer) lists each with its version and whether
 it says it is signed in; `subscriptions login TOOL` runs its sign-in (`./stack subscriptions login TOOL` shows the
 sandbox's words here, each line marked `sandbox│`; what you type then reaches the sandbox only for Claude Code — the
-code from your browser — and Copilot — whether to keep its login in a file — and it says so first). Plain `claude` and
+code from your browser — and Copilot — whether to keep its login in a file — and it says so first). Add `--chat` for
+Chat's sandbox: its own sign-ins, for your subscriptions as Chat models (`./stack subscriptions login codex --chat`).
+Plain `claude` and
 `claude-bedrock` stay on Bedrock: `claude-sub` is the same, unmodified Claude Code in its own config folder
 (`~/.claude-subscription`), started without the stack's `ANTHROPIC_*` variables so it uses your login; only its
 updates stay off (the image pins it). It does **not** get the stack's shared MCP server (Chat's knowledge bases and the
@@ -613,8 +615,10 @@ plan in the Code page and Chat** (off by default; turning it on works from the c
   has no switch that turns its tools off) —
   answering in the same chat, streamed, with its thinking. Each answer is the provider's own agent in the sandbox,
   signed in with its own login, through the interface it ships for other apps (the Claude Agent SDK, Codex's app
-  server, the ACP mode of Copilot and Grok) — in **Chat's own sandbox** (the sandbox's image and your tools'
-  sign-in folders, but a home of its own, no workspace and no project folder), in an empty folder of the conversation's own, and **without
+  server, the ACP mode of Copilot and Grok) — in **Chat's own sandbox** (the sandbox's image, but a home of its own,
+  no workspace and no project folder, and **sign-ins of its own**: each tool signs in once more for Chat, with the same
+  flow — `./stack subscriptions login codex --chat`, or Settings' Chat row for it; nothing is copied between the
+  terminal's sign-ins and Chat's), in an empty folder of the conversation's own, and **without
   tools**: each starts with every switch it has that turns its tools off, and at the first sign of a tool it still
   reaches for, the agent is killed there and then — nothing it says after reaches the answer (which says so; the chat
   goes on in a new session of it). A
@@ -646,7 +650,11 @@ plan in the Code page and Chat** (off by default; turning it on works from the c
 Settings › Claude Code › **Your AI subscriptions** shows each tool, whether it said it is signed in and which kind
 (*ChatGPT*, *Claude Max* …: its own status command, or for Gemini CLI and Grok whether their login file is there —
 never opened; Copilot has no way to say: `/user` in it), **Sign out** (its own sign-out) and **Check again** (both
-through the update helper, with the password). Usage counts against each plan's own limits: bedrock-now bills none of
+through the update helper, with the password) — two rows for each Chat model: *Terminal & Code page* and *Chat*, each
+sign-in its own (Chat's *Sign in* shows the command for it; a tool not signed in for Chat shows as *Sign in for
+Chat…* in Chat's picker, which leads there). While the sandbox's way out is the direct one (`TERMINAL_EGRESS=host`),
+your subscriptions are not Chat models (greyed, saying why): Chat's sandbox would sit beside the terminal with no
+proxy between. Usage counts against each plan's own limits: bedrock-now bills none of
 it and shows no $ for it.
 
 The tools are in the sandbox's image, each **pinned and checked** when it is built on your computer: Codex's and
@@ -2002,7 +2010,7 @@ troubleshooting: [docs/voice.md](docs/voice.md).
 | `./stack terminal status\|enable [--workspace DIR]\|disable` | Claude Code in the browser, a sandbox that sees one folder; on by default with the Code page ([above](#claude-code-in-the-browser)) | none (its sessions: per token) |
 | `./stack code status\|enable [--workspace DIR]\|disable` | The Code tab, Claude Code with a chat, permission prompts and your files, in the terminal's sandbox; on by default, `disable` keeps it off ([above](#the-code-page)) | none (its sessions: per token) |
 | `./stack project add DIR [--read-only] [--hide-path] [--name N]\|remove N\|mode N ro\|rw\|list` | A folder of this computer as a Code page project, mounted into the sandbox (it restarts; [above](#folders-of-this-computer)) | none |
-| `./stack subscriptions [status\|login TOOL\|logout TOOL]` | Your AI subscriptions' own tools in the sandbox (Claude Code on your plan, Codex, Gemini CLI, Copilot, Cursor, Grok): whether each is signed in, its own sign-in with its words shown here as plain text (Gemini CLI: in the Terminal tab), its own sign-out ([above](#your-ai-subscriptions)) | none (each plan's own limits) |
+| `./stack subscriptions [status\|login TOOL\|logout TOOL] [--chat]` | Your AI subscriptions' own tools in the sandbox (Claude Code on your plan, Codex, Gemini CLI, Copilot, Cursor, Grok): whether each is signed in, its own sign-in with its words shown here as plain text (Gemini CLI: in the Terminal tab), its own sign-out ([above](#your-ai-subscriptions)); `--chat`: the same in Chat's sandbox, whose sign-ins are its own | none (each plan's own limits) |
 | `./stack sessions [list\|import --project N\|scan\|fetch\|consent\|suggest]` | Your Claude Code and `claude-bedrock` sessions of a project folder copied into the sandbox, after you allowed it here (secrets redacted by default; nothing written back; [above](#your-claude-code-and-claude-bedrock-sessions-from-this-computer)) | none (a resume: per token) |
 | `./stack sessions config [list\|import\|scan\|open\|consent]` | Bring your setup: items of your Claude Code setup (`CLAUDE.md`, skills, agents, commands, MCP servers, plugins, four settings) and your Git name and email copied into the sandbox, after you allowed it here (never env or logins; nothing written back; [above](#your-claude-code-setup-from-this-computer)) | none (what you bring: tokens in every request) |
 | `./stack git-host import gh\|glab [--host HOST]` | A login of the GitHub CLI or the GitLab CLI on this computer as a Git host of the Code page ([above](#remote-repositories-git-hosts-clone-push-and-pull)): the token goes to the code container on stdin (never a command line, a file or the browser); what it reaches is shown and confirmed first. glab: a personal access token only (an OAuth login of glab's is refused) | none |

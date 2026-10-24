@@ -2,15 +2,20 @@
 # Your AI subscriptions (./stack subscriptions; README "Your AI subscriptions"): each provider's own, unmodified client
 # — Claude Code on your Claude plan (claude-sub), Codex, Gemini CLI, Copilot CLI, Cursor CLI, Grok Build — in the
 # sandbox's image (terminal/Dockerfile's ai-tools stage), signed in THERE with its own flow, its login in its own file in
-# the sandbox's home (its folder a volume of its own: compose.terminal.yaml subs-*). This side never sees a login: it asks the sandbox's `subscriptions status --tsv` (each
-# tool's own status command, reduced to words) and keeps only what passes the checks below, in
-# .state/status/subscriptions.json for Settings › Claude Code › Your AI subscriptions.
+# the sandbox's home (the terminal-home volume: the terminal's and the Code page's). Chat's sandbox (compose.code.yaml
+# subs-chat: your subscriptions as Chat models) has sign-ins of its own, in volumes of its own (subs-chat-*), signed in
+# there with the same flows (--chat) — never the terminal's: nothing is copied between the two. This side never sees
+# a login: it asks the sandbox's `subscriptions status --tsv` (each tool's own status command, reduced to words) and
+# keeps only what passes the checks below, in .state/status/subscriptions.json (Chat's: subscriptions-chat.json) for
+# Settings › Claude Code › Your AI subscriptions.
 #
-#   status            asks the sandbox now, writes the status file, prints it
-#   login TOOL        the tool's own sign-in, in the sandbox (docker compose exec), its words shown here as plain text
-#                     (never a terminal escape of the sandbox's): a link and a code for your browser (Claude Code: a
-#                     link, then the code pasted back on stdin); Gemini CLI signs in inside its own screen (Terminal tab)
-#   logout TOOL       its own sign-out (Gemini CLI and Copilot sign out inside them: /auth signout, /logout)
+#   status [--chat]       asks the sandbox now (and Chat's, while the Code page is on), writes the status files,
+#                         prints them; --chat: Chat's alone
+#   login TOOL [--chat]   the tool's own sign-in, in the sandbox (docker compose exec; --chat: in Chat's), its words
+#                         shown here as plain text (never a terminal escape of the sandbox's): a link and a code for your
+#                         browser (Claude Code: a link, then the code pasted back on stdin); Gemini CLI signs in inside
+#                         its own screen (Terminal tab)
+#   logout TOOL [--chat]  its own sign-out (Gemini CLI and Copilot sign out inside them: /auth signout, /logout)
 #
 # .env: TERMINAL_AI_TOOLS — all (blank: the default) | none | a comma list of codex, gemini, copilot, cursor, grok: which
 # of them the sandbox's image holds, from its next build (./stack update, ./stack terminal enable). Claude Code is
@@ -19,7 +24,14 @@
 SUBS_TOOLS="claude codex gemini copilot cursor grok"
 SUBS_OPTIONAL="codex gemini copilot cursor grok"
 SUBS_SIGNOUT="claude codex cursor grok"   # the ones with a sign-out command (the others: inside their own screens)
-subs_status_file() { printf '%s/subscriptions.json\n' "$(status_dir)"; }
+# the tools that are Chat models (catalog/ai-tools.tsv chat_model yes): signed in for Chat in Chat's own sandbox
+SUBS_CHAT_TOOLS="claude codex copilot grok"
+# where a command works: terminal (the sandbox: the terminal's and the Code page's sign-ins) or chat (Chat's sandbox)
+SUBS_WHERE=terminal
+subs_service() { if [ "$SUBS_WHERE" = chat ]; then echo subs-chat; else echo terminal; fi; }
+subs_status_file() { if [ "$SUBS_WHERE" = chat ]; then printf '%s/subscriptions-chat.json\n' "$(status_dir)"; else printf '%s/subscriptions.json\n' "$(status_dir)"; fi; }
+subs_where_words() { if [ "$SUBS_WHERE" = chat ]; then echo "Chat's sandbox"; else echo "the sandbox"; fi; }
+subs_chat_on() { terminal_on && code_on; }
 # The sandbox's own command, by its path in the image (never a program of the same name its home put ahead on PATH),
 # run with the system's PATH only
 SUBS_PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -30,12 +42,15 @@ SUBS_TSV_MAX=16384 SUBS_LINE_MAX=300 SUBS_LINES_MAX=400
 
 subscriptions_usage() {
   cat <<'EOF'
-Usage: ./stack subscriptions <command>
+Usage: ./stack subscriptions <command> [--chat]
 
-  status          Each tool in the sandbox: its version, and whether it is signed in (asked now)
+  status          Each tool in the sandbox: its version, and whether it is signed in (asked now) — and, while the
+                  Code page is on, the same for Chat's sandbox
   login TOOL      Its own sign-in, its words shown here: a link and a code for your browser (Gemini CLI: in the
                   Terminal tab, inside its own screen)
   logout TOOL     Its own sign-out (Gemini CLI and Copilot sign out inside them: /auth signout, /logout)
+  --chat          For Chat's sandbox (your subscriptions as Chat models: claude, codex, copilot, grok): its own
+                  sign-ins, never the terminal's — sign in there once more, with the same flow
 
   TOOL: claude (Claude Code on your Claude plan), codex, gemini, copilot, cursor, grok. In the sandbox's terminal:
   claude-sub, codex, gemini, copilot, cursor-agent, grok, and `subscriptions` (the same commands). Each login stays
@@ -103,11 +118,11 @@ subs_parse() {
 # _subs_tsv — the sandbox's status lines, at most SUBS_TSV_MAX bytes (cut inside the deadline: a sandbox that prints
 # forever is stopped there, never read whole); nothing on this side's stdin
 _subs_tsv() {
-  dc exec -T -e "PATH=$SUBS_PATH" -e BN_SUBS_TIMEOUT=15 terminal "$SUBS_CMD" status --tsv </dev/null 2>/dev/null | head -c "$SUBS_TSV_MAX"
+  dc exec -T -e "PATH=$SUBS_PATH" -e BN_SUBS_TIMEOUT=15 "$(subs_service)" "$SUBS_CMD" status --tsv </dev/null 2>/dev/null | head -c "$SUBS_TSV_MAX"
 }
 
-# subs_running -> 0 while the sandbox's container runs
-subs_running() { [ -n "$(dc ps -q --status running terminal 2>/dev/null | head -n 1)" ]; }
+# subs_running -> 0 while the sandbox's container (SUBS_WHERE's) runs
+subs_running() { [ -n "$(dc ps -q --status running "$(subs_service)" 2>/dev/null | head -n 1)" ]; }
 
 # subs_refresh -> asks the sandbox (each tool at most 15 s) and writes the status file: {"version", "written_at",
 # "terminal": running | off | down | error, "tools": [...]}. 0 when the sandbox answered.
@@ -115,11 +130,13 @@ SUBS_LAST_ROWS=''
 subs_refresh() {
   local state=running out rows='' rc=0
   SUBS_LAST_ROWS=''
-  if ! terminal_on; then state=off
+  if ! terminal_on || { [ "$SUBS_WHERE" = chat ] && ! code_on; }; then state=off
   elif ! subs_running; then state=down
   else
     out="$(PROBE_DEADLINE_S="${SUBS_DEADLINE_S:-150}" _probe _subs_tsv)"
     rows="$(printf '%s\n' "$out" | subs_parse)"
+    # (Chat's sandbox: its Chat tools alone — the others are not Chat models, whatever it says of them)
+    [ "$SUBS_WHERE" != chat ] || rows="$(printf '%s\n' "$rows" | grep -E "^\{\"id\":\"($(printf '%s' "$SUBS_CHAT_TOOLS" | tr ' ' '|'))\"" || true)"
     [ -n "$rows" ] || state=error
   fi
   SUBS_LAST_ROWS="$rows"
@@ -144,7 +161,7 @@ subs_print() {
     words="$(subs_kind_words "$kind")"
     case "$signed" in
       yes) signed="yes${words:+ — $words}"; [ "$how" != file ] || signed="$signed (its login file is there)" ;;
-      no) signed="no — ./stack subscriptions login $id" ;;
+      no) signed="no — ./stack subscriptions login $id$([ "$SUBS_WHERE" != chat ] || echo ' --chat')" ;;
       *) if [ "$id" = copilot ]; then signed="not known here (/user in Copilot says)"; else signed="not known here${words:+ ($words)}"; fi ;;
     esac
     printf '  %-32s %-20s %s\n' "$(subs_name "$id")" "$ver" "$signed"
@@ -167,52 +184,91 @@ subs_plain_stream() {
 
 subs_need_sandbox() {
   terminal_on || die "the sandbox is off — ./stack terminal enable (the tools run in it)"
-  subs_running || die "the sandbox is not running — ./stack up"
+  if [ "$SUBS_WHERE" = chat ]; then
+    code_on || die "Chat's sandbox runs with the Code page — ./stack code enable (your subscriptions as Chat models)"
+    subs_running || die "Chat's sandbox is not running — ./stack up (./stack logs subs-chat says why)"
+  else subs_running || die "the sandbox is not running — ./stack up"; fi
+}
+
+# _subs_status_print — one status file's table, after a refresh (rc of the refresh), with what to do when it failed
+_subs_status_print() {
+  local ok="$1" what
+  what="$(subs_where_words)"
+  if [ "$ok" = 0 ]; then
+    if [ "$SUBS_WHERE" = chat ]; then
+      printf "Chat's own sign-ins (Chat's sandbox: your subscriptions as Chat models — never the terminal's):\n"
+    else
+      printf 'Your AI subscriptions in the sandbox — the terminal'"'"'s and the Code page'"'"'s (each signs in with its own flow there; %s never sees the login):\n' "$PRODUCT_NAME"
+    fi
+    subs_print
+    return 0
+  fi
+  case "$(sed -n 's/.*"terminal":"\([a-z]*\)".*/\1/p' "$(subs_status_file)" 2>/dev/null)" in
+    off) if [ "$SUBS_WHERE" = chat ]; then printf "Chat's sandbox is off (it runs with the Code page: ./stack code enable)\n"; else printf 'the sandbox is off — ./stack terminal enable (the tools run in it)\n'; fi ;;
+    down) printf '%s is not running — ./stack up\n' "$what" ;;
+    *) printf '%s did not say (./stack logs %s)\n' "$what" "$(subs_service)" ;;
+  esac
+  return 1
 }
 
 cmd_subscriptions() {
-  local sub="${1:-status}" rc=0
+  local sub="${1:-status}" rc=0 a args=()
   [ $# -eq 0 ] || shift
+  SUBS_WHERE=terminal
+  for a in "$@"; do if [ "$a" = --chat ]; then SUBS_WHERE=chat; else args+=("$a"); fi; done
+  set -- ${args[@]+"${args[@]}"}
   case "$sub" in
     status)
-      [ $# -eq 0 ] || die "usage: ./stack subscriptions status"
+      [ $# -eq 0 ] || die "usage: ./stack subscriptions status [--chat]"
       [ -f "$ENV_FILE" ] || die "run ./stack setup first"
-      if subs_refresh; then
-        printf 'Your AI subscriptions in the sandbox (each signs in with its own flow there; %s never sees the login):\n' "$PRODUCT_NAME"
-        subs_print
-        printf '\nSign in: ./stack subscriptions login TOOL (here), or the Terminal tab'"'"'s Open menu. Settings › Claude Code › Your AI subscriptions shows the same.\n'
-      else
+      if [ "$SUBS_WHERE" = chat ]; then
+        subs_refresh; _subs_status_print $? || die "Chat's sandbox did not answer"
+        return 0
+      fi
+      if ! subs_refresh; then
         case "$(sed -n 's/.*"terminal":"\([a-z]*\)".*/\1/p' "$(subs_status_file)" 2>/dev/null)" in
           off) die "the sandbox is off — ./stack terminal enable (the tools run in it)" ;;
           down) die "the sandbox is not running — ./stack up" ;;
           *) die "the sandbox did not say (./stack logs terminal)" ;;
         esac
-      fi ;;
+      fi
+      _subs_status_print 0
+      if subs_chat_on; then
+        printf '\n'
+        SUBS_WHERE=chat; subs_refresh; _subs_status_print $? || true; SUBS_WHERE=terminal
+      fi
+      printf '\nSign in: ./stack subscriptions login TOOL (here), or the Terminal tab'"'"'s Open menu; for Chat, ./stack subscriptions login TOOL --chat. Settings › Claude Code › Your AI subscriptions shows the same.\n' ;;
     login | logout)
-      [ $# -eq 1 ] || die "usage: ./stack subscriptions $sub TOOL   (TOOL: ${SUBS_TOOLS// /, })"
+      [ $# -eq 1 ] || die "usage: ./stack subscriptions $sub TOOL [--chat]   (TOOL: ${SUBS_TOOLS// /, })"
       subs_valid_tool "$1" || die "no tool called '$(plain_text "$1")' — one of: ${SUBS_TOOLS// /, }"
+      if [ "$SUBS_WHERE" = chat ]; then
+        case " $SUBS_CHAT_TOOLS " in *" $1 "*) ;; *) die "$(subs_name "$1") is not a Chat model (Settings › Claude Code › Your AI subscriptions says why): nothing to sign in to for Chat — one of: ${SUBS_CHAT_TOOLS// /, }" ;; esac
+      fi
       [ -f "$ENV_FILE" ] || die "run ./stack setup first"
       subs_need_sandbox
+      local svc; svc="$(subs_service)"
       if [ "$sub" = logout ]; then
         case " $SUBS_SIGNOUT " in
-          *" $1 "*) dc exec -T -e "PATH=$SUBS_PATH" terminal "$SUBS_CMD" logout "$1" </dev/null 2>&1 | head -c "$SUBS_STREAM_MAX" | subs_plain_stream; rc="${PIPESTATUS[0]}" ;;
+          *" $1 "*) dc exec -T -e "PATH=$SUBS_PATH" "$svc" "$SUBS_CMD" logout "$1" </dev/null 2>&1 | head -c "$SUBS_STREAM_MAX" | subs_plain_stream; rc="${PIPESTATUS[0]}" ;;
           *) [ "$1" = gemini ] && die "Gemini CLI signs out inside it: in the Terminal tab, gemini, then /auth signout"
+             [ "$SUBS_WHERE" != chat ] || die "Copilot signs out inside it, and Chat's sandbox has no screen of it: remove Chat's sign-in with docker volume rm $(project_name)_subs-chat-copilot while the Code page is off (./stack code disable), and revoke it on github.com › Settings › Applications"
              die "Copilot signs out inside it: in the Terminal tab, copilot, then /logout (and revoke it on github.com › Settings › Applications)" ;;
         esac
       else
         # Its own sign-in, its words shown here as plain text marked as the sandbox's (subs_plain_stream): a link and a
         # code to open in your browser. What you type here reaches the sandbox only for the two tools whose own sign-in
         # asks something back — Claude Code (the code your browser shows) and Copilot (whether to keep its login in a
-        # file) — and is said first; the others get nothing of this terminal's. The login stays in the sandbox. Gemini
-        # CLI signs in inside its own screen: the Terminal tab's.
+        # file) — and is said first; the others get nothing of this terminal's. The login stays in the sandbox (--chat:
+        # in Chat's, its own). Gemini CLI signs in inside its own screen: the Terminal tab's.
         [ "$1" != gemini ] || die "Gemini CLI signs in inside its own screen: open it in the Terminal tab (Open › Gemini CLI), or gemini in a shell window there"
+        [ "$SUBS_WHERE" != chat ] || printf "For Chat: %s's own sign-in, in Chat's sandbox — a sign-in of its own, apart from the terminal's.\n" "$(subs_name "$1")"
         case "$1" in
           claude | copilot)
             [ "$1" != claude ] || printf 'Claude Code: open the link below in your browser and sign in; then paste the code it shows here and press Enter.\n'
             [ "$1" != copilot ] || printf 'Copilot: open the link below in your browser and enter the code; it may then ask here whether to keep its login in a file (answer y).\n'
-            printf '(What you type here now goes to %s'"'"'s own sign-in in the sandbox, and nowhere else.)\n' "$(subs_name "$1")"
-            dc exec -T -e "PATH=$SUBS_PATH" terminal "$SUBS_CMD" login "$1" 2>&1 | head -c "$SUBS_STREAM_MAX" | subs_plain_stream; rc="${PIPESTATUS[0]}" ;;
-          *) dc exec -T -e "PATH=$SUBS_PATH" terminal "$SUBS_CMD" login "$1" </dev/null 2>&1 | head -c "$SUBS_STREAM_MAX" | subs_plain_stream; rc="${PIPESTATUS[0]}" ;;
+            printf '(What you type here now goes to %s'"'"'s own sign-in in %s, and nowhere else.)\n' "$(subs_name "$1")" "$(subs_where_words)"
+            dc exec -T -e "PATH=$SUBS_PATH" "$svc" "$SUBS_CMD" login "$1" 2>&1 | head -c "$SUBS_STREAM_MAX" | subs_plain_stream; rc="${PIPESTATUS[0]}" ;;
+          *) dc exec -T -e "PATH=$SUBS_PATH" "$svc" "$SUBS_CMD" login "$1" </dev/null 2>&1 | head -c "$SUBS_STREAM_MAX" | subs_plain_stream; rc="${PIPESTATUS[0]}" ;;
         esac
       fi
       subs_refresh >/dev/null 2>&1 || true

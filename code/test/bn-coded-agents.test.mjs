@@ -193,3 +193,12 @@ test('an agent runs in a process group of its own: a kill reaches what it starte
     assert.equal(alive, false, 'what the agent started was killed with it');
   } finally { fs.writeFileSync(bin, SAY, { mode: 0o755 }); }
 });
+
+test('Chat\'s sandbox does not start where the stack\'s own services resolve (a compose run without its overlay)', async () => {
+  const lookup = (resolves) => async (n) => { if (resolves.includes(n)) return { address: '172.18.0.2' }; throw Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' }); };
+  assert.deepEqual(await coded.chatNetworkGuard({ lookup: lookup([]) }), []);
+  assert.deepEqual(await coded.chatNetworkGuard({ lookup: lookup(['portal', 'litellm']) }), ['litellm', 'portal']);
+  // (a lookup that never answers: not taken as resolving, within its deadline)
+  assert.deepEqual(await coded.chatNetworkGuard({ lookup: () => new Promise(() => {}), timeoutMs: 50 }), []);
+  assert.ok(coded.STACK_NAMES.includes('open-webui') && coded.STACK_NAMES.includes('litellm'));
+});

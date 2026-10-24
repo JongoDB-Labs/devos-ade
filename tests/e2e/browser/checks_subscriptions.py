@@ -63,11 +63,20 @@ def settings_row(ctx):
     text = row.inner_text()
     for words in ("Your AI subscriptions", "Codex", "Grok Build", "Check again", "bedrock-now never opens it", "./stack subscriptions"):
         expect(words in text, f"the row lacks {words!r}")
+    # two rows for each Chat model — the terminal's and the Code page's sign-in, and Chat's own — none for the others
+    for t in ("claude", "codex", "copilot", "grok"):
+        expect(page.locator(f"#set-subscriptions li[data-tool={t}] [data-where=chat]").count() == 1, f"{t}: no Chat row")
+    for t in ("cursor", "gemini"):
+        expect(page.locator(f"#set-subscriptions li[data-tool={t}] [data-where=chat]").count() == 0, f"{t}: a Chat row")
+    page.locator("#set-subs-chat-codex [data-act=subscriptions-chat-signin]").click()
+    cmd = page.locator("#set-subs-chat-codex .set-cli")
+    cmd.wait_for(state="visible", timeout=5000)
+    expect("./stack subscriptions login codex --chat" in cmd.inner_text(), f"Chat's sign-in command: {cmd.inner_text()!r}")
     shot(page, "s1-settings-subscriptions")
     probs = rec.problems()
     rec.save()
     expect(not probs, f"errors: {probs[:6]}")
-    return "Settings › Claude Code › Your AI subscriptions: six tools, Check again, ./stack subscriptions"
+    return "Settings › Claude Code › Your AI subscriptions: six tools, a Chat row each for the four Chat models (its own sign-in: ./stack subscriptions login TOOL --chat), Check again, ./stack subscriptions"
 
 
 @check("browser", "walkthrough-subscriptions")
@@ -143,12 +152,19 @@ def chat_embed(ctx):
     expect(vals.get("owui") is False, "no Open WebUI entry")
     expect(any(v.startswith("model:") and not d for v, d in opts), "no Bedrock model entry")
     expect(all(vals.get(f"tool:{t}") is False for t in TOOLS), f"the tools are not all offered: {opts}")
-    # as Chat models: each the catalog offers as one, greyed until it can answer (none signed in; Claude: its switch off) —
-    # Copilot, which cannot say, listed; Gemini CLI planned through your own key
-    for t in ("claude", "codex", "cursor", "grok"):
-        expect(vals.get(f"model:plan-{t}") is True, f"{t} as a Chat model is not greyed out (not signed in): {opts}")
+    # as Chat models: each the catalog offers as one — one not signed in for Chat (its own sign-in, apart from the
+    # terminal's) as "Sign in for Chat…", Claude greyed (its switch off), Copilot, which cannot say, listed; Cursor (no
+    # switch that turns its tools off) and Gemini CLI (planned through your own key) not Chat models
+    for t in ("codex", "grok"):
+        expect(vals.get(f"signin:{t}") is False, f"{t}: no 'Sign in for Chat…' entry: {opts}")
+    expect(vals.get("model:plan-claude") is True, f"Claude as a Chat model is not greyed out (its switch off): {opts}")
     expect(vals.get("model:plan-copilot") is False, f"Copilot as a Chat model is not listed: {opts}")
-    expect(vals.get("as-model:gemini") is True, f"Gemini CLI as a Chat model is not greyed out (planned): {opts}")
+    expect(vals.get("as-model:gemini") is True and vals.get("as-model:cursor") is True, f"Gemini CLI or Cursor offered as a Chat model: {opts}")
+    # Sign in for Chat…: Settings' row for it, its command shown
+    page.select_option("#answers-chat", "signin:codex")
+    page.locator("#set-subs-chat-codex .set-cli").wait_for(state="visible", timeout=15000)
+    page.click(".tab[data-tab=chat]")
+    page.locator("#answers-chat").wait_for(timeout=15000)
     page.select_option("#answers-chat", "tool:grok")
     page.wait_for_selector("iframe[data-app=chat-tool]:not([hidden])", timeout=10000)
     expect(page.locator("iframe[data-app=chat]").is_hidden(), "Open WebUI still shows with a tool chosen")

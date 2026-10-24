@@ -113,7 +113,8 @@ _code_front() { dc up -d --wait portal open-webui && recreate_caddy; }
 # _subs_chat_up — Chat's sandbox; when it does not start, its last words and how to look (never fatal)
 _subs_chat_up() {
   local out
-  out="$(dc up -d --wait subs-chat 2>&1)" && return 0
+  # (then what its own sign-ins say, for Settings and Chat's picker — never fatal; lib/subscriptions.sh)
+  out="$(dc up -d --wait subs-chat 2>&1)" && { (SUBS_WHERE=chat; subs_refresh >/dev/null 2>&1) || true; return 0; }
   warn "Chat's sandbox (subs-chat) did not start: your subscriptions cannot answer in Chat until it does — ./stack logs subs-chat"
   printf '%s\n' "$out" | tail -n 8 | sed 's/^/    /' >&2
   return 0
@@ -177,6 +178,7 @@ code_disable() {
   [ "$own" = 0 ] || stack_unlock
   log "the Code page is off: no Code tab, no code host, no code container (the terminal and its workspace stay)"
   log "kept: Git hosts — the tokens and SSH keys you connected (volume $(project_name)_code-state; docker volume rm $(project_name)_code-state forgets them, ./stack uninstall too)"
+  log "kept: Chat's own sign-ins to your subscriptions (volumes $(project_name)_subs-chat-*: ./stack uninstall removes them; each tool's sign-out, before, with ./stack subscriptions logout TOOL --chat)"
 }
 
 # code_terminal_off — ./stack terminal disable: the Code page needs the terminal, so it goes off too (its container
@@ -601,11 +603,13 @@ code_rollback_cleanup() {
 }
 
 # code_uninstall_cleanup — ./stack uninstall, after compose's down: its network, its state volume (Git hosts: tokens and
-# SSH keys go with the install) and images by their exact names, whether or not it is on now (the socket volume is the
-# terminal's: terminal_uninstall_cleanup)
+# SSH keys go with the install), Chat's sign-in volumes and images by their exact names, whether or not it is on now
+# (the socket volume is the terminal's: terminal_uninstall_cleanup)
 code_uninstall_cleanup() {
   local p; p="$(project_name)"
   code_network_cleanup
   docker volume rm "${p}_code-state" >/dev/null 2>&1 || true
+  # (Chat's own sign-ins: by their exact names)
+  docker volume rm "${p}_subs-chat-claude" "${p}_subs-chat-codex" "${p}_subs-chat-copilot" "${p}_subs-chat-grok" >/dev/null 2>&1 || true
   docker image rm "$p/code:local" "$p/code:previous" >/dev/null 2>&1 || true
 }

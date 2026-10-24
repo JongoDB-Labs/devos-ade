@@ -128,5 +128,9 @@ find /out -type l -exec sh -c '
     case "$t" in /*) echo "ai-tools: $l is an absolute link ($t)" >&2; exit 1 ;; esac
     r="$(readlink -e "$l")" || { echo "ai-tools: $l leads nowhere ($t)" >&2; exit 1; }
     case "$r" in /out/*) ;; *) echo "ai-tools: $l leads out of /out ($r)" >&2; exit 1 ;; esac
+    # (and as written, its own path read without following any link: a ../.. that only lands back in /out through
+    # another link is not one that stays in it)
+    s="$(realpath -m -s "$(dirname "$l")/$t")" || { echo "ai-tools: $l cannot be read as a path ($t)" >&2; exit 1; }
+    case "$s" in /out/*) ;; *) echo "ai-tools: $l points out of /out as written ($t)" >&2; exit 1 ;; esac
   done' sh {} + || { echo "ai-tools: a link in /out is not one that stays in it" >&2; exit 1; }
 cat /out/VERSIONS

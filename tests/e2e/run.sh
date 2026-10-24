@@ -1222,10 +1222,17 @@ setTimeout(() => { console.log("timeout"); process.exit(0); }, 20000);'
     # (/workspace: the image's empty folder, nothing mounted there)
     mounts="$(docker exec "$sc" sh -c 'grep -c " /workspace" /proc/self/mountinfo; ls -A /workspace 2>/dev/null | wc -l' 2>&1 | tr '\n' ' ')"
     names="$(docker exec "$sc" sh -c 'for h in gateway litellm shared-mcp portal open-webui code code-upstream code-chat postgres; do getent hosts "$h" >/dev/null 2>&1 && printf "%s " "$h"; done; true' 2>&1)"
-    # its home is its own: a file the terminal puts in its home is not there, one in a sign-in folder (~/.codex) is
-    docker exec "$tc" sh -c 'touch ~/.bn-e2e-home-mark ~/.codex/.bn-e2e-codex-mark' >/dev/null 2>&1
+    # its home is its own, and so are its sign-in folders: nothing the terminal puts in its home or in a sign-in folder
+    # (~/.codex) is there, nothing Chat's sandbox puts in its own ~/.codex reaches the terminal; its sign-in folders
+    # (its own volumes) are yours, mode 700, writable
+    docker exec "$tc" sh -c 'mkdir -p ~/.codex && touch ~/.bn-e2e-home-mark ~/.codex/.bn-e2e-codex-mark' >/dev/null 2>&1
+    docker exec "$sc" sh -c 'touch ~/.codex/.bn-e2e-chat-mark' >/dev/null 2>&1
     homes="$(docker exec "$sc" sh -c 'test -e ~/.bn-e2e-home-mark && echo terminal-home-seen; test -e ~/.codex/.bn-e2e-codex-mark && echo codex-shared; test -e ~/.config/bedrock-now && echo terminal-config-seen; true' 2>&1 | tr '\n' ' ')"
+    homes="$homes$(docker exec "$tc" sh -c 'test -e ~/.codex/.bn-e2e-chat-mark && echo chat-codex-seen; true' 2>&1 | tr '\n' ' ')"
+    own="$(docker exec "$sc" sh -c 'for d in ~/.claude-subscription ~/.codex ~/.copilot ~/.grok; do test -d "$d" -a -w "$d" && stat -c "%u:%a" "$d"; done' 2>&1 | tr '\n' ' ')"
     docker exec "$tc" sh -c 'rm -f ~/.bn-e2e-home-mark ~/.codex/.bn-e2e-codex-mark' >/dev/null 2>&1
+    docker exec "$sc" sh -c 'rm -f ~/.codex/.bn-e2e-chat-mark' >/dev/null 2>&1
+    uid="$(get_env TERMINAL_UID)"; uid="${uid:-10104}"
     chat_refuses="$(docker exec "$sc" node --input-type=module -e "$bnc_ask" /run/bn-chat/coded.sock '{"op":"fs.list","path":""}' 2>&1)"
     term_refuses="$(docker exec "$tc" node --input-type=module -e "$bnc_ask" /run/bn-code/coded.sock '{"op":"agent","tool":"codex","mode":"chat","chat":"abababababababababababababababab"}' 2>&1)"
     codex_cfg="$(docker exec -i "$sc" node --input-type=module - <<'JS' 2>&1
@@ -1242,11 +1249,20 @@ send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'e2e', title: 
 setTimeout(() => { console.log('timeout'); p.kill(); process.exit(0); }, 30000);
 JS
 )"
-    if [ "$(printf '%s' "$mounts" | tr -d ' ')" = 00 ] && [ -z "$names" ] && [ "$homes" = "codex-shared " ] && printf '%s' "$chat_refuses" | grep -q "not in Chat's sandbox" \
+    if [ "$(printf '%s' "$mounts" | tr -d ' ')" = 00 ] && [ -z "$names" ] && [ -z "$homes" ] && [ "$own" = "$uid:700 $uid:700 $uid:700 $uid:700 " ] \
+      && printf '%s' "$chat_refuses" | grep -q "not in Chat's sandbox" \
       && printf '%s' "$term_refuses" | grep -q "run in their own sandbox" \
       && printf '%s' "$codex_cfg" | grep -q '"shell":false,"exec":false,"web":"disabled","mcp":{},"apps":false,"plugins":false'; then
-      record subscriptions chat-sandbox PASS "$(( $(now) - t0 ))" "Chat's sandbox: no workspace, a home of its own with the sign-in folders alone, none of the stack's names; it refuses the workspace's ops and the workspace refuses Chat's; Codex there: shell, web search, MCP, apps, plugins off"
-    else record subscriptions chat-sandbox FAIL "$(( $(now) - t0 ))" "mounts: $mounts; names: ${names:-none}; homes: $homes; chat: $(printf '%s' "$chat_refuses" | tail -c 150); terminal: $(printf '%s' "$term_refuses" | tail -c 150); codex: $(printf '%s' "$codex_cfg" | tail -c 200)"; fi
+      record subscriptions chat-sandbox PASS "$(( $(now) - t0 ))" "Chat's sandbox: no workspace, a home of its own and sign-in folders of its own (yours, 700; nothing crosses to or from the terminal's), none of the stack's names; it refuses the workspace's ops and the workspace refuses Chat's; Codex there: shell, web search, MCP, apps, plugins off"
+    else record subscriptions chat-sandbox FAIL "$(( $(now) - t0 ))" "mounts: $mounts; names: ${names:-none}; homes: ${homes:-none}; own: $own; chat: $(printf '%s' "$chat_refuses" | tail -c 150); terminal: $(printf '%s' "$term_refuses" | tail -c 150); codex: $(printf '%s' "$codex_cfg" | tail -c 200)"; fi
+    # Chat's own sign-ins: ./stack subscriptions status --chat says them (not the terminal's), Cursor is not a Chat model,
+    # and Codex's own sign-in runs in Chat's sandbox until its link (a request to OpenAI; never completed)
+    cli subscriptions-status-chat 0 'Codex +[0-9.]+ +no — \./stack subscriptions login codex --chat' subscriptions status --chat
+    cli subscriptions-chat-not-cursor 1 'Cursor CLI is not a Chat model' subscriptions login cursor --chat
+    t0="$(now)"
+    out="$(docker exec "$sc" timeout 40 script -qec "subscriptions login codex" /dev/null </dev/null 2>&1 | tr -d '\r' | head -c 20000)"
+    if printf '%s' "$out" | grep -Eq 'auth\.openai\.com/codex/device'; then record subscriptions signin-codex-chat PASS "$(( $(now) - t0 ))" "Codex's own sign-in, for Chat, in Chat's sandbox: printed its link; ended there, never completed"
+    else record subscriptions signin-codex-chat FAIL "$(( $(now) - t0 ))" "no device link in: $(printf '%s' "$out" | sed -E 's/\x1b\[[0-9;?]*[A-Za-z]//g' | tr '\n' ' ' | tail -c 300)"; fi
   else record subscriptions chat-sandbox SKIP 0 "needs the Code page (Chat's sandbox)"; fi
   # claude-sub: the image's claude without the stack's variables (a stand-in in the workspace prints its environment)
   ws="$(get_env TERMINAL_WORKSPACE)"; t0="$(now)"

@@ -128,6 +128,9 @@ class Settings:
     # Settings › Claude Code › Your AI subscriptions › Use my Claude plan in the Code page and Chat (CODE_CLAUDE_PLAN,
     # compose.code.yaml): whether Claude on your plan is offered as a Chat model (the code container enforces it)
     claude_plan: bool = False
+    # TERMINAL_EGRESS as the stack reads it (lib/common.sh egress_mode): internet (the default), host or off — with
+    # host, your subscriptions are not Chat models (answers.plan_models; the code container enforces it)
+    terminal_egress: str = "internet"
 
     def password_where(self) -> str:
         """"~/bn/.env (project bn-dev)", or "" when ./stack did not say."""
@@ -208,6 +211,13 @@ class Settings:
 def _on(value: str | None) -> bool:
     """true / 1 / yes / on (any case) — anything else, or nothing, is off."""
     return (value or "false").strip().lower() in ("true", "1", "yes", "on")
+
+
+def _egress(value: str | None) -> str:
+    """TERMINAL_EGRESS as the stack reads it (lib/common.sh egress_mode; settings.egress_mode): host; off
+    (false/0/no/off); else internet, the default."""
+    v = (value or "").strip().lower()
+    return "host" if v == "host" else "off" if v in ("false", "0", "no", "off") else "internet"
 
 
 def _int_in(raw, lo: int, hi: int, default: int) -> int:
@@ -307,6 +317,7 @@ def from_env(env: dict | None = None) -> Settings:
         remote_preview_host=r_preview,
         remote_preview=_on(env.get("REMOTE_PREVIEW")),
         claude_plan=code and _on(env.get("CODE_CLAUDE_PLAN")),
+        terminal_egress=_egress(env.get("TERMINAL_EGRESS")),
         tailscale_allowed_login=(env.get("TAILSCALE_ALLOWED_LOGIN") or "").strip().lower(),
         proxy_secret=env.get("PORTAL_PROXY_SECRET", ""),
         env_file=(env.get("PORTAL_ENV_FILE") or "").strip(),

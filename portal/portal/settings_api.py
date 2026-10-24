@@ -398,7 +398,7 @@ def routes(ctx: Ctx) -> list[Route]:
         act, tool = data.get("action"), data.get("tool")
         if act not in st.SUBS_ACTIONS:
             return err(400, "unknown action")
-        if act == "subscriptions-signout" and tool not in st.SUBS_SIGNOUT_TOOLS:
+        if act in st.SUBS_SIGNOUT and tool not in st.SUBS_SIGNOUT[act]:
             return err(400, "That tool signs out inside its own screen (Gemini CLI: /auth signout, Copilot: /logout).")
         if (busy := helper_ready()) is not None:
             return busy
@@ -407,14 +407,14 @@ def routes(ctx: Ctx) -> list[Route]:
         if wait := action_rate.retry_after():
             return err(429, f"Please wait {wait} s before the next action.", wait)
         try:
-            nonce = st.write_subs_action(s.request_dir, password, act, tool if act == "subscriptions-signout" else None)
+            nonce = st.write_subs_action(s.request_dir, password, act, tool if act in st.SUBS_SIGNOUT else None)
         except ValueError:
             return err(413, f"The portal password is longer than {st.MAX_AUTH} bytes: set a shorter one with ./stack config set PORTAL_PASSWORD.")
         except OSError as e:
             log.warning("cannot write the %s request to %s (%s)", act, s.request_dir, e)
             return err(500, "Could not hand the request to the helper (see ./stack logs portal).")
         action_rate.hit()
-        log.warning("subscriptions: %s%s%s", act, f" {tool}" if act == "subscriptions-signout" else "", " (remote)" if is_remote(request) else "")
+        log.warning("subscriptions: %s%s%s", act, f" {tool}" if act in st.SUBS_SIGNOUT else "", " (remote)" if is_remote(request) else "")
         return _no_store(JSONResponse({"id": nonce, "action": act}, status_code=202))
 
     async def signout_others(request: Request) -> Response:

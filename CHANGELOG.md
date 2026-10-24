@@ -30,9 +30,14 @@ All notable changes to bedrock-now are documented here. The format follows
 ### Security
 
 - **Chat's own sandbox for your subscriptions' Chat models** (`subs-chat`): the sandbox's image, a home of its own, and
-  of the sandbox only the tools' sign-in folders (volumes of their own now, in the terminal too: `subs-claude`,
-  `subs-codex`, `subs-copilot`, `subs-cursor`, `subs-cursor-login`, `subs-grok`); no workspace, no project folder, no
-  LiteLLM key or MCP token, not on the terminal's network; each tool
+  **sign-ins of its own** — each Chat tool's folder a volume of Chat's alone (`subs-chat-claude`, `subs-chat-codex`,
+  `subs-chat-copilot`, `subs-chat-grok`), signed in there once more with the tool's own flow (`./stack subscriptions
+  login TOOL --chat`; Settings › Your AI subscriptions shows a *Terminal & Code page* row and a *Chat* row for each,
+  with their own Sign in, Sign out and Check again; Chat's picker shows a tool not signed in for Chat as *Sign in for
+  Chat…*, leading there). Nothing copies a login between the terminal's sign-ins and Chat's, and neither can plant a
+  file the other's tools run. No workspace, no project folder, no LiteLLM key or MCP token, not on the terminal's
+  network, and off the network entirely while the sandbox's way out is the direct one (`TERMINAL_EGRESS=host`: your
+  subscriptions are not Chat models then, greyed out saying why); each tool
   started there with its tools switched off, every permission refused, and at the first sign of a tool call the
   agent's process killed there and then, with what it started, nothing it says after reaching the answer (which says
   so; that session is dropped). Open WebUI reaches Chat's models
@@ -56,6 +61,10 @@ All notable changes to bedrock-now are documented here. The format follows
   either.
 - A conversation carried to another harness (or to a Chat model's new session) goes in as a quote that holds no
   instructions, its role-like tags defanged: an earlier answer cannot speak as you.
+
+(Dev installs that ran a pre-release of this version kept the terminal's sign-ins in volumes of their own,
+`<project>_subs-*`: those are not carried over — the terminal's sign-ins are in its home again, so sign in once more
+there; `./stack uninstall` removes the old volumes.)
 
 ## [0.23.0] - 2026-10-23
 

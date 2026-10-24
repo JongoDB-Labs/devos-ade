@@ -116,6 +116,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import dns from 'node:dns';
 
 export const SOCK_DIR = process.env.BN_CODE_SOCK_DIR || '/run/bn-code';
 export const SOCK = path.join(SOCK_DIR, 'coded.sock');
@@ -5063,6 +5064,20 @@ export function start() {
   return server;
 }
 
+// Chat's sandbox's guard: it must never be on the stack's own network (a compose run without its overlay —
+// compose.code-proxy/-egress/-offline.yaml, lib/common.sh compose_overlays — would put it on the default one, beside
+// LiteLLM, the portal and Open WebUI). In Chat's role, if any of the stack's own services' names resolves here, it does
+// not start: no Chat conversation runs there.
+export const STACK_NAMES = Object.freeze(['litellm', 'portal', 'open-webui', 'caddy', 'gateway', 'shared-mcp', 'postgres', 'code']);
+export async function chatNetworkGuard({ lookup = (n) => dns.promises.lookup(n), names = STACK_NAMES, timeoutMs = 3000 } = {}) {
+  const seen = [];
+  await Promise.all(names.map((n) => Promise.race([
+    Promise.resolve().then(() => lookup(n)).then(() => { seen.push(n); }, () => {}),
+    new Promise((r) => { setTimeout(r, timeoutMs).unref?.(); }),
+  ])));
+  return seen.sort();
+}
+
 // (run as a program, not imported — a script read from stdin, `node -`, imports it with "-" there: not this file)
 const isMain = (() => { try { return Boolean(process.argv[1]) && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href; } catch { return false; } })();
 if (isMain) {
@@ -5073,5 +5088,13 @@ if (isMain) {
   } else if (process.argv[2] === '--run-tty') {
     const [label, sep, ...argv] = process.argv.slice(3);
     runTty(label, sep === '--' ? argv : []).then((status) => process.exit(status));
+  } else if (roleOf() === 'chat') {
+    chatNetworkGuard().then((seen) => {
+      if (seen.length) {
+        process.stderr.write(`bn-coded (Chat's sandbox): the stack's own services are reachable here (${seen.join(', ')}): not starting — Chat's sandbox runs only with its overlay (./stack up adds it)\n`);
+        process.exit(1);
+      }
+      start();
+    });
   } else start();
 }

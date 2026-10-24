@@ -88,10 +88,12 @@ services:
 
   # Chat's own sandbox: where your subscriptions answer as Chat models (code/server/chat.mjs). The terminal's image, a
   # home of its own (a tmpfs: nothing of the sandbox's home — no dotfiles, shell files, ~/.config of the terminal's),
-  # and of the sandbox only the tools' sign-in folders, its volumes (compose.terminal.yaml): claude-sub's
-  # ~/.claude-subscription, ~/.codex, ~/.copilot, ~/.cursor and ~/.config/cursor, ~/.grok — writable, as each tool
-  # writes there: its login when it renews it, and the sessions a conversation takes up again (Codex's rollouts,
-  # Copilot's session state, Cursor's chats, Grok's sessions, Claude's transcripts). Nothing of your files: no
+  # and sign-ins of its own: each Chat tool's folder a volume of Chat's alone (subs-chat-*: claude-sub's
+  # ~/.claude-subscription, ~/.codex, ~/.copilot, ~/.grok), signed in there with the tool's own flow (./stack
+  # subscriptions login TOOL --chat) — never the terminal's: nothing either one writes there reaches the other, a
+  # config file that would run something included. Writable, as each tool writes there: its login when it renews it,
+  # and the sessions a conversation takes up again (Codex's rollouts, Copilot's session state, Grok's sessions,
+  # Claude's transcripts). Nothing of your files: no
   # workspace, no project folder, no LiteLLM key, no MCP token, not on the terminal's network (its gateway, LiteLLM
   # and shared-mcp are out of reach). Its one program is bn-coded in Chat's role
   # (terminal/bin/bn-coded.mjs roleOf): Chat's conversations, each in an empty folder of its own
@@ -110,11 +112,10 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    # its home: its own, gone at each start (~/.config a tmpfs too, its owner yours: Cursor's sign-in folder is in it)
+    # its home: its own, gone at each start
     tmpfs:
       - /tmp:size=256m,mode=1777
       - /home/claude:size=256m,uid=${TERMINAL_UID:-10104},gid=${TERMINAL_GID:-10104},mode=0700
-      - /home/claude/.config:size=16m,uid=${TERMINAL_UID:-10104},gid=${TERMINAL_GID:-10104},mode=0700
     mem_limit: 2g
     pids_limit: 512
     init: true
@@ -132,13 +133,11 @@ services:
       - "gateway.docker.internal:192.0.2.1"
       - "gateway.docker.internal:100::1"
     volumes:
-      # the tools' sign-in folders (the sandbox's volumes), each at its place in this home
-      - subs-claude:/home/claude/.claude-subscription
-      - subs-codex:/home/claude/.codex
-      - subs-copilot:/home/claude/.copilot
-      - subs-cursor:/home/claude/.cursor
-      - subs-cursor-login:/home/claude/.config/cursor
-      - subs-grok:/home/claude/.grok
+      # Chat's own sign-in folders (never the terminal's), each at its place in this home; never in a backup
+      - subs-chat-claude:/home/claude/.claude-subscription
+      - subs-chat-codex:/home/claude/.codex
+      - subs-chat-copilot:/home/claude/.copilot
+      - subs-chat-grok:/home/claude/.grok
       - chat-socket:/run/bn-chat
       # Claude Code's managed settings of Chat's own (terminal/managed/chat.json): every file read denied (an @path of
       # a prompt included), no hook, no Bypass or Auto mode — whatever a conversation's own settings would say
@@ -199,6 +198,9 @@ services:
       CODE_HOST: ${CODE_HOST:-}
       # (Chat's Who answers offers Claude on your plan as a model only while this is on; the code container enforces it)
       CODE_CLAUDE_PLAN: ${CODE_CLAUDE_PLAN:-false}
+      # (and none of your subscriptions as a Chat model while the sandbox's way out is the direct one: the code
+      # container enforces it, compose.code-egress.yaml)
+      TERMINAL_EGRESS: ${TERMINAL_EGRESS:-}
       REMOTE_CODE_HOST: ${REMOTE_CODE_HOST:-}
       PREVIEW_DOMAIN: ${PREVIEW_DOMAIN:-bedrock-now-preview.localhost}
       REMOTE_PREVIEW_HOST: ${REMOTE_PREVIEW_HOST:-}
@@ -211,3 +213,7 @@ networks:
 volumes:
   code-state:
   chat-socket:
+  subs-chat-claude:
+  subs-chat-codex:
+  subs-chat-copilot:
+  subs-chat-grok:

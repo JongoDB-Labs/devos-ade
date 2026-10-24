@@ -25,6 +25,9 @@
 #                                        subscriptions-check {…}  ./stack subscriptions status (lib/subscriptions.sh)
 #                                        subscriptions-signout {…,"tool":"claude|codex|cursor|grok"}  that tool's own
 #                                                        sign-out in the sandbox (narrowing)
+#                                        subscriptions-check-chat {…}, subscriptions-signout-chat {…,"tool":"claude|
+#                                                        codex|grok"}  the same for Chat's sandbox (--chat): its own
+#                                                        sign-ins
 #   .state/requests/ses-<nonce>.json   the Code page's Import sheet: a look, a read, suggestions, a copy that keeps a
 #                                      possible secret (lib/sessions.sh sessions_poll_once; the portal checked the password)
 # Each kind has its own rate limits (state in .state/helper/), separate from update/rollback/clean.
@@ -39,7 +42,7 @@ RECHECK_MIN_INTERVAL_S=3600   # ./stack models --recheck (< $0.01 each): at most
 # Project folders (lib/projects.sh): the folder chooser on this computer's screen at most once a minute, 10 a day
 PROJECT_ACTIONS="project-pick project-remove project-mode-ro"
 SESSIONS_REVOKE_ACTIONS="sessions-revoke"   # (the Code page's own requests: ses-<nonce>.json, lib/sessions.sh SESSIONS_ACTIONS)
-SUBS_HELPER_ACTIONS="subscriptions-check subscriptions-signout"   # your AI subscriptions (lib/subscriptions.sh)
+SUBS_HELPER_ACTIONS="subscriptions-check subscriptions-signout subscriptions-check-chat subscriptions-signout-chat"   # your AI subscriptions (lib/subscriptions.sh)
 PICK_MIN_INTERVAL_S="${PICK_MIN_INTERVAL_S:-60}"
 PICK_MAX_PER_DAY="${PICK_MAX_PER_DAY:-10}"
 ACT_MAX_BYTES=768   # (a project action carries a few more fields than a diagnostic)
@@ -256,9 +259,10 @@ act_check_request() {
     action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="${BASH_REMATCH[4]}"
     project="${BASH_REMATCH[5]}"; mode="${BASH_REMATCH[6]}"
   # (your AI subscriptions: ask the sandbox again, or one tool's own sign-out — the tool in mode's place)
-  elif _sv_re "$body" '^\{"action":"(subscriptions-check)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})"\}$'; then
+  elif _sv_re "$body" '^\{"action":"(subscriptions-check|subscriptions-check-chat)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})"\}$'; then
     action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="${BASH_REMATCH[4]}"
-  elif _sv_re "$body" '^\{"action":"(subscriptions-signout)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})","tool":"(claude|codex|cursor|grok)"\}$'; then
+  elif _sv_re "$body" '^\{"action":"(subscriptions-signout)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})","tool":"(claude|codex|cursor|grok)"\}$' \
+    || _sv_re "$body" '^\{"action":"(subscriptions-signout-chat)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})","tool":"(claude|codex|grok)"\}$'; then
     action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="${BASH_REMATCH[4]}"
     mode="${BASH_REMATCH[5]}"
   else
@@ -444,6 +448,8 @@ helper_run_diag() {
       esac ;;
     subscriptions-check) helper_write_status running "Asking the sandbox's AI tools whether they are signed in"; set -- subscriptions status ;;
     subscriptions-signout) helper_write_status running "Signing $(subs_name "$mode") out in the sandbox"; set -- subscriptions logout "$mode" ;;
+    subscriptions-check-chat) helper_write_status running "Asking Chat's sandbox whether its AI tools are signed in"; set -- subscriptions status --chat ;;
+    subscriptions-signout-chat) helper_write_status running "Signing $(subs_name "$mode") out for Chat"; set -- subscriptions logout "$mode" --chat ;;
   esac
   # in the background, the heartbeat going on (a model check takes about 2 minutes, a backup longer)
   read -r lim idle <<< "$(_job_deadline "$action")"
@@ -475,6 +481,8 @@ helper_run_diag() {
       # (this side's words only: the log holds the sandbox's output too, which never becomes the job's message)
       subscriptions-check) msg="The sandbox's AI tools were not checked (exit $rc)" ;;
       subscriptions-signout) msg="$(subs_name "$mode")'s sign-out did not finish (exit $rc)" ;;
+      subscriptions-check-chat) msg="Chat's AI tools were not checked (exit $rc)" ;;
+      subscriptions-signout-chat) msg="$(subs_name "$mode")'s sign-out for Chat did not finish (exit $rc)" ;;
       *) msg="$(_last_error "$logf")" ;;
     esac
     helper_write_status failed "$msg (full log: .state/helper/last-diag.log)"; return 0
@@ -490,6 +498,8 @@ helper_run_diag() {
     sessions-revoke) msg="Taken back: bedrock-now no longer reads those sessions on this computer (what the Code page's container read is forgotten; sessions already copied into the sandbox stay there)" ;;
     subscriptions-check) msg="Checked: $(subs_count '"signed_in":"yes"') of your AI tools in the sandbox say they are signed in" ;;
     subscriptions-signout) msg="$(subs_name "$mode") signed out in the sandbox (its own sign-out; revoke it at the provider too if the sandbox may have been read)" ;;
+    subscriptions-check-chat) msg="Checked: $(SUBS_WHERE=chat subs_count '"signed_in":"yes"') of your AI tools say they are signed in for Chat" ;;
+    subscriptions-signout-chat) msg="$(subs_name "$mode") signed out for Chat (its own sign-out in Chat's sandbox; revoke it at the provider too if that may have been read)" ;;
     project-*)
       # (said as it is in the sandbox: done only once it restarted with it; else pending — ./stack logs it)
       local applied=0

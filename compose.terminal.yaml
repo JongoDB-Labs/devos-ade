@@ -62,15 +62,9 @@ services:
       - "gateway.docker.internal:192.0.2.1"
       - "gateway.docker.internal:100::1"
     volumes:
+      # (your subscriptions' sign-ins live here, each in its tool's own folder — the terminal's and the Code page's;
+      # Chat's sandbox has sign-ins of its own, never these: compose.code.yaml subs-chat-*)
       - terminal-home:/home/claude
-      # Your subscriptions' sign-in folders (each tool's own: its login, settings and sessions): volumes of their own,
-      # so Chat's sandbox (compose.code.yaml subs-chat) mounts these and nothing else of this home. Never in a backup.
-      - subs-claude:/home/claude/.claude-subscription
-      - subs-codex:/home/claude/.codex
-      - subs-copilot:/home/claude/.copilot
-      - subs-cursor:/home/claude/.cursor
-      - subs-cursor-login:/home/claude/.config/cursor
-      - subs-grok:/home/claude/.grok
       # ttyd's UNIX socket (no TCP listener in here at all), shared only with the gateway
       - terminal-socket:/run/bn-ttyd
       # The Code page's spawn server (bn-coded, started by bn-terminal) listens here; only the code container shares
@@ -181,12 +175,6 @@ networks:
 
 volumes:
   terminal-home:
-  subs-claude:
-  subs-codex:
-  subs-copilot:
-  subs-cursor:
-  subs-cursor-login:
-  subs-grok:
   terminal-socket:
   code-socket:
   preview-socket:

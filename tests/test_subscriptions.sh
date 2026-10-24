@@ -19,6 +19,10 @@ _stubs() {
     echo "dc $*" >> "$TMP/dc"
     case "$*" in
       "ps -q --status running terminal") [ "$RUNNING" != 1 ] || echo t3rm ;;
+      # (Chat's sandbox: its own sign-ins)
+      "ps -q --status running subs-chat") [ "${CHAT_RUNNING:-1}" != 1 ] || echo ch4t ;;
+      "$SX -e BN_SUBS_TIMEOUT=15 subs-chat /usr/local/bin/subscriptions status --tsv") printf '%s' "${CHAT_TSV:-}" ;;
+      "$SX subs-chat /usr/local/bin/subscriptions "*) echo "chat: $*" >> "$TMP/dc"; printf 'Open https://auth.openai.com/codex/device\n'; return 0 ;;
       "$SX -e BN_SUBS_TIMEOUT=15 terminal /usr/local/bin/subscriptions status --tsv")
         # (a sandbox that never stops printing: read up to the cap only)
         if [ "$FOREVER" = 1 ]; then printf 'codex\tyes\t0.163.0\tyes\tchatgpt\tcommand\n'; yes 'more more more'; else printf '%s' "$TSV"; fi ;;
@@ -397,8 +401,19 @@ subscriptions logout codex"
   _ra 55555555555555555555555555555555 subscriptions-check ',"tool":"codex"'
   if settings_poll_once 2>/dev/null; then return 1; fi
   assert_eq "$(wc -l < "$CALLS" | tr -d ' ')" 2
+  # Chat's own: its check, and a sign-out for Chat of a Chat model with a sign-out command (never Cursor, never Copilot)
+  _ra 66666666666666666666666666666666 subscriptions-check-chat ''; settings_poll_once 2>/dev/null
+  _ra 77777777777777777777777777777777 subscriptions-signout-chat ',"tool":"grok"'; settings_poll_once 2>/dev/null
+  assert_eq "$(tail -n 2 "$CALLS")" "subscriptions status --chat
+subscriptions logout grok --chat"
+  assert_contains "$(cat "$(helper_status_file)")" "Grok Build signed out for Chat"
+  _ra 88888888888888888888888888888888 subscriptions-signout-chat ',"tool":"cursor"'
+  if settings_poll_once 2>/dev/null; then return 1; fi
+  _ra 99999999999999999999999999999999 subscriptions-signout-chat ',"tool":"copilot"'
+  if settings_poll_once 2>/dev/null; then return 1; fi
+  assert_eq "$(wc -l < "$CALLS" | tr -d ' ')" 4
   settings_helper_tick 2>/dev/null || true
-  assert_contains "$(cat "$(settings_capability_file)")" '"subscriptions": ["subscriptions-check","subscriptions-signout"]'
+  assert_contains "$(cat "$(settings_capability_file)")" '"subscriptions": ["subscriptions-check","subscriptions-signout","subscriptions-check-chat","subscriptions-signout-chat"]'
   assert_eq "$(_job_deadline subscriptions-check)" "300 0"
 }
 
@@ -457,9 +472,23 @@ test_the_image_pins_every_tool_it_downloads() {
   assert_contains "$(cat "$STACK_DIR/terminal/tools/install.sh")" 'chown -hR 0:0 /out'
   # nothing setuid/setgid; every link relative and leading inside /out (readlink -e: there); a find that fails, fails
   i="$(cat "$STACK_DIR/terminal/tools/install.sh")"
-  for want in '-perm /6000' 'ug-s' 'case "$t" in /*)' 'r="$(readlink -e "$l")" ||' 'case "$r" in /out/*) ;;' '-print)" || {' "sh {} + || {"; do
+  for want in '-perm /6000' 'ug-s' 'case "$t" in /*)' 'r="$(readlink -e "$l")" ||' 'case "$r" in /out/*) ;;' '-print)" || {' "sh {} + || {" \
+              's="$(realpath -m -s "$(dirname "$l")/$t")" ||' 'case "$s" in /out/*) ;;'; do
     assert_contains "$i" "$want"
   done
+  # the link check itself, on a folder of its own (where this computer's realpath reads paths as written: GNU's):
+  # a link that lands in it only through a link outside it — inside as resolved, outside as written — is refused
+  if realpath -m -s / >/dev/null 2>&1 && readlink -e / >/dev/null 2>&1; then
+    local o chk
+    o="$(cd "$TMP" && pwd -P)/out"   # (its real path: what readlink -e answers)
+    mkdir -p "$o/a" "$o/stuff"; : > "$o/stuff/file"
+    ln -s "$o/stuff" "$TMP/elsewhere"
+    ln -s ../stuff/file "$o/a/ok"
+    chk="$(sed -n "/^find \/out -type l -exec sh -c '/,/sh {} + ||/p" "$STACK_DIR/terminal/tools/install.sh" | sed "s#/out#$o#g; s/ || {.*$//")"
+    sh -c "$chk" 2>/dev/null || { echo "a link that stays in it was refused" >&2; return 1; }
+    ln -s ../../elsewhere/file "$o/a/sly"
+    if sh -c "$chk" 2>/dev/null; then echo "a link out as written was taken" >&2; return 1; fi
+  fi
   # (the build stage's /bin/sh is dash: the check is POSIX sh)
   if command -v dash >/dev/null 2>&1; then dash -n "$STACK_DIR/terminal/tools/install.sh" || return 1; fi
   [ "$(grep -c 'tar ' "$STACK_DIR/terminal/tools/install.sh")" = "$(grep -c 'tar --no-same-owner ' "$STACK_DIR/terminal/tools/install.sh")" ] || return 1
@@ -472,4 +501,50 @@ test_the_image_pins_every_tool_it_downloads() {
   [ -z "$(grep -oE 'https://[^"/ ]+' "$STACK_DIR/terminal/tools/install.sh" | sort -u | grep -vxE 'https://(github\.com|downloads\.cursor\.com)')" ] || return 1
   # ttyd hands the pickers' words to bn-session (as arguments, never a shell)
   assert_contains "$(cat "$STACK_DIR/terminal/bin/bn-terminal")" "--check-origin --url-arg"
+}
+
+test_chat_has_sign_ins_of_its_own_asked_and_made_in_its_sandbox_alone() {
+  _stubs
+  local out f
+  set_env CODE_ENABLED true
+  # its status: Chat's sandbox asked, its Chat tools alone kept (a Cursor or Gemini line there is not a Chat model's), in
+  # a file of its own
+  export TSV="$(printf 'codex\tyes\t0.163.0\tyes\tchatgpt\tcommand\n')"
+  export CHAT_TSV="$(printf 'codex\tyes\t0.163.0\tno\t-\tcommand\ncursor\tyes\t1\tyes\tcursor\tcommand\ngrok\tyes\t1.0.67\tno\t-\tfile\n')"
+  out="$(cmd_subscriptions status --chat)"
+  assert_contains "$out" "Chat's own sign-ins"
+  assert_contains "$out" "no — ./stack subscriptions login codex --chat"
+  assert_not_contains "$out" "Cursor"
+  f="$(SUBS_WHERE=chat subs_status_file)"
+  assert_contains "$f" "subscriptions-chat.json"
+  assert_contains "$(cat "$f")" '"terminal":"running","tools":[{"id":"codex","installed":true,"version":"0.163.0","signed_in":"no"'
+  assert_not_contains "$(cat "$f")" "cursor"
+  # the terminal's file untouched by it; both asked by a plain status, each in its own sandbox
+  : > "$TMP/dc"
+  out="$(cmd_subscriptions status)"
+  assert_contains "$out" "yes — ChatGPT"
+  assert_contains "$out" "Chat's own sign-ins"
+  assert_contains "$(cat "$TMP/dc")" "terminal /usr/local/bin/subscriptions status --tsv"
+  assert_contains "$(cat "$TMP/dc")" "subs-chat /usr/local/bin/subscriptions status --tsv"
+  assert_contains "$(cat "$(subs_status_file)")" '"signed_in":"yes"'
+  # a sign-in for Chat: in Chat's sandbox, never the terminal's
+  : > "$TMP/dc"
+  out="$(cmd_subscriptions login codex --chat 2>&1)"
+  assert_contains "$out" "For Chat: Codex's own sign-in, in Chat's sandbox"
+  assert_contains "$out" "sandbox│ Open https://auth.openai.com/codex/device"
+  assert_contains "$(cat "$TMP/dc")" "subs-chat /usr/local/bin/subscriptions login codex"
+  assert_not_contains "$(cat "$TMP/dc")" "terminal /usr/local/bin/subscriptions login"
+  # not a Chat model (Cursor, Gemini CLI): refused before anything is asked; Copilot's sign-out: said how
+  : > "$TMP/dc"
+  out="$( (cmd_subscriptions login cursor --chat) 2>&1)" && return 1
+  assert_contains "$out" "Cursor CLI is not a Chat model"
+  out="$( (cmd_subscriptions logout copilot --chat) 2>&1)" && return 1
+  assert_contains "$out" "subs-chat-copilot"
+  assert_not_contains "$(cat "$TMP/dc")" "login"
+  # the Code page off: Chat's sandbox is too — said
+  set_env CODE_ENABLED false
+  out="$( (cmd_subscriptions login codex --chat) 2>&1)" && return 1
+  assert_contains "$out" "./stack code enable"
+  out="$( (cmd_subscriptions status --chat) 2>&1)" && return 1
+  assert_contains "$out" "Chat's sandbox is off"
 }

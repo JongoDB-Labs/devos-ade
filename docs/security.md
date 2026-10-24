@@ -3106,10 +3106,8 @@ never reads, copies, keeps, passes on or relays a login.**
 - [x] **Its own sign-in, in the sandbox.** Each signs in there with a flow that needs no callback into the sandbox:
   Codex's and Grok's device codes, Copilot's GitHub device flow, Cursor's link that the app polls, Claude Code's and
   Gemini CLI's link with the code pasted back. Your browser talks to the provider; the sandbox talks to the provider;
-  bedrock-now's other containers see none of it, Chat's sandbox aside (below: the same folders, for Chat's models).
-  Their logins stay in each app's own file in its own folder of the sandbox's home — a volume of its own each
-  (`subs-claude`, `subs-codex`, `subs-copilot`, `subs-cursor`, `subs-cursor-login`, `subs-grok`; Gemini CLI's in
-  `terminal-home`): `~/.claude-subscription/.credentials.json`, `~/.codex/auth.json`, `~/.gemini/oauth_creds.json`,
+  bedrock-now's other containers see none of it. Their logins stay in each app's own file in its own folder of the
+  sandbox's home (`terminal-home`): `~/.claude-subscription/.credentials.json`, `~/.codex/auth.json`, `~/.gemini/oauth_creds.json`,
   `~/.copilot/` (plaintext once you agree, as the app asks: there is no keychain in the container),
   `~/.config/cursor/auth.json`, `~/.grok/auth.json`. They survive restarts, updates, rollbacks and `./stack terminal
   disable`; `./stack uninstall` (or `docker volume rm <project>_terminal-home`) removes them. **Backups never hold
@@ -3178,14 +3176,17 @@ never reads, copies, keeps, passes on or relays a login.**
   so a container beside it could sign in as you — with a key only they have (`CODE_CHAT_KEY`, made by `./stack code
   enable`, never in the sandbox or on a command line); the endpoint lists only the subscriptions signed in now (the sandbox's own `subscriptions status`,
   words only), caps requests (24 MiB) and answers (2 MiB), and treats what comes back as plain text.
-- [x] **Chat's own sandbox: none of your files.** Chat's conversations never run where your workspace is. They run in
-  `subs-chat`, a container of the sandbox's image with a home of its own (a tmpfs, new at each start: none of the
-  sandbox's dotfiles, shell files or `~/.config`) and, of the sandbox, only the tools' sign-in folders — volumes of
-  their own, mounted at the same places in both: `~/.claude-subscription`, `~/.codex`, `~/.copilot`, `~/.cursor` and
-  `~/.config/cursor`, `~/.grok`. Those are writable, because each tool writes there: its login when it renews it, and
-  the sessions a conversation takes up again (Codex's rollouts, Copilot's session state, Cursor's chats, Grok's
-  sessions, Claude's transcripts); a Chat turn can so change what that tool keeps, never anything else the terminal
-  runs. Nothing else of yours: no workspace, no project folder (neither is mounted), no LiteLLM key, no MCP token, not on
+- [x] **Chat's own sandbox: none of your files, sign-ins of its own.** Chat's conversations never run where your
+  workspace is. They run in `subs-chat`, a container of the sandbox's image with a home of its own (a tmpfs, new at each
+  start: none of the sandbox's dotfiles, shell files or `~/.config`) and sign-ins of its own: each Chat tool's folder
+  (`~/.claude-subscription`, `~/.codex`, `~/.copilot`, `~/.grok`) a volume of Chat's alone (`subs-chat-claude`,
+  `subs-chat-codex`, `subs-chat-copilot`, `subs-chat-grok`), signed in there with the tool's own flow (`./stack
+  subscriptions login TOOL --chat`; Settings › Your AI subscriptions has a Chat row for each). The terminal's sign-ins
+  are never mounted there, nor Chat's in the terminal, and nothing copies a login between them: the terminal cannot
+  read a Chat conversation or plant a file Chat's tools run (a Codex `notify`, a hooks file), and a Chat turn cannot
+  plant one the terminal's tools would run with your workspace and keys. Chat's folders are writable, because each tool
+  writes there: its login when it renews it, and the sessions a conversation takes up again (Codex's rollouts, Copilot's
+  session state, Grok's sessions, Claude's transcripts). Nothing else of yours: no workspace, no project folder (neither is mounted), no LiteLLM key, no MCP token, not on
   the terminal's network (its gateway, LiteLLM, shared-mcp: no name resolves there; its one network is the egress proxy's, which the terminal is on too — a dev server of yours listening on every address in the terminal answers it there, and Chat's agents have no tool to ask), `read_only`, `cap_drop: ALL`,
   `no-new-privileges`, 2 GB, 512 processes; its way out is the sandbox's (the egress proxy by default). Its one program
   is bn-coded in Chat's role, which runs Chat's conversations and nothing else (no file, Git, project or session op);
@@ -3259,7 +3260,11 @@ never reads, copies, keeps, passes on or relays a login.**
 - [ ] **Anything in the sandbox can read those files.** Claude, a command it runs, a web page it reads, a plugin or an
   MCP server there runs as the same user and can copy a login out and use your plan elsewhere until you sign out **and
   revoke it at the provider** (your account's settings at Anthropic, OpenAI, GitHub, Cursor or xAI). The sandbox
-  reaches the internet by default. Sign in only with plans you are comfortable using there; `TERMINAL_AI_TOOLS=none`
+  reaches the internet by default. Taking the stack's variables out of the tools' environment is not a boundary
+  either: anything there can read the sandbox's first process's environment (`/proc/1/environ`: the LiteLLM key) and
+  `~/.config/bedrock-now/mcp.json` (the shared MCP server's token), and Codex's "untrusted" approvals run a `cat` of
+  them without a card — they are the sandbox's, as your workspace is. The same holds in Chat's sandbox for Chat's own
+  sign-ins (which hold no key or token of the stack's). Sign in only with plans you are comfortable using there; `TERMINAL_AI_TOOLS=none`
   leaves the apps out. Each app also sends its provider what it sends from anywhere, telemetry included: `claude-sub`
   runs with Anthropic's defaults (the Bedrock `claude` here turns non-essential traffic off), its updates off.
 

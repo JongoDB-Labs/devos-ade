@@ -1290,23 +1290,36 @@
   }
 
   // Your AI subscriptions (lib/subscriptions.sh, answers.py): each tool in the sandbox — the provider's own client —
-  // with what it said of its own login at the last check (yes · which kind / no / not known here), never a login.
-  // Signing in happens in the terminal (Open in the terminal); Sign out runs the tool's own sign-out and Check again
-  // asks the sandbox again, both through the update helper with the password (narrowing: wherever Settings actions are).
+  // with what it said of its own login at the last check (yes · which kind / no / not known here), never a login. Two
+  // rows for each tool that is a Chat model: the terminal's and the Code page's sign-in, and Chat's own (Chat's
+  // sandbox: a sign-in apart, never the terminal's) — each with its own Sign in, Sign out and Check again. Signing in
+  // happens in the terminal (Open in the terminal) or, for Chat, with ./stack subscriptions login TOOL --chat; Sign out
+  // runs the tool's own sign-out and Check again asks that sandbox again, both through the update helper with the
+  // password (narrowing: wherever Settings actions are).
+  const SUBS_CHAT_SIGNOUT = ["claude", "codex", "grok"];   // (settings.py SUBS_SIGNOUT_CHAT_TOOLS)
   function subscriptionsRow(r) {
     const rw = ownFrame(r, "Your AI subscriptions");
     const sb = data.subscriptions || { tools: [], sandbox: null, checked_at: null };
     const can = (act) => canChange() && (data.helper.subscriptions || []).includes(act);
     const list = el("ul", { class: "set-projects", id: "set-subscriptions" });
     const termHere = Boolean(APP_URLS.terminal);
+    const stateOf = (t, s) => (s.installed === false ? ["not in the sandbox", ""] : s.installed == null ? ["not checked yet", ""]
+      : s.signed_in === "yes" ? [`signed in${s.kind_words ? ` · ${s.kind_words}` : ""}${s.how === "file" ? " (its login file is there)" : ""}`, "badge-local"]
+        : s.signed_in === "no" ? ["not signed in", ""] : [t.id === "copilot" ? "not known here — /user in Copilot says" : "not known here", ""]);
+    const checkButton = (action, title, body) => {
+      const b = el("button", { type: "button", class: "action", text: "Check again", "data-act": action });
+      b.disabled = !can(action);
+      b.addEventListener("click", () => askPassword({ kind: "subscriptions", action }, title, body, "Check again"));
+      return b;
+    };
     for (const t of sb.tools || []) {
-      const state = t.installed === false ? ["not in the sandbox", ""] : t.installed == null ? ["not checked yet", ""]
-        : t.signed_in === "yes" ? [`signed in${t.kind_words ? ` · ${t.kind_words}` : ""}${t.how === "file" ? " (its login file is there)" : ""}`, "badge-local"]
-          : t.signed_in === "no" ? ["not signed in", ""] : [t.id === "copilot" ? "not known here — /user in Copilot says" : "not known here", ""];
       const li = el("li", { class: "set-project", "data-tool": t.id },
         el("span", { class: "set-project-name", text: t.name }), " ",
-        el("span", { class: "note", text: `${t.provider} · ${t.plan}${t.version ? ` · ${t.version}` : ""} · ${t.command}` }), " ",
-        el("span", { class: `badge ${state[1]}`.trim(), text: state[0] }));
+        el("span", { class: "note", text: `${t.provider} · ${t.plan}${t.version ? ` · ${t.version}` : ""} · ${t.command}` }));
+      // the terminal's and the Code page's sign-in
+      const st = stateOf(t, t);
+      const term = el("div", { class: "set-subs-where", "data-where": "terminal" },
+        el("span", { class: "note", text: t.chat ? "Terminal & Code page: " : "" }), el("span", { class: `badge ${st[1]}`.trim(), text: st[0] }));
       const acts = el("span", { class: "set-project-actions" });
       if (t.installed !== false && termHere) {
         const open = el("button", { type: "button", class: "action", text: t.signed_in === "yes" ? "Open in the terminal" : "Sign in in the terminal", "data-act": "subscriptions-open" });
@@ -1327,29 +1340,63 @@
         out.disabled = !can("subscriptions-signout");
         out.addEventListener("click", () => askPassword({ kind: "subscriptions", action: "subscriptions-signout", tool: t.id },
           `Sign ${t.name} out in the sandbox?`,
-          `${t.name}'s own sign-out runs in the sandbox: its login there is removed. If anything in the sandbox may have read it, revoke it at ${t.provider} too.`, "Sign out"));
+          `${t.name}'s own sign-out runs in the sandbox (the terminal's and the Code page's sign-in; Chat's is its own): its login there is removed. If anything in the sandbox may have read it, revoke it at ${t.provider} too.`, "Sign out"));
         acts.append(out);
       } else if (t.signout === "inside" && t.installed !== false) {
-        li.append(el("p", { class: "note", text: `${t.name} signs out inside it: ${t.id === "gemini" ? "/auth signout" : "/logout"} (Open in the terminal).` }));
+        term.append(el("p", { class: "note", text: `${t.name} signs out inside it: ${t.id === "gemini" ? "/auth signout" : "/logout"} (Open in the terminal).` }));
       }
-      li.append(acts);
+      acts.append(checkButton("subscriptions-check", "Ask the sandbox's AI tools again?",
+        "Each tool's own status command runs in the sandbox (about a second each); only signed in or not, and which kind, is kept."));
+      term.append(acts);
+      li.append(term);
+      // Chat's own sign-in (a Chat model only: catalog chat_model yes)
+      if (t.chat) {
+        const cs = stateOf(t, t.chat);
+        const chat = el("div", { class: "set-subs-where", "data-where": "chat", id: `set-subs-chat-${t.id}` },
+          el("span", { class: "note", text: "Chat: " }), el("span", { class: `badge ${cs[1]}`.trim(), text: cs[0] }));
+        const cacts = el("span", { class: "set-project-actions" });
+        const cmd = `./stack subscriptions login ${t.id} --chat`;
+        const signin = el("button", { type: "button", class: "action", text: "Sign in for Chat", "data-act": "subscriptions-chat-signin" });
+        const how = el("p", { class: "set-cli", hidden: true }, el("span", { class: "note", text: `Chat's own sign-in, apart from the terminal's — in a terminal on this computer (its link and code show there): ` }),
+          el("code", { text: cmd }), " ", copyButton(cmd));
+        signin.addEventListener("click", () => { how.hidden = !how.hidden; });
+        cacts.append(signin);
+        if (SUBS_CHAT_SIGNOUT.includes(t.id) && t.chat.installed !== false) {
+          const out = el("button", { type: "button", class: "action", text: "Sign out", "data-act": "subscriptions-signout-chat" });
+          out.disabled = !can("subscriptions-signout-chat");
+          out.addEventListener("click", () => askPassword({ kind: "subscriptions", action: "subscriptions-signout-chat", tool: t.id },
+            `Sign ${t.name} out for Chat?`,
+            `${t.name}'s own sign-out runs in Chat's sandbox: Chat's login is removed (the terminal's stays). Revoke it at ${t.provider} too if that may have been read.`, "Sign out"));
+          cacts.append(out);
+        } else if (t.id === "copilot") {
+          chat.append(el("p", { class: "note", text: "Copilot signs out inside it, and Chat has no screen of it: ./stack subscriptions logout copilot --chat says how." }));
+        }
+        cacts.append(checkButton("subscriptions-check-chat", "Ask Chat's sandbox again?",
+          "Each Chat tool's own status command runs in Chat's sandbox; only signed in or not, and which kind, is kept."));
+        chat.append(cacts, how);
+        li.append(chat);
+      }
       list.append(li);
     }
     if (!(sb.tools || []).length) list.append(el("li", { class: "note", text: "No tools listed (catalog/ai-tools.tsv is missing)." }));
     rw._main.append(list);
     const when = sb.checked_at ? new Date(sb.checked_at * 1000).toLocaleString() : "";
+    const chatWhen = sb.chat_checked_at ? new Date(sb.chat_checked_at * 1000).toLocaleString() : "";
     const SB = { off: "The sandbox is off: ./stack terminal enable.", down: "The sandbox is not running: ./stack up.", error: "The sandbox did not answer at the last check." };
-    rw._main.append(el("p", { class: "note set-extra", text: `${SB[sb.sandbox] || ""}${SB[sb.sandbox] ? " " : ""}${when ? `Checked ${when}.` : "Not checked yet."} Each tool signs in with its own flow, in the terminal (a link and a code for your browser); its login stays in that tool's own file in the sandbox — bedrock-now never opens it, and backups leave it out. Anything in the sandbox can read those files: sign out (and revoke at the provider) if that worries you.` }));
-    const check = el("button", { type: "button", class: "action", text: "Check again", id: "set-subscriptions-check" });
-    check.disabled = !can("subscriptions-check");
-    check.addEventListener("click", () => askPassword({ kind: "subscriptions", action: "subscriptions-check" }, "Ask the sandbox's AI tools again?",
-      "Each tool's own status command runs in the sandbox (about a second each); only signed in or not, and which kind, is kept.", "Check again"));
-    rw._actions.append(check);
+    const CSB = { off: "Chat's sandbox is off (it runs with the Code page).", down: "Chat's sandbox is not running: ./stack up.", error: "Chat's sandbox did not answer at the last check." };
+    rw._main.append(el("p", { class: "note set-extra", text: `${SB[sb.sandbox] || ""}${SB[sb.sandbox] ? " " : ""}${when ? `Checked ${when}.` : "Not checked yet."} ${CSB[sb.chat_sandbox] || ""}${chatWhen ? ` Chat's checked ${chatWhen}.` : ""} Each tool signs in with its own flow, in the terminal (a link and a code for your browser) — and once more for Chat, whose sandbox has sign-ins of its own (nothing is copied between the two); each login stays in that tool's own file there — bedrock-now never opens it, and backups leave it out. Anything in that sandbox can read those files: sign out (and revoke at the provider) if that worries you.` }));
     if (!can("subscriptions-check")) {
       rw._main.append(el("p", { class: "note set-extra", text: !data.helper.running ? "Check again and Sign out need the update helper (./stack helper install)." : !canChange() ? "Settings changes are off for remote access (REMOTE_ADMIN_ACTIONS)." : "This update helper does not offer them yet: ./stack helper install refreshes it." }));
     }
     rw._main.append(el("p", { class: "set-cli" }, el("span", { class: "note", text: "In a terminal on this computer: " }), el("code", { text: "./stack subscriptions" }), " ",
       copyButton("./stack subscriptions")));
+    // (from Chat's picker: "Sign in for Chat…" — that tool's Chat row, its command shown: answers.js sets which)
+    const want = typeof window.bnSubsChatSignin === "string" && /^[a-z]{2,10}$/.test(window.bnSubsChatSignin) ? window.bnSubsChatSignin : "";
+    if (want) {
+      window.bnSubsChatSignin = "";
+      const c = rw.querySelector(`#set-subs-chat-${want}`);
+      if (c) { c.querySelector(".set-cli").hidden = false; requestAnimationFrame(() => c.scrollIntoView({ block: "center" })); }
+    }
     return rw;
   }
 

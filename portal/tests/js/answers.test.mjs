@@ -64,4 +64,9 @@ test("the Chat tab: your subscriptions as models while they can answer (Open Web
   assert.deepEqual(models.slice(0, 2).map((i) => [i.value, i.disabled]), [["model:plan-codex", false], ["model:plan-claude", true]]);
   assert.match(models[1].label, /off: Settings$/);
   assert.match(models[0].title, /no \$/);
+  // one that lacks only Chat's own sign-in: "Sign in for Chat…", a choice that goes to Settings' row (never a model)
+  const s = plain(A.chatOptions({ ...data, plan_models: [{ id: "plan-grok", tool: "grok", label: "Grok · x", ok: false, why: "Sign in for Chat…", signin: true },
+    { id: "plan-x", tool: "../x", label: "X", ok: false, why: "w", signin: true }] })).find((x) => x.label === "Your AI subscriptions as Chat models").items;
+  assert.deepEqual(s.slice(0, 2).map((i) => [i.value, i.disabled]), [["signin:grok", false], ["model:plan-x", true]]);
+  assert.match(s[0].label, /Sign in for Chat…$/);
 });

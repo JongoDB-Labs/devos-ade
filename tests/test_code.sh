@@ -471,7 +471,8 @@ test_setup_hook_builds_and_starts_it_and_never_stops_setup() {
   code_enable > /dev/null 2>&1 || return 1
   : > "$TMP/dc"
   code_setup_hook > "$TMP/out" 2>&1 || return 1
-  assert_eq "$(cat "$TMP/dc" | tr '\n' '|')" "dc build -q code|dc up -d --wait terminal-gateway|dc up -d --wait code|dc up -d --wait subs-chat|dc up -d --wait open-webui|"
+  # (Chat's sandbox up, then what its own sign-ins say: asked only while it runs — here it does not)
+  assert_eq "$(cat "$TMP/dc" | tr '\n' '|')" "dc build -q code|dc up -d --wait terminal-gateway|dc up -d --wait code|dc up -d --wait subs-chat|dc ps -q --status running subs-chat|dc up -d --wait open-webui|"
   dc() { echo "boom"; return 1; }
   code_setup_hook > "$TMP/out" 2>&1 || return 1
   assert_contains "$(cat "$TMP/out")" "Code page: setup goes on without it"
@@ -496,6 +497,8 @@ test_images_rollback_and_uninstall() {
   d="$(cat "$TMP/docker")"
   assert_contains "$d" "docker network rm bedrock-now_code-link"
   assert_not_contains "$d" "code-socket"   # (the terminal's volume: terminal_uninstall_cleanup)
+  # (Chat's own sign-ins, by their exact names)
+  assert_contains "$d" "docker volume rm bedrock-now_subs-chat-claude bedrock-now_subs-chat-codex bedrock-now_subs-chat-copilot bedrock-now_subs-chat-grok"
   assert_contains "$d" "docker image rm bedrock-now/code:local bedrock-now/code:previous"
   assert_contains "$d" "docker volume rm bedrock-now_code-state"   # (Git hosts' tokens and keys go with the install)
   : > "$TMP/docker"; terminal_uninstall_cleanup
@@ -555,7 +558,7 @@ test_compose_code_is_a_sandboxed_container_on_its_own_network() {
   for want in "read_only: true" "cap_drop: [ALL]" 'security_opt: ["no-new-privileges:true"]' 'user: "${TERMINAL_UID:-10104}:${TERMINAL_GID:-10104}"' \
               'image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/terminal:local' "pull_policy: never" 'entrypoint: ["node", "/usr/local/bin/bn-coded.mjs"]' "BN_CODED_ROLE: chat" \
               "BN_CODE_SOCK_DIR: /run/bn-chat" "- chat-socket:/run/bn-chat" "pids_limit:" "mem_limit:" \
-              "- /home/claude:size=256m,uid=\${TERMINAL_UID:-10104},gid=\${TERMINAL_GID:-10104},mode=0700" "- subs-codex:/home/claude/.codex"; do
+              "- /home/claude:size=256m,uid=\${TERMINAL_UID:-10104},gid=\${TERMINAL_GID:-10104},mode=0700" "- subs-chat-codex:/home/claude/.codex"; do
     assert_contains "$sc" "$want"
   done
   for bad in "/workspace" "TERMINAL_WORKSPACE" "LITELLM" "ANTHROPIC" "SHARED_MCP_TOKEN" "BN_MCP_URL" "AWS_" "code-socket" "docker.sock" "privileged" \
@@ -566,7 +569,9 @@ test_compose_code_is_a_sandboxed_container_on_its_own_network() {
   assert_contains "$sc" "target: /etc/claude-code/managed-settings.json"
   # (its one network: the sandbox's way out — never the stack's default network, nor one of its own)
   assert_contains "$(cat "$STACK_DIR/compose.code-proxy.yaml")" "networks: [terminal-proxy]"
-  assert_contains "$(cat "$STACK_DIR/compose.code-egress.yaml")" "networks: [terminal-out]"
+  # (host egress: Chat's sandbox off the network too — no Chat models then)
+  assert_contains "$(cat "$STACK_DIR/compose.code-egress.yaml")" "network_mode: none"
+  assert_not_contains "$(cat "$STACK_DIR/compose.code-egress.yaml")" "terminal-out"
   assert_contains "$(cat "$STACK_DIR/compose.code-offline.yaml")" "network_mode: none"
   for f in compose.code-egress.yaml compose.code-offline.yaml; do assert_eq "$(grep -c '^  [a-z]' "$STACK_DIR/$f")" 1; done   # subs-chat: alone
   for want in 'CODE_MODE: "on"' 'REMOTE_CODE_HOST: ${REMOTE_CODE_HOST:-code.remote.invalid}' 'CODE_ENABLED: "true"'; do
@@ -591,16 +596,19 @@ x = s["subs-chat"]
 assert x["image"] == t["image"] and x["user"] == "501:20" and x["read_only"] and x["cap_drop"] == ["ALL"] and "ports" not in x
 assert x["entrypoint"] == ["node", "/usr/local/bin/bn-coded.mjs"] and x["environment"]["BN_CODED_ROLE"] == "chat", x
 assert sorted(x["networks"]) == ["terminal-proxy"], x["networks"]
-# (of the sandbox home: the sign-in folders alone, the same volumes as the terminal has at the same places; a home of
-# its own, a tmpfs)
-SUBS = [("subs-claude", "/home/claude/.claude-subscription"), ("subs-codex", "/home/claude/.codex"), ("subs-copilot", "/home/claude/.copilot"),
-  ("subs-cursor", "/home/claude/.cursor"), ("subs-cursor-login", "/home/claude/.config/cursor"), ("subs-grok", "/home/claude/.grok")]
+# (sign-in folders of its own, volumes of Chat alone, never those of the terminal: the terminal keeps its sign-ins in its
+# home, and no volume of either is in the other; and a home of its own, a tmpfs)
+SUBS = [("subs-chat-claude", "/home/claude/.claude-subscription"), ("subs-chat-codex", "/home/claude/.codex"), ("subs-chat-copilot", "/home/claude/.copilot"),
+  ("subs-chat-grok", "/home/claude/.grok")]
 assert [(v["type"], v.get("source", "").rsplit("/", 1)[-1], v["target"], v.get("read_only")) for v in x["volumes"]] == [
   ("volume", s, t, None) for s, t in SUBS] + [("volume", "chat-socket", "/run/bn-chat", None),
   ("bind", "chat.json", "/etc/claude-code/managed-settings.json", True)], x["volumes"]
-assert all((s, t) in [(v.get("source"), v["target"]) for v in t_vols] for s, t in SUBS) if (t_vols := t["volumes"]) else False
+t_src = [v.get("source") for v in t["volumes"] if v["type"] == "volume"]
+x_src = [v.get("source") for v in x["volumes"] if v["type"] == "volume"]
+assert not set(t_src) & set(x_src), (t_src, x_src)
+assert not any(str(v).startswith("subs-") for v in t_src), t_src
 assert ("terminal-home", "/home/claude") in [(v.get("source"), v["target"]) for v in t["volumes"]]
-assert sorted(x["tmpfs"]) == ["/home/claude/.config:size=16m,uid=501,gid=20,mode=0700", "/home/claude:size=256m,uid=501,gid=20,mode=0700", "/tmp:size=256m,mode=1777"], x["tmpfs"]
+assert sorted(x["tmpfs"]) == ["/home/claude:size=256m,uid=501,gid=20,mode=0700", "/tmp:size=256m,mode=1777"], x["tmpfs"]
 assert not any(k.startswith(("ANTHROPIC", "LITELLM", "AWS_", "SHARED_MCP", "BN_MCP")) for k in x["environment"]), x["environment"]
 assert x["environment"]["HTTPS_PROXY"] == "http://egress:3128"
 assert ("chat-socket", "/run/bn-chat", True) in [(v.get("source"), v["target"], v.get("read_only")) for v in c["volumes"]], c["volumes"]

@@ -100,10 +100,10 @@ COPY tools/gemini-settings.json /etc/gemini-cli/settings.json
 # the terminal's gateway alone.
 # You, inside: the same uid/gid as on your computer (TERMINAL_UID/GID from ./stack), so files in the workspace
 # folder stay yours. The node image's own user (uid 1000) goes first. The home folder is the terminal-home volume
-# (Claude Code's settings and history, shell history); it starts empty: the settings below live in /etc. Your
-# subscriptions' sign-in folders are volumes of their own (compose.terminal.yaml: Chat's sandbox mounts those alone),
-# so each is a folder of yours here, mode 700, for a new volume to take its owner from; /run/bn-chat is Chat's
-# sandbox's socket folder (compose.code.yaml subs-chat).
+# (Claude Code's settings and history, shell history, your subscriptions' sign-ins); it starts empty: the settings
+# below live in /etc. Your subscriptions' sign-in folders are folders of yours here, mode 700: a new home takes them,
+# and Chat's sandbox's own sign-in volumes (compose.code.yaml subs-chat-*) take their owner from them; /run/bn-chat is
+# Chat's sandbox's socket folder (compose.code.yaml subs-chat).
 ARG BN_UID=10104
 ARG BN_GID=10104
 RUN set -eu; userdel -r node 2>/dev/null || true; \

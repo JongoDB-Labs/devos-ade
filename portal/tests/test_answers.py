@@ -411,25 +411,52 @@ def test_write_subs_action_is_exact(tmp_path):
     assert raw == '{"action":"subscriptions-check","requested_at":1792760000,"nonce":"%s","auth":"cHc="}' % n
     n = st.write_subs_action(tmp_path, "pw", "subscriptions-signout", "grok", now=1)
     assert json.loads((tmp_path / f"act-{n}.json").read_text())["tool"] == "grok"
-    for bad in (("subscriptions-check", "codex"), ("subscriptions-signout", None), ("subscriptions-signout", "gemini"), ("x", None)):
+    # (Chat's own sign-ins: the same words, for Chat's sandbox — of the Chat models with a sign-out command)
+    n = st.write_subs_action(tmp_path, "pw", "subscriptions-check-chat", now=1)
+    assert json.loads((tmp_path / f"act-{n}.json").read_text())["action"] == "subscriptions-check-chat"
+    n = st.write_subs_action(tmp_path, "pw", "subscriptions-signout-chat", "codex", now=1)
+    assert json.loads((tmp_path / f"act-{n}.json").read_text())["tool"] == "codex"
+    for bad in (("subscriptions-check", "codex"), ("subscriptions-signout", None), ("subscriptions-signout", "gemini"), ("x", None),
+                ("subscriptions-check-chat", "codex"), ("subscriptions-signout-chat", None), ("subscriptions-signout-chat", "cursor"),
+                ("subscriptions-signout-chat", "copilot")):
         with pytest.raises(ValueError):
             st.write_subs_action(tmp_path, "pw", *bad)
 
 
 def test_your_subscriptions_as_chat_models_while_they_can_answer(s):
+    # (the terminal's sign-ins: every one in; Chat's own, apart — what a Chat model goes by)
     _status(s, {"version": 1, "written_at": 1792760000, "terminal": "running", "tools": [
         {"id": "claude", "installed": True, "version": "2.1.309", "signed_in": "yes", "kind": "claude-max", "how": "command"},
         {"id": "codex", "installed": True, "version": "0.163.0", "signed_in": "yes", "kind": "chatgpt", "how": "command"},
         {"id": "copilot", "installed": True, "version": "1.0.103", "signed_in": "unknown", "kind": "", "how": "none"},
-        {"id": "cursor", "installed": True, "version": "1", "signed_in": "no", "kind": "", "how": "command"},
+        {"id": "cursor", "installed": True, "version": "1", "signed_in": "yes", "kind": "cursor", "how": "command"},
         {"id": "grok", "installed": False, "version": "", "signed_in": "no", "kind": "", "how": "none"},
         {"id": "gemini", "installed": True, "version": "0.65.0", "signed_in": "yes", "kind": "google", "how": "file"}]})
-    rows = answers.tools(s.catalog_dir, s.status_dir)["tools"]
+    (s.status_dir / "subscriptions-chat.json").write_text(json.dumps({"version": 1, "written_at": 1792760001, "terminal": "running", "tools": [
+        {"id": "claude", "installed": True, "version": "2.1.309", "signed_in": "no", "kind": "", "how": "command"},
+        {"id": "codex", "installed": True, "version": "0.163.0", "signed_in": "yes", "kind": "chatgpt", "how": "command"},
+        {"id": "copilot", "installed": True, "version": "1.0.103", "signed_in": "unknown", "kind": "", "how": "none"},
+        {"id": "grok", "installed": False, "version": "", "signed_in": "no", "kind": "", "how": "none"}]}))
+    t = answers.tools(s.catalog_dir, s.status_dir)
+    rows = t["tools"]
+    assert t["chat_checked_at"] == 1792760001 and t["chat_sandbox"] == "running"
+    by = {r["id"]: r for r in rows}
+    assert by["codex"]["chat"]["signed_in"] == "yes" and by["claude"]["chat"]["signed_in"] == "no" and "chat" not in by["cursor"]
     pm = {m["tool"]: m for m in answers.plan_models(s, False, rows)}
-    assert list(pm) == ["claude", "codex", "copilot", "cursor", "grok"]   # (Gemini: Google's plans no longer work in it)
+    # (Gemini: Google's plans no longer work in it; Cursor: no switch that turns its tools off)
+    assert list(pm) == ["claude", "codex", "copilot", "grok"]
     assert pm["codex"]["ok"] and pm["codex"]["id"] == "plan-codex" and pm["copilot"]["ok"]
     assert not pm["claude"]["ok"] and "Use my Claude plan" in pm["claude"]["why"]
-    assert not pm["cursor"]["ok"] and "sign in first" in pm["cursor"]["why"]
     assert not pm["grok"]["ok"] and pm["grok"]["why"] == "not in the sandbox"
-    assert answers.plan_models(replace(s, claude_plan=True), False, rows)[0]["ok"]
+    # signed in in the terminal, not for Chat: Chat's own sign-in is what is missing — said so, and where
+    on = answers.plan_models(replace(s, claude_plan=True), False, rows)
+    assert not on[0]["ok"] and on[0]["signin"] is True and on[0]["why"].startswith("Sign in for Chat")
     assert not any(m["ok"] for m in answers.plan_models(replace(s, code=False), False, rows))
+    # the sandbox on the internet directly: none, saying why
+    host = answers.plan_models(replace(s, terminal_egress="host"), False, rows)
+    assert not any(m["ok"] for m in host) and all("reaches the internet directly" in m["why"] for m in host)
+    # Chat's own check not made yet: not known — a Chat model not offered as signed out, nor as signed in for Claude
+    (s.status_dir / "subscriptions-chat.json").unlink()
+    rows = answers.tools(s.catalog_dir, s.status_dir)["tools"]
+    pm = {m["tool"]: m for m in answers.plan_models(replace(s, claude_plan=True), False, rows)}
+    assert pm["codex"]["ok"] and not pm["claude"]["ok"] and pm["claude"]["signin"]
