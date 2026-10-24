@@ -379,4 +379,13 @@ Upstream behaviours the suite tolerates on purpose (not DevOS ADE bugs):
   pages say "Unsupported"); object details ask `?retention=` and `?legal-hold=` (400 without object lock).
 - LiteLLM UI: a few "Failed to fetch" console errors while its login page navigates away (aborted requests); its
   key table shows budgets in whole dollars (the throwaway's $0.04 budget reads "$0").
+- LiteLLM UI: Chrome warns that `/litellm-asset-prefix/_next/static/chunks/1pbkw-….css` "was preloaded using link
+  preload but not used" (its sidebar prefetches the Logs, Lens, Guardrails Monitor and Tool Policies pages, whose
+  stylesheet arrives as a preload hint on the page shown; not in its HTML, no `Link` header from Caddy); its Usage
+  page warns "The width(0) and height(0) of chart should be greater than 0" (recharts, for charts of tabs not open
+  yet). Its AI Hub page's "Field name=enable_public_model_hub is not set" (a 400) is gone since v0.25.0: the stack's
+  config declares that setting (off).
+- Open WebUI: "No token found in localStorage, user-join event not emitted" on a browser's first load (its socket
+  connects while the portal's trusted-header sign-in is still storing the token; the sign-in then joins itself).
+- The UI sweep (`tests/e2e/ui-sweep.sh`) lists these with their causes in `known-upstream.json`, not as findings.
 - Open WebUI breaks (no messages rendered) in a browser whose locale is `en-US@POSIX`; the suite sets `en-US`.

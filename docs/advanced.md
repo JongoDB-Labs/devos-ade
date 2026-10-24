@@ -364,3 +364,11 @@ tests/e2e/run.sh --aws-env /path/to/a/file/with/AWS_keys    # or export AWS_ACCE
   sign-out checks after it stopped; `helper/update-helper` in the results says whether it ran.
 - **Known product bugs** go in `tests/e2e/known-issues.tsv` (check id, reason): a listed check that fails is
   reported as XFAIL, one that passes as XPASS.
+- **The UI/UX sweep** (`tests/e2e/ui-sweep.sh --aws-env FILE`, opt-in, its own throwaway `bne2e-uisweep`): every page
+  and state of the portal, Chat, the Code page and the terminal at three widths (1512×900, 820×1180, 390×844) in
+  both themes — screenshots, console errors and failed requests, broken images and icons, the logo, the old name in
+  visible text, text or elements past their card, sideways scroll, unnamed controls, and every link (external ones
+  paced; a bot wall's page checked in a browser). `--long-path` stages it under a long folder name so every path the
+  pages show has to wrap; `SWEEP_WIDTHS`, `SWEEP_THEMES` and `SWEEP_ONLY` narrow it; `--keep` / `--reuse` /
+  `--teardown` as above. Console messages of Open WebUI, LiteLLM and RustFS whose cause is theirs are listed in
+  `known-upstream.json` ([INVENTORY](../tests/e2e/INVENTORY.md#known-issues)).
