@@ -24,9 +24,12 @@ from checks_run import _problem, _read, _run_from_panel, _write
 
 DIR = "e2e-mentions"
 SCRIPT = "bn-e2e-mention"
-MARK = "kiwi-4711"
+# codes a model has no shorter form of (a hyphenated "papaya-2026" came back as "papaya"): asked for verbatim, each
+# checked for on its own (any order, any case, words around them), so only a mention that never reached Claude fails
+MARK = "kiwi4711"
+FRUIT, COLOUR = "papaya7316", "teal5208"
 PKG = {"name": "bn-e2e-mention", "private": True, "scripts": {SCRIPT: f"echo 'bn-e2e-mention-marker: {MARK}' >&2; exit 3"}}
-NOTES = "first line\nthe fruit is papaya-2026\nthe colour is teal-0042\nlast line\n"
+NOTES = f"first line\nthe fruit code is {FRUIT}\nthe colour code is {COLOUR}\nlast line\n"
 # the section's markers carry an id new for each prompt (8 hex characters)
 CONTEXT_START = re.compile(r"^--- Context from the workspace \[([0-9a-f]{8})\] \(attached with @-mentions\) ---$", re.M)
 
@@ -94,11 +97,12 @@ def ui_mentions(ctx):
         page.get_by_test_id("chat-new").click()
         see(page.locator(".chat-head .pane-title")).to_have_text("New session", timeout=20000)
         see(page.get_by_test_id("mention-chip")).to_have_count(3)
-        ask(page, "Using only the context below (run no tool, read no file): reply with the fruit, then the colour, then the word after "
-                  "bn-e2e-mention-marker:, separated by single spaces, and nothing else.")
+        ask(page, "Using only the context below (run no tool, read no file): reply with the fruit code, the colour code and the word "
+                  "after bn-e2e-mention-marker:, each copied verbatim, exactly as written there, separated by single spaces, and nothing else.")
         answered(page)
         ans = last_answer(page)
-        expect("papaya-2026" in ans and "teal-0042" in ans and MARK in ans, f"Haiku's answer: {ans!r}")
+        missing = [w for w in (FRUIT, COLOUR, MARK) if w.lower() not in ans.lower()]
+        expect(not missing, f"Haiku's answer {ans!r} lacks {missing}")
         see(page.get_by_test_id("mention-chip")).to_have_count(0)
         msg = page.get_by_test_id("msg-user").last
         see(msg.get_by_test_id("msg-context")).to_contain_text("3 @-mentions")
@@ -116,7 +120,7 @@ def ui_mentions(ctx):
                f"the prompt in the transcript: {sent[:300]!r}")
         heads = [l.split(" — ")[0] for l in sent.split("\n") if re.match(r"^\[[0-9]+\] @", l)]
         expect(heads == ["[1] @problems", "[2] @terminal", f"[3] @{DIR}/notes.txt#L2-3"], f"the blocks: {heads}")
-        expect("```\nthe fruit is papaya-2026\nthe colour is teal-0042\n```" in sent, "lines 2–3 fenced as the editor had them")
+        expect(f"```\nthe fruit code is {FRUIT}\nthe colour code is {COLOUR}\n```" in sent, "lines 2–3 fenced as the editor had them")
         shot(page, "97-code-ui-mentions-answer")
         notes.append(f"@problems + @terminal ({MARK}) + @{DIR}/notes.txt#L2-3 → Haiku answered {ans.strip()[:60]!r}")
         # plan comments: Plan mode, a plan, a comment on one of its lines, Keep planning with it
