@@ -95,7 +95,9 @@ chat_csp() {
 # (script-src-elem / -attr, style-src-elem / -attr, worker-src, child-src, fenced-frame-src, prefetch-src), and any other
 # directive with only keywords ('none', 'self' …), data: or blob: — never *, http:, https: or a host (one that only
 # narrows, added later, does not break the check); else the first directive missing, different or widening, and 1.
-# The first of a directive given twice counts, as it does for browsers.
+# The first of a directive given twice counts, as it does for browsers. report-uri: only paths of the page's own origin
+# (/… — never //…, another host or a scheme: a report carries what was refused); report-to: a group's name, as before
+# (where its reports go is the Reporting-Endpoints header's, which the stack never sends).
 CHAT_CSP_WIDENING="script-src-elem script-src-attr style-src-elem style-src-attr worker-src child-src fenced-frame-src prefetch-src"
 CHAT_CSP_NO_SOURCES="sandbox report-to upgrade-insecure-requests block-all-mixed-content require-trusted-types-for trusted-types"
 chat_csp_check() {
@@ -116,6 +118,12 @@ WANT
     case " $wanted " in *" $name "*) continue ;; esac
     case " $CHAT_CSP_WIDENING " in *" $name "*) printf '%s\n' "$name"; return 1 ;; esac
     case " $CHAT_CSP_NO_SOURCES " in *" $name "*) continue ;; esac
+    if [ "$name" = report-uri ]; then
+      read -r -a toks <<< "${d#"${d%% *}"}"
+      [ "${#toks[@]}" -gt 0 ] || { printf '%s\n' "$name"; return 1; }
+      for t in "${toks[@]}"; do case "$t" in //*) printf '%s\n' "$name"; return 1 ;; /*) ;; *) printf '%s\n' "$name"; return 1 ;; esac; done
+      continue
+    fi
     # (its sources as words, never as patterns: a * stays a *)
     read -r -a toks <<< "${d#"${d%% *}"}"
     for t in ${toks[@]+"${toks[@]}"}; do

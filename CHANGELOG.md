@@ -36,6 +36,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   that cannot be read or shown (binary, over 256 KiB, a link out, a FIFO), or a plugin tree past its bounds, made
   Claude Code's part unverifiable (as in v0.23.0). The plugin files are still in Claude Code's hash, but judged with the
   other tools' part, with bounds of their own: such a file now keeps agents from starting there, and only them.
+- **`./stack test` and the e2e's check of Chat's policy** accept a `report-uri` of Chat's own origin (a path), and
+  still refuse one that names another host; a `report-to` group, as before.
 - **Chat's sweep stops everything first:** it used to freeze what it found one process at a time, so a process that
   forked fast enough could start one the sweep had not seen yet. Now every process in Chat's sandbox but bn-coded and
   the init is stopped at once, the sandbox sorted while nothing runs, what is not spared killed, and the rest let go

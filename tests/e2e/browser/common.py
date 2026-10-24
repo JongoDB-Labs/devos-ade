@@ -102,6 +102,11 @@ def csp_differs(served: str, wanted: str) -> list[str]:
     for k, v in have.items():
         if k in want or k in no_sources:
             continue
+        # (report-uri: only paths of the page's own origin — a report carries what was refused)
+        if k == "report-uri":
+            if not v.split() or any(not t.startswith("/") or t.startswith("//") for t in v.split()):
+                bad.append(k)
+            continue
         if k in widening or any(not (t.startswith("'") and t.endswith("'")) and t not in ("data:", "blob:") for t in v.split()):
             bad.append(k)
     return bad
