@@ -18,7 +18,17 @@ const cancelled = new Set();  // ACP: sessions told to stop their turn; Codex: t
 const ran = (what) => { if (process.env.FAKE_MARK) fs.appendFileSync(process.env.FAKE_MARK, `${what}\n`); };
 // waitStop(key) -> true when the client stopped it within 400 ms (what a tool's own start-up takes, at least)
 const waitStop = async (key) => { for (let i = 0; i < 40; i++) { if (cancelled.has(key)) return true; await new Promise((r) => setTimeout(r, 10)); } return false; };
-const MODES = [{ id: 'agent', name: 'Agent' }, { id: 'plan', name: 'Plan' }, { id: 'ask', name: 'Ask' }, { id: 'yolo', name: 'YOLO' }];
+// its modes: Copilot's ids (the protocol's), else Cursor's — and one that approves by itself
+const U = 'https://agentclientprotocol.com/protocol/session-modes#';
+const COPILOT = process.env.FAKE_TOOL === 'copilot';
+const M = COPILOT ? { agent: `${U}agent`, plan: `${U}plan`, yolo: `${U}autopilot` } : { agent: 'agent', plan: 'plan', ask: 'ask', yolo: 'yolo' };
+const MODES = [{ id: M.agent, name: 'Agent' }, { id: M.plan, name: 'Plan' }, ...(M.ask ? [{ id: M.ask, name: 'Ask' }] : []), { id: M.yolo, name: COPILOT ? 'Autopilot' : 'YOLO' }];
+// a mode given as a config option of the mode category (config-mode: only that way)
+const modeOption = (current) => ({ id: 'mode', name: 'Mode', category: 'mode', type: 'select', currentValue: current, options: MODES.map((x) => ({ value: x.id, name: x.name })) });
+let configMode = M.agent, perm = scenario === 'perm-approve' ? 'approve' : 'ask';
+const configOptions = () => [...(scenario === 'config-mode' || scenario === 'config-later' ? [modeOption(configMode)] : []),
+  ...(scenario.startsWith('perm-') ? [{ id: 'permission', name: 'Permission mode', category: 'other', type: 'select', currentValue: perm,
+    options: [{ value: 'ask', name: 'Ask' }, { value: 'approve', name: 'Always approve' }] }] : [])];
 
 const rl = readline.createInterface({ input: process.stdin });
 rl.on('line', async (line) => {
@@ -47,10 +57,13 @@ async function acp(m) {
       if (!signedIn || scenario === 'cursor-auth' && !signedIn) return { error: { code: -32000, message: 'Authentication required' } };
       const id = `sess-${Object.keys(Object.fromEntries(sessions)).length + 1}`;
       sessions.set(id, { cwd: m.params.cwd, history: [] });
-      // (yolo-only: its one mode approves everything; yolo-start: it starts there, and has others)
-      const modes = scenario === 'yolo-only' ? { currentModeId: 'yolo', availableModes: [{ id: 'yolo', name: 'YOLO' }] }
-        : { currentModeId: scenario === 'yolo-start' ? 'yolo' : 'agent', availableModes: MODES };
-      return { result: { sessionId: id, modes,
+      // (yolo-only: its one mode approves everything; yolo-start: it starts there, and has others; unknown-start: in a
+      // mode no list knows; no-modes: none reported; config-mode: its mode only as a config option, starting in yolo)
+      if (scenario === 'config-mode') configMode = M.yolo;
+      const modes = scenario === 'yolo-only' ? { currentModeId: M.yolo, availableModes: [{ id: M.yolo, name: 'YOLO' }] }
+        : scenario === 'unknown-start' ? { currentModeId: 'turbo', availableModes: [...MODES, { id: 'turbo', name: 'Turbo' }] }
+          : { currentModeId: scenario === 'yolo-start' || scenario === 'silent-set' ? M.yolo : M.agent, availableModes: MODES };
+      return { result: { sessionId: id, ...(scenario === 'no-modes' || scenario === 'config-mode' ? {} : { modes }), configOptions: configOptions(),
         models: { currentModelId: 'fast-1', availableModels: [{ modelId: 'fast-1', name: 'Fast' }, { modelId: 'smart-2', name: 'Smart' }] } } };
     }
     case 'session/load': {
@@ -58,9 +71,17 @@ async function acp(m) {
       if (!s) return { error: { code: -32002, message: 'no such session' } };
       sessions.set(m.params.sessionId, s);
       for (const h of s.history) update(m.params.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `replayed ${h}` } });
-      return { result: { modes: { currentModeId: 'agent', availableModes: [{ id: 'agent', name: 'Agent' }] } } };
+      return { result: { modes: { currentModeId: M.agent, availableModes: [{ id: M.agent, name: 'Agent' }] } } };
     }
-    case 'session/set_mode': log(`set_mode ${m.params.modeId}`); return { result: {} };
+    // a mode asked for: reported (current_mode_update) — but by silent-set, which says yes and stays where it is
+    case 'session/set_mode':
+      log(`set_mode ${m.params.modeId}`);
+      if (scenario !== 'silent-set') setTimeout(() => update(m.params.sessionId, { sessionUpdate: 'current_mode_update', currentModeId: m.params.modeId }), 5);
+      return { result: {} };
+    case 'session/set_config_option':
+      log(`set_config_option ${m.params.configId}=${m.params.value}`);
+      if (m.params.configId === 'mode') configMode = m.params.value; else if (m.params.configId === 'permission') perm = m.params.value;
+      return { result: { configOptions: configOptions() } };
     case 'session/set_model': return { result: {} };
     case 'session/cancel': cancelled.add(m.params.sessionId); return undefined;
     case 'session/prompt': {
@@ -71,11 +92,13 @@ async function acp(m) {
       if (scenario === 'long-line') { process.stdout.write(`${'x'.repeat(17 << 20)}\n`); return undefined; }
       cancelled.delete(sid);
       // grab: it reaches for a file of yours (no permission asked: a read it would run by itself); yolo-switch: it switches
-      // itself to its approve-everything mode, then would run a command
-      if (scenario === 'grab' || scenario === 'yolo-switch') {
+      // itself to its approve-everything mode, then would run a command; config-later: the same through its mode config
+      // option (config_option_update)
+      if (scenario === 'grab' || scenario === 'yolo-switch' || scenario === 'config-later') {
         update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Let me look. ' } });
         if (scenario === 'grab') update(sid, { sessionUpdate: 'tool_call', toolCallId: 'g1', title: 'Read ~/.ssh/id_ed25519', kind: 'read', status: 'pending', locations: [{ path: '/home/claude/.ssh/id_ed25519' }] });
-        else update(sid, { sessionUpdate: 'current_mode_update', currentModeId: 'yolo' });
+        else if (scenario === 'config-later') { configMode = M.yolo; update(sid, { sessionUpdate: 'config_option_update', configOptions: configOptions() }); }
+        else update(sid, { sessionUpdate: 'current_mode_update', currentModeId: M.yolo });
         if (await waitStop(sid)) return { result: { stopReason: 'cancelled' } };
         ran(scenario === 'grab' ? 'read the key' : 'ran a command in yolo');
         update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Here it is: (secret)' } });

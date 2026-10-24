@@ -3213,9 +3213,15 @@ never reads, copies, keeps, passes on or relays a login.**
   `.mcp.json`, `.husky`, `.devcontainer`, `.envrc`, a `lsp.json` or a tool's own folder (`.codex`, `.cursor`, `.grok`,
   `.gemini`, `.copilot`, `.agents`), in any case, no link on its way or at its end, no other name for the file (a hard
   link) — and asks for everything else: a move (its destination is not always said), a change naming no path, Codex's
-  request for a folder of its own to write in (`grantRoot`), a path that is not plain. A tool's own "approve everything" modes are never chosen — an ACP agent that starts in one is moved to
-  a safe one before anything, and one that has no other, or switches itself to one, ends its session: no turn runs in
-  such a mode. Codex runs with its own sandbox off (the container is the boundary) and its "untrusted" approvals. The watchlist checks the files that run on your computer
+  request for a folder of its own to write in (`grantRoot`), a path that is not plain. An ACP agent runs only in the modes of
+  an allowlist per tool, by the ids the pinned version reports — Cursor's `agent`, `plan`, `ask`; Copilot's
+  protocol `#agent` and `#plan` (its `#autopilot` turns allow-all on); Grok's `default`, `ask`, `plan` (its
+  `acceptEdits` writes without asking; Grok's ACP ids are not confirmed without a sign-in, so another id ends the
+  session) — whether it gives its mode as a mode or as a config option of the mode category, and only while a config
+  option about permissions says default or ask. One that starts elsewhere (an approve-everything mode, a mode added
+  later, none reported) is moved to an allowed one, taken only once the agent reports it (a `current_mode_update`, or
+  a config option's answer); one it cannot leave, or one it switches itself to (`current_mode_update`,
+  `config_option_update`), ends its session: no turn runs outside the list. Codex runs with its own sandbox off (the container is the boundary) and its "untrusted" approvals. The watchlist checks the files that run on your computer
   after each turn, with Revert. Its tool cards, its text and its history (kept by the code container: `agents/` in its
   volume, at most 2 MiB a session, 300 sessions) are the sandbox's words, shown as data.
 - [x] **A project's own tool settings: trusted first.** An agent reads a project's own configuration as it is —

@@ -36,8 +36,9 @@ All notable changes to bedrock-now are documented here. The format follows
   the first sign of a tool call (the answer says so; that session is dropped). Open WebUI reaches Chat's models
   through the main Caddy's internal site (`caddy:8098`) with a key (`CODE_CHAT_KEY`) — the code container shares no
   network with Open WebUI; no login is read, refreshed or passed on.
-- The Code page's agents: their tool calls on your permission cards; never in a mode that approves by itself (an ACP
-  agent that starts in one is moved to a safe one, one that has no other or switches itself to one ends its session);
+- The Code page's agents: their tool calls on your permission cards; only in the modes that ask, by an allowlist of
+  each tool's own mode ids (an ACP agent that starts in another — or reports none — is moved to an allowed one, taken
+  once it reports it; one that cannot leave, or switches itself away, ends its session);
   in a project's folder only while its own settings are trusted — Claude Code's and now also the other tools'
   (`.codex/`, `.cursor/`, `.grok/`, `.gemini/`, `.copilot/`, `.agents/`, all of `.github/` but the files GitHub alone
   reads, images and instructions, a `lsp.json`, Claude Code's plugins, `.vscode/mcp.json`, in its folder and the folders

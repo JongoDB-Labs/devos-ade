@@ -19,7 +19,7 @@ function manager(opts = {}) {
   const store = new AgentStore({ dir: tmp('bna') });
   const mgr = new SessionManager({ broker, spawn: (o, x) => { spawns.push(x); return null; },
     query: (a) => { const q = fq(a); queries.push(q); return q; },
-    spawnAgent: (o) => { agents.push(o); return fakeProc(o.tool === 'codex' ? 'codex' : 'acp', opts.scenario ?? 'tools'); },
+    spawnAgent: (o) => { agents.push(o); return fakeProc(o.tool === 'codex' ? 'codex' : 'acp', opts.scenario ?? 'tools', o.tool); },
     agentStore: store, planAllowed: opts.plan === true, onEvent: (s, seq, ev) => events.push([s.id, ev]), ...opts.more });
   return { mgr, broker, queries, events, asked, sent, spawns, agents, store };
 }

@@ -15,7 +15,8 @@ import { fakeProc } from './fake-agent-proc.mjs';
 
 function acp(scenario, opts = {}) {
   const events = [], asked = [];
-  const agent = new AcpAgent(fakeProc('acp', scenario), { tool: 'copilot', onEvent: (e) => events.push(e),
+  const tool = opts.tool ?? 'cursor';
+  const agent = new AcpAgent(fakeProc('acp', scenario, tool), { tool, onEvent: (e) => events.push(e),
     onPermission: async (p) => { asked.push(p); return opts.answer ?? 'once'; }, chat: opts.chat === true, ...(opts.plainEdit ? { plainEdit: opts.plainEdit } : {}) });
   return { agent, events, asked };
 }
@@ -257,7 +258,7 @@ test('ACP: never a turn in a mode that approves everything by itself', async () 
   const b = acp('yolo-only');
   try {
     await b.agent.init();
-    await assert.rejects(b.agent.open({ cwd: '/workspace' }), (e) => e instanceof UnsafeMode && /started in its "YOLO" mode, which approves everything by itself, and offers no other/.test(e.message));
+    await assert.rejects(b.agent.open({ cwd: '/workspace' }), (e) => e instanceof UnsafeMode && /started in its "YOLO" mode, not one this page uses \(one that asks before changes\), and did not leave it/.test(e.message));
     await b.agent.closed;
   } finally { b.agent.close(); }
   // it switches itself to one during a turn: the turn stops, the session ends, nothing runs
@@ -266,13 +267,56 @@ test('ACP: never a turn in a mode that approves everything by itself', async () 
   const c = acp('yolo-switch');
   try {
     await c.agent.init(); await c.agent.open({ cwd: '/workspace' });
-    await assert.rejects(c.agent.prompt('x'), (e) => e instanceof UnsafeMode && /switched itself to its "YOLO" mode/.test(e.message));
+    await assert.rejects(c.agent.prompt('x'), (e) => e instanceof UnsafeMode && /switched itself to its "YOLO" mode, not one this page uses/.test(e.message));
     await c.agent.closed;
     assert.ok(!fs.existsSync(mark));
     // the page's own modes never map to one either
     c.agent.modes = [{ id: 'yolo', name: 'YOLO' }];
     assert.equal(await c.agent.setMode('default'), 'yolo');   // (unchanged: nothing set, and prompt() refuses in it)
   } finally { c.agent.close(); delete process.env.FAKE_MARK; }
+});
+
+test('ACP: only the modes each tool asks in (an allowlist by its own ids) — an unknown one left, none reported refused, a mode taken only once the agent reports it, a mode or a permissions option given as a config option', async () => {
+  const run = async (scenario, opts, fn) => { const x = acp(scenario, opts); try { await x.agent.init(); await fn(x); } finally { x.agent.close(); } };
+  // a mode no list knows (not even by its name): left for one that asks
+  await run('unknown-start', {}, async ({ agent }) => { await agent.open({ cwd: '/workspace' }); assert.equal(agent.mode, 'agent'); });
+  // none reported, for a tool that has them: not used
+  await run('no-modes', {}, async ({ agent }) => {
+    await assert.rejects(agent.open({ cwd: '/workspace' }), (e) => e instanceof UnsafeMode && /started in no mode it reported/.test(e.message));
+  });
+  // a set_mode the agent says yes to but never reports: not taken — still in YOLO: not used
+  await run('silent-set', {}, async ({ agent }) => {
+    await assert.rejects(agent.open({ cwd: '/workspace' }), (e) => e instanceof UnsafeMode && /"YOLO" mode/.test(e.message));
+  });
+  // its mode only as a config option (category mode), starting in YOLO: set through set_config_option, its answer taken
+  await run('config-mode', {}, async ({ agent }) => {
+    await agent.open({ cwd: '/workspace' });
+    assert.equal(agent.modeOpt, 'agent');
+    assert.equal((await agent.prompt('x')).stop, 'end_turn');
+  });
+  // the config option moved to YOLO during a turn (config_option_update): the turn stops, the session ends
+  await run('config-later', {}, async ({ agent }) => {
+    await agent.open({ cwd: '/workspace' });
+    await assert.rejects(agent.prompt('x'), (e) => e instanceof UnsafeMode && /"YOLO" mode/.test(e.message));
+  });
+  // a permissions option that approves everything: set to ask first; its answer taken
+  await run('perm-approve', {}, async ({ agent }) => {
+    await agent.open({ cwd: '/workspace' });
+    assert.equal(agent.permOpts.get('permission').value, 'ask');
+    assert.equal((await agent.prompt('x')).stop, 'end_turn');
+  });
+  // Copilot: the protocol's mode ids — its #agent and #plan; #autopilot (allow-all) left at once
+  await run('yolo-start', { tool: 'copilot' }, async ({ agent }) => {
+    await agent.open({ cwd: '/workspace' });
+    assert.equal(agent.mode, 'https://agentclientprotocol.com/protocol/session-modes#agent');
+    assert.equal(await agent.setMode('plan'), 'https://agentclientprotocol.com/protocol/session-modes#plan');
+  });
+  // another tool's ids are not this one's: Grok's list has no "agent" — never used as one
+  await run('ok', { tool: 'grok' }, async ({ agent }) => {
+    await agent.open({ cwd: '/workspace' });
+    assert.ok(['plan', 'ask'].includes(agent.mode), agent.mode);
+    assert.equal(agent.safe('agent'), false);
+  });
 });
 
 test('Codex: a failed turn says so; a thread it no longer has: a new one', async () => {

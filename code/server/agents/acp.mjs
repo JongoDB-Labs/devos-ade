@@ -26,6 +26,25 @@ export class NotSignedIn extends Error {}
 export class UnsafeMode extends Error {}
 // an agent mode this side never switches to, and never prompts in: one that approves by itself
 export const MODE_NEVER = /yolo|autopilot|bypass|full.?access|always|dangerous|auto(?![-_ ]?edit)/i;
+// The modes each tool runs in here — the ones that ask before a change or refuse it, by the ids the pinned tool reports
+// (anything else, a mode added later included, is never used: the session is moved to one of these, or ends):
+//   cursor   Cursor CLI 2026.10.22's ACP modes: agent, plan, ask (its own list, buildModesStateFromCliMode)
+//   copilot  Copilot CLI 1.0.103's: the protocol's #agent and #plan (#autopilot turns allow-all on)
+//   grok     Grok Build 1.0.67's documented modes that ask: default (ask) and plan — its acceptEdits writes without
+//            asking (this side's Accept edits checks each path: never handed to the tool), auto, dontAsk and
+//            bypassPermissions never; its ACP ids are not confirmed without a sign-in: an id not here ends the session
+const ACP_MODE = 'https://agentclientprotocol.com/protocol/session-modes#';
+export const SAFE_MODES = Object.freeze({
+  cursor: Object.freeze(['agent', 'plan', 'ask']),
+  copilot: Object.freeze([`${ACP_MODE}agent`, `${ACP_MODE}plan`]),
+  grok: Object.freeze(['default', 'ask', 'plan']),
+});
+// a select config option about permissions (not a mode's): only these values — anything else approves by itself or is
+// not known
+const PERM_OPTION = /permission|approv|yolo|autonom|trust/i;
+const PERM_SAFE = /^(default|ask|manual|prompt)$/i;
+// how long a mode asked for may take to be reported (current_mode_update): not reported, not taken
+const MODE_REPORT_MS = 5000;
 // the agent's own login, used where the agent asks a client to name it: Cursor's (after `agent login` in the terminal)
 // and the one an agent names as its default (Grok, once signed in) — never a method that starts a sign-in here
 const EXISTING_LOGIN = new Set(['cursor_login']);
@@ -39,6 +58,8 @@ export class AcpAgent {
     this.peer = new Peer(proc, { jsonrpc: true, log, onNotify: (m, p) => this.notified(m, p), onRequest: (m, p) => this.requested(m, p) });
     this.sessionId = null; this.caps = {}; this.authMethods = []; this.defaultAuth = null;
     this.modes = []; this.mode = null; this.models = []; this.model = null; this.commands = [];
+    this.modesFromSession = false; this.modeConfig = null; this.modeOpt = null; this.permOpts = new Map();
+    this.modeWait = null;     // a mode asked for, until the agent reports it: {id, resolve}
     this.calls = new Map();   // toolCallId -> merged state {…, shown}
     this.loading = false;     // a session/load replays the past: not shown again (the page has it)
     this.text = ''; this.thought = '';
@@ -49,8 +70,39 @@ export class AcpAgent {
   }
 
   get closed() { return this.peer.closed; }
-  modeName(id) { return short(this.modes.find((m) => m.id === id)?.name || id, 100); }
+  modeName(id) { return short(this.modes.find((m) => m.id === id)?.name || id || 'no', 100); }
   never(id) { return typeof id === 'string' && MODE_NEVER.test(`${id} ${this.modes.find((m) => m.id === id)?.name ?? ''}`); }
+  // safe(id) -> one of this tool's modes that ask (SAFE_MODES), and nothing about it says it approves by itself
+  safe(id) { return typeof id === 'string' && (SAFE_MODES[this.tool] ?? []).includes(id) && !this.never(id); }
+  // what makes the session's mode unsafe now (its name, for the error), or null: the mode it reports (a mode, or a
+  // config option of the mode category: both, when it gives both) is one of SAFE_MODES, and a config option about
+  // permissions says default or ask — none reported, for a tool that has them: unsafe too
+  unsafeNow() {
+    const current = [this.mode, this.modeOpt].filter((x) => x !== null && x !== undefined);
+    if (!current.length) return 'no';
+    const bad = current.find((x) => !this.safe(x));
+    if (bad !== undefined) return this.modeName(bad);
+    for (const [, o] of this.permOpts) if (!PERM_SAFE.test(o.value ?? '')) return short(`${o.name}: ${o.value ?? '?'}`, 100);
+    return null;
+  }
+  // takeConfig(configOptions) — the agent's config options as it reports them (session/new, a set_config_option's
+  // answer, config_option_update): its mode where it gives one that way, and those about permissions
+  takeConfig(list) {
+    if (!Array.isArray(list)) return;
+    const opts = list.map(obj).filter((o) => typeof o.id === 'string');
+    const mo = opts.find((o) => o.category === 'mode' && Array.isArray(o.options));
+    if (mo) {
+      this.modeConfig = mo.id;
+      this.modeOpt = typeof mo.currentValue === 'string' ? short(mo.currentValue, 100) : null;
+      if (!this.modesFromSession) {
+        this.modes = arr(mo.options).map(obj).filter((x) => typeof x.value === 'string' && /^[\x21-\x7e]{1,100}$/.test(x.value)).slice(0, 30)
+          .map((x) => ({ id: x.value, name: short(x.name || x.value, 100), description: short(x.description, 300) }));
+      }
+    }
+    this.permOpts = new Map(opts.filter((o) => o !== mo && o.category !== 'model' && PERM_OPTION.test(`${o.id} ${o.name ?? ''}`))
+      .map((o) => [o.id, { name: short(o.name || o.id, 60), value: typeof o.currentValue === 'string' ? o.currentValue : null,
+        options: arr(o.options).map(obj).map((x) => x.value).filter((x) => typeof x === 'string') }]));
+  }
 
   async init() {
     const r = obj(await this.peer.request('initialize', {
@@ -70,7 +122,9 @@ export class AcpAgent {
     const m = obj(r.modes);
     this.modes = arr(m.availableModes).map(obj).filter((x) => typeof x.id === 'string' && /^[\x21-\x7e]{1,100}$/.test(x.id))
       .slice(0, 30).map((x) => ({ id: x.id, name: short(x.name || x.id, 100), description: short(x.description, 300) }));
-    if (typeof m.currentModeId === 'string') this.mode = m.currentModeId;
+    this.modesFromSession = this.modes.length > 0;
+    this.mode = typeof m.currentModeId === 'string' ? short(m.currentModeId, 100) : null;
+    this.takeConfig(r.configOptions);
     const ms = obj(r.models);
     let models = arr(ms.availableModels).map(obj).filter((x) => typeof x.modelId === 'string')
       .map((x) => ({ id: x.modelId, name: short(x.name || x.modelId, 120) }));
@@ -108,7 +162,7 @@ export class AcpAgent {
         this.sessionId = resume;
         this.takeSession(r);
         await this.leaveUnsafe();
-        this.firstMode ??= this.mode;
+        this.firstMode ??= this.mode ?? this.modeOpt;
         return { ref: resume, resumed: true };
       } catch (e) {
         if (e instanceof NotSignedIn || e instanceof UnsafeMode) throw e;
@@ -120,33 +174,62 @@ export class AcpAgent {
     this.sessionId = r.sessionId;
     this.takeSession(r);
     await this.leaveUnsafe();
-    this.firstMode ??= this.mode;
+    this.firstMode ??= this.mode ?? this.modeOpt;
     return { ref: r.sessionId, resumed: false };
   }
 
-  // a session that starts in a mode approving by itself (the agent's own default, or a resumed session's): left at once
-  // for a safe one — the page's, else any other the agent offers; none, or the agent will not leave it: closed
+  // a session in a mode that is not one of SAFE_MODES (the agent's own default, a resumed session's, one added later,
+  // none reported), or with a permissions option that approves by itself: moved at once to a safe one — the page's,
+  // else any other the agent offers — taken only once the agent reports it; none, or it does not report it: closed
   async leaveUnsafe() {
-    if (!this.never(this.mode)) return;
-    const was = this.modeName(this.mode);
-    const m = this.agentModeFor(this.pageMode);
-    const to = (typeof m === 'string' ? m : m?.id) ?? this.modes.find((x) => !this.never(x.id))?.id ?? null;
-    if (to) {
-      try { await this.peer.request('session/set_mode', { sessionId: this.sessionId, modeId: to }, { timeoutMs: 30000 }); this.mode = to; } catch (e) { this.log(`${this.tool}: mode ${short(to, 40)} not set: ${said(e.message, 200)}`); }
+    if (!this.unsafeNow()) return;
+    const was = this.unsafeNow();
+    if ([this.mode, this.modeOpt].some((x) => x !== null && x !== undefined && !this.safe(x)) || (this.mode === null && this.modeOpt === null)) {
+      const m = this.agentModeFor(this.pageMode);
+      const to = (typeof m === 'string' ? m : m?.id) ?? this.modes.find((x) => this.safe(x.id))?.id ?? null;
+      if (to) await this.askMode(to);
     }
-    if (this.never(this.mode)) {
+    for (const [id, o] of this.permOpts) {
+      if (PERM_SAFE.test(o.value ?? '')) continue;
+      const v = o.options.find((x) => PERM_SAFE.test(x));
+      if (v) await this.askConfig(id, v);
+    }
+    if (this.unsafeNow()) {
       this.close();
-      throw new UnsafeMode(`${HARNESSES[this.tool]?.name ?? this.tool} started in its "${was}" mode, which approves everything by itself, ${to ? 'and did not leave it' : 'and offers no other'}: not used (its own settings in the terminal choose its default mode)`);
+      throw new UnsafeMode(`${HARNESSES[this.tool]?.name ?? this.tool} started in ${was === 'no' ? 'no mode it reported' : `its "${was}" mode`}, not one this page uses (one that asks before changes), and did not leave it: not used (its own settings in the terminal choose its default mode)`);
     }
   }
+  // askMode(id) — the agent asked to go to a mode; taken only once it reports it (current_mode_update, or a config
+  // option's answer), within MODE_REPORT_MS
+  async askMode(id) {
+    try {
+      if (this.modeConfig && !this.modesFromSession) { await this.askConfig(this.modeConfig, id); return; }
+      const reported = new Promise((resolve) => { this.modeWait = { id, resolve }; setTimeout(() => resolve(false), MODE_REPORT_MS).unref?.(); });
+      await this.peer.request('session/set_mode', { sessionId: this.sessionId, modeId: id }, { timeoutMs: 30000 });
+      if (!(await reported)) this.log(`${this.tool}: mode ${short(id, 40)} asked for, not reported: not taken`);
+    } catch (e) { this.log(`${this.tool}: mode ${short(id, 40)} not set: ${said(e.message, 200)}`); } finally { this.modeWait = null; }
+  }
+  // askConfig(configId, value) — a config option set; its answer is the agent's options as they are now (taken)
+  async askConfig(configId, value) {
+    try {
+      const r = obj(await this.peer.request('session/set_config_option', { sessionId: this.sessionId, configId, value }, { timeoutMs: 30000 }));
+      this.takeConfig(r.configOptions);
+    } catch (e) { this.log(`${this.tool}: ${short(configId, 40)} not set: ${said(e.message, 200)}`); }
+  }
+  // checkMode() — a mode (or permissions option) the agent reports itself in now that is not one of SAFE_MODES: the turn
+  // under way stops, the session ends (prompt())
+  checkMode() {
+    const bad = this.unsafeNow();
+    if (bad && !this.unsafe && this.sessionId && !this.modeWait) { this.unsafe = bad; if (this.prompting) this.cancel(); }
+  }
   unsafeError() {
-    return new UnsafeMode(`${HARNESSES[this.tool]?.name ?? this.tool} switched itself to its "${this.unsafe}" mode, which approves everything by itself: its turn was stopped and its session closed (your next prompt starts it again)`);
+    return new UnsafeMode(`${HARNESSES[this.tool]?.name ?? this.tool} switched itself to ${this.unsafe === 'no' ? 'no mode it reports' : `its "${this.unsafe}" mode`}, not one this page uses (one that asks before changes): its turn was stopped and its session closed (your next prompt starts it again)`);
   }
 
   // the page's mode as one of the agent's: Plan and Read only to its planning or asking mode where it has one (this side
   // refuses changes in them either way: requested()), Manual and Accept edits to the one it started in
   agentModeFor(page) {
-    const ok = this.modes.filter((m) => !MODE_NEVER.test(`${m.id} ${m.name}`));
+    const ok = this.modes.filter((m) => this.safe(m.id));
     const find = (re) => ok.find((m) => re.test(m.id) || re.test(m.name));
     if (page === 'plan') return find(/plan/i) ?? find(/^ask$|read/i) ?? null;
     if (page === 'readOnly') return find(/^ask$|read.?only|^read/i) ?? find(/plan/i) ?? null;
@@ -158,19 +241,18 @@ export class AcpAgent {
     this.pageMode = page;
     const m = this.agentModeFor(page);
     const id = typeof m === 'string' ? m : m?.id;
-    if (!id || id === this.mode || !this.sessionId || this.never(id)) return this.mode;
-    try {
-      await this.peer.request('session/set_mode', { sessionId: this.sessionId, modeId: id }, { timeoutMs: 30000 });
-      this.mode = id;
-    } catch (e) { this.log(`${this.tool}: mode ${short(id, 40)} not set: ${said(e.message, 200)}`); }
-    return this.mode;
+    if (!id || id === (this.modesFromSession ? this.mode : this.modeOpt) || !this.sessionId || !this.safe(id)) return this.mode ?? this.modeOpt;
+    // (the page's own mode decides what it lets through either way — requested(): a mode not reported changes nothing)
+    await this.askMode(id);
+    this.checkMode();
+    return this.mode ?? this.modeOpt;
   }
 
   // Chat: the agent's asking mode where it has one (Cursor's ask: questions and answers, read only); else its own
   async chatMode() {
-    const m = this.modes.find((x) => (/^ask$/i.test(x.id) || /^ask$/i.test(x.name)) && !this.never(x.id));
+    const m = this.modes.find((x) => (/^ask$/i.test(x.id) || /^ask$/i.test(x.name)) && this.safe(x.id));
     if (!m || m.id === this.mode || !this.sessionId) return;
-    try { await this.peer.request('session/set_mode', { sessionId: this.sessionId, modeId: m.id }, { timeoutMs: 30000 }); this.mode = m.id; } catch { /* its own mode */ }
+    await this.askMode(m.id);
   }
 
   async setModel(id) {
@@ -187,7 +269,7 @@ export class AcpAgent {
     blocks.push({ type: 'text', text });
     this.text = ''; this.thought = ''; this.toolTried = null;
     // never a turn in a mode that approves by itself (the agent's own switch to one ends the session: notified())
-    if (this.unsafe || this.never(this.mode)) { this.unsafe ??= this.modeName(this.mode); this.close(); throw this.unsafeError(); }
+    if (this.unsafe || this.unsafeNow()) { this.unsafe ??= this.unsafeNow(); this.close(); throw this.unsafeError(); }
     let r;
     this.prompting = true;
     try {
@@ -254,8 +336,13 @@ export class AcpAgent {
       case 'current_mode_update':
         if (typeof u.currentModeId !== 'string') return;
         this.mode = short(u.currentModeId, 100);
-        // a switch of its own to a mode that approves by itself: the turn under way stops, the session ends (prompt())
-        if (this.never(this.mode) && !this.unsafe) { this.unsafe = this.modeName(this.mode); if (this.prompting) this.cancel(); }
+        if (this.modeWait && this.modeWait.id === this.mode) this.modeWait.resolve(true);
+        this.checkMode();
+        return;
+      // its config options as they are now (a mode given that way, permissions): the same check
+      case 'config_option_update':
+        this.takeConfig(u.configOptions);
+        this.checkMode();
         return;
       case 'usage_update': {
         const used = int(u.used, 0, 1e12), size = int(u.size, 0, 1e12);
