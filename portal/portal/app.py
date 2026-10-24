@@ -201,6 +201,32 @@ def _launch_page(s: Settings, rem: bool, mode: str, tool: str, folder: str) -> H
     return _no_store(resp)
 
 
+def from_the_code_page_or_typed(headers) -> bool:
+    """The code host's /.bn/terminal hands the Code page's unlock over to the terminal host only for a navigation the
+    person made: from the Code page itself (Sec-Fetch-Site: same-origin: the panel's frame, its new-tab link, the ⋯
+    menu), or one they started in the browser, typed or from a bookmark or the history (Sec-Fetch-Site: none, which
+    browsers send only with a top-level document navigation by the user: Mode navigate, Dest document, User ?1). Another
+    page or site can never send either (it gets same-site or cross-site), and no header at all is refused."""
+    site = headers.get("sec-fetch-site")
+    if site == "same-origin":
+        return True
+    return (site == "none" and headers.get("sec-fetch-mode") == "navigate" and headers.get("sec-fetch-dest") == "document"
+            and headers.get("sec-fetch-user") == "?1")
+
+
+def _terminal_from_code_page(s: Settings, rem: bool) -> HTMLResponse:
+    """What a refused /.bn/terminal shows: the portal's card, "Open the terminal from the Code page", and a button back
+    to the Code page (403, as before; never the hand-off)."""
+    portal = s.origin(remote=rem)
+    page = (STATIC / "terminal-from-code.html").read_text(encoding="utf-8").replace("{{portal}}", html.escape(portal, quote=True))
+    resp = HTMLResponse(page, status_code=403)
+    resp.headers["Content-Security-Policy"] = (
+        f"default-src 'none'; style-src {portal}; img-src {portal}; form-action 'none'; base-uri 'none'; frame-ancestors 'self'")
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["Referrer-Policy"] = "same-origin"
+    return _no_store(resp)
+
+
 def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = None) -> Starlette:
     state_file = settings.state_dir / "logout-not-before" if settings.state_dir else None
     sessions = Sessions(settings.secret, settings.password_hash, state_file=state_file, max_age=settings.session_days * 86400)
@@ -541,17 +567,19 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
     # --- code host's check) mints a single-use, 60-second token for exactly this site's terminal host, carrying the
     # --- Code page unlock's time and login; the terminal host's /.bn/unlock-callback (Caddy → here, before its check)
     # --- redeems it and sets the terminal's own unlock with that same time: it ends when the Code page's does, and
-    # --- with Sign out or a new password like every unlock. Only from the Code page itself (Sec-Fetch-Site).
+    # --- with Sign out or a new password like every unlock. Only from the Code page itself, or an address the person
+    # --- typed or opened from a bookmark (from_the_code_page_or_typed: Sec-Fetch-*); anything else gets a card back.
     async def code_terminal(request: Request) -> Response:
         if (deny := code_guard(request)) is not None:
             return deny
         rem = remote(request)
         if not settings.terminal_on(rem):
             return _no_store(PlainTextResponse("the terminal is off here", status_code=404))
-        if request.headers.get("sec-fetch-site") != "same-origin":
-            log.warning("code → terminal hand-off refused: not from the Code page (Sec-Fetch-Site %s)",
-                        request.headers.get("sec-fetch-site", "none")[:40])
-            return _no_store(PlainTextResponse("open the terminal from the Code page", status_code=403))
+        if not from_the_code_page_or_typed(request.headers):
+            log.warning("code → terminal hand-off refused: not from the Code page (Sec-Fetch-Site %s, Mode %s, User %s)",
+                        request.headers.get("sec-fetch-site", "-")[:40], request.headers.get("sec-fetch-mode", "-")[:40],
+                        request.headers.get("sec-fetch-user", "-")[:8])
+            return _terminal_from_code_page(settings, rem)
         login = session_login(request.headers, settings)
         code = unlocks[CODE].claims(request.cookies.get(unlock_cookie_params(CODE, rem)["key"]), login)
         sess = session_claims(request)

@@ -1184,8 +1184,12 @@ spawn server, Claude Code or any file at will.
   Caddy may set are deleted first.
 - [x] **One unlock for the page and its terminal panel, handed over once.** The panel (and "open in a new tab")
   starts at `/.bn/terminal` on the code host, which Caddy sends to the portal after the code host's check; the portal
-  checks the session, the Code page's unlock and `Sec-Fetch-Site: same-origin` (a link from another site, or a typed
-  address, gets nothing), and redirects to the terminal host's `/.bn/unlock-callback` with a token: signed with a salt
+  checks the session, the Code page's unlock and the request's fetch metadata: `Sec-Fetch-Site: same-origin` (the
+  Code page itself), or `none` together with `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document` and
+  `Sec-Fetch-User: ?1` — the address typed, or opened from a bookmark or the history, which browsers send only for a
+  navigation the person started; no page can send either for another site's link, or for one on another of the
+  portal's hosts (`cross-site`, `same-site`), and a request without them is refused too. A refused one gets a card
+  (403: "Open the terminal from the Code page", a button to the Code page), never the hand-off. Then it redirects to the terminal host's `/.bn/unlock-callback` with a token: signed with a salt
   of its own, for exactly this site's terminal host, valid 60 seconds, single-use (its nonce is remembered), void
   after a portal restart or a new password, carrying the Code page unlock's time and the Tailscale login. Caddy
   sends that path to the portal before the terminal host's check; the portal redeems the token there and sets the

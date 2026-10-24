@@ -654,6 +654,67 @@ def test_the_hand_off_needs_the_code_unlock_the_page_itself_and_the_terminal(cc,
         assert _handoff(c, t2, ut).status_code == 404
 
 
+TYPED = {"Sec-Fetch-Site": "none", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document", "Sec-Fetch-User": "?1"}
+
+
+def test_an_address_typed_or_bookmarked_opens_the_terminal_too(cc):
+    """A navigation the person started in the browser (typed, a bookmark, the history): Sec-Fetch-Site none with Mode
+    navigate, Dest document and User ?1 — what browsers send only for that. The same hand-off as from the Code page."""
+    tok, ut = unlocked(cc)
+    r = _handoff(cc, tok, ut, headers=TYPED)
+    assert r.status_code == 303 and r.headers["location"].startswith(f"{TERM}/.bn/unlock-callback?t="), r.text
+    r = _callback(cc, r.headers["location"], tok)
+    assert r.status_code == 303 and _cookie(r, TERMINAL_COOKIE)
+    # still the session and the Code page's unlock first
+    assert _handoff(cc, tok, "nope", headers=TYPED).status_code == 401
+    assert cc.get("/auth/code-terminal", headers={"Host": CODE_HOST, **TYPED}).status_code == 401
+    # ?open= without a launch token: the terminal still asks "Open … here?" (an address makes no token, typed or not)
+    from urllib.parse import unquote
+    from portal import answers
+    r = cc.get("/auth/code-terminal", params={"open": "shell"},
+               headers={"Host": CODE_HOST, "Cookie": f"{COOKIE}={tok}; {CODE_COOKIE}={ut}", **TYPED})
+    assert r.status_code == 303 and "&next=" in r.headers["location"], r.text
+    assert answers.ASK_TOKEN in unquote(r.headers["location"])
+
+
+def test_every_other_kind_of_request_gets_the_card_not_the_hand_off(cc):
+    tok, ut = unlocked(cc)
+    kinds = {
+        "cross-site (another site's link)": {**TYPED, "Sec-Fetch-Site": "cross-site"},
+        "same-site (another of the portal's hosts)": {**TYPED, "Sec-Fetch-Site": "same-site"},
+        "none without the user's gesture (?1)": {k: v for k, v in TYPED.items() if k != "Sec-Fetch-User"},
+        "none, ?0": {**TYPED, "Sec-Fetch-User": "?0"},
+        "none, not a navigation (a fetch)": {**TYPED, "Sec-Fetch-Mode": "cors", "Sec-Fetch-Dest": "empty"},
+        "none, in a frame": {**TYPED, "Sec-Fetch-Dest": "iframe"},
+        "none alone": {"Sec-Fetch-Site": "none"},
+        "no Sec-Fetch-* at all": {},
+        "an unknown value": {**TYPED, "Sec-Fetch-Site": "None"},
+    }
+    for why, h in kinds.items():
+        r = _handoff(cc, tok, ut, headers=h)
+        assert r.status_code == 403, why
+        assert TERMINAL_COOKIE not in r.headers.get("set-cookie", "") and "location" not in r.headers, why
+        assert r.headers["content-type"].startswith("text/html"), why
+        assert "Open the terminal from the Code page" in r.text and 'href="/" id="terminal-to-code"' in r.text, why
+        assert "DevOS ADE" in r.text and "/static/login.css" in r.text, why
+        csp = r.headers["content-security-policy"]
+        assert "default-src 'none'" in csp and "form-action 'none'" in csp and "frame-ancestors 'self'" in csp, csp
+        assert "script-src" not in csp and r.headers["cache-control"] == "no-store", why
+        assert r.headers["x-content-type-options"] == "nosniff", why
+
+
+def test_the_hand_off_rule_reads_the_fetch_metadata_exactly():
+    from portal.app import from_the_code_page_or_typed as ok
+    assert ok({"sec-fetch-site": "same-origin"})
+    assert ok({"sec-fetch-site": "none", "sec-fetch-mode": "navigate", "sec-fetch-dest": "document", "sec-fetch-user": "?1"})
+    for h in ({}, {"sec-fetch-site": "cross-site"}, {"sec-fetch-site": "same-site"}, {"sec-fetch-site": "none"},
+              {"sec-fetch-site": "none", "sec-fetch-mode": "navigate", "sec-fetch-dest": "document"},
+              {"sec-fetch-site": "none", "sec-fetch-mode": "nested-navigate", "sec-fetch-dest": "document", "sec-fetch-user": "?1"},
+              {"sec-fetch-site": "none", "sec-fetch-mode": "navigate", "sec-fetch-dest": "iframe", "sec-fetch-user": "?1"},
+              {"sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate", "sec-fetch-dest": "document", "sec-fetch-user": "?1"}):
+        assert not ok(h), h
+
+
 def test_the_callback_refuses_bad_foreign_and_unsigned_tokens(cs):
     with _client(cs) as c:
         tok, ut = unlocked(c)
