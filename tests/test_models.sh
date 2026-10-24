@@ -155,6 +155,17 @@ test_render_never_calls_the_breached_password_service() {
   assert_contains "$(CATALOG="$FIX" render_litellm_config "" us-east-1 false)" "  password_policy_check_breached_passwords: false"
 }
 
+test_render_declares_the_public_model_hub_off() {
+  # LiteLLM's AI Hub page asks for enable_public_model_hub and gets a 400 while no config declares it; off, in the
+  # config (so its toggle in LiteLLM's UI is not editable): no model list for visitors who are not signed in
+  local out
+  out="$(CATALOG="$FIX" render_litellm_config "" us-east-1 false)"
+  assert_contains "$out" "  enable_public_model_hub: false"
+  out="$(CATALOG="$FIX" render_litellm_config "" us-east-1 false true true)"
+  assert_contains "$out" "  enable_public_model_hub: false"
+  assert_eq "$(printf '%s\n' "$out" | awk '/^[a-z_]+:/ { s = $1 } /enable_public_model_hub/ { print s }')" "general_settings:"
+}
+
 # One alias only: claude-sonnet-5 -> claude-sonnet-5-5, the model Claude Code's auto-mode classifier asks for by that
 # fixed id (Settings › Claude Code › Auto mode). No legacy names otherwise; rendered only while Sonnet 5.5 is enabled.
 test_catalog_ships_only_the_classifier_alias() {

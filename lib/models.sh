@@ -195,6 +195,7 @@ general_settings:
   maximum_spend_logs_retention_period: "90d"
   proxy_batch_write_at: 1   # spend logs land within ~1-6 s (claude-bedrock's exit summary reads them)
   password_policy_check_breached_passwords: false   # no haveibeenpwned.com call (Bedrock-only rule)
+  enable_public_model_hub: false   # no sign-in-free model list; declared, so the AI Hub page's lookup gets an answer, not a 400
 EOT
   # Budget alerts (soft_budget = BUDGET_ALERT_PCT, default 80%; max_budget) go to WEBHOOK_URL, which compose fills from ALERT_WEBHOOK_URL.
   [ "$alerting" != true ] || printf '  alerting: ["webhook"]\n  alert_types: ["budget_alerts"]\n'

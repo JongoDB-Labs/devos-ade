@@ -37,6 +37,16 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   so *Update now* is not offered and its nightly automatic update, which waits for that check, may not start: run
   `./stack update` in its folder — that always works (git follows the redirect) — and Home works again after it.
   `./stack uninstall` asks you to type `devos-ade` (`bedrock-now` still works).
+- **LiteLLM's public model hub is declared off** (`general_settings.enable_public_model_hub: false`): no model list
+  for visitors who are not signed in, and Admin's *AI Hub* page no longer logs an error asking for the unset
+  setting. It was off already (LiteLLM's default); its switch in Admin is now read-only, set by the stack's config.
+
+### Fixed
+
+- A long install folder no longer runs past the sign-in card: paths, commands and keys wrap inside their card,
+  dialog or note on every portal page (the sign-in hint and its wrong-password note, Settings, Home, the walkthrough).
+- The Code page on a tablet: the terminal drawer stops at the status bar instead of covering its top
+  (*Connected*, *Run*, *Ports*, the model).
 
 ## [0.24.0] - 2026-10-24
 

@@ -38,7 +38,8 @@ Back to the [README](../README.md#security-model).
 - Open WebUI's only model connection is LiteLLM. Ollama, web search and community sharing are off.
   `OFFLINE_MODE` is on (no Hugging Face downloads, no update check) and telemetry is off.
 - LiteLLM uses its **bundled** price map (no runtime fetch from GitHub); our prices override it. LiteLLM's
-  breached-password check (a haveibeenpwned.com lookup) is off.
+  breached-password check (a haveibeenpwned.com lookup) is off. Its public model hub (a model list for visitors
+  who are not signed in) is declared off in the config (`enable_public_model_hub: false`); its switch in Admin is read-only.
 - LiteLLM does **not** store prompt or response text, only metadata and spend. To store it, set
   `LITELLM_STORE_PROMPTS=true` (Settings → Account & security, or `./stack config set LITELLM_STORE_PROMPTS`). Spend logs are kept for 90 days (LiteLLM's
   built-in cleanup job, `maximum_spend_logs_retention_period`).
