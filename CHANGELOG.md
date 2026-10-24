@@ -60,7 +60,12 @@ All notable changes to bedrock-now are documented here. The format follows
   a marketplace (its parsed keys, at any depth), or that cannot be read the way the tool reads it, cannot be trusted
   either.
 - A conversation carried to another harness (or to a Chat model's new session) goes in as a quote that holds no
-  instructions, its role-like tags defanged: an earlier answer cannot speak as you.
+  instructions, its role-like tags defanged and its tags marked with a random mark of their own: an earlier answer
+  cannot speak as you.
+- Chat's Claude attaches no file and reads none: `CLAUDE_CODE_DISABLE_ATTACHMENTS=1`, `--tools=`,
+  `--strict-mcp-config` and `--setting-sources=` (each required by bn-coded), managed settings of Chat's own (every
+  file read denied, no hooks, no Bypass or Auto); an `@` in Chat's text is no file's name (`＠`); Open WebUI's site
+  loads images from itself only.
 
 (Dev installs that ran a pre-release of this version kept the terminal's sign-ins in volumes of their own,
 `<project>_subs-*`: those are not carried over — the terminal's sign-ins are in its home again, so sign in once more

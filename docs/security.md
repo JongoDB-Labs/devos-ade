@@ -3194,8 +3194,14 @@ never reads, copies, keeps, passes on or relays a login.**
   (`chat-socket`).
 - [x] **No tools in Chat.** Each conversation runs in an empty folder of its own (`~/.bn-chat/<32 hex>`, made by
   bn-coded, never through a link), each tool with every switch it has that turns its tools off: Claude Code with
-  `--tools=` (no built-in tool), `--strict-mcp-config` and no MCP server, no settings files (bn-coded refuses a Chat
-  conversation without those flags); Codex without its shell, MCP servers, web search, apps, plugins, skills, browser
+  `--tools=` (no built-in tool), `--strict-mcp-config` and no MCP server, `--setting-sources=` (no settings files) —
+  each exactly once, and nothing that adds a tool, a server, a folder or settings (bn-coded refuses a Chat
+  conversation otherwise) — and `CLAUDE_CODE_DISABLE_ATTACHMENTS=1` (Claude Code otherwise reads an `@path` of a prompt
+  into it before the model runs, tools or not), under managed settings of Chat's own (`terminal/managed/chat.json`:
+  every file read and write denied, shell and web fetch denied, no hooks, no Bypass or Auto mode); an `@` in Chat's text
+  that would name a file reaches every agent as `＠`, and so in a quoted conversation; Open WebUI's site loads images
+  from itself only (`img-src 'self' data: blob:`), so an answer's markdown image cannot carry words out to another
+  site; Codex without its shell, MCP servers, web search, apps, plugins, skills, browser
   and images, no AGENTS.md, asking before anything it does not count as safe; Copilot with an empty list of available
   tools, no MCP server of its own, no instructions files, no temp folder, its shell, writes and URLs denied; Grok with
   an empty list of tools, no web search, no subagents. Cursor is not a Chat model: it has no switch that turns its

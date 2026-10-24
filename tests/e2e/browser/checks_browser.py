@@ -1027,6 +1027,35 @@ def chat_models(ctx):
     return f"{len(enabled)} models: friendly names with tiers, prices, logos; helpers hidden; default {default}"
 
 
+@check("browser", "chat-images-own-only")
+def chat_images(ctx):
+    """Open WebUI's site loads images from itself only (img-src 'self' data: blob:, caddy/Caddyfile): what it shows
+    itself — its logo, the models' icons, avatars — still loads, with no CSP error; an image of another site (what an
+    answer could carry a sign-in's words out in) is refused."""
+    need("open-webui")
+    page, rec = ctx.page("chat-images")
+    login(page)
+    fl, f = chat_frame(page)
+    csp = f.evaluate("async () => (await fetch(location.href, {cache: 'no-store'})).headers.get('content-security-policy') || ''")
+    expect("img-src 'self' data: blob:" in csp, f"Open WebUI's CSP: {csp!r}")
+    page.wait_for_timeout(3000)
+    broken = f.evaluate("""() => [...document.images].filter((i) => i.complete && i.naturalWidth === 0 && i.src)
+        .map((i) => i.src.slice(0, 120))""")
+    expect(not broken, f"images of Open WebUI's own that did not load: {broken[:6]}")
+    refused = f.evaluate("""() => new Promise((r) => {
+        document.addEventListener('securitypolicyviolation', (e) => r(e.violatedDirective), { once: true });
+        const i = new Image(); i.src = 'https://example.com/bn-e2e.png?' + Date.now(); document.body.append(i);
+        setTimeout(() => r(null), 8000); })""")
+    expect(refused and refused.startswith("img-src"), f"an image of another site was not refused: {refused!r}")
+    shot(page, "07b-chat-images")
+    probs = rec.problems(allow=[r"No token found in localStorage", r"example\.com/bn-e2e\.png", r"Content Security Policy"])
+    own = [p for p in rec.problems(allow=[r"No token found in localStorage", r"example\.com/bn-e2e\.png"]) if "Content Security Policy" in p and "example.com" not in p]
+    rec.save()
+    expect(not own, f"CSP refused something of Open WebUI's own: {own[:4]}")
+    expect(not probs, f"errors: {probs}")
+    return "Open WebUI's site: images from itself only (img-src 'self' data: blob:); its own load, another site's is refused"
+
+
 def _last_answer(f):
     return f.evaluate("() => { const m = [...document.querySelectorAll('.chat-assistant')]; return m.length ? m[m.length-1].innerText : null }")
 
