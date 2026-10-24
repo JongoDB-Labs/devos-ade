@@ -147,6 +147,8 @@ def chat_embed(ctx):
     login(page)
     page.click(".tab[data-tab=chat]")
     page.locator("#answers-chat").wait_for(timeout=15000)
+    # (the menu is shown at once and filled once /api/answers has answered: its entries, not just the menu)
+    page.wait_for_function("() => document.querySelectorAll('#answers-chat option').length > 0", timeout=20000)
     opts = page.eval_on_selector_all("#answers-chat option", "os => os.map(o => [o.value, o.disabled])")
     vals = dict(opts)
     expect(vals.get("owui") is False, "no Open WebUI entry")

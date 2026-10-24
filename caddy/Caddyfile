@@ -164,7 +164,7 @@
 # our Open WebUI image vendors (open-webui/Dockerfile), from /pyodide/ inside a sandboxed frame of its own: an opaque
 # origin, which sends no cookie (the session check would answer 401) and says Origin: null (the same-site guard would
 # refuse its fetches and its module import). Those files are the image's own, the same for everyone — no user data; an
-# unknown name gets Open WebUI's page shell, which holds none either. So exactly these requests are answered without
+# unknown name gets Open WebUI's own not-found answer, which holds none either. So exactly these requests are answered without
 # the guard and the session check: GET or HEAD whose request target, exactly as it arrived ({http.request.orig_uri}:
 # not decoded, not cleaned — Caddy's path matchers clean ../ and //, which the upstream would not), is /pyodide/ and one
 # file name of plain characters, with no query — any %, dot first, ., .., //, \, ; or ? and it is the gated route as

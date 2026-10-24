@@ -3304,7 +3304,7 @@ never reads, copies, keeps, passes on or relays a login.**
   sets comes back; the answer allows any origin to read it, never with credentials; and Chat's policy holds there as
   everywhere. What is there is public and static, the same for everyone: Pyodide's runtime from the Open WebUI image,
   the wheels our build vendored into it, and the lists of them (`pyodide-lock.json`, `vendored.json`); an unknown name
-  gets Open WebUI's page shell, which holds nothing of anyone. Everything else under `/pyodide/` — another method, a
+  gets Open WebUI's own not-found answer, which holds nothing of anyone. Everything else under `/pyodide/` — another method, a
   folder, a dot first — is behind the session check, and an opaque origin is still refused everywhere else.
   The packages: Pyodide's lock names its CDN for every one, which Chat's page never reaches (its policy: requests to
   itself only — unchanged). So the stack builds its own Open WebUI image (`open-webui/`: the pinned image, by digest,

@@ -429,17 +429,18 @@ def chat_python_runtime(ctx):
     r = http("GET", "chat", "/api/config", {"Origin": "null", "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "cors"})
     if r.status != 403 or "opaque origin" not in (r.header("x-bn-refused") or ""):
         bad.append(f"opaque origin on /api/config -> {r.status} {r.header('x-bn-refused')!r}")
-    # an unknown name: Open WebUI's page shell, the same for everyone — nothing of the admin, no session, no key
+    # an unknown name: Open WebUI's own answer for a static file it does not have (its 404 — or its page shell), the
+    # same for everyone — nothing of the admin, no session, no key
     r = http("GET", "chat", "/pyodide/bn-no-such-file.js", {})
     text = r.body.decode("utf-8", "replace")
     secrets_in = [k for k in ("OPENWEBUI_ADMIN_EMAIL", "OPENWEBUI_API_KEY", "LITELLM_MASTER_KEY", "PORTAL_PASSWORD", "WEBUI_SECRET_KEY")
                   if ENV.get(k) and ENV[k] in text]
-    if r.status != 200 or secrets_in or "bn_session" in text:
+    if r.status not in (200, 404) or secrets_in or "bn_session" in text or r.header("set-cookie"):
         bad.append(f"unknown name -> {r.status}, holds {secrets_in}")
     expect(not bad, "; ".join(bad))
     return ("/pyodide/<one name>: GET/HEAD public (CORS *, no credentials, Chat's policy, nothing set; micropip and numpy "
             "vendored by name); POST, folders, dots, escapes → the session check; opaque origins still refused elsewhere; "
-            "an unknown name → the page shell, nothing of anyone")
+            "an unknown name → Open WebUI's 404 (or shell), nothing of anyone")
 
 
 @check("final", "logout-csrf-and-revocation")
