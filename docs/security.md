@@ -3234,8 +3234,10 @@ never reads, copies, keeps, passes on or relays a login.**
   and rules (public addresses only, on ports 80, 443 and 22, checked after its own lookup; `TERMINAL_EGRESS_ALLOW` /
   `_DENY` narrow it alike), hardened alike (a test keeps the two definitions equal), Chat's sandbox alone with it on
   `chat-proxy` (internal) and only the proxy also on `chat-out` — so Chat's sandbox never shares a network with the
-  terminal there, nor reaches this computer's services or your network; with no way out (`off`) no network at all,
-  and Chat's models are greyed, saying why. Without that
+  terminal there, and the proxy refuses this computer's services and your network; on Linux, as from every internal
+  network here (the terminal's `terminal-proxy` too), this computer itself stays reachable at the network's gateway
+  address — services listening on `0.0.0.0` — (Docker Desktop on macOS has no such path); with no way out (`off`) no
+  network at all, and Chat's models are greyed, saying why. Without that
   overlay (a run of compose that lacks it) it is on a network of its own with nothing else on it and no way out
   (`subs-chat-internal`), never the stack's default one; and bn-coded in Chat's role does not start where one of the
   stack's own names resolves — or where a lookup of one does not answer in time, twice: not known to be out of reach

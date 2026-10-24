@@ -129,7 +129,9 @@ class Settings:
     # compose.code.yaml): whether Claude on your plan is offered as a Chat model (the code container enforces it)
     claude_plan: bool = False
     # TERMINAL_EGRESS as the stack reads it (lib/common.sh egress_mode): internet (the default), host or off — with
-    # host, your subscriptions are not Chat models (answers.plan_models; the code container enforces it)
+    # off, your subscriptions are not Chat models (answers.plan_models, which reads a later change from ./stack's
+    # snapshot: answers.current_egress; the code container enforces it); with host, Chat's sandbox has a proxy of its
+    # own (compose.code-egress.yaml)
     terminal_egress: str = "internet"
 
     def password_where(self) -> str:

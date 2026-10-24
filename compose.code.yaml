@@ -201,8 +201,9 @@ services:
       CODE_HOST: ${CODE_HOST:-}
       # (Chat's Who answers offers Claude on your plan as a model only while this is on; the code container enforces it)
       CODE_CLAUDE_PLAN: ${CODE_CLAUDE_PLAN:-false}
-      # (and none of your subscriptions as a Chat model while the sandbox's way out is the direct one: the code
-      # container enforces it, compose.code-egress.yaml)
+      # (and none of your subscriptions as a Chat model while the sandbox has no way out, off: the code container
+      # enforces it; with the direct one, Chat's sandbox has a proxy of its own — compose.code-egress.yaml. The portal
+      # reads a change from Settings in ./stack's snapshot: answers.current_egress)
       TERMINAL_EGRESS: ${TERMINAL_EGRESS:-}
       REMOTE_CODE_HOST: ${REMOTE_CODE_HOST:-}
       PREVIEW_DOMAIN: ${PREVIEW_DOMAIN:-bedrock-now-preview.localhost}

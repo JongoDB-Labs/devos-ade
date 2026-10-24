@@ -354,7 +354,7 @@ export function forwardHeaders(raw) {
 const MESSAGES = { 400: 'Bad Request', 403: 'Forbidden', 405: 'Method Not Allowed', 408: 'Request Timeout', 431: 'Request Header Fields Too Large',
   501: 'Not Implemented', 502: 'Bad Gateway', 503: 'Service Unavailable', 504: 'Gateway Timeout' };
 const refusalText = (status, why) => `DevOS ADE's sandbox proxy: ${status === 403 ? 'refused' : 'failed'} — ${why}.\n` +
-  (status === 403 ? "The sandbox reaches public internet addresses only (TERMINAL_EGRESS=internet): not this computer's services, your network or private addresses. Settings › Claude Code › Sandbox internet access.\n" : '');
+  (status === 403 ? "This proxy lets the sandbox reach public internet addresses only: not this computer's services, your network or private addresses (the terminal's with Settings › Claude Code › Sandbox internet access: Internet only; Chat's always).\n" : '');
 function rawReply(sock, status, why) {
   const body = refusalText(status, why);
   if (sock.writable) {

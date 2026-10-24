@@ -586,7 +586,13 @@ terminal_status() {
       printf '             not this computer'"'"'s services, your network or private addresses (refusals: ./stack logs terminal-egress)\n'
       [ -z "$(get_env TERMINAL_EGRESS_ALLOW)" ] || printf '             only: %s (TERMINAL_EGRESS_ALLOW)\n' "$(get_env TERMINAL_EGRESS_ALLOW)"
       [ -z "$(get_env TERMINAL_EGRESS_DENY)" ] || printf '             never: %s (TERMINAL_EGRESS_DENY)\n' "$(get_env TERMINAL_EGRESS_DENY)" ;;
-    host) printf '  Internet   on, with this computer'"'"'s services and your network (TERMINAL_EGRESS=host): any address, any port\n' ;;
+    host) printf '  Internet   on, with this computer'"'"'s services and your network (TERMINAL_EGRESS=host): any address, any port\n'
+      # (Chat's sandbox keeps the proxy's rules then: a proxy of its own, compose.code-egress.yaml)
+      if flag_on "$(get_env CODE_ENABLED)"; then
+        printf '             Chat'"'"'s sandbox: public addresses only, through an egress proxy of its own (refusals: ./stack logs chat-egress)\n'
+        [ -z "$(get_env TERMINAL_EGRESS_ALLOW)" ] || printf '             Chat only: %s (TERMINAL_EGRESS_ALLOW)\n' "$(get_env TERMINAL_EGRESS_ALLOW)"
+        [ -z "$(get_env TERMINAL_EGRESS_DENY)" ] || printf '             Chat never: %s (TERMINAL_EGRESS_DENY)\n' "$(get_env TERMINAL_EGRESS_DENY)"
+      fi ;;
     *) printf '  Internet   off (TERMINAL_EGRESS=off): only the gateway to LiteLLM and the shared MCP server\n' ;;
   esac
   printf '             Settings › Claude Code › Sandbox internet access, or TERMINAL_EGRESS=internet|host|off in .env, then ./stack up\n'

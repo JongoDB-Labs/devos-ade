@@ -718,7 +718,8 @@
             [b("+ this computer"), ": also what runs on this computer (a dev server, a database) and your local network."],
             [b("Off"), ": only LiteLLM and the shared MCP server."]]),
           p("Narrower, in ", code(".env"), " and then ", code("./stack up"), ": ", code("TERMINAL_EGRESS_ALLOW"), " (only these names) and ",
-            code("TERMINAL_EGRESS_DENY"), " (never these). What the proxy refused: ", code("./stack logs terminal-egress"), "."),
+            code("TERMINAL_EGRESS_DENY"), " (never these) — for Chat's own proxy too, which Chat's sandbox goes out through with ", b("+ this computer"),
+            ". What the proxy refused: ", code("./stack logs terminal-egress"), " (Chat's: ", code("./stack logs chat-egress"), ")."),
           note("Opening it further works only from the computer running DevOS ADE; a change restarts the terminal (its shells and open Code sessions end)."),
         ];
       },
