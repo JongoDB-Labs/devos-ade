@@ -574,10 +574,10 @@ test_an_older_compose_builds_the_portal_without_the_docs_index_and_says_so() {
   dc() { echo "dc $*" >> "$TMP/dc"; }
   BEDROCK_NOW_COMPOSE_CONTEXTS=0; _BN_COMPOSE_VERSION=2.12.2
   out="$(_build_and_up_portal 2>&1)"
-  assert_contains "$out" "Docker Compose 2.12.2 is older than 2.17: the portal is built without its search's docs index"
+  assert_contains "$out" "Docker Compose 2.12.2 is older than 2.24.4, which $PRODUCT_NAME needs (./stack setup and ./stack update stop for it): the portal is built without its search's docs index"
   assert_contains "$(cat "$TMP/dc")" "dc build -q portal"   # it still builds and starts
   : > "$TMP/dc"; BEDROCK_NOW_COMPOSE_CONTEXTS=1
-  assert_not_contains "$(_build_and_up_portal 2>&1)" "older than 2.17"
+  assert_not_contains "$(_build_and_up_portal 2>&1)" "older than 2.24.4"
 }
 
 test_compose_renders_the_portals_docs_context_only_with_the_overlay() {
