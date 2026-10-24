@@ -3226,8 +3226,9 @@ never reads, copies, keeps, passes on or relays a login.**
   conversation otherwise) — and `CLAUDE_CODE_DISABLE_ATTACHMENTS=1` (Claude Code otherwise reads an `@path` of a prompt
   into it before the model runs, tools or not), under managed settings of Chat's own (`terminal/managed/chat.json`:
   every file read and write denied, shell and web fetch denied, no hooks, no Bypass or Auto mode); an `@` in Chat's text
-  that would name a file reaches every agent as `＠` (after a space, a bracket, a quote or CJK punctuation such as
-  `。、？！`, before a path, a name or a quoted one: `@"my notes.md"`), and so in a quoted conversation; what an answer
+  not right after a letter or a digit reaches every agent as `＠`, whatever follows (`@~/.ssh/…`, `@"my notes.md"`,
+  `@@/path`, `@$HOME`; after CJK punctuation such as `。、？！` too — an e-mail address keeps its `@`), and so in a quoted
+  conversation; what an answer
   can make your browser fetch is limited by Chat's page (below); Codex without its shell, MCP servers, web search, apps, plugins, skills, browser
   and images, no AGENTS.md, asking before anything it does not count as safe; Copilot with an empty list of available
   tools, no MCP server of its own, no instructions files, no temp folder, its shell, writes and URLs denied; Grok with
@@ -3240,9 +3241,11 @@ never reads, copies, keeps, passes on or relays a login.**
   killed there and then, with what it started (its own process group in the sandbox), not asked to stop; nothing it
   says after that sign reaches the answer. What left its group (a process started with `setsid`, `forkpty` or
   `setpgid`) is killed too: no tool ever runs in Chat's sandbox, so whatever is there in no session of bn-coded's own,
-  of a check it runs or of an agent running now is killed — when an agent is killed, when one ends, and every 5
-  seconds —, each by its exact pid, its start time read again just before (never a pid that names another process
-  since), never the container's init or what `docker exec` put in (a health check). An agent's end is its end: 2
+  of a check it runs, of an agent running now (never the one being ended) or of what `docker exec` put in (`./stack
+  subscriptions login TOOL --chat` and the sign-in it runs, a health check) is killed — when an agent is killed, when
+  one ends, and every 5 seconds: each frozen first (it starts nothing more), the sandbox looked at again until no new
+  one appears (at most 5 rounds), then each killed by its exact pid, its start time read again just before (never a
+  pid that names another process since); never the container's init. An agent's end is its end: 2
   seconds after it exits the code container hears so, even while something it started holds its output open; and a
   turn waits at most 10 seconds after a tool's first sign before it stops waiting and closes that agent's
   connection. A tool that runs by itself before any sign of it reaches here (one its switches let through and it

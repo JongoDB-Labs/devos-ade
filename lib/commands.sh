@@ -119,6 +119,7 @@ cmd_password() {
 check_prereqs() {
   require_cmd docker "install Docker Desktop (macOS) or Docker Engine (Linux)"
   docker compose version >/dev/null 2>&1 || die "Docker Compose v2 plugin is required"
+  compose_overrides_ok || die "$(compose_too_old)"
   check_docker_daemon
   check_docker_engine
   require_cmd curl; require_cmd openssl; require_cmd awk; require_cmd sed
@@ -1632,6 +1633,9 @@ cmd_update() {
     esac
   done
   [ -f "$ENV_FILE" ] || die "run ./stack setup first"
+  # (this version's compose files need Docker Compose 2.24.4: said before anything changes — after an update from an
+  # earlier version, before its setup runs; ./stack update then finishes it once Compose is updated)
+  compose_overrides_ok || die "$(compose_too_old)"
   if [ "${BEDROCK_NOW_CODE_UPDATED:-0}" = 1 ]; then   # before stack_lock, which would take the lock as ours
     if _update_reexec_genuine; then reexec=1
     else   # e.g. v0.1.1 or a stale v0.2.1 hand-over: the code may have moved, so nothing is skipped

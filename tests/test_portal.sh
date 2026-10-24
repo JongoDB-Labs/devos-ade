@@ -537,6 +537,19 @@ test_compose_version_that_reads_additional_contexts() {
   for v in 2.16.9 v2.3.3 1.29.2 2 '' x.y.z 2.x; do ! compose_contexts_ok "$v" || { echo "should not read: $v" >&2; return 1; }; done
 }
 
+test_compose_version_for_override_and_reset_tags() {
+  # setup and update need Docker Compose 2.24.4 (the compose files' !override and !reset); an older one: said, and stopped
+  local v
+  for v in 2.24.4 v2.24.4 2.24.6+ds1-0ubuntu1 2.40.3-desktop.1 2.25 3.0.0; do compose_version_ge "$v" 2 24 4 || { echo "should do: $v" >&2; return 1; }; done
+  for v in 2.24.3 2.23.9 v2.17.0 1.29.2 2 '' x.y.z 2.x 2.24.x; do ! compose_version_ge "$v" 2 24 4 || { echo "should not do: $v" >&2; return 1; }; done
+  docker() { case "$*" in "compose version --short") echo 2.20.1 ;; *) return 0 ;; esac; }
+  unset BEDROCK_NOW_COMPOSE_OVERRIDES _BN_COMPOSE_VERSION
+  ! compose_overrides_ok || return 1
+  assert_contains "$(compose_too_old)" "Docker Compose 2.20.1 is older than 2.24.4"
+  assert_contains "$(sed -n '/^check_prereqs()/,/^}/p' "$STACK_DIR/lib/commands.sh")" 'compose_overrides_ok || die "$(compose_too_old)"'
+  assert_contains "$(sed -n '/^cmd_update()/,/^}/p' "$STACK_DIR/lib/commands.sh")" 'compose_overrides_ok || die "$(compose_too_old)"'
+}
+
 test_dc_adds_the_docs_overlay_only_where_compose_reads_it() {
   docker() { case "$*" in "compose version --short") echo "$VER"; echo asked >> "$TMP/asked" ;; *) printf '%s\n' "$*" >> "$TMP/args" ;; esac; }
   : > "$ENV_FILE"

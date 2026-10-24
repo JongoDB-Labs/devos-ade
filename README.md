@@ -38,8 +38,9 @@ disable` the Code page alone; either stays off across updates).
 
 **Prerequisites**
 
-- macOS or Linux, with **Docker Desktop** (macOS) or **Docker Engine 28+ with Compose v2** (Linux). Compose 2.17 or
-  newer (2023 on) also gives the portal's Search its index of this README and `docs/`; with an older one everything
+- macOS or Linux, with **Docker Desktop** (macOS) or **Docker Engine 28+ with Compose v2** (Linux), **Compose 2.24.4 or
+  newer** (2024 on: its compose files use `!override` and `!reset`; `./stack setup` and `./stack update` say so and stop
+  on an older one). Compose 2.17 or newer (2023 on) also gives the portal's Search its index of this README and `docs/`; with an older one everything
   else works, and `./stack` says so when it builds the portal. Docker Desktop 4.29 or newer (Engine 26+) also keeps
   the sandbox from looking up outside names, a way out by DNS; with an older one `./stack test` says so
 - `git`, `curl`, `openssl` (macOS's built-in bash 3.2 is fine). Nothing else on your computer: no Node or Python

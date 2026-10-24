@@ -27,6 +27,12 @@ All notable changes to bedrock-now are documented here. The format follows
   Anthropic's support article allows the Agent SDK on a plan; its legal page says other apps may not route requests
   through one on their users' behalf — your choice, quoted where you make it.
 
+### Changed
+
+- **Docker Compose 2.24.4 or newer is needed** (2024 on): the compose files use `!override` and `!reset` (Chat's
+  sandbox's network). `./stack setup` and `./stack update` say so and stop on an older one, before anything changes
+  (an update from an earlier version: before its setup — `./stack update` finishes it once Compose is updated).
+
 ### Security
 
 - **Chat's own sandbox for your subscriptions' Chat models** (`subs-chat`): the sandbox's image, a home of its own, and
@@ -90,8 +96,8 @@ All notable changes to bedrock-now are documented here. The format follows
   cannot speak as you.
 - Chat's Claude attaches no file and reads none: `CLAUDE_CODE_DISABLE_ATTACHMENTS=1`, `--tools=`,
   `--strict-mcp-config` and `--setting-sources=` (each required by bn-coded), managed settings of Chat's own (every
-  file read denied, no hooks, no Bypass or Auto); an `@` in Chat's text is no file's name (`＠`, a quoted path's and one
-  after CJK punctuation too).
+  file read denied, no hooks, no Bypass or Auto); an `@` in Chat's text is no file's name (`＠`: every one not right
+  after a letter or a digit).
 - **What an answer can make your browser fetch, in Chat:** Open WebUI's site (locally and over remote access) loads
   images, audio, video, frames, fonts, scripts and style sheets, and sends requests and forms, to itself only, with no
   Referer; an html code block opens in Open WebUI's Artifacts panel only on a click, under the Code page's artifact

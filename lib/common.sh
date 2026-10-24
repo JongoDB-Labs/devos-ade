@@ -346,6 +346,35 @@ compose_contexts_ok() {
   [ "$maj" -gt 2 ] || { [ "$maj" -eq 2 ] && [ "$min" -ge 17 ]; }
 }
 
+# compose_version_ge VERSION MAJ MIN PATCH -> 0 for a Docker Compose version (2.40.3-desktop.1, v2.24.4,
+# 2.24.6+ds1-0ubuntu1) at least MAJ.MIN.PATCH. Anything unreadable counts as older.
+compose_version_ge() {
+  local v="${1#v}" a b c
+  a="${v%%.*}"; v="${v#*.}"; [ "$v" != "$1" ] || return 1
+  b="${v%%.*}"; c=0
+  case "$v" in *.*) c="${v#*.}"; c="${c%%[!0-9]*}" ;; esac
+  b="${b%%[!0-9]*}"
+  case "$a" in '' | *[!0-9]*) return 1 ;; esac
+  case "$b" in '' | *[!0-9]*) return 1 ;; esac
+  [ -n "$c" ] || c=0
+  [ "$a" -gt "$2" ] && return 0; [ "$a" -lt "$2" ] && return 1
+  [ "$b" -gt "$3" ] && return 0; [ "$b" -lt "$3" ] && return 1
+  [ "$c" -ge "$4" ]
+}
+
+# compose_overrides_ok -> 0 when this machine's Docker Compose reads the !override and !reset tags of the compose files
+# (2.24.4 or newer: Chat's sandbox's network, remote access under your own domain); BEDROCK_NOW_COMPOSE_OVERRIDES=1|0
+# decides instead (tests/run.sh sets 1). _BN_COMPOSE_VERSION keeps the version for the message.
+compose_overrides_ok() {
+  case "${BEDROCK_NOW_COMPOSE_OVERRIDES:-}" in 0) return 1 ;; 1) return 0 ;; esac
+  [ -n "${_BN_COMPOSE_VERSION:-}" ] || _BN_COMPOSE_VERSION="$(docker compose version --short 2>/dev/null || true)"
+  compose_version_ge "$_BN_COMPOSE_VERSION" 2 24 4
+}
+compose_too_old() {
+  printf 'Docker Compose %s is older than 2.24.4, which %s needs (its compose files use !override and !reset): update Docker Desktop (on Linux, the docker-compose-plugin) and run this again' \
+    "${_BN_COMPOSE_VERSION:-(this one)}" "$PRODUCT_NAME"
+}
+
 # compose_reads_contexts -> 0 when this machine's Docker Compose reads build.additional_contexts, which the portal's
 # docs index needs (compose.portal-docs.yaml). Asked once per command (./stack asks before anything else; the answer
 # is exported to the commands it runs); BEDROCK_NOW_COMPOSE_CONTEXTS=1|0 decides instead (tests/run.sh sets 0).
