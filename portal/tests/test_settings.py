@@ -207,7 +207,8 @@ def test_settings_page_search_and_changed_filter():
     # across every section: a match shows with its section (the others hidden), More opened where it matches; the
     # settings shown inside a row (its "with" keys) count as that row's
     assert "const show = finding ? left > 0 : c.dataset.section === current;" in find
-    assert "m.open = true;" in find and "withOf[r.dataset.key]" in find
+    assert "m.open = true;" in find and "withOf[at]" in find and "const at = r.dataset.key || r.dataset.own;" in find
+    # (a row of the page's own too: the Claude plan switch inside Your AI subscriptions counts as changed there)
     for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML"):
         assert sink not in js
 

@@ -266,7 +266,9 @@
   function rowMatches(r, q) {
     // the row's key and the ones shown inside it, except values ./stack derives (setup's model choices differ from
     // .env.example's blank on every install: they are no change of yours)
-    const keyNames = [r.dataset.key, ...(withOf[r.dataset.key] || []).filter((w) => keys[w] && keys[w].policy !== "derived")].filter(Boolean);
+    // (a row of the page's own counts by the settings shown inside it: the Claude plan switch in Your AI subscriptions)
+    const at = r.dataset.key || r.dataset.own;
+    const keyNames = [r.dataset.key, ...(withOf[at] || []).filter((w) => keys[w] && keys[w].policy !== "derived")].filter(Boolean);
     const okChanged = !find.changed || keyNames.some((n) => changedFromDefault(keys[n]));
     return okChanged && (!q || (findText.get(r) || "").includes(q));
   }
