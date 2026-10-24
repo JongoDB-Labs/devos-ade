@@ -192,12 +192,15 @@ def test_the_code_steps_name_what_a_developer_uses():
         "code-open": ("Open Code", "unlock it with the portal password", "New session", "Projects", "Needs you", "Working", "Done",
                       "claude-code-terminal"),
         "code-modes": ("Read only", "Plan", "Manual", "Accept edits", "Shift+Tab", "Alt+M", "Allow once", "Always", "Deny", "Permissions",
-                       "Auto", "Bypass permissions", '"CODE_AUTO_MODE"', "edits to ordinary files of the project go ahead", "git's folder",
-                       'code(".github")', "links", "for every edit in a repository whose git settings can run a program", "the note under the turn says why"),
+                       "Auto", "Bypass permissions", '"CODE_AUTO_MODE"', "with Claude Code, file edits in the workspace and file commands there",
+                       'code("mkdir")', 'code("sed")', "Claude Code's own Accept edits", "With an agent of your subscriptions",
+                       "edits to ordinary files of the project go ahead", "git's folder",
+                       'code(".github")', "links", "for every edit in a repository whose git settings can run a program", "the note under the agent's turn says why"),
         # (a project's own settings: what is in each part, who needs which, Trust in the dialog, v0.23.0's carried over)
         "code-trust": ('code(".claude/")', 'code(".mcp.json")', 'code("CLAUDE.md")', 'code(".codex")', 'code(".cursor")', 'code(".github")',
                        'b("Trust")', "Claude Code settings…", "Claude Code on Bedrock", "needs its own part", "Codex", "Copilot", "Cursor", "Grok",
-                       "the other tools' part too", "the first time one of them starts there", "Stop trusting them", "v0.23.0", 'doc("projects"'),
+                       "the other tools' part too", "the first time one of them starts there", "Stop trusting them", "v0.23.0", 'doc("projects"',
+                       'Trust covers only what it shows ", b("whole")', "A part the dialog cannot show whole", "Trust covers Claude Code's part alone"),
         "code-models": ("works", "chat only", "not tested", "Models for Claude Code", "Default model for new sessions",
                         "claude-bedrock --models", "claude-bedrock --model mistral-large-3", "Budget for this session"),
         "code-workspace": ("cfg.workspace", '"./stack code status"', "Ctrl/⌘+P", "Ctrl/⌘+Shift+F", "Ctrl/⌘+K", "Preview", "Mermaid",
@@ -220,16 +223,16 @@ def test_the_code_steps_name_what_a_developer_uses():
 
 
 def test_chat_and_subscriptions_steps_say_what_v0_24_changed():
-    # Chat's page loads only from itself, HTML previews on a click, the Python runner's packages; the Claude-plan switch
-    # where it is, off by default, its terms quoted there
+    # Chat's page loads only from itself, HTML previews on a click by default, the Python runner's packages; the
+    # Claude-plan switch where it is, off by default, what its row says of Anthropic's two texts
     js = (STATIC / "tour.js").read_text(encoding="utf-8")
     chat = _step(js, "chat")
     for words in ("loads pictures and scripts only from itself", "a picture an answer links from another site does not show",
-                  "opens in a preview only when you click it", 'b("Run")', "numpy, pandas and matplotlib", "other packages are not available"):
+                  "By default, an HTML block opens in a preview only when you click it", 'b("Run")', "numpy, pandas and matplotlib", "other packages are not available"):
         assert words in chat, words
     subs = _step(js, "subscriptions")
     for words in ('settings("Claude Code", "CODE_CLAUDE_PLAN")', 'b("Use my Claude plan in the Code page and Chat")', "off by default",
-                  "the choice is yours", "Anthropic's terms are quoted there", 'b("A project\'s own settings")'):
+                  "the choice is yours", "the row says what Anthropic's support article and its legal page each say", 'b("A project\'s own settings")'):
         assert words in subs, words
     # (no sentence of the old Accept edits)
     assert "file edits in the workspace go ahead" not in js

@@ -275,8 +275,9 @@ def test_the_search_page_builds_text_only_and_talks_to_the_code_frame_on_its_ori
 
 
 def test_an_image_without_the_docs_index_says_where_the_docs_are():
-    # a portal built without compose.portal-docs.yaml (an earlier release with a Compose older than 2.17, a plain docker
-    # build): an empty index, said so — and how to get it (this version needs Compose 2.24.4, which builds it)
+    # a portal built without compose.portal-docs.yaml (a Compose that does not read build.additional_contexts, which
+    # this version never runs with, or a plain docker build): an empty index, said so — and how to get it (this version
+    # needs Compose 2.24.4, which builds it)
     js = (STATIC / "search.js").read_text(encoding="utf-8")
     assert "if (index && !((index.docs && index.docs.pages) || []).length) out.push(\"Docs: this portal's image has no index" in js
     assert "./stack setup builds it with one" in js

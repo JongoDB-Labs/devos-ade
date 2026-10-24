@@ -515,7 +515,7 @@
       body: () => [
         p("The model dropdown at the top of Chat lists your Bedrock models by name with a price tier ($ cheapest, $$, $$$) and, with OpenRouter on, “… · OpenRouter” models tagged Free or Paid (and your subscriptions, once signed in: ", b("Your AI subscriptions and keys"), ", below)."),
         p("Pick one, type a question, send. The italic line under each answer is what it cost, and what the whole chat has cost so far."),
-        note("Chat's page loads pictures and scripts only from itself: a picture an answer links from another site does not show. An HTML block opens in a preview only when you click it. ",
+        note("Chat's page loads pictures and scripts only from itself: a picture an answer links from another site does not show. By default, an HTML block opens in a preview only when you click it. ",
           b("Run"), " on a Python block works with numpy, pandas and matplotlib; other packages are not available."),
       ],
       actions: () => [openApp("chat")],
@@ -580,8 +580,9 @@
           [b("Read only"), ": it reads and searches; anything else is denied."],
           [b("Plan"), ": it reads, then shows a plan for you to approve — or to send back with your comments."],
           [b("Manual"), ": every file edit and command waits for your OK."],
-          [b("Accept edits"), ": edits to ordinary files of the project go ahead; other commands ask. It always asks for git's folder, ", code(".github"),
-            ", editor, hook and tool settings, and links — and for every edit in a repository whose git settings can run a program, or that it cannot read whole: the note under the turn says why."]]),
+          [b("Accept edits"), ": with Claude Code, file edits in the workspace and file commands there (", code("mkdir"), ", ", code("touch"), ", ", code("mv"), ", ", code("cp"), ", ", code("rm"), ", ", code("sed"),
+            ") go ahead; other commands ask — Claude Code's own Accept edits. With an agent of your subscriptions (Codex, Copilot, Cursor, Grok), edits to ordinary files of the project go ahead, and it always asks for git's folder, ", code(".github"),
+            ", editor, hook and tool settings, and links — and for every edit in a repository whose git settings can run a program, or that it cannot read whole: the note under the agent's turn says why."]]),
         p("A card says exactly what would run or change: ", b("Allow once"), ", ", b("Always"), " (the rule is shown first) or ", b("Deny"),
           " (with a note for Claude). ⋯ › ", b("Permissions"), " lists the rules, with Remove."),
         note(b("Auto"), " (a reviewer model decides; about $0.13 per 5 minutes in use) and ", b("Bypass permissions"), " stay off until ",
@@ -625,10 +626,11 @@
       body: () => [
         p("A project can bring settings of its own: Claude Code's (", code(".claude/"), ", ", code(".mcp.json"), " and, with them, its ", code("CLAUDE.md"),
           ") and the other tools' (", code(".codex"), ", ", code(".cursor"), ", ", code(".github"), " …). They are used only after you ", b("Trust"),
-          " them, in the dialog a new session there opens first (or the project's ⋯ › ", b("Claude Code settings…"), "), which shows every file whole."),
+          " them, in the dialog a new session there opens first (or the project's ⋯ › ", b("Claude Code settings…"), "), which shows the files: Trust covers only what it shows ", b("whole"), "."),
         list("ul", [
           [b("Claude Code on Bedrock"), " needs its own part. ", b("Codex"), ", ", b("Copilot"), ", ", b("Cursor"), " and ", b("Grok"),
             " need the other tools' part too, and are asked about it the first time one of them starts there."],
+          ["A part the dialog cannot show whole (too large, a file it cannot read) is never trusted: when that is the other tools' part, Trust covers Claude Code's part alone and agents do not start there."],
           ["When a file changes, they stop applying until you look again; ", b("Stop trusting them"), " takes a trust back."],
           ["A project you trusted in v0.23.0 stays trusted for Claude Code while its files are as they were."]]),
         note("Hooks and MCP servers run commands, and allow rules skip the cards: read them first (", doc("projects", "details"), ")."),
@@ -789,7 +791,7 @@
         list("ul", [
           [b("Terminal"), ": the ", b("Open"), " menu above it — Claude Code on Bedrock, a tool of yours, or a shell, each in a window of its own (the Code page's terminal panel has the same)."],
           [b("Chat"), ": the ", b("Who answers"), " menu above it — a Bedrock or OpenRouter model in Open WebUI, or one of your tools ", b("itself"), ", right there, in the folder you pick. Each subscription that is signed in is also ", b("a model in Open WebUI's menu"), " (Codex, Copilot, Grok, and Claude on your plan once you turn on ",
-            settings("Claude Code", "CODE_CLAUDE_PLAN"), " › ", b("Use my Claude plan in the Code page and Chat"), " — off by default: the choice is yours, and Anthropic's terms are quoted there): it answers in the same chat, without tools, on your plan — under each answer its tokens, never dollars. Chat has ", b("sign-ins of its own"), " (its own sandbox, apart from the terminal's): sign each in once more for Chat — the picker's ", b("Sign in for Chat…"), " leads to Settings, which shows the command (", code("./stack subscriptions login codex --chat"), "). Cursor is not a Chat model (it has no switch that turns its tools off). Google's plans no longer work in Gemini CLI: your own Gemini key is planned instead, like your other API keys."],
+            settings("Claude Code", "CODE_CLAUDE_PLAN"), " › ", b("Use my Claude plan in the Code page and Chat"), " — off by default: the choice is yours, and the row says what Anthropic's support article and its legal page each say): it answers in the same chat, without tools, on your plan — under each answer its tokens, never dollars. Chat has ", b("sign-ins of its own"), " (its own sandbox, apart from the terminal's): sign each in once more for Chat — the picker's ", b("Sign in for Chat…"), " leads to Settings, which shows the command (", code("./stack subscriptions login codex --chat"), "). Cursor is not a Chat model (it has no switch that turns its tools off). Google's plans no longer work in Gemini CLI: your own Gemini key is planned instead, like your other API keys."],
           [b("Code page"), ": the model picker's ", b("Who answers"), " switches to one of them — a new session in the project's folder with your conversation so far, once the project's settings are trusted for it (", b("A project's own settings"), ", above); its questions come as the usual permission cards."]]),
         note("Usage counts against each plan's own limits; DevOS ADE shows no $ for it. ", settings("Claude Code", "+subscriptions"), " › ",
           b("Your AI subscriptions"), " lists each tool, whether it says it is signed in — the terminal's and the Code page's sign-in, and Chat's — ", b("Sign out"), " and ", b("Check again"), "; ", code("./stack subscriptions"), " in a terminal."),

@@ -15,7 +15,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   — and the stack builds its own Open WebUI image with the wheels of `open-webui/packages.txt` in it, each checked
   against Pyodide's lock: Chat's page still talks only to itself, so any other package is not available, and says so.
   `./stack status` says what is ready and what was left out; a build that could not download a wheel goes on without
-  it and tries again at the next `./stack up`.
+  it and tries again at a later `./stack up`, at most once an hour.
 - **A project's settings dialog with long files in both parts** (Claude Code's and the other tools') could not open or
   trust: both parts' texts went to the code container in one answer, which could pass its 4 MiB. The answer is now
   measured in bytes as it is sent; when it would not fit, the other tools' texts are left out first (agents do not
@@ -43,12 +43,14 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ### Changed
 
-- **The walkthrough is up to date with v0.24:** Accept edits as it works now (ordinary files of the project; always
-  asked for git's folder, `.github`, editor, hook and tool settings and links; every edit asked where the repository's
-  git settings can run a program, and why); a new Code step, *A project's own settings* (what Claude Code's part and the
-  other tools' part hold, who needs which, *Trust* in the dialog, v0.23.0's trusts carried over); where the switch for
-  Claude on your plan is (off by default, Anthropic's terms quoted there); and in the Chat step, what Chat's page loads,
-  HTML previews on a click and the Python runner's packages.
+- **The walkthrough is up to date with v0.24:** Accept edits as it works now — with Claude Code, its own (file edits
+  and file commands in the workspace go ahead); with an agent of your subscriptions, ordinary files of the project, and
+  always asked for git's folder, `.github`, editor, hook and tool settings and links, every edit asked where the
+  repository's git settings can run a program, and why, under the agent's turn; a new Code step, *A project's own
+  settings* (what Claude Code's part and the other tools' part hold, who needs which, *Trust* in the dialog for what it
+  shows whole, v0.23.0's trusts carried over); where the switch for Claude on your plan is (off by default; its row
+  says what Anthropic's support article and its legal page each say); and in the Chat step, what Chat's page loads,
+  HTML previews on a click by default and the Python runner's packages.
 
 ### Security
 

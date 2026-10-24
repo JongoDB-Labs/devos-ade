@@ -222,7 +222,7 @@ phone it is under **More**.
    Files (on its buckets) open signed in, and opening each one ticks its step off. Admin's and Files' own sign-ins
    are folded away under **Credentials**, with Copy buttons and a link to each app's own form, for the API or in
    case the automatic sign-in ever fails.
-3. **Chat:** a chat with its cost line (what its page loads, previews on a click, the Python runner's packages), voice,
+3. **Chat:** a chat with its cost line (what its page loads, previews on a click by default, the Python runner's packages), voice,
    your documents.
 4. **Code with Claude** (where the Code page is on; otherwise one step on how to turn it on): open Code and ask, the
    permission modes and cards, picking a model, your workspace (its folder on this computer, files, search, previews),
@@ -376,7 +376,7 @@ so a phone needs remote access (HTTPS) turned on first; a tablet or a small brow
   checked against the hash Open WebUI's Pyodide lists for it. Any other package is not available: Chat's page talks
   only to Open WebUI itself, so a package from Pyodide's CDN is refused and the block says so. `./stack status` says
   how many are ready, and which were left out and why (a build that could not download one goes on without it and
-  tries again at the next `./stack up`).
+  tries again at a later `./stack up`, at most once an hour).
 - **Voice:** read-aloud uses your system's voices. The microphone and voice **calls** (the sound-wave button)
   use [server speech-to-text](#voice-speech-to-text): Mistral Voxtral on Bedrock, on by default when your AWS
   key can use it (AWS no longer accepts its audio since October 2026), or your own OpenAI or Groq key. Without
