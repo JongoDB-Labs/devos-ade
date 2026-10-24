@@ -667,13 +667,18 @@ assert c["depends_on"]["terminal"]["condition"] == "service_healthy"' || return 
   # Chat's sandbox with the other ways out: host egress — a proxy of its own, the terminal on its direct way still; no
   # egress — no network at all; and with no overlay, its own alone. (Chat's proxy is the terminal's, as rendered —
   # the whole service but its networks: the same image, user, limits, capabilities, environment, logging …)
-  # (twice: with blank lists, as most .env files have them, and with lists of names of their own — so that a list
-  # written into either file, an empty one too, differs)
+  # (three times: with blank lists, as most .env files have them; with lists of names of their own — so that a list
+  # written into either file, an empty one too, differs; and with the keys not in .env at all — so that a default
+  # without a colon, ${X-…}, which a blank value does not reach, differs too)
   local allow deny lists
-  for lists in blank sentinel; do
+  for lists in blank sentinel unset; do
     allow=''; deny=''
-    [ "$lists" = blank ] || { allow=allow-sentinel.invalid,github.com; deny=deny-sentinel.invalid; }
+    [ "$lists" != sentinel ] || { allow=allow-sentinel.invalid,github.com; deny=deny-sentinel.invalid; }
     set_env TERMINAL_EGRESS internet; set_env TERMINAL_EGRESS_ALLOW "$allow"; set_env TERMINAL_EGRESS_DENY "$deny"
+    if [ "$lists" = unset ]; then
+      grep -Ev '^TERMINAL_EGRESS_(ALLOW|DENY)=' "$ENV_FILE" > "$TMP/env.unset"; cat "$TMP/env.unset" > "$ENV_FILE"
+      ! grep -q '^TERMINAL_EGRESS_ALLOW\|^TERMINAL_EGRESS_DENY' "$ENV_FILE" || return 1
+    fi
     dc config --format json 2>/dev/null > "$TMP/render-internet.json" || return 1
     set_env TERMINAL_EGRESS host
     dc config --format json 2>/dev/null > "$TMP/render-host.json" || return 1

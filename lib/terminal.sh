@@ -249,8 +249,9 @@ egress_image_wanted() {
   esac
 }
 # chat_proxy_wanted -> 0 while Chat's sandbox goes out through a proxy of its own: the terminal's way out the direct one
-# (TERMINAL_EGRESS=host) and the Code page on (compose.code-egress.yaml)
-chat_proxy_wanted() { [ "$(terminal_egress_mode)" = host ] && flag_on "$(get_env CODE_ENABLED)"; }
+# (TERMINAL_EGRESS=host), the terminal on and the Code page on (compose.code-egress.yaml) — the terminal turned off by
+# hand in .env leaves it unwanted too, so no proxy stays up for a Chat sandbox compose no longer runs
+chat_proxy_wanted() { [ "$(terminal_egress_mode)" = host ] && terminal_on && flag_on "$(get_env CODE_ENABLED)"; }
 # chat_proxy_leave — before anything is brought up: Chat's own egress proxy goes unless it is still Chat's way out
 # (host, the Code page on). Every path that ups — Settings' apply, ./stack up, setup and update, restore — calls it first:
 # an up that fails then leaves Chat's sandbox with no way out, never with the one it had.

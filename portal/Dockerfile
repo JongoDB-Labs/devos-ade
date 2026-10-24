@@ -26,8 +26,11 @@ RUN mkdir -p /src /out && python -m portal.searchindex /src /out/docs-index.json
 # jstest: the page scripts' pure parts (static/fuzzy.js, activity.js, search.js; and that no script builds a regular
 # expression) under Node's test runner, with the same
 # pinned Node image as the Code page (shared layers). Only the test stage needs it: never setup, update or the runtime.
+# The greyed items' table (catalog/setup-links.tsv) from the repo context, where the tests look for it (/catalog): its
+# tests skip, saying so, in a plain `docker build portal` that has none.
 FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS jstest
 WORKDIR /app
+COPY --from=repo catalo[g]/setup-links.tsv /catalog/
 COPY portal/static/*.js ./portal/static/
 COPY tests/js/ ./tests/js/
 RUN node --test --test-reporter=spec tests/js/*.test.mjs && touch /tmp/js-tested

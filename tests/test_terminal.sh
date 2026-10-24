@@ -1183,6 +1183,12 @@ test_chats_own_proxy_goes_before_every_up_that_no_longer_wants_it() {
   : > "$TMP/order"; ( terminal_enable ) > /dev/null 2>&1 || true
   assert_eq "$(head -n 1 "$TMP/order")" "rm"
   assert_contains "$(cat "$TMP/order")" "up"
+  # host with the Code page on but the terminal turned off by hand in .env: not wanted, gone at ./stack up
+  set_env TERMINAL_EGRESS host; set_env TERMINAL_ENABLED false
+  if chat_proxy_wanted; then echo "wanted with the terminal off" >&2; return 1; fi
+  : > "$TMP/order"; terminal_up_hook > /dev/null 2>&1 || true
+  assert_eq "$(cat "$TMP/order")" "rm"
+  set_env TERMINAL_ENABLED true; set_env TERMINAL_EGRESS internet
   # host with the Code page on: it stays (Chat's way out)
   dc() { echo "dc $*" >> "$TMP/dc"; return 0; }
   set_env TERMINAL_EGRESS host

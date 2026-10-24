@@ -123,7 +123,8 @@
   // goLabelOf(DATA, VALUE) -> the words of the button beside a menu for a greyed item (setup:REASON:TOOL) or a sign-in
   // for Chat (signin:TOOL): "Go to Settings", or "Open it to sign in" (the tool itself in the terminal); "" for any
   // other choice. goNameOf(DATA, VALUE) -> that button's name for a screen reader: where it goes, from the table
-  // ("Go to Settings › Claude Code › Use my Claude plan"), "" when the table does not say (its words name it then)
+  // ("Go to Settings › Claude Code › Your AI subscriptions › Use my Claude plan"), "" when the table does not say (its
+  // words name it then)
   function goLabelOf(d, v) {
     const m = /^setup:([a-z][a-z-]{1,40}):([a-z]{0,10})$/.exec(v || "");
     if (/^signin:[a-z]{2,10}$/.test(v || "")) return "Go to Settings";

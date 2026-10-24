@@ -75,21 +75,14 @@ test("the Chat tab: your subscriptions as models while they can answer (Open Web
 // --- greyed items go where they are turned on (catalog/setup-links.tsv, served as the answers' `setup`) ---
 import fs from "node:fs";
 import path from "node:path";
-// (the repository's table where it is here — the image's test stage has none: the same rows, written out)
+// (the repository's table: catalog/setup-links.tsv here, /catalog in the image's jstest stage — portal/test.sh passes it.
+// Never rows written out here, which drift from it: without the table, the tests that read it skip and say why.)
 const TSV = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "..", "..", "catalog", "setup-links.tsv");
 const parse = (text) => Object.fromEntries(text.split("\n").filter((l) => l && !l.startsWith("#")).map((l) => l.split("\t")).map(([r, target, where, says]) => [r, { target, where, says }]));
-const SETUP = fs.existsSync(TSV) ? parse(fs.readFileSync(TSV, "utf8")) : {
-  "terminal-off": { target: "setting:TERMINAL_ENABLED", where: "Settings", says: "The browser terminal is off: Settings › Claude Code › Browser terminal turns it on." },
-  "terminal-remote-off": { target: "setting:REMOTE_TERMINAL", where: "Settings", says: "Not over remote access: Settings › Remote access › …" },
-  "tool-left-out": { target: "setting:TERMINAL_AI_TOOLS", where: "Settings", says: "Not in the sandbox: Settings › Claude Code › Tools in the sandbox puts it in." },
-  "code-off": { target: "setting:CODE_ENABLED", where: "Settings", says: "Needs the Code page: Settings › Claude Code › Code page turns it on." },
-  "chat-egress-off": { target: "setting:TERMINAL_EGRESS", where: "Settings", says: "Off while the sandbox has no internet: Settings › Claude Code › Sandbox internet access." },
-  "claude-plan-off": { target: "setting:CODE_CLAUDE_PLAN", where: "Settings › Claude Code › Your AI subscriptions › Use my Claude plan", says: "Off: Settings › Claude Code › Your AI subscriptions › Use my Claude plan in the Code page and Chat." },
-  "chat-signin": { target: "signin:chat", where: "Settings › Claude Code › Your AI subscriptions › Chat", says: "Sign in for Chat: Settings › Claude Code › Your AI subscriptions shows how." },
-  "openrouter-off": { target: "setting:OPENROUTER_API_KEY", where: "Settings", says: "OpenRouter's models need your OpenRouter key: Settings › Chat & voice › OpenRouter API key." },
-};
+const SETUP = fs.existsSync(TSV) ? parse(fs.readFileSync(TSV, "utf8")) : null;
+const TABLE = SETUP ? {} : { skip: `${TSV} is not here (portal/test.sh passes the repository's catalog; a plain docker build does not)` };
 
-test("greyed items: each a choice that goes where it is turned on, saying where — none dead, none greyed while the table has its reason", () => {
+test("greyed items: each a choice that goes where it is turned on, saying where — none dead, none greyed while the table has its reason", TABLE, () => {
   const pm = [{ id: "plan-claude", tool: "claude", label: "Claude · your Claude plan", ok: false, why: "w", reason: "claude-plan-off" },
     { id: "plan-codex", tool: "codex", label: "Codex · ChatGPT", ok: false, why: "w", reason: "code-off" },
     { id: "plan-grok", tool: "grok", label: "Grok · x", ok: false, why: "w", reason: "chat-egress-off" },
@@ -129,7 +122,7 @@ test("where a greyed item goes: Settings at its row, Chat's sign-in row for that
   assert.equal(A.setupOf({ setup: { x: { target: "javascript:alert(1)", where: "Settings", says: "s" } } }, "x"), null);
   assert.equal(A.setupOf({ setup: { x: { target: "setting:lower", where: "Settings", says: "s" } } }, "x"), null);
   assert.equal(A.setupOf({ setup: {} }, "toString"), null);
-  assert.equal(A.setupOf({ setup: SETUP }, "nope"), null);
+  assert.equal(A.setupOf({ setup: { x: { target: "setting:CODE_MODELS", where: "Settings", says: "s" } } }, "nope"), null);
   // (without the table: greyed as before, saying why)
   const g = plain(A.terminalOptions({ ...data, terminal: { here: false } })).flatMap((x) => x.items);
   assert.ok(g.every((i) => i.disabled && !i.value.startsWith("setup:")));
@@ -241,7 +234,7 @@ test("Your AI subscriptions: each tool's Sign out, Check again and Copy has a na
   assert.match(js, /function cliLine\(k, lead, name\) \{[\s\S]*?copyButton\(cmd, name\)\);/);
 });
 
-test("the button beside a menu is named for where it goes — Go to Settings › …; Open, with no name of its own, otherwise", () => {
+test("the button beside a menu is named for where it goes — Go to Settings › …; Open, with no name of its own, otherwise", TABLE, () => {
   const d = { ...data, setup: SETUP };
   assert.equal(A.setupOf(d, "claude-plan-off").where, SETUP["claude-plan-off"].where);
   assert.equal(A.goLabelOf(d, "setup:claude-plan-off:claude"), "Go to Settings");
@@ -259,7 +252,7 @@ test("the button beside a menu is named for where it goes — Go to Settings ›
   assert.equal(A.goNameOf({ setup: { "claude-plan-off": { target: "setting:CODE_CLAUDE_PLAN", says: "s" } } }, "setup:claude-plan-off:claude"), "");
 });
 
-test("the Terminal's button: its words and its accessible name follow the choice — and the tab shown again sets both", () => {
+test("the Terminal's button: its words and its accessible name follow the choice — and the tab shown again sets both", TABLE, () => {
   const js = source("answers.js");
   const body = js.split("const tLabel = () => {")[1].split("\n  };")[0];
   // tLabel as answers.js has it, on a button of the test's: an aria-label wins over the words for a screen reader

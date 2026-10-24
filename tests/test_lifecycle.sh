@@ -479,7 +479,9 @@ test_write_mcp_config_writes_port_and_token() {
 # services come up — an up that fails leaves Chat's sandbox with no way out, never with the one it had
 test_restore_removes_chats_own_proxy_before_any_up() {
   local first
-  for env in 'TERMINAL_EGRESS=internet\nCODE_ENABLED=true\n' 'TERMINAL_EGRESS=host\nCODE_ENABLED=false\n' 'TERMINAL_EGRESS=host\nCODE_ENABLED=true\n'; do
+  # (Chat's way out stays only while host egress, the terminal and the Code page are all on)
+  for env in 'TERMINAL_EGRESS=internet\nCODE_ENABLED=true\nTERMINAL_ENABLED=true\n' 'TERMINAL_EGRESS=host\nCODE_ENABLED=false\nTERMINAL_ENABLED=true\n' \
+    'TERMINAL_EGRESS=host\nCODE_ENABLED=true\nTERMINAL_ENABLED=false\n' 'TERMINAL_EGRESS=host\nCODE_ENABLED=true\nTERMINAL_ENABLED=true\n'; do
     printf "LITELLM_SALT_KEY=a\nWEBUI_SECRET_KEY=b\nSHARED_MCP_PORT=8765\nSHARED_MCP_TOKEN=t0k\n$env" > "$ENV_FILE"
     _mk_backup "LITELLM_SALT_KEY=a\nWEBUI_SECRET_KEY=b\n$env"; _stub_dc; : > "$TMP/calls"
     # (the services' up failing: restore stops there)
@@ -490,7 +492,7 @@ test_restore_removes_chats_own_proxy_before_any_up() {
     # (the services' ups, once the restored .env decides — the data services' up before it starts no sandbox)
     first="$(grep -n -m1 '^dc up -d --wait --force-recreate' "$TMP/calls" | cut -d: -f1 || true)"
     case "$env" in
-      *host*CODE_ENABLED=true*) assert_not_contains "$(cat "$TMP/calls")" "chat_proxy_rm" ;;
+      *host*CODE_ENABLED=true*TERMINAL_ENABLED=true*) assert_not_contains "$(cat "$TMP/calls")" "chat_proxy_rm" ;;
       *) [ -n "$first" ] && [ "$(grep -n -m1 '^chat_proxy_rm' "$TMP/calls" | cut -d: -f1 || echo 9999)" -lt "$first" ] ||
            { echo "Chat's proxy not removed before the first up ($env): $(tr '\n' '|' < "$TMP/calls")" >&2; return 1; } ;;
     esac
