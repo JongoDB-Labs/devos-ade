@@ -3300,10 +3300,12 @@ never reads, copies, keeps, passes on or relays a login.**
   continuation or inner quotes; printable ASCII), and every key must be one that never names a program or a path git or
   a tool of your computer loads: core's format and file-system flags, a remote's URL (never `ext::` or `fd::`), fetch
   and push refspecs, a branch's tracking (VS Code's and the GitHub PR extension's keys included), your name, email and
-  signing key, pull, push, fetch, gc, color, rerere, the conflict style, commit signing, a submodule's URL, branch and
-  `update` (checkout, rebase, merge or none), the object format, git-lfs's own settings and its filter exactly as `git
-  lfs install` writes it (never its custom transfers or extensions), and `core.hooksPath` only as a plain relative
-  folder of the repository (its top folder is then guarded). Anything else — an include, an fsmonitor, a filter, a
+  signing key, pull, push, fetch, gc's numbers, booleans and dates (never `gc.recentObjectsHook`, a command, nor
+  `gc.repackFilterTo`, a path), colours, rerere, the conflict style, commit signing, a submodule's URL, branch and
+  `update` (checkout, rebase, merge or none), the object format, git-lfs's settings one by one (never `lfs.storage`, a
+  folder it loads from, nor its custom transfers, extensions or standalone transfer agent, programs it runs) and its
+  filter exactly as `git lfs install` writes it, and `core.hooksPath` only as a plain relative folder of the repository
+  (its top folder is then guarded) — each key by its exact name: one git adds later is not on the list. Anything else — an include, an fsmonitor, a filter, a
   diff driver, an alias, an editor, a pager, `sshCommand`, a credential helper, `gpg.program`, `core.worktree` …, a
   config that cannot be read whole or plainly, a link on the way — and no path is plain: every edit asks, and the
   session says why once, in the page's own words (what the repository named — a key, a name — is shown apart, as the

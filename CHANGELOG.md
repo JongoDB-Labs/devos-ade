@@ -81,8 +81,9 @@ All notable changes to bedrock-now are documented here. The format follows
   cannot be read the way the tool reads it, cannot be trusted either. What *Trust* confirms names the project and the
   reading. A link in `.github/` (whatever its name) is never trusted; only a real folder no pinned tool reads is
   listed by its name alone. **Accept edits approves an agent's edit only where the
-  repository's git config is plainly harmless** — read with a strict grammar, every key one that never names a program
-  (`core.hooksPath` only as a plain folder of the repository) — and asks for every edit otherwise, saying why; never in
+  repository's git config is plainly harmless** — read with a strict grammar, every key, by its exact name, one that
+  never names a program or a path git or git-lfs loads (`core.hooksPath` only as a plain folder of the repository) —
+  and asks for every edit otherwise, saying why; never in
   the Workspace itself, nor in a folder of your computer with no repository visible. It also asks for `.idea/`,
   `.zed/`, `*.code-workspace`, `.pre-commit-config.yaml`, `.githooks/`, lefthook's and lint-staged's files,
   `.yarnrc.yml`, `.pnpmfile.cjs`, other agents' folders (`.roo`, `.kiro`, `.continue`, `.amazonq`, `opencode.json`),

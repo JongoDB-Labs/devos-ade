@@ -2734,10 +2734,29 @@ const GIT_KEYS = new Set(['core.repositoryformatversion', 'core.filemode', 'core
   'merge.conflictstyle', 'commit.gpgsign',
   'submodule.*.url', 'submodule.*.active', 'submodule.*.branch', 'submodule.*.update',
   'extensions.objectformat', 'extensions.refstorage', 'extensions.worktreeconfig',
-  'filter.lfs.clean', 'filter.lfs.smudge', 'filter.lfs.process', 'filter.lfs.required']);
-// (gc.* and color.* whole; lfs.* but the keys that name a program git-lfs runs)
-const GIT_KEY_SECTIONS = new Set(['gc', 'color', 'lfs']);
-const GIT_LFS_PROGRAMS = /^lfs\.(customtransfer|extension)\./;
+  'filter.lfs.clean', 'filter.lfs.smudge', 'filter.lfs.process', 'filter.lfs.required',
+  // gc: only the keys that take a number, a boolean or a date (never gc.recentObjectsHook — a command —, nor
+  // gc.repackFilterTo — a path)
+  'gc.aggressivedepth', 'gc.aggressivewindow', 'gc.auto', 'gc.autopacklimit', 'gc.autodetach', 'gc.bigpackthreshold', 'gc.writecommitgraph',
+  'gc.logexpiry', 'gc.packrefs', 'gc.cruftpacks', 'gc.maxcruftsize', 'gc.pruneexpire', 'gc.worktreepruneexpire', 'gc.reflogexpire',
+  'gc.reflogexpireunreachable', 'gc.rerereresolved', 'gc.rerereunresolved', 'gc.*.reflogexpire', 'gc.*.reflogexpireunreachable',
+  // color: a colour or a boolean (a slot of the commands that colour: its colour)
+  'color.ui', 'color.diff', 'color.branch', 'color.status', 'color.grep', 'color.interactive', 'color.pager', 'color.showbranch',
+  'color.decorate', 'color.advice', 'color.push', 'color.remote', 'color.transport', 'color.blame',
+  // git-lfs: its settings one by one — never lfs.storage (a folder it loads from), its custom transfers, extensions or
+  // standalone transfer agent (programs it runs)
+  'lfs.url', 'lfs.pushurl', 'lfs.repositoryformatversion', 'lfs.dialtimeout', 'lfs.keepalive', 'lfs.tlstimeout', 'lfs.activitytimeout',
+  'lfs.concurrenttransfers', 'lfs.basictransfersonly', 'lfs.tustransfers', 'lfs.fetchrecentalways', 'lfs.fetchrecentrefsdays',
+  'lfs.fetchrecentcommitsdays', 'lfs.fetchrecentrefsincluderemotes', 'lfs.fetchrecentremoterefs', 'lfs.pruneoffsetdays',
+  'lfs.pruneremotetocheck', 'lfs.pruneverifyremotealways', 'lfs.pruneverifyunreachablealways', 'lfs.fetchinclude', 'lfs.fetchexclude',
+  'lfs.skipdownloaderrors', 'lfs.allowincompletepush', 'lfs.locksverify', 'lfs.cachecredentials', 'lfs.setlockablereadonly',
+  'lfs.lockignoredfiles', 'lfs.defaulttokenttl', 'lfs.gitprotocol']);
+// the subsections whose every key is a colour (color.<command>.<slot>), and git-lfs's per-URL and transfer keys
+const GIT_COLOR_SLOTS = new Set(['diff', 'branch', 'status', 'grep', 'interactive', 'decorate', 'advice', 'push', 'remote', 'transport', 'blame']);
+const GIT_LFS_URL_KEYS = new Set(['access', 'locksverify', 'contenttype', 'sshtransfer']);
+const GIT_LFS_TRANSFER_KEYS = new Set(['maxretries', 'maxretrydelay', 'maxverifies', 'enablehrefrewrite']);
+// a colour, as git reads one: words, numbers and #rrggbb — never a path or a command
+const GIT_COLOR = /^[A-Za-z0-9#\- ]*$/;
 const GIT_LFS_FILTER = Object.freeze({ clean: 'git-lfs clean -- %f', smudge: 'git-lfs smudge -- %f', process: 'git-lfs filter-process', required: 'true' });
 const asciiLower = (s) => s.replace(/[A-Z]/g, (c) => c.toLowerCase());
 // gitConfigStrict(text) -> [{section, sub, key, value}] or null: only blank lines, whole-line # or ; comments, a header
@@ -2781,8 +2800,12 @@ function gitKeyWhy({ section, sub, key, value }) {
     if (sub !== 'lfs' || !Object.hasOwn(GIT_LFS_FILTER, key)) return full;
     return (value ?? 'true') === GIT_LFS_FILTER[key] ? null : full;
   }
-  if (section === 'lfs' && sub !== null && GIT_LFS_PROGRAMS.test(`lfs.${asciiLower(sub)}.`)) return full;
-  if (!GIT_KEYS.has(name) && !GIT_KEY_SECTIONS.has(section)) return full;
+  if (section === 'color' && sub !== null) return GIT_COLOR_SLOTS.has(asciiLower(sub)) && GIT_COLOR.test(value ?? '') ? null : full;
+  if (section === 'color') return GIT_KEYS.has(name) && GIT_COLOR.test(value ?? '') ? null : full;
+  if (section === 'lfs' && sub !== null) {
+    return (asciiLower(sub) === 'transfer' ? GIT_LFS_TRANSFER_KEYS : /^https?:\/\//i.test(sub) ? GIT_LFS_URL_KEYS : new Set()).has(key) ? null : full;
+  }
+  if (!GIT_KEYS.has(name)) return full;
   if ((name === 'remote.*.url' || name === 'remote.*.pushurl' || name === 'submodule.*.url') && /^\s*(ext|fd)::/i.test(value ?? '')) return full;
   if (name === 'submodule.*.update' && !['checkout', 'rebase', 'merge', 'none'].includes(value ?? '')) return full;
   if (name === 'core.hookspath') return plainRel(value) ? null : full;

@@ -835,7 +835,8 @@ test('paths.plain: what an agent\'s change may touch without asking (Accept edit
     + '\tprecomposeunicode = true\n\thooksPath = tools/hooks\n[remote "origin"]\n\turl = https://example.com/a/b.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n'
     + '[branch "main"]\n\tremote = origin\n\tmerge = refs/heads/main\n\tvscode-merge-base = origin/main\n[user]\n\tname = "A B"\n\temail = a@b.c\n'
     + '[lfs]\n\trepositoryformatversion = 0\n[filter "lfs"]\n\tclean = git-lfs clean -- %f\n\tsmudge = git-lfs smudge -- %f\n\tprocess = git-lfs filter-process\n\trequired = true\n'
-    + '[pull]\n\trebase = false\n[color "diff"]\n\tmeta = yellow\n# a comment\n; another\n');
+    + '[pull]\n\trebase = false\n[color "diff"]\n\tmeta = yellow\n[color]\n\tui = auto\n[gc]\n\tauto = 0\n\treflogExpire = 90.days\n[gc "refs/remotes/*"]\n\treflogExpire = never\n'
+    + '[lfs "https://example.com/a/b.git/info/lfs"]\n\taccess = basic\n[lfs "transfer"]\n\tmaxretries = 3\n# a comment\n; another\n');
   fs.mkdirSync(path.join(D, 'dir'), { recursive: true });
   fs.writeFileSync(path.join(OUT, 'h'), 'outside');
   fs.symlinkSync(OUT, path.join(D, 'link'));
@@ -899,6 +900,11 @@ test('paths.plain: what an agent\'s change may touch without asking (Accept edit
     ['a quote inside', '[user]\n\tname = "a"b"\n'], ['the old [section.sub]', '[remote.origin]\n\turl = x\n'], ['not ASCII', '[user]\n\tname = Zoë\n'],
     ['a bare CR', '[user]\r\tname = x\n'], ['credential', '[credential]\n\thelper = store\n'], ['gpg.program', '[gpg]\n\tprogram = sh\n'],
     ['core.worktree', '[core]\n\tworktree = /x\n'], ['an editor', '[core]\n\teditor = vi\n'],
+    // (gc, color and git-lfs key by key: a hook command, a path git-lfs loads, a key not known yet, a colour that is not one)
+    ['gc.recentObjectsHook', '[gc]\n\trecentObjectsHook = sh scripts/keep.sh\n'], ['gc.repackFilterTo', '[gc]\n\trepackFilterTo = /x\n'],
+    ['an unknown gc key', '[gc]\n\tsomethingLater = 1\n'], ['lfs.storage', '[lfs]\n\tstorage = /x\n'],
+    ['lfs.standalonetransferagent', '[lfs]\n\tstandalonetransferagent = x\n'], ['an lfs key for a URL not known', '[lfs "https://x/"]\n\tpath = sh\n'],
+    ['a colour that is not one', '[color "diff"]\n\tmeta = $(x)\n'], ['an unknown color section', '[color "x"]\n\tmeta = red\n'],
   ]) {
     fs.writeFileSync(path.join(D, '.git/config'), config + text);
     await asked(what);
