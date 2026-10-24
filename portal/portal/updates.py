@@ -1,8 +1,9 @@
 """Daily "is there a newer DevOS ADE release?" check, for the update card on Home.
 
 Asks GitHub's public releases API (unauthenticated, https only, a size cap and a timeout; the ETag makes repeat
-checks cheap; no redirect but one: GitHub's, from the repository's old name to its new one — _redirect_target) for the project's recent releases (one request: the list, newest PER_PAGE; under the repository's old name
-once more when its name answers 404 — before GitHub's rename, or a mirror of it — _releases_answer) and,
+checks cheap; no redirect but one: GitHub's, from the repository's old name to its new one — _redirect_target) for
+the project's recent releases (one request: the list, newest PER_PAGE; once more under the repository's old name when
+its name answers 404, as before GitHub's rename — _releases_answer) and,
 only when the newest is newer than the installed version, the new release's compose.yaml from
 raw.githubusercontent.com to estimate the download. The newest release is the highest vX.Y.Z tag — what
 ./stack update installs — and Home shows the notes of every release between the installed one and it, so a jump
