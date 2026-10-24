@@ -1314,7 +1314,9 @@ direction-changing character; a record that does not fit (a file someone changed
     not installed (Claude Code could fetch it), or a record that cannot be read, is never trusted. Claude on your plan
     has a record of its own (claude-sub's folder): the trust keeps a second hash, of the same files with the plugins
     as installed there, and a session on your plan applies the settings only while that one holds — a plugin it has
-    not installed (or its record unreadable): it starts with your own settings only, and says so. Of the other keys,
+    not installed (or its record unreadable): it starts with your own settings only, and says so. *Trust* confirms
+    what the dialog showed of both records: either one changed between the dialog and the click is a conflict, and
+    nothing is stored. Of the other keys,
     `pluginConfigs` (the options of plugins already on) and `strictKnownMarketplaces` / `allowedMarketplaces` (read
     from managed settings only, and they only narrow) are shown as they are; any other key naming plugins or a
     marketplace, at any depth — a later Claude Code's, an `env` variable that could steer how plugins load — makes

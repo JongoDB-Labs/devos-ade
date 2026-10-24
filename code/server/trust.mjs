@@ -665,6 +665,11 @@ export function withheldText(d) {
 export const OVER = new RegExp('^(more than \\d+ MiB in all|too much to show|a folder that could not be read|folders more than \\d+ deep|more than \\d+ files'
   + '|a linked git worktree or a submodule( above it)? \\(Claude Code reads another checkout\'s configuration then\\))$');
 
+// confirmOf(read) -> what trusting a project's settings confirms: their hash (the files, and the plugins they turn on as
+// the sandbox has them), and — with plugins turned on — Claude on your plan's too (the same plugins as its own record
+// has them): the dialog shows both, so a change to either between it and Trust is a change. No plugin: the hash itself.
+const confirmOf = (r) => (r.hash === null ? null : r.planPlugins ? sha256(JSON.stringify({ hash: r.hash, planHash: r.planHash })) : r.hash);
+
 export function makeTrust({ call, store, log = () => {} }) {
   // each project's state as last looked at (a start's decision, the dialog, a trust) — for the list only; a decision is
   // always made anew
@@ -731,7 +736,7 @@ export function makeTrust({ call, store, log = () => {} }) {
     note(rec.id, state);
     return {
       // (a hash to trust only for settings the summary shows whole: nothing you were not shown can apply)
-      project: rec.id, path: abs, state, hash: state === 'workspace' || !summary.complete ? null : r.hash, trustedAt: rec.trust?.at ?? null,
+      project: rec.id, path: abs, state, hash: state === 'workspace' || !summary.complete ? null : confirmOf(r), trustedAt: rec.trust?.at ?? null,
       files: r.files.map(({ name, type, size, target }) => ({ name, type, size, target })),
       summary,
       ...(r.over && !own ? { said: r.over, saidBy: 'sandbox' } : {}),
@@ -743,11 +748,12 @@ export function makeTrust({ call, store, log = () => {} }) {
     const r = await read(absOf(rec.root));
     if (!r.present) return { conflict: 'this project has no settings of its own (nothing to trust)' };
     if (!r.verifiable) return { conflict: 'its settings cannot be checked (a file there is a link out of the workspace, too large to show, or not a file): they are never trusted' };
-    if (r.hash !== hash) return { conflict: 'its settings changed since you looked: review them again' };
+    // (what the dialog showed — the files, the plugins as the sandbox and Claude on your plan have them — exactly)
+    if (r.hash === null || confirmOf(r) !== hash) return { conflict: 'its settings changed since you looked: review them again' };
     const sm = summarize(r.files, r.plugins, r.planPlugins);
     if (!sm.complete) return { conflict: `its settings cannot all be shown here (${sm.missing.join('; ')}): they are not trusted — shorten them, or use the folder without them` };
     // (Claude on your plan: the same trust while its own record has every plugin they turn on — else none for it)
-    store().trust(rec.id, hash, r.planPlugins ? (planMissing(r.planPlugins) ? null : r.planHash) : undefined);
+    store().trust(rec.id, r.hash, r.planPlugins ? (planMissing(r.planPlugins) ? null : r.planHash) : undefined);
     note(rec.id, 'trusted');
     return { conflict: null };
   }

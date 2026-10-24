@@ -300,6 +300,19 @@ test('Claude on your plan has its own plugin record: a plugin installed for Bedr
   let v = await trust.view(rec);
   assert.equal(v.summary.complete, true, v.summary.missing.join('; '));
   assert.match(v.summary.notes.map((n) => n.note).join('; '), /Claude on your plan has not installed: its sessions here start with your own settings only/);
+  // what Trust confirms is what the dialog showed: your plan's record (or the sandbox's) changed in between — a
+  // conflict, nothing stored
+  const shown = v.hash;
+  plan = { list: [inst('2.0.0')], registry: 'ok' };
+  assert.match((await trust.trust(rec, shown)).conflict, /changed since you looked/);
+  assert.equal(rec.trust, null);
+  plan = { list: [{ id: 'fmt@acme', installed: false, versions: [] }], registry: 'ok' };
+  bed.list = [inst('1.0.1')];
+  assert.match((await trust.trust(rec, shown)).conflict, /changed since you looked/);
+  assert.equal(rec.trust, null);
+  bed.list = [inst('1.0.0')];
+  v = await trust.view(rec);
+  assert.equal(v.hash, shown, 'the same again: the same to confirm');
   assert.deepEqual(v.summary.plugins.map((p) => [p.id, p.version, p.planVersion]), [['fmt@acme', '1.0.0', null]]);
   assert.equal((await trust.trust(rec, v.hash)).conflict, null);
   assert.equal(rec.trust.planHash, null, 'no trust for your plan');
@@ -328,4 +341,29 @@ test('Claude on your plan has its own plugin record: a plugin installed for Bedr
   plan = { list: [{ id: 'fmt@acme', installed: false, versions: [] }], registry: 'unreadable' };
   d = await trust.decide('/workspace/proj');
   assert.equal(d.plan.reason, 'plan-plugins'); assert.deepEqual(d.plan.sources, USER_SOURCES);
+});
+
+test('a row\'s place is fixed by its name: no other folder and surface fit it, so whose each file is (shown in the dialog) is covered by the names Trust confirms', async () => {
+  const { placeOf } = await import('../server/trust.mjs');
+  const ROOT = '/workspace/mono/app';
+  for (const [name, at, surface] of [['/workspace/mono/.github/mcp.json', '/workspace/mono', '.github/mcp.json'],
+    ['/workspace/mono/.claude/settings.json', '/workspace/mono', '.claude/settings.json'], ['/workspace/mono/.claude/plugins/p/h.json', '/workspace/mono', '.claude/plugins'],
+    ['/workspace/mono/.codex/config.toml', '/workspace/mono', '.codex'], ['/workspace/mono/lsp.json', '/workspace/mono', 'lsp.json']]) {
+    assert.ok(placeOf({ name, at, surface }, ROOT), name);
+    const parts = name.slice(1).split('/');
+    for (let i = 1; i < parts.length; i++) {
+      for (let j = i + 1; j <= parts.length; j++) {
+        const a = `/${parts.slice(0, i).join('/')}`, sfc = parts.slice(i, j).join('/');
+        if (a !== at || sfc !== surface) assert.equal(placeOf({ name, at: a, surface: sfc }, ROOT), null, `${name}: ${a} + ${sfc}`);
+      }
+    }
+  }
+  for (const [name, surface] of [['.github/hooks/h.json', '.github/hooks'], ['.claude/plugins/p/h.json', '.claude'], ['.mcp.json', '.mcp.json'], ['lsp.json', 'lsp.json']]) {
+    assert.ok(placeOf({ name, at: '', surface }, ROOT), name);
+    const parts = name.split('/');
+    for (let j = 1; j <= parts.length; j++) {
+      const sfc = parts.slice(0, j).join('/');
+      if (sfc !== surface) assert.equal(placeOf({ name, at: '', surface: sfc }, ROOT), null, `${name}: ${sfc}`);
+    }
+  }
 });
