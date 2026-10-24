@@ -2423,14 +2423,23 @@ export const CONFIG_FILES = 500, CONFIG_BYTES = 2 << 20, CONFIG_FILE = 256 << 10
 export const CONFIG_SURFACES = Object.freeze(['commands', 'agents', 'output-styles', 'skills', 'workflows', 'routines']);
 // Other tools' own configuration in the folder itself — your subscriptions' agents start there from the Code page and
 // read it as it is: Codex's .codex/ (config.toml: MCP servers, hooks), Cursor's .cursor/ (mcp.json, hooks.json, rules,
-// cli.json), Grok's .grok/, Gemini CLI's .gemini/, Copilot's .copilot/ and .github/{hooks,skills,agents,copilot}/, the
-// agents' shared .agents/ (skills), VS Code's .vscode/mcp.json (Copilot reads it). Listed and hashed with Claude Code's:
-// one trust covers both, and an agent starts in a project's folder only while it holds (code/server). In the folder
-// itself and in every folder above it to the git root (the tools read theirs there too), as Claude Code's .claude/
-// trees. Instructions alone (AGENTS.md, .cursorrules, copilot-instructions.md) are read as instructions, as CLAUDE.md
-// is: not listed.
+// cli.json), Grok's .grok/, Gemini CLI's .gemini/, Copilot's .copilot/ and everything of .github/ (mcp.json, lsp.json —
+// it launches the command that names —, extensions/, hooks/, skills/, agents/ …: all of it but GITHUB_INERT, so a file
+// of a kind Copilot reads next is listed before it is read), the agents' shared .agents/ (skills), a lsp.json or
+// .lsp.json, VS Code's .vscode/mcp.json (older Copilot CLIs read it); and above the folder, the .claude/settings*.json
+// and .claude/plugins/ Grok and Copilot read there (Claude Code does not). Listed and hashed with Claude Code's: one
+// trust covers both, and an agent starts in a project's folder only while it holds (code/server). In the folder itself
+// and in every folder above it to the git root (the tools read theirs there too), as Claude Code's .claude/ trees.
+// Instructions alone (AGENTS.md, .cursorrules, copilot-instructions.md, .github/instructions/) are read as
+// instructions, as CLAUDE.md is: not listed.
 export const AGENT_TREES = Object.freeze(['.codex', '.cursor', '.grok', '.gemini', '.copilot', '.agents']);
-export const AGENT_GITHUB = Object.freeze(['hooks', 'skills', 'agents', 'copilot']);
+export const AGENT_FILES = Object.freeze(['lsp.json', '.lsp.json']);
+// what of .github/ is not listed: GitHub's own (workflows, templates, owners, funding, Dependabot …), images, and the
+// instruction files
+export const GITHUB_INERT = Object.freeze(['workflows', 'issue_template', 'discussion_template', 'pull_request_template', 'pull_request_template.md',
+  'codeowners', 'dependabot.yml', 'dependabot.yaml', 'funding.yml', 'release.yml', 'release.yaml', 'labeler.yml', 'stale.yml', 'settings.yml',
+  'renovate.json', 'security.md', 'contributing.md', 'code_of_conduct.md', 'support.md', 'copilot-instructions.md', 'instructions']);
+const IMAGE = /\.(png|jpe?g|gif|svg|webp|ico)$/i;
 // settingsFiles(abs, {text}) -> {files: [{name, type: file|link|big|other, size, sha256, target, text}], hash,
 // verifiable, over}: every file of abs/.claude and abs/.mcp.json (names relative to abs), and of the six trees above it
 // (names absolute: /workspace/…), sorted; hash: the SHA-256 of what is there (null when nothing is); verifiable: each
@@ -2494,11 +2503,13 @@ export function settingsFiles(abs, { text = false } = {}) {
   };
   const named = (dir, want) => { try { return fs.readdirSync(dir).filter((x) => x.toLowerCase() === want).sort(); } catch { return []; } };
   // .git here: a folder (the git root: nothing above it is read), a file (a linked worktree or a submodule), or none
+  // (a .git folder counts only with its HEAD: an empty one does not end the walk up)
   const gitOf = (dir) => {
     for (const n of named(dir, '.git')) {
       let st;
       try { st = fs.lstatSync(path.join(dir, n)); } catch { continue; }
-      return st.isDirectory() ? 'dir' : 'file';
+      if (!st.isDirectory()) return 'file';
+      try { if (fs.lstatSync(path.join(dir, n, 'HEAD')).isFile()) return 'dir'; } catch { /* no HEAD: not a repository */ }
     }
     return null;
   };
@@ -2522,11 +2533,21 @@ export function settingsFiles(abs, { text = false } = {}) {
       return st.isDirectory();
     };
     for (const g of named(dir, '.github')) {
-      if (folderOf(g)) for (const sub of AGENT_GITHUB) for (const n of named(path.join(dir, g), sub)) from(at, `${g}/${n}`, () => tree(path.join(dir, g, n), nameOf(`${g}/${n}`)));
+      if (!folderOf(g)) continue;
+      let list = [];
+      try { list = fs.readdirSync(path.join(dir, g)).sort(); } catch { over ??= 'a folder that could not be read'; continue; }
+      for (const n of list) {
+        if (GITHUB_INERT.includes(n.toLowerCase()) || IMAGE.test(n)) continue;
+        let st;
+        try { st = fs.lstatSync(path.join(dir, g, n)); } catch { continue; }
+        // (a file: read as one; a folder: walked; a link: named)
+        from(at, `${g}/${n}`, () => (st.isFile() ? one(nameOf(`${g}/${n}`), path.join(dir, g, n)) : tree(path.join(dir, g, n), nameOf(`${g}/${n}`))));
+      }
     }
     for (const v of named(dir, '.vscode')) {
       if (folderOf(v)) for (const n of named(path.join(dir, v), 'mcp.json')) from(at, `${v}/${n}`, () => one(nameOf(`${v}/${n}`), path.join(dir, v, n)));
     }
+    for (const f of AGENT_FILES) for (const n of named(dir, f)) from(at, n, () => one(nameOf(n), path.join(dir, n)));
   };
   agentConfig(abs, '');
   // the folders above it, to the git root (else the workspace itself): their six trees. Above a folder of this computer
@@ -2544,7 +2565,10 @@ export function settingsFiles(abs, { text = false } = {}) {
       try { st = fs.lstatSync(cp); } catch { continue; }
       if (!st.isDirectory()) { from(d, c, () => tree(cp, cp)); continue; }
       for (const sname of (() => { try { return fs.readdirSync(cp).sort(); } catch { return []; } })()) {
-        if (CONFIG_SURFACES.includes(sname.toLowerCase())) from(d, `${c}/${sname}`, () => tree(path.join(cp, sname), path.join(cp, sname)));
+        const low = sname.toLowerCase();
+        if (CONFIG_SURFACES.includes(low) || low === 'plugins') from(d, `${c}/${sname}`, () => tree(path.join(cp, sname), path.join(cp, sname)));
+        // (its settings: Grok and Copilot read them from the folders above too)
+        else if (low === 'settings.json' || low === 'settings.local.json') from(d, `${c}/${sname}`, () => one(path.join(cp, sname), path.join(cp, sname)));
       }
     }
     // the other tools' configuration above it too — Codex, Gemini CLI, Copilot and Cursor read theirs from the folders

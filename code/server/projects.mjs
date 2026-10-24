@@ -19,9 +19,11 @@ import { isUuid } from './validate.mjs';
 
 export const WS = '/workspace';
 // The epoch of a trust: a project's (or a folder's) trusted settings apply only while their record says this one — a
-// trust recorded before bedrock-now read Claude Code settings the way it does now (v0.21.1: front matter found where
-// Claude Code finds it, its shell commands listed) is looked at again, never carried over (trust.mjs's stateOf: recheck)
-export const TRUST_EPOCH = 2;
+// trust recorded before bedrock-now read a project's settings the way it does now is looked at again, never carried over
+// (trust.mjs's stateOf: recheck). 2: v0.21.1 (front matter found where Claude Code finds it, its shell commands listed);
+// 3: the other tools' settings too (your subscriptions' agents read them: a trust given when the dialog showed Claude
+// Code's alone does not cover Codex, Copilot, Cursor or Grok)
+export const TRUST_EPOCH = 3;
 export const WORKSPACE_ID = 'ws';
 export const PROJECTS_MAX = 64, FILED_MAX = 2000, HOSTS_MAX = 16, GONE_MAX = 16;
 // ./stack's list of the folders of this computer (lib/projects.sh public/roots.json; compose.code.yaml mounts its folder)

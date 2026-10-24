@@ -580,21 +580,21 @@ test('a trust recorded before v0.21.1 (no epoch): not applied, said as recheck �
   const v2 = (await req('GET', `/api/projects/${id}/settings`)).json;
   assert.equal(v2.state, 'recheck');
   assert.equal((await req('POST', `/api/projects/${id}/trust`, { hash: v2.hash })).json.state, 'trusted');
-  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).projects.find((p) => p.id === id).trust.epoch, 2);
-  assert.equal(store.get(id).trust.epoch, 2);
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).projects.find((p) => p.id === id).trust.epoch, 3);
+  assert.equal(store.get(id).trust.epoch, 3);
   r = await req('POST', '/api/sessions', { project: id });
   assert.deepEqual(queries.at(-1).options.settingSources, ['user', 'project', 'local'], 'trusted again: applied');
   srv.mgr.closeAll();
   assert.equal((await req('GET', `/api/projects/${id}/settings`)).json.state, 'trusted', 'the epoch holds');
   // a folder of this computer's trust is read with its epoch too (the same rule)
   const v3 = JSON.parse(fs.readFileSync(file, 'utf8'));
-  v3.hostTrust = { p_0000aaaa: { hash: 'a'.repeat(64), at: 1 }, p_0000bbbb: { hash: 'b'.repeat(64), at: 1, epoch: 2 } };
+  v3.hostTrust = { p_0000aaaa: { hash: 'a'.repeat(64), at: 1, epoch: 2 }, p_0000bbbb: { hash: 'b'.repeat(64), at: 1, epoch: 3 } };
   fs.writeFileSync(file, JSON.stringify(v3));
   const ht = store.read().hostTrust;
   assert.equal(stateOf({ present: true, hash: 'a'.repeat(64), trust: ht.p_0000aaaa }), 'recheck');
   assert.equal(stateOf({ present: true, hash: 'b'.repeat(64), trust: ht.p_0000bbbb }), 'trusted');
   assert.equal(stateOf({ present: true, hash: 'c'.repeat(64), trust: ht.p_0000bbbb }), 'changed');
-  assert.match(withheldText({ state: 'recheck', project: true }), /more strictly since v0\.21\.1 — look at them again/);
+  assert.match(withheldText({ state: 'recheck', project: true }), /more strictly since you trusted them \(the other tools' too\) — look at them again/);
   // (tidy: the next test's projects are its own)
   delete v3.hostTrust;
   fs.writeFileSync(file, JSON.stringify(v3));

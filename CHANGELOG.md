@@ -38,10 +38,11 @@ All notable changes to bedrock-now are documented here. The format follows
 - The Code page's agents: their tool calls on your permission cards; never in a mode that approves by itself (an ACP
   agent that starts in one is moved to a safe one, one that has no other or switches itself to one ends its session);
   in a project's folder only while its own settings are trusted — Claude Code's and now also the other tools'
-  (`.codex/`, `.cursor/`, `.grok/`, `.gemini/`, `.copilot/`, `.agents/`, `.github/{hooks,skills,agents,copilot}/`,
-  `.vscode/mcp.json`, in its folder and the folders above it to the git root, with a `.mcp.json` there), listed whole in
-  the trust dialog. A project trusted under v0.21.1 that holds such files is
-  asked about again (its hash covers them now).
+  (`.codex/`, `.cursor/`, `.grok/`, `.gemini/`, `.copilot/`, `.agents/`, all of `.github/` but the files GitHub alone
+  reads, images and instructions, a `lsp.json`, Claude Code's plugins, `.vscode/mcp.json`, in its folder and the folders
+  above it to the git root, with a `.mcp.json` and `.claude/settings*.json` there), listed whole in the trust dialog,
+  and checked again before every turn (a running agent ends when they change). The git root is a `.git` with a `HEAD`:
+  an empty `.git` folder no longer ends the walk up. Every project trusted before is asked about again.
 - A conversation carried to another harness (or to a Chat model's new session) goes in as a quote that holds no
   instructions, its role-like tags defanged: an earlier answer cannot speak as you.
 

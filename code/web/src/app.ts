@@ -1255,9 +1255,10 @@ export function noteProjectSettings(id: string, state: SettingsState): void {
   set((x) => ({ ...x, projects: x.projects.map((p) => (p.id === id && !p.workspace && p.settings !== state ? { ...p, settings: state } : p)) }));
   if (state === 'recheck') sayRecheck(get().projects);
 }
-// A project trusted before bedrock-now read Claude Code settings the way it does now (v0.21.1): said once per project —
-// this browser remembers it (and says it again when it cannot) — with the way to look at them again
-const RECHECK_SAID = 'bn.recheck-said';
+// A project trusted before bedrock-now read a project's settings the way it does now: said once per project and epoch
+// (the key names it: a project said for the last one is said again) — this browser remembers it (and says it again
+// when it cannot) — with the way to look at them again
+const RECHECK_SAID = 'bn.recheck-said.3';
 function sayRecheck(projects: Project[]): void {
   let said: string[] = [];
   try { const v = JSON.parse(localStorage.getItem(RECHECK_SAID) ?? '[]'); said = Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []; } catch { said = []; }

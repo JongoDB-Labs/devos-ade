@@ -169,6 +169,11 @@ export class AgentSession {
         const t0 = Date.now();
         try {
           if (!this.agent) await this.start();
+          else {
+            // (its folder's own settings, asked again before every turn: changed or no longer trusted since it started — a
+            // pull, an edit, Stop trusting —, the tool ends here, before it reads them again)
+            try { await this.mgr.agentSettingsCheck?.(this.cwd, this.name); } catch (e) { this.close('settings'); throw e; }
+          }
           this.setState('busy');
           if (this.mgr.watcher && !this.watchOff) await this.watchStart();
           const text = this.preface ? `${this.preface}\n\n${next.text}` : next.text;
@@ -237,7 +242,8 @@ export class AgentSession {
     this.agent = null; this.queue = [];
     this.mgr.broker.cancelSession(this.id);
     try { a.close(); } catch { /* gone */ }
-    this.emit({ type: 'local', text: reason === 'idle' ? `Closed after ${LIMITS.idleMinutes} idle minutes; your next prompt takes it up again.` : `${this.name} closed; a prompt takes it up again.` });
+    this.emit({ type: 'local', text: reason === 'idle' ? `Closed after ${LIMITS.idleMinutes} idle minutes; your next prompt takes it up again.`
+      : reason === 'settings' ? `${this.name} ended: its folder's own settings changed or are no longer trusted.` : `${this.name} closed; a prompt takes it up again.` });
     this.setState('ended');
   }
 }

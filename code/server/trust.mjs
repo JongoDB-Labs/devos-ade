@@ -10,9 +10,10 @@
 // a .mcp.json needs nothing (a lone CLAUDE.md is read as instructions; it grants nothing). The Workspace (/workspace
 // itself) keeps applying its own, as before projects: it is the folder you chose for the sandbox. Everything here came
 // from the sandbox: shown as text, capped.
-// Other tools' configuration in the folder (.codex/, .cursor/, .grok/, .gemini/, .copilot/, .agents/,
-// .github/{hooks,skills,agents,copilot}/, .vscode/mcp.json; and above it to the git root: placeOf) is listed and hashed with it — one trust for
-// the folder — and shown whole: your subscriptions' agents read it as it is, with no flag that turns it off, so an
+// Other tools' configuration in the folder (.codex/, .cursor/, .grok/, .gemini/, .copilot/, .agents/, everything of
+// .github/ but files GitHub alone reads, a lsp.json, .vscode/mcp.json, Claude Code's plugins; and above it to the git
+// root, with the .claude/ settings and plugins Grok and Copilot load there: placeOf) is listed and hashed with it — one
+// trust for the folder — and shown whole: your subscriptions' agents read it as it is, with no flag that turns it off, so an
 // agent session starts in a project's folder only while that trust holds (SessionManager.agentSettingsCheck).
 import crypto from 'node:crypto';
 import { short, str } from './validate.mjs';
@@ -38,28 +39,49 @@ const legacyNameOk = (n) => n.toLowerCase() === '.mcp.json'
 // .claude that is no folder), .mcp.json, and the other tools' (bn-coded's AGENT_TREES …: your subscriptions' agents
 // read them, in the folder and above it to the git root).
 const CLAUDE_TREES = ['commands', 'agents', 'output-styles', 'skills', 'workflows', 'routines'];
-const AGENT_TOOLS_OF = { '.codex': 'Codex', '.cursor': 'Cursor', '.grok': 'Grok', '.gemini': 'Gemini CLI', '.copilot': 'GitHub Copilot', '.agents': 'Codex and GitHub Copilot' };
-const AGENT_GITHUB = ['hooks', 'skills', 'agents', 'copilot'];
-const SURFACES = new Map([['.claude', null], ['.mcp.json', null], ...CLAUDE_TREES.map((t) => [`.claude/${t}`, null]), ...Object.entries(AGENT_TOOLS_OF),
-  ['.github', 'GitHub Copilot'], ...AGENT_GITHUB.map((t) => [`.github/${t}`, 'GitHub Copilot']), ['.vscode', 'GitHub Copilot'], ['.vscode/mcp.json', 'GitHub Copilot']]);
-// surfaces that are one entry (a file, or a folder that is a link): the row's name is the surface itself
-const SINGLE = new Set(['.mcp.json', '.vscode/mcp.json', '.github', '.vscode']);
+const AGENT_TOOLS_OF = { '.codex': 'Codex', '.cursor': 'Cursor', '.grok': 'Grok', '.gemini': 'Gemini CLI', '.copilot': 'GitHub Copilot',
+  '.agents': 'Codex, Cursor, Grok and GitHub Copilot' };
+// Claude Code plugins and settings other tools load: a project's own .claude/plugins/ (Grok: their hooks, .mcp.json and
+// .lsp.json), and above it .claude/settings*.json and .claude/plugins/ (Grok and Copilot read them there; Claude Code
+// does not)
+const CLAUDE_PLUGINS = 'Grok and GitHub Copilot (Claude Code plugins)', CLAUDE_ABOVE = 'Grok and GitHub Copilot';
+// surfaceOf(kind, above) -> {tool, single} for a surface bn-coded lists (single: one entry, a file or a link — the row's
+// name is the surface itself), or undefined
+function surfaceOf(kind, above) {
+  if (kind === '.claude') return { tool: null, single: above };   // (above: a .claude that is no folder, as an entry of its own)
+  if (kind.startsWith('.claude/')) {
+    if (!above) return undefined;   // (the project's own .claude/ is read whole: its surface is .claude)
+    const t = kind.slice(8);
+    if (CLAUDE_TREES.includes(t)) return { tool: null, single: false };
+    if (t === 'plugins') return { tool: CLAUDE_PLUGINS, single: false };
+    if (t === 'settings.json' || t === 'settings.local.json') return { tool: CLAUDE_ABOVE, single: true };
+    return undefined;
+  }
+  if (kind === '.mcp.json') return { tool: above ? 'other tools (a folder above)' : null, single: true };
+  if (Object.hasOwn(AGENT_TOOLS_OF, kind)) return { tool: AGENT_TOOLS_OF[kind], single: false };
+  if (kind === '.github') return { tool: 'GitHub Copilot', single: true };
+  if (/^\.github\/[^/]+$/.test(kind)) return { tool: 'GitHub Copilot', single: false };
+  if (kind === '.vscode' || kind === '.vscode/mcp.json') return { tool: 'VS Code (older GitHub Copilot CLIs)', single: true };
+  if (kind === 'lsp.json' || kind === '.lsp.json') return { tool: 'GitHub Copilot and Grok', single: true };
+  return undefined;
+}
 /** placeOf(row, root) -> {tool} (whose configuration it is; null: Claude Code's), or null when the row's at, surface and
  *  name do not fit together for a project in root — then nothing of the listing can be trusted */
 export function placeOf(f, root) {
   if (typeof f.surface !== 'string' || typeof f.at !== 'string' || f.surface.length > 300 || f.at.length > 1024 || !segsOk(f.surface.split('/'))) return null;
   const kind = f.surface.toLowerCase();
-  if (!SURFACES.has(kind)) return null;
+  const s = surfaceOf(kind, f.at !== '');
+  if (!s) return null;
   if (f.at !== '') {
     // a real folder above the project's, in the workspace (the workspace itself included)
     if (!(f.at === WS || (f.at.startsWith(`${WS}/`) && segsOk(f.at.slice(WS.length + 1).split('/')))) || typeof root !== 'string' || !root.startsWith(`${f.at}/`)) return null;
-  } else if (kind.startsWith('.claude/')) return null;   // (the project's own .claude/ is read whole: its surface is .claude)
+  }
   const base = f.at ? `${f.at}/${f.surface}` : f.surface;
-  const one = SINGLE.has(kind) || (f.at !== '' && kind === '.claude');   // (above: a .claude only as an entry of its own)
-  if (one ? f.name !== base : f.name !== base && !f.name.startsWith(`${base}/`)) return null;
+  if (s.single ? f.name !== base : f.name !== base && !f.name.startsWith(`${base}/`)) return null;
   if (!segsOk(f.name.slice(f.at ? f.at.length + 1 : 0).split('/'))) return null;
-  if (kind === '.mcp.json') return { tool: f.at ? 'other tools (a folder above)' : null };
-  return { tool: SURFACES.get(kind) };
+  // (the project's own .claude/plugins/: other tools load them — shown whole, as theirs)
+  if (kind === '.claude' && f.at === '' && f.name.toLowerCase().startsWith('.claude/plugins/')) return { tool: CLAUDE_PLUGINS };
+  return { tool: s.tool };
 }
 
 /** checkFiles(project.settings' RESULT, root) -> {files: [{name, type, size, sha256, target, text, at, tool}], ok}: ok
@@ -342,6 +364,11 @@ export function summarize(files) {
     if (tool) {
       const whole = f.text.length <= TOOL_TEXT_MAX;
       if (!whole) incomplete(`another tool's file over ${TOOL_TEXT_MAX.toLocaleString('en')} characters`);
+      // (a plugin marketplace the repository declares: its plugins' folders are not looked at here — never trusted)
+      if (/"(extraKnownMarketplaces|marketplaces?)"\s*:/i.test(f.text)) {
+        note('declares a plugin marketplace: the plugins it points at are not looked at here');
+        incomplete('a plugin marketplace declared in the project');
+      }
       const t = whole ? f.text : `${f.text.slice(0, TOOL_TEXT_MAX)}… (${f.text.length - TOOL_TEXT_MAX} more characters not shown)`;
       if (careful(t)) out.careful++;
       add('tools', { file: f.name, tool, text: t, careful: careful(t) });
@@ -362,7 +389,15 @@ export function summarize(files) {
         const json = text(canonical(c));
         add('mcpServers', { file: f.name, name: text(name), run: text(run), json, mixed, careful: careful(json) || careful(run) });
       }
-      for (const k of Object.keys(v).filter((k) => k !== 'mcpServers')) add('other', { file: f.name, key: text(k), value: text(v[k]) });
+      // (GitHub Copilot also reads servers at the top level of a .mcp.json: shown as MCP servers, said whose)
+      for (const k of Object.keys(v).filter((k) => k !== 'mcpServers')) {
+        const sv = obj(v[k]);
+        if (sv && (typeof sv.command === 'string' || typeof sv.url === 'string')) {
+          const run = typeof sv.command === 'string' ? [sv.command, ...(Array.isArray(sv.args) ? sv.args : [])].map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ') : sv.url;
+          const json = text(canonical(sv));
+          add('mcpServers', { file: f.name, name: text(`${k} (at the top level: GitHub Copilot starts it)`), run: text(run), json, mixed: false, careful: careful(json) || careful(run) });
+        } else add('other', { file: f.name, key: text(k), value: text(v[k]) });
+      }
       continue;
     }
     if (v.hooks !== undefined && !obj(v.hooks)) add('other', { file: f.name, key: 'hooks', value: text(v.hooks) });
@@ -420,7 +455,7 @@ export const stateOf = ({ workspace = false, present, hash, trust, verifiable = 
   if (trust && trust.hash === hash) return 'trusted';
   return trust ? 'changed' : 'untrusted';
 };
-export const RECHECK_TEXT = 'bedrock-now reads Claude Code settings more strictly since v0.21.1 — look at them again';
+export const RECHECK_TEXT = 'bedrock-now reads a project\'s settings more strictly since you trusted them (the other tools\' too) — look at them again';
 const sha256 = (b) => crypto.createHash('sha256').update(b).digest('hex');
 /** hashOf(files) -> the hash bn-coded's settingsFiles makes, from the checked rows (null when none is there) */
 export const hashOf = (files) => (files.length ? sha256(JSON.stringify(files.map((f) => [f.name, f.type, f.sha256 ?? null, f.target ?? null]))) : null);

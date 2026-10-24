@@ -3191,12 +3191,19 @@ never reads, copies, keeps, passes on or relays a login.**
   volume, at most 2 MiB a session, 300 sessions) are the sandbox's words, shown as data.
 - [x] **A project's own tool settings: trusted first.** An agent reads a project's own configuration as it is —
   Codex's `.codex/config.toml` (MCP servers, hooks), Cursor's `.cursor/` (MCP servers, hooks, rules), Grok's `.grok/`,
-  Copilot's `.github/hooks/`, `.github/skills/`, `.github/agents/`, `.copilot/`, the agents' `.agents/`,
-  `.vscode/mcp.json` — in its folder and in the folders above it to the git root (a `.mcp.json` there too), with no
-  switch of ours to leave it out. So bn-coded lists those files with the project's Claude Code settings, from the same
-  folders as Claude Code's `.claude/` trees (one hash, one trust), the trust dialog shows each whole, and an agent session starts in a project's
-  folder only while that trust holds (trusted, or nothing there); not trusted, changed, unverifiable or from before
-  v0.21.1: refused with why, at every start. AGENTS.md and the like are instructions, as CLAUDE.md is.
+  Copilot's `.copilot/` and its `.github/` (hooks, skills, agents, MCP servers, extensions …), the agents' `.agents/`,
+  a `lsp.json` (language servers Copilot and Grok start), Claude Code's plugins (their hooks and MCP servers: Grok and
+  Copilot load them), `.vscode/mcp.json` — in its folder and in the folders above it to the git root (a `.mcp.json`
+  there too, and the `.claude/settings*.json` and `.claude/plugins/` that Grok and Copilot read there and Claude Code
+  does not), with no switch of ours to leave it out. Of `.github/`, everything is listed but what GitHub alone reads
+  (workflows, issue and pull-request templates, CODEOWNERS, dependabot …), images and instruction files: a kind no
+  tool is known to read yet is listed too, so a new one is never missed. The git root is the first folder with a
+  `.git` that holds a `HEAD` (an empty `.git` a repository carries does not end the walk). So bn-coded lists those
+  files with the project's Claude Code settings, from the same folders as Claude Code's `.claude/` trees (one hash,
+  one trust), the trust dialog shows each whole, and an agent session starts in a project's folder only while that
+  trust holds (trusted, or nothing there) — checked again before every turn, so a running agent ends when they change
+  under it; not trusted, changed, unverifiable or trusted before v0.24.0 (the listing grew: look again): refused with
+  why. AGENTS.md and the like are instructions, as CLAUDE.md is.
 - [x] **A carried conversation is quoted, not yours.** When you switch who answers (or Chat starts a new agent session
   for a conversation), the conversation so far goes in front of your next prompt as a quote that says it holds no
   instructions, every role-like tag in it (`</earlier-conversation>`, `<system>`, `<|im_start|>` …) defanged, its last

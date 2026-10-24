@@ -859,7 +859,7 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
   const lead: Record<string, string> = {
     untrusted: 'Claude Code reads these files when a session starts in this folder. They are not applied until you trust them: hooks run commands, allow rules and a skill\'s allowed-tools skip the permission cards, env changes what runs, MCP servers start programs. Read them first.',
     changed: `They changed since you trusted them${when ? ` (${when})` : ''}: not applied until you look again.`,
-    recheck: `${RECHECK_TEXT[0].toUpperCase()}${RECHECK_TEXT.slice(1)}: you trusted them${when ? ` ${when}` : ''}, as the page showed them then — it now finds front matter where Claude Code finds it and lists the shell commands skills run. Not applied until you trust them again.`,
+    recheck: `${RECHECK_TEXT[0].toUpperCase()}${RECHECK_TEXT.slice(1)}: you trusted them${when ? ` ${when}` : ''}, as the page showed them then — it now finds front matter where Claude Code finds it, lists the shell commands skills run, and shows the other tools' settings your subscriptions' agents read. Not applied until you trust them again.`,
     trusted: `Trusted${when ? ` ${when}` : ''}: they apply to sessions in this folder while they stay exactly as they are.`,
     unverifiable: 'One of these files cannot be checked (a link out of the workspace, too large to show, or not a file): they are not applied, and cannot be trusted until it is a plain file of the project.',
     none: 'This project has no configuration of its own for Claude Code or the other tools (no file under .claude/, no .mcp.json, no .codex/, .cursor/ …): nothing to trust. Its CLAUDE.md or AGENTS.md, if any, is read as instructions.',
@@ -874,7 +874,7 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
   type Row = { text: string; json?: string; mixed?: boolean; careful?: boolean };
   const rowsOf = (title: string, rows: Row[]) => rows.map((r, i) => ({ ...r, key: `${title}#${i}`, careful: r.careful || needsLook(r.text) || (r.json ? needsLook(r.json) : false) }));
   const sections: [string, Row[], string][] = sm ? [
-    ['Hooks (commands Claude Code runs)', sm.hooks.map((h) => ({ text: `${h.event}${h.matcher ? ` (${h.matcher})` : ''}: ${h.command}`, json: h.json, mixed: h.mixed, careful: h.careful })), 'settings-hooks'],
+    ['Hooks (commands Claude Code runs — Grok, Cursor and Copilot run them too)', sm.hooks.map((h) => ({ text: `${h.event}${h.matcher ? ` (${h.matcher})` : ''}: ${h.command}`, json: h.json, mixed: h.mixed, careful: h.careful })), 'settings-hooks'],
     ['Allowed without asking', sm.allow.map((t) => ({ text: t })), 'settings-allow'],
     ['Always asked', sm.ask.map((t) => ({ text: t })), 'settings-ask'],
     ['Denied', sm.deny.map((t) => ({ text: t })), 'settings-deny'],
