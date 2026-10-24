@@ -415,7 +415,8 @@ _fake_caddy() {
       chat:/api/v1/auths/signin:) code=401 ;;
       nope:*) code=404 ;;
       :/login\?next=*) code=303; h="Location: /" ;;
-      chat:/*|admin:/*|files:/*) h="Content-Security-Policy: ${FRAME_CSP:-frame-ancestors $(portal_url)}" ;;
+      chat:/*) h="Content-Security-Policy: ${FRAME_CSP:-frame-ancestors $(portal_url); img-src 'self' data: blob:}" ;;
+      admin:/*|files:/*) h="Content-Security-Policy: ${FRAME_CSP:-frame-ancestors $(portal_url)}" ;;
     esac
     [ -z "$hdr" ] || printf '%s\r\n' "$h" > "$hdr"
     case " $* " in *" -w "*) printf '%s' "$code" ;; esac

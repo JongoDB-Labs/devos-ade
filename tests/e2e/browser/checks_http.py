@@ -325,7 +325,9 @@ def headers(ctx):
         r = http("GET", sub, path, HTML, cookie=s + past_sso.get(sub, ""))
         if r.status not in (200, 301, 302, 307, 308):
             bad.append(f"{sub}: HTTP {r.status}")
-        if r.header("content-security-policy") != f"frame-ancestors {origin()}":
+        # (Open WebUI's site: images from itself only, too — chat-images-own-only checks it still works)
+        want_csp = f"frame-ancestors {origin()}" + ("; img-src 'self' data: blob:" if sub == "chat" else "")
+        if r.header("content-security-policy") != want_csp:
             bad.append(f"{sub}: CSP {r.header('content-security-policy')!r}")
         if r.header("x-frame-options"):
             bad.append(f"{sub}: X-Frame-Options {r.header('x-frame-options')}")

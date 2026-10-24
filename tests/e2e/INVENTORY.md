@@ -134,7 +134,7 @@ its apps. The e2e throwaway uses `<project>.localhost` on free ports instead (de
 | `/auth/verify` → 404 | e2e `http/unknown-host-and-internal-paths` | — |
 | Body limits `/login` 16 KB, `/api/admin/*` 4 KB | e2e `http/login-csrf-origin`, `http/api-admin-request-guards` | 413. |
 | `bn_session` never reaches the apps | e2e `http/security-headers-per-host` (apps never set it) · unit (Caddyfile test) | — |
-| Apps framable only by the portal | e2e `http/security-headers-per-host` | `Content-Security-Policy: frame-ancestors <portal origin>`, no `X-Frame-Options` on chat/admin/files. |
+| Apps framable only by the portal | e2e `http/security-headers-per-host` | `Content-Security-Policy: frame-ancestors <portal origin>` (chat's with `img-src 'self' data: blob:` too), no `X-Frame-Options` on chat/admin/files. |
 | Chat's CORS (Open WebUI `CORS_ALLOW_ORIGIN` = `CHAT_ORIGIN`) | e2e `http/chat-cors-own-origin-only` · unit (`tests/test_portal.sh`) | `/api/config` with a session: `Access-Control-Allow-Origin` only for Chat's own origin; none for the portal, admin, files, terminal or another site. Remote on: the remote chat host too (compose render). |
 | Portal headers | e2e `http/security-headers-per-host` | CSP (`script-src 'self'`, `frame-ancestors 'none'`, `frame-src` = the 3 apps), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: same-origin`. |
 | Unknown Host → 404; `/caddy-health` 200 | e2e `http/unknown-host-and-internal-paths` | DNS-rebinding pages get nothing. |

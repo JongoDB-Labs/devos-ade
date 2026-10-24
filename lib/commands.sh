@@ -1192,10 +1192,13 @@ _test_portal() {
   else
     _skip "open-webui sees litellm models" "no Claude model enabled"
   fi
+  # (Open WebUI's site also loads images from itself only: an answer's markdown image cannot carry words to another site)
+  local want_csp
   for k in chat:/ admin:/ui/ files:/rustfs/console/; do
     code="$(portal_curl "${k%%:*}" "${k#*:}" -s -m 20 -o /dev/null -D "$hdr" -w '%{http_code}' || true)"
     csp="$(_hdr content-security-policy < "$hdr")"
-    _check "${k%%:*}. loads, framable only by the portal" "$code|$csp|$(_hdr x-frame-options < "$hdr")" "200|frame-ancestors $origin|"
+    want_csp="frame-ancestors $origin"; [ "${k%%:*}" != chat ] || want_csp="$want_csp; img-src 'self' data: blob:"
+    _check "${k%%:*}. loads, framable only by the portal" "$code|$csp|$(_hdr x-frame-options < "$hdr")" "200|$want_csp|"
   done
   portal_session_end; rm -f "$hdr"
 }
