@@ -6,6 +6,8 @@ All notable changes to bedrock-now are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-10-24
+
 ### Added
 
 - **Your subscriptions as Chat models.** Each one signed in — Codex (ChatGPT), GitHub Copilot, Grok, and Claude on
@@ -2423,7 +2425,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/bedrock-now/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/bedrock-now/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/JongoDB-Labs/bedrock-now/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/JongoDB-Labs/bedrock-now/compare/v0.22.1...v0.23.0
 [0.22.1]: https://github.com/JongoDB-Labs/bedrock-now/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/JongoDB-Labs/bedrock-now/compare/v0.21.1...v0.22.0
