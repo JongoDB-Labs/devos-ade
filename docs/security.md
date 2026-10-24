@@ -3253,9 +3253,12 @@ never reads, copies, keeps, passes on or relays a login.**
   `setpgid`) is killed too: no tool ever runs in Chat's sandbox, so whatever is there in no session of bn-coded's own,
   of a check it runs, of an agent running now (never the one being ended) or of what `docker exec` put in (`./stack
   subscriptions login TOOL --chat` and the sign-in it runs, a health check) is killed — when an agent is killed, when
-  one ends, and every 5 seconds: each frozen first (it starts nothing more), the sandbox looked at again until no new
-  one appears (at most 5 rounds), then each killed by its exact pid, its start time read again just before (never a
-  pid that names another process since); never the container's init. An agent's end is its end: 2
+  one ends, and every 5 seconds: everything in the sandbox is stopped at once first (`kill(-1, SIGSTOP)`: every process
+  bn-coded may signal but itself and the container's init — so nothing can start another meanwhile, and none slips past
+  by forking first), stopped again while one that was being made as the signal went round still runs (at most 5
+  rounds), sorted on that still picture, each one that is not spared killed by its exact pid, its start time read
+  again just before (never a pid that names another process since), and then everything else let go on (`SIGCONT`):
+  bn-coded's own children and the live agents are only paused for that moment. An agent's end is its end: 2
   seconds after it exits the code container hears so, even while something it started holds its output open; and a
   turn waits at most 10 seconds after a tool's first sign before it stops waiting and closes that agent's
   connection. A tool that runs by itself before any sign of it reaches here (one its switches let through and it

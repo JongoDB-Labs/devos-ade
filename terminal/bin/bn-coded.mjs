@@ -5197,20 +5197,24 @@ export function sweepOrphans({ kill = process.kill } = {}) {
 // --- each by its exact pid, its start time read again just before (never a pid that now names another process); a
 // --- process docker exec put in (its parent 0 here: a health check) is not one of them.
 const liveAgents = new Set();
-// statOf(pid) -> {ppid, pgrp, sid, start} of /proc/PID/stat, or null
+// statOf(pid) -> {state, ppid, pgrp, sid, start} of /proc/PID/stat, or null
 export const statOf = (pid, procDir = '/proc') => {
   try {
     const f = fs.readFileSync(`${procDir}/${pid}/stat`, 'utf8').replace(/^.*\) /s, '').split(' ');
-    return { ppid: Number(f[1]), pgrp: Number(f[2]), sid: Number(f[3]), start: f[19] || '' };
+    return { state: f[0] || '', ppid: Number(f[1]), pgrp: Number(f[2]), sid: Number(f[3]), start: f[19] || '' };
   } catch { return null; }
 };
 // sweepChat({procDir, self, agents, helpers, ending, kill}) -> the pids killed: every process of the sandbox but its init
 // (pid 1), bn-coded and what docker exec put in, whose session is not spared — bn-coded's, one of its helpers'
 // (runCapped: the status check), a live agent's, or that of a process docker exec put in (a parent 0 here but pid 1:
 // ./stack subscriptions login --chat, a health check — and what they start) — never the session of an agent being
-// ended (ending). Each is frozen first (SIGSTOP: it starts nothing more), the sandbox looked at again until no new one
-// appears (at most CHAT_SWEEP_ROUNDS), then each killed — by its exact pid, its start time read again just before.
+// ended (ending). Fork-first lineage: everything is stopped at once first (kill(-1, SIGSTOP): every process bn-coded
+// may signal but itself and the init — nothing can start another meanwhile, so none slips past), stopped again while
+// one that was being made as the signal went round still runs (at most CHAT_SWEEP_ROUNDS), sorted on that still
+// /proc, each one not spared killed by its exact pid (its start time read again just before), and then every other one
+// let go on (SIGCONT) — bn-coded's own children and live agents only paused for that moment.
 export const CHAT_SWEEP_ROUNDS = 5;
+const STOPPED = new Set(['T', 't', 'Z', 'X', 'x']);
 export function sweepChat({ procDir = '/proc', self = process.pid, agents = liveAgents, helpers = helperSessions, ending = [], kill = process.kill } = {}) {
   const own = statOf(self, procDir);
   if (!own) return [];
@@ -5227,28 +5231,26 @@ export function sweepChat({ procDir = '/proc', self = process.pid, agents = live
     }
     return out;
   };
-  const spared = (procs) => {
+  try { kill(-1, 'SIGSTOP'); } catch { return []; }
+  const killed = [];
+  try {
+    let procs = scan();
+    for (let round = 1; round < CHAT_SWEEP_ROUNDS && procs.some(({ st }) => !STOPPED.has(st.state)); round++) {
+      try { kill(-1, 'SIGSTOP'); } catch { /* none left to stop */ }
+      procs = scan();
+    }
     const ok = new Set([own.sid, ...helpers, ...agents]);
     for (const { st } of procs) if (st.ppid === 0) ok.add(st.sid);
     for (const e of ending) ok.delete(e);
-    return ok;
-  };
-  const frozen = new Map();
-  for (let round = 0; round < CHAT_SWEEP_ROUNDS; round++) {
-    const procs = scan(), ok = spared(procs);
-    let fresh = 0;
     for (const { pid, st } of procs) {
-      if (st.ppid === 0 || ok.has(st.sid) || frozen.has(pid)) continue;
+      if (st.ppid === 0 || ok.has(st.sid)) continue;
       // (its start time again, just before: the same process, never one that took its pid since)
       if (statOf(pid, procDir)?.start !== st.start) continue;
-      try { kill(pid, 'SIGSTOP'); frozen.set(pid, st.start); fresh++; } catch { /* gone */ }
+      try { kill(pid, 'SIGKILL'); killed.push(pid); } catch { /* gone */ }
     }
-    if (!fresh) break;
-  }
-  const killed = [];
-  for (const [pid, start] of frozen) {
-    if (statOf(pid, procDir)?.start !== start) continue;
-    try { kill(pid, 'SIGKILL'); killed.push(pid); } catch { /* gone */ }
+  } finally {
+    // (what is spared goes on: everything bn-coded stopped, the killed gone)
+    try { kill(-1, 'SIGCONT'); } catch { /* none left */ }
   }
   return killed;
 }

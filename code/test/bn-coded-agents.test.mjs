@@ -239,50 +239,87 @@ test('an agent that exits while something it started (out of its group) holds it
   }
 });
 
-test('Chat\'s sweep: whatever is in no session of bn-coded\'s, its helpers\' or a live agent\'s is killed, by its pid, its start time read again; never the init, bn-coded or what docker exec put in', () => {
+test('Chat\'s sweep: everything stopped first, then whatever is in no session of bn-coded\'s, its helpers\' or a live agent\'s killed by its pid (its start time read again), the rest let go on; never the init, bn-coded or what docker exec put in', () => {
   const proc = tmp('bnproc');
-  const put = (pid, { ppid, pgrp = pid, sid, start = `${pid}00` }) => {
+  const put = (pid, { ppid, pgrp = pid, sid, start = `${pid}00`, state = 'S' }) => {
     fs.mkdirSync(path.join(proc, String(pid)), { recursive: true });
-    const f = ['S', ppid, pgrp, sid, ...Array(15).fill(0), start, 0, 0];
+    const f = [state, ppid, pgrp, sid, ...Array(15).fill(0), start, 0, 0];
     fs.writeFileSync(path.join(proc, String(pid), 'stat'), `${pid} (a (b) c) ${f.join(' ')}\n`);
   };
-  put(1, { ppid: 0, sid: 1 });                          // the init (tini)
-  put(100, { ppid: 1, sid: 1 });                        // bn-coded
-  put(110, { ppid: 100, sid: 1 });                      // a Claude Code of Chat's, in bn-coded's session
-  put(200, { ppid: 100, sid: 200 });                    // an agent (its own session)
-  put(201, { ppid: 200, pgrp: 201, sid: 200 });         // what it started, out of its group (setpgid): its session still
-  put(300, { ppid: 1, sid: 300 });                      // what it started with setsid, now the init's
-  put(400, { ppid: 0, sid: 400 });                      // docker exec: ./stack subscriptions login --chat
-  put(401, { ppid: 400, sid: 400 });                    // what it runs: the tool's own sign-in (its session)
-  put(500, { ppid: 100, sid: 500 });                    // a helper of bn-coded's (the status check)
-  fs.mkdirSync(path.join(proc, 'self'));
-  const killed = [];
-  const kill = (pid, sig) => { killed.push([pid, sig]); };
-  // (frozen first, then killed; a sign-in docker exec started survives)
-  assert.deepEqual(coded.sweepChat({ procDir: proc, self: 100, agents: [200], helpers: [500], kill }), [300]);
-  assert.deepEqual(killed, [[300, 'SIGSTOP'], [300, 'SIGKILL']]);
-  // the agent ended: its session goes, whatever left its group — never spared, even named a live one
-  killed.length = 0;
-  assert.deepEqual(coded.sweepChat({ procDir: proc, self: 100, agents: [], helpers: [500], kill }).sort(), [200, 201, 300]);
-  killed.length = 0;
-  assert.deepEqual(coded.sweepChat({ procDir: proc, self: 100, agents: [200], helpers: [500], ending: [200], kill }).sort(), [200, 201, 300]);
-  // a process that keeps starting others: each new one frozen as it appears, the sandbox looked at again, then all
-  // killed (at most CHAT_SWEEP_ROUNDS rounds)
-  killed.length = 0;
-  let next = 600;
-  const forking = (pid, sig) => { killed.push([pid, sig]); if (sig === 'SIGSTOP' && next < 603) put(next++, { ppid: pid, sid: 300 }); };
-  assert.deepEqual(coded.sweepChat({ procDir: proc, self: 100, agents: [200], helpers: [500], kill: forking }).sort(), [300, 600, 601, 602]);
-  assert.deepEqual(killed.filter(([, sig]) => sig === 'SIGKILL').map(([p]) => p).sort(), [300, 600, 601, 602]);
-  assert.ok(killed.findIndex(([, sig]) => sig === 'SIGKILL') > killed.findLastIndex(([, sig]) => sig === 'SIGSTOP'), 'killed only once all are frozen');
-  for (const p of [600, 601, 602]) fs.rmSync(path.join(proc, String(p)), { recursive: true });
-  // no bn-coded found: nothing
-  assert.deepEqual(coded.sweepChat({ procDir: proc, self: 999, agents: [], helpers: [], kill }), []);
-  // killGroup: the leader with its start — the group; the pid taken by another process since — not; the leader gone — its group still
+  const setState = (pid, state) => {
+    const file = path.join(proc, String(pid), 'stat');
+    if (fs.existsSync(file)) fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/\) [A-Za-z] /, `) ${state} `));
+  };
+  const pids = () => fs.readdirSync(proc).filter((n) => /^[0-9]+$/.test(n)).map(Number);
+  const reset = () => {
+    for (const p of pids()) fs.rmSync(path.join(proc, String(p)), { recursive: true });
+    put(1, { ppid: 0, sid: 1 });                          // the init (tini)
+    put(100, { ppid: 1, sid: 1 });                        // bn-coded
+    put(110, { ppid: 100, sid: 1 });                      // a Claude Code of Chat's, in bn-coded's session
+    put(200, { ppid: 100, sid: 200 });                    // an agent (its own session)
+    put(201, { ppid: 200, pgrp: 201, sid: 200 });         // what it started, out of its group (setpgid): its session still
+    put(300, { ppid: 1, sid: 300 });                      // what it started with setsid, now the init's
+    put(400, { ppid: 0, sid: 400 });                      // docker exec: ./stack subscriptions login --chat
+    put(401, { ppid: 400, sid: 400 });                    // what it runs: the tool's own sign-in (its session)
+    put(500, { ppid: 100, sid: 500 });                    // a helper of bn-coded's (the status check)
+  };
+  fs.mkdirSync(path.join(proc, 'self'), { recursive: true });
+  // the kernel, as far as the sweep can tell: kill(-1) reaches every process but the init and the caller (bn-coded, 100)
   const sent = [];
-  const k = (pid, sig) => { sent.push([pid, sig]); };
+  let forks = 0;
+  const kill = (pid, sig) => {
+    sent.push([pid, sig]);
+    if (pid === -1) {
+      for (const p of pids()) if (p !== 1 && p !== 100) setState(p, sig === 'SIGSTOP' ? 'T' : 'S');
+      // (one being made as the signal goes round: not stopped by it — the next round stops it)
+      if (sig === 'SIGSTOP' && forks > 0) { forks--; put(600 + forks, { ppid: 300, sid: 300, state: 'R' }); }
+    } else if (sig === 'SIGKILL') fs.rmSync(path.join(proc, String(pid)), { recursive: true });
+  };
+  reset();
+  assert.deepEqual(coded.sweepChat({ procDir: proc, self: 100, agents: [200], helpers: [500], kill }), [300]);
+  assert.deepEqual(sent, [[-1, 'SIGSTOP'], [300, 'SIGKILL'], [-1, 'SIGCONT']], 'stopped at once, sorted, killed, let go on');
+  for (const p of [110, 200, 201, 400, 401, 500]) assert.match(fs.readFileSync(path.join(proc, String(p), 'stat'), 'utf8'), /\) S /, `${p} goes on`);
+  // the agent ended: its session goes, whatever left its group — never spared, even named a live one
+  reset(); sent.length = 0;
+  assert.deepEqual(coded.sweepChat({ procDir: proc, self: 100, agents: [], helpers: [500], kill }).sort(), [200, 201, 300]);
+  reset(); sent.length = 0;
+  assert.deepEqual(coded.sweepChat({ procDir: proc, self: 100, agents: [200], helpers: [500], ending: [200], kill }).sort(), [200, 201, 300]);
+  // processes being made as the signal goes round (forking): stopped by the next round, each killed — and nothing
+  // killed before every one is stopped
+  reset(); sent.length = 0; forks = 3;
+  assert.deepEqual(coded.sweepChat({ procDir: proc, self: 100, agents: [200], helpers: [500], kill }).sort(), [300, 600, 601, 602]);
+  const stops = sent.filter(([p, sig]) => p === -1 && sig === 'SIGSTOP').length;
+  assert.equal(stops, 4, 'stopped again until none runs');
+  assert.ok(sent.findIndex(([, sig]) => sig === 'SIGKILL') > sent.findLastIndex(([, sig]) => sig === 'SIGSTOP'), 'killed only once all are stopped');
+  assert.deepEqual(sent.at(-1), [-1, 'SIGCONT']);
+  // a pid that names another process between the scan and its kill (its start time read again): left alone
+  reset(); sent.length = 0;
+  let scans = 0;
+  const realRead = fs.readFileSync;
+  fs.readFileSync = (f, ...a) => {
+    const out = realRead(f, ...a);
+    if (String(f).endsWith('/300/stat') && ++scans === 2) put(300, { ppid: 1, sid: 300, start: 'another', state: 'T' });
+    return out;
+  };
+  try {
+    assert.deepEqual(coded.sweepChat({ procDir: proc, self: 100, agents: [200], helpers: [500], kill }), []);
+  } finally { fs.readFileSync = realRead; }
+  assert.ok(!sent.some(([p, sig]) => p === 300 && sig === 'SIGKILL'));
+  // kill(-1) refused (nothing may be signalled): nothing done, nothing let go
+  reset(); sent.length = 0;
+  assert.deepEqual(coded.sweepChat({ procDir: proc, self: 100, agents: [200], helpers: [500], kill: (pid, sig) => { sent.push([pid, sig]); throw new Error('EPERM'); } }), []);
+  assert.deepEqual(sent, [[-1, 'SIGSTOP']]);
+  // no bn-coded found: nothing
+  reset(); sent.length = 0;
+  assert.deepEqual(coded.sweepChat({ procDir: proc, self: 999, agents: [], helpers: [], kill }), []);
+  assert.deepEqual(sent, []);
+  // killGroup: the leader with its start — the group; the pid taken by another process since — not; the leader gone — its group still
+  reset();
+  const group = [];
+  const k = (pid, sig) => { group.push([pid, sig]); };
   assert.equal(coded.killGroup(200, '20000', 'SIGKILL', { procDir: proc, kill: k }), true);
   assert.equal(coded.killGroup(200, '12345', 'SIGKILL', { procDir: proc, kill: k }), false);
   assert.equal(coded.killGroup(777, '77700', 'SIGTERM', { procDir: proc, kill: k }), true);
-  assert.deepEqual(sent, [[-200, 'SIGKILL'], [-777, 'SIGTERM']]);
+  assert.deepEqual(group, [[-200, 'SIGKILL'], [-777, 'SIGTERM']]);
   fs.rmSync(proc, { recursive: true });
 });
