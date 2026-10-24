@@ -12,22 +12,25 @@
 #                    bedrock-now.git, read only): the update fetches through GitHub's redirect and goes to the newest
 #                    release there — so only after v0.25.0 is published — and origin must then point at the new name;
 #                    the portal's update check is asked once too (api.github.com, the new name). Default: origin is
-#                    this checkout, and the release to update to is a local tag v0.25.0 on its HEAD plus its working
-#                    tree (as run.sh stages it), in the throwaway only.
+#                    this checkout, and the release to update to is a local tag on its HEAD plus its working tree (as
+#                    run.sh stages it), in the throwaway only: v0.25.0, or, once that release exists, the patch after
+#                    the newest release here (a tag the update's fetch never meets).
 #   --keep           leave the throwaway running (tests/e2e/upgrade.sh --teardown --project NAME removes it)
 #
 # 1. stage: a clone of this checkout in tests/e2e/work/PROJECT at --from; .env seeded with the project, free ports
 #    (never 80, 443, 3000, 3009, 4000, 8080, 8081, 8090, 8765, 8800), small budgets, the Code page's workspace next to
 #    the checkout; ./stack setup there.
 # 2. seed: an Open WebUI chat (its API, no model call), one Haiku answer through LiteLLM (spend rows), a file in the
-#    shared bucket and one in the workspace, a portal session (its cookie kept).
+#    shared bucket and one in the workspace, a Code page project whose own settings are trusted (code-state), a file
+#    in the sandbox's home (terminal-home), a portal session (its cookie kept).
 # 3. record: the project's containers, volumes and their mount points; the keys of Open WebUI's chats, users and
 #    files and of LiteLLM's keys and spend rows; .env; the ports; the manifest's id and link scheme.
 # 4. update: the throwaway's own update helper (its bin/bedrock-now-helper, in the foreground as tests/e2e/lib.sh runs
 #    it) picks up an Update now request (.state/requests/req-<nonce>.json, as the portal writes it).
 # 5. check: the release updated to; the folder where it was; the same containers, volumes and mount points; every key
 #    recorded still there; .env with nothing removed or changed; the same ports; the session from before still signed
-#    in; the chat, the shared file and the workspace file there; the login page, Home and the manifest say DevOS ADE
+#    in; the chat, the shared file, the workspace file and the sandbox's home file there, by content; the Code page
+#    project's record and its trust (state, hash, when) as before; the login page, Home and the manifest say DevOS ADE
 #    and have no bedrock-now outside the internal names (tests/brand_check.py --stdin); the manifest's id and link
 #    scheme as before (the same installed app); ./stack test passes; with --real-github, origin moved to the new name
 #    and the update check answering.
@@ -113,6 +116,36 @@ def api(method, path, body=None, token=None, extra=None):
 TOKEN = api('POST', '/api/v1/auths/signin', {'email': '', 'password': ''}, extra={'X-Portal-User': os.environ['E2E_OWUI_EMAIL']})['token']
 $1" ) </dev/null
 }
+# cexec SERVICE ARGS... — docker exec in the throwaway's container of SERVICE (an overlay's service too)
+cexec() {
+  local s="$1" id; shift
+  id="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$s" | head -n 1)"
+  [ -n "$id" ] || { echo "no $s container in project $PROJECT" >&2; return 1; }
+  docker exec -i "$id" "$@"
+}
+# codeapi METHOD PATH [JSON] — the Code page's own API, asked in its container as the main Caddy asks it (its secret
+# header, its own origin); prints the answer, fails on an HTTP error
+codeapi() {
+  cexec code node -e '
+const http = require("http"); const [m, p, b] = process.argv.slice(1); const port = Number(process.env.CODE_PORT || 8095);
+const req = http.request({ host: "127.0.0.1", port, method: m, path: p, headers: { "X-Bn-Code-Proxy": process.env.CODE_PROXY_SECRET,
+  Origin: `http://127.0.0.1:${port}`, "Content-Type": "application/json" } }, (res) => {
+  let d = ""; res.on("data", (c) => { d += c; }); res.on("end", () => { process.stdout.write(d); process.exitCode = res.statusCode < 300 ? 0 : 1; });
+});
+req.on("error", (e) => { console.error(e.message); process.exitCode = 2; });
+if (b) req.write(b);
+req.end();' "$@" </dev/null
+}
+# code_project ID -> the project's record and its settings' trust (state, hash, when), as the Code page shows them
+code_project() {
+  { codeapi GET /api/projects && echo && codeapi GET "/api/projects/$1/settings"; } | python3 -c '
+import json, sys
+lines = [l for l in sys.stdin.read().splitlines() if l.strip()]
+projects, settings = json.loads(lines[0]), json.loads(lines[1])
+rec = [p for p in projects["projects"] if p.get("id") == sys.argv[1]]
+print(json.dumps({"project": {k: rec[0].get(k) for k in ("id", "name", "root")} if rec else None,
+                  "trust": {k: settings.get(k) for k in ("state", "hash", "trustedAt")}}, sort_keys=True))' "$1"
+}
 # psql_keys DB TABLE COLUMN -> the column's values, sorted (the database's own rows, read in the postgres container)
 psql_keys() {
   ( cd "$STACK" && docker compose -p "$PROJECT" exec -T postgres psql -U postgres -d "$1" -Atc "SELECT \"$3\" FROM \"$2\" ORDER BY 1" ) </dev/null 2>/dev/null
@@ -156,7 +189,10 @@ else
   done || die "could not copy the untracked files"
   git -C "$STACK" add -A
   git -C "$STACK" -c user.name=e2e -c user.email=e2e@example.invalid commit -q --allow-empty -m "e2e: the release to update to"
-  TO=v0.25.0
+  # (a number no tag of this checkout has, nor ever fetches: v0.25.0 until that release exists, then the patch
+  # after the newest release here — origin's tags never collide with it)
+  TO="$(git -C "$ROOT" -c versionsort.suffix=- tag -l 'v[0-9]*' --sort=-v:refname | grep -v -- - | sed -n 1p)"
+  case "$TO" in v0.[0-9].* | v0.1[0-9].* | v0.2[0-4].* | '') TO=v0.25.0 ;; *) TO="${TO%.*}.$(( ${TO##*.} + 1 ))" ;; esac
   git -C "$STACK" -c user.name=e2e -c user.email=e2e@example.invalid tag -a "$TO" -m "$TO (e2e)" e2e-next
 fi
 [ -n "$TO" ] || die "no release to update to"
@@ -194,6 +230,21 @@ CANARY="shared/e2e-upgrade/canary.txt"; CANARY_V="kept-$(openssl rand -hex 4)"
   docker compose -p "$PROJECT" -f compose.yaml run --rm --no-deps -T -e E2E_CANARY --entrypoint /bin/sh rustfs-init -c \
     'printf %s "$E2E_CANARY" > /tmp/c && aws --endpoint-url http://rustfs:9000 s3 cp --only-show-errors /tmp/c s3://'"$CANARY" ) </dev/null > "$LOGS/canary.log" 2>&1
 printf 'kept\n' > "$WS/e2e-upgrade.txt"
+# a Code page project (a folder of the workspace) whose own settings are trusted — the record and the trust in the
+# code container's code-state volume — and a file in the sandbox's home (the terminal-home volume)
+PROJECT_ID="$(codeapi POST /api/projects '{"kind": "new", "folder": "e2e-upgrade-project"}' 2> "$LOGS/code-seed.log" |
+  python3 -c 'import json, sys; print(json.load(sys.stdin)["project"]["id"])' 2>> "$LOGS/code-seed.log")"
+if [ -n "$PROJECT_ID" ]; then
+  mkdir -p "$WS/e2e-upgrade-project/.claude"
+  printf '{"permissions": {"allow": ["Bash(ls:*)"]}}\n' > "$WS/e2e-upgrade-project/.claude/settings.json"
+  hash="$(codeapi GET "/api/projects/$PROJECT_ID/settings" 2>> "$LOGS/code-seed.log" | python3 -c 'import json, sys; print(json.load(sys.stdin).get("hash") or "")')"
+  codeapi POST "/api/projects/$PROJECT_ID/trust" "{\"hash\": \"$hash\"}" > "$LOGS/code-trust.json" 2>> "$LOGS/code-seed.log"
+fi
+code_project "${PROJECT_ID:-none}" > "$OUT/code-project-before.json" 2>> "$LOGS/code-seed.log"
+check code-project-made "$(grep -q '"state": "trusted"' "$OUT/code-project-before.json" && echo 0 || echo 1)" "$(cat "$OUT/code-project-before.json" 2>/dev/null)"
+HOME_V="kept-$(openssl rand -hex 4)"
+cexec terminal sh -c 'printf %s "$1" > "$HOME/.e2e-upgrade-home"' sh "$HOME_V" 2>> "$LOGS/code-seed.log"
+check home-file-made "$([ "$(cexec terminal cat /home/claude/.e2e-upgrade-home 2>/dev/null)" = "$HOME_V" ] && echo 0 || echo 1)" "a file in the sandbox's home"
 sleep 15   # (LiteLLM writes spend rows in batches)
 snapshot "$OUT/before"
 
@@ -237,16 +288,23 @@ got="$( ( clean_env; cd "$STACK" && docker compose -p "$PROJECT" -f compose.yaml
   'aws --endpoint-url http://rustfs:9000 s3 cp --only-show-errors s3://'"$CANARY"' -' ) </dev/null 2>/dev/null)"
 check shared-file-kept "$([ "$got" = "$CANARY_V" ] && echo 0 || echo 1)" "the shared bucket's file: ${got:-gone}"
 check workspace-file-kept "$([ "$(cat "$WS/e2e-upgrade.txt" 2>/dev/null)" = kept ] && echo 0 || echo 1)" "the workspace file"
+code_project "${PROJECT_ID:-none}" > "$OUT/code-project-after.json" 2>> "$LOGS/code-after.log"
+check code-project-kept "$(grep -q '"state": "trusted"' "$OUT/code-project-after.json" && cmp -s "$OUT/code-project-before.json" "$OUT/code-project-after.json" && echo 0 || echo 1)" \
+  "before $(cat "$OUT/code-project-before.json" 2>/dev/null), after $(cat "$OUT/code-project-after.json" 2>/dev/null)"
+got="$(cexec terminal cat /home/claude/.e2e-upgrade-home 2>/dev/null)"
+check home-file-kept "$([ "$got" = "$HOME_V" ] && echo 0 || echo 1)" "the sandbox's home file: ${got:-gone}"
 # the pages say DevOS ADE, and nothing but internal names say bedrock-now
 pcurl "$(purl /)" > "$OUT/home.html"; curl -sS -m 30 --resolve "$HOST:$(pp):127.0.0.1" "$(purl /login)" > "$OUT/login.html"
 for pg in login home; do
   t="$(sed -n 's:.*<title>\(.*\)</title>.*:\1:p' "$OUT/$pg.html" | head -1)"
   # (the throwaway's own path is on the page — the sign-in hint names its .env —, and this checkout's path may hold
-  # the old name: it is taken out first)
-  left="$(STACK="$STACK" python3 -c 'import os, sys; t = sys.stdin.read(); s = os.environ["STACK"]; h = os.path.expanduser("~")
-print(t.replace(s, "STACK").replace("~" + s[len(h):] if s.startswith(h + "/") else s, "STACK"))' < "$OUT/$pg.html" |
-    python3 "$ROOT/tests/brand_check.py" --stdin "$pg")"
-  ok=1; case "$t" in *"DevOS ADE"*) [ -n "$left" ] || ok=0 ;; esac
+  # the old name: it is taken out first). A tool that fails fails the check: never read as "nothing left".
+  rc=0
+  STACK="$STACK" python3 -c 'import os, sys; t = sys.stdin.read(); s = os.environ["STACK"]; h = os.path.expanduser("~")
+print(t.replace(s, "STACK").replace("~" + s[len(h):] if s.startswith(h + "/") else s, "STACK"))' < "$OUT/$pg.html" > "$OUT/$pg.txt" || rc=3
+  left=''; [ "$rc" != 0 ] || { left="$(python3 "$ROOT/tests/brand_check.py" --stdin "$pg" < "$OUT/$pg.txt")" || rc=$?; }
+  case "$rc" in 0 | 1) ;; *) left="the page check itself failed (exit $rc)" ;; esac
+  ok=1; case "$t" in *"DevOS ADE"*) [ "$rc" = 0 ] && ok=0 ;; esac
   check "page-$pg" "$ok" "title '$t'${left:+; old name: $(printf '%s' "$left" | head -3 | tr '\n' ' ')}"
 done
 python3 - "$OUT/before/manifest.json" "$OUT/after/manifest.json" "$PROJECT" "$(pp)" > "$OUT/manifest.check" 2>&1 <<'PY'
