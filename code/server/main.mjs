@@ -194,6 +194,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
   const mgr = new SessionManager({
     query, spawn, broker, log: logger, allowBypass: allowBypass === true, allowAuto: allowAuto === true, watcher, watchRootOf, decideSettings: trust.decide,
     spawnAgent, agentStore: agents, planAllowed: planAllowed === true, versions: { server: versions.sdk || '0' },
+    plainPaths: async (root, paths) => (await call({ op: 'paths.plain', root, paths }, { timeoutMs: 15000 })).result,
     gitHosts: () => hostStore.list(),
     onEvent: (s, seq, ev) => {
       toAttached(s.id, { type: 'event', session: s.id, epoch: s.epoch, seq, ev });

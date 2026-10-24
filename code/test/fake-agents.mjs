@@ -84,6 +84,15 @@ async function acp(m) {
       update(sid, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'thinking…' } });
       update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Hello ' } });
       update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `you said: ${text.slice(-40)}` } });
+      if (scenario === 'moves') {
+        // a move (its destination not said) and an edit naming no path: asked, whatever the mode
+        for (const [id, kind, content] of [['mv1', 'move', []], ['ed2', 'edit', []]]) {
+          update(sid, { sessionUpdate: 'tool_call', toolCallId: id, title: id, kind, status: 'pending', content });
+          const r = await ask('session/request_permission', { sessionId: sid, toolCall: { toolCallId: id },
+            options: [{ optionId: 'ok1', name: 'Allow', kind: 'allow_once' }, { optionId: 'no1', name: 'Reject', kind: 'reject_once' }] });
+          update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: ` ${id}:${r.result?.outcome?.optionId ?? 'cancelled'}` } });
+        }
+      }
       if (scenario === 'tools' || scenario === 'chat-tools') {
         update(sid, { sessionUpdate: 'tool_call', toolCallId: 'call/1 é', title: 'Edit app.js', kind: 'edit', status: 'pending' });
         update(sid, { sessionUpdate: 'tool_call_update', toolCallId: 'call/1 é', content: [{ type: 'diff', path: '/workspace/app.js', oldText: 'a\n', newText: 'b\n' }] });
@@ -151,6 +160,19 @@ async function codex(m) {
           n('turn/plan/updated', { explanation: null, plan: [{ step: 'build', status: 'inProgress' }] });
           const tok = await ask('account/chatgptAuthTokens/refresh', {});
           n('item/agentMessage/delta', { itemId: 'm2', delta: ` refresh:${tok.error ? 'refused' : 'answered'}` });
+        }
+        if (scenario === 'edits') {
+          // changes to files, each asking: one in the folder; one asking for a folder of its own to write in (grantRoot);
+          // one moving a file into .git/hooks; one whose paths it never said (no item/started)
+          const decisions = [];
+          for (const [id, changes, extra] of [['f1', [{ path: '/workspace/a.js', kind: { type: 'update', move_path: null }, diff: '' }], {}],
+            ['f2', [{ path: '/workspace/b.js', kind: { type: 'add' }, diff: '' }], { grantRoot: '/' }],
+            ['f3', [{ path: 'x.js', kind: { type: 'update', move_path: '/workspace/.git/hooks/pre-commit' }, diff: '' }], {}], ['f4', null, {}]]) {
+            if (changes) n('item/started', { item: { type: 'fileChange', id, status: 'inProgress', changes } });
+            const r = await ask('item/fileChange/requestApproval', { threadId: thread.id, turnId: tid, itemId: id, ...extra });
+            decisions.push(`${id}:${r.result?.decision}`);
+          }
+          n('item/agentMessage/delta', { itemId: 'm3', delta: ` ${decisions.join(' ')}` });
         }
         n('thread/tokenUsage/updated', { tokenUsage: { last: { totalTokens: 50, inputTokens: 40, cachedInputTokens: 5, cacheWriteInputTokens: 0, outputTokens: 10, reasoningOutputTokens: 0 }, total: {}, modelContextWindow: null } });
         send({ method: 'account/rateLimits/updated', params: { rateLimits: { primary: { usedPercent: 42.4, windowDurationMins: 300, resetsAt: 1792800000 }, secondary: null } } });

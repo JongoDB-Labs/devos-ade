@@ -699,3 +699,34 @@ test('project.settings: the plugins a folder\'s own settings turn on, with what 
   fs.rmSync(path.join(CONF, 'plugins'), { recursive: true });
   fs.rmSync(D, { recursive: true });
 });
+
+test('paths.plain: what an agent\'s change may touch without asking (Accept edits) — plain files of the folder, outside git\'s and the tools\' own configuration, no link on the way, no hard link', async () => {
+  const D = path.join(WS, 'edits');
+  const put = (rel, text = 'x') => { fs.mkdirSync(path.dirname(path.join(D, rel)), { recursive: true }); fs.writeFileSync(path.join(D, rel), text); };
+  put('src/a.js'); put('.git/hooks/pre-commit'); put('sub/.codex/config.toml'); put('lsp.json', '{}');
+  fs.mkdirSync(path.join(D, 'dir'), { recursive: true });
+  fs.writeFileSync(path.join(OUT, 'h'), 'outside');
+  fs.symlinkSync(OUT, path.join(D, 'link'));
+  fs.symlinkSync(path.join(OUT, 'h'), path.join(D, 'linkfile'));
+  fs.linkSync(path.join(OUT, 'h'), path.join(D, 'hard'));
+  const cases = [
+    [`${D}/src/a.js`, true], [`${D}/src/new.js`, true, 'a new file'], [`${D}/newdir/deeper/new.js`, true, 'in folders to be made'],
+    [`${D}/.git/hooks/pre-commit`, false], [`${D}/.GIT/config`, false, 'any case'], [`${D}/.GitHub/workflows/x.yml`, false],
+    [`${D}/sub/.codex/config.toml`, false, 'at any depth'], [`${D}/lsp.json`, false], [`${D}/.mcp.json`, false], [`${D}/.claude/settings.json`, false],
+    [`${D}/.vscode/tasks.json`, false], [`${D}/.envrc`, false], [`${D}/.husky/pre-push`, false], [`${D}/.agents/skills/s.md`, false],
+    [`${D}/link/x.js`, false, 'a link on the way'], [`${D}/linkfile`, false, 'a link at the end'], [`${D}/hard`, false, 'a hard link'],
+    [`${D}/dir`, false, 'a folder'], [`${D}/src/a.js/x`, false, 'below a file'], [`${D}/src/../.git/config`, false, 'not normalized'],
+    ['src/a.js', false, 'relative'], [`${WS}/p1/a.js`, false, 'another folder'], [D, false, 'the folder itself'], [`${D}/a\0b`, false], [42, false],
+  ];
+  const r = await call({ op: 'paths.plain', root: D, paths: cases.map((c) => c[0]) });
+  assert.deepEqual(r.plain, cases.map((c) => c[1]), JSON.stringify(cases.map((c, i) => [c[0], r.plain?.[i]]).filter(([, got], i) => got !== cases[i][1])));
+  // the workspace itself as the root: its projects' .git and configuration guarded the same way
+  const w = await call({ op: 'paths.plain', paths: [`${D}/src/a.js`, `${D}/.git/HEAD`] });
+  assert.deepEqual(w.plain, [true, false]);
+  // refusals: a root that is not a project folder, too many paths, no list
+  assert.ok((await call({ op: 'paths.plain', root: `${D}/link`, paths: [] })).error);
+  assert.ok((await call({ op: 'paths.plain', root: D, paths: Array.from({ length: 201 }, () => `${D}/a`) })).error);
+  assert.ok((await call({ op: 'paths.plain', root: D })).error);
+  fs.rmSync(D, { recursive: true });
+  fs.rmSync(path.join(OUT, 'h'));
+});

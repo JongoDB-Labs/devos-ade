@@ -11,6 +11,15 @@ import { HARNESSES } from './tools.mjs';
 const obj = (v) => (v !== null && typeof v === 'object' && !Array.isArray(v) ? v : {});
 const arr = (v) => (Array.isArray(v) ? v : []);
 const TEXT = 200000, DELTA = 100000;
+// editPaths(toolCall) -> the absolute paths an edit says it touches (its locations and its diffs), or null when one is
+// not absolute or none is named
+export function editPaths(tc) {
+  const out = [];
+  for (const l of arr(tc.locations).map(obj)) out.push(l.path);
+  for (const c of arr(tc.content).map(obj)) if (c.type === 'diff') out.push(c.path);
+  if (!out.length || out.length > 200 || !out.every((p) => typeof p === 'string' && p.startsWith('/') && p.length <= 4096)) return null;
+  return [...new Set(out)];
+}
 export class NotSignedIn extends Error {}
 // an agent in a mode that approves by itself, with no other to leave it for (or one it switched to by itself): its
 // session is closed, never prompted in it
@@ -24,8 +33,9 @@ const EXISTING_LOGIN = new Set(['cursor_login']);
 export class AcpAgent {
   // proc: sandboxAgent's process. onEvent(ev): the page's events. onPermission({tool, input, kind}) -> 'once' |
   // 'always' | 'deny'. chat: one of Chat's conversations (every permission request is refused there without asking).
-  constructor(proc, { tool, onEvent = () => {}, onPermission = async () => 'deny', log = () => {}, chat = false, clientVersion = '0' }) {
-    Object.assign(this, { tool, onEvent, onPermission, log, chat, clientVersion });
+  // plainEdit(paths) -> whether a change to these paths may go through without asking (Accept edits: session.mjs)
+  constructor(proc, { tool, onEvent = () => {}, onPermission = async () => 'deny', log = () => {}, chat = false, clientVersion = '0', plainEdit = async () => false }) {
+    Object.assign(this, { tool, onEvent, onPermission, log, chat, clientVersion, plainEdit });
     this.peer = new Peer(proc, { jsonrpc: true, log, onNotify: (m, p) => this.notified(m, p), onRequest: (m, p) => this.requested(m, p) });
     this.sessionId = null; this.caps = {}; this.authMethods = []; this.defaultAuth = null;
     this.modes = []; this.mode = null; this.models = []; this.model = null; this.commands = [];
@@ -302,7 +312,13 @@ export class AcpAgent {
       this.onEvent({ type: 'local', text: `${this.pageMode === 'plan' ? 'Plan' : 'Read only'}: ${short(merged.title || kind, 120)} was refused without asking.` });
       return pick('reject_once', 'reject_always');
     }
-    if (this.pageMode === 'acceptEdits' && ['edit', 'delete', 'move'].includes(kind)) return pick('allow_once');
+    // Accept edits: an edit or a delete goes through without asking only when every path it names is a plain file of
+    // the session's folder outside git's and the tools' own configuration (plainEdit) — a move (its destination not
+    // always said), a path not named, or anything else: asked
+    if (this.pageMode === 'acceptEdits' && ['edit', 'delete'].includes(kind)) {
+      const paths = editPaths(merged);
+      if (paths && await this.plainEdit(paths)) return pick('allow_once');
+    }
     const c = acpCall(merged);
     const answer = await this.onPermission({ tool: c.name, input: c.input, kind, always: opts.some((o) => o.kind === 'allow_always') });
     if (answer === 'always') return pick('allow_always', 'allow_once');

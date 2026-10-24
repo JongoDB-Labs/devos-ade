@@ -253,3 +253,32 @@ test('a project below its git root: the other tools\' files above it are in its 
     await assert.rejects(mgr.agentSettingsCheck('/workspace/mono/app', 'Codex'), /changed since you trusted them/);
   } finally { mgr.closeAll(); }
 });
+
+test('Accept edits in an agent session: an edit goes through without asking only when the sandbox says its paths are plain files of the session\'s folder', async () => {
+  const checked = [];
+  for (const plain of [true, false]) {
+    const { mgr, events, asked, broker } = manager({ more: { plainPaths: async (root, paths) => { checked.push([root, paths]); return { plain: paths.map(() => plain) }; } } });
+    const { id } = mgr.open({ harness: 'copilot', cwd: '/workspace/app', mode: 'acceptEdits' });
+    const s = mgr.get(id);
+    await wait(() => s.state === 'idle');
+    s.prompt({ text: 'fix it' });
+    if (!plain) { await wait(() => asked.length === 1); broker.answer(asked[0].id, 'deny'); }
+    await wait(() => events.some(([, ev]) => ev.type === 'result'));
+    assert.equal(asked.length, plain ? 0 : 1);
+    assert.equal(events.find(([, ev]) => ev.type === 'tool_result')[1].text, plain ? 'permission: ok1' : 'permission: no1');
+    mgr.closeAll();
+  }
+  assert.deepEqual(checked, [['/workspace/app', ['/workspace/app.js']], ['/workspace/app', ['/workspace/app.js']]]);
+  // the sandbox not reached, or an answer that does not fit: asked
+  const { mgr } = manager({ more: { plainPaths: async () => { throw new Error('down'); } } });
+  const { id } = mgr.open({ harness: 'copilot', cwd: '/workspace/app', mode: 'acceptEdits' });
+  const s = mgr.get(id);
+  assert.equal(await s.plainEdit(['/workspace/app/a.js']), false);
+  mgr.closeAll();
+  for (const answer of [{ plain: [true, true] }, { plain: ['yes'] }, null]) {
+    const m = manager({ more: { plainPaths: async () => answer } });
+    const x = m.mgr.get(m.mgr.open({ harness: 'copilot', cwd: '/workspace/app', mode: 'acceptEdits' }).id);
+    assert.equal(await x.plainEdit(['/workspace/app/a.js']), false, JSON.stringify(answer));
+    m.mgr.closeAll();
+  }
+});

@@ -2637,6 +2637,37 @@ const isUtf8Buf = (b) => { try { new TextDecoder('utf-8', { fatal: true }).decod
 export function projectSettings(req) {
   return settingsFiles(rootArg(req?.root).abs, { text: req?.text !== false });
 }
+// The names an agent's change approved by Accept edits never touches, in any case and at any depth: git's folder and
+// what runs on your computer when you open the folder (Claude Code's own protected list), and every tool's own
+// configuration (what the trust step lists)
+export const EDIT_GUARDED = Object.freeze(['.git', '.claude', '.mcp.json', '.vscode', '.husky', '.devcontainer', '.devcontainer.json', '.envrc',
+  '.github', ...AGENT_TREES, ...AGENT_FILES]);
+export const PLAIN_PATHS_MAX = 200;
+// paths.plain {root, paths} -> {plain: [bool]}: whether each path an agent says its change touches may be changed
+// without asking (the page's Accept edits): absolute, in the project's folder, no part of it in EDIT_GUARDED, no link on
+// its way or at its end (a repository's link could lead to ~/.codex or .git/hooks), and — when it is there — a plain
+// file with no other name (a hard link). Anything else: false, and the page asks.
+export function pathsPlain(req) {
+  const root = rootArg(req?.root);
+  const list = Array.isArray(req?.paths) ? req.paths : null;
+  if (!list || list.length > PLAIN_PATHS_MAX) throw new Error(`paths: a list of at most ${PLAIN_PATHS_MAX}`);
+  const guarded = new Set(EDIT_GUARDED);
+  const one = (p) => {
+    if (typeof p !== 'string' || !p.startsWith('/') || p.length > 4096 || p.includes('\0') || path.resolve(p) !== p || !inRoot(p, root) || p === root.abs) return false;
+    const parts = p.slice(root.abs.length + 1).split('/');
+    if (parts.some((x) => guarded.has(x.toLowerCase()))) return false;
+    let at = root.abs;
+    for (let i = 0; i < parts.length; i++) {
+      at = path.join(at, parts[i]);
+      let st;
+      try { st = fs.lstatSync(at); } catch (e) { return e.code === 'ENOENT'; }   // (not there yet: a new file — nothing further is either)
+      if (st.isSymbolicLink()) return false;
+      if (i < parts.length - 1 ? !st.isDirectory() : !(st.isFile() && st.nlink === 1)) return false;
+    }
+    return true;
+  };
+  return { plain: list.map(one) };
+}
 // project.trash {root} -> {trash}: Remove from Code with its folder — the project's folder itself (a real folder of
 // the workspace, every part of its path too: never through a link, never the workspace) moved to the workspace's trash
 // (/workspace/.bedrock-now-trash/<time>-<random>/<name>). The entry is moved, not what a link points to.
@@ -4825,6 +4856,7 @@ export function serve(sock) {
         case 'project.check': return finish(T.RESULT, projectCheck(req));
         case 'project.trash': return finish(T.RESULT, projectTrash(req));
         case 'project.settings': return finish(T.RESULT, projectSettings(req));
+        case 'paths.plain': return finish(T.RESULT, pathsPlain(req));
         // the Git panel's remotes: no network for these two; a branch switch or a remote's URL is a change
         case 'git.repos': return finish(T.RESULT, gitRepos({ root: root() }));
         case 'git.remote.state':

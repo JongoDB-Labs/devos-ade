@@ -3205,8 +3205,13 @@ never reads, copies, keeps, passes on or relays a login.**
   tools' own, in Chat's sandbox.
 - [x] **The Code page's agents ask you.** A Codex, Copilot, Cursor or Grok session asks through the same permission
   cards (*Allow once*, *Always* for this session — the tool's own "allow always" —, *Deny*; unanswered: denied after
-  the usual minutes); Read only and Plan refuse its changes and commands without asking, Accept edits allows its file
-  changes only; a tool's own "approve everything" modes are never chosen — an ACP agent that starts in one is moved to
+  the usual minutes); Read only and Plan refuse its changes and commands without asking; Accept edits lets a file
+  change through without asking only when the sandbox (bn-coded's `paths.plain`) says every path it names is a plain
+  file of the session's folder — absolute, inside it, no part of it `.git`, `.github`, `.vscode`, `.claude`,
+  `.mcp.json`, `.husky`, `.devcontainer`, `.envrc`, a `lsp.json` or a tool's own folder (`.codex`, `.cursor`, `.grok`,
+  `.gemini`, `.copilot`, `.agents`), in any case, no link on its way or at its end, no other name for the file (a hard
+  link) — and asks for everything else: a move (its destination is not always said), a change naming no path, Codex's
+  request for a folder of its own to write in (`grantRoot`), a path that is not plain. A tool's own "approve everything" modes are never chosen — an ACP agent that starts in one is moved to
   a safe one before anything, and one that has no other, or switches itself to one, ends its session: no turn runs in
   such a mode. Codex runs with its own sandbox off (the container is the boundary) and its "untrusted" approvals. The watchlist checks the files that run on your computer
   after each turn, with Revert. Its tool cards, its text and its history (kept by the code container: `agents/` in its

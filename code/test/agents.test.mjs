@@ -16,7 +16,7 @@ import { fakeProc } from './fake-agent-proc.mjs';
 function acp(scenario, opts = {}) {
   const events = [], asked = [];
   const agent = new AcpAgent(fakeProc('acp', scenario), { tool: 'copilot', onEvent: (e) => events.push(e),
-    onPermission: async (p) => { asked.push(p); return opts.answer ?? 'once'; }, chat: opts.chat === true });
+    onPermission: async (p) => { asked.push(p); return opts.answer ?? 'once'; }, chat: opts.chat === true, ...(opts.plainEdit ? { plainEdit: opts.plainEdit } : {}) });
   return { agent, events, asked };
 }
 
@@ -78,13 +78,50 @@ test('ACP: Always, Deny; Read only and Plan refuse changes without asking; Accep
     try { await agent.init(); await agent.open({ cwd: '/workspace' }); await agent.prompt('x'); } finally { agent.close(); }
     assert.equal(events.find((e) => e.type === 'tool_result').text, `permission: ${want}`);
   }
+  const seen = [];
   for (const mode of ['readOnly', 'plan', 'acceptEdits']) {
-    const { agent, events, asked } = acp('tools');
+    const { agent, events, asked } = acp('tools', { plainEdit: async (paths) => { seen.push(paths); return true; } });
     try { await agent.init(); await agent.open({ cwd: '/workspace' }); await agent.setMode(mode); await agent.prompt('x'); } finally { agent.close(); }
     assert.equal(asked.length, 0, mode);
     assert.equal(events.find((e) => e.type === 'tool_result').text, mode === 'acceptEdits' ? 'permission: ok1' : 'permission: no1', mode);
     if (mode !== 'acceptEdits') assert.ok(events.some((e) => e.type === 'local' && /refused without asking/.test(e.text)), mode);
   }
+  // Accept edits: the paths the edit names, checked in the sandbox (plainEdit) — a plain file of the folder goes through
+  assert.deepEqual(seen, [['/workspace/app.js']]);
+  // one that is not (.git/, a tool's configuration, a link …): asked
+  const no = acp('tools', { answer: 'deny', plainEdit: async () => false });
+  try { await no.agent.init(); await no.agent.open({ cwd: '/workspace' }); await no.agent.setMode('acceptEdits'); await no.agent.prompt('x'); } finally { no.agent.close(); }
+  assert.equal(no.asked.length, 1);
+  assert.equal(no.events.find((e) => e.type === 'tool_result').text, 'permission: no1');
+  // nothing said to check it with (no plainEdit): asked
+  const none = acp('tools', { answer: 'once' });
+  try { await none.agent.init(); await none.agent.open({ cwd: '/workspace' }); await none.agent.setMode('acceptEdits'); await none.agent.prompt('x'); } finally { none.agent.close(); }
+  assert.equal(none.asked.length, 1);
+  // a move (its destination not always said) and an edit naming no path: asked, never checked
+  const checked = [];
+  const mv = acp('moves', { answer: 'deny', plainEdit: async (p) => { checked.push(p); return true; } });
+  try { await mv.agent.init(); await mv.agent.open({ cwd: '/workspace' }); await mv.agent.setMode('acceptEdits'); await mv.agent.prompt('x'); } finally { mv.agent.close(); }
+  assert.equal(mv.asked.length, 2);
+  assert.deepEqual(checked, []);
+  assert.match(mv.events.filter((e) => e.type === 'text').map((e) => e.text).join(''), /mv1:no1.* ed2:no1/s);
+});
+
+test('Codex: Accept edits lets a change through only when the sandbox says each path is a plain file of the folder; a grantRoot or unsaid paths: asked', async () => {
+  const seen = [];
+  const events = [], asked = [];
+  const agent = new CodexAgent(fakeProc('codex', 'edits'), { onEvent: (e) => events.push(e), onPermission: async (p) => { asked.push(p); return 'deny'; },
+    plainEdit: async (paths) => { seen.push(paths); return paths.every((p) => !p.includes('/.git/')); } });
+  try {
+    await agent.init();
+    await agent.open({ cwd: '/workspace/proj' });
+    await agent.setMode('acceptEdits');
+    await agent.prompt('edit');
+  } finally { agent.close(); }
+  assert.match(events.filter((e) => e.type === 'text').at(-1).text, /f1:accept f2:decline f3:decline f4:decline/);
+  // (a relative path in the thread's folder; a move's destination checked too; never a grantRoot's)
+  assert.deepEqual(seen, [['/workspace/a.js'], ['/workspace/proj/x.js', '/workspace/.git/hooks/pre-commit']]);
+  assert.deepEqual(asked.map((a) => a.input.file_path), ['/', '/workspace/proj/x.js, /workspace/.git/hooks/pre-commit', '(the change above)']);
+  assert.match(asked[0].input.description, /asks to write anywhere under \//);
 });
 
 test('ACP: its own login only — Cursor\'s existing one named back; a method that would start a sign-in never: not signed in', async () => {

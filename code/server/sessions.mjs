@@ -943,12 +943,14 @@ export class SessionManager {
   // process's system prompt (gitnote.mjs); none: no note
   // spawnAgent({tool, mode, cwd}, {onStderr}) -> a process of a subscription's agent in the sandbox (spawn-client's
   // sandboxAgent); agentStore: the page's record of those sessions (agents/store.mjs); planAllowed: CODE_CLAUDE_PLAN
-  // (Claude on your plan may be used here)
+  // (Claude on your plan may be used here); plainPaths(root, paths) -> bn-coded's paths.plain RESULT ({plain: [bool]}):
+  // whether an agent's change may go through without asking in Accept edits
   constructor({ query, spawn, broker, log = () => {}, onEvent = () => {}, onState = () => {}, onReload = () => {}, onReset = () => {},
     transcriptExists = async () => false, maxOpen = LIMITS.maxOpen, idleMs = LIMITS.idleMinutes * 60000, allowBypass = false, allowAuto = false, watcher = null,
-    watchRootOf = () => null, decideSettings = null, gitHosts = null, spawnAgent = null, agentStore = null, planAllowed = false, versions = {} }) {
+    watchRootOf = () => null, decideSettings = null, gitHosts = null, spawnAgent = null, agentStore = null, planAllowed = false, versions = {},
+    plainPaths = null }) {
     Object.assign(this, { query, spawn, broker, log, onEvent, onState, onReload, onReset, transcriptExists, maxOpen, idleMs, allowBypass: allowBypass === true,
-      allowAuto: allowAuto === true, watcher, watchRootOf, decideSettings, gitHosts, spawnAgent, agentStore, planAllowed: planAllowed === true, versions });
+      allowAuto: allowAuto === true, watcher, watchRootOf, decideSettings, gitHosts, spawnAgent, agentStore, planAllowed: planAllowed === true, versions, plainPaths });
     this.decisions = new Map();   // cwd -> {d, at}: made just before a start (prepare), taken by it (takeSettings)
     this.sessions = new Map();
     this.stderrSeen = new Map();   // session -> {from, n, dropped}

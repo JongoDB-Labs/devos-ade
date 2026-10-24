@@ -85,7 +85,7 @@ export class AgentSession {
         const proc = this.mgr.spawnAgent({ tool: this.harness, mode: 'code', cwd: this.cwd },
           { onStderr: (s) => this.mgr.logStderr(this.id, `${this.harness} ${this.id.slice(0, 8)} stderr: ${short(s, 300)}`) });
         const opts = { tool: this.harness, log: (m) => this.mgr.log(`${this.harness} ${this.id.slice(0, 8)}: ${m}`), clientVersion: this.mgr.versions?.server ?? '0',
-          onEvent: (ev) => this.fromAgent(agent, ev), onPermission: (p) => this.ask(p) };
+          onEvent: (ev) => this.fromAgent(agent, ev), onPermission: (p) => this.ask(p), plainEdit: (paths) => this.plainEdit(paths) };
         agent = this.info0.kind === 'codex' ? new CodexAgent(proc, opts) : new AcpAgent(proc, opts);
         this.agent = agent;
         await withTimeout(agent.init(), START_MS, proc);
@@ -117,6 +117,18 @@ export class AgentSession {
       } finally { this.starting = null; }
     })();
     return this.starting;
+  }
+
+  // plainEdit(paths) -> whether a change to these paths (absolute, as the agent names them) may go through without
+  // asking in Accept edits: each one in the session's folder, outside .git/, .github, .vscode, .claude, .mcp.json and
+  // every tool's own configuration, no link on its way (bn-coded's paths.plain, in the sandbox). Anything it cannot
+  // say: no — the page asks.
+  async plainEdit(paths) {
+    if (!Array.isArray(paths) || !paths.length || paths.length > 200 || typeof this.mgr.plainPaths !== 'function') return false;
+    try {
+      const r = await this.mgr.plainPaths(this.cwd, paths);
+      return Array.isArray(r?.plain) && r.plain.length === paths.length && r.plain.every((x) => x === true);
+    } catch (e) { this.mgr.log(`${this.harness} ${this.id.slice(0, 8)}: paths not checked (${short(e?.message || String(e), 200)}): asked`); return false; }
   }
 
   fromAgent(agent, ev) {

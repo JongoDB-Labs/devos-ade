@@ -629,7 +629,9 @@ plan in the Code page and Chat** (off by default; turning it on works from the c
   its tool cards (commands, edits with their diffs, to-dos), its questions on the same permission cards (*Allow once*,
   *Always* for this session, *Deny*), the watchlist after each turn, the same files, Git, Review and previews, and its
   history in the session list (a badge: *Codex*, *Plan* …), taken up again later with the tool's own session. Modes:
-  Read only and Plan refuse its changes without asking, Accept edits allows its edits, Manual asks — a tool's own
+  Read only and Plan refuse its changes without asking, Accept edits allows its edits to plain files of the folder (one
+  to `.git/`, `.github/`, `.vscode/`, `.claude/`, `.mcp.json` or a tool's own settings, through a link, or outside it is
+  asked), Manual asks — a tool's own
   "approve everything" mode is never used. The meter says *on your ChatGPT plan · tokens in / out* and the plan's own
   limits where the tool reports them (Codex's 5-hour and weekly windows, Claude's), never dollars and no budget.
   Codex runs with its own sandbox off (the sandbox container is the boundary) and asks before what it does not count as

@@ -3,6 +3,7 @@
 // runs with Codex's "external sandbox" policy and asks before anything it does not count as safe ("untrusted"); the
 // page's mode decides the rest here (requested()). Its login is Codex's own (`codex login` in the terminal): this side
 // only asks whether there is one (account/read), never reads, refreshes or passes it on.
+import path from 'node:path';
 import { Peer, RpcError, said } from './jsonrpc.mjs';
 import { codexStarted, codexCompleted, codexPlan, callId, usageOf } from './map.mjs';
 import { NotSignedIn } from './acp.mjs';
@@ -21,8 +22,10 @@ const QUIET = ['item/commandExecution/outputDelta', 'item/fileChange/outputDelta
   'thread/realtime/outputAudio/delta', 'rawResponseItem/completed', 'rawResponse/completed', 'fuzzyFileSearch/sessionUpdated'];
 
 export class CodexAgent {
-  constructor(proc, { onEvent = () => {}, onPermission = async () => 'deny', log = () => {}, chat = false, clientVersion = '0' }) {
-    Object.assign(this, { tool: 'codex', onEvent, onPermission, log, chat, clientVersion });
+  constructor(proc, { onEvent = () => {}, onPermission = async () => 'deny', log = () => {}, chat = false, clientVersion = '0', plainEdit = async () => false }) {
+    Object.assign(this, { tool: 'codex', onEvent, onPermission, log, chat, clientVersion, plainEdit });
+    this.cwd = null;
+    this.changes = new Map();   // a fileChange item's id -> the paths it changes (item/started), for its approval
     this.peer = new Peer(proc, { jsonrpc: false, log, onNotify: (m, p) => this.notified(m, p), onRequest: (m, p) => this.requested(m, p) });
     this.threadId = null; this.turnId = null; this.turnDone = null;
     this.models = []; this.model = null; this.modes = []; this.mode = null; this.commands = [];
@@ -62,6 +65,7 @@ export class CodexAgent {
 
   /** A thread in cwd: the one named (thread/resume) or a new one -> {ref, resumed} */
   async open({ cwd, resume = null, model = null }) {
+    this.cwd = cwd;
     const base = { cwd, ...this.policy(), ...(model ? { model } : {}), ...(this.chat ? { developerInstructions: CHAT_NOTE } : {}) };
     let r = null, resumed = false;
     if (resume) {
@@ -89,6 +93,7 @@ export class CodexAgent {
   async prompt(text, images = []) {
     const input = [...images.map((im) => ({ type: 'image', url: `data:${im.media_type};base64,${im.data}` })), { type: 'text', text, text_elements: [] }];
     this.text = ''; this.thought = ''; this.usage = null; this.toolTried = null; this.interruptWanted = false;
+    this.changes.clear();
     const done = new Promise((resolve) => { this.turnDone = resolve; });
     try {
       const sandboxPolicy = this.chat ? undefined : { type: 'externalSandbox', networkAccess: 'enabled' };
@@ -142,6 +147,7 @@ export class CodexAgent {
           if (!CHAT_ITEMS.has(it.type)) this.stopTool(short(typeof it.type === 'string' ? it.type : 'a tool', 60));
           return;
         }
+        if (it.type === 'fileChange' && typeof it.id === 'string' && this.changes.size < 500) this.changes.set(it.id, changePaths(it, this.cwd));
         const evs = codexStarted(p.item);
         if (evs.length) this.flush();
         for (const ev of evs) this.onEvent(ev);
@@ -188,15 +194,33 @@ export class CodexAgent {
       this.onEvent({ type: 'local', text: `${this.pageMode === 'plan' ? 'Plan' : 'Read only'}: ${edit ? 'a change to files' : 'a command'} was refused without asking.` });
       return decline;
     }
-    if (edit && this.pageMode === 'acceptEdits') return { decision: 'accept' };
+    // Accept edits: a change goes through without asking only when every path it changes is a plain file of the session's
+    // folder outside git's and the tools' own configuration (plainEdit) — never one asking for a folder of its own to
+    // write in (grantRoot), never one whose paths were not said (asked)
+    const paths = edit && typeof p.itemId === 'string' ? this.changes.get(p.itemId) ?? null : null;
+    if (edit && this.pageMode === 'acceptEdits' && p.grantRoot === undefined && paths && await this.plainEdit(paths)) return { decision: 'accept' };
     const tool = edit ? 'Edit' : 'Bash';
-    const input = edit ? { file_path: short(p.grantRoot || '(the change above)', 4096), ...(p.reason ? { description: short(p.reason, 500) } : {}) }
+    const input = edit ? { file_path: short(p.grantRoot || paths?.join(', ') || '(the change above)', 4096), ...(p.grantRoot ? { description: `asks to write anywhere under ${short(p.grantRoot, 300)}${p.reason ? ` — ${short(p.reason, 300)}` : ''}` } : p.reason ? { description: short(p.reason, 500) } : {}) }
       : { command: str(p.command ?? '', 20000), ...(typeof p.cwd === 'string' ? { description: `in ${short(p.cwd, 300)}${p.reason ? ` — ${short(p.reason, 300)}` : ''}` } : {}) };
     const answer = await this.onPermission({ tool, input, kind: edit ? 'edit' : 'execute', always: true });
     if (answer === 'always') return { decision: 'acceptForSession' };
     if (answer === 'once') return { decision: 'accept' };
     return decline;
   }
+}
+
+// changePaths(fileChange item, cwd) -> the absolute paths it changes (a move's destination too; a relative one taken in
+// cwd), or null when one is not a path
+export function changePaths(it, cwd) {
+  const out = [];
+  for (const c of arr(it.changes).map(obj)) {
+    out.push(c.path);
+    const mv = obj(c.kind).move_path ?? obj(c.kind).movePath;
+    if (mv !== undefined && mv !== null) out.push(mv);
+  }
+  if (!out.length || out.length > 200 || !out.every((x) => typeof x === 'string' && x && x.length <= 4096 && !x.includes('\0'))) return null;
+  if (out.some((x) => !x.startsWith('/')) && (typeof cwd !== 'string' || !cwd.startsWith('/'))) return null;
+  return [...new Set(out.map((x) => (x.startsWith('/') ? x : path.posix.resolve(cwd, x))))];
 }
 
 // rateLimits(snapshot) -> [{label, usedPercent, resetsAt}]: Codex's plan limits as it reports them (5-hour, weekly …)

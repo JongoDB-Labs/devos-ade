@@ -18,7 +18,8 @@ All notable changes to bedrock-now are documented here. The format follows
 - **Who answers on the Code page.** The model picker switches a session to Claude on your plan, Codex, Copilot,
   Cursor or Grok (a new session in the project's folder, your conversation so far going with it), with the tool's own
   models: its answers, tool cards and diffs, its permission questions on the same cards, the modes (Read only and Plan
-  refuse its changes, Accept edits allows its edits), the watchlist, files, Git, Review, history in the list with a
+  refuse its changes, Accept edits allows its edits to plain files of the folder — never to `.git/`, `.github/`,
+  `.vscode/`, `.claude/`, `.mcp.json` or a tool's own settings, through a link, or outside it: those are asked), the watchlist, files, Git, Review, history in the list with a
   badge, and usage *on your plan* (tokens, the plan's own limits), no budget in dollars. In a project, once its own
   settings are trusted.
 - **Settings › Claude Code › Use my Claude plan in the Code page and Chat** (`CODE_CLAUDE_PLAN`, off by default):
