@@ -377,7 +377,8 @@ test_chat_csp_check_takes_each_directive_whole() {
   # (report-uri: paths of Chat's own origin only — a report carries what was refused)
   chat_csp_check "$w; report-uri /csp-report /x" "$o" "$h" || return 1
   for extra in "report-uri https://collect.example/r" "report-uri //collect.example/r" "report-uri /ok https://x.example/r" "report-uri" \
-               "report-uri http://$h/r" "report-uri data:,x"; do
+               "report-uri http://$h/r" "report-uri data:,x" 'report-uri /\evil.example/x' 'report-uri /ok\x' 'report-uri \\evil.example/x' \
+               "report-uri /" "report-uri /ok /\\x"; do
     assert_eq "$(chat_csp_check "$w; $extra" "$o" "$h")" "report-uri"
   done
   # (the e2e's copies decide the same)
@@ -388,8 +389,9 @@ src = open(sys.argv[1]).read(); tree = ast.parse(src)
 fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "csp_differs")
 ns = {}; exec(compile(ast.Module([fn], []), "x", "exec"), ns)
 w = sys.argv[2]
-print([ns["csp_differs"](w + "; " + e, w) for e in ("report-uri /csp-report", "report-uri https://collect.example/r", "report-uri //x/r", "report-to g")])' "$py" "$w")"
-    assert_eq "$r" "[[], ['report-uri'], ['report-uri'], []]"
+print([ns["csp_differs"](w + "; " + e, w) for e in ("report-uri /csp-report", "report-uri https://collect.example/r", "report-uri //x/r", "report-to g",
+  "report-uri /\\evil.example/x", "report-uri /ok\\x", "report-uri /")])' "$py" "$w")"
+    assert_eq "$r" "[[], ['report-uri'], ['report-uri'], [], ['report-uri'], ['report-uri'], ['report-uri']]"
   done
   assert_eq "$(chat_csp_check "$(printf '%s' "$w" | sed "s/; script-src [^;]*//")" "$o" "$h")" "script-src"
   assert_eq "$(chat_csp_check "frame-ancestors *" "$o" "$h")" "frame-ancestors"

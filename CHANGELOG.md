@@ -32,8 +32,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   that cannot be read or shown (binary, over 256 KiB, a link out, a FIFO), or a plugin tree past its bounds, made
   Claude Code's part unverifiable (as in v0.23.0). The plugin files are still in Claude Code's hash, but judged with the
   other tools' part, with bounds of their own: such a file now keeps agents from starting there, and only them.
-- **`./stack test` and the e2e's check of Chat's policy** accept a `report-uri` of Chat's own origin (a path), and
-  still refuse one that names another host; a `report-to` group, as before.
+- **`./stack test` and the e2e's check of Chat's policy** accept a `report-uri` of Chat's own origin (a path: `/` and
+  then neither `/` nor `\`, with no `\` anywhere), and still refuse one that names another host (`//host`, `/\host`,
+  which browsers read the same, or a scheme); a `report-to` group, as before.
 - **A project trusted in v0.23.0 that cannot be carried over** (its settings not shown whole today) no longer reads
   its settings a second time, with their texts, at every start there.
 
