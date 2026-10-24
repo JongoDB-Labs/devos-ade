@@ -4982,9 +4982,14 @@ export function gitConfigLines(text) {
 // core.hooksPath in /workspace, the last one first: which one git applies depends on includeIf conditions this does
 // not evaluate; and .git/hooks), .husky, the core.fsmonitor programs in /workspace (every distinct value), and
 // submodules (their config and hooks, listed last). truncated: something was left out (too many includes, values or
-// modules).
+// modules) — or the layout could not be read whole: a .git file whose gitdir is outside the folder or not one, a
+// commondir the same, a .git that is a link, a config git reads that is there but not a plain file this can read whole
+// (a link, too large), an include that names a file outside the folder. Then the page says not everything could be
+// checked (A.6), never a layout taken as harmless because part of it was not seen.
 function gitLayout(root = WS_ROOT) {
   const out = { gitdirs: [], configs: [], hookDirs: [], moduleConfigs: [], moduleHookDirs: [], fsmonitor: [], truncated: false };
+  // (there(rel): something is at that path — what a read that came back empty may have missed)
+  const there = (rel) => { const a = watchPath(rel, false, root); try { return !!a && !!fs.lstatSync(a); } catch { return false; } };
   const top = watchPath('.git', false, root);
   let st = null;
   try { st = top && fs.lstatSync(top); } catch { st = null; }
@@ -4992,12 +4997,13 @@ function gitLayout(root = WS_ROOT) {
   else if (st && st.isFile()) {
     const m = (readSmall('.git', 4096, root) || '').match(/^gitdir:\s*(.+)$/m);
     const g = m && gitPathRel(m[1], '.', root);
-    if (g) out.gitdirs.push(g);
-  }
+    if (g) out.gitdirs.push(g); else out.truncated = true;
+  } else if (st) out.truncated = true;
   for (const g of [...out.gitdirs]) {
     const common = readSmall(`${g}/commondir`, 4096, root);
     const c = common && gitPathRel(common.split('\n')[0], g, root);
     if (c && !out.gitdirs.includes(c)) out.gitdirs.push(c);
+    else if (!c && there(`${g}/commondir`)) out.truncated = true;
   }
   // the configs git reads for this worktree: the common one (or the gitdir's), then config.worktree; includes inline
   const seen = new Set();
@@ -5009,14 +5015,15 @@ function gitLayout(root = WS_ROOT) {
     seen.add(rel);
     (main ? out.configs : out.moduleConfigs).push(rel);
     const text = readSmall(rel, WATCH_MAX_FILE, root);
-    if (text === null) return;
+    if (text === null) { if (there(rel)) out.truncated = true; return; }
     for (const { section, key, value } of gitConfigLines(text)) {
       if (main && section === 'core' && key === 'hookspath' && value.trim() !== '') note(hooksPaths, value);
       if (main && section === 'core' && key === 'fsmonitor' && !isFlag(value)) note(fsmonitors, value);
       if (main && section === 'extensions' && key === 'worktreeconfig') worktreeConfig = /^(true|yes|on|1)$/i.test(value);
       if ((section === 'include' || section === 'includeif') && key === 'path') {
         const f = gitPathRel(value, path.dirname(rel), root);
-        if (!f || seen.has(f)) continue;
+        if (!f) { if (value.trim() !== '') out.truncated = true; continue; }
+        if (seen.has(f)) continue;
         if (depth >= 3 || includes >= WATCH_MAX_INCLUDES) { out.truncated = true; continue; }
         includes++;
         walk(f, depth + 1, main);

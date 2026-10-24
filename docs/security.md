@@ -2563,7 +2563,9 @@ run them, or change too often for a card to mean anything. The spawn server (`ws
 folders first, at most 256 entries and 64 files per hook folder, a SHA-256 of each (files over 8 MiB by size and
 time), a copy of each up to 1 MiB (2 MiB in all, which the code container enforces again), never through a link and
 never a path with a `.` or `..` part; when it leaves anything out (more includes, hook files, submodules or entries
-than these limits, or more than the 300 entries the code container takes) it says so, and the cards say that not
+than these limits, or more than the 300 entries the code container takes) — or cannot read the git layout whole: a
+`gitdir:` or `commondir` that leads outside the folder or to no folder, a `.git` that is a link, a config git reads
+that is there but a link or too large, an include that names a file outside the folder — it says so, and the cards say that not
 every file could be checked (once on its own, then on every card) — never a silent cut — when a turn starts (before
 its first prompt is sent, ≤ 5 s) and when it ends; the code container compares the two (and the end of the last turn
 with the start of the next: a background command, the terminal, you) and decides what changed and why it matters —

@@ -38,6 +38,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   other tools' part, with bounds of their own: such a file now keeps agents from starting there, and only them.
 - **`./stack test` and the e2e's check of Chat's policy** accept a `report-uri` of Chat's own origin (a path), and
   still refuse one that names another host; a `report-to` group, as before.
+- **The watchlist says when it cannot read a repository's git layout whole** — a `gitdir:` or `commondir` that leads
+  outside the folder, a `.git` that is a link, a config git reads that is a link or too large, an include outside the
+  folder — and the cards say that not every file could be checked, instead of taking what it saw as all there is.
 - **Chat's sweep stops everything first:** it used to freeze what it found one process at a time, so a process that
   forked fast enough could start one the sweep had not seen yet. Now every process in Chat's sandbox but bn-coded and
   the init is stopped at once, the sandbox sorted while nothing runs, what is not spared killed, and the rest let go

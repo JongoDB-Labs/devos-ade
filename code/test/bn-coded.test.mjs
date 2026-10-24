@@ -418,7 +418,8 @@ test('the watchlist follows git: core.hooksPath, include.path, core.fsmonitor in
     '.pre-commit-config.yaml', 'lefthook.yml', '.lintstagedrc.json', '.yarnrc.yml', '.npmrc', '.pnpmfile.cjs', 'proj.code-workspace',
     '.devcontainer/py/devcontainer.json', '.git/hooks/pre-push']) assert.ok(by[p], p);
   for (const p of ['Makefile', 'pyproject.toml', '.nvmrc', '.env', 'hooks-src/pre-push']) assert.equal(by[p], undefined, p);
-  assert.equal(r.truncated, undefined);
+  // (the includeIf of /etc/outside.cfg: a config git may read that this cannot — not read whole, said: A.6)
+  assert.equal(r.truncated, true);
   // the hook folders come first (what runs at every commit), the submodules last
   const order = r.files.map((f) => f.path);
   assert.ok(order.indexOf('.githooks/pre-commit') < order.indexOf('.git/config') && order.indexOf('.git/config') < order.indexOf('.git/modules/sub/hooks/post-checkout'), order.join(' '));
@@ -456,9 +457,24 @@ test('the watchlist follows git: core.hooksPath, include.path, core.fsmonitor in
   for (const p of ['other/.gitdir/info/attributes', 'other/.gitdir/commondir', 'other/.gitdir/rebase-merge/git-rebase-todo']) assert.ok(g2[p], p);
   assert.equal(g2['other/.gitdir/objects/ab/cdef'], undefined, 'git\'s objects are not watched');
   assert.ok(coded.isWatched('other/.gitdir/rebase-merge/git-rebase-todo'));
+  assert.equal(r.truncated, undefined, 'every part of it read');
   w('.git', 'gitdir: /somewhere/else\n');
   r = result(await talk(SOCK, [open({ op: 'ws.sensitive' })]));
   assert.equal(r.files.some((f) => f.path.startsWith('other/')), false, 'a gitdir outside: only the .git file itself');
+  assert.equal(r.truncated, true, 'a layout not read whole: said (A.6)');
+  // the same for a commondir outside, a config that is a link, an include outside the folder
+  w('.git', 'gitdir: other/.gitdir\n');
+  w('other/.gitdir/commondir', '/elsewhere\n');
+  assert.equal(result(await talk(SOCK, [open({ op: 'ws.sensitive' })])).truncated, true, 'a commondir outside');
+  fs.rmSync(path.join(WS, 'other/.gitdir/commondir'));
+  fs.renameSync(path.join(WS, 'other/.gitdir/config'), path.join(WS, 'other/.gitdir/config.real'));
+  fs.symlinkSync('config.real', path.join(WS, 'other/.gitdir/config'));
+  assert.equal(result(await talk(SOCK, [open({ op: 'ws.sensitive' })])).truncated, true, 'a config that is a link');
+  fs.rmSync(path.join(WS, 'other/.gitdir/config'));
+  w('other/.gitdir/config', '[include]\n\tpath = /etc/gitconfig.d/x\n');
+  assert.equal(result(await talk(SOCK, [open({ op: 'ws.sensitive' })])).truncated, true, 'an include outside the folder');
+  w('other/.gitdir/config', '[core]\n');
+  assert.equal(result(await talk(SOCK, [open({ op: 'ws.sensitive' })])).truncated, undefined, 'read whole again');
   void W2;
 });
 
