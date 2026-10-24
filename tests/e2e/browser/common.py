@@ -82,8 +82,10 @@ CHAT_CSP = ("frame-ancestors {origin}; img-src 'self' data: blob:; media-src 'se
 
 def csp_differs(served: str, wanted: str) -> list[str]:
     """The directives of the policy wanted that the one served lacks or gives other sources (the first of one given twice
-    counts, as for browsers); others may come with it: one added later does not break a check (lib/portal.sh
-    chat_csp_check: the same rule)."""
+    counts, as for browsers), and every other directive served that would widen it: one that widens one of them
+    (script-src-elem, worker-src, child-src …) or one with a source other than a keyword, data: or blob: (a host, *,
+    http:, https:). Another directive that only narrows it may come with it (sandbox, trusted-types, one added later
+    with keywords alone): that does not break a check (lib/portal.sh chat_csp_check: the same rule)."""
     def parse(p):
         out = {}
         for d in (p or "").split(";"):

@@ -40,7 +40,9 @@ results: dict = {"label": LABEL, "checks": [], "observed": {}}
 
 
 def csp_differs(served: str, wanted: str) -> list[str]:
-    """The directives of wanted that served lacks or gives other sources (tests/e2e/browser/common.py: the same)."""
+    """The directives of wanted that served lacks or gives other sources, and every other one served that would widen
+    it — a directive that widens one of them, or one with a host, *, http: or https: (tests/e2e/browser/common.py: the
+    same rule)."""
     def parse(p):
         out = {}
         for d in (p or "").split(";"):

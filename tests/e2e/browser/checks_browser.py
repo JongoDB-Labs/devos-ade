@@ -1155,15 +1155,32 @@ def chat_images(ctx):
             "site, nor a popup opened or the top page moved; artifacts open on a click")
 
 
+def _owui_chat(f, md: str, title: str) -> str:
+    """A conversation made through Open WebUI's own API (no model call): a question and MD as its answer; its id."""
+    import uuid
+    now = int(time.time())
+    uid, aid = str(uuid.uuid4()), str(uuid.uuid4())
+    # (no "models" on the question: an empty list would make it a question to several models, shown side by side)
+    msgs = {uid: {"id": uid, "parentId": None, "childrenIds": [aid], "role": "user", "content": "show me", "timestamp": now},
+            aid: {"id": aid, "parentId": uid, "childrenIds": [], "role": "assistant", "content": md, "model": "", "modelName": "",
+                  "done": True, "timestamp": now}}
+    chat = {"title": title, "models": [], "params": {}, "history": {"messages": msgs, "currentId": aid},
+            "messages": [msgs[uid], msgs[aid]], "tags": [], "timestamp": now * 1000}
+    r = owui_api(f, "/api/v1/chats/new", "POST", {"chat": chat})
+    expect(r["status"] == 200, f"new chat {r['status']} {r['body'][:200]}")
+    return json.loads(r["body"])["id"]
+
+
 @check("browser", "chat-own-page-under-policy")
 def chat_own_page(ctx):
     """Open WebUI's own page under Chat's policy (caddy/Caddyfile chat_csp: scripts, styles, workers and WebAssembly
-    from itself only): an answer with a highlighted code block, a Mermaid diagram, a Python block run by Open WebUI's
-    runner in the browser (Pyodide: WebAssembly in a worker) and an html block opened in the Artifacts panel by its
-    Preview button (detectArtifacts is off) — each works, with no CSP error of Open WebUI's own. No model call: the
-    conversation is made through Open WebUI's own API."""
+    from itself only): an answer with a highlighted code block, a Mermaid diagram and an html block opened in the
+    Artifacts panel by its Preview button (detectArtifacts is off) — each works, with no CSP error of Open WebUI's own;
+    and a sandboxed frame made as Open WebUI's Python runner makes its own loads Open WebUI's pyodide.js with no
+    violation (the policy allows it). The Python runner itself does not work in this stack yet — a known issue that
+    predates this release, to be fixed in v0.24.1: browser/chat-python-runner. No model call: the conversation is made
+    through Open WebUI's own API."""
     import secrets
-    import uuid
     need("open-webui")
     page, rec = ctx.page("chat-own-page")
     login(page)
@@ -1171,17 +1188,7 @@ def chat_own_page(ctx):
     tag = f"bnpolicy{secrets.token_hex(4)}"
     md = ("Here they are.\n\n```python\nprint(6 * 7)\n```\n\n```mermaid\ngraph TD\n  A[bnstart] --> B[bnend]\n```\n\n"
           f"```html\n<html><head></head><body><h1 id=\"bnart\">artifact {tag}</h1></body></html>\n```\n")
-    now = int(time.time())
-    uid, aid = str(uuid.uuid4()), str(uuid.uuid4())
-    # (no "models" on the question: an empty list would make it a question to several models, shown side by side)
-    msgs = {uid: {"id": uid, "parentId": None, "childrenIds": [aid], "role": "user", "content": "show me", "timestamp": now},
-            aid: {"id": aid, "parentId": uid, "childrenIds": [], "role": "assistant", "content": md, "model": "", "modelName": "",
-                  "done": True, "timestamp": now}}
-    chat = {"title": f"Policy {tag}", "models": [], "params": {}, "history": {"messages": msgs, "currentId": aid},
-            "messages": [msgs[uid], msgs[aid]], "tags": [], "timestamp": now * 1000}
-    r = owui_api(f, "/api/v1/chats/new", "POST", {"chat": chat})
-    expect(r["status"] == 200, f"new chat {r['status']} {r['body'][:200]}")
-    cid = json.loads(r["body"])["id"]
+    cid = _owui_chat(f, md, f"Policy {tag}")
     done = []
     try:
         start = len(rec.events)
@@ -1202,36 +1209,20 @@ def chat_own_page(ctx):
         step("the Mermaid diagram", lambda: f.wait_for_function(
             "() => [...document.querySelectorAll('svg')].some((s) => s.textContent.includes('bnstart') && s.textContent.includes('bnend'))", timeout=45000))
         done.append("Mermaid diagram")
-        # the Python runner (on unless the admin turned code execution off)
-        run = fl.locator("button.run-code-button", has_text="Run")
-        if run.count():
-            mark = len(rec.events)
-            run.first.click()
-            step("the Python runner's answer", lambda: f.wait_for_function(
-                "() => /(^|\\n)42(\\n|$)/.test(document.body.innerText) || document.body.innerText.includes('loadPyodide is not defined')", timeout=180000))
-            if "loadPyodide is not defined" not in f.evaluate("() => document.body.innerText"):
-                done.append("Python run in the browser (Pyodide): 42")
-            else:
-                # Open WebUI runs Pyodide in a sandboxed frame of its own (an opaque origin): its request for pyodide.js
-                # carries no session cookie, so the portal's check refuses it (401) — the stack's sign-in, not this
-                # policy. That the policy would let the frame load Open WebUI's own script: a frame made the same way
-                # loads one with no violation
-                no_cookie = [x for x in rec.problems(start=mark) if x.startswith("401 GET ") and "/pyodide/pyodide.js" in x]
-                expect(no_cookie, f"the Python runner failed otherwise: {rec.problems(start=mark)[:6]}")
-                v = f.evaluate("""() => new Promise((r) => {
-                    const x = document.createElement('iframe'); x.setAttribute('sandbox', 'allow-scripts'); x.style.display = 'none';
-                    const on = (e) => { if (e.source === x.contentWindow) { window.removeEventListener('message', on); x.remove(); r(e.data); } };
-                    window.addEventListener('message', on);
-                    x.srcdoc = '<!doctype html><html><head><script>const seen = [];'
-                      + "document.addEventListener('securitypolicyviolation', (e) => seen.push(e.effectiveDirective));<" + "/script>"
-                      + '<script src="' + location.origin + '/pyodide/pyodide.js"><' + '/script></head><body><script>'
-                      + "setTimeout(() => parent.postMessage(seen.join(',') || 'none', '*'), 1500);<" + "/script></body></html>";
-                    document.body.append(x); setTimeout(() => r('no answer'), 8000); })""")
-                expect(v == "none", f"Chat's policy refuses Open WebUI's own script in a sandboxed frame: {v!r}")
-                done.append("Python runner: its sandboxed frame gets no session cookie (401 for pyodide.js: the portal's sign-in, "
-                            "not this policy — a frame made the same way loads Open WebUI's own script with no violation)")
-        else:
-            done.append("Python runner: not offered (code execution off)")
+        # the Python runner's way of loading Pyodide (a sandboxed frame of its own, an opaque origin, loading
+        # Open WebUI's pyodide.js): the policy lets it — a frame made the same way loads the script with no violation
+        # (its answer is the portal's 401: such a frame carries no session cookie — chat-python-runner, a known issue)
+        v = f.evaluate("""() => new Promise((r) => {
+            const x = document.createElement('iframe'); x.setAttribute('sandbox', 'allow-scripts'); x.style.display = 'none';
+            const on = (e) => { if (e.source === x.contentWindow) { window.removeEventListener('message', on); x.remove(); r(e.data); } };
+            window.addEventListener('message', on);
+            x.srcdoc = '<!doctype html><html><head><script>const seen = [];'
+              + "document.addEventListener('securitypolicyviolation', (e) => seen.push(e.effectiveDirective));<" + "/script>"
+              + '<script src="' + location.origin + '/pyodide/pyodide.js"><' + '/script></head><body><script>'
+              + "setTimeout(() => parent.postMessage(seen.join(',') || 'none', '*'), 1500);<" + "/script></body></html>";
+            document.body.append(x); setTimeout(() => r('no answer'), 8000); })""")
+        expect(v == "none", f"Chat's policy refuses Open WebUI's own script in a sandboxed frame: {v!r}")
+        done.append("Pyodide's script allowed in a sandboxed frame")
         # the artifact: opened by its Preview, in the Artifacts panel's sandboxed frame, with Open WebUI's policy in it
         fl.locator("button.run-code-button", has_text="Preview").first.click()
         art = fl.frame_locator("iframe[title='Content']")
@@ -1249,14 +1240,60 @@ def chat_own_page(ctx):
             owui_api(f, f"/api/v1/chats/{cid}", "DELETE")
         except Exception:  # noqa: BLE001 — the frame went away: the conversation stays (a test one)
             pass
-    # (the Python runner's frame without the session cookie: above)
+    # (the frame made as the Python runner's, without the session cookie: above)
     # (and Open WebUI's Artifacts panel reaching into its own sandboxed frame — an opaque origin — on load: its own
     # error, whatever the policy)
-    probs = rec.problems(allow=[r"No token found in localStorage", r"^401 GET \S+/pyodide/pyodide\.js", r"loadPyodide is not defined",
+    probs = rec.problems(allow=[r"No token found in localStorage", r"^401 GET \S+/pyodide/pyodide\.js",
                                 r"Failed to read a named property 'addEventListener' from 'Window': Blocked a frame with origin"])
     rec.save()
     expect(not probs, f"errors: {probs}")
     return "; ".join(done) + " — no CSP error of Open WebUI's own"
+
+
+@check("browser", "chat-python-runner")
+def chat_python_runner(ctx):
+    """Open WebUI's Python runner: a Python block's Run prints 42. A KNOWN ISSUE (tests/e2e/known-issues.tsv: reported
+    as XFAIL): the runner does not work in this stack yet. Open WebUI runs Pyodide in a sandboxed frame of its own (an
+    opaque origin), whose request for pyodide.js carries no session cookie, so the portal's sign-in refuses it (401)
+    and the block shows "loadPyodide is not defined". This predates this release (Chat's policy is not the cause:
+    chat-own-page-under-policy loads the script in a frame made the same way with no violation) and is to be fixed in
+    v0.24.1. Fails while it does not print 42 — saying whether it failed that way or otherwise — so it never reads as
+    working; skips when the admin turned code execution off (no Run button). No model call."""
+    import secrets
+    need("open-webui")
+    page, rec = ctx.page("chat-python-runner")
+    login(page)
+    fl, f = chat_frame(page)
+    tag = f"bnpy{secrets.token_hex(4)}"
+    cid = _owui_chat(f, "Here it is.\n\n```python\nprint(6 * 7)\n```\n", f"Python {tag}")
+    try:
+        fl, f = chat_frame(page, f"c/{cid}")
+        f.wait_for_function("t => document.body.innerText.includes(t)", arg="Here it is.", timeout=30000)
+        run = fl.locator("button.run-code-button", has_text="Run")
+        if not run.count():
+            raise Skip("Python runner not offered (code execution off)")
+        mark = len(rec.events)
+        run.first.click()
+        try:
+            f.wait_for_function("() => /(^|\\n)42(\\n|$)/.test(document.body.innerText) || document.body.innerText.includes('loadPyodide is not defined')",
+                                timeout=180000)
+        except PwError:
+            pass
+        shot(page, "07d-chat-python-runner")
+        if re.search(r"(^|\n)42(\n|$)", f.evaluate("() => document.body.innerText")):
+            rec.save()
+            return "Python run in the browser (Pyodide): 42"
+        no_cookie = [x for x in rec.problems(start=mark) if x.startswith("401 GET ") and "/pyodide/pyodide.js" in x]
+        rec.save()
+        if no_cookie:
+            raise AssertionError("the Python runner does not work in this stack yet: its sandboxed frame's request for pyodide.js "
+                                 "carries no session cookie (401) — predates this release, to be fixed in v0.24.1")
+        raise AssertionError(f"the Python runner failed otherwise (not the known 401): {rec.problems(start=mark)[:6]}")
+    finally:
+        try:
+            owui_api(f, f"/api/v1/chats/{cid}", "DELETE")
+        except Exception:  # noqa: BLE001 — the frame went away: the conversation stays (a test one)
+            pass
 
 
 def _last_answer(f):
@@ -1839,9 +1876,10 @@ def same_site_guard(ctx):
     session cookie (same-site: SameSite=Strict sends it), each refused by Caddy before the app; a plain image from the
     portal passes (page loads too: every other check here runs with the guard on); an opaque origin (a sandboxed frame
     the page makes) is refused too. From the Chat page, Chat's own policy (caddy/Caddyfile chat_csp) stops the same
-    image, fetch and form post, and a style sheet, before anything goes out: it allows no load from another host, so
-    the 200 control is the image from the page above. Chromium reports no response for a fetch whose answer CORS
-    refuses, so the raw network events (CDP) are read."""
+    image, fetch and form post, and a style sheet from the portal, before anything goes out (a securitypolicyviolation
+    each, nothing sent): it allows no load from another host, so its 200 control is an image of Open WebUI's own
+    (same-origin). Chromium reports no response for a fetch whose answer CORS refuses, so the raw network events (CDP)
+    are read."""
     page, rec = ctx.page("same-site-guard")
     login(page)
     urls, sent, got = {}, {}, {}
@@ -1912,8 +1950,9 @@ def same_site_guard(ctx):
         expect(r is not None and r.status == 403 and "opaque origin" in refused, f"{what}: {r.status if r else 'not seen'} {refused!r}")
         seen[what] = r.status
     cdp.detach()
-    # From the Chat page: its own policy stops the image, the fetch and the form post before anything is sent (a
-    # securitypolicyviolation each, no request); a style sheet from the portal, which it allows, passes the guard
+    # From the Chat page: its own policy stops the image, the fetch, the form post and a style sheet from the portal
+    # before anything is sent (a securitypolicyviolation each, no request); the control, an image of Open WebUI's own
+    # (same-origin), loads (200)
     page.goto(origin("chat") + "/")
     page.wait_for_load_state("load")
     watch(page)
