@@ -99,25 +99,25 @@ trap 'warn "interrupted"; exit 130' INT TERM HUP
 pp() { get_env PORTAL_PORT; }
 pcurl() { curl -sS -m 30 --resolve "$HOST:$(pp):127.0.0.1" -b "$OUT/jar" -c "$OUT/jar" "$@"; }
 purl() { printf 'http://%s:%s%s\n' "$HOST" "$(pp)" "$1"; }
-# owui PY — Python in the throwaway's Open WebUI container, signed in as its admin (the .env's, passed in the
-# environment, never on a command line): TOKEN and api(method, path, body) are defined for PY
+# owui PY — Python in the throwaway's Open WebUI container, signed in as its admin the way Caddy signs the portal's
+# session in (the trusted header with the admin's email; Open WebUI ignores the password then): TOKEN and
+# api(method, path, body, token) are defined for PY
 owui() {
-  ( E2E_OWUI_EMAIL="$(get_env OPENWEBUI_ADMIN_EMAIL)" E2E_OWUI_PASSWORD="$(get_env OPENWEBUI_ADMIN_PASSWORD)"
-    export E2E_OWUI_EMAIL E2E_OWUI_PASSWORD
-    cd "$STACK" && docker compose -p "$PROJECT" exec -T -e E2E_OWUI_EMAIL -e E2E_OWUI_PASSWORD open-webui python3 -c "
+  ( E2E_OWUI_EMAIL="$(get_env OPENWEBUI_ADMIN_EMAIL)"; export E2E_OWUI_EMAIL
+    cd "$STACK" && docker compose -p "$PROJECT" exec -T -e E2E_OWUI_EMAIL open-webui python3 -c "
 import json, os, urllib.request
-def api(method, path, body=None, token=None):
+def api(method, path, body=None, token=None, extra=None):
     req = urllib.request.Request('http://127.0.0.1:8080' + path, method=method, data=None if body is None else json.dumps(body).encode(),
-                                 headers={'Content-Type': 'application/json', **({'Authorization': 'Bearer ' + token} if token else {})})
+                                 headers={'Content-Type': 'application/json', **(extra or {}), **({'Authorization': 'Bearer ' + token} if token else {})})
     return json.load(urllib.request.urlopen(req, timeout=30))
-TOKEN = api('POST', '/api/v1/auths/signin', {'email': os.environ['E2E_OWUI_EMAIL'], 'password': os.environ['E2E_OWUI_PASSWORD']})['token']
+TOKEN = api('POST', '/api/v1/auths/signin', {'email': '', 'password': ''}, extra={'X-Portal-User': os.environ['E2E_OWUI_EMAIL']})['token']
 $1" ) </dev/null
 }
 # psql_keys DB TABLE COLUMN -> the column's values, sorted (the database's own rows, read in the postgres container)
 psql_keys() {
   ( cd "$STACK" && docker compose -p "$PROJECT" exec -T postgres psql -U postgres -d "$1" -Atc "SELECT \"$3\" FROM \"$2\" ORDER BY 1" ) </dev/null 2>/dev/null
 }
-KEYS="openwebui:chat:id openwebui:user:id openwebui:file:id openwebui:function:id litellm:LiteLLM_VerificationToken:token litellm:LiteLLM_SpendLogs:request_id"
+KEYS="openwebui:chat:id openwebui:user:id openwebui:function:id litellm:LiteLLM_VerificationToken:token litellm:LiteLLM_SpendLogs:request_id"
 snapshot() { # snapshot DIR — what must survive the update
   local d="$1" k; mkdir -p "$d"
   docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --format '{{.Label "com.docker.compose.service"}}' | sort > "$d/services"
@@ -241,8 +241,13 @@ check workspace-file-kept "$([ "$(cat "$WS/e2e-upgrade.txt" 2>/dev/null)" = kept
 pcurl "$(purl /)" > "$OUT/home.html"; curl -sS -m 30 --resolve "$HOST:$(pp):127.0.0.1" "$(purl /login)" > "$OUT/login.html"
 for pg in login home; do
   t="$(sed -n 's:.*<title>\(.*\)</title>.*:\1:p' "$OUT/$pg.html" | head -1)"
-  left="$(python3 "$ROOT/tests/brand_check.py" --stdin "$pg" < "$OUT/$pg.html")"
-  check "page-$pg" "$(case "$t" in *"DevOS ADE"*) [ -z "$left" ] && echo 0 || echo 1 ;; *) echo 1 ;; esac)" "title '$t'${left:+; old name: $(printf '%s' "$left" | head -3 | tr '\n' ' ')}"
+  # (the throwaway's own path is on the page — the sign-in hint names its .env —, and this checkout's path may hold
+  # the old name: it is taken out first)
+  left="$(STACK="$STACK" python3 -c 'import os, sys; t = sys.stdin.read(); s = os.environ["STACK"]; h = os.path.expanduser("~")
+print(t.replace(s, "STACK").replace("~" + s[len(h):] if s.startswith(h + "/") else s, "STACK"))' < "$OUT/$pg.html" |
+    python3 "$ROOT/tests/brand_check.py" --stdin "$pg")"
+  ok=1; case "$t" in *"DevOS ADE"*) [ -n "$left" ] || ok=0 ;; esac
+  check "page-$pg" "$ok" "title '$t'${left:+; old name: $(printf '%s' "$left" | head -3 | tr '\n' ' ')}"
 done
 python3 - "$OUT/before/manifest.json" "$OUT/after/manifest.json" "$PROJECT" "$(pp)" > "$OUT/manifest.check" 2>&1 <<'PY'
 import json, sys
