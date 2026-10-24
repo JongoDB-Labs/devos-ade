@@ -70,6 +70,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   `ssh://`, `git://`, `file://`, `git+ssh://`, `ssh+git://`, exactly so, in lower case; `9x://` is another) in a
   remote's, a submodule's or a branch's remote URL (git runs `git-remote-<name>` for those), and a colour setting under
   a slot git does not document. The Code page's Git panel refuses those names in a URL you give it, as before.
+- **Accept edits asks for every edit while a git hook is a link** (since v0.24.0, every agent edit in such a
+  repository could go ahead): `.git/hooks/pre-commit -> ../../scripts/pre-commit.sh`, a common setup, left
+  `scripts/pre-commit.sh` a plain file an agent could change without asking — and git runs it at your next commit;
+  `.git/hooks -> ../githooks` the same for `githooks/*`. Now a link at or under any folder git runs hooks from — each
+  git folder's `hooks/` (a submodule's too, `modules/` at any depth, names with `/` included) and `core.hooksPath`
+  (`.husky/pre-commit -> …`), in any spelling a disk that folds names opens — and no edit there is plain; a hooks
+  folder that cannot be listed whole neither. `core.hooksPath` is plain only in printable ASCII. A hook that calls other
+  scripts of the repository (`npm test` …) is beyond this check, as with Claude Code's own Accept edits. The watchlist
+  says a hooks folder that is a link, or holds one, too.
 - **The watchlist says when it cannot read a repository's git layout whole** — a `gitdir:` or `commondir` that leads
   outside the folder, to no folder or through a link on its way, a `.git` or `modules/` that is a link, a config git
   reads that is a link, too large or not plainly written (as Accept edits reads one: no key on a section's line, no

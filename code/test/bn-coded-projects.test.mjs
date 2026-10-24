@@ -1223,6 +1223,105 @@ test('paths.plain: its 2 s bound holds — 200 paths under a folder of 50,000 en
     assert.ok(slow.plain.slice(k).every((x) => x === false) && slow.each.slice(k).every((x) => x === 'timeout'));
   } finally { fs.rmSync(B, { recursive: true, force: true }); }
 });
+test('paths.plain: a link at or under any folder git runs hooks from leaves nothing plain (hook-link) — real git runs what it points to', async () => {
+  const D = path.join(WS, 'hooklinks');
+  const put = (rel, text = 'x', mode = 0o644) => { fs.mkdirSync(path.dirname(path.join(D, rel)), { recursive: true }); fs.writeFileSync(path.join(D, rel), text, { mode }); };
+  fs.rmSync(D, { recursive: true, force: true });
+  fs.mkdirSync(D, { recursive: true });
+  git(D, 'init', '-q', '-b', 'main');
+  // (a hook git runs: it leaves a mark — the control that git on your computer would run it)
+  const MARK = path.join(D, 'ran');
+  const script = (rel) => put(rel, `#!/bin/sh\necho ${rel} >> ${JSON.stringify(MARK)}\n`, 0o755);
+  const commit = () => { fs.rmSync(MARK, { force: true }); try { execFileSync(GIT, ['-c', 'user.name=a', '-c', 'user.email=a@b.c', 'commit', '-q', '--allow-empty', '-m', 'x'], { cwd: D, env: PLAIN, stdio: 'ignore' }); } catch { /* a hook may fail */ } return fs.existsSync(MARK) ? fs.readFileSync(MARK, 'utf8').trim() : ''; };
+  const ask = async (p = 'scripts/pre-commit.sh') => call({ op: 'paths.plain', root: D, paths: [`${D}/${p}`, `${D}/src/a.js`] });
+  script('scripts/pre-commit.sh'); put('src/a.js');
+  let r = await ask();
+  assert.deepEqual([r.plain, r.why], [[true, true], undefined], 'no hook links: plain');
+  // .git/hooks/pre-commit -> ../../scripts/pre-commit.sh (a common setup): git runs the script; nothing is plain
+  fs.symlinkSync('../../scripts/pre-commit.sh', path.join(D, '.git/hooks/pre-commit'));
+  assert.equal(commit(), 'scripts/pre-commit.sh', 'control: git runs the linked script');
+  r = await ask();
+  assert.deepEqual([r.plain, r.why, r.detail], [[false, false], 'hook-link', '.git/hooks/pre-commit']);
+  fs.rmSync(path.join(D, '.git/hooks/pre-commit'));
+  // .git/hooks -> ../githooks: git runs githooks/*; nothing is plain
+  fs.renameSync(path.join(D, '.git/hooks'), path.join(D, 'hooks-was'));
+  script('githooks/pre-commit');
+  fs.symlinkSync('../githooks', path.join(D, '.git/hooks'));
+  assert.equal(commit(), 'githooks/pre-commit', 'control: git runs hooks of the linked folder');
+  r = await ask('githooks/pre-commit');
+  assert.deepEqual([r.plain, r.why], [[false, false], 'hook-link']);
+  fs.rmSync(path.join(D, '.git/hooks'));
+  fs.renameSync(path.join(D, 'hooks-was'), path.join(D, '.git/hooks'));
+  // a link deeper in a hooks folder: the same
+  fs.mkdirSync(path.join(D, '.git/hooks/lib'));
+  fs.symlinkSync('../../../scripts/pre-commit.sh', path.join(D, '.git/hooks/lib/common.sh'));
+  assert.deepEqual((await ask()).why, 'hook-link', 'a link in a folder of hooks/');
+  fs.rmSync(path.join(D, '.git/hooks/lib'), { recursive: true });
+  // core.hooksPath (.husky): a link in it, or the folder itself a link
+  git(D, 'config', 'core.hooksPath', '.husky');
+  fs.mkdirSync(path.join(D, '.husky'));
+  fs.symlinkSync('../scripts/pre-commit.sh', path.join(D, '.husky/pre-commit'));
+  assert.equal(commit(), 'scripts/pre-commit.sh', 'control: git runs the hooksPath link');
+  r = await ask();
+  assert.deepEqual([r.plain, r.why], [[false, false], 'hook-link']);
+  fs.rmSync(path.join(D, '.husky'), { recursive: true });
+  fs.symlinkSync('githooks', path.join(D, '.husky'));
+  assert.equal(commit(), 'githooks/pre-commit', 'control: a hooksPath that is a link');
+  assert.deepEqual((await ask('githooks/pre-commit')).why, 'hook-link');
+  fs.rmSync(path.join(D, '.husky'));
+  fs.mkdirSync(path.join(D, '.husky'));
+  script('.husky/pre-commit');
+  r = await ask();
+  assert.deepEqual([r.plain, r.why], [[true, true], undefined], 'a hooksPath of plain files: plain again (its own files guarded)');
+  // folded spellings — a disk that folds names opens .husky as .HUSKY, hooks as Hooks: as git there would
+  fs.rmSync(path.join(D, '.husky'), { recursive: true });
+  fs.mkdirSync(path.join(D, '.HUSKY'));
+  fs.symlinkSync('../scripts/pre-commit.sh', path.join(D, '.HUSKY/pre-commit'));
+  const folds = fs.existsSync(path.join(D, '.husky'));   // (this disk folds names: git would run it — the control)
+  if (folds) assert.equal(commit(), 'scripts/pre-commit.sh', 'control: git opens .husky as .HUSKY');
+  assert.deepEqual((await ask()).why, 'hook-link', '.HUSKY for .husky');
+  fs.rmSync(path.join(D, '.HUSKY'), { recursive: true });
+  git(D, 'config', '--unset', 'core.hooksPath');
+  fs.renameSync(path.join(D, '.git/hooks'), path.join(D, '.git/hooks-x'));
+  fs.renameSync(path.join(D, '.git/hooks-x'), path.join(D, '.git/Hooks'));
+  fs.symlinkSync('../../scripts/pre-commit.sh', path.join(D, '.git/Hooks/pre-commit'));
+  if (folds) assert.equal(commit(), 'scripts/pre-commit.sh', 'control: git opens hooks as Hooks');
+  assert.deepEqual((await ask()).why, 'hook-link', '.git/Hooks for .git/hooks');
+  fs.rmSync(path.join(D, '.git/Hooks/pre-commit'));
+  fs.renameSync(path.join(D, '.git/Hooks'), path.join(D, '.git/hooks-x'));
+  fs.renameSync(path.join(D, '.git/hooks-x'), path.join(D, '.git/hooks'));
+  // a submodule's hooks (modules/**/hooks)
+  put('.git/modules/libs/sub/HEAD', 'ref: refs/heads/main\n'); put('.git/modules/libs/sub/config', '[core]\n\tbare = false\n');
+  fs.mkdirSync(path.join(D, '.git/modules/libs/sub/hooks'));
+  fs.symlinkSync('../../../../../scripts/pre-commit.sh', path.join(D, '.git/modules/libs/sub/hooks/pre-commit'));
+  assert.deepEqual((await ask()).why, 'hook-link', 'a submodule\'s hook');
+  // (a submodule named with a slash — modules/libs/sub —: its config read too)
+  fs.rmSync(path.join(D, '.git/modules/libs/sub/hooks/pre-commit'));
+  assert.deepEqual((await ask()).plain, [true, true], 'its hooks plain files');
+  put('.git/modules/libs/sub/config', '[alias]\n\tx = !sh x\n');
+  assert.deepEqual((await ask()).why, 'git-config-key', 'libs/sub\'s config');
+  fs.rmSync(path.join(D, '.git/modules'), { recursive: true });
+  // fail-closed: a hooks folder that cannot be listed, or past its cap
+  fs.chmodSync(path.join(D, '.git/hooks'), 0o000);
+  try {
+    if (process.getuid?.() !== 0) assert.deepEqual((await ask()).why, 'git-unreadable', 'a hooks folder not listed');
+  } finally { fs.chmodSync(path.join(D, '.git/hooks'), 0o755); }
+  for (let i = 0; i <= coded.HOOK_ENTRIES_MAX; i++) fs.writeFileSync(path.join(D, `.git/hooks/h${i}.sample`), '');
+  assert.deepEqual((await ask()).why, 'git-unreadable', 'more entries than it reads');
+  for (let i = 0; i <= coded.HOOK_ENTRIES_MAX; i++) fs.rmSync(path.join(D, `.git/hooks/h${i}.sample`));
+  assert.deepEqual((await ask()).plain, [true, true], 'as it was');
+  // core.hooksPath in printable ASCII alone (a disk that folds names may open another folder by such a spelling)
+  for (const v of ['.hu​sky', 'hooks ', '.huſky']) {
+    fs.writeFileSync(path.join(D, '.git/config'), `[core]\n\tbare = false\n\thooksPath = ${v}\n`);
+    const x = await ask();
+    assert.deepEqual([x.why, x.detail], ['git-config-key', 'core.hookspath'], JSON.stringify(v));
+  }
+  fs.rmSync(D, { recursive: true, force: true });
+  // (every code bn-coded gives has the code container's own words)
+  const { PLAIN_SAID } = await import('../server/agents/session.mjs');
+  assert.deepEqual(Object.keys(PLAIN_SAID).sort(), [...coded.PLAIN_WHY].sort());
+});
+
 test('gitConfigStrict: only what it reads plainly, the way git does', () => {
   assert.deepEqual(coded.gitConfigStrict('[core]\r\n\tbare = false\r\n[remote "o"]\n\turl = "https://x"\n\tprune\n'),
     [{ section: 'core', sub: null, key: 'bare', value: 'false' }, { section: 'remote', sub: 'o', key: 'url', value: 'https://x' }, { section: 'remote', sub: 'o', key: 'prune', value: null }]);

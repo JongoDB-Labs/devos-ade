@@ -2767,6 +2767,8 @@ export const guardedName = (x) => { const f = fold(x); return EDIT_GUARDED_SET.h
 export const PLAIN_PATHS_MAX = 200;
 // a request's bounds: path parts (deeper: not plain), time (past it: the rest not plain), git's configs read
 export const PLAIN_DEPTH_MAX = 64, PLAIN_TIME_MS = 2000, GIT_CONFIGS_MAX = 64, GIT_CONFIG_BYTES = 64 << 10;
+// the folders git runs hooks from, read whole: at most this many entries in all, this many folders deep
+export const HOOK_ENTRIES_MAX = 512, HOOK_DEPTH_MAX = 4;
 
 // --- what git on your computer would run here, decided from the repository's own config: Accept edits approves an
 // --- edit only while that config is plainly harmless (gitPlainVerdict). Listing everything git runs code from does
@@ -2900,7 +2902,9 @@ function gitKeyWhy({ section, sub, key, value }) {
   // (a URL — or, for a branch, a remote's name or a URL — that runs no transport helper)
   if (['remote.*.url', 'remote.*.pushurl', 'submodule.*.url', 'branch.*.remote', 'branch.*.pushremote'].includes(name) && !gitUrlPlain(value)) return full;
   if (name === 'submodule.*.update' && !['checkout', 'rebase', 'merge', 'none'].includes(value ?? '')) return full;
-  if (name === 'core.hookspath') return plainRel(value) ? null : full;
+  // (core.hooksPath: a plain relative folder, in printable ASCII alone — a disk that folds names may open another folder
+  // by a spelling with a zero-width or other character)
+  if (name === 'core.hookspath') return plainRel(value) && !/[^\x20-\x7e]/.test(value) ? null : full;
   return null;
 }
 
@@ -2911,7 +2915,13 @@ function gitKeyWhy({ section, sub, key, value }) {
 //     workspace (and its commondir the same way); each such folder guarded whole
 //   - every config git reads for this checkout — the common one, the gitdir's, config.worktree, each submodule's
 //     (modules/**, at most GIT_CONFIGS_MAX) — read with gitConfigStrict, every key one of GIT_KEYS (core.hooksPath only
-//     as a plain relative path: its top folder guarded)
+//     as a plain relative path in printable ASCII: its top folder guarded)
+//   - every folder git runs hooks from — each git folder's hooks/ (the gitdir's, the common one's, every submodule's)
+//     and each core.hooksPath —, read whole: a link at or under any of them (pre-commit -> ../../scripts/x.sh, or the
+//     folder itself elsewhere) would put a file of the project behind a hook, plain to an agent: nothing is plain then
+//     (hook-link); a folder that cannot be listed, or past HOOK_ENTRIES_MAX or HOOK_DEPTH_MAX, neither. Names as a disk
+//     that folds them opens them (.git/Hooks is .git/hooks there; two that fold alike: neither is plain). A hook that
+//     calls the repository's scripts (npm test …) is beyond this check, as with Claude Code's own Accept edits.
 // Anything else — another key, a file that cannot be read whole, a link, more than the caps — and nothing is plain:
 // the why is said to the page. The Workspace itself: nothing is plain (no trust there); a folder of this computer with
 // no repository in it: nothing is plain either (a repository on your computer around it is not visible here).
@@ -2977,13 +2987,19 @@ export function gitPlainVerdict(root, look = folderLook()) {
     common = to;
   }
   const guarded = [...new Set([gitdir, common])];
+  // (the git folders whose hooks/ git runs: these two and every submodule's — modules below)
+  const gitDirs = [...guarded];
   // every config git reads for this checkout — and a stray one beside it, and every submodule's
   const configs = [path.join(common, 'config'), path.join(gitdir, 'config'), path.join(gitdir, 'config.worktree'), path.join(common, 'config.worktree')];
-  const modules = (dir, depth) => {
-    const m = path.join(dir, 'modules');
+  // (submodules: every git folder — a HEAD or a config in it — under modules/, a name with / being folders on the way
+  // — modules/libs/sub —, and its own modules/ below; GIT_CONFIGS_MAX configs, 8 folders deep, the folders looked into
+  // bounded: past any, nothing is plain)
+  let looked = 0;
+  const isGitDir = (d) => ['HEAD', 'config'].some((f) => { try { return fs.lstatSync(path.join(d, f)).isFile(); } catch { return false; } });
+  const modules = (m, depth) => {
     let st;
     try { st = fs.lstatSync(m); } catch { return true; }
-    if (st.isSymbolicLink() || !st.isDirectory() || depth > 8) return false;
+    if (st.isSymbolicLink() || !st.isDirectory() || depth > 8 || ++looked > GIT_CONFIGS_MAX * 8) return false;
     let names;
     try { names = fs.readdirSync(m); } catch { return false; }
     for (const n of names) {
@@ -2992,12 +3008,16 @@ export function gitPlainVerdict(root, look = folderLook()) {
       try { s = fs.lstatSync(sub); } catch { return false; }
       if (s.isSymbolicLink()) return false;
       if (!s.isDirectory()) continue;
-      configs.push(path.join(sub, 'config'));
-      if (configs.length > GIT_CONFIGS_MAX || !modules(sub, depth + 1)) return false;
+      if (isGitDir(sub)) {
+        configs.push(path.join(sub, 'config'));
+        gitDirs.push(sub);
+        if (configs.length > GIT_CONFIGS_MAX || !modules(path.join(sub, 'modules'), depth + 1)) return false;
+      } else if (!modules(sub, depth + 1)) return false;
     }
     return true;
   };
-  if (!modules(common, 0)) return deny('git-unreadable', 'modules');
+  if (!modules(path.join(common, 'modules'), 0)) return deny('git-unreadable', 'modules');
+  const hookPaths = [];
   for (const c of [...new Set(configs)]) {
     const text = small(c);
     if (text === null) return deny('git-unreadable', 'config');
@@ -3007,17 +3027,62 @@ export function gitPlainVerdict(root, look = folderLook()) {
       const why = gitKeyWhy(e);
       if (why) return deny('git-config-key', why);
       if (e.section === 'core' && e.key === 'hookspath') {
-        // (its folders as far as they are there: real ones, never a link)
-        let at = workTree;
-        for (const part of e.value.split('/')) {
-          at = path.join(at, part);
-          let st;
-          try { st = fs.lstatSync(at); } catch (x) { if (x.code === 'ENOENT') break; return deny('git-unreadable', 'core.hooksPath'); }
-          if (st.isSymbolicLink() || !st.isDirectory()) return deny('guarded-link', 'core.hooksPath');
-        }
+        hookPaths.push(e.value);
         guarded.push(path.join(workTree, e.value.split('/')[0]));
       }
     }
+  }
+  // the folders git runs hooks from: no link at or under any of them, each listed whole (hook-link)
+  // (child(dir, name): the entry of dir that is NAME as a disk that folds names opens it — '' none, null when it
+  // cannot be told: dir not listed, or two entries that fold alike)
+  const child = (dir, want) => {
+    const names = look.names(dir);
+    if (names === null) return null;
+    const hit = names.filter((n) => fold(n) === fold(want));
+    return hit.length > 1 ? null : hit[0] ?? '';
+  };
+  const relOf = (abs) => path.relative(workTree, abs) || '.';
+  let hookEntries = 0;
+  const hookTree = (abs, depth) => {
+    let st;
+    try { st = fs.lstatSync(abs); } catch { return deny('git-unreadable', relOf(abs)); }
+    if (st.isSymbolicLink()) return deny('hook-link', relOf(abs));
+    if (!st.isDirectory()) return null;   // (a file there: git runs no hook from it)
+    if (depth > HOOK_DEPTH_MAX) return deny('git-unreadable', relOf(abs));
+    let list;
+    try { list = fs.readdirSync(abs, { withFileTypes: true }); } catch { return deny('git-unreadable', relOf(abs)); }
+    for (const d of list) {
+      if (++hookEntries > HOOK_ENTRIES_MAX) return deny('git-unreadable', relOf(abs));
+      const p = path.join(abs, d.name);
+      if (d.isSymbolicLink()) return deny('hook-link', relOf(p));
+      if (d.isDirectory()) {
+        const r = hookTree(p, depth + 1);
+        if (r) return r;
+      }
+    }
+    return null;
+  };
+  for (const g of gitDirs) {
+    const h = child(g, 'hooks');
+    if (h === null) return deny('git-unreadable', relOf(path.join(g, 'hooks')));
+    const r = h ? hookTree(path.join(g, h), 0) : null;
+    if (r) return r;
+  }
+  for (const v of hookPaths) {
+    // (its folders as far as they are there: real ones, never a link; then what it holds)
+    let at = workTree, there = true;
+    for (const part of v.split('/')) {
+      const c = child(at, part);
+      if (c === null) return deny('git-unreadable', 'core.hooksPath');
+      if (c === '') { there = false; break; }
+      at = path.join(at, c);
+      let st;
+      try { st = fs.lstatSync(at); } catch { return deny('git-unreadable', 'core.hooksPath'); }
+      if (st.isSymbolicLink()) return deny('hook-link', 'core.hooksPath');
+      if (!st.isDirectory()) return deny('git-unreadable', 'core.hooksPath');
+    }
+    const r = there ? hookTree(at, 0) : null;
+    if (r) return r;
   }
   return { why: null, detail: null, guarded: guarded.map(fold), workTree };
 }
@@ -3042,10 +3107,10 @@ function folderLook() {
 
 // Why a path is not plain, as codes (the page says each in words of its own — what the repository named is said
 // apart, as the sandbox's): its git config may run programs, is not written plainly, or could not be read whole; a
-// git folder leads out of the workspace; a link named like a guarded entry; another repository (or what would become
-// one) on the path's way; the Workspace itself; a folder of this computer whose repository is not visible; a path too
-// deep; past the request's time
-export const PLAIN_WHY = Object.freeze(['git-config-key', 'git-config-syntax', 'git-unreadable', 'gitdir-outside', 'guarded-link', 'nested-repo',
+// git folder leads out of the workspace; a link named like a guarded entry; a link in a folder git runs hooks from;
+// another repository (or what would become one) on the path's way; the Workspace itself; a folder of this computer
+// whose repository is not visible; a path too deep; past the request's time
+export const PLAIN_WHY = Object.freeze(['git-config-key', 'git-config-syntax', 'git-unreadable', 'gitdir-outside', 'guarded-link', 'hook-link', 'nested-repo',
   'workspace', 'host-outer-repo', 'too-deep', 'timeout']);
 // paths.plain {root, paths} -> {plain: [bool], why?, detail?, each?: [code|null]}: whether each path an agent says its
 // change touches may be changed without asking (the page's Accept edits). Nothing is plain — why: a PLAIN_WHY code,
@@ -4999,7 +5064,8 @@ export function gitConfigLines(text) {
 // spaces —: their config and hooks, listed last). truncated: something was left out, and why (WATCH_WHY codes, which
 // the code container says in its own words): too many includes, values or submodules (many); a layout that could not
 // be read whole (layout: a .git that is a link, a gitdir or commondir outside the folder, not a folder, or reached
-// through a link on any part of its way, a modules/ that is a link, a hooksPath or fsmonitor reached through a link);
+// through a link on any part of its way, a modules/ that is a link, a hooksPath or fsmonitor reached through a link, a
+// hook folder that is a link or holds one);
 // a config git reads that is there but not a plain file this reads whole — a link, too large, or not in the plain
 // grammar Accept edits reads (gitConfigStrict: no key on a header's line, no continued line, no comment after a value,
 // at most WATCH_MAX_CONFIG_LINES lines) — what can be seen of it is still followed (config); an include that names a
@@ -5121,6 +5187,18 @@ function gitLayout(root = WS_ROOT) {
     }
   };
   for (const g of out.gitdirs) modules(`${g}/modules`, 1);
+  // a hook folder that is a link, or with a link in it: what it points to runs at a commit, and is not this list's to
+  // follow — said (layout), whatever of it is watched
+  for (const d of [...out.hookDirs, ...out.moduleHookDirs]) {
+    if (!watchRel(d)) continue;
+    let st;
+    try { st = fs.lstatSync(path.join(root.abs, d)); } catch { continue; }
+    if (st.isSymbolicLink()) { cut('layout'); continue; }
+    if (!st.isDirectory()) continue;
+    try {
+      if (fs.readdirSync(path.join(root.abs, d), { withFileTypes: true }).some((e) => e.isSymbolicLink())) cut('layout');
+    } catch { cut('layout'); }
+  }
   return out;
 }
 // what is watched at this moment: the hook folders (git's own first), single files (git's configs and fsmonitor

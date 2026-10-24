@@ -3365,11 +3365,20 @@ never reads, copies, keeps, passes on or relays a login.**
   `update` (checkout, rebase, merge or none), the object format, git-lfs's settings one by one (never `lfs.storage`, a
   folder it loads from, nor its custom transfers, extensions or standalone transfer agent, programs it runs) and its
   filter exactly as `git lfs install` writes it, and `core.hooksPath` only as a plain relative folder of the repository
-  (its top folder is then guarded) — each key by its exact name: one git adds later is not on the list. Anything else — an include, an fsmonitor, a filter, a
+  in printable ASCII (its top folder is then guarded; a zero-width or other character could name another folder on a
+  disk that folds names) — each key by its exact name: one git adds later is not on the list. Anything else — an include, an fsmonitor, a filter, a
   diff driver, an alias, an editor, a pager, `sshCommand`, a credential helper, `gpg.program`, `core.worktree` …, a
   config that cannot be read whole or plainly, a link on the way — and no path is plain: every edit asks, and the
   session says why once, in the page's own words (what the repository named — a key, a name — is shown apart, as the
-  sandbox's: a key cannot speak in the page's voice). The Workspace itself has no trust step, so there every edit asks; a folder of this computer
+  sandbox's: a key cannot speak in the page's voice). Nothing is plain either while a folder git runs hooks from —
+  each git folder's `hooks/` (the worktree's, the common one's, every submodule's under `modules/`, at any depth) and
+  each `core.hooksPath` — is a link or holds one anywhere in it (`.git/hooks/pre-commit -> ../../scripts/pre-commit.sh`,
+  `.git/hooks -> ../githooks`, `.husky/pre-commit -> ../scripts/x.sh`: git runs what they point to, a file of the project
+  an agent could otherwise change), named as a disk that folds names opens it (`.git/Hooks`, `.HUSKY`), or cannot be
+  listed whole (past 512 entries or 4 folders deep). A hook that *calls* other scripts of the repository (`npm test`, a
+  `make` target, a script it runs by name) is beyond this check — those scripts stay plain files, as with Claude Code's
+  own Accept edits: the watchlist shows a change to them only where it watches them (`package.json` when a hook runs
+  package scripts). The Workspace itself has no trust step, so there every edit asks; a folder of this computer
   with no repository in it here asks too (a repository around it on your computer is not visible in the sandbox;
   `./stack project` could note one when you add the folder — it does not yet). Then nothing is plain either while an
   entry named like a guarded one (below) is a link in the project's folder, the git root, a folder between them or a

@@ -527,6 +527,15 @@ test('the watchlist follows git: core.hooksPath, include.path, core.fsmonitor in
   for (let i = 0; i < 16; i++) { w(`other/.gitdir/modules/m${i}/HEAD`, 'x\n'); }
   assert.deepEqual(await why(), ['many'], 'more than 16 submodules');
   fs.rmSync(path.join(WS, 'other/.gitdir/modules'), { recursive: true });
+  // a hooks folder that is a link, or holds one: said (layout) — what it points to runs at a commit
+  fs.mkdirSync(path.join(WS, 'other/.gitdir/hooks'), { recursive: true });
+  fs.rmSync(path.join(WS, 'other/.gitdir/hooks/pre-commit'), { force: true });
+  fs.symlinkSync('../../../tools/fsmon.sh', path.join(WS, 'other/.gitdir/hooks/pre-commit'));
+  assert.deepEqual(await why(), ['layout'], 'a link in the hooks folder');
+  fs.rmSync(path.join(WS, 'other/.gitdir/hooks'), { recursive: true });
+  fs.symlinkSync('../../hooks-src', path.join(WS, 'other/.gitdir/hooks'));
+  assert.deepEqual(await why(), ['layout'], 'a hooks folder that is a link');
+  fs.rmSync(path.join(WS, 'other/.gitdir/hooks'));
   // (and a link among them)
   fs.mkdirSync(path.join(WS, 'other/.gitdir/modules'));
   fs.symlinkSync('../../../mods-elsewhere', path.join(WS, 'other/.gitdir/modules/s'));

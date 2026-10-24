@@ -31,6 +31,7 @@ export const PLAIN_SAID = Object.freeze({
   'git-unreadable': 'Accept edits asks for every edit here: a part of this repository\'s git folder could not be read whole.',
   'gitdir-outside': 'Accept edits asks for every edit here: this repository\'s git folder is outside the workspace, or reached through a link.',
   'guarded-link': 'Accept edits asks for every edit here: a link is named like git\'s or a tool\'s own folder.',
+  'hook-link': 'Accept edits asks for every edit here: a git hook, or a folder git runs hooks from, is a link — what it points to runs on your computer.',
   'nested-repo': 'Accept edits asks for an edit inside another git repository in this folder (or one that would become one).',
   workspace: 'Accept edits asks for every edit in the Workspace itself (it has no trust step): use a project for edits without asking.',
   'host-outer-repo': 'Accept edits asks for every edit here: a repository around this folder of your computer would not be visible to the page.',

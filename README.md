@@ -650,8 +650,10 @@ plan in the Code page and Chat** (off by default; turning it on works from the c
   only where the repository's git config is plainly harmless — written plainly, every key one that never names a
   program or a path git or git-lfs loads, by its exact name (an include, an fsmonitor, a filter, a hook command … is
   not; the git-lfs filter exactly as `git lfs install` writes it, and `core.hooksPath` as a relative folder of the
-  repository, which is then asked about like `.git/`, are); otherwise every edit asks, and the session says why,
-  quoting the key. A project of the workspace with no repository at all is approved too (git runs nothing there);
+  repository, which is then asked about like `.git/`, are) and no folder git runs hooks from is a link or holds one
+  (`.git/hooks/pre-commit -> ../../scripts/pre-commit.sh` would make that script a hook); otherwise every edit asks,
+  and the session says why, quoting the key. A hook that calls other scripts of the repository (`npm test` …) is beyond
+  this check, as with Claude Code's own Accept edits. A project of the workspace with no repository at all is approved too (git runs nothing there);
   never the Workspace itself, nor a folder of your computer with no repository visible (one around it could be). Where it does allow them, an edit to `.git/`, `.github/`,
   `.vscode/`, `.idea/`, `.zed/`, `.claude/`, `.mcp.json`, git's hooks or a commit hook's file, a tool's own settings,
   another repository inside the folder, through a link, or outside it is still asked. Manual asks — a tool's own

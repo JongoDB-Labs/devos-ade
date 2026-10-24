@@ -76,7 +76,7 @@ const B64 = /^[A-Za-z0-9+/]*={0,2}$/;
  *  a submodule it could not name (module). */
 export const INCOMPLETE_WHY = Object.freeze({
   many: 'too many git config includes, hook files or submodules',
-  layout: 'a git folder that is a link, outside this folder, or reached through a link',
+  layout: 'a git folder or a hook that is a link, outside this folder, or reached through a link',
   config: 'a git config file that is a link, too large, or not written plainly enough to read whole',
   include: 'a git config include of a file outside this folder',
   module: 'a submodule whose folder could not be read or named',
