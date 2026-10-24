@@ -441,7 +441,7 @@ test_help_and_dispatcher() {
 
 test_missing_images_skips_the_local_terminal_build() {
   # (its egress proxy's too: built here, never pulled — a pull of it would stop setup before the build)
-  dc() { printf 'caddy:2\nbedrock-now/terminal:local\nbedrock-now/terminal-egress:local\n'; }
+  dc() { printf 'caddy:2\nbedrock-now/terminal:local\nbedrock-now/terminal-egress:local\n'; }; compose_refs() { :; }   # (compose.yaml's own: test_phases.sh)
   docker() { return 1; }
   assert_eq "$(missing_images)" "caddy:2"
 }

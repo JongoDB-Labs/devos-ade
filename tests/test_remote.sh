@@ -297,7 +297,7 @@ test_local_site_unchanged_and_app_hosts_configurable() {
 }
 
 test_missing_images_skips_the_local_caddy_build() {
-  dc() { printf 'caddy:2\nbedrock-now/caddy-dns:local\n'; }
+  dc() { printf 'caddy:2\nbedrock-now/caddy-dns:local\n'; }; compose_refs() { :; }   # (compose.yaml's own: test_phases.sh)
   docker() { return 1; }
   assert_eq "$(missing_images)" "caddy:2"
 }
