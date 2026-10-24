@@ -1170,6 +1170,15 @@ test_chats_own_proxy_goes_before_every_up_that_no_longer_wants_it() {
   docker() { echo "docker $*" >> "$TMP/docker"; case "$*" in "ps -aq"*chat-egress) echo c0ffee ;; "rm -f c0ffee") echo rm >> "$TMP/order" ;; esac; return 0; }
   : > "$TMP/order"; terminal_setup_hook > /dev/null 2>&1 || true
   assert_eq "$(head -n 1 "$TMP/order")" "rm"
+  # ./stack up's hook: the terminal's folder missing, and the terminal off (a hand edit of .env) — gone all the same
+  mv "$ws" "$ws.away"
+  : > "$TMP/order"; terminal_up_hook > /dev/null 2>&1 || true
+  assert_eq "$(head -n 1 "$TMP/order")" "rm"
+  mv "$ws.away" "$ws"
+  set_env TERMINAL_ENABLED false
+  : > "$TMP/order"; terminal_up_hook > /dev/null 2>&1 || true
+  assert_eq "$(cat "$TMP/order")" "rm"
+  set_env TERMINAL_ENABLED true
   # ./stack terminal enable, its build failing (it stops there): gone before it
   : > "$TMP/order"; ( terminal_enable ) > /dev/null 2>&1 || true
   assert_eq "$(head -n 1 "$TMP/order")" "rm"

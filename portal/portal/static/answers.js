@@ -24,11 +24,12 @@
 
   // --- pure parts (portal/tests/js/answers.test.mjs runs these in Node) ---
 
-  // setupOf(DATA, REASON) -> {reason, target, says} of the answers' table (catalog/setup-links.tsv), or null
+  // setupOf(DATA, REASON) -> {reason, target, where, says} of the answers' table (catalog/setup-links.tsv), or null
+  // (where: "" when the table has none — a button is then named by its words alone)
   function setupOf(d, reason) {
     const s = d && d.setup && typeof d.setup === "object" && typeof reason === "string" && Object.hasOwn(d.setup, reason) ? d.setup[reason] : null;
     return s && typeof s.says === "string" && typeof s.target === "string" && /^(setting:([A-Z][A-Z0-9_]{1,60}|\+[a-z-]{2,20})|signin:(terminal|chat))$/.test(s.target)
-      ? { reason, target: s.target, says: s.says } : null;
+      ? { reason, target: s.target, where: typeof s.where === "string" ? s.where : "", says: s.says } : null;
   }
   // toolState(TOOL, TERMINAL_HERE, TERMINAL_REASON) -> {ok, word, why, reason}: whether the tool can open here, a short
   // state for its option, and why not with its reason (setup-links: where it is turned on)
@@ -119,7 +120,23 @@
     if (s.target === "signin:terminal" && okTool) return { open: okTool };
     return null;
   }
-  root.bnAnswers = { _pure: { toolState, terminalOptions, chatOptions, chatSrc, parseSaved, setupOf, setupPlace } };
+  // goLabelOf(DATA, VALUE) -> the words of the button beside a menu for a greyed item (setup:REASON:TOOL) or a sign-in
+  // for Chat (signin:TOOL): "Go to Settings", or "Open it to sign in" (the tool itself in the terminal); "" for any
+  // other choice. goNameOf(DATA, VALUE) -> that button's name for a screen reader: where it goes, from the table
+  // ("Go to Settings › Claude Code › Use my Claude plan"), "" when the table does not say (its words name it then)
+  function goLabelOf(d, v) {
+    const m = /^setup:([a-z][a-z-]{1,40}):([a-z]{0,10})$/.exec(v || "");
+    if (/^signin:[a-z]{2,10}$/.test(v || "")) return "Go to Settings";
+    if (!m) return "";
+    const where = setupPlace(setupOf(d, m[1]), m[2]);
+    return where && where.open ? "Open it to sign in" : "Go to Settings";
+  }
+  function goNameOf(d, v) {
+    const m = /^setup:([a-z][a-z-]{1,40}):/.exec(v || "");
+    const s = m ? setupOf(d, m[1]) : /^signin:[a-z]{2,10}$/.test(v || "") ? setupOf(d, "chat-signin") : null;
+    return s && s.where ? `${goLabelOf(d, v) === "Open it to sign in" ? "Open it to sign in:" : "Go to"} ${s.where}` : "";
+  }
+  root.bnAnswers = { _pure: { toolState, terminalOptions, chatOptions, chatSrc, parseSaved, setupOf, setupPlace, goLabelOf, goNameOf } };
   if (typeof document === "undefined" || typeof document.querySelector !== "function") return;
 
   const PHONE = window.matchMedia("(max-width: 767.98px)");
@@ -176,19 +193,9 @@
   // goSetup(VALUE) — a greyed item's button pressed (setup:REASON:TOOL): where it is turned on (Settings at that row;
   // Chat's sign-in row with its Sign in open; the tool itself in the terminal). -> whether it was one
   // goLabel(VALUE) -> the button's words for a greyed item (or a sign-in for Chat), "" for any other choice
-  // (and goName(VALUE): its name for a screen reader — where it goes, "Go to Settings › Claude Code › …")
-  function goLabel(v) {
-    const m = /^setup:([a-z][a-z-]{1,40}):([a-z]{0,10})$/.exec(v || "");
-    if (/^signin:[a-z]{2,10}$/.test(v || "")) return "Go to Settings";
-    if (!m) return "";
-    const where = setupPlace(setupOf(data, m[1]), m[2]);
-    return where && where.open ? "Open it to sign in" : "Go to Settings";
-  }
-  function goName(v) {
-    const m = /^setup:([a-z][a-z-]{1,40}):/.exec(v || "");
-    const s = m ? setupOf(data, m[1]) : /^signin:[a-z]{2,10}$/.test(v || "") ? setupOf(data, "chat-signin") : null;
-    return s && s.where ? `${goLabel(v) === "Open it to sign in" ? "Open it to sign in:" : "Go to"} ${s.where}` : "";
-  }
+  // (and goName(VALUE): its name for a screen reader — where it goes, "Go to Settings › Claude Code › …": goNameOf)
+  const goLabel = (v) => goLabelOf(data, v);
+  const goName = (v) => goNameOf(data, v);
   function goSetup(v) {
     const m = /^setup:([a-z][a-z-]{1,40}):([a-z]{0,10})$/.exec(v || "");
     if (!m) return false;
@@ -347,7 +354,7 @@
     if (current !== tab) return;
     if (tab === "terminal") {
       fill(tSelect, terminalOptions(d), tLast);
-      tOpen.textContent = goLabel(tSelect.value) || "Open";
+      tLabel();   // (its words and its name: a greyed item's "Go to …", else Open — never one left from before)
     } else {
       fill(cSelect, chatOptions(d), saved.chat);
       goHide();

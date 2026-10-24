@@ -667,21 +667,27 @@ assert c["depends_on"]["terminal"]["condition"] == "service_healthy"' || return 
   # Chat's sandbox with the other ways out: host egress — a proxy of its own, the terminal on its direct way still; no
   # egress — no network at all; and with no overlay, its own alone. (Chat's proxy is the terminal's, as rendered —
   # the whole service but its networks: the same image, user, limits, capabilities, environment, logging …)
-  # (lists of names of their own in .env, so that a list written into either file — an empty one too — differs)
-  set_env TERMINAL_EGRESS_ALLOW allow-sentinel.invalid,github.com; set_env TERMINAL_EGRESS_DENY deny-sentinel.invalid
-  dc config --format json 2>/dev/null > "$TMP/render-internet.json" || return 1
-  set_env TERMINAL_EGRESS host
-  dc config --format json 2>/dev/null > "$TMP/render-host.json" || return 1
-  python3 - "$TMP/render-internet.json" "$TMP/render-host.json" <<'PY' || { echo "chat-egress is not terminal-egress but its networks" >&2; return 1; }
+  # (twice: with blank lists, as most .env files have them, and with lists of names of their own — so that a list
+  # written into either file, an empty one too, differs)
+  local allow deny lists
+  for lists in blank sentinel; do
+    allow=''; deny=''
+    [ "$lists" = blank ] || { allow=allow-sentinel.invalid,github.com; deny=deny-sentinel.invalid; }
+    set_env TERMINAL_EGRESS internet; set_env TERMINAL_EGRESS_ALLOW "$allow"; set_env TERMINAL_EGRESS_DENY "$deny"
+    dc config --format json 2>/dev/null > "$TMP/render-internet.json" || return 1
+    set_env TERMINAL_EGRESS host
+    dc config --format json 2>/dev/null > "$TMP/render-host.json" || return 1
+    python3 - "$TMP/render-internet.json" "$TMP/render-host.json" "$allow" "$deny" <<'PY' || { echo "chat-egress is not terminal-egress but its networks ($lists lists)" >&2; return 1; }
 import json, sys
 t = json.load(open(sys.argv[1]))["services"]["terminal-egress"]
 c = json.load(open(sys.argv[2]))["services"]["chat-egress"]
 for x in (t, c):
     x.pop("networks")
-    assert x["environment"]["TERMINAL_EGRESS_ALLOW"] == "allow-sentinel.invalid,github.com", x["environment"]
-    assert x["environment"]["TERMINAL_EGRESS_DENY"] == "deny-sentinel.invalid", x["environment"]
+    assert x["environment"]["TERMINAL_EGRESS_ALLOW"] == sys.argv[3], x["environment"]
+    assert x["environment"]["TERMINAL_EGRESS_DENY"] == sys.argv[4], x["environment"]
 assert c == t, json.dumps({k: (t.get(k), c.get(k)) for k in set(t) | set(c) if t.get(k) != c.get(k)})
 PY
+  done
   set_env TERMINAL_EGRESS_ALLOW ''; set_env TERMINAL_EGRESS_DENY ''
   python3 -c '
 import json, sys
@@ -987,6 +993,13 @@ test_code_setup_hook_removes_chats_own_proxy_before_its_ups() {
   set_env TERMINAL_EGRESS host; : > "$TMP/order"; : > "$TMP/docker"
   code_setup_hook > /dev/null 2>&1 || true
   assert_not_contains "$(cat "$TMP/docker")" "chat-egress"
+  # ./stack code enable (the terminal on already, its spawn server not answering: the terminal again first) — gone right
+  # after the switch, before any build or up
+  dc() { echo "dc $*" >> "$TMP/dc"; case "$*" in *build*|up*|*" up "*) echo up >> "$TMP/order"; return 1 ;; exec*) return 1 ;; esac; return 0; }
+  set_env TERMINAL_EGRESS internet; : > "$TMP/order"
+  ( code_enable ) > /dev/null 2>&1 || true
+  assert_eq "$(head -n 1 "$TMP/order")" "rm"
+  assert_contains "$(cat "$TMP/order")" "up"
   # Chat's sandbox brought up on its own (code enable: _subs_chat_up) — not host: gone before its up, which fails here
   dc() { echo "dc $*" >> "$TMP/dc"; case "$*" in *build*|up*|*" up "*) echo up >> "$TMP/order"; return 1 ;; esac; return 0; }
   set_env TERMINAL_EGRESS internet; : > "$TMP/order"

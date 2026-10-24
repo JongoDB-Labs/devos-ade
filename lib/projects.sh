@@ -551,6 +551,7 @@ projects_restart() {
     [ "$own" = 0 ] || stack_lock project
   fi
   log "restarting the sandbox: the terminal's shells, every Code page session's Claude Code (each resumes with its next prompt), dev servers, Run & test runs and /tmp end; its home, the workspace and every folder stay"
+  ! declare -F chat_proxy_leave >/dev/null || chat_proxy_leave   # (Chat's own proxy, not its way out: gone before the up)
   dc up -d --no-deps --wait terminal > "$(projects_dir)/last-restart.log" 2>&1
 }
 
@@ -595,6 +596,7 @@ _projects_change() {
     warn "the sandbox did not start with $what — the list is as it was before; its last messages:"
     tail -n 12 "$(projects_dir)/last-restart.log" 2>/dev/null | sed 's/^/    /' >&2 || true
     projects_write "$old"; projects_sync >/dev/null 2>&1 || true
+    ! declare -F chat_proxy_leave >/dev/null || chat_proxy_leave
     dc up -d --no-deps --wait terminal >/dev/null 2>&1 || warn "the sandbox did not come back either — ./stack up"
     projects_sync >/dev/null 2>&1 || true
     case "$(uname -s)" in

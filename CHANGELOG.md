@@ -81,7 +81,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   rules, public addresses only, never this computer's services or your network (`compose.code-egress.yaml`; `./stack
   test` checks it) — and the terminal's own way out is not changed. With no internet (`off`) they are greyed, saying
   why. Leaving the direct way removes Chat's proxy before anything starts again (`./stack up`, the terminal's and the
-  Code page's setup and update, `./stack restore`), even when that start fails.
+  Code page's setup, update and enable, `./stack project apply` and `add`, `./stack restore`), even when that start
+  fails.
 
 ### Changed
 

@@ -70,6 +70,7 @@ _stub_up() {
   # config next to it (tested with a folder of their own in test_price_updates.sh, test_stt.sh, test_openrouter.sh)
   config_prices_line() { echo p; }; stt_up_hook() { return 1; }; reprice_litellm_config() { return 1; }
   openrouter_up_hook() { :; }
+  chat_proxy_rm() { :; }   # (lib/terminal.sh: tested in test_terminal.sh)
 }
 
 test_up_rewrites_portal_origin() {

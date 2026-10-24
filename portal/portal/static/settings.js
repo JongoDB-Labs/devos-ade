@@ -575,10 +575,11 @@
     b.addEventListener("click", () => copy(cmd.replace(/\s+\(.*\)$/, ""), "the command"));
     return b;
   }
-  function cliLine(k, lead) {
+  // (NAME: its Copy button's name, where the row has another Copy — copyButton)
+  function cliLine(k, lead, name) {
     const cmd = k.cli || `./stack config set ${k.key}`;
     return el("p", { class: "set-cli" }, el("span", { class: "note", text: lead || (editable(k) ? "In a terminal: " : "Change it in a terminal: ") }),
-      el("code", { text: cmd }), " ", copyButton(cmd));
+      el("code", { text: cmd }), " ", copyButton(cmd, name));
   }
 
   // the badges next to a setting's name: from where it may change, that it is secret or read-only, what it restarts
@@ -1441,7 +1442,9 @@
           plan.append(el("span", { class: "set-project-actions" }, toggle(pk, shown(pk), "set-name-CODE_CLAUDE_PLAN")));
         } else plan.append(" ", el("span", { class: "badge", text: display(pk) || "Off" }));
         // (from your devices, or with changes off here: the way in a terminal on the computer running bedrock-now)
-        if (codeOn() && (data.here.remote || !canChange() || !editable(pk))) plan.append(cliLine(pk, "On the computer running bedrock-now, in a terminal: "));
+        if (codeOn() && (data.here.remote || !canChange() || !editable(pk))) {
+          plan.append(cliLine(pk, "On the computer running bedrock-now, in a terminal: ", "Copy the command for Use my Claude plan in the Code page and Chat"));
+        }
         plan.append(el("p", { class: "note", id: "set-sum-CODE_CLAUDE_PLAN", text: "Off by default: Anthropic's support article and its legal page pull apart on apps like this one — your choice (Details)." }),
           el("details", { class: "set-details" }, el("summary", {}, "Details"), el("p", { class: "note", text: pk.note || "" })));
         li.append(plan);
@@ -1462,7 +1465,7 @@
           : el("p", { class: "note set-extra", text: "This update helper does not offer them yet: ./stack helper install refreshes it." }));
     }
     rw._main.append(el("p", { class: "set-cli" }, el("span", { class: "note", text: "In a terminal on this computer: " }), el("code", { text: "./stack subscriptions" }), " ",
-      copyButton("./stack subscriptions")));
+      copyButton("./stack subscriptions", "Copy the command ./stack subscriptions")));
     // (from Chat's picker: "Sign in for Chat…" — that tool's Chat row, its Sign in pressed: the command shown; goTo
     // then focuses it, the row highlighted)
     const want = chatAsk.shown();

@@ -153,6 +153,7 @@ code_enable() {
   code_secrets rotate
   # On from here: every compose call below (the terminal's too) includes compose.code.yaml once the terminal is on.
   set_env CODE_ENABLED true
+  ! declare -F chat_proxy_leave >/dev/null || chat_proxy_leave   # (Chat's own proxy, not its way out: gone before any up)
   code_remote_sync
   if ! terminal_ready || [ ${#targs[@]} -gt 0 ]; then
     log "the Code page runs Claude Code in the browser terminal's sandbox: turning the terminal on first ($(code_workspace))"

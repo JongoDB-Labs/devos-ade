@@ -13,6 +13,8 @@ import os
 import re
 import socket
 
+from playwright.sync_api import expect as see
+
 from common import ENV, HOST, PORT, TARGET_IP, Skip, check, expect, http
 from checks_browser import login, shot
 from checks_terminal import TERM, LOCKED_OK, terminal_frame, unlock_cookie, unlock_in, wait_text, wait_xterm
@@ -180,13 +182,19 @@ def chat_embed(ctx):
     page.click("#answers-chat-go")
     page.locator("#set-subs-chat-codex .set-cli").wait_for(state="visible", timeout=15000)
     page.wait_for_function("() => document.activeElement && document.activeElement.matches('#set-subs-chat-codex [data-act=subscriptions-chat-signin]')", timeout=10000)
-    # the greyed Claude-plan item: Settings, at the switch on Claude's row of Your AI subscriptions, focused
+    # the greyed Claude-plan item: Settings, at the switch on Claude's row of Your AI subscriptions, focused — or, with no
+    # switch to press there (no update helper: its words say so), that block itself; never Chat's sign-in left from above
     page.click(".tab[data-tab=chat]")
     page.locator("#answers-chat").wait_for(timeout=15000)
     page.wait_for_function("() => [...document.querySelectorAll('#answers-chat option')].some((o) => o.value === 'setup:claude-plan-off:claude')", timeout=20000)
     page.select_option("#answers-chat", "setup:claude-plan-off:claude")
     page.click("#answers-chat-go")
-    page.wait_for_function("() => document.activeElement && document.activeElement.closest('[data-for=CODE_CLAUDE_PLAN]') && document.activeElement.getAttribute('role') === 'switch'", timeout=15000)
+    page.wait_for_function("""() => {
+      const a = document.activeElement, b = document.querySelector('[data-for=CODE_CLAUDE_PLAN]');
+      if (!a || !b) return false;
+      const sw = b.querySelector('button[role=switch]:not(:disabled)');
+      return sw ? a === sw : a === b;
+    }""", timeout=15000)
     expect(page.evaluate("location.hash") == "#settings/CODE_CLAUDE_PLAN", "not Settings' address for it")
     page.click(".tab[data-tab=chat]")
     page.locator("#answers-chat").wait_for(timeout=15000)
@@ -270,7 +278,6 @@ def code_harness(ctx):
     if ENV.get("CODE_ENABLED") != "true":
         raise Skip("the Code page is off in this throwaway")
     from checks_code import Code, ui_page
-    from playwright.sync_api import expect as see
     c = Code(ctx, "subscriptions-code-harness")
     r = c.api("GET", "/api/harnesses?fresh=1")
     expect(r["status"] == 200, f"/api/harnesses: {r}")

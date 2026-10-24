@@ -757,3 +757,35 @@ test_a_probe_into_the_sandbox_that_never_answers_is_not_a_pass() {
   assert_contains "$out" "(got «couldn't check (timed out after 1 s)», want there writable)"
   assert_contains "$out" "FAIL  the sandbox's project folders are the ones listed (BN_CODE_ROOTS) (got «couldn't check (timed out after 1 s)"
 }
+
+test_chats_own_proxy_goes_before_the_sandbox_restarts_for_its_folders() {
+  DC_RUNNING=1; _stubs
+  terminal_ready() { return 0; }
+  local a b; a="$(_dir app)"; b="$(_dir other)"
+  # (Chat's own proxy left from host egress: TERMINAL_EGRESS is internet now — the order of its removal and the ups)
+  : > "$TMP/order"
+  docker() { echo "docker $*" >> "$TMP/docker"; case "$*" in "ps -aq"*chat-egress) echo c0ffee ;; "rm -f c0ffee") echo rm >> "$TMP/order" ;; esac; return 0; }
+  dc() {
+    echo "dc $*" >> "$TMP/dc"
+    case "$*" in
+      "ps -q --status running "*) echo abc123 ;;
+      "up -d --no-deps --wait terminal") echo up >> "$TMP/order"; [ -z "$DC_FAIL_UP" ] || return 1 ;;
+    esac
+    return 0
+  }
+  # ./stack project add … --now
+  project_add "$a" --now 2>/dev/null || return 1
+  assert_eq "$(tr '\n' ' ' < "$TMP/order")" "rm up "
+  # ./stack project apply
+  : > "$TMP/order"; projects_apply > /dev/null 2>&1 || return 1
+  assert_eq "$(tr '\n' ' ' < "$TMP/order")" "rm up "
+  # a widening add that fails: the old list back, and the proxy gone before that up too
+  : > "$TMP/order"; DC_FAIL_UP=1
+  ( project_add "$b" --now ) > /dev/null 2>&1 && return 1
+  assert_eq "$(tr '\n' ' ' < "$TMP/order")" "rm up rm up "
+  DC_FAIL_UP=''
+  # host with the Code page on: it stays (Chat's way out)
+  set_env TERMINAL_EGRESS host; : > "$TMP/order"
+  projects_apply > /dev/null 2>&1 || return 1
+  assert_eq "$(tr '\n' ' ' < "$TMP/order")" "up "
+}

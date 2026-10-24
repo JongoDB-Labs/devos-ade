@@ -496,11 +496,10 @@ terminal_why_out() {
 terminal_up_hook() {
   local why
   terminal_remote_sync
-  terminal_on || return 0
-  # (no longer host, or the Code page off: Chat's own proxy goes first — its folder missing too: Chat's sandbox never
-  # keeps a way out it no longer has, whether or not what comes up after does. With the terminal off nothing of Chat's
-  # comes up: ./stack terminal disable removed it)
+  # (no longer host, or the Code page off — the terminal off or its folder missing too: Chat's own proxy goes first.
+  # Chat's sandbox never keeps a way out it no longer has, whether or not what comes up after does)
   chat_proxy_leave
+  terminal_on || return 0
   terminal_flag_warnings
   terminal_secrets
   # TERMINAL_EGRESS no longer internet: its egress proxy goes before compose would find it an orphan

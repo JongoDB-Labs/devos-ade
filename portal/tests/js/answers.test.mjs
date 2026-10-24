@@ -84,8 +84,8 @@ const SETUP = fs.existsSync(TSV) ? parse(fs.readFileSync(TSV, "utf8")) : {
   "tool-left-out": { target: "setting:TERMINAL_AI_TOOLS", where: "Settings", says: "Not in the sandbox: Settings › Claude Code › Tools in the sandbox puts it in." },
   "code-off": { target: "setting:CODE_ENABLED", where: "Settings", says: "Needs the Code page: Settings › Claude Code › Code page turns it on." },
   "chat-egress-off": { target: "setting:TERMINAL_EGRESS", where: "Settings", says: "Off while the sandbox has no internet: Settings › Claude Code › Sandbox internet access." },
-  "claude-plan-off": { target: "setting:CODE_CLAUDE_PLAN", where: "Settings", says: "Off: Settings › Claude Code › Your AI subscriptions › Use my Claude plan in the Code page and Chat." },
-  "chat-signin": { target: "signin:chat", where: "Settings", says: "Sign in for Chat: Settings › Claude Code › Your AI subscriptions shows how." },
+  "claude-plan-off": { target: "setting:CODE_CLAUDE_PLAN", where: "Settings › Claude Code › Your AI subscriptions › Use my Claude plan", says: "Off: Settings › Claude Code › Your AI subscriptions › Use my Claude plan in the Code page and Chat." },
+  "chat-signin": { target: "signin:chat", where: "Settings › Claude Code › Your AI subscriptions › Chat", says: "Sign in for Chat: Settings › Claude Code › Your AI subscriptions shows how." },
   "openrouter-off": { target: "setting:OPENROUTER_API_KEY", where: "Settings", says: "OpenRouter's models need your OpenRouter key: Settings › Chat & voice › OpenRouter API key." },
 };
 
@@ -234,4 +234,54 @@ test("Your AI subscriptions: each tool's Sign out, Check again and Copy has a na
   assert.equal([...row.matchAll(/checkButton\("subscriptions-check(-chat)?",/g)].length, 2);
   assert.equal([...row.matchAll(/text: "Sign out", "data-act": "subscriptions-signout(-chat)?",\s*"aria-label": `Sign out: \$\{t\.name\}/g)].length, 2);
   assert.match(js, /function copyButton\(cmd, name\) \{[\s\S]*?if \(name\) b\.setAttribute\("aria-label", name\);/);
+  // (and the row's other two Copy buttons: the Claude plan's command, ./stack subscriptions — none bare)
+  assert.match(row, /cliLine\(pk, "On the computer running bedrock-now, in a terminal: ", "Copy the command for Use my Claude plan in the Code page and Chat"\)/);
+  assert.match(row, /copyButton\("\.\/stack subscriptions", "Copy the command \.\/stack subscriptions"\)/);
+  assert.equal([...row.matchAll(/copyButton\(([^)]*)\)/g)].filter((m) => !m[1].includes(",")).length, 0, "a Copy without a name");
+  assert.match(js, /function cliLine\(k, lead, name\) \{[\s\S]*?copyButton\(cmd, name\)\);/);
+});
+
+test("the button beside a menu is named for where it goes — Go to Settings › …; Open, with no name of its own, otherwise", () => {
+  const d = { ...data, setup: SETUP };
+  assert.equal(A.setupOf(d, "claude-plan-off").where, SETUP["claude-plan-off"].where);
+  assert.equal(A.goLabelOf(d, "setup:claude-plan-off:claude"), "Go to Settings");
+  assert.equal(A.goNameOf(d, "setup:claude-plan-off:claude"), "Go to Settings › Claude Code › Your AI subscriptions › Use my Claude plan");
+  assert.equal(A.goNameOf(d, "signin:codex"), "Go to Settings › Claude Code › Your AI subscriptions › Chat");
+  for (const r of Object.keys(SETUP)) {
+    const v = `setup:${r}:codex`, label = A.goLabelOf(d, v), name = A.goNameOf(d, v);
+    assert.ok(label === "Go to Settings" || label === "Open it to sign in", `${r}: ${label}`);
+    assert.equal(name, `${label === "Go to Settings" ? "Go to" : "Open it to sign in:"} ${SETUP[r].where}`, r);
+    assert.ok(SETUP[r].where.startsWith("Settings ›") || label === "Open it to sign in", `${r}: ${SETUP[r].where}`);
+  }
+  // (any other choice: its own words, no name; a table without where: the words name it)
+  for (const v of ["bedrock", "codex", "model:x", "tool:grok", "owui", "", "setup:nope:codex"]) assert.equal(A.goNameOf(d, v), "", v);
+  assert.equal(A.goLabelOf(d, "model:x"), "");
+  assert.equal(A.goNameOf({ setup: { "claude-plan-off": { target: "setting:CODE_CLAUDE_PLAN", says: "s" } } }, "setup:claude-plan-off:claude"), "");
+});
+
+test("the Terminal's button: its words and its accessible name follow the choice — and the tab shown again sets both", () => {
+  const js = source("answers.js");
+  const body = js.split("const tLabel = () => {")[1].split("\n  };")[0];
+  // tLabel as answers.js has it, on a button of the test's: an aria-label wins over the words for a screen reader
+  const btn = { textContent: "", attrs: {}, setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute(k) { delete this.attrs[k]; } };
+  const sel = { value: "" };
+  const d = { ...data, setup: SETUP };
+  const ctx = vm.createContext({ tOpen: btn, tSelect: sel, goLabel: (v) => A.goLabelOf(d, v), goName: (v) => A.goNameOf(d, v) });
+  vm.runInContext(`this.tLabel = () => {${body}\n};`, ctx);
+  const accName = () => btn.attrs["aria-label"] || btn.textContent;
+  sel.value = "setup:tool-left-out:codex";
+  ctx.tLabel();
+  assert.equal(btn.textContent, "Go to Settings");
+  assert.equal(accName(), `Go to ${SETUP["tool-left-out"].where}`);
+  // a tool that opens: "Open", its name the words again — never the greyed item's left behind
+  sel.value = "codex";
+  ctx.tLabel();
+  assert.equal(btn.textContent, "Open");
+  assert.equal(accName(), "Open");
+  // the tab shown again (onTab) sets both through tLabel, not the words alone
+  const onTab = js.split("async function onTab(tab) {")[1].split("\n  }\n")[0];
+  assert.match(onTab, /fill\(tSelect, terminalOptions\(d\), tLast\);\s*tLabel\(\);/);
+  assert.doesNotMatch(js, /tOpen\.textContent = goLabel/);
+  // Chat's button: the same name from goName
+  assert.match(js.split('cSelect.addEventListener("change", () => {')[1].split("\n  });")[0], /cGo\.setAttribute\("aria-label", goName\(v\) \|\| go\)/);
 });
