@@ -8,7 +8,6 @@ portal/portal/brand.py	LEGACY_REPO = "JongoDB-Labs/bedrock-now"	the repository's
 install.sh	PRODUCT_LEGACY_NAME="bedrock-now"	install.sh's own copy of lib/brand.sh: it finds an install made before v0.25.0 in ~/bedrock-now
 install.sh	PRODUCT_LEGACY_REPO="JongoDB-Labs/bedrock-now"	install.sh's own copy of lib/brand.sh
 install.sh	~/bedrock-now when an install made before v0.25.0	the folder of installs made before v0.25.0, found and kept
-install.sh	unless that is not there and ~/bedrock-now	the folder of installs made before v0.25.0, found and kept
 lib/guard.sh	grep -qE 'bedrock-now|DevOS ADE'	a checkout under either name (its stack file says one)
 .env.example	Service base name (bedrock-now[-<project>])	the Tailscale Service base name (an internal name: the remote addresses are made from it)
 lib/claude_config.sh	.bedrock-now-claude-md-hint	a marker file in your claude-bedrock config folder (renaming it would show the hint again)
@@ -49,3 +48,6 @@ docs/remote.md	also `bedrock-now-terminal` and `bedrock-now-code`, and `bedrock-
 docs/remote.md	uses `bedrock-now-<project>` names	the Tailscale Service names of a second copy
 docs/security.md	`bedrock-now-preview` would otherwise be	a project name quoted as an example (the previews' site of the default project)
 lib/remote.sh	and bedrock-now-<project> for a second copy	the Tailscale Service base name of a second copy (an internal name)
+install.sh	when ~/bedrock-now holds an install made before v0.25.0	the folder of installs made before v0.25.0, found and kept
+install.sh	# ~/bedrock-now holds an install made before v0.25.0	the folder of installs made before v0.25.0, found and kept
+install.sh	and an install in ~/bedrock-now: that one	the folder of installs made before v0.25.0, found and kept
