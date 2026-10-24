@@ -212,6 +212,33 @@ test_e2e_report_groups_suites_and_applies_known_issues() {
   assert_contains "$(cat "$TMP/out")" "1 checks: 1 passed, 0 failed"
 }
 
+test_e2e_report_known_issue_with_a_pattern_matches_only_its_own_failure() {
+  mkdir -p "$TMP/rep"
+  # (the Python runner's entry as tests/e2e/known-issues.tsv has it: its 401 only)
+  awk -F'\t' '$1 == "chat-python-runner"' "$STACK_DIR/tests/e2e/known-issues.tsv" > "$TMP/known"
+  assert_eq "$(awk -F'\t' '{ print NF }' "$TMP/known")" 3
+  known401="AssertionError: the Python runner does not work in this stack yet: its sandboxed frame's request for pyodide.js carries no session cookie (401) — predates this release, to be fixed in v0.24.1"
+  printf 'browser\tchat-python-runner\tFAIL\t9\t%s\n' "$known401" > "$TMP/res"
+  _report "$TMP/res" "$TMP/known" > "$TMP/out" 2>&1 || { cat "$TMP/out" >&2; return 1; }
+  assert_contains "$(cat "$TMP/rep/results-final.tsv")" "$(printf 'browser\tchat-python-runner\tXFAIL')"
+  # another failure of that check — another cause, or a step before the runner — stays a FAIL, and says so
+  for other in "AssertionError: the Python runner failed otherwise (not the known 401): ['500 GET /x']" \
+               "AssertionError: new chat 500 internal error" "TimeoutError: Timeout 30000ms exceeded."; do
+    printf 'browser\tchat-python-runner\tFAIL\t9\t%s\n' "$other" > "$TMP/res"
+    if _report "$TMP/res" "$TMP/known" > "$TMP/out" 2>&1; then echo "not the known issue, yet not a failure: $other" >&2; return 1; fi
+    assert_contains "$(cat "$TMP/rep/results-final.tsv")" "$(printf 'browser\tchat-python-runner\tFAIL')"
+    assert_contains "$(cat "$TMP/rep/results-final.tsv")" "not the known issue ("
+  done
+  # it passes: XPASS (drop the line)
+  printf 'browser\tchat-python-runner\tPASS\t9\tPython run in the browser (Pyodide): 42\n' > "$TMP/res"
+  _report "$TMP/res" "$TMP/known" > "$TMP/out" 2>&1 || { cat "$TMP/out" >&2; return 1; }
+  assert_contains "$(cat "$TMP/rep/results-final.tsv")" "$(printf 'browser\tchat-python-runner\tXPASS')"
+  # an entry without a pattern: any failure of its check, as before
+  printf 'e\ta known bug\n' > "$TMP/known"; printf 'cli\te\tFAIL\t2\twhatever it says\n' > "$TMP/res"
+  _report "$TMP/res" "$TMP/known" > "$TMP/out" 2>&1 || { cat "$TMP/out" >&2; return 1; }
+  assert_contains "$(cat "$TMP/rep/results-final.tsv")" "$(printf 'cli\te\tXFAIL')"
+}
+
 test_e2e_report_fails_without_results() {
   mkdir -p "$TMP/rep"; : > "$TMP/known"; : > "$TMP/res"
   if out="$(_report "$TMP/res" "$TMP/known" 2>&1)"; then return 1; fi

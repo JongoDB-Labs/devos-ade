@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Summary table + JUnit XML for tests/e2e/run.sh.
 # report.sh RESULTS.tsv KNOWN_ISSUES.tsv OUT_DIR SECONDS SPEND
-# RESULTS: suite<TAB>id<TAB>PASS|FAIL|SKIP<TAB>seconds<TAB>message. KNOWN_ISSUES: id<TAB>reason (# comments):
-# a listed check that fails counts as XFAIL (a known product bug, not a suite failure); one that passes is XPASS
-# (the bug is fixed: drop the line). Exit status: 1 if any check FAILed or there are no results at all, else 0.
+# RESULTS: suite<TAB>id<TAB>PASS|FAIL|SKIP<TAB>seconds<TAB>message. KNOWN_ISSUES: id<TAB>reason[<TAB>pattern] (#
+# comments): a listed check that fails counts as XFAIL (a known product bug, not a suite failure) — with a pattern (an
+# extended regular expression), only when its failure message matches it: any other failure of that check (another
+# step's, another cause) stays a FAIL; one that passes is XPASS (the bug is fixed: drop the line). Exit status: 1 if
+# any check FAILed or there are no results at all, else 0.
 set -uo pipefail
 results="$1"; known="$2"; out="$3"; secs="$4"; spend="$5"
 [ -s "$results" ] || { printf 'xx  no results in %s — the run did not get as far as its first check\n' "$results" >&2; exit 1; }
@@ -11,10 +13,14 @@ results="$1"; known="$2"; out="$3"; secs="$4"; spend="$5"
 
 final="$out/results-final.tsv"
 awk -F'\t' -v OFS='\t' '
-  FILENAME == ARGV[1] { if ($0 !~ /^#/ && NF >= 2) why[$1] = $2; next }
+  FILENAME == ARGV[1] { if ($0 !~ /^#/ && NF >= 2) { why[$1] = $2; if (NF >= 3 && $3 != "") pat[$1] = $3 }; next }
   NF >= 3 {
     st = $3; msg = $5
-    if ($2 in why) { if (st == "FAIL") { st = "XFAIL"; msg = "known issue: " why[$2] " | " msg } else if (st == "PASS") { st = "XPASS"; msg = "listed as a known issue but passed: " why[$2] } }
+    if ($2 in why) {
+      if (st == "FAIL" && (!($2 in pat) || msg ~ pat[$2])) { st = "XFAIL"; msg = "known issue: " why[$2] " | " msg }
+      else if (st == "FAIL") msg = "not the known issue (" why[$2] "): " msg
+      else if (st == "PASS") { st = "XPASS"; msg = "listed as a known issue but passed: " why[$2] }
+    }
     print $1, $2, st, $4, msg
   }' "$known" "$results" > "$final"
 
