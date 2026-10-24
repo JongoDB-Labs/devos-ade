@@ -1,15 +1,15 @@
-# bedrock-now
+# DevOS ADE
 
-bedrock-now is a private, single-user AI workbench for your own Mac or Linux machine: a chat app, Claude Code
-and a shared file store. Models run on **Amazon Bedrock** in your own AWS account (an IAM user's access key, or an
-EC2 instance role) and are billed there; the only other places a call can go are ones you turn on yourself —
-**OpenRouter** with your own key (billed by OpenRouter; some models are free) and speech-to-text through **OpenAI or
+DevOS ADE (formerly bedrock-now) is a private, single-user AI workbench for your own Mac or Linux machine: a chat
+app, Claude Code and a shared file store. Models run on **Amazon Bedrock** in your own AWS account (an IAM user's
+access key, or an EC2 instance role) and are billed there; the only other places a call can go are ones you turn on
+yourself — **OpenRouter** with your own key (billed by OpenRouter; some models are free) and speech-to-text through **OpenAI or
 Groq** with your own key. The microphone in Chat uses your browser's own speech recognition unless you choose
 otherwise, and that sends what you say to the browser's maker (Google, Microsoft or Apple; [Voice](#voice-speech-to-text)).
 You get modern models without sending your work to a consumer AI service, and you see what every answer costs.
 Install it with one command; nothing listens beyond `127.0.0.1`.
 
-![bedrock-now portal](docs/img/portal-home.png)
+![DevOS ADE portal](docs/img/portal-home.png)
 
 ## What you get
 
@@ -25,9 +25,9 @@ disable` the Code page alone; either stays off across updates).
 | [**The API for your tools**](#the-models-from-your-own-code) | the same models for your own scripts and apps: OpenAI- and Anthropic-compatible, on `127.0.0.1`, a key and budget per tool (Admin › Virtual Keys) | on | — |
 | [**Activity & search**](#activity-and-search) | a bell for budget alerts, updates, Code sessions that need you and jobs; **Ctrl/⌘+K** finds pages, settings, Code sessions and workspace files, Chat conversations, the walkthrough and these docs | on | — |
 | [**Settings**](#settings) | every setting of `.env`, shown in the portal | on (read-only until the update helper is installed) | `./stack helper install` makes it editable |
-| [**Terminal**](#claude-code-in-the-browser) | Claude Code in the browser, in a sandbox that sees one folder of yours (`~/bedrock-now-workspace`) and reaches public internet addresses through an egress proxy of its own — not this computer's services or your network | on, as the Code page's sandbox (internet: public addresses only) | `./stack terminal disable` / `enable` (disable turns the Code page off too); its internet: Settings › Claude Code › Sandbox internet access |
+| [**Terminal**](#claude-code-in-the-browser) | Claude Code in the browser, in a sandbox that sees one folder of yours (`~/devos-ade-workspace`) and reaches public internet addresses through an egress proxy of its own — not this computer's services or your network | on, as the Code page's sandbox (internet: public addresses only) | `./stack terminal disable` / `enable` (disable turns the Code page off too); its internet: Settings › Claude Code › Sandbox internet access |
 | [**Code page**](#the-code-page) | Claude Code as an IDE-like page: chat with any chat model of the catalog, @-mentions of the terminal, the changes, failed runs and file lines, permission modes, comments on a plan's lines, editor, file and dev-server previews, review changes, Git with remotes (Git hosts: clone, fetch, pull, push), Run & test | on (Bypass, Auto and remote access to it: off) | `./stack code disable` / `enable`, or Settings › Claude Code; the Code tab stays and says how while it is off |
-| [**Your AI subscriptions**](#your-ai-subscriptions) | your own plans in the sandbox, each through its provider's own, unmodified app signed in with its own sign-in: Claude Code on your Claude plan (`claude-sub`), Codex (ChatGPT), Gemini CLI, Copilot, Cursor, Grok — a **who answers** menu above the Terminal and Chat (where the tool itself opens in place of Open WebUI) and in the Code page's terminal panel; bedrock-now never sees a login | on (the tools are in the sandbox; nothing is signed in) | `TERMINAL_AI_TOOLS` in `.env` (all, none or some); Settings › Claude Code › *Your AI subscriptions* |
+| [**Your AI subscriptions**](#your-ai-subscriptions) | your own plans in the sandbox, each through its provider's own, unmodified app signed in with its own sign-in: Claude Code on your Claude plan (`claude-sub`), Codex (ChatGPT), Gemini CLI, Copilot, Cursor, Grok — a **who answers** menu above the Terminal and Chat (where the tool itself opens in place of Open WebUI) and in the Code page's terminal panel; DevOS ADE never sees a login | on (the tools are in the sandbox; nothing is signed in) | `TERMINAL_AI_TOOLS` in `.env` (all, none or some); Settings › Claude Code › *Your AI subscriptions* |
 | [**Remote access**](#remote-access) | the portal from your phone or laptop over HTTPS ([on a phone](#using-it-on-your-phone)) | off | `./stack remote enable tailscale` / `disable` |
 | [**Voice**](#voice-speech-to-text) | speech-to-text for Chat's microphone and voice calls (Mistral Voxtral on Bedrock: AWS no longer accepts its audio since October 2026; your own OpenAI/Groq key, or the browser) | browser speech (Bedrock: on when your key can use Voxtral and AWS takes its audio) | `./stack stt set openai\|groq` / `bedrock` / `remove` |
 | [**OpenRouter**](#optional-openrouter) | hundreds of other models, some free | off | `./stack openrouter set` / `remove` |
@@ -59,21 +59,22 @@ disable` the Code page alone; either stays off across updates).
 **Install** with the one-liner:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/JongoDB-Labs/bedrock-now/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/JongoDB-Labs/devos-ade/main/install.sh | bash
 ```
 
 or inspect first:
 
 ```bash
-git clone https://github.com/JongoDB-Labs/bedrock-now && cd bedrock-now
+git clone https://github.com/JongoDB-Labs/devos-ade && cd devos-ade
 less install.sh setup.sh      # optional
 ./setup.sh
 ```
 
 The installer checks the prerequisites and says how to install anything missing, clones the latest release
-into `~/bedrock-now` (`BEDROCK_NOW_DIR=/path` for another folder, `BEDROCK_NOW_REF=main` for the newest code)
-and starts setup. It never overwrites an existing folder: for an existing checkout it tells you to run
-`./stack update`. Arguments go to setup (`… | bash -s -- --yes`). Without a terminal to ask in, it runs
+into `~/devos-ade` (`BEDROCK_NOW_DIR=/path` — or `DEVOS_ADE_DIR` — for another folder, `BEDROCK_NOW_REF=main` for the
+newest code) and starts setup. It never overwrites an existing folder: for an existing checkout it tells you to run
+`./stack update` — also for an install made before v0.25.0 in `~/bedrock-now`, which it finds there and leaves as it
+is. Arguments go to setup (`… | bash -s -- --yes`). Without a terminal to ask in, it runs
 `./setup.sh --yes` when `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are exported (or the EC2 instance has an IAM
 role), and otherwise tells you to run `./setup.sh` in the new folder.
 
@@ -103,7 +104,8 @@ Then it:
 3. creates LiteLLM keys with monthly budgets, configures Open WebUI and runs a smoke test;
 4. turns on the [Code page](#the-code-page) — Claude Code in the browser, like its desktop app — and the
    [browser terminal](#claude-code-in-the-browser) it runs in: a sandbox container that sees only one folder of
-   yours, `~/bedrock-now-workspace` (created, mode 700), with its own LiteLLM key and budget. It builds their images
+   yours, `~/devos-ade-workspace` (created, mode 700; an install made before v0.25.0 keeps its
+   `~/bedrock-now-workspace`), with its own LiteLLM key and budget. It builds their images
    (a few minutes the first time) and says so; no question is asked, and `./stack code disable` turns it off;
 5. offers to link `claude-bedrock` into `~/.local/bin`, and to turn on one-click updates from Home (the
    [update helper](#updating), which also makes Settings editable; default yes). Both only in interactive runs;
@@ -126,7 +128,7 @@ network). To keep them off, write it into `.env` before the first setup (setup k
 on without internet with `TERMINAL_EGRESS=off`:
 
 ```bash
-git clone https://github.com/JongoDB-Labs/bedrock-now && cd bedrock-now
+git clone https://github.com/JongoDB-Labs/devos-ade && cd devos-ade
 cp .env.example .env && chmod 600 .env
 printf 'CODE_ENABLED=false\n' >> .env      # or: printf 'TERMINAL_EGRESS=off\n' >> .env  (the last line of a key wins)
 ./setup.sh --yes
@@ -196,7 +198,7 @@ in a terminal; piped into a log it prints where it is instead. Tools can use the
 `http://127.0.0.1:4000` (`LITELLM_PORT`; OpenAI- and Anthropic-compatible): [the models from your own
 code](#the-models-from-your-own-code).
 
-The installed version is always shown: under **bedrock-now** in the sidebar (on a tablet's icon rail as a tiny
+The installed version is always shown: under **DevOS ADE** in the sidebar (on a tablet's icon rail as a tiny
 label, the full version in the logo's tooltip; on a phone in Home's header). A build after a release reads
 `v0.3.0 +7 (1a2b3c4)`: seven commits after v0.3.0, at commit 1a2b3c4; its tooltip adds the branch and the commit
 date. Clicking it opens that version's release notes on GitHub (a build after a release: the changelog). While an
@@ -205,7 +207,7 @@ reloading the page shows the new version.
 
 ### Walkthrough
 
-New here? **Walkthrough** at the bottom of the sidebar takes you through what a developer uses in bedrock-now, in six
+New here? **Walkthrough** at the bottom of the sidebar takes you through what a developer uses in DevOS ADE, in six
 parts you can fold away or skip (about 30 minutes for all of it, a few cents of usage). It opens by itself on your
 first visit (not on a phone, where it would cover Chat); on a desktop it widens the sidebar instead of covering an app
 (with the sidebar folded to its icons, it is a card beside them), on a tablet it is a card next to the icons, and on a
@@ -292,7 +294,7 @@ microphone keeps working), kept by your browser.
   right-click menu.
 - **Once it is installed, a browser tab says so:** instead of **Install app**, the sidebar and Home show **Open
   in the app**, which brings the app forward (or starts it) on the tab you were on; the tab then says you can
-  close it. The first time, the browser asks twice: **Open bedrock-now?** (tick *Always allow…*) and the app's
+  close it. The first time, the browser asks twice: **Open DevOS ADE?** (tick *Always allow…*) and the app's
   **Allow app to open web+bedrocknow links?** (tick *Remember this choice*); after that it just opens. If
   nothing opens, Home lists the other ways in (and Chrome's **Open in app** button in the address bar does the
   same). Google Chrome and Microsoft Edge 140 or newer tell the page that the app is installed; other browsers
@@ -303,15 +305,17 @@ microphone keeps working), kept by your browser.
   the browser next refreshes it from the portal's manifest (it does so when the app or a portal tab loads);
   until then **Open in the app** falls back to the list on Home. Answered **Don't allow** with *Remember this
   choice*? Chrome then never opens the app from the link: uninstall and reinstall the app (your data is in the
-  stack, not in the app), or try removing bedrock-now under `chrome://settings/handlers` (Edge:
+  stack, not in the app), or try removing DevOS ADE under `chrome://settings/handlers` (Edge:
   `edge://settings/content/handlers`). If the same copy is installed in both Chrome and Edge, the operating
   system gives the link to one of the two apps.
-- **Several copies:** each portal address is its own app: `bedrock-now` for the default one, `bedrock-now
-  (bn-dev)` for a copy with `COMPOSE_PROJECT_NAME=bn-dev`, `bedrock-now (port 8800)` when the portal is not on
-  port 80. If you rename the app in the install dialog, `./stack open` will not find it (it opens a tab). Each
+- **Several copies:** each portal address is its own app: `DevOS ADE` for the default one, `DevOS ADE
+  (bn-dev)` for a copy with `COMPOSE_PROJECT_NAME=bn-dev`, `DevOS ADE (port 8800)` when the portal is not on
+  port 80 (an app installed before v0.25.0 is named `bedrock-now` until you accept its new name and icon when the
+  browser offers them; `./stack open` finds it under either). If you rename the app in the install dialog,
+  `./stack open` will not find it (it opens a tab). Each
   has its own **Open in the app** link (`web+bedrocknow` for the default copy, `web+bedrocknow` plus eight
   letters for any other copy or the remote address), so one copy's tab never opens another copy's app.
-- **Uninstall:** in the app, **⋮ → Uninstall bedrock-now** (or chrome://apps → right-click → **Remove from
+- **Uninstall:** in the app, **⋮ → Uninstall DevOS ADE** (or chrome://apps → right-click → **Remove from
   Chrome**; Edge: edge://apps). Your data is in the stack, not in the app.
 - `BEDROCK_NOW_OPEN_MODE=window ./stack open` brings back the old separate window (Chrome `--app` with its own
   browser profile); it has no Dock icon of its own.
@@ -323,7 +327,7 @@ so a phone needs remote access (HTTPS) turned on first; a tablet or a small brow
 
 - **Install it:** on an iPhone or iPad, open the portal in Safari, tap **Share → Add to Home Screen**. On
   Android, open it in Chrome and tap **⋮ → Install app** (Chrome offers this over HTTPS only; over plain
-  http it can still add a shortcut). It opens full screen with the bedrock-now icon, like any other app.
+  http it can still add a shortcut). It opens full screen with the DevOS ADE icon, like any other app.
 - **Phone layout:** a tab bar at the bottom with **Home** and **Chat**; the phone opens on Chat and then
   remembers the tab you used last. Home is compact: total spend and each key's budget bar, one health line
   (tap it for every service), the update card when there is one, and the models as cards with an
@@ -336,12 +340,12 @@ so a phone needs remote access (HTTPS) turned on first; a tablet or a small brow
   something is unread) and **Search**, the walkthrough and **Sign out**.
 - **Over remote access** (so on a phone) Update, Rollback, Clean, the automatic-updates switch, Settings changes
   and Diagnostics are off unless `REMOTE_ADMIN_ACTIONS=true`; Home then says to use a desktop browser on the
-  computer running bedrock-now.
+  computer running DevOS ADE.
 - **Tablets** get the sidebar as a column of icons.
 - **Dictation on iPhone and iPad:** use the 🎤 on the keyboard. It works in any text box, runs on the device,
   and does not need Open WebUI's microphone button (Chat shows this tip until you close it with ✕).
 - **Offline:** nothing from your account is stored on the phone. If the computer is asleep or out of reach,
-  the app shows "Can't reach bedrock-now" with a **Try again** button.
+  the app shows "Can't reach DevOS ADE" with a **Try again** button.
 
 ### Chat (Open WebUI)
 
@@ -475,8 +479,8 @@ More details (session headers, signals, `--help`, the config folder): [docs/adva
 ### Claude Code in the browser
 
 On by default, as the sandbox of the [Code page](#the-code-page): setup (and `./stack update`, on an install that
-never chose) turns it on with the workspace `~/bedrock-now-workspace` (a second copy's default folder is
-`~/bedrock-now-<project>-workspace`).
+never chose) turns it on with the workspace `~/devos-ade-workspace` (a second copy's default folder is
+`~/devos-ade-<project>-workspace`; an install made before v0.25.0 keeps `~/bedrock-now-workspace` when it is there).
 
 ```bash
 ./stack terminal status                           # on or off, the folder, the container, its key and internet
@@ -512,7 +516,7 @@ It is a sandbox, not a shell on your computer:
   itself and the folders above it, hidden folders like `~/.ssh`, `~/Library`, system folders, `/Volumes`, `/mnt`
   and `/media` themselves, a temporary folder itself (`/tmp`, a Mac's `/private/var/folders/…/T` — a folder of yours
   inside one is fine) or a path through a folder of sockets (`tmux-<uid>`, `.X11-unix` …), and any folder inside or
-  around the bedrock-now folder (its `.env` holds every secret), in any spelling; a socket in the workspace is said at
+  around the DevOS ADE folder (its `.env` holds every secret), in any spelling; a socket in the workspace is said at
   `./stack up`. Claude Code's settings and history live in the `terminal-home` volume. The container may use up
   to 4 GB of memory (`TERMINAL_MEM_LIMIT` in `.env`).
 - Inside the stack its only neighbour is its own gateway (a second, minimal Caddy), which passes just what Claude
@@ -544,7 +548,7 @@ It is a sandbox, not a shell on your computer:
   `./stack up`; in Tailscale mode it is one more Service to approve, `./stack remote status` names it).
 - Claude Code's **auto mode** (a reviewer model approving actions instead of you) is off for every `claude` in it —
   the sandbox's managed settings say so — unless **Settings → Claude Code → Auto mode in the terminal** is on
-  (`TERMINAL_AUTO_MODE`, from the computer running bedrock-now; the terminal restarts). Then Claude Code decides as
+  (`TERMINAL_AUTO_MODE`, from the computer running DevOS ADE; the terminal restarts). Then Claude Code decides as
   anywhere else: an interactive `claude` starts in it (`Shift+Tab` leaves it), its reviewer runs on Sonnet 5.5 at
   about $0.13 per 5 minutes in use on the terminal's key. With only the Code page's Auto mode on, `claude` typed in
   its shells and `claude-bedrock` keep auto mode off (`/usr/local/bin/claude` called directly does not:
@@ -567,7 +571,7 @@ sessions in progress drop for a few seconds. Details and what was weighed:
 ### Your AI subscriptions
 
 Your own AI plans work in the sandbox too, each through **its provider's own, unmodified app**, signed in with **that
-app's own sign-in** — a link and a code you open in your own browser. bedrock-now never reads, copies, keeps or
+app's own sign-in** — a link and a code you open in your own browser. DevOS ADE never reads, copies, keeps or
 passes on a login: each stays in its own app's file in the sandbox's home folder (the `terminal-home` volume: the
 terminal's and the Code page's), and backups leave it out. Chat's sandbox has sign-ins of its own, apart (below: sign
 in once more for Chat).
@@ -598,7 +602,7 @@ Claude on your plan, outside Anthropic's own apps: Anthropic's support article (
 Claude plan*, 2026-10-07) says *"You can still use the Claude Agent SDK, `claude -p`, and third-party apps with your
 subscription limits"*; its legal and compliance page still says developers may not *"offer Claude.ai login into their
 own applications, or … route requests through Free, Pro, or Max plan credentials on behalf of their users"*.
-`claude-sub` is Claude Code itself, signed in by you with Anthropic's own flow on your own computer; bedrock-now offers
+`claude-sub` is Claude Code itself, signed in by you with Anthropic's own flow on your own computer; DevOS ADE offers
 no Claude login and never holds the token. Claude on your plan in the Code page and as a Chat model — the Agent SDK
 running that same Claude Code, with its own login — waits for your choice: Settings › Claude Code › **Use my Claude
 plan in the Code page and Chat** (off by default; turning it on works from the computer running the stack).
@@ -661,12 +665,12 @@ through the update helper, with the password) — two rows for each Chat model: 
 sign-in its own (Chat's *Sign in* shows the command for it; a tool not signed in for Chat shows as *Sign in for
 Chat…* in Chat's picker, which leads there). While the sandbox's way out is the direct one (`TERMINAL_EGRESS=host`),
 your subscriptions are not Chat models (greyed, saying why): Chat's sandbox would sit beside the terminal with no
-proxy between. Usage counts against each plan's own limits: bedrock-now bills none of
+proxy between. Usage counts against each plan's own limits: DevOS ADE bills none of
 it and shows no $ for it.
 
 The tools are in the sandbox's image, each **pinned and checked** when it is built on your computer: Codex's and
 Copilot's release files by the SHA-256 their GitHub releases list, Gemini CLI and Grok Build by their npm lockfiles,
-Cursor's by the SHA-256 bedrock-now recorded (Cursor publishes none). A tool whose download or check fails is left out
+Cursor's by the SHA-256 DevOS ADE recorded (Cursor publishes none). A tool whose download or check fails is left out
 of the image — the build says so, the tool's command says so, and the others are kept. Copilot's own package (the code
 it runs) is unpacked into the image, not into your home; all of it is root's, read-only. Together about 1.5 GB;
 `TERMINAL_AI_TOOLS` in `.env` (`all`, `none`, or e.g. `codex,copilot`), then `./stack terminal enable`, keeps fewer.
@@ -711,7 +715,7 @@ In this section: [turning it on and off](#turning-the-code-page-on-and-off) ·
 #### Turning the Code page on and off
 
 **On by default.** A new install's setup turns it on, with the browser terminal (its sandbox) and the workspace
-folder `~/bedrock-now-workspace`, and says so; `./stack update` does the same on an install that never chose (no
+folder `~/devos-ade-workspace` (`~/bedrock-now-workspace`, when an install made before v0.25.0 has it), and says so; `./stack update` does the same on an install that never chose (no
 `CODE_ENABLED` in `.env`, or a blank one) and names it in its *What's new*. An explicit choice stays: once
 `CODE_ENABLED=false` or `TERMINAL_ENABLED=false` is in `.env` (`./stack code disable`, Settings › Claude Code › Off,
 `./stack terminal disable`), setup and updates never turn it on. If the folder cannot be created or is refused,
@@ -731,10 +735,10 @@ connection to your subscriptions as Chat models: chats in progress drop for a fe
 goes on (only a terminal container from before v0.5.0, without the page's spawn server, is restarted once, and
 `--workspace` with another folder recreates it).
 
-From the portal: **Settings → Claude Code → Code page: On** (only on the computer running bedrock-now; **Off** works from
+From the portal: **Settings → Claude Code → Code page: On** (only on the computer running DevOS ADE; **Off** works from
 anywhere). The update helper runs `./stack code enable` / `disable` for you. With the browser terminal off, **On**
 turns it on too, with the folder Settings names before you confirm (the terminal's `TERMINAL_WORKSPACE`, or
-`~/bedrock-now-workspace`); another folder is chosen in a terminal (`./stack code enable --workspace DIR`, or
+`~/devos-ade-workspace`); another folder is chosen in a terminal (`./stack code enable --workspace DIR`, or
 `./stack terminal enable --workspace DIR` later). If turning it on from Settings fails, the previous settings come
 back and a terminal it had turned on is turned off again (`./stack code enable` in a terminal stops with the error
 instead and leaves the settings as they are: run it again).
@@ -742,7 +746,7 @@ instead and leaves the settings as they are: run it again).
 `./stack code disable` (or **Off**) leaves the browser terminal on; `./stack terminal disable` turns the Code page
 off too. Two of its permission modes, *Auto* and *Bypass permissions*, stay off until **Settings → Claude Code** allows
 them (*Auto mode*, *Allow Bypass permissions*; or `./stack config set CODE_AUTO_MODE` / `CODE_ALLOW_BYPASS`; turning
-them on only from the computer running bedrock-now; [permission modes](#permissions-and-modes)). Either switch
+them on only from the computer running DevOS ADE; [permission modes](#permissions-and-modes)). Either switch
 restarts the page's container (about 10 s: open Code sessions end, your next prompt resumes them), and *Auto mode*
 also the terminal unless its own auto mode is on. `./stack code status` shows all of it. Its address is
 `code.<portal host>` (`CODE_HOST` overrides it). Over remote access it is off unless the terminal is shared there:
@@ -813,7 +817,7 @@ Service to define and approve) or `code.<your domain>` ([Remote access](#remote-
   the context window's use. A switch Claude Code refuses is taken back and said ("Still on …"); the page lists the
   model in the session's own `/model` picker first, so Claude Code does not need an API round trip to accept it.
 - **A budget per session** (⋯ → *Budget for this session*; off by default). An amount: the conversation says when the
-  session has used half of it, 80 % and all of it (from bedrock-now's spend logs, what Bedrock billed), and the cost
+  session has used half of it, 80 % and all of it (from DevOS ADE's spend logs, what Bedrock billed), and the cost
   meter shows the share. **Stop at the budget** (optional) is Claude Code's own stop: every Claude Code process of the
   session starts with what is left (its `maxBudgetUsd`), it ends a turn after the request that reaches it — by its own
   estimate, so up to one request over — and new prompts are refused until you raise the budget or turn the stop off;
@@ -934,10 +938,10 @@ sandbox, so the Code page's sessions (and the terminal) work in it directly, wit
   through such a folder of sockets (`tmux-<uid>`, `ssh-…` of ssh-agent, `.X11-unix` …), a `.claude` folder (a worktree
   Claude Code made, `.claude/worktrees/<name>`, is fine: nothing there is configuration) or a Time Machine backup; a
   folder holding a socket (down to 3 levels: git's fsmonitor daemon leaves one in `.git` — stop it first); this
-  bedrock-now folder and the workspace, or a folder inside or around them; another project's folder, or one inside or
+  DevOS ADE folder and the workspace, or a folder inside or around them; another project's folder, or one inside or
   around it; a folder with keys or logins in it or one level down (`.ssh`, `.aws`, `.gnupg`, `.kube`,
   `.docker`, `.azure`, the gh, glab and gcloud logins under `.config`, a keychain, `.netrc`, `.git-credentials`), an
-  `.npmrc` or `.pypirc` at its top with a token or password, another bedrock-now folder or a Time Machine backup down
+  `.npmrc` or `.pypirc` at its top with a token or password, another DevOS ADE folder or a Time Machine backup down
   to 3 levels (a heuristic; in a terminal, `--yes-it-holds-keys` adds such a folder anyway); a path with `:` or `,`.
   The folder is resolved first (a link counts as the folder it leads to; on a Mac `/tmp` is `/private/tmp`, and names
   differing only in case are one folder). Every `./stack up` checks the list again: a folder that is gone, is now a
@@ -983,7 +987,7 @@ written back to those folders.
   the folder each session recorded.
 - **Only on this computer** is a look allowed: from a phone or another computer the sheet reads and copies sessions of
   a look already allowed here, never asks for one. What may be read is listed in Settings › Claude Code › **What
-  bedrock-now may read on this computer**, where **Take back** (from any device) undoes it — and what the Code page's
+  DevOS ADE may read on this computer**, where **Take back** (from any device) undoes it — and what the Code page's
   container read under it (the list, sessions waiting) is forgotten; `./stack sessions consent --project NAME --revoke`
   (or `--revoke-all`) in a terminal.
 - **What is copied by default, and nothing else:** what you typed, Claude's text, its thinking (as below), its tool
@@ -1072,11 +1076,11 @@ email — into the sandbox's own configuration, one way: nothing is ever written
   token is not added unless you keep it (such URLs are shown masked). Keeping one needs the portal password (the
   update helper makes that copy).
 - **The sandbox's own is kept**: permission rules and hooks are added to its `settings.json` (a later copy replaces
-  only what bedrock-now added from that tool, and lists what it takes out first); any other file, a skill's folder, a server of the same name or a Git name the
+  only what DevOS ADE added from that tool, and lists what it takes out first); any other file, a skill's folder, a server of the same name or a Git name the
   sandbox has of its own is left as it is unless you choose *Replace* — and then it goes to
   `~/.claude/.bedrock-now-trash/` in the sandbox, never deleted. A copy is refused when what it was checked against
   changed meanwhile (check it again).
-- What may be read is listed in Settings › Claude Code › *What bedrock-now may read on this computer* (per tool:
+- What may be read is listed in Settings › Claude Code › *What DevOS ADE may read on this computer* (per tool:
   Claude Code, `claude-bedrock`, Git), where **Take back** undoes it; `./stack sessions config consent --revoke`.
 
 How it is read: [docs/security.md](docs/security.md#your-claude-code-setup-from-this-computer).
@@ -1156,7 +1160,7 @@ maps to it).
   denies.
 - **Permission modes**, next to **Send** as in Claude Code's desktop app (`Shift+Tab` cycles *Manual → Accept edits →
   Plan → Bypass permissions → Auto*, those two when allowed, as the CLI does; `Alt+M` opens the menu). The desktop
-  app's names and Claude Code's own modes underneath, plus one of bedrock-now's own, *Read only*:
+  app's names and Claude Code's own modes underneath, plus one of DevOS ADE's own, *Read only*:
 
   | Mode | Claude Code underneath | Without asking | Your words |
   |---|---|---|---|
@@ -1170,7 +1174,7 @@ maps to it).
   *Read only*, *Manual*, *Accept edits* and *Auto* are remembered for new sessions (per browser); *Plan* and *Bypass
   permissions* apply to the session they were picked in only, as in the desktop app and VS Code. **Auto** is off
   unless **Settings → Claude Code → Auto mode** is on (`CODE_AUTO_MODE`; turning it on works only from the computer
-  running bedrock-now). It needs no confirmation — it still asks or blocks, as in Claude Code — and costs model calls:
+  running DevOS ADE). It needs no confirmation — it still asks or blocks, as in Claude Code — and costs model calls:
   about **$0.13 for the first check in each 5 minutes** and half a cent for each further one, on the terminal's key
   (more than a Haiku session itself). A risky command you ask for by name counts as your approval (the reviewer may
   let it run); one Claude picked up elsewhere — a file, a web page — is what it blocks. A blocked action shows a card
@@ -1179,7 +1183,7 @@ maps to it).
   (a normal card). In *Manual* and *Accept edits* a shell command's card also offers **Allow, and switch to Auto**,
   and a plan can be approved with *Auto*. Details: [docs/security.md](docs/security.md#auto-mode). **Bypass
   permissions** is off unless **Settings → Claude Code → Allow Bypass permissions** is on (`CODE_ALLOW_BYPASS`; turning it
-  on works only from the computer running bedrock-now), and every switch to it asks first, in a dialog that names
+  on works only from the computer running DevOS ADE), and every switch to it asks first, in a dialog that names
   what it means here: the workspace is your real folder (git hooks, package scripts and editor settings in it run on
   your computer later), the sandbox's internet access, and the budget. While it is on a red strip sits above the prompt
   box (*Switch to Manual*), the tab title starts with ⏵⏵ and the portal's Code badge turns red; it ends with the
@@ -1232,7 +1236,7 @@ maps to it).
   `python3 -m http.server 8000`, and use the [dev-server preview](#previews-of-dev-servers) of :8000: that one has
   your browser's network and is not sandboxed, so only for a page you trust), and Mermaid diagrams are drawn there
   and shown as images; a notebook's HTML and JavaScript outputs run there too, when you click **Show the HTML
-  output**. The viewer works on the computer running bedrock-now; over remote access these previews say so (Source
+  output**. The viewer works on the computer running DevOS ADE; over remote access these previews say so (Source
   and Download still work).
 - **Preview limits** (above them: **Download**): Markdown, the first 2 MB; YAML 5 MB; SVG and HTML 10 MB; Mermaid 1
   MB; notebooks 20 MB; everything else 25 MB; images up to 100 million pixels; tables 1,000,000 rows, 200 columns and
@@ -1271,7 +1275,7 @@ maps to it).
   (`Ctrl/⌘+Enter`); **Write message** has Claude propose a message from the staged diff — in a helper process of its
   own that can use no tool at all (never your session, whatever its mode: a diff could carry instructions) — which
   lands in the box as a draft for you to read; it never commits by itself. The panel shows who the commit is by (the
-  repository's `user.name`/`user.email`, else the sandbox's `~/.gitconfig`, else "bedrock-now Code page" — *Use yours
+  repository's `user.name`/`user.email`, else the sandbox's `~/.gitconfig`, else "DevOS ADE Code page" — *Use yours
   from this computer…* there brings your own, [Bring your setup](#your-claude-code-setup-from-this-computer)), and the
   last 20 commits. Commits made here run **no git hooks** (`pre-commit`, `commit-msg` …), no signing program and no editor,
   whatever the repository configures — your computer's git would run its hooks, so staged files that run on your
@@ -1282,7 +1286,7 @@ maps to it).
   lines, run by the sandbox image's own GNU `make`), `pyproject.toml`'s entry points (`[project.scripts]`,
   `[tool.poetry.scripts]`) — and `.claude/launch.json`'s dev servers (*Start*, as in Ports), each with what it runs.
   **Run** shows the task in full first — each argument of its fixed wrapper (`npm run -- <name>`, `make -- <target>`,
-  or `python3` with bedrock-now's loader for an entry point — the image's own programs, by their path), the script
+  or `python3` with DevOS ADE's loader for an entry point — the image's own programs, by their path), the script
   with npm's `pre…` and `post…` scripts, the recipe or the entry point, and a workspace `.npmrc` (its secrets' values
   hidden) — the first time in this browser and again whenever it changed; then it runs it in a new window of the
   terminal, without input (a test runner runs once instead of watching; Ctrl-C there stops it), in an environment of
@@ -1312,12 +1316,12 @@ credentials ever being kept in the sandbox.
     host's page it links to (*Open github.com/login/device*), enter the code there and approve. Enter a device code
     only when your own Code page shows it, right after you pressed Sign in. The page never opens the host's page for
     you, and your browser never talks to the host about it: the code container asks the host for the code and waits
-    for your approval, through the sandbox's own way out. On github.com it signs in with bedrock-now's GitHub
-    App, which reaches only the repositories you install it on — *Choose repositories* in the host's row, or
-    [github.com/apps/bedrock-now](https://github.com/apps/bedrock-now) — with *Contents: Read and write* (and
+    for your approval, through the sandbox's own way out. On github.com it signs in with the project's GitHub App
+    (*DevOS ADE*), which reaches only the repositories you install it on — *Choose repositories* in the host's row
+    opens its page — with *Contents: Read and write* (and
     *Metadata: Read-only*); its token lasts 8 hours and renews itself when an operation needs it (the sign-in lasts 6
     months). On GitLab it asks for `read_repository`, `write_repository` and `read_user`: every project your account
-    can reach; its token renews itself too. gitlab.com has no bedrock-now application: register one (below) and put
+    can reach; its token renews itself too. gitlab.com has no DevOS ADE application: register one (below) and put
     its ID in Settings. A GitLab of your own, or GitHub Enterprise: its address (`gitlab.example.com`), the
     application ID of an app you registered there, and its CA under *More* when a private CA signed its certificate.
     When a sign-in ends
@@ -1333,7 +1337,7 @@ credentials ever being kept in the sandbox.
     bitbucket.org's host keys are built in; for another server **Test connection** learns its host key and shows the
     fingerprint to compare with the one the server publishes (or paste the line `ssh-keyscan` prints).
   - **Already signed in with `gh` or `glab`** on this computer? `./stack git-host import gh` (or `glab`; `--host` for
-    GitHub Enterprise or a GitLab of your own), run in the bedrock-now folder, imports that login as the host's access
+    GitHub Enterprise or a GitLab of your own), run in the DevOS ADE folder, imports that login as the host's access
     token; the dialog shows the command with *Copy*. It shows the account, the scopes, the expiry and what the token
     reaches, and asks before anything is kept (`--yes`: without asking). gh's own OAuth token (or a classic token gh was
     given) reaches every repository your account can — a fine-grained one, what it was given — and gh goes on using
@@ -1343,7 +1347,7 @@ credentials ever being kept in the sandbox.
 
   **Test connection** lists a repository's branches with the host's credential. A server whose certificate a private
   CA signed takes that CA (*More*). Adding a host, signing in, a token or a key, trusting a host key, and letting
-  Claude use a host work only from the computer running bedrock-now; over remote access you can still use the hosts,
+  Claude use a host work only from the computer running DevOS ADE; over remote access you can still use the hosts,
   remove one, or turn Claude's use off.
 
   **What each one reaches, and revoking it.** A fine-grained token: the repositories you picked for it. A GitHub
@@ -1373,7 +1377,7 @@ credentials ever being kept in the sandbox.
   or changes it — to publish to a new repository, create it on the host first (empty), then put its URL there.
 - **What Claude's own git gets: nothing, by default.** Claude's `git push` in the sandbox, or yours in the terminal,
   has no credential from Git hosts. **Let Claude use this host** (a switch on each host, off by default, turned on only
-  from the computer running bedrock-now) changes that: git and ssh in the sandbox then get that host's token or key
+  from the computer running DevOS ADE) changes that: git and ssh in the sandbox then get that host's token or key
   logins too — so Claude, or text it reads and follows, could push to any repository the token or key reaches — and
   each use is listed in the host's *Recent use* and in Activity. Prefer a fine-grained token or a deploy key for that.
 - **gh in the sandbox.** The sandbox has the GitHub CLI (`gh`), never logged in there. While *Let Claude use this
@@ -1392,10 +1396,10 @@ credentials ever being kept in the sandbox.
 
 ##### Your own app for sign-in
 
-Optional. Sign in with GitHub on github.com uses bedrock-now's own GitHub App (`bedrock-now`) unless Settings ›
+Optional. Sign in with GitHub on github.com uses the project's own GitHub App (*DevOS ADE*) unless Settings ›
 Claude Code › More names another. An application of your own is for GitHub Enterprise, for gitlab.com (which has no
-bedrock-now application) and a GitLab of your own, or for when you would rather authorize an app you own than
-bedrock-now's. Its ID is public, and sign-in uses neither a client secret nor a private key (the device flow needs
+DevOS ADE application) and a GitLab of your own, or for when you would rather authorize an app you own than
+DevOS ADE's. Its ID is public, and sign-in uses neither a client secret nor a private key (the device flow needs
 neither — GitHub only asks a GitHub App for one key before it can be installed; delete its downloaded .pem):
 
 - **GitHub** — *Settings › Developer settings › GitHub Apps › New GitHub App*: a name, a homepage URL (this
@@ -1404,7 +1408,7 @@ neither — GitHub only asks a GitHub App for one key before it can be installed
   Read-only*; add *Workflows: Read and write* only to push changes to `.github/workflows`). For an organization's
   repositories, create it under the organization, or choose *Any account* (GitHub's default is *Only on this
   account*). Do not generate a client secret. GitHub asks for a private key before the app can be installed: generate
-  one and delete the downloaded .pem file — bedrock-now never uses it. Copy its **Client ID** (`Iv…`) into Settings ›
+  one and delete the downloaded .pem file — DevOS ADE never uses it. Copy its **Client ID** (`Iv…`) into Settings ›
   Claude Code › More › **GitHub app client ID** (`GIT_GITHUB_CLIENT_ID`) and its name as its address has it
   (`github.com/apps/NAME`) into **GitHub app name** (`GIT_GITHUB_APP_SLUG`), then install it on the accounts and
   repositories it may reach: from the app's page (*Developer settings › GitHub Apps › your app › Install App*), or Git
@@ -1415,7 +1419,7 @@ neither — GitHub only asks a GitHub App for one key before it can be installed
   device sign-in does not use it). Copy its **Application ID** into **GitLab application ID** (`GIT_GITLAB_CLIENT_ID`)
   — for gitlab.com; a GitLab of your own takes it in the Git hosts dialog.
 
-The settings change only from the computer running bedrock-now (another app is another party you would authorize).
+The settings change only from the computer running DevOS ADE (another app is another party you would authorize).
 
 The credentials are kept by the code container, in its own volume (`<project>_code-state`): not in `.env`, not in the
 portal, not in backups, never in the sandbox. They are stored there unencrypted (a file of mode 600): anyone who can
@@ -1453,7 +1457,7 @@ file changed after you looked does not start.
 
 The server must listen on the sandbox's `localhost`, `127.0.0.1` or `0.0.0.0` (no `--host` needed); its own host
 checks pass unchanged (it is asked as `localhost:<port>`), and hot reload works. A preview is **sandbox content** on a
-site of its own (`p<port>-<capability>.bedrock-now-preview.localhost`): it gets none of bedrock-now's cookies, cannot
+site of its own (`p<port>-<capability>.bedrock-now-preview.localhost`): it gets none of DevOS ADE's cookies, cannot
 take the Code page away, and its link (with its capability) works until the Code page's unlock ends — Sign out or a
 new password end it. In the pane it is a frame from another site, so *the app's own* cookies mostly do not work there
 (cookies without `SameSite=None` are not sent to a frame from another site, and Safari or Chrome set to block
@@ -1465,7 +1469,7 @@ the app's page (`fetch('http://localhost:3000')`) reach your computer, not the s
 [docs/remote.md](docs/remote.md#previews-of-dev-servers-over-remote-access) first: their one address —
 `https://bedrock-now-preview.<tailnet>.ts.net`, one more Tailscale Service to define and approve *before* you turn
 them on, or `preview.<your domain>` — is on the same *site* as every other app of your tailnet or domain, so a page
-your sandbox serves could send those apps requests with their cookies. bedrock-now's own hosts refuse them (the
+your sandbox serves could send those apps requests with their cookies. DevOS ADE's own hosts refuse them (the
 [same-site guard](docs/security.md#the-same-site-guard)); your other apps may not. In own-domain mode
 `REMOTE_PREVIEW_DOMAIN` (a domain of their own) avoids that, and previews are then on by default. A browser previews
 **one port at a time** there (opening another port's preview switches it; *Try again* switches back), and a dev server
@@ -1503,7 +1507,7 @@ until the Code page's unlock ends; the terminal's own unlock never opens the Cod
 
 What the sandbox can do is what the terminal can (see above); on top, a compromised sandbox could show misleading
 *text* in the Code page (fake tool output or diffs, a misleading permission sentence, a fake plugin catalog) but
-cannot run script in your browser on bedrock-now's pages (a preview draws a file as text, an image or a canvas; an
+cannot run script in your browser on DevOS ADE's pages (a preview draws a file as text, an image or a canvas; an
 HTML file or a diagram runs only in the sandboxed viewer, another site with no network and no cookies),
 reach the page's container, change the prices or costs shown, answer a permission prompt itself, or accept a
 plugin's install command for you. Details:
@@ -1607,7 +1611,7 @@ by what you came to do — a list on the left (on a phone, a section picker at t
 | **AWS & models** | the AWS key (with *Check*), region, **Re-check models** |
 | **Spending & budgets** | the budgets of Chat, `claude-bedrock` and the Terminal/Code page (with this period's spend), alert threshold and webhook; *More*: the setup key's budget, daily price updates |
 | **Chat & voice** | Chat's default model, models hidden from its picker, speech-to-text, OpenRouter; *More*: the title/tag model, OpenRouter's cap and aliases |
-| **Claude Code** | the Code page with *Allow Bypass permissions* and *Auto mode*, the browser terminal (folder, *Sandbox internet access*, *Auto mode in the terminal*), Claude Code's main model, *Models for Claude Code*, the *Default model for new sessions*, *Project folders* ([folders of this computer](#folders-of-this-computer)), *What bedrock-now may read on this computer* ([your sessions](#your-claude-code-and-claude-bedrock-sessions-from-this-computer) and setup: Take back) and *Bring your setup…* ([your setup](#your-claude-code-setup-from-this-computer)) and *Your AI subscriptions* ([each tool, signed in or not](#your-ai-subscriptions): Sign out, Check again); *More*: its sonnet/haiku slots, the sandbox's internet name lists (only these, never these), its memory and *Tools in the sandbox* (`TERMINAL_AI_TOOLS`) |
+| **Claude Code** | the Code page with *Allow Bypass permissions* and *Auto mode*, the browser terminal (folder, *Sandbox internet access*, *Auto mode in the terminal*), Claude Code's main model, *Models for Claude Code*, the *Default model for new sessions*, *Project folders* ([folders of this computer](#folders-of-this-computer)), *What DevOS ADE may read on this computer* ([your sessions](#your-claude-code-and-claude-bedrock-sessions-from-this-computer) and setup: Take back) and *Bring your setup…* ([your setup](#your-claude-code-setup-from-this-computer)) and *Your AI subscriptions* ([each tool, signed in or not](#your-ai-subscriptions): Sign out, Check again); *More*: its sonnet/haiku slots, the sandbox's internet name lists (only these, never these), its memory and *Tools in the sandbox* (`TERMINAL_AI_TOOLS`) |
 | **Files & sharing** | the Files (RustFS) key pair and the shared MCP token (**Regenerate**) |
 | **Remote access** | status, allowed Tailscale login, remote admin actions, the Terminal and Code page remotely, previews remotely; *More*: Tailscale and own-domain details |
 | **Updates & backups** | daily release check (when it last checked, and **Check for updates**), automatic updates and their window, nightly backups (window, how many), **Back up now** and the list of backups; *More*: signed releases only, the helper's switches |
@@ -1736,7 +1740,7 @@ shown by `./stack costs`. The [browser terminal](#claude-code-in-the-browser) an
 key, `claude-code-terminal`, **$50** (`BUDGET_TERMINAL`). To change one, use **Settings › Spending & budgets** or
 `./stack config set BUDGET_OPENWEBUI` (likewise `BUDGET_CLAUDE_CODE`, `BUDGET_SETUP`, `BUDGET_TERMINAL`): it applies
 at once, with no restart, and keeps the reset date. Raising a budget works only from the computer
-running bedrock-now.
+running DevOS ADE.
 
 **Alerts.** Each key has a soft budget at **80%** (Settings → Spending & budgets → Alert threshold, 50-99%;
 `BUDGET_ALERT_PCT`): it never blocks, but `./stack costs`, Home and the `claude-bedrock` launch line warn from there
@@ -1760,7 +1764,7 @@ servers multiply this, which is why `claude-bedrock` leaves your `~/.claude` out
 **Why Open WebUI adds tokens.** Open WebUI v0.12 lets the model call its built-in tools (search your knowledge
 bases, chat history and notes, calendar, automations, skills, task lists, the time, …) and sends the
 definitions of all of them, about 40 tools, with every chat request: a one-sentence question cost ~9,800 input
-tokens instead of ~25. bedrock-now turns those always-on categories off for every model
+tokens instead of ~25. DevOS ADE turns those always-on categories off for every model
 (`DEFAULT_MODEL_METADATA` → `builtinTools` in `compose.yaml`), so a short question now costs about what it
 costs through the API. The memory tools are off too (~2,000 tokens more, because the browser switches Memory
 on in every chat): memories you save in Settings → Personalization → Memory still reach the model as context,
@@ -1798,9 +1802,9 @@ If models show as **DISABLED**, send your AWS admin a request like this, listing
 reports as *no Marketplace access*, *no model access* or *access denied*, with the Bedrock IDs from
 `catalog/models.tsv`:
 
-> Subject: Bedrock model access for bedrock-now
+> Subject: Bedrock model access for DevOS ADE
 >
-> Hi, I'm running bedrock-now (a local AI workbench that calls AWS Bedrock through LiteLLM) with the IAM user
+> Hi, I'm running DevOS ADE (a local AI workbench that calls AWS Bedrock through LiteLLM) with the IAM user
 > you gave me. Could you please:
 >
 > 1. **Enable model access / the AWS Marketplace subscription** in our account for these models, which the
@@ -1834,7 +1838,7 @@ picker. To add a model, see [docs/advanced.md](docs/advanced.md#adding-a-model).
 
 ## Optional: OpenRouter
 
-[OpenRouter](https://openrouter.ai) offers hundreds of models from many providers, some free. bedrock-now can
+[OpenRouter](https://openrouter.ai) offers hundreds of models from many providers, some free. DevOS ADE can
 add them next to your Bedrock models as `or/<id>`; it is **off unless you give it a key**.
 
 ```bash
@@ -1846,7 +1850,7 @@ add them next to your Bedrock models as `or/<id>`; it is **off unless you give i
 ./stack openrouter remove              # back to Bedrock only
 ```
 
-The portal's **Settings → Chat & voice → OpenRouter API key** does the same as `set` from the computer running bedrock-now (not over
+The portal's **Settings → Chat & voice → OpenRouter API key** does the same as `set` from the computer running DevOS ADE (not over
 remote access): paste the key there, and it is checked before anything changes.
 
 An account without credits can only use free models, so `apply`, `set` and setup then offer just those
@@ -1855,7 +1859,7 @@ An account without credits can only use free models, so `apply`, `set` and setup
 
 **Set up your OpenRouter account** (once, on openrouter.ai):
 
-1. **Create a key** at [Settings › API Keys](https://openrouter.ai/settings/keys). Name it `bedrock-now`; a
+1. **Create a key** at [Settings › API Keys](https://openrouter.ai/settings/keys). Name it `DevOS ADE`; a
    credit limit is optional (it caps what this key can spend).
 2. **Paste it** into `.env` after `OPENROUTER_API_KEY=` and run `./stack openrouter apply` (or run
    `./stack openrouter set`).
@@ -1863,13 +1867,13 @@ An account without credits can only use free models, so `apply`, `set` and setup
    free endpoints that train on request data*. That is a trade-off: those providers may keep your prompts and
    train on them. Without it, free models answer 404 (below). Leave *Allow free endpoints that publish
    prompts* off.
-4. **Filter the model catalog for API keys** (recommended; Settings › Privacy › Model catalog): bedrock-now
+4. **Filter the model catalog for API keys** (recommended; Settings › Privacy › Model catalog): DevOS ADE
    asks for the model list with your key, so with this on, Chat lists only the models your key can actually use
    under your provider restrictions and guardrails.
 5. **Observability:** nothing to turn on. Leave *Input & Output Logging* (and *Broadcast*) off: Admin's logs
    already record every request (model, key, tokens, cost), and OpenRouter's logging would store your prompts
    at OpenRouter.
-   OpenRouter's Activity page lists the requests under the app name `bedrock-now`.
+   OpenRouter's Activity page lists the requests under the app name `DevOS ADE`.
 
 **When an OpenRouter model fails** (the error shows in Chat):
 
@@ -1886,7 +1890,7 @@ for vendors without one). Their prices go into LiteLLM, so spend, budgets, `./st
 
 **Actual and Equivalent.** Free models really cost $0, so using them never eats into a budget. Home's Spend
 card then has a switch (remembered per browser):
-- **Actual**: what you are charged — Bedrock at its on-demand list prices (what bedrock-now records; your AWS
+- **Actual**: what you are charged — Bedrock at its on-demand list prices (what DevOS ADE records; your AWS
   bill can differ with discounts or credits), paid OpenRouter models at their prices, free models $0. Budgets
   always count actual spend.
 - **Equivalent**: what the same usage would have cost if every request had been paid — each free model
@@ -1920,13 +1924,13 @@ into `.env` before the first setup ([how](#quickstart)).
 ## Voice: speech-to-text
 
 Open WebUI's microphone and **Call** button need server speech-to-text (without it Call says *"Call feature is
-not supported when using Web STT engine"*). bedrock-now uses **Mistral Voxtral on Bedrock** for it: no extra
+not supported when using Web STT engine"*). DevOS ADE uses **Mistral Voxtral on Bedrock** for it: no extra
 key, and your recorded speech stays in your AWS account. Setup turns it on by default when its model check
 finds Voxtral usable with your AWS key, and says so in one line (an interactive setup asks once: Bedrock,
 OpenAI, Groq or browser only).
 
 **Since October 2026 AWS no longer accepts audio for the Voxtral models** (Bedrock answers *"Model does not
-support audio modality"*; text still works). bedrock-now recognises that: an install with Bedrock
+support audio modality"*; text still works). DevOS ADE recognises that: an install with Bedrock
 speech-to-text on switches to your **browser's speech recognition** once, at `./stack up`, `./stack update` or
 `./stack setup`, and says so on Home and in `./stack status`; `./stack stt set bedrock` and Settings › Voice
 refuse Bedrock with the reason. For the microphone *and* calls now, use your own **OpenAI or Groq** key
@@ -1971,7 +1975,7 @@ troubleshooting: [docs/voice.md](docs/voice.md).
   (`raw.githubusercontent.com`) and the public AWS Price List (`pricing.us-east-1.amazonaws.com`). No
   credentials are sent; `PRICE_UPDATES=false` turns it off.
 - **Update check:** once a day the portal asks GitHub's public releases API (`api.github.com`) for the latest
-  bedrock-now release and, only when it is newer than yours, fetches that release's `compose.yaml` from
+  DevOS ADE release and, only when it is newer than yours, fetches that release's `compose.yaml` from
   `raw.githubusercontent.com` to estimate the download. Unauthenticated, https only; nothing about your
   install is sent (GitHub sees your IP address, as for any download). Settings → Updates & backups
   (`UPDATE_CHECK`) turns it off; **Check for updates** on Home asks once more, when you click it.
@@ -1985,7 +1989,7 @@ troubleshooting: [docs/voice.md](docs/voice.md).
   own-domain mode Caddy asks Let's Encrypt for certificates through Cloudflare's DNS API.
 - **Nothing else.** Open WebUI runs in offline mode with telemetry, web search and community sharing off;
   `claude-bedrock` turns off Claude Code's non-essential traffic; LiteLLM stores no prompt or response text.
-  `./stack setup`, `./stack update` and image pulls contact GitHub, the image registries and, to build bedrock-now's
+  `./stack setup`, `./stack update` and image pulls contact GitHub, the image registries and, to build DevOS ADE's
   own images, the package indexes (PyPI, Alpine, Debian, npm) only when you run them.
 
 ## Commands
@@ -1995,7 +1999,7 @@ troubleshooting: [docs/voice.md](docs/voice.md).
 | `./stack setup` | First-time or repeat setup: AWS key, ports, model probe, keys | < $0.01 |
 | `./stack up` / `down` | Start / stop (data is kept) | none |
 | `./stack status [--disk]` | Services, health, URLs and the disk this install uses (images, data, backups, and old images `./stack clean` would remove, if any; reused for 5 minutes, `--disk` measures now) | none |
-| `./stack open` | The installed bedrock-now app, else the portal in a browser tab | none |
+| `./stack open` | The installed DevOS ADE app, else the portal in a browser tab | none |
 | `./stack logs [service]` | Follow logs (`litellm`, `open-webui`, `rustfs`, `postgres`, `shared-mcp`, `portal`, `caddy`, `stt`; while on: `terminal`, `terminal-gateway`, `terminal-egress` (the sandbox's refusals), `code`, `tailscale`) | none |
 | `./stack test` | End-to-end smoke test, incl. the portal login (and, while the terminal is on, its isolation and its egress proxy's refusals) | ~$0.0001 |
 | `./stack costs` | Prices for your enabled models + spend per key | none |
@@ -2036,6 +2040,15 @@ troubleshooting: [docs/voice.md](docs/voice.md).
 ./stack update                 # newest release
 ./stack update --to main       # or any tag / branch
 ```
+
+**Formerly bedrock-now (renamed in v0.25.0).** The project and its repository are now DevOS ADE
+(`github.com/JongoDB-Labs/devos-ade`; GitHub redirects the old address). An install made before keeps its folder
+(`~/bedrock-now`), its addresses (`http://bedrock-now.localhost`), its `.env` and every setting name in it, and its
+data: there is nothing to do. `./stack update` moves the checkout's `origin` to the new address once; an installed
+app asks you to accept its new name and icon (until then it keeps the old ones, and `./stack open` finds it under
+either). An install older than v0.22.1 shows *could not check* on Home's update card until it updates once — with
+`./stack update` or the nightly automatic update, which both still work (git follows GitHub's redirect). What kept
+the old name, and why: [docs/internal-names.md](docs/internal-names.md).
 
 When a newer release is out, Home shows an **update card**: one line for **every release since yours** (an update
 installs the newest, so a jump from v0.4.1 to v0.9.0 lists v0.5.0 to v0.9.0, each with its headline) and their
@@ -2127,7 +2140,7 @@ when you wake it up and start working (keep a Mac awake with `./stack serve`, or
 **Disk space:** an update keeps **one** previous version of every image it replaces (so going back needs no
 download) and removes the version before that, then says what it freed, e.g. `freed 3.1 GB (old litellm
 1.104.0, open-webui v0.11.2-slim)`. It only removes images this install used, never one that any container
-(of any project) or another bedrock-now folder still needs, and never runs a global `docker … prune`. Its own
+(of any project) or another DevOS ADE folder still needs, and never runs a global `docker … prune`. Its own
 leftover builds (untagged images Compose labelled with this project) go too; a current `<project>/…:local` build
 never does, even when its container is stopped. If Docker cannot list what is in use, nothing is removed.
 `./stack clean` does the same on demand: it lists what it would remove and asks first (`--yes` skips the
@@ -2141,7 +2154,7 @@ internet — now reads as `internet`, public addresses only, so the sandbox of t
 longer reaches this computer's own services (on Docker Desktop, anything on its `127.0.0.1`: a dev server, a
 database, LiteLLM) or your local network; `off` stays off. The update's *What's new* says so once, with the way
 back: Settings › Claude Code › Sandbox internet access › **+ this computer** (or `./stack config set
-TERMINAL_EGRESS`, then `host`; from the computer running bedrock-now). The terminal's container is recreated on its
+TERMINAL_EGRESS`, then `host`; from the computer running DevOS ADE). The terminal's container is recreated on its
 new networks, as at every update (its tmux session ends: above), and the proxy's small image is built. Also new:
 the Code page's model picker and `claude-bedrock`'s `/model` menu list every enabled chat model
 ([Models for Claude Code](#models-for-claude-code); Settings › Claude Code › Models for Claude Code › *Anthropic
@@ -2167,7 +2180,7 @@ downtime (Chat answers, `claude-bedrock` requests and MCP sessions in progress t
 setup runs without questions. What changes for you:
 
 - **New parts stay off** (until an update to v0.10.0 or later, which turns the Code page on: above): the Code
-  page (`./stack code enable`, or **Settings › Claude Code › On** on the computer running bedrock-now), its *Auto* and
+  page (`./stack code enable`, or **Settings › Claude Code › On** on the computer running DevOS ADE), its *Auto* and
   *Bypass permissions* modes and auto mode in the terminal (Settings → Claude
   Code), and previews of dev servers over remote access (`REMOTE_PREVIEW`). Nothing you did not turn on starts.
 - **The browser terminal, if it is on,** gets a new image: its container is recreated, so its tmux session ends
@@ -2208,10 +2221,10 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
 | `claude-bedrock --debug mcp list` fails | Options placed *before* a subcommand trip the wrapper's MCP flag. Use `claude-bedrock mcp list --debug`, or plain `claude` for management commands. |
 | "LiteLLM is not running" from `claude-bedrock` | `./stack up` |
 | Requests fail for about a minute during `./stack setup` | LiteLLM restarts while setup probes the models. Wait, or avoid running setup mid-session. |
-| "project '…' is already used by the bedrock-now install in …" | Another folder owns this project name. If this folder replaces it (moved or copied with its `.env`), run `./stack down` there, move that folder aside or delete it (it holds its own `backups/` and `.env`), and re-run here. Otherwise use that install, or remove it with `./stack uninstall` there. A checkout that was never set up can take another name: `COMPOSE_PROJECT_NAME=<other name> ./setup.sh`. See [docs/advanced.md](docs/advanced.md#running-a-second-copy). |
+| "project '…' is already used by the DevOS ADE install in …" | Another folder owns this project name. If this folder replaces it (moved or copied with its `.env`), run `./stack down` there, move that folder aside or delete it (it holds its own `backups/` and `.env`), and re-run here. Otherwise use that install, or remove it with `./stack uninstall` there. A checkout that was never set up can take another name: `COMPOSE_PROJECT_NAME=<other name> ./setup.sh`. See [docs/advanced.md](docs/advanced.md#running-a-second-copy). |
 | "… containers started from …, a folder that no longer exists" | Remove them with `docker compose -p <project> down` (the data volumes are kept), then re-run. |
 | "project '…' was just claimed by …" | Another checkout ran a command at the same moment and now owns the project; fix it as for "already used". If it says "a record pointing to …, which no longer exists", just re-run. |
-| "project '…' is already used by another Compose project in …" | Something other than bedrock-now uses this project name. Stop it there (`docker compose down`), or set up this copy with `COMPOSE_PROJECT_NAME=<other name> ./setup.sh`. |
+| "project '…' is already used by another Compose project in …" | Something other than DevOS ADE uses this project name. Stop it there (`docker compose down`), or set up this copy with `COMPOSE_PROJECT_NAME=<other name> ./setup.sh`. |
 | "./stack uninstall here would delete project '…'" | The volumes belong to another folder's install; run `./stack uninstall` there instead. |
 | Setup can't sign in to the portal or to Open WebUI through it | Run `./stack logs portal` and `./stack logs caddy`. If you edited `PORTAL_PASSWORD` in `.env` by hand, run `./stack up` (it hashes the new one for the portal). |
 | Settings: "changed on disk since you opened the page" | `.env` changed in the meantime (a terminal command, or an edit by hand): reload the page and make the change again. |
@@ -2318,7 +2331,7 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
   with the values on stdin; keys that could send data elsewhere, and settings that would protect less, change
   only from this computer.
 - The browser terminal is on by default, as the Code page's sandbox (`./stack terminal disable` turns both off). It
-  is a container (not a shell on your computer) that sees one folder of yours (`~/bedrock-now-workspace` unless you
+  is a container (not a shell on your computer) that sees one folder of yours (`~/devos-ade-workspace` unless you
   pick another), has its own LiteLLM key and budget, and reaches inside the stack only a gateway that passes
   Claude Code's few LiteLLM paths and the shared MCP server, and outside only public internet addresses, through an
   egress proxy of its own (not this computer's services or your network, unless `TERMINAL_EGRESS=host`); opening it
@@ -2334,7 +2347,7 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
   mode it flags changes to files of your folder that run on your computer (git hooks, `.envrc`, editor and Claude
   Code settings …), with Revert.
 - Your AI subscriptions are used only by each provider's own, unmodified app in that sandbox, signed in with its own
-  sign-in; bedrock-now never reads, copies, keeps or passes on a login (status comes from each app's own status
+  sign-in; DevOS ADE never reads, copies, keeps or passes on a login (status comes from each app's own status
   command, as words), and backups leave them out. Anything running in the sandbox can read those logins: sign out and
   revoke at the provider if that ever matters ([details](docs/security.md#your-ai-subscriptions)).
 - Remote access is off by default. When on, nothing is published on the host either: a Tailscale container

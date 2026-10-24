@@ -1,8 +1,8 @@
-# Running bedrock-now on a cloud VM
+# Running DevOS ADE on a cloud VM
 
 Back to the [README](../README.md#run-it-on-a-cloud-vm).
 
-A small always-on VM is a good home for bedrock-now when you want it from several devices (or from your phone)
+A small always-on VM is a good home for DevOS ADE when you want it from several devices (or from your phone)
 without keeping a laptop awake. On **EC2** the VM can use an **IAM role** instead of an access key: nothing is
 stored in `.env`, and AWS rotates the role's temporary credentials by itself. Other providers (Hetzner,
 DigitalOcean, …) work the same way with an IAM user access key, as on your Mac.
@@ -22,16 +22,16 @@ Everything stays private: the security group has **no inbound rules**. You reach
 | Security group | **no inbound rules**; outbound: all (Bedrock, image pulls, Tailscale) |
 | Public IPv4 | yes (outbound internet without a NAT gateway; nothing listens on it) |
 | Metadata | IMDSv2 **required**, hop limit **2** (AL2023's default; see below) |
-| IAM instance profile | the `bedrock-now` role below |
+| IAM instance profile | the `devos-ade` role below |
 
-Every image bedrock-now runs is published for `linux/arm64` (pgvector, RustFS, aws-cli, LiteLLM, Open WebUI,
+Every image DevOS ADE runs is published for `linux/arm64` (pgvector, RustFS, aws-cli, LiteLLM, Open WebUI,
 Caddy, and the Python base of the portal and shared-mcp images, which are built on the VM), so Graviton works
 out of the box and costs less than the equivalent x86 type.
 
 ## 1. The IAM role
 
-Create a role for EC2 (trusted entity: `ec2.amazonaws.com`) named `bedrock-now`, with this inline policy
-(replace `111122223333` with your account ID):
+Create a role for EC2 (trusted entity: `ec2.amazonaws.com`) named `devos-ade` (any name works: a role you made
+earlier keeps working), with this inline policy (replace `111122223333` with your account ID):
 
 ```json
 {
@@ -96,14 +96,14 @@ Create a role for EC2 (trusted entity: `ec2.amazonaws.com`) named `bedrock-now`,
 
 ### Asking your AWS admin for the role
 
-> Subject: EC2 instance role for bedrock-now
+> Subject: EC2 instance role for DevOS ADE
 >
-> Hi, I'd like to run bedrock-now (a private AI workbench that calls AWS Bedrock through LiteLLM) on a small EC2
+> Hi, I'd like to run DevOS ADE (a private AI workbench that calls AWS Bedrock through LiteLLM) on a small EC2
 > instance (t4g.medium, Amazon Linux 2023, us-east-1, no inbound ports). Instead of an IAM user access key it
 > can use an instance role, so no long-lived keys are stored anywhere. Could you please:
 >
-> 1. **Create an EC2 role** (or instance profile) named `bedrock-now` with the inline policy in
->    https://github.com/JongoDB-Labs/bedrock-now/blob/main/docs/cloud-vm.md#1-the-iam-role:
+> 1. **Create an EC2 role** (or instance profile) named `devos-ade` with the inline policy in
+>    https://github.com/JongoDB-Labs/devos-ade/blob/main/docs/cloud-vm.md#1-the-iam-role:
 >    `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` on US foundation models
 >    (`arn:aws:bedrock:us-*::foundation-model/*`) and our `us.` inference profiles
 >    (`arn:aws:bedrock:us-*:<account>:inference-profile/us.*`), `bedrock:Rerank` (resource `*`), optional
@@ -117,7 +117,7 @@ Create a role for EC2 (trusted entity: `ec2.amazonaws.com`) named `bedrock-now`,
 
 In the console: *Launch instance* → Amazon Linux 2023 (64-bit **Arm**) → `t4g.medium` → no key pair needed
 (Session Manager) → a new security group **with the SSH rule removed** → 30–40 GB gp3 → *Advanced details*:
-IAM instance profile `bedrock-now`, *Metadata version* **V2 only (token required)**, *Metadata response hop
+IAM instance profile `devos-ade`, *Metadata version* **V2 only (token required)**, *Metadata response hop
 limit* **2**.
 
 Or with the AWS CLI:
@@ -126,11 +126,11 @@ Or with the AWS CLI:
 aws ec2 run-instances --region us-east-1 \
   --image-id resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64 \
   --instance-type t4g.medium \
-  --iam-instance-profile Name=bedrock-now \
+  --iam-instance-profile Name=devos-ade \
   --security-group-ids sg-0123456789abcdef0 \
   --block-device-mappings 'DeviceName=/dev/xvda,Ebs={VolumeSize=40,VolumeType=gp3}' \
   --metadata-options 'HttpTokens=required,HttpPutResponseHopLimit=2,HttpEndpoint=enabled' \
-  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=bedrock-now}]'
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=devos-ade}]'
 ```
 
 ### IMDSv2 hop limit 2 (important)
@@ -192,11 +192,11 @@ let other machines on the same LAN reach ports published on `127.0.0.1`). On EC2
 inbound rules drops such traffic at the network interface, so the warning is informational there; update Docker
 when AL2023 ships a newer package.
 
-## 4. Install bedrock-now
+## 4. Install DevOS ADE
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/JongoDB-Labs/bedrock-now/main/install.sh | bash
-cd ~/bedrock-now
+curl -fsSL https://raw.githubusercontent.com/JongoDB-Labs/devos-ade/main/install.sh | bash
+cd ~/devos-ade
 ```
 
 Setup looks for an instance role **only on EC2**: on Linux whose firmware identifies the machine as an EC2
@@ -204,7 +204,7 @@ instance (never on macOS, and never on a network that merely answers `169.254.16
 no access key is configured, it asks:
 
 ```
-This EC2 instance has an AWS IAM role (bedrock-now). Use it instead of an access key (nothing stored in .env)? [Y/n]
+This EC2 instance has an AWS IAM role (devos-ade). Use it instead of an access key (nothing stored in .env)? [Y/n]
 ```
 
 Answer yes (the default). Setup then checks, before writing anything, that a **container** gets this role's
@@ -236,7 +236,7 @@ itself and see [docs/phone-claude-code.md](phone-claude-code.md):
 ```bash
 curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up --ssh      # --ssh: Tailscale SSH, no SSH keys or port 22 to manage
-cd ~/bedrock-now && ./stack ssh-info
+cd ~/devos-ade && ./stack ssh-info
 ```
 
 Servers don't sleep, so `./stack serve` has nothing to hold on a VM; the stack comes back after a reboot on
@@ -300,7 +300,7 @@ and run it from systemd — a long-running listener plus a timer:
 sudo dnf install -y iptables-nft
 sudo tee /etc/systemd/system/bedrock-now-imds-guard.service >/dev/null <<'EOF'
 [Unit]
-Description=bedrock-now: only LiteLLM may reach the EC2 metadata service (on every container start)
+Description=DevOS ADE: only LiteLLM may reach the EC2 metadata service (on every container start)
 After=docker.service
 Requires=docker.service
 [Service]
@@ -314,7 +314,7 @@ WantedBy=multi-user.target
 EOF
 sudo tee /etc/systemd/system/bedrock-now-imds-guard-refresh.service >/dev/null <<'EOF'
 [Unit]
-Description=bedrock-now: refresh the metadata-service rule (backstop)
+Description=DevOS ADE: refresh the metadata-service rule (backstop)
 After=docker.service
 [Service]
 Type=oneshot
@@ -331,7 +331,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now bedrock-now-imds-guard.service bedrock-now-imds-guard-refresh.timer
 ```
 
-**Check it** (from `~/bedrock-now`). Ask for an IMDSv2 token — the first step of every credential lookup — from
+**Check it** (from `~/devos-ade`). Ask for an IMDSv2 token — the first step of every credential lookup — from
 another container and from LiteLLM:
 
 ```bash
@@ -387,11 +387,11 @@ regions for latency; your prompts still go to Bedrock's US regions as above.
 
 ## What to check on a real EC2 instance
 
-The role detection is unit-tested with stubs; after your first install, from `~/bedrock-now`, confirm:
+The role detection is unit-tested with stubs; after your first install, from `~/devos-ade`, confirm:
 
 1. The first `./stack setup` built the portal and shared-mcp images (buildx) without errors.
 2. Setup offered the role, printed `Bedrock access confirmed with the role` and showed
-   `arn:aws:sts::<account>:assumed-role/bedrock-now/i-…` with your account ID.
+   `arn:aws:sts::<account>:assumed-role/devos-ade/i-…` with your account ID.
 3. `grep -c AWS_ACCESS_KEY_ID .env` prints `0`, and `grep AWS_AUTH .env` shows `AWS_AUTH=instance-role`.
 4. `docker compose exec litellm env | grep AWS_` shows only `AWS_REGION_NAME` (no keys).
 5. `./stack test` passes (LiteLLM reached Bedrock with the role's credentials).

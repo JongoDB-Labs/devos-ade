@@ -2,7 +2,7 @@
 
 Back to the [README](../README.md#claude-code-from-your-phone).
 
-`claude-bedrock` runs on the machine that runs bedrock-now (your Mac, or a [cloud VM](cloud-vm.md)). From a
+`claude-bedrock` runs on the machine that runs DevOS ADE (your Mac, or a [cloud VM](cloud-vm.md)). From a
 phone you reach it the way you'd reach any server: **SSH**, inside **tmux** so a dropped connection doesn't end
 the session. That is what this page describes: Claude Code on the machine itself, with your projects and tools.
 
@@ -67,7 +67,7 @@ built in). Over Tailscale, mosh's UDP ports need no firewall changes.
 A sleeping Mac answers no SSH. While you're away, run:
 
 ```bash
-cd ~/bedrock-now               # your checkout
+cd ~/devos-ade                 # your checkout (~/bedrock-now if you installed before v0.25.0)
 ./stack serve                  # brings the stack up and keeps the Mac awake until Ctrl-C
 ./stack serve --background     # the same without a terminal; ./stack serve --stop ends it
 ```

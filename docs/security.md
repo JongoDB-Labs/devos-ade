@@ -129,7 +129,7 @@ and delivers the result.
     (LiteLLM sets it the same way). Caddy never passes that cookie on to LiteLLM: the dashboard sends the session as
     `Authorization` itself, but LiteLLM 1.105 also accepts the cookie as a credential on a few browser routes (MCP
     OAuth's `authorize`/`token`, BYOK sessions), which a page on another of the portal's hosts could drive with your
-    cookies. The cost: those LiteLLM browser-redirect flows, which bedrock-now does not use, need an
+    cookies. The cost: those LiteLLM browser-redirect flows, which DevOS ADE does not use, need an
     `Authorization` header. The portal's own HTTP client keeps no cookies, so the cookie LiteLLM sets on its
     `/v2/login` answer goes nowhere.
   - Files: STS `AssumeRole` on `rustfs:9000`, signed (SigV4) with the key pair — the call the console makes — for
@@ -307,7 +307,7 @@ you type into the search travels from your device to the portal, as every reques
 - **Browser notifications** are off until you turn them on in the panel, which asks the browser's permission; then
   only items that appear while a portal tab is open and not focused raise one, at most three at a time, never for
   what was there when the page opened. A notification says **fixed words only** — what kind of thing happened ("A
-  Code session needs you", "A job failed", "A bedrock-now update is available"; for a budget its key's label from
+  Code session needs you", "A job failed", "A DevOS ADE update is available"; for a budget its key's label from
   this stack and the percentage) and "Details in Activity" — never an item's title or text: a Code session's title
   (sandbox text, often the prompt), a job's message, a model name or an error could otherwise show on a lock screen,
   in the system's notification history or on a paired watch. The details stay in the panel, behind the portal's
@@ -425,12 +425,12 @@ Off by default; `./stack remote enable tailscale` turns it on ([docs/remote.md](
 ## The same-site guard
 
 `SameSite=Strict` keeps a session cookie out of requests from other *sites*, not from other *hosts of the same
-site* — and bedrock-now's hosts share one: `*.bedrock-now.localhost` here (`localhost` is not on the public suffix
+site* — and DevOS ADE's hosts share one: `*.bedrock-now.localhost` here (`localhost` is not on the public suffix
 list, so a `.localhost` name's last two labels are its site), every Service of a tailnet over Tailscale (`ts.net` is on
 it: the whole `<tailnet>.ts.net` is one site, the remote preview host and your other machines' web apps included), and
 everything under your domain in own-domain mode. A page on any of those hosts could send requests to the portal, Chat,
 Admin, Files, the terminal or the Code page that carry your cookies — form posts, `no-cors` fetches, WebSockets — and,
-where an app's CORS answers its `Origin` (Open WebUI's default is `*`; bedrock-now limits it to Chat's own origin),
+where an app's CORS answers its `Origin` (Open WebUI's default is `*`; DevOS ADE limits it to Chat's own origin),
 read the answers. The remote preview host shows whatever the sandbox serves, so over remote access this is not
 hypothetical: `tests/e2e/remote/run.sh` shows a preview reading a stand-in Chat's API (permissive CORS, like Open
 WebUI's default) and posting a form to it as you once the guard is taken out.
@@ -443,7 +443,7 @@ portal's check and before the app:
 - [x] **An opaque origin is refused**: `Origin: null` unless `Sec-Fetch-Site: same-origin`. A sandboxed frame without
   `allow-same-origin`, or a `data:` page, that a preview opens has no origin of its own: its requests say
   `Origin: null` and `Sec-Fetch-Site: cross-site`, yet a browser may still send the site's cookies with them (the frame
-  tree decides). None of bedrock-now's requests between its hosts sends `null`; an app's own page with
+  tree decides). None of DevOS ADE's requests between its hosts sends `null`; an app's own page with
   `Referrer-Policy: no-referrer` posting to itself sends `null` with `same-origin`, which passes. It also closes the
   gap of a browser without `Sec-Fetch-*` posting a form with `no-referrer`. Every method is refused, `GET` too: an app
   whose CORS answers `null` with credentials (Starlette's `*` with cookies does) would otherwise let such a frame read
@@ -467,7 +467,7 @@ portal's check and before the app:
 Remaining risks:
 - **A page load is still a page load — with your cookies, by design.** Page loads and plain `no-cors` `GET`s from the
   same site carry the site's `SameSite` cookies; that is what lets the portal frame the apps. So a preview (or another
-  same-site page) can open bedrock-now's pages in a frame or a tab and load their images: the pages refuse to be framed
+  same-site page) can open DevOS ADE's pages in a frame or a tab and load their images: the pages refuse to be framed
   by anything but the portal (and the Code page for the terminal), and nothing changes on a `GET` except the automatic
   sign-in to Admin and Files (`/.bn/sso`): a preview loading it over and over spends that session's sign-in budget (a
   nuisance: the app's own sign-in form still works). Open WebUI's sign-out (v0.12.0, the pinned version) is a `POST`,
@@ -477,7 +477,7 @@ Remaining risks:
   It can also fill the parent with cookies until requests to every host of the site are too large; clearing that
   site's cookies in the browser recovers (on Tailscale that means all of `<tailnet>.ts.net`, which signs you out of
   your other tailnet apps too: [docs/remote.md](remote.md#previews-of-dev-servers-over-remote-access) has the steps).
-- **Your other apps on the same site are not guarded by it.** The guard protects bedrock-now's six hosts; Grafana, Home
+- **Your other apps on the same site are not guarded by it.** The guard protects DevOS ADE's six hosts; Grafana, Home
   Assistant or a NAS page on the same tailnet (or under the same domain) get no such protection from a preview — which
   is why previews over remote access are off unless you turn them on.
 
@@ -652,7 +652,7 @@ reaches is the container — with the three exceptions under *Threat model*.
   macOS — `/`, system folders (where the Docker socket lives), `/Volumes`, `/mnt` and `/media` themselves (every
   mounted disk; a folder on one is fine), your home folder itself or any folder around it,
   hidden folders directly in your home folder (`~/.ssh`, `~/.aws`, `~/.docker` …), `~/Library` (keychains, app
-  data; only its iCloud Drive folder, `~/Library/Mobile Documents`, is allowed), the bedrock-now folder and
+  data; only its iCloud Drive folder, `~/Library/Mobile Documents`, is allowed), the DevOS ADE folder and
   anything around or inside it (its `.env` holds every secret), a temporary folder itself (`/tmp`, `/var/tmp`,
   `/dev/shm`, a Mac's `/private/var/folders/…/T` and the folders above it: programs keep their UNIX sockets there, and
   a socket is a way to run commands on this computer — a folder of yours inside one stays fine), a path through a
@@ -986,7 +986,7 @@ spawn server, Claude Code or any file at will.
   none of the upstream's `Set-Cookie`, `Clear-Site-Data`, `Refresh`, `Link`, `Location`, `Service-Worker-Allowed`,
   CORS or reporting headers. The page renders sandbox text with `textContent` only, never as HTML, and keeps it
   inside messages and cards (never in its chrome); it never asks for a password (the unlock is the portal's page).
-- [x] **File previews draw the workspace's files; nothing in them runs on bedrock-now's pages.** Every file in
+- [x] **File previews draw the workspace's files; nothing in them runs on DevOS ADE's pages.** Every file in
   `/workspace` is untrusted (the sandbox writes whatever it likes there), so the page previews on its own origin only
   formats it can turn into DOM or canvas from plain data, under the policy above; what needs a file's own script or an
   HTML parser runs only in the sandboxed artifact viewer, another site ("The artifact viewer", below):
@@ -1202,10 +1202,10 @@ spawn server, Claude Code or any file at will.
   code container never opens a second process on a session it has open (opening it again returns the open one).
 - [x] **Turned on only where it is local.** In Settings, `CODE_ENABLED` is *widen-local*: turning the Code page on (it
   adds a host for Claude Code processes with the sandbox's internet access, reachable from the browser) works only
-  from the computer running bedrock-now. With the browser terminal off it turns the terminal on too, with the
+  from the computer running DevOS ADE. With the browser terminal off it turns the terminal on too, with the
   terminal's folder (`TERMINAL_WORKSPACE`, or the default `~/bedrock-now-workspace`), which Settings names before you
   confirm and `./stack` checks first by the same rules as `./stack terminal enable` (never your home folder, a system
-  folder or this bedrock-now folder); another folder is chosen in a terminal (`./stack code enable --workspace DIR`).
+  folder or this DevOS ADE folder); another folder is chosen in a terminal (`./stack code enable --workspace DIR`).
   Turning it off — the safer direction — works from anywhere the settings can be changed. The update helper runs
   `./stack code enable` or `disable`; neither restarts the terminal container (its tmux session goes on). A change
   that fails is rolled back, and a terminal it had turned on is turned off again (the failure says so, or says how to
@@ -1218,7 +1218,7 @@ spawn server, Claude Code or any file at will.
 page — fake tool output, fake diffs, misleading permission sentences, wrong session titles, a fake plugin catalog
 or MCP status — deny service (kill the
 spawn server: restarted in 2 s; flood: capped; hang: timeouts), and write permission through *Always* (only for itself; into your folder's settings only through the explicit workspace button). A file
-it writes can be previewed, which shows its content and runs none of it on bedrock-now's pages (an HTML file's or a
+it writes can be previewed, which shows its content and runs none of it on DevOS ADE's pages (an HTML file's or a
 notebook output's script runs only in the sandboxed artifact viewer: another site, no network, no cookies). It
 cannot run script in your browser, reach the code container over the network, read its files, make it open or
 follow a path, call host callbacks other than `canUseTool`, obtain `CODE_PROXY_SECRET`, the master key or the unlock
@@ -1704,10 +1704,11 @@ repository can plant in `.git/` or in a configuration file.
   (git's status lists the folder, not its files).
 - [x] **Who a commit is by.** The repository's `user.name` / `user.email` (read by git, includes and all), else the
   sandbox's own `~/.config/git/config` and `~/.gitconfig` — read by bn-coded itself, regular files only, never through
-  a link, includes not followed (the global configuration is never given to git) — else a fixed identity, "bedrock-now
-  Code page" `<code-page@bedrock-now.invalid>`. A name or e-mail with `<`, `>` or a control character is not used. It
-  is set as `GIT_AUTHOR_*` / `GIT_COMMITTER_*` (nothing else of the environment can be added), and the panel shows it
-  before you commit. Commits are refused during a rebase, cherry-pick, revert or bisect (finish those in the terminal).
+  a link, includes not followed (the global configuration is never given to git) — else a fixed identity, "DevOS ADE
+  Code page" `<code-page@devos-ade.invalid>` (commits made before v0.25.0 carry the old name). A name or e-mail with
+  `<`, `>` or a control character is not used. It is set as `GIT_AUTHOR_*` / `GIT_COMMITTER_*` (nothing else of the
+  environment can be added), and the panel shows it before you commit. Commits are refused during a rebase,
+  cherry-pick, revert or bisect (finish those in the terminal).
 - [x] **Write message runs a helper that can use no tool — never your session.** The staged diff is file content, and
   so untrusted: sent as your prompt into the open session, an "also run …" planted in it would run in *Bypass
   permissions*, and in *Auto* the reviewer counts what your message names as your approval. So the code container
@@ -1776,7 +1777,7 @@ operation you started, sent only where you saw it go.
   never shown again (*Replace it* takes a new one; replace-only); an SSH key is an ed25519 key made there, whose
   private half never leaves it — the page sees the public half and the fingerprint. Adding a host, a sign-in, a token
   or a key, trusting a host key and turning on Claude's use of a host work only from the computer running
-  bedrock-now: the code container refuses them with Caddy's `X-Bn-Remote: 1` (its remote sites set it; a client's copy
+  DevOS ADE: the code container refuses them with Caddy's `X-Bn-Remote: 1` (its remote sites set it; a client's copy
   is stripped before it gets there). Removing a host and turning Claude's use off work everywhere. `./stack uninstall`
   removes the volume.
   **The tokens and SSH private keys are stored unencrypted** (the file's mode 600 is the protection): whoever can read
@@ -1784,7 +1785,7 @@ operation you started, sent only where you saw it go.
   that may have been exposed, revoke the tokens and remove the keys on the hosts, then connect them again.
 - [x] **A gh or glab login, imported.** `./stack git-host import gh` reads gh's token with `gh auth token`, `import
   glab` glab's with `glab config get token` (with `GH_TOKEN`, `GITLAB_TOKEN` and their kin taken out of the
-  environment: the stored login only), on the computer running bedrock-now. The shell keeps it in a variable and hands
+  environment: the stored login only), on the computer running DevOS ADE. The shell keeps it in a variable and hands
   it to `code/server/import-host.mjs` in the code container on the stdin of `docker compose exec -T` — never a command
   line (proven: in none of docker's, gh's or glab's arguments, nor docker's environment), a file, the browser or the
   portal; nothing prints it. Before it is kept, the account and the scopes (from the CLI's own `gh api` / `glab api`)
@@ -1825,7 +1826,7 @@ operation you started, sent only where you saw it go.
   `IdentitiesOnly` with the host's public key as `IdentityFile`, `IdentityAgent` a socket in a private folder of this
   operation, `UserKnownHostsFile` the host keys the code container sends (github.com's, gitlab.com's and
   bitbucket.org's built in, checked against their published fingerprints; another host's learned by *Test connection*
-  from the computer running bedrock-now, its fingerprint shown, or pasted), `StrictHostKeyChecking=yes`, no
+  from the computer running DevOS ADE, its fingerprint shown, or pasted), `StrictHostKeyChecking=yes`, no
   `GlobalKnownHostsFile`, no control socket, forwarding, local command, password or keyboard authentication, the egress
   proxy's `ProxyCommand` (`bn-ssh-proxy`) as the only way out. The agent socket relays every request to the code
   container, which answers with the host's public key and signs only an SSH login (a `publickey` user authentication
@@ -1869,7 +1870,7 @@ operation you started, sent only where you saw it go.
   (or the workspace folder while it is empty).
 - [x] **Claude's own git gets nothing — unless you let it, per host.** Neither `~/.git-credentials` nor an agent of
   the Code page is anywhere in the sandbox by default. *Let Claude use this host* (off by default; turned on only from
-  the computer running bedrock-now, after a warning that Claude, or text it reads, could then push to any repository
+  the computer running DevOS ADE, after a warning that Claude, or text it reads, could then push to any repository
   the token or key reaches) makes the code container keep `git.broker` open: bn-coded then answers
   `/tmp/bn-git/claude/cred.sock` (the image's `/etc/gitconfig` names `bn-git-credential`, which asks there when it is
   not inside an operation of yours) and `/tmp/bn-git/claude/agent.sock` (the image's ssh configuration names it as
@@ -1953,33 +1954,35 @@ operation you started, sent only where you saw it go.
 ### Signing in to a Git host (OAuth)
 
 **Sign in with GitHub** and **Sign in with GitLab** (README: *Remote repositories*) connect a Git host with a token the
-host issues to an application registered for bedrock-now, once you approve it on the host's own page (a gh or glab
+host issues to an application registered for DevOS ADE, once you approve it on the host's own page (a gh or glab
 login imported with `./stack git-host import` is an access token instead: [above](#git-remotes-and-git-hosts)). Such
 a host is one of Git hosts like the others (auth `oauth`): the same file, its token handed to git the same way (fd 3,
 only for the confirmed URL's host, while the operation runs), the same *Let Claude use this host* switch (off by
 default).
 
 - [x] **No secret; the device flow only.** GitHub's device flow and GitLab's Device Authorization Grant take the
-  application's (client) ID alone, which is public: no client secret and no private key are anywhere in bedrock-now —
+  application's (client) ID alone, which is public: no client secret and no private key are anywhere in DevOS ADE —
   a program you run on your own computer could not keep one. GitHub's web flow with PKCE still needs the client
   secret, so it is not used; GitLab's device grant needs a non-confidential application. The IDs are settings
-  (`GIT_GITHUB_CLIENT_ID`, `GIT_GITHUB_APP_SLUG`, `GIT_GITLAB_CLIENT_ID`; blank: bedrock-now's own GitHub App, and
-  none for gitlab.com), changed only from the computer running bedrock-now: an app someone else registered is theirs,
+  (`GIT_GITHUB_CLIENT_ID`, `GIT_GITHUB_APP_SLUG`, `GIT_GITLAB_CLIENT_ID`; blank: DevOS ADE's own GitHub App, and
+  none for gitlab.com), changed only from the computer running DevOS ADE: an app someone else registered is theirs,
   and a GitHub App you install on repositories lets its owner act on them too.
-- [x] **bedrock-now's own GitHub App (the default on github.com).** `code/server/oauth.mjs` names it by its public
-  values only: client ID `Iv23li9eDUUgicar7aTx`, name `bedrock-now` (github.com/apps/bedrock-now). What a sign-in
+- [x] **The project's own GitHub App, *DevOS ADE* (the default on github.com).** `code/server/oauth.mjs` names it by
+  its public values only: client ID `Iv23li9eDUUgicar7aTx` and its slug, written once (`GITHUB_APP_SLUG`; its address
+  is github.com/apps/<slug>). Renamed with the project, it kept its client ID: sign-ins and installs made before
+  v0.25.0 keep working. What a sign-in
   with it can reach: *Contents: Read and write* and *Metadata: Read-only*, on the repositories you install it on
   (*Choose repositories*) and that your account can reach — nothing else of your account. Its user tokens expire
   after 8 hours and are renewed with a refresh token (the sign-in lasts 6 months), kept in the code container like
   any sign-in. The app has one private key registered on GitHub (GitHub requires one before an app can be
-  installed). Its private half was deleted right after it was made, and bedrock-now uses no key (the device flow
+  installed). Its private half was deleted right after it was made, and DevOS ADE uses no key (the device flow
   needs none). GitHub shows an app's keys only to its owner, so that is the project's word. Like any GitHub App's
   owner, the project could make a new key at any time and act on the repositories the app is installed on, within
   its permissions (Contents read and write, Metadata); new permissions need each installer's approval on GitHub. The
   app has no webhook (inactive): no events from installed repositories go anywhere. If that is not acceptable,
   install it on fewer repositories, use a fine-grained token, or register an app of your own (README: *Your own app
   for sign-in*) and name it in Settings.
-  gitlab.com has no bedrock-now application: Sign in with GitLab there needs one of yours; a GitLab of your own
+  gitlab.com has no DevOS ADE application: Sign in with GitLab there needs one of yours; a GitLab of your own
   always takes its own application's ID in the Git hosts dialog.
 - [x] **The code container talks to the host; TLS ends there.** The code container keeps no network of its own. Its
   requests to the host — the device code, the polling, the renewals, the account (`/user`), a GitLab revocation — go
@@ -2004,14 +2007,14 @@ default).
   on as a link that you open — the page never opens it, and the browser never talks to the host about it. The code
   container checks first that the page the host named is `https://` on the Git host itself (its name and port): an
   answer naming another site is refused before anything is shown. The device code never leaves the code container.
-  Starting a sign-in and following it work only from the computer running bedrock-now (like adding a token);
+  Starting a sign-in and following it work only from the computer running DevOS ADE (like adding a token);
   cancelling works anywhere. The polling keeps the host's interval (5 s more after each `slow_down`), stops at the
   code's expiry, after `access_denied`, `expired_token` or any other refusal, and after five failures in a row.
 - **Phishing with device codes — what remains.** A device code signs in whoever enters it: someone who gets you to
   enter *their* code ("enter ABCD-1234 at github.com/login/device") gets a token of your account for *their* app.
-  bedrock-now never sends you a code: you see one only in the Git hosts dialog, right after you pressed Sign in, and
+  DevOS ADE never sends you a code: you see one only in the Git hosts dialog, right after you pressed Sign in, and
   the dialog says so. GitHub and GitLab show the app's name before you approve: check it is the one you meant
-  (bedrock-now's, or your own). Nor can the sandbox put such a message in the dialog: a failure of the tunnel (whose
+  (DevOS ADE's, or your own). Nor can the sandbox put such a message in the dialog: a failure of the tunnel (whose
   error text the sandbox writes) or of TLS (where a server names its certificate) is told in one of a few fixed
   phrases of ours, chosen by the code it names — never its text — and a provider's error only by a known OAuth error
   name ("an error of its own" otherwise), in the dialog, a plan's error, Activity and the log alike (proven with a
@@ -2022,7 +2025,7 @@ default).
   refused") and the words apart. The page never puts them in a sentence of ours ("Push failed: GitHub asks you to
   re-confirm …"): it shows them in a box of their own, without quote marks (a quote mark inside could look like their
   end), labelled *git in the sandbox said:*, under one fixed line:
-  "bedrock-now never asks you to enter a code except in Git hosts › Sign in, right after you press it."
+  "DevOS ADE never asks you to enter a code except in Git hosts › Sign in, right after you press it."
   The box scrolls, so however long the words are (invisible characters — also Hangul fillers, the soft hyphen and
   variation selectors other than an emoji's — are shown as ⟨U+202E⟩: up to ~2,700 characters) the line stays in
   view — in the toast, the Git panel, a diff, the Review pane, the Clone dialog, Test connection's result and Recent
@@ -2088,7 +2091,7 @@ default).
 - [x] **Removing.** **Remove** forgets the sign-in here. A GitLab sign-in is revoked on GitLab too (RFC 7009: a
   non-confidential application's own token, no secret), and so is the session a **Sign in again** replaces (best
   effort). GitHub revokes a user token only for the app's client
-  secret, which bedrock-now never has: the page says where to do it (*Settings › Applications › Authorized GitHub
+  secret, which DevOS ADE never has: the page says where to do it (*Settings › Applications › Authorized GitHub
   Apps*).
 - **Proof** (`code/test/oauth.test.mjs`, against a stand-in provider over real TLS with a CA of the test's own,
   `code/test/oauth-mock.mjs`): the device flow (pending, `slow_down`'s 5 s more, approved; declined; expired at the
@@ -2108,7 +2111,7 @@ default).
 The Code page shows a web server running in the sandbox — `npm run dev`, Vite, Next, `python -m http.server`,
 started by Claude, a background task or you in the terminal — in a pane beside the chat or in a new tab (README:
 "Previews of dev servers"). What it shows is **sandbox content: treat a preview like a website from a stranger.** Its script runs in
-your browser. The design keeps that script away from bedrock-now's cookies and pages, adds no new way into the
+your browser. The design keeps that script away from DevOS ADE's cookies and pages, adds no new way into the
 sandbox, and opens nothing on any network.
 
 ```
@@ -2117,15 +2120,15 @@ browser ─ http://p5173-<capability>.<PREVIEW_DOMAIN>:<PORTAL_PORT>/   (another
    └─ main Caddy: the local listener (caddy/preview-on.caddy), or the remote one (remote_preview, remote-*.caddy)
         forward_auth → portal /auth/verify?app=preview: the capability (remote: the cookie and your Tailscale login),
                        no Origin but the preview's own → the port
-        towards the sandbox: Host and Origin = localhost:5173, no bedrock-now cookie, no Referer, no Tailscale identity,
+        towards the sandbox: Host and Origin = localhost:5173, no DevOS ADE cookie, no Referer, no Tailscale identity,
                              the preview's secret header
         back: + CSP frame-ancestors (the Code page, the portal) and frame-src, Set-Cookie without Domain= (and none
-              with bedrock-now's names), Referrer-Policy same-origin
+              with DevOS ADE's names), Referrer-Policy same-origin
    └─ terminal gateway :7682 (terminal-link only): requires and removes X-Bn-Preview-0<PREVIEW_PROXY_SECRET>
    └─ bn-preview on a UNIX socket in the sandbox (preview-socket volume) → 127.0.0.1:5173 (or [::1]:5173)
 ```
 
-- [x] **Another site, so no cookie of bedrock-now reaches a preview.** Browsers count a `.localhost` name's last two
+- [x] **Another site, so no cookie of DevOS ADE reaches a preview.** Browsers count a `.localhost` name's last two
   labels as its site (`localhost` is not on the public suffix list): a page on `preview.bedrock-now.localhost` would
   be *same-site* with the portal — it would receive the portal's session cookie (`Domain=PORTAL_HOST`) and the code
   host's `SameSite=Strict` unlock cookie on its requests to them, and could plant `Domain=bedrock-now.localhost`
@@ -2165,7 +2168,7 @@ browser ─ http://p5173-<capability>.<PREVIEW_DOMAIN>:<PORTAL_PORT>/   (another
   storage and cookies on its own site. The Code page reads nothing from the frame and listens to no message from it.
   Caddy adds a CSP of its own to every preview answer (beside the app's, both apply): `frame-ancestors` the Code page
   and the portal only, and `frame-src 'self' https: data: blob: http://*.<PREVIEW_DOMAIN>:*` — a preview cannot frame
-  bedrock-now's hosts or anything on this computer's `localhost`. It drops `X-Frame-Options`, `Clear-Site-Data`,
+  DevOS ADE's hosts or anything on this computer's `localhost`. It drops `X-Frame-Options`, `Clear-Site-Data`,
   `Service-Worker-Allowed` and reporting headers (bn-preview drops the app's own `frame-ancestors`, e.g. helmet's
   `'self'`, which would keep it out of the pane), makes every `Set-Cookie` host-only (`Domain=` in any spelling goes)
   and sends `Referrer-Policy: same-origin`: no Referer to other origins (it would name the capability), while the
@@ -2276,7 +2279,7 @@ browser ─ http://p5173-<capability>.<PREVIEW_DOMAIN>:<PORTAL_PORT>/   (another
   like the local capability. `SameSite=Strict` holds in the Code page's pane: the portal, the Code page and the preview
   are one site there (checked in Chromium by `tests/e2e/remote/run.sh`). The preview's script cannot read the cookie
   (`HttpOnly`) or replace it (a script cannot overwrite an `HttpOnly` cookie, and the dev server's own `Set-Cookie` with
-  bedrock-now's names is dropped by Caddy); Caddy strips it, with every other `bn_*` cookie and your Tailscale identity
+  DevOS ADE's names is dropped by Caddy); Caddy strips it, with every other `bn_*` cookie and your Tailscale identity
   headers, before the sandbox. One host serves every port, so a browser previews **one port at a time** there — and for
   the same reason it takes no service worker: the host refuses `Service-Worker: script` requests (a worker would outlive
   the port, the unlock and Sign out on that origin, and would see the hand-off's links). This computer's previews keep
@@ -2285,18 +2288,18 @@ browser ─ http://p5173-<capability>.<PREVIEW_DOMAIN>:<PORTAL_PORT>/   (another
   as the portal and the apps, whose `SameSite=Strict` cookies therefore go with its requests: every app host refuses a
   preview's `Origin` and any other host's script requests ([the same-site guard](#the-same-site-guard)). In own-domain
   mode `REMOTE_PREVIEW_DOMAIN` puts the previews on a registrable domain of their own instead — another site again, as
-  here: no cookie of bedrock-now goes with their requests, and their script cannot set cookies for your domain. Their
+  here: no cookie of DevOS ADE goes with their requests, and their script cannot set cookies for your domain. Their
   cookie is then a third-party one in the pane (`SameSite=None; Partitioned`: kept for the Code page's site only;
   browsers that block third-party cookies need **Open in a new tab**).
 
 Remaining risks:
 - **Over remote access a preview shares the portal's site** — and that of every other app of your tailnet or domain
   (Tailscale; own domain without `REMOTE_PREVIEW_DOMAIN`), which is why it is off unless `REMOTE_PREVIEW=true`. Its
-  script can open bedrock-now's pages (as any link can), send your other apps there requests with their cookies, set
+  script can open DevOS ADE's pages (as any link can), send your other apps there requests with their cookies, set
   cookies for the whole site (never the `__Host-` session cookies; Open WebUI's `token` could be shadowed, but not
   forged), and fill it with cookies until requests to every host of the site fail (clear the site's cookies:
   [docs/remote.md](remote.md#previews-of-dev-servers-over-remote-access)). The guard keeps it from reading or changing
-  anything in bedrock-now.
+  anything in DevOS ADE.
 - **Script in a preview has your browser's network.** With `TERMINAL_EGRESS=off` the sandbox has no internet, but a
   preview's script runs in your browser, which has: it can send out what the dev server serves it (your workspace's
   files, if the app serves them). And a page from `localhost` may call services on your computer's `localhost` as
@@ -2315,7 +2318,7 @@ Remaining risks:
   cookies are allowed (default Chrome), its requests are cross-site there, so cookies the app sets without
   `SameSite=None` (browsers treat a cookie without `SameSite` as `Lax`) are not sent back to it; where third-party
   cookies are blocked (Safari, Chrome with that setting, the e2e suite's Chromium) none are kept at all. An app's
-  sign-in therefore works in a new tab, where the preview is first-party. (bedrock-now's own check needs no cookie.)
+  sign-in therefore works in a new tab, where the preview is first-party. (DevOS ADE's own check needs no cookie.)
   Relaxing the app's cookies instead (`SameSite=None; Partitioned`) would hand them to every site in a new tab, so
   they are left as the app sets them.
 - **Browsers.** Safari resolves `*.localhost` names only where macOS does (macOS 26; not 15), like the stack's
@@ -2346,7 +2349,7 @@ Code page (code.<PORTAL_HOST>) ── <iframe sandbox="allow-scripts" src="http:
 ```
 
 - [x] **Another site, sandboxed twice, no network.** The viewer's host is under the previews' site (`PREVIEW_DOMAIN`:
-  another site than the portal's, so no cookie of bedrock-now reaches it and its requests to bedrock-now's hosts would
+  another site than the portal's, so no cookie of DevOS ADE reaches it and its requests to DevOS ADE's hosts would
   be cross-site). Its documents are sandboxed by their CSP (`sandbox allow-scripts`) and by the frame
   (`sandbox="allow-scripts"`, `allow=""`, `referrerpolicy="no-referrer"`): an opaque origin — no cookies, no storage,
   no reading anything of another frame — with no forms, popups, dialogs, downloads, top navigation or pointer lock.
@@ -2357,7 +2360,7 @@ Code page (code.<PORTAL_HOST>) ── <iframe sandbox="allow-scripts" src="http:
   (`artifact/html.html`) lets the document it is handed run its inline scripts (`'unsafe-inline' 'unsafe-eval'` —
   that is what an HTML preview is for) under exactly that policy; the diagram page runs only its own script
   (`script-src 'self'`). A frame that tries to navigate itself elsewhere is stopped by the Code page's own
-  `frame-src`: only bedrock-now's terminal host and the previews' site, **on the portal's port** (`PORTAL_PORT`) — those
+  `frame-src`: only DevOS ADE's terminal host and the previews' site, **on the portal's port** (`PORTAL_PORT`) — those
   names resolve to this computer's loopback, so with any port a framed page could send a blind GET to any service
   listening there; a navigation to another port is refused (tested). Tested in Chromium with a page that tries
   fetch, XHR, WebSocket, EventSource, `sendBeacon`, images, stylesheets, prefetch, `<base>`, iframes, forms, popups,
@@ -2394,7 +2397,7 @@ Remaining risks:
   (tested: the directive is reported as unrecognized and a peer connection still gathers ICE candidates), so a running
   page's script could reach out over a STUN/TURN request (with `TERMINAL_EGRESS=off`, a way out for what that file
   holds — it was written in the sandbox, which can send it out itself whenever its internet is on). It cannot read
-  anything of bedrock-now's: an opaque origin, other site, no cookies.
+  anything of DevOS ADE's: an opaque origin, other site, no cookies.
 - **A busy page.** An HTML file can loop forever. The frame is another site, which desktop browsers run in a process
   of their own; on phones (site isolation is partial there) a busy frame can slow the Code page — close the tab.
 - **DNS.** `<link rel=dns-prefetch>` is not governed by CSP in Chromium: a page in the viewer — also before Run, as
@@ -2411,7 +2414,7 @@ Remaining risks:
 action, including those a file, a web page or a tool's output talks Claude into. So:
 
 - **Off unless you allow it.** `CODE_ALLOW_BYPASS` (Settings → Claude Code → *Allow Bypass permissions*) is
-  *widen-local*: on only from the computer running bedrock-now, off from anywhere. The code container reads it at
+  *widen-local*: on only from the computer running DevOS ADE, off from anywhere. The code container reads it at
   its start (a change recreates it) and is the only place it is enforced: with it, Claude Code processes start with
   `--allow-dangerously-skip-permissions` — still in one of the asking modes; Claude Code refuses a switch to bypass
   in a process started without it — and `set_mode` accepts `bypassPermissions` only with it **and** `confirmed`
@@ -2435,9 +2438,9 @@ action, including those a file, a web page or a tool's output talks Claude into.
   (absolute paths: probed for absolute and relative tool paths). They cover Claude's Edit/Write/NotebookEdit; a shell
   command writing the same files does not ask — the watchlist flags it after the turn. A speed bump, not a wall.
 - **Over remote access too — a decision.** The setting itself can only be turned on at the computer running
-  bedrock-now; once it is, a session can be switched to Bypass from a phone or laptop over remote access as well
+  DevOS ADE; once it is, a session can be switched to Bypass from a phone or laptop over remote access as well
   (that browser has passed the portal sign-in, the Tailscale login or your domain's, and the Code page's own password
-  unlock — and the owner on a phone is the main remote user). The dialog then says you are using bedrock-now remotely:
+  unlock — and the owner on a phone is the main remote user). The dialog then says you are using DevOS ADE remotely:
   everything still runs on the computer at home, in its sandbox and folder. Caddy tells the code container which it is
   (`X-Bn-Remote`: 1 from the remote sites, 0 from the local one, a client's own copy deleted first; `/api/state`'s
   `remote`), not the browser.
@@ -2471,7 +2474,7 @@ It reduces prompts; it does not make anything safe: a model can be wrong either 
 (its folder, its key and budget, its internet switch).
 
 - **Off unless you allow it.** `CODE_AUTO_MODE` (Settings → Claude Code → *Auto mode*) and `TERMINAL_AUTO_MODE` (*Auto
-  mode in the terminal*) are *widen-local*: on only from the computer running bedrock-now, off from anywhere. The code
+  mode in the terminal*) are *widen-local*: on only from the computer running DevOS ADE, off from anywhere. The code
   container enforces the Code page's: without it, sessions start with auto mode off and `set_mode auto` is refused
   (403), whatever a page sends. Both switches reach the sandbox through Claude Code's **managed settings**, which
   outrank every other settings tier — permission rules, hooks, the starting mode, `apiKeyHelper` — so the sandbox can
@@ -2571,7 +2574,7 @@ container's memory (the last 10 cards per session, 4 MiB), gone with a restart.
 
 ## Projects and the coding tools on your computer
 
-What widens what the sandbox sees is decided on the computer running bedrock-now: in its terminal, or in a dialog on
+What widens what the sandbox sees is decided on the computer running DevOS ADE: in its terminal, or in a dialog on
 its screen. Nothing a page, the portal or the sandbox sends names a folder of yours.
 
 ### Folders of this computer
@@ -2590,7 +2593,7 @@ A folder of this computer can be a Code page project: `./stack project add DIR` 
 - [x] **Checked before it is mounted, and at every `./stack up`.** The folder is resolved to its physical path first
   (a link counts as what it leads to; on a Mac case and `/private` spellings are one folder) and refused when it is
   `/`, a system folder or the folder that holds every disk; your home folder or a folder around it, a hidden folder
-  of it (`~/.ssh`, `~/.aws`, `~/.config` …) or `~/Library`; this bedrock-now folder or the workspace, or a folder
+  of it (`~/.ssh`, `~/.aws`, `~/.config` …) or `~/Library`; this DevOS ADE folder or the workspace, or a folder
   inside or around them; another project folder, or one inside or around it; a path with `:` or `,` (Docker reads
   them as separators), a quote, `$`, a backtick, a backslash or a control character. At most 16. Also refused, and why:
   - *temporary and runtime folders and anything in them* — `/tmp`, `/var/tmp`, a Mac's `/private/var/folders`,
@@ -2611,7 +2614,7 @@ A folder of this computer can be a Code page project: `./stack project add DIR` 
     outside every top, never trustable;
   - *keys and logins* — a folder with `.ssh`, `.aws`, `.gnupg`, `.kube`, `.docker`, `.azure`, the gh, glab and gcloud
     logins under `.config`, `Library/Keychains`, `.netrc` or `.git-credentials` in it or one level down; an `.npmrc` or
-    `.pypirc` at its top with a token or password in it; another bedrock-now folder (`stack`, `.env` and
+    `.pypirc` at its top with a token or password in it; another DevOS ADE folder (`stack`, `.env` and
     `compose.yaml` side by side: its `.env` holds that install's keys) or a Time Machine backup down to 3 levels
     (`node_modules`, `.git` and `vendor` not entered). A heuristic for an old home folder's copy, a backup or another
     install, not a scan for secrets: only `--yes-it-holds-keys`, typed in a terminal, adds such a folder anyway.
@@ -2735,7 +2738,7 @@ steer whoever reads it next. So the stores are read on this computer only after 
 that trusts nothing in them, and what it read is untrusted data all the way to the sandbox.
 
 - [x] **One way: nothing is written to `~/.claude` or `~/.claude-bedrock`.** The reader's container mounts the
-  store folders it reads read-only; nothing else of bedrock-now opens them. A copy goes into the sandbox's own Claude
+  store folders it reads read-only; nothing else of DevOS ADE opens them. A copy goes into the sandbox's own Claude
   Code configuration (`/home/claude/.claude/projects/…`), written by bn-coded inside the sandbox; a later import reads
   the computer's store again (a later change on the computer comes along); nothing of the sandbox's goes back.
 - [x] **Asked through the portal, which checks the password; the Code page's backend never sees it.** A look, a read,
@@ -2760,7 +2763,7 @@ that trusts nothing in them, and what it read is untrusted data all the way to t
   you may only read and copy sessions of a look already allowed here. At most one dialog a minute and 10 a day. The
   grants are in `.state/sessions/consent.tsv` (mode 600 in a folder of 700, no container mounts it; not in backups:
   allow again after a restore); a folder removed, or added again under another id, loses its grant. **Take back**
-  (Settings › Claude Code › *What bedrock-now may read on this computer*, from any device — it only narrows; or
+  (Settings › Claude Code › *What DevOS ADE may read on this computer*, from any device — it only narrows; or
   `./stack sessions consent --revoke`) removes the grant and has the code container forget what it read under it (the
   list, the sessions waiting to be copied); copies already in the sandbox stay there.
 - [x] **Only that folder's sessions, of those two stores.** The reader is given the store folders Claude Code names
@@ -2809,7 +2812,7 @@ that trusts nothing in them, and what it read is untrusted data all the way to t
   preserved turns (its `preservedSegment` and `preservedMessages`, their ids checked against the entries the copy
   keeps), the custom title, and the entry fields the CLI reads (type, ids and links, times, folder, branch,
   version, model, the usage numbers) — all of it scanned. **Replaced by one fixed line** (`[tool output left out by
-  bedrock-now — 12.3 KB; re-import with "Include tool outputs" to bring it]`), in the shape the CLI expects there: a
+  DevOS ADE — 12.3 KB; re-import with "Include tool outputs" to bring it]`), in the shape the CLI expects there: a
   tool result's content and a tool's structured result (`toolUseResult`); a file or folder Claude Code attached — it
   attaches the files it had read, whole, after every compaction —, an MCP resource, an edited file's snippet (emptied);
   an MCP result's structured content (`mcpMeta`: dropped, only its `claude/*` metadata kept); a server tool's result
@@ -2886,7 +2889,7 @@ that trusts nothing in them, and what it read is untrusted data all the way to t
   scanned is not copied, and the sheet says so. Titles, first prompts and branches are scanned whole — on the computer,
   by the reader, before they are cut to their length — and paths too, before they are shown. Not detectable, and so
   said in the sheet: a secret in a shape the scan does not know, or written in prose.
-- [x] **Shown as data, never as instructions.** Nothing in a transcript is acted on by bedrock-now: titles, prompts,
+- [x] **Shown as data, never as instructions.** Nothing in a transcript is acted on by DevOS ADE: titles, prompts,
   findings' context and tool calls reach the page as text only (the page's client keeps one line, shows control and
   direction-changing characters as `⟨U+202E⟩`, caps lengths and counts — 4,000 rows); Claude's words go through the
   page's own Markdown renderer and its sanitizing; a refusal of the sandbox's is shown apart, as the sandbox's words.
@@ -2985,7 +2988,7 @@ else, says what each item brings before it is copied, and never copies a secret-
   *Always*, in the update helper's dialog on this computer's screen (*Don't allow* the default; unanswered after 2
   minutes, the same) or in its terminal. A look and an open are refused for a request over remote access, by the
   portal (403) and by the helper again; from another device the page shows a look made here and copies what was
-  opened here. *Take back* (Settings › Claude Code › *What bedrock-now may read on this computer*, or `./stack
+  opened here. *Take back* (Settings › Claude Code › *What DevOS ADE may read on this computer*, or `./stack
   sessions config consent --revoke`) removes the grant and has the code container forget the look and the items
   waiting; what was copied into the sandbox stays.
 - [x] **Said before it is copied.** Each item's check (`setup-plan.mjs`, in the import's worker thread with its
@@ -3041,15 +3044,15 @@ else, says what each item brings before it is copied, and never copies a secret-
   again"). The text shown is the text written (made visible: direction-changing and control characters shown as
   such); a file too long to show is named by its size and SHA-256.
 - [x] **The sandbox's own kept.** Permission rules and hooks are added to the sandbox's `settings.json`, every other
-  key of it kept; a later copy removes only what bedrock-now added before **from the same tool** (recorded in the code
+  key of it kept; a later copy removes only what DevOS ADE added before **from the same tool** (recorded in the code
   container by tool, rule and hook group: Claude Code's copy never takes out a rule `claude-bedrock`'s brought, nor the
   other way round; a rule both bring stays while either does — what a copy wants is recorded even when it has nothing
   to write) — and every rule and hook group it takes out is listed
   in a warning before you copy (*taken out of the sandbox's settings*: your computer no longer has it). Any other
   destination — a file, a skill's folder, `statusLine`, `outputStyle`, an MCP server of that name, the Git name and
-  email — is replaced without asking only while it is exactly what bedrock-now wrote there (when that was the other
+  email — is replaced without asking only while it is exactly what DevOS ADE wrote there (when that was the other
   tool's copy, it is said); otherwise it is a conflict — every conflict of a unit listed — **left as it is** unless
-  you choose *Replace*. `CLAUDE.md` can be appended to instead (a later copy replaces the part bedrock-now appended
+  you choose *Replace*. `CLAUDE.md` can be appended to instead (a later copy replaces the part DevOS ADE appended
   while it is still at the end).
 - [x] **Written into the sandbox by bn-coded, checked again there.** `setup.write` takes one destination of a fixed
   set in the sandbox's `~/.claude` (`CLAUDE.md`, `settings.json`, `keybindings.json`, `agents/…`, `commands/…`,
@@ -3098,7 +3101,7 @@ else, says what each item brings before it is copied, and never copies a secret-
 
 Your own AI plans in the sandbox (README: [Your AI subscriptions](../README.md#your-ai-subscriptions)): Claude Code on
 your Claude plan (`claude-sub`), Codex, Gemini CLI, Copilot CLI, Cursor CLI and Grok Build. The rule for every one of
-them: **only the provider's own, unmodified app uses your plan, signed in with that app's own sign-in, and bedrock-now
+them: **only the provider's own, unmodified app uses your plan, signed in with that app's own sign-in, and DevOS ADE
 never reads, copies, keeps, passes on or relays a login.**
 
 - [x] **Each provider's own app, as it ships.** Built into the sandbox's image on your computer (never pulled from a
@@ -3106,7 +3109,7 @@ never reads, copies, keeps, passes on or relays a login.**
   release files by the SHA-256 their GitHub releases list, Gemini CLI and Grok Build from npm by their lockfiles
   (`npm ci --ignore-scripts`: none of their install scripts runs; Grok's binary is unpacked at build the way its own
   postinstall would, into the read-only image rather than your home folder), Cursor's package by the SHA-256
-  bedrock-now recorded on 2026-10-23 — **Cursor publishes no checksum**, so that one is trust on first use: a file that
+  DevOS ADE recorded on 2026-10-23 — **Cursor publishes no checksum**, so that one is trust on first use: a file that
   changed since is not kept. A tool whose download or check fails is left out of the image, said in the build and by
   its command (`/usr/local/lib/bn-tools/SKIPPED`); the others stay. Everything of theirs is root's (whatever owner a
   tarball recorded), nothing setuid or setgid, and every link in it relative and leading to something inside the tools'
@@ -3130,7 +3133,7 @@ never reads, copies, keeps, passes on or relays a login.**
 - [x] **Its own sign-in, in the sandbox.** Each signs in there with a flow that needs no callback into the sandbox:
   Codex's and Grok's device codes, Copilot's GitHub device flow, Cursor's link that the app polls, Claude Code's and
   Gemini CLI's link with the code pasted back. Your browser talks to the provider; the sandbox talks to the provider;
-  bedrock-now's other containers see none of it. Their logins stay in each app's own file in its own folder of the
+  DevOS ADE's other containers see none of it. Their logins stay in each app's own file in its own folder of the
   sandbox's home (`terminal-home`): `~/.claude-subscription/.credentials.json`, `~/.codex/auth.json`, `~/.gemini/oauth_creds.json`,
   `~/.copilot/` (plaintext once you agree, as the app asks: there is no keychain in the container),
   `~/.config/cursor/auth.json`, `~/.grok/auth.json`. They survive restarts, updates, rollbacks and `./stack terminal
@@ -3438,7 +3441,7 @@ What each provider says (read 2026-10-23; the design notes keep the quotes):
 |---|---|---|
 | Anthropic | *"Nor does it prevent an end user from signing in to the unmodified Claude Code binary with their own Claude subscription"*; developers *"may not collect, store, or intermediate Claude.ai credentials or session tokens — sign-in to a Claude account must complete through Anthropic's own flow"*, nor *"offer Claude.ai login into their own applications, or … route requests through Free, Pro, or Max plan credentials on behalf of their users"*; and since 2026-10-07: *"You can still use the Claude Agent SDK, `claude -p`, and third-party apps with your subscription limits."* The two texts pull apart: Claude in the Code page or as a Chat model on your plan would sit behind a switch of its own | [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance), [Use the Claude Agent SDK with your Claude plan](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan) |
 | OpenAI | *"When you sign in to Codex using an existing ChatGPT account, the ChatGPT Terms of Use and Privacy Policy … apply"*; Codex's docs prefer device-code sign-in on remote and headless machines; *"Do not share the same file across concurrent jobs or multiple machines"*; for other apps on a ChatGPT sign-in, the *Sign in with ChatGPT* terms: *"Requests must originate from the user's local runtime or a remote runtime only that user controls"*, *"Do not provide general-purpose API access for other tools"* | [Using Codex with your ChatGPT plan](https://help.openai.com/en/articles/11369540-using-codex-with-your-chatgpt-plan), [Codex authentication](https://learn.chatgpt.com/docs/auth), [Terms of Use](https://openai.com/policies/terms-of-use/), [Sign in with ChatGPT terms](https://openai.com/policies/sign-in-with-chatgpt-terms/) |
-| Google | Gemini CLI stopped serving Google AI Pro and Ultra (and Code Assist for individuals) on 2026-06-18; Standard and Enterprise logins remain; reusing Gemini CLI's sign-in from other software *"is a violation of applicable terms"* (bedrock-now runs the CLI itself) | [Deprecations](https://developers.google.com/gemini-code-assist/docs/deprecations/code-assist-individuals), [Gemini CLI terms](https://geminicli.com/docs/resources/tos-privacy/) |
+| Google | Gemini CLI stopped serving Google AI Pro and Ultra (and Code Assist for individuals) on 2026-06-18; Standard and Enterprise logins remain; reusing Gemini CLI's sign-in from other software *"is a violation of applicable terms"* (DevOS ADE runs the CLI itself) | [Deprecations](https://developers.google.com/gemini-code-assist/docs/deprecations/code-assist-individuals), [Gemini CLI terms](https://geminicli.com/docs/resources/tos-privacy/) |
 | GitHub | *"Your login may only be used by one person"*; Copilot CLI runs in containers by GitHub's own docs, with the device flow there | [GitHub Terms of Service](https://docs.github.com/en/site-policy/github-terms/github-terms-of-service), [Authenticate Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli) |
 | Cursor | no reproducing or modifying the service; nothing on containers; its CLI's own login | [Terms of service](https://cursor.com/terms-of-service), [CLI authentication](https://cursor.com/docs/cli/reference/authentication) |
 | xAI | *"You may not share your account credentials"*; the acceptable use policy rules out *"unauthorized automated or non-human means"*; Grok Build documents `grok login --device-auth` for containers, and its own headless and ACP modes | [Terms](https://x.ai/legal/terms-of-service), [Acceptable use](https://x.ai/legal/acceptable-use-policy), [Grok Build CLI](https://docs.x.ai/build/cli/reference) |

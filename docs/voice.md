@@ -4,7 +4,7 @@ Back to the [README](../README.md#voice-speech-to-text).
 
 Open WebUI's **Call** button (the sound-wave button next to the microphone) needs a server speech-to-text
 service; with only the browser's speech recognition (the Web Speech API), Open WebUI v0.12 refuses Call with
-*"Call feature is not supported when using Web STT engine"*. bedrock-now offers these choices:
+*"Call feature is not supported when using Web STT engine"*. DevOS ADE offers these choices:
 
 | Choice | Key | Where your speech goes | Price per minute of audio |
 |---|---|---|---|
@@ -22,7 +22,7 @@ of its APIs (Converse and Invoke) and in every region we tried (us-east-1, us-ea
 still works, so the model check's 1-token request kept saying *ok*, while every press of the microphone failed.
 AWS's model page now lists both models as **Legacy** (end of life 2027-03-30) without audio input.
 
-**What bedrock-now does now** (v0.20.2 and later). It recognises that answer as a state of its own — any other
+**What DevOS ADE does now** (v0.20.2 and later). It recognises that answer as a state of its own — any other
 failure (network, permissions, throttling) is handled as before and never switches anything off:
 
 - An install with Bedrock speech-to-text on switches to your **browser's speech recognition once**, at
@@ -174,7 +174,7 @@ holds no AWS credentials and no key of its own, keeps nothing, and logs only siz
 ### Updates of ffmpeg
 
 The stt image is `python:3.12-alpine` pinned by digest; ffmpeg comes from that Alpine release's package
-repository (8.1.x for Alpine 3.24). bedrock-now releases move the base digest. Between releases, setup (and so
+repository (8.1.x for Alpine 3.24). DevOS ADE releases move the base digest. Between releases, setup (and so
 `./stack update`) builds the image with the current ISO week as a build argument (`APK_REFRESH`, right before
 the ffmpeg layer): once a week at most, Docker reinstalls ffmpeg — the newest 8.1.x security fix Alpine has
 published — and keeps the Python layer. When that fails (offline, repository down), setup says so and builds
@@ -218,7 +218,7 @@ still come from Bedrock (or OpenRouter, if you use it).
   is not stored.
 - **Restricted OpenAI keys** (project keys with limited permissions) need write access to the **audio**
   endpoints (`/v1/audio/transcriptions`); *Models: Read* is optional. Without it the check answers HTTP 403
-  "missing scopes": bedrock-now then accepts the key with a note, and transcription is tested on first use.
+  "missing scopes": DevOS ADE then accepts the key with a note, and transcription is tested on first use.
 - **Without a terminal:** `STT_PROVIDER=openai STT_API_KEY=… ./stack stt set`, or at setup
   `BEDROCK_NOW_STT_FROM_ENV=1 STT_PROVIDER=… STT_API_KEY=… ./stack setup --yes`. (`STT_PROVIDER=bedrock` needs
   no key and no opt-in.)

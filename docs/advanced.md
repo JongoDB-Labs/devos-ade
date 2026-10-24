@@ -4,11 +4,12 @@ Back to the [README](../README.md#advanced).
 
 ## Running a second copy
 
-Each checkout needs its own Docker Compose project name (default `bedrock-now`). To try a branch or a fresh
-clone next to your main stack, give it its own name:
+Each checkout needs its own Docker Compose project name (default `bedrock-now`, as before v0.25.0:
+[internal names](internal-names.md) stay). To try a branch or a fresh clone next to your main stack, give it its
+own name:
 
 ```bash
-git clone https://github.com/JongoDB-Labs/bedrock-now bedrock-now-test && cd bedrock-now-test
+git clone https://github.com/JongoDB-Labs/devos-ade devos-ade-test && cd devos-ade-test
 COMPOSE_PROJECT_NAME=bn-test ./setup.sh
 ```
 
@@ -21,13 +22,13 @@ front for the apps; `PORTAL_HOST` in `.env`), so the two stacks never share brow
 automatically because the main stack holds the defaults. `--yes` never touches your
 `~/.local/bin/claude-bedrock` link; run `bin/claude-bedrock` from the copy's folder instead. Remove the copy
 with `./stack uninstall` inside it. Each copy has its own `PORTAL_PASSWORD`: its login page names the copy's
-`.env` and project (`It is PORTAL_PASSWORD in ~/bedrock-now-test/.env (project bn-test).`; on this computer only,
+`.env` and project (`It is PORTAL_PASSWORD in ~/devos-ade-test/.env (project bn-test).`; on this computer only,
 never to a remote visitor), and `./stack password` in a folder says the same.
 
 ### How copies are kept apart
 
 Two checkouts with the same project name would share containers and data volumes, so every `./stack` command
-refuses when another folder already uses the name (`project 'bedrock-now' is already used by the bedrock-now
+refuses when another folder already uses the name (`project 'bedrock-now' is already used by the DevOS ADE
 install in <dir>…`), and a first setup refuses when data volumes of that name already exist. Nothing is changed
 in either case. `./stack status` only prints the warning and still shows its table.
 
@@ -91,8 +92,9 @@ that resolves to this computer alone.
 ## Opening the portal (`./stack open`)
 
 `./stack open` first looks for the installed web app of this portal, by the name its manifest gives
-(`bedrock-now`, or `bedrock-now (<project>)` / `(port N)` for other addresses; `portal_app_name` in
-`lib/portal.sh` and `app_name` in `portal/portal/webapp.py` share the rule):
+(`DevOS ADE`, or `DevOS ADE (<project>)` / `(port N)` for other addresses — then the same under its name before
+v0.25.0, for an app installed then; `portal_app_name` in `lib/portal.sh` and `app_name` in `portal/portal/webapp.py`
+share the rule):
 
 - macOS: `~/Applications/<Browser> Apps.localized/<name>.app` (Chrome: `Chrome Apps.localized`), opened with
   `open -a`.

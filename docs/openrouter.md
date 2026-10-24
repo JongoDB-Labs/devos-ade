@@ -4,7 +4,7 @@ Back to the [README](../README.md#optional-openrouter).
 
 [OpenRouter](https://openrouter.ai) is one API in front of hundreds of models from many providers (Llama,
 Gemma, Mistral, DeepSeek, Qwen, GPT, Gemini and more). Some of them are **free** (ids ending in `:free`, with
-daily request limits); the rest are **paid** from credits you buy at OpenRouter. bedrock-now can add them next
+daily request limits); the rest are **paid** from credits you buy at OpenRouter. DevOS ADE can add them next
 to your Bedrock models. It is off unless you give it a key, and all it needs is the key (no email, no account
 API).
 
@@ -21,7 +21,7 @@ API).
   used up; or, readable only with a management key, a balance at or below zero) can only use free models.
   When `set`, `apply` or setup checks such a key and `OPENROUTER_MODELS` is not set, it becomes `free`, in
   one line: `this OpenRouter account has no credits, so only free models are offered (OPENROUTER_MODELS=free);
-  after buying credits: ./stack openrouter models all`. bedrock-now remembers that it chose this
+  after buying credits: ./stack openrouter models all`. DevOS ADE remembers that it chose this
   (`.state/openrouter-models-auto`): once a later `apply`, `set` or setup finds the account can pay, it goes
   back to the default (all) and says so, and `remove` clears it for the next key. A set you chose yourself
   (also `free`, or any `./stack openrouter models …`) is kept: one warning when it includes paid models (they
@@ -31,7 +31,7 @@ API).
   switches to free models there too; `./stack openrouter models all` undoes it.
 - **Only `.env` counts.** An `OPENROUTER_API_KEY` that happens to be in your shell never turns OpenRouter on
   by itself: `./stack` strips `OPENROUTER_*` from what Docker Compose sees, an interactive setup asks
-  `found OPENROUTER_API_KEY in your environment — use it for bedrock-now? [y/N]`, and `setup --yes` uses it
+  `found OPENROUTER_API_KEY in your environment — use it for DevOS ADE? [y/N]`, and `setup --yes` uses it
   only with `BEDROCK_NOW_OPENROUTER_FROM_ENV=1`. `./stack update` ignores it, so a removed key stays removed.
 - **Off:** `./stack openrouter remove` empties `OPENROUTER_API_KEY=` in `.env` (an empty key is off, like no
   line), deletes the cached model list, restarts LiteLLM with Bedrock only and removes the OpenRouter entries it
@@ -73,7 +73,7 @@ under each answer in Chat prices `or/…` models too.
 
 Not modelled (OpenRouter bills them, LiteLLM's numbers leave them out): long-context price tiers
 (`overrides`), `input_cache_write_1h`, `internal_reasoning`, `web_search`, `audio`, `image` and any other
-per-request fee. A model whose price OpenRouter lists in a form bedrock-now can't read (e.g. an absurd
+per-request fee. A model whose price OpenRouter lists in a form DevOS ADE can't read (e.g. an absurd
 exponent) is left out.
 
 The model list and prices are fetched with your key (`GET /api/v1/models`, the key on curl's stdin), so
@@ -137,7 +137,7 @@ paid rates)`) and today's requests from the same LiteLLM data.
 ## When a model fails
 
 The usual errors (404 *No endpoints found matching your data policy*, 429, 402) and their fixes are in the
-[README](../README.md#optional-openrouter), with the OpenRouter account settings that go with bedrock-now.
+[README](../README.md#optional-openrouter), with the OpenRouter account settings that go with DevOS ADE.
 
 ## Privacy
 
@@ -148,9 +148,9 @@ and [privacy policy](https://openrouter.ai/privacy), and set which providers may
 OpenRouter [privacy settings](https://openrouter.ai/settings/privacy). Keep confidential work on Bedrock
 models.
 
-LiteLLM names bedrock-now to OpenRouter (`X-Title: bedrock-now` and `HTTP-Referer:
-https://github.com/JongoDB-Labs/bedrock-now`, set by `OR_APP_NAME` / `OR_SITE_URL` in `compose.yaml`), so
-OpenRouter's Activity and Logs show the requests as bedrock-now. They name the project only, nothing about you.
+LiteLLM names DevOS ADE to OpenRouter (`X-Title: DevOS ADE` and `HTTP-Referer:
+https://github.com/JongoDB-Labs/devos-ade`, set by `OR_APP_NAME` / `OR_SITE_URL` in `compose.yaml`), so
+OpenRouter's Activity and Logs show the requests as DevOS ADE (as bedrock-now before v0.25.0). They name the project only, nothing about you.
 OpenRouter's own *Input & Output Logging* is not needed (Admin's logs record every request) and would store
 your prompts at OpenRouter.
 

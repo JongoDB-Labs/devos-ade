@@ -2,7 +2,7 @@
 
 Back to the [README](../README.md#remote-access).
 
-By default bedrock-now is reachable only on the computer it runs on (`http://bedrock-now.localhost`, bound to
+By default DevOS ADE is reachable only on the computer it runs on (`http://bedrock-now.localhost`, bound to
 `127.0.0.1`). `./stack remote` adds a second way in for **your own devices**, over HTTPS, without opening any
 port to the internet. The local address keeps working exactly as before.
 
@@ -74,7 +74,7 @@ phone (Tailscale) ──HTTPS──▶ Tailscale Service svc:bedrock-now[-chat|-
   app host's cookie, the portal stops after four hand-offs a minute and says so instead of looping.
 - **Install it on your phone.** The remote address is installable like the local one (Android/desktop
   Chrome and Edge: *Install app*; iPhone/iPad Safari: *Share → Add to Home Screen*). Being another origin it is
-  another app, named **bedrock-now (remote)** (a second copy: *bedrock-now (bn-dev, remote)*). Its manifest,
+  another app, named **DevOS ADE (remote)** (a second copy: *DevOS ADE (bn-dev, remote)*). Its manifest,
   icons and service worker are public on the remote site through the same `(public_paths)` list as locally.
 - One-click Update / Rollback / Clean and the automatic-updates switch stay off for remote requests unless you
   set `REMOTE_ADMIN_ACTIONS=true` ([security](security.md#the-update-helper)).
@@ -96,19 +96,19 @@ over remote access too, wherever the Code page does (`REMOTE_TERMINAL=true`). Th
 
 ```bash
 ./stack config set REMOTE_PREVIEW    # it asks for the value: true (or Settings › Remote access), on the computer
-                                     # running bedrock-now only; false, off again, from anywhere (also your phone)
+                                     # running DevOS ADE only; false, off again, from anywhere (also your phone)
 ```
 
 **What turning them on means.** A preview shows whatever the sandbox serves — script included. Over remote access its
 address is on the same *site* as everything else there: with Tailscale every name under `<tailnet>.ts.net` (all your
-Tailscale Services and Serve apps — Grafana, Home Assistant, a NAS's page, another copy of bedrock-now), in own-domain
+Tailscale Services and Serve apps — Grafana, Home Assistant, a NAS's page, another copy of DevOS ADE), in own-domain
 mode everything under your registrable domain. Cookies with `SameSite=Strict` or `Lax` do not keep requests from the
 same site out. So a preview's script could send those apps form posts and other requests that carry *their* cookies,
-and set or flood cookies for the whole site. bedrock-now's own hosts refuse such requests
+and set or flood cookies for the whole site. DevOS ADE's own hosts refuse such requests
 ([the same-site guard](security.md#the-same-site-guard)); your other apps on the tailnet or the domain may not. Turn
 previews on when the dev servers you run in the sandbox are your own projects and no other app of your tailnet (or
 domain) matters to you more than that convenience — or use a domain of their own (below), or keep previewing on the
-computer running bedrock-now.
+computer running DevOS ADE.
 
 - **With Tailscale: define and approve the Service first, then turn them on.** In the admin console: *Services → Define
   a Service* `<base>-preview` (port `tcp:443`), and add `svc:<base>-preview` to your policy's `autoApprovers` and
@@ -148,7 +148,7 @@ computer running bedrock-now.
   cookies → See all site data and permissions*, search `<tailnet>.ts.net` (or your domain) and delete it; Firefox:
   *Settings → Privacy & Security → Cookies and Site Data → Manage Data*, search and remove; Safari: *Settings →
   Privacy → Manage Website Data*, search and remove. That signs you out of every app on that site, your other tailnet
-  apps too; bedrock-now asks for the password again.
+  apps too; DevOS ADE asks for the password again.
 
 ### Your Tailscale login, checked
 
@@ -174,10 +174,10 @@ own app session from the portal on their own name, host-only as well
 
 The reverse direction, **cookie tossing**, is limited too: another machine under the same parent (or, in
 own-domain mode, any host you run under your domain) could set cookies scoped to the parent that browsers would
-then send to bedrock-now. It cannot forge or overwrite the `__Host-` session cookies (browsers refuse that
+then send to DevOS ADE. It cannot forge or overwrite the `__Host-` session cookies (browsers refuse that
 prefix with a `Domain`), but it could plant other cookies the apps read (for example Open WebUI's or LiteLLM's
 `token`; one LiteLLM did not sign sends its UI back to the automatic sign-in). Only
-run machines you trust under the same tailnet or parent domain, or give bedrock-now a dedicated subdomain.
+run machines you trust under the same tailnet or parent domain, or give DevOS ADE a dedicated subdomain.
 
 ## Tailscale mode, step by step
 
@@ -232,7 +232,7 @@ Requirements (checked against Tailscale's documentation, October 2026):
    cut off, and that requests without (or with another) Tailscale login are refused — and prints a checklist
    for your phone.
 
-A second copy of bedrock-now (another `COMPOSE_PROJECT_NAME`) uses `bedrock-now-<project>` names, so both can be
+A second copy of DevOS ADE (another `COMPOSE_PROJECT_NAME`) uses `bedrock-now-<project>` names, so both can be
 in one tailnet. `TS_SERVICE`, `TS_HOSTNAME` and `TS_TAG` in `.env` override the names.
 
 ## Own-domain mode
@@ -273,7 +273,7 @@ in one tailnet. `TS_SERVICE`, `TS_HOSTNAME` and `TS_TAG` in `.env` override the 
 ## Cloudflare Tunnel + Access (documentation only)
 
 You can also publish the local Caddy through a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
-with [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) in front. bedrock-now
+with [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) in front. DevOS ADE
 does not automate this; know the trade-offs first:
 
 - **Cloudflare decrypts everything at its edge.** Prompts, answers, uploaded files and your session cookies pass
@@ -281,7 +281,7 @@ does not automate this; know the trade-offs first:
 - **Validate the Access JWT, not just its presence.** Access adds `Cf-Access-Jwt-Assertion`; anything that can
   reach the tunnel origin without going through Access could send its own. A proxy in front of Caddy would have
   to verify the JWT's signature (your team's certs URL), audience (the application's AUD tag) and expiry —
-  bedrock-now's portal does not do this. Without it, Access is the only gate and the portal password the second.
+  DevOS ADE's portal does not do this. Without it, Access is the only gate and the portal password the second.
 - **100 MB request body limit** on Cloudflare's free and pro plans: larger uploads to Chat or Files fail.
 - Map four public host names (portal, chat, admin, files) to `http://127.0.0.1:<PORTAL_PORT>` with the matching
   **local** `Host` header (`httpHostHeader`), and keep the portal's cookie rules in mind: the local site is
@@ -316,4 +316,4 @@ and Open WebUI. The sidecar's login stays in the `tailscale-state` volume for a 
 | Code page: "Previews over remote access have no address yet" | `./stack up` on the computer writes `REMOTE_PREVIEW_HOST`; Tailscale: define and approve the Service `<base>-preview` |
 | A preview: "no service workers on the remote preview host" | expected: develop a PWA's service worker on this computer's preview |
 | A preview: "This preview link does not work (any more)" | open it again from the Code page (Ports › Preview): the unlock ended (12 h, Sign out), or another port's preview took over in this browser |
-| A request refused with "same-site guard" (`X-Bn-Refused`) | a page on another host of the site (a preview, another of your tailnet's web apps) sent a script request to bedrock-now: expected; if one of bedrock-now's own pages does, report it |
+| A request refused with "same-site guard" (`X-Bn-Refused`) | a page on another host of the site (a preview, another of your tailnet's web apps) sent a script request to DevOS ADE: expected; if one of DevOS ADE's own pages does, report it |
