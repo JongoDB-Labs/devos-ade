@@ -2452,6 +2452,9 @@ export const AGENT_FILES = Object.freeze(['lsp.json', '.lsp.json']);
 export const COPILOT_AUDITED = '1.0.103';
 export const COPILOT_GITHUB_DIRS = Object.freeze(['agents', 'copilot', 'extensions', 'hooks', 'skills', 'plugin']);
 export const GITHUB_INSTRUCTIONS = Object.freeze(['copilot-instructions.md', 'instructions']);
+// the files directly in .github/ that the pinned Copilot reads (listed whole, as every file there but GitHub's own is;
+// never a row by its name alone: code/server/trust.mjs refuses one)
+export const COPILOT_GITHUB_FILES = Object.freeze(['mcp.json', 'lsp.json', 'allowed_models.txt', 'plugin.json']);
 export const GITHUB_INERT = Object.freeze(['codeowners', 'dependabot.yml', 'dependabot.yaml', 'funding.yml', 'release.yml', 'release.yaml',
   'labeler.yml', 'labeler.yaml', 'stale.yml', 'stale.yaml', 'release-drafter.yml', 'release-drafter.yaml', 'settings.yml', 'renovate.json', 'security.md',
   'contributing.md', 'code_of_conduct.md', 'support.md', 'pull_request_template.md']);
@@ -2570,16 +2573,22 @@ export function settingsFiles(abs, { text = false } = {}) {
     for (const g of of('.github')) {
       if (!folderOf(g)) continue;
       for (const n of entries(path.join(dir, g), [agent])) {
-        const f = fold(n);
-        if (GITHUB_INSTRUCTIONS.includes(f)) continue;
-        let st;
-        try { st = fs.lstatSync(path.join(dir, g, n)); } catch { continue; }
-        if (st.isFile()) {
+        const f = fold(n), p = path.join(dir, g, n), rowName = nameOf(`${g}/${n}`);
+        // (each entry looked at once, never through a link: lstat)
+        let st = null;
+        try { st = fs.lstatSync(p); } catch (e) { if (e.code === 'ENOENT') continue; }
+        const file = st?.isFile() === true, folder = st?.isDirectory() === true;
+        // (the instruction files, a real file or folder: instructions, as CLAUDE.md is — a link there is not)
+        if (GITHUB_INSTRUCTIONS.includes(f) && (file || folder)) continue;
+        if (file) {
           if (GITHUB_INERT.includes(f) || IMAGE.test(f)) continue;
-          from(agent, at, `${g}/${n}`, () => one(agent, nameOf(`${g}/${n}`), path.join(dir, g, n)));
-        } else if (COPILOT_GITHUB_DIRS.includes(f)) from(agent, at, `${g}/${n}`, () => tree(agent, path.join(dir, g, n), nameOf(`${g}/${n}`)));
-        // (a folder no pinned tool reads, or a link: its name alone)
-        else from(agent, at, `${g}/${n}`, () => nameOnly(agent, nameOf(`${g}/${n}`)));
+          from(agent, at, `${g}/${n}`, () => one(agent, rowName, p));
+        } else if (folder && COPILOT_GITHUB_DIRS.includes(f)) from(agent, at, `${g}/${n}`, () => tree(agent, p, rowName));
+        // (a real folder no pinned tool reads: its name alone)
+        else if (folder) from(agent, at, `${g}/${n}`, () => nameOnly(agent, rowName));
+        // (anything else — a link, whatever its name, a FIFO, a socket, a device, one that could not be looked at: a
+        // row that is never trusted)
+        else from(agent, at, `${g}/${n}`, () => tree(agent, p, rowName));
       }
     }
     for (const v of of('.vscode')) {

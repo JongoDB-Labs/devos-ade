@@ -425,9 +425,17 @@ test('a row\'s place is fixed by its name: no other folder and surface fit it, s
   assert.equal(partOf('.github/workflows', '', '.github/workflows', 'name'), false);
   assert.equal(partOf('/workspace/mono/.github/workflows', '/workspace/mono', '.github/workflows', 'name'), false);
   for (const [name, surface] of [['.claude/skills', '.claude'], ['.github/hooks/x', '.github/hooks'], ['.github/workflows/x', '.github/workflows'], ['.codex', '.codex'],
-    ['.github', '.github'], ['.github/hooks', '.github/hooks'], ['.github/Skills', '.github/Skills'], ['.github/agentſ', '.github/agentſ']]) {
+    ['.github', '.github'], ['.github/hooks', '.github/hooks'], ['.github/Skills', '.github/Skills'], ['.github/agentſ', '.github/agentſ'],
+    // (a file Copilot reads there — forged as a row by its name alone: what it holds would never be in the hash)
+    ['.github/mcp.json', '.github/mcp.json'], ['.github/LSP.json', '.github/LSP.json'], ['.GitHub/allowed_models.txt', '.GitHub/allowed_models.txt'],
+    ['.github/plugin.json', '.github/plugin.json'], ['.github/copilot-instructions.md', '.github/copilot-instructions.md'], ['.github/instructions', '.github/instructions']]) {
     assert.equal(placeOf({ name, at: '', surface, type: 'name' }, ROOT), null, name);
   }
+  assert.equal(placeOf({ name: '/workspace/mono/.github/mcp.json', at: '/workspace/mono', surface: '.github/mcp.json', type: 'name' }, ROOT), null, 'above too');
+  // and so the whole listing is unverifiable: both parts (a sandbox that forged it is not believed for either)
+  const { checkFiles } = await import('../server/trust.mjs');
+  assert.equal(checkFiles({ files: [{ name: '.claude/settings.json', type: 'file', at: '', surface: '.claude', sha256: 'a'.repeat(64), text: '{}' },
+    { name: '.github/mcp.json', type: 'name', at: '', surface: '.github/mcp.json', sha256: 'b'.repeat(64) }] }, ROOT).ok, false);
 });
 
 test('a file not shown whole is not looked into (it is incomplete already); an entry nested too deep to show: incomplete, never an error', () => {
@@ -455,9 +463,9 @@ test('fold: the same in the code container as in bn-coded (names a disk that fol
   assert.equal(fold('.ﬂ'), '.fl');
   assert.equal(fold('ß'), 'ss');
   // and the folders of .github/ the pinned Copilot reads: the same list
-  const { COPILOT_GITHUB_DIRS } = await import('../server/trust.mjs');
-  const { COPILOT_GITHUB_DIRS: bnDirs } = await bnCoded();
-  assert.deepEqual(COPILOT_GITHUB_DIRS, bnDirs);
+  const t = await import('../server/trust.mjs');
+  const b = await bnCoded();
+  for (const k of ['COPILOT_GITHUB_DIRS', 'COPILOT_GITHUB_FILES', 'GITHUB_INSTRUCTIONS']) assert.deepEqual(t[k], b[k], k);
 });
 
 test('the Copilot CLI the image pins is the one whose .github/ reading was audited (a new pin: audit COPILOT_GITHUB_DIRS again)', async () => {

@@ -657,6 +657,45 @@ test('project.settings: the other tools\' own configuration in the folder too (y
   assert.deepEqual(r.files.filter((f) => f.name.startsWith('.github')).map((f) => [f.name, f.type, f.surface]), [['.github', 'link', '.github']]);
 });
 
+test('project.settings: in .github/, only a real folder no pinned tool reads is a row by its name alone — a link (whatever its name), a FIFO: never trusted; Claude Code\'s part unchanged', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const D = path.join(WS, 'gh-links');
+  const put = (rel, text = '{}') => { fs.mkdirSync(path.dirname(path.join(D, rel)), { recursive: true }); fs.writeFileSync(path.join(D, rel), text); };
+  put('.claude/settings.json', '{"permissions": {"allow": ["Bash(npm test)"]}}');
+  put('.github/ISSUE_TEMPLATE/bug.md', 'x');
+  put('x.json', '{"servers": {}}');
+  put('somedir/a.yml', 'x');
+  let r = await call({ op: 'project.settings', root: D });
+  const claudeHash = r.hash;
+  assert.match(claudeHash, /^[0-9a-f]{64}$/);
+  assert.equal(r.verifiable, true);
+  assert.equal(r.agentVerifiable, true, 'a real folder by its name alone: trustable');
+  assert.deepEqual(r.files.filter((f) => f.name.startsWith('.github')).map((f) => [f.name, f.type]), [['.github/ISSUE_TEMPLATE', 'name']]);
+  for (const [what, make, type] of [
+    ['a file Copilot reads, as a link', () => fs.symlinkSync('../x.json', path.join(D, '.github/mcp.json')), 'link'],
+    ['a link to a folder', () => fs.symlinkSync('../somedir', path.join(D, '.github/workflows')), 'link'],
+    ['a link named as one of GitHub\'s own files', () => fs.symlinkSync('../x.json', path.join(D, '.github/CODEOWNERS')), 'link'],
+    ['an instruction file as a link', () => fs.symlinkSync('../x.json', path.join(D, '.github/copilot-instructions.md')), 'link'],
+    ['a FIFO', () => execFileSync('mkfifo', [path.join(D, '.github/pipe')]), 'other'],
+  ]) {
+    make();
+    r = await call({ op: 'project.settings', root: D });
+    const rows = r.files.filter((f) => f.name.startsWith('.github') && f.name !== '.github/ISSUE_TEMPLATE');
+    assert.deepEqual(rows.map((f) => f.type), [type], `${what}: ${JSON.stringify(rows)}`);
+    assert.equal(r.agentVerifiable, false, `${what}: the other tools' part never trusted`);
+    assert.equal(r.hash, claudeHash, `${what}: Claude Code's part as it was`);
+    assert.equal(r.verifiable, true, `${what}: Claude Code's part still verifiable`);
+    for (const f of rows) fs.rmSync(path.join(D, f.name));
+  }
+  // what the code container makes of it: Claude Code's part applies (for Claude Code on Bedrock), an agent waits
+  fs.symlinkSync('../x.json', path.join(D, '.github/mcp.json'));
+  const { checkFiles } = await import('../server/trust.mjs');
+  const placed = checkFiles({ ...r, files: (await call({ op: 'project.settings', root: D })).files }, D);
+  assert.equal(placed.ok, true);
+  assert.deepEqual(placed.files.filter((f) => !f.claude).map((f) => [f.name, f.type]), [['.github/ISSUE_TEMPLATE', 'name'], ['.github/mcp.json', 'link']]);
+  fs.rmSync(D, { recursive: true });
+});
+
 test('project.settings: the other tools\' configuration in the folders above it too, to the git root (named by their path)', async () => {
   const M = path.join(WS, 'mono'), A = path.join(M, 'app');
   const put = (p, text) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, text); };

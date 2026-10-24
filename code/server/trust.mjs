@@ -69,9 +69,13 @@ function surfaceOf(kind, above) {
   if (kind === 'lsp.json' || kind === '.lsp.json') return { tool: 'GitHub Copilot and Grok', single: true };
   return undefined;
 }
-// The folders of .github/ the pinned GitHub Copilot CLI reads (bn-coded's COPILOT_GITHUB_DIRS: the same — code/test
-// checks): never a row by its name alone
+// What the pinned GitHub Copilot CLI reads of .github/ — its folders, the files directly there and the instruction
+// files (bn-coded's COPILOT_GITHUB_DIRS, COPILOT_GITHUB_FILES and GITHUB_INSTRUCTIONS: the same — code/test checks):
+// never a row by its name alone
 export const COPILOT_GITHUB_DIRS = Object.freeze(['agents', 'copilot', 'extensions', 'hooks', 'skills', 'plugin']);
+export const COPILOT_GITHUB_FILES = Object.freeze(['mcp.json', 'lsp.json', 'allowed_models.txt', 'plugin.json']);
+export const GITHUB_INSTRUCTIONS = Object.freeze(['copilot-instructions.md', 'instructions']);
+const NEVER_BY_NAME = new Set([...COPILOT_GITHUB_DIRS, ...COPILOT_GITHUB_FILES, ...GITHUB_INSTRUCTIONS]);
 /** placeOf(row, root) -> {tool, claude} (whose configuration it is — tool null: Claude Code's —, and claude: in the
  *  part Claude Code reads, v0.23.0's listing: the project's own .claude/ and .mcp.json, and the six .claude trees above
  *  it), or null when the row's at, surface and name do not fit together for a project in root — then nothing of the
@@ -90,8 +94,9 @@ export function placeOf(f, root) {
   if (!segsOk(f.name.slice(f.at ? f.at.length + 1 : 0).split('/'))) return null;
   // Claude Code's part: the project's own .claude and .mcp.json; above it, the six trees and a .claude that is no folder
   const claude = f.at === '' ? kind === '.claude' || kind === '.mcp.json' : kind === '.claude' || (kind.startsWith('.claude/') && s.tool === null);
-  // (a name-only row: only where bn-coded lists one — a folder of .github/ no pinned tool reads, by its name alone)
-  if (f.type === 'name' && (!/^\.github\/[^/]+$/.test(kind) || f.name !== base || COPILOT_GITHUB_DIRS.includes(kind.slice(8)))) return null;
+  // (a name-only row: only where bn-coded lists one — a folder of .github/ no pinned tool reads, by its name alone:
+  // never one of what Copilot reads there, a folder or a file)
+  if (f.type === 'name' && (!/^\.github\/[^/]+$/.test(kind) || f.name !== base || NEVER_BY_NAME.has(kind.slice(8)))) return null;
   // (the project's own .claude/plugins/: other tools load them too — shown whole, said whose)
   if (kind === '.claude' && f.at === '' && fold(f.name).startsWith('.claude/plugins/')) return { tool: CLAUDE_PLUGINS, claude };
   return { tool: s.tool, claude };
