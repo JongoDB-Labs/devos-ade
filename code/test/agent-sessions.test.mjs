@@ -631,3 +631,43 @@ test('what Trust covers is what the page showed: the other tools\' part not show
     }
   }
 });
+
+test('plugin files never keep Claude Code\'s part from Bedrock: one that cannot be read or shown (binary, too large, a link out, a FIFO) costs only the other tools\' part', async () => {
+  const crypto = await import('node:crypto');
+  const { makeTrust, hashOf } = await import('../server/trust.mjs');
+  const { TRUST_EPOCH } = await import('../server/projects.mjs');
+  const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
+  const row = (name, text, extra = {}) => ({ name, type: 'file', size: Buffer.byteLength(text ?? ''), sha256: sha(text ?? name), text, target: null, at: '', surface: '.claude', ...extra });
+  const settings = row('.claude/settings.json', '{"permissions": {"allow": ["Bash(npm test)"]}}');
+  for (const [what, plugin] of [
+    ['binary (no text)', row('.claude/plugins/p/lib.so', null)],
+    ['too large', row('.claude/plugins/p/big.js', null, { type: 'big', size: 300000 })],
+    ['a link out of the workspace', row('.claude/plugins/p/out', null, { type: 'link', target: '/etc/passwd' })],
+    ['a FIFO', row('.claude/plugins/p/fifo', null, { type: 'other' })],
+  ]) {
+    const own = [plugin, settings].sort((a, b) => (a.name < b.name ? -1 : 1));
+    const result = { files: own, hash: hashOf(own), verifiable: true, over: null, agentHash: null, agentVerifiable: false, agentOver: null };
+    const rec = { id: `p_plug`, root: 'plug', name: 'plug', trust: null };
+    const call = async (req) => ({ result: req.op === 'project.settings' ? { ...result, files: req.text === false ? own.map(({ text: _t, ...f }) => f) : own } : {} });
+    const trust = makeTrust({ call, store: () => storeOf(rec, TRUST_EPOCH) });
+    const v = await trust.view(rec);
+    assert.equal(v.summary.complete, true, `${what}: Claude Code's part shown whole`);
+    assert.match(v.hash ?? '', /^[0-9a-f]{64}$/, `${what}: trustable`);
+    assert.equal(v.summary.agentsComplete, false, `${what}: the other tools' part (the plugin) cannot be`);
+    assert.deepEqual(await trust.trust(rec, v.hash), { conflict: null, agents: 'not trusted' }, what);
+    const d = await trust.decide('/workspace/plug');
+    assert.equal(d.state, 'trusted', `${what}: Claude Code on Bedrock trusted`);
+    assert.notEqual(d.agents.state, 'trusted', `${what}: agents not`);
+  }
+  // past the plugin rows' own cap (bn-coded lists 500 and says the other tools' part is over): the same
+  const many = Array.from({ length: 500 }, (_, i) => row(`.claude/plugins/p/f${String(i).padStart(3, '0')}.json`, '{}'));
+  const own = [...many, settings].sort((a, b) => (a.name < b.name ? -1 : 1));
+  const rec = { id: 'p_plugs', root: 'plugs', name: 'plugs', trust: null };
+  const result = { files: own, hash: hashOf(own), verifiable: true, over: null, agentHash: null, agentVerifiable: false, agentOver: 'more than 500 files' };
+  const trust = makeTrust({ call: async (req) => ({ result: req.op === 'project.settings' ? result : {} }), store: () => storeOf(rec, TRUST_EPOCH) });
+  const v = await trust.view(rec);
+  assert.match(v.hash ?? '', /^[0-9a-f]{64}$/, 'a plugin tree past its cap: Claude Code\'s part trustable');
+  assert.equal(v.summary.agentsComplete, false);
+  await trust.trust(rec, v.hash);
+  assert.equal((await trust.decide('/workspace/plugs')).state, 'trusted');
+});

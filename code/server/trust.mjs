@@ -136,16 +136,19 @@ export function checkFiles(r, root) {
   let ok = true, agentOk = true;
   const placed = rows.some((f) => f && typeof f === 'object' && (f.surface !== undefined || f.at !== undefined));
   const files = [];
-  const count = { claude: 0, agent: 0 }, last = { claude: null, agent: null };
+  const count = { claude: 0, agent: 0, plug: 0 }, last = { claude: null, agent: null, plug: null };
   // (every row is placed in its part, and each part's cap is its own: the other tools' rows past theirs never cost Claude
-  // Code's part — only a listing past any the sandbox makes, ROWS_MAX, is not believed at all)
+  // Code's part — only a listing past any the sandbox makes, ROWS_MAX, is not believed at all. The project's own
+  // .claude/plugins/ rows are Claude Code's, in its hash, but judged with the other tools' part: their cap and their
+  // shape cost only that part)
   for (const f of rows.slice(0, ROWS_MAX + 1)) {
-    const part = f && typeof f === 'object' && !claudeRow(f) ? 'agent' : 'claude';
-    const bad = () => { if (part === 'agent') agentOk = false; else ok = false; };
+    const own = !(f && typeof f === 'object') || claudeRow(f);
+    const part = !own ? 'agent' : f.at === '' && typeof f.name === 'string' && fold(f.name).startsWith('.claude/plugins/') ? 'plug' : 'claude';
+    const bad = () => { if (part === 'claude') ok = false; else agentOk = false; };
     if (++count[part] > FILES_MAX) { bad(); continue; }
     const nameShape = f && typeof f === 'object' && typeof f.name === 'string' && f.name.length <= 1024 && !/[\x00-\x1f\x7f]/.test(f.name);
     const place = !nameShape ? null : placed ? placeOf(f, root) : legacyNameOk(f.name) ? { tool: null, claude: true } : null;
-    if (!place || place.claude !== (part === 'claude') || (last[part] !== null && last[part] >= f.name)) { bad(); continue; }
+    if (!place || place.claude !== (part !== 'agent') || (last[part] !== null && last[part] >= f.name)) { bad(); continue; }
     if (place.refused) agentOk = false;
     last[part] = f.name;
     files.push({
@@ -796,8 +799,9 @@ export function makeTrust({ call, store, log = () => {} }) {
     const over = typeof result?.over === 'string' ? short(result.over, 200) : null;
     const present = files.length > 0 || !ok || over !== null;
     const hash = hashOf(files, plugins), planHash = planPlugins ? hashOf(files, planPlugins) : hash;
+    // (the plugin rows are in its hash; whether they can be shown is the other tools' part's: pluginShown)
     const verifiable = ok && pok && present && result?.verifiable === true && !result?.over && hash !== null && result?.hash === hash
-      && (!planPlugins || result?.planHash === planHash) && files.every((f) => f.type !== 'name') && shown(files);
+      && (!planPlugins || result?.planHash === planHash) && files.every((f) => f.type !== 'name') && shown(files.filter((f) => f.tool !== CLAUDE_PLUGINS));
     // the other tools' part (an agent of your subscriptions needs it as well)
     const agentOver = typeof result?.agentOver === 'string' ? short(result.agentOver, 200) : null;
     // (a sandbox that says nothing of the other tools' part — an older bn-coded — is not "nothing of theirs": not known)
@@ -810,14 +814,14 @@ export function makeTrust({ call, store, log = () => {} }) {
     // they never keep a trust of Claude Code's part from Claude Code on Bedrock
     const pluginRows = files.filter((f) => f.tool === CLAUDE_PLUGINS);
     return { files, plugins, planPlugins, present, hash: verifiable ? hash : null, planHash: verifiable ? planHash : null, verifiable, over,
-      agentFiles, agentPresent, agentHash: agentVerifiable ? agentHash : null, agentVerifiable, agentOver, pluginRows };
+      agentFiles, agentPresent, agentHash: agentVerifiable ? agentHash : null, agentVerifiable, agentOver, pluginRows, pluginShown: shown(pluginRows) };
   }
   // the other tools' part as judged: its files and the project's own .claude/plugins/ rows (their hash is Claude Code's:
   // with none of its own files, the part's is EMPTY_HASH)
   const agentsJudged = (r) => ({
     present: r.agentPresent || r.pluginRows.length > 0,
     hash: r.agentPresent ? r.agentHash : EMPTY_HASH,
-    verifiable: r.agentPresent ? r.agentVerifiable : true,
+    verifiable: (r.agentPresent ? r.agentVerifiable : true) && r.pluginShown,
   });
   // agentsOk(r, agents) -> whether the other tools' part can be trusted as the dialog shows it (nothing of it, or all of
   // it verifiable and shown whole)

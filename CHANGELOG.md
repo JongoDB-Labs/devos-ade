@@ -32,6 +32,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   than git's own (`https://`, `http://`, `ssh://`, `git://`, `file://`, `git+ssh://`, `ssh+git://`, exactly so, in
   lower case) in a remote's, a submodule's or a branch's remote URL (git runs `git-remote-<name>` for those), and a
   colour setting under a slot git does not document.
+- **Plugin files never keep Claude Code on Bedrock from a project:** a file under the project's `.claude/plugins/`
+  that cannot be read or shown (binary, over 256 KiB, a link out, a FIFO), or a plugin tree past its bounds, made
+  Claude Code's part unverifiable (as in v0.23.0). The plugin files are still in Claude Code's hash, but judged with the
+  other tools' part, with bounds of their own: such a file now keeps agents from starting there, and only them.
 - **Chat's sweep stops everything first:** it used to freeze what it found one process at a time, so a process that
   forked fast enough could start one the sweep had not seen yet. Now every process in Chat's sandbox but bn-coded and
   the init is stopped at once, the sandbox sorted while nothing runs, what is not spared killed, and the rest let go

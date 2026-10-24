@@ -2481,7 +2481,10 @@ const IMAGE = /\.(png|jpe?g|gif|svg|webp|ico)$/i;
 export function settingsFiles(abs, { text = false } = {}) {
   // one part's rows and bounds
   const part = () => ({ files: [], over: null, bytes: 0, shown: 0 });
-  const claude = part(), agent = part();
+  // (plug: the project's own .claude/plugins/ — in Claude Code's hash, as v0.23.0 lists it, but judged with the other
+  // tools' part, with bounds of its own: a plugin file that cannot be read or shown, or too many of them, never costs
+  // Claude Code's part)
+  const claude = part(), agent = part(), plug = part();
   // add(P, row): a row of that part — at most CONFIG_FILES each, whatever kind (a file, a link, a folder by its name
   // alone …): beyond, that part alone is over (the other's rows are its own); full(P): no room left (said so)
   const full = (P) => { if (P.files.length < CONFIG_FILES) return false; P.over ??= `more than ${CONFIG_FILES} files`; return true; };
@@ -2567,7 +2570,22 @@ export function settingsFiles(abs, { text = false } = {}) {
   // '' for the folder itself, else the folder above it that was read —, surface — what was read there, as named there
   const from = (P, at, surface, fn) => { const k = P.files.length; fn(); for (const f of P.files.slice(k)) { f.at = at; f.surface = surface; } };
   // Claude Code's part: the folder's own .claude/ and .mcp.json
-  for (const n of named(abs, '.claude')) from(claude, '', n, () => tree(claude, path.join(abs, n), n));
+  // (the folder's own .claude/: walked as a tree is, its plugins/ folder — in any spelling — into the plugin part)
+  const ownClaude = (p, name) => {
+    let c;
+    try { c = fs.lstatSync(p); } catch (e) { c = null; if (e.code !== 'ENOENT') claude.over ??= 'a folder that could not be read'; }
+    if (!c?.isDirectory()) { tree(claude, p, name); return; }
+    let list;
+    try { list = fs.readdirSync(p, { withFileTypes: true }); } catch { claude.over ??= 'a folder that could not be read'; return; }
+    for (const d of list.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+      const P = fold(d.name) === 'plugins' ? plug : claude;
+      if (P.over) continue;
+      const rel = `${name}/${d.name}`, q = path.join(p, d.name);
+      if (d.isDirectory()) walk(P, q, rel, 2);
+      else if (!full(P)) one(P, rel, q);
+    }
+  };
+  for (const n of named(abs, '.claude')) from(plug, '', n, () => from(claude, '', n, () => ownClaude(path.join(abs, n), n)));
   for (const n of named(abs, '.mcp.json')) from(claude, '', n, () => one(claude, n, path.join(abs, n)));
   // the other tools' part (AGENT_TREES …) in a folder: dir's (at: '' for the project's own, else that folder). A .github
   // or .vscode that is a link is named as one (never read through: never trustable)
@@ -2655,13 +2673,17 @@ export function settingsFiles(abs, { text = false } = {}) {
   const pl = enabledPluginsOf(abs, claude.files);
   const pp = pl ? enabledPluginsOf(abs, claude.files, PLAN_PLUGIN_RECORD()) : null;
   const rowsOf = (list) => list.map((f) => [f.name, f.type, f.sha256 ?? null, f.target ?? null]);
-  const hashWith = (x) => (claude.files.length ? sha256(JSON.stringify(x ? { files: rowsOf(claude.files), plugins: x.plugins, registry: x.registry } : rowsOf(claude.files))) : null);
+  // (Claude Code's hash: its rows and the plugin rows together, sorted, exactly as v0.23.0's listing)
+  const own = [...claude.files, ...plug.files].sort(byName);
+  const hashWith = (x) => (own.length ? sha256(JSON.stringify(x ? { files: rowsOf(own), plugins: x.plugins, registry: x.registry } : rowsOf(own))) : null);
   const hash = hashWith(pl);
   const agentHash = agent.files.length ? sha256(JSON.stringify(rowsOf(agent.files))) : null;
   const answer = () => ({
-    files: [...claude.files, ...agent.files].sort(byName).map(({ readable: _r, ...f }) => f), hash,
+    files: [...own, ...agent.files].sort(byName).map(({ readable: _r, ...f }) => f), hash,
     verifiable: !claude.over && claude.files.every((f) => f.readable === true), over: claude.over,
-    agentHash, agentVerifiable: !agent.over && agent.files.every((f) => f.readable === true), agentOver: agent.over,
+    // (the other tools' part as judged: theirs and the plugin rows)
+    agentHash, agentVerifiable: !agent.over && !plug.over && agent.files.every((f) => f.readable === true) && plug.files.every((f) => f.readable === true),
+    agentOver: agent.over ?? plug.over,
     ...(pl ? { ...pl, planPlugins: pp.plugins, planRegistry: pp.registry, planHash: hashWith(pp) } : {}),
   });
   let out = answer();
@@ -2671,7 +2693,7 @@ export function settingsFiles(abs, { text = false } = {}) {
   // untouched —, Claude Code's only when they alone would not fit)
   const fits = () => Buffer.byteLength(JSON.stringify(out)) <= MAX_FRAME;
   if (text && !fits()) {
-    for (const f of agent.files) if (f.text !== undefined) f.text = null;
+    for (const f of [...agent.files, ...plug.files]) if (f.text !== undefined) f.text = null;
     agent.over ??= 'too much to show';
     out = answer();
     if (!fits()) {

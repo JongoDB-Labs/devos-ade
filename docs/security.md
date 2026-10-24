@@ -3438,8 +3438,9 @@ never reads, copies, keeps, passes on or relays a login.**
   every agent, which needs both. The project's own `.claude/plugins/` stays in
   Claude Code's hash, exactly as v0.23.0 lists it, but what it sets is judged — and shown in the dialog — with the
   other tools' part (Grok and Copilot load its hooks and MCP servers; Claude Code a plugin only when it is installed
-  and turned on): a plugin file whose settings the dialog cannot show whole keeps agents from starting, not Claude
-  Code; one that cannot be read or shown at all still makes Claude Code's part unverifiable, as in v0.23.0. The git
+  and turned on), with bounds of its own (500 rows): a plugin file the dialog cannot show whole — or cannot read or
+  show at all (binary, too large, a link out, a FIFO), or more of them than that — keeps agents from starting, never
+  Claude Code. The git
   root is the first folder with a `.git` that holds a `HEAD` (an empty `.git` a repository carries does not end the
   walk). The walk stops below the workspace itself — outside a repository, and when the workspace is the git root:
   the workspace's own `.claude` trees and the tools' settings there are the Workspace's, yours, applied as they always

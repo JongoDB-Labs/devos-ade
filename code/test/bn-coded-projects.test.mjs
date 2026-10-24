@@ -365,6 +365,28 @@ test('project.settings: both parts\' texts fit one answer — past it the other 
   fs.rmSync(D, { recursive: true, force: true });
 });
 
+test('project.settings: the project\'s own .claude/plugins/ has bounds of its own — a binary or too large plugin file, or 600 of them, cost only the other tools\' part; Claude Code\'s hash still holds them', async () => {
+  const D = path.join(WS, 'plugin-heavy');
+  fs.mkdirSync(path.join(D, '.claude/plugins/p'), { recursive: true });
+  fs.writeFileSync(path.join(D, '.claude/settings.json'), '{"permissions": {"allow": ["Bash(npm test)"]}}');
+  fs.writeFileSync(path.join(D, '.claude/plugins/p/lib.so'), Buffer.from([0xff, 0xfe, 0x00, 0x80]));
+  fs.writeFileSync(path.join(D, '.claude/plugins/p/big.js'), 'x'.repeat(300 * 1024));
+  let r = await call({ op: 'project.settings', root: D });
+  assert.deepEqual([r.verifiable, r.over], [true, null], 'Claude Code\'s part');
+  assert.equal(r.agentVerifiable, false, 'the plugin part: not');
+  const before = r.hash;
+  assert.ok(r.files.some((f) => f.name === '.claude/plugins/p/lib.so'), 'listed');
+  // (in Claude Code's hash: a plugin file changed is looked at again)
+  fs.writeFileSync(path.join(D, '.claude/plugins/p/lib.so'), Buffer.from([0xff, 0xfe, 0x00, 0x81]));
+  assert.notEqual((await call({ op: 'project.settings', root: D })).hash, before);
+  for (let i = 0; i < 600; i++) fs.writeFileSync(path.join(D, `.claude/plugins/p/f${String(i).padStart(3, '0')}.json`), '{}');
+  r = await call({ op: 'project.settings', root: D });
+  assert.deepEqual([r.verifiable, r.over], [true, null], '600 plugin files: Claude Code\'s part still');
+  assert.deepEqual([r.agentVerifiable, r.agentOver], [false, `more than ${coded.CONFIG_FILES} files`]);
+  assert.equal(r.files.filter((f) => f.name.startsWith('.claude/plugins/')).length, coded.CONFIG_FILES);
+  fs.rmSync(D, { recursive: true, force: true });
+});
+
 test('project.settings: the answer is measured in bytes, as it is framed — three-byte characters under the old count, over the frame', async () => {
   const D = path.join(WS, 'cjk-texts');
   // (漢 is one UTF-16 unit and three UTF-8 bytes: 8 files a part of 262,140 bytes — under each file's and each part's cap —
