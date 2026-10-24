@@ -812,6 +812,26 @@ test('paths.plain: what an agent\'s change may touch without asking (Accept edit
   ];
   const r = await call({ op: 'paths.plain', root: D, paths: cases.map((c) => c[0]) });
   assert.deepEqual(r.plain, cases.map((c) => c[1]), JSON.stringify(cases.map((c, i) => [c[0], r.plain?.[i]]).filter(([, got], i) => got !== cases[i][1])));
+  // what git runs code from wherever its layout puts it: a "gitdir:" file's folder (its config, hooks, info/ …), the
+  // include.path and includeIf targets of its config (there yet or not), its core.fsmonitor program (and below it),
+  // a submodule's config — each in any spelling a folding disk opens
+  const E = path.join(WS, 'edits-gitdir');
+  const putE = (rel, text = 'x') => { fs.mkdirSync(path.dirname(path.join(E, rel)), { recursive: true }); fs.writeFileSync(path.join(E, rel), text); };
+  putE('.git', 'gitdir: tools/repo\n');
+  putE('tools/repo/HEAD', 'ref: refs/heads/main\n');
+  putE('tools/repo/config', '[include]\n\tpath = ../../docs/git.inc\n[includeIf "gitdir:/x/"]\n\tpath = ../../conf/cond.inc\n[core]\n\tfsmonitor = scripts/fsmon.sh\n');
+  putE('tools/repo/hooks/pre-commit'); putE('tools/repo/modules/sub/config'); putE('scripts/fsmon.sh'); putE('src/a.js'); putE('tools/build.js');
+  const gitCases = [
+    [`${E}/tools/repo/config`, false, 'the gitdir\'s config'], [`${E}/tools/repo/hooks/pre-commit`, false, 'its hooks'],
+    [`${E}/tools/repo/info/attributes`, false, 'anything of its folder'], [`${E}/tools/repo/modules/sub/config`, false, 'a submodule\'s config'],
+    [`${E}/docs/git.inc`, false, 'an include.path target, not there yet'], [`${E}/conf/cond.inc`, false, 'an includeIf target'],
+    [`${E}/scripts/fsmon.sh`, false, 'the fsmonitor program'], [`${E}/scripts/fsmon.sh/x`, false, 'below it'],
+    [`${E}/DOCS/Git.inc`, false, 'an include target, folded'], [`${E}/conf/COND.inc`, false, 'folded'], [`${E}/tools/repo/ınfo/x`, false, 'below the gitdir, another spelling'],
+    [`${E}/src/a.js`, true, 'a plain file'], [`${E}/tools/build.js`, true, 'beside the gitdir'], [`${E}/docs/other.md`, true, 'beside an include target'],
+  ];
+  const g = await call({ op: 'paths.plain', root: E, paths: gitCases.map((c) => c[0]) });
+  assert.deepEqual(g.plain, gitCases.map((c) => c[1]), JSON.stringify(gitCases.map((c, i) => [c[2], g.plain?.[i]]).filter(([, got], i) => got !== gitCases[i][1])));
+  fs.rmSync(E, { recursive: true });
   // the workspace itself as the root: its projects' .git and configuration guarded the same way
   const w = await call({ op: 'paths.plain', paths: [`${D}/src/a.js`, `${D}/.git/HEAD`] });
   assert.deepEqual(w.plain, [true, false]);

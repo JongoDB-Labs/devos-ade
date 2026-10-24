@@ -2689,14 +2689,15 @@ export function projectSettings(req) {
 // The names an agent's change approved by Accept edits never touches, folded (fold) and at any depth: git's folder and
 // what runs on your computer when you open the folder or commit (Claude Code's own protected list, other editors'
 // folders, pre-commit and lefthook files), and every tool's own configuration (what the trust step lists); a
-// *.code-workspace file too, and the folders git runs hooks from (core.hooksPath: gitLayout)
+// *.code-workspace file too, and whatever git runs code from (its folders, hooks, configs: gitLayout, pathsPlain)
 export const EDIT_GUARDED = Object.freeze(['.git', '.claude', '.mcp.json', '.vscode', '.husky', '.devcontainer', '.devcontainer.json', '.envrc',
   '.github', '.idea', '.zed', '.pre-commit-config.yaml', '.pre-commit-config.yml', 'lefthook.yml', 'lefthook.yaml', '.lefthook.yml',
   '.lefthook.yaml', 'lefthook-local.yml', 'lefthook-local.yaml', ...AGENT_TREES, ...AGENT_FILES]);
 export const PLAIN_PATHS_MAX = 200;
 // paths.plain {root, paths} -> {plain: [bool]}: whether each path an agent says its change touches may be changed
 // without asking (the page's Accept edits): absolute, in the project's folder, no part of it in EDIT_GUARDED (folded:
-// a disk that folds names opens .curſor as .cursor), not in a folder git runs hooks from, each part that is there
+// a disk that folds names opens .curſor as .cursor), nothing git runs code from (a git folder wherever a "gitdir:"
+// file points, a hook folder, an fsmonitor program, a config file or an include target of one), each part that is there
 // spelled exactly as the folder lists it (never another entry the disk would open by a folded spelling), no link on
 // its way or at its end (a repository's link could lead to ~/.codex or .git/hooks), and — when it is there — a plain
 // file with no other name (a hard link). Anything else: false, and the page asks. (Checked, then the agent writes: what
@@ -2707,14 +2708,20 @@ export function pathsPlain(req) {
   if (!list || list.length > PLAIN_PATHS_MAX) throw new Error(`paths: a list of at most ${PLAIN_PATHS_MAX}`);
   const guarded = new Set(EDIT_GUARDED);
   const guardedName = (x) => { const f = fold(x); return guarded.has(f) || f.endsWith('.code-workspace'); };
-  // the folders git runs hooks from here (core.hooksPath, .git/hooks, .husky): none of them, at any depth below
+  // what git on your computer runs code from here (gitLayout, folded): every git folder — a "gitdir:" file's, wherever
+  // it points in the folder, and its commondir — whole, the folders it runs hooks from (core.hooksPath, .git/hooks,
+  // .husky, a submodule's) and each core.fsmonitor program, and anything below them; each config file it reads (its
+  // include.path and includeIf targets, there yet or not, a submodule's config). Not known (gitLayout failed, or left
+  // something out): nothing is plain
   const layout = (() => { try { return gitLayout(root); } catch { return null; } })();
-  const hooks = layout ? [...layout.hookDirs, ...layout.moduleHookDirs].map(fold) : null;
+  const below = layout ? [...layout.gitdirs, ...layout.hookDirs, ...layout.moduleHookDirs, ...layout.fsmonitor].map(fold) : null;
+  const exact = layout ? new Set([...layout.configs, ...layout.moduleConfigs].map(fold)) : null;
+  const gits = (rel) => { const f = fold(rel); return exact.has(f) || below.some((h) => f === h || f.startsWith(`${h}/`)); };
   const one = (p) => {
     if (typeof p !== 'string' || !p.startsWith('/') || p.length > 4096 || p.includes('\0') || path.resolve(p) !== p || !inRoot(p, root) || p === root.abs) return false;
     const rel = p.slice(root.abs.length + 1), parts = rel.split('/');
     if (parts.some(guardedName)) return false;
-    if (!hooks || layout.truncated || hooks.some((h) => fold(rel) === h || fold(rel).startsWith(`${h}/`))) return false;
+    if (!layout || layout.truncated || gits(rel)) return false;
     let at = root.abs;
     for (let i = 0; i < parts.length; i++) {
       let names;
@@ -4416,8 +4423,9 @@ export function permRemove(req, hooks = {}) {
 //   fixed files      git, VS Code, direnv, Claude Code, MCP, npm/yarn/pnpm, git hook managers, dev containers
 //   hook folders     .git/hooks, .husky, and every core.hooksPath (husky v9's .husky/_, .githooks/ …) in /workspace
 //   git itself       .git (a folder, or a "gitdir:" file — followed when it points into /workspace, with its commondir),
-//                    its config and include.path / includeIf targets and a core.fsmonitor program in /workspace, and
-//                    submodules (.git/modules/*/config, …/hooks/*)
+//                    its config and include.path / includeIf targets and a core.fsmonitor program in /workspace, its
+//                    info/attributes, commondir and a rebase's to-do list, and submodules (.git/modules/*/config,
+//                    …/hooks/*)
 //   patterns         .devcontainer/*/devcontainer.json, *.code-workspace at the top
 const WATCH_FILES = ['.envrc', '.vscode/tasks.json', '.vscode/settings.json', '.claude/settings.json', '.claude/settings.local.json',
   '.mcp.json', 'package.json', '.devcontainer.json', '.devcontainer/devcontainer.json', '.pre-commit-config.yaml', 'lefthook.yml',
@@ -4606,6 +4614,11 @@ function watchTargets(root = WS_ROOT) {
   let ws = [];
   try { ws = fs.readdirSync(root.abs).filter((n) => /^[A-Za-z0-9._-]{1,100}\.code-workspace$/.test(n)).sort(); } catch { /* none */ }
   if (ws.length > 16) { truncated = true; ws = ws.slice(0, 16); }
+  // (and of each git folder, the files beside its config that change what git does there: the attributes that pick a
+  // filter, diff or merge driver, the commondir that names the folder whose config and hooks apply, a rebase's to-do
+  // list — its exec lines run at `git rebase --continue`. The rest of it — objects, refs, the index, logs — changes
+  // with every git command and runs nothing)
+  for (const d of g.gitdirs) files.push(`${d}/info/attributes`, `${d}/commondir`, `${d}/rebase-merge/git-rebase-todo`);
   files.push(...ws, ...g.moduleConfigs);
   return { files: [...new Set(files)], hookDirs: [...new Set(g.hookDirs)], moduleHookDirs: g.moduleHookDirs, gitdirs: g.gitdirs,
     configs: [...g.configs, ...g.moduleConfigs], fsmonitor: g.fsmonitor, truncated, root };
