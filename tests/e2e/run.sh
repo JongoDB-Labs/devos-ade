@@ -599,7 +599,8 @@ console.log(`uid\t${process.getuid()}`);
 console.log(`claude-binary\t${fs.existsSync('/usr/local/bin/claude') || fs.readdirSync('/opt/code/node_modules/@anthropic-ai').some((n) => n !== 'claude-agent-sdk') ? 'present' : 'absent'}`);
 // a forged X-Portal-User for Open WebUI's sign-in, through the main Caddy (the only way this container could reach it):
 // Caddy asks the portal first — no session here — so it never reaches Open WebUI
-const forged = await new Promise((r) => { const q = http.request({ host: 'caddy', port: 80, method: 'POST', path: '/api/v1/auths/signin', timeout: 8000,
+// (Caddy's own listener in its container: http_port 8080 — the chat site behind it, as a browser's request reaches it)
+const forged = await new Promise((r) => { const q = http.request({ host: 'caddy', port: 8080, method: 'POST', path: '/api/v1/auths/signin', timeout: 8000,
   headers: { host: process.env.CHAT_HOST, 'x-portal-user': process.env.OWNER, 'content-type': 'application/json' } }, (res) => { res.resume(); r(String(res.statusCode)); });
   q.on('timeout', () => { q.destroy(); r('timeout'); }); q.on('error', () => r('closed')); q.end('{}'); });
 console.log(`forged-signin\t${forged}`);
