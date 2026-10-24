@@ -967,9 +967,24 @@ test('paths.plain: what an agent\'s change may touch without asking (Accept edit
     ['an unknown gc key', '[gc]\n\tsomethingLater = 1\n'], ['lfs.storage', '[lfs]\n\tstorage = /x\n'],
     ['lfs.standalonetransferagent', '[lfs]\n\tstandalonetransferagent = x\n'], ['an lfs key for a URL not known', '[lfs "https://x/"]\n\tpath = sh\n'],
     ['a colour that is not one', '[color "diff"]\n\tmeta = $(x)\n'], ['an unknown color section', '[color "x"]\n\tmeta = red\n'],
+    // (v0.24.1: a transport helper or another scheme in any remote's, submodule's or branch's URL — git runs
+    // git-remote-<name> —, and colour slots by their exact names)
+    ['a helper:: url', '[remote "o"]\n\turl = gcrypt::rsync://h/p\n'], ['a helper:: pushurl', '[remote "o"]\n\tpushurl = Foo::bar\n'],
+    ['a submodule helper:: url', '[submodule "s"]\n\turl = custom::thing\n'], ['an unknown scheme', '[remote "o"]\n\turl = gcrypt://h/p\n'],
+    ['a branch remote with a helper', '[branch "main"]\n\tremote = ext::sh -c x\n'], ['a branch pushremote with a helper', '[branch "main"]\n\tpushremote = foo::bar\n'],
+    ['a branch remote with an unknown scheme', '[branch "main"]\n\tremote = myhelper://h/p\n'], ['a file:: helper', '[remote "o"]\n\turl = file::/srv/x\n'],
+    ['a colour slot of another command', '[color "status"]\n\told = red\n'], ['a colour slot not known', '[color "diff"]\n\tsomethingLater = red\n'],
   ]) {
     fs.writeFileSync(path.join(D, '.git/config'), config + text);
     await asked(what);
+  }
+  // (and what stays plain: git's own transports, a scp-like address, a local path, a remote's name, known slots)
+  for (const text of ['[remote "o"]\n\turl = git://h/p\n\tpushurl = http://h/p\n', '[remote "o"]\n\turl = file:///srv/r.git\n',
+    '[remote "o"]\n\turl = /srv/r.git\n', '[remote "o"]\n\turl = ../r\n', '[remote "o"]\n\turl = git@github.com:a/b.git\n',
+    '[remote "o"]\n\turl = SSH://git@h/p\n', '[submodule "s"]\n\turl = https://h/s.git\n', '[branch "main"]\n\tremote = .\n\tpushremote = https://h/r.git\n',
+    '[color "status"]\n\tadded = green\n', '[color "diff"]\n\toldMovedAlternativeDimmed = dim\n', '[color "decorate"]\n\tHEAD = bold red\n']) {
+    fs.writeFileSync(path.join(D, '.git/config'), config + text);
+    assert.deepEqual((await call({ op: 'paths.plain', root: D, paths: [`${D}/src/a.js`] })).plain, [true], text);
   }
   fs.writeFileSync(path.join(D, '.git/config'), config);
   // the other configs git reads: config.worktree, a submodule's (any depth); each not a plain file (a link): the same

@@ -2777,8 +2777,24 @@ const GIT_KEYS = new Set(['core.repositoryformatversion', 'core.filemode', 'core
   'lfs.pruneremotetocheck', 'lfs.pruneverifyremotealways', 'lfs.pruneverifyunreachablealways', 'lfs.fetchinclude', 'lfs.fetchexclude',
   'lfs.skipdownloaderrors', 'lfs.allowincompletepush', 'lfs.locksverify', 'lfs.cachecredentials', 'lfs.setlockablereadonly',
   'lfs.lockignoredfiles', 'lfs.defaulttokenttl', 'lfs.gitprotocol']);
-// the subsections whose every key is a colour (color.<command>.<slot>), and git-lfs's per-URL and transfer keys
-const GIT_COLOR_SLOTS = new Set(['diff', 'branch', 'status', 'grep', 'interactive', 'decorate', 'advice', 'push', 'remote', 'transport', 'blame']);
+// the colour slots of each command that colours (color.<command>.<slot>: [color "<command>"] <slot> = …), each by its
+// exact name as git's documentation lists it — a slot git adds later is not one here — and git-lfs's per-URL and
+// transfer keys
+const GIT_COLOR_SLOTS = new Map(Object.entries({
+  advice: ['hint'],
+  blame: ['repeatedLines'],
+  branch: ['current', 'local', 'remote', 'upstream', 'plain', 'worktree'],
+  decorate: ['branch', 'remoteBranch', 'tag', 'stash', 'HEAD', 'grafted', 'symbol', 'ref'],
+  diff: ['context', 'plain', 'meta', 'frag', 'func', 'old', 'new', 'commit', 'whitespace', 'oldMoved', 'newMoved', 'oldMovedDimmed',
+    'oldMovedAlternative', 'oldMovedAlternativeDimmed', 'newMovedDimmed', 'newMovedAlternative', 'newMovedAlternativeDimmed', 'contextDimmed',
+    'oldDimmed', 'newDimmed', 'contextBold', 'oldBold', 'newBold'],
+  grep: ['context', 'filename', 'function', 'lineNumber', 'column', 'match', 'matchContext', 'matchSelected', 'selected', 'separator'],
+  interactive: ['prompt', 'header', 'help', 'error', 'reset'],
+  push: ['error'],
+  remote: ['hint', 'warning', 'success', 'error'],
+  status: ['header', 'added', 'updated', 'changed', 'untracked', 'branch', 'nobranch', 'localBranch', 'remoteBranch', 'unmerged'],
+  transport: ['rejected'],
+}).map(([command, slots]) => [command, new Set(slots.map((x) => x.toLowerCase()))]));
 const GIT_LFS_URL_KEYS = new Set(['access', 'locksverify', 'contenttype', 'sshtransfer']);
 const GIT_LFS_TRANSFER_KEYS = new Set(['maxretries', 'maxretrydelay', 'maxverifies', 'enablehrefrewrite']);
 // a colour, as git reads one: words, numbers and #rrggbb — never a path or a command
@@ -2814,6 +2830,17 @@ export function gitConfigStrict(text) {
   }
   return out;
 }
+// gitUrlPlain(v) -> whether a remote's, a submodule's or a branch's remote URL (or a remote's name) makes git run no
+// program of its own for it: an https://, http://, ssh://, git:// or file:// URL, a scp-like [user@]host:path, a local
+// path or a remote's name — never <helper>::<address> (git runs git-remote-<helper>), nor any other scheme:// (the same:
+// git-remote-<scheme>), nor a control character
+const GIT_URL_SCHEMES = new Set(['https', 'http', 'ssh', 'git', 'file']);
+const gitUrlPlain = (v) => {
+  if (typeof v !== 'string' || v === '' || /[\x00-\x1f\x7f]/.test(v)) return false;
+  if (/^[A-Za-z][A-Za-z0-9+.-]*::/.test(v)) return false;
+  const m = v.match(/^([A-Za-z][A-Za-z0-9+.-]*):\/\//);
+  return m ? GIT_URL_SCHEMES.has(m[1].toLowerCase()) : true;
+};
 // a plain relative path inside the work tree: no ~, not absolute, no "." or ".." part, printable
 const plainRel = (v) => typeof v === 'string' && v !== '' && !v.startsWith('~') && !v.startsWith('/') && !/[\x00-\x1f\x7f\\]/.test(v)
   && v.split('/').every((p) => p !== '' && p !== '.' && p !== '..');
@@ -2826,13 +2853,14 @@ function gitKeyWhy({ section, sub, key, value }) {
     if (sub !== 'lfs' || !Object.hasOwn(GIT_LFS_FILTER, key)) return full;
     return (value ?? 'true') === GIT_LFS_FILTER[key] ? null : full;
   }
-  if (section === 'color' && sub !== null) return GIT_COLOR_SLOTS.has(asciiLower(sub)) && GIT_COLOR.test(value ?? '') ? null : full;
+  if (section === 'color' && sub !== null) return GIT_COLOR_SLOTS.get(asciiLower(sub))?.has(key) && GIT_COLOR.test(value ?? '') ? null : full;
   if (section === 'color') return GIT_KEYS.has(name) && GIT_COLOR.test(value ?? '') ? null : full;
   if (section === 'lfs' && sub !== null) {
     return (asciiLower(sub) === 'transfer' ? GIT_LFS_TRANSFER_KEYS : /^https?:\/\//i.test(sub) ? GIT_LFS_URL_KEYS : new Set()).has(key) ? null : full;
   }
   if (!GIT_KEYS.has(name)) return full;
-  if ((name === 'remote.*.url' || name === 'remote.*.pushurl' || name === 'submodule.*.url') && /^\s*(ext|fd)::/i.test(value ?? '')) return full;
+  // (a URL — or, for a branch, a remote's name or a URL — that runs no transport helper)
+  if (['remote.*.url', 'remote.*.pushurl', 'submodule.*.url', 'branch.*.remote', 'branch.*.pushremote'].includes(name) && !gitUrlPlain(value)) return full;
   if (name === 'submodule.*.update' && !['checkout', 'rebase', 'merge', 'none'].includes(value ?? '')) return full;
   if (name === 'core.hookspath') return plainRel(value) ? null : full;
   return null;

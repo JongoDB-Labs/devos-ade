@@ -3337,10 +3337,13 @@ never reads, copies, keeps, passes on or relays a login.**
   the gitdir's, `config.worktree`, each submodule's — is read with a grammar stricter than git's (blank lines, whole-line
   comments, a `[section]` or `[section "sub"]` header alone on its line, `key = value` or a bare key; no `\`, `#`, `;`,
   continuation or inner quotes; printable ASCII), and every key must be one that never names a program or a path git or
-  a tool of your computer loads: core's format and file-system flags, a remote's URL (never `ext::` or `fd::`), fetch
-  and push refspecs, a branch's tracking (VS Code's and the GitHub PR extension's keys included), your name, email and
-  signing key, pull, push, fetch, gc's numbers, booleans and dates (never `gc.recentObjectsHook`, a command, nor
-  `gc.repackFilterTo`, a path), colours, rerere, the conflict style, commit signing, a submodule's URL, branch and
+  a tool of your computer loads: core's format and file-system flags, a remote's URL (an `https://`, `http://`,
+  `ssh://`, `git://` or `file://` URL, a scp-like `host:path` or a local path — never a transport helper,
+  `<name>::…`, nor another scheme: git runs `git-remote-<name>` for those), fetch and push refspecs, a branch's
+  tracking (its remote and push remote checked the same way when they hold a URL; VS Code's and the GitHub PR
+  extension's keys included), your name, email and signing key, pull, push, fetch, gc's numbers, booleans and dates
+  (never `gc.recentObjectsHook`, a command, nor `gc.repackFilterTo`, a path), colours (each command's slots by their
+  exact names), rerere, the conflict style, commit signing, a submodule's URL (as a remote's), branch and
   `update` (checkout, rebase, merge or none), the object format, git-lfs's settings one by one (never `lfs.storage`, a
   folder it loads from, nor its custom transfers, extensions or standalone transfer agent, programs it runs) and its
   filter exactly as `git lfs install` writes it, and `core.hooksPath` only as a plain relative folder of the repository

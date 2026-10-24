@@ -25,6 +25,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   ended — in a project whose settings its tool cannot use yet opens the settings dialog first, as a new one does, and
   goes on once you trust them; it no longer stops at "not trusted". A new one whose settings could not be read opens
   the dialog too.
+- **Accept edits asks where a remote's URL could run a program:** a transport helper (`<name>::…`) or a scheme other
+  than https, http, ssh, git and file in a remote's, a submodule's or a branch's remote URL (git runs
+  `git-remote-<name>` for those), and a colour setting under a slot git does not document.
 - **A project trusted in v0.23.0 that cannot be carried over** (its settings not shown whole today) no longer reads
   its settings a second time, with their texts, at every start there.
 
