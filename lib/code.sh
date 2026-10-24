@@ -84,8 +84,8 @@ code_secrets() {
 # from PORTAL_HOST at every enable/up (like PORTAL_ORIGIN): <its site's first label>-preview.localhost —
 # bedrock-now.localhost → bedrock-now-preview.localhost, bn-dev.localhost → bn-dev-preview.localhost. Browsers count
 # a .localhost name's last two labels as its site, so a preview there is another site than the portal's: none of the
-# portal's cookies reach it (docs/security.md "Previews of dev servers"). A PORTAL_HOST outside .localhost (BEDROCK_NOW_ALLOW_PUBLIC_
-# HOST) gets <project>-preview.localhost: this computer's previews are on *.localhost, this computer in every browser
+# portal's cookies reach it (docs/security.md "Previews of dev servers"). A PORTAL_HOST outside .localhost
+# (BEDROCK_NOW_ALLOW_PUBLIC_HOST) gets <project>-preview.localhost: this computer's previews are on *.localhost, this computer in every browser
 # (over remote access they have a host of their own: code_remote_sync).
 code_preview_domain() {
   local h d
@@ -289,7 +289,8 @@ code_up_hook() {
 # --- on by default (setup and ./stack update) ---
 # The Code page, and the browser terminal it runs in, are on unless you turned them off: a setup that finds
 # CODE_ENABLED blank in .env (never chosen: enable writes true; disable, ./stack terminal disable and Settings write
-# false) turns both on, in the terminal's folder (TERMINAL_WORKSPACE, or ~/bedrock-now-workspace, created with mode 700
+# false) turns both on, in the terminal's folder (TERMINAL_WORKSPACE, or ~/devos-ade-workspace — ~/bedrock-now-workspace
+# on an install that already has it: lib/terminal.sh terminal_default_workspace —, created with mode 700
 # and checked as ./stack terminal enable does), with the terminal's own key and budget. An explicit off is kept —
 # CODE_ENABLED=false, or TERMINAL_ENABLED=false (its sandbox). What stays opt-in is unchanged: Bypass permissions and
 # Auto mode, the sandbox's internet (TERMINAL_EGRESS keeps its default: public addresses only), remote access to the terminal and the Code

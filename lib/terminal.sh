@@ -4,7 +4,8 @@
 # default with the Code page, which runs in its sandbox (lib/code.sh code_default_on: setup and ./stack update turn both
 # on while CODE_ENABLED is blank); an explicit TERMINAL_ENABLED=false (disable) stays.
 #
-#   enable [--workspace DIR]   TERMINAL_ENABLED=true. DIR (default ~/bedrock-now-workspace, created with mode 700)
+#   enable [--workspace DIR]   TERMINAL_ENABLED=true. DIR (default ~/devos-ade-workspace, or ~/bedrock-now-workspace
+#                              on an install that already has it; created with mode 700)
 #                              is the only folder of this computer the container sees, at /workspace.
 #   disable                    the container, its gateway, their networks and ttyd's socket volume go; the folder,
 #                              terminal-home (Claude Code's settings and history) and its LiteLLM key are kept
@@ -59,7 +60,8 @@ Usage: ./stack terminal <command>
 
   status                      On or off, the workspace folder, the container, its address and access
   enable [--workspace DIR]    A Terminal tab in the portal: Claude Code in a sandbox container that sees only
-                              DIR (default ~/bedrock-now-workspace) and asks for the portal password again
+                              DIR (default ~/devos-ade-workspace, or ~/bedrock-now-workspace on an install
+                              that already has it) and asks for the portal password again
   disable                     Removes the container (the folder and Claude Code's history are kept)
 
   .env: TERMINAL_EGRESS=internet (the default: public addresses only, through its egress proxy) | host (this
@@ -81,7 +83,8 @@ cmd_terminal() {
 
 # terminal_default_workspace -> the workspace folder when none was chosen: ~/devos-ade-workspace (another Compose
 # project: ~/devos-ade-<project>-workspace) — or the folder an install made before v0.25.0 used, when it is there
-# (~/bedrock-now-workspace, ~/bedrock-now-<project>-workspace): its files stay where they are. Once chosen it is in .env
+# (~/bedrock-now-workspace for ~/devos-ade-workspace, ~/bedrock-now-<project>-workspace for ~/devos-ade-<project>-workspace):
+# its files stay where they are. Once chosen it is in .env
 # (TERMINAL_WORKSPACE) and this is not asked again.
 terminal_default_workspace() {
   local p s=""; p="$(project_name)"

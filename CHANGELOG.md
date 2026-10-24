@@ -20,22 +20,23 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 - **New installs go to `~/devos-ade`**, with the Code page's workspace in `~/devos-ade-workspace`. An install made
   before v0.25.0 is found in `~/bedrock-now` (the installer says it is installed, and changes nothing) and keeps its
   folder and its workspace.
-- The GitHub App that *Sign in with GitHub* uses is renamed too: its client ID is the same, so hosts already signed in
-  keep working; *Choose repositories* leads to its page under its new name.
+- The GitHub App that *Sign in with GitHub* uses is renamed too (`GITHUB_APP_SLUG`: `devos-ade`). Its client ID is the
+  same, so hosts already signed in keep working without signing in again; each takes the App's new name from GitHub's
+  own answer (the App's installations, asked with the host's token) at its next renewal or *Test connection*, and
+  *Choose repositories* then leads to its page under that name.
 - The update check's and the price update's user agents, the comment of SSH keys the Code page makes from now on, the
   commits it makes when you set no identity (`DevOS ADE Code page <code-page@devos-ade.invalid>`) and the sandbox
-  proxy's refusals say DevOS ADE. The portal's AWS session name for Admin and Files is now `devos-ade-portal`: a
-  CloudTrail filter or an IAM condition on `bedrock-now-portal` needs editing. OpenRouter lists the stack's requests
-  under *DevOS ADE*.
+  proxy's refusals say DevOS ADE. OpenRouter lists the stack's requests under *DevOS ADE*.
 - **Upgrading: nothing to do.** `./stack update`, Home's *Update now* and the nightly automatic update bring it as
   usual. Your folder, your addresses (`bedrock-now.localhost` and its hosts), `.env` and its `BEDROCK_NOW_*` names, the
   Compose project and its volumes, the update helper and your sign-in stay as they are: no data moves and nobody is
   signed out ([docs/internal-names.md](docs/internal-names.md) lists what keeps the old name, and why). `./stack
   update` moves `origin` from `JongoDB-Labs/bedrock-now` to `JongoDB-Labs/devos-ade` once (only when it is exactly the
-  project's GitHub address: a fork or a mirror is never touched). **An install older than v0.22.1** shows *could not
-  check* on Home's update card until it updates — its check does not follow GitHub's redirect to the new name —, but
-  `./stack update` and the automatic update still work (git follows the redirect), and the card works again after
-  the update. `./stack uninstall` asks you to type `devos-ade` (`bedrock-now` still works).
+  project's GitHub address: a fork or a mirror is never touched). **An install older than v0.22.1** does not see this
+  release on Home after the rename (its check does not follow GitHub's redirect to the new name: *could not check*),
+  so *Update now* is not offered and its nightly automatic update, which waits for that check, may not start: run
+  `./stack update` in its folder — that always works (git follows the redirect) — and Home works again after it.
+  `./stack uninstall` asks you to type `devos-ade` (`bedrock-now` still works).
 
 ## [0.24.0] - 2026-10-24
 

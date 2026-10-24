@@ -104,8 +104,8 @@ Then it:
 3. creates LiteLLM keys with monthly budgets, configures Open WebUI and runs a smoke test;
 4. turns on the [Code page](#the-code-page) — Claude Code in the browser, like its desktop app — and the
    [browser terminal](#claude-code-in-the-browser) it runs in: a sandbox container that sees only one folder of
-   yours, `~/devos-ade-workspace` (created, mode 700; an install made before v0.25.0 keeps its
-   `~/bedrock-now-workspace`), with its own LiteLLM key and budget. It builds their images
+   yours, `~/devos-ade-workspace` (created, mode 700), or `~/bedrock-now-workspace` on an install that already has it,
+   with its own LiteLLM key and budget. It builds their images
    (a few minutes the first time) and says so; no question is asked, and `./stack code disable` turns it off;
 5. offers to link `claude-bedrock` into `~/.local/bin`, and to turn on one-click updates from Home (the
    [update helper](#updating), which also makes Settings editable; default yes). Both only in interactive runs;
@@ -2046,9 +2046,10 @@ troubleshooting: [docs/voice.md](docs/voice.md).
 (`~/bedrock-now`), its addresses (`http://bedrock-now.localhost`), its `.env` and every setting name in it, and its
 data: there is nothing to do. `./stack update` moves the checkout's `origin` to the new address once; an installed
 app asks you to accept its new name and icon (until then it keeps the old ones, and `./stack open` finds it under
-either). An install older than v0.22.1 shows *could not check* on Home's update card until it updates once — with
-`./stack update` or the nightly automatic update, which both still work (git follows GitHub's redirect). What kept
-the old name, and why: [docs/internal-names.md](docs/internal-names.md).
+either). An install older than v0.22.1 does not see the new release on Home (*could not check*: its check does not
+follow GitHub's redirect), so it offers no *Update now*, and its nightly automatic update, which waits for that check,
+may not start: run `./stack update` in its folder once — that always works (git follows the redirect). What kept the
+old name, and why: [docs/internal-names.md](docs/internal-names.md).
 
 When a newer release is out, Home shows an **update card**: one line for **every release since yours** (an update
 installs the newest, so a jump from v0.4.1 to v0.9.0 lists v0.5.0 to v0.9.0, each with its headline) and their
@@ -2163,9 +2164,9 @@ to blank (that version's *on*; `off` stays) and says that the sandbox then reach
 this computer's services and your network included.
 
 **Updating from v0.9.0 or earlier** turns the Code page on, with the browser terminal it runs in, unless you chose
-otherwise: an install with no `CODE_ENABLED` in `.env` (or a blank one) gets both, in `~/bedrock-now-workspace` (or
-the terminal's folder, if it was on), with the terminal's own key and budget; the update says so ("The Code page is
-now on by default …") and its *What's new* names it. An update nobody watched — **Update now** on Home, or the
+otherwise: an install with no `CODE_ENABLED` in `.env` (or a blank one) gets both, in
+`~/devos-ade-workspace` (`~/bedrock-now-workspace` on an install that already has it, or the terminal's folder, if
+it was on), with the terminal's own key and budget; the update says so ("The Code page is now on by default …") and its *What's new* names it. An update nobody watched — **Update now** on Home, or the
 nightly automatic update — also leaves a one-time item in [Activity](#activity-and-search) (the bell): "The last
 update turned on the Code page and its sandbox (workspace …, internet: public addresses only)", with **Keep** and
 **Turn off** (Settings, at its switch). Building their images takes a few minutes more the first time

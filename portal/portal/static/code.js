@@ -289,7 +289,10 @@
           item("With Tailscale, approve the new Services (", code("…-terminal"), " and ", code("…-code"), ") in the admin console like the others; ", code("./stack remote status"), " lists them."),
           item("Both still ask for the portal password again before they open.")));
     } else {
-      const ws = code("~/devos-ade-workspace", "code-off-ws");
+      // (both names until Settings names the folder this install would mount — fillFolder: ./stack's own choice, the new
+      // ~/devos-ade-workspace, or ~/bedrock-now-workspace on an install that already has it)
+      const ws = el("span", { id: "code-off-ws" }, code("~/devos-ade-workspace"), ", or ", code("~/bedrock-now-workspace"),
+        " on an install that already has it");
       const other = code("./stack code enable --workspace DIR", "code-off-other");
       const turnOn = el("button", { type: "button", class: "action primary", id: "code-off-settings", text: "Turn on in Settings" });
       turnOn.addEventListener("click", toSettings);
@@ -331,7 +334,7 @@
       const termOn = Boolean(keys.TERMINAL_ENABLED && keys.TERMINAL_ENABLED.value === "true");
       const ws = termOn ? (keys.TERMINAL_WORKSPACE && keys.TERMINAL_WORKSPACE.value) || ""
         : (d.snapshot && d.snapshot.choices && d.snapshot.choices.code_workspace) || "";
-      if (ws) $("#code-off-ws").textContent = ws;
+      if (ws) $("#code-off-ws").replaceChildren(code(ws));
       if (termOn) $("#code-off-other").textContent = "./stack terminal enable --workspace DIR";
     } catch (_) { folderAsked = false; /* the default folder's name stays */ }
   }

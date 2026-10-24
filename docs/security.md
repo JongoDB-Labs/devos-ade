@@ -613,7 +613,8 @@ reaches is the container — with the three exceptions under *Threat model*.
 
 - [x] **On by default, as the Code page's sandbox (since the release after v0.9.0).** Setup — and `./stack update`
   on an install that never chose (`CODE_ENABLED` blank or absent in `.env`) — turns the terminal and the Code page
-  on, with the workspace `~/bedrock-now-workspace` (created with mode 700 and checked like any other: below). What
+  on, with the workspace `~/devos-ade-workspace`, or `~/bedrock-now-workspace` on an install that already has it
+  (created with mode 700 and checked like any other: below). What
   that adds to a default install, and what it does not:
   - *Adds:* a container running Claude Code and a shell, as your user id, that can read and write that one folder,
     spend its own key (`claude-code-terminal`, `BUDGET_TERMINAL`: $50 a month by default) and reach public internet
@@ -658,7 +659,7 @@ reaches is the container — with the three exceptions under *Threat model*.
   a socket is a way to run commands on this computer — a folder of yours inside one stays fine), a path through a
   folder of sockets (`tmux-<uid>`, ssh-agent's `ssh-<random>`, `.X11-unix` …), and paths `.env` cannot hold. Every
   `./stack up`, setup and update checks the folder again (it may have become a symlink since): a refused or
-  missing one leaves the terminal out of that run, with the reason; a socket in it (down to 3 levels) is said. Its default, `~/bedrock-now-workspace`, is
+  missing one leaves the terminal out of that run, with the reason; a socket in it (down to 3 levels) is said. Its default, `~/devos-ade-workspace` (`~/bedrock-now-workspace` on an install that already has it), is
   created with mode 700. `TERMINAL_*` values from your shell are ignored (`dc()` drops them): only `.env` decides
   what is mounted. Claude Code's own settings and history live in the `terminal-home` volume (not part of
   `./stack backup`).
@@ -1203,7 +1204,8 @@ spawn server, Claude Code or any file at will.
 - [x] **Turned on only where it is local.** In Settings, `CODE_ENABLED` is *widen-local*: turning the Code page on (it
   adds a host for Claude Code processes with the sandbox's internet access, reachable from the browser) works only
   from the computer running DevOS ADE. With the browser terminal off it turns the terminal on too, with the
-  terminal's folder (`TERMINAL_WORKSPACE`, or the default `~/bedrock-now-workspace`), which Settings names before you
+  terminal's folder (`TERMINAL_WORKSPACE`, or the default `~/devos-ade-workspace` — `~/bedrock-now-workspace` on an
+  install that already has it), which Settings names before you
   confirm and `./stack` checks first by the same rules as `./stack terminal enable` (never your home folder, a system
   folder or this DevOS ADE folder); another folder is chosen in a terminal (`./stack code enable --workspace DIR`).
   Turning it off — the safer direction — works from anywhere the settings can be changed. The update helper runs
@@ -1968,9 +1970,12 @@ default).
   none for gitlab.com), changed only from the computer running DevOS ADE: an app someone else registered is theirs,
   and a GitHub App you install on repositories lets its owner act on them too.
 - [x] **The project's own GitHub App, *DevOS ADE* (the default on github.com).** `code/server/oauth.mjs` names it by
-  its public values only: client ID `Iv23li9eDUUgicar7aTx` and its slug, written once (`GITHUB_APP_SLUG`; its address
-  is github.com/apps/<slug>). Renamed with the project, it kept its client ID: sign-ins and installs made before
-  v0.25.0 keep working. What a sign-in
+  its public values only: client ID `Iv23li9eDUUgicar7aTx` and its slug, written once (`GITHUB_APP_SLUG`, `devos-ade`;
+  its address is github.com/apps/<slug>). Renamed with the project, it kept its client ID: sign-ins and installs made
+  before v0.25.0 keep working without signing in again. A host signed in before keeps the slug it stored until GitHub
+  says otherwise: at each renewal of its token and at *Test connection*, the code container asks GitHub (its
+  `/user/installations`, with that host's token, over TLS) and keeps the App's slug GitHub answers — for the project's
+  App on github.com, `GITHUB_APP_SLUG` when GitHub names none — and nothing the sandbox or the page says. What a sign-in
   with it can reach: *Contents: Read and write* and *Metadata: Read-only*, on the repositories you install it on
   (*Choose repositories*) and that your account can reach — nothing else of your account. Its user tokens expire
   after 8 hours and are renewed with a refresh token (the sign-in lasts 6 months), kept in the code container like
