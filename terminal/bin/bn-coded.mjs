@@ -2828,20 +2828,27 @@ const GIT_LFS_FILTER = Object.freeze({ clean: 'git-lfs clean -- %f', smudge: 'gi
 const asciiLower = (s) => s.replace(/[A-Z]/g, (c) => c.toLowerCase());
 // gitConfigStrict(text) -> [{section, sub, key, value}] or null: only blank lines, whole-line # or ; comments, a header
 // alone on its line ([section] or [section "sub"], sub without \ or "), and key = value or a bare key; a value with no
-// \, # or ;, and " only as one fully quoted value; printable characters and tabs, CRLF or LF line ends
+// \, # or ;, and " only as one fully quoted value; CRLF or LF line ends. Printable ASCII and tabs everywhere — and in a
+// value also UTF-8 text (a name like José, a description in any script), never a control character (C0, C1), a line or
+// paragraph separator, a direction mark or override (U+061C, U+200E/F, U+202A-202E, U+2066-2069), a BOM or U+FFFD
+// (what a read of bytes that are no UTF-8 gives). Spaces and tabs only around "=" and at a line's ends, as git reads them.
+const GIT_VALUE_ODD = /[\x00-\x08\x0a-\x1f\x7f-\x9f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufeff\ufffd]/;
 export function gitConfigStrict(text) {
-  if (typeof text !== 'string' || /[^\x20-\x7e\t\r\n]/.test(text)) return null;
+  if (typeof text !== 'string') return null;
   const out = [];
   let section = null, sub = null;
   for (const raw of text.split('\n')) {
     if (raw.includes('\r') && !/^[^\r]*\r$/.test(raw)) return null;
-    const line = raw.replace(/\r$/, '').trim();
-    if (line === '' || /^[#;]/.test(line)) continue;
-    let m = line.match(/^\[([A-Za-z0-9-]+)(?:\s+"([^"\\]*)")?\]$/);
+    const line = raw.replace(/\r$/, '').replace(/^[ \t]+|[ \t]+$/g, '');
+    if (GIT_VALUE_ODD.test(line)) return null;
+    // (anything but printable ASCII and tabs: only in a value — after a key and its "=")
+    const ascii = !/[^\x20-\x7e\t]/.test(line);
+    if (line === '' || (ascii && /^[#;]/.test(line))) continue;
+    let m = ascii ? line.match(/^\[([A-Za-z0-9-]+)(?:[ \t]+"([^"\\]*)")?\]$/) : null;
     if (m) { section = asciiLower(m[1]); sub = m[2] ?? null; continue; }
     if (line.startsWith('[') || section === null) return null;
-    m = line.match(/^([A-Za-z][A-Za-z0-9-]*)(?:\s*=\s*(.*))?$/);
-    if (!m) return null;
+    m = line.match(/^([A-Za-z][A-Za-z0-9-]*)(?:[ \t]*=[ \t]*(.*))?$/);
+    if (!m || (!ascii && m[2] === undefined)) return null;
     let value = m[2] === undefined ? null : m[2];
     if (value !== null) {
       if (/[\\#;]/.test(value)) return null;

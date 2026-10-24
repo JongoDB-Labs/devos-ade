@@ -1086,7 +1086,8 @@ test('paths.plain: what an agent\'s change may touch without asking (Accept edit
     ['an ext:: url', '[remote "o"]\n\turl = ext::sh -c x\n'], ['uploadpack', '[remote "o"]\n\tuploadpack = sh x\n'],
     ['a submodule update command', '[submodule "s"]\n\tupdate = !sh x\n'], ['git-lfs\'s custom transfer', '[lfs "customtransfer.x"]\n\tpath = sh\n'],
     ['a continuation', '[core]\n\tfilemode = \\\ntrue\n'], ['an escape', '[user]\n\tname = a\\tb\n'], ['an inline comment', '[user]\n\tname = a # b\n'],
-    ['a quote inside', '[user]\n\tname = "a"b"\n'], ['the old [section.sub]', '[remote.origin]\n\turl = x\n'], ['not ASCII', '[user]\n\tname = Zoë\n'],
+    ['a quote inside', '[user]\n\tname = "a"b"\n'], ['the old [section.sub]', '[remote.origin]\n\turl = x\n'], ['not ASCII in a key', '[user]\n\tnamë = Zoe\n'], ['a direction override in a value', '[user]\n\tname = Zo\u202eë\n'],
+    ['a C1 control in a value', '[user]\n\tname = Zo\u0085e\n'],
     ['a bare CR', '[user]\r\tname = x\n'], ['credential', '[credential]\n\thelper = store\n'], ['gpg.program', '[gpg]\n\tprogram = sh\n'],
     ['core.worktree', '[core]\n\tworktree = /x\n'], ['an editor', '[core]\n\teditor = vi\n'],
     // (gc, color and git-lfs key by key: a hook command, a path git-lfs loads, a key not known yet, a colour that is not one)
@@ -1116,7 +1117,9 @@ test('paths.plain: what an agent\'s change may touch without asking (Accept edit
   for (const text of ['[remote "o"]\n\turl = git://h/p\n\tpushurl = http://h/p\n', '[remote "o"]\n\turl = file:///srv/r.git\n',
     '[remote "o"]\n\turl = /srv/r.git\n', '[remote "o"]\n\turl = ../r\n', '[remote "o"]\n\turl = git@github.com:a/b.git\n',
     '[remote "o"]\n\turl = ssh://git@h/p\n', '[remote "o"]\n\turl = git+ssh://h/p\n\tpushurl = ssh+git://h/p\n', '[submodule "s"]\n\turl = https://h/s.git\n', '[branch "main"]\n\tremote = .\n\tpushremote = https://h/r.git\n',
-    '[color "status"]\n\tadded = green\n', '[color "diff"]\n\toldMovedAlternativeDimmed = dim\n', '[color "decorate"]\n\tHEAD = bold red\n']) {
+    '[color "status"]\n\tadded = green\n', '[color "diff"]\n\toldMovedAlternativeDimmed = dim\n', '[color "decorate"]\n\tHEAD = bold red\n',
+    // (a name or a description in any script: plain text in a value)
+    '[user]\n\tname = José\n', '[branch "main"]\n\tdescription = 日本語の説明\n']) {
     fs.writeFileSync(path.join(D, '.git/config'), config + text);
     assert.deepEqual((await call({ op: 'paths.plain', root: D, paths: [`${D}/src/a.js`] })).plain, [true], text);
   }
@@ -1223,7 +1226,19 @@ test('paths.plain: its 2 s bound holds — 200 paths under a folder of 50,000 en
 test('gitConfigStrict: only what it reads plainly, the way git does', () => {
   assert.deepEqual(coded.gitConfigStrict('[core]\r\n\tbare = false\r\n[remote "o"]\n\turl = "https://x"\n\tprune\n'),
     [{ section: 'core', sub: null, key: 'bare', value: 'false' }, { section: 'remote', sub: 'o', key: 'url', value: 'https://x' }, { section: 'remote', sub: 'o', key: 'prune', value: null }]);
-  for (const bad of ['[core] bare = x\n', '[core]\n\tx = a\\\nb\n', '[core]\n\tx = "a" "b"\n', '[core\n', '[a "b\\"c"]\n', 'x = 1\n', '[core]\n\tx = é\n', '[core]\n\t1x = a\n']) {
+  for (const bad of ['[core] bare = x\n', '[core]\n\tx = a\\\nb\n', '[core]\n\tx = "a" "b"\n', '[core\n', '[a "b\\"c"]\n', 'x = 1\n', '[core]\n\t1x = a\n']) {
+    assert.equal(coded.gitConfigStrict(bad), null, JSON.stringify(bad));
+  }
+  // UTF-8 text in a value (a name, a description in any script) is plain; anything else not ASCII is not: a key, a
+  // section or subsection name, a comment — and in a value a control character (C0, C1), a line or paragraph
+  // separator, a direction mark or override, a BOM, U+FFFD (bytes that were no UTF-8)
+  assert.deepEqual(coded.gitConfigStrict('[user]\n\tname = José\n\temail = "josé@example.org"\n[branch "main"]\n\tdescription = 日本語の説明、漢字\n'),
+    [{ section: 'user', sub: null, key: 'name', value: 'José' }, { section: 'user', sub: null, key: 'email', value: 'josé@example.org' },
+      { section: 'branch', sub: 'main', key: 'description', value: '日本語の説明、漢字' }]);
+  for (const bad of ['[user]\n\tname = a\u202eb\n', '[user]\n\tname = a\u2066b\u2069\n', '[user]\n\tname = a\u0085b\n', '[user]\n\tname = a\u009bb\n',
+    '[user]\n\tname = a\u2028b\n', '[user]\n\tname = a\u200fb\n', '[user]\n\tname = a\u061cb\n', '[user]\n\tname = \ufeffa\n', '[user]\n\tname = a\ufffdb\n',
+    '[user]\n\tname = a\u0007b\n', '[user]\n\tnamé = a\n', '[usér]\n\tname = a\n', '[remote "örigin"]\n\turl = x\n', '[user]\n# José\n\tname = a\n',
+    '[user]\n\tname\u00a0= a\n', '[user]\n\tJosé\n', '\u00a0[user]\n']) {
     assert.equal(coded.gitConfigStrict(bad), null, JSON.stringify(bad));
   }
 });

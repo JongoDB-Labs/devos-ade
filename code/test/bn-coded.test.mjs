@@ -497,10 +497,14 @@ test('the watchlist follows git: core.hooksPath, include.path, core.fsmonitor in
   // a config not in the plain grammar (Accept edits'): a key on the header's line, a continued line, a comment after a
   // value, more than 5,000 lines — what git's own reading finds is still followed
   for (const [what, text] of [['a key on the header\'s line', '[include] path = ../../inc.cfg\n'], ['a continued line', '[core]\n\thooksPath = .git\\\nhooks2\n'],
-    ['a comment after a value', '[core]\n\tbare = false # x\n'], ['more than 5,000 lines', `[core]\n${'\tbare = false\n'.repeat(5001)}`]]) {
+    ['a comment after a value', '[core]\n\tbare = false # x\n'], ['more than 5,000 lines', `[core]\n${'\tbare = false\n'.repeat(5001)}`],
+    ['a direction override in a value', '[user]\n\tname = a\u202eb\n']]) {
     w('other/.gitdir/config', text);
     assert.deepEqual(await why(), ['config'], what);
   }
+  // (UTF-8 text in a value: read whole)
+  w('other/.gitdir/config', '[user]\n\tname = José\n[branch "main"]\n\tdescription = 漢字の説明\n');
+  assert.equal(await why(), undefined, 'José, and a description in CJK');
   w('other/.gitdir/config', '[core]\n\thooksPath = h2\n\tbare = false # x\n');
   w('h2/pre-commit', 'x\n');
   let ans = result(await talk(SOCK, [open({ op: 'ws.sensitive' })]));

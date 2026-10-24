@@ -40,6 +40,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   which browsers read the same, or a scheme); a `report-to` group, as before.
 - **A project trusted in v0.23.0 that cannot be carried over** (its settings not shown whole today) no longer reads
   its settings a second time, with their texts, at every start there.
+- **A repository whose git config has a name like José, or a description in another script,** no longer makes an
+  agent's every edit ask in Accept edits (nor the watchlist say it could not check everything): UTF-8 text in a value
+  is plain. A control character, a line separator or a direction override in a value still is not, and keys, section
+  and subsection names stay ASCII.
 
 ### Changed
 

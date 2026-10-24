@@ -3350,7 +3350,9 @@ never reads, copies, keeps, passes on or relays a login.**
   the same way; a folder of this computer: itself alone); every config git reads for that checkout — the common one,
   the gitdir's, `config.worktree`, each submodule's — is read with a grammar stricter than git's (blank lines, whole-line
   comments, a `[section]` or `[section "sub"]` header alone on its line, `key = value` or a bare key; no `\`, `#`, `;`,
-  continuation or inner quotes; printable ASCII), and every key must be one that never names a program or a path git or
+  continuation or inner quotes; printable ASCII — and in a value also UTF-8 text, a name like José or a description in
+  any script, but never a control character, a line or paragraph separator, a direction mark or override, a BOM or a
+  character that stood for bytes that were no UTF-8), and every key must be one that never names a program or a path git or
   a tool of your computer loads: core's format and file-system flags, a remote's URL (an `https://`, `http://`,
   `ssh://`, `git://`, `file://`, `git+ssh://` or `ssh+git://` URL — those prefixes exactly, in lower case, as git
   compares them —, a scp-like `host:path` or a local path; never a transport helper, `<name>::…` (a name that starts
