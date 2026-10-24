@@ -2917,7 +2917,8 @@ function gitKeyWhy({ section, sub, key, value }) {
 //     (modules/**, at most GIT_CONFIGS_MAX) — read with gitConfigStrict, every key one of GIT_KEYS (core.hooksPath only
 //     as a plain relative path in printable ASCII: its top folder guarded)
 //   - every folder git runs hooks from — each git folder's hooks/ (the gitdir's, the common one's, every submodule's)
-//     and each core.hooksPath —, read whole: a link at or under any of them (pre-commit -> ../../scripts/x.sh, or the
+//     and each core.hooksPath, and .githooks, .husky and .husky/_ whatever the config here says (a core.hooksPath of
+//     your computer's own git config is not visible here) —, read whole: a link at or under any of them (pre-commit -> ../../scripts/x.sh, or the
 //     folder itself elsewhere) would put a file of the project behind a hook, plain to an agent: nothing is plain then
 //     (hook-link); a folder that cannot be listed, or past HOOK_ENTRIES_MAX or HOOK_DEPTH_MAX, neither. Names as a disk
 //     that folds them opens them (.git/Hooks is .git/hooks there; two that fold alike: neither is plain). A hook that
@@ -3068,6 +3069,9 @@ export function gitPlainVerdict(root, look = folderLook()) {
     const r = h ? hookTree(path.join(g, h), 0) : null;
     if (r) return r;
   }
+  // (and the folders hook managers use by default, whether or not a config here names them: a core.hooksPath in your
+  // computer's own git config — which the sandbox never sees — may)
+  for (const v of ['.githooks', '.husky', '.husky/_']) if (!hookPaths.includes(v)) hookPaths.push(v);
   for (const v of hookPaths) {
     // (its folders as far as they are there: real ones, never a link; then what it holds)
     let at = workTree, there = true;
@@ -5060,7 +5064,7 @@ export function gitConfigLines(text) {
 // includeIf targets in /workspace: 3 levels, WATCH_MAX_INCLUDES in all), the hook folders git may use (every distinct
 // core.hooksPath in /workspace, the last one first: which one git applies depends on includeIf conditions this does
 // not evaluate; and .git/hooks), .husky, the core.fsmonitor programs in /workspace (every distinct value), and
-// submodules (every git folder under a git folder's modules/, at any depth — a submodule's name may hold / and
+// submodules (every git folder under a git folder's modules/, 8 levels deep — a submodule's name may hold / and
 // spaces —: their config and hooks, listed last). truncated: something was left out, and why (WATCH_WHY codes, which
 // the code container says in its own words): too many includes, values or submodules (many); a layout that could not
 // be read whole (layout: a .git that is a link, a gitdir or commondir outside the folder, not a folder, or reached

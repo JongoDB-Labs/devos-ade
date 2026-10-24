@@ -196,7 +196,8 @@ def test_the_code_steps_name_what_a_developer_uses():
                        'code("mkdir")', 'code("sed")', "Claude Code's own Accept edits", "except its protected paths", 'code(".husky")', "which still ask",
                        "With an agent of your subscriptions",
                        "edits to ordinary files of the project go ahead", "git's folder",
-                       'code(".github")', "links", "for every edit in a repository whose git settings can run a program", "the note under the agent's turn says why"),
+                       'code(".github")', "links", "for every edit in a repository whose git settings can run a program", "the note under the agent's turn says why",
+                       "Edits to scripts a hook calls by name", "go ahead without asking — with Claude Code too"),
         # (a project's own settings: what is in each part, who needs which, Trust in the dialog, v0.23.0's carried over)
         "code-trust": ('code(".claude/")', 'code(".mcp.json")', 'code("CLAUDE.md")', 'code(".codex")', 'code(".cursor")', 'code(".github")',
                        'b("Trust")', "Claude Code settings…", "Claude Code on Bedrock", "needs its own part", "Codex", "Copilot", "Cursor", "Grok",

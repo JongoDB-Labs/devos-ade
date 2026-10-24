@@ -1301,6 +1301,14 @@ test('paths.plain: a link at or under any folder git runs hooks from leaves noth
   put('.git/modules/libs/sub/config', '[alias]\n\tx = !sh x\n');
   assert.deepEqual((await ask()).why, 'git-config-key', 'libs/sub\'s config');
   fs.rmSync(path.join(D, '.git/modules'), { recursive: true });
+  // .githooks, .husky and .husky/_ looked at even when no config here names them (a core.hooksPath of the computer's
+  // own git config may: the sandbox does not see it)
+  for (const dir of ['.githooks', '.husky', '.husky/_']) {
+    fs.mkdirSync(path.join(D, dir), { recursive: true });
+    fs.symlinkSync(`${dir.split('/').map(() => '..').join('/')}/scripts/pre-commit.sh`, path.join(D, dir, 'pre-commit'));
+    assert.deepEqual((await ask()).why, 'hook-link', `${dir}, named by no config here`);
+    fs.rmSync(path.join(D, dir.split('/')[0]), { recursive: true });
+  }
   // fail-closed: a hooks folder that cannot be listed, or past its cap
   fs.chmodSync(path.join(D, '.git/hooks'), 0o000);
   try {

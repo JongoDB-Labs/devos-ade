@@ -71,21 +71,22 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   `ssh://`, `git://`, `file://`, `git+ssh://`, `ssh+git://`, exactly so, in lower case; `9x://` is another) in a
   remote's, a submodule's or a branch's remote URL (git runs `git-remote-<name>` for those), and a colour setting under
   a slot git does not document. The Code page's Git panel refuses those names in a URL you give it, as before.
-- **Accept edits asks for every edit while a git hook is a link** (since v0.24.0, every agent edit in such a
-  repository could go ahead): `.git/hooks/pre-commit -> ../../scripts/pre-commit.sh`, a common setup, left
+- **Your subscriptions' agents in Accept edits ask for every edit while a git hook is a link** (since v0.24.0, every
+  such edit in that repository could go ahead): `.git/hooks/pre-commit -> ../../scripts/pre-commit.sh`, a common setup, left
   `scripts/pre-commit.sh` a plain file an agent could change without asking — and git runs it at your next commit;
   `.git/hooks -> ../githooks` the same for `githooks/*`. Now a link at or under any folder git runs hooks from — each
-  git folder's `hooks/` (a submodule's too, `modules/` at any depth, names with `/` included) and `core.hooksPath`
-  (`.husky/pre-commit -> …`), in any spelling a disk that folds names opens — and no edit there is plain; a hooks
-  folder that cannot be listed whole neither. `core.hooksPath` is plain only in printable ASCII. A hook that calls other
-  scripts of the repository (`npm test` …) is beyond this check, as with Claude Code's own Accept edits. The watchlist
-  says a hooks folder that is a link, or holds one, too.
+  git folder's `hooks/` (a submodule's too, `modules/` 8 levels deep, names with `/` included), `core.hooksPath`
+  (`.husky/pre-commit -> …`) and, whatever the config says, `.githooks`, `.husky` and `.husky/_` (a `core.hooksPath` in
+  your computer's own git config is not visible to the sandbox), in any spelling a disk that folds names opens — and no
+  edit there is plain; a hooks folder that cannot be listed whole neither. `core.hooksPath` is plain only in printable
+  ASCII. Edits to scripts a hook calls by name (`npm test`, `make lint`, `scripts/check.sh` …) still go ahead without
+  asking, as with Claude Code's own Accept edits. The watchlist says a hooks folder that is a link, or holds one, too.
 - **The watchlist says when it cannot read a repository's git layout whole** — a `gitdir:` or `commondir` that leads
   outside the folder, to no folder or through a link on its way, a `.git` or `modules/` that is a link, a config git
   reads that is a link, too large or not plainly written (as Accept edits reads one: no key on a section's line, no
   continued line, no comment after a value, at most 5,000 lines), an include outside the folder — and the cards say
   that not every file could be checked, and why, instead of taking what it saw as all there is. Submodules are
-  followed at any depth (`modules/` within `modules/`, names with spaces or `/`), 16 in all.
+  followed 8 levels deep (`modules/` within `modules/`, names with spaces or `/`), 16 in all.
 - **Chat's sweep stops everything first:** it used to freeze what it found one process at a time, so a process that
   forked fast enough could start one the sweep had not seen yet. Now every process in Chat's sandbox but bn-coded and
   the init is stopped at once, the sandbox sorted while nothing runs, what is not spared killed, and the rest let go

@@ -2569,7 +2569,7 @@ than these limits, or more than the 300 entries the code container takes) — or
 that is there but a link, too large or not in the plain grammar Accept edits reads (a key on a section's line, a
 continued line, a comment after a value, more than 5,000 lines: what git's own reading finds in it is still followed),
 an include that names a file outside the folder, a submodule folder it cannot read or name (submodules are followed
-at any depth, `modules/` within `modules/`, names with spaces and `/` included, 16 in all) — it says so, and the cards
+8 levels deep, `modules/` within `modules/`, names with spaces and `/` included, 16 in all) — it says so, and the cards
 say that not every file could be checked, and why, in the code container's words (once on its own, then on every
 card) — never a silent cut — when a turn starts (before
 its first prompt is sent, ≤ 5 s) and when it ends; the code container compares the two (and the end of the last turn
@@ -3372,14 +3372,19 @@ never reads, copies, keeps, passes on or relays a login.**
   config that cannot be read whole or plainly, a link on the way — and no path is plain: every edit asks, and the
   session says why once, in the page's own words (what the repository named — a key, a name — is shown apart, as the
   sandbox's: a key cannot speak in the page's voice). Nothing is plain either while a folder git runs hooks from —
-  each git folder's `hooks/` (the worktree's, the common one's, every submodule's under `modules/`, at any depth) and
-  each `core.hooksPath` — is a link or holds one anywhere in it (`.git/hooks/pre-commit -> ../../scripts/pre-commit.sh`,
-  `.git/hooks -> ../githooks`, `.husky/pre-commit -> ../scripts/x.sh`: git runs what they point to, a file of the project
-  an agent could otherwise change), named as a disk that folds names opens it (`.git/Hooks`, `.HUSKY`), or cannot be
-  listed whole (past 512 entries or 4 folders deep). A hook that *calls* other scripts of the repository (`npm test`, a
-  `make` target, a script it runs by name) is beyond this check — those scripts stay plain files, as with Claude Code's
-  own Accept edits: the watchlist shows a change to them only where it watches them (`package.json` when a hook runs
-  package scripts). The Workspace itself has no trust step, so there every edit asks; a folder of this computer
+  each git folder's `hooks/` (the worktree's, the common one's, every submodule's under `modules/`, 8 levels deep), each
+  `core.hooksPath`, and `.githooks`, `.husky` and `.husky/_` whatever the config here says (a `core.hooksPath` in your
+  computer's own git config is not visible to the sandbox) — is a link or holds one anywhere in it
+  (`.git/hooks/pre-commit -> ../../scripts/pre-commit.sh`, `.git/hooks -> ../githooks`, `.husky/pre-commit ->
+  ../scripts/x.sh`: git runs what they point to, a file of the project an agent could otherwise change), named as a disk
+  that folds names opens it (`.git/Hooks`, `.HUSKY` — case and Unicode folding; HFS+, which also ignores characters
+  such as zero-width ones when it compares names, is not supported: those are not folded here), or cannot be listed
+  whole (past 512 entries or 4 folders deep). Not looked into: the hooks of another repository inside the project (a
+  nested one, or one whose git folder was made apart with `--separate-git-dir`) — a link there to a file of the
+  project leaves that file plain; git runs those hooks only when you commit in that repository. **Edits to scripts a
+  hook calls by name go ahead without asking** (`npm test`, a `make` target, `scripts/check.sh` …) — those scripts stay
+  plain files, as with Claude Code's own Accept edits: the watchlist shows a change to them only where it watches them
+  (`package.json` when a hook runs package scripts). The Workspace itself has no trust step, so there every edit asks; a folder of this computer
   with no repository in it here asks too (a repository around it on your computer is not visible in the sandbox;
   `./stack project` could note one when you add the folder — it does not yet). Then nothing is plain either while an
   entry named like a guarded one (below) is a link in the project's folder, the git root, a folder between them or a
