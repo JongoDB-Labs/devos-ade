@@ -365,6 +365,31 @@ test('project.settings: both parts\' texts fit one answer — past it the other 
   fs.rmSync(D, { recursive: true, force: true });
 });
 
+test('project.settings: the answer is measured in bytes, as it is framed — three-byte characters under the old count, over the frame', async () => {
+  const D = path.join(WS, 'cjk-texts');
+  // (漢 is one UTF-16 unit and three UTF-8 bytes: 8 files a part of 262,140 bytes — under each file's and each part's cap —
+  // are 1.4 million units in all, far under what a count of units would call too much, and over 4 MiB in bytes)
+  const text = '漢'.repeat(87380);
+  for (let i = 0; i < 8; i++) {
+    fs.mkdirSync(path.join(D, `.claude/skills/s${i}`), { recursive: true });
+    fs.writeFileSync(path.join(D, `.claude/skills/s${i}/SKILL.md`), text);
+    fs.mkdirSync(path.join(D, `.agents/skills/a${i}`), { recursive: true });
+    fs.writeFileSync(path.join(D, `.agents/skills/a${i}/SKILL.md`), text);
+  }
+  const r = coded.settingsFiles(D, { text: true });
+  assert.ok(JSON.stringify(r).length < (3 << 20), 'under the old count (UTF-16 units)');
+  assert.ok(Buffer.byteLength(JSON.stringify(r)) <= coded.MAX_FRAME, 'the answer as framed fits one frame');
+  const own = r.files.filter((f) => f.name.startsWith('.claude/')), theirs = r.files.filter((f) => f.name.startsWith('.agents/'));
+  assert.ok(own.length === 8 && own.every((f) => f.text === text), 'Claude Code\'s texts all there');
+  assert.deepEqual([r.verifiable, r.over], [true, null]);
+  assert.ok(theirs.length === 8 && theirs.every((f) => f.text === null), 'the other tools\' texts left out');
+  assert.deepEqual([r.agentVerifiable, r.agentOver], [false, 'too much to show']);
+  // (and over the socket, through the code container's own frame reader)
+  const viaSocket = await call({ op: 'project.settings', root: D });
+  assert.deepEqual([viaSocket.verifiable, viaSocket.agentOver], [true, 'too much to show']);
+  fs.rmSync(D, { recursive: true, force: true });
+});
+
 test('project.settings: everything under a folder\'s .claude/ and its .mcp.json, as Claude Code reads them; bounded; their hash in project.check', async () => {
   const D = path.join(WS, 'cloned');
   const by = (r) => Object.fromEntries(r.files.map((f) => [f.name, f]));

@@ -17,10 +17,13 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   `./stack status` says what is ready and what was left out; a build that could not download a wheel goes on without
   it and tries again at the next `./stack up`.
 - **A project's settings dialog with long files in both parts** (Claude Code's and the other tools') could not open or
-  trust: both parts' texts went to the code container in one answer, which could pass its 4 MiB. When they would not
-  fit, the other tools' texts are left out first (agents do not start there, said), Claude Code's part shown whole.
+  trust: both parts' texts went to the code container in one answer, which could pass its 4 MiB. The answer is now
+  measured in bytes as it is sent; when it would not fit, the other tools' texts are left out first (agents do not
+  start there, said), Claude Code's part shown whole.
 - **More than 200 notes or files of the other tools** no longer keep the dialog from trusting Claude Code's part: the
-  page cuts each part on its own.
+  page cuts each part on its own, and the code container cuts them the same way. When the other tools' part is not
+  shown whole, *Trust* confirms Claude Code's part alone (a token of its own): agents are not trusted with what you
+  were not shown.
 - **A session of an agent of your subscriptions taken up again** — from the list, as a fork, or when its process
   ended — in a project whose settings its tool cannot use yet opens the settings dialog first, as a new one does, and
   goes on once you trust them; it no longer stops at "not trusted". A new one whose settings could not be read opens

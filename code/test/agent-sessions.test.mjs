@@ -588,3 +588,46 @@ test('an agent\'s permission question named like one of the broker\'s own tools 
   }
   mgr.closeAll();
 });
+
+test('what Trust covers is what the page showed: the other tools\' part not shown whole (past a section\'s cut) — Claude Code\'s alone trusted, a token for both refused; the page\'s own cut sends the Claude-only token', async () => {
+  const crypto = await import('node:crypto');
+  const { makeTrust, hashOf } = await import('../server/trust.mjs');
+  const { TRUST_EPOCH } = await import('../server/projects.mjs');
+  const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
+  const row = (name, text, surface, extra = {}) => ({ name, type: 'file', size: Buffer.byteLength(text), sha256: sha(text), text, target: null, at: '', surface, ...extra });
+  const own = [row('.claude/settings.json', '{"permissions": {"allow": ["Bash(npm test)"]}}', '.claude')];
+  // 210 links of the other tools' (each a note — "a link to …" — and its text): more than a section of the page shows
+  const others = Array.from({ length: 210 }, (_, i) => row(`.codex/l${String(i).padStart(3, '0')}.toml`, 'model = "a"\n', '.codex', { type: 'link', target: 'real.toml' }));
+  const both = (r, rec, agents) => sha(JSON.stringify({ project: rec.id, epoch: TRUST_EPOCH, hash: r.hash, planHash: r.hash, agentHash: agents ? r.agentHash : null, agents }));
+  for (const [what, list, cutByServer] of [['210 notes of theirs', others, true], ['5 of theirs', others.slice(0, 5), false]]) {
+    const files = [...own, ...list];
+    const result = { files, hash: hashOf(own), verifiable: true, over: null, agentHash: hashOf(list), agentVerifiable: true, agentOver: null };
+    const rec = { id: `p_${list.length}`, root: `cut${list.length}`, name: 'cut', trust: null };
+    const call = async (req) => ({ result: req.op === 'project.settings' ? { ...result, files: req.text === false ? files.map(({ text: _t, ...f }) => f) : files } : {} });
+    const trust = makeTrust({ call, store: () => storeOf(rec, TRUST_EPOCH) });
+    const v = await trust.view(rec);
+    const r = { hash: result.hash, agentHash: result.agentHash };
+    assert.equal(v.summary.agentsComplete, !cutByServer, what);
+    assert.ok(v.summary.agentNotes.length <= 200, `${what}: the server cuts as the page does`);
+    if (cutByServer) {
+      // (the server could not show their part whole: its token is Claude Code's alone; one for both is refused)
+      assert.equal(v.claudeHash, undefined);
+      assert.equal(v.hash, both(r, rec, false));
+      assert.match((await trust.trust(rec, both(r, rec, true))).conflict ?? '', /changed since you looked/, `${what}: a token for both refused`);
+      assert.deepEqual(await trust.trust(rec, v.hash), { conflict: null, agents: 'not trusted' });
+    } else {
+      // (the server showed it whole: both tokens offered — the page sends the Claude-only one when it cut theirs itself)
+      assert.equal(v.hash, both(r, rec, true));
+      assert.equal(v.claudeHash, both(r, rec, false));
+      assert.deepEqual(await trust.trust(rec, v.claudeHash), { conflict: null, agents: 'not trusted' }, `${what}: Claude Code's part alone`);
+    }
+    assert.equal(rec.trust.agentHash, null, `${what}: the other tools' part not trusted`);
+    const d = await trust.decide(`/workspace/cut${list.length}`);
+    assert.equal(d.state, 'trusted', `${what}: Claude Code on Bedrock trusted`);
+    assert.notEqual(d.agents.state, 'trusted', `${what}: agents not`);
+    if (!cutByServer) {
+      assert.deepEqual(await trust.trust(rec, v.hash), { conflict: null }, 'both, when both were shown');
+      assert.equal((await trust.decide(`/workspace/cut${list.length}`)).agents.state, 'trusted');
+    }
+  }
+});

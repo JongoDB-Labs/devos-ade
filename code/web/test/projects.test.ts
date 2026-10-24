@@ -153,9 +153,17 @@ test('a project\'s own Claude Code settings: its state in the list, a session\'s
   // the other tools' notes and tools have the page's cut of their own: 201 of theirs make their part incomplete — never
   // Claude Code's, whose hash stays; 201 of Claude Code's own do
   const notes = (n: number, who: string) => Array.from({ length: n }, (_, i) => ({ file: `${who}/f${i}`, note: 'a note' }));
-  const crowded = normSettingsView({ ...whole, summary: { ...whole.summary, agentsComplete: true, agentNotes: notes(201, '.codex'), agentTools: [] } });
+  const claudeHash = 'e'.repeat(64);
+  const crowded = normSettingsView({ ...whole, claudeHash, summary: { ...whole.summary, agentsComplete: true, agentNotes: notes(201, '.codex'), agentTools: [] } });
   assert.equal(crowded?.summary.complete, true);
-  assert.match(crowded?.hash ?? '', /^[0-9a-f]{64}$/, 'Claude Code\'s part trustable from the dialog');
+  assert.equal(crowded?.hash, claudeHash, 'Claude Code\'s part trustable from the dialog — the token for it alone: theirs was cut here');
+  assert.notEqual(crowded?.hash, whole.hash);
+  // (no Claude-only token from the backend, which said theirs was whole: nothing to trust as shown)
+  assert.equal(normSettingsView({ ...whole, summary: { ...whole.summary, agentsComplete: true, agentNotes: notes(201, '.codex') } })?.hash, null);
+  // (the backend said theirs is not whole: its token is Claude Code's alone already)
+  assert.equal(normSettingsView({ ...whole, summary: { ...whole.summary, agentsComplete: false, agentNotes: notes(201, '.codex') } })?.hash, whole.hash);
+  // (nothing of theirs cut here: the backend's token, for what it showed)
+  assert.equal(normSettingsView({ ...whole, claudeHash, summary: { ...whole.summary, agentsComplete: true, agentNotes: notes(3, '.codex') } })?.hash, whole.hash);
   assert.equal(crowded?.summary.agentsComplete, false);
   assert.equal(crowded?.summary.notes.length, 200);
   assert.deepEqual(crowded?.summary.agentsMissing.at(-1), 'more than this page shows');

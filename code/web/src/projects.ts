@@ -341,6 +341,7 @@ const LIST_MAX = 200, TEXT_MAX = 2100;
 const TOOL_TEXT_MAX = 16100;
 /** The backend's view of a project's settings, checked (everything as text); null when it does not fit. Nothing is cut
  *  silently: whatever does not fit makes it incomplete. */
+const hashOf = (x: unknown): string | null => (typeof x === 'string' && /^[0-9a-f]{64}$/.test(x) ? x : null);
 export function normSettingsView(v: unknown): SettingsView | null {
   const o = obj(v);
   const state = settingsState(o?.state);
@@ -414,8 +415,10 @@ export function normSettingsView(v: unknown): SettingsView | null {
     project: o.project, path: cwdOk(o.path) ? o.path : WORKSPACE_PATH, state,
     planState: settingsState(o.planState) ?? state, planReason: o.planReason === 'plan-plugins' ? 'plan-plugins' : null,
     agentState: settingsState(o.agentState) ?? state,
-    // (a hash to trust only with a summary shown whole)
-    hash: summary.complete && typeof o.hash === 'string' && /^[0-9a-f]{64}$/.test(o.hash) ? o.hash : null,
+    // (a hash to trust only with a summary shown whole — and when the other tools' part was cut here, the one for Claude
+    // Code's part alone: what Trust confirms is what this page showed, theirs not trusted. The backend's when it says
+    // that part cannot be shown whole anyway: its hash is that one already)
+    hash: !summary.complete ? null : !agentCut ? hashOf(o.hash) : hashOf(o.claudeHash) ?? (s.agentsComplete === false ? hashOf(o.hash) : null),
     trustedAt: typeof o.trustedAt === 'number' && Number.isFinite(o.trustedAt) && o.trustedAt > 0 ? o.trustedAt : null,
     files: Array.isArray(o.files) ? o.files.slice(0, FILES_MAX).map((f) => obj(f)).filter((f): f is Obj => !!f && typeof f.name === 'string' && FILE_TYPES.includes(f.type as string))
       .map((f) => ({ name: f.name as string, type: f.type as SettingsFile['type'], size: typeof f.size === 'number' && f.size >= 0 ? f.size : null, target: typeof f.target === 'string' ? label(f.target, 300) : null }))

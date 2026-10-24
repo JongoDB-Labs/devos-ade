@@ -525,7 +525,8 @@ export function summarize(files, plugins = null, planPlugins = null) {
   // (an entry nested too deeply to write out — a RangeError — is one this page cannot show: incomplete, never a failure)
   const canon = (v) => { try { return canonical(v); } catch { incomplete('an entry nested too deeply to show'); return '?'; } };
   for (const f of files) {
-    const note = (t) => out.notes.push({ file: f.name, note: t });
+    // (notes within the page's cut of a section, as every other: past it the summary is incomplete, here as there)
+    const note = (t) => add('notes', { file: f.name, note: t });
     // (names as a case-insensitive workspace reads them, folded: .CLAUDE/ſettings.json is .claude/settings.json)
     const lower = fold(f.name);
     const tool = f.tool ?? null;   // (checkFiles: from where it was read, never from its name)
@@ -541,8 +542,12 @@ export function summarize(files, plugins = null, planPlugins = null) {
       const shell = f.text !== null ? shellBlocks(f.text, LIST_MAX) : { list: [], more: false };
       if (shell.more) incomplete(`more than ${LIST_MAX} shell commands in one file`);
       if (shell.list.some((x) => x.command.length > TEXT_MAX)) incomplete('a shell command too long to show');
-      out.files.push({ name: text(f.name), size: f.size, grants: [...fm.grants.map((g) => ({ key: text(g.key), value: text(g.value) })),
-        ...shell.list.map((x) => ({ key: x.kind === 'inline' ? 'runs in a shell when used (!`…`)' : 'runs in a shell when used (```!)', value: text(x.command) }))] });
+      const grants = [...fm.grants.map((g) => ({ key: text(g.key), value: text(g.value) })),
+        ...shell.list.map((x) => ({ key: x.kind === 'inline' ? 'runs in a shell when used (!`…`)' : 'runs in a shell when used (```!)', value: text(x.command) }))];
+      // (the page's cuts, here too: a file's grants within a section's, the files within a part's)
+      if (grants.length > LIST_MAX) incomplete(`more than ${LIST_MAX} entries in one section`);
+      if (out.files.length >= FILES_MAX) incomplete(`more than ${FILES_MAX} files`);
+      else out.files.push({ name: text(f.name), size: f.size, grants: grants.slice(0, LIST_MAX) });
     }
     // (a folder by its name alone: no tool reads what it holds — its name is what is trusted)
     if (f.type === 'name') { add('tools', { file: f.name, tool, text: '(a folder no tool here reads: its name alone)', careful: false }); continue; }
@@ -763,8 +768,10 @@ export const EMPTY_HASH = sha256('');
 // Claude Code's part (its files and the plugins they turn on as the sandbox has them), Claude on your plan's (the same
 // plugins as its own record has them), and the other tools' part when it is trusted with them — what the dialog showed,
 // so a change to any between it and Trust is a change
+// (agents: whether the other tools' part is confirmed too — said apart, so the two never match, even when that part
+// has nothing of its own but Claude Code's plugins)
 const confirmOf = (rec, r, agentsTrusted) => sha256(JSON.stringify({ project: rec.id, epoch: TRUST_EPOCH, hash: r.hash, planHash: r.planHash,
-  agentHash: agentsTrusted ? r.agentHash : null }));
+  agentHash: agentsTrusted ? r.agentHash : null, agents: agentsTrusted === true }));
 
 export function makeTrust({ call, store, log = () => {} }) {
   // each project's state as last looked at (a start's decision, the dialog, a trust) — for the list only; a decision is
@@ -927,8 +934,12 @@ export function makeTrust({ call, store, log = () => {} }) {
     // (a hash to trust only for what the summary shows whole: nothing you were not shown can apply)
     // (nothing to trust: Claude Code's part has nothing, and the other tools' part cannot be trusted either)
     const hash = ws || !claudeOk || (!r.present && !(agentsJudged(r).present && othersOk)) ? null : confirmOf(rec, r, othersOk);
+    // (and the one for Claude Code's part alone, while the other covers both: what the page sends when it could not show
+    // the other tools' part whole — a Trust of what was shown, theirs not trusted)
+    const claudeHash = hash !== null && othersOk && r.present ? confirmOf(rec, r, false) : null;
     return {
       project: rec.id, path: abs, state: st.state, planState: st.planState, planReason: st.planReason, agentState: st.agentState, hash,
+      ...(claudeHash ? { claudeHash } : {}),
       trustedAt: rec.trust?.at ?? null,
       files: [...r.files, ...r.agentFiles].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).map(({ name, type, size, target }) => ({ name, type, size, target })),
       // (each part's notes and tools apart, each within the page's own cut: the other tools' never cost Claude Code's)
@@ -949,14 +960,18 @@ export function makeTrust({ call, store, log = () => {} }) {
     // (what can never be trusted said as such first: no page could have offered it)
     if (r.present && !summary.complete) return { conflict: `its settings cannot all be shown here (${summary.missing.join('; ')}): they are not trusted — shorten them, or use the folder without them` };
     if (!r.present && !othersOk) return { conflict: 'the other tools\' settings here cannot all be checked or shown: there is nothing else to trust' };
-    if (hash !== confirmOf(rec, r, othersOk)) return { conflict: 'its settings changed since you looked: review them again' };
+    // (what the page confirmed: both parts — or Claude Code's alone, when the page could not show the other tools' part
+    // whole, though here it can be; never both when it could not)
+    const alone = r.present && othersOk && hash === confirmOf(rec, r, false);
+    if (!alone && hash !== confirmOf(rec, r, othersOk)) return { conflict: 'its settings changed since you looked: review them again' };
+    const withOthers = othersOk && !alone;
     // (Claude on your plan: the same trust while its own record has every plugin they turn on — else none for it; the
-    // other tools' part: its hash, or none when it cannot be trusted)
+    // other tools' part: its hash, or none when it cannot be trusted or was not shown whole)
     store().trust(rec.id, r.hash ?? EMPTY_HASH, r.planPlugins ? (planMissing(r.planPlugins) ? null : r.planHash) : undefined,
-      othersOk ? (agentsJudged(r).hash ?? EMPTY_HASH) : null);
+      withOthers ? (agentsJudged(r).hash ?? EMPTY_HASH) : null);
     note(rec.id, 'trusted');
     // (Claude Code's part alone: said, so an agent's start there is no surprise)
-    return { conflict: null, ...(othersOk ? {} : { agents: 'not trusted' }) };
+    return { conflict: null, ...(withOthers ? {} : { agents: 'not trusted' }) };
   }
   const untrust = async (rec) => { store().trust(rec.id, null); known.delete(rec.id); };
   return { decide, view, trust, untrust, known: (id) => known.get(id) ?? null };
