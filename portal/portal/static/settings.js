@@ -1336,7 +1336,8 @@
       if (t.installed !== false && termHere) {
         const signedIn = t.signed_in === "yes";
         const open = el("button", { type: "button", class: signedIn ? "action" : "action primary", text: signedIn ? "Open in the terminal" : "Sign in (terminal and Code page)",
-          "aria-label": signedIn ? `Open ${t.name} in the terminal` : `Sign ${t.name} in: it opens in the terminal, where its own sign-in starts`, "data-act": "subscriptions-open" });
+          // (its name as shown first, then where it goes)
+          "aria-label": signedIn ? `Open in the terminal: ${t.name}` : `Sign in (terminal and Code page): ${t.name} opens in the terminal, where its own sign-in starts`, "data-act": "subscriptions-open" });
         open.addEventListener("click", () => {
           // (a launch token for exactly this, made on this click: answers.js launch)
           if (!window.bnAnswers || !window.bnAnswers.launch) return;
@@ -1372,7 +1373,7 @@
         const cmd = `./stack subscriptions login ${t.id} --chat`;
         const chatIn = t.chat.signed_in === "yes";
         const signin = el("button", { type: "button", class: chatIn ? "action" : "action primary", text: "Sign in (Chat)", "aria-expanded": "false",
-          "aria-label": `Sign ${t.name} in for Chat: shows the command for a terminal on this computer`, "data-act": "subscriptions-chat-signin" });
+          "aria-label": `Sign in (Chat): ${t.name}'s command for a terminal on this computer`, "data-act": "subscriptions-chat-signin" });
         const how = el("p", { class: "set-cli", hidden: true }, el("span", { class: "note", text: `Chat's own sign-in, apart from the terminal's — in a terminal on this computer (its link and code show there): ` }),
           el("code", { text: cmd }), " ", copyButton(cmd));
         signin.addEventListener("click", () => { how.hidden = !how.hidden; signin.setAttribute("aria-expanded", String(!how.hidden)); });
