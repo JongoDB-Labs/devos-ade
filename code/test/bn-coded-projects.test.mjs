@@ -968,10 +968,15 @@ test('paths.plain: what an agent\'s change may touch without asking (Accept edit
   fs.symlinkSync(OUT, path.join(D, 'src/.husky'));
   assert.equal(await asked('.husky a link on the way'), 'guarded-link');
   fs.rmSync(path.join(D, 'src/.husky'));
-  // the request's time is bounded: past it, the rest is not plain
+  // the request's time is bounded (looked at before each piece of work): past it, the rest is not plain — timeout
   let t = 0;
   const paths = [`${D}/src/a.js`, `${D}/src/b.js`, `${D}/src/c.js`];
-  assert.deepEqual(coded.pathsPlain({ root: D, paths }, { now: () => (t += 1500) }).plain, [true, false, false]);
+  assert.deepEqual(coded.pathsPlain({ root: D, paths }, { now: () => 0 }).plain, [true, true, true], 'in time: all plain');
+  const late = coded.pathsPlain({ root: D, paths }, { now: () => (t += 400) });
+  const cut = late.plain.indexOf(false);
+  assert.ok(cut > 0, 'the first in time, then the time ran out');
+  assert.deepEqual(late.plain.slice(cut), paths.slice(cut).map(() => false));
+  assert.deepEqual(late.each.slice(cut), paths.slice(cut).map(() => 'timeout'));
   // a .git file followed only to a real folder of the workspace: its folder guarded whole; its config read the same way
   const E = path.join(WS, 'edits-gitdir');
   const putE = (rel, text = 'x') => { fs.mkdirSync(path.dirname(path.join(E, rel)), { recursive: true }); fs.writeFileSync(path.join(E, rel), text); };
@@ -1020,6 +1025,28 @@ test('paths.plain: what an agent\'s change may touch without asking (Accept edit
   fs.rmSync(path.join(OUT, 'h'));
 });
 
+
+test('paths.plain: its 2 s bound holds — 200 paths under a folder of 50,000 entries answer in about 2 s at most, the rest not plain', () => {
+  const B = path.join(WS, 'edits-crowded');
+  fs.mkdirSync(path.join(B, 'sub'), { recursive: true });
+  for (let i = 0; i < 50000; i++) fs.writeFileSync(path.join(B, 'sub', `f${i}`), '');
+  try {
+    const paths = Array.from({ length: 200 }, (_, i) => path.join(B, 'sub', `f${i}`));
+    const t0 = Date.now();
+    const r = coded.pathsPlain({ root: B, paths });
+    const took = Date.now() - t0;
+    assert.ok(took < 2600, `answered in ${took} ms`);
+    assert.equal(r.plain.length, 200);
+    // (each plain, or — past the time — not, said as timeout; never anything else)
+    r.plain.forEach((x, i) => assert.ok(x === true || r.each?.[i] === 'timeout', `${i}: ${x} ${r.each?.[i]}`));
+    // and when the time runs out on the way, what is left is not plain
+    let t = 0;
+    const slow = coded.pathsPlain({ root: B, paths }, { now: () => (t += 100) });
+    const k = slow.plain.indexOf(false);
+    assert.ok(k >= 0 && k < 200);
+    assert.ok(slow.plain.slice(k).every((x) => x === false) && slow.each.slice(k).every((x) => x === 'timeout'));
+  } finally { fs.rmSync(B, { recursive: true, force: true }); }
+});
 test('gitConfigStrict: only what it reads plainly, the way git does', () => {
   assert.deepEqual(coded.gitConfigStrict('[core]\r\n\tbare = false\r\n[remote "o"]\n\turl = "https://x"\n\tprune\n'),
     [{ section: 'core', sub: null, key: 'bare', value: 'false' }, { section: 'remote', sub: 'o', key: 'url', value: 'https://x' }, { section: 'remote', sub: 'o', key: 'prune', value: null }]);

@@ -2983,36 +2983,65 @@ export function pathsPlain(req, { now = Date.now } = {}) {
   const list = Array.isArray(req?.paths) ? req.paths : null;
   if (!list || list.length > PLAIN_PATHS_MAX) throw new Error(`paths: a list of at most ${PLAIN_PATHS_MAX}`);
   const t0 = now();
+  // (the request's time: looked at before each piece of work — a path, a folder's scan —, never after; what is left
+  // when it runs out is not plain, said as timeout)
+  const late = () => now() - t0 > PLAIN_TIME_MS;
+  const LATE = Symbol('late');
   const look = folderLook();
   const none = (why, detail = null) => ({ plain: list.map(() => false), why, ...(detail ? { detail: printable(detail, 200) } : {}) });
   const git = gitPlainVerdict(root, look);
   if (git.why) return none(git.why, git.detail);
-  // a link named like a guarded entry in this folder: nothing is plain (it could lead an edit into .git or ~/.codex)
+  // linked(dir) -> a link named like a guarded entry in this folder (nothing is plain then: it could lead an edit into
+  // .git or ~/.codex), '' when the folder cannot be listed, null when none, LATE when the time ran out — each folder
+  // scanned once a request
+  const scanned = new Map();
   const linked = (dir) => {
+    if (scanned.has(dir)) return scanned.get(dir);
+    if (late()) return LATE;
     const names = look.names(dir);
-    if (names === null) return '';
-    for (const n of names) {
-      if (!guardedName(n)) continue;
-      let st;
-      try { st = fs.lstatSync(path.join(dir, n)); } catch { return n; }
-      if (st.isSymbolicLink()) return n;
+    let out = null;
+    if (names === null) out = '';
+    else {
+      for (let i = 0; i < names.length; i++) {
+        if ((i & 4095) === 4095 && late()) return LATE;
+        const n = names[i];
+        if (!guardedName(n)) continue;
+        let st;
+        try { st = fs.lstatSync(path.join(dir, n)); } catch { out = n; break; }
+        if (st.isSymbolicLink()) { out = n; break; }
+      }
     }
-    return null;
+    scanned.set(dir, out);
+    return out;
   };
   // the project's folder, and the folders above it to the git root (none: up to the workspace)
   for (let d = root.abs; ; d = path.dirname(d)) {
     const n = linked(d);
+    if (n === LATE) return none('timeout');
     if (n !== null) return none('guarded-link', n);
     if (d === git.workTree || d === root.top || d === '/' || d === WORKSPACE) break;
   }
-  // the request's own paths (absolute, in the folder, normalized), folded: what it creates counts as there
-  const asked = list.filter((p) => typeof p === 'string' && p.startsWith('/') && !p.includes('\0') && path.resolve(p) === p && inRoot(p, root) && p !== root.abs)
-    .map(fold);
-  // has(dir, name) -> an entry of that folded name in dir, on the disk or among the request's paths
+  // the request's own paths (absolute, in the folder, normalized), folded — what it creates counts as there —, as a
+  // tree of their parts: every folder on their way is found in it by its parts, never by walking the list
+  const asked = new Map();
+  for (const p of list) {
+    if (typeof p !== 'string' || !p.startsWith('/') || p.length > 4096 || p.includes('\0') || path.resolve(p) !== p || !inRoot(p, root) || p === root.abs) continue;
+    let node = asked;
+    for (const part of fold(p).split('/').slice(1)) {
+      let next = node.get(part);
+      if (!next) { next = new Map(); node.set(part, next); }
+      node = next;
+    }
+  }
+  const folded = new Map();
+  const foldDir = (dir) => { let f = folded.get(dir); if (f === undefined) { f = fold(dir); folded.set(dir, f); } return f; };
+  // has(dir, name) -> an entry of that folded name in dir, on the disk or among the request's paths (one of them that
+  // name, or below it)
   const has = (dir, name) => {
     if (look.hasFolded(dir, name)) return true;
-    const at = `${fold(dir)}/${name}`;
-    return asked.some((q) => q === at || q.startsWith(`${at}/`));
+    let node = asked;
+    for (const part of foldDir(dir).split('/').slice(1)) { node = node.get(part); if (!node) return false; }
+    return node.has(name);
   };
   // nestedWhy(p) -> 'nested-repo' when another repository is on p's way (or this request, or the ones before it, would
   // put one together there), else null
@@ -3058,7 +3087,9 @@ export function pathsPlain(req, { now = Date.now } = {}) {
   };
   const plain = [], each = [];
   for (const p of list) {
+    if (late()) { plain.push(false); each.push('timeout'); continue; }
     // (a folder on this path's way with a link named like a guarded entry: nothing of the request is plain)
+    let out = false;
     if (typeof p === 'string' && p.startsWith('/') && inRoot(p, root) && p !== root.abs && path.resolve(p) === p) {
       let at = root.abs;
       for (const part of p.slice(root.abs.length + 1).split('/').slice(0, -1).slice(0, PLAIN_DEPTH_MAX)) {
@@ -3068,9 +3099,11 @@ export function pathsPlain(req, { now = Date.now } = {}) {
         try { st = fs.lstatSync(at); } catch { st = null; }
         if (!st?.isDirectory()) break;
         const n = linked(at);
+        if (n === LATE) { out = true; break; }
         if (n !== null) return none('guarded-link', n);
       }
     }
+    if (out) { plain.push(false); each.push('timeout'); continue; }
     const r = one(p);
     plain.push(r === true);
     each.push(typeof r === 'string' ? r : null);
