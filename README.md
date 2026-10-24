@@ -609,13 +609,15 @@ plan in the Code page and Chat** (off by default; turning it on works from the c
   in the project's folder. A tool starts only on your click there: the portal then makes a short-lived launch token for
   exactly that; a link to the terminal with a tool in it but no such token only asks *Open … here?*.
 - **Chat**: each subscription that is signed in is **a model in Open WebUI's own menu** — *Codex · your ChatGPT plan*,
-  *GitHub Copilot · your Copilot plan*, *Cursor*, *Grok*, and *Claude · your Claude plan* while its switch is on —
+  *GitHub Copilot · your Copilot plan*, *Grok*, and *Claude · your Claude plan* while its switch is on (not Cursor: it
+  has no switch that turns its tools off) —
   answering in the same chat, streamed, with its thinking. Each answer is the provider's own agent in the sandbox,
   signed in with its own login, through the interface it ships for other apps (the Claude Agent SDK, Codex's app
-  server, the ACP mode of Copilot, Cursor and Grok) — in **Chat's own sandbox** (the sandbox's image and your tools'
+  server, the ACP mode of Copilot and Grok) — in **Chat's own sandbox** (the sandbox's image and your tools'
   sign-in folders, but a home of its own, no workspace and no project folder), in an empty folder of the conversation's own, and **without
-  tools**: each starts with every switch it has that turns its tools off, and a tool it still reaches for stops its
-  answer at once (the answer says so; the chat goes on in a new session of it). A
+  tools**: each starts with every switch it has that turns its tools off, and at the first sign of a tool it still
+  reaches for, the agent is killed there and then — nothing it says after reaches the answer (which says so; the chat
+  goes on in a new session of it). A
   conversation is one of the agent's own sessions, taken up again at each turn (its context, compaction and limits are
   the provider's); an edited or regenerated message starts a new session with the conversation so far. Under each
   answer: *on your ChatGPT plan · 1,240 in / 380 out* — tokens, never dollars. *Who answers* above Chat lists them too

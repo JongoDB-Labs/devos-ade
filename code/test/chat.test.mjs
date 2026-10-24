@@ -20,7 +20,7 @@ const ALL = { claude: { installed: true, signed: 'yes' }, codex: { installed: tr
 
 function server(opts = {}) {
   const s = createChatServer({ key: KEY, status: statusOf(opts.tools ?? ALL), planAllowed: opts.plan === true, store: new ChatStore({ file: path.join(dir, `c-${Math.random()}.json`) }),
-    spawnAgent: (o) => { spawned.push(o); return fakeProc(o.tool === 'codex' ? 'codex' : 'acp', opts.scenario ?? 'ok'); },
+    spawnAgent: (o) => { spawned.push(o); return fakeProc(o.tool === 'codex' ? 'codex' : 'acp', opts.scenario ?? 'ok', o.tool); },
     query: opts.query ?? (() => { throw new Error('no SDK here'); }), spawn: () => null });
   return new Promise((resolve) => s.listen(0, '127.0.0.1', () => resolve({ s, url: `http://127.0.0.1:${s.address().port}` })));
 }
@@ -100,15 +100,17 @@ test('no tool in Chat: a tool reached for stops the turn (nothing runs), the ans
 });
 
 test('refusals said plainly: not signed in, not there, Claude off, a model of nobody, bad messages, too large', async () => {
-  const { s, url } = await server();
+  const { s, url } = await server({ tools: { ...ALL, codex: { installed: true, signed: 'no' } } });
   try {
     const err = async (body, code, re) => { const res = await call(url, '/v1/chat/completions', body); assert.equal(res.status, code, JSON.stringify(body).slice(0, 80)); assert.match((await res.json()).error.message, re); };
-    await err({ model: 'plan-cursor', messages: [{ role: 'user', content: 'x' }] }, 409, /Cursor is not signed in: open the Terminal tab \(Open › Cursor\)/);
+    await err({ model: 'plan-codex', messages: [{ role: 'user', content: 'x' }] }, 409, /Codex is not signed in: open the Terminal tab \(Open › Codex\)/);
+    // Cursor: never a Chat model (no switch that turns its tools off)
+    await err({ model: 'plan-cursor', messages: [{ role: 'user', content: 'x' }] }, 404, /no such model/);
     await err({ model: 'plan-grok', messages: [{ role: 'user', content: 'x' }] }, 404, /Grok is not in the sandbox/);
     await err({ model: 'plan-claude', messages: [{ role: 'user', content: 'x' }] }, 403, /Claude on your plan is off/);
     await err({ model: 'gpt-4o', messages: [{ role: 'user', content: 'x' }] }, 404, /no such model/);
-    await err({ model: 'plan-codex', messages: [{ role: 'assistant', content: 'x' }] }, 400, /last message must be yours/);
-    await err({ model: 'plan-codex', messages: 'x' }, 400, /messages/);
+    await err({ model: 'plan-copilot', messages: [{ role: 'assistant', content: 'x' }] }, 400, /last message must be yours/);
+    await err({ model: 'plan-copilot', messages: 'x' }, 400, /messages/);
     const big = await fetch(`${url}/v1/chat/completions`, { method: 'POST', headers: { authorization: `Bearer ${KEY}` }, body: 'x'.repeat((24 << 20) + 1) });
     assert.equal(big.status, 413);
   } finally { s.closeAgents(); s.close(); }

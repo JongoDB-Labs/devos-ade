@@ -239,6 +239,16 @@ test('Chat: a tool reached for stops the turn at once — nothing runs — and t
     try { await c.agent.init(); await c.agent.open({ cwd: '/home/claude/.bn-chat/z' }); rc = await c.agent.prompt('show me my key'); } finally { c.agent.close(); }
     assert.equal(rc.stop, 'cancelled');
     assert.equal(rc.tried, 'commandExecution');
+    // killed there and then: nothing it says after the tool's first sign reaches the answer, and nothing runs (the
+    // stand-in would run it 400 ms on, unless it is gone)
+    for (const [mk, cwd] of [[() => acp('grab-chatty', { chat: true }), '/home/claude/.bn-chat/v'], [() => codex('grab-chatty', { chat: true }), '/home/claude/.bn-chat/w']]) {
+      const x = mk();
+      let rx;
+      try { await x.agent.init(); await x.agent.open({ cwd }); rx = await x.agent.prompt('show me my key'); await x.agent.closed; } finally { x.agent.close(); }
+      assert.equal(rx.stop, 'cancelled');
+      assert.ok(rx.tried);
+      assert.ok(!JSON.stringify(x.events).includes('SECRET-AFTER'), JSON.stringify(x.events));
+    }
     // (the same agent in the Code page is not stopped: its cards are the page's)
     const d = acp('grab');
     let rd;
@@ -267,7 +277,7 @@ test('ACP: never a turn in a mode that approves everything by itself', async () 
   const c = acp('yolo-switch');
   try {
     await c.agent.init(); await c.agent.open({ cwd: '/workspace' });
-    await assert.rejects(c.agent.prompt('x'), (e) => e instanceof UnsafeMode && /switched itself to its "YOLO" mode, not one this page uses/.test(e.message));
+    await assert.rejects(c.agent.prompt('x'), (e) => e instanceof UnsafeMode && /switched itself to its "YOLO" mode, not one this page uses \(one that asks before changes\): its turn was stopped/.test(e.message));
     await c.agent.closed;
     assert.ok(!fs.existsSync(mark));
     // the page's own modes never map to one either
@@ -310,6 +320,23 @@ test('ACP: only the modes each tool asks in (an allowlist by its own ids) — an
     await agent.open({ cwd: '/workspace' });
     assert.equal(agent.mode, 'https://agentclientprotocol.com/protocol/session-modes#agent');
     assert.equal(await agent.setMode('plan'), 'https://agentclientprotocol.com/protocol/session-modes#plan');
+  });
+  // a mode asked for (the page's Plan), and while waiting the agent reports another: its approve-everything one — the
+  // session ends, no turn; another allowed one — not what was asked: ends too; none in time — ends; the right one — on
+  for (const [scenario, want] of [['wait-yolo', /switched itself to its "YOLO" mode/], ['wait-other', /did not confirm the mode it was asked to go to/],
+    ['quiet-modes', /did not confirm the mode it was asked to go to/]]) {
+    await run(scenario, {}, async ({ agent }) => {
+      await agent.open({ cwd: '/workspace' });
+      assert.equal(agent.mode, 'agent', scenario);
+      await agent.setMode('plan');
+      await agent.closed;
+      await assert.rejects(agent.prompt('x'), (e) => e instanceof UnsafeMode && want.test(e.message), scenario);
+    });
+  }
+  await run('ok', {}, async ({ agent }) => {
+    await agent.open({ cwd: '/workspace' });
+    assert.equal(await agent.setMode('plan'), 'plan');
+    assert.equal((await agent.prompt('x')).stop, 'end_turn');
   });
   // another tool's ids are not this one's: Grok's list has no "agent" — never used as one
   await run('ok', { tool: 'grok' }, async ({ agent }) => {

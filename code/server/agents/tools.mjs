@@ -8,7 +8,8 @@ export const HARNESSES = Object.freeze({
   claude: { id: 'claude', name: 'Claude', provider: 'Anthropic', plan: 'your Claude plan', kind: 'sdk' },
   codex: { id: 'codex', name: 'Codex', provider: 'OpenAI', plan: 'your ChatGPT plan', kind: 'codex' },
   copilot: { id: 'copilot', name: 'GitHub Copilot', provider: 'GitHub', plan: 'your Copilot plan', kind: 'acp' },
-  cursor: { id: 'cursor', name: 'Cursor', provider: 'Cursor', plan: 'your Cursor plan', kind: 'acp' },
+  // (not a Chat model: Cursor CLI has no switch that turns its tools off — its Ask mode is a mode, which it can leave)
+  cursor: { id: 'cursor', name: 'Cursor', provider: 'Cursor', plan: 'your Cursor plan', kind: 'acp', noChat: true },
   grok: { id: 'grok', name: 'Grok', provider: 'xAI', plan: 'your SuperGrok or X plan', kind: 'acp' },
 });
 // a session's harness: bedrock (Claude Code on Bedrock, through LiteLLM: the Code page as before) or one of HARNESSES
@@ -18,4 +19,5 @@ export const harnessOk = (h) => typeof h === 'string' && SESSION_HARNESSES.inclu
 export const AGENT_TOOLS = Object.freeze(Object.keys(HARNESSES).filter((k) => HARNESSES[k].kind !== 'sdk'));
 // Chat's model ids (Open WebUI's dropdown): plan-<tool>
 export const chatModelId = (tool) => `plan-${tool}`;
-export const toolOfChatModel = (id) => (typeof id === 'string' && /^plan-[a-z]{1,20}$/.test(id) && Object.hasOwn(HARNESSES, id.slice(5)) ? id.slice(5) : null);
+export const toolOfChatModel = (id) => (typeof id === 'string' && /^plan-[a-z]{1,20}$/.test(id) && Object.hasOwn(HARNESSES, id.slice(5))
+  && !HARNESSES[id.slice(5)].noChat ? id.slice(5) : null);

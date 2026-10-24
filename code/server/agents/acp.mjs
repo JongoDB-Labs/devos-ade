@@ -45,6 +45,7 @@ const PERM_OPTION = /permission|approv|yolo|autonom|trust/i;
 const PERM_SAFE = /^(default|ask|manual|prompt)$/i;
 // how long a mode asked for may take to be reported (current_mode_update): not reported, not taken
 const MODE_REPORT_MS = 5000;
+const UNCONFIRMED = '\0unconfirmed';
 // the agent's own login, used where the agent asks a client to name it: Cursor's (after `agent login` in the terminal)
 // and the one an agent names as its default (Grok, once signed in) — never a method that starts a sign-in here
 const EXISTING_LOGIN = new Set(['cursor_login']);
@@ -88,7 +89,7 @@ export class AcpAgent {
   // takeConfig(configOptions) — the agent's config options as it reports them (session/new, a set_config_option's
   // answer, config_option_update): its mode where it gives one that way, and those about permissions
   takeConfig(list) {
-    if (!Array.isArray(list)) return;
+    if (!Array.isArray(list)) return false;
     const opts = list.map(obj).filter((o) => typeof o.id === 'string');
     const mo = opts.find((o) => o.category === 'mode' && Array.isArray(o.options));
     if (mo) {
@@ -102,6 +103,7 @@ export class AcpAgent {
     this.permOpts = new Map(opts.filter((o) => o !== mo && o.category !== 'model' && PERM_OPTION.test(`${o.id} ${o.name ?? ''}`))
       .map((o) => [o.id, { name: short(o.name || o.id, 60), value: typeof o.currentValue === 'string' ? o.currentValue : null,
         options: arr(o.options).map(obj).map((x) => x.value).filter((x) => typeof x === 'string') }]));
+    return Boolean(mo);
   }
 
   async init() {
@@ -184,30 +186,38 @@ export class AcpAgent {
   async leaveUnsafe() {
     if (!this.unsafeNow()) return;
     const was = this.unsafeNow();
+    let ok = true;
     if ([this.mode, this.modeOpt].some((x) => x !== null && x !== undefined && !this.safe(x)) || (this.mode === null && this.modeOpt === null)) {
       const m = this.agentModeFor(this.pageMode);
       const to = (typeof m === 'string' ? m : m?.id) ?? this.modes.find((x) => this.safe(x.id))?.id ?? null;
-      if (to) await this.askMode(to);
+      ok = to ? await this.askMode(to) : false;
     }
-    for (const [id, o] of this.permOpts) {
+    for (const [id, o] of ok ? this.permOpts : []) {
       if (PERM_SAFE.test(o.value ?? '')) continue;
       const v = o.options.find((x) => PERM_SAFE.test(x));
       if (v) await this.askConfig(id, v);
     }
-    if (this.unsafeNow()) {
+    if (!ok || this.unsafe || this.unsafeNow()) {
       this.close();
       throw new UnsafeMode(`${HARNESSES[this.tool]?.name ?? this.tool} started in ${was === 'no' ? 'no mode it reported' : `its "${was}" mode`}, not one this page uses (one that asks before changes), and did not leave it: not used (its own settings in the terminal choose its default mode)`);
     }
   }
-  // askMode(id) — the agent asked to go to a mode; taken only once it reports it (current_mode_update, or a config
-  // option's answer), within MODE_REPORT_MS
+  // askMode(id) -> whether the agent went to that mode: taken only once it reports it — a current_mode_update (or a
+  // config option of the mode category) naming it, or a config option's answer — within MODE_REPORT_MS. One naming
+  // another mode meanwhile, no report in time, an error: false (the callers close the session)
   async askMode(id) {
     try {
-      if (this.modeConfig && !this.modesFromSession) { await this.askConfig(this.modeConfig, id); return; }
-      const reported = new Promise((resolve) => { this.modeWait = { id, resolve }; setTimeout(() => resolve(false), MODE_REPORT_MS).unref?.(); });
+      if (this.modeConfig && !this.modesFromSession) { await this.askConfig(this.modeConfig, id); return this.modeOpt === id && this.safe(id); }
+      const reported = new Promise((resolve) => {
+        this.modeWait = { id, resolve };
+        const t = setTimeout(() => resolve(false), MODE_REPORT_MS);
+        t.unref?.();
+      });
       await this.peer.request('session/set_mode', { sessionId: this.sessionId, modeId: id }, { timeoutMs: 30000 });
-      if (!(await reported)) this.log(`${this.tool}: mode ${short(id, 40)} asked for, not reported: not taken`);
-    } catch (e) { this.log(`${this.tool}: mode ${short(id, 40)} not set: ${said(e.message, 200)}`); } finally { this.modeWait = null; }
+      const ok = await reported;
+      if (!ok) this.log(`${this.tool}: mode ${short(id, 40)} asked for, not reported as such: not taken`);
+      return ok;
+    } catch (e) { this.log(`${this.tool}: mode ${short(id, 40)} not set: ${said(e.message, 200)}`); return false; } finally { this.modeWait = null; }
   }
   // askConfig(configId, value) — a config option set; its answer is the agent's options as they are now (taken)
   async askConfig(configId, value) {
@@ -216,14 +226,26 @@ export class AcpAgent {
       this.takeConfig(r.configOptions);
     } catch (e) { this.log(`${this.tool}: ${short(configId, 40)} not set: ${said(e.message, 200)}`); }
   }
-  // checkMode() — a mode (or permissions option) the agent reports itself in now that is not one of SAFE_MODES: the turn
-  // under way stops, the session ends (prompt())
-  checkMode() {
+  // reported(mode) — a mode the agent says it is in (current_mode_update, a mode config option's update): a mode asked
+  // for is taken only when it is that one, and allowed; anything else ends the wait as not taken. Then checkMode().
+  reported(mode) {
+    const w = this.modeWait;
+    if (w) w.resolve(mode === w.id && this.safe(mode));
+    this.checkMode(w && mode === w.id && this.safe(mode));
+  }
+  // checkMode(asked) — a mode (or permissions option) the agent reports itself in now that is not one of SAFE_MODES:
+  // the turn under way is stopped there and then (the process killed), the session ends (prompt()). asked: the mode
+  // just reported is the allowed one asked for (what is left — a permissions option — is leaveUnsafe's to set)
+  checkMode(asked = false) {
     const bad = this.unsafeNow();
-    if (bad && !this.unsafe && this.sessionId && !this.modeWait) { this.unsafe = bad; if (this.prompting) this.cancel(); }
+    if (!bad || this.unsafe || !this.sessionId || asked) return;
+    this.unsafe = bad;
+    if (this.prompting) this.peer.kill('SIGKILL');
   }
   unsafeError() {
-    return new UnsafeMode(`${HARNESSES[this.tool]?.name ?? this.tool} switched itself to ${this.unsafe === 'no' ? 'no mode it reports' : `its "${this.unsafe}" mode`}, not one this page uses (one that asks before changes): its turn was stopped and its session closed (your next prompt starts it again)`);
+    const what = this.unsafe === UNCONFIRMED ? 'did not confirm the mode it was asked to go to'
+      : `switched itself to ${this.unsafe === 'no' ? 'no mode it reports' : `its "${this.unsafe}" mode`}, not one this page uses (one that asks before changes)`;
+    return new UnsafeMode(`${HARNESSES[this.tool]?.name ?? this.tool} ${what}: its turn was stopped and its session closed (your next prompt starts it again)`);
   }
 
   // the page's mode as one of the agent's: Plan and Read only to its planning or asking mode where it has one (this side
@@ -243,7 +265,8 @@ export class AcpAgent {
     const id = typeof m === 'string' ? m : m?.id;
     if (!id || id === (this.modesFromSession ? this.mode : this.modeOpt) || !this.sessionId || !this.safe(id)) return this.mode ?? this.modeOpt;
     // (the page's own mode decides what it lets through either way — requested(): a mode not reported changes nothing)
-    await this.askMode(id);
+    // (not reported as asked: never a turn in a mode not known — the session ends, the next prompt starts a new one)
+    if (!(await this.askMode(id))) { this.unsafe ??= this.unsafeNow() ?? UNCONFIRMED; this.close(); }
     this.checkMode();
     return this.mode ?? this.modeOpt;
   }
@@ -252,7 +275,7 @@ export class AcpAgent {
   async chatMode() {
     const m = this.modes.find((x) => (/^ask$/i.test(x.id) || /^ask$/i.test(x.name)) && this.safe(x.id));
     if (!m || m.id === this.mode || !this.sessionId) return;
-    await this.askMode(m.id);
+    if (!(await this.askMode(m.id))) { this.close(); throw new UnsafeMode(`${HARNESSES[this.tool]?.name ?? this.tool} did not go to its asking mode: not used`); }
   }
 
   async setModel(id) {
@@ -275,6 +298,8 @@ export class AcpAgent {
     try {
       r = obj(await this.peer.request('session/prompt', { sessionId: this.sessionId, prompt: blocks }, { timeoutMs: 6 * 3600000 }));
     } catch (e) {
+      // (Chat: a tool reached for — the process was killed there and then: the turn ends with what came before it)
+      if (this.toolTried) return { stop: 'cancelled', usage: usageOf({}), tried: this.toolTried };
       if (this.unsafe) { this.close(); throw this.unsafeError(); }
       throw e;
     } finally { this.prompting = false; this.flush(); }
@@ -286,11 +311,13 @@ export class AcpAgent {
   }
 
   cancel() { if (this.sessionId) this.peer.notify('session/cancel', { sessionId: this.sessionId }); }
+  // Chat: the first sign of a tool — the process (and all it started: its own process group in the sandbox) is killed
+  // there and then, not asked to stop, and nothing it says after reaches the answer (notified() drops it)
   stopTool(title) {
     if (this.toolTried) return;
     this.toolTried = title;
-    this.log(`${this.tool}: reached for a tool in Chat (${title}): its turn stopped`);
-    this.cancel();
+    this.log(`${this.tool}: reached for a tool in Chat (${title}): killed`);
+    this.peer.kill('SIGKILL');
   }
   close() { this.peer.kill(); }
 
@@ -302,7 +329,7 @@ export class AcpAgent {
   }
 
   notified(method, p) {
-    if (method !== 'session/update' || this.loading || (this.sessionId && p.sessionId !== this.sessionId)) return;
+    if (method !== 'session/update' || this.loading || this.toolTried || (this.sessionId && p.sessionId !== this.sessionId)) return;
     const u = obj(p.update);
     switch (u.sessionUpdate) {
       case 'agent_message_chunk': {
@@ -336,13 +363,11 @@ export class AcpAgent {
       case 'current_mode_update':
         if (typeof u.currentModeId !== 'string') return;
         this.mode = short(u.currentModeId, 100);
-        if (this.modeWait && this.modeWait.id === this.mode) this.modeWait.resolve(true);
-        this.checkMode();
+        this.reported(this.mode);
         return;
       // its config options as they are now (a mode given that way, permissions): the same check
       case 'config_option_update':
-        this.takeConfig(u.configOptions);
-        this.checkMode();
+        if (this.takeConfig(u.configOptions)) this.reported(this.modeOpt); else this.checkMode();
         return;
       case 'usage_update': {
         const used = int(u.used, 0, 1e12), size = int(u.size, 0, 1e12);

@@ -3,11 +3,13 @@
 // this container shares no network with Open WebUI), with a key only Open WebUI has (CODE_CHAT_KEY). Each signed-in subscription is a model there (plan-claude, plan-codex …),
 // answering in the same chat pane; each answer is the provider's own agent, signed in with its own login, through its
 // interface for other apps — the Claude Agent SDK (Claude Code, `--tools=` : no tool), Codex's app server, ACP (Copilot,
-// Cursor, Grok) — in Chat's own sandbox (subs-chat: the terminal's image and home, no workspace, no project folder),
+// Grok; not Cursor: it has no switch that turns its tools off) — in Chat's own sandbox (subs-chat: the terminal's image and home, no workspace, no project folder),
 // in an empty folder of the conversation's own, each tool started with its tools switched off (bn-coded's AGENTS.chat).
-// No tool in Chat, whatever a tool's switches let through: every permission request is refused, and the first sign of
-// a tool call (ACP's tool_call, a Codex item that is not an answer) stops the turn at once — the answer says so, and
-// that agent session is dropped (the chat goes on in a new one). Nothing of a login passes here; what comes back is
+// No tool in Chat, whatever a tool's switches let through: every permission request is refused, and at the first sign
+// of a tool call (ACP's tool_call or a permission request, a Codex item that is not an answer) the agent's process is
+// killed there and then (with what it started), nothing it says after reaches the answer — the answer says so, and
+// that agent session is dropped (the chat goes on in a new one). A tool that runs a tool by itself before any sign
+// reaches here is not stopped by this: the switches that turn tools off are what keeps them from running. Nothing of a login passes here; what comes back is
 // the sandbox's text, sent on as plain text.
 //
 // A conversation is one of the agent's own sessions, taken up again each turn (its context, compaction and limits are the
@@ -156,7 +158,7 @@ export function createChatServer({ key, status, planAllowed = false, spawnAgent,
     const out = [];
     for (const h of Object.values(HARNESSES)) {
       const t = st?.tools?.[h.id];
-      if (!t?.installed || t.signed === 'no') continue;
+      if (h.noChat || !t?.installed || t.signed === 'no') continue;
       if (h.id === 'claude' && (planAllowed !== true || t.signed !== 'yes')) continue;
       out.push({ id: chatModelId(h.id), object: 'model', created: 0, owned_by: h.plan, name: `${h.name} · ${h.plan}` });
     }
@@ -207,6 +209,7 @@ export function createChatServer({ key, status, planAllowed = false, spawnAgent,
     r.busy = true; r.at = Date.now();
     let streamed = false;
     r.onEvent = (ev) => {
+      if (r.agent.toolTried) return;   // (nothing after a tool's first sign: the agent is being killed)
       if (ev.type === 'delta') { streamed = true; out.text(ev.text); } else if (ev.type === 'thinking_delta') out.thought(ev.text);
       else if (ev.type === 'text') { if (!streamed) out.text(ev.text); streamed = false; }
     };

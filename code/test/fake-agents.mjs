@@ -73,11 +73,14 @@ async function acp(m) {
       for (const h of s.history) update(m.params.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `replayed ${h}` } });
       return { result: { modes: { currentModeId: M.agent, availableModes: [{ id: M.agent, name: 'Agent' }] } } };
     }
-    // a mode asked for: reported (current_mode_update) — but by silent-set, which says yes and stays where it is
-    case 'session/set_mode':
+    // a mode asked for: reported (current_mode_update) — but by silent-set and quiet-modes, which say yes and stay where
+    // they are; wait-yolo reports its approve-everything mode instead, wait-other another allowed one
+    case 'session/set_mode': {
       log(`set_mode ${m.params.modeId}`);
-      if (scenario !== 'silent-set') setTimeout(() => update(m.params.sessionId, { sessionUpdate: 'current_mode_update', currentModeId: m.params.modeId }), 5);
+      const to = scenario === 'wait-yolo' ? M.yolo : scenario === 'wait-other' ? (m.params.modeId === M.plan ? M.agent : M.plan) : m.params.modeId;
+      if (scenario !== 'silent-set' && scenario !== 'quiet-modes') setTimeout(() => update(m.params.sessionId, { sessionUpdate: 'current_mode_update', currentModeId: to }), 5);
       return { result: {} };
+    }
     case 'session/set_config_option':
       log(`set_config_option ${m.params.configId}=${m.params.value}`);
       if (m.params.configId === 'mode') configMode = m.params.value; else if (m.params.configId === 'permission') perm = m.params.value;
@@ -94,13 +97,16 @@ async function acp(m) {
       // grab: it reaches for a file of yours (no permission asked: a read it would run by itself); yolo-switch: it switches
       // itself to its approve-everything mode, then would run a command; config-later: the same through its mode config
       // option (config_option_update)
-      if (scenario === 'grab' || scenario === 'yolo-switch' || scenario === 'config-later') {
+      if (scenario === 'grab' || scenario === 'grab-chatty' || scenario === 'yolo-switch' || scenario === 'config-later') {
         update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Let me look. ' } });
-        if (scenario === 'grab') update(sid, { sessionUpdate: 'tool_call', toolCallId: 'g1', title: 'Read ~/.ssh/id_ed25519', kind: 'read', status: 'pending', locations: [{ path: '/home/claude/.ssh/id_ed25519' }] });
-        else if (scenario === 'config-later') { configMode = M.yolo; update(sid, { sessionUpdate: 'config_option_update', configOptions: configOptions() }); }
+        if (scenario.startsWith('grab')) {
+          update(sid, { sessionUpdate: 'tool_call', toolCallId: 'g1', title: 'Read ~/.ssh/id_ed25519', kind: 'read', status: 'pending', locations: [{ path: '/home/claude/.ssh/id_ed25519' }] });
+          // (grab-chatty: what it says right after — a tool's output, say — never reaches the answer)
+          if (scenario === 'grab-chatty') update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'SECRET-AFTER' } });
+        } else if (scenario === 'config-later') { configMode = M.yolo; update(sid, { sessionUpdate: 'config_option_update', configOptions: configOptions() }); }
         else update(sid, { sessionUpdate: 'current_mode_update', currentModeId: M.yolo });
         if (await waitStop(sid)) return { result: { stopReason: 'cancelled' } };
-        ran(scenario === 'grab' ? 'read the key' : 'ran a command in yolo');
+        ran(scenario.startsWith('grab') ? 'read the key' : 'ran a command in yolo');
         update(sid, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Here it is: (secret)' } });
         return { result: { stopReason: 'end_turn' } };
       }
@@ -159,10 +165,11 @@ async function codex(m) {
       cancelled.delete(tid);
       setTimeout(async () => {
         const n = (method, params) => send({ method, params: { threadId: thread.id, turnId: tid, ...params } });
-        if (scenario === 'grab') {
-          // a command it would run (shell on, never asking): the client interrupts the turn at its start
+        if (scenario === 'grab' || scenario === 'grab-chatty') {
+          // a command it would run (shell on, never asking): the client kills it at its start
           n('item/agentMessage/delta', { itemId: 'm0', delta: 'Let me look. ' });
           n('item/started', { item: { type: 'commandExecution', id: 'c9', command: 'cat ~/.ssh/id_ed25519', cwd: '/home/claude', status: 'inProgress' } });
+          if (scenario === 'grab-chatty') n('item/agentMessage/delta', { itemId: 'm0', delta: 'SECRET-AFTER' });
           if (await waitStop(tid)) { n('turn/completed', { turn: { id: tid, status: 'interrupted', error: null } }); return; }
           ran('cat the key');
           n('item/completed', { item: { type: 'commandExecution', id: 'c9', command: 'cat ~/.ssh/id_ed25519', status: 'completed', exitCode: 0, aggregatedOutput: 'KEY' } });

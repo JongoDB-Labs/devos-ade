@@ -100,14 +100,19 @@ export class CodexAgent {
       const r = obj(await this.peer.request('turn/start', { threadId: this.threadId, input, ...(this.model ? { model: this.model } : {}),
         approvalPolicy: 'untrusted', ...(this.chat ? {} : { sandboxPolicy }) }, { timeoutMs: 120000 }));
       this.turnId = typeof obj(r.turn).id === 'string' ? r.turn.id : null;
-      if (this.interruptWanted) this.cancel();   // (a tool reached for before the turn's id came)
-    } catch (e) { this.turnDone = null; throw e; }
-    const end = await Promise.race([done, this.peer.closed.then(() => ({ status: 'failed', error: 'Codex ended' }))]);
+    } catch (e) {
+      this.turnDone = null;
+      // (Chat: a tool reached for before the turn's id came — the process was killed there and then)
+      if (this.toolTried) { this.flush(); return { stop: 'cancelled', usage: usageOf({}), tried: this.toolTried }; }
+      throw e;
+    }
+    const end = await Promise.race([done, this.peer.closed.then(() => ({ status: this.toolTried ? 'interrupted' : 'failed', error: 'Codex ended' }))]);
     this.flush();
     this.turnId = null; this.turnDone = null;
     const u = obj(this.usage);
     const usage = usageOf({ input: u.inputTokens, output: u.outputTokens, cached: u.cachedInputTokens });
     const tried = this.toolTried ? { tried: this.toolTried } : {};
+    if (this.toolTried) return { stop: 'cancelled', usage, ...tried };
     if (end.status === 'interrupted') return { stop: 'cancelled', usage, ...tried };
     if (end.status === 'failed') return { stop: 'error', usage, error: end.error || 'Codex reported an error', ...tried };
     return { stop: 'end_turn', usage, ...tried };
@@ -117,11 +122,13 @@ export class CodexAgent {
     if (this.threadId && this.turnId) this.peer.request('turn/interrupt', { threadId: this.threadId, turnId: this.turnId }, { timeoutMs: 15000 }).catch(() => {});
     else this.interruptWanted = true;
   }
+  // Chat: the first sign of a tool — the process (and all it started) is killed there and then, not interrupted, and
+  // nothing it says after reaches the answer (notified() drops it)
   stopTool(what) {
     if (this.toolTried) return;
     this.toolTried = what;
-    this.log(`codex: reached for a tool in Chat (${what}): its turn interrupted`);
-    this.cancel();
+    this.log(`codex: reached for a tool in Chat (${what}): killed`);
+    this.peer.kill('SIGKILL');
   }
   close() { this.peer.kill(); }
 
@@ -132,7 +139,7 @@ export class CodexAgent {
   }
 
   notified(method, p) {
-    if (p.threadId !== undefined && p.threadId !== this.threadId) return;
+    if (this.toolTried || (p.threadId !== undefined && p.threadId !== this.threadId)) return;
     switch (method) {
       case 'item/agentMessage/delta':
         if (typeof p.delta === 'string' && p.delta) { if (this.text.length < 200000) this.text += p.delta; this.onEvent({ type: 'delta', text: str(p.delta, DELTA), parent: null }); }

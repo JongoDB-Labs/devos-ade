@@ -3196,12 +3196,17 @@ never reads, copies, keeps, passes on or relays a login.**
   `--tools=` (no built-in tool), `--strict-mcp-config` and no MCP server, no settings files (bn-coded refuses a Chat
   conversation without those flags); Codex without its shell, MCP servers, web search, apps, plugins, skills, browser
   and images, no AGENTS.md, asking before anything it does not count as safe; Copilot with an empty list of available
-  tools, no MCP server of its own, no instructions files, no temp folder, its shell, writes and URLs denied; Cursor in
-  its Ask mode; Grok with an empty list of tools, no web search, no subagents. Those switches are the vendors'; what
-  holds whatever they let through is this side: every permission question is refused, and the first sign of a tool
-  call — ACP's `tool_call`, a Codex item that is not an answer — stops the turn at once (before what it fetched goes
-  back to the model), the answer says so, and that agent session is dropped: the chat goes on in a new one, with the
-  conversation quoted. Of what a tool could still read without asking, there is the empty folder and the home's
+  tools, no MCP server of its own, no instructions files, no temp folder, its shell, writes and URLs denied; Grok with
+  an empty list of tools, no web search, no subagents. Cursor is not a Chat model: it has no switch that turns its
+  tools off (its Ask mode is a mode, which an agent can leave). Those switches are the vendors' — Copilot's and Grok's
+  are their documented flags, which this page cannot see work without a sign-in (the e2e checks stop at the sign-in) —
+  and they are what keeps a tool from running: what holds whatever they let through is this side, after the fact.
+  Every permission question is refused, and at the first sign of a tool call — ACP's `tool_call` or a permission
+  question, a Codex item that is not an answer — the agent's process is killed there and then, with what it started
+  (its own process group in the sandbox), not asked to stop; nothing it says after that sign reaches the answer. A
+  tool that runs by itself before any sign of it reaches here (one its switches let through and it approves itself)
+  is not stopped by this. The answer says what was tried, and that agent session is dropped: the chat goes on in a new
+  one, with the conversation quoted. Of what a tool could still read without asking, there is the empty folder and the home's
   sign-ins — never a file of your workspace. What a conversation was is kept as a hash of your prompts
   (`conversations.json` in the code container's volume: which session goes on); the sessions themselves are the
   tools' own, in Chat's sandbox.

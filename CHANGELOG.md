@@ -8,8 +8,9 @@ All notable changes to bedrock-now are documented here. The format follows
 
 ### Added
 
-- **Your subscriptions as Chat models.** Each one signed in — Codex (ChatGPT), GitHub Copilot, Cursor, Grok, and Claude
-  on your plan while its switch is on — is a model in Open WebUI's menu, answering in the same chat, streamed, with
+- **Your subscriptions as Chat models.** Each one signed in — Codex (ChatGPT), GitHub Copilot, Grok, and Claude on
+  your plan while its switch is on — is a model in Open WebUI's menu (not Cursor: it has no switch that turns its
+  tools off), answering in the same chat, streamed, with
   its thinking: the provider's own agent through the interface it ships for other apps (Codex's app server, ACP; the
   Claude Agent SDK), with its own login, without tools, in Chat's own sandbox (none of your files there), in an empty
   folder of the conversation's own.
@@ -32,8 +33,9 @@ All notable changes to bedrock-now are documented here. The format follows
   of the sandbox only the tools' sign-in folders (volumes of their own now, in the terminal too: `subs-claude`,
   `subs-codex`, `subs-copilot`, `subs-cursor`, `subs-cursor-login`, `subs-grok`); no workspace, no project folder, no
   LiteLLM key or MCP token, not on the terminal's network; each tool
-  started there with its tools switched off where it has a switch, every permission refused, and a turn stopped at
-  the first sign of a tool call (the answer says so; that session is dropped). Open WebUI reaches Chat's models
+  started there with its tools switched off, every permission refused, and at the first sign of a tool call the
+  agent's process killed there and then, with what it started, nothing it says after reaching the answer (which says
+  so; that session is dropped). Open WebUI reaches Chat's models
   through the main Caddy's internal site (`caddy:8098`) with a key (`CODE_CHAT_KEY`) — the code container shares no
   network with Open WebUI; no login is read, refreshed or passed on.
 - The Code page's agents: their tool calls on your permission cards; only in the modes that ask, by an allowlist of

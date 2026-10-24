@@ -138,9 +138,10 @@ const CHAT_DIR = process.env.BN_CHAT_DIR || path.join(os.homedir(), '.bn-chat');
 // chat: for Chat's conversations (Chat's own sandbox, subs-chat: no workspace, no project folder), with every switch
 // the tool has that turns its tools off — Codex: no shell, no MCP server, no web search, no apps, plugins, skills,
 // browser or images, no AGENTS.md; Copilot: an empty list of available tools, no MCP server of its own, no
-// instructions files, no temp folder, shell, writes and URLs denied; Cursor: its Ask mode; Grok: an empty list of
-// tools, no web search, no subagents. What a tool still reaches for, the code container stops at once
-// (code/server/agents: the turn interrupted, the session dropped).
+// instructions files, no temp folder, shell, writes and URLs denied; Grok: an empty list of tools, no web search, no
+// subagents. Cursor is not in Chat: it has no switch that turns its tools off (its Ask mode is a mode, which an agent
+// can leave), so chat: null. What a tool still reaches for, the code container stops at once (code/server/agents: the
+// process killed, nothing it says after reaching the answer, the session dropped).
 const CODEX_CHAT_OFF = ['shell_tool', 'unified_exec', 'shell_snapshot', 'apps', 'plugins', 'browser_use', 'browser_use_external', 'computer_use',
   'in_app_browser', 'image_generation', 'view_image', 'skill_search', 'skill_mcp_dependency_install', 'tool_suggest', 'goals', 'code_mode_host', 'sleep_tool'];
 export const AGENTS = Object.freeze({
@@ -149,7 +150,7 @@ export const AGENTS = Object.freeze({
   copilot: { bin: 'copilot', code: ['--acp', '--stdio'],
     chat: ['--acp', '--stdio', '--disable-builtin-mcps', '--no-custom-instructions', '--no-ask-user', '--disallow-temp-dir', '--available-tools=',
       '--deny-tool=shell', '--deny-tool=write', '--deny-tool=url'] },
-  cursor: { bin: 'cursor-agent', code: ['acp'], chat: ['--mode', 'ask', 'acp'] },
+  cursor: { bin: 'cursor-agent', code: ['acp'], chat: null },
   grok: { bin: 'grok', code: ['agent', '--no-leader', 'stdio'], chat: ['--tools=', '--disable-web-search', '--no-subagents', 'agent', '--no-leader', 'stdio'] },
 });
 // This spawn server's role: the terminal's (everything here: the Code page's sessions in the workspace) or Chat's
@@ -4701,6 +4702,13 @@ let brokerSock = null;
 export function serve(sock) {
   const parser = new FrameParser();
   let child = null, opened = false, writer = null, done = false, tunnel = null;
+  // (a subscription's agent runs in a process group of its own: a signal reaches whatever it started too — Chat kills
+  // one at the first sign of a tool, and a shell it started dies with it)
+  let group = false;
+  const signalChild = (c, sig) => {
+    if (group && c.pid) { try { process.kill(-c.pid, sig); return; } catch { /* gone, or no group: the process itself */ } }
+    try { c.kill(sig); } catch { /* gone */ }
+  };
   const send = (t, p) => (sock.destroyed ? false : sock.write(frame(t, p)));
   const finish = (t, p) => { if (done) return; done = true; send(t, p); sock.end(); };
   const fail = (msg) => finish(T.ERROR, { error: printable(msg, 300) });
@@ -4725,7 +4733,8 @@ export function serve(sock) {
     let counted = true;
     const uncount = () => { if (counted) { counted = false; running[kind]--; } };
     try {
-      child = spawn(bin, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+      group = kind === 'agent';
+      child = spawn(bin, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], detached: group });
     } catch (e) { uncount(); return fail(`spawn failed: ${e.code || e.message}`); }
     const c = child;
     if (c.pid) recordChild(c.pid);
@@ -4788,6 +4797,7 @@ export function serve(sock) {
       const a = typeof req.tool === 'string' && Object.hasOwn(AGENTS, req.tool) ? AGENTS[req.tool] : null;
       if (!a) return fail('no such tool');
       if (req.mode !== 'code' && req.mode !== 'chat') return fail('mode: code or chat');
+      if (req.mode === 'chat' && !a.chat) return fail('not in Chat: it has no switch that turns its tools off');
       let cwd;
       if (req.mode === 'code') {
         cwd = confine(typeof req.cwd === 'string' ? req.cwd : WORKSPACE);
@@ -5011,7 +5021,7 @@ export function serve(sock) {
     } else if (type === T.STDIN_END) child.stdin.end();
     else if (type === T.SIGNAL) {
       let s = {}; try { s = JSON.parse(payload.toString('utf8')); } catch { /* ignored */ }
-      if (['SIGINT', 'SIGTERM', 'SIGKILL'].includes(s.signal)) child.kill(s.signal);
+      if (['SIGINT', 'SIGTERM', 'SIGKILL'].includes(s.signal)) signalChild(child, s.signal);
     }
     return undefined;
   }
@@ -5033,8 +5043,10 @@ export function serve(sock) {
     const c = child;
     if (!c) return;
     try { c.stdin.end(); } catch { /* gone */ }
-    setTimeout(() => { if (c.exitCode === null && c.signalCode === null) c.kill('SIGTERM'); }, 3000).unref();
-    setTimeout(() => { if (c.exitCode === null && c.signalCode === null) c.kill('SIGKILL'); }, 8000).unref();
+    setTimeout(() => { if (c.exitCode === null && c.signalCode === null) signalChild(c, 'SIGTERM'); }, 3000).unref();
+    setTimeout(() => { if (c.exitCode === null && c.signalCode === null) signalChild(c, 'SIGKILL'); }, 8000).unref();
+    // (an agent's group: whatever it started is killed even when the agent itself is gone)
+    if (group && c.pid) setTimeout(() => { try { process.kill(-c.pid, 'SIGKILL'); } catch { /* gone */ } }, 8000).unref();
   });
   sock.on('error', () => {});
 }

@@ -121,7 +121,6 @@ test('an agent: its launcher with fixed arguments, in a folder of the workspace 
       '--disable', 'code_mode_host', '--disable', 'sleep_tool', '-c', 'web_search="disabled"', '-c', 'mcp_servers={}', '-c', 'project_doc_max_bytes=0'],
     copilot: ['--acp', '--stdio', '--disable-builtin-mcps', '--no-custom-instructions', '--no-ask-user', '--disallow-temp-dir', '--available-tools=',
       '--deny-tool=shell', '--deny-tool=write', '--deny-tool=url'],
-    cursor: ['--mode', 'ask', 'acp'],
     grok: ['--tools=', '--disable-web-search', '--no-subagents', 'agent', '--no-leader', 'stdio'] };
   await asChat(async () => {
     for (const [tool, args] of Object.entries(chatWant)) {
@@ -131,6 +130,8 @@ test('an agent: its launcher with fixed arguments, in a folder of the workspace 
       assert.deepEqual(c.env, { HTTPS_PROXY: 'http://egress:3128' }, tool);
     }
     assert.match(result(await run({ op: 'agent', tool: 'codex', mode: 'chat', chat: 'x' })).error, /bad conversation id/);
+    // Cursor: no switch that turns its tools off — not in Chat
+    assert.match(result(await run({ op: 'agent', tool: 'cursor', mode: 'chat', chat: 'cd'.repeat(16) })).error, /not in Chat: it has no switch that turns its tools off/);
   });
   for (const [req, why] of [[{ op: 'agent', tool: 'gemini', mode: 'code' }, /no such tool/], [{ op: 'agent', tool: 'toString', mode: 'code' }, /no such tool/],
     [{ op: 'agent', tool: 'codex', mode: 'yolo' }, /mode: code or chat/], [{ op: 'agent', tool: 'codex', mode: 'code', cwd: '/etc' }, /must be in \/workspace/]]) {
@@ -159,4 +160,36 @@ test('the plan\'s transcripts: listed, read and titled from its own folder; a st
   assert.equal(result(await talk(SOCK, [open({ op: 'sessions.load', id, store: 'plan' })])).entries.length, 1);
   assert.deepEqual(result(await talk(SOCK, [open({ op: 'sessions.title', id, title: 'Mine', store: 'plan' })])), { ok: true });
   assert.match(result(await talk(SOCK, [open({ op: 'sessions.list', store: '../x' })])).error, /bad store/);
+});
+
+test('an agent runs in a process group of its own: a kill reaches what it started (Chat kills one at the first sign of a tool)', async () => {
+  const net = await import('node:net');
+  const { FrameParser } = await import('../server/frames.mjs');
+  const bin = path.join(BIN, 'grok');
+  fs.writeFileSync(bin, '#!/bin/sh\nsleep 300 &\necho "ready $!"\nwait\n', { mode: 0o755 });
+  try {
+    const pid = await new Promise((resolve, reject) => {
+      const c = net.connect(SOCK);
+      const parser = new FrameParser(1 << 20);
+      let out = '', child = null;
+      const timer = setTimeout(() => { c.destroy(); reject(new Error(`no end; ${out}`)); }, 15000);
+      c.on('connect', () => c.write(open({ op: 'agent', tool: 'grok', mode: 'code', cwd: path.join(WS, 'app') })));
+      c.on('data', (d) => {
+        for (const [t, p] of parser.push(d)) {
+          if (t !== T.STDOUT) continue;
+          out += p.toString('utf8');
+          const m = /ready (\d+)/.exec(out);
+          if (m && child === null) { child = Number(m[1]); c.write(frame(T.SIGNAL, { signal: 'SIGKILL' })); }
+        }
+      });
+      c.on('close', () => { clearTimeout(timer); resolve(child); });
+      c.on('error', () => {});
+    });
+    assert.ok(pid > 0);
+    let alive = true;
+    for (let i = 0; i < 50 && alive; i++) {
+      try { process.kill(pid, 0); await new Promise((r) => setTimeout(r, 50)); } catch { alive = false; }
+    }
+    assert.equal(alive, false, 'what the agent started was killed with it');
+  } finally { fs.writeFileSync(bin, SAY, { mode: 0o755 }); }
 });
