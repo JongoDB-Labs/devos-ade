@@ -983,13 +983,16 @@ export class SessionManager {
   async agentSettingsCheck(cwd, name) {
     if (cwd === WS || !this.decideSettings) return;
     const d = await this.decideSettings(cwd);
-    if (APPLIED_STATES.includes(d.state)) return;
-    const what = 'this project\'s own settings (Claude Code\'s and other tools\': .codex/, .cursor/, .grok/, .github/hooks/ …)';
-    const why = d.state === 'changed' ? `${what} changed since you trusted them`
-      : d.state === 'recheck' ? `${what} are not applied: ${RECHECK_TEXT}`
-      : d.state === 'unverifiable' ? `one of ${what} cannot be checked (a link out of the workspace, too large to show, or not a file), so they cannot be trusted`
-        : d.state === 'unchecked' ? `the sandbox did not say what ${what} hold`
-          : `${what} are not trusted`;
+    // (both parts: Claude Code's and the other tools' — d.agents; a decision without it (none made): not applied)
+    const a = d.agents ?? { state: 'unchecked', part: 'claude' };
+    if (APPLIED_STATES.includes(a.state)) return;
+    const what = a.part === 'agents' ? 'this project\'s settings for the other tools (.codex/, .cursor/, .grok/, .github/ …)'
+      : 'this project\'s own settings (Claude Code\'s, and with them the other tools\': .codex/, .cursor/, .grok/, .github/ …)';
+    const why = a.state === 'changed' ? `${what} changed since you trusted them`
+      : a.state === 'recheck' ? `${what} are not applied: ${RECHECK_TEXT}`
+      : a.state === 'unverifiable' ? `one of ${what} cannot be checked (a link out of the workspace, too large to show, not a file, or a folder that cannot be listed), so they cannot be trusted`
+        : a.state === 'unchecked' ? `the sandbox did not say what ${what} hold`
+          : a.part === 'agents' ? `${what} are not trusted (the project's Claude Code settings may be, alone: its dialog says why)` : `${what} are not trusted`;
     throw new SessionError(`${name} does not start here: ${why} — it would read them as they are (hooks, MCP servers, rules that approve by themselves). Review and trust them first: the project's ⋯ › Claude Code settings…`, 409);
   }
   // gitNoteNow({strict}) -> the Git note for a process starting now, or null (no gitHosts; strict: not read just now)

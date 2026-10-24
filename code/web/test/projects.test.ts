@@ -146,6 +146,16 @@ test('a project\'s own Claude Code settings: its state in the list, a session\'s
   assert.equal(many?.summary.complete, false);
   assert.equal(normSettingsView({ ...whole, state: 'mine' }), null);
   assert.equal(normSettingsView({ ...whole, project: '/etc' }), null);
+  // the two parts' states: Claude on your plan's and an agent's beside Claude Code's (an older backend: Claude Code's for
+  // both); the other tools' part shown whole or not, and why; a folder by its name alone listed as one
+  assert.deepEqual([v.planState, v.agentState, v.planReason, v.summary.agentsComplete], ['untrusted', 'untrusted', null, true]);
+  const split = normSettingsView({ ...whole, state: 'trusted', planState: 'untrusted', planReason: 'plan-plugins', agentState: 'changed',
+    files: [{ name: '.github/workflows', type: 'name', size: null }], summary: { ...whole.summary, agentsComplete: false, agentsMissing: ['another tool\'s file over 16,000 characters', 4] } });
+  assert.deepEqual([split?.state, split?.planState, split?.planReason, split?.agentState], ['trusted', 'untrusted', 'plan-plugins', 'changed']);
+  assert.deepEqual([split?.summary.complete, split?.summary.agentsComplete, split?.summary.agentsMissing], [true, false, ['another tool\'s file over 16,000 characters']]);
+  assert.deepEqual(split?.files.map((f) => [f.name, f.type]), [['.github/workflows', 'name']]);
+  assert.equal(normSettingsView({ ...whole, planState: 'evil', planReason: '<b>' })?.planState, 'untrusted', 'not one of the states: Claude Code\'s');
+  assert.equal(normSettingsView({ ...whole, planReason: '<b>' })?.planReason, null);
   assert.equal(normSettingsView({ ...whole, hash: 'zz' })?.hash, null, 'a hash that is not one: nothing to trust');
   // nothing cut silently: a section longer than shown, an over-long value, or the backend's own "incomplete" — then no
   // hash to trust, and what was left out is said

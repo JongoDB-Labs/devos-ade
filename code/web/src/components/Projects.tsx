@@ -862,16 +862,36 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
     recheck: `${RECHECK_TEXT[0].toUpperCase()}${RECHECK_TEXT.slice(1)}: you trusted them${when ? ` ${when}` : ''}, as the page showed them then — it now finds front matter where Claude Code finds it, lists the shell commands skills run, and shows the other tools' settings your subscriptions' agents read. Not applied until you trust them again.`,
     trusted: `Trusted${when ? ` ${when}` : ''}: they apply to sessions in this folder while they stay exactly as they are.`,
     unverifiable: 'One of these files cannot be checked (a link out of the workspace, too large to show, or not a file): they are not applied, and cannot be trusted until it is a plain file of the project.',
-    none: 'This project has no configuration of its own for Claude Code or the other tools (no file under .claude/, no .mcp.json, no .codex/, .cursor/ …): nothing to trust. Its CLAUDE.md or AGENTS.md, if any, is read as instructions.',
+    none: v?.agentState === 'none' || !v
+      ? 'This project has no configuration of its own for Claude Code or the other tools (no file under .claude/, no .mcp.json, no .codex/, .cursor/ …): nothing to trust. Its CLAUDE.md or AGENTS.md, if any, is read as instructions.'
+      : 'Claude Code: nothing of its own here (no file under .claude/, no .mcp.json) — Claude Code on Bedrock and on your plan read this project\'s CLAUDE.md, if any, as instructions. The other tools\' settings are below.',
     workspace: 'The Workspace\'s own settings always apply, as they did before projects.',
     unchecked: 'The sandbox did not say what they hold: they are not applied.',
   };
   const fileNote = (f: SettingsView['files'][number]) =>
-    f.type === 'big' ? 'too large to show' : f.type === 'other' ? 'not a file it could read' : f.type === 'link' ? `a link to ${f.target ?? '?'}` : `${f.size ?? 0} bytes`;
+    f.type === 'big' ? 'too large to show' : f.type === 'other' ? 'not a file it could read' : f.type === 'link' ? `a link to ${f.target ?? '?'}`
+      : f.type === 'name' ? 'a folder no tool here reads: listed by its name alone' : `${f.size ?? 0} bytes`;
+  // what the other states say beside Claude Code's: Claude on your plan's (its own plugin record) and an agent's (the
+  // other tools' part too)
+  const planLine = !v || v.planState === v.state ? null
+    : v.planReason === 'plan-plugins' ? 'Claude on your plan: not applied in its sessions — they turn on a plugin it has not installed (claude-sub in the terminal). Install it there, then trust them again.'
+    : v.planState === 'changed' ? 'Claude on your plan: its own plugin record changed since you trusted them — not applied in its sessions until you trust them again.'
+    : settingsApplied(v.planState) ? `Claude on your plan: ${v.planState === 'trusted' ? 'trusted, as they are' : 'they apply'}.`
+    : 'Claude on your plan: not applied in its sessions until you trust them.';
+  const agentLine = !v || v.agentState === v.state || v.state === 'workspace' ? null
+    : !v.summary.agentsComplete ? `The other tools' settings (Codex, Copilot, Cursor, Grok) cannot all be checked or shown here (${label(v.summary.agentsMissing.join('; ') || 'not said', 400)}): trusting covers Claude Code's alone, and your subscriptions' agents do not start in this folder.`
+    : v.agentState === 'changed' ? 'The other tools\' settings changed since you trusted them: your subscriptions\' agents do not start in this folder until you trust them again.'
+    : settingsApplied(v.agentState) ? null
+    : 'The other tools\' settings (Codex, Copilot, Cursor, Grok) are not trusted: your subscriptions\' agents do not start in this folder until they are. Claude Code on Bedrock does not read them.';
+  // the state the session about to start goes by: Claude Code on Bedrock's (Claude Code's part), Claude on your plan's,
+  // or an agent's (both parts)
+  const vendor = !!start?.harness && start.harness !== 'bedrock' && start.harness !== 'claude';
+  const startState = !v ? null : vendor ? v.agentState : start?.harness === 'claude' ? v.planState : v.state;
+  const worktree = !!v && [...v.summary.missing, ...v.summary.agentsMissing].some((m) => /linked git worktree or a submodule/.test(m));
   const sm = v?.summary;
   // a row: its text with whitespace made visible; a hook's or an MCP server's whole entry below it; one that could
   // hide something in whitespace or lines folded until opened
-  type Row = { text: string; json?: string; mixed?: boolean; careful?: boolean };
+  type Row = { text: string; json?: string; mixed?: boolean; careful?: boolean; block?: boolean };
   const rowsOf = (title: string, rows: Row[]) => rows.map((r, i) => ({ ...r, key: `${title}#${i}`, careful: r.careful || needsLook(r.text) || (r.json ? needsLook(r.json) : false) }));
   const sections: [string, Row[], string][] = sm ? [
     ['Hooks (commands Claude Code runs — Grok, Cursor and Copilot run them too)', sm.hooks.map((h) => ({ text: `${h.event}${h.matcher ? ` (${h.matcher})` : ''}: ${h.command}`, json: h.json, mixed: h.mixed, careful: h.careful })), 'settings-hooks'],
@@ -891,7 +911,7 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
     ['Skills, commands, agents … — this folder\'s .claude/ and the folders\' above it to the git root: what their front matter grants, and the shell commands they run when used', sm.files.flatMap((f) => (f.grants.length
       ? f.grants.map((g) => ({ text: `${f.name}: ${g.key}: ${g.value}` })) : [{ text: `${f.name}: grants nothing in its front matter, runs no shell command` }])), 'settings-tree'],
     ['Other tools\' settings — read as they are by your subscriptions\' agents (Codex, Copilot, Cursor, Grok) when they start here: their hooks, MCP servers and rules',
-      sm.tools.map((t) => ({ text: `${t.file} (${t.tool}):\n${t.text}`, careful: t.careful })), 'settings-tools'],
+      sm.tools.map((t) => ({ text: `${t.file} (${t.tool}):\n${t.text}`, careful: t.careful, block: true })), 'settings-tools'],
     ['Notes', sm.notes.map((n) => ({ text: `${n.file}: ${n.note}` })), 'settings-notes'],
   ] : [];
   const all = sections.flatMap(([title, rows]) => rowsOf(title, rows));
@@ -906,7 +926,8 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
             const shown = visibleWs(r.text);
             return (
               <li key={r.key} class={r.careful ? 'ps-careful' : ''} data-testid={r.careful ? 'settings-careful' : undefined}>
-                <code>{folded ? `${shown.slice(0, 120)}…` : shown}</code>
+                {/* (a file whole: a code block, each line as the dialog shows a value, its end marked ⏎) */}
+                {r.block && !folded ? <code class="ps-code">{r.text.split('\n').map(visibleWs).join('⏎\n')}</code> : <code>{folded ? `${shown.slice(0, 120)}…` : shown}</code>}
                 {r.mixed && <span class="warn-text small"> — names more than one of a command, a URL and a prompt: check which one runs</span>}
                 {folded ? (
                   <button type="button" class="btn small ghost" onClick={() => setOpened((x) => new Set(x).add(r.key))} data-testid="settings-open">
@@ -921,13 +942,21 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
         </ul>
       </div>
     ) : null;
-  const canTrust = v && v.hash && v.summary.complete && (v.state === 'untrusted' || v.state === 'changed' || v.state === 'recheck');
+  // (Trust: for any state it would change — Claude Code's, Claude on your plan's, an agent's)
+  const canTrust = v && v.hash && v.summary.complete && [v.state, v.planState, v.agentState].some((x) => x === 'untrusted' || x === 'changed' || x === 'recheck');
   return (
     <Dialog title={`${p.name}: its own Claude Code settings`} onClose={onClose} testid="settings-dialog">
       {!v && !err && <p class="muted small"><Spinner size={12} /> Reading them in the sandbox…</p>}
       {v && (
         <>
           <p class={`small${settingsApplied(v.state) ? '' : ' warn-text'}`} data-testid="settings-state" data-state={v.state}>{lead[v.state]}</p>
+          {planLine && <p class={`small${settingsApplied(v.planState) ? '' : ' warn-text'}`} data-testid="settings-plan" data-state={v.planState}>{planLine}</p>}
+          {agentLine && <p class="small warn-text" data-testid="settings-agents" data-state={v.agentState}>{agentLine}</p>}
+          {worktree && (
+            <p class="warn-text small" data-testid="settings-worktree">This folder is a linked git worktree or a submodule: Claude Code and the other tools read another
+              checkout&apos;s configuration then, which this page does not list. Its settings are never applied here, and your subscriptions&apos; agents do not start in it — add the
+              main checkout as a project instead.</p>
+          )}
           {v.files.length > 0 && (
             <ul class="ps-files small" data-testid="settings-files">
               {v.files.slice(0, 500).map((f) => (
@@ -955,11 +984,11 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
               packages a trusted hook or MCP server runs (bash scripts/x.sh, npx some-package) — read those too before you trust them.
             </p>
           )}
-          {!settingsApplied(v.state) && start?.harness && start.harness !== 'bedrock' && start.harness !== 'claude' ? (
+          {!settingsApplied(startState) && start?.harness && vendor ? (
             <p class="warn-text small" data-testid="settings-agent-waits">{harnessName(start.harness)} starts in this folder only once you trust them: it reads them as they
               are — its own and Claude Code&apos;s — with no switch here to leave them out. Every project is in the one sandbox: trusting runs these hooks there, not on your
               computer.</p>
-          ) : !settingsApplied(v.state) && (
+          ) : !settingsApplied(startState) && (
             <p class="muted small">Until then a session here runs with your own settings only (the sandbox&apos;s ~/.claude) and, of MCP servers, the stack&apos;s own; this
               project&apos;s CLAUDE.md, commands and agents are not read either. Every project is in the one sandbox: trusting runs these hooks there, not on your computer.</p>
           )}
@@ -975,7 +1004,7 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
         <button type="button" class="btn" onClick={onClose}>
           {start ? 'Cancel' : 'Close'}
         </button>
-        {start && v && !settingsApplied(v.state) && (!start.harness || start.harness === 'bedrock' || start.harness === 'claude') && (
+        {start && v && !settingsApplied(startState) && !vendor && (
           <button type="button" class="btn" disabled={busy} onClick={() => void go(null)} data-testid="settings-start-without">
             Start without them
           </button>
@@ -990,7 +1019,7 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
             {busy ? <Spinner size={12} /> : null} {start ? 'Trust them and start' : 'Trust this project\'s Claude Code settings'}
           </button>
         )}
-        {start && v && settingsApplied(v.state) && (
+        {start && v && settingsApplied(startState) && (
           <button type="button" class="btn primary" disabled={busy} onClick={() => void go(null)} data-testid="settings-start">
             Start the session
           </button>

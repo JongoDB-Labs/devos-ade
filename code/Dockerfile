@@ -64,6 +64,8 @@ COPY --from=terminal bin/bn-coded.mjs bin/bn-preview.mjs bin/bn-git-credential b
 COPY --from=terminal ssh_known_hosts /opt/terminal/ssh_known_hosts
 COPY --from=terminal egress/bn-egress.mjs /opt/terminal/egress/
 COPY --from=terminal claude-code/package.json /opt/terminal/claude-code/package.json
+# (its pins: the GitHub Copilot CLI's is the one whose reading of .github/ was audited — trust-frontmatter.test.mjs)
+COPY --from=terminal Dockerfile /opt/terminal/Dockerfile
 ENV BN_TERMINAL_DIR=/opt/terminal
 # (the files of test/one-at-a-time.txt check that parsing stays linear, by timing: run after the others, one at a time —
 # another file's work at the same moment is noise to them)

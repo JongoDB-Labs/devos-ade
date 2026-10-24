@@ -7,6 +7,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { frontMatter, ccFrontMatterBlock, shellBlocks, summarize, stripJsonc, pluginsOf, hashOf, checkPlugins } from '../server/trust.mjs';
 import { assertLinear } from './linear.mjs';
+import { TERMINAL_DIR } from './helpers.mjs';
+import path from 'node:path';
+
+// bn-coded (terminal/, or the copy the image's test stage gets)
+const bnCoded = () => import(path.join(TERMINAL_DIR, 'bin/bn-coded.mjs'));
 
 const BASH = { key: 'allowed-tools', value: 'Bash(*)' };
 
@@ -218,8 +223,16 @@ test('another tool\'s file: plugins and marketplaces found by its parsed keys (a
   assert.equal(verdict(tool('.grok/config.yml', 'a: !!binary bWFya2V0cGxhY2Vz\n', 'Grok')).complete, false, 'a tag');
   assert.equal(verdict(tool('.agents/plugins/marketplace.json', '{"name": "m"}', 'Codex, Cursor, Grok and GitHub Copilot')).complete, false);
   assert.deepEqual(pluginsOf('.github/hooks/h.json', '{"hooks": {}}'), { key: null, unreadable: null });
-  // the raw text's "marketplaces": stays a trigger where nothing parses it (a Markdown file)
-  assert.equal(pluginsOf('.agents/skills/s/SKILL.md', 'see "marketplaces": x').key, 'marketplace');
+  // exact names only, never a word that holds one (a dependency named eslint-plugin-react, an MCP server my-plugin-server),
+  // and only in what is parsed: a Markdown file's text is not a key
+  assert.deepEqual(pluginsOf('.github/x/package.json', '{"devDependencies": {"eslint-plugin-react": "7"}, "pluginOptions": {}}'), { key: null, unreadable: null });
+  assert.equal(pluginsOf('.cursor/mcp.json', '{"mcpServers": {"my-plugin-server": {"command": "node"}}}').key, null);
+  assert.equal(pluginsOf('.grok/config.yaml', 'name: eslint-plugin-react\n').key, null);
+  assert.equal(pluginsOf('.grok/config.yaml', 'additional_plugins: [a]\n').key, 'additional_plugins');
+  assert.equal(pluginsOf('.github/copilot/settings.json', '{"Plugin-Dirs": ["./p"]}').key, 'Plugin-Dirs');
+  assert.equal(pluginsOf('.agents/skills/s/SKILL.md', 'see "marketplaces": x').key, null);
+  // a name a folding disk opens as marketplace.json: one
+  assert.equal(pluginsOf('.claude-plugin/marketplace.jſon', '{}').key, 'a marketplace.json');
 });
 
 test('Claude Code\'s own settings: a marketplace the project adds is never trusted; a plugin it turns on is listed when installed in the sandbox (its version in the hash), never trusted when not; .mcp.json names never count', () => {
@@ -232,12 +245,21 @@ test('Claude Code\'s own settings: a marketplace the project adds is never trust
   assert.equal(verdict(own('.mcp.json', '{"mcpServers": {"my-plugin-server": {"command": "node", "args": ["plugin.js"]}}}')).complete, true);
   // the keys known to be harmless in a project's file: shown, trustable
   assert.equal(verdict(own('.claude/settings.json', '{"pluginConfigs": {"p@m": {"a": 1}}, "strictKnownMarketplaces": [], "allowedMarketplaces": []}')).complete, true);
-  // anything else naming plugins or a marketplace, at any depth — a key of a later Claude Code, an env variable that
-  // could steer how plugins load: never trusted, the key named
-  v = verdict(own('.claude/settings.json', '{"pluginMarketplaces": {"m": {}}}'));
-  assert.equal(v.complete, false); assert.match(v.notes, /names plugins or a marketplace \(pluginMarketplaces\)/);
-  v = verdict(own('.claude/settings.json', '{"env": {"CLAUDE_CODE_PLUGIN_X": "1"}}'));
-  assert.equal(v.complete, false); assert.match(v.notes, /\(env › CLAUDE_CODE_PLUGIN_X\)/);
+  // Claude Code 2.1.309's keys that bring plugins, by their exact names (in any case): never trusted; a key it does not
+  // read (pluginMarketplaces): shown under Other settings, as any other
+  for (const k of ['plugins', 'pluginDirs', 'additionalPlugins', 'syncClaudeAiPlugins', 'PREPENDPLUGINS', 'appendPlugins', 'pluginSuggestionMarketplaces']) {
+    v = verdict(own('.claude/settings.json', JSON.stringify({ [k]: ['./p'] })));
+    assert.equal(v.complete, false, k); assert.match(v.notes, /names plugins/, k);
+  }
+  assert.equal(verdict(own('.claude/settings.json', '{"pluginMarketplaces": {"m": {}}}')).complete, true);
+  assert.deepEqual(summarize([own('.claude/settings.json', '{"pluginMarketplaces": {"m": {}}}')]).other.map((o) => o.key), ['pluginMarketplaces']);
+  // an env variable of Claude Code's that could steer where plugins come from: never trusted, the variable named
+  v = verdict(own('.claude/settings.json', '{"env": {"CLAUDE_CODE_PLUGIN_SEED_DIR": "./p"}}'));
+  assert.equal(v.complete, false); assert.match(v.notes, /sets CLAUDE_CODE_PLUGIN_SEED_DIR/);
+  assert.equal(verdict(own('.claude/settings.json', '{"env": {"ESLINT_PLUGIN_X": "1"}}')).complete, true);
+  // a settings file a folding disk opens as .claude/settings.json: read as one
+  v = verdict(own('.claude/ſettings.json', '{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "evil"}]}]}}'));
+  assert.deepEqual(summarize([own('.claude/ſettings.json', '{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "evil"}]}]}}')]).hooks.map((h) => h.command), ['evil']);
   // enabledPlugins: a plugin installed in the sandbox — listed, trustable
   v = verdict(own('.claude/settings.json', '{"enabledPlugins": {"fmt@acme": true, "old@acme": false}}'), reg([installed('fmt@acme')]));
   assert.equal(v.complete, true, v.notes);
@@ -272,7 +294,25 @@ test('Claude Code\'s own settings: a marketplace the project adds is never trust
   assert.equal(checkPlugins(both([installed('a@m')], 'ok', [{ id: 'a@m', installed: false, versions: [] }], 'none')).ok, true);
 });
 
+test('line breaks YAML knows beyond \\n and \\r (NEL, LS, PS): a comment ends there for the tools\' YAML readers — never a key hidden behind one', () => {
+  for (const br of ['\x85', '\u2028', '\u2029']) {
+    // (front matter: the key after the break is read — never plain, its grant listed)
+    const fm = frontMatter(`---\n# notes${br}allowed-tools: shell(*), write\n---\nGo.\n`);
+    assert.equal(fm.plain, false, JSON.stringify(br));
+    const sm = summarize([{ name: '.claude/agents/a.md', size: 1, type: 'file', text: `---\nname: a # x${br}mcpServers: evil\n---\n`, tool: null, at: '' }]);
+    assert.equal(sm.complete, false, JSON.stringify(br));
+    // (another tool's YAML: an alias, a complex key, a tag right after the break — cannot be looked at)
+    for (const t of [`k: &k x${br}*k : 1\n`, `a: 1${br}? x\n: 1\n`, `a: 1${br}!!binary x: 1\n`]) {
+      assert.notEqual(pluginsOf('.grok/config.yml', t).unreadable, null, JSON.stringify([br, t]));
+    }
+  }
+});
+
 test('stripJsonc and pluginsOf: linear in the text', () => {
+  assertLinear((n) => '-*'.repeat(n), (t) => pluginsOf('.github/x.yml', t), 'aliases after dashes');
+  assertLinear((n) => `${'- '.repeat(n)}*`, (t) => pluginsOf('.github/x.yml', t), 'dashes, an alias at the end');
+  assertLinear((n) => ' ?'.repeat(n), (t) => pluginsOf('.github/x.yml', t), 'question marks');
+  assertLinear((n) => '{,'.repeat(n), (t) => pluginsOf('.github/x.yml', t), 'flow openers');
   assertLinear((n) => `{${'"a": 1, // x\n'.repeat(n)}}`, stripJsonc, 'comments');
   assertLinear((n) => `[${',     '.repeat(n)}]`, stripJsonc, 'commas and whitespace');
   assertLinear((n) => `${'/* x */'.repeat(n)}`, stripJsonc, 'block comments');
@@ -365,5 +405,65 @@ test('a row\'s place is fixed by its name: no other folder and surface fit it, s
       const sfc = parts.slice(0, j).join('/');
       if (sfc !== surface) assert.equal(placeOf({ name, at: '', surface: sfc }, ROOT), null, `${name}: ${sfc}`);
     }
+  }  // which part each is in — Claude Code's (v0.23.0's listing: the project's own .claude/ and .mcp.json, the six trees
+  // above it) or the other tools' — by the folded surface, as bn-coded puts it
+  const partOf = (name, at, surface, type = 'file') => placeOf({ name, at, surface, type }, ROOT)?.claude;
+  assert.equal(partOf('.claude/settings.json', '', '.claude'), true);
+  assert.equal(partOf('.CLAUDE/plugins/p/h.json', '', '.CLAUDE'), true);
+  assert.equal(partOf('.mcp.jſon', '', '.mcp.jſon'), true);
+  assert.equal(partOf('.github/hooks/h.json', '', '.github/hooks'), false);
+  assert.equal(partOf('/workspace/mono/.claude/skills/s/SKILL.md', '/workspace/mono', '.claude/skills'), true);
+  assert.equal(partOf('/workspace/mono/.claude/ſkills/s/SKILL.md', '/workspace/mono', '.claude/ſkills'), true);
+  assert.equal(partOf('/workspace/mono/.claude', '/workspace/mono', '.claude'), true, 'a .claude above that is no folder');
+  assert.equal(partOf('/workspace/mono/.claude/settings.json', '/workspace/mono', '.claude/settings.json'), false);
+  assert.equal(partOf('/workspace/mono/.claude/ſettings.json', '/workspace/mono', '.claude/ſettings.json'), false);
+  assert.equal(partOf('/workspace/mono/.claude/plugins/p/h.json', '/workspace/mono', '.claude/plugins'), false);
+  assert.equal(partOf('/workspace/mono/.mcp.json', '/workspace/mono', '.mcp.json'), false);
+  // the workspace itself is never a folder above (its .claude is your own)
+  assert.equal(placeOf({ name: '/workspace/.claude/skills/s.md', at: '/workspace', surface: '.claude/skills' }, ROOT), null);
+  // a row by its name alone: only a folder directly under .github/
+  assert.equal(partOf('.github/workflows', '', '.github/workflows', 'name'), false);
+  assert.equal(partOf('/workspace/mono/.github/workflows', '/workspace/mono', '.github/workflows', 'name'), false);
+  for (const [name, surface] of [['.claude/skills', '.claude'], ['.github/hooks/x', '.github/hooks'], ['.github/workflows/x', '.github/workflows'], ['.codex', '.codex'],
+    ['.github', '.github'], ['.github/hooks', '.github/hooks'], ['.github/Skills', '.github/Skills'], ['.github/agentſ', '.github/agentſ']]) {
+    assert.equal(placeOf({ name, at: '', surface, type: 'name' }, ROOT), null, name);
   }
+});
+
+test('a file not shown whole is not looked into (it is incomplete already); an entry nested too deep to show: incomplete, never an error', () => {
+  const big = `${'-*'.repeat(140000)}\n`;
+  const t0 = Date.now();
+  const sm = summarize([{ name: '.github/x.yml', size: big.length, type: 'file', text: big, tool: 'GitHub Copilot', at: '' }]);
+  assert.ok(Date.now() - t0 < 2000, `${Date.now() - t0} ms`);
+  assert.equal(sm.complete, false);
+  assert.match(sm.missing.join('; '), /another tool's file over/);
+  let deep = '{}';
+  for (let i = 0; i < 20000; i++) deep = `{"a":${deep}}`;
+  for (const text of [`{"hooks": {"Stop": [{"hooks": [${deep}]}]}}`, `{"mcpServers": {"x": ${deep}}}`]) {
+    const name = text.includes('mcpServers') ? '.mcp.json' : '.claude/settings.json';
+    const r = summarize([{ name, size: text.length, type: 'file', text, tool: null, at: '' }]);
+    assert.equal(r.complete, false, name);
+    assert.match(r.missing.join('; '), /nested/, name);
+  }
+});
+
+test('fold: the same in the code container as in bn-coded (names a disk that folds them opens as one)', async () => {
+  const { fold } = await import('../server/trust.mjs');
+  const { fold: bnFold } = await bnCoded();
+  for (const n of ['.Curſor', 'lſp.json', '.ﬂow', 'Straße', '.CLAUDE', 'ǅ', 'ﬁle', 'Ⅻ', 'ｃｏｄｅ', 'K', 'İ', 'ΐ']) assert.equal(fold(n), bnFold(n), n);
+  assert.equal(fold('.curſor'), '.cursor');
+  assert.equal(fold('.ﬂ'), '.fl');
+  assert.equal(fold('ß'), 'ss');
+  // and the folders of .github/ the pinned Copilot reads: the same list
+  const { COPILOT_GITHUB_DIRS } = await import('../server/trust.mjs');
+  const { COPILOT_GITHUB_DIRS: bnDirs } = await bnCoded();
+  assert.deepEqual(COPILOT_GITHUB_DIRS, bnDirs);
+});
+
+test('the Copilot CLI the image pins is the one whose .github/ reading was audited (a new pin: audit COPILOT_GITHUB_DIRS again)', async () => {
+  const fs = await import('node:fs');
+  const { COPILOT_AUDITED } = await bnCoded();
+  const df = fs.readFileSync(path.join(TERMINAL_DIR, 'Dockerfile'), 'utf8');
+  const pins = [...df.matchAll(/^ARG COPILOT_VERSION=(\S+)/gm)].map((m) => m[1]);
+  assert.deepEqual(pins, [COPILOT_AUDITED]);
 });

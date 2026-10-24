@@ -231,9 +231,10 @@ export const shownIn = (wsPath: string, root: string): string => (root && wsPath
 
 /** GET /api/projects/ID/settings: a project's own Claude Code settings — what they set (text only), their hash. */
 export interface SettingsFile {
-  /** .mcp.json, or a path under .claude/ */
+  /** .mcp.json, or a path under .claude/ (or another tool's: .codex/, .github/ …) */
   name: string;
-  type: 'file' | 'link' | 'big' | 'other';
+  /** name: a folder no tool here reads, listed by its name alone */
+  type: 'file' | 'link' | 'big' | 'other' | 'name';
   size: number | null;
   target: string | null;
 }
@@ -266,6 +267,9 @@ export interface SettingsSummary {
   /** every key and value of the files is above, whole (else: never trustable — what was left out, in `missing`) */
   complete: boolean;
   missing: string[];
+  /** the other tools' part shown whole too (else Trust covers Claude Code's part alone: agents do not start there) */
+  agentsComplete: boolean;
+  agentsMissing: string[];
 }
 
 // A value of the trust summary that could hide something in plain sight: any character but printable ASCII, a tab or a
@@ -287,6 +291,11 @@ export interface SettingsView {
   project: string;
   path: string;
   state: SettingsState;
+  /** Claude on your plan's state (its own plugin record) — reason plan-plugins: a plugin they turn on is not installed there */
+  planState: SettingsState;
+  planReason: string | null;
+  /** an agent of your subscriptions': both parts (Claude Code's and the other tools') */
+  agentState: SettingsState;
   /** what trusting them names (null: nothing that can be trusted) */
   hash: string | null;
   trustedAt: number | null;
@@ -295,7 +304,7 @@ export interface SettingsView {
   /** why not all of them could be shown, in the sandbox's own words (not one of bn-coded's): apart (SandboxSaid) */
   said: SandboxWords | null;
 }
-const FILE_TYPES = ['file', 'link', 'big', 'other'];
+const FILE_TYPES = ['file', 'link', 'big', 'other', 'name'];
 const FILES_MAX = 500;
 // the backend shows at most 200 entries a section and 2,000 characters a value (with its own "… more characters not
 // shown"): anything beyond that here, too, makes the summary incomplete — never trustable
@@ -356,11 +365,18 @@ export function normSettingsView(v: unknown): SettingsView | null {
     }),
     complete: false,
     missing: Array.isArray(s.missing) ? s.missing.slice(0, 20).filter((x) => typeof x === 'string').map((x) => label(x, 200)) : [],
+    agentsComplete: false,
+    agentsMissing: Array.isArray(s.agentsMissing) ? s.agentsMissing.slice(0, 20).filter((x) => typeof x === 'string').map((x) => label(x, 200)) : [],
   };
   summary.complete = s.complete === true && !cut;
+  // (an older backend without the split: the other tools' files were in the one part)
+  summary.agentsComplete = (s.agentsComplete === undefined ? s.complete === true : s.agentsComplete === true) && !cut;
   if (cut) summary.missing.push('more than this page shows');
+  if (cut) summary.agentsMissing.push('more than this page shows');
   return {
     project: o.project, path: cwdOk(o.path) ? o.path : WORKSPACE_PATH, state,
+    planState: settingsState(o.planState) ?? state, planReason: o.planReason === 'plan-plugins' ? 'plan-plugins' : null,
+    agentState: settingsState(o.agentState) ?? state,
     // (a hash to trust only with a summary shown whole)
     hash: summary.complete && typeof o.hash === 'string' && /^[0-9a-f]{64}$/.test(o.hash) ? o.hash : null,
     trustedAt: typeof o.trustedAt === 'number' && Number.isFinite(o.trustedAt) && o.trustedAt > 0 ? o.trustedAt : null,

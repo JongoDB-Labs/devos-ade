@@ -427,11 +427,15 @@ test('project.settings: everything under a folder\'s .claude/ and its .mcp.json,
   r = await call({ op: 'project.settings', root: A });
   assert.ok(r.files.some((f) => f.name === path.join(M, '.mcp.json')), 'read on past an empty .git');
   fs.rmSync(path.join(M, 'packages/.git'), { recursive: true });
-  // a project outside any repository: the trees of every folder above it, the workspace's own included
+  // a project outside any repository: the trees of the folders above it, below the workspace (the workspace's own are
+  // yours, not the project's: they always apply)
   const N = path.join(WS, 'plain/sub');
   fs.mkdirSync(N, { recursive: true });
+  fs.mkdirSync(path.join(WS, 'plain/.claude/commands'), { recursive: true });
+  fs.writeFileSync(path.join(WS, 'plain/.claude/commands/up.md'), 'x');
   r = await call({ op: 'project.settings', root: N });
-  assert.deepEqual(r.files.map((f) => f.name), [path.join(WS, '.claude/commands/ws.md')]);
+  assert.deepEqual(r.files.map((f) => f.name), [path.join(WS, 'plain/.claude/commands/up.md')]);
+  fs.rmSync(path.join(WS, 'plain/.claude'), { recursive: true });
   // a linked worktree or a submodule (a .git that is a file, here or above): unverifiable
   fs.writeFileSync(path.join(N, '.git'), 'gitdir: /workspace/mono/.git/worktrees/sub\n');
   r = await call({ op: 'project.settings', root: N });
@@ -611,15 +615,39 @@ test('project.settings: the other tools\' own configuration in the folder too (y
   put('.vscode/settings.json', '{}');
   put('AGENTS.md', 'instructions');
   put('.cursorrules', 'instructions');
+  // (GitHub's own files and folders no pinned tool reads: .github/workflows/ and ISSUE_TEMPLATE/ by their names alone)
+  put('.github/stale.yaml', 'GitHub\'s own');
+  put('.github/scripts/big.sh', 'x'.repeat(20000));
+  put('.github/actions/a/dist/index.js', 'x'.repeat(300 << 10));
+  put('.github/release-notes.cfg', 'unknown: listed');
   let r = await call({ op: 'project.settings', root: D });
-  assert.deepEqual(r.files.map((f) => [f.name, f.surface]), [['.agents/skills/s/SKILL.md', '.agents'], ['.codex/config.toml', '.codex'],
-    ['.codex/x/.claude/skills/s.md', '.codex'], ['.copilot/mcp-config.json', '.copilot'], ['.cursor/mcp.json', '.cursor'], ['.cursor/rules/a.mdc', '.cursor'],
-    ['.gemini/settings.json', '.gemini'], ['.github/agents/a.md', '.github/agents'], ['.github/extensions/e/index.js', '.github/extensions'],
-    ['.github/hooks/pre.json', '.github/hooks'], ['.github/mcp.json', '.github/mcp.json'], ['.grok/settings.json', '.grok'], ['.vscode/mcp.json', '.vscode/mcp.json'],
-    ['lsp.json', 'lsp.json']]);
+  assert.deepEqual(r.files.map((f) => [f.name, f.surface, f.type]), [['.agents/skills/s/SKILL.md', '.agents', 'file'], ['.codex/config.toml', '.codex', 'file'],
+    ['.codex/x/.claude/skills/s.md', '.codex', 'file'], ['.copilot/mcp-config.json', '.copilot', 'file'], ['.cursor/mcp.json', '.cursor', 'file'],
+    ['.cursor/rules/a.mdc', '.cursor', 'file'], ['.gemini/settings.json', '.gemini', 'file'], ['.github/ISSUE_TEMPLATE', '.github/ISSUE_TEMPLATE', 'name'],
+    ['.github/actions', '.github/actions', 'name'], ['.github/agents/a.md', '.github/agents', 'file'], ['.github/extensions/e/index.js', '.github/extensions', 'file'],
+    ['.github/hooks/pre.json', '.github/hooks', 'file'], ['.github/mcp.json', '.github/mcp.json', 'file'], ['.github/release-notes.cfg', '.github/release-notes.cfg', 'file'],
+    ['.github/scripts', '.github/scripts', 'name'], ['.github/workflows', '.github/workflows', 'name'], ['.grok/settings.json', '.grok', 'file'],
+    ['.vscode/mcp.json', '.vscode/mcp.json', 'file'], ['lsp.json', 'lsp.json', 'file']]);
   assert.ok(r.files.every((f) => f.at === ''));
+  // two parts: Claude Code's (none here: no hash — v0.23.0's listing, what Claude Code on Bedrock decides on), the
+  // other tools' (an agent of your subscriptions needs it too)
+  assert.equal(r.hash, null);
   assert.equal(r.verifiable, true);
+  assert.equal(r.agentVerifiable, true);
+  assert.match(r.agentHash, /^[0-9a-f]{64}$/);
+  // what a folder by its name alone holds is not in the hash; its name is
+  const before = r.agentHash;
+  put('.github/workflows/ci.yml', 'on: [push, pull_request]');
+  assert.equal((await call({ op: 'project.settings', root: D })).agentHash, before);
+  put('.github/workflows2/x.yml', 'x');
+  assert.notEqual((await call({ op: 'project.settings', root: D })).agentHash, before);
+  fs.rmSync(path.join(D, '.github/workflows2'), { recursive: true });
+  // a .claude of the folder: Claude Code's part (its own hash); the other tools' hash as before
+  put('.claude/settings.json', '{}');
+  r = await call({ op: 'project.settings', root: D });
   assert.match(r.hash, /^[0-9a-f]{64}$/);
+  assert.equal(r.agentHash, before);
+  fs.rmSync(path.join(D, '.claude'), { recursive: true });
   // a .github that is a link: named as one, never read through (never trustable)
   fs.rmSync(path.join(D, '.github'), { recursive: true });
   fs.mkdirSync(path.join(WS, 'elsewhere/hooks'), { recursive: true });
@@ -643,12 +671,65 @@ test('project.settings: the other tools\' configuration in the folders above it 
   put(path.join(WS, '.codex/config.toml'), 'above the git root: not read');
   let r = await call({ op: 'project.settings', root: A });
   assert.deepEqual(r.files.map((f) => f.name), [`${M}/.codex/config.toml`, `${M}/.github/hooks/h.json`, `${M}/.mcp.json`, `${M}/.vscode/mcp.json`]);
-  assert.equal(r.verifiable, true);
-  const before = r.hash;
+  // (all the other tools' part: Claude Code reads only the project's own .mcp.json)
+  assert.equal(r.hash, null);
+  assert.equal(r.agentVerifiable, true);
+  const before = r.agentHash;
   put(path.join(M, '.codex/config.toml'), '[mcp_servers.y]\ncommand = "other"\n');
   r = await call({ op: 'project.settings', root: A });
-  assert.notEqual(r.hash, before, 'a change above changes the hash');
+  assert.notEqual(r.agentHash, before, 'a change above changes the hash');
+  // a .claude above: its six trees Claude Code's part, its settings and plugins the other tools' (Grok and Copilot load
+  // them from the folders above; Claude Code does not)
+  put(path.join(M, '.claude/settings.json'), '{"enabledPlugins": {"x@y": true}}');
+  put(path.join(M, '.claude/plugins/p/hooks.json'), '{}');
+  r = await call({ op: 'project.settings', root: A });
+  assert.equal(r.hash, null, 'Claude Code\'s part: nothing of it above');
+  assert.equal(r.plugins, undefined, 'a plugin turned on above: not Claude Code\'s');
+  assert.ok(r.files.some((f) => f.name === `${M}/.claude/settings.json`) && r.files.some((f) => f.name === `${M}/.claude/plugins/p/hooks.json`));
+  put(path.join(M, '.claude/skills/s/SKILL.md'), '---\nallowed-tools: Bash(*)\n---\n');
+  r = await call({ op: 'project.settings', root: A });
+  assert.match(r.hash, /^[0-9a-f]{64}$/);
+  fs.rmSync(path.join(M, '.claude'), { recursive: true });
   fs.rmSync(path.join(WS, '.codex'), { recursive: true });
+});
+
+test('project.settings: names compared as a disk that folds them opens them (ſ is s, ﬂ is fl, ß is ss — the Mac\'s does), from the folder\'s own entries; a folder that cannot be listed: unverifiable', async () => {
+  const M = path.join(WS, 'folded'), A = path.join(M, 'app');
+  const put = (p, text = '{}') => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, text); };
+  fs.mkdirSync(path.join(M, '.git'), { recursive: true });
+  put(path.join(M, '.git/HEAD'), 'ref: refs/heads/main\n');
+  put(path.join(A, 'lſp.json'));
+  put(path.join(A, '.curſor/mcp.json'));
+  put(path.join(A, '.mcp.jſon'));
+  put(path.join(A, '.vſcode/mcp.json'));
+  put(path.join(A, '.agentſ/skills/s/SKILL.md'), '---\nname: s\n---\n');
+  put(path.join(A, '.claude/ſettings.json'), '{"hooks": {}}');
+  put(path.join(M, '.claude/ſettings.json'));
+  put(path.join(M, '.claude/ſkills/x/SKILL.md'), '---\nallowed-tools: Bash(*)\n---\n');
+  let r = await call({ op: 'project.settings', root: A });
+  assert.deepEqual(r.files.map((f) => [f.name, f.surface]), [['.agentſ/skills/s/SKILL.md', '.agentſ'], ['.claude/ſettings.json', '.claude'],
+    ['.curſor/mcp.json', '.curſor'], ['.mcp.jſon', '.mcp.jſon'], ['.vſcode/mcp.json', '.vſcode/mcp.json'],
+    [`${M}/.claude/ſettings.json`, '.claude/ſettings.json'], [`${M}/.claude/ſkills/x/SKILL.md`, '.claude/ſkills'], ['lſp.json', 'lſp.json']]);
+  assert.equal(r.verifiable, true);
+  assert.equal(r.agentVerifiable, true);
+  // the code container takes each of the folder's own to its part by the folded name too (those above: outside the
+  // workspace it knows here — code/test/trust-frontmatter.test.mjs)
+  const { checkFiles } = await import('../server/trust.mjs');
+  const parts = Object.fromEntries(checkFiles({ ...r, files: r.files.filter((f) => f.at === '') }, A).files.map((f) => [f.name, f.claude]));
+  assert.deepEqual(parts, { '.agentſ/skills/s/SKILL.md': false, '.claude/ſettings.json': true, '.curſor/mcp.json': false, '.mcp.jſon': true,
+    '.vſcode/mcp.json': false, 'lſp.json': false });
+  // a folder that can be entered but not listed: what it holds is not known — both parts unverifiable
+  if (process.getuid?.() !== 0) {
+    fs.chmodSync(A, 0o311);
+    try {
+      r = await call({ op: 'project.settings', root: A });
+      assert.equal(r.verifiable, false);
+      assert.equal(r.over, 'a folder that could not be read');
+      assert.equal(r.agentVerifiable, false);
+      assert.equal(r.agentOver, 'a folder that could not be read');
+    } finally { fs.chmodSync(A, 0o755); }
+  }
+  fs.rmSync(M, { recursive: true });
 });
 
 test('project.settings: the plugins a folder\'s own settings turn on, with what the sandbox has installed of each — in the hash, as the code container recomputes it', async () => {

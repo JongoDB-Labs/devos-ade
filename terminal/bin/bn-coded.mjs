@@ -402,13 +402,17 @@ const TRASH = '.bedrock-now-trash';
 // --- Taken only when it is one: absolute, plain, a real folder here (never through a link), not around or inside the
 // --- workspace, another top or a folder of the sandbox's own. bn-coded is not the boundary (the mounts are); this keeps
 // --- the paths it works on to the folders it was given. ---
+// fold(name) -> a name as a case-insensitive disk may match it: compatibility-normalized (NFKC: ſ is s, ﬁ is fi …) and
+// case-folded in full (ß is ss) — more than one disk folds rather than less: every name here is compared folded, so a
+// spelling the Mac's disk opens as .cursor or lsp.json is read as that (code/server/trust.mjs fold: the same)
+export const fold = (name) => String(name).normalize('NFKC').toUpperCase().toLowerCase().normalize('NFKC');
 const SANDBOX_OWN = ['/home', '/workspace', '/tmp', '/run', '/etc', '/usr', '/opt', '/proc', '/sys', '/dev', '/var', '/srv', '/root', '/bin', '/sbin',
   '/lib', '/lib32', '/lib64', '/libx32', '/boot'];
-// claudePartsOk(p) -> false when a part of p is .claude (any case) other than as …/.claude/worktrees/<name>[/…] (a
+// claudePartsOk(p) -> false when a part of p is .claude (any case, folded) other than as …/.claude/worktrees/<name>[/…] (a
 // worktree Claude Code made: not a configuration folder) — as ./stack project's rule (lib/projects.sh)
 export function claudePartsOk(p) {
   const parts = String(p).split('/');
-  return parts.every((c, i) => c.toLowerCase() !== '.claude' || ((parts[i + 1] ?? '').toLowerCase() === 'worktrees' && !!parts[i + 2]));
+  return parts.every((c, i) => fold(c) !== '.claude' || (fold(parts[i + 1] ?? '') === 'worktrees' && !!parts[i + 2]));
 }
 export function hostTops(env = process.env.BN_CODE_ROOTS, workspace = WORKSPACE, own = workspace === '/workspace' ? SANDBOX_OWN : []) {
   let list = [];
@@ -1601,8 +1605,8 @@ export function panelOverrides(text) {
   if (!drivers || drivers.length / 3 + hooks.size > GIT_DRIVERS_MAX) return null;
   return [...drivers, ...[...hooks].map((n) => [`hook.${n}.enabled`, 'false'])];
 }
-// a path the page names for a git command: one git can name too (gitRel), no .git part, at most 4096 bytes
-export const gitPathOk = (p) => gitRel(p) && Buffer.byteLength(p) <= 4096 && !p.split('/').some((s) => s.toLowerCase() === '.git');
+// a path the page names for a git command: one git can name too (gitRel), no .git part (folded), at most 4096 bytes
+export const gitPathOk = (p) => gitRel(p) && Buffer.byteLength(p) <= 4096 && !p.split('/').some((s) => fold(s) === '.git');
 // gitPaths(req) -> the paths of a request, checked (null: `all`); throws on anything else
 export function gitPaths(req, { allowAll = true } = {}) {
   if (req?.all === true) {
@@ -2434,78 +2438,101 @@ export const CONFIG_SURFACES = Object.freeze(['commands', 'agents', 'output-styl
 // and in every folder above it to the git root (the tools read theirs there too), as Claude Code's .claude/ trees.
 // Instructions alone (AGENTS.md, .cursorrules, copilot-instructions.md, .github/instructions/) are read as
 // instructions, as CLAUDE.md is: not listed.
-export const AGENT_TREES = Object.freeze(['.codex', '.cursor', '.grok', '.gemini', '.copilot', '.agents']);
+export const AGENT_TREES = Object.freeze(['.codex', '.cursor', '.grok', '.gemini', '.copilot', '.agents', '.claude-plugin']);
 export const AGENT_FILES = Object.freeze(['lsp.json', '.lsp.json']);
-// what of .github/ is not listed: GitHub's own (workflows, templates, owners, funding, Dependabot …), images, and the
-// instruction files
-export const GITHUB_INERT = Object.freeze(['workflows', 'issue_template', 'discussion_template', 'pull_request_template', 'pull_request_template.md',
-  'codeowners', 'dependabot.yml', 'dependabot.yaml', 'funding.yml', 'release.yml', 'release.yaml', 'labeler.yml', 'stale.yml', 'settings.yml',
-  'renovate.json', 'security.md', 'contributing.md', 'code_of_conduct.md', 'support.md', 'copilot-instructions.md', 'instructions']);
+// What the pinned Copilot CLI reads of .github/ (audited for COPILOT_AUDITED — code/test checks the image's pin is that
+// one: a new pin means a new audit): its folders, read whole; any other folder there is listed by its name alone (no
+// pinned tool reads it: its name is in the hash, not what it holds — trustable); every file directly under .github/ is
+// read whole but GitHub's own (GITHUB_INERT), images and the instruction files (read as instructions, as CLAUDE.md is)
+export const COPILOT_AUDITED = '1.0.103';
+export const COPILOT_GITHUB_DIRS = Object.freeze(['agents', 'copilot', 'extensions', 'hooks', 'skills', 'plugin']);
+export const GITHUB_INSTRUCTIONS = Object.freeze(['copilot-instructions.md', 'instructions']);
+export const GITHUB_INERT = Object.freeze(['codeowners', 'dependabot.yml', 'dependabot.yaml', 'funding.yml', 'release.yml', 'release.yaml',
+  'labeler.yml', 'labeler.yaml', 'stale.yml', 'stale.yaml', 'release-drafter.yml', 'release-drafter.yaml', 'settings.yml', 'renovate.json', 'security.md',
+  'contributing.md', 'code_of_conduct.md', 'support.md', 'pull_request_template.md']);
 const IMAGE = /\.(png|jpe?g|gif|svg|webp|ico)$/i;
-// settingsFiles(abs, {text}) -> {files: [{name, type: file|link|big|other, size, sha256, target, text}], hash,
-// verifiable, over}: every file of abs/.claude and abs/.mcp.json (names relative to abs), and of the six trees above it
-// (names absolute: /workspace/…), sorted; hash: the SHA-256 of what is there (null when nothing is); verifiable: each
-// was read whole as text and the bounds held (a link out of the workspace, a big file, a FIFO, a link to a folder, a
-// .claude that is a link are not: their hash does not cover what Claude Code would read); over: why not (null: fine).
-// text false: no texts (the hash alone — what a session's start compares)
+// settingsFiles(abs, {text}) -> {files, hash, verifiable, over, agentHash, agentVerifiable, agentOver, plugins …}: what
+// a folder's own configuration is, in two parts, each hashed and bounded on its own:
+//   Claude Code's — what Claude Code reads (v0.23.0's listing): every file of abs/.claude and abs/.mcp.json (names
+//     relative to abs), and of the six .claude trees of the folders above it to the git root (names absolute), never
+//     /workspace's own (your settings, not the project's); hash, verifiable, over. Claude Code on Bedrock and Claude on
+//     your plan decide on this part alone.
+//   the other tools' — what your subscriptions' agents read besides (AGENT_TREES, .github/, a lsp.json, .vscode/mcp.json,
+//     and above it the .claude settings and plugins Grok and Copilot load, a .mcp.json there); agentHash,
+//     agentVerifiable, agentOver. An agent needs both parts.
+// files: both parts' rows, sorted by name — {name, type: file|link|big|other|name, size, sha256, target, text, at,
+// surface}; type name: a folder listed by its name alone. verifiable: each was read whole as text and the bounds held
+// (a link out of the workspace, a big file, a FIFO, a link to a folder, a .claude that is a link, a folder that cannot
+// be listed are not); over: why not (null: fine). text false: no texts (the hashes alone — what a start compares)
 export function settingsFiles(abs, { text = false } = {}) {
-  const files = [];
-  let over = null, bytes = 0, shown = 0;
-  const one = (name, p) => {
+  // one part's rows and bounds
+  const part = () => ({ files: [], over: null, bytes: 0, shown: 0 });
+  const claude = part(), agent = part();
+  const one = (P, name, p) => {
     let lst;
-    try { lst = fs.lstatSync(p); } catch { return; }
+    try { lst = fs.lstatSync(p); } catch (e) { if (e.code !== 'ENOENT') P.over ??= 'a folder that could not be read'; return; }
     const target = lst.isSymbolicLink() ? (() => { try { return printable(fs.readlinkSync(p), 1000); } catch { return '?'; } })() : null;
     const real = confine(p);
     let st = null;
     try { st = real ? fs.statSync(real) : null; } catch { st = null; }
-    if (target !== null && (!real || !st)) { files.push({ name, type: 'link', target, sha256: sha256(`link:${target}`) }); return; }
-    if (!st || !st.isFile()) { files.push({ name, type: 'other', target, sha256: sha256(`other:${target ?? ''}`) }); return; }
-    if (st.size > CONFIG_FILE) { files.push({ name, type: 'big', target, size: st.size, sha256: sha256(`big:${st.size}:${st.mtimeMs}`) }); return; }
+    if (target !== null && (!real || !st)) { P.files.push({ name, type: 'link', target, sha256: sha256(`link:${target}`) }); return; }
+    if (!st || !st.isFile()) { P.files.push({ name, type: 'other', target, sha256: sha256(`other:${target ?? ''}`) }); return; }
+    if (st.size > CONFIG_FILE) { P.files.push({ name, type: 'big', target, size: st.size, sha256: sha256(`big:${st.size}:${st.mtimeMs}`) }); return; }
     const b = readRegular(real, CONFIG_FILE);
-    if (!b) { files.push({ name, type: 'other', target, sha256: sha256(`other:${target ?? ''}`) }); return; }
-    bytes += b.length;
-    if (bytes > CONFIG_BYTES) over ??= `more than ${CONFIG_BYTES >> 20} MiB in all`;
+    if (!b) { P.files.push({ name, type: 'other', target, sha256: sha256(`other:${target ?? ''}`) }); return; }
+    P.bytes += b.length;
+    if (P.bytes > CONFIG_BYTES) P.over ??= `more than ${CONFIG_BYTES >> 20} MiB in all`;
     const readable = isUtf8Buf(b);
     const row = { name, type: target ? 'link' : 'file', target, size: b.length, sha256: sha256(b), readable };
     if (text) {
       row.text = null;
-      if (readable && !over) {
+      if (readable && !P.over) {
         const t = b.toString('utf8');
-        shown += JSON.stringify(t).length;
-        if (shown > CONFIG_SHOWN) over ??= 'too much to show'; else row.text = t;
+        P.shown += JSON.stringify(t).length;
+        if (P.shown > CONFIG_SHOWN) P.over ??= 'too much to show'; else row.text = t;
       }
     }
-    files.push(row);
+    P.files.push(row);
   };
-  const walk = (dir, rel, depth) => {
+  const walk = (P, dir, rel, depth) => {
     let list;
-    try { list = fs.readdirSync(dir, { withFileTypes: true }); } catch { over ??= 'a folder that could not be read'; return; }
+    try { list = fs.readdirSync(dir, { withFileTypes: true }); } catch { P.over ??= 'a folder that could not be read'; return; }
     for (const d of list.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
-      if (over) return;
+      if (P.over) return;
       const name = `${rel}/${d.name}`, p = path.join(dir, d.name);
       if (d.isDirectory()) {
-        if (depth >= CONFIG_DEPTH) { over = `folders more than ${CONFIG_DEPTH} deep`; return; }
-        walk(p, name, depth + 1);
+        if (depth >= CONFIG_DEPTH) { P.over = `folders more than ${CONFIG_DEPTH} deep`; return; }
+        walk(P, p, name, depth + 1);
         continue;
       }
-      if (files.length >= CONFIG_FILES) { over = `more than ${CONFIG_FILES} files`; return; }
-      one(name, p);
+      if (P.files.length >= CONFIG_FILES) { P.over = `more than ${CONFIG_FILES} files`; return; }
+      one(P, name, p);
     }
   };
   // a .claude (or one of its trees): a folder is walked; anything else there (a link, a file) is one entry — never
   // trustable
-  const tree = (p, name) => {
+  const tree = (P, p, name) => {
     let c;
-    try { c = fs.lstatSync(p); } catch { c = null; }
-    if (c?.isDirectory()) walk(p, name, 1);
+    try { c = fs.lstatSync(p); } catch (e) { c = null; if (e.code !== 'ENOENT') P.over ??= 'a folder that could not be read'; }
+    if (c?.isDirectory()) walk(P, p, name, 1);
     else if (c?.isSymbolicLink()) {
       const target = (() => { try { return printable(fs.readlinkSync(p), 1000); } catch { return '?'; } })();
-      files.push({ name, type: 'link', target, sha256: sha256(`link:${target}`) });
-    } else if (c) files.push({ name, type: 'other', target: null, sha256: sha256('other:') });
+      P.files.push({ name, type: 'link', target, sha256: sha256(`link:${target}`) });
+    } else if (c) P.files.push({ name, type: 'other', target: null, sha256: sha256('other:') });
   };
-  const named = (dir, want) => { try { return fs.readdirSync(dir).filter((x) => x.toLowerCase() === want).sort(); } catch { return []; } };
-  // .git here: a folder (the git root: nothing above it is read), a file (a linked worktree or a submodule), or none
-  // (a .git folder counts only with its HEAD: an empty one does not end the walk up)
+  // a folder by its name alone (no tool reads what it holds): its name in the hash
+  const nameOnly = (P, name) => P.files.push({ name, type: 'name', target: null, sha256: sha256('name:'), readable: true });
+  // the folder's real entries (never a lookup by spelling: a disk that folds names opens .curſor as .cursor), each
+  // compared folded; a folder that is there but cannot be listed: both parts unverifiable (what it holds is not known)
+  const entries = (dir, parts = [claude, agent]) => {
+    try { return fs.readdirSync(dir).sort(); } catch (e) {
+      if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') for (const P of parts) P.over ??= 'a folder that could not be read';
+      return [];
+    }
+  };
+  const named = (dir, want, parts) => entries(dir, parts).filter((x) => fold(x) === want);
+  // .git here: a folder with its HEAD (the git root: nothing above it is read), a file (a linked worktree or a
+  // submodule), or none (an empty .git folder does not end the walk up)
   const gitOf = (dir) => {
     for (const n of named(dir, '.git')) {
       let st;
@@ -2516,101 +2543,117 @@ export function settingsFiles(abs, { text = false } = {}) {
     return null;
   };
   // where each row came from (the code container checks it against the row's name and the project's folder, and takes
-  // whose configuration it is from the surface, never from a search of the name): at — '' for the folder itself, else
-  // the folder above it that was read —, surface — the .claude/ tree (or one of its six above), .mcp.json, or another
-  // tool's folder or file there (.codex, .github/hooks, .vscode/mcp.json …), as named in that folder
-  const from = (at, surface, fn) => { const k = files.length; fn(); for (const f of files.slice(k)) { f.at = at; f.surface = surface; } };
-  // the folder's own .claude/ and .mcp.json
-  for (const n of named(abs, '.claude')) from('', n, () => tree(path.join(abs, n), n));
-  for (const n of named(abs, '.mcp.json')) from('', n, () => one(n, path.join(abs, n)));
-  // and the other tools' (AGENT_TREES …) in a folder: dir's (at: '' for the project's own, else that folder). A .github
+  // whose configuration it is — and so which part it is in — from the surface, never from a search of the name): at —
+  // '' for the folder itself, else the folder above it that was read —, surface — what was read there, as named there
+  const from = (P, at, surface, fn) => { const k = P.files.length; fn(); for (const f of P.files.slice(k)) { f.at = at; f.surface = surface; } };
+  // Claude Code's part: the folder's own .claude/ and .mcp.json
+  for (const n of named(abs, '.claude')) from(claude, '', n, () => tree(claude, path.join(abs, n), n));
+  for (const n of named(abs, '.mcp.json')) from(claude, '', n, () => one(claude, n, path.join(abs, n)));
+  // the other tools' part (AGENT_TREES …) in a folder: dir's (at: '' for the project's own, else that folder). A .github
   // or .vscode that is a link is named as one (never read through: never trustable)
   const agentConfig = (dir, at) => {
     const nameOf = (n) => (at ? path.join(at, n) : n);
-    for (const top of AGENT_TREES) for (const n of named(dir, top)) from(at, n, () => tree(path.join(dir, n), nameOf(n)));
+    const all = entries(dir, [agent]);
+    const of = (want) => all.filter((x) => fold(x) === want);
+    for (const top of AGENT_TREES) for (const n of of(top)) from(agent, at, n, () => tree(agent, path.join(dir, n), nameOf(n)));
     const folderOf = (n) => {
       let st;
       try { st = fs.lstatSync(path.join(dir, n)); } catch { return false; }
-      if (st.isSymbolicLink()) { from(at, n, () => tree(path.join(dir, n), nameOf(n))); return false; }
+      if (st.isSymbolicLink()) { from(agent, at, n, () => tree(agent, path.join(dir, n), nameOf(n))); return false; }
       return st.isDirectory();
     };
-    for (const g of named(dir, '.github')) {
+    for (const g of of('.github')) {
       if (!folderOf(g)) continue;
-      let list = [];
-      try { list = fs.readdirSync(path.join(dir, g)).sort(); } catch { over ??= 'a folder that could not be read'; continue; }
-      for (const n of list) {
-        if (GITHUB_INERT.includes(n.toLowerCase()) || IMAGE.test(n)) continue;
+      for (const n of entries(path.join(dir, g), [agent])) {
+        const f = fold(n);
+        if (GITHUB_INSTRUCTIONS.includes(f)) continue;
         let st;
         try { st = fs.lstatSync(path.join(dir, g, n)); } catch { continue; }
-        // (a file: read as one; a folder: walked; a link: named)
-        from(at, `${g}/${n}`, () => (st.isFile() ? one(nameOf(`${g}/${n}`), path.join(dir, g, n)) : tree(path.join(dir, g, n), nameOf(`${g}/${n}`))));
+        if (st.isFile()) {
+          if (GITHUB_INERT.includes(f) || IMAGE.test(f)) continue;
+          from(agent, at, `${g}/${n}`, () => one(agent, nameOf(`${g}/${n}`), path.join(dir, g, n)));
+        } else if (COPILOT_GITHUB_DIRS.includes(f)) from(agent, at, `${g}/${n}`, () => tree(agent, path.join(dir, g, n), nameOf(`${g}/${n}`)));
+        // (a folder no pinned tool reads, or a link: its name alone)
+        else from(agent, at, `${g}/${n}`, () => nameOnly(agent, nameOf(`${g}/${n}`)));
       }
     }
-    for (const v of named(dir, '.vscode')) {
-      if (folderOf(v)) for (const n of named(path.join(dir, v), 'mcp.json')) from(at, `${v}/${n}`, () => one(nameOf(`${v}/${n}`), path.join(dir, v, n)));
+    for (const v of of('.vscode')) {
+      if (folderOf(v)) for (const n of named(path.join(dir, v), 'mcp.json', [agent])) from(agent, at, `${v}/${n}`, () => one(agent, nameOf(`${v}/${n}`), path.join(dir, v, n)));
     }
-    for (const f of AGENT_FILES) for (const n of named(dir, f)) from(at, n, () => one(nameOf(n), path.join(dir, n)));
+    for (const f of AGENT_FILES) for (const n of of(f)) from(agent, at, n, () => one(agent, nameOf(n), path.join(dir, n)));
   };
   agentConfig(abs, '');
-  // the folders above it, to the git root (else the workspace itself): their six trees. Above a folder of this computer
-  // (its path in the sandbox: folders Docker made for its mount, or what else is mounted there), up to / — anything
-  // there is read by Claude Code too, so it is listed (outside every top: never verifiable, never trusted)
+  // the folders above it, to the git root — never the workspace itself (its .claude is your own: the Workspace's, not a
+  // project's). Above a folder of this computer (its path in the sandbox: folders Docker made for its mount, or what
+  // else is mounted there), up to / — anything there is read by Claude Code too, so it is listed (outside every top:
+  // never verifiable, never trusted)
   let g = gitOf(abs);
-  if (g === 'file') over ??= 'a linked git worktree or a submodule (Claude Code reads another checkout\'s configuration then)';
+  if (g === 'file') {
+    for (const P of [claude, agent]) P.over ??= 'a linked git worktree or a submodule (Claude Code reads another checkout\'s configuration then)';
+  }
   const hostTop = topOf(abs) !== null && topOf(abs) !== WORKSPACE;
-  for (let d = path.dirname(abs); g === null && !over && abs !== WORKSPACE && (hostTop || inside(d)); d = path.dirname(d)) {
+  for (let d = path.dirname(abs); g === null && !claude.over && abs !== WORKSPACE && d !== WORKSPACE && (hostTop || inside(d)); d = path.dirname(d)) {
     g = gitOf(d);
-    if (g === 'file') { over = 'a linked git worktree or a submodule above it (Claude Code reads another checkout\'s configuration then)'; break; }
+    if (g === 'file') {
+      for (const P of [claude, agent]) P.over = 'a linked git worktree or a submodule above it (Claude Code reads another checkout\'s configuration then)';
+      break;
+    }
     for (const c of named(d, '.claude')) {
       const cp = path.join(d, c);
       let st;
       try { st = fs.lstatSync(cp); } catch { continue; }
-      if (!st.isDirectory()) { from(d, c, () => tree(cp, cp)); continue; }
-      for (const sname of (() => { try { return fs.readdirSync(cp).sort(); } catch { return []; } })()) {
-        const low = sname.toLowerCase();
-        if (CONFIG_SURFACES.includes(low) || low === 'plugins') from(d, `${c}/${sname}`, () => tree(path.join(cp, sname), path.join(cp, sname)));
-        // (its settings: Grok and Copilot read them from the folders above too)
-        else if (low === 'settings.json' || low === 'settings.local.json') from(d, `${c}/${sname}`, () => one(path.join(cp, sname), path.join(cp, sname)));
+      if (!st.isDirectory()) { from(claude, d, c, () => tree(claude, cp, cp)); continue; }
+      for (const sname of entries(cp)) {
+        const low = fold(sname);
+        if (CONFIG_SURFACES.includes(low)) from(claude, d, `${c}/${sname}`, () => tree(claude, path.join(cp, sname), path.join(cp, sname)));
+        // (its plugins and settings: Grok and Copilot load them from the folders above too — the other tools' part)
+        else if (low === 'plugins') from(agent, d, `${c}/${sname}`, () => tree(agent, path.join(cp, sname), path.join(cp, sname)));
+        else if (low === 'settings.json' || low === 'settings.local.json') from(agent, d, `${c}/${sname}`, () => one(agent, path.join(cp, sname), path.join(cp, sname)));
       }
     }
     // the other tools' configuration above it too — Codex, Gemini CLI, Copilot and Cursor read theirs from the folders
-    // up to the git root as well —, and a .mcp.json there (Claude Code reads only the project's own; others may not):
-    // the same trees as in the folder itself, named by their path
+    // up to the git root as well —, and a .mcp.json there (Claude Code reads only the project's own; others may not)
     agentConfig(d, d);
-    for (const n of named(d, '.mcp.json')) from(d, n, () => one(path.join(d, n), path.join(d, n)));
-    if (d === WORKSPACE || d === '/') break;
+    for (const n of named(d, '.mcp.json', [agent])) from(agent, d, n, () => one(agent, path.join(d, n), path.join(d, n)));
+    if (d === '/') break;
   }
-  files.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  claude.files.sort(byName); agent.files.sort(byName);
   // the plugins the folder's own settings turn on, with what the sandbox has installed of each (the code container
-  // lists each one installed, and never trusts one that is not: Claude Code could fetch it) — in the hash, so a
-  // plugin updated or removed since is looked at again
-  // Claude on your plan has a record of its own (claude-sub's folder): the same plugins, as installed there, with a hash
-  // of their own (planHash) — its sessions apply the folder's settings only while that one is trusted
-  const pl = enabledPluginsOf(abs, files);
-  const pp = pl ? enabledPluginsOf(abs, files, PLAN_PLUGIN_RECORD()) : null;
-  const rows = files.map((f) => [f.name, f.type, f.sha256 ?? null, f.target ?? null]);
-  const hashWith = (x) => (files.length ? sha256(JSON.stringify(x ? { files: rows, plugins: x.plugins, registry: x.registry } : rows)) : null);
+  // lists each one installed, and never trusts one that is not: Claude Code could fetch it) — in Claude Code's hash, so
+  // a plugin updated or removed since is looked at again. Claude on your plan has a record of its own (claude-sub's
+  // folder): the same plugins, as installed there, with a hash of their own (planHash)
+  const pl = enabledPluginsOf(abs, claude.files);
+  const pp = pl ? enabledPluginsOf(abs, claude.files, PLAN_PLUGIN_RECORD()) : null;
+  const rowsOf = (list) => list.map((f) => [f.name, f.type, f.sha256 ?? null, f.target ?? null]);
+  const hashWith = (x) => (claude.files.length ? sha256(JSON.stringify(x ? { files: rowsOf(claude.files), plugins: x.plugins, registry: x.registry } : rowsOf(claude.files))) : null);
   const hash = hashWith(pl);
-  const verifiable = !over && files.every((f) => f.readable === true);
+  const agentHash = agent.files.length ? sha256(JSON.stringify(rowsOf(agent.files))) : null;
+  const verifiable = !claude.over && claude.files.every((f) => f.readable === true);
+  const agentVerifiable = !agent.over && agent.files.every((f) => f.readable === true);
+  const files = [...claude.files, ...agent.files].sort(byName);
   for (const f of files) delete f.readable;
-  return { files, hash, verifiable, over, ...(pl ? { ...pl, planPlugins: pp.plugins, planRegistry: pp.registry, planHash: hashWith(pp) } : {}) };
+  return { files, hash, verifiable, over: claude.over, agentHash, agentVerifiable, agentOver: agent.over,
+    ...(pl ? { ...pl, planPlugins: pp.plugins, planRegistry: pp.registry, planHash: hashWith(pp) } : {}) };
 }
 // The sandbox's own plugins (Claude Code's record of what is installed, in its folder)
 export const PLUGIN_RECORD = () => path.join(CONFIG_DIR, 'plugins', 'installed_plugins.json');
 export const PLAN_PLUGIN_RECORD = () => path.join(PLAN_DIR, 'plugins', 'installed_plugins.json');
 // enabledPluginsOf(abs, files) -> {plugins: [{id, installed, versions: [{version, commit}]}] (by id), registry: ok |
 // none | unreadable}, or null when the folder's own .claude/settings*.json turn no plugin on (enabledPlugins, in any
-// case, at the top level: an object's keys whose value is not false, an array's strings — as the code container reads
+// case — folded —, at the top level: an object's keys whose value is not false, an array's strings — as the code container reads
 // them). Installed: for every user, or for this folder (a project or local install of it).
 export function enabledPluginsOf(abs, files, record = PLUGIN_RECORD()) {
   const ids = new Set();
   for (const f of files) {
-    if (f.at !== '' || f.type !== 'file' || !/^\.claude\/settings(\.local)?\.json$/i.test(f.name)) continue;
+    // (named as the code container names them: folded — .CLAUDE/ſettings.json is .claude/settings.json)
+    const n = fold(f.name);
+    if (f.at !== '' || f.type !== 'file' || (n !== '.claude/settings.json' && n !== '.claude/settings.local.json')) continue;
     let v;
     try { v = JSON.parse(fs.readFileSync(path.join(abs, f.name), 'utf8')); } catch { continue; }   // (not JSON: the code container never trusts it)
     if (!v || typeof v !== 'object' || Array.isArray(v)) continue;
     for (const [k, x] of Object.entries(v)) {
-      if (k.toLowerCase() !== 'enabledplugins') continue;
+      if (fold(k) !== 'enabledplugins') continue;
       if (Array.isArray(x)) { for (const id of x) if (typeof id === 'string') ids.add(id); } else if (x && typeof x === 'object') { for (const [id, on] of Object.entries(x)) if (on !== false) ids.add(id); }
     }
   }

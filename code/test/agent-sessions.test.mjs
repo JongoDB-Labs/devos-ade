@@ -11,6 +11,19 @@ import { fakeQuery } from './fake-sdk.mjs';
 import { fakeProc } from './fake-agent-proc.mjs';
 import { tmp } from './helpers.mjs';
 
+// project.settings' reply as bn-coded makes it from rows: two parts — Claude Code's (v0.23.0's listing) and the other
+// tools' — each with its own hash, as the code container takes each row to its part
+async function settingsReply(files, root, { text = true } = {}) {
+  const { checkFiles, hashOf } = await import('../server/trust.mjs');
+  const placed = checkFiles({ files }, root).files;
+  const own = files.filter((_, i) => placed[i].claude), others = files.filter((_, i) => !placed[i].claude);
+  return { files: text ? files : files.map(({ text: _t, ...f }) => f), hash: hashOf(own), verifiable: true, over: null,
+    agentHash: hashOf(others), agentVerifiable: true, agentOver: null };
+}
+// a projects store's trust as projects.mjs keeps it (the hash of each part)
+const storeOf = (rec, epoch) => ({ list: () => [rec], trust: (id, hash, planHash, agentHash) => {
+  rec.trust = hash ? { hash, at: 1, epoch, ...(planHash === undefined ? {} : { planHash }), ...(agentHash === undefined ? {} : { agentHash }) } : null;
+} });
 const wait = async (cond, ms = 5000) => { const t0 = Date.now(); while (!cond()) { if (Date.now() - t0 > ms) throw new Error('timed out'); await new Promise((r) => setTimeout(r, 10)); } };
 function manager(opts = {}) {
   const queries = [], events = [], asked = [], sent = [], spawns = [], agents = [];
@@ -153,17 +166,21 @@ test('an agent starts in a project\'s folder only while its own settings — Cla
     ['grok', '.grok/settings.json', '{"permissions":{"allow":["*"]}}']]) {
     const files = filesOf({ [name]: text, 'AGENTS.md': 'x' }).filter((f) => f.name !== 'AGENTS.md');
     const rec = { id: 'p1', root: 'proj', name: 'proj', trust: null };
-    const call = async (req) => ({ result: req.op === 'project.settings' ? { files: req.text === false ? files.map(({ text: _t, ...f }) => f) : files, hash: hashOf(files), verifiable: true, over: null } : {} });
-    const trust = makeTrust({ call, store: () => ({ list: () => [rec], trust: (id, hash) => { rec.trust = hash ? { hash, at: 1, epoch: TRUST_EPOCH } : null; } }) });
+    const call = async (req) => ({ result: req.op === 'project.settings' ? await settingsReply(files, '/workspace/proj', { text: req.text !== false }) : {} });
+    const trust = makeTrust({ call, store: () => storeOf(rec, TRUST_EPOCH) });
     const { mgr, agents, events } = manager({ scenario: 'ok', more: { decideSettings: trust.decide } });
     try {
-      // the page's view lists it whole, as that tool's
+      // the page's view lists it whole, as that tool's — Claude Code's part has nothing (Claude Code on Bedrock: as
+      // before), the other tools' is not trusted (an agent waits)
       const v = await trust.view(rec);
-      assert.equal(v.state, 'untrusted', tool);
+      assert.equal(v.state, 'none', tool);
+      assert.equal(v.agentState, 'untrusted', tool);
       assert.deepEqual(v.summary.tools.map((t) => [t.file, t.text]), [[name, text]], tool);
       assert.equal(v.summary.complete, true, tool);
+      assert.equal(v.summary.agentsComplete, true, tool);
+      assert.equal((await trust.decide('/workspace/proj')).state, 'none', `${tool}: Claude Code sessions decide on their part alone`);
       // not trusted: refused before anything starts (the POST asks first; every start asks again)
-      await assert.rejects(mgr.agentSettingsCheck('/workspace/proj', tool), (e) => e.status === 409 && /does not start here: this project's own settings \(Claude Code's and other tools'.*are not trusted/.test(e.message), tool);
+      await assert.rejects(mgr.agentSettingsCheck('/workspace/proj', tool), (e) => e.status === 409 && /does not start here: this project's settings for the other tools.*are not trusted/.test(e.message), tool);
       const { id } = mgr.open({ harness: tool, cwd: '/workspace/proj' });
       mgr.get(id).prompt({ text: 'hi' });
       await wait(() => events.some(([sid, e]) => sid === id && e.type === 'result'));
@@ -186,7 +203,7 @@ test('an agent starts in a project\'s folder only while its own settings — Cla
       // the Workspace itself: as always (the folder you chose)
       await mgr.agentSettingsCheck('/workspace', tool);
       // a trust from before the stricter reading (an earlier epoch): looked at again first, as for Claude Code
-      rec.trust = { hash: v.hash, at: 1 };
+      rec.trust = { hash: 'a'.repeat(64), at: 1 };
       await assert.rejects(mgr.agentSettingsCheck('/workspace/proj', tool), (e) => e.status === 409 && /are not applied: .*look at them again/.test(e.message), tool);
     } finally { mgr.closeAll(); }
   }
@@ -238,8 +255,8 @@ test('a project below its git root: the other tools\' files above it are in its 
   assert.deepEqual(checkFiles({ files: [bare] }, ROOT).files.map((f) => [f.name, f.tool]), [['/workspace/mono/.claude/skills/s.md', null]]);
   assert.equal(checkFiles({ files: [{ ...bare, name: '/workspace/mono/.codex/config.toml' }] }, ROOT).ok, false);
   const rec = { id: 'p2', root: 'mono/app', name: 'app', trust: null };
-  const call = async (req) => ({ result: req.op === 'project.settings' ? { files: req.text === false ? files.map(({ text: _t, ...f }) => f) : files, hash: hashOf(files), verifiable: true, over: null } : {} });
-  const trust = makeTrust({ call, store: () => ({ list: () => [rec], trust: (id, hash) => { rec.trust = hash ? { hash, at: 1, epoch: TRUST_EPOCH } : null; } }) });
+  const call = async (req) => ({ result: req.op === 'project.settings' ? await settingsReply(files, ROOT, { text: req.text !== false }) : {} });
+  const trust = makeTrust({ call, store: () => storeOf(rec, TRUST_EPOCH) });
   const { mgr } = manager({ scenario: 'ok', more: { decideSettings: trust.decide } });
   try {
     const v = await trust.view(rec);
@@ -251,8 +268,63 @@ test('a project below its git root: the other tools\' files above it are in its 
     await mgr.agentSettingsCheck('/workspace/mono/app', 'Codex');
     // the parent's MCP server changes: the hash does, and the agent waits again
     files = [row('/workspace/mono/.codex/config.toml', `${codex}[mcp_servers.y]\ncommand = "more"\n`), files[1]];
-    assert.notEqual(hashOf(files), v.hash);
+    assert.notEqual(hashOf(files), rec.trust.agentHash);
     await assert.rejects(mgr.agentSettingsCheck('/workspace/mono/app', 'Codex'), /changed since you trusted them/);
+    // Claude Code's sessions there: their part has nothing — as before, whatever the other tools' files
+    assert.equal((await trust.decide(ROOT)).state, 'none');
+  } finally { mgr.closeAll(); }
+});
+
+test('the two parts: Claude Code\'s trusted alone when the other tools\' cannot all be shown — Claude Code sessions get it, an agent does not start', async () => {
+  const crypto = await import('node:crypto');
+  const { makeTrust, TOOL_TEXT_MAX } = await import('../server/trust.mjs');
+  const { TRUST_EPOCH } = await import('../server/projects.mjs');
+  const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
+  const row = (name, text, surface) => ({ name, type: 'file', size: Buffer.byteLength(text), sha256: sha(text), text, target: null, at: '', surface });
+  const own = '{"permissions": {"allow": ["Bash(npm test)"]}}', script = `#!/bin/sh\n${'echo x\n'.repeat(Math.ceil(TOOL_TEXT_MAX / 7) + 10)}`;
+  const files = [row('.claude/settings.json', own, '.claude'), row('.github/x.sh', script, '.github/x.sh')];
+  const rec = { id: 'p3', root: 'split', name: 'split', trust: null };
+  const call = async (req) => ({ result: req.op === 'project.settings' ? await settingsReply(files, '/workspace/split', { text: req.text !== false }) : {} });
+  const trust = makeTrust({ call, store: () => storeOf(rec, TRUST_EPOCH) });
+  const { mgr } = manager({ scenario: 'ok', more: { decideSettings: trust.decide } });
+  try {
+    const v = await trust.view(rec);
+    assert.equal(v.state, 'untrusted');
+    assert.equal(v.summary.complete, true, 'Claude Code\'s part: shown whole');
+    assert.equal(v.summary.agentsComplete, false);
+    assert.match(v.summary.agentsMissing.join('; '), /another tool's file over/);
+    assert.match(v.hash, /^[0-9a-f]{64}$/, 'trustable: Claude Code\'s part');
+    assert.deepEqual(await trust.trust(rec, v.hash), { conflict: null });
+    assert.equal(rec.trust.agentHash, null, 'the other tools\' part: not trusted with it');
+    const d = await trust.decide('/workspace/split');
+    assert.equal(d.state, 'trusted');
+    assert.deepEqual(d.agents, { state: 'untrusted', part: 'agents' });
+    await assert.rejects(mgr.agentSettingsCheck('/workspace/split', 'Codex'), (e) => e.status === 409 && /settings for the other tools .* are not trusted \(the project's Claude Code settings may be, alone/.test(e.message));
+    // the other tools' file shortened: trusted again, both parts — the agent starts
+    files[1] = row('.github/x.sh', '#!/bin/sh\necho ok\n', '.github/x.sh');
+    const w = await trust.view(rec);
+    assert.equal(w.state, 'trusted');
+    assert.equal(w.agentState, 'untrusted');
+    assert.deepEqual(await trust.trust(rec, w.hash), { conflict: null });
+    await mgr.agentSettingsCheck('/workspace/split', 'Codex');
+    // the hash Trust confirms names the project and the reading's epoch: another project's dialog cannot confirm it
+    const other = { ...rec, id: 'p4' };
+    assert.notEqual((await trust.view(other)).hash, w.hash);
+  } finally { mgr.closeAll(); }
+});
+
+test('an agent\'s folder settings changed while it started (what it read then): checked again once it opened — no turn runs', async () => {
+  let n = 0;
+  const decideSettings = async () => (++n === 1 ? { state: 'trusted', agents: { state: 'trusted', part: null } } : { state: 'trusted', agents: { state: 'changed', part: 'agents' } });
+  const { mgr, agents, events } = manager({ scenario: 'ok', more: { decideSettings } });
+  try {
+    const { id } = mgr.open({ harness: 'codex', cwd: '/workspace/proj' });
+    mgr.get(id).prompt({ text: 'hi' });
+    await wait(() => events.some(([sid, e]) => sid === id && e.type === 'result'));
+    assert.equal(n, 2, 'asked before it started and once it opened');
+    assert.equal(agents.length, 1, 'it started (and read them)');
+    assert.ok(events.some(([sid, e]) => sid === id && e.type === 'error' && /changed since you trusted them/.test(e.text)), JSON.stringify(events.map(([, e]) => e.type)));
+    assert.ok(!events.some(([sid, e]) => sid === id && e.type === 'text'), 'no turn ran');
   } finally { mgr.closeAll(); }
 });
 

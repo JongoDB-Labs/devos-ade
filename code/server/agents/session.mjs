@@ -99,6 +99,8 @@ export class AgentSession {
         if (this.model && this.model !== agent.model && agent.models.some((m) => m.id === this.model)) await agent.setModel(this.model).catch(() => {});
         else this.model = agent.model ?? this.model;
         await agent.setMode(this.mode);
+        // (and once more now it has read them: a change made while it started — what it loaded — is never used)
+        await this.mgr.agentSettingsCheck?.(this.cwd, this.name);
         this.record();
         this.emit({ type: 'init', model: short(this.model, 128), cwd: this.cwd, permissionMode: this.mode, cliVersion: short(agent.agentVersion, 40),
           tools: [], commands: agent.commands ?? [], skills: [], plugins: [], mcp: [], effort: null, harness: this.harness,

@@ -23,15 +23,19 @@ export const ALL_SOURCES = Object.freeze(['user', 'project', 'local']);
 export const USER_SOURCES = Object.freeze(['user']);
 const SHA = /^[0-9a-f]{64}$/;
 export const SETTINGS_FILES = Object.freeze(['.claude/settings.json', '.claude/settings.local.json']);
-const TYPES = ['file', 'link', 'big', 'other'];
+// (name: a folder listed by its name alone — no tool reads what it holds)
+const TYPES = ['file', 'link', 'big', 'other', 'name'];
+// fold(name) -> a name as a case-insensitive disk may match it (bn-coded's fold, the same): compatibility-normalized
+// (NFKC: ſ is s, ﬁ is fi) and case-folded in full (ß is ss) — every name here is compared folded
+export const fold = (name) => String(name).normalize('NFKC').toUpperCase().toLowerCase().normalize('NFKC');
 export const FILES_MAX = 500;
 // a name bn-coded may list (bn-coded from before rows said where they came from): the project's own .mcp.json, its
 // .claude (a link, not a folder) or a path under it — relative —, or a path under a .claude above it, absolute in
 // /workspace; one line, no "." or ".." part
 const segsOk = (segs) => segs.every((x) => x !== '' && x !== '.' && x !== '..');
-const legacyNameOk = (n) => n.toLowerCase() === '.mcp.json'
-  || (!n.startsWith('/') && n.split('/')[0].toLowerCase() === '.claude' && segsOk(n.split('/')))
-  || (n.startsWith(`${WS}/`) && n.slice(WS.length + 1).toLowerCase().split('/').includes('.claude') && segsOk(n.slice(WS.length + 1).split('/')));
+const legacyNameOk = (n) => fold(n) === '.mcp.json'
+  || (!n.startsWith('/') && fold(n.split('/')[0]) === '.claude' && segsOk(n.split('/')))
+  || (n.startsWith(`${WS}/`) && fold(n.slice(WS.length + 1)).split('/').includes('.claude') && segsOk(n.slice(WS.length + 1).split('/')));
 // Where a row came from, as bn-coded says (at: '' for the project's folder itself, else the folder above it that was
 // read; surface: what was read there, named as in that folder) — checked against the row's name and the project's
 // folder, and the only thing that says whose configuration a row is: never a search of its name. The surfaces, in
@@ -40,7 +44,7 @@ const legacyNameOk = (n) => n.toLowerCase() === '.mcp.json'
 // read them, in the folder and above it to the git root).
 const CLAUDE_TREES = ['commands', 'agents', 'output-styles', 'skills', 'workflows', 'routines'];
 const AGENT_TOOLS_OF = { '.codex': 'Codex', '.cursor': 'Cursor', '.grok': 'Grok', '.gemini': 'Gemini CLI', '.copilot': 'GitHub Copilot',
-  '.agents': 'Codex, Cursor, Grok and GitHub Copilot' };
+  '.agents': 'Codex, Cursor, Grok and GitHub Copilot', '.claude-plugin': 'Grok and GitHub Copilot (a plugin marketplace)' };
 // Claude Code plugins and settings other tools load: a project's own .claude/plugins/ (Grok: their hooks, .mcp.json and
 // .lsp.json), and above it .claude/settings*.json and .claude/plugins/ (Grok and Copilot read them there; Claude Code
 // does not)
@@ -65,23 +69,32 @@ function surfaceOf(kind, above) {
   if (kind === 'lsp.json' || kind === '.lsp.json') return { tool: 'GitHub Copilot and Grok', single: true };
   return undefined;
 }
-/** placeOf(row, root) -> {tool} (whose configuration it is; null: Claude Code's), or null when the row's at, surface and
- *  name do not fit together for a project in root — then nothing of the listing can be trusted */
+// The folders of .github/ the pinned GitHub Copilot CLI reads (bn-coded's COPILOT_GITHUB_DIRS: the same — code/test
+// checks): never a row by its name alone
+export const COPILOT_GITHUB_DIRS = Object.freeze(['agents', 'copilot', 'extensions', 'hooks', 'skills', 'plugin']);
+/** placeOf(row, root) -> {tool, claude} (whose configuration it is — tool null: Claude Code's —, and claude: in the
+ *  part Claude Code reads, v0.23.0's listing: the project's own .claude/ and .mcp.json, and the six .claude trees above
+ *  it), or null when the row's at, surface and name do not fit together for a project in root — then nothing of the
+ *  listing can be trusted */
 export function placeOf(f, root) {
   if (typeof f.surface !== 'string' || typeof f.at !== 'string' || f.surface.length > 300 || f.at.length > 1024 || !segsOk(f.surface.split('/'))) return null;
-  const kind = f.surface.toLowerCase();
+  const kind = fold(f.surface);
   const s = surfaceOf(kind, f.at !== '');
   if (!s) return null;
   if (f.at !== '') {
-    // a real folder above the project's, in the workspace (the workspace itself included)
-    if (!(f.at === WS || (f.at.startsWith(`${WS}/`) && segsOk(f.at.slice(WS.length + 1).split('/')))) || typeof root !== 'string' || !root.startsWith(`${f.at}/`)) return null;
+    // a real folder above the project's, in the workspace (never the workspace itself: its .claude is your own)
+    if (!(f.at.startsWith(`${WS}/`) && segsOk(f.at.slice(WS.length + 1).split('/'))) || typeof root !== 'string' || !root.startsWith(`${f.at}/`)) return null;
   }
   const base = f.at ? `${f.at}/${f.surface}` : f.surface;
   if (s.single ? f.name !== base : f.name !== base && !f.name.startsWith(`${base}/`)) return null;
   if (!segsOk(f.name.slice(f.at ? f.at.length + 1 : 0).split('/'))) return null;
-  // (the project's own .claude/plugins/: other tools load them — shown whole, as theirs)
-  if (kind === '.claude' && f.at === '' && f.name.toLowerCase().startsWith('.claude/plugins/')) return { tool: CLAUDE_PLUGINS };
-  return { tool: s.tool };
+  // Claude Code's part: the project's own .claude and .mcp.json; above it, the six trees and a .claude that is no folder
+  const claude = f.at === '' ? kind === '.claude' || kind === '.mcp.json' : kind === '.claude' || (kind.startsWith('.claude/') && s.tool === null);
+  // (a name-only row: only where bn-coded lists one — a folder of .github/ no pinned tool reads, by its name alone)
+  if (f.type === 'name' && (!/^\.github\/[^/]+$/.test(kind) || f.name !== base || COPILOT_GITHUB_DIRS.includes(kind.slice(8)))) return null;
+  // (the project's own .claude/plugins/: other tools load them too — shown whole, said whose)
+  if (kind === '.claude' && f.at === '' && fold(f.name).startsWith('.claude/plugins/')) return { tool: CLAUDE_PLUGINS, claude };
+  return { tool: s.tool, claude };
 }
 
 /** checkFiles(project.settings' RESULT, root) -> {files: [{name, type, size, sha256, target, text, at, tool}], ok}: ok
@@ -95,12 +108,13 @@ export function checkFiles(r, root) {
   const files = [];
   for (const f of rows.slice(0, FILES_MAX)) {
     const nameShape = f && typeof f === 'object' && typeof f.name === 'string' && f.name.length <= 1024 && !/[\x00-\x1f\x7f]/.test(f.name);
-    const place = !nameShape ? null : placed ? placeOf(f, root) : legacyNameOk(f.name) ? { tool: null } : null;
+    const place = !nameShape ? null : placed ? placeOf(f, root) : legacyNameOk(f.name) ? { tool: null, claude: true } : null;
     if (!place || (files.length && files.at(-1).name >= f.name)) { ok = false; continue; }
     files.push({
       name: f.name, type: TYPES.includes(f.type) ? f.type : 'other', size: Number.isInteger(f.size) && f.size >= 0 ? f.size : null,
       sha256: SHA.test(f.sha256 ?? '') ? f.sha256 : null, target: typeof f.target === 'string' ? short(f.target, 1000) : null,
       text: typeof f.text === 'string' && f.text.length <= 256 << 10 ? f.text : null, at: placed ? f.at : null, tool: place.tool,
+      claude: place.claude,
     });
   }
   return { files, ok };
@@ -170,15 +184,17 @@ export function ccFrontMatter(t) {
 const STRICT = /^\uFEFF?---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
 const BLOCK_MAX = 64 << 10;
 // eslint-disable-next-line no-control-regex
-const CONTROL = /[\x00-\x08\x0b\x0c\x0e-\x1f\x85]/;   // (Claude Code reads no front matter of more than 64 KiB in an untrusted folder)
+// (a NEL, LS or PS too: a line break to YAML parsers others use — serde_yaml, PyYAML — so a key there would hide
+// from a line-by-line reading; never plain)
+const CONTROL = /[\x00-\x08\x0b\x0c\x0e-\x1f\x85\u2028\u2029]/;   // (Claude Code reads no front matter of more than 64 KiB in an untrusted folder)
 // readBlock(block) -> {keys: [{key, value, list}], plain}: top-level `key: value` lines and `key:` with `  - item`
 // lines, one pass; anything else is not plain (a key twice — told by a set —, a structural value, a continuation …)
 function readBlock(block) {
   const keys = [], seen = new Set();
   let cur = null, plain = true;
-  // (a CR alone is a line break to YAML: split there too — and not plain, a page shows it differently)
-  if (/\r(?!\n)/.test(block)) plain = false;
-  for (const raw of block.split(/\r\n|\r|\n/)) {
+  // (a CR alone, a NEL, LS or PS is a line break to YAML: split there too — and not plain, a page shows it differently)
+  if (/\r(?!\n)|[\x85\u2028\u2029]/.test(block)) plain = false;
+  for (const raw of block.split(/\r\n|[\r\n\x85\u2028\u2029]/)) {
     let e = raw.length;
     while (e > 0 && raw[e - 1] === ' ') e--;
     const line = raw.slice(0, e);
@@ -308,15 +324,20 @@ export function shellBlocks(text, max = 1000) {
   return { list: out, more };
 }
 // Plugins and plugin marketplaces another tool's file declares: the plugins' own folders (their hooks, MCP and
-// language servers) are not listed here, so a listing with one is incomplete — never trusted. Found by what the tools
-// read, not by its spelling: a JSON (or JSONC) file is parsed and every key at every depth looked at, in any case (a key
-// spelled with \u escapes is the same key once parsed); a .json that does not parse, even as JSONC, cannot be looked
-// at (incomplete too). There is no TOML or YAML parser here: such a file is searched whole, and one with anything that
-// could spell a key otherwise than as written — a backslash anywhere (an escape: \u, \x, \N, a folded line …), and in
-// YAML a complex key (?), a merge (<<), an alias as a key or a tag — cannot be looked at. A marketplace.json is one by
-// its name. The raw text's "marketplace": key is a trigger as well, never the only one. (Claude Code's own settings
-// follow a narrower rule: summarize.)
-const PLUGIN_KEY = /plugin|marketplace/i;
+// language servers) are not listed here, so a listing with one is incomplete — never trusted. Found by the keys the
+// tools read (PLUGIN_KEYS: their exact names, folded, - and _ left out — never a word that only holds one, as
+// eslint-plugin-react does), in the files they read: a JSON (or JSONC) file is parsed and every key at every depth
+// looked at (a key spelled with \u escapes is the same key once parsed); a .json that does not parse, even as JSONC,
+// cannot be looked at (incomplete too). There is no TOML or YAML parser here: such a file's words are looked at whole,
+// and one with anything that could spell a key otherwise than as written — a backslash anywhere (an escape: \u, \x,
+// \N, a folded line …), and in YAML a complex key (?), a merge (<<), an alias or a tag — cannot be looked at. A
+// marketplace.json is one by its name. (Claude Code's own settings follow their own exact keys: summarize.)
+// The keys: Claude Code's (enabledPlugins, extraKnownMarketplaces …, which Grok and Copilot read too), Copilot
+// 1.0.103's and Grok 1.0.67's own (plugins, marketplaces, additionalPlugins, pluginDirs …), Codex's [plugins]
+export const PLUGIN_KEYS = Object.freeze(['plugin', 'plugins', 'marketplace', 'marketplaces', 'enabledplugins', 'extraknownmarketplaces',
+  'additionalmarketplaces', 'additionalplugins', 'plugindirs', 'plugindirectories', 'pluginpaths', 'knownmarketplaces', 'installedplugins',
+  'explicitplugins', 'defaultenabledplugins']);
+const pluginWord = (k) => PLUGIN_KEYS.includes(fold(k).replace(/[-_\s]/g, ''));
 // a line break as JSONC parsers read one (jsonc-parser: \n, \r, U+2028, U+2029)
 const JSONC_BREAK = /[\n\r\u2028\u2029]/;
 // stripJsonc(t) -> the text without // and /* */ comments and trailing commas (outside strings), or null: a comment
@@ -375,7 +396,7 @@ export function pluginKeyIn(v, depth = 0) {
   if (Array.isArray(v)) { for (const x of v) { const k = pluginKeyIn(x, depth + 1); if (k) return k; } return null; }
   if (v && typeof v === 'object') {
     for (const [k, x] of Object.entries(v)) {
-      if (PLUGIN_KEY.test(k)) return k;
+      if (pluginWord(k)) return k;
       const r = pluginKeyIn(x, depth + 1);
       if (r) return r;
     }
@@ -389,28 +410,30 @@ export const parseJsonc = (t) => {
   if (s === null) return null;
   try { return { v: JSON.parse(s) }; } catch { return null; }
 };
-// TOML and YAML: what could spell a key otherwise than as written (no parser here to read it)
-const YAML_ODD = [[/\\/, 'a backslash (an escape or a folded line)'], [/(^|[\s{,[-])\?(\s|$)/m, 'a complex key (?)'], [/<</, 'a merge key (<<)'],
-  [/(^|[\s{,[?-])\*[^\s,[\]{}]+\s*:/m, 'an alias as a key'], [/(^|[\s{,[?:-])!/m, 'a tag']];
+// TOML and YAML: what could spell a key otherwise than as written (no parser here to read it) — each pattern one
+// character's look ahead or behind, linear in the text; a line starts after any break YAML knows (NEL, LS and PS too)
+const YAML_ODD = [[/\\/, 'a backslash (an escape or a folded line)'], [/(?:^|[\s\x85{,[-])\?(?:[\s\x85]|$)/, 'a complex key (?)'], [/<</, 'a merge key (<<)'],
+  [/(?:^|[\s\x85{,[?:-])\*[^\s\x85]/, 'an alias'], [/(?:^|[\s\x85{,[?:-])!/, 'a tag']];
 /** pluginsOf(name, text) -> {key: what declares plugins or a marketplace, or null; unreadable: why it cannot be looked
  *  at, or null} — for another tool's file */
 export function pluginsOf(name, text) {
-  const base = String(name).toLowerCase().split('/').pop();
+  const base = fold(name).split('/').pop();
   if (base === 'marketplace.json') return { key: 'a marketplace.json', unreadable: null };
-  const raw = /"(extraKnownMarketplaces|marketplaces?)"\s*:/i.test(text) ? 'marketplace' : null;
   if (/\.jsonc?$/.test(base)) {
     const p = parseJsonc(text);
-    if (!p) return { key: raw, unreadable: 'not valid JSON or JSONC (or a line break the tools read differently: a CR alone, U+2028, U+2029)' };
+    if (!p) return { key: null, unreadable: 'not valid JSON or JSONC (or a line break the tools read differently: a CR alone, U+2028, U+2029)' };
     let k = null;
     try { k = pluginKeyIn(p.v); } catch { k = '(could not be looked at)'; }
-    return { key: k ?? raw, unreadable: null };
+    return { key: k, unreadable: null };
   }
   if (/\.(toml|ya?ml)$/.test(base)) {
     const odd = (base.endsWith('.toml') ? YAML_ODD.slice(0, 1) : YAML_ODD).find(([re]) => re.test(text));
-    const m = text.match(PLUGIN_KEY);
-    return { key: m ? m[0] : raw, unreadable: odd ? `${odd[1]}: a key could be spelled otherwise than as written, and this page has no ${base.endsWith('.toml') ? 'TOML' : 'YAML'} parser to read it` : null };
+    // (its words — letters, digits, - and _ — each looked at once)
+    const words = String(text).match(/[\p{L}\p{N}_-]+/gu) ?? [];
+    const key = words.find(pluginWord) ?? null;
+    return { key, unreadable: odd ? `${odd[1]}: a key could be spelled otherwise than as written, and this page has no ${base.endsWith('.toml') ? 'TOML' : 'YAML'} parser to read it` : null };
   }
-  return { key: raw, unreadable: null };
+  return { key: null, unreadable: null };
 }
 // Claude Code's own plugin keys in a project's .claude/settings*.json (2.1.309 reads them at the top level; in any case
 // here): a marketplace the project adds (extraKnownMarketplaces, and its alias additionalMarketplaces) is code nobody
@@ -418,11 +441,13 @@ export function pluginsOf(name, text) {
 // (its id and version are in the hash: bn-coded's plugins), one that is not could be fetched — never trusted
 const CC_MARKETPLACE_KEYS = ['extraknownmarketplaces', 'additionalmarketplaces'];
 const CC_ENABLED_KEY = 'enabledplugins';
-// Plugin keys that are harmless in a project's file (shown as they are, under Other settings): pluginConfigs — the
-// options of plugins already turned on (values a plugin reads, not a plugin or a place to fetch one from);
-// strictKnownMarketplaces and its alias allowedMarketplaces — read from managed settings only, and only narrow which
-// marketplaces may be added. Any other key naming plugins or a marketplace, at any depth: never trusted.
-const CC_PLUGIN_HARMLESS = ['pluginconfigs', 'strictknownmarketplaces', 'allowedmarketplaces'];
+// Claude Code 2.1.309's other plugin keys, by their exact names (folded), at the top level where it reads them: those
+// that bring a plugin or a place to fetch one from — inline plugin entries, a plugin folder, another plugin list —
+// never trusted; the harmless ones (pluginConfigs: the options of plugins already on; strictKnownMarketplaces,
+// allowedMarketplaces, blockedMarketplaces: managed settings only, and they only narrow) shown as they are, under
+// Other settings
+const CC_PLUGIN_BRINGS = ['plugins', 'plugindirs', 'plugindirectories', 'additionalplugins', 'syncclaudeaiplugins', 'prependplugins', 'appendplugins',
+  'pluginsuggestionmarketplaces'];
 
 // canonical(v) -> JSON with sorted keys (every field, whatever the friendly line shows)
 const canonical = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((key) => [key, x[key]])) : x));
@@ -456,10 +481,12 @@ export function summarize(files, plugins = null, planPlugins = null) {
     if (out[section].length >= LIST_MAX) { incomplete(`more than ${LIST_MAX} entries in one section`); return; }
     out[section].push(item);
   };
+  // (an entry nested too deeply to write out — a RangeError — is one this page cannot show: incomplete, never a failure)
+  const canon = (v) => { try { return canonical(v); } catch { incomplete('an entry nested too deeply to show'); return '?'; } };
   for (const f of files) {
     const note = (t) => out.notes.push({ file: f.name, note: t });
-    // (names as a case-insensitive workspace reads them: .CLAUDE/settings.json is .claude/settings.json)
-    const lower = f.name.toLowerCase();
+    // (names as a case-insensitive workspace reads them, folded: .CLAUDE/ſettings.json is .claude/settings.json)
+    const lower = fold(f.name);
     const tool = f.tool ?? null;   // (checkFiles: from where it was read, never from its name)
     const settings = !tool && !f.at && (lower === '.mcp.json' || SETTINGS_FILES.includes(lower));
     // every other file under a .claude/ is listed — each text file with the front matter keys that grant something,
@@ -476,6 +503,8 @@ export function summarize(files, plugins = null, planPlugins = null) {
       out.files.push({ name: text(f.name), size: f.size, grants: [...fm.grants.map((g) => ({ key: text(g.key), value: text(g.value) })),
         ...shell.list.map((x) => ({ key: x.kind === 'inline' ? 'runs in a shell when used (!`…`)' : 'runs in a shell when used (```!)', value: text(x.command) }))] });
     }
+    // (a folder by its name alone: no tool reads what it holds — its name is what is trusted)
+    if (f.type === 'name') { add('tools', { file: f.name, tool, text: '(a folder no tool here reads: its name alone)', careful: false }); continue; }
     if (f.type === 'link') note(`a link to ${f.target ?? '?'}${f.text === null ? ' (not read: outside the workspace, or not a file)' : ''}`);
     if (f.type === 'big') { note('too large to show (over 256 KiB)'); incomplete('a file too large to show'); continue; }
     if (f.type === 'other') { note('not a file it could read (a FIFO, a folder through a link …)'); incomplete('a file that could not be read'); continue; }
@@ -485,8 +514,9 @@ export function summarize(files, plugins = null, planPlugins = null) {
       const whole = f.text.length <= TOOL_TEXT_MAX;
       if (!whole) incomplete(`another tool's file over ${TOOL_TEXT_MAX.toLocaleString('en')} characters`);
       // (plugins or a plugin marketplace the repository declares: their folders are not looked at here — never trusted;
-      // a .json that cannot be parsed cannot be looked at either)
-      const pl = pluginsOf(f.name, f.text);
+      // a .json that cannot be parsed cannot be looked at either. A file not shown whole is incomplete already: not
+      // looked into)
+      const pl = whole ? pluginsOf(f.name, f.text) : { key: null, unreadable: null };
       if (pl.unreadable) { note(`${pl.unreadable}: what it declares cannot be looked at here`); incomplete('another tool\'s file this page cannot read the way the tool does'); }
       if (pl.key) {
         // (Claude Code's settings in a folder above: Claude Code does not read them there; Grok and Copilot do)
@@ -511,7 +541,7 @@ export function summarize(files, plugins = null, planPlugins = null) {
         const run = !sv ? '' : typeof sv.command === 'string' ? [sv.command, ...(Array.isArray(sv.args) ? sv.args : [])].map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ')
           : typeof sv.url === 'string' ? sv.url : '';
         const mixed = Boolean(sv) && ['command', 'url'].filter((k) => sv[k] !== undefined).length > 1;
-        const json = text(canonical(c));
+        const json = text(canon(c));
         add('mcpServers', { file: f.name, name: text(name), run: text(run), json, mixed, careful: careful(json) || careful(run) });
       }
       // (GitHub Copilot also reads servers at the top level of a .mcp.json: shown as MCP servers, said whose)
@@ -519,7 +549,7 @@ export function summarize(files, plugins = null, planPlugins = null) {
         const sv = obj(v[k]);
         if (sv && (typeof sv.command === 'string' || typeof sv.url === 'string')) {
           const run = typeof sv.command === 'string' ? [sv.command, ...(Array.isArray(sv.args) ? sv.args : [])].map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ') : sv.url;
-          const json = text(canonical(sv));
+          const json = text(canon(sv));
           add('mcpServers', { file: f.name, name: text(`${k} (at the top level: GitHub Copilot starts it)`), run: text(run), json, mixed: false, careful: careful(json) || careful(run) });
         } else add('other', { file: f.name, key: text(k), value: text(v[k]) });
       }
@@ -537,7 +567,7 @@ export function summarize(files, plugins = null, planPlugins = null) {
           // the friendly line (the command, URL or prompt it runs) — and always the whole entry beside it
           const head = !o ? '' : typeof o.command === 'string' ? o.command : typeof o.url === 'string' ? o.url : typeof o.prompt === 'string' ? `(prompt) ${o.prompt}` : '';
           const mixed = Boolean(o) && ['command', 'url', 'prompt'].filter((k) => o[k] !== undefined).length > 1;
-          const json = text(canonical(h));
+          const json = text(canon(h));
           add('hooks', { file: f.name, event: text(event), matcher, command: text(head), json, mixed, careful: careful(json) || careful(head) });
         }
       }
@@ -556,16 +586,29 @@ export function summarize(files, plugins = null, planPlugins = null) {
     }
     for (const k of Object.keys(perms).filter((k) => !PERM_KNOWN.has(k))) add('other', { file: f.name, key: `permissions.${text(k)}`, value: text(perms[k]) });
     if (v.env !== undefined && !obj(v.env)) add('other', { file: f.name, key: 'env', value: text(v.env) });
-    for (const [name, value] of Object.entries(obj(v.env) ?? {})) add('env', { file: f.name, name: text(name), value: text(value) });
+    for (const [name, value] of Object.entries(obj(v.env) ?? {})) {
+      add('env', { file: f.name, name: text(name), value: text(value) });
+      // (Claude Code's own variables for where plugins come from — a seed or cache folder of the repository's: plugins
+      // this page does not look at — never trusted)
+      const low = fold(name);
+      if (low.startsWith('claude') && (low.includes('plugin') || low.includes('marketplace'))) {
+        note(`sets ${short(name, 60)}: a variable that could steer where Claude Code loads plugins from — not trustable`);
+        incomplete('an env variable that could steer how plugins load');
+      }
+    }
     for (const k of COMMAND_KEYS) if (v[k] !== undefined) add('commands', { file: f.name, key: k, command: text(typeof v[k] === 'string' ? v[k] : v[k]) });
     for (const k of MCP_KEYS) if (v[k] !== undefined) add('mcp', { file: f.name, key: k, value: text(v[k]) });
     // Claude Code's plugin keys (top level, any case): a marketplace the project adds — never trusted; the plugins it turns
     // on — each one installed in the sandbox listed, one that is not never trusted
     for (const k of Object.keys(v)) {
-      const low = k.toLowerCase();
+      const low = fold(k);
       if (CC_MARKETPLACE_KEYS.includes(low)) {
         note(`adds a plugin marketplace (${short(k, 60)}): its plugins are code nobody here has looked at — not trustable`);
         incomplete('a plugin marketplace the project adds');
+      }
+      if (CC_PLUGIN_BRINGS.includes(low)) {
+        note(`names plugins (${short(k, 60)}): plugins this page does not look at — not trustable`);
+        incomplete('a setting that brings plugins this page does not look at');
       }
       if (low !== CC_ENABLED_KEY) continue;
       const x = v[k];
@@ -593,19 +636,7 @@ export function summarize(files, plugins = null, planPlugins = null) {
         }
       }
     }
-    // and anything else that names plugins or a marketplace, at any depth (a key of a later Claude Code, an env variable
-    // that steers how plugins load …): never trusted — but the keys above, already looked at, and CC_PLUGIN_HARMLESS
-    for (const k of Object.keys(v)) {
-      const low = k.toLowerCase();
-      if (low === CC_ENABLED_KEY || CC_MARKETPLACE_KEYS.includes(low) || CC_PLUGIN_HARMLESS.includes(low)) continue;
-      let found = null;
-      try { found = PLUGIN_KEY.test(k) ? k : pluginKeyIn(v[k]); } catch { found = '(could not be looked at)'; }
-      if (found) {
-        note(`names plugins or a marketplace (${short(k, 60)}${found !== k ? ` › ${short(found, 60)}` : ''}): not something this page reads — not trustable`);
-        incomplete('a setting about plugins this page does not read');
-      }
-    }
-    for (const k of Object.keys(v).filter((k) => !KNOWN.has(k) && k.toLowerCase() !== CC_ENABLED_KEY)) add('other', { file: f.name, key: text(k), value: text(v[k]) });
+    for (const k of Object.keys(v).filter((k) => !KNOWN.has(k) && fold(k) !== CC_ENABLED_KEY)) add('other', { file: f.name, key: text(k), value: text(v[k]) });
   }
   out.missing = [...why].map(([reason, n]) => (n > 1 ? `${reason} (${n} times)` : reason));
   return out;
@@ -680,10 +711,15 @@ export function withheldText(d) {
 export const OVER = new RegExp('^(more than \\d+ MiB in all|too much to show|a folder that could not be read|folders more than \\d+ deep|more than \\d+ files'
   + '|a linked git worktree or a submodule( above it)? \\(Claude Code reads another checkout\'s configuration then\\))$');
 
-// confirmOf(read) -> what trusting a project's settings confirms: their hash (the files, and the plugins they turn on as
-// the sandbox has them), and — with plugins turned on — Claude on your plan's too (the same plugins as its own record
-// has them): the dialog shows both, so a change to either between it and Trust is a change. No plugin: the hash itself.
-const confirmOf = (r) => (r.hash === null ? null : r.planPlugins ? sha256(JSON.stringify({ hash: r.hash, planHash: r.planHash })) : r.hash);
+// The hash recorded for a part with nothing in it (Claude Code's, when only the other tools have files): never one a
+// part with a file has
+export const EMPTY_HASH = sha256('');
+// confirmOf(rec, read, agentsTrusted) -> what trusting a project's settings confirms: the project, the reading's epoch,
+// Claude Code's part (its files and the plugins they turn on as the sandbox has them), Claude on your plan's (the same
+// plugins as its own record has them), and the other tools' part when it is trusted with them — what the dialog showed,
+// so a change to any between it and Trust is a change
+const confirmOf = (rec, r, agentsTrusted) => sha256(JSON.stringify({ project: rec.id, epoch: TRUST_EPOCH, hash: r.hash, planHash: r.planHash,
+  agentHash: agentsTrusted ? r.agentHash : null }));
 
 export function makeTrust({ call, store, log = () => {} }) {
   // each project's state as last looked at (a start's decision, the dialog, a trust) — for the list only; a decision is
@@ -691,31 +727,63 @@ export function makeTrust({ call, store, log = () => {} }) {
   const known = new Map();
   const note = (id, state) => { if (id && id !== WORKSPACE_ID) { if (known.size >= 500 && !known.has(id)) known.clear(); known.set(id, state); } };
   const recordAt = (cwd) => store().list().find((p) => p.id !== WORKSPACE_ID && absOf(p.root) === cwd) ?? null;
-  // read(abs, {text}) -> {files, present, hash, verifiable}: with the texts (the dialog, a trust), the hash recomputed
-  // here from what was shown — each text's own SHA-256 checked against the one the sandbox gave — so a trusted hash
-  // covers exactly the texts the page showed; without (a session's start: the hash alone, cheap), the sandbox's hash of
-  // the same files, compared with the trusted one
+  // read(abs, {text}) -> both parts, each checked on its own — Claude Code's (files, present, hash, planHash,
+  // verifiable, over) and the other tools' (agentFiles, agentPresent, agentHash, agentVerifiable, agentOver): with the
+  // texts (the dialog, a trust), each hash recomputed here from what was shown — each text's own SHA-256 checked
+  // against the one the sandbox gave — so a trusted hash covers exactly the texts the page showed; without (a
+  // session's start: the hashes alone, cheap), the sandbox's hashes of the same files, compared with the trusted ones
   async function read(abs, { text = true } = {}) {
     const { result } = await call({ op: 'project.settings', ...(abs === WS ? {} : { root: abs }), ...(text ? {} : { text: false }) }, { timeoutMs: 20000 });
-    const { files, ok } = checkFiles(result, abs);
+    const { files: all, ok } = checkFiles(result, abs);
     const { plugins, planPlugins, ok: pok } = checkPlugins(result);
-    for (const f of files) if (f.text !== null && (!f.sha256 || sha256(Buffer.from(f.text, 'utf8')) !== f.sha256)) f.text = null;
-    const present = files.length > 0 || !ok || (result?.over !== null && result?.over !== undefined);
+    for (const f of all) if (f.text !== null && (!f.sha256 || sha256(Buffer.from(f.text, 'utf8')) !== f.sha256)) f.text = null;
+    const shown = (list) => list.every((f) => (f.type === 'file' || f.type === 'link' || f.type === 'name') && (!text || f.type === 'name' || f.text !== null));
+    const files = all.filter((f) => f.claude), agentFiles = all.filter((f) => !f.claude);
+    // Claude Code's part (Claude Code on Bedrock and Claude on your plan decide on it alone); a listing that does not fit
+    // (!ok) is there and unverifiable, in both parts
+    const over = typeof result?.over === 'string' ? short(result.over, 200) : null;
+    const present = files.length > 0 || !ok || over !== null;
     const hash = hashOf(files, plugins), planHash = planPlugins ? hashOf(files, planPlugins) : hash;
     const verifiable = ok && pok && present && result?.verifiable === true && !result?.over && hash !== null && result?.hash === hash
-      && (!planPlugins || result?.planHash === planHash)
-      && files.every((f) => (f.type === 'file' || f.type === 'link') && (!text || f.text !== null));
-    return { files, plugins, planPlugins, present, hash: verifiable ? hash : null, planHash: verifiable ? planHash : null, verifiable,
-      over: typeof result?.over === 'string' ? short(result.over, 200) : null };
+      && (!planPlugins || result?.planHash === planHash) && files.every((f) => f.type !== 'name') && shown(files);
+    // the other tools' part (an agent of your subscriptions needs it as well)
+    const agentOver = typeof result?.agentOver === 'string' ? short(result.agentOver, 200) : null;
+    const agentPresent = agentFiles.length > 0 || !ok || agentOver !== null;
+    const agentHash = hashOf(agentFiles);
+    const agentVerifiable = ok && agentPresent && result?.agentVerifiable === true && !result?.agentOver && agentHash !== null && result?.agentHash === agentHash
+      && shown(agentFiles);
+    return { files, plugins, planPlugins, present, hash: verifiable ? hash : null, planHash: verifiable ? planHash : null, verifiable, over,
+      agentFiles, agentPresent, agentHash: agentVerifiable ? agentHash : null, agentVerifiable, agentOver };
   }
-  /** decide(cwd) -> {state, sources, strictMcp, project, hash, plan}: what a Claude Code process started there now gets
-   *  — plan: the same for Claude on your plan (its own plugin record: a trust holds for it only while the plugins the
-   *  settings turn on are installed there too, as trusted; reason plan-plugins when they are not). Anything that cannot
-   *  be decided (the records, the sandbox): not applied. */
+  // the states of a reading against a record: Claude Code's (state), Claude on your plan's (planState, reason
+  // plan-plugins when its own record lacks a plugin they turn on), the other tools' part alone (agentPart), and an
+  // agent's (agentState: both parts — Claude Code's first)
+  const statesOf = (rec, r, workspace = false) => {
+    const t = rec?.trust;
+    const state = stateOf({ workspace, present: r.present, hash: r.hash, trust: t, verifiable: r.verifiable });
+    // Claude on your plan: the trust's own plan hash (none recorded: the same as its hash — no plugin then)
+    const planTrust = t ? { ...t, hash: t.planHash === undefined ? t.hash : t.planHash } : t;
+    let planState = stateOf({ workspace, present: r.present, hash: r.planHash, trust: planTrust, verifiable: r.verifiable });
+    const missing = planMissing(r.planPlugins);
+    // (a plugin turned on that it has not installed: never applied for it, whatever the trust — said why)
+    if (missing && !['unverifiable', 'none', 'workspace'].includes(planState)) planState = 'untrusted';
+    // the other tools' part: its own hash in the trust (none: not trusted with it — a trust of an earlier epoch: looked
+    // at again, as Claude Code's part)
+    const agentPart = stateOf({ workspace, present: r.agentPresent, hash: r.agentHash,
+      trust: t && (t.agentHash || t.epoch !== TRUST_EPOCH) ? { ...t, hash: t.agentHash ?? null } : null, verifiable: r.agentVerifiable });
+    const agentState = !APPLIED.includes(state) ? state : !APPLIED.includes(agentPart) ? agentPart
+      : state === 'none' && agentPart === 'none' ? 'none' : workspace ? 'workspace' : 'trusted';
+    return { state, planState, planReason: missing ? 'plan-plugins' : null, agentPart, agentState };
+  };
+  /** decide(cwd) -> {state, sources, strictMcp, project, hash, plan, agents}: what a Claude Code process started there
+   *  now gets — on Claude Code's part alone (plan: the same for Claude on your plan, its own plugin record: a trust
+   *  holds for it only while the plugins the settings turn on are installed there too, as trusted; reason plan-plugins
+   *  when they are not) — and agents: {state, part} whether an agent of your subscriptions may start there (both parts
+   *  applied; part: which one is not). Anything that cannot be decided (the records, the sandbox): not applied. */
   async function decide(cwd) {
     if (cwd === WS) {
       const ws = { state: 'workspace', sources: ALL_SOURCES, strictMcp: false, project: WORKSPACE_ID, hash: null };
-      return { ...ws, plan: { ...ws } };
+      return { ...ws, plan: { ...ws }, agents: { state: 'workspace', part: null } };
     }
     let rec = null;
     const of = (state, hash, extra = {}) => ({ state, project: rec?.id ?? null, sources: APPLIED.includes(state) ? ALL_SOURCES : USER_SOURCES,
@@ -723,52 +791,73 @@ export function makeTrust({ call, store, log = () => {} }) {
     try {
       rec = recordAt(cwd);
       const r = await read(cwd, { text: false });
-      const state = stateOf({ present: r.present, hash: r.hash, trust: rec?.trust, verifiable: r.verifiable });
-      note(rec?.id, state);
-      // Claude on your plan: the trust's own plan hash (none recorded: the same as its hash — no plugin then)
-      const planTrust = rec?.trust ? { ...rec.trust, hash: rec.trust.planHash === undefined ? rec.trust.hash : rec.trust.planHash } : rec?.trust;
-      let pstate = stateOf({ present: r.present, hash: r.planHash, trust: planTrust, verifiable: r.verifiable });
-      const missing = planMissing(r.planPlugins);
-      // (a plugin turned on that it has not installed: never applied for it, whatever the trust — said why)
-      if (missing && !['unverifiable', 'none'].includes(pstate)) pstate = 'untrusted';
+      const st = statesOf(rec, r);
+      note(rec?.id, st.state);
       // (not applied: your own settings, and of MCP servers only the stack's own — whatever Claude Code would read)
-      return { ...of(state, r.hash), plan: of(pstate, r.planHash, missing ? { reason: 'plan-plugins' } : {}) };
+      return { ...of(st.state, r.hash), plan: of(st.planState, r.planHash, st.planReason ? { reason: st.planReason } : {}),
+        agents: { state: st.agentState, part: !APPLIED.includes(st.state) ? 'claude' : !APPLIED.includes(st.agentPart) ? 'agents' : null } };
     } catch (e) {
       log(`settings of ${short(cwd, 200)}: not checked (${short(e?.message || String(e), 200)}): not applied`);
       const no = { state: 'unchecked', project: rec?.id ?? null, sources: USER_SOURCES, strictMcp: true, hash: null };
-      return { ...no, plan: { ...no } };
+      return { ...no, plan: { ...no }, agents: { state: 'unchecked', part: 'claude' } };
     }
   }
-  /** view(rec) -> GET /api/projects/ID/settings: the files, what they set, the hash to trust, the state — and, when
-   *  bn-coded's reason for not showing them all is not one of its own (OVER), the sandbox's words apart (said) */
+  // summaries(r) -> {summary (Claude Code's part), agents (the other tools'), complete, agentsComplete, said?}
+  const summaries = (r) => {
+    const summary = summarize(r.files, r.plugins, r.planPlugins);
+    const agents = summarize(r.agentFiles);
+    let said = null;
+    for (const [sm, over] of [[summary, r.over], [agents, r.agentOver]]) {
+      if (!over) continue;
+      const own = OVER.test(over);
+      sm.complete = false; sm.missing.push(own ? over : 'a reason of the sandbox\'s own (below)');
+      if (!own) said ??= over;
+    }
+    return { summary, agents, said };
+  };
+  /** view(rec) -> GET /api/projects/ID/settings: the files, what they set, the hash to trust, the states — Claude
+   *  Code's (state), Claude on your plan's (planState), an agent's (agentState) — and, when bn-coded's reason for not
+   *  showing them all is not one of its own (OVER), the sandbox's words apart (said). The summary is Claude Code's part
+   *  with the other tools' files beside it (tools); complete: Claude Code's part shown whole; agentsComplete: the other
+   *  tools' too (else Trust covers Claude Code's part alone, and agents do not start there) */
   async function view(rec) {
     const abs = absOf(rec.root);
     const r = await read(abs);
-    const state = stateOf({ workspace: rec.id === WORKSPACE_ID, present: r.present, hash: r.hash, trust: rec.trust, verifiable: r.verifiable });
-    const summary = summarize(r.files, r.plugins, r.planPlugins);
-    const own = r.over && OVER.test(r.over);
-    if (r.over) { summary.complete = false; summary.missing.push(own ? r.over : 'a reason of the sandbox\'s own (below)'); }
-    note(rec.id, state);
+    const ws = rec.id === WORKSPACE_ID;
+    const st = statesOf(rec, r, ws);
+    const { summary, agents, said } = summaries(r);
+    note(rec.id, st.state);
+    const claudeOk = !r.present || (r.verifiable && summary.complete);
+    const agentsOk = !r.agentPresent || (r.agentVerifiable && agents.complete);
+    // (a hash to trust only for what the summary shows whole: nothing you were not shown can apply)
+    // (nothing to trust: Claude Code's part has nothing, and the other tools' part cannot be trusted either)
+    const hash = ws || !claudeOk || (!r.present && !(r.agentPresent && agentsOk)) ? null : confirmOf(rec, r, agentsOk);
     return {
-      // (a hash to trust only for settings the summary shows whole: nothing you were not shown can apply)
-      project: rec.id, path: abs, state, hash: state === 'workspace' || !summary.complete ? null : confirmOf(r), trustedAt: rec.trust?.at ?? null,
-      files: r.files.map(({ name, type, size, target }) => ({ name, type, size, target })),
-      summary,
-      ...(r.over && !own ? { said: r.over, saidBy: 'sandbox' } : {}),
+      project: rec.id, path: abs, state: st.state, planState: st.planState, planReason: st.planReason, agentState: st.agentState, hash,
+      trustedAt: rec.trust?.at ?? null,
+      files: [...r.files, ...r.agentFiles].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).map(({ name, type, size, target }) => ({ name, type, size, target })),
+      summary: { ...summary, tools: agents.tools, notes: [...summary.notes, ...agents.notes], careful: summary.careful + agents.careful,
+        agentsComplete: agentsOk, agentsMissing: agentsOk ? [] : [...agents.missing, ...(r.agentPresent && !r.agentVerifiable ? ['a file of theirs that cannot be checked'] : [])] },
+      ...(said ? { said, saidBy: 'sandbox' } : {}),
     };
   }
-  /** trust(rec, hash) — only the files exactly as the page showed them (a conflict when they changed since, when there
-   *  are none, or when they cannot be verified) */
+  /** trust(rec, hash) — only what the page showed, exactly (a conflict when it changed since, when there is nothing, or
+   *  when Claude Code's part cannot be verified or shown whole); the other tools' part with it when it can be (else
+   *  agents do not start there: Claude Code's part is trusted alone) */
   async function trust(rec, hash) {
     const r = await read(absOf(rec.root));
-    if (!r.present) return { conflict: 'this project has no settings of its own (nothing to trust)' };
-    if (!r.verifiable) return { conflict: 'its settings cannot be checked (a file there is a link out of the workspace, too large to show, or not a file): they are never trusted' };
-    // (what the dialog showed — the files, the plugins as the sandbox and Claude on your plan have them — exactly)
-    if (r.hash === null || confirmOf(r) !== hash) return { conflict: 'its settings changed since you looked: review them again' };
-    const sm = summarize(r.files, r.plugins, r.planPlugins);
-    if (!sm.complete) return { conflict: `its settings cannot all be shown here (${sm.missing.join('; ')}): they are not trusted — shorten them, or use the folder without them` };
-    // (Claude on your plan: the same trust while its own record has every plugin they turn on — else none for it)
-    store().trust(rec.id, r.hash, r.planPlugins ? (planMissing(r.planPlugins) ? null : r.planHash) : undefined);
+    if (!r.present && !r.agentPresent) return { conflict: 'this project has no settings of its own (nothing to trust)' };
+    if (r.present && !r.verifiable) return { conflict: 'its settings cannot be checked (a file there is a link out of the workspace, too large to show, or not a file): they are never trusted' };
+    const { summary, agents } = summaries(r);
+    const agentsOk = !r.agentPresent || (r.agentVerifiable && agents.complete);
+    // (what can never be trusted said as such first: no page could have offered it)
+    if (r.present && !summary.complete) return { conflict: `its settings cannot all be shown here (${summary.missing.join('; ')}): they are not trusted — shorten them, or use the folder without them` };
+    if (!r.present && !agentsOk) return { conflict: 'the other tools\' settings here cannot all be checked or shown: there is nothing else to trust' };
+    if (hash !== confirmOf(rec, r, agentsOk)) return { conflict: 'its settings changed since you looked: review them again' };
+    // (Claude on your plan: the same trust while its own record has every plugin they turn on — else none for it; the
+    // other tools' part: its hash, or none when it cannot be trusted)
+    store().trust(rec.id, r.hash ?? EMPTY_HASH, r.planPlugins ? (planMissing(r.planPlugins) ? null : r.planHash) : undefined,
+      agentsOk ? (r.agentHash ?? EMPTY_HASH) : null);
     note(rec.id, 'trusted');
     return { conflict: null };
   }
