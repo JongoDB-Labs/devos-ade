@@ -250,6 +250,8 @@ export function makeGitRemote({ call: sandboxCall, openBroker = null, store = ne
     try { p = parseRemoteUrl(b?.url); } catch (e) { throw err(400, e.message); }
     if (store.match(p, [h]) !== h) throw err(400, `that URL is not on ${h.host}${h.port ? `:${h.port}` : ''} over ${httpsAuth(h.auth) ? 'https' : 'ssh'} (this host's ${httpsAuth(h.auth) ? 'token is for https://' : 'key is for ssh'} URLs)`);
     try { h = await fresh(h); } catch (e) { event({ action: 'test', host: h.label, target: p.display, ok: false, ...failNote(e) }); throw e; }
+    // (a GitHub sign-in: its App's slug asked of GitHub again — renamed since the sign-in, its links follow)
+    if (h.auth === 'oauth') h = (await oauth.refreshApp(h.id)) || h;
     // (a key is learned only from the computer running DevOS ADE, and never for a host whose keys are built in)
     const learn = h.auth === 'ssh' && !remote && !((p.port ?? 22) === 22 && (KNOWN_HOSTS[h.host] || []).length);
     let result;

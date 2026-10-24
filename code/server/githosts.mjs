@@ -291,6 +291,15 @@ export class GitHosts {
       h.oauth = checkOAuth({ ...h.oauth, ...t, needsSignIn: false, why: null, refreshedAt: this.now() }, this.now());
     });
   }
+  // setOAuthApp(id, {appSlug, installations}, {accessToken}) -> the host (public): the GitHub App's slug (and, when
+  // given, its installations) as GitHub answered for this sign-in's token — an App renamed since the sign-in is followed,
+  // its links with it — only while the host still has that token (a renewal or a Sign in again meanwhile wins)
+  setOAuthApp(id, a, { accessToken } = {}) {
+    return this.change(id, (h) => {
+      if (h.auth !== 'oauth' || !accessToken || h.oauth?.accessToken !== accessToken) return;
+      h.oauth = checkOAuth({ ...h.oauth, appSlug: a.appSlug || h.oauth.appSlug, ...(Array.isArray(a.installations) ? { installations: a.installations } : {}) }, this.now());
+    });
+  }
   // the sign-in ended (its refresh token refused, or expired): "Sign in again" — the tokens are dropped; given the
   // refresh token a renewal sent, only while the host still has it (a Sign in again meanwhile is never ended by it)
   markSignIn(id, why, { refreshToken: sent } = {}) {

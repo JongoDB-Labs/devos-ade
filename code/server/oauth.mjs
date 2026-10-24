@@ -33,7 +33,7 @@ const HOST = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?(?:\.[a-z0-9](?:
 // The project's GitHub App's slug — its address is github.com/apps/<slug>, and Git hosts' "Choose repositories" and
 // "install it" links are built from it. The ONE place it is written (tests/test_brand.sh checks): when the App is renamed
 // on GitHub, its new slug goes here.
-export const GITHUB_APP_SLUG = 'bedrock-now';
+export const GITHUB_APP_SLUG = 'devos-ade';
 
 // The project's own applications — public values, no secret: DevOS ADE's GitHub App (github.com/apps/<GITHUB_APP_SLUG>:
 // Contents read and write and Metadata, on the repositories you install it on; user tokens that expire in 8 hours,
@@ -403,6 +403,7 @@ export function makeOAuth({ store, connect, apps = {}, appDefaults = DEFAULT_APP
         }
       }
       event({ action: 'host', host: kept.label, target: kept.host, text: 'its sign-in renewed' });
+      await refreshApp(id);
       return store.get(id);
     }
     const code = typeof j.error === 'string' && ERROR_CODE.test(j.error) ? j.error : '';
@@ -413,6 +414,23 @@ export function makeOAuth({ store, connect, apps = {}, appDefaults = DEFAULT_APP
     const why = code === 'invalid_grant' || code === 'bad_refresh_token' ? 'the host no longer accepts it: revoked, or used up' : `the host refused to renew it: ${errorName(code, r.status)}`;
     event({ action: 'host', host: h.label, target: h.host, ok: false, text: `its sign-in ended: ${why} — Sign in again` });
     throw end(why);
+  }
+  // refreshApp(id) -> the host, its GitHub App's slug asked of GitHub again with the sign-in's own token (best effort:
+  // a failure keeps what it has). Run at each renewal and by Test connection, so an App renamed since the sign-in — its
+  // address, and the links built from it — is followed without a Sign in again. The slug is GitHub's answer
+  // (/user/installations), else, for the project's own App on github.com (its client ID), GITHUB_APP_SLUG: never
+  // anything the sandbox or the page says.
+  async function refreshApp(id) {
+    const h = store.get(id);
+    if (!h || h.auth !== 'oauth' || h.oauth?.provider !== 'github' || !h.oauth.accessToken) return h;
+    const o = h.oauth;
+    const who = await accountOf('github', { host: h.host, port: h.port ?? null, ca: h.ca || null }, o.accessToken);
+    const slug = who.appSlug || (h.host === 'github.com' && o.clientId === app('github').clientId ? app('github').appSlug || null : null);
+    if (!slug) return h;
+    try {
+      store.setOAuthApp(id, { appSlug: slug, installations: who.appSlug ? who.installations : null }, { accessToken: o.accessToken });
+    } catch (e) { log(`git sign-in ${h.host}: the app's slug could not be kept (${ours(e, 'a write failed')})`); }
+    return store.get(id);
   }
   // revoke(h) -> true when the provider took the revocation (GitLab: RFC 7009, a non-confidential application's own
   // token, without a secret), false when it did not, null when it cannot be revoked from here (GitHub: it needs the
@@ -429,7 +447,7 @@ export function makeOAuth({ store, connect, apps = {}, appDefaults = DEFAULT_APP
   }
 
   const close = () => { for (const f of flows.values()) end(f, 'cancelled'); };
-  return { config, start, status, cancel, fresh, revoke, close, accountOf, get pending() { return [...flows.values()].filter((f) => f.state === 'pending').length; } };
+  return { config, start, status, cancel, fresh, refreshApp, revoke, close, accountOf, get pending() { return [...flows.values()].filter((f) => f.state === 'pending').length; } };
 }
 
 // refusal(provider, code, host, status) -> what a provider's error means, in plain words (never its description: only

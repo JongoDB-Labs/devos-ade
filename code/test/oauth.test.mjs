@@ -619,3 +619,38 @@ test('Sign in again: a provider that hands back the same access token — the se
   }
 });
 
+test('a GitHub App renamed since the sign-in: its slug follows at Test connection and at the next renewal — GitHub\'s answer only', async () => {
+  // (last in this file: its renewal counts in the mock's log, which the tests above read from zero)
+  const { g, store, fx } = remoteOf('renamed');
+  mock.set({ lifetime: 28800, appSlug: 'bedrock-now-e2e' });
+  try {
+    const { end } = await signIn(g, { provider: 'github', host: 'ghe.test', clientId: GH, ca: CA }, { account: 'octo' });
+    assert.equal(end.state, 'done', end.error);
+    const id = end.gitHost.id;
+    assert.equal(store.get(id).oauth.appSlug, 'bedrock-now-e2e');
+    // the App renamed on GitHub: Test connection asks GitHub again (the sandbox's answer plays no part)
+    mock.set({ appSlug: 'devos-ade-e2e' });
+    fx.url = 'https://ghe.test/o/r.git';
+    const t = await g.testHost(id, { url: 'https://ghe.test/o/r.git' }, false);
+    assert.equal(t.ok, true);
+    assert.equal(t.host.oauth.appSlug, 'devos-ade-e2e');
+    assert.equal(store.get(id).oauth.appSlug, 'devos-ade-e2e');
+    assert.deepEqual(store.get(id).oauth.installations, [{ account: 'octo', selection: 'selected' }]);
+    // ... and a renewal: renamed once more, followed with the new token, no Sign in again
+    mock.set({ appSlug: 'renamed-again' });
+    const before = store.get(id).oauth;
+    clock = before.expiresAt - 60000;
+    fx.asks = [{ kind: 'cred', protocol: 'https', host: 'ghe.test', path: 'o/r.git' }];
+    const p = await g.plan({ action: 'push' });
+    await g.run({ planId: p.planId });
+    const after = store.get(id).oauth;
+    assert.notEqual(after.accessToken, before.accessToken);
+    assert.equal(after.appSlug, 'renamed-again');
+    assert.equal(after.needsSignIn, false);
+    assert.equal(g.hostsView(false).hosts.find((h) => h.id === id).oauth.appSlug, 'renamed-again');
+    // GitHub not answering keeps what the host has (the project's own App's slug is only for github.com's client ID)
+    const { g: g2, store: s2 } = remoteOf('renamed', { connect: () => Promise.reject(new Error('unreachable')) });
+    const t2 = await g2.testHost(id, { url: 'https://ghe.test/o/r.git' }, false).catch((e) => e);
+    assert.equal(s2.get(id).oauth.appSlug, 'renamed-again', String(t2?.message || ''));
+  } finally { mock.set({ appSlug: 'bedrock-now-e2e' }); fx.asks = []; }
+});
