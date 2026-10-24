@@ -37,6 +37,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 - **A project trusted in v0.23.0 that cannot be carried over** (its settings not shown whole today) no longer reads
   its settings a second time, with their texts, at every start there.
 
+### Changed
+
+- **The walkthrough is up to date with v0.24:** Accept edits as it works now (ordinary files of the project; always
+  asked for git's folder, `.github`, editor, hook and tool settings and links; every edit asked where the repository's
+  git settings can run a program, and why); a new Code step, *A project's own settings* (what Claude Code's part and the
+  other tools' part hold, who needs which, *Trust* in the dialog, v0.23.0's trusts carried over); where the switch for
+  Claude on your plan is (off by default, Anthropic's terms quoted there); and in the Chat step, what Chat's page loads,
+  HTML previews on a click and the Python runner's packages.
+
 ### Security
 
 - **Chat's one public route, deliberately:** the Python runner's static files — GET or HEAD of one plain file name

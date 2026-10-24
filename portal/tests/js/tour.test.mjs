@@ -13,7 +13,7 @@ test("the step ids: every one of the old walkthrough's still there but its Code 
   for (const id of T.BEFORE.filter((x) => x !== "code")) assert.ok(ids.includes(id), id);
   assert.ok(!ids.includes("code"), "the old Code page step is split into the new ones");
   const fresh = ids.filter((x) => !T.BEFORE.includes(x));
-  for (const id of ["git-hosts", "code-open", "code-modes", "code-models", "code-workspace", "code-context", "code-clone", "code-review",
+  for (const id of ["git-hosts", "code-open", "code-modes", "code-models", "code-workspace", "code-trust", "code-context", "code-clone", "code-review",
     "code-run", "sandbox", "code-plugins", "api", "activity", "updates", "phone", "code-off"]) assert.ok(fresh.includes(id), id);
 });
 

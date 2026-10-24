@@ -222,15 +222,17 @@ phone it is under **More**.
    Files (on its buckets) open signed in, and opening each one ticks its step off. Admin's and Files' own sign-ins
    are folded away under **Credentials**, with Copy buttons and a link to each app's own form, for the API or in
    case the automatic sign-in ever fails.
-3. **Chat:** a chat with its cost line, voice, your documents.
+3. **Chat:** a chat with its cost line (what its page loads, previews on a click, the Python runner's packages), voice,
+   your documents.
 4. **Code with Claude** (where the Code page is on; otherwise one step on how to turn it on): open Code and ask, the
    permission modes and cards, picking a model, your workspace (its folder on this computer, files, search, previews),
-   @-mentions and comments on a plan's lines, **Clone a repository**, review, commit and push, Run & test and
+   a project's own settings and **Trust**, @-mentions and comments on a plan's lines, **Clone a repository**, review, commit and push, Run & test and
    previews of dev servers, the browser terminal, what the sandbox can reach, plugins and MCP servers.
 5. **Your own tools:** `claude-bedrock` in your terminal, [the models from your own
    code](#the-models-from-your-own-code) (this install's API address, a key per tool, curl and Python examples to
    copy), [your AI subscriptions and keys](#your-ai-subscriptions) (which tools, how each signs in, the *who answers*
-   menu on each page, what is greyed out and why) and the store Claude Code and Chat share.
+   menu on each page, the switch for your Claude plan, what is greyed out and why) and the store Claude Code and Chat
+   share.
 6. **Keep it running:** Home, Activity and search, where the money went, updates, backups and rollback, and the portal
    from your phone.
 
