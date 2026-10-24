@@ -294,7 +294,7 @@ test('the two parts: Claude Code\'s trusted alone when the other tools\' cannot 
     assert.equal(v.summary.agentsComplete, false);
     assert.match(v.summary.agentsMissing.join('; '), /another tool's file over/);
     assert.match(v.hash, /^[0-9a-f]{64}$/, 'trustable: Claude Code\'s part');
-    assert.deepEqual(await trust.trust(rec, v.hash), { conflict: null });
+    assert.deepEqual(await trust.trust(rec, v.hash), { conflict: null, agents: 'not trusted' }, 'Claude Code\'s part alone: said');
     assert.equal(rec.trust.agentHash, null, 'the other tools\' part: not trusted with it');
     const d = await trust.decide('/workspace/split');
     assert.equal(d.state, 'trusted');
@@ -310,6 +310,37 @@ test('the two parts: Claude Code\'s trusted alone when the other tools\' cannot 
     // the hash Trust confirms names the project and the reading's epoch: another project's dialog cannot confirm it
     const other = { ...rec, id: 'p4' };
     assert.notEqual((await trust.view(other)).hash, w.hash);
+  } finally { mgr.closeAll(); }
+});
+
+test('the project\'s own .claude/plugins/: in Claude Code\'s hash (as v0.23.0), judged and shown with the other tools\' part — never keeping Claude Code\'s trust from Bedrock', async () => {
+  const crypto = await import('node:crypto');
+  const { makeTrust, TOOL_TEXT_MAX } = await import('../server/trust.mjs');
+  const { TRUST_EPOCH } = await import('../server/projects.mjs');
+  const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
+  const row = (name, text) => ({ name, type: 'file', size: Buffer.byteLength(text), sha256: sha(text), text, target: null, at: '', surface: '.claude' });
+  const big = JSON.stringify({ hooks: { x: 'y'.repeat(TOOL_TEXT_MAX) } });
+  const files = [row('.claude/plugins/p/hooks.json', big), row('.claude/settings.json', '{"permissions": {"allow": ["Bash(ls)"]}}')];
+  const rec = { id: 'p5', root: 'plug', name: 'plug', trust: null };
+  const call = async (req) => ({ result: req.op === 'project.settings' ? await settingsReply(files, '/workspace/plug', { text: req.text !== false }) : {} });
+  const trust = makeTrust({ call, store: () => storeOf(rec, TRUST_EPOCH) });
+  const { mgr } = manager({ scenario: 'ok', more: { decideSettings: trust.decide } });
+  try {
+    let v = await trust.view(rec);
+    assert.equal(v.summary.complete, true, 'Claude Code\'s part: its own settings, shown whole');
+    assert.equal(v.summary.agentsComplete, false, 'the plugin file too long to show: the other tools\' part');
+    assert.deepEqual(v.summary.tools.map((t) => t.file), ['.claude/plugins/p/hooks.json'], 'shown with the other tools\' files');
+    assert.deepEqual(await trust.trust(rec, v.hash), { conflict: null, agents: 'not trusted' });
+    assert.equal((await trust.decide('/workspace/plug')).state, 'trusted', 'Claude Code on Bedrock: trusted');
+    await assert.rejects(mgr.agentSettingsCheck('/workspace/plug', 'Grok'), /not trusted/);
+    // shortened: both parts trusted; the plugin file changed: Claude Code's hash changes (as v0.23.0's did)
+    files[0] = row('.claude/plugins/p/hooks.json', '{"hooks": {}}');
+    v = await trust.view(rec);
+    assert.equal(v.summary.agentsComplete, true);
+    assert.deepEqual(await trust.trust(rec, v.hash), { conflict: null });
+    await mgr.agentSettingsCheck('/workspace/plug', 'Grok');
+    files[0] = row('.claude/plugins/p/hooks.json', '{"hooks": {"x": 1}}');
+    assert.equal((await trust.decide('/workspace/plug')).state, 'changed');
   } finally { mgr.closeAll(); }
 });
 

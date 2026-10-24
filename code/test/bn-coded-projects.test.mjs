@@ -687,6 +687,12 @@ test('project.settings: in .github/, only a real folder no pinned tool reads is 
     assert.equal(r.verifiable, true, `${what}: Claude Code's part still verifiable`);
     for (const f of rows) fs.rmSync(path.join(D, f.name));
   }
+  // a folder named like a file Copilot reads: walked (what it holds listed), never a row by its name alone
+  put('.github/mcp.json/inner.json', '{"servers": {}}');
+  r = await call({ op: 'project.settings', root: D });
+  assert.deepEqual(r.files.filter((f) => f.name.startsWith('.github/mcp')).map((f) => [f.name, f.type]), [['.github/mcp.json/inner.json', 'file']]);
+  assert.equal(r.agentVerifiable, true);
+  fs.rmSync(path.join(D, '.github/mcp.json'), { recursive: true });
   // what the code container makes of it: Claude Code's part applies (for Claude Code on Bedrock), an agent waits
   fs.symlinkSync('../x.json', path.join(D, '.github/mcp.json'));
   const { checkFiles } = await import('../server/trust.mjs');

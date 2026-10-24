@@ -99,35 +99,38 @@ export function placeOf(f, root) {
   if (!segsOk(f.name.slice(f.at ? f.at.length + 1 : 0).split('/'))) return null;
   // Claude Code's part: the project's own .claude and .mcp.json; above it, the six trees and a .claude that is no folder
   const claude = f.at === '' ? kind === '.claude' || kind === '.mcp.json' : kind === '.claude' || (kind.startsWith('.claude/') && s.tool === null);
-  // (a name-only row: only where bn-coded lists one — a folder of .github/ no pinned tool reads, by its name alone:
-  // never one of what Copilot reads there, a folder or a file)
-  if (f.type === 'name' && (!/^\.github\/[^/]+$/.test(kind) || f.name !== base || NEVER_BY_NAME.has(kind.slice(8)))) return null;
+  // (a name-only row: only where bn-coded lists one — a folder of .github/ no pinned tool reads, by its name alone;
+  // one for what Copilot reads there, a folder or a file: its place fits, the other tools' part is not believed)
+  if (f.type === 'name' && (!/^\.github\/[^/]+$/.test(kind) || f.name !== base)) return null;
+  if (f.type === 'name' && NEVER_BY_NAME.has(kind.slice(8))) return { tool: s.tool, claude: false, refused: true };
   // (the project's own .claude/plugins/: other tools load them too — shown whole, said whose)
   if (kind === '.claude' && f.at === '' && fold(f.name).startsWith('.claude/plugins/')) return { tool: CLAUDE_PLUGINS, claude };
   return { tool: s.tool, claude };
 }
 
-/** checkFiles(project.settings' RESULT, root) -> {files: [{name, type, size, sha256, target, text, at, tool}], ok}: ok
- *  false when the list does not fit what bn-coded lists for a project in root (a bad name, a row whose place does not
- *  fit its name, rows that say where they came from beside rows that do not, the same name twice, out of order, too
- *  many): then unverifiable */
+/** checkFiles(project.settings' RESULT, root) -> {files: [{name, type, size, sha256, target, text, at, tool, claude,
+ *  surface}], ok, agentOk}: ok false when the list does not fit what bn-coded lists for a project in root (a bad name, a
+ *  row whose place does not fit its name, rows that say where they came from beside rows that do not, the same name
+ *  twice, out of order, too many): then unverifiable; agentOk false when a row of the other tools' part cannot be
+ *  believed (a row by its name alone for what Copilot reads): that part unverifiable, never Claude Code's */
 export function checkFiles(r, root) {
   const rows = Array.isArray(r?.files) ? r.files : [];
-  let ok = rows.length <= FILES_MAX;
+  let ok = rows.length <= FILES_MAX, agentOk = true;
   const placed = rows.some((f) => f && typeof f === 'object' && (f.surface !== undefined || f.at !== undefined));
   const files = [];
   for (const f of rows.slice(0, FILES_MAX)) {
     const nameShape = f && typeof f === 'object' && typeof f.name === 'string' && f.name.length <= 1024 && !/[\x00-\x1f\x7f]/.test(f.name);
     const place = !nameShape ? null : placed ? placeOf(f, root) : legacyNameOk(f.name) ? { tool: null, claude: true } : null;
     if (!place || (files.length && files.at(-1).name >= f.name)) { ok = false; continue; }
+    if (place.refused) agentOk = false;
     files.push({
       name: f.name, type: TYPES.includes(f.type) ? f.type : 'other', size: Number.isInteger(f.size) && f.size >= 0 ? f.size : null,
       sha256: SHA.test(f.sha256 ?? '') ? f.sha256 : null, target: typeof f.target === 'string' ? short(f.target, 1000) : null,
       text: typeof f.text === 'string' && f.text.length <= 256 << 10 ? f.text : null, at: placed ? f.at : null, tool: place.tool,
-      claude: place.claude,
+      claude: place.claude, surface: placed && typeof f.surface === 'string' ? f.surface : null,
     });
   }
-  return { files, ok };
+  return { files, ok, agentOk };
 }
 
 const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
@@ -526,7 +529,11 @@ export function summarize(files, plugins = null, planPlugins = null) {
       // (plugins or a plugin marketplace the repository declares: their folders are not looked at here — never trusted;
       // a .json that cannot be parsed cannot be looked at either. A file not shown whole is incomplete already: not
       // looked into)
-      const pl = whole ? pluginsOf(f.name, f.text) : { key: null, unreadable: null };
+      // (and only a file a tool reads: never one of .github/'s that the pinned Copilot does not read — listed whole, as
+      // every unknown file there is, but not a configuration of anyone's)
+      const sfc = typeof f.surface === 'string' ? fold(f.surface) : '';
+      const unread = /^\.github\/[^/]+$/.test(sfc) && !COPILOT_GITHUB_FILES.includes(sfc.slice(8)) && f.name.split('/').length === (f.at ? f.at.split('/').length + 2 : 2);
+      const pl = whole && !unread ? pluginsOf(f.name, f.text) : { key: null, unreadable: null };
       if (pl.unreadable) { note(`${pl.unreadable}: what it declares cannot be looked at here`); incomplete('another tool\'s file this page cannot read the way the tool does'); }
       if (pl.key) {
         // (Claude Code's settings in a folder above: Claude Code does not read them there; Grok and Copilot do)
@@ -744,7 +751,7 @@ export function makeTrust({ call, store, log = () => {} }) {
   // session's start: the hashes alone, cheap), the sandbox's hashes of the same files, compared with the trusted ones
   async function read(abs, { text = true } = {}) {
     const { result } = await call({ op: 'project.settings', ...(abs === WS ? {} : { root: abs }), ...(text ? {} : { text: false }) }, { timeoutMs: 20000 });
-    const { files: all, ok } = checkFiles(result, abs);
+    const { files: all, ok, agentOk } = checkFiles(result, abs);
     const { plugins, planPlugins, ok: pok } = checkPlugins(result);
     for (const f of all) if (f.text !== null && (!f.sha256 || sha256(Buffer.from(f.text, 'utf8')) !== f.sha256)) f.text = null;
     const shown = (list) => list.every((f) => (f.type === 'file' || f.type === 'link' || f.type === 'name') && (!text || f.type === 'name' || f.text !== null));
@@ -760,11 +767,25 @@ export function makeTrust({ call, store, log = () => {} }) {
     const agentOver = typeof result?.agentOver === 'string' ? short(result.agentOver, 200) : null;
     const agentPresent = agentFiles.length > 0 || !ok || agentOver !== null;
     const agentHash = hashOf(agentFiles);
-    const agentVerifiable = ok && agentPresent && result?.agentVerifiable === true && !result?.agentOver && agentHash !== null && result?.agentHash === agentHash
-      && shown(agentFiles);
+    const agentVerifiable = ok && agentOk && agentPresent && result?.agentVerifiable === true && !result?.agentOver && agentHash !== null
+      && result?.agentHash === agentHash && shown(agentFiles);
+    // the project's own .claude/plugins/: in Claude Code's hash, as v0.23.0 has them, but judged — and shown — with the
+    // other tools' part (Grok and Copilot load them; Claude Code a plugin only when it is installed and turned on), so
+    // they never keep a trust of Claude Code's part from Claude Code on Bedrock
+    const pluginRows = files.filter((f) => f.tool === CLAUDE_PLUGINS);
     return { files, plugins, planPlugins, present, hash: verifiable ? hash : null, planHash: verifiable ? planHash : null, verifiable, over,
-      agentFiles, agentPresent, agentHash: agentVerifiable ? agentHash : null, agentVerifiable, agentOver };
+      agentFiles, agentPresent, agentHash: agentVerifiable ? agentHash : null, agentVerifiable, agentOver, pluginRows };
   }
+  // the other tools' part as judged: its files and the project's own .claude/plugins/ rows (their hash is Claude Code's:
+  // with none of its own files, the part's is EMPTY_HASH)
+  const agentsJudged = (r) => ({
+    present: r.agentPresent || r.pluginRows.length > 0,
+    hash: r.agentPresent ? r.agentHash : EMPTY_HASH,
+    verifiable: r.agentPresent ? r.agentVerifiable : true,
+  });
+  // agentsOk(r, agents) -> whether the other tools' part can be trusted as the dialog shows it (nothing of it, or all of
+  // it verifiable and shown whole)
+  const agentsOk = (r, agents) => !agentsJudged(r).present || (agentsJudged(r).verifiable && agents.complete);
   // the states of a reading against a record: Claude Code's (state), Claude on your plan's (planState, reason
   // plan-plugins when its own record lacks a plugin they turn on), the other tools' part alone (agentPart), and an
   // agent's (agentState: both parts — Claude Code's first)
@@ -779,8 +800,9 @@ export function makeTrust({ call, store, log = () => {} }) {
     if (missing && !['unverifiable', 'none', 'workspace'].includes(planState)) planState = 'untrusted';
     // the other tools' part: its own hash in the trust (none: not trusted with it — a trust of an earlier epoch: looked
     // at again, as Claude Code's part)
-    const agentPart = stateOf({ workspace, present: r.agentPresent, hash: r.agentHash,
-      trust: t && (t.agentHash || t.epoch !== TRUST_EPOCH) ? { ...t, hash: t.agentHash ?? null } : null, verifiable: r.agentVerifiable });
+    const judged = agentsJudged(r);
+    const agentPart = stateOf({ workspace, present: judged.present, hash: judged.hash,
+      trust: t && (t.agentHash || t.epoch !== TRUST_EPOCH) ? { ...t, hash: t.agentHash ?? null } : null, verifiable: judged.verifiable });
     const agentState = !APPLIED.includes(state) ? state : !APPLIED.includes(agentPart) ? agentPart
       : state === 'none' && agentPart === 'none' ? 'none' : workspace ? 'workspace' : 'trusted';
     return { state, planState, planReason: missing ? 'plan-plugins' : null, agentPart, agentState };
@@ -814,8 +836,8 @@ export function makeTrust({ call, store, log = () => {} }) {
   }
   // summaries(r) -> {summary (Claude Code's part), agents (the other tools'), complete, agentsComplete, said?}
   const summaries = (r) => {
-    const summary = summarize(r.files, r.plugins, r.planPlugins);
-    const agents = summarize(r.agentFiles);
+    const summary = summarize(r.files.filter((f) => f.tool !== CLAUDE_PLUGINS), r.plugins, r.planPlugins);
+    const agents = summarize([...r.agentFiles, ...r.pluginRows]);
     let said = null;
     for (const [sm, over] of [[summary, r.over], [agents, r.agentOver]]) {
       if (!over) continue;
@@ -838,16 +860,16 @@ export function makeTrust({ call, store, log = () => {} }) {
     const { summary, agents, said } = summaries(r);
     note(rec.id, st.state);
     const claudeOk = !r.present || (r.verifiable && summary.complete);
-    const agentsOk = !r.agentPresent || (r.agentVerifiable && agents.complete);
+    const othersOk = agentsOk(r, agents);
     // (a hash to trust only for what the summary shows whole: nothing you were not shown can apply)
     // (nothing to trust: Claude Code's part has nothing, and the other tools' part cannot be trusted either)
-    const hash = ws || !claudeOk || (!r.present && !(r.agentPresent && agentsOk)) ? null : confirmOf(rec, r, agentsOk);
+    const hash = ws || !claudeOk || (!r.present && !(agentsJudged(r).present && othersOk)) ? null : confirmOf(rec, r, othersOk);
     return {
       project: rec.id, path: abs, state: st.state, planState: st.planState, planReason: st.planReason, agentState: st.agentState, hash,
       trustedAt: rec.trust?.at ?? null,
       files: [...r.files, ...r.agentFiles].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).map(({ name, type, size, target }) => ({ name, type, size, target })),
-      summary: { ...summary, tools: agents.tools, notes: [...summary.notes, ...agents.notes], careful: summary.careful + agents.careful,
-        agentsComplete: agentsOk, agentsMissing: agentsOk ? [] : [...agents.missing, ...(r.agentPresent && !r.agentVerifiable ? ['a file of theirs that cannot be checked'] : [])] },
+      summary: { ...summary, tools: [...summary.tools, ...agents.tools], notes: [...summary.notes, ...agents.notes], careful: summary.careful + agents.careful,
+        agentsComplete: othersOk, agentsMissing: othersOk ? [] : [...agents.missing, ...(agentsJudged(r).verifiable ? [] : ['a file of theirs that cannot be checked'])] },
       ...(said ? { said, saidBy: 'sandbox' } : {}),
     };
   }
@@ -859,17 +881,18 @@ export function makeTrust({ call, store, log = () => {} }) {
     if (!r.present && !r.agentPresent) return { conflict: 'this project has no settings of its own (nothing to trust)' };
     if (r.present && !r.verifiable) return { conflict: 'its settings cannot be checked (a file there is a link out of the workspace, too large to show, or not a file): they are never trusted' };
     const { summary, agents } = summaries(r);
-    const agentsOk = !r.agentPresent || (r.agentVerifiable && agents.complete);
+    const othersOk = agentsOk(r, agents);
     // (what can never be trusted said as such first: no page could have offered it)
     if (r.present && !summary.complete) return { conflict: `its settings cannot all be shown here (${summary.missing.join('; ')}): they are not trusted — shorten them, or use the folder without them` };
-    if (!r.present && !agentsOk) return { conflict: 'the other tools\' settings here cannot all be checked or shown: there is nothing else to trust' };
-    if (hash !== confirmOf(rec, r, agentsOk)) return { conflict: 'its settings changed since you looked: review them again' };
+    if (!r.present && !othersOk) return { conflict: 'the other tools\' settings here cannot all be checked or shown: there is nothing else to trust' };
+    if (hash !== confirmOf(rec, r, othersOk)) return { conflict: 'its settings changed since you looked: review them again' };
     // (Claude on your plan: the same trust while its own record has every plugin they turn on — else none for it; the
     // other tools' part: its hash, or none when it cannot be trusted)
     store().trust(rec.id, r.hash ?? EMPTY_HASH, r.planPlugins ? (planMissing(r.planPlugins) ? null : r.planHash) : undefined,
-      agentsOk ? (r.agentHash ?? EMPTY_HASH) : null);
+      othersOk ? (agentsJudged(r).hash ?? EMPTY_HASH) : null);
     note(rec.id, 'trusted');
-    return { conflict: null };
+    // (Claude Code's part alone: said, so an agent's start there is no surprise)
+    return { conflict: null, ...(othersOk ? {} : { agents: 'not trusted' }) };
   }
   const untrust = async (rec) => { store().trust(rec.id, null); known.delete(rec.id); };
   return { decide, view, trust, untrust, known: (id) => known.get(id) ?? null };

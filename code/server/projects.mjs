@@ -264,23 +264,25 @@ export class Projects {
    *  all installed there: its sessions start with your own settings only; undefined: the same as hash (no plugin).
    *  agentHash: the other tools' part (what your subscriptions' agents read besides), or null — not trusted with it:
    *  agents do not start there */
-  trust(id, hash, planHash = undefined, agentHash = undefined) {
+  trust(id, hash, planHash = undefined, agentHash = undefined, { at = null } = {}) {
     if (id === WORKSPACE_ID) throw new ProjectError(400, 'the Workspace\'s own settings always apply (as they did before projects)');
     if (hash !== null && !SHA.test(hash ?? '')) throw new ProjectError(400, 'bad hash');
     if (planHash !== undefined && planHash !== null && !SHA.test(planHash)) throw new ProjectError(400, 'bad hash');
     if (agentHash !== undefined && agentHash !== null && !SHA.test(agentHash)) throw new ProjectError(400, 'bad hash');
     const plan = { ...(planHash === undefined ? {} : { planHash }), ...(agentHash === undefined ? {} : { agentHash }) };
+    // (when: now — or, for a trust carried over from an earlier reading as it was, the time it was given)
+    const when = Number.isFinite(at) && at > 0 ? at : this.now();
     const h = this.hostRecords().find((x) => x.id === id && !x.gone);
     if (h) {
       return this.update((v) => {
-        if (hash === null) delete v.hostTrust[id]; else v.hostTrust[id] = { hash, at: this.now(), epoch: TRUST_EPOCH, ...plan };
+        if (hash === null) delete v.hostTrust[id]; else v.hostTrust[id] = { hash, at: when, epoch: TRUST_EPOCH, ...plan };
         return { ...h, ...(hash === null ? { trust: undefined } : { trust: { ...v.hostTrust[id] } }) };
       });
     }
     return this.update((v) => {
       const p = v.projects.find((x) => x.id === id);
       if (!p) throw new ProjectError(404, 'no such project (it was removed?)');
-      if (hash === null) delete p.trust; else p.trust = { hash, at: this.now(), epoch: TRUST_EPOCH, ...plan };
+      if (hash === null) delete p.trust; else p.trust = { hash, at: when, epoch: TRUST_EPOCH, ...plan };
       return { ...p };
     });
   }

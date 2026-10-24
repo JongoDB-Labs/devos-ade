@@ -853,7 +853,10 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
     setBusy(false);
     if (e) return setErr(e);
     onClose();
-    if (start) void newSession({ ...start, noAsk: true });
+    // (an agent of your subscriptions where the other tools' settings could not be trusted with them: no start — it
+    // would be refused)
+    const agentWaits = trust === true && !!start?.harness && start.harness !== 'bedrock' && start.harness !== 'claude' && v?.summary.agentsComplete === false;
+    if (start && !agentWaits) void newSession({ ...start, noAsk: true });
   };
   const when = v?.trustedAt ? new Date(v.trustedAt).toLocaleString() : '';
   const lead: Record<string, string> = {
@@ -878,8 +881,10 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
     : v.planState === 'changed' ? 'Claude on your plan: its own plugin record changed since you trusted them — not applied in its sessions until you trust them again.'
     : settingsApplied(v.planState) ? `Claude on your plan: ${v.planState === 'trusted' ? 'trusted, as they are' : 'they apply'}.`
     : 'Claude on your plan: not applied in its sessions until you trust them.';
-  const agentLine = !v || v.agentState === v.state || v.state === 'workspace' ? null
+  // (when Trust covers Claude Code's part alone it is said whatever the states, before you click)
+  const agentLine = !v || v.state === 'workspace' ? null
     : !v.summary.agentsComplete ? `The other tools' settings (Codex, Copilot, Cursor, Grok) cannot all be checked or shown here (${label(v.summary.agentsMissing.join('; ') || 'not said', 400)}): trusting covers Claude Code's alone, and your subscriptions' agents do not start in this folder.`
+    : v.agentState === v.state ? null
     : v.agentState === 'changed' ? 'The other tools\' settings changed since you trusted them: your subscriptions\' agents do not start in this folder until you trust them again.'
     : settingsApplied(v.agentState) ? null
     : 'The other tools\' settings (Codex, Copilot, Cursor, Grok) are not trusted: your subscriptions\' agents do not start in this folder until they are. Claude Code on Bedrock does not read them.';
@@ -1016,7 +1021,8 @@ function SettingsDialog({ id, start, onClose }: { id: string; start?: NewSession
         )}
         {canTrust && (
           <button type="button" class="btn primary" disabled={busy || unopened > 0} onClick={() => void go(true)} data-testid="settings-trust">
-            {busy ? <Spinner size={12} /> : null} {start ? 'Trust them and start' : 'Trust this project\'s Claude Code settings'}
+            {busy ? <Spinner size={12} /> : null}{' '}
+            {!v.summary.agentsComplete ? 'Trust Claude Code\'s settings alone' : start ? 'Trust them and start' : 'Trust this project\'s Claude Code settings'}
           </button>
         )}
         {start && v && settingsApplied(startState) && (

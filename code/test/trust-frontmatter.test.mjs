@@ -231,6 +231,12 @@ test('another tool\'s file: plugins and marketplaces found by its parsed keys (a
   assert.equal(pluginsOf('.grok/config.yaml', 'additional_plugins: [a]\n').key, 'additional_plugins');
   assert.equal(pluginsOf('.github/copilot/settings.json', '{"Plugin-Dirs": ["./p"]}').key, 'Plugin-Dirs');
   assert.equal(pluginsOf('.agents/skills/s/SKILL.md', 'see "marketplaces": x').key, null);
+  // a file of .github/ the pinned Copilot does not read (listed whole, as every unknown one is): not looked into for
+  // plugins; one it reads (mcp.json …): looked into
+  const gh = (name, text) => summarize([{ name, size: text.length, type: 'file', text, tool: 'GitHub Copilot', at: '', surface: name }]);
+  assert.equal(gh('.github/release-notes.json', '{"plugins": ["x"]}').complete, true);
+  assert.equal(gh('.github/release-notes.json', '{"a": ').complete, true, 'not even parsed');
+  assert.equal(gh('.github/plugin.json', '{"plugins": ["x"]}').complete, false);
   // a name a folding disk opens as marketplace.json: one
   assert.equal(pluginsOf('.claude-plugin/marketplace.jſon', '{}').key, 'a marketplace.json');
 });
@@ -425,17 +431,22 @@ test('a row\'s place is fixed by its name: no other folder and surface fit it, s
   assert.equal(partOf('.github/workflows', '', '.github/workflows', 'name'), false);
   assert.equal(partOf('/workspace/mono/.github/workflows', '/workspace/mono', '.github/workflows', 'name'), false);
   for (const [name, surface] of [['.claude/skills', '.claude'], ['.github/hooks/x', '.github/hooks'], ['.github/workflows/x', '.github/workflows'], ['.codex', '.codex'],
-    ['.github', '.github'], ['.github/hooks', '.github/hooks'], ['.github/Skills', '.github/Skills'], ['.github/agentſ', '.github/agentſ'],
-    // (a file Copilot reads there — forged as a row by its name alone: what it holds would never be in the hash)
-    ['.github/mcp.json', '.github/mcp.json'], ['.github/LSP.json', '.github/LSP.json'], ['.GitHub/allowed_models.txt', '.GitHub/allowed_models.txt'],
-    ['.github/plugin.json', '.github/plugin.json'], ['.github/copilot-instructions.md', '.github/copilot-instructions.md'], ['.github/instructions', '.github/instructions']]) {
+    ['.github', '.github']]) {
     assert.equal(placeOf({ name, at: '', surface, type: 'name' }, ROOT), null, name);
   }
-  assert.equal(placeOf({ name: '/workspace/mono/.github/mcp.json', at: '/workspace/mono', surface: '.github/mcp.json', type: 'name' }, ROOT), null, 'above too');
-  // and so the whole listing is unverifiable: both parts (a sandbox that forged it is not believed for either)
+  // (what Copilot reads there — a folder, or a file —, forged as a row by its name alone: what it holds would never be
+  // in the hash — its place fits, but the other tools' part is not believed)
+  for (const [name, surface] of [['.github/hooks', '.github/hooks'], ['.github/Skills', '.github/Skills'], ['.github/agentſ', '.github/agentſ'],
+    ['.github/mcp.json', '.github/mcp.json'], ['.github/LSP.json', '.github/LSP.json'], ['.GitHub/allowed_models.txt', '.GitHub/allowed_models.txt'],
+    ['.github/plugin.json', '.github/plugin.json'], ['.github/copilot-instructions.md', '.github/copilot-instructions.md'], ['.github/instructions', '.github/instructions']]) {
+    assert.deepEqual(placeOf({ name, at: '', surface, type: 'name' }, ROOT), { tool: 'GitHub Copilot', claude: false, refused: true }, name);
+  }
+  assert.equal(placeOf({ name: '/workspace/mono/.github/mcp.json', at: '/workspace/mono', surface: '.github/mcp.json', type: 'name' }, ROOT).refused, true, 'above too');
+  // and so the other tools' part is unverifiable — never Claude Code's
   const { checkFiles } = await import('../server/trust.mjs');
-  assert.equal(checkFiles({ files: [{ name: '.claude/settings.json', type: 'file', at: '', surface: '.claude', sha256: 'a'.repeat(64), text: '{}' },
-    { name: '.github/mcp.json', type: 'name', at: '', surface: '.github/mcp.json', sha256: 'b'.repeat(64) }] }, ROOT).ok, false);
+  const c = checkFiles({ files: [{ name: '.claude/settings.json', type: 'file', at: '', surface: '.claude', sha256: 'a'.repeat(64), text: '{}' },
+    { name: '.github/mcp.json', type: 'name', at: '', surface: '.github/mcp.json', sha256: 'b'.repeat(64) }] }, ROOT);
+  assert.deepEqual([c.ok, c.agentOk], [true, false]);
 });
 
 test('a file not shown whole is not looked into (it is incomplete already); an entry nested too deep to show: incomplete, never an error', () => {

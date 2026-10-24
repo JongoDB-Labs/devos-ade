@@ -2588,7 +2588,8 @@ export function settingsFiles(abs, { text = false } = {}) {
         if (file) {
           if (GITHUB_INERT.includes(f) || IMAGE.test(f)) continue;
           from(agent, at, `${g}/${n}`, () => one(agent, rowName, p));
-        } else if (folder && COPILOT_GITHUB_DIRS.includes(f)) from(agent, at, `${g}/${n}`, () => tree(agent, p, rowName));
+        // (Copilot's folders — and a folder named like a file it reads, mcp.json/ …: what it holds, never its name alone)
+        } else if (folder && (COPILOT_GITHUB_DIRS.includes(f) || COPILOT_GITHUB_FILES.includes(f))) from(agent, at, `${g}/${n}`, () => tree(agent, p, rowName));
         // (a real folder no pinned tool reads: its name alone)
         else if (folder) from(agent, at, `${g}/${n}`, () => nameOnly(agent, rowName));
         // (anything else — a link, whatever its name, a FIFO, a socket, a device, one that could not be looked at: a
