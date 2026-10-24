@@ -3290,9 +3290,12 @@ never reads, copies, keeps, passes on or relays a login.**
   blocks with Pyodide in a sandboxed frame of its own (an opaque origin), which sends no cookie and says
   `Origin: null`, so the session check and the same-site guard would refuse what it loads. Caddy answers exactly
   these requests without either (`caddy/Caddyfile` `chat_runtime`, first on every Chat site, local and remote): GET or
-  HEAD of one file name directly under `/pyodide/`, matched on the decoded path (no folder, no dot first: an escaped
-  `..` or `/` names no other path). Nothing that says who you are is passed on — no cookie (the session's included),
-  no `X-Portal-User`, no proxy secret, no `Authorization` — so Open WebUI answers them as it answers anyone; nothing it
+  HEAD whose request target, exactly as it arrived — not decoded, not cleaned (Caddy's path matchers clean `../` and
+  `//`; the upstream would not) — is `/pyodide/` and one file name of plain characters, with no query: any `%`, a dot
+  first, `..`, `//`, `\`, `;` or `?` and it is the gated route. It is sent on as exactly that path (Open WebUI gets the
+  bytes that were checked). Nothing that says who you are is passed on — no cookie (the session's included), no
+  `X-Portal-User` (Open WebUI's trusted sign-in header), no proxy secret, no `Authorization` — so Open WebUI answers
+  them as it answers anyone; nothing it
   sets comes back; the answer allows any origin to read it, never with credentials; and Chat's policy holds there as
   everywhere. What is there is public and static, the same for everyone: Pyodide's runtime from the Open WebUI image,
   the wheels our build vendored into it, and the lists of them (`pyodide-lock.json`, `vendored.json`); an unknown name

@@ -415,11 +415,15 @@ def chat_python_runtime(ctx):
     if r.status != 200 or not {x["name"] for x in json.loads(r.body).get("ready", [])} >= {"micropip", "numpy"}:
         bad.append(f"vendored.json -> {r.status}")
     # behind the session as before: another method, a folder, a dot first — and the same spelled with escapes
+    # (each sent exactly as written — no client cleans ../ or // here: Caddy's own path matchers would)
     for method, path in (("POST", "/pyodide/pyodide.js"), ("PUT", "/pyodide/pyodide.js"), ("GET", "/pyodide/a/b.js"), ("GET", "/pyodide/.env"),
                          ("GET", "/pyodide/..%2fapi%2fconfig"), ("GET", "/pyodide/%2e%2e/api/config"), ("GET", "/pyodide/a%2fb.js"),
+                         ("GET", "/pyodide/a%2Fb"), ("GET", "/pyodide//a"), ("GET", "/api/../pyodide/a"), ("GET", "/pyodide/a;b"),
+                         ("GET", "/pyodide/pyodide.js?x=1"), ("GET", "/api/v1/x/../../../pyodide/a"), ("GET", "/api/v1/auths/../../../pyodide/pyodide.js"),
+                         ("GET", "/pyodide/%61.js"), ("GET", "/pyodide/./pyodide.js"), ("HEAD", "/pyodide//pyodide.js"),
                          ("GET", "/pyodide/%2epyodide.js"), ("GET", "/pyodide/"), ("GET", "/pyodide"), ("GET", "/api/v1/auths/")):
         r = http(method, "chat", path, {"Accept": "application/json"}, "{}" if method in ("POST", "PUT") else None)
-        if r.status != 401:
+        if r.status != 401 or r.header("access-control-allow-origin") == "*":
             bad.append(f"{method} {path} -> {r.status} (not the session check)")
     # the same-site guard steps back for that route only: an opaque origin's request to Chat's API is still refused
     r = http("GET", "chat", "/api/config", {"Origin": "null", "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "cors"})

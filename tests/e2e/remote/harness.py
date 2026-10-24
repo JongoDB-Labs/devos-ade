@@ -93,7 +93,8 @@ class Base(BaseHTTPRequestHandler):
         for k, v in extra:
             self.send_header(k, v)
         self.end_headers()
-        self.wfile.write(b)
+        if self.command != "HEAD":
+            self.wfile.write(b)
 
     def body(self) -> str:
         n = int(self.headers.get("Content-Length") or 0)
@@ -149,7 +150,7 @@ class Chat(Base):
             return self.send(200, b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;", "image/gif")
         self.send(200, f"<!doctype html><title>chat stand-in</title><h1 id=chat>chat stand-in, signed in as {user}</h1>")
 
-    do_GET = do_POST = handle_any
+    do_GET = do_POST = do_HEAD = handle_any
 
 
 CODE_JS = """
@@ -353,22 +354,44 @@ def run(b, ctx, page, reqs, resps, by_frame):
               and "set-cookie" not in r.headers and not csp_differs(r.headers.get("content-security-policy", ""), want),
               f"{r.status}; the browser holds {cookies_sent} for Chat; Open WebUI saw {sorted(h)} (leaked: {leaked}); "
               f"ACAO {r.headers.get('access-control-allow-origin')!r}, Set-Cookie {r.headers.get('set-cookie')!r}")
-        # anything else under /pyodide/ — another method, a folder, a dot first, the same escaped — is behind the session
-        # check: without a session Open WebUI never sees it
-        anon = b.new_context(ignore_https_errors=True)
-        try:
-            n0 = len(seen_chat)
-            st = {}
-            for method, path in (("POST", "/pyodide/bn-probe.js"), ("GET", "/pyodide/a/bn-probe.js"), ("GET", "/pyodide/..%2fapi%2fbn-probe"),
-                                 ("GET", "/pyodide/%2e%2e/api/bn-probe"), ("GET", "/pyodide/.bn-probe"), ("GET", "/api/bn-probe")):
-                rr = anon.request.fetch(CHAT + path, method=method, max_redirects=0, headers={"Accept": "application/json"},
-                                        data="{}" if method == "POST" else None)
-                st[f"{method} {path}"] = rr.status
-            reached = [c["path"] for c in seen_chat[n0:]]
-            check("chat-runtime-remote-exact", all(v == 401 for v in st.values()) and not reached,
-                  f"{st}; Open WebUI saw {reached}")
-        finally:
-            anon.close()
+        # anything else under /pyodide/ — another method, a folder, a dot first, the same escaped, ../ and // sent raw (as
+        # no browser would: Caddy's path matchers clean them, the upstream would not), a ; or a query — is behind the
+        # session check: without a session Open WebUI never sees it. What reaches it on the public route is exactly the
+        # path checked, with no query, and no Authorization (raw requests: http.client sends the target as written)
+        import http.client
+        import ssl
+        host = CHAT.split("://", 1)[1]
+
+        def raw(method: str, target: str, headers: dict | None = None) -> int:
+            c = http.client.HTTPSConnection(host, 443, timeout=20, context=ssl._create_unverified_context())
+            try:
+                c.request(method, target, body="{}" if method == "POST" else None, headers={"Accept": "application/json", **(headers or {})})
+                r = c.getresponse()
+                r.read()
+                return r.status
+            finally:
+                c.close()
+        n0 = len(seen_chat)
+        st = {}
+        for method, path in (("POST", "/pyodide/bn-probe.js"), ("GET", "/pyodide/a/bn-probe.js"), ("GET", "/pyodide/..%2fapi%2fbn-probe"),
+                             ("GET", "/pyodide/%2e%2e/api/bn-probe"), ("GET", "/pyodide/.bn-probe"), ("GET", "/api/bn-probe"),
+                             ("GET", "/pyodide/a%2Fbn-probe"), ("GET", "/pyodide//bn-probe.js"), ("GET", "/api/../pyodide/bn-probe.js"),
+                             ("GET", "/pyodide/bn-probe;x"), ("GET", "/pyodide/bn-probe.js?x=1"), ("GET", "/api/v1/x/../../../pyodide/bn-probe.js"),
+                             ("GET", "/pyodide/%62n-probe.js"), ("HEAD", "/pyodide//bn-probe.js")):
+            st[f"{method} {path}"] = raw(method, path)
+        reached = [c["path"] for c in seen_chat[n0:]]
+        check("chat-runtime-remote-exact", all(v == 401 for v in st.values()) and not reached,
+              f"{st}; Open WebUI saw {reached}")
+        # the public route, raw and with an Authorization (GET and HEAD): Open WebUI gets exactly /pyodide/<name>, nothing
+        # that says who you are
+        n0 = len(seen_chat)
+        got = {m: raw(m, "/pyodide/bn-probe.js", {"Authorization": "Bearer bn-probe", "Cookie": "token=bn-probe; __Host-bn_session=x"})
+               for m in ("GET", "HEAD")}
+        seen = [(c["method"], c["path"], sorted(k for k in c["headers"] if k in ("authorization", "cookie", "x-portal-user", "x-portal-proxy")))
+                for c in seen_chat[n0:]]
+        check("chat-runtime-remote-upstream-exact", got == {"GET": 200, "HEAD": 200}
+              and seen == [("GET", "/pyodide/bn-probe.js", []), ("HEAD", "/pyodide/bn-probe.js", [])],
+              f"{got}; Open WebUI saw {seen}")
         page.goto(CODE + "/")
         page.wait_for_selector("#password", timeout=20000)
         # the unlock page loads the portal's style sheet and logo: same-site plain assets, which the guard lets through

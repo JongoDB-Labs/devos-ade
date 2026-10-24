@@ -306,28 +306,34 @@ test_caddy_chat_policy_one_definition_local_and_remote() {
 }
 
 test_caddy_chat_runtime_is_one_exact_public_route_before_the_guard() {
-  # Open WebUI's Python runner's static files (a sandboxed frame: no cookie, Origin: null): GET/HEAD of one file name
-  # directly under /pyodide/, nothing passed on that says who you are, CORS open without credentials, Chat's policy —
-  # imported on every Chat site (local and both remote ones) right after the request's own headers, before the guard
+  # Open WebUI's Python runner's static files (a sandboxed frame: no cookie, Origin: null): GET/HEAD whose request
+  # target as it arrived — not decoded, not cleaned — is one file name directly under /pyodide/, sent on as exactly that
+  # path, nothing passed on that says who you are, CORS open without credentials, Chat's policy — imported on every Chat
+  # site (local and both remote ones) right after the request's own headers, before the guard
   local f="$STACK_DIR/caddy/Caddyfile" t="$STACK_DIR/caddy/remote-tailscale.caddy" d="$STACK_DIR/caddy/remote-domain.caddy" snip site want
   snip="$(sed -n '/^(chat_runtime) {/,/^}/p' "$f")"
   assert_eq "$(grep -c '^(chat_runtime) {' "$f" | tr -d ' ')" 1
-  for want in "method GET HEAD" 'path_regexp ^/pyodide/[A-Za-z0-9][A-Za-z0-9._-]*$' "request_header @chat_runtime -Cookie" \
+  for want in "method GET HEAD" 'vars_regexp chat_runtime {http.request.orig_uri} ^/pyodide/([A-Za-z0-9][A-Za-z0-9._-]*)$' \
+              'rewrite @chat_runtime /pyodide/{re.chat_runtime.1}' "request_header @chat_runtime -Cookie" \
               "request_header @chat_runtime -Authorization" "request_header @chat_runtime -X-Portal-User" "request_header @chat_runtime -X-Portal-Proxy" \
               "request_header @chat_runtime -X-Portal-Remote" "reverse_proxy @chat_runtime open-webui:8080 {" "header_down -Set-Cookie" \
               "header_down Access-Control-Allow-Origin *" "header_down -Access-Control-Allow-Credentials" "import chat_csp {args[0]}"; do
     assert_contains "$snip" "$want"
   done
-  # (nothing else in it: no other matcher, no other upstream, no session check)
-  assert_eq "$(printf '%s\n' "$snip" | grep -c '@' | tr -d ' ')" 7
+  # (nothing else in it: no other matcher, no other upstream, no session check; no matcher on Caddy's cleaned path)
+  assert_eq "$(printf '%s\n' "$snip" | grep -c '@' | tr -d ' ')" 8
+  assert_not_contains "$snip" "path_regexp"
+  assert_not_contains "$snip" "uri.path"
   assert_not_contains "$snip" "portal_auth"
   assert_not_contains "$snip" "forward_auth"
-  # the pattern on the decoded path: one name, no folder, no dot first — what an escaped path decodes to included
-  local re='^/pyodide/[A-Za-z0-9][A-Za-z0-9._-]*$' p
+  # the pattern on the request target as it arrived (path and query): one plain name, nothing else
+  local re='^/pyodide/([A-Za-z0-9][A-Za-z0-9._-]*)$' p
   for p in /pyodide/pyodide.js /pyodide/pyodide.asm.wasm /pyodide/python_stdlib.zip /pyodide/pyodide-lock.json /pyodide/numpy-2.2.5-cp314-cp314-pyodide_2026_0_wasm32.whl; do
     printf '%s\n' "$p" | grep -qE "$re" || { echo "should be the runtime: $p" >&2; return 1; }
   done
-  for p in /pyodide/ /pyodide/.. /pyodide/../api/v1/chats /pyodide/a/b /pyodide/.env /pyodide/x%2e /pyodide/a/../../api /pyodide /pyodidex/a /api/pyodide/x '/pyodide/a b' /PYODIDE/x; do
+  for p in /pyodide/ /pyodide/.. /pyodide/../api/v1/chats /pyodide/a/b /pyodide/.env /pyodide/x%2e /pyodide/a/../../api /pyodide /pyodidex/a \
+           /api/pyodide/x '/pyodide/a b' /PYODIDE/x /pyodide/%2e%2e/api/config /pyodide/a%2Fb /pyodide//a /api/../pyodide/a '/pyodide/a;b' \
+           '/pyodide/a?x=1' /api/v1/x/../../../pyodide/a /pyodide/%61.js /pyodide/./a.js '/pyodide/a\b'; do
     if printf '%s\n' "$p" | grep -qE "$re"; then echo "should stay behind the guard and the session: $p" >&2; return 1; fi
   done
   # on every Chat site: right after the request's own headers, before the guard and the session check
