@@ -282,7 +282,8 @@ test_caddy_chat_policy_one_definition_local_and_remote() {
   assert_eq "$line" "$(chat_csp '{args[0]}' '{http.request.host}')"
   assert_contains "$snip" "header_down Referrer-Policy no-referrer"
   for want in "img-src 'self' data: blob:" "media-src 'self' data: blob:" "frame-src 'self' blob:" "object-src 'none'" "form-action 'self'" \
-              "base-uri 'self'" "connect-src 'self' ws://{http.request.host}:* wss://{http.request.host}:*" "font-src 'self' data:"; do
+              "base-uri 'self'" "connect-src 'self' ws://{http.request.host}:* wss://{http.request.host}:*" "font-src 'self' data:" \
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:" "style-src 'self' 'unsafe-inline'" "default-src 'self' data: blob:"; do
     assert_contains "$line" "$want"
   done
   assert_contains "$(sed -n '/^http:\/\/{\$CHAT_HOST} {/,/^}/p' "$f")" 'import chat_csp {$PORTAL_ORIGIN}'
@@ -308,12 +309,17 @@ test_chat_csp_check_takes_each_directive_whole() {
   w="$(chat_csp "$o" "$h")"
   chat_csp_check "$w" "$o" "$h" || return 1
   chat_csp_check "$w; report-to x" "$o" "$h" || return 1
-  chat_csp_check "default-src 'self'; $(printf '%s' "$w" | tr ';' '\n' | sort | tr '\n' ';')" "$o" "$h" || return 1
+  chat_csp_check "manifest-src 'self'; $(printf '%s' "$w" | tr ';' '\n' | sort | tr '\n' ';')" "$o" "$h" || return 1
   chat_csp_check "$(printf '%s' "$w" | tr -s ' ' | sed 's/; /;   /g')" "$o" "$h" || return 1   # (spacing)
   assert_eq "$(chat_csp_check "$(printf '%s' "$w" | sed "s/img-src 'self' data: blob:;/img-src 'self' data: blob: https:;/")" "$o" "$h")" "img-src"
   assert_eq "$(chat_csp_check "$(printf '%s' "$w" | sed "s/img-src 'self' data: blob:; //")" "$o" "$h")" "img-src"
   assert_eq "$(chat_csp_check "img-src *; $w" "$o" "$h")" "img-src"
   assert_eq "$(chat_csp_check "$(printf '%s' "$w" | sed "s/connect-src 'self' /connect-src * /")" "$o" "$h")" "connect-src"
+  # (scripts and style sheets from another host: refused too — what a srcdoc artifact would load them from)
+  assert_eq "$(chat_csp_check "$(printf '%s' "$w" | sed "s/script-src 'self' /script-src 'self' https:\/\/cdn.example /")" "$o" "$h")" "script-src"
+  assert_eq "$(chat_csp_check "$(printf '%s' "$w" | sed "s/; style-src 'self' 'unsafe-inline'/; style-src 'self' 'unsafe-inline' https:/")" "$o" "$h")" "style-src"
+  assert_eq "$(chat_csp_check "$(printf '%s' "$w" | sed "s/; default-src [^;]*//")" "$o" "$h")" "default-src"
+  assert_eq "$(chat_csp_check "$(printf '%s' "$w" | sed "s/; script-src [^;]*//")" "$o" "$h")" "script-src"
   assert_eq "$(chat_csp_check "frame-ancestors *" "$o" "$h")" "frame-ancestors"
   if chat_csp_check "" "$o" "$h" >/dev/null; then echo "an empty policy passed" >&2; return 1; fi
   # (./stack test uses it, and wants no Referer there)

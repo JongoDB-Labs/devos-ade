@@ -87,7 +87,7 @@ app_host() {
 # chat_csp FRAME_ORIGIN CHAT_HOST -> the Content-Security-Policy Caddy sends on Chat's site, framed by FRAME_ORIGIN
 # (caddy/Caddyfile chat_csp, with {args[0]} and {http.request.host} filled in: tests/test_portal.sh keeps the two the same)
 chat_csp() {
-  printf "frame-ancestors %s; img-src 'self' data: blob:; media-src 'self' data: blob:; frame-src 'self' blob:; object-src 'none'; form-action 'self'; base-uri 'self'; connect-src 'self' ws://%s:* wss://%s:*; font-src 'self' data:\n" "$1" "$2" "$2"
+  printf "frame-ancestors %s; img-src 'self' data: blob:; media-src 'self' data: blob:; frame-src 'self' blob:; object-src 'none'; form-action 'self'; base-uri 'self'; connect-src 'self' ws://%s:* wss://%s:*; font-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; default-src 'self' data: blob:\n" "$1" "$2" "$2"
 }
 
 # chat_csp_check SERVED FRAME_ORIGIN CHAT_HOST -> 0, printing nothing, when the policy SERVED has each of chat_csp's

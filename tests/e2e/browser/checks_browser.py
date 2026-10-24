@@ -1033,11 +1033,16 @@ def chat_images(ctx):
     shows itself — its logo, the models' icons, avatars — still loads, with no CSP error; an image of another site (what
     an answer could carry a sign-in's words out in) is refused, and so are a video, a frame and a request to another
     site. An artifact (a sandboxed srcdoc frame, as Open WebUI's Artifacts panel makes one, with its IFRAME_CSP written
-    into the document's <head>): its request and image to another site refused — also when the document hides its
-    <head> in a comment, so that Open WebUI's policy lands there (Chat's own policy holds it then); html code blocks
-    open there only on a click (detectArtifacts off)."""
+    into the document's <head>): its request, image, script and style sheet from another site refused — also when the
+    document hides its <head> in a comment, so that Open WebUI's policy lands there (Chat's own policy holds them then)
+    —, none of them requested; its frame navigating itself to another site refused (the embedding page's frame-src), a
+    popup and the top page's navigation refused (its sandbox), nothing requested; html code blocks open there only on a
+    click (detectArtifacts off)."""
     need("open-webui")
     page, rec = ctx.page("chat-images")
+    # (every request the page or a frame of it makes to another site: none may go out)
+    out = []
+    page.context.on("request", lambda r: out.append(r.url) if "example.com" in r.url else None)
     login(page)
     fl, f = chat_frame(page)
     csp = f.evaluate("async () => (await fetch(location.href, {cache: 'no-store'})).headers.get('content-security-policy') || ''")
@@ -1080,28 +1085,135 @@ def chat_images(ctx):
             document.body.append(x);
             setTimeout(() => r('no answer'), 12000);
         });
+        // (each directive as reported, its -elem / -attr form as the directive itself)
         const probe = '<script>const seen = [];'
-            + "document.addEventListener('securitypolicyviolation', (e) => seen.push(e.violatedDirective.split(' ')[0]));"
+            + "document.addEventListener('securitypolicyviolation', (e) => seen.push(e.effectiveDirective.replace(/-(elem|attr)$/, '')));"
             + "fetch('https://example.com/bn-e2e-artifact?' + Date.now()).catch(() => {});"
             + "const i = new Image(); i.src = 'https://example.com/bn-e2e-artifact.png?' + Date.now(); document.body.append(i);"
+            + "const sc = document.createElement('script'); sc.src = 'https://example.com/bn-e2e-artifact.js?' + Date.now(); document.body.append(sc);"
+            + "const ln = document.createElement('link'); ln.rel = 'stylesheet'; ln.href = 'https://example.com/bn-e2e-artifact.css?' + Date.now(); document.head.append(ln);"
+            + "const pf = document.createElement('link'); pf.rel = 'prefetch'; pf.href = 'https://example.com/bn-e2e-artifact-prefetch?' + Date.now(); document.head.append(pf);"
             + "setTimeout(() => parent.postMessage([...new Set(seen)].sort().join(','), '*'), 3000);<" + "/script>";
+        // its own frame sent elsewhere, a popup, the top page: what Chat's page sees of the first (its frame-src is the
+        // embedding page's rule), what the artifact sees of the other two (its sandbox)
+        const nav = () => new Promise((r) => {
+            const seen = [];
+            const on = (e) => { if (String(e.blockedURI).includes('bn-e2e-nav')) seen.push(e.effectiveDirective); };
+            document.addEventListener('securitypolicyviolation', on);
+            const x = document.createElement('iframe');
+            x.setAttribute('sandbox', 'allow-scripts allow-downloads allow-forms');
+            let said = null;
+            const msg = (e) => { if (e.source === x.contentWindow) said = e.data; };
+            window.addEventListener('message', msg);
+            x.srcdoc = '<!--<head>--><html><body><script>'
+                + "let pop = 'none'; try { pop = window.open('https://example.com/bn-e2e-pop?' + Date.now()) ? 'opened' : 'refused'; } catch (e) { pop = 'refused'; }"
+                + "let top = 'none'; try { window.top.location.href = 'https://example.com/bn-e2e-top?' + Date.now(); top = 'tried'; } catch (e) { top = 'refused'; }"
+                + "parent.postMessage({ pop, top }, '*');"
+                + "setTimeout(() => { location.href = 'https://example.com/bn-e2e-nav?' + Date.now(); }, 300);<" + "/script></body></html>";
+            document.body.append(x);
+            setTimeout(() => { document.removeEventListener('securitypolicyviolation', on); window.removeEventListener('message', msg);
+                let still = null; try { still = x.contentDocument === null ? 'opaque' : 'here'; } catch (e) { still = 'opaque'; }
+                x.remove(); r({ seen, said, still }); }, 4000);
+        });
         return { csp, detect: user && user.ui ? user.ui.detectArtifacts : undefined,
             plain: await run('<html><head></head><body>' + probe + '</body></html>'),
-            hidden: await run('<!--<head>--><html><body>' + probe + '</body></html>') };
+            hidden: await run('<!--<head>--><html><body>' + probe + '</body></html>'), nav: await nav() };
     }""")
     expect("connect-src 'none'" in art["csp"], f"Open WebUI's IFRAME_CSP: {art['csp']!r}")
     expect(art["detect"] is False, f"detectArtifacts by default: {art['detect']!r}")
     for k in ("plain", "hidden"):
         got = set(str(art[k]).split(","))
-        expect({"connect-src", "img-src"} <= got, f"an artifact ({k} <head>): refused {art[k]!r}, want its request and image to another site refused")
+        expect({"connect-src", "img-src", "script-src", "style-src"} <= got,
+               f"an artifact ({k} <head>): refused {art[k]!r}, want its request, image, script and style sheet from another site refused")
+    # (a prefetch: default-src, Chat's — the hidden one shows it; with IFRAME_CSP, its own default-src 'none' first)
+    expect("default-src" in set(str(art["hidden"]).split(",")), f"an artifact's prefetch to another site: not refused ({art['hidden']!r})")
+    nav = art["nav"]
+    expect("frame-src" in (nav.get("seen") or []), f"an artifact sending its own frame to another site: not refused by Chat's frame-src ({nav})")
+    expect((nav.get("said") or {}).get("pop") == "refused", f"an artifact's popup: {nav}")
+    page.wait_for_timeout(1000)
+    expect(page.url.startswith(origin()), f"the top page was navigated: {page.url}")
+    sent = [u for u in out if "bn-e2e-" in u]
+    expect(not sent, f"requested all the same: {sent[:6]}")
     shot(page, "07b-chat-images")
-    probs = rec.problems(allow=[r"No token found in localStorage", r"example\.com/bn-e2e", r"Content Security Policy"])
-    own = [p for p in rec.problems(allow=[r"No token found in localStorage", r"example\.com/bn-e2e"]) if "Content Security Policy" in p and "example.com" not in p]
+    # (Chromium's own words for what the sandbox refused: the top page's navigation, a popup)
+    sandboxed = [r"Unsafe attempt to initiate navigation", r"allow-top-navigation", r"allow-popups"]
+    probs = rec.problems(allow=[r"No token found in localStorage", r"example\.com/bn-e2e", r"Content Security Policy", *sandboxed])
+    own = [p for p in rec.problems(allow=[r"No token found in localStorage", r"example\.com/bn-e2e", *sandboxed]) if "Content Security Policy" in p and "example.com" not in p]
     rec.save()
     expect(not own, f"CSP refused something of Open WebUI's own: {own[:4]}")
     expect(not probs, f"errors: {probs}")
-    return ("Open WebUI's site: images, media, frames and requests from itself only — its own load, another site's are refused; "
-            "an artifact's request and image too (its <head> hidden or not); artifacts open on a click")
+    return ("Open WebUI's site: images, media, frames, requests, scripts and style sheets from itself only — its own load, another "
+            "site's are refused, none requested; an artifact's too (its <head> hidden or not), and its frame cannot be sent to another "
+            "site, nor a popup opened or the top page moved; artifacts open on a click")
+
+
+@check("browser", "chat-own-page-under-policy")
+def chat_own_page(ctx):
+    """Open WebUI's own page under Chat's policy (caddy/Caddyfile chat_csp: scripts, styles, workers and WebAssembly
+    from itself only): an answer with a highlighted code block, a Mermaid diagram, a Python block run by Open WebUI's
+    runner in the browser (Pyodide: WebAssembly in a worker) and an html block opened in the Artifacts panel by its
+    Preview button (detectArtifacts is off) — each works, with no CSP error of Open WebUI's own. No model call: the
+    conversation is made through Open WebUI's own API."""
+    import secrets
+    import uuid
+    need("open-webui")
+    page, rec = ctx.page("chat-own-page")
+    login(page)
+    fl, f = chat_frame(page)
+    tag = f"bnpolicy{secrets.token_hex(4)}"
+    md = ("Here they are.\n\n```python\nprint(6 * 7)\n```\n\n```mermaid\ngraph TD\n  A[bnstart] --> B[bnend]\n```\n\n"
+          f"```html\n<html><head></head><body><h1 id=\"bnart\">artifact {tag}</h1></body></html>\n```\n")
+    now = int(time.time())
+    uid, aid = str(uuid.uuid4()), str(uuid.uuid4())
+    msgs = {uid: {"id": uid, "parentId": None, "childrenIds": [aid], "role": "user", "content": "show me", "timestamp": now, "models": []},
+            aid: {"id": aid, "parentId": uid, "childrenIds": [], "role": "assistant", "content": md, "model": "", "modelName": "",
+                  "done": True, "timestamp": now}}
+    chat = {"title": f"Policy {tag}", "models": [], "params": {}, "history": {"messages": msgs, "currentId": aid},
+            "messages": [msgs[uid], msgs[aid]], "tags": [], "timestamp": now * 1000}
+    r = owui_api(f, "/api/v1/chats/new", "POST", {"chat": chat})
+    expect(r["status"] == 200, f"new chat {r['status']} {r['body'][:200]}")
+    cid = json.loads(r["body"])["id"]
+    done = []
+    try:
+        start = len(rec.events)
+        fl, f = chat_frame(page, f"c/{cid}")
+        f.wait_for_function("t => document.body.innerText.includes(t)", arg="Here they are.", timeout=30000)
+        # highlighted code (highlight.js, or the code editor)
+        fl.locator(".hljs, .cm-editor").first.wait_for(timeout=20000)
+        done.append("code highlighted")
+        # Mermaid: the diagram drawn (its nodes' words in an svg)
+        f.wait_for_function("() => [...document.querySelectorAll('svg')].some((s) => s.textContent.includes('bnstart') && s.textContent.includes('bnend'))",
+                            timeout=45000)
+        done.append("Mermaid diagram")
+        # the Python runner (on unless the admin turned code execution off)
+        run = fl.locator("button.run-code-button", has_text="Run")
+        if run.count():
+            run.first.click()
+            f.wait_for_function("() => document.body.innerText.includes('STDOUT/STDERR') && /(^|\\n)42(\\n|$)/.test(document.body.innerText)", timeout=180000)
+            done.append("Python run in the browser (Pyodide): 42")
+        else:
+            done.append("Python runner: not offered (code execution off)")
+        # the artifact: opened by its Preview, in the Artifacts panel's sandboxed frame, with Open WebUI's policy in it
+        fl.locator("button.run-code-button", has_text="Preview").first.click()
+        art = fl.frame_locator("iframe[title='Content']")
+        art.locator("#bnart").wait_for(timeout=30000)
+        expect(tag in art.locator("#bnart").inner_text(), "the artifact's text")
+        srcdoc = fl.locator("iframe[title='Content']").first.get_attribute("srcdoc") or ""
+        expect("connect-src 'none'" in srcdoc, "Open WebUI's IFRAME_CSP is not in the artifact's document")
+        done.append("artifact opened in the Artifacts panel")
+        shot(page, "07c-chat-own-page")
+        page.wait_for_timeout(2000)
+        own = [x for x in rec.problems(start=start, allow=[r"No token found in localStorage"]) if "Content Security Policy" in x or "securitypolicyviolation" in x]
+        expect(not own, f"CSP refused something of Open WebUI's own: {own[:6]}")
+    finally:
+        try:
+            owui_api(f, f"/api/v1/chats/{cid}", "DELETE")
+        except Exception:  # noqa: BLE001 — the frame went away: the conversation stays (a test one)
+            pass
+    probs = rec.problems(allow=[r"No token found in localStorage"])
+    rec.save()
+    expect(not probs, f"errors: {probs}")
+    return "; ".join(done) + " — no CSP error of Open WebUI's own"
 
 
 def _last_answer(f):

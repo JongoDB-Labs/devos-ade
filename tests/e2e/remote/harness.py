@@ -33,7 +33,8 @@ SANDBOX = "allow-scripts allow-same-origin allow-forms allow-popups allow-popups
 
 # What Chat's site may make the browser fetch (caddy/Caddyfile chat_csp; tests/test_portal.sh keeps this copy the same)
 CHAT_CSP = ("frame-ancestors {origin}; img-src 'self' data: blob:; media-src 'self' data: blob:; frame-src 'self' blob:; object-src 'none'; "
-            "form-action 'self'; base-uri 'self'; connect-src 'self' ws://{host}:* wss://{host}:*; font-src 'self' data:")
+            "form-action 'self'; base-uri 'self'; connect-src 'self' ws://{host}:* wss://{host}:*; font-src 'self' data:; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; default-src 'self' data: blob:")
 
 results: dict = {"label": LABEL, "checks": [], "observed": {}}
 

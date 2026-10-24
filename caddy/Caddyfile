@@ -146,14 +146,17 @@
 # Chat (Open WebUI, which sends no CSP of its own): what an answer — the model's text, which a document it read can steer
 # — can make the browser fetch. Images, audio and video only from Open WebUI itself, data: and blob:, frames only its
 # own, no plugins, forms posted only to it, no <base>, no Referer: a markdown image, a <video>, an <iframe> or a form in
-# an answer cannot carry what a model read to another server. Requests (fetch, beacons, WebSockets) and fonts only to
-# Open WebUI itself too: everything its own page connects to is there. An artifact (an html code block Open WebUI shows
-# in a sandboxed srcdoc frame) has this policy too — a srcdoc document inherits its parent's — and IFRAME_CSP's
-# (compose.yaml: the artifact viewer's, connect-src 'none'), which Open WebUI writes into the document's own <head>.
-# Not covered (docs/security.md "Chat"): an artifact's scripts and styles from another server, and its frame navigating
-# itself away. {args[0]}: the origin that may frame Chat — the portal's.
+# an answer cannot carry what a model read to another server. Requests (fetch, beacons, WebSockets), fonts, scripts and
+# style sheets only from Open WebUI itself too: everything its own page loads and connects to is there (its scripts
+# need inline code — its page's own —, eval — Vega charts, HEIC images, docx files, a tool's code — WebAssembly — the
+# Python runner, Pyodide — and blob: workers; no other host), and anything else — a prefetch, a manifest — the same
+# (default-src). An artifact (an html code block Open WebUI shows in a
+# sandboxed srcdoc frame) has this policy too — a srcdoc document inherits its parent's —, IFRAME_CSP's as well
+# (compose.yaml: the artifact viewer's, connect-src 'none'), which Open WebUI writes into the document's own <head>,
+# and its frame cannot be navigated anywhere but Open WebUI itself (frame-src: the embedding page's rule). {args[0]}:
+# the origin that may frame Chat — the portal's.
 (chat_csp) {
-	header_down Content-Security-Policy "frame-ancestors {args[0]}; img-src 'self' data: blob:; media-src 'self' data: blob:; frame-src 'self' blob:; object-src 'none'; form-action 'self'; base-uri 'self'; connect-src 'self' ws://{http.request.host}:* wss://{http.request.host}:*; font-src 'self' data:"
+	header_down Content-Security-Policy "frame-ancestors {args[0]}; img-src 'self' data: blob:; media-src 'self' data: blob:; frame-src 'self' blob:; object-src 'none'; form-action 'self'; base-uri 'self'; connect-src 'self' ws://{http.request.host}:* wss://{http.request.host}:*; font-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; default-src 'self' data: blob:"
 	header_down Referrer-Policy no-referrer
 }
 
