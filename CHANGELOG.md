@@ -1,10 +1,41 @@
 # Changelog
 
-All notable changes to bedrock-now are documented here. The format follows
+All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+### Changed
+
+- **DevOS ADE, formerly bedrock-now** (ADE: agentic development environment). Everything you read says DevOS ADE: the
+  portal's pages, its sidebar and sign-in, the installed app's name (*DevOS ADE*, *DevOS ADE (bn-dev)*), Settings,
+  Activity, the walkthrough, the Code page (*Code · DevOS ADE*), the terminal (*Terminal · DevOS ADE*), `./stack`'s
+  output, dialogs on your computer, the README and the docs. The repository is
+  [JongoDB-Labs/devos-ade](https://github.com/JongoDB-Labs/devos-ade); the one-liner is
+  `curl -fsSL https://raw.githubusercontent.com/JongoDB-Labs/devos-ade/main/install.sh | bash`, and the old
+  addresses redirect.
+- **A new icon:** the DevOS torus with a teal ribbon, on a black tile — the installed app, the favicons, the Apple
+  touch icon and the sidebar. Your browser asks before it gives an installed app its new name and icon.
+- **New installs go to `~/devos-ade`**, with the Code page's workspace in `~/devos-ade-workspace`. An install made
+  before v0.25.0 is found in `~/bedrock-now` (the installer says it is installed, and changes nothing) and keeps its
+  folder and its workspace.
+- The GitHub App that *Sign in with GitHub* uses is renamed too: its client ID is the same, so hosts already signed in
+  keep working; *Choose repositories* leads to its page under its new name.
+- The update check's and the price update's user agents, the comment of SSH keys the Code page makes from now on, the
+  commits it makes when you set no identity (`DevOS ADE Code page <code-page@devos-ade.invalid>`) and the sandbox
+  proxy's refusals say DevOS ADE. The portal's AWS session name for Admin and Files is now `devos-ade-portal`: a
+  CloudTrail filter or an IAM condition on `bedrock-now-portal` needs editing. OpenRouter lists the stack's requests
+  under *DevOS ADE*.
+- **Upgrading: nothing to do.** `./stack update`, Home's *Update now* and the nightly automatic update bring it as
+  usual. Your folder, your addresses (`bedrock-now.localhost` and its hosts), `.env` and its `BEDROCK_NOW_*` names, the
+  Compose project and its volumes, the update helper and your sign-in stay as they are: no data moves and nobody is
+  signed out ([docs/internal-names.md](docs/internal-names.md) lists what keeps the old name, and why). `./stack
+  update` moves `origin` from `JongoDB-Labs/bedrock-now` to `JongoDB-Labs/devos-ade` once (only when it is exactly the
+  project's GitHub address: a fork or a mirror is never touched). **An install older than v0.22.1** shows *could not
+  check* on Home's update card until it updates — its check does not follow GitHub's redirect to the new name —, but
+  `./stack update` and the automatic update still work (git follows the redirect), and the card works again after
+  the update. `./stack uninstall` asks you to type `devos-ade` (`bedrock-now` still works).
 
 ## [0.24.0] - 2026-10-24
 
