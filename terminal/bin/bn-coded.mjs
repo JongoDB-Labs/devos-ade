@@ -5332,9 +5332,10 @@ export function sweepChat({ procDir = '/proc', self = process.pid, agents = live
     }
     return out;
   };
-  try { kill(-1, 'SIGSTOP'); } catch { return []; }
   const killed = [];
   try {
+    // (inside: whatever the first stop did — some stopped as it failed —, finally lets everything go on)
+    try { kill(-1, 'SIGSTOP'); } catch { return killed; }
     let procs = scan();
     for (let round = 1; round < CHAT_SWEEP_ROUNDS && procs.some(({ st }) => !STOPPED.has(st.state)); round++) {
       try { kill(-1, 'SIGSTOP'); } catch { /* none left to stop */ }

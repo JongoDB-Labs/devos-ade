@@ -305,10 +305,10 @@ test('Chat\'s sweep: everything stopped first, then whatever is in no session of
     assert.deepEqual(coded.sweepChat({ procDir: proc, self: 100, agents: [200], helpers: [500], kill }), []);
   } finally { fs.readFileSync = realRead; }
   assert.ok(!sent.some(([p, sig]) => p === 300 && sig === 'SIGKILL'));
-  // kill(-1) refused (nothing may be signalled): nothing done, nothing let go
+  // the first stop failing (as some may have been stopped already): nothing killed, and everything let go on all the same
   reset(); sent.length = 0;
   assert.deepEqual(coded.sweepChat({ procDir: proc, self: 100, agents: [200], helpers: [500], kill: (pid, sig) => { sent.push([pid, sig]); throw new Error('EPERM'); } }), []);
-  assert.deepEqual(sent, [[-1, 'SIGSTOP']]);
+  assert.deepEqual(sent, [[-1, 'SIGSTOP'], [-1, 'SIGCONT']]);
   // no bn-coded found: nothing
   reset(); sent.length = 0;
   assert.deepEqual(coded.sweepChat({ procDir: proc, self: 999, agents: [], helpers: [], kill }), []);
