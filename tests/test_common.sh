@@ -159,3 +159,26 @@ test_with_deadline_writes_only_in_a_folder_of_its_own() {
   assert_eq "$(cat "$TMP/target")" precious
   assert_eq "$(find "$t" -name 'bn-deadline.*' -type d | grep -c . || true)" 0
 }
+
+# No rm takes an unquoted expansion ($X, ${X}, $(…)) in ./stack's scripts: split on spaces and globbed, such an
+# argument removes other files when a path has a space in it — a checkout under "Code Projects" and a folder "Code"
+# beside it (tests/rm_scan.py: what it reads as code, trap strings included). First the scanner on cases of each kind.
+test_no_rm_takes_an_unquoted_expansion() {
+  command -v python3 >/dev/null 2>&1 || return 77
+  local f files=() out
+  # shellcheck disable=SC2016  # the cases are shell text
+  printf '%s\n' 'rm -rf $X' 'rm -f ${X}' 'rm -rf $(ls)' 'x=$(rm -f $y)' '[ -z "$x" ] || rm -rf $x' 'rm -f "$a" ${b:+"$b"}' \
+    "trap 'rm -rf \${T:-}; exit' TERM" 'trap "rm -f \$late" INT' > "$TMP/bad.sh"
+  # shellcheck disable=SC2016
+  printf '%s\n' 'rm -f "$a" "${b}" -- "$(c)"' 'rm -rf -- "$d"' 'docker rm -f $ids' 'echo "docker volume rm $vols"' \
+    '# rm -rf $comment' 'rm -f /tmp/x.$$' 'trap "rm -f $q; kill -INT \$\$" INT' 'cat <<EOF' 'rm -rf $text' 'EOF' 'done <<< "$plan"' \
+    'rm -f "$z"' > "$TMP/good.sh"
+  out="$(python3 -I "$T_ROOT/tests/rm_scan.py" "$TMP/bad.sh")" || true
+  assert_eq "$(printf '%s\n' "$out" | grep -c .)" 8
+  python3 -I "$T_ROOT/tests/rm_scan.py" "$TMP/good.sh"
+  for f in "$T_ROOT"/lib/*.sh "$T_ROOT"/stack "$T_ROOT"/install.sh "$T_ROOT"/setup.sh "$T_ROOT"/bin/* "$T_ROOT"/terminal/bin/*; do
+    [ -f "$f" ] && head -n 1 "$f" | grep -qE '^#!.*sh|shellcheck shell=' && files+=("$f")
+  done
+  [ "${#files[@]}" -gt 30 ]
+  out="$(python3 -I "$T_ROOT/tests/rm_scan.py" "${files[@]}")" || { printf 'rm with an unquoted expansion:\n%s\n' "$out" >&2; return 1; }
+}

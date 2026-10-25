@@ -882,7 +882,7 @@ test_a_refresh_never_saves_one_keys_list_as_anothers() {
   assert_eq "$(xl_cached_rows | cut -f1 | tr '\n' ' ')" "qwen3.8-27b org2-only "
   xl_cache_current; xl_fresh 720
   [ ! -e "$(xl_bg_pid_file)" ] && [ ! -d "$(xl_lock_dir)" ]
-  assert_eq "$(ls "$TMP/litellm" | grep -c '^explabs-models.tsv\.')" 0                 # its temp file gone too
+  assert_eq "$(find "$STATE_DIR" "$TMP/litellm" -maxdepth 1 -name 'explabs-tmp.*' -o -maxdepth 1 -name 'explabs-models.tsv.*')" ""   # its temp folder gone too
   # .env changes while a read runs: that read is dropped, the list and its key mark stay as they were
   local before mark; before="$(cat "$(xl_cache_tsv)")"; mark="$(cat "$(xl_key_mark)")"
   SWITCH_TO="$K1" explabs_refresh 2> "$TMP/err"
@@ -924,7 +924,7 @@ test_the_background_refresh_is_one_stoppable_and_said() {
   assert_contains "$(cat "$TMP/down")" "stopped the background read of the model details"
   ! kill -0 "$bg" 2>/dev/null
   [ ! -e "$(xl_bg_pid_file)" ] && [ ! -d "$(xl_lock_dir)" ]
-  assert_eq "$(ls "$TMP/litellm" | grep -c '^explabs-models.tsv\.')" 0
+  assert_eq "$(find "$STATE_DIR" "$TMP/litellm" -maxdepth 1 -name 'explabs-tmp.*' -o -maxdepth 1 -name 'explabs-models.tsv.*')" ""
   assert_not_contains "$(explabs_status_line)" "under way"
   # read in the background, not yet rendered: "./stack up applies them", not as if LiteLLM had them
   : > "$(xl_pending_file)"
@@ -933,4 +933,29 @@ test_the_background_refresh_is_one_stoppable_and_said() {
   local f
   for f in cmd_update cmd_restore cmd_uninstall; do assert_contains "$(declare -f "$f")" "xl_bg_stop"; done
   assert_contains "$(cat "$T_ROOT/lib/rollback.sh")" "xl_bg_stop"
+}
+
+# A checkout path with a space, and a folder named after its first word beside it: stopping a background refresh
+# removes its own temp folder and nothing else (the review's repro: a list of temp paths split on the space named
+# ".../Code", which went)
+test_stopping_a_refresh_removes_only_its_own_temp_folder() {
+  local top="$TMP/sp" bg
+  mkdir -p "$top/Code" "$top/Code Projects/devos-ade/litellm"
+  echo keep > "$top/Code/canary.txt"
+  STACK_DIR="$top/Code Projects/devos-ade"; STATE_DIR="$STACK_DIR/.state"; ENV_FILE="$STACK_DIR/.env"; mkdir -p "$STATE_DIR"
+  printf 'EXPLABS_API_KEY=%s\n' "$XL_KEY" > "$ENV_FILE"
+  _stub_curl
+  SLOW=qwen3.8-27b SLOW_S=30 xl_refresh_in_background 2>/dev/null
+  read -r bg _ < "$(xl_bg_pid_file)"
+  local n=0; while [ -z "$(ls -d "$STATE_DIR"/explabs-tmp.?* 2>/dev/null)" ] && [ "$n" -lt 40 ]; do n=$((n + 1)); sleep 0.1; done
+  [ -n "$(ls -d "$STATE_DIR"/explabs-tmp.?* 2>/dev/null)" ]   # (its temp folder, while it runs)
+  xl_bg_stop 2>/dev/null
+  ! kill -0 "$bg" 2>/dev/null
+  assert_eq "$(cat "$top/Code/canary.txt")" keep
+  assert_eq "$(ls "$top" | tr '\n' '|')" "Code|Code Projects|"
+  assert_eq "$(ls -d "$STATE_DIR"/explabs-tmp.?* 2>/dev/null)" ""
+  # and _xl_tmp_end removes nothing but a folder of that name under .state
+  mkdir -p "$TMP/other"; XL_TMPDIR="$TMP/other"; _xl_tmp_end; [ -d "$TMP/other" ]
+  XL_TMPDIR="$STATE_DIR/explabs-tmp."; mkdir -p "$XL_TMPDIR"; _xl_tmp_end; [ -d "$STATE_DIR/explabs-tmp." ]
+  XL_TMPDIR=''; _xl_tmp_end
 }

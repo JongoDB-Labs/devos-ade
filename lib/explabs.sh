@@ -78,6 +78,23 @@ xl_error_file() { printf '%s\n' "$STATE_DIR/explabs-fetch-error"; }
 xl_key_mark() { printf '%s\n' "$STATE_DIR/explabs-key.sha256"; }
 # ./stack up's refresh in the background: its pid (while it runs), its output, and a mark that it changed the models
 xl_bg_pid_file() { printf '%s\n' "$STATE_DIR/explabs-refresh.pid"; }
+# A refresh's temp files all go in one private folder of its own (_xl_tmp_begin: .state/explabs-tmp.XXXXXX, beside
+# the list so its move into place stays a rename), removed by that path alone, quoted (_xl_tmp_end) — never a list of
+# paths split on spaces (a checkout under "Code Projects" would name a sibling "Code"). Outside a refresh (the key's
+# check in Settings, the e2e) _xl_mktemp makes ordinary temp files.
+_xl_tmp_begin() { mkdir -p "$STATE_DIR" && XL_TMPDIR="$(mktemp -d "$STATE_DIR/explabs-tmp.XXXXXX")"; }
+_xl_tmp_end() {
+  local d="${XL_TMPDIR:-}"; XL_TMPDIR=''
+  case "$d" in "$STATE_DIR"/explabs-tmp.?*) ;; *) return 0 ;; esac
+  case "${d#"$STATE_DIR"/explabs-tmp.}" in */* | *..*) return 0 ;; esac   # (a folder of its own: no other path)
+  [ ! -d "$d" ] || rm -rf -- "$d"
+}
+_xl_mktemp() { # _xl_mktemp [-d]
+  if [ -n "${XL_TMPDIR:-}" ] && [ -d "$XL_TMPDIR" ]; then
+    if [ "${1:-}" = -d ]; then mktemp -d "$XL_TMPDIR/t.XXXXXX"; else mktemp "$XL_TMPDIR/t.XXXXXX"; fi
+  elif [ "${1:-}" = -d ]; then mktemp -d
+  else mktemp; fi
+}
 xl_bg_log() { printf '%s\n' "$STATE_DIR/explabs-refresh.log"; }
 xl_pending_file() { printf '%s\n' "$STATE_DIR/explabs-render-pending"; }
 
@@ -363,7 +380,7 @@ xl_curl_why() {
 xl_fetch_ids() {
   local out="$1" raw w='' rc=0 code tc
   XL_ERR=''
-  raw="$(mktemp)"; XL_TMPS="${XL_TMPS:-} $raw"
+  raw="$(_xl_mktemp)"
   w="$(curl_auth "$2" --proto "$(_xl_proto)" -sS --connect-timeout 10 -m "$XL_LIST_TIMEOUT" --max-filesize 20000000 -o "$raw" -w '%{http_code} %{time_connect}' "$EXPLABS_API/models" 2>/dev/null)" || rc=$?
   code="${w%% *}"; tc="${w#* }"; [ "$tc" != "$w" ] || tc=''
   if [ "$rc" != 0 ]; then XL_ERR="$(xl_curl_why "$rc" "$tc" "$XL_LIST_TIMEOUT" "the model list")"
@@ -398,8 +415,7 @@ _xl_fetch_one() {
 xl_fetch_details() {
   local out="$1" dir n=0 i id p pids='' rc code tc e err='' errs=0 lim="${XL_MODEL_LIMIT:-$XL_MODEL_TIMEOUT}" more=0
   XL_ERR=''; : > "$out"
-  dir="$(mktemp -d)" || { XL_ERR="could not make a temporary folder"; return 1; }
-  XL_TMPS="${XL_TMPS:-} $dir"
+  dir="$(_xl_mktemp -d)" || { XL_ERR="could not make a temporary folder"; return 1; }
   while IFS= read -r id; do
     valid_xl_id "$id" || continue
     if [ "$n" -ge "$XL_MODEL_MAX" ]; then more=$((more + 1)); continue; fi
@@ -441,7 +457,7 @@ xl_fetch_details() {
 # safe unless the list cached for this key had theirs); 1 when the key's list could not be read (XL_ERR; OUT untouched)
 xl_fetch_models() {
   local out="$1" ids det want old='' rc=0 t0 left
-  ids="$(mktemp)"; det="$(mktemp)"; want="$(mktemp)"; t0="$(date +%s)"; XL_TMPS="${XL_TMPS:-} $ids $det $want"
+  ids="$(_xl_mktemp)"; det="$(_xl_mktemp)"; want="$(_xl_mktemp)"; t0="$(date +%s)"
   if ! xl_fetch_ids "$ids" "$2"; then rm -f "$ids" "$det" "$want"; return 1; fi
   # one deadline for the whole refresh: the details get what the list left of XL_REFRESH_BUDGET (at least 5 s), at most
   # XL_MODEL_TIMEOUT
@@ -449,13 +465,13 @@ xl_fetch_models() {
   [ "$left" -le "$XL_MODEL_TIMEOUT" ] || left="$XL_MODEL_TIMEOUT"
   # the chosen models the key may call (a free tier: its model's details)
   xl_wanted | sed 's/:free$//' | awk 'FILENAME == ARGV[1] { have[$1] = 1; next } ($1 in have) && !seen[$1]++' "$ids" - > "$want"
-  if xl_cache_current; then old="$(mktemp)"; XL_TMPS="$XL_TMPS $old"; xl_cached_rows > "$old"; fi
+  if xl_cache_current; then old="$(_xl_mktemp)"; xl_cached_rows > "$old"; fi
   XL_MODEL_LIMIT="$left" xl_fetch_details "$det" "$want" "$old" || rc=2
   { printf '# fetched_at: %s\n# source: %s/models (the ids, as listed for your key) and %s/<id> (the chosen ones'"'"' details)\n' \
       "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$EXPLABS_API" "$EXPLABS_CATALOG"
     printf '# id\ttemperature\ttop_p\ttop_k\tfrequency_penalty\tpresence_penalty\tlogprobs\ttools\tstructured_output\treasoning\tsampling_requires_reasoning_none\tmax_tokens_field\tmax_out\tcontext\tin\tout\tcache_read\tcache_write\n'
     xl_join "$ids" < "$det"; } > "$out"
-  rm -f "$ids" "$det" "$want" ${old:+"$old"}
+  rm -f "$ids" "$det" "$want"; [ -z "$old" ] || rm -f "$old"
   return "$rc"
 }
 
@@ -497,7 +513,6 @@ xl_fresh() {
 # shellcheck disable=SC2120  # MAX_AGE_MIN: lib/settings.sh passes it
 explabs_refresh() {
   local rc=0
-  XL_TMPS=''
   explabs_enabled || { rm -f "$(xl_error_file)"; XL_CHANGED=0; return 0; }
   if [ -n "${1:-}" ] && xl_fresh "$1"; then XL_CHANGED=0; return 0; fi
   xl_bg_stop
@@ -511,15 +526,21 @@ explabs_refresh() {
 # The key and EXPLABS_MODELS it reads for are recorded at its start: what it writes is marked as read with that key, and
 # is dropped (said) when either has changed in .env meanwhile — a slow read never stands for a newer key or choice.
 _explabs_refresh() {
-  local f tmp before m rc=0 key khash models
+  local rc=0
   XL_CHANGED=0; XL_ERR=''
+  _xl_tmp_begin || { XL_ERR="could not make a temporary folder in $STATE_DIR"; warn "Experiential Labs: $XL_ERR"; return 0; }
+  _explabs_refresh_in "$@" || rc=$?
+  _xl_tmp_end
+  return "$rc"
+}
+_explabs_refresh_in() {
+  local f tmp before m rc=0 key khash models
   if ! explabs_enabled; then rm -f "$(xl_error_file)"; return 0; fi
   f="$(xl_cache_tsv)"; mkdir -p "$(dirname "$f")" "$STATE_DIR"
   if [ -n "${1:-}" ] && xl_fresh "$1"; then return 0; fi
   key="$(get_env EXPLABS_API_KEY)"; khash="$(xl_key_hash "$key")"; models="$(get_env EXPLABS_MODELS)"
   before="$(_xl_signature)"
-  tmp="$(mktemp "$f.XXXXXX")" || return 0
-  XL_TMPS="${XL_TMPS:-} $tmp"
+  tmp="$(_xl_mktemp)" || return 0
   xl_fetch_models "$tmp" "$key" || rc=$?
   if [ "$(xl_key_hash "$(get_env EXPLABS_API_KEY)")" != "$khash" ] || [ "$(get_env EXPLABS_MODELS)" != "$models" ]; then
     rm -f "$tmp"
@@ -769,15 +790,15 @@ xl_bg_stop() {
 
 # xl_refresh_in_background — _explabs_refresh on its own, so ./stack up never waits on the gateway's catalog (one
 # model's details took 15-25 s on 2026-10-25): what it reads is used from the next ./stack up or Settings change.
-# One at a time (the refresh lock, taken for it here); its output goes to xl_bg_log; stopped, it removes its temp files.
+# One at a time (the refresh lock, taken for it here); its output goes to xl_bg_log; stopped, it removes its temp
+# folder (_xl_tmp_end).
 xl_refresh_in_background() {
   local pidf p; pidf="$(xl_bg_pid_file)"
   if xl_bg_running || ! _xl_lock 0 "$$"; then log "Experiential Labs: the model details are being read already"; return 0; fi
   (
     trap '' HUP
     # (stopped: its temp files, its lock and its pid file go)
-    trap 'rm -rf ${XL_TMPS:-}; _xl_unlock; rm -f "$(xl_bg_pid_file)"; exit 143' TERM INT
-    XL_TMPS=''
+    trap '_xl_tmp_end; _xl_unlock; rm -f "$(xl_bg_pid_file)"; exit 143' TERM INT
     XL_BACKGROUND=1 _explabs_refresh > "$(xl_bg_log)" 2>&1 || true
     _xl_unlock; rm -f "$(xl_bg_pid_file)"
   ) < /dev/null > /dev/null 2>&1 &
