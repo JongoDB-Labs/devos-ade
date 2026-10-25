@@ -192,9 +192,18 @@ test_validate_key_per_provider() {
   assert_eq "$(cat "$TMP/calls")" ""   # never sent
 }
 
-test_api_base_only_from_test_variable() {
-  assert_eq "$(STT_API_OPENAI=http://evil.example "$BASH" -c '. lib/common.sh; . lib/stt.sh; stt_api_base openai')" "https://api.openai.com/v1"
-  assert_eq "$(BEDROCK_NOW_TEST_STT_API=https://t.example "$BASH" -c '. lib/common.sh; . lib/stt.sh; stt_api_base groq')" "https://t.example"
+# Where the key goes: only the test suite (BEDROCK_NOW_TESTING=1) can change it; the test variable alone in a shell is
+# ignored, with a warning
+test_api_base_only_from_test_variable_while_testing() {
+  local src='. lib/common.sh; . lib/stt.sh; stt_api_base'
+  assert_eq "$(STT_API_OPENAI=http://evil.example "$BASH" -c "$src openai")" "https://api.openai.com/v1"
+  assert_eq "$(BEDROCK_NOW_TESTING=1 BEDROCK_NOW_TEST_STT_API=https://t.example "$BASH" -c "$src groq")" "https://t.example"
+  local v
+  for v in https://t.example http://127.0.0.1:9/v1; do
+    assert_eq "$(BEDROCK_NOW_TESTING='' BEDROCK_NOW_TEST_STT_API="$v" "$BASH" -c "$src groq" 2> "$TMP/err")" "https://api.groq.com/openai/v1"
+    assert_contains "$(cat "$TMP/err")" "BEDROCK_NOW_TEST_STT_API in your shell is ignored: only the test suite (BEDROCK_NOW_TESTING=1) may change where the speech-to-text key goes"
+  done
+  assert_eq "$(BEDROCK_NOW_TESTING='' BEDROCK_NOW_TEST_STT_API=https://t.example "$BASH" -c "$src openai" 2>/dev/null)" "https://api.openai.com/v1"
 }
 
 test_key_never_on_argv() {

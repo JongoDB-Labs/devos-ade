@@ -627,9 +627,18 @@ test_validate_key_paths() {
   assert_eq "$(cat "$TMP/calls")" ""   # never sent
 }
 
-test_api_base_only_from_test_variable() {
-  assert_eq "$(OPENROUTER_API=http://evil.example "$BASH" -c '. lib/openrouter.sh; echo "$OPENROUTER_API"')" "https://openrouter.ai/api/v1"
-  assert_eq "$(BEDROCK_NOW_TEST_OPENROUTER_API=https://t.example "$BASH" -c '. lib/openrouter.sh; echo "$OPENROUTER_API"')" "https://t.example"
+# Where the key goes: only the test suite (BEDROCK_NOW_TESTING=1) can change it; the test variable alone in a shell is
+# ignored, with a warning
+test_api_base_only_from_test_variable_while_testing() {
+  local src='. lib/common.sh; . lib/openrouter.sh; echo "$OPENROUTER_API"'
+  assert_eq "$(OPENROUTER_API=http://evil.example "$BASH" -c "$src")" "https://openrouter.ai/api/v1"
+  assert_eq "$(BEDROCK_NOW_TESTING=1 BEDROCK_NOW_TEST_OPENROUTER_API=https://t.example "$BASH" -c "$src")" "https://t.example"
+  local v
+  for v in https://t.example http://127.0.0.1:9/v1; do
+    assert_eq "$(BEDROCK_NOW_TESTING='' BEDROCK_NOW_TEST_OPENROUTER_API="$v" "$BASH" -c "$src" 2> "$TMP/err")" "https://openrouter.ai/api/v1"
+    assert_contains "$(cat "$TMP/err")" "BEDROCK_NOW_TEST_OPENROUTER_API in your shell is ignored: only the test suite (BEDROCK_NOW_TESTING=1) may change where the OpenRouter key goes"
+  done
+  assert_eq "$(BEDROCK_NOW_TESTING=1 "$BASH" -c "$src" 2> "$TMP/err")/$(cat "$TMP/err")" "https://openrouter.ai/api/v1/"   # unset: no word
 }
 
 test_account_lines_key_and_credits() {

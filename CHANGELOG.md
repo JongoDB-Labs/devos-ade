@@ -30,6 +30,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ### Fixed
 
+- **A variable in your shell could send the OpenRouter or speech-to-text key to another server.**
+  `BEDROCK_NOW_TEST_OPENROUTER_API` and `BEDROCK_NOW_TEST_STT_API`, meant for the test suite, were honoured in any
+  shell: set to another https address, `./stack` sent the OpenRouter key there when it checked the key or read the
+  model list or the credits, and the OpenAI or Groq speech-to-text key when it checked that key. They now count only
+  with `BEDROCK_NOW_TESTING=1` (as the test addresses of `lib/host.sh` already did); otherwise they are ignored, with a
+  warning, and the keys go only to `openrouter.ai`, `api.openai.com` and `api.groq.com`.
 - **Your subscriptions are Chat models whatever the terminal's way out is.** With *Sandbox internet access* on the
   direct way (`TERMINAL_EGRESS=host`) they were greyed in Chat ("off while the sandbox reaches the internet
   directly"). Chat's sandbox now goes out through an egress proxy of its own then — the terminal proxy's image and

@@ -53,9 +53,13 @@ STT_EST_OUT_TOKENS_PER_MIN=200
 
 stt_catalog() { printf '%s\n' "$STT_CATALOG"; }
 
-# Tests may point both key providers at another server; users cannot (no per-provider override).
+# Where the key goes. Only the test suite (BEDROCK_NOW_TESTING=1, as lib/host.sh) can point both key providers at another
+# server; BEDROCK_NOW_TEST_STT_API in a user's shell is ignored, with a warning (no per-provider override either).
 stt_api_base() {
-  if [ -n "${BEDROCK_NOW_TEST_STT_API:-}" ]; then printf '%s\n' "$BEDROCK_NOW_TEST_STT_API"; return 0; fi
+  if [ -n "${BEDROCK_NOW_TEST_STT_API:-}" ]; then
+    if [ "${BEDROCK_NOW_TESTING:-}" = 1 ]; then printf '%s\n' "$BEDROCK_NOW_TEST_STT_API"; return 0; fi
+    test_url_ignored BEDROCK_NOW_TEST_STT_API "the speech-to-text key"
+  fi
   case "$1" in openai) echo https://api.openai.com/v1 ;; groq) echo https://api.groq.com/openai/v1 ;; esac
 }
 stt_host() { case "$1" in openai) echo api.openai.com ;; groq) echo api.groq.com ;; bedrock) echo "Bedrock in your AWS account" ;; esac; }

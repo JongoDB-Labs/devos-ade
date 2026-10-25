@@ -15,8 +15,16 @@
 #   openrouter_sync_owui              Open WebUI names/tags/prices, batched (needs a portal session)
 #   openrouter_up_hook / openrouter_after_up   ./stack up, before `compose up` / inside its portal session
 
-# Tests may point this at another server; users cannot (no OPENROUTER_API override).
-OPENROUTER_API="${BEDROCK_NOW_TEST_OPENROUTER_API:-https://openrouter.ai/api/v1}"
+# Where the key goes. Only the test suite (BEDROCK_NOW_TESTING=1, as lib/host.sh) can point this at another server;
+# BEDROCK_NOW_TEST_OPENROUTER_API in a user's shell is ignored, with a warning, and so is an OPENROUTER_API there.
+_or_api() {
+  if [ -n "${BEDROCK_NOW_TEST_OPENROUTER_API:-}" ]; then
+    if [ "${BEDROCK_NOW_TESTING:-}" = 1 ]; then printf '%s\n' "$BEDROCK_NOW_TEST_OPENROUTER_API"; return 0; fi
+    test_url_ignored BEDROCK_NOW_TEST_OPENROUTER_API "the OpenRouter key"
+  fi
+  printf 'https://openrouter.ai/api/v1\n'
+}
+OPENROUTER_API="$(_or_api)"
 OPENROUTER_MAX_DEFAULT=1000   # safety cap; OpenRouter lists ~450 text models today
 
 or_cache_tsv() { printf '%s\n' "$STACK_DIR/litellm/openrouter-models.tsv"; }

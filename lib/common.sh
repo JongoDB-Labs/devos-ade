@@ -91,6 +91,9 @@ off_exit() {
 
 log()  { printf '%s==>%s %s\n' "$C_GRN" "$C_OFF" "$*" >&2; }
 warn() { printf '%s!!%s  %s\n' "$C_YEL" "$C_OFF" "$*" >&2; }
+# test_url_ignored NAME WHAT — a test suite's address (BEDROCK_NOW_TEST_…) found without BEDROCK_NOW_TESTING=1: not used,
+# and said (lib/openrouter.sh, lib/stt.sh: only the test suite may change where WHAT, a key, goes)
+test_url_ignored() { warn "$1 in your shell is ignored: only the test suite (BEDROCK_NOW_TESTING=1) may change where $2 goes"; }
 die()  { _BN_DIE_MSG="$*"; printf '%sxx%s  %s\n' "$C_RED" "$C_OFF" "$*" >&2; exit 1; }   # (the message: for Home, lib/lock.sh)
 
 require_cmd() { command -v "$1" >/dev/null 2>&1 || die "missing required command: $1${2:+ — $2}"; }
