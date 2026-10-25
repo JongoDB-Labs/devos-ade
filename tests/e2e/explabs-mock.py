@@ -11,7 +11,9 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT, LOG, MODELS = int(sys.argv[1]), sys.argv[2], sys.argv[3]
-COST = 0.00013376   # what the real gateway reported for this prompt on qwen3.8-27b: 58 in, 48 out
+# what each answer "cost": not qwen3.8-27b's list price for 58 in / 48 out ($0.00013376, what the real gateway reported for
+# that prompt), so the check can tell the gateway's figure from one LiteLLM computed
+COST = 0.00042
 
 
 class Gateway(BaseHTTPRequestHandler):

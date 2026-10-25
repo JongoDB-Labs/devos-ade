@@ -185,12 +185,17 @@ assert "frequency_penalty" not in b and "max_tokens" not in b and b.get("max_com
   results+=("$r")
   printf '%s' '{"model":"xl/qwen3.8-27b","stream":true,"stream_options":{"include_usage":true},"messages":[{"role":"user","content":"hi"}]}' > "$WORK/stream.req"
   _call /v1/chat/completions "$WORK/stream.req" "$WORK/stream" >/dev/null
-  grep -q '"cost": *0.00013376' "$WORK/stream.json" && grep -q 'test OK' "$WORK/stream.json" &&
+  grep -q '"cost": *0.00042' "$WORK/stream.json" && grep -q 'test OK' "$WORK/stream.json" &&
     ok "a streamed answer carries the gateway's cost in its last chunk" || fail "the stream: $(tail -c 300 "$WORK/stream.json")"
   printf '%s' '{"model":"xl/qwen3.8-27b","max_tokens":32000,"temperature":0.7,"top_k":40,"messages":[{"role":"user","content":"hi"}]}' > "$WORK/msg.req"
   code="$(_call /v1/messages "$WORK/msg.req" "$WORK/msg")"
-  [ "$code" = 200 ] && grep -q 'test OK' "$WORK/msg.json" && grep -qi '^x-litellm-response-cost: 0.00013376' "$WORK/msg.h" &&
-    ok "Claude Code's /v1/messages: answered on Chat Completions, booked at the gateway's cost" || fail "/v1/messages (HTTP $code): $(head -c 300 "$WORK/msg.json")"
+  # (its x-litellm-response-cost header is LiteLLM's own estimate for the Anthropic-shaped answer; what LiteLLM books
+  # for it is the gateway's figure, as for the completion above — tests/test_explabs.sh and the hook's tests)
+  docker exec "$NAME" cat /tmp/reqs.jsonl > "$WORK/reqs.jsonl" 2>/dev/null || : > "$WORK/reqs.jsonl"
+  [ "$code" = 200 ] && grep -q 'test OK' "$WORK/msg.json" && tail -n 1 "$WORK/reqs.jsonl" | grep -q '"path": "/v1/chat/completions"' &&
+    tail -n 1 "$WORK/reqs.jsonl" | grep -q '"max_completion_tokens": 32000' &&
+    ok "Claude Code's /v1/messages: answered through the gateway's Chat Completions, its cap as max_completion_tokens" ||
+    fail "/v1/messages (HTTP $code): $(head -c 300 "$WORK/msg.json" | _mask) — the gateway got: $(tail -n 1 "$WORK/reqs.jsonl" | head -c 300)"
 fi
 
 # --- the key, nowhere ---

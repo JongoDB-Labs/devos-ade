@@ -374,13 +374,14 @@ An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*)
 - **Where requests go.** A prompt to an `xl/<id>` model goes from LiteLLM to `https://api.experientiallabs.ai/v1`
   (Chat Completions; with extended thinking, its Responses API) and from there to whichever provider the gateway routes
   that call to — its own Experiential Cloud, another hosted provider, or your own provider account connected there
-  (BYOK). The answer's `x-gateway-provider` header names it (Admin's logs keep it with the response headers). The
-  only other request is `GET /v1/models` with the key (free; setup, `./stack up` at most every 12 hours, Settings,
+  (BYOK); the answer's `x-gateway-provider` header names it. The only other request is `GET /v1/models` with the key (free; setup, `./stack up` at most every 12 hours, Settings,
   the check of a new key): the model list and its details, cached in `litellm/explabs-models.tsv`.
 - **What is sent.** The request as Chat, the Code page or a LiteLLM client made it — your messages, tools, files you
   attached — minus the parameters the gateway's details say the model does not take (LiteLLM's `drop_params`, the
-  model's `additional_drop_params`, and the hook `lib/litellm-hooks/bn_hooks.py`); nothing that names you or this
-  install (no user, no tags, no session id of ours). The key is the only credential.
+  model's `additional_drop_params`, and the hook `lib/litellm-hooks/bn_hooks.py`). A client's own fields pass as they
+  came: Claude Code's user id, for one (LiteLLM sends it as `user`, which the gateway keeps as the call's attribution
+  label, and a prompt-cache key made from it), as for OpenRouter. DevOS ADE adds nothing that names you or this install:
+  no tags, no session header. The key is the only credential.
 - **The key.** In `.env` (mode 600), changed only from this computer (Settings › Chat & voice, policy `local`, or
   `./stack config set EXPLABS_API_KEY`, which asks without echo), checked with the gateway before it is stored. It
   reaches LiteLLM's environment (the config names `os.environ/EXPLABS_API_KEY`, never the value) and, when `./stack`
