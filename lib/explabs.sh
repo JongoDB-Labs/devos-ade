@@ -564,13 +564,16 @@ explabs_status_line() {
   if [ "$fs" -gt 0 ]; then
     # (no failure: the gateway's public catalog has no details for it — an organisation's own model, say)
     why="$(xl_error_text)"; [ -n "$why" ] || why="the gateway's public catalog has none for $([ "$fs" = 1 ] && echo it || echo them)"
-    printf '%sExperiential Labs: %s — %s without model details (%s%s), so fail safe: none of %s is sent (tools and the max_tokens cap are); ./stack up or Settings tries again%s\n' \
+    printf '%sExperiential Labs: %s — %s without model details (%s%s), so fail safe: none of %s is sent (tools and the max_tokens cap are); ./stack up or Settings tries again%s%s\n' \
       "$O_YEL" "$(xl_counts)" "$([ "$fs" = "$(xl_selected | grep -c .)" ] && echo all || echo "$fs")" "$why" \
       "${at:+, $(date -r "$at" '+%Y-%m-%d %H:%M' 2>/dev/null || date -d "@$at" '+%Y-%m-%d %H:%M' 2>/dev/null)}" \
-      "$(printf '%s' "${XL_FAILSAFE_DROPS% max_completion_tokens}" | tr ' ' ',' | sed 's/,/, /g')" "$O_OFF"
+      "$(printf '%s' "${XL_FAILSAFE_DROPS% max_completion_tokens}" | tr ' ' ',' | sed 's/,/, /g')" "$bg" "$O_OFF"
   elif [ -n "$at" ]; then
     why="$(xl_error_text)"
     printf '%sExperiential Labs: %s — the model details read before stay (the last refresh failed%s)%s%s\n' "$O_YEL" "$(xl_counts)" "${why:+: $why}" "$bg" "$O_OFF"
+  elif [ -e "$(xl_pending_file)" ]; then
+    # (read in the background, not yet in LiteLLM's config)
+    printf 'Experiential Labs: %s — model details read %s; ./stack up applies them%s\n' "$(xl_counts)" "$(xl_fetched_at)" "$bg"
   else
     printf 'Experiential Labs: %s — model details read %s%s\n' "$(xl_counts)" "$(xl_fetched_at)" "$bg"
   fi

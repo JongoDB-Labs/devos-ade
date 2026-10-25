@@ -894,7 +894,7 @@ test_a_refresh_never_saves_one_keys_list_as_anothers() {
 }
 
 # One refresh at a time; ./stack down (and update, restore, uninstall) stop a background one by its pid, its temp
-# files going with it
+# files going with it; ./stack status says what is under way and what waits for ./stack up
 test_the_background_refresh_is_one_stoppable_and_said() {
   _stub_curl
   _xl_env
@@ -907,6 +907,10 @@ test_the_background_refresh_is_one_stoppable_and_said() {
   assert_contains "$(cat "$TMP/second")" "the model details are being read already"
   assert_eq "$(cat "$(xl_bg_pid_file)")" "$bg"
   assert_contains "$(explabs_status_line)" "a refresh is under way in the background"
+  # fail safe and a refresh under way: both said
+  printf 'EXPLABS_API_KEY=%s\nEXPLABS_MODELS=qwen3.8-27b,gpt-latest\n' "$XL_KEY" > "$ENV_FILE"
+  assert_contains "$(explabs_status_line)" "so fail safe"; assert_contains "$(explabs_status_line)" "; a refresh is under way in the background"
+  _xl_env
   dc() { :; }
   cmd_down 2> "$TMP/down"
   assert_contains "$(cat "$TMP/down")" "stopped the background read of the model details"
@@ -914,6 +918,9 @@ test_the_background_refresh_is_one_stoppable_and_said() {
   [ ! -e "$(xl_bg_pid_file)" ] && [ ! -d "$(xl_lock_dir)" ]
   assert_eq "$(ls "$TMP/litellm" | grep -c '^explabs-models.tsv\.')" 0
   assert_not_contains "$(explabs_status_line)" "under way"
+  # read in the background, not yet rendered: "./stack up applies them", not as if LiteLLM had them
+  : > "$(xl_pending_file)"
+  assert_contains "$(explabs_status_line)" "— model details read 2026-"; assert_contains "$(explabs_status_line)" "; ./stack up applies them"
   # the stop points
   local f
   for f in cmd_update cmd_restore cmd_uninstall; do assert_contains "$(declare -f "$f")" "xl_bg_stop"; done
