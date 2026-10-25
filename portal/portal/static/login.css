@@ -1,44 +1,43 @@
-/* Shared tokens + the sign-in page. Public (served before login), so nothing here is sensitive. */
-:root {
-  --bg: #edf0f2; --surface: #ffffff; --ink: #18232e; --muted: #5a6775; --line: #d5dce2;
-  --accent: #1d6a84; --accent-ink: #ffffff; --ok: #2f7d4e; --warn: #a86b12; --bad: #b4373a;
-  --track: #e1e6ea; --sidebar: #e3e8ec;
-  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Ubuntu, Cantarell, "Noto Sans", sans-serif;
-  --figures: ui-serif, "New York", "Iowan Old Style", Charter, Georgia, serif;
-  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-  color-scheme: light;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #111820; --surface: #18212b; --ink: #e4e9ee; --muted: #93a0ae; --line: #2a3540;
-    --accent: #73b6cd; --accent-ink: #0e1a21; --ok: #6cc08c; --warn: #e0a84a; --bad: #ee7b7b;
-    --track: #24303b; --sidebar: #141c25;
-    color-scheme: dark;
-  }
-}
+/* The base every portal page shares, and the sign-in page. Tokens: tokens.css (loaded first); fonts: fonts.css (pages on
+   the portal's own host; the pages other hosts serve keep the system fonts). docs/design.md. Public (served before
+   login), so nothing here is sensitive. */
 * { box-sizing: border-box; }
 html, body { margin: 0; }
-body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); -webkit-font-smoothing: antialiased; overflow-wrap: break-word; }
-code { font-family: var(--mono); font-size: 0.9em; }
+body { background: var(--bg); color: var(--ink); font: 400 15px/1.5 var(--font-sans); -webkit-font-smoothing: antialiased; overflow-wrap: break-word; }
+/* Page and section titles in the display serif, as on the DevOS website */
+h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.012em; }
+code { font-family: var(--font-mono); font-size: 0.88em; }
 /* Paths, commands and keys never run past their card, dialog or note: a long unbroken one (an install folder, a
    .env path, a key) wraps anywhere, which also lets it shrink inside a flex row. A <pre> keeps its lines and scrolls. */
 code, kbd, samp, .cred, .tour-cred, .set-bk-name { overflow-wrap: anywhere; }
 pre code { overflow-wrap: normal; }
+a { color: var(--accent); text-underline-offset: 0.2em; text-decoration-thickness: 1px; }
+a:hover { text-decoration-thickness: 2px; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button { font: inherit; cursor: pointer; }
 
-body.login { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
-.login-panel { width: 100%; max-width: 380px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 32px 28px 24px; }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; letter-spacing: -0.01em; }
-.login h1 { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; margin: 28px 0 4px; }
+/* The sign-in page (and the unlock and hand-off pages of the other hosts): a card on paper, a soft teal light */
+body.login { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px;
+  background: radial-gradient(56rem 36rem at 88% -12%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 70%),
+    radial-gradient(40rem 30rem at -10% 110%, color-mix(in srgb, var(--steel) 9%, transparent), transparent 70%), var(--bg); }
+.login-panel { width: 100%; max-width: 400px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-xl);
+  padding: 32px 30px 26px; box-shadow: var(--shadow); }
+.brand { display: flex; align-items: center; gap: 10px; font: 600 1.15rem/1.2 var(--font-display); letter-spacing: -0.01em; }
+.login h1 { font-size: var(--t-3); line-height: 1.12; letter-spacing: -0.02em; margin: 28px 0 6px; }
 .lede { color: var(--muted); margin: 0 0 20px; }
 .login form { display: grid; gap: 8px; }
-.login label { font-weight: 500; }
-.login input[type=password] { font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
-.login button[type=submit] { margin-top: 8px; padding: 10px 14px; border: 0; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font-weight: 600; }
-.login .error { margin: 0 0 16px; padding: 10px 12px; border-radius: 8px; border-left: 3px solid var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent); }
+.login label { font-weight: 500; font-size: var(--t-s); }
+.login input[type=password] { font: inherit; padding: 10px 12px; border-radius: var(--r-m); border: 1px solid var(--line-strong); background: var(--bg); color: var(--ink); }
+.login button[type=submit] { margin-top: 10px; padding: 11px 16px; border: 1px solid var(--ink); border-radius: var(--r-pill); background: var(--ink); color: var(--bg);
+  font-weight: 600; transition: transform 0.25s var(--ease), box-shadow 0.25s var(--ease); }
+.login button[type=submit]:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
+.login button[type=submit]:active { transform: scale(0.98); }
+.login .error { margin: 0 0 16px; padding: 10px 12px; border-radius: var(--r-m); border-left: 3px solid var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent); }
 .hint { color: var(--muted); font-size: 13px; margin: 20px 0 0; }
 /* The automatic sign-in pages on the Admin / Files hosts (portal/appsso.py): its fallback links. */
 .app-signin a { color: var(--accent); }
 .sso-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; margin: 0; }
-.app-signin a.sso-primary { padding: 10px 14px; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font-weight: 600; text-decoration: none; }
+.app-signin a.sso-primary { padding: 10px 16px; border-radius: var(--r-pill); background: var(--ink); color: var(--bg); font-weight: 600; text-decoration: none; }
+@media (prefers-reduced-motion: reduce) {
+  .login button[type=submit] { transition: none; }
+}

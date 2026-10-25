@@ -9,7 +9,9 @@ from urllib.parse import quote, urlencode
 from common import CHAT_CSP, ENV, HOST, LITELLM_PORT, PORT, Skip, check, csp_differs, expect, host_of, http, origin, portal_login, real_helper_running
 
 APPS = {"chat": "/", "admin": "/ui/", "files": "/rustfs/console/"}
-PUBLIC = ["/login", "/healthz", "/favicon.svg", "/static/login.css", "/static/logo.svg", "/manifest.webmanifest", "/sw.js"]
+PUBLIC = ["/login", "/healthz", "/favicon.svg", "/static/tokens.css", "/static/fonts.css", "/static/login.css", "/static/logo.svg",
+          "/static/fonts/source-serif-4-latin-wght-normal.woff2", "/static/fonts/inter-latin-wght-normal.woff2",
+          "/static/fonts/jetbrains-mono-latin-wght-normal.woff2", "/manifest.webmanifest", "/sw.js"]
 ICONS = ["16", "32", "48", "192", "512", "1024", "maskable-192", "maskable-512", "monochrome-512", "touch-180"]
 HTML = {"Accept": "text/html,application/xhtml+xml"}
 API = {"X-Requested-With": "bedrock-now"}

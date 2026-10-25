@@ -1,0 +1,94 @@
+/* DevOS ADE design tokens (docs/design.md). The DevOS website's system — its token names, 1.25 type scale, fonts,
+   radii, shadow and easing — with ADE's teal (the icon's ribbon) as the accent and, in dark, the DevOS apps' warm "Ink"
+   palette. Custom properties only (each page loads its fonts with its own fonts.css). Two identical copies:
+   portal/portal/static/tokens.css and code/web/src/styles/tokens.css; tests/test_design_tokens.sh keeps them equal. */
+:root {
+  /* colour: the site's paper and ink, ADE's teal */
+  --bg: #f5f3ee;
+  --bg-2: #ebe8e0;
+  --surface: #ffffff;
+  --ink: #14151a;
+  --muted: #4b4e5a;
+  --line: #d6d2c7;
+  --line-strong: #858073;
+  --accent: #1b6a5f;
+  --accent-ink: #ffffff;
+  --accent-soft: #dcece8;
+  --steel: #3d6591;
+  /* ADE's own: states, meters, the sidebar */
+  --ok: #2c7340;
+  --warn: #94590b;
+  --bad: #b02f30;
+  --track: #e4e0d6;
+  --sidebar: #ece9e1;
+  /* finish */
+  --shadow: 0 1px 2px rgb(20 21 26 / 0.06), 0 12px 32px -12px rgb(20 21 26 / 0.18);
+  --shadow-pop: 0 1px 3px rgb(20 21 26 / 0.1), 0 18px 44px -10px rgb(20 21 26 / 0.28);
+  --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+  --r-s: 6px;
+  --r-m: 10px;
+  --r-l: 14px;
+  --r-xl: 18px;
+  --r-pill: 999px;
+  /* type: the site's fonts (self-hosted, fonts.css) and its 1.25 scale; --t-xs is the step below --t-s */
+  --font-display: "DevOS Serif", ui-serif, "New York", "Iowan Old Style", Charter, Georgia, serif;
+  --font-sans: "DevOS Sans", ui-sans-serif, -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "DevOS Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --t-xs: 0.8rem;
+  --t-s: 0.875rem;
+  --t-0: 1rem;
+  --t-1: 1.1875rem;
+  --t-2: 1.4375rem;
+  --t-3: clamp(1.6rem, 1.3rem + 1.2vw, 2.1rem);
+  --t-4: clamp(2.1rem, 1.5rem + 2.6vw, 3.4rem);
+  /* the names the pages used before (kept so nothing breaks) */
+  --sans: var(--font-sans);
+  --mono: var(--font-mono);
+  --figures: var(--font-display);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    /* the DevOS apps' Ink: warm near-black, cream ink, a lighter teal */
+    --bg: #14110e;
+    --bg-2: #1a1511;
+    --surface: #221c17;
+    --ink: #f4ecdf;
+    --muted: #b3a394;
+    --line: #3a3128;
+    --line-strong: #806f5f;
+    --accent: #84c8bf;
+    --accent-ink: #14110e;
+    --accent-soft: #1f2d29;
+    --steel: #8fb0d6;
+    --ok: #b7c7a1;
+    --warn: #e6a15a;
+    --bad: #f08c7c;
+    --track: #2e2620;
+    --sidebar: #1a1511;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.6);
+    --shadow-pop: 0 1px 3px rgb(0 0 0 / 0.5), 0 18px 44px -10px rgb(0 0 0 / 0.72);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14110e;
+  --bg-2: #1a1511;
+  --surface: #221c17;
+  --ink: #f4ecdf;
+  --muted: #b3a394;
+  --line: #3a3128;
+  --line-strong: #806f5f;
+  --accent: #84c8bf;
+  --accent-ink: #14110e;
+  --accent-soft: #1f2d29;
+  --steel: #8fb0d6;
+  --ok: #b7c7a1;
+  --warn: #e6a15a;
+  --bad: #f08c7c;
+  --track: #2e2620;
+  --sidebar: #1a1511;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.6);
+  --shadow-pop: 0 1px 3px rgb(0 0 0 / 0.5), 0 18px 44px -10px rgb(0 0 0 / 0.72);
+  color-scheme: dark;
+}

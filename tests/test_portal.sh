@@ -186,9 +186,11 @@ test_caddy_web_app_files_are_public_before_login() {
   for n in $names; do assert_contains "$line " " /icons/$n "; done
   assert_eq "$(printf '%s\n' "$line" | tr ' ' '\n' | grep -c '^/icons/')" "$(printf '%s\n' "$names" | wc -l | tr -d ' ')"
   # ...and never a wildcard, the provider logos or anything else under /icons/ or /static/ beyond the login page's
-  # own files.
+  # own files: its style sheets, the logo and the three fonts (docs/design.md), each by name.
   case "$line" in *"*"*) echo "public paths use a wildcard: $line" >&2; return 1 ;; esac
-  case "$line" in *" /icons/"[!a]*|*" /static/"[!l]*) echo "public paths too broad: $line" >&2; return 1 ;; esac
+  case "$line" in *" /icons/"[!a]*) echo "public paths too broad: $line" >&2; return 1 ;; esac
+  assert_eq "$(printf '%s\n' "$line" | tr ' ' '\n' | grep '^/static/' | sort | tr '\n' ' ')" \
+    "/static/fonts.css /static/fonts/inter-latin-wght-normal.woff2 /static/fonts/jetbrains-mono-latin-wght-normal.woff2 /static/fonts/source-serif-4-latin-wght-normal.woff2 /static/login.css /static/logo.svg /static/tokens.css "
 }
 
 test_caddy_public_paths_have_one_definition_in_a_snippet() {

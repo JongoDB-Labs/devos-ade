@@ -16,6 +16,7 @@
 #               sweep/findings.tsv and .json, sweep/summary.txt, sweep/links.json, sweep/links-pending-release.json
 #   SWEEP_WIDTHS=desktop,tablet,phone  SWEEP_THEMES=light,dark   a smaller sweep
 #   SWEEP_ONLY=code,off_pages          just those parts (signin portal off_pages walkthrough code errors manifest links)
+#   SWEEP_SIZES=desktop=1440x900,tablet=834x1194   other viewports for those widths (e.g. a design review's)
 # The sweep reads; what it seeds is the throwaway's own: a project of its workspace (a git repository with a change, its
 # own Claude Code settings, not trusted) for the Code page's Projects, Git and trust views. Costs setup's probe only.
 set -uo pipefail
@@ -142,7 +143,7 @@ say "the sweep ($(echo "${SWEEP_WIDTHS:-desktop,tablet,phone}" | tr , ' '), ${SW
 docker rm -f "$PROJECT-playwright" >/dev/null 2>&1 || true
 docker run --rm --name "$PROJECT-playwright" --init --shm-size=1g "${opts[@]}" \
   -e E2E_HOST="$HOST" -e E2E_PORT="$P" -e E2E_LITELLM_PORT="$L" -e E2E_MCP_PORT="$M" \
-  -e SWEEP_WIDTHS="${SWEEP_WIDTHS:-desktop,tablet,phone}" -e SWEEP_THEMES="${SWEEP_THEMES:-light,dark}" -e SWEEP_ONLY="${SWEEP_ONLY:-}" \
+  -e SWEEP_WIDTHS="${SWEEP_WIDTHS:-desktop,tablet,phone}" -e SWEEP_THEMES="${SWEEP_THEMES:-light,dark}" -e SWEEP_ONLY="${SWEEP_ONLY:-}" -e SWEEP_SIZES="${SWEEP_SIZES:-}" \
   -e SWEEP_NEW_LOGO_SHA="$NEW_LOGO" -e SWEEP_OLD_LOGO_SHA="$OLD_LOGO" -e SWEEP_STACK_PATH="$STACK" -e SWEEP_HOME="$HOME" \
   -v "$STACK/.env:/run/e2e/env:ro" -v "$HERE/browser:/suite:ro" -v "$OUT/run:/out" \
   -v "$STACK/.state/status:/state/status:ro" -v "$STACK/.state/update-check:/state/update-check" \

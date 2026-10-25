@@ -43,6 +43,12 @@ WIDTHS = {
     "phone": {"viewport": {"width": 390, "height": 844}, "is_mobile": True, "has_touch": True, "device_scale_factor": 2,
               "user_agent": "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"},
 }
+# SWEEP_SIZES=desktop=1440x900,tablet=834x1194: other viewports for those widths (a design review's sizes)
+for _kv in filter(None, os.environ.get("SWEEP_SIZES", "").split(",")):
+    _name, _, _wh = _kv.partition("=")
+    if _name in WIDTHS and re.fullmatch(r"\d{3,4}x\d{3,4}", _wh):
+        _w, _h = (int(v) for v in _wh.split("x"))
+        WIDTHS[_name]["viewport"] = {"width": _w, "height": _h}
 ONLY_WIDTHS = [w for w in os.environ.get("SWEEP_WIDTHS", "desktop,tablet,phone").split(",") if w in WIDTHS]
 THEMES = [t for t in os.environ.get("SWEEP_THEMES", "light,dark").split(",") if t in ("light", "dark")]
 # SWEEP_ONLY=code,off_pages,…: just those parts (signin portal off_pages walkthrough code errors manifest links); all when empty

@@ -1,0 +1,6 @@
+/* DevOS ADE's fonts (docs/design.md): the DevOS website's own — Source Serif 4, Inter and JetBrains Mono, each under the
+   SIL Open Font License 1.1 (fonts/LICENSE-*.txt) — self-hosted beside this file: same origin, no CDN. Two identical
+   copies, like tokens.css: portal/portal/static/ and code/web/src/styles/ (tests/test_design_tokens.sh). */
+@font-face { font-family: "DevOS Serif"; src: url("fonts/source-serif-4-latin-wght-normal.woff2") format("woff2"); font-weight: 200 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "DevOS Sans"; src: url("fonts/inter-latin-wght-normal.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "DevOS Mono"; src: url("fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2"); font-weight: 100 800; font-style: normal; font-display: swap; }

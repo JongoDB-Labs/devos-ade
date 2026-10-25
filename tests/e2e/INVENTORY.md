@@ -124,7 +124,7 @@ its apps. The e2e throwaway uses `<project>.localhost` on free ports instead (de
 | `GET /sw.js` | public | e2e `http/manifest-and-sw`, `browser/pwa-installable` | JavaScript; registers with scope `/`; Chrome reports no installability errors. |
 | `GET /icons/app-*.png` (10 files) | public | e2e `http/public-paths-without-session`, `http/api-routes-authorized` | 200 `image/png` without a session, `Cache-Control: no-cache` with the content's version as ETag (a 304 while unchanged); the pages and the manifest name them with `?v=<version>`, so a new icon is a new address (unit `portal/tests/test_pwa.py`); any other `app-*` 404 (with a session; without one Caddy answers 401). |
 | `GET /icons/<provider>.png` | session | e2e `http/auth-required-every-host`, `browser/home-dashboard` | 401 without a session; logos in the model table. |
-| `/static/*` | session except `login.css`, `logo.svg` | e2e `http/auth-required-every-host` | `app.js` etc. need the session. |
+| `/static/*` | session except `tokens.css`, `fonts.css`, `login.css`, `logo.svg` and the three `fonts/*.woff2` | e2e `http/auth-required-every-host` | `app.js` etc. need the session. |
 
 ## 3. Caddy (`caddy/Caddyfile`; local site only — remote snippets are manual until remote testing)
 
