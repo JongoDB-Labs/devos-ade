@@ -405,7 +405,7 @@ code_setup_hook() {
   ! declare -F chat_proxy_leave >/dev/null || chat_proxy_leave
   code_ready || return 0
   code_secrets
-  out="$(mktemp)"; start="$(_now)"
+  out="$(mktemp)"; start="$(_now)"; phase_start "Code page"
   # (the gateway again: a no-op, unless the previews' secret was made just now — the first setup after an update)
   if { code_build && dc up -d --wait terminal-gateway && dc up -d --wait code; } > "$out" 2>&1; then
     rm -f "$out"; log "$(phase_line "Code page" $(($(_now) - start)))"

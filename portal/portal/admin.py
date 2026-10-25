@@ -121,6 +121,21 @@ def _auto(beat: dict) -> dict:
 COMMAND = re.compile(r"[a-z][a-z-]{0,23}(?: [a-z][a-z-]{0,23})?")
 
 
+TOOK = re.compile(r"[0-9]{1,4}m[0-9]{2}s|[0-9]{1,4}s")
+
+
+def _steps(v) -> list:
+    """The phases a job finished so far, as the helper read them from its log ([{label, took}], at most 40)."""
+    out = []
+    for x in v if isinstance(v, list) else []:
+        if isinstance(x, dict) and isinstance(x.get("label"), str) and x["label"].strip():
+            took = x.get("took")
+            out.append({"label": x["label"][:120], "took": took if isinstance(took, str) and TOOK.fullmatch(took) else ""})
+        if len(out) == 40:
+            break
+    return out
+
+
 def _job(raw: dict, origin: str) -> dict | None:
     if not raw:
         return None
@@ -131,6 +146,9 @@ def _job(raw: dict, origin: str) -> dict | None:
         "finished_at": _int(raw.get("finished_at")), "freed_bytes": _int(raw.get("freed_bytes")),
         "version": _str(raw.get("version"), 80),
         "trigger": "auto" if raw.get("trigger") == "auto" else "request",
+        # its steps (an update's or a rollback's restart): what runs now and since when, and the ones done with their time
+        "step": _str(raw.get("step"), 160), "step_started_at": _int(raw.get("step_started_at")),
+        "steps": _steps(raw.get("steps")),
         # where it ran: "helper" (Home, Settings, the nightly jobs) or "terminal" (a ./stack command typed in a terminal)
         "origin": origin,
     }

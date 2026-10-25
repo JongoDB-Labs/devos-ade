@@ -613,9 +613,15 @@ helper_write_status() {
   # cannot be written is logged
   d="$(status_dir)"; f="$(helper_status_file)"; mkdir -p "$d" 2>/dev/null || true
   tmp="$(mktemp "$d/.helper-status.XXXXXX" 2>/dev/null)" || { printf '%s could not write %s\n' "$(date '+%F %T')" "$f" >&2; return 0; }
-  if printf '{"id": "%s", "action": "%s", "phase": "%s", "message": "%s", "started_at": %s, "updated_at": %s, "finished_at": %s, "freed_bytes": %s, "version": "%s", "trigger": "%s"}\n' \
+  # (the steps of this job only: _job_steps read them from its own log)
+  local step='' step_at=null steps='[]'
+  if [ -n "$JOB_ID" ] && [ "${JOB_STEPS_ID:-}" = "$JOB_ID" ]; then
+    step="$JOB_STEP"; step_at="${JOB_STEP_AT:-null}"; steps="${JOB_STEPS_JSON:-[]}"
+  fi
+  if printf '{"id": "%s", "action": "%s", "phase": "%s", "message": "%s", "started_at": %s, "updated_at": %s, "finished_at": %s, "freed_bytes": %s, "version": "%s", "trigger": "%s", "step": "%s", "step_started_at": %s, "steps": %s}\n' \
     "$(_json_str "$JOB_ID")" "$(_json_str "$JOB_ACTION")" "$(_json_str "$1")" "$(_json_str "$2")" "${JOB_STARTED:-null}" "$(date +%s)" \
-    "${JOB_FINISHED:-null}" "${JOB_FREED:-null}" "$(_json_str "$JOB_VERSION")" "$(_json_str "${JOB_TRIGGER:-request}")" > "$tmp" &&
+    "${JOB_FINISHED:-null}" "${JOB_FREED:-null}" "$(_json_str "$JOB_VERSION")" "$(_json_str "${JOB_TRIGGER:-request}")" \
+    "$(_json_str "$step")" "$step_at" "$steps" > "$tmp" &&
     chmod 644 "$tmp" && mv "$tmp" "$f"; then return 0; fi
   rm -f "$tmp" 2>/dev/null || true
   printf '%s could not write %s\n' "$(date '+%F %T')" "$f" >&2
@@ -734,6 +740,36 @@ _phase_of() {
   esac
 }
 
+# _job_steps LOG — what the job's log says of its steps, from the lines ./stack writes in a helper job (lib/commands.sh
+# phase_start, phase_line, setup_step), after its last "update: N/4" or "rollback: N/3" line:
+#   JOB_STEP        what runs now: a phase started and not ready yet, or setup's step ("" between them)
+#   JOB_STEPS_JSON  the phases ready so far, in order: [{"label": "Postgres + RustFS", "took": "1m50s"}, …] (at most 40)
+#   JOB_STEP_AT     when JOB_STEP was first seen (the poll's clock; empty with no step)
+# Read again only when the log has grown. Labels and times as JSON-safe text.
+JOB_STEP=''; JOB_STEP_AT=''; JOB_STEPS_JSON='[]'; JOB_STEPS_ID=''; JOB_STEPS_SIZE=''
+_job_steps() {
+  local size line label took cur='' arr='' n=0
+  size="$(wc -c < "$1" 2>/dev/null | tr -d ' ')"
+  [ "$JOB_STEPS_ID" != "$JOB_ID" ] || [ "$size" != "$JOB_STEPS_SIZE" ] || return 0
+  [ "$JOB_STEPS_ID" = "$JOB_ID" ] || { JOB_STEP=''; JOB_STEP_AT=''; }
+  JOB_STEPS_ID="$JOB_ID"; JOB_STEPS_SIZE="$size"
+  while IFS= read -r line; do
+    case "$line" in
+      '==> update: '[1-4]/4* | '==> rollback: '[1-3]/3*) cur=''; arr=''; n=0 ;;
+      '==> '*': starting…') cur="${line#==> }"; cur="${cur%: starting…}" ;;
+      '==> doing: '*) cur="${line#==> doing: }" ;;
+      '==> '*' ready ('*')')
+        label="${line#==> }"; took="${label##* ready (}"; took="${took%)}"; label="${label% ready (*}"
+        if [ "$n" -lt 40 ]; then
+          arr="$arr${arr:+, }{\"label\": \"$(_json_str "$label")\", \"took\": \"$(_json_str "$took")\"}"; n=$((n + 1))
+        fi
+        [ "$cur" != "$label" ] || cur='' ;;
+    esac
+  done < <(grep -E '^==> ' "$1" 2>/dev/null | tail -n 400)
+  [ "$cur" = "$JOB_STEP" ] || { JOB_STEP="$cur"; JOB_STEP_AT="$( [ -z "$cur" ] || date +%s)"; }
+  JOB_STEPS_JSON="[$arr]"
+}
+
 # _last_error LOG -> the most useful line of a failed run (the last "xx" line, else the last line)
 _last_error() {
   local l
@@ -807,11 +843,14 @@ helper_run_job() {
   pid=$!
   [ "$action" = clean ] || _keep_awake "$pid"
   while kill -0 "$pid" 2>/dev/null; do
+    [ "$action" = clean ] || _job_steps "$logf"
     if ph="$(_phase_of "$logf")"; then helper_write_status "${ph%%	*}" "${ph#*	}"; fi
     helper_heartbeat
     sleep "${HELPER_JOB_POLL_S:-2}"
   done
   wait "$pid" || rc=$?
+  # (its steps as the log ended: the done or failed status keeps how long each took; nothing runs any more)
+  if [ "$action" != clean ]; then JOB_STEPS_SIZE=''; _job_steps "$logf"; JOB_STEP=''; JOB_STEP_AT=''; fi
   helper_facts force; AUTO_FRESH=0   # what the heartbeats saw during the job is out of date now
   JOB_FINISHED="$(date +%s)"; JOB_VERSION="$HF_VERSION"
   at="$(sed -n 's/^at=//p' "$STATE_DIR/images/last-clean" 2>/dev/null || true)"   # none yet (e.g. nothing to update)

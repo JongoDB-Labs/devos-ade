@@ -548,8 +548,10 @@ def update_check_button(ctx):
 
 @check("browser", "home-update-last-job-and-reconnecting")
 def update_last_job_and_reconnecting(ctx):
-    """Home's last job is the newest of any origin (a ./stack command run in a terminal records one too); while an update
-    restarts the portal, the job card says so calmly, with the time so far, instead of an error banner."""
+    """Home's last job is the newest of any origin (a ./stack command run in a terminal records one too); an update says it
+    runs in the background and shows the step that runs with its time so far and the steps done (Settings says an update
+    is finishing); while it restarts the portal, the job card says so calmly, with the time so far, instead of an error
+    banner; when it ends, "Updated to …" and Settings without its notice."""
     if real_helper_running():
         raise Skip("a real update helper is running: this check fakes its heartbeat and its job")
     st = STATE / "status"
@@ -576,10 +578,27 @@ def update_last_job_and_reconnecting(ctx):
         states.append("newest job: ./stack code enable (terminal)")
         # 2. an update from Home, restarting the services (heartbeat and job faked) ...
         _write_json(files["helper.json"], {"heartbeat": int(time.time()), "version": "e2e", "rollback": {"available": False}})
+        t = int(time.time())
         _write_json(files["helper-status.json"], {"id": "f" * 32, "action": "update", "phase": "restarting",
                                                   "message": "Restarting the services and checking them", "started_at": now - 40,
-                                                  "updated_at": int(time.time()), "finished_at": None, "version": "", "trigger": "request"})
+                                                  "updated_at": t, "finished_at": None, "version": "", "trigger": "request",
+                                                  "step": "Terminal", "step_started_at": t - 130,
+                                                  "steps": [{"label": "Postgres + RustFS", "took": "1m50s"}, {"label": "Open WebUI", "took": "17s"}]})
         page.reload()
+        page.locator("#job-title", has_text="in progress").wait_for(timeout=15000)
+        # ... in the background, the step that runs and for how long, the ones done with their time
+        expect(page.inner_text("#job-step") == "Terminal, 2 min so far", f"step: {page.inner_text('#job-step')!r}")
+        expect(page.inner_text("#job-done").split("\n") == ["Postgres + RustFS · 1m50s", "Open WebUI · 17s"], f"done: {page.inner_text('#job-done')!r}")
+        expect(page.inner_text("#job-note").startswith("Updating in the background: keep working, or close DevOS ADE."), f"note: {page.inner_text('#job-note')!r}")
+        shot(page, "06b-home-update-steps")
+        states.append("update: Terminal, 2 min so far; 2 steps done; in the background")
+        # ... and Settings says an update is finishing
+        page.goto(page.url.split("#")[0] + "#settings")
+        page.locator("#settings-updating:not([hidden])").wait_for(timeout=15000)
+        expect(page.inner_text("#settings-updating") == "An update is finishing: new settings appear when it's done.", page.inner_text("#settings-updating"))
+        shot(page, "06c-settings-update-finishing")
+        states.append("Settings: an update is finishing")
+        page.goto(page.url.split("#")[0] + "#home")
         page.locator("#job-title", has_text="in progress").wait_for(timeout=15000)
         # ... and the portal away (every /api/ request fails, as while it restarts): reconnecting, with the time so far
         page.route(api, lambda route: route.abort())
@@ -596,6 +615,19 @@ def update_last_job_and_reconnecting(ctx):
         page.unroute(api)
         page.locator("#job-reconnect-text", has_text="Reconnected: the portal was away for").wait_for(timeout=15000)
         states.append("back: " + page.inner_text("#job-reconnect-text"))
+        # 4. done: "Updated to …", no step running; Settings' notice gone and its list loaded again
+        t = int(time.time())
+        _write_json(files["helper-status.json"], {"id": "f" * 32, "action": "update", "phase": "done", "message": "Updated to v9.9.9",
+                                                  "started_at": now - 40, "updated_at": t, "finished_at": t, "version": "v9.9.9",
+                                                  "trigger": "request", "step": "", "step_started_at": None,
+                                                  "steps": [{"label": "Postgres + RustFS", "took": "1m50s"}, {"label": "Terminal", "took": "3m11s"}]})
+        page.locator("#job-title", has_text="finished").wait_for(timeout=15000)
+        expect(page.inner_text("#job-message") == "Updated to v9.9.9", f"message: {page.inner_text('#job-message')!r}")
+        expect(page.locator("#job-step").is_hidden(), "a step shown after the update ended")
+        page.goto(page.url.split("#")[0] + "#settings")
+        page.wait_for_selector("#settings-title", timeout=15000)
+        expect(page.locator("#settings-updating").count() == 0 or page.locator("#settings-updating").is_hidden(), "Settings still says an update is finishing")
+        states.append("done: Updated to v9.9.9; Settings' notice gone")
     finally:
         try:
             page.unroute(api)

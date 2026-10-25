@@ -13,6 +13,8 @@ echo "$*" >> "$CALLS"
 case "$1" in
   update) [ -z "${FAKE_NOOP:-}" ] || { echo "==> already on v0.3.0 — nothing to update (./stack update --force re-runs setup)"; exit 0; }
     echo "==> update: 1/4 backup"; echo "==> update: 2/4 code (git)"; echo "==> update: 3/4 images"; echo "==> update: 4/4 setup"
+    echo "==> doing: starting Postgres + RustFS"; echo "==> Postgres + RustFS: starting…"; echo "==> Postgres + RustFS ready (1m50s)"
+    echo "==> Terminal: starting…"; echo "==> Terminal ready (3m11s)"
     printf 'freed_bytes=3100000000\nsummary=freed 3.1 GB (old litellm 1)\nat=%s\n' "$(date +%s)" > "$STATE_DIR/images/last-clean" ;;
   clean) printf 'freed_bytes=500000000\nsummary=freed 500 MB (old old build)\nat=%s\n' "$(date +%s)" > "$STATE_DIR/images/last-clean" ;;
 esac
@@ -112,6 +114,47 @@ test_update_job_reports_phases_version_and_freed() {
   assert_eq "$(_phase_of "$TMP/log")" "$(printf 'downloading\tDownloading images')"
   printf 'rollback: 2/3 data\n' > "$TMP/log"
   assert_eq "$(_phase_of "$TMP/log" | cut -f1)" "restoring"
+}
+
+# Home's progress card: the steps of the job as its log says them (lib/commands.sh phase_start, phase_line, setup_step)
+test_job_steps_say_what_runs_and_what_is_done() {
+  JOB_ID=j1; JOB_STEPS_ID=''; JOB_STEPS_SIZE=''
+  printf '%s\n' '==> update: 3/4 images' '==> Old WebUI ready (9s)' '==> update: 4/4 setup' '==> doing: checking your AWS key' \
+    '==> Postgres + RustFS: starting…' '==> Postgres + RustFS ready (1m50s)' 'noise' '==> doing: checking which models your AWS key can use' > "$TMP/log"
+  _job_steps "$TMP/log"
+  # (only this part of the job: what came before update: 4/4 is not one of its steps)
+  assert_eq "$JOB_STEPS_JSON" '[{"label": "Postgres + RustFS", "took": "1m50s"}]'
+  assert_eq "$JOB_STEP" "checking which models your AWS key can use"
+  case "$JOB_STEP_AT" in ''|*[!0-9]*) echo "no start time: $JOB_STEP_AT" >&2; return 1 ;; esac
+  # the same log again: nothing read again, the start time kept
+  JOB_STEP_AT=1; _job_steps "$TMP/log"; assert_eq "$JOB_STEP_AT" 1
+  # a phase that starts: the step it is, from when it was seen; ready: no step until the next
+  printf '%s\n' '==> Terminal: starting…' >> "$TMP/log"
+  _job_steps "$TMP/log"
+  assert_eq "$JOB_STEP" "Terminal"; [ "$JOB_STEP_AT" -gt 1 ] || return 1
+  printf '%s\n' '==> Terminal ready (3m11s)' '==> Code "page" ready (23s)' >> "$TMP/log"
+  _job_steps "$TMP/log"
+  assert_eq "$JOB_STEP|$JOB_STEP_AT" "|"
+  assert_eq "$JOB_STEPS_JSON" '[{"label": "Postgres + RustFS", "took": "1m50s"}, {"label": "Terminal", "took": "3m11s"}, {"label": "Code page", "took": "23s"}]'
+  # at most 40, and another job starts afresh
+  for i in $(seq 1 45); do printf '==> S%s ready (1s)\n' "$i"; done >> "$TMP/log"
+  _job_steps "$TMP/log"
+  assert_eq "$(printf '%s' "$JOB_STEPS_JSON" | grep -o '"label"' | wc -l | tr -d ' ')" 40
+  JOB_ID=j2; printf '%s\n' '==> rollback: 3/3 setup' '==> Portal: starting…' > "$TMP/log2"
+  _job_steps "$TMP/log2"
+  assert_eq "$JOB_STEP|$JOB_STEPS_JSON" "Portal|[]"
+}
+
+test_update_job_status_carries_its_steps_and_only_its_own() {
+  _checkout; _req update
+  helper_poll_once 2>/dev/null
+  s="$(_status)"
+  assert_contains "$s" '"phase": "done", "message": "Updated to v0.3.0 · freed 3.1 GB"'
+  assert_contains "$s" '"step": "", "step_started_at": null, "steps": [{"label": "Postgres + RustFS", "took": "1m50s"}, {"label": "Terminal", "took": "3m11s"}]}'
+  printf '%s\n' "$s" | python3 -c 'import json,sys; json.load(sys.stdin)' || { echo "not JSON: $s" >&2; return 1; }
+  # another job's status never shows them
+  JOB_ID=other; JOB_ACTION=clean; helper_write_status cleaning "Removing old images"
+  assert_contains "$(_status)" '"step": "", "step_started_at": null, "steps": []}'
 }
 
 test_update_with_nothing_new_is_done_and_says_so() {

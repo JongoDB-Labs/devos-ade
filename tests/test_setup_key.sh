@@ -43,6 +43,49 @@ test_setup_key_created_before_probe() {
   assert_eq "$(tr '\n' ';' < "$TMP/calls")" "KEY LITELLM_KEY_SETUP setup 5;PROBE;"
 }
 
+# An update (or setup again) keeps the last model probe's answers while nothing they depend on changed: LiteLLM starts
+# once with the models it found; a new AWS key or region, another catalog or LiteLLM, a week, or --recheck: probed again
+_probe_setup() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR/litellm" "$STACK_DIR/lib"
+  CATALOG="$TMP/models.tsv"; printf 'big\tchat\tbedrock/x\t-\t-\n' > "$CATALOG"
+  printf '  litellm:\n    image: ghcr.io/berriai/litellm:1.105.0\n' > "$STACK_DIR/compose.yaml"
+  printf '# probe v1\n' > "$STACK_DIR/lib/models.sh"
+  printf 'BUDGET_SETUP=5\nAWS_ACCESS_KEY_ID=id-one\nAWS_SECRET_ACCESS_KEY=s1\nAWS_REGION_NAME=us-east-1\n' > "$ENV_FILE"
+  render_config() { echo "RENDER ${1:+enabled}" >> "$TMP/calls"; }; ensure_images() { :; }; owui_build() { :; }; choose_defaults() { :; }
+  run_phase() { echo "PHASE $1" >> "$TMP/calls"; }
+  dc() { :; }; refresh_prices() { :; }   # never a real build/run in a (possibly live) Compose project
+  ensure_virtual_key() { echo "KEY $2" >> "$TMP/calls"; }
+  probe_models() { echo "PROBE" >> "$TMP/calls"; echo big > "$1"; printf 'big\tchat\tENABLED\n' > "$2"; }
+}
+_probe_run() { : > "$TMP/calls"; setup_bringup_and_probe 2> "$TMP/err"; tr '\n' ';' < "$TMP/calls"; }
+
+test_the_model_probe_is_kept_while_nothing_it_depends_on_changed() {
+  _probe_setup
+  # the first time: probed, with LiteLLM up twice (all the catalog, then the models found)
+  assert_eq "$(_probe_run)" "RENDER ;PHASE Postgres + RustFS;PHASE LiteLLM (full catalog, for probing);KEY setup;PROBE;RENDER enabled;PHASE LiteLLM (1 models);"
+  [ -s "$STATE_DIR/models/probe.mark" ] || { echo "no mark" >&2; return 1; }
+  assert_not_contains "$(cat "$STATE_DIR/models/probe.mark")" "id-one"   # (a hash: never the key as it is)
+  assert_not_contains "$(cat "$STATE_DIR/models/probe.mark")" "s1"
+  # again, nothing changed: no probe, LiteLLM once with the models found
+  assert_eq "$(_probe_run)" "RENDER enabled;PHASE Postgres + RustFS;PHASE LiteLLM (1 models);KEY setup;"
+  assert_contains "$(cat "$TMP/err")" "model check: the last one stands (same AWS key, region, model catalog and LiteLLM; 0 min ago)"
+  # each thing it depends on, changed: probed again
+  sed -i.bak 's/us-east-1/eu-west-1/' "$ENV_FILE"; assert_contains "$(_probe_run)" "PROBE"
+  assert_not_contains "$(_probe_run)" "PROBE"
+  sed -i.bak 's/^AWS_SECRET_ACCESS_KEY=s1/AWS_SECRET_ACCESS_KEY=s2/' "$ENV_FILE"; assert_contains "$(_probe_run)" "PROBE"
+  printf 'small\tchat\tbedrock/y\t-\t-\n' >> "$CATALOG"; assert_contains "$(_probe_run)" "PROBE"
+  sed -i.bak 's/1.105.0/1.106.0/' "$STACK_DIR/compose.yaml"; assert_contains "$(_probe_run)" "PROBE"
+  printf '# probe v2\n' > "$STACK_DIR/lib/models.sh"; assert_contains "$(_probe_run)" "PROBE"
+  assert_not_contains "$(_probe_run)" "PROBE"
+  # its results gone, or a week old, or ./stack models --recheck: probed again
+  rm "$STACK_DIR/litellm/probe-results.tsv"; assert_contains "$(_probe_run)" "PROBE"
+  sed -i.bak "s/^at=.*/at=$(( $(date +%s) - 604800 ))/" "$STATE_DIR/models/probe.mark"; assert_contains "$(_probe_run)" "PROBE"
+  assert_contains "$(SETUP_REPROBE=1 _probe_run)" "PROBE"
+  assert_contains "$(sed -n '/^models_recheck() {/,/^}/p' "$T_ROOT/lib/commands.sh")" "SETUP_REPROBE=1 setup_bringup_and_probe"
+  # a mark that is not ours: probed
+  printf 'garbage\n' > "$STATE_DIR/models/probe.mark"; assert_contains "$(_probe_run)" "PROBE"
+}
+
 test_setup_secrets_defaults_setup_budget() {
   printf 'OPENWEBUI_ADMIN_EMAIL=a@b.c\n' > "$ENV_FILE"
   setup_secrets 2>/dev/null

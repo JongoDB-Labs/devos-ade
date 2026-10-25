@@ -151,6 +151,12 @@ fmt_elapsed() { # fmt_elapsed SECONDS -> "16s" / "2m05s"
   if [ "$s" -lt 60 ]; then printf '%ss\n' "$s"; else printf '%dm%02ds\n' $((s / 60)) $((s % 60)); fi
 }
 phase_line() { printf '%s ready (%s)\n' "$1" "$(fmt_elapsed "$2")"; }   # phase_line LABEL SECONDS
+# helper_job — this command runs as a job of the update helper (Home's Update now, the nightly update): its log is what
+# Home's progress card reads (lib/helper.sh _job_steps)
+helper_job() { [ "${BEDROCK_NOW_JOB_ORIGIN:-}" = helper ] && [ ! -t 2 ]; }
+# phase_start LABEL — in a helper job's log, "==> LABEL: starting…" before a phase whose "LABEL ready (…)" line follows:
+# Home shows the step that runs and for how long (a terminal shows it on its own line instead; run_phase)
+phase_start() { ! helper_job || is_verbose || log "$1: starting…"; }
 _now() { date +%s; }
 is_verbose() { [ "${BEDROCK_NOW_VERBOSE:-0}" = 1 ]; }
 
@@ -186,6 +192,7 @@ run_phase() {
   else
     out="$(mktemp)"; _cleanup_on_signal "$out"
     [ ! -t 2 ] || printf '%s==>%s %s: starting…' "$C_GRN" "$C_OFF" "$label" >&2
+    phase_start "$label"
     "$@" 8>&2 > "$out" 2>&1 || rc=$?
     [ ! -t 2 ] || printf '\r\033[K' >&2
   fi
@@ -525,7 +532,8 @@ setup_secrets() {
 
 # --- setup stopped by Ctrl-C (or TERM): what it did, what still runs, and how to go on ---
 SETUP_STEP=''; SETUP_DONE=''; SETUP_CODE_DEFAULT=0
-setup_step() { SETUP_STEP="$1"; }                                    # setup_step "probing which models …": doing now
+# setup_step "probing which models …": doing now (in a helper job's log too, "==> doing: …": Home's progress card)
+setup_step() { SETUP_STEP="$1"; ! helper_job || log "doing: $1"; }
 setup_done() { SETUP_DONE="${SETUP_DONE:+$SETUP_DONE; }$1"; SETUP_STEP=''; }   # setup_done "Postgres + RustFS started"
 
 # _setup_undo_code_default 1|2 — a Code page this setup turned on by default (code_default_on; 2: the terminal too) and
@@ -722,13 +730,63 @@ _restore_litellm_config() {
   (render_config "$en" && dc up -d --no-deps --force-recreate litellm >/dev/null 2>&1) || warn "could not restore it; re-run ./stack setup"
 }
 
+# --- the model probe, kept while nothing it depends on changed (an update, a setup again) ---
+# PROBE_REUSE_MAX_S: how long its answers stand at most (a week: a model your AWS admin enables meanwhile shows by then;
+# ./stack models --recheck checks again at once). The mark: .state/models/probe.mark (fingerprint=, at=).
+PROBE_REUSE_MAX_S="${BEDROCK_NOW_PROBE_MAX_AGE_S:-604800}"
+probe_mark_file() { printf '%s\n' "$STATE_DIR/models/probe.mark"; }
+# probe_fingerprint -> a hash of what the probe's answers depend on: .env's AWS_* lines (the key, its region, how it
+# signs in — hashed, never kept as they are), the model catalog, LiteLLM's image and the probe's own code
+probe_fingerprint() {
+  { grep -E '^AWS_' "$ENV_FILE" 2>/dev/null; catalog_rows 2>/dev/null; grep -E 'berriai/litellm' "$STACK_DIR/compose.yaml" 2>/dev/null
+    cat "$STACK_DIR/lib/models.sh" 2>/dev/null; } | openssl dgst -sha256 | awk '{ print $NF }'
+}
+# probe_reusable -> 0 when the last probe's answers still stand: the same fingerprint, younger than PROBE_REUSE_MAX_S,
+# and its results still there (litellm/enabled-models.txt, litellm/probe-results.tsv); prints how old they are
+probe_reusable() {
+  local f fp at age
+  f="$(probe_mark_file)"; [ -r "$f" ] || return 1
+  [ -s "$STACK_DIR/litellm/enabled-models.txt" ] && [ -s "$STACK_DIR/litellm/probe-results.tsv" ] || return 1
+  fp="$(sed -n 's/^fingerprint=//p' "$f")"; at="$(sed -n 's/^at=//p' "$f")"
+  case "$at" in '' | *[!0-9]*) return 1 ;; esac
+  age=$(( $(date +%s) - at ))
+  [ -n "$fp" ] && [ "$fp" = "$(probe_fingerprint)" ] && [ "$age" -ge 0 ] && [ "$age" -lt "$PROBE_REUSE_MAX_S" ] || return 1
+  if [ "$age" -lt 7200 ]; then printf '%s min\n' $((age / 60)); else printf '%s h\n' $((age / 3600)); fi
+}
+# probe_mark — the probe just answered: its fingerprint and the time (a failure to write it only means a probe next time)
+probe_mark() {
+  local d tmp
+  d="$(dirname "$(probe_mark_file)")"
+  mkdir -p "$d" 2>/dev/null && chmod 700 "$d" 2>/dev/null && tmp="$(mktemp "$d/.probe.XXXXXX" 2>/dev/null)" || return 0
+  printf 'fingerprint=%s\nat=%s\n' "$(probe_fingerprint)" "$(date +%s)" > "$tmp" && mv -f "$tmp" "$(probe_mark_file)" || rm -f "$tmp"
+  return 0
+}
+
 setup_bringup_and_probe() {
-  local en="$STACK_DIR/litellm/enabled-models.txt"
+  local en="$STACK_DIR/litellm/enabled-models.txt" age
   # Today's prices before LiteLLM's config is rendered (lib/prices.sh; never fatal). The portal image runs the
   # updater, so build it first: an image from before an update would not have it.
   ensure_prices_dir
   if dc build -q portal >/dev/null 2>&1; then refresh_prices 1
   else warn "could not build the portal image yet — prices stay as they are (./stack logs portal after setup)"; fi
+  # Nothing the probe depends on changed since it last answered (SETUP_REPROBE=1: ./stack models --recheck asks
+  # again): LiteLLM starts once, with the models it found, instead of twice around a new probe
+  if [ "${SETUP_REPROBE:-0}" != 1 ] && age="$(probe_reusable)"; then
+    log "model check: the last one stands (same AWS key, region, model catalog and LiteLLM; $age ago) — ./stack models --recheck checks again"
+    render_config "$en"
+    setup_step "downloading images"
+    ensure_images
+    owui_build || die "could not build Open WebUI's image (./stack logs is empty for a build: run ./stack setup again and read its output)"
+    setup_step "starting Postgres + RustFS"
+    run_phase "Postgres + RustFS" "postgres rustfs" _up_data_services
+    setup_done "Postgres + RustFS started"
+    choose_defaults
+    setup_step "starting LiteLLM with the models your key can use"
+    run_phase "LiteLLM ($(wc -l < "$en" | tr -d ' ') models)" litellm dc up -d --no-deps --force-recreate --wait litellm
+    ensure_virtual_key LITELLM_KEY_SETUP setup "$(get_env BUDGET_SETUP)"
+    setup_done "model check kept"
+    return 0
+  fi
   log "rendering LiteLLM config with the full catalog for probing"
   on_exit _restore_litellm_config
   render_config ""
@@ -749,6 +807,7 @@ setup_bringup_and_probe() {
   probe_models "$en.new" "$STACK_DIR/litellm/probe-results.tsv"
   [ -s "$en.new" ] || die "no models are usable with this AWS key — check with your AWS admin"
   mv "$en.new" "$en"
+  probe_mark
   render_config "$en"
   off_exit _restore_litellm_config
   choose_defaults
@@ -881,7 +940,7 @@ models_recheck() {
   [ -f "$ENV_FILE" ] && [ -n "$(get_env LITELLM_MASTER_KEY)" ] || die "run ./stack setup first"
   stack_lock models   # lib/lock.sh: the model choices in .env are rewritten
   check_prereqs
-  setup_bringup_and_probe
+  SETUP_REPROBE=1 setup_bringup_and_probe
   stt_after_probe   # lib/stt.sh: Voxtral may have become usable (or not)
   stt_setup_service
   ensure_portal_password_hash

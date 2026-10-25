@@ -578,7 +578,7 @@ terminal_setup_hook() {
     warn "Terminal: could not create or update its LiteLLM key (claude-code-terminal) — see ./stack logs litellm"
     [ -n "$(get_env LITELLM_KEY_TERMINAL)" ] || { TERMINAL_SETUP_FAILED=1; TERMINAL_SETUP_WHY="no LiteLLM key for its sandbox (is LiteLLM up?)"; }
   fi
-  out="$(mktemp)"; start="$(_now)"
+  out="$(mktemp)"; start="$(_now)"; phase_start Terminal
   if _terminal_build_and_up > "$out" 2>&1; then
     rm -f "$out"; log "$(phase_line "Terminal" $(($(_now) - start)))"; terminal_after_up
     # (a new image: what its AI tools say now, for Settings — never fatal; lib/subscriptions.sh)

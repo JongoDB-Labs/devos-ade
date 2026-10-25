@@ -84,6 +84,7 @@
     }
     keys = {};
     for (const k of (data.snapshot && data.snapshot.keys) || []) keys[k.key] = k;
+    updating = isUpdating(data.helper.in_progress, data.helper.job);
     buildLayout();
     render();
     renderNotice();
@@ -166,7 +167,7 @@
       p.append(el("p", { class: "banner", text: "Settings are not available yet: run ./stack up once (it writes .state/status/settings.json, the masked copy of .env this page shows)." }));
       return;
     }
-    p.append(helperBox(), jobBox(), findBar(), picker());
+    p.append(updatingBox(), helperBox(), jobBox(), findBar(), picker());
     const cards = el("div", { class: "set-cards" });
     for (const s of sections) cards.append(card(s));
     p.append(el("div", { class: "set-layout" }, sectionNav(), cards));
@@ -176,6 +177,25 @@
     applyView();
     p.scrollTop = scrollY;
   }
+
+  // An update or a rollback running (the helper's job): this list is rewritten when it ends — said at the top, and the
+  // list is loaded again then (app.js's job poll tells us: bn:admin)
+  let updating = false;
+  const isUpdating = (inProgress, j) => Boolean(inProgress && j && (j.action === "update" || j.action === "rollback"));
+  function updatingBox() {
+    const b = el("p", { id: "settings-updating", class: "banner", role: "status",
+      text: "An update is finishing: new settings appear when it's done." });
+    b.hidden = !updating;
+    return b;
+  }
+  function setUpdating(now) {
+    const was = updating;
+    updating = now;
+    const b = $("#settings-updating");
+    if (b) b.hidden = !updating;
+    if (was && !now) load();   // it ended: the settings it wrote
+  }
+  document.addEventListener("bn:admin", (e) => { const a = e.detail || {}; setUpdating(isUpdating(a.in_progress, a.job)); });
 
   function initialSection() {
     let memo = null;

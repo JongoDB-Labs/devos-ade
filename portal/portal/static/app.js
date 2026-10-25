@@ -584,6 +584,38 @@ window.addEventListener("message", (e) => {
   codeTurn = e.data.busy === true;
 });
 
+// An update's or a rollback's steps as the helper reads them from its log (job.step, job.steps): what runs now and how
+// long it has taken ("Terminal, 2 min so far"), and the ones done with their time — a slow step never looks stuck.
+const BACKGROUND = {
+  update: "Updating in the background: keep working, or close DevOS ADE. The update finishes on its own, and you get a notice when it's done. Services restart one at a time; the portal is away for under a minute.",
+  rollback: "Rolling back in the background: keep working, or close DevOS ADE. It finishes on its own, and you get a notice when it's done. Services restart one at a time; the portal is away for under a minute.",
+};
+function soFar(s) { return s < 60 ? `${Math.max(1, Math.round(s))} s` : `${Math.round(s / 60)} min`; }
+function stepText(job) {
+  if (!job.step) return "";
+  const s = job.step_started_at && job.updated_at ? Math.max(0, job.updated_at - job.step_started_at) : 0;
+  const what = job.step.charAt(0).toUpperCase() + job.step.slice(1);
+  return s >= 1 ? `${what}, ${soFar(s)} so far` : what;
+}
+function renderSteps(job, inProgress) {
+  const now = $("#job-step"), done = $("#job-done");
+  const steps = Array.isArray(job.steps) ? job.steps : [];
+  const mine = job.action === "update" || job.action === "rollback";
+  now.textContent = mine && inProgress ? stepText(job) : "";
+  now.hidden = !now.textContent;
+  done.replaceChildren(...(mine ? steps : []).map((x) => el("li", { text: x.took ? `${x.label} · ${x.took}` : x.label })));
+  done.hidden = !done.children.length;
+}
+// The update that finished while Home looked on: said once ("Updated to v0.27.1"), besides the card and Activity
+let lastJobKey = "";
+function noticeFinished(job, inProgress) {
+  const key = job ? `${job.id || ""}:${job.phase || ""}` : "";
+  const was = lastJobKey; lastJobKey = key;
+  if (!job || inProgress || !was || was === key || !was.startsWith(`${job.id || ""}:`)) return;
+  if (job.phase === "done" && job.action === "update" && job.version && !/^Already up to date/.test(job.message || "")) toast(`Updated to ${job.version}`);
+  if (job.phase === "done" && job.action === "rollback" && job.version) toast(`Rolled back to ${job.version}`);
+}
+
 // While an update or rollback restarts the portal, Home cannot reach it for a minute or two: the job card says so,
 // calmly, with the time it has taken so far, and "Reconnected: the portal was away for 1:15" once it answers again.
 let downSince = 0, downTick = null;
@@ -726,11 +758,14 @@ function renderJob(job, inProgress) {
   // "Already up to date (…)": the helper's update found nothing new — no step ran, and Home did not change either
   const nothingNew = job.phase === "done" && msg.startsWith("Already up to date");
   list.hidden = !steps.length || nothingNew || job.phase === "skipped";
+  renderSteps(job, inProgress);
+  noticeFinished(job, inProgress);
   $("#job-message").textContent = msg;
   $("#job-message").className = `job-message ${job.phase === "failed" ? "bad" : job.phase === "done" ? "good" : ""}`;
   let note = "";
   if (reconnecting) note = "Chat, Admin and Files come back when it has finished. This page keeps trying by itself.";
   else if (inProgress && term) note = "It runs in a terminal on your computer; Home follows it (the portal may restart during it).";
+  else if (inProgress && !term && BACKGROUND[job.action]) note = BACKGROUND[job.action];
   else if (inProgress) note = "You can leave this page; it is carried out on your computer.";
   else if (job.phase === "done" && (job.action === "update" || job.action === "rollback") && !nothingNew) note = "Reload this page to use the new version of Home.";
   else if (job.phase === "failed" && auto) note = "This release is not retried automatically: Update now tries again, and a newer release is tried as usual.";

@@ -28,6 +28,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   `~/.local/bin`), the shim's arguments, input and exit codes, uninstall of both links. The e2e runs `devos-claude`,
   checks that `bin/claude-bedrock` gives the same help and a failure's exit code, and that neither link in your
   `~/.local/bin` changes; `tests/run.sh` fails if the suite changes them.
+- **An update says it runs in the background, and shows how far it is.** Home's update card says "Updating in the
+  background: keep working, or close DevOS ADE …", the step that runs and how long it has taken ("Terminal, 2 min so
+  far"), and the steps done with their times, so a slow step never looks stuck; "Updated to vX" when it ends (and in
+  Activity, as before). While an update runs, Settings says "An update is finishing: new settings appear when it's
+  done", and loads its list again when it is. A rollback does the same.
+- **An update restarts faster when your AWS key, its region and the model catalog are unchanged:** the last model
+  check's answers are kept (a week at most), so LiteLLM starts once with the models found instead of twice around a
+  new check (in the last measured update: 58 s for the full catalog, then the check). A new key, region, catalog or
+  LiteLLM checks again, and so does `./stack models --recheck`, at once.
 
 ## [0.27.1] - 2026-10-25
 

@@ -25,6 +25,29 @@ test_run_phase_quiet_by_default() {
   assert_not_contains "$out" "compose err"
 }
 
+# A helper job's log (Home's progress card reads it, lib/helper.sh _job_steps): each phase says when it starts, and
+# setup's steps are named; a terminal or any other run prints neither
+test_a_helper_jobs_log_names_each_phase_and_step_as_it_starts() {
+  _now() { echo 100; }
+  out="$(BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_VERBOSE=0 run_phase LiteLLM litellm _noisy 2>&1)"
+  assert_eq "$(printf '%s\n' "$out" | grep -c '')" 2
+  assert_eq "$(printf '%s\n' "$out" | head -n 1)" "==> LiteLLM: starting…"
+  assert_contains "$(printf '%s\n' "$out" | tail -n 1)" "LiteLLM ready (0s)"
+  assert_eq "$(BEDROCK_NOW_JOB_ORIGIN=helper setup_step "checking your AWS key" 2>&1)" "==> doing: checking your AWS key"
+  assert_eq "$(BEDROCK_NOW_JOB_ORIGIN=helper phase_start Terminal 2>&1)" "==> Terminal: starting…"
+  # not a helper job: nothing more than before
+  out="$(BEDROCK_NOW_VERBOSE=0 run_phase LiteLLM litellm _noisy 2>&1)"
+  assert_not_contains "$out" "starting"
+  assert_eq "$(setup_step "checking your AWS key" 2>&1)" ""
+  assert_eq "$(BEDROCK_NOW_JOB_ORIGIN=terminal phase_start Terminal 2>&1)" ""
+  # (verbose: run_phase says it already, once)
+  out="$(BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_VERBOSE=1 run_phase LiteLLM litellm _noisy 2>&1)"
+  assert_eq "$(printf '%s\n' "$out" | grep -c 'LiteLLM: starting')" 1
+  # the terminal's and the Code page's own phases say it too
+  assert_contains "$(sed -n '/^terminal_setup_hook() {/,/^}/p' "$STACK_DIR/lib/terminal.sh")" 'phase_start Terminal'
+  assert_contains "$(sed -n '/^code_setup_hook() {/,/^}/p' "$STACK_DIR/lib/code.sh")" 'phase_start "Code page"'
+}
+
 test_run_phase_verbose_shows_compose_output() {
   out="$(BEDROCK_NOW_VERBOSE=1 run_phase LiteLLM litellm _noisy 2>&1)"
   assert_contains "$out" "compose noise 2"
