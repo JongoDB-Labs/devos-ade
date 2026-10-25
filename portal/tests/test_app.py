@@ -277,7 +277,6 @@ def test_from_env_reads_the_install_location():
     assert s.password_where() == ""
 
 
-def test_favicon_ico_is_public_and_points_at_the_png(client):
-    r = client.get("/favicon.ico")
-    assert r.status_code == 301 and r.headers["location"] == "/icons/app-32.png"
-    assert client.get(r.headers["location"]).status_code == 200
+def test_favicon_ico_is_public_and_the_png(client):
+    r = client.get("/favicon.ico", follow_redirects=False)
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png" and r.headers["cache-control"] == "no-cache"

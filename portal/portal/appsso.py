@@ -46,7 +46,7 @@ import httpx
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from starlette.responses import HTMLResponse
 
-from . import brand
+from . import appicons, brand
 from .config import Settings
 
 log = logging.getLogger("portal")
@@ -535,7 +535,7 @@ def _page(portal: str, title: str, lede: str, extra: str = "", status: int = 200
     page = (STATIC / "app-signin.html").read_text(encoding="utf-8")
     page = page.replace("{{portal}}", p).replace("{{title}}", html.escape(title)).replace("{{lede}}", lede)
     page = page.replace("{{extra}}", extra)
-    resp = HTMLResponse(page, status_code=status)
+    resp = HTMLResponse(appicons.versioned(page), status_code=status)
     scripts = script or "'none'"
     resp.headers["Content-Security-Policy"] = (
         f"default-src 'none'; style-src {portal}; img-src {portal}; script-src {scripts}; base-uri 'none'; "

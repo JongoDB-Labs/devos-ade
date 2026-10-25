@@ -3,6 +3,7 @@
 import hashlib
 import json
 import re
+import shutil
 import struct
 import zlib
 from dataclasses import replace
@@ -249,6 +250,77 @@ def test_manifest_icon_urls_carry_the_file_version(client):
         assert v == hashlib.sha256((STATIC / path.lstrip("/")).read_bytes()).hexdigest()[:10], icon["src"]
 
 
+def test_manifest_icon_urls_change_when_an_icon_does(tmp_path, monkeypatch, settings):
+    # A new icon (an update that changes the mark) is a new address: Chrome's installed-app update check and every
+    # browser fetch it, instead of an old one kept under the same URL. The manifest's id stays "/" (the same app).
+    before = {i["src"] for i in webapp.manifest(settings)["icons"]}
+    icons = tmp_path / "icons"
+    shutil.copytree(STATIC / "icons", icons)
+    (icons / "app-192.png").write_bytes((icons / "app-192.png").read_bytes() + b"\0")
+    monkeypatch.setattr(appicons, "ICON_DIR", icons)
+    appicons.versions.cache_clear()
+    try:
+        m = webapp.manifest(settings)
+    finally:
+        appicons.versions.cache_clear()
+    after = {i["src"] for i in m["icons"]}
+    assert {u.split("?")[0] for u in before ^ after} == {"/icons/app-192.png"}, before ^ after
+    assert m["id"] == "/"
+
+
+def test_icons_logo_and_favicons_are_revalidated_on_every_load(client):
+    # Cache-Control: no-cache with an ETag: each load asks, an unchanged file is a 304 with no body. (They were cached
+    # for a day under unchanged URLs, so an update's new icon did not show in the portal or the installed app.)
+    v = appicons.versions()
+    for path in [f"/icons/{n}" for n in appicons.FILES] + ["/favicon.svg", "/favicon.ico", "/static/logo.svg"]:
+        r = client.get(path)
+        assert r.status_code == 200, path
+        assert r.headers["cache-control"] == "no-cache", (path, r.headers.get("cache-control"))
+        etag = r.headers.get("etag")
+        assert etag, path
+        again = client.get(path, headers={"If-None-Match": etag})
+        assert again.status_code == 304 and again.content == b"", (path, again.status_code)
+        assert client.get(path, headers={"If-None-Match": '"0000000000"'}).status_code == 200, path
+    assert client.get("/icons/app-32.png").headers["etag"] == f'"{v["app-32.png"]}"'
+    assert client.get("/favicon.svg").headers["etag"] == f'"{v["logo.svg"]}"'
+
+
+def test_favicon_ico_is_the_png_itself_never_a_cached_redirect(client):
+    r = client.get("/favicon.ico", follow_redirects=False)
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png"
+    assert r.content == (STATIC / "icons" / "app-32.png").read_bytes()
+
+
+UNVERSIONED = re.compile(r'(?:href|src)="[^"?]*(?:/favicon\.svg|/static/logo\.svg|/icons/app-[a-z0-9-]+\.png)"')
+
+
+def test_pages_use_the_versioned_icon_and_logo_addresses(client, settings):
+    from portal import appsso
+    from portal.app import _launch_page, _unlock_page
+    v = appicons.versions()
+    want = (f'href="/favicon.svg?v={v["logo.svg"]}"', f'href="/icons/app-32.png?v={v["app-32.png"]}"',
+            f'rel="apple-touch-icon" href="/icons/app-touch-180.png?v={v["app-touch-180.png"]}"',
+            f'src="/static/logo.svg?v={v["logo.svg"]}"')
+    login = client.get("/login").text
+    for needle in want:
+        assert needle in login, needle
+    assert not UNVERSIONED.search(login), UNVERSIONED.search(login).group(0)
+    client.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://bedrock-now.localhost"})
+    home = client.get("/").text
+    for needle in (*want, f'src="/icons/app-48.png?v={v["app-48.png"]}"'):
+        assert needle in home, needle
+    assert not UNVERSIONED.search(home), UNVERSIONED.search(home).group(0)
+    # the app hosts' own pages (their marks come from the portal's origin): the unlock pages, the launch question,
+    # the Admin / Files sign-in
+    portal = settings.origin()
+    others = [_unlock_page(settings, False).body.decode(), _unlock_page(settings, False, app="code").body.decode(),
+              _launch_page(settings, False, "open", "shell", "").body.decode(),
+              appsso._page(portal, "Signing in", "…").body.decode()]
+    for page in others:
+        assert f'src="{portal}/static/logo.svg?v={v["logo.svg"]}"' in page and f'href="{portal}/favicon.svg?v={v["logo.svg"]}"' in page
+        assert not UNVERSIONED.search(page), UNVERSIONED.search(page).group(0)
+
+
 def test_logo_and_favicon_are_the_same_mark(client):
     logo = (STATIC / "logo.svg").read_text()
     assert logo == (STATIC / "brand" / "glyph.svg").read_text()
@@ -277,11 +349,11 @@ def test_service_worker_is_public_hardened_and_caches_nothing(client):
 
 def test_shell_links_manifest_icons_and_modules(client):
     login = client.get("/login").text  # public page: "Add to Home Screen" works from here too
-    assert 'rel="manifest"' in login and 'rel="apple-touch-icon"' in login and 'href="/icons/app-32.png"' in login
+    assert 'rel="manifest"' in login and 'rel="apple-touch-icon"' in login and 'href="/icons/app-32.png?v=' in login
     client.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://bedrock-now.localhost"})
     page = client.get("/").text
-    for needle in ('rel="manifest" href="/manifest.webmanifest"', 'rel="apple-touch-icon" href="/icons/app-touch-180.png"',
-                   'href="/icons/app-32.png"', "viewport-fit=cover", 'name="apple-mobile-web-app-capable" content="yes"',
+    for needle in ('rel="manifest" href="/manifest.webmanifest"', 'rel="apple-touch-icon" href="/icons/app-touch-180.png?v=',
+                   'href="/icons/app-32.png?v=', "viewport-fit=cover", 'name="apple-mobile-web-app-capable" content="yes"',
                    'name="theme-color"', '(prefers-color-scheme: dark)',
                    'src="/static/mobile.js"', 'href="/static/mobile.css"', 'src="/static/install.js"'):
         assert needle in page, needle

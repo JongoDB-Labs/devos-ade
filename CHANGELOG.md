@@ -6,6 +6,13 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Fixed
+
+- After an update that changes the app's icon, the portal and the installed app show the new one at once (icons were
+  cached for a day). The icons, the logo and the favicons are revalidated on every load (a 304 while unchanged), and
+  their addresses in the pages and the app's manifest carry the file's version (`?v=`), so a new icon is a new address
+  that Chrome's installed-app check notices; `/favicon.ico` is the 32 px icon itself instead of a permanent redirect.
+
 ## [0.25.1] - 2026-10-25
 
 ### Fixed

@@ -115,7 +115,7 @@ def _login_page(next_url: str, error: str = "", status: int = 200, retry_after: 
     hint = f"<code>{html.escape(where)}</code>" if where else html.escape(GENERIC_WHERE).replace(".env", "<code>.env</code>", 1)
     page = page.replace("{{next}}", html.escape(next_url, quote=True)).replace("{{error}}", err)
     page = page.replace("{{where}}", hint).replace("{{days}}", str(days))
-    resp = HTMLResponse(page, status_code=status)
+    resp = HTMLResponse(appicons.versioned(page), status_code=status)
     if retry_after:
         resp.headers["Retry-After"] = str(retry_after)
     return _no_store(resp)
@@ -160,7 +160,7 @@ def _unlock_page(s: Settings, rem: bool, error: str = "", status: int = 401, ret
     page = page.replace("{{error}}", f'<p class="error" role="alert">{html.escape(error)}</p>' if error else "")
     # a deep link into the Code page (?session, ?prompt, ?git) goes on after the password (portal/code.py deep_link)
     page = page.replace("{{next}}", f'<input type="hidden" name="next" value="{html.escape(next_link, quote=True)}">' if next_link else "")
-    resp = HTMLResponse(page, status_code=status)
+    resp = HTMLResponse(appicons.versioned(page), status_code=status)
     resp.headers["Content-Security-Policy"] = (
         f"default-src 'none'; style-src {portal}; img-src {portal}; form-action 'self'; base-uri 'none'; "
         f"frame-ancestors {framers}")
@@ -192,7 +192,7 @@ def _launch_page(s: Settings, rem: bool, mode: str, tool: str, folder: str) -> H
     for k, v in (("name", name), ("what", what), ("mode", mode), ("tool", tool), ("folder", folder)):
         page = page.replace("{{" + k + "}}", html.escape(v, quote=True))
     page = page.replace("{{error}}", "")
-    resp = HTMLResponse(page, status_code=403)
+    resp = HTMLResponse(appicons.versioned(page), status_code=403)
     resp.headers["Content-Security-Policy"] = (
         f"default-src 'none'; style-src {portal}; img-src {portal}; form-action 'self'; base-uri 'none'; "
         f"frame-ancestors {framers}")
@@ -1150,7 +1150,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         code = {"enabled": settings.code, "here": settings.code_on(rem)}
         meta += f'\n<meta name="bn-code" content="{html.escape(json.dumps(code), quote=True)}">'
         page = page.replace("</head>", meta + "\n</head>", 1)
-        return _security_headers(_no_store(HTMLResponse(page)), settings)
+        return _security_headers(_no_store(HTMLResponse(appicons.versioned(page))), settings)
 
     def api_guard(request: Request) -> Response | None:
         if not authed(request):
@@ -1376,12 +1376,24 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             return _no_store(JSONResponse({"error": str(e), "chats": []}))
         return _no_store(JSONResponse({"chats": found}))
 
+    versions = appicons.versions()   # (read once: a new icon after an update is a new ?v= and a new ETag)
+
+    def brand_file(request: Request, path, media_type: str, version: str) -> Response:
+        """An icon, the logo or a favicon: revalidated on every load (Cache-Control: no-cache), its ETag the file's
+        content version, so an unchanged one is a 304 with no body and a new one (after an update) shows at once."""
+        etag = f'"{version}"'
+        asked = [t.strip().removeprefix("W/") for t in request.headers.get("if-none-match", "").split(",")]
+        if etag in asked or "*" in asked:
+            return _security_headers(Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"}), settings)
+        return _security_headers(FileResponse(path, media_type=media_type, headers={"ETag": etag, "Cache-Control": "no-cache"}), settings)
+
     async def favicon(request: Request) -> Response:
-        return FileResponse(STATIC / "logo.svg", media_type="image/svg+xml")
+        return brand_file(request, STATIC / "logo.svg", "image/svg+xml", versions["logo.svg"])
 
     async def favicon_ico(request: Request) -> Response:
-        # Browsers ask for /favicon.ico by themselves, before any login: the 32 px PNG (Safari has no SVG favicons).
-        return RedirectResponse("/icons/app-32.png", status_code=301)
+        # Browsers ask for /favicon.ico by themselves, before any login: the 32 px PNG itself (Safari has no SVG
+        # favicons). Served here, not redirected: a permanent redirect would be cached, and its target with it.
+        return brand_file(request, STATIC / "icons" / "app-32.png", "image/png", versions["app-32.png"])
 
     # Installable web app (Chrome "Install app", Add to Home Screen). Public, like the login page: browsers fetch
     # the manifest and its icons without the session cookie. Nothing here is per-user.
@@ -1400,8 +1412,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         name = f"app-{request.path_params['rest']}.png"
         if name not in appicons.FILES:
             return PlainTextResponse("not found", status_code=404)
-        return _security_headers(FileResponse(STATIC / "icons" / name, media_type="image/png",
-                                              headers={"Cache-Control": "public, max-age=86400"}), settings)
+        return brand_file(request, STATIC / "icons" / name, "image/png", versions[name])
 
     async def icon(request: Request) -> Response:
         """A provider logo from catalog/icons for Home's model table (behind the login at Caddy, like Home)."""

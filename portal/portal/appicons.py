@@ -20,9 +20,11 @@ Each kind places the torus on its tile:
 from __future__ import annotations
 
 import base64
+import functools
 import hashlib
 import io
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -63,6 +65,31 @@ PLACE = {
     "glyph": (0.9, (0.5, 4.2)),
     "mono": (0.73, None),
 }
+
+
+@functools.lru_cache(maxsize=1)
+def versions() -> dict[str, str]:
+    """The ?v= of each published icon and of logo.svg: the first 10 hex digits of the file's sha256, read once (the
+    portal calls it at startup). A changed icon is then a new address, so browsers and an installed app's icon check
+    fetch it at once; the same value is its ETag, for the cheap revalidation every load does (Cache-Control: no-cache)."""
+    out = {name: hashlib.sha256((ICON_DIR / name).read_bytes()).hexdigest()[:10] for name in FILES}
+    out["logo.svg"] = hashlib.sha256((STATIC / "logo.svg").read_bytes()).hexdigest()[:10]
+    return out
+
+
+# href="…/favicon.svg", src="…/static/logo.svg", href="…/icons/app-32.png" in the portal's pages (also after a
+# {{portal}} origin): each gets its file's ?v=. An address that already has a query is left alone.
+_BRAND_URL = re.compile(r'((?:href|src)=")([^"?]*?)(/favicon\.svg|/static/logo\.svg|/icons/(app-[a-z0-9-]+\.png))(")')
+
+
+def versioned(page: str) -> str:
+    """PAGE with its icon, favicon and logo addresses versioned (?v=<the file's version>)."""
+    v = versions()
+
+    def sub(m: re.Match) -> str:
+        key = m.group(4) or "logo.svg"
+        return f"{m.group(1)}{m.group(2)}{m.group(3)}?v={v[key]}{m.group(5)}" if key in v else m.group(0)
+    return _BRAND_URL.sub(sub, page)
 
 
 def _superellipse(cx: float, cy: float, half: float, n: float, steps: int = 720) -> list[tuple[float, float]]:
