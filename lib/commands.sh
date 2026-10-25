@@ -599,6 +599,7 @@ cmd_setup() {
   setup_secrets
   setup_step "asking about OpenRouter and voice"
   setup_openrouter   # optional; lib/openrouter.sh
+  setup_explabs      # optional; lib/explabs.sh (no question: Settings or ./stack config set EXPLABS_API_KEY)
   setup_stt          # optional; lib/stt.sh
   setup_done "passwords and settings in .env"
   setup_bringup_and_probe
@@ -653,6 +654,8 @@ render_config() {
   # the models of the Code page and claude-bedrock (lib/code_models.sh), next to the config: the portal, claude-bedrock
   # and LiteLLM's hook (lib/litellm-hooks/bn_hooks.py) read it
   ! declare -F code_models_write >/dev/null || code_models_write "$1" "$(dirname "$out")/code-models.tsv"
+  # the chosen Experiential Labs models for the portal (lib/explabs.sh; removed while it is off)
+  ! declare -F explabs_write_portal_json >/dev/null || [ "$out" != "$STACK_DIR/litellm/config.yaml" ] || explabs_write_portal_json
 }
 
 # litellm_ui_user -> the LiteLLM UI login name: the database admin's email once setup created it, else "admin"
@@ -863,6 +866,7 @@ setup_keys_and_ui() {
   run_phase "shared-mcp" shared-mcp _build_and_up_mcp
   sync_openwebui_models
   openrouter_sync_owui   # optional; lib/openrouter.sh
+  explabs_sync_owui      # optional; lib/explabs.sh
   stt_sync_owui          # optional; lib/stt.sh
   owui_install_cost_filter
   sync_budget_banner
@@ -885,6 +889,7 @@ models_recheck() {
   portal_session_or_die
   sync_openwebui_models
   openrouter_sync_owui   # optional; lib/openrouter.sh
+  explabs_sync_owui      # optional; lib/explabs.sh
   stt_sync_owui          # lib/stt.sh
   owui_install_cost_filter
   portal_session_end
@@ -906,6 +911,7 @@ cmd_models() {
   printf '\n  Prices: %s (the PRICE column shows them)\n' "$(prices_source_text)"
   prices_notes
   openrouter_models_section
+  explabs_models_section
 }
 
 # --- cost transparency ---
@@ -954,6 +960,7 @@ cmd_costs() {
   esac
   rm -f "$tmp"
   openrouter_costs_section
+  explabs_costs_section
   stt_costs_section
   printf '\nBreakdown by model and day: %s/ui → Usage (portal Admin tab; its sign-in is on the portal Home page)\n' "$(portal_url admin)"
   printf 'Budgets: Settings in the portal, or ./stack config set BUDGET_CLAUDE_CODE (BUDGET_OPENWEBUI, BUDGET_SETUP%s)\n' \
@@ -997,6 +1004,7 @@ SUMMARY
   Models          ./stack models            (which models your AWS key can use)
 SUMMARY
   openrouter_summary_line
+  explabs_summary_line
   stt_summary_line
   terminal_summary_line
   code_summary_line
@@ -1088,6 +1096,7 @@ cmd_up() {
   # (the portal's daily job updated them), Bedrock's descriptions/tiers must re-sync too (repriced, no restart).
   before="$(config_prices_line)"
   openrouter_up_hook   # optional; refreshes OpenRouter models/prices when a key is set
+  explabs_up_hook      # optional; lib/explabs.sh: Experiential Labs' model details when a key is set (12 h)
   [ "$(config_prices_line)" = "$before" ] || repriced=1
   # lib/stt.sh: STT_* edited by hand in .env — re-renders, and a running LiteLLM must pick the change up
   if stt_up_hook && [ -n "$(dc ps -q --status running litellm 2>/dev/null)" ]; then restart=1; fi
@@ -1121,8 +1130,10 @@ cmd_up() {
     if [ "$PRICES_CHANGED" = 1 ] || [ "$repriced" = 1 ]; then
       on_prices_changed
       [ "${OR_UP_CHANGED:-0}" != 1 ] || ! declare -F openrouter_sync_owui >/dev/null || openrouter_sync_owui || true
+      [ "${XL_UP_CHANGED:-0}" != 1 ] || explabs_sync_owui || true
     else
       openrouter_after_up
+      explabs_after_up   # lib/explabs.sh: names, tags and the cost line's prices when its models changed
     fi
   else
     warn "could not sign in to the portal — budget banner and Open WebUI prices not refreshed"
@@ -1178,7 +1189,7 @@ status_table() {
 
 # shellcheck disable=SC2120  # arguments come from the ./stack dispatcher
 cmd_status() {
-  local ps upd py fresh='' O_RED O_GRN O_YEL O_OFF
+  local ps upd py xl fresh='' O_RED O_GRN O_YEL O_OFF
   case "${1:-}" in '') ;; --disk) fresh=--fresh ;; *) die "usage: ./stack status [--disk]   (--disk: measure disk use now)" ;; esac
   out_colors
   check_docker_daemon   # a stopped daemon would otherwise look like "not created" everywhere
@@ -1199,6 +1210,8 @@ cmd_status() {
   fi
   printf '  %s\n' "$(helper_status_line)"   # lib/helper.sh: one-click and automatic updates
   py="$(python_runner_line)"; [ -z "$py" ] || printf '  %s\n' "$py"   # lib/owui.sh: what Chat's Python runner can import
+  # lib/explabs.sh: its models, and when they run without model details (every optional parameter dropped)
+  xl="$(explabs_status_line)"; [ -z "$xl" ] || printf '  %s\n' "$xl"
   # lib/stt.sh: Bedrock speech-to-text turned off because AWS refuses its audio — said until a voice choice is made
   ! stt_notice_on || printf '  %sVoice: %s%s\n' "$O_YEL" "$STT_REFUSED_NOTICE" "$O_OFF"
 }
@@ -1775,6 +1788,7 @@ cmd_update() {
   # from .env, never from this shell (a removed OpenRouter key stays removed).
   env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN -u AWS_REGION_NAME -u AWS_REGION \
     -u OPENROUTER_API_KEY -u OPENROUTER_MODELS -u OPENROUTER_MAX_MODELS -u BEDROCK_NOW_OPENROUTER_FROM_ENV \
+    -u EXPLABS_API_KEY -u EXPLABS_MODELS \
     -u STT_PROVIDER -u STT_API_KEY -u STT_MODEL -u BEDROCK_NOW_STT_FROM_ENV \
     -u COMPOSE_PROJECT_NAME -u BEDROCK_NOW_CODE_UPDATED -u BEDROCK_NOW_UPDATE_BACKUP -u BEDROCK_NOW_UPDATE_FROM -u BEDROCK_NOW_UPDATE_BRANCH \
     -u BEDROCK_NOW_UPDATE_FINISHING \
@@ -1924,6 +1938,8 @@ cmd_uninstall() {
 . "$STACK_DIR/lib/lock.sh"
 # Optional OpenRouter provider (setup step, ./stack openrouter, costs/models/summary sections).
 . "$STACK_DIR/lib/openrouter.sh"
+# Optional Experiential Labs gateway (xl/… models; Settings and ./stack config set EXPLABS_API_KEY; status lines).
+. "$STACK_DIR/lib/explabs.sh"
 # The models of the Code page and claude-bedrock: litellm/code-models.tsv and their bn_* model_info (render_config).
 . "$STACK_DIR/lib/code_models.sh"
 # Optional speech-to-text for Open WebUI's voice calls (setup step, ./stack stt, costs/summary lines).

@@ -91,6 +91,8 @@ services:
       # requests as "DevOS ADE" (not "liteLLM"). They name this project only, nothing about you or this install.
       OR_APP_NAME: DevOS ADE
       OR_SITE_URL: https://github.com/JongoDB-Labs/devos-ade
+      # Optional; blank = no Experiential Labs models are rendered (lib/explabs.sh). Only LiteLLM holds it.
+      EXPLABS_API_KEY: ${EXPLABS_API_KEY:-}
       # Optional speech-to-text provider key (OpenAI or Groq); blank = no "stt" model is rendered (lib/stt.sh).
       STT_API_KEY: ${STT_API_KEY:-}
     volumes:

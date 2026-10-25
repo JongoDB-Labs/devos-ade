@@ -359,16 +359,17 @@ openrouter_cost_prices_entries() {
 # of enabled free models (enabled or not): openrouter_refresh sets OR_PRICES_CHANGED when only these change.
 _or_cost_prices_sum() { openrouter_cost_prices_entries | cksum; }
 
-# Python run inside the open-webui container by openrouter_sync_owui. stdin: openrouter_owui_models lines, a
-# "---icons---" line, or_icon_lines, a "---existing---" line, then GET /api/v1/models/base JSON. argv[1]: our
-# icon hashes (owui_our_icon_hashes). stdout: "IMPORT <json>" lines (POST /api/v1/models/import bodies, ≤100
-# models each: new entries and changed ones as complete objects), 'DELETE {"id": …}' lines (our or/ entries
-# that are no longer offered; the JSON is the POST body for /api/v1/models/model/delete, posted as it is) and
-# one "UNCHANGED <n>" line.
-# Our entries carry meta.bedrock_now="openrouter"; only those are ever deleted. A user's own name (anything
-# not ending in " · OpenRouter"), extra tags, params, knowledge and access grants are kept. The logo is set
-# while the icon is unset, Open WebUI's default or one of ours (a data: URI whose sha256 is in argv[1]); an
-# icon the user picked stays.
+# Python run inside the open-webui container by openrouter_sync_owui (and lib/explabs.sh explabs_sync_owui). stdin:
+# openrouter_owui_models lines, a "---icons---" line, or_icon_lines, a "---existing---" line, then GET
+# /api/v1/models/base JSON. argv[1]: our icon hashes (owui_our_icon_hashes). argv[2..5], whose entries these are
+# (OpenRouter's without them): the meta.bedrock_now marker, the id prefix, the name suffix and the comma list of the
+# tags the sync owns. stdout: "IMPORT <json>" lines (POST /api/v1/models/import bodies, ≤100 models each: new entries
+# and changed ones as complete objects), 'DELETE {"id": …}' lines (our entries with that prefix that are no longer
+# offered; the JSON is the POST body for /api/v1/models/model/delete, posted as it is) and one "UNCHANGED <n>" line.
+# Our entries carry meta.bedrock_now="openrouter" (or argv[2]); only those are ever deleted. A user's own name
+# (anything not ending in " · OpenRouter", or argv[4]), extra tags, params, knowledge and access grants are kept. The
+# logo is set while the icon is unset, Open WebUI's default or one of ours (a data: URI whose sha256 is in argv[1]);
+# an icon the user picked stays.
 # shellcheck disable=SC2016  # Python source, not shell
 OR_OWUI_SYNC_PY='import hashlib, json, sys
 raw = sys.stdin.read()
@@ -380,6 +381,8 @@ if isinstance(existing, dict):
 icons = dict(l.split("\t", 1) for l in icons_txt.splitlines() if "\t" in l)
 ours = set(sys.argv[1].split()) if len(sys.argv) > 1 else set()
 ours |= {hashlib.sha256(u.encode()).hexdigest() for u in icons.values()}
+who = sys.argv[2:6] + ["openrouter", "or/", " · OpenRouter", "OpenRouter,Free,Paid"][len(sys.argv[2:6]):]
+MARK, PREFIX, SUFFIX, OWN = who[0], who[1], who[2], set(who[3].split(","))
 def replaceable(url):
     return url in (None, "", "/static/favicon.png") or (
         isinstance(url, str) and url.startswith("data:") and hashlib.sha256(url.encode()).hexdigest() in ours)
@@ -396,7 +399,7 @@ for line in want_txt.splitlines():
     tag_list = [{"name": t} for t in tags.split(",") if t]
     cur = by_id.get(mid)
     if cur is None:
-        meta = {"description": desc, "tags": tag_list, "bedrock_now": "openrouter"}
+        meta = {"description": desc, "tags": tag_list, "bedrock_now": MARK}
         if icon:
             meta["profile_image_url"] = icon
         out.append({"id": mid, "name": name, "base_model_id": None, "params": {}, "access_grants": public, "is_active": True,
@@ -406,11 +409,11 @@ for line in want_txt.splitlines():
     before = json.dumps(d, sort_keys=True)
     meta = d["meta"] = d.get("meta") if isinstance(d.get("meta"), dict) else {}
     meta["description"] = desc
-    meta["bedrock_now"] = "openrouter"
+    meta["bedrock_now"] = MARK
     cn = d.get("name") or ""
-    if cn in ("", mid) or cn.endswith(" · OpenRouter"):
+    if cn in ("", mid) or cn.endswith(SUFFIX):
         d["name"] = name
-    mine = {"OpenRouter", "Free", "Paid"} | {t["name"] for t in tag_list}
+    mine = OWN | {t["name"] for t in tag_list}
     meta["tags"] = tag_list + [t for t in (meta.get("tags") or []) if isinstance(t, dict) and t.get("name") not in mine]
     if icon and replaceable(meta.get("profile_image_url")):
         meta["profile_image_url"] = icon
@@ -424,7 +427,7 @@ for m in existing:
     if not isinstance(m, dict):
         continue
     mid, meta = str(m.get("id") or ""), m.get("meta") if isinstance(m.get("meta"), dict) else {}
-    if mid.startswith("or/") and meta.get("bedrock_now") == "openrouter" and mid not in wanted:
+    if mid.startswith(PREFIX) and meta.get("bedrock_now") == MARK and mid not in wanted:
         print("DELETE " + json.dumps({"id": mid}))
 print("UNCHANGED %d" % unchanged)'
 

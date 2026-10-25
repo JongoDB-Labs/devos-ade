@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # The models Claude Code can be given here — the Code page's picker, claude-bedrock (on your computer and in the browser
 # terminal) and the terminal's /model menu: every enabled chat model of the catalog (Bedrock, Anthropic's and the
-# others) and the enabled OpenRouter models, with prices, how well each works as Claude Code's model
+# others), the enabled OpenRouter models and the chosen Experiential Labs ones, with prices, how well each works as Claude Code's model
 # (catalog/code-models.tsv) and which of them Settings › Claude Code › Models lists (CODE_MODELS, CODE_DEFAULT_MODEL).
 #
 # render_config writes them to litellm/code-models.tsv (code_models_write) and into LiteLLM's model_info (bn_* keys,
@@ -18,8 +18,9 @@
 #
 # A row (TAB-separated, "-" = none): id name provider vendor in out cache_read cache_write free compat listed default
 # max_out context note — prices in USD per million tokens; free/listed/default 1 or 0; compat works | chat-only | fails
-# | untested. Bedrock rows first (catalog order), then OpenRouter (by id). Model names never hold a quote, backslash,
-# TAB or control character (display.tsv is ours; or_classify strips them from OpenRouter's).
+# | untested. Bedrock rows first (catalog order), then OpenRouter (by id), then Experiential Labs (EXPLABS_MODELS'
+# order). Model names never hold a quote, backslash, TAB or control character (display.tsv is ours; or_classify strips
+# them from OpenRouter's; an Experiential Labs name is its id, valid_xl_id).
 
 CODE_MODELS_MAX=2000   # rows in the file (OPENROUTER_MAX_MODELS caps OpenRouter at 1000 by default)
 CODE_PICKER_MAX=150    # rows in claude-bedrock's /model menu
@@ -63,16 +64,19 @@ valid_code_model() { [ -z "$1" ] || valid_code_model_id "$1"; }
 
 # code_models_rows ENABLED_FILE -> the rows. Inputs: the catalog's chat models enabled in ENABLED_FILE (all of them for
 # ""), their names and vendors (display.tsv: name, tags' first entry), prices ($PRICES: the prices in use), OpenRouter's
-# selected models (lib/openrouter.sh, with a key), catalog/code-models.tsv, and .env's CODE_MODELS, CODE_DEFAULT_MODEL
+# selected models (lib/openrouter.sh, with a key), the chosen Experiential Labs models (lib/explabs.sh, with a key: their
+# list prices), catalog/code-models.tsv, and .env's CODE_MODELS, CODE_DEFAULT_MODEL
 # and CLAUDE_BEDROCK_OPUS_MODEL (the default when CODE_DEFAULT_MODEL is blank or not enabled).
 code_models_rows() {
-  local en="${1:-}" all=0 orf rc=0 disp compat
+  local en="${1:-}" all=0 orf xlf rc=0 disp compat
   [ -n "$en" ] && [ -r "$en" ] || { en=/dev/null; all=1; }
   disp="$(_code_display)"; compat="$(_code_compat)"
   [ -r "$disp" ] || disp=/dev/null; [ -r "$compat" ] || compat=/dev/null
   orf="$(mktemp)" || return 1
+  xlf="$(mktemp)" || { rm -f "$orf"; return 1; }
   if declare -F openrouter_enabled >/dev/null && openrouter_enabled; then or_selected > "$orf" 2>/dev/null || :; fi
-  F_EN="$en" F_DISP="$disp" F_PRICES="${PRICES:-/dev/null}" F_COMPAT="$compat" F_CAT="$CATALOG" F_OR="$orf" \
+  if declare -F explabs_enabled >/dev/null && explabs_enabled; then explabs_code_rows > "$xlf" 2>/dev/null || :; fi
+  F_EN="$en" F_DISP="$disp" F_PRICES="${PRICES:-/dev/null}" F_COMPAT="$compat" F_CAT="$CATALOG" F_OR="$orf" F_XL="$xlf" \
   ALL="$all" SCOPE="$(get_env CODE_MODELS)" DEF="$(get_env CODE_DEFAULT_MODEL)" MAIN="$(get_env CLAUDE_BEDROCK_OPUS_MODEL)" \
   MAX="$CODE_MODELS_MAX" LC_ALL=C awk -F'\t' -v OFS='\t' -v UNSAFE="$CODE_UNSAFE" '
     function clean(s) { gsub(/[\001-\037\177"\\]/, "", s); gsub(UNSAFE, "", s); gsub(/  +/, " ", s); sub(/^ +/, "", s); sub(/ +$/, "", s); return s }
@@ -80,20 +84,20 @@ code_models_rows() {
     # per million tokens from a per-token price (OpenRouter): plain decimals, no float noise
     function mt(v,  s) { if (v == "" || v == "-") return "-"; s = sprintf("%.6f", v * 1000000); sub(/0+$/, "", s); sub(/\.$/, "", s); return s }
     function num(v) { return (v ~ /^[0-9]+(\.[0-9]+)?$/) ? v : "-" }
-    function compat(id, tools,  i, p) {
+    function compat(id, tools, prov,  i, p) {
       for (i = 1; i <= np; i++) {
         p = pat[i]
         if (p == id || (substr(p, length(p)) == "*" && substr(id, 1, length(p) - 1) == substr(p, 1, length(p) - 1))) { cs = st[i]; cm = mo[i]; cn = nt[i]; return }
       }
       cm = "-"
-      if (tools == "0") { cs = "chat-only"; cn = "OpenRouter lists no tool use for it: Claude Code could only chat, not read, edit or run anything." }
-      else if (tools == "1") { cs = "untested"; cn = "Not checked with Claude Code here; OpenRouter lists tool use for it." }
+      if (tools == "0") { cs = "chat-only"; cn = prov " lists no tool use for it: Claude Code could only chat, not read, edit or run anything." }
+      else if (tools == "1") { cs = "untested"; cn = "Not checked with Claude Code here; " prov " lists tool use for it." }
       else { cs = "untested"; cn = "Not checked with Claude Code here: tool use, thinking and prompt caching may not work." }
     }
     function add(id, name, prov, vend, pin, pout, pcr, pcw, free, tools, maxo, ctx) {
       # (a model id by the one rule above, valid_code_model_id: no "~" alias of OpenRouter, at most 128 characters)
       if (n >= ENVIRON["MAX"] + 0 || (id in seen) || id !~ /^[A-Za-z0-9][A-Za-z0-9._:\/-]*$/ || length(id) > 128) return
-      seen[id] = 1; compat(id, tools)
+      seen[id] = 1; compat(id, tools, prov)
       if ((cm == "" || cm == "-") && maxo != "" && maxo != "-") cm = maxo   # the provider limit OpenRouter names, unless a row of ours says
       if (cm !~ /^[1-9][0-9]*$/) cm = "-"
       n++; I[n] = id; N[n] = d(clean(name)); P[n] = prov; V[n] = d(clean(vend)); IN[n] = pin; OU[n] = pout; CR[n] = pcr; CW[n] = pcw
@@ -125,6 +129,13 @@ code_models_rows() {
       add("or/" $1, nm, "OpenRouter", vend, mt($4), mt($5), mt($6), mt($7), free, $10, $11, $3)
       next
     }
+    FILENAME == ENVIRON["F_XL"] {
+      # id name vendor in out cache_read cache_write (per million) free tools max_out context (explabs_code_rows); the
+      # tool use its model details name, when there are none (fail safe) none
+      if ($1 == "" || $1 ~ /^#/) next
+      add($1, $2, "Experiential Labs", $3, d($4), d($5), d($6), d($7), ($8 == 1 ? 1 : 0), ($9 == "" ? "0" : $9), $10, $11)
+      next
+    }
     END {
       def = ""
       for (i = 1; i <= n; i++) if (I[i] == ENVIRON["DEF"]) def = I[i]
@@ -138,8 +149,8 @@ code_models_rows() {
         D = (I[i] == def) ? 1 : 0
         print I[i], N[i], P[i], V[i], IN[i], OU[i], CR[i], CW[i], FR[i], CS[i], (D ? 1 : L[i]), D, MO[i], CX[i], NT[i]
       }
-    }' "$en" "$disp" "${PRICES:-/dev/null}" "$compat" "$CATALOG" "$orf" || rc=$?
-  rm -f "$orf"
+    }' "$en" "$disp" "${PRICES:-/dev/null}" "$compat" "$CATALOG" "$orf" "$xlf" || rc=$?
+  rm -f "$orf" "$xlf"
   return "$rc"
 }
 
@@ -246,7 +257,7 @@ code_picker_json() {
     # a longer menu helps nobody — --model and /model <id> reach every model
     [ "$def" = 1 ] || [ "$n" -lt "$((CODE_PICKER_MAX - 1))" ] || { [ "$had" = 1 ] && [ "$n" -lt "$CODE_PICKER_MAX" ]; } || continue
     n=$((n + 1)); [ "$def" != 1 ] || had=1
-    rows="$rows$sep{\"model\":$(_code_json_str "$id"),\"label\":$(_code_json_str "$name$([ "$prov" = OpenRouter ] && echo ' · OpenRouter')"),\"description\":$(_code_json_str "$vend · $(_code_price "$pin" "$pout" "$free") · $(_code_compat_word "$compat")")}"
+    rows="$rows$sep{\"model\":$(_code_json_str "$id"),\"label\":$(_code_json_str "$name$(case "$prov" in OpenRouter | "Experiential Labs") printf ' · %s' "$prov" ;; esac)"),\"description\":$(_code_json_str "$vend · $(_code_price "$pin" "$pout" "$free") · $(_code_compat_word "$compat")")}"
     sep=','
   done < <(_code_rows "$f")
   printf '{%s"modelPicker":{"replaceBuiltInOptions":true,"options":[%s]}}\n' "$([ "$off" = 1 ] && printf '"disableAutoMode":"disable",')" "$rows"

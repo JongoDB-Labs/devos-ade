@@ -13,14 +13,24 @@ catalog/code-models.tsv and OpenRouter's list):
   originally a mid-conversation system-role reminder." and the count), and GPT-6 then sometimes ends its turn on that
   note with no answer, or asks what to do (one turn replayed: 5 times in 31 with the note, never in 30 without). For
   those models that message is left out; every other message stays as it came.
+
+For the Experiential Labs gateway's models (lib/explabs.sh: model_info bn_xl: true), on each call to the gateway:
+- Before it: the output cap goes under the field the model takes (model_info bn_xl_max_tokens: max_tokens or
+  max_completion_tokens; Claude Code and Chat send max_tokens), and the parameters of its additional_drop_params — what
+  the gateway's metadata says it does not take — are left out, extra_body included (LiteLLM drops the others itself).
+- After it: the cost LiteLLM books is the one the gateway reported for the call (usage.cost, USD), $0 when the call ran
+  on your own provider key (usage.is_byok), never one computed from the list prices in the config. (A streamed reply's
+  usage.cost is booked by LiteLLM itself.)
 Nothing else is changed, and any problem here leaves the request exactly as it came: this must never be the reason a
 request fails.
 """
 
 from __future__ import annotations
 
+import math
 import os
 import re
+from collections.abc import Mapping
 
 from litellm.integrations.custom_logger import CustomLogger
 
@@ -101,6 +111,80 @@ def drop_token_counts(data: dict) -> dict:
     return data
 
 
+# --- the Experiential Labs gateway (lib/explabs.sh) ---
+
+# The only parameters ever left out here: those lib/explabs.sh lets the gateway's metadata decide (XL_OPTIONAL_PARAMS)
+XL_OPTIONAL = frozenset(("temperature", "top_p", "top_k", "frequency_penalty", "presence_penalty", "logprobs", "top_logprobs",
+                         "tools", "tool_choice", "parallel_tool_calls", "functions", "function_call", "response_format",
+                         "reasoning_effort", "max_tokens", "max_completion_tokens"))
+_CAP_FIELDS = ("max_tokens", "max_completion_tokens")
+# where LiteLLM's cost calculator looks for a cost the provider reported before it prices anything itself
+COST_HEADER = "llm_provider-x-litellm-response-cost"
+
+
+# the calls that reach the gateway as Chat Completions: a /v1/messages request (Claude Code) is one of them only once
+# LiteLLM has turned it into one (its own anthropic_messages call around it keeps Anthropic's max_tokens)
+_CHAT_CALLS = frozenset(("acompletion", "completion"))
+
+
+def is_xl(kwargs) -> bool:
+    """Whether KWARGS (one call to one deployment) goes to an Experiential Labs model."""
+    mi = kwargs.get("model_info") if isinstance(kwargs, Mapping) else None
+    return isinstance(mi, Mapping) and mi.get("bn_xl") is True
+
+
+def _chat_call(call_type) -> bool:
+    return getattr(call_type, "value", call_type) in _CHAT_CALLS
+
+
+def xl_request(kwargs: dict) -> dict:
+    """KWARGS for an Experiential Labs model with the output cap under the field its model takes and the parameters of
+    its additional_drop_params left out (top level and extra_body); unchanged for any other model."""
+    if not is_xl(kwargs):
+        return kwargs
+    field = kwargs["model_info"].get("bn_xl_max_tokens")
+    if field in _CAP_FIELDS:
+        other = _CAP_FIELDS[1] if field == _CAP_FIELDS[0] else _CAP_FIELDS[0]
+        if kwargs.get(field) is None and kwargs.get(other) is not None:
+            kwargs[field] = kwargs.pop(other)
+    drops = kwargs.get("additional_drop_params")
+    drop = {p for p in drops if isinstance(p, str) and p in XL_OPTIONAL} if isinstance(drops, (list, tuple)) else set()
+    for p in drop:
+        kwargs.pop(p, None)
+    extra = kwargs.get("extra_body")
+    if isinstance(extra, dict) and drop & extra.keys():
+        kwargs["extra_body"] = {k: v for k, v in extra.items() if k not in drop}
+    return kwargs
+
+
+def _usage_field(usage, name):
+    return usage.get(name) if isinstance(usage, Mapping) else getattr(usage, name, None)
+
+
+def gateway_cost(response) -> float | None:
+    """What the gateway says RESPONSE cost in USD: usage.cost, 0.0 on your own provider key (usage.is_byok); None
+    without a usable figure (LiteLLM then prices it from the config)."""
+    usage = response.get("usage") if isinstance(response, Mapping) else getattr(response, "usage", None)
+    if usage is None:
+        return None
+    if _usage_field(usage, "is_byok") is True:
+        return 0.0
+    c = _usage_field(usage, "cost")
+    if isinstance(c, bool) or not isinstance(c, (int, float)) or not math.isfinite(c) or not 0 <= c < 1e6:
+        return None
+    return float(c)
+
+
+def book_gateway_cost(response) -> None:
+    """Puts gateway_cost(RESPONSE) where LiteLLM's cost calculator reads a provider-reported cost first."""
+    c = gateway_cost(response)
+    hidden = getattr(response, "_hidden_params", None)
+    if c is None or not isinstance(hidden, dict):
+        return
+    headers = hidden.get("additional_headers")
+    hidden["additional_headers"] = {**(dict(headers) if isinstance(headers, Mapping) else {}), COST_HEADER: c}
+
+
 class BnHooks(CustomLogger):
     async def async_pre_call_hook(self, user_api_key_dict, cache, data, call_type):  # noqa: ARG002 — LiteLLM's signature
         try:
@@ -110,6 +194,22 @@ class BnHooks(CustomLogger):
         except Exception:  # noqa: BLE001 — never fail a request because of this hook
             pass
         return data
+
+    async def async_pre_call_deployment_hook(self, kwargs, call_type):
+        try:
+            if isinstance(kwargs, dict) and _chat_call(call_type):
+                return xl_request(kwargs)
+        except Exception:  # noqa: BLE001
+            pass
+        return kwargs
+
+    async def async_post_call_success_deployment_hook(self, request_data, response, call_type):  # noqa: ARG002
+        try:
+            if is_xl(request_data):
+                book_gateway_cost(response)
+        except Exception:  # noqa: BLE001 — a cost never fails an answer
+            pass
+        return response
 
 
 proxy_handler_instance = BnHooks()

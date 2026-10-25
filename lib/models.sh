@@ -182,6 +182,8 @@ _render_litellm_config_base() {
   [ "$n" -gt 0 ] || die "no models to render (none of the catalog models are enabled)"
   # Optional OpenRouter models ("or/<id>", lib/openrouter.sh): nothing without OPENROUTER_API_KEY in .env.
   ! declare -F openrouter_yaml >/dev/null || openrouter_yaml
+  # Optional Experiential Labs models ("xl/<id>", lib/explabs.sh): nothing without EXPLABS_API_KEY in .env.
+  ! declare -F explabs_yaml >/dev/null || explabs_yaml
   # Optional speech-to-text model "stt" (lib/stt.sh): nothing without STT_PROVIDER + STT_API_KEY in .env.
   ! declare -F stt_yaml >/dev/null || stt_yaml
   printf '\nrouter_settings:\n'
@@ -206,6 +208,12 @@ litellm_settings:
   drop_params: true
   turn_off_message_logging: $msg_off
 EOT
+  # Experiential Labs' models are openai/… deployments: LiteLLM would send Claude Code's /v1/messages requests to the
+  # gateway's Responses API; this keeps them on Chat Completions, the API the gateway's model details describe (as
+  # OpenRouter's go). A request with extended thinking still goes to Responses (LiteLLM's own rule). No other chat model
+  # here is an openai/… one.
+  if declare -F explabs_enabled >/dev/null && explabs_enabled; then printf '  use_chat_completions_url_for_anthropic_messages: true
+'; fi
   # LiteLLM's one hook (lib/litellm-hooks/bn_hooks.py, copied next to the config by render_config): lowers a request's
   # max_tokens to the model's limit from litellm/code-models.tsv (Claude Code asks for up to 32,000; Bedrock's Llama
   # refuses over 8,192) and leaves out Claude Code's running token count for another vendor's model on Bedrock

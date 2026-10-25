@@ -311,8 +311,8 @@ dc() {
     warn "COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT_NAME in your shell is ignored: this checkout is project '$p' (from .env or the default)"
     _DC_PROJECT_WARNED=1
   fi
-  # Compose lets shell variables beat --env-file: OpenRouter and speech-to-text are opt-in via .env only, so an
-  # OPENROUTER_* or STT_* in your shell never switches them on (or keeps them on after a remove).
+  # Compose lets shell variables beat --env-file: OpenRouter, Experiential Labs and speech-to-text are opt-in via .env
+  # only, so an OPENROUTER_*, EXPLABS_* or STT_* in your shell never switches them on (or keeps them on after a remove).
   # (A subshell, not `env -u`: same effect on docker's environment, and tests can still stub docker.)
   # The same for AWS: .env decides the key (or none, with AWS_AUTH=instance-role) and the region, never the shell
   # (./stack warns once per command when your shell's key differs: warn_shell_aws_ignored in lib/host.sh).
@@ -328,7 +328,7 @@ dc() {
   # Bedrock speech-to-text: its container is in the "stt" profile (lib/stt.sh), so down/ps/logs include it too.
   if [ "${_STT_PROFILE:-}" = 1 ] || [ "$(get_env STT_PROVIDER)" = bedrock ]; then f+=(--profile stt); fi
   # The browser terminal too: an exported TERMINAL_WORKSPACE must never decide what the container sees.
-  ( unset OPENROUTER_API_KEY OPENROUTER_MODELS OPENROUTER_MAX_MODELS STT_PROVIDER STT_API_KEY STT_MODEL OWUI_STT_ENGINE \
+  ( unset OPENROUTER_API_KEY OPENROUTER_MODELS OPENROUTER_MAX_MODELS EXPLABS_API_KEY EXPLABS_MODELS STT_PROVIDER STT_API_KEY STT_MODEL OWUI_STT_ENGINE \
       OWUI_STT_BASE_URL STT_BEDROCK_MODEL COMPOSE_PROFILES \
       AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_REGION_NAME \
       TERMINAL_ENABLED TERMINAL_WORKSPACE TERMINAL_EGRESS TERMINAL_EGRESS_ALLOW TERMINAL_EGRESS_DENY TERMINAL_HOST TERMINAL_UID TERMINAL_GID TERMINAL_MEM_LIMIT \
