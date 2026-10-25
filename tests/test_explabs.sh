@@ -65,6 +65,9 @@ _stub_curl() {
   }
 }
 
+# _bg_pid -> the pid ./stack up's background refresh recorded ("PID START" in its pid file), or nothing
+_bg_pid() { local p=''; read -r p _ < "$(xl_bg_pid_file)" 2>/dev/null || true; printf '%s' "$p"; }
+
 # _assert_no_key TEXT... — not a trace of either key (nor its 40 hex digits) in TEXT
 _assert_no_key() {
   local t
@@ -401,7 +404,7 @@ test_a_slow_or_unreachable_catalog_says_why_and_up_never_waits_for_it() {
   assert_contains "$(explabs_status_line)" "a refresh is under way in the background"
   # a second ./stack up meanwhile starts no second one
   explabs_up_hook 2> "$TMP/up"; assert_contains "$(cat "$TMP/up")" "the model details are being read already"
-  wait "$(cat "$(xl_bg_pid_file)")" 2>/dev/null || true
+  wait "$(_bg_pid)" 2>/dev/null || true
   assert_contains "$(cat "$(xl_bg_log)")" "timed out after 90 s reading the details of qwen3.8-27b"
   # now quick: the background read brings changed details (no temperature), the next ./stack up renders them at once
   CATALOG_DIR="$TMP/cat" XL_BACKGROUND=1 explabs_refresh 2>/dev/null
@@ -418,7 +421,7 @@ EXPLABS_MODELS=qwen3.8-27b,gpt-5-mini
 ' "$XL_KEY" > "$ENV_FILE"
   CATALOG_DIR="$TMP/cat" explabs_up_hook 2>/dev/null
   assert_eq "$XL_UP_CHANGED/$(cat "$TMP/renders")" "1/render"
-  wait "$(cat "$(xl_bg_pid_file)" 2>/dev/null)" 2>/dev/null || true
+  wait "$(_bg_pid)" 2>/dev/null || true
 }
 
 test_a_failed_refresh_keeps_the_list_or_runs_fail_safe_and_says_so() {
@@ -871,7 +874,7 @@ test_a_refresh_never_saves_one_keys_list_as_anothers() {
   }
   K1_S=30 xl_refresh_in_background 2>/dev/null
   xl_bg_running; [ -d "$(xl_lock_dir)" ]
-  local bg; bg="$(cat "$(xl_bg_pid_file)")"
+  local bg; bg="$(_bg_pid)"
   sleep 0.5
   printf 'EXPLABS_API_KEY=%s\nEXPLABS_MODELS=qwen3.8-27b\n' "$K2" > "$ENV_FILE"
   local t0=$SECONDS
@@ -895,7 +898,7 @@ test_a_refresh_never_saves_one_keys_list_as_anothers() {
   # the same in the background: nothing written, nothing pending
   printf 'EXPLABS_API_KEY=%s\nEXPLABS_MODELS=qwen3.8-27b\n' "$K2" > "$ENV_FILE"
   SWITCH_TO="$K1" xl_refresh_in_background 2>/dev/null
-  wait "$(cat "$(xl_bg_pid_file)" 2>/dev/null || echo 0)" 2>/dev/null || true
+  wait "$(_bg_pid)" 2>/dev/null || true
   [ ! -e "$(xl_pending_file)" ]
   assert_contains "$(cat "$(xl_bg_log)")" "that read is dropped"
   assert_eq "$(cat "$(xl_key_mark)")" "$mark"
@@ -908,12 +911,12 @@ test_the_background_refresh_is_one_stoppable_and_said() {
   _xl_env
   explabs_refresh 2>/dev/null
   SLOW=qwen3.8-27b SLOW_S=30 xl_refresh_in_background 2>/dev/null
-  local bg; bg="$(cat "$(xl_bg_pid_file)")"
+  local bg; bg="$(_bg_pid)"
   sleep 0.5
   # a second one meanwhile: not started
   SLOW=qwen3.8-27b SLOW_S=30 xl_refresh_in_background 2> "$TMP/second"
   assert_contains "$(cat "$TMP/second")" "the model details are being read already"
-  assert_eq "$(cat "$(xl_bg_pid_file)")" "$bg"
+  assert_eq "$(_bg_pid)" "$bg"
   assert_contains "$(explabs_status_line)" "a refresh is under way in the background"
   # fail safe and a refresh under way: both said
   printf 'EXPLABS_API_KEY=%s\nEXPLABS_MODELS=qwen3.8-27b,gpt-latest\n' "$XL_KEY" > "$ENV_FILE"
@@ -958,4 +961,40 @@ test_stopping_a_refresh_removes_only_its_own_temp_folder() {
   mkdir -p "$TMP/other"; XL_TMPDIR="$TMP/other"; _xl_tmp_end; [ -d "$TMP/other" ]
   XL_TMPDIR="$STATE_DIR/explabs-tmp."; mkdir -p "$XL_TMPDIR"; _xl_tmp_end; [ -d "$STATE_DIR/explabs-tmp." ]
   XL_TMPDIR=''; _xl_tmp_end
+}
+
+# A pid file is acted on only while it still names that process (the review's reuse.sh: a refresh killed hard leaves its
+# pid file; the pid, taken since by another process, got TERM with its children). Fresh (10 min), alive, started when
+# the file says, a shell of ./stack's — else the file is only removed, and a lock naming such a pid is taken over. A
+# refresh that did not get the lock never lets it go.
+test_a_pid_file_is_acted_on_only_while_it_names_that_process() {
+  _xl_env
+  mkdir -p "$STATE_DIR"
+  local other sh_other f; f="$(xl_bg_pid_file)"
+  # (their output away from the test's pipe, short-lived should the test stop before it kills them; a shell: two
+  # commands, so bash does not exec into sleep)
+  sleep 60 > /dev/null 2>&1 & other=$!
+  bash -c 'sleep 60; :' > /dev/null 2>&1 & sh_other=$!
+  sleep 0.3
+  # another program under the recorded pid: left alone, the file removed
+  printf '%s\n' "$other" > "$f"; xl_bg_stop 2>/dev/null; kill -0 "$other"; [ ! -e "$f" ]
+  _xl_pid_line "$other" > "$f"; xl_bg_stop 2>/dev/null; kill -0 "$other"
+  # a shell, but started at another time than the file says, or a file hours old: left alone
+  printf '%s Thu Jan  1 00:00:00 2026\n' "$sh_other" > "$f"; xl_bg_stop 2>/dev/null; kill -0 "$sh_other"
+  _xl_pid_line "$sh_other" > "$f"; touch -t 202601010000 "$f"; xl_bg_stop 2>/dev/null; kill -0 "$sh_other"
+  ! xl_bg_running
+  # the same file naming it as it is: that one is ours, and is stopped
+  _xl_pid_line "$sh_other" > "$f"; xl_bg_running; xl_bg_stop 2>/dev/null; ! kill -0 "$sh_other" 2>/dev/null
+  # a lock naming a reused pid, or an old one: taken over
+  mkdir -p "$(xl_lock_dir)"; printf '%s\n' "$other" > "$(xl_lock_dir)/pid"
+  _xl_lock 0 "$$"; _xl_unlock
+  # a lock held by a live refresh of ours: a foreground refresh waits, reads anyway, and leaves that lock as it was
+  bash -c 'sleep 60; :' > /dev/null 2>&1 & sh_other=$!
+  sleep 0.3
+  mkdir -p "$(xl_lock_dir)"; _xl_pid_line "$sh_other" > "$(xl_lock_dir)/pid"
+  _stub_curl
+  XL_LOCK_WAIT=1 explabs_refresh 2> "$TMP/err"
+  assert_contains "$(cat "$TMP/err")" "another refresh of the model list is still running — reading it anyway"
+  assert_eq "$(_xl_pid_of "$(xl_lock_dir)/pid")" "$sh_other"
+  _xl_kill_tree "$sh_other"; kill "$other" 2>/dev/null || true
 }

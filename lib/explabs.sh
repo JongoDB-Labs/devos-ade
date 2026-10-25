@@ -512,13 +512,13 @@ xl_fresh() {
 # _explabs_refresh reads.
 # shellcheck disable=SC2120  # MAX_AGE_MIN: lib/settings.sh passes it
 explabs_refresh() {
-  local rc=0
+  local rc=0 owned=0
   explabs_enabled || { rm -f "$(xl_error_file)"; XL_CHANGED=0; return 0; }
   if [ -n "${1:-}" ] && xl_fresh "$1"; then XL_CHANGED=0; return 0; fi
   xl_bg_stop
-  _xl_lock 30 || warn "Experiential Labs: another refresh of the model list is still running — reading it anyway"
+  if _xl_lock "${XL_LOCK_WAIT:-30}"; then owned=1; else warn "Experiential Labs: another refresh of the model list is still running — reading it anyway"; fi
   _explabs_refresh "$@" || rc=$?
-  _xl_unlock
+  [ "$owned" != 1 ] || _xl_unlock
   return "$rc"
 }
 
@@ -740,29 +740,43 @@ setup_explabs() {
   log "Experiential Labs: $(xl_counts)"
 }
 
-# xl_bg_running -> 0 while ./stack up's refresh runs in the background (its pid file names a live process, written
-# within the last 10 minutes: a stale file never blocks the next one)
-xl_bg_running() {
-  local f; f="$(xl_bg_pid_file)"
-  [ -n "$(find "$f" -mmin -10 2>/dev/null)" ] && kill -0 "$(head -c 12 "$f" | tr -cd '0-9')" 2>/dev/null
+# The refresh's pid files (the background refresh's, the refresh lock's) hold "PID START" — its pid and its start time
+# as ps gives it. _xl_pid_line PID -> that line. _xl_pid_of FILE -> the pid FILE names when it is still that process:
+# the file written within the last 10 minutes (no refresh takes longer), the process alive, started when the file says,
+# and a shell of ./stack's (ps names stack or bash, as lib/lock.sh's _lock_pid_alive); else nothing — a pid file left
+# by a refresh killed hard, its pid since taken by another process, is never acted on.
+_xl_pid_line() { printf '%s %s\n' "$1" "$(ps -p "$1" -o lstart= 2>/dev/null | tr -s ' ' | sed 's/^ //; s/ $//')"; }
+_xl_pid_of() {
+  local f="$1" p='' st='' now
+  [ -n "$(find "$f" -mmin -10 2>/dev/null)" ] || return 0
+  read -r p st < "$f" 2>/dev/null || true
+  case "$p" in '' | *[!0-9]*) return 0 ;; esac
+  kill -0 "$p" 2>/dev/null || return 0
+  ps -p "$p" -o command= 2>/dev/null | grep -qiE 'stack|bash' || return 0
+  now="$(ps -p "$p" -o lstart= 2>/dev/null | tr -s ' ' | sed 's/^ //; s/ $//')"
+  [ -n "$st" ] && [ "$now" = "$st" ] || return 0
+  printf '%s\n' "$p"
 }
 
-# One refresh at a time: a lock folder under .state holding its process's pid. _xl_lock WAIT_S [PID] -> 0 when it is
-# taken for PID (default this process; a lock whose process is gone is taken over), 1 when another live one still holds
-# it after WAIT_S seconds. _xl_unlock — let it go.
+# xl_bg_running -> 0 while ./stack up's refresh runs in the background (_xl_pid_of its pid file)
+xl_bg_running() { [ -n "$(_xl_pid_of "$(xl_bg_pid_file)")" ]; }
+
+# One refresh at a time: a lock folder under .state holding its process's pid line. _xl_lock WAIT_S [PID] -> 0 when it
+# is taken for PID (default this process; a lock whose process is not that one any more — gone, or its pid reused: not
+# _xl_pid_of — is taken over), 1 when that process still holds it after WAIT_S seconds. _xl_unlock — let it go (only
+# by its taker: a refresh that did not get the lock never lets someone else's go).
 xl_lock_dir() { printf '%s\n' "$STATE_DIR/explabs-refresh.lock"; }
 _xl_lock() {
-  local d n=0 p; d="$(xl_lock_dir)"; mkdir -p "$STATE_DIR"
+  local d n=0; d="$(xl_lock_dir)"; mkdir -p "$STATE_DIR"
   while ! mkdir "$d" 2>/dev/null; do
-    p="$(head -c 12 "$d/pid" 2>/dev/null | tr -cd '0-9')" || p=""
-    if [ -n "$p" ] && ! kill -0 "$p" 2>/dev/null; then rm -rf "$d"; continue; fi   # (its process is gone)
+    if [ -s "$d/pid" ] && [ -z "$(_xl_pid_of "$d/pid")" ]; then rm -rf "$d"; continue; fi   # (not that process any more)
     if [ "$n" -ge "$(($1 * 4))" ]; then
-      [ -z "$p" ] || return 1
+      [ ! -s "$d/pid" ] || return 1
       rm -rf "$d"; continue   # (no pid in it after the wait: left half-made)
     fi
     n=$((n + 1)); sleep 0.25
   done
-  printf '%s\n' "${2:-$$}" > "$d/pid"
+  _xl_pid_line "${2:-$$}" > "$d/pid"
 }
 _xl_unlock() { rm -rf "$(xl_lock_dir)"; }
 
@@ -773,19 +787,21 @@ _xl_kill_tree() {
   kill -TERM "$1" 2>/dev/null || true
 }
 
-# xl_bg_stop — PUBLIC HOOK: stops ./stack up's background refresh if one runs (by its recorded pid: what it read so far
-# goes, its temp files with it), and its lock. (A foreground refresh, ./stack down, update, restore, uninstall.)
+# xl_bg_stop — PUBLIC HOOK: stops ./stack up's background refresh if one runs (the process its pid file names, when
+# _xl_pid_of says it is still that one: what it read so far goes, its temp folder with it), and its lock. A pid file
+# that names nothing of ours is only removed. (A foreground refresh, ./stack down, update, rollback, restore, uninstall.)
 xl_bg_stop() {
-  local f p n=0; f="$(xl_bg_pid_file)"
-  p="$(head -c 12 "$f" 2>/dev/null | tr -cd '0-9')" || p=""
-  [ -n "$p" ] || return 0
-  if kill -0 "$p" 2>/dev/null; then
+  local f p n=0 lp=''; f="$(xl_bg_pid_file)"
+  [ -e "$f" ] || return 0
+  p="$(_xl_pid_of "$f")"
+  if [ -n "$p" ]; then
     _xl_kill_tree "$p"
     while kill -0 "$p" 2>/dev/null && [ "$n" -lt 40 ]; do n=$((n + 1)); sleep 0.25; done
     log "Experiential Labs: stopped the background read of the model details"
+    read -r lp _ < "$(xl_lock_dir)/pid" 2>/dev/null || true
+    [ "$lp" != "$p" ] || _xl_unlock
   fi
   rm -f "$f"
-  [ "$(head -c 12 "$(xl_lock_dir)/pid" 2>/dev/null | tr -cd '0-9')" != "$p" ] || _xl_unlock
 }
 
 # xl_refresh_in_background — _explabs_refresh on its own, so ./stack up never waits on the gateway's catalog (one
@@ -803,7 +819,7 @@ xl_refresh_in_background() {
     _xl_unlock; rm -f "$(xl_bg_pid_file)"
   ) < /dev/null > /dev/null 2>&1 &
   p=$!
-  printf '%s\n' "$p" > "$pidf"; printf '%s\n' "$p" > "$(xl_lock_dir)/pid"
+  _xl_pid_line "$p" > "$pidf"; _xl_pid_line "$p" > "$(xl_lock_dir)/pid"
   log "Experiential Labs: reading the model details in the background (the ones read $(xl_fetched_at) stay until it is done)"
 }
 
