@@ -607,7 +607,8 @@ def plan_asks(ctx):
         (probe, f"Use the Bash tool now to run exactly this, unchanged: {probe} — it changes nothing, so Plan mode allows it; "
                 f"a permission prompt for it is expected."),
     ]
-    log, card = [], None
+    log, card, at = [], None, ""
+    names = ("touch", "probe 1", "probe 2")
     for i, (cmd, text) in enumerate(prompts, 1):
         since = turn = len(c.msgs())
         c.request({"type": "prompt", "session": sid, "text": text})
@@ -621,13 +622,13 @@ def plan_asks(ctx):
             shown = json.dumps(m.get("input", {}))
             asked.append(m.get("tool"))
             if m.get("tool") == "Bash" and any(t in shown for t in ours):
-                card = m
+                card, at = m, f"prompt {i} ({names[i - 1]})"
                 c.request({"type": "permission", "id": m["id"], "session": sid, "decision": "deny", "message": "e2e: not now"})
             else:
                 c.request({"type": "permission", "id": m["id"], "session": sid, "decision": "deny",
                            "message": f"No plan or question is needed. Run exactly `{cmd}` with the Bash tool now."})
         said = "" if asked else " ".join(text_of(c.events(sid, turn)).split())[:80]
-        log.append(f"{i}. {'touch' if i == 1 else 'node -e'}: cards {asked or 'none'}{f' — said {said!r}' if said else ''}")
+        log.append(f"{i}. {names[i - 1]}: cards {asked or 'none'}{f' — said {said!r}' if said else ''}")
         if card is not None:
             break
     evs = c.events(sid, n)
@@ -636,14 +637,20 @@ def plan_asks(ctx):
     by_classifier = [e for e in evs if (e["type"] == "blocked" and e.get("by") == "classifier")
                      or (e["type"] == "tool_result" and "auto mode" in e.get("text", "").lower())]
     exists = c.api("GET", f"/api/fs/file?path={target}")["status"]
+    # (pinned for a failure: Claude Code's version and the permission mode the session reported)
+    init = next((e for e in evs if e["type"] == "init"), {})
+    modes = [e.get("permissionMode") for e in evs if e["type"] in ("init", "status") and e.get("permissionMode")]
+    state = c.api("GET", "/api/state")["json"] or {}
+    pinned = (f"Claude Code {init.get('cliVersion') or (state.get('versions') or {}).get('claudeCode')}, "
+              f"permission mode {modes[-1] if modes else 'not reported'} (init: {init.get('permissionMode')})")
     c.api("DELETE", f"/api/sessions/{sid}")
     c.rec.save()
-    expect(not ran, f"Plan mode ran a command without an answer: {[e['input'].get('command', '')[:80] for e in ran]} ({'; '.join(log)})")
-    expect(exists == 404, f"{target} was created in Plan mode (GET /api/fs/file: {exists}; {'; '.join(log)})")
+    expect(not ran, f"Plan mode ran a command without an answer: {[e['input'].get('command', '')[:80] for e in ran]} — {pinned} ({'; '.join(log)})")
+    expect(exists == 404, f"{target} was created in Plan mode (GET /api/fs/file: {exists}) — {pinned} ({'; '.join(log)})")
     expect(not by_classifier, f"the auto-mode classifier handled it: {json.dumps(by_classifier[0])[:200] if by_classifier else ''}")
     expect(card is not None, f"Haiku tried neither command in three prompts, so Plan mode's card was not exercised: {'; '.join(log)}")
     cmd = card.get("input", {}).get("command", "")
-    return f"Plan mode: a Bash card for `{cmd[:60]}` (denied), nothing ran, no file, no auto-mode classifier — {'; '.join(log)}"
+    return f"Plan mode: a Bash card at {at} for `{cmd[:60]}` (denied), nothing ran, no file, no auto-mode classifier — {'; '.join(log)}"
 
 
 @check("browser", "code-files-through-the-sandbox")
