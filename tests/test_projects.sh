@@ -408,7 +408,8 @@ test_the_workspace_rules_for_temporary_folders_and_sockets() {
   local why
   for p in /tmp /var/tmp; do
     [ -d "$p" ] || continue
-    why="$(terminal_workspace_check "$p")" && { echo "accepted $p" >&2; return 1; }
+    # (a home outside them: the tests' own is in a temporary folder — on Linux in /tmp, which the home rule names first)
+    why="$(HOME=/nonexistent terminal_workspace_check "$p")" && { echo "accepted $p" >&2; return 1; }
     assert_contains "$why" "it is a temporary folder itself"
   done
   # a folder of your own in a temporary folder is fine (the tests' workspaces are); a path through a socket folder is not
@@ -479,7 +480,9 @@ test_pending_until_the_sandbox_has_it() {
   out="$(project_mode app ro --later 2>&1)" || return 1
   assert_contains "$out" "app ro applies when the sandbox restarts"
   assert_contains "$out" "app is read-only in the list; the sandbox applies it when it restarts"
-  assert_contains "$(cat "$(projects_status_file)")" '"mode":"ro","hidden":false,'
+  # (hidden: the sandbox has it at /projects/app — a folder in /tmp on Linux, the tests' own — instead of its own path)
+  local hidden=false; [ "$pa" = "$a" ] || hidden=true
+  assert_contains "$(cat "$(projects_status_file)")" "\"mode\":\"ro\",\"hidden\":$hidden,"
   assert_contains "$(tr '{' '\n' < "$(projects_status_file)" | grep '"name":"app"')" '"pending":"ro"'
   assert_contains "$(tr '{' '\n' < "$(projects_roots_file)" | grep '"name":"app"')" '"pending":"ro"'
   assert_contains "$(projects_list)" "pending: read-only once the sandbox restarts — until then Claude can still change it"
