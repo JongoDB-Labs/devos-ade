@@ -6,6 +6,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Removed
+
+- **The Code page's plain fallback page**, unused since the frontend build replaced it (2026-10-16); an image without
+  the build now says so instead ("This image has no Code page build: run ./stack update").
+
 ### Fixed
 
 - **Tests:** the sandbox's isolation check (`terminal/terminal-isolation`) no longer fails on a moment of this

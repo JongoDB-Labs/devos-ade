@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The Code page's unit tests (Node's test runner) in the image's test stage: the backend (code/server, code/plain),
+# The Code page's unit tests (Node's test runner) in the image's test stage: the backend (code/server),
 # the sandbox's spawn server (terminal/bin/bn-coded.mjs) and its egress proxy (terminal/egress/bn-egress.mjs) — no
 # Bedrock, no running stack, and no image is kept (the stage's result goes to the build cache only).
 # Usage: code/test.sh [more docker build options, e.g. --no-cache]

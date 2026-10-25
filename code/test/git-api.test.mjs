@@ -10,7 +10,7 @@ import { SandboxError, printable } from '../server/spawn-client.mjs';
 import { GIT_SAID, NEVER_ASKS } from '../server/gitremote.mjs';
 import { commitMessage, gitFileOf, gitLogOf, gitPathOk, gitStatusOf, gitTargets, GIT_LIST_MAX } from '../server/api.mjs';
 import { fakeQuery } from './fake-sdk.mjs';
-import { tmp, TERMINAL_DIR } from './helpers.mjs';
+import { tmp, TERMINAL_DIR, stubDist } from './helpers.mjs';
 import { GIT_REASONS, GIT_REFUSALS, SANDBOX_REFUSALS, GIT_ANSWERED, GIT_LOG_FAILED, plainRefusal, reasonOf } from '../server/gitreasons.mjs';
 
 const H = 'c'.repeat(40);
@@ -95,8 +95,8 @@ const answers = {
 const call = async (req, opts) => { calls.push([req, opts]); const a = answers[req.op]; if (!a) throw new SandboxError('unknown op', 'refused'); return a(req); };
 let srv, base;
 before(async () => {
-  const dist = tmp('bndist');
-  srv = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call, distDir: dist, plainDir: path.resolve(import.meta.dirname, '../plain'), versions: {}, logger: () => {} });
+  const dist = stubDist('bndist');
+  srv = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call, distDir: dist, versions: {}, logger: () => {} });
   await new Promise((r) => srv.server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${srv.server.address().port}`;
   fs.rmSync(dist, { recursive: true, force: true });

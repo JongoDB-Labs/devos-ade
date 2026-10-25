@@ -1,4 +1,4 @@
-// The Code page's API between the page (code/web, or code/plain while there is no build) and this backend. All of it
+// The Code page's API between the page (code/web's build) and this backend. All of it
 // is on the code host (code.<portal host>) behind the main Caddy, which first asks the portal (session, a fresh
 // unlock, the Origin) and then adds X-Bn-Code-Proxy. This file is the reference for both sides; the backend imports
 // the constants below.
@@ -224,10 +224,11 @@
 //                     cache_read_tokens, cache_write_tokens, status}], requests, total, key: {alias, spend, max_budget,
 //                     reset_at, error}}
 //
-// index.html (code/web/dist or code/plain) is served no-store with <meta> tags added before </head>:
+// index.html (code/web/dist) is served no-store with <meta> tags added before </head>:
 //   bn-style-nonce (= bn-csp-nonce): the nonce Caddy's CSP allows for <style> (optional: style-src 'self' works)
 //   bn-portal-origin: the portal that frames this page (also /api/state's portal_origin)
 // Hashed files (name.HASH.ext) and everything under chunks/ are served immutable; the rest no-cache with an ETag.
+// An image without that build answers every page request 503 (main.mjs NO_BUILD); the API is the same.
 // The page tells the portal how many permission prompts wait (the Code tab's badge):
 //   parent.postMessage({type: "bn-code-status", pending: N, busy, bypass, waiting: SESSIONS, sessions: [{id, title,
 //                      state: waiting|working|idle, waiting: N}] (≤ 8: Home's Code card; titles are sandbox data)},

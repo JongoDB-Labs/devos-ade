@@ -20,7 +20,7 @@ import { sandboxTunnel } from '../server/spawn-client.mjs';
 import { createOAuthMock } from './oauth-mock.mjs';
 import { makeCA } from './git-servers.mjs';
 import { fakeQuery } from './fake-sdk.mjs';
-import { tmp, TERMINAL_DIR } from './helpers.mjs';
+import { tmp, TERMINAL_DIR, stubDist } from './helpers.mjs';
 
 const ROOT = tmp('bnoauth');
 after(() => fs.rmSync(ROOT, { recursive: true, force: true }));
@@ -421,8 +421,8 @@ test('net.tunnel: directly, and through the egress proxy (CONNECT) — the proxy
 test('the routes: a sign-in only from the computer running DevOS ADE; its status there; nothing secret in any answer', async () => {
   const SECRET = 'ab'.repeat(16);
   const store = new GitHosts({ dir: path.join(ROOT, 'routes'), now });
-  const dist = tmp('bndist');
-  const s = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call: fakeSandbox().call, distDir: dist, plainDir: path.resolve(import.meta.dirname, '../plain'),
+  const dist = stubDist('bndist');
+  const s = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call: fakeSandbox().call, distDir: dist,
     versions: {}, logger: () => {}, gitHosts: store, gitConnect: connect, gitApps: { gitlab: { clientId: '' }, github: { clientId: GH, appSlug: 'bedrock-now' } }, gitOAuthDelay: () => sleep(2) });
   await new Promise((r) => s.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${s.server.address().port}`;

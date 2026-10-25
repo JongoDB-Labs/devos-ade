@@ -2423,8 +2423,8 @@ terminal/                     the browser terminal's image: Claude Code (pinned)
                               spawn server (bin/bn-coded.mjs); egress/ its egress proxy (bn-egress.mjs); tools/ your
                               AI subscriptions' apps (pins, install.sh) and bin/ their launchers and subscriptions
 code/                         the Code page: its backend (server/, Agent SDK pinned with Claude Code), the page
-                              (web/: Preact + CodeMirror 6, built into the image; a mock backend in web/dev) and
-                              a plain fallback page (plain/); tests: code/test.sh, code/web/e2e/run.sh
+                              (web/: Preact + CodeMirror 6, built into the image; a mock backend in web/dev);
+                              tests: code/test.sh, code/web/e2e/run.sh
 shared-mcp/                   MCP server for shared files and knowledge (Python; tests: docker build --target test shared-mcp)
 stt/                          the speech-to-text service for Voxtral on Bedrock (Python, ffmpeg; tests in stt/tests)
 owui/functions/               the Open WebUI cost filter (tests in owui/tests)

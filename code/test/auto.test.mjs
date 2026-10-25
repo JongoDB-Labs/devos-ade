@@ -15,6 +15,7 @@ import { fromSdk } from '../server/normalize.mjs';
 import { SET_MODES, START_MODES, startFlags } from '../server/modes.mjs';
 import { DECISIONS } from '../server/protocol.mjs';
 import { fakeQuery } from './fake-sdk.mjs';
+import { stubDist } from './helpers.mjs';
 
 const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
 function manager(opts = {}) {
@@ -268,7 +269,7 @@ test('the API: state says whether Auto is allowed; set_mode auto, "Allow, and sw
     const queries = [];
     const fq = fakeQuery();
     const srv = createServer({ secret: SECRET, query: (a) => { const q = fq(a); q.echoMode = 'change'; queries.push(q); return q; }, spawn: () => {}, call: async () => ({ result: {} }),
-      distDir: tmp('bndistauto'), plainDir: path.resolve(import.meta.dirname, '../plain'), logger: () => {}, allowAuto, watch: false });
+      distDir: stubDist('bndistauto'), logger: () => {}, allowAuto, watch: false });
     await new Promise((r) => srv.server.listen(0, '127.0.0.1', r));
     const base = `http://127.0.0.1:${srv.server.address().port}`;
     try {

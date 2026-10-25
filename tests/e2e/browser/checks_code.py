@@ -1,7 +1,7 @@
 """The optional Code page (./stack code; tests/e2e/run.sh --code turns it on in the throwaway, with the terminal): the
 Code tab sits under Chat (under More on a phone) and follows the setting; the code host is locked until the portal
 password is typed again, sends the main Caddy's policy whoever answers, and refuses other sites' Origins; then, through
-the page's own API and WebSocket (so these checks hold for any frontend build, not only the plain page): a session
+the page's own API and WebSocket (so these checks hold for any frontend build): a session
 streams an answer (Haiku), a Bash permission prompt is allowed (the file appears in the workspace) or denied (it does
 not), the Code tab's badge counts a waiting prompt, the model switches, a turn is interrupted, a slash command runs at
 $0, a reload re-attaches and a closed session resumes, the workspace's files are listed, read, written (with the
@@ -283,7 +283,6 @@ def tab(ctx):
     f.wait_for_function("() => document.querySelector('meta[name=bn-csp-nonce]') !== null", timeout=20000)
     page.wait_for_timeout(1500)
     shot(page, "50-code-tab")
-    plain = f.locator("form#ask").count() == 1
     probs = rec.problems(allow=LOCKED_OK)
     rec.save()
     expect(not probs, f"errors (CSP violations included): {probs}")
@@ -298,7 +297,7 @@ def tab(ctx):
     expect(link.get_attribute("href") == CODE + "/", f"More → Code {link.get_attribute('href')}")
     shot(page, "51-code-phone-more")
     rec.save()
-    return f"tabs {order[:3]}; framed {'plain page' if plain else 'frontend build'} after the unlock, no console errors or CSP violations; phone: under More"
+    return f"tabs {order[:3]}; framed the frontend build after the unlock, no console errors or CSP violations; phone: under More"
 
 
 @check("browser", "code-terminal-typed-address")
@@ -708,31 +707,6 @@ def spend(ctx):
     return f"session {sid[:8]}: {d['requests']} requests, ${d['total']:.4f} (LiteLLM's logs, the terminal key's rows); key spend ${d['key']['spend']:.4f} of ${d['key']['max_budget']}"
 
 
-@check("browser", "code-plain-page-chat")
-def plain_page(ctx):
-    need_haiku()
-    page, rec = ctx.page("code-plain")
-    login(page)
-    page.goto(CODE + "/")
-    unlock_page(page)
-    page.wait_for_selector("body")
-    if page.locator("form#ask").count() == 0:
-        rec.save()
-        raise Skip("this image serves the frontend build (code/web), not the plain page")
-    page.wait_for_function("() => document.querySelector('#model option') !== null", timeout=20000)
-    page.select_option("#model", HAIKU)   # (the plain page's options are full model ids)
-    page.fill("#prompt", "Reply with exactly the word: pong")
-    page.click("#ask button[type=submit]")
-    page.locator("#log .assistant", has_text=re.compile("pong", re.I)).wait_for(timeout=120000)
-    page.locator("#log .muted", has_text="— success").wait_for(timeout=60000)
-    shot(page, "54-code-plain-page")
-    injected = page.evaluate("() => document.querySelectorAll('#log img, #log script, #log svg, #log a, [onerror], [onload]').length")
-    probs = rec.problems(allow=LOCKED_OK)
-    rec.save()
-    expect(injected == 0 and not probs, f"injected {injected}, errors {probs}")
-    return "plain page: Haiku, prompt → streamed 'pong' → success; nothing but text in the log; no console errors or CSP violations"
-
-
 # --- the page itself (code/web's build): what a person does, through the real Caddy, backend and sandbox ---
 
 # Every CSP / Trusted Types violation on the code host is recorded (and fails the check)
@@ -740,11 +714,6 @@ CSP_GUARD = """(() => { window.__csp = []; document.addEventListener('securitypo
   window.__csp.push(e.violatedDirective + ' ' + (e.blockedURI || '') + ' ' + (e.sample || ''))); })();"""
 UI = "e2e-ui"
 MKT = "e2e-mkt"
-
-
-def built_page(page):
-    if page.locator("form#ask").count():
-        raise Skip("this image serves the plain page (no code/web build)")
 
 
 def ui_page(ctx, name, device="desktop", session=None):
@@ -760,7 +729,6 @@ def ui_page(ctx, name, device="desktop", session=None):
     page.goto(CODE + "/")
     unlock_page(page)
     page.wait_for_load_state("domcontentloaded")
-    built_page(page)
     see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
     if session:
         # its transcript merges in after the live replay (an ended one shows only the transcript): let it settle
@@ -2816,30 +2784,23 @@ def hostile(ctx):
     c.request({"type": "prompt", "session": sid, "text": "hello"})
     end = c.wait(lambda m: m.get("type") == "session_state" and m["session"] == sid and m["state"] in ("error", "ended"), "the hostile session's end", 60, since=n)
     evs = c.events(sid, n)
-    # the page shows what came as text: let the plain page (if it is the one) render the session
-    if page.locator("form#ask").count():
-        page.reload(); page.wait_for_selector("#sessions li", timeout=20000)
+    # the frontend: the session list, the explorer and the plugins dialog with the stand-in's answers (markup in
+    # every field, a "command" to confirm whose hash is not one)
+    page.reload()
+    see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+    page.get_by_test_id("side-sessions").click()
+    page.wait_for_timeout(1500)
+    page.get_by_test_id("side-files").click()
+    page.wait_for_timeout(1000)
+    page.get_by_test_id("more-menu").click()
+    page.get_by_test_id("menu-plugins").click()
+    page.get_by_test_id("plugins-tab-discover").click()
+    page.wait_for_timeout(1500)
+    if page.locator("[data-testid=plugin-install]").count():
+        page.locator("[data-testid=plugin-install]").first.click()
         page.wait_for_timeout(1500)
-        page.evaluate(CLIENT_JS)   # (the reload took the in-page client along)
-    built = page.locator("form#ask").count() == 0
-    if built:
-        # the frontend: the session list, the explorer and the plugins dialog with the stand-in's answers (markup in
-        # every field, a "command" to confirm whose hash is not one)
-        page.reload()
-        see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
-        page.get_by_test_id("side-sessions").click()
-        page.wait_for_timeout(1500)
-        page.get_by_test_id("side-files").click()
-        page.wait_for_timeout(1000)
-        page.get_by_test_id("more-menu").click()
-        page.get_by_test_id("menu-plugins").click()
-        page.get_by_test_id("plugins-tab-discover").click()
-        page.wait_for_timeout(1500)
-        if page.locator("[data-testid=plugin-install]").count():
-            page.locator("[data-testid=plugin-install]").first.click()
-            page.wait_for_timeout(1500)
-            expect(page.get_by_test_id("plugin-confirm").count() == 0, "a confirmation with a bogus hash was offered")
-        page.evaluate(CLIENT_JS)
+        expect(page.get_by_test_id("plugin-confirm").count() == 0, "a confirmation with a bogus hash was offered")
+    page.evaluate(CLIENT_JS)
     injected = page.evaluate("() => document.querySelectorAll('img[src=\"x\"], [onerror], [onload], script:not([src]), a[href^=\"javascript:\"]').length")
     state = c.api("GET", "/api/state")
     shot(page, "55-code-hostile")

@@ -292,8 +292,8 @@ export class Session {
     // CODE_AUTO_MODE on: "Allow once" on an action Auto mode blocked — Claude's retry of exactly that call is approved
     // here, once, before the classifier sees it (Claude Code's /permissions › Recently denied › retry does the same)
     if (this.mgr.allowAuto === true) options.hooks = { PreToolUse: [{ hooks: [(input) => Promise.resolve(this.preToolUse(input))] }] };
-    // Declared only by a page with a per-task Stop: then an interrupt spares background tasks. Without it (the plain
-    // page) the CLI fails closed: an interrupt ends them too.
+    // Declared only by a page with a per-task Stop: then an interrupt spares background tasks. Without it the CLI fails
+    // closed: an interrupt ends them too.
     if (this.taskStop) options.perTaskStopAffordance = true;
     if (resume && fork) {
       options.resume = resume; options.forkSession = true; options.sessionId = this.id;

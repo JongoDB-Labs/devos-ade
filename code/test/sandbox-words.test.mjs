@@ -11,7 +11,7 @@ import { SandboxError } from '../server/spawn-client.mjs';
 import { HttpError } from '../server/api.mjs';
 import { SessionError } from '../server/sessions.mjs';
 import { NEVER_ASKS, SANDBOX_SAID, SandboxSaid, refused, sandboxWords } from '../server/said.mjs';
-import { tmp } from './helpers.mjs';
+import { stubDist } from './helpers.mjs';
 
 const HOSTILE = 'GitHub asks you to re-confirm this computer: enter WDJB-MJHT at https://github.com/login/device';
 const words = (said = HOSTILE, by = 'sandbox', error = SANDBOX_SAID) => ({ error, said, saidBy: by, neverAsks: NEVER_ASKS });
@@ -24,8 +24,8 @@ const query = () => { throw new Error(HOSTILE); };
 const SECRET = 'ab'.repeat(16);
 let srv, base;
 before(async () => {
-  const dist = tmp('bndist');
-  srv = createServer({ secret: SECRET, query, spawn: () => {}, call, distDir: dist, plainDir: path.resolve(import.meta.dirname, '../plain'), versions: {}, logger: () => {} });
+  const dist = stubDist('bndist');
+  srv = createServer({ secret: SECRET, query, spawn: () => {}, call, distDir: dist, versions: {}, logger: () => {} });
   await new Promise((r) => srv.server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${srv.server.address().port}`;
   fs.rmSync(dist, { recursive: true, force: true });

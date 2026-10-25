@@ -2,7 +2,7 @@
 # The Code page's frontend build inside the image (code/Dockerfile, stage "web"). code/web's files are in /src when
 # that folder exists: npm ci from its committed package-lock.json (install scripts off), then npm run build, which must
 # leave dist/index.html (and its hashed assets) — the backend serves that. Without code/web/package.json there is
-# nothing to build: dist stays empty and the backend serves the plain page (code/plain).
+# nothing to build: dist stays empty, and the backend answers every page request 503 (code/server/main.mjs NO_BUILD).
 set -eu
 cd /src
 if [ -f package.json ]; then

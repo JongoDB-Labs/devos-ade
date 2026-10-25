@@ -1,6 +1,7 @@
-// The Code page's backend (./stack code enable; compose.code.yaml). Serves the page (code/web/dist when a build is
-// there, else code/plain), the REST API and the WebSocket of protocol.mjs, and runs Claude Code sessions with the Agent
-// SDK, whose CLI runs in the sandbox (spawnClaudeCodeProcess -> bn-coded over the code-socket volume).
+// The Code page's backend (./stack code enable; compose.code.yaml). Serves the page (code/web/dist, the frontend's
+// build; an image without it answers 503), the REST API and the WebSocket of protocol.mjs, and runs Claude Code
+// sessions with the Agent SDK, whose CLI runs in the sandbox (spawnClaudeCodeProcess -> bn-coded over the code-socket
+// volume).
 // Holds no LiteLLM key and mounts no folder of yours; its only network is code-link, shared with the main Caddy. Every
 // request must carry X-Bn-Code-Proxy (CODE_PROXY_SECRET), which only the main Caddy adds — after the portal's check
 // (session, a fresh unlock, the Origin). Everything that comes from the sandbox is data, checked before the page sees it.
@@ -58,11 +59,14 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
   '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.map': 'application/json', '.txt': 'text/plain; charset=utf-8',
   '.webmanifest': 'application/manifest+json', '.wasm': 'application/wasm' };
 
-// loadSite(dir) -> {files: Map(urlPath -> {body, type, etag}), index} for the page: code/web/dist (the frontend's build:
-// index.html + hashed assets) when it has an index.html, else the plain page. Read once (a read-only image).
-export function loadSite(distDir, plainDir) {
-  const dir = fs.existsSync(path.join(distDir, 'index.html')) ? distDir : plainDir;
+// loadSite(dir) -> {files: Map(urlPath -> {body, type, etag}), index, built} for the page: code/web/dist (the
+// frontend's build: index.html + hashed assets). Without its index.html — an image built without code/web, which no
+// supported build makes — no files and built false: every page request is answered NO_BUILD (503), the API as ever.
+// Read once (a read-only image).
+export const NO_BUILD = 'This image has no Code page build: run ./stack update\n';
+export function loadSite(dir) {
   const files = new Map();
+  if (!fs.existsSync(path.join(dir, 'index.html'))) return { files, built: false, index: '' };
   let total = 0;
   const walk = (d, prefix) => {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
@@ -78,7 +82,7 @@ export function loadSite(distDir, plainDir) {
     }
   };
   walk(dir, '');
-  return { dir, files, built: dir === distDir, index: files.get('/index.html')?.body.toString('utf8') || '' };
+  return { files, built: true, index: files.get('/index.html')?.body.toString('utf8') || '' };
 }
 
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -126,7 +130,7 @@ export function ownOrigin(req) {
 // (projects.mjs; made on first use: /var/lib/bn-code). imports: sessions of this computer copied into the sandbox
 // (import-sessions.mjs; made on first use). setup: your Claude Code setup of this computer copied into the sandbox
 // (import-setup.mjs; made on first use).
-export function createServer({ secret, query, spawn, call, distDir = path.join(HERE, '../web/dist'), plainDir = path.join(HERE, '../plain'), versions = {}, logger = log,
+export function createServer({ secret, query, spawn, call, distDir = path.join(HERE, '../web/dist'), versions = {}, logger = log,
   reloadPollMs, reloadMaxMs, maxBufferedBytes = LIMITS.wsMaxBufferedBytes, maxSocketAgeMs = LIMITS.wsMaxAgeHours * 3600000, broker: brokerOpts = {},
   allowBypass = false, allowAuto = false, sandbox = {}, watch = true, gitHosts = null, openBroker = null, gitConnect = null, gitApps = {}, gitOAuthDelay = null,
   projects = null, imports = null, setup = null, spawnAgent = null, agentStore = null, planAllowed = false, subsStatus = null }) {
@@ -136,8 +140,9 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     const got = Buffer.from(String(req.headers['x-bn-code-proxy'] || ''));
     return got.length === want.length && crypto.timingSafeEqual(got, want);
   };
-  const site = loadSite(distDir, plainDir);
-  logger(`page: ${site.built ? 'the frontend build (code/web/dist)' : 'the plain page (no code/web build in this image)'}, ${site.files.size} files`);
+  const site = loadSite(distDir);
+  logger(site.built ? `page: the frontend build (code/web/dist), ${site.files.size} files`
+    : 'page: this image has no Code page build (code/web/dist/index.html): every page request is answered 503 — run ./stack update');
 
   // --- sockets, sessions, prompts ---
   const clients = new Set();   // {ws, attached: Set(sessionId)}
@@ -523,6 +528,13 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'method not allowed');
     // the sandboxed artifact viewer's pages are the artifact site's alone (artifactPage), never the code host's
     if (p === '/artifact' || p.startsWith('/artifact/')) throw new HttpError(404, 'not found');
+    // no build in this image: one fixed answer for every page request, with the page's own headers (Caddy's CSP is on
+    // every response of the code host)
+    if (!site.built) {
+      res.writeHead(503, { 'content-type': 'text/plain; charset=utf-8', 'x-content-type-options': 'nosniff', 'cache-control': 'no-store',
+        'content-length': Buffer.byteLength(NO_BUILD) });
+      return res.end(req.method === 'HEAD' ? undefined : NO_BUILD);
+    }
     let f = site.files.get(p === '/' ? '/index.html' : p);
     // the page's own routes (no dot in the last segment) get index.html
     if (!f && !/\.[A-Za-z0-9]{1,8}$/.test(p)) f = site.files.get('/index.html');

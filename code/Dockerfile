@@ -4,8 +4,8 @@
 # gets pathToClaudeCodeExecutable + spawnClaudeCodeProcess, so Claude Code runs in the sandbox alone. .npmrc: no peer
 # dependencies (the SDK's main entry imports only Node built-ins). Nothing is fetched at runtime.
 #
-#   web      code/web's build (its package-lock.json, npm ci, npm run build -> dist/: index.html + hashed assets) when
-#            code/web exists; otherwise an empty dist, and the backend serves the plain page (code/plain)
+#   web      code/web's build (its package-lock.json, npm ci, npm run build -> dist/: index.html + hashed assets); a
+#            checkout without code/web gets an empty dist, and the backend answers every page request 503 (main.mjs NO_BUILD)
 #   webtest  the frontend's checks on that same install: npm test (tsc --noEmit, then its unit tests)
 #   deps     the backend's node_modules, checked: no native binaries, no peer dependencies, the SDK imports
 #   gitnew   the Git panel's unit tests once more with git 2.54 (Alpine 3.24): config-based hooks, which Debian's git
@@ -59,7 +59,6 @@ COPY --from=gitnew /tmp/gitnew-tested /tmp/gitnew-tested
 RUN apt-get update && apt-get install -y --no-install-recommends git ripgrep tmux ca-certificates openssh-client openssh-server openssl \
  && rm -rf /var/lib/apt/lists/*
 COPY server/ ./server/
-COPY plain/ ./plain/
 COPY test/ ./test/
 COPY --from=terminal bin/bn-coded.mjs bin/bn-preview.mjs bin/bn-git-credential bin/bn-gh /opt/terminal/bin/
 COPY --from=terminal ssh_known_hosts /opt/terminal/ssh_known_hosts
@@ -79,12 +78,11 @@ WORKDIR /opt/code
 COPY --from=deps /opt/code/node_modules ./node_modules
 COPY package.json ./
 COPY server/ ./server/
-COPY plain/ ./plain/
 COPY --from=web /src/dist/ ./web/dist/
 # Readable by the user compose runs it as (TERMINAL_UID), whatever modes the checkout has: COPY keeps them, and a
 # checkout written with umask 077 (the update helper's) has 600 files — the server then failed with EACCES on its own
 # main.mjs. (The portal, shared-mcp and stt images do the same; node_modules and web/dist are already a+r.)
-RUN chmod -R a+rX /opt/code/package.json /opt/code/server /opt/code/plain \
+RUN chmod -R a+rX /opt/code/package.json /opt/code/server \
  && mkdir -p /var/lib/bn-code /run/bn-chat && chmod 1777 /var/lib/bn-code /run/bn-chat
 # /var/lib/bn-code: the code-state volume (compose.code.yaml) starts as a copy of this folder — writable by the user
 # compose runs this as (TERMINAL_UID, unknown here), which keeps Git hosts in a folder of its own, mode 700, in it.

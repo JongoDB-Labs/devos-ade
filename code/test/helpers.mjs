@@ -47,6 +47,20 @@ export function tmp(prefix = 'bnc') {
   return fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), `${prefix}-`));
 }
 
+// stubDist(prefix) -> a fresh folder shaped like code/web's build for a test's createServer: an index.html as build.mjs
+// writes it (a stylesheet and a module script by path, nothing inline) and those two hashed files. The image always
+// has the build; without one, every page request is a 503 (main.mjs NO_BUILD).
+export const STUB_INDEX = '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>Code</title>\n'
+  + '<link rel="stylesheet" href="app.ABCD1234.css">\n<script type="module" src="app.ABCD1234.js"></script>\n</head>\n'
+  + '<body>\n<noscript>The Code page needs JavaScript.</noscript>\n</body>\n</html>\n';
+export function stubDist(prefix = 'bndist') {
+  const dir = tmp(prefix);
+  fs.writeFileSync(path.join(dir, 'index.html'), STUB_INDEX);
+  fs.writeFileSync(path.join(dir, 'app.ABCD1234.js'), 'export {};\n');
+  fs.writeFileSync(path.join(dir, 'app.ABCD1234.css'), 'body{}\n');
+  return dir;
+}
+
 // talk(sock, frames) -> every frame the other side sends until it closes: [[type, Buffer]]
 export function talk(sock, frames, { timeoutMs = 10000 } = {}) {
   return new Promise((resolve, reject) => {

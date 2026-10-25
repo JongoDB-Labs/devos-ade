@@ -10,7 +10,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { Readable } from 'node:stream';
-import { tmp } from './helpers.mjs';
+import { tmp, stubDist } from './helpers.mjs';
 import { session, jsonl, fake, uuid } from './transcripts.mjs';
 
 const DIR = tmp('bnimapi');
@@ -54,12 +54,12 @@ const queries = [];
 const fq = fakeQuery();
 let srv, base, imports;
 before(async () => {
-  const dist = tmp('bnimdist');
+  const dist = stubDist('bnimdist');
   const store = new Projects({ dir: tmp('bnimstate') });
   imports = new Imports({ dir: path.join(DIR, 'imports'), stage: path.join(DIR, 'stage'), helperFile: path.join(DIR, 'public', 'helper.json'),
     projects: { get: (id) => store.get(id) } });
   srv = createServer({ secret: SECRET, query: (a) => { const q = fq(a); queries.push(a); return q; }, spawn: () => {}, call, distDir: dist,
-    plainDir: path.resolve(import.meta.dirname, '../plain'), logger: () => {}, projects: store, imports });
+    logger: () => {}, projects: store, imports });
   await new Promise((r) => srv.server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${srv.server.address().port}`;
   fs.rmSync(dist, { recursive: true, force: true });

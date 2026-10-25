@@ -338,7 +338,7 @@ you type into the search travels from your device to the portal, as every reques
     only to a Code tab whose page has reported since it loaded (so it is unlocked and listening), and asks in place:
     the page is not reloaded, so unsaved edits in its editor stay. Otherwise (not loaded, locked, a phone) the portal
     opens `code.<host>/?git=hosts` or `?git=clone` instead, a deep link kept through the unlock (below).
-  A frame that is locked, not loaded (a phone, a browser that never opened Code) or the plain page answers nothing:
+  A frame that is locked or not loaded (a phone, a browser that never opened Code) answers nothing:
   the search then says where to look instead.
 - **Chat conversations** come from Open WebUI's own search API, asked by the portal server (`GET /api/search/chats`):
   it signs in to Open WebUI the way the Chat tab does — `POST /api/v1/auths/signin` with `X-Portal-User: <owner email>`

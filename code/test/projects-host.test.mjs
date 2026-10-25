@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { tmp } from './helpers.mjs';
+import { tmp, stubDist } from './helpers.mjs';
 
 const DIR = tmp('bnhost');
 const ROOTS = path.join(DIR, 'roots.json');
@@ -138,8 +138,8 @@ before(async () => {
   store = new Projects({ dir: tmp('bnhostapi') });
   store.syncHosts();
   writeRoots(live);   // (old: no longer added)
-  const dist = tmp('bnhostdist');
-  srv = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call, distDir: dist, plainDir: path.resolve(import.meta.dirname, '../plain'), logger: () => {}, projects: store });
+  const dist = stubDist('bnhostdist');
+  srv = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call, distDir: dist, logger: () => {}, projects: store });
   await new Promise((r) => srv.server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${srv.server.address().port}`;
 });

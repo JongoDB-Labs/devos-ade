@@ -7,11 +7,11 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { WebSocket } from 'ws';
-import { createServer, withMeta, ownOrigin } from '../server/main.mjs';
+import { createServer, withMeta, ownOrigin, NO_BUILD } from '../server/main.mjs';
 import { SandboxError } from '../server/spawn-client.mjs';
 import { actionResult, availableRow, installedRow, mcpConfig } from '../server/api.mjs';
 import { fakeQuery } from './fake-sdk.mjs';
-import { tmp } from './helpers.mjs';
+import { tmp, stubDist, STUB_INDEX } from './helpers.mjs';
 
 const SECRET = 'ab'.repeat(16);
 const SID = '3f2a1b4c-5d6e-4f70-8192-a3b4c5d6e7f8';
@@ -68,8 +68,8 @@ const call = async (req, opts) => { calls.push([req, opts?.input?.length]); cons
 
 let srv, base, origin;
 before(async () => {
-  const dist = tmp('bndist');
-  srv = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call, distDir: dist, plainDir: path.resolve(import.meta.dirname, '../plain'),
+  const dist = stubDist('bndist');
+  srv = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call, distDir: dist,
     versions: { sdk: '0.3.296', claudeCode: '2.1.296' }, logger: () => {}, reloadPollMs: 20, reloadMaxMs: 300 });
   await new Promise((r) => srv.server.listen(0, '127.0.0.1', r));
   const port = srv.server.address().port;
@@ -106,11 +106,17 @@ test('state changes only from the page\'s own Origin', async () => {
   assert.equal(ownOrigin({ headers: { host: 'evil host' } }), null);
 });
 
-test('the page: the plain one without a build, with the CSP nonce and the portal origin as meta tags', async () => {
+test('the page: the build\'s index.html with the CSP nonce and the portal origin as meta tags, nothing else added', async () => {
   const r = await req('GET', '/', { headers: { 'X-Bn-Csp-Nonce': '0123456789abcdef-0123', 'X-Bn-Portal-Origin': 'http://bedrock-now.localhost:8800' } });
   assert.equal(r.status, 200);
   assert.match(r.text, /<meta name="bn-csp-nonce" content="0123456789abcdef-0123">/);
   assert.match(r.text, /<meta name="bn-style-nonce" content="0123456789abcdef-0123">/);
+  // the build's page as it is, the three meta tags before </head> its only change: no inline script or style, no
+  // handler attribute, nothing from elsewhere comes from serving it
+  assert.equal(r.text, withMeta(STUB_INDEX, { nonce: '0123456789abcdef-0123', portal: 'http://bedrock-now.localhost:8800' }));
+  assert.ok(!/<script>|<style|\sstyle=|\son[a-z]+=|https?:\/\//.test(STUB_INDEX));
+  assert.equal(r.text.match(/<script\b[^>]*>/g).join(), '<script type="module" src="app.ABCD1234.js">');
+  assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
   const st = await req('GET', '/api/state', { headers: { 'X-Bn-Portal-Origin': 'https://bn.tail1.ts.net', 'X-Bn-Terminal-Host': 'bn-terminal.tail1.ts.net', 'X-Bn-Remote': '1' } });
   assert.equal(st.json.portal_origin, 'https://bn.tail1.ts.net');
   assert.equal(st.json.remote, true, 'Caddy\'s remote site says so');
@@ -127,20 +133,58 @@ test('the page: the plain one without a build, with the CSP nonce and the portal
   assert.equal(r.headers.get('cache-control'), 'no-store');
   const bad = await req('GET', '/', { headers: { 'X-Bn-Csp-Nonce': '"><script>', 'X-Bn-Portal-Origin': 'javascript:alert(1)' } });
   assert.match(bad.text, /bn-csp-nonce" content=""/); assert.match(bad.text, /bn-portal-origin" content=""/);
-  const js = await req('GET', '/app.js');
+  const js = await req('GET', '/app.ABCD1234.js');
   assert.equal(js.headers.get('content-type'), 'text/javascript; charset=utf-8');
   assert.equal(js.headers.get('x-content-type-options'), 'nosniff');
   const etag = js.headers.get('etag');
-  assert.equal((await fetch(`${base}/app.js`, { headers: H({ 'If-None-Match': etag }) })).status, 304);
+  assert.match(etag, /^"[A-Za-z0-9_-]{22}"$/);
+  assert.equal((await fetch(`${base}/app.ABCD1234.js`, { headers: H({ 'If-None-Match': etag }) })).status, 304);
+  assert.equal((await req('GET', '/app.ABCD1234.css')).headers.get('content-type'), 'text/css; charset=utf-8');
   assert.equal((await req('GET', '/nope.js')).status, 404);
   assert.match((await req('GET', '/some/route')).text, /bn-csp-nonce/);   // the page's own routes
   assert.equal(withMeta('<html><head></head></html>', { nonce: 'n', portal: 'p&"<' }).includes('p&amp;&quot;&lt;'), true);
-  assert.ok(srv.site.built === false);
-  // the plain page itself: no inline script or style, nothing from elsewhere, no HTML sinks in its script
-  const html = fs.readFileSync(path.resolve(import.meta.dirname, '../plain/index.html'), 'utf8');
-  const appjs = fs.readFileSync(path.resolve(import.meta.dirname, '../plain/app.js'), 'utf8');
-  assert.ok(!/<script>|<style|\sstyle=|\son[a-z]+=|https?:\/\//.test(html));
-  assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(|new Function/.test(appjs));
+  assert.ok(srv.site.built === true);
+});
+
+test('no build in the image: every page request one fixed 503 with the page\'s headers, the API as ever, said once at start', async () => {
+  for (const distDir of [tmp('bnnobuild'), path.join(tmp('bnnobuild'), 'missing')]) {
+    const said = [];
+    const b = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call, distDir, logger: (m) => said.push(m) });
+    await new Promise((r) => b.server.listen(0, '127.0.0.1', r));
+    const u = `http://127.0.0.1:${b.server.address().port}`;
+    const get = (p, h = {}, method = 'GET') => fetch(u + p, { method, headers: { 'X-Bn-Code-Proxy': SECRET, ...h } });
+    try {
+      assert.equal(b.site.built, false);
+      for (const p of ['/', '/index.html', '/sessions/x', '/app.ABCD1234.js', '/favicon.svg']) {
+        const r = await get(p, { 'X-Bn-Csp-Nonce': 'abcdefabcdefabcdef' });
+        assert.equal(r.status, 503, p);
+        assert.equal(await r.text(), NO_BUILD, p);
+        assert.equal(r.headers.get('content-type'), 'text/plain; charset=utf-8', p);
+        assert.equal(r.headers.get('x-content-type-options'), 'nosniff', p);
+        assert.equal(r.headers.get('cache-control'), 'no-store', p);
+      }
+      assert.equal(NO_BUILD, 'This image has no Code page build: run ./stack update\n');
+      const head = await get('/', {}, 'HEAD');
+      assert.equal(head.status, 503);
+      assert.equal(await head.text(), '');
+      // what was refused before is refused as before: another method, the artifact viewer's pages on the code host,
+      // no secret header
+      assert.equal((await get('/', { Origin: u }, 'POST')).status, 405);
+      assert.equal((await get('/artifact/html.html')).status, 404);
+      assert.equal((await get('/artifact/html.html', { 'X-Bn-Artifact': '1' })).status, 404);
+      assert.equal((await fetch(`${u}/healthz`)).status, 200);
+      // the API as ever
+      const st = await get('/api/state');
+      assert.equal(st.status, 200);
+      assert.equal(typeof (await st.json()).versions, 'object');
+      assert.equal((await get('/api/nope')).status, 404);
+      // one line at start, nothing about it per request
+      assert.deepEqual(said.filter((m) => /^page:/.test(m)),
+        ['page: this image has no Code page build (code/web/dist/index.html): every page request is answered 503 — run ./stack update']);
+    } finally {
+      b.mgr.closeAll(); b.wss.close(); b.server.close();
+    }
+  }
 });
 
 test('a frontend build: index.html no-store with its meta tags, hashed files and chunks immutable, the rest revalidated', async () => {
@@ -151,12 +195,14 @@ test('a frontend build: index.html no-store with its meta tags, hashed files and
   fs.writeFileSync(path.join(dist, 'app.ZYXW9876.css'), 'body{}');
   fs.writeFileSync(path.join(dist, 'chunks', 'chunk.QWER5678.js'), 'export {}');
   fs.writeFileSync(path.join(dist, 'favicon.svg'), '<svg/>');
-  const b = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call, distDir: dist, plainDir: path.resolve(import.meta.dirname, '../plain'), logger: () => {} });
+  const said = [];
+  const b = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call, distDir: dist, logger: (m) => said.push(m) });
   await new Promise((r) => b.server.listen(0, '127.0.0.1', r));
   const u = `http://127.0.0.1:${b.server.address().port}`;
   const get = (p, h = {}) => fetch(u + p, { headers: { 'X-Bn-Code-Proxy': SECRET, ...h } });
   try {
     assert.equal(b.site.built, true);
+    assert.deepEqual(said.filter((m) => /^page:/.test(m)), ['page: the frontend build (code/web/dist), 5 files']);
     let r = await get('/', { 'X-Bn-Csp-Nonce': 'abcdefabcdefabcdef', 'X-Bn-Portal-Origin': 'http://bn.localhost:8800' });
     assert.equal(r.headers.get('cache-control'), 'no-store');
     assert.match(await r.text(), /<meta name="bn-csp-nonce" content="abcdefabcdefabcdef">[\s\S]*<\/head>/);
@@ -183,7 +229,7 @@ test('the artifact site: only the viewer\'s files, GET/HEAD; never the page, the
   fs.writeFileSync(path.join(dist, 'app.ABCD1234.js'), 'console.log(1)');
   fs.writeFileSync(path.join(dist, 'artifact', 'html.html'), '<!doctype html><script src="runner.ABCD1234.js"></script>');
   fs.writeFileSync(path.join(dist, 'artifact', 'runner.ABCD1234.js'), '1');
-  const b = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call, distDir: dist, plainDir: path.resolve(import.meta.dirname, '../plain'), logger: () => {} });
+  const b = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call, distDir: dist, logger: () => {} });
   await new Promise((r) => b.server.listen(0, '127.0.0.1', r));
   const u = `http://127.0.0.1:${b.server.address().port}`;
   const art = { 'X-Bn-Code-Proxy': SECRET, 'X-Bn-Artifact': '1' };
@@ -587,7 +633,7 @@ test('Bypass permissions allowed (CODE_ALLOW_BYPASS): the state says so; set_mod
     if (r.op === 'ws.restore') { restores.push(r); return { result: { path: r.path, action: 'trashed' } }; }
     return call(r);
   };
-  const s2 = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call: call2, distDir: tmp('bndist2'), plainDir: path.resolve(import.meta.dirname, '../plain'),
+  const s2 = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call: call2, distDir: stubDist('bndist2'),
     logger: () => {}, allowBypass: true, sandbox: { egress: false, egressHost: false, workspace: '/home/u/projects' } });
   await new Promise((r) => s2.server.listen(0, '127.0.0.1', r));
   const b2 = `http://127.0.0.1:${s2.server.address().port}`;

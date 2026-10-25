@@ -128,7 +128,7 @@ test_the_github_apps_slug_is_written_in_one_place() {
   assert_contains "$(grep '^export const DEFAULT_APPS' "$o")" "appSlug: GITHUB_APP_SLUG"
   # no other slug in the code, and no App address with a slug in it in the docs (they name the App, not its address)
   hits="$(cd "$T_ROOT" && git grep -nE "appSlug: '[a-z0-9-]+'|apps/[a-z0-9][a-z0-9-]*/installations|github\.com/apps/[a-z0-9][a-z0-9-]*([^a-z0-9<-]|\$)" \
-    -- code/server code/web/src code/plain portal/portal lib catalog README.md docs ':!CHANGELOG.md' || true)"
+    -- code/server code/web/src portal/portal lib catalog README.md docs ':!CHANGELOG.md' || true)"
   assert_eq "$hits" ""
 }
 

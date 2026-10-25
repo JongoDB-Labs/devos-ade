@@ -159,7 +159,7 @@
   }
 
   // The framed page says how many permission prompts wait ({type: "bn-code-status", pending: N, busy, bypass, waiting,
-  // sessions}, or the plain page's {bn: "code", pending: N}); only the code host may. bypass: a session runs without
+  // sessions}); only the code host may. bypass: a session runs without
   // asking (Bypass permissions) — the badge turns red and says ⏵⏵ (the CLI's marker) while nothing waits.
   // the Settings place of each greyed item the Code page has (catalog/setup-links.tsv: portal/tests/test_code.py
   // checks each against it)
@@ -174,7 +174,7 @@
     const codeFrame = () => document.querySelector('#frames iframe[data-app="code"]');
     window.addEventListener("message", (e) => {
       const f = codeFrame();
-      if (e.origin !== codeOrigin || !f || e.source !== f.contentWindow || !e.data || (e.data.type !== "bn-code-status" && e.data.bn !== "code") || !badge) return;
+      if (e.origin !== codeOrigin || !f || e.source !== f.contentWindow || !e.data || e.data.type !== "bn-code-status" || !badge) return;
       markUsed();
       const n = Number.isInteger(e.data.pending) && e.data.pending > 0 ? Math.min(e.data.pending, 99) : 0;
       const bypass = e.data.bypass === true;
@@ -183,18 +183,16 @@
       badge.classList.toggle("bypass", bypass);
       badge.title = bypass ? "A Code session runs without asking (Bypass permissions)" : "";
       document.title = n ? `(${n}) DevOS ADE` : "DevOS ADE";
-      if (e.data.type === "bn-code-status") {
-        reported = { waiting: Number.isInteger(e.data.waiting) && e.data.waiting > 0 ? Math.min(e.data.waiting, 99) : 0, sessions: takeSessions(e.data.sessions), git: takeGit(e.data.git),
-          // how many Git hosts are connected (a number only; the walkthrough's "Connect a git host" step), null: not known
-          hosts: Number.isInteger(e.data.hosts) && e.data.hosts >= 0 ? Math.min(e.data.hosts, 99) : null };
-        renderCard();
-        // the frame reported since it (re)loaded: the global search may ask it (search.js); a reload (a deep link, the
-        // unlock ending) waits for its next report
-        if (!hooked.has(f)) { hooked.add(f); f.addEventListener("load", () => { loadedAt = Date.now(); }); }
-        reportedAt = Date.now();
-        // Activity (activity.js): the sessions that wait for you — the same checked copy the card shows
-        document.dispatchEvent(new CustomEvent("bn:code-status", { detail: { waiting: reported.waiting, sessions: reported.sessions.map((x) => ({ ...x })), git: reported.git.map((x) => ({ ...x })), hosts: reported.hosts } }));
-      }
+      reported = { waiting: Number.isInteger(e.data.waiting) && e.data.waiting > 0 ? Math.min(e.data.waiting, 99) : 0, sessions: takeSessions(e.data.sessions), git: takeGit(e.data.git),
+        // how many Git hosts are connected (a number only; the walkthrough's "Connect a git host" step), null: not known
+        hosts: Number.isInteger(e.data.hosts) && e.data.hosts >= 0 ? Math.min(e.data.hosts, 99) : null };
+      renderCard();
+      // the frame reported since it (re)loaded: the global search may ask it (search.js); a reload (a deep link, the
+      // unlock ending) waits for its next report
+      if (!hooked.has(f)) { hooked.add(f); f.addEventListener("load", () => { loadedAt = Date.now(); }); }
+      reportedAt = Date.now();
+      // Activity (activity.js): the sessions that wait for you — the same checked copy the card shows
+      document.dispatchEvent(new CustomEvent("bn:code-status", { detail: { waiting: reported.waiting, sessions: reported.sessions.map((x) => ({ ...x })), git: reported.git.map((x) => ({ ...x })), hosts: reported.hosts } }));
     });
     // A greyed item of the Code page chosen ({type: "bn-code-setup", reason}: catalog/setup-links.tsv — its Who
     // answers, terminal panel, modes, previews, folders): Settings where that is turned on (settings.js goTo), from the

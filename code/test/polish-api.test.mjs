@@ -12,7 +12,7 @@ import { SandboxError } from '../server/spawn-client.mjs';
 import { permSide } from '../server/api.mjs';
 import { BYPASS_ASK } from '../server/modes.mjs';
 import { fakeQuery } from './fake-sdk.mjs';
-import { tmp } from './helpers.mjs';
+import { stubDist } from './helpers.mjs';
 
 const SECRET = 'cd'.repeat(16);
 const SHA = 'a'.repeat(64);
@@ -30,8 +30,8 @@ const call = async (req) => { calls.push(req); const a = answers[req.op]; if (!a
 
 let srv, base;
 before(async () => {
-  const dist = tmp('bnpdist');
-  srv = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call, distDir: dist, plainDir: path.resolve(import.meta.dirname, '../plain'), logger: () => {} });
+  const dist = stubDist('bnpdist');
+  srv = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call, distDir: dist, logger: () => {} });
   await new Promise((r) => srv.server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${srv.server.address().port}`;
   fs.rmSync(dist, { recursive: true, force: true });

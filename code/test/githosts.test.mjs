@@ -17,7 +17,7 @@ import { SandboxError } from '../server/spawn-client.mjs';
 import { agentAnswer, AGENT, sshString, keyBlob, fingerprint, publicKeyBlob, newKey, loadKey, userauth, KNOWN_HOSTS, FAILURE } from '../server/sshagent.mjs';
 import { createServer } from '../server/main.mjs';
 import { fakeQuery } from './fake-sdk.mjs';
-import { tmp, TERMINAL_DIR } from './helpers.mjs';
+import { tmp, TERMINAL_DIR, stubDist } from './helpers.mjs';
 
 const ROOT = tmp('bnhosts');
 after(() => fs.rmSync(ROOT, { recursive: true, force: true }));
@@ -344,8 +344,8 @@ before(async () => {
   rs = store('routes');
   const fx = fakeSandbox(() => repoState());
   fakeSandbox.asks = [];
-  const dist = tmp('bndist');
-  srv = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call: fx.call, distDir: dist, plainDir: path.resolve(import.meta.dirname, '../plain'), versions: {}, logger: () => {}, gitHosts: rs });
+  const dist = stubDist('bndist');
+  srv = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call: fx.call, distDir: dist, versions: {}, logger: () => {}, gitHosts: rs });
   await new Promise((r) => srv.server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${srv.server.address().port}`;
   fs.rmSync(dist, { recursive: true, force: true });

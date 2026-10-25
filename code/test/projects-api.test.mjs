@@ -14,7 +14,7 @@ import { SandboxError } from '../server/spawn-client.mjs';
 import { Projects } from '../server/projects.mjs';
 import { hashOf, stateOf, withheldText } from '../server/trust.mjs';
 import { fakeQuery } from './fake-sdk.mjs';
-import { tmp } from './helpers.mjs';
+import { tmp, stubDist } from './helpers.mjs';
 import { WebSocket } from 'ws';
 
 const SECRET = 'ef'.repeat(16);
@@ -81,9 +81,9 @@ const query = (a) => { const q = fq(a); queries.push(q); return q; };
 
 let srv, base, store;
 before(async () => {
-  const dist = tmp('bnpjdist');
+  const dist = stubDist('bnpjdist');
   store = new Projects({ dir: tmp('bnpjstate') });
-  srv = createServer({ secret: SECRET, query, spawn: () => {}, call, distDir: dist, plainDir: path.resolve(import.meta.dirname, '../plain'), logger: () => {}, projects: store });
+  srv = createServer({ secret: SECRET, query, spawn: () => {}, call, distDir: dist, logger: () => {}, projects: store });
   await new Promise((r) => srv.server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${srv.server.address().port}`;
   fs.rmSync(dist, { recursive: true, force: true });
