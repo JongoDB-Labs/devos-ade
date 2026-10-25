@@ -1,6 +1,14 @@
 {
  "name": "bedrock-now",
  "networks": {
+  "chat-out": {
+   "external": false,
+   "name": "bedrock-now_chat-out"
+  },
+  "chat-proxy": {
+   "external": false,
+   "name": "bedrock-now_chat-proxy"
+  },
   "code-link": {
    "external": false,
    "name": "bedrock-now_code-link"
@@ -63,6 +71,17 @@
      "type": "volume"
     }
    ]
+  },
+  "chat-egress": {
+   "container_name": null,
+   "image": "bedrock-now/terminal-egress:local",
+   "labels": {},
+   "networks": [
+    "chat-out",
+    "chat-proxy"
+   ],
+   "ports": [],
+   "volumes": []
   },
   "code": {
    "container_name": null,
@@ -269,7 +288,9 @@
    "container_name": null,
    "image": "bedrock-now/terminal:local",
    "labels": {},
-   "networks": [],
+   "networks": [
+    "chat-proxy"
+   ],
    "ports": [],
    "volumes": [
     {
