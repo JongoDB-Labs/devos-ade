@@ -36,6 +36,7 @@ REPO = Path(os.environ.get("BN_REPO_DIR", "/repo"))
 OUT = Path(os.environ.get("E2E_OUT_DIR", "/out"))
 sys.path.insert(0, str(REPO / "portal"))
 from portal import settings as st  # noqa: E402  (the portal's own snapshot reader, layout reader and rules)
+from portal import answers as an  # noqa: E402  (the subscriptions' tools, as /api/settings lists them)
 
 from playwright.sync_api import sync_playwright  # noqa: E402
 
@@ -128,6 +129,8 @@ def settings_json():
             "helper": {"running": True, "heartbeat_at": int(time.time()), "settings": True, "diagnostics": list(st.DIAG_ACTIONS),
                        "in_progress": False, "job": None},
             "here": {"remote": MODE["remote"], "allowed": True}, "apps": {}, "user": "owner@example.com",
+            # (Your AI subscriptions: the catalog's tools, not checked yet — the row a setting may be shown inside)
+            "subscriptions": an.tools(REPO / "catalog", Path(tempfile.mkdtemp())),
             "backups": {"written_at": None, "backups": [], "nightly": {"on": on, "hour": 2, "keep": 7}},
             "remote": {"on": on, "mode": "tailscale" if on else "off", "url": "https://bn.tail1234.ts.net" if on else ""}}
 
@@ -172,11 +175,13 @@ class Stub(http.server.BaseHTTPRequestHandler):
 # --- the page ---
 
 COLLECT = """(sel) => {
+  // (a setting's row; a row of the page's own (data-own), whose settings are its blocks with data-for; such a block)
   const one = (r) => {
-    const acts = r.querySelector(':scope > .set-actions');
+    const acts = r.querySelector(':scope > .set-actions') || r.querySelector(':scope > .set-project-actions');
     const env = r.querySelector('.set-envkey code');   // "In .env: KEY · the keys shown inside the row"
-    const o = { key: r.dataset.key, switch: null, selects: [], change: [], diag: [], reveal: [], visible: r.offsetParent !== null,
-      inside: env ? env.textContent.split(' · ').slice(1) : [] };
+    const o = { key: r.dataset.key || r.dataset.own || r.dataset.for, switch: null, selects: [], change: [], diag: [], reveal: [],
+      visible: r.offsetParent !== null,
+      inside: env ? env.textContent.split(' · ').slice(1) : r.dataset.own ? [...r.querySelectorAll('[data-for]')].map((e) => e.dataset.for) : [] };
     if (!acts) return o;
     for (const sw of acts.querySelectorAll('[role=switch]')) o.switch = { enabled: !sw.disabled, on: sw.getAttribute('aria-checked') === 'true' };
     for (const s of acts.querySelectorAll('select')) o.selects.push({ enabled: !s.disabled, options: [...s.options].map((x) => [x.value, x.disabled]) });
@@ -227,7 +232,8 @@ def walk(page, failures, label):
         page.click(f".set-nav-item[data-section='{sid}']")
         page.wait_for_selector(f"#set-{sid}:not([hidden])")
         page.evaluate("() => document.querySelectorAll('#settings details.set-more').forEach((d) => { d.open = true; })")
-        for o in page.evaluate(COLLECT, f"#set-{sid} .set-row[data-key], #set-{sid} .set-adv-item[data-key]"):
+        for o in page.evaluate(COLLECT, f"#set-{sid} .set-row[data-key], #set-{sid} .set-adv-item[data-key], #set-{sid} .set-row[data-own], "
+                                        f"#set-{sid} .set-row[data-own] [data-for]"):
             if o["visible"]:
                 seen[o["key"]] = o
     rows = [r for r in (LAYOUT["rows"] if MODE["layout"] else []) if not r["key"].startswith("+") and r["place"] != "with"]
@@ -237,9 +243,21 @@ def walk(page, failures, label):
         if not r["parent"]:
             failures.append(f"{label}: {r['key']} ({r['section']}, {r['place']}) not shown in its section")
         page.evaluate("k => { location.hash = '#settings'; location.hash = '#settings/' + k; }", r["key"])
-        sel = f"#settings .set-row[data-key={r['key']}], #settings .set-adv-item[data-key={r['key']}]"
+        sel = f"#settings .set-row[data-key={r['key']}], #settings .set-adv-item[data-key={r['key']}], #settings [data-for={r['key']}]"
         page.wait_for_selector(sel, state="visible", timeout=10000)
         seen[r["key"]] = page.evaluate(COLLECT, sel)[0]
+    # a setting shown inside one of the page's own rows (+subscriptions' Claude plan switch), not seen in its section (that
+    # row under a switch that is off): by its address too, and the own row it lands in
+    for r in (LAYOUT["rows"] if MODE["layout"] else []):
+        if r["place"] != "with" or not r["parent"].startswith("+") or r["key"] in seen:
+            continue
+        page.evaluate("k => { location.hash = '#settings'; location.hash = '#settings/' + k; }", r["key"])
+        sel = f"#settings [data-for={r['key']}]"
+        page.wait_for_selector(sel, state="visible", timeout=10000)
+        seen[r["key"]] = page.evaluate(COLLECT, sel)[0]
+        own = page.evaluate(COLLECT, f"#settings .set-row[data-own='{r['parent']}']")
+        if own:
+            seen.setdefault(r["parent"], own[0])
     return seen
 
 

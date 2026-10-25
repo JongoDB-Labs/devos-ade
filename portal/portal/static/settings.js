@@ -1436,13 +1436,16 @@
       if (t.id === "claude" && pk) {
         const plan = el("div", { class: "set-subs-where set-subs-plan", "data-for": "CODE_CLAUDE_PLAN", id: "set-row-CODE_CLAUDE_PLAN" },
           el("span", { class: "set-name", id: "set-name-CODE_CLAUDE_PLAN", text: pk.label || "Use my Claude plan in the Code page and Chat" }));
-        if (!codeOn()) {
-          plan.append(" ", el("a", { href: "#settings/CODE_ENABLED", class: "note", text: "Needs the Code page: Settings › Claude Code › Code page" }));
-        } else if (editable(pk)) {
+        // (its switch whether the Code page is on or not, as any setting's: with it off, it takes effect once it is on)
+        if (editable(pk)) {
           plan.append(el("span", { class: "set-project-actions" }, toggle(pk, shown(pk), "set-name-CODE_CLAUDE_PLAN")));
         } else plan.append(" ", el("span", { class: "badge", text: display(pk) || "Off" }));
+        if (!codeOn()) {
+          plan.append(" ", el("a", { href: "#settings/CODE_ENABLED", class: "note", "data-setup": "code-off",
+            text: "It takes effect with the Code page: Settings › Claude Code › Code page" }));
+        }
         // (from your devices, or with changes off here: the way in a terminal on the computer running DevOS ADE)
-        if (codeOn() && (data.here.remote || !canChange() || !editable(pk))) {
+        if (data.here.remote || !canChange() || !editable(pk)) {
           plan.append(cliLine(pk, "On the computer running DevOS ADE, in a terminal: ", "Copy the command for Use my Claude plan in the Code page and Chat"));
         }
         plan.append(el("p", { class: "note", id: "set-sum-CODE_CLAUDE_PLAN", text: "Off by default: Anthropic's support article and its legal page pull apart on apps like this one — your choice (Details)." }),
