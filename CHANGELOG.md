@@ -6,6 +6,14 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Fixed
+
+- **Tests:** the sandbox's isolation check (`terminal/terminal-isolation`) no longer fails on a moment of this
+  computer's DNS. Its public-site probes are tried again, up to three more times 15 s apart, only while this computer's
+  DNS answers one of their names with a private or loopback address, which the sandbox's proxy rightly refuses. A
+  failure that remains says first that this computer's DNS answered that name with that address, and so does a
+  DNS-rebinding probe that tested nothing. Its refusal checks are judged once, as before.
+
 ## [0.26.0] - 2026-10-25
 
 ### Added

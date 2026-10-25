@@ -402,3 +402,132 @@ test_host_egress_runs_in_its_own_throwaway() {
   assert_contains "$r" 'config apply --stdin < "$LOGS/hostegress-off.in"'
   assert_contains "$r" '[ "$gone" -lt "$back" ]'
 }
+
+# --- terminal-isolation's public side (lib.sh public_probe_steady): fakes of the probe, the proxy's log and this
+# computer's resolver ---
+_public() { printf 'internet\t200\nproxy-public\t%s\nnode-fetch\t200\nnpm-install\tok\npip-download\t1\ngit-https\t1\ngit-ssh\t1\n' "$1"; }
+_public_ok() { _public '200 200'; }
+_public_refused() { _public '200 403'; }
+# (fails its first two tries; a count in a file: each try runs in a subshell)
+_public_twice() {
+  local n; n=$(( $(cat "$TMP/tries" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$TMP/tries"
+  if [ "$n" -le 2 ]; then _public_refused; else _public_ok; fi
+}
+# the proxy's log, as bn-egress.mjs writes it; the argument (SINCE) kept for the test
+_egress_loopback() {
+  printf '%s\n' "$1" >> "$TMP/since"
+  printf '%s\n' '{"t":"2026-10-25T10:31:20.568Z","event":"refused","method":"GET","host":"example.com","port":80,"address":"127.0.0.1","status":403,"why":"example.com resolves to 127.0.0.1: loopback"}'
+}
+_egress_refusals_only() {
+  printf '%s\n' '{"t":"2026-10-25T10:31:09.297Z","event":"refused","method":"GET","host":"127.0.0.1.nip.io","port":80,"address":"127.0.0.1","status":403,"why":"127.0.0.1.nip.io resolves to 127.0.0.1: loopback"}' \
+    '{"t":"2026-10-25T10:31:10.541Z","event":"refused","method":"GET","host":"10.255.255.1","port":80,"address":"10.255.255.1","status":403,"why":"a private address (RFC 1918)"}'
+}
+_egress_none() { :; }
+_dns_public() { local n; for n in "$@"; do printf '%s 104.20.23.154 2606:4700:10::6814:179a\n' "$n"; done; }
+_dns_example_loopback() {
+  local n; for n in "$@"; do case "$n" in example.com) printf '%s 127.0.0.1\n' "$n" ;; *) printf '%s 104.20.23.154\n' "$n" ;; esac; done
+}
+
+test_e2e_public_probes_are_tried_again_only_while_this_computers_dns_answers_privately() {
+  local rc
+  export E2E_PUBLIC_GAP_S=0 E2E_HOST_DNS=_dns_public
+  # passes at once: one try, nothing found
+  rc=0; public_probe_steady _public_ok _egress_loopback || rc=$?
+  assert_eq "$rc/$PUBLIC_TRIES/$PUBLIC_DNS/$PUBLIC_DNS_SEEN" "0/1//"
+  # the proxy refused example.com for the loopback address this computer's DNS gave it: tried again, passes at try 3
+  rm -f "$TMP/tries" "$TMP/since"
+  rc=0; public_probe_steady _public_twice _egress_loopback || rc=$?
+  assert_eq "$rc/$PUBLIC_TRIES/$PUBLIC_DNS" "0/3/"
+  assert_eq "$PUBLIC_DNS_SEEN" "this computer's DNS answered example.com with 127.0.0.1"
+  assert_contains "$PUBLIC_LOG" "# public probes, try 3"
+  assert_contains "$PUBLIC_LOG" "# this computer's DNS: example.com 104.20.23.154"
+  assert_eq "$(printf '%s' "$PUBLIC_OUT" | awk -F'\t' '$1 == "proxy-public" { print $2 }')" "200 200"
+  # (the log is read from the try's start, in unix seconds)
+  assert_eq "$(grep -cE '^[0-9]{10}$' "$TMP/since")" 2
+  # the same while it stays so: 1 + 3 tries, then a FAIL that says why
+  rc=0; public_probe_steady _public_refused _egress_loopback || rc=$?
+  assert_eq "$rc/$PUBLIC_TRIES" "1/4"
+  assert_eq "$PUBLIC_DNS" "this computer's DNS answered example.com with 127.0.0.1"
+  assert_eq "$(public_probe_bad "$PUBLIC_OUT")" " proxy-public:200 403"
+  # E2E_PUBLIC_RETRIES bounds it
+  rc=0; E2E_PUBLIC_RETRIES=1 public_probe_steady _public_refused _egress_loopback || rc=$?
+  assert_eq "$rc/$PUBLIC_TRIES" "1/2"
+  # the refusal not in the log (its window was full) but this computer's resolver answering privately: tried again too
+  rc=0; E2E_HOST_DNS=_dns_example_loopback public_probe_steady _public_refused _egress_none || rc=$?
+  assert_eq "$rc/$PUBLIC_TRIES/$PUBLIC_DNS" "1/4/this computer's DNS answered example.com with 127.0.0.1"
+  # any other failure is final at once: the proxy's log has only refusals of names that are not the public probes'
+  # (DNS rebinding, a private address), and this computer's DNS answers publicly
+  rc=0; public_probe_steady _public_refused _egress_refusals_only || rc=$?
+  assert_eq "$rc/$PUBLIC_TRIES/$PUBLIC_DNS/$PUBLIC_DNS_SEEN" "1/1//"
+  rc=0; public_probe_steady _public_refused _egress_none || rc=$?
+  assert_eq "$rc/$PUBLIC_TRIES/$PUBLIC_DNS" "1/1/"
+  # a probe that says nothing fails every key
+  assert_eq "$(public_probe_bad '')" " internet: proxy-public: node-fetch: npm-install: pip-download: git-https: git-ssh:"
+}
+
+test_e2e_public_dns_problem_reads_the_proxys_log_and_this_computers_answers() {
+  local a out
+  for a in 127.0.0.1 10.1.2.3 100.64.0.1 172.16.0.1 172.31.255.254 192.168.1.1 169.254.169.254 0.0.0.0 224.0.0.1 198.18.0.1 \
+           192.0.2.1 203.0.113.5 ::1 :: fd00::1 FE80::1 ff02::1 ::ffff:127.0.0.1 ::ffff:10.0.0.1; do
+    not_public "$a" || { echo "$a counted as public" >&2; return 1; }
+  done
+  for a in 8.8.8.8 104.20.23.154 100.128.0.1 172.32.0.1 2606:4700::1 ::ffff:8.8.8.8 1.2.3 1.2.3.4.5 a.b.c.d ''; do
+    ! not_public "$a" || { echo "$a counted as not public" >&2; return 1; }
+  done
+  # the proxy's own words: the address it refused, IPv6 too
+  out="$(printf '%s\n' '{"event":"refused","method":"CONNECT","host":"registry.npmjs.org","port":443,"address":"::1","status":403,"why":"registry.npmjs.org resolves to ::1: loopback"}' |
+    public_dns_problem '' registry.npmjs.org example.com)"
+  assert_eq "$out" "this computer's DNS answered registry.npmjs.org with ::1"
+  # a name that is not a public probe's, or a refusal without "resolves to", is not one
+  ! _egress_refusals_only | public_dns_problem "$(_dns_public example.com)" example.com >/dev/null || return 1
+  # this computer's own answer: an address no public name has, among others
+  out="$(public_dns_problem "github.com 140.82.112.3 fd00::1
+example.com 104.20.23.154" github.com example.com </dev/null)"
+  assert_eq "$out" "this computer's DNS answered github.com with fd00::1"
+  ! public_dns_problem "nip.io.example 127.0.0.1" github.com </dev/null >/dev/null || return 1
+  # this computer's resolver, offline: localhost
+  assert_contains "$(host_dns_answers localhost)" "127.0.0.1"
+}
+
+test_e2e_rebind_dns_problem_only_when_no_unrefused_name_got_its_address() {
+  local names='127.0.0.1.nip.io 146.112.61.106
+10.255.255.1.nip.io 146.112.61.106
+169.254.169.254.nip.io 146.112.61.106'
+  # none refused, none got their address (a filtering resolver's own page): those probes tested nothing
+  assert_eq "$(rebind_dns_problem '0 0 0 ' "$names")" "this computer's DNS answered 127.0.0.1.nip.io with 146.112.61.106, not 127.0.0.1"
+  assert_eq "$(rebind_dns_problem '1 0 1 ' "127.0.0.1.nip.io 127.0.0.1
+10.255.255.1.nip.io -
+169.254.169.254.nip.io 169.254.169.254")" "this computer's DNS answered 10.255.255.1.nip.io with -, not 10.255.255.1"
+  # one not refused that did get its address: the proxy let it through — no excuse for any of them
+  ! rebind_dns_problem '0 0 1 ' "127.0.0.1.nip.io 127.0.0.1
+10.255.255.1.nip.io 146.112.61.106
+169.254.169.254.nip.io 169.254.169.254" >/dev/null || return 1
+  ! rebind_dns_problem '1 1 1 ' "$names" >/dev/null || return 1
+  ! rebind_dns_problem '' "$names" >/dev/null || return 1
+}
+
+# run.sh: the refusals are judged once, from the first probe; only terminal_public_probe's keys are tried again,
+# and they are exactly E2E_PUBLIC_EXPECT's; the names they reach are E2E_PUBLIC_HOSTS
+test_e2e_terminal_isolation_tries_only_the_public_side_again() {
+  local r main pub k h
+  r="$(cat "$STACK_DIR/tests/e2e/run.sh")"
+  main="$(awk '/^terminal_probe\(\) \{/ { f = 1 } f { print } f && /^\}/ { exit }' "$STACK_DIR/tests/e2e/run.sh")"
+  pub="$(awk '/^terminal_public_probe\(\) \{/ { f = 1 } f { print } f && /^\}/ { exit }' "$STACK_DIR/tests/e2e/run.sh")"
+  [ -n "$main" ] && [ -n "$pub" ] || { echo "terminal_probe or terminal_public_probe not found" >&2; return 1; }
+  while IFS= read -r k; do
+    k="${k%%=*}"
+    assert_contains "$pub" "printf '$k\\t"
+    assert_not_contains "$main" "printf '$k\\t"
+  done <<< "$E2E_PUBLIC_EXPECT"
+  for k in proxy-rebind proxy-host proxy-private proxy-tls-private proxy-port 'x -o' egress:3128; do assert_not_contains "$pub" "$k"; done
+  for h in $(printf '%s\n' "$pub" | grep -oE 'https?://[a-z0-9.-]+|git@[a-z0-9.-]+' | sed -E 's#^(https?://|git@)##' | sort -u); do
+    case " $E2E_PUBLIC_HOSTS " in *" $h "*) ;; *) echo "$h is not in E2E_PUBLIC_HOSTS" >&2; return 1 ;; esac
+  done
+  # the strict side as it was: every refusal in the one list, a rebinding probe not refused a FAIL
+  assert_contains "$r" 'proxy-host="403 403 403 403 403 403 403 403 " proxy-private="403 403 403 403 403 403 403 403 403 "'
+  assert_contains "$r" 'proxy-host-ssh=403 proxy-tls-private="403 403 403 " proxy-port=403; do'
+  assert_contains "$r" '*0*|"") bad="$bad proxy-rebind:$rb"'
+  assert_contains "$r" 'public_probe_steady pub_try egress_since'
+  assert_contains "$r" 'pbad="$(public_probe_bad "$PUBLIC_OUT")"; bad="$bad$pbad"'
+  assert_contains "$r" '"${dns_note:+$dns_note — }unexpected:$bad'
+}

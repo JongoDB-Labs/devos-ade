@@ -404,3 +404,130 @@ host_folders_refused() {
     . "$STACK_DIR/lib/projects.sh" && _project_path_rules "$1"' _ "$phys/app" 2>/dev/null)" && return 1
   printf '%s\n' "${why:-its path breaks a rule of ./stack project}"
 }
+
+# --- terminal-isolation's "a public site is reachable" side, steady against this computer's DNS ---
+# The sandbox reaches public sites through its egress proxy, which asks Docker's DNS — this computer's resolver. When
+# that answers a public name with a private or loopback address for a while, the proxy rightly refuses it, and the
+# public probes fail for a reason that is not the sandbox's. Only these probes are tried again; the proxy's refusals
+# (this computer, private addresses, DNS rebinding) are judged once, as they come, in run.sh.
+E2E_PUBLIC_HOSTS='registry.npmjs.org example.com pypi.org files.pythonhosted.org github.com'
+E2E_PUBLIC_EXPECT='internet=200
+proxy-public=200 200
+node-fetch=200
+npm-install=ok
+pip-download=1
+git-https=1
+git-ssh=1'
+
+# public_probe_bad PROBE -> " key:value" for each public probe that PROBE (lines "key<TAB>value") has not as it must be
+public_probe_bad() {
+  local kv k got out=''
+  while IFS= read -r kv; do
+    k="${kv%%=*}"
+    got="$(printf '%s\n' "$1" | awk -F'\t' -v k="$k" '$1 == k && !f { print $2; f = 1 }')"
+    [ "$got" = "${kv#*=}" ] || out="$out $k:$got"
+  done <<< "$E2E_PUBLIC_EXPECT"
+  printf '%s' "$out"
+}
+
+# not_public ADDR -> 0 for an address no public name has: IPv4 0/8, 10/8, 100.64/10, 127/8, 169.254/16, 172.16/12,
+# 192.0.0/24, 192.0.2/24, 192.168/16, 198.18/15, 198.51.100/24, 203.0.113/24, 224/3; IPv6 ::, ::1, fc00::/7,
+# fe80::/10, ff00::/8 and the IPv4-mapped form of the IPv4 ones. 1 for any other address (or not an address).
+not_public() {
+  local a o1 o2 o3 o4
+  a="$(printf '%s' "$1" | tr 'A-F' 'a-f')"
+  case "$a" in
+    ::ffff:*.*.*.*) a="${a#::ffff:}" ;;
+    :: | ::1 | fc*:* | fd*:* | fe[89ab]*:* | ff*:*) return 0 ;;
+    *:*) return 1 ;;
+  esac
+  case "$a" in '' | *[!0-9.]* | .* | *. | *..*) return 1 ;; esac
+  IFS=. read -r o1 o2 o3 o4 <<< "$a"
+  case "$o3.$o4" in .* | *. | *.*.*) return 1 ;; esac
+  if [ "$o1" -eq 0 ] || [ "$o1" -eq 10 ] || [ "$o1" -eq 127 ] || [ "$o1" -ge 224 ]; then return 0; fi
+  if [ "$o1" -eq 100 ] && [ "$o2" -ge 64 ] && [ "$o2" -le 127 ]; then return 0; fi
+  if [ "$o1" -eq 172 ] && [ "$o2" -ge 16 ] && [ "$o2" -le 31 ]; then return 0; fi
+  case "$o1.$o2" in 169.254 | 192.168 | 198.18 | 198.19) return 0 ;; esac
+  case "$o1.$o2.$o3" in 192.0.0 | 192.0.2 | 198.51.100 | 203.0.113) return 0 ;; esac
+  return 1
+}
+
+# host_dns_answers NAME... -> "NAME ADDR ..." per name as this computer's resolver answers it now ("NAME -": none) —
+# dscacheutil on macOS (the system resolver, which Docker Desktop's DNS asks), getent ahosts elsewhere
+host_dns_answers() {
+  local n a
+  for n in "$@"; do
+    case "$(uname -s)" in
+      Darwin) a="$(dscacheutil -q host -a name "$n" 2>/dev/null | awk '$1 == "ip_address:" || $1 == "ipv6_address:" { print $2 }')" ;;
+      *) a="$(getent ahosts "$n" 2>/dev/null | awk '{ print $1 }')" ;;
+    esac
+    a="$(printf '%s\n' "$a" | awk 'NF && !seen[$0]++' | tr '\n' ' ' | sed 's/ *$//')"
+    printf '%s %s\n' "$n" "${a:--}"
+  done
+}
+
+# public_dns_problem ANSWERS NAME... < EGRESS-LOG -> "this computer's DNS answered NAME with ADDR" (and 0) when the
+# egress proxy refused one of the NAMEs for the address it resolved to ("NAME resolves to ADDR: …" in its log), or
+# ANSWERS (host_dns_answers' lines) has one of them at an address no public name has; nothing (and 1) otherwise
+public_dns_problem() {
+  local answers="$1" hit n a x; shift
+  hit="$(awk -v names=" $* " '/"event":"refused"/ && / resolves to / {
+      h = $0; if (!sub(/.*"host":"/, "", h)) next; sub(/".*/, "", h)
+      a = $0; if (!sub(/.*"address":"/, "", a)) next; sub(/".*/, "", a)
+      if (!f && index(names, " " h " ")) { print h " " a; f = 1 } }')"
+  if [ -z "$hit" ]; then
+    while read -r n a; do
+      case " $* " in *" $n "*) ;; *) continue ;; esac
+      for x in $a; do not_public "$x" && { hit="$n $x"; break 2; }; done
+    done <<< "$answers"
+  fi
+  [ -n "$hit" ] || return 1
+  printf "this computer's DNS answered %s with %s\n" "${hit%% *}" "${hit#* }"
+}
+
+# public_probe_steady PROBE LOG -> 0 when the public probes are as they must be. PROBE prints their "key<TAB>value"
+# lines; LOG SINCE prints the egress proxy's log from SINCE (unix seconds). A try that fails is tried again — at most
+# E2E_PUBLIC_RETRIES (3) more times, E2E_PUBLIC_GAP_S (15) s apart — only while public_dns_problem finds this
+# computer's DNS answering a public name privately (E2E_HOST_DNS: the resolver, host_dns_answers); any other failure
+# is final at once. Sets PUBLIC_OUT (the last try's lines), PUBLIC_LOG (every try's, with this computer's answers),
+# PUBLIC_TRIES, PUBLIC_DNS (the finding at the last try; empty when it passed) and PUBLIC_DNS_SEEN (the first finding).
+public_probe_steady() {
+  local probe="$1" logf="$2" since answers elog
+  PUBLIC_TRIES=0; PUBLIC_DNS=''; PUBLIC_DNS_SEEN=''; PUBLIC_LOG=''; PUBLIC_OUT=''
+  while :; do
+    since="$(( $(date +%s) - 1 ))"
+    PUBLIC_OUT="$("$probe" 2>&1)"; PUBLIC_TRIES=$((PUBLIC_TRIES + 1))
+    # shellcheck disable=SC2086  # the names, one word each
+    answers="$("${E2E_HOST_DNS:-host_dns_answers}" $E2E_PUBLIC_HOSTS)"
+    PUBLIC_LOG="$PUBLIC_LOG# public probes, try $PUBLIC_TRIES
+$PUBLIC_OUT
+$(printf '%s\n' "$answers" | sed "s/^/# this computer's DNS: /")
+"
+    [ -n "$(public_probe_bad "$PUBLIC_OUT")" ] || { PUBLIC_DNS=''; return 0; }
+    elog="$("$logf" "$since" 2>&1)" || true
+    # shellcheck disable=SC2086
+    PUBLIC_DNS="$(public_dns_problem "$answers" $E2E_PUBLIC_HOSTS <<< "$elog")" || PUBLIC_DNS=''
+    [ -n "$PUBLIC_DNS_SEEN" ] || PUBLIC_DNS_SEEN="$PUBLIC_DNS"
+    [ -n "$PUBLIC_DNS" ] && [ "$PUBLIC_TRIES" -le "${E2E_PUBLIC_RETRIES:-3}" ] || return 1
+    sleep "${E2E_PUBLIC_GAP_S:-15}"
+  done
+}
+
+# rebind_dns_problem RESULTS ANSWERS -> "this computer's DNS answered NAME with ADDR, not IP" when every DNS-rebinding
+# probe that was not refused (a 0 in RESULTS, one per name, in order) had a name this computer's resolver did not
+# answer with the address in that name (ANSWERS: host_dns_answers' lines for those names, in the same order): those
+# probes tested nothing. Nothing (and 1) when one of them did get its address — then the proxy let it through.
+rebind_dns_problem() {
+  local -a r; local i=0 n a note=''
+  read -r -a r <<< "$1"
+  while read -r n a; do
+    [ -n "$n" ] || continue
+    if [ "${r[$i]:-}" = 0 ]; then
+      case " $a " in *" ${n%.nip.io} "*) return 1 ;; esac
+      [ -n "$note" ] || note="this computer's DNS answered $n with ${a:--}, not ${n%.nip.io}"
+    fi
+    i=$((i + 1))
+  done <<< "$2"
+  [ -n "$note" ] || return 1
+  printf '%s\n' "$note"
+}
