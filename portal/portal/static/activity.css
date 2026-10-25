@@ -4,13 +4,13 @@
 
 /* ---------- The sidebar: Search (a box that opens the dialog) and the bell ---------- */
 .side-tools { display: flex; align-items: center; gap: 6px; margin-top: -8px; }
-.side-search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 8px 0 11px; border: 1px solid var(--line);
+.side-search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 7px 0 10px; border: 1px solid var(--line);
   border-radius: var(--r-pill); background: var(--bg); color: var(--muted); font-size: 13.5px; text-align: left; }
 .side-search:hover, .side-search[aria-expanded="true"] { border-color: var(--accent); color: var(--ink); }
 .side-search svg, .bell-btn svg, .search-box svg { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.side-search-text { flex: 1; }
+.side-search-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-kbd, .search-close kbd { padding: 0 5px; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--surface); color: var(--muted);
-  font-family: var(--font-mono); font-size: 11px; line-height: 17px; white-space: nowrap; }
+  font-family: var(--font-sans); font-size: 11px; line-height: 17px; white-space: nowrap; }
 .bell-btn { position: relative; flex: none; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid var(--line);
   border-radius: var(--r-pill); background: none; color: var(--muted); }
 .bell-btn svg { width: 18px; height: 18px; }
