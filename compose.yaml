@@ -25,6 +25,10 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
+      # (while it starts, checked every second: `up --wait` sees it healthy at once, not at the first interval; so are
+      # the other services' checks, here and in the images' HEALTHCHECK)
+      start_period: 60s
+      start_interval: 1s
     logging: *logging
 
   rustfs:
@@ -108,6 +112,7 @@ services:
       timeout: 5s
       retries: 30
       start_period: 30s
+      start_interval: 1s
     logging: *logging
 
   open-webui:
@@ -229,6 +234,7 @@ services:
       timeout: 5s
       retries: 60
       start_period: 60s
+      start_interval: 2s
     logging: *logging
 
   shared-mcp:
@@ -404,6 +410,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 6
+      start_period: 30s
+      start_interval: 1s
     logging: *logging
 
 networks:

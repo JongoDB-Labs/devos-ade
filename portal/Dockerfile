@@ -56,6 +56,6 @@ RUN chmod a+r /app/portal/docs-index.json && useradd --system --uid 10102 portal
 RUN mkdir /state && chown portal:portal /state && chmod 700 /state
 USER portal
 EXPOSE 8000
-HEALTHCHECK --interval=10s --timeout=5s --retries=6 \
+HEALTHCHECK --interval=10s --timeout=5s --retries=6 --start-period=60s --start-interval=1s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"
 CMD ["python", "-m", "portal"]

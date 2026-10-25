@@ -144,6 +144,6 @@ ENV LANG=C.UTF-8 HOME=/home/claude SHELL=/bin/bash NPM_CONFIG_PREFIX=/home/claud
 USER claude
 WORKDIR /workspace
 # ttyd listens on a UNIX socket only (bn-terminal; the terminal-socket volume, shared with its gateway alone)
-HEALTHCHECK --interval=10s --timeout=5s --retries=6 \
+HEALTHCHECK --interval=10s --timeout=5s --retries=6 --start-period=60s --start-interval=1s \
   CMD curl -fsS -o /dev/null --unix-socket /run/bn-ttyd/ttyd.sock http://terminal/ || exit 1
 CMD ["bn-terminal"]

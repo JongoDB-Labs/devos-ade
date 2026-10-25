@@ -17,6 +17,6 @@ FROM base AS runtime
 RUN useradd --system --uid 10101 mcp
 USER mcp
 EXPOSE 8000
-HEALTHCHECK --interval=10s --timeout=5s --retries=6 \
+HEALTHCHECK --interval=10s --timeout=5s --retries=6 --start-period=60s --start-interval=1s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"
 CMD ["python", "-m", "shared_mcp.server"]

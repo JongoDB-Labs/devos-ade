@@ -91,6 +91,6 @@ RUN chmod -R a+rX /opt/code/package.json /opt/code/server \
 ENV NODE_ENV=production
 # (compose runs it as TERMINAL_UID, read-only; this is for a plain docker run)
 USER node
-HEALTHCHECK --interval=15s --timeout=5s --retries=4 \
+HEALTHCHECK --interval=15s --timeout=5s --retries=4 --start-period=60s --start-interval=1s \
   CMD ["node", "-e", "fetch('http://127.0.0.1:8095/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
 CMD ["node", "server/main.mjs"]

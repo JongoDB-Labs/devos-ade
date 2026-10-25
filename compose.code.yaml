@@ -154,7 +154,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 6
-      start_period: 5s
+      start_period: 30s
+      start_interval: 1s
     depends_on:
       terminal: { condition: service_healthy }   # (its image is the terminal's: built, and the terminal up, first)
     logging:   # (YAML anchors do not reach across compose files: same values as x-logging in compose.yaml)
