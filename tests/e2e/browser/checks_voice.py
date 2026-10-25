@@ -16,6 +16,8 @@ FIXTURE = Path(__file__).parent / "fixtures" / "speech.webm"   # espeak-ng: fixt
 WEB_STT = "Call feature is not supported when using Web STT engine"
 # Since October 2026 Bedrock refuses audio for both Voxtral models: ./stack turns Bedrock speech-to-text off once and
 # says so (lib/stt.sh STT_REFUSED_NOTICE) — on Home's voice line and as one Activity item
+# (where speech-to-text is turned on: the link the voice line ends with, catalog/setup-links.tsv voice-off)
+VOICE_SETUP = "Settings › Chat & voice › Speech-to-text"
 REFUSED_NOTICE = ("Voice: Bedrock speech-to-text was turned off: AWS no longer accepts audio for the Voxtral models (since "
                   "October 2026). Voice uses your browser's speech recognition; or use your own OpenAI/Groq key: "
                   "./stack stt set openai|groq.")
@@ -40,8 +42,11 @@ def home_voice(ctx):
         expect(text.startswith("Voice: Bedrock Mistral Voxtral"), f"voice line {text!r}")
         expect("estimated" in text and "per minute of audio" in text and "your AWS account" in text, f"voice line {text!r}")
     elif stt_mode() == "browser" and text.startswith("Voice: Bedrock speech-to-text was turned off"):
-        # AWS refused the audio: the notice, word for word, and its one Activity item (a voice choice ends both)
-        expect(text == REFUSED_NOTICE, f"voice line {text!r}")
+        # AWS refused the audio: the notice, word for word, then where speech-to-text is turned on (a link to Settings at
+        # its row: catalog/setup-links.tsv voice-off), and its one Activity item (a voice choice ends both)
+        expect(text == f"{REFUSED_NOTICE} {VOICE_SETUP}", f"voice line {text!r}")
+        link = note.locator("a[href='#settings/STT_PROVIDER']")
+        expect(link.count() == 1 and link.inner_text() == VOICE_SETUP, f"voice line's link: {link.count()}")
         act = page.evaluate("""async () => { const r = await fetch('/api/activity', {headers: {'X-Requested-With': 'bedrock-now'}});
             return {status: r.status, body: await r.text()}; }""")
         expect(act["status"] == 200, f"/api/activity {act['status']}")
@@ -51,7 +56,7 @@ def home_voice(ctx):
         rec.save()
         return "browser speech after AWS refused Voxtral's audio: the notice on Home and one Activity item"
     elif stt_mode() == "browser":
-        expect(text.startswith("Voice: browser speech recognition (Call is unavailable)"), f"voice line {text!r}")
+        expect(text.startswith("Voice: browser speech recognition (Call is unavailable)") and text.endswith(VOICE_SETUP), f"voice line {text!r}")
     rec.save()
     return f"{stt_mode()}: {text[:110]!r}"
 
