@@ -6,6 +6,29 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Changed
+
+- **Claude Code's command is `devos-claude`** (formerly `claude-bedrock`). It is the name setup links into
+  `~/.local/bin`, the browser terminal runs, and every page, message, help text and document gives: `devos-claude
+  --resume <id>`, `devos-claude --models`, Home's command, the Code page's *Open in the terminal* and the import sheets
+  (badge **DC**, was CB). `./stack sessions … --tool devos-claude` works where `--tool` does.
+- **The old name keeps working.** `bin/claude-bedrock` (and `/usr/local/bin/claude-bedrock` in the browser terminal) is
+  now a shim: it runs `devos-claude` with the same arguments, gives back its exit code and prints nothing of its own.
+  Setup links `~/.local/bin/claude-bedrock` beside `~/.local/bin/devos-claude`. An update from v0.27.x needs nothing
+  from you: where `~/.local/bin/claude-bedrock` points into the checkout, the update turns that file into the shim and
+  adds the `devos-claude` link (a link to another checkout, or a file of yours, is left alone). `./stack uninstall`
+  removes both links, only those to its own checkout.
+- **What keeps the old name, and why** ([internal names](docs/internal-names.md#devos-claudes-old-name)): its Claude
+  Code folder `~/.claude-bedrock` (your sign-in and session history), every `CLAUDE_BEDROCK_*` setting, LiteLLM's
+  request tags (`x-litellm-tags: claude-bedrock`, and its `,code` and `,terminal` forms: the spend already logged under
+  them) and the tool's id in *Bring your sessions* and *Bring your setup* (what you allowed is kept under it).
+- **Tests:** the brand check knows devos-claude's old name too: it may stay only as the shim, an internal name of
+  docs/internal-names.md's new allowlist, the old name said as such, or in the CHANGELOG's entries before v0.28.0. New
+  unit tests: setup and update link both names, an update from a v0.27.x checkout (its old wrapper linked from
+  `~/.local/bin`), the shim's arguments, input and exit codes, uninstall of both links. The e2e runs `devos-claude`,
+  checks that `bin/claude-bedrock` gives the same help and a failure's exit code, and that neither link in your
+  `~/.local/bin` changes; `tests/run.sh` fails if the suite changes them.
+
 ## [0.27.1] - 2026-10-25
 
 ### Changed
