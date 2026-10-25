@@ -59,6 +59,9 @@ def test_who_answers_groups_them_and_greys_the_entry_while_off(settings):
     (settings.litellm_dir / explabs.FILE).unlink()
     d = answers.build(settings, False, summary.models_with_openrouter(settings))
     assert d["explabs"]["on"] is False and not [m for m in d["models"] if m["provider"] == "Experiential Labs"]
+    # off: the greyed entry gets the Settings row and nothing else of the gateway (the portal never calls it)
+    assert d["explabs"] == {"on": False, "setting": "EXPLABS_API_KEY"}
+    assert "experientiallabs" not in json.dumps(d).lower() and '"xl/' not in json.dumps(d)
 
 
 def test_the_code_page_lists_them_only_while_it_is_on(settings):

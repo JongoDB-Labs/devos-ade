@@ -56,6 +56,9 @@ test("chat picker: Experiential Labs' models as a group; while it has no key, on
   assert.equal(off.items[0].disabled, true);
   assert.match(off.items[0].label, /add its key in Settings › Chat & voice$/);
   assert.match(off.items[0].title, /EXPLABS_API_KEY/);
+  // it only points to Settings: no address of the gateway, and never a saved choice (a reload is back on Open WebUI)
+  assert.doesNotMatch(JSON.stringify(off), /experientiallabs|https?:|xl\//);
+  assert.equal(A.parseSaved(JSON.stringify({ chat: "setup:explabs" })).chat, "owui");
   // an older portal (no explabs field): nothing at all
   assert.ok(!plain(A.chatOptions(data)).some((x) => x.label === "Experiential Labs"));
 });
