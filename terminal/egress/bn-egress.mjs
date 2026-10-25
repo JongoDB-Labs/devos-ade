@@ -351,6 +351,13 @@ export function forwardHeaders(raw) {
   }
   return out;
 }
+// upstreamHeaders(raw) -> an upstream response's headers as forwardHeaders keeps them, less any X-Bn-*: the proxy's own
+// (X-Bn-Egress marks its refusals and failures) never comes from a site, which could otherwise pass itself off as one
+export function upstreamHeaders(raw) {
+  const out = forwardHeaders(raw), kept = [];
+  for (let i = 0; i < out.length; i += 2) if (!/^x-bn-/i.test(String(out[i]))) kept.push(out[i], out[i + 1]);
+  return kept;
+}
 const MESSAGES = { 400: 'Bad Request', 403: 'Forbidden', 405: 'Method Not Allowed', 408: 'Request Timeout', 431: 'Request Header Fields Too Large',
   501: 'Not Implemented', 502: 'Bad Gateway', 503: 'Service Unavailable', 504: 'Gateway Timeout' };
 const refusalText = (status, why) => `DevOS ADE's sandbox proxy: ${status === 403 ? 'refused' : 'failed'} — ${why}.\n` +
@@ -457,7 +464,7 @@ export function createServer(cfg, deps = {}) {
     } catch { return reply(res, 400, 'a path this proxy cannot pass on'); }
     up.setTimeout(idleMs, () => up.destroy(Object.assign(new Error('idle'), { code: 'ETIMEDOUT' })));
     up.on('response', (ur) => {
-      try { res.writeHead(ur.statusCode, ur.statusMessage, forwardHeaders(ur.rawHeaders)); } catch {
+      try { res.writeHead(ur.statusCode, ur.statusMessage, upstreamHeaders(ur.rawHeaders)); } catch {
         up.destroy(); return reply(res, 502, `${short(u.hostname)}:${port} answered with a header this proxy cannot pass on`);
       }
       ur.pipe(res);

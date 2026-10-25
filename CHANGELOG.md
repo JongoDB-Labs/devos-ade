@@ -18,6 +18,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   or a bare `eval`, `xargs … rm` without `-0` or `-d`, `find` with an unquoted path and `-delete` or `-exec rm`, an
   `-exec rm` with an unquoted argument, and the strings given to `eval`, `sh -c` and `bash -c`. It finds nothing in
   the scripts.
+- **The sandbox's egress proxy passes no X-Bn-* header on from a site.** Its own X-Bn-Egress marks its refusals and
+  failures; a site's response that carried one is now relayed without it, so no site can pass itself off as a refusal.
+  Nothing in DevOS ADE read that header from a site's response (only the isolation test did), so this is hardening.
 - **Tests:** the sandbox's isolation check (`terminal/terminal-isolation`) no longer fails when the sandbox's proxy
   gives its DNS-rebinding probes no answer for a moment (Docker's DNS slow after a restart). Such a probe is asked
   again, up to three more times 10 s apart with a longer limit; only a refusal for the address passes. Any other

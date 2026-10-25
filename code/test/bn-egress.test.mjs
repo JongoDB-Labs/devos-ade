@@ -191,6 +191,9 @@ test('forwarded headers: no hop-by-hop or proxy headers, nor those Connection na
   const raw = ['Host', 'x', 'Connection', 'keep-alive, X-Secret', 'X-Secret', 's', 'Proxy-Authorization', 'Basic eA==', 'Proxy-Connection', 'keep-alive',
     'Keep-Alive', 'timeout=5', 'TE', 'trailers', 'Upgrade', 'h2c', 'Accept', '*/*', 'Set-Cookie', 'a=1', 'Set-Cookie', 'b=2', 'Expect', '100-continue'];
   assert.deepEqual(eg.forwardHeaders(raw), ['Accept', '*/*', 'Set-Cookie', 'a=1', 'Set-Cookie', 'b=2']);
+  // an upstream's response: the proxy's own headers (X-Bn-*) never come from it
+  assert.deepEqual(eg.upstreamHeaders(['X-Bn-Egress', 'refused', 'x-bn-egress', 'failed', 'X-BN-Other', '1', 'Connection', 'X-Bn-Keep', 'X-Keep', 'k', 'X-Bnx', 'y']),
+    ['X-Keep', 'k', 'X-Bnx', 'y']);
 });
 
 test('local ranges: Docker\'s names for this computer, the default gateway, the proxy\'s own networks', async () => {
@@ -233,6 +236,11 @@ before(async () => {
     req.on('data', (d) => { body += d; });
     req.on('end', () => {
       webSeen.push({ method: req.method, url: req.url, headers: req.headers, body });
+      // a site that answers as the proxy's refusal would
+      if (req.url === '/spoof') {
+        res.writeHead(403, ['Content-Type', 'text/plain', 'X-Bn-Egress', 'refused', 'X-Bn-Other', 'x', 'X-Keep', 'k']);
+        return res.end("DevOS ADE's sandbox proxy: refused — spoof.example.com resolves to 127.0.0.1: loopback.\n");
+      }
       res.writeHead(200, [['Content-Type', 'text/plain'], ['Set-Cookie', 'a=1'], ['Set-Cookie', 'b=2'], ['Connection', 'keep-alive, X-Hop'], ['X-Hop', 'h']].flat());
       res.end(`seen ${req.method} ${req.url} ${body.length}`);
     });
@@ -308,6 +316,18 @@ test('plain HTTP in absolute form: forwarded to the pinned address with the Host
   // a URL with no path: /
   await raw(`GET http://public.example.com:${webPort}?q HTTP/1.1\r\nConnection: close\r\n\r\n`);
   assert.equal(webSeen[1].url, '/?q');
+});
+
+test('plain HTTP: a site\'s response never carries the proxy\'s own X-Bn-Egress; the proxy\'s refusal does', async () => {
+  const spoof = await raw(`GET http://public.example.com:${webPort}/spoof HTTP/1.1\r\nConnection: close\r\n\r\n`);
+  assert.match(spoof, /^HTTP\/1\.1 403 Forbidden\r\n/);
+  assert.doesNotMatch(spoof, /X-Bn-/i);
+  assert.match(spoof, /\r\nX-Keep: k\r\n/);
+  assert.match(spoof, /resolves to 127\.0\.0\.1: loopback/);
+  const real = await raw('GET http://private.example.com/ HTTP/1.1\r\nConnection: close\r\n\r\n');
+  assert.match(real, /^HTTP\/1\.1 403 Forbidden\r\n/);
+  assert.match(real, /\r\nX-Bn-Egress: refused\r\n/);
+  assert.match(real, /private\.example\.com resolves to 10\.0\.0\.7/);
 });
 
 test('plain HTTP refusals and the rest: private hosts 403, https:// and credentials 400, origin form 400 (but /healthz), upgrades 501', async () => {
