@@ -374,8 +374,16 @@ An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*)
 - **Where requests go.** A prompt to an `xl/<id>` model goes from LiteLLM to `https://api.experientiallabs.ai/v1`
   (Chat Completions; with extended thinking, its Responses API) and from there to whichever provider the gateway routes
   that call to — its own Experiential Cloud, another hosted provider, or your own provider account connected there
-  (BYOK); the answer's `x-gateway-provider` header names it. The only other request is `GET /v1/models` with the key (free; setup, `./stack up` at most every 12 hours, Settings,
-  the check of a new key): the model list and its details, cached in `litellm/explabs-models.tsv`.
+  (BYOK); the answer's `x-gateway-provider` header names it. Besides the calls themselves, `./stack` makes two GET
+  requests, both free (setup, `./stack up` at most every 12 hours, Settings; the check of a new key makes the first
+  alone):
+  - `GET https://api.experientiallabs.ai/v1/models` **with the key** (on curl's stdin): the ids of the models this key
+    may call — the OpenAI list, which carries nothing else;
+  - `GET https://api.experientiallabs.ai/api/models` **without the key**, page by page (`limit`, `offset`): the
+    gateway's public catalog, each model's details (what it takes) and list price. No key and nothing about you or this
+    install goes there; an organisation's own models are not in it, so they run fail safe.
+
+  Joined by model id and cached in `litellm/explabs-models.tsv`: a catalog entry your key may not call is not kept.
 - **What is sent.** The request as Chat, the Code page or a LiteLLM client made it — your messages, tools, files you
   attached — minus the parameters the gateway's details say the model does not take (LiteLLM's `drop_params`, the
   model's `additional_drop_params`, and the hook `lib/litellm-hooks/bn_hooks.py`). A client's own fields pass as they
@@ -401,9 +409,9 @@ An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*)
 - **Costs.** What LiteLLM books for a call is the cost the gateway reported for it (`usage.cost`), $0 when your own
   provider key paid for it (`usage.is_byok`: that provider bills you); the list prices in the config only price a
   reply that carries no cost. Budgets count it like any other spend.
-- **Failing safe.** Without model details for the key in `.env` (the list could not be read), each model is sent no
-  sampling, penalty or logprob parameter, `response_format` or `reasoning_effort`; its tools and the output cap (as
-  `max_tokens`) still go, and a model that cannot take them answers with a clear 400. `./stack status` says so — a
+- **Failing safe.** Without model details for the key in `.env` (the catalog could not be read, or has none for that
+  model), each model is sent no sampling, penalty or logprob parameter, `response_format` or `reasoning_effort`; its
+  tools and the output cap (as `max_tokens`) still go, and a model that cannot take them answers with a clear 400. `./stack status` says so — a
   call is never refused by DevOS ADE for want of details. The cap is never left out, with details or without (a model
   whose details name no cap field gets it as `max_tokens`): it bounds what an answer can cost.
 

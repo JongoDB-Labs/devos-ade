@@ -4,17 +4,23 @@
 # EXPLABS_API_KEY: without one nothing here talks to the network and no xl/… model is rendered. Only .env counts (dc()
 # strips EXPLABS_* from the shell's environment).
 #
-# Data flow: GET https://api.experientiallabs.ai/v1/models with the key (curl -K -: never on a command line, in a URL
-# or a log) → litellm/explabs-models.tsv: every model the key may call, with what the gateway's own metadata says each
-# takes (supports_temperature, supports_top_p, supports_tools, chat_max_tokens_field, …) and its list price →
-# EXPLABS_MODELS (a comma list of exact gateway ids; blank = qwen3.8-27b) picks the ones rendered into
+# Data flow, two requests joined by model id:
+#   GET https://api.experientiallabs.ai/v1/models WITH the key (curl -K -: never on a command line, in a URL or a log):
+#     the ids this key may call — the OpenAI list, nothing else (id, object, created, owned_by);
+#   GET https://api.experientiallabs.ai/api/models WITHOUT it (the public catalog, keyless; paged with limit/offset):
+#     each model's details — what it takes (supports_temperature, supports_top_p, supports_tools,
+#     chat_max_tokens_field, …) — and its list price.
+# → litellm/explabs-models.tsv: every model of the key's list, with its catalog details when the catalog has them (an
+# entry of the catalog the key may not call is not kept; one of the key's models the catalog lacks — an organisation's
+# own model — has none: fail safe) → EXPLABS_MODELS (a comma list of exact gateway ids; blank = qwen3.8-27b) picks the
+# ones rendered into
 # litellm/config.yaml as "xl/<id>" → openai/<id> at the gateway. Each sends only the parameters its model takes:
 # drop_params plus the model's additional_drop_params, and the output cap under the field it names, max_tokens when it
 # names none (LiteLLM's hook, lib/litellm-hooks/bn_hooks.py). A model without metadata — the list could not be read and
 # none is cached for this key — runs fail safe: no sampling, penalty or logprob parameter, response_format or
 # reasoning_effort (XL_FAILSAFE_DROPS), while tools and the max_tokens cap pass (a model that cannot take one answers
 # with a clear 400); ./stack status says so. The key reaches only LiteLLM (os.environ/EXPLABS_API_KEY in the config) and
-# api.experientiallabs.ai.
+# api.experientiallabs.ai/v1; the catalog is asked without it, and so without anything about you.
 #
 # Costs: the gateway reports what each call cost (usage.cost, USD; 0 with usage.is_byok, which your own provider
 # bills). LiteLLM's hook books exactly that; the list prices in the config only price a reply without one.
@@ -29,14 +35,18 @@
 #   explabs_status_line / explabs_summary_line / explabs_costs_section / explabs_models_section
 #   setup_explabs / explabs_up_hook / explabs_after_up   setup, and ./stack up before `compose up` / in its portal session
 
-# Tests may point this at another server; users cannot (no EXPLABS_API override).
+# Tests may point this at another server; users cannot (no EXPLABS_API override). The catalog lives beside it.
 EXPLABS_API="${BEDROCK_NOW_TEST_EXPLABS_API:-https://api.experientiallabs.ai/v1}"
+EXPLABS_CATALOG="${EXPLABS_API%/v1}/api/models"
+XL_CATALOG_PAGE=500     # entries asked for per catalog page (the gateway may send fewer: the next page starts after them)
+XL_CATALOG_PAGES=20     # at most this many pages (10,000 models; the gateway lists ~320)
 EXPLABS_DEFAULT_MODELS=qwen3.8-27b
 EXPLABS_KEYS_URL=https://platform.experientiallabs.ai/settings/api-keys
 # The request parameters the gateway's metadata decides about: each goes only to a model whose metadata says it takes
 # it (unknown = not taken, except tools: they go unless the details say false; the output cap: the field the model
 # names, max_tokens when it names none). The rest of a
 # request (messages, stream, stop, …) passes as it came.
+# shellcheck disable=SC2034  # the reference list: tests/test_explabs.sh holds the hook's XL_OPTIONAL to it
 XL_OPTIONAL_PARAMS="temperature top_p top_k frequency_penalty presence_penalty logprobs top_logprobs tools tool_choice parallel_tool_calls functions function_call response_format reasoning_effort max_tokens max_completion_tokens"
 # What a model without metadata (fail safe) is never sent: the sampling, penalty and logprob parameters, response_format
 # and reasoning_effort (some models refuse them, and the call then fails with all_routes_failed). Its tools and its cap,
@@ -89,18 +99,26 @@ xl_wanted() {
     while IFS= read -r m; do ! valid_xl_id "$m" || printf '%s\n' "$m"; done | awk '!seen[$0]++'
 }
 
-# xl_models_tsv < GET /v1/models JSON -> one TAB-separated line per model: id temperature top_p top_k
-# frequency_penalty presence_penalty logprobs tools structured_output reasoning sampling_requires_reasoning_none
-# max_tokens_field max_out context in out cache_read cache_write — the supports_* fields as 1 (true), 0 (false) or empty
-# (null, or not listed), the field as max_tokens | max_completion_tokens | empty, the counts and the list prices
-# (nano-USD per million tokens, from "pricing") as whole numbers or empty. Ids that are not valid_xl_id are left out.
-xl_models_tsv() {
+# xl_ids < GET /v1/models JSON -> the ids it lists, one per line, each once; only those that are valid_xl_id. Only the
+# id is read: this list says which models the key may call, never what they take (the gateway sends no details here).
+xl_ids() {
+  or_json_flatten | awk -F'\t' '$1 ~ /^data\.[0-9]+\.id$/ && $2 ~ /^[A-Za-z0-9][A-Za-z0-9._:-]*$/ && length($2) <= 128 && !seen[$2]++ { print $2 }'
+}
+
+# xl_details_tsv < GET /api/models JSON (the catalog; its entries under "data", "models" or "items", or a bare list)
+# -> one TAB-separated line per model: id temperature top_p top_k frequency_penalty presence_penalty logprobs tools
+# structured_output reasoning sampling_requires_reasoning_none max_tokens_field max_out context in out cache_read
+# cache_write — the supports_* fields as 1 (true), 0 (false) or empty (null, or not listed), the field as max_tokens |
+# max_completion_tokens | empty, the counts and the list prices (nano-USD per million tokens, from "pricing") as whole
+# numbers or empty. Ids that are not valid_xl_id are left out.
+xl_details_tsv() {
   or_json_flatten | awk -F'\t' -v OFS='\t' '
     function b(v) { return v == "true" ? 1 : (v == "false" ? 0 : "") }
     function w(v) { return (v ~ /^[0-9]+$/ && length(v) <= 18) ? v : "" }
-    $1 ~ /^data\.[0-9]+\./ {
-      split($1, p, "."); i = p[2] + 0; if (i > n) n = i; seen[i] = 1
-      f = substr($1, length("data." p[2] ".") + 1)
+    $1 ~ /^(data\.|models\.|items\.)?[0-9]+\./ {
+      pre = ""; if (match($1, /^(data|models|items)\./)) { pre = substr($1, 1, RLENGTH) }
+      rest = substr($1, length(pre) + 1); k = rest; sub(/\..*/, "", k); i = k + 0; if (i > n) n = i; seen[i] = 1
+      f = substr(rest, length(k) + 2)
       if (f == "id") id[i] = $2
       else if (f == "supports_temperature") te[i] = b($2)
       else if (f == "supports_top_p") tp[i] = b($2)
@@ -174,6 +192,13 @@ function xl_vendor(id) {
 }'
 
 xl_key_hash() { printf '%s' "$1" | openssl dgst -sha256 | awk '{ print $NF }'; }
+# xl_join IDS_FILE < xl_details_tsv rows -> one row per id of IDS_FILE (the key's list, in its order): its details row,
+# or the id alone when the catalog has none (fail safe). A catalog entry the key's list lacks is not kept.
+xl_join() {
+  awk -F'\t' -v OFS='\t' 'FILENAME == ARGV[1] { want[++n] = $1; next } !($1 in row) { row[$1] = $0 }
+    END { for (i = 1; i <= n; i++) print ((want[i] in row) ? row[want[i]] : want[i]) }' "$1" -
+}
+
 # xl_cache_current -> 0 when the cached list was read with the key .env holds now (another key: another
 # organisation, other models)
 xl_cache_current() {
@@ -183,7 +208,7 @@ xl_cache_current() {
 xl_cached_rows() { local f; f="$(xl_cache_tsv)"; [ -r "$f" ] || return 0; grep -v '^#' "$f" || true; }
 xl_fetched_at() { local f; f="$(xl_cache_tsv)"; [ -r "$f" ] || return 0; sed -n 's/^# fetched_at: //p' "$f" | head -n 1; }
 
-# xl_selected -> one line per model EXPLABS_MODELS picks: STATE then the xl_models_tsv fields. STATE = details (the
+# xl_selected -> one line per model EXPLABS_MODELS picks: STATE then the xl_details_tsv fields. STATE = details (the
 # cached list for this key has its details) or failsafe (no list for this key, or no details for it in the list:
 # XL_FAILSAFE_DROPS). With a list, an id it does not have is left out (the gateway would refuse it); "<slug>:free"
 # takes its slug's details, at $0. Empty without a key.
@@ -280,12 +305,12 @@ explabs_write_portal_json() {
   chmod 644 "$tmp"; mv "$tmp" "$f"
 }
 
-# xl_fetch_models OUT KEY -> 0 if OUT now holds the list (with a fetched_at header); otherwise XL_ERR says why. KEY goes
-# on curl's stdin (curl_auth), the answer to a temp file of our own.
-xl_fetch_models() {
-  local out="$1" raw rows code
+# xl_fetch_ids OUT KEY -> 0 if OUT now holds the ids the key may call (GET /v1/models with KEY on curl's stdin, the
+# answer to a temp file of our own); otherwise XL_ERR says why
+xl_fetch_ids() {
+  local out="$1" raw code
   XL_ERR=''
-  raw="$(mktemp)"; rows="$(mktemp)"
+  raw="$(mktemp)"
   code="$(curl_auth "$2" --proto '=https' -sS --connect-timeout 10 -m 60 --max-filesize 20000000 -o "$raw" -w '%{http_code}' "$EXPLABS_API/models" 2>/dev/null)" || code=000
   case "$code" in
     200) ;;
@@ -294,14 +319,54 @@ xl_fetch_models() {
     *) XL_ERR="api.experientiallabs.ai answered HTTP $code when listing models" ;;
   esac
   if [ -z "$XL_ERR" ]; then
-    xl_models_tsv < "$raw" > "$rows" || : > "$rows"
-    if [ ! -s "$rows" ] && ! grep -q '"data"[[:space:]]*:[[:space:]]*\[' "$raw"; then XL_ERR="api.experientiallabs.ai sent no model list"; fi
+    xl_ids < "$raw" > "$out" || : > "$out"
+    if [ ! -s "$out" ] && ! grep -q '"data"[[:space:]]*:[[:space:]]*\[' "$raw"; then XL_ERR="api.experientiallabs.ai sent no model list"; fi
   fi
-  if [ -n "$XL_ERR" ]; then rm -f "$raw" "$rows"; return 1; fi
-  { printf '# fetched_at: %s\n# source: %s/models (as listed for your key)\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$EXPLABS_API"
+  rm -f "$raw"
+  [ -z "$XL_ERR" ]
+}
+
+# xl_fetch_details OUT -> 0 if OUT now holds the catalog's details rows (GET /api/models, keyless: no key and nothing
+# about you is sent; page after page — limit/offset — until one adds no model, at most XL_CATALOG_PAGES); otherwise
+# XL_ERR says why
+xl_fetch_details() {
+  local out="$1" raw page code off=0 n=0 before
+  XL_ERR=''
+  raw="$(mktemp)"; page="$(mktemp)"; : > "$out"
+  while [ "$n" -lt "$XL_CATALOG_PAGES" ]; do
+    n=$((n + 1))
+    code="$(curl --proto '=https' -sS --connect-timeout 10 -m 60 --max-filesize 20000000 -o "$raw" -w '%{http_code}' "$EXPLABS_CATALOG?limit=$XL_CATALOG_PAGE&offset=$off" 2>/dev/null)" || code=000
+    case "$code" in
+      200) ;;
+      000 | '') XL_ERR="could not read the model details from api.experientiallabs.ai/api/models"; break ;;
+      *) XL_ERR="api.experientiallabs.ai/api/models answered HTTP $code"; break ;;
+    esac
+    xl_details_tsv < "$raw" > "$page" || : > "$page"
+    before="$(wc -l < "$out" | tr -d ' ')"
+    # (a gateway that ignores offset sends the same page again: nothing new, the end)
+    cut -f1 "$out" | awk -F'\t' 'FILENAME == ARGV[1] { have[$1] = 1; next } !($1 in have)' - "$page" >> "$out"
+    [ "$(wc -l < "$out" | tr -d ' ')" -gt "$before" ] || break
+    off=$((off + $(wc -l < "$page" | tr -d ' ')))
+  done
+  rm -f "$raw" "$page"
+  if [ -z "$XL_ERR" ] && [ ! -s "$out" ]; then XL_ERR="api.experientiallabs.ai/api/models sent no model details"; fi
+  [ -z "$XL_ERR" ]
+}
+
+# xl_fetch_models OUT KEY -> the cached list in OUT (with a fetched_at header): 0 with the key's ids and the catalog's
+# details; 2 with the ids alone — the catalog could not be read (XL_ERR says why), every model fail safe; 1 when the
+# key's list could not be read (XL_ERR; OUT untouched)
+xl_fetch_models() {
+  local out="$1" ids det rc=0
+  ids="$(mktemp)"; det="$(mktemp)"
+  if ! xl_fetch_ids "$ids" "$2"; then rm -f "$ids" "$det"; return 1; fi
+  xl_fetch_details "$det" || rc=2
+  { printf '# fetched_at: %s\n# source: %s/models (the ids, as listed for your key) and %s (their details)\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$EXPLABS_API" "$EXPLABS_CATALOG"
     printf '# id\ttemperature\ttop_p\ttop_k\tfrequency_penalty\tpresence_penalty\tlogprobs\ttools\tstructured_output\treasoning\tsampling_requires_reasoning_none\tmax_tokens_field\tmax_out\tcontext\tin\tout\tcache_read\tcache_write\n'
-    cat "$rows"; } > "$out"
-  rm -f "$raw" "$rows"
+    xl_join "$ids" < "$det"; } > "$out"
+  rm -f "$ids" "$det"
+  return "$rc"
 }
 
 # xl_validate_key KEY -> 0 if the gateway accepts KEY (GET /v1/models: free); otherwise XL_ERR says why
@@ -309,43 +374,53 @@ xl_validate_key() {
   local tmp
   valid_xl_key "$1" || { XL_ERR="that does not look like an Experiential Labs key (20-256 letters, digits, - and _)"; return 1; }
   tmp="$(mktemp)"
-  if xl_fetch_models "$tmp" "$1"; then rm -f "$tmp"; return 0; fi
+  if xl_fetch_ids "$tmp" "$1"; then rm -f "$tmp"; return 0; fi
   rm -f "$tmp"; return 1
 }
+
+# xl_cache_has_details -> 0 when the cached list holds any model's details
+# (read to the end: an awk that exits early can kill the writer with SIGPIPE, which pipefail turns into a failure)
+xl_cache_has_details() { xl_cached_rows | awk -F'\t' '!f { for (i = 2; i <= 12; i++) if ($i != "") f = 1 } END { exit !f }'; }
 
 # xl_error_text -> what the last refresh could not do ("" when it worked)
 xl_error_text() { local f; f="$(xl_error_file)"; [ -r "$f" ] || return 0; cut -f2- "$f" | head -n 1 | cut -c1-300; }
 xl_error_at() { local f; f="$(xl_error_file)"; [ -r "$f" ] || return 0; cut -f1 "$f" | head -n 1; }
 _xl_signature() { xl_selected; get_env EXPLABS_API_KEY | openssl dgst -sha256; }
 
-# explabs_refresh [MAX_AGE_MIN] — PUBLIC HOOK: read the model list with the key. With MAX_AGE_MIN, a list younger than
-# that, read with this key, is kept without any network call (./stack up: 720). A failure keeps a list read with this
-# key (warning), or leaves the models fail safe until a refresh works (warning; ./stack status says so); it never
-# fails. When the chosen models or their details changed it re-renders litellm/config.yaml (when setup has rendered
-# one) and sets XL_CHANGED=1: the caller then recreates LiteLLM and, with a portal session, runs explabs_sync_owui.
+# explabs_refresh [MAX_AGE_MIN] — PUBLIC HOOK: read the key's model list and the catalog's details. With MAX_AGE_MIN, a
+# list younger than that, read with this key and completely (no failure since), is kept without any network call
+# (./stack up: 720). A failure keeps a list read with this key with its details (warning), or leaves the models fail
+# safe until a refresh works (warning; ./stack status says so); it never fails. The catalog alone failing still takes
+# the key's new list of ids, fail safe, unless details read before for this key can stay. When the chosen models or
+# their details changed it re-renders litellm/config.yaml (when setup has rendered one) and sets XL_CHANGED=1: the
+# caller then recreates LiteLLM and, with a portal session, runs explabs_sync_owui.
 explabs_refresh() {
-  local f tmp before m
+  local f tmp before m rc=0
   XL_CHANGED=0; XL_ERR=''
   if ! explabs_enabled; then rm -f "$(xl_error_file)"; return 0; fi
   f="$(xl_cache_tsv)"; mkdir -p "$(dirname "$f")" "$STATE_DIR"
-  if [ -n "${1:-}" ] && xl_cache_current && [ -n "$(find "$f" -mmin "-$1" 2>/dev/null)" ]; then return 0; fi
+  if [ -n "${1:-}" ] && [ ! -e "$(xl_error_file)" ] && xl_cache_current && [ -n "$(find "$f" -mmin "-$1" 2>/dev/null)" ]; then return 0; fi
   before="$(_xl_signature)"
   tmp="$(mktemp "$f.XXXXXX")" || return 0
-  if xl_fetch_models "$tmp" "$(get_env EXPLABS_API_KEY)"; then
-    chmod 644 "$tmp"; mv "$tmp" "$f"
-    ( umask 077; xl_key_hash "$(get_env EXPLABS_API_KEY)" > "$(xl_key_mark)" )
-    rm -f "$(xl_error_file)"
-    xl_missing | while IFS= read -r m; do warn "Experiential Labs: '$m' (EXPLABS_MODELS) is not a model your key may call — left out"; done
-  else
-    rm -f "$tmp"
-    ( umask 077; printf '%s\t%s\n' "$(date +%s)" "$XL_ERR" > "$(xl_error_file)" )
-    if xl_cache_current; then warn "Experiential Labs: $XL_ERR — keeping the model details read $(xl_fetched_at)"
-    else warn "Experiential Labs: $XL_ERR — until the details can be read its models are sent no sampling or penalty parameter (temperature, top_p, …), only tools and the max_tokens cap (./stack up or Settings tries again)"; fi
-  fi
+  xl_fetch_models "$tmp" "$(get_env EXPLABS_API_KEY)" || rc=$?
+  if [ "$rc" = 2 ] && xl_cache_current && xl_cache_has_details; then rc=3; fi   # (details read before stay)
+  case "$rc" in
+    0 | 2)
+      chmod 644 "$tmp"; mv "$tmp" "$f"
+      ( umask 077; xl_key_hash "$(get_env EXPLABS_API_KEY)" > "$(xl_key_mark)" )
+      if [ "$rc" = 0 ]; then rm -f "$(xl_error_file)"; else _xl_record_error; fi
+      xl_missing | while IFS= read -r m; do warn "Experiential Labs: '$m' (EXPLABS_MODELS) is not a model your key may call — left out"; done
+      [ "$rc" = 0 ] || warn "Experiential Labs: $XL_ERR — until the details can be read its models are sent no sampling or penalty parameter (temperature, top_p, …), only tools and the max_tokens cap (./stack up or Settings tries again)" ;;
+    *)
+      rm -f "$tmp"; _xl_record_error
+      if xl_cache_current && xl_cache_has_details; then warn "Experiential Labs: $XL_ERR — keeping the model details read $(xl_fetched_at)"
+      else warn "Experiential Labs: $XL_ERR — until the details can be read its models are sent no sampling or penalty parameter (temperature, top_p, …), only tools and the max_tokens cap (./stack up or Settings tries again)"; fi ;;
+  esac
   [ "$before" != "$(_xl_signature)" ] || return 0
   XL_CHANGED=1
   [ ! -f "$STACK_DIR/litellm/config.yaml" ] || render_config "$(_enabled_or_all)"
 }
+_xl_record_error() { ( umask 077; printf '%s\t%s\n' "$(date +%s)" "$XL_ERR" > "$(xl_error_file)" ); }
 
 # xl_counts -> "1 model (xl/qwen3.8-27b)" / "2 models" / "no model"
 xl_counts() {
@@ -357,15 +432,18 @@ xl_failsafe_count() { xl_selected | awk -F'\t' '$1 == "failsafe" { n++ } END { p
 
 # explabs_status_line — ./stack status: one line while Experiential Labs is on, saying when the models run fail safe
 explabs_status_line() {
-  local O_YEL O_OFF fs at
+  local O_YEL O_OFF fs at why
   # shellcheck disable=SC2034  # set by out_colors; unused here
   local O_RED O_GRN
   explabs_enabled || return 0
   out_colors
   fs="$(xl_failsafe_count)"; at="$(xl_error_at)"
   if [ "$fs" -gt 0 ]; then
-    printf '%sExperiential Labs: %s — no model details (%s%s), so fail safe: none of %s is sent (tools and the max_tokens cap are); ./stack up or Settings tries again%s\n' \
-      "$O_YEL" "$(xl_counts)" "$(xl_error_text)" "${at:+, $(date -r "$at" '+%Y-%m-%d %H:%M' 2>/dev/null || date -d "@$at" '+%Y-%m-%d %H:%M' 2>/dev/null)}" \
+    # (no failure: the gateway's public catalog has no details for it — an organisation's own model, say)
+    why="$(xl_error_text)"; [ -n "$why" ] || why="the gateway's public catalog has none for $([ "$fs" = 1 ] && echo it || echo them)"
+    printf '%sExperiential Labs: %s — %s without model details (%s%s), so fail safe: none of %s is sent (tools and the max_tokens cap are); ./stack up or Settings tries again%s\n' \
+      "$O_YEL" "$(xl_counts)" "$([ "$fs" = "$(xl_selected | grep -c .)" ] && echo all || echo "$fs")" "$why" \
+      "${at:+, $(date -r "$at" '+%Y-%m-%d %H:%M' 2>/dev/null || date -d "@$at" '+%Y-%m-%d %H:%M' 2>/dev/null)}" \
       "$(printf '%s' "${XL_FAILSAFE_DROPS% max_completion_tokens}" | tr ' ' ',' | sed 's/,/, /g')" "$O_OFF"
   elif [ -n "$at" ]; then
     printf '%sExperiential Labs: %s — model details read %s (the last refresh failed: %s)%s\n' "$O_YEL" "$(xl_counts)" "$(xl_fetched_at)" "$(xl_error_text)" "$O_OFF"

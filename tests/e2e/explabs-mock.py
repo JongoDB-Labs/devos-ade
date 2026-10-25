@@ -1,16 +1,19 @@
 """A stand-in for the Experiential Labs gateway, for tests/e2e/explabs.sh --mock (inside the throwaway LiteLLM container,
-on 127.0.0.1 only): GET /v1/models answers the fixture; POST /v1/chat/completions and /v1/responses answer like the
-gateway — "DevOS ADE test OK", usage with cost (USD) and is_byok (true for a model whose id holds "byok") — streamed
-or not, and each request body is appended to a JSONL file for the script to check. Never the key: only "Bearer" is
-looked for in the header. Usage: python3 explabs-mock.py PORT LOG MODELS_JSON
+on 127.0.0.1 only), split as the gateway is: GET /v1/models (with a key) answers V1_JSON — the OpenAI list, ids and
+nothing else; GET /api/models (keyless: the public catalog, paged with limit/offset) answers CATALOG_JSON's entries,
+each model's details. POST /v1/chat/completions and /v1/responses answer like the gateway — "DevOS ADE test OK", usage
+with cost (USD) and is_byok (true for a model whose id holds "byok") — streamed or not, and each request body is
+appended to a JSONL file for the script to check. Never the key: only "Bearer" is looked for in the header.
+Usage: python3 explabs-mock.py PORT LOG V1_JSON CATALOG_JSON
 """
 
 import json
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 
-PORT, LOG, MODELS = int(sys.argv[1]), sys.argv[2], sys.argv[3]
+PORT, LOG, V1, CATALOG = int(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4]
 # what each answer "cost": not qwen3.8-27b's list price for 58 in / 48 out ($0.00013376, what the real gateway reported for
 # that prompt), so the check can tell the gateway's figure from one LiteLLM computed
 COST = 0.00042
@@ -39,10 +42,17 @@ class Gateway(BaseHTTPRequestHandler):
             self.wfile.write(b"data: [DONE]\n\n")
 
     def do_GET(self):
+        url = urlsplit(self.path)
+        if url.path == "/api/models":   # the catalog: keyless, a page of at most limit entries from offset
+            q = parse_qs(url.query)
+            limit, offset = int((q.get("limit") or ["50"])[0]), int((q.get("offset") or ["0"])[0])
+            with open(CATALOG, encoding="utf-8") as f:
+                rows = json.load(f)["data"]
+            return self._json(200, {"object": "list", "data": rows[offset:offset + min(limit, 200)]})
         if not self.headers.get("Authorization", "").startswith("Bearer "):
             return self._json(401, {"error": {"code": "invalid_key", "type": "authentication_error"}})
-        if self.path.rstrip("/").endswith("/models"):
-            with open(MODELS, encoding="utf-8") as f:
+        if url.path == "/v1/models":
+            with open(V1, encoding="utf-8") as f:
                 return self._json(200, json.load(f))
         self._json(404, {"error": {"code": "not_found"}})
 

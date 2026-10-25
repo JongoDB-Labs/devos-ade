@@ -1973,8 +1973,9 @@ shown there once.
   `gpt-5-mini`, `deepseek-v4.1-flash`, `…:free` for a model's free tier); blank means `qwen3.8-27b` alone. An id your
   key may not call is left out, with a warning.
 - **Only what each model takes.** Some models refuse a sampling parameter, and the call then fails
-  (`all_routes_failed`, HTTP 502). So DevOS ADE reads the gateway's details for each model (`GET /v1/models` with your
-  key, free) and sends each only what it takes: LiteLLM drops the rest (`drop_params` and the model's
+  (`all_routes_failed`, HTTP 502). So DevOS ADE reads which models your key may call (`GET /v1/models` with the key:
+  ids only) and what each takes from the gateway's public catalog (`GET /api/models`, without the key), both free, and
+  sends each only what it takes: LiteLLM drops the rest (`drop_params` and the model's
   `additional_drop_params`), and its hook moves the output cap to the field the model names. Claude Code's requests
   stay on Chat Completions, the API those details describe (with extended thinking, LiteLLM sends them to the gateway's
   Responses API).
@@ -1993,7 +1994,8 @@ shown there once.
   A field the details leave open (null) counts as not true, except tools' and the cap's: a model that cannot take
   them answers with a clear 400, where their silent loss would confuse (Claude Code that cannot use tools, an answer
   without a cap); a sampling parameter left out is harmless, and sending one to a model that refuses it would fail.
-- **Fail safe.** Without the details — the list could not be read and none is kept for this key — the models get the
+- **Fail safe.** Without the details — the catalog could not be read and none is kept for this key, or it has none for
+  a model (an organisation's own model, which the public catalog does not list) — the models get the
   last row above: no sampling, penalty or logprob parameter, so a call never fails on one, while tools and the cap
   still go (a model that cannot take them answers with a clear 400, `unsupported_capability` or
   `unsupported_parameter`, rather than a Claude Code that silently cannot use tools). `./stack status` says so with
@@ -2077,8 +2079,9 @@ troubleshooting: [docs/voice.md](docs/voice.md).
 - **OpenRouter, only if you add a key:** the `or/…` models go to OpenRouter. Without a key nothing contacts
   openrouter.ai.
 - **Experiential Labs, only if you add a key:** the `xl/…` models go to `api.experientiallabs.ai` and, from there, the
-  provider that serves each call; `./stack` reads its model list with the key (setup, `./stack up` at most every 12
-  hours, Settings). Without a key nothing contacts it.
+  provider that serves each call; `./stack` reads which models your key may call (`GET /v1/models`, with the key) and
+  their details from the gateway's public catalog (`GET /api/models`, without it) at setup, `./stack up` (at most
+  every 12 hours) and in Settings. Without a key nothing contacts it.
 - **Your voice:** with Bedrock speech-to-text (the default when Voxtral is usable and AWS takes its audio),
   audio from the microphone and voice calls goes only to Bedrock in your AWS account, through the local `stt`
   container and LiteLLM. Read-aloud uses your system's voices. Without server speech-to-text, the microphone uses
@@ -2420,7 +2423,7 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
   What is covered, and what stays manual: [tests/e2e/INVENTORY.md](tests/e2e/INVENTORY.md). Options: `tests/e2e/run.sh
   --help` and [docs/advanced.md](docs/advanced.md#end-to-end-tests).
 - **Experiential Labs** (opt-in, no AWS, about a minute): `E2E_EXPLABS_API_KEY=… tests/e2e/explabs.sh` reads the
-  gateway's model list with that key and makes **one** real completion on `qwen3.8-27b` through this checkout's
+  gateway's model list with that key and its catalog without it, and makes **one** real completion on `qwen3.8-27b` through this checkout's
   rendered LiteLLM config and hook, in one throwaway container (`bne2e-explabs`, removed afterwards): the answer, the
   parameters left out, the cost LiteLLM books against the one the gateway reported, and the key nowhere (config,
   answers, the container's log, `tests/e2e/out/explabs.json`). Without the variable it skips;

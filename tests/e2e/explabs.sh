@@ -4,14 +4,16 @@
 # in the LiteLLM image compose.yaml pins, in ONE throwaway container named bne2e-explabs on a free port of 127.0.0.1,
 # removed afterwards (by that name; nothing is pruned). No Postgres, no portal, no AWS.
 #
-#   E2E_EXPLABS_API_KEY=… tests/e2e/explabs.sh    the real gateway: its model list read with the key (free), then ONE
+#   E2E_EXPLABS_API_KEY=… tests/e2e/explabs.sh    the real gateway: its model list read with the key and its catalog
+#                                                 without it (both free), then ONE
 #                                                 real completion on qwen3.8-27b (a fraction of a cent of credits)
 #   tests/e2e/explabs.sh                          without E2E_EXPLABS_API_KEY: skipped (exit 0), nothing started
 #   tests/e2e/explabs.sh --mock                   no key, no gateway: a stand-in (tests/e2e/explabs-mock.py) inside the
 #                                                 container answers like it, and records what reached it
 #   --out DIR                                     results (default tests/e2e/out, gitignored): explabs.json
 #
-# What it checks: qwen3.8-27b is in the model list with its details; the config sends it only what it takes; LiteLLM
+# What it checks: qwen3.8-27b is in the key's model list (GET /v1/models: ids only) with its details from the catalog
+# (GET /api/models, keyless); the config sends it only what it takes; LiteLLM
 # answers "DevOS ADE test OK"; the cost LiteLLM books for the call (x-litellm-response-cost) is the one the gateway
 # reported (usage.cost; $0 with usage.is_byok); and the key is nowhere — not in the rendered config, the results, the
 # answer, the container's log, this run's output. With --mock also: what the stand-in got (no refused parameter, the
@@ -92,30 +94,41 @@ get_env() { case "$1" in EXPLABS_API_KEY) printf '%s' "$KEY" ;; EXPLABS_MODELS) 
 STACK_DIR="$WORK"; mkdir -p "$WORK/litellm" "$STATE_DIR"
 xl_cache_current() { [ -s "$(xl_cache_tsv)" ]; }   # (no key mark: not even a hash of the key on disk)
 
-if [ "$MOCK" = 1 ]; then
-  # the fixture, plus a model whose calls the stand-in answers as on your own provider key
-  python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); q = next(m for m in d["data"] if m["id"] == "qwen3.8-27b")
-d["data"].append({**q, "id": "byok-model"}); json.dump(d, open(sys.argv[2], "w"))' "$ROOT/tests/fixtures/explabs_models.json" "$WORK/models.json" || exit 2
-  cp "$HERE/explabs-mock.py" "$WORK/mock.py"
-  { printf '# fetched_at: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"; xl_models_tsv < "$WORK/models.json"; } > "$(xl_cache_tsv)"
-else
-  say "reading the gateway's model list with the key (free)"
-  xl_fetch_models "$(xl_cache_tsv)" "$KEY" || { echo "the model list could not be read: $XL_ERR" >&2; exit 1; }
-fi
-row="$(xl_selected | awk -F'\t' '$2 == "qwen3.8-27b"')"
-if [ -z "$row" ]; then fail "qwen3.8-27b is not in the model list for this key"; exit 1; fi
-[ "$(printf '%s' "$row" | cut -f1)" = details ] && ok "qwen3.8-27b has its details in the list" || fail "qwen3.8-27b has no details in the list"
+# _render — the cached list read, the config rendered from it into the folder the container mounts, checked
+_render() {
+  local row
+  row="$(xl_selected | awk -F'\t' '$2 == "qwen3.8-27b"')"
+  if [ -z "$row" ]; then fail "qwen3.8-27b is not in the model list for this key"; exit 1; fi
+  [ "$(printf '%s' "$row" | cut -f1)" = details ] && ok "qwen3.8-27b has its details (the key's list joined with the catalog)" || fail "qwen3.8-27b has no details in the list"
+  cp "$ROOT/lib/litellm-hooks/bn_hooks.py" "$WORK/litellm/bn_hooks.py"
+  { printf 'model_list:\n'; explabs_yaml
+    printf '\nlitellm_settings:\n  drop_params: true\n  use_chat_completions_url_for_anthropic_messages: true\n  callbacks: ["bn_hooks.proxy_handler_instance"]\n'
+    printf '\ngeneral_settings:\n  master_key: os.environ/LITELLM_MASTER_KEY\n'; } > "$WORK/litellm/config.yaml.new"
+  chmod 644 "$WORK/litellm/"*   # (read by the container's user)
+  litellm_config_safe "$WORK/litellm/config.yaml.new" || { fail "the rendered config is not valid YAML"; exit 1; }
+  grep -q 'additional_drop_params: \[.*"frequency_penalty".*"max_tokens"\]' "$WORK/litellm/config.yaml.new" &&
+    ok "the config leaves out what qwen3.8-27b does not take (frequency_penalty, …) and max_tokens (its cap: max_completion_tokens)" ||
+    fail "the config's drops for qwen3.8-27b: $(grep additional_drop_params "$WORK/litellm/config.yaml.new" | head -n 1)"
+  _has_key "$WORK/litellm/config.yaml.new" && fail "the key is in the rendered config"
+  mv "$WORK/litellm/config.yaml.new" "$WORK/litellm/config.yaml"
+}
+chmod 755 "$WORK" "$WORK/litellm"
 
-cp "$ROOT/lib/litellm-hooks/bn_hooks.py" "$WORK/litellm/bn_hooks.py"
-{ printf 'model_list:\n'; explabs_yaml
-  printf '\nlitellm_settings:\n  drop_params: true\n  use_chat_completions_url_for_anthropic_messages: true\n  callbacks: ["bn_hooks.proxy_handler_instance"]\n'
-  printf '\ngeneral_settings:\n  master_key: os.environ/LITELLM_MASTER_KEY\n'; } > "$WORK/litellm/config.yaml"
-chmod 755 "$WORK" "$WORK/litellm"; chmod 644 "$WORK/litellm/"*   # (read by the container's user)
-litellm_config_safe "$WORK/litellm/config.yaml" || { fail "the rendered config is not valid YAML"; exit 1; }
-grep -q 'additional_drop_params: \[.*"frequency_penalty".*"max_tokens"\]' "$WORK/litellm/config.yaml" &&
-  ok "the config leaves out what qwen3.8-27b does not take (frequency_penalty, …) and max_tokens (its cap: max_completion_tokens)" ||
-  fail "the config's drops for qwen3.8-27b: $(grep additional_drop_params "$WORK/litellm/config.yaml" | head -n 1)"
-_has_key "$WORK/litellm/config.yaml" && fail "the key is in the rendered config"
+if [ "$MOCK" = 1 ]; then
+  # the stand-in's two answers, split as the gateway's are: its /v1/models from the shape of the real one (ids only),
+  # its catalog with the details; both plus a model whose calls it answers as on your own provider key
+  python3 -I -c 'import json, sys
+v = json.load(open(sys.argv[1])); v["data"].append({"id": "byok-model", "object": "model", "created": 0, "owned_by": "exp"})
+c = json.load(open(sys.argv[2])); q = next(m for m in c["data"] if m["id"] == "qwen3.8-27b"); c["data"].append({**q, "id": "byok-model"})
+json.dump(v, open(sys.argv[3], "w")); json.dump(c, open(sys.argv[4], "w"))' "$ROOT/tests/fixtures/explabs_v1_models.json" \
+    "$ROOT/tests/fixtures/explabs_catalog.json" "$WORK/v1.json" "$WORK/catalog.json" || exit 2
+  cp "$HERE/explabs-mock.py" "$WORK/mock.py"; chmod 644 "$WORK/v1.json" "$WORK/catalog.json" "$WORK/mock.py"
+else
+  say "reading the key's model list (GET /v1/models, with the key) and the catalog's details (GET /api/models, keyless)"
+  rc=0; xl_fetch_models "$(xl_cache_tsv)" "$KEY" || rc=$?
+  case "$rc" in 0) ;; 2) fail "the catalog's details could not be read: $XL_ERR" ;; *) echo "the model list could not be read: $XL_ERR" >&2; exit 1 ;; esac
+  _render
+fi
 
 # --- the container ---
 PORT=18490
@@ -124,12 +137,32 @@ say "starting $NAME ($IMAGE) on 127.0.0.1:$PORT"
 args=(-d --name "$NAME" --label io.bedrock-now.e2e=explabs -p "127.0.0.1:$PORT:4000" -v "$WORK/litellm:/app/config:ro"
       -e EXPLABS_API_KEY -e LITELLM_MASTER_KEY -e LITELLM_LOCAL_MODEL_COST_MAP=True)
 if [ "$MOCK" = 1 ]; then
-  args+=(-v "$WORK/mock.py:/mock/mock.py:ro" -v "$WORK/models.json:/mock/models.json:ro" --entrypoint sh "$IMAGE" -c
-         "(python3 /mock/mock.py $MOCK_PORT /tmp/reqs.jsonl /mock/models.json || python /mock/mock.py $MOCK_PORT /tmp/reqs.jsonl /mock/models.json) & exec litellm --config /app/config/config.yaml --port 4000")
+  # the stand-in first; LiteLLM once the config is there (rendered from what the stand-in answered)
+  args+=(-v "$WORK/mock.py:/mock/mock.py:ro" -v "$WORK/v1.json:/mock/v1.json:ro" -v "$WORK/catalog.json:/mock/catalog.json:ro"
+         --entrypoint sh "$IMAGE" -c
+         "PY=\$(command -v python3 || command -v python); \$PY /mock/mock.py $MOCK_PORT /tmp/reqs.jsonl /mock/v1.json /mock/catalog.json & while [ ! -s /app/config/config.yaml ]; do sleep 1; done; exec litellm --config /app/config/config.yaml --port 4000")
 else
   args+=("$IMAGE" --config /app/config/config.yaml --port 4000)
 fi
 EXPLABS_API_KEY="$KEY" LITELLM_MASTER_KEY="$MASTER" docker run "${args[@]}" >/dev/null || { echo "could not start $NAME" >&2; exit 1; }
+
+if [ "$MOCK" = 1 ]; then
+  # _get URL OUT — the stand-in's answer, asked from inside the container (it listens there only); a made-up bearer
+  _get() {
+    docker exec "$NAME" sh -c 'PY=$(command -v python3 || command -v python); $PY -c "import sys, urllib.request as u
+sys.stdout.write(u.urlopen(u.Request(sys.argv[1], headers={\"Authorization\": \"Bearer stand-in\"}), timeout=10).read().decode())" "$1"' _ "$1" > "$2" 2>/dev/null
+  }
+  for _ in $(seq 1 30); do _get "http://127.0.0.1:$MOCK_PORT/v1/models" "$WORK/got-v1.json" && break; sleep 1; done
+  _get "http://127.0.0.1:$MOCK_PORT/api/models?limit=$XL_CATALOG_PAGE&offset=0" "$WORK/got-catalog.json" || : > "$WORK/got-catalog.json"
+  python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1]))["data"]
+assert d and all(set(m) == {"id", "object", "created", "owned_by"} for m in d), d[:2]' "$WORK/got-v1.json" &&
+    ok "the stand-in's /v1/models lists ids only, as the gateway's does" || fail "the stand-in's /v1/models: $(head -c 300 "$WORK/got-v1.json")"
+  # never details from /v1/models: read as a catalog it gives ids alone
+  [ -z "$(xl_details_tsv < "$WORK/got-v1.json" | cut -f2-12 | tr -d '\t\n')" ] && ok "nothing in /v1/models is taken for model details" || fail "/v1/models parsed as details"
+  xl_ids < "$WORK/got-v1.json" > "$WORK/ids"
+  { printf '# fetched_at: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"; xl_details_tsv < "$WORK/got-catalog.json" | xl_join "$WORK/ids"; } > "$(xl_cache_tsv)"
+  _render
+fi
 up=0
 for _ in $(seq 1 90); do
   if [ "$(curl -s -m 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/health/liveliness" 2>/dev/null)" = 200 ]; then up=1; break; fi
