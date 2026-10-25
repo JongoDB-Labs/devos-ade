@@ -45,6 +45,21 @@ test("the Chat tab: Open WebUI first, the models, your keys next, the tools them
   assert.equal(g[5].items[1].title, "Terms first.");
 });
 
+test("chat picker: Experiential Labs' models as a group; while it has no key, one greyed entry naming Settings' row", () => {
+  const on = plain(A.chatOptions({ ...data, explabs: { on: true, setting: "EXPLABS_API_KEY" },
+    models: [...data.models, { id: "xl/qwen3.8-27b", label: "qwen3.8-27b", provider: "Experiential Labs" }] }));
+  const xl = on.find((x) => x.label === "Experiential Labs");
+  assert.deepEqual(xl.items.map((i) => [i.value, i.disabled]), [["model:xl/qwen3.8-27b", false]]);
+  assert.deepEqual(on.map((x) => x.label).slice(1, 4), ["Bedrock", "OpenRouter", "Experiential Labs"]);   // next to OpenRouter
+  const off = plain(A.chatOptions({ ...data, explabs: { on: false, setting: "EXPLABS_API_KEY" } })).find((x) => x.label === "Experiential Labs");
+  assert.equal(off.items.length, 1);
+  assert.equal(off.items[0].disabled, true);
+  assert.match(off.items[0].label, /add its key in Settings › Chat & voice$/);
+  assert.match(off.items[0].title, /EXPLABS_API_KEY/);
+  // an older portal (no explabs field): nothing at all
+  assert.ok(!plain(A.chatOptions(data)).some((x) => x.label === "Experiential Labs"));
+});
+
 test("Open WebUI's address for a new chat with a model", () => {
   assert.equal(A.chatSrc("http://chat.bedrock-now.localhost/?x=1#y", "or/x:free"), "http://chat.bedrock-now.localhost/?models=or%2Fx%3Afree");
   assert.equal(A.chatSrc("http://chat.bedrock-now.localhost/", ""), "http://chat.bedrock-now.localhost/");

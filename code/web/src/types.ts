@@ -184,7 +184,7 @@ export interface BnModel {
   output: number | null;
   cacheWrite: number | null;
   cacheRead: number | null;
-  /** Bedrock or OpenRouter */
+  /** Bedrock, OpenRouter or Experiential Labs */
   provider: string;
   /** who makes it: Anthropic, Meta, Mistral … ('' when unknown) */
   vendor: string;
@@ -537,6 +537,8 @@ export interface SpendRow {
   model: string;
   spend: number;
   tokens: number;
+  /** a call through Experiential Labs on your own provider key: that provider bills it ($0 here) */
+  byok?: boolean;
 }
 
 /** The terminal key's budget (from /.bn/spend): what the Code page's sessions spend against. */

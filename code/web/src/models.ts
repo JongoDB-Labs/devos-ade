@@ -52,7 +52,7 @@ export const COMPAT_INFO: Record<Compat, { badge: string; tone: 'ok' | 'warn' | 
 };
 
 /** The groups of the model picker, in order. */
-export const MODEL_GROUPS = ['starred', 'anthropic', 'bedrock', 'or-free', 'or-paid'] as const;
+export const MODEL_GROUPS = ['starred', 'anthropic', 'bedrock', 'or-free', 'or-paid', 'xl'] as const;
 export type ModelGroup = (typeof MODEL_GROUPS)[number];
 export const GROUP_TITLE: Record<ModelGroup, string> = {
   starred: 'Starred',
@@ -60,13 +60,17 @@ export const GROUP_TITLE: Record<ModelGroup, string> = {
   bedrock: 'Other providers on Bedrock',
   'or-free': 'OpenRouter: free',
   'or-paid': 'OpenRouter',
+  xl: 'Experiential Labs',
 };
+// TODO(setup-links): while Experiential Labs has no key its group is simply absent here. Once the setup-links registry
+// for greyed items is on main, add a greyed 'xl' entry that links to DevOS ADE's #settings/EXPLABS_API_KEY.
 
-const isAnthropic = (m: BnModel): boolean => m.vendor.toLowerCase() === 'anthropic' && m.provider !== 'OpenRouter';
+const isAnthropic = (m: BnModel): boolean => m.vendor.toLowerCase() === 'anthropic' && m.provider === 'Bedrock';
 
 /** Which group a model belongs in (starred aside). */
 export function groupOf(m: BnModel): Exclude<ModelGroup, 'starred'> {
   if (m.provider === 'OpenRouter') return m.free ? 'or-free' : 'or-paid';
+  if (m.provider === 'Experiential Labs') return 'xl';
   return isAnthropic(m) ? 'anthropic' : 'bedrock';
 }
 
@@ -83,7 +87,8 @@ export function modelMatches(m: BnModel, query: string): boolean {
   return words.every((w) => h.includes(w));
 }
 
-/** The picker's sections: starred first, then by provider (Anthropic, Bedrock's others, OpenRouter's free, then paid).
+/** The picker's sections: starred first, then by provider (Anthropic, Bedrock's others, OpenRouter's free, then paid,
+ *  then Experiential Labs).
  *  Without `all` only the models Settings lists, and none that fails; the current model is always there. */
 export function modelSections(models: BnModel[], o: { query?: string; starred?: string[]; all?: boolean; current?: string }): { group: ModelGroup; models: BnModel[] }[] {
   const starred = new Set(o.starred ?? []);

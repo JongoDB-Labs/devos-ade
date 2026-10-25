@@ -165,8 +165,12 @@ def tools(catalog_dir: Path, status_dir: Path) -> dict:
             "chat_sandbox": ch["sandbox"], "tools": rows}
 
 
+CHAT_PROVIDERS = ("OpenRouter", "Experiential Labs")   # (and Bedrock: everything else)
+
+
 def chat_models(models: dict) -> list[dict]:
-    """The enabled chat models (Bedrock, OpenRouter) for the Chat picker: {id, label, provider}, at most 400."""
+    """The enabled chat models (Bedrock, OpenRouter, Experiential Labs) for the Chat picker: {id, label, provider}, at
+    most 400."""
     out = []
     for r in (models or {}).get("rows") or []:
         if not isinstance(r, dict) or r.get("kind") != "chat" or not r.get("enabled"):
@@ -175,7 +179,7 @@ def chat_models(models: dict) -> list[dict]:
         if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}", name):
             continue
         out.append({"id": name, "label": _text(r.get("display") or name, 80) or name,
-                    "provider": "OpenRouter" if r.get("provider") == "OpenRouter" else "Bedrock"})
+                    "provider": r["provider"] if r.get("provider") in CHAT_PROVIDERS else "Bedrock"})
         if len(out) >= 400:
             break
     return out
@@ -230,6 +234,8 @@ def build(s, remote: bool, models: dict | None = None) -> dict:
     t["plan_models"] = plan_models(s, remote, t["tools"], links, current_egress(s))
     return {"terminal": {"enabled": bool(s.terminal), "here": s.terminal_on(remote), "reason": terminal_reason(s, remote)},
             "basics": list(BASICS), **t, "models": chat_models(models) if models is not None else [],
+            # Experiential Labs off: Chat's picker shows it greyed, with the Settings row where its key goes
+            "explabs": {"on": bool((models or {}).get("explabs")), "setting": "EXPLABS_API_KEY"},
             "folders": folders(s.status_dir), "openrouter": bool(getattr(s, "openrouter_api_key", "")), "setup": links}
 
 

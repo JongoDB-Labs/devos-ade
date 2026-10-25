@@ -6,7 +6,7 @@ import { store, setModel, setMode, setEffort, activeView, defaultModel, refreshS
 import { SETUP_LINKS, type SetupReason } from '../setuplinks';
 import { COMPAT_INFO, GROUP_TITLE, compatWarning, findModel, hiddenCount, modelSections } from '../models';
 import { STARRED_MAX } from '../prefs';
-import { meter } from '../spend';
+import { byokCount, meter } from '../spend';
 import { percent } from '../budget';
 import type { BnModel, Harness, HarnessInfo, PlanUsage } from '../types';
 import { MODE_INFO, offeredModes, startMode } from '../modes';
@@ -440,6 +440,7 @@ export function CostMeter() {
     );
   }
   const { turn, session } = meter(v.turns, v.spend);
+  const byok = byokCount(v.spend);
   const pct = v.budget ? percent(session, v.budget) : 0;
   const level = !v.budget ? '' : pct >= 100 ? ' over' : pct >= 80 ? ' warn' : '';
   const key =
@@ -450,7 +451,7 @@ export function CostMeter() {
     <button
       type="button"
       class={`meter-btn${level}`}
-      title={`Cost from ${PRODUCT}'s spend logs (what Bedrock or OpenRouter billed; a free model costs $0). Turns appear a few seconds after they end. Click to refresh.${v.budget ? `\nThis session's budget: ${money(v.budget.usd, 2)}${v.budget.hard ? ', stop on' : ' (warnings only)'} — ⋯ › Budget.` : ''}${key}`}
+      title={`Cost from ${PRODUCT}'s spend logs (what Bedrock, OpenRouter or Experiential Labs billed; a free model costs $0). Turns appear a few seconds after they end. Click to refresh.${byok ? `\n${byok} of this session's requests ran on your own provider key through Experiential Labs: that provider bills them, $0 here.` : ''}${v.budget ? `\nThis session's budget: ${money(v.budget.usd, 2)}${v.budget.hard ? ', stop on' : ' (warnings only)'} — ⋯ › Budget.` : ''}${key}`}
       onClick={() => void refreshSpend(v.id)}
       data-testid="cost"
     >

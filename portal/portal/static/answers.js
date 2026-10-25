@@ -1,6 +1,7 @@
 // Who answers: one picker, above the Terminal tab and the Chat tab (and the same JSON in the Code page's terminal
 // panel): Claude Code on Bedrock, your own AI subscriptions' tools — each the provider's own client in the sandbox,
-// signed in there with its own flow — and, in Chat, the models of Bedrock and OpenRouter (your own API keys next).
+// signed in there with its own flow — and, in Chat, the models of Bedrock, OpenRouter and Experiential Labs (your own
+// API keys next).
 // GET /api/answers (answers.py): the tools of catalog/ai-tools.tsv with what each said of its own login at ./stack's
 // last check (never a login), the chat models, the project folders. Built with el()/textContent only.
 //   Terminal tab: "Open" makes (or selects) a window of that tool in the terminal's tmux session — on that click the
@@ -65,8 +66,9 @@
     return [{ label: "Claude Code on Bedrock, and a shell", items: basics },
       { label: "Your AI subscriptions — each signs in with its own flow", items: tools }].filter((g) => g.items.length);
   }
-  // chatOptions(DATA) -> the Chat tab's groups: Open WebUI, Bedrock and OpenRouter models, your API keys (next), the
-  // tools themselves (they open here), and the subscriptions as Chat models (each while it can answer; else greyed, saying why)
+  // chatOptions(DATA) -> the Chat tab's groups: Open WebUI, Bedrock, OpenRouter and Experiential Labs models (the last
+  // greyed while it has no key), your API keys (next), the tools themselves (they open here), and the subscriptions as
+  // Chat models (each while it can answer; else greyed, saying why)
   function chatOptions(d) {
     const here = Boolean(d && d.terminal && d.terminal.here);
     const models = d && Array.isArray(d.models) ? d.models : [];
@@ -79,6 +81,12 @@
       { label: "", items: [{ value: "owui", label: "Open WebUI — its own model menu", disabled: false, title: "" }] },
       { label: "Bedrock", items: by("Bedrock") },
       { label: "OpenRouter", items: or },
+      // TODO(setup-links): while Experiential Labs is off this entry is only greyed; once the setup-links registry is on
+      // main, register d.explabs.setting (EXPLABS_API_KEY) there so the entry links straight to #settings/EXPLABS_API_KEY.
+      { label: "Experiential Labs", items: d && d.explabs && d.explabs.on === false
+        ? [{ value: "setup:explabs", label: "Experiential Labs — add its key in Settings › Chat & voice", disabled: true,
+            title: "One key adds the gateway's models next to Bedrock: Settings › Chat & voice › Experiential Labs key, or ./stack config set EXPLABS_API_KEY." }]
+        : by("Experiential Labs") },
       { label: "Your API keys", items: [{ value: "keys", label: "Your own OpenAI, Anthropic, xAI, Google or Mistral key — coming next", disabled: true, title: "Billed by each provider, with budgets, through LiteLLM (as OpenRouter is)." }] },
       { label: "Your AI subscriptions — the tool itself, here", items: tools.map((t) => {
         const s = toolState(t, here, termReasonOf(d));

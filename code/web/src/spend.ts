@@ -51,6 +51,11 @@ export function sessionCost(rows: SpendRow[]): number {
   return rows.reduce((s, r) => s + r.spend, 0);
 }
 
+/** How many of the rows ran on your own provider key through Experiential Labs (billed by that provider, $0 here). */
+export function byokCount(rows: SpendRow[] | null): number {
+  return (rows ?? []).filter((r) => r.byok === true).length;
+}
+
 /** The cost-meter numbers: last turn and whole session (null = not known yet). */
 export function meter(turns: Turn[], rows: SpendRow[] | null, now = Date.now()): { turn: number | null | undefined; session: number | null } {
   if (!rows) return { turn: null, session: null };

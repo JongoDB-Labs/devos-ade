@@ -64,6 +64,22 @@ test('models: the picker groups starred first, then Anthropic, Bedrock’s other
   assert.equal(groupOf(ms[5]), 'or-free');
 });
 
+// Experiential Labs' models (xl/…): a group of their own, after OpenRouter's; a Claude model through the gateway is the
+// gateway's, never "Anthropic (Claude)" (that group is Bedrock's)
+test('models: Experiential Labs models are a group of their own, after OpenRouter', () => {
+  const bn = normModels({ models: [...RAW.models,
+    { id: 'xl/qwen3.8-27b', name: 'qwen3.8-27b', provider: 'Experiential Labs', vendor: 'Qwen', compat: 'untested', listed: true, input_per_mtok: 0.32, output_per_mtok: 2.4, context: 1000000 },
+    { id: 'xl/claude-fable-5', name: 'claude-fable-5', provider: 'Experiential Labs', vendor: 'Anthropic', compat: 'untested', listed: true },
+    { id: 'xl/odd', name: 'odd', provider: 'Somebody Else' }] });
+  const by = Object.fromEntries(bn.models.map((m) => [m.id, m]));
+  assert.equal(by['xl/qwen3.8-27b'].provider, 'Experiential Labs');
+  assert.equal(by['xl/odd'].provider, 'Bedrock', 'an unknown provider is not passed on');
+  assert.equal(groupOf(by['xl/qwen3.8-27b']), 'xl');
+  assert.equal(groupOf(by['xl/claude-fable-5']), 'xl');
+  assert.deepEqual(modelSections(bn.models, {}).map((s) => s.group), ['anthropic', 'bedrock', 'or-free', 'or-paid', 'xl']);
+  assert.deepEqual(modelSections(bn.models, { query: 'experiential qwen' }).flatMap((s) => s.models.map((m) => m.id)), ['xl/qwen3.8-27b']);
+});
+
 test('models: search by name, id, vendor, provider, badge and "free" — every word', () => {
   const ms = normModels(RAW).models;
   const ids = (q: string) => modelSections(ms, { query: q, all: true }).flatMap((s) => s.models.map((m) => m.id));

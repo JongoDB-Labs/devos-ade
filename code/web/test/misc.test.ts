@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyHunks, compact, countChanges, hunkLines, lineDiff } from '../src/diff';
-import { meter, shownCost, turnCosts } from '../src/spend';
+import { byokCount, meter, shownCost, turnCosts } from '../src/spend';
 import { appendMemory, findTrigger, memoryLine, mergeCommands, rankCommands, rankPaths } from '../src/palette';
 import { rulePreview, ruleOf, sentence, destinationText } from '../src/permission';
 import { parsePrefs, DEFAULT_PREFS } from '../src/prefs';
@@ -95,6 +95,10 @@ test('spend: rows go to the turn whose interval holds them; unknown is "…"', (
   assert.equal(m.turn, null);
   assert.ok(Math.abs((m.session ?? 0) - 5.16) < 1e-9);
   assert.deepEqual(meter(turns, null), { turn: null, session: null });
+  // calls on your own provider key through Experiential Labs: counted for the tooltip, $0 in the totals
+  assert.equal(byokCount([...rows, { start: 9_500, model: 'xl/q', spend: 0, tokens: 9, byok: true }]), 1);
+  assert.equal(byokCount(rows), 0);
+  assert.equal(byokCount(null), 0);
 });
 
 test('palette: / only at the start, @ anywhere; ranking', () => {

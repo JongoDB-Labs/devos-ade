@@ -1797,7 +1797,7 @@ export function normModels(raw: unknown): BnModels {
       seen.add(id);
       const alias = Object.entries(aliases).find(([, v]) => v === id)?.[0] ?? (typeof x.alias === 'string' ? label(x.alias, 40) : null);
       const free = x.free === true;
-      const provider = x.provider === 'OpenRouter' ? 'OpenRouter' : 'Bedrock';
+      const provider = x.provider === 'OpenRouter' || x.provider === 'Experiential Labs' ? x.provider : 'Bedrock';
       const ctx = nonneg(x.context);
       return {
         id,
@@ -1835,7 +1835,7 @@ export async function getSpend(session: string): Promise<{ rows: SpendRow[]; key
       const spend = nonneg(x.spend);
       const start = time(x.startTime ?? x.start);
       if (spend === null || !start) return null;
-      return { start, model: label(x.model, 128), spend, tokens: nonneg(x.tokens ?? x.total_tokens) ?? 0 };
+      return { start, model: label(x.model, 128), spend, tokens: nonneg(x.tokens ?? x.total_tokens) ?? 0, byok: x.byok === true };
     })
     .filter((r): r is SpendRow => r !== null);
   const k = obj(o.key);

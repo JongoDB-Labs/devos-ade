@@ -13,7 +13,7 @@ from urllib.parse import parse_qsl, urlencode
 
 import httpx
 
-from . import hostfiles, summary, usage
+from . import explabs, hostfiles, summary, usage
 from . import prices as price_update
 from .config import Settings
 
@@ -30,7 +30,7 @@ CODE_MODELS = "code-models.tsv"   # written by ./stack (lib/code_models.sh) next
 MAX_CODE_MODELS = 2000
 MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}")    # settings.MODEL_ID, lib/code_models.sh valid_code_model_id
 COMPAT = ("works", "chat-only", "fails", "untested")
-PROVIDERS = ("Bedrock", "OpenRouter")
+PROVIDERS = ("Bedrock", "OpenRouter", "Experiential Labs")
 SCOPES = ("all", "anthropic", "list")
 
 
@@ -82,9 +82,10 @@ def read_code_models(litellm_dir: Path) -> tuple[list[dict], str | None]:
 
 def models(s: Settings) -> dict:
     """The models a Code page session may run (litellm/code-models.tsv: every enabled chat model, Bedrock's and the
-    OpenRouter ones, with how each works as Claude Code's model and whether Settings › Claude Code › Models lists it),
-    with this stack's prices per million tokens (Bedrock's: the daily-updated list while fresh, as Home shows them;
-    OpenRouter's: what LiteLLM bills; a free one is $0, never spend), and which of Claude Code's aliases maps where.
+    OpenRouter and Experiential Labs ones, with how each works as Claude Code's model and whether Settings › Claude Code ›
+    Models lists it), with this stack's prices per million tokens (Bedrock's: the daily-updated list while fresh, as Home
+    shows them; OpenRouter's: what LiteLLM bills; Experiential Labs': the list price, while LiteLLM books what the gateway
+    reports for each call; a free one is $0, never spend), and which of Claude Code's aliases maps where.
     Before ./stack wrote the file: the enabled Claude models, as before."""
     prices = price_update.effective_prices(summary.price_paths(s))
     aliases = {k: v for k, v in s.claude_models.items() if k in ALIAS_ORDER and v}
@@ -97,9 +98,12 @@ def models(s: Settings) -> dict:
                              "prices": {f: None for f in PRICE_FIELDS}, "free": False, "compat": "works", "listed": True,
                              "default": False, "max_out": None, "context": None, "note": ""})
     out = []
+    xl_on = explabs.read(s.litellm_dir) is not None
     for r in rows:
         if r["provider"] == "OpenRouter" and not s.openrouter_api_key:
             continue   # (the key went: the file follows at the next render)
+        if r["provider"] == explabs.PROVIDER and not xl_on:
+            continue   # (Experiential Labs is off: its file is gone)
         p = prices.get(r["id"]) if r["provider"] == "Bedrock" else None
         pr = {f: (float(p[f]) if p.get(f) is not None else None) for f in PRICE_FIELDS} if p else dict(r["prices"])
         if r["free"]:
@@ -144,7 +148,10 @@ def _row(r: dict) -> dict:
         start = datetime.fromisoformat(str(start).replace("Z", "+00:00")).isoformat() if start else None
     except ValueError:
         start = None
+    # a call on your own provider key through the Experiential Labs gateway (its usage.is_byok): that provider bills it
+    byok = u.get("is_byok") is True or (isinstance(meta.get("additional_usage_values"), dict) and meta["additional_usage_values"].get("is_byok") is True)
     return {"startTime": start, "model": str(r.get("model") or r.get("model_group") or "")[:128], "spend": _num(r.get("spend")),
+            "byok": byok,
             "status": str(r.get("status") or "")[:20], "tokens": _int(r.get("total_tokens")),
             "input_tokens": _int(r.get("prompt_tokens")), "output_tokens": _int(r.get("completion_tokens")),
             "cache_read_tokens": _int(u.get("cache_read_input_tokens")), "cache_write_tokens": _int(u.get("cache_creation_input_tokens"))}

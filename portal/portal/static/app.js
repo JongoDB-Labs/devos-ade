@@ -282,10 +282,10 @@ const matchesFilter = (m) => modelFilter === "all" || (modelFilter === "bedrock"
 
 function renderModels(models, prices) {
   const body = $("#models"); body.replaceChildren();
-  const or = models.openrouter;
-  $("#model-filter").hidden = !or;
-  $("#models-title").textContent = or ? "Models" : "Models your AWS key can use";
-  if (!or) modelFilter = "all";
+  const or = models.openrouter, xl = models.explabs;
+  $("#model-filter").hidden = !(or || xl);
+  $("#models-title").textContent = or || xl ? "Models" : "Models your AWS key can use";
+  if (!(or || xl)) modelFilter = "all";
   const counts = { all: models.rows.length, bedrock: 0, free: 0, paid: 0 };
   for (const m of models.rows) counts[(m.provider || "Bedrock") === "Bedrock" ? "bedrock" : m.access] += 1;
   for (const b of document.querySelectorAll("#model-filter .chip")) {
@@ -311,6 +311,8 @@ function renderModels(models, prices) {
   else if (models.checked_at) bits.push(`Checked ${ago(models.checked_at)}; ./stack models --recheck checks again (< $0.01).`);
   bits.push("Prices are Bedrock on-demand rates in USD per 1M tokens.");
   if (or) bits.push(`OpenRouter models (or/…) send prompts to openrouter.ai; prices as of ${ago(or.fetched_at)}. ./stack openrouter changes which ones are offered.`);
+  // (Experiential Labs: list prices; each call is booked at what the gateway reported for it, $0 on your own provider key)
+  if (xl) bits.push(`Experiential Labs models (xl/…) send prompts to api.experientiallabs.ai; list prices${xl.fetched_at ? ` as of ${ago(xl.fetched_at)}` : ""}, while spend is what the gateway reports for each call ($0 on your own provider key, which that provider bills).${xl.failsafe ? ` ${xl.failsafe} of them run without model details, so no optional parameter is sent (./stack status says why).` : ""} Settings › Chat & voice changes which ones are offered.`);
   $("#models-note").textContent = bits.join(" ");
   renderPrices(prices);
 }

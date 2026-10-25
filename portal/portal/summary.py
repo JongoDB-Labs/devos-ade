@@ -9,7 +9,7 @@ from pathlib import Path
 
 import httpx
 
-from . import hostfiles, icons, openrouter, updates, usage
+from . import explabs, hostfiles, icons, openrouter, updates, usage
 from . import prices as price_update
 from .config import Settings
 
@@ -268,13 +268,17 @@ async def spend(client: httpx.AsyncClient, s: Settings) -> dict:
 
 
 def models_with_openrouter(s: Settings) -> dict:
-    """Bedrock probe results, plus the enabled OpenRouter models when a key is configured."""
+    """Bedrock probe results, plus the enabled OpenRouter models when a key is configured and the chosen Experiential
+    Labs models while it is on (models.explabs: None while off)."""
     models = read_models(s.litellm_dir, s.catalog_dir, price_update.effective_prices(price_paths(s)))
     models["openrouter"] = None
     if s.openrouter_api_key:
         orm = openrouter.read_models(s.litellm_dir, s.catalog_dir)
         models["rows"] = models["rows"] + orm["rows"]
         models["openrouter"] = {k: orm[k] for k in ("fetched_at", "mode", "counts")}
+    xl = explabs.read(s.litellm_dir)
+    models["rows"] = models["rows"] + explabs.rows(xl)
+    models["explabs"] = explabs.summary(xl)
     return models
 
 
