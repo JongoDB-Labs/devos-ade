@@ -45,6 +45,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   question, never a launch. A link on another website gets the sign-in or a card with a button to the Code page. The
   session and the Code page's unlock are still needed. Safari may not send `Sec-Fetch-User`, so a typed address there
   can show the card: that fails closed and only costs convenience.
+- **Settings › Your AI subscriptions shows Claude's plan switch with the Code page off too**, saying it takes effect
+  with the Code page.
+- **Changing *Sandbox internet access* frees the Docker networks it no longer needs before making new ones.** When
+  Docker has no address range left, it says so and how to free one, instead of Compose's "all predefined address pools
+  have been fully subnetted".
 - **The Code page's unit tests run on a Mac:** the ones that need the sandbox's Linux tools skip there and say why, and
   fail instead of skipping inside the image.
 - **Tests:** the Plan-mode end-to-end check decides on every run.
