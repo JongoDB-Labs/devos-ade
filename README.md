@@ -2487,6 +2487,20 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
   the gateway, each on a key of its own, in throwaway containers (`bne2e-free-*`, removed afterwards). Every request
   must be on the free model and booked $0 (none on a Claude model: those are priced there), each key's spend $0, and
   Home's Equivalent must price the same usage (`tests/e2e/out/free-models.json`).
+- **Harness parity** (opt-in, a few minutes, about $0.50 of Bedrock for every family): `tests/e2e/harness-parity.sh
+  --aws-env FILE` runs real Claude Code sessions (`devos-claude -p … --output-format stream-json`, its tools allowed in
+  one test folder) in the terminal's sandbox image, through this checkout's terminal gateway, LiteLLM config and hook,
+  on each provider family's models: Claude Haiku as the control, Bedrock's GPT-6 Luna and Mistral Large 3, an OpenRouter
+  model and two Experiential Labs models. Thirteen scenarios each: three turns with `--resume`, thinking replayed,
+  Claude Code's tools (Read, Write, Edit, Bash, Glob, Grep, its todo list), parallel tool calls, a tool call after
+  thinking, an image through Read and one in the prompt, `/compact` after a long read, `count_tokens` and `/context`,
+  a switch from Haiku (its thinking and tool calls) to the model and back, a provider's error as Claude Code and the
+  Code page show it, WebFetch and WebSearch. Each one's PASS or FAIL with the exact error is in
+  `tests/e2e/out/harness-parity.tsv` (and `.json`, with every session's stream-json and the Bedrock spend LiteLLM
+  booked). OpenRouter is a stand-in without `E2E_OPENROUTER_API_KEY`, and Experiential Labs always is
+  (`tests/e2e/explabs-mock.py`: the gateway's refusals, answered by GPT-6 Luna); `E2E_EXPLABS_API_KEY=…
+  tests/e2e/harness-parity.sh --aws-env FILE --families explabs --explabs-real` runs the real gateway (credits on every
+  turn). `--families`, `--models` and `--scenarios` pick fewer.
 - **Remote access without a tailnet** (opt-in, no AWS, about two minutes): `tests/e2e/remote/run.sh` runs the real
   portal and Caddyfile in Tailscale mode behind a stand-in for the sidecar, in Chromium (and Firefox and WebKit for
   one probe): the hand-offs, the Code page's previews over remote access and the same-site guard (and, with the guard
