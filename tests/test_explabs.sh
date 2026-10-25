@@ -417,3 +417,38 @@ assert post(None, Resp(Usage(cost=1.0)))._hidden_params == {}
 assert post(xl, None) is None
 '
 }
+
+# Open WebUI: names "<id> · Experiential Labs", tags Experiential Labs and the vendor; a name or tag of your own stays;
+# its own entries that are no longer offered go (also once the key went), OpenRouter's and yours are never touched
+test_open_webui_names_tags_and_cleans_up_only_its_own() {
+  command -v python3 >/dev/null || return 77
+  _xl_cached 'EXPLABS_MODELS=qwen3.8-27b,gpt-5-mini
+OPENWEBUI_API_KEY=sk-ow
+'
+  _owui_get() { echo "GET $1" >> "$TMP/owui"; printf '%s' "${OWUI_BASE:-[]}" > "$2"; echo 200; }
+  _owui_post() { echo "POST $1 $2" >> "$TMP/owui"; echo 200; }
+  _owui_py() { local s="$1"; shift; python3 -c "$s" "$@"; }
+  OWUI_BASE='[{"id":"xl/qwen3.8-27b","name":"My Qwen","meta":{"tags":[{"name":"mine"}],"bedrock_now":"explabs"}},
+ {"id":"xl/old-model","name":"old-model · Experiential Labs","meta":{"bedrock_now":"explabs"}},
+ {"id":"or/a/b","name":"B · OpenRouter","meta":{"bedrock_now":"openrouter"}},
+ {"id":"xl/hand-made","name":"mine","meta":{}}]'
+  local out imp; out="$(explabs_sync_owui 2>&1)"
+  assert_contains "$out" "Open WebUI: Experiential Labs models named and tagged (2 updated, 0 unchanged, 1 removed)"
+  imp="$(grep '^POST /api/v1/models/import ' "$TMP/owui" | cut -d' ' -f3-)"
+  assert_eq "$(printf '%s' "$imp" | python3 -c 'import json, sys
+m = {x["id"]: x for x in json.load(sys.stdin)["models"]}
+print(m["xl/qwen3.8-27b"]["name"], [t["name"] for t in m["xl/qwen3.8-27b"]["meta"]["tags"]], m["xl/gpt-5-mini"]["name"], m["xl/gpt-5-mini"]["meta"]["bedrock_now"])')" \
+    "My Qwen ['Experiential Labs', 'Qwen', 'mine'] gpt-5-mini · Experiential Labs explabs"
+  assert_contains "$(cat "$TMP/owui")" 'POST /api/v1/models/model/delete {"id": "xl/old-model"}'
+  assert_not_contains "$(cat "$TMP/owui")" "or/a/b"; assert_not_contains "$(cat "$TMP/owui")" "xl/hand-made"
+  [ -e "$STATE_DIR/explabs-owui-synced" ]
+  _assert_no_key "$(cat "$TMP/owui")" "$out"
+  # the key went: its entries go with it, the marker too
+  printf 'OPENWEBUI_API_KEY=sk-ow\n' > "$ENV_FILE"; : > "$TMP/owui"
+  OWUI_BASE='[{"id":"xl/qwen3.8-27b","name":"My Qwen","meta":{"bedrock_now":"explabs"}}]'
+  explabs_sync_owui 2>/dev/null
+  assert_contains "$(cat "$TMP/owui")" 'POST /api/v1/models/model/delete {"id": "xl/qwen3.8-27b"}'
+  [ ! -e "$STATE_DIR/explabs-owui-synced" ]
+  # never synced and off: no request at all
+  : > "$TMP/owui"; explabs_sync_owui; assert_eq "$(cat "$TMP/owui")" ""
+}
