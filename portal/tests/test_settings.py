@@ -219,11 +219,13 @@ def test_removing_a_key_says_what_that_key_does():
     js = (STATIC / "settings.js").read_text(encoding="utf-8")
     words = js[js.index("const REMOVE_KEY = {"):js.index("const ON_VALUES")]
     # each key that has a Remove button has words of its own: never OpenRouter's for the speech-to-text key
-    form = js[js.index('} else if (k.validator === "or_key" || k.validator === "stt_key") {'):js.index('} else if (k.validator === "webhook") {')]
+    form = js[js.index('} else if (k.validator === "or_key" || k.validator === "stt_key" || k.validator === "xl_key") {'):js.index('} else if (k.validator === "webhook") {')]
     assert "REMOVE_KEY[k.validator]" in form and "disappear" not in form
-    stt = words[words.index("stt_key:"):]
+    stt = words[words.index("stt_key:"):words.index("xl_key:")]
     assert "OpenRouter" not in stt and "OpenAI or Groq key is deleted" in stt and "LiteLLM, Chat and the portal restart" in stt
     assert "or_key: \"OpenRouter's models disappear from Chat and the API; LiteLLM and the portal restart (about 40 s).\"" in words
+    # (the Experiential Labs key restarts LiteLLM alone: RESTARTS.explabs)
+    assert "xl_key: \"Experiential Labs' models disappear from Chat, the Code page and the API; LiteLLM restarts (about 30 s).\"" in words
 
 
 def test_no_snapshot_or_a_bad_one(dirs):
