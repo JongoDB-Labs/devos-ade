@@ -465,7 +465,7 @@ test_up_renders_again_when_the_key_was_removed_by_hand() {
 }
 
 # LiteLLM's hook (lib/litellm-hooks/bn_hooks.py), with a stand-in for LiteLLM's CustomLogger: the output cap under the
-# field the model takes and the parameters its details refuse left out — only for the gateway's models, only on their
+# field the model takes (in extra_body) and the parameters its details refuse left out — only for the gateway's models, only on their
 # Chat Completions calls; the cost LiteLLM books is the gateway's (usage.cost), $0 on your own provider key
 _hook() {
   command -v python3 >/dev/null 2>&1 || return 77
@@ -488,14 +488,24 @@ drops = ["frequency_penalty", "logprobs", "top_logprobs", "response_format", "ma
 kw = {"model": "openai/qwen3.8-27b", "messages": [{"role": "user", "content": "hi"}], "model_info": mi, "additional_drop_params": drops,
       "max_tokens": 32000, "temperature": 0.3, "frequency_penalty": 0.5, "logprobs": True, "extra_body": {"top_logprobs": 2, "keep": 1}}
 out = run(copy.deepcopy(kw))
-assert out["max_completion_tokens"] == 32000 and "max_tokens" not in out, out          # the cap under its field
+# the cap under its field, in extra_body (LiteLLM renames a top-level max_tokens for o-series and GPT-5 names)
+assert "max_tokens" not in out and "max_completion_tokens" not in out, out
 assert out["temperature"] == 0.3 and "frequency_penalty" not in out and "logprobs" not in out, out
-assert out["extra_body"] == {"keep": 1}, out                                          # extra_body too
+assert out["extra_body"] == {"keep": 1, "max_completion_tokens": 32000}, out          # extra_body dropped from too
 assert out["messages"] == kw["messages"] and out["model"] == kw["model"], out          # never anything but XL_OPTIONAL
-# a cap already under its field stays; the other way round for a max_tokens model
-assert run({**copy.deepcopy(kw), "max_completion_tokens": 100})["max_completion_tokens"] == 100
-mt = run({"model": "openai/x", "model_info": {"bn_xl": True, "bn_xl_max_tokens": "max_tokens"}, "max_completion_tokens": 50})
-assert mt == {"model": "openai/x", "model_info": {"bn_xl": True, "bn_xl_max_tokens": "max_tokens"}, "max_tokens": 50}, mt
+# a cap already under its field wins; the other way round for a max_tokens model (o4-mini, gpt-5.1-codex)
+assert run({**copy.deepcopy(kw), "max_completion_tokens": 100})["extra_body"]["max_completion_tokens"] == 100
+mi_mt = {"bn_xl": True, "bn_xl_max_tokens": "max_tokens"}
+mt = run({"model": "openai/o4-mini", "model_info": mi_mt, "max_completion_tokens": 50})
+assert mt == {"model": "openai/o4-mini", "model_info": mi_mt, "extra_body": {"max_tokens": 50}}, mt
+assert run({"model": "openai/o4-mini", "model_info": mi_mt, "max_tokens": 7, "extra_body": None})["extra_body"] == {"max_tokens": 7}
+# no cap asked: none added
+assert run({"model": "openai/x", "model_info": mi_mt}) == {"model": "openai/x", "model_info": mi_mt}
+# anything failing here: the request exactly as it came, its cap where it was
+class Odd(dict):
+    def keys(self): raise RuntimeError("odd")
+odd = {"model": "openai/x", "model_info": mi_mt, "max_tokens": 9, "additional_drop_params": ["top_k"], "extra_body": Odd(a=1)}
+assert run(odd) is odd and odd["max_tokens"] == 9 and "max_tokens" not in odd["extra_body"], odd
 # not on LiteLLM'"'"'s own anthropic_messages call (it needs Anthropic'"'"'s max_tokens), nor for another model, nor odd shapes
 assert run(copy.deepcopy(kw), CallTypes.anthropic_messages) == kw
 other = {"model": "bedrock/x", "model_info": {"id": "1"}, "max_tokens": 9, "temperature": 1, "additional_drop_params": ["temperature"]}

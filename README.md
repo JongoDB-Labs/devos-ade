@@ -1988,7 +1988,7 @@ shown there once.
   | `supports_tools` false (null: they go) | `tools`, `tool_choice`, `parallel_tool_calls`, `functions`, `function_call` |
   | `supports_structured_output` not true | `response_format` |
   | `supports_reasoning` not true | `reasoning_effort` |
-  | `chat_max_tokens_field` | the cap goes under the field it names (`max_completion_tokens` for `qwen3.8-27b`); none named: as `max_tokens`. Never left out: it is what keeps an answer's length, and its cost, in bounds |
+  | `chat_max_tokens_field` | the cap goes under the field it names (`max_completion_tokens` for `qwen3.8-27b`, `max_tokens` for `gpt-5.1-codex`, which LiteLLM alone would rename for its GPT-5 name); none named: as `max_tokens`. Never left out: it is what keeps an answer's length, and its cost, in bounds |
   | **no details at all** (fail safe) | `temperature`, `top_p`, `top_k`, the penalties, `logprobs`, `top_logprobs`, `response_format`, `reasoning_effort`; tools and the `max_tokens` cap still go |
 
   A field the details leave open (null) counts as not true, except tools' and the cap's: a model that cannot take

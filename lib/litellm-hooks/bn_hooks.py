@@ -16,9 +16,12 @@ catalog/code-models.tsv and OpenRouter's list):
 
 For the Experiential Labs gateway's models (lib/explabs.sh: model_info bn_xl: true), on each call to the gateway:
 - Before it: the model goes by its own id on Chat Completions (with extended thinking on, LiteLLM renames it
-  openai/responses/<id> for OpenAI's Responses API, which would send the gateway an id it does not know); the output cap goes under the field the model takes (model_info bn_xl_max_tokens: max_tokens or
-  max_completion_tokens; Claude Code and Chat send max_tokens), and the parameters of its additional_drop_params — what
-  the gateway's metadata says it does not take — are left out, extra_body included (LiteLLM drops the others itself).
+  openai/responses/<id> for OpenAI's Responses API, which would send the gateway an id it does not know). The output
+  cap goes under the field the model takes (model_info bn_xl_max_tokens: max_tokens or max_completion_tokens; Claude
+  Code and Chat send max_tokens), in extra_body: LiteLLM sends that as it is, where it would rename a top-level
+  max_tokens to max_completion_tokens for an o-series or GPT-5 name whatever the model takes. The parameters of its
+  additional_drop_params — what the gateway's details say it does not take — are left out, extra_body included
+  (LiteLLM drops the others itself).
 - After it: the cost LiteLLM books is the one the gateway reported for the call (usage.cost, USD), $0 when the call ran
   on your own provider key (usage.is_byok), never one computed from the list prices in the config. (A streamed reply's
   usage.cost is booked by LiteLLM itself.)
@@ -143,6 +146,7 @@ def xl_request(kwargs: dict) -> dict:
     the parameters of its additional_drop_params left out (top level and extra_body); unchanged for any other model."""
     if not is_xl(kwargs):
         return kwargs
+    kwargs = dict(kwargs)   # (a copy: the hook hands LiteLLM the request as it came should anything here fail)
     # a /v1/messages request with thinking on: LiteLLM names the model openai/responses/<id> to send it to OpenAI's
     # Responses API, with a Responses-shaped reasoning_effort; the gateway takes Chat Completions under the id itself
     model = kwargs.get("model")
@@ -156,18 +160,22 @@ def xl_request(kwargs: dict) -> dict:
                     kwargs["reasoning_effort"] = effort["effort"]
                 else:
                     kwargs.pop("reasoning_effort")
+    # the output cap: out of LiteLLM's hands (its own field first, else the other one), into extra_body under the
+    # field the model takes
     field = kwargs["model_info"].get("bn_xl_max_tokens")
+    cap = None
     if field in _CAP_FIELDS:
-        other = _CAP_FIELDS[1] if field == _CAP_FIELDS[0] else _CAP_FIELDS[0]
-        if kwargs.get(field) is None and kwargs.get(other) is not None:
-            kwargs[field] = kwargs.pop(other)
+        caps = [kwargs.pop(f, None) for f in sorted(_CAP_FIELDS, key=lambda f: f != field)]
+        cap = next((c for c in caps if c is not None), None)
     drops = kwargs.get("additional_drop_params")
     drop = {p for p in drops if isinstance(p, str) and p in XL_OPTIONAL} if isinstance(drops, (list, tuple)) else set()
     for p in drop:
         kwargs.pop(p, None)
     extra = kwargs.get("extra_body")
     if isinstance(extra, dict) and drop & extra.keys():
-        kwargs["extra_body"] = {k: v for k, v in extra.items() if k not in drop}
+        kwargs["extra_body"] = extra = {k: v for k, v in extra.items() if k not in drop}
+    if cap is not None:
+        kwargs["extra_body"] = {**(extra if isinstance(extra, dict) else {}), field: cap}
     return kwargs
 
 
