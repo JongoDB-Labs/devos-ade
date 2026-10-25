@@ -6,6 +6,13 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Fixed
+
+- **A new Code page session starts on the model you picked last**, an Experiential Labs or OpenRouter one too, whether
+  or not Settings › Claude Code › Models lists it (that list narrows the picker; it never overrides a choice you made).
+  Before, a pick the list did not name gave way to the default Claude model without a word. If the model you picked is
+  not served any more (its key removed), the session starts on the default and says so.
+
 ## [0.28.0] - 2026-10-25
 
 ### Changed

@@ -6,7 +6,7 @@ import { createStore, type Store } from './store';
 import { addPrompt, applySeq, dropPrompt, endedMidTurn, idleWithoutResult, mergeHistory, newView, pendingCount, prependHistory, withEarlier, type SessionView } from './session';
 import { exportName, toMarkdown } from './transcript';
 import { appendMemory, memoryLine } from './palette';
-import { fullModel, modelCommand } from './models';
+import { fullModel, modelCommand, startModel } from './models';
 import { sentence } from './permission';
 import { remembered, startMode } from './modes';
 import { SETUP_LINKS, settingsRoute, setupTarget, type SetupReason } from './setuplinks';
@@ -471,17 +471,11 @@ export function activeView(s: AppState = get()): SessionView | undefined {
   return s.active ? s.views[s.active] : undefined;
 }
 
-/** The model to use for new sessions, by its full id: the browser's last choice, else DevOS ADE's default, else the
- *  first (an alias remembered from before becomes its id). */
+/** The model to use for new sessions, by its full id: the browser's last choice while DevOS ADE serves it (listed in
+ *  Settings › Claude Code › Models or not), else DevOS ADE's default, else the first (an alias remembered from before
+ *  becomes its id) — models.ts startModel. */
 export function defaultModel(s: AppState = get()): string {
-  const m = s.models;
-  const pref = fullModel(s.prefs.model, m);
-  // (the browser's last pick while DevOS ADE still serves it, and Settings › Claude Code › Models lists it or "Show all" is on)
-  const known = m?.models.find((x) => x.id === pref);
-  if (pref && (!m || !m.models.length || (known && (known.listed || s.prefs.allModels)))) return pref;
-  const def = fullModel(m?.defaultModel, m);
-  if (def) return def;
-  return m?.models[0]?.id ?? '';
+  return startModel(s.prefs.model, s.models).model;
 }
 
 /** A model as it goes to the backend: its full id (an alias the page holds from a session or an older version is
@@ -1323,6 +1317,8 @@ async function openNew(opts: NewSessionOptions): Promise<string | null> {
     const bedrock = harness === 'bedrock';
     // (Bedrock's models by their full ids; on your plan or with an agent, its own model names — none: its default)
     const model = bedrock ? sendModel(opts.model, s) || defaultModel(s) : opts.model ?? '';
+    // (your last pick no longer served: said, never a silent start on another model)
+    const missed = bedrock && !sendModel(opts.model, s) ? startModel(s.prefs.model, s.models).missed : null;
     let mode = startMode(opts.mode ?? s.startWith, s.prefs.mode, autoOk(s));   // never Bypass (switched to per session); Auto only while allowed
     if (!bedrock && mode === 'auto') mode = 'default';
     const effort = bedrock || harness === 'claude' ? (opts.effort === undefined ? s.prefs.effort : opts.effort) : null;
@@ -1335,6 +1331,7 @@ async function openNew(opts: NewSessionOptions): Promise<string | null> {
     set((x) => ({ ...x, startWith: null, where: { ...x.where, [id]: { project: proj.id, cwd: proj.path } } }));
     loadedHistory.add(id);
     ensureView(id, { state: 'idle', model, mode, effort, budget, harness });
+    if (missed) toast(`${label(missed, 60)} is not available here now: this session starts on ${label(s.models?.models.find((m) => m.id === model)?.name ?? model, 60)}.`, 'info');
     if (budget) rememberBudget(id, budget);
     set((x) => ({ ...x, active: id, sheet: null }));
     setPrefs((p) => ({ ...p, lastSession: id }));

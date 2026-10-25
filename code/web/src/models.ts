@@ -18,6 +18,17 @@ export function fullModel(name: string | null | undefined, bn: BnModels | null |
   return to && !isAlias(to) ? to : '';
 }
 
+/** The model a new session starts on, by its full id: your last pick (PICK) whenever DevOS ADE serves it — listed in
+ *  Settings › Claude Code › Models or not: that list narrows the picker, never a choice you made — or while the list
+ *  is not there yet; else DevOS ADE's default, else the first. missed: your pick, when DevOS ADE no longer serves it
+ *  (the page says so: a new session never moves to another model silently). */
+export function startModel(pick: string | null | undefined, bn: BnModels | null | undefined): { model: string; missed: string | null } {
+  const pref = fullModel(pick, bn);
+  if (pref && (!bn || !bn.models.length || bn.models.some((x) => x.id === pref))) return { model: pref, missed: null };
+  const def = fullModel(bn?.defaultModel, bn);
+  return { model: def || bn?.models[0]?.id || '', missed: pref || null };
+}
+
 /** Whether a model a frame reports is the one picked (ids compared loosely: a provider may report a longer form). */
 export function sameModel(reported: string, picked: string): boolean {
   const a = reported.trim().toLowerCase(), b = picked.trim().toLowerCase();

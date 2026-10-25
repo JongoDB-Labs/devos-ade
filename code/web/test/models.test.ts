@@ -138,3 +138,17 @@ test('status bar: Run and Ports have shortcuts in the sheet, and tips name them 
   assert.equal(ariaKeys('Ctrl+`'), 'Control+`');
   assert.equal(ariaKeys('⌘+K · Ctrl+Shift+P'), 'Meta+K Control+Shift+P');
 });
+
+test('models: a new session starts on your last pick — an Experiential Labs or OpenRouter model too, listed or not — never silently on another', async () => {
+  const { startModel } = await import('../src/models');
+  const bn = normModels({ ...RAW, models: [...RAW.models, { id: 'xl/glm-5.3-uncensored:free', name: 'GLM 5.3 Uncensored (free)', provider: 'Experiential Labs', vendor: 'Zhipu', compat: 'untested', listed: false, free: true }] });
+  assert.deepEqual(startModel('xl/glm-5.3-uncensored:free', bn), { model: 'xl/glm-5.3-uncensored:free', missed: null }, 'not listed in Settings › Claude Code › Models: still your pick');
+  assert.deepEqual(startModel('or/google/gemma-4-31b-it:free', bn), { model: 'or/google/gemma-4-31b-it:free', missed: null });
+  assert.deepEqual(startModel('mistral-large-3', bn), { model: 'mistral-large-3', missed: null });
+  assert.deepEqual(startModel('haiku', bn), { model: 'claude-haiku-5-5', missed: null }, 'an alias from before: its id');
+  // the list not there yet: your pick (the backend never runs another in its place)
+  assert.deepEqual(startModel('xl/glm-5.3-uncensored:free', null), { model: 'xl/glm-5.3-uncensored:free', missed: null });
+  // no pick: DevOS ADE's default; a pick no longer served (Experiential Labs' key removed): the default, and said
+  assert.deepEqual(startModel('', bn), { model: 'claude-opus-5-5', missed: null });
+  assert.deepEqual(startModel('xl/gone:free', bn), { model: 'claude-opus-5-5', missed: 'xl/gone:free' });
+});
