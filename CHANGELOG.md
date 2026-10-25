@@ -10,12 +10,14 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 - **Experiential Labs:** a refresh of the model list killed hard (the computer shut down, SIGKILL) left its temp
   folder in `.state/` (`explabs-tmp.…`); the next refresh removes those older than 10 minutes, and only those. Where
-  `ps` gives no process start times (BusyBox), the background refresh's pid file is judged by its age and its
-  process's command — never by the pid alone — and its log says so once.
+  `ps` gives no process start times (BusyBox), the background refresh's pid file takes its process's start time from
+  `/proc/<pid>/stat`; where neither has one, it is judged by its age and its process's command — never by the pid
+  alone — and its log says so once.
 - **Tests:** the check that no script removes files through an unquoted path (`tests/rm_scan.py`) also covers `rm`
-  called as `\rm`, `/bin/rm`, `/usr/bin/rm` or through `env`, `xargs … rm` without `-0` or `-d`, `find` with an
-  unquoted path and `-delete` or `-exec rm`, and the strings given to `eval`, `sh -c` and `bash -c`. It finds nothing
-  in the scripts.
+  called as `\rm`, `/bin/rm` or `/usr/bin/rm`, behind `env`, `nice`, `timeout`, `busybox`, `command`, `sudo`, `exec`
+  or a bare `eval`, `xargs … rm` without `-0` or `-d`, `find` with an unquoted path and `-delete` or `-exec rm`, an
+  `-exec rm` with an unquoted argument, and the strings given to `eval`, `sh -c` and `bash -c`. It finds nothing in
+  the scripts.
 
 ## [0.27.0] - 2026-10-25
 
