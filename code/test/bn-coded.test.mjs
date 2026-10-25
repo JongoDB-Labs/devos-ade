@@ -17,7 +17,8 @@ fs.writeFileSync(path.join(ROOT, 'outside', 'secret.txt'), 'outside');
 // a stand-in for Claude Code: says its arguments, cwd and some environment, echoes stdin, exits 3 at stdin's end
 const FAKE = path.join(ROOT, 'claude');
 fs.writeFileSync(FAKE, `#!/usr/bin/env node
-const pick = ['ANTHROPIC_CUSTOM_HEADERS', 'SHARED_MCP_TOKEN', 'CLAUDE_CODE_ENTRYPOINT', 'EVIL', 'BN_CODE', 'PATH'];
+const pick = ['ANTHROPIC_CUSTOM_HEADERS', 'SHARED_MCP_TOKEN', 'CLAUDE_CODE_ENTRYPOINT', 'EVIL', 'BN_CODE', 'PATH',
+  'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'ANTHROPIC_SMALL_FAST_MODEL', 'CLAUDE_CODE_SUBAGENT_MODEL'];
 const env = Object.fromEntries(pick.filter((k) => k in process.env).map((k) => [k, k === 'PATH' ? 'set' : process.env[k]]));
 process.stdout.write(JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), env }) + '\\n');
 process.on('SIGTERM', () => { process.stdout.write('got SIGTERM\\n'); process.exit(143); });
@@ -121,6 +122,41 @@ test('environment: the container\'s, minus the MCP token and its own variables; 
   assert.deepEqual(env, { PATH: '/bin', ANTHROPIC_AUTH_TOKEN: 'k', CLAUDE_CODE_ENTRYPOINT: 'sdk-ts',
     ANTHROPIC_CUSTOM_HEADERS: `x-litellm-session-id: code-${SID}\nx-litellm-tags: claude-bedrock,code` });
   assert.equal(coded.childEnv({}, '../../etc', { ANTHROPIC_CUSTOM_HEADERS: 'x' }).ANTHROPIC_CUSTOM_HEADERS, undefined);
+});
+
+test('environment: Claude Code\'s background model and subagents on the session\'s model when it is not one of Bedrock\'s Claude models', () => {
+  const base = { PATH: '/bin', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-5-5', ANTHROPIC_MODEL: 'claude-opus-5-5' };
+  for (const m of ['xl/glm-5.3-uncensored:free', 'or/google/gemma-4-31b-it:free', 'mistral-large-3']) {
+    const env = coded.childEnv({}, SID, base, m);
+    assert.equal(env.ANTHROPIC_DEFAULT_HAIKU_MODEL, m, m);
+    assert.equal(env.ANTHROPIC_SMALL_FAST_MODEL, m, m);
+    assert.equal(env.CLAUDE_CODE_SUBAGENT_MODEL, m, m);
+    assert.equal(env.ANTHROPIC_MODEL, 'claude-opus-5-5', 'the main model is --model\'s, as before');
+  }
+  assert.equal(coded.childEnv({}, SID, base, 'xl/qwen3.8-27b[1m]').ANTHROPIC_DEFAULT_HAIKU_MODEL, 'xl/qwen3.8-27b');
+  for (const m of ['claude-sonnet-5-5', 'claude-haiku-5-5', 'haiku', 'sonnet[1m]', null, 'bad model', '../x']) {
+    const env = coded.childEnv({}, SID, base, m);
+    assert.equal(env.ANTHROPIC_DEFAULT_HAIKU_MODEL, 'claude-haiku-5-5', String(m));
+    assert.equal('ANTHROPIC_SMALL_FAST_MODEL' in env || 'CLAUDE_CODE_SUBAGENT_MODEL' in env, false, String(m));
+  }
+  assert.equal(coded.modelArg([...FIXED, '--model=xl/a:free', `--session-id=${SID}`]), 'xl/a:free');
+  assert.equal(coded.modelArg([...FIXED, `--session-id=${SID}`]), null);
+});
+
+test('a Claude Code process on a free model gets it as its background model too (over the socket)', async () => {
+  const { FrameParser } = await import('../server/frames.mjs');
+  const c = net.connect(SOCK);
+  const parser = new FrameParser();
+  const got = [];
+  const done = new Promise((r) => c.on('close', r));
+  c.on('data', (d) => got.push(...parser.push(d)));
+  c.write(open({ op: 'claude', args: [...FIXED, '--model=xl/glm-5.3-uncensored:free', `--session-id=${SID}`, `--project-config-root=${WS}`], cwd: WS, env: {}, litellmSession: SID }));
+  c.write(frame(T.STDIN_END, Buffer.alloc(0)));
+  await done;
+  const info = JSON.parse(stdout(got).toString().split('\n')[0]);
+  assert.equal(info.env.ANTHROPIC_DEFAULT_HAIKU_MODEL, 'xl/glm-5.3-uncensored:free');
+  assert.equal(info.env.ANTHROPIC_SMALL_FAST_MODEL, 'xl/glm-5.3-uncensored:free');
+  assert.equal(info.env.CLAUDE_CODE_SUBAGENT_MODEL, 'xl/glm-5.3-uncensored:free');
 });
 
 test('paths: confined to the workspace, symlinks resolved in its own view', () => {

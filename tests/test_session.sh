@@ -610,6 +610,22 @@ test_wrapper_model_by_id_name_or_alias_rewritten_to_the_id_and_unknown_refused()
   assert_contains "$(cat "$TMP/err")" "unknown model 'nope' (CLAUDE_BEDROCK_MODEL)"
 }
 
+# Claude Code's own background work (its "haiku" model: titles, summaries, the Explore subagent) and its subagents: on
+# the session's model when that is not one of Bedrock's Claude models — a free model's session spends nothing on Haiku
+test_wrapper_background_model_follows_a_model_that_is_not_bedrock_claude() {
+  _wrapper_env; _code_tsv
+  printf 'CLAUDE_BEDROCK_HAIKU_MODEL=claude-haiku-5-5\n' >> "$ENV_FILE"
+  _bg() { STUB_DUMP="$TMP/dump" _run_wrapper "$@" -p hi > /dev/null 2>&1 || return 1
+    printf '%s|%s|%s\n' "$(sed -n 's/^ANTHROPIC_DEFAULT_HAIKU_MODEL=//p' "$TMP/dump")" "$(sed -n 's/^ANTHROPIC_SMALL_FAST_MODEL=//p' "$TMP/dump")" \
+      "$(sed -n 's/^CLAUDE_CODE_SUBAGENT_MODEL=//p' "$TMP/dump")"; }
+  assert_eq "$(_bg --model=google/gemma-4-31b-it:free)" "or/google/gemma-4-31b-it:free|or/google/gemma-4-31b-it:free|or/google/gemma-4-31b-it:free"
+  assert_eq "$(_bg --model llama-3-3-70b)" "llama-3-3-70b|llama-3-3-70b|llama-3-3-70b"
+  assert_eq "$(CLAUDE_BEDROCK_MODEL=or/google/gemma-4-31b-it:free _bg)" "or/google/gemma-4-31b-it:free|or/google/gemma-4-31b-it:free|or/google/gemma-4-31b-it:free"
+  # a Claude model (also by alias): Haiku, as before
+  assert_eq "$(_bg --model claude-opus-5-5)" "claude-haiku-5-5||"
+  assert_eq "$(_bg --model haiku)" "claude-haiku-5-5||"
+}
+
 test_wrapper_starts_on_the_default_of_settings_and_lists_the_models_in_model() {
   _wrapper_env; _code_tsv 0 1; unset CLAUDE_BEDROCK_AUTO_MODE
   _run_wrapper -p hi > "$TMP/out" 2> /dev/null

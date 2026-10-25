@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import { LIMITS, EFFORTS, IMAGE_TYPES } from './protocol.mjs';
 import { Ring } from './ring.mjs';
 import { fromSdk, errorEvent } from './normalize.mjs';
-import { isUuid, isModel, isFullModel, str, short, capped, num } from './validate.mjs';
+import { isUuid, isModel, isFullModel, str, short, capped, num, backgroundModel } from './validate.mjs';
 import { START_MODES, SET_MODES, normMode, cliMode, pageMode, permissionsFor, unionPermissions, samePermissions, startFlags } from './modes.mjs';
 import { checkSnapshot, diffSnapshots, mergeSnapshots, watchEvent, revertOf } from './watch.mjs';
 import { WS, cwdOk } from './projects.mjs';
@@ -179,6 +179,11 @@ export class Session {
   /** its process restarts at the next prompt that starts a turn when the Git note would read differently now (a host
    *  connected or removed, Let Claude use this host turned on or off, a sign-in ended): what Claude may use is in its
    *  system prompt. Not when the hosts cannot be read just now (the note it has stays). */
+  /** Whether the running process's background model (bn-coded's backgroundEnv: the session's model when that is not one
+   *  of Bedrock's Claude models) differs from what the model picked now needs: Claude Code reads it only as it starts. */
+  modelRestart() {
+    return !this.plan && this.bgModel !== undefined && this.bgModel !== backgroundModel(this.model);
+  }
   gitRestart() {
     if (typeof this.gitNote !== 'string') return false;
     const now = this.mgr.gitNoteNow({ strict: true });
@@ -282,6 +287,7 @@ export class Session {
     // .claude/ applies as before projects; only the nested discovery below it is off
     options.projectConfigRoot = this.cwd;
     if (this.model) options.model = this.model;
+    this.bgModel = backgroundModel(this.model);   // (what bn-coded gives this process for its background work)
     if (this.effort) options.effort = this.effort;
     // stop at the budget: Claude Code's own limit for this process, what is left of it now
     this.limit = this.budget ? { ...this.budget, est: this.estimates() } : null; this.budgetHit = false;
@@ -568,6 +574,7 @@ export class Session {
     if (this.open && startsTurn && this.budgetRestart()) this.close('budget');
     else if (this.open && startsTurn && this.settingsRestart()) this.close('settings');
     else if (this.open && startsTurn && this.gitRestart()) this.close('git');
+    else if (this.open && startsTurn && this.modelRestart()) this.close('model');
     if (this.open) this.mgr.dropSettings(this.cwd);   // (no start: the decision made for one goes)
     if (!this.open) this.start({ resume: this.id });
     const id = isUuid(uuid) ? uuid : crypto.randomUUID();
@@ -927,6 +934,7 @@ export class Session {
           : reason === 'budget' ? `Restarting Claude Code for this session so its new budget applies${this.budget?.hard ? ` (stop at ${money(this.budget.usd)})` : ''}${wasBypass ? ', in Manual (Bypass permissions ends with its process)' : ''}; its next turn may write the prompt cache again.`
             : reason === 'settings-changed' ? 'Claude Code stopped here: this folder\'s own Claude Code configuration changed while it started (after it was checked). Your next prompt starts it again without it until you look at it again.'
             : reason === 'settings' ? 'Restarting Claude Code for this session: the folder\'s own Claude Code settings apply differently now (you trusted them, or they changed); its next turn writes the prompt cache again.'
+            : reason === 'model' ? `Restarting Claude Code for this session so its own background work (titles, summaries, subagents) runs on the model you picked${wasBypass ? ' (in Manual: Bypass permissions ends with its process)' : ''}; its next turn may write the prompt cache again.`
             : reason === 'git' ? `Restarting Claude Code for this session: your Git hosts changed, and the ones Claude may use are in its instructions${wasBypass ? ' (in Manual: Bypass permissions ends with its process)' : ''}; its next turn writes the prompt cache again.`
             : reason === 'terminal' ? `Continued in the terminal${wasBypass ? ' (in Manual)' : ''}: exit Claude Code there (/exit) before you send a prompt here — two Claude Code processes would both write this conversation.`
               : `Session closed; a prompt resumes it${wasBypass ? ' (in Manual)' : ''}.`;

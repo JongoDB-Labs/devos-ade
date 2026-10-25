@@ -1177,7 +1177,10 @@ CODE_DEFAULT_MODEL` (a model id, such as `mistral-large-3`).
 Not every switch is free: switching to a model that caches writes ~30k tokens of prompt cache at its price (the picker
 says how much); a model without cache prices writes none, and has no cold-cache line above the prompt box. Auto mode's
 reviewer stays on Sonnet 5.5 whatever the session's model (Claude Code asks for `claude-sonnet-5`, which the catalog
-maps to it).
+maps to it). Claude Code's own background work — titles, summaries, its Explore subagent — and its subagents run on
+the session's model when that is not one of Bedrock's Claude models (on Haiku otherwise), here and in `devos-claude
+--model …`: a session on a free model spends nothing behind it. A switch between such a model and a Claude one
+restarts the session's Claude Code at your next prompt, so that follows too.
 
 #### Permissions and modes
 

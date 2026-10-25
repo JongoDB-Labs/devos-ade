@@ -155,6 +155,14 @@ for a in "$@"; do
 done
 set -- ${cb_args[@]+"${cb_args[@]}"}
 export ANTHROPIC_MODEL="$model"
+# Claude Code's own background work (titles, summaries, its Explore subagent: its "haiku" model) and its subagents run
+# on the session's model when that is not one of Bedrock's Claude models: a session on a free model never spends on
+# Haiku behind it (as the Code page's sessions: bn-coded.mjs backgroundEnv)
+case "$model" in
+  claude-*) ;;
+  *) export ANTHROPIC_DEFAULT_HAIKU_MODEL="${model%\[1[mM]\]}"
+     export ANTHROPIC_SMALL_FAST_MODEL="$ANTHROPIC_DEFAULT_HAIKU_MODEL" CLAUDE_CODE_SUBAGENT_MODEL="$ANTHROPIC_DEFAULT_HAIKU_MODEL" ;;
+esac
 
 before=''
 if [ "${CLAUDE_BEDROCK_QUIET:-0}" != 1 ]; then

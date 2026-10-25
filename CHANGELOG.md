@@ -12,6 +12,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   or not Settings › Claude Code › Models lists it (that list narrows the picker; it never overrides a choice you made).
   Before, a pick the list did not name gave way to the default Claude model without a word. If the model you picked is
   not served any more (its key removed), the session starts on the default and says so.
+- **Claude Code's background work no longer runs on Haiku behind a free model.** Its titles, summaries and Explore
+  subagent (its "haiku" model) and its subagents now run on the session's model when that is not one of Bedrock's
+  Claude models — on the Code page (a switch to or from such a model restarts the session's Claude Code at your next
+  prompt) and in `devos-claude --model …` (on this computer and in the browser terminal). With a Claude model they
+  stay on Haiku. Auto mode's reviewer keeps Sonnet 5.5, as before.
 
 ## [0.28.0] - 2026-10-25
 

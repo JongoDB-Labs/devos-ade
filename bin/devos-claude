@@ -133,6 +133,14 @@ export ANTHROPIC_DEFAULT_OPUS_MODEL="$opus"
 ANTHROPIC_DEFAULT_SONNET_MODEL="$(get_env CLAUDE_BEDROCK_SONNET_MODEL)"
 ANTHROPIC_DEFAULT_HAIKU_MODEL="$(get_env CLAUDE_BEDROCK_HAIKU_MODEL)"
 export ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL
+# Claude Code's own background work (titles, summaries, its Explore subagent: its "haiku" model) and its subagents run
+# on the session's model when that is not one of Bedrock's Claude models: a session on a free model never spends on
+# Haiku behind it (the Code page's sessions do the same: terminal/bin/bn-coded.mjs backgroundEnv)
+case "$ANTHROPIC_MODEL" in
+  claude-* | '') ;;
+  *) ANTHROPIC_DEFAULT_HAIKU_MODEL="${ANTHROPIC_MODEL%\[1[mM]\]}"
+     export ANTHROPIC_SMALL_FAST_MODEL="$ANTHROPIC_DEFAULT_HAIKU_MODEL" CLAUDE_CODE_SUBAGENT_MODEL="$ANTHROPIC_DEFAULT_HAIKU_MODEL" ;;
+esac
 export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1   # Bedrock rejects Anthropic beta headers
 # No ENABLE_TOOL_SEARCH: tool search (deferred MCP tools) needs a beta header, so with the betas off it changes
 # nothing (Claude Code 2.1.301: every MCP tool inline with or without it). Hence the lean config folder above.

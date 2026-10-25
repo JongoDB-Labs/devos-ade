@@ -1088,6 +1088,7 @@ test_claude_bedrock_in_the_sandbox_lists_and_checks_the_models_of_model_info() {
 #!/bin/bash
 if [ "${1:-}" = --help ]; then printf 'Usage: claude\nCommands:\n  mcp  Configure MCP servers\n'; exit 0; fi
 printf 'ARG %s\n' "$@"; printf 'MODEL %s\n' "$ANTHROPIC_MODEL"
+printf 'BG %s|%s|%s\n' "${ANTHROPIC_DEFAULT_HAIKU_MODEL-}" "${ANTHROPIC_SMALL_FAST_MODEL-}" "${CLAUDE_CODE_SUBAGENT_MODEL-}"
 STUB
   cat > "$TMP/bin/curl" <<'STUB'
 #!/bin/sh
@@ -1133,6 +1134,11 @@ JSON
   ARGS=(--model=google/gemma-4-31b-it:free -p hi); out="$(run 2>&1)" || return 1
   assert_contains "$out" "ARG --model=or/google/gemma-4-31b-it:free"
   assert_contains "$out" "openrouter · or/google/gemma-4-31b-it:free (free (\$0)) · not tested with Claude Code"
+  # Claude Code's own background work (its "haiku" model) and subagents on the session's model: not one of Bedrock's
+  # Claude models here; on a Claude model, Haiku as the container says
+  assert_contains "$out" "BG or/google/gemma-4-31b-it:free|or/google/gemma-4-31b-it:free|or/google/gemma-4-31b-it:free"
+  ARGS=(--model claude-opus-5-5 -p hi); out="$(run CLAUDE_BEDROCK_QUIET=1 ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-5-5)" || return 1
+  assert_contains "$out" "BG claude-haiku-5-5||"
   ARGS=(--model gpt-4 -p hi); rc=0; out="$(run 2>&1)" || rc=$?
   assert_eq "$rc" 1
   assert_contains "$out" "unknown model 'gpt-4' (--model) — devos-claude --models lists them: claude-opus-5-5, llama-3-3-70b, or/google/gemma-4-31b-it:free"
