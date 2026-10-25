@@ -703,9 +703,19 @@ def auto_switch(ctx):
                 # wait the time the dialog names and confirm again
                 m = re.search(r"wait (\d+) s", err.inner_text())
                 expect(m, f"the switch was refused: {err.inner_text()}")
-                page.wait_for_timeout((int(m.group(1)) + 1) * 1000)
+                # (the fake heartbeat kept fresh meanwhile — the portal trusts one for 30 s, and the wait can be that
+                # long — and the dialog opened again from the switch if it closed: on a slower host it was gone by then)
+                end = time.time() + int(m.group(1)) + 1
+                while time.time() < end:
+                    fresh_beat()
+                    page.wait_for_timeout(max(0, min(5.0, end - time.time())) * 1000)
                 fresh_beat()
+                if not page.locator("#confirm-ok").is_visible():
+                    page.click("#auto-toggle [data-auto=on]")
+                    page.wait_for_selector("#confirm[open]")
+                    page.fill("#confirm-password", ENV["PORTAL_PASSWORD"])
                 page.click("#confirm-ok")
+                t0 = time.time()   # (the wait above is not the request's time)
             page.wait_for_timeout(250)
         expect(new, "no request file for the helper after Nightly")
         req = json.loads(next(iter(new)).read_text())
