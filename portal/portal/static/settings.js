@@ -160,6 +160,7 @@
     findText = new Map();
     const when = data.snapshot && data.snapshot.written_at ? new Date(data.snapshot.written_at * 1000).toLocaleString() : "";
     p.append(el("header", { class: "home-head set-head" },
+      el("p", { class: "eyebrow", "aria-hidden": "true", text: "DevOS ADE · Settings" }),
       el("h1", { id: "settings-title", text: "Settings" }),
       el("p", { class: "updated" }, when ? `From .env as of ${when} ` : "", el("button", { type: "button", class: "quiet", id: "set-reload", text: "Reload" }))));
     $("#set-reload", p).addEventListener("click", load);

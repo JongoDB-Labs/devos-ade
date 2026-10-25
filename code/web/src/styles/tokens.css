@@ -21,9 +21,10 @@
   --bad: #b02f30;
   --track: #e4e0d6;
   --sidebar: #ece9e1;
-  /* finish */
+  /* finish (--card-edge: the 1 px warm highlight on a card's top edge, dark only, as on the apps' cards) */
   --shadow: 0 1px 2px rgb(20 21 26 / 0.06), 0 12px 32px -12px rgb(20 21 26 / 0.18);
   --shadow-pop: 0 1px 3px rgb(20 21 26 / 0.1), 0 18px 44px -10px rgb(20 21 26 / 0.28);
+  --card-edge: 0 0 #0000;
   --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
   --r-s: 6px;
   --r-m: 10px;
@@ -68,6 +69,7 @@
     --sidebar: #1a1511;
     --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.6);
     --shadow-pop: 0 1px 3px rgb(0 0 0 / 0.5), 0 18px 44px -10px rgb(0 0 0 / 0.72);
+    --card-edge: inset 0 1px 0 rgb(244 236 223 / 0.07);
     color-scheme: dark;
   }
 }
@@ -90,5 +92,6 @@
   --sidebar: #1a1511;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.6);
   --shadow-pop: 0 1px 3px rgb(0 0 0 / 0.5), 0 18px 44px -10px rgb(0 0 0 / 0.72);
+  --card-edge: inset 0 1px 0 rgb(244 236 223 / 0.07);
   color-scheme: dark;
 }

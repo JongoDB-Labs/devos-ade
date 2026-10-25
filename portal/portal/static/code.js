@@ -91,7 +91,7 @@
     const claude = $("section.claude");
     if (!claude) return null;
     const input = el("input", { type: "text", id: "code-ask", maxlength: "4000", placeholder: "Ask Claude in Code…", "aria-label": "A prompt for the Code page" });
-    const form = el("form", { class: "code-ask" }, input, el("button", { type: "submit", class: "action", text: "Open in Code" }));
+    const form = el("form", { class: "code-ask" }, input, el("button", { type: "submit", class: "action primary", text: "Open in Code" }));
     form.addEventListener("submit", (e) => { e.preventDefault(); const t = input.value.trim(); if (t) { openLink({ prompt: t }); input.value = ""; } });
     const open = el("button", { type: "button", class: "linkish", text: "Open Code" });
     open.addEventListener("click", () => { if (window.matchMedia("(max-width: 767.98px)").matches) window.open(appUrl("code"), "_blank", "noopener"); else showTab("code"); });
@@ -330,6 +330,7 @@
         el("p", { class: "note", text: "Once it is on, reload this page: this tab then opens Claude Code. Turning it off again works from anywhere and keeps the terminal." }));
     }
     const head = el("header", { class: "home-head code-off-head" },
+      el("p", { class: "eyebrow", "aria-hidden": "true", text: "DevOS ADE · Code" }),
       el("h1", { id: "code-off-title" }, el("span", { class: "code-off-icon", "aria-hidden": "true" }, icon(BRACKETS)), "Code",
         el("span", { class: "code-off-pill", text: remoteOnly ? "off for remote access" : "off" })));
     const page = el("section", { id: "code", class: "code-off-page", "aria-labelledby": "code-off-title", hidden: "" }, head, card);

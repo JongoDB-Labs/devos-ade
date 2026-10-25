@@ -37,6 +37,7 @@ Docker contexts:
 | `--sidebar` | `#ece9e1` | `#1a1511` | ADE |
 | `--shadow` | site | site (dark) | site `--shadow`: a card that lifts |
 | `--shadow-pop` | | | ADE: menus, dialogs, sheets |
+| `--card-edge` | none | a 1 px warm highlight on a card's top edge | apps: their cards catch a little light |
 | `--ease` | `cubic-bezier(0.22, 0.8, 0.24, 1)` | | site `--ease` |
 | `--r-s` … `--r-pill` | 6, 10, 14, 18, 999 px | | the site's radii: tags, fields, small cards, cards, pills |
 
@@ -98,16 +99,21 @@ the portal's host. Their CSP allows no fonts from there, so they use the system 
 
 ## Components
 
-- **Buttons:** pills. The main action (`.action.primary`, Sign in) is ink: black in light mode, cream in dark. It lifts
-  1 px with `--shadow` on hover. Other buttons are outlined in `--line` and turn ink on hover. A disabled button is
+- **Buttons:** pills. The main action (`.action.primary`: Sign in, Install app, Open in Code, Save, Confirm) is teal,
+  with `--accent-ink` text. It lifts 1 px with `--shadow` on hover. Other buttons are outlined in `--line`, with ink
+  text, and their outline turns ink on hover. A disabled button is
   dashed and muted, never faded, so its label keeps its contrast.
 - **Chips and filters:** pills on `--surface`. The chosen one is ink, as on the website's filters.
-- **Cards:** `--surface`, a `--line` hairline and an 18 px corner. Home's cards do not lift: they are not links.
+- **Cards:** `--surface`, a `--line` hairline and an 18 px corner, plus `--card-edge` in dark. Home's cards do not
+  lift: they are not links.
 - **Lit card:** a card that needs you, such as the update card, has a 4 px teal rail on its left (the apps'
   `LampCard`).
-- **Navigation:** the sidebar marks the page shown with an ink pill, as the website's header does. Settings marks its
-  section with a teal wash and a 3 px teal rail, like the website's active step. The phone's tab bar keeps the teal
-  underline.
+- **Navigation:** the sidebar marks the page shown with a teal pill: the website's header marks its page with a pill,
+  and ADE's is its teal. Settings marks its section with a teal wash and a 3 px teal rail, like the website's active
+  step. The phone's tab bar marks it with a teal icon, label and underline.
+- **Page head:** an eyebrow above each page title, as the website labels its sections: mono, uppercase, teal, for
+  example "DevOS ADE · Home". It is `aria-hidden`, so the heading's name stays the title. Behind the head, a soft
+  `--accent-soft` wash fades into the paper over about 340 px.
 - **Fields:** a 10 px corner and a `--line-strong` border (3:1). Search fields are pills.
 - **Tags and badges:** mono, 11 px, with a 6 px corner (the website's `.tag`).
 - **Focus:** a 2 px `--accent` outline, offset 2 px, everywhere.
@@ -119,9 +125,10 @@ the portal's host. Their CSP allows no fonts from there, so they use the system 
 
 - **Do** use the tokens. A new colour first becomes a token in both `tokens.css` copies, with its contrast in this
   file.
-- **Do** keep the accent for links, focus, the current place, progress and switches that are on. The main button is
-  ink.
+- **Do** keep the accent for the main button, links, focus, the current place, progress, budgets within their limit
+  and switches that are on. Amber and red are for near the limit and over it.
 - **Do** put titles in the display serif, and keep body text, controls and numbers in tables in Inter.
+- **Don't** add gradients beyond the head wash and the sign-in glow, or new imagery.
 - **Don't** load anything from another origin: fonts, styles and images stay same-origin, so the CSP stays as it is.
 - **Don't** use `text-transform` on text that tests or screen readers read as words. Use it only on short eyebrow
   labels, as the search groups do.
