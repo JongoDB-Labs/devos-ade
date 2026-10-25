@@ -581,39 +581,69 @@ def ask_user_question(ctx):
 
 @check("browser", "code-plan-mode-asks")
 def plan_asks(ctx):
-    """Plan mode with a writing shell command: a permission card, as the Code page documents — not Claude Code's auto-mode
-    classifier (Claude Code counts auto mode as available behind our base URL; the backend and the sandbox's managed
-    settings turn it off). The model decides whether it runs the command: a plan it presents first is declined with
-    "no plan, run it" (twice at most); when it still runs nothing, a skip."""
+    """Plan mode asks before a shell command it cannot prove read-only: a permission card, as the Code page documents —
+    never Claude Code's auto-mode classifier (Claude Code counts auto mode as available behind our base URL; the
+    backend and the sandbox's managed settings turn it off), and the command never runs before an answer.
+
+    Haiku in Plan mode often declines a writing command outright (it plans, asks, or says it cannot): that is Plan
+    mode working, not a test of its card. So up to three prompts, each logged: `touch <target>` (a write) first; then a
+    command Plan mode lets it run as research, which Claude Code still cannot tell is read-only (`node -e "…"`: any
+    code, so it asks). Every card is denied: the command's with "not now"; a plan (ExitPlanMode), a question
+    (AskUserQuestion) or another command with "run exactly … now". Whatever Haiku did: neither command ran, the target
+    file does not exist, nothing was blocked by the classifier — and at least one of them reached a Bash card (else a
+    failure: the claim was not exercised)."""
     need_haiku()
     c = Code(ctx, "code-plan-asks")
     sid = c.new_session(HAIKU, "plan")
     n = len(c.msgs())
-    target = f"e2e-plan-{int(time.time())}.txt"
-    c.request({"type": "prompt", "session": sid, "text": f"Before any planning, run exactly this shell command with the Bash tool: touch {target}"})
-    seen, since, card = [], n, None
-    for _ in range(3):
-        m = c.wait(lambda m: m.get("session") == sid and (m.get("type") == "permission" or (m.get("type") == "event" and m["ev"]["type"] == "result")),
-                   "a permission prompt or the turn's end", 150, since=since)
-        since = c.seen
-        if m.get("type") != "permission":
+    ts = int(time.time())
+    target, token = f"e2e-plan-{ts}.txt", f"plan-probe-{ts}"
+    probe = f"node -e \"console.log('{token}', process.version)\""
+    ours = (target, token)
+    prompts = [
+        (f"touch {target}", f"Before any planning, run exactly this shell command with the Bash tool: touch {target}"),
+        (probe, f"Planning needs this sandbox's Node.js runtime. Before anything else, run exactly this read-only check with "
+                f"the Bash tool, unchanged (it only prints): {probe}"),
+        (probe, f"Use the Bash tool now to run exactly this, unchanged: {probe} — it changes nothing, so Plan mode allows it; "
+                f"a permission prompt for it is expected."),
+    ]
+    log, card = [], None
+    for i, (cmd, text) in enumerate(prompts, 1):
+        since = turn = len(c.msgs())
+        c.request({"type": "prompt", "session": sid, "text": text})
+        asked = []
+        for _ in range(5):   # the cards of this turn (a plan or a question first, then perhaps the command)
+            m = c.wait(lambda m: m.get("session") == sid and (m.get("type") == "permission" or (m.get("type") == "event" and m["ev"]["type"] == "result")),
+                       "a permission prompt or the turn's end", 150, since=since)
+            since = c.seen
+            if m.get("type") != "permission":
+                break
+            shown = json.dumps(m.get("input", {}))
+            asked.append(m.get("tool"))
+            if m.get("tool") == "Bash" and any(t in shown for t in ours):
+                card = m
+                c.request({"type": "permission", "id": m["id"], "session": sid, "decision": "deny", "message": "e2e: not now"})
+            else:
+                c.request({"type": "permission", "id": m["id"], "session": sid, "decision": "deny",
+                           "message": f"No plan or question is needed. Run exactly `{cmd}` with the Bash tool now."})
+        said = "" if asked else " ".join(text_of(c.events(sid, turn)).split())[:80]
+        log.append(f"{i}. {'touch' if i == 1 else 'node -e'}: cards {asked or 'none'}{f' — said {said!r}' if said else ''}")
+        if card is not None:
             break
-        seen.append(m.get("tool"))
-        if m.get("tool") == "Bash":
-            card = m
-            c.request({"type": "permission", "id": m["id"], "session": sid, "decision": "deny", "message": "e2e: not now"})
-            break
-        c.request({"type": "permission", "id": m["id"], "session": sid, "decision": "deny",
-                   "message": f"No plan is needed. Run exactly `touch {target}` with the Bash tool now."})
     evs = c.events(sid, n)
-    blocked = [e for e in evs if e["type"] == "tool_result" and "auto mode" in e.get("text", "").lower()]
+    ran = [e for e in evs if e["type"] == "tool_use" and e["name"] == "Bash" and any(t in json.dumps(e.get("input", {})) for t in ours)
+           and (tool_result(evs, e["id"]) or {}).get("is_error") is False]
+    by_classifier = [e for e in evs if (e["type"] == "blocked" and e.get("by") == "classifier")
+                     or (e["type"] == "tool_result" and "auto mode" in e.get("text", "").lower())]
+    exists = c.api("GET", f"/api/fs/file?path={target}")["status"]
     c.api("DELETE", f"/api/sessions/{sid}")
     c.rec.save()
-    expect(not blocked, f"the auto-mode classifier handled it: {blocked[0]['text'][:200] if blocked else ''}")
-    if card is None:
-        raise Skip(f"Haiku ran no command in Plan mode this time (prompts: {seen or 'none'}); no auto-mode block either")
-    expect("touch" in json.dumps(card.get("input", {})), f"the card's input {card.get('input')}")
-    return f"Plan mode + `touch {target}` → a Bash permission card (after {seen[:-1] or 'no'} other prompts; denied), no auto-mode classifier"
+    expect(not ran, f"Plan mode ran a command without an answer: {[e['input'].get('command', '')[:80] for e in ran]} ({'; '.join(log)})")
+    expect(exists == 404, f"{target} was created in Plan mode (GET /api/fs/file: {exists}; {'; '.join(log)})")
+    expect(not by_classifier, f"the auto-mode classifier handled it: {json.dumps(by_classifier[0])[:200] if by_classifier else ''}")
+    expect(card is not None, f"Haiku tried neither command in three prompts, so Plan mode's card was not exercised: {'; '.join(log)}")
+    cmd = card.get("input", {}).get("command", "")
+    return f"Plan mode: a Bash card for `{cmd[:60]}` (denied), nothing ran, no file, no auto-mode classifier — {'; '.join(log)}"
 
 
 @check("browser", "code-files-through-the-sandbox")
