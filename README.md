@@ -2086,9 +2086,11 @@ troubleshooting: [docs/voice.md](docs/voice.md).
 - **Experiential Labs, only if you add a key:** the `xl/…` models go to `api.experientiallabs.ai` and, from there, the
   provider that serves each call; `./stack` reads which models your key may call (`GET /v1/models`, with the key) and
   the chosen ones' details from the gateway's public catalog (`GET /api/models/<id>`, without it) at setup, in
-  Settings (each waits at most about 100 s) and at `./stack up` — at most every 12 hours, unless the last read failed
-  or left a chosen model without details, and in the background: `./stack up` never waits for it while it has a list
-  read before, and uses what it brings from the next `./stack up`. Without a key nothing contacts it.
+  Settings and at `./stack up`. Setup and a Settings change wait for it: about 100 s at most, and up to about 130 s for
+  a new key (its check, then the details), then LiteLLM's restart. `./stack up` reads at most every 12 hours, unless
+  the last read failed or left a chosen model without details, and in the background while it has a list read with
+  the key `.env` holds: it never waits for it then, and uses what it brings from the next `./stack up`. With a key
+  changed by hand in `.env`, it waits for the new key's list, up to about 100 s. Without a key nothing contacts it.
 - **Your voice:** with Bedrock speech-to-text (the default when Voxtral is usable and AWS takes its audio),
   audio from the microphone and voice calls goes only to Bedrock in your AWS account, through the local `stt`
   container and LiteLLM. Read-aloud uses your system's voices. Without server speech-to-text, the microphone uses

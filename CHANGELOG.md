@@ -18,7 +18,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   `claude-bedrock` (a group of their own) and on Home. Each model is sent **only the parameters it takes**, from the
   gateway's own model details (`supports_temperature`, `supports_top_p`, `supports_tools`, `chat_max_tokens_field`, …;
   from its public catalog, `GET /api/models/<id>` without the key for each chosen model, joined with the key's own
-  list, `GET /v1/models`; `./stack up` reads them in the background and never waits for them):
+  list, `GET /v1/models`; with a list read with the same key, `./stack up` reads them in the background and never
+  waits for them):
   so a model that refuses a sampling parameter answers instead of failing with `all_routes_failed`; the output cap is
   always sent (as `max_tokens` when a model names no field). Without the details (the list could not be read) no
   sampling, penalty or logprob parameter is sent, tools and the cap still are, and `./stack status` says so. **Costs are what the gateway
