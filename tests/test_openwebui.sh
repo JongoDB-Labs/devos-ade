@@ -320,7 +320,7 @@ test_open_webui_one_pin_everywhere_and_a_local_image_no_pull_replaces() {
   # compose.yaml's build argument, the Dockerfile's default, the e2e's tested version: one pin, a tag and a digest
   svc="$(awk '/^  open-webui:$/ { f = 1; next } f && /^  [a-z]/ { f = 0 } f' "$STACK_DIR/compose.yaml")"
   pin="$(printf '%s\n' "$svc" | sed -n 's/^ *image: \(ghcr\.io\/open-webui\/open-webui:[^ ]*\)$/\1/p')"
-  printf '%s\n' "$pin" | grep -qE '^ghcr\.io/open-webui/open-webui:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$' || { echo "pin: $pin" >&2; return 1; }
+  grep -qE '^ghcr\.io/open-webui/open-webui:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$' <<< "$pin" || { echo "pin: $pin" >&2; return 1; }
   dflt="$(sed -n 's/^ARG image=\(.*\)$/\1/p' "$OWUI/Dockerfile")"
   assert_eq "$dflt" "$pin"
   assert_contains "$(cat "$OWUI/Dockerfile")" 'FROM ${image}'

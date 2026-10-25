@@ -26,6 +26,18 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   again, up to three more times 10 s apart with a longer limit; only a refusal for the address passes. Any other
   answer is judged at once: a page reached through the proxy fails without a retry. A no-answer that remains fails
   saying the proxy did not answer and that it is the environment.
+### Changed
+
+- **Tests:** the shell suite runs several tests at a time: about 3 minutes instead of 16 on a 16-core Mac.
+  `tests/run.sh -j N` runs N at once (default: one less than the computer's CPUs, at most 8; `-j 1`: one after another).
+  Each test runs as before, in a process of its own with its own home and `.env`, and now with a temporary folder of
+  its own too. What it prints is the same, line for line: each test in its file's order, the isolation guard's line and
+  the counts. Every guard is as strict: a test that writes in this checkout's `.env`, `.state/`, `litellm/` or
+  `backups/`, makes a folder in your real home or calls the real docker, aws, tailscale, gh, glab (or curl to this
+  computer) fails by name, and with it the suite (the tests running at the same moment fail too: the one that did it
+  is among those named). The few slow tests of the last run on that checkout start first; Ctrl-C ends the tests
+  running then. Eight checks that piped `printf` into `grep -q` could fail at random with Linux's bash 5 (grep ends
+  early and the writer gets SIGPIPE, which pipefail reports: 32 times in 20,000 there): they read a here-string now.
 
 ## [0.27.0] - 2026-10-25
 

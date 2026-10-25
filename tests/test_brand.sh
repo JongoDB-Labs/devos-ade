@@ -87,11 +87,11 @@ PROBES
            docs/p.md:2 docs/p.md:3 catalog/settings.tsv:1 compose.p.yaml:1 compose.p.yaml:2 caddy/Caddyfile:1 \
            owui/functions/p.py:1 .env.example:1 install.sh:1 CHANGELOG.md:2; do
     n=$((n + 1))
-    printf '%s\n' "$out" | grep -q "^$f: " || { echo "probe $f was not caught" >&2; return 1; }
+    grep -q "^$f: " <<< "$out" || { echo "probe $f was not caught" >&2; return 1; }
   done
   assert_eq "$n" 29
   for f in compose.yaml lib/c.sh; do
-    if printf '%s\n' "$out" | grep -q "^$f:"; then echo "a control line was taken for the old name: $(printf '%s\n' "$out" | grep "^$f:")" >&2; return 1; fi
+    if grep -q "^$f:" <<< "$out"; then echo "a control line was taken for the old name: $(printf '%s\n' "$out" | grep "^$f:")" >&2; return 1; fi
   done
 }
 
@@ -146,7 +146,7 @@ test_internal_names_are_as_they_were() {
   src="$(cd "$T_ROOT" && git grep -hoE 'BEDROCK_NOW_[A-Z0-9_]*' -- . ':!tests' ':!portal/tests' ':!code/test' ':!code/web/test' ':!code/web/e2e' ':!portal/e2e' ':!CHANGELOG.md' ':!README.md' ':!docs' | sort -u)"
   while read -r n; do
     case "$n" in '#'* | '') continue ;; esac
-    printf '%s\n' "$src" | grep -q "^$n" || miss="$miss $n"
+    grep -q "^$n" <<< "$src" || miss="$miss $n"
   done < "$T_ROOT/tests/fixtures/env-names.txt"
   [ -z "$miss" ] || { echo "no longer read:$miss" >&2; return 1; }
 }

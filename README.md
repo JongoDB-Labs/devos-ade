@@ -2392,10 +2392,11 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
 
 ## Testing
 
-- **Unit tests** (no Docker, no AWS): `/bin/bash tests/run.sh` (bash 3.2). Its last line counts what passed, was
-  skipped and failed, and names every failure (each test with its file, or a guard); a test that changes this
-  checkout's `.env`, `.state/`, `litellm/` or `backups/`, calls the real docker, aws or tailscale, or curls this
-  computer fails by name (the live-state and isolation guards). Plus the Python tests in
+- **Unit tests** (no Docker, no AWS): `/bin/bash tests/run.sh` (bash 3.2), several tests at a time (`-j N`; by
+  default one less than the computer's CPUs, at most 8; `-j 1`: one after another — what it prints is the same). Its
+  last line counts what passed, was skipped and failed, and names every failure (each test with its file, or a guard);
+  a test that changes this checkout's `.env`, `.state/`, `litellm/` or `backups/`, calls the real docker, aws or
+  tailscale, or curls this computer fails by name (the live-state and isolation guards). Plus the Python tests in
   `portal/tests`, `shared-mcp/tests`, `stt/tests` and `owui/tests` (the portal's in its image's test stage, with the
   repository files some of them check: `portal/test.sh`). The Settings page's controls, key by key, against each
   setting's policy (on this computer and from a remote device) in a browser, without a stack:

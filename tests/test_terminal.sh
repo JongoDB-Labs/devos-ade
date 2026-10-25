@@ -797,8 +797,8 @@ respond 407
   assert_contains "$(awk '/reverse_proxy @mcp/,/}/' "$STACK_DIR/caddy/terminal-gateway.caddy")" "header_up Host 127.0.0.1:8000"
   assert_contains "$gw" "reverse_proxy @litellm litellm:4000"
   assert_contains "$(awk '/^http:\/\/:8091/,/^}/' "$STACK_DIR/caddy/terminal-gateway.caddy")" "respond 404"
-  if printf '%s\n' "$gw" | grep -q 'reverse_proxy litellm'; then echo "an unmatched proxy to LiteLLM" >&2; return 1; fi
-  if printf '%s\n' "$gw" | grep -q 'terminal:7681'; then echo "ttyd over TCP" >&2; return 1; fi
+  if grep -q 'reverse_proxy litellm' <<< "$gw"; then echo "an unmatched proxy to LiteLLM" >&2; return 1; fi
+  if grep -q 'terminal:7681' <<< "$gw"; then echo "ttyd over TCP" >&2; return 1; fi
   # the snippets: a fixed check, ttyd's secret header after any client copy is gone
   assert_contains "$(awk '/^\(terminal_auth\)/,/^}/' "$STACK_DIR/caddy/Caddyfile")" "uri /auth/verify?app=terminal"
   up="$(awk '/^\(terminal_upstream\)/,/^}/' "$STACK_DIR/caddy/Caddyfile")"

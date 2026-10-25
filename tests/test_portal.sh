@@ -330,13 +330,13 @@ test_caddy_chat_runtime_is_one_exact_public_route_before_the_guard() {
   # the pattern on the request target as it arrived (path and query): one plain name, nothing else
   local re='^/pyodide/([A-Za-z0-9][A-Za-z0-9._-]*)$' p
   for p in /pyodide/pyodide.js /pyodide/pyodide.asm.wasm /pyodide/python_stdlib.zip /pyodide/pyodide-lock.json /pyodide/numpy-2.2.5-cp314-cp314-pyodide_2026_0_wasm32.whl; do
-    printf '%s\n' "$p" | grep -qE "$re" || { echo "should be the runtime: $p" >&2; return 1; }
+    grep -qE "$re" <<< "$p" || { echo "should be the runtime: $p" >&2; return 1; }
   done
   for p in /pyodide/ /pyodide/.. /pyodide/../api/v1/chats /pyodide/a/b /pyodide/.env /pyodide/x%2e /pyodide/a/../../api /pyodide /pyodidex/a \
            /api/pyodide/x '/pyodide/a b' /PYODIDE/x /pyodide/%2e%2e/api/config /pyodide/a%2Fb /pyodide//a /api/../pyodide/a '/pyodide/a;b' \
            '/pyodide/a?x=1' /api/v1/x/../../../pyodide/a /pyodide/%61.js /pyodide/./a.js '/pyodide/a\b' '/pyodide/{env.PORTAL_PROXY_SECRET}' \
            '/pyodide/a{?x=1}' '/pyodide/{http.request.uri}'; do
-    if printf '%s\n' "$p" | grep -qE "$re"; then echo "should stay behind the guard and the session: $p" >&2; return 1; fi
+    if grep -qE "$re" <<< "$p"; then echo "should stay behind the guard and the session: $p" >&2; return 1; fi
   done
   # on every Chat site: right after the request's own headers, before the guard and the session check
   site="$(sed -n '/^http:\/\/{\$CHAT_HOST} {/,/^}/p' "$f")"
