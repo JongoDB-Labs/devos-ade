@@ -66,6 +66,14 @@ test_models_tsv_reads_every_model() {
   assert_contains "$out" "$(printf '\timage,text\t')"
 }
 
+# A hostile list whose entry sits at index 999999999 (an object under "data"): that entry, read in one step, not a loop
+# over a billion indices (each one also an array element awk would make); the CPU limit fails it instead of hanging
+test_models_tsv_steps_only_over_the_indices_it_holds() {
+  printf '%s' '{"data":{"999999999":{"id":"late/model","name":"Late"},"0":{"id":"first/model","name":"First"}}}' > "$TMP/h.json"
+  out="$( (ulimit -t 5; or_models_tsv < "$TMP/h.json") )" || { echo "or_models_tsv stepped over the indices one by one" >&2; return 1; }
+  assert_eq "$(printf '%s\n' "$out" | cut -f1,2 | tr '\t\n' ': ')" "late/model:Late first/model:First "
+}
+
 test_classify_keeps_text_models_with_known_prices() {
   ids="$(_rows | _ids)"
   assert_contains "$ids" "meta-llama/llama-3.3-70b-instruct "

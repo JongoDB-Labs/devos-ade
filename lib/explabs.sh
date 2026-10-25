@@ -117,7 +117,7 @@ xl_details_tsv() {
     function w(v) { return (v ~ /^[0-9]+$/ && length(v) <= 18) ? v : "" }
     $1 ~ /^(data\.|models\.|items\.)?[0-9]+\./ {
       pre = ""; if (match($1, /^(data|models|items)\./)) { pre = substr($1, 1, RLENGTH) }
-      rest = substr($1, length(pre) + 1); k = rest; sub(/\..*/, "", k); i = k + 0; if (i > n) n = i; seen[i] = 1
+      rest = substr($1, length(pre) + 1); k = rest; sub(/\..*/, "", k); i = k; if (!(i in seen)) { seen[i] = 1; ord[++n] = i }
       f = substr(rest, length(k) + 2)
       if (f == "id") id[i] = $2
       else if (f == "supports_temperature") te[i] = b($2)
@@ -138,9 +138,10 @@ xl_details_tsv() {
       else if (f == "pricing.cached_input_nano_usd_per_million_tokens") pr[i] = w($2)
       else if (f == "pricing.cache_creation_input_nano_usd_per_million_tokens") pw[i] = w($2)
     }
-    END { for (i = 0; i <= n; i++) if (seen[i] && id[i] ~ /^[A-Za-z0-9][A-Za-z0-9._:-]*$/ && length(id[i]) <= 128 && !(id[i] in done)) {
+    # (only the indices it holds, in their order: a hostile "data.999999999" costs one entry, not a billion steps)
+    END { for (j = 1; j <= n; j++) { i = ord[j]; if (id[i] ~ /^[A-Za-z0-9][A-Za-z0-9._:-]*$/ && length(id[i]) <= 128 && !(id[i] in done)) {
       done[id[i]] = 1
-      print id[i], te[i], tp[i], tk[i], fq[i], pp[i], lp[i], tl[i], so[i], rs[i], sn[i], mf[i], mo[i], cx[i], pi[i], po[i], pr[i], pw[i] } }'
+      print id[i], te[i], tp[i], tk[i], fq[i], pp[i], lp[i], tl[i], so[i], rs[i], sn[i], mf[i], mo[i], cx[i], pi[i], po[i], pr[i], pw[i] } } }'
 }
 
 # The rules, in awk (one copy for the config, the Code page's rows and the tests):

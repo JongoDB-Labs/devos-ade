@@ -149,7 +149,7 @@ or_field() { P="$1" awk -F'\t' '!f && $1 == ENVIRON["P"] { print $2; f = 1 }'; }
 or_models_tsv() {
   or_json_flatten | awk -F'\t' '
     $1 ~ /^data\.[0-9]+\./ {
-      split($1, p, "."); i = p[2] + 0; if (i > n) n = i; seen[i] = 1
+      split($1, p, "."); i = p[2]; if (!(i in seen)) { seen[i] = 1; ord[++n] = i }
       f = substr($1, length("data." p[2] ".") + 1)
       if (f == "id") id[i] = $2; else if (f == "name") nm[i] = $2; else if (f == "context_length") cx[i] = $2
       else if (f == "created") cr[i] = $2
@@ -159,8 +159,9 @@ or_models_tsv() {
       else if (f ~ /^supported_parameters\.[0-9]+$/) { if ($2 == "tools") tl[i] = 1; else if (tl[i] == "") tl[i] = 0 }
       else if (f == "top_provider.max_completion_tokens") mo[i] = $2
     }
-    END { for (i = 0; i <= n; i++) if (seen[i] && id[i] != "")
-      print id[i] "\t" nm[i] "\t" cx[i] "\t" pp[i] "\t" pc[i] "\t" rd[i] "\t" wr[i] "\t" om[i] "\t" cr[i] "\t" tl[i] "\t" mo[i] }'
+    # (only the indices it holds, in their order: a hostile "data.999999999" costs one entry, not a billion steps)
+    END { for (j = 1; j <= n; j++) { i = ord[j]; if (id[i] != "")
+      print id[i] "\t" nm[i] "\t" cx[i] "\t" pp[i] "\t" pc[i] "\t" rd[i] "\t" wr[i] "\t" om[i] "\t" cr[i] "\t" tl[i] "\t" mo[i] } }'
 }
 
 # or_classify < or_models_tsv -> eligible models: id name context prompt completion cache_read cache_write tier created

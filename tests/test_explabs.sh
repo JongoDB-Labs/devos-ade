@@ -97,6 +97,15 @@ assert all(set(m) == {"id", "object", "created", "owned_by"} for m in d), "the f
   assert_eq "$(xl_cached_rows | awk -F'\t' '{ for (i = 2; i <= NF; i++) printf "%s", $i }')" ""   # ids alone
 }
 
+# A hostile catalog whose entry sits at index 999999999 (an object under "data"): that entry, read in one step, not a
+# loop over a billion indices; the CPU limit fails it instead of hanging
+test_the_catalog_parser_steps_only_over_the_indices_it_holds() {
+  printf '%s' '{"data":{"999999999":{"id":"late-model","supports_tools":false},"0":{"id":"qwen3.8-27b"}}}' > "$TMP/h.json"
+  local out
+  out="$( (ulimit -t 5; xl_details_tsv < "$TMP/h.json") )" || { echo "xl_details_tsv stepped over the indices one by one" >&2; return 1; }
+  assert_eq "$(printf '%s\n' "$out" | cut -f1,8 | tr '\t\n' ': ')" "late-model:0 qwen3.8-27b: "
+}
+
 # The join: the key's ids decide what is offered, the catalog what each takes. A catalog entry the key may not call is
 # not offered; one of the key's models the catalog lacks (an organisation's own) runs fail safe, and ./stack status says
 # why although nothing failed
