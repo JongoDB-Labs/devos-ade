@@ -110,7 +110,8 @@ def snapshot(state):
                                     ["llama-3-3-70b", "Llama 3.3 70B", "Bedrock", "Meta", "chat-only", False, True],
                                     ["mistral-large-3", "Mistral Large 3", "Bedrock", "Mistral", "works", False, True, "$0.50/$1.50 per 1M"],
                                     ["or/google/gemma-4-31b-it:free", "Gemma 4 31B (free)", "OpenRouter", "Google", "untested", True, True],
-                                    ["or/meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B Instruct", "OpenRouter", "Meta", "untested", False, True]]},
+                                    ["or/meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B Instruct", "OpenRouter", "Meta", "untested", False, True],
+                                    ["xl/qwen3.8-27b", "qwen3.8-27b", "Experiential Labs", "Qwen", "untested", False, True, "$0.32/$2.40 per 1M"]]},
         "keys": keys}))
     snap = st.snapshot(Path(d))
     assert snap and len(snap["keys"]) == len(TABLE), "the portal did not read the snapshot"
@@ -343,13 +344,13 @@ def check_code_models(page, failures, label):
     chips = row.locator(".set-seg button").all_inner_texts()
     if chips != ["All enabled", "Anthropic only", "Pick…"]:
         failures.append(f"{label}: CODE_MODELS offers {chips}")
-    if "6 enabled chat models, 3 of them checked" not in row.inner_text():
+    if "7 enabled chat models, 3 of them checked" not in row.inner_text():
         failures.append(f"{label}: CODE_MODELS does not say how many models work: {row.inner_text()[:200]}")
     page.screenshot(path=str(OUT / "settings-code-models.png"), clip=row.bounding_box())
     row.locator(".set-seg button", has_text="Pick…").click()
     form = row.locator(".set-form")
     heads = form.locator(".set-code-head").all_text_contents()
-    if heads != ["Anthropic (Bedrock)", "Other providers on Bedrock", "OpenRouter: free", "OpenRouter: paid"]:
+    if heads != ["Anthropic (Bedrock)", "Other providers on Bedrock", "OpenRouter: free", "OpenRouter: paid", "Experiential Labs"]:
         failures.append(f"{label}: the checklist's groups are {heads}")
     form.locator("input[type=search]").fill("free")
     visible = [x for x in form.locator("label.set-radio").all() if x.is_visible()]
@@ -375,7 +376,7 @@ def check_code_models(page, failures, label):
     row.wait_for(state="visible", timeout=10000)
     row.locator(".set-actions .action", has_text=re.compile("Change|Set")).first.click()
     groups = row.locator(".set-form select optgroup").evaluate_all("els => els.map((e) => e.label)")
-    if groups != ["Anthropic (Bedrock)", "Other providers on Bedrock", "OpenRouter: free", "OpenRouter: paid"]:
+    if groups != ["Anthropic (Bedrock)", "Other providers on Bedrock", "OpenRouter: free", "OpenRouter: paid", "Experiential Labs"]:
         failures.append(f"{label}: CODE_DEFAULT_MODEL's select groups are {groups}")
     # the confirmation names the model's price and how it works
     row.locator(".set-form select").select_option("mistral-large-3")

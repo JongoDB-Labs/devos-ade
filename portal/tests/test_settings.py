@@ -68,6 +68,8 @@ KEYS = [
     row("CODE_MODELS", "aws", "-", "edit", "code_models", "litellm-cfg", value=""),
     row("CODE_DEFAULT_MODEL", "aws", "-", "edit", "code_model", "litellm-cfg", value=""),
     row("PORTAL_SESSION_DAYS", "account", "-", "widen-local", "days", "portal", value=""),
+    row("EXPLABS_API_KEY", "explabs", "S", "local", "xl_key", "explabs", set=False),
+    row("EXPLABS_MODELS", "explabs", "-", "edit", "xl_models", "explabs", value=""),
 ]
 CHOICES = {"stt_models": {"bedrock": ["voxtral-small", "voxtral-mini"], "openai": ["gpt-4o-mini-transcribe"], "groq": []},
            "stt_bedrock_ready": ["voxtral-small"], "restart": ["litellm", "open-webui"],
@@ -455,13 +457,35 @@ def test_remote_sessions_never_change_exfiltration_keys(make, dirs):
     c = remote_client(make, True)
     for values in ({"AWS_ACCESS_KEY_ID": "AKIAABCDEFGHIJKLMNOP", "AWS_SECRET_ACCESS_KEY": "a" * 40},
                    {"ALERT_WEBHOOK_URL": "https://attacker.example/x"}, {"STT_PROVIDER": "openai", "STT_API_KEY": "k" * 30},
-                   {"REMOTE_ADMIN_ACTIONS": "true"}):
+                   {"EXPLABS_API_KEY": "test-key-for-the-validator-only"}, {"REMOTE_ADMIN_ACTIONS": "true"}):
         r = apply(c, values, headers=RH)
         assert r.status_code == 400, values
         assert any("computer running DevOS ADE" in m for m in r.json()["fields"].values())
     assert apply(c, {"REMOTE_ADMIN_ACTIONS": "false"}, headers=RH).status_code == 202   # narrowing is fine anywhere
     req = next(rq.iterdir()).read_text()
     assert "\norigin remote\n" in req
+
+
+def test_the_experiential_labs_key_goes_to_the_helper_from_this_computer_and_its_models_from_anywhere(make, dirs):
+    sd, rq = dirs
+    write_snapshot(sd); helper_up(sd)
+    c = make()
+    assert apply(c, {"EXPLABS_API_KEY": "has spaces so not a key"}).status_code == 400
+    assert apply(c, {"EXPLABS_MODELS": "vendor/qwen3.8-27b"}).status_code == 400
+    assert apply(c, {"EXPLABS_API_KEY": "test-key-for-the-validator-only"}).status_code == 202
+    req = next(rq.iterdir()).read_text()
+    assert "test-key-for-the-validator-only" not in req   # (base64 in the request, as every value)
+    assert "\nset EXPLABS_API_KEY " in req and "\norigin local\n" in req
+    # the snapshot shows the key as set, never a character of it
+    k = next(x for x in c.get("/api/settings", headers=API).json()["snapshot"]["keys"] if x["key"] == "EXPLABS_API_KEY")
+    assert k["secret"] == "S" and "hint" not in k and "value" not in k
+
+
+def test_the_experiential_labs_models_change_from_a_remote_device_too(make, dirs):
+    sd, rq = dirs
+    write_snapshot(sd); helper_up(sd)
+    assert apply(remote_client(make, True), {"EXPLABS_MODELS": "qwen3.8-27b,gpt-5-mini"}, headers=RH).status_code == 202
+    assert "\norigin remote\n" in next(rq.iterdir()).read_text()
 
 
 def test_a_bare_remote_header_counts_as_remote(make, dirs):
@@ -564,7 +588,7 @@ def test_reveal_only_what_the_portal_holds(make, dirs):
     assert reveal(c, "LITELLM_KEY_OPENWEBUI").json()["value"] == "sk-ow"
     assert reveal(c, "SHARED_MCP_TOKEN").json()["value"] == "mcp-token-0123456789abcdef"
     assert reveal(c, "LITELLM_KEY_SETUP").status_code == 404                 # not set in this fixture
-    for k in ("AWS_SECRET_ACCESS_KEY", "PORTAL_PASSWORD", "LITELLM_MASTER_KEY", "PORTAL_SECRET", "OPENROUTER_API_KEY"):
+    for k in ("AWS_SECRET_ACCESS_KEY", "PORTAL_PASSWORD", "LITELLM_MASTER_KEY", "PORTAL_SECRET", "OPENROUTER_API_KEY", "EXPLABS_API_KEY"):
         r = reveal(c, k)
         assert r.status_code == 403 and "never shown" in r.json()["error"]
     assert reveal(c, "LITELLM_UI_PASSWORD", password="wrong").status_code == 403
