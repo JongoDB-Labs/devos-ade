@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.25.2] - 2026-10-25
+
 ### Fixed
 
 - After an update that changes the app's icon, the portal and the installed app show the new one at once (icons were
@@ -2568,7 +2570,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.25.1...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.25.2...HEAD
+[0.25.2]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.25.1...v0.25.2
 [0.25.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/JongoDB-Labs/bedrock-now/compare/v0.23.0...v0.24.0
