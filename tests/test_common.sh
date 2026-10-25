@@ -167,14 +167,22 @@ test_no_rm_takes_an_unquoted_expansion() {
   command -v python3 >/dev/null 2>&1 || return 77
   local f files=() out
   # shellcheck disable=SC2016  # the cases are shell text
+  # (one finding a line: rm and its other names, xargs … rm without -0 or -d, a removing find with an unquoted path,
+  # and each inside trap, eval, sh -c and bash -c strings)
   printf '%s\n' 'rm -rf $X' 'rm -f ${X}' 'rm -rf $(ls)' 'x=$(rm -f $y)' '[ -z "$x" ] || rm -rf $x' 'rm -f "$a" ${b:+"$b"}' \
-    "trap 'rm -rf \${T:-}; exit' TERM" 'trap "rm -f \$late" INT' > "$TMP/bad.sh"
+    "trap 'rm -rf \${T:-}; exit' TERM" 'trap "rm -f \$late" INT' \
+    '\rm -rf $X' '/bin/rm -f ${X}' '/usr/bin/rm -rf $(ls)' 'env LC_ALL=C rm -f $y' \
+    'find . -name x | xargs rm -f' 'printf "%s\n" "$a" | xargs -r rm -f --' \
+    "find \$dir -name '*.tmp' -delete" 'find $dir -type f -exec rm -f {} \;' \
+    'eval "rm -rf $x"' 'sh -c "rm -f $f"' "bash -c 'rm -rf \$1' _ \"\$p\"" > "$TMP/bad.sh"
   # shellcheck disable=SC2016
   printf '%s\n' 'rm -f "$a" "${b}" -- "$(c)"' 'rm -rf -- "$d"' 'docker rm -f $ids' 'echo "docker volume rm $vols"' \
     '# rm -rf $comment' 'rm -f /tmp/x.$$' 'trap "rm -f $q; kill -INT \$\$" INT' 'cat <<EOF' 'rm -rf $text' 'EOF' 'done <<< "$plan"' \
-    'rm -f "$z"' > "$TMP/good.sh"
+    'rm -f "$z"' '\rm -rf -- "$X"' 'env LC_ALL=C rm -f "$y"' 'find . -name x -print0 | xargs -0 rm -f' \
+    "printf '%s\\n' \"\$a\" | xargs -d '\\n' rm -f --" "find \"\$dir\" -name '*.tmp' -delete" 'find "$dir" -type f -exec rm -f {} \;' \
+    'find $dir -name x -print' 'eval "rm -rf \"\$x\""' "sh -c 'rm -f \"\$1\"' _ \"\$f\"" > "$TMP/good.sh"
   out="$(python3 -I "$T_ROOT/tests/rm_scan.py" "$TMP/bad.sh")" || true
-  assert_eq "$(printf '%s\n' "$out" | grep -c .)" 8
+  assert_eq "$(printf '%s\n' "$out" | grep -c .)" "$(grep -c . "$TMP/bad.sh")"
   python3 -I "$T_ROOT/tests/rm_scan.py" "$TMP/good.sh"
   for f in "$T_ROOT"/lib/*.sh "$T_ROOT"/stack "$T_ROOT"/install.sh "$T_ROOT"/setup.sh "$T_ROOT"/bin/* "$T_ROOT"/terminal/bin/*; do
     [ -f "$f" ] && head -n 1 "$f" | grep -qE '^#!.*sh|shellcheck shell=' && files+=("$f")
