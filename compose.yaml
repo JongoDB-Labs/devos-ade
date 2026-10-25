@@ -166,7 +166,7 @@ services:
       IMAGE_GENERATION_MODEL: ${OWUI_IMAGE_MODEL:-}
       # Chat experience (OWUI_* model choices are made by setup from the models your key can use)
       DEFAULT_MODELS: ${OWUI_DEFAULT_MODEL:-}                # default chat model for users without their own
-      TASK_MODEL_EXTERNAL: ${OWUI_TASK_MODEL:-}              # titles, tags, follow-ups: a cheap model
+      TASK_MODEL_EXTERNAL: ${OWUI_TASK_MODEL:-}              # titles, tags, follow-ups: the pinned model, else each chat's own
       ENABLE_TITLE_GENERATION: "true"
       ENABLE_TAGS_GENERATION: "true"
       ENABLE_FOLLOW_UP_GENERATION: "true"

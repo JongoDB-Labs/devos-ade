@@ -701,11 +701,12 @@ choose_defaults() { # derive model choices from litellm/enabled-models.txt (pins
   p="$(_pinned CLAUDE_MODEL_HAIKU "$en")"; set_env CLAUDE_BEDROCK_HAIKU_MODEL "${p:-$(first_enabled "$en" claude-haiku-5-5 claude-sonnet-4-5)}"
   [ -n "$(get_env CLAUDE_BEDROCK_OPUS_MODEL)" ] || warn "no Claude model is usable with this key — devos-claude will not work"
 
-  # Open WebUI: default chat model, and the cheap model for titles/tags/follow-up suggestions.
+  # Open WebUI: default chat model, and the model for titles/tags/follow-up suggestions: the one pinned, else none —
+  # then Open WebUI asks each chat's own model (TASK_MODEL_EXTERNAL empty: its get_task_model_id keeps the chat's), so
+  # a chat on a free model stays free; pin a cheap one (CHAT_TASK_MODEL) to keep them off an expensive chat model
   m="$(first_enabled "$en" claude-sonnet-5-5 claude-sonnet-4-5 claude-haiku-5-5)"
   p="$(_pinned CHAT_DEFAULT_MODEL "$en")"; set_env OWUI_DEFAULT_MODEL "${p:-$m}"
-  p="$(_pinned CHAT_TASK_MODEL "$en")"; set_env OWUI_TASK_MODEL "${p:-$(first_enabled "$en" claude-haiku-5-5)}"
-  [ -n "$(get_env OWUI_TASK_MODEL)" ] || set_env OWUI_TASK_MODEL "$m"
+  p="$(_pinned CHAT_TASK_MODEL "$en")"; set_env OWUI_TASK_MODEL "$p"
 
   # Bedrock-only rule: never let Open WebUI fall back to a local (Hugging Face-downloaded) embedder.
   m="$(first_enabled "$en" cohere-embed-v4 titan-embed-v2)"

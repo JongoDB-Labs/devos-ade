@@ -215,12 +215,18 @@ _owui_models() { # _owui_models MODEL... -> OWUI_DEFAULT_MODEL/OWUI_TASK_MODEL a
   printf '%s %s\n' "$(get_env OWUI_DEFAULT_MODEL)" "$(get_env OWUI_TASK_MODEL)"
 }
 
+# Titles, tags and follow-ups: on each chat's own model (no task model: Open WebUI's get_task_model_id keeps the chat's),
+# so a chat on a free model stays free; a pin (CHAT_TASK_MODEL) while that model is enabled
 test_choose_defaults_open_webui_default_and_task_model() {
-  assert_eq "$(_owui_models claude-haiku-5-5 claude-sonnet-4-5 claude-sonnet-5-5)" "claude-sonnet-5-5 claude-haiku-5-5"
-  assert_eq "$(_owui_models claude-haiku-5-5 claude-sonnet-4-5)" "claude-sonnet-4-5 claude-haiku-5-5"
-  assert_eq "$(_owui_models claude-sonnet-4-5)" "claude-sonnet-4-5 claude-sonnet-4-5"   # no Haiku: task model = default
-  assert_eq "$(_owui_models claude-haiku-5-5)" "claude-haiku-5-5 claude-haiku-5-5"
+  assert_eq "$(_owui_models claude-haiku-5-5 claude-sonnet-4-5 claude-sonnet-5-5)" "claude-sonnet-5-5 "
+  assert_eq "$(_owui_models claude-haiku-5-5 claude-sonnet-4-5)" "claude-sonnet-4-5 "
+  assert_eq "$(_owui_models claude-haiku-5-5)" "claude-haiku-5-5 "
   assert_eq "$(_owui_models gpt-6-sol)" " "   # none of the three: Open WebUI's own defaults apply
+  printf 'CHAT_TASK_MODEL=claude-haiku-5-5\n' >> "$ENV_FILE"
+  assert_eq "$(_owui_models claude-haiku-5-5 claude-sonnet-5-5)" "claude-sonnet-5-5 claude-haiku-5-5"   # pinned
+  assert_eq "$(_owui_models claude-sonnet-5-5 2>/dev/null)" "claude-sonnet-5-5 "   # the pin not enabled: each chat's own
+  # (the compose file hands it to Open WebUI as its task model for every chat: empty = the chat's own)
+  assert_contains "$(cat "$STACK_DIR/compose.yaml" 2>/dev/null || cat "$T_ROOT/compose.yaml")" 'TASK_MODEL_EXTERNAL: ${OWUI_TASK_MODEL:-}'
 }
 
 test_new_litellm_ui_password_meets_litellm_policy() {

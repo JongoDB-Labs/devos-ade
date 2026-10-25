@@ -57,7 +57,7 @@ OPENROUTER_API_KEY	chat	main	-	Optional: hundreds of other models next to Bedroc
 OPENROUTER_MODELS	chat	main	OPENROUTER_API_KEY	Which OpenRouter models Chat and the API offer.
 EXPLABS_API_KEY	chat	main	-	Optional: one gateway in front of many models, next to Bedrock. Prompts to its models go to api.experientiallabs.ai.
 EXPLABS_MODELS	chat	main	EXPLABS_API_KEY	Which of the gateway's models Chat, the Code page and the API offer.
-CHAT_TASK_MODEL	chat	more	-	The model that writes chat titles, tags and follow-up suggestions (every chat pays for it).
+CHAT_TASK_MODEL	chat	more	-	The model that writes chat titles, tags and follow-up suggestions: each chat's own unless you pin one.
 OWUI_TASK_MODEL	chat	with	CHAT_TASK_MODEL	-
 OPENROUTER_MAX_MODELS	chat	more	OPENROUTER_API_KEY	At most this many OpenRouter models, the newest first; a long list slows LiteLLM's start.
 OPENROUTER_INCLUDE_ALIASES	chat	more	OPENROUTER_API_KEY	Also offer OpenRouter's …-latest alias models.

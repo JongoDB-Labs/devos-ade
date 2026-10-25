@@ -17,6 +17,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   Claude models — on the Code page (a switch to or from such a model restarts the session's Claude Code at your next
   prompt) and in `devos-claude --model …` (on this computer and in the browser terminal). With a Claude model they
   stay on Haiku. Auto mode's reviewer keeps Sonnet 5.5, as before.
+- **Chat's titles, tags and follow-up suggestions run on the chat's own model**, so a chat on a free model stays free.
+  They ran on Haiku whatever the chat's model (Open WebUI's task model). Open WebUI uses each chat's own model when no
+  task model is set, and setup now sets none unless you pin one: **Settings › Chat & voice › More › Chat title and tag
+  model** (blank: each chat's own) — pin Haiku there if you chat with an expensive model. It applies at the next
+  `./stack setup` or update.
 
 ## [0.28.0] - 2026-10-25
 

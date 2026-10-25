@@ -1411,7 +1411,7 @@ test_choose_defaults_respects_pins_and_warns_about_a_disabled_one() {
   assert_eq "$(get_env CLAUDE_BEDROCK_OPUS_MODEL)" claude-sonnet-5-5         # pinned
   assert_eq "$(get_env CLAUDE_BEDROCK_SONNET_MODEL)" claude-sonnet-5-5       # automatic
   assert_eq "$(get_env OWUI_DEFAULT_MODEL)" mistral-large-3                   # pinned
-  assert_eq "$(get_env OWUI_TASK_MODEL)" claude-haiku-5-5                     # pin not enabled: automatic
+  assert_eq "$(get_env OWUI_TASK_MODEL)" ""                                   # pin not enabled: each chat's own model
   assert_eq "$(get_env CLAUDE_BEDROCK_HAIKU_MODEL)" claude-haiku-5-5          # an embedding model is no chat pin
   assert_contains "$(cat "$TMP/err")" "CHAT_TASK_MODEL=gpt-oss-120b is not a chat model your AWS key can use now"
   assert_contains "$(cat "$TMP/err")" "CLAUDE_MODEL_HAIKU=titan-embed-v2 is not a chat model"

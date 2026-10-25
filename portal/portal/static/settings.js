@@ -957,7 +957,7 @@
       collect = () => ({ [k.key]: $(`#${id}`, form).value.trim() });
     } else if (k.validator === "model_pin") {
       const sel = el("select", { id });
-      sel.append(el("option", { value: "", text: "automatic (setup picks one)" }));
+      sel.append(el("option", { value: "", text: k.key === "CHAT_TASK_MODEL" ? "each chat's own model" : "automatic (setup picks one)" }));
       for (const [m, name] of data.snapshot.choices.chat_models) {
         if (k.key.startsWith("CLAUDE_MODEL_") && !m.startsWith("claude-")) continue;   // Claude Code speaks Anthropic's API
         const o = el("option", { value: m, text: `${name} (${m})` });
