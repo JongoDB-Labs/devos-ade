@@ -30,15 +30,13 @@ def public_paths(ctx):
 
 @check("http", "favicon-ico-public")
 def favicon_ico(ctx):
+    # The 32 px PNG itself, revalidated on every load: never a redirect (a permanent one is kept by the browser, and
+    # an update's new icon would not show), never cached for a while.
     r = http("GET", None, "/favicon.ico")
-    loc = r.header("location") or ""
-    if r.status in (301, 302, 307, 308):
-        expect(loc.endswith("/icons/app-32.png") or loc.endswith("/favicon.svg"), f"/favicon.ico → {loc}")
-        t = http("GET", None, "/" + loc.split("/", 3)[-1] if loc.startswith("http") else loc)
-        expect(t.status == 200 and (t.header("content-type") or "").startswith("image/"), f"{loc}: {t.status}")
-        return f"{r.status} → {loc} (200 {t.header('content-type')}) without a session"
-    expect(r.status == 200, f"/favicon.ico without a session: HTTP {r.status} (browsers request it on every page)")
-    return f"200 {r.header('content-type')}"
+    expect(r.status == 200, f"/favicon.ico without a session: HTTP {r.status} {r.header('location') or ''} (browsers request it on every page)")
+    expect(r.header("content-type") == "image/png", f"/favicon.ico type {r.header('content-type')}")
+    expect(r.header("cache-control") == "no-cache" and r.header("etag"), f"/favicon.ico Cache-Control {r.header('cache-control')!r}, ETag {r.header('etag')!r}")
+    return f"200 image/png, no-cache, ETag {r.header('etag')} without a session"
 
 
 @check("http", "manifest-and-sw")

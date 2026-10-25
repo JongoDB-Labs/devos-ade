@@ -172,7 +172,7 @@ test_caddy_web_app_files_are_public_before_login() {
   line="$(grep '@public path' "$f")"
   assert_contains "$line" " /manifest.webmanifest"
   assert_contains "$line" " /sw.js"
-  # browsers ask for /favicon.ico on their own, before any login: the portal redirects it to a public icon
+  # browsers ask for /favicon.ico on their own, before any login: the portal serves the 32 px PNG there itself
   assert_contains "$line " " /favicon.ico "
   # Exactly the icon files the portal serves (portal/appicons.py FILES), each by name: no wildcard, so nothing
   # else that ever lands under /icons/ (the provider logos) is public.
