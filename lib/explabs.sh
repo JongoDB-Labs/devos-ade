@@ -36,11 +36,15 @@
 #   explabs_status_line / explabs_summary_line / explabs_costs_section / explabs_models_section
 #   setup_explabs / explabs_up_hook / explabs_after_up   setup, and ./stack up before `compose up` / in its portal session
 
-# Where the key goes. Only the test suite (BEDROCK_NOW_TESTING=1, as lib/host.sh) can point this at another server: a
-# stray variable in a user's shell never changes it. The catalog lives beside it.
+# Where the key goes. Only the test suite (BEDROCK_NOW_TESTING=1, as lib/host.sh) can point this at another server:
+# BEDROCK_NOW_TEST_EXPLABS_API in a user's shell is ignored, with a warning (as lib/openrouter.sh's and lib/stt.sh's
+# test addresses). The catalog lives beside it.
 _xl_api() {
-  if [ "${BEDROCK_NOW_TESTING:-}" = 1 ] && [ -n "${BEDROCK_NOW_TEST_EXPLABS_API:-}" ]; then printf '%s\n' "$BEDROCK_NOW_TEST_EXPLABS_API"
-  else printf 'https://api.experientiallabs.ai/v1\n'; fi
+  if [ -n "${BEDROCK_NOW_TEST_EXPLABS_API:-}" ]; then
+    if [ "${BEDROCK_NOW_TESTING:-}" = 1 ]; then printf '%s\n' "$BEDROCK_NOW_TEST_EXPLABS_API"; return 0; fi
+    test_url_ignored BEDROCK_NOW_TEST_EXPLABS_API "the Experiential Labs key"
+  fi
+  printf 'https://api.experientiallabs.ai/v1\n'
 }
 EXPLABS_API="$(_xl_api)"
 # xl_api_ok -> 0 when EXPLABS_API may get the key: https, or any address while testing
