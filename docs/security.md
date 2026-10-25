@@ -374,16 +374,21 @@ An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*)
 - **Where requests go.** A prompt to an `xl/<id>` model goes from LiteLLM to `https://api.experientiallabs.ai/v1`
   (Chat Completions, extended thinking included) and from there to whichever provider the gateway routes
   that call to — its own Experiential Cloud, another hosted provider, or your own provider account connected there
-  (BYOK); the answer's `x-gateway-provider` header names it. Besides the calls themselves, `./stack` makes two GET
-  requests, both free (setup, `./stack up` at most every 12 hours unless the last read failed or left a chosen model
-  without details, Settings; the check of a new key makes the first alone):
+  (BYOK); the answer's `x-gateway-provider` header names it. Besides the calls themselves, `./stack` makes these GET
+  requests, all free (setup and Settings, which wait at most about 100 s; `./stack up` at most every 12 hours unless
+  the last read failed or left a chosen model without details, in the background; the check of a new key makes the
+  first alone):
   - `GET https://api.experientiallabs.ai/v1/models` **with the key** (on curl's stdin): the ids of the models this key
     may call — the OpenAI list, which carries nothing else;
-  - `GET https://api.experientiallabs.ai/api/models` **without the key**, page by page (`limit`, `offset`): the
-    gateway's public catalog, each model's details (what it takes) and list price. No key and nothing about you or this
-    install goes there; an organisation's own models are not in it, so they run fail safe.
+  - `GET https://api.experientiallabs.ai/api/models/<id>` **without the key**, one for each model `EXPLABS_MODELS`
+    picks that the key may call (at most 40), side by side: that model in the gateway's public catalog — its
+    deployments, each with its capabilities and list price, and the order the gateway tries them in. Its details are
+    those of the deployment the gateway serves it on (the first active one of that order). The ids you chose are all
+    this request says about you; no key and nothing else about you or this install goes there. An organisation's own
+    models and aliases are not in it (HTTP 404), so they run fail safe.
 
-  Joined by model id and cached in `litellm/explabs-models.tsv`: a catalog entry your key may not call is not kept.
+  Joined by model id and cached in `litellm/explabs-models.tsv`. A request that times out, a name that does not resolve,
+  a connection refused are each said as such in `./stack status`, and details read before for this key stay.
 - **What is sent.** The request as Chat, the Code page or a LiteLLM client made it — your messages, tools, files you
   attached — minus the parameters the gateway's details say the model does not take (LiteLLM's `drop_params`, the
   model's `additional_drop_params`, and the hook `lib/litellm-hooks/bn_hooks.py`). A client's own fields pass as they

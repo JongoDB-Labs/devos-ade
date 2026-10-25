@@ -1,0 +1,60 @@
+{
+ "model": {
+  "id": "m-gpt-5-mini",
+  "slug": "gpt-5-mini",
+  "display_name": "gpt-5-mini",
+  "release_date": null,
+  "context_window": 400000,
+  "max_output_tokens": 128000,
+  "max_input_tokens": null,
+  "input_modalities": [
+   "text"
+  ],
+  "output_modalities": [
+   "text"
+  ],
+  "supported_params": {},
+  "status": "active"
+ },
+ "providers": [
+  {
+   "id": "gpt-5-mini-experiential_cloud",
+   "model_id": "m-gpt-5-mini",
+   "provider": "experiential_cloud",
+   "provider_model_id": "gpt-5-mini",
+   "status": "active",
+   "routable": true,
+   "billing_source": "host_managed",
+   "input_nano_usd_per_million": 250000000,
+   "cached_input_nano_usd_per_million": 25000000,
+   "cache_write_input_nano_usd_per_million": null,
+   "output_nano_usd_per_million": 2000000000,
+   "capabilities": {
+    "supports_temperature": false,
+    "supports_top_p": false,
+    "supports_top_k": false,
+    "supports_frequency_penalty": null,
+    "supports_presence_penalty": null,
+    "supports_logprobs": false,
+    "supports_tools": true,
+    "supports_structured_output": true,
+    "supports_reasoning": true,
+    "sampling_requires_reasoning_none": false,
+    "chat_max_tokens_field": "max_completion_tokens",
+    "maximum_temperature": null,
+    "minimum_temperature": null
+   },
+   "zero_data_retention": null
+  }
+ ],
+ "default_waterfall": [
+  {
+   "position": 0,
+   "model_provider_id": "gpt-5-mini-experiential_cloud",
+   "provider": "experiential_cloud",
+   "status": "active",
+   "funding": "platform"
+  }
+ ],
+ "retention": null
+}

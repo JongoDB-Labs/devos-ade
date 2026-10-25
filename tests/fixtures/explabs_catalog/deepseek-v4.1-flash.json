@@ -1,0 +1,60 @@
+{
+ "model": {
+  "id": "m-deepseek-v4.1-flash",
+  "slug": "deepseek-v4.1-flash",
+  "display_name": "deepseek-v4.1-flash",
+  "release_date": null,
+  "context_window": 1048576,
+  "max_output_tokens": 393216,
+  "max_input_tokens": null,
+  "input_modalities": [
+   "text"
+  ],
+  "output_modalities": [
+   "text"
+  ],
+  "supported_params": {},
+  "status": "active"
+ },
+ "providers": [
+  {
+   "id": "deepseek-v4.1-flash-experiential_cloud",
+   "model_id": "m-deepseek-v4.1-flash",
+   "provider": "experiential_cloud",
+   "provider_model_id": "deepseek-v4.1-flash",
+   "status": "active",
+   "routable": true,
+   "billing_source": "host_managed",
+   "input_nano_usd_per_million": 300000000,
+   "cached_input_nano_usd_per_million": 6000000,
+   "cache_write_input_nano_usd_per_million": null,
+   "output_nano_usd_per_million": 1200000000,
+   "capabilities": {
+    "supports_temperature": true,
+    "supports_top_p": true,
+    "supports_top_k": false,
+    "supports_frequency_penalty": null,
+    "supports_presence_penalty": null,
+    "supports_logprobs": false,
+    "supports_tools": true,
+    "supports_structured_output": true,
+    "supports_reasoning": true,
+    "sampling_requires_reasoning_none": false,
+    "chat_max_tokens_field": "max_tokens",
+    "maximum_temperature": 2.0,
+    "minimum_temperature": 0.0
+   },
+   "zero_data_retention": null
+  }
+ ],
+ "default_waterfall": [
+  {
+   "position": 0,
+   "model_provider_id": "deepseek-v4.1-flash-experiential_cloud",
+   "provider": "experiential_cloud",
+   "status": "active",
+   "funding": "platform"
+  }
+ ],
+ "retention": null
+}

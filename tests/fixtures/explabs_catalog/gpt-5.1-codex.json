@@ -1,0 +1,87 @@
+{
+ "model": {
+  "id": "m-6574de69",
+  "slug": "gpt-5.1-codex",
+  "display_name": "GPT-5.1 Codex",
+  "release_date": null,
+  "context_window": 400000,
+  "max_output_tokens": 128000,
+  "max_input_tokens": 272000,
+  "input_modalities": [
+   "text"
+  ],
+  "output_modalities": [
+   "text"
+  ],
+  "supported_params": {
+   "tools": true,
+   "reasoning": true,
+   "structured_outputs": true
+  },
+  "status": "active"
+ },
+ "providers": [
+  {
+   "id": "gpt-5.1-codex-azure_openai",
+   "model_id": "m-6574de69",
+   "provider": "azure_openai",
+   "provider_model_id": "gpt-5.1-codex-2025-11-13",
+   "status": "disabled",
+   "routable": null,
+   "billing_source": "customer_managed",
+   "input_nano_usd_per_million": 610000000,
+   "cached_input_nano_usd_per_million": null,
+   "cache_write_input_nano_usd_per_million": null,
+   "output_nano_usd_per_million": 2940000000,
+   "capabilities": {
+    "supports_temperature": false,
+    "supports_top_p": false,
+    "supports_top_k": false,
+    "supports_logprobs": false,
+    "supports_tools": true,
+    "supports_structured_output": true,
+    "supports_reasoning": false,
+    "sampling_requires_reasoning_none": false,
+    "chat_max_tokens_field": "max_tokens",
+    "supports_streaming": true
+   },
+   "zero_data_retention": false
+  },
+  {
+   "id": "gpt-5.1-codex-experiential_cloud",
+   "model_id": "m-6574de69",
+   "provider": "experiential_cloud",
+   "provider_model_id": "gpt-5.1-codex",
+   "status": "active",
+   "routable": true,
+   "billing_source": "host_managed",
+   "input_nano_usd_per_million": 1250000000,
+   "cached_input_nano_usd_per_million": 130000000,
+   "cache_write_input_nano_usd_per_million": null,
+   "output_nano_usd_per_million": 10000000000,
+   "capabilities": {
+    "supports_temperature": false,
+    "supports_top_p": false,
+    "supports_top_k": false,
+    "supports_logprobs": false,
+    "supports_tools": true,
+    "supports_structured_output": true,
+    "supports_reasoning": true,
+    "sampling_requires_reasoning_none": true,
+    "chat_max_tokens_field": "max_tokens",
+    "supports_streaming": true
+   },
+   "zero_data_retention": true
+  }
+ ],
+ "default_waterfall": [
+  {
+   "position": 0,
+   "model_provider_id": "gpt-5.1-codex-azure_openai",
+   "provider": "azure_openai",
+   "status": "disabled",
+   "funding": "platform"
+  }
+ ],
+ "retention": "zdr_all_rungs"
+}

@@ -1,0 +1,60 @@
+{
+ "model": {
+  "id": "m-claude-fable-5",
+  "slug": "claude-fable-5",
+  "display_name": "claude-fable-5",
+  "release_date": null,
+  "context_window": 1000000,
+  "max_output_tokens": 128000,
+  "max_input_tokens": null,
+  "input_modalities": [
+   "text"
+  ],
+  "output_modalities": [
+   "text"
+  ],
+  "supported_params": {},
+  "status": "active"
+ },
+ "providers": [
+  {
+   "id": "claude-fable-5-experiential_cloud",
+   "model_id": "m-claude-fable-5",
+   "provider": "experiential_cloud",
+   "provider_model_id": "claude-fable-5",
+   "status": "active",
+   "routable": true,
+   "billing_source": "host_managed",
+   "input_nano_usd_per_million": 10000000000,
+   "cached_input_nano_usd_per_million": 1000000000,
+   "cache_write_input_nano_usd_per_million": null,
+   "output_nano_usd_per_million": 50000000000,
+   "capabilities": {
+    "supports_temperature": true,
+    "supports_top_p": true,
+    "supports_top_k": true,
+    "supports_frequency_penalty": null,
+    "supports_presence_penalty": null,
+    "supports_logprobs": false,
+    "supports_tools": true,
+    "supports_structured_output": false,
+    "supports_reasoning": false,
+    "sampling_requires_reasoning_none": false,
+    "chat_max_tokens_field": null,
+    "maximum_temperature": 2.0,
+    "minimum_temperature": 0.0
+   },
+   "zero_data_retention": null
+  }
+ ],
+ "default_waterfall": [
+  {
+   "position": 0,
+   "model_provider_id": "claude-fable-5-experiential_cloud",
+   "provider": "experiential_cloud",
+   "status": "active",
+   "funding": "platform"
+  }
+ ],
+ "retention": null
+}

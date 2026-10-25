@@ -1974,7 +1974,8 @@ shown there once.
   key may not call is left out, with a warning.
 - **Only what each model takes.** Some models refuse a sampling parameter, and the call then fails
   (`all_routes_failed`, HTTP 502). So DevOS ADE reads which models your key may call (`GET /v1/models` with the key:
-  ids only) and what each takes from the gateway's public catalog (`GET /api/models`, without the key), both free, and
+  ids only) and what each chosen one takes from the gateway's public catalog (`GET /api/models/<id>`, without the key,
+  one per chosen model and side by side: the capabilities of the deployment the gateway serves it on), all free, and
   sends each only what it takes: LiteLLM drops the rest (`drop_params` and the model's
   `additional_drop_params`), and its hook moves the output cap to the field the model names. Claude Code's requests
   stay on Chat Completions, the API those details describe, with extended thinking too (LiteLLM would send those to
@@ -2081,9 +2082,10 @@ troubleshooting: [docs/voice.md](docs/voice.md).
   openrouter.ai.
 - **Experiential Labs, only if you add a key:** the `xl/…` models go to `api.experientiallabs.ai` and, from there, the
   provider that serves each call; `./stack` reads which models your key may call (`GET /v1/models`, with the key) and
-  their details from the gateway's public catalog (`GET /api/models`, without it) at setup, `./stack up` (at most
-  every 12 hours, unless the last read failed or left a chosen model without details) and in Settings. Without a key
-  nothing contacts it.
+  the chosen ones' details from the gateway's public catalog (`GET /api/models/<id>`, without it) at setup, in
+  Settings (each waits at most about 100 s) and at `./stack up` — at most every 12 hours, unless the last read failed
+  or left a chosen model without details, and in the background: `./stack up` never waits for it while it has a list
+  read before, and uses what it brings from the next `./stack up`. Without a key nothing contacts it.
 - **Your voice:** with Bedrock speech-to-text (the default when Voxtral is usable and AWS takes its audio),
   audio from the microphone and voice calls goes only to Bedrock in your AWS account, through the local `stt`
   container and LiteLLM. Read-aloud uses your system's voices. Without server speech-to-text, the microphone uses

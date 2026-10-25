@@ -1,0 +1,155 @@
+{
+ "model": {
+  "id": "m-8ba8abcb",
+  "slug": "qwen3.8-27b",
+  "display_name": "Qwen3.8 27B",
+  "release_date": "2026-08-14",
+  "context_window": 1000000,
+  "max_output_tokens": 131072,
+  "max_input_tokens": 868928,
+  "input_modalities": [
+   "text",
+   "image",
+   "video"
+  ],
+  "output_modalities": [
+   "text"
+  ],
+  "supported_params": {
+   "seed": true,
+   "stop": true,
+   "tools": true,
+   "top_k": true,
+   "top_p": true,
+   "logprobs": true,
+   "reasoning": true,
+   "temperature": true,
+   "response_format": true,
+   "structured_outputs": true
+  },
+  "status": "active"
+ },
+ "providers": [
+  {
+   "id": "qwen3.8-27b-fireworks",
+   "model_id": "m-8ba8abcb",
+   "provider": "fireworks",
+   "provider_model_id": "accounts/fireworks/models/qwen3p8-27b",
+   "status": "active",
+   "routable": null,
+   "billing_source": "customer_managed",
+   "input_nano_usd_per_million": 450000000,
+   "cached_input_nano_usd_per_million": 50000000,
+   "cache_write_input_nano_usd_per_million": null,
+   "output_nano_usd_per_million": 3200000000,
+   "capabilities": {
+    "supports_temperature": true,
+    "supports_top_p": true,
+    "supports_top_k": true,
+    "supports_logprobs": false,
+    "supports_tools": true,
+    "supports_structured_output": false,
+    "supports_reasoning": false,
+    "sampling_requires_reasoning_none": false,
+    "chat_max_tokens_field": "max_tokens",
+    "supports_streaming": true,
+    "supports_image_input": false,
+    "maximum_temperature": 2.0,
+    "minimum_temperature": 0.0
+   },
+   "zero_data_retention": true
+  },
+  {
+   "id": "qwen3.8-27b-cerebras",
+   "model_id": "m-8ba8abcb",
+   "provider": "cerebras",
+   "provider_model_id": "qwen-3.8-27b",
+   "status": "active",
+   "routable": true,
+   "billing_source": "host_managed",
+   "input_nano_usd_per_million": 990000000,
+   "cached_input_nano_usd_per_million": 990000000,
+   "cache_write_input_nano_usd_per_million": null,
+   "output_nano_usd_per_million": 1490000000,
+   "capabilities": {
+    "supports_temperature": true,
+    "supports_top_p": true,
+    "supports_logprobs": false,
+    "supports_structured_output": true,
+    "supports_streaming": true,
+    "supports_image_input": false,
+    "maximum_temperature": 2.0,
+    "minimum_temperature": 0.0
+   },
+   "zero_data_retention": false
+  },
+  {
+   "id": "qwen3.8-27b-experiential_cloud",
+   "model_id": "m-8ba8abcb",
+   "provider": "experiential_cloud",
+   "provider_model_id": "qwen3.8-27b",
+   "status": "active",
+   "routable": true,
+   "billing_source": "host_managed",
+   "input_nano_usd_per_million": 320000000,
+   "cached_input_nano_usd_per_million": 40000000,
+   "cache_write_input_nano_usd_per_million": null,
+   "output_nano_usd_per_million": 2400000000,
+   "capabilities": {
+    "supports_temperature": true,
+    "supports_top_p": true,
+    "supports_top_k": true,
+    "supports_logprobs": false,
+    "supports_tools": true,
+    "supports_structured_output": false,
+    "supports_reasoning": true,
+    "chat_max_tokens_field": "max_completion_tokens",
+    "supports_streaming": true,
+    "maximum_temperature": 1.99,
+    "minimum_temperature": 0.0
+   },
+   "zero_data_retention": true
+  },
+  {
+   "id": "qwen3.8-27b-reka",
+   "model_id": "m-8ba8abcb",
+   "provider": "reka",
+   "provider_model_id": "qwen3.8-27b",
+   "status": "active",
+   "routable": true,
+   "billing_source": "host_managed",
+   "input_nano_usd_per_million": 200000000,
+   "cached_input_nano_usd_per_million": 50000000,
+   "cache_write_input_nano_usd_per_million": null,
+   "output_nano_usd_per_million": 2500000000,
+   "capabilities": {
+    "supports_streaming": true
+   },
+   "zero_data_retention": null
+  }
+ ],
+ "default_waterfall": [
+  {
+   "position": 0,
+   "model_provider_id": "qwen3.8-27b-experiential_cloud",
+   "provider": "experiential_cloud",
+   "status": "active",
+   "funding": "platform"
+  },
+  {
+   "position": 1,
+   "model_provider_id": "qwen3.8-27b-reka",
+   "provider": "reka",
+   "status": "active",
+   "funding": "platform"
+  },
+  {
+   "position": 3,
+   "model_provider_id": "qwen3.8-27b-cerebras",
+   "provider": "cerebras",
+   "status": "active",
+   "funding": "platform"
+  }
+ ],
+ "retention": "zdr_enforceable"
+}

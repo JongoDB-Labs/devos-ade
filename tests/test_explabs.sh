@@ -5,13 +5,16 @@
 # The gateway answers in two places, and the fixtures are split the same way:
 #   tests/fixtures/explabs_v1_models.json  GET /v1/models with the key: the OpenAI list, ids only (id, object, created,
 #                                          owned_by) — the real answer's shape, trimmed to seven ids;
-#   tests/fixtures/explabs_catalog.json    GET /api/models (keyless): the same seven with their details and prices,
-#                                          public catalog fields only.
+#   tests/fixtures/explabs_catalog/<id>.json  GET /api/models/<id> (keyless): one model's catalog answer in the real
+#                                          shape of 2026-10-25 — the model, its deployments (each with its capabilities
+#                                          and list prices) and its default waterfall — trimmed: qwen3.8-27b and
+#                                          gpt-5.1-codex from real answers, four more in that shape; gpt-latest has
+#                                          none (the catalog answers 404, as for an alias).
 # Keys are made here, at run time: never a key-like literal in the repository.
 . "$STACK_DIR/lib/commands.sh"   # also sources lib/explabs.sh
 . "$STACK_DIR/lib/owui.sh"
 FIX_V1="$STACK_DIR/tests/fixtures/explabs_v1_models.json"
-FIX_CAT="$STACK_DIR/tests/fixtures/explabs_catalog.json"
+FIX_CAT="$STACK_DIR/tests/fixtures/explabs_catalog"
 XL_KEY="xpl_$(printf '%040d' 0 | tr 0 a)"
 XL_KEY2="xpl_$(printf '%040d' 0 | tr 0 b)"
 
@@ -20,34 +23,45 @@ _xl_env() {
   STACK_DIR="$TMP"; mkdir -p "$TMP/litellm" "$STATE_DIR"
   printf 'EXPLABS_API_KEY=%s\n%s' "${XL_KEY_USE:-$XL_KEY}" "${1:-}" > "$ENV_FILE"
 }
-# _xl_list CATALOG_JSON V1_JSON -> the cached list as a refresh writes it: the key's ids joined with the catalog's details
+# _xl_list CATALOG_DIR V1_JSON -> the cached list as a refresh writes it: the key's ids joined with each one's details
+# (here every model the catalog folder has, chosen or not)
 _xl_list() {
-  xl_ids < "$2" > "$TMP/ids"
-  { printf '# fetched_at: 2026-10-24T00:00:00Z\n'; xl_details_tsv < "$1" | xl_join "$TMP/ids"; } > "$TMP/litellm/explabs-models.tsv"
+  local id
+  xl_ids < "$2" > "$TMP/ids"; : > "$TMP/det"
+  while IFS= read -r id; do [ ! -r "$1/$id.json" ] || xl_model_tsv "$id" < "$1/$id.json" >> "$TMP/det"; done < "$TMP/ids"
+  { printf '# fetched_at: 2026-10-24T00:00:00Z\n'; xl_join "$TMP/ids" < "$TMP/det"; } > "$TMP/litellm/explabs-models.tsv"
   xl_key_hash "${XL_KEY_USE:-$XL_KEY}" > "$(xl_key_mark)"
 }
 # ... and the fixtures' list cached as read with that key.
 _xl_cached() { _xl_env "${1:-}"; _xl_list "$FIX_CAT" "$FIX_V1"; }
 
 # curl stub, by address: GET …/v1/models (the key on stdin, curl -K -, which goes to $TMP/stdin) answers MODELS_CODE
-# (default 200) with V1_BODY (default the fixture); GET …/api/models (keyless) answers CATALOG_CODE with CATALOG_BODY, or
-# for offset=N CATALOG_BODY_N when that is set (the next page). Each call's arguments are logged (never the key), with
-# "keyed" or "keyless"; CURL_FAIL=1: no answer at all.
+# (default 200) with V1_BODY (default the fixture); GET …/api/models/<id> (keyless) answers CATALOG_CODE (default 200)
+# with CATALOG_DIR/<id>.json (default the fixtures' folder), 404 when that has none. No answer at all: CURL_FAIL=RC for
+# every request, CATALOG_FAIL=RC for the catalog's, SLOW="id …" for those ids (after SLOW_S seconds, default 0) — curl's
+# exit code RC: 6 not resolved, 7 not connected (1 means 7), 28 timed out after connecting. Each call's arguments are
+# logged (never the key), with "keyed" or "keyless"; -w gets "HTTP-status connect-time", as curl writes them.
 _stub_curl() {
   curl() {
-    local a prev='' out='' w='' url='' keyed='' code body
+    local a prev='' out='' w='' url='' keyed='' code body fail tc=0.051234 id
     for a in "$@"; do [ "$prev" = -o ] && out="$a"; [ "$prev" = -w ] && w=1; [ "$prev$a" = "-K-" ] && keyed=1; prev="$a"; case "$a" in http*) url="$a" ;; esac; done
     echo "curl $([ -n "$keyed" ] && echo keyed || echo keyless) $*" >> "$TMP/calls"
     [ -z "$keyed" ] || cat >> "$TMP/stdin"
-    if [ -n "${CURL_FAIL:-}" ]; then [ -z "$w" ] || printf 000; return 7; fi
+    fail="${CURL_FAIL:-}"
     case "$url" in
-      */api/models*)
-        code="${CATALOG_CODE:-200}"; body="${CATALOG_BODY:-$FIX_CAT}"
-        case "$url" in *offset=0) ;; *offset=*) local n="${url##*offset=}" v; v="CATALOG_BODY_$n"; body="${!v:-$body}" ;; esac ;;
+      */api/models/*)
+        id="${url##*/api/models/}"; [ -n "$fail" ] || fail="${CATALOG_FAIL:-}"
+        case " ${SLOW:-} " in *" $id "*) fail=28; sleep "${SLOW_S:-0}" ;; esac
+        code="${CATALOG_CODE:-200}"; body="${CATALOG_DIR:-$FIX_CAT}/$id.json"
+        [ "$code" != 200 ] || [ -r "$body" ] || code=404 ;;
       *) code="${MODELS_CODE:-200}"; body="${V1_BODY:-$FIX_V1}" ;;
     esac
+    if [ -n "$fail" ]; then
+      [ "$fail" != 1 ] || fail=7; [ "$fail" = 28 ] || tc=0.000000
+      [ -z "$w" ] || printf '000 %s' "$tc"; return "$fail"
+    fi
     if [ "$code" = 200 ]; then cp "$body" "$out"; else printf '{"error":{"code":"x"}}' > "$out"; fi
-    [ -z "$w" ] || printf '%s' "$code"
+    [ -z "$w" ] || printf '%s %s' "$code" "$tc"
   }
 }
 
@@ -60,24 +74,30 @@ _assert_no_key() {
   done
 }
 
-test_the_catalog_gives_each_models_details_and_list_price() {
-  local out
-  out="$(xl_details_tsv < "$FIX_CAT")"
-  assert_eq "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" 7
+# One model's catalog answer: the details of the deployment the gateway serves it on — the first active rung of its
+# default waterfall, else the first active one it can route on its own — and the model's own counts
+test_the_catalog_gives_a_model_the_details_of_the_deployment_that_serves_it() {
+  local out id
+  out="$(for id in qwen3.8-27b gpt-5.1-codex claude-fable-5; do xl_model_tsv "$id" < "$FIX_CAT/$id.json"; done)"
   # id temperature top_p top_k frequency presence logprobs tools structured reasoning sampling-needs-no-reasoning field
   # max_out context in out cache_read cache_write (nano-USD per million tokens)
-  assert_contains "$out" "$(printf 'qwen3.8-27b\t1\t1\t1\t\t\t0\t1\t0\t1\t0\tmax_completion_tokens\t131072\t1000000\t320000000\t2400000000\t40000000\t')"
-  assert_contains "$out" "$(printf 'gpt-5.1-codex\t0\t0\t0\t\t\t0\t1\t1\t1\t1\tmax_tokens\t')"
+  # qwen3.8-27b: its waterfall's first rung, Experiential Cloud — not fireworks, listed first but not in the waterfall
+  # (it names max_tokens and other prices)
+  assert_contains "$out" "$(printf 'qwen3.8-27b\t1\t1\t1\t\t\t0\t1\t0\t1\t\tmax_completion_tokens\t131072\t1000000\t320000000\t2400000000\t40000000\t')"
+  # gpt-5.1-codex: its waterfall's one rung is disabled, so the deployment the gateway routes on its own
+  assert_contains "$out" "$(printf 'gpt-5.1-codex\t0\t0\t0\t\t\t0\t1\t1\t1\t1\tmax_tokens\t128000\t400000\t1250000000\t10000000000\t')"
   assert_contains "$out" "$(printf 'claude-fable-5\t1\t1\t1\t\t\t0\t1\t0\t0\t0\t\t128000\t')"
-  # a model the catalog names without any details: its id only
-  assert_eq "$(printf '%s\n' "$out" | awk -F'\t' '$1 == "gpt-latest"' | tr -d '\t')" gpt-latest
-  # an id we could not write into YAML or JSON as it is never gets through; entries under "models", "items" or in a
-  # bare list are read the same
-  out="$(printf '{"data":[{"id":"ok-1","supports_tools":true},{"id":"bad id\\"x"},{"id":"-dash"},{"id":"a/b"},{"id":"ok-1"}]}' | xl_details_tsv | cut -f1)"
-  assert_eq "$out" ok-1
-  for j in '{"models":[{"id":"m-1","supports_tools":false}]}' '{"items":[{"id":"m-1","supports_tools":false}]}' '[{"id":"m-1","supports_tools":false}]'; do
-    assert_eq "$(printf '%s' "$j" | xl_details_tsv | cut -f1,8)" "$(printf 'm-1\t0')"
-  done
+  # the rules: the lowest position wins whatever the order; a rung whose deployment is off is passed over; the
+  # default_provider_ids form; no active deployment: the counts alone (fail safe)
+  local m='"model":{"slug":"x","max_output_tokens":64,"context_window":128}'
+  local pa='{"id":"a","status":"active","capabilities":{"supports_tools":false,"chat_max_tokens_field":"max_tokens"}}'
+  local pb='{"id":"b","status":"active","routable":true,"capabilities":{"supports_tools":true,"chat_max_tokens_field":"max_completion_tokens"}}'
+  local pc='{"id":"c","status":"disabled","routable":true,"capabilities":{"supports_tools":true}}'
+  assert_eq "$(printf '{%s,"providers":[%s,%s],"default_waterfall":[{"position":2,"model_provider_id":"b","status":"active"},{"position":0,"model_provider_id":"a","status":"active"}]}' "$m" "$pa" "$pb" | xl_model_tsv x | cut -f1,8,12,13,14)" "$(printf 'x\t0\tmax_tokens\t64\t128')"
+  assert_eq "$(printf '{%s,"providers":[%s,%s],"default_waterfall":[{"position":0,"model_provider_id":"c","status":"active"},{"position":1,"model_provider_id":"a","status":"active"}]}' "$m" "$pc" "$pa" | xl_model_tsv x | cut -f8)" 0
+  assert_eq "$(printf '{%s,"providers":[%s,%s],"default_provider_ids":["b","a"]}' "$m" "$pa" "$pb" | xl_model_tsv x | cut -f8,12)" "$(printf '1\tmax_completion_tokens')"
+  assert_eq "$(printf '{%s,"providers":[%s],"default_waterfall":[{"position":0,"model_provider_id":"c","status":"active"}]}' "$m" "$pc" | xl_model_tsv x | tr '\t' '|')" "x||||||||||||64|128||||"
+  assert_eq "$(printf '{"error":"nope"}' | xl_model_tsv x | tr -d '\t')" x
 }
 
 # /v1/models is the key's list of ids, never details: the real answer carries id, object, created and owned_by only,
@@ -86,50 +106,53 @@ test_the_keys_list_is_read_for_its_ids_and_nothing_else() {
   assert_eq "$(xl_ids < "$FIX_V1" | tr '\n' ' ')" "chatgpt-image-latest claude-fable-5 deepseek-v4.1-flash gpt-5-mini gpt-5.1-codex gpt-latest qwen3.8-27b "
   python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1]))["data"]
 assert all(set(m) == {"id", "object", "created", "owned_by"} for m in d), "the fixture is not the real shape"' "$FIX_V1"
-  # the catalog's answer handed in as /v1/models: ids, nothing else
-  assert_eq "$(xl_ids < "$FIX_CAT" | wc -l | tr -d ' ')" 7
   assert_eq "$(printf '{"data":[{"id":"ok-1"},{"id":"bad id"},{"id":"ok-1"},{"id":"a/b"}]}' | xl_ids)" ok-1
   # a details-bearing answer at /v1/models and no catalog: every model fail safe — nothing of /v1/models becomes details
+  printf '%s' '{"object":"list","data":[{"id":"qwen3.8-27b","object":"model","supports_temperature":true,"supports_tools":true,"chat_max_tokens_field":"max_completion_tokens"},{"id":"gpt-5-mini","object":"model","supports_tools":true}]}' > "$TMP/v1-details.json"
+  assert_eq "$(xl_ids < "$TMP/v1-details.json" | tr '\n' ' ')" "qwen3.8-27b gpt-5-mini "
   _stub_curl; _xl_env 'EXPLABS_MODELS=qwen3.8-27b,gpt-5-mini
 '
-  V1_BODY="$FIX_CAT" CATALOG_CODE=503 explabs_refresh 2>/dev/null
+  V1_BODY="$TMP/v1-details.json" CATALOG_CODE=503 explabs_refresh 2>/dev/null
   assert_eq "$(xl_selected | cut -f1 | tr '\n' ' ')" "failsafe failsafe "
   assert_eq "$(xl_cached_rows | awk -F'\t' '{ for (i = 2; i <= NF; i++) printf "%s", $i }')" ""   # ids alone
 }
 
-# A hostile catalog whose entry sits at index 999999999 (an object under "data"): that entry, read in one step, not a
-# loop over a billion indices; the CPU limit fails it instead of hanging
+# A hostile answer whose deployment and rung sit at index 999999999 (objects, not lists): read in one step, not a loop
+# over a billion indices; the CPU limit fails it instead of hanging
 test_the_catalog_parser_steps_only_over_the_indices_it_holds() {
-  printf '%s' '{"data":{"999999999":{"id":"late-model","supports_tools":false},"0":{"id":"qwen3.8-27b"}}}' > "$TMP/h.json"
+  printf '%s' '{"model":{"slug":"x"},"providers":{"999999999":{"id":"p","status":"active","capabilities":{"supports_tools":false}}},"default_waterfall":{"999999999":{"position":0,"model_provider_id":"p","status":"active"}}}' > "$TMP/h.json"
   local out
-  out="$( (ulimit -t 5; xl_details_tsv < "$TMP/h.json") )" || { echo "xl_details_tsv stepped over the indices one by one" >&2; return 1; }
-  assert_eq "$(printf '%s\n' "$out" | cut -f1,8 | tr '\t\n' ': ')" "late-model:0 qwen3.8-27b: "
+  out="$( (ulimit -t 5; xl_model_tsv x < "$TMP/h.json") )" || { echo "xl_model_tsv stepped over the indices one by one" >&2; return 1; }
+  assert_eq "$(printf '%s\n' "$out" | cut -f1,8 | tr '\t\n' ': ')" "x:0 "
 }
 
-# The join: the key's ids decide what is offered, the catalog what each takes. A catalog entry the key may not call is
-# not offered; one of the key's models the catalog lacks (an organisation's own) runs fail safe, and ./stack status says
-# why although nothing failed
+# The join: the key's ids decide what is offered, the catalog what each chosen one takes. Only the chosen models the
+# key may call are asked for (a model the key may not call is never asked); one the catalog lacks (an organisation's
+# own: HTTP 404) runs fail safe, and ./stack status says why although nothing failed
 test_the_keys_ids_joined_with_the_catalog() {
   python3 -I -c 'import json, sys
 v = json.load(open(sys.argv[1])); v["data"].append({"id": "our-own-model", "object": "model", "created": 0, "owned_by": "org"})
-c = json.load(open(sys.argv[2])); c["data"].append({**c["data"][0], "id": "not-for-this-key"})
-json.dump(v, open(sys.argv[3], "w")); json.dump(c, open(sys.argv[4], "w"))' "$FIX_V1" "$FIX_CAT" "$TMP/v1.json" "$TMP/cat.json"
+json.dump(v, open(sys.argv[2], "w"))' "$FIX_V1" "$TMP/v1.json"
+  mkdir -p "$TMP/cat"; cp "$FIX_CAT"/*.json "$TMP/cat/"; cp "$FIX_CAT/qwen3.8-27b.json" "$TMP/cat/not-for-this-key.json"
   _stub_curl
-  _xl_env 'EXPLABS_MODELS=qwen3.8-27b,our-own-model,not-for-this-key
+  _xl_env 'EXPLABS_MODELS=qwen3.8-27b,our-own-model,not-for-this-key,qwen3.8-27b:free
 '
-  V1_BODY="$TMP/v1.json" CATALOG_BODY="$TMP/cat.json" explabs_refresh 2> "$TMP/err"
-  assert_eq "$(xl_selected | cut -f1,2 | tr '\t\n' ': ')" "details:qwen3.8-27b failsafe:our-own-model "
+  V1_BODY="$TMP/v1.json" CATALOG_DIR="$TMP/cat" explabs_refresh 2> "$TMP/err"
+  assert_eq "$(xl_selected | cut -f1,2 | tr '\t\n' ': ')" "details:qwen3.8-27b failsafe:our-own-model details:qwen3.8-27b:free "
   assert_contains "$(cat "$TMP/err")" "'not-for-this-key' (EXPLABS_MODELS) is not a model your key may call — left out"
+  # asked: the two the key may call, each once (the free tier is its model's); never the others
+  assert_eq "$(grep '^curl keyless ' "$TMP/calls" | sed 's/.*\/api\/models\///' | sort | tr '\n' ' ')" "our-own-model qwen3.8-27b "
   assert_eq "$(xl_cached_rows | cut -f1 | grep -c .)" 8                        # the key's 7 + its own; never not-for-this-key
+  assert_eq "$(xl_cached_rows | awk -F'\t' '$2 != ""' | cut -f1)" qwen3.8-27b   # details: the chosen ones alone
   [ ! -e "$(xl_error_file)" ]
   assert_contains "$(explabs_status_line)" "1 without model details (the gateway's public catalog has none for it), so fail safe"
   # not fresh while a chosen model has no details: read again at the next ./stack up or Settings change, not after 12 h
-  : > "$TMP/calls"; V1_BODY="$TMP/v1.json" CATALOG_BODY="$TMP/cat.json" explabs_refresh 720 2>/dev/null
-  assert_contains "$(cat "$TMP/calls")" "/v1/models"; assert_contains "$(cat "$TMP/calls")" "/api/models"
+  : > "$TMP/calls"; V1_BODY="$TMP/v1.json" CATALOG_DIR="$TMP/cat" explabs_refresh 720 2>/dev/null
+  assert_contains "$(cat "$TMP/calls")" "/v1/models"; assert_contains "$(cat "$TMP/calls")" "/api/models/our-own-model"
   # every chosen model with its details: young enough, no request
   _xl_env 'EXPLABS_MODELS=qwen3.8-27b
 '
-  : > "$TMP/calls"; V1_BODY="$TMP/v1.json" CATALOG_BODY="$TMP/cat.json" explabs_refresh 720
+  : > "$TMP/calls"; V1_BODY="$TMP/v1.json" CATALOG_DIR="$TMP/cat" explabs_refresh 720
   assert_eq "$(cat "$TMP/calls")" ""
 }
 
@@ -259,10 +282,11 @@ test_refresh_reads_the_keys_list_with_the_key_and_the_catalog_without() {
   assert_eq "$(grep -c '^curl keyed ' "$TMP/calls")" 1
   assert_contains "$(grep '^curl keyed ' "$TMP/calls")" "--proto =https"
   assert_contains "$(grep '^curl keyed ' "$TMP/calls")" " https://api.experientiallabs.ai/v1/models"
-  # the catalog: keyless, https, paged; the second page adds nothing (the gateway ignored offset or ran out), the end
+  # the catalog: keyless, https, one request per chosen model
   assert_eq "$(grep -c '^curl keyless ' "$TMP/calls")" 2
   assert_contains "$(grep '^curl keyless ' "$TMP/calls" | head -n 1)" "--proto =https"
-  assert_contains "$(grep '^curl keyless ' "$TMP/calls" | head -n 1)" " https://api.experientiallabs.ai/api/models?limit=500&offset=0"
+  assert_contains "$(grep '^curl keyless ' "$TMP/calls")" " https://api.experientiallabs.ai/api/models/qwen3.8-27b"
+  assert_contains "$(grep '^curl keyless ' "$TMP/calls")" " https://api.experientiallabs.ai/api/models/gpt-5-mini"
   assert_not_contains "$(grep '^curl keyless ' "$TMP/calls")" "Authorization"
   assert_eq "$(grep -c 'Authorization' "$TMP/stdin")" 1                       # one keyed request, the key on its stdin
   assert_contains "$(cat "$TMP/stdin")" "Authorization: Bearer $XL_KEY"     # (curl_auth: the header on curl's stdin)
@@ -279,18 +303,26 @@ test_refresh_reads_the_keys_list_with_the_key_and_the_catalog_without() {
   assert_contains "$(cat "$TMP/calls")" "/v1/models"
 }
 
-# The catalog page by page (limit/offset) until a page adds no model, whatever size the gateway's pages are
-test_the_catalog_is_read_page_by_page() {
+# The chosen models' details are asked for side by side, each within the time the whole refresh has left; past
+# XL_MODEL_MAX chosen models the others are not read, and that is said — never as if the catalog had nothing for them
+test_the_details_are_read_side_by_side_within_one_deadline() {
   _stub_curl
-  python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1]))
-json.dump({"object": "list", "data": d["data"][:4]}, open(sys.argv[2], "w")); json.dump({"object": "list", "data": d["data"][4:]}, open(sys.argv[3], "w"))
-json.dump({"object": "list", "data": []}, open(sys.argv[4], "w"))' "$FIX_CAT" "$TMP/p0.json" "$TMP/p4.json" "$TMP/p7.json"
-  _xl_env 'EXPLABS_MODELS=qwen3.8-27b,gpt-5-mini
+  _xl_env 'EXPLABS_MODELS=qwen3.8-27b,gpt-5-mini,claude-fable-5
 '
-  CATALOG_BODY="$TMP/p0.json" CATALOG_BODY_4="$TMP/p4.json" CATALOG_BODY_7="$TMP/p7.json" explabs_refresh 2>/dev/null
-  assert_eq "$(grep '^curl keyless ' "$TMP/calls" | sed 's/.*offset=//' | tr '\n' ' ')" "0 4 7 "
-  assert_eq "$(xl_cached_rows | awk -F'\t' '$2 != ""' | wc -l | tr -d ' ')" 6   # every model with its details (gpt-latest has none)
-  assert_eq "$(xl_selected | cut -f1 | tr '\n' ' ')" "details details "
+  local t0=$SECONDS
+  SLOW="qwen3.8-27b gpt-5-mini claude-fable-5" SLOW_S=2 explabs_refresh 2> "$TMP/err"
+  [ $((SECONDS - t0)) -lt 5 ] || { echo "the three were read one after the other ($((SECONDS - t0)) s)" >&2; return 1; }
+  # one deadline: the details get what the list left of XL_REFRESH_BUDGET (here all of it, capped at XL_MODEL_TIMEOUT)
+  assert_contains "$(grep '/api/models/qwen' "$TMP/calls")" " -m 90 "
+  : > "$TMP/calls"; XL_REFRESH_BUDGET=40 explabs_refresh 2>/dev/null
+  local m; m="$(grep '/api/models/qwen' "$TMP/calls" | sed 's/.* -m \([0-9]*\) .*/\1/')"
+  [ "$m" -le 40 ] && [ "$m" -ge 35 ] || { echo "the details got -m $m of a 40 s budget" >&2; return 1; }
+  : > "$TMP/calls"; XL_MODEL_MAX=2 explabs_refresh 2> "$TMP/err"
+  assert_eq "$(grep -c '^curl keyless ' "$TMP/calls")" 2
+  assert_contains "$(cat "$TMP/err")" "only the first 2 chosen models' details are read: 1 more run fail safe"
+  assert_eq "$(xl_selected | cut -f1 | tr '\n' ' ')" "details details failsafe "
+  assert_contains "$(explabs_status_line)" "1 without model details (only the first 2 chosen models' details are read: 1 more run fail safe, "
+  assert_not_contains "$(explabs_status_line)" "has none"
 }
 
 # The key's list read, the catalog not: the models run fail safe with the reason in ./stack status (the key's list is
@@ -301,27 +333,84 @@ test_the_catalog_failing_while_the_keys_list_works_runs_fail_safe() {
 '
   CATALOG_CODE=503 explabs_refresh 2> "$TMP/err"
   assert_contains "$(cat "$TMP/err")" "'nope' (EXPLABS_MODELS) is not a model your key may call — left out"
-  assert_contains "$(cat "$TMP/err")" "Experiential Labs: api.experientiallabs.ai/api/models answered HTTP 503 — until the details can be read its models are sent no sampling or penalty parameter"
+  assert_contains "$(cat "$TMP/err")" "Experiential Labs: api.experientiallabs.ai answered HTTP 503 for the details of qwen3.8-27b — until the details can be read its models are sent no sampling or penalty parameter"
   assert_eq "$(xl_selected | cut -f1,2 | tr '\t\n' ': ')" "failsafe:qwen3.8-27b "
   local st; st="$(explabs_status_line)"
-  assert_contains "$st" "Experiential Labs: 1 model (xl/qwen3.8-27b) — all without model details (api.experientiallabs.ai/api/models answered HTTP 503, "
+  assert_contains "$st" "Experiential Labs: 1 model (xl/qwen3.8-27b) — all without model details (api.experientiallabs.ai answered HTTP 503 for the details of qwen3.8-27b, "
   assert_contains "$st" "so fail safe: none of temperature, top_p"
   assert_contains "$(explabs_yaml)" 'bn_xl_max_tokens: "max_tokens"'
   # a later refresh within 12 h is not skipped while that failure stands: details then
   : > "$TMP/calls"; explabs_refresh 720 2>/dev/null
-  assert_contains "$(cat "$TMP/calls")" "/api/models"
+  assert_contains "$(cat "$TMP/calls")" "/api/models/qwen3.8-27b"
   assert_eq "$(xl_selected | cut -f1)" details
   [ ! -e "$(xl_error_file)" ]
   # the catalog fails again: the details read before stay, the status line names the failure
   CATALOG_CODE=500 explabs_refresh 2> "$TMP/err"
-  assert_contains "$(cat "$TMP/err")" "api.experientiallabs.ai/api/models answered HTTP 500 — keeping the model details read"
+  assert_contains "$(cat "$TMP/err")" "api.experientiallabs.ai answered HTTP 500 for the details of qwen3.8-27b — keeping the model details read before"
   assert_eq "$(xl_selected | cut -f1)" details
-  assert_contains "$(explabs_status_line)" "(the last refresh failed: api.experientiallabs.ai/api/models answered HTTP 500)"
+  assert_contains "$(explabs_status_line)" "the model details read before stay (the last refresh failed: api.experientiallabs.ai answered HTTP 500 for the details of qwen3.8-27b)"
   # an answer of the catalog with no model in it
-  printf '{"object":"list","data":[]}' > "$TMP/empty.json"
-  rm -f "$(xl_cache_tsv)"; CATALOG_BODY="$TMP/empty.json" explabs_refresh 2> "$TMP/err"
-  assert_contains "$(cat "$TMP/err")" "api.experientiallabs.ai/api/models sent no model details"
+  mkdir -p "$TMP/cat"; printf '{"models":[]}' > "$TMP/cat/qwen3.8-27b.json"
+  rm -f "$(xl_cache_tsv)"; CATALOG_DIR="$TMP/cat" explabs_refresh 2> "$TMP/err"
+  assert_contains "$(cat "$TMP/err")" "api.experientiallabs.ai sent no details for qwen3.8-27b"
   assert_eq "$(xl_selected | cut -f1)" failsafe
+}
+
+# The catalog too slow (curl's timeout), the name not resolved, no connection: each said as it is, never "could not
+# reach"; a list read before with this key keeps its details. And ./stack up never waits on the catalog while it has a
+# list: it reads in the background, and the next ./stack up renders what that brought
+test_a_slow_or_unreachable_catalog_says_why_and_up_never_waits_for_it() {
+  _stub_curl
+  _xl_env
+  SLOW=qwen3.8-27b explabs_refresh 2> "$TMP/err"
+  assert_contains "$(cat "$TMP/err")" "Experiential Labs: timed out after 90 s reading the details of qwen3.8-27b from api.experientiallabs.ai — until the details can be read"
+  assert_contains "$(explabs_status_line)" "(timed out after 90 s reading the details of qwen3.8-27b from api.experientiallabs.ai, "
+  explabs_refresh 2>/dev/null; assert_eq "$(xl_selected | cut -f1)" details
+  # slow again: the details read before stay
+  SLOW=qwen3.8-27b explabs_refresh 2> "$TMP/err"
+  assert_contains "$(cat "$TMP/err")" "timed out after 90 s reading the details of qwen3.8-27b from api.experientiallabs.ai — keeping the model details read before"
+  assert_eq "$(xl_selected | cut -f1)" details
+  # the key's list: not resolved, not connected, too slow
+  CURL_FAIL=6 explabs_refresh 2> "$TMP/err"; assert_contains "$(cat "$TMP/err")" "Experiential Labs: could not resolve api.experientiallabs.ai (DNS) — keeping the model details read"
+  CURL_FAIL=7 explabs_refresh 2> "$TMP/err"; assert_contains "$(cat "$TMP/err")" "Experiential Labs: could not connect to api.experientiallabs.ai — keeping"
+  CURL_FAIL=28 explabs_refresh 2> "$TMP/err"; assert_contains "$(cat "$TMP/err")" "Experiential Labs: timed out after 30 s reading the model list from api.experientiallabs.ai — keeping"
+  assert_eq "$(xl_curl_why 28 0.000000 30 x)" "timed out connecting to api.experientiallabs.ai"
+  assert_not_contains "$(cat "$TMP/err")" "could not reach"
+  # ./stack up with that list (a failure since: not fresh): no waiting — a background read, the cached models rendered
+  render_config() { echo render >> "$TMP/renders"; }
+  dc() { echo "dc $*" >> "$TMP/dc"; }
+  printf 'model_list:
+  - model_name: "xl/qwen3.8-27b"
+' > "$TMP/litellm/config.yaml"
+  mkdir -p "$TMP/cat"; cp "$FIX_CAT"/*.json "$TMP/cat/"
+  sed -i.bak 's/"supports_temperature": true/"supports_temperature": false/' "$TMP/cat/qwen3.8-27b.json"
+  local t0=$SECONDS
+  CATALOG_DIR="$TMP/cat" SLOW=qwen3.8-27b SLOW_S=3 explabs_up_hook 2> "$TMP/up"
+  [ $((SECONDS - t0)) -lt 2 ] || { echo "./stack up waited $((SECONDS - t0)) s on the catalog" >&2; return 1; }
+  assert_contains "$(cat "$TMP/up")" "Experiential Labs: reading the model details in the background"
+  assert_eq "$XL_UP_CHANGED/$(cat "$TMP/renders" 2>/dev/null)" "0/"
+  xl_bg_running
+  assert_contains "$(explabs_status_line)" "a refresh is under way in the background"
+  # a second ./stack up meanwhile starts no second one
+  explabs_up_hook 2> "$TMP/up"; assert_contains "$(cat "$TMP/up")" "being read in the background already"
+  wait "$(cat "$(xl_bg_pid_file)")" 2>/dev/null || true
+  assert_contains "$(cat "$(xl_bg_log)")" "timed out after 90 s reading the details of qwen3.8-27b"
+  # now quick: the background read brings changed details (no temperature), the next ./stack up renders them at once
+  CATALOG_DIR="$TMP/cat" XL_BACKGROUND=1 explabs_refresh 2>/dev/null
+  [ -e "$(xl_pending_file)" ]; assert_eq "$(cat "$TMP/renders" 2>/dev/null)" ""   # (in the background: nothing rendered)
+  explabs_up_hook 2>/dev/null
+  assert_eq "$XL_UP_CHANGED/$(cat "$TMP/renders")" "1/render"
+  [ ! -e "$(xl_pending_file)" ]
+  # an EXPLABS_MODELS edited by hand: the config follows at the next ./stack up, without waiting
+  : > "$TMP/renders"; printf 'model_list:
+  - model_name: "xl/qwen3.8-27b"
+' > "$TMP/litellm/config.yaml"
+  printf 'EXPLABS_API_KEY=%s
+EXPLABS_MODELS=qwen3.8-27b,gpt-5-mini
+' "$XL_KEY" > "$ENV_FILE"
+  CATALOG_DIR="$TMP/cat" explabs_up_hook 2>/dev/null
+  assert_eq "$XL_UP_CHANGED/$(cat "$TMP/renders")" "1/render"
+  wait "$(cat "$(xl_bg_pid_file)" 2>/dev/null)" 2>/dev/null || true
 }
 
 test_a_failed_refresh_keeps_the_list_or_runs_fail_safe_and_says_so() {
@@ -329,10 +418,10 @@ test_a_failed_refresh_keeps_the_list_or_runs_fail_safe_and_says_so() {
   # no list yet, no answer: the models run fail safe, said once, and ./stack status says why
   _xl_env
   CURL_FAIL=1 explabs_refresh 2> "$TMP/err"
-  assert_contains "$(cat "$TMP/err")" "Experiential Labs: could not reach api.experientiallabs.ai — until the details can be read its models are sent no sampling or penalty parameter"
+  assert_contains "$(cat "$TMP/err")" "Experiential Labs: could not connect to api.experientiallabs.ai — until the details can be read its models are sent no sampling or penalty parameter"
   assert_eq "$(xl_selected | cut -f1)" failsafe
   local st; st="$(explabs_status_line)"
-  assert_contains "$st" "Experiential Labs: 1 model (xl/qwen3.8-27b) — all without model details (could not reach api.experientiallabs.ai, "
+  assert_contains "$st" "Experiential Labs: 1 model (xl/qwen3.8-27b) — all without model details (could not connect to api.experientiallabs.ai, "
   assert_contains "$st" "so fail safe: none of temperature, top_p, top_k, frequency_penalty, presence_penalty, logprobs, top_logprobs, response_format, reasoning_effort is sent (tools and the max_tokens cap are)"
   _assert_no_key "$st" "$(cat "$TMP/err")" "$(cat "$(xl_error_file)")"
   assert_eq "$(ls -l "$(xl_error_file)" | cut -c1-10)" "-rw-------"
@@ -345,7 +434,7 @@ test_a_failed_refresh_keeps_the_list_or_runs_fail_safe_and_says_so() {
   MODELS_CODE=401 explabs_refresh 2> "$TMP/err"
   assert_contains "$(cat "$TMP/err")" "the gateway rejected the key (HTTP 401) — a new one: https://platform.experientiallabs.ai/settings/api-keys — keeping the model details read"
   assert_eq "$(xl_selected | cut -f1)" details
-  assert_contains "$(explabs_status_line)" "(the last refresh failed: the gateway rejected the key (HTTP 401)"
+  assert_contains "$(explabs_status_line)" "the model details read before stay (the last refresh failed: the gateway rejected the key (HTTP 401)"
   # an answer that is no model list
   printf '<html>maintenance</html>' > "$TMP/page"
   V1_BODY="$TMP/page" explabs_refresh 2> "$TMP/err"
@@ -366,8 +455,9 @@ test_a_change_re_renders_litellm_once_and_says_so() {
   explabs_refresh 2>/dev/null; assert_eq "$XL_CHANGED/$(cat "$TMP/renders")" "1/render"   # fail safe → details
   : > "$TMP/renders"; explabs_refresh 2>/dev/null; assert_eq "$XL_CHANGED/$(cat "$TMP/renders")" "0/"   # nothing new
   # the gateway changed a model's details (no more temperature for qwen3.8-27b): rendered again
-  sed 's/"supports_temperature": true/"supports_temperature": false/' "$FIX_CAT" > "$TMP/changed.json"
-  CATALOG_BODY="$TMP/changed.json" explabs_refresh 2>/dev/null; assert_eq "$XL_CHANGED/$(cat "$TMP/renders")" "1/render"
+  mkdir -p "$TMP/cat"; cp "$FIX_CAT"/*.json "$TMP/cat/"
+  sed -i.bak 's/"supports_temperature": true/"supports_temperature": false/' "$TMP/cat/qwen3.8-27b.json"
+  CATALOG_DIR="$TMP/cat" explabs_refresh 2>/dev/null; assert_eq "$XL_CHANGED/$(cat "$TMP/renders")" "1/render"
   assert_contains "$(explabs_yaml)" 'additional_drop_params: ["temperature", "frequency_penalty"'
 }
 
@@ -673,13 +763,19 @@ assert sorted(chat) == ["xl/gpt-5-mini", "xl/qwen3.8-27b"], chat
 # take them answers with a clear 400, where silently losing them would leave Claude Code chat-only. The other nulls
 # (sampling, penalties, logprobs, response_format, reasoning_effort) stay left out.
 test_tools_go_unless_the_details_say_false() {
-  python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); q = next(m for m in d["data"] if m["id"] == "qwen3.8-27b")
-d["data"] += [{**q, "id": "tools-null", "supports_tools": None, "supports_temperature": None}, {**q, "id": "tools-false", "supports_tools": False}]
-json.dump(d, open(sys.argv[2], "w"))
-json.dump({"object": "list", "data": [{"id": m["id"], "object": "model", "created": 0, "owned_by": "exp"} for m in d["data"]]}, open(sys.argv[3], "w"))' "$FIX_CAT" "$TMP/tools.json" "$TMP/tools-v1.json"
+  mkdir -p "$TMP/tools"
+  python3 -I -c 'import json, sys, os; q = json.load(open(os.path.join(sys.argv[1], "qwen3.8-27b.json")))
+def variant(**caps):
+    d = json.loads(json.dumps(q))
+    for p in d["providers"]:
+        if p.get("capabilities"): p["capabilities"].update(caps)
+    return d
+json.dump(variant(supports_tools=None, supports_temperature=None), open(os.path.join(sys.argv[2], "tools-null.json"), "w"))
+json.dump(variant(supports_tools=False), open(os.path.join(sys.argv[2], "tools-false.json"), "w"))
+json.dump({"object": "list", "data": [{"id": i, "object": "model", "created": 0, "owned_by": "exp"} for i in ("tools-null", "tools-false")]}, open(sys.argv[3], "w"))' "$FIX_CAT" "$TMP/tools" "$TMP/tools-v1.json"
   _xl_env 'EXPLABS_MODELS=tools-null,tools-false
 '
-  _xl_list "$TMP/tools.json" "$TMP/tools-v1.json"
+  _xl_list "$TMP/tools" "$TMP/tools-v1.json"
   local y n f
   y="$(explabs_yaml)"
   n="$(printf '%s\n' "$y" | grep -A 6 '"xl/tools-null"$' | grep additional_drop_params)"

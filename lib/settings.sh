@@ -891,7 +891,7 @@ _cfg_explabs() {
     if cfg_has EXPLABS_API_KEY; then explabs_refresh; else explabs_refresh 720; fi
     return 0
   fi
-  rm -f "$(xl_cache_tsv)" "$(xl_key_mark)" "$(xl_error_file)"
+  rm -f "$(xl_cache_tsv)" "$(xl_key_mark)" "$(xl_error_file)" "$(xl_pending_file)"
 }
 
 # _cfg_post — restarts only what the change needs (Compose recreates a container only when its settings changed)

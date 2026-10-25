@@ -118,17 +118,43 @@ _render() {
 chmod 755 "$WORK" "$WORK/litellm"
 
 if [ "$MOCK" = 1 ]; then
-  # the stand-in's two answers, split as the gateway's are: its /v1/models from the shape of the real one (ids only),
-  # its catalog with the details; both plus a model whose calls it answers as on your own provider key
+  # the stand-in's answers, split as the gateway's are: its /v1/models from the shape of the real one (ids only), one
+  # catalog answer per model (tests/fixtures/explabs_catalog/); both plus a model whose calls it answers as on your own
+  # provider key
+  mkdir -p "$WORK/catalog"; cp "$ROOT/tests/fixtures/explabs_catalog/"*.json "$WORK/catalog/" || exit 2
+  sed 's/"qwen3\.8-27b"/"byok-model"/g' "$WORK/catalog/qwen3.8-27b.json" > "$WORK/catalog/byok-model.json"
   python3 -I -c 'import json, sys
 v = json.load(open(sys.argv[1])); v["data"].append({"id": "byok-model", "object": "model", "created": 0, "owned_by": "exp"})
-c = json.load(open(sys.argv[2])); q = next(m for m in c["data"] if m["id"] == "qwen3.8-27b"); c["data"].append({**q, "id": "byok-model"})
-json.dump(v, open(sys.argv[3], "w")); json.dump(c, open(sys.argv[4], "w"))' "$ROOT/tests/fixtures/explabs_v1_models.json" \
-    "$ROOT/tests/fixtures/explabs_catalog.json" "$WORK/v1.json" "$WORK/catalog.json" || exit 2
-  cp "$HERE/explabs-mock.py" "$WORK/mock.py"; chmod 644 "$WORK/v1.json" "$WORK/catalog.json" "$WORK/mock.py"
+json.dump(v, open(sys.argv[2], "w"))' "$ROOT/tests/fixtures/explabs_v1_models.json" "$WORK/v1.json" || exit 2
+  cp "$HERE/explabs-mock.py" "$WORK/mock.py"; chmod 755 "$WORK/catalog"; chmod 644 "$WORK/v1.json" "$WORK/catalog/"*.json "$WORK/mock.py"
+
+  # --- the catalog streaming slowly, as it did on 2026-10-25: this checkout's own refresh (real curl) against the
+  # stand-in on this computer's 127.0.0.1 (http: lib/explabs.sh takes it only while testing), each read limited to 3 s
+  HPORT=18520
+  while port_in_use "$HPORT" || case "$AVOID_PORTS" in *" $HPORT "*) true ;; *) false ;; esac; do HPORT=$((HPORT + 1)); done
+  python3 -I "$WORK/mock.py" "$HPORT" "$WORK/host-reqs.jsonl" "$WORK/v1.json" "$WORK/catalog" "$WORK/slow" 2>/dev/null &
+  HPID=$!
+  for _ in $(seq 1 20); do [ "$(curl -s -m 2 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$HPORT/api/models/qwen3.8-27b" 2>/dev/null)" = 200 ] && break; sleep 0.5; done
+  (
+    EXPLABS_API="http://127.0.0.1:$HPORT/v1"; EXPLABS_CATALOG="http://127.0.0.1:$HPORT/api/models"; XL_HOST="127.0.0.1:$HPORT"
+    BEDROCK_NOW_TESTING=1; XL_MODEL_TIMEOUT=3
+    explabs_refresh 2>/dev/null
+    [ "$(xl_selected | awk -F'\t' '$2 == "qwen3.8-27b" { print $1 }')" = details ] || { echo "qwen3.8-27b has no details from the stand-in"; exit 1; }
+    printf 'qwen3.8-27b\n' > "$WORK/slow"
+    t0=$SECONDS; explabs_refresh 2> "$WORK/slow.err"; t=$((SECONDS - t0))
+    grep -q "timed out after 3 s reading the details of qwen3.8-27b from 127.0.0.1:$HPORT — keeping the model details read before" "$WORK/slow.err" ||
+      { echo "the slow catalog said: $(head -c 300 "$WORK/slow.err")"; exit 1; }
+    [ "$t" -le 6 ] || { echo "the slow catalog held the refresh $t s"; exit 1; }
+    [ "$(xl_selected | awk -F'\t' '$2 == "qwen3.8-27b" { print $1 }')" = details ] || { echo "the cached details went"; exit 1; }
+  ) > "$WORK/slow.out" 2>&1 &&
+    ok "a catalog that streams slowly: timed out after 3 s with that said, the details read before kept" ||
+    fail "the slow catalog: $(cat "$WORK/slow.out")"
+  kill "$HPID" 2>/dev/null; wait "$HPID" 2>/dev/null
+  rm -f "$(xl_cache_tsv)" "$(xl_error_file)" "$WORK/slow"
 else
-  say "reading the key's model list (GET /v1/models, with the key) and the catalog's details (GET /api/models, keyless)"
-  rc=0; xl_fetch_models "$(xl_cache_tsv)" "$KEY" || rc=$?
+  say "reading the key's model list (GET /v1/models, with the key) and the chosen models' details (GET /api/models/<id>, keyless)"
+  rc=0; t0=$SECONDS; xl_fetch_models "$(xl_cache_tsv)" "$KEY" || rc=$?
+  say "read in $((SECONDS - t0)) s"
   case "$rc" in 0) ;; 2) fail "the catalog's details could not be read: $XL_ERR" ;; *) echo "the model list could not be read: $XL_ERR" >&2; exit 1 ;; esac
   _render
 fi
@@ -141,9 +167,9 @@ args=(-d --name "$NAME" --label io.bedrock-now.e2e=explabs -p "127.0.0.1:$PORT:4
       -e EXPLABS_API_KEY -e LITELLM_MASTER_KEY -e LITELLM_LOCAL_MODEL_COST_MAP=True)
 if [ "$MOCK" = 1 ]; then
   # the stand-in first; LiteLLM once the config is there (rendered from what the stand-in answered)
-  args+=(-v "$WORK/mock.py:/mock/mock.py:ro" -v "$WORK/v1.json:/mock/v1.json:ro" -v "$WORK/catalog.json:/mock/catalog.json:ro"
+  args+=(-v "$WORK/mock.py:/mock/mock.py:ro" -v "$WORK/v1.json:/mock/v1.json:ro" -v "$WORK/catalog:/mock/catalog:ro"
          --entrypoint sh "$IMAGE" -c
-         "PY=\$(command -v python3 || command -v python); \$PY /mock/mock.py $MOCK_PORT /tmp/reqs.jsonl /mock/v1.json /mock/catalog.json & while [ ! -s /app/config/config.yaml ]; do sleep 1; done; exec litellm --config /app/config/config.yaml --port 4000")
+         "PY=\$(command -v python3 || command -v python); \$PY /mock/mock.py $MOCK_PORT /tmp/reqs.jsonl /mock/v1.json /mock/catalog & while [ ! -s /app/config/config.yaml ]; do sleep 1; done; exec litellm --config /app/config/config.yaml --port 4000")
 else
   args+=("$IMAGE" --config /app/config/config.yaml --port 4000)
 fi
@@ -156,14 +182,17 @@ if [ "$MOCK" = 1 ]; then
 sys.stdout.write(u.urlopen(u.Request(sys.argv[1], headers={\"Authorization\": \"Bearer stand-in\"}), timeout=10).read().decode())" "$1"' _ "$1" > "$2" 2>/dev/null
   }
   for _ in $(seq 1 30); do _get "http://127.0.0.1:$MOCK_PORT/v1/models" "$WORK/got-v1.json" && break; sleep 1; done
-  _get "http://127.0.0.1:$MOCK_PORT/api/models?limit=$XL_CATALOG_PAGE&offset=0" "$WORK/got-catalog.json" || : > "$WORK/got-catalog.json"
   python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1]))["data"]
 assert d and all(set(m) == {"id", "object", "created", "owned_by"} for m in d), d[:2]' "$WORK/got-v1.json" &&
     ok "the stand-in's /v1/models lists ids only, as the gateway's does" || fail "the stand-in's /v1/models: $(head -c 300 "$WORK/got-v1.json")"
-  # never details from /v1/models: read as a catalog it gives ids alone
-  [ -z "$(xl_details_tsv < "$WORK/got-v1.json" | cut -f2-12 | tr -d '\t\n')" ] && ok "nothing in /v1/models is taken for model details" || fail "/v1/models parsed as details"
-  xl_ids < "$WORK/got-v1.json" > "$WORK/ids"
-  { printf '# fetched_at: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"; xl_details_tsv < "$WORK/got-catalog.json" | xl_join "$WORK/ids"; } > "$(xl_cache_tsv)"
+  # never details from /v1/models: read as a catalog answer it gives an id alone
+  [ -z "$(xl_model_tsv x < "$WORK/got-v1.json" | cut -f2-12 | tr -d '\t\n')" ] && ok "nothing in /v1/models is taken for model details" || fail "/v1/models parsed as details"
+  xl_ids < "$WORK/got-v1.json" > "$WORK/ids"; : > "$WORK/det"
+  # each chosen model's catalog answer, as the refresh asks for it
+  for id in $(xl_wanted); do
+    _get "http://127.0.0.1:$MOCK_PORT/api/models/$id" "$WORK/got-$id.json" && xl_model_tsv "$id" < "$WORK/got-$id.json" >> "$WORK/det"
+  done
+  { printf '# fetched_at: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"; xl_join "$WORK/ids" < "$WORK/det"; } > "$(xl_cache_tsv)"
   _render
 fi
 up=0

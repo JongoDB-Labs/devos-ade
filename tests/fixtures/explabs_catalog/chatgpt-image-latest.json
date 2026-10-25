@@ -1,0 +1,60 @@
+{
+ "model": {
+  "id": "m-chatgpt-image-latest",
+  "slug": "chatgpt-image-latest",
+  "display_name": "chatgpt-image-latest",
+  "release_date": null,
+  "context_window": null,
+  "max_output_tokens": null,
+  "max_input_tokens": null,
+  "input_modalities": [
+   "text"
+  ],
+  "output_modalities": [
+   "image"
+  ],
+  "supported_params": {},
+  "status": "active"
+ },
+ "providers": [
+  {
+   "id": "chatgpt-image-latest-experiential_cloud",
+   "model_id": "m-chatgpt-image-latest",
+   "provider": "experiential_cloud",
+   "provider_model_id": "chatgpt-image-latest",
+   "status": "active",
+   "routable": true,
+   "billing_source": "host_managed",
+   "input_nano_usd_per_million": 5000000000,
+   "cached_input_nano_usd_per_million": null,
+   "cache_write_input_nano_usd_per_million": null,
+   "output_nano_usd_per_million": 32000000000,
+   "capabilities": {
+    "supports_temperature": false,
+    "supports_top_p": false,
+    "supports_top_k": false,
+    "supports_frequency_penalty": null,
+    "supports_presence_penalty": null,
+    "supports_logprobs": false,
+    "supports_tools": null,
+    "supports_structured_output": false,
+    "supports_reasoning": false,
+    "sampling_requires_reasoning_none": false,
+    "chat_max_tokens_field": null,
+    "maximum_temperature": null,
+    "minimum_temperature": null
+   },
+   "zero_data_retention": null
+  }
+ ],
+ "default_waterfall": [
+  {
+   "position": 0,
+   "model_provider_id": "chatgpt-image-latest-experiential_cloud",
+   "provider": "experiential_cloud",
+   "status": "active",
+   "funding": "platform"
+  }
+ ],
+ "retention": null
+}

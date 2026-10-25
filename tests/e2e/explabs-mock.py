@@ -1,19 +1,24 @@
 """A stand-in for the Experiential Labs gateway, for tests/e2e/explabs.sh --mock (inside the throwaway LiteLLM container,
-on 127.0.0.1 only), split as the gateway is: GET /v1/models (with a key) answers V1_JSON — the OpenAI list, ids and
-nothing else; GET /api/models (keyless: the public catalog, paged with limit/offset) answers CATALOG_JSON's entries,
-each model's details. POST /v1/chat/completions and /v1/responses answer like the gateway — "DevOS ADE test OK", usage
-with cost (USD) and is_byok (true for a model whose id holds "byok") — streamed or not, and each request body is
-appended to a JSONL file for the script to check. Never the key: only "Bearer" is looked for in the header.
-Usage: python3 explabs-mock.py PORT LOG V1_JSON CATALOG_JSON
+on 127.0.0.1 only; for its check of a slow catalog, on this computer's 127.0.0.1), split as the gateway is: GET
+/v1/models (with a key) answers V1_JSON — the OpenAI list, ids and nothing else; GET /api/models/<id> (keyless: one
+model of the public catalog) answers CATALOG_DIR/<id>.json, 404 without one — slowly (a few bytes every half second,
+about 20 s in all) for an id SLOW_FILE lists, when that file exists. POST /v1/chat/completions and /v1/responses answer
+like the gateway — "DevOS ADE test OK", usage with cost (USD) and is_byok (true for a model whose id holds "byok") —
+streamed or not, and each request body is appended to a JSONL file for the script to check. Never the key: only
+"Bearer" is looked for in the header.
+Usage: python3 explabs-mock.py PORT LOG V1_JSON CATALOG_DIR [SLOW_FILE]
 """
 
 import json
+import os
+import re
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import urlsplit
 
 PORT, LOG, V1, CATALOG = int(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4]
+SLOW_FILE = sys.argv[5] if len(sys.argv) > 5 else ""
 # what each answer "cost": not qwen3.8-27b's list price for 58 in / 48 out ($0.00013376, what the real gateway reported for
 # that prompt), so the check can tell the gateway's figure from one LiteLLM computed
 COST = 0.00042
@@ -41,14 +46,37 @@ class Gateway(BaseHTTPRequestHandler):
         if not events or not events[0][0]:
             self.wfile.write(b"data: [DONE]\n\n")
 
+    def _slow(self, body):
+        # the catalog as it was on 2026-10-25: the answer starts at once, then trickles in
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        step = max(1, len(body) // 40)
+        try:
+            for i in range(0, len(body), step):
+                self.wfile.write(body[i:i + step])
+                self.wfile.flush()
+                time.sleep(0.5)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
     def do_GET(self):
         url = urlsplit(self.path)
-        if url.path == "/api/models":   # the catalog: keyless, a page of at most limit entries from offset
-            q = parse_qs(url.query)
-            limit, offset = int((q.get("limit") or ["50"])[0]), int((q.get("offset") or ["0"])[0])
-            with open(CATALOG, encoding="utf-8") as f:
-                rows = json.load(f)["data"]
-            return self._json(200, {"object": "list", "data": rows[offset:offset + min(limit, 200)]})
+        m = re.fullmatch(r"/api/models/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})", url.path)
+        if m:   # one model of the catalog: keyless
+            path = os.path.join(CATALOG, m.group(1) + ".json")
+            if not os.path.isfile(path):
+                return self._json(404, {"error": "model not found"})
+            with open(path, encoding="utf-8") as f:
+                doc = json.load(f)
+            slow = []
+            if SLOW_FILE and os.path.isfile(SLOW_FILE):
+                with open(SLOW_FILE, encoding="utf-8") as f:
+                    slow = f.read().split()
+            if m.group(1) in slow:
+                return self._slow(json.dumps(doc).encode())
+            return self._json(200, doc)
         if not self.headers.get("Authorization", "").startswith("Bearer "):
             return self._json(401, {"error": {"code": "invalid_key", "type": "authentication_error"}})
         if url.path == "/v1/models":
