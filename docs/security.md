@@ -389,7 +389,11 @@ An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*)
   model's `additional_drop_params`, and the hook `lib/litellm-hooks/bn_hooks.py`). A client's own fields pass as they
   came: Claude Code's user id, for one (LiteLLM sends it as `user`, which the gateway keeps as the call's attribution
   label, and a prompt-cache key made from it), as for OpenRouter. DevOS ADE adds nothing that names you or this install:
-  no tags, no session header. The key is the only credential.
+  no tags, no session header. The key is the only credential. LiteLLM calls the gateway through the OpenAI Python SDK,
+  which adds its usual headers: `User-Agent: AsyncOpenAI/Python <version>` and `x-stainless-*` (the SDK's version and
+  language, the Python runtime and its version, the operating system and CPU architecture of LiteLLM's container —
+  `Linux`, `arm64` or `x64` —, the retry count and read timeout); nothing in them names you or this install. The two
+  GETs above go with curl's own `User-Agent: curl/<version>`.
 - **The key.** In `.env` (mode 600), changed only from this computer (Settings › Chat & voice, policy `local`, or
   `./stack config set EXPLABS_API_KEY`, which asks without echo), checked with the gateway before it is stored. It
   reaches LiteLLM's environment (the config names `os.environ/EXPLABS_API_KEY`, never the value) and, when `./stack`
