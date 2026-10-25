@@ -91,7 +91,8 @@ STACK_DIR="$ROOT"; ENV_FILE=/dev/null; STATE_DIR="$WORK/state"
 export STACK_DIR ENV_FILE STATE_DIR
 # shellcheck source=/dev/null
 . "$ROOT/lib/common.sh"; . "$ROOT/lib/ports.sh"; . "$ROOT/lib/portal.sh"; . "$ROOT/lib/models.sh"; . "$ROOT/lib/commands.sh"
-[ "$MOCK" = 0 ] || EXPLABS_API="http://127.0.0.1:$MOCK_PORT/v1"
+# (the stand-in answers on plain http inside the container: lib/explabs.sh takes such an address only while testing)
+[ "$MOCK" = 0 ] || { EXPLABS_API="http://127.0.0.1:$MOCK_PORT/v1"; BEDROCK_NOW_TESTING=1; }
 get_env() { case "$1" in EXPLABS_API_KEY) printf '%s' "$KEY" ;; EXPLABS_MODELS) printf 'qwen3.8-27b%s' "$([ "$MOCK" = 1 ] && echo ,byok-model,claude-fable-5,gpt-5.1-codex)" ;; esac; }
 STACK_DIR="$WORK"; mkdir -p "$WORK/litellm" "$STATE_DIR"
 xl_cache_current() { [ -s "$(xl_cache_tsv)" ]; }   # (no key mark: not even a hash of the key on disk)

@@ -35,8 +35,15 @@
 #   explabs_status_line / explabs_summary_line / explabs_costs_section / explabs_models_section
 #   setup_explabs / explabs_up_hook / explabs_after_up   setup, and ./stack up before `compose up` / in its portal session
 
-# Tests may point this at another server; users cannot (no EXPLABS_API override). The catalog lives beside it.
-EXPLABS_API="${BEDROCK_NOW_TEST_EXPLABS_API:-https://api.experientiallabs.ai/v1}"
+# Where the key goes. Only the test suite (BEDROCK_NOW_TESTING=1, as lib/host.sh) can point this at another server: a
+# stray variable in a user's shell never changes it. The catalog lives beside it.
+_xl_api() {
+  if [ "${BEDROCK_NOW_TESTING:-}" = 1 ] && [ -n "${BEDROCK_NOW_TEST_EXPLABS_API:-}" ]; then printf '%s\n' "$BEDROCK_NOW_TEST_EXPLABS_API"
+  else printf 'https://api.experientiallabs.ai/v1\n'; fi
+}
+EXPLABS_API="$(_xl_api)"
+# xl_api_ok -> 0 when EXPLABS_API may get the key: https, or any address while testing
+xl_api_ok() { case "$EXPLABS_API" in https://?*) return 0 ;; esac; [ "${BEDROCK_NOW_TESTING:-}" = 1 ]; }
 EXPLABS_CATALOG="${EXPLABS_API%/v1}/api/models"
 XL_CATALOG_PAGE=500     # entries asked for per catalog page (the gateway may send fewer: the next page starts after them)
 XL_CATALOG_PAGES=20     # at most this many pages (10,000 models; the gateway lists ~320)
@@ -261,6 +268,7 @@ xl_yaml_entries() {
 # explabs_yaml -> model_list entries for the chosen models; nothing without a key. Called by render_litellm_config.
 explabs_yaml() {
   explabs_enabled || return 0
+  if ! xl_api_ok; then warn "Experiential Labs: $EXPLABS_API is not https — no xl/ model is rendered"; return 0; fi
   xl_selected | xl_yaml_entries
 }
 

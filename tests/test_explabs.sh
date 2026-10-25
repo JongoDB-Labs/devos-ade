@@ -225,6 +225,21 @@ test_validators_for_the_key_and_the_models() {
   assert_eq "$(_settings_mask EXPLABS_API_KEY "$XL_KEY")" "(set)"
 }
 
+# The gateway's address: only the test suite (BEDROCK_NOW_TESTING=1) can change it; anything but https gets no model
+test_only_the_test_suite_can_point_the_key_elsewhere() {
+  assert_eq "$(BEDROCK_NOW_TEST_EXPLABS_API=http://127.0.0.1:9/v1 _xl_api)" "https://api.experientiallabs.ai/v1"
+  assert_eq "$(BEDROCK_NOW_TESTING=1 BEDROCK_NOW_TEST_EXPLABS_API=http://127.0.0.1:9/v1 _xl_api)" "http://127.0.0.1:9/v1"
+  assert_eq "$(BEDROCK_NOW_TESTING=1 _xl_api)" "https://api.experientiallabs.ai/v1"
+  _xl_cached
+  local y
+  y="$(EXPLABS_API=http://127.0.0.1:9/v1; BEDROCK_NOW_TESTING=''; explabs_yaml 2> "$TMP/err")"
+  assert_eq "$y" ""
+  assert_contains "$(cat "$TMP/err")" "Experiential Labs: http://127.0.0.1:9/v1 is not https — no xl/ model is rendered"
+  y="$(EXPLABS_API=http://127.0.0.1:9/v1; BEDROCK_NOW_TESTING=1; explabs_yaml)"
+  assert_contains "$y" 'api_base: "http://127.0.0.1:9/v1"'
+  assert_contains "$(explabs_yaml)" 'api_base: "https://api.experientiallabs.ai/v1"'
+}
+
 test_a_malformed_key_is_off_and_never_sent() {
   _stub_curl
   STACK_DIR="$TMP"; mkdir -p "$TMP/litellm"
