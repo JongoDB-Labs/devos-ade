@@ -35,6 +35,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   question, never a launch. A link on another website gets the sign-in or a card with a button to the Code page. The
   session and the Code page's unlock are still needed. Safari may not send `Sec-Fetch-User`, so a typed address there
   can show the card: that fails closed and only costs convenience.
+- **The Code page's unit tests run on a Mac:** the ones that need the sandbox's Linux tools skip there and say why, and
+  fail instead of skipping inside the image.
+- **Tests:** the Plan-mode end-to-end check decides on every run.
 
 ## [0.25.2] - 2026-10-25
 
