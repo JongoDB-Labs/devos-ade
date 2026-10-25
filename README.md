@@ -1812,6 +1812,19 @@ its own JSON alert (`soft_budget_crossed`, `budget_crossed`); it is not Slack's 
 - **Chat**: the cost under every answer and the chat total; each model's price in the picker.
 - `devos-claude`: spend this period at launch, the session's cost at exit.
 
+**Why does Actual move when I use free models?** A free model's own requests book $0, but other requests in the same
+session may not:
+- **Background work.** Claude Code's titles, summaries and subagents, and Chat's titles, tags and follow-up
+  suggestions, run on the model you picked when it is not one of Bedrock's Claude models (they used to run on Haiku).
+  A session on a Claude model still uses Haiku for them.
+- **Auto mode's reviewer** stays on Sonnet 5.5 whatever the model: about $0.13 for its first check in each 5 minutes
+  (see [Permissions and modes](#permissions-and-modes)).
+- **Bedrock prompt-cache writes.** A request to a Claude model that starts or rewrites the prompt cache (a new session,
+  a model switch, 5 idle minutes) pays the cache-write price for its whole context: often tens of thousands of tokens.
+
+**Admin** tab → Usage shows spend by model, key and day, and its Logs each request with its model and key: that tells
+you which one it was.
+
 A single Claude Code prompt is several requests with a large cached context: a small task on Haiku costs
 about $0.04, a long interactive Opus session can cost dollars. Use Haiku or Sonnet for routine work. Plugins and MCP
 servers multiply this, which is why `devos-claude` leaves your `~/.claude` out

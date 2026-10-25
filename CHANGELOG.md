@@ -97,6 +97,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   a fetch runs) asks git for the checkout's HEAD and branch: a fetch slower than 3 s had its record overwritten with
   an empty one. Only the fetch records it now.
 
+### Docs
+
+- **README: "Why does Actual move when I use free models?"** Background work (now on the model you picked), Auto
+  mode's reviewer (Sonnet 5.5) and Bedrock prompt-cache writes, and where to see which request it was (Admin › Usage).
+
 ## [0.27.1] - 2026-10-25
 
 ### Changed
