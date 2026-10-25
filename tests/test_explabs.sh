@@ -998,3 +998,37 @@ test_a_pid_file_is_acted_on_only_while_it_names_that_process() {
   assert_eq "$(_xl_pid_of "$(xl_lock_dir)/pid")" "$sh_other"
   _xl_kill_tree "$sh_other"; kill "$other" 2>/dev/null || true
 }
+
+# A refresh killed hard (SIGKILL: no trap runs) leaves its temp folder: the next refresh removes the ones older than 10
+# minutes — refreshes' temp folders only, by the same checks — and leaves a younger one (another refresh's) alone
+test_a_refresh_sweeps_the_temp_folders_left_by_killed_ones() {
+  _stub_curl
+  _xl_env
+  mkdir -p "$STATE_DIR/explabs-tmp.old1/t.x" "$STATE_DIR/explabs-tmp.young" "$STATE_DIR/explabs-tmpnot" "$STATE_DIR/other"
+  touch -t 202601010000 "$STATE_DIR/explabs-tmp.old1" "$STATE_DIR/explabs-tmpnot" "$STATE_DIR/other"
+  explabs_refresh 2>/dev/null
+  [ ! -e "$STATE_DIR/explabs-tmp.old1" ]
+  [ -d "$STATE_DIR/explabs-tmp.young" ] && [ -d "$STATE_DIR/explabs-tmpnot" ] && [ -d "$STATE_DIR/other" ]
+  assert_eq "$(xl_selected | cut -f1)" details
+}
+
+# Where ps gives no process start times (BusyBox), a pid file is judged by its age and its command — never by the pid
+# alone — and the background refresh's log says so once
+test_without_start_times_a_pid_file_is_judged_by_age_and_command() {
+  ps() { case " $* " in *lstart*) return 1 ;; esac; command ps "$@"; }
+  _xl_env
+  mkdir -p "$STATE_DIR"
+  local other sh_other f; f="$(xl_bg_pid_file)"
+  sleep 60 > /dev/null 2>&1 & other=$!
+  bash -c 'sleep 60; :' > /dev/null 2>&1 & sh_other=$!
+  sleep 0.3
+  assert_eq "$(_xl_pid_line "$sh_other")" "$sh_other "
+  _xl_pid_line "$other" > "$f"; xl_bg_stop 2>/dev/null; kill -0 "$other"                  # another program: left alone
+  _xl_pid_line "$sh_other" > "$f"; touch -t 202601010000 "$f"; xl_bg_stop 2>/dev/null; kill -0 "$sh_other"   # old
+  _xl_pid_line "$sh_other" > "$f"; xl_bg_running; xl_bg_stop 2>/dev/null; ! kill -0 "$sh_other" 2>/dev/null
+  kill "$other" 2>/dev/null || true
+  _stub_curl
+  SLOW=qwen3.8-27b SLOW_S=1 xl_refresh_in_background 2>/dev/null
+  wait "$(_bg_pid)" 2>/dev/null || true
+  assert_eq "$(grep -c 'gives no process start times' "$(xl_bg_log)")" 1
+}

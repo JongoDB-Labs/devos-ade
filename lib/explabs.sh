@@ -82,12 +82,24 @@ xl_bg_pid_file() { printf '%s\n' "$STATE_DIR/explabs-refresh.pid"; }
 # the list so its move into place stays a rename), removed by that path alone, quoted (_xl_tmp_end) — never a list of
 # paths split on spaces (a checkout under "Code Projects" would name a sibling "Code"). Outside a refresh (the key's
 # check in Settings, the e2e) _xl_mktemp makes ordinary temp files.
-_xl_tmp_begin() { mkdir -p "$STATE_DIR" && XL_TMPDIR="$(mktemp -d "$STATE_DIR/explabs-tmp.XXXXXX")"; }
-_xl_tmp_end() {
-  local d="${XL_TMPDIR:-}"; XL_TMPDIR=''
+# A refresh killed hard (SIGKILL: no trap runs) leaves its folder: the next refresh removes those older than 10 minutes
+# (no refresh takes that long), through the same checks (_xl_tmp_sweep).
+_xl_tmp_begin() { mkdir -p "$STATE_DIR" && _xl_tmp_sweep && XL_TMPDIR="$(mktemp -d "$STATE_DIR/explabs-tmp.XXXXXX")"; }
+_xl_tmp_end() { local d="${XL_TMPDIR:-}"; XL_TMPDIR=''; _xl_tmp_rm "$d"; }
+# _xl_tmp_rm DIR — DIR removed when it is a refresh's temp folder: under .state, named explabs-tmp.<something>, and
+# naming no other path; anything else is left alone
+_xl_tmp_rm() {
+  local d="$1"
   case "$d" in "$STATE_DIR"/explabs-tmp.?*) ;; *) return 0 ;; esac
   case "${d#"$STATE_DIR"/explabs-tmp.}" in */* | *..*) return 0 ;; esac   # (a folder of its own: no other path)
   [ ! -d "$d" ] || rm -rf -- "$d"
+}
+_xl_tmp_sweep() {
+  local d
+  for d in "$STATE_DIR"/explabs-tmp.?*; do
+    [ -d "$d" ] && [ -n "$(find "$d" -maxdepth 0 -mmin +10 2>/dev/null)" ] || continue
+    _xl_tmp_rm "$d"
+  done
 }
 _xl_mktemp() { # _xl_mktemp [-d]
   if [ -n "${XL_TMPDIR:-}" ] && [ -d "$XL_TMPDIR" ]; then
@@ -743,18 +755,21 @@ setup_explabs() {
 # The refresh's pid files (the background refresh's, the refresh lock's) hold "PID START" — its pid and its start time
 # as ps gives it. _xl_pid_line PID -> that line. _xl_pid_of FILE -> the pid FILE names when it is still that process:
 # the file written within the last 10 minutes (no refresh takes longer), the process alive, started when the file says,
-# and a shell of ./stack's (ps names stack or bash, as lib/lock.sh's _lock_pid_alive); else nothing — a pid file left
-# by a refresh killed hard, its pid since taken by another process, is never acted on.
-_xl_pid_line() { printf '%s %s\n' "$1" "$(ps -p "$1" -o lstart= 2>/dev/null | tr -s ' ' | sed 's/^ //; s/ $//')"; }
+# and a shell of ./stack's (its command names stack or bash, as lib/lock.sh's _lock_pid_alive); else nothing — a pid
+# file left by a refresh killed hard, its pid since taken by another process, is never acted on. Where ps gives no start
+# times (BusyBox: _xl_start_of says nothing), the file's age and the command decide — never the pid alone.
+_xl_start_of() { ps -p "$1" -o lstart= 2>/dev/null | tr -s ' ' | sed 's/^ //; s/ $//' || true; }
+_xl_cmd_of() { ps -p "$1" -o command= 2>/dev/null || tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null || true; }
+_xl_pid_line() { printf '%s %s\n' "$1" "$(_xl_start_of "$1")"; }
 _xl_pid_of() {
   local f="$1" p='' st='' now
   [ -n "$(find "$f" -mmin -10 2>/dev/null)" ] || return 0
   read -r p st < "$f" 2>/dev/null || true
   case "$p" in '' | *[!0-9]*) return 0 ;; esac
   kill -0 "$p" 2>/dev/null || return 0
-  ps -p "$p" -o command= 2>/dev/null | grep -qiE 'stack|bash' || return 0
-  now="$(ps -p "$p" -o lstart= 2>/dev/null | tr -s ' ' | sed 's/^ //; s/ $//')"
-  [ -n "$st" ] && [ "$now" = "$st" ] || return 0
+  _xl_cmd_of "$p" | grep -qiE 'stack|bash' || return 0
+  now="$(_xl_start_of "$p")"
+  if [ -n "$now" ] || [ -n "$st" ]; then [ "$now" = "$st" ] || return 0; fi
   printf '%s\n' "$p"
 }
 
@@ -815,7 +830,10 @@ xl_refresh_in_background() {
     trap '' HUP
     # (stopped: its temp files, its lock and its pid file go)
     trap '_xl_tmp_end; _xl_unlock; rm -f "$(xl_bg_pid_file)"; exit 143' TERM INT
-    XL_BACKGROUND=1 _explabs_refresh > "$(xl_bg_log)" 2>&1 || true
+    # (said once in its log: without start times its pid file is checked by age and command alone)
+    : > "$(xl_bg_log)"
+    [ -n "$(_xl_start_of "$$")" ] || echo "Experiential Labs: this system's ps gives no process start times (BusyBox?) — a refresh's pid file is checked by its age and its command alone" >> "$(xl_bg_log)"
+    XL_BACKGROUND=1 _explabs_refresh >> "$(xl_bg_log)" 2>&1 || true
     _xl_unlock; rm -f "$(xl_bg_pid_file)"
   ) < /dev/null > /dev/null 2>&1 &
   p=$!
