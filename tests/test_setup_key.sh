@@ -2,6 +2,9 @@
 # shellcheck disable=SC2034  # PRICES/CATALOG are read by sourced lib functions
 # Task A5: probe + smoke-test spend goes to its own 'setup' key; ./stack costs shows a total.
 . "$STACK_DIR/lib/commands.sh"
+# On Linux the portal's folders ask Docker whether it runs rootless (lib/prices.sh portal_gid): answered here as
+# Docker Engine (rootful), never by the real docker (a test of rootless Docker sets its own)
+_docker_rootless() { return 1; }
 
 # curl_auth stub: logs "TOKEN URL" per call; answers $CODE (default 200) and writes $BODY to -o.
 _stub_curl_auth() {

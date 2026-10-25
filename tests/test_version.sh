@@ -2,6 +2,9 @@
 # lib/version.sh: the installed version, the version file the portal reads, and the portal's cached release
 # check as ./stack status and devos-claude see it (no network).
 . "$STACK_DIR/lib/commands.sh"
+# On Linux the portal's folders ask Docker whether it runs rootless (lib/prices.sh portal_gid): answered here as
+# Docker Engine (rootful), never by the real docker (a test of rootless Docker sets its own)
+_docker_rootless() { return 1; }
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 
 _repo() { # a checkout tagged v0.2.1, plus one commit after it when $1 = ahead

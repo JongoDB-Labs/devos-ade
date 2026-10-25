@@ -2,6 +2,9 @@
 # lib/helper.sh: the host helper's request validation, its job loop (with a stubbed ./stack), the status it
 # writes for the portal, and install/uninstall with stubbed launchctl/systemctl (never the real ones).
 . "$STACK_DIR/lib/commands.sh"
+# On Linux the portal's folders ask Docker whether it runs rootless (lib/prices.sh portal_gid): answered here as
+# Docker Engine (rootful), never by the real docker (a test of rootless Docker sets its own)
+_docker_rootless() { return 1; }
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 NONCE=0123456789abcdef0123456789abcdef
 

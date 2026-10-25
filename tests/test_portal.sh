@@ -1,6 +1,9 @@
 # shellcheck shell=bash
 # Batch B: portal host names, the portal port, migration of the old direct ports, curl through Caddy.
 . "$STACK_DIR/lib/commands.sh"
+# On Linux the portal's folders ask Docker whether it runs rootless (lib/prices.sh portal_gid): answered here as
+# Docker Engine (rootful), never by the real docker (a test of rootless Docker sets its own)
+_docker_rootless() { return 1; }
 
 test_default_portal_host_follows_project() {
   assert_eq "$(default_portal_host bedrock-now)" "bedrock-now.localhost"
