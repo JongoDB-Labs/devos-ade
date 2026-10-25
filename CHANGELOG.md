@@ -42,6 +42,23 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   again recreated LiteLLM, Caddy, the terminal's gateway, the terminal and Chat's sandbox, each healthy about 10 s
   after its start). After it has started, the checks are as before.
 
+### Fixed
+
+- **Tests:** the shell suite passes on Linux (bash 5.2) as it does on macOS (bash 3.2): 14 tests failed there, the
+  same in serial and parallel runs. None was a bug of DevOS ADE itself; each test now checks the same thing on both:
+  - four tests that set up the portal's folders (`test_requests_dir_is_private`, `test_up_rewrites_portal_origin`,
+    `test_setup_key_created_before_probe`, `test_ensure_portal_dirs_creates_what_compose_mounts`) reached the real
+    `docker info`, which the isolation guard refuses: on Linux the portal's folders ask Docker whether it runs
+    rootless. Those test files now answer it as rootful Docker Engine, as the one rootless test already does;
+  - eight tests read a file's mode with BSD's `stat -f %Lp` first, which on Linux prints the file system's status
+    before the mode (OpenRouter's and speech's `.env`, a terminal command's record for Home, speech's probe and notice
+    files): a shared `perm_of` (GNU's `stat -c %a` first) reads it on both;
+  - two of the project folders' tests took their temporary folder for macOS's: on Linux the tests' folders are in
+    `/tmp`, where the sandbox mounts a project at `/projects/<name>` (said as hidden), and their home is in `/tmp`
+    too, so "your home folder or a folder around it" came before "a temporary folder itself".
+  Every test runs on both, except where the machine decides: on Linux, three are skipped without PyYAML (two) or the
+  de_DE.UTF-8 locale (one), and the one about case-insensitive spellings needs macOS's case-insensitive file system.
+
 ## [0.27.1] - 2026-10-25
 
 ### Changed
