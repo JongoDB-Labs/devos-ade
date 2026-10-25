@@ -246,6 +246,10 @@ code_models_table() {
 # _code_json_str S -> S as a JSON string (names hold no quotes or backslashes; control characters are dropped anyway)
 _code_json_str() { printf '"%s"' "$(printf '%s' "$1" | tr -d '\000-\037"\\')"; }
 
+# _code_prov_suffix PROVIDER -> " · OpenRouter" / " · Experiential Labs" after a model's name in /model; nothing for Bedrock
+# (a function: bash 3.2 cannot parse a case statement inside $(…))
+_code_prov_suffix() { case "$1" in OpenRouter | "Experiential Labs") printf ' · %s' "$1" ;; esac; }
+
 # code_picker_json [FILE] [AUTO_OFF(1|0)] -> the --settings JSON for claude-bedrock: Claude Code's /model menu lists the
 # listed models by their full ids with our names, prices and how they work (modelPicker, replacing its own lineup of
 # aliases: an alias lets Claude Code pick the model itself — Plan mode on "haiku" plans on Sonnet), plus auto mode off
@@ -257,7 +261,7 @@ code_picker_json() {
     # a longer menu helps nobody — --model and /model <id> reach every model
     [ "$def" = 1 ] || [ "$n" -lt "$((CODE_PICKER_MAX - 1))" ] || { [ "$had" = 1 ] && [ "$n" -lt "$CODE_PICKER_MAX" ]; } || continue
     n=$((n + 1)); [ "$def" != 1 ] || had=1
-    rows="$rows$sep{\"model\":$(_code_json_str "$id"),\"label\":$(_code_json_str "$name$(case "$prov" in OpenRouter | "Experiential Labs") printf ' · %s' "$prov" ;; esac)"),\"description\":$(_code_json_str "$vend · $(_code_price "$pin" "$pout" "$free") · $(_code_compat_word "$compat")")}"
+    rows="$rows$sep{\"model\":$(_code_json_str "$id"),\"label\":$(_code_json_str "$name$(_code_prov_suffix "$prov")"),\"description\":$(_code_json_str "$vend · $(_code_price "$pin" "$pout" "$free") · $(_code_compat_word "$compat")")}"
     sep=','
   done < <(_code_rows "$f")
   printf '{%s"modelPicker":{"replaceBuiltInOptions":true,"options":[%s]}}\n' "$([ "$off" = 1 ] && printf '"disableAutoMode":"disable",')" "$rows"

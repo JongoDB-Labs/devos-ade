@@ -296,6 +296,9 @@ cost_prices_json() {
   done 3< <(catalog_rows)
   # Optional OpenRouter models ("or/<id>", lib/openrouter.sh): nothing unless OpenRouter is on.
   ! declare -F openrouter_cost_prices_entries >/dev/null || out="$out$(openrouter_cost_prices_entries)"
+  # Optional Experiential Labs models ("xl/<id>", lib/explabs.sh): their list prices, marked gateway_cost (the cost line
+  # takes the gateway's own figure for each answer, these only without one). Nothing unless it is on.
+  ! declare -F explabs_cost_prices_entries >/dev/null || out="$out$(explabs_cost_prices_entries)"
   printf '{%s}\n' "${out#,}"
 }
 

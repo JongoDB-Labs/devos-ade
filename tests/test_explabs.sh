@@ -268,6 +268,18 @@ assert q == {"name": "qwen3.8-27b (Experiential Labs)", "input_cost_per_token": 
 assert d["xl/deepseek-v4.1-flash:free"]["input_cost_per_token"] == 0' "$(explabs_cost_prices_entries)"
 }
 
+# Chat's cost filter gets them with the Bedrock prices (lib/owui.sh cost_prices_json), and loses them with the key
+test_chats_cost_filter_prices_them_while_it_is_on() {
+  _xl_cached
+  printf 'claude-haiku-5-5\tchat\tbedrock/x\t-\t-\n' > "$TMP/catalog.tsv"
+  printf 'claude-haiku-5-5\t1\t5\t-\t-\t-\t-\n' > "$TMP/prices.tsv"
+  local j; j="$(CATALOG="$TMP/catalog.tsv" PRICES="$TMP/prices.tsv" cost_prices_json)"
+  python3 -I -c 'import json, sys; d = json.loads(sys.argv[1]); assert d["xl/qwen3.8-27b"]["gateway_cost"] is True and "claude-haiku-5-5" in d, d' "$j"
+  _assert_no_key "$j"
+  : > "$ENV_FILE"
+  assert_not_contains "$(CATALOG="$TMP/catalog.tsv" PRICES="$TMP/prices.tsv" cost_prices_json)" "xl/"
+}
+
 test_the_portal_gets_the_models_and_never_the_key() {
   _xl_cached 'EXPLABS_MODELS=qwen3.8-27b,gpt-latest
 '

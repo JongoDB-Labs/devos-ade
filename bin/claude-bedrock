@@ -59,7 +59,7 @@ case "${1:-}" in
     if [ -n "$opus" ] && [ -n "$port" ]; then
       m="$def (default); --model <id or name> or CLAUDE_BEDROCK_MODEL=<name> picks another, claude-bedrock --models lists them"
       p="LiteLLM on 127.0.0.1:$port, key 'claude-code' (monthly budget; ./stack costs)"
-      c="billed per token by Bedrock (OpenRouter's models: by OpenRouter, free ones \$0); $def: $(_cb_price "$def")"
+      c="billed per token by Bedrock (OpenRouter's models: by OpenRouter, free ones \$0; Experiential Labs': what the gateway reports, \$0 on your own provider key); $def: $(_cb_price "$def")"
     else
       m="not set up yet — run $STACK_DIR/stack setup"; p="not set up yet — run $STACK_DIR/stack setup"
       c="billed by Bedrock per token; prices: $STACK_DIR/stack costs"
@@ -142,7 +142,7 @@ export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 # One cost line on stderr (CLAUDE_BEDROCK_QUIET=1 hides it). Spend comes from LiteLLM with this key;
 # if that takes >2s or fails, the spend part is left out rather than delaying the launch.
 if [ "${CLAUDE_BEDROCK_QUIET:-0}" != 1 ]; then
-  via=bedrock; case "$ANTHROPIC_MODEL" in or/*) via=openrouter ;; esac
+  via=bedrock; case "$ANTHROPIC_MODEL" in or/*) via=openrouter ;; xl/*) via="experiential labs" ;; esac
   line="$via · $ANTHROPIC_MODEL ($(_cb_price "$ANTHROPIC_MODEL"))"
   case "$(code_model_row "$ANTHROPIC_MODEL" | cut -f10)" in
     chat-only) line="$line · chat only: it cannot use tools" ;;
