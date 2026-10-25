@@ -68,7 +68,7 @@ test_the_model_probe_is_kept_while_nothing_it_depends_on_changed() {
   assert_not_contains "$(cat "$STATE_DIR/models/probe.mark")" "s1"
   # again, nothing changed: no probe, LiteLLM once with the models found
   assert_eq "$(_probe_run)" "RENDER enabled;PHASE Postgres + RustFS;PHASE LiteLLM (1 models);KEY setup;"
-  assert_contains "$(cat "$TMP/err")" "model check: the last one stands (same AWS key, region, model catalog and LiteLLM; 0 min ago)"
+  assert_contains "$(cat "$TMP/err")" "model check: not run again — nothing it depends on changed (the same AWS key, region, model catalog and LiteLLM; the last check 0 min ago). ./stack models --recheck checks again"
   # each thing it depends on, changed: probed again
   sed -i.bak 's/us-east-1/eu-west-1/' "$ENV_FILE"; assert_contains "$(_probe_run)" "PROBE"
   assert_not_contains "$(_probe_run)" "PROBE"

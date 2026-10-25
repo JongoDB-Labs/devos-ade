@@ -102,7 +102,10 @@ Then it:
    the portal should use instead (Enter takes the suggestion, 8800 or the next port free at that moment; a port in
    use is asked again; `--yes` takes the suggestion), and names the new address;
 2. starts the stack and **probes every model** with a 1-token request (< $0.01 in total) to see which ones
-   your key can use, and prints a table of ENABLED/DISABLED models with prices and reasons;
+   your key can use, and prints a table of ENABLED/DISABLED models with prices and reasons. A later setup or update
+   does not probe again while nothing it depends on changed (the same AWS key and region, model catalog and
+   LiteLLM, and a probe less than a week old): it says so and keeps the last answers. `./stack models --recheck`
+   probes again at once;
 3. creates LiteLLM keys with monthly budgets, configures Open WebUI and runs a smoke test;
 4. turns on the [Code page](#the-code-page) — Claude Code in the browser, like its desktop app — and the
    [browser terminal](#claude-code-in-the-browser) it runs in: a sandbox container that sees only one folder of
@@ -1831,7 +1834,8 @@ on Haiku.
 The probe decides what you get. Only an explicit "no" from AWS (not subscribed, access denied, not in this region, or
 an id that needs an inference profile) disables a model; anything else keeps it and shows why. `./stack models` shows
 the last result (MODEL, KIND, STATUS, PRICE, WHY); after your AWS admin changes your access, run `./stack models
---recheck` (< $0.01) or `./stack setup`.
+--recheck` (< $0.01). `./stack setup` and `./stack update` probe again only when your AWS key, its region, the model
+catalog or LiteLLM changed, or the last probe is a week old; otherwise they keep its answers and say so.
 
 | Model | Use |
 |---|---|
@@ -2130,7 +2134,7 @@ troubleshooting: [docs/voice.md](docs/voice.md).
 
 | Command | What it does | Bedrock cost |
 |---|---|---|
-| `./stack setup` | First-time or repeat setup: AWS key, ports, model probe, keys | < $0.01 |
+| `./stack setup` | First-time or repeat setup: AWS key, ports, model probe (again only when the key, region, catalog or LiteLLM changed, or after a week), keys | < $0.01 |
 | `./stack up` / `down` | Start / stop (data is kept) | none |
 | `./stack status [--disk]` | Services, health, URLs and the disk this install uses (images, data, backups, and old images `./stack clean` would remove, if any; reused for 5 minutes, `--disk` measures now) | none |
 | `./stack open` | The installed DevOS ADE app, else the portal in a browser tab | none |
@@ -2355,7 +2359,7 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
 | `claude --resume <id>` finds no conversation after `devos-claude` | Its sessions are kept in `~/.claude-bedrock`: `devos-claude --resume <id>`. |
 | `devos-claude --debug mcp list` fails | Options placed *before* a subcommand trip the wrapper's MCP flag. Use `devos-claude mcp list --debug`, or plain `claude` for management commands. |
 | "LiteLLM is not running" from `devos-claude` | `./stack up` |
-| Requests fail for about a minute during `./stack setup` | LiteLLM restarts while setup probes the models. Wait, or avoid running setup mid-session. |
+| Requests fail for about a minute during `./stack setup` | LiteLLM restarts while setup probes the models (and once more after). Wait, or avoid running setup mid-session. |
 | "project '…' is already used by the DevOS ADE install in …" | Another folder owns this project name. If this folder replaces it (moved or copied with its `.env`), run `./stack down` there, move that folder aside or delete it (it holds its own `backups/` and `.env`), and re-run here. Otherwise use that install, or remove it with `./stack uninstall` there. A checkout that was never set up can take another name: `COMPOSE_PROJECT_NAME=<other name> ./setup.sh`. See [docs/advanced.md](docs/advanced.md#running-a-second-copy). |
 | "… containers started from …, a folder that no longer exists" | Remove them with `docker compose -p <project> down` (the data volumes are kept), then re-run. |
 | "project '…' was just claimed by …" | Another checkout ran a command at the same moment and now owns the project; fix it as for "already used". If it says "a record pointing to …, which no longer exists", just re-run. |

@@ -772,7 +772,7 @@ setup_bringup_and_probe() {
   # Nothing the probe depends on changed since it last answered (SETUP_REPROBE=1: ./stack models --recheck asks
   # again): LiteLLM starts once, with the models it found, instead of twice around a new probe
   if [ "${SETUP_REPROBE:-0}" != 1 ] && age="$(probe_reusable)"; then
-    log "model check: the last one stands (same AWS key, region, model catalog and LiteLLM; $age ago) — ./stack models --recheck checks again"
+    log "model check: not run again — nothing it depends on changed (the same AWS key, region, model catalog and LiteLLM; the last check $age ago). ./stack models --recheck checks again"
     render_config "$en"
     setup_step "downloading images"
     ensure_images
