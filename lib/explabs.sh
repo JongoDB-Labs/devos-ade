@@ -34,7 +34,8 @@ EXPLABS_API="${BEDROCK_NOW_TEST_EXPLABS_API:-https://api.experientiallabs.ai/v1}
 EXPLABS_DEFAULT_MODELS=qwen3.8-27b
 EXPLABS_KEYS_URL=https://platform.experientiallabs.ai/settings/api-keys
 # The request parameters the gateway's metadata decides about: each goes only to a model whose metadata says it takes
-# it (unknown = not taken; the output cap: the field the model names, max_tokens when it names none). The rest of a
+# it (unknown = not taken, except tools: they go unless the details say false; the output cap: the field the model
+# names, max_tokens when it names none). The rest of a
 # request (messages, stream, stop, …) passes as it came.
 XL_OPTIONAL_PARAMS="temperature top_p top_k frequency_penalty presence_penalty logprobs top_logprobs tools tool_choice parallel_tool_calls functions function_call response_format reasoning_effort max_tokens max_completion_tokens"
 # What a model without metadata (fail safe) is never sent: the sampling, penalty and logprob parameters, response_format
@@ -126,7 +127,8 @@ xl_models_tsv() {
 
 # The rules, in awk (one copy for the config, the Code page's rows and the tests):
 #   xl_drops(fail safe 1/0, row fields 2..12) -> what to leave out of a request to that model, space-separated: with
-#     details, every parameter of XL_OPTIONAL_PARAMS its metadata does not say it takes (unknown = not taken), sampling
+#     details, every parameter of XL_OPTIONAL_PARAMS its metadata does not say it takes (unknown = not taken; tools only
+#     on an explicit false: a model that cannot take them answers with a clear 400), sampling
 #     too when it takes sampling only with reasoning off, and the output-cap field it does not name (when it names none:
 #     max_completion_tokens, the cap goes as max_tokens); fail safe, XL_FAILSAFE_DROPS
 #   xl_cap(field) -> the field the output cap goes under: the one the model names, else max_tokens
@@ -142,7 +144,7 @@ function xl_drops(fs, te, tp, tk, fq, pp, lp, tl, so, rs, sn, mf,   d) {
   if (fq != "1") d = d " frequency_penalty"
   if (pp != "1") d = d " presence_penalty"
   if (lp != "1") d = d " logprobs top_logprobs"
-  if (tl != "1") d = d " tools tool_choice parallel_tool_calls functions function_call"
+  if (tl == "0") d = d " tools tool_choice parallel_tool_calls functions function_call"
   if (so != "1") d = d " response_format"
   if (rs != "1") d = d " reasoning_effort"
   d = d (xl_cap(mf) == "max_tokens" ? " max_completion_tokens" : " max_tokens")
@@ -238,12 +240,12 @@ explabs_yaml() {
 
 # explabs_code_rows -> for lib/code_models.sh, one line per chosen model: id ("xl/…") name vendor in out cache_read
 # cache_write (USD per million tokens, empty when unknown) free tools max_out context — tools 1 or 0 as its details
-# say (unknown: 0, they are not sent), empty fail safe (they are sent, untested)
+# say, empty when they do not say or fail safe (the tools are sent, untested)
 explabs_code_rows() {
   explabs_enabled || return 0
   xl_selected | awk -F'\t' -v OFS='\t' "$XL_AWK"'
     { free = ($16 != "" && $17 != "" && $16 + 0 == 0 && $17 + 0 == 0) ? 1 : 0
-      tools = ($1 == "failsafe") ? "" : ($9 == "1" ? 1 : 0)
+      tools = ($1 == "failsafe" || ($9 != "1" && $9 != "0")) ? "" : $9
       print "xl/" $2, $2, xl_vendor($2), xl_shift($16, 9), xl_shift($17, 9), xl_shift($18, 9), xl_shift($19, 9), free, tools, $14, $15 }'
 }
 

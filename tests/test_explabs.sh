@@ -77,8 +77,8 @@ test_only_what_each_model_takes_is_sent() {
   # claude-fable-5 names no cap field: the cap goes as max_tokens (never dropped: it is a spend safety); no reasoning effort
   assert_contains "$y" "$(printf '      additional_drop_params: ["frequency_penalty", "presence_penalty", "logprobs", "top_logprobs", "response_format", "reasoning_effort", "max_completion_tokens"]')"
   assert_contains "$(printf '%s\n' "$y" | grep -A 16 '"xl/claude-fable-5"$')" 'bn_xl_max_tokens: "max_tokens"'
-  # tools unknown in its details (chatgpt-image-latest): no tools
-  assert_contains "$(printf '%s\n' "$y" | grep -A 7 '"xl/chatgpt-image-latest"')" '"tools", "tool_choice", "parallel_tool_calls", "functions", "function_call"'
+  # tools unknown in its details (chatgpt-image-latest: supports_tools null): the tools go, as fail safe
+  assert_not_contains "$(printf '%s\n' "$y" | grep -A 7 '"xl/chatgpt-image-latest"')" '"tools"'
   # no model is ever sent without a cap field to take one: max_tokens or max_completion_tokens is always left in
   assert_eq "$(printf '%s\n' "$y" | grep additional_drop_params | grep -c '"max_tokens".*"max_completion_tokens"\|"max_completion_tokens".*"max_tokens"')" 0
   # the list price, per token, exact (only a reply without usage.cost is priced with it)
@@ -268,7 +268,7 @@ test_the_code_pages_rows_chats_names_and_the_cost_lines_prices() {
   printf 'claude-haiku-5-5\tchat\tbedrock/x\t-\t-\n' > "$TMP/catalog.tsv"
   rows="$(CATALOG="$TMP/catalog.tsv" PRICES=/dev/null CODE_COMPAT=/dev/null CODE_DISPLAY_TSV=/dev/null code_models_rows "")"
   assert_contains "$rows" "$(printf 'xl/qwen3.8-27b\tqwen3.8-27b\tExperiential Labs\tQwen\t0.32\t2.4\t0.04\t-\t0\tuntested\t1\t0\t131072\t1000000\tNot checked with Claude Code here; Experiential Labs lists tool use for it.')"
-  assert_contains "$rows" "$(printf 'xl/chatgpt-image-latest\tchatgpt-image-latest\tExperiential Labs\tOpenAI\t5\t32\t-\t-\t0\tchat-only\t')"
+  assert_contains "$rows" "$(printf 'xl/chatgpt-image-latest\tchatgpt-image-latest\tExperiential Labs\tOpenAI\t5\t32\t-\t-\t0\tuntested\t')"
   assert_contains "$rows" "$(printf 'xl/deepseek-v4.1-flash:free\tdeepseek-v4.1-flash:free\tExperiential Labs\tDeepSeek\t0\t0\t-\t-\t1\t')"
   # Chat: named and tagged as the gateway's; the description says what the list price is
   assert_contains "$(explabs_owui_models)" "$(printf 'xl/qwen3.8-27b\tqwen3.8-27b · Experiential Labs\tExperiential Labs · $0.32 in / $2.40 out per 1M tokens (list price; the gateway bills what each call cost) · 1M context\tExperiential Labs,Qwen')"
@@ -488,4 +488,28 @@ other = [n for n in chat if not n.startswith("xl/")]
 assert not other, "openai/ chat models beside the gateway'"'"'s, which use_chat_completions_url_for_anthropic_messages would move: %s" % other
 assert sorted(chat) == ["xl/gpt-5-mini", "xl/qwen3.8-27b"], chat
 ' "$TMP/config.yaml"
+}
+
+# Tools: left out only when the details say false; null (not said) sends them, as fail safe does — a model that cannot
+# take them answers with a clear 400, where silently losing them would leave Claude Code chat-only. The other nulls
+# (sampling, penalties, logprobs, response_format, reasoning_effort) stay left out.
+test_tools_go_unless_the_details_say_false() {
+  python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); q = next(m for m in d["data"] if m["id"] == "qwen3.8-27b")
+d["data"] += [{**q, "id": "tools-null", "supports_tools": None, "supports_temperature": None}, {**q, "id": "tools-false", "supports_tools": False}]
+json.dump(d, open(sys.argv[2], "w"))' "$FIXJ" "$TMP/tools.json"
+  _xl_env 'EXPLABS_MODELS=tools-null,tools-false
+'
+  { printf '# fetched_at: 2026-10-24T00:00:00Z\n'; xl_models_tsv < "$TMP/tools.json"; } > "$TMP/litellm/explabs-models.tsv"
+  xl_key_hash "$XL_KEY" > "$(xl_key_mark)"
+  local y n f
+  y="$(explabs_yaml)"
+  n="$(printf '%s\n' "$y" | grep -A 6 '"xl/tools-null"$' | grep additional_drop_params)"
+  f="$(printf '%s\n' "$y" | grep -A 6 '"xl/tools-false"$' | grep additional_drop_params)"
+  assert_not_contains "$n" '"tools"'
+  assert_contains "$n" '"temperature"'          # a null sampling field: still left out
+  assert_contains "$f" '"tools", "tool_choice", "parallel_tool_calls", "functions", "function_call"'
+  # the Code page: null tools "not tested" (they are sent), false "chat only"
+  printf 'claude-haiku-5-5\tchat\tbedrock/x\t-\t-\n' > "$TMP/catalog.tsv"
+  local rows; rows="$(CATALOG="$TMP/catalog.tsv" PRICES=/dev/null CODE_COMPAT=/dev/null CODE_DISPLAY_TSV=/dev/null code_models_rows "")"
+  assert_eq "$(printf '%s\n' "$rows" | awk -F'\t' '$1 ~ /^xl\// { print $1, $10 }' | tr '\n' ' ')" "xl/tools-null untested xl/tools-false chat-only "
 }

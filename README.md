@@ -1984,13 +1984,15 @@ shown there once.
   | `supports_temperature`, `supports_top_p`, `supports_top_k` not true, or `sampling_requires_reasoning_none` | `temperature`, `top_p`, `top_k` (each its own) |
   | `supports_frequency_penalty`, `supports_presence_penalty` not true (no model says true today) | the penalty |
   | `supports_logprobs` not true | `logprobs`, `top_logprobs` |
-  | `supports_tools` not true | `tools`, `tool_choice`, `parallel_tool_calls`, `functions`, `function_call` |
+  | `supports_tools` false (null: they go) | `tools`, `tool_choice`, `parallel_tool_calls`, `functions`, `function_call` |
   | `supports_structured_output` not true | `response_format` |
   | `supports_reasoning` not true | `reasoning_effort` |
   | `chat_max_tokens_field` | the cap goes under the field it names (`max_completion_tokens` for `qwen3.8-27b`); none named: as `max_tokens`. Never left out: it is what keeps an answer's length, and its cost, in bounds |
   | **no details at all** (fail safe) | `temperature`, `top_p`, `top_k`, the penalties, `logprobs`, `top_logprobs`, `response_format`, `reasoning_effort`; tools and the `max_tokens` cap still go |
 
-  A field the details leave open (null) counts as not true, except the cap's.
+  A field the details leave open (null) counts as not true, except tools' and the cap's: a model that cannot take
+  them answers with a clear 400, where their silent loss would confuse (Claude Code that cannot use tools, an answer
+  without a cap); a sampling parameter left out is harmless, and sending one to a model that refuses it would fail.
 - **Fail safe.** Without the details — the list could not be read and none is kept for this key — the models get the
   last row above: no sampling, penalty or logprob parameter, so a call never fails on one, while tools and the cap
   still go (a model that cannot take them answers with a clear 400, `unsupported_capability` or
@@ -2000,7 +2002,8 @@ shown there once.
 - **Where they show up:** in LiteLLM as `xl/<id>`; in Chat as `<id> · Experiential Labs`, tagged *Experiential Labs*
   and the vendor, and as a group of Chat's **Who answers** menu (greyed, naming the Settings row, while there is no
   key); on the Code page and in `claude-bedrock` as the *Experiential Labs* group (tool use as the details say: a
-  model without it is *chat only*; fail safe, *not tested*); on Home as rows of the model table.
+  model whose details say no tools is *chat only*; one whose details do not say, or fail safe, *not tested*); on Home
+  as rows of the model table.
 - **What it costs.** The gateway reports what each call cost (`usage.cost`, USD), and that is what LiteLLM books —
   spend per key, budgets, Home, `./stack costs` and the cost line under each answer in Chat — not a figure computed
   from token prices. A call on **your own provider key** (`usage.is_byok`) is billed by that provider: it counts $0 here,
