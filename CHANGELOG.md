@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.27.1] - 2026-10-25
+
 ### Changed
 
 - **Tests:** the shell suite runs several tests at a time: about 3 minutes instead of 16 on a 16-core Mac.
@@ -2712,7 +2714,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.27.1...HEAD
+[0.27.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.25.2...v0.26.0
 [0.25.2]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.25.1...v0.25.2
