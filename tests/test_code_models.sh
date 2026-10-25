@@ -203,6 +203,51 @@ for d in ({"model": "gpt-x", "messages": "x"}, {"model": "gpt-x", "messages": [N
 '
 }
 
+_hook_models() {
+  mkdir -p "$TMP/h/litellm/integrations"
+  printf '' > "$TMP/h/litellm/__init__.py"; printf '' > "$TMP/h/litellm/integrations/__init__.py"
+  printf 'class CustomLogger:\n    pass\n' > "$TMP/h/litellm/integrations/custom_logger.py"
+  cp "$STACK_DIR/lib/litellm-hooks/bn_hooks.py" "$TMP/h/bn_hooks.py"
+  { printf '# x\n# id\n'
+    printf 'gpt-x\tG\tBedrock\tOpenAI\t1\t1\t-\t-\t0\tworks\t1\t0\t-\t-\t-\n'
+    printf 'claude-big\tC\tBedrock\tAnthropic\t1\t1\t-\t-\t0\tworks\t1\t1\t-\t-\t-\n'
+    printf 'or/a/b\tO\tOpenRouter\ta\t1\t1\t-\t-\t0\tuntested\t1\t0\t-\t-\t-\n'
+    printf 'xl/q\tQ\tExperiential Labs\tQwen\t1\t1\t-\t-\t0\tuntested\t1\t0\t-\t-\t-\n'; } > "$TMP/h/code-models.tsv"
+}
+
+# the hook: the Read tool's image, which Bedrock's Converse refuses inside a tool result for another vendor's model
+# ("This model doesn't support the image field for user messages"), moved after the results in the same user message,
+# under a line naming its call; the results' text, their order and every other block kept; Claude, OpenRouter and
+# Experiential Labs (LiteLLM moves it itself for an OpenAI-shaped provider) unchanged
+test_litellm_hook_moves_tool_result_images_for_other_vendors_on_bedrock() {
+  command -v python3 >/dev/null 2>&1 || return 77
+  _hook_models
+  PYTHONPATH="$TMP/h" python3 -c '
+import asyncio, copy, bn_hooks as h
+img = {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBORw0KGgo="}}
+msgs = [{"role": "user", "content": "look at red.png and a.txt"},
+        {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "red.png"}},
+                                          {"type": "tool_use", "id": "t2", "name": "Read", "input": {"file_path": "a.txt"}}]},
+        {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": [img], "cache_control": {"type": "ephemeral"}},
+                                     {"type": "tool_result", "tool_use_id": "t2", "content": [{"type": "text", "text": "alpha"}, img]},
+                                     {"type": "text", "text": "<system-reminder>x</system-reminder>"}]}]
+run = lambda d: asyncio.run(h.proxy_handler_instance.async_pre_call_hook(None, None, d, "anthropic_messages"))
+out = run({"model": "gpt-x", "max_tokens": 9, "messages": copy.deepcopy(msgs)})["messages"]
+assert out[:2] == msgs[:2], out
+assert out[2]["content"] == [
+    {"type": "tool_result", "tool_use_id": "t1", "content": [{"type": "text", "text": "(its image is in the message below)"}], "cache_control": {"type": "ephemeral"}},
+    {"type": "tool_result", "tool_use_id": "t2", "content": [{"type": "text", "text": "alpha"}]},
+    {"type": "text", "text": "[The image output of tool call t1]"}, img,
+    {"type": "text", "text": "[The image output of tool call t2]"}, img,
+    {"type": "text", "text": "<system-reminder>x</system-reminder>"}], out[2]
+for model in ("claude-big", "or/a/b", "xl/q", "unlisted"):
+    assert run({"model": model, "messages": copy.deepcopy(msgs)})["messages"] == msgs, model
+# no image, a string result, odd shapes: as they came
+for m in ([{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t", "content": "text"}]}],
+          [{"role": "user", "content": [{"type": "tool_result", "content": [None, 3]}]}], [None, "x", {"role": "user"}]):
+    assert run({"model": "gpt-x", "messages": copy.deepcopy(m)})["messages"] == m, m
+'
+}
 
 # Names that YAML refuses or a terminal acts on (C1 controls such as U+009B, CSI; U+2028; bidi overrides; U+FFFE) never
 # reach LiteLLM's config, the model list or a terminal; a config that is not valid YAML is never put in place

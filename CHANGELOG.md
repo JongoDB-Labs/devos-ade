@@ -28,6 +28,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   own above. The page now says what happened in a sentence ("The model's provider refused the request", "… is limiting
   requests right now" …) with the provider's message in the box below it ("API Error 400: This model doesn't support
   the image field for user messages. …"), LiteLLM's wrapping left out so that it fits.
+- **Claude Code on Bedrock's other models (GPT-6, Mistral):** an image read with the Read tool no longer ends the
+  turn with `400 … This model doesn't support the image field for user messages`. Bedrock's Converse refuses an image
+  inside a tool result for those models, though it takes one in a message; LiteLLM's hook now moves a tool result's
+  images right after the results, in the same message, under a line naming the call (what LiteLLM already does for
+  OpenRouter and Experiential Labs).
 
 ## [0.28.1] - 2026-10-25
 

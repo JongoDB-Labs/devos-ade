@@ -13,6 +13,10 @@ catalog/code-models.tsv and OpenRouter's list):
   originally a mid-conversation system-role reminder." and the count), and GPT-6 then sometimes ends its turn on that
   note with no answer, or asks what to do (one turn replayed: 5 times in 31 with the note, never in 30 without). For
   those models that message is left out; every other message stays as it came.
+- The Read tool hands an image back as part of its result. Bedrock's Converse refuses an image inside a tool result
+  for another vendor's model ("This model doesn't support the image field for user messages"), though it takes one in
+  the user's message: for those models the images of a tool result go right after the results, in the same message,
+  under a line saying which call they came from (what LiteLLM does itself for an OpenAI-shaped provider).
 
 For the Experiential Labs gateway's models (lib/explabs.sh: model_info bn_xl: true), on each call to the gateway:
 - Before it: the model goes by its own id (with extended thinking on, LiteLLM renames it openai/responses/<id> for
@@ -45,7 +49,8 @@ from collections.abc import Mapping
 from litellm.integrations.custom_logger import CustomLogger
 
 _TSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "code-models.tsv")
-_cache: dict = {"stamp": None, "limits": {}, "other": frozenset()}
+_EMPTY = {"limits": {}, "other": frozenset()}
+_cache: dict = {"stamp": None, **_EMPTY}
 
 
 def _read() -> dict:
@@ -55,7 +60,7 @@ def _read() -> dict:
         st = os.stat(_TSV)
         stamp = (st.st_mtime_ns, st.st_size)
     except OSError:
-        return {"limits": {}, "other": frozenset()}
+        return _EMPTY
     if stamp != _cache["stamp"]:
         out, other = {}, set()
         try:
@@ -118,6 +123,44 @@ def drop_token_counts(data: dict) -> dict:
     kept = [m for i, m in enumerate(msgs) if i == 0 or not _token_count(m)]
     if len(kept) != len(msgs):
         data["messages"] = kept
+    return data
+
+
+def _is_image(b) -> bool:
+    return isinstance(b, Mapping) and b.get("type") == "image"
+
+
+def lift_tool_images(data: dict) -> dict:
+    """DATA with the images of its tool results moved out of them, into the same user message right after the results
+    (each under a line naming its call) — only for another vendor's model on Bedrock; unchanged otherwise."""
+    model, msgs = data.get("model"), data.get("messages")
+    if not isinstance(model, str) or model not in _read()["other"] or not isinstance(msgs, list):
+        return data
+    out, changed = [], False
+    for m in msgs:
+        content = m.get("content") if isinstance(m, Mapping) and m.get("role") == "user" else None
+        if not isinstance(content, list) or not any(
+                isinstance(b, Mapping) and b.get("type") == "tool_result" and isinstance(b.get("content"), list)
+                and any(_is_image(x) for x in b["content"]) for b in content):
+            out.append(m)
+            continue
+        kept, lifted, last = [], [], -1
+        for b in content:
+            if isinstance(b, Mapping) and b.get("type") == "tool_result" and isinstance(b.get("content"), list):
+                images = [x for x in b["content"] if _is_image(x)]
+                if images:
+                    rest = [x for x in b["content"] if not _is_image(x)] or [
+                        {"type": "text", "text": "(its image is in the message below)" if len(images) == 1 else "(its images are in the message below)"}]
+                    b = {**b, "content": rest}
+                    lifted += [{"type": "text", "text": f"[The image output of tool call {b.get('tool_use_id', '')}]"}, *images]
+                kept.append(b)
+                last = len(kept) - 1
+            else:
+                kept.append(b)
+        out.append({**m, "content": kept[:last + 1] + lifted + kept[last + 1:]})
+        changed = True
+    if changed:
+        data["messages"] = out
     return data
 
 
@@ -284,12 +327,12 @@ def book_gateway_cost(response) -> None:
 
 class BnHooks(CustomLogger):
     async def async_pre_call_hook(self, user_api_key_dict, cache, data, call_type):  # noqa: ARG002 — LiteLLM's signature
-        try:
-            if isinstance(data, dict):
-                cap_request(data)
-                drop_token_counts(data)
-        except Exception:  # noqa: BLE001 — never fail a request because of this hook
-            pass
+        for step in (cap_request, drop_token_counts, lift_tool_images):
+            try:
+                if isinstance(data, dict):
+                    step(data)
+            except Exception:  # noqa: BLE001 — never fail a request because of this hook
+                pass
         return data
 
     async def async_pre_call_deployment_hook(self, kwargs, call_type):
