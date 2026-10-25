@@ -63,7 +63,7 @@
   },
   "open-webui": {
    "container_name": null,
-   "image": "ghcr.io/open-webui/open-webui:v0.12.0-slim",
+   "image": "bedrock-now/open-webui:local",
    "labels": {},
    "networks": [
     "default"

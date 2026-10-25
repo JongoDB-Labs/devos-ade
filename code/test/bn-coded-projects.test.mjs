@@ -1095,7 +1095,7 @@ test('paths.plain: what an agent\'s change may touch without asking (Accept edit
     ['an unknown gc key', '[gc]\n\tsomethingLater = 1\n'], ['lfs.storage', '[lfs]\n\tstorage = /x\n'],
     ['lfs.standalonetransferagent', '[lfs]\n\tstandalonetransferagent = x\n'], ['an lfs key for a URL not known', '[lfs "https://x/"]\n\tpath = sh\n'],
     ['a colour that is not one', '[color "diff"]\n\tmeta = $(x)\n'], ['an unknown color section', '[color "x"]\n\tmeta = red\n'],
-    // (v0.24.1: a transport helper or another scheme in any remote's, submodule's or branch's URL — git runs
+    // (v0.25.1: a transport helper or another scheme in any remote's, submodule's or branch's URL — git runs
     // git-remote-<name> —, and colour slots by their exact names)
     ['a helper:: url', '[remote "o"]\n\turl = gcrypt::rsync://h/p\n'], ['a helper:: pushurl', '[remote "o"]\n\tpushurl = Foo::bar\n'],
     ['a submodule helper:: url', '[submodule "s"]\n\turl = custom::thing\n'], ['an unknown scheme', '[remote "o"]\n\turl = gcrypt://h/p\n'],

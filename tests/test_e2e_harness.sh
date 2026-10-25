@@ -214,10 +214,10 @@ test_e2e_report_groups_suites_and_applies_known_issues() {
 
 test_e2e_report_known_issue_with_a_pattern_matches_only_its_own_failure() {
   mkdir -p "$TMP/rep"
-  # (an entry with a pattern, as the Python runner's was until v0.24.1 fixed it: its 401 only)
+  # (an entry with a pattern, as the Python runner's was until v0.25.1 fixed it: its 401 only)
   printf 'chat-python-runner\tthe Python runner'"'"'s frame got 401\tpyodide\\.js carries no session cookie \\(401\\)\n' > "$TMP/known"
   assert_eq "$(awk -F'\t' '{ print NF }' "$TMP/known")" 3
-  known401="AssertionError: the Python runner does not work in this stack yet: its sandboxed frame's request for pyodide.js carries no session cookie (401) — predates this release, to be fixed in v0.24.1"
+  known401="AssertionError: the Python runner does not work in this stack yet: its sandboxed frame's request for pyodide.js carries no session cookie (401) — predates this release, to be fixed in v0.25.1"
   printf 'browser\tchat-python-runner\tFAIL\t9\t%s\n' "$known401" > "$TMP/res"
   _report "$TMP/res" "$TMP/known" > "$TMP/out" 2>&1 || { cat "$TMP/out" >&2; return 1; }
   assert_contains "$(cat "$TMP/rep/results-final.tsv")" "$(printf 'browser\tchat-python-runner\tXFAIL')"

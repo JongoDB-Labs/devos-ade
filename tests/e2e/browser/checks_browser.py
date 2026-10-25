@@ -1311,7 +1311,7 @@ def chat_python_runner(ctx):
     """Open WebUI's Python runner: a Python block's Run prints 42. The runner runs Pyodide in a sandboxed frame of its
     own (an opaque origin: no cookie, Origin: null), which loads Pyodide's runtime and micropip from /pyodide/ — Chat's
     one public route (caddy/Caddyfile chat_runtime), served from our Open WebUI image (open-webui/: the wheels vendored
-    into it, so nothing comes from another host). Before v0.24.1 the frame got the portal's 401 for pyodide.js. No model
+    into it, so nothing comes from another host). Before v0.25.1 the frame got the portal's 401 for pyodide.js. No model
     call."""
     page, rec, mark, shown, cleanup = _run_python(ctx, "chat-python-runner", "print(6 * 7)", "42", "07d-chat-python-runner")
     try:
