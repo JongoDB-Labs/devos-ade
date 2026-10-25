@@ -825,7 +825,7 @@
           [b("Spend"), ": each app's key against its monthly budget, and the total of the last 30 days."],
           [b("Models"), ": status, price, and why a model is not available."],
           CODE.here ? [b("Code"), ": the sessions that need you, with Answer and Resume, and a box to start a prompt in Code."] : null].filter(Boolean)),
-        note("If you use free OpenRouter models, the cost switch on the Spend card shows what you were actually charged ($0 for free models) or what the same usage would have cost at paid rates."),
+        note("If you use free OpenRouter or Experiential Labs models, the cost switch on the Spend card shows what you were actually charged ($0 for free models) or what the same usage would have cost at paid rates."),
         // (desktops: tablets always have the icon rail, phones the tab bar)
         !PHONE.matches && !TABLET.matches ? note("More room for an app: the button at the top of the sidebar (or ", kbd("Ctrl/⌘+\\"),
           ") folds it to its icons, and back; this browser remembers it.") : null,

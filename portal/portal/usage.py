@@ -1,18 +1,33 @@
-"""Usage by model, for Home while OpenRouter is on: the Equivalent cost view, OpenRouter usage and failures.
+"""Usage by model, for Home while OpenRouter or Experiential Labs is on: the Equivalent cost view, and OpenRouter's
+usage and failures.
 
-Two cost views. Actual: what is charged — Bedrock at its on-demand list prices, paid OpenRouter models at their
-prices, free models $0 (what LiteLLM records, and what budgets count). Equivalent: the same usage as if every
-request had been paid — free OpenRouter models ("…:free") priced at their paid variant (the same id without
-":free", from litellm/openrouter-models.tsv, which lists every eligible model, selected or not); a free model
-without one stays $0 and is listed as such. Everything else is the same in both views.
+Two cost views. Actual: what is charged — Bedrock at its on-demand list prices, paid models at what they cost, free
+models $0 (what LiteLLM records, and what budgets count). Equivalent: what the same usage would have cost with no free
+tiers — free OpenRouter and Experiential Labs models priced at their paid versions; everything else is already at its
+real price, the same in both views:
+  - a free OpenRouter model ("or/…:free"): at its paid variant (the same id without ":free", from
+    litellm/openrouter-models.tsv, which lists every eligible model, selected or not);
+  - an Experiential Labs free tier ("xl/<slug>:free", or a model listed at $0): at its model's prices from the
+    gateway's details ./stack caches (litellm/explabs-models.json "paid", portal/explabs.py);
+  - a call on a priced xl/… model the gateway reported at $0 and not on your own provider key (usage.cost 0 with
+    usage.is_byok false): a promotion, priced at the model's list price. One on your own provider key (is_byok true:
+    that provider bills it) stays $0 in both views and is counted as such; so is one whose usage does not say (a
+    streamed answer loses is_byok on its way through LiteLLM; Claude Code always streams). LiteLLM's daily rows cannot
+    tell these apart, so for each day a model's answered calls were all booked $0, up to XL_SAMPLE of them are read
+    from the spend log (its metadata.usage_object is the gateway's usage), and that day's usage is split in their
+    proportion. (On a day with paid calls too, its $0 calls stay $0.)
+A free model without a paid version stays $0 and is listed as such.
 
-LiteLLM 1.105.0, with the master key (both answers cached for a minute; Home refreshes every 30 seconds):
-  GET /user/daily/activity/aggregated?start_date&end_date   per UTC day: breakdown.model_groups["or/…"].metrics
-      (api_requests, prompt_tokens, completion_tokens, cache_read/creation_input_tokens, spend) and its
+LiteLLM 1.105.0, with the master key (answers cached for a minute — a past day's $0 calls for as long as the portal
+runs: they do not change; Home refreshes every 30 seconds):
+  GET /user/daily/activity/aggregated?start_date&end_date   per UTC day: breakdown.model_groups["or/…" and "xl/…"]
+      .metrics (api_requests, prompt_tokens, completion_tokens, cache_read/creation_input_tokens, spend) and its
       api_key_breakdown by hashed key (sha256 of the key). Budget periods start at UTC midnight, so days are exact.
       The daily rows do not say which model answered a router (or/openrouter/free): it counts as $0, no paid version.
   GET /spend/logs/v2?status_filter=failure (last 24 hours)   metadata.error_information of each failed request
-Nothing here runs without an OpenRouter key; a LiteLLM error leaves Actual as it is and says why.
+      (OpenRouter only)
+  GET /spend/logs/v2?model_group=xl/…&max_spend=0 (one UTC day)   metadata.usage_object.is_byok / .cost
+Nothing here runs while both are off; a LiteLLM error leaves Actual as it is and says why.
 """
 
 from __future__ import annotations
@@ -28,12 +43,18 @@ from pathlib import Path
 
 import httpx
 
+from . import explabs
+
 TIMEOUT = httpx.Timeout(6.0, connect=2.0)
 CACHE_SECONDS = 60
 FAILURE_HOURS = 24
 FAILURE_PAGE = 300   # failed requests read per refresh (the newest); more → "more": true
 TOP_MODELS = 5
+XL_SAMPLE = 50       # $0 calls read per Experiential Labs model and day to tell a promotion from your own provider key
+XL_PARALLEL = 4      # of those reads at a time
+XL_DAYS_KEPT = 400   # (model, day) answers remembered
 _cache: dict = {}    # name -> (monotonic time, value, what it was asked for)
+_xl_days: dict = {}  # (LiteLLM url, model, day) -> (monotonic time, split or None): a past day's for good
 _inflight: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()   # event loop -> {name: (ask, task)}
 
 
@@ -85,6 +106,15 @@ def read_catalog(litellm_dir: Path) -> dict:
 def is_free(model_id: str, cat: dict) -> bool:
     row = cat.get(model_id)
     return row["free"] if row else model_id.endswith(":free")
+
+
+def xl_prices(litellm_dir: Path) -> dict | None:
+    """The chosen Experiential Labs models → {slug (no "xl/"): {"free": bool, "paid": prices or None}}; None while it is
+    off. paid: what Equivalent puts on its free usage — a free tier's are its model's, a priced model's its own."""
+    data = explabs.read(litellm_dir)
+    if data is None:
+        return None
+    return {m["id"][3:]: {"free": m["free"] or m["id"].endswith(":free"), "paid": m["paid"]} for m in data["models"]}
 
 
 def paid_variant(model_id: str, cat: dict) -> dict | None:
@@ -167,8 +197,8 @@ def _metrics(raw) -> dict:
 
 
 def parse_activity(body) -> list[dict]:
-    """The or/… model groups of /user/daily/activity/aggregated: [{date, model, m: metrics, keys: {hash: metrics}}].
-    model is the OpenRouter id ("google/gemma-4-31b-it:free")."""
+    """The or/… and xl/… model groups of /user/daily/activity/aggregated: [{date, src, model, m: metrics, keys: {hash:
+    metrics}}]. src is "or" or "xl"; model the id without that prefix ("google/gemma-4-31b-it:free")."""
     rows = []
     days = body.get("results") if isinstance(body, dict) else None
     for day in days if isinstance(days, list) else []:
@@ -176,14 +206,16 @@ def parse_activity(body) -> list[dict]:
             continue
         bd = day.get("breakdown") if isinstance(day.get("breakdown"), dict) else {}
         groups = bd.get("model_groups")
-        prefix = "or/"
-        if not isinstance(groups, dict) or not groups:   # no group breakdown: the deployment names ("openrouter/…")
-            groups, prefix = bd.get("models") if isinstance(bd.get("models"), dict) else {}, "openrouter/"
+        prefixes = (("or/", "or"), ("xl/", "xl"))
+        if not isinstance(groups, dict) or not groups:   # no group breakdown: the deployment names ("openrouter/…";
+            # an xl/… model's, "openai/<id>", cannot be told from another provider's)
+            groups, prefixes = bd.get("models") if isinstance(bd.get("models"), dict) else {}, (("openrouter/", "or"),)
         for name, g in groups.items():
-            if not isinstance(name, str) or not name.startswith(prefix) or not isinstance(g, dict):
+            prefix, src = next(((p, v) for p, v in prefixes if isinstance(name, str) and name.startswith(p)), (None, None))
+            if prefix is None or not isinstance(g, dict):
                 continue
             keys = g.get("api_key_breakdown") if isinstance(g.get("api_key_breakdown"), dict) else {}
-            rows.append({"date": day["date"][:10], "model": name[len(prefix):], "m": _metrics(g.get("metrics")),
+            rows.append({"date": day["date"][:10], "src": src, "model": name[len(prefix):], "m": _metrics(g.get("metrics")),
                          "keys": {h: _metrics(k.get("metrics") if isinstance(k, dict) else None)
                                   for h, k in keys.items() if isinstance(h, str)}})
     return rows
@@ -220,6 +252,70 @@ async def activity(client: httpx.AsyncClient, litellm_url: str, master: str, sta
         return got, None
 
     return await _once("activity", ask, fetch)
+
+
+# --- Experiential Labs: $0 calls on a priced model ---
+
+def zero_days(rows: list[dict], xl: dict) -> list[tuple[str, str]]:
+    """(model, day) of every day a priced xl/… model (one with list prices) answered calls that were all booked $0."""
+    out = set()
+    for r in rows:
+        x = xl.get(r["model"]) if r["src"] == "xl" else None
+        if x and not x["free"] and x["paid"] and r["m"]["requests"] and r["m"]["spend"] == 0:
+            out.add((r["model"], r["date"]))
+    return sorted(out)
+
+
+def parse_zero_calls(body) -> dict | None:
+    """A /spend/logs/v2 page of one model's $0 calls → the shares of {"byok": your own provider key (usage.is_byok
+    true), "promo": a promotion (the gateway reported usage.cost 0 with is_byok false), "unknown": the rest (a streamed
+    answer's usage without is_byok, or none the gateway sent)}; None for an empty page."""
+    data = body.get("data") if isinstance(body, dict) else None
+    n = byok = promo = 0
+    for row in data if isinstance(data, list) else []:
+        if not isinstance(row, dict):
+            continue
+        n += 1
+        md = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+        u = md.get("usage_object") if isinstance(md.get("usage_object"), dict) else {}
+        c = u.get("cost")
+        if u.get("is_byok") is True:
+            byok += 1
+        elif u.get("is_byok") is False and isinstance(c, (int, float)) and not isinstance(c, bool) and c == 0:
+            promo += 1
+    return {"byok": byok / n, "promo": promo / n, "unknown": (n - byok - promo) / n} if n else None
+
+
+async def zero_splits(client: httpx.AsyncClient, litellm_url: str, master: str, pairs: list[tuple[str, str]],
+                      today: date, now: float | None = None) -> dict:
+    """{(model, day): parse_zero_calls(…)} for PAIRS (zero_days): up to XL_SAMPLE of that model's $0 calls that day, the
+    newest. A past day is read once, today once a minute; a day LiteLLM did not answer for is left out (its calls stay
+    $0, and are not counted as your own provider key's) and asked again on the next refresh."""
+    now = time.monotonic() if now is None else now
+    out, todo = {}, []
+    for model, d in pairs:
+        hit = _xl_days.get((litellm_url, model, d))
+        if hit and (d < today.isoformat() or now - hit[0] < CACHE_SECONDS):
+            out[(model, d)] = hit[1]
+        else:
+            todo.append((model, d))
+    gate = asyncio.Semaphore(XL_PARALLEL)
+
+    async def one(model: str, d: str):
+        async with gate:
+            body, err = await _get(client, f"{litellm_url}/spend/logs/v2", master, {
+                "start_date": f"{d} 00:00:00", "end_date": f"{d} 23:59:59", "model_group": f"xl/{model}",
+                "max_spend": "0", "status_filter": "success", "page_size": str(XL_SAMPLE),
+                "exclude_internal_health_checks": "true"})
+        if err:
+            return
+        out[(model, d)] = got = parse_zero_calls(body)
+        _xl_days[(litellm_url, model, d)] = (now, got)
+        while len(_xl_days) > XL_DAYS_KEPT:
+            _xl_days.pop(next(iter(_xl_days)))
+
+    await asyncio.gather(*(one(m, d) for m, d in todo))
+    return {k: v for k, v in out.items() if v is not None}
 
 
 # --- failures ---
@@ -385,48 +481,73 @@ def _add(b: dict, m: dict, equivalent: float) -> None:
     b["equivalent"] += m["spend"] + equivalent
 
 
+def _part(n: int, share: float) -> int:
+    return n if share == 1 else int(n * share + 0.5)
+
+
+def free_part(r: dict, cat: dict, xl: dict, splits: dict) -> tuple[float, dict | None, float, float]:
+    """Of parse_activity row R: (the share that is free usage, the prices Equivalent puts on it or None, the share
+    that ran on your own provider key, the share booked $0 without saying why). SPLITS: zero_splits' answer."""
+    if r["src"] == "or":
+        free = is_free(r["model"], cat)
+        return (1.0, paid_variant(r["model"], cat), 0.0, 0.0) if free else (0.0, None, 0.0, 0.0)
+    x = xl.get(r["model"])
+    if r["model"].endswith(":free") or (x and x["free"]):
+        base = xl.get(r["model"].removesuffix(":free"))   # (a free tier no longer chosen: its model's, if chosen)
+        return 1.0, (x or {}).get("paid") or (base["paid"] if base and not base["free"] else None), 0.0, 0.0
+    sp = splits.get((r["model"], r["date"]))
+    return (sp["promo"], x["paid"], sp["byok"], sp["unknown"]) if sp and x else (0.0, None, 0.0, 0.0)
+
+
 def summarize(rows: list[dict], cat: dict, today: date, start30: date, windows: dict, actual_total: float | None,
-              key_spend: dict) -> tuple[dict, dict]:
+              key_spend: dict, xl: dict | None = None, splits: dict | None = None) -> tuple[dict, dict]:
     """(spend.equivalent, spend.openrouter_usage without failures) from parse_activity rows.
-    WINDOWS: {alias: (key hash, first day of its budget period)}; KEY_SPEND: {alias: actual spend or None}."""
+    WINDOWS: {alias: (key hash, first day of its budget period)}; KEY_SPEND: {alias: actual spend or None}; XL:
+    xl_prices(); SPLITS: zero_splits(). OpenRouter's usage counts or/… rows only."""
+    xl, splits = xl or {}, splits or {}
     t, s30 = today.isoformat(), start30.isoformat()
     usage = {"today": {"free": _bucket(), "paid": _bucket()}, "days_30": {"free": _bucket(), "paid": _bucket()}}
     per_model: dict = {}
     keys = {a: {"extra": 0.0, "free_requests": 0, "free_tokens_in": 0, "free_tokens_out": 0} for a in windows}
-    no_paid, extra_30d = set(), 0.0
+    no_paid, extra_30d, byok_30d, unknown_30d = set(), 0.0, 0, 0
+    f30 = {"requests": 0, "tokens_in": 0, "tokens_out": 0}
     for r in rows:
-        free = is_free(r["model"], cat)
-        pv = paid_variant(r["model"], cat) if free else None
-        eq = priced(r["m"], pv) if pv else 0.0
+        share, pv, byok, unknown = free_part(r, cat, xl, splits)
+        free = share > 0
+        eq = priced(r["m"], pv) * share if pv else 0.0
         if free and not pv and r["m"]["requests"]:
-            no_paid.add(r["model"])
+            no_paid.add(r["model"] if r["src"] == "or" else f"xl/{r['model']}")
         if r["date"] >= s30:
-            kind = "free" if free else "paid"
-            _add(usage["days_30"][kind], r["m"], eq)
-            if r["date"] == t:
-                _add(usage["today"][kind], r["m"], eq)
-            pm = per_model.setdefault(r["model"], {**_bucket(), "free": free})
-            _add(pm, r["m"], eq)
+            byok_30d += _part(r["m"]["requests"], byok)
+            unknown_30d += _part(r["m"]["requests"], unknown)
             if free:
                 extra_30d += eq
+                for f in f30:
+                    f30[f] += _part(r["m"][f], share)
+            if r["src"] == "or":
+                kind = "free" if free else "paid"
+                _add(usage["days_30"][kind], r["m"], eq)
+                if r["date"] == t:
+                    _add(usage["today"][kind], r["m"], eq)
+                pm = per_model.setdefault(r["model"], {**_bucket(), "free": free})
+                _add(pm, r["m"], eq)
         if not free:
             continue
         for alias, (h, start) in windows.items():
             km = r["keys"].get(h)
             if km and r["date"] >= start.isoformat():
                 k = keys[alias]
-                k["extra"] += priced(km, pv) if pv else 0.0
-                k["free_requests"] += km["requests"]
-                k["free_tokens_in"] += km["tokens_in"]
-                k["free_tokens_out"] += km["tokens_out"]
+                k["extra"] += priced(km, pv) * share if pv else 0.0
+                k["free_requests"] += _part(km["requests"], share)
+                k["free_tokens_in"] += _part(km["tokens_in"], share)
+                k["free_tokens_out"] += _part(km["tokens_out"], share)
     for alias, k in keys.items():
         actual = key_spend.get(alias)
         k["spend"] = None if actual is None else actual + k["extra"]
-    f30 = usage["days_30"]["free"]
     equivalent = {
         "total_30d": None if actual_total is None else actual_total + extra_30d, "extra_30d": extra_30d,
         "free_requests_30d": f30["requests"], "free_tokens_in_30d": f30["tokens_in"], "free_tokens_out_30d": f30["tokens_out"],
-        "keys": keys, "no_paid_variant": sorted(no_paid), "error": None,
+        "byok_requests_30d": byok_30d, "zero_unknown_requests_30d": unknown_30d, "keys": keys, "no_paid_variant": sorted(no_paid), "error": None,
     }
     top = sorted(per_model.items(), key=lambda kv: (-kv[1]["requests"], -(kv[1]["tokens_in"] + kv[1]["tokens_out"]), kv[0]))
     usage["top"] = [{"id": f"or/{mid}", "name": (cat.get(mid) or {}).get("name") or mid, "access": "free" if b["free"] else "paid",
@@ -438,17 +559,21 @@ def summarize(rows: list[dict], cat: dict, today: date, start30: date, windows: 
     return equivalent, usage
 
 
-def unavailable(err: str, fails: dict | None = None) -> tuple[dict, dict]:
-    """(spend.equivalent, spend.openrouter_usage) that only say why they are missing; Home then shows Actual."""
+def unavailable(err: str, fails: dict | None = None, openrouter: bool = True) -> tuple[dict, dict | None]:
+    """(spend.equivalent, spend.openrouter_usage) that only say why they are missing; Home then shows Actual.
+    (No OpenRouter usage at all while OpenRouter is off.)"""
     fails = fails or {"hours": FAILURE_HOURS, "count": None, "more": False, "groups": [], "error": err}
     return ({"total_30d": None, "extra_30d": None, "keys": {}, "no_paid_variant": [], "error": err},
-            {"today": None, "days_30": None, "top": [], "error": err, "failures": fails})
+            {"today": None, "days_30": None, "top": [], "error": err, "failures": fails} if openrouter else None)
 
 
 async def build(client: httpx.AsyncClient, s, sp: dict, now_utc: datetime | None = None) -> tuple[dict | None, dict | None]:
-    """(spend.equivalent, spend.openrouter_usage) for /api/summary; (None, None) while OpenRouter is off.
-    SP: summary.spend()'s result (key rows with period_start, total_30d)."""
-    if not s.openrouter_api_key:
+    """(spend.equivalent, spend.openrouter_usage) for /api/summary: (None, None) while OpenRouter and Experiential Labs
+    are both off; the usage is None while OpenRouter is. SP: summary.spend()'s result (key rows with period_start,
+    total_30d)."""
+    xl = xl_prices(s.litellm_dir)
+    on_or = bool(s.openrouter_api_key)
+    if not on_or and xl is None:
         return None, None
     now_utc = now_utc or datetime.now(timezone.utc)
     today = now_utc.date()
@@ -466,12 +591,18 @@ async def build(client: httpx.AsyncClient, s, sp: dict, now_utc: datetime | None
         windows[row["alias"]] = (key_hash(key), start)
         key_spend[row["alias"]] = row.get("spend")
     first = min([start30] + [w[1] for w in windows.values()])
-    (rows, err), fails = await asyncio.gather(
-        activity(client, s.litellm_url, s.litellm_master_key, first, today),
-        failures(client, s.litellm_url, s.litellm_master_key, now_utc))
+    if on_or:
+        (rows, err), fails = await asyncio.gather(
+            activity(client, s.litellm_url, s.litellm_master_key, first, today),
+            failures(client, s.litellm_url, s.litellm_master_key, now_utc))
+    else:
+        (rows, err), fails = await activity(client, s.litellm_url, s.litellm_master_key, first, today), None
     if err:
-        return unavailable(err, fails)
+        return unavailable(err, fails, on_or)
+    splits = await zero_splits(client, s.litellm_url, s.litellm_master_key, zero_days(rows, xl), today) if xl else {}
     equivalent, usage = summarize(rows, read_catalog(s.litellm_dir), today, start30, windows,
-                                  sp.get("total_30d") if not sp.get("total_error") else None, key_spend)
+                                  sp.get("total_30d") if not sp.get("total_error") else None, key_spend, xl, splits)
+    if not on_or:
+        return equivalent, None
     usage["failures"] = fails
     return equivalent, usage

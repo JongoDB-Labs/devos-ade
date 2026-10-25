@@ -133,7 +133,7 @@ td.provider .tier { margin-left: 6px; padding: 0 6px; border-radius: 4px; border
 .or-account { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 14px; }
 .or-account .meter-head b { font-family: var(--figures); font-weight: 600; font-size: 16px; }
 .or-account .or-title { font-weight: 500; }
-/* Cost views (Actual | Equivalent, only while OpenRouter is on): two chips joined into one switch. */
+/* Cost views (Actual | Equivalent, only while OpenRouter or Experiential Labs is on): two chips joined into one switch. */
 .spend-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 12px; }
 .spend-head h2 { margin: 0; }
 .chips.seg { margin: 0; gap: 0; flex-wrap: nowrap; }

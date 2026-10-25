@@ -298,6 +298,26 @@ xl_selected() {
       print ((free && (base in row) && !bare(c)) ? "details" : "failsafe"), s }
     function bare(c,  i) { for (i = 2; i <= 12; i++) if (c[i] != "") return 0; return 1 }'
 }
+# xl_paid_prices -> one line per chosen model, for the Equivalent cost view: id (no "xl/"), free (1 for a "<slug>:free"
+# tier or a model listed at $0), then the prices of its paid version, USD per token (empty when unknown): in out
+# cache_read cache_write. A free tier's are its slug's, from the list cached for this key; a priced model's are its own
+# list prices (what a call the gateway reported at $0, not on your own provider key, would have cost); a model listed
+# at $0 has none.
+xl_paid_prices() {
+  local rows=''
+  explabs_enabled || return 0
+  ! xl_cache_current || rows="$(xl_cached_rows)"
+  xl_selected | R="$rows" awk -F'\t' -v OFS='\t' "$XL_AWK"'
+    BEGIN { n = split(ENVIRON["R"], l, "\n")
+      for (i = 1; i <= n; i++) { split(l[i], c, "\t"); if (c[1] != "") { pi[c[1]] = c[15]; po[c[1]] = c[16]; pr[c[1]] = c[17]; pw[c[1]] = c[18] } } }
+    { id = $2; base = id; tier = sub(/:free$/, "", base)
+      a = $16; b = $17; r = $18; w = $19
+      if (tier) { a = pi[base]; b = po[base]; r = pr[base]; w = pw[base] }
+      free = tier || (a != "" && b != "" && a + 0 == 0 && b + 0 == 0)
+      if (a + 0 == 0 && b + 0 == 0) { a = ""; b = ""; r = ""; w = "" }   # no paid version (or no price) known
+      print id, (free ? 1 : 0), xl_shift(a, 15), xl_shift(b, 15), xl_shift(r, 15), xl_shift(w, 15) }'
+}
+
 # xl_missing -> the ids EXPLABS_MODELS names that the list read for this key does not have (nothing without a list)
 xl_missing() {
   xl_cache_current || return 0
@@ -351,7 +371,8 @@ xl_price_text() {
 
 # explabs_write_portal_json — litellm/explabs-models.json for the portal (Home's model list, Chat's Who answers and the
 # Code page): the chosen models with their list prices (USD per token), whether each runs on the gateway's details or
-# fail safe, and when the list was read. Removed while Experiential Labs is off. No key in it, ever.
+# fail safe, and when the list was read; and as "paid" the prices Home's Equivalent view puts on its free usage
+# (xl_paid_prices; null when none is known). Removed while Experiential Labs is off. No key in it, ever.
 explabs_write_portal_json() {
   local f tmp
   f="$(xl_cache_json)"
@@ -359,11 +380,14 @@ explabs_write_portal_json() {
   mkdir -p "$(dirname "$f")" 2>/dev/null || return 0
   tmp="$(mktemp "$f.XXXXXX")" || return 0
   xl_selected | FA="$(xl_fetched_at)" CUR="$(xl_cache_current && echo 1 || echo 0)" ERR="$(xl_error_text | tr -d '"\\')" \
-    awk -F'\t' "$XL_AWK"'
+    P="$(xl_paid_prices)" awk -F'\t' "$XL_AWK"'
     function num(v) { return v == "" ? "null" : v }
+    BEGIN { m = split(ENVIRON["P"], l, "\n"); for (i = 1; i <= m; i++) { split(l[i], c, "\t")
+      if (c[3] != "" && c[4] != "") paid[c[1]] = sprintf("{\"prompt\":%s,\"completion\":%s,\"cache_read\":%s,\"cache_write\":%s}", c[3], c[4], num(c[5]), num(c[6])) } }
     { pin = xl_shift($16, 15); pout = xl_shift($17, 15)
-      r[++n] = sprintf("{\"id\":\"xl/%s\",\"name\":\"%s\",\"vendor\":\"%s\",\"prompt\":%s,\"completion\":%s,\"context_length\":%s,\"free\":%s,\"failsafe\":%s}",
-        $2, $2, xl_vendor($2), num(pin), num(pout), num($15), (pin != "" && pout != "" && pin + 0 == 0 && pout + 0 == 0) ? "true" : "false", ($1 == "failsafe" ? "true" : "false")) }
+      r[++n] = sprintf("{\"id\":\"xl/%s\",\"name\":\"%s\",\"vendor\":\"%s\",\"prompt\":%s,\"completion\":%s,\"context_length\":%s,\"free\":%s,\"failsafe\":%s,\"paid\":%s}",
+        $2, $2, xl_vendor($2), num(pin), num(pout), num($15), (pin != "" && pout != "" && pin + 0 == 0 && pout + 0 == 0) ? "true" : "false", ($1 == "failsafe" ? "true" : "false"),
+        ($2 in paid) ? paid[$2] : "null") }
     END {
       printf "{\"fetched_at\":%s,\"details\":%s,\"error\":%s,\"models\":[", (ENVIRON["CUR"] == 1 && ENVIRON["FA"] != "" ? "\"" ENVIRON["FA"] "\"" : "null"),
         (ENVIRON["CUR"] == 1 ? "true" : "false"), (ENVIRON["ERR"] != "" ? "\"" ENVIRON["ERR"] "\"" : "null")
@@ -639,7 +663,70 @@ explabs_costs_section() {
     p="$(xl_price_text "${pin#-}" "${pout#-}")"; case "$p" in '$'*) p="list price $p" ;; esac
     printf '  %-36s %s\n' "xl/$id" "$p"
   done < <(xl_selected | awk -F'\t' -v OFS='\t' "$XL_AWK"'{ a = xl_shift($16, 15); b = xl_shift($17, 15); print $2, (a == "" ? "-" : a), (b == "" ? "-" : b) }')
-  printf '  On your own provider key (BYOK) the provider bills you and the gateway charges $0: such calls count $0 here.\n'
+  [ -z "$(get_env LITELLM_MASTER_KEY)" ] || xl_usage_lines | sed 's/^/  /'   # before the first setup: no LiteLLM yet
+  printf '  On your own provider key (BYOK) the provider bills you and the gateway charges $0: such calls count $0 here,\n'
+  printf '  and Equivalent does not price them either (that provider bills them).\n'
+}
+
+# xl_usage_totals PRICES < flattened /user/daily/activity/aggregated -> one TAB-separated line, like or_usage_totals:
+#   free_requests free_tokens free_equivalent free_requests_without_paid_version paid_requests paid_tokens paid_cost
+# over the xl/… model groups of the last 30 days. Free: a free tier ("<slug>:free") or a model listed at $0 (PRICES:
+# xl_paid_prices' lines); its tokens priced at its paid version's prices. (A call the gateway reported at $0 on a priced
+# model, your own provider key or a promotion, counts as paid here: Home's Equivalent reads each one to tell them apart.)
+xl_usage_totals() {
+  awk -F'\t' '
+    FILENAME == ARGV[1] { fr[$1] = $2; pi[$1] = $3; po[$1] = $4; pr[$1] = $5; pw[$1] = $6; next }
+    $1 ~ /^results\.[0-9]+\.breakdown\.model_groups\.xl\/.*\.metrics\.[a-z_]+$/ && $1 !~ /\.api_key_breakdown\./ {
+      split($1, p, "."); i = p[2]
+      rest = substr($1, length("results." i ".breakdown.model_groups.xl/") + 1)
+      f = rest; sub(/^.*\.metrics\./, "", f); id = substr(rest, 1, length(rest) - length(".metrics." f))
+      seen[i SUBSEP id] = 1; v[i SUBSEP id SUBSEP f] = $2 + 0
+    }
+    END {
+      for (k in seen) {
+        split(k, q, SUBSEP); id = q[2]
+        api = v[k SUBSEP "api_requests"]; req = api - v[k SUBSEP "failed_requests"]; if (req < 0) req = 0
+        sh = (api > 0 && req < api) ? req / api : 1
+        pt = int(v[k SUBSEP "prompt_tokens"] * sh + 0.5); ct = v[k SUBSEP "completion_tokens"]
+        cr = int(v[k SUBSEP "cache_read_input_tokens"] * sh + 0.5); cw = int(v[k SUBSEP "cache_creation_input_tokens"] * sh + 0.5)
+        free = (id in fr) ? fr[id] == 1 : id ~ /:free$/
+        if (!free) { preq += req; ptok += pt + ct; pcost += v[k SUBSEP "spend"]; continue }
+        freq += req; ftok += pt + ct
+        if (pi[id] == "") { fnp += req; continue }
+        un = pt - cr - cw; if (un < 0) un = 0
+        feq += un * pi[id] + cr * (pr[id] != "" ? pr[id] : pi[id]) + cw * (pw[id] != "" ? pw[id] : pi[id]) + ct * po[id]
+      }
+      printf "%.0f\t%.0f\t%.10f\t%.0f\t%.0f\t%.0f\t%.10f\n", freq, ftok, feq, fnp, preq, ptok, pcost
+    }' "$1" -
+}
+
+# xl_usage_lines — usage of xl/… models through LiteLLM in the last 30 days (UTC days), from GET
+# /user/daily/activity/aggregated (master key), for ./stack costs; one "unavailable" line when LiteLLM does not answer
+xl_usage_lines() {
+  local tmp code today t0 start prices line fr ft feq fnp pq pt pc free
+  today="$(date -u +%Y-%m-%d)"; t0="$(date_to_epoch "$today")" || return 0
+  start="$(date -u -r $((t0 - 30 * 86400)) +%Y-%m-%d 2>/dev/null || date -u -d "@$((t0 - 30 * 86400))" +%Y-%m-%d)"
+  tmp="$(mktemp)"; prices="$(mktemp)"
+  code="$(litellm_api GET "/user/daily/activity/aggregated?start_date=$start&end_date=$today" "" "$tmp")"
+  if [ "$code" != 200 ]; then
+    rm -f "$tmp" "$prices"
+    case "$code" in 000 | '') echo "usage     unavailable — LiteLLM did not answer (is the stack up? ./stack status)" ;;
+      *) echo "usage     unavailable (LiteLLM answered HTTP $code)" ;; esac
+    return 0
+  fi
+  xl_paid_prices > "$prices"
+  line="$(or_json_flatten < "$tmp" | xl_usage_totals "$prices")"
+  rm -f "$tmp" "$prices"
+  IFS=$'\t' read -r fr ft feq fnp pq pt pc <<< "$line"
+  if [ "${fr:-0}" -eq 0 ]; then free="none"
+  else
+    free="$(_or_count "$fr") requests, $(_or_count "$ft") tokens — \$0 actual"
+    if awk -v e="$feq" 'BEGIN { exit !(e > 0) }'; then free="$free (≈ $(usd "$feq") at paid rates)"
+    elif [ "$fnp" -gt 0 ]; then free="$free (no paid version to compare)"; fi
+  fi
+  printf 'free      %s   (free tiers, last 30 days)\n' "$free"
+  if [ "${pq:-0}" -eq 0 ]; then printf 'paid      none   (last 30 days)\n'
+  else printf 'paid      %s requests, %s tokens — %s   (last 30 days)\n' "$(_or_count "$pq")" "$(_or_count "$pt")" "$(usd "$pc")"; fi
 }
 
 # explabs_owui_models -> one line per chosen model for Open WebUI (TAB-separated: id, name, description, tags), like
@@ -667,16 +754,23 @@ explabs_owui_models() {
 
 # explabs_cost_prices_entries -> ',"xl/<id>":{"name":"<id> (Experiential Labs)","input_cost_per_token":…,…,"gateway_cost":true}'
 # for every chosen model with a list price, appended by cost_prices_json: Chat's cost line uses the cost the gateway
-# reported for the answer (usage.cost; $0 on your own provider key) and these prices only without one
+# reported for the answer (usage.cost; $0 on your own provider key) and these prices only without one. A free tier
+# whose paid version's prices are known (xl_paid_prices) also gets them as "equivalent_input_cost_per_token" etc., like
+# a free OpenRouter model: its line says "free · … · ≈ $… at paid rates".
 explabs_cost_prices_entries() {
   explabs_enabled || return 0
-  xl_selected | awk -F'\t' "$XL_AWK"'
+  xl_selected | P="$(xl_paid_prices)" awk -F'\t' "$XL_AWK"'
+    BEGIN { m = split(ENVIRON["P"], l, "\n"); for (i = 1; i <= m; i++) { split(l[i], c, "\t")
+      if (c[2] == 1 && c[3] != "" && c[4] != "") { e = ",\"equivalent_input_cost_per_token\":" c[3] ",\"equivalent_output_cost_per_token\":" c[4]
+        if (c[5] != "") e = e ",\"equivalent_cache_read_input_token_cost\":" c[5]
+        if (c[6] != "") e = e ",\"equivalent_cache_creation_input_token_cost\":" c[6]
+        eq[c[1]] = e } } }
     { o = ""
       if (xl_shift($16, 15) != "") o = o ",\"input_cost_per_token\":" xl_shift($16, 15)
       if (xl_shift($17, 15) != "") o = o ",\"output_cost_per_token\":" xl_shift($17, 15)
       if (xl_shift($18, 15) != "") o = o ",\"cache_read_input_token_cost\":" xl_shift($18, 15)
       if (xl_shift($19, 15) != "") o = o ",\"cache_creation_input_token_cost\":" xl_shift($19, 15)
-      printf ",\"xl/%s\":{\"name\":\"%s (Experiential Labs)\"%s,\"gateway_cost\":true}", $2, $2, o }'
+      printf ",\"xl/%s\":{\"name\":\"%s (Experiential Labs)\"%s%s,\"gateway_cost\":true}", $2, $2, o, eq[$2] }'
 }
 
 # explabs_sync_owui — names ("<id> · Experiential Labs"), tags (Experiential Labs and the vendor) and price descriptions

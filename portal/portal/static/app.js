@@ -106,11 +106,12 @@ function stamp(sec) {
 }
 
 // --- rendering (textContent only: nothing from the API is parsed as HTML) ---
-// Two cost views while OpenRouter is on (spend.equivalent; null otherwise): Actual (what is charged; budgets
-// count it) and Equivalent (free OpenRouter models priced at their paid version). Remembered per browser.
+// Two cost views while OpenRouter or Experiential Labs is on (spend.equivalent; null otherwise): Actual (what is
+// charged; budgets count it) and Equivalent (their free tiers priced at the paid versions; portal/usage.py).
+// Remembered per browser. (./stack costs says the same: lib/commands.sh COST_EQUIVALENT_TEXT.)
 const VIEW_NOTE = {
-  actual: "Actual: what you are charged — Bedrock at its on-demand list prices (your AWS bill can differ with discounts or credits), paid OpenRouter models at their prices, free models $0; budgets always count this.",
-  equivalent: "Equivalent: what the same usage would have cost if every request had been paid — free OpenRouter models priced at their paid version, everything else unchanged.",
+  actual: "Actual: what you are charged — Bedrock at its on-demand list prices (your AWS bill can differ with discounts or credits), paid OpenRouter and Experiential Labs models at what they cost, free models $0; budgets always count this.",
+  equivalent: "Equivalent: what the same usage would have cost with no free tiers: free OpenRouter and Experiential Labs models priced at their paid versions. Everything else is already at its real price.",
 };
 function savedView() { try { return localStorage.getItem("bn.costView") === "equivalent" ? "equivalent" : "actual"; } catch (_) { return "actual"; } }
 let costView = savedView();
@@ -138,6 +139,10 @@ function renderSpend(spend) {
       if (eq.extra_30d > 0) tf = `${paidZero(eq.extra_30d)}${none.length ? `; no paid version, so $0 here too: ${none.join(", ")}` : ""}`;
       else if (eq.free_requests_30d) tf = `${plural(eq.free_requests_30d, "free-model request")}, none with a paid version to price them at`;
       else tf = "No free-model usage in the last 30 days";
+      // calls on your own provider key through Experiential Labs: $0 here, billed by that provider, never priced
+      if (eq.byok_requests_30d) tf += `; ${plural(eq.byok_requests_30d, "request")} on your own provider key (BYOK) ${eq.byok_requests_30d === 1 ? "is" : "are"} billed by that provider, so $0 in both views`;
+      // (a streamed answer's usage does not say whether it ran on your own key or a promotion: left at $0)
+      if (eq.zero_unknown_requests_30d) tf += `; ${plural(eq.zero_unknown_requests_30d, "Experiential Labs request")} at $0 without saying why (your own key or a promotion) stay $0`;
       tf += ". Budgets count actual spend.";
     }
   }

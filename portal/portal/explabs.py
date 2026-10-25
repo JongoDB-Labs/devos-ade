@@ -21,6 +21,15 @@ def _num(v) -> float | None:
     return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0 else None
 
 
+def _paid(v) -> dict | None:
+    """{"prompt", "completion", "cache_read", "cache_write"} as ./stack writes them → priced()'s shape, or None."""
+    if not isinstance(v, dict):
+        return None
+    p = {"in": _num(v.get("prompt")), "out": _num(v.get("completion")), "cache_read": _num(v.get("cache_read")),
+         "cache_write": _num(v.get("cache_write"))}
+    return p if p["in"] is not None and p["out"] is not None and (p["in"] or p["out"]) else None
+
+
 def money(v: float) -> str:
     """Like money in lib/models.sh: $0.22, $0.1375, $10.00."""
     s = f"{v:.4f}"
@@ -31,8 +40,9 @@ def money(v: float) -> str:
 
 def read(litellm_dir: Path) -> dict | None:
     """The file as Home needs it: {fetched_at, details, error, models: [{id, name, vendor, prompt, completion,
-    context, free, failsafe}]}, every field checked; None while Experiential Labs is off (no file) or the file is not
-    one ./stack wrote."""
+    context, free, failsafe, paid}]}, every field checked; None while Experiential Labs is off (no file) or the file is
+    not one ./stack wrote. paid: the prices Home's Equivalent view puts on the model's free usage ({in, out, cache_read,
+    cache_write}, USD per token; a free tier's are its model's), None when none is known."""
     try:
         path = litellm_dir / FILE
         if path.stat().st_size > MAX_FILE:
@@ -52,7 +62,7 @@ def read(litellm_dir: Path) -> dict | None:
         models.append({"id": m["id"], "name": name, "vendor": vendor, "prompt": _num(m.get("prompt")),
                        "completion": _num(m.get("completion")),
                        "context": ctx if isinstance(ctx, int) and not isinstance(ctx, bool) and 0 < ctx < 100_000_000 else None,
-                       "free": m.get("free") is True, "failsafe": m.get("failsafe") is True})
+                       "free": m.get("free") is True, "failsafe": m.get("failsafe") is True, "paid": _paid(m.get("paid"))})
     fetched = data.get("fetched_at") if isinstance(data.get("fetched_at"), str) and len(data["fetched_at"]) <= 40 else None
     err = data.get("error") if isinstance(data.get("error"), str) else None
     return {"fetched_at": fetched, "details": data.get("details") is True, "error": err[:300] if err else None,

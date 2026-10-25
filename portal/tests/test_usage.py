@@ -91,6 +91,7 @@ FAILURES = {"data": [
 
 def setup_function():
     usage._cache.clear()
+    usage._xl_days.clear()
     openrouter._cache.clear()
 
 
@@ -430,3 +431,184 @@ def test_concurrent_refreshes_share_one_failed_request():
     assert all(o["error"] == "LiteLLM answered HTTP 500" for o in out[5:])
     run(usage.activity, "http://litellm:4000", "m", d0, d0, 51.0)   # the error was not kept: the next refresh asks
     assert route.call_count == 2 and all(not v for v in usage._inflight.values())
+
+
+# --- Experiential Labs: free tiers and $0 calls in Equivalent ---
+
+# litellm/explabs-models.json as ./stack writes it (lib/explabs.sh): GLM 5.3 Uncensored's free tier with its model's
+# prices (the owner's, 2026-10-25), a priced model, and one whose calls run on your own provider key
+GLM = {"in": 1.4e-06, "out": 4.4e-06, "cache_read": 2.6e-07}
+QWEN = {"in": 3.2e-07, "out": 2.4e-06, "cache_read": 4e-08}
+XL_DOC = {"fetched_at": "2026-10-25T20:00:17Z", "details": True, "error": None, "models": [
+    {"id": "xl/glm-5.3-uncensored:free", "name": "glm-5.3-uncensored:free", "vendor": "Z.ai", "prompt": 0, "completion": 0,
+     "context_length": 1048576, "free": True, "failsafe": False,
+     "paid": {"prompt": GLM["in"], "completion": GLM["out"], "cache_read": GLM["cache_read"], "cache_write": None}},
+    {"id": "xl/qwen3.8-27b", "name": "qwen3.8-27b", "vendor": "Qwen", "prompt": QWEN["in"], "completion": QWEN["out"],
+     "context_length": 1000000, "free": False, "failsafe": False,
+     "paid": {"prompt": QWEN["in"], "completion": QWEN["out"], "cache_read": QWEN["cache_read"], "cache_write": None}},
+    {"id": "xl/gpt-5-mini", "name": "gpt-5-mini", "vendor": "OpenAI", "prompt": 2.5e-07, "completion": 2e-06,
+     "context_length": None, "free": False, "failsafe": False,
+     "paid": {"prompt": 2.5e-07, "completion": 2e-06, "cache_read": None, "cache_write": None}},
+    {"id": "xl/no-price:free", "name": "no-price:free", "vendor": "", "prompt": 0, "completion": 0,
+     "context_length": None, "free": True, "failsafe": True, "paid": None},
+]}
+
+
+def xl_activity(today):
+    """Today: the free tier (both keys), qwen at a price; 1 day ago: qwen all $0 (a promotion, mostly), 2 days ago:
+    gpt-5-mini all $0 (your own provider key), 3 days ago: qwen all $0 with nothing to tell (no gateway usage); the free
+    tier without a paid version; Bedrock as ever."""
+    ow, cc = HASH["sk-ow"], HASH["sk-cc"]
+    return {"results": [
+        day(today, {
+            "xl/glm-5.3-uncensored:free": group({ow: metrics(7, 7000, 700), cc: metrics(8, 40000, 400, cread=10000)}),
+            "xl/qwen3.8-27b": group({cc: metrics(2, 2000, 200, spend=0.0011)}),
+            "claude-haiku-5-5": group({cc: metrics(9, 9000, 900, spend=0.5)}),
+        }),
+        day(today - timedelta(days=1), {"xl/qwen3.8-27b": group({cc: metrics(4, 4000, 400)})}),
+        day(today - timedelta(days=2), {"xl/gpt-5-mini": group({cc: metrics(6, 6000, 600)})}),
+        day(today - timedelta(days=3), {"xl/qwen3.8-27b": group({cc: metrics(5, 5000, 500)}),
+                                        "xl/no-price:free": group({ow: metrics(2, 200, 20)})}),
+    ], "metadata": {"page": 1, "total_pages": 1, "has_more": False}}
+
+
+def zero_call(byok=False, cost=0.0):
+    """One /spend/logs/v2 row of a call booked $0, its usage as the gateway sent it (LiteLLM keeps it whole)."""
+    u = {"prompt_tokens": 1000, "completion_tokens": 100, "total_tokens": 1100}
+    if byok is not None:
+        u["is_byok"] = byok
+    if cost is not None:
+        u["cost"] = cost
+    return {"model": "openai/x", "model_group": "xl/x", "status": "success", "spend": 0.0, "api_key": "h",
+            "metadata": {"status": "success", "usage_object": u}}
+
+
+def _mock_xl(today):
+    respx.get("http://litellm:4000/health/readiness").respond(200, json={"db": "connected"})
+    respx.get(url__regex=r"http://(open-webui|rustfs|shared-mcp).*").respond(200, json={})
+    respx.get("http://litellm:4000/key/info").respond(200, json={"info": {"spend": 1.0, "max_budget": 10.0}})
+    respx.get("http://litellm:4000/global/spend").respond(200, json={"spend": 2.0})
+    act = respx.get("http://litellm:4000/user/daily/activity/aggregated").respond(200, json=xl_activity(today))
+    pages = {"xl/qwen3.8-27b": [zero_call(False)] * 3 + [zero_call(True)],   # 3 promotional, 1 on your own key
+             "xl/gpt-5-mini": [zero_call(True)] * 6}
+
+    def logs(request):
+        q = request.url.params
+        assert q.get("status_filter") == "success", "no failures are read while OpenRouter is off"
+        d = q["start_date"][:10]
+        rows = pages[q["model_group"]] if d != (today - timedelta(days=3)).isoformat() else [zero_call(None, None)] * 5
+        return httpx.Response(200, json={"data": rows, "total": len(rows)})
+
+    return act, respx.get("http://litellm:4000/spend/logs/v2").mock(side_effect=logs)
+
+
+@respx.mock
+def test_experiential_labs_free_tiers_and_promotions_are_priced_and_own_key_calls_are_not(settings):
+    (settings.litellm_dir / "explabs-models.json").write_text(json.dumps(XL_DOC))
+    today = datetime.now(timezone.utc).date()
+    act, logs = _mock_xl(today)
+    d = run(summary.build, settings)   # OpenRouter off, Experiential Labs on
+    sp = d["spend"]
+    # Actual: what LiteLLM booked, untouched — the free tier and the $0 calls stay $0 there
+    assert sp["total_30d"] == 2.0 and all(k["spend"] == 1.0 for k in sp["keys"] if not k.get("error"))
+    assert sp["openrouter_usage"] is None   # OpenRouter's block stays off
+    eq = sp["equivalent"]
+    p = lambda pr, tin, tout, cr=0: (tin - cr) * pr["in"] + cr * pr["cache_read"] + tout * pr["out"]  # noqa: E731
+    glm = p(GLM, 7000, 700) + p(GLM, 40000, 400, 10000)
+    promo = p(QWEN, 4000, 400) * 0.75      # 1 day ago: 3 of the 4 calls read were promotional
+    assert eq["error"] is None and eq["extra_30d"] == pytest.approx(glm + promo)
+    assert eq["total_30d"] == pytest.approx(2.0 + glm + promo)
+    # your own provider key: 6 calls 2 days ago, and 1 of 4 the day before; never priced
+    assert eq["byok_requests_30d"] == 6 + 1
+    # 3 days ago: $0 calls whose usage does not say why (streamed): $0 in both views, and counted
+    assert eq["zero_unknown_requests_30d"] == 5
+    assert eq["free_requests_30d"] == 15 + 3 + 2   # the free tier, the promotional share, no-price:free
+    assert eq["no_paid_variant"] == ["xl/no-price:free"]
+    # by key (no reset date from LiteLLM here: the 30 days); the bar stays actual, the amount adds the extra
+    cc, ow = eq["keys"]["claude-code"], eq["keys"]["open-webui"]
+    assert ow["extra"] == pytest.approx(p(GLM, 7000, 700)) and ow["spend"] == pytest.approx(1.0 + ow["extra"])
+    assert cc["extra"] == pytest.approx(p(GLM, 40000, 400, 10000) + promo)
+    assert (cc["free_requests"], ow["free_requests"]) == (8 + 3, 7 + 2)
+    # the spend log was asked only for the priced models' all-$0 days, one day and model each, $0 calls only
+    asked = sorted((c.request.url.params["model_group"], c.request.url.params["start_date"][:10]) for c in logs.calls)
+    assert asked == sorted([("xl/qwen3.8-27b", (today - timedelta(days=1)).isoformat()),
+                            ("xl/gpt-5-mini", (today - timedelta(days=2)).isoformat()),
+                            ("xl/qwen3.8-27b", (today - timedelta(days=3)).isoformat())])
+    q = logs.calls.last.request.url.params
+    assert (q["max_spend"], q["page_size"], q["end_date"][11:]) == ("0", str(usage.XL_SAMPLE), "23:59:59")
+    assert all(c.request.headers["authorization"] == "Bearer sk-master" for c in logs.calls)
+    # past days are read once: a minute on, the activity is asked again and the spend log is not
+    usage._cache.clear()
+    run(summary.build, settings)
+    assert act.call_count == 2 and logs.call_count == 3
+
+
+def test_zero_days_are_the_priced_models_days_booked_entirely_at_zero():
+    today = date(2026, 10, 25)
+    rows = usage.parse_activity(xl_activity(today))
+    assert {(r["src"], r["model"]) for r in rows} == {("xl", "glm-5.3-uncensored:free"), ("xl", "qwen3.8-27b"),
+                                                      ("xl", "gpt-5-mini"), ("xl", "no-price:free")}
+    xl = {m["id"][3:]: {"free": m["free"], "paid": {"in": 1} if m["paid"] else None} for m in XL_DOC["models"]}
+    assert usage.zero_days(rows, xl) == [("gpt-5-mini", "2026-10-23"), ("qwen3.8-27b", "2026-10-22"),
+                                         ("qwen3.8-27b", "2026-10-24")]
+    # a model without a list price, or no longer chosen: nothing to price it at, nothing read
+    assert usage.zero_days(rows, {}) == []
+    assert usage.zero_days(rows, {"gpt-5-mini": {"free": False, "paid": None}}) == []
+    # OpenRouter rows never
+    assert usage.zero_days([{**r, "src": "or"} for r in rows], xl) == []
+
+
+def test_zero_calls_say_own_key_or_promotion_or_nothing():
+    assert usage.parse_zero_calls(None) is None and usage.parse_zero_calls({"data": "x"}) is None
+    assert usage.parse_zero_calls({"data": [None, "x"]}) is None
+    assert usage.parse_zero_calls({"data": [zero_call(True), zero_call(True, None), zero_call(False)]}) == \
+        {"byok": 2 / 3, "promo": 1 / 3, "unknown": 0.0}
+    # a promotion needs both: is_byok false and a cost the gateway reported as 0. A streamed answer's usage has the cost
+    # without is_byok (LiteLLM drops it): it could be your own key's, so it says nothing; nor does a cost above 0
+    assert usage.parse_zero_calls({"data": [zero_call(None, 0), zero_call(False, None), zero_call(False, 0.002),
+                                            zero_call(False, True), {"metadata": "x"}]}) == \
+        {"byok": 0.0, "promo": 0.0, "unknown": 1.0}
+
+
+@respx.mock
+def test_a_spend_log_that_does_not_answer_leaves_those_calls_at_zero_and_is_asked_again(settings):
+    (settings.litellm_dir / "explabs-models.json").write_text(json.dumps(XL_DOC))
+    today = datetime.now(timezone.utc).date()
+    _mock_xl(today)
+    logs = respx.get("http://litellm:4000/spend/logs/v2").respond(500)
+    eq = run(summary.build, settings)["spend"]["equivalent"]
+    glm = (7000 * GLM["in"] + 700 * GLM["out"]) + (30000 * GLM["in"] + 10000 * GLM["cache_read"] + 400 * GLM["out"])
+    assert eq["error"] is None and eq["extra_30d"] == pytest.approx(glm) and eq["byok_requests_30d"] == 0
+    usage._cache.clear()
+    run(summary.build, settings)
+    assert logs.call_count == 6   # 3 days, asked again
+
+
+@respx.mock
+def test_experiential_labs_on_alone_and_litellm_down_says_why(settings):
+    (settings.litellm_dir / "explabs-models.json").write_text(json.dumps(XL_DOC))
+    today = datetime.now(timezone.utc).date()
+    _mock_litellm(today, act=httpx.Response(500))
+    sp = run(summary.build, settings)["spend"]
+    assert sp["equivalent"]["error"] == "LiteLLM answered HTTP 500" and sp["openrouter_usage"] is None
+    assert sp["total_30d"] == 2.0
+
+
+def test_openrouter_rows_are_unchanged_by_experiential_labs_ones(settings):
+    (settings.litellm_dir / "openrouter-models.tsv").write_text(TSV)
+    today = date(2026, 10, 14)
+    body = activity_body(today)
+    body["results"][0]["breakdown"]["model_groups"].update(xl_activity(today)["results"][0]["breakdown"]["model_groups"])
+    cat = usage.read_catalog(settings.litellm_dir)
+    windows = {"open-webui": (HASH["sk-ow"], date(2026, 10, 1))}
+    eq0, use0 = usage.summarize(usage.parse_activity(activity_body(today)), cat, today, today - timedelta(days=30), windows, 2.0, {"open-webui": 0.25})
+    xl = usage.xl_prices(settings.litellm_dir)   # off: None
+    assert xl is None
+    (settings.litellm_dir / "explabs-models.json").write_text(json.dumps(XL_DOC))
+    xl = usage.xl_prices(settings.litellm_dir)
+    eq1, use1 = usage.summarize(usage.parse_activity(body), cat, today, today - timedelta(days=30), windows, 2.0, {"open-webui": 0.25}, xl, {})
+    assert use1 == use0   # OpenRouter's own block: or/… only
+    glm_ow = 7000 * GLM["in"] + 700 * GLM["out"]
+    assert eq1["extra_30d"] == pytest.approx(eq0["extra_30d"] + glm_ow + 30000 * GLM["in"] + 10000 * GLM["cache_read"] + 400 * GLM["out"])
+    assert eq1["keys"]["open-webui"]["extra"] == pytest.approx(eq0["keys"]["open-webui"]["extra"] + glm_ow)
+    assert eq1["no_paid_variant"] == eq0["no_paid_variant"]

@@ -22,6 +22,17 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   task model is set, and setup now sets none unless you pin one: **Settings › Chat & voice › More › Chat title and tag
   model** (blank: each chat's own) — pin Haiku there if you chat with an expensive model. It applies at the next
   `./stack setup` or update.
+- **Home's Equivalent cost view prices Experiential Labs' free tiers too**, and is there while OpenRouter or
+  Experiential Labs is on. Before, it priced only free OpenRouter models, so with Experiential Labs' free models it
+  showed the same figure as Actual. Now *Equivalent: what the same usage would have cost with no free tiers: free
+  OpenRouter and Experiential Labs models priced at their paid versions. Everything else is already at its real
+  price.* An `xl/<id>:free` model is priced at its model's prices (from the gateway's details the stack caches); a call
+  the gateway reported at $0 on a priced model, not on your own provider key, at that model's list price (a
+  promotion). Calls on your own provider key (BYOK) are billed by that provider: they stay $0 in both views and Home
+  says how many, as it does for $0 calls whose usage does not say which (a streamed answer). Chat's cost line under a
+  free tier's answer adds *≈ $… at paid rates*, and `./stack costs` shows the last 30 days of Experiential Labs usage
+  (free tiers at $0, with what they would have cost) and says what Equivalent is. Actual is unchanged: a free model
+  is never shown as dollars spent.
 
 ## [0.28.0] - 2026-10-25
 

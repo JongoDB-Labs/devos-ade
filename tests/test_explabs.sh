@@ -520,7 +520,29 @@ test_the_code_pages_rows_chats_names_and_the_cost_lines_prices() {
   # the cost line: the gateway's own figure for each answer (gateway_cost), these prices only without one
   python3 -I -c 'import json, sys; d = json.loads("{" + sys.argv[1][1:] + "}"); q = d["xl/qwen3.8-27b"]
 assert q == {"name": "qwen3.8-27b (Experiential Labs)", "input_cost_per_token": 3.2e-07, "output_cost_per_token": 2.4e-06, "cache_read_input_token_cost": 4e-08, "gateway_cost": True}, q
-assert d["xl/deepseek-v4.1-flash:free"]["input_cost_per_token"] == 0' "$(explabs_cost_prices_entries)"
+f = d["xl/deepseek-v4.1-flash:free"]
+assert f["input_cost_per_token"] == 0 and f["output_cost_per_token"] == 0, f
+# a free tier: its model'"'"'s prices for "≈ … at paid rates" (owui/functions/bedrock_cost.py equivalent_cost)
+assert (f["equivalent_input_cost_per_token"], f["equivalent_output_cost_per_token"], f["equivalent_cache_read_input_token_cost"]) == (3e-07, 1.2e-06, 6e-09), f
+assert "equivalent_cache_creation_input_token_cost" not in f and not [k for k in q if k.startswith("equivalent_")]' "$(explabs_cost_prices_entries)"
+}
+
+# What Equivalent puts on each chosen model's free usage: a free tier at its model's prices (the details the refresh
+# read for it), a priced model at its own list price (a promotional $0 call), none when nothing is known
+test_paid_prices_are_a_free_tiers_models_and_a_priced_models_own() {
+  _xl_cached 'EXPLABS_MODELS=qwen3.8-27b,deepseek-v4.1-flash:free,gpt-latest,claude-fable-5:free,unknown:free
+'
+  local out; out="$(xl_paid_prices)"
+  assert_contains "$out" "$(printf 'qwen3.8-27b\t0\t0.00000032\t0.0000024\t0.00000004\t')"
+  assert_contains "$out" "$(printf 'deepseek-v4.1-flash:free\t1\t0.0000003\t0.0000012\t0.000000006\t')"
+  assert_contains "$out" "$(printf 'gpt-latest\t0\t\t\t\t')"
+  # (unknown:free: the key's list has no "unknown", so it is left out, as xl_selected leaves it)
+  assert_not_contains "$out" "unknown"
+  # another key's cached list: nothing known about a free tier's model
+  XL_KEY_USE="$XL_KEY2" _xl_env 'EXPLABS_MODELS=deepseek-v4.1-flash:free
+'
+  assert_eq "$(xl_paid_prices)" "$(printf 'deepseek-v4.1-flash:free\t1\t\t\t\t')"
+  : > "$ENV_FILE"; assert_eq "$(xl_paid_prices)" ""
 }
 
 # Chat's cost filter gets them with the Bedrock prices (lib/owui.sh cost_prices_json), and loses them with the key
@@ -536,16 +558,21 @@ test_chats_cost_filter_prices_them_while_it_is_on() {
 }
 
 test_the_portal_gets_the_models_and_never_the_key() {
-  _xl_cached 'EXPLABS_MODELS=qwen3.8-27b,gpt-latest
+  _xl_cached 'EXPLABS_MODELS=qwen3.8-27b,gpt-latest,deepseek-v4.1-flash:free
 '
   explabs_write_portal_json
   local f; f="$(xl_cache_json)"
   assert_eq "$(ls -l "$f" | cut -c1-10)" "-rw-r--r--"
   python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1]))
 assert d["details"] is True and d["fetched_at"] == "2026-10-24T00:00:00Z" and d["error"] is None
-assert [m["id"] for m in d["models"]] == ["xl/qwen3.8-27b", "xl/gpt-latest"]
-assert d["models"][0] == {"id": "xl/qwen3.8-27b", "name": "qwen3.8-27b", "vendor": "Qwen", "prompt": 3.2e-07, "completion": 2.4e-06, "context_length": 1000000, "free": False, "failsafe": False}
-assert d["models"][1]["failsafe"] is True and d["models"][1]["prompt"] is None' "$f"
+assert [m["id"] for m in d["models"]] == ["xl/qwen3.8-27b", "xl/gpt-latest", "xl/deepseek-v4.1-flash:free"]
+assert d["models"][0] == {"id": "xl/qwen3.8-27b", "name": "qwen3.8-27b", "vendor": "Qwen", "prompt": 3.2e-07, "completion": 2.4e-06, "context_length": 1000000, "free": False, "failsafe": False,
+                          "paid": {"prompt": 3.2e-07, "completion": 2.4e-06, "cache_read": 4e-08, "cache_write": None}}
+assert d["models"][1]["failsafe"] is True and d["models"][1]["prompt"] is None and d["models"][1]["paid"] is None
+# a free tier: $0, and its model'"'"'s prices for Home'"'"'s Equivalent view
+m = d["models"][2]
+assert (m["prompt"], m["completion"], m["free"]) == (0, 0, True), m
+assert m["paid"] == {"prompt": 3e-07, "completion": 1.2e-06, "cache_read": 6e-09, "cache_write": None}, m' "$f"
   _assert_no_key "$(cat "$f")"
   : > "$ENV_FILE"; explabs_write_portal_json; [ ! -e "$f" ]   # off: gone
 }
@@ -565,13 +592,55 @@ test_costs_status_and_summary_lines() {
   assert_contains "$out" "  xl/qwen3.8-27b                       list price \$0.32 in / \$2.40 out per 1M tokens"
   assert_contains "$out" "  xl/deepseek-v4.1-flash:free          free"
   assert_contains "$out" "  xl/gpt-latest                        price unknown"
-  assert_contains "$out" "On your own provider key (BYOK) the provider bills you and the gateway charges \$0: such calls count \$0 here."
+  assert_contains "$out" "On your own provider key (BYOK) the provider bills you and the gateway charges \$0: such calls count \$0 here,"
+  assert_contains "$out" "and Equivalent does not price them either (that provider bills them)."
+  assert_not_contains "$out" "usage "   # before the first setup: no LiteLLM to ask
   assert_contains "$(explabs_summary_line)" "Experiential Labs 3 models (xl/qwen3.8-27b, xl/deepseek-v4.1-flash:free, xl/gpt-latest)"
   assert_contains "$(explabs_models_section)" "./stack config set EXPLABS_MODELS"
   _assert_no_key "$out" "$(explabs_summary_line)" "$(explabs_models_section)" "$(explabs_status_line)"
   : > "$ENV_FILE"
   assert_contains "$(explabs_costs_section)" "Experiential Labs: off — ./stack config set EXPLABS_API_KEY"
   assert_eq "$(explabs_summary_line)$(explabs_models_section)" ""
+}
+
+# ./stack costs: the xl/… models' usage in the last 30 days, from LiteLLM's daily activity — free tiers at $0 actual
+# with what they would have cost at their models' prices; the Equivalent line says what that figure is
+XL_ACTIVITY='{"results":[{"date":"TODAY","breakdown":{"model_groups":{
+ "xl/deepseek-v4.1-flash:free":{"metrics":{"spend":0.0,"prompt_tokens":20000,"completion_tokens":2000,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"api_requests":11,"failed_requests":1},"api_key_breakdown":{}},
+ "xl/qwen3.8-27b":{"metrics":{"spend":0.0015,"prompt_tokens":3000,"completion_tokens":300,"api_requests":3,"failed_requests":0}},
+ "xl/old:free":{"metrics":{"spend":0.0,"prompt_tokens":80,"completion_tokens":20,"api_requests":2,"failed_requests":0}},
+ "or/a/b:free":{"metrics":{"spend":0.0,"prompt_tokens":5,"completion_tokens":5,"api_requests":1,"failed_requests":0}},
+ "claude-haiku-5-5":{"metrics":{"spend":0.5,"prompt_tokens":9000,"completion_tokens":900,"api_requests":9,"failed_requests":0}}}}}]}'
+
+test_costs_show_free_tier_usage_at_zero_and_what_it_would_have_cost() {
+  _xl_cached 'EXPLABS_MODELS=qwen3.8-27b,deepseek-v4.1-flash:free
+LITELLM_MASTER_KEY=sk-master
+LITELLM_PORT=9
+'
+  local today out; today="$(date -u +%Y-%m-%d)"
+  litellm_api() { echo "$1 $2" >> "$TMP/calls"; printf '%s' "${XL_ACTIVITY//TODAY/$today}" > "$4"; echo 200; }
+  # 10 of 11 answered: 10/11 of the 20,000 prompt tokens count (18,182), at deepseek-v4.1-flash's prices
+  # (0.30/1.20 per 1M): 18182*0.0000003 + 2000*0.0000012 = 0.0078546; old:free (no longer chosen): no paid version
+  assert_eq "$(xl_paid_prices > "$TMP/p"; printf '%s' "${XL_ACTIVITY//TODAY/$today}" | or_json_flatten | xl_usage_totals "$TMP/p")" \
+    "$(printf '12\t20282\t0.0078546000\t2\t3\t3300\t0.0015000000')"
+  out="$(explabs_costs_section)"
+  assert_contains "$out" '  free      12 requests, 20,282 tokens — $0 actual (≈ $0.0079 at paid rates)   (free tiers, last 30 days)'
+  assert_contains "$out" '  paid      3 requests, 3,300 tokens — $0.0015   (last 30 days)'
+  assert_contains "$(cat "$TMP/calls")" "GET /user/daily/activity/aggregated?start_date="
+  _assert_no_key "$out"
+  litellm_api() { echo 000; }
+  assert_contains "$(explabs_costs_section)" "  usage     unavailable — LiteLLM did not answer"
+  litellm_api() { printf '{"results":[]}' > "$4"; echo 200; }
+  assert_contains "$(explabs_costs_section)" "  free      none   (free tiers, last 30 days)"
+  # the whole of ./stack costs: the Equivalent line, as Home words it, while either provider is on — and not without
+  PRICES="$STACK_DIR/tests/fixtures/prices.tsv"; CATALOG="$STACK_DIR/tests/fixtures/catalog.tsv"
+  key_info() { printf '{"info":{"spend":1.0,"max_budget":50.0}}'; }
+  out="$(TODAY=2026-01-02 cmd_costs 2>&1)"
+  assert_contains "$out" "Equivalent: what the same usage would have cost with no free tiers: free OpenRouter and Experiential Labs models priced at their paid versions. Everything else is already at its real price."
+  printf 'LITELLM_PORT=9\n' > "$ENV_FILE"
+  assert_not_contains "$(TODAY=2026-01-02 cmd_costs 2>&1)" "Equivalent:"
+  # Home says the same, word for word
+  assert_contains "$(cat "$T_ROOT/portal/portal/static/app.js")" "$COST_EQUIVALENT_TEXT"
 }
 
 test_setup_adds_the_paste_in_lines_once() {

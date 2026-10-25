@@ -283,7 +283,8 @@ def models_with_openrouter(s: Settings) -> dict:
 
 
 async def spend_and_usage(client: httpx.AsyncClient, s: Settings) -> dict:
-    """spend() plus, while OpenRouter is on, the Equivalent view and OpenRouter usage (usage.py); both None when off."""
+    """spend() plus the Equivalent view while OpenRouter or Experiential Labs is on, and OpenRouter's usage while it is
+    (usage.py); None when off."""
     sp = await spend(client, s)
     try:
         sp["equivalent"], sp["openrouter_usage"] = await usage.build(client, s, sp)

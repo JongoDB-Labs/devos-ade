@@ -9,9 +9,11 @@ from portal.config import from_env
 
 DOC = {"fetched_at": "2026-10-24T00:00:00Z", "details": True, "error": None, "models": [
     {"id": "xl/qwen3.8-27b", "name": "qwen3.8-27b", "vendor": "Qwen", "prompt": 3.2e-07, "completion": 2.4e-06,
-     "context_length": 1000000, "free": False, "failsafe": False},
+     "context_length": 1000000, "free": False, "failsafe": False,
+     "paid": {"prompt": 3.2e-07, "completion": 2.4e-06, "cache_read": 4e-08, "cache_write": None}},
     {"id": "xl/deepseek-v4.1-flash:free", "name": "deepseek-v4.1-flash:free", "vendor": "DeepSeek", "prompt": 0,
-     "completion": 0, "context_length": None, "free": True, "failsafe": False},
+     "completion": 0, "context_length": None, "free": True, "failsafe": False,
+     "paid": {"prompt": 3e-07, "completion": 1.2e-06, "cache_read": 6e-09, "cache_write": None}},
     {"id": "xl/gpt-latest", "name": "gpt-latest", "vendor": "OpenAI", "prompt": None, "completion": None,
      "context_length": None, "free": False, "failsafe": True},
     {"id": "or/not-ours", "name": "x"}, {"id": "xl/bad id", "name": "x"}, "junk"]}
@@ -28,7 +30,14 @@ def test_the_file_is_read_field_by_field_and_off_without_it(settings):
     assert [m["id"] for m in d["models"]] == ["xl/qwen3.8-27b", "xl/deepseek-v4.1-flash:free", "xl/gpt-latest"]
     assert d["details"] is True and d["fetched_at"] == "2026-10-24T00:00:00Z"
     assert d["models"][0] == {"id": "xl/qwen3.8-27b", "name": "qwen3.8-27b", "vendor": "Qwen", "prompt": 3.2e-07,
-                              "completion": 2.4e-06, "context": 1000000, "free": False, "failsafe": False}
+                              "completion": 2.4e-06, "context": 1000000, "free": False, "failsafe": False,
+                              "paid": {"in": 3.2e-07, "out": 2.4e-06, "cache_read": 4e-08, "cache_write": None}}
+    # what Equivalent puts on a free tier's usage: its model's prices; none known (or nonsense): None
+    assert d["models"][1]["paid"] == {"in": 3e-07, "out": 1.2e-06, "cache_read": 6e-09, "cache_write": None}
+    assert d["models"][2]["paid"] is None
+    for junk in ("x", {"prompt": "1"}, {"prompt": 0, "completion": 0}, {"prompt": -1, "completion": 2}, {"prompt": True, "completion": 1}):
+        _write(settings, {**DOC, "models": [{**DOC["models"][1], "paid": junk}]})
+        assert explabs.read(settings.litellm_dir)["models"][0]["paid"] is None, junk
     for bad in ("not json", json.dumps({"models": "x"}), json.dumps([1]), "x" * (explabs.MAX_FILE + 1)):
         (settings.litellm_dir / explabs.FILE).write_text(bad, encoding="utf-8")
         assert explabs.read(settings.litellm_dir) is None

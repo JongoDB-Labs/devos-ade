@@ -976,6 +976,9 @@ cmd_models() {
 
 # --- cost transparency ---
 
+# What Home's Equivalent cost view means (portal/portal/static/app.js says the same; README, docs/openrouter.md)
+COST_EQUIVALENT_TEXT="Equivalent: what the same usage would have cost with no free tiers: free OpenRouter and Experiential Labs models priced at their paid versions. Everything else is already at its real price."
+
 _enabled_or_all() { # -> path of enabled-models.txt, or "" (= whole catalog) if setup hasn't probed yet
   local en="$STACK_DIR/litellm/enabled-models.txt"
   if [ -s "$en" ]; then echo "$en"; else echo ""; fi
@@ -1021,6 +1024,9 @@ cmd_costs() {
   rm -f "$tmp"
   openrouter_costs_section
   explabs_costs_section
+  if openrouter_enabled || explabs_enabled; then
+    printf '\n%s\n  (the "≈ … at paid rates" figures above; Home'"'"'s Spend card switches between Actual and Equivalent)\n' "$COST_EQUIVALENT_TEXT"
+  fi
   stt_costs_section
   printf '\nBreakdown by model and day: %s/ui → Usage (portal Admin tab; its sign-in is on the portal Home page)\n' "$(portal_url admin)"
   printf 'Budgets: Settings in the portal, or ./stack config set BUDGET_CLAUDE_CODE (BUDGET_OPENWEBUI, BUDGET_SETUP%s)\n' \

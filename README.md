@@ -1807,7 +1807,7 @@ its own JSON alert (`soft_budget_crossed`, `budget_crossed`); it is not Slack's 
 **Where to see spend:**
 - `./stack costs`: prices for your enabled models, spend and budget per key, the 30-day total.
 - **Home**: spend per key against its budget (amber from the alert threshold, red at 100%) and the 30-day total. With
-  OpenRouter on, an **Actual | Equivalent** switch (see [Optional: OpenRouter](#optional-openrouter)).
+  OpenRouter or Experiential Labs on, an **Actual | Equivalent** switch (see [Optional: OpenRouter](#optional-openrouter)).
 - **Admin** tab → Usage: spend by model and day.
 - **Chat**: the cost under every answer and the chat total; each model's price in the picker.
 - `devos-claude`: spend this period at launch, the session's cost at exit.
@@ -1946,13 +1946,16 @@ In Chat they show their vendor's logo (Claude, GPT, Gemini, Llama, Qwen, DeepSee
 for vendors without one). Their prices go into LiteLLM, so spend, budgets, `./stack costs` and the cost line in Chat include them.
 
 **Actual and Equivalent.** Free models really cost $0, so using them never eats into a budget. Home's Spend
-card then has a switch (remembered per browser):
+card then has a switch (remembered per browser; also there while only [Experiential Labs](#optional-experiential-labs)
+is on):
 - **Actual**: what you are charged — Bedrock at its on-demand list prices (what DevOS ADE records; your AWS
-  bill can differ with discounts or credits), paid OpenRouter models at their prices, free models $0. Budgets
-  always count actual spend.
-- **Equivalent**: what the same usage would have cost if every request had been paid — each free model
-  (`…:free`) priced at its paid version (the same id without `:free`); a free model without one stays $0 and is
-  named as such. The budget bars keep showing actual spend.
+  bill can differ with discounts or credits), paid OpenRouter and Experiential Labs models at what they cost, free
+  models $0. Budgets always count actual spend.
+- **Equivalent**: what the same usage would have cost with no free tiers: free OpenRouter and Experiential Labs
+  models priced at their paid versions. Everything else is already at its real price. A free OpenRouter model
+  (`…:free`) is priced at its paid version (the same id without `:free`); an Experiential Labs free tier as its
+  model (below); a free model without a paid version stays $0 and is named as such. The budget bars keep showing
+  actual spend.
 
 The go-to free model is the free router `or/openrouter/free`: it picks a free model that is available right now.
 
@@ -2032,6 +2035,13 @@ shown there once.
   Code page cannot tell such a request from a free one: Claude Code always streams, so it shows as $0 without the
   reason. The gateway's list prices are only used for a reply that carries no cost. A model that costs nothing is
   never shown as dollars spent.
+- **Equivalent** (Home's Spend card switch, and `./stack costs`): a free tier (`xl/<id>:free`) is priced at its
+  model's prices from the gateway's details the stack caches (`<id>`'s, read at each refresh for a chosen free tier);
+  in Chat its cost line adds *≈ $… at paid rates*. A call the gateway reported at $0 on a priced model and not on your
+  own provider key (`usage.is_byok` false: a promotion) is priced at that model's list price — Home reads up to 50 of
+  a model's $0 calls from LiteLLM's log for each day its calls were all $0 to tell. Calls on your own provider key
+  are not: that provider bills them, so they stay $0 in both views and Home counts them. Nor are $0 calls whose usage
+  does not say which (a streamed answer, as Claude Code's always are): they stay $0, counted too.
 - **The key** stays in `.env` (mode 600) and reaches only LiteLLM (`os.environ/EXPLABS_API_KEY`) and
   `api.experientiallabs.ai` (on curl's stdin, never on a command line or in a URL). Settings and `./stack config` never
   show it back, not even its last characters; no log, status line or file of the portal holds it.

@@ -91,13 +91,17 @@ they link to https://openrouter.ai/settings/credits instead.
 
 ### Actual and Equivalent cost
 
-Free models are priced at $0 in LiteLLM, so they never count against a budget. With OpenRouter on, Home's Spend
-card has an **Actual | Equivalent** switch (stored in the browser as `bn.costView`):
+Free models are priced at $0 in LiteLLM, so they never count against a budget. With OpenRouter (or Experiential
+Labs) on, Home's Spend card has an **Actual | Equivalent** switch (stored in the browser as `bn.costView`):
 
 - **Actual** (default): what you are charged — what LiteLLM records. Budgets always count this.
-- **Equivalent**: the same usage as if every request had been paid. A free model's tokens (`x/y:free`) are priced
-  at its paid version (`x/y`, from the cached model list, enabled or not), cache reads at its cache-read price;
-  everything else is unchanged. A free model without a paid version stays $0 and is named on Home. The 30-day total
+- **Equivalent**: what the same usage would have cost with no free tiers: free OpenRouter and Experiential Labs
+  models priced at their paid versions. Everything else is already at its real price. A free model's tokens
+  (`x/y:free`) are priced at its paid version (`x/y`, from the cached model list, enabled or not), cache reads at
+  its cache-read price; an Experiential Labs free tier (`xl/<id>:free`) at its model's prices from the gateway's
+  details, and a call the gateway reported at $0 on a priced `xl/…` model, not on your own provider key, at that
+  model's list price (README, *Optional: Experiential Labs*). A free model without a paid version stays $0 and is
+  named on Home. The 30-day total
   and each key's amount change (a key reads "≈ $12.00 equivalent · $6.00 of $10.00 actual"); the budget bars do
   not. The free router `or/openrouter/free` always shows "$0 (no paid version)": LiteLLM's daily figures do not
   say which model answered, so there is nothing to price it at.
