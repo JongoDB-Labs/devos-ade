@@ -2615,7 +2615,7 @@ litellm/, postgres/           LiteLLM's rendered config (written by setup) and t
 lib/*.sh                      the shell code (bash 3.2-compatible); lib/litellm-hooks/ LiteLLM's one hook (bn_hooks.py)
 tests/run.sh                  shell tests
 tests/e2e/                    opt-in end-to-end suite (throwaway stack + Playwright; INVENTORY.md)
-docs/                         longer reference pages
+docs/                         longer reference pages; docs/design.md: the look (the DevOS design tokens, fonts, colours)
 ```
 
 ## License
