@@ -1322,15 +1322,20 @@ if [ "$HOST_EGRESS" = 1 ]; then
   if [ "$nets" = "${PROJECT}_chat-proxy" ] && [ "$okp" = 2 ]; then
     record hostegress chat-sandbox-routes PASS "$(( $(now) - t0 ))" "subs-chat on ${PROJECT}_chat-proxy alone; ./stack test: no route around Chat's proxy, 403 through it for this computer, LiteLLM's port, the metadata and private addresses, ::1 and the stack's containers"
   else record hostegress chat-sandbox-routes FAIL "$(( $(now) - t0 ))" "subs-chat's networks: '${nets:-?}'; ./stack test's Chat checks ok: $okp of 2 ($LOGS/hostegress-test.log)"; fi
-  # off: Chat's proxy gone before Chat's sandbox is started again (Docker's own events, by the Compose service label)
-  t0="$(now)"; since="$(date +%s)"
+  # off: Chat's proxy gone before Chat's sandbox is started again (Docker's own events, by the Compose service label).
+  # Watched as they happen, from before the apply: Docker replays only its last 256 events to a later --since, and
+  # every container's health checks on this computer fill those in about a minute, so the apply's first steps were lost.
+  t0="$(now)"
+  docker events --filter "label=com.docker.compose.project=$PROJECT" --filter type=container \
+    --filter event=create --filter event=start --filter event=kill --filter event=die --filter event=stop --filter event=destroy \
+    --format '{{.TimeNano}} {{index .Actor.Attributes "com.docker.compose.service"}} {{.Action}}' > "$LOGS/hostegress-events.log" 2>&1 &
+  evpid=$!
   sleep 1
   printf 'set TERMINAL_EGRESS %s\n' "$(printf off | openssl base64 -A)" > "$LOGS/hostegress-off.in"
   ( clean_env; cd "$STACK" && "$NOTTY" "$STACK/stack" config apply --stdin < "$LOGS/hostegress-off.in" ) > "$LOGS/hostegress-off.log" 2>&1; rc=$?
   redact "$LOGS/hostegress-off.log"
   sleep 1
-  docker events --since "$since" --until "$(date +%s)" --filter "label=com.docker.compose.project=$PROJECT" --filter type=container \
-    --format '{{.TimeNano}} {{index .Actor.Attributes "com.docker.compose.service"}} {{.Action}}' > "$LOGS/hostegress-events.log" 2>&1 || true
+  kill "$evpid" 2>/dev/null; wait "$evpid" 2>/dev/null
   gone="$(awk '$2 == "chat-egress" && ($3 == "kill" || $3 == "die" || $3 == "stop" || $3 == "destroy") { print $1; exit }' "$LOGS/hostegress-events.log")"
   back="$(awk '$2 == "subs-chat" && $3 == "start" { print $1; exit }' "$LOGS/hostegress-events.log")"
   sc="$(svc_id subs-chat | head -n 1)"
