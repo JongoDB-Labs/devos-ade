@@ -114,6 +114,14 @@ json.dump(v, open(sys.argv[3], "w")); json.dump(c, open(sys.argv[4], "w"))' "$FI
   assert_eq "$(xl_cached_rows | cut -f1 | grep -c .)" 8                        # the key's 7 + its own; never not-for-this-key
   [ ! -e "$(xl_error_file)" ]
   assert_contains "$(explabs_status_line)" "1 without model details (the gateway's public catalog has none for it), so fail safe"
+  # not fresh while a chosen model has no details: read again at the next ./stack up or Settings change, not after 12 h
+  : > "$TMP/calls"; V1_BODY="$TMP/v1.json" CATALOG_BODY="$TMP/cat.json" explabs_refresh 720 2>/dev/null
+  assert_contains "$(cat "$TMP/calls")" "/v1/models"; assert_contains "$(cat "$TMP/calls")" "/api/models"
+  # every chosen model with its details: young enough, no request
+  _xl_env 'EXPLABS_MODELS=qwen3.8-27b
+'
+  : > "$TMP/calls"; V1_BODY="$TMP/v1.json" CATALOG_BODY="$TMP/cat.json" explabs_refresh 720
+  assert_eq "$(cat "$TMP/calls")" ""
 }
 
 test_only_what_each_model_takes_is_sent() {
@@ -318,6 +326,10 @@ test_a_failed_refresh_keeps_the_list_or_runs_fail_safe_and_says_so() {
   printf '<html>maintenance</html>' > "$TMP/page"
   V1_BODY="$TMP/page" explabs_refresh 2> "$TMP/err"
   assert_contains "$(cat "$TMP/err")" "api.experientiallabs.ai sent no model list"
+  # a failure recorded without words: never an empty "()" or ": )" in the status line
+  printf '%s\t\n' "$(date +%s)" > "$(xl_error_file)"
+  st="$(explabs_status_line)"
+  assert_contains "$st" "(the last refresh failed)"; assert_not_contains "$st" "()"; assert_not_contains "$st" ": )"
   # off: no status line
   : > "$ENV_FILE"; assert_eq "$(explabs_status_line)" ""
 }

@@ -375,8 +375,8 @@ An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*)
   (Chat Completions, extended thinking included) and from there to whichever provider the gateway routes
   that call to — its own Experiential Cloud, another hosted provider, or your own provider account connected there
   (BYOK); the answer's `x-gateway-provider` header names it. Besides the calls themselves, `./stack` makes two GET
-  requests, both free (setup, `./stack up` at most every 12 hours, Settings; the check of a new key makes the first
-  alone):
+  requests, both free (setup, `./stack up` at most every 12 hours unless the last read failed or left a chosen model
+  without details, Settings; the check of a new key makes the first alone):
   - `GET https://api.experientiallabs.ai/v1/models` **with the key** (on curl's stdin): the ids of the models this key
     may call — the OpenAI list, which carries nothing else;
   - `GET https://api.experientiallabs.ai/api/models` **without the key**, page by page (`limit`, `offset`): the

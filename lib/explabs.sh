@@ -388,8 +388,9 @@ xl_error_at() { local f; f="$(xl_error_file)"; [ -r "$f" ] || return 0; cut -f1 
 _xl_signature() { xl_selected; get_env EXPLABS_API_KEY | openssl dgst -sha256; }
 
 # explabs_refresh [MAX_AGE_MIN] — PUBLIC HOOK: read the key's model list and the catalog's details. With MAX_AGE_MIN, a
-# list younger than that, read with this key and completely (no failure since), is kept without any network call
-# (./stack up: 720). A failure keeps a list read with this key with its details (warning), or leaves the models fail
+# list younger than that, read with this key and completely (no failure since, and details for every chosen model), is
+# kept without any network call (./stack up: 720); one that is not is read again at the next ./stack up or Settings
+# change. A failure keeps a list read with this key with its details (warning), or leaves the models fail
 # safe until a refresh works (warning; ./stack status says so); it never fails. The catalog alone failing still takes
 # the key's new list of ids, fail safe, unless details read before for this key can stay. When the chosen models or
 # their details changed it re-renders litellm/config.yaml (when setup has rendered one) and sets XL_CHANGED=1: the
@@ -399,7 +400,8 @@ explabs_refresh() {
   XL_CHANGED=0; XL_ERR=''
   if ! explabs_enabled; then rm -f "$(xl_error_file)"; return 0; fi
   f="$(xl_cache_tsv)"; mkdir -p "$(dirname "$f")" "$STATE_DIR"
-  if [ -n "${1:-}" ] && [ ! -e "$(xl_error_file)" ] && xl_cache_current && [ -n "$(find "$f" -mmin "-$1" 2>/dev/null)" ]; then return 0; fi
+  if [ -n "${1:-}" ] && [ ! -e "$(xl_error_file)" ] && xl_cache_current && [ -n "$(find "$f" -mmin "-$1" 2>/dev/null)" ] &&
+    [ "$(xl_failsafe_count)" = 0 ]; then return 0; fi
   before="$(_xl_signature)"
   tmp="$(mktemp "$f.XXXXXX")" || return 0
   xl_fetch_models "$tmp" "$(get_env EXPLABS_API_KEY)" || rc=$?
@@ -446,7 +448,8 @@ explabs_status_line() {
       "${at:+, $(date -r "$at" '+%Y-%m-%d %H:%M' 2>/dev/null || date -d "@$at" '+%Y-%m-%d %H:%M' 2>/dev/null)}" \
       "$(printf '%s' "${XL_FAILSAFE_DROPS% max_completion_tokens}" | tr ' ' ',' | sed 's/,/, /g')" "$O_OFF"
   elif [ -n "$at" ]; then
-    printf '%sExperiential Labs: %s — model details read %s (the last refresh failed: %s)%s\n' "$O_YEL" "$(xl_counts)" "$(xl_fetched_at)" "$(xl_error_text)" "$O_OFF"
+    why="$(xl_error_text)"
+    printf '%sExperiential Labs: %s — model details read %s (the last refresh failed%s)%s\n' "$O_YEL" "$(xl_counts)" "$(xl_fetched_at)" "${why:+: $why}" "$O_OFF"
   else
     printf 'Experiential Labs: %s — model details read %s\n' "$(xl_counts)" "$(xl_fetched_at)"
   fi
@@ -588,10 +591,10 @@ setup_explabs() {
   log "Experiential Labs: $(xl_counts)"
 }
 
-# explabs_up_hook — ./stack up, before `compose up`: read the list unless one younger than 12 h was read with this key;
-# with no key, a config that still holds xl/ models (the key was removed by hand) is rendered again. A running LiteLLM
-# whose models changed is recreated (the `compose up --wait` that follows waits for it). Remembers the change for
-# explabs_after_up.
+# explabs_up_hook — ./stack up, before `compose up`: read the list unless one younger than 12 h was read completely with
+# this key (explabs_refresh); with no key, a config that still holds xl/ models (the key was removed by hand) is
+# rendered again. A running LiteLLM whose models changed is recreated (the `compose up --wait` that follows waits for
+# it). Remembers the change for explabs_after_up.
 explabs_up_hook() {
   XL_UP_CHANGED=0
   if explabs_enabled; then
