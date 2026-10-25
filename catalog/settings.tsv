@@ -4,7 +4,7 @@
 # here (lib/settings.sh: _sv_<validator>; the portal mirrors them in portal/portal/settings.py).
 #
 # key  group  secret  policy  validator  apply  label  note  cli
-#   group    account | aws | budgets | voice | openrouter | files | updates | remote | advanced (a coarse area, kept in
+#   group    account | aws | budgets | voice | openrouter | explabs | files | updates | remote | advanced (a coarse area, kept in
 #            the snapshot; where the Settings page and ./stack config list show a key: catalog/settings-layout.tsv)
 #   secret   - plain (shown) | s sensitive, shown (an email, a login) | k key id (first 4 … last 4) | u URL (host only)
 #            | h secret, last 4 shown | S secret, nothing shown
@@ -72,6 +72,8 @@ OPENROUTER_API_KEY	openrouter	h	local	or_key	openrouter	OpenRouter API key	Adds 
 OPENROUTER_MODELS	openrouter	-	edit	or_mode	openrouter	OpenRouter models	all, free, paid, or a comma list of model ids. LiteLLM restarts (about 30 s).	./stack openrouter models all|free|paid|IDS
 OPENROUTER_MAX_MODELS	openrouter	-	edit	int_1_5000	openrouter	OpenRouter model cap	At most this many OpenRouter models (blank = 1000, the newest first). A long list slows LiteLLM's start.	./stack config set OPENROUTER_MAX_MODELS
 OPENROUTER_INCLUDE_ALIASES	openrouter	-	edit	true_blank	openrouter	OpenRouter -latest aliases	true = also the ~vendor/…-latest alias models.	./stack config set OPENROUTER_INCLUDE_ALIASES
+EXPLABS_API_KEY	explabs	S	local	xl_key	explabs	Experiential Labs key	Adds the Experiential Labs gateway's xl/… models next to Bedrock (EXPLABS_MODELS picks which): prompts to them go to api.experientiallabs.ai and the model's provider, under that account's own retention and zero-data-retention settings. Checked with the gateway first (its model list: free); never shown again, and only LiteLLM holds it; blank removes it. LiteLLM restarts (about 30 s).	./stack config set EXPLABS_API_KEY
+EXPLABS_MODELS	explabs	-	edit	xl_models	explabs	Experiential Labs models	A comma list of exact model ids from the gateway's model list (blank = qwen3.8-27b). Each one sends only the parameters the gateway's details say its model takes (temperature, top_p, tools, …); an id your key may not call is left out. LiteLLM restarts (about 30 s).	./stack config set EXPLABS_MODELS
 RUSTFS_ACCESS_KEY	files	k	regen	-	rustfs	Files (RustFS) access key	RustFS's own sign-in (the portal signs you in to Files with this pair) and the S3 key of Chat, shared-mcp and backups. Regenerate makes a new random pair: stored files stay; Files, Chat and the portal restart (about 35 s), and scripts that used the old pair need the new one.	./stack config regenerate rustfs
 RUSTFS_SECRET_KEY	files	S	regen	-	rustfs	Files (RustFS) secret key	The secret of that pair (regenerated together with the access key).	./stack config regenerate rustfs
 SHARED_MCP_TOKEN	files	h	regen	-	mcp	Shared MCP token	The bearer token of the shared file server claude-bedrock uses (.state/mcp.json). Regenerate makes a new one: running claude-bedrock sessions and other MCP clients need it (claude-bedrock reads it at its next start); shared-mcp and the portal restart (about 15 s).	./stack config regenerate mcp-token

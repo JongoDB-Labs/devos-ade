@@ -65,14 +65,14 @@ test_every_env_key_is_in_the_settings_table_once() {
   # (the 85 keys of the inventory, + the portal password hash, + 11 new ones: session length, alert threshold, five
   # model pins, hidden models, nightly backups with their hour and how many to keep, + the browser terminal's 12,
   # Chat's origin and the Code page's 5, + its previews' 2, + their 4 over remote access, + auto mode's 2, + Git hosts'
-  # sign-in's 3: the GitHub App's client ID and name, the GitLab application's ID)
-  assert_eq "$(settings_rows | wc -l | tr -d ' ')" 133
+  # sign-in's 3: the GitHub App's client ID and name, the GitLab application's ID, + the Experiential Labs key and models)
+  assert_eq "$(settings_rows | wc -l | tr -d ' ')" 135
 }
 
 test_table_columns_are_valid() {
   local bad
   bad="$(settings_rows | awk -F'\t' '
-    $2 !~ /^(account|aws|budgets|voice|openrouter|files|updates|remote|advanced)$/ { print $1 " group" }
+    $2 !~ /^(account|aws|budgets|voice|openrouter|explabs|files|updates|remote|advanced)$/ { print $1 " group" }
     $3 !~ /^(-|s|k|u|h|S)$/ { print $1 " secret" }
     $4 !~ /^(edit|local|on-only|widen-local|companion|regen|ro|derived)$/ { print $1 " policy" }
     $4 == "regen" && $5 != "-" { print $1 " regen has no validator" }
@@ -234,16 +234,21 @@ test_portal_password_hash_follows_env_and_the_helper_keeps_its_own() {
 
 test_snapshot_masks_every_secret() {
   _env
+  # (an Experiential Labs key's shape, made here: never a key-like literal in the repository)
+  local xl; xl="xpl_$(printf '%040d' 0 | tr 0 9)"
   set_env_batch ALERT_WEBHOOK_URL 'https://hooks.example.com/abc?token=hooktoken123' MY_OWN_SECRET 'mine123456789' \
-    TERMINAL_PROXY_SECRET 0123456789abcdef0123456789abcdef LITELLM_KEY_TERMINAL sk-term0123456789
+    TERMINAL_PROXY_SECRET 0123456789abcdef0123456789abcdef LITELLM_KEY_TERMINAL sk-term0123456789 EXPLABS_API_KEY "$xl"
   settings_snapshot_write
   local f s v; f="$(settings_snapshot_file)"; s="$(cat "$f")"
   assert_eq "$(ls -l "$f" | cut -c1-10)" "-rw-r--r--"
   for v in 'correct horse battery' ${FAKE_AWS_3} sk-master0123456789 rustfs0123456789secret \
            mcp0123456789abcdef Bn9-0123456789abcdef hooktoken123 mine123456789 sk-setup0123456789 \
-           0123456789abcdef0123456789abcdef sk-term0123456789; do
+           0123456789abcdef0123456789abcdef sk-term0123456789 "$xl" 9999; do
     assert_not_contains "$s" "$v"
   done
+  # the Experiential Labs key: set, and not a character of it (no hint either)
+  assert_contains "$s" '"key": "EXPLABS_API_KEY", "group": "explabs", "secret": "S"'
+  assert_contains "$(printf '%s\n' "$s" | grep '"key": "EXPLABS_API_KEY"')" '"present": true, "set": true}' 
   assert_contains "$s" '"hint": "AKIA…MNOP"'
   assert_contains "$s" '"hint": "https://hooks.example.com/…"'
   assert_contains "$s" '"hint": "…cdef"'
@@ -251,7 +256,7 @@ test_snapshot_masks_every_secret() {
   assert_contains "$s" "\"base\": \"$(env_sha256)\""
   assert_contains "$s" '"key": "MY_OWN_SECRET", "group": "advanced", "secret": "S"'
   if command -v python3 >/dev/null 2>&1; then
-    python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); assert len(d["keys"]) == 134; assert d["last_change"] is None' "$f"
+    python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); assert len(d["keys"]) == 136; assert d["last_change"] is None' "$f"
   fi
 }
 
@@ -1422,6 +1427,54 @@ test_pins_and_hidden_models_must_be_enabled_chat_models() {
   _lines CHAT_DEFAULT_MODEL=claude-haiku-5-5 | _apply 2>/dev/null
   assert_eq "$(get_env OWUI_DEFAULT_MODEL)" claude-haiku-5-5
   assert_contains "$(cat "$TMP/calls")" "dc up -d --no-deps --wait open-webui portal"
+}
+
+# The Experiential Labs key (lib/explabs.sh): checked with the gateway before anything changes (its model list, free),
+# then the list read again with it, LiteLLM recreated with its models, Open WebUI's names; a refused key changes
+# nothing; removed, its list and Open WebUI's entries go. The key itself: never in a command line, a message, the
+# audit log or the snapshot (the gateway's answers are stubbed)
+test_apply_the_experiential_labs_key() {
+  _env; _in_checkout; _stub_stack
+  local xl; xl="xpl_$(printf '%040d' 0 | tr 0 c)"
+  printf 'model_list: []\n' > "$STACK_DIR/litellm/config.yaml"
+  xl_validate_key() { echo "validate" >> "$TMP/calls"; [ "$1" = "$xl" ] || { XL_ERR="the gateway rejected the key (HTTP 401)"; return 1; }; }
+  explabs_refresh() { echo "refresh ${1:-now}" >> "$TMP/calls"; echo "  - model_name: \"xl/qwen3.8-27b\"" >> "$STACK_DIR/litellm/config.yaml"; }
+  _xl_owui_refresh() { echo "owui-xl" >> "$TMP/calls"; }
+  # refused by the gateway: nothing changes, and the message says why without the key
+  if (_lines "EXPLABS_API_KEY=xpl_$(printf '%040d' 0 | tr 0 d)" | _apply --via portal --origin local --base "$(env_sha256)") 2> "$TMP/err"; then return 1; fi
+  assert_contains "$(cat "$TMP/err")" "EXPLABS_API_KEY: the gateway rejected the key (HTTP 401) — nothing was changed"
+  assert_eq "$(get_env EXPLABS_API_KEY)" ""
+  # from a remote device: refused before any check (a key that sends prompts elsewhere is this computer's call)
+  : > "$TMP/calls"
+  if (_lines "EXPLABS_API_KEY=$xl" | _apply --via portal --origin remote) 2> "$TMP/err"; then return 1; fi
+  assert_contains "$(cat "$TMP/err")" "EXPLABS_API_KEY can only be changed from the computer running"
+  assert_not_contains "$(cat "$TMP/calls")" "validate"
+  # accepted: stored, the list read again (now), LiteLLM recreated with the new models, Open WebUI named; no portal restart
+  : > "$TMP/calls"
+  _lines "EXPLABS_API_KEY=$xl" | _apply --via portal --origin local --base "$(env_sha256)" 2> "$TMP/err"
+  assert_eq "$(get_env EXPLABS_API_KEY)" "$xl"
+  assert_eq "$(sed -n 1,2p "$TMP/calls" | tr '\n' ' ')" "validate refresh now "
+  assert_contains "$(cat "$TMP/calls")" "dc up -d --no-deps --force-recreate --wait litellm"
+  assert_contains "$(cat "$TMP/calls")" "owui-xl"
+  assert_not_contains "$(cat "$TMP/calls")" "--wait portal"
+  assert_contains "$(tail -n 1 "$(settings_audit_file)")" "result=ok via=portal-local keys=EXPLABS_API_KEY"
+  assert_contains "$(cat "$(settings_snapshot_file)")" '"key": "EXPLABS_API_KEY", "group": "explabs", "secret": "S"'
+  assert_not_contains "$(cat "$TMP/err" "$TMP/calls" "$(settings_audit_file)" "$(settings_snapshot_file)")" "$xl"
+  assert_not_contains "$(cat "$TMP/err" "$TMP/calls" "$(settings_audit_file)" "$(settings_snapshot_file)")" "cccccccc"
+  # the models: from anywhere; the list read only when older than 12 h
+  : > "$TMP/calls"
+  _lines EXPLABS_MODELS=qwen3.8-27b,gpt-5-mini | _apply --via portal --origin remote 2>/dev/null
+  assert_eq "$(get_env EXPLABS_MODELS)" qwen3.8-27b,gpt-5-mini
+  assert_contains "$(cat "$TMP/calls")" "refresh 720"
+  assert_not_contains "$(cat "$TMP/calls")" "validate"
+  # removed: the line stays empty (off), the list and its key mark go, Open WebUI's entries with them
+  printf 'x\n' > "$(xl_cache_tsv)"; mkdir -p "$STATE_DIR"; printf 'x\n' > "$(xl_key_mark)"
+  : > "$TMP/calls"
+  _lines EXPLABS_API_KEY= | _apply 2>/dev/null
+  assert_eq "$(grep -c '^EXPLABS_API_KEY=$' "$ENV_FILE")" 1
+  [ ! -e "$(xl_cache_tsv)" ] && [ ! -e "$(xl_key_mark)" ]
+  assert_not_contains "$(cat "$TMP/calls")" "refresh"
+  assert_contains "$(cat "$TMP/calls")" "owui-xl"
 }
 
 test_apply_openrouter_key_plans_models_like_openrouter_set() {

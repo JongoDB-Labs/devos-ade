@@ -46,7 +46,7 @@ BUDGET_SETUP	spending	more	-	Monthly limit for model checks and smoke tests. Kee
 LITELLM_KEY_SETUP	spending	with	BUDGET_SETUP	-
 PRICE_UPDATES	spending	more	-	Update Bedrock prices daily from AWS's public price lists (no credentials are sent).
 
-@chat	Chat & voice	Chat's models, its microphone and voice calls, and OpenRouter's models next to Bedrock.	README.md#chat-open-webui
+@chat	Chat & voice	Chat's models, its microphone and voice calls, and OpenRouter's and Experiential Labs' models next to Bedrock.	README.md#chat-open-webui
 CHAT_DEFAULT_MODEL	chat	main	-	The model a new chat starts with.
 OWUI_DEFAULT_MODEL	chat	with	CHAT_DEFAULT_MODEL	-
 MODELS_HIDDEN	chat	main	-	Models Chat's picker leaves out. They stay usable through the API and Claude Code.
@@ -55,6 +55,8 @@ STT_MODEL	chat	with	STT_PROVIDER	-
 STT_API_KEY	chat	with	STT_PROVIDER	-
 OPENROUTER_API_KEY	chat	main	-	Optional: hundreds of other models next to Bedrock. Prompts to them go to openrouter.ai.
 OPENROUTER_MODELS	chat	main	OPENROUTER_API_KEY	Which OpenRouter models Chat and the API offer.
+EXPLABS_API_KEY	chat	main	-	Optional: one gateway in front of many models, next to Bedrock. Prompts to its models go to api.experientiallabs.ai.
+EXPLABS_MODELS	chat	main	EXPLABS_API_KEY	Which of the gateway's models Chat, the Code page and the API offer.
 CHAT_TASK_MODEL	chat	more	-	The model that writes chat titles, tags and follow-up suggestions (every chat pays for it).
 OWUI_TASK_MODEL	chat	with	CHAT_TASK_MODEL	-
 OPENROUTER_MAX_MODELS	chat	more	OPENROUTER_API_KEY	At most this many OpenRouter models, the newest first; a long list slows LiteLLM's start.

@@ -48,7 +48,7 @@ MAX_REQUEST = 8192             # the file for the helper (lib/settings_helper.sh
 MAX_KEYS = 20
 MAX_VALUE = 2000
 CAPABILITY_MAX_AGE_S = 24 * 3600
-GROUPS = ("account", "aws", "budgets", "voice", "openrouter", "files", "updates", "remote", "advanced")
+GROUPS = ("account", "aws", "budgets", "voice", "openrouter", "explabs", "files", "updates", "remote", "advanced")
 # the page's sections, in catalog/settings-layout.tsv; a row's place in its section; the page's own rows (no .env key)
 SECTIONS = ("account", "aws", "spending", "chat", "code", "files", "remote", "updates", "diagnostics", "advanced", "about")
 PLACES = ("main", "more", "with")
@@ -440,6 +440,19 @@ def _or_mode(v, remote_on=False):
         "must be all, free, paid or a comma list of model ids"
 
 
+def _xl_key(v, remote_on=False):
+    return None if v == "" or re.fullmatch(r"[A-Za-z0-9_-]{20,256}", v) else \
+        "must be an Experiential Labs key (20-256 letters, digits, - and _)"
+
+
+_XL_ID = re.compile(r"(?:xl/)?[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+
+
+def _xl_models(v, remote_on=False):
+    ok = v == "" or (len(v) <= MAX_VALUE and all(_XL_ID.fullmatch(m) for m in v.split(",")))
+    return None if ok else "must be a comma list of the gateway's model ids (letters, digits, . _ : and -)"
+
+
 def _int_1_5000(v, remote_on=False):
     return None if v == "" or (re.fullmatch(r"[1-9][0-9]{0,3}", v) and int(v) <= 5000) else \
         "must be a whole number from 1 to 5000 (blank = 1000)"
@@ -498,6 +511,7 @@ VALIDATORS = {
     "hour": _hour,
     "stt_provider": _one_of("bedrock", "openai", "groq", "", msg="must be bedrock, openai, groq or blank (the browser)"),
     "stt_key": _stt_key, "stt_model": _stt_model, "or_key": _or_key, "or_mode": _or_mode, "int_1_5000": _int_1_5000,
+    "xl_key": _xl_key, "xl_models": _xl_models,
     "login": _login,
     "days": _range(1, 90, "must be a whole number of days from 1 to 90 (blank = 30)"),
     "pct": _range(50, 99, "must be a percentage from 50 to 99 (blank = 80)"),

@@ -22,12 +22,14 @@
   // what a change restarts, by settings.tsv's apply column (lib/settings.sh _cfg_post): the badge next to a setting
   const RESTARTS = { "portal-pw": ["portal"], email: ["Chat", "portal"], "litellm-pw": ["portal"], portal: ["portal"],
     "litellm-cfg": ["LiteLLM"], aws: ["LiteLLM"], pins: ["Chat", "portal"], "alert-pct": ["portal"], stt: ["LiteLLM", "Chat", "portal"],
-    openrouter: ["LiteLLM", "portal"], rustfs: ["Files", "Chat", "shared-mcp", "portal"], mcp: ["shared-mcp", "portal"],
+    openrouter: ["LiteLLM", "portal"], explabs: ["LiteLLM"], rustfs: ["Files", "Chat", "shared-mcp", "portal"], mcp: ["shared-mcp", "portal"],
     code: ["portal", "Caddy"], "code-env": ["Code page"], "terminal-env": ["Terminal"], "terminal-egress": ["Terminal"], "remote-preview": ["portal", "Caddy"] };
   // what removing a key does, in each key's own words (the keys share one form; lib/settings.sh _cfg_post, _stt_apply)
   const REMOVE_KEY = {
     or_key: "OpenRouter's models disappear from Chat and the API; LiteLLM and the portal restart (about 40 s).",
     stt_key: "The OpenAI or Groq key is deleted. While Speech-to-text uses OpenAI or Groq the removal is refused (they need a key): switch it to the browser or Bedrock first. LiteLLM, Chat and the portal restart (about 40 s).",
+    // (Experiential Labs' key restarts LiteLLM alone: RESTARTS.explabs)
+    xl_key: "Experiential Labs' models disappear from Chat, the Code page and the API; LiteLLM restarts (about 30 s).",
   };
   const ON_VALUES = ["true", "1", "yes", "on"], OFF_VALUES = ["false", "0", "no", "off"];
   const KEY_NAME = /^[A-Z][A-Z0-9_]{1,60}$/;   // (as the setup links' targets: catalog/setup-links.tsv)
@@ -491,7 +493,8 @@
   }
   // what a blank value means (the stack's own default), for the keys whose default is not .env.example's value
   const BLANK = { PORTAL_SESSION_DAYS: "30 days", BUDGET_ALERT_PCT: "80%", BACKUP_HOUR: hourRange(2), BACKUP_KEEP: "7",
-    AUTO_UPDATE_HOUR: hourRange(3), OPENROUTER_MODELS: "all", OPENROUTER_MAX_MODELS: "1000", TERMINAL_EGRESS: "Internet only",
+    AUTO_UPDATE_HOUR: hourRange(3), OPENROUTER_MODELS: "all", OPENROUTER_MAX_MODELS: "1000", EXPLABS_MODELS: "qwen3.8-27b",
+    TERMINAL_EGRESS: "Internet only",
     TERMINAL_MEM_LIMIT: "4g", TERMINAL_AI_TOOLS: "all", REMOTE_MODE: "off", AWS_AUTH: "an access key", REMOTE_SUBNET: "10.255.255.248/29",
     PORTAL_HOST: "bedrock-now.localhost", PORTAL_PORT: "80, else 8800", CHAT_HOST: "chat. + the portal's address",
     ADMIN_HOST: "admin. + the portal's address", FILES_HOST: "files. + the portal's address",
@@ -784,9 +787,10 @@
   }
   // the models in groups, for the checklist and the default's select
   function codeGroups() {
-    const g = [["Anthropic (Bedrock)", []], ["Other providers on Bedrock", []], ["OpenRouter: free", []], ["OpenRouter: paid", []]];
+    const g = [["Anthropic (Bedrock)", []], ["Other providers on Bedrock", []], ["OpenRouter: free", []], ["OpenRouter: paid", []],
+      ["Experiential Labs", []]];
     for (const m of codeModels()) {
-      const i = m[2] === "OpenRouter" ? (m[5] ? 2 : 3) : (lower(m[3]) === "anthropic" ? 0 : 1);
+      const i = m[2] === "Experiential Labs" ? 4 : m[2] === "OpenRouter" ? (m[5] ? 2 : 3) : (lower(m[3]) === "anthropic" ? 0 : 1);
       g[i][1].push(m);
     }
     return g.filter((x) => x[1].length);
@@ -1004,7 +1008,7 @@
         if (!m) return k.note;
         return `${m[1]} (${m[0]}): ${m[7] || "price unknown"}, ${COMPAT_WORD[m[4]] || "not tested"} with Claude Code. ${k.note}`;
       };
-    } else if (k.validator === "or_key" || k.validator === "stt_key") {
+    } else if (k.validator === "or_key" || k.validator === "stt_key" || k.validator === "xl_key") {
       form.append(...field(id, "New key", "password", { maxlength: "512" }));
       collect = () => ({ [k.key]: $(`#${id}`, form).value.trim() });
       if (k.set) {
@@ -1027,7 +1031,7 @@
     } else {
       const type = k.validator === "email" ? "email" : "text";
       const unit = { days: "days (1-90; blank = 30)", pct: "% (50-99; blank = 80)", int_1_5000: "models (blank = 1000)" }[k.validator] || "";
-      const label = { or_mode: "all, free, paid, or model ids separated by commas" }[k.validator] || "New value";
+      const label = { or_mode: "all, free, paid, or model ids separated by commas", xl_models: "gateway model ids, separated by commas (blank = qwen3.8-27b)" }[k.validator] || "New value";
       form.append(...field(id, label, type, { value: v, maxlength: "2000", ...(unit ? { inputmode: "numeric" } : {}) }, unit));
       // emails in lowercase, as Chat keeps them
       collect = () => ({ [k.key]: k.validator === "email" ? $(`#${id}`, form).value.trim().toLowerCase() : $(`#${id}`, form).value.trim() });

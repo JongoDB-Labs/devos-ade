@@ -109,6 +109,23 @@ or_mode	0	ok	free
 or_mode	0	ok	meta-llama/llama-3.3-70b-instruct,google/gemma-4-31b-it:free
 or_mode	0	ok
 or_mode	0	bad	all; rm -rf
+xl_key	0	ok	
+xl_key	0	ok	test-key-for-the-validator-only
+xl_key	0	ok	under_scores_and-dashes-0123
+xl_key	0	bad	too-short-key
+xl_key	0	bad	has spaces in the key itself
+xl_key	0	bad	quoted-"key"-is-not-a-key-value
+xl_key	0	bad	slash/in/the/key-value-is-bad
+xl_models	0	ok	
+xl_models	0	ok	qwen3.8-27b
+xl_models	0	ok	qwen3.8-27b,gpt-5-mini,deepseek-v4.1-flash:free
+xl_models	0	ok	xl/qwen3.8-27b
+xl_models	0	bad	qwen3.8-27b,
+xl_models	0	bad	,qwen3.8-27b
+xl_models	0	bad	qwen3.8-27b, gpt-5-mini
+xl_models	0	bad	vendor/qwen3.8-27b
+xl_models	0	bad	-starts-with-dash
+xl_models	0	bad	all; rm -rf
 int_1_5000	0	ok	1
 int_1_5000	0	ok	1000
 int_1_5000	0	ok	5000

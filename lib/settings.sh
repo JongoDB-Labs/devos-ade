@@ -168,6 +168,10 @@ _sv_stt_key() { [ -z "$1" ] || valid_stt_key "$1" || { SV_ERR="must be an API ke
 _sv_stt_model() { case "$1" in '') return 0 ;; *[!a-z0-9.-]*) ;; *) [ "${#1}" -le 64 ] && return 0 ;; esac; SV_ERR="must be a model name (lowercase letters, digits, . and -)"; return 1; }
 _sv_or_key() { [ -z "$1" ] || { valid_or_key "$1" && [ "${#1}" -le 256 ]; } || { SV_ERR="must be an OpenRouter key (sk-or-…; letters, digits, - and _)"; return 1; }; }
 _sv_or_mode() { [ -z "$1" ] || { valid_or_mode "$1" && [ "${#1}" -le "$SETTINGS_MAX_VALUE" ]; } || { SV_ERR="must be all, free, paid or a comma list of model ids"; return 1; }; }
+_sv_xl_key() { [ -z "$1" ] || valid_xl_key "$1" || { SV_ERR="must be an Experiential Labs key (20-256 letters, digits, - and _)"; return 1; }; }
+_sv_xl_models() {
+  { valid_xl_models "$1" && [ "${#1}" -le "$SETTINGS_MAX_VALUE" ]; } || { SV_ERR="must be a comma list of the gateway's model ids (letters, digits, . _ : and -)"; return 1; }
+}
 _sv_int_1_5000() {
   case "$1" in '') return 0 ;; [1-9] | [1-9][0-9] | [1-9][0-9][0-9] | [1-4][0-9][0-9][0-9] | 5000) return 0 ;; esac
   SV_ERR="must be a whole number from 1 to 5000 (blank = 1000)"; return 1
@@ -739,6 +743,10 @@ _cfg_live_checks() {
   if cfg_has OPENROUTER_API_KEY && [ -n "$(cfg_new OPENROUTER_API_KEY)" ]; then
     or_validate_key "$(cfg_new OPENROUTER_API_KEY)" || _cfg_refuse "OPENROUTER_API_KEY: $OR_ERR"
   fi
+  # (lib/explabs.sh: the gateway's model list, read with the new key — free; the key on curl's stdin only)
+  if cfg_has EXPLABS_API_KEY && [ -n "$(cfg_new EXPLABS_API_KEY)" ]; then
+    xl_validate_key "$(cfg_new EXPLABS_API_KEY)" || _cfg_refuse "EXPLABS_API_KEY: $XL_ERR"
+  fi
   case "$(cfg_effective STT_PROVIDER)" in
     openai | groq)
       if cfg_has STT_API_KEY || cfg_has STT_PROVIDER; then
@@ -876,11 +884,22 @@ _cfg_openrouter() {
   rm -f "$(or_cache_tsv)" "$(or_cache_json)" "$(or_models_auto)"
 }
 
+# _cfg_explabs — the gateway's model list read again with the key .env now holds (a new key: another organisation's
+# models); without one, its list and Open WebUI's entries go (lib/explabs.sh)
+_cfg_explabs() {
+  if explabs_enabled; then
+    if cfg_has EXPLABS_API_KEY; then explabs_refresh; else explabs_refresh 720; fi
+    return 0
+  fi
+  rm -f "$(xl_cache_tsv)" "$(xl_key_mark)" "$(xl_error_file)"
+}
+
 # _cfg_post — restarts only what the change needs (Compose recreates a container only when its settings changed)
 _cfg_post() {
   local svc='' k cfg="$STACK_DIR/litellm/config.yaml" before=''
   [ ! -f "$cfg" ] || before="$(cat "$cfg")"   # before anything here re-renders it (openrouter_refresh does)
   if _cfg_on openrouter; then _cfg_openrouter; fi
+  if _cfg_on explabs; then _cfg_explabs; fi
   if _cfg_on remote-preview; then code_remote_sync; fi   # the remote preview address follows (blank when off)
   # .env first, so ./stack up applies them too when the stack is stopped
   if _cfg_on pins && [ -s "$STACK_DIR/litellm/enabled-models.txt" ]; then choose_defaults; fi
@@ -890,10 +909,10 @@ _cfg_post() {
     _stt_apply   # re-renders, recreates LiteLLM, the stt container, Chat and the portal; restores the previous choice if stt fails
     before="$(cat "$cfg")"   # (LiteLLM was recreated with all of .env)
   fi
-  if _cfg_on litellm-cfg || _cfg_on openrouter; then
+  if _cfg_on litellm-cfg || _cfg_on openrouter || _cfg_on explabs; then
     render_config "$(_enabled_or_all)"
     if [ "$(cat "$cfg")" != "$before" ]; then run_phase "LiteLLM (new settings)" litellm dc up -d --no-deps --force-recreate --wait litellm
-    else svc="$svc litellm"; fi   # its environment (the webhook, the OpenRouter key) changed: Compose recreates it for that
+    else svc="$svc litellm"; fi   # its environment (the webhook, the OpenRouter or Experiential Labs key) changed: Compose recreates it for that
   fi
   if _cfg_on rustfs; then   # every holder of the pair at once; rustfs-init (a dependency) runs again with it
     run_phase "Files (new sign-in)" "rustfs open-webui shared-mcp portal" dc up -d --wait rustfs open-webui shared-mcp portal
@@ -936,10 +955,11 @@ _cfg_post() {
     done
     if _cfg_on alert-pct; then alert_pct_mark; fi
   fi
-  if _cfg_on budget || _cfg_on email || _cfg_on openrouter || _cfg_on rustfs || _cfg_on pins || _cfg_on alert-pct || _cfg_on owui-models; then
+  if _cfg_on budget || _cfg_on email || _cfg_on openrouter || _cfg_on explabs || _cfg_on rustfs || _cfg_on pins || _cfg_on alert-pct || _cfg_on owui-models; then
     portal_session_start || die "could not sign in to the portal after the restart (HTTP ${PORTAL_LOGIN_CODE:-?})"
     if _cfg_on email; then _owui_drop_strays "$(cfg_old OPENWEBUI_ADMIN_EMAIL)" || true; fi
     if _cfg_on openrouter; then _or_owui_refresh; fi
+    if _cfg_on explabs; then _xl_owui_refresh; fi
     if _cfg_on owui-models; then owui_apply_hidden; fi
     sync_budget_banner
     portal_session_end
