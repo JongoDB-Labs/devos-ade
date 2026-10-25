@@ -1210,7 +1210,7 @@ cmd_status() {
   fi
   printf '  %s\n' "$(helper_status_line)"   # lib/helper.sh: one-click and automatic updates
   py="$(python_runner_line)"; [ -z "$py" ] || printf '  %s\n' "$py"   # lib/owui.sh: what Chat's Python runner can import
-  # lib/explabs.sh: its models, and when they run without model details (every optional parameter dropped)
+  # lib/explabs.sh: its models, and when they run without model details (fail safe: no sampling parameters)
   xl="$(explabs_status_line)"; [ -z "$xl" ] || printf '  %s\n' "$xl"
   # lib/stt.sh: Bedrock speech-to-text turned off because AWS refuses its audio — said until a voice choice is made
   ! stt_notice_on || printf '  %sVoice: %s%s\n' "$O_YEL" "$STT_REFUSED_NOTICE" "$O_OFF"

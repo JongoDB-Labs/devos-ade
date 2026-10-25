@@ -131,9 +131,9 @@ code_models_rows() {
     }
     FILENAME == ENVIRON["F_XL"] {
       # id name vendor in out cache_read cache_write (per million) free tools max_out context (explabs_code_rows); the
-      # tool use its model details name, when there are none (fail safe) none
+      # tool use its model details name (fail safe: empty, the tools are sent untested)
       if ($1 == "" || $1 ~ /^#/) next
-      add($1, $2, "Experiential Labs", $3, d($4), d($5), d($6), d($7), ($8 == 1 ? 1 : 0), ($9 == "" ? "0" : $9), $10, $11)
+      add($1, $2, "Experiential Labs", $3, d($4), d($5), d($6), d($7), ($8 == 1 ? 1 : 0), $9, $10, $11)
       next
     }
     END {

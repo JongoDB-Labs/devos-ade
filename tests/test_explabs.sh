@@ -74,25 +74,35 @@ test_only_what_each_model_takes_is_sent() {
   assert_contains "$y" 'additional_drop_params: ["temperature", "top_p", "top_k", "frequency_penalty", "presence_penalty", "logprobs", "top_logprobs", "max_tokens"]'
   # gpt-5.1-codex takes sampling only with reasoning off: none of it; its cap is max_tokens
   assert_contains "$y" 'additional_drop_params: ["temperature", "top_p", "top_k", "frequency_penalty", "presence_penalty", "logprobs", "top_logprobs", "max_completion_tokens"]'
-  # claude-fable-5 names no cap field: neither is sent; no reasoning effort
-  assert_contains "$y" 'additional_drop_params: ["frequency_penalty", "presence_penalty", "logprobs", "top_logprobs", "response_format", "reasoning_effort", "max_tokens", "max_completion_tokens"]'
-  # tools unknown (chatgpt-image-latest): no tools
+  # claude-fable-5 names no cap field: the cap goes as max_tokens (never dropped: it is a spend safety); no reasoning effort
+  assert_contains "$y" "$(printf '      additional_drop_params: ["frequency_penalty", "presence_penalty", "logprobs", "top_logprobs", "response_format", "reasoning_effort", "max_completion_tokens"]')"
+  assert_contains "$(printf '%s\n' "$y" | grep -A 16 '"xl/claude-fable-5"$')" 'bn_xl_max_tokens: "max_tokens"'
+  # tools unknown in its details (chatgpt-image-latest): no tools
   assert_contains "$(printf '%s\n' "$y" | grep -A 7 '"xl/chatgpt-image-latest"')" '"tools", "tool_choice", "parallel_tool_calls", "functions", "function_call"'
+  # no model is ever sent without a cap field to take one: max_tokens or max_completion_tokens is always left in
+  assert_eq "$(printf '%s\n' "$y" | grep additional_drop_params | grep -c '"max_tokens".*"max_completion_tokens"\|"max_completion_tokens".*"max_tokens"')" 0
   # the list price, per token, exact (only a reply without usage.cost is priced with it)
   assert_contains "$y" "$(printf '      input_cost_per_token: 0.00000032\n      output_cost_per_token: 0.0000024\n      cache_read_input_token_cost: 0.00000004\n')"
   _assert_no_key "$y"
 }
 
-test_without_details_every_optional_parameter_is_dropped() {
+# Fail safe: the sampling, penalty and logprob parameters, response_format and reasoning_effort never go; tools and the
+# cap (as max_tokens) do — a model that cannot take them answers with a clear 400, never a silent chat-only Claude Code
+test_without_details_sampling_goes_and_tools_and_the_cap_stay() {
   local y all
-  all='["temperature", "top_p", "top_k", "frequency_penalty", "presence_penalty", "logprobs", "top_logprobs", "tools", "tool_choice", "parallel_tool_calls", "functions", "function_call", "response_format", "reasoning_effort", "max_tokens", "max_completion_tokens"]'
+  all='["temperature", "top_p", "top_k", "frequency_penalty", "presence_penalty", "logprobs", "top_logprobs", "response_format", "reasoning_effort", "max_completion_tokens"]'
   # no list at all (it could not be read): the default model, fail safe
   _xl_env
   y="$(explabs_yaml)"
   assert_contains "$y" "$(printf '  - model_name: "xl/qwen3.8-27b"')"
   assert_contains "$y" "additional_drop_params: $all"
-  assert_not_contains "$y" "bn_xl_max_tokens"
+  assert_contains "$y" 'bn_xl_max_tokens: "max_tokens"'
+  assert_not_contains "$y" '"tools"'; assert_not_contains "$y" '"max_tokens",'
   assert_eq "$(xl_selected | cut -f1)" failsafe
+  # the awk rule and XL_FAILSAFE_DROPS (the status line's list) are one list
+  assert_eq "$all" "[$(printf '"%s", ' $XL_FAILSAFE_DROPS | sed 's/, $//')]"
+  # the Code page: tool use not known, so "not tested" (never "chat only": the tools are sent)
+  assert_eq "$(explabs_code_rows | cut -f9)" ""
   # a list read with ANOTHER key (another organisation): not this key's, so fail safe too
   _xl_cached; XL_KEY_USE="$XL_KEY2" _xl_env
   assert_eq "$(xl_selected | cut -f1,2)" "$(printf 'failsafe\tqwen3.8-27b')"
@@ -101,8 +111,8 @@ test_without_details_every_optional_parameter_is_dropped() {
 '
   assert_eq "$(xl_selected | cut -f1)" failsafe
   assert_contains "$(explabs_yaml)" "additional_drop_params: $all"
-  # every name of the list is one the hook may drop (lib/litellm-hooks/bn_hooks.py XL_OPTIONAL)
-  for p in $XL_OPTIONAL_PARAMS; do assert_contains "$(cat "$T_ROOT/lib/litellm-hooks/bn_hooks.py")" "\"$p\""; done
+  # every name of the lists is one the hook may drop (lib/litellm-hooks/bn_hooks.py XL_OPTIONAL)
+  for p in $XL_OPTIONAL_PARAMS $XL_FAILSAFE_DROPS; do assert_contains "$(cat "$T_ROOT/lib/litellm-hooks/bn_hooks.py")" "\"$p\""; done
 }
 
 test_the_allow_list_picks_the_models() {
@@ -179,11 +189,11 @@ test_a_failed_refresh_keeps_the_list_or_runs_fail_safe_and_says_so() {
   # no list yet, no answer: the models run fail safe, said once, and ./stack status says why
   _xl_env
   CURL_FAIL=1 explabs_refresh 2> "$TMP/err"
-  assert_contains "$(cat "$TMP/err")" "Experiential Labs: could not reach api.experientiallabs.ai — its models send no optional parameter"
+  assert_contains "$(cat "$TMP/err")" "Experiential Labs: could not reach api.experientiallabs.ai — until the details can be read its models are sent no sampling or penalty parameter"
   assert_eq "$(xl_selected | cut -f1)" failsafe
   local st; st="$(explabs_status_line)"
   assert_contains "$st" "Experiential Labs: 1 model (xl/qwen3.8-27b) — no model details (could not reach api.experientiallabs.ai, "
-  assert_contains "$st" "so every optional parameter is dropped (temperature, top_p, top_k, frequency_penalty, presence_penalty, logprobs, top_logprobs, tools, tool_choice, parallel_tool_calls, functions, function_call, response_format, reasoning_effort, max_tokens, max_completion_tokens)"
+  assert_contains "$st" "so fail safe: none of temperature, top_p, top_k, frequency_penalty, presence_penalty, logprobs, top_logprobs, response_format, reasoning_effort is sent (tools and the max_tokens cap are)"
   _assert_no_key "$st" "$(cat "$TMP/err")" "$(cat "$(xl_error_file)")"
   assert_eq "$(ls -l "$(xl_error_file)" | cut -c1-10)" "-rw-------"
   # it works again: details, the error gone
@@ -451,4 +461,31 @@ print(m["xl/qwen3.8-27b"]["name"], [t["name"] for t in m["xl/qwen3.8-27b"]["meta
   [ ! -e "$STATE_DIR/explabs-owui-synced" ]
   # never synced and off: no request at all
   : > "$TMP/owui"; explabs_sync_owui; assert_eq "$(cat "$TMP/owui")" ""
+}
+
+# LiteLLM's use_chat_completions_url_for_anthropic_messages is one switch for every openai/ deployment: rendered for
+# Experiential Labs' models, it must never reach another openai/ chat model unseen. The whole config as ./stack renders
+# it — the real catalog, OpenRouter's models, OpenAI speech-to-text (an openai/ model too, but no chat one) — holds
+# no openai/ chat model but the gateway's; a catalog or provider that adds one fails here first
+test_the_messages_switch_reaches_no_openai_chat_model_but_the_gateways() {
+  command -v python3 >/dev/null 2>&1 && python3 -I -c 'import yaml' 2>/dev/null || { echo "no PyYAML" >&2; return 77; }
+  _xl_cached "EXPLABS_MODELS=qwen3.8-27b,gpt-5-mini
+OPENROUTER_API_KEY=sk-or-v1-$(printf '%032d' 0)
+STT_PROVIDER=openai
+STT_API_KEY=sk-$(printf '%040d' 0)
+"
+  { printf '# fetched_at: 2026-10-24T00:00:00Z\n'; or_models_tsv < "$T_ROOT/tests/fixtures/openrouter_models.json" | or_classify; } > "$TMP/litellm/openrouter-models.tsv"
+  CATALOG="$T_ROOT/catalog/models.tsv" PRICES="$T_ROOT/catalog/prices.tsv" render_litellm_config "" us-east-1 false > "$TMP/config.yaml"
+  python3 -I -c '
+import sys, yaml
+c = yaml.safe_load(open(sys.argv[1]))
+assert c["litellm_settings"]["use_chat_completions_url_for_anthropic_messages"] is True
+models = c["model_list"]
+assert any(m["model_name"].startswith("or/") for m in models) and any(m["model_name"] == "stt" for m in models), "the render left OpenRouter or speech-to-text out"
+openai = [m for m in models if str(m["litellm_params"]["model"]).startswith("openai/")]
+chat = [m["model_name"] for m in openai if (m.get("model_info") or {}).get("mode", "chat") == "chat"]
+other = [n for n in chat if not n.startswith("xl/")]
+assert not other, "openai/ chat models beside the gateway'"'"'s, which use_chat_completions_url_for_anthropic_messages would move: %s" % other
+assert sorted(chat) == ["xl/gpt-5-mini", "xl/qwen3.8-27b"], chat
+' "$TMP/config.yaml"
 }

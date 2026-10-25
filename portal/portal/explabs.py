@@ -72,7 +72,7 @@ def rows(data: dict | None) -> list[dict]:
     """Home's model table rows for the chosen models (provider Experiential Labs; access free or paid)."""
     out = []
     for m in (data or {}).get("models") or []:
-        why = "no model details: optional parameters are not sent" if m["failsafe"] else "ok"
+        why = "no model details: no sampling parameters are sent (tools and the cap are)" if m["failsafe"] else "ok"
         out.append({"name": m["id"], "display": m["name"], "tier": None, "kind": "chat", "enabled": True,
                     "why": "ok (fail safe)" if m["failsafe"] else "ok",
                     "reason": f"Experiential Labs model (EXPLABS_MODELS); {why}", "price": price_short(m),

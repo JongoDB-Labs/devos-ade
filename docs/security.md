@@ -402,7 +402,10 @@ An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*)
   provider key paid for it (`usage.is_byok`: that provider bills you); the list prices in the config only price a
   reply that carries no cost. Budgets count it like any other spend.
 - **Failing safe.** Without model details for the key in `.env` (the list could not be read), each model is sent no
-  optional parameter at all, and `./stack status` says so — a call is never refused by DevOS ADE for want of details.
+  sampling, penalty or logprob parameter, `response_format` or `reasoning_effort`; its tools and the output cap (as
+  `max_tokens`) still go, and a model that cannot take them answers with a clear 400. `./stack status` says so — a
+  call is never refused by DevOS ADE for want of details. The cap is never left out, with details or without (a model
+  whose details name no cap field gets it as `max_tokens`): it bounds what an answer can cost.
 
 ## Remote access
 

@@ -1974,20 +1974,33 @@ shown there once.
   key may not call is left out, with a warning.
 - **Only what each model takes.** Some models refuse a sampling parameter, and the call then fails
   (`all_routes_failed`, HTTP 502). So DevOS ADE reads the gateway's details for each model (`GET /v1/models` with your
-  key, free: `supports_temperature`, `supports_top_p`, `supports_tools`, `chat_max_tokens_field`, …) and sends each
-  only what it takes: LiteLLM drops the rest (`drop_params` and the model's `additional_drop_params`), and its hook
-  moves the output cap to the field the model names (`max_completion_tokens` for `qwen3.8-27b`). A parameter whose
-  support the details leave open counts as not taken. Claude Code's requests stay on Chat Completions, the API those
-  details describe (with extended thinking, LiteLLM sends them to the gateway's Responses API).
-- **Fail safe.** Without the details — the list could not be read and none is kept for this key — the models are
-  offered with **every** optional parameter dropped (temperature, top_p, top_k, the penalties, logprobs, tools,
-  response_format, reasoning_effort and the output cap), so a call goes through as plain chat, and `./stack status`
-  says so with the reason. `./stack up` and Settings read the list again; a list read earlier with the same key is
-  kept when a refresh fails.
+  key, free) and sends each only what it takes: LiteLLM drops the rest (`drop_params` and the model's
+  `additional_drop_params`), and its hook moves the output cap to the field the model names. Claude Code's requests
+  stay on Chat Completions, the API those details describe (with extended thinking, LiteLLM sends them to the gateway's
+  Responses API).
+
+  | The model's details | Left out of a request to it |
+  |---|---|
+  | `supports_temperature`, `supports_top_p`, `supports_top_k` not true, or `sampling_requires_reasoning_none` | `temperature`, `top_p`, `top_k` (each its own) |
+  | `supports_frequency_penalty`, `supports_presence_penalty` not true (no model says true today) | the penalty |
+  | `supports_logprobs` not true | `logprobs`, `top_logprobs` |
+  | `supports_tools` not true | `tools`, `tool_choice`, `parallel_tool_calls`, `functions`, `function_call` |
+  | `supports_structured_output` not true | `response_format` |
+  | `supports_reasoning` not true | `reasoning_effort` |
+  | `chat_max_tokens_field` | the cap goes under the field it names (`max_completion_tokens` for `qwen3.8-27b`); none named: as `max_tokens`. Never left out: it is what keeps an answer's length, and its cost, in bounds |
+  | **no details at all** (fail safe) | `temperature`, `top_p`, `top_k`, the penalties, `logprobs`, `top_logprobs`, `response_format`, `reasoning_effort`; tools and the `max_tokens` cap still go |
+
+  A field the details leave open (null) counts as not true, except the cap's.
+- **Fail safe.** Without the details — the list could not be read and none is kept for this key — the models get the
+  last row above: no sampling, penalty or logprob parameter, so a call never fails on one, while tools and the cap
+  still go (a model that cannot take them answers with a clear 400, `unsupported_capability` or
+  `unsupported_parameter`, rather than a Claude Code that silently cannot use tools). `./stack status` says so with
+  the reason. `./stack up` and Settings read the list again; a list read earlier with the same key is kept when a
+  refresh fails.
 - **Where they show up:** in LiteLLM as `xl/<id>`; in Chat as `<id> · Experiential Labs`, tagged *Experiential Labs*
   and the vendor, and as a group of Chat's **Who answers** menu (greyed, naming the Settings row, while there is no
   key); on the Code page and in `claude-bedrock` as the *Experiential Labs* group (tool use as the details say: a
-  model without it is *chat only*); on Home as rows of the model table.
+  model without it is *chat only*; fail safe, *not tested*); on Home as rows of the model table.
 - **What it costs.** The gateway reports what each call cost (`usage.cost`, USD), and that is what LiteLLM books —
   spend per key, budgets, Home, `./stack costs` and the cost line under each answer in Chat — not a figure computed
   from token prices. A call on **your own provider key** (`usage.is_byok`) is billed by that provider: it counts $0 here,

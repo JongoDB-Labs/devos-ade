@@ -9,10 +9,12 @@
 # takes (supports_temperature, supports_top_p, supports_tools, chat_max_tokens_field, …) and its list price →
 # EXPLABS_MODELS (a comma list of exact gateway ids; blank = qwen3.8-27b) picks the ones rendered into
 # litellm/config.yaml as "xl/<id>" → openai/<id> at the gateway. Each sends only the parameters its model takes:
-# drop_params plus the model's additional_drop_params, and the output cap under the field it names (LiteLLM's hook,
-# lib/litellm-hooks/bn_hooks.py). A model without metadata — the list could not be read and none is cached for this
-# key — is rendered with every optional parameter dropped (fail safe), and ./stack status says so. The key reaches only
-# LiteLLM (os.environ/EXPLABS_API_KEY in the config) and api.experientiallabs.ai.
+# drop_params plus the model's additional_drop_params, and the output cap under the field it names, max_tokens when it
+# names none (LiteLLM's hook, lib/litellm-hooks/bn_hooks.py). A model without metadata — the list could not be read and
+# none is cached for this key — runs fail safe: no sampling, penalty or logprob parameter, response_format or
+# reasoning_effort (XL_FAILSAFE_DROPS), while tools and the max_tokens cap pass (a model that cannot take one answers
+# with a clear 400); ./stack status says so. The key reaches only LiteLLM (os.environ/EXPLABS_API_KEY in the config) and
+# api.experientiallabs.ai.
 #
 # Costs: the gateway reports what each call cost (usage.cost, USD; 0 with usage.is_byok, which your own provider
 # bills). LiteLLM's hook books exactly that; the list prices in the config only price a reply without one.
@@ -32,9 +34,14 @@ EXPLABS_API="${BEDROCK_NOW_TEST_EXPLABS_API:-https://api.experientiallabs.ai/v1}
 EXPLABS_DEFAULT_MODELS=qwen3.8-27b
 EXPLABS_KEYS_URL=https://platform.experientiallabs.ai/settings/api-keys
 # The request parameters the gateway's metadata decides about: each goes only to a model whose metadata says it takes
-# it, and a model without metadata gets none of them (fail safe). The rest of a request (messages, stream, stop, …)
-# passes as it came.
+# it (unknown = not taken; the output cap: the field the model names, max_tokens when it names none). The rest of a
+# request (messages, stream, stop, …) passes as it came.
 XL_OPTIONAL_PARAMS="temperature top_p top_k frequency_penalty presence_penalty logprobs top_logprobs tools tool_choice parallel_tool_calls functions function_call response_format reasoning_effort max_tokens max_completion_tokens"
+# What a model without metadata (fail safe) is never sent: the sampling, penalty and logprob parameters, response_format
+# and reasoning_effort (some models refuse them, and the call then fails with all_routes_failed). Its tools and its cap,
+# as max_tokens, pass: a model that cannot take them answers with a clear 400 (unsupported_capability /
+# unsupported_parameter), which beats a Claude Code that silently cannot use tools or an answer without a cap.
+XL_FAILSAFE_DROPS="temperature top_p top_k frequency_penalty presence_penalty logprobs top_logprobs response_format reasoning_effort max_completion_tokens"
 
 xl_cache_tsv() { printf '%s\n' "$STACK_DIR/litellm/explabs-models.tsv"; }
 xl_cache_json() { printf '%s\n' "$STACK_DIR/litellm/explabs-models.json"; }
@@ -118,13 +125,16 @@ xl_models_tsv() {
 }
 
 # The rules, in awk (one copy for the config, the Code page's rows and the tests):
-#   xl_drops(row fields 2..12) -> what to leave out of a request to that model, space-separated: every parameter of
-#     XL_OPTIONAL_PARAMS its metadata does not say it takes (unknown = not taken), sampling too when it takes sampling
-#     only with reasoning off, and the output-cap field it does not name (both when it names none)
+#   xl_drops(fail safe 1/0, row fields 2..12) -> what to leave out of a request to that model, space-separated: with
+#     details, every parameter of XL_OPTIONAL_PARAMS its metadata does not say it takes (unknown = not taken), sampling
+#     too when it takes sampling only with reasoning off, and the output-cap field it does not name (when it names none:
+#     max_completion_tokens, the cap goes as max_tokens); fail safe, XL_FAILSAFE_DROPS
+#   xl_cap(field) -> the field the output cap goes under: the one the model names, else max_tokens
 #   xl_shift(NANO, K) -> a whole number of nano-USD moved K places: per token (15) or per million tokens (9), exact
 # shellcheck disable=SC2016  # awk source, not shell
 XL_AWK='
-function xl_drops(te, tp, tk, fq, pp, lp, tl, so, rs, sn, mf,   d) {
+function xl_drops(fs, te, tp, tk, fq, pp, lp, tl, so, rs, sn, mf,   d) {
+  if (fs == 1) return "temperature top_p top_k frequency_penalty presence_penalty logprobs top_logprobs response_format reasoning_effort max_completion_tokens"
   d = ""
   if (te != "1" || sn == "1") d = d " temperature"
   if (tp != "1" || sn == "1") d = d " top_p"
@@ -135,11 +145,10 @@ function xl_drops(te, tp, tk, fq, pp, lp, tl, so, rs, sn, mf,   d) {
   if (tl != "1") d = d " tools tool_choice parallel_tool_calls functions function_call"
   if (so != "1") d = d " response_format"
   if (rs != "1") d = d " reasoning_effort"
-  if (mf == "max_completion_tokens") d = d " max_tokens"
-  else if (mf == "max_tokens") d = d " max_completion_tokens"
-  else d = d " max_tokens max_completion_tokens"
+  d = d (xl_cap(mf) == "max_tokens" ? " max_completion_tokens" : " max_tokens")
   return substr(d, 2)
 }
+function xl_cap(mf) { return mf == "max_completion_tokens" ? mf : "max_tokens" }
 function xl_shift(v, k,   s) {
   if (v !~ /^[0-9]+$/) return ""
   s = v; while (length(s) <= k) s = "0" s
@@ -173,10 +182,9 @@ xl_cached_rows() { local f; f="$(xl_cache_tsv)"; [ -r "$f" ] || return 0; grep -
 xl_fetched_at() { local f; f="$(xl_cache_tsv)"; [ -r "$f" ] || return 0; sed -n 's/^# fetched_at: //p' "$f" | head -n 1; }
 
 # xl_selected -> one line per model EXPLABS_MODELS picks: STATE then the xl_models_tsv fields. STATE = details (the
-# cached list for this key has its details) or failsafe (no list for this key, or no details for it in the list: every
-# optional parameter is dropped). With a
-# list, an id it does not have is left out (the gateway would refuse it); "<slug>:free" takes its slug's details,
-# at $0. Empty without a key.
+# cached list for this key has its details) or failsafe (no list for this key, or no details for it in the list:
+# XL_FAILSAFE_DROPS). With a list, an id it does not have is left out (the gateway would refuse it); "<slug>:free"
+# takes its slug's details, at $0. Empty without a key.
 xl_selected() {
   local have=0 rows
   explabs_enabled || return 0
@@ -205,21 +213,20 @@ xl_missing() {
 
 # xl_yaml_entries < xl_selected -> LiteLLM model_list entries (render_litellm_config's indentation). model_info carries
 # the list prices (only a reply without usage.cost is priced with them), bn_xl (the hook knows its own) and the output
-# cap's field for the hook to rename max_tokens to.
+# cap's field (bn_xl_max_tokens), which the hook moves a cap sent under the other name to.
 xl_yaml_entries() {
   awk -F'\t' -v base="$EXPLABS_API" "$XL_AWK"'
     { id = $2
       printf "  - model_name: \"xl/%s\"\n    litellm_params:\n      model: \"openai/%s\"\n      api_base: \"%s\"\n", id, id, base
       printf "      api_key: os.environ/EXPLABS_API_KEY\n      drop_params: true\n"
-      n = split(xl_drops($3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13), d, " "); s = ""
+      n = split(xl_drops($1 == "failsafe", $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13), d, " "); s = ""
       for (i = 1; i <= n; i++) s = s (i > 1 ? ", " : "") "\"" d[i] "\""
       printf "      additional_drop_params: [%s]\n    model_info:\n      mode: \"chat\"\n", s
       if (xl_shift($16, 15) != "") printf "      input_cost_per_token: %s\n", xl_shift($16, 15)
       if (xl_shift($17, 15) != "") printf "      output_cost_per_token: %s\n", xl_shift($17, 15)
       if (xl_shift($18, 15) != "") printf "      cache_read_input_token_cost: %s\n", xl_shift($18, 15)
       if (xl_shift($19, 15) != "") printf "      cache_creation_input_token_cost: %s\n", xl_shift($19, 15)
-      printf "      bn_xl: true\n"
-      if ($13 != "") printf "      bn_xl_max_tokens: \"%s\"\n", $13
+      printf "      bn_xl: true\n      bn_xl_max_tokens: \"%s\"\n", xl_cap($13)
     }'
 }
 
@@ -230,12 +237,14 @@ explabs_yaml() {
 }
 
 # explabs_code_rows -> for lib/code_models.sh, one line per chosen model: id ("xl/…") name vendor in out cache_read
-# cache_write (USD per million tokens, empty when unknown) free tools (1/0/empty) max_out context
+# cache_write (USD per million tokens, empty when unknown) free tools max_out context — tools 1 or 0 as its details
+# say (unknown: 0, they are not sent), empty fail safe (they are sent, untested)
 explabs_code_rows() {
   explabs_enabled || return 0
   xl_selected | awk -F'\t' -v OFS='\t' "$XL_AWK"'
     { free = ($16 != "" && $17 != "" && $16 + 0 == 0 && $17 + 0 == 0) ? 1 : 0
-      print "xl/" $2, $2, xl_vendor($2), xl_shift($16, 9), xl_shift($17, 9), xl_shift($18, 9), xl_shift($19, 9), free, $9, $14, $15 }'
+      tools = ($1 == "failsafe") ? "" : ($9 == "1" ? 1 : 0)
+      print "xl/" $2, $2, xl_vendor($2), xl_shift($16, 9), xl_shift($17, 9), xl_shift($18, 9), xl_shift($19, 9), free, tools, $14, $15 }'
 }
 
 # xl_price_text IN OUT (USD per token) -> "$0.32 in / $2.40 out per 1M tokens", "free" or "price unknown"
@@ -329,7 +338,7 @@ explabs_refresh() {
     rm -f "$tmp"
     ( umask 077; printf '%s\t%s\n' "$(date +%s)" "$XL_ERR" > "$(xl_error_file)" )
     if xl_cache_current; then warn "Experiential Labs: $XL_ERR — keeping the model details read $(xl_fetched_at)"
-    else warn "Experiential Labs: $XL_ERR — its models send no optional parameter (temperature, top_p, tools, …) until the details can be read (./stack up or Settings tries again)"; fi
+    else warn "Experiential Labs: $XL_ERR — until the details can be read its models are sent no sampling or penalty parameter (temperature, top_p, …), only tools and the max_tokens cap (./stack up or Settings tries again)"; fi
   fi
   [ "$before" != "$(_xl_signature)" ] || return 0
   XL_CHANGED=1
@@ -353,9 +362,9 @@ explabs_status_line() {
   out_colors
   fs="$(xl_failsafe_count)"; at="$(xl_error_at)"
   if [ "$fs" -gt 0 ]; then
-    printf '%sExperiential Labs: %s — no model details (%s%s), so every optional parameter is dropped (%s); ./stack up or Settings tries again%s\n' \
+    printf '%sExperiential Labs: %s — no model details (%s%s), so fail safe: none of %s is sent (tools and the max_tokens cap are); ./stack up or Settings tries again%s\n' \
       "$O_YEL" "$(xl_counts)" "$(xl_error_text)" "${at:+, $(date -r "$at" '+%Y-%m-%d %H:%M' 2>/dev/null || date -d "@$at" '+%Y-%m-%d %H:%M' 2>/dev/null)}" \
-      "$(printf '%s' "$XL_OPTIONAL_PARAMS" | tr ' ' ',' | sed 's/,/, /g')" "$O_OFF"
+      "$(printf '%s' "${XL_FAILSAFE_DROPS% max_completion_tokens}" | tr ' ' ',' | sed 's/,/, /g')" "$O_OFF"
   elif [ -n "$at" ]; then
     printf '%sExperiential Labs: %s — model details read %s (the last refresh failed: %s)%s\n' "$O_YEL" "$(xl_counts)" "$(xl_fetched_at)" "$(xl_error_text)" "$O_OFF"
   else
@@ -407,7 +416,7 @@ explabs_owui_models() {
       else if (pin + 0 == 0 && pout + 0 == 0) desc = desc "free"
       else desc = desc money(pin * 1000000) " in / " money(pout * 1000000) " out per 1M tokens (list price; the gateway bills what each call cost)"
       if (ctxl($15) != "") desc = desc " · " ctxl($15)
-      if ($1 == "failsafe") desc = desc " · no model details yet: optional parameters are not sent"
+      if ($1 == "failsafe") desc = desc " · no model details yet: no sampling parameters are sent"
       v = xl_vendor($2)
       printf "xl/%s\t%s · Experiential Labs\t%s\tExperiential Labs%s\n", $2, $2, desc, (v != "" ? "," v : "") }'
 }

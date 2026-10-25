@@ -312,7 +312,7 @@ function renderModels(models, prices) {
   bits.push("Prices are Bedrock on-demand rates in USD per 1M tokens.");
   if (or) bits.push(`OpenRouter models (or/…) send prompts to openrouter.ai; prices as of ${ago(or.fetched_at)}. ./stack openrouter changes which ones are offered.`);
   // (Experiential Labs: list prices; each call is booked at what the gateway reported for it, $0 on your own provider key)
-  if (xl) bits.push(`Experiential Labs models (xl/…) send prompts to api.experientiallabs.ai; list prices${xl.fetched_at ? ` as of ${ago(xl.fetched_at)}` : ""}, while spend is what the gateway reports for each call ($0 on your own provider key, which that provider bills).${xl.failsafe ? ` ${xl.failsafe} of them run without model details, so no optional parameter is sent (./stack status says why).` : ""} Settings › Chat & voice changes which ones are offered.`);
+  if (xl) bits.push(`Experiential Labs models (xl/…) send prompts to api.experientiallabs.ai; list prices${xl.fetched_at ? ` as of ${ago(xl.fetched_at)}` : ""}, while spend is what the gateway reports for each call ($0 on your own provider key, which that provider bills).${xl.failsafe ? ` ${xl.failsafe} of them run without model details: no sampling parameter is sent, tools and the cap are (./stack status says why).` : ""} Settings › Chat & voice changes which ones are offered.`);
   $("#models-note").textContent = bits.join(" ");
   renderPrices(prices);
 }

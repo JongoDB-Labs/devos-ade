@@ -16,8 +16,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   *Experiential Labs*, a group of the Who answers menu, greyed while there is no key), on the Code page and in
   `claude-bedrock` (a group of their own) and on Home. Each model is sent **only the parameters it takes**, from the
   gateway's own model details (`supports_temperature`, `supports_top_p`, `supports_tools`, `chat_max_tokens_field`, …):
-  so a model that refuses a sampling parameter answers instead of failing with `all_routes_failed`. Without the details (the list
-  could not be read) every optional parameter is dropped and `./stack status` says so. **Costs are what the gateway
+  so a model that refuses a sampling parameter answers instead of failing with `all_routes_failed`; the output cap is
+  always sent (as `max_tokens` when a model names no field). Without the details (the list could not be read) no
+  sampling, penalty or logprob parameter is sent, tools and the cap still are, and `./stack status` says so. **Costs are what the gateway
   reported** for each call (`usage.cost`), in spend, budgets, Home and Chat's cost line; a call on your own provider key
   (`usage.is_byok`) counts $0 here and Chat's line says *on your own provider key*. README › *Optional: Experiential
   Labs*; docs/security.md › *Experiential Labs*; an opt-in check of one real completion: `tests/e2e/explabs.sh`.
