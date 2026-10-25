@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-10-25
+
 ### Added
 
 - **Experiential Labs as a model gateway** (optional, off without a key): one OpenAI-compatible gateway in front of
@@ -2666,7 +2668,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.26.0...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.25.2...v0.26.0
 [0.25.2]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.25.1...v0.25.2
 [0.25.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.25.0...v0.25.1
