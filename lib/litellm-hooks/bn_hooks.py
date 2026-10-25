@@ -15,13 +15,15 @@ catalog/code-models.tsv and OpenRouter's list):
   those models that message is left out; every other message stays as it came.
 
 For the Experiential Labs gateway's models (lib/explabs.sh: model_info bn_xl: true), on each call to the gateway:
-- Before it: the model goes by its own id on Chat Completions (with extended thinking on, LiteLLM renames it
-  openai/responses/<id> for OpenAI's Responses API, which would send the gateway an id it does not know). The output
-  cap goes under the field the model takes (model_info bn_xl_max_tokens: max_tokens or max_completion_tokens; Claude
-  Code and Chat send max_tokens), in extra_body: LiteLLM sends that as it is, where it would rename a top-level
-  max_tokens to max_completion_tokens for an o-series or GPT-5 name whatever the model takes. The parameters of its
-  additional_drop_params — what the gateway's details say it does not take — are left out, extra_body included
-  (LiteLLM drops the others itself).
+- Before it: the model goes by its own id (with extended thinking on, LiteLLM renames it openai/responses/<id> for
+  OpenAI's Responses API, which would send the gateway an id it does not know). The output cap goes under the field the
+  model takes (model_info bn_xl_max_tokens: max_tokens or max_completion_tokens; Claude Code and Chat send max_tokens),
+  in extra_body: LiteLLM sends that as it is, where it would rename a top-level max_tokens to max_completion_tokens for
+  an o-series or GPT-5 name whatever the model takes. A call LiteLLM moves to the gateway's Responses API after this
+  hook (GPT-5.4 and later names with a reasoning effort and function tools: LiteLLM's responses_api_bridge_check) keeps
+  its cap at the top level instead, under the model's field, since that move leaves extra_body behind; LiteLLM sends it
+  as max_output_tokens. The parameters of its additional_drop_params — what the gateway's details say it does not
+  take — are left out, extra_body included (LiteLLM drops the others itself).
 - After it: the cost LiteLLM books is the one the gateway reported for the call (usage.cost, USD), $0 when the call ran
   on your own provider key (usage.is_byok), never one computed from the list prices in the config. (A streamed reply's
   usage.cost is booked by LiteLLM itself.)
@@ -175,8 +177,26 @@ def xl_request(kwargs: dict) -> dict:
     if isinstance(extra, dict) and drop & extra.keys():
         kwargs["extra_body"] = extra = {k: v for k, v in extra.items() if k not in drop}
     if cap is not None:
-        kwargs["extra_body"] = {**(extra if isinstance(extra, dict) else {}), field: cap}
+        if _goes_to_responses(kwargs):
+            kwargs[field] = cap
+        else:
+            kwargs["extra_body"] = {**(extra if isinstance(extra, dict) else {}), field: cap}
     return kwargs
+
+
+def _goes_to_responses(kwargs: dict) -> bool:
+    """Whether LiteLLM will move this Chat Completions call (KWARGS as the hook leaves them) to the Responses API, which
+    does not carry extra_body: its own check, asked as it will ask it. Without that check (another LiteLLM) or on any
+    error: True, so the cap stays at the top level under the model's field, never lost."""
+    try:
+        from litellm.main import responses_api_bridge_check
+        model = kwargs.get("model")
+        info, _ = responses_api_bridge_check(
+            model=model.removeprefix("openai/") if isinstance(model, str) else "", custom_llm_provider="openai",
+            tools=kwargs.get("tools"), reasoning_effort=kwargs.get("reasoning_effort"), api_base=kwargs.get("api_base"))
+        return not isinstance(info, Mapping) or info.get("mode") == "responses"
+    except Exception:  # noqa: BLE001 — never a lost cap because of this check
+        return True
 
 
 def _usage_field(usage, name):

@@ -1979,7 +1979,10 @@ shown there once.
   sends each only what it takes: LiteLLM drops the rest (`drop_params` and the model's
   `additional_drop_params`), and its hook moves the output cap to the field the model names. Claude Code's requests
   stay on Chat Completions, the API those details describe, with extended thinking too (LiteLLM would send those to
-  OpenAI's Responses API as `responses/<id>`, an id the gateway does not know; the hook keeps the model's own).
+  OpenAI's Responses API as `responses/<id>`, an id the gateway does not know; the hook keeps the model's own). One
+  kind goes to the gateway's Responses API (`/v1/responses`) all the same: for an id LiteLLM takes for GPT-5.4 or later
+  (`gpt-5.5`, `gpt-6-luna`, …), a request with a reasoning effort and function tools — Claude Code with thinking, Chat
+  with tools and an effort — which LiteLLM moves there itself; its cap goes along, as `max_output_tokens`.
 
   | The model's details | Left out of a request to it |
   |---|---|

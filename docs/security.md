@@ -372,7 +372,9 @@ An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*)
 `EXPLABS_API_KEY`. Without it nothing contacts the gateway, and no `xl/…` model exists.
 
 - **Where requests go.** A prompt to an `xl/<id>` model goes from LiteLLM to `https://api.experientiallabs.ai/v1`
-  (Chat Completions, extended thinking included) and from there to whichever provider the gateway routes
+  (Chat Completions, extended thinking included; its Responses API, `/v1/responses`, for a call LiteLLM moves there:
+  an id it takes for GPT-5.4 or later, with a reasoning effort and function tools — Claude Code with thinking, Chat
+  with tools and an effort) and from there to whichever provider the gateway routes
   that call to — its own Experiential Cloud, another hosted provider, or your own provider account connected there
   (BYOK); the answer's `x-gateway-provider` header names it. Besides the calls themselves, `./stack` makes these GET
   requests, all free (setup and Settings, which wait at most about 100 s; `./stack up` at most every 12 hours unless
@@ -422,7 +424,8 @@ An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*)
   model), each model is sent no sampling, penalty or logprob parameter, `response_format` or `reasoning_effort`; its
   tools and the output cap (as `max_tokens`) still go, and a model that cannot take them answers with a clear 400. `./stack status` says so — a
   call is never refused by DevOS ADE for want of details. The cap is never left out, with details or without (a model
-  whose details name no cap field gets it as `max_tokens`): it bounds what an answer can cost.
+  whose details name no cap field gets it as `max_tokens`), on Chat Completions and on a call LiteLLM moves to the
+  Responses API (there, as `max_output_tokens`): it bounds what an answer can cost.
 
 ## Remote access
 

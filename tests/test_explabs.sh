@@ -598,6 +598,11 @@ _hook() {
   mkdir -p "$TMP/h/litellm/integrations"
   printf '' > "$TMP/h/litellm/__init__.py"; printf '' > "$TMP/h/litellm/integrations/__init__.py"
   printf 'class CustomLogger:\n    pass\n' > "$TMP/h/litellm/integrations/custom_logger.py"
+  # LiteLLM's check of whether a call goes to the Responses API, as 1.105.0 answers it for a GPT-5.4-or-later name:
+  # function tools with a reasoning effort (here: names starting gpt-5.5)
+  printf '%s\n' 'def responses_api_bridge_check(model, custom_llm_provider, tools=None, reasoning_effort=None, api_base=None, **kw):' \
+    '    go = model.startswith("gpt-5.5") and bool(tools) and reasoning_effort not in (None, "none")' \
+    '    return {"mode": "responses" if go else "chat"}, model' > "$TMP/h/litellm/main.py"
   cp "$STACK_DIR/lib/litellm-hooks/bn_hooks.py" "$TMP/h/bn_hooks.py"
 }
 
@@ -665,6 +670,34 @@ for kw in ({"model": "openai/claude-fable-5", "model_info": mi, "reasoning_effor
 other = {"model": "openai/responses/gpt-5", "model_info": {"id": "1"}, "reasoning_effort": {"effort": "high"}}
 assert run(copy.deepcopy(other)) == other
 '
+}
+
+# A call LiteLLM moves to the Responses API after the hook (GPT-5.4 and later with a reasoning effort and function tools:
+# its responses_api_bridge_check) leaves extra_body behind: there the cap stays at the top level, under the model's own
+# field (LiteLLM sends it as max_output_tokens). Without that check, or when it fails: the same — never a lost cap
+test_litellm_hook_keeps_the_cap_on_calls_litellm_moves_to_the_responses_api() {
+  _hook || return $?
+  local py='
+import asyncio, enum, sys, bn_hooks as h
+class CallTypes(enum.Enum):
+    acompletion = "acompletion"
+run = lambda kw: asyncio.run(h.proxy_handler_instance.async_pre_call_deployment_hook(kw, CallTypes.acompletion))
+mi = {"bn_xl": True, "bn_xl_max_tokens": "max_completion_tokens"}
+T = [{"type": "function", "function": {"name": "f", "parameters": {"type": "object"}}}]
+moved = {"model": "openai/gpt-5.5", "model_info": mi, "max_tokens": 32000, "tools": T, "reasoning_effort": "high", "additional_drop_params": ["max_tokens"]}
+chat = {"model": "openai/gpt-5.5", "model_info": mi, "max_tokens": 300, "tools": T}
+out = run(moved)
+assert out["max_completion_tokens"] == 32000 and "max_tokens" not in out and "extra_body" not in out, out
+out = run(chat)
+if sys.argv[1] == "check":
+    assert out["extra_body"] == {"max_completion_tokens": 300} and "max_completion_tokens" not in out, out
+else:   # no check to ask: at the top level, under its field
+    assert out["max_completion_tokens"] == 300 and "extra_body" not in out, out
+'
+  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$TMP/h" python3 -c "$py" check
+  rm -f "$TMP/h/litellm/main.py"; PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$TMP/h" python3 -c "$py" none
+  printf 'def responses_api_bridge_check(**kw):\n    raise RuntimeError("changed")\n' > "$TMP/h/litellm/main.py"
+  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$TMP/h" python3 -c "$py" none
 }
 
 test_litellm_hook_books_the_cost_the_gateway_reported() {

@@ -13,13 +13,14 @@
 #   --out DIR                                     results (default tests/e2e/out, gitignored): explabs.json
 #
 # What it checks: qwen3.8-27b is in the key's model list (GET /v1/models: ids only) with its details from the catalog
-# (GET /api/models, keyless); the config sends it only what it takes; LiteLLM
+# (GET /api/models/qwen3.8-27b, keyless); the config sends it only what it takes; LiteLLM
 # answers "DevOS ADE test OK"; the cost LiteLLM books for the call (x-litellm-response-cost) is the one the gateway
 # reported (usage.cost; $0 with usage.is_byok); and the key is nowhere — not in the rendered config, the results, the
 # answer, the container's log, this run's output. With --mock also: what the stand-in got (no refused parameter, the
 # output cap under max_completion_tokens; as max_tokens for gpt-5.1-codex, which names it), a streamed answer, Claude
-# Code's /v1/messages (with extended thinking too: Chat Completions under the model's own id), and a BYOK call booked
-# at $0.
+# Code's /v1/messages (with extended thinking too: Chat Completions under the model's own id; with thinking and tools
+# on xl/gpt-5.5, the Responses API with its cap as max_output_tokens), a BYOK call booked at $0, and a catalog that
+# streams slowly (the stand-in on this computer's 127.0.0.1, real curl): timed out, said, the details read before kept.
 #
 # The key is only ever in this process's environment and the container's: E2E_EXPLABS_API_KEY is read here, handed to
 # curl on its stdin (lib/common.sh curl_auth) and to docker as `-e EXPLABS_API_KEY` (the value from the environment,
@@ -93,7 +94,7 @@ export STACK_DIR ENV_FILE STATE_DIR
 . "$ROOT/lib/common.sh"; . "$ROOT/lib/ports.sh"; . "$ROOT/lib/portal.sh"; . "$ROOT/lib/models.sh"; . "$ROOT/lib/commands.sh"
 # (the stand-in answers on plain http inside the container: lib/explabs.sh takes such an address only while testing)
 [ "$MOCK" = 0 ] || { EXPLABS_API="http://127.0.0.1:$MOCK_PORT/v1"; BEDROCK_NOW_TESTING=1; }
-get_env() { case "$1" in EXPLABS_API_KEY) printf '%s' "$KEY" ;; EXPLABS_MODELS) printf 'qwen3.8-27b%s' "$([ "$MOCK" = 1 ] && echo ,byok-model,claude-fable-5,gpt-5.1-codex)" ;; esac; }
+get_env() { case "$1" in EXPLABS_API_KEY) printf '%s' "$KEY" ;; EXPLABS_MODELS) printf 'qwen3.8-27b%s' "$([ "$MOCK" = 1 ] && echo ,byok-model,claude-fable-5,gpt-5.1-codex,gpt-5.5)" ;; esac; }
 STACK_DIR="$WORK"; mkdir -p "$WORK/litellm" "$STATE_DIR"
 xl_cache_current() { [ -s "$(xl_cache_tsv)" ]; }   # (no key mark: not even a hash of the key on disk)
 
@@ -123,8 +124,11 @@ if [ "$MOCK" = 1 ]; then
   # provider key
   mkdir -p "$WORK/catalog"; cp "$ROOT/tests/fixtures/explabs_catalog/"*.json "$WORK/catalog/" || exit 2
   sed 's/"qwen3\.8-27b"/"byok-model"/g' "$WORK/catalog/qwen3.8-27b.json" > "$WORK/catalog/byok-model.json"
+  # (and a GPT-5.4-or-later name, which LiteLLM moves to the Responses API with thinking and tools: gpt-5-mini's details)
+  sed 's/"gpt-5-mini"/"gpt-5.5"/g' "$WORK/catalog/gpt-5-mini.json" > "$WORK/catalog/gpt-5.5.json"
   python3 -I -c 'import json, sys
-v = json.load(open(sys.argv[1])); v["data"].append({"id": "byok-model", "object": "model", "created": 0, "owned_by": "exp"})
+v = json.load(open(sys.argv[1]))
+v["data"] += [{"id": i, "object": "model", "created": 0, "owned_by": "exp"} for i in ("byok-model", "gpt-5.5")]
 json.dump(v, open(sys.argv[2], "w"))' "$ROOT/tests/fixtures/explabs_v1_models.json" "$WORK/v1.json" || exit 2
   cp "$HERE/explabs-mock.py" "$WORK/mock.py"; chmod 755 "$WORK/catalog"; chmod 644 "$WORK/v1.json" "$WORK/catalog/"*.json "$WORK/mock.py"
 
@@ -274,6 +278,16 @@ assert "frequency_penalty" not in b and "max_tokens" not in b and b.get("max_com
 b = json.loads(sys.stdin.read())["body"]; sys.exit(0 if b.get("model") == "gpt-5.1-codex" and b.get("max_tokens") == 300 and "max_completion_tokens" not in b else 1)' &&
     ok "xl/gpt-5.1-codex (its details: max_tokens) got its cap as max_tokens" ||
     fail "xl/gpt-5.1-codex (HTTP $code): $(head -c 300 "$WORK/codex.json" | _mask) — the gateway got: $(tail -n 1 "$WORK/reqs.jsonl" | head -c 300)"
+  # GPT-5.4 and later with thinking and tools: LiteLLM moves the call to the gateway's Responses API after the hook;
+  # the cap goes along (as max_output_tokens)
+  printf '%s' '{"model":"xl/gpt-5.5","max_tokens":32000,"thinking":{"type":"enabled","budget_tokens":4096},"tools":[{"name":"Read","description":"read a file","input_schema":{"type":"object","properties":{"p":{"type":"string"}}}}],"messages":[{"role":"user","content":"hi"}]}' > "$WORK/resp.req"
+  code="$(_call /v1/messages "$WORK/resp.req" "$WORK/resp")"
+  docker exec "$NAME" cat /tmp/reqs.jsonl > "$WORK/reqs.jsonl" 2>/dev/null || : > "$WORK/reqs.jsonl"
+  [ "$code" = 200 ] && tail -n 1 "$WORK/reqs.jsonl" | python3 -I -c 'import json, sys
+d = json.loads(sys.stdin.read()); b = d["body"]
+sys.exit(0 if d["path"] == "/v1/responses" and b.get("model") == "gpt-5.5" and b.get("max_output_tokens") == 32000 else 1)' &&
+    ok "/v1/messages with thinking and tools on xl/gpt-5.5: the gateway's Responses API, the cap as max_output_tokens 32000" ||
+    fail "xl/gpt-5.5 with thinking and tools (HTTP $code): $(head -c 300 "$WORK/resp.json" | _mask) — the gateway got: $(tail -n 1 "$WORK/reqs.jsonl" | head -c 400)"
   # with extended thinking on, LiteLLM names the model openai/responses/<id>: the hook keeps it on Chat Completions under
   # the id the gateway knows
   printf '%s' '{"model":"xl/claude-fable-5","max_tokens":32000,"thinking":{"type":"enabled","budget_tokens":4096},"messages":[{"role":"user","content":"hi"}]}' > "$WORK/think.req"
