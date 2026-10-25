@@ -45,29 +45,46 @@ while [ $# -gt 0 ]; do
 done
 
 say() { printf '==> %s\n' "$*" >&2; }
-fail() { printf 'FAIL  %s\n' "$*" >&2; FAILS=$((FAILS + 1)); }
+fail() { printf 'FAIL  %s\n' "$*" >&2; FAILS=$((FAILS + 1)); LAST_FAIL="$*"; }
 ok() { printf 'ok    %s\n' "$*" >&2; }
-FAILS=0
+# stop REASON [CODE] — the run cannot go on: says why, and so does its results file
+stop() { STOP_REASON="$1"; echo "$1" >&2; exit "${2:-1}"; }
+FAILS=0; KEY=''; LAST_FAIL=''; STOP_REASON=''
+
+# _has_key FILE... -> 0 when any FILE holds the key (the key on grep's stdin as its pattern list: never in argv)
+_has_key() { [ -n "$KEY" ] && printf '%s\n' "$KEY" | grep -qF -f - "$@" 2>/dev/null; }
+_mask() { if [ -z "$KEY" ]; then cat; return; fi; K="$KEY" awk '{ while ((i = index($0, ENVIRON["K"])) > 0) $0 = substr($0, 1, i - 1) "[key]" substr($0, i + length(ENVIRON["K"])); print }'; }
+
+# This run's results only: an earlier run's explabs.json never stands for this one. From the start until the summary
+# replaces it, the file says the run did not finish, with why when it stops early (its reason, or the last failure).
+RESULT="$OUT/explabs.json"; RESULT_DONE=0
+_result_stopped() {
+  local why="${STOP_REASON:-${LAST_FAIL:-the run stopped before its checks finished}}"
+  mkdir -p "$OUT" 2>/dev/null || return 0
+  why="$(printf '%s' "$why" | _mask | head -c 600)"
+  python3 -I -c 'import json, sys
+print(json.dumps({"mode": sys.argv[1], "finished": False, "failures": max(1, int(sys.argv[2])), "reason": sys.argv[3]}, indent=1))' \
+    "$([ "$MOCK" = 1 ] && echo mock || echo gateway)" "$FAILS" "$why" > "$RESULT" 2>/dev/null || rm -f "$RESULT"
+}
+_result_stopped
+trap '[ "$RESULT_DONE" = 1 ] || _result_stopped' EXIT
 
 KEY="${E2E_EXPLABS_API_KEY:-}"
 unset E2E_EXPLABS_API_KEY EXPLABS_API_KEY   # (from here on only $KEY holds it, and only this process)
 if [ "$MOCK" = 0 ] && [ -z "$KEY" ]; then
   echo "skip: E2E_EXPLABS_API_KEY is not set (tests/e2e/explabs.sh --mock runs against a stand-in instead)"
+  printf '{\n "mode": "gateway",\n "skipped": "E2E_EXPLABS_API_KEY is not set",\n "failures": 0\n}\n' > "$RESULT"; RESULT_DONE=1
   exit 0
 fi
 if [ "$MOCK" = 1 ]; then KEY="mock-key-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"; fi
-case "$KEY" in *[!A-Za-z0-9_-]*) echo "E2E_EXPLABS_API_KEY is not a key (letters, digits, - and _ only)" >&2; exit 2 ;; esac
-command -v docker >/dev/null 2>&1 || { echo "needs docker" >&2; exit 2; }
+case "$KEY" in *[!A-Za-z0-9_-]*) KEY=''; stop "E2E_EXPLABS_API_KEY is not a key (letters, digits, - and _ only)" 2 ;; esac
+command -v docker >/dev/null 2>&1 || stop "needs docker" 2
 
 IMAGE="$(sed -n 's/^    image: \(ghcr.io\/berriai\/litellm:[^ ]*\)$/\1/p' "$ROOT/compose.yaml" | head -n 1)"
-[ -n "$IMAGE" ] || { echo "no LiteLLM image in compose.yaml" >&2; exit 2; }
+[ -n "$IMAGE" ] || stop "no LiteLLM image in compose.yaml" 2
 WORK="$ROOT/tests/e2e/work/$NAME"
-mkdir -p "$OUT" "$WORK" || exit 2
+mkdir -p "$OUT" "$WORK" || stop "could not make $OUT or $WORK" 2
 MASTER="sk-e2e-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
-
-# _has_key FILE... -> 0 when any FILE holds the key (the key on grep's stdin as its pattern list: never in argv)
-_has_key() { printf '%s\n' "$KEY" | grep -qF -f - "$@" 2>/dev/null; }
-_mask() { K="$KEY" awk '{ while ((i = index($0, ENVIRON["K"])) > 0) $0 = substr($0, 1, i - 1) "[key]" substr($0, i + length(ENVIRON["K"])); print }'; }
 
 cleanup() {
   if docker container inspect "$NAME" >/dev/null 2>&1; then
@@ -76,6 +93,7 @@ cleanup() {
       docker rm -f "$NAME" >/dev/null 2>&1
   fi
   rm -rf "$WORK"
+  [ "$RESULT_DONE" = 1 ] || _result_stopped
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
@@ -83,7 +101,8 @@ if docker container inspect "$NAME" >/dev/null 2>&1; then
   if [ "$(docker container inspect -f '{{index .Config.Labels "io.bedrock-now.e2e"}}' "$NAME" 2>/dev/null)" = explabs ]; then
     say "removing a $NAME left by an earlier run"; docker rm -f "$NAME" >/dev/null 2>&1
   else
-    echo "a container named $NAME exists and is not this check's: not touching it" >&2; trap - EXIT; exit 2
+    STOP_REASON="a container named $NAME exists and is not this check's: not touching it"; echo "$STOP_REASON" >&2
+    _result_stopped; trap - EXIT; exit 2
   fi
 fi
 
@@ -159,7 +178,7 @@ else
   say "reading the key's model list (GET /v1/models, with the key) and the chosen models' details (GET /api/models/<id>, keyless)"
   rc=0; t0=$SECONDS; xl_fetch_models "$(xl_cache_tsv)" "$KEY" || rc=$?
   say "read in $((SECONDS - t0)) s"
-  case "$rc" in 0) ;; 2) fail "the catalog's details could not be read: $XL_ERR" ;; *) echo "the model list could not be read: $XL_ERR" >&2; exit 1 ;; esac
+  case "$rc" in 0) ;; 2) fail "the catalog's details could not be read: $XL_ERR" ;; *) stop "the model list could not be read: $XL_ERR" ;; esac
   _render
 fi
 
@@ -177,7 +196,7 @@ if [ "$MOCK" = 1 ]; then
 else
   args+=("$IMAGE" --config /app/config/config.yaml --port 4000)
 fi
-EXPLABS_API_KEY="$KEY" LITELLM_MASTER_KEY="$MASTER" docker run "${args[@]}" >/dev/null || { echo "could not start $NAME" >&2; exit 1; }
+EXPLABS_API_KEY="$KEY" LITELLM_MASTER_KEY="$MASTER" docker run "${args[@]}" >/dev/null || stop "could not start $NAME"
 
 if [ "$MOCK" = 1 ]; then
   # _get URL OUT — the stand-in's answer, asked from inside the container (it listens there only); a made-up bearer
@@ -312,8 +331,8 @@ rm -f "$WORK/container.log"
 summary="$(printf '%s\n' "${results[@]}" | python3 -I -c 'import json, sys
 print(json.dumps({"mode": sys.argv[1], "model": "xl/qwen3.8-27b", "image": sys.argv[2], "failures": int(sys.argv[3]),
                   "calls": [json.loads(l) for l in sys.stdin if l.strip()]}, indent=1))' "$([ "$MOCK" = 1 ] && echo mock || echo gateway)" "$IMAGE" "$FAILS")"
-printf '%s\n' "$summary" > "$OUT/explabs.json"
-if _has_key "$OUT/explabs.json"; then rm -f "$OUT/explabs.json"; fail "the results held the key (removed)"; fi
+printf '%s\n' "$summary" > "$OUT/explabs.json"; RESULT_DONE=1
+if _has_key "$OUT/explabs.json"; then RESULT_DONE=0; fail "the results held the key (removed)"; fi
 say "results: $OUT/explabs.json"
 if [ "$FAILS" -gt 0 ]; then printf '\n%d check(s) failed\n' "$FAILS"; exit 1; fi
 printf '\nall checks passed\n'

@@ -821,3 +821,18 @@ json.dump({"object": "list", "data": [{"id": i, "object": "model", "created": 0,
   local rows; rows="$(CATALOG="$TMP/catalog.tsv" PRICES=/dev/null CODE_COMPAT=/dev/null CODE_DISPLAY_TSV=/dev/null code_models_rows "")"
   assert_eq "$(printf '%s\n' "$rows" | awk -F'\t' '$1 ~ /^xl\// { print $1, $10 }' | tr '\n' ' ')" "xl/tools-null untested xl/tools-false chat-only "
 }
+
+# tests/e2e/explabs.sh: an earlier run's results never stand for this one. A run that stops early leaves an explabs.json
+# that says it did not finish and why; a skipped run, that it was skipped (both before any container or request)
+test_the_e2e_results_file_is_always_this_runs() {
+  local r="$TMP/out/explabs.json"
+  mkdir -p "$TMP/out"; printf '{"mode": "gateway", "failures": 0, "calls": [{"label": "completion", "ok": true}]}\n' > "$r"
+  if E2E_EXPLABS_API_KEY='not a key!' "$BASH" "$T_ROOT/tests/e2e/explabs.sh" --out "$TMP/out" >/dev/null 2>&1; then return 1; fi
+  python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1]))
+assert d["finished"] is False and d["failures"] >= 1 and "calls" not in d, d
+assert d["reason"] == "E2E_EXPLABS_API_KEY is not a key (letters, digits, - and _ only)", d' "$r"
+  printf '{"mode": "gateway", "failures": 0, "calls": [{"label": "completion", "ok": true}]}\n' > "$r"
+  env -u E2E_EXPLABS_API_KEY "$BASH" "$T_ROOT/tests/e2e/explabs.sh" --out "$TMP/out" >/dev/null 2>&1
+  python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1]))
+assert d == {"mode": "gateway", "skipped": "E2E_EXPLABS_API_KEY is not set", "failures": 0}, d' "$r"
+}
