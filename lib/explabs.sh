@@ -359,7 +359,7 @@ xl_curl_why() {
 xl_fetch_ids() {
   local out="$1" raw w='' rc=0 code tc
   XL_ERR=''
-  raw="$(mktemp)"
+  raw="$(mktemp)"; XL_TMPS="${XL_TMPS:-} $raw"
   w="$(curl_auth "$2" --proto "$(_xl_proto)" -sS --connect-timeout 10 -m "$XL_LIST_TIMEOUT" --max-filesize 20000000 -o "$raw" -w '%{http_code} %{time_connect}' "$EXPLABS_API/models" 2>/dev/null)" || rc=$?
   code="${w%% *}"; tc="${w#* }"; [ "$tc" != "$w" ] || tc=''
   if [ "$rc" != 0 ]; then XL_ERR="$(xl_curl_why "$rc" "$tc" "$XL_LIST_TIMEOUT" "the model list")"
@@ -395,6 +395,7 @@ xl_fetch_details() {
   local out="$1" dir n=0 i id p pids='' rc code tc e err='' errs=0 lim="${XL_MODEL_LIMIT:-$XL_MODEL_TIMEOUT}" more=0
   XL_ERR=''; : > "$out"
   dir="$(mktemp -d)" || { XL_ERR="could not make a temporary folder"; return 1; }
+  XL_TMPS="${XL_TMPS:-} $dir"
   while IFS= read -r id; do
     valid_xl_id "$id" || continue
     if [ "$n" -ge "$XL_MODEL_MAX" ]; then more=$((more + 1)); continue; fi
@@ -436,7 +437,7 @@ xl_fetch_details() {
 # safe unless the list cached for this key had theirs); 1 when the key's list could not be read (XL_ERR; OUT untouched)
 xl_fetch_models() {
   local out="$1" ids det want old='' rc=0 t0 left
-  ids="$(mktemp)"; det="$(mktemp)"; want="$(mktemp)"; t0="$(date +%s)"
+  ids="$(mktemp)"; det="$(mktemp)"; want="$(mktemp)"; t0="$(date +%s)"; XL_TMPS="${XL_TMPS:-} $ids $det $want"
   if ! xl_fetch_ids "$ids" "$2"; then rm -f "$ids" "$det" "$want"; return 1; fi
   # one deadline for the whole refresh: the details get what the list left of XL_REFRESH_BUDGET (at least 5 s), at most
   # XL_MODEL_TIMEOUT
@@ -444,7 +445,7 @@ xl_fetch_models() {
   [ "$left" -le "$XL_MODEL_TIMEOUT" ] || left="$XL_MODEL_TIMEOUT"
   # the chosen models the key may call (a free tier: its model's details)
   xl_wanted | sed 's/:free$//' | awk 'FILENAME == ARGV[1] { have[$1] = 1; next } ($1 in have) && !seen[$1]++' "$ids" - > "$want"
-  if xl_cache_current; then old="$(mktemp)"; xl_cached_rows > "$old"; fi
+  if xl_cache_current; then old="$(mktemp)"; XL_TMPS="$XL_TMPS $old"; xl_cached_rows > "$old"; fi
   XL_MODEL_LIMIT="$left" xl_fetch_details "$det" "$want" "$old" || rc=2
   { printf '# fetched_at: %s\n# source: %s/models (the ids, as listed for your key) and %s/<id> (the chosen ones'"'"' details)\n' \
       "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$EXPLABS_API" "$EXPLABS_CATALOG"
@@ -486,21 +487,45 @@ xl_fresh() {
 # key's list failing keeps the whole list read before with it. It never fails. When the chosen models or their details
 # changed it re-renders litellm/config.yaml (when setup has rendered one) and sets XL_CHANGED=1: the caller then
 # recreates LiteLLM and, with a portal session, runs explabs_sync_owui. In the background (XL_BACKGROUND=1) it renders
-# nothing and leaves xl_pending_file for the next ./stack up instead.
+# nothing and leaves xl_pending_file for the next ./stack up instead. In the foreground it first stops a background
+# refresh (whose result would come from the same or an older .env) and takes the refresh lock (_xl_lock);
+# _explabs_refresh reads.
 # shellcheck disable=SC2120  # MAX_AGE_MIN: lib/settings.sh passes it
 explabs_refresh() {
-  local f tmp before m rc=0
+  local rc=0
+  XL_TMPS=''
+  explabs_enabled || { rm -f "$(xl_error_file)"; XL_CHANGED=0; return 0; }
+  if [ -n "${1:-}" ] && xl_fresh "$1"; then XL_CHANGED=0; return 0; fi
+  xl_bg_stop
+  _xl_lock 30 || warn "Experiential Labs: another refresh of the model list is still running — reading it anyway"
+  _explabs_refresh "$@" || rc=$?
+  _xl_unlock
+  return "$rc"
+}
+
+# _explabs_refresh [MAX_AGE_MIN] — the refresh itself (explabs_refresh, or the background one: xl_refresh_in_background).
+# The key and EXPLABS_MODELS it reads for are recorded at its start: what it writes is marked as read with that key, and
+# is dropped (said) when either has changed in .env meanwhile — a slow read never stands for a newer key or choice.
+_explabs_refresh() {
+  local f tmp before m rc=0 key khash models
   XL_CHANGED=0; XL_ERR=''
   if ! explabs_enabled; then rm -f "$(xl_error_file)"; return 0; fi
   f="$(xl_cache_tsv)"; mkdir -p "$(dirname "$f")" "$STATE_DIR"
   if [ -n "${1:-}" ] && xl_fresh "$1"; then return 0; fi
+  key="$(get_env EXPLABS_API_KEY)"; khash="$(xl_key_hash "$key")"; models="$(get_env EXPLABS_MODELS)"
   before="$(_xl_signature)"
   tmp="$(mktemp "$f.XXXXXX")" || return 0
-  xl_fetch_models "$tmp" "$(get_env EXPLABS_API_KEY)" || rc=$?
+  XL_TMPS="${XL_TMPS:-} $tmp"
+  xl_fetch_models "$tmp" "$key" || rc=$?
+  if [ "$(xl_key_hash "$(get_env EXPLABS_API_KEY)")" != "$khash" ] || [ "$(get_env EXPLABS_MODELS)" != "$models" ]; then
+    rm -f "$tmp"
+    log "Experiential Labs: the key or EXPLABS_MODELS changed while the model list was read — that read is dropped (the next one reads for the new ones)"
+    return 0
+  fi
   case "$rc" in
     0 | 2)
       chmod 644 "$tmp"; mv "$tmp" "$f"
-      ( umask 077; xl_key_hash "$(get_env EXPLABS_API_KEY)" > "$(xl_key_mark)" )
+      ( umask 077; printf '%s\n' "$khash" > "$(xl_key_mark)" )
       if [ "$rc" = 0 ]; then rm -f "$(xl_error_file)"; else _xl_record_error; fi
       xl_missing | while IFS= read -r m; do warn "Experiential Labs: '$m' (EXPLABS_MODELS) is not a model your key may call — left out"; done
       if [ "$rc" = 2 ]; then
@@ -694,15 +719,63 @@ xl_bg_running() {
   [ -n "$(find "$f" -mmin -10 2>/dev/null)" ] && kill -0 "$(head -c 12 "$f" | tr -cd '0-9')" 2>/dev/null
 }
 
-# xl_refresh_in_background — explabs_refresh on its own, so ./stack up never waits on the gateway's catalog (one
+# One refresh at a time: a lock folder under .state holding its process's pid. _xl_lock WAIT_S [PID] -> 0 when it is
+# taken for PID (default this process; a lock whose process is gone is taken over), 1 when another live one still holds
+# it after WAIT_S seconds. _xl_unlock — let it go.
+xl_lock_dir() { printf '%s\n' "$STATE_DIR/explabs-refresh.lock"; }
+_xl_lock() {
+  local d n=0 p; d="$(xl_lock_dir)"; mkdir -p "$STATE_DIR"
+  while ! mkdir "$d" 2>/dev/null; do
+    p="$(head -c 12 "$d/pid" 2>/dev/null | tr -cd '0-9')" || p=""
+    if [ -n "$p" ] && ! kill -0 "$p" 2>/dev/null; then rm -rf "$d"; continue; fi   # (its process is gone)
+    if [ "$n" -ge "$(($1 * 4))" ]; then
+      [ -z "$p" ] || return 1
+      rm -rf "$d"; continue   # (no pid in it after the wait: left half-made)
+    fi
+    n=$((n + 1)); sleep 0.25
+  done
+  printf '%s\n' "${2:-$$}" > "$d/pid"
+}
+_xl_unlock() { rm -rf "$(xl_lock_dir)"; }
+
+# _xl_kill_tree PID — PID and every process under it, by their pids (TERM): a background refresh and its curls
+_xl_kill_tree() {
+  local c
+  for c in $(pgrep -P "$1" 2>/dev/null); do _xl_kill_tree "$c"; done
+  kill -TERM "$1" 2>/dev/null || true
+}
+
+# xl_bg_stop — PUBLIC HOOK: stops ./stack up's background refresh if one runs (by its recorded pid: what it read so far
+# goes, its temp files with it), and its lock. (A foreground refresh, ./stack down, update, restore, uninstall.)
+xl_bg_stop() {
+  local f p n=0; f="$(xl_bg_pid_file)"
+  p="$(head -c 12 "$f" 2>/dev/null | tr -cd '0-9')" || p=""
+  [ -n "$p" ] || return 0
+  if kill -0 "$p" 2>/dev/null; then
+    _xl_kill_tree "$p"
+    while kill -0 "$p" 2>/dev/null && [ "$n" -lt 40 ]; do n=$((n + 1)); sleep 0.25; done
+    log "Experiential Labs: stopped the background read of the model details"
+  fi
+  rm -f "$f"
+  [ "$(head -c 12 "$(xl_lock_dir)/pid" 2>/dev/null | tr -cd '0-9')" != "$p" ] || _xl_unlock
+}
+
+# xl_refresh_in_background — _explabs_refresh on its own, so ./stack up never waits on the gateway's catalog (one
 # model's details took 15-25 s on 2026-10-25): what it reads is used from the next ./stack up or Settings change.
-# One at a time; its output goes to xl_bg_log.
+# One at a time (the refresh lock, taken for it here); its output goes to xl_bg_log; stopped, it removes its temp files.
 xl_refresh_in_background() {
-  local pidf; pidf="$(xl_bg_pid_file)"
-  if xl_bg_running; then log "Experiential Labs: the model details are being read in the background already"; return 0; fi
-  mkdir -p "$STATE_DIR"
-  ( trap '' HUP; XL_BACKGROUND=1 explabs_refresh > "$(xl_bg_log)" 2>&1 || true; rm -f "$pidf" ) < /dev/null > /dev/null 2>&1 &
-  printf '%s\n' "$!" > "$pidf"
+  local pidf p; pidf="$(xl_bg_pid_file)"
+  if xl_bg_running || ! _xl_lock 0 "$$"; then log "Experiential Labs: the model details are being read already"; return 0; fi
+  (
+    trap '' HUP
+    # (stopped: its temp files, its lock and its pid file go)
+    trap 'rm -rf ${XL_TMPS:-}; _xl_unlock; rm -f "$(xl_bg_pid_file)"; exit 143' TERM INT
+    XL_TMPS=''
+    XL_BACKGROUND=1 _explabs_refresh > "$(xl_bg_log)" 2>&1 || true
+    _xl_unlock; rm -f "$(xl_bg_pid_file)"
+  ) < /dev/null > /dev/null 2>&1 &
+  p=$!
+  printf '%s\n' "$p" > "$pidf"; printf '%s\n' "$p" > "$(xl_lock_dir)/pid"
   log "Experiential Labs: reading the model details in the background (the ones read $(xl_fetched_at) stay until it is done)"
 }
 

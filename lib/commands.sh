@@ -1143,7 +1143,7 @@ cmd_up() {
   cmd_status
   maybe_auto_open
 }
-cmd_down()   { dc down; }
+cmd_down()   { ! declare -F xl_bg_stop >/dev/null || xl_bg_stop; dc down; }   # (lib/explabs.sh: its background read stops too)
 cmd_logs()   { dc logs -f --tail=200 "$@"; }
 status_url() { # status_url SERVICE -> where to open it (browser UIs: through the portal)
   case "$1" in
@@ -1488,6 +1488,7 @@ cmd_restore() {
     die "usage: ./stack restore backups/<timestamp>   (a directory written by ./stack backup)"
   [ -f "$ENV_FILE" ] || die "run ./stack setup first (on a new machine: copy the backup's .env to ./.env, run ./stack setup, then restore)"
   stack_lock restore
+  ! declare -F xl_bg_stop >/dev/null || xl_bg_stop   # (lib/explabs.sh: its background read would write a list the restore replaces)
   quiet_compose
   dir="$(cd "$dir" && pwd -P)"
   log "backup to restore: $dir"
@@ -1723,6 +1724,7 @@ cmd_update() {
     fi
   fi
   stack_lock update   # lib/lock.sh: one update/rollback/clean/restore/setup at a time (kept across the re-exec)
+  ! declare -F xl_bg_stop >/dev/null || xl_bg_stop   # (lib/explabs.sh: a background read of the model details)
   [ "${ASSUME_YES:-0}" != 1 ] || yes=(--yes)
   if [ "$reexec" = 0 ] && update_unfinished; then
     _require_clean_tree
@@ -1912,6 +1914,7 @@ cmd_uninstall() {
   # (the project's name before v0.25.0 is taken too)
   case "$(ask "Type '$PRODUCT_SLUG' to confirm" "")" in "$PRODUCT_SLUG" | "$PRODUCT_LEGACY_NAME") ;; *) die "aborted — nothing was removed" ;; esac
   if confirm "Take a backup first?"; then cmd_backup; fi
+  ! declare -F xl_bg_stop >/dev/null || xl_bg_stop   # (lib/explabs.sh: a background read of the model details)
   dc down -v --remove-orphans
   code_uninstall_cleanup       # lib/code.sh: its network, socket volume and image (before the terminal's)
   terminal_uninstall_cleanup   # lib/terminal.sh: its volume, networks and image, also while it is off

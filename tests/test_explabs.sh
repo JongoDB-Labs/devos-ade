@@ -392,7 +392,7 @@ test_a_slow_or_unreachable_catalog_says_why_and_up_never_waits_for_it() {
   xl_bg_running
   assert_contains "$(explabs_status_line)" "a refresh is under way in the background"
   # a second ./stack up meanwhile starts no second one
-  explabs_up_hook 2> "$TMP/up"; assert_contains "$(cat "$TMP/up")" "being read in the background already"
+  explabs_up_hook 2> "$TMP/up"; assert_contains "$(cat "$TMP/up")" "the model details are being read already"
   wait "$(cat "$(xl_bg_pid_file)")" 2>/dev/null || true
   assert_contains "$(cat "$(xl_bg_log)")" "timed out after 90 s reading the details of qwen3.8-27b"
   # now quick: the background read brings changed details (no temperature), the next ./stack up renders them at once
@@ -835,4 +835,87 @@ assert d["reason"] == "E2E_EXPLABS_API_KEY is not a key (letters, digits, - and 
   env -u E2E_EXPLABS_API_KEY "$BASH" "$T_ROOT/tests/e2e/explabs.sh" --out "$TMP/out" >/dev/null 2>&1
   python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1]))
 assert d == {"mode": "gateway", "skipped": "E2E_EXPLABS_API_KEY is not set", "failures": 0}, d' "$r"
+}
+
+# A background refresh (./stack up) for one key, slow, then a Settings change to another key: the Settings refresh
+# stops the background one (by its pid: nothing of it is written, its temp files gone) and reads for the new key. And a
+# read whose key or EXPLABS_MODELS changes in .env while it runs is dropped, never marked as read for the new ones
+# (the review's race: the old organisation's models, marked current for the new key, fresh for 12 h)
+test_a_refresh_never_saves_one_keys_list_as_anothers() {
+  local K1 K2
+  K1="xpl_$(printf '%040d' 0 | tr 0 1)"; K2="xpl_$(printf '%040d' 0 | tr 0 2)"
+  STACK_DIR="$TMP"; mkdir -p "$TMP/litellm" "$STATE_DIR"
+  printf 'EXPLABS_API_KEY=%s\nEXPLABS_MODELS=qwen3.8-27b\n' "$K1" > "$ENV_FILE"
+  curl() {
+    local a out='' url='' prev='' key
+    for a in "$@"; do [ "$prev" = -o ] && out="$a"; case "$a" in http*) url="$a" ;; esac; prev="$a"; done
+    case "$url" in
+      */v1/models)
+        key="$(cat)"
+        [ -z "${SWITCH_TO:-}" ] || printf 'EXPLABS_API_KEY=%s\nEXPLABS_MODELS=%s\n' "$SWITCH_TO" "${SWITCH_MODELS:-qwen3.8-27b}" > "$ENV_FILE"
+        case "$key" in
+          *"$K1"*) sleep "${K1_S:-0}"; printf '{"data":[{"id":"qwen3.8-27b"},{"id":"org1-only"}]}' > "$out" ;;
+          *) printf '{"data":[{"id":"qwen3.8-27b"},{"id":"org2-only"}]}' > "$out" ;;
+        esac ;;
+      */api/models/*) cp "$FIX_CAT/${url##*/}.json" "$out" 2>/dev/null || { printf '{}' > "$out"; printf '404 0.01'; return 0; } ;;
+    esac
+    printf '200 0.01'
+  }
+  K1_S=30 xl_refresh_in_background 2>/dev/null
+  xl_bg_running; [ -d "$(xl_lock_dir)" ]
+  local bg; bg="$(cat "$(xl_bg_pid_file)")"
+  sleep 0.5
+  printf 'EXPLABS_API_KEY=%s\nEXPLABS_MODELS=qwen3.8-27b\n' "$K2" > "$ENV_FILE"
+  local t0=$SECONDS
+  explabs_refresh 2> "$TMP/err"
+  [ $((SECONDS - t0)) -lt 15 ] || { echo "the Settings refresh waited for the background one" >&2; return 1; }
+  assert_contains "$(cat "$TMP/err")" "Experiential Labs: stopped the background read of the model details"
+  ! kill -0 "$bg" 2>/dev/null
+  assert_eq "$(xl_cached_rows | cut -f1 | tr '\n' ' ')" "qwen3.8-27b org2-only "
+  xl_cache_current; xl_fresh 720
+  [ ! -e "$(xl_bg_pid_file)" ] && [ ! -d "$(xl_lock_dir)" ]
+  assert_eq "$(ls "$TMP/litellm" | grep -c '^explabs-models.tsv\.')" 0                 # its temp file gone too
+  # .env changes while a read runs: that read is dropped, the list and its key mark stay as they were
+  local before mark; before="$(cat "$(xl_cache_tsv)")"; mark="$(cat "$(xl_key_mark)")"
+  SWITCH_TO="$K1" explabs_refresh 2> "$TMP/err"
+  assert_contains "$(cat "$TMP/err")" "the key or EXPLABS_MODELS changed while the model list was read — that read is dropped"
+  assert_eq "$(cat "$(xl_cache_tsv)")/$(cat "$(xl_key_mark)")" "$before/$mark"
+  ! xl_cache_current                                                                   # (K1 now: not K2's list)
+  printf 'EXPLABS_API_KEY=%s\nEXPLABS_MODELS=qwen3.8-27b\n' "$K2" > "$ENV_FILE"
+  SWITCH_TO="$K2" SWITCH_MODELS=qwen3.8-27b,org2-only explabs_refresh 2> "$TMP/err"
+  assert_contains "$(cat "$TMP/err")" "that read is dropped"
+  # the same in the background: nothing written, nothing pending
+  printf 'EXPLABS_API_KEY=%s\nEXPLABS_MODELS=qwen3.8-27b\n' "$K2" > "$ENV_FILE"
+  SWITCH_TO="$K1" xl_refresh_in_background 2>/dev/null
+  wait "$(cat "$(xl_bg_pid_file)" 2>/dev/null || echo 0)" 2>/dev/null || true
+  [ ! -e "$(xl_pending_file)" ]
+  assert_contains "$(cat "$(xl_bg_log)")" "that read is dropped"
+  assert_eq "$(cat "$(xl_key_mark)")" "$mark"
+}
+
+# One refresh at a time; ./stack down (and update, restore, uninstall) stop a background one by its pid, its temp
+# files going with it
+test_the_background_refresh_is_one_stoppable_and_said() {
+  _stub_curl
+  _xl_env
+  explabs_refresh 2>/dev/null
+  SLOW=qwen3.8-27b SLOW_S=30 xl_refresh_in_background 2>/dev/null
+  local bg; bg="$(cat "$(xl_bg_pid_file)")"
+  sleep 0.5
+  # a second one meanwhile: not started
+  SLOW=qwen3.8-27b SLOW_S=30 xl_refresh_in_background 2> "$TMP/second"
+  assert_contains "$(cat "$TMP/second")" "the model details are being read already"
+  assert_eq "$(cat "$(xl_bg_pid_file)")" "$bg"
+  assert_contains "$(explabs_status_line)" "a refresh is under way in the background"
+  dc() { :; }
+  cmd_down 2> "$TMP/down"
+  assert_contains "$(cat "$TMP/down")" "stopped the background read of the model details"
+  ! kill -0 "$bg" 2>/dev/null
+  [ ! -e "$(xl_bg_pid_file)" ] && [ ! -d "$(xl_lock_dir)" ]
+  assert_eq "$(ls "$TMP/litellm" | grep -c '^explabs-models.tsv\.')" 0
+  assert_not_contains "$(explabs_status_line)" "under way"
+  # the stop points
+  local f
+  for f in cmd_update cmd_restore cmd_uninstall; do assert_contains "$(declare -f "$f")" "xl_bg_stop"; done
+  assert_contains "$(cat "$T_ROOT/lib/rollback.sh")" "xl_bg_stop"
 }
