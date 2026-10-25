@@ -6,6 +6,27 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Changed
+
+- **Tests:** the shell suite runs several tests at a time: about 3 minutes instead of 16 on a 16-core Mac.
+  `tests/run.sh -j N` runs N at once (default: one less than the computer's CPUs, at most 8; `-j 1`: one after another).
+  Each test runs as before, in a process of its own with its own home and `.env`, and now with a temporary folder of
+  its own too. What it prints is the same, line for line: each test in its file's order, the isolation guard's line and
+  the counts. Every guard is as strict: a test that writes in this checkout's `.env`, `.state/`, `litellm/` or
+  `backups/`, makes a folder in your real home or calls the real docker, aws, tailscale, gh, glab (or curl to this
+  computer) fails by name, and with it the suite (the tests running at the same moment fail too: the one that did it
+  is among those named). The few slow tests of the last run on that checkout start first; Ctrl-C ends the tests
+  running then. Eight checks that piped `printf` into `grep -q` could fail at random with Linux's bash 5 (grep ends
+  early and the writer gets SIGPIPE, which pipefail reports: 32 times in 20,000 there): they read a here-string now.
+- **Tests:** an end-to-end run builds the images of the same files once. Every run is a Compose project of its own,
+  and its setup built each image again under that name (Open WebUI, the portal, shared-mcp, the sandbox, its egress
+  proxy, the Code page) — the same images for every stage of a release run. Now the first run of a tree keeps what
+  setup built as `bne2e-cache/<name>:<key>` (key: the throwaway's git tree, the image, how it is built), and a later
+  run of the same files tags those as its own: setup's image builds took 12 s and now take under half a second
+  (measured here; Docker's build cache already made a rebuild of unchanged files quick, and the rest of setup — 4½ to
+  8 minutes on this busy Mac — is starting and checking the services). Only setup's builds: an update or a rollback in
+  the run builds for real. `E2E_IMAGE_REUSE=0` builds everything; `setup/image-cache` says what was reused.
+
 ### Fixed
 
 - **Experiential Labs:** a refresh of the model list killed hard (the computer shut down, SIGKILL) left its temp
@@ -26,18 +47,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   again, up to three more times 10 s apart with a longer limit; only a refusal for the address passes. Any other
   answer is judged at once: a page reached through the proxy fails without a retry. A no-answer that remains fails
   saying the proxy did not answer and that it is the environment.
-### Changed
-
-- **Tests:** the shell suite runs several tests at a time: about 3 minutes instead of 16 on a 16-core Mac.
-  `tests/run.sh -j N` runs N at once (default: one less than the computer's CPUs, at most 8; `-j 1`: one after another).
-  Each test runs as before, in a process of its own with its own home and `.env`, and now with a temporary folder of
-  its own too. What it prints is the same, line for line: each test in its file's order, the isolation guard's line and
-  the counts. Every guard is as strict: a test that writes in this checkout's `.env`, `.state/`, `litellm/` or
-  `backups/`, makes a folder in your real home or calls the real docker, aws, tailscale, gh, glab (or curl to this
-  computer) fails by name, and with it the suite (the tests running at the same moment fail too: the one that did it
-  is among those named). The few slow tests of the last run on that checkout start first; Ctrl-C ends the tests
-  running then. Eight checks that piped `printf` into `grep -q` could fail at random with Linux's bash 5 (grep ends
-  early and the writer gets SIGPIPE, which pipefail reports: 32 times in 20,000 there): they read a here-string now.
+- **Tests:** every end-to-end run left its Open WebUI image (`bne2e-…/open-webui:local`) behind; teardown removes it
+  now, with the other images the run built.
 
 ## [0.27.0] - 2026-10-25
 

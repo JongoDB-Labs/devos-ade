@@ -22,6 +22,9 @@
 #   --no-claude      skip the claude-bedrock check
 #   --only PARTS     run only these parts (comma list of cli, browser, voice, claude, mutating; default all).
 #                    Setup, the spend guard and the claude-bedrock link check always run.
+#   E2E_IMAGE_REUSE=0  build every image setup builds (default: the images of the same files are built once, by the
+#                    first run, and later runs' setups take them from the suite's image cache, bne2e-cache/NAME:KEY —
+#                    tests/e2e/docker-reuse; the cache keeps the images of one tree; setup/image-cache says what it did)
 #   E2E_CHECKS=REGEX only the browser checks whose suite/id matches (a Python regex, on top of each pass's own
 #                    filter): a focused run that spends less on Bedrock, e.g. E2E_CHECKS='code-settings-row|code-auto'
 #   (default)        the Code page and its browser terminal are on, as on a new install: setup turns them on by
@@ -261,16 +264,24 @@ mkdir -p "$LOGS"; : > "$RESULTS"
 START_TS="$(now)"
 
 # st [--aws] ARGS... — the throwaway's ./stack with a clean environment and no controlling terminal (notty), run in
-# its folder (ST_CWD=DIR: from DIR instead; ST_TIMEOUT=SECS: ended after SECS); stdin is /dev/null.
+# its folder (ST_CWD=DIR: from DIR instead; ST_TIMEOUT=SECS: ended after SECS; ST_IMAGES=1: its docker builds through
+# the suite's image cache, tests/e2e/docker-reuse); stdin is /dev/null.
+# shellcheck disable=SC2034  # (exported by name for docker-reuse: IMAGE_VARS)
+E2E_REAL_DOCKER="$(command -v docker)"; E2E_IMAGE_TREE=''; E2E_IMAGE_LOG="$LOGS/image-cache.log"
+IMAGE_VARS="E2E_REAL_DOCKER E2E_IMAGE_TREE E2E_IMAGE_LOG"
 st() {
   # Never let a command default to the bedrock-now project (the default Compose project): the throwaway .env must name ours.
   [ "$(get_env COMPOSE_PROJECT_NAME)" = "$PROJECT" ] || { echo "xx  throwaway .env does not name project $PROJECT" >&2; return 99; }
-  local cwd="${ST_CWD:-$STACK}" timeout=()   # read before clean_env, which unexports them with everything else
+  local cwd="${ST_CWD:-$STACK}" timeout=() images=''   # read before clean_env, which unexports them with everything else
   [ -z "${ST_TIMEOUT:-}" ] || timeout=(--timeout "$ST_TIMEOUT")
+  [ "${ST_IMAGES:-0}" = 0 ] || [ -z "$E2E_IMAGE_TREE" ] || images="$IMAGE_VARS"
   if [ "${1:-}" = --aws ]; then
     shift
     ( export AWS_REGION_NAME="${AWS_REGION_NAME:-us-east-1}" COMPOSE_PROJECT_NAME="$PROJECT"
-      clean_env AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION_NAME COMPOSE_PROJECT_NAME
+      # shellcheck disable=SC2086,SC2163  # (names, a word each)
+      [ -z "$images" ] || export PATH="$HERE/docker-reuse:$PATH" $images
+      # shellcheck disable=SC2086
+      clean_env AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION_NAME COMPOSE_PROJECT_NAME $images
       cd "$cwd" && exec "$NOTTY" ${timeout[@]+"${timeout[@]}"} "$STACK/stack" "$@" </dev/null )
   else
     ( clean_env; cd "$cwd" && exec "$NOTTY" ${timeout[@]+"${timeout[@]}"} "$STACK/stack" "$@" </dev/null )
@@ -375,6 +386,8 @@ stage() {
   # never asks GitHub here.
   printf '{"checked_at": "%s", "error": null}\n' "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" > "$STACK/.state/update-check/latest.json"
   chmod 644 "$STACK/.state/update-check/latest.json"
+  # setup's images: built once per tree (lib.sh, the suite's image cache)
+  [ "${E2E_IMAGE_REUSE:-1}" = 0 ] || E2E_IMAGE_TREE="$(image_cache_tree)"
   say "throwaway: project $PROJECT, http://$HOST:$pp  (LiteLLM 127.0.0.1:$lp, shared-mcp 127.0.0.1:$mp)"
 }
 
@@ -385,8 +398,13 @@ if [ "$REUSE" = 1 ]; then
 else
   stage
   say "setup (non-interactive; a few minutes; log: $LOGS/cli-setup.log)"
-  cli setup 0 'DevOS ADE is up' --aws setup --yes || {
+  ST_IMAGES=1 cli setup 0 'DevOS ADE is up' --aws setup --yes || {
     tail -n 40 "$LOGS/cli-setup.log" >&2; die "setup failed — see $LOGS/cli-setup.log (redacted)"; }
+  if [ -z "$E2E_IMAGE_TREE" ]; then record setup image-cache SKIP 0 "E2E_IMAGE_REUSE=0: every image built, none kept"
+  else
+    record setup image-cache PASS 0 "setup's images by tree ${E2E_IMAGE_TREE:0:12} — $(image_cache_report "$E2E_IMAGE_LOG") (log $E2E_IMAGE_LOG)"
+    image_cache_keep "$E2E_IMAGE_LOG"
+  fi
 fi
 [ -n "$(get_env PORTAL_PASSWORD)" ] || die "the throwaway .env has no PORTAL_PASSWORD"
 for k in PORTAL_PORT LITELLM_PORT SHARED_MCP_PORT; do

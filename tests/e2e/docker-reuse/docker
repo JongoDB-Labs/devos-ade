@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# The docker of the throwaway's ./stack setup in tests/e2e/run.sh (this folder first on its PATH; never installed,
+# never yours): images built from the same files are built once. `docker compose … build [-q] [--build-arg K=V]…
+# SERVICE…` of images the stack builds itself (PROJECT/NAME:local) is answered from the suite's image cache when every
+# one of them is there — bne2e-cache/NAME:KEY tagged PROJECT/NAME:local, nothing built — and otherwise built for real
+# and then kept there. KEY is a hash of E2E_IMAGE_TREE (the git tree of the throwaway's commit: this checkout's files,
+# uncommitted changes included), the image's name, the build's arguments (this command's --build-arg values, the uid and
+# gid the terminal's compose file passes from .env) and the compose files of the command: an image is reused only for
+# the same files built the same way. Everything else goes to the real docker (E2E_REAL_DOCKER) as it is. What it did:
+# a line each in E2E_IMAGE_LOG.
+set -uo pipefail
+real="${E2E_REAL_DOCKER:?}"
+[ "${1:-}" = compose ] && [ -n "${E2E_IMAGE_TREE:-}" ] || exec "$real" "$@"
+
+# the command's words: compose's own options, then build's, then the services (anything else: the real docker)
+state=global; want=''; project=''; envf=''; files=''; bargs=''; svcs=''
+for a in "${@:2}"; do
+  if [ -n "$want" ]; then
+    case "$want" in p) project="$a" ;; e) envf="$a" ;; f) files="$files ${a##*/}" ;; b) bargs="$bargs
+$a" ;; esac
+    want=''; continue
+  fi
+  case "$state:$a" in
+    global:-p | global:--project-name) want=p ;;
+    global:--env-file) want=e ;;
+    global:-f | global:--file) want=f ;;
+    global:--project-directory | global:--profile) want=x ;;
+    global:build) state=build ;;
+    build:-q | build:--quiet) ;;
+    build:--build-arg) want=b ;;
+    build:--build-arg=*) bargs="$bargs
+${a#--build-arg=}" ;;
+    build:-*) exec "$real" "$@" ;;   # (--no-cache, --pull, …: a build wanted as such)
+    build:*) svcs="$svcs $a" ;;
+    *) exec "$real" "$@" ;;
+  esac
+done
+[ "$state" = build ] && [ -n "$project" ] && [ -n "$svcs" ] && [ -z "$want" ] || exec "$real" "$@"
+
+# image_of SERVICE -> NAME of PROJECT/NAME:local it builds (compose.*.yaml); 1 for any other service
+image_of() {
+  case "$1" in
+    open-webui | portal | shared-mcp | stt | terminal | terminal-egress | code) echo "$1" ;;
+    chat-egress) echo terminal-egress ;;
+    *) return 1 ;;
+  esac
+}
+env_of() { [ -n "$envf" ] && K="$1" awk 'index($0, ENVIRON["K"] "=") == 1 { v = substr($0, length(ENVIRON["K"]) + 2) } END { printf "%s", v }' "$envf" 2>/dev/null; }
+# key NAME -> the cache tag of NAME built by this command
+# shellcheck disable=SC2086  # (the compose files' names: a word each)
+key() {
+  { printf 'e2e-image-cache 1\n%s\n%s\nuid=%s gid=%s\n' "$E2E_IMAGE_TREE" "$1" "$(env_of TERMINAL_UID)" "$(env_of TERMINAL_GID)"
+    printf '%s\n' $files | LC_ALL=C sort; printf '%s\n' "$bargs" | LC_ALL=C sort; } | git hash-object --stdin
+}
+say() { printf '%s %s\n' "$(date '+%F %T')" "$*" >> "${E2E_IMAGE_LOG:-/dev/null}"; }
+
+names=''; all=1
+for s in $svcs; do
+  n="$(image_of "$s")" || exec "$real" "$@"
+  k="$(key "$n")" || exec "$real" "$@"
+  names="$names $n:$k"
+  "$real" image inspect "bne2e-cache/$n:$k" >/dev/null 2>&1 || all=0
+done
+if [ "$all" = 1 ]; then
+  for nk in $names; do
+    "$real" tag "bne2e-cache/${nk%%:*}:${nk#*:}" "$project/${nk%%:*}:local" || exec "$real" "$@"
+    say "reused ${nk%%:*} (bne2e-cache/$nk, built from this tree before)"
+  done
+  exit 0
+fi
+"$real" "$@"; rc=$?
+[ "$rc" = 0 ] || exit "$rc"
+for nk in $names; do
+  "$real" tag "$project/${nk%%:*}:local" "bne2e-cache/$nk" >/dev/null 2>&1 && say "built ${nk%%:*}; kept as bne2e-cache/$nk"
+done
+exit 0

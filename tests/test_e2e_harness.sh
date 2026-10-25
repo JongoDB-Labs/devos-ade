@@ -266,6 +266,9 @@ test_e2e_teardown_removes_the_terminal_workspace_only_with_its_marker() {
     assert_contains "$(cat "$TMP/docker")" "docker network rm $n" || return 1
   done
   assert_contains "$(cat "$TMP/docker")" "docker image rm bne2e/terminal-egress:local"
+  # (Open WebUI's own build too: every run used to leave it behind)
+  assert_contains "$(cat "$TMP/docker")" "docker image rm bne2e/open-webui:local"
+  assert_contains "$(cat "$TMP/docker")" "docker image rm bne2e/open-webui:previous"
   # (the suite's git server, --git-server: by its own names, never compose's)
   assert_contains "$(cat "$TMP/docker")" "docker rm -f bne2e-gitsrv"
   assert_contains "$(cat "$TMP/docker")" "docker image rm bne2e/e2e-gitsrv:local"
@@ -656,4 +659,121 @@ EOF
   assert_contains "$r" 'rebind_steady rebind_try'
   assert_contains "$r" '*0*|"") bad="$bad proxy-rebind:$rb$REBIND_BAD"'
   assert_contains "$r" 'case "$rb" in 1*) printf '"'"'%s\n'"'"' "$elog" | grep -q '"'"'"address":"127.0.0.1".*resolves to 127.0.0.1'"'"' || bad="$bad egress-log-no-rebind" ;; esac'
+}
+
+# --- the suite's image cache (tests/e2e/docker-reuse/docker, for the throwaway's ./stack setup): a stand-in for the
+# real docker logs every call and keeps images as files ($TMP/images/REPO_NAME_TAG) ---
+_real_docker() {
+  mkdir -p "$TMP/images"; : > "$TMP/calls"
+  cat > "$TMP/realdocker" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >> "$TMP/calls"
+f() { printf '%s/images/%s' "$TMP" "$(printf '%s' "$1" | tr '/:' '__')"; }
+case "$1" in
+  image) [ "$2" = inspect ] && [ -f "$(f "$3")" ]; exit $? ;;
+  tag) [ -f "$(f "$2")" ] || exit 1; cp "$(f "$2")" "$(f "$3")" ;;
+  compose)   # a build: each service after the options is PROJECT/NAME:local, made anew
+    [ -z "${FAIL_BUILD:-}" ] || exit 1
+    p=''; prev=''; past=0
+    for a in "$@"; do
+      [ "$prev" != -p ] || p="$a"
+      if [ "$past" = 1 ] && [ "$prev" != --build-arg ]; then
+        case "$a" in -*) ;; chat-egress) echo "$$ $(date +%s)" > "$(f "$p/terminal-egress:local")" ;; *) echo "$$ $(date +%s)" > "$(f "$p/$a:local")" ;; esac
+      fi
+      [ "$a" != build ] || past=1; prev="$a"
+    done ;;
+esac
+exit 0
+EOF
+  chmod +x "$TMP/realdocker"
+  printf 'COMPOSE_PROJECT_NAME=x\nTERMINAL_UID=501\nTERMINAL_GID=20\n' > "$TMP/env"
+  export TMP E2E_REAL_DOCKER="$TMP/realdocker" E2E_IMAGE_TREE=tree1 E2E_IMAGE_LOG="$TMP/image-cache.log"
+}
+# _build PROJECT [EXTRA...] — setup's build of the terminal image, as lib/terminal.sh terminal_build runs it through dc
+_build() {
+  local p="$1"; shift
+  "$STACK_DIR/tests/e2e/docker-reuse/docker" compose -p "$p" --project-directory /s -f /s/compose.yaml -f /s/compose.terminal.yaml \
+    --env-file "$TMP/env" build -q --build-arg APT_REFRESH=2026-43 --build-arg BN_AI_TOOLS=all "$@" terminal
+}
+_img() { [ -f "$TMP/images/$(printf '%s' "$1" | tr '/:' '__')" ]; }
+_builds() { grep -c ' build ' "$TMP/calls" | tr -d ' '; }
+
+test_e2e_image_cache_builds_an_image_once_per_tree() {
+  _real_docker
+  _build bne2e-a || return 1
+  assert_eq "$(_builds)" 1
+  _img bne2e-a/terminal:local || return 1
+  local kept; kept="$(sed -n 's/.*kept as \(bne2e-cache\/terminal:[0-9a-f]*\)$/\1/p' "$TMP/image-cache.log")"
+  [ -n "$kept" ] && _img "$kept" || { echo "not kept: $(cat "$TMP/image-cache.log")" >&2; return 1; }
+  # the next run of the same files: its image is the kept one, nothing built
+  : > "$TMP/calls"; _build bne2e-b || return 1
+  assert_eq "$(_builds)" 0
+  cmp -s "$TMP/images/bne2e-cache_terminal_${kept##*:}" "$TMP/images/bne2e-b_terminal_local" || { echo "not the kept image" >&2; return 1; }
+  assert_contains "$(cat "$TMP/image-cache.log")" "reused terminal ($kept, built from this tree before)"
+  assert_eq "$(image_cache_report "$TMP/image-cache.log")" "reused: terminal; built: terminal"
+}
+
+test_e2e_image_cache_never_reuses_across_trees_or_builds() {
+  _real_docker
+  _build bne2e-a || return 1
+  # another tree; another build argument; another uid (the terminal's compose file passes it from .env); another
+  # compose file: each built
+  : > "$TMP/calls"; E2E_IMAGE_TREE=tree2 _build bne2e-b || return 1; assert_eq "$(_builds)" 1
+  : > "$TMP/calls"; _build bne2e-c --build-arg EXTRA=1 || return 1; assert_eq "$(_builds)" 1
+  sed -i.bak 's/^TERMINAL_UID=501/TERMINAL_UID=502/' "$TMP/env"
+  : > "$TMP/calls"; _build bne2e-d || return 1; assert_eq "$(_builds)" 1
+  mv "$TMP/env.bak" "$TMP/env"
+  : > "$TMP/calls"
+  "$STACK_DIR/tests/e2e/docker-reuse/docker" compose -p bne2e-e --project-directory /s -f /s/compose.yaml --env-file "$TMP/env" \
+    build -q --build-arg APT_REFRESH=2026-43 --build-arg BN_AI_TOOLS=all terminal || return 1
+  assert_eq "$(_builds)" 1
+  # and the first tree's again: reused
+  : > "$TMP/calls"; _build bne2e-f || return 1; assert_eq "$(_builds)" 0
+}
+
+test_e2e_image_cache_leaves_everything_else_to_docker() {
+  _real_docker
+  local d="$STACK_DIR/tests/e2e/docker-reuse/docker"
+  # a build wanted as such, a service it does not know, another command, no tree: as given, nothing kept
+  "$d" compose -p bne2e-a -f /s/compose.yaml build --no-cache terminal || return 1
+  "$d" compose -p bne2e-a -f /s/compose.yaml build -q caddy || return 1
+  "$d" compose -p bne2e-a -f /s/compose.yaml ps -q || return 1
+  "$d" ps -a --filter name=x || return 1
+  E2E_IMAGE_TREE='' "$d" compose -p bne2e-a -f /s/compose.yaml build -q terminal || return 1
+  assert_eq "$(cat "$TMP/calls")" "compose -p bne2e-a -f /s/compose.yaml build --no-cache terminal
+compose -p bne2e-a -f /s/compose.yaml build -q caddy
+compose -p bne2e-a -f /s/compose.yaml ps -q
+ps -a --filter name=x
+compose -p bne2e-a -f /s/compose.yaml build -q terminal"
+  [ ! -s "$TMP/image-cache.log" ] || { echo "kept: $(cat "$TMP/image-cache.log")" >&2; return 1; }
+  # a build that fails: its status, nothing kept
+  local rc=0; FAIL_BUILD=1 _build bne2e-b || rc=$?
+  assert_eq "$rc" 1
+  [ ! -s "$TMP/image-cache.log" ] || return 1
+  # Chat's egress proxy: the terminal's egress proxy's image
+  "$d" compose -p bne2e-c -f /s/compose.yaml --env-file "$TMP/env" build -q chat-egress || return 1
+  assert_contains "$(cat "$TMP/image-cache.log")" "built terminal-egress; kept as bne2e-cache/terminal-egress:"
+}
+
+test_e2e_image_cache_keeps_one_trees_images() {
+  _fake_docker
+  printf '%s\n' "2026-10-25 12:00:00 reused portal (bne2e-cache/portal:aaa, built from this tree before)" \
+    "2026-10-25 12:00:01 built code; kept as bne2e-cache/code:bbb" > "$TMP/log"
+  docker() {
+    printf 'docker %s\n' "$*" >> "$TMP/docker"
+    case "$*" in "image ls --filter reference=bne2e-cache/* "*) printf '%s\n' bne2e-cache/portal:aaa bne2e-cache/portal:old bne2e-cache/code:bbb bne2e-cache/terminal:old ;; esac
+  }
+  image_cache_keep "$TMP/log"
+  assert_eq "$(grep 'image rm' "$TMP/docker")" "docker image rm bne2e-cache/portal:old
+docker image rm bne2e-cache/terminal:old"
+  # nothing reused or kept in this run: nothing removed
+  : > "$TMP/docker"; : > "$TMP/log"; image_cache_keep "$TMP/log"
+  assert_eq "$(grep -c 'image rm' "$TMP/docker" | tr -d ' ')" 0
+}
+
+test_e2e_setup_alone_builds_through_the_image_cache() {
+  local r; r="$(cat "$STACK_DIR/tests/e2e/run.sh")"
+  assert_contains "$r" "ST_IMAGES=1 cli setup 0 'DevOS ADE is up' --aws setup --yes"
+  [ "$(grep -c 'ST_IMAGES=1 ' "$STACK_DIR/tests/e2e/run.sh" | tr -d ' ')" = 1 ] || { echo "ST_IMAGES=1 beyond setup" >&2; return 1; }
+  assert_contains "$r" '[ "${E2E_IMAGE_REUSE:-1}" = 0 ] || E2E_IMAGE_TREE="$(image_cache_tree)"'
 }

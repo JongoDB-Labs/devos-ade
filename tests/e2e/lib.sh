@@ -279,6 +279,7 @@ teardown() {
       done
     done
     for img in "$PROJECT/portal:local" "$PROJECT/shared-mcp:local" "$PROJECT/portal:previous" "$PROJECT/shared-mcp:previous" \
+               "$PROJECT/open-webui:local" "$PROJECT/open-webui:previous" \
                "$PROJECT/caddy-dns:local" "$PROJECT/e2e-playwright:local" "$PROJECT/stt:local" "$PROJECT/stt:previous" \
                "$PROJECT/terminal:local" "$PROJECT/terminal:previous" "$PROJECT/terminal-egress:local" "$PROJECT/terminal-egress:previous" \
                "$PROJECT/code:local" "$PROJECT/code:previous" "$PROJECT/e2e-gitsrv:local"; do
@@ -403,6 +404,31 @@ host_folders_refused() {
   why="$(STACK_DIR="$ROOT" ENV_FILE=/nonexistent bash -c '. "$STACK_DIR/lib/common.sh" && . "$STACK_DIR/lib/terminal.sh" &&
     . "$STACK_DIR/lib/projects.sh" && _project_path_rules "$1"' _ "$phys/app" 2>/dev/null)" && return 1
   printf '%s\n' "${why:-its path breaks a rule of ./stack project}"
+}
+
+# --- the suite's image cache (tests/e2e/docker-reuse/docker, for the throwaway's ./stack setup) ---
+# Each run is a Compose project of its own, whose images (PROJECT/NAME:local) its setup builds — the same images again,
+# for every stage of a release run of one commit. Setup builds each one once per tree: the first run keeps what it
+# built as bne2e-cache/NAME:KEY, and a later run of the same files (KEY: the throwaway's git tree, the image's name and
+# how it is built) tags that as its own instead of building it. Only setup's builds: an update or a rollback in the run
+# builds for real. E2E_IMAGE_REUSE=0: no cache (every image built, none kept).
+# image_cache_tree -> the git tree of the throwaway's commit (this checkout's files, uncommitted changes included)
+image_cache_tree() { git -C "$STACK" rev-parse 'HEAD^{tree}' 2>/dev/null; }
+# image_cache_report LOG -> what setup's builds did ("reused NAME", "built NAME"), from docker-reuse's log
+image_cache_report() {
+  awk '$3 == "reused" { r = r " " $4 } $3 == "built" { n = $4; sub(/;$/, "", n); b = b " " n }
+    END { printf "reused:%s; built:%s", (r == "" ? " none" : r), (b == "" ? " none" : b) }' "$1" 2>/dev/null
+}
+# image_cache_keep LOG — the cache keeps one tree's images: those setup reused or kept in this run (LOG); every other
+# bne2e-cache/ image name goes (by name; an image still named by a run's PROJECT/NAME:local stays as that). Never fatal.
+image_cache_keep() {
+  local keep ref
+  keep=" $(sed -n 's|.*(bne2e-cache/\([^,)]*\).*|\1|p; s|.* as bne2e-cache/\([^ ]*\)$|\1|p' "$1" 2>/dev/null | tr '\n' ' ') "
+  [ "$keep" != "  " ] || return 0
+  for ref in $(docker image ls --filter 'reference=bne2e-cache/*' --format '{{.Repository}}:{{.Tag}}' 2>/dev/null); do
+    case "$keep" in *" ${ref#bne2e-cache/} "*) ;; *) docker image rm "$ref" >/dev/null 2>&1 || true ;; esac
+  done
+  return 0
 }
 
 # --- terminal-isolation's "a public site is reachable" side, steady against this computer's DNS ---

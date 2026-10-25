@@ -336,6 +336,14 @@ tests/e2e/run.sh --aws-env /path/to/a/file/with/AWS_keys    # or export AWS_ACCE
   those leftovers first (only when they are the suite's own). `--only cli,mutating` (any of `cli`, `browser`,
   `voice`, `claude`, `mutating`) runs only those parts; `--skip-cli-mutating` skips backup/restore, down/up, rotate-aws,
   update and rollback.
+- **Images:** every run is a Compose project of its own, so setup's images (`<project>/<name>:local`: Open WebUI, the
+  portal, shared-mcp, the sandbox, its egress proxy, the Code page) are that run's. Setup builds each one once per
+  tree: the first run keeps what it built as `bne2e-cache/<name>:<key>` (key: the throwaway's git tree — this
+  checkout's files, uncommitted changes included —, the image's name, its build arguments, the uid the sandbox's
+  image is built for and the compose files), and a later run of the same files tags that as its own instead of
+  building it (`tests/e2e/docker-reuse`, setup's docker alone; an update or a rollback in the run builds for real).
+  `setup/image-cache` says what was reused and built; the cache keeps one tree's images (the others go by name);
+  `E2E_IMAGE_REUSE=0` builds everything and keeps nothing.
 - **The browser terminal:** on by default with the Code page, as on a new install (setup turns it on, in a workspace
   folder of the suite's own next to the checkout seeded as `TERMINAL_WORKSPACE`: `tests/e2e/work/<project>-workspace`,
   removed at teardown; with `--no-code`, `--terminal` or `E2E_TERMINAL=1` runs `./stack terminal enable` there): its isolation probe from inside the container, `./stack test`'s terminal checks, and the browser
