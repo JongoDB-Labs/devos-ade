@@ -1,9 +1,11 @@
 """Finds file removals that take an unquoted expansion ($X, ${X}, $(…), `…`) in shell scripts: such an argument is split
 on spaces and globbed, so a path with a space in it (a checkout under "Code Projects") names other files — the review
 of v0.27.0 found a trap that removed a sibling folder that way. What it flags:
-- `rm` — also as `\\rm`, `/bin/rm`, `/usr/bin/rm` or `env … rm` — with an unquoted expansion among its arguments;
+- `rm` — also as `\\rm`, `/bin/rm`, `/usr/bin/rm`, after `env`, `nice`, `timeout N`, `busybox`, `command`, `sudo`,
+  `exec` or a bare `eval` (which reads its words again as code) — with an unquoted expansion among its arguments;
 - `xargs … rm` without -0 or -d (xargs splits its input on blanks and reads quotes in it);
-- `find` whose first path is an unquoted expansion when the command removes (`-delete`, `-exec rm`);
+- `find` whose first path is an unquoted expansion when the command removes (`-delete`, `-exec rm`), and an
+  `-exec rm` whose own arguments hold one (`find "$d" -exec rm -rf $X \\;`);
 - the same inside the string given to `eval`, `sh -c` or `bash -c`: a double-quoted one is expanded before it is read
   again as code, so a `$x` in it is unquoted there; a single-quoted one is code as it stands.
 Quoted arguments ("$x", "${x:-}") are fine; $$, $!, $? and $# are numbers. Comments, quoted text (messages that mention
@@ -16,7 +18,7 @@ Usage: python3 -I tests/rm_scan.py FILE... -> one "FILE:LINE: TEXT" per finding;
 import re
 import sys
 
-PREFIXES = {"then", "do", "else", "elif", "if", "while", "until", "!", "exec", "command", "sudo", "nohup", "time", "{", "}"}
+PREFIXES = {"then", "do", "else", "elif", "if", "while", "until", "!", "exec", "command", "nohup", "time", "{", "}", "eval", "busybox"}
 RM_NAMES = {"rm", "\\rm", "/bin/rm", "/usr/bin/rm"}
 SAFE_SPECIALS = ("$$", "$!", "$?", "$#")
 
@@ -83,17 +85,26 @@ def mask(line, state):
     return code, quote, inner
 
 
+# wrappers that run the command after them, and their options that take a value
+WRAPPERS = {"env": ("-u", "--unset", "-C", "--chdir", "-S", "--split-string"), "nice": ("-n", "--adjustment"),
+            "sudo": ("-u", "-g", "-h", "-p", "-C", "-D", "-r", "-t", "-U"), "timeout": ("-s", "--signal", "-k", "--kill-after")}
+
+
 def _command(words):
-    """WORDS without what goes before a command's name: keywords, assignments, `env` and its options."""
+    """WORDS without what goes before a command's name: keywords, assignments, and wrappers (env, nice, timeout N, sudo,
+    busybox, command, exec, eval) with their options."""
     words = list(words)
     while words:
-        if words[0] in PREFIXES or re.fullmatch(r"\w+=\S*", words[0]):
+        w = words[0]
+        if w in PREFIXES or re.fullmatch(r"\w+=\S*", w):
             words.pop(0)
-        elif words[0] == "env":
+        elif w in WRAPPERS:
             words.pop(0)
-            while words and (words[0].startswith("-") or re.fullmatch(r"\w+=\S*", words[0])):
-                if words.pop(0) in ("-u", "--unset") and words:
+            while words and (words[0].startswith("-") or (w == "env" and re.fullmatch(r"\w+=\S*", words[0]))):
+                if words.pop(0) in WRAPPERS[w] and words:
                     words.pop(0)
+            if w == "timeout" and words:
+                words.pop(0)   # (its duration)
         else:
             break
     return words
@@ -129,9 +140,19 @@ def findings(code):
             while rest and rest[0] in ("-H", "-L", "-P"):
                 rest.pop(0)
             path = rest[0] if rest else ""
-            removes = "-delete" in rest or any(w == "-exec" and i + 1 < len(rest) and rest[i + 1] in RM_NAMES for i, w in enumerate(rest))
+            execs = [i for i, w in enumerate(rest) if w in ("-exec", "-execdir", "-ok", "-okdir") and i + 1 < len(rest)
+                     and _command(rest[i + 1:]) and _command(rest[i + 1:])[0] in RM_NAMES]
+            removes = "-delete" in rest or bool(execs)
             if removes and path and not path.startswith(("'", '"')) and _unquoted(path):
                 out.append(seg.strip() + "   (find with an unquoted path, removing)")
+            for i in execs:
+                args = []
+                for w in _command(rest[i + 1:])[1:]:
+                    if w in ("\\", "\\;", "+", ";"):
+                        break
+                    args.append(w)
+                if any(_unquoted(w) for w in args):
+                    out.append(seg.strip() + "   (find -exec rm with an unquoted argument)")
     return out
 
 

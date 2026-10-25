@@ -167,20 +167,25 @@ test_no_rm_takes_an_unquoted_expansion() {
   command -v python3 >/dev/null 2>&1 || return 77
   local f files=() out
   # shellcheck disable=SC2016  # the cases are shell text
-  # (one finding a line: rm and its other names, xargs … rm without -0 or -d, a removing find with an unquoted path,
-  # and each inside trap, eval, sh -c and bash -c strings)
+  # (one finding a line: rm and its other names, behind wrappers or a bare eval, xargs … rm without -0 or -d, a
+  # removing find with an unquoted path or an -exec rm with an unquoted argument, and each inside trap, eval, sh -c and
+  # bash -c strings)
   printf '%s\n' 'rm -rf $X' 'rm -f ${X}' 'rm -rf $(ls)' 'x=$(rm -f $y)' '[ -z "$x" ] || rm -rf $x' 'rm -f "$a" ${b:+"$b"}' \
     "trap 'rm -rf \${T:-}; exit' TERM" 'trap "rm -f \$late" INT' \
     '\rm -rf $X' '/bin/rm -f ${X}' '/usr/bin/rm -rf $(ls)' 'env LC_ALL=C rm -f $y' \
     'find . -name x | xargs rm -f' 'printf "%s\n" "$a" | xargs -r rm -f --' \
     "find \$dir -name '*.tmp' -delete" 'find $dir -type f -exec rm -f {} \;' \
-    'eval "rm -rf $x"' 'sh -c "rm -f $f"' "bash -c 'rm -rf \$1' _ \"\$p\"" > "$TMP/bad.sh"
+    'eval "rm -rf $x"' 'sh -c "rm -f $f"' "bash -c 'rm -rf \$1' _ \"\$p\"" \
+    'find "$d" -exec rm -rf $X \;' 'eval rm -rf $X' 'nice -n 5 rm -f $x' 'timeout 10 rm -rf $x' 'busybox rm -rf $x' \
+    'command rm -f $x' 'sudo -u root rm -rf $x' 'exec rm -f $x' > "$TMP/bad.sh"
   # shellcheck disable=SC2016
   printf '%s\n' 'rm -f "$a" "${b}" -- "$(c)"' 'rm -rf -- "$d"' 'docker rm -f $ids' 'echo "docker volume rm $vols"' \
     '# rm -rf $comment' 'rm -f /tmp/x.$$' 'trap "rm -f $q; kill -INT \$\$" INT' 'cat <<EOF' 'rm -rf $text' 'EOF' 'done <<< "$plan"' \
     'rm -f "$z"' '\rm -rf -- "$X"' 'env LC_ALL=C rm -f "$y"' 'find . -name x -print0 | xargs -0 rm -f' \
     "printf '%s\\n' \"\$a\" | xargs -d '\\n' rm -f --" "find \"\$dir\" -name '*.tmp' -delete" 'find "$dir" -type f -exec rm -f {} \;' \
-    'find $dir -name x -print' 'eval "rm -rf \"\$x\""' "sh -c 'rm -f \"\$1\"' _ \"\$f\"" > "$TMP/good.sh"
+    'find $dir -name x -print' 'eval "rm -rf \"\$x\""' "sh -c 'rm -f \"\$1\"' _ \"\$f\"" \
+    'find "$d" -exec rm -rf "$X" \;' 'find "$d" -exec rm -rf {} +' 'nice -n 5 rm -f "$x"' 'timeout 10 rm -rf "$x"' \
+    'busybox rm -rf "$x"' 'command rm -f "$x"' 'sudo -u root rm -rf "$x"' 'exec rm -f "$x"' 'timeout 5 docker rm -f $ids' > "$TMP/good.sh"
   out="$(python3 -I "$T_ROOT/tests/rm_scan.py" "$TMP/bad.sh")" || true
   assert_eq "$(printf '%s\n' "$out" | grep -c .)" "$(grep -c . "$TMP/bad.sh")"
   python3 -I "$T_ROOT/tests/rm_scan.py" "$TMP/good.sh"
