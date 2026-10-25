@@ -716,7 +716,7 @@ test_cmd_set_and_remove() {
   cmd_openrouter remove 2>/dev/null
   assert_eq "$(get_env OPENROUTER_API_KEY)" ""
   [ ! -e "$TMP/litellm/openrouter-models.tsv" ] && [ ! -e "$TMP/litellm/openrouter-models.json" ]
-  assert_eq "$(stat -f %Lp "$ENV_FILE" 2>/dev/null || stat -c %a "$ENV_FILE")" 600
+  assert_eq "$(perm_of "$ENV_FILE")" 600
 }
 
 test_cmd_models_validates_and_saves() {
@@ -771,7 +771,7 @@ OPENROUTER_API_KEY="
   or_env_placeholder; or_env_placeholder
   assert_eq "$(grep -c '^OPENROUTER_API_KEY=' "$ENV_FILE")" 1
   assert_eq "$(grep -c 'paste a key' "$ENV_FILE")" 1
-  assert_eq "$(stat -f %Lp "$ENV_FILE" 2>/dev/null || stat -c %a "$ENV_FILE")" 600
+  assert_eq "$(perm_of "$ENV_FILE")" 600
 }
 
 test_env_placeholder_leaves_existing_lines_alone() {
@@ -1108,14 +1108,14 @@ test_cmd_apply_cleans_cr_and_comments_and_tightens_the_mode() {
   cmd_openrouter apply 2>/dev/null
   assert_eq "$(get_env OPENROUTER_API_KEY)" "sk-or-v1-crlf"
   assert_eq "$(head -n 1 "$TMP/calls" | cut -d' ' -f1)" "sk-or-v1-crlf"
-  assert_eq "$(stat -f %Lp "$ENV_FILE" 2>/dev/null || stat -c %a "$ENV_FILE")" 600
+  assert_eq "$(perm_of "$ENV_FILE")" 600
   printf 'OPENROUTER_API_KEY=sk-or-v1-noted # my laptop key\n' > "$ENV_FILE"
   cmd_openrouter apply 2>/dev/null
   assert_eq "$(cat "$ENV_FILE")" "OPENROUTER_API_KEY=sk-or-v1-noted"
   # also when it refuses
   printf 'OPENROUTER_API_KEY=\n' > "$ENV_FILE"; chmod 644 "$ENV_FILE"
   (cmd_openrouter apply) 2>/dev/null || true
-  assert_eq "$(stat -f %Lp "$ENV_FILE" 2>/dev/null || stat -c %a "$ENV_FILE")" 600
+  assert_eq "$(perm_of "$ENV_FILE")" 600
 }
 
 test_clean_key_reads_values_like_compose() {

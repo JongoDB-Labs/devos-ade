@@ -254,7 +254,7 @@ d = json.load(open(sys.argv[1]))
 assert d["workspace"] == sys.argv[2] and d["egress"] is True and d["terminal"] is True and isinstance(d["at"], int), d
 assert d["egress_mode"] == "internet", d
 PY
-  case "$(uname -s)" in Darwin) assert_eq "$(stat -f %Lp "$f")" 644 ;; *) assert_eq "$(stat -c %a "$f")" 644 ;; esac
+  assert_eq "$(perm_of "$f")" 644
   # internet off: said so
   set_env CODE_ENABLED ''; set_env TERMINAL_EGRESS off; code_default_on > /dev/null 2>&1 || return 1
   assert_contains "$(cat "$f")" '"egress": false, "egress_mode": "off"'

@@ -122,7 +122,7 @@ test_sync_env_sets_engine_only_when_on() {
   stt_sync_env 2>/dev/null
   assert_eq "$(get_env OWUI_STT_ENGINE)" ""
   assert_not_contains "$(cat "$ENV_FILE")" "OWUI_STT_ENGINE"
-  assert_eq "$(stat -f %Lp "$ENV_FILE" 2>/dev/null || stat -c %a "$ENV_FILE")" 600
+  assert_eq "$(perm_of "$ENV_FILE")" 600
 }
 
 test_compose_selects_engine_and_keeps_key_in_litellm() {
@@ -345,7 +345,7 @@ test_cmd_set_status_remove() {
   cmd_stt remove 2>/dev/null
   assert_eq "$(get_env STT_PROVIDER)$(get_env STT_API_KEY)$(get_env STT_MODEL)$(get_env OWUI_STT_ENGINE)" ""
   assert_contains "$(cmd_stt status)" "browser (Web Speech)"
-  assert_eq "$(stat -f %Lp "$ENV_FILE" 2>/dev/null || stat -c %a "$ENV_FILE")" 600
+  assert_eq "$(perm_of "$ENV_FILE")" 600
   assert_eq "$(tr '\n' ';' < "$TMP/seq")" "APPLY;APPLY;APPLY;"
 }
 
@@ -1235,7 +1235,7 @@ test_a_refused_model_is_not_ready_and_the_record_follows_later_checks() {
   _stt_mark_audio voxtral-small refused
   stt_model_refused voxtral-small
   assert_eq "$(awk -F'\t' '$1 == "voxtral-small" { print $3 }' "$TMP/litellm/probe-results.tsv")" ENABLED
-  assert_eq "$(perm_of "$TMP/litellm/probe-results.tsv" 2>/dev/null || stat -f %Lp "$TMP/litellm/probe-results.tsv" 2>/dev/null || stat -c %a "$TMP/litellm/probe-results.tsv")" 644
+  assert_eq "$(perm_of "$TMP/litellm/probe-results.tsv")" 644
   # a model the text check found unusable stays as it was
   _probed voxtral-small
   _stt_mark_audio voxtral-mini refused
@@ -1254,7 +1254,7 @@ test_setup_turns_an_installs_bedrock_speech_off_once_and_says_why() {
   [ ! -e "$STATE_DIR/stt-start-failed" ]
   at="$(cat "$STATE_DIR/status/stt-notice.json")"
   assert_contains "$at" '"reason": "audio-refused"'
-  assert_eq "$(perm_of "$STATE_DIR/status/stt-notice.json" 2>/dev/null || stat -f %Lp "$STATE_DIR/status/stt-notice.json" 2>/dev/null || stat -c %a "$STATE_DIR/status/stt-notice.json")" 644
+  assert_eq "$(perm_of "$STATE_DIR/status/stt-notice.json")" 644
   # the next setup: still refused — said again in its log, but the notice stays the one event it was
   sleep 1; out="$(stt_after_probe 2>&1)"
   assert_contains "$out" "Bedrock speech-to-text is unavailable: AWS no longer accepts audio"

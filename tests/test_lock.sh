@@ -113,7 +113,7 @@ test_a_terminal_command_records_running_then_done() {
   assert_contains "$(cat "$f")" '"version": "v0.9.0"'
   case "$(cat "$f")" in *'"finished_at": null'*) echo "no finish time" >&2; return 1 ;; esac
   _json_ok "$f" || return 1
-  [ "$(stat -f %Lp "$f" 2>/dev/null || stat -c %a "$f")" = 644 ] || { echo "the portal must be able to read it" >&2; return 1; }
+  [ "$(perm_of "$f")" = 644 ] || { echo "the portal must be able to read it" >&2; return 1; }
   [ ! -d "$STATE_DIR/lock" ] || { echo "the lock must go" >&2; return 1; }
 }
 
