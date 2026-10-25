@@ -130,7 +130,7 @@ COPY bin/ /usr/local/bin/
 COPY managed/off.json /etc/claude-code/managed-settings.json
 RUN chmod 755 /etc/claude-code && chmod 644 /etc/claude-code/managed-settings.json \
  && chmod 644 /etc/tmux.conf /etc/bedrock-now.bashrc /etc/ssh/ssh_config.d/bedrock-now.conf /etc/gitconfig /etc/ssh/ssh_known_hosts \
- && chmod 755 /usr/local/bin/devos-claude /usr/local/bin/bn-terminal \
+ && chmod 755 /usr/local/bin/devos-claude /usr/local/bin/claude-bedrock /usr/local/bin/bn-terminal \
       /usr/local/bin/bn-session /usr/local/bin/bn-coded.mjs /usr/local/bin/bn-preview.mjs /usr/local/bin/bn-ssh-proxy /usr/local/bin/bn-git-credential \
       /usr/local/bin/bn-gh /usr/local/bin/claude-sub /usr/local/bin/subscriptions /usr/local/bin/codex /usr/local/bin/gemini \
       /usr/local/bin/copilot /usr/local/bin/cursor-agent /usr/local/bin/grok \

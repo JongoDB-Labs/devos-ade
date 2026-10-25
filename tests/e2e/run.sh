@@ -126,7 +126,8 @@
 #
 # Never touches the default install: only project names bne2e[-…] are accepted, and teardown touches Docker only
 # after the project was found to be this suite's own (or free); ports 80/4000/8765 (and the others in AVOID_PORTS)
-# are never used; ~/.local/bin/devos-claude is checked before and after (link and file); nothing is pruned.
+# are never used; ~/.local/bin/devos-claude and ~/.local/bin/claude-bedrock (its old name) are checked before and after
+# (link and file); nothing is pruned.
 set -uo pipefail
 umask 077   # logs, results and screenshots are private; the throwaway checkout itself is cloned with umask 022
 
@@ -1509,7 +1510,7 @@ else
   browser_run "speech-to-text on again" 'browser/(home-voice-line|chat-voice-call|stt-transcription)$' stt-on-again
 fi
 
-# --- 4. devos-claude (the throwaway's wrapper, never the ~/.local/bin link) ---
+# --- 4. devos-claude (the throwaway's wrapper, never the ~/.local/bin link), and claude-bedrock, its old name ---
 if ! part_on claude; then record claude devos-claude SKIP 0 "--only $ONLY"
 elif [ "$NO_CLAUDE" = 1 ]; then record claude devos-claude SKIP 0 "--no-claude"
 elif ! command -v claude >/dev/null 2>&1; then record claude devos-claude SKIP 0 "Claude Code (claude) is not installed"
@@ -1532,6 +1533,13 @@ else
   if printf '%s' "$out" | grep -q 'devos-claude: Claude Code on AWS Bedrock via DevOS ADE'; then
     record claude devos-claude-help PASS "$(( $(now) - t0 ))" "wrapper header + claude --help"
   else record claude devos-claude-help FAIL "$(( $(now) - t0 ))" "no wrapper header"; fi
+  # claude-bedrock, the old name: a shim that runs devos-claude with the same arguments (the same output, nothing of
+  # its own) and gives back its exit code
+  t0="$(now)"; old="$( (clean_env; cd "$OUT/claude-cwd" && exec "$NOTTY" "$STACK/bin/claude-bedrock" --help) 2>&1 </dev/null)"
+  bad="$( (clean_env; cd "$OUT/claude-cwd" && exec "$NOTTY" "$STACK/bin/claude-bedrock" --model no-such-model -p x) >/dev/null 2>&1 </dev/null; echo $?)"
+  if [ "$old" = "$out" ] && [ "$bad" != 0 ]; then
+    record claude claude-bedrock-shim PASS "$(( $(now) - t0 ))" "the same help as devos-claude; its failure's exit code ($bad)"
+  else record claude claude-bedrock-shim FAIL "$(( $(now) - t0 ))" "not the same output, or exit 0 on a failure"; fi
 fi
 
 # --- 5. CLI commands that change the throwaway (backup/restore, down/up, rotate-aws, update, rollback) ---

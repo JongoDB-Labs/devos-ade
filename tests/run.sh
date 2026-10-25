@@ -80,6 +80,10 @@ home_watch=''   # (those of them not there before the suite)
 [ "$cb_home_before" = 1 ] || home_watch="$home_watch .claude-bedrock"
 [ "$ws_home_before" = 1 ] || home_watch="$home_watch bedrock-now-workspace"
 [ "$wsn_home_before" = 1 ] || home_watch="$home_watch devos-ade-workspace"
+# ~/.local/bin/devos-claude and claude-bedrock, its old name (lib/commands.sh offer_symlink): read only (what each is,
+# where it points), never changed — the tests link and unlink in their own home.
+_links_state() { local n; for n in devos-claude claude-bedrock; do printf '%s %s|' "$n" "$(ls -ld "${HOME:-/nonexistent}/.local/bin/$n" 2>/dev/null | awk '{ $6 = $7 = $8 = ""; print }')"; done; }
+links_before="$(_links_state)"
 
 # The guards, after every test too, so the test that tripped one fails by name (the checks at the end only say that
 # the suite did): what it wrote in this checkout's .env, .state/, litellm/ or backups/ — a file, or a temp file made
@@ -242,6 +246,10 @@ fi
 if [ "$wsn_home_before" = 0 ] && [ -e "${HOME:-/nonexistent}/devos-ade-workspace" ]; then
   fail=$((fail + 1)); _failed "live-state guard (~/devos-ade-workspace)"
   printf 'FAIL live-state guard: the suite created ~/devos-ade-workspace in your real home (remove it)\n'
+fi
+if [ "$(_links_state)" != "$links_before" ]; then
+  fail=$((fail + 1)); _failed "live-state guard (~/.local/bin)"
+  printf 'FAIL live-state guard: the suite changed ~/.local/bin/devos-claude or ~/.local/bin/claude-bedrock in your real home\n'
 fi
 if [ -s "$BN_SHIM_LOG" ]; then
   fail=$((fail + 1)); _failed "isolation guard"

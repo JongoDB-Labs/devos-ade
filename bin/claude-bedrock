@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# claude-bedrock: devos-claude's name before v0.28.0, kept so scripts and habits keep working. It runs the devos-claude
+# beside it (through any links to this file) with the same arguments and gives back its exit code; it prints nothing
+# of its own. (terminal/bin/claude-bedrock is the same file, for the browser terminal.)
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"; src="$(readlink "$src")"
+  case "$src" in /*) ;; *) src="$dir/$src" ;; esac
+done
+exec "$(cd -P "$(dirname "$src")" && pwd)/devos-claude" "$@"

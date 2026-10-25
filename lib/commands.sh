@@ -1037,14 +1037,22 @@ write_mcp_config() {
   mv "$tmp" "$f"
 }
 
-# offer_symlink — interactive runs only: --yes never creates or replaces ~/.local/bin/devos-claude,
-# and a link to a DIFFERENT checkout is replaced only after an explicit "y".
+# offer_symlink — devos-claude on your PATH: ~/.local/bin/devos-claude, a link to this checkout's bin/devos-claude, and
+# beside it ~/.local/bin/claude-bedrock (claude-bedrock, its name before v0.28.0): a link to bin/claude-bedrock, a shim
+# that runs devos-claude with the same arguments (docs/internal-names.md). Interactive runs ask first. --yes (./stack
+# update) creates the devos-claude link only for an install whose ~/.local/bin/claude-bedrock links here (v0.27.x and
+# earlier, where the update's checkout has just made that file the shim), and never replaces a link to a different
+# checkout or a file: that one is replaced only after an explicit "y".
 offer_symlink() {
-  local target="$HOME/.local/bin/devos-claude" want="$STACK_DIR/bin/devos-claude" cur
+  local target="$HOME/.local/bin/devos-claude" want="$STACK_DIR/bin/devos-claude" cur old_cur
   cur="$(readlink "$target" 2>/dev/null || true)"
-  [ "$cur" = "$want" ] && return 0
+  old_cur="$(readlink "$HOME/.local/bin/claude-bedrock" 2>/dev/null || true)"
+  [ "$cur" = "$want" ] && { _link_old_name; return 0; }
   if [ "${ASSUME_YES:-0}" = 1 ] || ! _have_tty; then
-    if [ -n "$cur" ]; then log "left $target alone (it points to $cur)"
+    if [ "$old_cur" = "$STACK_DIR/bin/claude-bedrock" ] && [ ! -e "$target" ] && [ ! -L "$target" ]; then
+      if ln -s "$want" "$target" 2>/dev/null; then log "linked $target (formerly claude-bedrock, which keeps working: it runs devos-claude now)"
+      else warn "could not link $target (to put devos-claude on your PATH: ln -s $want $target)"; fi
+    elif [ -n "$cur" ]; then log "left $target alone (it points to $cur)"
     else log "to put devos-claude on your PATH: ln -s $want $target"; fi
     return 0
   fi
@@ -1059,8 +1067,25 @@ offer_symlink() {
   mkdir -p "$HOME/.local/bin"
   ln -sfn "$want" "$target"
   log "linked $target"
+  _link_old_name
   # shellcheck disable=SC2088  # literal ~ in a message
   case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) warn "~/.local/bin is not on your PATH; add it yourself (setup won't edit shell rc files)" ;; esac
+}
+
+# _link_old_name — next to a devos-claude link to this checkout: ~/.local/bin/claude-bedrock, a link to this checkout's
+# shim (bin/claude-bedrock), made when nothing has that name. A link to another checkout or a file of yours stays.
+_link_old_name() {
+  local old="$HOME/.local/bin/claude-bedrock" shim="$STACK_DIR/bin/claude-bedrock" cur
+  [ -f "$shim" ] || return 0
+  cur="$(readlink "$old" 2>/dev/null || true)"
+  [ "$cur" = "$shim" ] && return 0
+  if [ -e "$old" ] || [ -L "$old" ]; then
+    if [ -n "$cur" ]; then log "left $old alone (it points to $cur); devos-claude is its new name"
+    else log "left $old alone (not a link); devos-claude is its new name"; fi
+    return 0
+  fi
+  if ln -s "$shim" "$old" 2>/dev/null; then log "linked $old (devos-claude's name before v0.28.0: it runs devos-claude)"
+  else warn "could not link $old, devos-claude's name before v0.28.0 (devos-claude is linked)"; fi
 }
 
 # --- day-2 commands ---
@@ -1923,6 +1948,9 @@ cmd_uninstall() {
   local_builds_remove          # lib/images.sh: <project>/portal:local, …:previous, by exact name (never a prune)
   ! helper_installed || helper_uninstall
   if [ "$(readlink "$target" 2>/dev/null)" = "$STACK_DIR/bin/devos-claude" ]; then rm -f "$target"; log "removed the $target link"; fi
+  # its old name: the link to this checkout's shim (bin/claude-bedrock); another checkout's or a file of yours stays
+  target="$HOME/.local/bin/claude-bedrock"
+  if [ "$(readlink "$target" 2>/dev/null)" = "$STACK_DIR/bin/claude-bedrock" ]; then rm -f "$target"; log "removed the $target link"; fi
   log "removed. .env and backups/ were kept (they contain secrets) — delete this folder yourself if you're done."
   # devos-claude's own Claude Code folder (settings, plugins, sessions): yours, possibly shared by other copies.
   # The default one and the one CLAUDE_BEDROCK_CONFIG_DIR names in this shell — each only as lib/claude_config.sh

@@ -162,6 +162,18 @@ test_wrapper_prints_summary_and_passes_exit_code() {
   assert_eq "$(tail -n 1 "$TMP/err")" 'session: 2 requests · 94.4K tokens (59% cached) · $0.0384'
 }
 
+# claude-bedrock, devos-claude's name before v0.28.0: the shim runs this wrapper, the same as typing devos-claude
+test_old_name_claude_bedrock_runs_the_wrapper_with_its_arguments_and_exit_code() {
+  _wrapper_env
+  local rc=0
+  STUB_RC=3 PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/claude-bedrock" -p 'hi there' > "$TMP/out" 2> "$TMP/err" || rc=$?
+  assert_eq "$rc" "3"
+  assert_contains "$(cat "$TMP/out")" "CLAUDE -p hi there"
+  assert_eq "$(tail -n 1 "$TMP/err")" 'session: 2 requests · 94.4K tokens (59% cached) · $0.0384'
+  assert_eq "$(PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/claude-bedrock" --help 2>&1)" "$(_run_wrapper --help 2>&1)"
+  assert_contains "$(_run_wrapper --help 2>&1)" "devos-claude: Claude Code on AWS Bedrock via DevOS ADE"
+}
+
 test_wrapper_sends_session_header_and_keeps_callers_headers() {
   _wrapper_env
   ANTHROPIC_CUSTOM_HEADERS='X-Mine: 1' _run_wrapper -p hi > "$TMP/out" 2> /dev/null

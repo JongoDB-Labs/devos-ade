@@ -349,12 +349,17 @@ pick_port() { # pick_port VAR START — sets VAR (no subshell, so CHOSEN is kept
   eval "$1=$p"
 }
 
-# link_state -> what ~/.local/bin/devos-claude is: the link target and a checksum of the file it points to
+# link_state -> what ~/.local/bin/devos-claude and ~/.local/bin/claude-bedrock (its old name, a shim) are: each one's
+# link target and a checksum of the file it points to
 link_state() {
-  local link="$HOME/.local/bin/devos-claude"
-  if [ -L "$link" ]; then printf 'symlink -> %s (%s)\n' "$(readlink "$link")" "$(cksum < "$link" 2>/dev/null | awk '{ print $1 "/" $2 }')"
-  elif [ -e "$link" ]; then printf 'file (%s)\n' "$(cksum < "$link" | awk '{ print $1 "/" $2 }')"
-  else echo absent; fi
+  local name link
+  for name in devos-claude claude-bedrock; do
+    link="$HOME/.local/bin/$name"
+    if [ -L "$link" ]; then printf '%s: symlink -> %s (%s); ' "$name" "$(readlink "$link")" "$(cksum < "$link" 2>/dev/null | awk '{ print $1 "/" $2 }')"
+    elif [ -e "$link" ]; then printf '%s: file (%s); ' "$name" "$(cksum < "$link" | awk '{ print $1 "/" $2 }')"
+    else printf '%s: absent; ' "$name"; fi
+  done
+  echo
 }
 
 # perm_of PATH -> octal mode (GNU stat first: BSD stat -f means something else on Linux)
