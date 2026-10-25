@@ -13,7 +13,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   key** (from this computer only), or `./stack config set EXPLABS_API_KEY`, which asks for it without echo; the key is
   checked with the gateway first, never shown back, and reaches only LiteLLM. **Experiential Labs models**
   (`EXPLABS_MODELS`): exact gateway ids, blank = `qwen3.8-27b`. They appear as `xl/<id>` in Chat (named and tagged
-  *Experiential Labs*, a group of the Who answers menu, greyed while there is no key), on the Code page and in
+  *Experiential Labs*, a group of the Who answers menu; while there is no key, as for OpenRouter, a choice that takes
+  you to Settings › Chat & voice › Experiential Labs key), on the Code page and in
   `claude-bedrock` (a group of their own) and on Home. Each model is sent **only the parameters it takes**, from the
   gateway's own model details (`supports_temperature`, `supports_top_p`, `supports_tools`, `chat_max_tokens_field`, …;
   from its public catalog, `GET /api/models/<id>` without the key for each chosen model, joined with the key's own

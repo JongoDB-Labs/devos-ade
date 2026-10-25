@@ -2006,8 +2006,8 @@ shown there once.
   the reason. `./stack up` and Settings read the list again; a list read earlier with the same key is kept when a
   refresh fails.
 - **Where they show up:** in LiteLLM as `xl/<id>`; in Chat as `<id> · Experiential Labs`, tagged *Experiential Labs*
-  and the vendor, and as a group of Chat's **Who answers** menu (greyed, naming the Settings row, while there is no
-  key); on the Code page and in `claude-bedrock` as the *Experiential Labs* group (tool use as the details say: a
+  and the vendor, and as a group of Chat's **Who answers** menu (while there is no key, as for OpenRouter, a choice that
+  says so and takes you to Settings › Chat & voice › Experiential Labs key); on the Code page and in `claude-bedrock` as the *Experiential Labs* group (tool use as the details say: a
   model whose details say no tools is *chat only*; one whose details do not say, or fail safe, *not tested*); on Home
   as rows of the model table.
 - **What it costs.** The gateway reports what each call cost (`usage.cost`, USD), and that is what LiteLLM books —

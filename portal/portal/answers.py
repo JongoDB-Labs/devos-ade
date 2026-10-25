@@ -234,8 +234,9 @@ def build(s, remote: bool, models: dict | None = None) -> dict:
     t["plan_models"] = plan_models(s, remote, t["tools"], links, current_egress(s))
     return {"terminal": {"enabled": bool(s.terminal), "here": s.terminal_on(remote), "reason": terminal_reason(s, remote)},
             "basics": list(BASICS), **t, "models": chat_models(models) if models is not None else [],
-            # Experiential Labs off: Chat's picker shows it greyed, with the Settings row where its key goes
-            "explabs": {"on": bool((models or {}).get("explabs")), "setting": "EXPLABS_API_KEY"},
+            # Experiential Labs on (its models file is there: the portal never holds its key); off, Chat's picker shows
+            # where its key goes in (catalog/setup-links.tsv explabs-off)
+            "explabs": bool((models or {}).get("explabs")),
             "folders": folders(s.status_dir), "openrouter": bool(getattr(s, "openrouter_api_key", "")), "setup": links}
 
 

@@ -52,14 +52,18 @@ def test_home_lists_them_with_the_list_price_and_says_which_run_fail_safe(settin
 def test_who_answers_groups_them_and_greys_the_entry_while_off(settings):
     _write(settings)
     d = answers.build(settings, False, summary.models_with_openrouter(settings))
-    assert d["explabs"] == {"on": True, "setting": "EXPLABS_API_KEY"}
+    assert d["explabs"] is True
     assert [m for m in d["models"] if m["provider"] == "Experiential Labs"][0] == \
         {"id": "xl/qwen3.8-27b", "label": "qwen3.8-27b", "provider": "Experiential Labs"}
     (settings.litellm_dir / explabs.FILE).unlink()
     d = answers.build(settings, False, summary.models_with_openrouter(settings))
-    assert d["explabs"]["on"] is False and not [m for m in d["models"] if m["provider"] == "Experiential Labs"]
-    # off: the greyed entry gets the Settings row and nothing else of the gateway (the portal never calls it)
-    assert d["explabs"] == {"on": False, "setting": "EXPLABS_API_KEY"}
+    assert d["explabs"] is False and not [m for m in d["models"] if m["provider"] == "Experiential Labs"]
+    # off: the greyed entry's words and place come from the setup links (Settings at the key's row), and nothing else
+    # of the gateway (the portal never calls it)
+    links = d["setup"]
+    if links:
+        assert links["explabs-off"]["target"] == "setting:EXPLABS_API_KEY"
+    d.pop("setup")
     assert "experientiallabs" not in json.dumps(d).lower() and '"xl/' not in json.dumps(d)
 
 
@@ -100,8 +104,30 @@ def test_the_page_scripts_name_the_gateways_group_and_its_settings_row():
     from pathlib import Path
     root = Path(answers.__file__).parent / "static"
     js = (root / "answers.js").read_text(encoding="utf-8")
-    assert 'label: "Experiential Labs"' in js and "TODO(setup-links)" in js and "#settings/EXPLABS_API_KEY" in js
+    assert 'label: "Experiential Labs"' in js and 'setupOf(d, "explabs-off")' in js and "TODO(setup-links)" not in js
     st = (root / "settings.js").read_text(encoding="utf-8")
     assert 'explabs: ["LiteLLM"]' in st and '"xl_key"' in st
     # removing the key restarts LiteLLM alone, and the dialog says so
     assert "the Code page and the API; LiteLLM restarts (about 30 s)." in st
+
+
+def test_the_greyed_entry_goes_to_a_live_settings_row():
+    # catalog/setup-links.tsv explabs-off: Settings › Chat & voice › Experiential Labs key, a row the page shows, a key
+    # set from this computer only (so its words say so), and the Code page's copy the same
+    from pathlib import Path
+    root = Path(answers.__file__).resolve().parents[2]
+    table = root / "catalog" / "setup-links.tsv"
+    if not table.exists():
+        return
+    links = answers.setup_links(table.parent)
+    row = links["explabs-off"]
+    assert row["target"] == "setting:EXPLABS_API_KEY" and row["where"] == "Settings › Chat & voice › Experiential Labs key"
+    assert row["says"].endswith(", from the computer running DevOS ADE.") and row["where"] in row["says"]
+    settings = [l.split("\t") for l in (root / "catalog" / "settings.tsv").read_text(encoding="utf-8").splitlines() if l and not l.startswith("#")]
+    key = next(f for f in settings if f[0] == "EXPLABS_API_KEY")
+    assert key[3] == "local" and key[6] == "Experiential Labs key"
+    layout = [l.split("\t") for l in (root / "catalog" / "settings-layout.tsv").read_text(encoding="utf-8").splitlines() if l and not l.startswith(("#", "@"))]
+    assert next(f for f in layout if f[0] == "EXPLABS_API_KEY")[1:3] == ["chat", "main"]
+    code = root / "code" / "web" / "src" / "setuplinks.ts"
+    if code.exists():
+        assert f'"explabs-off": {{ target: "setting:EXPLABS_API_KEY", where: "{row["where"]}", says: "{row["says"]}" }}' in code.read_text(encoding="utf-8")

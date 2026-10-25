@@ -26,6 +26,7 @@ chat-signin	signin:chat	Settings › Claude Code › Your AI subscriptions › C
 auto-off	setting:CODE_AUTO_MODE	Settings › Claude Code › Auto mode	Auto is off: Settings › Claude Code › Auto mode turns it on, from the computer running DevOS ADE.
 bypass-off	setting:CODE_ALLOW_BYPASS	Settings › Claude Code › Allow Bypass permissions	Bypass permissions is off: Settings › Claude Code › Allow Bypass permissions turns it on, from the computer running DevOS ADE.
 openrouter-off	setting:OPENROUTER_API_KEY	Settings › Chat & voice › OpenRouter API key	OpenRouter's models need your OpenRouter key: Settings › Chat & voice › OpenRouter API key takes it, from the computer running DevOS ADE.
+explabs-off	setting:EXPLABS_API_KEY	Settings › Chat & voice › Experiential Labs key	Experiential Labs' models need your Experiential Labs key: add it in Settings › Chat & voice › Experiential Labs key, from the computer running DevOS ADE.
 voice-off	setting:STT_PROVIDER	Settings › Chat & voice › Speech-to-text	Voice calls need speech-to-text: Settings › Chat & voice › Speech-to-text turns it on, from the computer running DevOS ADE.
 models-scope	setting:CODE_MODELS	Settings › Claude Code › Models for Claude Code	Settings › Claude Code › Models for Claude Code picks the models listed here.
 remote-preview	setting:REMOTE_PREVIEW	Settings › Remote access › Previews over remote access	Previews are off over remote access: Settings › Remote access › Previews over remote access turns them on, from the computer running DevOS ADE.

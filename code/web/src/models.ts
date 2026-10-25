@@ -62,8 +62,8 @@ export const GROUP_TITLE: Record<ModelGroup, string> = {
   'or-paid': 'OpenRouter',
   xl: 'Experiential Labs',
 };
-// TODO(setup-links): while Experiential Labs has no key its group is simply absent here. Once the setup-links registry
-// for greyed items is on main, add a greyed 'xl' entry that links to DevOS ADE's #settings/EXPLABS_API_KEY.
+// (while Experiential Labs has no key its group is absent here, as OpenRouter's is: Chat's Who answers shows where the
+// key goes in — catalog/setup-links.tsv explabs-off)
 
 const isAnthropic = (m: BnModel): boolean => m.vendor.toLowerCase() === 'anthropic' && m.provider === 'Bedrock';
 
