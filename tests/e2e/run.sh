@@ -398,7 +398,8 @@ spend_start   # with --reuse: only this run's spend is counted
 # terminal_probe CONTAINER HOST_ADDR — inside the terminal: what it can reach. Prints "name<TAB>result" lines.
 # HOST_ADDR: Docker's address for this computer (host-gateway; on Docker Desktop its loopback services answer there).
 terminal_probe() {
-  docker exec -i -e HG="$2" -e LP="$(get_env LITELLM_PORT)" -e PP="$(get_env PORTAL_PORT)" "$1" bash -s <<'SH'
+  # (rebind-try.sh first: rb_try, for the DNS-rebinding probes)
+  { cat "$HERE/rebind-try.sh"; cat <<'SH'; } | docker exec -i -e HG="$2" -e LP="$(get_env LITELLM_PORT)" -e PP="$(get_env PORTAL_PORT)" "$1" bash -s
 tcp() { if timeout 4 bash -c "exec 3<>/dev/tcp/$1/$2" 2>/dev/null; then echo open; else echo closed; fi; }
 for t in portal:8000 open-webui:8080 postgres:5432 rustfs:9000 litellm:4000 shared-mcp:8000 stt:8000 caddy:8080 \
          gateway:8080 gateway:8090 gateway:8081 gateway:7681 gateway:7682 gateway:80; do
@@ -460,10 +461,9 @@ printf 'direct-host\t%s %s\n' "$(curl --noproxy '*' -s -m 5 -o /dev/null -w '%{h
   "$(curl --noproxy '*' -s -m 5 -o /dev/null -w '%{http_code}' "http://$HG:$PP/" || true)"
 # (the proxy logs at most 20 refusals per 10 s: a fresh window, and the ones the log is checked for first)
 sleep 11
-# (each: 1 = refused for the address the name resolves to; dns = nip.io itself did not resolve — an outside outage, not
-# the proxy's doing: not counted as a failure)
-printf 'proxy-rebind\t%s\n' "$(for u in http://127.0.0.1.nip.io/ http://10.255.255.1.nip.io/ http://169.254.169.254.nip.io/; do
-  r="$(x "$u")"; case "$r" in *'resolves to'*) echo 1 ;; *'does not resolve'*) echo dns ;; *) echo 0 ;; esac; done | tr '\n' ' ')"
+# (public names resolving to refused addresses: one proxy-rebind-try line each — the answer as it came; lib.sh
+# rebind_steady judges them, and asks again only the ones that got no answer at all)
+for u in http://127.0.0.1.nip.io/ http://10.255.255.1.nip.io/ http://169.254.169.254.nip.io/; do rb_try "$u" 15; done
 # (port 22 is open through it: this computer's address on it is refused for the address itself)
 printf 'proxy-host-ssh\t%s\n' "$(x -o /dev/null -w '%{http_connect}' "https://$HG:22/")"
 printf 'proxy-host\t%s\n' "$(for u in "http://host.docker.internal:$LP/" "http://gateway.docker.internal:$LP/" "http://$HG:$LP/v1/models" "http://$HG:$PP/" \
@@ -476,6 +476,10 @@ printf 'proxy-port\t%s\n' "$(x -o /dev/null -w '%{http_connect}' https://registr
 printf 'claude-webfetch\t%s\n' "$(cd /tmp && timeout 150 claude -p --model "$ANTHROPIC_DEFAULT_HAIKU_MODEL" --allowedTools WebFetch --output-format text \
   'Use the WebFetch tool to fetch https://example.com/ and reply with only the text of its h1 heading.' </dev/null 2>&1 | tr '\n' ' ' | cut -c1-120)"
 SH
+}
+# terminal_rebind_try CONTAINER URL MAXTIME -> one DNS-rebinding probe again, alone (rebind-try.sh)
+terminal_rebind_try() {
+  { cat "$HERE/rebind-try.sh"; printf 'rb_try %q %q\n' "$2" "$3"; } | docker exec -i "$1" bash -s
 }
 # terminal_public_probe CONTAINER -> the "a public site is reachable" side of the sandbox's way out, through its egress
 # proxy: the registry, a plain-http site, Node's fetch, npm install, pip download, git over https and ssh. The names
@@ -514,6 +518,13 @@ if [ "$TERMINAL" = 1 ]; then
     hg="$(docker run --rm --add-host hg:host-gateway --entrypoint getent "$PROJECT/terminal:local" ahostsv4 hg 2>/dev/null | awk 'NR == 1 { print $1 }')"
     eg="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=terminal-egress)"
     probe="$(terminal_probe "$tc" "${hg:-192.0.2.1}" 2>&1)"
+    # DNS rebinding: its first answers came with the probe; one with no answer at all (the proxy's own lookup timed out,
+    # the proxy not reached) is asked again — never one refused, reached or answered otherwise (lib.sh rebind_steady)
+    rebind_try() { terminal_rebind_try "$tc" "$@"; }
+    rebind_steady rebind_try "$(printf '%s\n' "$probe" | grep "^proxy-rebind-try$(printf '\t')")"
+    probe="$probe
+$(printf '%s\n' "$REBIND_LOG" | sed -n '/^# DNS rebinding, try /,$p')
+proxy-rebind	$REBIND_RB"
     # The public side after it, in a fresh window of the proxy's refusal log (20 a window of 10 s; the refusals above
     # filled theirs): a public name refused for the address this computer's DNS gave it is then in the log. Tried
     # again only while that is so (lib.sh public_probe_steady); never the refusals.
@@ -545,15 +556,19 @@ if [ "$TERMINAL" = 1 ]; then
     [ "$(printf '%s\n' "$probe" | awk -F'\t' '$1 == "user" { print $2 }')" = "$(id -u)" ] || bad="$bad not-your-uid"
     # DNS rebinding: a public name resolving to a refused address is refused for the address; when nip.io itself is
     # unreachable (an outside DNS outage) that one is not checked, and said
-    rebind_note=""; rb="$(printf '%s\n' "$probe" | awk -F'\t' '$1 == "proxy-rebind" { print $2 }')"
-    # (a name not refused stays a FAIL; the detail says so first when this computer's DNS did not answer it with the
-    # address in its name — then it tested nothing — for every such name; the names of proxy-rebind above, in order)
+    rebind_note=""; rb="$REBIND_RB"
+    # (a name not refused stays a FAIL. The detail says so first when every such name got no answer after the retries
+    # (REBIND_NOTE), or when this computer's DNS did not answer each with the address in its name — then it tested
+    # nothing; the names of proxy-rebind above, in order)
     case "$rb" in
-      *0*|"") bad="$bad proxy-rebind:$rb"
-        rdns="$(rebind_dns_problem "$rb" "$(host_dns_answers 127.0.0.1.nip.io 10.255.255.1.nip.io 169.254.169.254.nip.io)")" &&
-          dns_note="${dns_note:+$dns_note; }$rdns: an environment problem, rerun (DNS rebinding not tested)" ;;
+      *0*|"") bad="$bad proxy-rebind:$rb$REBIND_BAD"
+        if [ -n "$REBIND_NOTE" ]; then dns_note="${dns_note:+$dns_note; }$REBIND_NOTE ($REBIND_TRIES tries ${E2E_REBIND_GAP_S:-10} s apart)"
+        elif rdns="$(rebind_dns_problem "$rb" "$(host_dns_answers 127.0.0.1.nip.io 10.255.255.1.nip.io 169.254.169.254.nip.io)")"; then
+          dns_note="${dns_note:+$dns_note; }$rdns: an environment problem, rerun (DNS rebinding not tested)"
+        fi ;;
       *dns*) rebind_note=" (DNS rebinding not checked: nip.io did not resolve)" ;;
     esac
+    [ "$REBIND_TRIES" -le 1 ] || case "$rb" in *0*) ;; *) rebind_note="$rebind_note (DNS rebinding answered at try $REBIND_TRIES)" ;; esac
     # LiteLLM through this computer's loopback: with the egress proxy (the default) refused by it, and no route around
     # it (direct-host above); with TERMINAL_EGRESS=host reachable on Docker Desktop (the 200 shows it), but the key gets
     # 403 off its routes (and 404 for a ../ path, which LiteLLM routes nowhere)

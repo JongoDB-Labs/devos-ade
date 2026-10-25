@@ -531,3 +531,84 @@ rebind_dns_problem() {
   [ -n "$note" ] || return 1
   printf '%s\n' "$note"
 }
+
+# --- terminal-isolation's DNS-rebinding probes: refused for the address, or a FAIL; only no answer is asked again ---
+# (tests/e2e/rebind-try.sh makes each answer's line; run.sh sends the first three with terminal_probe, after its
+# fresh log window, and any retry alone)
+
+# rebind_class RC CODE EGRESS BODY -> what one DNS-rebinding probe got through the egress proxy (curl's exit, the HTTP
+# code, the proxy's X-Bn-Egress header, the start of the body):
+#   refused   403 from the proxy, "… resolves to ADDR: …": refused for the address the name resolves to — what must be
+#   dns       the proxy found no address for the name ("does not resolve"): nip.io unreachable, not checked (as before)
+#   noanswer  no HTTP answer at all (curl failed: no proxy, a timeout), or the proxy's own lookup timed out (504
+#             "looking up NAME timed out"): nothing reached, nothing refused — asked again
+#   reached   any 2xx or 3xx, or an answer that is not the proxy's (no X-Bn-Egress): the target was reached
+#   other     any other answer of the proxy's (a refusal for another reason, an address that did not answer …)
+rebind_class() {
+  local rc="$1" code="$2" eg="$3" body="$4"
+  case "$code" in 2??|3??) echo reached; return ;; ''|000) echo noanswer; return ;; esac
+  case "$eg" in refused|failed) ;; *) echo reached; return ;; esac
+  case "$eg:$code:$body" in
+    refused:403:*' resolves to '*) echo refused ;;
+    failed:502:*' does not resolve'*) echo dns ;;
+    failed:504:*'looking up '*' timed out'*) echo noanswer ;;
+    *) echo other ;;
+  esac
+}
+
+# _rebind_state < LINES -> "URL CLASS CODE" for each "proxy-rebind-try" line
+_rebind_state() {
+  local tag url rc code eg body
+  while IFS=$'\t' read -r tag url rc code eg body; do
+    [ "$tag" = proxy-rebind-try ] || continue
+    printf '%s %s %s\n' "$url" "$(rebind_class "$rc" "$code" "$eg" "$body")" "${code:-000}"
+  done
+}
+
+# rebind_steady PROBE FIRST -> the DNS-rebinding probes' verdict. FIRST: their first lines (rebind-try.sh's, one per
+# URL, in order); PROBE URL MAXTIME prints one such line again. A URL with no answer (noanswer) is asked again — at most
+# E2E_REBIND_RETRIES (3) more times, E2E_REBIND_GAP_S (10) s apart, E2E_REBIND_MAX_TIME (30) s each; any other answer
+# is final at once (a reached target fails without a retry). Sets REBIND_RB (one word per URL, as before: 1 refused,
+# dns, 0 anything else), REBIND_BAD (" NAME:CLASS(CODE)" for each not refused or dns), REBIND_NOTE (the environment
+# note when every such one is a remaining no-answer, else empty), REBIND_TRIES and REBIND_LOG (every try's lines).
+# shellcheck disable=SC2034  # REBIND_*: set for the caller (run.sh)
+rebind_steady() {
+  local probe="$1" state next url cls code u0 line round=0 na='' strict='' host
+  REBIND_LOG="$2"; REBIND_RB=''; REBIND_BAD=''; REBIND_NOTE=''
+  state="$(printf '%s\n' "$2" | _rebind_state)"
+  while printf '%s\n' "$state" | grep -q ' noanswer ' && [ "$round" -lt "${E2E_REBIND_RETRIES:-3}" ]; do
+    round=$((round + 1))
+    sleep "${E2E_REBIND_GAP_S:-10}"
+    next=''
+    while read -r url cls code; do
+      [ -n "$url" ] || continue
+      if [ "$cls" = noanswer ]; then
+        u0="$url"
+        line="$("$probe" "$url" "${E2E_REBIND_MAX_TIME:-30}" 2>&1)"
+        REBIND_LOG="$REBIND_LOG
+# DNS rebinding, try $((round + 1))
+$line"
+        read -r url cls code <<< "$(printf '%s\n' "$line" | _rebind_state)"
+        [ "$url" = "$u0" ] || { url="$u0"; cls=noanswer; code=000; }
+      fi
+      next="$next$url $cls $code
+"
+    done <<< "$state"
+    state="$next"
+  done
+  REBIND_TRIES=$((round + 1))
+  while read -r url cls code; do
+    [ -n "$url" ] || continue
+    host="${url#*://}"; host="${host%%/*}"
+    case "$cls" in
+      refused) REBIND_RB="${REBIND_RB}1 " ;;
+      dns) REBIND_RB="${REBIND_RB}dns " ;;
+      noanswer) REBIND_RB="${REBIND_RB}0 "; REBIND_BAD="$REBIND_BAD $host:no-answer"; [ -n "$na" ] || na="$host" ;;
+      *) REBIND_RB="${REBIND_RB}0 "; REBIND_BAD="$REBIND_BAD $host:$cls($code)"; strict=1 ;;
+    esac
+  done <<< "$state"
+  if [ -n "$na" ] && [ -z "$strict" ]; then
+    REBIND_NOTE="the proxy did not answer for $na (its DNS lookup timed out?): an environment problem, rerun"
+  fi
+  return 0
+}

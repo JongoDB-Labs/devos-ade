@@ -526,8 +526,134 @@ test_e2e_terminal_isolation_tries_only_the_public_side_again() {
   # the strict side as it was: every refusal in the one list, a rebinding probe not refused a FAIL
   assert_contains "$r" 'proxy-host="403 403 403 403 403 403 403 403 " proxy-private="403 403 403 403 403 403 403 403 403 "'
   assert_contains "$r" 'proxy-host-ssh=403 proxy-tls-private="403 403 403 " proxy-port=403; do'
-  assert_contains "$r" '*0*|"") bad="$bad proxy-rebind:$rb"'
+  assert_contains "$r" '*0*|"") bad="$bad proxy-rebind:$rb$REBIND_BAD"'
   assert_contains "$r" 'public_probe_steady pub_try egress_since'
   assert_contains "$r" 'pbad="$(public_probe_bad "$PUBLIC_OUT")"; bad="$bad$pbad"'
   assert_contains "$r" '"${dns_note:+$dns_note — }unexpected:$bad'
+}
+
+# --- terminal-isolation's DNS-rebinding probes (lib.sh rebind_steady): the egress proxy's answers, faked ---
+_RB1=http://127.0.0.1.nip.io/ _RB2=http://10.255.255.1.nip.io/ _RB3=http://169.254.169.254.nip.io/
+# _rb URL RC CODE EGRESS BODY -> a line as tests/e2e/rebind-try.sh writes it
+_rb() { printf 'proxy-rebind-try\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5"; }
+_rb_answer() {   # URL KIND -> the proxy's answer of that kind (bn-egress.mjs's words)
+  local n="${1#http://}"; n="${n%/}"
+  case "$2" in
+    refused) _rb "$1" 0 403 refused "DevOS ADE's sandbox proxy: refused — $n resolves to ${n%.nip.io}: loopback. This proxy lets …" ;;
+    timeout) _rb "$1" 28 000 - - ;;
+    lookup-timeout) _rb "$1" 0 504 failed "DevOS ADE's sandbox proxy: failed — looking up $n timed out." ;;
+    dns) _rb "$1" 0 502 failed "DevOS ADE's sandbox proxy: failed — $n does not resolve (ENOTFOUND)." ;;
+    reached) _rb "$1" 0 200 - "<html><body>a page</body></html>" ;;
+    redirect) _rb "$1" 0 302 - - ;;
+    other) _rb "$1" 0 502 failed "DevOS ADE's sandbox proxy: failed — $n:80 did not answer (ECONNREFUSED)." ;;
+  esac
+}
+# the retry: answers from the kinds in $TMP/rb-next (one per call, the last one repeating), each call logged
+_rb_retry() {
+  local n kind
+  printf '%s %s\n' "$1" "$2" >> "$TMP/rb-calls"
+  n="$(wc -l < "$TMP/rb-calls" | tr -d ' ')"
+  kind="$(sed -n "${n}p" "$TMP/rb-next")"; [ -n "$kind" ] || kind="$(tail -n 1 "$TMP/rb-next")"
+  _rb_answer "$1" "$kind"
+}
+_rb_run() {   # FIRST-KINDS (3 words) RETRY-KINDS... -> rebind_steady on them; $TMP/rb-calls: the retries asked
+  local k1 k2 k3; read -r k1 k2 k3 <<< "$1"; shift
+  : > "$TMP/rb-calls"; printf '%s\n' "${@:-refused}" > "$TMP/rb-next"
+  rebind_steady _rb_retry "$(_rb_answer "$_RB1" "$k1"; _rb_answer "$_RB2" "$k2"; _rb_answer "$_RB3" "$k3")"
+}
+
+test_e2e_rebind_class_reads_the_proxys_answer() {
+  local k
+  for k in refused:refused timeout:noanswer lookup-timeout:noanswer dns:dns reached:reached redirect:reached other:other; do
+    assert_eq "$(_rb_answer "$_RB1" "${k%%:*}" | _rebind_state)" "$_RB1 ${k#*:} $(_rb_answer "$_RB1" "${k%%:*}" | cut -f4)"
+  done
+  # an answer that is not the proxy's (no X-Bn-Egress) reached the target, whatever its code or words
+  assert_eq "$(rebind_class 0 403 - 'Forbidden: 127.0.0.1.nip.io resolves to 127.0.0.1')" reached
+  # the proxy's words with the wrong code or header are not a refusal
+  assert_eq "$(rebind_class 0 502 failed 'x resolves to 127.0.0.1: loopback')" other
+  assert_eq "$(rebind_class 0 403 failed 'x resolves to 127.0.0.1: loopback')" other
+  # the proxy's connection to an address that timed out is not its lookup timing out
+  assert_eq "$(rebind_class 0 504 failed "DevOS ADE's sandbox proxy: failed — x.nip.io:80 did not answer (ETIMEDOUT).")" other
+  assert_eq "$(rebind_class 7 000 - -)" noanswer
+}
+
+test_e2e_rebind_no_answer_is_asked_again_and_nothing_else_is() {
+  export E2E_REBIND_GAP_S=0
+  # no answer, then refused: passes, one retry with the longer limit
+  _rb_run "timeout refused refused" refused
+  assert_eq "$REBIND_RB|$REBIND_BAD|$REBIND_NOTE|$REBIND_TRIES" "1 1 1 |||2"
+  assert_eq "$(cat "$TMP/rb-calls")" "$_RB1 30"
+  assert_contains "$REBIND_LOG" "# DNS rebinding, try 2"
+  # the proxy's own lookup timed out (504), then refused: the same
+  _rb_run "refused lookup-timeout refused" refused
+  assert_eq "$REBIND_RB|$REBIND_BAD|$REBIND_NOTE|$REBIND_TRIES" "1 1 1 |||2"
+  assert_eq "$(cat "$TMP/rb-calls")" "$_RB2 30"
+  # 200: the target was reached — a FAIL at once, never asked again
+  _rb_run "reached refused refused"
+  assert_eq "$REBIND_RB|$REBIND_BAD|$REBIND_NOTE|$REBIND_TRIES" "0 1 1 | 127.0.0.1.nip.io:reached(200)||1"
+  assert_eq "$(cat "$TMP/rb-calls")" ""
+  _rb_run "refused redirect refused"
+  assert_eq "$REBIND_RB|$REBIND_BAD|$REBIND_NOTE" "1 0 1 | 10.255.255.1.nip.io:reached(302)|"
+  assert_eq "$(cat "$TMP/rb-calls")" ""
+  # no answer four times: a FAIL that says it is the environment
+  _rb_run "timeout refused refused" timeout timeout lookup-timeout
+  assert_eq "$REBIND_RB|$REBIND_BAD|$REBIND_TRIES" "0 1 1 | 127.0.0.1.nip.io:no-answer|4"
+  assert_eq "$REBIND_NOTE" "the proxy did not answer for 127.0.0.1.nip.io (its DNS lookup timed out?): an environment problem, rerun"
+  assert_eq "$(wc -l < "$TMP/rb-calls" | tr -d ' ')" 3
+  # E2E_REBIND_RETRIES bounds it
+  E2E_REBIND_RETRIES=1 _rb_run "timeout timeout refused" timeout
+  assert_eq "$REBIND_RB|$REBIND_TRIES" "0 0 1 |2"
+  assert_eq "$(wc -l < "$TMP/rb-calls" | tr -d ' ')" 2
+  # nip.io itself not resolving: not checked, as before — and not asked again
+  _rb_run "dns refused refused"
+  assert_eq "$REBIND_RB|$REBIND_BAD|$REBIND_NOTE|$REBIND_TRIES" "dns 1 1 |||1"
+  assert_eq "$(cat "$TMP/rb-calls")" ""
+  # any other answer of the proxy's is final at once and no excuse
+  _rb_run "other refused refused"
+  assert_eq "$REBIND_RB|$REBIND_BAD|$REBIND_NOTE|$REBIND_TRIES" "0 1 1 | 127.0.0.1.nip.io:other(502)||1"
+  # no environment note while any other one failed otherwise: strict
+  _rb_run "timeout other refused" timeout
+  assert_eq "$REBIND_RB|$REBIND_NOTE" "0 0 1 |"
+  assert_contains "$REBIND_BAD" "127.0.0.1.nip.io:no-answer"
+  assert_contains "$REBIND_BAD" "10.255.255.1.nip.io:other(502)"
+  # no answer, then reached on a retry: a FAIL, no note
+  _rb_run "timeout refused refused" reached
+  assert_eq "$REBIND_RB|$REBIND_BAD|$REBIND_NOTE|$REBIND_TRIES" "0 1 1 | 127.0.0.1.nip.io:reached(200)||2"
+  # a retry that says nothing usable stays no answer
+  _rb_run "timeout refused refused" garbage
+  assert_eq "$REBIND_RB|$REBIND_TRIES" "0 1 1 |4"
+}
+
+# rebind-try.sh itself, with a curl that answers as the proxy would: one line per answer, read back right
+test_e2e_rebind_try_reports_each_answer_as_one_line() {
+  mkdir -p "$TMP/bin"
+  cat > "$TMP/bin/curl" <<'EOF'
+#!/bin/sh
+o=''; d=''
+while [ $# -gt 0 ]; do case "$1" in -o) o="$2"; shift ;; -D) d="$2"; shift ;; -w|-m|-x) shift ;; esac; shift; done
+case "$FAKE_CURL" in
+  refused) printf 'HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain; charset=utf-8\r\nX-Bn-Egress: refused\r\nConnection: close\r\n\r\n' > "$d"
+    printf "DevOS ADE's sandbox proxy: refused — 127.0.0.1.nip.io resolves to 127.0.0.1: loopback.\nThis proxy\tlets …\n" > "$o"; printf 403 ;;
+  timeout) : > "$d"; : > "$o"; printf 000; exit 28 ;;
+  reached) printf 'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n' > "$d"; printf '<html>\n</html>\n' > "$o"; printf 200 ;;
+esac
+EOF
+  chmod +x "$TMP/bin/curl"
+  local line
+  . "$STACK_DIR/tests/e2e/rebind-try.sh"
+  line="$(PATH="$TMP/bin:$PATH" FAKE_CURL=refused rb_try "$_RB1" 15)"
+  assert_eq "$(printf '%s\n' "$line" | awk -F'\t' '{ print NF, $1, $3, $4, $5 }')" "6 proxy-rebind-try 0 403 refused"
+  assert_eq "$(printf '%s\n' "$line" | _rebind_state)" "$_RB1 refused 403"
+  line="$(PATH="$TMP/bin:$PATH" FAKE_CURL=timeout rb_try "$_RB1" 15)"
+  assert_eq "$line" "$(printf 'proxy-rebind-try\t%s\t28\t000\t-\t-' "$_RB1")"
+  assert_eq "$(printf '%s\n' "$line" | _rebind_state)" "$_RB1 noanswer 000"
+  line="$(PATH="$TMP/bin:$PATH" FAKE_CURL=reached rb_try "$_RB1" 15)"
+  assert_eq "$(printf '%s\n' "$line" | _rebind_state)" "$_RB1 reached 200"
+  # run.sh: the first three go with the probe, after its fresh log window; a retry alone; the verdict as before
+  local r; r="$(cat "$STACK_DIR/tests/e2e/run.sh")"
+  assert_contains "$r" 'for u in http://127.0.0.1.nip.io/ http://10.255.255.1.nip.io/ http://169.254.169.254.nip.io/; do rb_try "$u" 15; done'
+  assert_contains "$r" '{ cat "$HERE/rebind-try.sh"; cat <<'"'"'SH'"'"'; } | docker exec -i'
+  assert_contains "$r" 'rebind_steady rebind_try'
+  assert_contains "$r" '*0*|"") bad="$bad proxy-rebind:$rb$REBIND_BAD"'
+  assert_contains "$r" 'case "$rb" in 1*) printf '"'"'%s\n'"'"' "$elog" | grep -q '"'"'"address":"127.0.0.1".*resolves to 127.0.0.1'"'"' || bad="$bad egress-log-no-rebind" ;; esac'
 }
