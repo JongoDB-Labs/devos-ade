@@ -3,7 +3,8 @@
 DevOS ADE (formerly bedrock-now) is a private, single-user AI workbench for your own Mac or Linux machine: a chat
 app, Claude Code and a shared file store. Models run on **Amazon Bedrock** in your own AWS account (an IAM user's
 access key, or an EC2 instance role) and are billed there; the only other places a call can go are ones you turn on
-yourself — **OpenRouter** with your own key (billed by OpenRouter; some models are free) and speech-to-text through **OpenAI or
+yourself — **OpenRouter** with your own key (billed by OpenRouter; some models are free), the **Experiential Labs**
+gateway with your own key (its credits, or your own provider keys connected there) and speech-to-text through **OpenAI or
 Groq** with your own key. The microphone in Chat uses your browser's own speech recognition unless you choose
 otherwise, and that sends what you say to the browser's maker (Google, Microsoft or Apple; [Voice](#voice-speech-to-text)).
 You get modern models without sending your work to a consumer AI service, and you see what every answer costs.
@@ -31,6 +32,7 @@ disable` the Code page alone; either stays off across updates).
 | [**Remote access**](#remote-access) | the portal from your phone or laptop over HTTPS ([on a phone](#using-it-on-your-phone)) | off | `./stack remote enable tailscale` / `disable` |
 | [**Voice**](#voice-speech-to-text) | speech-to-text for Chat's microphone and voice calls (Mistral Voxtral on Bedrock: AWS no longer accepts its audio since October 2026; your own OpenAI/Groq key, or the browser) | browser speech (Bedrock: on when your key can use Voxtral and AWS takes its audio) | `./stack stt set openai\|groq` / `bedrock` / `remove` |
 | [**OpenRouter**](#optional-openrouter) | hundreds of other models, some free | off | `./stack openrouter set` / `remove` |
+| [**Experiential Labs**](#optional-experiential-labs) | one gateway in front of many models, on its credits or your own provider keys | off | Settings › Chat & voice, or `./stack config set EXPLABS_API_KEY` |
 | [**Costs & budgets**](#costs--budgets) | a monthly budget per key, prices updated daily, `./stack costs` | on | Settings → Spending & budgets |
 | [**Updates**](#updating) | `./stack update` with a backup and `./stack rollback`; one-click on Home; automatic at night | one-click: setup asks; automatic: off | `./stack helper install`; `./stack helper auto on` / `off` |
 
@@ -1123,8 +1125,9 @@ How it is read: [docs/security.md](docs/security.md#your-claude-code-setup-from-
 
 The model picker (top bar; on a phone ⋯ → *Model*; the status bar's model opens it) lists **every enabled chat model
 of the catalog**, not only Anthropic's: Claude on Bedrock, Bedrock's other providers (OpenAI's GPT-6, xAI's Grok, Meta's
-Llama, Mistral) and, with an [OpenRouter](#optional-openrouter) key, the OpenRouter models you enabled — in groups
-(*Starred*, *Anthropic*, *Other providers on Bedrock*, *OpenRouter: free*, *OpenRouter*), with a search (name,
+Llama, Mistral), with an [OpenRouter](#optional-openrouter) key the OpenRouter models you enabled and, with an
+[Experiential Labs](#optional-experiential-labs) key, the gateway's models you chose — in groups (*Starred*,
+*Anthropic*, *Other providers on Bedrock*, *OpenRouter: free*, *OpenRouter*, *Experiential Labs*), with a search (name,
 provider, `free` …), prices per million tokens (a free model shows **free** and costs $0: never spend), and a star per
 model kept in this browser (starred ones first). Claude Code speaks Anthropic's Messages API with tools; LiteLLM
 translates `/v1/messages` for every other provider, but tool use, thinking, prompt caching and long contexts vary, so
@@ -1135,11 +1138,11 @@ each model has a badge from [`catalog/code-models.tsv`](catalog/code-models.tsv)
 | (none) | Anthropic's own: tools, thinking, prompt caching | Claude Opus, Sonnet, Haiku |
 | **works** | a tool call round-trips; no thinking blocks, prompt caching as the provider does it | GPT-6 Sol and Luna, Grok 4.7, Mistral Large 3 (and Amazon Nova Micro, not in the catalog) |
 | **chat only** | it answers but cannot use tools: Claude Code cannot read, edit or run anything | Llama 3.3 70B (writes its tool calls as text) |
-| **not tested** | nobody checked: OpenRouter's models that list tool use | — |
+| **not tested** | nobody checked: OpenRouter's and Experiential Labs' models that list tool use | — |
 | **fails** | a session on it errors; hidden behind *Show all models* | — |
 
-Picking a model that is not "works" says what to expect (a toast); it stays selectable. OpenRouter models whose
-listing names no tool use count as *chat only*. Two fixes in LiteLLM make more models answer at all: `drop_params`
+Picking a model that is not "works" says what to expect (a toast); it stays selectable. OpenRouter and Experiential
+Labs models whose listing names no tool use count as *chat only*. Two fixes in LiteLLM make more models answer at all: `drop_params`
 (parameters a provider does not take are dropped) and a small hook, [`lib/litellm-hooks/bn_hooks.py`](lib/litellm-hooks/bn_hooks.py)
 (copied into LiteLLM's config folder whenever `./stack` renders the config),
 that lowers a request's `max_tokens` to the model's limit — Claude Code asks for up to 32,000 output tokens and
@@ -1650,7 +1653,7 @@ by what you came to do — a list on the left (on a phone, a section picker at t
 | **Account & security** | portal password, owner email, Admin (LiteLLM) password, session length, signed-in devices, storing prompts |
 | **AWS & models** | the AWS key (with *Check*), region, **Re-check models** |
 | **Spending & budgets** | the budgets of Chat, `claude-bedrock` and the Terminal/Code page (with this period's spend), alert threshold and webhook; *More*: the setup key's budget, daily price updates |
-| **Chat & voice** | Chat's default model, models hidden from its picker, speech-to-text, OpenRouter; *More*: the title/tag model, OpenRouter's cap and aliases |
+| **Chat & voice** | Chat's default model, models hidden from its picker, speech-to-text, OpenRouter, Experiential Labs (its key and models); *More*: the title/tag model, OpenRouter's cap and aliases |
 | **Claude Code** | the Code page with *Allow Bypass permissions* and *Auto mode*, the browser terminal (folder, *Sandbox internet access*, *Auto mode in the terminal*), Claude Code's main model, *Models for Claude Code*, the *Default model for new sessions*, *Project folders* ([folders of this computer](#folders-of-this-computer)), *What DevOS ADE may read on this computer* ([your sessions](#your-claude-code-and-claude-bedrock-sessions-from-this-computer) and setup: Take back) and *Bring your setup…* ([your setup](#your-claude-code-setup-from-this-computer)) and *Your AI subscriptions* ([each tool, signed in or not](#your-ai-subscriptions): Sign out, Check again); *More*: its sonnet/haiku slots, the sandbox's internet name lists (only these, never these), its memory and *Tools in the sandbox* (`TERMINAL_AI_TOOLS`) |
 | **Files & sharing** | the Files (RustFS) key pair and the shared MCP token (**Regenerate**) |
 | **Remote access** | status, allowed Tailscale login, remote admin actions, the Terminal and Code page remotely, previews remotely; *More*: Tailscale and own-domain details |
@@ -1689,7 +1692,7 @@ reads `.env`: `./stack` writes a masked copy, `.state/status/settings.json`, whe
   `setup` (at once, no restart; a warning when one is below this period's spend), the alert threshold (50-99%,
   default 80%) and the budget alert webhook;
 - speech-to-text (Bedrock, OpenAI, Groq or the browser), OpenRouter's key, model set, model cap and `-latest`
-  aliases;
+  aliases, the Experiential Labs key and models;
 - the **Code page** (on and off, with the folder it would use) and its *Allow Bypass permissions* and *Auto mode*;
   the browser terminal's *Auto mode in the terminal* ([The Code page](#turning-the-code-page-on-and-off)) and the
   sandbox's internet access (*Internet only*, *+ this computer*, *Off*: the terminal restarts, its shells and open
@@ -1736,8 +1739,8 @@ Without the helper the page is read-only and shows the terminal command next to 
 
 Values never go on a command line (`config set` asks; scripts use `./stack config apply --stdin`). Each change is
 logged by key name only (`.state/helper/settings-audit.log`) and Home says "Settings changed: … at …" for a day.
-Keys that could send your data elsewhere (the AWS key, OpenRouter, speech-to-text providers, the alert webhook)
-change only from this computer, never from a remote device. Details: [docs/security.md](docs/security.md#settings).
+Keys that could send your data elsewhere (the AWS key, OpenRouter, Experiential Labs, speech-to-text providers, the alert
+webhook) change only from this computer, never from a remote device. Details: [docs/security.md](docs/security.md#settings).
 
 ## Remote access
 
@@ -1948,6 +1951,59 @@ last 30 days (free / paid), the top models, and the last 24 hours' failed reques
 **Privacy:** a prompt to an `or/…` model goes to OpenRouter and the model's provider, and some free models may
 log or train on your prompts; keep confidential work on Bedrock. Details: [docs/openrouter.md](docs/openrouter.md).
 
+## Optional: Experiential Labs
+
+[Experiential Labs](https://platform.experientiallabs.ai/docs) is an OpenAI-compatible gateway in front of many models
+(GPT, Claude, Gemini, Qwen, DeepSeek, …): a call is paid from its credits, or by your own provider key that you
+connected there (*bring your own key*, BYOK), with no markup. DevOS ADE can add its models next to Bedrock as
+`xl/<id>`; it is **off unless you give it a key**, and the key is all it needs.
+
+```bash
+./stack config set EXPLABS_API_KEY     # asks for the key (hidden), checks it with the gateway, turns the models on
+./stack config set EXPLABS_MODELS      # which models: a comma list of exact ids (blank = qwen3.8-27b)
+./stack status                         # one line: its models, and whether they run on the gateway's model details
+```
+
+Or **Settings → Chat & voice → Experiential Labs key** from the computer running DevOS ADE (not over remote access):
+paste the key, and it is checked before anything changes. Blank removes it. Mint a key at
+[platform.experientiallabs.ai › Settings › API keys](https://platform.experientiallabs.ai/settings/api-keys); the key is
+shown there once.
+
+- **Which models:** `EXPLABS_MODELS` takes the gateway's own ids, exactly as its model list has them (`qwen3.8-27b`,
+  `gpt-5-mini`, `deepseek-v4.1-flash`, `…:free` for a model's free tier); blank means `qwen3.8-27b` alone. An id your
+  key may not call is left out, with a warning.
+- **Only what each model takes.** Some models refuse a sampling parameter, and the call then fails
+  (`all_routes_failed`, HTTP 502). So DevOS ADE reads the gateway's details for each model (`GET /v1/models` with your
+  key, free: `supports_temperature`, `supports_top_p`, `supports_tools`, `chat_max_tokens_field`, …) and sends each
+  only what it takes: LiteLLM drops the rest (`drop_params` and the model's `additional_drop_params`), and its hook
+  moves the output cap to the field the model names (`max_completion_tokens` for `qwen3.8-27b`). A parameter whose
+  support the details leave open counts as not taken. Claude Code's requests stay on Chat Completions, the API those
+  details describe (with extended thinking, LiteLLM sends them to the gateway's Responses API).
+- **Fail safe.** Without the details — the list could not be read and none is kept for this key — the models are
+  offered with **every** optional parameter dropped (temperature, top_p, top_k, the penalties, logprobs, tools,
+  response_format, reasoning_effort and the output cap), so a call goes through as plain chat, and `./stack status`
+  says so with the reason. `./stack up` and Settings read the list again; a list read earlier with the same key is
+  kept when a refresh fails.
+- **Where they show up:** in LiteLLM as `xl/<id>`; in Chat as `<id> · Experiential Labs`, tagged *Experiential Labs*
+  and the vendor, and as a group of Chat's **Who answers** menu (greyed, naming the Settings row, while there is no
+  key); on the Code page and in `claude-bedrock` as the *Experiential Labs* group (tool use as the details say: a
+  model without it is *chat only*); on Home as rows of the model table.
+- **What it costs.** The gateway reports what each call cost (`usage.cost`, USD), and that is what LiteLLM books —
+  spend per key, budgets, Home, `./stack costs` and the cost line under each answer in Chat — not a figure computed
+  from token prices. A call on **your own provider key** (`usage.is_byok`) is billed by that provider: it counts $0 here,
+  and Chat's line under such an answer says *on your own provider key* (a streamed answer loses that flag on its way
+  through LiteLLM, so a $0 one reads *on your own provider key or a free tier*); the Code page's cost tooltip counts such
+  requests. The gateway's list prices are only used for a reply that carries no cost. A model that costs nothing is
+  never shown as dollars spent.
+- **The key** stays in `.env` (mode 600) and reaches only LiteLLM (`os.environ/EXPLABS_API_KEY`) and
+  `api.experientiallabs.ai` (on curl's stdin, never on a command line or in a URL). Settings and `./stack config` never
+  show it back, not even its last characters; no log, status line or file of the portal holds it.
+
+**Privacy:** a prompt to an `xl/…` model goes to Experiential Labs and the provider it routes the call to. What is kept
+there follows your Experiential Labs account's own settings: its prompt capture (`capture_prompt_content`) and its zero
+data retention (*require_zdr*, or the account-wide switch). DevOS ADE changes neither. Details:
+[docs/security.md](docs/security.md#experiential-labs).
+
 ## Run it on a cloud VM
 
 An always-on VM saves keeping a laptop awake. On **EC2**, give the instance an **IAM role** with Bedrock access
@@ -2004,6 +2060,9 @@ troubleshooting: [docs/voice.md](docs/voice.md).
   capability, it is off and setup says why.
 - **OpenRouter, only if you add a key:** the `or/…` models go to OpenRouter. Without a key nothing contacts
   openrouter.ai.
+- **Experiential Labs, only if you add a key:** the `xl/…` models go to `api.experientiallabs.ai` and, from there, the
+  provider that serves each call; `./stack` reads its model list with the key (setup, `./stack up` at most every 12
+  hours, Settings). Without a key nothing contacts it.
 - **Your voice:** with Bedrock speech-to-text (the default when Voxtral is usable and AWS takes its audio),
   audio from the microphone and voice calls goes only to Bedrock in your AWS account, through the local `stt`
   container and LiteLLM. Read-aloud uses your system's voices. Without server speech-to-text, the microphone uses
@@ -2344,6 +2403,13 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
   also runs the throwaway's update helper in the foreground (never installed as a service) for the Settings checks.
   What is covered, and what stays manual: [tests/e2e/INVENTORY.md](tests/e2e/INVENTORY.md). Options: `tests/e2e/run.sh
   --help` and [docs/advanced.md](docs/advanced.md#end-to-end-tests).
+- **Experiential Labs** (opt-in, no AWS, about a minute): `E2E_EXPLABS_API_KEY=… tests/e2e/explabs.sh` reads the
+  gateway's model list with that key and makes **one** real completion on `qwen3.8-27b` through this checkout's
+  rendered LiteLLM config and hook, in one throwaway container (`bne2e-explabs`, removed afterwards): the answer, the
+  parameters left out, the cost LiteLLM books against the one the gateway reported, and the key nowhere (config,
+  answers, the container's log, `tests/e2e/out/explabs.json`). Without the variable it skips;
+  `tests/e2e/explabs.sh --mock` runs the same against a stand-in for the gateway (plus a streamed answer,
+  `/v1/messages` and a call on your own provider key), no key needed.
 - **Remote access without a tailnet** (opt-in, no AWS, about two minutes): `tests/e2e/remote/run.sh` runs the real
   portal and Caddyfile in Tailscale mode behind a stand-in for the sidecar, in Chromium (and Firefox and WebKit for
   one probe): the hand-offs, the Code page's previews over remote access and the same-site guard (and, with the guard

@@ -6,6 +6,22 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+
+- **Experiential Labs as a model gateway** (optional, off without a key): one OpenAI-compatible gateway in front of
+  many models, on its credits or your own provider keys connected there. **Settings › Chat & voice › Experiential Labs
+  key** (from this computer only), or `./stack config set EXPLABS_API_KEY`, which asks for it without echo; the key is
+  checked with the gateway first, never shown back, and reaches only LiteLLM. **Experiential Labs models**
+  (`EXPLABS_MODELS`): exact gateway ids, blank = `qwen3.8-27b`. They appear as `xl/<id>` in Chat (named and tagged
+  *Experiential Labs*, a group of the Who answers menu, greyed while there is no key), on the Code page and in
+  `claude-bedrock` (a group of their own) and on Home. Each model is sent **only the parameters it takes**, from the
+  gateway's own model details (`supports_temperature`, `supports_top_p`, `supports_tools`, `chat_max_tokens_field`, …):
+  so a model that refuses a sampling parameter answers instead of failing with `all_routes_failed`. Without the details (the list
+  could not be read) every optional parameter is dropped and `./stack status` says so. **Costs are what the gateway
+  reported** for each call (`usage.cost`), in spend, budgets, Home and Chat's cost line; a call on your own provider key
+  (`usage.is_byok`) counts $0 here and Chat's line says *on your own provider key*. README › *Optional: Experiential
+  Labs*; docs/security.md › *Experiential Labs*; an opt-in check of one real completion: `tests/e2e/explabs.sh`.
+
 ### Removed
 
 - **The Code page's plain fallback page**, unused since the frontend build replaced it (2026-10-16); an image without

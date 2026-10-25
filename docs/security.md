@@ -223,7 +223,8 @@ The **Settings** tab shows every key of `.env` and changes the ones listed in
   `.env`, a log or an error message. `config apply` takes the stack lock, validates everything again, refuses a
   request whose `base` no longer matches `.env` ("changed on disk since you opened the page"), runs the live
   checks before anything changes (the AWS key with STS and a free Bedrock check, OpenRouter's and the
-  speech-to-text provider's key endpoints, the new owner email not taken by another Chat account), keeps the
+  speech-to-text provider's key endpoints, the Experiential Labs gateway's model list, the new owner email not taken
+  by another Chat account), keeps the
   old values in memory (`.state/config/pending.env`, 600, holds only the key names until the change ends, so
   `./stack up` notices a change cut short), changes the LiteLLM password or the owner email in LiteLLM and Open WebUI first, writes
   `.env` once, restarts only what changed and checks the result (the paid smoke test only after an AWS key
@@ -233,8 +234,8 @@ The **Settings** tab shows every key of `.env` and changes the ones listed in
   them undoes a change, or recreates a database under a backup, while it runs (`./stack serve` releases it once
   the stack is up). A subshell never releases its parent's lock or runs its parent's exit hooks. A portal password
   longer than 300 bytes cannot travel in a request: the portal says so (413).
-- **Keys that could send data elsewhere** — the AWS key, the OpenRouter key, the speech-to-text provider and key,
-  the alert webhook — are taken only from a local session (`origin local`); so is turning `REMOTE_ADMIN_ACTIONS`
+- **Keys that could send data elsewhere** — the AWS key, the OpenRouter key, the Experiential Labs key, the
+  speech-to-text provider and key, the alert webhook — are taken only from a local session (`origin local`); so is turning `REMOTE_ADMIN_ACTIONS`
   on and changing `TAILSCALE_ALLOWED_LOGIN` (never to blank). `UPDATE_REQUIRE_SIGNED_TAGS` can only be turned on.
   Settings that would protect less move that way only locally, the other way from anywhere: higher budgets and a
   later alert threshold, automatic updates or the daily release check off, storing prompts (`LITELLM_STORE_PROMPTS`
@@ -276,7 +277,7 @@ pair, the LiteLLM keys and the MCP token, and it sits on the network next to Ope
 header from its peers): it can act as admin of LiteLLM, RustFS and Chat and spend Bedrock money within the
 budgets — Settings adds nothing to that. It can no longer read the portal password (only its hash: it would have to
 crack PBKDF2 or catch your next sign-in), so it cannot pass the helper's password check, and it cannot read the
-AWS key, the Cloudflare token or the speech-to-text key. It does hold the OpenRouter key (Home shows that
+AWS key, the Cloudflare token, the speech-to-text key or the Experiential Labs key. It does hold the OpenRouter key (Home shows that
 account's credit with it). With your password (caught at a sign-in)
 it could make any change a local session may make, including pointing the AWS key, the OpenRouter or
 speech-to-text key or the alert webhook at its own accounts, or changing your passwords; each such change is
@@ -364,6 +365,43 @@ you type into the search travels from your device to the portal, as every reques
   suite in Chromium. The docs index is built from this repository's files with string operations only.
 - **Over remote access** Activity and search work as locally (they read nothing a remote session could not see on
   Home and in Settings already); the Code tab's frame answers only where the Code page is allowed there.
+
+## Experiential Labs
+
+An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*), off unless `.env` holds
+`EXPLABS_API_KEY`. Without it nothing contacts the gateway, and no `xl/…` model exists.
+
+- **Where requests go.** A prompt to an `xl/<id>` model goes from LiteLLM to `https://api.experientiallabs.ai/v1`
+  (Chat Completions; with extended thinking, its Responses API) and from there to whichever provider the gateway routes
+  that call to — its own Experiential Cloud, another hosted provider, or your own provider account connected there
+  (BYOK). The answer's `x-gateway-provider` header names it (Admin's logs keep it with the response headers). The
+  only other request is `GET /v1/models` with the key (free; setup, `./stack up` at most every 12 hours, Settings,
+  the check of a new key): the model list and its details, cached in `litellm/explabs-models.tsv`.
+- **What is sent.** The request as Chat, the Code page or a LiteLLM client made it — your messages, tools, files you
+  attached — minus the parameters the gateway's details say the model does not take (LiteLLM's `drop_params`, the
+  model's `additional_drop_params`, and the hook `lib/litellm-hooks/bn_hooks.py`); nothing that names you or this
+  install (no user, no tags, no session id of ours). The key is the only credential.
+- **The key.** In `.env` (mode 600), changed only from this computer (Settings › Chat & voice, policy `local`, or
+  `./stack config set EXPLABS_API_KEY`, which asks without echo), checked with the gateway before it is stored. It
+  reaches LiteLLM's environment (the config names `os.environ/EXPLABS_API_KEY`, never the value) and, when `./stack`
+  reads the model list, curl's stdin (`curl_auth`: never a command line, a URL or a log). Nothing shows it back: the
+  settings snapshot marks it set without any hint (secret code `S`), `./stack config get` refuses it, and no status
+  line, error message, audit line, cache or file the portal reads holds it. `.state/explabs-key.sha256` (600) keeps a
+  SHA-256 of it, only to tell whether the cached list was read with the key `.env` holds now. The portal, Open WebUI and
+  the Code page never get it; an `EXPLABS_*` in your shell never reaches Docker Compose.
+- **What is kept, and where.** LiteLLM keeps its usual metadata and spend for these calls (no prompt text unless
+  `LITELLM_STORE_PROMPTS=true`). At the gateway, what is kept follows your Experiential Labs account's own settings:
+  its request ledger keeps metadata (request id, model, provider, tokens, cost, times); prompt and response text only
+  while its *capture_prompt_content* is on (the default for a Free organisation; off for Pro); its zero-data-retention
+  routing (*require_zdr*, the account-wide switch) decides which providers may serve a call, and a provider's own
+  retention applies to what it serves. Calls on your own provider key leave no content on the gateway. DevOS ADE sets
+  none of these and sends no per-request `provider.zdr`: check them at platform.experientiallabs.ai before you send
+  anything confidential.
+- **Costs.** What LiteLLM books for a call is the cost the gateway reported for it (`usage.cost`), $0 when your own
+  provider key paid for it (`usage.is_byok`: that provider bills you); the list prices in the config only price a
+  reply that carries no cost. Budgets count it like any other spend.
+- **Failing safe.** Without model details for the key in `.env` (the list could not be read), each model is sent no
+  optional parameter at all, and `./stack status` says so — a call is never refused by DevOS ADE for want of details.
 
 ## Remote access
 
