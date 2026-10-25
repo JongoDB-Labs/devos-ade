@@ -152,9 +152,14 @@ _check_cost() {
   python3 -I - "$1.json" "$1.h" "$2" <<'PY'
 import json, sys
 body, head, label = json.load(open(sys.argv[1])), open(sys.argv[2]).read(), sys.argv[3]
-booked = next((float(l.split(":", 1)[1]) for l in head.splitlines() if l.lower().startswith("x-litellm-response-cost:")), None)
+def header(name):
+    return next((float(l.split(":", 1)[1]) for l in head.splitlines() if l.lower().startswith(name + ":")), None)
+booked = header("x-litellm-response-cost")
 u = body.get("usage") or {}
 want = 0.0 if u.get("is_byok") is True else u.get("cost")
+# LiteLLM leaves its cost header out for a $0 call: then the figure its cost calculator read first (the hook's)
+if booked is None and want == 0:
+    booked = header("llm_provider-x-litellm-response-cost")
 ok = isinstance(want, (int, float)) and booked is not None and abs(booked - want) < 1e-12
 print(json.dumps({"label": label, "reported": u.get("cost"), "is_byok": u.get("is_byok"), "booked": booked, "ok": ok}))
 sys.exit(0 if ok else 1)
