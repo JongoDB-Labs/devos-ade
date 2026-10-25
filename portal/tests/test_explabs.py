@@ -104,3 +104,5 @@ def test_the_page_scripts_name_the_gateways_group_and_its_settings_row():
     assert 'label: "Experiential Labs"' in js and "TODO(setup-links)" in js and "#settings/EXPLABS_API_KEY" in js
     st = (root / "settings.js").read_text(encoding="utf-8")
     assert 'explabs: ["LiteLLM"]' in st and '"xl_key"' in st
+    # removing the key restarts LiteLLM alone, and the dialog says so
+    assert "the Code page and the API; LiteLLM restarts (about 30 s)." in st
