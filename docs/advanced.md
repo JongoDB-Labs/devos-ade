@@ -20,7 +20,7 @@ name is fixed from then on: a `COMPOSE_PROJECT_NAME` left over in your shell nev
 its own host name, `<name>.localhost` (here `http://bn-test.localhost`, with `chat.`, `admin.` and `files.` in
 front for the apps; `PORTAL_HOST` in `.env`), so the two stacks never share browser cookies. Ports move
 automatically because the main stack holds the defaults. `--yes` never touches your
-`~/.local/bin/claude-bedrock` link; run `bin/claude-bedrock` from the copy's folder instead. Remove the copy
+`~/.local/bin/devos-claude` link; run `bin/devos-claude` from the copy's folder instead. Remove the copy
 with `./stack uninstall` inside it. Each copy has its own `PORTAL_PASSWORD`: its login page names the copy's
 `.env` and project (`It is PORTAL_PASSWORD in ~/devos-ade-test/.env (project bn-test).`; on this computer only,
 never to a remote visitor), and `./stack password` in a folder says the same.
@@ -183,7 +183,7 @@ backup's `.env` lacks one of them, restore says so; run `./stack setup --yes` af
 2. Run `cp backups/<ts>/.env .env`. The same secrets (`LITELLM_SALT_KEY`, `WEBUI_SECRET_KEY`, …) are needed to
    decrypt stored credentials and sessions.
 3. Run `./setup.sh`. Answer "yes" to keeping the AWS key in `.env`. Ports may change if they are busy.
-4. Run `./stack restore backups/<ts>`. It restores the data and the matching keys; `claude-bedrock` and Open
+4. Run `./stack restore backups/<ts>`. It restores the data and the matching keys; `devos-claude` and Open
    WebUI keep working without further steps.
 
 **Rotating the AWS key** (rotate long-lived keys regularly, e.g. every 90 days): run `./stack rotate-aws` and
@@ -202,14 +202,14 @@ test fails.
 
 ## Claude Code wrapper details
 
-- `claude-bedrock --help` starts with a short header about the wrapper (models, key, env vars, cost) and then
+- `devos-claude --help` starts with a short header about the wrapper (models, key, env vars, cost) and then
   shows Claude Code's own help. `--help` and `--version` print no cost line.
 - Every request of a session carries an `x-litellm-session-id: cb-<time>-<random>` header (and the tag
-  `claude-bedrock`), so you can find the session in the LiteLLM UI under Logs. LiteLLM writes spend logs every
+  `devos-claude`), so you can find the session in the LiteLLM UI under Logs. LiteLLM writes spend logs every
   few seconds, so the exit summary can take up to 6 s (`CLAUDE_BEDROCK_SUMMARY_WAIT` changes the limit; Ctrl-C
   skips it). Your own `ANTHROPIC_CUSTOM_HEADERS` are kept.
 - The summary is printed only when stderr is a terminal (`CLAUDE_BEDROCK_SUMMARY=1` forces it).
-  `CLAUDE_BEDROCK_QUIET=1` and subcommands (`claude-bedrock mcp list`, …) print no summary; then the wrapper
+  `CLAUDE_BEDROCK_QUIET=1` and subcommands (`devos-claude mcp list`, …) print no summary; then the wrapper
   simply `exec`s claude. Otherwise claude runs as an ordinary foreground child: Ctrl-C, Ctrl-Z and closing
   the terminal reach it as usual, its exit code is the wrapper's, and if it was killed by Ctrl-C or TERM the
   wrapper ends with the same signal.
@@ -221,17 +221,17 @@ test fails.
   own: `/` and your home folder are refused in any spelling (`~`, `$HOME/`, a link to it). A missing lean folder is
   created with mode 700; an existing one must be owned by you, writable, and not writable by group or others (it
   holds settings that run commands: hooks, MCP servers) — otherwise the wrapper stops with the `chown`/`chmod` that
-  fixes it, e.g. for a `~/.claude-bedrock` made by `sudo claude-bedrock`. A lean folder that is one of yours after
+  fixes it, e.g. for a `~/.claude-bedrock` made by `sudo devos-claude`. A lean folder that is one of yours after
   all (`~/.claude` or your `CLAUDE_CONFIG_DIR`, named directly or through a link) gets the opt-in's warning. Without
   `HOME` the account's home folder (password database) is used, as Claude Code does; `--help` shows the folder on its
   `Config` line and, like `--version`, creates nothing.
-- Subcommands get the same folder, so `claude-bedrock mcp add -s user …` writes to `~/.claude-bedrock/.claude.json`
-  and `claude-bedrock plugin install …` installs into `~/.claude-bedrock/plugins`. Everything Claude Code keeps per
+- Subcommands get the same folder, so `devos-claude mcp add -s user …` writes to `~/.claude-bedrock/.claude.json`
+  and `devos-claude plugin install …` installs into `~/.claude-bedrock/plugins`. Everything Claude Code keeps per
   user lives there: settings, `.claude.json` (user MCP servers, which folders you trusted, project MCP approvals),
   sessions, plugins. The working folder's `.mcp.json` (asks for approval once per folder, as usual),
   `.claude/settings.json` and `CLAUDE.md` are read in either mode.
-- **What the lean folder leaves out**, and how to bring it back selectively: plugins (`claude-bedrock plugin
-  install …`), user MCP servers (`claude-bedrock mcp add …`), `CLAUDE.md` (a link or a copy; the wrapper prints how
+- **What the lean folder leaves out**, and how to bring it back selectively: plugins (`devos-claude plugin
+  install …`), user MCP servers (`devos-claude mcp add …`), `CLAUDE.md` (a link or a copy; the wrapper prints how
   once, at a terminal, remembered by an empty `.bedrock-now-claude-md-hint` in the folder, and never copies it),
   `settings.json` (permissions, `statusLine`, `outputStyle`, `hooks`, `env`: copy only the keys you want — `hooks`
   run commands at every event, and an `env` block can override the wrapper's `ANTHROPIC_*`), `keybindings.json`,
@@ -239,18 +239,18 @@ test fails.
   again once (the wrapper says so at a terminal when it creates the folder).
 - **Resume.** Claude Code's exit hint `claude --resume <id>` looks in `~/.claude`. When the wrapper stays around for
   the session cost (a terminal, not `CLAUDE_BEDROCK_QUIET=1`, not a subcommand) and the run is interactive (no
-  `-p`), it prints `resume: claude-bedrock --resume <id>` right after claude exits, before the (slower) cost —
+  `-p`), it prints `resume: devos-claude --resume <id>` right after claude exits, before the (slower) cost —
   prefixed with `CLAUDE_BEDROCK_USE_MY_CONFIG=1` or `CLAUDE_BEDROCK_CONFIG_DIR=…` when one of them picked the folder.
   A new session gets its id from the wrapper (`claude --session-id=<uuid>`, from `uuidgen`, the Linux kernel or
   Python), so the line names exactly it; `--resume <id>` and `--session-id <id>` name that id. A marker file in the
   config folder (on the transcripts' own clock) marks the start of the run: when other transcripts of this working
   folder (or its `claude -w` worktrees) were written too — `/clear`, `/new` and `/reset` start a new session, an
   in-session `/resume` switches to another, or a second session ran there — the line adds `(after /clear or /resume:
-  claude-bedrock --resume to pick)`, and if the wrapper's own session has no transcript (cleared before anything was
+  devos-claude --resume to pick)`, and if the wrapper's own session has no transcript (cleared before anything was
   typed) it suggests the picker instead. For `--continue`, the `--resume` picker, `--fork-session`, `--from-pr` and
   combined short options (`-cr`, `-r<id>`: claude expands them, the wrapper does not take them apart) it is the one
   transcript written during the run there; several (another session, or a plugin's Agent SDK session in your own
-  `~/.claude`) give `claude-bedrock --resume` (the picker). Never another folder's session. Nothing typed, no
+  `~/.claude`) give `devos-claude --resume` (the picker). Never another folder's session. Nothing typed, no
   transcript: no line. `--bg`, `--cloud`/`--remote`, `--desktop` and a combined option with `p` in it get none.
 - The shared MCP server is passed first, as one argument (`--mcp-config=<file>`), the wrapper's `--session-id=…`
   likewise: after your arguments, a `--` of yours made it prompt text (it used to be appended); first but as two
@@ -270,7 +270,7 @@ test fails.
   `CLAUDE_BEDROCK_MODEL=haiku`, `sonnet` or `opus` (any case, `[1m]` kept) is passed as that slot's full id from
   `.env` (`CLAUDE_BEDROCK_HAIKU_MODEL` …): given the alias, Claude Code picks the model itself, and with `haiku` it
   plans on Sonnet in *Plan* mode (2.1.296, probed; with the full id it stays on Haiku). A `--model haiku` of yours, or
-  `/model haiku` typed in a session, still reaches Claude Code as the alias. The browser terminal's `claude-bedrock`
+  `/model haiku` typed in a session, still reaches Claude Code as the alias. The browser terminal's `devos-claude`
   maps the aliases the same way (its auto mode is off unless Settings › Claude Code › *Auto mode in the terminal* is on:
   the sandbox's managed settings, and its own `--settings` when only the Code page's Auto mode is on).
 - **Requests at launch.** Claude Code's changelog, 2.1.290: "Changed `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` to
@@ -284,7 +284,7 @@ test fails.
   (`advanced-tool-use-…`), so with the betas off it stays off: with Claude Code 2.1.301 and an MCP server of 40 tools,
   all 40 went into the request whether or not `ENABLE_TOOL_SEARCH=true` was set (with betas on and the variable set,
   they were deferred). The wrapper used to set that variable; it no longer does, since it changed nothing.
-- **The browser terminal** (`terminal/bin/claude-bedrock`) is not affected: Claude Code there uses the container's
+- **The browser terminal** (`terminal/bin/devos-claude`) is not affected: Claude Code there uses the container's
   own `~/.claude` in the `terminal-home` volume, which starts empty (lean) and never sees your computer's folders.
 - `./stack uninstall` keeps `~/.claude-bedrock` (and the folder `CLAUDE_BEDROCK_CONFIG_DIR` names in that shell)
   and says so; delete it yourself if you're done.
@@ -303,7 +303,7 @@ tests/e2e/run.sh --aws-env /path/to/a/file/with/AWS_keys    # or export AWS_ACCE
   Compose project `bne2e` or `bne2e-<suffix>` (`--project`; no other name is accepted), portal
   `http://bne2e.localhost:<port>`, free ports (never 80, 443, 3000, 3009, 4000, 8080, 8081, 8090, 8765 or 8800).
   `./stack` runs with a clean environment (proxy settings kept) and without a terminal (`tests/e2e/notty`, so
-  nothing can stop at a prompt). Setup never links `~/.local/bin/claude-bedrock` (the link and its file are
+  nothing can stop at a prompt). Setup never links `~/.local/bin/devos-claude` (the link and its file are
   checked before and after) and never installs the helper.
 - **Ownership:** nothing in Docker is touched until the project is known to be the suite's own: free, or started
   from its checkout (or from a folder under `tests/e2e/work/` that no longer exists, i.e. a killed run). Otherwise
@@ -324,7 +324,7 @@ tests/e2e/run.sh --aws-env /path/to/a/file/with/AWS_keys    # or export AWS_ACCE
   `stt set bedrock` with the browser checks after each.
 - **Cost:** about half a cent per full run (measured: $0.005 with `--deep-update`): two short Haiku chats, one
   file question, a few embeddings and `/v1/messages` calls, two short transcriptions, setup's probe (twice more
-  with `--deep-update`) and one `claude-bedrock -p`. The throwaway's keys get budgets of $0.04 / $0.04 / $0.02, so LiteLLM refuses anything
+  with `--deep-update`) and one `devos-claude -p`. The throwaway's keys get budgets of $0.04 / $0.04 / $0.02, so LiteLLM refuses anything
   beyond, and the run fails if its own spend (summed around restores, which roll LiteLLM's spend log back) reaches
   $0.10.
 - **Output** (`--out DIR`, default `tests/e2e/out/`, gitignored, private): `results-final.tsv`, `junit.xml`,
@@ -349,7 +349,7 @@ tests/e2e/run.sh --aws-env /path/to/a/file/with/AWS_keys    # or export AWS_ACCE
   removed at teardown; with `--no-code`, `--terminal` or `E2E_TERMINAL=1` runs `./stack terminal enable` there): its isolation probe from inside the container, `./stack test`'s terminal checks, and the browser
   suite's terminal checks (locked → unlock → xterm + tmux, a shell window, the session outliving the browser, the
   Origin rules at the terminal host, the phone's full-screen path, Sign out). With the `claude` part it also runs
-  one `claude-bedrock -p` inside the terminal (~$0.001-0.02), on the terminal's own key (budget $0.06; the run's
+  one `devos-claude -p` inside the terminal (~$0.001-0.02), on the terminal's own key (budget $0.06; the run's
   limit is then $0.16). The probe also checks the gateway's 404s (`..` paths included), its secret header before
   ttyd's socket (and that a failed request logs no secret), the terminal key's 403s on LiteLLM past the gateway,
   the gateway's neighbours and `caddy validate` of every terminal/remote combination.

@@ -35,7 +35,7 @@ prices actually in use.
 **Worked example:** a Claude Code session on Opus 5.5 that sends 1M new input tokens, 10M cache-read tokens and
 100K output tokens costs about $4.40 + $2.20 + $2.20 = **$8.80**. One SD3.5 image costs $0.08.
 
-**Real-world note:** a single Claude Code prompt is *not* one request. Even `claude-bedrock -p "…"` makes
+**Real-world note:** a single Claude Code prompt is *not* one request. Even `devos-claude -p "…"` makes
 about 5–13 requests (the main model plus haiku background calls), and each carries a large cached context
 (tens of thousands of tokens: system prompt, tools, files). In our testing, a small tool-using task on Haiku
 cost about $0.04, and a one-word answer from Opus cost about $0.19. A long interactive Opus session can cost
@@ -80,7 +80,7 @@ LiteLLM's prices anyway; then `./stack up` hands them to LiteLLM.
   the catalog is newer. A failed check keeps the last known prices and shows the error and when it happened.
 - LiteLLM reads prices only when it starts (no LiteLLM 1.105 API changes the cost of a config-file model at
   runtime), so new prices reach it at the next `./stack up` (which restarts LiteLLM once, only when prices
-  changed) or `./stack setup`. Until then Home says so and the `claude-bedrock` launch line adds `new prices
+  changed) or `./stack setup`. Until then Home says so and the `devos-claude` launch line adds `new prices
   pending — run ./stack up`. The chat cost filter and Open WebUI's model prices are updated at the same time.
 - Home, `./stack costs` and `./stack models` (its PRICE column) show the prices in use, where they come from
   and how old they are.

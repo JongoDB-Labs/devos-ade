@@ -1,7 +1,9 @@
 # shellcheck shell=bash
 # The rename to DevOS ADE (v0.25.0, formerly bedrock-now): no old name left where a person reads it, one value per layer
 # for the names, the GitHub App's slug written once, and every internal name — the Compose project, volumes, hosts,
-# labels, salts, cookie names, BEDROCK_NOW_* — as it was (docs/internal-names.md says why each stays).
+# labels, salts, cookie names, BEDROCK_NOW_* — as it was (docs/internal-names.md says why each stays). And the rename of
+# its Claude Code command to devos-claude (v0.28.0, formerly claude-bedrock): the old command only as the shim, an
+# internal name (~/.claude-bedrock, CLAUDE_BEDROCK_*, LiteLLM's tags, the sessions' tool id) or the CHANGELOG's history.
 
 test_no_old_name_left_where_a_person_reads_it() {
   local out
@@ -93,6 +95,54 @@ PROBES
   for f in compose.yaml lib/c.sh; do
     if grep -q "^$f:" <<< "$out"; then echo "a control line was taken for the old name: $(printf '%s\n' "$out" | grep "^$f:")" >&2; return 1; fi
   done
+}
+
+test_the_brand_check_catches_the_old_command_name_with_the_real_allowlist() {
+  # claude-bedrock where a person reads or types it is caught; the shim, the internal names (its folder, CLAUDE_BEDROCK_*,
+  # LiteLLM's tags, the sessions' tool id in code), the old name said as such and the CHANGELOG's history are not
+  local r="$TMP/repo" f line n=0 out
+  mkdir -p "$r/docs" "$r/tests/fixtures"; git -C "$r" init -q
+  cp "$T_ROOT/docs/internal-names.md" "$r/docs/"; cp "$T_ROOT/tests/fixtures/brand-allow.txt" "$r/tests/fixtures/"
+  while IFS="$(printf '\t')" read -r f line; do
+    [ -n "$f" ] || continue
+    mkdir -p "$r/$(dirname "$f")"; printf '%s\n' "$line" >> "$r/$f"
+  done <<'PROBES'
+lib/p.sh	log "run claude-bedrock to start"
+lib/p.sh	echo "Claude_Bedrock is ready"
+lib/sessions.sh	die "--tool: claude, claude-bedrock or both"
+lib/sessions.sh	log "your claude-bedrock sessions"
+lib/commands.sh	log "linked claude-bedrock"
+portal/portal/static/settings.js	toast("claude-bedrock could not start")
+code/web/src/p.tsx	<option value="x">claude-bedrock only</option>
+README.md	Run `claude-bedrock` in your terminal
+docs/p.md	ClaudeBedrock keeps its settings
+terminal/bin/devos-claude	echo "claude-bedrock: unknown model"
+CHANGELOG.md	## [Unreleased]
+CHANGELOG.md	- claude-bedrock got faster
+CHANGELOG.md	## [0.27.1] - 2026-10-25
+CHANGELOG.md	- claude-bedrock got faster (history: not read)
+PROBES
+  # controls, each in a file its row names
+  mkdir -p "$r/bin" "$r/code/server"
+  printf '#!/usr/bin/env bash\n# claude-bedrock: the shim\nexec devos-claude "$@"\n' > "$r/bin/claude-bedrock"
+  printf 'x=~/.claude-bedrock m=$CLAUDE_BEDROCK_MODEL\nh="x-litellm-tags: claude-bedrock,code"\n# devos-claude, formerly claude-bedrock\n' > "$r/lib/c.sh"
+  printf 'l="$HOME/.local/bin/claude-bedrock"\n' >> "$r/lib/commands.sh"
+  printf "case \"\$t\" in claude | claude-bedrock | git) ;; esac\nSETUP_TOOLS=\"claude claude-bedrock git\"\n# T: claude, devos-claude (internal name: claude-bedrock)\n" > "$r/lib/sessions_config.sh"
+  printf "export const TOOL_LABEL = { claude: 'Claude Code', 'claude-bedrock': 'devos-claude' };\n" > "$r/code/server/c.mjs"
+  out="$(python3 "$T_ROOT/tests/brand_check.py" --root "$r" 2>&1)" || true
+  for f in lib/p.sh:1 lib/p.sh:2 lib/sessions.sh:1 lib/sessions.sh:2 lib/commands.sh:1 portal/portal/static/settings.js:1 \
+           code/web/src/p.tsx:1 README.md:1 docs/p.md:1 terminal/bin/devos-claude:1 CHANGELOG.md:2; do
+    n=$((n + 1))
+    grep -q "^$f: " <<< "$out" || { echo "probe $f was not caught: $out" >&2; return 1; }
+  done
+  assert_eq "$n" 11
+  for f in bin/claude-bedrock lib/c.sh lib/commands.sh:2 lib/sessions_config.sh code/server/c.mjs CHANGELOG.md:4; do
+    if grep -q "^$f:" <<< "$out"; then echo "a control line was taken for the old name: $(grep "^$f:" <<< "$out")" >&2; return 1; fi
+  done
+  # a row of one old name never excuses the other: claude-bedrock's patterns leave bedrock-now alone
+  printf 'x=~/.claude-bedrock bedrock-now is up\n' > "$r/lib/d.sh"
+  out="$(python3 "$T_ROOT/tests/brand_check.py" --root "$r" lib/d.sh 2>&1)" || true
+  assert_contains "$out" "lib/d.sh:1: x=~/.claude-bedrock bedrock-now is up"
 }
 
 # _py_const FILE NAME -> NAME = "value" of a Python file; _js_const FILE NAME -> export const NAME = 'value'

@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""The product's old name where a person reads it: every occurrence of bedrock-now (bedrock now, bedrock_now,
-BedrockNow, BEDROCK_NOW, in any case) in the repository's files outside the tests must be an internal name — one the
-allowlist of docs/internal-names.md matches (its table: a regular expression each, the old name inside what it
-matches, and the files it may match in) — or an exemption of tests/fixtures/brand-allow.txt (a file, the text on its
-line that holds the old name, and why it stays). CHANGELOG.md's entries before v0.25.0 are history: only its header
-and the entries from v0.25.0 on are read. docs/internal-names.md itself (the list of the names that stay) is not read.
+"""The old names where a person reads them: the product's, bedrock-now (bedrock now, bedrock_now, BedrockNow,
+BEDROCK_NOW, in any case), and its Claude Code command's, claude-bedrock (now devos-claude; claude_bedrock,
+ClaudeBedrock, CLAUDE_BEDROCK, in any case). Every occurrence in the repository's files outside the tests must be an
+internal name — one an allowlist of docs/internal-names.md matches (a table for each old name, under its own heading: a
+regular expression each, the old name inside what it matches, and the files it may match in) — or an exemption of
+tests/fixtures/brand-allow.txt (a file, the text on its line that holds the old name, and why it stays). CHANGELOG.md's
+entries of the releases before the rename are history (before v0.25.0 for bedrock-now, before v0.28.0 for
+claude-bedrock): only its header and the entries from then on are read. docs/internal-names.md itself (the list of the
+names that stay) is not read.
 
 Usage: tests/brand_check.py [--root DIR] [PATH-PREFIX...]
   Prints each occurrence left (path:line: text) and exits 1 when there is one; with no PATH-PREFIX also each pattern
@@ -23,7 +26,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-OLD = re.compile(r"bedrock[-_ ]?now", re.I)
 # The tests: their fixtures are internal names, and what they assert is checked where it is shown.
 SKIP = ("tests/", "portal/tests/", "code/test/", "code/web/test/", "code/web/e2e/", "portal/e2e/")
 DOC = "docs/internal-names.md"
@@ -32,6 +34,21 @@ ALLOW = "tests/fixtures/brand-allow.txt"
 # comma between), or `*` for any file; a "|" of the pattern is written \| in the table
 ROW = re.compile(r"^\|[^|]*\|\s*`((?:[^`\\]|\\.)+)`\s*\|\s*([^|]+?)\s*\|")
 RELEASE = re.compile(r"^## \[(\d+)\.(\d+)\.(\d+)\]")
+
+
+class Name:
+    """An old name: how it is spelled (any case), the heading of its allowlist in docs/internal-names.md, and the
+    release from which CHANGELOG.md is read for it (the entries before: history)."""
+
+    def __init__(self, label: str, rx: str, heading: str, since: tuple[int, int, int]):
+        self.label, self.rx, self.heading, self.since = label, re.compile(rx, re.I), heading, since
+
+
+NAMES = (
+    Name("bedrock-now", r"bedrock[-_ ]?now", "## The allowlist", (0, 25, 0)),
+    Name("claude-bedrock", r"claude[-_ ]?bedrock", "## The allowlist of claude-bedrock", (0, 28, 0)),
+)
+OLD = NAMES[0].rx   # (the product's old name)
 
 
 class Pattern:
@@ -45,13 +62,19 @@ class Pattern:
         return any(g == "*" or fnmatch.fnmatchcase(path, g) for g in self.globs)
 
 
-def patterns(root: Path) -> list[Pattern]:
-    out = []
+def patterns(root: Path) -> dict[str, list[Pattern]]:
+    """Each old name's patterns: a table row belongs to the old name whose heading (a `## ` line) is the last one
+    above it; rows above every such heading, to the first old name (bedrock-now)."""
+    out: dict[str, list[Pattern]] = {n.label: [] for n in NAMES}
+    name = NAMES[0].label
     for line in (root / DOC).read_text(encoding="utf-8").splitlines():
+        for n in NAMES:
+            if line.strip() == n.heading:
+                name = n.label
         m = ROW.match(line)
         if m:
-            out.append(Pattern(m.group(1), m.group(2)))
-    if not out:
+            out[name].append(Pattern(m.group(1), m.group(2)))
+    if not out[NAMES[0].label]:
         raise SystemExit(f"{DOC}: no patterns found (a table row: | name | `pattern` | files | why |)")
     return out
 
@@ -62,8 +85,8 @@ def exemptions(root: Path) -> list[tuple[str, str, str]]:
         if not line.strip() or line.startswith("#"):
             continue
         parts = line.split("\t")
-        if len(parts) != 3 or not all(p.strip() for p in parts) or not OLD.search(parts[1]):
-            raise SystemExit(f"{ALLOW}:{n}: want PATH<TAB>TEXT WITH THE OLD NAME<TAB>WHY, got: {line!r}")
+        if len(parts) != 3 or not all(p.strip() for p in parts) or not any(o.rx.search(parts[1]) for o in NAMES):
+            raise SystemExit(f"{ALLOW}:{n}: want PATH<TAB>TEXT WITH AN OLD NAME<TAB>WHY, got: {line!r}")
         out.append((parts[0], parts[1], parts[2]))
     return out
 
@@ -74,11 +97,11 @@ def files(root: Path) -> list[str]:
     return sorted({p for p in out.decode("utf-8", "surrogateescape").split("\0") if p})
 
 
-def changelog_lines(lines: list[str]) -> list[str]:
-    """CHANGELOG.md's lines up to its first entry of a release before v0.25.0 (the rest: blank)."""
+def changelog_lines(lines: list[str], since: tuple[int, int, int] = NAMES[0].since) -> list[str]:
+    """CHANGELOG.md's lines up to its first entry of a release before SINCE (the rest: blank)."""
     for i, line in enumerate(lines):
         m = RELEASE.match(line)
-        if m and tuple(map(int, m.groups())) < (0, 25, 0):
+        if m and tuple(map(int, m.groups())) < since:
             return lines[:i] + [""] * (len(lines) - i)
     return lines
 
@@ -87,10 +110,10 @@ def spans(rx: re.Pattern, text: str) -> list[tuple[int, int]]:
     return [m.span() for m in rx.finditer(text)]
 
 
-def uncovered(line: str, pats: list[Pattern], extra=()) -> bool:
-    """True when an occurrence of the old name on LINE lies outside what the patterns (and the EXTRA spans) match;
-    marks the patterns that covered one as used."""
-    occ = spans(OLD, line)
+def uncovered(line: str, pats: list[Pattern], extra=(), old: re.Pattern = OLD) -> bool:
+    """True when an occurrence of the old name OLD on LINE lies outside what the patterns (and the EXTRA spans)
+    match; marks the patterns that covered one as used."""
+    occ = spans(old, line)
     if not occ:
         return False
     covered = [(s, p) for p in pats for s in spans(p.rx, line)] + [(s, None) for s in extra]
@@ -117,31 +140,35 @@ def check(root: Path, prefixes: list[str]) -> tuple[list[str], list[str]]:
             continue   # (listed but gone: a deleted file not yet staged)
         if b"\0" in data[:8192]:
             continue   # binary
-        lines = data.decode("utf-8", "replace").splitlines()
-        if path == "CHANGELOG.md":
-            lines = changelog_lines(lines)
-        mine = [(i, a) for i, a in enumerate(allow) if a[0] == path]
-        here = [p for p in pats if p.applies(path)]
-        for n, line in enumerate(lines, 1):
-            if not OLD.search(line):
-                continue
-            extra = []
-            for i, (_, text, _) in mine:
-                at = [(m.start(), m.start() + len(text)) for m in re.finditer(re.escape(text), line)]
-                if at:
-                    used[i] = True
-                    extra += at
-            if uncovered(line, here, extra):
-                left.append(f"{path}:{n}: {line.strip()[:200]}")
+        text = data.decode("utf-8", "replace").splitlines()
+        for name in NAMES:
+            lines = changelog_lines(text, name.since) if path == "CHANGELOG.md" else text
+            mine = [(i, a) for i, a in enumerate(allow) if a[0] == path and name.rx.search(a[1])]
+            here = [p for p in pats[name.label] if p.applies(path)]
+            for n, line in enumerate(lines, 1):
+                if not name.rx.search(line):
+                    continue
+                extra = []
+                for i, (_, t, _) in mine:
+                    at = [(m.start(), m.start() + len(t)) for m in re.finditer(re.escape(t), line)]
+                    if at:
+                        used[i] = True
+                        extra += at
+                if uncovered(line, here, extra, name.rx):
+                    left.append(f"{path}:{n}: {line.strip()[:200]}")
     stale = [f"{ALLOW}: {p}\t{t}" for (p, t, _), u in zip(allow, used) if not u and (not prefixes or p.startswith(tuple(prefixes)))]
     if not prefixes:
-        stale += [f"{DOC}: the pattern `{p.text}`" for p in pats if not p.used]
-    return left, stale
+        stale += [f"{DOC}: the pattern `{p.text}`" for n in NAMES for p in pats[n.label] if not p.used]
+    return sorted(set(left), key=left.index), stale
 
 
 def check_text(root: Path, label: str, text: str) -> list[str]:
-    pats = [p for p in patterns(root) if "*" in p.globs]
-    return [f"{label}:{n}: {line.strip()[:200]}" for n, line in enumerate(text.splitlines(), 1) if uncovered(line, pats)]
+    pats = patterns(root)
+    out = []
+    for n, line in enumerate(text.splitlines(), 1):
+        if any(uncovered(line, [p for p in pats[o.label] if "*" in p.globs], (), o.rx) for o in NAMES):
+            out.append(f"{label}:{n}: {line.strip()[:200]}")
+    return out
 
 
 def main(argv: list[str]) -> int:
@@ -159,8 +186,9 @@ def main(argv: list[str]) -> int:
     for line in stale:
         print(f"stale (matches nothing): {line}")
     if left or stale:
-        print(f"{len(left)} occurrence(s) of the old name left, {len(stale)} stale pattern(s) or exemption(s): change "
-              f"the text to DevOS ADE, or — for an internal name — add a pattern to {DOC} or an exemption to {ALLOW}",
+        print(f"{len(left)} occurrence(s) of an old name left, {len(stale)} stale pattern(s) or exemption(s): change "
+              f"the text to DevOS ADE (bedrock-now) or devos-claude (claude-bedrock), or — for an internal name — add a "
+              f"pattern to {DOC} or an exemption to {ALLOW}",
               file=sys.stderr)
         return 1
     return 0

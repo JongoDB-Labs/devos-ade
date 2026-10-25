@@ -2,7 +2,7 @@
 
 Back to the [README](../README.md#claude-code-from-your-phone).
 
-`claude-bedrock` runs on the machine that runs DevOS ADE (your Mac, or a [cloud VM](cloud-vm.md)). From a
+`devos-claude` runs on the machine that runs DevOS ADE (your Mac, or a [cloud VM](cloud-vm.md)). From a
 phone you reach it the way you'd reach any server: **SSH**, inside **tmux** so a dropped connection doesn't end
 the session. That is what this page describes: Claude Code on the machine itself, with your projects and tools.
 
@@ -52,7 +52,7 @@ Use SSH keys, not passwords: let the phone app generate a key, append its public
 ssh you@studio.tail1234.ts.net
 tmux new -A -s claude          # attaches to the "claude" session, or creates it
 cd ~/your-project
-claude-bedrock
+devos-claude
 ```
 
 Lost the connection? Reconnect and run `tmux new -A -s claude` again: Claude Code is still where you left it.
@@ -109,5 +109,5 @@ battery it only notes that servers don't sleep. `--background` is macOS-only; on
 
 Claude Code's **Remote Control** (continuing a session from claude.ai or the Claude app) needs a claude.ai
 subscription login. It doesn't work when Claude Code talks to Bedrock or to a custom API URL, which is what
-`claude-bedrock` does (LiteLLM on `127.0.0.1`). SSH + tmux gives you the same "pick it up on the phone" with
+`devos-claude` does (LiteLLM on `127.0.0.1`). SSH + tmux gives you the same "pick it up on the phone" with
 your Bedrock billing and budgets intact.

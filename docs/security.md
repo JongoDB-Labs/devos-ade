@@ -53,7 +53,7 @@ Back to the [README](../README.md#security-model).
   at most every 30 seconds and 20 times an hour, one check at a time, not within an hour of GitHub refusing one —
   sooner when its rate limit says so). It
   sends nothing about your install; `UPDATE_CHECK=false` turns the daily and Home checks off (a click still asks).
-- `claude-bedrock` sets `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, so Bedrock sessions send no telemetry,
+- `devos-claude` sets `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, so Bedrock sessions send no telemetry,
   error reports or update checks. Plain `claude` is not affected and follows Claude Code's own settings.
 
 ## How the single login works
@@ -692,7 +692,7 @@ reaches is the container — with the three exceptions under *Threat model*.
   - *Does not add:* nothing listens beyond `127.0.0.1`; no access over remote access (`REMOTE_TERMINAL` stays off
     unless you set it, and it is not a Settings switch); no Bypass permissions or Auto mode (each off until allowed
     from this computer); no remote previews; no other folder of yours, no Docker socket, no LiteLLM master key or
-    `claude-bedrock`'s key in the sandbox; the Code page's default mode asks before every command and file change.
+    `devos-claude`'s key in the sandbox; the Code page's default mode asks before every command and file change.
   - *Kept:* an explicit `CODE_ENABLED=false` or `TERMINAL_ENABLED=false` is never turned on again;
     `./stack code disable` (Settings › Claude Code › Off, from anywhere) or `./stack terminal disable` writes it. A
     folder that cannot be created or is refused leaves both off (setup says why and goes on); an image that does not
@@ -731,7 +731,7 @@ reaches is the container — with the three exceptions under *Threat model*.
 - [x] **Its own key.** It holds `claude-code-terminal`, a LiteLLM key of its own with its own monthly budget
   (`BUDGET_TERMINAL`, $50: `./stack config set BUDGET_TERMINAL`, in Settings → Spending & budgets; a meter on Home, a
   line in `./stack costs`), never the `claude-code` key of
-  `claude-bedrock` on your computer, the master key, the portal password or AWS credentials. The key itself may
+  `devos-claude` on your computer, the master key, the portal password or AWS credentials. The key itself may
   call only Claude Code's LiteLLM routes — `/v1/messages` (with `…/count_tokens`), `/v1/models`, `/key/info`,
   `/model/info` (LiteLLM's `allowed_routes`, set when the key is made and again at every enable, setup and update,
   so older keys get it too): wherever the sandbox reaches LiteLLM, its pass-through, `/v1/chat/completions` and the
@@ -752,7 +752,7 @@ reaches is the container — with the three exceptions under *Threat model*.
   left</total_tokens>`). It changes nothing else (no other message, nothing of yours), reads no secret, makes no
   network call, and any problem in it leaves the request as it came. `./stack rollback` to a version without
   it takes the `callbacks:` line out of the running config before the checkout (that version starts LiteLLM with it).
-- [x] **Model names are data.** A name from OpenRouter's list reaches LiteLLM's config, `claude-bedrock --models`,
+- [x] **Model names are data.** A name from OpenRouter's list reaches LiteLLM's config, `devos-claude --models`,
   Claude Code's `/model` menu and the pages: C1 controls (U+009B is a terminal's CSI), U+2028/U+2029, bidi embeddings,
   overrides and isolates, zero-width marks, U+FEFF and U+FFFE/U+FFFF are dropped where the list is read
   (`or_classify`), again wherever `litellm/code-models.tsv` is read, and in the terminal's own reading of `/model/info`;
@@ -762,7 +762,7 @@ reaches is the container — with the three exceptions under *Threat model*.
 - [x] **Inside the stack: one neighbour, a few paths.** Its network `terminal` is internal and holds only the
   container and its gateway, a second minimal Caddy (`terminal-gateway`, the main Caddy's pinned image, read-only,
   no capabilities but binding, no admin API, no published port). The gateway listens there only on `:8091`
-  (`bind gateway`) and forwards exactly what Claude Code and the terminal's `claude-bedrock` use: LiteLLM's
+  (`bind gateway`) and forwards exactly what Claude Code and the terminal's `devos-claude` use: LiteLLM's
   `/v1/messages` (and `…/count_tokens`), `/v1/models`, `/key/info`, `/model/info`, `/health/liveliness`, and
   shared-mcp's `/mcp` — each still needing the terminal's key or `SHARED_MCP_TOKEN`. Everything else is 404 there:
   LiteLLM's admin UI and management API (`/key/generate` …), its spend logs, and its `/bedrock/…` pass-through,
@@ -893,7 +893,7 @@ weigh:
 1. **The workspace can run code on your computer later.** Anything in it can be changed: a `.git/hooks` script,
    `core.fsmonitor` or `core.sshCommand` in `.git/config`, `.vscode/tasks.json`, `.envrc` (direnv), an npm script
    or Makefile target, Claude Code's `.claude/settings.json` hooks or `.mcp.json` — each runs on your computer
-   when you open the folder there with the tool that reads it (git, your editor, direnv, npm, `claude-bedrock`).
+   when you open the folder there with the tool that reads it (git, your editor, direnv, npm, `devos-claude`).
    Use a workspace you only open in the terminal, or review it like code from someone else.
 2. **Your Mac's own services** (only with `TERMINAL_EGRESS=host`, on Docker Desktop): see above — LiteLLM directly
    (its key still limited to Claude Code's routes), shared-mcp, the portal's login (wrong guesses can keep it locked
@@ -1018,7 +1018,7 @@ spawn server, Claude Code or any file at will.
   asking instead: `useAutoModeDuringPlan: false`), and the sandbox's managed settings (`/etc/claude-code/
   managed-settings.json`, a link to the file `bn-terminal` writes at the container's start from the two auto mode
   switches) turn it off for every Claude Code there while both switches are off — the terminal's and
-  `claude-bedrock`'s too, which start in the ordinary asking mode. On your computer `claude-bedrock` does the same in
+  `devos-claude`'s too, which start in the ordinary asking mode. On your computer `devos-claude` does the same in
   its lean folder (`--settings={"disableAutoMode":"disable"}`, Claude Code's flag tier; `CLAUDE_BEDROCK_AUTO_MODE=1`
   leaves it to Claude Code, whose classifier then runs on Sonnet 5.5 through the catalog's alias). Sessions
   name their model in full: the code container refuses Claude Code's aliases (`haiku`, `sonnet`, `opus` …), with
@@ -1510,7 +1510,7 @@ direction-changing character; a record that does not fit (a file someone changed
   possible ("Claude may then … without asking", "… is no longer blocked").
 - [x] **Open in the terminal types one fixed command.** `terminal.resume` takes a session id that must be a UUID **and**
   the name of a transcript that is there (a regular file, not a link); it opens a new window of the terminal's tmux
-  session (`resume-<first 8 hex>`, in `/workspace`) and types `claude-bedrock --resume <uuid>` into that window's new
+  session (`resume-<first 8 hex>`, in `/workspace`) and types `devos-claude --resume <uuid>` into that window's new
   shell with `send-keys -l` (literal text, no key names), then Enter — never into a window where something already
   runs, never anything the page or the sandbox chose. The code container ends its own process for the session first
   (refused while a turn runs) and waits for it to exit. Then `sessions.running` keeps the page from resuming that
@@ -1520,7 +1520,7 @@ direction-changing character; a record that does not fit (a file someone changed
   `--session-id <id>`, a path to its transcript; `/proc/*/cmdline`, at most 64 KiB each); if there is one, the resume is
   refused (409) until Claude Code exits there. Two Claude Code processes would both append to one transcript. The check
   is the safe side (a process that merely mentions the id counts too), and not a boundary: anything in the sandbox can
-  run Claude Code itself. A spend tag of its own: the terminal's `claude-bedrock` books under `cb-…`, not the page's
+  run Claude Code itself. A spend tag of its own: the terminal's `devos-claude` books under `cb-…`, not the page's
   `code-<uuid>`, so that session's page cost meter does not show what the terminal spends on it (Home's key spend does).
 - [x] **Links put a draft in the prompt box, never more.** `code.<host>/?session=<id>&prompt=<text>`: the session is
   shown or resumed (a valid UUID of this workspace, else said); the prompt becomes a **draft** in the prompt box, with a
@@ -2566,7 +2566,7 @@ It reduces prompts; it does not make anything safe: a model can be wrong either 
   Code there; the terminal's on — nothing set, Claude Code decides as anywhere else (an interactive `claude` starts in
   auto mode, `Shift+Tab` leaves it); only the Code page's on — auto mode stays available (the page needs it, and
   managed settings outrank its own), but the terminal's `claude` starts in *Manual*, its *Plan* asks, and both
-  `claude-bedrock` there and the `claude` typed in its shells (a shell function in `/etc/bedrock-now.bashrc`) add
+  `devos-claude` there and the `claude` typed in its shells (a shell function in `/etc/bedrock-now.bashrc`) add
   Claude Code's flag-tier `disableAutoMode` to their sessions — a convenience for what you type, not a boundary:
   `/usr/local/bin/claude` called directly, or a `--settings` of your own, goes without it, and `Shift+Tab` could then
   reach auto mode. *Allow once*'s approval is not in the sandbox either: it is a hook callback of the Agent SDK in the code
@@ -2813,9 +2813,9 @@ A folder of this computer can be a Code page project: `./stack project add DIR` 
 
 ### Your coding tools' sessions from this computer
 
-The sessions you had with Claude Code (`~/.claude`) or `claude-bedrock` (`~/.claude-bedrock`) in a folder of this
-computer can be copied into the sandbox and resumed there (README: [Your Claude Code and claude-bedrock sessions from
-this computer](../README.md#your-claude-code-and-claude-bedrock-sessions-from-this-computer)). Two things make this
+The sessions you had with Claude Code (`~/.claude`) or `devos-claude` (`~/.claude-bedrock`) in a folder of this
+computer can be copied into the sandbox and resumed there (README: [Your Claude Code and devos-claude sessions from
+this computer](../README.md#your-claude-code-and-devos-claude-sessions-from-this-computer)). Two things make this
 sensitive. Those stores are **read by a Claude Code that runs on this computer with your full access** — so nothing
 may ever be written back to them: text the sandbox wrote would steer it. And a transcript holds **whatever a past
 session saw**: secrets that passed through a tool call, and text from files and web pages that may be written to
@@ -2839,7 +2839,7 @@ that trusts nothing in them, and what it read is untrusted data all the way to t
   follows the request by its id only: the helper says how it went in fixed words (`./stack sessions` → `docker compose
   exec code … request --id … --state …`), and the code container keeps that, a copy's results with it.
 - [x] **Allowed on this computer, per tool and folder, and taken back from anywhere.** A store is read only after you
-  allowed that tool (Claude Code, claude-bedrock or both) for that project folder: in a terminal here (`./stack
+  allowed that tool (Claude Code, devos-claude or both) for that project folder: in a terminal here (`./stack
   sessions consent --project NAME --always`, or the question `./stack sessions import` asks), or in the dialog the
   update helper shows **on this computer's screen** (fixed text naming the tool and your folder: *Don't allow* — the
   default, and what an unanswered dialog means after 2 minutes, whatever shows it —, *Allow once*, *Always for this
@@ -3069,7 +3069,7 @@ else, says what each item brings before it is copied, and never copies a secret-
   plugins' cache — its manifest is read for what it adds, never copied). The code container stages only items of
   that look's list, each file against its SHA-256 and its kind's bounds, each value through the same shapes again.
 - [x] **Allowed on this computer, per tool, taken back from anywhere.** Its own consent kind (`setup` in
-  `consent.tsv`), per tool — Claude Code, `claude-bedrock`, Git — *Allow once* (that look and its opens, an hour) or
+  `consent.tsv`), per tool — Claude Code, `devos-claude`, Git — *Allow once* (that look and its opens, an hour) or
   *Always*, in the update helper's dialog on this computer's screen (*Don't allow* the default; unanswered after 2
   minutes, the same) or in its terminal. A look and an open are refused for a request over remote access, by the
   portal (403) and by the helper again; from another device the page shows a look made here and copies what was
@@ -3130,7 +3130,7 @@ else, says what each item brings before it is copied, and never copies a secret-
   such); a file too long to show is named by its size and SHA-256.
 - [x] **The sandbox's own kept.** Permission rules and hooks are added to the sandbox's `settings.json`, every other
   key of it kept; a later copy removes only what DevOS ADE added before **from the same tool** (recorded in the code
-  container by tool, rule and hook group: Claude Code's copy never takes out a rule `claude-bedrock`'s brought, nor the
+  container by tool, rule and hook group: Claude Code's copy never takes out a rule `devos-claude`'s brought, nor the
   other way round; a rule both bring stays while either does — what a copy wants is recorded even when it has nothing
   to write) — and every rule and hook group it takes out is listed
   in a warning before you copy (*taken out of the sandbox's settings*: your computer no longer has it). Any other

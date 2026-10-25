@@ -21,7 +21,7 @@ disable` the Code page alone; either stays off across updates).
 | Part | What it is | Default | On / off |
 |---|---|---|---|
 | [**Chat**](#chat-open-webui) | Open WebUI with the Bedrock models your key can use (and OpenRouter's, once you turn it on): the cost under every answer, documents and knowledge bases, images | on | — |
-| [**`claude-bedrock`**](#claude-code-claude-bedrock) | Claude Code in your own terminal, billed to Bedrock (or to OpenRouter for its models), with a lean config folder and each session's cost; any chat model of the catalog (`--models` lists them and how each works, `--model` picks one) | on (needs `claude`) | setup offers to put it on your `PATH` |
+| [**`devos-claude`**](#claude-code-devos-claude) | Claude Code in your own terminal, billed to Bedrock (or to OpenRouter for its models), with a lean config folder and each session's cost; any chat model of the catalog (`--models` lists them and how each works, `--model` picks one) | on (needs `claude`) | setup offers to put it on your `PATH` |
 | [**Home, Admin, Files**](#the-portal-one-login-for-everything) | health, spend and budgets; LiteLLM's UI; the shared file store (also an MCP server for Claude Code) | on | — |
 | [**The API for your tools**](#the-models-from-your-own-code) | the same models for your own scripts and apps: OpenAI- and Anthropic-compatible, on `127.0.0.1`, a key and budget per tool (Admin › Virtual Keys) | on | — |
 | [**Activity & search**](#activity-and-search) | a bell for budget alerts, updates, Code sessions that need you and jobs; **Ctrl/⌘+K** finds pages, settings, Code sessions and workspace files, Chat conversations, the walkthrough and these docs | on | — |
@@ -56,7 +56,7 @@ disable` the Code page alone; either stays off across updates).
 - An **AWS access key ID and secret** for an IAM user with Bedrock access (long-lived `AKIA…` key; see
   [Asking your AWS admin for model access](#asking-your-aws-admin-for-model-access)), or, on an EC2 VM, an
   **IAM role** instead (no keys stored; see [Run it on a cloud VM](#run-it-on-a-cloud-vm))
-- Optional: **Claude Code** (`claude`) on your computer, for `claude-bedrock`
+- Optional: **Claude Code** (`claude`) on your computer, for `devos-claude`
 
 **Install** with the one-liner:
 
@@ -109,18 +109,20 @@ Then it:
    yours, `~/devos-ade-workspace` (created, mode 700), or `~/bedrock-now-workspace` on an install that already has it,
    with its own LiteLLM key and budget. It builds their images
    (a few minutes the first time) and says so; no question is asked, and `./stack code disable` turns it off;
-5. offers to link `claude-bedrock` into `~/.local/bin`, and to turn on one-click updates from Home (the
-   [update helper](#updating), which also makes Settings editable; default yes). Both only in interactive runs;
-   `--yes` installs the helper only with `BEDROCK_NOW_HELPER=1`. It never edits your shell rc files or `~/.claude`.
+5. offers to link `devos-claude` into `~/.local/bin`, with its old name beside it (`~/.local/bin/claude-bedrock`),
+   and to turn on one-click updates from Home (the [update helper](#updating), which also makes Settings editable;
+   default yes). Both only in interactive runs; `--yes` installs the helper only with `BEDROCK_NOW_HELPER=1`, and
+   links `devos-claude` only where `~/.local/bin/claude-bedrock` already points into this checkout (an update from
+   v0.27.x). It never edits your shell rc files or `~/.claude`.
 
 At the end it prints the portal address, the first time only (and only to a terminal) its password (always in
-`.env` as `PORTAL_PASSWORD`; `./stack password --show` prints it) and a `claude-bedrock` command to try, and, when
+`.env` as `PORTAL_PASSWORD`; `./stack password --show` prints it) and a `devos-claude` command to try, and, when
 run in a terminal, opens the portal: the installed app if you have one, else a browser tab (`BEDROCK_NOW_NO_OPEN=1`
 turns that off). On your first visit (not on a phone) the [walkthrough](#walkthrough) opens by itself.
 
 **What it takes:** about 5 GB of Docker images (downloaded once, announced first), 5–15 minutes on the first
 run depending on your connection (about 2 minutes after that), and under $0.05 of Bedrock usage to try it
-(the probe and smoke test cost < $0.01; a short `claude-bedrock -p` prompt about $0.02–0.04). The browser terminal,
+(the probe and smoke test cost < $0.01; a short `devos-claude -p` prompt about $0.02–0.04). The browser terminal,
 its egress proxy and the Code page are built on your computer during the first setup (a few minutes more, about
 1.6 GB).
 
@@ -143,7 +145,8 @@ once more, and in its default mode every command and file change waits for your 
 
 **Stop or remove:** `./stack down` stops everything and keeps your data; `./stack up` starts it again.
 `./stack uninstall` removes the containers, **all data volumes** and this install's built images, the update helper
-and the `claude-bedrock` link (it keeps `.env`, `backups/`, the terminal's workspace folder and `~/.claude-bedrock`);
+and the links `~/.local/bin/devos-claude` and `~/.local/bin/claude-bedrock` (it keeps `.env`, `backups/`, the
+terminal's workspace folder and `~/.claude-bedrock`);
 then delete the folder.
 
 `./stack setup` is safe to re-run at any time: it keeps your keys and data and re-checks which models work.
@@ -163,7 +166,7 @@ your browser.
 
 | Tab | What it is | Sign-in |
 |---|---|---|
-| **Home** | Health of each service, spend per key against its budget, the models your key can use with prices, the price source, the `claude-bedrock` command; with the Code page on, its card (the sessions that need you, Resume, a prompt to open in Code). Under the title: *Up to date · checked 12 min ago ·* **Check for updates** ([Updating](#updating)). Refreshes every 30 s; makes no Bedrock calls. Above the tabs: **Search** (Ctrl/⌘+K) and the **Activity** bell ([Activity and search](#activity-and-search)). | the portal |
+| **Home** | Health of each service, spend per key against its budget, the models your key can use with prices, the price source, the `devos-claude` command; with the Code page on, its card (the sessions that need you, Resume, a prompt to open in Code). Under the title: *Up to date · checked 12 min ago ·* **Check for updates** ([Updating](#updating)). Refreshes every 30 s; makes no Bedrock calls. Above the tabs: **Search** (Ctrl/⌘+K) and the **Activity** bell ([Activity and search](#activity-and-search)). | the portal |
 | **Chat** | Open WebUI at `chat.bedrock-now.localhost`: chat, documents/knowledge, images (if enabled) | automatic |
 | **Code** | On by default: Claude Code with a chat and your files, at `code.bedrock-now.localhost` ([The Code page](#the-code-page)); while it is off the tab stays, muted, and says how to turn it on | the portal, then the portal password again (12 hours) |
 | **Admin** | LiteLLM's UI at `admin.bedrock-now.localhost/ui`: keys, spend by model and day, logs | automatic |
@@ -216,7 +219,7 @@ first visit (not on a phone, where it would cover Chat); on a desktop it widens 
 phone it is under **More**.
 
 1. **Set up:** the Bedrock models your AWS key can use (and how to get more), optional OpenRouter models and voice,
-   Claude Code on your computer (`claude-bedrock` and its lean `~/.claude-bedrock` config folder), **Connect a git
+   Claude Code on your computer (`devos-claude` and its lean `~/.claude-bedrock` config folder), **Connect a git
    host** for the Code page (Sign in with GitHub or GitLab, an access token or an SSH key it makes; **Open Git hosts**
    opens its dialog), each app's budget, and extras (the desktop app, one-click updates). Each step shows its live
    status and the commands to run, with Copy buttons.
@@ -230,7 +233,7 @@ phone it is under **More**.
    permission modes and cards, picking a model, your workspace (its folder on this computer, files, search, previews),
    a project's own settings and **Trust**, @-mentions and comments on a plan's lines, **Clone a repository**, review, commit and push, Run & test and
    previews of dev servers, the browser terminal, what the sandbox can reach, plugins and MCP servers.
-5. **Your own tools:** `claude-bedrock` in your terminal, [the models from your own
+5. **Your own tools:** `devos-claude` in your terminal, [the models from your own
    code](#the-models-from-your-own-code) (this install's API address, a key per tool, curl and Python examples to
    copy), [your AI subscriptions and keys](#your-ai-subscriptions) (which tools, how each signs in, the *who answers*
    menu on each page, the switch for your Claude plan, what is greyed out — a link to where it is turned on) and the
@@ -390,26 +393,29 @@ so a phone needs remote access (HTTPS) turned on first; a tablet or a small brow
 Settings changed in Open WebUI's admin panel revert at restart by design: `.env` and setup own the
 configuration.
 
-### Claude Code: `claude-bedrock`
+### Claude Code: `devos-claude`
 
-`claude-bedrock` is Claude Code pointed at this stack. It sets the environment for its own process only, so
+`devos-claude` is Claude Code pointed at this stack. It sets the environment for its own process only, so
 plain `claude` stays exactly as it was, and it takes the same arguments. It runs Claude Code with **its own config
 folder, `~/.claude-bedrock`**, not your `~/.claude` ([why and how](#a-lean-config-folder-for-bedrock)).
+It was formerly `claude-bedrock` (until v0.28.0), and that name still works: it runs `devos-claude` with the same
+arguments. Its folder, settings and LiteLLM tags keep the old name
+([internal names](docs/internal-names.md#devos-claudes-old-name)).
 
 - Models: main/opus = `claude-opus-5-5`, sonnet = `claude-sonnet-5-5`, haiku (background tasks, subagents) =
   `claude-haiku-5-5`. Any chat model of the catalog works too — Bedrock's other providers and the OpenRouter models
-  you enabled ([which work with Claude Code's tools](#models-for-claude-code)): `claude-bedrock --models` lists them
+  you enabled ([which work with Claude Code's tools](#models-for-claude-code)): `devos-claude --models` lists them
   with prices and how each works (`--models all`: also those Settings › Claude Code › Models for Claude Code leaves
   out), and
-  `claude-bedrock --model mistral-large-3` (or a name: `--model "Mistral Large 3"`; an OpenRouter id with or without
+  `devos-claude --model mistral-large-3` (or a name: `--model "Mistral Large 3"`; an OpenRouter id with or without
   `or/`) starts on one. An unknown model is refused before Claude Code starts, naming the choices. For a cheaper
-  session: `CLAUDE_BEDROCK_MODEL=claude-haiku-5-5 claude-bedrock`. Without either, a session starts on Settings ›
+  session: `CLAUDE_BEDROCK_MODEL=claude-haiku-5-5 devos-claude`. Without either, a session starts on Settings ›
   Claude Code › Default model for new sessions (`CODE_DEFAULT_MODEL`; blank: the main model).
 - **`/model` in a session** lists the same models by name, price and how they work, instead of Claude Code's own
   lineup of aliases (`Opus`, `Sonnet`, `Haiku`: with an alias Claude Code picks the model itself, and *Plan* mode on
   Haiku plans on Sonnet) — a `modelPicker` in the wrapper's `--settings` (Claude Code's flag tier; at most 150 rows,
   the default always among them). *s* in the menu switches for this session; *Enter* also saves it in the config
-  folder's settings, but the next `claude-bedrock` starts on `--model`, `CLAUDE_BEDROCK_MODEL` or the default again.
+  folder's settings, but the next `devos-claude` starts on `--model`, `CLAUDE_BEDROCK_MODEL` or the default again.
 - Each launch prints a cost line and a config line (hide both with `CLAUDE_BEDROCK_QUIET=1`):
   `bedrock · claude-opus-5-5 ($4.40 in / $22.00 out per 1M tokens) · spent $X.XX of $200.00 this period`,
   with `· ⚠ 84% of monthly budget used` from the alert threshold (80% by default) on, and
@@ -426,25 +432,25 @@ folder, `~/.claude-bedrock`**, not your `~/.claude` ([why and how](#a-lean-confi
 Your everyday `~/.claude` may hold plugins, hooks, skills, agents and MCP servers. Bedrock takes no Anthropic beta
 headers, and Claude Code's tool search (deferring MCP tools until they are needed) needs one, so on Bedrock the
 definitions of all of them go into **every request**, billed per token. Measured on Haiku with a one-line
-`claude-bedrock -p "Reply with just: ok"`:
+`devos-claude -p "Reply with just: ok"`:
 
 | Claude Code's config | Requests | Input tokens per request | Cost |
 |---|---|---|---|
 | a well-stocked `~/.claude` | 5 | 258K–340K each | $0.094 |
 | the same with `--strict-mcp-config` (MCP: only `bedrock-shared`) | 13 | 5K–63K each, plus two of 353K (hooks) | $0.112: no cheaper, hooks, skills and agents still load |
-| an empty config folder (what `claude-bedrock` uses now) | 1 | 25K | $0.001 |
+| an empty config folder (what `devos-claude` uses now) | 1 | 25K | $0.001 |
 
 The lean folder was about 100× cheaper per prompt. With the full setup one real Opus request cost $1.44, and every
 interactive launch made 4 requests ($0.13) before anything was typed: plugins' own Agent SDK calls. On a flat-rate
 claude.ai plan that is invisible; billed per token it is not. So:
 
-- **Lean by default.** `claude-bedrock` sets `CLAUDE_CONFIG_DIR=~/.claude-bedrock` (created on first use, mode 700):
+- **Lean by default.** `devos-claude` sets `CLAUDE_CONFIG_DIR=~/.claude-bedrock` (created on first use, mode 700):
   Claude Code's own tools, the stack's `bedrock-shared` MCP server, and the working folder's own `.mcp.json`,
   `.claude/settings.json` and `CLAUDE.md` (Claude Code reads those from the folder you start it in, whatever the
   config folder). The launch line says so: `config: lean (~/.claude-bedrock) — your ~/.claude plugins, hooks and MCP
   servers are not loaded; …`. The first launch asks Claude Code's first-run questions (theme, trusting the folder)
   once more. In lean mode a launch makes no model request until you type (Claude Code 2.1.301).
-- **Your full setup anyway:** `CLAUDE_BEDROCK_USE_MY_CONFIG=1 claude-bedrock` uses `~/.claude` (or the
+- **Your full setup anyway:** `CLAUDE_BEDROCK_USE_MY_CONFIG=1 devos-claude` uses `~/.claude` (or the
   `CLAUDE_CONFIG_DIR` you exported for plain `claude`), as before this change, with a ⚠ on the launch line: that
   can cost about 100× more per prompt (an empty `~/.claude` costs nothing extra).
   `CLAUDE_BEDROCK_CONFIG_DIR=/some/folder` picks another lean folder: an absolute path, not `/` or your home folder,
@@ -452,7 +458,7 @@ claude.ai plan that is invisible; billed per token it is not. So:
   commands), or the wrapper stops and says how to fix it. A `CLAUDE_CONFIG_DIR` you exported for plain `claude` is
   not used in lean mode: that is where the plugins live.
 - **Bring things in one by one.** (For the Code page's sandbox: [Bring your setup](#your-claude-code-setup-from-this-computer).)
-  `~/.claude-bedrock` is an ordinary Claude Code config folder, and subcommands manage it: `claude-bedrock mcp add …`, `claude-bedrock plugin install …`. A personal
+  `~/.claude-bedrock` is an ordinary Claude Code config folder, and subcommands manage it: `devos-claude mcp add …`, `devos-claude plugin install …`. A personal
   `~/.claude-bedrock/CLAUDE.md` is read as usual; to reuse yours, `ln -s ~/.claude/CLAUDE.md ~/.claude-bedrock/`
   (or copy it for a Bedrock-only version) — the wrapper says this once, at a terminal, and never copies it, as it may
   hold things you don't want sent to Bedrock. Settings are separate now too: permissions, status line, output style
@@ -460,20 +466,20 @@ claude.ai plan that is invisible; billed per token it is not. So:
   `cp ~/.claude/keybindings.json ~/.claude-bedrock/`; from `settings.json` take only the keys you want
   (`permissions`, `statusLine`, `outputStyle`): a whole copy brings its `hooks` back, and an `env` block in it can
   override the wrapper.
-- **Resume with `claude-bedrock --resume <id>`** (or `claude-bedrock --continue`): sessions are kept in
+- **Resume with `devos-claude --resume <id>`** (or `devos-claude --continue`): sessions are kept in
   `~/.claude-bedrock`, so the `claude --resume <id>` that Claude Code prints at exit does not find them. A new
   interactive session gets its id from the wrapper (`--session-id`), and when it ends the wrapper prints the right
-  line, before the session cost: `resume: claude-bedrock --resume 0b2c3d4e-…` (with the `CLAUDE_BEDROCK_CONFIG_DIR=…`
+  line, before the session cost: `resume: devos-claude --resume 0b2c3d4e-…` (with the `CLAUDE_BEDROCK_CONFIG_DIR=…`
   or `CLAUDE_BEDROCK_USE_MY_CONFIG=1` in front that you started it with). That is the session you started; if you
   moved on with `/clear` (or `/new`, `/reset`) or an in-session `/resume`, the line adds `(after /clear or /resume:
-  claude-bedrock --resume to pick)`. After `--continue` or the picker it names the session it can tell apart, or
-  suggests the picker (`claude-bedrock --resume`) when several sessions wrote in that folder meanwhile. There is no
+  devos-claude --resume to pick)`. After `--continue` or the picker it names the session it can tell apart, or
+  suggests the picker (`devos-claude --resume`) when several sessions wrote in that folder meanwhile. There is no
   such line for `-p`, `--bg`, `--cloud`/`--remote`, subcommands, with `CLAUDE_BEDROCK_QUIET=1`, or when stderr is not
-  a terminal (unless `CLAUDE_BEDROCK_SUMMARY=1`): use `claude-bedrock --resume` (the picker) or `claude-bedrock
+  a terminal (unless `CLAUDE_BEDROCK_SUMMARY=1`): use `devos-claude --resume` (the picker) or `devos-claude
   --continue` then.
 - **Auto mode off, models in full.** Claude Code 2.1.283 and later counts its *auto* mode (a classifier model
   approving actions for you, on your key) as available behind this stack's API address, and may start in it.
-  `claude-bedrock` turns it off in its lean folder's sessions, as the browser terminal and the Code page do unless
+  `devos-claude` turns it off in its lean folder's sessions, as the browser terminal and the Code page do unless
   Settings turn it on there: one `--settings={"disableAutoMode":"disable"}` argument (Claude Code's flag tier, above
   every settings file — nothing of yours is written; a `--settings` of your own replaces it).
   `CLAUDE_BEDROCK_AUTO_MODE=1` leaves auto mode to Claude Code; with `CLAUDE_BEDROCK_USE_MY_CONFIG=1` your own settings
@@ -502,12 +508,12 @@ never chose) turns it on with the workspace `~/devos-ade-workspace` (a second co
 The stack must be running to turn it on. The first `enable` builds the sandbox's image on your computer (a few
 minutes); a later `enable` without `--workspace` keeps the folder it had.
 
-This is the **Terminal** tab of the portal (on a phone: **More → Terminal**, full screen): `claude-bedrock` in a
+This is the **Terminal** tab of the portal (on a phone: **More → Terminal**, full screen): `devos-claude` in a
 tmux session, set up like the one on your computer (same models — `--models`, `--model`, the `/model` menu, read from
 LiteLLM's `/model/info` — the shared MCP server, the cost line and the session cost on exit; plain `claude` there keeps
 Claude Code's own `/model` lineup), but with **its own LiteLLM key**, `claude-code-terminal`, and its own monthly budget
 (`BUDGET_TERMINAL`, $50: Settings → Spending & budgets or `./stack config set BUDGET_TERMINAL`; a Terminal
-meter on Home). Its `claude-bedrock` prints no `resume:` line (`claude-bedrock --resume` without an id is the
+meter on Home). Its `devos-claude` prints no `resume:` line (`devos-claude --resume` without an id is the
 picker), and its session cost is how much the terminal key's spend grew meanwhile, so a Code page session running at
 the same time counts too. `Ctrl-b c` opens a shell window, `Ctrl-b n` switches. Its internet access and *Auto mode in
 the terminal* change under Settings → Claude Code; its other settings are shown there read-only (they change with
@@ -533,7 +539,7 @@ It is a sandbox, not a shell on your computer:
 - Inside the stack its only neighbour is its own gateway (a second, minimal Caddy), which passes just what Claude
   Code needs — LiteLLM's Anthropic API, model list and key info, and the shared MCP server's `/mcp` — and answers
   404 to everything else: LiteLLM's admin UI and API, the Bedrock pass-through, the portal and its login, Open
-  WebUI, the databases. It never holds the master key or the `claude-code` key of `claude-bedrock` on your
+  WebUI, the databases. It never holds the master key or the `claude-code` key of `devos-claude` on your
   computer, and its own key works only for those LiteLLM paths, wherever it is used.
 - Out, it reaches **public internet addresses only** (git clone, npm, pip, Claude Code's web fetch), through an
   egress proxy of its own: the sandbox itself is on internal networks only, and the proxy passes HTTP and HTTPS (and
@@ -562,20 +568,20 @@ It is a sandbox, not a shell on your computer:
   (`TERMINAL_AUTO_MODE`, from the computer running DevOS ADE; the terminal restarts). Then Claude Code decides as
   anywhere else: an interactive `claude` starts in it (`Shift+Tab` leaves it), its reviewer runs on Sonnet 5.5 at
   about $0.13 per 5 minutes in use on the terminal's key. With only the Code page's Auto mode on, `claude` typed in
-  its shells and `claude-bedrock` keep auto mode off (`/usr/local/bin/claude` called directly does not:
+  its shells and `devos-claude` keep auto mode off (`/usr/local/bin/claude` called directly does not:
   [docs/security.md](docs/security.md#auto-mode)).
 - What runs in it can spend its key (within `BUDGET_TERMINAL`), read and write the shared store and knowledge
   bases (so it could plant text that Chat's answers later draw on), and change anything in the workspace — which
   you may open on your computer later: a `.git/hooks` script or `core.fsmonitor`/`core.sshCommand` in
   `.git/config`, `.vscode/tasks.json`, `.envrc`, an npm script or Makefile, or Claude Code's own
-  `.claude/settings.json` hooks and `.mcp.json` run on your computer when your tools (or `claude-bedrock` there)
+  `.claude/settings.json` hooks and `.mcp.json` run on your computer when your tools (or `devos-claude` there)
   open the folder. Treat what the terminal wrote like code from someone else.
 
 `./stack terminal disable` removes the container and turns the Code page off too; the folder, Claude Code's history
 (the `terminal-home` volume, your AI subscriptions' logins with it: [below](#your-ai-subscriptions)) and the key stay
 (delete the key in Admin to revoke it). Every `enable` and `disable`
 restarts the portal and Caddy (open apps reload), and the first `enable`, and `disable`, also LiteLLM and the shared
-MCP server (they join or leave the terminal's gateway network): Chat answers, `claude-bedrock` requests and MCP
+MCP server (they join or leave the terminal's gateway network): Chat answers, `devos-claude` requests and MCP
 sessions in progress drop for a few seconds. Details and what was weighed:
 [docs/security.md](docs/security.md#the-browser-terminal).
 
@@ -602,7 +608,7 @@ sandbox's words here, each line marked `sandbox│`; what you type then reaches 
 code from your browser — and Copilot — whether to keep its login in a file — and it says so first). Add `--chat` for
 Chat's sandbox: its own sign-ins, for your subscriptions as Chat models (`./stack subscriptions login codex --chat`).
 Plain `claude` and
-`claude-bedrock` stay on Bedrock: `claude-sub` is the same, unmodified Claude Code in its own config folder
+`devos-claude` stay on Bedrock: `claude-sub` is the same, unmodified Claude Code in its own config folder
 (`~/.claude-subscription`), started without the stack's `ANTHROPIC_*` variables so it uses your login; only its
 updates stay off (the image pins it). It does **not** get the stack's shared MCP server (Chat's knowledge bases and the
 shared bucket, which that server can write): what it reads would go to Anthropic under your plan's terms —
@@ -834,7 +840,7 @@ Service to define and approve) or `code.<your domain>` ([Remote access](#remote-
   is the one Claude Code wrote (a rename, or its own summary or title when a transcript has one — Claude Code writes
   those only with its non-essential traffic on, which the sandbox turns off), else its first prompt. **Open in the
   terminal** (a session's ⋯, or ⋯ → *Continue this session in the terminal*) ends the page's process for it and types
-  `claude-bedrock --resume <id>` into a new window of the terminal panel; until Claude Code exits there, the page
+  `devos-claude --resume <id>` into a new window of the terminal panel; until Claude Code exits there, the page
   refuses to resume it (two processes would both write the conversation). A session keeps working when you close the tab
   or reload: the page re-attaches and shows what it missed, nothing twice. At most 4 sessions run at once (each Claude
   Code process takes ~220 MB of the sandbox's memory); an idle one stops after 30 minutes and your next prompt resumes
@@ -1006,9 +1012,9 @@ sandbox, so the Code page's sessions (and the terminal) work in it directly, wit
 Every project is in the one sandbox, a folder of this computer too: a session in one can read and change the others.
 Details: [docs/security.md](docs/security.md#folders-of-this-computer).
 
-##### Your Claude Code and claude-bedrock sessions from this computer
+##### Your Claude Code and devos-claude sessions from this computer
 
-The sessions you had in a project folder with Claude Code (`~/.claude`) or `claude-bedrock` (`~/.claude-bedrock`) on
+The sessions you had in a project folder with Claude Code (`~/.claude`) or `devos-claude` (`~/.claude-bedrock`) on
 this computer can be copied into the sandbox and go on there, on any model of the catalog — one way: nothing is ever
 written back to those folders.
 
@@ -1055,7 +1061,7 @@ written back to those folders.
 - **Thinking blocks** of a session that ran elsewhere than Bedrock (Anthropic's API, a Claude subscription) are taken out
   by default (Bedrock may refuse their signatures on resume; the text stays); *Keep them* if you like — a block is
   copied as it was or not at all, so one that holds a possible secret or a path to rewrite is left out.
-- **The copy** keeps the session's id (the same conversation; badged **CC** or **CB** in the project), its subagents'
+- **The copy** keeps the session's id (the same conversation; badged **CC** or **DC** in the project), its subagents'
   transcripts and its large tool results' files (each one line, unless you included the outputs); it opens in Manual
   the first time. Copying again later replaces the copy while it
   is as it was copied; once continued here, a later copy comes in as a new session. A fork of a copy opens in Manual
@@ -1072,7 +1078,7 @@ How it is read: [docs/security.md](docs/security.md#your-coding-tools-sessions-f
 
 ##### Your Claude Code setup from this computer
 
-The sandbox starts lean, as [`claude-bedrock`](#a-lean-config-folder-for-bedrock) does: none of your `~/.claude` is
+The sandbox starts lean, as [`devos-claude`](#a-lean-config-folder-for-bedrock) does: none of your `~/.claude` is
 there. **Bring your setup** copies the items you choose of it — and of `~/.claude-bedrock`, and your Git name and
 email — into the sandbox's own configuration, one way: nothing is ever written back.
 
@@ -1117,7 +1123,7 @@ email — into the sandbox's own configuration, one way: nothing is ever written
   `~/.claude/.bedrock-now-trash/` in the sandbox, never deleted. A copy is refused when what it was checked against
   changed meanwhile (check it again).
 - What may be read is listed in Settings › Claude Code › *What DevOS ADE may read on this computer* (per tool:
-  Claude Code, `claude-bedrock`, Git), where **Take back** undoes it; `./stack sessions config consent --revoke`.
+  Claude Code, `devos-claude`, Git), where **Take back** undoes it; `./stack sessions config consent --revoke`.
 
 How it is read: [docs/security.md](docs/security.md#your-claude-code-setup-from-this-computer).
 
@@ -1155,12 +1161,12 @@ another provider's model a session's *Stop at the budget* goes by what LiteLLM b
 no Claude Code stop mid-turn, the next prompt is refused once the spend logs reach the budget; on a Claude model it
 works as before.
 
-**Settings › Claude Code › Models for Claude Code** picks which models the picker and claude-bedrock's `/model`
+**Settings › Claude Code › Models for Claude Code** picks which models the picker and devos-claude's `/model`
 menu list (`CODE_MODELS`): **All enabled** (the default), **Anthropic only** (Claude, Bedrock's and OpenRouter's), or
 **Pick…** — a checklist in the same groups, with a filter. A list for convenience, not a limit: the terminal's key may
 use every model either way, and *Show all models* in the picker shows the rest. **Default model for new sessions**
 (`CODE_DEFAULT_MODEL`): the model a new Code page session starts on (unless this browser picked another one last) and
-claude-bedrock starts with; blank = the main model (`CLAUDE_MODEL_OPUS`). Both re-render LiteLLM's config (the browser
+devos-claude starts with; blank = the main model (`CLAUDE_MODEL_OPUS`). Both re-render LiteLLM's config (the browser
 terminal learns the list from LiteLLM's `/model/info`), so LiteLLM restarts (about 15 s). In a terminal:
 `./stack config set CODE_MODELS` (it asks: `all`, `anthropic` or a comma list of ids), `./stack config set
 CODE_DEFAULT_MODEL` (a model id, such as `mistral-large-3`).
@@ -1552,7 +1558,7 @@ plugin's install command for you. Details:
 
 #### Costs on the Code page
 
-Every prompt is billed like `claude-bedrock`, on the terminal's key; the page shows the session's cost
+Every prompt is billed like `devos-claude`, on the terminal's key; the page shows the session's cost
 a few seconds after each turn (LiteLLM writes its logs in batches). Two things cost more than they
 look: a **new session** and every **model switch within a session** make the next request write the prompt cache
 for that model again — Claude Code's system prompt, tools and the conversation so far, ~26-30k tokens: about
@@ -1586,7 +1592,7 @@ panel's remotes, the terminal's capture, orphans). `code/test.sh` runs them all,
 ### Claude Code from your phone
 
 SSH into the machine from a phone SSH app (Blink or Termius on iOS, Termius or JuiceSSH on Android), start `tmux new
--A -s claude` and run `claude-bedrock` in it; a dropped connection then loses nothing. Tailscale on both devices makes
+-A -s claude` and run `devos-claude` in it; a dropped connection then loses nothing. Tailscale on both devices makes
 this work from anywhere without open ports. `./stack ssh-info` prints the exact commands for this machine (its
 Tailscale name, the SSH command, apps, mosh). Without SSH, the optional [browser
 terminal](#claude-code-in-the-browser) runs Claude Code in a sandbox from the portal's More menu. Claude
@@ -1597,7 +1603,7 @@ caveats: [docs/phone-claude-code.md](docs/phone-claude-code.md).
 
 ### Shared files and knowledge (MCP)
 
-In `claude-bedrock`, `/mcp` shows the **`bedrock-shared`** server with the tools `list_files`, `read_file`,
+In `devos-claude`, `/mcp` shows the **`bedrock-shared`** server with the tools `list_files`, `read_file`,
 `write_file(path, content, ingest_to=…)`, `list_knowledge_bases` and `search_knowledge`. Example prompt:
 *"write `reports/summary.md` to the shared store and ingest it into knowledge base `Claude Code`"*. The file
 then shows up in the **Files** tab (bucket `shared`) and in Chat as a knowledge base, and `search_knowledge`
@@ -1612,7 +1618,7 @@ on the *LiteLLM API* line of `./stack status` (`LITELLM_PORT`; the walkthrough's
 shows yours).
 
 - **OpenAI-compatible:** base URL `http://127.0.0.1:4000/v1` — `/chat/completions` (streaming too) and `/models`.
-- **Anthropic-compatible:** base URL `http://127.0.0.1:4000` — `/v1/messages` (streaming too), what `claude-bedrock`
+- **Anthropic-compatible:** base URL `http://127.0.0.1:4000` — `/v1/messages` (streaming too), what `devos-claude`
   uses.
 - **A key for each tool:** **Admin › Virtual Keys › + Create New Key**: a name, the models it may use and, under
   *Optional Settings*, its own budget. Admin then shows each tool's spend apart from the apps', and deleting the key
@@ -1652,9 +1658,9 @@ by what you came to do — a list on the left (on a phone, a section picker at t
 |---|---|
 | **Account & security** | portal password, owner email, Admin (LiteLLM) password, session length, signed-in devices, storing prompts |
 | **AWS & models** | the AWS key (with *Check*), region, **Re-check models** |
-| **Spending & budgets** | the budgets of Chat, `claude-bedrock` and the Terminal/Code page (with this period's spend), alert threshold and webhook; *More*: the setup key's budget, daily price updates |
+| **Spending & budgets** | the budgets of Chat, `devos-claude` and the Terminal/Code page (with this period's spend), alert threshold and webhook; *More*: the setup key's budget, daily price updates |
 | **Chat & voice** | Chat's default model, models hidden from its picker, speech-to-text, OpenRouter, Experiential Labs (its key and models); *More*: the title/tag model, OpenRouter's cap and aliases |
-| **Claude Code** | the Code page with *Allow Bypass permissions* and *Auto mode*, the browser terminal (folder, *Sandbox internet access*, *Auto mode in the terminal*), Claude Code's main model, *Models for Claude Code*, the *Default model for new sessions*, *Project folders* ([folders of this computer](#folders-of-this-computer)), *What DevOS ADE may read on this computer* ([your sessions](#your-claude-code-and-claude-bedrock-sessions-from-this-computer) and setup: Take back) and *Bring your setup…* ([your setup](#your-claude-code-setup-from-this-computer)) and *Your AI subscriptions* ([each tool, signed in or not](#your-ai-subscriptions): Sign out, Check again); *More*: its sonnet/haiku slots, the sandbox's internet name lists (only these, never these), its memory and *Tools in the sandbox* (`TERMINAL_AI_TOOLS`) |
+| **Claude Code** | the Code page with *Allow Bypass permissions* and *Auto mode*, the browser terminal (folder, *Sandbox internet access*, *Auto mode in the terminal*), Claude Code's main model, *Models for Claude Code*, the *Default model for new sessions*, *Project folders* ([folders of this computer](#folders-of-this-computer)), *What DevOS ADE may read on this computer* ([your sessions](#your-claude-code-and-devos-claude-sessions-from-this-computer) and setup: Take back) and *Bring your setup…* ([your setup](#your-claude-code-setup-from-this-computer)) and *Your AI subscriptions* ([each tool, signed in or not](#your-ai-subscriptions): Sign out, Check again); *More*: its sonnet/haiku slots, the sandbox's internet name lists (only these, never these), its memory and *Tools in the sandbox* (`TERMINAL_AI_TOOLS`) |
 | **Files & sharing** | the Files (RustFS) key pair and the shared MCP token (**Regenerate**) |
 | **Remote access** | status, allowed Tailscale login, remote admin actions, the Terminal and Code page remotely, previews remotely; *More*: Tailscale and own-domain details |
 | **Updates & backups** | daily release check (when it last checked, and **Check for updates**), automatic updates and their window, nightly backups (window, how many), **Back up now** and the list of backups; *More*: signed releases only, the helper's switches |
@@ -1686,7 +1692,7 @@ reads `.env`: `./stack` writes a masked copy, `.state/status/settings.json`, whe
   automatic; Claude Code's slots take Claude models; setup keeps a pin while that model is enabled and warns
   when it is not), and which models Chat's picker
   leaves out (a tidier picker only: the API and Claude Code can still use them); which models the Code page and
-  `claude-bedrock`'s `/model` list and which one they start on (*Models for Claude Code*, *Default model for new
+  `devos-claude`'s `/model` list and which one they start on (*Models for Claude Code*, *Default model for new
   sessions*: LiteLLM restarts, about 15 s);
 - the four budgets of `claude-code`, `open-webui`, `claude-code-terminal` (the Terminal and the Code page) and
   `setup` (at once, no restart; a warning when one is below this period's spend), the alert threshold (50-99%,
@@ -1773,7 +1779,7 @@ stack costs money. Full price table, worked examples and the update rules: [docs
 cross-checks it with the public AWS Price List; `./stack setup` and `./stack up` check too. Guards keep a bad
 upstream file from making prices vanish or jump; a refused change shows as a warning on Home and in `./stack
 costs`. `./stack prices` checks now, `./stack prices --accept` applies a change the guards refused, and new
-prices reach LiteLLM at the next `./stack up` (until then Home says so and the `claude-bedrock` line says `new
+prices reach LiteLLM at the next `./stack up` (until then Home says so and the `devos-claude` line says `new
 prices pending`). The fallback is `catalog/prices.tsv`; Settings → Spending & budgets (`PRICE_UPDATES`, under
 More settings) turns updates off (`./stack prices` then refuses to run).
 
@@ -1786,7 +1792,7 @@ at once, with no restart, and keeps the reset date. Raising a budget works only 
 running DevOS ADE.
 
 **Alerts.** Each key has a soft budget at **80%** (Settings → Spending & budgets → Alert threshold, 50-99%;
-`BUDGET_ALERT_PCT`): it never blocks, but `./stack costs`, Home and the `claude-bedrock` launch line warn from there
+`BUDGET_ALERT_PCT`): it never blocks, but `./stack costs`, Home and the `devos-claude` launch line warn from there
 on. To also get a message, set **Settings → Spending & budgets → Budget alert webhook** (or `./stack config set
 ALERT_WEBHOOK_URL`) to any URL that accepts a JSON POST (an n8n, Zapier or Make hook, for example). LiteLLM then posts
 its own JSON alert (`soft_budget_crossed`, `budget_crossed`); it is not Slack's message format.
@@ -1797,11 +1803,11 @@ its own JSON alert (`soft_budget_crossed`, `budget_crossed`); it is not Slack's 
   OpenRouter on, an **Actual | Equivalent** switch (see [Optional: OpenRouter](#optional-openrouter)).
 - **Admin** tab → Usage: spend by model and day.
 - **Chat**: the cost under every answer and the chat total; each model's price in the picker.
-- `claude-bedrock`: spend this period at launch, the session's cost at exit.
+- `devos-claude`: spend this period at launch, the session's cost at exit.
 
 A single Claude Code prompt is several requests with a large cached context: a small task on Haiku costs
 about $0.04, a long interactive Opus session can cost dollars. Use Haiku or Sonnet for routine work. Plugins and MCP
-servers multiply this, which is why `claude-bedrock` leaves your `~/.claude` out
+servers multiply this, which is why `devos-claude` leaves your `~/.claude` out
 ([a lean config folder](#a-lean-config-folder-for-bedrock)).
 
 **Why Open WebUI adds tokens.** Open WebUI v0.12 lets the model call its built-in tools (search your knowledge
@@ -2007,7 +2013,7 @@ shown there once.
   refresh fails.
 - **Where they show up:** in LiteLLM as `xl/<id>`; in Chat as `<id> · Experiential Labs`, tagged *Experiential Labs*
   and the vendor, and as a group of Chat's **Who answers** menu (while there is no key, as for OpenRouter, a choice that
-  says so and takes you to Settings › Chat & voice › Experiential Labs key); on the Code page and in `claude-bedrock` as the *Experiential Labs* group (tool use as the details say: a
+  says so and takes you to Settings › Chat & voice › Experiential Labs key); on the Code page and in `devos-claude` as the *Experiential Labs* group (tool use as the details say: a
   model whose details say no tools is *chat only*; one whose details do not say, or fail safe, *not tested*); on Home
   as rows of the model table.
 - **What it costs.** The gateway reports what each call cost (`usage.cost`, USD), and that is what LiteLLM books —
@@ -2116,7 +2122,7 @@ troubleshooting: [docs/voice.md](docs/voice.md).
 - **Remote access, only if you turn it on:** the Tailscale container talks to Tailscale's coordination servers; in
   own-domain mode Caddy asks Let's Encrypt for certificates through Cloudflare's DNS API.
 - **Nothing else.** Open WebUI runs in offline mode with telemetry, web search and community sharing off;
-  `claude-bedrock` turns off Claude Code's non-essential traffic; LiteLLM stores no prompt or response text.
+  `devos-claude` turns off Claude Code's non-essential traffic; LiteLLM stores no prompt or response text.
   `./stack setup`, `./stack update` and image pulls contact GitHub, the image registries and, to build DevOS ADE's
   own images, the package indexes (PyPI, Alpine, Debian, npm) only when you run them.
 
@@ -2143,14 +2149,14 @@ troubleshooting: [docs/voice.md](docs/voice.md).
 | `./stack remote status\|enable tailscale\|enable domain HOST\|disable\|test` | Optional: the portal from your phone/laptop over HTTPS through Tailscale ([docs/remote.md](docs/remote.md)) | none |
 | `./stack rotate-aws [--use-keys \| --use-instance-role]` | Replace the AWS key (verified first), then test; the flags switch between an EC2 IAM role and a key | ~$0.0001 |
 | `./stack serve [--background \| --stop]` | Start the stack and keep the Mac (or a Linux laptop) awake until Ctrl-C (prints the URLs; `--background`: macOS only) | none |
-| `./stack ssh-info` | How to run `claude-bedrock` from your phone over SSH | none |
+| `./stack ssh-info` | How to run `devos-claude` from your phone over SSH | none |
 | `./stack openrouter …` | Optional OpenRouter: `status`, `set`, `apply` (the key pasted into `.env`), `remove`, `refresh`, `list`, `models` | none |
 | `./stack stt …` | Speech-to-text for the microphone and voice calls: `status`, `set bedrock [small\|mini]`, `set openai\|groq [model]`, `remove` ([docs/voice.md](docs/voice.md)) | none |
 | `./stack terminal status\|enable [--workspace DIR]\|disable` | Claude Code in the browser, a sandbox that sees one folder; on by default with the Code page ([above](#claude-code-in-the-browser)) | none (its sessions: per token) |
 | `./stack code status\|enable [--workspace DIR]\|disable` | The Code tab, Claude Code with a chat, permission prompts and your files, in the terminal's sandbox; on by default, `disable` keeps it off ([above](#the-code-page)) | none (its sessions: per token) |
 | `./stack project add DIR [--read-only] [--hide-path] [--name N]\|remove N\|mode N ro\|rw\|list` | A folder of this computer as a Code page project, mounted into the sandbox (it restarts; [above](#folders-of-this-computer)) | none |
 | `./stack subscriptions [status\|login TOOL\|logout TOOL] [--chat]` | Your AI subscriptions' own tools in the sandbox (Claude Code on your plan, Codex, Gemini CLI, Copilot, Cursor, Grok): whether each is signed in, its own sign-in with its words shown here as plain text (Gemini CLI: in the Terminal tab), its own sign-out ([above](#your-ai-subscriptions)); `--chat`: the same in Chat's sandbox, whose sign-ins are its own | none (each plan's own limits) |
-| `./stack sessions [list\|import --project N\|scan\|fetch\|consent\|suggest]` | Your Claude Code and `claude-bedrock` sessions of a project folder copied into the sandbox, after you allowed it here (secrets redacted by default; nothing written back; [above](#your-claude-code-and-claude-bedrock-sessions-from-this-computer)) | none (a resume: per token) |
+| `./stack sessions [list\|import --project N\|scan\|fetch\|consent\|suggest]` | Your Claude Code and `devos-claude` sessions of a project folder copied into the sandbox, after you allowed it here (secrets redacted by default; nothing written back; [above](#your-claude-code-and-devos-claude-sessions-from-this-computer)) | none (a resume: per token) |
 | `./stack sessions config [list\|import\|scan\|open\|consent]` | Bring your setup: items of your Claude Code setup (`CLAUDE.md`, skills, agents, commands, MCP servers, plugins, four settings) and your Git name and email copied into the sandbox, after you allowed it here (never env or logins; nothing written back; [above](#your-claude-code-setup-from-this-computer)) | none (what you bring: tokens in every request) |
 | `./stack git-host import gh\|glab [--host HOST]` | A login of the GitHub CLI or the GitLab CLI on this computer as a Git host of the Code page ([above](#remote-repositories-git-hosts-clone-push-and-pull)): the token goes to the code container on stdin (never a command line, a file or the browser); what it reaches is shown and confirmed first. glab: a personal access token only (an OAuth login of glab's is refused) | none |
 | `./stack password [--show]` | Where the portal password is (`PORTAL_PASSWORD` in this folder's `.env`); `--show` prints it, only to a terminal | none |
@@ -2182,7 +2188,7 @@ old name, and why: [docs/internal-names.md](docs/internal-names.md).
 When a newer release is out, Home shows an **update card**: one line for **every release since yours** (an update
 installs the newest, so a jump from v0.4.1 to v0.9.0 lists v0.5.0 to v0.9.0, each with its headline) and their
 release notes (the newest open), what the update will do (backup, roughly how much it downloads, a few minutes of
-downtime) and the command to copy; `./stack status` and the `claude-bedrock` launch line mention it too (they read
+downtime) and the command to copy; `./stack status` and the `devos-claude` launch line mention it too (they read
 the portal's last check, not with `UPDATE_CHECK=false`; no network of their own). The portal checks once a day, and
 again when you open Home and its last check is more than 3 hours old (at most every 15 minutes); the card and the
 version label say when it last checked. Settings → Updates & backups (`UPDATE_CHECK=false`) turns the check off.
@@ -2216,10 +2222,10 @@ pre-update backup (taking a backup of the current state first) and starts the pr
 disk. It also works when the update failed half-way. The failure message also shows the manual way
 (`git … && ./stack restore <backup>`).
 
-**What an update or a rollback ends:** besides a few minutes of downtime (answers in Chat, `claude-bedrock`
+**What an update or a rollback ends:** besides a few minutes of downtime (answers in Chat, `devos-claude`
 requests and MCP sessions in progress fail; start them again), both recreate the **browser terminal's** container
 when it is on: its tmux windows close and whatever runs in them ends, Claude Code too (its conversations are kept:
-`claude-bedrock --resume` there picks one up again). **Code page** sessions come back by themselves from their
+`devos-claude --resume` there picks one up again). **Code page** sessions come back by themselves from their
 transcripts, but a turn still running then stops (send it again); processes you started in the terminal do not come
 back. Home's Update and Roll back say this before you confirm, and that a Code page turn is running when one is.
 
@@ -2285,7 +2291,7 @@ database, LiteLLM) or your local network; `off` stays off. The update's *What's 
 back: Settings › Claude Code › Sandbox internet access › **+ this computer** (or `./stack config set
 TERMINAL_EGRESS`, then `host`; from the computer running DevOS ADE). The terminal's container is recreated on its
 new networks, as at every update (its tmux session ends: above), and the proxy's small image is built. Also new:
-the Code page's model picker and `claude-bedrock`'s `/model` menu list every enabled chat model
+the Code page's model picker and `devos-claude`'s `/model` menu list every enabled chat model
 ([Models for Claude Code](#models-for-claude-code); Settings › Claude Code › Models for Claude Code › *Anthropic
 only* lists Claude's alone). `./stack rollback` of that update removes the proxy, puts `internet` and `host` back
 to blank (that version's *on*; `off` stays) and says that the sandbox then reaches the internet directly again,
@@ -2305,7 +2311,7 @@ sandbox; a switch you turned off since stays off), and the next update turns the
 twice (no network, a full disk), setup and updates stop trying: `./stack code enable` once that is fixed.
 
 **Updating from v0.4.x** (to v0.5.0 or later) is an ordinary update: the four steps above, a few minutes of
-downtime (Chat answers, `claude-bedrock` requests and MCP sessions in progress then fail; start them again), and
+downtime (Chat answers, `devos-claude` requests and MCP sessions in progress then fail; start them again), and
 setup runs without questions. What changes for you:
 
 - **New parts stay off** (until an update to v0.10.0 or later, which turns the Code page on: above): the Code
@@ -2313,8 +2319,8 @@ setup runs without questions. What changes for you:
   *Bypass permissions* modes and auto mode in the terminal (Settings → Claude
   Code), and previews of dev servers over remote access (`REMOTE_PREVIEW`). Nothing you did not turn on starts.
 - **The browser terminal, if it is on,** gets a new image: its container is recreated, so its tmux session ends
-  (as at every update; Claude Code's history stays: `claude-bedrock --resume` there). Claude Code's *auto* mode is
-  now off there (and for `claude-bedrock` on your computer: `CLAUDE_BEDROCK_AUTO_MODE=1` leaves it to Claude Code;
+  (as at every update; Claude Code's history stays: `devos-claude --resume` there). Claude Code's *auto* mode is
+  now off there (and for `devos-claude` on your computer: `CLAUDE_BEDROCK_AUTO_MODE=1` leaves it to Claude Code;
   [why](#a-lean-config-folder-for-bedrock)).
 - **Remote access with the terminal shared** (`REMOTE_TERMINAL=true`, Tailscale): turning the Code page on adds one
   more Tailscale Service (`<name>-code`), and remote previews another (`<name>-preview`); `./stack up` names each
@@ -2344,11 +2350,11 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
 | Forgot the portal password | It is `PORTAL_PASSWORD` in `.env`: `./stack password` says which file (the login page names it too, with the Compose project, so a second copy is not mixed up), `./stack password --show` prints it. After five wrong tries the login waits a few seconds (up to five minutes). |
 | The old Open WebUI address (`127.0.0.1:8080`/`8082`) stopped working after an update | By design: browsers reach every app through the portal now. Open the URL from `./stack status`. |
 | A setting changed in Open WebUI's admin UI reverts after a restart | By design (`ENABLE_PERSISTENT_CONFIG=false`): `.env` and setup own the configuration. |
-| `claude-bedrock` ignores the stack, or uses the wrong model or key | An `env` block in Claude Code's user settings (`~/.claude-bedrock/settings.json`; `~/.claude/settings.json` with `CLAUDE_BEDROCK_USE_MY_CONFIG=1`) or the folder's `.claude/settings.json` (e.g. `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`) overrides the wrapper. Remove those keys. |
-| Your plugins, MCP servers, `CLAUDE.md` or keybindings are missing in `claude-bedrock` | By design: it uses its own config folder, `~/.claude-bedrock`. Add what you need there (`claude-bedrock mcp add …`, `claude-bedrock plugin install …`, a `CLAUDE.md`), or run with `CLAUDE_BEDROCK_USE_MY_CONFIG=1` ([a lean config folder](#a-lean-config-folder-for-bedrock)). |
-| `claude --resume <id>` finds no conversation after `claude-bedrock` | Its sessions are kept in `~/.claude-bedrock`: `claude-bedrock --resume <id>`. |
-| `claude-bedrock --debug mcp list` fails | Options placed *before* a subcommand trip the wrapper's MCP flag. Use `claude-bedrock mcp list --debug`, or plain `claude` for management commands. |
-| "LiteLLM is not running" from `claude-bedrock` | `./stack up` |
+| `devos-claude` ignores the stack, or uses the wrong model or key | An `env` block in Claude Code's user settings (`~/.claude-bedrock/settings.json`; `~/.claude/settings.json` with `CLAUDE_BEDROCK_USE_MY_CONFIG=1`) or the folder's `.claude/settings.json` (e.g. `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`) overrides the wrapper. Remove those keys. |
+| Your plugins, MCP servers, `CLAUDE.md` or keybindings are missing in `devos-claude` | By design: it uses its own config folder, `~/.claude-bedrock`. Add what you need there (`devos-claude mcp add …`, `devos-claude plugin install …`, a `CLAUDE.md`), or run with `CLAUDE_BEDROCK_USE_MY_CONFIG=1` ([a lean config folder](#a-lean-config-folder-for-bedrock)). |
+| `claude --resume <id>` finds no conversation after `devos-claude` | Its sessions are kept in `~/.claude-bedrock`: `devos-claude --resume <id>`. |
+| `devos-claude --debug mcp list` fails | Options placed *before* a subcommand trip the wrapper's MCP flag. Use `devos-claude mcp list --debug`, or plain `claude` for management commands. |
+| "LiteLLM is not running" from `devos-claude` | `./stack up` |
 | Requests fail for about a minute during `./stack setup` | LiteLLM restarts while setup probes the models. Wait, or avoid running setup mid-session. |
 | "project '…' is already used by the DevOS ADE install in …" | Another folder owns this project name. If this folder replaces it (moved or copied with its `.env`), run `./stack down` there, move that folder aside or delete it (it holds its own `backups/` and `.env`), and re-run here. Otherwise use that install, or remove it with `./stack uninstall` there. A checkout that was never set up can take another name: `COMPOSE_PROJECT_NAME=<other name> ./setup.sh`. See [docs/advanced.md](docs/advanced.md#running-a-second-copy). |
 | "… containers started from …, a folder that no longer exists" | Remove them with `docker compose -p <project> down` (the data volumes are kept), then re-run. |
@@ -2360,7 +2366,7 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
 | Settings shows everything but nothing can be changed | Changes need the update helper: `./stack helper install` (or use `./stack config set KEY` in a terminal). From a remote device they also need `REMOTE_ADMIN_ACTIONS=true`. |
 | The Code page's **Start** or **Run** says "the terminal's tmux has hooks … or loader variables … set" | Something in the sandbox (or your tmux settings) changed the terminal's tmux, so a new window might not run what you saw. Run the command in the terminal yourself, remove them (`tmux set-hook -gu …`, `tmux set-environment -gu …`), or restart the terminal (`./stack terminal disable`, then `enable`; that ends its tmux session). |
 | A remote address of the terminal, the Code page or its previews does not answer | Each is a Tailscale Service of its own: define it in the admin console and approve it (`./stack remote status` lists the Services; [docs/remote.md](docs/remote.md)). |
-| On the Code page or in `claude-bedrock`, a model answers but never reads, edits or runs anything (or writes its tool calls out as text) | It is marked **chat only** (Llama 3.3 70B; OpenRouter models whose listing names no tool use): it cannot use Claude Code's tools. Pick a Claude model or one marked **works** — in the picker, with `/model`, or `claude-bedrock --model` (`claude-bedrock --models` says how each works); a **not tested** one may do the same ([Models for Claude Code](#models-for-claude-code)). |
+| On the Code page or in `devos-claude`, a model answers but never reads, edits or runs anything (or writes its tool calls out as text) | It is marked **chat only** (Llama 3.3 70B; OpenRouter models whose listing names no tool use): it cannot use Claude Code's tools. Pick a Claude model or one marked **works** — in the picker, with `/model`, or `devos-claude --model` (`devos-claude --models` says how each works); a **not tested** one may do the same ([Models for Claude Code](#models-for-claude-code)). |
 | In the sandbox, a download, `npm install` or `git clone` fails with 403 from the proxy (curl: `CONNECT tunnel failed, response 403`) | The egress proxy refused it: `./stack logs terminal-egress` says why. A name left out by `TERMINAL_EGRESS_ALLOW` or listed in `TERMINAL_EGRESS_DENY`: change the list in `.env`, then `./stack up`; a port other than 80, 443 and 22: `TERMINAL_EGRESS_ALLOW=*,name:PORT`. Something on this computer or your network (a dev server or registry on your Mac, a git server on your LAN) is never reached through the proxy: Settings › Claude Code › Sandbox internet access › **+ this computer** (`host`, from this computer only; [what it opens](#claude-code-in-the-browser)). |
 | Ctrl/⌘+K opens Chat's search or the Code page's command palette, not the portal's Search (or Ctrl/⌘+\\ does not fold the sidebar) | While the focus is inside an app's tab, the key goes to that app (Chat and the Code page have a Ctrl/⌘+K of their own). Click the search box at the top of the sidebar (on a phone **More → Search**) or the button above it, or click the sidebar first. |
 | Search finds no sections of the README or `docs/` ("this portal's image has no index of them") | The portal was built without that index: by an earlier release with a Docker Compose that does not read `build.additional_contexts`, or by a plain `docker build`. This version needs Docker Compose 2.24.4 or newer (`docker compose version` shows yours; `./stack setup` and `./stack update` stop on an older one and say so): update it, then `./stack setup` rebuilds the portal with the index. Meanwhile the docs are on GitHub. |
@@ -2406,13 +2412,13 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
   install's), runs setup non-interactively, drives every page in a pinned Playwright Chromium container (login, Home,
   Chat with a streamed answer and a file question, voice calls and speech-to-text, Admin, the RustFS console's
   upload/download/delete, phone and tablet layouts, sign-out), checks every portal route, header and CSRF rule, runs
-  the safe `./stack` commands (backup/restore, down/up, update, rollback) and `claude-bedrock -p`, then removes
+  the safe `./stack` commands (backup/restore, down/up, update, rollback) and `devos-claude -p`, then removes
   everything it created. About 15-25 minutes and up to about 20 cents of Bedrock, most of it the Code page's Haiku
   turns (capped by small budgets; the total is printed; with `--no-code` about half a cent); results as a table and
   JUnit XML in `tests/e2e/out/`. As on a new install, the Code page and the browser terminal are on (setup turns them
   on, in a folder next to the throwaway): the terminal is checked (lock, unlock, tmux, Origin, isolation and its
   egress proxy's refusals, `make`, Claude Code's web fetch; with the
-  claude part one `claude-bedrock -p` inside it, ~$0.02), and the Code page (unlock, CSP, a Haiku
+  claude part one `devos-claude -p` inside it, ~$0.02), and the Code page (unlock, CSP, a Haiku
   session: streaming, permission allow/deny and the badge, model switch, interrupt, a slash command, re-attach and
   resume, files, spend; then the page itself as a person uses it — a Bash prompt allowed in its card, an @-mentioned
   file edited and its diff, the palette, an upload, a reload without duplicates, an AskUserQuestion answered, plugins
@@ -2500,7 +2506,7 @@ Details: [docs/security.md](docs/security.md).
 
 ```
 stack, setup.sh, install.sh   the CLI, setup and the one-line installer
-bin/claude-bedrock            Claude Code wrapper
+bin/devos-claude            Claude Code wrapper
 bin/bedrock-now-helper        the update helper: one-click and automatic updates (./stack helper)
 compose.yaml                  all services (images pinned)
 compose.tailscale.yaml        remote access: the Tailscale sidecar (only while ./stack remote is on)
