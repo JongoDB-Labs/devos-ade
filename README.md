@@ -2008,10 +2008,11 @@ shown there once.
   as rows of the model table.
 - **What it costs.** The gateway reports what each call cost (`usage.cost`, USD), and that is what LiteLLM books —
   spend per key, budgets, Home, `./stack costs` and the cost line under each answer in Chat — not a figure computed
-  from token prices. A call on **your own provider key** (`usage.is_byok`) is billed by that provider: it counts $0 here,
-  and Chat's line under such an answer says *on your own provider key* (a streamed answer loses that flag on its way
-  through LiteLLM, so a $0 one reads *on your own provider key or a free tier*); the Code page's cost tooltip counts such
-  requests. The gateway's list prices are only used for a reply that carries no cost. A model that costs nothing is
+  from token prices. A call on **your own provider key** (`usage.is_byok`) is billed by that provider: the gateway
+  reports it at $0 and it counts $0 here. Chat's line under such an answer says *on your own provider key*; a streamed
+  answer loses that flag on its way through LiteLLM, so a $0 one reads *on your own provider key or a free tier*. The
+  Code page cannot tell such a request from a free one: Claude Code always streams, so it shows as $0 without the
+  reason. The gateway's list prices are only used for a reply that carries no cost. A model that costs nothing is
   never shown as dollars spent.
 - **The key** stays in `.env` (mode 600) and reaches only LiteLLM (`os.environ/EXPLABS_API_KEY`) and
   `api.experientiallabs.ai` (on curl's stdin, never on a command line or in a URL). Settings and `./stack config` never

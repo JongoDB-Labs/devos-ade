@@ -51,7 +51,9 @@ export function sessionCost(rows: SpendRow[]): number {
   return rows.reduce((s, r) => s + r.spend, 0);
 }
 
-/** How many of the rows ran on your own provider key through Experiential Labs (billed by that provider, $0 here). */
+/** How many of the rows ran on your own provider key through Experiential Labs (billed by that provider, $0 here). Only
+ *  a non-streamed request's row can say so: LiteLLM drops usage.is_byok from a stream, and Claude Code always streams,
+ *  so its own requests on such a key show as $0 without the reason (README › Optional: Experiential Labs). */
 export function byokCount(rows: SpendRow[] | null): number {
   return (rows ?? []).filter((r) => r.byok === true).length;
 }

@@ -21,7 +21,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   always sent (as `max_tokens` when a model names no field). Without the details (the list could not be read) no
   sampling, penalty or logprob parameter is sent, tools and the cap still are, and `./stack status` says so. **Costs are what the gateway
   reported** for each call (`usage.cost`), in spend, budgets, Home and Chat's cost line; a call on your own provider key
-  (`usage.is_byok`) counts $0 here and Chat's line says *on your own provider key*. README › *Optional: Experiential
+  (`usage.is_byok`) counts $0 here and Chat's line says *on your own provider key* (streamed: *on your own provider key
+  or a free tier*, as LiteLLM drops the flag from a stream). README › *Optional: Experiential
   Labs*; docs/security.md › *Experiential Labs*; an opt-in check of one real completion: `tests/e2e/explabs.sh`.
 
 ### Removed
