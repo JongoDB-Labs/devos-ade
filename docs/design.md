@@ -159,4 +159,10 @@ character cells once, when it opens. A web font that arrived later would draw te
 
 ## Chat (Open WebUI)
 
-Chat is Open WebUI, a third-party app. It is restyled only through its own supported settings, never forked.
+Chat is Open WebUI, a third-party app, and it is never forked. Open WebUI 0.12.0 has no accent or font setting.
+
+- Its themes (System, Light, Dark, OLED and Her) are each person's choice in its own Settings. Its default, System,
+  already follows light and dark like the rest of ADE.
+- Its only styling hook is `/static/custom.css`, which is empty by default. The stack does not fill it, so Chat keeps
+  Open WebUI's own look.
+- The portal's frame around Chat is ADE's: the "who answers" bar and the voice tip.
