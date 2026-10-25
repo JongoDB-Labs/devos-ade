@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-10-25
+
 ### Added
 
 - **Greyed out means "set it up here".** Everything greyed because of a setting or a sign-in now says where it is
@@ -28,6 +30,14 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ### Fixed
 
+- **Your subscriptions are Chat models whatever the terminal's way out is.** With *Sandbox internet access* on the
+  direct way (`TERMINAL_EGRESS=host`) they were greyed in Chat ("off while the sandbox reaches the internet
+  directly"). Chat's sandbox now goes out through an egress proxy of its own then — the terminal proxy's image and
+  rules, public addresses only, never this computer's services or your network (`compose.code-egress.yaml`; `./stack
+  test` checks it) — and the terminal's own way out is not changed. With no internet (`off`) they are greyed, saying
+  why. Leaving the direct way removes Chat's proxy before anything starts again (`./stack up`, the terminal's and the
+  Code page's setup, update and enable, `./stack project apply` and `add`, `./stack restore`), even when that start
+  fails.
 - **The Code page's terminal address, typed or from a bookmark** (`code.<host>/.bn/terminal`): it opens the terminal
   like the Code page's own *Open the terminal in a new tab*, instead of a blank page saying "open the terminal from
   the Code page". Only a navigation you start does (`Sec-Fetch-Site: none` with a user's navigation). A link opened
@@ -88,14 +98,6 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   agent's every edit ask in Accept edits (nor the watchlist say it could not check everything): UTF-8 text in a value
   is plain. A control character, a line separator or a direction override in a value still is not, and keys, section
   and subsection names stay ASCII.
-- **Your subscriptions are Chat models whatever the terminal's way out is.** With *Sandbox internet access* on the
-  direct way (`TERMINAL_EGRESS=host`) they were greyed in Chat ("off while the sandbox reaches the internet
-  directly"). Chat's sandbox now goes out through an egress proxy of its own then — the terminal proxy's image and
-  rules, public addresses only, never this computer's services or your network (`compose.code-egress.yaml`; `./stack
-  test` checks it) — and the terminal's own way out is not changed. With no internet (`off`) they are greyed, saying
-  why. Leaving the direct way removes Chat's proxy before anything starts again (`./stack up`, the terminal's and the
-  Code page's setup, update and enable, `./stack project apply` and `add`, `./stack restore`), even when that start
-  fails.
 
 ### Changed
 
@@ -2611,7 +2613,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.25.2...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.26.0...HEAD
+[0.26.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.25.2...v0.26.0
 [0.25.2]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.25.1...v0.25.2
 [0.25.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.24.0...v0.25.0
