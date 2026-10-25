@@ -407,21 +407,42 @@ terminal_proxy_rm() {
 # recreates a container only when those changed), then the networks no longer used go. The terminal's shells and the
 # Code page's sessions end with its container.
 terminal_egress_apply() {
+  local chat=0
   # (the proxies no longer wanted go first, whatever comes after — the terminal not ready included: should an up below
   # fail, or none run, Chat's sandbox and the terminal are left with no way out, never with the one they had)
   [ "$(terminal_egress_mode)" = internet ] || terminal_proxy_rm
   chat_proxy_leave
   terminal_ready || return 0
+  # (Docker has few address ranges for networks — "all predefined address pools have been fully subnetted" — so a change
+  # never needs more of them at once than its result does: what no longer is used goes before what is new is made.
+  # Chat's sandbox goes now, to come back below on its new way out; until then it held its old networks.)
+  if code_ready 2>/dev/null; then
+    chat=1
+    dc rm -sf subs-chat >/dev/null 2>&1 || true
+    chat_proxy_leave
+  fi
   if [ "$(terminal_egress_mode)" = internet ]; then
     run_phase "Terminal: its egress proxy" terminal-egress _terminal_egress_build_up || return 1
   fi
   run_phase "Terminal (its way to the internet)" terminal dc up -d --no-deps --wait terminal || return 1
+  terminal_networks_unused_rm
   # Chat's sandbox on its new way out too (with host: its own proxy, built when needed; otherwise the terminal's, or none)
-  if code_ready 2>/dev/null; then
+  if [ "$chat" = 1 ]; then
     if [ "$(terminal_egress_mode)" = host ]; then building "Chat's egress proxy's image" dc build -q chat-egress || return 1; fi
     run_phase "Chat's sandbox (its way to the internet)" subs-chat dc up -d --wait subs-chat || return 1
   fi
   terminal_after_up
+}
+
+# terminal_networks_unused_rm — once the terminal is on its new networks: the one of its way out it no longer uses
+# (internet: terminal-out; host: terminal-proxy; off: both). Never fatal.
+terminal_networks_unused_rm() {
+  local p; p="$(project_name)"
+  case "$(terminal_egress_mode)" in
+    internet) docker network rm "${p}_terminal-out" >/dev/null 2>&1 || true ;;
+    host) docker network rm "${p}_terminal-proxy" >/dev/null 2>&1 || true ;;
+    *) docker network rm "${p}_terminal-proxy" "${p}_terminal-out" >/dev/null 2>&1 || true ;;
+  esac
 }
 
 # terminal_remote_sync — REMOTE_TERMINAL_HOST in .env: the terminal's remote name while the terminal is on,

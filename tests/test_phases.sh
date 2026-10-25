@@ -45,6 +45,16 @@ test_run_phase_failure_shows_tail_logs_and_hint() {
   assert_contains "$out" "BEDROCK_NOW_VERBOSE=1"
 }
 
+# Docker out of address ranges for a new network: said as it is (how to free some), not as a service that failed
+test_run_phase_says_when_docker_has_no_network_range_left() {
+  _pools() { echo " Network p_chat-proxy  Error"; echo "failed to create network p_chat-proxy: Error response from daemon: all predefined address pools have been fully subnetted"; return 1; }
+  dc() { case "$*" in ps*) printf 'subs-chat\trunning\thealthy\n' ;; esac; }
+  if out="$( (run_phase "Chat's sandbox" subs-chat _pools) 2>&1)"; then echo "should fail" >&2; return 1; fi
+  assert_contains "$out" "Chat's sandbox did not come up: Docker has no address range left for another network (docker network ls lists them;"
+  assert_contains "$out" "docker network rm NAME"
+  assert_not_contains "$out" "full logs: ./stack logs"
+}
+
 test_run_phase_failure_logs_only_unhealthy_services() {
   _fail() { return 1; }
   dc() {

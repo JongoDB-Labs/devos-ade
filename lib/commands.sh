@@ -176,7 +176,7 @@ _failed_services() {
 # "==> LABEL ready (16s)". On failure: the last 30 output lines, the last 30 log lines of each failed
 # service, and the ./stack logs hint; then dies. CMD's fd 8 is the phase's own stderr (building, below).
 run_phase() {
-  local label="$1" svcs="$2" start rc=0 out s failed first _PHASE_TICK=''
+  local label="$1" svcs="$2" start rc=0 out s failed first pools='' _PHASE_TICK=''
   shift 2
   start="$(_now)"
   [ -t 2 ] || _PHASE_TICK=1   # (no terminal to show "starting…" on: an image build says it is still at work)
@@ -199,6 +199,7 @@ run_phase() {
   if [ -n "${out:-}" ]; then
     printf '  --- last 30 lines of output ---\n' >&2; tail -n 30 "$out" | sed 's/^/    /' >&2
     ! declare -F projects_mount_hint >/dev/null || projects_mount_hint "$out"   # lib/projects.sh: a project folder Docker could not mount
+    ! grep -q 'address pools have been fully subnetted' "$out" 2>/dev/null || pools=1
     rm -f "$out"
   fi
   # shellcheck disable=SC2086  # word-split the service list on purpose
@@ -208,6 +209,9 @@ run_phase() {
     dc logs --no-color --tail 30 "$s" 2>&1 | sed 's/^/    /' >&2 || true
   done
   first="${failed%% *}"
+  # (Docker out of address ranges for a new network: said as it is, not as a service's failure)
+  [ -z "$pools" ] || die "$label did not come up: Docker has no address range left for another network (docker network ls lists them;" \
+    "the networks of stacks you no longer run can go with docker network rm NAME, or Docker's default-address-pools setting gives it more)"
   die "$label did not come up — full logs: ./stack logs ${first:-<service>}   (BEDROCK_NOW_VERBOSE=1 ./stack setup shows all compose output)"
 }
 

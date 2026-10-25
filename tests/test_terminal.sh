@@ -403,12 +403,14 @@ dc up -d --no-deps --wait terminal"
   assert_not_contains "$(cat "$TMP/dc")" "terminal-egress"
   code_ready() { return 0; }
   : > "$TMP/dc"; terminal_egress_apply || return 1
-  assert_eq "$(cat "$TMP/dc")" "dc up -d --no-deps --wait terminal
+  assert_eq "$(cat "$TMP/dc")" "dc rm -sf subs-chat
+dc up -d --no-deps --wait terminal
 dc build -q chat-egress
 dc up -d --wait subs-chat"
   # off: Chat's sandbox on no network (no proxy built), and Chat's proxy gone
   set_env TERMINAL_EGRESS off; : > "$TMP/dc"; : > "$TMP/docker"; terminal_egress_apply || return 1
-  assert_eq "$(cat "$TMP/dc")" "dc up -d --no-deps --wait terminal
+  assert_eq "$(cat "$TMP/dc")" "dc rm -sf subs-chat
+dc up -d --no-deps --wait terminal
 dc up -d --wait subs-chat"
   assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_chat-proxy bedrock-now_chat-out"
   # leaving host (the Code page on): Chat's own proxy goes before anything comes up — an up that fails leaves Chat's
@@ -437,6 +439,33 @@ dc up -d --wait subs-chat"
   set_env TERMINAL_ENABLED false; : > "$TMP/dc"
   terminal_egress_apply || return 1
   assert_eq "$(cat "$TMP/dc")" ""
+}
+
+# Docker has few address ranges for networks: an egress change frees what its way out no longer uses before it makes
+# what is new — Chat's sandbox (holding its old networks) removed first, the terminal's unused network after the
+# terminal is on its new ones, Chat's proxy's networks before the terminal's proxy comes — never needing more at once
+# than its result does
+test_an_egress_change_frees_networks_before_it_makes_new_ones() {
+  _stubs
+  terminal_enable > /dev/null 2>&1 || return 1
+  set_env CODE_ENABLED true
+  code_ready() { return 0; }
+  dc() { echo "dc $*" >> "$TMP/order"; return 0; }
+  docker() { echo "docker $*" >> "$TMP/order"; return 0; }
+  at() { grep -n -F -- "$1" "$TMP/order" | head -n 1 | cut -d: -f1; }
+  # internet → host: subs-chat gone, the terminal on terminal-out, terminal-proxy gone, then Chat's own proxy's networks
+  set_env TERMINAL_EGRESS host; : > "$TMP/order"; terminal_egress_apply || return 1
+  [ "$(at "dc rm -sf subs-chat")" -lt "$(at "dc up -d --no-deps --wait terminal")" ] || { cat "$TMP/order" >&2; return 1; }
+  [ "$(at "dc up -d --no-deps --wait terminal")" -lt "$(at "docker network rm bedrock-now_terminal-proxy")" ] || { cat "$TMP/order" >&2; return 1; }
+  [ "$(at "docker network rm bedrock-now_terminal-proxy")" -lt "$(at "dc up -d --wait subs-chat")" ] || { cat "$TMP/order" >&2; return 1; }
+  # host → internet: subs-chat gone, Chat's proxy's networks gone, then the terminal's proxy (its network) comes
+  set_env TERMINAL_EGRESS internet; : > "$TMP/order"; terminal_egress_apply || return 1
+  # (Chat's proxy's networks go once nothing holds them: after subs-chat is removed, before the terminal's proxy comes)
+  local a c; a="$(at "dc rm -sf subs-chat")"; c="$(at "dc up -d --wait --no-deps terminal-egress")"
+  grep -n -F "docker network rm bedrock-now_chat-proxy bedrock-now_chat-out" "$TMP/order" | cut -d: -f1 |
+    awk -v a="$a" -v c="$c" '$1 > a && $1 < c { f = 1 } END { exit !f }' || { cat "$TMP/order" >&2; return 1; }
+  [ "$(at "dc up -d --no-deps --wait terminal")" -lt "$(at "docker network rm bedrock-now_terminal-out")" ] || { cat "$TMP/order" >&2; return 1; }
+  unset -f code_ready at
 }
 
 test_remote_terminal_only_with_remote_terminal_on() {
