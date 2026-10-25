@@ -84,7 +84,7 @@ Every key has a **monthly** budget; see [Settings](#settings).
 ## nor this
 ```
 
-### Claude Code: `claude-bedrock`
+### Claude Code: `devos-claude`
 Runs Claude Code.
 
 ## Costs & budgets
@@ -102,7 +102,7 @@ def test_markdown_headings_github_anchors_parents_and_excerpts():
     title, secs = searchindex.parse_markdown(MD)
     assert title == "Title of the page"
     assert [(s["anchor"], s["level"], s["parent"]) for s in secs] == [
-        ("costs--budgets", 2, ""), ("claude-code-claude-bedrock", 3, "Costs & budgets"), ("costs--budgets-1", 2, ""),
+        ("costs--budgets", 2, ""), ("claude-code-devos-claude", 3, "Costs & budgets"), ("costs--budgets-1", 2, ""),
         ("deep-one-with-html", 4, "Costs & budgets"), ("nota-heading", 2, "")]   # ("##No space" is none)
     assert secs[0]["text"] == "Every key has a monthly budget; see Settings."
     assert secs[3]["title"] == "Deep one with html" and secs[3]["text"] == "a list item first"

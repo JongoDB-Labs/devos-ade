@@ -34,7 +34,7 @@ services:
     init: true
     environment:
       # Claude Code → LiteLLM through the gateway, with the terminal's own key (claude-code-terminal: its own monthly
-      # budget, BUDGET_TERMINAL, revocable on its own), the same model mapping and switches as bin/claude-bedrock:
+      # budget, BUDGET_TERMINAL, revocable on its own), the same model mapping and switches as bin/devos-claude:
       # plain `claude` in here uses Bedrock too.
       ANTHROPIC_BASE_URL: http://gateway:8091
       ANTHROPIC_AUTH_TOKEN: ${LITELLM_KEY_TERMINAL:-}
@@ -47,7 +47,7 @@ services:
       # (no ENABLE_TOOL_SEARCH: tool search needs a beta header, so with the betas off it changes nothing)
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"   # no telemetry, error reports or update checks
       DISABLE_AUTOUPDATER: "1"                        # the image is read-only; ./stack update rebuilds it
-      # Settings › Claude Code › Auto mode in the terminal: claude-bedrock and the shells' `claude` (terminal/bashrc) keep
+      # Settings › Claude Code › Auto mode in the terminal: devos-claude and the shells' `claude` (terminal/bashrc) keep
       # auto mode off for their sessions unless it is on. A convenience for what is typed here, not a boundary: the
       # read-only managed settings below decide for everything else
       TERMINAL_AUTO_MODE: ${TERMINAL_AUTO_MODE:-false}

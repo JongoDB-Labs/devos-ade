@@ -49,7 +49,7 @@ MAX_STATUS = 16 * 1024
 MAX_TABLE = 32 * 1024
 # The Terminal picker's own entries, before the subscriptions: Claude Code on Bedrock (the terminal's first window) and
 # a shell
-BASICS = ({"id": "bedrock", "name": "Claude Code (Bedrock)", "command": "claude-bedrock"},
+BASICS = ({"id": "bedrock", "name": "Claude Code (Bedrock)", "command": "devos-claude"},
           {"id": "shell", "name": "A shell", "command": "bash"})
 
 

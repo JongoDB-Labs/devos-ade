@@ -296,7 +296,7 @@ terminal_secrets() {
 }
 
 # terminal_key — the terminal's own LiteLLM key, claude-code-terminal (BUDGET_TERMINAL): the sandbox never holds the
-# claude-code key of claude-bedrock on your computer, and its key can be revoked (Admin) or capped on its own. It may
+# claude-code key of devos-claude on your computer, and its key can be revoked (Admin) or capped on its own. It may
 # call only TERMINAL_KEY_ROUTES — the gateway's LiteLLM paths — also where the sandbox could reach LiteLLM past the
 # gateway (TERMINAL_EGRESS=host: Docker Desktop's way to your Mac's 127.0.0.1:LITELLM_PORT): no /bedrock/… pass-through, no
 # /v1/chat/completions. LiteLLM matches each entry and the paths below it. Needs LiteLLM running. Fails (in a
@@ -348,7 +348,7 @@ terminal_enable() {
   terminal_remote_sync
   code_remote_sync   # lib/code.sh: the Code page's remote name follows the terminal's switch
   log "LiteLLM and shared-mcp restart once as they join the terminal's gateway network (the first enable): Chat" \
-    "answers, claude-bedrock requests and MCP sessions in progress drop for a few seconds"
+    "answers, devos-claude requests and MCP sessions in progress drop for a few seconds"
   projects_up_hook   # lib/projects.sh: the project folders' mounts (kept from before), each folder checked again
   chat_proxy_leave   # (Chat's own proxy, no longer its way out: gone before any up)
   run_phase "Terminal image (build; the first one takes a few minutes)" terminal terminal_build
@@ -376,7 +376,7 @@ terminal_disable() {
   set_env TERMINAL_ENABLED false
   terminal_remote_sync
   log "LiteLLM and shared-mcp restart once as they leave the terminal's gateway network: Chat answers," \
-    "claude-bedrock requests and MCP sessions in progress drop for a few seconds"
+    "devos-claude requests and MCP sessions in progress drop for a few seconds"
   run_phase "Portal + Caddy (terminal off)" "portal caddy litellm shared-mcp" _terminal_front
   code_network_cleanup   # (lib/code.sh: its network, now that nothing uses it)
   terminal_network_cleanup

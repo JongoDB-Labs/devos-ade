@@ -102,7 +102,7 @@ test_piped_awk_lookups_never_exit_early() {
 }
 
 test_every_test_runs_with_a_home_of_its_own() {
-  # tests/run.sh: setup (the Code page's ~/bedrock-now-workspace) or claude-bedrock (~/.claude-bedrock) run by a test
+  # tests/run.sh: setup (the Code page's ~/bedrock-now-workspace) or devos-claude (~/.claude-bedrock) run by a test
   # must never reach your real home folder
   case "$HOME" in "$TMP"/*) ;; *) echo "HOME is $HOME, not under $TMP" >&2; return 1 ;; esac
   [ -d "$HOME" ] || return 1

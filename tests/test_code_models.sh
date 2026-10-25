@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# The models of the Code page and claude-bedrock (lib/code_models.sh): every enabled chat model of the catalog and the
+# The models of the Code page and devos-claude (lib/code_models.sh): every enabled chat model of the catalog and the
 # enabled OpenRouter ones, how each fares as Claude Code's model (catalog/code-models.tsv), Settings › Claude Code ›
 # Models (CODE_MODELS, CODE_DEFAULT_MODEL), litellm/code-models.tsv and LiteLLM's bn_* model_info.
 . "$STACK_DIR/lib/commands.sh"   # also sources lib/openrouter.sh and lib/code_models.sh

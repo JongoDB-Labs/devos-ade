@@ -34,7 +34,7 @@ export const SETUP_KEEP = /^(v|f[0-9]{1,3})#[0-9a-f]{16}$/;
 export const KEY = /^s_[0-9a-f]{16}$/;
 export const LIMITS = Object.freeze({ memory: 1 << 20, file: 1 << 20, showFile: 256 << 10, showAll: 4 << 20, paths: 10, flagItems: 20, programs: 20, url: 8192, piece: 4096,
   projects: 100 });
-export const TOOL_LABEL = Object.freeze({ claude: 'Claude Code', 'claude-bedrock': 'claude-bedrock', git: 'Git' });
+export const TOOL_LABEL = Object.freeze({ claude: 'Claude Code', 'claude-bedrock': 'devos-claude', git: 'Git' });   // (keys: internal names)
 const sha256 = (b) => crypto.createHash('sha256').update(b).digest('hex');
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 // stable(v) -> JSON with every object's keys in order (a value's identity, whatever order it was written in)

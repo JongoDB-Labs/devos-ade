@@ -1,6 +1,6 @@
 #!/bin/bash
 # What ttyd runs for each browser connection: attach to the one tmux session, "claude" — or create it, with
-# claude-bedrock in /workspace as its first window (a shell takes over once Claude Code exits). Closing the tab
+# devos-claude in /workspace as its first window (a shell takes over once Claude Code exits). Closing the tab
 # only detaches; Ctrl-b c opens another shell window.
 #
 # The pickers ("who answers": the Terminal tab, the Code page's terminal panel, the Chat tab) add words to the address
@@ -10,7 +10,7 @@
 #                           there already
 #   chat TOOL TOKEN [DIR]   the same window, shown alone in a session of its own grouped with "claude" (chat-TOOL…:
 #                           the Chat tab's embedded tool; "claude"'s current window stays what it was)
-# TOOL: bedrock (claude-bedrock), claude (claude-sub, your Claude plan), codex, gemini, copilot, cursor, grok, shell.
+# TOOL: bedrock (devos-claude), claude (claude-sub, your Claude plan), codex, gemini, copilot, cursor, grok, shell.
 # TOKEN: a launch token, <iat>-<16 hex>-<32 hex> — the portal makes one only on your click (in its own page, the Code
 # page's hand-off, or the terminal host's own "Open … here?" page) and lets no request to the terminal carry words
 # without a valid one for exactly these words (portal/portal/answers.py, app.py launch_gate); here only its form is
@@ -23,8 +23,8 @@ S=claude
 STATE="${BN_SESSION_STATE:-/tmp/bn-session}"
 WS="${BN_CODE_WORKSPACE:-/workspace}"
 
-plain() { exec tmux new-session -A -s "$S" -n claude -c "$WS" "claude-bedrock; exec bash"; }
-ensure() { tmux has-session -t "=$S" 2>/dev/null || tmux new-session -d -s "$S" -n claude -c "$WS" "claude-bedrock; exec bash"; }
+plain() { exec tmux new-session -A -s "$S" -n claude -c "$WS" "devos-claude; exec bash"; }
+ensure() { tmux has-session -t "=$S" 2>/dev/null || tmux new-session -d -s "$S" -n claude -c "$WS" "devos-claude; exec bash"; }
 
 [ $# -ge 3 ] && [ $# -le 4 ] || plain
 mode="$1" tool="$2" token="$3" dir="${4:-$WS}"
@@ -45,7 +45,7 @@ fi
 
 # the window: the tool's name, and — when it is not the workspace — the folder's (letters, digits, _ and - only: a "." or
 # ":" would be read as a pane or a window in a tmux target) and a short hash of its path (two folders of one name
-# stay two windows). Claude on your plan's is claude-sub (the first window, claude, is claude-bedrock's).
+# stay two windows). Claude on your plan's is claude-sub (the first window, claude, is devos-claude's).
 name="$tool"
 [ "$tool" != claude ] || name=claude-sub
 if [ "$real" != "$WS" ]; then

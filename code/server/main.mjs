@@ -269,7 +269,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
       disable: (id) => api.pluginAction('disable', { name: id, scope: 'user' }) } }));
   let setupApi = null;
   const stpApi = () => (setupApi ??= makeSetupApi({ setup: stp(), imports: imp() }));
-  // importedOf(id) -> {tool, at, forked} of a session copied from this computer (the page's CC / CB badge), else null
+  // importedOf(id) -> {tool, at, forked} of a session copied from this computer (the page's CC / DC badge), else null
   const importedOf = (all, id) => (all[id] ? { tool: all[id].tool, at: all[id].at, forked: Boolean(all[id].forkedFrom) } : null);
   // the sessions of /api/state, each with the project it is shown in
   const listed = () => { let place = null; try { place = proj().placer(); } catch { /* none */ } return mgr.list().map((x) => ({ ...x, project: place ? place(x.id, x.cwd) : 'ws' })); };

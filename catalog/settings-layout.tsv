@@ -36,7 +36,7 @@ AWS_AUTH	aws	more	-	An access key (the usual), or this EC2 machine's own IAM rol
 @spending	Spending & budgets	A monthly budget for each LiteLLM key, the warning before one runs out, and the prices costs are counted with. Budget changes take effect at once.	README.md#costs--budgets
 BUDGET_OPENWEBUI	spending	main	-	Monthly limit for Chat, with its document search and voice.
 LITELLM_KEY_OPENWEBUI	spending	with	BUDGET_OPENWEBUI	-
-BUDGET_CLAUDE_CODE	spending	main	-	Monthly limit for claude-bedrock in your own terminal.
+BUDGET_CLAUDE_CODE	spending	main	-	Monthly limit for devos-claude in your own terminal.
 LITELLM_KEY_CLAUDE_CODE	spending	with	BUDGET_CLAUDE_CODE	-
 BUDGET_TERMINAL	spending	main	-	Monthly limit for the Terminal tab and the Code page (they share one key).
 LITELLM_KEY_TERMINAL	spending	with	BUDGET_TERMINAL	-
@@ -68,7 +68,7 @@ CODE_ALLOW_BYPASS	code	main	CODE_ENABLED	Offer Bypass permissions: Claude runs e
 CODE_AUTO_MODE	code	main	CODE_ENABLED	Offer Auto mode: a reviewer model approves routine actions and blocks risky ones (it costs extra).
 +git-hosts	code	main	CODE_ENABLED	Git hosts for the Code page's push, pull and clone: GitHub, GitLab or any git server — a sign-in, a token or an SSH key.
 +project-folders	code	main	CODE_ENABLED	Folders of this computer as Code page projects: mounted into its sandbox, read-write or read-only.
-+sessions-consent	code	main	CODE_ENABLED	What DevOS ADE may read of your Claude Code and claude-bedrock sessions and setup on this computer.
++sessions-consent	code	main	CODE_ENABLED	What DevOS ADE may read of your Claude Code and devos-claude sessions and setup on this computer.
 +bring-setup	code	main	CODE_ENABLED	Your Claude Code setup and Git name and email from this computer, copied into the Code page's sandbox.
 +subscriptions	code	main	TERMINAL_ENABLED	Your plans' own tools in the sandbox (Claude, Codex, Gemini, Copilot, Cursor, Grok) and their sign-ins.
 CODE_CLAUDE_PLAN	code	with	+subscriptions	-
@@ -78,10 +78,10 @@ TERMINAL_EGRESS	code	main	TERMINAL_ENABLED	The sandbox's internet: public addres
 TERMINAL_EGRESS_ALLOW	code	more	TERMINAL_ENABLED	Only these names on the internet, and other ports (blank: every public name on 80, 443 and 22).
 TERMINAL_EGRESS_DENY	code	more	TERMINAL_ENABLED	Never these names on the internet.
 TERMINAL_AUTO_MODE	code	main	TERMINAL_ENABLED	Auto mode for claude typed in the Terminal too (it costs extra).
-CLAUDE_MODEL_OPUS	code	main	-	The model Claude Code works with: claude-bedrock's main (opus) slot.
+CLAUDE_MODEL_OPUS	code	main	-	The model Claude Code works with: devos-claude's main (opus) slot.
 CLAUDE_BEDROCK_OPUS_MODEL	code	with	CLAUDE_MODEL_OPUS	-
 CODE_MODELS	code	main	-	The models the Code page's picker and the terminal's /model list: all enabled, Anthropic only, or a list you pick.
-CODE_DEFAULT_MODEL	code	main	-	The model new Code page sessions and claude-bedrock start on.
+CODE_DEFAULT_MODEL	code	main	-	The model new Code page sessions and devos-claude start on.
 CLAUDE_MODEL_SONNET	code	more	-	Claude Code's sonnet slot.
 CLAUDE_BEDROCK_SONNET_MODEL	code	with	CLAUDE_MODEL_SONNET	-
 CLAUDE_MODEL_HAIKU	code	more	-	Claude Code's haiku slot: quick background tasks.
@@ -95,7 +95,7 @@ GIT_GITLAB_CLIENT_ID	code	more	CODE_ENABLED	Sign in with GitLab (Git hosts): the
 @files	Files & sharing	The file store behind the Files tab, and the shared file server Claude Code and Chat use.	README.md#shared-files-and-knowledge-mcp
 RUSTFS_ACCESS_KEY	files	main	-	The Files tab's sign-in (the portal signs you in with it); also the storage key of Chat and backups.
 RUSTFS_SECRET_KEY	files	with	RUSTFS_ACCESS_KEY	-
-SHARED_MCP_TOKEN	files	main	-	The token of the shared file server (MCP) claude-bedrock and other MCP clients use.
+SHARED_MCP_TOKEN	files	main	-	The token of the shared file server (MCP) devos-claude and other MCP clients use.
 
 @remote	Remote access	The portal from your phone or laptop over Tailscale (or your own domain), without opening a port to the internet.	docs/remote.md
 REMOTE_MODE	remote	main	-	Off, Tailscale or your own domain. Turned on in a terminal: it needs steps in your tailnet.
@@ -137,7 +137,7 @@ ADMIN_HOST	advanced	main	-	Admin's address (blank: admin. and the portal's addre
 FILES_HOST	advanced	main	-	Files' address (blank: files. and the portal's address).
 TERMINAL_HOST	advanced	main	-	The Terminal's address (blank: terminal. and the portal's address).
 CODE_HOST	advanced	main	-	The Code page's address (blank: code. and the portal's address).
-LITELLM_PORT	advanced	main	-	The port of LiteLLM's API on this computer, for tools like claude-bedrock.
+LITELLM_PORT	advanced	main	-	The port of LiteLLM's API on this computer, for tools like devos-claude.
 SHARED_MCP_PORT	advanced	main	-	The port of the shared file server on this computer.
 BEDROCK_NOW_ALLOW_PUBLIC_HOST	advanced	main	-	Allow a portal address that does not end in .localhost (a security switch).
 COMPOSE_PROJECT_NAME	advanced	main	-	This checkout's Docker Compose project; changing it would orphan all data.

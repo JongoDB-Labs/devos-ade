@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Shared helpers for ./stack and bin/claude-bedrock. Must stay bash 3.2-compatible (macOS default shell).
+# Shared helpers for ./stack and bin/devos-claude. Must stay bash 3.2-compatible (macOS default shell).
 
 # C locale for every tool we run: macOS awk/printf honour LC_NUMERIC, so a German locale would turn
 # 0.0000044 into "0,0000044" in config.yaml and "$4,40" in price labels.
@@ -9,7 +9,7 @@ if [ -z "${_CALLER_LC_ALL_CAPTURED:-}" ]; then
 fi
 export LC_ALL=C
 
-# restore_caller_locale — undo the C locale before exec'ing a user program (e.g. claude-bedrock → claude).
+# restore_caller_locale — undo the C locale before exec'ing a user program (e.g. devos-claude → claude).
 restore_caller_locale() {
   if [ -n "$_CALLER_LC_ALL_SET" ]; then export LC_ALL="$_CALLER_LC_ALL"; else unset LC_ALL; fi
 }

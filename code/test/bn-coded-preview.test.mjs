@@ -160,7 +160,7 @@ test('launch.start: the file\'s command in a new window of the terminal\'s tmux 
   assert.deepEqual([r.ok, r.name, r.window, r.port], [true, 'web app', 'web-app', 5173]);
   const calls = fs.readFileSync(LOG, 'utf8').split('---\n').filter(Boolean).map((c) => c.trimEnd().split('\n'));
   assert.deepEqual(calls[0], ['has-session', '-t', '=claude']);
-  assert.deepEqual(calls[1], ['new-session', '-d', '-s', 'claude', '-n', 'claude', '-c', WS, 'claude-bedrock; exec bash']);
+  assert.deepEqual(calls[1], ['new-session', '-d', '-s', 'claude', '-n', 'claude', '-c', WS, 'devos-claude; exec bash']);
   // tmux checked for hooks and loader variables right before the window (tmuxGuard)
   assert.deepEqual(calls.slice(2, 8).map((c) => c[0]), ['show-hooks', 'show-hooks', 'show-hooks', 'show-environment', 'show-environment', 'display-message']);
   assert.deepEqual(calls[2], ['show-hooks', '-g']);

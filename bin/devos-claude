@@ -29,7 +29,7 @@ _cb_model() {
   [ -r "$(code_models_file)" ] || { cb_model_id "$want"; return 0; }
   case "$want" in *'[1m]' | *'[1M]') suffix="${want#"${want%????}"}"; base="${want%????}" ;; *) base="$want" ;; esac
   id="$(code_model_resolve "$base")"
-  [ -n "$id" ] || die "unknown model '$want' ($2) — claude-bedrock --models lists them: $(_code_rows | awk -F'\t' '$11 == 1 && n < 6 { printf "%s%s", (n++ ? ", " : ""), $1; next } $11 == 1 { more = 1 } END { if (more) printf ", …" }')"
+  [ -n "$id" ] || die "unknown model '$want' ($2) — devos-claude --models lists them: $(_code_rows | awk -F'\t' '$11 == 1 && n < 6 { printf "%s%s", (n++ ? ", " : ""), $1; next } $11 == 1 { more = 1 } END { if (more) printf ", …" }')"
   printf '%s%s\n' "$id" "$suffix"
 }
 
@@ -50,14 +50,14 @@ case "${1:-}" in
     if [ "${2:-}" = all ]; then printf 'Every enabled chat model (* = the default for new sessions):\n'
     else printf 'The models of Settings › Claude Code › Models (* = the default for new sessions; --models all: every enabled one):\n'; fi
     code_models_table "" "${2:-}"
-    printf '\nclaude-bedrock --model <id or name> starts on one; /model in a session switches (by full id: an alias lets Claude Code\n'
+    printf '\ndevos-claude --model <id or name> starts on one; /model in a session switches (by full id: an alias lets Claude Code\n'
     printf 'pick the model itself). Only models that "work" can use tools — read, edit and run things; prices as LiteLLM bills them.\n'
     exit 0 ;;
   -h | --help)
     opus="$(get_env CLAUDE_BEDROCK_OPUS_MODEL)"; port="$(get_env LITELLM_PORT)"
     def="$(code_models_default)"; def="${def:-$opus}"
     if [ -n "$opus" ] && [ -n "$port" ]; then
-      m="$def (default); --model <id or name> or CLAUDE_BEDROCK_MODEL=<name> picks another, claude-bedrock --models lists them"
+      m="$def (default); --model <id or name> or CLAUDE_BEDROCK_MODEL=<name> picks another, devos-claude --models lists them"
       p="LiteLLM on 127.0.0.1:$port, key 'claude-code' (monthly budget; ./stack costs)"
       c="billed per token by Bedrock (OpenRouter's models: by OpenRouter, free ones \$0; Experiential Labs': what the gateway reports, \$0 on your own provider key); $def: $(_cb_price "$def")"
     else
@@ -70,14 +70,14 @@ case "${1:-}" in
     elif [ "${CLAUDE_BEDROCK_AUTO_MODE:-0}" = 1 ]; then a="left to Claude Code (CLAUDE_BEDROCK_AUTO_MODE=1); its reviewer runs on Sonnet 5.5 (~\$0.13 per 5 minutes in use)"
     else a="left to Claude Code and your settings (your own config folder)"; fi
     cat <<EOT
-claude-bedrock: Claude Code on AWS Bedrock via DevOS ADE (plain \`claude\` is unchanged)
+devos-claude: Claude Code on AWS Bedrock via DevOS ADE (plain \`claude\` is unchanged)
   Model    $m
   Proxy    $p
   Config   $g
   Auto     auto mode $a
   Quiet    CLAUDE_BEDROCK_QUIET=1 hides the launch cost line and the session cost on exit
   Cost     $c
-  Below    Claude Code's own help; every option works with claude-bedrock
+  Below    Claude Code's own help; every option works with devos-claude
 
 EOT
     command -v claude >/dev/null 2>&1 || die "Claude Code (claude) is not installed"
@@ -98,7 +98,7 @@ key="$(get_env LITELLM_KEY_CLAUDE_CODE)"
 [ -n "$key" ] || die "no LiteLLM key for Claude Code in $ENV_FILE — re-run $STACK_DIR/stack setup"
 
 # Claude Code's config folder: its own lean one (created 700), unless CLAUDE_BEDROCK_USE_MY_CONFIG=1. Subcommands get
-# it too, so `claude-bedrock mcp add …` / `plugin install …` manage that folder. A CLAUDE_CONFIG_DIR you exported for
+# it too, so `devos-claude mcp add …` / `plugin install …` manage that folder. A CLAUDE_CONFIG_DIR you exported for
 # your everyday claude is not used in lean mode (precedence: lib/claude_config.sh).
 claude_config_resolve || die "$CB_CONFIG_ERR"
 claude_config_prepare || die "$CB_CONFIG_ERR"   # created 700; an existing one must be yours and not group/other-writable
@@ -160,10 +160,10 @@ if [ "${CLAUDE_BEDROCK_QUIET:-0}" != 1 ]; then
   claude_config_line >&2    # which config folder: lean, or yours with a warning (subcommands too: `mcp add` changes it)
 fi
 
-# Sessions get the shared MCP server. Subcommands (`claude-bedrock mcp list`, `doctor`, …) reject
+# Sessions get the shared MCP server. Subcommands (`devos-claude mcp list`, `doctor`, …) reject
 # --mcp-config, so it is added only when $1 is empty, an option, or not a subcommand. The subcommand
 # list is parsed from `claude --help` on every launch (falls back to the 2.1.296 list).
-# Known gap: options before a subcommand (`claude-bedrock --debug mcp list`) still get --mcp-config
+# Known gap: options before a subcommand (`devos-claude --debug mcp list`) still get --mcp-config
 # and fail; put options after the subcommand, or run plain `claude` for management commands.
 subcmds="$(claude --help 2>/dev/null </dev/null | claude_subcommands || true)"
 [ -n "$subcmds" ] || subcmds="agents attach auth auto-mode config doctor gateway import install logs mcp
@@ -210,7 +210,7 @@ if [ "$add_mcp" = 1 ] && [ "${CLAUDE_BEDROCK_QUIET:-0}" != 1 ]; then
 fi
 [ "$want_summary" = 1 ] || exec claude ${mcp_args[@]+"${mcp_args[@]}"} ${settings_args[@]+"${settings_args[@]}"} "$@"
 
-# Interactive sessions end with `claude-bedrock --resume <id>`: Claude Code's own hint says plain `claude --resume`,
+# Interactive sessions end with `devos-claude --resume <id>`: Claude Code's own hint says plain `claude --resume`,
 # which looks in ~/.claude and does not find a session kept in the lean folder (lib/claude_config.sh). A new session
 # gets its id from the wrapper (--session-id), so the line names exactly this session; for --continue, the --resume
 # picker and the like, the id is that of the one transcript of this folder written during the run, or the picker when
@@ -224,7 +224,7 @@ case "$CB_RESUME_KIND" in
 esac
 if [ "$CB_RESUME_KIND" != none ]; then
   marker="$(mktemp "$CB_CONFIG_DIR/.claude-bedrock-run.XXXXXX" 2>/dev/null)" ||
-    marker="$(mktemp "${TMPDIR:-/tmp}/claude-bedrock.XXXXXX" 2>/dev/null)" || marker=''
+    marker="$(mktemp "${TMPDIR:-/tmp}/devos-claude.XXXXXX" 2>/dev/null)" || marker=''
 fi
 
 # claude runs as an ordinary FOREGROUND child: same terminal, same process group, so Ctrl-C / Ctrl-Z / a closed
@@ -250,11 +250,11 @@ if [ "$CB_RESUME_KIND" != none ]; then
 fi
 case "$resume" in
   '') ;;
-  pick) printf 'resume: %sclaude-bedrock --resume  (more than one session wrote in this folder meanwhile: pick yours)\n' \
+  pick) printf 'resume: %sdevos-claude --resume  (more than one session wrote in this folder meanwhile: pick yours)\n' \
           "$(claude_config_resume_prefix)" >&2 ;;
-  *' others') printf 'resume: %sclaude-bedrock --resume %s  (after /clear or /resume: claude-bedrock --resume to pick)\n' \
+  *' others') printf 'resume: %sdevos-claude --resume %s  (after /clear or /resume: devos-claude --resume to pick)\n' \
           "$(claude_config_resume_prefix)" "${resume% others}" >&2 ;;
-  *) printf 'resume: %sclaude-bedrock --resume %s\n' "$(claude_config_resume_prefix)" "$resume" >&2 ;;
+  *) printf 'resume: %sdevos-claude --resume %s\n' "$(claude_config_resume_prefix)" "$resume" >&2 ;;
 esac
 if [ -t 2 ]; then
   trap 'printf "\n" >&2; exit "$rc"' INT QUIT TERM HUP

@@ -121,7 +121,7 @@ COPY ssh_config /etc/ssh/ssh_config.d/bedrock-now.conf
 COPY gitconfig /etc/gitconfig
 COPY ssh_known_hosts /etc/ssh/ssh_known_hosts
 COPY bin/ /usr/local/bin/
-# Claude Code's managed settings for every claude here — the terminal's, claude-bedrock's and the Code page's. They
+# Claude Code's managed settings for every claude here — the terminal's, devos-claude's and the Code page's. They
 # outrank every other settings tier (permission rules, hooks, the mode), so nothing in the sandbox may change them:
 # root's file in root's folder, on a read-only image. This one (auto mode off) is the default; compose.terminal.yaml
 # mounts one of managed/*.json over it, read-only, chosen on your computer from Settings' auto mode switches. Behind a
@@ -130,7 +130,7 @@ COPY bin/ /usr/local/bin/
 COPY managed/off.json /etc/claude-code/managed-settings.json
 RUN chmod 755 /etc/claude-code && chmod 644 /etc/claude-code/managed-settings.json \
  && chmod 644 /etc/tmux.conf /etc/bedrock-now.bashrc /etc/ssh/ssh_config.d/bedrock-now.conf /etc/gitconfig /etc/ssh/ssh_known_hosts \
- && chmod 755 /usr/local/bin/claude-bedrock /usr/local/bin/bn-terminal \
+ && chmod 755 /usr/local/bin/devos-claude /usr/local/bin/bn-terminal \
       /usr/local/bin/bn-session /usr/local/bin/bn-coded.mjs /usr/local/bin/bn-preview.mjs /usr/local/bin/bn-ssh-proxy /usr/local/bin/bn-git-credential \
       /usr/local/bin/bn-gh /usr/local/bin/claude-sub /usr/local/bin/subscriptions /usr/local/bin/codex /usr/local/bin/gemini \
       /usr/local/bin/copilot /usr/local/bin/cursor-agent /usr/local/bin/grok \

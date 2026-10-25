@@ -34,8 +34,8 @@
 //
 //   node server/harness/claude-config.mjs scan  --in TOOL:MOUNT=/in/<id> … [--project PATH_B64] [--links TOOL=N …]
 //   node server/harness/claude-config.mjs fetch --in … [--project …] [--root …] --want N:TOOL:KIND:SCOPE:NAME_B64 …
-// TOOL: claude (~/.claude), claude-bedrock (~/.claude-bedrock) or git (~/.gitconfig). --root: the tool's folder on the
-// computer (a plugin's install path names it). Node built-ins only.
+// TOOL: claude (~/.claude), claude-bedrock (devos-claude's internal name; ~/.claude-bedrock) or git (~/.gitconfig).
+// --root: the tool's folder on the computer (a plugin's install path names it). Node built-ins only.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -44,7 +44,7 @@ import { fileURLToPath } from 'node:url';
 import { openFile, clean } from './claude.mjs';
 import { redactText } from '../secrets.mjs';
 
-export const SETUP_TOOLS = Object.freeze(['claude', 'claude-bedrock', 'git']);
+export const SETUP_TOOLS = Object.freeze(['claude', 'claude-bedrock', 'git']);   // (claude-bedrock: devos-claude's, by its internal name)
 export const ITEM_KINDS = Object.freeze(['memory', 'skill', 'agent', 'command', 'output-style', 'keybindings', 'setting', 'mcp', 'plugin', 'identity']);
 // what may be mounted, and as what: a file or a folder
 export const MOUNTS = Object.freeze({

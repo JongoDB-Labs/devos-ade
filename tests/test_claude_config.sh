@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2088,SC2030,SC2031,SC2016  # literal "~/" and "$(id)" in expected strings; HOME changed in subshells on purpose
-# claude-bedrock's own Claude Code config folder (lib/claude_config.sh): lean by default, CLAUDE_BEDROCK_USE_MY_CONFIG=1,
+# devos-claude's own Claude Code config folder (lib/claude_config.sh): lean by default, CLAUDE_BEDROCK_USE_MY_CONFIG=1,
 # CLAUDE_BEDROCK_CONFIG_DIR, the launch/help wording, the CLAUDE.md tip and the --resume id. The wrapper itself: test_session.sh.
 . "$STACK_DIR/lib/claude_config.sh"
 
@@ -77,10 +77,10 @@ test_prepare_names_the_fix_for_a_folder_of_another_user() {
   CLAUDE_BEDROCK_CONFIG_DIR=/usr/bin claude_config_resolve
   if claude_config_prepare; then return 1; fi
   assert_eq "$CB_CONFIG_ERR" "/usr/bin belongs to another user — pick a folder of your own with CLAUDE_BEDROCK_CONFIG_DIR"
-  # under your home folder (here: HOME=/usr): most likely made by sudo claude-bedrock
+  # under your home folder (here: HOME=/usr): most likely made by sudo devos-claude
   HOME=/usr; unset CB_HOME; CLAUDE_BEDROCK_CONFIG_DIR=/usr/bin claude_config_resolve
   if claude_config_prepare; then return 1; fi
-  assert_eq "$CB_CONFIG_ERR" "~/bin belongs to another user (made by sudo claude-bedrock?) — fix: sudo chown -R $(id -un) ~/bin"
+  assert_eq "$CB_CONFIG_ERR" "~/bin belongs to another user (made by sudo devos-claude?) — fix: sudo chown -R $(id -un) ~/bin"
 }
 
 test_resolve_use_my_config_keeps_your_folder_and_beats_the_override() {

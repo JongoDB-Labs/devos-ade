@@ -53,7 +53,7 @@
 //                                           here that has no transcript yet keeps it until it has one)
 //   POST   /api/sessions/ID/terminal       {ok, window, command}: "Open in the terminal" — this side's process for it
 //                                           ends (409 while a turn runs), then a new window of the terminal's tmux
-//                                           session runs `claude-bedrock --resume ID` (typed into its shell: bn-coded's
+//                                           session runs `devos-claude --resume ID` (typed into its shell: bn-coded's
 //                                           terminal.resume); until Claude Code exits there, resuming it here is refused
 //   Projects (projects.mjs; ?project=ID or {project: ID} on the calls that work in one — /api/fs/find, /api/fs/grep,
 //   /api/git/diff, /api/git/repos, /api/memory, /api/permissions, DELETE /api/fs, /api/run(/start), /api/launch(/start)

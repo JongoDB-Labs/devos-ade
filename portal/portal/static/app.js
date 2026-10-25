@@ -548,7 +548,7 @@ function endsNote() {
   const s = lastSummary || {};
   const term = Boolean(s.terminal && s.terminal.enabled), code = Boolean(s.code && s.code.enabled);
   let t = "";
-  if (term) t += " The Terminal's container is recreated: its tmux windows close and what runs in them ends, Claude Code too (claude-bedrock --resume there picks a conversation up again).";
+  if (term) t += " The Terminal's container is recreated: its tmux windows close and what runs in them ends, Claude Code too (devos-claude --resume there picks a conversation up again).";
   if (code) t += " Code page sessions resume from their transcripts; a turn still running then stops.";
   if (code && codeTurn) t += " A Code page turn is running right now.";
   return t;

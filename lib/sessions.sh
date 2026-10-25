@@ -1,5 +1,7 @@
 # shellcheck shell=bash
-# Your Claude Code and claude-bedrock sessions on this computer, copied into the Code page's sandbox (./stack sessions).
+# Your Claude Code and devos-claude sessions on this computer, copied into the Code page's sandbox (./stack sessions).
+# (Their tool's internal name stays claude-bedrock — in the consent records, the helper's requests, the Code page's
+# container — after its store, ~/.claude-bedrock; --tool takes devos-claude too: docs/internal-names.md.)
 # Copy one way: the computer's stores (~/.claude/projects and ~/.claude-bedrock/projects) are read here, on this
 # computer, only for a project folder you allowed (once, or always for that folder) — never by the sandbox, which
 # cannot see them — and nothing is ever written back to them. The reader is code/server/harness/claude.mjs, run in a
@@ -10,7 +12,7 @@
 # say Copy, writes them into the sandbox's own store.
 #
 #   list                                      what DevOS ADE may read here, and the last looks
-#   scan --project NAME [--tool T]            a list of the project's sessions (T: claude, claude-bedrock or both)
+#   scan --project NAME [--tool T]            a list of the project's sessions (T: claude, devos-claude or both)
 #   fetch --project NAME --rows 1,3-5|--all   read those sessions into the code container (checked on the Code page)
 #   import --project NAME [--tool T] [--rows …|--all] [--keep-secrets] [--keep-thinking] [--with-tool-outputs] [--rescan]
 #                                             the whole way in a terminal: look, pick, check, copy (tool outputs left
@@ -62,13 +64,13 @@ sessions_usage() {
   cat <<'EOF'
 Usage: ./stack sessions <command>
 
-  Your Claude Code and claude-bedrock sessions on this computer, copied into the Code page's sandbox — only for a
+  Your Claude Code and devos-claude sessions on this computer, copied into the Code page's sandbox — only for a
   folder added as a project (./stack project add), only after you allowed it here, and never the other way:
   nothing is ever written to ~/.claude or ~/.claude-bedrock.
 
   list                          What DevOS ADE may read on this computer, and the last looks
   scan --project NAME           A list of the project's sessions (titles, dates, sizes): on the Code page's
-      [--tool claude|claude-bedrock|both]   Import sheet, or ./stack sessions import
+      [--tool claude|devos-claude|both]     Import sheet, or ./stack sessions import
   fetch --project NAME --rows 1,3-5|--all   Read those sessions into the Code page's container, to check and
                                 copy them there (secrets redacted by default)
   import --project NAME         The whole way in this terminal: look, pick, check, copy
@@ -90,7 +92,7 @@ Usage: ./stack sessions <command>
   config                        Your Claude Code setup (memory, skills, agents, commands, MCP servers, plugins, four
                                 settings) and your Git name and email, copied into the sandbox: ./stack sessions config help
 
-  T: claude (Claude Code, ~/.claude), claude-bedrock (~/.claude-bedrock) or both (the default).
+  T: claude (Claude Code, ~/.claude), devos-claude (~/.claude-bedrock) or both (the default).
   From the Code page: a project's ⋯ › Import sessions from this computer… (the update helper asks you in a dialog
   on this computer's screen first).
 EOF
@@ -114,13 +116,15 @@ cmd_sessions() {
 
 # --- small things ---
 _ss_now() { date +%s; }
-_ss_label() { case "$1" in claude) echo "Claude Code" ;; claude-bedrock) echo "claude-bedrock" ;; esac; }
-_ss_badge() { case "$1" in claude) echo CC ;; claude-bedrock) echo CB ;; esac; }
-# _ss_tools claude|claude-bedrock|both -> the tools, one word each
+_ss_label() { case "$1" in claude) echo "Claude Code" ;; claude-bedrock) echo "devos-claude" ;; esac; }
+_ss_badge() { case "$1" in claude) echo CC ;; claude-bedrock) echo DC ;; esac; }
+# _ss_tool_id T -> the tool's internal name (devos-claude, as you type it, has the internal name claude-bedrock)
+_ss_tool_id() { case "$1" in devos-claude) echo claude-bedrock ;; *) printf '%s\n' "$1" ;; esac; }
+# _ss_tools claude|claude-bedrock|devos-claude|both -> the tools, one word each (internal names)
 _ss_tools() {
-  case "${1:-both}" in claude) echo claude ;; claude-bedrock) echo claude-bedrock ;; both) echo "$SESSIONS_TOOLS" ;; *) return 1 ;; esac
+  case "$(_ss_tool_id "${1:-both}")" in claude) echo claude ;; claude-bedrock) echo claude-bedrock ;; both) echo "$SESSIONS_TOOLS" ;; *) return 1 ;; esac
 }
-# _ss_labels claude|claude-bedrock|both -> their names in a sentence ("Claude Code and claude-bedrock")
+# _ss_labels claude|claude-bedrock|both -> their names in a sentence ("Claude Code and devos-claude")
 _ss_labels() { local t out=''; for t in $(_ss_tools "$1"); do out="$out${out:+ and }$(_ss_label "$t")"; done; printf '%s\n' "$out"; }
 # the stores: in your home folder (BN_SESSIONS_HOME: a fake home of the tests' — only this computer's environment sets it)
 _ss_home() { printf '%s\n' "${BN_SESSIONS_HOME:-$HOME}"; }
@@ -184,7 +188,7 @@ _ss_consent_lines() {
   [ -f "$f" ] && [ ! -L "$f" ] || return 0
   while IFS=$'\t' read -r k t p s a n h; do
     case "$k:$t:$s" in folder:claude:always | folder:claude:once | folder:claude-bedrock:always | folder:claude-bedrock:once | suggest:claude:always | suggest:claude:once | suggest:claude-bedrock:always | suggest:claude-bedrock:once) ;;
-      # (Bring your setup: lib/sessions_config.sh — your Claude Code setup, claude-bedrock's, your Git name and email)
+      # (Bring your setup: lib/sessions_config.sh — your Claude Code setup, devos-claude's, your Git name and email)
       setup:claude:always | setup:claude:once | setup:claude-bedrock:always | setup:claude-bedrock:once | setup:git:always | setup:git:once) ;;
       *) continue ;; esac
     case "$a" in '' | *[!0-9]*) continue ;; esac
@@ -407,18 +411,18 @@ sessions_scan() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --project) ref="${2:-}"; shift 2 || true ;;
-      --tool) tool="${2:-}"; shift 2 || true ;;
+      --tool) tool="$(_ss_tool_id "${2:-}")"; shift 2 || true ;;
       --origin) origin="${2:-}"; shift 2 || true ;;
       --request) SS_REQ="${2:-}"; shift 2 || true ;;
       --screen) screen=1; shift ;;
-      *) die "usage: ./stack sessions scan --project NAME [--tool claude|claude-bedrock|both]" ;;
+      *) die "usage: ./stack sessions scan --project NAME [--tool claude|devos-claude|both]" ;;
     esac
   done
   case "$SS_REQ" in '') ;; *[!0-9a-f]* | ?????????????????????????????????*) SS_REQ='' ;; esac
   SS_REQ_ACTION=sessions-scan
   case "$origin" in local | remote) ;; *) _ss_fail bad-request "--origin: local or remote" ;; esac
   [ -n "$ref" ] || die "usage: ./stack sessions scan --project NAME (./stack project list)"
-  tools="$(_ss_tools "$tool")" || _ss_fail bad-request "--tool: claude, claude-bedrock or both"
+  tools="$(_ss_tools "$tool")" || _ss_fail bad-request "--tool: claude, devos-claude or both"
   [ -f "$ENV_FILE" ] || die "run ./stack setup first"
   _ss_secure_dir "$(sessions_dir)" || die "cannot create $(sessions_dir)"
   _ss_forget_pending
@@ -657,7 +661,7 @@ sessions_import() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --project) ref="${2:-}"; shift 2 || true ;;
-      --tool) tool="${2:-}"; shift 2 || true ;;
+      --tool) tool="$(_ss_tool_id "${2:-}")"; shift 2 || true ;;
       --rows) rows="${2:-}"; shift 2 || true ;;
       --all) all=1; shift ;;
       --keep-secrets) keep=1; shift ;;
@@ -728,7 +732,7 @@ sessions_import() {
     elif [ "$by" = sandbox ]; then warn "not copied: $id — the sandbox refused it. What it said:"; printf '      | %s\n' "$(plain_text "$why" | head -c 300)" >&2
     else warn "not copied: $id — $(plain_text "$why" | head -c 300)"; fi
   done < <(_ss_code --secs "$SESSIONS_COPY_S" copy --project "$SS_ID" --ids "$ids" --tsv $([ "$keep" = 1 ] && echo --keep-secrets) $([ "$think_keep" = 1 ] && echo --keep-thinking) $([ "$outputs" = 1 ] && echo --with-tool-outputs) 2>/dev/null)
-  log "on the Code page: $SS_NAME › its sessions (badged CC or CB) resume on any model there"
+  log "on the Code page: $SS_NAME › its sessions (badged CC or DC) resume on any model there"
 }
 
 # --- consent from a terminal ---
@@ -737,7 +741,7 @@ sessions_consent() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --project) ref="${2:-}"; shift 2 || true ;;
-      --tool) tool="${2:-}"; shift 2 || true ;;
+      --tool) tool="$(_ss_tool_id "${2:-}")"; shift 2 || true ;;
       --always | --once | --revoke) [ -z "$what" ] || die "one of --always, --once, --revoke"; what="${1#--}"; shift ;;
       --suggest) sug=1; shift ;;
       --revoke-all) what=revoke-all; shift ;;
@@ -753,10 +757,10 @@ sessions_consent() {
     _ss_consent_take folder both all; _ss_consent_take suggest both all
     # (everything: your setup's too — lib/sessions_config.sh)
     if declare -F _sc_consent_take >/dev/null; then for t in $SETUP_TOOLS; do _sc_consent_take "$t"; done; _ss_forget setup all; sessions_status_sync; fi
-    log "taken back: $PRODUCT_NAME may read nothing of Claude Code's or claude-bedrock's on this computer now (sessions already copied into the sandbox stay there)"
+    log "taken back: $PRODUCT_NAME may read nothing of Claude Code's or devos-claude's on this computer now (sessions already copied into the sandbox stay there)"
     return 0
   fi
-  _ss_tools "$tool" >/dev/null || die "--tool: claude, claude-bedrock or both"
+  _ss_tools "$tool" >/dev/null || die "--tool: claude, devos-claude or both"
   if [ "$sug" = 1 ]; then
     for t in $(_ss_tools "$tool"); do
       if [ "$what" = revoke ]; then _ss_consent_take suggest "$t" all; else _ss_consent_grant suggest "$t" - - "$what"; fi

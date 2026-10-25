@@ -36,7 +36,7 @@ BN_SHIM_LOG="$(mktemp)"; BN_REAL_CURL="$(command -v curl || echo /usr/bin/curl)"
 # openssl is real too; only its PBKDF2 derivation (600,000 real rounds) is cached for the run (tests/shims/openssl)
 BN_REAL_OPENSSL="$(command -v openssl || echo /usr/bin/openssl)"; BN_PBKDF2_CACHE="$(mktemp -d)"
 # Every test child gets a home of its own ($TMP/home): nothing a test runs (setup turns the Code page on with
-# ~/bedrock-now-workspace; claude-bedrock makes ~/.claude-bedrock) can touch your real one. Only the real docker of the
+# ~/bedrock-now-workspace; devos-claude makes ~/.claude-bedrock) can touch your real one. Only the real docker of the
 # compose-rendering tests still reads its CLI plugins from your Docker config folder (DOCKER_CONFIG).
 BN_REAL_DOCKER_CONFIG="${DOCKER_CONFIG:-${HOME:-/nonexistent}/.docker}"
 export BN_SHIM_LOG BN_REAL_CURL BN_REAL_DOCKER BN_REAL_OPENSSL BN_PBKDF2_CACHE BN_REAL_DOCKER_CONFIG
@@ -68,8 +68,8 @@ rc=$?; rm -rf "$TMP"; exit $rc'
 # Live-state guard: tests must never touch this checkout's real .env, .state/, litellm/ or backups/.
 _live_state() { (cd "$ROOT" && find .env .state litellm backups -type f 2>/dev/null | LC_ALL=C sort | xargs cksum 2>/dev/null) || true; }
 live_before="$(_live_state)"
-# claude-bedrock creates ~/.claude-bedrock (its own Claude Code config folder): tests run it with a throwaway HOME.
-# Only its appearance is checked — a claude-bedrock of yours running meanwhile may change what is inside.
+# devos-claude creates ~/.claude-bedrock (its own Claude Code config folder): tests run it with a throwaway HOME.
+# Only its appearance is checked — a devos-claude of yours running meanwhile may change what is inside.
 cb_home_before=0; [ ! -e "${HOME:-/nonexistent}/.claude-bedrock" ] || cb_home_before=1
 # Setup turns the Code page on by default with the workspace ~/devos-ade-workspace (~/bedrock-now-workspace for an
 # install made before v0.25.0: lib/terminal.sh terminal_default_workspace): a test that runs it unstubbed must not

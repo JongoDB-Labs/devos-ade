@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# claude-bedrock sessions: a per-launch id sent to LiteLLM, and the cost summary printed on exit.
+# devos-claude sessions: a per-launch id sent to LiteLLM, and the cost summary printed on exit.
 # Needs lib/common.sh (get_env, curl_auth) and lib/models.sh (usd, litellm_api).
 #
 # How the id reaches LiteLLM: Claude Code adds every "Name: value" line of ANTHROPIC_CUSTOM_HEADERS to its
@@ -15,7 +15,7 @@ session_new_id() {
 }
 
 # session_headers ID [EXISTING] -> ANTHROPIC_CUSTOM_HEADERS value: the caller's own headers (if any) plus the
-# session id and a `claude-bedrock` tag (LiteLLM UI › Logs can filter by either).
+# session id and a `devos-claude` tag (LiteLLM UI › Logs can filter by either).
 session_headers() {
   local own="${2:-}"
   [ -z "$own" ] || printf '%s\n' "$own"

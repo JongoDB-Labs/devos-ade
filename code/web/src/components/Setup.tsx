@@ -22,8 +22,9 @@ import { Password, RequestLine, STATE, WHY, useRequest } from './Import';
 import { ConfirmCommand } from './Plugins';
 import { PRODUCT } from '../brand';
 
-export const SETUP_TOOL_LABEL: Record<SetupTool, string> = { claude: 'Claude Code', 'claude-bedrock': 'claude-bedrock', git: 'Git' };
-const BADGE: Record<SetupTool, string> = { claude: 'CC', 'claude-bedrock': 'CB', git: 'Git' };
+// (keys: the tools' internal names — claude-bedrock is devos-claude's)
+export const SETUP_TOOL_LABEL: Record<SetupTool, string> = { claude: 'Claude Code', 'claude-bedrock': 'devos-claude', git: 'Git' };
+const BADGE: Record<SetupTool, string> = { claude: 'CC', 'claude-bedrock': 'DC', git: 'Git' };
 const KIND_LABEL: Record<SetupKind, string> = {
   memory: 'Memory (CLAUDE.md)', skill: 'Skills', agent: 'Agents', command: 'Commands', 'output-style': 'Output styles', keybindings: 'Key bindings',
   setting: 'Settings (settings.json)', mcp: 'MCP servers', plugin: 'Plugins', identity: 'Git name and email',
@@ -97,7 +98,7 @@ export function SetupSheet({ project: pid, tool: firstTool = null, onClose }: { 
       {view && step === 1 && (
         <div class="imp-step" data-testid="setup-step-look">
           <p>
-            Items of your <b>Claude Code</b> setup (<code>~/.claude</code>) and <b>claude-bedrock</b>'s (<code>~/.claude-bedrock</code>) on the computer running {PRODUCT}, and your
+            Items of your <b>Claude Code</b> setup (<code>~/.claude</code>) and <b>devos-claude</b>'s (<code>~/.claude-bedrock</code>) on the computer running {PRODUCT}, and your
             <b> Git name and email</b> (<code>~/.gitconfig</code>), copied into the sandbox — each one your choice: CLAUDE.md, skills, agents, commands, output styles, key bindings,
             settings.json's permissions, status line, output style and hooks, MCP servers{host ? <> (with <b>{label(host.name, 60)}</b>'s own)</> : null}, and plugins (installed again from their marketplace).
           </p>
@@ -107,7 +108,7 @@ export function SetupSheet({ project: pid, tool: firstTool = null, onClose }: { 
             <code> ~/.aws</code>, Git's credential helpers. Nothing is ever written back to the computer.
           </p>
           <p class="small muted">
-            Every definition you bring goes into each request on Bedrock (billed per token): the sandbox starts lean, as <code>claude-bedrock</code> does — bring only what you use.
+            Every definition you bring goes into each request on Bedrock (billed per token): the sandbox starts lean, as <code>devos-claude</code> does — bring only what you use.
           </p>
           {view.index && (
             <p class="small muted" data-testid="setup-last-look">
@@ -130,9 +131,9 @@ export function SetupSheet({ project: pid, tool: firstTool = null, onClose }: { 
               <label class="small">
                 From{' '}
                 <select value={tool} onChange={(e) => setTool((e.currentTarget as HTMLSelectElement).value as SetupTool | 'all')} data-testid="setup-tool">
-                  <option value="all">Claude Code, claude-bedrock and Git</option>
+                  <option value="all">Claude Code, devos-claude and Git</option>
                   <option value="claude">Claude Code only</option>
-                  <option value="claude-bedrock">claude-bedrock only</option>
+                  <option value="claude-bedrock">devos-claude only</option>
                   <option value="git">Git name and email only</option>
                 </select>
               </label>

@@ -4212,10 +4212,10 @@ def polish_groups(browser):
     row.hover()
     row.locator(".sess-more .dd-trigger").click()
     page.get_by_test_id("session-to-terminal").click()
-    expect(page.locator(".toast").filter(has_text=f"claude-bedrock --resume {first}")).to_be_visible(timeout=10_000)
+    expect(page.locator(".toast").filter(has_text=f"devos-claude --resume {first}")).to_be_visible(timeout=10_000)
     expect(page.get_by_test_id("terminal")).to_be_visible()
     typed = json.loads(urllib.request.urlopen(NORMAL + "/__mock/terminal-log", timeout=5).read())["typed"]
-    assert typed == [f"claude-bedrock --resume {first}"], typed
+    assert typed == [f"devos-claude --resume {first}"], typed
     send(page, "and one more thing")
     expect(page.locator(".toast").filter(has_text="open in the terminal")).to_be_visible(timeout=10_000)
     expect(page.get_by_test_id("prompt")).to_have_value("and one more thing")
@@ -5117,7 +5117,7 @@ def import_sheet(browser):
     rows = page.get_by_test_id("import-row")
     expect(rows).to_have_count(3)
     expect(rows.nth(0).get_by_test_id("import-badge")).to_have_text("CC")
-    expect(rows.nth(1).get_by_test_id("import-badge")).to_have_text("CB")
+    expect(rows.nth(1).get_by_test_id("import-badge")).to_have_text("DC")
     expect(rows.nth(2).get_by_test_id("import-pick")).to_be_disabled()   # too large to copy
     expect(rows.nth(2)).to_contain_text("not a version these imports were tested with")
     p.shot("import-pick.png")
@@ -5179,7 +5179,7 @@ def import_sheet(browser):
     unfold(page, tools)
     row = proj(page, tools).get_by_test_id("session-row").filter(has_text="Fix the login bug")
     expect(row.get_by_test_id("session-imported")).to_have_text("CC", timeout=10_000)
-    expect(proj(page, tools).get_by_test_id("session-row").filter(has_text="Release notes").get_by_test_id("session-imported")).to_have_text("CB")
+    expect(proj(page, tools).get_by_test_id("session-row").filter(has_text="Release notes").get_by_test_id("session-imported")).to_have_text("DC")
     p.shot("import-badges.png")
     # nothing about a session was ever sent anywhere but the code host
     assert all(u.startswith(NORMAL) or u.startswith("data:") or u.startswith("blob:") for u in p.requests), [u for u in p.requests if not u.startswith(NORMAL)][:3]
@@ -5310,7 +5310,7 @@ def setup_sheet(browser):
     for name in ("CLAUDE.md", "pdf", "everything", "lan", "hello-cmd@acme", "identity"):
         rows.filter(has_text=name).first.get_by_test_id("setup-pick").check()
     for n in rows.filter(has_text="permissions").all() + rows.filter(has_text="hooks").all():
-        if "CB" not in n.inner_text():
+        if "DC" not in n.inner_text():
             n.get_by_test_id("setup-pick").check()
     page.get_by_test_id("setup-password-2").fill("correct horse")
     page.get_by_test_id("setup-open").click()
@@ -5400,7 +5400,7 @@ def setup_remote_phone(browser):
 @check("setup: from another device, what lets Claude act without asking goes through the portal password; on the computer it is said in its own words")
 def setup_remote_grants(browser):
     post(NORMAL + "/__mock/reset")
-    # opened on the computer: claude-bedrock's permissions (its whole Bash) and the Git name
+    # opened on the computer: devos-claude's permissions (its whole Bash; data-tool: its internal name) and the Git name
     p = Page(browser, NORMAL, "setup-grants", **DESKTOP)
     page = p.open()
     page.get_by_test_id("more-menu").click()

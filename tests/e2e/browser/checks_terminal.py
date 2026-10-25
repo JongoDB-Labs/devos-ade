@@ -1,7 +1,7 @@
 """The optional browser terminal (./stack terminal; tests/e2e/run.sh --terminal turns it on in the throwaway): the
 tab follows the setting, the terminal host is locked until the portal password is typed again, then xterm shows the
 tmux session (Claude Code in window 1, shell windows with Ctrl-b c) that outlives the browser; its WebSocket refuses
-other sites' Origins; on a phone it opens full screen from More; Sign out locks it again. One real claude-bedrock -p
+other sites' Origins; on a phone it opens full screen from More; Sign out locks it again. One real devos-claude -p
 inside it only with E2E_TERMINAL_CLAUDE=1 (run.sh's claude part). With E2E_TERMINAL_HOSTILE=1 (run.sh, after the
 suite: a stand-in listener on ttyd's socket, as code in the sandbox could start one) the terminal host's policy is
 checked against it. Every check but the first skips while it is off."""
@@ -218,7 +218,7 @@ def survives(ctx):
     return f"a window made in one browser ({mark}) is still there from the next one: {names[-120:]}"
 
 
-@check("browser", "terminal-claude-bedrock-inside")
+@check("browser", "terminal-devos-claude-inside")
 def claude_inside(ctx):
     need_on()
     if not CLAUDE:
@@ -236,7 +236,7 @@ def claude_inside(ctx):
     new_shell_window(page, f)
     # its stream (to a file): the mode Claude Code started in — the image's managed settings turn auto mode off, so
     # a session without a mode starts in default (Manual), not auto — and the answer
-    type_line(page, f, f'clear; CLAUDE_BEDROCK_MODEL={haiku} claude-bedrock -p "Reply with exactly the word: ok" --max-turns 1 '
+    type_line(page, f, f'clear; CLAUDE_BEDROCK_MODEL={haiku} devos-claude -p "Reply with exactly the word: ok" --max-turns 1 '
                        '--output-format stream-json --verbose > /tmp/e2e-cb.jsonl; jq -r \'select(.type == "system" and .subtype == "init") '
                        '| "mode: " + .permissionMode\' /tmp/e2e-cb.jsonl; jq -r \'select(.type == "result") | .result\' /tmp/e2e-cb.jsonl')
     wait_text(f, r"^session: (?!tallying)", 150)   # the final line replaces "session: tallying cost…"
@@ -248,7 +248,7 @@ def claude_inside(ctx):
     cost = re.search(r"^session: (.*)$", out, re.M).group(1)
     expect(re.match(r"(<?\$[0-9.]+ \(terminal key|no spend booked yet)", cost), f"session line {cost!r}")
     launch = re.search(r"^bedrock · .*$", out, re.M).group(0)
-    shot(page, "43-terminal-claude-bedrock")
+    shot(page, "43-terminal-devos-claude")
     rec.save()
     return f"{launch[:110]} → ok, started in default mode (auto off); session: {cost}"
 

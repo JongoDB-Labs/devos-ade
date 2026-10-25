@@ -1,5 +1,5 @@
 #!/bin/bash
-# The terminal container's start (compose.terminal.yaml): the MCP config for claude-bedrock, Claude Code's first-run
+# The terminal container's start (compose.terminal.yaml): the MCP config for devos-claude, Claude Code's first-run
 # theme screen done once, then ttyd on a UNIX socket. Each browser connection attaches to the same tmux session
 # (bn-session).
 set -euo pipefail
@@ -26,7 +26,7 @@ fi
 # restarts this container: with no code container, nothing connects and it does nothing. Restarted when it exits —
 # anything in here can kill it. Not under this script's `set -e` (a killed bn-coded would end the loop with it), and
 # detached twice, so tini (PID 1), not ttyd, is the loop's parent and reaps it. Without the MCP token: the Claude Code
-# it starts reads it from mcp.json, like claude-bedrock.
+# it starts reads it from mcp.json, like devos-claude.
 ( ( set +e; while :; do env -u SHARED_MCP_TOKEN node /usr/local/bin/bn-coded.mjs; sleep 2; done ) </dev/null & )
 # The Code page's browser previews, bn-preview: an HTTP/WebSocket proxy on a socket in the preview-socket volume, which
 # only the terminal's gateway shares (it connects; the main Caddy reaches it there with the preview's secret header,

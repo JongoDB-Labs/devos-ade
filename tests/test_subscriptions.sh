@@ -337,7 +337,7 @@ test_bn_session_takes_only_its_words() {
     "open codex $N1 $TMP/elsewhere" "open codex $N1 $ws/../elsewhere" "open codex $N1 relative" "open codex $N1 $ws extra"; do
     # shellcheck disable=SC2086
     out="$(_run $args)"
-    assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux new-session -A -s claude -n claude -c $ws claude-bedrock; exec bash"
+    assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux new-session -A -s claude -n claude -c $ws devos-claude; exec bash"
   done
   [ ! -d "$TMP/state/$N1" ] || { echo "a refused request used its nonce" >&2; return 1; }
   # a token made more than 10 minutes ago (or ahead of this clock): nothing starts, the terminal is only attached
@@ -362,7 +362,7 @@ test_bn_session_takes_only_its_words() {
   out="$(_run open shell "$N5")"
   assert_contains "$out" "-n shell -c $ws /usr/local/bin/subscriptions open shell"
   assert_not_contains "$out" "@bn-sub"
-  # Claude on your plan's window is claude-sub (the first window, claude, is claude-bedrock's)
+  # Claude on your plan's window is claude-sub (the first window, claude, is devos-claude's)
   out="$(_run open claude "$N1x")"
   assert_contains "$out" "-n claude-sub -c $ws /usr/local/bin/subscriptions open claude"
   # a folder with "#" (tmux reads -c as a format) and a "." in its name (a pane in a target): doubled, mapped

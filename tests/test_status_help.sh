@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2016  # literal $ in expected strings
-# Task A4: compact status, cost-aware help, claude-bedrock --help, budget wording, summary command.
+# Task A4: compact status, cost-aware help, devos-claude --help, budget wording, summary command.
 . "$STACK_DIR/lib/commands.sh"
 # Never touch real Docker images from these tests (lib/images.sh is covered by tests/test_images.sh).
 images_snapshot_before() { :; }; images_after_update() { :; }; disk_line() { echo "Disk: (stub)"; }
@@ -101,10 +101,10 @@ test_claude_bedrock_help_prints_header_and_no_cost_line() {
   _fake_claude
   printf 'LITELLM_PORT=9\nCLAUDE_BEDROCK_OPUS_MODEL=claude-opus-5-5\nCLAUDE_BEDROCK_HAIKU_MODEL=claude-haiku-5-5\n' > "$ENV_FILE"
   HOME="$TMP/home"; mkdir -p "$HOME"; unset CLAUDE_BEDROCK_USE_MY_CONFIG CLAUDE_BEDROCK_CONFIG_DIR CLAUDE_CONFIG_DIR
-  PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/claude-bedrock" --help > "$TMP/out" 2> "$TMP/err" || { cat "$TMP/err" >&2; return 1; }
+  PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/devos-claude" --help > "$TMP/out" 2> "$TMP/err" || { cat "$TMP/err" >&2; return 1; }
   out="$(cat "$TMP/out")"
   assert_eq "$(sed -n 9p "$TMP/out")" ""
-  assert_contains "$(sed -n 1p "$TMP/out")" "claude-bedrock"
+  assert_contains "$(sed -n 1p "$TMP/out")" "devos-claude"
   assert_contains "$(head -n 8 "$TMP/out")" "CLAUDE_BEDROCK_MODEL"
   assert_contains "$(head -n 8 "$TMP/out")" "CLAUDE_BEDROCK_QUIET"
   assert_contains "$(head -n 8 "$TMP/out")" "per 1M tokens"
@@ -113,14 +113,14 @@ test_claude_bedrock_help_prints_header_and_no_cost_line() {
   assert_eq "$(tail -n 1 "$TMP/out")" "CLAUDE --help"
   assert_eq "$(cat "$TMP/err")" ""
   [ ! -e "$HOME/.claude-bedrock" ] || { echo "--help created ~/.claude-bedrock" >&2; return 1; }
-  CLAUDE_BEDROCK_USE_MY_CONFIG=1 PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/claude-bedrock" --help > "$TMP/out" 2> /dev/null
+  CLAUDE_BEDROCK_USE_MY_CONFIG=1 PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/devos-claude" --help > "$TMP/out" 2> /dev/null
   assert_contains "$(sed -n 4p "$TMP/out")" "  Config   ~/.claude (CLAUDE_BEDROCK_USE_MY_CONFIG=1): your plugins, hooks and MCP servers load"
 }
 
 test_claude_bedrock_version_has_no_header_or_cost_line() {
   _fake_claude
   printf 'LITELLM_PORT=9\n' > "$ENV_FILE"
-  out="$(PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/claude-bedrock" --version 2> "$TMP/err")"
+  out="$(PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/devos-claude" --version 2> "$TMP/err")"
   assert_eq "$out" "CLAUDE --version"
   assert_eq "$(cat "$TMP/err")" ""
 }
@@ -133,26 +133,26 @@ test_budget_wording_is_consistent() {
   assert_contains "$(cat "$TMP/err")" 'monthly budget $7, resets on the date shown by ./stack costs'
 }
 
-test_claude_bedrock_cmd_short_when_linked_on_path() {
+test_devos_claude_cmd_short_when_linked_on_path() {
   HOME="$TMP/home"; STACK_DIR="$TMP/stack"; mkdir -p "$HOME/.local/bin" "$STACK_DIR/bin"
-  : > "$STACK_DIR/bin/claude-bedrock"; chmod +x "$STACK_DIR/bin/claude-bedrock"
-  assert_eq "$(PATH="/usr/bin:/bin" claude_bedrock_cmd)" "$STACK_DIR/bin/claude-bedrock"
-  ln -s "$STACK_DIR/bin/claude-bedrock" "$HOME/.local/bin/claude-bedrock"
-  assert_eq "$(PATH="/usr/bin:/bin" claude_bedrock_cmd)" "$STACK_DIR/bin/claude-bedrock"
-  assert_eq "$(PATH="$HOME/.local/bin:/usr/bin:/bin" claude_bedrock_cmd)" "claude-bedrock"
+  : > "$STACK_DIR/bin/devos-claude"; chmod +x "$STACK_DIR/bin/devos-claude"
+  assert_eq "$(PATH="/usr/bin:/bin" devos_claude_cmd)" "$STACK_DIR/bin/devos-claude"
+  ln -s "$STACK_DIR/bin/devos-claude" "$HOME/.local/bin/devos-claude"
+  assert_eq "$(PATH="/usr/bin:/bin" devos_claude_cmd)" "$STACK_DIR/bin/devos-claude"
+  assert_eq "$(PATH="$HOME/.local/bin:/usr/bin:/bin" devos_claude_cmd)" "devos-claude"
 }
 
-test_claude_bedrock_cmd_quotes_paths_with_spaces() {
+test_devos_claude_cmd_quotes_paths_with_spaces() {
   HOME="$TMP/home"; STACK_DIR="$TMP/my stack"
-  assert_eq "$(PATH="/usr/bin:/bin" claude_bedrock_cmd)" "$(printf '%q' "$TMP/my stack/bin/claude-bedrock")"
+  assert_eq "$(PATH="/usr/bin:/bin" devos_claude_cmd)" "$(printf '%q' "$TMP/my stack/bin/devos-claude")"
 }
 
 test_summary_shows_working_command_and_try_it() {
   printf 'OPENWEBUI_ADMIN_EMAIL=a@b.c\nCLAUDE_BEDROCK_HAIKU_MODEL=claude-haiku-5-5\n' > "$ENV_FILE"
-  claude_bedrock_cmd() { echo /opt/bn/bin/claude-bedrock; }
+  devos_claude_cmd() { echo /opt/bn/bin/devos-claude; }
   out="$(print_summary 2>&1)"
-  assert_contains "$out" "Claude Code     /opt/bn/bin/claude-bedrock"
-  assert_contains "$out" 'CLAUDE_BEDROCK_MODEL=claude-haiku-5-5 /opt/bn/bin/claude-bedrock -p'
+  assert_contains "$out" "Claude Code     /opt/bn/bin/devos-claude"
+  assert_contains "$out" 'CLAUDE_BEDROCK_MODEL=claude-haiku-5-5 /opt/bn/bin/devos-claude -p'
   assert_contains "$out" '(~$0.02)'
   printf 'OPENWEBUI_ADMIN_EMAIL=a@b.c\n' > "$ENV_FILE"
   assert_not_contains "$(print_summary 2>&1)" "Try it"

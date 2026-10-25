@@ -304,6 +304,6 @@ async def build(client: httpx.AsyncClient, s: Settings) -> dict:
         "models": models_with_openrouter(s),
         "voice": voice(s, price_update.effective_prices(price_paths(s))),
         "prices": price_update.status(price_paths(s), enabled=s.price_updates),
-        "claude": {"command": "claude-bedrock", "models": s.claude_models},
+        "claude": {"command": "devos-claude", "models": s.claude_models},
         "update": updates.status(update_paths(s), s.update_check),
     }

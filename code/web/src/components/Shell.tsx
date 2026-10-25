@@ -319,7 +319,7 @@ function ToolMenu({ onOpen }: { onOpen: (src: string) => void }) {
     >
       <option value="">Open…</option>
       <optgroup label="Claude Code on Bedrock, and a shell">
-        <option value="bedrock">Claude Code (Bedrock) — claude-bedrock</option>
+        <option value="bedrock">Claude Code (Bedrock) — devos-claude</option>
         <option value="shell">A shell</option>
       </optgroup>
       {answers && answers.tools.length > 0 && (
@@ -500,7 +500,7 @@ function TerminalAction() {
   const open = useSel(store, (s) => s.prefs.layout.terminal);
   return (
     <SbAction id="terminal" icon="terminal" label="Terminal" class="sb-opt" pressed={open} keys={keysFor('terminal')}
-      tip={open ? 'Hide the terminal: the sandbox’s shell, with claude-bedrock and your workspace' : 'Show the terminal: the sandbox’s shell, with claude-bedrock and your workspace'}
+      tip={open ? 'Hide the terminal: the sandbox’s shell, with devos-claude and your workspace' : 'Show the terminal: the sandbox’s shell, with devos-claude and your workspace'}
       onClick={toggleTerminal} />
   );
 }

@@ -55,11 +55,11 @@ test_costs_total_transport_failure() {
   assert_contains "$(_costs)" 'Total (all keys, last 30 days): unavailable — LiteLLM did not answer (is the stack up?'
 }
 
-# --- 3. claude-bedrock --help before setup ---
+# --- 3. devos-claude --help before setup ---
 
 test_claude_bedrock_help_before_setup() {
   mkdir -p "$TMP/bin"; printf '#!/bin/sh\necho "CLAUDE $*"\n' > "$TMP/bin/claude"; chmod +x "$TMP/bin/claude"
-  out="$(HOME="$TMP/home" PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/claude-bedrock" --help 2>&1)"
+  out="$(HOME="$TMP/home" PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/devos-claude" --help 2>&1)"
   assert_contains "$out" "not set up yet — run"
   assert_not_contains "$out" "127.0.0.1:,"
   assert_not_contains "$out" "price not in catalog"

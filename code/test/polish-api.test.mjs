@@ -129,7 +129,7 @@ test('POST /api/sessions/ID/terminal: this side\'s process ends first; refused m
   calls.length = 0;
   r = await req('POST', `/api/sessions/${json.id}/terminal`);
   assert.equal(r.status, 200);
-  assert.deepEqual(r.json, { ok: true, window: `resume-${json.id.slice(0, 8)}`, command: `claude-bedrock --resume ${json.id}` });
+  assert.deepEqual(r.json, { ok: true, window: `resume-${json.id.slice(0, 8)}`, command: `devos-claude --resume ${json.id}` });
   assert.deepEqual(calls.map((c) => c.op).filter((op) => op !== 'ws.sensitive'), ['terminal.resume']);
   assert.equal(srv.mgr.get(json.id).open, false);
   await until(a.inbox, (m) => m.type === 'event' && m.ev.type === 'local' && /Continued in the terminal/.test(m.ev.text));

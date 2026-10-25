@@ -1,7 +1,7 @@
 // The Import sheet's routes over the backend's API (main.mjs, imports-api.mjs) with a stand-in sandbox: what needs the
 // portal password (a look, a read, suggestions, a copy that keeps a possible secret) is never asked here — the page asks
 // the portal; this container only follows a request by its id and never writes one. The preview (its digest), the copy
-// through bn-coded's sessions.import (nothing kept), the CC / CB badge on the session list, an imported session's first
+// through bn-coded's sessions.import (nothing kept), the CC / DC badge on the session list, an imported session's first
 // open in Manual (and a fork's), Continue in this project (sessions.export, then a fork written into the project's
 // folder: an imported one's fork badged too), and suggestions without the folders that are projects already.
 import { test, before, after } from 'node:test';

@@ -300,7 +300,7 @@ export interface SessionInfo {
   cwd: string;
   /** the project it is shown in, as the backend says (projects.ts: only one of the list counts) */
   project: string;
-  /** copied from Claude Code (CC) or claude-bedrock (CB) on the computer running DevOS ADE; forked: as a new
+  /** copied from Claude Code (CC) or devos-claude (DC; its internal name: claude-bedrock) on the computer running DevOS ADE; forked: as a new
    *  session (its copy here had been continued) */
   imported?: ImportedFrom | null;
   /** who answered in it: Claude Code on Bedrock (also when not said), Claude on your plan, a subscription's agent */
@@ -327,7 +327,7 @@ export interface ImportRow {
   version: string | null;
   /** the Claude Code version that wrote it: one these imports were tested with, another, or none said */
   format: 'tested' | 'other' | 'unknown';
-  /** where its model calls went: DevOS ADE (claude-bedrock), Bedrock, Anthropic (its thinking blocks come out) */
+  /** where its model calls went: DevOS ADE (devos-claude), Bedrock, Anthropic (its thinking blocks come out) */
   source: 'bedrock-now' | 'bedrock' | 'anthropic' | 'unknown';
   thinking: number | null;
   branch: string | null;

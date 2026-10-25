@@ -256,9 +256,9 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
   }
 
   // --- "Open in the terminal": this side's process ends (sessions.mjs toTerminal), then the sandbox types
-  // `claude-bedrock --resume <id>` into a new window of the terminal's tmux session (bn-coded terminal.resume) ---
+  // `devos-claude --resume <id>` into a new window of the terminal's tmux session (bn-coded terminal.resume) ---
   // ids handed to the terminal in the last few seconds: a second request (a double click, another tab) is refused
-  // even before the first one's `claude-bedrock` shows in the sandbox's process list
+  // even before the first one's `devos-claude` shows in the sandbox's process list
   const handing = new Set();
   async function toTerminal(id) {
     if (!isUuid(id)) throw new HttpError(400, 'bad session id');
@@ -281,7 +281,7 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     }
     setTimeout(() => handing.delete(id), 10000).unref?.();
     const window = typeof result?.window === 'string' && /^resume-[0-9a-f]{8}$/.test(result.window) ? result.window : null;
-    return { ok: true, window, command: `${harness === 'claude' ? 'claude-sub' : 'claude-bedrock'} --resume ${id}` };
+    return { ok: true, window, command: `${harness === 'claude' ? 'claude-sub' : 'devos-claude'} --resume ${id}` };
   }
   // notRunning(id) — throws 409 while a process in the sandbox other than this side's runs that conversation (resumed
   // in the terminal): the page never resumes it a second time. This side's own process for it, just closed, is waited

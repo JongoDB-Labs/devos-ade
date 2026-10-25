@@ -211,7 +211,7 @@ def home(ctx):
     forms = page.eval_on_selector_all("a.form-link", "els => els.map(e => e.getAttribute('href'))")
     expect(forms == [origin("admin") + "/ui/login/?sso=off", origin("files") + "/rustfs/console/auth/login/?sso=off"],
            f"links to the apps' own forms: {forms}")
-    expect(page.inner_text("#claude-cmd") == "claude-bedrock", "claude command")
+    expect(page.inner_text("#claude-cmd") == "devos-claude", "claude command")
     expect(page.locator("#update-card").is_hidden(), "update card visible without an update")
     # The four Copy buttons put each sign-in on the clipboard (granted); the passwords are never in the page.
     page.context.grant_permissions(["clipboard-read", "clipboard-write"], origin=origin())

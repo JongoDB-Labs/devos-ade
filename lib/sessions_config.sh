@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # Bring your setup: items of your Claude Code setup on this computer — ~/.claude's (Claude Code) and ~/.claude-bedrock's
-# (claude-bedrock) memory, skills, agents, commands, output styles, key bindings, four keys of settings.json, MCP servers
+# (devos-claude) memory, skills, agents, commands, output styles, key bindings, four keys of settings.json, MCP servers
 # and plugins — and your Git name and email (~/.gitconfig), copied into the Code page's sandbox (./stack sessions config).
 # Copy one way, as for sessions (lib/sessions.sh, whose consent, reader container, dialog and request checks this uses):
 # read here, on this computer, only after you allowed it here (once, or always — per tool), by the reader
@@ -16,7 +16,7 @@
 #   import [--tool T] [--project NAME] [--rows …|--all] [--memory replace|append] [--replace-changed] [--keep-secrets]
 #                                           the whole way in a terminal: look, pick, open, check, copy
 #   consent [--tool T] --always|--once|--revoke
-#   T: claude, claude-bedrock, git, or all (the default)
+#   T: claude, devos-claude (internal name: claude-bedrock), git, or all (the default)
 #
 # The Code page asks for a look, an open, and a copy that keeps a possible secret through the PORTAL (setup-scan,
 # setup-fetch, setup-copy: lib/sessions.sh's request checks — fixed fields, never a path); a look and an open only from
@@ -31,9 +31,9 @@ SETUP_ROWS_MAX=100                  # items one open may name
 SETUP_KINDS='memory|skill|agent|command|output-style|keybindings|setting|mcp|plugin|identity'
 
 _sc_setup_dir() { printf '%s/setup\n' "$(sessions_dir)"; }
-_sc_label() { case "$1" in claude) echo "Claude Code setup (~/.claude)" ;; claude-bedrock) echo "claude-bedrock setup (~/.claude-bedrock)" ;; git) echo "Git name and email (~/.gitconfig)" ;; esac; }
-_sc_short() { case "$1" in claude) echo "Claude Code" ;; claude-bedrock) echo "claude-bedrock" ;; git) echo "Git" ;; esac; }
-_sc_tools() { case "${1:-all}" in claude | claude-bedrock | git) echo "$1" ;; all | both) echo "$SETUP_TOOLS" ;; *) return 1 ;; esac; }
+_sc_label() { case "$1" in claude) echo "Claude Code setup (~/.claude)" ;; claude-bedrock) echo "devos-claude setup (~/.claude-bedrock)" ;; git) echo "Git name and email (~/.gitconfig)" ;; esac; }
+_sc_short() { case "$1" in claude) echo "Claude Code" ;; claude-bedrock) echo "devos-claude" ;; git) echo "Git" ;; esac; }
+_sc_tools() { local t; t="$(_ss_tool_id "${1:-all}")"; case "$t" in claude | claude-bedrock | git) echo "$t" ;; all | both) echo "$SETUP_TOOLS" ;; *) return 1 ;; esac; }
 
 sessions_config_usage() {
   cat <<'EOF'
@@ -60,7 +60,7 @@ Usage: ./stack sessions config <command>
       --keep-secrets            copy what looks like a secret as it is (redacted, or left out, otherwise)
   consent [--tool T] --always | --once | --revoke
 
-  T: claude (~/.claude), claude-bedrock (~/.claude-bedrock), git (~/.gitconfig), or all (the default).
+  T: claude (~/.claude), devos-claude (~/.claude-bedrock), git (~/.gitconfig), or all (the default).
   From the Code page: Settings › Claude Code › Bring your setup…, or a project's ⋯ › Bring your setup… (the update
   helper asks you in a dialog on this computer's screen first).
 EOF
@@ -159,18 +159,18 @@ sessions_config_scan() {
   local tool=all ref='' origin=local screen=0 tools t s need='' ans scope=always scan tmp res rows gitonly=1 needtext pid='-' host='-'
   while [ $# -gt 0 ]; do
     case "$1" in
-      --tool) tool="${2:-}"; shift 2 || true ;;
+      --tool) tool="$(_ss_tool_id "${2:-}")"; shift 2 || true ;;
       --project) ref="${2:-}"; shift 2 || true ;;
       --origin) origin="${2:-}"; shift 2 || true ;;
       --request) SS_REQ="${2:-}"; shift 2 || true ;;
       --screen) screen=1; shift ;;
-      *) die "usage: ./stack sessions config scan [--tool claude|claude-bedrock|git|all] [--project NAME]" ;;
+      *) die "usage: ./stack sessions config scan [--tool claude|devos-claude|git|all] [--project NAME]" ;;
     esac
   done
   case "$SS_REQ" in '') ;; *[!0-9a-f]* | ?????????????????????????????????*) SS_REQ='' ;; esac
   SS_REQ_ACTION=setup-scan
   case "$origin" in local | remote) ;; *) _ss_fail bad-request "--origin: local or remote" ;; esac
-  tools="$(_sc_tools "$tool")" || _ss_fail bad-request "--tool: claude, claude-bedrock, git or all"
+  tools="$(_sc_tools "$tool")" || _ss_fail bad-request "--tool: claude, devos-claude, git or all"
   [ -f "$ENV_FILE" ] || die "run ./stack setup first"
   _ss_secure_dir "$(sessions_dir)" || die "cannot create $(sessions_dir)"
   _ss_forget_pending
@@ -392,7 +392,7 @@ sessions_config_import() {
   local tool=all ref='' rows='' all=0 mode='' conflict=leave keep=0 n=0 k t kind scope name size flag last
   while [ $# -gt 0 ]; do
     case "$1" in
-      --tool) tool="${2:-}"; shift 2 || true ;;
+      --tool) tool="$(_ss_tool_id "${2:-}")"; shift 2 || true ;;
       --project) ref="${2:-}"; shift 2 || true ;;
       --rows) rows="${2:-}"; shift 2 || true ;;
       --all) all=1; shift ;;
@@ -463,7 +463,7 @@ sessions_config_consent() {
   local tool=all what='' t
   while [ $# -gt 0 ]; do
     case "$1" in
-      --tool) tool="${2:-}"; shift 2 || true ;;
+      --tool) tool="$(_ss_tool_id "${2:-}")"; shift 2 || true ;;
       --always | --once | --revoke) [ -z "$what" ] || die "one of --always, --once, --revoke"; what="${1#--}"; shift ;;
       *) die "unknown option: $1 (./stack sessions config help)" ;;
     esac
@@ -472,7 +472,7 @@ sessions_config_consent() {
   _ss_secure_dir "$(sessions_dir)" || die "cannot create $(sessions_dir)"
   _ss_forget_pending
   [ -n "$what" ] || { sessions_config_list; return 0; }
-  _sc_tools "$tool" >/dev/null || die "--tool: claude, claude-bedrock, git or all"
+  _sc_tools "$tool" >/dev/null || die "--tool: claude, devos-claude, git or all"
   for t in $(_sc_tools "$tool"); do
     if [ "$what" = revoke ]; then _sc_consent_take "$t"; else _ss_consent_grant setup "$t" - - "$what"; fi
   done

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # lib/version.sh: the installed version, the version file the portal reads, and the portal's cached release
-# check as ./stack status and claude-bedrock see it (no network).
+# check as ./stack status and devos-claude see it (no network).
 . "$STACK_DIR/lib/commands.sh"
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 

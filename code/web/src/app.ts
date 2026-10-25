@@ -237,7 +237,7 @@ export type ProjectDialog =
   | { kind: 'file'; ids: string[] }
   /** a project's own Claude Code settings: what they set, Trust / Stop trusting (start: then a new session there) */
   | { kind: 'settings'; id: string; start?: NewSessionOptions }
-  /** your Claude Code and claude-bedrock sessions of a folder of this computer, copied into the sandbox (Import.tsx) */
+  /** your Claude Code and devos-claude sessions of a folder of this computer, copied into the sandbox (Import.tsx) */
   | { kind: 'import'; id: string }
   /** Bring your setup: your Claude Code setup and Git name and email of this computer, copied into the sandbox (Setup.tsx);
    *  id: the project it was opened from (a folder of this computer: its local MCP servers too), tool: git from the Git panel */
@@ -1505,7 +1505,7 @@ export async function setSessionBudget(id: string | null, b: Budget | null, forN
 }
 
 /** "Open in the terminal": the page's process for the session ends, and the terminal panel (a new tab on a phone)
- *  shows a new window where `claude-bedrock --resume <id>` was typed. Until Claude Code exits there, a prompt here is
+ *  shows a new window where `devos-claude --resume <id>` was typed. Until Claude Code exits there, a prompt here is
  *  refused (two processes would write one conversation). */
 export async function openInTerminal(id: string): Promise<void> {
   if (!isUuid(id)) return;

@@ -15,7 +15,7 @@ const tools = [
   { id: "cursor", name: "Cursor CLI", provider: "Cursor", plan: "your Cursor plan", command: "cursor-agent", installed: false, signed_in: "no", kind_words: "", chat_model: "no", chat_why: "No." },
   { id: "grok", name: "Grok Build", provider: "xAI", plan: "SuperGrok", command: "grok", installed: null, signed_in: "unknown", kind_words: "", chat_model: "no", chat_why: "No." },
 ];
-const data = { terminal: { here: true }, basics: [{ id: "bedrock", name: "Claude Code (Bedrock)", command: "claude-bedrock" }, { id: "shell", name: "A shell", command: "bash" }],
+const data = { terminal: { here: true }, basics: [{ id: "bedrock", name: "Claude Code (Bedrock)", command: "devos-claude" }, { id: "shell", name: "A shell", command: "bash" }],
   tools, models: [{ id: "claude-haiku-5-5", label: "Claude Haiku 5.5", provider: "Bedrock" }, { id: "or/x", label: "X", provider: "OpenRouter" }] };
 
 test("the Terminal tab: Bedrock and a shell, then each tool with its state; one that cannot open is greyed with why", () => {

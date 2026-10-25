@@ -1,7 +1,7 @@
 // Walkthrough: takes a developer through all of DevOS ADE — setting it up (AWS models, OpenRouter, voice, Claude Code,
 // a git host, budgets), its apps behind the one portal sign-in, Chat, coding with Claude on the Code page (modes, models,
 // the workspace, @-mentions, clone, review and push, run and preview, what the sandbox reaches, plugins), the models from
-// your own tools (claude-bedrock, the LiteLLM API, the shared store) and keeping it running (Home, Activity and search,
+// your own tools (devos-claude, the LiteLLM API, the shared store) and keeping it running (Home, Activity and search,
 // spend, updates and backups, your phone). It lives at the bottom of the sidebar: on desktops a section of the widened
 // sidebar (the apps' frames just get narrower), on tablets — and on a desktop whose sidebar is collapsed to its icons
 // (nav.js) — a card next to the icon rail, on phones a sheet above the tab bar opened from More.
@@ -306,7 +306,7 @@
     const k = sum && sum.spend && (sum.spend.keys || []).find((r) => r.alias === alias);
     return k && !k.error && typeof k.spend === "number" ? k.spend : null;
   };
-  const command = () => (sum && sum.claude && sum.claude.command) || "claude-bedrock";
+  const command = () => (sum && sum.claude && sum.claude.command) || "devos-claude";
   const remote = () => Boolean(sum && sum.remote && sum.remote.here);
   const onlyHere = () => (remote() ? " — you are on another device now, so open it there for that" : "");
 
@@ -324,7 +324,7 @@
         list("ul", [
           CODE.here ? [b("Code"), ": Claude Code in the browser — a chat beside your files, Git, previews, Run & test — in a sandbox that sees one folder."]
             : [b("Code"), ": Claude Code in the browser, once it is on (its step says how)."],
-          [b("Claude Code"), " in your own terminal (", code("claude-bedrock"), ")", TERM.here ? ", and the browser terminal." : "."],
+          [b("Claude Code"), " in your own terminal (", code("devos-claude"), ")", TERM.here ? ", and the browser terminal." : "."],
           [b("Chat"), " (Open WebUI): conversations, voice and your documents."],
           [b("Your own tools"), ": scripts and apps use the same models through one OpenAI- and Anthropic-compatible API."],
           [b("Admin"), " (keys, budgets, logs) and ", b("Files"), " (the store Claude Code and Chat share)."]]),
@@ -404,15 +404,15 @@
     "claude-setup": {
       title: "Claude Code on your computer", optional: true,
       body: () => [
-        p(code("claude-bedrock"), " is Claude Code pointed at this stack, so Claude Code (", code("claude"), ") must be installed (",
+        p(code("devos-claude"), " is Claude Code pointed at this stack, so Claude Code (", code("claude"), ") must be installed (",
           doc("quickstart", "prerequisites"), ")."),
         p("Setup offers to link it into ", code("~/.local/bin"), ". If your terminal says “command not found”, run ",
-          code("./bin/claude-bedrock"), " from your DevOS ADE folder, or re-run ", code("./stack setup"), " and answer y."),
+          code("./bin/devos-claude"), " from your DevOS ADE folder, or re-run ", code("./stack setup"), " and answer y."),
         cmd(command()),
         p("It keeps its own config folder, ", code("~/.claude-bedrock"), ": your ", code("~/.claude"),
           " plugins, hooks and MCP servers are not loaded, which makes a prompt on Bedrock about 100× cheaper (",
           doc("a-lean-config-folder-for-bedrock", "why"), "). Add only what you want with ",
-          code("claude-bedrock plugin install …"), " or ", code("claude-bedrock mcp add …"), "; ",
+          code("devos-claude plugin install …"), " or ", code("devos-claude mcp add …"), "; ",
           code("CLAUDE_BEDROCK_USE_MY_CONFIG=1"), " loads your whole setup."),
         codeLine(false),
       ],
@@ -605,7 +605,7 @@
           [b("chat only"), ": it answers, but cannot read, edit or run anything (Llama 3.3 70B)."],
           [b("not tested"), ": OpenRouter models nobody checked yet."]]),
         p(settings("Claude Code", "CODE_MODELS"), " › ", b("Models for Claude Code"), " picks what the picker lists, and ", b("Default model for new sessions"),
-          " which one they start on. In your terminal, ", code("claude-bedrock --models"), " lists them and ", code("claude-bedrock --model mistral-large-3"), " starts on one."),
+          " which one they start on. In your terminal, ", code("devos-claude --models"), " lists them and ", code("devos-claude --model mistral-large-3"), " starts on one."),
         note("Switching writes the prompt cache for that model again (the picker says how much). ⋯ › ", b("Budget for this session"),
           " warns at 50 % and 80 % of an amount you choose, and can stop Claude at it."),
       ],
@@ -700,7 +700,7 @@
     terminal: {
       title: "The browser terminal", optional: true, when: () => TERM.here,
       body: () => [
-        p("Claude Code in a sandbox that sees only your workspace folder: in the ", b("Terminal"), " tab, ", code("claude-bedrock"),
+        p("Claude Code in a sandbox that sees only your workspace folder: in the ", b("Terminal"), " tab, ", code("devos-claude"),
           " starts by itself in its first window. It asks for the portal password again."),
         list("ul", [
           ["Closing the tab keeps it running: come back later, or from your phone, and it is where you left it."],
@@ -742,12 +742,12 @@
     // ---------------- Your own tools
     claude: {
       title: "Claude Code in your terminal", optional: true, live: true,
-      spendKey: "claude-code",   // (claude-bedrock's key; the Code tab's spend is Open Code and ask's, on the terminal's key)
+      spendKey: "claude-code",   // (devos-claude's key; the Code tab's spend is Open Code and ask's, on the terminal's key)
       waiting: "Not detected yet: spend can take a minute to show.",
       body: () => [
         p("In a terminal, in a project folder:"), cmd(command()),
         p("Its first line shows the model's price and your budget; when you exit, it prints what the session cost and how to come back: ",
-          code("resume: claude-bedrock --resume <id>"), "."),
+          code("resume: devos-claude --resume <id>"), "."),
         p("Type ", code("/mcp"), ": ", code("bedrock-shared"), " is connected. Then ask:"),
         cmd(PROMPT, "the prompt"),
         PHONE.matches && !CODE.here ? note("From a phone, ", code("./stack ssh-info"), " shows how to reach Claude Code over SSH.") : null,

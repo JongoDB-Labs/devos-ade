@@ -161,12 +161,12 @@ test('terminal.resume: a new tmux window, the fixed command typed into its shell
   fs.writeFileSync(path.join(dir, `${id}.jsonl`), '{"type":"user"}\n');
   fs.rmSync(LOG, { force: true });
   const r = await call({ op: 'terminal.resume', id });
-  assert.deepEqual(r, { ok: true, window: `resume-${id.slice(0, 8)}`, command: `claude-bedrock --resume ${id}` });
+  assert.deepEqual(r, { ok: true, window: `resume-${id.slice(0, 8)}`, command: `devos-claude --resume ${id}` });
   const calls = fs.readFileSync(LOG, 'utf8').split('---\n').filter(Boolean).map((c) => c.trim().split('\n'));
   assert.deepEqual(calls[0], ['has-session', '-t', '=claude']);
   assert.equal(calls[1][0], 'new-session');   // (no session yet: made as bn-session would)
   assert.deepEqual(calls[2], ['new-window', '-P', '-F', '#{pane_id}', '-t', '=claude:', '-n', `resume-${id.slice(0, 8)}`, '-c', WS]);
-  assert.deepEqual(calls[3], ['send-keys', '-t', '%17', '-l', `claude-bedrock --resume ${id}`]);
+  assert.deepEqual(calls[3], ['send-keys', '-t', '%17', '-l', `devos-claude --resume ${id}`]);
   assert.deepEqual(calls[4], ['send-keys', '-t', '%17', 'Enter']);
   assert.equal(calls.length, 5);
 });
@@ -193,7 +193,7 @@ test('sessions.running: a process with the id as an argument (not bn-coded\'s ow
   mk(101, ['claude', '--resume', other]);
   fs.mkdirSync(path.join(proc, 'self'), { recursive: true });
   assert.deepEqual(coded.sessionRunning(id, proc), { running: false });
-  mk(102, ['/bin/bash', '/usr/local/bin/claude-bedrock', '--resume', id]);
+  mk(102, ['/bin/bash', '/usr/local/bin/devos-claude', '--resume', id]);
   assert.deepEqual(coded.sessionRunning(id, proc), { running: true, pid: 102 });
   fs.rmSync(path.join(proc, '102'), { recursive: true });
   mk(103, ['claude', '--output-format', 'stream-json', `--resume=${id}`]);

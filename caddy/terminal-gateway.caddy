@@ -16,7 +16,7 @@
 	}
 }
 
-# On the internal "terminal" network alone ("gateway"): exactly what Claude Code and the terminal's claude-bedrock
+# On the internal "terminal" network alone ("gateway"): exactly what Claude Code and the terminal's devos-claude
 # use — LiteLLM's Anthropic API (/v1/messages, …/count_tokens), its model list, the key's own info and model prices,
 # its liveness — and shared-mcp's /mcp. Each still needs the terminal's key or SHARED_MCP_TOKEN (and the key itself
 # may call only these LiteLLM paths: lib/terminal.sh, TERMINAL_KEY_ROUTES). Everything else (LiteLLM's admin UI and

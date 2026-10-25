@@ -119,10 +119,10 @@ def test_one_sign_in_wording():
 def test_claude_steps_name_the_lean_config_folder():
     js = (STATIC / "tour.js").read_text(encoding="utf-8")
     setup = js[js.index('"claude-setup": {'):js.index("budgets: {")]
-    for words in ("~/.claude-bedrock", "CLAUDE_BEDROCK_USE_MY_CONFIG=1", "claude-bedrock plugin install", "claude-bedrock mcp add",
+    for words in ("~/.claude-bedrock", "CLAUDE_BEDROCK_USE_MY_CONFIG=1", "devos-claude plugin install", "devos-claude mcp add",
                   'doc("a-lean-config-folder-for-bedrock"'):
         assert words in setup, words
-    assert "resume: claude-bedrock --resume <id>" in js[js.index("    claude: {"):]
+    assert "resume: devos-claude --resume <id>" in js[js.index("    claude: {"):]
 
 
 def test_claude_steps_point_at_the_code_tab_or_at_settings():
@@ -144,7 +144,7 @@ def test_claude_steps_point_at_the_code_tab_or_at_settings():
     off = opener[opener.index("if (!CODE.here)"):opener.index("if (PHONE.matches)")]
     assert 'button("About the Code tab", "open-code", () => { showTab("code"); away(); })' in off and "appUrl" not in off
     # each step its own spend baseline (spendState / withBaseline, tour.test.mjs): the Claude Code step watches
-    # claude-bedrock's key only — the Code tab's spend is Open Code and ask's
+    # devos-claude's key only — the Code tab's spend is Open Code and ask's
     assert 'spendKey: "claude-code",' in use and "spendAlso" not in js
     assert 'spendKey: "claude-code-terminal"' in _step(js, "code-open")
 
@@ -204,7 +204,7 @@ def test_the_code_steps_name_what_a_developer_uses():
                        "the other tools' part too", "the first time one of them starts there", "Stop trusting them", "v0.23.0", 'doc("projects"',
                        'Trust covers only what it shows ", b("whole")', "A part the dialog cannot show whole", "Trust covers Claude Code's part alone"),
         "code-models": ("works", "chat only", "not tested", "Models for Claude Code", "Default model for new sessions",
-                        "claude-bedrock --models", "claude-bedrock --model mistral-large-3", "Budget for this session"),
+                        "devos-claude --models", "devos-claude --model mistral-large-3", "Budget for this session"),
         "code-workspace": ("cfg.workspace", '"./stack code status"', "Ctrl/⌘+P", "Ctrl/⌘+Shift+F", "Ctrl/⌘+K", "Preview", "Mermaid",
                            "Memory (CLAUDE.md)", "./stack code enable --workspace DIR", "Projects", "New project"),
         "code-context": ('code("@file#L5-10")', "Alt+K", '"@terminal"', '"@diff"', '"@problems"', "Comment on lines", "Keep planning"),

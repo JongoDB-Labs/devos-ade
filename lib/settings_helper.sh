@@ -18,6 +18,7 @@
 #                                        project-remove / project-mode-ro  {…,"when":"now|idle","project":"p_<8 hex>"}
 #                                                        by the project's id in folders.tsv (narrowing: from anywhere)
 #                                        sessions-revoke {…,"project":"p_<8 hex>|all","tool":"claude|claude-bedrock|both|suggest|setup-…"}
+#                                                        (claude-bedrock: devos-claude's, by its internal name)
 #                                                        what DevOS ADE may read of your sessions here, taken back
 #                                                        (narrowing: from anywhere; lib/sessions.sh) — setup-claude,
 #                                                        setup-claude-bedrock, setup-git, setup-all: of your setup

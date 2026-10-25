@@ -2189,8 +2189,8 @@ async function api(req, res, url) {
       sessions.delete(id);
     }
     inTerminal.add(id);
-    terminalLog.push(`claude-bedrock --resume ${id}`);
-    return json(res, 200, { ok: true, window: `resume-${id.slice(0, 8)}`, command: `claude-bedrock --resume ${id}` });
+    terminalLog.push(`devos-claude --resume ${id}`);
+    return json(res, 200, { ok: true, window: `resume-${id.slice(0, 8)}`, command: `devos-claude --resume ${id}` });
   }
   if (p === '/api/permissions' && m === 'GET') return json(res, 200, permissionsView());
   if (p === '/api/permissions/remove' && m === 'POST') {

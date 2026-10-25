@@ -140,7 +140,7 @@ first_enabled() { # first_enabled ENABLED_FILE PREF... -> first pref present, or
 # empty model list).
 render_litellm_config() {
   local rows rc=0
-  # with lib/code_models.sh (./stack): the chat models' bn_* model_info for claude-bedrock in the terminal
+  # with lib/code_models.sh (./stack): the chat models' bn_* model_info for devos-claude in the terminal
   if ! declare -F code_models_inject >/dev/null; then _render_litellm_config_base "$@"; return; fi
   rows="$(mktemp)" || die "cannot create a temp file"
   code_models_rows "${1:-}" > "$rows" 2>/dev/null || : > "$rows"
@@ -195,7 +195,7 @@ general_settings:
   database_url: os.environ/DATABASE_URL
   store_prompts_in_spend_logs: $store
   maximum_spend_logs_retention_period: "90d"
-  proxy_batch_write_at: 1   # spend logs land within ~1-6 s (claude-bedrock's exit summary reads them)
+  proxy_batch_write_at: 1   # spend logs land within ~1-6 s (devos-claude's exit summary reads them)
   password_policy_check_breached_passwords: false   # no haveibeenpwned.com call (Bedrock-only rule)
   enable_public_model_hub: false   # no sign-in-free model list; declared, so the AI Hub page's lookup gets an answer, not a 400
 EOT

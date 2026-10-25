@@ -49,7 +49,7 @@ test_rotate_aws_rejects_temporary_credentials() {
 
 # --- symlink policy ---
 
-_symlink_env() { HOME="$TMP/home"; STACK_DIR="$TMP/stack"; mkdir -p "$HOME/.local/bin" "$STACK_DIR/bin"; T="$HOME/.local/bin/claude-bedrock"; }
+_symlink_env() { HOME="$TMP/home"; STACK_DIR="$TMP/stack"; mkdir -p "$HOME/.local/bin" "$STACK_DIR/bin"; T="$HOME/.local/bin/devos-claude"; }
 
 test_symlink_never_created_under_yes() {
   _symlink_env; ASSUME_YES=1
@@ -59,26 +59,26 @@ test_symlink_never_created_under_yes() {
 }
 
 test_symlink_to_other_checkout_is_not_replaced_under_yes() {
-  _symlink_env; ASSUME_YES=1; ln -s /elsewhere/bin/claude-bedrock "$T"
+  _symlink_env; ASSUME_YES=1; ln -s /elsewhere/bin/devos-claude "$T"
   offer_symlink 2>/dev/null
-  assert_eq "$(readlink "$T")" "/elsewhere/bin/claude-bedrock"
+  assert_eq "$(readlink "$T")" "/elsewhere/bin/devos-claude"
 }
 
 test_symlink_to_other_checkout_needs_interactive_yes() {
-  _symlink_env; ASSUME_YES=0; ln -s /elsewhere/bin/claude-bedrock "$T"; _have_tty() { return 0; }
+  _symlink_env; ASSUME_YES=0; ln -s /elsewhere/bin/devos-claude "$T"; _have_tty() { return 0; }
   ask() { echo "$1" >> "$TMP/prompts"; echo n; }
   offer_symlink 2>/dev/null
-  assert_eq "$(readlink "$T")" "/elsewhere/bin/claude-bedrock"
-  assert_contains "$(cat "$TMP/prompts")" "/elsewhere/bin/claude-bedrock"
+  assert_eq "$(readlink "$T")" "/elsewhere/bin/devos-claude"
+  assert_contains "$(cat "$TMP/prompts")" "/elsewhere/bin/devos-claude"
   ask() { echo y; }
   offer_symlink 2>/dev/null
-  assert_eq "$(readlink "$T")" "$STACK_DIR/bin/claude-bedrock"
+  assert_eq "$(readlink "$T")" "$STACK_DIR/bin/devos-claude"
 }
 
 test_symlink_created_interactively_by_default() {
   _symlink_env; ASSUME_YES=0; _have_tty() { return 0; }; ask() { echo "${2:-}"; }
   offer_symlink 2>/dev/null
-  assert_eq "$(readlink "$T")" "$STACK_DIR/bin/claude-bedrock"
+  assert_eq "$(readlink "$T")" "$STACK_DIR/bin/devos-claude"
 }
 
 # --- summary ---
@@ -214,5 +214,5 @@ test_compose_bind_mounts_are_selinux_labelled() {
 }
 
 test_claude_bedrock_turns_off_nonessential_traffic() {
-  assert_contains "$(grep -E '^export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1([[:space:]]|$)' "$STACK_DIR/bin/claude-bedrock")" "NONESSENTIAL"
+  assert_contains "$(grep -E '^export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1([[:space:]]|$)' "$STACK_DIR/bin/devos-claude")" "NONESSENTIAL"
 }

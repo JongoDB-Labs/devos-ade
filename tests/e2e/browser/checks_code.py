@@ -2660,7 +2660,7 @@ def ui_guardrails(ctx):
     # with Claude Code ended and closed (finally).
     page.get_by_test_id("more-menu").click()
     page.get_by_test_id("menu-to-terminal").click()
-    see(page.locator(".toast").filter(has_text=f"claude-bedrock --resume {sid}")).to_be_visible(timeout=30000)
+    see(page.locator(".toast").filter(has_text=f"devos-claude --resume {sid}")).to_be_visible(timeout=30000)
     see(page.get_by_test_id("terminal")).to_be_visible()
     tf = None
 
@@ -2680,7 +2680,7 @@ def ui_guardrails(ctx):
         # its window (tmux's status line), and Claude Code running there — the command line itself is soon covered by
         # Claude Code's screen (in this fresh sandbox first its "trust this folder?" question)
         _term_wait(tf, re.escape(f"resume-{sid[:8]}"), 60)
-        _term_wait(tf, r"(?i)(trust this folder|for shortcuts|claude-bedrock --resume)", 60)
+        _term_wait(tf, r"(?i)(trust this folder|for shortcuts|devos-claude --resume)", 60)
         shot(page, "113-code-ui-open-in-terminal")
         r = c.api("POST", "/api/sessions", {"resume": sid, "model": HAIKU, "mode": "default"})
         expect(r["status"] == 409 and "terminal" in r["text"], f"a resume while the terminal runs it: {r['status']} {r['text'][:160]}")
@@ -3465,7 +3465,7 @@ def host_sessions_a(ctx):
     """run.sh added a folder (e2e-sessions-app) and read two synthetic sessions of a fake home into the Code page's
     container (./stack sessions consent, scan, fetch). The Import sheet opens on Check and copy: the Claude Code one
     with 2 possible secrets (one in its prompt, one in a subagent's transcript — its length shown — a token's public start only —,
-    never the whole), its thinking block to come out and its one tool output (a third fake secret in it) left out by default; copied (redacted), both badged (CC, CB); the CC one resumed on
+    never the whole), its thinking block to come out and its one tool output (a third fake secret in it) left out by default; copied (redacted), both badged (CC, DC); the CC one resumed on
     Haiku answers the word its copied history asked it to remember; Continue in this project (filed in the Workspace)
     makes a new session there. With E2E_HOST_SESSIONS_REAL, also the owner's one real transcript: copied and resumed."""
     need_haiku()
@@ -3503,7 +3503,7 @@ def host_sessions_a(ctx):
     expect(rows.get(s1, {}).get("imported", {}).get("tool") == "claude" and rows.get(s2, {}).get("imported", {}).get("tool") == "claude-bedrock",
            f"the copies' badges: {rows.get(s1)} {rows.get(s2)}")
     see(_proj(page, app["id"]).locator(f"[data-testid=session-row][data-session='{s1}'] [data-testid=session-imported]")).to_have_text("CC", timeout=30000)
-    see(_proj(page, app["id"]).locator(f"[data-testid=session-row][data-session='{s2}'] [data-testid=session-imported]")).to_have_text("CB")
+    see(_proj(page, app["id"]).locator(f"[data-testid=session-row][data-session='{s2}'] [data-testid=session-imported]")).to_have_text("DC")
     # resumed natively on Haiku: its copied history is there (the word), its first open in Manual
     page.get_by_test_id("model-picker").click()
     page.get_by_test_id("model-haiku").click()
@@ -3541,4 +3541,4 @@ def host_sessions_a(ctx):
         expect("OK" in last_answer(page), f"the real transcript resumed on Bedrock: {last_answer(page)!r}")
         real = "; the owner's real transcript resumed on Haiku"
     csp_clean(page, rec)
-    return f"2 possible secrets listed (never shown whole) and redacted, the thinking block out, both copied (CC, CB); resumed on Haiku with its history (PELICAN); continued in the Workspace{real}"
+    return f"2 possible secrets listed (never shown whole) and redacted, the thinking block out, both copied (CC, DC); resumed on Haiku with its history (PELICAN); continued in the Workspace{real}"

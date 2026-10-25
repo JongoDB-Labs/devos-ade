@@ -92,7 +92,7 @@
 .np-cmd code { min-width: 0; overflow-wrap: anywhere; padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-2); }
 .proj-ro.pending { border-style: dashed; color: var(--warn); }
 
-/* sessions of this computer: the Import sheet (Import.tsx), the CC / CB badge, Suggested from your computer */
+/* sessions of this computer: the Import sheet (Import.tsx), the CC / DC badge, Suggested from your computer */
 .imp-badge { display: inline-grid; place-items: center; margin-right: 5px; padding: 0 4px; height: 15px; border: 1px solid var(--line); border-radius: 4px; font-size: 10px; font-weight: 600; color: var(--muted); vertical-align: 1px; }
 .imp-steps { display: flex; gap: 14px; margin: 0 0 10px; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
 .imp-steps li.on { color: var(--fg); font-weight: 600; }

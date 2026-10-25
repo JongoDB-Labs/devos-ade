@@ -90,7 +90,7 @@
 //                   rule taken out of the user settings — that one fixed file, only while it is as the page saw it, every
 //                   other key kept, written to a temporary file and renamed
 //   terminal.resume a session continued in the terminal: a new window of the terminal's tmux session, in the
-//                   session's folder, with `claude-bedrock --resume <id>` typed into its shell (a checked UUID of a
+//                   session's folder, with `devos-claude --resume <id>` typed into its shell (a checked UUID of a
 //                   transcript that is there; nothing else is ever typed)
 //   terminal.window a new window of the terminal's tmux session in a project's folder (a shell; nothing typed)
 //   terminal.capture
@@ -701,7 +701,7 @@ export function sessionsTitle(id, title, cwd, store) {
 }
 
 // --- sessions.import / sessions.export: a transcript copied into this sandbox's store by the code container (a session
-// --- of Claude Code or claude-bedrock on the computer, which you picked and checked on the Code page; or Continue in
+// --- of Claude Code or devos-claude on the computer, which you picked and checked on the Code page; or Continue in
 // --- this project: a fork written into another project's folder), and one read whole for that fork. The code container
 // --- decides what the copy says; here only where it goes: the store folder of a working folder the sandbox has (a top
 // --- or a folder in one), never through a link, a checked id, at most 32 MiB in all, a temporary file renamed (linked,
@@ -4046,7 +4046,7 @@ const tmuxDir = (p) => String(p).replaceAll('#', '##');
 // none runs yet
 async function tmuxSession(tmux) {
   if ((await run(tmux, ['has-session', '-t', `=${TMUX_SESSION}`])).code === 0) return;
-  const r = await run(tmux, ['new-session', '-d', '-s', TMUX_SESSION, '-n', 'claude', '-c', WORKSPACE, 'claude-bedrock; exec bash']);
+  const r = await run(tmux, ['new-session', '-d', '-s', TMUX_SESSION, '-n', 'claude', '-c', WORKSPACE, 'devos-claude; exec bash']);
   if (r.code !== 0) throw new Error(`tmux: ${printable(r.err, 200) || `exit ${r.code}`}`);
 }
 // tmuxGuard(tmux) -> null, or why a window made now might not run what was shown. The terminal's tmux server is the
@@ -4131,11 +4131,11 @@ export async function launchStart(name, digest, { tmux = tmuxBin(), root = WS_RO
 
 // terminalResume(id, {cwd}) — a Code-page session continued in the terminal: a new window of the terminal's tmux
 // session (made the current one, so the terminal panel shows it), in the session's working folder (cwd: a folder of the
-// workspace; none: the workspace — Claude Code finds a session by the folder it runs in), and `claude-bedrock --resume
+// workspace; none: the workspace — Claude Code finds a session by the folder it runs in), and `devos-claude --resume
 // <id>` typed into its fresh shell and run — there, in your shell's history. Only a checked UUID of a transcript that is
 // there is ever part of what is typed (the page's own process for that session is closed first, by the code container).
 // plan: a session of Claude on your plan — `claude-sub --resume <id>` (its own folder's transcript)
-const RESUME_CMD = (id, plan = false) => `${plan ? 'claude-sub' : 'claude-bedrock'} --resume ${id}`;
+const RESUME_CMD = (id, plan = false) => `${plan ? 'claude-sub' : 'devos-claude'} --resume ${id}`;
 export async function terminalResume(id, { tmux = tmuxBin(), procDir = '/proc', cwd = null, plan = false } = {}) {
   if (typeof id !== 'string' || !UUID.test(id)) throw new Error('bad session id');
   const file = transcriptFile(id, cwd, { store: plan ? 'plan' : 'bedrock' });
@@ -4809,7 +4809,7 @@ export function runTty(label, argv, { out = process.stdout } = {}) {
 }
 
 // sessionRunning(id) -> {running, pid?}: whether a process in the sandbox other than this bn-coded's own children has
-// an argument holding that session id, in any form (`claude-bedrock --resume <id>` in the terminal, `-r<id>`,
+// an argument holding that session id, in any form (`devos-claude --resume <id>` in the terminal, `-r<id>`,
 // `--resume=<id>`, `--session-id <id>`, a path to its transcript …): the code container resumes a conversation in the
 // page only while nothing else runs it — two Claude Code processes would both append to its transcript. A process that
 // only mentions it (grep <id>, tail -f <id>.jsonl) counts too: the safe side.

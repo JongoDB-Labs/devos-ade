@@ -775,12 +775,12 @@ export async function closeSession(id: string): Promise<void> {
   await request('DELETE', `/api/sessions/${id}`);
 }
 /** "Open in the terminal": the backend ends its process for the session, then a new window of the terminal's tmux
- *  session runs `claude-bedrock --resume <id>` (typed there). -> the window's name (null: not known) */
+ *  session runs `devos-claude --resume <id>` (typed there). -> the window's name (null: not known) */
 export async function openInTerminal(id: string): Promise<{ window: string | null; command: string }> {
   if (!isUuid(id)) throw new ApiError(400, 'bad session id');
   const o = await request('POST', `/api/sessions/${id}/terminal`);
   const window = typeof o.window === 'string' && /^resume-[0-9a-f]{8}$/.test(o.window) ? o.window : null;
-  return { window, command: `claude-bedrock --resume ${id.toLowerCase()}` };
+  return { window, command: `devos-claude --resume ${id.toLowerCase()}` };
 }
 
 /** One settings file's permission rules (the Permissions view). Rules are text from the sandbox: shown with safe(),

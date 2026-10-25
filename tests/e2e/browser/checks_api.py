@@ -72,7 +72,7 @@ def key_info(ctx):
 
 @check("litellm", "chat-completions-and-messages")
 def completions(ctx):
-    """OpenAI-style /v1/chat/completions (Open WebUI's path) and Anthropic-style /v1/messages (claude-bedrock's)."""
+    """OpenAI-style /v1/chat/completions (Open WebUI's path) and Anthropic-style /v1/messages (devos-claude's)."""
     m = chat_model()
     r = lite("POST", "/v1/chat/completions", key=ENV["LITELLM_KEY_SETUP"], timeout=120,
              body={"model": m, "max_tokens": 5, "messages": [{"role": "user", "content": "Say: ok"}]})

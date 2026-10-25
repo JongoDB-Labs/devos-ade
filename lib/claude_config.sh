@@ -1,6 +1,6 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2034  # the CB_* results are read by bin/claude-bedrock
-# claude-bedrock's Claude Code config folder (CLAUDE_CONFIG_DIR), and the session id it prints for --resume.
+# shellcheck disable=SC2034  # the CB_* results are read by bin/devos-claude
+# devos-claude's Claude Code config folder (CLAUDE_CONFIG_DIR), and the session id it prints for --resume.
 #
 # Lean by default: Claude Code runs with its own folder, ~/.claude-bedrock (CLAUDE_BEDROCK_CONFIG_DIR picks
 # another), so the plugins, hooks, skills, agents and MCP servers of your everyday ~/.claude stay out of Bedrock
@@ -132,15 +132,15 @@ claude_config_prepare() {
     CB_CONFIG_NEW=1
   fi
   if [ ! -d "$d" ]; then
-    CB_CONFIG_ERR="$show is not a folder (claude-bedrock keeps Claude Code's settings there) — move it aside, or set CLAUDE_BEDROCK_CONFIG_DIR"
+    CB_CONFIG_ERR="$show is not a folder (devos-claude keeps Claude Code's settings there) — move it aside, or set CLAUDE_BEDROCK_CONFIG_DIR"
     return 1
   fi
   if [ ! -O "$d" ]; then
-    # Under your home folder: most likely one `sudo claude-bedrock` made. Anywhere else, never suggest taking it over.
+    # Under your home folder: most likely one `sudo devos-claude` made. Anywhere else, never suggest taking it over.
     CB_CONFIG_ERR="$show belongs to another user — pick a folder of your own with CLAUDE_BEDROCK_CONFIG_DIR"
     if [ -n "$CB_HOME" ] && [ "$CB_HOME" != / ]; then
       case "$d" in
-        "$CB_HOME"/*) CB_CONFIG_ERR="$show belongs to another user (made by sudo claude-bedrock?) — fix: sudo chown -R $(id -un) $show" ;;
+        "$CB_HOME"/*) CB_CONFIG_ERR="$show belongs to another user (made by sudo devos-claude?) — fix: sudo chown -R $(id -un) $show" ;;
       esac
     fi
     return 1
@@ -169,7 +169,7 @@ claude_config_line() {
   fi
 }
 
-# claude_config_help -> the "Config" value of `claude-bedrock --help` (same wording as the launch line)
+# claude_config_help -> the "Config" value of `devos-claude --help` (same wording as the launch line)
 claude_config_help() {
   local dir my
   dir="$(claude_config_show "$CB_CONFIG_DIR")"; my="$(claude_config_show "$CB_MY_CONFIG_DIR")"
@@ -200,7 +200,7 @@ claude_config_notes() {
   fi
 }
 
-# claude_config_resume_prefix -> what has to precede `claude-bedrock --resume` to find this session again:
+# claude_config_resume_prefix -> what has to precede `devos-claude --resume` to find this session again:
 # nothing for the default folder, else the variable that picked the folder.
 claude_config_resume_prefix() {
   if [ "$CB_OPT_IN" = 1 ]; then printf 'CLAUDE_BEDROCK_USE_MY_CONFIG=1 '
@@ -209,7 +209,7 @@ claude_config_resume_prefix() {
   fi
 }
 
-# --- the session id for `claude-bedrock --resume` ---
+# --- the session id for `devos-claude --resume` ---
 
 # cb_is_uuid STR -> true for a lowercase 8-4-4-4-12 hex id (Claude Code's session ids and transcript names). The
 # digits are spelled out: a range like [a-f] can match A-F too, depending on the locale.
@@ -331,7 +331,7 @@ session_resume_choice() {
   fi
 }
 
-# --- models and auto mode in claude-bedrock's sessions ---
+# --- models and auto mode in devos-claude's sessions ---
 
 # cb_model_id NAME -> NAME, or for Claude Code's aliases haiku, sonnet and opus (any case, [1m] kept) the full id of
 # that slot in .env (CLAUDE_BEDROCK_HAIKU_MODEL …), when it has one. Given an alias, Claude Code picks the model itself:
@@ -352,10 +352,10 @@ cb_model_id() {
 # key — as available behind this stack's address and may start in it. Its classifier asks for claude-sonnet-5, which
 # the catalog maps to Sonnet 5.5 (an alias; without it the classifier would run on the session's model). The browser
 # terminal (managed settings) and the Code page turn it off the same way unless Settings turn it on there.
-# shellcheck disable=SC2034  # read by bin/claude-bedrock
+# shellcheck disable=SC2034  # read by bin/devos-claude
 CB_AUTO_OFF_ARG='--settings={"disableAutoMode":"disable"}'
 
-# claude_auto_mode_off -> true when claude-bedrock passes CB_AUTO_OFF_ARG: the lean folder (never your own: there your
+# claude_auto_mode_off -> true when devos-claude passes CB_AUTO_OFF_ARG: the lean folder (never your own: there your
 # settings decide), unless CLAUDE_BEDROCK_AUTO_MODE=1. A --settings of your own replaces it (Claude Code takes the last).
 claude_auto_mode_off() {
   [ "${CLAUDE_BEDROCK_AUTO_MODE:-0}" != 1 ] && [ "${CB_OPT_IN:-0}" = 0 ] && [ "${CB_CONFIG_MODE:-}" = lean ]

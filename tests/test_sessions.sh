@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2016,SC2034,SC2329  # literal ${...} in patterns; stubs read by the libs
-# Your Claude Code and claude-bedrock sessions on this computer (./stack sessions; lib/sessions.sh), with docker and the
+# Your Claude Code and devos-claude sessions on this computer (./stack sessions; lib/sessions.sh; its internal name
+# claude-bedrock), with docker and the
 # code container stubbed: consent (once, always, taken back; the status file for Settings), a look that asks first (in
 # a dialog on the screen through a stub, never for a request over remote access), the reader container's shape (no
 # network, read-only, only the project's store folders mounted, read-only), a read that names rows of its own look —
@@ -75,6 +76,8 @@ test_consent_once_always_taken_back_and_said_for_settings() {
   _stubs
   sessions_consent --project app --tool claude --always 2>/dev/null
   sessions_consent --project app --tool claude-bedrock --once 2>/dev/null
+  # (devos-claude, as you type it, is the same tool: claude-bedrock inside)
+  assert_eq "$(_ss_tool_id devos-claude)/$(_ss_tools devos-claude)/$(_sc_tools devos-claude)/$(_ss_tool_id claude)" "claude-bedrock/claude-bedrock/claude-bedrock/claude"
   assert_eq "$(_ss_consent_scope folder claude p_0000aaaa "$APP")" always
   assert_eq "$(_ss_consent_scope folder claude-bedrock p_0000aaaa "$APP")" once
   [ "$(stat -c %a "$(_ss_consent_file)" 2>/dev/null || stat -f %Lp "$(_ss_consent_file)")" = 600 ] || return 1
@@ -119,7 +122,7 @@ test_a_look_asks_first_never_over_remote_access_and_reads_only_that_projects_sto
   DIALOG_ANSWER=''
   if (sessions_scan --project app --screen 2>"$TMP/err"); then return 1; fi
   assert_contains "$(cat "$TMP/err")" "not allowed on this computer: nothing was read"
-  assert_contains "$(cat "$TMP/dialog.log")" "--consent The Code page asks to read your session history of Claude Code and claude-bedrock for this folder:"
+  assert_contains "$(cat "$TMP/dialog.log")" "--consent The Code page asks to read your session history of Claude Code and devos-claude for this folder:"
   assert_contains "$(cat "$TMP/dialog.log")" "$APP"
   [ ! -e "$TMP/docker" ]
   # Always for this folder: the reader runs — no network, read-only, no capability, only the two store folders, read-only
@@ -447,6 +450,6 @@ test_tool_outputs_come_along_only_when_asked() {
 test_cli_wiring() {
   _stubs
   assert_contains "$(./stack sessions --help 2>&1)" "Usage: ./stack sessions <command>"
-  assert_contains "$(cmd_help)" "sessions     Your Claude Code and claude-bedrock sessions on this computer"
+  assert_contains "$(cmd_help)" "sessions     Your Claude Code and devos-claude sessions on this computer"
   assert_contains "$( (cmd_sessions nope) 2>&1 || true)" "unknown: ./stack sessions nope"
 }

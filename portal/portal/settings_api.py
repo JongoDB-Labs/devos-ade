@@ -143,7 +143,7 @@ def routes(ctx: Ctx) -> list[Route]:
                        "in_progress": admin.job_in_progress(state), "job": state["job"]},
             # the folders of this computer the Code page's sandbox sees (./stack project; lib/projects.sh)
             "projects": st.project_folders(s.status_dir),
-            # what DevOS ADE may read of your Claude Code and claude-bedrock sessions here (lib/sessions.sh)
+            # what DevOS ADE may read of your Claude Code and devos-claude sessions here (lib/sessions.sh)
             "sessions": st.sessions_consent(s.status_dir),
             # your AI subscriptions' tools in the sandbox and what each says of its own login (answers.py; never a login)
             "subscriptions": answers.tools(s.catalog_dir, s.status_dir),

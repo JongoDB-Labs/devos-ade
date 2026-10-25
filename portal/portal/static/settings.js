@@ -1000,7 +1000,7 @@
       }
       if (v && !codeModels().some((m) => m[0] === v)) sel.append(el("option", { value: v, text: `${v} (not enabled: counts as automatic)`, selected: "" }));
       form.append(el("label", { for: id, text: "Model" }), sel,
-        el("p", { class: "note", text: "A browser's own last pick still wins for its new sessions; --model and CLAUDE_BEDROCK_MODEL win for claude-bedrock." }));
+        el("p", { class: "note", text: "A browser's own last pick still wins for its new sessions; --model and CLAUDE_BEDROCK_MODEL win for devos-claude." }));
       collect = () => ({ [k.key]: sel.value });
       // the confirmation names what the model costs and how it works with Claude Code
       form._note = () => {
@@ -1256,7 +1256,7 @@
     return rw;
   }
 
-  // What DevOS ADE may read on this computer: your Claude Code and claude-bedrock sessions of a project folder (the
+  // What DevOS ADE may read on this computer: your Claude Code and devos-claude sessions of a project folder (the
   // Code page's Import sheet; ./stack sessions, lib/sessions.sh). Allowed only on this computer — in a dialog on its
   // screen when the Code page asks, or ./stack sessions in a terminal there; taken back from anywhere (narrowing), by the
   // project's id, through the update helper. Names and folders are yours (folders.tsv); nothing of a session is here.
@@ -1264,9 +1264,9 @@
     const rw = ownFrame(r, "What DevOS ADE may read on this computer");
     const sc = data.sessions || { folders: [], suggest: [], setup: [] };
     const setup = sc.setup || [];
-    const SETUP = { claude: "your Claude Code setup (~/.claude)", "claude-bedrock": "claude-bedrock's setup (~/.claude-bedrock)", git: "your Git name and email (~/.gitconfig)" };
+    const SETUP = { claude: "your Claude Code setup (~/.claude)", "claude-bedrock": "devos-claude's setup (~/.claude-bedrock)", git: "your Git name and email (~/.gitconfig)" };
     const can = canChange() && (data.helper.sessions || []).includes("sessions-revoke");
-    const TOOL = { claude: "Claude Code (~/.claude)", "claude-bedrock": "claude-bedrock (~/.claude-bedrock)" };
+    const TOOL = { claude: "Claude Code (~/.claude)", "claude-bedrock": "devos-claude (~/.claude-bedrock)" };   // (keys: the tools' internal names)
     const take = (project, tool, what) => askPassword({ kind: "sessions", action: "sessions-revoke", project, tool },
       `Take back what DevOS ADE may read: ${what}?`,
       "DevOS ADE then reads none of it on this computer until you allow it again there; what the Code page's container read of it (the lists, sessions waiting to be copied) is forgotten. Sessions already copied into the sandbox stay there.",

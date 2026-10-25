@@ -145,7 +145,7 @@ or_field() { P="$1" awk -F'\t' '!f && $1 == ENVIRON["P"] { print $2; f = 1 }'; }
 # or_models_tsv < /api/v1/models JSON -> id name context prompt completion cache_read cache_write outputs created tools
 # max_out (one TAB-separated line per model, unfiltered; outputs = output_modalities joined with ","; tools = 1 when
 # supported_parameters names "tools", 0 when it lists others only, empty without the list; max_out =
-# top_provider.max_completion_tokens: the Code page and claude-bedrock show tool use, LiteLLM caps answers at max_out)
+# top_provider.max_completion_tokens: the Code page and devos-claude show tool use, LiteLLM caps answers at max_out)
 or_models_tsv() {
   or_json_flatten | awk -F'\t' '
     $1 ~ /^data\.[0-9]+\./ {
@@ -176,7 +176,7 @@ or_models_tsv() {
 or_classify() {
   # Control characters go first, with tr: mawk (Debian's default awk) has no [[:cntrl:]] class. Byte by byte (LC_ALL=C)
   # from there: a name loses what YAML refuses or a terminal or the page may act on (C1 controls, U+2028/U+2029, bidi
-  # overrides and isolates, zero-width marks, U+FEFF, U+FFFE/U+FFFF) — names reach LiteLLM's config, claude-bedrock's
+  # overrides and isolates, zero-width marks, U+FEFF, U+FFFE/U+FFFF) — names reach LiteLLM's config, devos-claude's
   # output and Claude Code's /model menu.
   tr -d '\001-\010\013-\037\177' | LC_ALL=C awk -F'\t' -v OFS='\t' '
     # A price: plain decimal, or e-notation with |exponent| <= 30 (dec() pads zeros, so a huge exponent would

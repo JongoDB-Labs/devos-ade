@@ -1,4 +1,4 @@
-// The reader of Claude Code's and claude-bedrock's session stores on the computer running DevOS ADE (./stack sessions,
+// The reader of Claude Code's and devos-claude's session stores on the computer running DevOS ADE (./stack sessions,
 // lib/sessions.sh). It runs in a throwaway container of the code image — no network, read-only, no capability, as you
 // — with only the store folder(s) of one project mounted, read-only: ~/.claude/projects/<folder> (Claude Code) and
 // ~/.claude-bedrock/projects/<folder> (claude-bedrock), the folder named after the project's path as Claude Code names
@@ -20,7 +20,8 @@
 //   node server/harness/claude.mjs fetch --path PATH_B64 --in TOOL=DIR … --want TOOL:UUID …
 //        per session its files: a JSON line {t:"file", tool, id, part, size, sha256} then exactly size bytes; a
 //        {t:"skip", tool, id, why} line for one it does not send; an end line
-// TOOL: claude (Claude Code, ~/.claude) or claude-bedrock (~/.claude-bedrock). Node built-ins only.
+// TOOL: claude (Claude Code, ~/.claude) or claude-bedrock (devos-claude's internal name; ~/.claude-bedrock).
+// Node built-ins only.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -28,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { redactText } from '../secrets.mjs';
 import { stripBlocks, stripTags } from '../allowlist.mjs';
 
+// (claude-bedrock: devos-claude, by its internal name — its store is ~/.claude-bedrock; requests and records use it)
 export const TOOLS = Object.freeze(['claude', 'claude-bedrock']);
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const TRANSCRIPT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$/;
@@ -229,7 +231,7 @@ export function parts(dir, id) {
   return { list: out, skipped };
 }
 
-// source(tool, models): where the session's model calls went — 'bedrock-now' (claude-bedrock: LiteLLM, the stack's own
+// source(tool, models): where the session's model calls went — 'bedrock-now' (devos-claude: LiteLLM, the stack's own
 // models), Bedrock (Claude Code with Bedrock's own model ids), or anthropic (any other: Anthropic's API, a Claude
 // subscription — thinking blocks signed there may not be accepted on Bedrock)
 export function sourceOf(tool, models) {

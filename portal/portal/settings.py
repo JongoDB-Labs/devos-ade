@@ -81,7 +81,7 @@ UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 DIGEST_RE = re.compile(r"[0-9a-f]{64}")
 KEEP_RE = re.compile(r"(main|(subagents|tool-results)/[A-Za-z0-9][A-Za-z0-9._-]{0,199})#[0-9a-f]{16}")
 SESSIONS = "sessions.json"                     # what DevOS ADE may read of your sessions here (lib/sessions.sh)
-SESSIONS_TOOLS = ("claude", "claude-bedrock")
+SESSIONS_TOOLS = ("claude", "claude-bedrock")   # (claude-bedrock: devos-claude's sessions, by its internal name)
 # Your AI subscriptions (lib/subscriptions.sh): ask the sandbox again, or a tool's own sign-out — by its id, never more
 # (…-chat: the same for Chat's sandbox, its own sign-ins: --chat — of the Chat models with a sign-out command)
 SUBS_ACTIONS = ("subscriptions-check", "subscriptions-signout", "subscriptions-check-chat", "subscriptions-signout-chat")
@@ -230,7 +230,7 @@ def capability(status_dir: Path, now: float | None = None) -> dict:
 
 
 def sessions_consent(status_dir: Path) -> dict:
-    """What DevOS ADE may read of your Claude Code and claude-bedrock sessions here (lib/sessions.sh): per project
+    """What DevOS ADE may read of your Claude Code and devos-claude sessions here (lib/sessions.sh): per project
     folder and tool, always (or once, within the hour), and the folder names for suggestions — every field checked."""
     d = _read_json(status_dir / SESSIONS, 64 * 1024)
     folders, suggest = [], []
@@ -716,7 +716,8 @@ def write_project_action(request_dir: Path, action: str, password: str, when: st
 
 def write_sessions_action(request_dir: Path, password: str, project: str, tool: str, now: float | None = None) -> str:
     """REQUEST_DIR/act-<nonce>.json: what DevOS ADE may read of your sessions here, taken back — by a project's id (or
-    all) and a tool (claude, claude-bedrock, both, or suggest: the folder names). Never a path. -> nonce"""
+    all) and a tool (claude, claude-bedrock — devos-claude's, by its internal name —, both, or suggest: the folder
+    names). Never a path. -> nonce"""
     if not (project == "all" or (isinstance(project, str) and PROJECT_ID.fullmatch(project))) or tool not in REVOKE_TOOLS \
             or (tool.startswith("setup-") and project != "all"):
         raise ValueError("bad request")

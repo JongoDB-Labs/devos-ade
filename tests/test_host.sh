@@ -670,7 +670,7 @@ _ssh_stubs() {
   hostname() { echo studio; }
   nc() { return 0; }
   have_cmd() { case "$1" in tmux | nc) return 0 ;; *) return 1 ;; esac; }
-  claude_bedrock_cmd() { echo claude-bedrock; }
+  devos_claude_cmd() { echo devos-claude; }
   host_os() { echo Darwin; }
 }
 
@@ -681,7 +681,7 @@ test_ssh_info_uses_tailscale_name_when_available() {
   out="$(cmd_ssh_info 2>&1)"
   assert_contains "$out" "ssh alice@studio.tail1234.ts.net"
   assert_contains "$out" "tmux new -A -s claude"
-  assert_contains "$out" "claude-bedrock"
+  assert_contains "$out" "devos-claude"
   assert_contains "$out" "Blink"; assert_contains "$out" "Termius"; assert_contains "$out" "JuiceSSH"
   assert_contains "$out" "mosh"
   assert_contains "$out" "Remote Control"

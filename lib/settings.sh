@@ -363,12 +363,12 @@ settings_check_batch() {
   # Settings › Claude Code › Models: models the stack serves (litellm/code-models.tsv; not checked before it exists)
   code="$(_code_rows 2>/dev/null | cut -f1)"
   if [ -n "$code" ] && cfg_has CODE_DEFAULT_MODEL && [ -n "$(cfg_new CODE_DEFAULT_MODEL)" ]; then
-    printf '%s\n' "$code" | grep -qxF "$(cfg_new CODE_DEFAULT_MODEL)" || die "CODE_DEFAULT_MODEL: $(cfg_new CODE_DEFAULT_MODEL) is not a chat model this stack serves (claude-bedrock --models all)"
+    printf '%s\n' "$code" | grep -qxF "$(cfg_new CODE_DEFAULT_MODEL)" || die "CODE_DEFAULT_MODEL: $(cfg_new CODE_DEFAULT_MODEL) is not a chat model this stack serves (devos-claude --models all)"
   fi
   if [ -n "$code" ] && cfg_has CODE_MODELS; then
     case "$(cfg_new CODE_MODELS)" in '' | all | anthropic) ;; *)
       for p in $(cfg_new CODE_MODELS | tr ',' ' '); do
-        printf '%s\n' "$code" | grep -qxF "$p" || die "CODE_MODELS: $p is not a chat model this stack serves (claude-bedrock --models all)"
+        printf '%s\n' "$code" | grep -qxF "$p" || die "CODE_MODELS: $p is not a chat model this stack serves (devos-claude --models all)"
       done ;;
     esac
   fi
@@ -1068,7 +1068,7 @@ _cfg_done() {
   settings_snapshot_write
   log "saved: $(printf '%s\n' $CFG_ORDER | grep -vx PORTAL_PASSWORD_HASH | tr '\n' ',' | sed 's/,$//; s/,/, /g')"
   if _cfg_on portal-pw; then log "the portal password changed: every browser and device signs in again (the one that changed it stays signed in)"; fi
-  if _cfg_on mcp; then log "running claude-bedrock sessions and other MCP clients need the new token (.state/mcp.json; claude-bedrock reads it at its next start)"; fi
+  if _cfg_on mcp; then log "running devos-claude sessions and other MCP clients need the new token (.state/mcp.json; devos-claude reads it at its next start)"; fi
   if _cfg_on aws && [ -n "$(cfg_old AWS_ACCESS_KEY_ID)" ]; then log "remember to deactivate the old key ($(_settings_mask AWS_ACCESS_KEY_ID "$(cfg_old AWS_ACCESS_KEY_ID)")) in IAM, or ask your AWS admin to"; fi
   return 0
 }

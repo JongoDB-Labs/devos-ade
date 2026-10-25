@@ -72,7 +72,7 @@ test('a copy\'s results: a refusal of the sandbox\'s is its words apart, never i
   assert.equal(r[2].said, null);
 });
 
-test('suggestions: folders (absolute paths) as text; the CC / CB badge from its own two tools only', async () => {
+test('suggestions: folders (absolute paths) as text; the CC / DC badge from its own two tools only', async () => {
   answer({ at: 5, rows: [{ path: '/home/x/src/a\u{202e}b', claude: 2, 'claude-bedrock': 1, last: 1_700_000_000_000 }, { path: 'relative' }, { path: 7 }] });
   const s = await getSuggestions();
   assert.deepEqual(s.rows, [{ path: '/home/x/src/a⟨U+202E⟩b', claude: 2, claudeBedrock: 1, last: 1_700_000_000_000 }]);

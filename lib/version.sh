@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Installed version and the portal's daily release check, ./stack side. Sourced by lib/commands.sh and
-# bin/claude-bedrock. The check itself runs in the portal (portal/portal/updates.py); ./stack and
-# claude-bedrock only read its cached answer (no network).
+# bin/devos-claude. The check itself runs in the portal (portal/portal/updates.py); ./stack and
+# devos-claude only read its cached answer (no network).
 #
 # Host folders the portal mounts (created here before Compose mounts them, else Docker creates them as root):
 #   .state/status/        read-only in the portal: version.json (this file), helper status (lib/helper.sh)

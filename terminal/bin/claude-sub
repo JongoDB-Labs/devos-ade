@@ -7,7 +7,7 @@
 # The stack's own variables are left out of its environment — the gateway and the terminal's LiteLLM key
 # (ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN), Bedrock's model ids, the switches made for Bedrock — so Claude Code uses
 # that login and Anthropic's own models; only its updates stay off (the image pins its version). claude and
-# claude-bedrock here stay on Bedrock. Every option of Claude Code works; `claude-sub auth status|logout` too.
+# devos-claude here stay on Bedrock. Every option of Claude Code works; `claude-sub auth status|logout` too.
 # Usage counts against your plan's limits (Anthropic: "You can still use the Claude Agent SDK, claude -p, and
 # third-party apps with your subscription limits" — support.claude.com/en/articles/15036540); DevOS ADE bills none
 # of it and shows no $ for it.
@@ -43,7 +43,7 @@ claude-sub: Claude Code on your own Claude plan (Pro, Max, Team or Enterprise), 
   Check    claude-sub auth status          Sign out  claude-sub auth logout (or /logout)
   Config   ~/.claude-subscription — your login stays there, in Claude Code's own file; DevOS ADE never reads it
   Usage    counts against your plan's limits; DevOS ADE bills none of it
-  Bedrock  claude and claude-bedrock here stay on Bedrock, with the stack's key
+  Bedrock  claude and devos-claude here stay on Bedrock, with the stack's key
   MCP      the stack's shared MCP server is not given to it (CLAUDE_SUB_STACK_MCP=1 gives it, said each time)
   Below    Claude Code's own help
 
@@ -53,7 +53,7 @@ EOT
 esac
 
 # A session (not a subcommand, which refuses these flags): auto mode off unless Settings › Claude Code › Auto mode in the
-# terminal is on (as claude and claude-bedrock here). The stack's shared MCP server (Chat's knowledge bases and the
+# terminal is on (as claude and devos-claude here). The stack's shared MCP server (Chat's knowledge bases and the
 # shared bucket, which it can write too) is NOT given to Claude on your plan: what it reads would go to Anthropic under
 # your plan's terms. CLAUDE_SUB_STACK_MCP=1 in this shell gives it anyway, said each time.
 subcmds="$("$CLAUDE_BIN" --help 2>/dev/null </dev/null | awk '/^Commands:/ { f = 1; next } f && /^[^ ]/ { f = 0 }

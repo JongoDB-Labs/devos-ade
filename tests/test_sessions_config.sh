@@ -104,7 +104,7 @@ test_a_look_asks_first_never_remotely_and_mounts_each_item_alone_never_credentia
   # Don't allow: nothing read
   DIALOG_ANSWER=''
   if (sessions_config_scan --screen 2>"$TMP/err"); then return 1; fi
-  assert_contains "$(cat "$TMP/dialog.log")" "--consent The Code page asks to read your Claude Code setup (~/.claude) and claude-bedrock setup (~/.claude-bedrock), and your Git name and email (~/.gitconfig) on this computer."
+  assert_contains "$(cat "$TMP/dialog.log")" "--consent The Code page asks to read your Claude Code setup (~/.claude) and devos-claude setup (~/.claude-bedrock), and your Git name and email (~/.gitconfig) on this computer."
   assert_contains "$(cat "$TMP/dialog.log")" "never env, logins, credentials or your account"
   [ ! -e "$TMP/docker" ]
   # Always: the reader runs — no network, read-only, every item alone and read-only
@@ -121,7 +121,7 @@ test_a_look_asks_first_never_remotely_and_mounts_each_item_alone_never_credentia
   assert_contains "$run" "--in claude:memory=/in/claude-memory"
   assert_contains "$run" "--links claude-bedrock=1"
   assert_contains "$run" "--project $(_ss_b64 "$APP")"
-  # never ~/.claude whole, credentials, history, sessions, the plugins' cache (only an open of a plugin), claude-bedrock's link
+  # never ~/.claude whole, credentials, history, sessions, the plugins' cache (only an open of a plugin), devos-claude's link
   assert_not_contains "$run" "source=$h/.claude,"
   for x in .credentials.json history.jsonl projects plugins/cache "$h/.claude-bedrock/CLAUDE.md"; do assert_not_contains "$run" "$x"; done
   assert_eq "$(_ss_consent_scope setup claude - -)" always

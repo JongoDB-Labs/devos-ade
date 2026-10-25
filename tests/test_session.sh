@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2016  # literal $ in expected strings
-# Task D2: claude-bedrock session id header + cost summary on exit.
+# Task D2: devos-claude session id header + cost summary on exit.
 . "$STACK_DIR/lib/session.sh"
 
 FIXTURE_V2="$STACK_DIR/tests/fixtures/spend_logs_v2.json"
@@ -152,7 +152,7 @@ EOS
   export STUB_V2="$FIXTURE_V2" CLAUDE_BEDROCK_SUMMARY_WAIT=0 CLAUDE_BEDROCK_SUMMARY=1 CLAUDE_BEDROCK_AUTO_MODE=1
 }
 
-_run_wrapper() { PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/claude-bedrock" "$@"; }
+_run_wrapper() { PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/devos-claude" "$@"; }
 
 test_wrapper_prints_summary_and_passes_exit_code() {
   _wrapper_env
@@ -194,7 +194,7 @@ test_wrapper_ctrl_c_reaches_claude_and_summary_still_prints() {
   # no shell can undo and every child inherits: perl first puts it back to the default, as a terminal has it.
   dfl=(); if command -v perl >/dev/null 2>&1; then dfl=(perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV or die "exec: $!\n"'); fi
   set -m
-  PATH="$TMP/bin:$PATH" ${dfl[@]+"${dfl[@]}"} "$BASH" "$STACK_DIR/bin/claude-bedrock" -p hi > /dev/null 2> "$TMP/err" &
+  PATH="$TMP/bin:$PATH" ${dfl[@]+"${dfl[@]}"} "$BASH" "$STACK_DIR/bin/devos-claude" -p hi > /dev/null 2> "$TMP/err" &
   w=$!
   set +m
   # up to 60 s for claude to start on a busy machine (a Ctrl-C before that would test nothing)
@@ -210,7 +210,7 @@ test_wrapper_ctrl_c_reaches_claude_and_summary_still_prints() {
 test_wrapper_is_killed_by_sigint_like_claude() {
   python3 -I -c 'import sys' >/dev/null 2>&1 || { echo "python3 not available" >&2; return 77; }
   _wrapper_env
-  export STUB_SLEEP=30 STUB_MARK="$TMP/mark" T_WRAPPER="$STACK_DIR/bin/claude-bedrock" T_PATH="$TMP/bin:$PATH"
+  export STUB_SLEEP=30 STUB_MARK="$TMP/mark" T_WRAPPER="$STACK_DIR/bin/devos-claude" T_PATH="$TMP/bin:$PATH"
   # Popen's returncode is -N when the process died of signal N (an exit(130) would give 130).
   rc="$(python3 -I -c '
 import os, signal, subprocess, sys, time
@@ -299,7 +299,7 @@ out = open(sys.argv[1], "wb")
 def rd(fd):
     d = os.read(fd, 65536); out.write(d); return d
 st = pty.spawn(sys.argv[2:], rd)
-sys.exit(1 if st else 0)' "$1" "$BASH" "$STACK_DIR/bin/claude-bedrock" "${@:2}" < /dev/null
+sys.exit(1 if st else 0)' "$1" "$BASH" "$STACK_DIR/bin/devos-claude" "${@:2}" < /dev/null
 }
 _need_python() { python3 -I -c 'import pty' >/dev/null 2>&1 || { echo "python3 not available" >&2; return 77; }; }
 
@@ -414,7 +414,7 @@ test_wrapper_refuses_unusable_config_folders() {
 
 test_wrapper_without_home_still_helps_and_says_why_it_stops() {
   _wrapper_env
-  out="$(env -u HOME PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/claude-bedrock" --help 2>&1)" || { echo "$out" >&2; return 1; }
+  out="$(env -u HOME PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/devos-claude" --help 2>&1)" || { echo "$out" >&2; return 1; }
   assert_contains "$out" "  Config   "
   assert_contains "$out" "Usage: claude"   # then Claude Code's own help
   # (an empty HOME means the account's home from the password database — the real one, so never without a folder here)
@@ -427,21 +427,21 @@ test_wrapper_new_session_gets_its_id_from_the_wrapper_and_names_exactly_it() {
   STUB_TYPED=1 _run_wrapper > "$TMP/out" 2> "$TMP/err"
   id="$(sed -n "s/^CLAUDE --session-id=\($_uuid_re\)\$/\1/p" "$TMP/out")"
   [ -n "$id" ] || { cat "$TMP/out" >&2; echo "no --session-id passed" >&2; return 1; }
-  assert_eq "$(tail -n 2 "$TMP/err" | head -n 1)" "resume: claude-bedrock --resume $id"
+  assert_eq "$(tail -n 2 "$TMP/err" | head -n 1)" "resume: devos-claude --resume $id"
   assert_contains "$(tail -n 1 "$TMP/err")" "session: 2 requests"   # the (slow) summary comes after it
   # another session of this folder written meanwhile (/clear, /resume, a second session): still this id, plus a hint
   STUB_TYPED=1 STUB_OTHER=0b2c3d4e-1111-4222-8333-444455556666 _run_wrapper > "$TMP/out" 2> "$TMP/err"
   id="$(sed -n "s/^CLAUDE --session-id=\($_uuid_re\)\$/\1/p" "$TMP/out")"
-  assert_contains "$(cat "$TMP/err")" "resume: claude-bedrock --resume $id  (after /clear or /resume: claude-bedrock --resume to pick)"
+  assert_contains "$(cat "$TMP/err")" "resume: devos-claude --resume $id  (after /clear or /resume: devos-claude --resume to pick)"
   # /clear before anything was typed in the first one: only the picker can tell
   STUB_OTHER=0b2c3d4e-1111-4222-8333-444455556670 _run_wrapper > "$TMP/out" 2> "$TMP/err"
-  assert_contains "$(cat "$TMP/err")" "resume: claude-bedrock --resume  (more than one session wrote in this folder meanwhile: pick yours)"
+  assert_contains "$(cat "$TMP/err")" "resume: devos-claude --resume  (more than one session wrote in this folder meanwhile: pick yours)"
   # with your own folder the command says so
   CLAUDE_BEDROCK_USE_MY_CONFIG=1 STUB_TYPED=1 _run_wrapper > "$TMP/out" 2> "$TMP/err"
   id="$(sed -n "s/^CLAUDE --session-id=\($_uuid_re\)\$/\1/p" "$TMP/out")"
-  assert_contains "$(cat "$TMP/err")" "resume: CLAUDE_BEDROCK_USE_MY_CONFIG=1 claude-bedrock --resume $id"
+  assert_contains "$(cat "$TMP/err")" "resume: CLAUDE_BEDROCK_USE_MY_CONFIG=1 devos-claude --resume $id"
   CLAUDE_BEDROCK_CONFIG_DIR="$TMP/cb" STUB_TYPED=1 _run_wrapper > "$TMP/out" 2> "$TMP/err"
-  assert_contains "$(cat "$TMP/err")" "resume: CLAUDE_BEDROCK_CONFIG_DIR=$TMP/cb claude-bedrock --resume "
+  assert_contains "$(cat "$TMP/err")" "resume: CLAUDE_BEDROCK_CONFIG_DIR=$TMP/cb devos-claude --resume "
   for f in "$HOME/.claude-bedrock"/.claude-bedrock-run.* "$TMP/cb"/.claude-bedrock-run.*; do
     [ ! -e "$f" ] || { echo "marker left: $f" >&2; return 1; }
   done
@@ -462,9 +462,9 @@ test_wrapper_resume_by_id_names_that_session() {
   u=0b2c3d4e-1111-4222-8333-444455556668
   STUB_TYPED=1 STUB_TRANSCRIPT="$u" _run_wrapper --resume "$u" > "$TMP/out" 2> "$TMP/err"
   assert_eq "$(head -n 1 "$TMP/out")" "CLAUDE --resume $u"   # no --session-id of the wrapper's
-  assert_eq "$(grep '^resume:' "$TMP/err")" "resume: claude-bedrock --resume $u"
+  assert_eq "$(grep '^resume:' "$TMP/err")" "resume: devos-claude --resume $u"
   STUB_TYPED=1 STUB_TRANSCRIPT="$u" STUB_OTHER=0b2c3d4e-1111-4222-8333-444455556669 _run_wrapper --resume "$u" > "$TMP/out" 2> "$TMP/err"
-  assert_contains "$(cat "$TMP/err")" "resume: claude-bedrock --resume $u  (after /clear or /resume:"
+  assert_contains "$(cat "$TMP/err")" "resume: devos-claude --resume $u  (after /clear or /resume:"
 }
 
 test_wrapper_combined_short_options_get_no_session_id() {
@@ -477,7 +477,7 @@ test_wrapper_combined_short_options_get_no_session_id() {
   done
   STUB_TYPED=1 STUB_TRANSCRIPT="$u" _run_wrapper "-r$u" > "$TMP/out" 2> "$TMP/err"
   assert_eq "$(head -n 1 "$TMP/out")" "CLAUDE -r$u"   # (claude reads it as --resume <id>)
-  assert_contains "$(cat "$TMP/err")" "resume: claude-bedrock --resume $u"
+  assert_contains "$(cat "$TMP/err")" "resume: devos-claude --resume $u"
 }
 
 test_wrapper_puts_the_shared_mcp_config_first_as_one_argument() {
@@ -511,12 +511,12 @@ test_wrapper_turns_auto_mode_off_in_the_lean_folder() {
   CLAUDE_BEDROCK_AUTO_MODE=1 _run_wrapper -p hi > "$TMP/out" 2> /dev/null
   assert_not_contains "$(head -n 1 "$TMP/out")" "disableAutoMode"
   # --help says which
-  out="$(PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/claude-bedrock" --help 2>&1)"
+  out="$(PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/devos-claude" --help 2>&1)"
   assert_contains "$out" "  Auto     auto mode off (as in the browser terminal and the Code page); CLAUDE_BEDROCK_AUTO_MODE=1 leaves it to Claude Code"
-  out="$(CLAUDE_BEDROCK_USE_MY_CONFIG=1 PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/claude-bedrock" --help 2>&1)"
+  out="$(CLAUDE_BEDROCK_USE_MY_CONFIG=1 PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/devos-claude" --help 2>&1)"
   assert_contains "$out" "  Auto     auto mode left to Claude Code and your settings (your own config folder)"
   # CLAUDE_BEDROCK_AUTO_MODE=1: left to Claude Code, whose reviewer runs on Sonnet 5.5 (the catalog's alias)
-  out="$(CLAUDE_BEDROCK_AUTO_MODE=1 PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/claude-bedrock" --help 2>&1)"
+  out="$(CLAUDE_BEDROCK_AUTO_MODE=1 PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/devos-claude" --help 2>&1)"
   assert_contains "$out" '  Auto     auto mode left to Claude Code (CLAUDE_BEDROCK_AUTO_MODE=1); its reviewer runs on Sonnet 5.5 (~$0.13 per 5 minutes in use)'
 }
 
@@ -539,9 +539,9 @@ test_wrapper_continue_names_the_one_session_or_offers_the_picker() {
   u=0b2c3d4e-1111-4222-8333-44445555666a
   STUB_TYPED=1 STUB_TRANSCRIPT="$u" _run_wrapper --continue > "$TMP/out" 2> "$TMP/err"
   assert_eq "$(head -n 1 "$TMP/out")" "CLAUDE --continue"
-  assert_contains "$(cat "$TMP/err")" "resume: claude-bedrock --resume $u"
+  assert_contains "$(cat "$TMP/err")" "resume: devos-claude --resume $u"
   STUB_TYPED=1 STUB_TRANSCRIPT="$u" STUB_OTHER=0b2c3d4e-1111-4222-8333-44445555666b _run_wrapper -c > "$TMP/out" 2> "$TMP/err"
-  assert_contains "$(cat "$TMP/err")" "resume: claude-bedrock --resume  (more than one session wrote in this folder meanwhile: pick yours)"
+  assert_contains "$(cat "$TMP/err")" "resume: devos-claude --resume  (more than one session wrote in this folder meanwhile: pick yours)"
   # the marker (in the config folder, the transcripts' clock) is gone
   for f in "$HOME/.claude-bedrock"/.claude-bedrock-run.*; do [ ! -e "$f" ] || { echo "left: $f" >&2; return 1; }; done
 }
@@ -591,7 +591,7 @@ test_wrapper_model_by_id_name_or_alias_rewritten_to_the_id_and_unknown_refused()
   # unknown: refused before claude runs, naming the choices
   rc=0; _run_wrapper --model gpt-4 -p hi > "$TMP/out" 2> "$TMP/err" || rc=$?
   assert_eq "$rc" 1
-  assert_contains "$(cat "$TMP/err")" "unknown model 'gpt-4' (--model) — claude-bedrock --models lists them: claude-opus-5-5, claude-haiku-5-5, llama-3-3-70b, or/google/gemma-4-31b-it:free"
+  assert_contains "$(cat "$TMP/err")" "unknown model 'gpt-4' (--model) — devos-claude --models lists them: claude-opus-5-5, claude-haiku-5-5, llama-3-3-70b, or/google/gemma-4-31b-it:free"
   assert_eq "$(cat "$TMP/out")" ""
   rc=0; CLAUDE_BEDROCK_MODEL=nope _run_wrapper -p hi > /dev/null 2> "$TMP/err" || rc=$?
   assert_eq "$rc" 1

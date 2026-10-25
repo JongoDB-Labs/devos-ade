@@ -861,7 +861,7 @@ test_ttyd_listens_on_a_socket_only_and_checks_the_origin() {
   assert_not_contains "$d" "TERMINAL_PROXY_SECRET"
   assert_not_contains "$d" "EXPOSE"
   assert_contains "$(cat "$STACK_DIR/terminal/bin/bn-session")" 'S=claude'
-  assert_contains "$(cat "$STACK_DIR/terminal/bin/bn-session")" 'plain() { exec tmux new-session -A -s "$S" -n claude -c "$WS" "claude-bedrock; exec bash"; }'
+  assert_contains "$(cat "$STACK_DIR/terminal/bin/bn-session")" 'plain() { exec tmux new-session -A -s "$S" -n claude -c "$WS" "devos-claude; exec bash"; }'
   # the page rewrite: a viewport and our icon in, ttyd's icon out
   assert_contains "$(cat "$STACK_DIR/terminal/ttyd-page.py")" '<meta name="viewport" content="width=device-width'
   printf '<html><head><meta charset="UTF-8"><link rel="icon" type="image/png" href="data:image/png;base64,AAA"></head><body><script type="text/javascript">var t="é";</script></body></html>' > "$TMP/in.html"
@@ -904,7 +904,7 @@ for p in ("", "-linux-x64", "-linux-arm64"):
     assert e["version"] == sys.argv[2] and e["integrity"].startswith("sha512-"), (p, e)
 PY
   # the in-container wrapper never gets the master key
-  assert_not_contains "$(cat "$STACK_DIR/terminal/bin/claude-bedrock")" "MASTER_KEY"
+  assert_not_contains "$(cat "$STACK_DIR/terminal/bin/devos-claude")" "MASTER_KEY"
 }
 
 test_test_checks_report_unlock_secret_gateway_and_isolation() {
@@ -1030,7 +1030,7 @@ print(m[0]["source"].rsplit("/", 1)[1])'; }
   assert_eq "$(TERMINAL_CLAUDE_POLICY=../../etc/passwd src)" on.json
 }
 
-# claude-bedrock in the sandbox: auto mode off in its sessions (Claude Code's flag tier) unless the terminal's switch is
+# devos-claude in the sandbox: auto mode off in its sessions (Claude Code's flag tier) unless the terminal's switch is
 # on; never for a subcommand (they refuse --settings); the shared MCP server first, then this, then your arguments
 test_claude_bedrock_in_the_sandbox_turns_auto_mode_off_unless_the_terminal_allows_it() {
   mkdir -p "$TMP/bin" "$TMP/home/.config/bedrock-now"
@@ -1045,16 +1045,16 @@ STUB
   run() { env -i PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" ANTHROPIC_BASE_URL=http://gateway:8091 ANTHROPIC_AUTH_TOKEN=sk-x \
     CLAUDE_BEDROCK_OPUS_MODEL=claude-haiku-5-5 CLAUDE_BEDROCK_QUIET=1 "$@"; }
   off='--settings={"disableAutoMode":"disable"}'
-  out="$(run TERMINAL_AUTO_MODE=false /bin/bash "$STACK_DIR/terminal/bin/claude-bedrock" -p hi)" || return 1
+  out="$(run TERMINAL_AUTO_MODE=false /bin/bash "$STACK_DIR/terminal/bin/devos-claude" -p hi)" || return 1
   assert_eq "$(printf '%s\n' "$out" | head -4 | tr '\n' ' ')" "--mcp-config=$TMP/home/.config/bedrock-now/mcp.json $off -p hi "
-  out="$(run /bin/bash "$STACK_DIR/terminal/bin/claude-bedrock" -p hi)" || return 1
+  out="$(run /bin/bash "$STACK_DIR/terminal/bin/devos-claude" -p hi)" || return 1
   assert_contains "$out" "$off"
-  out="$(run TERMINAL_AUTO_MODE=true /bin/bash "$STACK_DIR/terminal/bin/claude-bedrock" -p hi)" || return 1
+  out="$(run TERMINAL_AUTO_MODE=true /bin/bash "$STACK_DIR/terminal/bin/devos-claude" -p hi)" || return 1
   assert_not_contains "$out" "disableAutoMode"
-  out="$(run TERMINAL_AUTO_MODE=false /bin/bash "$STACK_DIR/terminal/bin/claude-bedrock" mcp list)" || return 1
+  out="$(run TERMINAL_AUTO_MODE=false /bin/bash "$STACK_DIR/terminal/bin/devos-claude" mcp list)" || return 1
   assert_eq "$(printf '%s\n' "$out" | tr '\n' ' ')" "mcp list "
-  assert_contains "$(run TERMINAL_AUTO_MODE=yes /bin/bash "$STACK_DIR/terminal/bin/claude-bedrock" --help)" "Auto     auto mode available (Settings › Terminal › Auto mode): its reviewer model runs on Sonnet 5.5"
-  assert_contains "$(run /bin/bash "$STACK_DIR/terminal/bin/claude-bedrock" --help)" "Auto     auto mode off (Settings › Terminal › Auto mode turns it on)"
+  assert_contains "$(run TERMINAL_AUTO_MODE=yes /bin/bash "$STACK_DIR/terminal/bin/devos-claude" --help)" "Auto     auto mode available (Settings › Terminal › Auto mode): its reviewer model runs on Sonnet 5.5"
+  assert_contains "$(run /bin/bash "$STACK_DIR/terminal/bin/devos-claude" --help)" "Auto     auto mode off (Settings › Terminal › Auto mode turns it on)"
 }
 
 # `claude` typed in the terminal's shells (terminal/bashrc): auto mode off for its sessions unless the terminal's own
@@ -1080,7 +1080,7 @@ STUB
   assert_contains "$(cat "$STACK_DIR/compose.terminal.yaml")" 'TERMINAL_AUTO_MODE: ${TERMINAL_AUTO_MODE:-false}'
 }
 
-# claude-bedrock in the sandbox: the models come from LiteLLM's /model/info (the bn_* keys ./stack renders) — --models,
+# devos-claude in the sandbox: the models come from LiteLLM's /model/info (the bn_* keys ./stack renders) — --models,
 # --model by id or name rewritten to the id, an unknown one refused, the default of Settings, and the /model menu
 test_claude_bedrock_in_the_sandbox_lists_and_checks_the_models_of_model_info() {
   mkdir -p "$TMP/bin" "$TMP/home/.config/bedrock-now"
@@ -1107,7 +1107,7 @@ STUB
 ]}
 JSON
   run() { env -i PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" INFO="$TMP/info.json" ANTHROPIC_BASE_URL=http://gateway:8091 ANTHROPIC_AUTH_TOKEN=sk-x \
-    CLAUDE_BEDROCK_OPUS_MODEL=claude-opus-5-5 ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-5-5 TERMINAL_AUTO_MODE=false "$@" /bin/bash "$STACK_DIR/terminal/bin/claude-bedrock" "${ARGS[@]}"; }
+    CLAUDE_BEDROCK_OPUS_MODEL=claude-opus-5-5 ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-5-5 TERMINAL_AUTO_MODE=false "$@" /bin/bash "$STACK_DIR/terminal/bin/devos-claude" "${ARGS[@]}"; }
   command -v jq >/dev/null 2>&1 || { echo "no jq" >&2; return 77; }
   ARGS=(--models); out="$(run 2>&1)" || { echo "$out" >&2; return 1; }
   assert_contains "$out" "* llama-3-3-70b"
@@ -1135,7 +1135,7 @@ JSON
   assert_contains "$out" "openrouter · or/google/gemma-4-31b-it:free (free (\$0)) · not tested with Claude Code"
   ARGS=(--model gpt-4 -p hi); rc=0; out="$(run 2>&1)" || rc=$?
   assert_eq "$rc" 1
-  assert_contains "$out" "unknown model 'gpt-4' (--model) — claude-bedrock --models lists them: claude-opus-5-5, llama-3-3-70b, or/google/gemma-4-31b-it:free"
+  assert_contains "$out" "unknown model 'gpt-4' (--model) — devos-claude --models lists them: claude-opus-5-5, llama-3-3-70b, or/google/gemma-4-31b-it:free"
   assert_not_contains "$out" "ARG"
 }
 

@@ -19,9 +19,9 @@
 #   --teardown       only remove a kept throwaway (refused unless it is this suite's own), then exit
 #   --skip-cli-mutating   skip backup/restore, down/up, rotate-aws, update and rollback (the slow part)
 #   --deep-update    also a real update to a new (local) commit and a rollback from it (two more setups)
-#   --no-claude      skip the claude-bedrock check
+#   --no-claude      skip the devos-claude check
 #   --only PARTS     run only these parts (comma list of cli, browser, voice, claude, mutating; default all).
-#                    Setup, the spend guard and the claude-bedrock link check always run.
+#                    Setup, the spend guard and the devos-claude link check always run.
 #   E2E_IMAGE_REUSE=0  build every image setup builds (default: the images of the same files are built once, by the
 #                    first run, and later runs' setups take them from the suite's image cache, bne2e-cache/NAME:KEY —
 #                    tests/e2e/docker-reuse; the cache keeps the images of one tree; setup/image-cache says what it did)
@@ -30,7 +30,7 @@
 #   (default)        the Code page and its browser terminal are on, as on a new install: setup turns them on by
 #                    default, in a workspace folder next to the checkout (TERMINAL_WORKSPACE, seeded): the terminal's
 #                    isolation probe, the browser suite's terminal checks and, with the claude part, one
-#                    claude-bedrock -p inside it (~$0.02); the Code page's isolation probe, its Caddy combinations, the
+#                    devos-claude -p inside it (~$0.02); the Code page's isolation probe, its Caddy combinations, the
 #                    browser suite's code checks (a few dozen Haiku turns, ~$0.17 on the terminal's key, whose budget
 #                    becomes $0.30) and, after the suite, a hostile stand-in on bn-coded's socket
 #   --no-code        the Code page off, as a person who turned it off (CODE_ENABLED=false; E2E_NO_CODE=1 does the
@@ -63,7 +63,7 @@
 #                    E2E_HOST_FOLDERS_DIR=/abs/new-folder: their parent instead (for a checkout whose path ./stack
 #                    project refuses — in a temporary folder, or in a .claude folder that is not a worktree's: the run
 #                    says so at once). Either parent must not exist yet; the suite makes it and removes it after.
-#   --host-sessions  Claude Code and claude-bedrock sessions of this computer copied into the sandbox
+#   --host-sessions  Claude Code and devos-claude sessions of this computer copied into the sandbox
 #                    (E2E_HOST_SESSIONS=1 does the same; needs the Code page and the browser part): a folder made in
 #                    tests/e2e/work/<project>-host-sessions (or E2E_HOST_SESSIONS_DIR, a new folder: never one of
 #                    yours, never a temporary one) added with ./stack project add, and a FAKE home folder beside it whose ~/.claude and
@@ -74,7 +74,7 @@
 #                    BN_SESSIONS_HOME pointing there — never your real ~/.claude. ./stack sessions scan without
 #                    consent refused; consent --always; scan (the reader container: gone afterwards), fetch --all; then
 #                    browser/code-host-sessions-a: the Import sheet's check step (2 possible secrets, the thinking
-#                    block taken out, the tool output left out), Copy into the sandbox (the CC and CB badges), the imported session resumed on
+#                    block taken out, the tool output left out), Copy into the sandbox (the CC and DC badges), the imported session resumed on
 #                    Haiku (it answers the word from the copied history), Continue in this project (a fork in the
 #                    Workspace); then no fake secret is anywhere in the sandbox's store, the stores on "this
 #                    computer" are unchanged, consent --revoke forgets what the code container read, and a read after
@@ -126,7 +126,7 @@
 #
 # Never touches the default install: only project names bne2e[-…] are accepted, and teardown touches Docker only
 # after the project was found to be this suite's own (or free); ports 80/4000/8765 (and the others in AVOID_PORTS)
-# are never used; ~/.local/bin/claude-bedrock is checked before and after (link and file); nothing is pruned.
+# are never used; ~/.local/bin/devos-claude is checked before and after (link and file); nothing is pruned.
 set -uo pipefail
 umask 077   # logs, results and screenshots are private; the throwaway checkout itself is cloned with umask 022
 
@@ -198,10 +198,10 @@ for part in $(printf '%s' "$ONLY" | tr ',' ' '); do
   case "$part" in cli | browser | voice | claude | mutating) ;; *) echo "--only: unknown part '$part' (cli, browser, voice, claude, mutating)" >&2; exit 2 ;; esac
 done
 part_on() { case ",$ONLY," in *",$1,"*) return 0 ;; esac; return 1; }   # part_on PART -> 0 when --only includes it
-# The terminal's claude-bedrock -p (browser suite) is a second Claude Code run, on the terminal's own key.
+# The terminal's devos-claude -p (browser suite) is a second Claude Code run, on the terminal's own key.
 if [ "$TERMINAL" = 1 ]; then BUDGETS="$BUDGETS BUDGET_TERMINAL=0.06"; SPEND_LIMIT="0.16"; fi
 # The Code page's checks: a few dozen Haiku turns (each new session writes ~26k tokens of prompt cache) on that key —
-# about $0.17 of it in a full run (Read only and Bypass permissions included), with the terminal's claude-bedrock -p
+# about $0.17 of it in a full run (Read only and Bypass permissions included), with the terminal's devos-claude -p
 # after them on the same key.
 if [ "$CODE" = 1 ]; then BUDGETS="${BUDGETS% BUDGET_TERMINAL=*} BUDGET_TERMINAL=0.30"; SPEND_LIMIT="0.40"; fi
 valid_project "$PROJECT" || { echo "--project: only bne2e or bne2e-<lowercase letters, digits, ->, not '$PROJECT' (teardown deletes the project's volumes)" >&2; exit 2; }
@@ -602,7 +602,7 @@ proxy-rebind	$REBIND_RB"
     printf '%s\n' "$elog" | grep -q "\"port\":22,\"address\":\"$hg\",\"status\":403" || bad="$bad egress-log-no-host-gateway"
     [ "$(docker inspect -f '{{.Config.User}} {{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}}' "$eg" 2>/dev/null)" = "65534:65534 true [ALL]" ] ||
       bad="$bad egress-not-hardened"
-    # Its key is its own (claude-code-terminal), never the claude-code key of claude-bedrock on this computer
+    # Its key is its own (claude-code-terminal), never the claude-code key of devos-claude on this computer
     ins="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$tc" 2>/dev/null)"
     ! env_has LITELLM_KEY_CLAUDE_CODE "$ins" || bad="$bad has-the-claude-code-key"
     env_has LITELLM_KEY_TERMINAL "$ins" || bad="$bad no-terminal-key"
@@ -761,7 +761,7 @@ if ! part_on cli; then record cli read-only SKIP 0 "--only $ONLY"; else
   cli remote-status 0 'Remote access: off' remote status
   cli openrouter-status 0 'OpenRouter: off' openrouter status
   cli serve-stop 0 'is not running' serve --stop
-  cli ssh-info 0 'Claude Code \(claude-bedrock\) from your phone' ssh-info
+  cli ssh-info 0 'Claude Code \(devos-claude\) from your phone' ssh-info
   if st help 2>&1 | grep -qE '^  password'; then
     cli password 0 'PORTAL_PASSWORD in .*\.env' password
     # --show prints only to a terminal: here (none) it must refuse, and the output must not hold the password
@@ -822,7 +822,7 @@ browser_run() {
   local label="$1" filter="${2:-}" tag="${3:-}" t0 rc got want runner
   runner="${4:-runner${tag:+@$tag}}"
   t0="$(now)"
-  # the terminal's one real Claude Code call (browser/terminal-claude-bedrock-inside) only with the claude part
+  # the terminal's one real Claude Code call (browser/terminal-devos-claude-inside) only with the claude part
   E2E_TERMINAL_CLAUDE="$( [ "$TERMINAL" = 1 ] && part_on claude && [ "$NO_CLAUDE" = 0 ] && echo 1 || echo 0)" \
     E2E_TERMINAL_HOSTILE="${HOSTILE:-0}" E2E_CODE_HOSTILE="${CODE_HOSTILE:-0}" E2E_HELPER_ON="${HELPER_ON:-0}" E2E_TAG="$tag" \
     "$HERE/browser.sh" "$STACK" "$OUT" "$PROJECT" "$PW_IMAGE" "$filter"; rc=$?
@@ -1081,7 +1081,7 @@ elif [ "$HOST_SESSIONS" = 1 ]; then
   HS_ID="$HS_S2"
   { hs_line "\"parentUuid\":null,\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Say hello.\"},\"uuid\":\"$v1\"" 2 1
     hs_line "\"parentUuid\":\"$v1\",\"type\":\"assistant\",\"message\":{\"id\":\"msg_e2e2\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-haiku-4-5\",\"content\":[{\"type\":\"text\",\"text\":\"Hello.\"}],\"stop_reason\":\"end_turn\"},\"uuid\":\"$w1\"" 2 2
-    printf '{"type":"custom-title","customTitle":"e2e claude-bedrock session","sessionId":"%s"}\n' "$HS_S2"; } > "$cb/$HS_S2.jsonl"
+    printf '{"type":"custom-title","customTitle":"e2e devos-claude session","sessionId":"%s"}\n' "$HS_S2"; } > "$cb/$HS_S2.jsonl"
   # the opt-in check of one real transcript (Q6): only when E2E_HOST_SESSIONS_REAL names one — its folder rewritten
   # to this run's, under a new id
   HS_REAL=0
@@ -1105,7 +1105,7 @@ elif [ "$HOST_SESSIONS" = 1 ]; then
   cli sessions-project-add 0 'e2e-sessions-app: .* \(read-write\)' project add "$HS_CWD" --name e2e-sessions-app --now
   BN_SESSIONS_HOME="$HS/home" cli sessions-scan-not-allowed 1 'not allowed yet' sessions scan --project e2e-sessions-app
   BN_SESSIONS_HOME="$HS/home" cli sessions-consent 0 'without asking again' sessions consent --project e2e-sessions-app --always
-  BN_SESSIONS_HOME="$HS/home" cli sessions-scan 0 "$([ "$HS_REAL" = 1 ] && echo 3 || echo 2) session\\(s\\) of Claude Code and claude-bedrock listed" sessions scan --project e2e-sessions-app
+  BN_SESSIONS_HOME="$HS/home" cli sessions-scan 0 "$([ "$HS_REAL" = 1 ] && echo 3 || echo 2) session\\(s\\) of Claude Code and devos-claude listed" sessions scan --project e2e-sessions-app
   t0="$(now)"
   readers="$(docker ps -a --filter name=bn-reader- --format '{{.Names}}' | grep -c . || true)"
   if [ "${readers:-0}" = 0 ]; then record projects host-sessions-reader-gone PASS "$(( $(now) - t0 ))" "the reader's throwaway container is gone after the look"
@@ -1163,7 +1163,7 @@ elif [ "$HOST_CONFIG" = 1 ]; then
   mkdir -p "$OUT/browser"
   BN_SESSIONS_HOME="$HC/home" cli setup-scan-not-allowed 1 'not allowed yet' sessions config scan
   BN_SESSIONS_HOME="$HC/home" cli setup-consent 0 'without asking again' sessions config consent --always
-  BN_SESSIONS_HOME="$HC/home" cli setup-scan 0 'item\(s\) of Claude Code, claude-bedrock, Git listed' sessions config scan
+  BN_SESSIONS_HOME="$HC/home" cli setup-scan 0 'item\(s\) of Claude Code, devos-claude, Git listed' sessions config scan
   t0="$(now)"
   readers="$(docker ps -a --filter name=bn-reader- --format '{{.Names}}' | grep -c . || true)"
   if [ "${readers:-0}" = 0 ]; then record projects host-config-reader-gone PASS "$(( $(now) - t0 ))" "the reader's throwaway container is gone after the look"
@@ -1509,29 +1509,29 @@ else
   browser_run "speech-to-text on again" 'browser/(home-voice-line|chat-voice-call|stt-transcription)$' stt-on-again
 fi
 
-# --- 4. claude-bedrock (the throwaway's wrapper, never the ~/.local/bin link) ---
-if ! part_on claude; then record claude claude-bedrock SKIP 0 "--only $ONLY"
-elif [ "$NO_CLAUDE" = 1 ]; then record claude claude-bedrock SKIP 0 "--no-claude"
-elif ! command -v claude >/dev/null 2>&1; then record claude claude-bedrock SKIP 0 "Claude Code (claude) is not installed"
+# --- 4. devos-claude (the throwaway's wrapper, never the ~/.local/bin link) ---
+if ! part_on claude; then record claude devos-claude SKIP 0 "--only $ONLY"
+elif [ "$NO_CLAUDE" = 1 ]; then record claude devos-claude SKIP 0 "--no-claude"
+elif ! command -v claude >/dev/null 2>&1; then record claude devos-claude SKIP 0 "Claude Code (claude) is not installed"
 else
-  say "claude-bedrock -p (Haiku, one short prompt)"
-  t0="$(now)"; log="$LOGS/claude-bedrock.log"; haiku="$(get_env CLAUDE_BEDROCK_HAIKU_MODEL)"
+  say "devos-claude -p (Haiku, one short prompt)"
+  t0="$(now)"; log="$LOGS/devos-claude.log"; haiku="$(get_env CLAUDE_BEDROCK_HAIKU_MODEL)"
   # Its own config folder (the wrapper's lean CLAUDE_CONFIG_DIR, not ~/.claude-bedrock) and an empty working folder:
   # your ~/.claude, ~/.claude-bedrock and this checkout's files stay out of it. The config folder is the harness's own
   # and made afresh (a reused --out keeps none), so the wrapper creates it: mode 700.
   rm -rf "$OUT/claude-config"; mkdir -p "$OUT/claude-cwd"
   ( export CLAUDE_BEDROCK_CONFIG_DIR="$OUT/claude-config" CLAUDE_BEDROCK_MODEL="$haiku" CLAUDE_BEDROCK_SUMMARY=1
     clean_env CLAUDE_BEDROCK_CONFIG_DIR CLAUDE_BEDROCK_MODEL CLAUDE_BEDROCK_SUMMARY
-    cd "$OUT/claude-cwd" && exec "$NOTTY" "$STACK/bin/claude-bedrock" -p "Reply with exactly the word: ok" --max-turns 1 ) > "$log" 2>&1 </dev/null; rc=$?
+    cd "$OUT/claude-cwd" && exec "$NOTTY" "$STACK/bin/devos-claude" -p "Reply with exactly the word: ok" --max-turns 1 ) > "$log" 2>&1 </dev/null; rc=$?
   redact "$log"
   if [ "$rc" = 0 ] && grep -qiE '^ok\.?$' "$log" && grep -q '^bedrock · ' "$log" && grep -q '^config: lean ' "$log" &&
     [ "$(perm_of "$OUT/claude-config")" = 700 ]; then
-    record claude claude-bedrock PASS "$(( $(now) - t0 ))" "answered ok via $haiku; cost line shown; lean config folder (700)"
-  else record claude claude-bedrock FAIL "$(( $(now) - t0 ))" "exit $rc: $(tail -n 3 "$log" | tr '\n' ' ')"; fi
-  t0="$(now)"; out="$( (clean_env; cd "$OUT/claude-cwd" && exec "$NOTTY" "$STACK/bin/claude-bedrock" --help) 2>&1 </dev/null)"
-  if printf '%s' "$out" | grep -q 'claude-bedrock: Claude Code on AWS Bedrock via DevOS ADE'; then
-    record claude claude-bedrock-help PASS "$(( $(now) - t0 ))" "wrapper header + claude --help"
-  else record claude claude-bedrock-help FAIL "$(( $(now) - t0 ))" "no wrapper header"; fi
+    record claude devos-claude PASS "$(( $(now) - t0 ))" "answered ok via $haiku; cost line shown; lean config folder (700)"
+  else record claude devos-claude FAIL "$(( $(now) - t0 ))" "exit $rc: $(tail -n 3 "$log" | tr '\n' ' ')"; fi
+  t0="$(now)"; out="$( (clean_env; cd "$OUT/claude-cwd" && exec "$NOTTY" "$STACK/bin/devos-claude" --help) 2>&1 </dev/null)"
+  if printf '%s' "$out" | grep -q 'devos-claude: Claude Code on AWS Bedrock via DevOS ADE'; then
+    record claude devos-claude-help PASS "$(( $(now) - t0 ))" "wrapper header + claude --help"
+  else record claude devos-claude-help FAIL "$(( $(now) - t0 ))" "no wrapper header"; fi
 fi
 
 # --- 5. CLI commands that change the throwaway (backup/restore, down/up, rotate-aws, update, rollback) ---
@@ -1606,10 +1606,10 @@ elif spend_ok "$spend" "$SPEND_LIMIT"; then record spend spend-guard PASS 0 "Bed
 else record spend spend-guard FAIL 0 "Bedrock spend of this run \$$spend >= \$$SPEND_LIMIT"; fi
 printf 'Bedrock spend of this run (LiteLLM /global/spend, summed around restores): $%s\n' "${spend:-unknown}" > "$OUT/spend.txt"
 
-# --- 7. the default install's claude-bedrock link (and the file it points to) is untouched ---
+# --- 7. the default install's devos-claude and claude-bedrock links (and the files they point to) are untouched ---
 LINK_AFTER="$(link_state)"
-if [ "$LINK_AFTER" = "$LINK_BEFORE" ]; then record safety claude-bedrock-link-untouched PASS 0 "$LINK_AFTER"
-else record safety claude-bedrock-link-untouched FAIL 0 "before: $LINK_BEFORE, after: $LINK_AFTER"; fi
+if [ "$LINK_AFTER" = "$LINK_BEFORE" ]; then record safety devos-claude-links-untouched PASS 0 "$LINK_AFTER"
+else record safety devos-claude-links-untouched FAIL 0 "before: $LINK_BEFORE, after: $LINK_AFTER"; fi
 
 # --- 8. report ---
 redact_outputs

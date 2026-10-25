@@ -1,11 +1,11 @@
 # shellcheck shell=bash
-# The models Claude Code can be given here — the Code page's picker, claude-bedrock (on your computer and in the browser
+# The models Claude Code can be given here — the Code page's picker, devos-claude (on your computer and in the browser
 # terminal) and the terminal's /model menu: every enabled chat model of the catalog (Bedrock, Anthropic's and the
 # others), the enabled OpenRouter models and the chosen Experiential Labs ones, with prices, how well each works as Claude Code's model
 # (catalog/code-models.tsv) and which of them Settings › Claude Code › Models lists (CODE_MODELS, CODE_DEFAULT_MODEL).
 #
 # render_config writes them to litellm/code-models.tsv (code_models_write) and into LiteLLM's model_info (bn_* keys,
-# code_models_inject): the portal's /.bn/models reads the file, claude-bedrock on your computer reads the file, the one
+# code_models_inject): the portal's /.bn/models reads the file, devos-claude on your computer reads the file, the one
 # in the terminal reads LiteLLM's /model/info (the only way the sandbox learns anything of this), and LiteLLM's
 # lib/litellm-hooks/bn_hooks.py (copied next to it) lowers a request's max_tokens to a model's max_out from the file
 # and, for another vendor's model on Bedrock (provider and vendor columns), leaves out Claude Code's token counts.
@@ -14,7 +14,7 @@
 #   code_models_write ENABLED_FILE [OUT]      litellm/code-models.tsv, atomically
 #   code_models_inject ROWS_FILE < yaml       LiteLLM config with bn_* model_info lines for the chat models in ROWS_FILE
 #   code_model_resolve NAME [FILE]            an id from an id, a name, an OpenRouter id without or/, or opus/sonnet/haiku
-#   code_models_table [FILE] / code_picker_json [FILE] [AUTO_OFF]   claude-bedrock --models / its --settings JSON
+#   code_models_table [FILE] / code_picker_json [FILE] [AUTO_OFF]   devos-claude --models / its --settings JSON
 #
 # A row (TAB-separated, "-" = none): id name provider vendor in out cache_read cache_write free compat listed default
 # max_out context note — prices in USD per million tokens; free/listed/default 1 or 0; compat works | chat-only | fails
@@ -23,7 +23,7 @@
 # them from OpenRouter's; an Experiential Labs name is its id, valid_xl_id).
 
 CODE_MODELS_MAX=2000   # rows in the file (OPENROUTER_MAX_MODELS caps OpenRouter at 1000 by default)
-CODE_PICKER_MAX=150    # rows in claude-bedrock's /model menu
+CODE_PICKER_MAX=150    # rows in devos-claude's /model menu
 # What a model name never keeps, byte by byte (LC_ALL=C; an awk ERE): C1 controls (U+0080–U+009F: U+009B is a terminal's
 # CSI), U+200B–U+200F, U+2028–U+202E (line/paragraph separators, bidi embeddings and overrides), U+2060–U+2064,
 # U+2066–U+2069 (bidi isolates), U+FEFF, U+FFFE/U+FFFF — YAML refuses some (LiteLLM would refuse the whole config), a
@@ -37,7 +37,7 @@ _code_display() { printf '%s\n' "${CODE_DISPLAY_TSV:-$STACK_DIR/catalog/display.
 code_models_file() { printf '%s\n' "${CODE_MODELS_FILE:-$STACK_DIR/litellm/code-models.tsv}"; }
 
 # A model id here — one rule for the Settings values, the list's rows, the portal (portal/portal/settings.py and code.py
-# MODEL_ID) and claude-bedrock: a letter or digit, then letters, digits and . _ : / - (Bedrock's names, or/<OpenRouter
+# MODEL_ID) and devos-claude: a letter or digit, then letters, digits and . _ : / - (Bedrock's names, or/<OpenRouter
 # id> with its :free or :nitro); at most 128 characters. Never ~ (OpenRouter's ~vendor/…-latest aliases are no model
 # here), @ or [ ] (the code server also takes Claude Code's "[1m]" suffix for a session's model: not an id of the list).
 # valid_code_model_id ID -> 0 when ID is one
@@ -165,7 +165,7 @@ code_models_write() {
          printf '# scope: %s\n' "$(code_models_scope)"
          printf '# id\tname\tprovider\tvendor\tin\tout\tcache_read\tcache_write\tfree\tcompat\tlisted\tdefault\tmax_out\tcontext\tnote\n'
          code_models_rows "$1"; } > "$tmp"; then
-    rm -f "$tmp"; warn "could not list the models for the Code page and claude-bedrock ($out kept)"; return 0
+    rm -f "$tmp"; warn "could not list the models for the Code page and devos-claude ($out kept)"; return 0
   fi
   chmod 644 "$tmp"; mv "$tmp" "$out"
 }
@@ -173,7 +173,7 @@ code_models_write() {
 # code_models_inject ROWS_FILE < LiteLLM config -> the same config with, after `mode: "chat"` of each model in
 # ROWS_FILE, its bn_* lines: bn_id (its own name: /model/info also lists an alias of the catalog — claude-sonnet-5 —
 # with its target's model_info), bn_name, bn_vendor, bn_compat, bn_code (listed in the Code page and the terminal) and
-# bn_default (the one new sessions start with). Only what the terminal's claude-bedrock needs from /model/info.
+# bn_default (the one new sessions start with). Only what the terminal's devos-claude needs from /model/info.
 code_models_inject() {
   F="$1" LC_ALL=C awk -F'\t' '
     BEGIN { f = ENVIRON["F"]; while ((getline line < f) > 0) { if (line ~ /^#/) continue; split(line, c, "\t"); if (c[1] == "") continue
@@ -196,7 +196,7 @@ _code_rows() {
 }
 
 # code_model_resolve NAME [FILE] -> the id NAME means (an id, a name — case-insensitive —, an OpenRouter id without
-# "or/", or Claude Code's alias opus/sonnet/haiku: claude-bedrock's slot, as an id), or nothing
+# "or/", or Claude Code's alias opus/sonnet/haiku: devos-claude's slot, as an id), or nothing
 code_model_resolve() {
   local want="$1" slot=''
   case "$(printf '%s' "$want" | tr '[:upper:]' '[:lower:]')" in
@@ -230,7 +230,7 @@ _code_compat_word() {
   case "$1" in works) echo "works" ;; chat-only) echo "chat only (no tools)" ;; fails) echo "fails" ;; *) echo "not tested" ;; esac
 }
 
-# code_models_table [FILE] [all] -> claude-bedrock --models: the listed models (all of them with "all"), one per line
+# code_models_table [FILE] [all] -> devos-claude --models: the listed models (all of them with "all"), one per line
 code_models_table() {
   local f="${1:-}" every="${2:-}" id name prov vend pin pout _cr _cw free compat listed def _mo _cx _note n=0
   printf '  %-44s %-28s %-24s %s\n' MODEL NAME PRICE "WITH CLAUDE CODE"
@@ -250,7 +250,7 @@ _code_json_str() { printf '"%s"' "$(printf '%s' "$1" | tr -d '\000-\037"\\')"; }
 # (a function: bash 3.2 cannot parse a case statement inside $(…))
 _code_prov_suffix() { case "$1" in OpenRouter | "Experiential Labs") printf ' · %s' "$1" ;; esac; }
 
-# code_picker_json [FILE] [AUTO_OFF(1|0)] -> the --settings JSON for claude-bedrock: Claude Code's /model menu lists the
+# code_picker_json [FILE] [AUTO_OFF(1|0)] -> the --settings JSON for devos-claude: Claude Code's /model menu lists the
 # listed models by their full ids with our names, prices and how they work (modelPicker, replacing its own lineup of
 # aliases: an alias lets Claude Code pick the model itself — Plan mode on "haiku" plans on Sonnet), plus auto mode off
 code_picker_json() {

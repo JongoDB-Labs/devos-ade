@@ -14,7 +14,7 @@
 #   subscriptions ids             the tools in this sandbox, one id a line
 #
 # TOOL: claude (Claude Code on your Claude plan: claude-sub), codex, gemini, copilot, cursor, grok; for open also
-# bedrock (claude-bedrock: Claude Code on Bedrock) and shell.
+# bedrock (devos-claude: Claude Code on Bedrock) and shell.
 set -uo pipefail
 umask 077
 
@@ -174,7 +174,7 @@ logout() {
 cmd_open() {
   local id="${1:-}" s
   case "$id" in
-    bedrock) exec "$BIN/claude-bedrock" ;;
+    bedrock) exec "$BIN/devos-claude" ;;
     shell) exec bash ;;
   esac
   need_tool "$id"

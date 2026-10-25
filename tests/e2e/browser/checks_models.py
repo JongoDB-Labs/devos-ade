@@ -1,11 +1,11 @@
 """Every model of the catalog as Claude Code's model (lib/code_models.sh, litellm/code-models.tsv, catalog/code-models.tsv):
 the portal's /.bn/models lists every enabled chat model (Claude first) with its provider, vendor, how it works with
 Claude Code and whether Settings › Claude Code › Models lists it; LiteLLM's /model/info carries the same as bn_* keys
-(the browser terminal's claude-bedrock reads them) and its hook lowers a request's max_tokens to a model's limit. Live:
+(the browser terminal's devos-claude reads them) and its hook lowers a request's max_tokens to a model's limit. Live:
 a Code page session on another provider's model (the cheapest that "works") round-trips a Bash tool call and its spend
 lands under that model; a Haiku session switches to it mid-session (no "Couldn't confirm model"); Llama 3.3 70B (chat
 only) answers at all — Bedrock refuses Claude Code's 32,000 max_tokens without the hook. The page: the status bar's quick
-actions (28 px+, styled tips with shortcuts) and the model picker in groups with badges; the terminal: claude-bedrock
+actions (28 px+, styled tips with shortcuts) and the model picker in groups with badges; the terminal: devos-claude
 --models and Claude Code's /model menu listing the catalog's models; Settings (with the update helper): Anthropic only,
 then every model again."""
 
@@ -78,7 +78,7 @@ def catalog(ctx):
         if m["free"]:
             expect(m["input_per_mtok"] == 0 and m["output_per_mtok"] == 0, f"a free model is $0: {m}")
     expect(bn["default"] in ids and bn["scope"]["mode"] in ("all", "anthropic", "list"), f"default {bn['default']}, scope {bn['scope']}")
-    # the same through LiteLLM (what the browser terminal's claude-bedrock reads)
+    # the same through LiteLLM (what the browser terminal's devos-claude reads)
     r = lite("GET", "/model/info", key=ENV["LITELLM_MASTER_KEY"])
     expect(r.status == 200, f"/model/info {r.status}")
     info = {d["model_name"]: d["model_info"] for d in r.json()["data"]}
@@ -207,9 +207,9 @@ def ui_models(ctx):
     return f"status bar actions 28 px+ with tips (Run: Alt+R); picker groups {groups}"
 
 
-@check("browser", "terminal-claude-bedrock-models")
+@check("browser", "terminal-devos-claude-models")
 def terminal_models(ctx):
-    """The browser terminal: claude-bedrock --models from LiteLLM's /model/info, and Claude Code's /model menu listing the
+    """The browser terminal: devos-claude --models from LiteLLM's /model/info, and Claude Code's /model menu listing the
     catalog's models by name, price and how they work (no model call)."""
     need_on()
     page, rec = ctx.page("terminal-models")
@@ -220,14 +220,14 @@ def terminal_models(ctx):
     f = terminal_frame(page)
     wait_xterm(f)
     new_shell_window(page, f)
-    type_line(page, f, "clear; claude-bedrock --models")
+    type_line(page, f, "clear; devos-claude --models")
     out = wait_text(f, r"WITH CLAUDE CODE", 30)
-    out = wait_text(f, r"claude-bedrock --model <id or name>", 10)
+    out = wait_text(f, r"devos-claude --model <id or name>", 10)
     expect(re.search(r"^\* claude-", out, re.M) or re.search(r"^\* \S+", out, re.M), f"no default marked: {out[-600:]!r}")
-    shot(page, "72-terminal-claude-bedrock-models")
+    shot(page, "72-terminal-devos-claude-models")
     listed = [ln.split()[0] for ln in out.splitlines() if re.match(r"^[ *] [a-z]", ln)]
     # Claude Code's /model menu: our rows (replaceBuiltInOptions), no aliases
-    type_line(page, f, "clear; claude-bedrock")
+    type_line(page, f, "clear; devos-claude")
     t0, steps = time.time(), []
     while time.time() - t0 < 90:
         s = term_text(f)

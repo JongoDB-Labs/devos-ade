@@ -1,7 +1,7 @@
 #!/bin/bash
-# claude-bedrock in the DevOS ADE terminal: Claude Code on AWS Bedrock through this stack's LiteLLM, reached through
+# devos-claude in the DevOS ADE terminal: Claude Code on AWS Bedrock through this stack's LiteLLM, reached through
 # the terminal's gateway on its own network (compose.terminal.yaml sets the environment). The same settings as
-# bin/claude-bedrock on your computer — model mapping, no telemetry, the shared MCP server — plus its launch line
+# bin/devos-claude on your computer — model mapping, no telemetry, the shared MCP server — plus its launch line
 # (price and budget) and a session cost on exit. That cost is the terminal key's spend after the session minus
 # before it: LiteLLM's per-session log needs the master key, which never enters this container, so other sessions
 # on the same key during this one count too. Plain `claude` here also uses Bedrock (without these extras).
@@ -9,7 +9,7 @@
 # ~/.claude-bedrock does on your computer: no plugins, hooks or MCP servers from your computer reach this terminal.
 set -euo pipefail
 
-die() { printf 'claude-bedrock: %s\n' "$*" >&2; exit 1; }
+die() { printf 'devos-claude: %s\n' "$*" >&2; exit 1; }
 gw="${ANTHROPIC_BASE_URL:-}"
 key="${ANTHROPIC_AUTH_TOKEN:-}"
 mcp="$HOME/.config/bedrock-now/mcp.json"
@@ -74,7 +74,7 @@ resolve_model() {
   [ -n "$rows" ] || { printf '%s%s\n' "$base" "$suffix"; return 0; }
   id="$(printf '%s\n' "$rows" | W="$base" awk -F'\t' 'BEGIN { w = tolower(ENVIRON["W"]) } !f && tolower($1) == w { e = $1; f = 1 }
     !h && (tolower($2) == w || tolower($1) == "or/" w) { h = $1 } END { if (f) print e; else if (h != "") print h }')"
-  [ -n "$id" ] || die "unknown model '$want' ($2) — claude-bedrock --models lists them: $(printf '%s\n' "$rows" | awk -F'\t' '$8 == 1 && n < 6 { printf "%s%s", (n++ ? ", " : ""), $1; next } $8 == 1 { more = 1 } END { if (more) printf ", …" }')"
+  [ -n "$id" ] || die "unknown model '$want' ($2) — devos-claude --models lists them: $(printf '%s\n' "$rows" | awk -F'\t' '$8 == 1 && n < 6 { printf "%s%s", (n++ ? ", " : ""), $1; next } $8 == 1 { more = 1 } END { if (more) printf ", …" }')"
   printf '%s%s\n' "$id" "$suffix"
 }
 # picker_json AUTO_OFF -> --settings JSON: Claude Code's /model menu lists the listed models by full id with their names,
@@ -110,20 +110,20 @@ case "${1:-}" in
       printf '%s %-44s %-28s %-20s %s\n' "$([ "$def" = 1 ] && echo '*' || echo ' ')" "$id" "$(printf '%s' "$name" | cut -c1-28)" \
         "$(price_word "$pin" "$pout" "$free")" "$(compat_word "$compat") · $vend"
     done
-    printf '\nclaude-bedrock --model <id or name> starts on one; /model in a session switches (by full id: an alias lets Claude Code\n'
+    printf '\ndevos-claude --model <id or name> starts on one; /model in a session switches (by full id: an alias lets Claude Code\n'
     printf 'pick the model itself). Only models that "work" can use tools — read, edit and run things.\n'
     exit 0 ;;
   -h | --help)
     cat <<EOT
-claude-bedrock: Claude Code on AWS Bedrock via DevOS ADE, in the browser terminal
+devos-claude: Claude Code on AWS Bedrock via DevOS ADE, in the browser terminal
   Model    ${CLAUDE_BEDROCK_OPUS_MODEL:-not set up} (main, unless Settings › Claude Code › Models names a default); --model <id or name> or
-           CLAUDE_BEDROCK_MODEL=<name> picks another, claude-bedrock --models lists them
+           CLAUDE_BEDROCK_MODEL=<name> picks another, devos-claude --models lists them
   Proxy    LiteLLM through the stack's gateway ($gw), key 'claude-code-terminal' (BUDGET_TERMINAL; Home shows it)
   Files    /workspace is the folder ./stack terminal enable shared; nothing else of your computer is here
   Config   this terminal's own ~/.claude (terminal-home volume), lean: nothing from your computer's ~/.claude
   Auto     auto mode $auto_help
   Quiet    CLAUDE_BEDROCK_QUIET=1 hides the launch line and the session cost on exit
-  Below    Claude Code's own help; every option works with claude-bedrock
+  Below    Claude Code's own help; every option works with devos-claude
 
 EOT
     exec claude "$@" ;;
@@ -189,7 +189,7 @@ mcp_args=()
 [ "$add_mcp" = 1 ] && [ -f "$mcp" ] && mcp_args=("--mcp-config=$mcp")
 # Claude Code's flag tier for a session (a --settings of your own replaces it): its /model menu lists the models of
 # Settings › Claude Code › Models by full id, name, price and how they work (picker_json), and auto mode is off unless
-# Settings › Terminal › Auto mode is on (TERMINAL_AUTO_MODE), as claude-bedrock on your computer does. The sandbox's
+# Settings › Terminal › Auto mode is on (TERMINAL_AUTO_MODE), as devos-claude on your computer does. The sandbox's
 # managed settings already turn auto mode off unless one of the two switches is on; this covers the Code page's alone.
 if [ "$add_mcp" = 1 ]; then
   off=1; [ "$auto_on" != 1 ] || off=0

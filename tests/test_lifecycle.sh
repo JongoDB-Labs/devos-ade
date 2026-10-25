@@ -269,21 +269,21 @@ test_uninstall_aborts_under_assume_yes() {
 
 test_uninstall_confirmed_removes_volumes_and_own_symlink_only() {
   printf 'X=1\n' > "$ENV_FILE"; _stub_dc; HOME="$TMP/home"; STACK_DIR="$TMP/stack"
-  mkdir -p "$HOME/.local/bin" "$STACK_DIR/bin"; ln -s "$STACK_DIR/bin/claude-bedrock" "$HOME/.local/bin/claude-bedrock"
+  mkdir -p "$HOME/.local/bin" "$STACK_DIR/bin"; ln -s "$STACK_DIR/bin/devos-claude" "$HOME/.local/bin/devos-claude"
   ask() { echo "bedrock-now"; }; confirm() { return 1; }
   docker() { echo "docker $*" >> "$TMP/calls"; }
   cmd_uninstall 2> "$TMP/err"
   assert_contains "$(cat "$TMP/calls")" "dc down -v --remove-orphans"
   assert_contains "$(cat "$TMP/calls")" "docker volume rm bedrock-now_terminal-home"   # also while the terminal is off
-  [ ! -e "$HOME/.local/bin/claude-bedrock" ] && [ ! -L "$HOME/.local/bin/claude-bedrock" ] || { echo "symlink not removed" >&2; return 1; }
+  [ ! -e "$HOME/.local/bin/devos-claude" ] && [ ! -L "$HOME/.local/bin/devos-claude" ] || { echo "symlink not removed" >&2; return 1; }
   assert_contains "$(cat "$TMP/err")" ".env and backups/ were kept"
   assert_not_contains "$(cat "$TMP/err")" ".claude-bedrock"
   mkdir -p "$HOME/.claude-bedrock" "$TMP/cb"; CLAUDE_BEDROCK_CONFIG_DIR="$TMP/cb" cmd_uninstall 2> "$TMP/err"
-  assert_contains "$(cat "$TMP/err")" "~/.claude-bedrock (claude-bedrock's Claude Code settings and sessions) was kept"
-  assert_contains "$(cat "$TMP/err")" "$TMP/cb (claude-bedrock's Claude Code settings and sessions) was kept"
+  assert_contains "$(cat "$TMP/err")" "~/.claude-bedrock (devos-claude's Claude Code settings and sessions) was kept"
+  assert_contains "$(cat "$TMP/err")" "$TMP/cb (devos-claude's Claude Code settings and sessions) was kept"
   [ -d "$HOME/.claude-bedrock" ] && [ -d "$TMP/cb" ] || { echo "a config folder was removed" >&2; return 1; }
   CLAUDE_BEDROCK_CONFIG_DIR="$HOME/.claude-bedrock/" cmd_uninstall 2> "$TMP/err"
-  assert_eq "$(grep -c 'claude-bedrock.s Claude Code settings' "$TMP/err")" 1
+  assert_eq "$(grep -c 'devos-claude.s Claude Code settings' "$TMP/err")" 1
   # never names ~/.claude, your home folder or / to delete: only folders that resolve as lean
   mkdir -p "$HOME/.claude"; rm -rf "$HOME/.claude-bedrock"
   for v in "$HOME/.claude" "$HOME" / '~' rel/dir; do

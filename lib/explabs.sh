@@ -30,7 +30,7 @@
 #   explabs_refresh [MAX_AGE_MIN]   read the model list (setup, Settings; ./stack up in the background, 12 h); XL_CHANGED
 #   explabs_yaml                    LiteLLM model_list entries (render_litellm_config)
 #   explabs_write_portal_json       litellm/explabs-models.json for the portal (render_config)
-#   explabs_code_rows               the Code page's and claude-bedrock's rows (lib/code_models.sh)
+#   explabs_code_rows               the Code page's and devos-claude's rows (lib/code_models.sh)
 #   explabs_sync_owui               Open WebUI names and tags (needs a portal session)
 #   explabs_cost_prices_entries     Chat's cost line (lib/owui.sh cost_prices_json)
 #   explabs_status_line / explabs_summary_line / explabs_costs_section / explabs_models_section

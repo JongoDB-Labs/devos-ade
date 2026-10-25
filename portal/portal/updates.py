@@ -20,7 +20,7 @@ Files (the update-check directory is the portal's only other writable place besi
                            checked_at, error, error_at, refused (GitHub answered 403/429), limited (... for its rate
                            limit: X-RateLimit-Remaining 0 or Retry-After) and retry_at (when it allows the next one), by
                            (daily, home or manual: what asked), images
-  UPDATE_DIR/latest.txt    latest=vX.Y.Z / checked_at=<epoch>: what ./stack status and claude-bedrock read
+  UPDATE_DIR/latest.txt    latest=vX.Y.Z / checked_at=<epoch>: what ./stack status and devos-claude read
 The installed version comes from STATUS_DIR/version.json, written by ./stack setup and ./stack up (the
 portal cannot see the checkout).
 """

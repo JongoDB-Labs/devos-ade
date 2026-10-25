@@ -48,7 +48,7 @@ Usage: ./stack <command> [--yes]
                --use-instance-role / --use-keys switch between an EC2 IAM role and a key
   serve        Keep the stack up (and a Mac awake: caffeinate) until Ctrl-C; prints the URLs
                --background (macOS) holds it without a terminal, --stop ends that
-  ssh-info     How to use claude-bedrock from your phone over SSH (Tailscale name, apps, tmux)
+  ssh-info     How to use devos-claude from your phone over SSH (Tailscale name, apps, tmux)
   openrouter   Optional OpenRouter models: status | set | apply | remove | refresh | list
                | models all|free|paid|<ids>   (no Bedrock calls; see README)
                apply uses the key pasted after OPENROUTER_API_KEY= in .env; set asks for one
@@ -65,7 +65,7 @@ Usage: ./stack <command> [--yes]
                (each change restarts the sandbox: --now, --when-idle or --later)
   git-host     The Code page's Git hosts from a CLI login on this computer: import gh | import glab
                [--host HOST]   (the token goes to the code container on stdin, never printed; you confirm)
-  sessions     Your Claude Code and claude-bedrock sessions on this computer, copied into a project's sandbox
+  sessions     Your Claude Code and devos-claude sessions on this computer, copied into a project's sandbox
                (only after you allow it here; nothing is written back): list | import --project NAME
                | scan | fetch | consent [--always|--once|--revoke] | suggest   (secrets redacted by default)
                config: your setup (CLAUDE.md, skills, agents, commands, MCP servers, plugins, four settings,
@@ -620,7 +620,7 @@ cmd_setup() {
   setup_step "running the smoke test"
   ensure_portal_reachable   # (the terminal's and the Code page's fronts recreate Caddy too)
   cmd_test
-  setup_done "smoke test passed"; setup_step "finishing (claude-bedrock link, one-click updates, remote access)"
+  setup_done "smoke test passed"; setup_step "finishing (devos-claude link, one-click updates, remote access)"
   offer_symlink
   offer_helper   # lib/helper.sh: asks once; --yes installs it only with BEDROCK_NOW_HELPER=1
   if [ -n "$SETUP_REMOTE_MODE" ]; then remote_enable "$SETUP_REMOTE_MODE"; else remote_up_hook; fi
@@ -651,7 +651,7 @@ render_config() {
   litellm_config_safe "$tmp" || { rm -f "$tmp"; die "the rendered $out is not valid YAML — kept the previous one (a model name with a character YAML refuses?)"; }
   chmod 644 "$tmp"   # read by the litellm container
   mv "$tmp" "$out"
-  # the models of the Code page and claude-bedrock (lib/code_models.sh), next to the config: the portal, claude-bedrock
+  # the models of the Code page and devos-claude (lib/code_models.sh), next to the config: the portal, devos-claude
   # and LiteLLM's hook (lib/litellm-hooks/bn_hooks.py) read it
   ! declare -F code_models_write >/dev/null || code_models_write "$1" "$(dirname "$out")/code-models.tsv"
   # the chosen Experiential Labs models for the portal (lib/explabs.sh; removed while it is off)
@@ -691,7 +691,7 @@ choose_defaults() { # derive model choices from litellm/enabled-models.txt (pins
   p="$(_pinned CLAUDE_MODEL_OPUS "$en")"; set_env CLAUDE_BEDROCK_OPUS_MODEL "${p:-$(first_enabled "$en" claude-opus-5-5 claude-sonnet-5-5 claude-sonnet-4-5)}"
   p="$(_pinned CLAUDE_MODEL_SONNET "$en")"; set_env CLAUDE_BEDROCK_SONNET_MODEL "${p:-$(first_enabled "$en" claude-sonnet-5-5 claude-sonnet-4-5)}"
   p="$(_pinned CLAUDE_MODEL_HAIKU "$en")"; set_env CLAUDE_BEDROCK_HAIKU_MODEL "${p:-$(first_enabled "$en" claude-haiku-5-5 claude-sonnet-4-5)}"
-  [ -n "$(get_env CLAUDE_BEDROCK_OPUS_MODEL)" ] || warn "no Claude model is usable with this key — claude-bedrock will not work"
+  [ -n "$(get_env CLAUDE_BEDROCK_OPUS_MODEL)" ] || warn "no Claude model is usable with this key — devos-claude will not work"
 
   # Open WebUI: default chat model, and the cheap model for titles/tags/follow-up suggestions.
   m="$(first_enabled "$en" claude-sonnet-5-5 claude-sonnet-4-5 claude-haiku-5-5)"
@@ -738,7 +738,7 @@ setup_bringup_and_probe() {
   setup_step "starting Postgres + RustFS"
   run_phase "Postgres + RustFS" "postgres rustfs" _up_data_services
   setup_done "Postgres + RustFS started"
-  warn "LiteLLM restarts while probing models; active claude-bedrock/Open WebUI requests may fail for ~1 min"
+  warn "LiteLLM restarts while probing models; active devos-claude/Open WebUI requests may fail for ~1 min"
   setup_step "starting LiteLLM for the model check"
   run_phase "LiteLLM (full catalog, for probing)" litellm dc up -d --no-deps --force-recreate --wait litellm
   setup_done "LiteLLM started"
@@ -988,7 +988,7 @@ print_summary() {
   else
     login="password: PORTAL_PASSWORD in $(env_file_display)   (./stack password --show)"
   fi
-  cb="$(claude_bedrock_cmd)"; haiku="$(get_env CLAUDE_BEDROCK_HAIKU_MODEL)"
+  cb="$(devos_claude_cmd)"; haiku="$(get_env CLAUDE_BEDROCK_HAIKU_MODEL)"
   cat <<SUMMARY
 
   ${O_GRN}$PRODUCT_NAME is up.${O_OFF}
@@ -1012,19 +1012,19 @@ SUMMARY
   printf '\n  All credentials live in .env (mode 600).\n'
 }
 
-# claude_bedrock_cmd -> "claude-bedrock" when that name on PATH runs this checkout's wrapper, else its
+# devos_claude_cmd -> "devos-claude" when that name on PATH runs this checkout's wrapper, else its
 # absolute path (shell-quoted), so the summary always shows a command that works as typed.
-claude_bedrock_cmd() {
-  local want="$STACK_DIR/bin/claude-bedrock" found
-  found="$(command -v claude-bedrock 2>/dev/null || true)"
+devos_claude_cmd() {
+  local want="$STACK_DIR/bin/devos-claude" found
+  found="$(command -v devos-claude 2>/dev/null || true)"
   if [ -n "$found" ] && { [ "$found" = "$want" ] || [ "$(readlink "$found" 2>/dev/null)" = "$want" ]; }; then
-    echo claude-bedrock
+    echo devos-claude
   else
     printf '%q\n' "$want"
   fi
 }
 
-# --- Claude Code: MCP config for claude-bedrock + optional symlink ---
+# --- Claude Code: MCP config for devos-claude + optional symlink ---
 
 write_mcp_config() {
   local f="$STATE_DIR/mcp.json" tmp port token
@@ -1037,15 +1037,15 @@ write_mcp_config() {
   mv "$tmp" "$f"
 }
 
-# offer_symlink — interactive runs only: --yes never creates or replaces ~/.local/bin/claude-bedrock,
+# offer_symlink — interactive runs only: --yes never creates or replaces ~/.local/bin/devos-claude,
 # and a link to a DIFFERENT checkout is replaced only after an explicit "y".
 offer_symlink() {
-  local target="$HOME/.local/bin/claude-bedrock" want="$STACK_DIR/bin/claude-bedrock" cur
+  local target="$HOME/.local/bin/devos-claude" want="$STACK_DIR/bin/devos-claude" cur
   cur="$(readlink "$target" 2>/dev/null || true)"
   [ "$cur" = "$want" ] && return 0
   if [ "${ASSUME_YES:-0}" = 1 ] || ! _have_tty; then
     if [ -n "$cur" ]; then log "left $target alone (it points to $cur)"
-    else log "to put claude-bedrock on your PATH: ln -s $want $target"; fi
+    else log "to put devos-claude on your PATH: ln -s $want $target"; fi
     return 0
   fi
   [ -e "$target" ] && ! [ -L "$target" ] && { warn "$target exists and is not a symlink; not touching it"; return 0; }
@@ -1053,7 +1053,7 @@ offer_symlink() {
     case "$(ask "$target points to $cur (another checkout) — replace it with this one? [y/N]" "n")" in
       [Yy]*) ;; *) log "kept $target → $cur"; return 0 ;;
     esac
-  elif ! confirm "Link claude-bedrock into ~/.local/bin?"; then
+  elif ! confirm "Link devos-claude into ~/.local/bin?"; then
     return 0
   fi
   mkdir -p "$HOME/.local/bin"
@@ -1909,7 +1909,7 @@ cmd_rotate_aws() {
 }
 
 cmd_uninstall() {
-  local target="$HOME/.local/bin/claude-bedrock"
+  local target="$HOME/.local/bin/devos-claude"
   warn "This deletes all containers AND data volumes (chats, knowledge bases, files, spend history) and this install's built images."
   # (the project's name before v0.25.0 is taken too)
   case "$(ask "Type '$PRODUCT_SLUG' to confirm" "")" in "$PRODUCT_SLUG" | "$PRODUCT_LEGACY_NAME") ;; *) die "aborted — nothing was removed" ;; esac
@@ -1922,9 +1922,9 @@ cmd_uninstall() {
   sessions_uninstall_cleanup   # lib/sessions.sh: the Code page's request folder and the looks (what you allowed stays)
   local_builds_remove          # lib/images.sh: <project>/portal:local, …:previous, by exact name (never a prune)
   ! helper_installed || helper_uninstall
-  if [ "$(readlink "$target" 2>/dev/null)" = "$STACK_DIR/bin/claude-bedrock" ]; then rm -f "$target"; log "removed the $target link"; fi
+  if [ "$(readlink "$target" 2>/dev/null)" = "$STACK_DIR/bin/devos-claude" ]; then rm -f "$target"; log "removed the $target link"; fi
   log "removed. .env and backups/ were kept (they contain secrets) — delete this folder yourself if you're done."
-  # claude-bedrock's own Claude Code folder (settings, plugins, sessions): yours, possibly shared by other copies.
+  # devos-claude's own Claude Code folder (settings, plugins, sessions): yours, possibly shared by other copies.
   # The default one and the one CLAUDE_BEDROCK_CONFIG_DIR names in this shell — each only as lib/claude_config.sh
   # resolves it in lean mode, so this never points at ~/.claude, your home folder or / ("delete it yourself").
   local cb_dir cb_seen='' cb_env
@@ -1933,7 +1933,7 @@ cmd_uninstall() {
       [ "$CB_CONFIG_MODE" = lean ] && printf '%s' "$CB_CONFIG_DIR")" || continue
     [ -n "$cb_dir" ] && [ -d "$cb_dir" ] && [ "$cb_dir" != "$cb_seen" ] || continue
     cb_seen="$cb_dir"
-    log "$(claude_config_show "$cb_dir") (claude-bedrock's Claude Code settings and sessions) was kept — delete it yourself if you're done."
+    log "$(claude_config_show "$cb_dir") (devos-claude's Claude Code settings and sessions) was kept — delete it yourself if you're done."
   done
 }
 
@@ -1943,7 +1943,7 @@ cmd_uninstall() {
 . "$STACK_DIR/lib/openrouter.sh"
 # Optional Experiential Labs gateway (xl/… models; Settings and ./stack config set EXPLABS_API_KEY; status lines).
 . "$STACK_DIR/lib/explabs.sh"
-# The models of the Code page and claude-bedrock: litellm/code-models.tsv and their bn_* model_info (render_config).
+# The models of the Code page and devos-claude: litellm/code-models.tsv and their bn_* model_info (render_config).
 . "$STACK_DIR/lib/code_models.sh"
 # Optional speech-to-text for Open WebUI's voice calls (setup step, ./stack stt, costs/summary lines).
 . "$STACK_DIR/lib/stt.sh"
@@ -1970,7 +1970,7 @@ cmd_uninstall() {
 . "$STACK_DIR/lib/code.sh"
 # Folders of this computer as Code page projects (./stack project): their mounts into the sandbox.
 . "$STACK_DIR/lib/projects.sh"
-# Your Claude Code and claude-bedrock sessions on this computer, copied into the sandbox (./stack sessions; the helper's
+# Your Claude Code and devos-claude sessions on this computer, copied into the sandbox (./stack sessions; the helper's
 # Code page requests).
 . "$STACK_DIR/lib/sessions.sh"
 # Bring your setup: your Claude Code setup and Git name and email on this computer, copied into the sandbox (./stack
@@ -1980,5 +1980,5 @@ cmd_uninstall() {
 . "$STACK_DIR/lib/githost.sh"
 # Your AI subscriptions' own tools in the sandbox (./stack subscriptions): what each says of its own login.
 . "$STACK_DIR/lib/subscriptions.sh"
-# claude-bedrock's own Claude Code config folder (./stack uninstall names it; bin/claude-bedrock uses it).
+# devos-claude's own Claude Code config folder (./stack uninstall names it; bin/devos-claude uses it).
 . "$STACK_DIR/lib/claude_config.sh"

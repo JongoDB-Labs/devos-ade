@@ -1,4 +1,4 @@
-// Your Claude Code and claude-bedrock sessions of a folder of this computer, copied into the sandbox (a project's ⋯ ›
+// Your Claude Code and devos-claude sessions of a folder of this computer, copied into the sandbox (a project's ⋯ ›
 // Import sessions from this computer…): a sheet of three steps. 1 Look — the update helper on the computer asks there
 // first, in a dialog on its screen (Allow once, or Always for this folder), and only then lists them; never asked over
 // remote access. 2 Pick — the sessions of that list (titles, dates, sizes). 3 Check and copy — each one read into the
@@ -22,8 +22,9 @@ import { SandboxSaid } from './Said';
 import { Cmd, Dialog } from './ui';
 import { PRODUCT } from '../brand';
 
-export const TOOL_LABEL: Record<ImportTool, string> = { claude: 'Claude Code', 'claude-bedrock': 'claude-bedrock' };
-export const TOOL_BADGE: Record<ImportTool, string> = { claude: 'CC', 'claude-bedrock': 'CB' };
+// (keys: the tools' internal names — claude-bedrock is devos-claude's, after its store ~/.claude-bedrock)
+export const TOOL_LABEL: Record<ImportTool, string> = { claude: 'Claude Code', 'claude-bedrock': 'devos-claude' };
+export const TOOL_BADGE: Record<ImportTool, string> = { claude: 'CC', 'claude-bedrock': 'DC' };
 const SHOWN_ROWS = 500;
 // why a request to the helper did not go through, said by us (the helper says a fixed word: import-sessions.mjs)
 export const WHY: Record<string, string> = {
@@ -152,7 +153,7 @@ export function ImportSheet({ id, onClose }: { id: string; onClose: () => void }
       {view && step === 1 && (
         <div class="imp-step" data-testid="import-step-look">
           <p>
-            Your sessions of <b>Claude Code</b> (<code>~/.claude</code>) and <b>claude-bedrock</b> (<code>~/.claude-bedrock</code>) in this folder on the computer
+            Your sessions of <b>Claude Code</b> (<code>~/.claude</code>) and <b>devos-claude</b> (<code>~/.claude-bedrock</code>) in this folder on the computer
             running {PRODUCT}: <code data-testid="import-folder">{where}</code>.
           </p>
           <p class="small">
@@ -181,9 +182,9 @@ export function ImportSheet({ id, onClose }: { id: string; onClose: () => void }
               <label class="small">
                 Tools{' '}
                 <select value={tool} onChange={(e) => setTool((e.currentTarget as HTMLSelectElement).value as ImportTool | 'both')} data-testid="import-tool">
-                  <option value="both">Claude Code and claude-bedrock</option>
+                  <option value="both">Claude Code and devos-claude</option>
                   <option value="claude">Claude Code only</option>
-                  <option value="claude-bedrock">claude-bedrock only</option>
+                  <option value="claude-bedrock">devos-claude only</option>
                 </select>
               </label>
               <Password value={pw} onInput={setPw} testid="import-password" />
@@ -241,13 +242,13 @@ function PickStep(props: { view: ImportView; picked: string[]; setPicked: (v: st
         <select value={props.filter} onChange={(e) => props.setFilter((e.currentTarget as HTMLSelectElement).value as ImportTool | 'all')} aria-label="Tool" data-testid="import-filter">
           <option value="all">All tools</option>
           <option value="claude">Claude Code</option>
-          <option value="claude-bedrock">claude-bedrock</option>
+          <option value="claude-bedrock">devos-claude</option>
         </select>
         <input type="search" placeholder="Search titles" value={props.needle} onInput={(e) => props.setNeedle((e.currentTarget as HTMLInputElement).value)} aria-label="Search titles"
           data-testid="import-search" />
         <span class="muted small">{picked.length} picked (at most 50 at once)</span>
       </div>
-      {!rows.length && <div class="side-note" data-testid="import-none">No sessions of Claude Code or claude-bedrock in this folder on the computer.</div>}
+      {!rows.length && <div class="side-note" data-testid="import-none">No sessions of Claude Code or devos-claude in this folder on the computer.</div>}
       <ul class="imp-rows" data-testid="import-rows">
         {shown.slice(0, SHOWN_ROWS).map((r) => <PickRow key={`${r.tool}:${r.id}`} r={r} picked={picked.includes(r.id)} onPick={(on) => toggle(r.id, on)} />)}
       </ul>
@@ -546,7 +547,7 @@ export function Suggestions() {
               <li key={r.path} class="imp-suggestion" data-testid="suggestion">
                 <span class="imp-title" title={r.path}>{r.path}</span>
                 <span class="muted small">
-                  {r.claude ? ` CC ${r.claude}` : ''}{r.claudeBedrock ? ` CB ${r.claudeBedrock}` : ''}{r.last ? ` · ${ago(r.last)}` : ''}
+                  {r.claude ? ` CC ${r.claude}` : ''}{r.claudeBedrock ? ` DC ${r.claudeBedrock}` : ''}{r.last ? ` · ${ago(r.last)}` : ''}
                 </span>
                 <details class="small">
                   <summary data-testid="suggestion-add">Add…</summary>
@@ -560,7 +561,7 @@ export function Suggestions() {
             <div class="side-note small">Looking for them is asked only on the computer running {PRODUCT}.</div>
           ) : (
             <div class="imp-ask small">
-              <span>The names of the folders Claude Code and claude-bedrock keep sessions for (no session is read; the computer asks you first):</span>
+              <span>The names of the folders Claude Code and devos-claude keep sessions for (no session is read; the computer asks you first):</span>
               <Password value={pw} onInput={setPw} testid="suggest-password" />
               <button type="button" class="btn small" disabled={busy || !pw} onClick={() => void ask()} data-testid="suggest-look">Look on this computer</button>
               <RequestLine req={look.req} />
