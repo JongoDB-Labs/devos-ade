@@ -346,7 +346,9 @@ xl_failsafe_count() { xl_selected | awk -F'\t' '$1 == "failsafe" { n++ } END { p
 
 # explabs_status_line — ./stack status: one line while Experiential Labs is on, saying when the models run fail safe
 explabs_status_line() {
-  local O_RED O_GRN O_YEL O_OFF fs at
+  local O_YEL O_OFF fs at
+  # shellcheck disable=SC2034  # set by out_colors; unused here
+  local O_RED O_GRN
   explabs_enabled || return 0
   out_colors
   fs="$(xl_failsafe_count)"; at="$(xl_error_at)"
