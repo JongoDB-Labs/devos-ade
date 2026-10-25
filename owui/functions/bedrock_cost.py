@@ -1,8 +1,8 @@
 """
 title: Bedrock cost
 author: DevOS ADE
-description: Adds a small cost line under every answer (this message and the whole chat), priced from DevOS ADE's Bedrock price list. Installed and updated by ./stack setup.
-version: 5
+description: Adds a small cost line under every answer (this message and the whole chat), priced from DevOS ADE's Bedrock price list (an Experiential Labs model: what the gateway reported for the answer). Installed and updated by ./stack setup.
+version: 6
 """
 
 # Installed into Open WebUI by ./stack setup (lib/owui.sh) as a global filter function with id
@@ -20,7 +20,10 @@ from pydantic import BaseModel, Field
 # The exact shapes footer() writes: one line in italics, "*≈ $0.0069 · 1,240 in / 380 out · Model · chat ≈ $0.04*",
 # for a free model (price 0) "*free · 1,240 in / 380 out · Model · ≈ $0.0012 at paid rates · chat ≈ $0.04*"
 # (the paid-rates part only when the model has a paid version), and for one of your subscriptions as a Chat model
-# (plan-…: no dollars at all, it counts against your plan) "*on your ChatGPT plan · 1,240 in / 380 out · Codex*" (version 5). Open WebUI's Markdown renderer shows
+# (plan-…: no dollars at all, it counts against your plan) "*on your ChatGPT plan · 1,240 in / 380 out · Codex*" (version 5);
+# an Experiential Labs model (its price entry says "gateway_cost") costs what the gateway reported for the answer
+# (usage.cost), and an answer your own provider key paid for through it (usage.is_byok) has the plan shape, "*on your own
+# provider key · …*" — "or a free tier" when the gateway reported $0 without saying which (version 6). Open WebUI's Markdown renderer shows
 # HTML such as <sub> as literal text, so the footer is plain Markdown; a "$" is always followed by a digit, so its
 # KaTeX "$…$" rule never turns the line into math. Footers written by version 2 used <sub>…</sub> instead; every
 # shape is recognised so old answers still get stripped and summed (a free footer counts $0).
@@ -126,6 +129,14 @@ def message_cost(tokens, price):
         + tokens["cache_write"] * (pin if pwrite is None else pwrite)
         + tokens["output"] * pout
     )
+
+
+def reported_cost(usage):
+    """What the gateway said an answer cost (usage.cost, USD), or None."""
+    c = usage.get("cost") if isinstance(usage, dict) else None
+    if isinstance(c, bool) or not isinstance(c, (int, float)) or c != c or not 0 <= c < 1e6:
+        return None
+    return float(c)
 
 
 def is_free(price):
@@ -295,6 +306,19 @@ class Filter:
             name = (model or {}).get("name") if isinstance(model, dict) else None
             name = name.split(" · ")[0] if isinstance(name, str) and name else (model_id or "unknown model")
         cost = message_cost(tokens, price)
+        # an Experiential Labs model: the gateway's own figure for this answer, never a computed one when it gave one
+        if isinstance(price, dict) and price.get("gateway_cost") is True:
+            usage = _usage(last) or {}
+            reported = reported_cost(usage)
+            if usage.get("is_byok") is True or (reported == 0 and not is_free(price)):
+                who = "your own provider key" if usage.get("is_byok") is True else "your own provider key or a free tier"
+                foot = footer(None, tokens, name, None, plan=who)
+                text = strip_footer(_text(last)).rstrip()
+                last["content"] = (text + "\n\n" if text else "") + foot
+                _set_output_text(last, foot)
+                return
+            if reported is not None:
+                cost = reported
 
         total = None
         if cost is not None:

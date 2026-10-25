@@ -444,3 +444,47 @@ def test_outlet_your_plan_shows_tokens_and_whose_plan_never_dollars():
         {"role": "user", "content": "x"}, {"role": "assistant", "content": "B", "usage": {"prompt_tokens": 1000, "completion_tokens": 100}}]}
     last2 = run(f.outlet(body2))["messages"][-1]["content"]
     assert "chat ≈ $0.0133" in last2   # this answer's $0.0033 + the earlier Bedrock footer's $0.0100, the plan's $0
+
+
+# Experiential Labs (lib/explabs.sh explabs_cost_prices_entries: "gateway_cost": true): the gateway reports what each
+# answer cost (usage.cost, USD) — that is the footer's figure, never one computed from the list prices; an answer your
+# own provider key paid for (usage.is_byok) is never shown in dollars; $0 without is_byok (a streamed answer drops it,
+# or a free tier) says both
+XL_PRICES = {"xl/qwen3.8-27b": {"name": "qwen3.8-27b (Experiential Labs)", "input_cost_per_token": 0.00000032,
+                                "output_cost_per_token": 0.0000024, "gateway_cost": True},
+             "xl/qwen3.8-27b:free": {"name": "qwen3.8-27b:free (Experiential Labs)", "input_cost_per_token": 0,
+                                     "output_cost_per_token": 0, "gateway_cost": True}}
+
+
+def _xl(usage_extra, model="xl/qwen3.8-27b"):
+    f = make_filter(XL_PRICES)
+    usage = {"prompt_tokens": 58, "completion_tokens": 48, **usage_extra}
+    body = {"model": model, "messages": [{"role": "assistant", "content": "DevOS ADE test OK", "usage": usage}]}
+    return run(f.outlet(body))["messages"][-1]["content"]
+
+
+def test_experiential_labs_answer_costs_what_the_gateway_reported():
+    last = _xl({"cost": 0.00042, "is_byok": False})   # (not the list price: 58 × 0.32 + 48 × 2.40 per 1M = $0.000134)
+    assert last == "DevOS ADE test OK\n\n*≈ $0.0004 · 58 in / 48 out · qwen3.8-27b (Experiential Labs) · chat ≈ $0.0004*"
+    assert bc.footer_cost(last) == 0.0004
+
+
+def test_experiential_labs_without_a_reported_cost_falls_back_to_the_list_price():
+    last = _xl({})
+    assert last.startswith("DevOS ADE test OK\n\n*≈ $0.0001 · 58 in / 48 out · qwen3.8-27b (Experiential Labs)")
+
+
+def test_experiential_labs_answer_on_your_own_provider_key_is_never_dollars():
+    last = _xl({"cost": 0, "is_byok": True, "cost_details": {"upstream_inference_cost": 0.0002}})
+    assert last == "DevOS ADE test OK\n\n*on your own provider key · 58 in / 48 out · qwen3.8-27b (Experiential Labs)*"
+    assert "$" not in last.split("\n\n")[-1]
+    assert bc.strip_footer(last) == "DevOS ADE test OK" and bc.footer_cost(last) == 0.0
+    # $0 reported without is_byok (a streamed answer, a free tier): never a dollar figure either
+    zero = _xl({"cost": 0.0})
+    assert zero.endswith("*on your own provider key or a free tier · 58 in / 48 out · qwen3.8-27b (Experiential Labs)*")
+    assert bc.footer_cost(zero) == 0.0
+    # a free tier's own id stays the free shape
+    assert _xl({"cost": 0.0}, "xl/qwen3.8-27b:free").startswith("DevOS ADE test OK\n\n*free · 58 in / 48 out")
+    # odd figures are not a cost: the list price
+    for bad in (-1, "0.1", True, float("nan")):
+        assert "≈ $0.0001" in _xl({"cost": bad}), bad
