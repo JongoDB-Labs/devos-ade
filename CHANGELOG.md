@@ -37,6 +37,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   check's answers are kept (a week at most), so LiteLLM starts once with the models found instead of twice around a
   new check (in the last measured update: 58 s for the full catalog, then the check). A new key, region, catalog or
   LiteLLM checks again, and so does `./stack models --recheck`, at once.
+- **Services count as started as soon as they are:** while one starts, its health check runs every second instead of
+  at its first 10 s interval, so a restart no longer waits about 10 s more for each service it brings back (setup ran
+  again recreated LiteLLM, Caddy, the terminal's gateway, the terminal and Chat's sandbox, each healthy about 10 s
+  after its start). After it has started, the checks are as before.
 
 ## [0.27.1] - 2026-10-25
 
