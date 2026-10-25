@@ -378,9 +378,10 @@ An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*)
   that call to — its own Experiential Cloud, another hosted provider, or your own provider account connected there
   (BYOK); the answer's `x-gateway-provider` header names it. Besides the calls themselves, `./stack` makes these GET
   requests, all free (setup and Settings, which wait about 100 s at most, up to about 130 s for a new key: its check,
-  then the details; `./stack up` at most every 12 hours unless the last read failed or left a chosen model without
-  details — in the background while it has a list read with the key `.env` holds, else waiting, up to about 100 s;
-  the check of a new key makes the first alone):
+  then the details — a background read to stop first adds up to 10 s, another read holding the lock up to 30 s;
+  `./stack up` at most every 12 hours unless the last read failed or left a chosen model without details — in the
+  background while it has a list read with the key `.env` holds, else waiting, up to about 100 s; the check of a new
+  key makes the first alone):
   - `GET https://api.experientiallabs.ai/v1/models` **with the key** (on curl's stdin): the ids of the models this key
     may call — the OpenAI list, which carries nothing else;
   - `GET https://api.experientiallabs.ai/api/models/<id>` **without the key**, one for each model `EXPLABS_MODELS`
