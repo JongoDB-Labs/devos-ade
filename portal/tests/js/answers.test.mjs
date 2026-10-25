@@ -228,7 +228,7 @@ test("Your AI subscriptions: each tool's Sign out, Check again and Copy has a na
   assert.equal([...row.matchAll(/text: "Sign out", "data-act": "subscriptions-signout(-chat)?",\s*"aria-label": `Sign out: \$\{t\.name\}/g)].length, 2);
   assert.match(js, /function copyButton\(cmd, name\) \{[\s\S]*?if \(name\) b\.setAttribute\("aria-label", name\);/);
   // (and the row's other two Copy buttons: the Claude plan's command, ./stack subscriptions — none bare)
-  assert.match(row, /cliLine\(pk, "On the computer running bedrock-now, in a terminal: ", "Copy the command for Use my Claude plan in the Code page and Chat"\)/);
+  assert.match(row, /cliLine\(pk, "On the computer running DevOS ADE, in a terminal: ", "Copy the command for Use my Claude plan in the Code page and Chat"\)/);
   assert.match(row, /copyButton\("\.\/stack subscriptions", "Copy the command \.\/stack subscriptions"\)/);
   assert.equal([...row.matchAll(/copyButton\(([^)]*)\)/g)].filter((m) => !m[1].includes(",")).length, 0, "a Copy without a name");
   assert.match(js, /function cliLine\(k, lead, name\) \{[\s\S]*?copyButton\(cmd, name\)\);/);

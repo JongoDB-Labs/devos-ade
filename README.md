@@ -687,7 +687,7 @@ on); and on Claude's row the switch for Claude on your plan. Chat's sandbox alwa
 the terminal's, or — while the terminal's way out is the direct one (`TERMINAL_EGRESS=host`) — one of its own with the
 same rules (public addresses only; never this computer's services or your network), so your subscriptions stay Chat
 models whatever the terminal's way out is; with none (`off`) they are greyed, saying why. Usage counts against each
-plan's own limits: bedrock-now bills none of it and shows no $ for it.
+plan's own limits: DevOS ADE bills none of it and shows no $ for it.
 
 **Greyed out means "set it up here".** Anything greyed because of a setting or a sign-in says where it is turned on,
 and takes you there: in a menu — the Terminal's *Open*, Chat's *Who answers*, the Code page's terminal panel's

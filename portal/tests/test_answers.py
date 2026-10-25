@@ -508,14 +508,14 @@ def test_every_greyed_reason_has_a_live_target():
         assert l["where"].startswith("Settings ›") or "terminal" in l["where"], (reason, l["where"])
         if l["where"].startswith("Settings ›"):
             assert l["where"].split(" › ")[1] in l["says"], (reason, l["where"])
-        # (a read-only row shows how, never "turns it on"; whatever only the computer running bedrock-now may do — a
+        # (a read-only row shows how, never "turns it on"; whatever only the computer running DevOS ADE may do — a
         # read-only row's step, a local setting, one turned on only there, Chat's sign-in command — says so, the same
         # words each time)
         pol = policy.get(what) if kind == "setting" else None
         if pol == "ro":
             assert "shows how" in l["says"] and "turns it on" not in l["says"], (reason, l["says"])
         if pol in ("ro", "local", "widen-local") or l["target"] == "signin:chat":
-            assert ", from the computer running bedrock-now." in l["says"], (reason, l["says"])
+            assert ", from the computer running DevOS ADE." in l["says"], (reason, l["says"])
         assert "on the computer running" not in l["says"], (reason, l["says"])
     # every reason the portal gives is in the table: plan_models' and the terminal's (answers.js's: tests/js)
     s = types.SimpleNamespace

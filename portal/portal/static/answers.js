@@ -89,7 +89,7 @@
         // (one that only lacks Chat's own sign-in: "Sign in for Chat…", which goes to Settings' row for it; one that is
         // off for another reason: the choice that goes where that is turned on)
         ...(d && Array.isArray(d.plan_models) ? d.plan_models : []).map((m) => (m.signin === true && /^[a-z]{2,10}$/.test(m.tool || "")
-          ? { value: `signin:${m.tool}`, label: `${m.label} — Sign in for Chat…`, disabled: false, title: (setupOf(d, "chat-signin") || {}).says || "Chat has sign-ins of its own, apart from the terminal's: Settings › Claude Code › Your AI subscriptions shows how, from the computer running bedrock-now." }
+          ? { value: `signin:${m.tool}`, label: `${m.label} — Sign in for Chat…`, disabled: false, title: (setupOf(d, "chat-signin") || {}).says || "Chat has sign-ins of its own, apart from the terminal's: Settings › Claude Code › Your AI subscriptions shows how, from the computer running DevOS ADE." }
           : m.ok ? { value: `model:${m.id}`, label: m.label, disabled: false, title: "A model in Open WebUI's list too; it answers in the same chat, on your plan (no $)." }
             : greyed(d, m.reason, m.tool, m.label, { value: `model:${m.id}`, label: `${m.label} — ${m.why}`, title: m.why }))),
         ...tools.filter((t) => t.chat_model !== "yes").map((t) => (

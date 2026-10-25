@@ -1441,9 +1441,9 @@
         } else if (editable(pk)) {
           plan.append(el("span", { class: "set-project-actions" }, toggle(pk, shown(pk), "set-name-CODE_CLAUDE_PLAN")));
         } else plan.append(" ", el("span", { class: "badge", text: display(pk) || "Off" }));
-        // (from your devices, or with changes off here: the way in a terminal on the computer running bedrock-now)
+        // (from your devices, or with changes off here: the way in a terminal on the computer running DevOS ADE)
         if (codeOn() && (data.here.remote || !canChange() || !editable(pk))) {
-          plan.append(cliLine(pk, "On the computer running bedrock-now, in a terminal: ", "Copy the command for Use my Claude plan in the Code page and Chat"));
+          plan.append(cliLine(pk, "On the computer running DevOS ADE, in a terminal: ", "Copy the command for Use my Claude plan in the Code page and Chat"));
         }
         plan.append(el("p", { class: "note", id: "set-sum-CODE_CLAUDE_PLAN", text: "Off by default: Anthropic's support article and its legal page pull apart on apps like this one — your choice (Details)." }),
           el("details", { class: "set-details" }, el("summary", {}, "Details"), el("p", { class: "note", text: pk.note || "" })));
