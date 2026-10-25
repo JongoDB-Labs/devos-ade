@@ -1012,10 +1012,11 @@ test_a_refresh_sweeps_the_temp_folders_left_by_killed_ones() {
   assert_eq "$(xl_selected | cut -f1)" details
 }
 
-# Where ps gives no process start times (BusyBox), a pid file is judged by its age and its command — never by the pid
-# alone — and the background refresh's log says so once
+# Where neither ps (BusyBox: no lstart) nor /proc gives process start times, a pid file is judged by its age and its
+# command — never by the pid alone — and the background refresh's log says so once
 test_without_start_times_a_pid_file_is_judged_by_age_and_command() {
   ps() { case " $* " in *lstart*) return 1 ;; esac; command ps "$@"; }
+  _xl_proc_dir() { printf '%s\n' "$TMP/no-proc"; }
   _xl_env
   mkdir -p "$STATE_DIR"
   local other sh_other f; f="$(xl_bg_pid_file)"
@@ -1030,5 +1031,33 @@ test_without_start_times_a_pid_file_is_judged_by_age_and_command() {
   _stub_curl
   SLOW=qwen3.8-27b SLOW_S=1 xl_refresh_in_background 2>/dev/null
   wait "$(_bg_pid)" 2>/dev/null || true
-  assert_eq "$(grep -c 'gives no process start times' "$(xl_bg_log)")" 1
+  assert_eq "$(grep -c 'neither ps nor /proc gives process start times here' "$(xl_bg_log)")" 1
+}
+
+# Linux without lstart in ps (BusyBox): the start time is /proc/<pid>/stat's field 22, read after the command's last
+# ")", recorded and compared as lstart is — so a fresh pid file naming an unrelated live shell (its pid reused) is not
+# acted on. (A /proc stand-in: each process's stat with a command that holds spaces and parentheses.)
+test_without_lstart_the_start_time_comes_from_proc() {
+  ps() { case " $* " in *lstart*) return 1 ;; esac; command ps "$@"; }
+  local proc="$TMP/proc" sh_other f
+  _xl_proc_dir() { printf '%s\n' "$TMP/proc"; }
+  _stat() { mkdir -p "$proc/$1"; printf '%s (bash -c (x) y) S %s %s 0 0\n' "$1" "$(seq 4 21 | tr '\n' ' ')" "$2" > "$proc/$1/stat"; }
+  _xl_env
+  mkdir -p "$STATE_DIR"; f="$(xl_bg_pid_file)"
+  bash -c 'sleep 60; :' > /dev/null 2>&1 & sh_other=$!
+  sleep 0.3
+  _stat "$sh_other" 4242
+  assert_eq "$(_xl_start_of "$sh_other")" "proc:4242"
+  assert_eq "$(_xl_pid_line "$sh_other")" "$sh_other proc:4242"
+  _xl_pid_line "$sh_other" > "$f"
+  # the pid since taken by another process (its start time not the one recorded): left alone, the file removed
+  _stat "$sh_other" 9999
+  ! xl_bg_running
+  xl_bg_stop 2>/dev/null; kill -0 "$sh_other"; [ ! -e "$f" ]
+  # a pid file written with no start time while /proc has one: not ours either
+  printf '%s\n' "$sh_other" > "$f"; xl_bg_stop 2>/dev/null; kill -0 "$sh_other"
+  # the process the file names, as it started: stopped
+  _xl_pid_line "$sh_other" > "$f"; xl_bg_running; xl_bg_stop 2>/dev/null; ! kill -0 "$sh_other" 2>/dev/null
+  # a stat of another shape: no start time from it
+  printf 'garbage\n' > "$proc/$sh_other/stat"; assert_eq "$(_xl_start_of "$sh_other")" ""
 }

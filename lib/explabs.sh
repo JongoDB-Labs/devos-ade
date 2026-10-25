@@ -752,14 +752,24 @@ setup_explabs() {
   log "Experiential Labs: $(xl_counts)"
 }
 
-# The refresh's pid files (the background refresh's, the refresh lock's) hold "PID START" — its pid and its start time
-# as ps gives it. _xl_pid_line PID -> that line. _xl_pid_of FILE -> the pid FILE names when it is still that process:
-# the file written within the last 10 minutes (no refresh takes longer), the process alive, started when the file says,
-# and a shell of ./stack's (its command names stack or bash, as lib/lock.sh's _lock_pid_alive); else nothing — a pid
-# file left by a refresh killed hard, its pid since taken by another process, is never acted on. Where ps gives no start
-# times (BusyBox: _xl_start_of says nothing), the file's age and the command decide — never the pid alone.
-_xl_start_of() { ps -p "$1" -o lstart= 2>/dev/null | tr -s ' ' | sed 's/^ //; s/ $//' || true; }
-_xl_cmd_of() { ps -p "$1" -o command= 2>/dev/null || tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null || true; }
+# The refresh's pid files (the background refresh's, the refresh lock's) hold "PID START" — its pid and its start time.
+# _xl_pid_line PID -> that line. _xl_pid_of FILE -> the pid FILE names when it is still that process: the file written
+# within the last 10 minutes (no refresh takes longer), the process alive, started when the file says, and a shell of
+# ./stack's (its command names stack or bash, as lib/lock.sh's _lock_pid_alive); else nothing — a pid file left by a
+# refresh killed hard, its pid since taken by another process, is never acted on.
+# _xl_start_of PID -> its start time: as ps gives it (lstart), else — Linux without it (BusyBox) — "proc:" and field 22
+# of /proc/<pid>/stat (clock ticks since boot, read after the command's last ")": a command may hold spaces and
+# parentheses); nothing where neither is there, and then the file's age and the command decide — never the pid alone.
+_xl_proc_dir() { printf '/proc\n'; }
+_xl_start_of() {
+  local s=''
+  s="$(ps -p "$1" -o lstart= 2>/dev/null | tr -s ' ' | sed 's/^ //; s/ $//')" || s=''
+  if [ -z "$s" ] && [ -r "$(_xl_proc_dir)/$1/stat" ]; then
+    s="$(sed 's/.*) //' "$(_xl_proc_dir)/$1/stat" 2>/dev/null | awk '{ if ($20 ~ /^[0-9]+$/) print "proc:" $20 }')" || s=''
+  fi
+  printf '%s' "$s"
+}
+_xl_cmd_of() { ps -p "$1" -o command= 2>/dev/null || tr '\0' ' ' < "$(_xl_proc_dir)/$1/cmdline" 2>/dev/null || true; }
 _xl_pid_line() { printf '%s %s\n' "$1" "$(_xl_start_of "$1")"; }
 _xl_pid_of() {
   local f="$1" p='' st='' now
@@ -832,7 +842,7 @@ xl_refresh_in_background() {
     trap '_xl_tmp_end; _xl_unlock; rm -f "$(xl_bg_pid_file)"; exit 143' TERM INT
     # (said once in its log: without start times its pid file is checked by age and command alone)
     : > "$(xl_bg_log)"
-    [ -n "$(_xl_start_of "$$")" ] || echo "Experiential Labs: this system's ps gives no process start times (BusyBox?) — a refresh's pid file is checked by its age and its command alone" >> "$(xl_bg_log)"
+    [ -n "$(_xl_start_of "$$")" ] || echo "Experiential Labs: neither ps nor /proc gives process start times here — a refresh's pid file is checked by its age and its command alone" >> "$(xl_bg_log)"
     XL_BACKGROUND=1 _explabs_refresh >> "$(xl_bg_log)" 2>&1 || true
     _xl_unlock; rm -f "$(xl_bg_pid_file)"
   ) < /dev/null > /dev/null 2>&1 &
