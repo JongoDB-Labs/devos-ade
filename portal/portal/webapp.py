@@ -75,8 +75,8 @@ def manifest(s: Settings, remote: bool = False) -> dict:
         # Clicking the Dock icon (or a link to the portal) brings the open window forward instead of a second one.
         "launch_handler": {"client_mode": "focus-existing"},
         # The title bar matches the sidebar; index.html's theme-color meta tags switch it for dark mode.
-        "theme_color": "#e3e8ec",
-        "background_color": "#edf0f2",
+        "theme_color": "#ece9e1",
+        "background_color": "#f5f3ee",
         "categories": ["productivity", "developer"],
         "icons": [icon(192), icon(512), icon(1024), icon(192, "maskable"), icon(512, "maskable"),
                   icon(512, "monochrome")],

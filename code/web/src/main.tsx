@@ -4,6 +4,9 @@ import { AppShell } from './components/Shell';
 import { boot, openFile, openGitDialog, showGit, store } from './app';
 import { fsFind } from './api';
 import { listenPortal } from './portalbridge';
+// the DevOS design tokens and fonts first (docs/design.md; the portal has the same two files)
+import './styles/tokens.css';
+import './styles/fonts.css';
 import './styles/app.css';
 import './styles/review.css';
 import './styles/polish.css';

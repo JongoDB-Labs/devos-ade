@@ -16,14 +16,14 @@ const OFFLINE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark"><title>DevOS ADE</title>
 <style>
-:root { color-scheme: light dark; --bg: #edf0f2; --ink: #18232e; --muted: #5a6775; --accent: #1d6a84; --on: #fff; }
-@media (prefers-color-scheme: dark) { :root { --bg: #111820; --ink: #e4e9ee; --muted: #93a0ae; --accent: #73b6cd; --on: #0e1a21; } }
+:root { color-scheme: light dark; --bg: #f5f3ee; --ink: #14151a; --muted: #4b4e5a; --accent: #1b6a5f; --on: #fff; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14110e; --ink: #f4ecdf; --muted: #b3a394; --accent: #84c8bf; --on: #14110e; } }
 body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; box-sizing: border-box;
   background: var(--bg); color: var(--ink); font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 main { max-width: 340px; }
-h1 { font-size: 22px; margin: 0 0 8px; }
+h1 { font: 600 24px/1.15 ui-serif, "New York", Georgia, serif; margin: 0 0 8px; }
 p { color: var(--muted); margin: 0 0 20px; }
-a { display: inline-block; min-height: 44px; line-height: 44px; padding: 0 18px; border-radius: 8px;
+a { display: inline-block; min-height: 44px; line-height: 44px; padding: 0 20px; border-radius: 999px;
   background: var(--accent); color: var(--on); text-decoration: none; font-weight: 600; }
 </style></head><body><main>
 <h1>Can't reach DevOS ADE</h1>

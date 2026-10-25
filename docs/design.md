@@ -101,8 +101,8 @@ the portal's host. Their CSP allows no fonts from there, so they use the system 
 
 - **Buttons:** pills. The main action (`.action.primary`: Sign in, Install app, Open in Code, Save, Confirm) is teal,
   with `--accent-ink` text. It lifts 1 px with `--shadow` on hover. Other buttons are outlined in `--line`, with ink
-  text, and their outline turns ink on hover. A disabled button is
-  dashed and muted, never faded, so its label keeps its contrast.
+  text, and their outline turns ink on hover. A disabled button is dashed and muted, never faded, so its label keeps
+  its contrast. Text on a coloured badge or button uses `--accent-ink`: white in light, Ink in dark.
 - **Chips and filters:** pills on `--surface`. The chosen one is ink, as on the website's filters.
 - **Cards:** `--surface`, a `--line` hairline and an 18 px corner, plus `--card-edge` in dark. Home's cards do not
   lift: they are not links.
@@ -120,6 +120,28 @@ the portal's host. Their CSP allows no fonts from there, so they use the system 
 - **Overlays:** dialogs, Activity, search, the walkthrough card and the phone sheets use an 18 px corner and
   `--shadow-pop`.
 - **Motion:** `--ease`, 0.2 to 0.25 s. `prefers-reduced-motion` turns transitions and lifts off.
+
+## The Code page and the terminal
+
+The Code page imports the same `tokens.css` and `fonts.css`. Its own extra tokens, in `code/web/src/styles/app.css`,
+are derived from the palette: chrome, panels, the editor, syntax and diffs. Syntax colours keep 4.5:1 on the editor
+in both themes. The page's chrome follows the portal:
+
+- pills for its buttons, pickers and status-bar actions;
+- mono eyebrows for its group heads;
+- the display serif for dialog titles, the welcome, a permission card's question and the headings in Claude's
+  answers.
+
+A permission card is the apps' lit card: a 4 px amber edge, because it needs you. The prompt box has an 18 px corner
+and a teal ring while you type in it.
+
+The terminal (ttyd, `terminal/bin/bn-terminal`; tmux, `terminal/tmux.conf`) is Ink in both themes:
+
+- background `#14110e`, text `#f4ecdf`;
+- a teal cursor, and a teal tab for the current window.
+
+It keeps the system's monospace font. ttyd's page allows fonts only as `data:` URLs, and xterm.js measures its
+character cells once, when it opens. A web font that arrived later would draw text out of step with the cells.
 
 ## Do and don't
 

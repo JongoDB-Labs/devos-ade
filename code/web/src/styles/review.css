@@ -20,7 +20,7 @@
 .rv-index-item, .rv-kept-row { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 5px; color: var(--ink); text-decoration: none; font-size: 12.5px; }
 .rv-index-item:hover { background: var(--hover); }
 .rv-index-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12px; }
-.rv-badge { flex: none; display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 4px; font: 600 10.5px/1 var(--mono); color: #fff; }
+.rv-badge { flex: none; display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 4px; font: 600 10.5px/1 var(--mono); color: var(--accent-ink); }
 .rv-m { background: var(--warn); }
 .rv-a { background: var(--ok); }
 .rv-d { background: var(--bad); }
@@ -86,7 +86,7 @@
 
 /* --- the command palette --- */
 .cp-backdrop { position: fixed; inset: 0; z-index: 60; display: flex; justify-content: center; align-items: flex-start; padding-top: min(12vh, 120px); background: rgb(0 0 0 / 0.25); }
-.cp { display: flex; flex-direction: column; width: min(640px, calc(100vw - 32px)); max-height: min(70vh, 560px); border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow); overflow: hidden; }
+.cp { display: flex; flex-direction: column; width: min(640px, calc(100vw - 32px)); max-height: min(70vh, 560px); border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-pop); overflow: hidden; }
 .cp.phone { width: 100%; max-height: none; height: 100%; border: 0; border-radius: 0; box-shadow: none; }
 .cp-input-row { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); color: var(--muted); }
 .cp-input { flex: 1; min-width: 0; height: 30px; border: 0; background: none; color: var(--ink); font-size: 15px; outline: none; }

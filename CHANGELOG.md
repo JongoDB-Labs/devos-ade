@@ -11,11 +11,17 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 - **Look:** DevOS ADE now uses the DevOS design system, so it looks like the rest of DevOS. Page and section titles
   are in a serif (Source Serif 4), the interface in Inter and code in JetBrains Mono. All three are the DevOS
   website's own fonts, served by your computer: nothing loads from a CDN. Light mode is on warm paper and dark mode
-  uses the DevOS apps' warm "Ink" colours. The accent is ADE's teal, taken from its icon. Buttons and chips are
-  pills, cards have the website's rounder corners, and the page you are on is marked with an ink pill. The layout,
-  every control and every label are unchanged, and text keeps AA contrast or better, with the numbers in
-  `docs/design.md`. The sign-in page's style sheets and fonts are reachable before you sign in, as `login.css` already
-  was.
+  uses the DevOS apps' warm "Ink" colours. The accent is ADE's teal, taken from its icon: it marks the main buttons,
+  the page you are on, links, progress and switches.
+  - **Portal:** buttons and chips are pills and cards have the website's rounder corners. Each page has a small teal
+    label above its title and a soft teal wash behind its head.
+  - **Code page:** the same colours and fonts. A permission card has an amber edge, like the apps' cards that need
+    you, and Claude's headings are in the serif.
+  - **Terminal:** the Ink colours, with a teal cursor and a teal current window.
+  - **Unchanged:** the layout, and every control and its name. Text keeps AA contrast or better (the numbers are in
+    `docs/design.md`). Form fields' borders now reach 3:1, and a disabled button is dashed instead of faded, so its
+    label stays readable.
+  - **Before you sign in:** the sign-in page's style sheets and fonts are reachable then, as `login.css` already was.
 
 ## [0.28.2] - 2026-10-25
 

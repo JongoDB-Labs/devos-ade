@@ -2926,7 +2926,7 @@ coder@sandbox:/workspace$ npm test
       Tests  1 passed (1)
 
 coder@sandbox:/workspace$ <span class="cur"> </span></pre></body></html>`;
-const TERMINAL_CSS = 'html,body{margin:0;height:100%;background:#111820;color:#d7dee5}pre{margin:0;padding:10px 12px;font:12.5px/1.45 ui-monospace,Menlo,monospace}.cur{background:#73b6cd}';
+const TERMINAL_CSS = 'html,body{margin:0;height:100%;background:#14110e;color:#f4ecdf}pre{margin:0;padding:10px 12px;font:12.5px/1.45 ui-monospace,Menlo,monospace}.cur{background:#84c8bf}';
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://mock');

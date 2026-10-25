@@ -107,6 +107,13 @@ function copyKatex() {
   return '/' + katexAssets + 'katex.min.css';
 }
 
+// The DevOS fonts' licences (SIL OFL 1.1) beside the fonts the build copies to assets/
+function copyFontLicences() {
+  const src = path.join(here, 'src/styles/fonts');
+  fs.mkdirSync(path.join(out, 'assets'), { recursive: true });
+  for (const f of fs.readdirSync(src)) if (/^LICENSE-.*\.txt$/.test(f)) fs.copyFileSync(path.join(src, f), path.join(out, 'assets', f));
+}
+
 // The artifact viewer (served on the artifact site only): fixed pages, each loading one script of this build.
 //   static.html   shows an HTML file as its own document WITHOUT its scripts: the runner under a policy that allows
 //                 exactly one script, artifact/static.js (a fixed name, so caddy/artifact-on.caddy can name it)
@@ -188,13 +195,15 @@ const options = {
   jsx: 'automatic',
   jsxImportSource: 'preact',
   logLevel: 'warning',
+  // the DevOS fonts (src/styles/fonts.css): copied to assets/ with a content hash, served from the code host itself
+  loader: { '.woff2': 'file' },
 };
 
 // The project's name for the page's title, from src/brand.ts (the page's own copy of it)
 const PRODUCT = /export const PRODUCT = '([^'\\]+)';/.exec(fs.readFileSync(path.join(here, 'src/brand.ts'), 'utf8'))?.[1];
 if (!PRODUCT) throw new Error('build: no PRODUCT in src/brand.ts');
 
-const FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#1d6a84"/><path d="M12 10l-6 6 6 6M20 10l6 6-6 6M17.5 8l-3 16" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+const FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#1b6a5f"/><path d="M12 10l-6 6 6 6M20 10l6 6-6 6M17.5 8l-3 16" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
 `;
 
 function writeIndex(metafile) {
@@ -241,6 +250,7 @@ fs.rmSync(out, { recursive: true, force: true });
 const workers = await buildWorkers();
 workers.paths.pdf = copyPdfjs();
 const katexCss = copyKatex();
+copyFontLicences();
 const artifact = await buildArtifact();
 
 if (watch) {

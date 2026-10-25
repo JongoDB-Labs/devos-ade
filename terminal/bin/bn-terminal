@@ -49,5 +49,5 @@ exec env -u SHARED_MCP_TOKEN ttyd --interface "$sock" --writable --check-origin 
   -t 'titleFixed=Terminal · DevOS ADE' -t fontSize=14 -t disableLeaveAlert=true -t disableResizeOverlay=true \
   -t rendererType=dom -t macOptionClickForcesSelection=true \
   -t 'fontFamily=ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace' \
-  -t 'theme={"background":"#111820","foreground":"#e4e9ee","cursor":"#73b6cd","cursorAccent":"#111820","selectionBackground":"#2c4f5d"}' \
+  -t 'theme={"background":"#14110e","foreground":"#f4ecdf","cursor":"#84c8bf","cursorAccent":"#14110e","selectionBackground":"#2f4a45"}' \
   bn-session

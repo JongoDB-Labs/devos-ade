@@ -11,11 +11,11 @@ import re
 import sys
 
 ICON = ("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 20 20%27%3E"
-        "%3Crect width=%2720%27 height=%2720%27 rx=%274%27 fill=%27%23111820%27/%3E"
-        "%3Cpath d=%27M5 7l3 3-3 3M10 13h5%27 fill=%27none%27 stroke=%27%2373b6cd%27 stroke-width=%271.8%27 "
+        "%3Crect width=%2720%27 height=%2720%27 rx=%274%27 fill=%27%2314110e%27/%3E"
+        "%3Cpath d=%27M5 7l3 3-3 3M10 13h5%27 fill=%27none%27 stroke=%27%2384c8bf%27 stroke-width=%271.8%27 "
         "stroke-linecap=%27round%27/%3E%3C/svg%3E")
 META = ('<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, '
-        'interactive-widget=resizes-content"><meta name="theme-color" content="#111820">')
+        'interactive-widget=resizes-content"><meta name="theme-color" content="#14110e">')
 
 page = open(sys.argv[1], encoding="utf-8").read()
 assert 'name="viewport"' not in page, "ttyd's page has a viewport of its own now: check this script"

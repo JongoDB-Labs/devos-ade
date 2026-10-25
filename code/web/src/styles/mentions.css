@@ -20,7 +20,7 @@
 
 /* the editor's "Lines 5–10 to the prompt" (a selection) */
 .file-body { position: relative; }
-.sel-mention { position: absolute; top: 6px; right: 14px; z-index: 5; box-shadow: var(--shadow); }
+.sel-mention { position: absolute; top: 6px; right: 14px; z-index: 5; box-shadow: var(--shadow-pop); }
 .sel-mention kbd { margin-left: 2px; }
 
 /* a sent prompt's context, folded */
