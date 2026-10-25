@@ -77,6 +77,27 @@ test('live messages: text, deltas, tools, results — capped, ids checked, costs
   assert.equal(fromSdk({ type: 'system', subtype: 'api_retry', attempt: 1, max_retries: 10, error: 'overloaded' })[0].type, 'status');
 });
 
+test('an API error: the provider\'s own words with the error, apart — never "Claude Code reported: unknown" alone', () => {
+  // as Claude Code 2.1.309 sends it through LiteLLM 1.105.0 (tests/e2e/harness-parity.sh, gpt-6-luna on Bedrock)
+  const api = (text, error = 'unknown') => fromSdk({ type: 'assistant', error, message: { model: '<synthetic>', content: [{ type: 'text', text }] } });
+  const bedrock = 'API Error: 400 litellm.BadRequestError: BedrockException - {"message":"This model doesn\'t support the image field for user messages. Remove image and try again."}' +
+    "\n\nLiteLLM: model group 'gpt-6-luna' failed with the error above. No fallback was attempted.";
+  assert.deepEqual(api(bedrock), [{ type: 'error', message: 'The request to the model failed', text: 'The request to the model failed',
+    said: 'API Error 400: This model doesn\'t support the image field for user messages. Remove image and try again.', saidBy: 'claude' }]);
+  // a gateway's refusal (Experiential Labs, an OpenAI-shaped provider), an Anthropic error envelope, LiteLLM's older suffix
+  assert.equal(api("API Error: 400 litellm.BadRequestError: OpenAIException - provider refused the request: cybersecurity policy\n\nLiteLLM: model group 'xl/q' failed with the error above. No fallback was attempted.", 'invalid_request')[0].said,
+    'API Error 400: provider refused the request: cybersecurity policy');
+  assert.equal(api('API Error: 400 litellm.BadRequestError: OpenAIException - provider refused the request: cybersecurity policy', 'invalid_request')[0].message, 'The model\'s provider refused the request');
+  assert.equal(api('API Error: 429 {"type":"error","error":{"type":"rate_limit_error","message":"Too many requests"}}', 'rate_limit')[0].said, 'API Error 429: Too many requests');
+  assert.equal(api('API Error: 400 {"error":{"message":"litellm.BadRequestError: BedrockException - {\\"message\\":\\"bad\\"}. Received Model Group=x\\nAvailable Model Group Fallbacks=None","code":"400"}}')[0].said, 'API Error 400: bad');
+  // any other text of Claude Code's (no status): as it is; a long one capped for the page
+  assert.equal(api('Prompt is too long', 'invalid_request')[0].said, 'Prompt is too long');
+  assert.equal(api(`API Error: 500 ${'x'.repeat(1000)}`, 'server_error')[0].said.length, 300);
+  // the text is no line of its own any more; an error the SDK does not name keeps its words as they were
+  assert.ok(!api(bedrock).some((e) => e.type === 'local'));
+  assert.deepEqual(fromSdk({ type: 'assistant', error: MARKUP, message: { model: '<synthetic>', content: [{ type: 'text', text: 'x' }] } }).map((e) => e.type), ['local', 'error']);
+});
+
 test('init: lists capped, plugins and MCP servers as name/status only', () => {
   const ev = initEvent({ model: MARKUP, cwd: '/workspace', permissionMode: 'default', claude_code_version: '2.1.296', tools: Array(400).fill('Bash'),
     slash_commands: ['context', 7, null], plugins: [{ name: 'p', path: '/home/x', version: '1' }, 'bad'], mcp_servers: [{ name: 'bedrock-shared', status: 'connected', config: { headers: { Authorization: 'x' } } }],

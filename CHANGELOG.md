@@ -20,6 +20,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   call, duplicate tool call ids, an image for a text-only model, a parameter the model does not list …) and, for this
   suite, answers through a real model on Bedrock; without a key it stands in for OpenRouter too.
 
+### Fixed
+
+- **Code page:** an error from the model's provider shows the provider's own words. A refused request said only
+  "Claude Code reported: unknown" (the Agent SDK's name for an error it does not classify), with Claude Code's text —
+  LiteLLM's `litellm.BadRequestError: BedrockException - {"message": …}` and its model group line — on a line of its
+  own above. The page now says what happened in a sentence ("The model's provider refused the request", "… is limiting
+  requests right now" …) with the provider's message in the box below it ("API Error 400: This model doesn't support
+  the image field for user messages. …"), LiteLLM's wrapping left out so that it fits.
+
 ## [0.28.1] - 2026-10-25
 
 ### Added

@@ -118,6 +118,38 @@ export const SDK_ERRORS = Object.freeze(['authentication_failed', 'oauth_org_not
 
 const TASK = ['pending', 'running', 'completed', 'failed', 'stopped', 'killed', 'paused'];
 
+// An API error of a turn, said as ours by the SDK's name for it; the provider's own words go apart (apiErrorWords)
+const API_ERROR_SAID = Object.freeze({ authentication_failed: 'The model\'s provider refused the key', rate_limit: 'The model\'s provider is limiting requests right now',
+  overloaded: 'The model\'s provider is overloaded right now', invalid_request: 'The model\'s provider refused the request',
+  model_not_found: 'The model was not found', server_error: 'The model\'s provider had an error', max_output_tokens: 'The answer reached its output limit' });
+
+// apiErrorWords(m) -> Claude Code's words for an API error (the text of its synthetic message), the provider's message
+// first: "API Error: 400 litellm.BadRequestError: BedrockException - {"message":"This model doesn't support …"}\n\n
+// LiteLLM: model group 'x' failed with the error above. …" becomes "API Error 400: This model doesn't support …" —
+// LiteLLM's wrapping left out (its error names, the provider's exception, the JSON around a message, its model group
+// line), so the provider's words fit the 300 characters the page shows. Any other text as it is; '' without one.
+export function apiErrorWords(m) {
+  const content = m?.message?.content;
+  const text = (Array.isArray(content) ? content.filter((b) => b && b.type === 'text' && typeof b.text === 'string').map((b) => b.text).join('\n')
+    : typeof content === 'string' ? content : '').trim();
+  const api = /^API Error: (\d{3}) ([\s\S]*)$/.exec(text);
+  if (!api) return text;
+  let said = api[2];
+  for (let i = 0; i < 8; i++) {
+    said = said.trim().replace(/^(?:litellm\.[A-Za-z]+: ?)+/, '');
+    let j = null;
+    try { j = JSON.parse(said); } catch { /* not JSON */ }
+    const e = j && typeof j === 'object' ? (j.error && typeof j.error === 'object' ? j.error : j) : null;
+    if (typeof e?.message === 'string' && e.message) { said = e.message; continue; }
+    const ex = /^[A-Za-z]+Exception - ([\s\S]*)$/.exec(said);
+    if (ex) { said = ex[1]; continue; }
+    const bare = said.replace(/\s*LiteLLM: model group '[^'\n]*' failed with the error above\.[\s\S]*$/, '').replace(/\.?\s*Received Model Group=[\s\S]*$/, '');
+    if (bare === said) break;
+    said = bare;
+  }
+  return `API Error ${api[1]}: ${said.trim()}`;
+}
+
 /** One live SDK message -> [events]. */
 export function fromSdk(m) {
   if (!m || typeof m !== 'object') return [];
@@ -133,7 +165,12 @@ export function fromSdk(m) {
     case 'assistant': {
       const out = blocks(m, parent);
       if (typeof m.error === 'string') {
-        out.push(SDK_ERRORS.includes(m.error) ? errorEvent(`Claude Code reported: ${m.error}`) : errorEvent('Claude Code reported an error of its own', m.error));
+        if (!SDK_ERRORS.includes(m.error)) return [...out, errorEvent('Claude Code reported an error of its own', m.error)];
+        // an API error: the provider's own words (Claude Code's text for it) go with the error, apart — not on a line of
+        // their own above "Claude Code reported: unknown", the SDK's name for an error it does not classify
+        const words = apiErrorWords(m);
+        if (!words) return [...out, errorEvent(`Claude Code reported: ${m.error}`)];
+        return [...out.filter((e) => e.type !== 'local'), errorEvent(API_ERROR_SAID[m.error] ?? 'The request to the model failed', words)];
       }
       return out;
     }
