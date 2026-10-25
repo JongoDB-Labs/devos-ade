@@ -63,6 +63,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   than DevOS Companion's and DevOS Mobile's beside it in the Dock. Every icon now has it at their share of the
   tile, measured from their Dock icon (458 of 824 px): the installed app's, the Apple touch icon, the favicons
   and the sidebar's logo. Your installed app picks it up at Chrome's next icon check (it may ask first).
+- **Removing the speech-to-text key in Settings** asked "OpenRouter's models disappear from Chat and the API". Each
+  key's Remove now says what it does: for the speech-to-text key, that it is refused while Speech-to-text uses OpenAI
+  or Groq, and that LiteLLM, Chat and the portal restart.
 
 ## [0.25.2] - 2026-10-25
 

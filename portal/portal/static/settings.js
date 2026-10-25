@@ -24,6 +24,11 @@
     "litellm-cfg": ["LiteLLM"], aws: ["LiteLLM"], pins: ["Chat", "portal"], "alert-pct": ["portal"], stt: ["LiteLLM", "Chat", "portal"],
     openrouter: ["LiteLLM", "portal"], rustfs: ["Files", "Chat", "shared-mcp", "portal"], mcp: ["shared-mcp", "portal"],
     code: ["portal", "Caddy"], "code-env": ["Code page"], "terminal-env": ["Terminal"], "terminal-egress": ["Terminal"], "remote-preview": ["portal", "Caddy"] };
+  // what removing a key does, in each key's own words (the keys share one form; lib/settings.sh _cfg_post, _stt_apply)
+  const REMOVE_KEY = {
+    or_key: "OpenRouter's models disappear from Chat and the API; LiteLLM and the portal restart (about 40 s).",
+    stt_key: "The OpenAI or Groq key is deleted. While Speech-to-text uses OpenAI or Groq the removal is refused (they need a key): switch it to the browser or Bedrock first. LiteLLM, Chat and the portal restart (about 40 s).",
+  };
   const ON_VALUES = ["true", "1", "yes", "on"], OFF_VALUES = ["false", "0", "no", "off"];
   const KEY_NAME = /^[A-Z][A-Z0-9_]{1,60}$/;   // (as the setup links' targets: catalog/setup-links.tsv)
   const SECTION_MEMO = "bn.settings.section";
@@ -1004,7 +1009,7 @@
       collect = () => ({ [k.key]: $(`#${id}`, form).value.trim() });
       if (k.set) {
         const rm = el("button", { type: "button", class: "quiet", text: "Remove the key" });
-        rm.addEventListener("click", () => confirmApply({ [k.key]: "" }, `Remove ${k.label}?`, "OpenRouter's models disappear from Chat and the API; LiteLLM and the portal restart (about 40 s).", [k.key]));
+        rm.addEventListener("click", () => confirmApply({ [k.key]: "" }, `Remove ${k.label}?`, REMOVE_KEY[k.validator], [k.key]));
         form.append(el("p", { class: "set-gen" }, rm));
       }
     } else if (k.validator === "webhook") {
