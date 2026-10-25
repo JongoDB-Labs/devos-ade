@@ -506,6 +506,31 @@ assert run(None) is None and run(["x"]) == ["x"]
 '
 }
 
+# Claude Code with extended thinking on: LiteLLM renames the model openai/responses/<id> (for OpenAI's Responses API)
+# and shapes reasoning_effort for it; the gateway gets the id it knows, on Chat Completions, and a plain effort
+test_litellm_hook_keeps_a_thinking_request_on_the_models_own_id() {
+  _hook || return $?
+  PYTHONPATH="$TMP/h" python3 -c '
+import asyncio, copy, enum, bn_hooks as h
+class CallTypes(enum.Enum):
+    acompletion = "acompletion"
+run = lambda kw: asyncio.run(h.proxy_handler_instance.async_pre_call_deployment_hook(kw, CallTypes.acompletion))
+mi = {"bn_xl": True, "bn_xl_max_tokens": "max_tokens"}
+out = run({"model": "openai/responses/claude-fable-5", "model_info": mi, "reasoning_effort": {"effort": "high", "summary": "detailed"}})
+assert out["model"] == "openai/claude-fable-5" and out["reasoning_effort"] == "high", out
+assert run({"model": "responses/gemini-3.7-flash", "custom_llm_provider": "openai", "model_info": mi})["model"] == "gemini-3.7-flash"
+out = run({"model": "openai/responses/claude-fable-5", "model_info": mi, "reasoning_effort": {"summary": "auto"}})
+assert "reasoning_effort" not in out, out                                               # no effort in it: none sent
+# a plain id, an effort already plain, an id holding "responses/" elsewhere: as they came
+for kw in ({"model": "openai/claude-fable-5", "model_info": mi, "reasoning_effort": "low"},
+           {"model": "openai/acme/responses/x", "model_info": mi, "reasoning_effort": {"effort": "low"}}):
+    assert run(copy.deepcopy(kw)) == kw, kw
+# another deployment (OpenAI itself, were there one): LiteLLM'"'"'s rule stands
+other = {"model": "openai/responses/gpt-5", "model_info": {"id": "1"}, "reasoning_effort": {"effort": "high"}}
+assert run(copy.deepcopy(other)) == other
+'
+}
+
 test_litellm_hook_books_the_cost_the_gateway_reported() {
   _hook || return $?
   PYTHONPATH="$TMP/h" python3 -c '

@@ -372,7 +372,7 @@ An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*)
 `EXPLABS_API_KEY`. Without it nothing contacts the gateway, and no `xl/…` model exists.
 
 - **Where requests go.** A prompt to an `xl/<id>` model goes from LiteLLM to `https://api.experientiallabs.ai/v1`
-  (Chat Completions; with extended thinking, its Responses API) and from there to whichever provider the gateway routes
+  (Chat Completions, extended thinking included) and from there to whichever provider the gateway routes
   that call to — its own Experiential Cloud, another hosted provider, or your own provider account connected there
   (BYOK); the answer's `x-gateway-provider` header names it. Besides the calls themselves, `./stack` makes two GET
   requests, both free (setup, `./stack up` at most every 12 hours, Settings; the check of a new key makes the first

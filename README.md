@@ -1977,8 +1977,8 @@ shown there once.
   ids only) and what each takes from the gateway's public catalog (`GET /api/models`, without the key), both free, and
   sends each only what it takes: LiteLLM drops the rest (`drop_params` and the model's
   `additional_drop_params`), and its hook moves the output cap to the field the model names. Claude Code's requests
-  stay on Chat Completions, the API those details describe (with extended thinking, LiteLLM sends them to the gateway's
-  Responses API).
+  stay on Chat Completions, the API those details describe, with extended thinking too (LiteLLM would send those to
+  OpenAI's Responses API as `responses/<id>`, an id the gateway does not know; the hook keeps the model's own).
 
   | The model's details | Left out of a request to it |
   |---|---|

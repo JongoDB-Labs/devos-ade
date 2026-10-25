@@ -15,7 +15,8 @@ catalog/code-models.tsv and OpenRouter's list):
   those models that message is left out; every other message stays as it came.
 
 For the Experiential Labs gateway's models (lib/explabs.sh: model_info bn_xl: true), on each call to the gateway:
-- Before it: the output cap goes under the field the model takes (model_info bn_xl_max_tokens: max_tokens or
+- Before it: the model goes by its own id on Chat Completions (with extended thinking on, LiteLLM renames it
+  openai/responses/<id> for OpenAI's Responses API, which would send the gateway an id it does not know); the output cap goes under the field the model takes (model_info bn_xl_max_tokens: max_tokens or
   max_completion_tokens; Claude Code and Chat send max_tokens), and the parameters of its additional_drop_params — what
   the gateway's metadata says it does not take — are left out, extra_body included (LiteLLM drops the others itself).
 - After it: the cost LiteLLM books is the one the gateway reported for the call (usage.cost, USD), $0 when the call ran
@@ -138,10 +139,23 @@ def _chat_call(call_type) -> bool:
 
 
 def xl_request(kwargs: dict) -> dict:
-    """KWARGS for an Experiential Labs model with the output cap under the field its model takes and the parameters of
-    its additional_drop_params left out (top level and extra_body); unchanged for any other model."""
+    """KWARGS for an Experiential Labs model: the model's own id, the output cap under the field its model takes and
+    the parameters of its additional_drop_params left out (top level and extra_body); unchanged for any other model."""
     if not is_xl(kwargs):
         return kwargs
+    # a /v1/messages request with thinking on: LiteLLM names the model openai/responses/<id> to send it to OpenAI's
+    # Responses API, with a Responses-shaped reasoning_effort; the gateway takes Chat Completions under the id itself
+    model = kwargs.get("model")
+    if isinstance(model, str) and "responses/" in model:
+        head, _, rest = model.partition("responses/")
+        if head in ("", "openai/") and rest:
+            kwargs["model"] = head + rest
+            effort = kwargs.get("reasoning_effort")
+            if isinstance(effort, Mapping):
+                if isinstance(effort.get("effort"), str) and effort["effort"]:
+                    kwargs["reasoning_effort"] = effort["effort"]
+                else:
+                    kwargs.pop("reasoning_effort")
     field = kwargs["model_info"].get("bn_xl_max_tokens")
     if field in _CAP_FIELDS:
         other = _CAP_FIELDS[1] if field == _CAP_FIELDS[0] else _CAP_FIELDS[0]

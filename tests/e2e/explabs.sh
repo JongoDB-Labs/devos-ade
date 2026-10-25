@@ -17,7 +17,8 @@
 # answers "DevOS ADE test OK"; the cost LiteLLM books for the call (x-litellm-response-cost) is the one the gateway
 # reported (usage.cost; $0 with usage.is_byok); and the key is nowhere — not in the rendered config, the results, the
 # answer, the container's log, this run's output. With --mock also: what the stand-in got (no refused parameter, the
-# output cap under max_completion_tokens), a streamed answer, Claude Code's /v1/messages, and a BYOK call booked at $0.
+# output cap under max_completion_tokens), a streamed answer, Claude Code's /v1/messages (with extended thinking too:
+# Chat Completions under the model's own id), and a BYOK call booked at $0.
 #
 # The key is only ever in this process's environment and the container's: E2E_EXPLABS_API_KEY is read here, handed to
 # curl on its stdin (lib/common.sh curl_auth) and to docker as `-e EXPLABS_API_KEY` (the value from the environment,
@@ -90,7 +91,7 @@ export STACK_DIR ENV_FILE STATE_DIR
 # shellcheck source=/dev/null
 . "$ROOT/lib/common.sh"; . "$ROOT/lib/ports.sh"; . "$ROOT/lib/portal.sh"; . "$ROOT/lib/models.sh"; . "$ROOT/lib/commands.sh"
 [ "$MOCK" = 0 ] || EXPLABS_API="http://127.0.0.1:$MOCK_PORT/v1"
-get_env() { case "$1" in EXPLABS_API_KEY) printf '%s' "$KEY" ;; EXPLABS_MODELS) printf 'qwen3.8-27b%s' "$([ "$MOCK" = 1 ] && echo ,byok-model)" ;; esac; }
+get_env() { case "$1" in EXPLABS_API_KEY) printf '%s' "$KEY" ;; EXPLABS_MODELS) printf 'qwen3.8-27b%s' "$([ "$MOCK" = 1 ] && echo ,byok-model,claude-fable-5)" ;; esac; }
 STACK_DIR="$WORK"; mkdir -p "$WORK/litellm" "$STATE_DIR"
 xl_cache_current() { [ -s "$(xl_cache_tsv)" ]; }   # (no key mark: not even a hash of the key on disk)
 
@@ -234,6 +235,15 @@ assert "frequency_penalty" not in b and "max_tokens" not in b and b.get("max_com
     tail -n 1 "$WORK/reqs.jsonl" | grep -q '"max_completion_tokens": 32000' &&
     ok "Claude Code's /v1/messages: answered through the gateway's Chat Completions, its cap as max_completion_tokens" ||
     fail "/v1/messages (HTTP $code): $(head -c 300 "$WORK/msg.json" | _mask) — the gateway got: $(tail -n 1 "$WORK/reqs.jsonl" | head -c 300)"
+  # with extended thinking on, LiteLLM names the model openai/responses/<id>: the hook keeps it on Chat Completions under
+  # the id the gateway knows
+  printf '%s' '{"model":"xl/claude-fable-5","max_tokens":32000,"thinking":{"type":"enabled","budget_tokens":4096},"messages":[{"role":"user","content":"hi"}]}' > "$WORK/think.req"
+  code="$(_call /v1/messages "$WORK/think.req" "$WORK/think")"
+  docker exec "$NAME" cat /tmp/reqs.jsonl > "$WORK/reqs.jsonl" 2>/dev/null || : > "$WORK/reqs.jsonl"
+  [ "$code" = 200 ] && grep -q 'test OK' "$WORK/think.json" && tail -n 1 "$WORK/reqs.jsonl" | python3 -I -c 'import json, sys
+d = json.loads(sys.stdin.read()); sys.exit(0 if d["path"] == "/v1/chat/completions" and d["body"].get("model") == "claude-fable-5" else 1)' &&
+    ok "/v1/messages with extended thinking on xl/claude-fable-5: Chat Completions, under the model's own id" ||
+    fail "/v1/messages with thinking (HTTP $code): $(head -c 300 "$WORK/think.json" | _mask) — the gateway got: $(tail -n 1 "$WORK/reqs.jsonl" | head -c 300)"
 fi
 
 # --- the key, nowhere ---

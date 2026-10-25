@@ -210,8 +210,9 @@ litellm_settings:
 EOT
   # Experiential Labs' models are openai/… deployments: LiteLLM would send Claude Code's /v1/messages requests to the
   # gateway's Responses API; this keeps them on Chat Completions, the API the gateway's model details describe (as
-  # OpenRouter's go). A request with extended thinking still goes to Responses (LiteLLM's own rule). No other chat model
-  # here is an openai/… one.
+  # OpenRouter's go). A request with extended thinking LiteLLM still names openai/responses/<id>; the hook
+  # (lib/litellm-hooks/bn_hooks.py) gives it back its id, so it too goes to Chat Completions. No other chat model here is
+  # an openai/… one.
   if declare -F explabs_enabled >/dev/null && explabs_enabled; then printf '  use_chat_completions_url_for_anthropic_messages: true
 '; fi
   # LiteLLM's one hook (lib/litellm-hooks/bn_hooks.py, copied next to the config by render_config): lowers a request's
