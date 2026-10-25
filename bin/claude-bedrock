@@ -7,4 +7,7 @@ while [ -L "$src" ]; do
   dir="$(cd -P "$(dirname "$src")" && pwd)"; src="$(readlink "$src")"
   case "$src" in /*) ;; *) src="$dir/$src" ;; esac
 done
-exec "$(cd -P "$(dirname "$src")" && pwd)/devos-claude" "$@"
+target="$(cd -P "$(dirname "$src")" && pwd)/devos-claude"
+# (a devos-claude that is this file itself, by a hand-made link, would exec it again forever)
+[ "$target" -ef "$src" ] && { echo "claude-bedrock: $target is this file itself, not devos-claude" >&2; exit 127; }
+exec "$target" "$@"

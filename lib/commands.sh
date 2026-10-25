@@ -1064,8 +1064,11 @@ offer_symlink() {
   elif ! confirm "Link devos-claude into ~/.local/bin?"; then
     return 0
   fi
-  mkdir -p "$HOME/.local/bin"
-  ln -sfn "$want" "$target"
+  # (a link that cannot be made is a warning: setup and the update go on to their next steps)
+  if ! { mkdir -p "$HOME/.local/bin" && ln -sfn "$want" "$target"; } 2>/dev/null; then
+    warn "could not link $target (to put devos-claude on your PATH: ln -s $want $target)"
+    return 0
+  fi
   log "linked $target"
   _link_old_name
   # shellcheck disable=SC2088  # literal ~ in a message
@@ -1079,6 +1082,15 @@ _link_old_name() {
   [ -f "$shim" ] || return 0
   cur="$(readlink "$old" 2>/dev/null || true)"
   [ "$cur" = "$shim" ] && return 0
+  # a broken link into an earlier checkout's bin/claude-bedrock (that checkout removed): this checkout's shim replaces it
+  if [ -L "$old" ] && [ ! -e "$old" ]; then
+    case "$cur" in
+      */bin/claude-bedrock)
+        if ln -sfn "$shim" "$old" 2>/dev/null; then log "linked $old (it pointed to $cur, which is gone; it runs devos-claude now)"
+        else warn "could not link $old (it points to $cur, which is gone)"; fi
+        return 0 ;;
+    esac
+  fi
   if [ -e "$old" ] || [ -L "$old" ]; then
     if [ -n "$cur" ]; then log "left $old alone (it points to $cur); devos-claude is its new name"
     else log "left $old alone (not a link); devos-claude is its new name"; fi

@@ -60,7 +60,8 @@ test_the_terminals_shim_is_the_same_file_and_kept_runnable() {
   assert_contains "$(grep -E '^ && chmod 755 /usr/local/bin/devos-claude' "$REPO/terminal/Dockerfile")" "/usr/local/bin/claude-bedrock"
   # only an exec: no output, no other command
   assert_eq "$(grep -cE '^[[:space:]]*(echo|printf|cat)( |$)' "$REPO/bin/claude-bedrock" || true)" 0
-  assert_contains "$(tail -n 1 "$REPO/bin/claude-bedrock")" 'exec "$(cd -P "$(dirname "$src")" && pwd)/devos-claude" "$@"'
+  assert_contains "$(tail -n 1 "$REPO/bin/claude-bedrock")" 'exec "$target" "$@"'
+  assert_contains "$(cat "$REPO/bin/claude-bedrock")" 'target="$(cd -P "$(dirname "$src")" && pwd)/devos-claude"'
   # the full wrapper is devos-claude (its help names it), not the old name
   assert_contains "$(cat "$REPO/bin/devos-claude")" "devos-claude: Claude Code on AWS Bedrock via DevOS ADE"
   assert_contains "$(cat "$REPO/terminal/bin/devos-claude")" "devos-claude: Claude Code on AWS Bedrock via DevOS ADE, in the browser terminal"
@@ -96,11 +97,12 @@ test_setup_under_yes_links_nothing_new_on_a_fresh_install() {
 
 test_the_old_name_is_never_taken_from_another_checkout_or_a_file() {
   _fake_stack; ASSUME_YES=0; _have_tty() { return 0; }; ask() { echo "${2:-}"; }
-  ln -s /elsewhere/bin/claude-bedrock "$O"
+  # another checkout that is there (a broken link into a removed one is replaced: see further below)
+  mkdir -p "$TMP/elsewhere/bin"; : > "$TMP/elsewhere/bin/claude-bedrock"; ln -s "$TMP/elsewhere/bin/claude-bedrock" "$O"
   offer_symlink 2> "$TMP/err"
   assert_eq "$(readlink "$D")" "$STACK_DIR/bin/devos-claude"
-  assert_eq "$(readlink "$O")" "/elsewhere/bin/claude-bedrock"
-  assert_contains "$(cat "$TMP/err")" "left $O alone (it points to /elsewhere/bin/claude-bedrock); devos-claude is its new name"
+  assert_eq "$(readlink "$O")" "$TMP/elsewhere/bin/claude-bedrock"
+  assert_contains "$(cat "$TMP/err")" "left $O alone (it points to $TMP/elsewhere/bin/claude-bedrock); devos-claude is its new name"
   rm -f "$O"; printf '#!/bin/sh\necho mine\n' > "$O"
   ASSUME_YES=1 offer_symlink 2> "$TMP/err"
   assert_eq "$(cat "$O")" "$(printf '#!/bin/sh\necho mine')"
@@ -210,4 +212,32 @@ test_a_link_that_cannot_be_made_never_stops_setup_or_an_update() {
   chmod 755 "$HOME/.local/bin"
   assert_eq "$rc/$(cat "$TMP/after" 2>/dev/null)" "0/after"
   assert_contains "$(cat "$TMP/err")" "could not link $D"
+}
+
+test_an_interactive_setup_goes_on_when_the_link_cannot_be_made() {
+  _fake_stack; ASSUME_YES=0; _have_tty() { return 0; }; ask() { echo "${2:-}"; }; chmod 555 "$HOME/.local/bin"
+  local rc=0
+  ( set -e; offer_symlink; echo after > "$TMP/after" ) 2> "$TMP/err" || rc=$?
+  chmod 755 "$HOME/.local/bin"
+  assert_eq "$rc/$(cat "$TMP/after" 2>/dev/null)" "0/after"
+  assert_contains "$(cat "$TMP/err")" "could not link $D"
+}
+
+test_shim_stops_when_devos_claude_is_a_link_to_the_shim_itself() {
+  _fake_stack; rm -f "$STACK_DIR/bin/devos-claude"; ln -s claude-bedrock "$STACK_DIR/bin/devos-claude"
+  local rc=0
+  "$STACK_DIR/bin/claude-bedrock" --version > /dev/null 2> "$TMP/err" || rc=$?
+  assert_eq "$rc" 127
+  assert_contains "$(cat "$TMP/err")" "is this file itself, not devos-claude"
+}
+
+test_a_broken_old_name_link_into_a_removed_checkout_is_replaced() {
+  _fake_stack; ln -s "$STACK_DIR/bin/devos-claude" "$D"; ln -s "$TMP/gone/bin/claude-bedrock" "$O"
+  ASSUME_YES=1 offer_symlink 2> "$TMP/err"
+  assert_eq "$(readlink "$O")" "$STACK_DIR/bin/claude-bedrock"
+  assert_contains "$(cat "$TMP/err")" "it pointed to $TMP/gone/bin/claude-bedrock, which is gone"
+  # a broken link of yours to something else stays as it is
+  rm -f "$O"; ln -s "$TMP/elsewhere/my-tool" "$O"
+  ASSUME_YES=1 offer_symlink 2> "$TMP/err"
+  assert_eq "$(readlink "$O")" "$TMP/elsewhere/my-tool"
 }
