@@ -8,7 +8,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
-import { tmp, talk, open, result, TERMINAL_DIR } from './helpers.mjs';
+import { tmp, talk, open, result, TERMINAL_DIR, sandboxSkip } from './helpers.mjs';
 
 const ROOT = tmp('bncp');
 const WS = path.join(ROOT, 'ws'), SOCKDIR = path.join(ROOT, 'sock'), PROC = path.join(ROOT, 'proc'), LOG = path.join(ROOT, 'tmux.log');
@@ -72,7 +72,7 @@ test('ports.list: one row per port with its process (from /proc/<pid>/fd), sorte
 });
 
 test('ports.list on this machine\'s /proc: a server of ours is found with our pid (Linux)', async (t) => {
-  if (!fs.existsSync('/proc/net/tcp')) { t.skip('no /proc here'); return; }
+  if (sandboxSkip(t, 'proc')) return;
   const s = net.createServer();
   await new Promise((r) => s.listen(0, '127.0.0.1', r));
   try {
@@ -90,7 +90,8 @@ test('launch.json: JSON with comments and trailing commas', () => {
   assert.deepEqual(JSON.parse(coded.stripJsonc('{"q": "a\\"//b"}')), { q: 'a"//b' });
 });
 
-test('launch.json entries: checked one by one, the command shown as it will run', () => {
+test('launch.json entries: checked one by one, the command shown as it will run', (t) => {
+  if (sandboxSkip(t, 'node', 'npm')) return;
   const c = coded.launchConfig({ name: 'web', runtimeExecutable: 'npm', runtimeArgs: ['run', 'dev', '--', '--host', "it's"], port: 5173,
     cwd: '${workspaceFolder}/web', env: { NODE_ENV: 'development' }, autoPort: true });
   // (its program: npm as Start's environment finds it — the image's own, from its folders first)
@@ -149,7 +150,8 @@ test('launch.list over the socket: none, broken, and a list (a bad entry says wh
   fs.rmSync(path.join(WS, '.claude/launch.json'));
 });
 
-test('launch.start: the file\'s command in a new window of the terminal\'s tmux session (made first when none runs), never the page\'s', async () => {
+test('launch.start: the file\'s command in a new window of the terminal\'s tmux session (made first when none runs), never the page\'s', async (t) => {
+  if (sandboxSkip(t, 'node', 'npm')) return;
   writeLaunch(JSON.stringify({ configurations: [
     { name: 'web app', runtimeExecutable: 'npm', runtimeArgs: ['run', 'dev', '$(touch /tmp/pwned)'], cwd: 'web', port: 5173, env: { NODE_ENV: 'development' } },
     { name: 'attach', url: 'http://localhost:9000' }, { name: 'away', runtimeExecutable: 'x', cwd: '../..' }] }));
@@ -193,6 +195,7 @@ test('launch.start: the file\'s command in a new window of the terminal\'s tmux 
 });
 
 test('the code container\'s digest of an entry is bn-coded\'s', async (t) => {
+  if (sandboxSkip(t, 'node', 'npm')) return;
   let api;
   try { api = await import('../server/api.mjs'); } catch { t.skip('the backend\'s dependencies are not installed here (code/test.sh runs it)'); return; }
   fs.writeFileSync(path.join(WS, 'web', 'tool.sh'), '#!/bin/sh\n', { mode: 0o755 });

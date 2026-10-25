@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
 import { execFileSync } from 'node:child_process';
-import { tmp, talk, open, result, stdout, TERMINAL_DIR } from './helpers.mjs';
+import { tmp, talk, open, result, stdout, TERMINAL_DIR, sandboxSkip } from './helpers.mjs';
 import { frame, T } from '../server/frames.mjs';
 import { checkSnapshot, diffSnapshots } from '../server/watch.mjs';
 
@@ -331,7 +331,7 @@ test('claude: the code side going away ends the process (stdin EOF)', async () =
 });
 
 test('orphans: a recorded child still running stream-json is ended at start; a reused PID is not', (t) => {
-  if (!fs.existsSync('/proc/self/stat')) { t.skip('no /proc here'); return; }
+  if (sandboxSkip(t, 'proc')) return;
   const dir = path.join(ROOT, 'children');
   fs.mkdirSync(dir, { recursive: true });
   const statStart = (pid) => fs.readFileSync(`/proc/${pid}/stat`, 'utf8').replace(/^.*\) /s, '').split(' ')[19];

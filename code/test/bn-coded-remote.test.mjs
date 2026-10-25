@@ -15,10 +15,10 @@ import net from 'node:net';
 import os from 'node:os';
 import http from 'node:http';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { tmp, TERMINAL_DIR } from './helpers.mjs';
+import { tmp, TERMINAL_DIR, sandboxSkip } from './helpers.mjs';
 import { FrameParser, frame, T } from '../server/frames.mjs';
 import { agentAnswer, newKey, loadKey, AGENT, sshString } from '../server/sshagent.mjs';
-import { makeCA, httpsGitServer, sshGitServer, OPENSSL, SSHD, SSH } from './git-servers.mjs';
+import { makeCA, httpsGitServer, sshGitServer, OPENSSL, SSH } from './git-servers.mjs';
 
 const ROOT = tmp('bnrem');
 const WS = path.join(ROOT, 'ws'), MARKS = path.join(ROOT, 'marks'), SRV = path.join(ROOT, 'srv'), HOME = path.join(ROOT, 'home'), GTMP = path.join(ROOT, 'g');
@@ -29,8 +29,6 @@ delete process.env.HTTPS_PROXY; delete process.env.https_proxy;
 const coded = await import(path.join(TERMINAL_DIR, 'bin/bn-coded.mjs'));
 const which = (n) => ['/usr/bin', '/usr/local/bin', '/bin', '/opt/homebrew/bin'].map((d) => path.join(d, n)).find((f) => fs.existsSync(f));
 const GIT = which('git');
-const ROOTUSER = process.getuid?.() === 0;
-const CAN_SSH = Boolean(SSHD && SSH && ROOTUSER);
 const SOCK = path.join(ROOT, 'sock', 'coded.sock');
 const TOKEN = ['t', 'o', 'k'].join('') + Buffer.from(String(Date.now())).toString('hex');   // (made here: no token-shaped literal)
 const PLAIN = { PATH: '/usr/local/bin:/usr/bin:/bin', HOME, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0' };
@@ -193,7 +191,8 @@ test('the overrides: every http.* setting of the connection for the plain key an
   assert.ok(coded.sshCommand('/d', { proxy: 'http://egress:3128' }).includes("'ProxyCommand=/usr/local/bin/bn-ssh-proxy %h %p'"));
 });
 
-test('HTTPS with a token: push, publish, fetch and pull; the token only for the operation\'s host, asked when git needs it; never in an answer', { skip: !OPENSSL && 'no openssl' }, async () => {
+test('HTTPS with a token: push, publish, fetch and pull; the token only for the operation\'s host, asked when git needs it; never in an answer', { skip: !OPENSSL && 'no openssl' }, async (t) => {
+  if (sandboxSkip(t, 'node')) return;
   const bare = workspaceClone();
   commit(WS, 'a.txt', 'a\n', 'add a');
   const url = REAL();
@@ -242,7 +241,8 @@ test('HTTPS with a token: push, publish, fetch and pull; the token only for the 
   assert.match(r.result.error, /credential|Username|terminal prompts/);
 });
 
-test('the sandbox\'s ~/.netrc is never a credential of the panel\'s (control: plain git uses it); a push goes only while the branch is the commit you confirmed', { skip: !OPENSSL && 'no openssl' }, async () => {
+test('the sandbox\'s ~/.netrc is never a credential of the panel\'s (control: plain git uses it); a push goes only while the branch is the commit you confirmed', { skip: !OPENSSL && 'no openssl' }, async (t) => {
+  if (sandboxSkip(t, 'node')) return;
   workspaceClone();
   const url = REAL();
   fs.writeFileSync(path.join(HOME, '.netrc'), `machine 127.0.0.1 login u password ${TOKEN}\n`, { mode: 0o600 });
@@ -283,7 +283,8 @@ test('the remote\'s URL is the one the page showed: a changed URL, a second URL,
   assert.equal(evil.log.length, 0);
 });
 
-test('a hostile repository: URL rewrites, credential helpers, a proxy and headers for the URL, remote programs, alternates, hooks — nothing runs, nothing goes elsewhere (controls: plain git)', { skip: !OPENSSL && 'no openssl' }, async () => {
+test('a hostile repository: URL rewrites, credential helpers, a proxy and headers for the URL, remote programs, alternates, hooks — nothing runs, nothing goes elsewhere (controls: plain git)', { skip: !OPENSSL && 'no openssl' }, async (t) => {
+  if (sandboxSkip(t, 'node')) return;
   const bare = workspaceClone();
   serverRepo('evil');
   const url = REAL(), evilBase = `https://127.0.0.1:${evil.port}/`, goodBase = `https://127.0.0.1:${good.port}/`;
@@ -393,7 +394,8 @@ test('TLS: the repository\'s sslVerify=false and its own CA for the URL change n
   assert.equal(good.log.length, 0, 'no request reached the server');
 });
 
-test('the credential reaches only the operation\'s own git: another git in the sandbox asking at the same time — even with the operation\'s nonce from /proc — gets nothing; the token is in no other process\'s environment or command line', { skip: !OPENSSL && 'no openssl' }, async () => {
+test('the credential reaches only the operation\'s own git: another git in the sandbox asking at the same time — even with the operation\'s nonce from /proc — gets nothing; the token is in no other process\'s environment or command line', { skip: !OPENSSL && 'no openssl' }, async (t) => {
+  if (sandboxSkip(t, 'proc', 'node')) return;
   workspaceClone();
   const url = REAL();
   let intruder = null;
@@ -429,7 +431,8 @@ test('the credential reaches only the operation\'s own git: another git in the s
   assert.deepEqual([...seen], [], 'no process had the token in its environment or command line');
 });
 
-test('ssh with a key the sandbox never sees: push, fetch and pull through the operation\'s agent; host keys pinned (an unknown one refused, learned only when asked); a hostile ~/.ssh/config, core.sshCommand and remote programs run nothing; the agent signs only a login', { skip: !CAN_SSH && 'needs sshd, ssh and root' }, async () => {
+test('ssh with a key the sandbox never sees: push, fetch and pull through the operation\'s agent; host keys pinned (an unknown one refused, learned only when asked); a hostile ~/.ssh/config, core.sshCommand and remote programs run nothing; the agent signs only a login', async (t) => {
+  if (sandboxSkip(t, 'ssh', 'root')) return;
   const key = newKey('bn-test');
   const k = loadKey(key.privatePem);
   const keys = [{ blob: k.blob, privateKey: k.privateKey, comment: 'bn-test' }];
@@ -491,7 +494,8 @@ test('ssh with a key the sandbox never sees: push, fetch and pull through the op
   } finally { await sshd.close(); }
 });
 
-test('clone: a new folder (or the empty workspace), shallow on request, nothing of the sandbox\'s git configuration; refusals', { skip: !OPENSSL && 'no openssl' }, async () => {
+test('clone: a new folder (or the empty workspace), shallow on request, nothing of the sandbox\'s git configuration; refusals', { skip: !OPENSSL && 'no openssl' }, async (t) => {
+  if (sandboxSkip(t, 'node')) return;
   resetWs();
   const bare = serverRepo('good');
   const two = fs.mkdtempSync(path.join(ROOT, 'two-'));
@@ -597,7 +601,8 @@ test('repositories in the workspace, remote state, branches and a remote\'s URL 
   assert.match(r.result.error, /would be overwritten/);
 });
 
-test('Claude\'s own git through the broker: only while the code container keeps it open, only what it answers', { skip: !OPENSSL && 'no openssl' }, async () => {
+test('Claude\'s own git through the broker: only while the code container keeps it open, only what it answers', { skip: !OPENSSL && 'no openssl' }, async (t) => {
+  if (sandboxSkip(t, 'node')) return;
   workspaceClone();
   const url = REAL();
   fs.writeFileSync(path.join(ROOT, 'ca.pem'), ca.ca);

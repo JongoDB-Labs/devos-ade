@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { tmp, talk, open, result, TERMINAL_DIR } from './helpers.mjs';
+import { tmp, talk, open, result, TERMINAL_DIR, sandboxSkip } from './helpers.mjs';
 
 const ROOT = tmp('bncap');
 const WS = path.join(ROOT, 'ws'), SOCKDIR = path.join(ROOT, 'sock'), LOG = path.join(ROOT, 'tmux.log');
@@ -261,7 +261,8 @@ test('hostile pane content comes back as data: fences, markers, invalid UTF-8 an
 // UTF-8 locale of bn-coded's own — the pane is found and read; a session named to look like tmux's answer cannot pass
 // for the terminal's. A server of the test's own (its own TMUX_TMPDIR), never anyone else's.
 const REAL = ['/usr/bin/tmux', '/usr/local/bin/tmux', '/opt/homebrew/bin/tmux'].find((p) => fs.existsSync(p)) ?? null;
-test('a real tmux, LANG=C: the terminal session\'s pane found and read; another session named like an answer refused', { skip: REAL && fs.existsSync('/proc/self') ? false : 'no tmux or no /proc here' }, async () => {
+test('a real tmux, LANG=C: the terminal session\'s pane found and read; another session named like an answer refused', async (t) => {
+  if (sandboxSkip(t, 'proc', 'tmux')) return;
   const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'bnt-'));
   const keep = Object.fromEntries(['TMUX_TMPDIR', 'TMUX', 'LANG', 'LC_ALL', 'LC_CTYPE'].map((k) => [k, process.env[k]]));
   Object.assign(process.env, { TMUX_TMPDIR: dir, LANG: 'C' });

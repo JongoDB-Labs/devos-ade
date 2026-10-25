@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { tmp, talk, open, result, TERMINAL_DIR } from './helpers.mjs';
+import { tmp, talk, open, result, TERMINAL_DIR, sandboxSkip } from './helpers.mjs';
 
 const ROOT = tmp('bnrun');
 const WS = path.join(ROOT, 'ws'), SOCKDIR = path.join(ROOT, 'sock'), RUNS = path.join(ROOT, 'runs'), LOG = path.join(ROOT, 'tmux.log');
@@ -70,7 +70,8 @@ const until = async (f, what, timeoutMs = 10000) => {
   }
 };
 
-test('package.json: each script with npm\'s pre/post scripts, run as `npm run -- <name>`; odd names listed, never offered', () => {
+test('package.json: each script with npm\'s pre/post scripts, run as `npm run -- <name>`; odd names listed, never offered', (t) => {
+  if (sandboxSkip(t, 'node', 'npm')) return;
   const r = coded.npmTasks(JSON.stringify({ scripts: {
     test: 'vitest run', pretest: 'tsc --noEmit', posttest: 'echo done', 'lint:fix': 'eslint --fix .', 'build/web': 'vite build',
     'a; rm -rf /': 'x', '$(touch /tmp/pwned)': 'x', 'x\ny': 'x', '--version': 'x', '-x': 'x', '`id`': 'x', 'a b': 'x', 'ü': 'x', '': 'x',
@@ -117,7 +118,8 @@ test('package.json: a huge file is read in linear time; at most 100 tasks listed
   assert.ok(nasty.tasks.every((x) => x.error && x.name.length <= 200));
 });
 
-test('.npmrc: its setting names shown, its hash bound to every npm task; one that is a link refuses npm tasks', async () => {
+test('.npmrc: its setting names shown, its hash bound to every npm task; one that is a link refuses npm tasks', async (t) => {
+  if (sandboxSkip(t, 'node', 'npm')) return;
   assert.deepEqual(coded.npmrcKeys('# c\nscript-shell=/workspace/evil.sh\n; c\nnode-options = --require ./x.js\n\nregistry=https://r\nregistry=again\n\x1b[31m=1'),
     ['script-shell', 'node-options', 'registry', '?[31m']);
   ws('package.json', JSON.stringify({ scripts: { test: 'vitest run' } }));
@@ -207,7 +209,8 @@ test('pyproject.toml: [project.scripts] and [tool.poetry.scripts] entry points; 
   }
 });
 
-test('run.list over the socket: every source with its file; a link or a FIFO is not read; the digest changes with what runs', async () => {
+test('run.list over the socket: every source with its file; a link or a FIFO is not read; the digest changes with what runs', async (t) => {
+  if (sandboxSkip(t, 'root', 'node', 'npm')) return;
   assert.deepEqual(await op({ op: 'run.list' }), { sources: [
     { source: 'npm', file: 'package.json', exists: false, error: null, more: false },
     { source: 'make', file: 'Makefile', exists: false, error: null, more: false },
@@ -276,7 +279,8 @@ test('the code container\'s digest of a task is bn-coded\'s, and its loader the 
   rm('package.json'); rm('.npmrc'); rm('Makefile'); rm('pyproject.toml');
 });
 
-test('run.start: the task\'s fixed wrapper in a new tmux window (the session made first), never the page\'s command', async () => {
+test('run.start: the task\'s fixed wrapper in a new tmux window (the session made first), never the page\'s command', async (t) => {
+  if (sandboxSkip(t, 'node', 'npm')) return;
   fs.rmSync(LOG, { force: true });
   fs.writeFileSync(path.join(ROOT, 'norun'), '');
   ws('package.json', JSON.stringify({ scripts: { test: 'vitest run' } }));
@@ -321,7 +325,8 @@ test('run.start: the task\'s fixed wrapper in a new tmux window (the session mad
   rm('package.json');
 });
 
-test('the terminal\'s tmux with hooks or loader variables (anything in the sandbox can set them): no window is made', async () => {
+test('the terminal\'s tmux with hooks or loader variables (anything in the sandbox can set them): no window is made', async (t) => {
+  if (sandboxSkip(t, 'node', 'npm')) return;
   fs.writeFileSync(path.join(ROOT, 'norun'), '');
   ws('package.json', JSON.stringify({ scripts: { test: 'vitest run' } }));
   fs.mkdirSync(path.join(WS, '.claude'), { recursive: true });
@@ -400,7 +405,8 @@ test('the runner: the task\'s output shown and its last 64 KiB kept with the exi
   assert.equal(await coded.runTask(dir, id, [], { out: { write() {} } }), 2);
 });
 
-test('run.start → the runner in the window → run.results (exit status, the end of the output) → run.show', async () => {
+test('run.start → the runner in the window → run.results (exit status, the end of the output) → run.show', async (t) => {
+  if (sandboxSkip(t, 'node', 'npm')) return;
   fs.rmSync(LOG, { force: true });
   fs.rmSync(RUNS, { recursive: true, force: true });
   // the image's own npm (the test container's: root's, in /usr/local), through the tmux stand-in and the runner
@@ -435,7 +441,8 @@ test('run.start → the runner in the window → run.results (exit status, the e
   rm('package.json');
 });
 
-test('what runs: the image\'s own programs (root\'s alone, through their links) first; an environment made here, never tmux\'s', () => {
+test('what runs: the image\'s own programs (root\'s alone, through their links) first; an environment made here, never tmux\'s', (t) => {
+  if (sandboxSkip(t, 'root', 'node', 'npm')) return;
   const mine = path.join(ROOT, 'mine');   // (a folder of the sandbox's own uid, like ~/.local/bin)
   fs.mkdirSync(mine, { recursive: true });
   fs.writeFileSync(path.join(mine, 'node'), '#!/bin/sh\n', { mode: 0o755 });
@@ -482,7 +489,8 @@ test('the launch runner: the window\'s terminal its own, then how it ended', asy
   assert.equal(await coded.runTty('x', [], { out }), 2);
 });
 
-test('what the shown files do not say cannot change what runs: tmux\'s global environment, npm\'s user and global npmrc, programs of the same name in ~/.local/bin', async () => {
+test('what the shown files do not say cannot change what runs: tmux\'s global environment, npm\'s user and global npmrc, programs of the same name in ~/.local/bin', async (t) => {
+  if (sandboxSkip(t, 'root', 'node', 'npm')) return;
   fs.rmSync(LOG, { force: true });
   fs.rmSync(RUNS, { recursive: true, force: true });
   const OUT = path.join(ROOT, 'window.out');
@@ -545,7 +553,8 @@ test('what the shown files do not say cannot change what runs: tmux\'s global en
   }
 });
 
-test('run.results: the last 20 runs, the list\'s tails cut to 4 KiB, running and lost runs, junk in the folder ignored', async () => {
+test('run.results: the last 20 runs, the list\'s tails cut to 4 KiB, running and lost runs, junk in the folder ignored', async (t) => {
+  if (sandboxSkip(t, 'proc', 'node', 'npm')) return;
   fs.rmSync(RUNS, { recursive: true, force: true });
   fs.mkdirSync(RUNS, { mode: 0o700 });
   const put = (name, v) => fs.writeFileSync(path.join(RUNS, name), typeof v === 'string' ? v : JSON.stringify(v));
@@ -575,7 +584,8 @@ test('run.results: the last 20 runs, the list\'s tails cut to 4 KiB, running and
   assert.equal(one[0].cut, false);
 });
 
-test('run.start keeps the last 20 runs (the oldest go, with their files); at most 8 run at once', async () => {
+test('run.start keeps the last 20 runs (the oldest go, with their files); at most 8 run at once', async (t) => {
+  if (sandboxSkip(t, 'proc', 'node', 'npm')) return;
   // (the folder of the test above: 27 records)
   fs.writeFileSync(path.join(ROOT, 'norun'), '');
   ws('package.json', JSON.stringify({ scripts: { test: 'vitest run' } }));

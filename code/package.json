@@ -4,7 +4,7 @@
   "description": "The Code page's backend (./stack code). The Agent SDK moves in lock-step with the terminal's Claude Code pin (its claudeCodeVersion = terminal/claude-code's version; code/test/pins.test.mjs checks it). npm ci checks every tarball against package-lock.json",
   "type": "module",
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test $(for f in test/*.test.mjs; do grep -qxF \"${f#test/}\" test/one-at-a-time.txt || echo \"$f\"; done) && node --test --test-concurrency=1 $(sed 's|^|test/|' test/one-at-a-time.txt)"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.309",

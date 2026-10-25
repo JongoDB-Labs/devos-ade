@@ -36,7 +36,8 @@ WORKDIR /opt/code
 COPY server/frames.mjs server/sshagent.mjs ./server/
 COPY test/helpers.mjs test/git-servers.mjs test/bn-coded-git.test.mjs test/bn-coded-remote.test.mjs ./test/
 COPY --from=terminal bin/bn-coded.mjs bin/bn-git-credential bin/bn-gh /opt/terminal/bin/
-ENV BN_TERMINAL_DIR=/opt/terminal BN_TEST_REQUIRE_CONFIG_HOOKS=1
+# (BN_TEST_EXPECT_SANDBOX: here the sandbox's tools are there, so a test that needs one fails rather than skips — test/helpers.mjs sandboxSkip)
+ENV BN_TERMINAL_DIR=/opt/terminal BN_TEST_REQUIRE_CONFIG_HOOKS=1 BN_TEST_EXPECT_SANDBOX=1
 RUN git --version && node --test --test-reporter=spec test/bn-coded-git.test.mjs test/bn-coded-remote.test.mjs && touch /tmp/gitnew-tested
 
 FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS deps
@@ -66,7 +67,8 @@ COPY --from=terminal egress/bn-egress.mjs /opt/terminal/egress/
 COPY --from=terminal claude-code/package.json /opt/terminal/claude-code/package.json
 # (its pins: the GitHub Copilot CLI's is the one whose reading of .github/ was audited — trust-frontmatter.test.mjs)
 COPY --from=terminal Dockerfile /opt/terminal/Dockerfile
-ENV BN_TERMINAL_DIR=/opt/terminal
+# (BN_TEST_EXPECT_SANDBOX: as in gitnew — no test may skip here for want of the sandbox's tools)
+ENV BN_TERMINAL_DIR=/opt/terminal BN_TEST_EXPECT_SANDBOX=1
 # (the files of test/one-at-a-time.txt check that parsing stays linear, by timing: run after the others, one at a time —
 # another file's work at the same moment is noise to them)
 RUN node --test --test-reporter=spec $(for f in test/*.test.mjs; do grep -qxF "${f#test/}" test/one-at-a-time.txt || echo "$f"; done) \

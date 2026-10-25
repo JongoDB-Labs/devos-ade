@@ -1574,6 +1574,12 @@ sh e2e/run.sh               # browser checks against the mock (desktop, tablet, 
 code/test.sh                # (from the repo root) the image's test stage: the frontend's and the backend's tests
 ```
 
+The backend's unit tests also run on this computer, macOS included: `cd code && npm ci --omit=optional --ignore-scripts
+&& npm test` (the timing tests of `test/one-at-a-time.txt` alone, after the others, as in the image). A test that needs
+the sandbox's tools skips there and says which: Linux's `/proc`, running as root, node and npm of root's own in
+`/usr/local/bin`, `/usr/bin` or `/bin`, a real tmux, sshd (on a Mac, 23 of bn-coded's: Run & test, previews, the Git
+panel's remotes, the terminal's capture, orphans). `code/test.sh` runs them all, and fails one that would skip there.
+
 ### Claude Code from your phone
 
 SSH into the machine from a phone SSH app (Blink or Termius on iOS, Termius or JuiceSSH on Android), start `tmux new
