@@ -48,6 +48,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 - **The Code page's unit tests run on a Mac:** the ones that need the sandbox's Linux tools skip there and say why, and
   fail instead of skipping inside the image.
 - **Tests:** the Plan-mode end-to-end check decides on every run.
+- **The app icon's torus is the DevOS apps' size.** It filled most of its tile (about three quarters), larger
+  than DevOS Companion's and DevOS Mobile's beside it in the Dock. Every icon now has it at their share of the
+  tile, measured from their Dock icon (458 of 824 px): the installed app's, the Apple touch icon, the favicons
+  and the sidebar's logo. Your installed app picks it up at Chrome's next icon check (it may ask first).
 
 ## [0.25.2] - 2026-10-25
 

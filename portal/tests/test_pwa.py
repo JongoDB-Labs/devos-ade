@@ -213,6 +213,25 @@ def test_maskable_icons_keep_the_torus_in_the_safe_circle():
                     assert max(row[4 * x:4 * x + 3]) < 24, (name, x, y)
 
 
+def test_the_torus_is_the_devos_apps_size_on_its_tile():
+    # DevOS Companion's and DevOS Mobile's Dock icon: the torus 458 px wide on the 824 px tile (55.6 %). Measured on the
+    # torus's coloured pixels, the way that number was measured: the Dock icon (on macOS's tile) and the full-bleed
+    # icons the system masks (the installed app's, the Apple touch icon) all have it at that share of their tile.
+    def torus_width(name: str) -> int:
+        w, _, rows = png_rgba((STATIC / "icons" / name).read_bytes())
+        cols = set()
+        for row in rows:
+            for x in range(w):
+                r, g, b, a = row[4 * x:4 * x + 4]
+                if a > 200 and max(r, g, b) > 70 and max(r, g, b) - min(r, g, b) > 12:
+                    cols.add(x)
+        return max(cols) - min(cols) + 1
+    assert appicons.TORUS_ON_TILE == 458 / 824
+    for name, tile in (("app-1024.png", 824), ("app-512.png", 412), ("app-maskable-512.png", 512),
+                       ("app-touch-180.png", 180)):
+        assert abs(torus_width(name) / tile - 458 / 824) < 0.015, (name, torus_width(name), tile)
+
+
 def test_committed_icons_are_the_ones_rendered_from_the_source():
     # render-icons.sh (python -m portal.appicons) records Pillow's version, the source's sha256 and each file it wrote
     recorded, renderer = {}, ""

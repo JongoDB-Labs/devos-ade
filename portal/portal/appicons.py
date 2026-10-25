@@ -56,14 +56,19 @@ GLYPH_SVG_PX = 128
 FULL_BLEED = {"maskable", "apple"}
 TILE = (0, 0, 0)
 
+# The torus's width as a share of its tile, as the DevOS apps show it: DevOS Companion's icon as macOS draws it in the
+# Dock (Icon Composer, from the same icon.json, scale 0.8; DevOS Mobile's is the same) has the torus 458 px wide on its
+# 824 px tile. (Icon Composer's scale is not that share: read as one, the torus came out at 79 %, far larger.)
+TORUS_ON_TILE = 458 / 824
+
 # kind -> (the torus's width as a share of the square, the tile: (half its side as a share of the square, its
 # superellipse exponent), or None for the whole square)
 PLACE = {
-    "icon": (0.8 * 824 / 1024, (412 / 1024, 5.0)),   # icon.json's scale 0.8, on macOS's 824 px tile
-    "maskable": (0.73, None),                         # its farthest pixel 0.39 of the side from the centre
-    "apple": (0.8, None),
-    "glyph": (0.9, (0.5, 4.2)),
-    "mono": (0.73, None),
+    "icon": (TORUS_ON_TILE * 824 / 1024, (412 / 1024, 5.0)),   # on macOS's 824 px tile
+    "maskable": (TORUS_ON_TILE, None),   # its farthest pixel 0.31 of the side from the centre: inside the 0.40 circle
+    "apple": (TORUS_ON_TILE, None),
+    "glyph": (TORUS_ON_TILE, (0.5, 4.2)),
+    "mono": (TORUS_ON_TILE, None),
 }
 
 
@@ -143,6 +148,7 @@ def main() -> None:
     from PIL import Image
 
     torus = Image.open(SOURCE).convert("RGBA")
+    torus = torus.crop(torus.getbbox())   # the torus itself, without the picture's margin: PLACE's shares are of it
     sha = lambda b: hashlib.sha256(b).hexdigest()  # noqa: E731
     lines = [f"# Pillow {PIL.__version__}", f"{sha(SOURCE.read_bytes())}  brand/AppIcon.icon/Assets/torus-teal.png"]
     ICON_DIR.mkdir(parents=True, exist_ok=True)
