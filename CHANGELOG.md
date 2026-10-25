@@ -31,6 +31,17 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ### Fixed
 
+- **Experiential Labs:** a conversation's second message no longer fails after a model's reasoning. On the Code page
+  (and with `claude-bedrock`), a model that answered with its reasoning (a "Thought" block, e.g.
+  `xl/glm-5.3-uncensored:free`) got the next message refused: `400 … Invalid value for 'messages.3.thinking_blocks'`.
+  Claude Code sends the earlier answer back with its thinking, and LiteLLM put that in a field of its own the gateway
+  does not take. The gateway now gets the history without LiteLLM's own fields (`thinking_blocks`,
+  `provider_specific_fields`), the earlier thinking as `reasoning_content` — the gateway's field for it: it keeps the
+  model's thinking on the lanes that use it and is dropped with a disclosure elsewhere, never refused. A call LiteLLM
+  moves to the gateway's Responses API (GPT-5.4 and later with tools and thinking) is unchanged: there LiteLLM sends
+  that thinking as reasoning items, which the gateway takes. Chat (Open WebUI) sends an earlier answer as plain text;
+  its history goes through the same cleaning. `tests/e2e/explabs.sh --mock` now sends a
+  second message after thinking, and its stand-in refuses LiteLLM's fields as the gateway does.
 - **Experiential Labs:** a refresh of the model list killed hard (the computer shut down, SIGKILL) left its temp
   folder in `.state/` (`explabs-tmp.…`); the next refresh removes those older than 10 minutes, and only those. Where
   `ps` gives no process start times (BusyBox), the background refresh's pid file takes its process's start time from

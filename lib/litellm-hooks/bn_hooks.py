@@ -23,7 +23,11 @@ For the Experiential Labs gateway's models (lib/explabs.sh: model_info bn_xl: tr
   hook (GPT-5.4 and later names with a reasoning effort and function tools: LiteLLM's responses_api_bridge_check) keeps
   its cap at the top level instead, under the model's field, since that move leaves extra_body behind; LiteLLM sends it
   as max_output_tokens. The parameters of its additional_drop_params — what the gateway's details say it does not
-  take — are left out, extra_body included (LiteLLM drops the others itself).
+  take — are left out, extra_body included (LiteLLM drops the others itself). The history goes without LiteLLM's own
+  fields, which the gateway refuses: an earlier answer's thinking that Claude Code replays (LiteLLM's /v1/messages
+  translation puts it in thinking_blocks) goes as reasoning_content, the gateway's field for it, and
+  provider_specific_fields is left out (a call moved to the Responses API keeps them: LiteLLM makes reasoning items of
+  that thinking there).
 - After it: the cost LiteLLM books is the one the gateway reported for the call (usage.cost, USD), $0 when the call ran
   on your own provider key (usage.is_byok), never one computed from the list prices in the config. (A streamed reply's
   usage.cost is booked by LiteLLM itself.)
@@ -176,27 +180,78 @@ def xl_request(kwargs: dict) -> dict:
     extra = kwargs.get("extra_body")
     if isinstance(extra, dict) and drop & extra.keys():
         kwargs["extra_body"] = extra = {k: v for k, v in extra.items() if k not in drop}
+    route = _route(kwargs)
     if cap is not None:
-        if _goes_to_responses(kwargs):
+        if route != "chat":
             kwargs[field] = cap
         else:
             kwargs["extra_body"] = {**(extra if isinstance(extra, dict) else {}), field: cap}
+    # the history, for the gateway's Chat Completions: without LiteLLM's own fields. (A call LiteLLM moves to the
+    # Responses API keeps them: LiteLLM turns thinking_blocks into the Responses API's reasoning items there, and sends
+    # none of those fields itself.)
+    messages = kwargs.get("messages")
+    if route != "responses" and isinstance(messages, list):
+        kwargs["messages"] = [xl_message(m) for m in messages]
     return kwargs
 
 
-def _goes_to_responses(kwargs: dict) -> bool:
-    """Whether LiteLLM will move this Chat Completions call (KWARGS as the hook leaves them) to the Responses API, which
-    does not carry extra_body: its own check, asked as it will ask it. Without that check (another LiteLLM) or on any
-    error: True, so the cap stays at the top level under the model's field, never lost."""
+# LiteLLM's own fields on a message, which the gateway's Chat Completions refuses ("Invalid value for
+# 'messages.3.thinking_blocks'"): an earlier answer's thinking, replayed by Claude Code (LiteLLM's /v1/messages
+# translation puts it there), and what a provider attached to a message or a tool call
+_XL_MESSAGE_ONLY_LITELLM = ("thinking_blocks", "provider_specific_fields")
+
+
+def xl_message(m):
+    """Message M as the gateway's Chat Completions takes it: a copy without LiteLLM's own fields, the thinking of an
+    earlier answer as reasoning_content (the gateway's field for it: replayed verbatim it keeps the model's thinking
+    on the lanes that use it, and any other route drops it with a disclosure, never a 400). A message without any of
+    them: M itself."""
+    if not isinstance(m, Mapping):
+        return m
+    calls = m.get("tool_calls")
+    dirty_calls = isinstance(calls, list) and any(
+        isinstance(c, Mapping) and ("provider_specific_fields" in c or (
+            isinstance(c.get("function"), Mapping) and "provider_specific_fields" in c["function"])) for c in calls)
+    if not dirty_calls and not any(k in m for k in _XL_MESSAGE_ONLY_LITELLM):
+        return m
+    out = {k: v for k, v in m.items() if k not in _XL_MESSAGE_ONLY_LITELLM}
+    if not out.get("reasoning_content"):
+        blocks = m.get("thinking_blocks")
+        text = "\n".join(b["thinking"] for b in blocks if isinstance(b, Mapping) and b.get("type") == "thinking"
+                         and isinstance(b.get("thinking"), str) and b["thinking"]) if isinstance(blocks, list) else ""
+        if text:
+            out["reasoning_content"] = text
+    if dirty_calls:
+        out["tool_calls"] = [_xl_tool_call(c) for c in calls]
+    return out
+
+
+def _xl_tool_call(c):
+    if not isinstance(c, Mapping):
+        return c
+    out = {k: v for k, v in c.items() if k != "provider_specific_fields"}
+    f = out.get("function")
+    if isinstance(f, Mapping) and "provider_specific_fields" in f:
+        out["function"] = {k: v for k, v in f.items() if k != "provider_specific_fields"}
+    return out
+
+
+def _route(kwargs: dict) -> str | None:
+    """Where LiteLLM will send this Chat Completions call (KWARGS as the hook leaves them): "responses" when it moves it
+    to the Responses API (which carries neither extra_body nor the messages' fields as they are), "chat" when it does
+    not — its own check, asked as it will ask it; None without that check (another LiteLLM) or on any error. The cap
+    then stays at the top level, never lost, and the history is cleaned for Chat Completions, never refused."""
     try:
         from litellm.main import responses_api_bridge_check
         model = kwargs.get("model")
         info, _ = responses_api_bridge_check(
             model=model.removeprefix("openai/") if isinstance(model, str) else "", custom_llm_provider="openai",
             tools=kwargs.get("tools"), reasoning_effort=kwargs.get("reasoning_effort"), api_base=kwargs.get("api_base"))
-        return not isinstance(info, Mapping) or info.get("mode") == "responses"
-    except Exception:  # noqa: BLE001 — never a lost cap because of this check
-        return True
+        if not isinstance(info, Mapping):
+            return None
+        return "responses" if info.get("mode") == "responses" else "chat"
+    except Exception:  # noqa: BLE001 — never a lost cap or a refused history because of this check
+        return None
 
 
 def _usage_field(usage, name):

@@ -711,6 +711,65 @@ else:   # no check to ask: at the top level, under its field
   PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$TMP/h" python3 -c "$py" none
 }
 
+# Claude Code's second message after a model's reasoning: it replays the earlier answer with its thinking, and LiteLLM's
+# /v1/messages translation puts that in thinking_blocks (and tool calls' provider_specific_fields), which the gateway's
+# Chat Completions refuses with a 400 ("Invalid value for 'messages.3.thinking_blocks'"). The gateway gets the history
+# without them, the thinking as reasoning_content; a call LiteLLM moves to the Responses API keeps them (it makes
+# reasoning items of them); another deployment's call is never touched.
+test_litellm_hook_sends_the_gateway_a_replayed_history_without_litellms_own_fields() {
+  _hook || return $?
+  local py='
+import asyncio, copy, enum, json, sys, bn_hooks as h
+class CallTypes(enum.Enum):
+    acompletion = "acompletion"
+run = lambda kw: asyncio.run(h.proxy_handler_instance.async_pre_call_deployment_hook(kw, CallTypes.acompletion))
+mi = {"bn_xl": True, "bn_xl_max_tokens": "max_completion_tokens"}
+sig = "litellm_encrypted_reasoning:" + "x" * 40
+history = [
+    {"role": "system", "content": "be brief"},
+    {"role": "user", "content": "first question"},
+    # as LiteLLM 1.105.0 translates an answer that had thinking: thinking_blocks, and reasoning_content from them
+    {"role": "assistant", "content": "first answer", "reasoning_content": "Thought about it",
+     "thinking_blocks": [{"type": "thinking", "thinking": "Thought about it", "signature": "sig-1"}]},
+    {"role": "user", "content": [{"type": "text", "text": "second", "cache_control": {"type": "ephemeral"}}]},
+    # thinking alone (no reasoning_content), a redacted block, and a tool call with a provider'"'"'s fields
+    {"role": "assistant", "content": None, "thinking_blocks": [{"type": "redacted_thinking", "data": "opaque"},
+        {"type": "thinking", "thinking": "Step one", "signature": sig}, {"type": "thinking", "thinking": "Step two"}],
+     "provider_specific_fields": {"refusal": None},
+     "tool_calls": [{"id": "c1", "type": "function", "provider_specific_fields": {"a": 1},
+                     "function": {"name": "Read", "arguments": "{}", "provider_specific_fields": {"thought_signature": "t"}}}]},
+    {"role": "tool", "tool_call_id": "c1", "content": "file"},
+    {"role": "assistant", "content": "no thinking here", "thinking_blocks": None},
+    {"role": "user", "content": "third"},
+]
+kw = {"model": "openai/glm-5.3-uncensored:free", "model_info": mi, "messages": copy.deepcopy(history), "max_tokens": 9}
+out = run(kw)
+m = out["messages"]
+flat = json.dumps(m)
+assert "thinking_blocks" not in flat and "provider_specific_fields" not in flat, flat
+assert m[2] == {"role": "assistant", "content": "first answer", "reasoning_content": "Thought about it"}, m[2]
+assert m[4]["reasoning_content"] == "Step one\nStep two", m[4]                    # (a redacted block has no text)
+assert m[4]["tool_calls"] == [{"id": "c1", "type": "function", "function": {"name": "Read", "arguments": "{}"}}], m[4]
+assert m[6] == {"role": "assistant", "content": "no thinking here"}, m[6]
+for i in (0, 1, 3, 5, 7):                                                            # the rest exactly as it came
+    assert m[i] == history[i], (i, m[i])
+assert kw["messages"] == history, "the hook changed the messages it was given"      # (a copy: never in place)
+if sys.argv[1] == "check":
+    # a call LiteLLM moves to the Responses API: LiteLLM makes reasoning items of thinking_blocks there
+    T = [{"type": "function", "function": {"name": "f", "parameters": {"type": "object"}}}]
+    moved = {"model": "openai/gpt-5.5", "model_info": mi, "messages": copy.deepcopy(history), "tools": T, "reasoning_effort": "high"}
+    assert run(moved)["messages"] == history
+# another deployment: as it came
+other = {"model": "openai/x", "model_info": {"id": "1"}, "messages": copy.deepcopy(history)}
+assert run(other)["messages"] == history
+'
+  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$TMP/h" python3 -c "$py" check
+  # without LiteLLM's check, or when it fails: cleaned (a Chat Completions history is never refused)
+  rm -f "$TMP/h/litellm/main.py"; PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$TMP/h" python3 -c "$py" none
+  printf 'def responses_api_bridge_check(**kw):\n    raise RuntimeError("changed")\n' > "$TMP/h/litellm/main.py"
+  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$TMP/h" python3 -c "$py" none
+}
+
 test_litellm_hook_books_the_cost_the_gateway_reported() {
   _hook || return $?
   PYTHONPATH="$TMP/h" python3 -c '

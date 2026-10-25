@@ -18,8 +18,9 @@
 # reported (usage.cost; $0 with usage.is_byok); and the key is nowhere — not in the rendered config, the results, the
 # answer, the container's log, this run's output. With --mock also: what the stand-in got (no refused parameter, the
 # output cap under max_completion_tokens; as max_tokens for gpt-5.1-codex, which names it), a streamed answer, Claude
-# Code's /v1/messages (with extended thinking too: Chat Completions under the model's own id; with thinking and tools
-# on xl/gpt-5.5, the Responses API with its cap as max_output_tokens), a BYOK call booked at $0, and a catalog that
+# Code's /v1/messages (with extended thinking too: Chat Completions under the model's own id, and a second message that
+# replays the first answer's thinking — the stand-in refuses LiteLLM's thinking_blocks with the gateway's 400; with
+# thinking and tools on xl/gpt-5.5, the Responses API with its cap as max_output_tokens), a BYOK call booked at $0, and a catalog that
 # streams slowly (the stand-in on this computer's 127.0.0.1, real curl): timed out, said, the details read before kept.
 #
 # The key is only ever in this process's environment and the container's: E2E_EXPLABS_API_KEY is read here, handed to
@@ -39,7 +40,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --mock) MOCK=1; shift ;;
     --out) OUT="${2:?--out DIR}"; shift 2 ;;
-    -h | --help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h | --help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1 (tests/e2e/explabs.sh --help)" >&2; exit 2 ;;
   esac
 done
@@ -316,6 +317,26 @@ sys.exit(0 if d["path"] == "/v1/responses" and b.get("model") == "gpt-5.5" and b
 d = json.loads(sys.stdin.read()); sys.exit(0 if d["path"] == "/v1/chat/completions" and d["body"].get("model") == "claude-fable-5" else 1)' &&
     ok "/v1/messages with extended thinking on xl/claude-fable-5: Chat Completions, under the model's own id" ||
     fail "/v1/messages with thinking (HTTP $code): $(head -c 300 "$WORK/think.json" | _mask) — the gateway got: $(tail -n 1 "$WORK/reqs.jsonl" | head -c 300)"
+  # the conversation's second message: Claude Code replays the first answer with its thinking (LiteLLM's translation
+  # puts it in thinking_blocks, which the gateway — and the stand-in — refuse with a 400); the gateway gets it as
+  # reasoning_content, and nothing of LiteLLM's own
+  python3 -I - "$WORK/think.json" > "$WORK/think2.req" <<'PY'
+import json, sys
+first = json.load(open(sys.argv[1]))
+content = [b for b in first.get("content") or [] if isinstance(b, dict)]
+if not any(b.get("type") == "thinking" for b in content):   # (an answer without one: replay one as Claude Code would)
+    content = [{"type": "thinking", "thinking": "Thought about it", "signature": "c2lnbmF0dXJl"}] + content
+print(json.dumps({"model": "xl/claude-fable-5", "max_tokens": 32000, "thinking": {"type": "enabled", "budget_tokens": 4096},
+                  "messages": [{"role": "user", "content": "hi"}, {"role": "assistant", "content": content},
+                               {"role": "user", "content": "and again"}]}))
+PY
+  code="$(_call /v1/messages "$WORK/think2.req" "$WORK/think2")"
+  docker exec "$NAME" cat /tmp/reqs.jsonl > "$WORK/reqs.jsonl" 2>/dev/null || : > "$WORK/reqs.jsonl"
+  [ "$code" = 200 ] && grep -q 'test OK' "$WORK/think2.json" && tail -n 1 "$WORK/reqs.jsonl" | python3 -I -c 'import json, sys
+d = json.loads(sys.stdin.read()); m = d["body"]["messages"]; a = [x for x in m if x.get("role") == "assistant"]
+sys.exit(0 if d["path"] == "/v1/chat/completions" and "thinking_blocks" not in json.dumps(m) and a and a[0].get("reasoning_content") else 1)' &&
+    ok "a second message replaying the first answer's thinking: the gateway got it as reasoning_content, no thinking_blocks" ||
+    fail "the second message after thinking (HTTP $code): $(head -c 300 "$WORK/think2.json" | _mask) — the gateway got: $(tail -n 1 "$WORK/reqs.jsonl" | head -c 600)"
 fi
 
 # --- the key, nowhere ---

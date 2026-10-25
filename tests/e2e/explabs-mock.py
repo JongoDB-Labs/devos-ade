@@ -4,8 +4,11 @@ on 127.0.0.1 only; for its check of a slow catalog, on this computer's 127.0.0.1
 model of the public catalog) answers CATALOG_DIR/<id>.json, 404 without one — slowly (a few bytes every half second,
 about 20 s in all) for an id SLOW_FILE lists, when that file exists. POST /v1/chat/completions and /v1/responses answer
 like the gateway — "DevOS ADE test OK", usage with cost (USD) and is_byok (true for a model whose id holds "byok") —
-streamed or not, and each request body is appended to a JSONL file for the script to check. Never the key: only
-"Bearer" is looked for in the header.
+streamed or not, and each request body is appended to a JSONL file for the script to check. A Chat Completions request
+with a reasoning effort is answered with the model's reasoning too (reasoning_content, as the gateway's reasoning lanes
+return it); one whose history carries LiteLLM's own fields (thinking_blocks, provider_specific_fields) is refused with
+the gateway's 400 ("Invalid value for 'messages.3.thinking_blocks'"). Never the key: only "Bearer" is looked for in the
+header.
 Usage: python3 explabs-mock.py PORT LOG V1_JSON CATALOG_DIR [SLOW_FILE]
 """
 
@@ -103,6 +106,10 @@ class Gateway(BaseHTTPRequestHandler):
                                   ("response.output_text.delta", {"type": "response.output_text.delta", "item_id": "msg_1", "output_index": 0, "content_index": 0, "delta": "DevOS ADE test OK"}),
                                   ("response.completed", {"type": "response.completed", "response": resp})])
             return self._json(200, resp)
+        bad = _litellm_field(body.get("messages"))
+        if bad:
+            return self._json(400, {"error": {"message": f"Invalid value for '{bad}'", "type": "invalid_request_error",
+                                              "param": bad, "code": "invalid_value"}})
         usage = {"prompt_tokens": 58, "completion_tokens": 48, "total_tokens": 106,
                  "completion_tokens_details": {"reasoning_tokens": 38}, "cost": cost, "is_byok": byok}
         if body.get("stream"):
@@ -111,9 +118,27 @@ class Gateway(BaseHTTPRequestHandler):
                               ("", {**base, "choices": [{"index": 0, "delta": {"content": "test OK"}, "finish_reason": None}]}),
                               ("", {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}),
                               ("", {**base, "choices": [], "usage": usage, "provider": "experiential_cloud"})])
+        message = {"role": "assistant", "content": "DevOS ADE test OK"}
+        if body.get("reasoning_effort"):
+            message["reasoning_content"] = "Thought about it"
         self._json(200, {"id": "gen-1", "object": "chat.completion", "created": now, "model": body.get("model"),
-                         "choices": [{"index": 0, "message": {"role": "assistant", "content": "DevOS ADE test OK"}, "finish_reason": "stop"}],
+                         "choices": [{"index": 0, "message": message, "finish_reason": "stop"}],
                          "usage": usage, "provider": "experiential_cloud"})
+
+
+def _litellm_field(messages):
+    """The first of LiteLLM's own fields in MESSAGES, as the gateway names it (messages.3.thinking_blocks), or None."""
+    for i, m in enumerate(messages if isinstance(messages, list) else []):
+        if not isinstance(m, dict):
+            continue
+        for k in ("thinking_blocks", "provider_specific_fields"):
+            if m.get(k) is not None:
+                return f"messages.{i}.{k}"
+        for j, c in enumerate(m.get("tool_calls") or []):
+            if isinstance(c, dict) and (c.get("provider_specific_fields") is not None or
+                                        (c.get("function") or {}).get("provider_specific_fields") is not None):
+                return f"messages.{i}.tool_calls.{j}.provider_specific_fields"
+    return None
 
 
 ThreadingHTTPServer(("127.0.0.1", PORT), Gateway).serve_forever()
