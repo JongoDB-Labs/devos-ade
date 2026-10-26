@@ -3097,12 +3097,15 @@ def settings_providers(ctx):
         else:
             expect(act == "subscriptions-open" and step.inner_text() == ("Open in the terminal" if t["signed_in"] == "yes" else "Sign in"),
                    f"{t['id']}: next step {act} {step.inner_text()!r}")
-    # Search: Claude Code's WebSearch (the backend in use, or why none) and a card for each backend (lib/websearch.sh:
-    # the snapshot's choices.websearch), each with its state, what it adds and its one action (a form, cancelled)
+    # Search: Claude Code's WebSearch (the backend in use and why, or why none) and a card for each option (lib/websearch.sh:
+    # the snapshot's choices.websearch) — the built-in SearXNG first (its switch), then the others — each with its state,
+    # what it adds, its one action (a form, cancelled; the built-in one's switch) and its info button (what it costs and
+    # sends, how steady and private it is, where its key comes from: opened by a click, closed by Escape)
     ws = d["snapshot"]["choices"].get("websearch") or {}
-    for key, name in (("WEBSEARCH_BACKEND", "Web search"), ("WEBSEARCH_AGENTCORE_GATEWAY", "AgentCore Web Search"),
-                      ("WEBSEARCH_TAVILY_API_KEY", "Tavily"), ("WEBSEARCH_BRAVE_API_KEY", "Brave Search"),
-                      ("WEBSEARCH_PERPLEXITY_API_KEY", "Perplexity"), ("WEBSEARCH_SEARXNG_URL", "SearXNG")):
+    for key, name, b in (("WEBSEARCH_BACKEND", "Web search", ""), ("WEBSEARCH_SEARXNG_BUILTIN", "Built-in SearXNG", "builtin"),
+                         ("WEBSEARCH_AGENTCORE_GATEWAY", "AgentCore Web Search", "agentcore"), ("WEBSEARCH_TAVILY_API_KEY", "Tavily", "tavily"),
+                         ("WEBSEARCH_BRAVE_API_KEY", "Brave Search", "brave"), ("WEBSEARCH_PERPLEXITY_API_KEY", "Perplexity", "perplexity"),
+                         ("WEBSEARCH_SEARXNG_URL", "Your own SearXNG", "searxng")):
         card = sec.locator(f".set-dep.set-prov > .set-row[data-key={key}]")
         expect(card.count() == 1, f"{name}: no card")
         expect(card.locator(".set-name").first.inner_text() == name, f"{key}'s card is not named {name}")
@@ -3111,16 +3114,51 @@ def settings_providers(ctx):
         if key == "WEBSEARCH_BACKEND":
             expect((state in ("On", "Needs a step")) if ws.get("backend") else state == "Off", f"{name}: {state!r} with backend {ws.get('backend')!r}")
             expect(("WebSearch searches with" in adds) if ws.get("backend") else ("WebSearch says it is not available" in adds), f"{name}: {adds!r}")
+            if ws.get("reason"):
+                expect(ws["reason"] in adds, f"{name}: {adds!r} says not why ({ws['reason']!r})")
+        elif b == "builtin":
+            expect(state in ("In use", "In use · needs a step", "On · not in use", "Off"), f"{name}: state {state!r}")
+            expect((state.startswith("In use")) == (ws.get("backend") == "builtin"), f"{name}: {state!r} with backend {ws.get('backend')!r}")
+            expect(("only the query goes to" in adds) if ws.get("backend") == "builtin" else bool(adds), f"{name}: {adds!r}")
         else:
             expect(state in ("In use", "In use · needs a step", "Set up", "Not set up", "Needs your AWS admin"), f"{name}: state {state!r}")
             expect("the queries" in adds, f"{name}: {adds!r} says not where the queries go")
-        btn = card.locator(":scope > .set-actions button.action:not([data-act])")
-        expect(btn.count() == 1 and btn.is_enabled() == can, f"{name}: its action {btn.all_inner_texts()}, enabled with the helper {'on' if can else 'off'}")
-        if can:
-            btn.click()
-            form = card.locator(".set-form")
-            expect(form.locator("input, select").count() >= 1, f"{name}: the form has no field")
-            form.locator("button", has_text="Cancel").click()
+        if b == "builtin":
+            sw = card.locator(":scope > .set-actions button.switch[role=switch]")
+            expect(sw.count() == 1 and sw.get_attribute("aria-checked") == ("true" if ws.get("builtin", {}).get("state") != "off" else "false"),
+                   f"{name}: its switch {sw.count()} {sw.first.get_attribute('aria-checked') if sw.count() else None}")
+            expect(sw.is_enabled() == can, f"{name}: its switch enabled with the helper {'on' if can else 'off'}")
+        else:
+            btn = card.locator(":scope > .set-actions button.action:not([data-act])")
+            expect(btn.count() == 1 and btn.is_enabled() == can, f"{name}: its action {btn.all_inner_texts()}, enabled with the helper {'on' if can else 'off'}")
+            if can:
+                btn.click()
+                form = card.locator(".set-form")
+                expect(form.locator("input, select").count() >= 1, f"{name}: the form has no field")
+                form.locator("button", has_text="Cancel").click()
+        if b:
+            info = card.locator(".set-label button.set-info-btn")
+            expect(info.count() == 1 and info.get_attribute("aria-expanded") == "false", f"{name}: no closed info button")
+            panel = card.locator(f"#set-ws-info-{b}")
+            expect(panel.count() == 1 and panel.is_hidden() and info.get_attribute("aria-controls") == f"set-ws-info-{b}", f"{name}: its info panel")
+            expect((info.get_attribute("aria-label") or "").startswith("About ") and "cost, what is sent, privacy" in info.get_attribute("aria-label"),
+                   f"{name}: info button's label {info.get_attribute('aria-label')!r}")
+            info.click()
+            expect(panel.is_visible() and info.get_attribute("aria-expanded") == "true", f"{name}: the info panel did not open")
+            dts = panel.locator("dt").all_inner_texts()
+            expect([t.upper() for t in dts[:3]] == ["COST", "WHAT IS SENT", "RELIABILITY AND PRIVACY"] and len(dts) == 4, f"{name}: info {dts}")
+            body = panel.inner_text()
+            expect("search query" in body, f"{name}: the info says not what is sent: {body[:200]!r}")
+            for a in panel.locator("a").all():
+                href = a.get_attribute("href") or ""
+                expect(href.startswith("https://") and a.get_attribute("target") == "_blank" and "noopener" in (a.get_attribute("rel") or ""),
+                       f"{name}: info link {href!r}")
+            cost = panel.locator("dd").first
+            if "$" in cost.inner_text():   # a price: the month it was checked, and its pricing page
+                expect("as of Oct 2026" in cost.inner_text() and cost.locator("a", has_text="pricing").count() == 1, f"{name}: a price without its page or month: {cost.inner_text()!r}")
+            info.focus()
+            page.keyboard.press("Escape")
+            expect(panel.is_hidden() and info.get_attribute("aria-expanded") == "false", f"{name}: Escape left the info open")
         said.append(f"{name}: {state}")
     shot(page, "17c-settings-providers")
     # the old places say where they went, and their links land on the card

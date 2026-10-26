@@ -76,6 +76,7 @@ bool	0	bad
 on_off	0	ok	on
 on_off	0	ok	off
 on_off	0	bad	true
+on_off	0	bad
 true_blank	0	ok	true
 true_blank	0	ok
 true_blank	0	bad	false
@@ -238,6 +239,8 @@ ws_backend	0	ok	auto
 ws_backend	0	ok	off
 ws_backend	0	ok	agentcore
 ws_backend	0	ok	searxng
+ws_backend	0	ok	builtin
+ws_backend	0	bad	Builtin
 ws_backend	0	bad	google
 ws_backend	0	bad	AUTO
 ws_backend	0	bad	tavily,brave

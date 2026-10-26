@@ -166,9 +166,10 @@ def snapshot(status_dir: Path) -> dict | None:
             "choices": choices, "keys": keys}
 
 
-WS_BACKENDS = ("", "agentcore", "tavily", "brave", "perplexity", "searxng")
+WS_BACKENDS = ("", "agentcore", "tavily", "brave", "perplexity", "searxng", "builtin")
 WS_STATUS = ("ok", "failed", "unverified", "unchecked", "off")
 WS_AGENTCORE = ("", "ready", "denied", "no-gateway", "no-target", "unverified")
+WS_ENGINE = re.compile(r"[a-z][a-z0-9 ._-]{0,30}")
 
 
 def _lines(v) -> list:
@@ -183,9 +184,16 @@ def _websearch(w) -> dict | None:
         return None
     ac = w.get("agentcore") if isinstance(w.get("agentcore"), dict) else {}
     gw = ac.get("gateway") if isinstance(ac.get("gateway"), str) and _WS_GATEWAY.fullmatch(ac["gateway"]) else ""
+    bi = w.get("builtin") if isinstance(w.get("builtin"), dict) else {}
+    engines = bi.get("engines") if isinstance(bi.get("engines"), list) else []
     return {"backend": w["backend"], "name": _s(w.get("name"), 80), "status": w["status"], "why": _s(w.get("why"), 300),
+            # why that one (auto's order, or WEBSEARCH_BACKEND by name); "" in an older snapshot
+            "reason": _s(w.get("reason"), 200),
             "checked_at": _s(w.get("checked_at"), 40), "fix": _lines(w.get("fix")),
-            "set_up": [b for b in (w.get("set_up") or []) if b in WS_BACKENDS and b][:5] if isinstance(w.get("set_up"), list) else [],
+            "set_up": [b for b in (w.get("set_up") or []) if b in WS_BACKENDS and b][:6] if isinstance(w.get("set_up"), list) else [],
+            # the built-in SearXNG: on or off, and the search engines it asks (by their SearXNG names)
+            "builtin": {"state": bi.get("state") if bi.get("state") in ("on", "off") else "",
+                        "engines": [e for e in engines if isinstance(e, str) and WS_ENGINE.fullmatch(e)][:12]},
             "agentcore": {"status": ac.get("status") if ac.get("status") in WS_AGENTCORE else "", "gateway": gw,
                           "why": _s(ac.get("why"), 300), "fix": _lines(ac.get("fix"))}}
 
@@ -550,8 +558,8 @@ VALIDATORS = {
     "stt_provider": _one_of("bedrock", "openai", "groq", "", msg="must be bedrock, openai, groq or blank (the browser)"),
     "stt_key": _stt_key, "stt_model": _stt_model, "or_key": _or_key, "or_mode": _or_mode, "int_1_5000": _int_1_5000,
     "xl_key": _xl_key, "xl_models": _xl_models,
-    "ws_backend": _one_of("", "auto", "off", "agentcore", "tavily", "brave", "perplexity", "searxng",
-                          msg="must be auto, off, agentcore, tavily, brave, perplexity or searxng (blank = auto)"),
+    "ws_backend": _one_of("", "auto", "off", "agentcore", "tavily", "brave", "perplexity", "searxng", "builtin",
+                          msg="must be auto, off, agentcore, tavily, brave, perplexity, searxng or builtin (blank = auto)"),
     "ws_gateway": _ws_gateway, "ws_key": _ws_key,
     "login": _login,
     "days": _range(1, 90, "must be a whole number of days from 1 to 90 (blank = 30)"),

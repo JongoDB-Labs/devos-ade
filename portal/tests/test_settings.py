@@ -378,9 +378,20 @@ def test_the_web_search_line_is_type_checked(dirs):
     w["agentcore"] = {"status": "ready", "gateway": gw, "why": "", "fix": []}
     write_snapshot(sd, choices={**CHOICES, "websearch": w})
     got = st.snapshot(sd)["choices"]["websearch"]
-    assert got == {"backend": "agentcore", "name": "Amazon Bedrock AgentCore Web Search", "status": "failed",
+    assert got == {"backend": "agentcore", "name": "Amazon Bedrock AgentCore Web Search", "status": "failed", "reason": "",
                    "why": "AWS refused bedrock-agentcore:InvokeGateway", "checked_at": "2026-10-26T06:00:00Z", "fix": w["fix"][:2],
-                   "set_up": ["agentcore", "tavily"], "agentcore": {"status": "ready", "gateway": gw, "why": "", "fix": []}}, got
+                   "set_up": ["agentcore", "tavily"], "builtin": {"state": "", "engines": []},
+                   "agentcore": {"status": "ready", "gateway": gw, "why": "", "fix": []}}, got
+    # the built-in SearXNG (the default): in use, why, its state and the engines it asks (names only)
+    b = {**w, "backend": "builtin", "name": "built-in SearXNG", "status": "ok", "reason": "auto: no key set up, so the built-in SearXNG",
+         "set_up": ["agentcore", "tavily", "brave", "perplexity", "searxng", "builtin"],
+         "builtin": {"state": "on", "engines": ["startpage", "yahoo", "yep", "mojeek", "<script>", 7, "a" * 40]}}
+    write_snapshot(sd, choices={**CHOICES, "websearch": b})
+    got = st.snapshot(sd)["choices"]["websearch"]
+    assert (got["backend"], got["reason"], got["set_up"][-1]) == ("builtin", "auto: no key set up, so the built-in SearXNG", "builtin"), got
+    assert got["builtin"] == {"state": "on", "engines": ["startpage", "yahoo", "yep", "mojeek"]}, got["builtin"]
+    write_snapshot(sd, choices={**CHOICES, "websearch": {**b, "builtin": {"state": "maybe", "engines": "startpage"}}})
+    assert st.snapshot(sd)["choices"]["websearch"]["builtin"] == {"state": "", "engines": []}
     # AgentCore's state: only its own words, and a gateway's URL only
     write_snapshot(sd, choices={**CHOICES, "websearch": {**w, "agentcore": {"status": "great", "gateway": "https://evil.example/mcp"}}})
     assert st.snapshot(sd)["choices"]["websearch"]["agentcore"] == {"status": "", "gateway": "", "why": "", "fix": []}

@@ -38,8 +38,11 @@
   // a row that stands for more than its key: named for what it shows (a provider's key: the provider)
   const ROW_LABEL = { RUSTFS_ACCESS_KEY: "Files (RustFS) key pair", STT_PROVIDER: "Speech-to-text", TERMINAL_ENABLED: "Browser terminal",
     REMOTE_MODE: "Remote access", AWS_ACCESS_KEY_ID: "Bedrock", OPENROUTER_API_KEY: "OpenRouter", EXPLABS_API_KEY: "Experiential Labs",
-    WEBSEARCH_BACKEND: "Web search", WEBSEARCH_AGENTCORE_GATEWAY: "AgentCore Web Search", WEBSEARCH_TAVILY_API_KEY: "Tavily",
-    WEBSEARCH_BRAVE_API_KEY: "Brave Search", WEBSEARCH_PERPLEXITY_API_KEY: "Perplexity", WEBSEARCH_SEARXNG_URL: "SearXNG" };
+    WEBSEARCH_BACKEND: "Web search", WEBSEARCH_SEARXNG_BUILTIN: "Built-in SearXNG", WEBSEARCH_AGENTCORE_GATEWAY: "AgentCore Web Search",
+    WEBSEARCH_TAVILY_API_KEY: "Tavily", WEBSEARCH_BRAVE_API_KEY: "Brave Search", WEBSEARCH_PERPLEXITY_API_KEY: "Perplexity",
+    WEBSEARCH_SEARXNG_URL: "Your own SearXNG" };
+  // a switch whose blank value means on (the stack's default; setup writes it): shown on while blank
+  const DEFAULT_ON = new Set(["WEBSEARCH_SEARXNG_BUILTIN"]);
   // Settings › Models & providers: a card for each provider. A key's card is its row (providerRow): MODELS, the
   // provider its models have in the snapshot's code_models (the pickers' list: litellm/code-models.tsv), and PICK,
   // where you pick which of them it adds. A provider of another kind (a web search backend) fits the same way: its
@@ -50,8 +53,11 @@
     OPENROUTER_API_KEY: { models: "OpenRouter", pick: ["OPENROUTER_MODELS", "OpenRouter's models"] },
     EXPLABS_API_KEY: { models: "Experiential Labs", pick: ["EXPLABS_MODELS", "the gateway's models"] },
     // Search: Claude Code's WebSearch (lib/websearch.sh; the snapshot's choices.websearch) — the backend it searches
-    // with now, then a card for each backend: AWS's own first, then your own key's, then SearXNG
+    // with now, then a card for each backend: the built-in SearXNG (the default, its switch), AWS's own, your own key's,
+    // then your own SearXNG. Each card's info button (wsInfo) says what a search costs, what is sent, how steady and
+    // private it is, and where its key comes from.
     WEBSEARCH_BACKEND: { on: () => Boolean(webSearch().backend), state: wsChoiceState, adds: wsChoiceAdds, off: wsChoiceOff, button: ["Change", "Change"] },
+    WEBSEARCH_SEARXNG_BUILTIN: wsCard("builtin", "the built-in SearXNG, and on to public search engines", "free"),
     WEBSEARCH_AGENTCORE_GATEWAY: wsCard("agentcore", "Amazon's web index, inside AWS", "$7 per 1,000 searches, on your AWS bill", ["Change gateway", "Set the gateway"]),
     WEBSEARCH_TAVILY_API_KEY: wsCard("tavily", "tavily.com", "about $0.008 a search at its list price"),
     WEBSEARCH_BRAVE_API_KEY: wsCard("brave", "search.brave.com", "about $0.005 a search at its list price"),
@@ -560,7 +566,7 @@
   const BLANK = { PORTAL_SESSION_DAYS: "30 days", BUDGET_ALERT_PCT: "80%", BACKUP_HOUR: hourRange(2), BACKUP_KEEP: "7",
     AUTO_UPDATE_HOUR: hourRange(3), OPENROUTER_MODELS: "all", OPENROUTER_MAX_MODELS: "1000", EXPLABS_MODELS: "qwen3.8-27b",
     TERMINAL_EGRESS: "Internet only",
-    WEBSEARCH_BACKEND: "automatic: the first one set up", TERMINAL_MEM_LIMIT: "4g", TERMINAL_AI_TOOLS: "all", REMOTE_MODE: "off", AWS_AUTH: "an access key", REMOTE_SUBNET: "10.255.255.248/29",
+    WEBSEARCH_BACKEND: "automatic: the first one you set up, else the built-in SearXNG", TERMINAL_MEM_LIMIT: "4g", TERMINAL_AI_TOOLS: "all", REMOTE_MODE: "off", AWS_AUTH: "an access key", REMOTE_SUBNET: "10.255.255.248/29",
     PORTAL_HOST: "bedrock-now.localhost", PORTAL_PORT: "80, else 8800", CHAT_HOST: "chat. + the portal's address",
     ADMIN_HOST: "admin. + the portal's address", FILES_HOST: "files. + the portal's address",
     TERMINAL_HOST: "terminal. + the portal's address", CODE_HOST: "code. + the portal's address",
@@ -572,7 +578,7 @@
     // (never chosen: the next setup or update turns it on — lib/code.sh code_default_on)
     if (k.key === "CODE_ENABLED" && (v === "blank" || v === "not set")) return "Off (on by default: the next setup or update turns it on)";
     if (k.validator === "bool" || k.validator === "true_blank") return v === "true" ? "On" : "Off";
-    if (k.validator === "on_off") return v === "on" ? "On" : "Off";
+    if (k.validator === "on_off") return v === "on" || (DEFAULT_ON.has(k.key) && (v === "blank" || v === "not set")) ? "On" : "Off";
     if (k.validator === "egress") return EGRESS_LABEL[egressMode(k.value)];
     if (k.secret === "S") return k.set ? "••••••••" : "Not set";
     if (!plain(k)) return v === "not set" ? "Not set" : v === "set" ? "Set" : v;
@@ -788,7 +794,8 @@
   // a switch: one button (role switch), its state in words next to it; a change asks for the password like any other
   function toggle(k, v, labelId) {
     const on = k.validator === "on_off" ? "on" : "true", off = k.validator === "on_off" ? "off" : (k.validator === "true_blank" ? "" : "false");
-    const cur = k.key === "REMOTE_PREVIEW" ? (remotePreviewOn() ? on : off) : v === on ? on : off;
+    const cur = k.key === "REMOTE_PREVIEW" ? (remotePreviewOn() ? on : off)
+      : v === on || (DEFAULT_ON.has(k.key) && (v === "blank" || v === "not set")) ? on : off;
     const other = cur === on ? off : on;
     const b = el("button", { type: "button", class: "switch", role: "switch", "aria-checked": String(cur === on), "aria-labelledby": labelId,
       "aria-describedby": `set-sum-${k.key}`, "data-state": cur === on ? "on" : "off" }, el("span", { class: "switch-track", "aria-hidden": "true" }, el("span", { class: "switch-thumb" })),
@@ -869,9 +876,18 @@
   // to do, the backends set up, and AgentCore Web Search's own state (its gateway, what your AWS admin runs)
   function webSearch() {
     const w = data && data.snapshot && data.snapshot.choices.websearch;
-    return w || { backend: "", name: "", status: "off", why: "", fix: [], set_up: [], agentcore: { status: "", gateway: "", why: "", fix: [] } };
+    return w || { backend: "", name: "", status: "off", reason: "", why: "", fix: [], set_up: [], builtin: { state: "", engines: [] },
+      agentcore: { status: "", gateway: "", why: "", fix: [] } };
   }
-  const WS_NAME = { agentcore: "AgentCore Web Search", tavily: "Tavily", brave: "Brave Search", perplexity: "Perplexity", searxng: "SearXNG" };
+  // each backend's name, as a sentence has it ("searches with the built-in SearXNG")
+  const WS_NAME = { builtin: "the built-in SearXNG", agentcore: "AgentCore Web Search", tavily: "Tavily", brave: "Brave Search", perplexity: "Perplexity",
+    searxng: "your own SearXNG" };
+  // the search engines the built-in SearXNG asks, by their SearXNG names (lib/websearch.sh WEBSEARCH_SEARXNG_ENGINES)
+  const WS_ENGINE = { startpage: "Startpage", yahoo: "Yahoo", yep: "Yep", mojeek: "Mojeek" };
+  const wsEngines = () => {
+    const e = (webSearch().builtin.engines || []).map((x) => WS_ENGINE[x] || x);
+    return e.length > 1 ? `${e.slice(0, -1).join(", ")} and ${e[e.length - 1]}` : e[0] || "public search engines";
+  };
   // lines of what to do, as ./stack says them: a command (aws …, ./stack …) as code with its Copy button
   function wsLines(lines) {
     const f = document.createDocumentFragment();
@@ -890,7 +906,7 @@
   function wsChoiceAdds() {
     const w = webSearch();
     const f = document.createDocumentFragment();
-    f.append(`Claude Code's WebSearch searches with ${WS_NAME[w.backend] || w.name} on every model: only the query goes there. `,
+    f.append(`Claude Code's WebSearch searches with ${WS_NAME[w.backend] || w.name} on every model${w.reason ? ` (${w.reason})` : ""}: only the query goes there. `,
       w.status === "ok" ? `Checked${w.checked_at ? ` ${new Date(w.checked_at).toLocaleDateString()}` : ""}: it answers.`
         : w.status === "failed" ? `It does not work yet: ${w.why}.` : "Not checked yet.");
     f.append(wsLines(w.fix));
@@ -911,22 +927,106 @@
       state: (k, on) => {
         const w = webSearch();
         if (b === "agentcore" && ["denied", "no-target"].includes(w.agentcore.status)) return ["Needs your AWS admin", "warn"];
-        return w.backend === b ? (w.status === "failed" ? ["In use · needs a step", "warn"] : ["In use", "on"]) : on ? ["Set up", "off"] : ["Not set up", "off"];
+        if (w.backend === b) return w.status === "failed" ? ["In use · needs a step", "warn"] : ["In use", "on"];
+        if (b === "builtin") return on ? ["On · not in use", "off"] : ["Off", "off"];
+        return on ? ["Set up", "off"] : ["Not set up", "off"];
       },
       adds: () => {
         const w = webSearch();
         const f = document.createDocumentFragment();
+        if (b === "builtin") {
+          f.append(w.backend === b ? `Claude Code's WebSearch searches with it: only the query goes to ${wsEngines()}, from this computer (free). `
+            : `On, standing by: WebSearch uses ${WS_NAME[w.backend] || "none"} now${w.reason ? ` (${w.reason})` : ""}. It takes over when none of yours is set up. `);
+          return f;
+        }
         f.append(w.backend === b ? `Claude Code's WebSearch searches with it: the queries go to ${where} (${cost}). ` : `Set up: the queries would go to ${where} (${cost}). WebSearch uses ${WS_NAME[w.backend] || "none"} now (the first one set up, or Web search's choice above). `);
         if (b === "agentcore" && w.agentcore.gateway && !(keys.WEBSEARCH_AGENTCORE_GATEWAY && keys.WEBSEARCH_AGENTCORE_GATEWAY.value)) f.append(`Its gateway, found by itself: ${w.agentcore.gateway}.`);
         return f;
       },
       off: () => {
         const f = document.createDocumentFragment();
+        if (b === "builtin") {
+          f.append("Off: no container runs. Switched on, it searches for Claude Code's WebSearch whenever none of yours is set up (free, no key).");
+          return f;
+        }
         f.append(`Sends nothing until it is set up; then Claude Code's WebSearch can search with it: the queries go to ${where} (${cost}).`);
         if (b === "agentcore") f.append(wsLines(webSearch().agentcore.fix));
         return f;
       },
     };
+  }
+  // What each search option costs, sends and is like, and where its key comes from: the info button next to its card's
+  // name opens it under the name (a disclosure, as the Sign in buttons' commands: aria-expanded and aria-controls, a
+  // click or a tap, Escape closes it). Prices as each one's own pricing page says them (checked in October 2026, linked);
+  // nothing is said here that its page does not say.
+  const WS_CHECKED = "as of Oct 2026";
+  const WS_INFO = {
+    builtin: {
+      cost: "Free: no key and no account.",
+      sent: () => `Only the search query, never your conversation or files: from this computer to ${wsEngines()}.`,
+      steady: "Those engines see this computer's internet address and may slow it down or refuse it after many searches; WebSearch then finds less for a while. A key below gives steadier results.",
+      get: ["Nothing to sign up for: it is on by default.", ["SearXNG's documentation", "https://docs.searxng.org/"]],
+    },
+    agentcore: {
+      cost: `$7 per 1,000 searches, plus $0.005 per 1,000 gateway calls, on your AWS bill; no free tier of its own (${WS_CHECKED}).`,
+      pricing: ["AWS pricing", "https://aws.amazon.com/bedrock/agentcore/pricing/"],
+      sent: "Only the search query, never your conversation or files, to Amazon's web search through your own AgentCore gateway.",
+      steady: "Amazon's own index. The query stays inside AWS, on the AWS key this stack already uses.",
+      get: ["No key: your AWS admin sets it up once (./stack websearch aws-setup prints the commands).", ["Setup steps", `${REPO}README.md#web-search-for-claude-code`]],
+    },
+    tavily: {
+      cost: `1,000 free searches a month; then $0.008 a search, or plans from $30 a month for 4,000 (${WS_CHECKED}).`,
+      pricing: ["Tavily pricing", "https://www.tavily.com/pricing"],
+      sent: "Only the search query, never your conversation or files, to Tavily with your key.",
+      steady: "A search API made for AI agents: steady results. Tavily sees your queries.",
+      get: ["", ["Get a key at app.tavily.com", "https://app.tavily.com/"]],
+    },
+    brave: {
+      cost: `$5 per 1,000 searches, with $5 of free credit each month: about 1,000 searches (${WS_CHECKED}).`,
+      pricing: ["Brave Search API pricing", "https://brave.com/search/api/"],
+      sent: "Only the search query, never your conversation or files, to Brave's Search API with your key.",
+      steady: "Brave's own independent index: steady results. Brave sees your queries.",
+      get: ["", ["Get a key at api-dashboard.search.brave.com", "https://api-dashboard.search.brave.com/register"]],
+    },
+    perplexity: {
+      cost: `$5 per 1,000 searches with its Search API, from prepaid credit; no free tier listed (${WS_CHECKED}).`,
+      pricing: ["Perplexity pricing", "https://docs.perplexity.ai/docs/getting-started/pricing"],
+      sent: "Only the search query, never your conversation or files, to Perplexity's Search API with your key.",
+      steady: "Steady results. Perplexity sees your queries.",
+      get: ["", ["Get a key at console.perplexity.ai", "https://console.perplexity.ai/"]],
+    },
+    searxng: {
+      cost: "Free: you run it.",
+      sent: "Only the search query, never your conversation or files, to your SearXNG, and from it to the engines it asks.",
+      steady: "As steady and as private as your instance and the engines it asks. Its JSON output must be on.",
+      get: ["", ["How to install SearXNG", "https://docs.searxng.org/admin/installation.html"]],
+    },
+  };
+  const extLink = ([text, href]) => el("a", { href, target: "_blank", rel: "noopener noreferrer", text });
+  // wsInfo(B) -> [the info button, its panel] for backend B's card (null for none)
+  function wsInfo(b) {
+    const i = WS_INFO[b];
+    if (!i) return null;
+    const name = b === "builtin" ? "the built-in SearXNG" : b === "searxng" ? "your own SearXNG" : WS_NAME[b];
+    const id = `set-ws-info-${b}`;
+    const btn = el("button", { type: "button", class: "set-info-btn", "aria-expanded": "false", "aria-controls": id,
+      "aria-label": `About ${name}: cost, what is sent, privacy`, title: "Cost, what is sent, privacy" },
+    el("span", { "aria-hidden": "true", text: "i" }));
+    const dd = (...parts) => el("dd", {}, ...parts.filter((x) => x !== "" && x !== null && x !== undefined));
+    const get = i.get || [];
+    const panel = el("div", { class: "set-ws-info", id, role: "region", "aria-label": `About ${name}`, hidden: true },
+      el("dl", {},
+        el("dt", { text: "Cost" }), dd(i.cost, i.pricing ? " " : "", i.pricing ? extLink(i.pricing) : null),
+        el("dt", { text: "What is sent" }), dd(typeof i.sent === "function" ? i.sent() : i.sent),
+        el("dt", { text: "Reliability and privacy" }), dd(i.steady),
+        el("dt", { text: b === "builtin" || b === "searxng" ? "Getting it" : b === "agentcore" ? "Setting it up" : "Where to get a key" }),
+        dd(get[0] || "", get[0] && get[1] ? " " : "", get[1] ? extLink(get[1]) : null)));
+    const show = (open) => { panel.hidden = !open; btn.setAttribute("aria-expanded", String(open)); };
+    btn.addEventListener("click", () => show(panel.hidden));
+    const esc = (e) => { if (e.key === "Escape" && !panel.hidden) { e.stopPropagation(); show(false); btn.focus(); } };
+    btn.addEventListener("keydown", esc);
+    panel.addEventListener("keydown", esc);
+    return [btn, panel];
   }
   // its state in a word or two next to its name: TONE on (it adds something now), warn (it needs a step) or off
   // (a badge, as the others next to a name: the page's tag style)
@@ -948,6 +1048,13 @@
     const label = $(".set-label", rw._main);
     const state = p.state ? p.state(k, on) : [!on ? (plain(k) ? "Off" : "Not set up") : p.adds || models.length ? "On" : "On · no models yet", !on ? "off" : p.adds || models.length ? "on" : "warn"];
     label.insertBefore(provState(...state), $(".set-badges", label));
+    // a search option's info button, after its state; its panel under the summary line
+    const info = p.backend ? wsInfo(p.backend) : null;
+    if (info) {
+      label.insertBefore(info[0], $(".set-badges", label));
+      const sum = $(".set-sum", rw._main);
+      if (sum) sum.after(info[1]); else rw._main.append(info[1]);
+    }
     // (without a key: its state says it, and Check (free) has nothing to check)
     if (!on) {
       const v = $(".set-value", rw._main);
@@ -1185,8 +1292,10 @@
       };
     } else if (k.validator === "ws_backend") {
       const sel = el("select", { id });
-      for (const [val, text] of [["", "Automatic: the first one set up (AgentCore Web Search, then your keys, then SearXNG)"], ["off", "Off: WebSearch says it is not available"],
-        ...Object.entries(WS_NAME).map(([b, n]) => [b, `${n} only`])]) {
+      const only = { builtin: "The built-in SearXNG only", agentcore: "AgentCore Web Search only", tavily: "Tavily only", brave: "Brave Search only",
+        perplexity: "Perplexity only", searxng: "Your own SearXNG only" };
+      for (const [val, text] of [["", "Automatic: the first one you set up (AgentCore Web Search, your keys, your SearXNG), else the built-in SearXNG"],
+        ["off", "Off: WebSearch says it is not available"], ...Object.entries(only)]) {
         const o = el("option", { value: val, text });
         if (val === (v === "auto" ? "" : v)) o.selected = true;
         sel.append(o);

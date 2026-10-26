@@ -198,6 +198,26 @@
 /* Search's cards (Claude Code's WebSearch): what to do, under what a card adds — a line of the page's note text, a command
    as code with its Copy (the design's tokens only, as .note and .set-cli have them) */
 .set-prov-adds > .set-extra { margin: 6px 0 0; }
+/* A search option's info: a round "i" button next to its name (24 px; 44 px of touch target on phones: the coarse
+   pointer rule below) opens a panel under the summary — cost, what is sent, reliability and privacy, where its key comes
+   from — a disclosure, never a hover-only tooltip */
+.set-info-btn { display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border-radius: var(--r-pill);
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--muted); cursor: pointer;
+  font: italic 600 13px/1 var(--font-display); }
+.set-info-btn:hover, .set-info-btn[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.set-info-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.set-ws-info { margin: 8px 0 2px; padding: 10px 12px; max-width: 70ch; border: 1px solid var(--line); border-radius: var(--r-m);
+  background: var(--bg); font-size: 13px; container-type: inline-size; }
+.set-ws-info[hidden] { display: none; }
+.set-ws-info dl { margin: 0; display: grid; grid-template-columns: minmax(0, 10em) minmax(0, 1fr); gap: 6px 12px; }
+.set-ws-info dt { font: 600 11.5px/1.6 var(--font-mono); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.set-ws-info dd { margin: 0; overflow-wrap: break-word; }
+.set-ws-info a { color: var(--accent); }
+/* (where the card's column is narrow — a phone, a tablet's column beside a switch — each label over its text) */
+@container (max-width: 479.98px) {
+  .set-ws-info dl { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .set-ws-info dd + dt { margin-top: 8px; }
+}
 .set-prov-adds > .set-cli { margin: 6px 0 0; }
 .set-prov-adds > .set-cli code { font: 12.5px/1.5 var(--font-mono); }
 
@@ -221,6 +241,9 @@
 @media (pointer: coarse) {
   .set-actions select, .set-form input, .set-form select, .set-find-input { min-height: 44px; }
   .switch { min-height: 44px; }
+  /* (the info button keeps its 24 px circle; its touch target is 44 px around it) */
+  .set-info-btn { position: relative; }
+  .set-info-btn::after { content: ""; position: absolute; inset: -10px; }
 }
 
 /* Narrow desktops and tablets: a narrower section list */

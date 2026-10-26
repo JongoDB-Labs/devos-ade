@@ -183,8 +183,8 @@ def test_sections_hold_what_their_task_needs():
     # (its models' rows inside it), then your subscriptions, then Search: Claude Code's WebSearch and a card for each of
     # its backends; none of them left in AWS & models, Chat & voice or Claude Code
     assert [k for k, r in rows.items() if r["section"] == "providers" and r["place"] == "main" and not r["parent"]] == \
-        ["AWS_ACCESS_KEY_ID", "OPENROUTER_API_KEY", "EXPLABS_API_KEY", "+subscriptions", "WEBSEARCH_BACKEND", "WEBSEARCH_AGENTCORE_GATEWAY",
-         "WEBSEARCH_TAVILY_API_KEY", "WEBSEARCH_BRAVE_API_KEY", "WEBSEARCH_PERPLEXITY_API_KEY", "WEBSEARCH_SEARXNG_URL"]
+        ["AWS_ACCESS_KEY_ID", "OPENROUTER_API_KEY", "EXPLABS_API_KEY", "+subscriptions", "WEBSEARCH_BACKEND", "WEBSEARCH_SEARXNG_BUILTIN",
+         "WEBSEARCH_AGENTCORE_GATEWAY", "WEBSEARCH_TAVILY_API_KEY", "WEBSEARCH_BRAVE_API_KEY", "WEBSEARCH_PERPLEXITY_API_KEY", "WEBSEARCH_SEARXNG_URL"]
     assert where("AWS_SECRET_ACCESS_KEY") == ("providers", "with", "AWS_ACCESS_KEY_ID")
     assert where("OPENROUTER_MODELS") == ("providers", "main", "OPENROUTER_API_KEY") and where("EXPLABS_MODELS") == ("providers", "main", "EXPLABS_API_KEY")
     assert where("OPENROUTER_MAX_MODELS") == where("OPENROUTER_INCLUDE_ALIASES") == ("providers", "more", "OPENROUTER_API_KEY")
@@ -379,18 +379,59 @@ def test_search_a_card_for_claude_codes_websearch_and_each_backend():
     rows = {r["key"]: r for r in st.layout(REAL.parent)["rows"]}
     table = _table()
     js = _js()
-    search = [k for k, r in rows.items() if k.startswith("WEBSEARCH_")]
-    assert search[0] == "WEBSEARCH_BACKEND" and all(rows[k]["section"] == "providers" for k in search)
+    search = [k for k, r in rows.items() if k.startswith("WEBSEARCH_") and r["section"] == "providers"]
+    assert search[0] == "WEBSEARCH_BACKEND" and search[1] == "WEBSEARCH_SEARXNG_BUILTIN"
+    # (the built-in SearXNG's secret: with the other generated secrets, never a card)
+    assert rows["WEBSEARCH_SEARXNG_SECRET"]["section"] == "advanced" and table["WEBSEARCH_SEARXNG_SECRET"][2:4] == ["S", "ro"]
     assert 'WEBSEARCH_BACKEND: "Search" }' in js   # (its group's head)
     provs = js[js.index("const PROVIDERS = {"):js.index("const GROUP_HEAD")]
     for k in search:
         assert f"{k}: " in provs, k
         assert table[k][3] == "local", k   # what is searched with, and where the queries go: from this computer only
-    for b, k in (("agentcore", "WEBSEARCH_AGENTCORE_GATEWAY"), ("tavily", "WEBSEARCH_TAVILY_API_KEY"), ("brave", "WEBSEARCH_BRAVE_API_KEY"),
-                 ("perplexity", "WEBSEARCH_PERPLEXITY_API_KEY"), ("searxng", "WEBSEARCH_SEARXNG_URL")):
+    for b, k in (("builtin", "WEBSEARCH_SEARXNG_BUILTIN"), ("agentcore", "WEBSEARCH_AGENTCORE_GATEWAY"), ("tavily", "WEBSEARCH_TAVILY_API_KEY"),
+                 ("brave", "WEBSEARCH_BRAVE_API_KEY"), ("perplexity", "WEBSEARCH_PERPLEXITY_API_KEY"), ("searxng", "WEBSEARCH_SEARXNG_URL")):
         assert f'{k}: wsCard("{b}",' in provs, k
     card = js[js.index("function wsCard(b, where, cost, button) {"):js.index("function providerRow(k, r) {")]
     assert "webSearch().set_up.includes(b)" in card and '["Needs your AWS admin", "warn"]' in card
+    # the built-in SearXNG: its switch (on by default: blank shows on), In use / On · not in use / Off
+    assert table["WEBSEARCH_SEARXNG_BUILTIN"][4] == "on_off" and table["WEBSEARCH_SEARXNG_BUILTIN"][5] == "websearch"
+    assert 'const DEFAULT_ON = new Set(["WEBSEARCH_SEARXNG_BUILTIN"]);' in js
+    assert '["On · not in use", "off"] : ["Off", "off"]' in card
+    # the WebSearch card says which one and why (lib/websearch.sh websearch_reason)
+    assert "w.reason ? ` (${w.reason})`" in js[js.index("function wsChoiceAdds() {"):js.index("function wsChoiceOff()")]
+    # each option's info: cost (a price only with its pricing page linked and the month it was checked), what is sent (the
+    # query only), reliability and privacy, where its key comes from — every option has one, every link an https one
+    info = js[js.index("const WS_INFO = {"):js.index("const extLink")]
+    names = re.findall(r"^    (\w+): \{$", info, re.M)
+    assert names == ["builtin", "agentcore", "tavily", "brave", "perplexity", "searxng"], names
+    for b in names:
+        block = info[info.index(f"    {b}: {{"):]
+        block = block[:block.index("\n    },")]
+        assert "cost:" in block and "sent:" in block and "steady:" in block and "get:" in block, b
+        assert "never your conversation" in block or b == "builtin", b
+        if "$" in block.split("sent:")[0]:   # a price: its page, and when it was checked
+            assert "pricing: [" in block and "${WS_CHECKED}" in block, b
+    assert 'const WS_CHECKED = "as of Oct 2026";' in js
+    assert "Only the search query, never your conversation or files: from this computer to" in info
+    for url in re.findall(r'"(https?://[^"]+)"', info):
+        assert url.startswith("https://"), url
+    assert set(re.findall(r'"https://([^/"]+)', info)) == {"docs.searxng.org", "aws.amazon.com", "www.tavily.com", "app.tavily.com", "brave.com",
+                                                          "api-dashboard.search.brave.com", "docs.perplexity.ai", "console.perplexity.ai"}
+    assert "${REPO}README.md#web-search-for-claude-code" in info
+    # the info button: a real button that says what it opens, keyboard (Escape) and screen readers (aria-expanded,
+    # aria-controls, a labelled region), opened by a click or a tap — never on hover alone; external links in a new tab
+    widget = js[js.index("function wsInfo(b) {"):js.index("const provState")]
+    for want in ('el("button", { type: "button", class: "set-info-btn", "aria-expanded": "false", "aria-controls": id,',
+                 '"aria-label": `About ${name}: cost, what is sent, privacy`', 'role: "region"', 'hidden: true',
+                 'btn.addEventListener("click", () => show(panel.hidden));', 'e.key === "Escape"', "btn.focus();"):
+        assert want in widget, want
+    assert "mouseover" not in widget and "mouseenter" not in widget
+    assert 'const extLink = ([text, href]) => el("a", { href, target: "_blank", rel: "noopener noreferrer", text });' in js
+    prow = js[js.index("function providerRow(k, r) {"):js.index("// --- the Code page")]
+    assert "const info = p.backend ? wsInfo(p.backend) : null;" in prow
+    css = _js("settings.css")
+    assert ".set-info-btn:focus-visible" in css and ".set-ws-info[hidden] { display: none; }" in css
+    assert re.search(r"@media \(pointer: coarse\) \{[^}]*\}[^@]*\.set-info-btn::after \{ content: \"\"; position: absolute; inset: -10px; \}", css)
     # the commands for your AWS admin as code, each with its Copy button
     lines = js[js.index("function wsLines(lines) {"):js.index("function wsChoiceState")]
     assert 'el("code", { text: line })' in lines and "copyButton(line" in lines
