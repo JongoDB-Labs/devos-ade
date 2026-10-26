@@ -371,6 +371,7 @@ def test_models_and_providers_a_card_for_each_key_and_sign_in():
     assert {"aws", "chat", "code"} <= set(re.findall(r'(\w+): \[\["', moved))
 
 
+@need_repo
 def test_search_a_card_for_claude_codes_websearch_and_each_backend():
     # Settings › Models & providers › Search (lib/websearch.sh): Claude Code's WebSearch — the backend it searches with
     # now, its check and what to do — then a card for each backend, AWS's own first; each says what it adds (real

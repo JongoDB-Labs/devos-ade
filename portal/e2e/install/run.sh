@@ -8,7 +8,8 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"; root="$(cd "$here/../../.." && pwd)"
 BASE=bedrock-now-portal-e2e-base-$$; E2E=bedrock-now-portal-e2e-$$
 trap 'docker rmi -f "$E2E" "$BASE" >/dev/null 2>&1 || true' EXIT
-docker build -q --target test -t "$BASE" "$root/portal" >/dev/null
+# (the test stage with the repository's files its tests check, as portal/test.sh builds it; without them, those tests skip)
+docker build -q --target test --build-context repo="$root" -t "$BASE" "$root/portal" >/dev/null
 docker build -q --build-arg BASE="$BASE" -t "$E2E" "$here" >/dev/null
 out=()
 if [ -n "${1:-}" ]; then mkdir -p "$1"; out=(-v "$(cd "$1" && pwd):/out"); fi

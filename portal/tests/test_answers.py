@@ -30,6 +30,9 @@ CODE = f"http://{CODE_HOST}"
 # (the repository's, or the copy the image's test stage gets: portal/Dockerfile, BN_REPO_DIR)
 CATALOG = Path(os.environ.get("BN_REPO_DIR") or Path(__file__).resolve().parents[2]) / "catalog" / "ai-tools.tsv"
 SETUP = CATALOG.parent / "setup-links.tsv"
+# The tests that read the real catalog's tools: in a checkout, or in the test image when portal/test.sh passes the
+# repository in (portal/Dockerfile: BN_REPO_DIR); a plain `docker build --target test portal` has none and skips them
+need_catalog = pytest.mark.skipif(not CATALOG.exists(), reason="the repository's catalog/ai-tools.tsv is not here: portal/test.sh passes it")
 H = {"X-Requested-With": "bedrock-now"}
 
 
@@ -62,6 +65,7 @@ def _status(s, body):
     (s.status_dir / "subscriptions.json").write_text(json.dumps(body) if not isinstance(body, str) else body)
 
 
+@need_catalog
 def test_the_catalog_lists_six_tools_each_checked(s):
     rows = answers.read_tools(s.catalog_dir)
     assert [r["id"] for r in rows] == ["claude", "codex", "gemini", "copilot", "cursor", "grok"]
@@ -76,6 +80,7 @@ def test_the_catalog_lists_six_tools_each_checked(s):
     assert [r["id"] for r in answers.read_tools(s.catalog_dir)] == ["cursor"]
 
 
+@need_catalog
 def test_only_the_sandboxs_words_are_kept(s):
     tok = "sk-ant-oat01-" + "x" * 40
     _status(s, {"version": 1, "written_at": 1792760000, "terminal": "running", "tools": [
@@ -109,6 +114,7 @@ def test_only_the_sandboxs_words_are_kept(s):
     assert answers.read_status(s.status_dir)["sandbox"] is None
 
 
+@need_catalog
 def test_api_answers_needs_a_session_and_says_where_the_terminal_is(s):
     _status(s, {"written_at": 1, "terminal": "running", "tools": [{"id": "codex", "installed": True, "version": "0.163.0", "signed_in": "no", "kind": "", "how": "command"}]})
     with _client(s) as c:
@@ -237,6 +243,7 @@ def _verify(c, tok, ut, uri, ws=False, accept="text/html", method="GET"):
     return c.get("/auth/verify?app=terminal", headers=h)
 
 
+@need_catalog
 def test_nothing_starts_from_an_address_alone(s):
     with _client(s) as c:
         tok, ut = _login_unlock(c)
@@ -323,6 +330,7 @@ def test_the_unlock_keeps_the_pickers_words_and_nothing_else(s):
         assert r.status_code == 303 and r.headers["location"] == "/"
 
 
+@need_catalog
 def test_the_code_pages_open_menu_goes_through_the_hand_off(s):
     with _client(s) as c:
         r = c.post("/login", data={"password": PW, "next": "/"}, headers={"Origin": PORTAL})
@@ -392,6 +400,7 @@ def _cap(s, subs=("subscriptions-check", "subscriptions-signout")):
     (s.status_dir / "helper.json").write_text(json.dumps({"heartbeat": int(time.time()), "pid": 1}))
 
 
+@need_catalog
 def test_settings_sends_check_and_sign_out_by_tool_only(s):
     _cap(s)
     with _client(s) as c:
@@ -428,6 +437,7 @@ def test_write_subs_action_is_exact(tmp_path):
             st.write_subs_action(tmp_path, "pw", *bad)
 
 
+@need_catalog
 def test_your_subscriptions_as_chat_models_while_they_can_answer(s):
     # (the terminal's sign-ins: every one in; Chat's own, apart — what a Chat model goes by)
     _status(s, {"version": 1, "written_at": 1792760000, "terminal": "running", "tools": [
@@ -566,6 +576,7 @@ def test_the_portals_own_setup_links_go_where_the_table_says():
         assert links[reason]["target"] == f"setting:{place}", (reason, place)
 
 
+@need_catalog
 def test_chat_models_follow_the_sandboxs_way_out_as_env_has_it_now(s):
     # (a change from Settings writes ./stack's snapshot at once; the portal is not restarted: /api/answers reads it)
     _status(s, {"written_at": 1, "terminal": "running", "tools": [{"id": "codex", "installed": True, "version": "1", "signed_in": "yes", "kind": "chatgpt", "how": "command"}]})
