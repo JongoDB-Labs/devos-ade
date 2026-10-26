@@ -2230,6 +2230,50 @@ def sidebar_collapse(ctx):
     expect(round(_settled_width(page, ".sidebar")["width"]) == 200, "Ctrl+\\ did not expand it")
     page.keyboard.press("Control+Backslash")
     expect(round(_settled_width(page, ".sidebar")["width"]) == 76, "Ctrl+\\ did not collapse it")
+    # each icon's name on keyboard focus as well as on hover: Tab from the button through the rail, each control with
+    # a title (its hover tooltip) shows the same words beside it (mobile.css: ::before, out of the rail)
+    page.focus("#nav-toggle")
+    named, seen = [], set()
+    for _ in range(30):
+        page.keyboard.press("Tab")
+        f = page.evaluate("""() => { const a = document.activeElement;
+          if (!a || !a.closest('.sidebar') || !a.getClientRects().length) return null;
+          const b = getComputedStyle(a, '::before');
+          return { id: a.dataset.tab || a.id || a.className.split(' ')[0] || a.textContent.trim(), title: a.title, content: b.content,
+                   pos: b.position, left: parseFloat(b.left), w: a.getBoundingClientRect().width,
+                   icon: a.matches('.tab, .side-search, .bell-btn, .tour-btn, .install-btn, .nav-toggle') }; }""")
+        if not f or f["id"] in seen:
+            break
+        seen.add(f["id"])
+        if not f["icon"]:   # (the version and Sign out show their words in the rail)
+            continue
+        named.append(f["id"])
+        expect(f["title"] and f["content"] == json.dumps(f["title"]) and f["pos"] == "absolute" and f["left"] > f["w"],
+               f"{f['id']}: no name beside it on focus ({f})")
+    expect({"home", "chat", "admin", "files", "settings", "search-btn", "tour-btn"} <= set(named), f"focus names: only {named}")
+    expect(page.get_attribute("#tour-btn", "title") == "Walkthrough", f"the walkthrough's button: {page.get_attribute('#tour-btn', 'title')!r}")
+    # the Code tab with the rail: its icon named, its frame (or its off page) takes the room; Ctrl+\ from its button
+    code_tab = page.locator(".tab[data-tab=code]")
+    code_note = "no Code tab"
+    if code_tab.count():
+        off = page.locator(".code-item.off").count() > 0
+        expect(code_tab.get_attribute("title") == ("Code (off)" if off else "Code"), f"the Code tab's name: {code_tab.get_attribute('title')!r}")
+        code_tab.click()
+        sel = "#code:not([hidden])" if off else "iframe[data-app=code]:not([hidden])"
+        page.wait_for_selector(sel, timeout=20000)
+        expect(code_tab.get_attribute("aria-current") == "page", "the Code tab is not the current one")
+        cw = _settled_width(page, sel)["width"]
+        expect(round(cw) == 1400 - 76, f"the Code {'page' if off else 'frame'}: {cw} px beside the rail (the window: 1400)")
+        shot(page, "19a-sidebar-collapsed-code")
+        code_tab.focus()
+        page.keyboard.press("Control+Backslash")
+        ew = _settled_width(page, sel)["width"]
+        expect(round(_settled_width(page, ".sidebar")["width"]) == 200 and round(ew) == 1400 - 200, f"Ctrl+\\ on Code: sidebar, {ew} px")
+        page.keyboard.press("Control+Backslash")
+        expect(round(_settled_width(page, ".sidebar")["width"]) == 76 and round(_settled_width(page, sel)["width"]) == 1400 - 76,
+               "Ctrl+\\ on Code did not collapse it again")
+        code_note = f"the Code tab ({'off page' if off else 'frame'} {cw:.0f} px, named, Ctrl+\\ both ways there)"
+        page.click(".tab[data-tab=home]")
     # the walkthrough beside the icons: the tablets' card; Escape closes it, the focus back on its button
     page.click("#tour-btn")
     page.wait_for_selector("#tour:not([hidden]) #tour-cur")
@@ -2271,7 +2315,8 @@ def sidebar_collapse(ctx):
     expect(not v and not probs, f"phone: CSP violations {v[:4]}, errors {probs[:6]}")
     return (f"button (aria-expanded, tooltip with Ctrl+\\) folds the {wide['width']:.0f} px sidebar to a {rail['width']:.0f} px rail: "
             f"icons with tooltips and names, Search, Activity, version and walkthrough kept; Chat's frame {frame['width']:.0f} px; "
-            "kept across a reload (no slide); Ctrl+\\ both ways; the walkthrough a card beside it, Escape back to its button; "
+            f"kept across a reload (no slide); Ctrl+\\ both ways; each icon's name beside it on keyboard focus ({len(named)}: "
+            f"{', '.join(named)}); {code_note}; the walkthrough a card beside it, Escape back to its button; "
             f"tablet ({t_side['width']:.0f} px rail, no button) and phone (tab bar) unchanged; no CSP violation")
 
 

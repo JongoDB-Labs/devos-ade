@@ -172,13 +172,17 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     // The icon rail (tablets, a collapsed desktop sidebar: nav.js): the label is hidden, so the tooltip carries it
-    // (elsewhere the label is visible).
+    // (elsewhere the label is visible) — on hover, and beside the icon on keyboard focus (mobile.css). A tab's name is
+    // its own words, never its badge's count; the walkthrough's button says its name too.
     const TABLET = window.matchMedia("(min-width: 768px) and (max-width: 1099.98px)");
     const rail = () => (window.bnNav && window.bnNav.rail ? window.bnNav.rail() : TABLET.matches);
+    const ownText = (b) => [...b.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join("").trim();
     const titles = () => {
       for (const b of document.querySelectorAll(".tab")) {
-        if (rail()) b.title = b.dataset.label || b.textContent.trim(); else b.removeAttribute("title");
+        if (rail()) b.title = b.dataset.label || ownText(b) || b.textContent.trim(); else b.removeAttribute("title");
       }
+      const tour = $("#tour-btn"), tourName = tour && $(".tour-btn-text", tour);
+      if (tourName) { if (rail()) tour.title = tourName.textContent.trim(); else tour.removeAttribute("title"); }
     };
     titles(); TABLET.addEventListener("change", titles); document.addEventListener("bn:nav", titles);
     // From an iPhone/iPad Home Screen app, Admin and Files open in Safari, which has its own cookies.

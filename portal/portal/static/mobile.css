@@ -60,6 +60,13 @@
   /* the Code tab while off (code.js): the pill in the icon's corner */
   .code-item.off .tab { position: relative; }
   .tab-off { position: absolute; top: 3px; right: 4px; padding: 0 4px; font-size: 9.5px; line-height: 13px; background: var(--sidebar); }
+  /* Each icon's name, which the rail hides: on hover its title (mobile.js gives each one), and on keyboard focus the
+     same words beside it, so Tab through the rail says where you are */
+  :is(.tab, .side-search, .bell-btn, .tour-btn, .install-btn, .nav-toggle)[title]:focus-visible { position: relative; }
+  :is(.tab, .side-search, .bell-btn, .tour-btn, .install-btn, .nav-toggle)[title]:focus-visible::before {
+    content: attr(title); position: absolute; z-index: 7; left: calc(100% + 12px); top: 50%; transform: translateY(-50%);
+    padding: 5px 10px; border-radius: var(--r-m); background: var(--ink); color: var(--bg); box-shadow: var(--shadow-pop);
+    font: 500 13px/1.3 var(--font-sans); letter-spacing: normal; text-align: left; white-space: nowrap; pointer-events: none; }
 }
 
 /* ---------- Phones and tablets: the models table becomes a card list ---------- */
