@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.31.4] - 2026-10-26
+
 ### Added
 
 - **Tests: a layout sweep.** `tests/e2e/browser/layout_sweep.py` measures every page and state in the browser for what
@@ -3171,7 +3173,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.3...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.4...HEAD
+[0.31.4]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.3...v0.31.4
 [0.31.3]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.2...v0.31.3
 [0.31.2]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.1...v0.31.2
 [0.31.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.0...v0.31.1
