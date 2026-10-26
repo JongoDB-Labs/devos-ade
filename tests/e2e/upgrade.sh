@@ -205,6 +205,7 @@ set_env COMPOSE_PROJECT_NAME "$PROJECT"; set_env PORTAL_HOST "$HOST"; set_env PO
 set_env LITELLM_PORT "$L"; set_env SHARED_MCP_PORT "$M"; set_env OPENWEBUI_ADMIN_EMAIL "e2e-admin@example.com"
 for kv in $BUDGETS; do set_env "${kv%%=*}" "${kv#*=}"; done
 set_env PORTAL_PASSWORD "$(openssl rand -hex 10)"
+seed_cheap_default   # (new sessions on Haiku: no flow falls back to a dearer model — the no-opus-spend check)
 WS="$(terminal_workspace_dir)"; ( umask 077; mkdir -p "$WS" ) && : > "$WS/.bedrock-now-e2e"; set_env TERMINAL_WORKSPACE "$WS"
 ( umask 022; mkdir -p "$STACK/.state/update-check" ); chmod 700 "$STACK/.state"; : > "$STACK/.state/portal-password-shown"
 # no GitHub call from the portal before the update (its check counts as done; --real-github asks for one at the end)

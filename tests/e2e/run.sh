@@ -21,7 +21,9 @@
 #   --deep-update    also a real update to a new (local) commit and a rollback from it (two more setups)
 #   --no-claude      skip the devos-claude check
 #   --only PARTS     run only these parts (comma list of cli, browser, voice, claude, websearch, mutating; default all).
-#                    Setup, the spend guard and the devos-claude link check always run. websearch: the built-in SearXNG
+#                    Setup, the spend guard (with no-opus-spend: any spend on Claude Opus fails the run unless a
+#                    check that ran is declared in tests/e2e/needs-opus.tsv; the throwaway's new sessions start on
+#                    Haiku) and the devos-claude link check always run. websearch: the built-in SearXNG
 #                    (the default search backend) — its container, who can and cannot reach it, the status lines,
 #                    ./stack websearch check, a real WebSearch through Claude Code on Haiku in the terminal (needs the
 #                    terminal), and off and on again
@@ -368,6 +370,7 @@ stage() {
   set_env OPENWEBUI_ADMIN_EMAIL "e2e-admin@example.com"
   for kv in $BUDGETS; do set_env "${kv%%=*}" "${kv#*=}"; done
   set_env PORTAL_PASSWORD "$(openssl rand -hex 10)"
+  seed_cheap_default   # (new sessions on Haiku: no flow falls back to a dearer model — the no-opus-spend check)
   # The Code page (on by default) and its terminal: setup turns them on in a folder of the suite's own next to the
   # checkout (never one in your home folder); --no-code turns it off as a person would (and the terminal unless
   # --terminal, which ./stack terminal enable turns on after setup)
@@ -1824,6 +1827,14 @@ if [ -z "$spend" ]; then record spend spend-guard FAIL 0 "LiteLLM /global/spend 
 elif spend_ok "$spend" "$SPEND_LIMIT"; then record spend spend-guard PASS 0 "Bedrock spend of this run \$$spend < \$$SPEND_LIMIT"
 else record spend spend-guard FAIL 0 "Bedrock spend of this run \$$spend >= \$$SPEND_LIMIT"; fi
 printf 'Bedrock spend of this run (LiteLLM /global/spend, summed around restores): $%s\n' "${spend:-unknown}" > "$OUT/spend.txt"
+
+# --- 6b. no spend on Claude Opus: the throwaway's sessions start on Haiku (seed_cheap_default) and every check picks
+# Haiku, so Opus spend means a flow fell back to the dearest model — unless a check that ran is declared in
+# tests/e2e/needs-opus.tsv (none is) ---
+opus="$(opus_total 2> "$LOGS/opus.err")" || opus=''
+verdict="$(no_opus_verdict "$opus" "$(needs_opus_ran "$HERE/needs-opus.tsv" "$RESULTS")")"
+record spend no-opus-spend "${verdict%%$'\t'*}" 0 "${verdict#*$'\t'}"
+printf 'Spend on Claude Opus in this run (LiteLLM /spend/logs/v2): %s\n' "${opus:-unknown}" >> "$OUT/spend.txt"
 
 # --- 7. the default install's devos-claude and claude-bedrock links (and the files they point to) are untouched ---
 LINK_AFTER="$(link_state)"

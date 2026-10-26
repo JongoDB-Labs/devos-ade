@@ -378,15 +378,56 @@ spend_now() {
 }
 # Every reading must answer: a missed one sets SPEND_ERR, and spend_total then prints nothing (the guard FAILs).
 _spend_read() { local s; s="$(spend_now)"; case "$s" in '' | *[!0-9.eE+-]*) return 1 ;; esac; printf '%s\n' "$s"; }
-spend_start() { SPEND_MARK="$(_spend_read)" || SPEND_ERR="${SPEND_ERR:+$SPEND_ERR, }start"; }
+spend_start() { SPEND_MARK="$(_spend_read)" || SPEND_ERR="${SPEND_ERR:+$SPEND_ERR, }start"; OPUS_FROM="$(now_ms)"; }
 spend_cut() {
   local s
+  opus_cut
   s="$(_spend_read)" || { SPEND_ERR="${SPEND_ERR:+$SPEND_ERR, }before a restore or at the end"; return 0; }
   SPEND_ACC="$(awk -v a="$SPEND_ACC" -v s="$s" -v m="${SPEND_MARK:-0}" 'BEGIN { d = s - m; if (d < 0) d = 0; printf "%.6f", a + d }')"
 }
-spend_resume() { SPEND_MARK="$(_spend_read)" || SPEND_ERR="${SPEND_ERR:+$SPEND_ERR, }after a restore"; }
+spend_resume() { SPEND_MARK="$(_spend_read)" || SPEND_ERR="${SPEND_ERR:+$SPEND_ERR, }after a restore"; OPUS_FROM="$(now_ms)"; }
 spend_total() { spend_cut; [ -z "$SPEND_ERR" ] || { printf 'unanswered: %s\n' "$SPEND_ERR" >&2; return 1; }; printf '%.4f\n' "$SPEND_ACC"; }
 spend_ok() { awk -v s="${1:-0}" -v l="$2" 'BEGIN { exit !(s + 0 < l + 0) }'; }
+
+# --- spend on Claude Opus (the no-opus-spend check): no flow of the suite may fall back to the dearest model. This run's
+# rows of LiteLLM's spend log on an Opus model (opus_spend.py), summed piecewise like the total — spend_start and
+# spend_resume start a window, spend_cut reads it (a restore rolls the log back). A reading that does not answer is an
+# error (opus_total prints nothing), never $0. ---
+OPUS_ACC=0; OPUS_FROM=''; OPUS_MODELS=''; OPUS_ERR=''
+now_ms() { printf '%s000\n' "$(date +%s)"; }
+# opus_now SINCE_MS -> "SPEND<TAB>MODELS": the Opus rows of the throwaway's spend log since then
+opus_now() { python3 -I "$HERE/opus_spend.py" "$STACK/.env" "$1"; }
+opus_cut() {
+  local r from="$OPUS_FROM"
+  [ -n "$from" ] || return 0
+  OPUS_FROM="$(now_ms)"
+  r="$(opus_now "$from" 2>/dev/null)" && [ -n "$r" ] || { OPUS_ERR="${OPUS_ERR:+$OPUS_ERR, }a reading"; return 0; }
+  OPUS_ACC="$(awk -v a="$OPUS_ACC" -v s="${r%%$'\t'*}" 'BEGIN { printf "%.6f", a + s }')"
+  case "$r" in *$'\t'?*) OPUS_MODELS="${OPUS_MODELS:+$OPUS_MODELS,}${r#*$'\t'}" ;; esac
+}
+# opus_total -> "SPEND<TAB>MODELS" of this run (after spend_total, which reads the last window); nothing if a reading
+# did not answer
+opus_total() { [ -z "$OPUS_ERR" ] || { printf 'unanswered: %s\n' "$OPUS_ERR" >&2; return 1; }; printf '%.4f\t%s\n' "$OPUS_ACC" "$OPUS_MODELS"; }
+# needs_opus_ran DECLARED RESULTS -> the checks of DECLARED (tests/e2e/needs-opus.tsv: suite/check per line) that ran in
+# this run (passed or failed), comma-separated; nothing when none did
+needs_opus_ran() {
+  [ -r "$1" ] && [ -r "$2" ] || return 0
+  awk -F'\t' 'NR == FNR { if ($0 !~ /^#/ && $1 != "") want[$1] = 1; next }
+    { id = $2; sub(/@.*/, "", id) } (($1 "/" id) in want) && ($3 == "PASS" || $3 == "FAIL") && !seen[$1 "/" id]++ { printf "%s%s", (n++ ? "," : ""), $1 "/" id }' "$1" "$2"
+}
+# no_opus_verdict OPUS_TOTAL ALLOWED -> "PASS|FAIL<TAB>message" for the no-opus-spend check
+no_opus_verdict() {
+  local spend="${1%%$'\t'*}" models="${1#*$'\t'}"
+  if [ -z "$1" ]; then printf 'FAIL\tLiteLLM'"'"'s spend log did not answer: this run'"'"'s spend on Claude Opus is unknown\n'
+  elif ! awk -v s="$spend" 'BEGIN { exit !(s + 0 > 0) }'; then printf 'PASS\tno spend on a Claude Opus model in this run\n'
+  elif [ -n "${2:-}" ]; then printf 'PASS\t$%s on Claude Opus (%s), declared by %s (tests/e2e/needs-opus.tsv)\n' "$spend" "$models" "$2"
+  else printf 'FAIL\t$%s on Claude Opus (%s): no check declared it needs Opus (tests/e2e/needs-opus.tsv) — a flow fell back to the dearest model\n' "$spend" "$models"; fi
+}
+
+# The throwaway's Code page and devos-claude start on Haiku (Settings › Claude Code › Default model for new sessions): no
+# flow of the suite falls back to a dearer model by itself
+E2E_DEFAULT_MODEL="claude-haiku-5-5"
+seed_cheap_default() { set_env CODE_DEFAULT_MODEL "$E2E_DEFAULT_MODEL"; }
 
 # host_folders_parent -> where --host-folders makes its two folders: E2E_HOST_FOLDERS_DIR, else
 # ROOT/tests/e2e/work/PROJECT-host-folders (gitignored) — never under --out, which may be a temporary folder that

@@ -100,6 +100,83 @@ test_e2e_unanswered_spend_is_an_error_not_zero() {
   if spend_total >/dev/null 2>&1; then return 1; fi
 }
 
+# no-opus-spend: this run's spend on Claude Opus, summed around restores like the total; an unanswered reading is an
+# error; any Opus spend fails unless a check that ran is declared in needs-opus.tsv; the throwaways start on Haiku
+test_e2e_opus_spend_fails_the_run_unless_a_check_that_ran_declared_it() {
+  _fake_docker
+  spend_now() { echo 0.001; }
+  opus_now() { printf '%s\n' "${FAKE_OPUS-0.000000	}"; echo "since $1" >> "$TMP/opus-calls"; }
+  OPUS_ACC=0; OPUS_MODELS=''; OPUS_ERR=''
+  spend_start
+  [ -n "$OPUS_FROM" ] || { echo "no window started" >&2; return 1; }
+  FAKE_OPUS=$'0.012000\tclaude-opus-5-5'; spend_cut; FAKE_OPUS=$'0.000000\t'; spend_resume   # a restore in between
+  FAKE_OPUS=$'0.003000\tclaude-opus-5-5'; spend_total > /dev/null
+  assert_eq "$(opus_total)" "$(printf '0.0150\tclaude-opus-5-5,claude-opus-5-5')"
+  assert_eq "$(grep -c since "$TMP/opus-calls")" 2
+  # the verdicts: none, Opus spend (undeclared, declared and ran), unknown
+  assert_eq "$(no_opus_verdict "$(printf '0.0000\t')" '' | cut -f1)" PASS
+  v="$(no_opus_verdict "$(printf '0.0150\tclaude-opus-5-5')" '')"
+  assert_eq "${v%%$'\t'*}" FAIL
+  assert_contains "$v" '$0.0150 on Claude Opus (claude-opus-5-5): no check declared it needs Opus'
+  assert_contains "$(no_opus_verdict "$(printf '0.0150\tclaude-opus-5-5')" browser/code-x)" $'PASS\t$0.0150 on Claude Opus (claude-opus-5-5), declared by browser/code-x'
+  assert_contains "$(no_opus_verdict '' '')" $'FAIL\tLiteLLM'
+  FAKE_OPUS=''; OPUS_ERR=''; OPUS_FROM=1; opus_cut
+  if opus_total > /dev/null 2>&1; then echo "an unanswered reading gave a total" >&2; return 1; fi
+  # declared checks count only when they ran (a tag after @ is the same check)
+  printf '# suite/check\twhy\nbrowser/code-x\ta reason\n' > "$TMP/needs.tsv"
+  printf 'browser\tcode-y\tPASS\t1\tok\nbrowser\tcode-x\tSKIP\t0\tno\n' > "$TMP/res.tsv"
+  assert_eq "$(needs_opus_ran "$TMP/needs.tsv" "$TMP/res.tsv")" ""
+  printf 'browser\tcode-x@stt\tFAIL\t3\tbad\nbrowser\tcode-x\tPASS\t3\tok\n' >> "$TMP/res.tsv"
+  assert_eq "$(needs_opus_ran "$TMP/needs.tsv" "$TMP/res.tsv")" "browser/code-x"
+  # the suite's own list declares none; every throwaway starts its sessions on Haiku
+  assert_eq "$(grep -cv '^#' "$STACK_DIR/tests/e2e/needs-opus.tsv")" 0
+  for f in run.sh upgrade.sh ui-sweep.sh; do grep -q '^ *seed_cheap_default' "$STACK_DIR/tests/e2e/$f" || { echo "$f does not seed the cheap default" >&2; return 1; }; done
+  case "$E2E_DEFAULT_MODEL" in claude-haiku-*) ;; *) echo "default $E2E_DEFAULT_MODEL" >&2; return 1 ;; esac
+}
+
+# opus_spend.py against a stand-in LiteLLM: the master key from the throwaway's .env in the header (never printed), the
+# rows since the moment on a model or model group naming Opus, every page; an error is an error
+test_e2e_opus_spend_reads_litellms_log_by_model() {
+  command -v python3 >/dev/null 2>&1 || return 77
+  local key; key="sk-$(printf 'e2e-master-%s' "$$")"
+  cat > "$TMP/fake_litellm.py" <<'PY'
+import json, signal, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+signal.alarm(20)   # (it ends by itself: three requests, or 20 s)
+key = sys.argv[1]
+PAGES = {1: [{"model": "bedrock/us.anthropic.claude-opus-5-5", "model_group": "claude-opus-5-5", "spend": 0.02, "startTime": "2026-10-26T10:00:05.000Z"},
+             {"model": "claude-haiku-5-5", "model_group": "claude-haiku-5-5", "spend": 0.004, "startTime": "2026-10-26T10:00:06+00:00"},
+             {"model": "claude-opus-5-5", "spend": 0.5, "startTime": "2026-10-26T09:59:00Z"}, "junk", {"model": "x-opus", "spend": "NaN", "startTime": "2026-10-26T10:00:07Z"}],
+         2: [{"model": "claude-opus-4-1", "spend": 0.001, "startTime": "2026-10-26T10:01:00"}]}
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_GET(self):
+        if self.headers.get("Authorization") != f"Bearer {key}" or not self.path.startswith("/spend/logs/v2?"):
+            self.send_response(401); self.end_headers(); return
+        page = int(self.path.split("page=")[1].split("&")[0])
+        body = json.dumps({"data": PAGES.get(page, []), "total_pages": 2}).encode()
+        self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
+srv = HTTPServer(("127.0.0.1", 0), H)
+print(srv.server_address[1], flush=True)
+for _ in range(3):
+    srv.handle_request()
+PY
+  python3 -I "$TMP/fake_litellm.py" "$key" > "$TMP/port" 2> /dev/null < /dev/null &
+  local pid=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$TMP/port" ] && break; sleep 0.2; done
+  printf 'LITELLM_PORT=%s\nLITELLM_MASTER_KEY=old\nLITELLM_MASTER_KEY=%s\n' "$(cat "$TMP/port")" "$key" > "$TMP/env"
+  since="$(python3 -I -c 'from datetime import datetime, timezone; print(int(datetime(2026, 10, 26, 10, 0, tzinfo=timezone.utc).timestamp() * 1000))')"
+  rc=0; out="$(python3 -I "$STACK_DIR/tests/e2e/opus_spend.py" "$TMP/env" "$since" 2>&1)" || rc=$?
+  printf 'LITELLM_PORT=%s\nLITELLM_MASTER_KEY=wrong\n' "$(cat "$TMP/port")" > "$TMP/env2"
+  brc=0; bad="$(python3 -I "$STACK_DIR/tests/e2e/opus_spend.py" "$TMP/env2" "$since" 2>&1)" || brc=$?
+  wait "$pid" 2>/dev/null || true
+  assert_eq "$rc" 0
+  assert_eq "$out" "$(printf '0.021000\tclaude-opus-4-1,claude-opus-5-5')"
+  assert_eq "$brc" 1
+  assert_contains "$bad" "did not answer"
+  assert_not_contains "$out$bad" "$key"
+}
+
 test_e2e_volumes_of_unknown_origin_are_foreign() {
   FAKE_VOLS="bne2e_pgdata"; _fake_docker
   project_ownership

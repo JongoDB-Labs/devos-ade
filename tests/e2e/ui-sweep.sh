@@ -119,6 +119,7 @@ else
   set_env LITELLM_PORT "$L"; set_env SHARED_MCP_PORT "$M"; set_env OPENWEBUI_ADMIN_EMAIL "you@example.com"
   for kv in $BUDGETS; do set_env "${kv%%=*}" "${kv#*=}"; done
   set_env PORTAL_PASSWORD "$(openssl rand -hex 10)"
+  seed_cheap_default   # (new sessions on Haiku: no flow falls back to a dearer model)
   WS="$(terminal_workspace_dir)"; ( umask 077; mkdir -p "$WS" ) && : > "$WS/.bedrock-now-e2e"; set_env TERMINAL_WORKSPACE "$WS"
   ( umask 022; mkdir -p "$STACK/.state/update-check" ); chmod 700 "$STACK/.state"; : > "$STACK/.state/portal-password-shown"
   printf '{"checked_at": "%s", "error": null}\n' "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" > "$STACK/.state/update-check/latest.json"
