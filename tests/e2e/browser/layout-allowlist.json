@@ -1,2 +1,8 @@
 [
+ {
+  "check": "clipped text",
+  "sig": "^clipped text\\|code\\|div\\[data-testid=git-panel\\]\\.gitp > label\\.gitr-repo\\.small > select\\[data-testid=git-repo\\]$",
+  "state": "^code(-mock)?-side-git$",
+  "why": "The Git panel's repository picker is a native <select> narrower than a long repository's label (\"Workspace (the workspace folder)\") in the narrow side panel. JON-512 replaces it with the design's dropdown and lists the repositories under the project (UX-09); remove this entry with that change."
+ }
 ]

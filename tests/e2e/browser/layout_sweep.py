@@ -750,10 +750,13 @@ def mock_session(S, p, device):
     box.press("Enter")
     p.wait_for_timeout(2500)
     yield "code-mock-session-tool", "[data-testid=composer]"
-    p.keyboard.press("Control+k")
-    p.wait_for_timeout(600)
-    if p.locator("[role=dialog], [data-testid=palette]").count():
-        yield "code-mock-palette", None
+    for keys in ("Control+k", "Meta+k"):   # (the palette's shortcut: Ctrl+K, ⌘K on a Mac)
+        p.keyboard.press(keys)
+        p.wait_for_timeout(600)
+        if p.locator("[data-testid=cp-item]").count():
+            break
+    if p.locator("[data-testid=cp-item]").count():
+        yield "code-mock-palette", "[data-testid=cp-item]"
 
 
 STATES = [
