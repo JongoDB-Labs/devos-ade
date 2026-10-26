@@ -347,20 +347,59 @@ export const reviewerModel = (haiku) => (typeof haiku === 'string' && MODEL.test
 // Claude Code does work of its own beside the session's model — titles and summaries, its Explore subagent — on its
 // "haiku" model (ANTHROPIC_DEFAULT_HAIKU_MODEL; ANTHROPIC_SMALL_FAST_MODEL before), and subagents on their own model.
 // For a session on a model that is not one of Bedrock's Claude models (OpenRouter's or/…, Experiential Labs' xl/…,
-// another vendor's on Bedrock) all of that runs on the session's model, so a session on a free model never spends on
-// Haiku behind it. A Claude model, one of Claude Code's aliases or none: as the container says (Haiku).
+// another vendor's on Bedrock) all of that runs on whichever of the session's model and the container's Haiku costs
+// less per token (input plus output, LiteLLM's prices: modelPrices): a free one is always the session's own (a session
+// on a free model never spends on Haiku behind it), a paid one cheaper than Haiku too; a dearer one, or one whose price
+// is not known, leaves it on Haiku. A Claude model, one of Claude Code's aliases or none: as the container says (Haiku).
 const CLAUDE_ALIAS = /^(haiku|sonnet|opus|fable|opusplan|best|default)(\[1m\])?$/i;
-export function backgroundEnv(model) {
+// followsSession(MODEL, PRICES, HAIKU) -> true when MODEL (not a Claude model) does Claude Code's own work too
+export function followsSession(model, prices, haiku) {
+  if (/:free$/i.test(model)) return true;   // a free tier, whatever the list says
+  if (typeof haiku !== 'string' || !haiku) return true;   // no Haiku here: nothing else to run it on
+  const own = prices && Object.hasOwn(prices, model) ? prices[model] : null;
+  const h = prices && Object.hasOwn(prices, haiku) ? prices[haiku] : null;
+  if (own === 0) return true;
+  return own !== null && h !== null && own < h;
+}
+export function backgroundEnv(model, prices = null, haiku = undefined) {
   if (typeof model !== 'string' || !MODEL.test(model) || /^claude-/i.test(model) || CLAUDE_ALIAS.test(model)) return {};
   const m = model.replace(/\[1m\]$/i, '');
+  if (!followsSession(m, prices, haiku)) return {};
   return { ANTHROPIC_DEFAULT_HAIKU_MODEL: m, ANTHROPIC_SMALL_FAST_MODEL: m, CLAUDE_CODE_SUBAGENT_MODEL: m };
+}
+// The prices LiteLLM serves, {model: input + output USD per token} (GET /model/info through the gateway, with this
+// container's key, as devos-claude here reads them), read at the start and again in the background when a session
+// starts and they are older than PRICES_TTL_MS: a session never waits for them (before the first answer, a paid model
+// that is not one of Claude's leaves its own work on Haiku; a free tier, "…:free", follows anyway).
+const PRICES_TTL_MS = 10 * 60 * 1000;
+let modelPrices = null, pricesAt = 0, pricesBusy = false;
+export function parsePrices(body) {
+  const out = {};
+  for (const d of Array.isArray(body?.data) ? body.data.slice(0, 5000) : []) {
+    const id = d?.model_name, mi = d?.model_info;
+    if (typeof id !== 'string' || !MODEL.test(id) || !mi || typeof mi !== 'object' || Object.hasOwn(out, id)) continue;
+    const i = mi.input_cost_per_token, o = mi.output_cost_per_token;
+    if ([i, o].every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0)) out[id] = i + o;
+  }
+  return out;
+}
+export function refreshPrices(env = process.env) {
+  if (pricesBusy || (modelPrices && Date.now() - pricesAt < PRICES_TTL_MS)) return;
+  const base = env.ANTHROPIC_BASE_URL, key = env.ANTHROPIC_AUTH_TOKEN;
+  if (typeof base !== 'string' || !/^https?:\/\/[^\s]+$/.test(base) || typeof key !== 'string' || !key) return;
+  pricesBusy = true;
+  fetch(`${base.replace(/\/+$/, '')}/model/info`, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(5000) })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((b) => { if (b) { modelPrices = parsePrices(b); pricesAt = Date.now(); } })
+    .catch(() => {})
+    .finally(() => { pricesBusy = false; });
 }
 // modelArg(args) -> the --model=… of Claude Code's (checked) arguments, or null
 export const modelArg = (args) => {
   const a = Array.isArray(args) ? args.find((x) => typeof x === 'string' && x.startsWith('--model=')) : undefined;
   return a ? a.slice('--model='.length) : null;
 };
-export function childEnv(extra, litellmSession, base = process.env, model = null) {
+export function childEnv(extra, litellmSession, base = process.env, model = null, prices = modelPrices) {
   const env = { ...base };
   for (const k of Object.keys(env)) if (k === 'SHARED_MCP_TOKEN' || k.startsWith('BN_CODE') || k === 'BN_CLAUDE_BIN') delete env[k];
   for (const [k, v] of Object.entries(extra && typeof extra === 'object' ? extra : {})) {
@@ -372,7 +411,7 @@ export function childEnv(extra, litellmSession, base = process.env, model = null
   // (the container's Haiku, before backgroundEnv may give its slot to the session's model)
   const reviewer = reviewerModel(base.ANTHROPIC_DEFAULT_HAIKU_MODEL);
   if (reviewer) env.CLAUDE_CODE_AUTO_MODE_MODEL = reviewer;
-  return Object.assign(env, backgroundEnv(model));
+  return Object.assign(env, backgroundEnv(model, prices, base.ANTHROPIC_DEFAULT_HAIKU_MODEL));
 }
 // The stack's variables a tool of your subscriptions never gets: its gateway, keys and models, Claude Code's switches
 // for Bedrock, the MCP token (in mcp.json), this server's own — what claude-sub leaves out too, and AWS's
@@ -5593,6 +5632,7 @@ export function serve(sock) {
         if (req.args.some((a) => typeof a === 'string' && a.startsWith('--max-budget-usd'))) return fail('no budget stop for a session on your plan');
         return startProcess([...FIXED, ...req.args.slice(FIXED.length)], cwd, planEnv(req.env));
       }
+      refreshPrices();   // (for the next session, when they are old: this one uses what is known now)
       return startProcess(args, cwd, childEnv(req.env, req.litellmSession, process.env, modelArg(req.args)));
     }
     // A tool of your subscriptions (AGENTS): code — a Code page session in a folder of the workspace; chat — one of
@@ -5872,6 +5912,7 @@ export function start() {
   const server = net.createServer({ allowHalfOpen: false }, serve);
   server.maxConnections = MAX_CONNECTIONS;
   server.listen(SOCK, () => process.stderr.write(`bn-coded: listening on ${SOCK}\n`));
+  if (roleOf() !== 'chat') refreshPrices();   // (Chat's sandbox runs your plans only: no LiteLLM)
   return server;
 }
 

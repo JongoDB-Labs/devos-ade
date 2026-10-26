@@ -163,12 +163,25 @@ done
 set -- ${cb_args[@]+"${cb_args[@]}"}
 export ANTHROPIC_MODEL="$model"
 # Claude Code's own background work (titles, summaries, its Explore subagent: its "haiku" model) and its subagents run
-# on the session's model when that is not one of Bedrock's Claude models: a session on a free model never spends on
-# Haiku behind it (as the Code page's sessions: bn-coded.mjs backgroundEnv)
+# on the session's model when that is not one of Bedrock's Claude models and costs less than Haiku per token (input
+# plus output, LiteLLM's prices) — a free one always: a session on a free model never spends on Haiku behind it. A
+# dearer one, or one whose price is not known, leaves it on Haiku (as the Code page's sessions: bn-coded.mjs
+# followsSession; on your computer, lib/code_models.sh code_bg_follows)
+bg_follows() {
+  case "$1" in *:free) return 0 ;; esac
+  [ -n "${2:-}" ] || return 0
+  model_rows all | M="$1" H="$2" awk -F'\t' '
+    function num(v) { return v ~ /^[0-9]+(\.[0-9]+)?$/ }
+    $1 == ENVIRON["M"] && !sm { sm = 1; mf = $6; if (num($4) && num($5)) { mk = 1; mp = $4 + $5 } }
+    $1 == ENVIRON["H"] && !sh { sh = 1; if (num($4) && num($5)) { hk = 1; hp = $4 + $5 } }
+    END { if (mf == 1 || (mk && mp == 0)) exit 0; exit !(mk && hk && mp < hp) }'
+}
 case "$model" in
   claude-*) ;;
-  *) export ANTHROPIC_DEFAULT_HAIKU_MODEL="${model%\[1[mM]\]}"
-     export ANTHROPIC_SMALL_FAST_MODEL="$ANTHROPIC_DEFAULT_HAIKU_MODEL" CLAUDE_CODE_SUBAGENT_MODEL="$ANTHROPIC_DEFAULT_HAIKU_MODEL" ;;
+  *) if bg_follows "${model%\[1[mM]\]}" "${ANTHROPIC_DEFAULT_HAIKU_MODEL:-}"; then
+       export ANTHROPIC_DEFAULT_HAIKU_MODEL="${model%\[1[mM]\]}"
+       export ANTHROPIC_SMALL_FAST_MODEL="$ANTHROPIC_DEFAULT_HAIKU_MODEL" CLAUDE_CODE_SUBAGENT_MODEL="$ANTHROPIC_DEFAULT_HAIKU_MODEL"
+     fi ;;
 esac
 
 before=''

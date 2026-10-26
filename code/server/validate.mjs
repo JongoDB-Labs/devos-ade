@@ -100,7 +100,8 @@ export const isModel = (v) => typeof v === 'string' && MODEL_RE.test(v);
 // "haiku plan upgrade"), with "opusplan" on Opus. A session runs exactly the model picked, so it is named in full.
 export const MODEL_ALIAS = /^(haiku|sonnet|opus|fable|opusplan|best|default)(\[1m\])?$/i;
 export const isFullModel = (v) => isModel(v) && !MODEL_ALIAS.test(v);
-// backgroundModel(model) -> the model Claude Code's own background work runs on in a session on MODEL (bn-coded's
-// backgroundEnv): MODEL itself when it is not one of Bedrock's Claude models, '' (Haiku, as the sandbox says) for a
-// Claude model, an alias or none
+// backgroundModel(model) -> the model Claude Code's own background work may run on in a session on MODEL: MODEL itself
+// when it is not one of Bedrock's Claude models, '' (Haiku, as the sandbox says) for a Claude model, an alias or none.
+// (bn-coded's backgroundEnv decides with LiteLLM's prices, which this container never sees — a paid model dearer than
+// Haiku leaves it on Haiku — so a switch this changes for may restart a process that did not need it: never the reverse.)
 export const backgroundModel = (v) => (isFullModel(v) && !/^claude-/i.test(v) ? v.replace(/\[1m\]$/i, '') : '');

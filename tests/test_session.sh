@@ -572,6 +572,8 @@ _code_tsv() {
     printf 'llama-3-3-70b\tLlama 3.3 70B\tBedrock\tMeta\t0.72\t0.72\t-\t-\t0\tchat-only\t1\t%s\t8192\t-\tNo tools.\n' "${2:-0}"
     printf 'mistral-large-3\tMistral Large 3\tBedrock\tMistral\t0.50\t1.50\t-\t-\t0\tworks\t0\t0\t-\t-\t-\n'
     printf 'or/google/gemma-4-31b-it:free\tGemma 4 31B (free)\tOpenRouter\tGoogle\t0\t0\t-\t-\t1\tuntested\t1\t0\t32768\t262144\t-\n'
+    printf 'nova-micro\tNova Micro\tBedrock\tAmazon\t0.035\t0.14\t-\t-\t0\tuntested\t0\t0\t-\t-\t-\n'
+    printf 'xl/no-price\tno-price\tExperiential Labs\t-\t-\t-\t-\t-\t0\tuntested\t0\t0\t-\t-\t-\n'
   } > "$CODE_MODELS_FILE"
 }
 
@@ -623,7 +625,12 @@ test_wrapper_background_model_follows_a_model_that_is_not_bedrock_claude() {
     printf '%s|%s|%s\n' "$(sed -n 's/^ANTHROPIC_DEFAULT_HAIKU_MODEL=//p' "$TMP/dump")" "$(sed -n 's/^ANTHROPIC_SMALL_FAST_MODEL=//p' "$TMP/dump")" \
       "$(sed -n 's/^CLAUDE_CODE_SUBAGENT_MODEL=//p' "$TMP/dump")"; }
   assert_eq "$(_bg --model=google/gemma-4-31b-it:free)" "or/google/gemma-4-31b-it:free|or/google/gemma-4-31b-it:free|or/google/gemma-4-31b-it:free"
-  assert_eq "$(_bg --model llama-3-3-70b)" "llama-3-3-70b|llama-3-3-70b|llama-3-3-70b"
+  # a paid one: the cheaper of it and Haiku (input plus output per 1M: Haiku 0.66; Nova Micro 0.175; Llama 1.44, Mistral
+  # Large 3 2.00); a price not known: Haiku
+  assert_eq "$(_bg --model nova-micro)" "nova-micro|nova-micro|nova-micro"
+  assert_eq "$(_bg --model llama-3-3-70b)" "claude-haiku-5-5||"
+  assert_eq "$(_bg --model mistral-large-3)" "claude-haiku-5-5||"
+  assert_eq "$(_bg --model xl/no-price)" "claude-haiku-5-5||"
   assert_eq "$(CLAUDE_BEDROCK_MODEL=or/google/gemma-4-31b-it:free _bg)" "or/google/gemma-4-31b-it:free|or/google/gemma-4-31b-it:free|or/google/gemma-4-31b-it:free"
   # a Claude model (also by alias): Haiku, as before
   assert_eq "$(_bg --model claude-opus-5-5)" "claude-haiku-5-5||"

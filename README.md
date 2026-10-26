@@ -1180,9 +1180,11 @@ Not every switch is free: switching to a model that caches writes ~30k tokens of
 says how much); a model without cache prices writes none, and has no cold-cache line above the prompt box. Auto mode's
 reviewer runs on Claude Haiku whatever the session's model (`CLAUDE_CODE_AUTO_MODE_MODEL`: a safety check stays on a
 Claude model). Claude Code's own background work — titles, summaries, its Explore subagent — and its subagents run on
-the session's model when that is not one of Bedrock's Claude models (on Haiku otherwise), here and in `devos-claude
---model …`: a session on a free model spends nothing behind it. A switch between such a model and a Claude one
-restarts the session's Claude Code at your next prompt, so that follows too.
+the session's model when that is not one of Bedrock's Claude models and costs less than Haiku per token (input plus
+output, the prices the cost views use), here and in `devos-claude --model …`: a free model always, so a session on
+one spends nothing behind it. A dearer one, one whose price is not known, or a Claude model leaves that work on Haiku.
+A switch between such a model and a Claude one restarts the session's Claude Code at your next prompt, so that follows
+too.
 
 #### Permissions and modes
 
@@ -1815,9 +1817,9 @@ its own JSON alert (`soft_budget_crossed`, `budget_crossed`); it is not Slack's 
 
 **Why does Actual move when I use free models?** A free model's own requests book $0, but other requests in the same
 session may not:
-- **Background work.** Claude Code's titles, summaries and subagents, and Chat's titles, tags and follow-up
-  suggestions, run on the model you picked when it is not one of Bedrock's Claude models (they used to run on Haiku).
-  A session on a Claude model still uses Haiku for them.
+- **Background work.** Claude Code's titles, summaries and subagents run on the model you picked when it is free, or
+  paid and cheaper than Haiku (they used to run on Haiku); Chat's titles, tags and follow-up suggestions on the chat's
+  own model. A session on a Claude model, or on a dearer one, still uses Haiku for them.
 - **Auto mode's reviewer** runs on Claude Haiku whatever the model (a safety check stays on a Claude model): about
   half a cent ($0.006) for its first check in each 5 minutes (see [Permissions and modes](#permissions-and-modes)).
 - **Bedrock prompt-cache writes.** A request to a Claude model that starts or rewrites the prompt cache (a new session,

@@ -1106,7 +1106,9 @@ STUB
  {"model_name": "or/google/gemma-4-31b-it:free", "model_info": {"mode": "chat", "input_cost_per_token": 0, "output_cost_per_token": 0, "bn_name": "Gemma 4 31B (free)", "bn_vendor": "Google", "bn_compat": "untested", "bn_code": true}},
  {"model_name": "claude-sonnet-5", "model_info": {"mode": "chat", "input_cost_per_token": 4.4e-06, "output_cost_per_token": 2.2e-05, "bn_id": "claude-opus-5-5", "bn_name": "Claude Opus 5.5", "bn_vendor": "Anthropic", "bn_compat": "works", "bn_code": true}},
  {"model_name": "or/x/esc", "model_info": {"mode": "chat", "input_cost_per_token": 0, "output_cost_per_token": 0, "bn_id": "or/x/esc", "bn_name": "E\u001b[2Jvil\u009b31m\u202e", "bn_vendor": "V\u001b]0;t\u0007", "bn_compat": "untested", "bn_code": false}},
- {"model_name": "cohere-embed-v4", "model_info": {"mode": "embedding", "input_cost_per_token": 1.2e-07}}
+ {"model_name": "cohere-embed-v4", "model_info": {"mode": "embedding", "input_cost_per_token": 1.2e-07}},
+ {"model_name": "claude-haiku-5-5", "model_info": {"mode": "chat", "input_cost_per_token": 1.1e-07, "output_cost_per_token": 5.5e-07, "bn_name": "Claude Haiku 5.5", "bn_vendor": "Anthropic", "bn_compat": "works", "bn_code": false}},
+ {"model_name": "nova-micro", "model_info": {"mode": "chat", "input_cost_per_token": 3.5e-08, "output_cost_per_token": 1.4e-07, "bn_name": "Nova Micro", "bn_vendor": "Amazon", "bn_compat": "untested", "bn_code": false}}
 ]}
 JSON
   run() { env -i PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP/home" INFO="$TMP/info.json" ANTHROPIC_BASE_URL=http://gateway:8091 ANTHROPIC_AUTH_TOKEN=sk-x \
@@ -1147,6 +1149,16 @@ JSON
   assert_contains "$out" "REVIEWER claude-haiku-5-5"
   ARGS=(--model claude-opus-5-5 -p hi); out="$(run CLAUDE_BEDROCK_QUIET=1 ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-sonnet-4-5)" || return 1
   assert_contains "$out" "REVIEWER"; assert_not_contains "$out" "REVIEWER claude"
+  # a paid model that is not one of Claude's: its own work on the cheaper of it and Haiku (input plus output per 1M:
+  # Haiku 0.66, Nova Micro 0.175, Llama 1.44, Mistral Large 3 2.00); no Haiku in this container: the model's own
+  ARGS=(--model nova-micro -p hi); out="$(run CLAUDE_BEDROCK_QUIET=1 ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-5-5)" || return 1
+  assert_contains "$out" "BG nova-micro|nova-micro|nova-micro"
+  for m in llama-3-3-70b mistral-large-3; do
+    ARGS=(--model "$m" -p hi); out="$(run CLAUDE_BEDROCK_QUIET=1 ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-5-5)" || return 1
+    assert_contains "$out" "BG claude-haiku-5-5||"
+  done
+  ARGS=(--model mistral-large-3 -p hi); out="$(run CLAUDE_BEDROCK_QUIET=1)" || return 1
+  assert_contains "$out" "BG mistral-large-3|mistral-large-3|mistral-large-3"
   ARGS=(--model gpt-4 -p hi); rc=0; out="$(run 2>&1)" || rc=$?
   assert_eq "$rc" 1
   assert_contains "$out" "unknown model 'gpt-4' (--model) — devos-claude --models lists them: claude-opus-5-5, llama-3-3-70b, or/google/gemma-4-31b-it:free"

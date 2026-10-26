@@ -6,6 +6,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Changed
+
+- **Auto mode's reviewer runs on Claude Haiku, not Sonnet 5.5:** about half a cent for its first check in each
+  5 minutes instead of $0.13, and a twentieth of a cent for each further one. It's still a Claude model judging
+  each action, whatever the session's model, on the Code page, in `devos-claude` (on this computer and in the
+  browser terminal) and for `claude` typed in the terminal. It uses Claude Code's own setting,
+  `CLAUDE_CODE_AUTO_MODE_MODEL`, set to your Haiku model while that is a Claude Haiku. Without one it stays on
+  Sonnet 5.5, as before. `./stack code status` and `./stack terminal status` say which.
+
 ### Fixed
 
 - **A new Code page session starts on the model you picked last**, an Experiential Labs or OpenRouter one too, whether
@@ -14,9 +23,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   not served any more (its key removed), the session starts on the default and says so.
 - **Claude Code's background work no longer runs on Haiku behind a free model.** Its titles, summaries and Explore
   subagent (its "haiku" model) and its subagents now run on the session's model when that is not one of Bedrock's
-  Claude models — on the Code page (a switch to or from such a model restarts the session's Claude Code at your next
-  prompt) and in `devos-claude --model …` (on this computer and in the browser terminal). With a Claude model they
-  stay on Haiku. Auto mode's reviewer keeps Sonnet 5.5, as before.
+  Claude models and is free, or paid and cheaper than Haiku per token (input plus output, the prices the cost views
+  use). This applies on the Code page (a switch to or from such a model restarts the session's Claude Code at your
+  next prompt) and in `devos-claude --model …` (on this computer and in the browser terminal). With a Claude model,
+  a dearer one, or one whose price isn't known, they stay on Haiku.
 - **Chat's titles, tags and follow-up suggestions run on the chat's own model**, so a chat on a free model stays free.
   They ran on Haiku whatever the chat's model (Open WebUI's task model). Open WebUI uses each chat's own model when no
   task model is set, and setup now sets none unless you pin one: **Settings › Chat & voice › More › Chat title and tag
@@ -33,6 +43,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   free tier's answer adds *≈ $… at paid rates*, and `./stack costs` shows the last 30 days of Experiential Labs usage
   (free tiers at $0, with what they would have cost) and says what Equivalent is. Actual is unchanged: a free model
   is never shown as dollars spent.
+
+### Docs
+
+- **README: "Why does Actual move when I use free models?"** Background work (now on the model you picked), Auto
+  mode's reviewer (Sonnet 5.5) and Bedrock prompt-cache writes, and where to see which request it was (Admin › Usage).
 
 ## [0.28.0] - 2026-10-25
 
@@ -71,12 +86,6 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   at its first 10 s interval, so a restart no longer waits about 10 s more for each service it brings back (setup ran
   again recreated LiteLLM, Caddy, the terminal's gateway, the terminal and Chat's sandbox, each healthy about 10 s
   after its start). After it has started, the checks are as before.
-- **Auto mode's reviewer runs on Claude Haiku, not Sonnet 5.5:** about half a cent for its first check in each
-  5 minutes instead of $0.13, and a twentieth of a cent for each further one. It's still a Claude model judging
-  each action, whatever the session's model, on the Code page, in `devos-claude` (on this computer and in the
-  browser terminal) and for `claude` typed in the terminal. It uses Claude Code's own setting,
-  `CLAUDE_CODE_AUTO_MODE_MODEL`, set to your Haiku model while that is a Claude Haiku. Without one it stays on
-  Sonnet 5.5, as before. `./stack code status` and `./stack terminal status` say which.
 
 ### Fixed
 
@@ -102,11 +111,6 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   busy computer. Its stand-in git recorded the ssh command on every call, and the helper's heartbeat (every 3 s while
   a fetch runs) asks git for the checkout's HEAD and branch: a fetch slower than 3 s had its record overwritten with
   an empty one. Only the fetch records it now.
-
-### Docs
-
-- **README: "Why does Actual move when I use free models?"** Background work (now on the model you picked), Auto
-  mode's reviewer (Sonnet 5.5) and Bedrock prompt-cache writes, and where to see which request it was (Admin › Usage).
 
 ## [0.27.1] - 2026-10-25
 

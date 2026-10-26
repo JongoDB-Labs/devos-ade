@@ -144,12 +144,15 @@ case "$ANTHROPIC_DEFAULT_HAIKU_MODEL" in
   claude-haiku-*) export CLAUDE_CODE_AUTO_MODE_MODEL="${CLAUDE_CODE_AUTO_MODE_MODEL:-$ANTHROPIC_DEFAULT_HAIKU_MODEL}" ;;
 esac
 # Claude Code's own background work (titles, summaries, its Explore subagent: its "haiku" model) and its subagents run
-# on the session's model when that is not one of Bedrock's Claude models: a session on a free model never spends on
-# Haiku behind it (the Code page's sessions do the same: terminal/bin/bn-coded.mjs backgroundEnv)
+# on the session's model when that is not one of Bedrock's Claude models and costs less than Haiku — a free one always:
+# a session on a free model never spends on Haiku behind it (lib/code_models.sh code_bg_follows; the Code page's
+# sessions do the same: terminal/bin/bn-coded.mjs backgroundEnv)
 case "$ANTHROPIC_MODEL" in
   claude-* | '') ;;
-  *) ANTHROPIC_DEFAULT_HAIKU_MODEL="${ANTHROPIC_MODEL%\[1[mM]\]}"
-     export ANTHROPIC_SMALL_FAST_MODEL="$ANTHROPIC_DEFAULT_HAIKU_MODEL" CLAUDE_CODE_SUBAGENT_MODEL="$ANTHROPIC_DEFAULT_HAIKU_MODEL" ;;
+  *) if code_bg_follows "${ANTHROPIC_MODEL%\[1[mM]\]}" "$ANTHROPIC_DEFAULT_HAIKU_MODEL"; then
+       ANTHROPIC_DEFAULT_HAIKU_MODEL="${ANTHROPIC_MODEL%\[1[mM]\]}"
+       export ANTHROPIC_SMALL_FAST_MODEL="$ANTHROPIC_DEFAULT_HAIKU_MODEL" CLAUDE_CODE_SUBAGENT_MODEL="$ANTHROPIC_DEFAULT_HAIKU_MODEL"
+     fi ;;
 esac
 export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1   # Bedrock rejects Anthropic beta headers
 # No ENABLE_TOOL_SEARCH: tool search (deferred MCP tools) needs a beta header, so with the betas off it changes

@@ -287,7 +287,7 @@ export class Session {
     // .claude/ applies as before projects; only the nested discovery below it is off
     options.projectConfigRoot = this.cwd;
     if (this.model) options.model = this.model;
-    this.bgModel = backgroundModel(this.model);   // (what bn-coded gives this process for its background work)
+    this.bgModel = backgroundModel(this.model);   // (what bn-coded may give this process for its background work)
     if (this.effort) options.effort = this.effort;
     // stop at the budget: Claude Code's own limit for this process, what is left of it now
     this.limit = this.budget ? { ...this.budget, est: this.estimates() } : null; this.budgetHit = false;
@@ -934,7 +934,7 @@ export class Session {
           : reason === 'budget' ? `Restarting Claude Code for this session so its new budget applies${this.budget?.hard ? ` (stop at ${money(this.budget.usd)})` : ''}${wasBypass ? ', in Manual (Bypass permissions ends with its process)' : ''}; its next turn may write the prompt cache again.`
             : reason === 'settings-changed' ? 'Claude Code stopped here: this folder\'s own Claude Code configuration changed while it started (after it was checked). Your next prompt starts it again without it until you look at it again.'
             : reason === 'settings' ? 'Restarting Claude Code for this session: the folder\'s own Claude Code settings apply differently now (you trusted them, or they changed); its next turn writes the prompt cache again.'
-            : reason === 'model' ? `Restarting Claude Code for this session so its own background work (titles, summaries, subagents) runs on the model you picked${wasBypass ? ' (in Manual: Bypass permissions ends with its process)' : ''}; its next turn may write the prompt cache again.`
+            : reason === 'model' ? `Restarting Claude Code for this session so its own background work (titles, summaries, subagents) follows the model you picked (or stays on Haiku, when that costs less)${wasBypass ? ' (in Manual: Bypass permissions ends with its process)' : ''}; its next turn may write the prompt cache again.`
             : reason === 'git' ? `Restarting Claude Code for this session: your Git hosts changed, and the ones Claude may use are in its instructions${wasBypass ? ' (in Manual: Bypass permissions ends with its process)' : ''}; its next turn writes the prompt cache again.`
             : reason === 'terminal' ? `Continued in the terminal${wasBypass ? ' (in Manual)' : ''}: exit Claude Code there (/exit) before you send a prompt here — two Claude Code processes would both write this conversation.`
               : `Session closed; a prompt resumes it${wasBypass ? ' (in Manual)' : ''}.`;

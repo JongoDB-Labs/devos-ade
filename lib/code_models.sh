@@ -219,6 +219,21 @@ code_model_row() { _code_rows "${2:-}" | I="$1" awk -F'\t' '!f && $1 == ENVIRON[
 # code_models_default [FILE] -> the id new sessions start with
 code_models_default() { _code_rows "${1:-}" | awk -F'\t' '!f && $12 == 1 { print $1; f = 1 }'; }
 
+# code_bg_follows MODEL HAIKU [FILE] -> 0 when Claude Code's own work (its "haiku" model: titles, summaries, its Explore
+# subagent; and its subagents) runs on MODEL, a model that is not one of Bedrock's Claude models: a free one always (a
+# free tier, "…:free", or $0 in the list), a paid one when it costs less per token than HAIKU (input plus output, the
+# list's prices); a dearer one, or one whose price is not known, leaves it on HAIKU. No HAIKU: MODEL (nothing else to
+# run it on). The Code page's sessions follow the same rule (terminal/bin/bn-coded.mjs followsSession).
+code_bg_follows() {
+  case "$1" in *:free) return 0 ;; esac
+  [ -n "${2:-}" ] || return 0
+  _code_rows "${3:-}" | M="$1" H="$2" awk -F'\t' '
+    function num(v) { return v ~ /^[0-9]+(\.[0-9]+)?$/ }
+    $1 == ENVIRON["M"] && !sm { sm = 1; mf = $9; if (num($5) && num($6)) { mk = 1; mp = $5 + $6 } }
+    $1 == ENVIRON["H"] && !sh { sh = 1; if (num($5) && num($6)) { hk = 1; hp = $5 + $6 } }
+    END { if (mf == 1 || (mk && mp == 0)) exit 0; exit !(mk && hk && mp < hp) }'
+}
+
 # _code_price IN OUT FREE -> "$0.72/$0.72 per 1M", "free ($0)" or "price unknown"
 _code_price() {
   awk -v i="$1" -v o="$2" -v f="$3" 'function m(v,  s) { s = sprintf("%.4f", v); while (s ~ /\.[0-9][0-9][0-9]+$/ && s ~ /0$/) s = substr(s, 1, length(s) - 1); return "$" s }

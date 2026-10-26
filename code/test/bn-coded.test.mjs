@@ -124,16 +124,52 @@ test('environment: the container\'s, minus the MCP token and its own variables; 
   assert.equal(coded.childEnv({}, '../../etc', { ANTHROPIC_CUSTOM_HEADERS: 'x' }).ANTHROPIC_CUSTOM_HEADERS, undefined);
 });
 
+// LiteLLM's /model/info as the gateway answers it (input + output per token: Haiku 5.5 0.66e-6, Mistral Large 3 2e-6,
+// Nova Micro 0.175e-6, an OpenRouter model at $0 without ":free")
+const INFO = { data: [
+  { model_name: 'claude-haiku-5-5', model_info: { input_cost_per_token: 1.1e-7, output_cost_per_token: 5.5e-7 } },
+  { model_name: 'mistral-large-3', model_info: { input_cost_per_token: 5e-7, output_cost_per_token: 1.5e-6 } },
+  { model_name: 'nova-micro', model_info: { input_cost_per_token: 3.5e-8, output_cost_per_token: 1.4e-7 } },
+  { model_name: 'or/openrouter/free', model_info: { input_cost_per_token: 0, output_cost_per_token: 0 } },
+  { model_name: 'xl/no-price', model_info: { input_cost_per_token: null } },
+  { model_name: 'bad name!', model_info: { input_cost_per_token: 0, output_cost_per_token: 0 } }, 'junk'] };
+
+test('prices: LiteLLM\'s /model/info read as input plus output per token, nonsense left out', () => {
+  const p = coded.parsePrices(INFO);
+  assert.deepEqual(Object.keys(p).sort(), ['claude-haiku-5-5', 'mistral-large-3', 'nova-micro', 'or/openrouter/free']);
+  assert.ok(Math.abs(p['claude-haiku-5-5'] - 6.6e-7) < 1e-15);
+  for (const bad of [null, {}, { data: 'x' }, { data: [{ model_name: 'a', model_info: { input_cost_per_token: -1, output_cost_per_token: 1 } }] }]) {
+    assert.deepEqual(coded.parsePrices(bad), {}, JSON.stringify(bad));
+  }
+});
+
+test('background work on a paid model that is not one of Claude\'s: the cheaper of it and Haiku; unknown: Haiku', () => {
+  const p = coded.parsePrices(INFO), h = 'claude-haiku-5-5';
+  assert.equal(coded.followsSession('nova-micro', p, h), true, 'cheaper than Haiku: its own');
+  assert.equal(coded.followsSession('mistral-large-3', p, h), false, 'dearer: Haiku');
+  assert.equal(coded.followsSession('xl/no-price', p, h), false, 'no price: Haiku');
+  assert.equal(coded.followsSession('or/openrouter/free', p, h), true, 'free in the list: its own');
+  assert.equal(coded.followsSession('xl/glm-5.3-uncensored:free', null, h), true, 'a free tier, prices not read yet: its own');
+  assert.equal(coded.followsSession('mistral-large-3', null, h), false, 'prices not read yet: Haiku');
+  assert.equal(coded.followsSession('mistral-large-3', p, ''), true, 'no Haiku here: its own');
+  assert.equal(coded.followsSession('nova-micro', { 'nova-micro': 1e-7 }, h), false, 'Haiku\'s price unknown: Haiku');
+  const base = { PATH: '/bin', ANTHROPIC_DEFAULT_HAIKU_MODEL: h };
+  assert.equal(coded.childEnv({}, SID, base, 'nova-micro', p).ANTHROPIC_DEFAULT_HAIKU_MODEL, 'nova-micro');
+  const dear = coded.childEnv({}, SID, base, 'mistral-large-3', p);
+  assert.equal(dear.ANTHROPIC_DEFAULT_HAIKU_MODEL, h);
+  assert.equal('ANTHROPIC_SMALL_FAST_MODEL' in dear || 'CLAUDE_CODE_SUBAGENT_MODEL' in dear, false);
+});
+
 test('environment: Claude Code\'s background model and subagents on the session\'s model when it is not one of Bedrock\'s Claude models', () => {
   const base = { PATH: '/bin', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-5-5', ANTHROPIC_MODEL: 'claude-opus-5-5' };
-  for (const m of ['xl/glm-5.3-uncensored:free', 'or/google/gemma-4-31b-it:free', 'mistral-large-3']) {
-    const env = coded.childEnv({}, SID, base, m);
+  for (const m of ['xl/glm-5.3-uncensored:free', 'or/google/gemma-4-31b-it:free', 'nova-micro']) {
+    const env = coded.childEnv({}, SID, base, m, coded.parsePrices(INFO));
     assert.equal(env.ANTHROPIC_DEFAULT_HAIKU_MODEL, m, m);
     assert.equal(env.ANTHROPIC_SMALL_FAST_MODEL, m, m);
     assert.equal(env.CLAUDE_CODE_SUBAGENT_MODEL, m, m);
     assert.equal(env.ANTHROPIC_MODEL, 'claude-opus-5-5', 'the main model is --model\'s, as before');
   }
-  assert.equal(coded.childEnv({}, SID, base, 'xl/qwen3.8-27b[1m]').ANTHROPIC_DEFAULT_HAIKU_MODEL, 'xl/qwen3.8-27b');
+  assert.equal(coded.childEnv({}, SID, base, 'xl/qwen3.8-27b:free[1m]').ANTHROPIC_DEFAULT_HAIKU_MODEL, 'xl/qwen3.8-27b:free');
   for (const m of ['claude-sonnet-5-5', 'claude-haiku-5-5', 'haiku', 'sonnet[1m]', null, 'bad model', '../x']) {
     const env = coded.childEnv({}, SID, base, m);
     assert.equal(env.ANTHROPIC_DEFAULT_HAIKU_MODEL, 'claude-haiku-5-5', String(m));
