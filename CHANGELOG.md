@@ -31,6 +31,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   setting's title, Settings comes above the walkthrough and the docs, its sections first (*budget* → Spending &
   budgets).
 
+### Fixed
+
+- **Setup and updates ride out a slow download.** Building DevOS ADE's images downloads Python, npm and Debian
+  packages, with each tool's default patience: pip gave up on one read after 15 s, and the build — setup's, an
+  update's, or a test run's — failed on a connection that was only slow (seen on 2026-10-26: `files.pythonhosted.org`
+  read timed out). pip now retries 10 times with a 60 s timeout, npm 5 times (up to 5 minutes for one package), and
+  apt 5 times, in every image and in the Code page's and subscriptions' installs. Nothing else changes: the same
+  pinned, hash-checked packages.
+
 ## [0.31.2] - 2026-10-26
 
 ### Fixed

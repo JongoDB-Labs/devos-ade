@@ -4,7 +4,7 @@ FROM python:3.12-alpine@sha256:1b668429b3511ab407d8e00648891631b0b1a4d7e15e3ca70
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir --root-user-action=ignore --require-hashes -r requirements.txt
+RUN pip install --no-cache-dir --retries 10 --timeout 60 --root-user-action=ignore --require-hashes -r requirements.txt
 # ./stack passes the ISO week (lib/stt.sh _stt_build): a new value invalidates Docker's cache from here on, so
 # the ffmpeg layer is reinstalled at most weekly and picks up Alpine's security fixes; the pip layer above stays.
 ARG APK_REFRESH=unset
@@ -15,7 +15,7 @@ RUN chmod -R a+rX /app
 
 FROM base AS test
 COPY requirements-dev.txt .
-RUN pip install --no-cache-dir --root-user-action=ignore --require-hashes -r requirements-dev.txt
+RUN pip install --no-cache-dir --retries 10 --timeout 60 --root-user-action=ignore --require-hashes -r requirements-dev.txt
 COPY tests ./tests
 RUN python -m pytest -q -p no:cacheprovider tests
 

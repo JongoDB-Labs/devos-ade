@@ -43,7 +43,7 @@ RUN git --version && node --test --test-reporter=spec test/bn-coded-git.test.mjs
 FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS deps
 WORKDIR /opt/code
 COPY package.json package-lock.json .npmrc ./
-RUN npm ci --omit=optional --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=error \
+RUN npm ci --omit=optional --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=error --fetch-retries=5 --fetch-retry-maxtimeout=120000 --fetch-timeout=300000 \
  && for p in darwin-arm64 darwin-x64 linux-arm64 linux-arm64-musl linux-x64 linux-x64-musl win32-arm64 win32-x64; do \
       test ! -e "node_modules/@anthropic-ai/claude-agent-sdk-$p" || { echo "a bundled Claude Code binary got in ($p)" >&2; exit 1; }; done \
  && test ! -e node_modules/@modelcontextprotocol && test ! -e node_modules/zod && test ! -e node_modules/@anthropic-ai/sdk \
@@ -56,7 +56,7 @@ COPY --from=gitnew /tmp/gitnew-tested /tmp/gitnew-tested
 # git, ripgrep and tmux, as the sandbox image has them (Debian's): bn-coded's git.diff is proven against a hostile
 # repository with the same git, fs.grep with the same ripgrep, and terminal.capture with a real tmux under LANG=C; the
 # Git panel's remote operations with the same OpenSSH client against test servers of their own (openssl's CA, sshd)
-RUN apt-get update && apt-get install -y --no-install-recommends git ripgrep tmux ca-certificates openssh-client openssh-server openssl \
+RUN apt-get -o Acquire::Retries=5 update && apt-get -o Acquire::Retries=5 install -y --no-install-recommends git ripgrep tmux ca-certificates openssh-client openssh-server openssl \
  && rm -rf /var/lib/apt/lists/*
 COPY server/ ./server/
 COPY test/ ./test/

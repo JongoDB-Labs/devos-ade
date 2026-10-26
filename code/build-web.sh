@@ -7,7 +7,7 @@ set -eu
 cd /src
 if [ -f package.json ]; then
   [ -f package-lock.json ] || { echo "code/web: no package-lock.json (npm ci needs one)" >&2; exit 1; }
-  npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+  npm ci --ignore-scripts --no-audit --no-fund --loglevel=error --fetch-retries=5 --fetch-retry-maxtimeout=120000 --fetch-timeout=300000
   npm run build
   [ -f dist/index.html ] || { echo "code/web: npm run build left no dist/index.html" >&2; exit 1; }
 else

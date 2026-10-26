@@ -10,7 +10,7 @@
 # downloads them again — only a new pin does. TERMINAL_AI_TOOLS in .env (BN_AI_TOOLS: all, none or a comma list)
 # chooses which go in; Claude Code is always there. Signing in happens later, in the sandbox, with each tool's own flow.
 FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS ai-tools
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get -o Acquire::Retries=5 update && apt-get -o Acquire::Retries=5 install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
 ARG BN_AI_TOOLS=all
 ARG CODEX_VERSION=0.163.0
 ARG CODEX_SHA256_AMD64=beb339e8ecd9ba057a6bb2dc81ad8ca474812edfbf0fc5056ca818797648dde4
@@ -32,8 +32,8 @@ FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a087
 # make: Run & test runs a Makefile's targets with it (bn-coded: the image's own /usr/bin/make). netcat-openbsd: ssh's
 # way through the egress proxy (an HTTP CONNECT: bin/bn-ssh-proxy, ssh_config).
 ARG APT_REFRESH=unset
-RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client tmux ncurses-term ripgrep less \
+RUN apt-get -o Acquire::Retries=5 update \
+ && apt-get -o Acquire::Retries=5 install -y --no-install-recommends ca-certificates curl git openssh-client tmux ncurses-term ripgrep less \
       nano jq procps unzip python3 python3-pip python3-venv make netcat-openbsd \
  && rm -rf /var/lib/apt/lists/*
 
@@ -84,7 +84,7 @@ RUN set -eu; ttyd -p 7682 -i lo true >/dev/null 2>&1 & pid=$!; \
 # Claude Code: npm ci refuses any tarball whose checksum differs from the lockfile (the platform's native binary
 # included). No auto-update in the container (read-only); ./stack update rebuilds with the next pinned version.
 COPY claude-code/package.json claude-code/package-lock.json /opt/claude-code/
-RUN cd /opt/claude-code && npm ci --no-audit --no-fund --loglevel=error --cache /tmp/npm-cache && rm -rf /tmp/npm-cache \
+RUN cd /opt/claude-code && npm ci --no-audit --no-fund --loglevel=error --fetch-retries=5 --fetch-retry-maxtimeout=120000 --fetch-timeout=300000 --cache /tmp/npm-cache && rm -rf /tmp/npm-cache \
  && ln -s /opt/claude-code/node_modules/.bin/claude /usr/local/bin/claude && claude --version
 
 # The AI tools of the stage above, read-only like everything here; their commands on PATH are the launchers in bin/

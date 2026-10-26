@@ -10,7 +10,7 @@ FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir --root-user-action=ignore --require-hashes -r requirements.txt
+RUN pip install --no-cache-dir --retries 10 --timeout 60 --root-user-action=ignore --require-hashes -r requirements.txt
 COPY portal ./portal
 # A checkout made under umask 077 has 0600 files; the runtime user (uid 10102) must still read them.
 RUN chmod -R a+rX /app
@@ -40,7 +40,7 @@ FROM base AS test
 COPY --from=jstest /tmp/js-tested /tmp/js-tested
 COPY --from=docs /out/docs-index.json /tmp/docs-index.json
 COPY requirements-dev.txt .
-RUN pip install --no-cache-dir --root-user-action=ignore --require-hashes -r requirements-dev.txt
+RUN pip install --no-cache-dir --retries 10 --timeout 60 --root-user-action=ignore --require-hashes -r requirements-dev.txt
 COPY tests ./tests
 # (a wildcard in every part: without the context nothing matches, and nothing is copied)
 COPY --from=repo catalo[g]/settings*.tsv catalo[g]/ai-tools.tsv catalo[g]/setup-links.tsv /repo/catalog/

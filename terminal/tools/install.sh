@@ -40,7 +40,7 @@ fetch() {
 npm_tool() {
   mkdir -p "/out/$1"
   cp "/tmp/tools/$1/package.json" "/tmp/tools/$1/package-lock.json" "/out/$1/"
-  (cd "/out/$1" && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error --cache /tmp/npm-cache)
+  (cd "/out/$1" && npm ci --ignore-scripts --no-audit --no-fund --loglevel=error --fetch-retries=5 --fetch-retry-maxtimeout=120000 --fetch-timeout=300000 --cache /tmp/npm-cache)
 }
 
 # One tool each (run in a subshell that stops at its first failure: the tool is then left out, the others stay)

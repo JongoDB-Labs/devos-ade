@@ -3,7 +3,7 @@
 ARG PW_IMAGE
 FROM ${PW_IMAGE}
 COPY requirements.txt /tmp/requirements.txt
-RUN pip install -q --no-cache-dir --break-system-packages --root-user-action=ignore --require-hashes --only-binary :all: \
+RUN pip install -q --no-cache-dir --retries 10 --timeout 60 --break-system-packages --root-user-action=ignore --require-hashes --only-binary :all: \
       -r /tmp/requirements.txt \
  && python3 -c "import importlib.metadata as m; assert m.version('playwright') == '1.55.0'"
 WORKDIR /suite
