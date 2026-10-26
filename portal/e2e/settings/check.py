@@ -186,6 +186,8 @@ class Stub(http.server.BaseHTTPRequestHandler):
         if path == "/api/settings/check-key":
             STUB["checks"].append(body)
             v = body.get("value", "")
+            if "late" in v:   # (an answer that takes a while: the form may be cancelled or edited meanwhile)
+                time.sleep(1.5)
             if "bad" in v:
                 d = {"result": "rejected", "message": "OpenRouter rejected this key (HTTP 401).", "url": "https://openrouter.ai/settings/keys", "models": None}
             elif "slow" in v:
@@ -429,6 +431,26 @@ def check_keys(page, failures, label):
     if len(STUB["checks"]) != n:
         failures.append(f"{label}: Save anyway asked the provider again")
     page.click("#set-confirm-cancel")
+    # an answer that comes after the form was edited, or cancelled: no password dialog for what is no longer there
+    late = prefix + "late" + "0" * 30
+    field.fill(late)
+    save.click()
+    page.wait_for_timeout(300)
+    field.fill(late + "1")
+    page.wait_for_timeout(2000)
+    if page.locator("#set-confirm[open]").count():
+        failures.append(f"{label}: an edit while the key was checked still opened the password dialog")
+        page.click("#set-confirm-cancel")
+    field.fill(late)
+    save.click()
+    page.wait_for_timeout(300)
+    form.locator("button", has_text="Cancel").click()
+    page.wait_for_timeout(2000)
+    if page.locator("#set-confirm[open]").count():
+        failures.append(f"{label}: Cancel while the key was checked still opened the password dialog")
+        page.click("#set-confirm-cancel")
+    row, form = open_key("OPENROUTER_API_KEY", "Replace key")
+    save, field = form.locator("button[type=submit]"), form.locator("input[type=password]")
     # accepted: the password dialog; the helper then refuses it: the form again, the key in it, the reason under it
     good = prefix + "good" + "0" * 30
     field.fill(good)

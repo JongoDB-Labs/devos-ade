@@ -157,13 +157,7 @@ https://{$REMOTE_HOST}:8443, https://*.{$REMOTE_HOST}:8443 {
 		import unknown_host remote
 	}
 	# (while the portal does not answer: the words alone — for those names only, never another host's error)
-	handle_errors {
-		@unknown_name_down {
-			remote_ip {$REMOTE_SIDECAR_IP}/32
-			not host {$REMOTE_HOST} {$REMOTE_CHAT_HOST} {$REMOTE_ADMIN_HOST} {$REMOTE_FILES_HOST} {$REMOTE_TERMINAL_HOST:terminal.remote.invalid} {$REMOTE_CODE_HOST:code.remote.invalid} {$REMOTE_PREVIEW_HOST:preview.remote.invalid}
-		}
-		respond @unknown_name_down "unknown host" 404
-	}
+	import unknown_host_down
 }
 
 # A REMOTE_PREVIEW_DOMAIN of its own (lib/code.sh writes REMOTE_PREVIEW_SITE=own; compose.domain.yaml): a site block

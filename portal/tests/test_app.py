@@ -341,3 +341,9 @@ def test_an_unknown_host_names_the_portal_and_nothing_it_was_asked(settings):
     with _where_client(rs) as c:
         r = c.get("/auth/unknown-host?site=remote")
         assert 'href="https://bn.tail1234.ts.net/"' in r.text and "Over remote access, DevOS ADE is at" in r.text
+
+
+def test_the_login_page_fills_its_template_once(client):
+    # a next= address holding a placeholder stays text: never the error box or another value
+    r = client.get("/login?next=%2F%7B%7Berror%7D%7D%7B%7Bforgot%7D%7D")
+    assert "{{error}}{{forgot}}" in r.text and 'role="alert"' not in r.text

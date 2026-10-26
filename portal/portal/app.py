@@ -177,9 +177,10 @@ def _login_page(next_url: str, error: str = "", status: int = 200, retry_after: 
                 forgot: str = "", days: int = 30) -> HTMLResponse:
     page = (STATIC / "login.html").read_text(encoding="utf-8")
     err = f'<p class="error" id="login-error" role="alert">{html.escape(error)}</p>' if error else ""
-    page = page.replace("{{next}}", html.escape(next_url, quote=True)).replace("{{error}}", err)
-    page = page.replace("{{described}}", "login-error login-hint" if error else "login-hint")
-    page = page.replace("{{forgot}}", forgot or _forgot("", "", False)).replace("{{days}}", str(days))
+    # (one pass: a value that holds "{{…}}" itself — a next= address — is never filled in again)
+    fill = {"next": html.escape(next_url, quote=True), "error": err, "described": "login-error login-hint" if error else "login-hint",
+            "forgot": forgot or _forgot("", "", False), "days": str(days)}
+    page = re.sub(r"\{\{([a-z]+)\}\}", lambda m: fill.get(m.group(1), m.group(0)), page)
     resp = HTMLResponse(appicons.versioned(page), status_code=status)
     if retry_after:
         resp.headers["Retry-After"] = str(retry_after)

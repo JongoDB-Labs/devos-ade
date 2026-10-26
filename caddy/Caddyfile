@@ -215,8 +215,10 @@
 # the portal's own routes, and nothing of the request is shown back. Its style sheets, fonts and logo — the sign-in
 # page's public files, the same list as public_paths' and named one by one — come from the portal under that name too
 # (a font from another host would need CORS). No cookie, Authorization or sign-in header goes on, no proxy secret
-# (the portal counts it as no one's), and nothing the portal sets comes back. Everything else: 405.
+# (the portal counts it as no one's), and nothing the portal sets comes back. Everything else: 405. The bn_unknown_host
+# variable marks these requests for unknown_host_down below.
 (unknown_host) {
+	vars bn_unknown_host 1
 	request_header -Cookie
 	request_header -Authorization
 	request_header -X-Portal-User
@@ -241,10 +243,13 @@
 	respond 405
 }
 
-# ...and while the portal does not answer (starting, stopped): the words alone, as before
+# ...and while the portal does not answer (starting, stopped): the words alone, as before. Only for the requests
+# unknown_host marked: a catch-all site's error handling has no host of its own to be scoped to, so without the mark it
+# would answer every other site's errors on the same listener too (a 502 of Chat, a 413 of the portal …).
 (unknown_host_down) {
 	handle_errors {
-		respond "unknown host" 404
+		@bn_unknown_down vars bn_unknown_host 1
+		respond @bn_unknown_down "unknown host" 404
 	}
 }
 

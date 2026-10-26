@@ -210,6 +210,12 @@ test_caddy_unknown_host_is_the_portals_page_and_public_files_only() {
   [ -n "$assets" ] || { echo "no files for the unknown host's page" >&2; return 1; }
   case "$assets" in *"*"*) echo "a wildcard in the unknown host's files" >&2; return 1 ;; esac
   [ -z "$(comm -13 <(printf '%s\n' "$pub") <(printf '%s\n' "$assets"))" ] || { echo "the unknown host's files are not all public" >&2; return 1; }
+  # the words alone while the portal does not answer: only for the requests unknown_host marked (a catch-all's error
+  # handling would otherwise answer every other site's errors on the same listener)
+  assert_contains "$snip" "vars bn_unknown_host 1"
+  assert_contains "$(sed -n '/^(unknown_host_down) {/,/^}/p' "$f")" 'respond @bn_unknown_down "unknown host" 404'
+  assert_contains "$(sed -n '/^(unknown_host_down) {/,/^}/p' "$f")" "@bn_unknown_down vars bn_unknown_host 1"
+  assert_eq "$(grep -c 'handle_errors' "$f" "$STACK_DIR"/caddy/remote-*.caddy | awk -F: '{ s += $2 } END { print s }')" 1
   assert_contains "$(sed -n '/^http:\/\/ {/,/^}/p' "$f")" "import unknown_host local"
   assert_contains "$(cat "$STACK_DIR/caddy/remote-tailscale.caddy")" "import unknown_host remote"
   assert_contains "$(cat "$STACK_DIR/caddy/remote-domain.caddy")" "import unknown_host remote"

@@ -1406,7 +1406,13 @@
         return;
       }
       // a provider's key: asked of the provider now (free), before the password (a "Save anyway" after no answer: not again)
-      if (asked && form.dataset.unchecked !== values[asked.key] && !(await checkKey(form, asked, values[asked.key]))) return;
+      if (asked && unchecked.get(form) !== values[asked.key]) {
+        if (!(await checkKey(form, asked, values[asked.key]))) return;
+        // (while it was asked: cancelled, or the key edited, or another dialog opened — then nothing goes on)
+        let now = null;
+        try { now = collect()[asked.key]; } catch (_) { return; }
+        if (!form.isConnected || now !== values[asked.key] || $("#set-confirm[open]")) return;
+      }
       confirmApply(values, `Save ${k.label}?`, typeof form._note === "function" ? form._note() : k.note, Object.keys(values), form, form.dataset.confirm ? [form.dataset.confirm] : []);
     });
     r.insertBefore(form, r.querySelector(":scope > .set-details"));
@@ -1416,6 +1422,9 @@
   }
 
   // --- a key's form: Save once it is filled in, what is wrong right under the field, the provider asked first ---
+  // a form whose key the provider did not answer about in time -> that key ("Save anyway" sends it on unasked); kept
+  // here, in the page's memory, not in an attribute of the form
+  const unchecked = new WeakMap();
   // keyForm(FORM, FIELDS, SAVE, DESCRIBED): Save waits until each of FIELDS has a value (an empty Save changes nothing:
   // it never opens the password dialog), the fields name the error and the check's word (aria-describedby), and an edit
   // clears what was said about the value before.
@@ -1426,8 +1435,8 @@
       const err = form.querySelector(":scope > .error");
       if (err) err.hidden = true;
       for (const x of form.querySelectorAll("[aria-invalid]")) x.removeAttribute("aria-invalid");
-      if (form.dataset.unchecked !== undefined) {   // a new value: checked again
-        delete form.dataset.unchecked;
+      if (unchecked.has(form)) {   // a new value: checked again
+        unchecked.delete(form);
         save.textContent = "Save";
       }
       const st = form.querySelector(".set-check");
@@ -1524,7 +1533,7 @@
         say(form, `${d.message} `, ...(d.url ? [extLink([`Get a new key at ${String(d.url).replace(/^https:\/\//, "")}`, d.url])] : []), ". Nothing was saved.");
         return false;
       }
-      form.dataset.unchecked = value;
+      unchecked.set(form, value);
       save.textContent = "Save anyway";
       say(form, `${d.message} Save anyway hands it to the update helper, which checks it again before anything changes.`);
       return false;
@@ -1634,7 +1643,11 @@
         if (kf && key) {
           const bad = shapeError({ STT_API_KEY: key });
           if (bad) { say(form, bad); return; }
-          if (form.dataset.unchecked !== key && !(await checkKey(form, { key: "STT_API_KEY", name: kf.check }, key, p))) return;
+          if (unchecked.get(form) !== key) {
+            if (!(await checkKey(form, { key: "STT_API_KEY", name: kf.check }, key, p))) return;
+            // (while it was asked: cancelled, or the key, provider or model changed, or another dialog opened — nothing goes on)
+            if (!form.isConnected || keyIn.value.trim() !== key || provider() !== p || msel.value !== values.STT_MODEL || $("#set-confirm[open]")) return;
+          }
         }
         confirmApply(values, "Save speech-to-text?", "Chat restarts (about 30 s).", Object.keys(values), form);
       });
