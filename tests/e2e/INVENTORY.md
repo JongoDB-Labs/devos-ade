@@ -360,6 +360,15 @@ before it — stays a FAIL, and says it is not the known issue.
 
 None open.
 
+Not explained yet, in `tests/e2e/harness-parity.sh` (no session failed): in one full run of the six models side by side
+(2026-10-26), bursts of about 35 calls in gpt-6-luna's group failed at Bedrock within two seconds — "Invalid
+'messages': empty array" and LiteLLM's "bedrock requires at least one non-system message". Each was a Chat Completions
+call into the proxy (call type acompletion, not Claude Code's /v1/messages) with no message at all and 0, 1 or 14
+tools; none of Claude Code's own requests failed, and every session passed. In this throwaway only the stand-ins'
+relay (to gpt-6-luna) uses Chat Completions, yet the stand-ins logged no request without messages. It did not come
+back in five runs since (side-calls three times beside the stand-ins' errors, count_tokens with /context, /compact).
+The suite now records each call's route and client and the stand-ins' requests, so the next one names its caller.
+
 Fixed after the suite found them:
 
 1. **`./stack restore` / `./stack rollback` from another folder** (e2e `cli/restore-from-another-folder`,
