@@ -86,34 +86,6 @@
 .set-project .error { flex-basis: 100%; margin: 0; }
 .set-projects-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 0; font-size: 13px; }
 
-/* Models & providers: a card for each provider — a key's row with its models' rows in a frame, your subscriptions' in
-   a grid — its state in a pill next to its name, and what it adds to the pickers; a mono head over each group */
-.set-group-head { margin: 18px 0 8px; font: 600 11.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-.set-rows > .set-group-head:first-child { margin-top: 4px; }
-.set-rows > .set-dep.set-prov, .set-prov-grid > .set-prov { border: 1px solid var(--line); border-radius: var(--r-l, 12px); background: var(--surface);
-  box-shadow: var(--card-edge, none); }
-.set-rows > .set-dep.set-prov { padding: 0 16px 2px; margin-bottom: 10px; }
-.set-rows > .set-dep.set-prov + .set-dep, .set-rows > .set-group-head + .set-dep { border-top: 0; }
-.set-prov-state { font-weight: 600; }
-.set-prov-state[data-tone="on"] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
-.set-prov-state[data-tone="warn"] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
-.set-prov-adds { margin: 6px 0 0; font-size: 13.5px; max-width: 70ch; }
-.set-prov-grid { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 10px; }
-.set-prov-grid > .set-prov { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 12px 14px; }
-.set-prov-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
-.set-prov .set-prov-meta, .set-prov .set-prov-adds { margin: 0; overflow-wrap: anywhere; }
-.set-prov .set-subs-where { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
-.set-prov .set-subs-where > .note:empty { display: none; }
-.set-prov .set-subs-where .note, .set-prov .set-subs-where .set-cli { margin: 0; }
-.set-prov .set-subs-where > p, .set-prov .set-subs-where > details { flex-basis: 100%; }
-.set-prov .set-project-actions { margin-left: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-.set-prov a.action { text-decoration: none; }
-.set-subs-checked { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 10px 0 0; }
-.set-moved { margin: -2px 0 10px; }
-.set-moved a, .set-prov-foot a { color: var(--accent); }
-.set-prov-foot { margin: 4px 0 10px; }
-.set-finding .set-group-head, .set-finding .set-prov-foot, .set-finding .set-moved { display: none; }
-
 /* badges: from where it changes, secret, read-only, what a change restarts — the DevOS website's tags (mono, a small corner) */
 .badge { display: inline-block; font: 500 11px/18px var(--font-mono); letter-spacing: 0.01em; padding: 0 7px; border-radius: var(--r-s); border: 1px solid var(--line);
   color: var(--muted); white-space: nowrap; }
@@ -196,6 +168,34 @@
 .set-adv-value.masked { color: var(--muted); }
 .set-adv-item .set-sum { font-size: 13px; }
 .set-adv-cli { font-size: 12.5px; }
+
+/* Models & providers: a card for each provider — a key's row with its models' rows in a frame, your subscriptions' in
+   a grid — its state in a badge next to its name, and what it adds to the pickers; a mono head over each group */
+.set-group-head { margin: 18px 0 8px; font: 600 11.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.set-rows > .set-group-head:first-child { margin-top: 4px; }
+.set-rows > .set-dep.set-prov, .set-prov-grid > .set-prov { border: 1px solid var(--line); border-radius: var(--r-l, 12px); background: var(--surface);
+  box-shadow: var(--card-edge, none); }
+.set-rows > .set-dep.set-prov { padding: 0 16px 2px; margin-bottom: 10px; }
+.set-rows > .set-dep.set-prov + .set-dep, .set-rows > .set-group-head + .set-dep { border-top: 0; }
+.set-prov-state { font-weight: 600; }
+.set-prov-state[data-tone="on"] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+.set-prov-state[data-tone="warn"] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+.set-prov-adds { margin: 6px 0 0; font-size: 13.5px; max-width: 70ch; }
+.set-prov-grid { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 10px; }
+.set-prov-grid > .set-prov { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 12px 14px; }
+.set-prov-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.set-prov .set-prov-meta, .set-prov .set-prov-adds { margin: 0; overflow-wrap: anywhere; }
+.set-prov .set-subs-where { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.set-prov .set-subs-where > .note:empty { display: none; }
+.set-prov .set-subs-where .note, .set-prov .set-subs-where .set-cli { margin: 0; }
+.set-prov .set-subs-where > p, .set-prov .set-subs-where > details { flex-basis: 100%; }
+.set-prov .set-project-actions { margin-left: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.set-prov a.action { text-decoration: none; }
+.set-subs-checked { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 10px 0 0; }
+.set-moved { margin: -2px 0 10px; }
+.set-moved a, .set-prov-foot a { color: var(--accent); }
+.set-prov-foot { margin: 4px 0 10px; }
+.set-finding .set-group-head, .set-finding .set-prov-foot, .set-finding .set-moved { display: none; }
 
 /* the backup list */
 .set-backups { grid-column: 1 / -1; margin-top: 6px; overflow-x: auto; }
