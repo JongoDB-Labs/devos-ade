@@ -3,7 +3,7 @@
 import * as api from './api';
 import type { BnModels, ConnStatus } from './api';
 import { createStore, type Store } from './store';
-import { addPrompt, applySeq, dropPrompt, endedMidTurn, idleWithoutResult, mergeHistory, newView, pendingCount, prependHistory, withEarlier, type SessionView } from './session';
+import { addPrompt, applySeq, changedFiles, dropPrompt, endedMidTurn, idleWithoutResult, mergeHistory, newView, pendingCount, prependHistory, withEarlier, type SessionView } from './session';
 import { exportName, toMarkdown } from './transcript';
 import { appendMemory, memoryLine } from './palette';
 import { fullModel, modelCommand, startModel } from './models';
@@ -18,7 +18,7 @@ import { applyHunks } from './diff';
 import { basename, cleanPath, dirname, isUuid, joinPath, label, money, setHostTops } from './text';
 import { sniff, viewFor, type FileView, type Sniffed } from './preview/sniff';
 import type { GitCommit, GitEntry, GitEvent, GitFile, GitNetAction, GitPlan, GitRemoteState, GitReview, GitScope, GitStatus, GrepResult, SandboxWords } from './types';
-import { proposedMessage } from './git';
+import { findRepo, proposedMessage, type RepoFound } from './git';
 import { buildReview, deletedText, reverseHunks, sessionStart, takesComments, undoBlocker, withComments, type ReviewComment, type ReviewFile, type ReviewHunk } from './review';
 import { promptTitle } from './mentions';
 import { crossed, nextBudget, rememberBudget, storedBudget, type Budget } from './budget';
@@ -174,8 +174,13 @@ export interface GitState {
   focus: number;
   /** the repository folder of the workspace the panel shows ('' : the workspace folder itself; remembered per browser) */
   repo: string;
-  /** the repository folders of the workspace (the workspace itself, and folders in it two levels down) */
+  /** the repository folders in the project's folder (itself, and folders in it two levels down) */
   repos: string[];
+  /** the project folder the panel found its repository for, and how (findRepo): the folder itself, the one around it,
+   *  one inside it — inside: those directly inside it, to pick from */
+  root: string;
+  found: RepoFound;
+  inside: string[];
   /** the repository's remotes and branches, as the last fetch left them (no network) */
   remote: GitRemoteState | null;
   /** a remote operation (fetch, pull, push, publish, clone) on its way */
@@ -396,7 +401,7 @@ export const store: Store<AppState> = createStore<AppState>({
   startWith: null,
   modeSwitching: false,
   review: { git: null, loading: false, error: null, kept: {}, undone: {}, busy: null, filter: 'session', engaged: false },
-  git: { status: null, commits: [], loading: false, error: null, busy: null, message: '', drafting: null, engaged: false, focus: 0, repo: '', repos: [], remote: null,
+  git: { status: null, commits: [], loading: false, error: null, busy: null, message: '', drafting: null, engaged: false, focus: 0, repo: '', repos: [], root: '', found: null, inside: [], remote: null,
     net: null, plan: null, pushed: null, dialog: null, hosts: null, events: [] },
   search: { q: '', regex: false, caseSensitive: false, include: '', exclude: '', globs: false, loading: false, result: null, error: null, focus: 0 },
   palette: null,
@@ -2049,7 +2054,7 @@ export function setProject(id: string, { keepSession = false }: { keepSession?: 
   storeProject(p.id);
   api.setScope(p.id);
   const was = get().project;
-  if (was !== p.id || get().git.repo !== p.root) {
+  if (was !== p.id || get().git.root !== p.root) {
     set((s) => ({
       ...s,
       project: p.id,
@@ -2063,7 +2068,8 @@ export function setProject(id: string, { keepSession = false }: { keepSession?: 
       launchConfirm: null,
       dialog: s.dialog === 'run-confirm' || s.dialog === 'launch' ? null : s.dialog,
       review: { ...s.review, git: null, error: null, errorSaid: null },
-      git: { ...s.git, repo: p.root, status: null, commits: [], remote: null, pushed: null, error: null, errorSaid: null, plan: null, repos: [] },
+      // (the repository is found again for this folder: itself, the one around it, one inside it — refreshGit)
+      git: { ...s.git, repo: p.root, root: p.root, found: null, inside: [], status: null, commits: [], remote: null, pushed: null, error: null, errorSaid: null, plan: null, repos: [] },
     }));
   }
   if (!keepSession) {
@@ -3332,12 +3338,37 @@ export function showGit(focusMessage = false): void {
   void refreshGit(true);
 }
 /** The panel shows another project's repository (the repository picker is the project chip's list: the panel follows the
- *  project shown). A repository folder of the workspace that is no project yet becomes one (Open as a project). */
-export async function selectGitRepo(repo: string): Promise<void> {
+ *  project shown) — or another of the repositories found inside this project's folder (it stays the project shown). A
+ *  repository folder of the workspace that is no project yet becomes one (Open as a project). */
+export async function selectGitRepo(repo: string, { inside = false }: { inside?: boolean } = {}): Promise<void> {
   const r = api.repoPath(repo) ?? '';
+  const g = get().git;
+  if (inside && g.found === 'above' && r === g.repo) return;
+  if (inside && g.found === 'inside' && g.inside.includes(r)) {
+    if (r !== g.repo) {
+      setGit((x) => ({ ...x, repo: r, status: null, commits: [], remote: null, pushed: null, error: null, errorSaid: null, plan: null }));
+      void refreshGit();
+    }
+    return;
+  }
   const p = get().projects.find((x) => x.root === r);
   if (p) return setProject(p.id);
   if (r) await cloneBecomesProject(r);
+}
+/** Find the repository the panel shows for the project's folder (findRepo) and show it: asked with the repository list
+ *  (refreshGit's repos), and again when the folder shown is no repository (one may have been made or cloned since).
+ *  -> whether the panel now shows another folder */
+async function resolveRepo(): Promise<boolean> {
+  const p = currentProject();
+  const info = await api.getGitRepoInfo(p.id).catch(() => null);
+  if (!info || get().project !== p.id) return false;
+  const g = get().git;
+  const touched = Object.keys(changedFiles(activeView()));
+  const f = findRepo(p.root, info, { current: g.found === 'inside' ? g.repo : undefined, touched });
+  const moved = f.repo !== g.repo;
+  setGit((x) => ({ ...x, repos: info.repos, root: p.root, found: f.found, inside: f.inside, ...(moved
+    ? { repo: f.repo, status: null, commits: [], remote: null, pushed: null, error: null, errorSaid: null, plan: null } : {}) }));
+  return moved;
 }
 /** git is asked once at a time (status, then the log and the remotes); asked again meanwhile, once more when that answer
  *  is in. repos: the workspace's repository folders are listed again too. */
@@ -3352,6 +3383,7 @@ export function refreshGit(repos = false): Promise<void> {
   }
   setGit((g) => ({ ...g, loading: true }));
   const run = (async () => {
+    let reposTried = false;
     try {
       do {
         gitAgain = false;
@@ -3359,8 +3391,7 @@ export function refreshGit(repos = false): Promise<void> {
         try {
           if (reposAgain) {
             reposAgain = false;
-            const list = await api.getGitRepos().catch(() => null);
-            if (list) setGit((g) => ({ ...g, repos: list }));
+            if (await resolveRepo()) { gitAgain = true; continue; }   // (do…while: the condition decides)
           }
           let status: GitStatus;
           try {
@@ -3373,6 +3404,11 @@ export function refreshGit(repos = false): Promise<void> {
           const log = status.repo ? await api.getGitLog(repo) : { commits: [] as GitCommit[], error: null, said: null };
           const remote = status.repo ? await api.getGitRemote(repo).catch(() => null) : null;
           if (get().git.repo !== repo) continue;
+          // (the folder shown is no repository: one may have been made or cloned in or around it since — found again)
+          if (!status.repo && !reposTried) {
+            reposTried = true;
+            if (await resolveRepo()) { gitAgain = true; continue; }   // (do…while: the condition decides)
+          }
           setGit((g) => ({ ...g, status, commits: log.commits, error: log.error, errorSaid: log.error ? log.said : null, remote }));
         } catch (e) {
           // (two reads run already: the next refresh has the answer)

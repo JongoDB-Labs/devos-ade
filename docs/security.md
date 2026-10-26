@@ -1857,6 +1857,14 @@ repository can plant in `.git/` or in a configuration file.
   (`--ignore-submodules=all`), a deadline (30 s for an op) and output caps (2,000 entries and 1 MiB of names in a
   status; 2 MiB of a file's diff; 20 commits). The global options are `--no-pager --no-replace-objects
   --literal-pathspecs` (and `GIT_LITERAL_PATHSPECS=1`).
+- [x] **Which repository the panel shows is found without git.** For a project's folder: the folder itself when it is
+  a repository, else the nearest folder around it, up to the workspace itself (never above it, never in a folder of
+  this computer beyond its own), else the repositories directly inside it — each found by a `.git` entry alone
+  (`lstat`, no git runs: `git.repos`, whose root was checked to have no link on its way, and two levels down never
+  through a link), and the code container takes only a folder truly around the project's in the workspace
+  (`aroundOf`). The panel then names that folder as its repository, and every command above runs there exactly as for
+  a project's own: git must find that folder as its top (`GIT_CEILING_DIRECTORIES` its parent), so it never works on a
+  repository the page did not name.
 - [x] **No hook runs.** `core.hooksPath=/dev/null` (hook files: `.git/hooks`, a `core.hooksPath` folder of the
   repository or one an included file names, husky's …), and — because **git 2.54's config-based hooks**
   (`hook.<name>.command` + `hook.<name>.event`) are *not* turned off by `core.hooksPath` (verified: a `pre-commit` defined

@@ -2398,14 +2398,24 @@ async function remoteUrls(g, name) {
 const mergeDriverOverrides = (text) => [...new Set(String(text).split('\0').map((r) => r.split('\n')[0].match(/^merge\.(.+)\.driver$/)?.[1]).filter(Boolean))]
   .slice(0, GIT_DRIVERS_MAX).map((n) => [`merge.${n}.driver`, '/dev/null/no-merge-driver']);
 
-// git.repos {root} -> {repos: [{path, kind: dir|file}]}: the root itself when it is a repository, and the folders in it
-// (two levels down, never through a link, not the trash or dependencies) that are — paths relative to the root; no git
-// runs for this
+// git.repos {root} -> {repos: [{path, kind: dir|file}], above}: the root itself when it is a repository, and the folders
+// in it (two levels down, never through a link, not the trash or dependencies) that are — paths relative to the root;
+// above: the nearest folder around the root, up to its top (the workspace itself, never beyond), that is a repository —
+// the one the root's files are in, as the page names it (relative to the workspace), or null. The root was checked to be
+// a real folder with no link on its way (rootArg), so every folder around it is one too. No git runs for this.
 export function gitRepos({ depth = 2, max = 50, root = WS_ROOT } = {}) {
   const out = [];
   const has = (abs) => { try { const st = fs.lstatSync(path.join(abs, '.git')); return st.isDirectory() ? 'dir' : st.isFile() ? 'file' : null; } catch { return null; } };
   const top = has(root.abs);
   if (top) out.push({ path: '', kind: top });
+  let above = null;
+  if (!top && root.rel) {
+    const parts = root.rel.split('/');
+    for (let i = parts.length - 1; i >= 0 && above === null; i--) {
+      const r = parts.slice(0, i).join('/');
+      if (has(r ? path.join(root.top, r) : root.top)) above = pageOf(r ? path.join(root.top, r) : root.top);
+    }
+  }
   const walk = (rel, d) => {
     if (out.length >= max || d > depth) return;
     let ents = [];
@@ -2421,7 +2431,7 @@ export function gitRepos({ depth = 2, max = 50, root = WS_ROOT } = {}) {
     }
   };
   walk('', 1);
-  return { repos: out, truncated: out.length >= max };
+  return { repos: out, truncated: out.length >= max, above };
 }
 
 // gitInitIn(abs, git) -> {git: true} or {git: false, gitError}: `git init` in a folder — no template (no hook, no

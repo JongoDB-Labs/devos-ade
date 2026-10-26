@@ -1488,13 +1488,21 @@ export async function testGitHost(id: string, url: string): Promise<{ ok: boolea
 }
 /** The repositories in a project's folder (and two levels down), as folders of the workspace. */
 export async function getGitRepos(project = scope): Promise<string[]> {
-  const o = await request('GET', '/api/git/repos' + q(inScope(project)));
-  const out: string[] = [];
+  return (await getGitRepoInfo(project)).repos;
+}
+/** The repositories in a project's folder (itself, and folders two levels down) and the one around it (above: the
+ *  nearest folder around it in the workspace that is a repository; null: none) — GET /api/git/repos. */
+export async function getGitRepoInfo(project = scope): Promise<{ repos: string[]; above: string | null }> {
+  return normGitRepoInfo(await request('GET', '/api/git/repos' + q(inScope(project))));
+}
+export function normGitRepoInfo(raw: unknown): { repos: string[]; above: string | null } {
+  const o = obj(raw) ?? {};
+  const repos: string[] = [];
   for (const v of arr(o.repos, 50)) {
     const p = repoPath(obj(v)?.path);
-    if (p !== null && !out.includes(p)) out.push(p);
+    if (p !== null && !repos.includes(p)) repos.push(p);
   }
-  return out;
+  return { repos, above: o.above === undefined || o.above === null ? null : repoPath(o.above) };
 }
 function normRemoteUrl(v: unknown): GitRemoteUrl | null {
   const o = obj(v);

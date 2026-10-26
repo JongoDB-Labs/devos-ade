@@ -205,6 +205,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   the card's lamp), the prompt box says Claude waits for your answer above, and the card takes the focus and is scrolled
   into view — also from an empty prompt box you just sent from (a key that lands on the card still answers nothing;
   text you are typing keeps the box's focus).
+- **The Git panel finds the repository of the project's folder.** It said *not a git repository* for a folder that is
+  none itself, even with a repository in it (a clone in the workspace, with a change waiting). It now shows the folder's
+  own repository, else the one the folder is in (around it, up to the workspace), else the one directly inside it — the
+  one you picked, else one the session changed files in, else the first; with several, the picker offers the others —
+  and says which it shows. It looks for a `.git` entry (no git runs to find it), and every command still runs only in a
+  repository's own top folder (docs/security.md › The Git panel).
 
 ## [0.31.0] - 2026-10-26
 

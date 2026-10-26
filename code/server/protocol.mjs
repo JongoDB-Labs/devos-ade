@@ -153,6 +153,11 @@
 //                                           At most 2,000 files and 1 MiB of names: beyond, truncated
 //   The Git panel (git in the sandbox with the same hardening; no hook, signing program or editor ever runs — also
 //   no config-based hook; no push, no pull; docs/security.md). 429 while two reads or one change run already:
+//   GET    /api/git/repos?project=ID       {repos: [{path}], truncated, above} — the repositories in the project's folder
+//                                           (itself, and folders two levels down; never through a link) and above: the
+//                                           nearest folder around it in the workspace that is one (null: none) — the
+//                                           page shows the repository the folder is in, else the ones inside it. No git
+//                                           runs for this (a .git entry is looked for)
 //   GET    /api/git/status                 {repo, reason, branch, detached, head, upstream, ahead, behind, state: null |
 //                                           merge|rebase|cherry-pick|revert|bisect, identity: {name, email, from:
 //                                           repository|sandbox|default} (who a commit is by), staged: [{path, code:

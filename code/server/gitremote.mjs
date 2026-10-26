@@ -89,8 +89,12 @@ export const repoOk = (v, hosts = hostRoots()) => v === '' || (typeof v === 'str
 export function reposOf(r) {
   const out = [];
   for (const x of Array.isArray(r?.repos) ? r.repos.slice(0, 50) : []) if (x && repoOk(x.path) && !out.some((y) => y.path === x.path)) out.push({ path: x.path });
-  return { repos: out, truncated: r?.truncated === true };
+  return { repos: out, truncated: r?.truncated === true, above: typeof r?.above === 'string' && repoOk(r.above) ? r.above : null };
 }
+// aroundOf(above, rel) -> the repository folder around a project's folder (rel) the sandbox named, when it truly is a
+// folder around it in the workspace (the workspace itself: ''), else null — never one elsewhere
+export const aroundOf = (above, rel) => (typeof above === 'string' && typeof rel === 'string' && rel && !rel.startsWith('/') && repoOk(above)
+  && !above.startsWith('/') && (above === '' || rel.startsWith(`${above}/`)) ? above : null);
 const urlList = (v) => (Array.isArray(v) ? v.slice(0, 16).filter((u) => typeof u === 'string' && u.length <= 1200).map((u) => short(u, 1200)) : []);
 // remoteStateOf(r) -> git.remote.state as the code container keeps it (every name, URL and count checked)
 export function remoteStateOf(r) {
@@ -275,11 +279,12 @@ export function makeGitRemote({ call: sandboxCall, openBroker = null, store = ne
 
   // --- the repositories and their remotes (no network) ---
   // repos(root) — the repositories in a project's folder (root: from the project records; none: the workspace), as
-  // folders of the workspace (bn-coded answers them relative to the root)
+  // folders of the workspace (bn-coded answers them relative to the root), and the one around it (above: the nearest
+  // folder around the project's, in the workspace, that is a repository; null: none — the Workspace has none around it)
   const repos = async (root = null) => {
     const r = reposOf((await call({ op: 'git.repos', ...(root?.rel ? { root: root.abs } : {}) }, { timeoutMs: 15000 })).result);
-    if (!root?.rel) return r;
-    return { ...r, repos: r.repos.map((x) => ({ path: x.path ? `${root.rel}/${x.path}` : root.rel })).filter((x) => repoOk(x.path)) };
+    if (!root?.rel) return { ...r, above: null };
+    return { ...r, repos: r.repos.map((x) => ({ path: x.path ? `${root.rel}/${x.path}` : root.rel })).filter((x) => repoOk(x.path)), above: aroundOf(r.above, root.rel) };
   };
   async function state(repo) {
     if (!repoOk(repo)) throw err(400, 'not a repository folder of the workspace');

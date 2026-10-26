@@ -154,6 +154,13 @@ test('git.diff in a root: the project folder must be the repository; paths relat
   // git.repos: relative to the root
   assert.deepEqual(coded.gitRepos({ root: coded.rootArg(P1) }).repos, [{ path: '', kind: 'dir' }]);
   assert.deepEqual(coded.gitRepos().repos, [{ path: 'p1', kind: 'dir' }]);
+  // the repository around a folder (the Git panel shows it for a project in p1/src): the nearest one up to the workspace,
+  // by a .git entry alone; none around the workspace itself or a repository's own folder
+  assert.equal(coded.gitRepos({ root: coded.rootArg(path.join(P1, 'src')) }).above, 'p1');
+  assert.deepEqual(coded.gitRepos({ root: coded.rootArg(path.join(P1, 'src')) }).repos, []);
+  assert.equal(coded.gitRepos({ root: coded.rootArg(P1) }).above, null);
+  assert.equal(coded.gitRepos().above, null);
+  assert.equal(coded.gitRepos({ root: coded.rootArg(P2) }).above, null, 'no repository around p2');
 });
 
 test('the watchlist and permission files of a root: its own .git hooks, package.json, .claude; restore and trash in it', async () => {

@@ -57,6 +57,29 @@ export function proposedMessage(answer: string): string | null {
   return text.trim() ? text : null;
 }
 
+/** How the Git panel found the repository it shows for a project's folder: the folder itself, the one around it, one
+ *  inside it — or none (the folder is shown: no repository). */
+export type RepoFound = 'self' | 'above' | 'inside' | null;
+
+/** The repository the Git panel shows for a project's folder ROOT (UX-09) — what git itself would use from there, then
+ *  what is in it: the folder itself when it is a repository; else the nearest one around it in the workspace (above);
+ *  else the repositories directly inside it — the one shown before (current), else one the session changed a file in
+ *  (touched: workspace paths), else the first by name; none: the folder itself (the panel says it is no repository).
+ *  REPOS: the repositories in the folder (itself and below it, as /api/git/repos lists them). */
+export function findRepo(root: string, info: { repos: string[]; above: string | null }, opts: { current?: string; touched?: string[] } = {}): { repo: string; found: RepoFound; inside: string[] } {
+  if (info.repos.includes(root)) return { repo: root, found: 'self', inside: [] };
+  if (info.above !== null && (info.above === '' ? !root.startsWith('/') : root.startsWith(`${info.above}/`))) return { repo: info.above, found: 'above', inside: [] };
+  const base = root ? `${root}/` : '';
+  const inside = info.repos.filter((r) => r.startsWith(base) && r.length > base.length && !r.slice(base.length).includes('/')).sort();
+  if (!inside.length) return { repo: root, found: null, inside: [] };
+  const rel = (p: string) => p.replace(/^\/workspace\//, '');
+  const touched = (opts.touched ?? []).map(rel);
+  const pick = (opts.current && inside.includes(opts.current) ? opts.current : null)
+    ?? inside.find((r) => touched.some((t) => t.startsWith(`${r}/`)))
+    ?? inside[0];
+  return { repo: pick, found: 'inside', inside };
+}
+
 /** Every file with a change, once (staged, unstaged, new, conflicts): the Git tab's count. */
 export function changedCount(s: GitStatus | null): number {
   if (!s?.repo) return 0;

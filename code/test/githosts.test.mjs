@@ -11,7 +11,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { GitHosts, HostError, KINDS } from '../server/githosts.mjs';
-import { makeGitRemote, parseRemoteUrl, prLink, remoteStateOf, reposOf, repoOk, credHost, NEVER_ASKS, GIT_SAID, SandboxSaid, GH_COMMAND }
+import { makeGitRemote, parseRemoteUrl, prLink, remoteStateOf, reposOf, repoOk, aroundOf, credHost, NEVER_ASKS, GIT_SAID, SandboxSaid, GH_COMMAND }
   from '../server/gitremote.mjs';
 import { SandboxError } from '../server/spawn-client.mjs';
 import { agentAnswer, AGENT, sshString, keyBlob, fingerprint, publicKeyBlob, newKey, loadKey, userauth, KNOWN_HOSTS, FAILURE } from '../server/sshagent.mjs';
@@ -147,6 +147,16 @@ test('the sandbox\'s answers are checked: names, URLs, counts', () => {
   assert.deepEqual(st.remoteBranches, [{ remote: 'origin', name: 'main' }]);
   assert.deepEqual(st.remoteHeads, { origin: 'main' });
   assert.deepEqual(reposOf({ repos: [{ path: '' }, { path: 'a/b' }, { path: '../x' }, { path: '.git' }, { path: 'a/b' }] }).repos.map((r) => r.path), ['', 'a/b']);
+  // the repository around a project's folder (the Git panel's, UX-09): a folder of the workspace around it, or the
+  // workspace itself — never one beside it, below it, elsewhere or of this computer
+  assert.equal(reposOf({ repos: [], above: 'a' }).above, 'a');
+  assert.equal(reposOf({ repos: [], above: '../x' }).above, null);
+  assert.equal(reposOf({ repos: [] }).above, null);
+  assert.equal(aroundOf('a', 'a/b'), 'a');
+  assert.equal(aroundOf('', 'a/b'), '');
+  for (const [above, rel] of [['b', 'a/c'], ['a/b', 'a'], ['a', 'a'], ['a', 'ab/c'], ['/x', '/x/y'], ['', ''], [null, 'a'], ['a', '']]) {
+    assert.equal(aroundOf(above, rel), null, JSON.stringify([above, rel]));
+  }
   assert.ok(repoOk('') && repoOk('a/b') && !repoOk('a/.git/x') && !repoOk('/a') && !repoOk('a//b'));
 });
 

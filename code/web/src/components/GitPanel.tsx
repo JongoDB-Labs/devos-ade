@@ -34,7 +34,7 @@ import type { GitEntry, GitScope, GitStatus } from '../types';
 import { Icon, Spinner } from './icons';
 import { ReadOnlyHunks } from './Review';
 import { Dialog, useMedia } from './ui';
-import { GitDialogs, NoRepoActions, RemoteBar, RepoPicker } from './GitRemote';
+import { FoundNote, GitDialogs, NoRepoActions, RemoteBar, RepoPicker } from './GitRemote';
 import { SandboxSaid } from './Said';
 import { PRODUCT } from '../brand';
 
@@ -67,6 +67,7 @@ export function GitPanel() {
         </button>
       </div>
       <RepoPicker />
+      <FoundNote />
       {error && (
         <div class="banner subtle small" role="alert" data-testid="git-error">
           {label(error, 300)}

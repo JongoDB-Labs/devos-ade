@@ -44,23 +44,64 @@ const authName = (auth: GitAuth): string => (auth === 'token' ? 'HTTPS token' : 
 const credSuffix = (r: { source?: string; account?: string | null }): string =>
   r.source ? ` (${r.source}'s login${r.account ? `, ${label(r.account, 100)}` : ''})` : r.account ? ` (${label(r.account, 100)})` : '';
 
-/** The project whose repository the panel shows (the project chip's list: picking one here shows that project). */
+/** The project whose repository the panel shows (the project chip's list: picking one here shows that project) — and,
+ *  when the project's folder is no repository itself, the repository found for it (the one around it, or those inside
+ *  it: picking one of these shows it, the project stays). */
 export function RepoPicker() {
   const repo = useSel(store, (s) => s.git.repo);
+  const found = useSel(store, (s) => s.git.found);
+  const inside = useSel(store, (s) => s.git.inside);
   const projects = useSel(store, (s) => s.projects);
-  if (projects.length < 2) return null;
+  const foundRepo = found === 'above' || found === 'inside';
+  if (projects.length < 2 && !(found === 'inside' && inside.length > 1)) return null;
   return (
-    <label class="gitr-repo small" title="The project whose repository the Git panel shows (the top bar's project chip: its folder)">
+    <label class="gitr-repo small" title="The project whose repository the Git panel shows (the top bar's project chip: its folder), or a repository found in its folder">
       <Icon name="folder" size={13} />
-      <select value={repo} onChange={(e) => void selectGitRepo((e.currentTarget as HTMLSelectElement).value)} aria-label="Project" data-testid="git-repo">
-        {projects.filter((p) => !p.gone).map((p) => (
-          <option key={p.id} value={p.root}>
-            {p.workspace ? 'Workspace (the workspace folder)' : `${p.name} (${label(p.root, 120)})`}
-          </option>
-        ))}
+      <select value={foundRepo ? `repo:${repo}` : repo} aria-label="Repository" data-testid="git-repo"
+        onChange={(e) => {
+          const v = (e.currentTarget as HTMLSelectElement).value;
+          void (v.startsWith('repo:') ? selectGitRepo(v.slice(5), { inside: true }) : selectGitRepo(v));
+        }}>
+        {foundRepo && (
+          <optgroup label={found === 'above' ? 'The repository around this folder' : 'Repositories in this folder'}>
+            {(found === 'above' ? [repo] : inside).map((r) => (
+              <option key={`repo:${r}`} value={`repo:${r}`}>
+                {r ? label(r, 120) : 'Workspace (the workspace folder)'}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {projects.length >= 2 && (
+          <optgroup label="Projects">
+            {projects.filter((p) => !p.gone).map((p) => (
+              <option key={p.id} value={p.root}>
+                {p.workspace ? 'Workspace (the workspace folder)' : `${p.name} (${label(p.root, 120)})`}
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
     </label>
   );
+}
+
+/** Where the repository the panel shows was found, when it is not the project's folder itself (UX-09). */
+export function FoundNote() {
+  const found = useSel(store, (s) => s.git.found);
+  const repo = useSel(store, (s) => s.git.repo);
+  const inside = useSel(store, (s) => s.git.inside);
+  const name = (r: string) => (r ? label(r, 160) : 'the workspace folder');
+  if (found === 'above') {
+    return <div class="gitp-pad muted small" data-testid="git-found" data-found="above">Showing <code>{name(repo)}</code>, the repository this project's folder is in.</div>;
+  }
+  if (found === 'inside') {
+    return (
+      <div class="gitp-pad muted small" data-testid="git-found" data-found="inside">
+        Showing <code>{name(repo)}</code>, a repository inside this project's folder (the folder itself is none){inside.length > 1 ? `: one of ${inside.length}, pick another above` : ''}.
+      </div>
+    );
+  }
+  return null;
 }
 
 /** The branch and its remote: switch or create a branch, Fetch, Pull, Push or Publish, and what each one goes to. */
