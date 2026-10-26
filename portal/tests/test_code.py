@@ -181,7 +181,9 @@ def test_code_tab_is_always_there_and_explains_itself_while_off():
     assert 'api("/api/settings")' in fill and "TERMINAL_WORKSPACE" in fill and "code_workspace" in fill and "textContent" in fill
     assert "const PAGES = [\"home\", \"settings\"];" in app
     assert "for (const p of PAGES) { const s = document.getElementById(p); if (s) s.hidden = tab !== p; }" in app
-    assert "!PAGES.includes(tab) ? \"chat\" : tab" in mobile and "b.dataset.label || b.textContent.trim()" in mobile
+    # (in the icon rail its tooltip: "Code (off)"; a tab's name is its own words, never its badge's count)
+    assert "!PAGES.includes(tab) ? \"chat\" : tab" in mobile and "b.dataset.label || ownText(b)" in mobile
+    assert "filter((n) => n.nodeType === 3)" in mobile
     css = open("portal/static/app.css", encoding="utf-8").read()
     assert ".code-item.off .tab svg" in css and ".tab-off" in css and ".code-off-page" in css
     assert "innerHTML" not in js
