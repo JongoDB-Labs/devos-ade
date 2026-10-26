@@ -2248,7 +2248,7 @@ def sidebar_collapse(ctx):
         if not f["icon"]:   # (the version and Sign out show their words in the rail)
             continue
         named.append(f["id"])
-        expect(f["title"] and f["content"] == json.dumps(f["title"]) and f["pos"] == "absolute" and f["left"] > f["w"],
+        expect(f["title"] and f["content"] == json.dumps(f["title"], ensure_ascii=False) and f["pos"] == "absolute" and f["left"] > f["w"],
                f"{f['id']}: no name beside it on focus ({f})")
     expect({"home", "chat", "admin", "files", "settings", "search-btn", "tour-btn"} <= set(named), f"focus names: only {named}")
     expect((page.get_attribute("#tour-btn", "title") or "").startswith("Walkthrough: "), f"the walkthrough's button: {page.get_attribute('#tour-btn', 'title')!r}")
