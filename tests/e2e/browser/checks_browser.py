@@ -2285,7 +2285,8 @@ def sidebar_collapse(ctx):
     page.wait_for_selector("#tour", state="hidden")
     expect(page.evaluate("document.activeElement.id") == "tour-btn", "Escape: the focus did not return to the button")
     v = page.evaluate("window.__csp")
-    probs = rec.problems(allow=FRAME_NOISE)
+    # (the Code tab's frame, still locked: its unlock page answers 401 — checks_code.py LOCKED_OK)
+    probs = rec.problems(allow=FRAME_NOISE + [r"^401 (GET|POST) " + re.escape(origin("code")) + r"/(\.bn/unlock)?$"])
     rec.save()
     expect(not v and not probs, f"CSP violations {v[:4]}, errors {probs[:6]}")
 
