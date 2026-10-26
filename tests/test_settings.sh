@@ -615,8 +615,13 @@ test_auto_mode_settings_on_only_locally_and_they_restart_the_sandbox() {
   _env; _in_checkout; _stub_stack; _stub_code
   assert_eq "$(setting_field CODE_AUTO_MODE 4)/$(setting_field CODE_AUTO_MODE 5)/$(setting_field CODE_AUTO_MODE 6)" "widen-local/bool/code-env,terminal-env"
   assert_eq "$(setting_field TERMINAL_AUTO_MODE 4)/$(setting_field TERMINAL_AUTO_MODE 5)/$(setting_field TERMINAL_AUTO_MODE 6)" "widen-local/bool/terminal-env"
-  assert_contains "$(setting_field CODE_AUTO_MODE 8)" "Claude Sonnet 5.5"
-  assert_contains "$(setting_field CODE_AUTO_MODE 8)" "about \$0.13 for the first check in each 5 minutes"
+  assert_contains "$(setting_field CODE_AUTO_MODE 8)" "The reviewer runs on Claude Haiku 5.5 whatever the session's model"
+  assert_contains "$(setting_field CODE_AUTO_MODE 8)" "about half a cent for the first check in each 5 minutes"
+  # what ./stack code status and ./stack terminal status say it runs on
+  set_env CLAUDE_BEDROCK_HAIKU_MODEL claude-haiku-5-5
+  assert_eq "$(auto_reviewer_text)" 'claude-haiku-5-5; ~$0.006 per 5 minutes in use'
+  set_env CLAUDE_BEDROCK_HAIKU_MODEL claude-sonnet-4-5
+  assert_eq "$(auto_reviewer_text)" 'Sonnet 5.5; ~$0.13 per 5 minutes in use'
   for k in CODE_AUTO_MODE TERMINAL_AUTO_MODE; do
     set_env "$k" false
     if setting_allowed "$k" true remote; then return 1; fi

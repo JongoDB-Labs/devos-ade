@@ -336,14 +336,19 @@ export function checkCliArgs(a) {
 // The environment Claude Code gets: this container's (gateway, terminal key, models), never the MCP token (it is
 // in mcp.json), plus the few variables the SDK sets for its CLI (checked), plus LiteLLM's session tag — built here
 // from a checked UUID, so spend in LiteLLM's logs is per Code-page session (code-<uuid>) — plus, for a session on a
-// model that is not one of Bedrock's Claude models, its background model (backgroundEnv).
+// model that is not one of Bedrock's Claude models, its background model (backgroundEnv), plus Auto mode's reviewer
+// on Claude Haiku (reviewerModel).
 const SDK_ENV = /^(CLAUDE_CODE_ENTRYPOINT|CLAUDE_AGENT_SDK_VERSION|CLAUDE_CODE_SDK_READS_SESSION_STATE|CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING|CLAUDE_CODE_QUESTION_PREVIEW_FORMAT)$/;
+// Auto mode's reviewer (Claude Code's classifier: CLAUDE_CODE_AUTO_MODE_MODEL, which Claude Code 2.1.309 takes for any
+// model but Sonnet 5.5 and the Opus 5 models) runs on this container's Haiku, whatever the session's model: a safety
+// check, so always a Claude model, at a twentieth of Sonnet 5.5's price. reviewerModel(HAIKU) -> HAIKU when it is a
+// Claude Haiku, else null (Claude Code's default then: claude-sonnet-5, which the catalog maps to Sonnet 5.5).
+export const reviewerModel = (haiku) => (typeof haiku === 'string' && MODEL.test(haiku) && /^claude-haiku-/i.test(haiku) ? haiku : null);
 // Claude Code does work of its own beside the session's model — titles and summaries, its Explore subagent — on its
 // "haiku" model (ANTHROPIC_DEFAULT_HAIKU_MODEL; ANTHROPIC_SMALL_FAST_MODEL before), and subagents on their own model.
 // For a session on a model that is not one of Bedrock's Claude models (OpenRouter's or/…, Experiential Labs' xl/…,
 // another vendor's on Bedrock) all of that runs on the session's model, so a session on a free model never spends on
-// Haiku behind it. A Claude model, one of Claude Code's aliases or none: as the container says (Haiku). Auto mode's
-// reviewer keeps its own model (Sonnet 5.5: a safety check, README › Permissions and modes).
+// Haiku behind it. A Claude model, one of Claude Code's aliases or none: as the container says (Haiku).
 const CLAUDE_ALIAS = /^(haiku|sonnet|opus|fable|opusplan|best|default)(\[1m\])?$/i;
 export function backgroundEnv(model) {
   if (typeof model !== 'string' || !MODEL.test(model) || /^claude-/i.test(model) || CLAUDE_ALIAS.test(model)) return {};
@@ -364,6 +369,9 @@ export function childEnv(extra, litellmSession, base = process.env, model = null
   if (typeof litellmSession === 'string' && UUID.test(litellmSession)) {
     env.ANTHROPIC_CUSTOM_HEADERS = `x-litellm-session-id: code-${litellmSession}\nx-litellm-tags: claude-bedrock,code`;
   } else delete env.ANTHROPIC_CUSTOM_HEADERS;
+  // (the container's Haiku, before backgroundEnv may give its slot to the session's model)
+  const reviewer = reviewerModel(base.ANTHROPIC_DEFAULT_HAIKU_MODEL);
+  if (reviewer) env.CLAUDE_CODE_AUTO_MODE_MODEL = reviewer;
   return Object.assign(env, backgroundEnv(model));
 }
 // The stack's variables a tool of your subscriptions never gets: its gateway, keys and models, Claude Code's switches

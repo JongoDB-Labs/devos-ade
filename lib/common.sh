@@ -437,6 +437,16 @@ compose_overlays() {
 # switches the same way: portal/portal/config.py _on)
 _flag() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]'; }
 flag_on() { case "$(_flag "$1")" in true | 1 | yes | on) return 0 ;; esac; return 1; }
+# auto_reviewer_text -> what Claude Code's auto mode reviewer runs on here and about what it costs: the stack's Haiku
+# while it is a Claude Haiku (CLAUDE_CODE_AUTO_MODE_MODEL: terminal/bin/bn-coded.mjs reviewerModel, both devos-claude
+# wrappers), else Sonnet 5.5 (Claude Code's claude-sonnet-5, the catalog's alias)
+auto_reviewer_text() {
+  local h; h="$(get_env CLAUDE_BEDROCK_HAIKU_MODEL)"
+  case "$h" in
+    claude-haiku-*) printf '%s; ~$0.006 per 5 minutes in use\n' "$h" ;;
+    *) printf 'Sonnet 5.5; ~$0.13 per 5 minutes in use\n' ;;
+  esac
+}
 flag_off() { case "$(_flag "$1")" in false | 0 | no | off) return 0 ;; esac; return 1; }
 
 # egress_mode VALUE -> internet | host | off: TERMINAL_EGRESS as the stack reads it (portal/portal/settings.py

@@ -8,6 +8,12 @@ HISTCONTROL=ignoreboth
 shopt -s histappend checkwinsize
 alias ls='ls --color=auto' ll='ls -alF' grep='grep --color=auto'
 
+# Auto mode's reviewer (Claude Code's classifier) on this terminal's Haiku, for `claude` typed here as for devos-claude
+# (terminal/bin/devos-claude): a Claude model whatever the session's, at a twentieth of Sonnet 5.5's price
+case "${ANTHROPIC_DEFAULT_HAIKU_MODEL:-}" in
+  claude-haiku-*) export CLAUDE_CODE_AUTO_MODE_MODEL="${CLAUDE_CODE_AUTO_MODE_MODEL:-$ANTHROPIC_DEFAULT_HAIKU_MODEL}" ;;
+esac
+
 # Claude Code's auto mode off for `claude` typed here unless Settings › Claude Code › Auto mode in the terminal is on
 # (TERMINAL_AUTO_MODE). The sandbox's managed settings turn it off already while both auto mode switches are off; with
 # only the Code page's on they must leave it available (the Code page's sessions need it), so this adds Claude Code's

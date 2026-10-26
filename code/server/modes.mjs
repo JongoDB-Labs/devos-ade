@@ -6,8 +6,8 @@
 //                       (auto mode off, or useAutoModeDuringPlan: false while Settings allow Auto)
 //   default             Manual: asks before edits and commands (Claude Code's default, "manual" in its CLI)
 //   acceptEdits         Accept edits: file edits and file commands in the workspace run without asking
-//   auto                Auto: Claude Code's auto mode — a reviewer model (its classifier, which asks for claude-sonnet-5:
-//                       Sonnet 5.5 through the catalog's alias) approves routine actions and blocks risky ones; ask rules
+//   auto                Auto: Claude Code's auto mode — a reviewer model (its classifier: on Claude Haiku, the sandbox's
+//                       CLAUDE_CODE_AUTO_MODE_MODEL, bn-coded.mjs reviewerModel) approves routine actions and blocks risky ones; ask rules
 //                       still ask. Only with CODE_AUTO_MODE; a process starts in Manual and is switched to it before its
 //                       first prompt. Off (disableAutoMode) otherwise
 //   bypassPermissions   Bypass permissions: nothing asks — except the ask rules below and AskUserQuestion; deny rules

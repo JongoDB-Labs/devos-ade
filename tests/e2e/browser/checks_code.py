@@ -18,7 +18,7 @@ Ctrl+Enter in the log, a discard — not one hook runs), and a phone
 helper (settings/*), Bypass permissions is allowed in Settings, then runs a command without a card, while a deny rule
 still denies, an ask rule on .git still asks, and a git hook written by Bash shows the watchlist's card, whose Revert
 puts it back — then it is turned off again; and Auto mode is allowed in Settings, a routine command runs without a card
-(Claude Code's reviewer approves it, on Sonnet 5.5), a risky one is blocked with the rule it matched, Allow once runs it
+(Claude Code's reviewer approves it, on Claude Haiku), a risky one is blocked with the rule it matched, Allow once runs it
 again, the reviewer's spend lands on the terminal's key — then it is turned off again. With E2E_CODE_HOSTILE=1 (run.sh, after the suite: a stand-in on bn-coded's socket, as code
 in the sandbox could start one) the page stays safe. Every check skips while the Code page is off (--no-code) but the
 tab's: then the tab is still there, muted, and shows a page of the portal's own on how to turn it on."""
@@ -3049,10 +3049,11 @@ def _auto_state(c, want: bool, timeout=90):
 @check("settings", "settings-code-auto")
 def settings_code_auto(ctx):
     """Auto mode, end to end on Bedrock: allowed in Settings (the helper restarts the terminal and the code container), a
-    Haiku session started in Auto; a routine command runs without a card (the reviewer, on Sonnet 5.5, approves it); a
+    Haiku session started in Auto; a routine command runs without a card (the reviewer, on Claude Haiku, approves it); a
     download piped into a shell is blocked with the rule it matched and no card; "Allow once" in the page runs exactly
     that call again without the reviewer; the session's spend — the reviewer's requests included — lands on the
-    terminal's key; the setting off again. About $0.15 (the reviewer's first check writes ~47k tokens of cache)."""
+    terminal's key, none of them on Sonnet 5.5 (the reviewer runs on Haiku: CLAUDE_CODE_AUTO_MODE_MODEL); the setting off
+    again. About $0.03 (the reviewer's first check writes ~47k tokens of cache, at Haiku's price: $0.13 on Sonnet)."""
     need_haiku()
     _need_helper(ctx)
     _auto_setting(ctx, True)
@@ -3127,19 +3128,19 @@ def settings_code_auto(ctx):
         expect(not [e for e in c2.events(sid, n2) if e["type"] == "blocked"], "the retry was blocked again")
         ran_again = f"`{again[0]['input'].get('command', '')[:40]}` ran ({(r2['text'] or 'no output')[:40]!r})"
         csp_clean(page, rec)
-        # 4. the spend: the session's rows on the terminal's key, the reviewer's (Sonnet 5.5) among them
+        # 4. the spend: the session's rows on the terminal's key, the reviewer's among them — all on Haiku: none on Sonnet
+        # 5.5, whose first check alone was $0.13, so the total stays well below that
         t0, d = time.time(), {}
         while time.time() - t0 < 90:   # LiteLLM writes its spend logs in batches
             r = c2.api("GET", f"/.bn/spend?session={sid}")
             expect(r["status"] == 200, f"/.bn/spend {r['status']} {r['text'][:200]}")
             d = r["json"]
-            if any("sonnet-5-5" in x["model"] for x in d["rows"]) and any("haiku" in x["model"] for x in d["rows"]):
+            if len([x for x in d["rows"] if "haiku" in x["model"]]) >= 3:
                 break
             c2.page.wait_for_timeout(3000)
-        reviewer = [x for x in d["rows"] if "sonnet-5-5" in x["model"]]
-        expect(reviewer, f"no reviewer (Sonnet 5.5) rows in the session's spend: {[x['model'] for x in d['rows']]}")
-        expect(d["key"]["alias"] == "claude-code-terminal" and d["total"] > 0, f"spend {d.get('key')} {d.get('total')}")
-        rev_cost = sum(x["spend"] for x in reviewer)
+        sonnet = [x["model"] for x in d["rows"] if "sonnet" in x["model"]]
+        expect(not sonnet, f"requests on Sonnet in the session's spend (the reviewer should run on Haiku): {sonnet}")
+        expect(d["key"]["alias"] == "claude-code-terminal" and 0 < d["total"] < 0.10, f"spend {d.get('key')} {d.get('total')}")
         c2.request({"type": "set_mode", "session": sid, "mode": "default"})
         c2.api("DELETE", f"/api/sessions/{sid}")
     finally:
@@ -3148,7 +3149,7 @@ def settings_code_auto(ctx):
     _auto_state(Code(ctx, "code-auto-off"), False)
     return (f"Auto: allowed in Settings (terminal and code container restarted); `node -e` ran without a card; `{risky[:40]}` blocked "
             f"{b['reason']!r}, no card; Allow once: {ran_again}, without the reviewer; spend: {len(d['rows'])} requests ${d['total']:.4f} on "
-            f"claude-code-terminal, the reviewer's {len(reviewer)} (Sonnet 5.5) ${rev_cost:.4f}; the setting off again"
+            f"claude-code-terminal, all on Haiku, the reviewer's included; the setting off again"
             f"{'; ' + '; '.join(notes) if notes else ''}")
 
 

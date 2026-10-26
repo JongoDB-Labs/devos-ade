@@ -349,8 +349,9 @@ cb_model_id() {
 
 # The one argument that turns Claude Code's auto mode off for a session (its flag tier: above user, project and local
 # settings). Claude Code 2.1.283 and later counts auto mode — a classifier model approving actions for you, on your
-# key — as available behind this stack's address and may start in it. Its classifier asks for claude-sonnet-5, which
-# the catalog maps to Sonnet 5.5 (an alias; without it the classifier would run on the session's model). The browser
+# key — as available behind this stack's address and may start in it. Its classifier runs on the stack's Haiku
+# (CLAUDE_CODE_AUTO_MODE_MODEL: bin/devos-claude sets it while that is a Claude Haiku), else asks for
+# claude-sonnet-5, which the catalog maps to Sonnet 5.5 (an alias; without it, the session's model). The browser
 # terminal (managed settings) and the Code page turn it off the same way unless Settings turn it on there.
 # shellcheck disable=SC2034  # read by bin/devos-claude
 CB_AUTO_OFF_ARG='--settings={"disableAutoMode":"disable"}'

@@ -92,10 +92,17 @@ picker_json() {
     END { if (n) printf "{%s\"modelPicker\":{\"replaceBuiltInOptions\":true,\"options\":[%s]}}\n", (off == 1 ? "\"disableAutoMode\":\"disable\"," : ""), r }'
 }
 
-# Settings › Terminal › Auto mode (TERMINAL_AUTO_MODE): Claude Code's auto mode in this terminal's sessions
+# Settings › Terminal › Auto mode (TERMINAL_AUTO_MODE): Claude Code's auto mode in this terminal's sessions. Its reviewer
+# (Claude Code's classifier, CLAUDE_CODE_AUTO_MODE_MODEL) runs on this terminal's Haiku whatever the session's model: a
+# safety check, so always a Claude model (as the Code page's sessions: bn-coded.mjs reviewerModel; one of yours wins).
+# No Claude Haiku here: Claude Code's default, claude-sonnet-5 (the catalog's alias for Sonnet 5.5).
+reviewer='Sonnet 5.5'
+case "${ANTHROPIC_DEFAULT_HAIKU_MODEL:-}" in
+  claude-haiku-*) export CLAUDE_CODE_AUTO_MODE_MODEL="${CLAUDE_CODE_AUTO_MODE_MODEL:-$ANTHROPIC_DEFAULT_HAIKU_MODEL}"; reviewer="$CLAUDE_CODE_AUTO_MODE_MODEL" ;;
+esac
 auto_on=0
 case "$(printf '%s' "${TERMINAL_AUTO_MODE:-}" | tr '[:upper:]' '[:lower:]')" in true | 1 | yes | on) auto_on=1 ;; esac
-if [ "$auto_on" = 1 ]; then auto_help="available (Settings › Terminal › Auto mode): its reviewer model runs on Sonnet 5.5"
+if [ "$auto_on" = 1 ]; then auto_help="available (Settings › Terminal › Auto mode): its reviewer model runs on $reviewer"
 else auto_help="off (Settings › Terminal › Auto mode turns it on)"; fi
 
 case "${1:-}" in

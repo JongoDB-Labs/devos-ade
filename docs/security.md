@@ -1020,7 +1020,7 @@ spawn server, Claude Code or any file at will.
   switches) turn it off for every Claude Code there while both switches are off — the terminal's and
   `devos-claude`'s too, which start in the ordinary asking mode. On your computer `devos-claude` does the same in
   its lean folder (`--settings={"disableAutoMode":"disable"}`, Claude Code's flag tier; `CLAUDE_BEDROCK_AUTO_MODE=1`
-  leaves it to Claude Code, whose classifier then runs on Sonnet 5.5 through the catalog's alias). Sessions
+  leaves it to Claude Code, whose classifier then runs on Claude Haiku: `CLAUDE_CODE_AUTO_MODE_MODEL`). Sessions
   name their model in full: the code container refuses Claude Code's aliases (`haiku`, `sonnet`, `opus` …), with
   which Claude Code picks the model itself (with `haiku`, *Plan* mode plans on Sonnet).
   Prompts typed in the page carry Claude Code's human origin. A card that appears never takes the focus from a field
@@ -2588,16 +2588,21 @@ It reduces prompts; it does not make anything safe: a model can be wrong either 
   which says so. In *Manual* and *Accept edits* a shell command's card offers **Allow, and switch to Auto** (as the CLI
   offers *Yes, and switch to auto mode*): the switch goes first, through the same gate; not for a prompt your ask rules
   or a hook forced.
-- **Which model, what it costs.** The classifier asks for the fixed id `claude-sonnet-5`; the catalog maps it to
-  `claude-sonnet-5-5` (a LiteLLM alias, rendered only while Sonnet 5.5 is enabled — without it Claude Code falls back
-  to the session's own model, so an Opus session would review on Opus). Its requests go through the same gateway with
-  the same key and session tags as the session's own (verified on Bedrock: the spend logs show them under the
-  session, model group `claude-sonnet-5`, model Sonnet 5.5, key `claude-code-terminal`). Each check sends Claude
-  Code's ~47k-token instructions (cached) plus the transcript's user messages and tool calls (tool *results* are left
-  out, so a hostile file cannot address the classifier directly): **measured about $0.13 for the first check in each
-  5-minute cache window** and about **$0.0055 for each further one** (a block costs a second, thinking stage of about
-  the same). On a Haiku session that is more than the session itself; the Code page's per-turn cost includes it. It
-  is spent on the terminal key's budget (`BUDGET_TERMINAL`).
+- **Which model, what it costs.** The classifier runs on Claude Haiku whatever the session's model: bn-coded, both
+  `devos-claude` wrappers and the terminal's shells set `CLAUDE_CODE_AUTO_MODE_MODEL` to the stack's Haiku model
+  while it is a Claude Haiku (Claude Code 2.1.309 takes it for any model but Sonnet 5.5 and the Opus 5 models, which
+  its API safeguards refuse for the classifier's escalated check; a classifier model Anthropic's servers configure
+  would win over it, and this stack's sessions send no such traffic). A safety check stays on a Claude model trained
+  for the judgement. Without a Claude Haiku the classifier asks for the fixed id `claude-sonnet-5`; the catalog maps
+  it to `claude-sonnet-5-5` (a LiteLLM alias, rendered only while Sonnet 5.5 is enabled — without it Claude Code falls
+  back to the session's own model). Its requests go through the same gateway with the same key and session tags as
+  the session's own (verified on Bedrock: the spend logs show them under the session, key `claude-code-terminal`).
+  Each check sends Claude Code's ~47k-token instructions (cached) plus the transcript's user messages and tool calls
+  (tool *results* are left out, so a hostile file cannot address the classifier directly): on Sonnet 5.5 that
+  measured about $0.13 for the first check in each 5-minute cache window and about $0.0055 for each further one; on
+  Haiku 5.5, at a twentieth of the price, **about half a cent** and **a twentieth of a cent** (a block costs a second,
+  thinking stage of about the same). The Code page's per-turn cost includes it. It is spent on the terminal key's
+  budget (`BUDGET_TERMINAL`).
 - **What leaves the sandbox**: nothing new — the classifier's requests go to LiteLLM like every other request of
   Claude Code (Bedrock; nothing to Anthropic's servers: the sandbox has `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1`, so
   Claude Code makes its own classifier requests instead of asking a server-side review). They carry the `context-1m`

@@ -264,9 +264,12 @@ test fails.
   and replaces this one (Claude Code takes the last); `CLAUDE_BEDROCK_AUTO_MODE=1` leaves auto mode to Claude Code;
   `CLAUDE_BEDROCK_USE_MY_CONFIG=1` (or a lean folder that is one of yours) leaves it to your settings — add
   `"disableAutoMode": "disable"` there for the same. `--help` says which on its `Auto` line. With auto mode on, the
-  classifier asks for the fixed id `claude-sonnet-5`, which the catalog maps to Sonnet 5.5 (an alias, while Sonnet 5.5
-  is enabled; without it Claude Code falls back to the session's own model): about $0.13 for the first check in each 5
-  minutes and half a cent for each further one, on the `claude-code` key (measured on Bedrock, 2.1.296).
+  classifier runs on your Haiku model while it is a Claude Haiku (`CLAUDE_CODE_AUTO_MODE_MODEL`, which Claude Code
+  2.1.309 takes for any model but Sonnet 5.5 and the Opus 5 models), whatever the session's model: about half a cent
+  for the first check in each 5 minutes and a twentieth of a cent for each further one, on the `claude-code` key (the
+  same ~47k cached tokens as measured on Sonnet 5.5, 2.1.296: $0.13 and half a cent there). Without a Claude Haiku it
+  asks for the fixed id `claude-sonnet-5`, which the catalog maps to Sonnet 5.5 (an alias, while Sonnet 5.5 is enabled;
+  without it Claude Code falls back to the session's own model).
   `CLAUDE_BEDROCK_MODEL=haiku`, `sonnet` or `opus` (any case, `[1m]` kept) is passed as that slot's full id from
   `.env` (`CLAUDE_BEDROCK_HAIKU_MODEL` …): given the alias, Claude Code picks the model itself, and with `haiku` it
   plans on Sonnet in *Plan* mode (2.1.296, probed; with the full id it stays on Haiku). A `--model haiku` of yours, or

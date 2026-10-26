@@ -487,11 +487,12 @@ claude.ai plan that is invisible; billed per token it is not. So:
   Settings turn it on there: one `--settings={"disableAutoMode":"disable"}` argument (Claude Code's flag tier, above
   every settings file — nothing of yours is written; a `--settings` of your own replaces it).
   `CLAUDE_BEDROCK_AUTO_MODE=1` leaves auto mode to Claude Code; with `CLAUDE_BEDROCK_USE_MY_CONFIG=1` your own settings
-  decide (add `"disableAutoMode": "disable"` to them for the same). Its classifier asks for `claude-sonnet-5`, which
-  the catalog maps to **Sonnet 5.5** (an alias, rendered while Sonnet 5.5 is enabled), so with auto mode on it runs
-  there, on the same key — about $0.13 for the first check in each 5 minutes and half a cent for each further one
-  (measured: it sends ~47k tokens of instructions, cached) — rather than on your session's model (an Opus session
-  would otherwise review on Opus). `CLAUDE_BEDROCK_MODEL=haiku` (or `sonnet`, `opus`) is passed as that slot's full id
+  decide (add `"disableAutoMode": "disable"` to them for the same). Its classifier — the reviewer — runs on **Claude
+  Haiku** (`CLAUDE_CODE_AUTO_MODE_MODEL`, set to your Haiku model while it is a Claude Haiku), whatever your
+  session's model: a safety check stays on a Claude model trained for it. On the same key that is about half a cent
+  for the first check in each 5 minutes and a twentieth of a cent for each further one (it sends ~47k tokens of
+  instructions, cached; on Sonnet 5.5 the first check was $0.13). Without a Claude Haiku it asks for
+  `claude-sonnet-5`, which the catalog maps to Sonnet 5.5 (an alias, rendered while Sonnet 5.5 is enabled). `CLAUDE_BEDROCK_MODEL=haiku` (or `sonnet`, `opus`) is passed as that slot's full id
   (`claude-haiku-5-5`): with the alias, Claude Code plans on Sonnet in *Plan* mode; so is `--model haiku`. A `/model
   haiku` typed in a session still goes to Claude Code as an alias: pick from the `/model` menu, or name it in full.
 
@@ -570,8 +571,8 @@ It is a sandbox, not a shell on your computer:
 - Claude Code's **auto mode** (a reviewer model approving actions instead of you) is off for every `claude` in it —
   the sandbox's managed settings say so — unless **Settings → Claude Code → Auto mode in the terminal** is on
   (`TERMINAL_AUTO_MODE`, from the computer running DevOS ADE; the terminal restarts). Then Claude Code decides as
-  anywhere else: an interactive `claude` starts in it (`Shift+Tab` leaves it), its reviewer runs on Sonnet 5.5 at
-  about $0.13 per 5 minutes in use on the terminal's key. With only the Code page's Auto mode on, `claude` typed in
+  anywhere else: an interactive `claude` starts in it (`Shift+Tab` leaves it), its reviewer runs on Claude Haiku at
+  about half a cent per 5 minutes in use on the terminal's key. With only the Code page's Auto mode on, `claude` typed in
   its shells and `devos-claude` keep auto mode off (`/usr/local/bin/claude` called directly does not:
   [docs/security.md](docs/security.md#auto-mode)).
 - What runs in it can spend its key (within `BUDGET_TERMINAL`), read and write the shared store and knowledge
@@ -1177,8 +1178,8 @@ CODE_DEFAULT_MODEL` (a model id, such as `mistral-large-3`).
 
 Not every switch is free: switching to a model that caches writes ~30k tokens of prompt cache at its price (the picker
 says how much); a model without cache prices writes none, and has no cold-cache line above the prompt box. Auto mode's
-reviewer stays on Sonnet 5.5 whatever the session's model (Claude Code asks for `claude-sonnet-5`, which the catalog
-maps to it). Claude Code's own background work — titles, summaries, its Explore subagent — and its subagents run on
+reviewer runs on Claude Haiku whatever the session's model (`CLAUDE_CODE_AUTO_MODE_MODEL`: a safety check stays on a
+Claude model). Claude Code's own background work — titles, summaries, its Explore subagent — and its subagents run on
 the session's model when that is not one of Bedrock's Claude models (on Haiku otherwise), here and in `devos-claude
 --model …`: a session on a free model spends nothing behind it. A switch between such a model and a Claude one
 restarts the session's Claude Code at your next prompt, so that follows too.
@@ -1218,15 +1219,15 @@ restarts the session's Claude Code at your next prompt, so that follows too.
   | **Plan** | `plan` | reading and read-only commands; it asks before anything else, then shows its plan to approve | read-only, then a plan |
   | **Manual** | `default` | reading and read-only commands; every edit and other command asks | read-write-execute, each approved |
   | **Accept edits** | `acceptEdits` | file edits in the workspace and file commands there (`mkdir`, `touch`, `mv`, `cp`, `rm`, `sed`) — except Claude Code's protected paths (`.git`, `.claude`, `.vscode`, `.husky`, `.mcp.json`), which still ask; other commands ask | read-write (execute approved) |
-  | **Auto** (when allowed) | `auto` | reading, read-only commands and file edits in the workspace; every other command, web fetch or tool goes to a **reviewer model** (Sonnet 5.5) that runs the routine ones and **blocks** risky ones (downloading and running code, sending data out, force pushes …) with the rule it matched; your ask rules still ask; *Plan* still asks you | read-write-execute, model-reviewed |
+  | **Auto** (when allowed) | `auto` | reading, read-only commands and file edits in the workspace; every other command, web fetch or tool goes to a **reviewer model** (Claude Haiku) that runs the routine ones and **blocks** risky ones (downloading and running code, sending data out, force pushes …) with the rule it matched; your ask rules still ask; *Plan* still asks you | read-write-execute, model-reviewed |
   | **Bypass permissions** | `bypassPermissions` | everything — Claude's file tools still ask before changing `.git`, `.claude`, `.vscode`, `.husky`, `.devcontainer` (and `.devcontainer.json`), `.envrc` and `.mcp.json` (shell commands do not: the watchlist below flags those after the turn), and your deny rules still deny | read-write-execute, no prompts |
 
   *Read only*, *Manual*, *Accept edits* and *Auto* are remembered for new sessions (per browser); *Plan* and *Bypass
   permissions* apply to the session they were picked in only, as in the desktop app and VS Code. **Auto** is off
   unless **Settings → Claude Code → Auto mode** is on (`CODE_AUTO_MODE`; turning it on works only from the computer
   running DevOS ADE). It needs no confirmation — it still asks or blocks, as in Claude Code — and costs model calls:
-  about **$0.13 for the first check in each 5 minutes** and half a cent for each further one, on the terminal's key
-  (more than a Haiku session itself). A risky command you ask for by name counts as your approval (the reviewer may
+  about **half a cent for the first check in each 5 minutes** and a twentieth of a cent for each further one, on the
+  terminal's key (the reviewer runs on Claude Haiku; on Sonnet 5.5 the first check was $0.13). A risky command you ask for by name counts as your approval (the reviewer may
   let it run); one Claude picked up elsewhere — a file, a web page — is what it blocks. A blocked action shows a card
   with the rule it matched and **Allow once**,
   which runs exactly that call again without the reviewer; three blocks in a row and Claude Code asks you again
@@ -1817,8 +1818,8 @@ session may not:
 - **Background work.** Claude Code's titles, summaries and subagents, and Chat's titles, tags and follow-up
   suggestions, run on the model you picked when it is not one of Bedrock's Claude models (they used to run on Haiku).
   A session on a Claude model still uses Haiku for them.
-- **Auto mode's reviewer** stays on Sonnet 5.5 whatever the model: about $0.13 for its first check in each 5 minutes
-  (see [Permissions and modes](#permissions-and-modes)).
+- **Auto mode's reviewer** runs on Claude Haiku whatever the model (a safety check stays on a Claude model): about
+  half a cent ($0.006) for its first check in each 5 minutes (see [Permissions and modes](#permissions-and-modes)).
 - **Bedrock prompt-cache writes.** A request to a Claude model that starts or rewrites the prompt cache (a new session,
   a model switch, 5 idle minutes) pays the cache-write price for its whole context: often tens of thousands of tokens.
 
@@ -1895,7 +1896,8 @@ Then run `./stack models --recheck`.
 ### Model aliases
 
 The catalog ships one alias: `claude-sonnet-5` → `claude-sonnet-5-5`, the fixed name Claude Code's auto-mode classifier
-asks for (so its reviews run on Sonnet 5.5 — harmless while auto mode is off: nothing asks for it then). If a tool
+asks for when it is given no model of its own (its reviews then run on Sonnet 5.5; with a Claude Haiku enabled they run
+there and nothing asks for the alias). If a tool
 still sends an old model name, put a comma list in the `aliases` column of `catalog/models.tsv` and run `./stack
 setup`:
 

@@ -590,7 +590,7 @@
             code("npm test"), ", a ", code("scripts/"), " file …) go ahead without asking — with Claude Code too."]]),
         p("A card says exactly what would run or change: ", b("Allow once"), ", ", b("Always"), " (the rule is shown first) or ", b("Deny"),
           " (with a note for Claude). ⋯ › ", b("Permissions"), " lists the rules, with Remove."),
-        note(b("Auto"), " (a reviewer model decides; about $0.13 per 5 minutes in use) and ", b("Bypass permissions"), " stay off until ",
+        note(b("Auto"), " (a reviewer model decides; about half a cent per 5 minutes in use) and ", b("Bypass permissions"), " stay off until ",
           settings("Claude Code", "CODE_AUTO_MODE"), " allows them, from the computer running DevOS ADE (", doc("permissions-and-modes", "details"), ")."),
       ],
       actions: () => [openCode()],

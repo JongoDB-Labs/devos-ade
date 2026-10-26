@@ -191,8 +191,8 @@ test('Auto (Settings › Claude Code): offered, cycled to last after Plan (and B
   assert.equal(startMode(null, 'auto', false), 'default');
   assert.equal(MODE_INFO.auto.label, 'Auto');
   assert.match(MODE_INFO.auto.desc, /reviewer model/);
-  assert.match(MODE_INFO.auto.runs, /Sonnet 5\.5/);
-  assert.match(MODE_INFO.auto.runs, /\$0\.13 per 5 minutes/);
+  assert.match(MODE_INFO.auto.runs, /Claude Haiku/);
+  assert.match(MODE_INFO.auto.runs, /half a cent per 5 minutes/);
   assert.equal(MODE_INFO.auto.tone, 'blue');
   assert.equal(ruleOf('[Code from External]'), 'Code from External');
   assert.equal(ruleOf(' [Data Exfiltration] '), 'Data Exfiltration');

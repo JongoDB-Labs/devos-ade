@@ -67,7 +67,11 @@ case "${1:-}" in
     if claude_config_resolve; then g="$(claude_config_help)"; else g="$CB_CONFIG_ERR"; fi
     if claude_config_resolve 2>/dev/null && claude_auto_mode_off; then
       a="off (as in the browser terminal and the Code page); CLAUDE_BEDROCK_AUTO_MODE=1 leaves it to Claude Code"
-    elif [ "${CLAUDE_BEDROCK_AUTO_MODE:-0}" = 1 ]; then a="left to Claude Code (CLAUDE_BEDROCK_AUTO_MODE=1); its reviewer runs on Sonnet 5.5 (~\$0.13 per 5 minutes in use)"
+    elif [ "${CLAUDE_BEDROCK_AUTO_MODE:-0}" = 1 ]; then
+      case "$(get_env CLAUDE_BEDROCK_HAIKU_MODEL)" in
+        claude-haiku-*) a="left to Claude Code (CLAUDE_BEDROCK_AUTO_MODE=1); its reviewer runs on $(get_env CLAUDE_BEDROCK_HAIKU_MODEL) (~\$0.006 per 5 minutes in use)" ;;
+        *) a="left to Claude Code (CLAUDE_BEDROCK_AUTO_MODE=1); its reviewer runs on Sonnet 5.5 (~\$0.13 per 5 minutes in use)" ;;
+      esac
     else a="left to Claude Code and your settings (your own config folder)"; fi
     cat <<EOT
 devos-claude: Claude Code on AWS Bedrock via DevOS ADE (plain \`claude\` is unchanged)
@@ -133,6 +137,12 @@ export ANTHROPIC_DEFAULT_OPUS_MODEL="$opus"
 ANTHROPIC_DEFAULT_SONNET_MODEL="$(get_env CLAUDE_BEDROCK_SONNET_MODEL)"
 ANTHROPIC_DEFAULT_HAIKU_MODEL="$(get_env CLAUDE_BEDROCK_HAIKU_MODEL)"
 export ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL
+# Auto mode's reviewer (Claude Code's classifier, CLAUDE_CODE_AUTO_MODE_MODEL) on the stack's Haiku whatever the
+# session's model: a safety check, so always a Claude model (as the Code page's: bn-coded.mjs reviewerModel; one of
+# yours wins). No Claude Haiku: Claude Code's default, claude-sonnet-5 (the catalog's alias for Sonnet 5.5).
+case "$ANTHROPIC_DEFAULT_HAIKU_MODEL" in
+  claude-haiku-*) export CLAUDE_CODE_AUTO_MODE_MODEL="${CLAUDE_CODE_AUTO_MODE_MODEL:-$ANTHROPIC_DEFAULT_HAIKU_MODEL}" ;;
+esac
 # Claude Code's own background work (titles, summaries, its Explore subagent: its "haiku" model) and its subagents run
 # on the session's model when that is not one of Bedrock's Claude models: a session on a free model never spends on
 # Haiku behind it (the Code page's sessions do the same: terminal/bin/bn-coded.mjs backgroundEnv)

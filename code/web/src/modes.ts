@@ -53,7 +53,7 @@ export const MODE_INFO: Record<Mode, ModeInfo> = {
     label: 'Auto',
     // (the CLI's own words: "no routine prompts; a reviewer model screens actions")
     desc: 'No routine prompts: a reviewer model screens actions, runs routine ones and blocks risky ones',
-    runs: 'Without asking: reading, read-only commands, file edits in the workspace, and what the reviewer (Sonnet 5.5) approves. Blocked: downloading and running code, sending data out, force pushes and the like — each with the rule it matched and "Allow once". Your ask rules still ask; Plan still asks you. Each check costs model tokens (~$0.13 per 5 minutes in use, on the terminal\'s key).',
+    runs: 'Without asking: reading, read-only commands, file edits in the workspace, and what the reviewer (Claude Haiku) approves. Blocked: downloading and running code, sending data out, force pushes and the like — each with the rule it matched and "Allow once". Your ask rules still ask; Plan still asks you. Each check costs model tokens (about half a cent per 5 minutes in use, on the terminal\'s key).',
     icon: 'sparkle',
     tone: 'blue',
     mark: '⏵⏵',

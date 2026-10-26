@@ -511,7 +511,7 @@ code_status() {
     printf '  Bypass     allowed: the mode picker offers Bypass permissions (per session, after a confirmation)\n'
   else printf '  Bypass     off (Settings › Claude Code, or ./stack config set CODE_ALLOW_BYPASS, from this computer)\n'; fi
   if flag_on "$(get_env CODE_AUTO_MODE)"; then
-    printf '  Auto       allowed: the mode picker offers Auto (a reviewer model on Sonnet 5.5 checks actions; ~$0.13 per 5 minutes in use)\n'
+    printf '  Auto       allowed: the mode picker offers Auto (a reviewer model checks actions: %s)\n' "$(auto_reviewer_text)"
   else printf '  Auto       off (Settings › Claude Code, or ./stack config set CODE_AUTO_MODE, from this computer)\n'; fi
   if [ -n "$(get_env REMOTE_CODE_HOST)" ]; then printf '  Remote     on: https://%s (REMOTE_TERMINAL=true)\n' "$(get_env REMOTE_CODE_HOST)"
   else printf '  Remote     off (with the terminal'"'"'s: REMOTE_TERMINAL=true in .env, then ./stack up)\n'; fi

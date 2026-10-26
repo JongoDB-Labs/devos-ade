@@ -71,6 +71,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   at its first 10 s interval, so a restart no longer waits about 10 s more for each service it brings back (setup ran
   again recreated LiteLLM, Caddy, the terminal's gateway, the terminal and Chat's sandbox, each healthy about 10 s
   after its start). After it has started, the checks are as before.
+- **Auto mode's reviewer runs on Claude Haiku, not Sonnet 5.5:** about half a cent for its first check in each
+  5 minutes instead of $0.13, and a twentieth of a cent for each further one. It's still a Claude model judging
+  each action, whatever the session's model, on the Code page, in `devos-claude` (on this computer and in the
+  browser terminal) and for `claude` typed in the terminal. It uses Claude Code's own setting,
+  `CLAUDE_CODE_AUTO_MODE_MODEL`, set to your Haiku model while that is a Claude Haiku. Without one it stays on
+  Sonnet 5.5, as before. `./stack code status` and `./stack terminal status` say which.
 
 ### Fixed
 

@@ -18,7 +18,7 @@ fs.writeFileSync(path.join(ROOT, 'outside', 'secret.txt'), 'outside');
 const FAKE = path.join(ROOT, 'claude');
 fs.writeFileSync(FAKE, `#!/usr/bin/env node
 const pick = ['ANTHROPIC_CUSTOM_HEADERS', 'SHARED_MCP_TOKEN', 'CLAUDE_CODE_ENTRYPOINT', 'EVIL', 'BN_CODE', 'PATH',
-  'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'ANTHROPIC_SMALL_FAST_MODEL', 'CLAUDE_CODE_SUBAGENT_MODEL'];
+  'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'ANTHROPIC_SMALL_FAST_MODEL', 'CLAUDE_CODE_SUBAGENT_MODEL', 'CLAUDE_CODE_AUTO_MODE_MODEL'];
 const env = Object.fromEntries(pick.filter((k) => k in process.env).map((k) => [k, k === 'PATH' ? 'set' : process.env[k]]));
 process.stdout.write(JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), env }) + '\\n');
 process.on('SIGTERM', () => { process.stdout.write('got SIGTERM\\n'); process.exit(143); });
@@ -141,6 +141,22 @@ test('environment: Claude Code\'s background model and subagents on the session\
   }
   assert.equal(coded.modelArg([...FIXED, '--model=xl/a:free', `--session-id=${SID}`]), 'xl/a:free');
   assert.equal(coded.modelArg([...FIXED, `--session-id=${SID}`]), null);
+});
+
+test('environment: Auto mode\'s reviewer on the container\'s Claude Haiku, whatever the session\'s model', () => {
+  const base = { PATH: '/bin', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-5-5' };
+  for (const m of ['xl/glm-5.3-uncensored:free', 'mistral-large-3', 'claude-opus-5-5', 'claude-sonnet-5-5', 'haiku', null]) {
+    // (the container's Haiku, never the slot backgroundEnv gives to the session's model)
+    assert.equal(coded.childEnv({}, SID, base, m).CLAUDE_CODE_AUTO_MODE_MODEL, 'claude-haiku-5-5', String(m));
+  }
+  // no Claude Haiku in the container: Claude Code's own default (claude-sonnet-5, the catalog's alias)
+  for (const h of ['claude-sonnet-4-5', 'mistral-large-3', 'xl/glm-5.3-uncensored:free', '', undefined, 'claude-haiku-5-5 x']) {
+    assert.equal('CLAUDE_CODE_AUTO_MODE_MODEL' in coded.childEnv({}, SID, { PATH: '/bin', ANTHROPIC_DEFAULT_HAIKU_MODEL: h }, 'mistral-large-3'), false, String(h));
+  }
+  assert.equal(coded.reviewerModel('claude-haiku-5-5'), 'claude-haiku-5-5');
+  assert.equal(coded.reviewerModel('claude-sonnet-5-5'), null);
+  // the SDK cannot set it: only its few variables pass
+  assert.equal(coded.childEnv({ CLAUDE_CODE_AUTO_MODE_MODEL: 'claude-opus-5-5' }, SID, { PATH: '/bin' }).CLAUDE_CODE_AUTO_MODE_MODEL, undefined);
 });
 
 test('a Claude Code process on a free model gets it as its background model too (over the socket)', async () => {

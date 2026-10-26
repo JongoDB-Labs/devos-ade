@@ -623,7 +623,7 @@ terminal_status() {
     *) printf '  Internet   off (TERMINAL_EGRESS=off): only the gateway to LiteLLM and the shared MCP server\n' ;;
   esac
   printf '             Settings › Claude Code › Sandbox internet access, or TERMINAL_EGRESS=internet|host|off in .env, then ./stack up\n'
-  if flag_on "$(get_env TERMINAL_AUTO_MODE)"; then printf '  Auto mode  on: Claude Code may run in auto mode here (a reviewer model on Sonnet 5.5; ~$0.13 per 5 minutes in use)\n'
+  if flag_on "$(get_env TERMINAL_AUTO_MODE)"; then printf '  Auto mode  on: Claude Code may run in auto mode here (a reviewer model: %s)\n' "$(auto_reviewer_text)"
   else printf '  Auto mode  off for claude here (Settings › Claude Code › Auto mode in the terminal, from this computer)\n'; fi
   printf '  Managed    terminal/managed/%s.json, read-only in the sandbox (Claude Code'"'"'s managed settings)\n' "$(claude_policy)"
   subs_status_line   # lib/subscriptions.sh: your AI subscriptions' tools there (as last checked)

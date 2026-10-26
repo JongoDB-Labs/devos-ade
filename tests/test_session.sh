@@ -527,9 +527,13 @@ test_wrapper_turns_auto_mode_off_in_the_lean_folder() {
   assert_contains "$out" "  Auto     auto mode off (as in the browser terminal and the Code page); CLAUDE_BEDROCK_AUTO_MODE=1 leaves it to Claude Code"
   out="$(CLAUDE_BEDROCK_USE_MY_CONFIG=1 PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/devos-claude" --help 2>&1)"
   assert_contains "$out" "  Auto     auto mode left to Claude Code and your settings (your own config folder)"
-  # CLAUDE_BEDROCK_AUTO_MODE=1: left to Claude Code, whose reviewer runs on Sonnet 5.5 (the catalog's alias)
+  # CLAUDE_BEDROCK_AUTO_MODE=1: left to Claude Code, whose reviewer runs on the stack's Haiku (CLAUDE_CODE_AUTO_MODE_MODEL);
+  # without a Claude Haiku, on Sonnet 5.5 (the catalog's alias)
   out="$(CLAUDE_BEDROCK_AUTO_MODE=1 PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/devos-claude" --help 2>&1)"
   assert_contains "$out" '  Auto     auto mode left to Claude Code (CLAUDE_BEDROCK_AUTO_MODE=1); its reviewer runs on Sonnet 5.5 (~$0.13 per 5 minutes in use)'
+  printf 'CLAUDE_BEDROCK_HAIKU_MODEL=claude-haiku-5-5\n' >> "$ENV_FILE"
+  out="$(CLAUDE_BEDROCK_AUTO_MODE=1 PATH="$TMP/bin:$PATH" "$BASH" "$STACK_DIR/bin/devos-claude" --help 2>&1)"
+  assert_contains "$out" '  Auto     auto mode left to Claude Code (CLAUDE_BEDROCK_AUTO_MODE=1); its reviewer runs on claude-haiku-5-5 (~$0.006 per 5 minutes in use)'
 }
 
 test_wrapper_names_models_in_full_never_by_an_alias() {
@@ -624,6 +628,21 @@ test_wrapper_background_model_follows_a_model_that_is_not_bedrock_claude() {
   # a Claude model (also by alias): Haiku, as before
   assert_eq "$(_bg --model claude-opus-5-5)" "claude-haiku-5-5||"
   assert_eq "$(_bg --model haiku)" "claude-haiku-5-5||"
+}
+
+# Auto mode's reviewer (CLAUDE_CODE_AUTO_MODE_MODEL) on the stack's Haiku whatever the session's model, a Claude Haiku
+# only; one of yours wins
+test_wrapper_runs_auto_modes_reviewer_on_haiku_whatever_the_model() {
+  _wrapper_env; _code_tsv
+  printf 'CLAUDE_BEDROCK_HAIKU_MODEL=claude-haiku-5-5\n' >> "$ENV_FILE"
+  _rv() { STUB_DUMP="$TMP/dump" _run_wrapper "$@" -p hi > /dev/null 2>&1 || return 1; sed -n 's/^CLAUDE_CODE_AUTO_MODE_MODEL=//p' "$TMP/dump"; }
+  assert_eq "$(_rv --model=google/gemma-4-31b-it:free)" "claude-haiku-5-5"
+  assert_eq "$(_rv --model llama-3-3-70b)" "claude-haiku-5-5"
+  assert_eq "$(_rv --model claude-opus-5-5)" "claude-haiku-5-5"
+  assert_eq "$(CLAUDE_CODE_AUTO_MODE_MODEL=claude-haiku-4-5 _rv --model claude-opus-5-5)" "claude-haiku-4-5"
+  # the Haiku slot not a Claude Haiku: Claude Code's default (the catalog's claude-sonnet-5)
+  printf 'CLAUDE_BEDROCK_HAIKU_MODEL=claude-sonnet-4-5\n' >> "$ENV_FILE"
+  assert_eq "$(_rv --model claude-opus-5-5)" ""
 }
 
 test_wrapper_starts_on_the_default_of_settings_and_lists_the_models_in_model() {
