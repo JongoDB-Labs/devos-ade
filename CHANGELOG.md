@@ -6,6 +6,22 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+
+- **Web search for Claude Code on every model:** Claude Code's WebSearch now searches on Bedrock's models (Claude
+  and the others) and OpenRouter's, which run no web search of their own: LiteLLM runs it (its web search
+  interception) and the model gets real results, cites the pages found, and can read one with WebFetch. Only the query
+  goes to the search backend. The first backend is **Amazon Bedrock AgentCore Web Search** on your own AWS key — no
+  other key, the query stays inside AWS, $7 per 1,000 searches on your AWS bill — through an AgentCore gateway your AWS
+  admin sets up once per account (`./stack websearch aws-setup` prints the commands; DevOS ADE never changes IAM).
+  Setup checks it (free: the gateway, found by itself when your key may list them, and your key's permission; then one
+  search) and names what is missing with the command for your admin (`bedrock-agentcore:InvokeGateway`, …). Or your
+  own Tavily, Brave Search or Perplexity key, or a SearXNG URL (`./stack config set WEBSEARCH_…`, Settings › Claude
+  Code). Each search is booked like model spend, on the key of the session that searched, against its budget.
+  `./stack websearch status | check | aws-setup`; `./stack status` and `./stack code status` say which backend is in
+  use. Without one, WebSearch still says it is not available (README › Web search for Claude Code). The harness
+  parity suite's WebSearch scenario now requires a real search whose answer cites a page it found, on every family.
+
 ## [0.29.0] - 2026-10-26
 
 ### Added
@@ -24,6 +40,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 - **Code page:** a provider without its key shows in the model picker, under *More providers*, as a greyed item that
   opens its card (*OpenRouter models — … Settings › Models & providers › OpenRouter takes it*); before, its group was
   simply missing. `/.bn/models` says which of OpenRouter and Experiential Labs has a key.
+
 
 ### Changed
 

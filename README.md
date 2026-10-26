@@ -1162,9 +1162,11 @@ Bedrock's Llama refuses more than 8,192 (OpenRouter's limits come from its model
 model on Bedrock, leaves out Claude Code's running token count after each tool result (LiteLLM turns that system
 message into a note after the result, and GPT-6 sometimes ended its turn on it without an answer) and moves the images
 of a tool result (the Read tool's) to the message after it (Bedrock refuses them inside a result for those models).
-For a model on Bedrock or OpenRouter it answers Claude Code's WebSearch with *Web search isn't available for <model> in
-DevOS ADE. Use WebFetch with a URL.*: Bedrock runs no web search, and without that sentence the model answered from
-memory as though it had searched (the Experiential Labs gateway searches itself). Not fixed:
+Claude Code's WebSearch works on every model once a search backend is set up: LiteLLM runs the search for Bedrock's
+and OpenRouter's models ([Web search for Claude Code](#web-search-for-claude-code)). Without one, the hook answers it
+for a model on Bedrock or OpenRouter with *Web search isn't available for <model> in DevOS ADE. Use WebFetch with a
+URL.*: Bedrock runs no web search, and without that sentence the model answered from memory as though it had searched
+(the Experiential Labs gateway searches itself). Not fixed:
 Claude Code assumes a 200K context for a model it does not know, so a long session on a smaller one (Llama: 128K) can
 fail before it compacts. Claude Code's own cost estimate prices a model it does not know at its own rates, so for
 another provider's model a session's *Stop at the budget* goes by what LiteLLM billed alone (the cost meter's figure):
@@ -1175,12 +1177,13 @@ What still differs is the model's own doing. [`tests/e2e/harness-parity.sh`](#te
 on each family (Claude Code 2.1.309 through LiteLLM 1.105.0, last on 2026-10-25): turns with `--resume`, thinking
 replayed, Read, Write, Edit, Bash, Glob, Grep and the todo list, parallel tool calls, an image through Read and in the
 prompt, `/compact`, `count_tokens` and `/context`, a switch of model mid-session (Claude's thinking and tool calls
-replayed to another vendor's model and back), a provider's error on the Code page and WebFetch work the same on GPT-6
-Luna and Mistral Large 3 on Bedrock, an OpenRouter model and Experiential Labs' models as on Claude, except:
+replayed to another vendor's model and back), a provider's error on the Code page, WebFetch and — with a search
+backend — WebSearch (searched, and the answer cites a page it found) work the same on GPT-6 Luna and Mistral Large 3 on
+Bedrock, an OpenRouter model and Experiential Labs' models as on Claude, except:
 
 | Model | What differs | What you see |
 |---|---|---|
-| Every model on Bedrock or OpenRouter, Claude included | WebSearch: no web search runs there | WebSearch's result says so: *Web search isn't available for … Use WebFetch with a URL.* |
+| Only without a search backend: every model on Bedrock or OpenRouter, Claude included | WebSearch: no web search runs there ([Web search for Claude Code](#web-search-for-claude-code) sets one up) | WebSearch's result says so: *Web search isn't available for … Use WebFetch with a URL.* |
 | GPT-6, Mistral Large 3, and the models of OpenRouter and Experiential Labs that hide their reasoning | No thinking blocks: the provider returns no reasoning to show (a model whose provider returns it, such as DeepSeek on Experiential Labs, shows it) | No *Thought* in the transcript; the picker's note says *no thinking blocks* |
 | Mistral Large 3 (Bedrock) | It gets the images but misreads them (a plain red picture read as white or blue) | The picker's note says so |
 | Text-only models, such as DeepSeek V4.1 Flash (Experiential Labs) | No image input | The provider's refusal in the error box: *… does not take image input* |
@@ -2115,6 +2118,65 @@ there follows your Experiential Labs account's own settings: its prompt capture 
 data retention (*require_zdr*, or the account-wide switch). DevOS ADE changes neither. Details:
 [docs/security.md](docs/security.md#experiential-labs).
 
+## Web search for Claude Code
+
+Claude Code's **WebSearch** asks the API for Anthropic's web search, a tool the provider runs. Bedrock runs none — for
+Claude or any other model — and OpenRouter barely does, so DevOS ADE has LiteLLM run the search itself (its *web search
+interception*): a Claude model on Bedrock is given LiteLLM's search tool and gets the results of each search it asks
+for; for another vendor's model on Bedrock and for OpenRouter's, the request WebSearch makes is answered with the
+results directly. Claude Code then works with them as with Anthropic's own search: the answer cites the pages found,
+and WebFetch reads one. The Experiential Labs gateway searches by itself, so its models are left as they are.
+
+**What is sent where:** only the search query goes to the backend; what it finds comes back to the model (and, from
+there, goes wherever the model's own requests go). The backend is the first one set up of these, in this order
+(`WEBSEARCH_BACKEND`: `auto`, the default; `off`; or one of them by name):
+
+| Backend | Needs | Where the query goes | Cost |
+|---|---|---|---|
+| **Amazon Bedrock AgentCore Web Search** (`agentcore`) | an AgentCore gateway with a web search target that your AWS key may use: set up once per AWS account by your AWS admin (below) | Amazon's own web index, inside AWS | $7 per 1,000 searches (+ $0.005 per 1,000 gateway calls), on your AWS bill |
+| Tavily (`tavily`) | your key: `WEBSEARCH_TAVILY_API_KEY` | tavily.com | $0.008 a search (list price) |
+| Brave Search (`brave`) | your key: `WEBSEARCH_BRAVE_API_KEY` | search.brave.com | $0.005 a search (list price) |
+| Perplexity Search (`perplexity`) | your key: `WEBSEARCH_PERPLEXITY_API_KEY` | perplexity.ai | $0.005 a search (list price) |
+| SearXNG (`searxng`) | a SearXNG instance with its JSON output on that LiteLLM's container can reach: `WEBSEARCH_SEARXNG_URL` | your SearXNG, and the search engines it asks | free |
+
+With none, WebSearch says so — *Web search isn't available for <model> in DevOS ADE. Use WebFetch with a URL.* — and
+WebFetch still works.
+
+**Costs:** a search is booked like model spend, on the LiteLLM key of the session that searched (the Code page's and
+the terminal's, devos-claude's), so it counts against that key's budget and shows in Home's spend and `./stack costs`.
+A provider's free monthly allowance is not known here: its searches count at the list price. On Claude, a WebSearch is
+also one more model call (the model reads the results and says what it found).
+
+**AgentCore Web Search** needs no other key, and the query stays inside AWS. Setup checks it: for free, who your key
+is, the gateway (found by itself when your key may list gateways, else `WEBSEARCH_AGENTCORE_GATEWAY`) and whether it
+answers your key; then one search (about $0.007, on the setup key). What is missing, setup and `./stack websearch
+status` name, with the command for your AWS admin — for a key that may not use the gateway:
+
+```bash
+aws iam put-user-policy --user-name YOUR_IAM_USER --policy-name DevOSADEWebSearch --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"bedrock-agentcore:InvokeGateway","Resource":"arn:aws:bedrock-agentcore:us-east-1:ACCOUNT_ID:gateway/GATEWAY_ID"},{"Effect":"Allow","Action":"bedrock-agentcore:ListGateways","Resource":"*"}]}'
+```
+
+`./stack websearch aws-setup` prints the one-time setup — the gateway's service role (it holds
+`bedrock-agentcore:InvokeWebSearch`), the gateway (IAM sign-in), its web search target and your key's permission — with
+your account, region and IAM user filled in. DevOS ADE never runs them: IAM and AWS resources stay your admin's. One gateway serves every key of
+the account that is allowed to use it. AgentCore Web Search runs in us-east-1, us-east-2, us-west-2, eu-west-1,
+ap-southeast-2, ap-northeast-1 and us-gov-west-1: the gateway is looked for (and made) in `AWS_REGION_NAME` when it is
+one of them, else in us-east-1. A query is at most 200 characters (LiteLLM shortens a longer one). AWS's terms ask
+that an answer built on its results keep their citations and links (Claude Code's answers end with the sources they
+used) and forbid storing results in bulk.
+
+```bash
+./stack websearch status       # the backend in use, what it sends where, what it costs, what to do
+./stack websearch check        # check again, e.g. after your admin's change: free, then one search
+./stack websearch aws-setup    # AgentCore Web Search's one-time AWS setup, as commands for your admin
+./stack config set WEBSEARCH_TAVILY_API_KEY    # or _BRAVE_ / _PERPLEXITY_ (asked for, hidden), or WEBSEARCH_SEARXNG_URL
+./stack config set WEBSEARCH_BACKEND           # auto | off | agentcore | tavily | brave | perplexity | searxng
+```
+
+Or **Settings › Claude Code › Web search for Claude Code** (its gateway, keys and URL under *More settings*), from the
+computer running DevOS ADE. A change re-renders LiteLLM's config (LiteLLM restarts, about 15 s) and checks the backend
+with one search. `./stack status` and `./stack code status` say which backend is in use.
+
 ## Run it on a cloud VM
 
 An always-on VM saves keeping a laptop awake. On **EC2**, give the instance an **IAM role** with Bedrock access
@@ -2180,6 +2242,10 @@ troubleshooting: [docs/voice.md](docs/voice.md).
   the last read failed or left a chosen model without details, and in the background while it has a list read with
   the key `.env` holds: it never waits for it then, and uses what it brings from the next `./stack up`. With a key
   changed by hand in `.env`, it waits for the new key's list, up to about 100 s. Without a key nothing contacts it.
+- **Web search for Claude Code, only with a search backend:** a WebSearch query goes to AgentCore Web Search in your
+  AWS account (inside AWS), or to Tavily, Brave Search, Perplexity or your SearXNG with a key or URL you added; only
+  the query. AgentCore's setup check asks AWS who your key is and your gateway what it offers (free) and makes one
+  search. Without a backend nothing is searched ([Web search for Claude Code](#web-search-for-claude-code)).
 - **Your voice:** with Bedrock speech-to-text (the default when Voxtral is usable and AWS takes its audio),
   audio from the microphone and voice calls goes only to Bedrock in your AWS account, through the local `stt`
   container and LiteLLM. Read-aloud uses your system's voices. Without server speech-to-text, the microphone uses
@@ -2233,6 +2299,7 @@ troubleshooting: [docs/voice.md](docs/voice.md).
 | `./stack serve [--background \| --stop]` | Start the stack and keep the Mac (or a Linux laptop) awake until Ctrl-C (prints the URLs; `--background`: macOS only) | none |
 | `./stack ssh-info` | How to run `devos-claude` from your phone over SSH | none |
 | `./stack openrouter …` | Optional OpenRouter: `status`, `set`, `apply` (the key pasted into `.env`), `remove`, `refresh`, `list`, `models` | none |
+| `./stack websearch status\|check\|aws-setup` | Claude Code's WebSearch on every model: the backend in use and what it sends where; `check` checks it again; `aws-setup` prints AgentCore Web Search's one-time AWS setup for your admin ([above](#web-search-for-claude-code)) | `check`: ~$0.007 at most |
 | `./stack stt …` | Speech-to-text for the microphone and voice calls: `status`, `set bedrock [small\|mini]`, `set openai\|groq [model]`, `remove` ([docs/voice.md](docs/voice.md)) | none |
 | `./stack terminal status\|enable [--workspace DIR]\|disable` | Claude Code in the browser, a sandbox that sees one folder; on by default with the Code page ([above](#claude-code-in-the-browser)) | none (its sessions: per token) |
 | `./stack code status\|enable [--workspace DIR]\|disable` | The Code tab, Claude Code with a chat, permission prompts and your files, in the terminal's sandbox; on by default, `disable` keeps it off ([above](#the-code-page)) | none (its sessions: per token) |
@@ -2543,7 +2610,9 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
   thinking, an image through Read and one in the prompt (and one straight to `/v1/messages`, with a count of the images
   that reach the provider), `/compact` after a long read, `count_tokens` and `/context`,
   a switch from Haiku (its thinking and tool calls) to the model and back, a provider's error as Claude Code and the
-  Code page show it, WebFetch and WebSearch. Each one's PASS or FAIL with the exact error is in
+  Code page show it, WebFetch and WebSearch (with a search backend — the stand-in's SearXNG-shaped one by default,
+  `E2E_WEBSEARCH=agentcore` with `E2E_AGENTCORE_GATEWAY` for AWS's own, `off` for none — it must search and cite a
+  page it found). Each one's PASS or FAIL with the exact error is in
   `tests/e2e/out/harness-parity.tsv` (and `.json`, with every session's stream-json and the Bedrock spend LiteLLM
   booked). OpenRouter is a stand-in without `E2E_OPENROUTER_API_KEY`, and Experiential Labs always is
   (`tests/e2e/explabs-mock.py`: the gateway's refusals, answered by GPT-6 Luna); `E2E_EXPLABS_API_KEY=…

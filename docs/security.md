@@ -235,7 +235,8 @@ The **Settings** tab shows every key of `.env` and changes the ones listed in
   the stack is up). A subshell never releases its parent's lock or runs its parent's exit hooks. A portal password
   longer than 300 bytes cannot travel in a request: the portal says so (413).
 - **Keys that could send data elsewhere** — the AWS key, the OpenRouter key, the Experiential Labs key, the
-  speech-to-text provider and key, the alert webhook — are taken only from a local session (`origin local`); so is turning `REMOTE_ADMIN_ACTIONS`
+  speech-to-text provider and key, the alert webhook, web search's backend, keys, gateway and SearXNG URL — are taken
+  only from a local session (`origin local`); so is turning `REMOTE_ADMIN_ACTIONS`
   on and changing `TAILSCALE_ALLOWED_LOGIN` (never to blank). `UPDATE_REQUIRE_SIGNED_TAGS` can only be turned on.
   Settings that would protect less move that way only locally, the other way from anywhere: higher budgets and a
   later alert threshold, automatic updates or the daily release check off, storing prompts (`LITELLM_STORE_PROMPTS`
@@ -428,6 +429,49 @@ An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*)
   call is never refused by DevOS ADE for want of details. The cap is never left out, with details or without (a model
   whose details name no cap field gets it as `max_tokens`), on Chat Completions and on a call LiteLLM moves to the
   Responses API (there, as `max_output_tokens`): it bounds what an answer can cost.
+
+## Web search for Claude Code
+
+Claude Code's WebSearch on Bedrock's and OpenRouter's models (`lib/websearch.sh`; README › *Web search for Claude
+Code*): LiteLLM's web search interception runs the search, with a backend `.env` sets up; without one nothing is
+searched, and the hook (`lib/litellm-hooks/bn_hooks.py`) has WebSearch say so.
+
+- **What is sent, and where.** Only the query (as the model wrote it; AgentCore takes 200 characters of it) goes to the
+  backend: Amazon Bedrock AgentCore Web Search through your account's AgentCore gateway (SigV4-signed with LiteLLM's
+  own AWS sign-in, https only, to the gateway's own `*.gateway.bedrock-agentcore.<region>.amazonaws.com` host: LiteLLM
+  refuses to sign for any other), Tavily, Brave Search or Perplexity with your key, or your SearXNG. No message,
+  file, tool result or anything about you or this install goes with it. What the search finds comes back into the
+  model's context like a tool result, and so goes wherever that model's requests go. A Claude model on Bedrock decides
+  what to search for (LiteLLM's own search tool, at most three follow-up model calls a request); for another vendor's
+  model on Bedrock and OpenRouter's, the query is the one Claude Code's WebSearch was given. The Experiential Labs
+  gateway searches by itself (its own fee, in the cost it reports): its models are not intercepted.
+- **The keys and URLs.** `WEBSEARCH_TAVILY_API_KEY`, `WEBSEARCH_BRAVE_API_KEY`, `WEBSEARCH_PERPLEXITY_API_KEY`: in
+  `.env` (600), changed only from this computer (policy `local`; `./stack config set` asks without echo), shown back as
+  set with their last 4 characters at most. They reach LiteLLM's environment only (the config names
+  `os.environ/WEBSEARCH_…`, never the value); a `WEBSEARCH_*` in your shell never reaches Docker Compose. The portal,
+  Open WebUI and the sandbox never get them. `WEBSEARCH_AGENTCORE_GATEWAY` takes nothing but an AgentCore gateway's MCP
+  URL; `WEBSEARCH_SEARXNG_URL` https, or http to a host of your own network (the webhook's rule).
+- **AWS: what DevOS ADE does, and what it does not.** It never changes IAM or makes an AWS resource: the one-time setup
+  (the gateway's service role, the gateway, its target, your key's permission) is commands `./stack websearch
+  aws-setup` prints for your admin. With your key it makes only these calls: `sts:GetCallerIdentity` (who the key is,
+  for those commands), `bedrock-agentcore:ListGateways` (the gateway, when none is set), the gateway's MCP
+  `tools/list` (whether it answers your key) — all free, in a one-off container of LiteLLM's image
+  (`lib/websearch_probe.py`, the same sign-in LiteLLM uses; it prints the account id, the IAM user or role name, the
+  gateway URL and AWS's refusal, never a credential) — and the searches. Your key needs only
+  `bedrock-agentcore:InvokeGateway` on that one gateway (and `ListGateways` to find it); the gateway's own role holds
+  `bedrock-agentcore:InvokeWebSearch`. A gateway with IAM sign-in answers only keys allowed to use it: the setup never
+  makes one open to anyone with its URL.
+- **The checks.** Setup, a settings change and `./stack websearch check` make at most one search, through LiteLLM's
+  `/v1/search` with the setup key (booked there); their answers (`.state/websearch/`, 700) hold the status, the
+  account id, the IAM user or role name and the gateway — never a key — and `litellm/web-search.json` (644, read by
+  LiteLLM's hook and the portal) the backend, its price, the status and what to do.
+- **Costs.** Each search is booked on the key of the request that searched, at the backend's price per search (the
+  hook registers it with LiteLLM: AgentCore's $0.007005, the list prices of the others, $0 for SearXNG), and counts
+  against that key's budget like model spend.
+- **What is kept.** LiteLLM keeps its usual metadata of each search (its spend log: the search tool's name, the cost,
+  the key; never the query unless `LITELLM_STORE_PROMPTS=true`). At the backend, its own retention applies:
+  AgentCore Web Search serves the query inside AWS (AWS's terms forbid storing results in bulk); Tavily, Brave,
+  Perplexity and your SearXNG (and the engines it asks) keep what their terms say.
 
 ## Remote access
 
