@@ -1406,6 +1406,10 @@ is always there and has no record). The records are kept by the code container i
 sandbox. At most 64; a folder is 1 to 4 names, none starting with `.`, at most 160 bytes, no control or
 direction-changing character; a record that does not fit (a file someone changed) is dropped, never trusted.
 
+The model you picked last for new sessions is kept beside them (`prefs/prefs.json`, the same modes: `GET` / `PUT
+/api/prefs`, the page's own Origin for a change), so every browser and device of your sign-in starts alike: model ids
+only (never one of Claude Code's aliases, at most 128 characters), anything else refused (400) or read as no choice.
+
 - [x] **A project is not a boundary.** Every project is in the one sandbox: the same user, the same workspace, the
   same key and budget. A session started in one folder can read and change every other (Claude Code's working folder
   is where it starts, not a limit; `--add-dir` stays refused). Projects organise your work; they do not isolate it.

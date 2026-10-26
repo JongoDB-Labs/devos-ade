@@ -471,11 +471,38 @@ export function activeView(s: AppState = get()): SessionView | undefined {
   return s.active ? s.views[s.active] : undefined;
 }
 
-/** The model to use for new sessions, by its full id: the browser's last choice while DevOS ADE serves it (listed in
- *  Settings › Claude Code › Models or not), else DevOS ADE's default, else the first (an alias remembered from before
- *  becomes its id) — models.ts startModel. */
+/** The model to use for new sessions, by its full id: your last choice (kept for your sign-in: every browser and
+ *  device alike) while DevOS ADE serves it (listed in Settings › Claude Code › Models or not) and Settings' default has
+ *  not changed since, else DevOS ADE's default (Settings', else Claude Sonnet), else the first (an alias remembered from
+ *  before becomes its id) — models.ts startModel. */
 export function defaultModel(s: AppState = get()): string {
-  return startModel(s.prefs.model, s.models).model;
+  return startModel(s.prefs.model, s.models, s.prefs.modelSetting).model;
+}
+
+/** Your pick of a model, kept for your sign-in (PUT /api/prefs) with Settings' default as it is now: a new browser or a
+ *  phone starts its next session on it too. (A backend that cannot keep it: this browser still does.) */
+function rememberModel(model: string): void {
+  const settingsDefault = get().models?.settingsDefault ?? null;
+  setPrefs((p) => (p.model === model && p.modelSetting === settingsDefault ? p : { ...p, model, modelSetting: settingsDefault }));
+  void api.putPrefs({ model, settingsDefault }).catch(() => undefined);
+}
+
+/** What the backend keeps for your sign-in, taken over by this browser (at the start, and again after a reconnect: a
+ *  pick made on another device since). A browser that picked before the backend kept picks gives its own to it. */
+function takePrefs(server: ServerState): void {
+  const kept = server.prefs;
+  if (!kept) return;
+  if (kept.model) {
+    setPrefs((p) => (p.model === kept.model && p.modelSetting === kept.settingsDefault ? p : { ...p, model: kept.model as string, modelSetting: kept.settingsDefault }));
+    return;
+  }
+  const mine = sendModel(get().prefs.model);
+  if (mine) {
+    // (a pick from before: kept as if made under Settings' default of now, so it goes on winning as it did)
+    const settingsDefault = get().prefs.modelSetting ?? get().models?.settingsDefault ?? null;
+    setPrefs((p) => ({ ...p, modelSetting: settingsDefault }));
+    void api.putPrefs({ model: mine, settingsDefault }).catch(() => undefined);
+  }
 }
 
 /** A model as it goes to the backend: its full id (an alias the page holds from a session or an older version is
@@ -516,6 +543,7 @@ async function syncOpenSessions(): Promise<void> {
   try {
     const server = await api.getState();
     noteWhere(server.sessions);
+    takePrefs(server);
     const open = new Set(server.sessions.map((o) => o.id));
     set((s) => {
       let changed = false;
@@ -1027,6 +1055,7 @@ export async function boot(): Promise<void> {
   if (st.status === 'fulfilled') {
     const server = st.value;
     set((s) => ({ ...s, server }));
+    takePrefs(server);
     if (server.agents) void refreshHarnesses();
     noteWhere(server.sessions);
     for (const o of server.sessions) {
@@ -1318,7 +1347,7 @@ async function openNew(opts: NewSessionOptions): Promise<string | null> {
     // (Bedrock's models by their full ids; on your plan or with an agent, its own model names — none: its default)
     const model = bedrock ? sendModel(opts.model, s) || defaultModel(s) : opts.model ?? '';
     // (your last pick no longer served: said, never a silent start on another model)
-    const missed = bedrock && !sendModel(opts.model, s) ? startModel(s.prefs.model, s.models).missed : null;
+    const missed = bedrock && !sendModel(opts.model, s) ? startModel(s.prefs.model, s.models, s.prefs.modelSetting).missed : null;
     let mode = startMode(opts.mode ?? s.startWith, s.prefs.mode, autoOk(s));   // never Bypass (switched to per session); Auto only while allowed
     if (!bedrock && mode === 'auto') mode = 'default';
     const effort = bedrock || harness === 'claude' ? (opts.effort === undefined ? s.prefs.effort : opts.effort) : null;
@@ -1717,11 +1746,17 @@ export async function setModel(name: string): Promise<boolean> {
   const prevPref = get().prefs.model;
   setPrefs((p) => ({ ...p, model }));
   const v = activeView();
-  if (!v || v.state === 'closed') return true;
+  if (!v || v.state === 'closed') {
+    rememberModel(model);
+    return true;
+  }
   const prev = v.model;
   updateView(v.id, (x) => ({ ...x, model }));
   const r = await wsRequest({ type: 'set_model', session: v.id, model }, 60_000);
-  if (r.ok) return true;
+  if (r.ok) {
+    rememberModel(model);
+    return true;
+  }
   updateView(v.id, (x) => (x.model === model ? { ...x, model: prev } : x));
   setPrefs((p) => (p.model === model ? { ...p, model: prevPref } : p));
   const was = get().models?.models.find((m) => m.id === prev || m.alias === prev)?.name || prev || 'the model before';

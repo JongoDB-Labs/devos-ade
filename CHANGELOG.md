@@ -6,6 +6,18 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Changed
+
+- **A new Code page session starts on Claude Sonnet, not Opus.** Wherever no model had been picked — a new browser, a
+  phone, the installed app — a session started on Claude Opus, the dearest model: one trivial first turn cost $0.184 on
+  Opus against about $0.005 on Haiku. The Code page's default is now Claude Sonnet (the stack's current Sonnet), unless
+  Settings › Claude Code › Default model for new sessions (`CODE_DEFAULT_MODEL`) names one. devos-claude's default is
+  unchanged (blank: the main model).
+- **The model you pick is kept for your sign-in, not per browser.** The code container keeps your last pick (`GET` /
+  `PUT /api/prefs`, in its own volume), so a new browser or a phone starts its next session where you left off. A
+  default set or changed in Settings after your pick wins over it until you pick again. A browser's pick from before
+  this version is taken over the first time it opens the Code page.
+
 ## [0.31.0] - 2026-10-26
 
 ### Added

@@ -1193,8 +1193,10 @@ Bedrock, an OpenRouter model and Experiential Labs' models as on Claude, except:
 menu list (`CODE_MODELS`): **All enabled** (the default), **Anthropic only** (Claude, Bedrock's and OpenRouter's), or
 **Pick…** — a checklist in the same groups, with a filter. A list for convenience, not a limit: the terminal's key may
 use every model either way, and *Show all models* in the picker shows the rest. **Default model for new sessions**
-(`CODE_DEFAULT_MODEL`): the model a new Code page session starts on (unless this browser picked another one last) and
-devos-claude starts with; blank = the main model (`CLAUDE_MODEL_OPUS`). Both re-render LiteLLM's config (the browser
+(`CODE_DEFAULT_MODEL`): the model a new Code page session starts on and devos-claude starts with; blank = Claude Sonnet
+on the Code page (the stack's current Sonnet; the main model when no Sonnet is enabled) and the main model
+(`CLAUDE_MODEL_OPUS`) for devos-claude. The Code page starts on the model you picked last instead — kept for your
+sign-in, so every browser, phone and the installed app alike — unless this default was set or changed since that pick. Both re-render LiteLLM's config (the browser
 terminal learns the list from LiteLLM's `/model/info`), so LiteLLM restarts (about 15 s). In a terminal:
 `./stack config set CODE_MODELS` (it asks: `all`, `anthropic` or a comma list of ids), `./stack config set
 CODE_DEFAULT_MODEL` (a model id, such as `mistral-large-3`).

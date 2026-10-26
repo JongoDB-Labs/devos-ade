@@ -18,12 +18,17 @@ export function fullModel(name: string | null | undefined, bn: BnModels | null |
   return to && !isAlias(to) ? to : '';
 }
 
-/** The model a new session starts on, by its full id: your last pick (PICK) whenever DevOS ADE serves it — listed in
- *  Settings › Claude Code › Models or not: that list narrows the picker, never a choice you made — or while the list
- *  is not there yet; else DevOS ADE's default, else the first. missed: your pick, when DevOS ADE no longer serves it
- *  (the page says so: a new session never moves to another model silently). */
-export function startModel(pick: string | null | undefined, bn: BnModels | null | undefined): { model: string; missed: string | null } {
+/** The model a new session starts on, by its full id: your last pick (PICK, kept for your sign-in) whenever DevOS ADE
+ *  serves it — listed in Settings › Claude Code › Models or not: that list narrows the picker, never a choice you made —
+ *  or while the list is not there yet; else DevOS ADE's default (Settings' default for new sessions, else Claude Sonnet:
+ *  never Opus by default), else the first. A default set or changed in Settings since your pick (PICKED_UNDER: what it
+ *  was when you picked; undefined: not known, a pick from before that was kept) wins over the pick — the newer choice.
+ *  missed: your pick, when DevOS ADE no longer serves it (the page says so: a new session never moves to another model
+ *  silently). */
+export function startModel(pick: string | null | undefined, bn: BnModels | null | undefined, pickedUnder?: string | null): { model: string; missed: string | null } {
   const pref = fullModel(pick, bn);
+  const settingsSince = !!bn?.settingsDefault && pickedUnder !== undefined && pickedUnder !== bn.settingsDefault;
+  if (pref && settingsSince) return { model: bn.settingsDefault as string, missed: null };
   if (pref && (!bn || !bn.models.length || bn.models.some((x) => x.id === pref))) return { model: pref, missed: null };
   const def = fullModel(bn?.defaultModel, bn);
   return { model: def || bn?.models[0]?.id || '', missed: pref || null };

@@ -20,7 +20,7 @@ import {
   readOnlyTopOf,
   safe,
 } from './text';
-import type { Harness, HarnessInfo, PlanUsage, AvailablePlugin, BnModel, Compat, Catalog, KeyBudget, RuleLine, CliModel, Command, ContextUsage, EditInfo, Ev, FileData, FsEntry, GitBranch, GitCommit, GitEntry, GitEvent, GitFile, GitFileDiff, GitHostRef, GitHostView, GitImported, GitOAuthView, GitSignInConfig, GitSignInFlow, GitIdentity, GitPlan, GitRemote, GitRemoteState, GitRemoteUrl, GitReview, GitRunResult, GitScope, GitStatus, GrepResult, Hunk, ImageBlock, InitInfo, InstalledPlugin, LoadedPlugin, Marketplace, McpServer, Mode, LaunchEntry, LaunchList, OpenSession, Outcome, PermissionReq, PortInfo, PreviewInfo, PreviewLink, RunList, RunResult, RunSource, RunSourceInfo, RunTask, ServerMsg, ServerState, SessionInfo, SessionState, SpendRow, Suggestion, WatchChange, SandboxWords, ImportTool, ImportedFrom, ImportRow, ImportView, ImportFinding,
+import type { Harness, HarnessInfo, PlanUsage, AvailablePlugin, BnModel, Compat, Catalog, KeyBudget, RuleLine, CliModel, Command, ContextUsage, EditInfo, Ev, FileData, FsEntry, GitBranch, GitCommit, GitEntry, GitEvent, GitFile, GitFileDiff, GitHostRef, GitHostView, GitImported, GitOAuthView, GitSignInConfig, GitSignInFlow, GitIdentity, GitPlan, GitRemote, GitRemoteState, GitRemoteUrl, GitReview, GitRunResult, GitScope, GitStatus, GrepResult, Hunk, ImageBlock, InitInfo, InstalledPlugin, LoadedPlugin, Marketplace, McpServer, Mode, LaunchEntry, LaunchList, OpenSession, Outcome, PermissionReq, PortInfo, PreviewInfo, PreviewLink, RunList, RunResult, RunSource, RunSourceInfo, RunTask, ServerMsg, ServerState, SessionInfo, UserPrefs, SessionState, SpendRow, Suggestion, WatchChange, SandboxWords, ImportTool, ImportedFrom, ImportRow, ImportView, ImportFinding,
   ImportPreview, ImportResult, ImportRequest, ImportCounts, ProjectSuggestion, SetupTool, SetupKind, SetupRow, SetupView, SetupCounts, SetupPreview, SetupFlag, SetupWrite,
   SetupSecret, SetupFinding, SetupResult } from './types';
 import { MODES, COMPATS, HARNESS_IDS } from './types';
@@ -656,7 +656,19 @@ export async function getState(): Promise<ServerState> {
     remote: o.remote === true,
     agents: obj(o.subscriptions)?.agents === true,
     planAllowed: obj(o.subscriptions)?.plan === true,
+    prefs: o.prefs === undefined ? null : normUserPrefs(o.prefs),
   };
+}
+
+/** Your choices for new sessions as the backend keeps them: model ids only (an alias or anything else: none). */
+export function normUserPrefs(v: unknown): UserPrefs {
+  const o = obj(v) ?? {};
+  const id = (x: unknown) => (typeof x === 'string' && MODEL_ID.test(x) && !/^(haiku|sonnet|opus|fable|opusplan|best|default)(\[1m\])?$/i.test(x) ? x : null);
+  return { model: id(o.model), settingsDefault: id(o.settingsDefault) };
+}
+/** Keep your choices for new sessions for your sign-in (every browser and device starts a session alike). */
+export async function putPrefs(p: UserPrefs): Promise<UserPrefs> {
+  return normUserPrefs(obj(await request('PUT', '/api/prefs', { model: p.model, settingsDefault: p.settingsDefault }))?.prefs);
 }
 
 /** Who may answer a new session (GET /api/harnesses): each of your subscriptions, there, signed in, allowed here. */
@@ -1726,7 +1738,11 @@ export async function mcpRemove(name: string): Promise<Outcome> {
 export interface BnModels {
   models: BnModel[];
   aliases: Record<string, string>;
+  /** what a new session starts on without a choice of yours: Settings' default, else Claude Sonnet (the portal decides) */
   defaultModel: string | null;
+  /** Settings › Claude Code › Default model for new sessions (CODE_DEFAULT_MODEL), while it is a model listed here; null:
+   *  none (an older portal says none either) — set or changed since your last pick, it wins over that pick */
+  settingsDefault?: string | null;
   /** Settings › Claude Code › Models: all, anthropic or list, and how many of the models it lists (null: not said) */
   scope?: { mode: 'all' | 'anthropic' | 'list'; listed: number; total: number } | null;
   /** whether OpenRouter and Experiential Labs have a key (Settings › Models & providers): without one, the picker shows
@@ -1827,7 +1843,8 @@ export function normModels(raw: unknown): BnModels {
   const scope = sc ? { mode: mode as 'all' | 'anthropic' | 'list', listed: models.filter((m) => m.listed).length, total: models.length } : null;
   const pv = obj(o.providers);
   const providers = pv ? { openrouter: pv.openrouter === true, explabs: pv.explabs === true } : null;
-  return { models, aliases, defaultModel: typeof o.default === 'string' ? label(o.default, 128) : null, scope, providers };
+  const settingsDefault = typeof o.settings_default === 'string' && models.some((m) => m.id === o.settings_default) ? (o.settings_default as string) : null;
+  return { models, aliases, defaultModel: typeof o.default === 'string' ? label(o.default, 128) : null, settingsDefault, scope, providers };
 }
 
 export async function getSpend(session: string): Promise<{ rows: SpendRow[]; key: KeyBudget | null }> {

@@ -1,5 +1,6 @@
 // Per-browser conveniences in localStorage (pane sizes, open panels, the model/mode for new sessions, the last
-// session, notifications on or off). Every read is validated and clamped and every access guarded: storage can be missing, full, blocked,
+// session, notifications on or off) — the model also kept for your sign-in by the backend (GET/PUT /api/prefs), which
+// wins: a new browser or a phone starts where you left off. Every read is validated and clamped and every access guarded: storage can be missing, full, blocked,
 // or hold anything (another tab, an older version); the page must work the same without it.
 import type { Mode } from './types';
 import { MODES } from './types';
@@ -26,6 +27,9 @@ export interface Layout {
 export interface Prefs {
   layout: Layout;
   model: string;
+  /** Settings' default for new sessions when `model` was picked (null: none then; undefined: not known — a pick from
+   *  before this was kept): a default set or changed since wins over the pick (models.ts startModel) */
+  modelSetting?: string | null;
   /** the mode new sessions start in: Read only, Manual, Accept edits or Auto (Plan and Bypass are for one session only) */
   mode: Mode;
   effort: string | null;
@@ -80,6 +84,7 @@ export function parsePrefs(raw: unknown): Prefs {
       side: l.side === 'sessions' || l.side === 'search' || l.side === 'git' ? l.side : 'files',
     },
     model: typeof o.model === 'string' && MODEL_ID.test(o.model) ? o.model : d.model,
+    ...(o.modelSetting === null || (typeof o.modelSetting === 'string' && MODEL_ID.test(o.modelSetting)) ? { modelSetting: o.modelSetting as string | null } : {}),
     // (the former "Don't ask" is Read only; Plan and Bypass are never remembered; Auto is, and a session starts in it only
     // while Settings allow it: modes.ts startMode)
     mode: o.mode === 'dontAsk' ? 'readOnly' : MODES.includes(o.mode as Mode) && remembered(o.mode as Mode) ? (o.mode as Mode) : d.mode,

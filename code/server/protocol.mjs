@@ -15,7 +15,13 @@
 //                                           sandbox: {egress: true|false (TERMINAL_EGRESS: any internet), egressHost:
 //                                           true|false (TERMINAL_EGRESS=host: this computer's services too), workspace: the folder of
 //                                           yours the sandbox sees (a label: this container mounts nothing) | null},
-//                                           remote: true over remote access (Caddy's X-Bn-Remote)}
+//                                           remote: true over remote access (Caddy's X-Bn-Remote), prefs: as GET /api/prefs}
+//   GET    /api/prefs                      {prefs: {model, settingsDefault, at}} your choices for new sessions, kept for
+//                                           your sign-in in the code container's state (userprefs.mjs), not per browser:
+//                                           the model you picked last (a full id, or null) and Settings' default for new
+//                                           sessions as it was then (the portal's /.bn/models settings_default, or null)
+//   PUT    /api/prefs {model, settingsDefault}   {prefs} — kept (each a full model id, not an alias, or null; 400
+//                                           otherwise)
 //   GET    /api/sessions?q=TEXT            {sessions: [{id, title, first_prompt, branch, modified, size, created, state,
 //                                           cwd, project}]} the sandbox's transcripts of the workspace and its folders,
 //                                           newest first (at most 300): cwd, the folder each ran in as its transcript

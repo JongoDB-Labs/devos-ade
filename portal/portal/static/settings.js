@@ -570,7 +570,7 @@
     PORTAL_HOST: "bedrock-now.localhost", PORTAL_PORT: "80, else 8800", CHAT_HOST: "chat. + the portal's address",
     ADMIN_HOST: "admin. + the portal's address", FILES_HOST: "files. + the portal's address",
     TERMINAL_HOST: "terminal. + the portal's address", CODE_HOST: "code. + the portal's address",
-    CODE_MODELS: "every enabled model", CODE_DEFAULT_MODEL: "the main model" };
+    CODE_MODELS: "every enabled model", CODE_DEFAULT_MODEL: "Claude Sonnet on the Code page, the main model for devos-claude" };
   // display K -> the value in words: "$50 a month", "30 days (default)", "On", "Not set", "••••••••"
   function display(k) {
     const v = shown(k);

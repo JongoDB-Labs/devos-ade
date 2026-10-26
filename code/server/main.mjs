@@ -22,6 +22,7 @@ import { makeGitRemote } from './gitremote.mjs';
 import { NEVER_ASKS, CLAUDE_SAID, sandboxWords } from './said.mjs';
 import { SandboxError } from './spawn-client.mjs';
 import { Projects, ProjectError, projectIdOk, WS, absOf } from './projects.mjs';
+import { UserPrefs, PrefsError } from './userprefs.mjs';
 import { makeTrust } from './trust.mjs';
 import { Imports, ImportError } from './import-sessions.mjs';
 import { makeImportsApi } from './imports-api.mjs';
@@ -129,11 +130,12 @@ export function ownOrigin(req) {
 // ({github: {clientId, appSlug}, gitlab: {clientId}}; blank: the project's own). projects: the project records
 // (projects.mjs; made on first use: /var/lib/bn-code). imports: sessions of this computer copied into the sandbox
 // (import-sessions.mjs; made on first use). setup: your Claude Code setup of this computer copied into the sandbox
-// (import-setup.mjs; made on first use).
+// (import-setup.mjs; made on first use). userPrefs: your choices for new sessions, kept for your sign-in (userprefs.mjs;
+// made on first write: /var/lib/bn-code).
 export function createServer({ secret, query, spawn, call, distDir = path.join(HERE, '../web/dist'), versions = {}, logger = log,
   reloadPollMs, reloadMaxMs, maxBufferedBytes = LIMITS.wsMaxBufferedBytes, maxSocketAgeMs = LIMITS.wsMaxAgeHours * 3600000, broker: brokerOpts = {},
   allowBypass = false, allowAuto = false, sandbox = {}, watch = true, gitHosts = null, openBroker = null, gitConnect = null, gitApps = {}, gitOAuthDelay = null,
-  projects = null, imports = null, setup = null, spawnAgent = null, agentStore = null, planAllowed = false, subsStatus = null }) {
+  projects = null, imports = null, setup = null, spawnAgent = null, agentStore = null, planAllowed = false, subsStatus = null, userPrefs = null }) {
   if (!/^[0-9a-f]{32,}$/.test(secret || '')) throw new Error('CODE_PROXY_SECRET missing or weak (32+ hex characters)');
   const want = Buffer.from(secret);
   const proxied = (req) => {
@@ -179,6 +181,9 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
   // the project records (projects.mjs): made on first use, as Git hosts are
   let projectStore = projects;
   const proj = () => (projectStore ??= new Projects());
+  // your choices for new sessions (userprefs.mjs): kept for your sign-in, so every browser and device starts alike
+  let prefsStore = userPrefs;
+  const prefs = () => (prefsStore ??= new UserPrefs());
   // the watchlist's two ops in the sandbox (bn-coded): the watched files (hashes, copies ≤ 1 MiB), and one put back —
   // in a session's project folder (root: from the records, by the folder the session runs in; none: the workspace)
   const watcher = watch === false ? null : {
@@ -315,8 +320,13 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
         subscriptions: { agents: Boolean(spawnAgent), plan: planAllowed === true },
         // over remote access (Caddy's remote sites say 1, the local one 0; a client's copy never gets here)
         remote: req.headers['x-bn-remote'] === '1',
+        // your choices for new sessions, kept for your sign-in (not this browser's): the model you picked last
+        prefs: prefs().read(),
       });
     }
+    // your choices for new sessions: the model picked last, with Settings' default as it was then (userprefs.mjs)
+    if (p === '/api/prefs' && m === 'GET') return send(res, 200, { prefs: prefs().read() });
+    if (p === '/api/prefs' && m === 'PUT') return send(res, 200, { prefs: prefs().set(await readJson(req, 4 << 10)) });
     // who may answer a new session: Claude Code on Bedrock, and each of your subscriptions — there, signed in, allowed
     if (p === '/api/harnesses' && m === 'GET') {
       if (!spawnAgent) return send(res, 200, { harnesses: [], checked: null });
@@ -583,7 +593,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     try {
       return await route(req, res, url);
     } catch (e) {
-      const [status, msg] = e instanceof HttpError || e instanceof HostError || e instanceof ProjectError || e instanceof ImportError ? [e.status, e.message] : sandboxStatus(e);
+      const [status, msg] = e instanceof HttpError || e instanceof HostError || e instanceof ProjectError || e instanceof ImportError || e instanceof PrefsError ? [e.status, e.message] : sandboxStatus(e);
       if (status >= 500) logger(`${req.method} ${url.pathname}: ${short(e.message, 300)}`);
       if (res.headersSent) return res.destroy();
       // (a failure in the sandbox's own words, on any route — a refusal of bn-coded's not one of its fixed texts, git's

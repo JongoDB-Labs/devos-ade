@@ -3,7 +3,7 @@
 // conversation to it again, on the session's model), and a hint on a new session's first turn on Opus.
 import { useEffect, useState } from 'preact/hooks';
 import { useSel } from '../store';
-import { store, activeView, dropLinkDraft, ackLinkDraft, openProjectDialog, setModel } from '../app';
+import { store, activeView, defaultModel, dropLinkDraft, ackLinkDraft, openProjectDialog, setModel } from '../app';
 import { RECHECK_TEXT, settingsApplied } from '../projects';
 import { cacheNotice, opusHint } from '../budget';
 import { fullModel } from '../models';
@@ -148,10 +148,10 @@ function ColdCache({ v }: { v: SessionView }) {
 
 function OpusHint({ v }: { v: SessionView | undefined }) {
   const bn = useSel(store, (s) => s.models);
-  const pref = useSel(store, (s) => s.prefs.model);
+  const pref = useSel(store, (s) => defaultModel(s));
   const [gone, setGone] = useState(hintOff());
   if (gone || !bn || (v && v.items.some((it) => it.t === 'user'))) return null;
-  const id = fullModel(v?.model || pref || bn.defaultModel, bn);
+  const id = fullModel(v?.model || pref, bn);
   const h = opusHint(id, bn.models);
   if (!h) return null;
   return (

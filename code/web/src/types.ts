@@ -512,6 +512,16 @@ export interface ServerState {
   /** your subscriptions' agents run here (Codex, Copilot, Cursor, Grok), and Claude on your plan may (Settings' switch) */
   agents: boolean;
   planAllowed: boolean;
+  /** your choices for new sessions, kept for your sign-in (the code container's, not this browser's); null: an older
+   *  backend keeps none */
+  prefs: UserPrefs | null;
+}
+
+/** What the backend keeps for your sign-in (GET/PUT /api/prefs): the model you picked last (a full id, or null) and
+ *  Settings' default for new sessions as it was then (null: none) — a default set in Settings since wins over the pick. */
+export interface UserPrefs {
+  model: string | null;
+  settingsDefault: string | null;
 }
 
 export interface FsEntry {

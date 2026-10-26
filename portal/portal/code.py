@@ -50,15 +50,24 @@ def _text(v: str, n: int) -> str:
     return "".join(c for c in (v or "") if c.isprintable())[:n].strip()
 
 
+SETTINGS_DEFAULT = re.compile(r"CODE_DEFAULT_MODEL=(\S*)\s*$")
+
+
 def read_code_models(litellm_dir: Path) -> tuple[list[dict], str | None]:
     """litellm/code-models.tsv: [{id, name, provider, vendor, prices, free, compat, listed, default, max_out, context,
-    note}] and the scope line ("all", "anthropic" or "list"); ([], None) without the file (before ./stack wrote it)."""
+    note}] and the scope line ("all", "anthropic" or "list"); ([], None) without the file (before ./stack wrote it). A
+    row's "default" is Settings' own choice (CODE_DEFAULT_MODEL, which the header names) — not the main model ./stack
+    marks when that is blank or not enabled (devos-claude's default, never the Code page's)."""
     try:
         text = (litellm_dir / CODE_MODELS).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return [], None
     rows, scope, seen = [], None, set()
+    chosen: str | None = None   # (None: a header that does not say — the marked row is Settings' choice)
     for line in text.splitlines():
+        if line.startswith("# GENERATED ") and (m := SETTINGS_DEFAULT.search(line)):
+            chosen = m.group(1)
+            continue
         if line.startswith("# scope: "):
             scope = line[9:].strip() if line[9:].strip() in SCOPES else None
             continue
@@ -77,6 +86,9 @@ def read_code_models(litellm_dir: Path) -> tuple[list[dict], str | None]:
         })
         if len(rows) >= MAX_CODE_MODELS:
             break
+    if chosen is not None:
+        for r in rows:
+            r["default"] = r["default"] and r["id"] == chosen
     return rows, scope
 
 
@@ -87,7 +99,11 @@ def models(s: Settings) -> dict:
     shows them; OpenRouter's: what LiteLLM bills; Experiential Labs': the list price, while LiteLLM books what the gateway
     reports for each call; a free one is $0, never spend), which of Claude Code's aliases maps where, and whether
     OpenRouter and Experiential Labs have a key (providers: without one the picker shows where it goes in, Settings ›
-    Models & providers). Before ./stack wrote the file: the enabled Claude models, as before."""
+    Models & providers). Before ./stack wrote the file: the enabled Claude models, as before.
+    default: what a new session starts on — Settings' default (settings_default: CODE_DEFAULT_MODEL, while it is a
+    listed model; else null), else Claude Sonnet (the Sonnet slot: the current Sonnet), else the main model (Opus), else
+    the first listed. Never Opus by default where Sonnet is there: a first turn on Opus costs ~2x Sonnet's. The page
+    starts a session on your last choice instead (kept for your sign-in), unless Settings' default changed since."""
     prices = price_update.effective_prices(summary.price_paths(s))
     aliases = {k: v for k, v in s.claude_models.items() if k in ALIAS_ORDER and v}
     alias_of = {v: k for k, v in aliases.items()}
@@ -122,11 +138,12 @@ def models(s: Settings) -> dict:
     rest = sorted((m for m in out if m not in claude), key=lambda m: order[m["id"]])
     out = claude + rest
     listed = [m for m in out if m["listed"]]
-    default = next((r["id"] for r in rows if r["default"] and any(m["id"] == r["id"] for m in listed)), None)
-    default = default or (aliases.get("opus") if any(m["id"] == aliases.get("opus") for m in listed) else None) \
+    ok = {m["id"] for m in listed}
+    chosen = next((r["id"] for r in rows if r["default"] and r["id"] in ok), None)
+    default = chosen or next((aliases[a] for a in ("sonnet", "opus") if aliases.get(a) in ok), None) \
         or (listed[0]["id"] if listed else None)
     each = ", ".join(f"{m['display']} ${m['cache_write_30k']:.3f}" for m in listed if m["cache_write_30k"] is not None)
-    return {"models": out, "aliases": aliases, "default": default, "unit": "USD per million tokens",
+    return {"models": out, "aliases": aliases, "default": default, "settings_default": chosen, "unit": "USD per million tokens",
             "scope": {"mode": scope or "all", "listed": len(listed), "total": len(out)},
             "providers": {"openrouter": bool(s.openrouter_api_key), "explabs": xl_on},
             "note": ("A new session, and every switch of model within one, makes its next turn write that model's prompt "
