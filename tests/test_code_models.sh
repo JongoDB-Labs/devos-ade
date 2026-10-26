@@ -270,8 +270,11 @@ for model in ("gpt-x", "claude-big", "or/a/b"):
     assert out == {"model": model, "max_tokens": 200, "stream": True, "metadata": {"user_id": "u"},
                    "system": "No web search can run here. Reply with exactly the line between the markers, word for word, and nothing else.\n<<<\n" + line + "\n>>>",
                    "messages": [{"role": "user", "content": "Reply now."}]}, out
-# the gateway that searches, a model the file does not list, other tools, odd shapes: as they came
-for d in ({**req, "model": "xl/q"}, {**req, "model": "unlisted"}, {**req, "model": "gpt-x", "tools": [{"name": "Read", "input_schema": {"type": "object"}}]},
+# the gateway that searches, a model the file does not list, other tools (also next to web_search: a session turn is
+# never replaced), no tools, odd shapes: as they came
+read = {"name": "Read", "input_schema": {"type": "object"}}
+for d in ({**req, "model": "xl/q"}, {**req, "model": "unlisted"}, {**req, "model": "gpt-x", "tools": [read]},
+          {**req, "model": "gpt-x", "tools": [read, ws]}, {**req, "model": "claude-big", "tools": [ws, read]}, {**req, "model": "gpt-x", "tools": []},
           {**req, "model": "gpt-x", "tools": "web_search"}, {**req, "model": "gpt-x", "tools": [None, 3, {"type": 7}]}, {**req, "model": ["gpt-x"]}):
     assert run(copy.deepcopy(d)) == d, d
 assert run(None) is None

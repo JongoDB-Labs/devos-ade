@@ -184,11 +184,13 @@ def _web_search_tool(t) -> bool:
 
 
 def no_web_search(data: dict) -> dict:
-    """DATA, when it asks a model whose provider runs no web search for Anthropic's web search (a tool whose type starts
-    with web_search: Claude Code's WebSearch), made a request for WEB_SEARCH_OFF instead: no tools, nothing to think
-    about, a short answer that is that sentence alone. Unchanged otherwise."""
+    """DATA, when it asks a model whose provider runs no web search for Anthropic's web search and nothing else (every
+    tool's type starts with web_search: the request Claude Code's WebSearch makes on its own), made a request for
+    WEB_SEARCH_OFF instead: no tools, nothing to think about, a short answer that is that sentence alone. Unchanged
+    otherwise: a request with any other tool (a session's turn) is never replaced, whatever it lists besides."""
     model, tools = data.get("model"), data.get("tools")
-    if not isinstance(model, str) or model not in _read()["no_search"] or not isinstance(tools, list) or not any(map(_web_search_tool, tools)):
+    if (not isinstance(model, str) or model not in _read()["no_search"] or not isinstance(tools, list) or not tools
+            or not all(map(_web_search_tool, tools))):
         return data
     line = WEB_SEARCH_OFF.format(model=model)
     for k in ("tools", "tool_choice", "thinking", "output_config", "temperature", "top_p", "top_k", "stop_sequences"):
