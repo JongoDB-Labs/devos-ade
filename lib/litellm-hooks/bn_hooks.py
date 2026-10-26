@@ -47,6 +47,17 @@ For the Experiential Labs gateway's models (lib/explabs.sh: model_info bn_xl: tr
 - After it: the cost LiteLLM books is the one the gateway reported for the call (usage.cost, USD), $0 when the call ran
   on your own provider key (usage.is_byok), never one computed from the list prices in the config. (A streamed reply's
   usage.cost is booked by LiteLLM itself.)
+
+For a Llama model on Bedrock (its model id names meta.llama), on each call with tools: Bedrock's Converse takes the
+tools (toolConfig) but hands Llama's tool call back as the text Llama wrote, in Meta's documented form ({"type":
+"function", "name": …, "parameters": {…}}), with stopReason end_turn — for Claude Code's requests every time, where a
+short request of one tool gets a toolUse block — so Claude Code saw an answer and ran nothing. Bedrock takes no tool
+use in a stream for Llama: LiteLLM asks the Converse API (not ConverseStream) and streams the answer itself. The call
+goes through LiteLLM's own client with Bedrock's answer read on the way back (llama_tool_calls): an answer that is
+one text block and nothing but Llama's tool calls, each naming a tool the request offers with a JSON object of
+arguments that has every key the tool's schema requires (text_tool_calls), becomes those calls as toolUse blocks with
+stopReason tool_use — the answer Bedrock gives for the other models' calls, so LiteLLM's stream, its Chat Completions
+answer and Claude Code's tool_use all follow from it. Anything else stays the text it was.
 Nothing else is changed, and any problem here leaves the request exactly as it came: this must never be the reason a
 request fails.
 """
@@ -57,6 +68,8 @@ import json
 import math
 import os
 import re
+import secrets
+import string
 from collections.abc import Mapping
 
 from litellm.integrations.custom_logger import CustomLogger
@@ -385,6 +398,209 @@ def _route(kwargs: dict) -> str | None:
         return None
 
 
+# --- Llama on Bedrock: the tool calls Bedrock hands back as text ---
+
+# Llama's own marks around a tool call (Meta's prompt format: <|python_tag|>{…}<|eom_id|>), should they reach us
+_LLAMA_HEAD = "<|python_tag|>"
+_LLAMA_TAILS = ("<|eom_id|>", "<|eot_id|>")
+# Meta's other documented form for a tool of your own: <function=name>{arguments}</function>
+_FUNCTION_TAG = re.compile(r"<function=([A-Za-z0-9_-]{1,64})>")
+_FUNCTION_END = "</function>"
+_JSON = json.JSONDecoder()
+_SPACE = " \t\r\n"
+_ID_CHARS = string.ascii_letters + string.digits
+
+
+def offered_tools(request) -> dict:
+    """{tool name: its input schema} of the tools a Converse REQUEST offers (toolConfig.tools[].toolSpec)."""
+    config = request.get("toolConfig") if isinstance(request, Mapping) else None
+    tools = config.get("tools") if isinstance(config, Mapping) else None
+    out = {}
+    for t in tools if isinstance(tools, list) else []:
+        spec = t.get("toolSpec") if isinstance(t, Mapping) else None
+        if isinstance(spec, Mapping) and isinstance(spec.get("name"), str) and spec["name"]:
+            schema = spec.get("inputSchema")
+            schema = schema.get("json") if isinstance(schema, Mapping) else None
+            out[spec["name"]] = schema if isinstance(schema, Mapping) else {}
+    return out
+
+
+def _tool_call(name, args, tools):
+    """(NAME, ARGS) when NAME is a tool of TOOLS and ARGS an object with every key that tool's schema requires; None
+    otherwise. (The values are the model's: Claude Code checks them against the schema, as for any model's call.)"""
+    if not isinstance(name, str) or name not in tools or not isinstance(args, dict):
+        return None
+    required = tools[name].get("required")
+    if isinstance(required, list) and not all(isinstance(k, str) and k in args for k in required):
+        return None
+    return name, args
+
+
+def _skip(s: str, i: int) -> int:
+    while i < len(s) and s[i] in _SPACE:
+        i += 1
+    return i
+
+
+def text_tool_calls(text, tools) -> list | None:
+    """The tool calls TEXT (a model's whole answer) is, as [(name, arguments)], when all of it is one or more calls in
+    Llama's documented forms — {"type": "function", "name": …, "parameters": {…}} ("type" optional; several of them
+    apart by white space or one ";"), or <function=name>{…}</function> (several apart by white space), with
+    <|python_tag|> before and <|eom_id|> or <|eot_id|> after allowed — each naming a tool of TOOLS ({name: input
+    schema}) with a JSON object of arguments that has every key its schema requires. None for anything else (any
+    other word, a code fence, an unknown tool, JSON that does not parse, a missing argument): that stays text."""
+    if not isinstance(text, str) or not tools:
+        return None
+    s = text.strip(_SPACE)
+    if s.startswith(_LLAMA_HEAD):
+        s = s[len(_LLAMA_HEAD):].lstrip(_SPACE)
+    for tail in _LLAMA_TAILS:
+        if s.endswith(tail):
+            s = s[:-len(tail)].rstrip(_SPACE)
+            break
+    calls, i = [], 0
+    if s.startswith("<function="):
+        while i < len(s):
+            m = _FUNCTION_TAG.match(s, i)
+            if not m:
+                return None
+            try:
+                args, i = _JSON.raw_decode(s, _skip(s, m.end()))
+            except ValueError:
+                return None
+            i = _skip(s, i)
+            call = _tool_call(m.group(1), args, tools)
+            if call is None or not s.startswith(_FUNCTION_END, i):
+                return None
+            calls.append(call)
+            i = _skip(s, i + len(_FUNCTION_END))
+        return calls or None
+    while i < len(s):
+        try:
+            obj, i = _JSON.raw_decode(s, i)
+        except ValueError:
+            return None
+        if (not isinstance(obj, dict) or not obj.keys() <= {"type", "name", "parameters"} or "parameters" not in obj
+                or obj.get("type", "function") != "function"):
+            return None
+        call = _tool_call(obj.get("name"), obj.get("parameters"), tools)
+        if call is None:
+            return None
+        calls.append(call)
+        i = _skip(s, i)
+        if i < len(s) and s[i] == ";":
+            i = _skip(s, i + 1)
+            if i == len(s):
+                return None
+    return calls or None
+
+
+def converse_tool_calls(request, answer) -> dict | None:
+    """ANSWER (Bedrock's Converse answer to REQUEST) with Llama's tool calls as toolUse blocks and stopReason
+    tool_use, as Bedrock returns the calls of the other models — when the answer is one text block, ended there
+    (end_turn), that text_tool_calls reads as calls of the tools REQUEST offers. None otherwise: the answer stays as it
+    came."""
+    if not isinstance(answer, Mapping) or answer.get("stopReason") != "end_turn":
+        return None
+    output = answer.get("output")
+    message = output.get("message") if isinstance(output, Mapping) else None
+    content = message.get("content") if isinstance(message, Mapping) else None
+    if not (isinstance(content, list) and len(content) == 1 and isinstance(content[0], Mapping)
+            and set(content[0]) == {"text"}):
+        return None
+    calls = text_tool_calls(content[0]["text"], offered_tools(request))
+    if not calls:
+        return None
+    blocks = [{"toolUse": {"toolUseId": "tooluse_" + "".join(secrets.choice(_ID_CHARS) for _ in range(22)),
+                           "name": name, "input": args}} for name, args in calls]
+    return {**answer, "output": {**output, "message": {**message, "content": blocks}}, "stopReason": "tool_use"}
+
+
+def _bedrock_llama(kwargs) -> bool:
+    """Whether KWARGS (one Chat Completions call) goes to a Llama model through Bedrock's Converse."""
+    model, provider = kwargs.get("model"), kwargs.get("custom_llm_provider")
+    if not isinstance(model, str) or "meta.llama" not in model or model.startswith(("bedrock/invoke/", "invoke/")):
+        return False
+    return model.startswith("bedrock/") or provider == "bedrock"
+
+
+def bedrock_llama_answer(url, body, response):
+    """RESPONSE — Bedrock's answer to the Converse request BODY (sent to URL) for a Llama model — with its tool calls
+    made toolUse blocks (converse_tool_calls): a response of the same kind with that answer, its headers but the
+    length and encoding of the old one. RESPONSE itself for anything else."""
+    if (not isinstance(url, str) or "meta.llama" not in url or not url.rstrip("/").endswith("/converse")
+            or getattr(response, "status_code", None) != 200):
+        return response
+    if isinstance(body, (bytes, bytearray)):
+        body = bytes(body).decode("utf-8")
+    request = json.loads(body) if isinstance(body, str) else body
+    if not isinstance(request, Mapping) or not offered_tools(request):
+        return response
+    answer = converse_tool_calls(request, response.json())
+    if answer is None:
+        return response
+    headers = [(k, v) for k, v in response.headers.items()
+               if k.lower() not in ("content-length", "content-encoding", "transfer-encoding")]
+    return type(response)(status_code=response.status_code, headers=headers, content=json.dumps(answer).encode("utf-8"),
+                          request=response.request)
+
+
+_llama_client_class: list = []
+
+
+def _llama_client(kwargs):
+    """A client for this call to Bedrock: LiteLLM's own (the one it would take: get_async_httpx_client) makes it, and
+    Bedrock's answer comes back through bedrock_llama_answer. None without LiteLLM's (another LiteLLM)."""
+    from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, get_async_httpx_client
+
+    if not _llama_client_class:
+        class LlamaToolCalls(AsyncHTTPHandler):
+            def __init__(self, inner):   # (not AsyncHTTPHandler's: no client of its own to make, or to close)
+                self._bn_inner = inner
+
+            def __getattr__(self, name):
+                if name == "_bn_inner":
+                    raise AttributeError(name)
+                return getattr(self._bn_inner, name)
+
+            def __del__(self):   # (LiteLLM's client is LiteLLM's to close)
+                pass
+
+            async def post(self, url, *args, **kw):
+                response = await self._bn_inner.post(url, *args, **kw)
+                if kw.get("stream"):
+                    return response
+                try:
+                    return bedrock_llama_answer(url, kw.get("data", args[0] if args else None), response)
+                except Exception:  # noqa: BLE001 — the answer as Bedrock gave it, never a failed call
+                    return response
+
+        _llama_client_class.append(LlamaToolCalls)
+    # (as LiteLLM picks it: a streamed call — a fake stream, a Converse call, for Llama with tools — takes its default
+    # client; any other its timeout's)
+    params = None
+    timeout = kwargs.get("timeout")
+    if not kwargs.get("stream") and isinstance(timeout, (int, float)) and not isinstance(timeout, bool):
+        import httpx
+
+        params = {"timeout": httpx.Timeout(timeout)}
+    elif not kwargs.get("stream") and type(timeout).__name__ == "Timeout":
+        params = {"timeout": timeout}
+    inner = get_async_httpx_client(llm_provider="bedrock", params=params)
+    return _llama_client_class[0](inner) if isinstance(inner, AsyncHTTPHandler) else None
+
+
+def llama_tool_calls(kwargs: dict) -> dict:
+    """KWARGS for a call with tools to a Llama model on Bedrock, with a client (_llama_client) that reads Bedrock's
+    answer for the tool calls Llama wrote as text (bedrock_llama_answer); unchanged for any other call, or one that
+    already has a client."""
+    if (not isinstance(kwargs, dict) or kwargs.get("client") is not None or not kwargs.get("tools")
+            or not _bedrock_llama(kwargs)):
+        return kwargs
+    client = _llama_client(kwargs)
+    return {**kwargs, "client": client} if client is not None else kwargs
+
+
 def _usage_field(usage, name):
     return usage.get(name) if isinstance(usage, Mapping) else getattr(usage, name, None)
 
@@ -424,11 +640,13 @@ class BnHooks(CustomLogger):
         return data
 
     async def async_pre_call_deployment_hook(self, kwargs, call_type):
-        try:
-            if isinstance(kwargs, dict) and _chat_call(call_type):
-                return xl_request(kwargs)
-        except Exception:  # noqa: BLE001
-            pass
+        if not isinstance(kwargs, dict) or not _chat_call(call_type):
+            return kwargs
+        for step in (xl_request, llama_tool_calls):
+            try:
+                kwargs = step(kwargs)
+            except Exception:  # noqa: BLE001 — never fail a request because of this hook
+                pass
         return kwargs
 
     async def async_post_call_success_deployment_hook(self, request_data, response, call_type):  # noqa: ARG002

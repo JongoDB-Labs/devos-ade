@@ -322,6 +322,183 @@ assert run(None) is None
 '
 }
 
+# the hook: Llama on Bedrock — Bedrock hands its tool call back as the text Llama wrote (Meta's documented form), which
+# becomes toolUse blocks only when the whole answer is calls of offered tools with every required argument; an unknown
+# tool, JSON that does not parse, a word around the call, a call in a code block (one a user asked to see), a missing
+# argument or anything not in that form stays text; several calls become several blocks, all or none
+test_litellm_hook_reads_llama_tool_calls_written_as_text() {
+  command -v python3 >/dev/null 2>&1 || return 77
+  _hook_models
+  PYTHONPATH="$TMP/h" python3 -c '
+import copy, json, re, bn_hooks as h
+schema = lambda *req, **props: {"type": "object", "properties": {k: {"type": "string"} for k in (*req, *props)}, "required": list(req)}
+tools = {"Bash": schema("command", description=1), "Read": schema("file_path", limit=1), "TaskList": {"type": "object", "properties": {}}}
+call = lambda name, args, **kw: json.dumps({"type": "function", "name": name, "parameters": args, **kw})
+bash = {"command": "echo $((6*7))", "description": "Calculate the product of 6 and 7"}
+read = {"file_path": "/workspace/a.txt", "limit": "2000"}
+T = h.text_tool_calls
+# what Bedrock returned for Claude Code s requests, as it came; without "type"; Meta s marks around it; white space
+assert T(call("Bash", bash), tools) == [("Bash", bash)]
+assert T(json.dumps({"name": "Read", "parameters": read}), tools) == [("Read", read)]
+assert T("<|python_tag|>" + call("Bash", bash) + "<|eom_id|>", tools) == [("Bash", bash)]
+assert T("\n  " + call("TaskList", {}) + "<|eot_id|>\n", tools) == [("TaskList", {})]
+assert T("<function=Read>" + json.dumps(read) + "</function>", tools) == [("Read", read)]
+# (the values are the model s: Claude Code checks them against the schema, as for any model s call)
+assert T(call("Read", {"file_path": {"type": "string", "value": "a.txt"}}), tools) == [("Read", {"file_path": {"type": "string", "value": "a.txt"}})]
+# several calls: each a block, in order — apart by white space or one ";" (the <function> form: white space)
+two = [("Read", read), ("Read", {"file_path": "b.txt"})]
+for text in (call(*two[0]) + "\n" + call(*two[1]), call(*two[0]) + "; " + call(*two[1]), call(*two[0]) + call(*two[1]),
+             "<function=Read>" + json.dumps(read) + "</function>\n<function=Read>{\"file_path\": \"b.txt\"}</function>"):
+    assert T(text, tools) == two, text
+# what stays text
+refused = {
+    "an unknown tool": call("Delete", {"path": "a.txt"}),
+    "a tool of another request": call("Write", {"file_path": "a", "content": "b"}),
+    "bad JSON": call("Bash", bash)[:-1],
+    "bad JSON in a function tag": "<function=Bash>{\"command\": \"ls\"</function>",
+    "words before": "I will run it now: " + call("Bash", bash),
+    "words after": call("Bash", bash) + " That prints 42.",
+    "words between two calls": call(*two[0]) + " and then " + call(*two[1]),
+    "a code block the user asked to see": "```json\n" + call("Bash", bash) + "\n```",
+    "a code block alone": "```\n" + call("Bash", bash) + "\n```",
+    "a missing argument": call("Bash", {"description": "no command"}),
+    "arguments as a string": json.dumps({"type": "function", "name": "Bash", "parameters": json.dumps(bash)}),
+    "no arguments": json.dumps({"type": "function", "name": "Bash"}),
+    "another field": call("Bash", bash, id="call_1"),
+    "another type": json.dumps({"type": "tool", "name": "Bash", "parameters": bash}),
+    "OpenAI s shape": json.dumps({"name": "Bash", "arguments": bash}),
+    "a list of calls (not Meta s form)": json.dumps([{"name": "Read", "parameters": read}]),
+    "one bad call of two": call(*two[0]) + "\n" + call("Delete", {}),
+    "a trailing ;": call("Bash", bash) + ";",
+    "two ;": call(*two[0]) + ";;" + call(*two[1]),
+    "a function tag and words": "<function=Bash>" + json.dumps(bash) + "</function> done",
+    "an unknown function tag": "<function=Delete>{}</function>",
+    "a plain answer": "42", "a JSON answer": "{\"answer\": 42}", "a string": "\"Bash\"", "nothing": "  ", "a mark alone": "<|python_tag|>",
+}
+for why, text in refused.items():
+    assert T(text, tools) is None, why
+assert T(call("Bash", bash), {}) is None and T(None, tools) is None and T(3, tools) is None
+
+# Bedrock s answer: one text block that is the calls, ended there (end_turn) -> toolUse blocks and stopReason tool_use;
+# the rest of the answer as it came
+spec = lambda name: {"toolSpec": {"name": name, "description": "d", "inputSchema": {"json": tools[name]}}}
+request = {"system": [{"text": "s"}], "messages": [{"role": "user", "content": [{"text": "run it"}]}],
+           "toolConfig": {"tools": [spec("Bash"), spec("Read"), spec("TaskList")]}, "inferenceConfig": {"maxTokens": 8192}}
+answer = {"output": {"message": {"role": "assistant", "content": [{"text": call("Bash", bash)}]}}, "stopReason": "end_turn",
+          "usage": {"inputTokens": 19216, "outputTokens": 43, "totalTokens": 19259}, "metrics": {"latencyMs": 900}}
+assert h.offered_tools(request) == tools
+out = h.converse_tool_calls(request, copy.deepcopy(answer))
+use = out["output"]["message"]["content"]
+assert len(use) == 1 and use[0]["toolUse"]["name"] == "Bash" and use[0]["toolUse"]["input"] == bash, out
+assert re.fullmatch(r"tooluse_[A-Za-z0-9]{22}", use[0]["toolUse"]["toolUseId"]), use
+assert out["stopReason"] == "tool_use" and out["usage"] == answer["usage"] and out["metrics"] == answer["metrics"]
+assert out["output"]["message"]["role"] == "assistant"
+pair = copy.deepcopy(answer); pair["output"]["message"]["content"] = [{"text": call(*two[0]) + "\n" + call(*two[1])}]
+blocks = h.converse_tool_calls(request, pair)["output"]["message"]["content"]
+assert [(b["toolUse"]["name"], b["toolUse"]["input"]) for b in blocks] == two and blocks[0]["toolUse"]["toolUseId"] != blocks[1]["toolUse"]["toolUseId"]
+# as it came: cut short (max_tokens), more than one block, a toolUse already, prose, no tools offered, odd shapes
+for change in (lambda a: a.update(stopReason="max_tokens"), lambda a: a["output"]["message"]["content"].append({"text": "x"}),
+               lambda a: a["output"]["message"].update(content=[{"toolUse": {"toolUseId": "t", "name": "Bash", "input": bash}}]),
+               lambda a: a["output"]["message"].update(content=[{"text": "Done: " + call("Bash", bash)}]),
+               lambda a: a["output"]["message"].update(content=[{"text": call("Bash", bash), "extra": 1}]),
+               lambda a: a.update(output=None), lambda a: a.pop("stopReason")):
+    a = copy.deepcopy(answer); change(a)
+    assert h.converse_tool_calls(request, a) is None, a
+assert h.converse_tool_calls({k: v for k, v in request.items() if k != "toolConfig"}, answer) is None
+assert h.converse_tool_calls(request, None) is None and h.converse_tool_calls(None, answer) is None
+assert h.offered_tools({"toolConfig": {"tools": [None, {"toolSpec": {"name": 3}}, {"toolSpec": {"name": "x"}}]}}) == {"x": {}}
+'
+}
+
+# the hook: a call with tools to Llama on Bedrock (Converse) goes through LiteLLM's own client, its answer read on the
+# way back (above): the same call reaches Bedrock; a 200 Converse answer that is Llama's tool call comes back as toolUse
+# (a response of the same kind, without the old length); a streamed call, an error, another endpoint, another answer
+# come back as they were; any other model, a call without tools or with a client of its own, another call type: as
+# they came
+test_litellm_hook_gives_llama_on_bedrock_a_client_that_reads_its_tool_calls() {
+  command -v python3 >/dev/null 2>&1 || return 77
+  _hook_models
+  mkdir -p "$TMP/h/litellm/llms/custom_httpx"
+  printf '' > "$TMP/h/litellm/llms/__init__.py"; printf '' > "$TMP/h/litellm/llms/custom_httpx/__init__.py"
+  cat > "$TMP/h/litellm/llms/custom_httpx/http_handler.py" <<'PY'
+import json
+
+
+class AsyncHTTPHandler:
+    def __init__(self, timeout=None):
+        self.timeout, self.calls, self.answer = timeout, [], None
+
+    async def post(self, url, data=None, json=None, params=None, headers=None, timeout=None, stream=False, logging_obj=None):
+        self.calls.append({"url": url, "data": data, "headers": headers, "stream": stream})
+        return self.answer
+
+
+class Response:
+    def __init__(self, status_code, headers=None, content=b"", request=None):
+        self.status_code, self.headers, self.content, self.request = status_code, dict(headers or {}), content, request
+
+    def json(self):
+        return json.loads(self.content)
+
+
+CLIENTS = {}
+
+
+def get_async_httpx_client(llm_provider, params=None, shared_session=None):
+    return CLIENTS.setdefault((llm_provider, repr(params)), AsyncHTTPHandler(**(params or {})))
+PY
+  PYTHONPATH="$TMP/h" python3 -c '
+import asyncio, copy, json, bn_hooks as h
+from litellm.llms.custom_httpx import http_handler as hh
+hook = lambda kw, ct="acompletion": asyncio.run(h.proxy_handler_instance.async_pre_call_deployment_hook(copy.deepcopy(kw), ct))
+tools = [{"type": "function", "function": {"name": "Bash", "parameters": {"type": "object", "required": ["command"]}}}]
+kw = {"model": "bedrock/us.meta.llama3-3-70b-instruct-v1:0", "messages": [{"role": "user", "content": "run it"}], "tools": tools,
+      "stream": True, "max_tokens": 8192, "client": None, "model_info": {"bn_id": "llama-3-3-70b"}}
+out = hook(kw)
+client = out.pop("client")
+assert isinstance(client, hh.AsyncHTTPHandler) and out == {k: v for k, v in kw.items() if k != "client"}, out
+inner = hh.CLIENTS[("bedrock", "None")]   # (a streamed call: LiteLLM s default client)
+url = "https://bedrock-runtime.us-east-1.amazonaws.com/model/us.meta.llama3-3-70b-instruct-v1%3A0/converse"
+request = {"messages": [{"role": "user", "content": [{"text": "run it"}]}], "inferenceConfig": {"maxTokens": 8192},
+           "toolConfig": {"tools": [{"toolSpec": {"name": "Bash", "inputSchema": {"json": {"type": "object", "required": ["command"]}}}}]}}
+text = json.dumps({"type": "function", "name": "Bash", "parameters": {"command": "echo hi"}})
+answer = {"output": {"message": {"role": "assistant", "content": [{"text": text}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 9, "outputTokens": 3}}
+def bedrock(status=200, body=answer, headers=None):
+    inner.answer = hh.Response(status, headers or {"Content-Type": "application/json", "Content-Length": "999", "x-amzn-RequestId": "r1"},
+                               json.dumps(body).encode(), request="the request")
+    return inner.answer
+post = lambda u=url, **k: asyncio.run(client.post(u, **{"headers": {"h": "v"}, "data": json.dumps(request), **k}))
+# a Converse answer that is the call: toolUse, the rest as it came, the call as LiteLLM made it
+bedrock()
+r = post(stream=False, logging_obj=None)
+got = r.json()
+assert type(r) is hh.Response and r.status_code == 200 and r.request == "the request", r
+assert r.headers == {"Content-Type": "application/json", "x-amzn-RequestId": "r1"}, r.headers
+assert got["stopReason"] == "tool_use" and got["usage"] == answer["usage"], got
+assert [(b["toolUse"]["name"], b["toolUse"]["input"]) for b in got["output"]["message"]["content"]] == [("Bash", {"command": "echo hi"})]
+assert inner.calls[-1] == {"url": url, "data": json.dumps(request), "headers": {"h": "v"}, "stream": False}, inner.calls[-1]
+# (LiteLLM s non-streamed call names the URL: post(url=…))
+bedrock()
+assert asyncio.run(client.post(url=url, data=json.dumps(request).encode())).json()["stopReason"] == "tool_use"
+# as they were: a streamed call, an error, ConverseStream, another model s URL, another answer, a body that is not JSON
+for kind, call in (("stream", lambda: post(stream=True)), ("error", lambda: post()), ("converse-stream", lambda: post(url[:-8] + "converse-stream")),
+                   ("another model", lambda: post(url.replace("meta.llama3-3-70b", "openai.gpt-6-luna"))),
+                   ("prose", lambda: post()), ("not JSON", lambda: post(data="{nope")), ("no tools", lambda: post(data=json.dumps({"messages": []})))):
+    sent = bedrock(400 if kind == "error" else 200, {**answer, "output": {"message": {"role": "assistant", "content": [{"text": "Hello."}]}}} if kind == "prose" else answer)
+    assert call() is sent, kind
+# a call that is not a call to Llama on Bedrock with tools, or has a client: as it came
+for other in ({**kw, "model": "bedrock/us.openai.gpt-6-luna"}, {**kw, "model": "bedrock/invoke/us.meta.llama3-3-70b-instruct-v1:0"},
+              {**kw, "tools": None}, {**kw, "tools": []}, {**kw, "client": "LiteLLM s"}, {**kw, "model": "openrouter/meta-llama/llama-3.3-70b-instruct"},
+              {**kw, "model": ["bedrock/us.meta.llama"]}):
+    assert hook(other) == other, other
+assert hook(kw, "aembedding") == kw and hook(kw, "anthropic_messages") == kw
+# the model named apart from its provider, a call that is not streamed (its timeout s client)
+plain = hook({**kw, "model": "us.meta.llama3-3-70b-instruct-v1:0", "custom_llm_provider": "bedrock", "stream": False, "timeout": 600.0})
+assert isinstance(plain["client"], hh.AsyncHTTPHandler) and plain["client"]._bn_inner is not inner
+assert asyncio.run(h.proxy_handler_instance.async_pre_call_deployment_hook(None, "acompletion")) is None
+'
+}
+
 
 # Names that YAML refuses or a terminal acts on (C1 controls such as U+009B, CSI; U+2028; bidi overrides; U+FFFE) never
 # reach LiteLLM's config, the model list or a terminal; a config that is not valid YAML is never put in place
