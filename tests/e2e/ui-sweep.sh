@@ -10,6 +10,15 @@
 #   tests/e2e/ui-sweep.sh --teardown [--project bne2e-uisweep]
 #   --long-path (with each of these) stages the throwaway under a deliberately long folder name with no break in it,
 #               so every path the pages show (the sign-in hint, Settings, Home, the walkthrough) has to wrap
+#   --layout fast|full   the layout sweep (tests/e2e/browser/layout_sweep.py) in place of the UI sweep: what collides or
+#               is cut off at many window sizes, in both themes. fast: 12 widths, the main pages (as the e2e check
+#               browser/layout-no-overlap runs it); full, for releases: every 40 px from 320 to 1920 at heights 600 and
+#               1000, every state (each Settings section and walkthrough step, Activity, search, More, the menus, info
+#               panels, the collapsed sidebar, the Code page's views), and a session of the Code page against its mock
+#               backend when code/web has a build and node_modules/ws (npm ci; npm run build). Results: OUT/layout/
+#               findings.json, summary.txt, shots/ (one cropped PNG per finding). LAYOUT_JOBS=3 browsers at a time;
+#               LAYOUT_ONLY=REGEX (state names); LAYOUT_MINUTES=N stops measuring after N minutes. Exit 1 when a finding
+#               is not in tests/e2e/browser/layout-allowlist.json.
 #
 #   --src DIR   the checkout to set up, at its HEAD (default: this one) — e.g. a detached worktree of a release
 #   --out DIR   results (default tests/e2e/out/ui-sweep): sweep/shots/<page>-<state>-<width>-<theme>.png,
@@ -28,7 +37,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 AVOID_PORTS=" 80 443 3000 3009 4000 8080 8081 8090 8765 8800 "
 BUDGETS="BUDGET_CLAUDE_CODE=0.04 BUDGET_OPENWEBUI=0.04 BUDGET_SETUP=0.02"
 NOTTY="$HERE/notty"
-PROJECT=bne2e-uisweep; SRC="$ROOT"; AWS_ENV_FILE=''; KEEP=0; TEARDOWN_ONLY=0; OUT_DIR=''; REUSE=0; LONG=0
+PROJECT=bne2e-uisweep; SRC="$ROOT"; AWS_ENV_FILE=''; KEEP=0; TEARDOWN_ONLY=0; OUT_DIR=''; REUSE=0; LONG=0; LAYOUT=''
 while [ $# -gt 0 ]; do
   case "$1" in
     --aws-env) AWS_ENV_FILE="${2:?}"; shift 2 ;;
@@ -38,6 +47,7 @@ while [ $# -gt 0 ]; do
     --keep) KEEP=1; shift ;;
     --reuse) REUSE=1; shift ;;
     --long-path) LONG=1; shift ;;
+    --layout) LAYOUT="${2:?}"; case "$LAYOUT" in fast | full) ;; *) echo "--layout takes fast or full" >&2; exit 2 ;; esac; shift 2 ;;
     --teardown) TEARDOWN_ONLY=1; shift ;;
     -h | --help) sed -n '2,/^set -uo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1 (--help)" >&2; exit 2 ;;
@@ -139,6 +149,28 @@ opts=()
 if [ "$(uname -s)" = Linux ]; then opts=(--network host --user "$(id -u):$(id -g)" -e HOME=/tmp); target=127.0.0.1; else target=host-gateway; fi
 for h in "$HOST" "chat.$HOST" "admin.$HOST" "files.$HOST" "terminal.$HOST" "code.$HOST" "nosuch.$HOST"; do opts+=(--add-host "$h:$target"); done
 mkdir -p "$OUT/run"
+if [ -n "$LAYOUT" ]; then
+  # the layout sweep; the Code page's mock backend too when code/web has a build and ws (served by the container's own
+  # Node, as code/web/e2e/run.sh does; ws from the folder node_modules/ws really is, for a linked node_modules)
+  web=(); mockopt=(); WEB="$ROOT/code/web"; WS_DIR="$(cd "$WEB/node_modules/ws" 2>/dev/null && pwd -P)"
+  if [ -f "$WEB/dist/index.html" ] && [ -n "$WS_DIR" ]; then web=(-v "$WEB:/web:ro" -v "$WS_DIR:/node_modules/ws:ro"); mockopt=(--mock-web /web); else
+    warn "code/web has no build or no node_modules/ws: the Code page's session against its mock backend is left out"; fi
+  mkdir -p "$OUT/layout"
+  say "the layout sweep ($LAYOUT; log: $OUT/layout/sweep.log)"
+  docker rm -f "$PROJECT-layout" >/dev/null 2>&1 || true
+  docker run --rm --name "$PROJECT-layout" --init --shm-size=2g "${opts[@]}" ${web[@]+"${web[@]}"} \
+    -e E2E_HOST="$HOST" -e E2E_PORT="$P" -e E2E_LITELLM_PORT="$L" -e E2E_MCP_PORT="$M" \
+    -e LAYOUT_JOBS="${LAYOUT_JOBS:-3}" -e LAYOUT_ONLY="${LAYOUT_ONLY:-}" -e LAYOUT_MINUTES="${LAYOUT_MINUTES:-0}" \
+    -e LAYOUT_HAR="${LAYOUT_HAR:-}" \
+    -v "$STACK/.env:/run/e2e/env:ro" -v "$HERE/browser:/suite:ro" -v "$OUT/layout:/out/layout" -v "$OUT/run:/out" \
+    -v "$STACK/.state/status:/state/status:ro" -v "$STACK/.state/update-check:/state/update-check" \
+    "$PROJECT/e2e-playwright:local" python3 -u /suite/layout_sweep.py --mode "$LAYOUT" --out /out/layout \
+      ${mockopt[@]+"${mockopt[@]}"} > "$OUT/layout/sweep.log" 2>&1
+  rc=$?
+  redact "$OUT/layout/sweep.log"
+  tail -n 40 "$OUT/layout/sweep.log" >&2
+  exit "$rc"
+fi
 say "the sweep ($(echo "${SWEEP_WIDTHS:-desktop,tablet,phone}" | tr , ' '), ${SWEEP_THEMES:-light,dark}; log: $OUT/run/sweep.log)"
 docker rm -f "$PROJECT-playwright" >/dev/null 2>&1 || true
 docker run --rm --name "$PROJECT-playwright" --init --shm-size=1g "${opts[@]}" \

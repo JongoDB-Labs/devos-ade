@@ -883,3 +883,65 @@ PY
   [ "$rc" = 0 ] || { cat "$TMP/out" "$TMP/mock.log" >&2; return 1; }
   assert_contains "$(cat "$TMP/out")" "ok: closed 3 sessions it left: "
 }
+
+# --- the layout sweep's own rules (tests/e2e/browser/layout_sweep.py; its measuring is the browser suite's
+# browser/layout-no-overlap): which device measures which width, every allowlist entry reviewed (a reason, a check it
+# names), a finding allowed only by an entry that matches it, workers' results merged as one; no browser ---
+test_e2e_layout_sweep_widths_allowlist_and_merge() {
+  command -v python3 >/dev/null 2>&1 || { echo "no python3" >&2; return 77; }
+  cat > "$TMP/lay.py" <<'PY'
+import json, sys
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+import layout_sweep as L
+
+def check(cond, what):
+    if not cond:
+        sys.exit(f"FAIL: {what}")
+
+# widths: 320..1920 every 40 (41), phones under 768 with touch, tablets to 1099, the desktop from 1100 (full: also a
+# narrowed desktop window from 768); the fast run's 12
+check(L.FULL_WIDTHS[0] == 320 and L.FULL_WIDTHS[-1] == 1920 and len(L.FULL_WIDTHS) == 41, "full widths")
+check(L.FAST_WIDTHS == [320, 360, 390, 600, 768, 820, 1024, 1100, 1280, 1366, 1440, 1920], "fast widths")
+check(L.device_widths("phone", L.FULL_WIDTHS, "full") == list(range(320, 761, 40)), "phone widths")
+check(L.device_widths("tablet", L.FAST_WIDTHS, "fast") == [768, 820, 1024], "tablet widths")
+check(L.device_widths("desktop", L.FAST_WIDTHS, "fast") == [1024, 1100, 1280, 1366, 1440, 1920], "fast desktop widths")
+check(L.device_widths("desktop", L.FULL_WIDTHS, "full")[0] == 800, "a narrowed desktop window in the full run")
+check(L.DEVICES["phone"].get("has_touch") and L.DEVICES["tablet"].get("has_touch") and not L.DEVICES["desktop"], "touch")
+c = L.Cfg(origin="http://x", password="p", out=None)
+check(c.widths == L.FAST_WIDTHS and c.heights == [800], "fast by default")
+c = L.Cfg(origin="http://x", password="p", out=None, mode="full")
+check(c.heights == [600, 1000], "full heights")
+# every reviewed entry: a reason and a check the sweep reports; its patterns compile
+rows = json.loads(open(sys.argv[1] + "/layout-allowlist.json").read())
+check(isinstance(rows, list), "the allowlist is a list")
+for r in rows:
+    check(isinstance(r, dict) and str(r.get("why", "")).strip(), f"an entry without its reason: {r}")
+    check(r.get("check") in ("overlap", "clipped text", "squeezed", "sideways scroll", "small target", "unreachable"), f"unknown check: {r}")
+    for k in ("sig", "state"):
+        if r.get(k):
+            import re; re.compile(r[k])
+check(len(L.load_allowlist()) == len(rows), "every entry loaded")
+# matching: the check, the signature and the state must all match
+rows = [{"check": "overlap", "sig": r"^overlap\|code\|.*etab", "state": "^code", "why": "reviewed"}]
+check(L.allowed(rows, "overlap", "overlap|code|div.etab > button|x", "code-page") == "reviewed", "a match")
+check(L.allowed(rows, "small target", "overlap|code|div.etab > button|x", "code-page") is None, "another check")
+check(L.allowed(rows, "overlap", "overlap|home|div.etab", "code-page") is None, "another signature")
+check(L.allowed(rows, "overlap", "overlap|code|div.etab", "home") is None, "another state")
+check(not L.load_allowlist() or all(r.get("why") for r in L.load_allowlist()), "no entry without a reason")
+# a state's page: one finding per component and page, whatever the state
+check(L.page_of("settings-providers") == "settings" and L.page_of("code-mock-session-permission") == "code" and L.page_of("home-details-open") == "home", "pages")
+# workers' results: one finding seen by two is one, its sizes and states joined; the first screenshot kept
+f = lambda **k: {"sig": "overlap|home|a|b", "check": "overlap", "allowed": False, "seen": 1, "widths": [], "heights": [800],
+                 "themes": ["light"], "states": [], "devices": ["phone"], "shot": "", **k}
+a = {"findings": [f(widths=[320], states=["home"], shot="shots/1.png")], "notes": [{"what": "x", "detail": "y"}], "counts": {"measurements": 4}, "secs": 3, "mode": "fast", "widths": [], "heights": [], "themes": []}
+b = {"findings": [f(widths=[360, 320], states=["activity"], themes=["dark"]), f(sig="small target|home|c", check="small target")], "notes": [], "counts": {"measurements": 6}, "secs": 5}
+m = L.merge([a, b])
+check(len(m["findings"]) == 2 and m["counts"]["measurements"] == 10 and m["secs"] == 5 and len(m["notes"]) == 1, f"merged {m}")
+o = next(x for x in m["findings"] if x["sig"] == "overlap|home|a|b")
+check(o["widths"] == [320, 360] and o["states"] == ["activity", "home"] and o["themes"] == ["dark", "light"] and o["seen"] == 2 and o["shot"] == "shots/1.png", f"joined {o}")
+print("ok")
+PY
+  python3 -I "$TMP/lay.py" "$STACK_DIR/tests/e2e/browser" > "$TMP/out" 2>&1 || { cat "$TMP/out" >&2; return 1; }
+  assert_contains "$(cat "$TMP/out")" "ok"
+}

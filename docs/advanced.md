@@ -415,3 +415,14 @@ tests/e2e/run.sh --aws-env /path/to/a/file/with/AWS_keys    # or export AWS_ACCE
   pages show has to wrap; `SWEEP_WIDTHS`, `SWEEP_THEMES` and `SWEEP_ONLY` narrow it; `--keep` / `--reuse` /
   `--teardown` as above. Console messages of Open WebUI, LiteLLM and RustFS whose cause is theirs are listed in
   `known-upstream.json` ([INVENTORY](../tests/e2e/INVENTORY.md#known-issues)).
+- **The layout sweep** (`tests/e2e/browser/layout_sweep.py`): what collides or is cut off, measured in the page at many
+  window sizes, in both themes — text over text, a control or a badge over a title, a title, label or button cut by an
+  ellipsis or a box that hides it, a page that scrolls sideways, pointer targets under 24 × 24 px (WCAG 2.2, 2.5.8)
+  and controls you can Tab to that no scrolling brings into view. Each finding is kept once, with every size, theme
+  and state it was seen at and a cropped screenshot of the first (its two elements outlined). Every e2e run has its
+  fast run as `browser/layout-no-overlap`: 12 widths from 320 to 1920 at one height, the main pages and states, failing
+  on any finding not in `tests/e2e/browser/layout-allowlist.json` (each entry reviewed, with its reason).
+  `tests/e2e/ui-sweep.sh --layout full` (or `E2E_LAYOUT=full` for the e2e run) is the release sweep: every 40 px from
+  320 to 1920 at heights 600 and 1000, every Settings section and walkthrough step, Activity, search, More, the menus
+  and info panels, the collapsed sidebar, the Code page's views and, against its mock backend (when `code/web` has a
+  build and `node_modules/ws`), a session with a permission card — about 15 minutes with `LAYOUT_JOBS=3`.
