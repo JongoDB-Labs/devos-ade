@@ -1159,12 +1159,31 @@ Labs models whose listing names no tool use count as *chat only*. Two fixes in L
 that lowers a request's `max_tokens` to the model's limit — Claude Code asks for up to 32,000 output tokens and
 Bedrock's Llama refuses more than 8,192 (OpenRouter's limits come from its model list) — and, for another vendor's
 model on Bedrock, leaves out Claude Code's running token count after each tool result (LiteLLM turns that system
-message into a note after the result, and GPT-6 sometimes ended its turn on it without an answer). Not fixed:
+message into a note after the result, and GPT-6 sometimes ended its turn on it without an answer) and moves the images
+of a tool result (the Read tool's) to the message after it (Bedrock refuses them inside a result for those models).
+For a model on Bedrock or OpenRouter it answers Claude Code's WebSearch with *Web search isn't available for <model> in
+DevOS ADE. Use WebFetch with a URL.*: Bedrock runs no web search, and without that sentence the model answered from
+memory as though it had searched (the Experiential Labs gateway searches itself). Not fixed:
 Claude Code assumes a 200K context for a model it does not know, so a long session on a smaller one (Llama: 128K) can
 fail before it compacts. Claude Code's own cost estimate prices a model it does not know at its own rates, so for
 another provider's model a session's *Stop at the budget* goes by what LiteLLM billed alone (the cost meter's figure):
 no Claude Code stop mid-turn, the next prompt is refused once the spend logs reach the budget; on a Claude model it
 works as before.
+
+What still differs is the model's own doing. [`tests/e2e/harness-parity.sh`](#testing) runs real Claude Code sessions
+on each family (Claude Code 2.1.309 through LiteLLM 1.105.0, last on 2026-10-25): turns with `--resume`, thinking
+replayed, Read, Write, Edit, Bash, Glob, Grep and the todo list, parallel tool calls, an image through Read and in the
+prompt, `/compact`, `count_tokens` and `/context`, a switch of model mid-session (Claude's thinking and tool calls
+replayed to another vendor's model and back), a provider's error on the Code page and WebFetch work the same on GPT-6
+Luna and Mistral Large 3 on Bedrock, an OpenRouter model and Experiential Labs' models as on Claude, except:
+
+| Model | What differs | What you see |
+|---|---|---|
+| Every model on Bedrock or OpenRouter, Claude included | WebSearch: no web search runs there | WebSearch's result says so: *Web search isn't available for … Use WebFetch with a URL.* |
+| GPT-6, Mistral Large 3, and the models of OpenRouter and Experiential Labs that hide their reasoning | No thinking blocks: the provider returns no reasoning to show (a model whose provider returns it, such as DeepSeek on Experiential Labs, shows it) | No *Thought* in the transcript; the picker's note says *no thinking blocks* |
+| Mistral Large 3 (Bedrock) | It gets the images but misreads them (a plain red picture read as white or blue) | The picker's note says so |
+| Text-only models, such as DeepSeek V4.1 Flash (Experiential Labs) | No image input | The provider's refusal in the error box: *… does not take image input* |
+| Llama 3.3 70B (Bedrock) | It writes its tool calls as text | The *chat only* badge |
 
 **Settings › Claude Code › Models for Claude Code** picks which models the picker and devos-claude's `/model`
 menu list (`CODE_MODELS`): **All enabled** (the default), **Anthropic only** (Claude, Bedrock's and OpenRouter's), or

@@ -20,6 +20,14 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   call, duplicate tool call ids, an image for a text-only model, a parameter the model does not list …) and, for this
   suite, answers through a real model on Bedrock; without a key it stands in for OpenRouter too.
 
+### Changed
+
+- **Models for Claude Code:** the README says what still differs from model to model, as the harness parity suite
+  found it (README › Models for Claude Code): WebSearch on Bedrock and OpenRouter, no thinking blocks where the
+  provider returns no reasoning, no image input for a text-only model, Llama's tool calls written as text — and
+  Mistral Large 3, which gets an image but misreads it (a plain red picture read as white or blue): its note in the
+  model picker and `devos-claude --models` now says so.
+
 ### Fixed
 
 - **Code page:** an error from the model's provider shows the provider's own words. A refused request said only
