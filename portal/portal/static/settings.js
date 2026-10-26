@@ -855,7 +855,8 @@
 
   // --- Settings › Models & providers: each provider a card (PROVIDERS; your subscriptions': subscriptionsRow) ---
   // its state in a word or two next to its name: TONE on (it adds something now), warn (it needs a step) or off
-  const provState = (words, tone) => el("span", { class: "set-prov-state", "data-tone": tone, text: words });
+  // (a badge, as the others next to a name: the page's tag style)
+  const provState = (words, tone) => el("span", { class: "badge set-prov-state", "data-tone": tone, text: words });
   // its key is there (Bedrock: or this EC2 machine's own role, AWS_AUTH); a provider that is a switch: it is on
   const providerOn = (k) => (plain(k) ? isOn(k.key) : Boolean(k.set) || (k.key === "AWS_ACCESS_KEY_ID" && Boolean(keys.AWS_AUTH) && shown(keys.AWS_AUTH) === "instance-role"));
   // A key's card: its row (the key masked, Add key / Replace key — a local setting: from this computer only, the row

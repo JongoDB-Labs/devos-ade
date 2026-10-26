@@ -94,8 +94,7 @@
   box-shadow: var(--card-edge, none); }
 .set-rows > .set-dep.set-prov { padding: 0 16px 2px; margin-bottom: 10px; }
 .set-rows > .set-dep.set-prov + .set-dep, .set-rows > .set-group-head + .set-dep { border-top: 0; }
-.set-prov-state { display: inline-block; font-size: 11.5px; font-weight: 600; line-height: 18px; padding: 0 8px; border-radius: 999px;
-  border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.set-prov-state { font-weight: 600; }
 .set-prov-state[data-tone="on"] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
 .set-prov-state[data-tone="warn"] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
 .set-prov-adds { margin: 6px 0 0; font-size: 13.5px; max-width: 70ch; }
