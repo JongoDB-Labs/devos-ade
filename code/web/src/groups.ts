@@ -35,6 +35,16 @@ export function waitingSessions(views: Record<string, SessionView>, pendingTotal
   return n || (pendingTotal > 0 ? 1 : 0);
 }
 
+/** The open session to show first because it waits for you (a permission card, a question, a plan), or null: the one
+ *  this browser showed last if it waits, else the waiting one active most recently. SESSIONS: the backend's open
+ *  sessions with their prompts waiting (pending). */
+export function firstWaiting(sessions: { id: string; state: string; pending: number; lastActive: number | null }[], last?: string | null): string | null {
+  const waiting = sessions.filter((o) => o.pending > 0 && o.state !== 'closed' && o.state !== 'ended');
+  if (!waiting.length) return null;
+  if (last && waiting.some((o) => o.id === last)) return last;
+  return waiting.reduce((a, b) => ((b.lastActive ?? 0) > (a.lastActive ?? 0) ? b : a)).id;
+}
+
 /** The tab's title: ⏵⏵ while a session runs without asking, "(2) waiting" while sessions need you. */
 export function pageTitle(waiting: number, bypass: boolean): string {
   return `${bypass ? '⏵⏵ ' : ''}${waiting > 0 ? `(${Math.min(waiting, 99)}) waiting · ` : ''}Code · ${PRODUCT}`;

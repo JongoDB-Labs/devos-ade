@@ -143,7 +143,6 @@
   if (typeof document === "undefined" || typeof document.querySelector !== "function") return;
 
   // --- the page ---
-  const PHONE = window.matchMedia("(max-width: 767.98px)");
   const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
   const dlg = $("#search"), opener = $("#search-btn"), moreEntry = $("#more-search");
   if (!dlg || !opener) return;
@@ -153,8 +152,9 @@
 
   const codeOrigin = (() => { try { return APP_URLS.code ? new URL(appUrl("code")).origin : ""; } catch (_) { return ""; } })();
   const codeFrame = () => document.querySelector('#frames iframe[data-app="code"]');
-  // the frame can answer: it exists, it reported to the portal since it loaded (unlocked and running), not on a phone
-  const codeReady = () => Boolean(window.bnCode && window.bnCode.ready() && codeFrame() && !PHONE.matches);
+  // the frame can answer: it exists, it reported to the portal since it loaded (unlocked and running) — on a phone too,
+  // where Code is a tab of the bottom bar
+  const codeReady = () => Boolean(window.bnCode && window.bnCode.ready() && codeFrame());
 
   function pages() {
     // (alt: a few other names for it — a page matches by its name and these, never by its description)
@@ -273,8 +273,7 @@
     // an image built without the docs index (compose.portal-docs.yaml left out: a Docker Compose that does not read
     // build.additional_contexts — which this version never runs with —, or a plain docker build): say where they are
     if (index && !((index.docs && index.docs.pages) || []).length) out.push("Docs: this portal's image has no index of them (./stack setup builds it with one): README and docs/ are on GitHub.");
-    if (PHONE.matches) out.push("Workspace files: search them in the Code page itself (More → Code).");
-    else if (!APP_URLS.code) { /* the Code page is off here: nothing to say */ }
+    if (!APP_URLS.code) { /* the Code page is off here: nothing to say */ }
     else if (!codeReady()) out.push("Workspace files and every Code session: open the Code tab once (unlocked), and it answers here too.");
     else if (code.error) out.push(code.error);
     else if (code.truncated) out.push("Workspace files: the first matches only — the Code page's own search has them all.");

@@ -1,11 +1,12 @@
-// Phones and tablets: the bottom tab bar's "More" sheet, keyboard-aware height for Chat, the iOS dictation tip,
-// Home's compact health line and status chips, and the service worker that makes the portal installable.
-// Loaded after app.js (both deferred); app.js asks window.bnMobile which tab a phone may show and which comes first.
+// Phones and tablets: the bottom tab bar (Home · Chat · Code · More) and its "More" sheet, keyboard-aware height for
+// Chat and Code, the iOS dictation tip, Home's compact health line and status chips, and the service worker that makes
+// the portal installable. Loaded after app.js (both deferred); app.js asks window.bnMobile which tab a phone may show
+// and which comes first.
 "use strict";
 
 (() => {
   const PHONE = window.matchMedia("(max-width: 767.98px)");
-  const DESKTOP_ONLY = new Set(["admin", "files", "terminal", "code"]);   // terminal, Code: More → full screen (terminal.js, code.js)
+  const DESKTOP_ONLY = new Set(["admin", "files", "terminal"]);   // terminal: More → full screen (terminal.js)
   const HINT_KEY = "bn.voiceHint";
   let current = null;
 
@@ -19,10 +20,13 @@
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
   window.bnMobile = {
-    // Admin, Files, the Terminal and Code are desktop apps: on a phone they open from the More sheet in a new tab instead.
-    // A page of the portal shows on a phone too (app.js PAGES: the Code tab's explanation while the Code page is off).
+    // Admin, Files and the Terminal are desktop apps: on a phone they open from the More sheet in a new tab instead. Code
+    // is a tab of the bar, framed like Chat (its own phone layout: chat first, sheets for the rest; code.js). A page of
+    // the portal shows on a phone too (app.js PAGES: the Code tab's explanation while the Code page is off).
     allowTab: (tab) => (PHONE.matches && DESKTOP_ONLY.has(tab) && !PAGES.includes(tab) ? "chat" : tab),
-    defaultTab: () => (PHONE.matches ? "chat" : "home"),
+    // Home first, on a phone too: what needs you (Home's Code card, the needs-you banner) and the first visit's
+    // welcome (tour.js: window.bnWelcome) start there.
+    defaultTab: () => "home",
   };
 
   // --- keyboard-aware height: the shell follows the visual viewport, so the iOS keyboard never hides Chat's input.
@@ -48,7 +52,8 @@
     window.addEventListener("resize", () => { if (Math.round(vv.height) === window.innerHeight) { fullHeight = 0; fit(); } });
   }
 
-  // --- the More sheet (phones): Admin and Files in a new tab, and Sign out.
+  // --- the More sheet (phones): Settings, Activity, Search and the walkthrough; Admin, Files (and the Terminal) in a
+  // new tab; Sign out.
   function sheet() {
     const box = $("#more-sheet"), btn = $("#more-btn");
     if (!box || !btn) return;
@@ -185,13 +190,13 @@
     titles(); TABLET.addEventListener("change", titles); document.addEventListener("bn:nav", titles);
     // From an iPhone/iPad Home Screen app, Admin and Files open in Safari, which has its own cookies.
     if (isIOS() && navigator.standalone) {
-      const n = $("#more-sheet .note");
+      const n = $("#more-newtab-note");
       if (n) n.textContent += " From this Home Screen app they open in Safari, which asks for the portal password once.";
     }
     sheet(); healthLine(); statusFilter(); fit();
     const hint = voiceHint();
     if (hint) { hint.hidden = current !== "chat"; $("#frames").classList.toggle("hint-on", current === "chat"); }
-    // Rotating a tablet down to phone width while Admin or Files is open: fall back to Chat.
+    // Rotating a tablet down to phone width while Admin, Files or the Terminal is open: fall back to Chat.
     PHONE.addEventListener("change", () => { if (PHONE.matches && window.bnMobile.allowTab(current) !== current) showTab("chat"); });
     // Installability on Android Chrome. Needs a secure context (HTTPS, or *.localhost); plain-http LAN skips it.
     if ("serviceWorker" in navigator && window.isSecureContext) {

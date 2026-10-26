@@ -301,3 +301,13 @@ test("chat picker: Experiential Labs' models as a group next to OpenRouter's; wi
   // an older portal (no explabs field): nothing at all
   assert.ok(!plain(A.chatOptions({ ...data, setup: SETUP })).some((x) => x.label === "Experiential Labs"));
 });
+
+test("a phone's closed Chat menu shows the choice's name only; the menu lists each in full", () => {
+  assert.equal(A.shortLabel("Open WebUI — its own model menu"), "Open WebUI");
+  assert.equal(A.shortLabel("Claude Code · your Claude plan — Sign in for Chat…"), "Claude Code");
+  assert.equal(A.shortLabel("Claude Haiku 5.5"), "Claude Haiku 5.5");
+  assert.equal(A.shortLabel("— odd"), "— odd", "nothing before the separator: the whole");
+  assert.equal(A.shortLabel(""), "");
+  assert.equal(A.shortLabel(null), "");
+  assert.equal(A.shortLabel("x".repeat(100)).length, 60);
+});

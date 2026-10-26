@@ -629,8 +629,7 @@ def sweep_portal(browser, width, theme):
     step("terminal", terminal)
 
     def code_tab():
-        if width == "phone":
-            return   # (phones: no Code tab in the portal either; the Code page is swept on its own host)
+        # (phones too: Code is a tab of the bottom bar, framed like Chat)
         p.goto(origin() + "/#code")
         p.wait_for_selector("iframe[data-app=code]", timeout=20000)
         p.wait_for_timeout(4000)

@@ -11,8 +11,14 @@
 //   bn:code-status  the Code tab's frame's report (code.js checks its origin and its window, and its fields)
 // Read, unread and dismissed are this browser's (localStorage "bn.activity": item ids and times only, never a title or
 // a text), as are browser notifications: off until you turn them on here (the browser asks once), and only while a
-// portal tab is open — no push service, no service worker push. Every node is built with el()/textContent: nothing from
-// the API, the status files or the Code page is parsed as HTML. Loaded after app.js, mobile.js and code.js (deferred).
+// portal tab is open — no push service, no service worker push. On a phone, a Code session that waits for you is also a
+// banner at the top of the page (not over the Code tab itself): Answer opens it there, ✕ marks it read.
+// The path an alert takes — an item (needsYou: the session, its title, since when), generic words for a notification
+// (notificationText), and the portal address that opens it (its link, #code/<session>: the Code tab at that session,
+// its card in view) — is the one a push (the installed app's service worker, DevOS Mobile through the Companion) is to
+// carry later: sw.js already opens an item's link when its notification is clicked.
+// Every node is built with el()/textContent: nothing from the API, the status files or the Code page is parsed as HTML.
+// Loaded after app.js, mobile.js and code.js (deferred).
 "use strict";
 
 (function (root) {
@@ -89,7 +95,7 @@
       eps[s.id] = ep;
       items.push({ id: `code:${s.id}:${Math.floor(ep / 1000)}`, kind: "code", level: "warn", title: "A Code session needs you",
         text: typeof s.title === "string" && s.title ? s.title.slice(0, 120) : "Untitled session",
-        at: Math.floor(ep / 1000), link: "", notify: true, data: { session: s.id } });
+        at: Math.floor(ep / 1000), link: `#code/${s.id}`, notify: true, data: { session: s.id } });
     }
     // Git hosts' uses the Code page reports (code.js checked them): Claude's own git or gh getting a credential (it
     // may push — gh: do anything — where the token reaches: worth a look, and a notification), a failed operation,
@@ -193,7 +199,17 @@
   const isUnread = (it, s) => it.notify !== false && !s.read[it.id] && !s.dismissed[it.id];
   const unreadCount = (items, s) => items.filter((it) => isUnread(it, s)).length;
 
-  const pure = { budgetItems, openrouterItems, codeItems, takeServerItem, loadState, prune, merge, unreadCount, isUnread, notificationText };
+  // needsYou(ITEMS, STATE) -> the Code sessions that wait for you and are not read yet, newest first: {id (the item's),
+  // session, title, since (seconds), link} — what the phone's banner shows, and what a push will carry
+  function needsYou(items, s) {
+    return (Array.isArray(items) ? items : []).filter((it) => it && it.kind === "code" && it.data && UUID.test(it.data.session) && isUnread(it, s))
+      .sort((a, b) => b.at - a.at)
+      .map((it) => ({ id: it.id, session: it.data.session, title: String(it.text || "").slice(0, 120), since: it.at, link: `#code/${it.data.session}` }));
+  }
+  // notificationLink(IT) -> the portal address a click on IT's notification opens: a Code session's, else "" (Activity)
+  const notificationLink = (it) => (it && it.kind === "code" && it.data && UUID.test(it.data.session) ? `#code/${it.data.session}` : "");
+
+  const pure = { budgetItems, openrouterItems, codeItems, takeServerItem, loadState, prune, merge, unreadCount, isUnread, notificationText, needsYou, notificationLink };
   root.bnActivity = { _pure: pure };
   if (typeof document === "undefined" || typeof document.querySelector !== "function") return;
 
@@ -233,14 +249,55 @@
     maybeNotify();
   }
 
+  // --- the needs-you banner (phones): the Code sessions that wait for you, at the top of every tab but Code's ---
+  let tab = null;
+  const banner = el("div", { class: "needs-banner", id: "needs-you", role: "status", "aria-live": "polite", hidden: "" });
+  const stage = $(".stage");
+  if (stage) stage.append(banner);
+  function renderBanner() {
+    const list = needsYou(items, state);
+    const on = PHONE.matches && tab !== "code" && list.length > 0 && Boolean(window.bnCode);
+    banner.hidden = !on;
+    document.body.classList.toggle("needs-on", on);
+    if (!on) { banner.replaceChildren(); banner.dataset.digest = ""; return; }
+    const digest = JSON.stringify(list.map((x) => [x.id, x.title]));
+    if (banner.dataset.digest === digest) return;
+    banner.dataset.digest = digest;
+    const top = list[0];
+    const answer = el("button", { type: "button", class: "action primary needs-answer", text: "Answer" });
+    answer.addEventListener("click", () => {
+      for (const x of list) if (x.session === top.session) state.read[x.id] = Date.now();
+      save(); render();
+      window.bnCode.openSession(top.session);
+    });
+    const later = el("button", { type: "button", class: "needs-x", "aria-label": "Not now (stays in Activity)", title: "Not now (stays in Activity)" },
+      el("span", { "aria-hidden": "true", text: "✕" }));
+    later.addEventListener("click", () => {
+      const now = Date.now();
+      for (const x of list) state.read[x.id] = now;
+      save(); render();
+    });
+    banner.replaceChildren(el("span", { class: "needs-dot", "aria-hidden": "true" }),
+      el("p", { class: "needs-text" }, el("strong", { text: list.length > 1 ? `${list.length} Code sessions need you` : "Claude needs you in Code" }),
+        el("span", { class: "needs-title act-untrusted", text: top.title || "Untitled session" })),
+      answer, later);
+  }
+
   // --- notifications (opt-in, while a portal tab is open) ---
   const canNotify = () => "Notification" in window;
   function showNotification(it) {
     const t = notificationText(it);   // (generic words only: see above)
-    const opts = { body: t.body, tag: `bn-${it.id}`.slice(0, 120), icon: "/icons/app-192.png" };
+    // data.link: what sw.js opens on a click (Android: notifications only through the service worker)
+    const opts = { body: t.body, tag: `bn-${it.id}`.slice(0, 120), icon: "/icons/app-192.png", data: { link: notificationLink(it) } };
     try {
       const n = new Notification(t.title, opts);
-      n.onclick = () => { try { window.focus(); } catch (_) { /* fine */ } n.close(); setOpen(true); };
+      // (a Code session's: that session in the Code tab, its card in view; anything else: Activity)
+      n.onclick = () => {
+        try { window.focus(); } catch (_) { /* fine */ }
+        n.close();
+        const link = notificationLink(it);
+        if (link) { markRead(it); go(link); } else setOpen(true);
+      };
     } catch (_) {
       // Android Chrome: notifications only through the service worker (sw.js focuses the portal on a click)
       if (navigator.serviceWorker && navigator.serviceWorker.getRegistration) {
@@ -423,6 +480,7 @@
   }
 
   function render() {
+    renderBanner();
     const n = unreadCount(items, state);
     const label = n ? `Activity: ${n} unread` : "Activity";
     count.textContent = n > 9 ? "9+" : String(n);
@@ -541,7 +599,18 @@
   document.addEventListener("visibilitychange", () => { if (!document.hidden) loadActivity(); else schedule(); });
   // another tab marked something read or dismissed it
   window.addEventListener("storage", (e) => { if (e.key === STORE) { state = loadState(e.newValue); render(); } });
-  PHONE.addEventListener("change", () => { if (opened) setOpen(false, false); });
+  PHONE.addEventListener("change", () => { if (opened) setOpen(false, false); renderBanner(); });
+  document.addEventListener("bn:tab", (e) => { tab = e.detail; renderBanner(); });
+  // a click on a notification the service worker showed (sw.js): its link — a Code session's — here
+  if (navigator.serviceWorker && navigator.serviceWorker.addEventListener) {
+    navigator.serviceWorker.addEventListener("message", (e) => {
+      const d = e.data;
+      if (!d || d.type !== "bn-notification-click" || typeof d.link !== "string" || !/^#code\/[0-9a-f-]{36}$/.test(d.link)) return;
+      const it = items.find((x) => notificationLink(x) === d.link);
+      if (it) markRead(it);
+      go(d.link);
+    });
+  }
   window.bnActivity.open = () => setOpen(true);
   window.bnActivity.items = () => items.map((it) => ({ ...it, unread: isUnread(it, state) }));
   window.bnActivity.refresh = loadActivity;

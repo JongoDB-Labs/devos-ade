@@ -136,12 +136,20 @@ def test_code_page_is_framed_only_when_on(settings, cs):
             assert summary["code"] == {"enabled": s.code, "here": want, "notice": None} and ("code" in summary["apps"]) is want
 
 
-def test_code_tab_sits_under_chat_and_under_more_on_phones():
+def test_code_tab_sits_under_chat_and_in_the_phones_tab_bar():
     js = open("portal/static/code.js", encoding="utf-8").read()
     assert '.tabs .tab[data-tab=chat]' in js and "after.after(" in js
-    assert '#more-sheet .sheet-links' in js and "e.origin !== codeOrigin" in js
-    assert '"code"' in open("portal/static/mobile.js", encoding="utf-8").read().split("DESKTOP_ONLY", 1)[1].split("\n", 1)[0]
-    assert ".tabs .code-item" in open("portal/static/mobile.css", encoding="utf-8").read()
+    assert "e.origin !== codeOrigin" in js
+    # a phone: a tab of the bottom bar (Home · Chat · Code · More), framed like Chat — never a new tab from More
+    assert "#more-sheet" not in js and "window.open(" not in js and "addSheetLink" not in js
+    mobile = open("portal/static/mobile.js", encoding="utf-8").read()
+    assert '"code"' not in mobile.split("DESKTOP_ONLY", 1)[1].split("\n", 1)[0]
+    assert 'defaultTab: () => "home",' in mobile
+    css = open("portal/static/mobile.css", encoding="utf-8").read()
+    phone = css[css.index("/* ---------- Phones ---------- */"):]
+    hidden = phone[phone.index(".tabs li:has("):].split("\n", 1)[0]
+    assert ".code-item" not in hidden and ".terminal-item" in hidden and "grid-auto-flow: column" in phone
+    assert ".tabs .tab-badge" in phone and ".tabs .tab-off" in phone
     assert "innerHTML" not in js
 
 
@@ -149,19 +157,16 @@ def test_code_tab_is_always_there_and_explains_itself_while_off():
     js = open("portal/static/code.js", encoding="utf-8").read()
     app = open("portal/static/app.js", encoding="utf-8").read()
     mobile = open("portal/static/mobile.js", encoding="utf-8").read()
-    # the tab and the More entry whatever the state; the frame, its badge, the preload and the code host only while on
+    # the tab whatever the state (on a phone too: a tab of the bottom bar); the frame, its badge, the preload and the
+    # code host only while on
     tail = js[js.rindex("// (Home's Code card first"):]
-    assert "\n  addTab(); addSheetLink();\n" in tail
-    assert "if (here) { listen(); window.addEventListener(\"load\", preload, { once: true }); } else offPage();" in tail
-    add = js[js.index("function addTab()"):js.index("function addSheetLink()")]
+    assert "\n  addTab();\n" in tail
+    assert "if (here) { listen(); routes(); window.addEventListener(\"load\", preload, { once: true }); } else offPage();" in tail
+    add = js[js.index("function addTab()"):js.index("// --- Home's Code card ---")]
     off = add[add.index("if (!here) {"):]
     off = off[:off.index("return;")]
     assert 'class: "code-item off"' in off and 'class: "tab-off", text: "off"' in off and '"data-label": "Code (off)"' in off
     assert "appUrl(" not in off and "badge" not in off and "popout" not in off
-    sheet = js[js.index("function addSheetLink()"):js.index("// --- Home's Code card ---")]
-    off = sheet[sheet.index("if (!here) {"):]
-    off = off[:off.index("return;")]
-    assert "appUrl(" not in off and 'showTab("code")' in off and "what it is, and how to turn it on" in off
     # while off, "code" is a page of the portal (app.js PAGES: a section of that id, no frame), on a phone too
     page = js[js.index("function offPage()"):js.index("// The folder Claude would see")]
     assert 'PAGES.push("code")' in page and 'id: "code"' in page and "appUrl(" not in page and "appFrame(" not in page
@@ -224,14 +229,14 @@ def test_a_greyed_item_of_the_code_page_opens_settings_from_the_code_tabs_own_fr
             assert len(wanted) >= 8 and wanted <= set(lst), sorted(wanted - set(lst))
 
 
-def test_code_tabs_frame_is_made_when_idle_on_big_screens_for_its_badge():
+def test_code_tabs_frame_is_made_when_idle_for_its_badge_on_phones_too():
     js = open("portal/static/code.js", encoding="utf-8").read()
     app = open("portal/static/app.js", encoding="utf-8").read()
     # one way to make an app's frame (hidden until its tab shows it): the tab and the idle preload share it
     assert "function appFrame(tab)" in app and "f.hidden = true;" in app and 'appFrame(tab).hidden = false' in app
     pre = js.split("function preload()", 1)[1].split("\n  }\n", 1)[0]
-    # only in a browser that has used the Code page, never on a phone
-    assert 'if (!used() || window.matchMedia("(max-width: 767.98px)").matches) return;' in pre
+    # only in a browser that has used the Code page — on a phone too (the tab bar's badge, the needs-you banner)
+    assert "if (!used()) return;" in pre and "767" not in pre
     # "used": set when the code host's own page reports (after the origin check), kept in localStorage
     handler = js.split('window.addEventListener("message", (e) => {', 1)[1].split("});", 1)[0]
     check, rest = handler.split("return;", 1)
@@ -244,6 +249,25 @@ def test_code_tabs_frame_is_made_when_idle_on_big_screens_for_its_badge():
     assert ".tab-badge.bypass" in open("portal/static/app.css", encoding="utf-8").read()
     assert "requestIdleCallback(make" in pre and 'appFrame("code")' in pre
     assert 'window.addEventListener("load", preload, { once: true })' in js.rsplit("if (here) {", 1)[1].split("\n", 1)[0]
+
+
+def test_the_code_tab_on_a_phone_lands_on_the_session_that_waits_and_a_session_opens_in_place():
+    js = open("portal/static/code.js", encoding="utf-8").read()
+    app = open("portal/static/app.js", encoding="utf-8").read()
+    routes = js[js.index("function routes()"):js.index("// --- the Code tab while the Code page is off here")]
+    # shown again on a phone, once the page runs: told so, to the code host's origin only (it shows the session that
+    # waits for you, its card in view: code/web app.ts showWaiting); nothing else is sent
+    shown = routes[routes.index('document.addEventListener("bn:tab"'):routes.index('document.addEventListener("bn:place"')]
+    assert 'e.detail !== "code"' in shown and '"(max-width: 767.98px)"' in shown and "window.bnCode.ready()" in shown
+    assert 'postMessage({ type: "bn-portal-shown" }, origin)' in shown and "\"*\"" not in js
+    # the portal's #code/<session id> (a notification's address): app.js hands the place on, code.js takes a session id only
+    assert 'new CustomEvent("bn:place", { detail: { tab, place: place.join("/") } })' in app
+    place = routes[routes.index('document.addEventListener("bn:place"'):]
+    assert 'd.tab === "code"' in place and "UUID.test(d.place)" in place and "openLink({ session: d.place })" in place
+    # a session in place (no reload, no unlock again) once the page runs; else its deep link through the frame
+    link = js[js.index("function openLink(params)"):js.index("function codeCard()")]
+    assert 'postMessage({ type: "bn-portal-session", id: params.session }, new URL(appUrl("code")).origin)' in link
+    assert "UUID.test(params.session)" in link and 'appFrame("code").src = linkTo(params);' in link and "window.open" not in link
 
 
 # --- /auth/verify?app=code ---

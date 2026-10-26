@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CACHE_TTL_MS, cacheNotice, crossed, normBudget, opusHint, parseStored, parseUsd, percent, writePrice } from '../src/budget';
 import { parseDeepLink, PROMPT_MAX, withoutDeepLink } from '../src/deeplink';
-import { grouped, groupOf, pageTitle, waitingSessions } from '../src/groups';
+import { firstWaiting, grouped, groupOf, pageTitle, waitingSessions } from '../src/groups';
 import { normPermFile, normServerMsg } from '../src/api';
 import { newView } from '../src/session';
 import type { BnModel, PermissionReq } from '../src/types';
@@ -132,6 +132,16 @@ test('session groups: needs you, working, done; the tab title says how many wait
   assert.equal(pageTitle(2, false), '(2) waiting · Code · DevOS ADE');
   assert.equal(pageTitle(0, true), '⏵⏵ Code · DevOS ADE');
   assert.equal(pageTitle(500, false), '(99) waiting · Code · DevOS ADE');
+});
+
+test('opening the page: the session that waits for you first — the one shown last if it waits, else the latest', () => {
+  const o = (id: string, pending: number, lastActive: number | null, state = 'idle') => ({ id, state, pending, lastActive });
+  assert.equal(firstWaiting([]), null);
+  assert.equal(firstWaiting([o('a', 0, 5), o('b', 0, 9)], 'a'), null, 'none waits: nothing to jump to');
+  assert.equal(firstWaiting([o('a', 0, 5), o('b', 1, 3), o('c', 2, 7)], 'a'), 'c', 'the waiting one active most recently');
+  assert.equal(firstWaiting([o('a', 0, 5), o('b', 1, 3), o('c', 2, 7)], 'b'), 'b', 'the one shown last, since it waits');
+  assert.equal(firstWaiting([o('b', 1, null), o('c', 1, null)], null), 'b', 'no times: the first');
+  assert.equal(firstWaiting([o('b', 1, 9, 'closed'), o('c', 1, 1, 'ended'), o('d', 1, 2, 'busy')]), 'd', 'closed or ended ones never');
 });
 
 test('the Permissions view\'s data: rules as text, a hash only when it is one, everything capped', () => {

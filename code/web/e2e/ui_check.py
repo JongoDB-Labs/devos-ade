@@ -4350,18 +4350,43 @@ def polish_links(browser):
     p.close()
 
 
-@check("polish: phone — the sessions that need you open first; budget and permissions fit; the link draft")
+@check("polish: phone — the session that needs you opens first, its card in view and answered on the first tap; budget and permissions fit; the link draft")
 def polish_phone(browser):
     post(NORMAL + "/__mock/reset")
     p = Page(browser, NORMAL, "polish-phone", viewport={"width": 390, "height": 844}, device_scale_factor=2, is_mobile=True, has_touch=True, color_scheme="light")
     page = p.open()
+    # a session that waits (a Bash card), then another one shown: opening the page again goes straight to the waiting
+    # one, its card in view, with no sheet over it
+    send(page, "run the tests")
+    expect(page.get_by_test_id("permission")).to_be_visible(timeout=15_000)
+    page.get_by_test_id("phone-menu-btn").click()
+    page.get_by_test_id("phone-menu").get_by_role("button", name="New session").click()
+    expect(page.get_by_test_id("permission")).to_have_count(0, timeout=10_000)
+    page.reload()
+    card = page.get_by_test_id("permission")
+    expect(card).to_be_visible(timeout=10_000)
+    expect(page.get_by_test_id("sheet-sessions")).to_have_count(0)
+    # Allow once and Deny: first, full width, at least 44 px tall, in the viewport
+    once, deny = card.get_by_test_id("perm-once"), card.get_by_test_id("perm-deny")
+    cb, ob, db = card.bounding_box(), once.bounding_box(), deny.bounding_box()
+    for name, b in (("Allow once", ob), ("Deny", db)):
+        assert b["height"] >= 44 and b["width"] >= cb["width"] - 40, f"{name} is {b['width']}x{b['height']} in a card {cb['width']} wide"
+        assert b["y"] >= 0 and b["y"] + b["height"] <= 844, f"{name} is outside the viewport: {b}"
+    assert ob["y"] < db["y"], "Deny above Allow once"
+    p.shot("polish-phone-needs-you.png")
+    # (a hit test where a finger lands: the button itself, no sheet or overlay over it)
+    hit = page.evaluate("([x, y]) => document.elementFromPoint(x, y)?.closest('[data-testid=perm-once]') !== null", [ob["x"] + ob["width"] / 2, ob["y"] + ob["height"] / 2])
+    assert hit, "something covers Allow once"
+    page.wait_for_timeout(500)   # (the card's own 400 ms before Allow works: a keystroke meant for the prompt box)
+    once.tap()
+    expect(page.get_by_test_id("permission")).to_have_count(0, timeout=10_000)
+    # the Projects sheet still groups the sessions that need you
     send(page, "ask me which colour to use")
     expect(page.get_by_test_id("permission")).to_be_visible(timeout=15_000)
-    page.reload()
+    page.get_by_test_id("phone-sessions").click()
     sheet = page.get_by_test_id("sheet-sessions")
-    expect(sheet).to_be_visible(timeout=10_000)
     expect(sheet.get_by_test_id("session-group-needs")).to_contain_text("waiting for you")
-    p.shot("polish-phone-needs-you.png")
+    p.shot("polish-phone-needs-you-sheet.png")
     sheet.get_by_test_id("session-group-needs").get_by_test_id("session-row").locator(".sess-main").click()
     expect(page.get_by_test_id("permission")).to_be_visible(timeout=10_000)
     page.get_by_test_id("phone-menu-btn").click()

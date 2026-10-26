@@ -43,6 +43,21 @@ test("git: the Git panel's Git hosts or Clone dialog, from the portal that frame
   assert.deepEqual(takeRequest({ type: 'bn-portal-git', dialog: 'clone', url: 'https://evil.example/x.git' }, PORTAL, parent, PORTAL, parent), { kind: 'git', dialog: 'clone' });
 });
 
+test('shown and session: the portal shows the page again, or names a session — a session id only, from it only', () => {
+  const req = (data: unknown, origin = PORTAL, source: unknown = parent) => takeRequest(data, origin, source, PORTAL, parent);
+  assert.deepEqual(req({ type: 'bn-portal-shown' }), { kind: 'shown' });
+  assert.deepEqual(req({ type: 'bn-portal-shown', session: 'x' }), { kind: 'shown' }, 'nothing else is taken from it');
+  const id = '11111111-1111-4111-8111-111111111111';
+  assert.deepEqual(req({ type: 'bn-portal-session', id }), { kind: 'session', session: id });
+  for (const bad of ['', 'AAAAAAAA-1111-4111-8111-111111111111', `${id} `, `${id}/x`, '../11111111-1111-4111-8111-111111111111', null, 7, [id], { id }]) {
+    assert.equal(req({ type: 'bn-portal-session', id: bad }), null, String(bad));
+  }
+  for (const [origin, source] of [['http://evil.example', parent], [PORTAL, { tag: 'other' }], ['null', parent]] as [string, unknown][]) {
+    assert.equal(req({ type: 'bn-portal-shown' }, origin, source), null);
+    assert.equal(req({ type: 'bn-portal-session', id }, origin, source), null);
+  }
+});
+
 test('sessions by title or first prompt, best first, as single-line labels; files only, capped', () => {
   const sessions = [
     { id: '11111111-1111-4111-8111-111111111111', title: 'Fix the login page', firstPrompt: '' },
@@ -65,6 +80,7 @@ test('the listener answers the portal only, to its origin; the newest request wi
   const win = Object.assign(target, { parent: parentWin }) as unknown as Window;
   const opened: string[] = [];
   const dialogs: string[] = [];
+  const shown: string[] = [];
   let release: () => void = () => {};
   let calls = 0;
   listenPortal({
@@ -77,6 +93,8 @@ test('the listener answers the portal only, to its origin; the newest request wi
     },
     openFile: (p) => opened.push(p),
     openGit: (d) => dialogs.push(d),
+    shown: () => shown.push('shown'),
+    showSession: (id) => shown.push(id),
   }, win);
   const send = (data: unknown, origin = PORTAL, source: unknown = parentWin) => {
     const e = new MessageEvent('message', { data, origin });
@@ -93,6 +111,10 @@ test('the listener answers the portal only, to its origin; the newest request wi
   send({ type: 'bn-portal-git', dialog: 'clone' }, PORTAL, {});              // not the parent: nothing
   send({ type: 'bn-portal-git', dialog: 'push' });                           // not a dialog it opens: nothing
   send({ type: 'bn-portal-git', dialog: 'hosts' });
+  send({ type: 'bn-portal-shown' }, 'http://evil.example');   // another site: nothing
+  send({ type: 'bn-portal-session', id: '22222222-2222-4222-8222-222222222222' }, PORTAL, {});   // not the parent: nothing
+  send({ type: 'bn-portal-shown' });
+  send({ type: 'bn-portal-session', id: '11111111-1111-4111-8111-111111111111' });
   await new Promise((r) => setTimeout(r, 0));
   release();
   for (let i = 0; i < 20 && posted.length < 2; i++) await new Promise((r) => setTimeout(r, 0));
@@ -102,4 +124,5 @@ test('the listener answers the portal only, to its origin; the newest request wi
   assert.equal((posted[0].msg.sessions as { title: string }[])[0].title, 'notes about zebras');
   assert.deepEqual(opened, ['notes/z.md']);
   assert.deepEqual(dialogs, ['hosts']);
+  assert.deepEqual(shown, ['shown', '11111111-1111-4111-8111-111111111111']);
 });

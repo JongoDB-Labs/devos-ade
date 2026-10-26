@@ -2,8 +2,9 @@
 
 browser/layout-no-overlap measures the main pages and states — sign-in, Home (its folds open; the sidebar collapsed),
 More, Activity, search, Settings' Models & providers and Claude Code sections (every fold and info panel open), the
-walkthrough's first steps (and beside a collapsed sidebar), the Chat and Terminal tabs' chrome, the Code page (as it
-opens, its model picker, its menu, the Explorer with a file open, Search, Git, Projects, the terminal panel) — at 320,
+walkthrough's first steps (and beside a collapsed sidebar), the Chat and Terminal tabs' chrome (and a phone's Code tab),
+the Code page (as it opens, its model picker, its menu, the Explorer with a file open, Search, Git, Projects, the
+terminal panel) — at 320,
 360, 390, 600, 768, 820, 1024, 1100, 1280, 1366, 1440 and 1920 px wide (800 high), in light and dark, phones and tablets
 with touch. It fails on any finding not in layout-allowlist.json (each entry reviewed, with its reason). Results:
 OUT/browser/layout/summary.txt, findings.json and a cropped screenshot per finding.

@@ -63,6 +63,9 @@ function showTab(tab) {
   if (location.hash !== hash) history.replaceState(null, "", hash);
   if (tab === "home") refresh();
   document.dispatchEvent(new CustomEvent("bn:tab", { detail: tab }));
+  // a place in an app's tab ("code/<session id>": a notification's or a link's address — code.js takes it; the
+  // address keeps only the tab)
+  if (place.length && !PAGES.includes(tab)) document.dispatchEvent(new CustomEvent("bn:place", { detail: { tab, place: place.join("/") } }));
 }
 
 // --- formatting ---

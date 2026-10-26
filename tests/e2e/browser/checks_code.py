@@ -247,7 +247,8 @@ CODE_SETTINGS_ROW = '#settings .set-row[data-key="CODE_ENABLED"]'
 def _off_page(ctx) -> str:
     """The Code page off (--no-code): the tab is still under Chat, muted with an "off" pill; it shows a page of the
     portal's own (no frame) that says what the Code page is and how to turn it on, whose button opens Settings at the
-    Code page's switch; on a phone More → Code (off) shows the same page; and nothing is asked from the code host."""
+    Code page's switch; on a phone the bar's Code tab (with its pill) shows the same page; and nothing is asked from the
+    code host."""
     page, rec = ctx.page("code-tab-off")
     asked = []
     page.on("request", lambda r: asked.append(r.url))
@@ -288,16 +289,16 @@ def _off_page(ctx) -> str:
     probs = rec.problems()
     rec.save()
     expect(not probs, f"errors: {probs}")
-    # a phone: not in the bottom bar; More → Code (off) shows the same page of the portal
+    # a phone: the bar's Code tab, muted with its pill, shows the same page of the portal
     phone, prec = ctx.page("code-tab-off-phone", "phone")
     phone.on("request", lambda r: asked.append(r.url))
     login(phone)
     phone.wait_for_selector(".shell")
-    expect(not phone.locator(".tab[data-tab=code]").is_visible(), "the Code tab in the phone's bottom bar")
-    phone.click("#more-btn")
-    phone.locator("#more-sheet .code-off-link").click()
+    expect(phone.locator(".tab[data-tab=code]").is_visible() and phone.locator(".tabs .code-item.off .tab-off").is_visible(),
+           "no muted Code tab with its pill in the phone's bottom bar")
+    expect(phone.locator("#more-sheet .code-off-link").count() == 0, "Code (off) in More too")
+    phone.locator(".tab[data-tab=code]").tap()
     phone.wait_for_selector("#code:not([hidden]) .code-off-card")
-    expect(phone.locator("#more-sheet").is_hidden(), "the More sheet stayed open")
     phone.wait_for_timeout(300)
     shot(phone, "51-code-off-phone")
     pprobs = prec.problems()
@@ -306,7 +307,7 @@ def _off_page(ctx) -> str:
     to_code = [u for u in asked if u.startswith(CODE)]
     expect(not to_code, f"requests to the code host while off: {to_code[:3]}")
     return (f"off: tabs {order[:3]}, muted with its off pill; its page (no frame) names {ws}, Turn on in Settings shows "
-            f"the Code page's switch; #code shows it; phone: More → Code (off); {len(asked)} requests, none to the code host")
+            f"the Code page's switch; #code shows it; phone: the bar's Code tab (off); {len(asked)} requests, none to the code host")
 
 
 @check("browser", "code-tab-under-chat")
@@ -333,18 +334,27 @@ def tab(ctx):
     probs = rec.problems(allow=LOCKED_OK)
     rec.save()
     expect(not probs, f"errors (CSP violations included): {probs}")
-    # a phone: not in the bottom bar; under More, full screen
+    # a phone: a tab of the bottom bar, framed like Chat (its own phone layout), the frame filling the stage above the bar
     page, rec = ctx.page("code-phone", "phone")
     login(page)
     page.wait_for_selector(".shell")
-    expect(not page.locator(".tab[data-tab=code]").is_visible(), "the Code tab in the phone's bottom bar")
-    page.click("#more-btn")
-    link = page.locator("#more-sheet .sheet-link[data-app=code]")
-    link.wait_for(timeout=5000)
-    expect(link.get_attribute("href") == CODE + "/", f"More → Code {link.get_attribute('href')}")
-    shot(page, "51-code-phone-more")
+    expect(page.locator(".tab[data-tab=code]").is_visible(), "no Code tab in the phone's bottom bar")
+    expect(page.locator("#more-sheet .sheet-link[data-app=code]").count() == 0, "Code in More too")
+    page.locator(".tab[data-tab=code]").tap()
+    f = code_frame(page)
+    unlock_page(f)
+    f = code_frame(page)
+    f.wait_for_function("() => document.querySelector('meta[name=bn-csp-nonce]') !== null", timeout=20000)
+    f.locator(".app.phone").wait_for(timeout=20000)
+    fb = page.locator('#frames iframe[data-app="code"]').bounding_box()
+    bar = page.locator(".sidebar").bounding_box()
+    expect(fb and abs(fb["y"] + fb["height"] - bar["y"]) <= 2 and fb["width"] >= 388, f"the frame {fb} vs the tab bar {bar}")
+    page.wait_for_timeout(1000)
+    shot(page, "51-code-phone-tab")
+    probs = rec.problems(allow=LOCKED_OK)
     rec.save()
-    return f"tabs {order[:3]}; framed the frontend build after the unlock, no console errors or CSP violations; phone: under More"
+    expect(not probs, f"phone errors (CSP violations included): {probs}")
+    return f"tabs {order[:3]}; framed the frontend build after the unlock, no console errors or CSP violations; phone: a tab of the bar, framed (its phone layout)"
 
 
 @check("browser", "code-terminal-typed-address")
@@ -522,6 +532,108 @@ def permission(ctx):
     prec.save()
     expect(not probs, f"errors: {probs}")
     return f"Allow once → {name} = hello-from-code ({len(tr)} tool result(s)); the Code tab's badge showed 1, then none; Deny → no {denied}"
+
+
+def _phone_wait(page, rec, text):
+    """A Bash prompt that waits for you, in a new Haiku session (by its full name: never Opus), from a page of the code
+    host in this browser (the phone's own unlock) — closed again once the prompt is there. -> (session, prompt id)"""
+    drv = Code.on(page.context.new_page(), rec)
+    sid = drv.new_session()
+    n = len(drv.msgs())
+    drv.request({"type": "prompt", "session": sid, "text": text})
+    p = drv.wait(lambda m: m.get("type") == "permission" and m.get("session") == sid, "permission prompt", 120, since=n)
+    expect(p["tool"] == "Bash", f"prompt {p}")
+    drv.page.close()
+    return sid, p["id"]
+
+
+def _card_in_view(page, f, what):
+    """The frame shows a permission card with no sheet over it; Allow once and Deny full width, 44 px or more, in the
+    viewport and not covered where a finger lands. -> the card's Allow once / Deny locators"""
+    card = f.get_by_test_id("permission")
+    see(card).to_be_visible(timeout=20000)
+    expect(f.get_by_test_id("sheet-sessions").count() == 0, f"{what}: the Projects sheet is over the card")
+    cb = card.bounding_box()
+    fb = page.locator('#frames iframe[data-app="code"]').bounding_box()   # (above the tab bar)
+    once, deny = card.get_by_test_id("perm-once"), card.get_by_test_id("perm-deny")
+    for name, tid, loc in (("Allow once", "perm-once", once), ("Deny", "perm-deny", deny)):
+        b = loc.bounding_box()
+        expect(b and b["height"] >= 44 and b["width"] >= cb["width"] - 40 and b["y"] >= fb["y"] and b["y"] + b["height"] <= fb["y"] + fb["height"],
+               f"{what}: {name} is {b} in a card {cb}, a frame {fb}")
+        # (what a finger there would touch, in the frame's own coordinates)
+        hit = f.evaluate("([x, y, t]) => document.elementFromPoint(x, y)?.closest(`[data-testid=${t}]`) !== null",
+                         [b["x"] - fb["x"] + b["width"] / 2, b["y"] - fb["y"] + b["height"] / 2, tid])
+        expect(hit, f"{what}: something covers {name}")
+    return once, deny
+
+
+@check("browser", "code-phone-needs-you")
+def phone_needs_you(ctx):
+    """A phone (390×844): Code is a tab of the bottom bar; a session that waits for you puts a badge on that tab and a
+    banner on the other tabs; the tab opens straight into that session, its card in view with no sheet over it, and Allow
+    once works on the first tap; the banner's Answer does the same; and opening Code afresh (a reload) while a session
+    waits lands on its card too, where Deny works. Haiku only: three Bash prompts in sessions of its own."""
+    need_haiku()
+    page, rec = ctx.page("code-phone-needs-you", "phone")
+    login(page)
+    page.wait_for_selector("#home:not([hidden])")
+    page.locator(".tab[data-tab=code]").tap()
+    f = code_frame(page)
+    unlock_page(f)
+    f = code_frame(page)
+    f.wait_for_function("() => document.querySelector('meta[name=bn-csp-nonce]') !== null", timeout=20000)
+    see(f.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+    page.locator(".tab[data-tab=home]").tap()
+    page.wait_for_selector("#home:not([hidden])")
+    # 1. a session waits: the badge on the bar's Code tab, the banner on Home
+    ok_file = f"e2e-phone-{int(time.time())}.txt"
+    sid1, _ = _phone_wait(page, rec, f"Use the Bash tool to run exactly this command, then reply with the word done: echo phone-ok > {ok_file}")
+    page.locator(".tabs .tab[data-tab=code] .tab-badge:not([hidden])", has_text="1").wait_for(timeout=20000)
+    banner = page.locator("#needs-you:not([hidden])")
+    banner.wait_for(timeout=20000)
+    expect("needs you" in banner.inner_text(), f"banner {banner.inner_text()!r}")
+    page.wait_for_timeout(300)
+    shot(page, "70-code-phone-badge-banner")
+    # the Code tab: straight into that session, its card in view; Allow once on the first tap
+    page.locator(".tab[data-tab=code]").tap()
+    expect(page.locator("#needs-you").is_hidden(), "the banner over the Code tab")
+    once, _ = _card_in_view(page, f, "the Code tab")
+    page.wait_for_timeout(600)   # (a card answers only after its first 400 ms: a tap meant for something else)
+    shot(page, "71-code-phone-card")
+    once.tap()
+    see(f.get_by_test_id("permission")).to_have_count(0, timeout=15000)
+    drv = Code.on(page.context.new_page(), rec)
+    t0 = time.time()
+    while time.time() - t0 < 120 and drv.api("GET", f"/api/fs/file?path={ok_file}")["status"] != 200:
+        page.wait_for_timeout(1000)
+    r = drv.api("GET", f"/api/fs/file?path={ok_file}")
+    expect(r["status"] == 200 and r["json"]["text"].strip() == "phone-ok", f"the file after one tap on Allow once: {r['status']}")
+    drv.page.close()
+    page.locator(".tabs .tab[data-tab=code] .tab-badge[hidden]").wait_for(state="attached", timeout=20000)
+    # 2. the banner's Answer, from Chat: the Code tab at that session, in place
+    page.locator(".tab[data-tab=chat]").tap()
+    sid2, _ = _phone_wait(page, rec, f"Use the Bash tool to run exactly this command: echo nope > e2e-phone-denied-{int(time.time())}.txt")
+    page.locator("#needs-you:not([hidden]) .needs-answer").tap(timeout=20000)
+    page.locator(".tab[data-tab=code][aria-current=page]").wait_for(timeout=10000)
+    _card_in_view(page, f, "the banner's Answer")
+    # 3. opening Code afresh while it waits (the UX audit's case: the Projects sheet used to cover the card)
+    page.reload()
+    page.locator(".tab[data-tab=code][aria-current=page]").wait_for(timeout=20000)
+    f = code_frame(page)
+    f.wait_for_function("() => document.querySelector('meta[name=bn-csp-nonce]') !== null", timeout=30000)
+    _, deny = _card_in_view(page, f, "a reload")
+    page.wait_for_timeout(600)
+    shot(page, "72-code-phone-reload-card")
+    deny.tap()
+    f.get_by_test_id("perm-deny-send").tap()
+    see(f.get_by_test_id("permission")).to_have_count(0, timeout=15000)
+    probs = rec.problems(allow=LOCKED_OK)
+    rec.save()
+    expect(not probs, f"errors (CSP violations included): {probs}")
+    ctx.code_phone_sessions = [sid1, sid2]
+    return (f"phone: the bar's Code tab framed; a waiting session → badge 1 and a banner on Home; the Code tab → its card in view "
+            f"(no sheet), Allow once on the first tap → {ok_file} written; the banner's Answer from Chat → that card; a reload "
+            "while it waits → the card, Deny on the first tap")
 
 
 @check("browser", "code-model-switch-interrupt-slash-command")

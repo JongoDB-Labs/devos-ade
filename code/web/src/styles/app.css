@@ -860,6 +860,17 @@ body.resizing-x iframe, body.resizing-y iframe { pointer-events: none; }
 .pm-label { color: var(--muted); }
 .phone-menu hr { width: 100%; border: 0; border-top: 1px solid var(--line); margin: 8px 0; }
 .pm-link { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 4px; border: 0; background: none; color: var(--ink); font-size: 15px; text-decoration: none; text-align: left; }
+/* A card on a phone (PermissionCard): every answer a full-width button of at least 44 px. The card fits the cards' box
+   (.perms): what is asked scrolls inside it (.perm-body), and Allow once and Deny — or Deny's message — stay below it,
+   always in view (nothing is drawn over the text). */
+.app.phone .perm-buttons { flex-direction: column; align-items: stretch; gap: 8px; }
+.app.phone .perm-buttons .btn { justify-content: center; width: 100%; height: auto; min-height: 44px; padding: 8px 14px; white-space: normal; text-align: center; }
+.app.phone .perms { display: flex; flex-direction: column; }
+.app.phone .perm { flex: 0 1 auto; min-height: 0; }
+.app.phone .perm-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px; }
+.app.phone .perm-body > * { flex: none; }   /* (each part its own height: the body scrolls, never a part squeezed to 0) */
+.app.phone .perm-main { flex: none; }
+.app.phone .perm-main .btn { min-height: 48px; font-size: 15px; }
 
 /* touch: 44 px targets */
 .app.phone ~ .toasts { top: max(58px, calc(env(safe-area-inset-top) + 54px)); left: 8px; right: 8px; align-items: stretch; }

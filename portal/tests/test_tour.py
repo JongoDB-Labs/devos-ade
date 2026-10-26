@@ -138,11 +138,11 @@ def test_claude_steps_point_at_the_code_tab_or_at_settings():
     line = js[js.index("function codeLine(use)"):js.index("// Chat, Admin and Files sign you in")]
     assert 'b("Code"), " tab' in line and 'settings("Claude Code", "CODE_ENABLED")' in line and 'code("./stack code enable")' in line
     assert 'code("REMOTE_TERMINAL=true")' in line and "off for now" in line
-    opener = js[js.index("function openCode()"):js.index("function codeLine(use)")]
-    assert 'showTab("code")' in opener and 'appUrl("code")' in opener and 'rel: "noopener"' in opener
+    opener = js[js.index("function openCode()"):js.index("// The Code page at one of its Git panel's dialogs")]
+    # the Code tab, on a phone too (a tab of the bottom bar): never a new browser tab
+    assert 'showTab("code")' in opener and 'appUrl("code")' not in opener and "PHONE" not in opener
     # while off here: its tab's page (a page of the portal, on a phone too), never the code host
-    off = opener[opener.index("if (!CODE.here)"):opener.index("if (PHONE.matches)")]
-    assert 'button("About the Code tab", "open-code", () => { showTab("code"); away(); })' in off and "appUrl" not in off
+    assert 'if (!CODE.here) return button("About the Code tab", "open-code", () => { showTab("code"); away(); });' in opener
     # each step its own spend baseline (spendState / withBaseline, tour.test.mjs): the Claude Code step watches
     # devos-claude's key only — the Code tab's spend is Open Code and ask's
     assert 'spendKey: "claude-code",' in use and "spendAlso" not in js
@@ -305,7 +305,13 @@ def test_new_steps_are_marked_for_a_browser_that_did_an_older_walkthrough():
     assert '$("#tour-count").textContent = fresh ? `${fresh} new`' in js
     assert 'opener.classList.toggle("has-new", fresh > 0)' in js
     assert "if (st.cur && isNew(st.cur)) { st.seen.push(st.cur); save(); }" in js
-    assert "const first = st.open === null;" in js and "if (first || PHONE.matches) st.open = !PHONE.matches && first;" in js
+    assert "const first = st.open === null;" in js and "if (first || PHONE.matches) st.open = false;" in js
+    # a first visit (and only one whose state could be stored) is greeted through ONE entry point, window.bnWelcome
+    # (Home's Get started checklist takes it over): by default the walkthrough, on a phone too — over Home only
+    assert "if (!root.bnWelcome) root.bnWelcome = { start: welcome };" in js and "if (first && stored) root.bnWelcome.start();" in js
+    assert js.count("root.bnWelcome.start();") == 1
+    welcome = js[js.index("function welcome()"):].split("\n", 1)[0]
+    assert 'if (!PHONE.matches || !location.hash || location.hash === "#home") setOpen(true, false);' in welcome
     assert "seen" in js[js.index("function save()"):js.index("let st = resolve(load(), ORDER);")]
     css = (STATIC / "tour.css").read_text(encoding="utf-8")
     assert ".tour-new {" in css and ".tour-btn.has-new" in css

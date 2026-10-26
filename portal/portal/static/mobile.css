@@ -1,6 +1,7 @@
-/* Phones (< 768 px): bottom tab bar, compact Home, full-height Chat. Tablets (768-1099 px): icon rail — and a desktop
-   whose sidebar is collapsed (nav.js, app.css): the rail is the sidebar as the "rail" container, its insides one set of
-   rules for both. Loaded after app.css; tokens: tokens.css. Everything here is layout: no new colours. */
+/* Phones (< 768 px): bottom tab bar (Home · Chat · Code · More), compact Home, full-height Chat and Code. Tablets
+   (768-1099 px): icon rail — and a desktop whose sidebar is collapsed (nav.js, app.css): the rail is the sidebar as the
+   "rail" container, its insides one set of rules for both. Loaded after app.css; tokens: tokens.css. Everything here is
+   layout: no new colours. */
 
 /* Pieces that exist only on some screens. */
 .tabs .more-item, .health-line { display: none; }
@@ -119,9 +120,17 @@
     border-right: 0; border-top: 1px solid var(--line); overflow: visible; }
   .sidebar .brand, .sidebar > .logout, .sidebar > .install-btn, .popout { display: none; }
   .sidebar .version-label { display: none; } .home-version { display: inline-flex; min-height: 24px; margin-right: 6px; }
-  .tabs { flex: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; }
-  .tabs li:has(> [data-tab="admin"]), .tabs li:has(> [data-tab="files"]), .tabs .terminal-item, .tabs .code-item { display: none; }
+  /* Home · Chat · Code · More (Code: framed like Chat, code.js; off here: its page of the portal). Admin, Files and the
+     Terminal are under More; Settings too. */
+  .tabs { flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 0; }
+  .tabs li:has(> [data-tab="admin"]), .tabs li:has(> [data-tab="files"]), .tabs .terminal-item { display: none; }
   .tabs li { border-radius: 0; }
+  /* the Code tab's badge (permission prompts waiting) and its "off" pill: at the icon's corner */
+  .tabs .tab { position: relative; }
+  .tabs .tab-badge, .tabs .tab-off { position: absolute; top: 4px; left: calc(50% + 6px); margin: 0; }
+  .tabs .tab-badge { box-shadow: 0 0 0 2px var(--sidebar); }
+  .tabs .tab[aria-current="page"] .tab-badge:not(.bypass) { background: var(--accent); color: var(--accent-ink); }
+  .tabs .tab-off { padding: 0 4px; font-size: 9.5px; line-height: 13px; background: var(--sidebar); }
   .tabs .more-item { display: flex; }
   .tab, .more-btn { flex: 1; flex-direction: column; justify-content: center; gap: 3px; min-height: 56px; padding: 6px 4px 4px;
     border: 0; border-radius: 0; background: none; color: var(--muted); font-size: 11.5px; font-weight: 500; text-align: center; }
@@ -175,6 +184,19 @@
 
   .toast { left: 16px; right: 16px; bottom: calc(72px + env(safe-area-inset-bottom)); text-align: center; }
 
+  /* Chat's Who answers (answers.js): the label, then the choice's name with a chevron, the bar's width; the menu itself
+     is over it, transparent — a tap opens the system's picker, which lists every choice in full. */
+  .answers-bar { gap: 8px; padding: 0 10px; }
+  .answers-chat { flex: 1 1 auto; }
+  .answers-pick { flex: 1 1 auto; align-items: center; min-height: 32px; padding: 3px 26px 3px 10px; border: 1px solid var(--line-strong);
+    border-radius: var(--r-m); background: var(--surface); }
+  .answers-pick::after { content: ""; position: absolute; right: 11px; top: 50%; width: 7px; height: 7px; margin-top: -6px;
+    border: solid var(--muted); border-width: 0 1.6px 1.6px 0; transform: rotate(45deg); pointer-events: none; }
+  .answers-pick-text { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .answers-bar .answers-pick select { position: absolute; inset: 0; width: 100%; max-width: none; min-height: 0; opacity: 0; }
+  .answers-pick:has(select:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .answers-chat .answers-note { display: none; }
+
   /* More sheet. */
   .sheet { position: fixed; inset: 0; z-index: 10; display: flex; align-items: flex-end; background: color-mix(in srgb, #000 40%, transparent); }
   /* (taller than a short window: it scrolls, its title never above the top) */
@@ -185,6 +207,8 @@
   .sheet.open .sheet-panel { transform: none; opacity: 1; }
   .sheet h2 { margin: 0; font-size: var(--t-2); line-height: 1.15; }
   .sheet .note { margin: 6px 0 14px; }
+  .sheet .sheet-sub { margin: 18px 0 0; font-size: 14px; font-weight: 600; }
+  .sheet .sheet-sub + .note { margin-top: 2px; }
   .sheet-links { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
   .sheet-link { display: flex; flex-direction: column; justify-content: center; min-height: 56px; padding: 8px 16px; border: 1px solid var(--line);
     border-radius: var(--r-l); color: var(--ink); text-decoration: none; font-weight: 600; }

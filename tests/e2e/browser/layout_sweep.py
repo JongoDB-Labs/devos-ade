@@ -776,6 +776,8 @@ STATES = [
     State("chat-frame", st_frame("chat")),
     State("terminal-frame", st_frame("terminal"), devices=("tablet", "desktop")),
     State("code-frame", st_frame("code"), devices=("tablet", "desktop"), fast=False),
+    # (a phone's Code tab: a tab of its bottom bar, framed — the bar with Code current, in the fast run too)
+    State("code-tab-phone", st_frame("code"), devices=("phone",), needs="code"),
     State("code", code_states("code"), needs="code"),
     State("code-mock", code_states("code-mock"), needs="mock", fast=False),
     State("code-mock-session", mock_session, needs="mock"),

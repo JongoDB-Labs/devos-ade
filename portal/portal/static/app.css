@@ -55,6 +55,9 @@ html.nav-collapsed .nav-chev { transform: scaleX(-1); }   /* « collapses, » ex
 .answers-bar select { max-width: min(46vw, 420px); min-height: 30px; padding: 3px 8px; border: 1px solid var(--line-strong);
   border-radius: var(--r-m); background: var(--surface); color: var(--ink); font: inherit; }
 .answers-folder select { max-width: 180px; }
+/* Chat's menu (answers.js): on a phone its closed state shows the choice's name only (mobile.css); here it is the menu */
+.answers-pick { position: relative; display: inline-flex; flex: none; min-width: 0; }
+.answers-pick-text { display: none; }
 .answers-note { flex: 1 1 auto; overflow: hidden; color: var(--muted); white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
 @media (max-width: 767.98px) {
   .answers-bar { padding: 0 10px; }

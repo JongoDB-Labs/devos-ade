@@ -1,11 +1,15 @@
-// The optional Code page (./stack code): the Code tab — in the sidebar directly under Chat on a big screen, full
-// screen from More on a phone — its badge (permission prompts waiting), and a line on Home's Claude Code card. Loaded
-// after app.js and mobile.js (deferred; shares their $, el, appUrl and APP_URLS) and adds its elements before
-// DOMContentLoaded, so app.js binds the tab like the others. The tab frames code.<host> like any app: while the Code
-// page is locked, that host answers with its own "Unlock the Code page" form (the portal password again). On a big
-// screen, in a browser that has used the Code page (its page reported to the portal once), the frame is made (hidden)
-// once the portal is idle, so the badge counts prompts before the tab is opened; a browser that never opened it loads
-// nothing from the code host. Home's Code card: the sessions that need you and the recent ones as the framed page
+// The optional Code page (./stack code): the Code tab — in the sidebar directly under Chat on a big screen, in the
+// bottom tab bar on a phone (Home · Chat · Code · More) — its badge (permission prompts waiting), and a line on Home's
+// Claude Code card. Loaded after app.js and mobile.js (deferred; shares their $, el, appUrl and APP_URLS) and adds its
+// elements before DOMContentLoaded, so app.js binds the tab like the others. The tab frames code.<host> like any app:
+// while the Code page is locked, that host answers with its own "Unlock the Code page" form (the portal password
+// again). In a browser that has used the Code page (its page reported to the portal once), the frame is made (hidden)
+// once the portal is idle, so the badge counts prompts before the tab is opened — on a phone too: the badge and
+// Activity's needs-you banner are how you learn a session waits; a browser that never opened it loads nothing from the
+// code host. Shown again on a phone, the page is told so ({type: "bn-portal-shown"}: it shows the session that waits for
+// you, its card in view); a session named here (Home's card, Activity, search, the portal's #code/<id> — a
+// notification's address) is shown in place ({type: "bn-portal-session", id}) once the page runs, else by its deep link.
+// Home's Code card: the sessions that need you and the recent ones as the framed page
 // reports them (titles are sandbox data: text only, capped), Resume and Ask links (deep links: ?session=, and ?prompt=
 // — a draft the Code page marks as coming from a link, never sent by itself), and the terminal key's budget.
 // The tab is there while the Code page is off on this site too (turned off, or not allowed over remote access): muted,
@@ -51,22 +55,6 @@
         title: "Open Code in its own window", "aria-label": "Open Code in its own window" }, icon(POPOUT))));
   }
 
-  // Phone: under More, full screen in a new tab (chat-first; an on-screen keyboard leaves no room for a framed IDE) —
-  // or, while it is off here, its page of the portal (on a phone too: it is no frame; mobile.js closes the sheet).
-  function addSheetLink() {
-    const list = $("#more-sheet .sheet-links");
-    if (!list) return;
-    if (!here) {
-      const b = el("button", { type: "button", class: "sheet-link code-off-link" }, "Code (off)",
-        el("span", { text: "Claude Code in the browser: what it is, and how to turn it on" }));
-      b.addEventListener("click", () => showTab("code"));
-      list.prepend(el("li", {}, b));
-      return;
-    }
-    list.prepend(el("li", {}, el("a", { class: "sheet-link", "data-app": "code", href: appUrl("code"), target: "_blank",
-      rel: "noopener" }, "Code", el("span", { text: "Claude Code with a chat and your files, full screen" }))));
-  }
-
   // --- Home's Code card ---
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   const STATES = { waiting: "needs you", working: "working", idle: "idle" };
@@ -77,13 +65,17 @@
     for (const [k, v] of Object.entries(params)) if (v) u.searchParams.set(k, v);
     return u.href;
   }
-  // a deep link in the Code tab (its frame loads it: the page reads it once and takes it out of its address), or on a
-  // phone in a tab of its own
+  // the Code tab at a deep link — a session of a page that runs (it reported since it loaded) in place, asked by a
+  // message to the code host's origin only (no reload: no unlock again, no unsaved edit lost); anything else by the
+  // frame loading the address (the page reads it once and takes it out of its address; kept through the unlock)
   function openLink(params) {
-    const href = linkTo(params);
-    if (window.matchMedia("(max-width: 767.98px)").matches) { window.open(href, "_blank", "noopener"); return; }
     showTab("code");
-    appFrame("code").src = href;
+    const f = document.querySelector('#frames iframe[data-app="code"]');
+    const only = Object.keys(params).filter((k) => params[k]);
+    if (f && window.bnCode.ready() && only.length === 1 && only[0] === "session" && UUID.test(params.session)) {
+      try { f.contentWindow.postMessage({ type: "bn-portal-session", id: params.session }, new URL(appUrl("code")).origin); return; } catch (_) { /* below */ }
+    }
+    appFrame("code").src = linkTo(params);
   }
   function codeCard() {
     let card = $("section.code-card");
@@ -94,7 +86,7 @@
     const form = el("form", { class: "code-ask" }, input, el("button", { type: "submit", class: "action primary", text: "Open in Code" }));
     form.addEventListener("submit", (e) => { e.preventDefault(); const t = input.value.trim(); if (t) { openLink({ prompt: t }); input.value = ""; } });
     const open = el("button", { type: "button", class: "linkish", text: "Open Code" });
-    open.addEventListener("click", () => { if (window.matchMedia("(max-width: 767.98px)").matches) window.open(appUrl("code"), "_blank", "noopener"); else showTab("code"); });
+    open.addEventListener("click", () => showTab("code"));
     card = el("section", { class: "code-card", "aria-labelledby": "code-card-title" },
       el("h2", { id: "code-card-title", text: "Code" }),
       el("p", { class: "note code-status", id: "code-status", "aria-live": "polite" }),
@@ -242,12 +234,12 @@
   // The Git panel's Git hosts or Clone dialog. A Code tab whose page is running (it reported since it loaded) is asked
   // in place — {type: "bn-portal-git", dialog}, to the code host's origin only; the page takes it only from the portal
   // it was told about and from window.parent (portalbridge.ts) — so it is not reloaded and no unsaved edit is lost.
-  // Otherwise (not loaded yet, locked, a phone) its address with ?git= (a deep link, kept through the unlock).
+  // Otherwise (not loaded yet, locked) its address with ?git= (a deep link, kept through the unlock).
   function openGit(dialog) {
     const f = document.querySelector('#frames iframe[data-app="code"]');
     let origin = "";
     try { origin = new URL(appUrl("code")).origin; } catch (_) { return; }
-    if (f && window.bnCode.ready() && !window.matchMedia("(max-width: 767.98px)").matches) {
+    if (f && window.bnCode.ready()) {
       showTab("code");
       f.contentWindow.postMessage({ type: "bn-portal-git", dialog }, origin);
       return;
@@ -256,13 +248,30 @@
   }
 
   // The badge needs the page running: its frame, hidden, once the portal has nothing else to do — only in a browser
-  // that has used the Code page (else the code host would answer its locked form, unasked), and not on a phone (there
-  // the Code page opens in a tab of its own, and an idle frame would only cost battery).
+  // that has used the Code page (else the code host would answer its locked form, unasked). On a phone too: the tab's
+  // badge and Activity's needs-you banner are how you learn that a session waits for you there.
   function preload() {
-    if (!used() || window.matchMedia("(max-width: 767.98px)").matches) return;
-    const make = () => { if (!window.matchMedia("(max-width: 767.98px)").matches) appFrame("code"); };
+    if (!used()) return;
+    const make = () => appFrame("code");
     if ("requestIdleCallback" in window) window.requestIdleCallback(make, { timeout: 5000 });
     else setTimeout(make, 2000);
+  }
+
+  // The Code tab shown again on a phone: the page is told ({type: "bn-portal-shown"}), and shows the session that waits
+  // for you with its card in view (no sheet over it) — the tab's badge said one does. The portal's #code/<id> (a
+  // notification's address, a link): that session, in place once the page runs.
+  function routes() {
+    let origin = "";
+    try { origin = new URL(appUrl("code")).origin; } catch (_) { return; }
+    document.addEventListener("bn:tab", (e) => {
+      if (e.detail !== "code" || !window.matchMedia("(max-width: 767.98px)").matches || !window.bnCode.ready()) return;
+      const f = document.querySelector('#frames iframe[data-app="code"]');
+      if (f) f.contentWindow.postMessage({ type: "bn-portal-shown" }, origin);
+    });
+    document.addEventListener("bn:place", (e) => {
+      const d = e.detail || {};
+      if (d.tab === "code" && typeof d.place === "string" && UUID.test(d.place)) openLink({ session: d.place });
+    });
   }
 
   // --- the Code tab while the Code page is off here: a page of the portal (no frame, nothing from the code host) ---
@@ -383,7 +392,7 @@
 
   // (Home's Code card first: the framed page's first report finds it there)
   if (here) { codeCard(); document.addEventListener("bn:summary", (e) => budgetLine(e.detail)); }
-  addTab(); addSheetLink();
-  if (here) { listen(); window.addEventListener("load", preload, { once: true }); } else offPage();
+  addTab();
+  if (here) { listen(); routes(); window.addEventListener("load", preload, { once: true }); } else offPage();
   cardLine();
 })();

@@ -143,10 +143,16 @@
     const s = m ? setupOf(d, m[1]) : /^signin:[a-z]{2,10}$/.test(v || "") ? setupOf(d, "chat-signin") : null;
     return s && s.where ? `${goLabelOf(d, v) === "Open it to sign in" ? "Open it to sign in:" : "Go to"} ${s.where}` : "";
   }
-  root.bnAnswers = { _pure: { toolState, terminalOptions, chatOptions, chatSrc, parseSaved, setupOf, setupPlace, goLabelOf, goNameOf } };
+  // shortLabel(TEXT) -> what a phone shows of a choice in the closed menu (its name: the words before " — " or " · ";
+  // the menu itself lists the whole of each): "Open WebUI — its own model menu" -> "Open WebUI"
+  function shortLabel(text) {
+    const t = String(text || "");
+    const cut = [" — ", " · "].map((sep) => t.indexOf(sep)).filter((i) => i > 0);
+    return (cut.length ? t.slice(0, Math.min(...cut)) : t).trim().slice(0, 60);
+  }
+  root.bnAnswers = { _pure: { toolState, terminalOptions, chatOptions, chatSrc, parseSaved, setupOf, setupPlace, goLabelOf, goNameOf, shortLabel } };
   if (typeof document === "undefined" || typeof document.querySelector !== "function") return;
 
-  const PHONE = window.matchMedia("(max-width: 767.98px)");
   let data = null, loadedAt = 0, loading = null;
   let saved = parseSaved((() => { try { return localStorage.getItem(KEY); } catch (_) { return null; } })());
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (_) { /* storage blocked: this page only */ } };
@@ -243,8 +249,13 @@
     launch("open", tSelect.value).then((url) => { f.src = url; f.focus(); }, failed).finally(() => { tOpen.disabled = false; });
   });
 
-  // Chat tab: Who answers [▾]  in [folder ▾]
+  // Chat tab: Who answers [▾]  in [folder ▾]. On a phone the closed menu shows the choice's name only ("Open WebUI ▾":
+  // the menu itself is over it, transparent, so a tap opens the system's picker with every choice in full) beside a
+  // visible "Who answers".
   const cSelect = el("select", { id: "answers-chat", "aria-label": "Who answers in Chat" });
+  const cPickText = el("span", { class: "answers-pick-text", "aria-hidden": "true" });
+  const cPick = el("span", { class: "answers-pick" }, cPickText, cSelect);
+  const syncPick = () => { const o = cSelect.selectedOptions[0]; cPickText.textContent = o ? shortLabel(o.textContent) : ""; };
   const cFolder = el("select", { id: "answers-folder", "aria-label": "Folder the tool works in" });
   const cFolderWrap = el("span", { class: "answers-group answers-folder" }, el("label", { for: "answers-folder", text: "in" }), cFolder);
   const cNote = el("span", { class: "answers-note", id: "answers-chat-note" });
@@ -256,7 +267,7 @@
   const cGo = el("button", { type: "button", class: "action", id: "answers-chat-go", "aria-describedby": "answers-chat-go-says" });
   const cGoSays = el("span", { class: "answers-note", id: "answers-chat-go-says" });
   cGo.hidden = true; cGoSays.hidden = true;
-  const cWrap = el("span", { class: "answers-group" }, el("label", { for: "answers-chat", text: PHONE.matches ? "" : "Who answers" }), cSelect, cGo, cReopen, cFolderWrap, cGoSays, cNote);
+  const cWrap = el("span", { class: "answers-group answers-chat" }, el("label", { for: "answers-chat", text: "Who answers" }), cPick, cGo, cReopen, cFolderWrap, cGoSays, cNote);
   bar.append(tWrap, cWrap);
 
   function toolFrame() {
@@ -280,6 +291,7 @@
     const t = tool && data.tools.find((x) => `tool:${x.id}` === saved.chat);
     cNote.textContent = t ? `${t.name} itself, on ${t.plan}: you type into it. Its own sign-in; DevOS ADE never sees it. As a Chat model: ${t.chat_model === "yes" ? "yes — in Who answers and in Open WebUI's model menu while it is signed in" : t.chat_why || "planned"}`
       : saved.chat.startsWith("model:") ? "A new chat with this model in Open WebUI." : "";
+    syncPick();
   }
   function openTool(id) {
     launch("chat", id, saved.folder || "").then((url) => { toolFrame().src = url; showChat(); }, (e) => {
@@ -302,6 +314,7 @@
     goHide();
     if (goLabel(v)) {
       cSelect.value = saved.chat;
+      syncPick();
       if (goSetup(v)) return;
       if (/^signin:[a-z]{2,10}$/.test(v)) { root.bnSubsChatSignin = v.slice(7); goHash("#settings/+subscriptions"); }
       return;
@@ -311,6 +324,7 @@
   // (a change only names the button: what it will do, and for a greyed item where it goes)
   cSelect.addEventListener("change", () => {
     const v = cSelect.value;
+    syncPick();
     if (v === saved.chat) { goHide(); return; }
     const go = goLabel(v);
     cGo.textContent = go || (v.startsWith("model:") ? "Use this model" : v.startsWith("tool:") ? "Open it here" : "Use Open WebUI");

@@ -1,6 +1,7 @@
 // DevOS ADE service worker. It exists so Android Chrome offers "Install app" (and shows Activity's opt-in browser
-// notifications there, which Android allows only through a service worker: a click brings the portal back), and does
-// nothing more. It keeps NOTHING: no Cache Storage, no copy of Home, /api/* or anything else signed-in; no push.
+// notifications there, which Android allows only through a service worker: a click brings the portal back — at a Code
+// session's card when the notification was one's), and does nothing more. It keeps NOTHING: no Cache Storage, no copy
+// of Home, /api/* or anything else signed-in; no push.
 // Page loads go to the network as usual; only when the network is unreachable does it answer with a short
 // built-in "can't reach DevOS ADE" page instead of the browser's error. Every other request (API calls,
 // scripts, icons) is not touched. Chat, Admin and Files live on other origins and never pass through here.
@@ -42,11 +43,18 @@ self.addEventListener("fetch", (event) => {
   })));
 });
 
-// A click on one of Activity's notifications (activity.js, while a portal tab is open): back to that tab.
+// A click on one of Activity's notifications (activity.js, while a portal tab is open): back to that tab — and for a
+// Code session that waits for you, its link (#code/<session>: the Code tab at that session, its card in view), handed
+// to the page (activity.js takes nothing else), or the portal opened at it.
+const LINK = /^#code\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+  const d = event.notification.data;
+  const link = d && typeof d.link === "string" && LINK.test(d.link) ? d.link : "";
   event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
     const mine = list.find((c) => new URL(c.url).origin === self.location.origin);
-    return mine ? mine.focus() : self.clients.openWindow("/");
+    if (!mine) return self.clients.openWindow(`/${link}`);
+    if (link) mine.postMessage({ type: "bn-notification-click", link });
+    return mine.focus();
   }));
 });

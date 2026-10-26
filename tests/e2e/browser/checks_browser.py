@@ -2154,42 +2154,60 @@ def same_site_guard(ctx):
 
 # --- phone / tablet ---
 
+# the tabs a phone's bottom bar shows, in order (More as "more")
+PHONE_BAR = """els => els.filter((li) => getComputedStyle(li).display !== 'none')
+  .map((li) => { const b = li.querySelector('.tab, .more-btn'); return b.classList.contains('more-btn') ? 'more' : b.dataset.tab; })"""
+
+
 @check("browser", "phone-layout-390x844")
 def phone(ctx):
     page, rec = ctx.page("phone", device="phone")
     login(page)
-    page.wait_for_selector("iframe[data-app=chat]", timeout=20000)  # phones start on Chat
-    expect(page.locator(".tab[data-tab=chat]").get_attribute("aria-current") == "page", "Chat is not the first tab")
-    vis = {t: page.locator(f".tab[data-tab={t}]").is_visible() for t in ("home", "chat", "admin", "files")}
-    expect(vis == {"home": True, "chat": True, "admin": False, "files": False}, f"tabs visible {vis}")
-    expect(page.locator("#more-btn").is_visible(), "More hidden")
+    page.wait_for_selector("#home:not([hidden])", timeout=20000)  # phones start on Home
+    expect(page.locator(".tab[data-tab=home]").get_attribute("aria-current") == "page", "Home is not the first tab")
+    expect(page.locator("iframe[data-app=chat]").count() == 0, "Chat loaded before its tab was opened")
+    # Home · Chat · Code · More: Code is a tab of the bar (its page's frame, or while it is off its page of the portal)
+    bar_tabs = page.eval_on_selector_all(".tabs > li", PHONE_BAR)
+    expect(bar_tabs == ["home", "chat", "code", "more"], f"the phone's tab bar {bar_tabs}")
+    vis = {t: page.locator(f".tab[data-tab={t}]").is_visible() for t in ("admin", "files", "settings", "terminal")}
+    expect(not any(vis.values()), f"in the bar: {vis}")
     bar = page.locator(".sidebar").bounding_box()
     expect(bar and bar["y"] + bar["height"] >= 844 - 2 and bar["width"] >= 380, f"tab bar not at the bottom: {bar}")
+    for t in ("home", "chat", "code"):
+        b = page.locator(f".tab[data-tab={t}]").bounding_box()
+        expect(b["height"] >= 44 and b["width"] >= 88, f"the {t} tab is {b['width']}x{b['height']}")
     page.click("#more-btn")
     page.wait_for_selector("#more-sheet:not([hidden])")
+    expect(page.inner_text("#more-title") == "More", f"the sheet is titled {page.inner_text('#more-title')!r}")
+    expect(page.inner_text("#more-newtab") == "In a new tab", "no In a new tab heading")
     links = page.eval_on_selector_all("#more-sheet .sheet-link[data-app]", "els => els.map(a => [a.dataset.app, a.href, a.target])")
     want = [["admin", origin("admin") + "/ui/", "_blank"], ["files", origin("files") + "/rustfs/console/", "_blank"]]
     if ENV.get("TERMINAL_ENABLED") == "true":   # the browser terminal (--terminal): full screen from More
         want.append(["terminal", origin("terminal") + "/", "_blank"])
-        if ENV.get("CODE_ENABLED") == "true":   # the Code page (--code): first in More
-            want.insert(0, ["code", origin("code") + "/", "_blank"])
     expect(links == want, f"More links {links}")
-    if not (ENV.get("TERMINAL_ENABLED") == "true" and ENV.get("CODE_ENABLED") == "true"):   # off: its page, first in More
-        expect(page.locator("#more-sheet .sheet-links li:first-child .code-off-link").is_visible(), "no Code (off) in More")
-    expect(page.locator("#more-sheet .sheet-link[data-page=settings]").is_visible(), "no Settings in More")
+    expect(page.locator("#more-sheet .code-off-link").count() == 0, "Code in More (it is a tab of the bar)")
+    expect(page.locator("#more-sheet .sheet-tools .sheet-link[data-page=settings]").is_visible(), "no Settings in More")
     expect(page.locator(".sheet-logout button").is_visible(), "no Sign out in More")
     shot(page, "13-phone-more")
     page.click("#more-close")
-    page.click(".tab[data-tab=home]")
-    page.wait_for_selector("#home:not([hidden])")
     page.locator(".health-line", has_text="services running").wait_for(timeout=30000)
     shot(page, "14-phone-home")
+    page.click(".tab[data-tab=chat]")
+    page.wait_for_selector("iframe[data-app=chat]:not([hidden])", timeout=20000)
+    # Chat's Who answers: a visible label, the choice's name whole ("Open WebUI ▾"), every choice in full in the menu
+    page.wait_for_function("() => document.querySelectorAll('#answers-chat option').length > 0", timeout=20000)
+    expect(page.locator("label[for=answers-chat]").is_visible() and page.inner_text("label[for=answers-chat]") == "Who answers", "no visible Who answers label")
+    pick = page.eval_on_selector(".answers-pick-text", "e => [e.textContent, e.scrollWidth <= e.clientWidth, e.getBoundingClientRect().right <= innerWidth]")
+    expect(pick == ["Open WebUI", True, True], f"the phone's Chat menu shows {pick}")
+    expect(page.eval_on_selector("#answers-chat option[value=owui]", "o => o.textContent") == "Open WebUI — its own model menu", "the menu's option is not whole")
+    shot(page, "14b-phone-chat-who-answers")
     page.evaluate("location.hash = '#admin'")  # a bookmarked #admin on a phone: Chat instead
     page.locator(".tab[data-tab=chat][aria-current=page]").wait_for(timeout=10000)
     expect(page.locator("iframe[data-app=admin]").count() == 0, "Admin frame opened on a phone")
     expect(page.locator(".tab[data-tab=chat]").get_attribute("aria-current") == "page", "#admin did not fall back to Chat")
     rec.save()
-    return "starts on Chat; bottom bar Home/Chat/More; Admin+Files only via More (new tab); health line"
+    return ("starts on Home; bottom bar Home/Chat/Code/More (44 px+); More: Settings, Activity, Search; Admin+Files under In a new tab; "
+            "health line; Chat's Who answers: a visible label and 'Open WebUI' whole")
 
 
 @check("browser", "tablet-layout-820x1180")
@@ -2643,9 +2661,21 @@ def walkthrough_tablet(ctx):
 def walkthrough_phone(ctx):
     page, rec = ctx.page("walkthrough-phone", device="phone", tour=True)
     login(page)
-    page.wait_for_selector("iframe[data-app=chat]", timeout=20000)   # phones start on Chat
-    page.wait_for_selector("#tour-btn:not([hidden])", state="attached")
-    expect(page.locator("#tour").is_hidden(), "the walkthrough opened by itself on a phone (it would cover Chat)")
+    # a first visit on a phone: Home, with the walkthrough at its first step (window.bnWelcome: Get started's entry
+    # point) — a sheet above the tab bar, its Back and Next in view
+    page.wait_for_selector("#home:not([hidden])", timeout=20000)
+    page.wait_for_selector("#tour:not([hidden]) #tour-cur", timeout=15000)
+    expect(_cur(page) == "welcome", f"the first visit opened on {_cur(page)!r}")
+    page.wait_for_timeout(300)   # the sheet slides in
+    bar = page.locator(".sidebar").bounding_box()
+    sheet = page.locator("#tour").bounding_box()
+    expect(abs(sheet["y"] + sheet["height"] - bar["y"]) <= 2 and sheet["width"] >= 380, f"sheet {sheet} vs tab bar {bar}")
+    for k in ("back", "next"):
+        b = page.locator(f"#tour [data-k={k}]").bounding_box()
+        expect(b and b["y"] >= sheet["y"] and b["y"] + b["height"] <= bar["y"] + 1 and b["height"] >= 44, f"{k} {b} vs the sheet {sheet} and the tab bar {bar}")
+    shot(page, "w07-walkthrough-phone-first-visit")
+    page.keyboard.press("Escape")
+    page.wait_for_selector("#tour", state="hidden")
     page.click("#more-btn")
     page.wait_for_selector("#more-sheet:not([hidden])")
     expect(page.locator("#more-tour").is_visible(), "no Walkthrough in More")
@@ -2653,7 +2683,6 @@ def walkthrough_phone(ctx):
     page.wait_for_selector("#tour:not([hidden]) #tour-cur")
     expect(page.locator("#more-sheet").is_hidden(), "More stayed open")
     page.wait_for_timeout(300)   # the sheet slides in
-    bar = page.locator(".sidebar").bounding_box()
     sheet = page.locator("#tour").bounding_box()
     expect(abs(sheet["y"] + sheet["height"] - bar["y"]) <= 2 and sheet["width"] >= 380, f"sheet {sheet} vs tab bar {bar}")
     shot(page, "w08-walkthrough-phone")
@@ -2678,17 +2707,18 @@ def walkthrough_phone(ctx):
     page.locator("#tour .tour-step.cur.done").wait_for(timeout=5000)
     page.keyboard.press("Escape")
     page.wait_for_selector("#tour", state="hidden")
-    # Left open, it still starts closed on the next load (a phone starts on Chat).
+    # Left open, it still starts closed on the next load (it would cover the tab shown).
     page.click("#more-btn")
     page.click("#more-tour")
     page.wait_for_selector("#tour:not([hidden]) #tour-cur")
     page.reload()
-    page.wait_for_selector("iframe[data-app=chat]", timeout=20000)
+    page.wait_for_selector("#home:not([hidden])", timeout=20000)
     page.wait_for_selector("#tour-btn:not([hidden])", state="attached")
     expect(page.locator("#tour").is_hidden(), "the walkthrough opened by itself after a reload on a phone")
     rec.save()
-    return ("closed at first and after a reload; More → Walkthrough opens a sheet above the tab bar; Open Admin is a "
-            "new-tab link that lands signed in (step done); Escape closes")
+    return ("a first visit: Home with the walkthrough's sheet at its first step, Back and Next in view above the tab bar; "
+            "closed after a reload; More → Walkthrough opens it; Open Admin is a new-tab link that lands signed in (step done); "
+            "Escape closes")
 
 
 def _seed_tour(page, state: dict):

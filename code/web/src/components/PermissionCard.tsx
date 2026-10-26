@@ -25,6 +25,7 @@ import { buildAnswers, emptyPick, parseQuestions, toggle, type Pick, type Questi
 import { DiffLines } from './ToolCard';
 import { MarkdownView } from './MarkdownView';
 import { Icon } from './icons';
+import { useMedia } from './ui';
 
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Obj) : {});
@@ -489,9 +490,14 @@ function ToolPermission({ req, index, total }: { req: PermissionReq; index: numb
   const ref = useRef<HTMLDivElement>(null);
   const denyRef = useRef<HTMLButtonElement>(null);
   const reasonRef = useRef<HTMLTextAreaElement>(null);
+  const denySendRef = useRef<HTMLButtonElement>(null);
+  // a phone: Allow once and Deny full width at the bottom of the card, what is asked scrolling above them (CSS)
+  const phone = useMedia('(max-width: 699.98px)');
   useFocusOnArrival(ref, req.id, () => (req.defaultNo ? denyRef.current : null));
   useEffect(() => {
-    if (denying) reasonRef.current?.focus();
+    // (a touch screen: the Deny button of the form, not its text box — which would bring up the on-screen keyboard
+    // over the card; a tap on the box types a message)
+    if (denying) (matchMedia('(pointer: coarse)').matches ? denySendRef.current : reasonRef.current)?.focus();
   }, [denying]);
 
   const allow = armed && req.complete;
@@ -514,6 +520,104 @@ function ToolPermission({ req, index, total }: { req: PermissionReq; index: numb
     setAutoBusy(false);
     if (e) setAutoErr(e);
   };
+
+  // what is asked: the subject, the details, why — and, while you write why you deny, the form for it
+  const info = (
+    <>
+      {s.subject && <div class="perm-subject">{s.subject}</div>}
+      <div class="perm-details">
+        <Details req={req} />
+      </div>
+      {!req.complete && <Partial />}
+      {req.reason && (
+        <div class="perm-reason" data-testid="perm-reason">
+          {req.reasonType === 'classifier' && <strong>Auto mode paused.</strong>}
+          {/* (the classifier's reason, from Claude Code's stream: its words, apart — never a sentence of ours) */}
+          <SandboxSaid words={{ said: req.reason, by: 'claude' }} who={req.reasonType === 'classifier' ? "The classifier's reason:" : "Claude Code's reason:"} compact never={false} />
+        </div>
+      )}
+      {autoErr && (
+        <div class="perm-warn perm-partial" role="alert" data-testid="perm-auto-error">
+          <Icon name="alert" size={14} /> Not switched to Auto: {autoErr}
+        </div>
+      )}
+    </>
+  );
+  const denyForm = (
+    <form
+      class={`perm-deny${phone ? ' perm-main' : ''}`}
+      onSubmit={(e) => {
+        e.preventDefault();
+        answer('deny');
+      }}
+    >
+      <textarea
+        ref={reasonRef}
+        rows={2}
+        placeholder="Tell Claude what to do instead (optional)"
+        value={msg}
+        maxLength={2000}
+        onInput={(e) => setMsg((e.target as HTMLTextAreaElement).value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            if (!e.repeat) answer('deny');
+          } else if (e.key === 'Escape') {
+            e.stopPropagation();
+            setDenying(false);
+          }
+        }}
+      />
+      <div class="perm-buttons">
+        {phone && (
+          <button ref={denySendRef} type="submit" class="btn danger" data-testid="perm-deny-send">
+            Deny
+          </button>
+        )}
+        <button type="button" class="btn ghost" onClick={() => setDenying(false)}>
+          Back
+        </button>
+        {!phone && (
+          <button ref={denySendRef} type="submit" class="btn danger" data-testid="perm-deny-send">
+            Deny
+          </button>
+        )}
+      </div>
+    </form>
+  );
+  // the Always choices (and Allow, and switch to Auto)
+  const always = [
+    rules.length > 0 && (
+      <button key="always" type="button" class="btn" disabled={!allow} onClick={() => answer('always')} title={rules.map((r) => r.text).join('\n')} data-testid="perm-always">
+        Always allow {!req.defaultNo && <kbd>2</kbd>}
+      </button>
+    ),
+    project.length > 0 && (
+      <button key="always-project" type="button" class="btn" disabled={!allow} onClick={() => answer('always_project')} data-testid="perm-always-project">
+        Always, in this workspace's settings
+      </button>
+    ),
+    offerAuto && (
+      <button key="auto" type="button" class="btn" disabled={!allow || autoBusy} onClick={() => void toAuto()} title="Runs this command, then switches the session to Auto: a reviewer model checks the next actions instead of you" data-testid="perm-once-auto">
+        Allow, and switch to Auto
+      </button>
+    ),
+  ].filter(Boolean);
+  // what Always saves, and what the workspace's option writes
+  const notes = denying ? null : (
+    <>
+      {rules.length > 0 && <RuleList rules={rules} label="What Always allow saves" testid="perm-rules" />}
+      {project.length > 0 && (
+        <div class="perm-project" data-testid="perm-project-note">
+          <span class="muted small">
+            "Always, in this workspace's settings" writes these into your folder's .claude settings — Claude Code on your computer honours them in that folder
+            too:
+          </span>
+          <RuleList rules={project} label="What it writes into the workspace" />
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div
@@ -553,91 +657,45 @@ function ToolPermission({ req, index, total }: { req: PermissionReq; index: numb
           </span>
         )}
       </div>
-      {s.subject && <div class="perm-subject">{s.subject}</div>}
-      <div class="perm-details">
-        <Details req={req} />
-      </div>
-      {!req.complete && <Partial />}
-      {req.reason && (
-        <div class="perm-reason" data-testid="perm-reason">
-          {req.reasonType === 'classifier' && <strong>Auto mode paused.</strong>}
-          {/* (the classifier's reason, from Claude Code's stream: its words, apart — never a sentence of ours) */}
-          <SandboxSaid words={{ said: req.reason, by: 'claude' }} who={req.reasonType === 'classifier' ? "The classifier's reason:" : "Claude Code's reason:"} compact never={false} />
-        </div>
-      )}
-      {autoErr && (
-        <div class="perm-warn perm-partial" role="alert" data-testid="perm-auto-error">
-          <Icon name="alert" size={14} /> Not switched to Auto: {autoErr}
-        </div>
-      )}
-      {denying ? (
-        <form
-          class="perm-deny"
-          onSubmit={(e) => {
-            e.preventDefault();
-            answer('deny');
-          }}
-        >
-          <textarea
-            ref={reasonRef}
-            rows={2}
-            placeholder="Tell Claude what to do instead (optional)"
-            value={msg}
-            maxLength={2000}
-            onInput={(e) => setMsg((e.target as HTMLTextAreaElement).value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                if (!e.repeat) answer('deny');
-              } else if (e.key === 'Escape') {
-                e.stopPropagation();
-                setDenying(false);
-              }
-            }}
-          />
-          <div class="perm-buttons">
-            <button type="button" class="btn ghost" onClick={() => setDenying(false)}>
-              Back
-            </button>
-            <button type="submit" class="btn danger" data-testid="perm-deny-send">
-              Deny
-            </button>
+      {phone ? (
+        <>
+          {/* a phone: what is asked scrolls inside the card; Allow once and Deny stay below it, full width */}
+          <div class="perm-body">
+            {info}
+            {!denying && always.length > 0 && <div class="perm-buttons perm-more">{always}</div>}
+            {notes}
           </div>
-        </form>
+          {denying ? (
+            denyForm
+          ) : (
+            <div class="perm-buttons perm-main">
+              <button type="button" class="btn primary" disabled={!allow} onClick={() => answer('once')} data-testid="perm-once">
+                Allow once
+              </button>
+              <button ref={denyRef} type="button" class="btn" onClick={() => setDenying(true)} data-testid="perm-deny">
+                Deny
+              </button>
+            </div>
+          )}
+        </>
       ) : (
-        <div class="perm-buttons">
-          <button type="button" class="btn primary" disabled={!allow} onClick={() => answer('once')} data-testid="perm-once">
-            Allow once {!req.defaultNo && <kbd>1</kbd>}
-          </button>
-          {rules.length > 0 && (
-            <button type="button" class="btn" disabled={!allow} onClick={() => answer('always')} title={rules.map((r) => r.text).join('\n')} data-testid="perm-always">
-              Always allow {!req.defaultNo && <kbd>2</kbd>}
-            </button>
+        <>
+          {info}
+          {denying ? (
+            denyForm
+          ) : (
+            <div class="perm-buttons">
+              <button type="button" class="btn primary" disabled={!allow} onClick={() => answer('once')} data-testid="perm-once">
+                Allow once {!req.defaultNo && <kbd>1</kbd>}
+              </button>
+              {always}
+              <button ref={denyRef} type="button" class="btn ghost" onClick={() => setDenying(true)} data-testid="perm-deny">
+                Deny {!req.defaultNo && <kbd>3</kbd>}
+              </button>
+            </div>
           )}
-          {project.length > 0 && (
-            <button type="button" class="btn" disabled={!allow} onClick={() => answer('always_project')} data-testid="perm-always-project">
-              Always, in this workspace's settings
-            </button>
-          )}
-          {offerAuto && (
-            <button type="button" class="btn" disabled={!allow || autoBusy} onClick={() => void toAuto()} title="Runs this command, then switches the session to Auto: a reviewer model checks the next actions instead of you" data-testid="perm-once-auto">
-              Allow, and switch to Auto
-            </button>
-          )}
-          <button ref={denyRef} type="button" class="btn ghost" onClick={() => setDenying(true)} data-testid="perm-deny">
-            Deny {!req.defaultNo && <kbd>3</kbd>}
-          </button>
-        </div>
-      )}
-      {rules.length > 0 && !denying && <RuleList rules={rules} label="What Always allow saves" testid="perm-rules" />}
-      {project.length > 0 && !denying && (
-        <div class="perm-project" data-testid="perm-project-note">
-          <span class="muted small">
-            "Always, in this workspace's settings" writes these into your folder's .claude settings — Claude Code on your computer honours them in that folder
-            too:
-          </span>
-          <RuleList rules={project} label="What it writes into the workspace" />
-        </div>
+          {notes}
+        </>
       )}
     </div>
   );

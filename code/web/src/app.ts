@@ -22,7 +22,7 @@ import { findRepo, proposedMessage, type RepoFound } from './git';
 import { buildReview, deletedText, reverseHunks, sessionStart, takesComments, undoBlocker, withComments, type ReviewComment, type ReviewFile, type ReviewHunk } from './review';
 import { promptTitle } from './mentions';
 import { crossed, nextBudget, rememberBudget, storedBudget, type Budget } from './budget';
-import { pageTitle, waitingSessions } from './groups';
+import { firstWaiting, pageTitle, waitingSessions } from './groups';
 import { parseDeepLink, withoutDeepLink } from './deeplink';
 import { eventTime, sessionCost } from './spend';
 import { RECHECK_TEXT, WORKSPACE, WORKSPACE_ID, goneTops, holdForSettings, inProject, liveHostTops, mentionPath, projectFor, projectIdOk, projectOfCwd, readOnlyTops, settingsApplied, settingsStateFor, type Project, type SettingsState, type Where } from './projects';
@@ -1076,12 +1076,13 @@ export async function boot(): Promise<void> {
       const last = get().prefs.lastSession;
       // (a link to a project shows that project's own sessions: the last one of it, if open)
       const inLinked = (o: { id: string }) => !linked || sessionProject(o.id) === linked.id;
-      const pick = server.sessions.filter(inLinked).find((o) => o.id === last) ?? server.sessions.filter(inLinked).find((o) => o.state !== 'closed' && o.state !== 'ended');
-      if (pick) await activate(pick.id);
+      const mine = server.sessions.filter(inLinked);
+      // a session that waits for you comes first, its card in view (on a phone with no sheet over it: the card is
+      // what you came to answer) — else the one shown last, else the first open one
+      const pick = firstWaiting(mine, last) ?? mine.find((o) => o.id === last)?.id ?? mine.find((o) => o.state !== 'closed' && o.state !== 'ended')?.id;
+      if (pick) await activate(pick);
     }
     if (socket.isOpen) for (const o of server.sessions) attach(o.id);
-    // on a phone, sessions waiting for you come first: the Projects sheet opens (its projects' "Needs you" groups)
-    if (!link.session && !link.prompt && isPhone() && (server.pending > 0 || server.sessions.some((o) => o.pending > 0))) setSheet('sessions');
   } else set((s) => ({ ...s, serverError: errText(st.reason) }));
   void loadDir(projectRoot());
   // Git hosts' recent uses (for Activity: Claude's own git getting a credential is said there), and a link from
@@ -1119,6 +1120,29 @@ async function showLinked(id: string): Promise<boolean> {
   }
   toast('The link named a session that is not in this workspace (any more).', 'error');
   return false;
+}
+
+/** The portal shows this page again (its Code tab, on a phone): when a session waits for you, that session with its
+ *  card in view — the one shown already if it waits, else the waiting one active most recently — and no sheet over
+ *  it. Nothing changes while none waits, nor on a bigger screen (its Projects panel and status bar say who waits). */
+export async function showWaiting(): Promise<void> {
+  if (!isPhone()) return;
+  const s = get();
+  // (a session that waits for you: a permission card, a question or a plan of it waits — the session list's "Needs
+  // you" group, and the rule of the "waiting for you" state chip)
+  const views = Object.values(s.views).filter((v) => v.state !== 'closed');
+  const id = firstWaiting(views.map((v) => ({ id: v.id, state: v.state, pending: v.permissions.length, lastActive: v.lastActive ?? null })), s.active);
+  if (!id) return;
+  set((x) => (x.sheet ? { ...x, sheet: null } : x));
+  if (get().active !== id) await activate(id);
+}
+
+/** The portal names a session of this page (Home's Code card, Activity, a notification's #code/<id>): shown — or
+ *  resumed — as a deep link's is, in place (no reload, no unlock again, no unsaved edit lost), with no sheet over it. */
+export async function showFromPortal(id: string): Promise<void> {
+  if (!isUuid(id)) return;
+  set((x) => (x.sheet ? { ...x, sheet: null } : x));
+  await showLinked(id);
 }
 
 /** The draft from a link was sent or put away. */

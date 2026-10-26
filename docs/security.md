@@ -327,7 +327,7 @@ you type into the search travels from your device to the portal, as every reques
   (`litellm/probe-results.tsv`). Budgets and failed OpenRouter requests come from `/api/summary`, which Home loads
   anyway (Activity asks it at most every 5 minutes while Home is not shown); Code sessions that wait for you come
   from the Code tab's frame's status message (below). An item carries a place in the portal to go to
-  (`#home`, `#settings/<KEY>` — checked on both sides; never a URL).
+  (`#home`, `#settings/<KEY>`, a waiting Code session's `#code/<session id>` — checked on both sides; never a URL).
 - **What the browser keeps.** Read, unread and dismissed: `localStorage["bn.activity"]`, this browser only, holding
   item ids and times — never a title or a text (an id names a key alias, a job id, a release tag, a Code session's
   UUID); entries older than 45 days are dropped. A Code page notice kept with the old Home banner's **Keep** stays
@@ -340,8 +340,13 @@ you type into the search travels from your device to the portal, as every reques
   (sandbox text, often the prompt), a job's message, a model name or an error could otherwise show on a lock screen,
   in the system's notification history or on a paired watch. The details stay in the panel, behind the portal's
   sign-in. There is no Web Push: no subscription, no push service, no server-sent notification.
-  `sw.js` only handles a click on one (it focuses the portal); on Android Chrome, which allows notifications only
-  through a service worker, it shows them.
+  `sw.js` only handles a click on one (it focuses the portal, and for a Code session that waits hands the page that
+  session's place, `#code/<session id>` — checked in both, nothing else taken; with no portal window it opens `/` at
+  that place); on Android Chrome, which allows notifications only through a service worker, it shows them.
+- **The needs-you banner (phones).** A Code session that waits for you and is unread in Activity is also a banner at
+  the top of the portal's other tabs: fixed words, and the session's title as text (sandbox text, like the panel's).
+  *Answer* marks it read and opens that session in the Code tab; ✕ marks it read. It is built from Activity's own
+  items (the Code tab's checked report), keeps nothing of its own and sends nothing anywhere.
 - **The Code tab's frame and the portal** talk by `postMessage`, and each side checks the other's origin *and*
   window: the portal takes messages only from the code host's origin and from its own Code tab's frame
   (`e.source === frame.contentWindow`), the Code page only from the portal origin it was given (`/api/state`'s
@@ -363,9 +368,15 @@ you type into the search travels from your device to the portal, as every reques
     walkthrough's *Open Git hosts* and *Clone a repository*): the Code page opens its Git panel with that dialog, only
     `hosts` or `clone`, empty — nothing else of the message is used, nothing is cloned, added or changed. It is sent
     only to a Code tab whose page has reported since it loaded (so it is unlocked and listening), and asks in place:
-    the page is not reloaded, so unsaved edits in its editor stay. Otherwise (not loaded, locked, a phone) the portal
+    the page is not reloaded, so unsaved edits in its editor stay. Otherwise (not loaded, locked) the portal
     opens `code.<host>/?git=hosts` or `?git=clone` instead, a deep link kept through the unlock (below).
-  A frame that is locked or not loaded (a phone, a browser that never opened Code) answers nothing:
+  - portal → Code page `{type: "bn-portal-shown"}` (the Code tab shown again on a phone): the Code page shows the
+    session that waits for you, its card in view with no sheet over it — one of its own open sessions, chosen by the
+    page; nothing of the message is used. portal → Code page `{type: "bn-portal-session", id}` (Home's Code card,
+    Activity's *Answer*, the banner, search, the portal's `#code/<id>`): the Code page shows or resumes that session as
+    its own deep link `?session=` would — a lowercase session id only, else nothing. Both go only to a Code tab whose
+    page has reported since it loaded; otherwise the portal loads `code.<host>/?session=<id>`.
+  A frame that is locked or not loaded (a browser that never opened Code) answers nothing:
   the search then says where to look instead.
 - **Chat conversations** come from Open WebUI's own search API, asked by the portal server (`GET /api/search/chats`):
   it signs in to Open WebUI the way the Chat tab does — `POST /api/v1/auths/signin` with `X-Portal-User: <owner email>`

@@ -80,18 +80,19 @@
 
 <div id="more-sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="more-title" hidden>
   <div class="sheet-panel">
-    <h2 id="more-title">Desktop site</h2>
-    <p class="note">Admin and Files are made for a big screen, so on a phone they open in a new tab, already signed in.</p>
-    <ul class="sheet-links">
-      <li><a class="sheet-link" data-app="admin" target="_blank" rel="noopener">Admin <span>LiteLLM: keys, budgets, logs</span></a></li>
-      <li><a class="sheet-link" data-app="files" target="_blank" rel="noopener">Files <span>RustFS: stored uploads</span></a></li>
-      <li><button type="button" class="sheet-link" data-page="settings">Settings <span>Passwords, keys, budgets, voice, backups</span></button></li>
-    </ul>
+    <h2 id="more-title">More</h2>
     <ul class="sheet-tools">
+      <li><button type="button" class="sheet-link" data-page="settings">Settings <span>Passwords, keys, budgets, voice, backups</span></button></li>
       <li><button type="button" class="sheet-link" id="more-activity" aria-haspopup="dialog" aria-controls="activity" aria-expanded="false" hidden>Activity <span>Budgets, updates, jobs, Code sessions that need you</span><b class="sheet-count" id="more-activity-count" hidden></b></button></li>
       <li><button type="button" class="sheet-link" id="more-search" aria-haspopup="dialog" aria-controls="search" hidden>Search <span>Settings, Code sessions, chats, the walkthrough, docs</span></button></li>
     </ul>
     <button type="button" class="sheet-tour" id="more-tour" hidden>Walkthrough <span id="more-tour-note">Set up, Chat, Code, your own tools</span></button>
+    <h3 class="sheet-sub" id="more-newtab">In a new tab</h3>
+    <p class="note" id="more-newtab-note">Made for a big screen, so on a phone they open in a new tab, already signed in.</p>
+    <ul class="sheet-links" aria-labelledby="more-newtab">
+      <li><a class="sheet-link" data-app="admin" target="_blank" rel="noopener">Admin <span>LiteLLM: keys, budgets, logs</span></a></li>
+      <li><a class="sheet-link" data-app="files" target="_blank" rel="noopener">Files <span>RustFS: stored uploads</span></a></li>
+    </ul>
     <form method="post" action="/logout" class="sheet-logout"><button type="submit">Sign out</button></form>
     <button type="button" class="sheet-close" id="more-close">Close</button>
   </div>

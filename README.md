@@ -275,7 +275,9 @@ browser only. **Browser notifications** in the panel are off until you turn them
 item raises one while a portal tab is open but you are not looking at it — never for what was there already, never
 when the tab is closed (there is no push service). A notification says only what kind of thing happened ("A Code
 session needs you", "A job failed", "Budget alert: Claude Code at 85 %"), never a session's title, a prompt or a job's
-message, which can show on a lock screen: those stay in the panel.
+message, which can show on a lock screen: those stay in the panel. A click on a Code session's notification opens
+that session in the Code tab; on a phone, a session that waits for you is also a banner at the top of the other tabs,
+with **Answer**.
 
 **Search** (**Ctrl+K**, **⌘K** on a Mac, or the box at the top of the sidebar; on a phone **More → Search**) finds, as
 you type: the portal's pages and **Check for updates**, every Settings section and setting by name or key (Enter opens
@@ -341,16 +343,21 @@ so a phone needs remote access (HTTPS) turned on first; a tablet or a small brow
 - **Install it:** on an iPhone or iPad, open the portal in Safari, tap **Share → Add to Home Screen**. On
   Android, open it in Chrome and tap **⋮ → Install app** (Chrome offers this over HTTPS only; over plain
   http it can still add a shortcut). It opens full screen with the DevOS ADE icon, like any other app.
-- **Phone layout:** a tab bar at the bottom with **Home** and **Chat**; the phone opens on Chat and then
-  remembers the tab you used last. Home is compact: total spend and each key's budget bar, one health line
+- **Phone layout:** a tab bar at the bottom with **Home**, **Chat**, **Code** and **More**. The first sign-in
+  opens on Home with the walkthrough's first step (a sheet you close with ✕); after that the phone remembers the tab
+  you used last. Home is compact: total spend and each key's budget bar, one health line
   (tap it for every service), the update card when there is one, and the models as cards with an
-  **Enabled only** filter (on by default on a phone). Chat fills the screen and shrinks above the keyboard, so
-  the message box stays visible.
-- **More** in the tab bar holds the rest: Code and Terminal (while they are on, full screen in a new tab; Code shows
-  as *Code (off)* while it is off), Admin
-  and Files (desktop apps: they open in a new browser tab, already signed in; from an iPhone or iPad Home Screen app
-  they open in Safari, which asks for the portal password once), Settings, **Activity** (a dot on More while
-  something is unread) and **Search**, the walkthrough and **Sign out**.
+  **Enabled only** filter (on by default on a phone). Chat and Code fill the screen and shrink above the keyboard,
+  so the message box stays visible.
+- **Code on a phone** is the Code page's own phone layout (the chat first; files, the editor, Git and the rest as
+  sheets), unlocked once with the portal password. When a session waits for you (a permission card, a question, a
+  plan), the **Code** tab shows a badge, the other tabs a banner with **Answer**, and opening Code goes straight to that
+  session with its card in view: **Allow once** and **Deny** are full-width buttons at the bottom of the card. While the
+  Code page is off (or off for remote access) the tab shows *off* and says how to turn it on.
+- **More** in the tab bar holds the rest: Settings, **Activity** (a dot on More while something is unread),
+  **Search** and the walkthrough; then, under *In a new tab*, Admin and Files (desktop apps: they open in a new browser
+  tab, already signed in; from an iPhone or iPad Home Screen app they open in Safari, which asks for the portal
+  password once) and the Terminal while it is on (full screen); and **Sign out**.
 - **Over remote access** (so on a phone) Update, Rollback, Clean, the automatic-updates switch, Settings changes
   and Diagnostics are off unless `REMOTE_ADMIN_ACTIONS=true`; Home then says to use a desktop browser on the
   computer running DevOS ADE.
@@ -747,7 +754,7 @@ mark their panes): a guard against reading one by accident, not a boundary. Whic
 ./stack code enable --workspace ~/projects # on again, or another folder for its sandbox
 ```
 
-The **Code** tab sits in the portal directly under Chat (on a phone: **More → Code**, full screen): Claude Code
+The **Code** tab sits in the portal directly under Chat (on a phone: in the tab bar, beside Chat): Claude Code
 in an IDE-like page instead of a terminal — your projects and an explorer of the shown project's folder on the
 left, an editor (CodeMirror) in the middle, the chat on the right and the sandbox's terminal in a bottom panel
 (`Ctrl+\``); on a tablet the chat and one of explorer/editor, on a phone the chat first with files, editor and diffs
@@ -775,7 +782,7 @@ turned off again and the next setup or update tries again. What it can do on its
 *Bypass permissions* and *Auto mode*, remote access to the sandbox (`REMOTE_TERMINAL`) and remote previews; the
 sandbox's internet access keeps its default (public addresses only, through its egress proxy; `TERMINAL_EGRESS`).
 
-While it is off, the **Code** tab stays in the sidebar, muted with an *off* pill (on a phone **More → Code (off)**):
+While it is off, the **Code** tab stays in the sidebar, muted with an *off* pill (on a phone in the tab bar too):
 it then shows what the Code page is, what turning it on does (with the folder Claude would see) and **Turn on in
 Settings**, which opens Settings at the Code page's switch, with `./stack code enable` beside it — nothing is loaded
 from the Code page's host. Over remote access without `REMOTE_TERMINAL=true` it says how to allow it there.
@@ -845,7 +852,8 @@ Service to define and approve) or `code.<your domain>` ([Remote access](#remote-
   any of your messages), rename — also from the Terminal tab's `claude --resume`, which shares them. The open ones are
   grouped as Claude Code's agent view does: **Needs you** (a permission card, a question or a plan waiting),
   **Working**, **Done** — with a dot on one that finished while you were looking at another (or away), and the tab's
-  title says `(2) waiting`. On a phone, the Projects sheet opens first while a session waits for you. A session's title
+  title says `(2) waiting`. Opening the page while a session waits for you shows that session, its card in view (on a
+  phone with no sheet over it): the one you looked at last if it waits, else the waiting one active most recently. A session's title
   is the one Claude Code wrote (a rename, or its own summary or title when a transcript has one — Claude Code writes
   those only with its non-essential traffic on, which the sandbox turns off), else its first prompt. **Open in the
   terminal** (a session's ⋯, or ⋯ → *Continue this session in the terminal*) ends the page's process for it and types

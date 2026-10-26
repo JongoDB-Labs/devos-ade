@@ -12,6 +12,11 @@
 //                                                       (dialog: 'hosts' or 'clone', nothing else; Settings › Claude
 //                                                       Code › Git hosts, Activity, the walkthrough) — in place, so the
 //                                                       page is not reloaded and no unsaved edit is lost
+//   portal -> page  {type: 'bn-portal-shown'}            the portal shows this page again (its Code tab): on a phone, the
+//                                                       session that waits for you, its card in view (app.ts showWaiting)
+//   portal -> page  {type: 'bn-portal-session', id}      a session of this page (Home's Code card, Activity, a
+//                                                       notification's #code/<id>): shown or resumed in place, as a deep
+//                                                       link's ?session= is (id: a session id's shape, nothing else)
 //
 // Titles and paths are this workspace's (sandbox data): the portal shows them as text, with invisible and
 // direction-changing characters made visible. Searching is the session list's own fuzzy matching (fuzzy.ts: linear,
@@ -25,12 +30,16 @@ export const MAX_Q = 64;
 const MAX_SESSIONS = 20;
 const MAX_FILES = 30;
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 export interface PortalRequest {
-  kind: 'search' | 'open' | 'git';
+  kind: 'search' | 'open' | 'git' | 'shown' | 'session';
   id?: string;
   q?: string;
   path?: string;
   dialog?: 'hosts' | 'clone';
+  /** kind 'session': the session's id */
+  session?: string;
 }
 
 /** A message from the portal, checked: who sent it (ORIGIN must be the portal's, SOURCE the parent window) and its
@@ -51,6 +60,11 @@ export function takeRequest(data: unknown, origin: string, source: unknown, port
   if (d.type === 'bn-portal-git') {
     if (d.dialog !== 'hosts' && d.dialog !== 'clone') return null;
     return { kind: 'git', dialog: d.dialog };
+  }
+  if (d.type === 'bn-portal-shown') return { kind: 'shown' };
+  if (d.type === 'bn-portal-session') {
+    if (typeof d.id !== 'string' || !UUID.test(d.id)) return null;
+    return { kind: 'session', session: d.id };
   }
   return null;
 }
@@ -77,6 +91,10 @@ export interface BridgeDeps {
   openFile: (path: string) => unknown;
   /** the Git panel with that dialog open (empty) */
   openGit?: (dialog: 'hosts' | 'clone') => unknown;
+  /** the portal shows this page again (on a phone: the session that waits for you) */
+  shown?: () => unknown;
+  /** a session of this page, shown or resumed in place */
+  showSession?: (id: string) => unknown;
 }
 
 function originOf(o: string | null): string | null {
@@ -131,5 +149,7 @@ export function listenPortal(deps: BridgeDeps, win: Window = window): void {
     if (req.kind === 'search') void answer(req.id as string, req.q as string, portal);
     else if (req.kind === 'open' && req.path) void deps.openFile(req.path);
     else if (req.kind === 'git' && req.dialog && deps.openGit) void deps.openGit(req.dialog);
+    else if (req.kind === 'shown' && deps.shown) void deps.shown();
+    else if (req.kind === 'session' && req.session && deps.showSession) void deps.showSession(req.session);
   });
 }

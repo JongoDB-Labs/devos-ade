@@ -131,3 +131,23 @@ test("a browser notification says fixed words only: no session title, prompt, jo
   }
   assert.equal(A.notificationText({ kind: "whatever", title: secret }).title, "Something new in Activity");
 });
+
+test("needs you: the Code sessions that wait and are not read yet, newest first, each with its portal address", () => {
+  const now = 1_800_000_000_000;
+  const a = A.codeItems({ sessions: [{ id: U1, state: "waiting", title: "Fix the login" }] }, {}, now).items[0];
+  const b = A.codeItems({ sessions: [{ id: U2, state: "waiting", title: "" }] }, {}, now + 60000).items[0];
+  // (every Code item carries the address that opens it: the Code tab at that session — what a notification opens)
+  assert.equal(a.link, `#code/${U1}`);
+  const st = { read: {}, dismissed: {} };
+  const list = plain(A.needsYou([a, b, { id: "budget:x", kind: "budget", at: now / 1000 + 120, notify: true }], st));
+  assert.deepEqual(list.map((x) => x.session), [U2, U1]);
+  assert.deepEqual(list[1], { id: a.id, session: U1, title: "Fix the login", since: now / 1000, link: `#code/${U1}` });
+  assert.equal(list[0].title, "Untitled session");
+  // read (Answer, ✕) or dismissed: not any more — the next wait of the same session is a new item
+  assert.deepEqual(plain(A.needsYou([a, b], { read: { [a.id]: 1 }, dismissed: { [b.id]: 1 } })), []);
+  // an odd item never makes an address
+  assert.deepEqual(plain(A.needsYou([{ id: "code:x", kind: "code", at: 1, notify: true, data: { session: "../x" } }, null], st)), []);
+  assert.equal(A.notificationLink(a), `#code/${U1}`);
+  assert.equal(A.notificationLink({ kind: "code", data: { session: "nope" } }), "");
+  assert.equal(A.notificationLink({ kind: "budget", link: "#settings/BUDGET_TERMINAL" }), "", "anything else opens Activity");
+});

@@ -191,14 +191,10 @@
     }
     return button(label, `open-${app}`, () => { showTab(app); away(); });
   }
-  // The Code tab (on a phone: full screen in a new browser tab, as under More). While the Code page is off here, the
-  // tab is still there: its page (the portal's own, on a phone too) says what it is and how to turn it on.
+  // The Code tab (on a phone too: a tab of the bottom bar). While the Code page is off here, the tab is still there:
+  // its page (the portal's own) says what it is and how to turn it on.
   function openCode() {
     if (!CODE.here) return button("About the Code tab", "open-code", () => { showTab("code"); away(); });
-    if (PHONE.matches) {
-      return el("a", { class: "action", href: appUrl("code"), target: "_blank", rel: "noopener", "data-k": "open-code" },
-        "Open Code", el("span", { "aria-hidden": "true", text: " ↗" }), el("span", { class: "tour-sr", text: " (opens in a new tab)" }));
-    }
     return button("Open Code", "open-code", () => { showTab("code"); away(); });
   }
   // The Code page at one of its Git panel's dialogs — Git hosts, or Clone (empty: a link clones nothing) — as Settings ›
@@ -881,7 +877,7 @@
         p("Remote access serves the portal over HTTPS to your own devices, through Tailscale, with no port opened to the internet:"),
         cmd("./stack remote enable tailscale"),
         list("ul", [
-          ["On the phone: Safari's Share › ", b("Add to Home Screen"), " (Android: Chrome's ⋮ › Install app). Chat opens first; the rest is under ", b("More"), "."],
+          ["On the phone: Safari's Share › ", b("Add to Home Screen"), " (Android: Chrome's ⋮ › Install app). Home opens first, with Chat and Code beside it in the tab bar; the rest is under ", b("More"), "."],
           ["The Terminal and the Code page stay off there unless ", code("REMOTE_TERMINAL=true"), "; updates and Settings changes unless ", code("REMOTE_ADMIN_ACTIONS=true"), "."],
           ["Claude Code over SSH instead: ", code("./stack ssh-info"), "."]]),
         note(ext(`${REPO}/blob/main/docs/remote.md`, "How remote access works"), ", and ", doc("using-it-on-your-phone", "using it on your phone"), "."),
@@ -1240,13 +1236,20 @@
   }
 
   // --- wiring ---
-  // First visit: open, except on phones (it would cover Chat; it is under More) and when storage is blocked (it
-  // would open again on every load). Phones also start closed after a visit that left it open. A browser that went
-  // through an older walkthrough is not opened for what is new: the button says how many steps are.
+  // The first visit in this browser (nothing of the walkthrough stored; app.js shows Home: no tab remembered yet) is
+  // greeted by window.bnWelcome.start() — ONE entry point, called once, here, which Home's Get started checklist takes
+  // over (it may set window.bnWelcome before this script runs, or replace welcome() below). Its default opens the
+  // walkthrough at its first step: beside the page on a big screen, the sheet above the tab bar (over Home) on a phone.
+  // Not when storage is blocked (it would open again on every load). Phones start closed after any later visit, even one
+  // that left it open (the sheet would cover the app). A browser that went through an older walkthrough is not opened
+  // for what is new: the button says how many steps are.
   if (!isDone("signin-portal")) mark("signin-portal", "done");
   const first = st.open === null;
-  if (first || PHONE.matches) st.open = !PHONE.matches && first;
-  if (!save() && first) st.open = false;
+  if (first || PHONE.matches) st.open = false;
+  const stored = save();
+  // (on a phone only over Home: a first visit by a link to another page — Settings, Chat — shows that page as it is)
+  function welcome() { if (!PHONE.matches || !location.hash || location.hash === "#home") setOpen(true, false); }
+  if (!root.bnWelcome) root.bnWelcome = { start: welcome };
   opener.hidden = false;
   if (moreEntry) moreEntry.hidden = false;
   opener.addEventListener("click", () => setOpen(!st.open));
@@ -1255,6 +1258,7 @@
   panel.hidden = !st.open;
   openSecs = sectionsFor(st.cur);
   if (st.open) { render({ focus: "scroll" }); panel.classList.add("in"); } else renderButtons();
+  if (first && stored) root.bnWelcome.start();
   // The sidebar animates its width only after the first paint (no slide on page load).
   requestAnimationFrame(() => requestAnimationFrame(() => document.body.classList.add("tour-anim")));
 

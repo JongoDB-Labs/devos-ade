@@ -200,9 +200,15 @@ def test_home_has_the_bell_the_panel_and_the_more_entry_hidden_until_the_script_
     order = [page.index(f'src="/static/{f}"') for f in ("app.js", "mobile.js", "code.js", "tour.js", "settings.js", "fuzzy.js", "activity.js", "search.js")]
     assert order == sorted(order)
     assert '<link rel="stylesheet" href="/static/activity.css">' in page
-    # the More sheet's links stay what the phone layout expects: Activity and Search are no app links
+    # the More sheet's links stay what the phone layout expects: Settings, Activity and Search are no app links (those
+    # are under "In a new tab")
     more = page[page.index('id="more-sheet"'):page.index("</div>\n</div>", page.index('id="more-sheet"'))]
-    assert 'id="more-activity"' in more and "data-app" not in more[more.index('class="sheet-tools"'):]
+    tools = more[more.index('class="sheet-tools"'):more.index("</ul>", more.index('class="sheet-tools"'))]
+    assert 'id="more-activity"' in tools and 'data-page="settings"' in tools and "data-app" not in tools
+    assert '<h2 id="more-title">More</h2>' in more and "Desktop site" not in more
+    links = more[more.index('class="sheet-links"'):]
+    assert more.index('id="more-newtab"') < more.index('class="sheet-links"') and 'aria-labelledby="more-newtab"' in links
+    assert 'data-app="admin"' in links and 'data-app="files"' in links
 
 
 def test_the_page_builds_text_only_and_asks_for_notifications_only_when_turned_on():
@@ -229,6 +235,27 @@ def test_the_page_builds_text_only_and_asks_for_notifications_only_when_turned_o
     assert 'new CustomEvent("bn:code-status", { detail: { waiting: reported.waiting, sessions: reported.sessions.map' in code
     sw = (STATIC / "sw.js").read_text(encoding="utf-8")
     assert 'addEventListener("notificationclick"' in sw and "push" not in sw.replace("no push", "")
+
+
+def test_a_phone_shows_a_session_that_needs_you_as_a_banner_and_a_notification_opens_it():
+    js = (STATIC / "activity.js").read_text(encoding="utf-8")
+    ban = js[js.index("function renderBanner()"):js.index("// --- notifications (opt-in")]
+    # phones only, never over the Code tab itself, only while the Code page is here; text only
+    assert 'PHONE.matches && tab !== "code" && list.length > 0 && Boolean(window.bnCode)' in ban
+    assert "innerHTML" not in js and 'el("span", { class: "needs-title act-untrusted", text: top.title || "Untitled session" })' in ban
+    # Answer: read, then that session in the Code tab; ✕: read (it stays in Activity) — nothing is dismissed
+    assert "window.bnCode.openSession(top.session)" in ban and "state.read[x.id]" in ban and "dismissed" not in ban
+    assert 'document.addEventListener("bn:tab", (e) => { tab = e.detail; renderBanner(); });' in js
+    # a click on a Code session's notification opens its address (#code/<id>); the service worker's click is taken only
+    # in that shape
+    show = js[js.index("function showNotification(it)"):js.index("function maybeNotify()")]
+    assert "data: { link: notificationLink(it) }" in show and "if (link) { markRead(it); go(link); } else setOpen(true);" in show
+    assert 'd.type !== "bn-notification-click"' in js and "/^#code\\/[0-9a-f-]{36}$/.test(d.link)" in js
+    sw = (STATIC / "sw.js").read_text(encoding="utf-8")
+    assert "const LINK = /^#code\\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;" in sw
+    assert 'mine.postMessage({ type: "bn-notification-click", link })' in sw and "self.clients.openWindow(`/${link}`)" in sw
+    css = (STATIC / "activity.css").read_text(encoding="utf-8")
+    assert ".needs-banner { display: none; }" in css.replace(".more-dot, .sheet-tools, .needs-banner { display: none; }", ".needs-banner { display: none; }")
 
 
 def test_voice_turned_off_because_aws_refuses_the_audio_is_one_item(s):

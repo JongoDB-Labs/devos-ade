@@ -102,7 +102,7 @@
 }
 
 /* ---------- Phones: neither in the bottom bar (More → Activity, More → Search); Activity a sheet, search full screen ---------- */
-.more-dot, .sheet-tools { display: none; }
+.more-dot, .sheet-tools, .needs-banner { display: none; }
 @media (max-width: 767.98px) {
   .side-tools { display: none; }
   .more-btn { position: relative; }
@@ -118,6 +118,21 @@
     border-radius: var(--r-xl) var(--r-xl) 0 0; border-bottom: 0; box-shadow: none; transform: translateY(16px); opacity: 0; transition: transform .25s var(--ease), opacity .18s; }
   .activity.open .act-panel { transform: none; opacity: 1; }
   .act-head h2 { font-size: var(--t-2); }
+
+  /* A Code session that needs you (activity.js renderBanner): a card at the top of every tab but Code's, over the
+     page (Chat's Who answers bar) rather than under the tab bar's thumb, until it is answered or put off with ✕. */
+  .needs-banner:not([hidden]) { position: absolute; z-index: 4; top: max(8px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left));
+    right: max(8px, env(safe-area-inset-right)); display: flex; align-items: center; gap: 10px; padding: 8px 6px 8px 14px;
+    background: var(--surface); border: 1px solid color-mix(in srgb, var(--warn) 60%, var(--line)); border-left: 4px solid var(--warn);
+    border-radius: var(--r-l); box-shadow: var(--shadow-pop); color: var(--ink); }
+  .needs-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--warn); }
+  .needs-text { flex: 1; min-width: 0; margin: 0; display: flex; flex-direction: column; font-size: 13.5px; line-height: 1.3; }
+  .needs-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12.5px; }
+  .needs-answer { flex: none; min-height: 44px; }
+  .needs-x { flex: none; width: 44px; height: 44px; border: 0; border-radius: var(--r-pill); background: none; color: var(--muted); font-size: 15px; }
+  .needs-x:hover { color: var(--ink); }
+  /* (a page of the portal makes room for it: its title stays in view; an app's frame keeps its place) */
+  body.needs-on .home, body.needs-on .settings-page, body.needs-on .code-off-page { padding-top: calc(max(18px, env(safe-area-inset-top)) + 72px); }
 
   .search-dlg { width: 100vw; height: var(--app-h, 100dvh); max-height: none; margin: 0; border: 0; border-radius: 0; }
   .search-box { padding-top: max(12px, env(safe-area-inset-top)); }
