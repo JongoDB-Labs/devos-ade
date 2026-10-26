@@ -2407,12 +2407,15 @@ pre-update backup (taking a backup of the current state first) and starts the pr
 disk. It also works when the update failed half-way. The failure message also shows the manual way
 (`git … && ./stack restore <backup>`).
 
-**What an update or a rollback ends:** besides a few minutes of downtime (answers in Chat, `devos-claude`
-requests and MCP sessions in progress fail; start them again), both recreate the **browser terminal's** container
-when it is on: its tmux windows close and whatever runs in them ends, Claude Code too (its conversations are kept:
-`devos-claude --resume` there picks one up again). **Code page** sessions come back by themselves from their
-transcripts, but a turn still running then stops (send it again); processes you started in the terminal do not come
-back. Home's Update and Roll back say this before you confirm, and that a Code page turn is running when one is.
+**What an update or a rollback ends:** an update restarts only the services whose image or configuration changed
+(the rest keep running; [what setup and an update restart](docs/advanced.md#what-setup-and-an-update-restart)).
+Besides a few minutes of downtime (answers in Chat, `devos-claude` requests and MCP sessions in progress fail; start
+them again), both recreate the **browser terminal's** container when it is on and changed, as it is at nearly every
+update (its image takes the week's Debian packages): its tmux windows close and whatever runs in them ends, Claude
+Code too (its conversations are kept: `devos-claude --resume` there picks one up again). **Code page** sessions come
+back by themselves from their transcripts, but a turn still running then stops (send it again); processes you
+started in the terminal do not come back. Home's Update and Roll back say this before you confirm, and that a Code
+page turn is running when one is.
 
 **One click from Home:** the update helper is a small background job under your user (a launchd agent on
 macOS, a systemd user unit on Linux). Setup asks *Turn on one-click updates from Home? (Y/n)*, and so does the

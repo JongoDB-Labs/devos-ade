@@ -56,6 +56,9 @@ services:
       # The shared MCP server (bn-terminal writes ~/.config/bedrock-now/mcp.json from these).
       BN_MCP_URL: http://gateway:8091/mcp
       SHARED_MCP_TOKEN: ${SHARED_MCP_TOKEN:-}
+      # (the checksum of the managed settings below, from ./stack: a mount of one file no longer shows a file git
+      # replaced, so a changed one recreates the container — lib/common.sh config_sums)
+      BN_CONFIG_SUM: ${BN_TERMINAL_POLICY_SUM:-}
     # Docker Desktop's names for your computer point nowhere in here (the egress proxy refuses them by name and by
     # address too). With TERMINAL_EGRESS=host a speed bump only: the address behind them stays reachable there.
     extra_hosts:   # IPv4 TEST-NET and the IPv6 discard prefix: nothing answers there
@@ -124,6 +127,9 @@ services:
       TERMINAL_PROXY_SECRET: ${TERMINAL_PROXY_SECRET:-}
       # Likewise for the Code page's previews (X-Bn-Preview-0<this>, :7682 → bn-preview): ./stack code enable makes it.
       PREVIEW_PROXY_SECRET: ${PREVIEW_PROXY_SECRET:-}
+      # (the checksum of caddy/terminal-gateway.caddy, from ./stack: read only at start, so a changed file recreates the
+      # container — lib/common.sh config_sums)
+      BN_CONFIG_SUM: ${BN_GATEWAY_CONFIG_SUM:-}
     # Directory mount, like the main Caddy's (a file replaced by git is seen after a restart).
     volumes:
       - ./caddy:/etc/caddy:ro,z

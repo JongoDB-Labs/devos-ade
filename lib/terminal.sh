@@ -231,13 +231,28 @@ terminal_ids() {
 }
 
 # terminal_build — the image (terminal/Dockerfile) with this week's Debian packages (the stt image's rule), and its
-# egress proxy's while that is its way out (terminal/egress: no packages, so no refresh)
+# egress proxy's while that is its way out (terminal/egress: no packages, so no refresh). One setup built already in
+# this command (lib/commands.sh setup_build_images, with the same arguments) is taken as it is.
 terminal_build() {
-  # (TERMINAL_AI_TOOLS: which of your AI subscriptions' tools go in — lib/subscriptions.sh)
-  building "the terminal image" dc build -q --build-arg "APT_REFRESH=$(date -u +%G-%V)" --build-arg "BN_AI_TOOLS=$(subs_tools_arg)" terminal || return 1
-  egress_image_wanted || return 0
-  if [ "$(terminal_egress_mode)" = internet ]; then building "the egress proxy's image" dc build -q terminal-egress
+  local e
+  if ! built_now terminal; then
+    terminal_build_args
+    building "the terminal image" dc build -q "${TERMINAL_BUILD_ARGS[@]}" terminal || return 1
+  fi
+  e="$(terminal_egress_build_service)"
+  [ -n "$e" ] && ! built_now "$e" || return 0
+  if [ "$e" = terminal-egress ]; then building "the egress proxy's image" dc build -q terminal-egress
   else building "Chat's egress proxy's image" dc build -q chat-egress; fi
+}
+# terminal_build_args — TERMINAL_BUILD_ARGS: the terminal image's build arguments: this week's Debian packages and
+# which of your AI subscriptions' tools go in (TERMINAL_AI_TOOLS — lib/subscriptions.sh)
+TERMINAL_BUILD_ARGS=()
+terminal_build_args() { TERMINAL_BUILD_ARGS=(--build-arg "APT_REFRESH=$(date -u +%G-%V)" --build-arg "BN_AI_TOOLS=$(subs_tools_arg)"); }
+# terminal_egress_build_service -> the service whose build makes the egress proxy's image while one runs (the same image
+# for both): the terminal's (terminal-egress), or Chat's own (chat-egress); nothing otherwise
+terminal_egress_build_service() {
+  egress_image_wanted || return 0
+  if [ "$(terminal_egress_mode)" = internet ]; then echo terminal-egress; else echo chat-egress; fi
 }
 # egress_image_wanted -> 0 while an egress proxy runs: the terminal's (TERMINAL_EGRESS=internet), or Chat's own (host,
 # with the Code page on: compose.code-egress.yaml — the same image)
@@ -267,22 +282,28 @@ chat_proxy_rm() {
   docker network rm "${p}_chat-proxy" "${p}_chat-out" >/dev/null 2>&1 || true
 }
 _terminal_build_and_up() { terminal_build && _terminal_up; }
-# Portal (the tab, the unlock) and Caddy (the terminal site: a changed Caddyfile is read only at start), LiteLLM and
-# shared-mcp (recreated only when they join or leave the gateway's network, terminal-link), then the terminal's
-# gateway (likewise read at start), its egress proxy and the container.
+# The terminal and what fronts it, in one compose call (up_services: each started as soon as what it depends on is up,
+# and recreated only where its image or configuration changed): the portal (the tab, the unlock) and Caddy (the
+# terminal site), LiteLLM and shared-mcp (they join or leave the gateway's network, terminal-link), Open WebUI (with
+# the terminal the Code page may go, and with it Open WebUI's connection to your subscriptions), the terminal's gateway,
+# its egress proxy while that is its way out (one left from before goes first otherwise) and the container. Then the
+# portal's port, as wherever Caddy may have been replaced (ensure_portal_reachable).
 _terminal_up() {
-  _terminal_front && dc up -d --wait --force-recreate terminal-gateway && _terminal_egress_up && dc up -d --wait terminal
+  local e=''
+  if [ "$(terminal_egress_mode)" = internet ]; then e=terminal-egress; else terminal_proxy_rm; fi
+  up_services --no-deps portal caddy litellm shared-mcp open-webui terminal-gateway $e terminal || return 1
+  ensure_portal_reachable
+  [ "${PORTAL_FORWARD_BROKEN:-0}" = 0 ]
 }
-# _terminal_egress_up — the egress proxy while it is the sandbox's way out; otherwise one left from before goes
+# _terminal_egress_build_up — the egress proxy's image and container, once it is the sandbox's way out (terminal_egress_apply)
 _terminal_egress_build_up() {
   building "the egress proxy's image" dc build -q terminal-egress && dc up -d --wait --no-deps terminal-egress
 }
-_terminal_egress_up() {
-  if [ "$(terminal_egress_mode)" = internet ]; then dc up -d --wait terminal-egress; else terminal_proxy_rm; fi
-}
 # (Open WebUI too: with the terminal the Code page may go, and with it Open WebUI's connection to your subscriptions)
 _terminal_front() {
-  dc up -d --wait portal && recreate_caddy && dc up -d --wait --no-deps litellm shared-mcp open-webui
+  up_services --no-deps portal caddy litellm shared-mcp open-webui || return 1
+  ensure_portal_reachable
+  [ "${PORTAL_FORWARD_BROKEN:-0}" = 0 ]
 }
 
 # terminal_secrets [rotate] — what the terminal needs besides the stack's own: the secret header the main Caddy adds

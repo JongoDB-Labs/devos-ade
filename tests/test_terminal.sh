@@ -130,11 +130,10 @@ test_enable_creates_the_default_workspace_its_key_and_secret() {
   [ "${#s1}" -ge 32 ] || { echo "secret too short" >&2; return 1; }
   calls="$(cat "$TMP/dc")"
   assert_contains "$calls" "dc build -q --build-arg APT_REFRESH=$(date -u +%G-%V) --build-arg BN_AI_TOOLS=all terminal"
-  assert_contains "$calls" "dc up -d --wait portal"
-  assert_contains "$calls" "dc up -d --wait --force-recreate caddy"
-  assert_contains "$calls" "dc up -d --wait --no-deps litellm shared-mcp"   # onto the gateway's network
-  assert_contains "$calls" "dc up -d --wait --force-recreate terminal-gateway"
-  assert_contains "$calls" "dc up -d --wait terminal"
+  # the portal, Caddy, LiteLLM and shared-mcp (onto the gateway's network), Open WebUI, the gateway, its egress proxy and
+  # the terminal: one compose call, which recreates only what the overlay changed — nothing forced
+  assert_contains "$calls" "dc up -d --wait --no-deps portal caddy litellm shared-mcp open-webui terminal-gateway terminal-egress terminal"
+  assert_not_contains "$calls" "force-recreate"
   assert_contains "$(cat "$TMP/out")" "Terminal: on — http://terminal.bedrock-now.localhost"
   assert_contains "$(cat "$TMP/out")" "created the workspace folder $ws (mode 700)"
   assert_contains "$(cat "$TMP/out")" "LiteLLM and shared-mcp restart once as they join the terminal's gateway network"
@@ -251,8 +250,8 @@ test_disable_removes_containers_and_networks_and_keeps_folder_and_key() {
   assert_eq "$(get_env LITELLM_KEY_TERMINAL)" sk-claude-code-terminal
   calls="$(cat "$TMP/dc")"
   assert_eq "$(printf '%s\n' "$calls" | head -n 1)" "dc rm -sf terminal terminal-gateway"   # while compose still knows them
-  assert_contains "$calls" "dc up -d --wait --force-recreate caddy"
-  assert_contains "$calls" "dc up -d --wait --no-deps litellm shared-mcp"   # off the gateway's network
+  # (Caddy, LiteLLM and shared-mcp off the gateway's network: compose recreates them, as their configuration changed)
+  assert_contains "$calls" "dc up -d --wait --no-deps portal caddy litellm shared-mcp open-webui"
   assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_terminal"
   assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_terminal-out"
   assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_terminal-link"
@@ -382,7 +381,7 @@ test_egress_apply_brings_the_proxy_and_the_sandbox_to_the_choice() {
   _stubs
   terminal_enable > /dev/null 2>&1 || return 1
   assert_contains "$(cat "$TMP/dc")" "dc build -q terminal-egress"   # (enable: built with the terminal's image)
-  assert_contains "$(cat "$TMP/dc")" "dc up -d --wait terminal-egress"
+  assert_contains "$(cat "$TMP/dc")" " terminal-gateway terminal-egress terminal"   # (and up with it)
   : > "$TMP/dc"; : > "$TMP/docker"
   set_env TERMINAL_EGRESS internet
   terminal_egress_apply || return 1

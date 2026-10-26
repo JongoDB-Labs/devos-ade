@@ -39,7 +39,7 @@ portal_port() { local p; p="$(get_env PORTAL_PORT)"; printf '%s\n' "${p:-80}"; }
 # replaced: the port on this computer then accepts every connection and resets it (curl: 000) while Caddy answers in
 # its new container. An update from Home ended that way (every portal check of the smoke test 000, and no portal left
 # to roll back from); recreating Caddy once mends the forward. Called wherever Caddy was recreated before the portal is
-# used: setup (before its portal sign-in and before the smoke test), ./stack up, restore. Said when it acts; never
+# used: setup (before its portal sign-in and before the smoke test), ./stack up, restore, caddy_up. Said when it acts; never
 # fatal (the smoke test says what is left). Only while Caddy runs: with no Caddy, the caller's own checks say why.
 _portal_port_answers() {   # -> 0 unless every try is a connection failure (000); any HTTP status counts as reaching it
   local i code
@@ -50,11 +50,13 @@ _portal_port_answers() {   # -> 0 unless every try is a connection failure (000)
   done
   return 1
 }
-# recreate_caddy — Caddy recreated (it reads its config and the app hosts at start), then ensure_portal_reachable: every
-# place that replaces Caddy goes through here, so a stale port forward is caught wherever it happens
+# caddy_up — Caddy with its configuration as it is now (it reads it, and the app hosts, only at start): up_services
+# recreates it only when that changed — its environment, the overlays' networks, or its Caddyfile and the files it
+# imports (config_sums) — and leaves an unchanged one running. Then ensure_portal_reachable: every place that brings
+# Caddy up goes through here, so a stale port forward is caught wherever a new Caddy replaced the old one
 # (non-zero when the port still does not answer after that, so a run_phase around it shows the advice instead of "ready")
-recreate_caddy() {
-  dc up -d --wait --force-recreate caddy || return
+caddy_up() {
+  up_services caddy || return
   ensure_portal_reachable
   [ "${PORTAL_FORWARD_BROKEN:-0}" = 0 ]
 }

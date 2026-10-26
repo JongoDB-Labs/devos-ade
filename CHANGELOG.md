@@ -47,6 +47,33 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   default set or changed in Settings after your pick wins over it until you pick again. A browser's pick from before
   this version is taken over the first time it opens the Code page.
 
+### Changed
+
+- **An update restarts only what it changed, and setup again is faster.** Setup and `./stack update` (Home's
+  **Update now**) recreated LiteLLM, Caddy (twice) and the terminal's gateway at every run, whatever had changed; they
+  now leave every service whose image and configuration are the same running, and Docker Compose recreates the others.
+  Measured on a throwaway with the terminal and the Code page on: `./stack setup --yes` run again went from 74 s to
+  48 s and recreates nothing (before: LiteLLM, Caddy and the terminal's gateway, each time); a changed Caddyfile
+  recreates Caddy alone. A real update from v0.30.2 through Home's Update now went from 98 s to 84 s (its setup step
+  from 93 s to 79 s; LiteLLM still restarts there, as its configuration changes).
+- **A changed configuration file still restarts its service.** Compose sees changes to the compose files and `.env`,
+  not to the content of a mounted file, so `./stack` now gives each service the checksum of the files it reads only
+  when it starts: LiteLLM's `config.yaml` and hook, the Caddyfile and its `*.caddy` files, the terminal's gateway's
+  file, the built-in SearXNG's `settings.yml` (as before) and the sandboxes' managed settings. A changed file recreates
+  that service and no other, at setup, update and `./stack up` alike ([what setup and an update
+  restart](docs/advanced.md#what-setup-and-an-update-restart)). A container running unhealthy is still recreated.
+- **Images are built side by side, services started in groups.** Setup builds all its images in one step (the
+  portal, shared-mcp, Open WebUI, the terminal, its egress proxy and the Code page), then starts Open WebUI, the
+  portal, Caddy and shared-mcp in one compose call, and the terminal with what fronts it in another: each service
+  starts as soon as what it depends on is up. Home's update card shows these steps (*Images*, *Open WebUI + portal +
+  shared-mcp*) as it showed the ones before. If the joint build fails, each image is built on its own, as before, so
+  the failure is reported where it belongs.
+- **Tests:** unit tests (`tests/test_recreate.sh`) check, with the hash Docker Compose itself compares
+  (`docker compose config --hash`), that nothing changes when nothing changed, and that a changed mounted file, `.env`
+  value or pinned image changes exactly the services that use it; setup's bring-up never forces a recreate; the
+  images are built once. The update e2e (`tests/e2e/upgrade.sh`) checks that Home's card lists every step the
+  update's log reports, in order and with its time, and allows a service the new release adds.
+
 ## [0.31.0] - 2026-10-26
 
 ### Added

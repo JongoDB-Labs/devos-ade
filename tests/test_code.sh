@@ -136,8 +136,9 @@ test_a_default_that_did_not_come_up_is_off_again_and_tried_next_time() {
   code_default_settle > "$TMP/out" 2>&1 || return 1
   assert_eq "$(get_env CODE_ENABLED)" ""; assert_eq "$(get_env TERMINAL_ENABLED)" ""
   assert_eq "$(head -n 1 "$TMP/dc")" "dc rm -sf code subs-chat terminal terminal-gateway"
-  assert_contains "$(cat "$TMP/dc")" "dc up -d --wait --force-recreate caddy"
-  assert_contains "$(cat "$TMP/dc")" "dc up -d --wait --no-deps litellm shared-mcp"
+  # (in one compose call: recreated only where the overlays' change reaches — Caddy, LiteLLM and shared-mcp off the
+  # terminal's network)
+  assert_contains "$(cat "$TMP/dc")" "dc up -d --wait --no-deps portal caddy litellm shared-mcp open-webui"
   assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_code-link"
   assert_contains "$(cat "$TMP/out")" "did not come up"
   assert_contains "$(cat "$TMP/out")" "The next ./stack setup or update tries once more"
@@ -320,9 +321,11 @@ test_enable_turns_the_terminal_on_first_then_builds_and_starts_the_code_page() {
   calls="$(cat "$TMP/dc")"
   assert_contains "$calls" "dc build -q --build-arg APT_REFRESH=$(date -u +%G-%V) --build-arg BN_AI_TOOLS=all terminal"
   assert_contains "$calls" "dc build -q code"
-  # after the terminal's own steps: terminal, portal, Caddy, then the code container
-  assert_eq "$(printf '%s\n' "$calls" | grep '^dc up' | tail -n 6 | tr '\n' '|')" \
-    "dc up -d --wait terminal|dc up -d --wait portal open-webui|dc up -d --wait --force-recreate caddy|dc up -d --wait terminal-gateway|dc up -d --wait code|dc up -d --wait subs-chat|"
+  # the terminal with all that fronts it in one compose call, then the portal, Caddy (recreated by compose only where
+  # its configuration changed — never forced), then the gateway and the code container together, then Chat's sandbox
+  assert_eq "$(printf '%s\n' "$calls" | grep '^dc up' | tail -n 5 | tr '\n' '|')" \
+    "dc up -d --wait --no-deps portal caddy litellm shared-mcp open-webui terminal-gateway terminal-egress terminal|dc up -d --wait portal open-webui|dc up -d --wait caddy|dc up -d --wait terminal-gateway code|dc up -d --wait subs-chat|"
+  assert_not_contains "$calls" "force-recreate"
   out="$(cat "$TMP/out")"
   assert_contains "$out" "turning the terminal on first"
   assert_contains "$out" "Code page: on — http://code.bedrock-now.localhost"
@@ -339,7 +342,7 @@ test_enable_turns_the_terminal_on_first_then_builds_and_starts_the_code_page() {
   assert_contains "$(cat "$TMP/dc")" "dc exec -T terminal timeout 10 test -S /run/bn-code/coded.sock"
   # (the gateway: recreated by compose only because the previews' secret is new)
   # (Open WebUI with the portal: its connection to the code container, with the new CODE_CHAT_KEY)
-  assert_eq "$(grep '^dc up' "$TMP/dc" | tr '\n' '|')" "dc up -d --wait portal open-webui|dc up -d --wait --force-recreate caddy|dc up -d --wait terminal-gateway|dc up -d --wait code|dc up -d --wait subs-chat|"
+  assert_eq "$(grep '^dc up' "$TMP/dc" | tr '\n' '|')" "dc up -d --wait portal open-webui|dc up -d --wait caddy|dc up -d --wait terminal-gateway code|dc up -d --wait subs-chat|"
   # a terminal started by a version without the spawn server: recreated once (and says so)
   dc() { echo "dc $*" >> "$TMP/dc"; case "$*" in *"test -S /run/bn-code/coded.sock"*) return 1 ;; esac; return 0; }
   : > "$TMP/dc"
@@ -375,7 +378,7 @@ test_disable_removes_the_code_page_and_keeps_the_terminal() {
   calls="$(cat "$TMP/dc")"
   assert_eq "$(printf '%s\n' "$calls" | head -n 1)" "dc rm -sf code subs-chat"   # while compose still knows it
   assert_not_contains "$calls" "terminal"                                # the terminal (and its tmux session) untouched
-  assert_contains "$calls" "dc up -d --wait --force-recreate caddy"
+  assert_contains "$calls" "dc up -d --wait caddy"   # (compose recreates it: its CODE_MODE and networks changed)
   assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_code-link bedrock-now_plan-chat"
   # (the code-socket volume is the terminal's; Chat's socket volume goes, its Git hosts' volume stays)
   assert_eq "$(grep 'docker volume rm' "$TMP/docker")" "docker volume rm bedrock-now_chat-socket"
@@ -472,8 +475,11 @@ test_setup_hook_builds_and_starts_it_and_never_stops_setup() {
   code_enable > /dev/null 2>&1 || return 1
   : > "$TMP/dc"
   code_setup_hook > "$TMP/out" 2>&1 || return 1
-  # (Chat's sandbox up, then what its own sign-ins say: asked only while it runs — here it does not)
-  assert_eq "$(cat "$TMP/dc" | tr '\n' '|')" "dc build -q code|dc up -d --wait terminal-gateway|dc up -d --wait code|dc up -d --wait subs-chat|dc ps -q --status running subs-chat|dc up -d --wait open-webui|"
+  # (the gateway and the code container in one compose call; Chat's sandbox up, then what its own sign-ins say: asked
+  # only while it runs — here it does not; Open WebUI alone, its dependencies up already. Each up first asks which of
+  # its containers run unhealthy: up_services)
+  assert_eq "$(grep -v '{{.Health}}' "$TMP/dc" | tr '\n' '|')" "dc build -q code|dc up -d --wait terminal-gateway code|dc up -d --wait subs-chat|dc ps -q --status running subs-chat|dc up -d --wait --no-deps open-webui|"
+  assert_eq "$(grep -c '^dc ps --format {{.Service}} {{.Health}}' "$TMP/dc")" 3
   dc() { echo "boom"; return 1; }
   code_setup_hook > "$TMP/out" 2>&1 || return 1
   assert_contains "$(cat "$TMP/out")" "Code page: setup goes on without it"
@@ -976,7 +982,7 @@ test_chats_own_proxy_is_built_before_chats_sandbox_and_listed() {
   code_enable > /dev/null 2>&1 || return 1
   set_env TERMINAL_EGRESS host
   : > "$TMP/dc"; _subs_chat_up 2>/dev/null
-  assert_eq "$(head -n 2 "$TMP/dc")" "dc build -q chat-egress
+  assert_eq "$(grep -v '{{.Health}}' "$TMP/dc" | head -n 2)" "dc build -q chat-egress
 dc up -d --wait subs-chat"
   assert_eq "$(code_services)" "code subs-chat chat-egress"
   set_env TERMINAL_EGRESS internet

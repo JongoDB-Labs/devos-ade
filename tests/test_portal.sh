@@ -649,11 +649,11 @@ test_an_older_compose_builds_the_portal_without_the_docs_index_and_says_so() {
   ensure_portal_password_hash() { :; }
   dc() { echo "dc $*" >> "$TMP/dc"; }
   BEDROCK_NOW_COMPOSE_CONTEXTS=0; _BN_COMPOSE_VERSION=2.12.2
-  out="$(_build_and_up_portal 2>&1)"
+  out="$(_build_and_up_front open-webui portal caddy 2>&1)"
   assert_contains "$out" "Docker Compose 2.12.2 is older than 2.24.4, which $PRODUCT_NAME needs (./stack setup and ./stack update stop for it): the portal is built without its search's docs index"
   assert_contains "$(cat "$TMP/dc")" "dc build -q portal"   # it still builds and starts
   : > "$TMP/dc"; BEDROCK_NOW_COMPOSE_CONTEXTS=1
-  assert_not_contains "$(_build_and_up_portal 2>&1)" "older than 2.24.4"
+  assert_not_contains "$(_build_and_up_front open-webui portal caddy 2>&1)" "older than 2.24.4"
 }
 
 test_compose_renders_the_portals_docs_context_only_with_the_overlay() {
@@ -730,27 +730,33 @@ test_ensure_portal_reachable_leaves_caddy_alone_otherwise() {
   _before cmd_setup ensure_portal_reachable cmd_test
 }
 
-test_every_caddy_recreate_checks_the_port_forward() {
-  # Caddy is replaced only through recreate_caddy (lib/portal.sh), except setup's first start of it, which captures
-  # the output for its port-80 fallback and is followed by ensure_portal_reachable in setup_keys_and_ui
+test_every_caddy_up_checks_the_port_forward() {
+  # Caddy is never recreated by force but by ensure_portal_reachable itself (lib/portal.sh): compose recreates it when
+  # its configuration changed (config_sums: its Caddyfile too). Every place that brings it up checks the port forward:
+  # caddy_up, the terminal's bring-up (Caddy in its compose call), setup's (ensure_portal_reachable after up_front)
   local direct
-  direct="$(grep -nE 'force-recreate.*caddy' "$T_ROOT"/lib/*.sh | grep -vE 'lib/portal\.sh:|out="\$\(dc up -d --wait --force-recreate caddy 2>&1\)"' || true)"
+  direct="$(grep -nE 'force-recreate.*caddy' "$T_ROOT"/lib/*.sh | grep -vE 'lib/portal\.sh:' || true)"
   assert_eq "$direct" ""
-  for f in _code_front _terminal_front _remote_up_front; do
-    assert_contains "$(grep -hE "^$f\(\)" -A3 "$T_ROOT"/lib/*.sh)" "recreate_caddy"
+  for f in _code_front _remote_up_front; do
+    assert_contains "$(grep -hE "^$f\(\)" -A3 "$T_ROOT"/lib/*.sh)" "caddy_up"
   done
+  for f in _terminal_front _terminal_up; do
+    assert_contains "$(sed -n "/^$f() {/,/^}/p" "$T_ROOT/lib/terminal.sh")" "ensure_portal_reachable"
+  done
+  assert_contains "$(sed -n '/^setup_keys_and_ui() {/,/^}/p' "$T_ROOT/lib/commands.sh" | grep -A1 'up_front open-webui portal caddy shared-mcp')" "ensure_portal_reachable"
   # a Settings change that restarts Caddy, and ./stack restart caddy, check it before the portal is used
   assert_contains "$(sed -n '/^_cfg_post() {/,/^}/p' "$T_ROOT/lib/settings.sh")" '*" caddy "*) ensure_portal_reachable'
   assert_contains "$(sed -n '/^cmd_restart() {/,/^}/p' "$T_ROOT/lib/settings.sh")" '[ "$s" != caddy ] || ensure_portal_reachable'
-  # recreate_caddy: the recreate, then the check; a failed recreate is the caller's to report (no check)
+  # caddy_up: the up (compose decides; never forced), then the check; a failed up is the caller's to report (no check)
   : > "$TMP/calls"; FWD="200" _stub_forward
-  recreate_caddy 2>/dev/null
-  assert_contains "$(head -n 1 "$TMP/calls")" "dc up -d --wait --force-recreate caddy"
+  caddy_up 2>/dev/null
+  assert_contains "$(cat "$TMP/calls")" "dc up -d --wait caddy"
+  assert_not_contains "$(cat "$TMP/calls")" "force-recreate"
   assert_contains "$(cat "$TMP/calls")" "/caddy-health"
   # the port still dead after it: non-zero, so the run_phase around it shows the advice
   : > "$TMP/calls"; FWD="000" _stub_forward
-  if recreate_caddy 2>/dev/null; then echo "recreate_caddy hid a port that still does not answer" >&2; return 1; fi
+  if caddy_up 2>/dev/null; then echo "caddy_up hid a port that still does not answer" >&2; return 1; fi
   dc() { echo "dc $*" >> "$TMP/calls"; return 1; }; : > "$TMP/calls"
-  if recreate_caddy 2>/dev/null; then echo "a failed recreate reported success" >&2; return 1; fi
+  if caddy_up 2>/dev/null; then echo "a failed up reported success" >&2; return 1; fi
   assert_not_contains "$(cat "$TMP/calls")" "curl"
 }

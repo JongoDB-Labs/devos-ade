@@ -27,9 +27,10 @@
 #    files and of LiteLLM's keys and spend rows; .env; the ports; the manifest's id and link scheme.
 # 4. update: the throwaway's own update helper (its bin/bedrock-now-helper, in the foreground as tests/e2e/lib.sh runs
 #    it) picks up an Update now request (.state/requests/req-<nonce>.json, as the portal writes it).
-# 5. check: the release updated to; the folder where it was; the same containers, volumes and mount points; every key
-#    recorded still there; .env with nothing removed or changed; the same ports; the session from before still signed
-#    in; the chat, the shared file, the workspace file and the sandbox's home file there, by content; the Code page
+# 5. check: the release updated to; every step the update's log says is done on Home's card (the helper's status), in
+#    order with its time; the folder where it was; no container lost (one the new release adds is said), the same
+#    volumes and mount points; every key recorded still there; .env with nothing removed or changed; the same ports;
+#    the session from before still signed in; the chat, the shared file, the workspace file and the sandbox's home file there, by content; the Code page
 #    project's record and its trust (state, hash, when) as before; the login page, Home and the manifest say DevOS ADE
 #    and have no bedrock-now outside the internal names (tests/brand_check.py --stdin); the manifest's id and link
 #    scheme as before (the same installed app); ./stack test passes; with --real-github, origin moved to the new name
@@ -264,12 +265,32 @@ cp "$STACK/.state/status/helper-status.json" "$LOGS/helper-status.json" 2>/dev/n
 s="$(cat "$LOGS/helper-status.json" 2>/dev/null)"
 case "$s" in *'"phase": "done"'*) check update-now 0 "the helper's update finished: $(printf '%s' "$s" | sed -n 's/.*"message": "\([^"]*\)".*/\1/p')" ;;
   *) check update-now 1 "the helper's update did not finish well: $s" ;; esac
+# Home's progress card: every step the update's log says is done ("==> LABEL ready (T)" after its last "update: N/4"
+# line, as lib/helper.sh _job_steps reads them) is in the helper's status — what Home lists — in that order and with
+# its time, and none is left running
+cp "$STACK/.state/helper/last-update.log" "$LOGS/update-job.log" 2>/dev/null; redact "$LOGS/update-job.log"
+python3 - "$LOGS/update-job.log" "$LOGS/helper-status.json" > "$OUT/steps.check" 2>&1 <<'PY'
+import json, re, sys
+lines = [l.rstrip("\n") for l in open(sys.argv[1], encoding="utf-8", errors="replace")]
+start = max([i for i, l in enumerate(lines) if re.match(r"^==> (update: [1-4]/4|rollback: [1-3]/3)", l)], default=-1)
+want = [(m.group(1), m.group(2)) for m in (re.match(r"^==> (.*) ready \((.*)\)$", l) for l in lines[start + 1:]) if m][:40]
+st = json.load(open(sys.argv[2]))
+got = [(s["label"], s["took"]) for s in st.get("steps") or []]
+assert want, "the update's log names no step"
+assert got == want, f"Home lists {got}, the log says {want}"
+assert not st.get("step"), f"a step left running: {st.get('step')}"
+print(f"{len(got)} steps on Home's card, as the log has them: " + ", ".join(f"{l} {t}" for l, t in got))
+PY
+check home-card-steps "$?" "$(tail -n 1 "$OUT/steps.check")"
 
 # --- 4. after ---
 snapshot "$OUT/after"
 check version "$(grep -qx "$TO" "$OUT/after/version" && echo 0 || echo 1)" "installed $(cat "$OUT/after/version"), want $TO"
 check same-folder "$([ "$(real_dir "$STACK")" = "$(cd "$WORK" && pwd -P)" ] && [ -f "$STACK/.env" ] && echo 0 || echo 1)" "still in $STACK"
-for f in services volumes mounts addresses; do
+# (the services: none lost; one the new release adds — v0.31.0's built-in SearXNG — is said)
+lost="$(comm -23 "$OUT/before/services" "$OUT/after/services" | tr '\n' ' ')"; new="$(comm -13 "$OUT/before/services" "$OUT/after/services" | tr '\n' ' ')"
+check same-services "$([ -z "$lost" ] && echo 0 || echo 1)" "lost: ${lost:-none}; added by the new release: ${new:-none}"
+for f in volumes mounts addresses; do
   check "same-$f" "$(cmp -s "$OUT/before/$f" "$OUT/after/$f" && echo 0 || echo 1)" "$(diff "$OUT/before/$f" "$OUT/after/$f" | head -5 | tr '\n' ' ')"
 done
 for k in $KEYS; do

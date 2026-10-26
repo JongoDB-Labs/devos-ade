@@ -328,10 +328,11 @@ dc() {
   if flag_on "$(get_env CODE_ENABLED)"; then mkdir -p "$STATE_DIR/projects/public" 2>/dev/null && chmod 700 "$STATE_DIR/projects" 2>/dev/null || true; fi
   # Bedrock speech-to-text: its container is in the "stt" profile (lib/stt.sh), so down/ps/logs include it too.
   if [ "${_STT_PROFILE:-}" = 1 ] || [ "$(get_env STT_PROVIDER)" = bedrock ]; then f+=(--profile stt); fi
-  # The built-in SearXNG (lib/websearch.sh): in the "searxng" profile, on unless WEBSEARCH_SEARXNG_BUILTIN=off; the
-  # checksum of its settings.yml goes into its environment, so a changed file recreates it (compose cannot see a file)
+  # The built-in SearXNG (lib/websearch.sh): in the "searxng" profile, on unless WEBSEARCH_SEARXNG_BUILTIN=off
   if [ "${_WS_SEARXNG_PROFILE:-}" = 1 ] || ! flag_off "$(get_env WEBSEARCH_SEARXNG_BUILTIN)"; then f+=(--profile searxng); fi
-  local sx_sum=''; [ ! -f "$STACK_DIR/searxng/settings.yml" ] || sx_sum="$(cksum < "$STACK_DIR/searxng/settings.yml" | awk '{ print $1 }')"
+  # the checksums of the configuration files the services read only at their start (config_sums, below): every compose
+  # call passes the same ones, so none recreates a service whose files did not change, and each recreates one whose did
+  local policy sums; policy="$(claude_policy)"; sums="$(config_sums "$policy")"
   # The browser terminal too: an exported TERMINAL_WORKSPACE must never decide what the container sees.
   ( unset OPENROUTER_API_KEY OPENROUTER_MODELS OPENROUTER_MAX_MODELS EXPLABS_API_KEY EXPLABS_MODELS STT_PROVIDER STT_API_KEY STT_MODEL OWUI_STT_ENGINE \
       WEBSEARCH_TAVILY_API_KEY WEBSEARCH_BRAVE_API_KEY WEBSEARCH_PERPLEXITY_API_KEY WEBSEARCH_SEARXNG_SECRET WEBSEARCH_SEARXNG_BUILTIN \
@@ -340,10 +341,75 @@ dc() {
       TERMINAL_ENABLED TERMINAL_WORKSPACE TERMINAL_EGRESS TERMINAL_EGRESS_ALLOW TERMINAL_EGRESS_DENY TERMINAL_HOST TERMINAL_UID TERMINAL_GID TERMINAL_MEM_LIMIT \
       REMOTE_TERMINAL REMOTE_TERMINAL_HOST CODE_ENABLED CODE_HOST CODE_PROXY_SECRET REMOTE_CODE_HOST PREVIEW_DOMAIN PREVIEW_PROXY_SECRET CODE_ALLOW_BYPASS \
       CODE_AUTO_MODE TERMINAL_AUTO_MODE GIT_GITHUB_CLIENT_ID GIT_GITHUB_APP_SLUG GIT_GITLAB_CLIENT_ID CODE_CLAUDE_PLAN CODE_CHAT_KEY
+    # (and the BN_*_SUM of config_sums: only ./stack sets them, never this shell)
+    while IFS='=' read -r o p_sum; do [ -z "$o" ] || export "$o=$p_sum"; done <<SUMS
+$sums
+SUMS
     # which of terminal/managed/*.json the sandbox gets as Claude Code's managed settings (read-only): from .env alone
-    TERMINAL_CLAUDE_POLICY="$(claude_policy)" BN_PROJECTS_PUBLIC="$STATE_DIR/projects/public" BN_SEARXNG_SETTINGS_SUM="$sx_sum" \
+    TERMINAL_CLAUDE_POLICY="$policy" BN_PROJECTS_PUBLIC="$STATE_DIR/projects/public" \
     BEDROCK_NOW_ENV_DISPLAY="$(env_file_display)" COMPOSE_PROJECT_NAME="$p" docker compose -p "$p" --project-directory "$STACK_DIR" -f "$STACK_DIR/compose.yaml" ${f[@]+"${f[@]}"} \
       --env-file "$ENV_FILE" "$@" )
+}
+
+# --- configuration files read at a service's start: their checksums, for compose's own change detection ---
+# Compose recreates a service's container only when the service's configuration (compose files, .env's values) or its
+# image changed — never for a mounted file's content. So each file a service reads only when it starts has its
+# checksum in that service's environment (compose files: BN_CONFIG_SUM, or SearXNG's BN_SETTINGS_SUM): a file ./stack
+# renders again (LiteLLM's config.yaml, SearXNG's settings.yml) or an update brings (the Caddyfile, LiteLLM's hook, the
+# sandboxes' managed settings) then changes exactly that service's configuration, and compose recreates it — and only
+# it — at the next `up` that includes it. setup and ./stack update rely on that instead of recreating services each time.
+#   BN_LITELLM_CONFIG_SUM    litellm           litellm/config.yaml and its hook, bn_hooks.py (the hook reads
+#                                              code-models.tsv and web-search.json again by itself when they change)
+#   BN_CADDY_CONFIG_SUM      caddy             caddy/Caddyfile and the caddy/*.caddy it imports (Caddy's admin API is off:
+#                                              it reads them only at start)
+#   BN_GATEWAY_CONFIG_SUM    terminal-gateway  caddy/terminal-gateway.caddy, its only file
+#   BN_SEARXNG_SETTINGS_SUM  searxng           searxng/settings.yml (the built-in web search)
+#   BN_TERMINAL_POLICY_SUM   terminal          terminal/managed/<policy>.json, Claude Code's managed settings (a mount of
+#                                              one file: once git replaced it, a running container no longer sees it)
+#   BN_CHAT_POLICY_SUM       subs-chat         terminal/managed/chat.json, the same for Chat's sandbox
+# Not here, as each is read again where it is used: the portal's litellm/, catalog/ and .state files, the Code page's
+# project list, Tailscale's serve.json (containerboot watches it); postgres/init.sql is read once, by a new database.
+# config_sums [POLICY] -> NAME=SUM lines (POLICY: claude_policy's answer, when the caller has it already)
+config_sums() {
+  local policy="${1:-}" c=() g
+  [ -n "$policy" ] || policy="$(claude_policy)"
+  for g in "$STACK_DIR"/caddy/*.caddy; do [ "${g##*/}" = terminal-gateway.caddy ] || c+=("${g##*/}"); done
+  printf 'BN_LITELLM_CONFIG_SUM=%s\n' "$(files_sum "$STACK_DIR/litellm" config.yaml bn_hooks.py)"
+  printf 'BN_CADDY_CONFIG_SUM=%s\n' "$(files_sum "$STACK_DIR/caddy" Caddyfile ${c[@]+"${c[@]}"})"
+  printf 'BN_GATEWAY_CONFIG_SUM=%s\n' "$(files_sum "$STACK_DIR/caddy" terminal-gateway.caddy)"
+  # (as v0.31.0 gave it: the checksum alone, so an update to this version leaves an unchanged SearXNG running)
+  g=''; [ ! -f "$STACK_DIR/searxng/settings.yml" ] || g="$(cksum < "$STACK_DIR/searxng/settings.yml" | awk '{ print $1 }')"
+  printf 'BN_SEARXNG_SETTINGS_SUM=%s\n' "$g"
+  printf 'BN_TERMINAL_POLICY_SUM=%s\n' "$(files_sum "$STACK_DIR/terminal/managed" "$policy.json")"
+  printf 'BN_CHAT_POLICY_SUM=%s\n' "$(files_sum "$STACK_DIR/terminal/managed" chat.json)"
+}
+# files_sum DIR NAME... -> "CRC-BYTES" (cksum) of the names and contents of DIR's files NAME… that exist, in the order
+# given; nothing when none exists
+files_sum() {
+  local d="$1" n=() x
+  shift
+  for x in "$@"; do [ ! -f "$d/$x" ] || n+=("$x"); done
+  [ ${#n[@]} -gt 0 ] || return 0
+  ( cd "$d" && cksum "${n[@]}" 2>/dev/null ) | cksum | awk '{ print $1 "-" $2 }'
+}
+
+# SETUP_BUILT — the images setup built side by side in this command (lib/commands.sh setup_build_images: " portal
+# shared-mcp … "): each one's own step takes it as it is. built_now SERVICE -> 0 for those.
+SETUP_BUILT=''; _OWUI_TRY=''
+built_now() { case "$SETUP_BUILT" in *" $1 "*) return 0 ;; esac; return 1; }
+
+# up_services [OPTION...] SERVICE... — `dc up -d --wait` of the SERVICEs in one compose call: compose starts each as
+# soon as what it depends on is up (side by side where nothing is between them), and recreates a container only where
+# its image or its configuration changed — with config_sums (above), the files it reads at its start too. The
+# others keep running, untouched. setup and ./stack update bring the stack up through here, never with --force-recreate.
+# One exception: a listed container that runs unhealthy is recreated all the same (up --wait would only wait on it).
+up_services() {
+  local a opts=() svcs=() sick
+  for a in "$@"; do case "$a" in -*) opts+=("$a") ;; *) svcs+=("$a") ;; esac; done
+  sick="$(dc ps --format '{{.Service}} {{.Health}}' "${svcs[@]}" 2>/dev/null | awk '$2 == "unhealthy" { printf "%s ", $1 }' || true)"
+  # shellcheck disable=SC2086  # (a service a word)
+  [ -z "$sick" ] || dc up -d --no-deps --force-recreate $sick || return
+  dc up -d --wait ${opts[@]+"${opts[@]}"} "${svcs[@]}"
 }
 
 # compose_contexts_ok VERSION -> 0 for a Docker Compose version (2.40.3-desktop.1, v2.17.0) that reads a service's

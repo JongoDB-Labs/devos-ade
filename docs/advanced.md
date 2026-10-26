@@ -140,6 +140,37 @@ Setup prints one line per phase (`==> LiteLLM ready (16s)`). If a service fails 
 log lines and the `./stack logs` command to run. `BEDROCK_NOW_VERBOSE=1 ./stack setup` shows the full docker
 compose output. `NO_COLOR=1` turns colours off.
 
+## What setup and an update restart
+
+`./stack setup` (and the setup step of `./stack update`, which is Home's **Update now**) restarts only the services
+whose image or configuration changed; the others keep running. Docker Compose decides, as it does for any `up`: it
+recreates a container when its service's settings (the compose files and the values they take from `.env`) or its
+image differ from the running container's. Compose cannot see a change to the content of a mounted file, so for each
+file a service reads only when it starts, `./stack` puts the file's checksum into that service's environment
+(`BN_CONFIG_SUM`; `lib/common.sh` `config_sums`):
+
+| Service | Files |
+|---|---|
+| `litellm` | `litellm/config.yaml` and its hook `bn_hooks.py` |
+| `caddy` | `caddy/Caddyfile` and the `caddy/*.caddy` files it imports |
+| `terminal-gateway` | `caddy/terminal-gateway.caddy` |
+| `searxng` | `searxng/settings.yml` |
+| `terminal` | the managed settings in use, `terminal/managed/<policy>.json` |
+| `subs-chat` | `terminal/managed/chat.json` |
+
+A changed file therefore recreates that service, and only it, at the next `up` that includes it (`./stack up` too).
+Files a service reads again on its own (the portal's `catalog/` and `litellm/`, the hook's `code-models.tsv` and
+`web-search.json`, Tailscale's `serve.json`) restart nothing. A container that is running but unhealthy is recreated as
+well. `./stack restart SERVICE` still recreates one service on request.
+
+Setup builds every image it needs in one step (the portal, shared-mcp, Open WebUI and, while they are on, the terminal,
+its egress proxy and the Code page), side by side; an unchanged image takes a few seconds from Docker's cache. Then it
+starts the services in groups, one compose call each: Postgres and RustFS; LiteLLM; Open WebUI, the portal, Caddy and
+shared-mcp; the terminal with what fronts it; the Code page. Within a group, Compose starts each service as soon as
+what it depends on is up. Each group is one step on Home's update card. If the joint build fails, each image is built
+again on its own, so the failure is reported where it belongs: setup stops for the stack's own images, and goes on
+without the terminal or the Code page for theirs.
+
 ## Model names, icons and tiers
 
 `catalog/display.tsv` maps each model to the name Open WebUI shows (`claude-sonnet-5-5` → `Claude Sonnet 5.5`),

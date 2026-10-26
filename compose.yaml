@@ -103,6 +103,9 @@ services:
       WEBSEARCH_TAVILY_API_KEY: ${WEBSEARCH_TAVILY_API_KEY:-}
       WEBSEARCH_BRAVE_API_KEY: ${WEBSEARCH_BRAVE_API_KEY:-}
       WEBSEARCH_PERPLEXITY_API_KEY: ${WEBSEARCH_PERPLEXITY_API_KEY:-}
+      # (the checksum of config.yaml and bn_hooks.py, from ./stack: LiteLLM reads them only at start, so a changed file
+      # recreates the container, and an unchanged one leaves it running — lib/common.sh config_sums)
+      BN_CONFIG_SUM: ${BN_LITELLM_CONFIG_SUM:-}
     volumes:
       - ./litellm:/app/config:ro,z
     ports:
@@ -448,6 +451,9 @@ services:
       # Only the sidecar's fixed address may use the remote listeners (compose.tailscale.yaml).
       REMOTE_SIDECAR_IP: ${REMOTE_SIDECAR_IP:-10.255.255.254}
       PORTAL_PROXY_SECRET: ${PORTAL_PROXY_SECRET:-}
+      # (the checksum of the Caddyfile and the *.caddy it imports, from ./stack: with its admin API off, Caddy reads them
+      # only at start, so a changed file recreates the container — lib/common.sh config_sums)
+      BN_CONFIG_SUM: ${BN_CADDY_CONFIG_SUM:-}
     depends_on:
       portal: { condition: service_healthy }   # forward_auth needs it; avoids 502s on the first requests
     # Directory mount, so a Caddyfile replaced by git (new inode) is seen after a restart.

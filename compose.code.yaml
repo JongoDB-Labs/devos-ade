@@ -130,6 +130,9 @@ services:
       HOME: /home/claude
       DISABLE_AUTOUPDATER: "1"
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+      # (the checksum of its managed settings below, from ./stack: a changed file recreates the container, as the
+      # terminal's — lib/common.sh config_sums)
+      BN_CONFIG_SUM: ${BN_CHAT_POLICY_SUM:-}
     extra_hosts:   # (as the terminal's: Docker Desktop's names for your computer point nowhere)
       - "host.docker.internal:192.0.2.1"
       - "host.docker.internal:100::1"

@@ -302,12 +302,52 @@ ensure_images() {
 owui_build() {
   local d try
   d="$(status_dir)"; mkdir -p "$d" 2>/dev/null || true
-  try="$(cat "$d/python-runner.try" 2>/dev/null || true)"
-  case "$try" in '' | *[!0-9]*) try=0 ;; esac
-  if grep -q 'download failed' "$d/python-runner.txt" 2>/dev/null; then try="$(date -u +%Y%m%d%H)"; fi
-  building "Open WebUI's image (with the Python runner's packages)" dc build -q --build-arg "BN_VENDOR_TRY=$try" open-webui || return 1
+  # (built already in this command by setup_build_images: with the try it gave the build)
+  if built_now open-webui; then try="$_OWUI_TRY"
+  else
+    try="$(owui_vendor_try)"
+    building "Open WebUI's image (with the Python runner's packages)" dc build -q --build-arg "BN_VENDOR_TRY=$try" open-webui || return 1
+  fi
   printf '%s\n' "$try" > "$d/python-runner.try" 2>/dev/null || true
   python_runner_status
+}
+# owui_vendor_try -> the BN_VENDOR_TRY of Open WebUI's next build: the last one's, or the hour's after a download failed
+owui_vendor_try() {
+  local try
+  try="$(cat "$(status_dir)/python-runner.try" 2>/dev/null || true)"
+  case "$try" in '' | *[!0-9]*) try=0 ;; esac
+  if grep -q 'download failed' "$(status_dir)/python-runner.txt" 2>/dev/null; then try="$(date -u +%Y%m%d%H)"; fi
+  printf '%s\n' "$try"
+}
+
+# setup_build_images [--sandboxes] — the images setup builds, in one compose call, which builds them side by side
+# (Docker's cache makes an unchanged one a matter of seconds): the portal, shared-mcp and Open WebUI; with --sandboxes
+# (./stack setup, ./stack update) also the browser terminal's, its egress proxy's and the Code page's, while they are on
+# and their folder usable. SETUP_BUILT then names them (lib/common.sh built_now), and each one's own step takes it as it
+# is. Never fatal: a build that fails names none, and each step builds its own image as before — which says the
+# failure where it belongs (setup stops for the stack's own images, not for the terminal's or the Code page's). A
+# helper job's log gets "still building" lines while it runs, like a phase's (building).
+# shellcheck disable=SC2034  # SETUP_BUILT: read by built_now (lib/common.sh)
+setup_build_images() {
+  local svcs=(portal shared-mcp open-webui) args e out start _PHASE_TICK=''
+  SETUP_BUILT=''; _OWUI_TRY="$(owui_vendor_try)"
+  args=(--build-arg "BN_VENDOR_TRY=$_OWUI_TRY")
+  if [ "${1:-}" = --sandboxes ] && terminal_on && [ -z "$(terminal_why_out)" ]; then
+    # (each build argument is its image's alone: no other Dockerfile here declares it)
+    terminal_build_args; args+=("${TERMINAL_BUILD_ARGS[@]}"); svcs+=(terminal)
+    e="$(terminal_egress_build_service)"; [ -z "$e" ] || svcs+=("$e")
+    if code_ready; then fix_checkout_modes; svcs+=(code); fi
+  fi
+  [ -t 2 ] || _PHASE_TICK=1
+  out="$(mktemp)"; start="$(_now)"; phase_start Images
+  if building "the images (${svcs[*]})" dc build -q "${args[@]}" "${svcs[@]}" 8>&2 > "$out" 2>&1; then
+    rm -f "$out"; SETUP_BUILT=" ${svcs[*]} "
+    log "$(phase_line Images $(($(_now) - start)))"
+    return 0
+  fi
+  warn "the images did not build side by side ($(fmt_elapsed $(($(_now) - start)))) — each is built on its own next; the build's last messages:"
+  tail -n 12 "$out" | sed 's/^/    /' >&2; rm -f "$out"
+  return 0
 }
 
 # python_runner_status — the image's vendored.txt (vendor.py: a line a package, ready or left out and why) into
@@ -620,7 +660,7 @@ cmd_setup() {
   setup_explabs      # optional; lib/explabs.sh (no question: Settings or ./stack config set EXPLABS_API_KEY)
   setup_stt          # optional; lib/stt.sh
   setup_done "passwords and settings in .env"
-  setup_bringup_and_probe
+  setup_bringup_and_probe --sandboxes   # (the terminal's and the Code page's images too, with the rest, side by side)
   stt_after_probe    # lib/stt.sh: Bedrock speech-to-text on by default when Voxtral is usable
   websearch_builtin_up    # lib/websearch.sh: the built-in SearXNG up (on by default) or gone (off); never fatal
   websearch_after_start   # lib/websearch.sh: one search with the backend in use (on the setup key), or why there is none
@@ -780,12 +820,17 @@ probe_mark() {
   return 0
 }
 
+# setup_bringup_and_probe [--sandboxes] — the images (setup_build_images: --sandboxes, the terminal's and the Code page's
+# too), today's prices, LiteLLM's config, Postgres + RustFS and LiteLLM, around a model probe unless its last answers
+# still stand. LiteLLM is recreated only when its configuration changed (up_services; config_sums).
 setup_bringup_and_probe() {
   local en="$STACK_DIR/litellm/enabled-models.txt" age
-  # Today's prices before LiteLLM's config is rendered (lib/prices.sh; never fatal). The portal image runs the
-  # updater, so build it first: an image from before an update would not have it.
+  # Every image setup builds, first and side by side; then today's prices before LiteLLM's config is rendered
+  # (lib/prices.sh; never fatal): the portal image runs the updater, and one from before an update would not have it.
   ensure_prices_dir
-  if dc build -q portal >/dev/null 2>&1; then refresh_prices 1
+  setup_step "building the images"
+  setup_build_images "$@"
+  if built_now portal || dc build -q portal >/dev/null 2>&1; then refresh_prices 1
   else warn "could not build the portal image yet — prices stay as they are (./stack logs portal after setup)"; fi
   # Nothing the probe depends on changed since it last answered (SETUP_REPROBE=1: ./stack models --recheck asks
   # again): LiteLLM starts once, with the models it found, instead of twice around a new probe
@@ -803,7 +848,7 @@ setup_bringup_and_probe() {
     setup_done "Postgres + RustFS started"
     choose_defaults
     setup_step "starting LiteLLM with the models your key can use"
-    run_phase "LiteLLM ($(wc -l < "$en" | tr -d ' ') models)" litellm dc up -d --no-deps --force-recreate --wait litellm
+    run_phase "LiteLLM ($(wc -l < "$en" | tr -d ' ') models)" litellm up_services --no-deps litellm
     ensure_virtual_key LITELLM_KEY_SETUP setup "$(get_env BUDGET_SETUP)"
     setup_done "model check kept"
     return 0
@@ -819,7 +864,7 @@ setup_bringup_and_probe() {
   setup_done "Postgres + RustFS started"
   warn "LiteLLM restarts while probing models; active devos-claude/Open WebUI requests may fail for ~1 min"
   setup_step "starting LiteLLM for the model check"
-  run_phase "LiteLLM (full catalog, for probing)" litellm dc up -d --no-deps --force-recreate --wait litellm
+  run_phase "LiteLLM (full catalog, for probing)" litellm up_services --no-deps litellm
   setup_done "LiteLLM started"
   # Probe and smoke-test spend is booked on its own key, so ./stack costs shows what setup itself cost.
   setup_step "checking which models your AWS key can use"
@@ -835,36 +880,49 @@ setup_bringup_and_probe() {
   off_exit _restore_litellm_config
   choose_defaults
   setup_done "model check done"; setup_step "restarting LiteLLM with the models your key can use"
-  run_phase "LiteLLM ($(wc -l < "$en" | tr -d ' ') models)" litellm dc up -d --no-deps --force-recreate --wait litellm
+  run_phase "LiteLLM ($(wc -l < "$en" | tr -d ' ') models)" litellm up_services --no-deps litellm
 }
 
 _up_data_services() { dc up -d --wait postgres rustfs && dc up -d rustfs-init; }
-_build_and_up_mcp() { building "the shared-mcp image" dc build -q shared-mcp && dc up -d --wait shared-mcp; }
+_build_and_up_mcp() {
+  built_now shared-mcp || building "the shared-mcp image" dc build -q shared-mcp || return 1
+  up_services --no-deps shared-mcp
+}
 
-# _build_and_up_portal — portal, then Caddy (recreated: with its admin API off, a changed Caddyfile is only
-# read at start). If Docker refuses to publish port 80 after all, falls back to 8800 once.
-_build_and_up_portal() {
-  local out rc=0
+# _build_and_up_front SERVICE... — the portal's image (and shared-mcp's, when listed) unless setup built them already,
+# then the SERVICEs — Open WebUI, the portal, Caddy… — in one compose call (up_services: each starts as soon as what it
+# depends on is up, Open WebUI and the portal side by side; recreated only where something changed). With their
+# dependencies: Open WebUI waits for the buckets (rustfs-init) as before. Caddy reads its Caddyfile only at start (its
+# admin API is off): config_sums recreates it when that changed. If Docker refuses to publish port 80 after all, falls
+# back to 8800 once.
+_build_and_up_front() {
+  local out rc=0 b=() s
   ensure_portal_password_hash   # lib/settings.sh: the portal starts only with a hash that matches PORTAL_PASSWORD
   # (every Compose this version runs with, 2.24.4 or newer, reads it: only one ./stack setup and update stop for does not)
   compose_reads_contexts || warn "Docker Compose ${_BN_COMPOSE_VERSION:-(this one)} is older than 2.24.4, which $PRODUCT_NAME needs (./stack setup and ./stack update stop for it): the portal is built without its search's docs index (README and docs/ sections) — update Docker Compose"
-  building "the portal image" dc build -q portal && dc up -d --wait portal || return 1
-  out="$(dc up -d --wait --force-recreate caddy 2>&1)" || rc=$?
+  for s in portal shared-mcp; do case " $* " in *" $s "*) built_now "$s" || b+=("$s") ;; esac; done
+  [ ${#b[@]} -eq 0 ] || building "the ${b[*]} image(s)" dc build -q "${b[@]}" || return 1
+  out="$(up_services "$@" 2>&1)" || rc=$?
   printf '%s\n' "$out"
   [ "$rc" -ne 0 ] || return 0
-  # Only a refused port 80 (rootless/unprivileged engines) moves the portal; any other failure is reported.
-  [ "$(portal_port)" = 80 ] && printf '%s\n' "$out" | grep -qiE 'bind|privileged|port is already allocated|ports are not available' || return 1
+  # Only a refused port 80 (rootless/unprivileged engines) moves the portal — Caddy not running then, its port refused;
+  # any other failure is reported.
+  [ "$(portal_port)" = 80 ] && [ -z "$(dc ps -q --status running caddy 2>/dev/null)" ] &&
+    printf '%s\n' "$out" | grep -qiE 'bind|privileged|port is already allocated|ports are not available' || return 1
   PORTAL_PORT_FELL_BACK=1
   set_env PORTAL_PORT "$PORTAL_FALLBACK_PORT"
   resolve_port PORTAL_PORT "$PORTAL_FALLBACK_PORT" caddy 8080
   save_portal_origin
-  dc up -d --wait portal && recreate_caddy   # portal: its PORTAL_PORT changed too
+  up_services "$@" && caddy_up   # the portal: its PORTAL_PORT changed too
 }
 
-# up_portal — the portal phase of setup (and models --recheck): new code, settings and Caddyfile take effect.
-up_portal() {
+# up_front SERVICE... — the portal phase of setup: Open WebUI, the portal and Caddy (and shared-mcp, when listed) with
+# their new code, settings and Caddyfile, in one phase (Home's progress card: one step)
+up_front() {
+  local label="Open WebUI + portal" s
+  for s in "$@"; do [ "$s" != shared-mcp ] || label="$label + shared-mcp"; done
   PORTAL_PORT_FELL_BACK=0
-  run_phase "Portal ($(portal_url))" "portal caddy" _build_and_up_portal
+  run_phase "$label ($(portal_url))" "$*" _build_and_up_front "$@"
   [ "$PORTAL_PORT_FELL_BACK" = 0 ] || warn "Docker could not publish port 80 → using $(portal_port) for the portal (PORTAL_PORT): $(portal_url)"
 }
 
@@ -933,19 +991,23 @@ ensure_openwebui_api_key() {
 }
 
 setup_keys_and_ui() {
+  local mcp_key
   log "creating LiteLLM virtual keys with monthly budgets"
   ensure_virtual_key LITELLM_KEY_CLAUDE_CODE claude-code "$(get_env BUDGET_CLAUDE_CODE)"
   ensure_virtual_key LITELLM_KEY_OPENWEBUI open-webui "$(get_env BUDGET_OPENWEBUI)"
   alert_pct_mark || true   # lib/settings.sh: all three keys alert at BUDGET_ALERT_PCT now
   setup_litellm_admin
   stt_setup_service   # lib/stt.sh: the stt container (Bedrock speech-to-text) before Open WebUI; never fatal
-  run_phase "Open WebUI" open-webui dc up -d --wait open-webui
-  up_portal
+  # Open WebUI, the portal and Caddy in one compose call, and shared-mcp with them once it has Open WebUI's API key (setup
+  # again, an update): compose starts each as soon as what it depends on is up — Open WebUI and the portal side by side
+  mcp_key="$(get_env OPENWEBUI_API_KEY)"
+  if [ -n "$mcp_key" ]; then up_front open-webui portal caddy shared-mcp; else up_front open-webui portal caddy; fi
   ensure_portal_reachable   # lib/portal.sh: Docker Desktop forwarding the portal's port to the Caddy it replaced
   portal_session_or_die
   settings_reconcile   # lib/settings.sh: Chat's owner and the Admin sign-in match .env (a change cut short, a restore)
   ensure_openwebui_api_key
-  run_phase "shared-mcp" shared-mcp _build_and_up_mcp
+  # shared-mcp on its own when it had no key (a first setup), or its key was just made anew (its environment changed)
+  [ -n "$mcp_key" ] && [ "$(get_env OPENWEBUI_API_KEY)" = "$mcp_key" ] || run_phase "shared-mcp" shared-mcp _build_and_up_mcp
   sync_openwebui_models
   openrouter_sync_owui   # optional; lib/openrouter.sh
   explabs_sync_owui      # optional; lib/explabs.sh

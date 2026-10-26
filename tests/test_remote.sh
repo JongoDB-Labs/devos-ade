@@ -170,7 +170,7 @@ test_enable_tailscale_end_to_end_with_stubs() {
   assert_contains "$out" "allow-all"
   assert_not_contains "$out" "TAILSCALE_ALLOWED_LOGIN is blank"
   assert_not_contains "$out" "OAuth client secret: it can create"
-  assert_contains "$(cat "$TMP/dc")" "--force-recreate caddy"
+  assert_contains "$(cat "$TMP/dc")" "dc up -d --wait caddy"   # (compose recreates it: its REMOTE_* changed)
   assert_contains "$out" "admin/services"
   assert_contains "$out" "./stack remote test"
 }
