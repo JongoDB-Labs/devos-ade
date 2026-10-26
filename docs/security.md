@@ -4,7 +4,8 @@ Back to the [README](../README.md#security-model).
 
 ## What stays local
 
-- Every host port binds to `127.0.0.1`. All containers share one private Docker network.
+- Every host port binds to `127.0.0.1`. The stack's containers share one private Docker network; a few have networks
+  of their own instead (speech-to-text, the built-in SearXNG, the browser terminal and the Code page: below).
 - With an access key, AWS credentials reach only the `litellm` container (and throwaway `aws-cli` containers
   during setup). They are never passed on a command line. With an EC2 instance role (`AWS_AUTH=instance-role`)
   no key exists, but every container on the VM can fetch the role's temporary credentials from the metadata
@@ -34,7 +35,7 @@ Back to the [README](../README.md#security-model).
   user, including the admin. Browsers only reach it through Caddy, which deletes a client-sent header and sets
   it only for a valid portal session. The containers that share its network (`default`) are Caddy, the portal,
   LiteLLM, Postgres, RustFS and shared-mcp — all part of the stack. The stt container (ffmpeg parsing untrusted
-  audio) and the Tailscale sidecar do not.
+  audio), the built-in SearXNG (parsing search engines' pages) and the Tailscale sidecar do not.
 - Open WebUI's only model connection is LiteLLM. Ollama, web search and community sharing are off.
   `OFFLINE_MODE` is on (no Hugging Face downloads, no update check) and telemetry is off.
 - LiteLLM uses its **bundled** price map (no runtime fetch from GitHub); our prices override it. LiteLLM's
@@ -433,13 +434,15 @@ An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*)
 ## Web search for Claude Code
 
 Claude Code's WebSearch on Bedrock's and OpenRouter's models (`lib/websearch.sh`; README › *Web search for Claude
-Code*): LiteLLM's web search interception runs the search, with a backend `.env` sets up; without one nothing is
+Code*): LiteLLM's web search interception runs the search, with the first backend you set up, else the built-in
+SearXNG (the default, below); with `WEBSEARCH_BACKEND=off` (or the built-in one off and nothing else) nothing is
 searched, and the hook (`lib/litellm-hooks/bn_hooks.py`) has WebSearch say so.
 
 - **What is sent, and where.** Only the query (as the model wrote it; AgentCore takes 200 characters of it) goes to the
-  backend: Amazon Bedrock AgentCore Web Search through your account's AgentCore gateway (SigV4-signed with LiteLLM's
-  own AWS sign-in, https only, to the gateway's own `*.gateway.bedrock-agentcore.<region>.amazonaws.com` host: LiteLLM
-  refuses to sign for any other), Tavily, Brave Search or Perplexity with your key, or your SearXNG. No message,
+  backend: by default the built-in SearXNG, which passes it on to Startpage, Yahoo, Yep and Mojeek from this computer's
+  internet address; or Amazon Bedrock AgentCore Web Search through your account's AgentCore gateway (SigV4-signed with
+  LiteLLM's own AWS sign-in, https only, to the gateway's own `*.gateway.bedrock-agentcore.<region>.amazonaws.com`
+  host: LiteLLM refuses to sign for any other), Tavily, Brave Search or Perplexity with your key, or your SearXNG. No message,
   file, tool result or anything about you or this install goes with it. What the search finds comes back into the
   model's context like a tool result, and so goes wherever that model's requests go. A Claude model on Bedrock decides
   what to search for (LiteLLM's own search tool, at most three follow-up model calls a request); for another vendor's
@@ -470,12 +473,52 @@ searched, and the hook (`lib/litellm-hooks/bn_hooks.py`) has WebSearch say so.
   account id, the IAM user or role name and the gateway — never a key — and `litellm/web-search.json` (644, read by
   LiteLLM's hook and the portal) the backend, its price, the status and what to do.
 - **Costs.** Each search is booked on the key of the request that searched, at the backend's price per search (the
-  hook registers it with LiteLLM: AgentCore's $0.007005, the list prices of the others, $0 for SearXNG), and counts
-  against that key's budget like model spend.
+  hook registers it with LiteLLM: AgentCore's $0.007005, the list prices of the others, $0 for SearXNG, yours or the
+  built-in one), and counts against that key's budget like model spend.
 - **What is kept.** LiteLLM keeps its usual metadata of each search (its spend log: the search tool's name, the cost,
   the key; never the query unless `LITELLM_STORE_PROMPTS=true`). At the backend, its own retention applies:
   AgentCore Web Search serves the query inside AWS (AWS's terms forbid storing results in bulk); Tavily, Brave,
-  Perplexity and your SearXNG (and the engines it asks) keep what their terms say.
+  Perplexity and your SearXNG (and the engines it asks) keep what their terms say. The built-in SearXNG keeps no
+  history (its metrics off, its cache in memory, gone with the container); its log (`./stack logs searxng`, Docker's
+  rotated log like the others') has its engines' errors, which can name the address an engine was asked, the query in
+  it. The engines it asks keep what their terms say.
+
+### The built-in SearXNG
+
+The default search backend: the official SearXNG image, pinned by digest (`compose.yaml` › `searxng`, compose profile
+`searxng`: started while `WEBSEARCH_SEARXNG_BUILTIN` is not `off`; off, its container is removed and never started).
+
+- **Hardened like the stack's other services.** Its image's own user (977), a read-only file system with an in-memory
+  cache and `/tmp`, no capabilities, `no-new-privileges`, 512 MB and 128 processes at most, a health check, restarted
+  unless stopped. Its settings (`searxng/settings.yml`, rendered by `./stack`, mounted read-only) narrow SearXNG to
+  four keyless engines and turn off what would make it fetch anything on a page's behalf: no image proxy, favicon
+  resolver or autocomplete; the limiter is off (only LiteLLM reaches it) and so are its metrics. Each engine gets 4 s,
+  a search 8 s at most, and LiteLLM gives up after 15 s.
+- **Who reaches it.** No published port and no Caddy site: nothing outside Docker reaches it. Its one inbound network,
+  `websearch`, is internal and has two members, LiteLLM and SearXNG. The portal, Open WebUI, Caddy, the browser
+  terminal and its gateway, the Code page, Chat's sandbox, shared-mcp and the data services are on no network with it.
+  The sandbox reaches it only the way it reaches LiteLLM: through its gateway's `/v1/messages`, where a WebSearch is
+  intercepted — never `/v1/search` (the gateway forwards only Claude Code's paths). The end-to-end suite checks this
+  from the terminal, the Code page's container and Chat's sandbox, and that LiteLLM gets real results from it.
+- **Its way out (a decision).** It needs the internet to ask the search engines: it is on `websearch-out`, a network of
+  its own with nothing else on it — the internet, as LiteLLM's default network has it. Not an egress proxy: the
+  stack's one (the terminal's) exists only while the terminal is on and Settings' allow and deny lists narrow it for
+  the sandbox, and a second one would be another container on every install for a service that only ever connects to
+  the four hosts its settings name: SearXNG never fetches an address a request brings (LiteLLM sends a query, never a
+  URL; no image proxy or favicons), and it holds no key or data of yours. Like LiteLLM, it can still reach this
+  computer's address: on Linux, services listening on every address through its network's gateway; on Docker Desktop,
+  Docker's host address — `host.docker.internal` and `gateway.docker.internal` point nowhere in it (TEST-NET and the
+  IPv6 discard prefix), a speed bump only. It can reach LiteLLM's port, which needs a key it does not have.
+- **What leaves this computer.** The query alone, to Startpage, Yahoo, Yep and Mojeek, from this computer's internet
+  address: those engines see the address and the query, and may rate-limit or refuse the address after many searches (WebSearch then finds less for a while). A key
+  of Tavily, Brave Search or Perplexity, or AgentCore Web Search, comes first once set up.
+- **Its secret.** SearXNG's `server.secret_key` is `WEBSEARCH_SEARXNG_SECRET` in `.env` (600): 64 hex characters setup
+  makes once (and `./stack up` when it is missing), kept like the stack's other generated secrets. It reaches the
+  container's environment only (`SEARXNG_SECRET`), never `settings.yml` or a command line; `./stack` never prints it,
+  Settings and `./stack config list` show it as set and nothing more, and a search's error text is cleaned of it before
+  it is kept. Without one, the container gets SearXNG's own placeholder, which SearXNG refuses to start with.
+- **Rollback.** `./stack rollback` to a version without it removes its container (by its Compose labels) and its two
+  networks.
 
 ## Remote access
 

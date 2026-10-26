@@ -6,6 +6,32 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+
+- **Web search works out of the box: a built-in SearXNG.** Claude Code's WebSearch now searches on every model with
+  no key and nothing to set up: a SearXNG container of the stack (on by default; `WEBSEARCH_SEARXNG_BUILTIN=off`
+  removes it) asks Startpage, Yahoo, Yep and Mojeek — the keyless engines that kept answering in testing — and LiteLLM
+  hands Claude Code the results, booked at $0. Only the query leaves this computer, from its own internet address; those
+  engines may rate-limit it after many searches, so a key gives steadier results. The container is reached by LiteLLM
+  alone (an internal network of the two; no port, no Caddy route; never the portal, Open WebUI, the terminal, the Code
+  page or their sandboxes), has a network of its own to the internet, runs read-only without capabilities, and has its
+  own secret key, made once by setup and never printed (docs/security.md › The built-in SearXNG). `./stack websearch
+  status`, `./stack status` and `./stack code status` say *built-in SearXNG (free …)*; `./stack websearch check` makes
+  one real search through it.
+- **Settings › Models & providers › Search:** a card for each option — the built-in SearXNG (its switch), AgentCore
+  Web Search, Tavily, Brave Search, Perplexity and your own SearXNG — with the one in use marked, and the WebSearch card
+  saying which and why (*auto: no key set up, so the built-in SearXNG*). Each card's **i** button opens what a search
+  costs and its free tier (checked on each pricing page in October 2026, linked), what is sent (the query only), how
+  steady and private it is, and where to get a key; it works with a keyboard, a screen reader and a tap.
+
+### Changed
+
+- **`WEBSEARCH_BACKEND=auto`** still takes what you set up first — AgentCore Web Search while its gateway is usable,
+  then a Tavily, Brave Search or Perplexity key, then your own SearXNG — and now falls back to the built-in SearXNG
+  instead of no search (`builtin` picks it by name; `off` still turns web search off). README › Web search for Claude
+  Code has a table of the options with their cost, setup and notes; the walkthrough's provider step says where to pick
+  one. The harness parity suite takes `E2E_WEBSEARCH=builtin` for real results.
+
 ## [0.30.2] - 2026-10-26
 
 ### Security
