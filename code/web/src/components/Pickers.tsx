@@ -84,7 +84,7 @@ function WhoAnswers({ current, close }: { current: Harness; close: () => void })
       <div class="panel-note">
         Each answers through its own app in the sandbox, signed in there with its own sign-in; usage counts against your plan (no $). Switching starts a new session in
         this project's folder with your conversation so far.{' '}
-        <button type="button" class="link" onClick={() => void refreshHarnesses(true)}>Check again</button>
+        <button type="button" class="link" role="menuitem" onClick={() => void refreshHarnesses(true)}>Check again</button>
       </div>
     </div>
   );
@@ -173,7 +173,9 @@ function BedrockModelPicker({ compact }: { compact?: boolean }) {
     >
       {(close) => (
         <>
-          <WhoAnswers current="bedrock" close={close} />
+          <div role="menu" aria-label="Who answers">
+            <WhoAnswers current="bedrock" close={close} />
+          </div>
           <div class="panel-head mp-head">
             <span>Model</span>
             {bn?.scope && bn.scope.mode !== 'all' && (
@@ -208,6 +210,8 @@ function BedrockModelPicker({ compact }: { compact?: boolean }) {
             />
           </div>
           {err && <div class="panel-note err">Models could not be loaded: {err}</div>}
+          {/* (the picker is a dialog — it holds a search and buttons —; its models are menu items, in a menu) */}
+          <div role="menu" aria-label="Models">
           {sections.map(({ group, models: list }) => (
             <div class="mp-group" key={group} role="group" aria-label={GROUP_TITLE[group]} data-testid={`model-group-${group}`}>
               <div class="mp-group-head">{GROUP_TITLE[group]}</div>
@@ -247,7 +251,8 @@ function BedrockModelPicker({ compact }: { compact?: boolean }) {
                     <button
                       type="button"
                       class={`mp-star${star ? ' on' : ''}`}
-                      aria-pressed={star}
+                      role="menuitemcheckbox"
+                      aria-checked={star}
                       aria-label={star ? `Unstar ${m.name}` : `Star ${m.name}: listed first`}
                       title={star ? 'Starred: listed first (in this browser)' : 'Star: list it first (in this browser)'}
                       data-testid={`star-${m.id}`}
@@ -263,6 +268,7 @@ function BedrockModelPicker({ compact }: { compact?: boolean }) {
               })}
             </div>
           ))}
+          </div>
           {/* a provider without its key: a greyed item that goes where the key goes in (Settings › Models & providers) */}
           {!query && providerSetups(bn).length > 0 && (
             <div class="mp-group" role="group" aria-label="More providers" data-testid="model-group-setup">
