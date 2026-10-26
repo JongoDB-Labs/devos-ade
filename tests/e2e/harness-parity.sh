@@ -145,6 +145,9 @@ MASTER_FILE="$WORK/.master"
 if [ "$REUSE" = 0 ]; then
   teardown
   for c in $CONTAINERS; do ! _exists container "$c" || die "$c exists and is not this suite's"; done
+  # from here on, whatever ends the run (a failed start, Ctrl-C) removes what it started, unless --keep
+  trap '[ "$KEEP" = 1 ] || { teardown; rm -rf "$WORK"; }' EXIT
+  trap 'exit 130' INT TERM
   rm -rf "$WORK"; mkdir -p "$WORK/litellm" "$WORK/state" "$WORK/mock/catalog" || die "cannot make $WORK"
   ( umask 077; printf 'sk-parity-%s\n' "$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')" > "$MASTER_FILE" )
 
@@ -394,5 +397,5 @@ for k in "$OPENROUTER_API_KEY" "$EXPLABS_API_KEY" "$AWS_SECRET_ACCESS_KEY" "$MAS
 done
 [ -z "$leak" ] || { echo "FAIL a key is in the results: removing them" >&2; rm -rf "$OUT/harness-parity.tsv" "$OUT/harness-parity.json" "$OUT/harness-parity-logs"; rc=1; }
 
-if [ "$KEEP" = 0 ]; then teardown; rm -rf "$WORK"; else say "kept (tests/e2e/harness-parity.sh --reuse runs again on it; --teardown removes it)"; fi
+[ "$KEEP" = 0 ] || say "kept (tests/e2e/harness-parity.sh --reuse runs again on it; --teardown removes it)"
 exit "$rc"
