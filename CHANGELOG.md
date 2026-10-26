@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-10-25
+
 ### Changed
 
 - **Claude Code's command is `devos-claude`** (formerly `claude-bedrock`). It is the name setup links into
@@ -2786,7 +2788,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.27.1...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.27.1...v0.28.0
 [0.27.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.25.2...v0.26.0
