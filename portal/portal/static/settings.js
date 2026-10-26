@@ -40,8 +40,8 @@
   // Settings › Models & providers: a card for each provider. A key's card is its row (providerRow): MODELS, the
   // provider its models have in the snapshot's code_models (the pickers' list: litellm/code-models.tsv), and PICK,
   // where you pick which of them it adds. A provider of another kind (a web search backend) fits the same way: its
-  // key's row here, with ADDS(k) saying what it adds instead of a count of models. Your subscriptions' cards:
-  // subscriptionsRow.
+  // key's row here — or its switch's —, with ADDS(k) saying what it adds instead of a count of models and OFF what it
+  // does while it is off. Your subscriptions' cards: subscriptionsRow.
   const PROVIDERS = {
     AWS_ACCESS_KEY_ID: { models: "Bedrock", pick: ["+models", "Models your key can use"] },
     OPENROUTER_API_KEY: { models: "OpenRouter", pick: ["OPENROUTER_MODELS", "OpenRouter's models"] },
@@ -856,11 +856,12 @@
   // --- Settings › Models & providers: each provider a card (PROVIDERS; your subscriptions': subscriptionsRow) ---
   // its state in a word or two next to its name: TONE on (it adds something now), warn (it needs a step) or off
   const provState = (words, tone) => el("span", { class: "set-prov-state", "data-tone": tone, text: words });
-  // its key is there (Bedrock: or this EC2 machine's own role, AWS_AUTH)
-  const providerOn = (k) => Boolean(k.set) || (k.key === "AWS_ACCESS_KEY_ID" && Boolean(keys.AWS_AUTH) && shown(keys.AWS_AUTH) === "instance-role");
+  // its key is there (Bedrock: or this EC2 machine's own role, AWS_AUTH); a provider that is a switch: it is on
+  const providerOn = (k) => (plain(k) ? isOn(k.key) : Boolean(k.set) || (k.key === "AWS_ACCESS_KEY_ID" && Boolean(keys.AWS_AUTH) && shown(keys.AWS_AUTH) === "instance-role"));
   // A key's card: its row (the key masked, Add key / Replace key — a local setting: from this computer only, the row
   // says so elsewhere), its state, how many models it adds to every picker and where you pick which ones. Without a key
-  // it sends nothing: the pickers grey its models out and lead here (catalog/setup-links.tsv openrouter-off …).
+  // it sends nothing: the pickers grey its models out and lead here (catalog/setup-links.tsv openrouter-off …). A
+  // provider of another kind says what it adds (ADDS) and, while it is off, what it then does (OFF).
   function providerRow(k, r) {
     const p = PROVIDERS[k.key];
     const rw = row(k, r);
@@ -868,7 +869,7 @@
     const models = p.models ? codeModels().filter((m) => m[2] === p.models) : [];
     const free = models.filter((m) => m[5]).length;
     const label = $(".set-label", rw._main);
-    label.insertBefore(provState(!on ? "Not set up" : p.adds || models.length ? "On" : "On · no models yet", !on ? "off" : p.adds || models.length ? "on" : "warn"),
+    label.insertBefore(provState(!on ? (plain(k) ? "Off" : "Not set up") : p.adds || models.length ? "On" : "On · no models yet", !on ? "off" : p.adds || models.length ? "on" : "warn"),
       $(".set-badges", label));
     // (without a key: its state says it, and Check (free) has nothing to check)
     if (!on) {
@@ -879,7 +880,7 @@
     }
     const adds = el("p", { class: "set-prov-adds" });
     rw._main.append(adds);
-    if (!on) adds.append("Sends nothing until it has a key; then its models are in every picker.");
+    if (!on) adds.append(p.off || "Sends nothing until it has a key; then its models are in every picker.");
     else if (p.adds) adds.append(p.adds(k));
     else {
       adds.append(models.length ? `Adds ${models.length} model${models.length === 1 ? "" : "s"}${free ? ` (${free} free)` : ""} to every picker. ` : "Adds no models yet. ",

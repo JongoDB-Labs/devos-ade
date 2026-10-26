@@ -1,6 +1,6 @@
 """Your AI subscriptions (README "Your AI subscriptions"; portal/portal/answers.py, static/answers.js): the pickers'
-JSON lists the six tools of the sandbox, none signed in, and never a login; Settings › Claude Code › Your AI
-subscriptions lists them; the walkthrough's step renders. With E2E_SUBSCRIPTIONS=1 (tests/e2e/run.sh --subscriptions)
+JSON lists the six tools of the sandbox, none signed in, and never a login; Settings › Models & providers › Your AI
+subscriptions lists them, a card each; the walkthrough's step renders. With E2E_SUBSCRIPTIONS=1 (tests/e2e/run.sh --subscriptions)
 also: the Terminal tab's Open menu starts Codex in a window of its own — at its own device-code sign-in, which prints its
 link and code and is never completed — and Chat's Who answers shows Grok Build itself in place of Open WebUI (at its
 own sign-in: a link and a code, never completed), then Open WebUI again. No sign-in is ever finished here."""
@@ -64,7 +64,7 @@ def settings_row(ctx):
     page.goto(page.url.split("#")[0] + "#settings/+subscriptions")
     row = page.locator("#set-row-subscriptions")
     row.wait_for(timeout=20000)
-    items = page.locator("#set-subscriptions li[data-tool]")
+    items = page.locator("#set-subscriptions li.set-prov[data-tool]")
     expect(items.count() == len(TOOLS), f"{items.count()} tools listed")
     text = row.inner_text()
     for words in ("Your AI subscriptions", "Codex", "Grok Build", "Check again", "DevOS ADE never opens it", "./stack subscriptions"):
@@ -82,7 +82,7 @@ def settings_row(ctx):
     probs = rec.problems()
     rec.save()
     expect(not probs, f"errors: {probs[:6]}")
-    return "Settings › Claude Code › Your AI subscriptions: six tools, a Chat row each for the four Chat models (its own sign-in: ./stack subscriptions login TOOL --chat), Check again, ./stack subscriptions"
+    return "Settings › Models & providers › Your AI subscriptions: six tools (a card each), a Chat row each for the four Chat models (its own sign-in: ./stack subscriptions login TOOL --chat), Check again, ./stack subscriptions"
 
 
 @check("browser", "walkthrough-subscriptions")
@@ -178,11 +178,11 @@ def chat_embed(ctx):
     page.wait_for_timeout(500)
     expect(page.evaluate("location.hash") == "" or not page.evaluate("location.hash").startswith("#settings"), "a change of the menu moved")
     see(page.locator("#answers-chat-go")).to_have_text("Go to Settings")
-    expect((page.get_attribute("#answers-chat-go", "aria-label") or "").startswith("Go to Settings › Claude Code › Your AI subscriptions"), "the button's name says where")
+    expect((page.get_attribute("#answers-chat-go", "aria-label") or "").startswith("Go to Settings › Models & providers › Your AI subscriptions"), "the button's name says where")
     page.click("#answers-chat-go")
     page.locator("#set-subs-chat-codex .set-cli").wait_for(state="visible", timeout=15000)
     page.wait_for_function("() => document.activeElement && document.activeElement.matches('#set-subs-chat-codex [data-act=subscriptions-chat-signin]')", timeout=10000)
-    # the greyed Claude-plan item: Settings, at the switch on Claude's row of Your AI subscriptions, focused — or, with no
+    # the greyed Claude-plan item: Settings, at the switch on Claude's card in Your AI subscriptions, focused — or, with no
     # switch to press there (no update helper: its words say so), that block itself; never Chat's sign-in left from above
     page.click(".tab[data-tab=chat]")
     page.locator("#answers-chat").wait_for(timeout=15000)
@@ -300,7 +300,7 @@ def code_harness(ctx):
     see(group).to_be_visible(timeout=10000)
     # (one that cannot start: a link to where that is turned on, saying where — catalog/setup-links.tsv)
     see(page.get_by_test_id("harness-codex")).to_contain_text("Not signed in: it opens in the terminal")
-    see(page.get_by_test_id("harness-claude")).to_contain_text("Off: Settings › Claude Code › Your AI subscriptions › Use my Claude plan")
+    see(page.get_by_test_id("harness-claude")).to_contain_text("Off: Settings › Models & providers › Claude Code › Use my Claude plan")
     shot(page, "s5-code-who-answers")
     page.keyboard.press("Escape")
     return "Who answers: five subscriptions listed (none signed in); Copilot's real ACP agent started and ended at \"not signed in\"; Claude on your plan off (409)"

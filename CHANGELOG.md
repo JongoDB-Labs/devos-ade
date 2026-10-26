@@ -27,6 +27,19 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ### Added
 
+- **Settings › Models & providers:** one place where every API key and subscription simply adds models. A card for
+  each provider — Bedrock (the AWS key, or this EC2 machine's role), OpenRouter, Experiential Labs, and each of Your AI
+  subscriptions (Claude Code, Codex, Copilot, Cursor, Grok, Gemini CLI) — says whether it is on (*On*, *Not set up*,
+  *signed in · ChatGPT* …), how many models it adds to every picker (*Adds 24 models to every picker*, how many of
+  them free) and where you pick which; its one action adds, replaces or removes the key (*Add key*, *Replace key*), or
+  signs the tool in or out (*Sign in* opens it in the terminal, where its own sign-in starts). A provider with its key
+  or sign-in is in Chat's *Who answers*, the Code page, the terminal's *Open* and `devos-claude --model` with nothing
+  else to set up; without one it sends nothing, and its card says so. Keys stay on this computer: on your devices each
+  card says where they are added, with the terminal command. Under the cards, the two lists that narrow the pickers:
+  *Models for Claude Code* and *Hidden in Chat's model picker* (a card says when the first leaves its models out).
+- **Code page:** a provider without its key shows in the model picker, under *More providers*, as a greyed item that
+  opens its card (*OpenRouter models — … Settings › Models & providers › OpenRouter takes it*); before, its group was
+  simply missing. `/.bn/models` says which of OpenRouter and Experiential Labs has a key.
 - **Tests:** a harness parity suite, `tests/e2e/harness-parity.sh` (opt-in, by hand): does a model of another vendor
   work as Claude Code's model with no difference but what it was trained on? It runs real Claude Code sessions
   (`devos-claude -p … --output-format stream-json`) in the terminal's sandbox image, through this checkout's terminal
@@ -41,6 +54,14 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ### Changed
 
+- **Settings:** the AWS key (from *AWS & models*), OpenRouter's and Experiential Labs' keys and models (from *Chat &
+  voice*) and *Your AI subscriptions* with *Use my Claude plan in the Code page and Chat* (from *Claude Code*) moved to
+  *Models & providers*; each old section says where they are now, with a link. Greyed items that waited for one of them
+  — OpenRouter's and Experiential Labs' models in Chat's *Who answers*, Claude on your plan, a Chat sign-in — name the
+  new place and open the card (`catalog/setup-links.tsv`); so do `./stack subscriptions`, `./stack costs` and the Code
+  page's own words. In each subscription's card, *Sign in* (the terminal's and the Code page's, and Chat's on its own
+  line) replaces *Sign in (terminal and Code page)* and *Sign in (Chat)*, and *Check again* is once for each sandbox,
+  under the cards. `./stack config` lists the section too.
 - **Models for Claude Code:** the README says what still differs from model to model, as the harness parity suite
   found it (README › Models for Claude Code): WebSearch on Bedrock and OpenRouter, no thinking blocks where the
   provider returns no reasoning, no image input for a text-only model, Llama's tool calls written as text — and

@@ -296,7 +296,7 @@ def global_search(ctx):
     pages = {p["file"]: p for p in idx["docs"]["pages"]}
     expect("README.md" in pages and len(pages["README.md"]["sections"]) >= 20 and "docs/security.md" in pages,
            f"the docs index built into the image: {list(pages)}")
-    expect(len(idx["settings"]["rows"]) > 100 and len(idx["settings"]["sections"]) == 11, "the Settings index")
+    expect(len(idx["settings"]["rows"]) > 100 and len(idx["settings"]["sections"]) == 12, "the Settings index")
     # Ctrl+K from Home: a setting by its key, Enter opens it
     page.keyboard.press(f"{MOD}+k")
     page.wait_for_selector("#search[open]")

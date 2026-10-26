@@ -2927,7 +2927,7 @@ def settings_without_helper(ctx):
     open_settings(page)
     expect(page.locator("#settings .set-helper.helper-off").is_visible(), "no hint that changes need the helper")
     expect("./stack helper install" in page.inner_text("#settings .set-helper"), "helper command missing")
-    expect(page.locator("#settings .set-card").count() == 11, f"{page.locator('#settings .set-card').count()} sections")
+    expect(page.locator("#settings .set-card").count() == 12, f"{page.locator('#settings .set-card').count()} sections")
     expect(page.locator("#settings .set-actions .action:not([disabled])", has_text="Change").count() == 0, "Change works without a helper")
     expect(page.locator("#settings [role=switch]:not([disabled])").count() == 0, "a switch works without a helper")
     goto_setting(page, "BUDGET_SETUP")   # (under More)
@@ -2957,7 +2957,7 @@ def settings_sections(ctx):
     settings_drawn(page)   # (a link: the page is loaded and drawn again)
     expect(page.evaluate("location.hash") == "#settings/spending", f"address {page.evaluate('location.hash')}")
     nav = page.locator(".set-nav .set-nav-item")
-    expect(nav.count() == 11, f"{nav.count()} sections in the list")
+    expect(nav.count() == 12, f"{nav.count()} sections in the list")
     expect(page.locator(".set-nav-item[aria-current=true]").inner_text() == "Spending & budgets", "the list does not mark the section")
     # the list: one section at a time, the address follows (a reload comes back to it)
     page.locator(".set-nav-item", has_text="Claude Code").click()
@@ -3026,9 +3026,106 @@ def settings_sections(ctx):
     probs += prec.problems()
     prec.save()
     expect(not probs, f"errors: {probs}")
-    return (f"11 sections, one at a time; Home → Spending & budgets; More unfolds for BUDGET_SETUP; "
+    return (f"12 sections, one at a time; Home → Spending & budgets; More unfolds for BUDGET_SETUP; "
             f"{'a hidden dependent shown with why; ' if off else ''}search 'budget' → {n_found} sections; "
             f"Changed from default → {len(changed)} settings; keyboard to the heading; phone picker")
+
+
+@check("browser", "settings-providers")
+def settings_providers(ctx):
+    """Settings › Models & providers (no helper needed: nothing changes): a card for every key and sign-in that adds
+    models — Bedrock, OpenRouter, Experiential Labs, each of Your AI subscriptions — each with its state, what it adds
+    to the pickers and its one action (a key's form opens and is cancelled; a tool's Sign in is never pressed: it starts
+    the provider's own sign-in); the old places say where they went, and a greyed item of Chat's Who answers leads to
+    its card (catalog/setup-links.tsv)."""
+    d = _settings_api(ctx)
+    keys = {k["key"]: k for k in d["snapshot"]["keys"]}
+    models = d["snapshot"]["choices"].get("code_models") or []
+    can = bool(d["helper"]["running"] and d["helper"]["settings"] and d["here"]["allowed"])
+    page, rec = ctx.page("settings-providers")
+    login(page)
+    open_settings(page, "providers")
+    sec = page.locator("#set-providers")
+    expect(page.locator(".set-nav-item[aria-current=true]").inner_text() == "Models & providers", "the list does not mark the section")
+    heads = [x.strip() for x in sec.locator(".set-group-head").all_text_contents()]
+    expect(heads == ["Keys", "Subscriptions"], f"the groups' heads: {heads}")
+    said = []
+    for key, name, prov in (("AWS_ACCESS_KEY_ID", "Bedrock", "Bedrock"), ("OPENROUTER_API_KEY", "OpenRouter", "OpenRouter"),
+                            ("EXPLABS_API_KEY", "Experiential Labs", "Experiential Labs")):
+        card = sec.locator(f".set-dep.set-prov > .set-row[data-key={key}]")
+        expect(card.count() == 1, f"{name}: no card")
+        expect(card.locator(".set-name").first.inner_text() == name, f"{key}'s card is not named {name}")
+        k = keys[key]
+        on = bool(k.get("set")) or (key == "AWS_ACCESS_KEY_ID" and keys.get("AWS_AUTH", {}).get("value") == "instance-role")
+        state = card.locator(".set-prov-state").inner_text()
+        adds = card.locator(".set-prov-adds").inner_text()
+        n = sum(1 for m in models if m[2] == prov)
+        if on:
+            expect(state.startswith("On"), f"{name}: state {state!r} with its key")
+            expect((f"Adds {n} model" in adds) if n else ("Adds no models yet" in adds), f"{name}: {adds!r} ({n} models in the snapshot)")
+        else:
+            expect(state == "Not set up" and "Sends nothing until it has a key" in adds, f"{name}: {state!r} {adds!r} without its key")
+        # its one action: Add key or Replace key (from this computer: these checks run there), enabled with the helper
+        btn = card.locator(":scope > .set-actions button.action:not([data-act])")
+        want = "Replace key" if k.get("set") else "Add key"
+        expect(btn.count() == 1 and btn.inner_text() == want, f"{name}: its action is {btn.all_inner_texts()}, not {want}")
+        expect(btn.is_enabled() == can, f"{name}: {want} enabled={btn.is_enabled()} with the helper {'on' if can else 'off'}")
+        if can:
+            btn.click()
+            form = card.locator(".set-form")
+            expect(form.locator("input[type=password]").count() >= 1, f"{name}: the form has no field for the key")
+            form.locator("button", has_text="Cancel").click()
+        said.append(f"{name}: {state}, {want}")
+    # your subscriptions: a card each, with its state, the pickers it answers in and its next step
+    tools = (d.get("subscriptions") or {}).get("tools") or []
+    cards = sec.locator("#set-subscriptions > li.set-prov[data-tool]")
+    expect(cards.count() == len(tools) and len(tools) >= 6, f"{cards.count()} subscription cards for {len(tools)} tools")
+    term_here = page.evaluate("() => typeof APP_URLS !== 'undefined' && Boolean(APP_URLS.terminal)")
+    for t in tools:
+        c = sec.locator(f"#set-subscriptions > li[data-tool={t['id']}]")
+        state = c.locator(".set-prov-state").inner_text()
+        expect(state, f"{t['id']}: no state")
+        if t["installed"] is True and t["signed_in"] == "yes":
+            expect(state.startswith("signed in"), f"{t['id']}: {state!r}")
+        expect(c.locator(".set-prov-adds").inner_text().startswith("Adds "), f"{t['id']}: no line of what it adds")
+        step = c.locator("[data-where=terminal] [data-act]").first
+        act = step.get_attribute("data-act")
+        if t["installed"] is False:
+            expect(act == "subscriptions-left-out", f"{t['id']}: left out of the sandbox, next step {act}")
+        elif not term_here:
+            expect(act == "subscriptions-terminal-off", f"{t['id']}: the terminal is off here, next step {act}")
+        else:
+            expect(act == "subscriptions-open" and step.inner_text() == ("Open in the terminal" if t["signed_in"] == "yes" else "Sign in"),
+                   f"{t['id']}: next step {act} {step.inner_text()!r}")
+    shot(page, "17c-settings-providers")
+    # the old places say where they went, and their links land on the card
+    goto_setting(page, "aws")
+    link = page.locator("#set-aws .set-moved a")
+    expect(link.count() == 1 and link.get_attribute("href") == "#settings/AWS_ACCESS_KEY_ID", "AWS & models: no link to the AWS key's card")
+    link.click()
+    page.wait_for_selector("#set-providers:not([hidden]) .set-row[data-key=AWS_ACCESS_KEY_ID]", timeout=20000)
+    settings_drawn(page)
+    for sid, place in (("chat", "OPENROUTER_API_KEY"), ("code", "+subscriptions")):
+        goto_setting(page, sid)
+        expect(page.locator(f"#set-{sid} .set-moved a[href='#settings/{place}']").count() == 1, f"{sid}: no link to {place}")
+    # a greyed item leads to its card: Chat's Who answers without OpenRouter's (or Experiential Labs') key
+    off = next((r for r, k in (("openrouter-off", "OPENROUTER_API_KEY"), ("explabs-off", "EXPLABS_API_KEY")) if not keys[k].get("set")), None)
+    if off:
+        target = "OPENROUTER_API_KEY" if off == "openrouter-off" else "EXPLABS_API_KEY"
+        page.click(".tab[data-tab=chat]")
+        page.locator("#answers-chat").wait_for(timeout=15000)
+        page.wait_for_function("v => [...document.querySelectorAll('#answers-chat option')].some((o) => o.value === v)", arg=f"setup:{off}:", timeout=20000)
+        page.select_option("#answers-chat", f"setup:{off}:")
+        expect((page.get_attribute("#answers-chat-go", "aria-label") or "").startswith("Go to Settings › Models & providers ›"),
+               "the button's name does not say Models & providers")
+        page.click("#answers-chat-go")
+        page.wait_for_selector(f"#set-providers:not([hidden]) .set-row[data-key={target}]", timeout=20000)
+        expect(page.evaluate("location.hash") == f"#settings/{target}", f"not the card's address: {page.evaluate('location.hash')}")
+        said.append(f"Chat's {off} → its card")
+    probs = rec.problems()
+    rec.save()
+    expect(not probs, f"errors: {probs}")
+    return "; ".join(said) + f"; {len(tools)} subscription cards; AWS & models, Chat & voice and Claude Code link here"
 
 
 @check("settings", "settings-page")
@@ -3037,7 +3134,7 @@ def settings_page(ctx):
     page, rec = ctx.page("settings-page")
     login(page)
     open_settings(page)
-    expect(page.locator("#settings .set-card").count() == 11, f"{page.locator('#settings .set-card').count()} sections, not eleven")
+    expect(page.locator("#settings .set-card").count() == 12, f"{page.locator('#settings .set-card').count()} sections, not twelve")
     expect(page.locator("#settings .set-card:not([hidden])").count() == 1, "more than one section shown at a time")
     expect(page.locator("#settings .set-helper").is_hidden(), "the helper hint shows while the helper runs")
     goto_setting(page, "advanced")
@@ -3049,7 +3146,7 @@ def settings_page(ctx):
     leaked = [k for k in SECRET_ENV if len(ENV.get(k, "")) >= 8 and ENV[k] in html]
     expect(not leaked, f"secret values in the page: {leaked}")
     expect(d["snapshot"]["base"] and len(d["snapshot"]["keys"]) >= 86, "snapshot")
-    expect(len(d["layout"]["sections"]) == 11 and len(d["layout"]["rows"]) >= 120, "layout")
+    expect(len(d["layout"]["sections"]) == 12 and len(d["layout"]["rows"]) >= 120, "layout")
     goto_setting(page, "account")
     shot(page, "18-settings-desktop", mask=[".set-value", ".set-adv-value"])
     page.emulate_media(color_scheme="dark")
@@ -3077,7 +3174,7 @@ def settings_page(ctx):
     probs = rec.problems() + prec.problems()
     rec.save(); prec.save()
     expect(not probs, f"errors: {probs}")
-    return "11 sections, one at a time; Advanced and About list the rest; no secret in the page; desktop light/dark and phone (picker) render"
+    return "12 sections, one at a time; Advanced and About list the rest; no secret in the page; desktop light/dark and phone (picker) render"
 
 
 @check("settings", "settings-budget-change")
