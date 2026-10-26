@@ -2,9 +2,10 @@
 // run or change, the reason the CLI gave, and Allow once / Always allow (with every rule it writes, as the backend
 // will write it) / Deny (with an optional message for Claude). Keys 1/2/3 answer, like the CLI, once you went to the
 // card yourself (a click on it, or Tab into it) — never a keystroke that reached it because it took the focus — and
-// not in its first 400 ms, nor at all when the prompt asks to default to no. A card that appears takes the focus only
-// from nothing you type into (a field, the editor, the terminal keep it). A prompt whose input could not be shown in
-// full can only be denied. ExitPlanMode is a plan to approve: then Accept edits, or Manual (asking for each edit), or
+// not in its first 400 ms, nor at all when the prompt asks to default to no. A card that appears takes the focus, and is
+// scrolled into view, unless something you type into has it (a field, the editor, the terminal — or the prompt box with
+// text in it or typed in a moment ago: focus.ts). A prompt whose input could not be shown in full can only be denied.
+// ExitPlanMode is a plan to approve: then Accept edits, or Manual (asking for each edit), or
 // Auto (while Settings allow it), or not yet (keep planning, with a message) — and any line of it can take a comment
 // (plannotes.ts): the comments go back with "Keep planning", or, once you approve, as your next message. While Settings allow Auto, a shell
 // command's card in Manual or Accept edits also offers "Allow, and switch to Auto", as the CLI does — not one that your
@@ -19,7 +20,7 @@ import { answerPermission, answerQuestions, allowAndSwitchToAuto, store, autoOk,
 import { approvedFollowUp, dropPlanComments, keepPlanningMessage, planLines, planNotes, prunePlanComments, setPlanComment, PLAN_COMMENT_MAX, PLAN_COMMENTS_MAX, type PlanComment } from '../plannotes';
 import { useSel } from '../store';
 import { PERMISSION_SHOWN_CHARS, PERMISSION_SHOWN_EDITS, PERMISSION_SHOWN_STRING, type Decision } from '../api';
-import { typingIn } from '../focus';
+import { cardMayTakeFocus, type Focused } from '../focus';
 import { buildAnswers, emptyPick, parseQuestions, toggle, type Pick, type Question } from '../questions';
 import { DiffLines } from './ToolCard';
 import { MarkdownView } from './MarkdownView';
@@ -85,11 +86,16 @@ function QuestionField({ q, n, pick, onPick }: { q: Question; n: number; pick: P
 function QuestionCard({ req, qs, index, total }: { req: PermissionReq; qs: Question[]; index: number; total: number }) {
   const [picks, setPicks] = useState<Pick[]>(() => qs.map(emptyPick));
   const answers = buildAnswers(qs, picks);
+  const ref = useRef<HTMLFormElement>(null);
+  // (the card itself takes the focus, never an option: a keystroke that lands on it picks nothing)
+  useFocusOnArrival(ref, req.id);
   const send = () => {
     if (answers) answerQuestions(req.session, req.id, answers);
   };
   return (
     <form
+      ref={ref}
+      tabIndex={-1}
       class="perm perm-question"
       role="alertdialog"
       aria-label="Claude has a question for you"
@@ -200,10 +206,14 @@ function useArmed(id: string, ms = 400): boolean {
   return armed;
 }
 
-/** The card takes focus when it appears, unless something you type into has it (empty or not). */
+/** The card takes focus when it appears (or when you come back to a session where it waits), and is scrolled into view —
+ *  unless something you type into has the focus: a field, the editor, the terminal, or the prompt box with text in it or
+ *  typed in a moment ago (focus.ts cardMayTakeFocus). */
 function useFocusOnArrival(ref: { current: HTMLElement | null }, id: string, target?: () => HTMLElement | null): void {
   useEffect(() => {
-    if (!typingIn(document.activeElement)) (target?.() ?? ref.current)?.focus({ preventScroll: true });
+    if (!cardMayTakeFocus(document.activeElement as (Element & Focused) | null)) return;
+    (target?.() ?? ref.current)?.focus({ preventScroll: true });
+    ref.current?.scrollIntoView?.({ block: 'nearest' });
   }, [id]);
 }
 

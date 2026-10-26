@@ -13,6 +13,14 @@ export function groupOf(v: SessionView): Group {
   return 'done';
 }
 
+/** What a session's state chip says (the chat's header, a phone's title): a session whose turn waits on a permission
+ *  card, a question or a plan says it waits for you — never "working" — with the amber dot; one at work spins. */
+export function stateChip(v: Pick<SessionView, 'state' | 'permissions'>): { cls: string; text: string; spin: boolean } {
+  if (v.permissions.length) return { cls: 'waiting', text: 'waiting for you', spin: false };
+  if (v.state === 'busy') return { cls: 'busy', text: 'working', spin: true };
+  return { cls: v.state, text: v.state, spin: v.state === 'starting' };
+}
+
 /** The page's sessions by group, in the order they were opened (the newest permission prompt does not reorder). */
 export function grouped(views: Record<string, SessionView>): Record<Group, string[]> {
   const out: Record<Group, string[]> = { needs: [], working: [], done: [] };

@@ -6,6 +6,7 @@ import { useSel } from '../store';
 import { store, activeView, stopTask, newSession } from '../app';
 import { overBudget } from '../api';
 import { runningTasks } from '../session';
+import { stateChip } from '../groups';
 import { latestTodos } from '../transcript';
 import { duration, label, money } from '../text';
 import { MessageList } from './MessageList';
@@ -76,16 +77,16 @@ function Permissions() {
 export function ChatHeader({ actions }: { actions?: ComponentChildren }) {
   const v = useSel(store, (s) => activeView(s));
   const title = v?.title || (v ? 'New session' : 'Claude');
-  const state = v?.state;
+  const chip = v ? stateChip(v) : null;
   return (
     <div class="pane-head chat-head">
       <span class="pane-title" title={title}>
         {title}
       </span>
-      {state && (
-        <span class={`state state-${state}`} data-testid="session-state">
-          {state === 'busy' || state === 'starting' ? <Spinner size={11} /> : <span class="sdot" />}
-          {state === 'busy' ? 'working' : state}
+      {chip && (
+        <span class={`state state-${chip.cls}`} data-testid="session-state" data-state={chip.cls}>
+          {chip.spin ? <Spinner size={11} /> : <span class="sdot" />}
+          {chip.text}
         </span>
       )}
       <span class="pane-actions">

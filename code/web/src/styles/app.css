@@ -460,6 +460,9 @@ body.resizing-x iframe, body.resizing-y iframe { pointer-events: none; }
 .state-idle .sdot { background: var(--ok); }
 .state-error { color: var(--bad); }
 .state-error .sdot { background: var(--bad); }
+/* a turn on hold for your answer (a permission card, a question, a plan): the amber of the card's lamp */
+.state-waiting { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.state-waiting .sdot { background: var(--warn); }
 
 .messages { flex: 1 1 0; min-height: min(96px, 16vh); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; position: relative;
   container: msgs / inline-size; }

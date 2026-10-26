@@ -1078,7 +1078,7 @@ ARM = """() => {
 }"""
 
 
-@check("permission cards: armed after a moment; partially shown; padded command; default-to-no; focus stays in the prompt box; MultiEdit")
+@check("permission cards: armed after a moment; partially shown; padded command; default-to-no; a card takes the focus from an empty prompt box (no key answers it there); MultiEdit")
 def permission_cards(browser):
     post(NORMAL + "/__mock/reset")
     p = Page(browser, NORMAL, "perm-cards", **DESKTOP)
@@ -1128,18 +1128,22 @@ def permission_cards(browser):
     page.keyboard.press("Enter")
     wait_turns(page, 4)
     expect(page.locator(".msg-claude").last).to_contain_text("Left it alone")
-    # a card that appears while the (empty) prompt box has the focus leaves it there: "1" is typed, nothing approved;
-    # once you go to the card yourself (a click), "1" answers it
+    # a card that appears right after you sent its prompt (the box empty, no key typed in it since) takes the focus and is
+    # in view, and the session says it waits for you — a key that lands on the card answers nothing ("1": neither typed
+    # nor an answer); once you go to the card yourself (a click), "1" answers it (a card that comes while you type keeps
+    # the box's focus: test/waiting.test.ts)
     send(page, "run the tests")
     perm = page.get_by_test_id("permission")
     expect(perm).to_be_visible(timeout=10_000)
-    expect(page.get_by_test_id("prompt")).to_be_focused()
+    page.wait_for_function("() => !!document.activeElement && !!document.activeElement.closest('[data-testid=permission]')", timeout=5_000)
+    expect(page.get_by_test_id("session-state")).to_have_attribute("data-state", "waiting")
+    expect(page.get_by_test_id("session-state")).to_have_text("waiting for you")
+    assert "waiting for your answer" in (page.get_by_test_id("prompt").get_attribute("placeholder") or "")
     page.wait_for_timeout(600)
     page.keyboard.press("1")
     page.wait_for_timeout(300)
-    expect(page.get_by_test_id("prompt")).to_have_value("1")
+    expect(page.get_by_test_id("prompt")).to_have_value("")
     expect(perm).to_have_count(1)
-    page.get_by_test_id("prompt").fill("")
     perm.locator(".perm-head").click()
     expect(perm).to_have_attribute("data-engaged", "true")
     page.keyboard.press("1")

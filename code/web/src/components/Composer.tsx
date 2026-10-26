@@ -24,6 +24,7 @@ import { Icon, Spinner } from './icons';
 import { ModePicker } from './Pickers';
 import { Guards } from './Guards';
 import { useMedia } from './ui';
+import { notePromptTyping } from '../focus';
 import { mentionStore, removeMention, clearMentions, addTerminal, addDiff, addProblems, addLines, syncTypedLines, recapture } from '../attach';
 import { mentionBlocks, mentionOptions, takesMentions, withContext, type Mention } from '../mentions';
 import { CAPTURE_LINES_MAX } from '../api';
@@ -127,6 +128,8 @@ export function Composer({ footer }: { footer?: ComponentChildren }) {
   }, [restore?.n]);
 
   const busy = view?.state === 'busy' || view?.state === 'starting';
+  // a permission card, a question or a plan waits for your answer (the turn is on hold until then)
+  const waiting = !!view?.permissions.length;
 
   useEffect(() => {
     if (focusN && matchMedia('(pointer: fine)').matches) ta.current?.focus();
@@ -320,6 +323,9 @@ export function Composer({ footer }: { footer?: ComponentChildren }) {
   };
 
   const onKey = (e: KeyboardEvent) => {
+    // (a key typed here: a card that arrives now leaves the focus here — not the Enter that sends: the card that prompt
+    // brings is what needs you next)
+    if (e.key !== 'Enter' || e.shiftKey) notePromptTyping();
     const el = e.currentTarget as HTMLTextAreaElement;
     if (trigger && options.length) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -469,7 +475,13 @@ export function Composer({ footer }: { footer?: ComponentChildren }) {
           ref={ta}
           rows={1}
           value={text}
-          placeholder={busy ? 'Claude is working — type to queue a message, Esc to stop' : 'Ask Claude to build, fix or explain…  / commands · @ files, @terminal, @diff'}
+          placeholder={
+            waiting
+              ? 'Claude is waiting for your answer above — type to queue a message, Esc to stop'
+              : busy
+                ? 'Claude is working — type to queue a message, Esc to stop'
+                : 'Ask Claude to build, fix or explain…  / commands · @ files, @terminal, @diff'
+          }
           aria-label="Message Claude"
           data-testid="prompt"
           onInput={(e) => {

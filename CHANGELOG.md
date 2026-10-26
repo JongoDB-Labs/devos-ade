@@ -196,6 +196,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   minute's rows: a first turn read $0.0049 live and $0.0007 after a reload, while the session's total stayed $0.0049
   (LiteLLM's spend, the true figure). The code container now stamps each event with its time, and a page that
   re-attaches (a reload, a second tab, a phone) rebuilds the turns at their own times.
+- **A session that waits for you says so.** While a permission card, a question or a plan waited for an answer, the
+  session's chip, a phone's title and the prompt box said *working*. They now say *waiting for you* (the amber dot of
+  the card's lamp), the prompt box says Claude waits for your answer above, and the card takes the focus and is scrolled
+  into view — also from an empty prompt box you just sent from (a key that lands on the card still answers nothing;
+  text you are typing keeps the box's focus).
 
 ## [0.31.0] - 2026-10-26
 

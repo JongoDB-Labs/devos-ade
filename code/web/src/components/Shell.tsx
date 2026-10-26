@@ -40,6 +40,7 @@ import { SETUP_LINKS, type SetupReason } from '../setuplinks';
 import { GitPanel } from './GitPanel';
 import { SandboxSaid } from './Said';
 import { changedCount } from '../git';
+import { stateChip } from '../groups';
 import { BudgetDialog } from './Budget';
 import { PermissionsDialog } from './Permissions';
 import { SearchPanel } from './Search';
@@ -964,16 +965,17 @@ function ChatHeaderPhone() {
   const v = useSel(store, (s) => activeView(s));
   const model = useSel(store, (s) => modelLabel(s.models?.models, activeView(s)?.model ?? ''));
   const project = useSel(store, (s) => currentProject(s));
+  const chip = v ? stateChip(v) : null;
   return (
     <div class="phone-title">
       <button type="button" class="pt-project" onClick={() => setSheet('sessions')} title={`Project: ${project.name} (${project.path})`} data-testid="phone-project">
         <Icon name={project.workspace ? 'files' : 'folder'} size={11} /> {project.name}
       </button>
       <span class="pt-title" title={v?.title || undefined}>{v?.title || (v ? 'New session' : 'Code')}</span>
-      {v && (
-        <span class={`state state-${v.state}`} title={`${v.state === 'busy' ? 'working' : v.state}${model ? ` · ${model}` : ''}`}>
-          {v.state === 'busy' ? <Spinner size={10} /> : <span class="sdot" />}
-          {v.state === 'busy' ? 'working' : v.state}
+      {chip && (
+        <span class={`state state-${chip.cls}`} data-testid="phone-session-state" data-state={chip.cls} title={`${chip.text}${model ? ` · ${model}` : ''}`}>
+          {chip.spin ? <Spinner size={10} /> : <span class="sdot" />}
+          {chip.text}
           {model ? ` · ${model}` : ''}
         </span>
       )}
