@@ -177,6 +177,42 @@ websearch_yaml() {
 # _ws_json_str TEXT -> TEXT as a JSON string's inside: no control character, quotes and backslashes escaped
 _ws_json_str() { printf '%s' "$1" | LC_ALL=C tr -d '\000-\037\177' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
 
+# _ws_url_masked URL -> scheme://host/…: the SearXNG address as Settings shows it (lib/settings.sh, kind u), without
+# what may carry a token (a user:password@, the path, the query); "(set)" for one that is no URL
+_ws_url_masked() {
+  local h
+  h="$(printf '%s' "$1" | sed -nE 's#^([A-Za-z][A-Za-z0-9+.-]*://)([^/?#]*@)?([^/?#@]+).*#\1\3#p')"
+  [ -n "$h" ] || { printf '(set)'; return 0; }
+  if [ "$1" = "$h" ]; then printf '%s' "$h"; else printf '%s/…' "$h"; fi
+}
+
+# _ws_redact TEXT -> TEXT without the search keys, the setup key or the SearXNG address (whole, or what of it may carry
+# a token: its user:password, password, path and query, and each value of the query): a search's error text is kept
+# as the reason Settings' card and ./stack status show, and a backend may echo what it was sent
+_ws_redact() {
+  local t="$1" v u rest auth pq q kv
+  local -a parts=()
+  for v in "$(get_env WEBSEARCH_TAVILY_API_KEY)" "$(get_env WEBSEARCH_BRAVE_API_KEY)" \
+           "$(get_env WEBSEARCH_PERPLEXITY_API_KEY)" "$(setup_key 2>/dev/null)"; do
+    [ "${#v}" -lt 8 ] || t="${t//"$v"/***}"
+  done
+  u="$(get_env WEBSEARCH_SEARXNG_URL)"
+  [ -n "$u" ] || { printf '%s' "$t"; return 0; }
+  t="${t//"$u"/$(_ws_url_masked "$u")}"
+  rest="${u#*://}"; auth="${rest%%[/?#]*}"; pq="${rest#"$auth"}"
+  case "$auth" in *@*)
+    v="${auth%@*}"; [ "${#v}" -lt 4 ] || t="${t//"$v"/***}"                               # user:password
+    case "$v" in *:*) v="${v#*:}"; [ "${#v}" -lt 4 ] || t="${t//"$v"/***}" ;; esac ;;       # the password
+  esac
+  [ "${#pq}" -lt 8 ] || t="${t//"$pq"/***}"                                                 # path and query
+  case "$pq" in *\?*) q="${pq#*\?}"; q="${q%%#*}"
+    [ "${#q}" -lt 8 ] || t="${t//"$q"/***}"
+    IFS='&' read -r -a parts <<< "$q"
+    for kv in "${parts[@]}"; do v="${kv#*=}"; [ "${#v}" -lt 6 ] || t="${t//"$v"/***}"; done ;;  # each value
+  esac
+  printf '%s' "$t"
+}
+
 # websearch_json -> one JSON object: the backend in use and its price per search (lib/litellm-hooks/bn_hooks.py reads
 # them), what WEBSEARCH_BACKEND says, the checks' answers and what to do (fix: lines), the backends set up, and
 # AgentCore's own state (its check's answer, its gateway, what makes it usable) — litellm/web-search.json, and
@@ -262,7 +298,8 @@ websearch_check_state() {
   if [ "$(_ws_state search backend)" = "$b" ] && [ "$(_ws_state search fingerprint)" = "$(_ws_search_fp "$b")" ]; then
     st="$(_ws_state search status)"; at="$(_ws_state search at)"
     case "$at" in '' | *[!0-9]*) at='' ;; *) at="$(date -u -r "$at" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$at" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || true)" ;; esac
-    printf '%s\037%s\037%s\n' "${st:-unchecked}" "$(_ws_state search why)" "$at"
+    # (redacted again as it is read: a reason v0.30.0 kept before it redacted them stands for up to a week)
+    printf '%s\037%s\037%s\n' "${st:-unchecked}" "$(_ws_redact "$(_ws_state search why)")" "$at"
     return 0
   fi
   printf 'unchecked\037\037\n'
@@ -295,6 +332,7 @@ websearch_search_check() {
 websearch_classify() {
   local b="$1" code="$2" text lower perm
   text="$(head -c 4000 "$3" 2>/dev/null | LC_ALL=C tr -c ' -~' ' ' | tr -d '"\\' || true)"
+  text="$(_ws_redact "$text")"   # (kept as the reason: never what the backend was sent)
   lower="$(printf '%s' "$text" | tr '[:upper:]' '[:lower:]')"
   case "$code" in
     200) if printf '%s' "$text" | grep -q 'results'; then printf 'ok\t\n'; else printf 'failed\tno results: %s\n' "$(printf '%s' "$text" | cut -c1-160)"; fi
@@ -453,7 +491,7 @@ websearch_fix() {
       r="$(_ws_url_region "$(websearch_agentcore_url)")"
       echo "your AWS admin gives the gateway's service role bedrock-agentcore:InvokeWebSearch on arn:aws:bedrock-agentcore:$r:aws:tool/web-search.v1 (an IAM change; ./stack websearch aws-setup, step 1, has the policy; then ./stack websearch check)" ;;
     agentcore:*) echo "./stack websearch check tries again; ./stack logs litellm has LiteLLM's side" ;;
-    searxng:*) echo "SearXNG must answer $(get_env WEBSEARCH_SEARXNG_URL)/search?q=test&format=json from LiteLLM's container (JSON output on in its settings.yml: search.formats); then ./stack websearch check" ;;
+    searxng:*) echo "your SearXNG ($(_ws_url_masked "$(get_env WEBSEARCH_SEARXNG_URL)")) must answer /search?q=test&format=json from LiteLLM's container (JSON output on in its settings.yml: search.formats); then ./stack websearch check" ;;
     *) echo "a new key: ./stack config set $(websearch_key "$b") (then it is checked again)" ;;
   esac
 }
@@ -493,7 +531,7 @@ websearch_status() {
   if [ -n "$b" ]; then
     case "$b" in
       agentcore) printf '  Sent        only the search query, to Amazon Bedrock AgentCore Web Search in your AWS account (gateway %s); it stays inside AWS\n' "$(websearch_agentcore_url)" ;;
-      searxng) printf '  Sent        only the search query, to your SearXNG (%s) and from there to the search engines it asks\n' "$(get_env WEBSEARCH_SEARXNG_URL)" ;;
+      searxng) printf '  Sent        only the search query, to your SearXNG (%s) and from there to the search engines it asks\n' "$(_ws_url_masked "$(get_env WEBSEARCH_SEARXNG_URL)")" ;;
       *) printf '  Sent        only the search query, to %s with your key\n' "$(websearch_name "$b")" ;;
     esac
     printf '  Cost        %s; booked on the LiteLLM key of the session that searched, like its model'"'"'s spend\n' "$(websearch_price_words "$b")"

@@ -6,6 +6,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Security
+
+- **Web search never shows a search key or your SearXNG address's token.** A search service's error text is kept as
+  the reason Settings › Models & providers › Search and `./stack status` show; a service that echoes what it was sent
+  could put your search key, the setup key or your SearXNG URL there. They are now taken out of it, as it is kept and
+  as it is read (so a reason kept by v0.30.0 is cleaned too). What to do when SearXNG fails and `./stack websearch
+  status` show its address as `https://host/…`, as Settings does, and Settings no longer shows a `user:password@` of
+  a URL setting (the SearXNG URL, the alert webhook).
+
 ## [0.30.1] - 2026-10-26
 
 ### Fixed

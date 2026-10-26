@@ -243,13 +243,13 @@ test_snapshot_masks_every_secret() {
   local xl ws; xl="xpl_$(printf '%040d' 0 | tr 0 9)"; ws="$(printf 'w%.0s' $(seq 1 24))5678"   # (and a search key's)
   set_env_batch ALERT_WEBHOOK_URL 'https://hooks.example.com/abc?token=hooktoken123' MY_OWN_SECRET 'mine123456789' \
     TERMINAL_PROXY_SECRET 0123456789abcdef0123456789abcdef LITELLM_KEY_TERMINAL sk-term0123456789 EXPLABS_API_KEY "$xl" \
-    WEBSEARCH_BRAVE_API_KEY "$ws" WEBSEARCH_SEARXNG_URL 'https://search.example.org/sx?token=searchtoken1'
+    WEBSEARCH_BRAVE_API_KEY "$ws" WEBSEARCH_SEARXNG_URL 'https://sxuser:sxpass1234@search.example.org/sx?token=searchtoken1'
   settings_snapshot_write
   local f s v; f="$(settings_snapshot_file)"; s="$(cat "$f")"
   assert_eq "$(ls -l "$f" | cut -c1-10)" "-rw-r--r--"
   for v in 'correct horse battery' ${FAKE_AWS_3} sk-master0123456789 rustfs0123456789secret \
            mcp0123456789abcdef Bn9-0123456789abcdef hooktoken123 mine123456789 sk-setup0123456789 \
-           0123456789abcdef0123456789abcdef sk-term0123456789 "$xl" 9999 "$ws" wwww searchtoken1; do
+           0123456789abcdef0123456789abcdef sk-term0123456789 "$xl" 9999 "$ws" wwww searchtoken1 sxuser sxpass1234; do
     assert_not_contains "$s" "$v"
   done
   # the Experiential Labs key: set, and not a character of it (no hint either)

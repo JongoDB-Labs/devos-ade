@@ -451,6 +451,10 @@ searched, and the hook (`lib/litellm-hooks/bn_hooks.py`) has WebSearch say so.
   `os.environ/WEBSEARCH_…`, never the value); a `WEBSEARCH_*` in your shell never reaches Docker Compose. The portal,
   Open WebUI and the sandbox never get them. `WEBSEARCH_AGENTCORE_GATEWAY` takes nothing but an AgentCore gateway's MCP
   URL; `WEBSEARCH_SEARXNG_URL` https, or http to a host of your own network (the webhook's rule).
+  The SearXNG URL is shown only as `scheme://host/…` (Settings, `./stack websearch status`, what to do when it fails):
+  never its `user:password@`, path or query, where a token may be. A search's error text is kept as the reason
+  Settings and `./stack status` show; before it is kept (and again as it is read) every search key, the setup key and
+  the SearXNG URL, whole or in parts, are taken out of it, since a backend may echo what it was sent.
 - **AWS: what DevOS ADE does, and what it does not.** It never changes IAM or makes an AWS resource: the one-time setup
   (the gateway's service role, the gateway, its target, your key's permission) is commands `./stack websearch
   aws-setup` prints for your admin. With your key it makes only these calls: `sts:GetCallerIdentity` (who the key is,

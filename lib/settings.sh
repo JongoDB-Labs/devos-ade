@@ -512,12 +512,14 @@ settings_snapshot_write() {
               # blank means internet (lib/common.sh egress_mode): an explicit internet is not "Changed from default"
               if ("TERMINAL_EGRESS" in def) def["TERMINAL_EGRESS"] = "internet" }
       function js(s) { gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); gsub(/\t/, " ", s); gsub(/[\001-\037\177]/, "", s); return "\"" s "\"" }
-      function mask(code, v,  n, m) {
+      function mask(code, v,  n, m, h) {
         n = length(v)
         if (code == "-" || code == "s") return ", \"value\": " js(v) ((K in def) ? ", \"default\": " js(def[K]) : "")
         if (code == "k") return n >= 8 ? ", \"hint\": " js(substr(v, 1, 4) "…" substr(v, n - 3)) : ""
         if (code == "h") return n >= 8 ? ", \"hint\": " js("…" substr(v, n - 3)) : ""
-        if (code == "u") { if (match(v, /^[A-Za-z]+:\/\/[^\/?#]+/)) return ", \"hint\": " js(substr(v, 1, RLENGTH) (n > RLENGTH ? "/…" : "")); return "" }
+        # (a URL: its scheme and host, never a user:password@, path or query, where a token may be)
+        if (code == "u") { if (match(v, /^[A-Za-z]+:\/\/[^\/?#]+/)) { h = substr(v, 1, RLENGTH); m = h; sub(/:\/\/.*@/, "://", m)
+          return ", \"hint\": " js(m (n > RLENGTH || m != h ? "/…" : "")) } return "" }
         return ""
       }
       FNR == NR { row[++nr] = $0; known[$1] = 1; next }

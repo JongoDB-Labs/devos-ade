@@ -261,6 +261,42 @@ test_the_search_check_classifies_what_litellm_answered() {
   assert_eq "$(websearch_classify tavily 429 "$TMP/b" | cut -f1)" unverified
 }
 
+test_a_search_error_never_keeps_a_key_or_the_searxng_address() {
+  # (Settings' card and ./stack status show the reason: a backend may echo what it was sent, in what it answers)
+  local u='https://sxuser:sxpass1234@search.example.org/sx?token=searchtoken1&lang=en' out v
+  _ws_env "WEBSEARCH_TAVILY_API_KEY=$KEY
+LITELLM_KEY_SETUP=sk-setup-test0123
+WEBSEARCH_SEARXNG_URL=$u
+"
+  printf '{"error":{"message":"bad request: key %s via sk-setup-test0123"}}' "$KEY" > "$TMP/b"
+  out="$(websearch_classify tavily 400 "$TMP/b")"
+  assert_contains "$out" "$(printf 'failed\tHTTP 400: ')"
+  assert_contains "$out" 'key *** via ***'
+  for v in "$KEY" sk-setup-test0123; do assert_not_contains "$out" "$v"; done
+  printf 'searx at %s failed; sxuser:sxpass1234, then sxpass1234 alone, /sx?token=searchtoken1&lang=en and searchtoken1' "$u" > "$TMP/b"
+  out="$(websearch_classify searxng 502 "$TMP/b")"
+  for v in sxpass1234 searchtoken1 /sx; do assert_not_contains "$out" "$v"; done
+  assert_contains "$out" "searx at https://search.example.org/… failed"
+  printf '{"object":"search","answer":"none for %s"}' "$KEY" > "$TMP/b"
+  out="$(websearch_classify tavily 200 "$TMP/b")"
+  assert_contains "$out" "$(printf 'failed\tno results: ')"; assert_not_contains "$out" "$KEY"
+  # what to do, and what is sent where: the address as Settings shows it
+  set_env WEBSEARCH_BACKEND searxng
+  mkdir -p "$(websearch_state_dir)"
+  printf 'backend=searxng\nstatus=failed\nwhy=HTTP 502\nat=%s\nfingerprint=%s\n' "$(date +%s)" "$(_ws_search_fp searxng)" > "$(_ws_state_file search)"
+  out="$(websearch_fix searxng; NO_COLOR=1 websearch_status)"
+  assert_contains "$out" "your SearXNG (https://search.example.org/…) must answer /search?q=test&format=json"
+  assert_contains "$out" "to your SearXNG (https://search.example.org/…)"
+  for v in sxuser sxpass1234 searchtoken1; do assert_not_contains "$out" "$v"; done
+  # a reason kept before this redaction (v0.30.0): redacted as it is read
+  printf 'backend=searxng\nstatus=failed\nwhy=HTTP 502: %s\nat=%s\nfingerprint=%s\n' "$u" "$(date +%s)" "$(_ws_search_fp searxng)" > "$(_ws_state_file search)"
+  out="$(websearch_check_state searxng; NO_COLOR=1 websearch_status_line)"
+  assert_contains "$out" "HTTP 502: https://search.example.org/…"
+  for v in sxuser sxpass1234 searchtoken1; do assert_not_contains "$out" "$v"; done
+  assert_eq "$(_ws_url_masked https://search.example.org)" https://search.example.org
+  assert_eq "$(_ws_url_masked not-a-url)" '(set)'
+}
+
 test_the_search_check_runs_once_with_the_setup_key_and_is_reused() {
   _ws_env "WEBSEARCH_TAVILY_API_KEY=$KEY
 LITELLM_KEY_SETUP=sk-setup-test
