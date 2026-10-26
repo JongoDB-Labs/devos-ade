@@ -2650,7 +2650,7 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
   `tests/e2e/harness-parity.sh --aws-env FILE` runs real Claude Code sessions (`devos-claude -p … --output-format
   stream-json`, its tools allowed in one test folder) in the terminal's sandbox image, through this checkout's terminal
   gateway, LiteLLM config and hook, on each provider family's models: Claude Haiku as the control, Bedrock's GPT-6
-  Luna, Mistral Large 3 and Llama 3.3 70B, an OpenRouter model and two Experiential Labs models. Fourteen scenarios
+  Luna, Mistral Large 3 and Llama 3.3 70B, an OpenRouter model and two Experiential Labs models. Fifteen scenarios
   each: three turns with `--resume`, thinking replayed,
   Claude Code's tools (Read, Write, Edit, Bash, Glob, Grep, its todo list), parallel tool calls, a tool call after
   thinking, an image through Read and one in the prompt (and one straight to `/v1/messages`, with a count of the images
