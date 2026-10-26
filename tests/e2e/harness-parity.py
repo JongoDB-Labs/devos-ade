@@ -274,6 +274,26 @@ class Suite:
             by[g] = round(by.get(g, 0) + float(r.get("cost") or 0), 6)
         return round(sum(by.values()), 6), by
 
+    def save_stand_in_logs(self):
+        """What reached the stand-ins (harness-parity-stand-ins.jsonl): when, the path, the model, the messages' roles,
+        the request's own keys and its tools — never their text."""
+        out = []
+        for flavor, log in (("explabs", "/tmp/xl-reqs.jsonl"), ("openrouter", "/tmp/or-reqs.jsonl")):
+            p = subprocess.run(["docker", "exec", self.litellm, "cat", log], capture_output=True)
+            for line in p.stdout.decode("utf-8", "replace").splitlines():
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                b = d.get("body") or {}
+                msgs = b.get("messages") if isinstance(b.get("messages"), list) else []
+                out.append({"stand_in": flavor, "t": round(d.get("t", 0), 1), "path": d.get("path"), "model": b.get("model"),
+                            "roles": [m.get("role") for m in msgs if isinstance(m, dict)][-20:], "keys": sorted(b)[:40],
+                            "tools": len(b.get("tools") or [])})
+        with open(os.path.join(self.a.out, "harness-parity-stand-ins.jsonl"), "w", encoding="utf-8") as f:
+            for r in out:
+                f.write(json.dumps(r) + "\n")
+
     def failed_calls(self):
         """Every call LiteLLM failed during the run: when, its model group, its error, its messages' roles as they went to
         the provider, and the request of that group just before it as Claude Code sent it (its shape)."""
@@ -286,7 +306,8 @@ class Suite:
             group = r.get("group") or r.get("model")
             sent = [x for x in raw if x.get("t", 0) <= r.get("t", 0) and x.get("group") == group]
             out.append({"t": round(r.get("t", 0), 1), "group": group, "error": str(r.get("error"))[:400], "roles": roles.get(r.get("call_id")),
-                        "request": {k: sent[-1].get(k) for k in ("call_type", "system_head", "max_tokens", "tools", "shape")} if sent else None})
+                        "route": r.get("route"), "ua": r.get("ua"),
+                        "request": {k: sent[-1].get(k) for k in ("call_type", "route", "ua", "system_head", "max_tokens", "tools", "shape")} if sent else None})
         return out
 
     def write(self):
@@ -441,7 +462,7 @@ def sc_side_calls(s, m, d, tag):
         groups = {m} | ({s.a.relay_model} if family(m) in ("openrouter", "explabs") else set())
         sent = [x for x in s.calls if x.get("kind") == "raw" and x.get("t", 0) >= t0 and x.get("group") in groups | {CONTROL}]
         failed = [x for x in s.failed_calls() if x["t"] >= t0 and x["group"] in groups]
-    flags = {"requests": [{k: x.get(k) for k in ("group", "system_head", "max_tokens", "tools", "shape")} for x in sent][:12], "failed": failed}
+    flags = {"requests": [{k: x.get(k) for k in ("group", "route", "ua", "system_head", "max_tokens", "tools", "shape")} for x in sent][:12], "failed": failed}
     if failed:
         return "FAIL", f"{len(failed)} call(s) failed at the provider: {failed[0]['error'][:300]} — sent as {json.dumps(failed[0].get('request'))[:400]}", flags
     if not r2.ok():
@@ -664,6 +685,7 @@ def main():
     with s.lock:
         s.calls += s.ledger_since()
         s.write()
+    s.save_stand_in_logs()
     total, by = s.spend()
     fails = sum(1 for r in s.rows if r["status"] == "FAIL")
     print(f"==> {len(s.rows)} scenario runs, {fails} failed; Bedrock spend booked by LiteLLM: ${total:.4f} {by}", file=sys.stderr)

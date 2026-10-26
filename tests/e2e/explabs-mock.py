@@ -18,8 +18,8 @@ the gateway refused LiteLLM's thinking_blocks so; any other unknown field of a m
 same way here, a strict reading), two tool calls with one id in an assistant turn (400), a tool description over
 65,536 characters (400), a parameter the model's catalog entry does not list (top_k, frequency_penalty,
 presence_penalty, top_logprobs; 400 unsupported_parameter), an image for a model whose catalog entry takes text only
-(400 unsupported_capability, naming "messages"), a plugin other than "web" (400), and a model the list does not have
-(403 model_not_granted). A user message holding PARITY-REFUSE is refused as a provider's policy refusal (400 refusal,
+(400 unsupported_capability, naming "messages"), a plugin other than "web" (400), a request without messages (400) and a
+model the list does not have (403 model_not_granted). A user message holding PARITY-REFUSE is refused as a provider's policy refusal (400 refusal,
 "provider refused the request: cybersecurity policy"), for the harness parity suite's error check.
 With MOCK_RELAY (LiteLLM's base URL, its key in MOCK_RELAY_KEY: environment only) a request that passes is answered by
 a real model, MOCK_RELAY_MODEL, through that LiteLLM's Chat Completions (tests/e2e/harness-parity.sh: Claude Code's
@@ -145,6 +145,10 @@ class Gateway(BaseHTTPRequestHandler):
                                   ("response.output_text.delta", {"type": "response.output_text.delta", "item_id": "msg_1", "output_index": 0, "content_index": 0, "delta": "DevOS ADE test OK"}),
                                   ("response.completed", {"type": "response.completed", "response": resp})])
             return self._json(200, resp)
+        if not self.path.endswith("/responses") and not body.get("messages"):
+            # (as the gateway and OpenRouter answer it: never relayed)
+            return self._json(400, {"error": {"message": "Invalid 'messages': empty array. Expected an array with minimum length 1.",
+                                              "type": "invalid_request_error", "param": "messages", "code": "invalid_request"}})
         refused = _refusal(body) if FLAVOR == "explabs" else None
         if refused:
             return self._json(*refused)

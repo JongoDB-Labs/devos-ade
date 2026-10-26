@@ -210,11 +210,21 @@ def _images(messages):
     return n
 
 
+def _origin(d):
+    """Where a request came from: the proxy's route and the client's user-agent (never a header's other values)."""
+    psr = d.get("proxy_server_request") if isinstance(d, dict) else None
+    if not isinstance(psr, dict):
+        return {}
+    h = psr.get("headers") if isinstance(psr.get("headers"), dict) else {}
+    return {"route": str(psr.get("url") or "")[-80:], "ua": str(h.get("user-agent") or "")[:60]}
+
+
 def _row(kwargs, ok, err=None):
     lp = kwargs.get("litellm_params") or {}
     meta = lp.get("metadata") or {}
     return {"t": time.time(), "ok": ok, "call_id": kwargs.get("litellm_call_id"), "model": kwargs.get("model"),
-            "group": meta.get("model_group"), "cost": kwargs.get("response_cost") or 0, "error": err}
+            "group": meta.get("model_group"), "cost": kwargs.get("response_cost") or 0, "error": err,
+            **_origin(lp) , **_origin(kwargs)}
 
 
 class Spend(CustomLogger):
@@ -238,6 +248,7 @@ class Spend(CustomLogger):
                 kinds = c if isinstance(c, str) and not c else ("text" if isinstance(c, str) else [b.get("type") for b in c if isinstance(b, dict)] if isinstance(c, list) else None)
                 shape.append([m.get("role") if isinstance(m, dict) else None, kinds])
             self._write({"t": time.time(), "ok": True, "kind": "raw", "group": data.get("model") if isinstance(data, dict) else None,
+                         **_origin(data),
                          "call_type": str(getattr(call_type, "value", call_type)), "system_head": head[:120],
                          "max_tokens": data.get("max_tokens") if isinstance(data, dict) else None,
                          "tools": len(data.get("tools") or []) if isinstance(data, dict) else None, "shape": shape[-12:]})
@@ -393,9 +404,9 @@ LITELLM_PORT="$PORT" MASTER_FILE="$MASTER_FILE" python3 -I "$HERE/harness-parity
 # --- the keys, nowhere
 leak=''
 for k in "$OPENROUTER_API_KEY" "$EXPLABS_API_KEY" "$AWS_SECRET_ACCESS_KEY" "$MASTER"; do
-  if printf '%s\n' "$k" | grep -rqF -f - "$OUT/harness-parity.tsv" "$OUT/harness-parity.json" "$OUT/harness-parity-logs" 2>/dev/null; then leak=1; fi
+  if printf '%s\n' "$k" | grep -rqF -f - "$OUT/harness-parity.tsv" "$OUT/harness-parity.json" "$OUT/harness-parity-stand-ins.jsonl" "$OUT/harness-parity-logs" 2>/dev/null; then leak=1; fi
 done
-[ -z "$leak" ] || { echo "FAIL a key is in the results: removing them" >&2; rm -rf "$OUT/harness-parity.tsv" "$OUT/harness-parity.json" "$OUT/harness-parity-logs"; rc=1; }
+[ -z "$leak" ] || { echo "FAIL a key is in the results: removing them" >&2; rm -rf "$OUT/harness-parity.tsv" "$OUT/harness-parity.json" "$OUT/harness-parity-stand-ins.jsonl" "$OUT/harness-parity-logs"; rc=1; }
 
 [ "$KEEP" = 0 ] || say "kept (tests/e2e/harness-parity.sh --reuse runs again on it; --teardown removes it)"
 exit "$rc"
