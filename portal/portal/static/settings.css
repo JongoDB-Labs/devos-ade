@@ -171,13 +171,12 @@
 
 /* Models & providers: a card for each provider — a key's row with its models' rows in a frame, your subscriptions' in
    a grid — its state in a badge next to its name, and what it adds to the pickers; a mono head over each group */
-.set-group-head { margin: 18px 0 8px; font: 600 11.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.set-group-head { margin: 18px 0 8px; font: 600 11.5px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .set-rows > .set-group-head:first-child { margin-top: 4px; }
-.set-rows > .set-dep.set-prov, .set-prov-grid > .set-prov { border: 1px solid var(--line); border-radius: var(--r-l, 12px); background: var(--surface);
-  box-shadow: var(--card-edge, none); }
+.set-rows > .set-dep.set-prov, .set-prov-grid > .set-prov { border: 1px solid var(--line); border-radius: var(--r-l); background: var(--surface);
+  box-shadow: var(--card-edge); }
 .set-rows > .set-dep.set-prov { padding: 0 16px 2px; margin-bottom: 10px; }
 .set-rows > .set-dep.set-prov + .set-dep, .set-rows > .set-group-head + .set-dep { border-top: 0; }
-.set-prov-state { font-weight: 600; }
 .set-prov-state[data-tone="on"] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
 .set-prov-state[data-tone="warn"] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
 .set-prov-adds { margin: 6px 0 0; font-size: 13.5px; max-width: 70ch; }
