@@ -798,6 +798,8 @@ function settingsView(pr) {
     trustedAt: trustMock.has(pr.id) ? Date.now() - 60_000 : null, files, summary };
 }
 const projectGit = new Map();
+// your choices for new sessions, kept for your sign-in (GET/PUT /api/prefs); /__mock/reset forgets them
+let userPrefs = { model: null, settingsDefault: null, at: null };
 const projectLog = [];
 const WS = '/workspace';
 const absOf = (root) => (root ? `${WS}/${root}` : WS);
@@ -2114,7 +2116,17 @@ async function api(req, res, url) {
       remote,
       // your subscriptions: their agents run here; Claude on your plan off (Settings' switch)
       subscriptions: { agents: true, plan: false },
+      prefs: userPrefs,
     });
+  }
+  // your choices for new sessions, kept for your sign-in (code/server/userprefs.mjs): the model picked last
+  if (p === '/api/prefs' && m === 'GET') return json(res, 200, { prefs: userPrefs });
+  if (p === '/api/prefs' && m === 'PUT') {
+    const b = await jsonBody(req);
+    const ok = (v) => v === null || v === undefined || (typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:/@[\]-]{0,127}$/.test(v) && !ALIAS.test(v));
+    if (!ok(b.model) || !ok(b.settingsDefault)) return json(res, 400, { error: 'model: a model id, not an alias' });
+    userPrefs = { model: b.model ?? null, settingsDefault: b.settingsDefault ?? null, at: Date.now() };
+    return json(res, 200, { prefs: userPrefs });
   }
   if (p === '/api/harnesses') {
     // who may answer a new session (the backend's /api/harnesses): Codex signed in, Copilot cannot say, Cursor not
@@ -3169,6 +3181,7 @@ const server = http.createServer(async (req, res) => {
         trustMock.clear();
         filedMock.clear();
         projectGit.clear();
+        userPrefs = { model: null, settingsDefault: null, at: null };
         projectLog.length = 0;
         inTerminal.clear();
         terminalLog.length = 0;

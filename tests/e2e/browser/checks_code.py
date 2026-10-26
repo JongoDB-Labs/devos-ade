@@ -3591,3 +3591,193 @@ def host_sessions_a(ctx):
         real = "; the owner's real transcript resumed on Haiku"
     csp_clean(page, rec)
     return f"2 possible secrets listed (never shown whole) and redacted, the thinking block out, both copied (CC, DC); resumed on Haiku with its history (PELICAN); continued in the Workspace{real}"
+
+
+# --- JON-512: the model a session starts on, a turn that waits for you, a turn's cost after a reload, the picker's
+# --- order and the Git panel's repository (UX-01, UX-04, UX-26, UX-06, UX-09) ---
+J512 = "e2e-j512"
+
+
+def _new_session_id(page, old):
+    """The session the page's New session opened (its lastSession, once it changed)."""
+    page.wait_for_function("(old) => { const s = (JSON.parse(localStorage.getItem('bn.code.v1') || '{}').lastSession) || '';"
+                           " return s.length === 36 && s !== old; }", arg=old, timeout=30000)
+    return page.evaluate("JSON.parse(localStorage.getItem('bn.code.v1')).lastSession")
+
+
+def _last_session(page):
+    return page.evaluate("(JSON.parse(localStorage.getItem('bn.code.v1') || '{}').lastSession) || ''")
+
+
+def _card_says_waiting(page, chip, label):
+    """While a permission card waits: the chip says so (amber, no spinner), so does the prompt box; the card has the
+    focus and is in view."""
+    card = page.get_by_test_id("permission")
+    see(card).to_be_visible(timeout=120000)
+    see(page.get_by_test_id(chip)).to_contain_text("waiting for you", timeout=10000)
+    see(page.get_by_test_id(chip)).to_have_attribute("data-state", "waiting")
+    expect("working" not in page.get_by_test_id(chip).inner_text(), f"{label}: the chip says working")
+    ph = page.get_by_test_id("prompt").get_attribute("placeholder") or ""
+    expect("waiting for your answer" in ph, f"{label}: the prompt box says {ph!r}")
+    page.wait_for_function("() => !!document.activeElement && !!document.activeElement.closest('[data-testid=permission]')", timeout=5000)
+    box = card.bounding_box()
+    vh = page.viewport_size["height"]
+    expect(box and box["y"] >= 0 and box["y"] < vh, f"{label}: the card is not in view ({box}, viewport {vh})")
+    expect(re.match(r"^\(\d+\) waiting", page.title()), f"{label}: the tab's title {page.title()!r}")
+
+
+def _turn_cost(page, timeout=180):
+    """The last turn's cost and the session's ({turn, session}), as the page shows them once LiteLLM's rows are in and
+    the figures have held for 20 s (the rows come in batches; the meter is asked again meanwhile)."""
+    t0 = time.time()
+    seen, since, last = None, 0.0, None
+    while time.time() - t0 < timeout:
+        got = page.evaluate("""() => { const t = [...document.querySelectorAll('[data-testid=turn-end] .turn-cost')].map((e) => e.textContent.trim());
+          const m = document.querySelector('[data-testid=cost]'); const f = ((m && m.innerText) || '').match(/\\$[0-9.]+/g) || [];
+          return { turn: t[t.length - 1] || '', session: f[f.length - 1] || '' }; }""")
+        last = got
+        if re.fullmatch(r"\$[0-9.]+", got["turn"]) and got["turn"] != "$0":
+            if got != seen:
+                seen, since = got, time.time()
+            elif time.time() - since >= 20:
+                return got
+        page.get_by_test_id("cost").click()   # (the meter asks /.bn/spend again)
+        page.wait_for_timeout(5000)
+    raise AssertionError(f"the turn's cost never held: {last}")
+
+
+@check("browser", "code-ui-cost-and-state")
+@saved
+def ui_cost_and_state(ctx):
+    """A new browser starts a session on DevOS ADE's default — Settings' (Haiku in the throwaways), never Opus — and
+    the model picked is kept for the sign-in, so a second browser starts on it; while a permission card waits the
+    session says so (the chip, the prompt box, the tab's title; the card focused and in view), on a desktop and a phone;
+    a finished turn costs the same live and after a reload (LiteLLM's rows: here also the session's total); the model
+    picker lists the models first; the Git panel shows the repository inside, or around, a project's folder. Two Haiku
+    turns, each with a card that is denied; no turn on any other model."""
+    need_haiku()
+    page, rec = ui_page(ctx, "code-ui-j512-a")
+    c = Code.on(page, rec, goto=False)
+    # the portal's default: Settings' (the throwaway's CODE_DEFAULT_MODEL, Haiku) — never Opus
+    m = c.api("GET", "/.bn/models")["json"] or {}
+    opus = (m.get("aliases") or {}).get("opus")
+    sonnet = (m.get("aliases") or {}).get("sonnet") or ENV.get("CLAUDE_BEDROCK_SONNET_MODEL") or ""
+    expect(m.get("default") == HAIKU and m.get("settings_default") == HAIKU, f"the default {m.get('default')!r}, Settings' {m.get('settings_default')!r} (want {HAIKU})")
+    expect(not opus or m.get("default") != opus, "the default is Opus")
+    # nothing kept for the sign-in: a new session starts on that default
+    r = c.api("PUT", "/api/prefs", {"model": None, "settingsDefault": None})
+    expect(r["status"] == 200, f"PUT /api/prefs: {r['status']} {r['text'][:200]}")
+    page.reload()
+    see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+    c = Code.on(page, rec, goto=False)
+    old = _last_session(page)
+    page.get_by_test_id("chat-new").click()
+    sid_a = _new_session_id(page, old)
+    wait_state(c, sid_a, "model", HAIKU)
+    # the picker: the models first, then who answers (the subscriptions to sign in to folded under one row)
+    page.get_by_test_id("model-picker").click()
+    heads = [h.lower() for h in page.locator(".model-panel .mp-group-head").all_inner_texts()]
+    expect(heads and heads[0] != "who answers" and ("who answers" not in heads or heads[-1] == "who answers"), f"the picker's groups: {heads}")
+    shot(page, "j512-picker-desktop")
+    # a pick (Sonnet: no turn on it) is kept for the sign-in
+    if sonnet and page.get_by_test_id("model-sonnet").count():
+        page.get_by_test_id("model-sonnet").click()
+        wait_state(c, sid_a, "model", sonnet)
+        kept = (c.api("GET", "/api/prefs")["json"] or {}).get("prefs", {})
+        expect(kept.get("model") == sonnet and kept.get("settingsDefault") == HAIKU, f"kept for the sign-in: {kept}")
+    else:
+        page.keyboard.press("Escape")
+    c.api("DELETE", f"/api/sessions/{sid_a}")
+    # a second browser (nothing of the first one's): its new session starts on that pick; then Haiku is picked there
+    page, rec = ui_page(ctx, "code-ui-j512-b")
+    c = Code.on(page, rec, goto=False)
+    if sonnet:   # (the page has taken what the backend keeps: it saves it in this browser too)
+        page.wait_for_function("(m) => (JSON.parse(localStorage.getItem('bn.code.v1') || '{}').model || '') === m", arg=sonnet, timeout=15000)
+    old = _last_session(page)
+    page.get_by_test_id("chat-new").click()
+    sid = _new_session_id(page, old)
+    if sonnet:
+        wait_state(c, sid, "model", sonnet)
+    page.get_by_test_id("model-picker").click()
+    page.get_by_test_id("model-haiku").click()
+    wait_state(c, sid, "model", HAIKU)
+    expect((c.api("GET", "/api/prefs")["json"] or {}).get("prefs", {}).get("model") == HAIKU, "Haiku is not kept for the sign-in")
+    # a Bash prompt in Manual: the card waits, and the session says so
+    for d in (J512,):
+        c.api("POST", "/api/fs/mkdir", {"path": d})
+    ask(page, f"Use the Bash tool to run exactly this command, then reply with the word done: echo j512 > {J512}/denied.txt")
+    _card_says_waiting(page, "session-state", "desktop")
+    shot(page, "j512-waiting-desktop")
+    page.get_by_test_id("perm-deny").click()
+    page.get_by_test_id("perm-deny-send").click()
+    answered(page)
+    see(page.get_by_test_id("session-state")).not_to_contain_text("waiting for you", timeout=30000)
+    # the turn's cost, live: LiteLLM's rows of it — here also the session's whole spend (one turn)
+    live = _turn_cost(page)
+    expect(live["turn"] == live["session"], f"one turn: its cost is the session's: {live}")
+    shot(page, "j512-turn-cost-live")
+    # a reload: the same turn, the same cost (the replay keeps each event's own time)
+    page.reload()
+    see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+    see(page.get_by_test_id("turn-end")).to_have_count(1, timeout=30000)
+    again = _turn_cost(page)
+    expect(again == live, f"the turn cost {live} live and {again} after a reload")
+    shot(page, "j512-turn-cost-reloaded")
+    csp_clean(page, rec, [r"^400 POST .*/api/fs/mkdir$"])
+    # a phone: the same session, another card
+    page, rec = ui_page(ctx, "code-ui-j512-phone", device="phone", session=sid)
+    if page.get_by_test_id("sheet-sessions").count() and page.get_by_test_id("sheet-sessions").is_visible():
+        page.keyboard.press("Escape")
+    ask(page, f"Use the Bash tool to run exactly this command, then reply with the word done: echo j512 > {J512}/denied-phone.txt")
+    _card_says_waiting(page, "phone-session-state", "phone")
+    shot(page, "j512-waiting-phone")
+    page.get_by_test_id("perm-deny").click()
+    page.get_by_test_id("perm-deny-send").click()
+    answered(page)
+    page.get_by_test_id("phone-menu-btn").click()
+    page.get_by_test_id("phone-menu").get_by_test_id("model-picker").first.click()
+    heads = [h.lower() for h in page.locator(".model-panel .mp-group-head").all_inner_texts()]
+    expect(heads and heads[0] != "who answers", f"the phone picker's groups: {heads}")
+    shot(page, "j512-picker-phone")
+    page.keyboard.press("Escape")
+    c = Code.on(page, rec, goto=False)
+    for f in ("denied.txt", "denied-phone.txt"):
+        expect(c.api("GET", f"/api/fs/file?path={J512}/{f}")["status"] == 404, f"{f} was written: the card was denied")
+    c.api("DELETE", f"/api/sessions/{sid}")
+    # (the denied files' 404s are this check's own reads)
+    csp_clean(page, rec, [r"^404 GET .*/api/fs/file\?path=" + re.escape(J512) + "/denied", r"console.error Failed to load resource.*404"])
+    # the Git panel: a project folder that is no repository shows the repository inside it; one inside a repository, that
+    # repository (no turn: the folders and git init through the projects' own API)
+    page, rec = ui_page(ctx, "code-ui-j512-git")
+    c = Code.on(page, rec, goto=False)
+    outer, inner, sub = f"{J512}-outer", f"{J512}-outer/repo", f"{J512}-outer/repo/sub"
+    made = []
+    for folder, git in ((outer, False), (inner, True), (sub, False)):
+        r = c.api("POST", "/api/projects", {"kind": "new", "folder": folder, "git": git})
+        expect(r["status"] == 200 and (not git or r["json"].get("git") is True), f"project {folder}: {r['status']} {r['text'][:200]}")
+        made.append(r["json"]["project"]["id"])
+    _drop_projects(c, (inner,))   # (a repository inside the folder that is no project: a clone from before projects)
+    r = c.api("PUT", f"/api/fs/file?path={inner}/j512-change.txt", {"text": "a change\n"})
+    expect(r["status"] == 200, f"a change in {inner}: {r['status']}")
+    page.reload()
+    see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+    c = Code.on(page, rec, goto=False)   # (the reload took the in-page client along)
+    page.get_by_test_id("side-git").click()
+    page.get_by_test_id("git-repo").select_option(outer)
+    see(page.get_by_test_id("git-found")).to_have_attribute("data-found", "inside", timeout=30000)
+    see(page.locator("[data-testid=git-file][data-path='j512-change.txt']")).to_have_count(1, timeout=30000)
+    see(page.get_by_test_id("git-norepo")).to_have_count(0)
+    shot(page, "j512-git-inside-desktop")
+    page.get_by_test_id("git-repo").select_option(sub)
+    see(page.get_by_test_id("git-found")).to_have_attribute("data-found", "above", timeout=30000)
+    see(page.get_by_test_id("git-found")).to_contain_text(inner)
+    see(page.locator("[data-testid=git-file][data-path='j512-change.txt']")).to_have_count(1, timeout=30000)
+    shot(page, "j512-git-above-desktop")
+    page.get_by_test_id("git-repo").select_option("")
+    _drop_projects(c, (outer, sub))
+    c.api("DELETE", f"/api/fs?path={outer}")
+    c.api("DELETE", f"/api/fs?path={J512}")
+    csp_clean(page, rec)
+    return (f"default {HAIKU} (Settings'), never Opus; a pick ({sonnet or 'none'}) kept for the sign-in and taken by a second browser; "
+            f"waiting for you while a card waits (chip, prompt box, title; the card focused, in view) on a desktop and a phone; "
+            f"the turn cost {live['turn']} live and after a reload; the picker's models first; the Git panel's repository inside and around a folder")
