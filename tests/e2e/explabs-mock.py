@@ -1,9 +1,11 @@
-"""A stand-in for the Experiential Labs gateway, for tests/e2e/explabs.sh --mock (inside the throwaway LiteLLM container,
-on 127.0.0.1 only; for its check of a slow catalog, on this computer's 127.0.0.1), split as the gateway is: GET
+"""A stand-in for the Experiential Labs gateway, for tests/e2e/explabs.sh --mock and tests/e2e/free-models.sh (inside the
+throwaway LiteLLM container, on 127.0.0.1 only; for explabs.sh's check of a slow catalog, on this computer's 127.0.0.1),
+split as the gateway is: GET
 /v1/models (with a key) answers V1_JSON — the OpenAI list, ids and nothing else; GET /api/models/<id> (keyless: one
 model of the public catalog) answers CATALOG_DIR/<id>.json, 404 without one — slowly (a few bytes every half second,
 about 20 s in all) for an id SLOW_FILE lists, when that file exists. POST /v1/chat/completions and /v1/responses answer
-like the gateway — "DevOS ADE test OK", usage with cost (USD) and is_byok (true for a model whose id holds "byok") —
+like the gateway — "DevOS ADE test OK", usage with cost (USD; $0 for a free tier, "<id>:free") and is_byok (true for a
+model whose id holds "byok") —
 streamed or not, and each request body is appended to a JSONL file for the script to check. A Chat Completions request
 with a reasoning effort is answered with the model's reasoning too (reasoning_content, as the gateway's reasoning lanes
 return it); one whose history carries LiteLLM's own fields (thinking_blocks, provider_specific_fields) is refused with
@@ -93,7 +95,7 @@ class Gateway(BaseHTTPRequestHandler):
             f.write(json.dumps({"path": self.path, "bearer": self.headers.get("Authorization", "").startswith("Bearer "),
                                 "body": body}) + "\n")
         byok = "byok" in str(body.get("model", ""))
-        cost = 0 if byok else COST
+        cost = 0 if byok or str(body.get("model", "")).endswith(":free") else COST
         now = int(time.time())
         if self.path.endswith("/responses"):
             usage = {"input_tokens": 58, "output_tokens": 48, "total_tokens": 106, "cost": cost, "is_byok": byok}

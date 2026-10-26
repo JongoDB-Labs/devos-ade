@@ -6,6 +6,14 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+
+- **Tests:** `tests/e2e/free-models.sh` (opt-in, no AWS, never the real gateway) checks that free models stay free end
+  to end: a Code page session, a Chat conversation with its title and tags, and `devos-claude --model
+  xl/deepseek-v4.1-flash:free -p …` in the terminal, against a stand-in for Experiential Labs, each on a key of its own.
+  Every request must be on the free model at $0 (the Claude models are priced there, so one that fell back would
+  show), each key's spend $0, and Home's Equivalent must price the same usage.
+
 ### Changed
 
 - **Auto mode's reviewer runs on Claude Haiku, not Sonnet 5.5:** about half a cent for its first check in each

@@ -2481,6 +2481,12 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
   answers, the container's log, `tests/e2e/out/explabs.json`). Without the variable it skips;
   `tests/e2e/explabs.sh --mock` runs the same against a stand-in for the gateway (plus a streamed answer,
   `/v1/messages` and a call on your own provider key), no key needed.
+- **Free models stay free** (opt-in, no AWS, a few minutes; it uses the terminal, code and Open WebUI images a run of
+  `tests/e2e/run.sh` leaves): `tests/e2e/free-models.sh` runs a Code page session, a Chat conversation (with its
+  title and tags) and `devos-claude --model xl/deepseek-v4.1-flash:free -p …` in the terminal against a stand-in for
+  the gateway, each on a key of its own, in throwaway containers (`bne2e-free-*`, removed afterwards). Every request
+  must be on the free model and booked $0 (none on a Claude model: those are priced there), each key's spend $0, and
+  Home's Equivalent must price the same usage (`tests/e2e/out/free-models.json`).
 - **Remote access without a tailnet** (opt-in, no AWS, about two minutes): `tests/e2e/remote/run.sh` runs the real
   portal and Caddyfile in Tailscale mode behind a stand-in for the sidecar, in Chromium (and Firefox and WebKit for
   one probe): the hand-offs, the Code page's previews over remote access and the same-site guard (and, with the guard
