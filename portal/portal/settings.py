@@ -62,7 +62,7 @@ SECRET_CODES = ("-", "s", "k", "u", "h", "S")
 REVEAL = ("LITELLM_UI_PASSWORD", "RUSTFS_ACCESS_KEY", "RUSTFS_SECRET_KEY", "LITELLM_KEY_CLAUDE_CODE",
           "LITELLM_KEY_OPENWEBUI", "LITELLM_KEY_SETUP", "SHARED_MCP_TOKEN")
 DIAG_ACTIONS = ("check-aws", "models-recheck", "backup", "test", "report", "restart-litellm", "restart-open-webui",
-                "restart-shared-mcp", "restart-stt", "restart-rustfs", "restart-caddy")
+                "restart-shared-mcp", "restart-stt", "restart-rustfs", "restart-caddy", "restart-searxng")
 PROJECT_ACTIONS = ("project-pick", "project-remove", "project-mode-ro")
 PROJECTS = "projects.json"                     # ./stack's list of project folders (lib/projects.sh)
 SESSIONS_ACTIONS = ("sessions-revoke",)

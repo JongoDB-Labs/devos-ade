@@ -451,7 +451,8 @@ test_help_and_dispatcher() {
   assert_contains "$(code_usage)" "Usage: ./stack code <command>"
   assert_contains "$(sed -n '/^if \[ "$want_help" = 1 \]/,/^fi/p' "$STACK_DIR/stack")" "code) code_usage; exit 0 ;;"
   assert_contains "$(cat "$STACK_DIR/stack")" 'code) [ ! -f "$ENV_FILE" ] || guard_project; cmd_code "$@" ;;'
-  assert_contains "$(cmd_help)" "logs [svc]   Follow logs (litellm, open-webui, rustfs, postgres, shared-mcp, portal, caddy, stt, terminal, code, subs-chat)"
+  assert_contains "$(cmd_help)" "logs [svc]   Follow logs (litellm, open-webui, rustfs, postgres, shared-mcp, portal, caddy, stt, terminal, code,
+               subs-chat, searxng)"
   for k in CODE_ENABLED CODE_HOST CODE_PROXY_SECRET REMOTE_CODE_HOST; do assert_contains "$(cat "$STACK_DIR/.env.example")" "$k="; done
 }
 

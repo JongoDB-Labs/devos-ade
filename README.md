@@ -2171,7 +2171,9 @@ slow engine never stalls Claude Code. Those engines see this computer's internet
 slow it down or refuse it for a while (SearXNG then leaves it out for a few minutes and the others answer), and
 WebSearch finds less — a key of Tavily, Brave Search or Perplexity, or AgentCore Web Search, gives steadier results and
 comes first by itself once set up. `./stack config set WEBSEARCH_SEARXNG_BUILTIN off` (or its switch in Settings)
-removes the container; `./stack logs searxng` shows what it did.
+removes the container. While it is on, Home's Services show it like the other services (its state and health, from
+`./stack`'s record of the containers: the portal has no way to it), `./stack logs searxng` shows what it did and
+`./stack restart searxng` (or Settings › Diagnostics) restarts it.
 
 **AgentCore Web Search** needs no other key, and the query stays inside AWS. Setup checks it: for free, who your key
 is, the gateway (found by itself when your key may list gateways, else `WEBSEARCH_AGENTCORE_GATEWAY`) and whether it
@@ -2344,7 +2346,7 @@ troubleshooting: [docs/voice.md](docs/voice.md).
 | `./stack git-host import gh\|glab [--host HOST]` | A login of the GitHub CLI or the GitLab CLI on this computer as a Git host of the Code page ([above](#remote-repositories-git-hosts-clone-push-and-pull)): the token goes to the code container on stdin (never a command line, a file or the browser); what it reaches is shown and confirmed first. glab: a personal access token only (an OAuth login of glab's is refused) | none |
 | `./stack password [--show]` | Where the portal password is (`PORTAL_PASSWORD` in this folder's `.env`); `--show` prints it, only to a terminal | none |
 | `./stack config [list\|get KEY\|set KEY…\|apply --stdin\|check-aws\|report\|regenerate rustfs\|mcp-token]` | Every setting, secrets masked; `set` asks for values (hidden for secrets) and applies them like the portal's [Settings](#settings) | none (`check-aws` is free; an AWS key change runs the test: ~$0.0001) |
-| `./stack restart SERVICE` | Recreate one service with its current settings (`litellm`, `open-webui`, `shared-mcp`, `stt`, `rustfs`, `caddy`) | none |
+| `./stack restart SERVICE` | Recreate one service with its current settings (`litellm`, `open-webui`, `shared-mcp`, `stt`, `rustfs`, `caddy`; `searxng` while the built-in SearXNG is on) | none |
 | `./stack uninstall` | Remove the containers, ALL data volumes and this install's built images (keeps `.env` and `backups/`) | none |
 | `./stack help` | All of the above; `./stack <command> --help` shows one | none |
 

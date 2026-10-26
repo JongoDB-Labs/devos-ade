@@ -500,6 +500,14 @@ The default search backend: the official SearXNG image, pinned by digest (`compo
   The sandbox reaches it only the way it reaches LiteLLM: through its gateway's `/v1/messages`, where a WebSearch is
   intercepted — never `/v1/search` (the gateway forwards only Claude Code's paths). The end-to-end suite checks this
   from the terminal, the Code page's container and Chat's sandbox, and that LiteLLM gets real results from it.
+- **What Home shows of it.** Home's Services list it while it is on (its state and health, like the other services),
+  without any new way to it: the portal does not ask SearXNG, it reads `./stack`'s record of the containers,
+  `.state/status/services.json` (each service `./stack status` lists, with Docker Compose's own words for its state
+  and health, and when; mode 644, read-only in the portal like the other status files). `./stack status`, `up`,
+  setup, `./stack restart` and the switch write it, and the update helper once a minute; the portal shows only
+  Docker's words from it and says how old a record is once nobody rewrote it for 5 minutes. Off: the record lists no
+  SearXNG, and Home no row. `./stack restart searxng` (Settings › Diagnostics too, while it is on) and `./stack logs
+  searxng` work as for the other services.
 - **Its way out (a decision).** It needs the internet to ask the search engines: it is on `websearch-out`, a network of
   its own with nothing else on it — the internet, as LiteLLM's default network has it. Not an egress proxy: the
   stack's one (the terminal's) exists only while the terminal is on and Settings' allow and deny lists narrow it for
@@ -654,7 +662,9 @@ outside Docker, polls that folder every 3 seconds, and runs **only** `./stack up
 --yes` or `./stack clean --yes` in its own checkout, or `./stack helper auto on|off` for the automatic-updates
 switch (it writes `AUTO_UPDATE` to `.env`; nothing else). It reports progress in `.state/status/helper-status.json`
 and a heartbeat in `.state/status/helper.json`; both are read-only in the portal (as is
-`.state/status/terminal-job.json`, the record a `./stack` command run in a terminal leaves for Home). After each update, rollback or
+`.state/status/terminal-job.json`, the record a `./stack` command run in a terminal leaves for Home). Once a minute it
+also writes `.state/status/services.json` again (one `docker compose ps`: each service's state and health, for Home's
+Services; [the built-in SearXNG](#the-built-in-searxng)). After each update, rollback or
 clean it exits and launchd/systemd start it again (so it runs the code an update brought); after a crash it is
 **not** restarted (`KeepAlive` → `SuccessfulExit`, `Restart=on-success`).
 

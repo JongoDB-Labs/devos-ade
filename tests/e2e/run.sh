@@ -887,6 +887,16 @@ else
   cli websearch-status-why 0 'Why +auto: no key set up, so the built-in SearXNG' websearch status
   cli status-says-builtin 0 'Web search for Claude Code: built-in SearXNG \(free; checked' status
   if [ "$CODE" = 1 ]; then cli code-status-says-builtin 0 'Web search built-in SearXNG \(free; checked' code status; fi
+  # like the other services: ./stack logs and restart, and Home's record of it (.state/status/services.json, which the
+  # portal reads: it has no way to SearXNG itself) running and healthy after the restart
+  follow_logs logs-searxng searxng
+  if cli restart-searxng 0 '' restart searxng; then
+    t0="$(now)"
+    if [ "$(docker inspect -f '{{.State.Health.Status}}' "$(ws_svc searxng)" 2>/dev/null)" = healthy ] &&
+       grep -q '{"service": "searxng", "state": "running", "health": "healthy"}' "$STACK/.state/status/services.json" 2>/dev/null; then
+      record websearch restart-and-home-record PASS "$(( $(now) - t0 ))" "healthy after ./stack restart searxng; services.json (Home's Services) says running, healthy"
+    else record websearch restart-and-home-record FAIL "$(( $(now) - t0 ))" "after the restart: $(docker inspect -f '{{.State.Health.Status}}' "$(ws_svc searxng)" 2>&1); services.json: $(grep -o '{"service": "searxng"[^}]*}' "$STACK/.state/status/services.json" 2>&1 | head -c 200)"; fi
+  fi
   # its secret: in no log of this run, and not in SearXNG's own
   t0="$(now)"; sec="$(get_env WEBSEARCH_SEARXNG_SECRET)"; n=0
   if [ -n "$sec" ]; then
@@ -921,12 +931,17 @@ else
   st websearch status > "$LOGS/websearch-off-status.log" 2>&1; redact "$LOGS/websearch-off-status.log"
   grep -q '^Web search for Claude Code: off — no search backend set up' "$LOGS/websearch-off-status.log" || bad="$bad status:$(head -n 1 "$LOGS/websearch-off-status.log" | cut -c1-120)"
   grep -q 'search_tools' "$STACK/litellm/config.yaml" && bad="$bad config-still-searches"
+  # (Home: no SearXNG row once its switch is off — the record the switch writes has none)
+  ! grep -q '"service": "searxng"' "$STACK/.state/status/services.json" 2>/dev/null || bad="$bad home-record-still-lists-it"
+  cli logs-searxng-off 1 'the built-in SearXNG is off \(WEBSEARCH_SEARXNG_BUILTIN=off\): no container, no logs' logs searxng || bad="$bad logs-off"
+  cli restart-searxng-off 1 'the built-in SearXNG is off \(WEBSEARCH_SEARXNG_BUILTIN=off\): no container to restart' restart searxng || bad="$bad restart-off"
   printf 'set WEBSEARCH_SEARXNG_BUILTIN %s\n' "$(printf on | openssl base64 -A)" > "$LOGS/websearch-on.in"
   ( clean_env; cd "$STACK" && "$NOTTY" "$STACK/stack" config apply --stdin < "$LOGS/websearch-on.in" ) > "$LOGS/websearch-on.log" 2>&1 || bad="$bad apply-on-failed"
   redact "$LOGS/websearch-on.log"
   [ "$(docker inspect -f '{{.State.Health.Status}}' "$(ws_svc searxng)" 2>/dev/null)" = healthy ] || bad="$bad not-back"
   grep -q 'Web search for Claude Code: on — built-in SearXNG (free); checked: it answers' "$LOGS/websearch-on.log" || bad="$bad on-not-checked"
-  if [ -z "$bad" ]; then record websearch off-and-on-again PASS "$(( $(now) - t0 ))" "off: its container removed, no search in LiteLLM's config, WebSearch off (no other backend); on: healthy again and one search answered"
+  grep -q '{"service": "searxng", "state": "running", "health": "healthy"}' "$STACK/.state/status/services.json" 2>/dev/null || bad="$bad home-record-not-back"
+  if [ -z "$bad" ]; then record websearch off-and-on-again PASS "$(( $(now) - t0 ))" "off: its container removed, no search in LiteLLM's config, WebSearch off (no other backend), no row in Home's record, logs and restart say it is off; on: healthy again, one search answered, its row back"
   else record websearch off-and-on-again FAIL "$(( $(now) - t0 ))" "unexpected:$bad (logs $LOGS/websearch-off.log, $LOGS/websearch-on.log)"; fi
 fi
 

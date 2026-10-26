@@ -26,7 +26,8 @@ Usage: ./stack <command> [--yes]
   open         The installed DevOS ADE app, else the portal in your browser, where
                "Install app" installs it (setup and up open it too; BEDROCK_NOW_NO_OPEN=1
                turns that off)
-  logs [svc]   Follow logs (litellm, open-webui, rustfs, postgres, shared-mcp, portal, caddy, stt, terminal, code, subs-chat)
+  logs [svc]   Follow logs (litellm, open-webui, rustfs, postgres, shared-mcp, portal, caddy, stt, terminal, code,
+               subs-chat, searxng)
   test         Smoke-test every service end to end (~$0.0001 Bedrock)
   costs        Bedrock prices for your enabled models + spend per key
   prices       Check Bedrock prices now (public price lists; daily anyway)
@@ -84,7 +85,7 @@ Usage: ./stack <command> [--yes]
   config       Every setting in .env, secrets masked (the portal's Settings tab shows the same):
                list | get KEY | set KEY [KEY…] (asks; hidden for secrets) | apply --stdin
                | check-aws (free) | report | regenerate rustfs|mcp-token
-  restart      Restart one service: litellm | open-webui | shared-mcp | stt | rustfs | caddy
+  restart      Restart one service: litellm | open-webui | shared-mcp | stt | rustfs | caddy | searxng
   uninstall    Remove the containers, ALL data volumes and this install's built images
                (keeps .env and backups/)
 
@@ -644,6 +645,7 @@ cmd_setup() {
   offer_helper   # lib/helper.sh: asks once; --yes installs it only with BEDROCK_NOW_HELPER=1
   if [ -n "$SETUP_REMOTE_MODE" ]; then remote_enable "$SETUP_REMOTE_MODE"; else remote_up_hook; fi
   record_setup_commit   # lib/rollback.sh: ./stack update calls "nothing new" only for this commit
+  services_status_write   # Home's record of the containers, as setup leaves them (the built-in SearXNG's row)
   _SIGNAL_HOOK=''; _signal_traps_restore   # done: Ctrl-C from here on only skips the summary or the browser
   print_summary
   [ "$(host_os)" != Darwin ] || docker_autostart_hint_weekly   # lib/host.sh: read-only check, at most weekly
@@ -1280,7 +1282,12 @@ cmd_up() {
   maybe_auto_open
 }
 cmd_down()   { ! declare -F xl_bg_stop >/dev/null || xl_bg_stop; dc down; }   # (lib/explabs.sh: its background read stops too)
-cmd_logs()   { dc logs -f --tail=200 "$@"; }
+cmd_logs() {
+  # (the built-in SearXNG while it is off: no container, so nothing to follow — said, not Compose's "no such service")
+  case " $* " in *" searxng "*) websearch_builtin_on ||
+    die "the built-in SearXNG is off (WEBSEARCH_SEARXNG_BUILTIN=off): no container, no logs — ./stack config set WEBSEARCH_SEARXNG_BUILTIN on turns it on" ;; esac
+  dc logs -f --tail=200 "$@"
+}
 status_url() { # status_url SERVICE -> where to open it (browser UIs: through the portal)
   case "$1" in
     portal) echo "$(portal_url)   (Home: one login for all)" ;;
@@ -1324,6 +1331,48 @@ status_table() {
   [ -z "$row" ] || warn "bucket setup (rustfs-init) exited with code $row — see ./stack logs rustfs-init"
 }
 
+# services_status_file -> .state/status/services.json: ./stack's record of its containers, for the portal (read-only)
+services_status_file() { printf '%s/services.json\n' "$(status_dir)"; }
+SERVICES_STATUS_EVERY_S=60   # the update helper rewrites it at most this often (services_status_tick)
+# services_status_write [PS] — services.json: each service ./stack status lists (the optional ones only while .env turns
+# them on: no searxng while WEBSEARCH_SEARXNG_BUILTIN=off), its state and health as Docker Compose has them, and when.
+# Home's Services take the built-in SearXNG's from there (portal/summary.py): the portal shares no network with it and
+# Caddy has no route to it (compose.yaml), so the portal cannot ask SearXNG itself. PS: `dc ps -a --format` lines
+# (service<TAB>state<TAB>health…), else asked here; a Docker that does not answer writes nothing. Never fatal.
+services_status_write() {
+  local d f tmp ps s row state health out='' extra
+  [ -f "$ENV_FILE" ] || return 0
+  if [ $# -gt 0 ]; then ps="$1"
+  else ps="$(dc ps -a --format '{{.Service}}	{{.State}}	{{.Health}}' 2>/dev/null)" || return 0; fi
+  d="$(status_dir)"; mkdir -p "$d" 2>/dev/null || return 0
+  f="$(services_status_file)"
+  extra="$(optional_services 2>/dev/null || true)"
+  for s in $STACK_BASE_SERVICES $extra; do
+    row="$(printf '%s\n' "$ps" | awk -F'\t' -v s="$s" '!f && $1 == s { print $2 "\t" $3; f = 1 }')"
+    state="${row%%	*}"; health="${row#*	}"
+    [ -n "$row" ] || { state="not created"; health=''; }
+    # (Docker's own words — running, exited, healthy, starting …: lowercase letters, spaces and dashes only)
+    state="$(printf '%s' "$state" | LC_ALL=C tr -cd 'a-z -' | cut -c1-24)"
+    health="$(printf '%s' "$health" | LC_ALL=C tr -cd 'a-z -' | cut -c1-24)"
+    out="$out${out:+, }{\"service\": \"$s\", \"state\": \"$state\", \"health\": \"$health\"}"
+  done
+  tmp="$(mktemp "$d/.services.XXXXXX" 2>/dev/null)" || return 0
+  { printf '{"version": 1, "written_at": %s, "services": [%s]}\n' "$(date +%s)" "$out" > "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$f"; } 2>/dev/null ||
+    rm -f "$tmp"
+  return 0
+}
+# services_status_tick — the update helper, every loop: the record ./stack keeps (setup, up and status write it)
+# again once it is SERVICES_STATUS_EVERY_S old, so Home's Services follow a container that stops or turns unhealthy
+# between ./stack commands; no record yet, nothing (the stack was never set up or started here). Never fatal.
+services_status_tick() {
+  local at now
+  at="$(sed -n 's/^{"version": 1, "written_at": \([0-9]*\),.*/\1/p' "$(services_status_file)" 2>/dev/null | head -n 1 || true)"
+  [ -n "$at" ] || return 0
+  now="$(date +%s)"
+  if [ "$at" -le "$now" ] && [ $((now - at)) -lt "$SERVICES_STATUS_EVERY_S" ]; then return 0; fi
+  services_status_write
+}
+
 # shellcheck disable=SC2120  # arguments come from the ./stack dispatcher
 cmd_status() {
   local ps upd py xl fresh='' O_RED O_GRN O_YEL O_OFF
@@ -1332,6 +1381,7 @@ cmd_status() {
   check_docker_daemon   # a stopped daemon would otherwise look like "not created" everywhere
   ps="$(dc ps -a --format '{{.Service}}	{{.State}}	{{.Health}}	{{.ExitCode}}' 2>/dev/null || true)"
   printf '%s\n' "$ps" | status_table
+  services_status_write "$ps"   # (the same answer, for Home's Services)
   if ! printf '%s\n' "$ps" | grep -q '	running	'; then
     printf '\n  The stack is not running — start it with ./stack up\n'
   else

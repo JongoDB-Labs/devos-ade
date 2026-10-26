@@ -663,6 +663,67 @@ test_the_built_in_searxngs_container_follows_its_switch() {
   out="$(websearch_builtin_up 2>&1)"; assert_contains "$out" "the built-in SearXNG did not start — ./stack logs searxng says why"
 }
 
+# Home's Services, ./stack restart and ./stack logs: the built-in SearXNG like the other services while it is on. Home
+# reads ./stack's record of the containers (.state/status/services.json: the portal has no way to SearXNG itself),
+# written by ./stack status, restart, Settings' switch and the update helper once a minute; off: no row, and restart
+# and logs say it is off. Settings › Diagnostics offers its restart while it is on.
+test_the_built_in_searxng_on_home_and_in_restart_and_logs() {
+  WS_BUILTIN='' _ws_env
+  docker() {
+    printf '%s\n' "$*" >> "$TMP/docker"
+    case "$*" in *" ps -a --format "*) [ ! -f "$TMP/no-docker" ] || return 1; printf 'litellm\trunning\thealthy\nsearxng\trunning\thealthy\nportal\texited\t\n' ;; esac
+  }
+  # (the update helper keeps a record ./stack wrote: none yet, nothing asked)
+  : > "$TMP/docker"; services_status_tick; assert_eq "$(cat "$TMP/docker")" ""
+  [ ! -e "$(services_status_file)" ] || { echo "the helper made a record" >&2; return 1; }
+  services_status_write
+  f="$(services_status_file)"
+  assert_eq "$f" "$STATE_DIR/status/services.json"
+  assert_eq "$(perm_of "$f")" 644
+  python3 -I -c 'import json, sys, time; d = json.load(open(sys.argv[1]))
+assert d["version"] == 1 and abs(d["written_at"] - time.time()) < 60, d
+s = {r["service"]: (r["state"], r["health"]) for r in d["services"]}
+assert [r["service"] for r in d["services"]] == "caddy portal open-webui litellm rustfs shared-mcp postgres searxng".split(), d
+assert s["searxng"] == ("running", "healthy") and s["portal"] == ("exited", "") and s["caddy"] == ("not created", ""), s' "$f"
+  # only Docker's words: nothing of a stranger answer breaks the file
+  services_status_write "$(printf 'searxng\trunning"},{\thealthy\\n<x>\n')"
+  python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); r = d["services"][-1]
+assert r == {"service": "searxng", "state": "running", "health": "healthynx"}, r' "$f"
+  # a Docker that does not answer: the last record stays
+  services_status_write; before="$(cat "$f")"; touch "$TMP/no-docker"
+  services_status_write; assert_eq "$(cat "$f")" "$before"; rm -f "$TMP/no-docker"
+  # the update helper: again only once it is a minute old
+  : > "$TMP/docker"; services_status_tick; assert_eq "$(cat "$TMP/docker")" ""
+  sed -i.bak "s/\"written_at\": [0-9]*/\"written_at\": $(( $(date +%s) - 61 ))/" "$f"
+  services_status_tick; assert_contains "$(cat "$TMP/docker")" "ps -a --format"
+  assert_contains "$(sed -n '/^helper_main()/,/^}/p' "$T_ROOT/lib/helper.sh")" "( services_status_tick )"
+  # ./stack restart searxng: recreated with the searxng profile on, then the record written again
+  stack_lock() { :; }; quiet_compose() { :; }; run_phase() { shift 2; "$@"; }; portal_session_end() { :; }
+  : > "$TMP/docker"; cmd_restart searxng
+  assert_contains "$(cat "$TMP/docker")" "--profile searxng --env-file $ENV_FILE up -d --no-deps --force-recreate --wait searxng"
+  assert_contains "$(sed -n '2p' "$TMP/docker")" "ps -a --format"
+  assert_contains " $(restart_choices) " " searxng "
+  # ./stack logs searxng follows its log like the others'
+  : > "$TMP/docker"; cmd_logs searxng; assert_contains "$(cat "$TMP/docker")" "--profile searxng --env-file $ENV_FILE logs -f --tail=200 searxng"
+  # off: no row on Home (Settings' switch writes the record), no restart, no logs — said
+  set_env WEBSEARCH_SEARXNG_BUILTIN off
+  websearch_builtin_up >/dev/null 2>&1
+  assert_not_contains "$(cat "$f")" searxng
+  assert_not_contains " $(restart_choices) " " searxng "
+  : > "$TMP/docker"
+  out="$(cmd_restart searxng 2>&1)" && { echo "restart did not refuse" >&2; return 1; }
+  assert_contains "$out" "the built-in SearXNG is off (WEBSEARCH_SEARXNG_BUILTIN=off): no container to restart"
+  out="$(cmd_logs searxng 2>&1)" && { echo "logs did not refuse" >&2; return 1; }
+  assert_contains "$out" "the built-in SearXNG is off (WEBSEARCH_SEARXNG_BUILTIN=off): no container, no logs"
+  assert_eq "$(cat "$TMP/docker")" ""
+  # (on again: Settings' switch writes its row back)
+  set_env WEBSEARCH_SEARXNG_BUILTIN on; websearch_builtin_up >/dev/null 2>&1
+  assert_contains "$(cat "$f")" '{"service": "searxng", "state": "running", "health": "healthy"}'
+  # its commands in ./stack help
+  assert_contains "$(cmd_help_for restart)" "| caddy | searxng"
+  assert_contains "$(cmd_help_for logs)" "subs-chat, searxng)"
+}
+
 # its secret: made once (setup), kept, in .env and in its container's environment only — never printed by setup, status,
 # the checks, ./stack config list or Settings' snapshot, never in its settings file, LiteLLM's config or web-search.json
 test_the_built_in_searxngs_secret_is_never_printed() {

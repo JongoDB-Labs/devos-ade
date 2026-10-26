@@ -246,7 +246,9 @@ def api_routes(ctx):
     down = [x["name"] for x in d["services"] if not x["ok"]]
     expect(not down, f"services down: {down}")
     bedrock_stt = d["voice"]["on"] and d["voice"]["provider"] == "bedrock"
-    expect(len(d["services"]) == 5 + bedrock_stt, f"{len(d['services'])} services (Bedrock speech-to-text {bedrock_stt})")
+    sx_on = (ENV.get("WEBSEARCH_SEARXNG_BUILTIN") or "on").lower() not in ("off", "false", "no", "0")
+    expect(len(d["services"]) == 5 + bedrock_stt + sx_on, f"{len(d['services'])} services (Bedrock speech-to-text {bedrock_stt}, built-in SearXNG {sx_on})")
+    expect(("searxng" in [x["id"] for x in d["services"]]) == sx_on, f"the built-in SearXNG listed: {[x['id'] for x in d['services']]}")
     want_keys = {"claude-code", "open-webui", "setup"} | ({"claude-code-terminal"} if ENV.get("LITELLM_KEY_TERMINAL") else set())
     expect({k["alias"] for k in d["spend"]["keys"]} == want_keys, "spend keys")
     expect(all(k["error"] is None and k["max_budget"] for k in d["spend"]["keys"]), f"key errors: {d['spend']['keys']}")

@@ -150,7 +150,46 @@ async def services(client: httpx.AsyncClient, s: Settings) -> list[dict]:
         stt = await _health(client, f"{s.stt_url}/healthz")
         out.append({"id": "stt", "name": "Speech-to-text", "role": "voice (Bedrock Voxtral)", "ok": stt[0],
                     "detail": "ready" if stt[0] else stt[2]})
+    sx = searxng(s)
+    if sx:
+        out.append(sx)
     return out
+
+
+# The built-in SearXNG (lib/websearch.sh): only LiteLLM reaches it — the portal shares no network with it and Caddy has
+# no route to it — so its state and health are ./stack's record of its container (STATUS_DIR/services.json, written by
+# ./stack status, up, setup and restart, by Settings' switch and by the update helper every minute: lib/commands.sh
+# services_status_write). Listed only while that record has it: with WEBSEARCH_SEARXNG_BUILTIN=off there is no
+# container and no row (as speech-to-text is listed only while its container runs here).
+SERVICES_FILE = "services.json"
+SERVICES_FRESH_S = 300   # an older record says how old it is (no update helper rewrites it)
+_WORD = re.compile(r"[a-z][a-z -]{0,23}")   # Docker's own words: running, exited, healthy, starting …
+
+
+def _ago(seconds: int) -> str:
+    m = seconds // 60
+    return f"{m} min ago" if m < 120 else f"{m // 60} h ago" if m < 48 * 60 else f"{m // 1440} days ago"
+
+
+def searxng(s: Settings, now: float | None = None) -> dict | None:
+    """Home's row for the built-in SearXNG from ./stack's record, or None: off, no record yet, or no record at all
+    (anything but Docker's own words for its state is shown as unknown)."""
+    d = hostfiles.read_json(s.status_dir / SERVICES_FILE, 16 * 1024)
+    rows, at = d.get("services"), d.get("written_at")
+    if not isinstance(rows, list) or not isinstance(at, int) or isinstance(at, bool) or at <= 0:
+        return None
+    row = next((r for r in rows if isinstance(r, dict) and r.get("service") == "searxng"), None)
+    if row is None:
+        return None
+    state, health = (str(row.get(k) or "") for k in ("state", "health"))
+    state = state if _WORD.fullmatch(state) else "unknown"
+    health = health if _WORD.fullmatch(health) else ""
+    ok = state == "running" and health in ("healthy", "")
+    detail = "ready" if ok else health if state == "running" and health else state
+    age = int((now if now is not None else datetime.now(timezone.utc).timestamp()) - at)
+    if age > SERVICES_FRESH_S:
+        detail += f" (checked {_ago(age)})"
+    return {"id": "searxng", "name": "SearXNG", "role": "web search (built-in)", "ok": ok, "detail": detail}
 
 
 # Mirrors lib/stt.sh: Voxtral's audio counts ~12.5 input tokens per second, plus ~200 output tokens per minute.

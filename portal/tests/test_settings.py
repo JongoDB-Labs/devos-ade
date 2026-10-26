@@ -659,6 +659,11 @@ def test_diagnostics_write_one_strict_request(make, dirs):
     assert m and base64.b64decode(m.group(1)) == b"correct horse"   # the helper checks the password again
     assert action(c, "restart-portal").status_code == 400
     assert action(c, "restore").status_code == 400
+    # the built-in SearXNG restarts like the others (./stack restart searxng; Settings offers it while it is on: the
+    # snapshot's choices.restart, which keeps only the services the portal may ask for)
+    assert "restart-searxng" in st.DIAG_ACTIONS
+    write_snapshot(sd, choices={**CHOICES, "restart": ["litellm", "searxng", "postgres", "portal"]})
+    assert st.snapshot(sd)["choices"]["restart"] == ["litellm", "searxng"]
     assert action(c, "test", password="nope").status_code == 403
     assert action(c, "test").status_code == 429       # rate limit
     assert len(files(rq)) == 1

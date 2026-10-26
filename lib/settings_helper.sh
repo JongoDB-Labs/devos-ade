@@ -36,7 +36,7 @@
 SETTINGS_REQ_MAX_BYTES=8192
 SETTINGS_MIN_INTERVAL_S="${SETTINGS_MIN_INTERVAL_S:-15}"
 SETTINGS_MAX_PER_DAY="${SETTINGS_MAX_PER_DAY:-60}"
-DIAG_ACTIONS="check-aws models-recheck backup test report restart-litellm restart-open-webui restart-shared-mcp restart-stt restart-rustfs restart-caddy"
+DIAG_ACTIONS="check-aws models-recheck backup test report restart-litellm restart-open-webui restart-shared-mcp restart-stt restart-rustfs restart-caddy restart-searxng"
 DIAG_MIN_INTERVAL_S="${DIAG_MIN_INTERVAL_S:-10}"
 DIAG_MAX_PER_DAY="${DIAG_MAX_PER_DAY:-60}"
 RECHECK_MIN_INTERVAL_S=3600   # ./stack models --recheck (< $0.01 each): at most once an hour
@@ -245,7 +245,7 @@ act_check_request() {
   [ "${#nonce}" = 32 ] || { echo "bad nonce in the file name" >&2; return 1; }
   body="$(_req_read "$f" "$ACT_MAX_BYTES")" || return 1
   body="${body%$'\n'}"   # one line, matched as a whole (the password again: every diagnostic costs time, disk or money)
-  if _sv_re "$body" '^\{"action":"(check-aws|models-recheck|backup|test|report|restart-(litellm|open-webui|shared-mcp|stt|rustfs|caddy))","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})"\}$'; then
+  if _sv_re "$body" '^\{"action":"(check-aws|models-recheck|backup|test|report|restart-(litellm|open-webui|shared-mcp|stt|rustfs|caddy|searxng))","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})"\}$'; then
     action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[3]}"; n="${BASH_REMATCH[4]}"; auth="${BASH_REMATCH[5]}"
   # (project folders: every field fixed, none a path — the folder is chosen on this computer's screen, or named by its id)
   elif _sv_re "$body" '^\{"action":"(project-pick)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})","when":"(now|idle)","mode":"(rw|ro)","hide":(true|false),"origin":"(local)"\}$'; then

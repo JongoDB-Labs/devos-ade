@@ -48,7 +48,9 @@
 #   websearch_json   Settings' status line (lib/settings.sh: the snapshot's choices.websearch)
 #   websearch_searxng_write / websearch_builtin_services / websearch_builtin_up / websearch_builtin_down
 #                    the built-in SearXNG: its settings.yml (render_config, ./stack up), its container in ./stack up's
-#                    list, started by setup and ./stack config, removed while it is off
+#                    list (and ./stack status's, logs', restart's, and Home's Services through ./stack's record of the
+#                    containers: lib/commands.sh services_status_write), started by setup and ./stack config, removed
+#                    while it is off
 #   cmd_websearch   ./stack websearch status | check | aws-setup
 
 # backend  LiteLLM search_provider  USD per search  the .env key that sets it up  name
@@ -284,14 +286,16 @@ websearch_searxng_write() {
 websearch_builtin_services() { ! websearch_builtin_on || echo searxng; }
 
 # websearch_builtin_up — setup and ./stack config: its settings written, its secret made when there is none, then on:
-# its container started (recreated when its settings or secret changed); off: removed. Never fatal: a container that
-# does not start is said, and its search check says why WebSearch does not work.
+# its container started (recreated when its settings or secret changed); off: removed. Either way Home's record of the
+# containers is written again (lib/commands.sh services_status_write: its row there, or none). Never fatal: a container
+# that does not start is said, and its search check says why WebSearch does not work.
 websearch_builtin_up() {
   websearch_searxng_write
-  if ! websearch_builtin_on; then websearch_builtin_down; return 0; fi
+  if ! websearch_builtin_on; then websearch_builtin_down; services_status_write; return 0; fi
   ensure_env WEBSEARCH_SEARXNG_SECRET "$(gen_hex 32)"
   run_phase "Web search (the built-in SearXNG)" searxng dc up -d --no-deps --wait searxng ||
     warn "the built-in SearXNG did not start — ./stack logs searxng says why; Claude Code's WebSearch fails until it does (./stack websearch status)"
+  services_status_write
   return 0
 }
 

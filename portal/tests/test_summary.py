@@ -1,3 +1,6 @@
+import json
+import time
+
 import anyio
 import httpx
 import respx
@@ -182,6 +185,55 @@ def test_services_include_the_stt_container_with_bedrock(settings):
     ids = [x["id"] for x in anyio.run(run, s)]
     assert ids[-1] == "stt"
     assert "stt" not in [x["id"] for x in anyio.run(run, settings)]
+
+
+def _services_json(status, rows, at):
+    status.mkdir(exist_ok=True)
+    (status / "services.json").write_text(json.dumps({"version": 1, "written_at": at, "services": rows}))
+
+
+@respx.mock
+def test_services_include_the_built_in_searxng_from_stacks_record(settings, tmp_path):
+    # Home's Services: the built-in SearXNG's state and health as ./stack recorded them (services.json: the portal has no
+    # way to it), listed after the others while the record has it — WEBSEARCH_SEARXNG_BUILTIN=off: no row at all
+    from dataclasses import replace
+    for url in ("http://litellm:4000/health/readiness", "http://open-webui:8080/health", "http://rustfs:9000/health",
+                "http://shared-mcp:8000/healthz"):
+        respx.get(url).respond(200, json={"db": "connected"})
+    s = replace(settings, status_dir=tmp_path / "status")
+    now = int(time.time())
+
+    async def run(st):
+        async with httpx.AsyncClient() as c:
+            return await summary.services(c, st)
+
+    assert "searxng" not in [x["id"] for x in anyio.run(run, s)]   # no record yet
+    base = [{"service": "litellm", "state": "running", "health": "healthy"}]
+    _services_json(s.status_dir, base, now)   # off: ./stack lists no searxng
+    assert [x["id"] for x in anyio.run(run, s)] == ["litellm", "postgres", "open-webui", "rustfs", "shared-mcp"]
+    _services_json(s.status_dir, base + [{"service": "searxng", "state": "running", "health": "healthy"}], now - 20)
+    row = anyio.run(run, s)[-1]
+    assert row == {"id": "searxng", "name": "SearXNG", "role": "web search (built-in)", "ok": True, "detail": "ready"}
+    # down, in Docker's words: unhealthy, starting, exited, not created
+    for state, health, detail in (("running", "unhealthy", "unhealthy"), ("running", "starting", "starting"),
+                                  ("exited", "", "exited"), ("not created", "", "not created"), ("restarting", "", "restarting")):
+        _services_json(s.status_dir, [{"service": "searxng", "state": state, "health": health}], now)
+        assert (summary.searxng(s, now)["ok"], summary.searxng(s, now)["detail"]) == (False, detail), (state, health)
+    # a record nobody rewrote for a while (no update helper) says how old it is
+    _services_json(s.status_dir, [{"service": "searxng", "state": "running", "health": "healthy"}], now - 3 * 3600)
+    assert summary.searxng(s, now) == {"id": "searxng", "name": "SearXNG", "role": "web search (built-in)", "ok": True,
+                                       "detail": "ready (checked 3 h ago)"}
+    assert summary.searxng(s, now + 400 - 3 * 3600)["detail"] == "ready (checked 6 min ago)"
+    # only Docker's own words are shown; anything else is unknown, never the file's text
+    _services_json(s.status_dir, [{"service": "searxng", "state": "<b>up</b>", "health": "healthy; rm -rf"}], now)
+    assert summary.searxng(s, now)["detail"] == "unknown" and not summary.searxng(s, now)["ok"]
+    for bad in ({"version": 1, "services": [{"service": "searxng", "state": "running"}]},   # no written_at
+                {"version": 1, "written_at": now, "services": {"searxng": "running"}},
+                {"version": 1, "written_at": True, "services": []}):
+        (s.status_dir / "services.json").write_text(json.dumps(bad))
+        assert summary.searxng(s, now) is None, bad
+    (s.status_dir / "services.json").write_text("x" * 20000)   # larger than any record: not read
+    assert summary.searxng(s, now) is None
 
 
 def test_settings_read_voice_from_env():

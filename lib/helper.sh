@@ -7,6 +7,7 @@
 #   helper (you, outside Docker) --reads, validates, deletes--> runs ONLY ./stack update|rollback|clean --yes,
 #          or ./stack helper auto on|off (the switch for automatic updates: AUTO_UPDATE in .env)
 #   helper --writes--> .state/status/helper.json (heartbeat) + helper-status.json (progress)   (read-only in the portal)
+#                      and, once a minute, services.json (the containers' state and health: lib/commands.sh)
 #
 # The helper is a launchd agent (macOS) or a systemd --user unit (Linux), installed by ./stack helper install or by
 # setup / an interactive ./stack update when you say yes (the default); --yes runs only with BEDROCK_NOW_HELPER=1.
@@ -1108,6 +1109,7 @@ helper_main() {
     # lib/settings_helper.sh: the settings snapshot, the helper's password hash, nightly backups (as above)
     if ( settings_helper_tick ); then AUTO_FRESH=0; fi
     ! declare -F sessions_helper_tick >/dev/null || ( sessions_helper_tick ) || true   # lib/sessions.sh: what it offers the Code page
+    ! declare -F services_status_tick >/dev/null || ( services_status_tick ) || true   # lib/commands.sh: Home's record of the containers, every minute
     if helper_poll_once; then helper_heartbeat || true; return 0; fi
     if helper_auto_tick; then helper_heartbeat || true; return 0; fi
     [ "${1:-}" != --once ] || return 0

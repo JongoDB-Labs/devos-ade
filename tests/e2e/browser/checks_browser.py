@@ -172,12 +172,18 @@ def home(ctx):
     page.locator("#updated", has_text="Updated").wait_for(timeout=30000)
     page.wait_for_selector("#services li")
     summary = page.evaluate("""() => fetch('/api/summary', {headers: {'X-Requested-With': 'bedrock-now'}}).then(r => r.json())""")
-    want_svc = len(summary["services"])   # 5, plus the speech-to-text container while Bedrock speech-to-text is on
-    expect(want_svc == 5 + (1 if summary["voice"]["on"] and summary["voice"]["provider"] == "bedrock" else 0),
+    # 5, plus the speech-to-text container while Bedrock speech-to-text is on, and the built-in SearXNG while it is on (its
+    # state and health from ./stack's record: .state/status/services.json)
+    want_svc = len(summary["services"])
+    sx_on = (ENV.get("WEBSEARCH_SEARXNG_BUILTIN") or "on").lower() not in ("off", "false", "no", "0")
+    expect(want_svc == 5 + (1 if summary["voice"]["on"] and summary["voice"]["provider"] == "bedrock" else 0) + sx_on,
            f"/api/summary lists {want_svc} services")
     up = page.locator("#services li.up").count()
     total = page.locator("#services li").count()
     expect(total == want_svc and up == want_svc, f"services {up}/{total} up: {page.inner_text('#services')}")
+    if sx_on:
+        sx = page.inner_text("#services li:last-child")
+        expect("SearXNG" in sx and "web search (built-in)" in sx and "ready" in sx, f"the built-in SearXNG's row: {sx!r}")
     labels = ("Claude Code", "Open WebUI", "Setup") + (("Terminal",) if ENV.get("LITELLM_KEY_TERMINAL") else ())
     expect(page.locator("#meters li.meter").count() == len(labels), f"{len(labels)} spend meters")
     meters = page.inner_text("#meters")
@@ -232,7 +238,7 @@ def home(ctx):
     probs = rec.problems()
     rec.save()
     expect(not probs, f"errors: {probs}")
-    return (f"{want_svc}/{want_svc} services, {len(labels)} meters, total {tot}, {len(want_rows)} models (names, prices, logos; Enabled only → {enabled}), "
+    return (f"{want_svc}/{want_svc} services{' (the built-in SearXNG among them)' if sx_on else ''}, {len(labels)} meters, total {tot}, {len(want_rows)} models (names, prices, logos; Enabled only → {enabled}), "
             "automatic sign-in card with the credentials folded away: 4 Copy buttons, 2 links to the apps' own forms")
 
 
