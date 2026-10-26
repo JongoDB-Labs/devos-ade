@@ -282,7 +282,9 @@ you type: the portal's pages and **Check for updates**, every Settings section a
 it, lit up), Code
 sessions and **workspace file names** (asked from the Code tab while this browser has it open; Enter opens the file in
 its editor), **Chat conversations** (Open WebUI's own search), the walkthrough's steps, and the sections of this README
-and `docs/` (on GitHub, as of your release; indexed when the portal's image is built). ↑ ↓ choose, Enter opens, Esc closes. Ctrl/⌘+K works while the focus is in the portal itself: inside the Chat
+and `docs/` (on GitHub, as of your release; indexed when the portal's image is built). Where a setting is changed
+comes first: when the words you type start words of a Settings section's or setting's title, Settings is listed above
+the walkthrough and the docs, its sections first (*budget* → **Spending & budgets**). ↑ ↓ choose, Enter opens, Esc closes. Ctrl/⌘+K works while the focus is in the portal itself: inside the Chat
 or Code tab the key goes to that app (Open WebUI and the Code page have a Ctrl+K of their own) — click the sidebar's
 search box there. Nothing typed there is sent outside your stack (over remote access it goes from your device to the
 portal, like everything else); [docs/security.md](docs/security.md#activity-and-search) says what each part reads.
@@ -2438,7 +2440,8 @@ remembered and not asked again (an install that said no to the earlier opt-in qu
 `./stack setup --yes` installs it only with `BEDROCK_NOW_HELPER=1`, and `./stack helper install` works any
 time. The portal cannot install software on your computer by design, so this one step happens in a terminal;
 until then Home shows "One-click updates are off" with that command and a Copy button. With the helper, Home
-shows **Update now**, **Roll back** and **Clean up old images**. Each asks for the portal password again, and
+shows **Update now** (first in the update card, with `./stack update` folded under *From a terminal instead*),
+**Roll back** and **Clean up old images**. Each asks for the portal password again, and
 Home shows the progress and the result, e.g. "Updated to v0.3.0 · freed 3.1 GB". While the update restarts the
 portal (about a minute or two), Home cannot reach it: the progress card then says it is reconnecting and for how
 long, and picks up by itself. Home's last job is the newest of any origin: a `./stack update`, `rollback`, `setup`,
