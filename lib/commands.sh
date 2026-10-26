@@ -55,6 +55,8 @@ Usage: ./stack <command> [--yes]
   stt          Speech-to-text for the microphone and voice calls: Bedrock (Mistral Voxtral, no key;
                on by default when your AWS key can use it) or OpenAI/Groq (outside Bedrock):
                status | set bedrock [small|mini] | set openai|groq [model] | remove   (see docs/voice.md)
+  websearch    Claude Code's WebSearch on every model (LiteLLM runs the search): status | check
+               (~$0.007 at most) | aws-setup (AgentCore Web Search's one-time AWS setup, for your admin)
   terminal     Claude Code in the browser: a Terminal tab, a sandbox that sees only one folder of yours
                status | enable [--workspace DIR] | disable   (asks for the portal password again)
   code         Claude Code in the browser with a chat: a Code tab with permission prompts, models and
@@ -612,6 +614,7 @@ cmd_setup() {
   setup_done "passwords and settings in .env"
   setup_bringup_and_probe
   stt_after_probe    # lib/stt.sh: Bedrock speech-to-text on by default when Voxtral is usable
+  websearch_after_start   # lib/websearch.sh: one search with the backend in use (on the setup key), or why there is none
   setup_step "creating keys and starting Open WebUI, the portal and the MCP server"
   setup_keys_and_ui
   write_mcp_config
@@ -662,6 +665,8 @@ render_config() {
   # the models of the Code page and devos-claude (lib/code_models.sh), next to the config: the portal, devos-claude
   # and LiteLLM's hook (lib/litellm-hooks/bn_hooks.py) read it
   ! declare -F code_models_write >/dev/null || code_models_write "$1" "$(dirname "$out")/code-models.tsv"
+  # the search backend in use and its price per search (lib/websearch.sh), next to it: the hook and the portal read it
+  ! declare -F websearch_write_json >/dev/null || websearch_write_json "$(dirname "$out")/web-search.json"
   # the chosen Experiential Labs models for the portal (lib/explabs.sh; removed while it is off)
   ! declare -F explabs_write_portal_json >/dev/null || [ "$out" != "$STACK_DIR/litellm/config.yaml" ] || explabs_write_portal_json
 }
@@ -778,6 +783,9 @@ setup_bringup_and_probe() {
     setup_step "downloading images"
     ensure_images
     owui_build || die "could not build Open WebUI's image (./stack logs is empty for a build: run ./stack setup again and read its output)"
+    # lib/websearch.sh: AgentCore Web Search's check (free; in LiteLLM's image) when its last answer no longer stands:
+    # the config follows the new one
+    if websearch_before_render; then render_config "$en"; fi
     setup_step "starting Postgres + RustFS"
     run_phase "Postgres + RustFS" "postgres rustfs" _up_data_services
     setup_done "Postgres + RustFS started"
@@ -809,6 +817,8 @@ setup_bringup_and_probe() {
   [ -s "$en.new" ] || die "no models are usable with this AWS key — check with your AWS admin"
   mv "$en.new" "$en"
   probe_mark
+  # lib/websearch.sh: AgentCore Web Search's check (free; in LiteLLM's image), whose answer the config follows
+  if [ "${SETUP_REPROBE:-0}" = 1 ]; then websearch_before_render --force || true; else websearch_before_render || true; fi
   render_config "$en"
   off_exit _restore_litellm_config
   choose_defaults
@@ -1072,6 +1082,7 @@ SUMMARY
   openrouter_summary_line
   explabs_summary_line
   stt_summary_line
+  websearch_summary_line
   terminal_summary_line
   code_summary_line
   remote_summary_line
@@ -1217,6 +1228,8 @@ cmd_up() {
   run_phase "$PRODUCT_NAME" "$STACK_SERVICES" dc up -d --wait $STACK_SERVICES
   # lib/stt.sh: Bedrock refusing audio turns Bedrock speech-to-text off once (the notice); the list follows
   stt_up_check; extra="$(optional_services)"; STACK_SERVICES="$STACK_BASE_SERVICES${extra:+ $extra}"
+  # lib/websearch.sh: a search backend changed while the stack was stopped is checked now (one search, on the setup key)
+  [ ! -f "$STACK_DIR/litellm/config.yaml" ] || { websearch_search_check; websearch_write_json; }
   terminal_after_up   # TERMINAL_EGRESS: what its way out no longer uses goes once the container has left it
   remote_up_hook
   ensure_portal_reachable   # lib/portal.sh: Docker Desktop forwarding the portal's port to a Caddy it replaced
@@ -1315,6 +1328,7 @@ cmd_status() {
   py="$(python_runner_line)"; [ -z "$py" ] || printf '  %s\n' "$py"   # lib/owui.sh: what Chat's Python runner can import
   # lib/explabs.sh: its models, and when they run without model details (fail safe: no sampling parameters)
   xl="$(explabs_status_line)"; [ -z "$xl" ] || printf '  %s\n' "$xl"
+  [ ! -f "$ENV_FILE" ] || printf '  %s\n' "$(websearch_status_line)"   # lib/websearch.sh: Claude Code's WebSearch
   # lib/stt.sh: Bedrock speech-to-text turned off because AWS refuses its audio — said until a voice choice is made
   ! stt_notice_on || printf '  %sVoice: %s%s\n' "$O_YEL" "$STT_REFUSED_NOTICE" "$O_OFF"
 }
@@ -2053,6 +2067,8 @@ cmd_uninstall() {
 . "$STACK_DIR/lib/code_models.sh"
 # Optional speech-to-text for Open WebUI's voice calls (setup step, ./stack stt, costs/summary lines).
 . "$STACK_DIR/lib/stt.sh"
+# Web search for Claude Code's WebSearch on every model (LiteLLM's web search interception; ./stack websearch).
+. "$STACK_DIR/lib/websearch.sh"
 # Image cleanup and disk usage (./stack update, ./stack clean, ./stack status).
 . "$STACK_DIR/lib/images.sh"
 # Installed version, the portal's release check, and the .state folders the portal mounts.

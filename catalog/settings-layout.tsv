@@ -84,10 +84,16 @@ CLAUDE_MODEL_OPUS	code	main	-	The model Claude Code works with: devos-claude's m
 CLAUDE_BEDROCK_OPUS_MODEL	code	with	CLAUDE_MODEL_OPUS	-
 CODE_MODELS	code	main	-	The models the Code page's picker and the terminal's /model list: all enabled, Anthropic only, or a list you pick.
 CODE_DEFAULT_MODEL	code	main	-	The model new Code page sessions and devos-claude start on.
+WEBSEARCH_BACKEND	code	main	-	Claude Code's WebSearch on every model: AgentCore Web Search on your AWS key, your own search key, or SearXNG.
 CLAUDE_MODEL_SONNET	code	more	-	Claude Code's sonnet slot.
 CLAUDE_BEDROCK_SONNET_MODEL	code	with	CLAUDE_MODEL_SONNET	-
 CLAUDE_MODEL_HAIKU	code	more	-	Claude Code's haiku slot: quick background tasks.
 CLAUDE_BEDROCK_HAIKU_MODEL	code	with	CLAUDE_MODEL_HAIKU	-
+WEBSEARCH_AGENTCORE_GATEWAY	code	more	-	Web search: the AgentCore gateway with a web search target (blank: found by itself, when your key may list them).
+WEBSEARCH_TAVILY_API_KEY	code	more	-	Web search: your own Tavily key (the queries go to tavily.com).
+WEBSEARCH_BRAVE_API_KEY	code	more	-	Web search: your own Brave Search API key (the queries go to search.brave.com).
+WEBSEARCH_PERPLEXITY_API_KEY	code	more	-	Web search: your own Perplexity key (the queries go to perplexity.ai).
+WEBSEARCH_SEARXNG_URL	code	more	-	Web search: a SearXNG instance with JSON output on (free; the queries go to it).
 TERMINAL_MEM_LIMIT	code	more	TERMINAL_ENABLED	The sandbox container's memory limit.
 TERMINAL_AI_TOOLS	code	more	TERMINAL_ENABLED	Which of your AI subscriptions' own tools the sandbox holds.
 GIT_GITHUB_CLIENT_ID	code	more	CODE_ENABLED	Sign in with GitHub (Git hosts): the GitHub App's client ID (blank: DevOS ADE's own).

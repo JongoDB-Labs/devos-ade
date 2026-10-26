@@ -40,6 +40,7 @@ if [ "$want_help" = 1 ]; then
     project) projects_usage; exit 0 ;;
     git-host) githost_usage; exit 0 ;;
     sessions) sessions_usage; exit 0 ;;
+    websearch) websearch_usage; exit 0 ;;
     subscriptions) subscriptions_usage; exit 0 ;;
     *) cmd_help_for "$cmd" || die "unknown command: $cmd (try ./stack help)"; exit 0 ;;
   esac
@@ -54,7 +55,7 @@ case "$cmd" in setup | rotate-aws | help | -h | --help) ;; *) [ ! -f "$ENV_FILE"
 # still look; uninstall checks even without .env, lists what it deletes, and releases the project afterwards).
 # Commands that may write .env refresh the settings snapshot the portal shows when they end (lib/settings.sh).
 case "$cmd" in
-  setup | up | restore | update | rollback | rotate-aws | openrouter | stt | remote | helper | config | models | terminal | code) on_exit settings_snapshot_refresh ;;
+  setup | up | restore | update | rollback | rotate-aws | openrouter | stt | remote | helper | config | models | terminal | code | websearch) on_exit settings_snapshot_refresh ;;
 esac
 case "$cmd" in
   setup) cmd_setup "$@" ;;
@@ -80,6 +81,7 @@ case "$cmd" in
   stt) [ ! -f "$ENV_FILE" ] || guard_project; cmd_stt "$@" ;;
   terminal) [ ! -f "$ENV_FILE" ] || guard_project; cmd_terminal "$@" ;;
   code) [ ! -f "$ENV_FILE" ] || guard_project; cmd_code "$@" ;;
+  websearch) [ ! -f "$ENV_FILE" ] || guard_project; cmd_websearch "$@" ;;
   project) [ ! -f "$ENV_FILE" ] || guard_project; cmd_project "$@" ;;
   git-host) [ ! -f "$ENV_FILE" ] || guard_project --no-claim; cmd_git_host "$@" ;;   # (no Compose change: an exec)
   sessions) [ ! -f "$ENV_FILE" ] || guard_project --no-claim; cmd_sessions "$@" ;;   # (no Compose change: a reader container and an exec)

@@ -233,3 +233,24 @@ app_slug	0	bad	-dash
 app_slug	0	bad	dash-
 app_slug	0	bad	with space
 app_slug	0	bad	under_score
+ws_backend	0	ok
+ws_backend	0	ok	auto
+ws_backend	0	ok	off
+ws_backend	0	ok	agentcore
+ws_backend	0	ok	searxng
+ws_backend	0	bad	google
+ws_backend	0	bad	AUTO
+ws_backend	0	bad	tavily,brave
+ws_gateway	0	ok
+ws_gateway	0	ok	https://devos-ade-web-search-abc123def4.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp
+ws_gateway	0	bad	http://devos-ade-web-search-abc123def4.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp
+ws_gateway	0	bad	https://evil.example.com/mcp
+ws_gateway	0	bad	https://x.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp/extra
+ws_gateway	0	bad	https://x.gateway.bedrock-agentcore.us-east-1.amazonaws.com.evil.example/mcp
+ws_gateway	0	bad	https://X.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp
+ws_key	0	ok
+ws_key	0	ok	abcdefghij0123456789_-XY
+ws_key	0	bad	short-key-123
+ws_key	0	bad	has space in the key value
+ws_key	0	bad	quote"inside-the-key-value
+ws_key	0	bad	newline\ninside-the-key-value

@@ -99,6 +99,10 @@ services:
       EXPLABS_API_KEY: ${EXPLABS_API_KEY:-}
       # Optional speech-to-text provider key (OpenAI or Groq); blank = no "stt" model is rendered (lib/stt.sh).
       STT_API_KEY: ${STT_API_KEY:-}
+      # Optional search keys for Claude Code's WebSearch (lib/websearch.sh): the config names the one in use; blank = none.
+      WEBSEARCH_TAVILY_API_KEY: ${WEBSEARCH_TAVILY_API_KEY:-}
+      WEBSEARCH_BRAVE_API_KEY: ${WEBSEARCH_BRAVE_API_KEY:-}
+      WEBSEARCH_PERPLEXITY_API_KEY: ${WEBSEARCH_PERPLEXITY_API_KEY:-}
     volumes:
       - ./litellm:/app/config:ro,z
     ports:

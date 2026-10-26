@@ -48,7 +48,7 @@ MAX_REQUEST = 8192             # the file for the helper (lib/settings_helper.sh
 MAX_KEYS = 20
 MAX_VALUE = 2000
 CAPABILITY_MAX_AGE_S = 24 * 3600
-GROUPS = ("account", "aws", "budgets", "voice", "openrouter", "explabs", "files", "updates", "remote", "advanced")
+GROUPS = ("account", "aws", "budgets", "voice", "openrouter", "explabs", "websearch", "files", "updates", "remote", "advanced")
 # the page's sections, in catalog/settings-layout.tsv; a row's place in its section; the page's own rows (no .env key)
 SECTIONS = ("account", "providers", "aws", "spending", "chat", "code", "files", "remote", "updates", "diagnostics", "advanced", "about")
 PLACES = ("main", "more", "with")
@@ -157,11 +157,27 @@ def snapshot(status_dir: Path) -> dict | None:
                          m[5] is True, m[6] is True, _s(m[7], 40) if len(m) == 8 else ""]
                         for m in (ch.get("code_models") or [])[:1500]
                         if isinstance(m, list) and len(m) in (7, 8) and isinstance(m[0], str) and MODEL_ID.fullmatch(m[0])],
+        # web search for Claude Code (lib/websearch.sh websearch_json): the backend in use, its check, what to do
+        "websearch": _websearch(ch.get("websearch")),
     }
     written = d.get("written_at") if isinstance(d.get("written_at"), int) else None
     base = d.get("base") if isinstance(d.get("base"), str) and HEX64.fullmatch(d.get("base")) else ""
     return {"written_at": written, "base": base, "remote_on": d.get("remote_on") is True, "last_change": lc,
             "choices": choices, "keys": keys}
+
+
+WS_BACKENDS = ("", "agentcore", "tavily", "brave", "perplexity", "searxng")
+WS_STATUS = ("ok", "failed", "unverified", "unchecked", "off")
+
+
+def _websearch(w) -> dict | None:
+    """Settings' web search line, as ./stack wrote it ({backend, name, status, why, checked_at, fix: [lines]}), every
+    field checked; None without one (an older snapshot)."""
+    if not isinstance(w, dict) or w.get("backend") not in WS_BACKENDS or w.get("status") not in WS_STATUS:
+        return None
+    return {"backend": w["backend"], "name": _s(w.get("name"), 80), "status": w["status"], "why": _s(w.get("why"), 300),
+            "checked_at": _s(w.get("checked_at"), 40),
+            "fix": [_s(f, 900) for f in (w.get("fix") or [])[:5] if isinstance(f, str)] if isinstance(w.get("fix"), list) else []}
 
 
 _layout_cache: dict = {}
@@ -453,6 +469,18 @@ def _xl_models(v, remote_on=False):
     return None if ok else "must be a comma list of the gateway's model ids (letters, digits, . _ : and -)"
 
 
+_WS_GATEWAY = re.compile(r"https://[a-z0-9-]{1,100}\.gateway\.bedrock-agentcore\.[a-z0-9-]{1,30}\.amazonaws\.com/mcp")
+
+
+def _ws_gateway(v, remote_on=False):
+    return None if v == "" or _WS_GATEWAY.fullmatch(v) else \
+        "must be an AgentCore gateway's MCP URL: https://GATEWAY_ID.gateway.bedrock-agentcore.REGION.amazonaws.com/mcp"
+
+
+def _ws_key(v, remote_on=False):
+    return None if v == "" or re.fullmatch(r"[A-Za-z0-9_-]{16,256}", v) else "must be an API key: 16-256 letters, digits, - and _"
+
+
 def _int_1_5000(v, remote_on=False):
     return None if v == "" or (re.fullmatch(r"[1-9][0-9]{0,3}", v) and int(v) <= 5000) else \
         "must be a whole number from 1 to 5000 (blank = 1000)"
@@ -512,6 +540,9 @@ VALIDATORS = {
     "stt_provider": _one_of("bedrock", "openai", "groq", "", msg="must be bedrock, openai, groq or blank (the browser)"),
     "stt_key": _stt_key, "stt_model": _stt_model, "or_key": _or_key, "or_mode": _or_mode, "int_1_5000": _int_1_5000,
     "xl_key": _xl_key, "xl_models": _xl_models,
+    "ws_backend": _one_of("", "auto", "off", "agentcore", "tavily", "brave", "perplexity", "searxng",
+                          msg="must be auto, off, agentcore, tavily, brave, perplexity or searxng (blank = auto)"),
+    "ws_gateway": _ws_gateway, "ws_key": _ws_key,
     "login": _login,
     "days": _range(1, 90, "must be a whole number of days from 1 to 90 (blank = 30)"),
     "pct": _range(50, 99, "must be a percentage from 50 to 99 (blank = 80)"),

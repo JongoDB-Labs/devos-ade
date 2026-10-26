@@ -149,7 +149,7 @@ render_litellm_config() {
   return "$rc"
 }
 _render_litellm_config_base() {
-  local enabled="$1" region="$2" store="${3:-false}" alerting="${4:-false}" env_login_off="${5:-false}" name mode model aliases mregion r region_yaml a msg_off aliases_out="" n=0
+  local enabled="$1" region="$2" store="${3:-false}" alerting="${4:-false}" env_login_off="${5:-false}" name mode model aliases mregion r region_yaml a msg_off aliases_out="" n=0 ws='' cbs
   local -a alias_list
   valid_region "$region" || die "invalid AWS region: '$region'"
   [ -r "$CATALOG" ] || die "catalog not found: $CATALOG"
@@ -188,6 +188,10 @@ _render_litellm_config_base() {
   ! declare -F stt_yaml >/dev/null || stt_yaml
   printf '\nrouter_settings:\n'
   if [ -n "$aliases_out" ]; then printf '  model_group_alias:\n%s' "$aliases_out"; else printf '  model_group_alias: {}\n'; fi
+  # Web search for Claude Code (lib/websearch.sh): the search backend in use, as LiteLLM's search tool (its interception,
+  # in the hook's file, needs both); none, nothing
+  ! declare -F websearch_backend >/dev/null || [ ! -r "$(bn_hook_src)" ] || ws="$(websearch_backend)"
+  [ -z "$ws" ] || websearch_yaml "$ws"
   cat <<EOT
 
 general_settings:
@@ -217,8 +221,14 @@ EOT
 '; fi
   # LiteLLM's one hook (lib/litellm-hooks/bn_hooks.py, copied next to the config by render_config): lowers a request's
   # max_tokens to the model's limit from litellm/code-models.tsv (Claude Code asks for up to 32,000; Bedrock's Llama
-  # refuses over 8,192) and leaves out Claude Code's running token count for another vendor's model on Bedrock
-  [ ! -r "$(bn_hook_src)" ] || printf '  callbacks: ["bn_hooks.proxy_handler_instance"]\n'
+  # refuses over 8,192) and leaves out Claude Code's running token count for another vendor's model on Bedrock. With a
+  # search backend, LiteLLM's web search interception as the hook's file has it (bn_hooks.web_search): Claude Code's
+  # WebSearch on Bedrock's and OpenRouter's models (lib/websearch.sh)
+  if [ -r "$(bn_hook_src)" ]; then
+    cbs='"bn_hooks.proxy_handler_instance"'
+    [ -z "$ws" ] || cbs="$cbs, \"bn_hooks.web_search\""
+    printf '  callbacks: [%s]\n' "$cbs"
+  fi
 }
 
 # bn_hook_src -> the source of LiteLLM's hook (the config names it while it exists: render_config copies it in)

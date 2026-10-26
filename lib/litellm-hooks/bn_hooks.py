@@ -18,12 +18,16 @@ catalog/code-models.tsv and OpenRouter's list):
   the user's message: for those models the images of a tool result go right after the results, in the same message,
   under a line saying which call they came from (what LiteLLM does itself for an OpenAI-shaped provider).
 - Claude Code's WebSearch asks the model for Anthropic's web search, a tool the provider runs (type web_search_…).
-  Bedrock runs none: LiteLLM refuses it for Claude there (telling you to set up a search of LiteLLM's own), and for
-  another vendor's model on Bedrock or OpenRouter it is left out or not booked, and the model answers from what it
-  knows as though it had searched. For those models the request becomes one that has the model answer WEB_SEARCH_OFF
-  and nothing else (no tools, a short answer): the WebSearch tool hands that to the model as its result, and the model
-  says so. The Experiential Labs gateway runs the search itself (LiteLLM asks it with web_search_options; its fee is in
-  the cost the gateway reports): its models' requests go as they came.
+  Bedrock runs none and OpenRouter barely: with a search backend (web-search.json next to this file, written by
+  ./stack: lib/websearch.sh), LiteLLM's web search interception runs the search for those models (web_search below: the
+  config names it after this hook), and each search is booked at the backend's price per search (registered with
+  LiteLLM here: its own map has none for some, $0 for AgentCore). Without one, LiteLLM refuses it for Claude on Bedrock
+  (telling you to set up a search of LiteLLM's own), and for another vendor's model on Bedrock or OpenRouter it is left
+  out or not booked, and the model answers from what it knows as though it had searched: for those models the request
+  becomes one that has the model answer WEB_SEARCH_OFF and nothing else (no tools, a short answer): the WebSearch tool
+  hands that to the model as its result, and the model says so. The Experiential Labs gateway runs the search itself
+  (LiteLLM asks it with web_search_options; its fee is in the cost the gateway reports): its models' requests go as
+  they came.
 
 For the Experiential Labs gateway's models (lib/explabs.sh: model_info bn_xl: true), on each call to the gateway:
 - Before it: the model goes by its own id (with extended thinking on, LiteLLM renames it openai/responses/<id> for
@@ -48,6 +52,7 @@ request fails.
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import re
@@ -177,6 +182,49 @@ def lift_tool_images(data: dict) -> dict:
 # --- Claude Code's WebSearch where no search runs (Bedrock, OpenRouter) ---
 
 WEB_SEARCH_OFF = "Web search isn't available for {model} in DevOS ADE. Use WebFetch with a URL."
+_SEARCH_JSON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web-search.json")
+_search_cache: dict = {"stamp": None, "backend": ""}
+_SEARCH_PROVIDER = re.compile(r"[a-z][a-z0-9_]{0,40}")
+
+
+def search_backend() -> str:
+    """The search backend LiteLLM's web search interception runs Claude Code's WebSearch with (web-search.json's
+    "backend"), "" for none (no file, or one that names none: v0.28.2's answer, WEB_SEARCH_OFF, stays). Read again when
+    the file changed; each time, the backend's price per search ("usd_per_query", under "provider") is registered with
+    LiteLLM, which books every search of it at that price on the key of the request that searched."""
+    try:
+        st = os.stat(_SEARCH_JSON)
+        stamp = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        _search_cache.update(stamp=None, backend="")
+        return ""
+    if stamp != _search_cache["stamp"]:
+        backend = ""
+        try:
+            with open(_SEARCH_JSON, encoding="utf-8") as f:
+                doc = json.load(f) if st.st_size < 65536 else {}
+            b, provider, price = doc.get("backend"), doc.get("provider"), doc.get("usd_per_query")
+            if isinstance(b, str) and _SEARCH_PROVIDER.fullmatch(b):
+                backend = b
+                if (isinstance(provider, str) and _SEARCH_PROVIDER.fullmatch(provider)
+                        and isinstance(price, (int, float)) and not isinstance(price, bool)
+                        and math.isfinite(price) and 0 <= price < 1):
+                    _register_search_price(provider, float(price))
+        except (OSError, ValueError, AttributeError):
+            backend = ""
+        _search_cache.update(stamp=stamp, backend=backend)
+    return _search_cache["backend"]
+
+
+def _register_search_price(provider: str, price: float) -> None:
+    """LiteLLM prices a search as <provider>/search's input_cost_per_query in its model map: ours, for this one."""
+    try:
+        import litellm
+
+        litellm.register_model({f"{provider}/search": {"input_cost_per_query": price, "litellm_provider": provider,
+                                                       "mode": "search"}})
+    except Exception:  # noqa: BLE001 — a price never stops a search (LiteLLM's own then stands)
+        pass
 
 
 def _web_search_tool(t) -> bool:
@@ -186,11 +234,12 @@ def _web_search_tool(t) -> bool:
 def no_web_search(data: dict) -> dict:
     """DATA, when it asks a model whose provider runs no web search for Anthropic's web search and nothing else (every
     tool's type starts with web_search: the request Claude Code's WebSearch makes on its own), made a request for
-    WEB_SEARCH_OFF instead: no tools, nothing to think about, a short answer that is that sentence alone. Unchanged
-    otherwise: a request with any other tool (a session's turn) is never replaced, whatever it lists besides."""
+    WEB_SEARCH_OFF instead: no tools, nothing to think about, a short answer that is that sentence alone — only while
+    no search backend is set up (search_backend: then LiteLLM's interception searches). Unchanged otherwise: a request
+    with any other tool (a session's turn) is never replaced, whatever it lists besides."""
     model, tools = data.get("model"), data.get("tools")
     if (not isinstance(model, str) or model not in _read()["no_search"] or not isinstance(tools, list) or not tools
-            or not all(map(_web_search_tool, tools))):
+            or not all(map(_web_search_tool, tools)) or search_backend()):
         return data
     line = WEB_SEARCH_OFF.format(model=model)
     for k in ("tools", "tool_choice", "thinking", "output_config", "temperature", "top_p", "top_k", "stop_sequences"):
@@ -391,3 +440,47 @@ class BnHooks(CustomLogger):
 
 
 proxy_handler_instance = BnHooks()
+
+
+# --- Claude Code's WebSearch with a search backend: LiteLLM's web search interception ---
+
+SEARCH_PROVIDERS = ["bedrock", "openrouter"]   # (not the Experiential Labs gateway, an openai one: it searches itself)
+SEARCH_TOOL = "web-search"                      # the config's search_tools entry (lib/websearch.sh WEBSEARCH_TOOL)
+NATIVE_WEB_SEARCH = {"type": "web_search_20250305", "name": "web_search"}
+
+
+def web_search_interception():
+    """LiteLLM's web search interception for Bedrock's and OpenRouter's models with the search tool SEARCH_TOOL (the
+    config names it, bn_hooks.web_search, while a backend is set up), changed in one thing: the request Claude Code's
+    WebSearch makes on its own, for a model LiteLLM answers with the search alone (another vendor's on Bedrock,
+    OpenRouter's), gets Anthropic's search blocks too (server_tool_use, web_search_tool_result), as Claude's does.
+    LiteLLM 1.105.0 has turned the request's web_search tool into its own by the time it looks for one there, and sent
+    the results as text alone: Claude Code then counted no search and listed no links. None without the interception
+    (another LiteLLM): the config would name nothing that exists, so ./stack names it only with this file there."""
+    try:
+        from litellm.integrations.websearch_interception.handler import (
+            WEBSEARCH_EMIT_NATIVE_BLOCKS_KEY, WebSearchInterceptionLogger)
+        from litellm.integrations.websearch_interception.tools import is_anthropic_native_web_search_tool
+    except Exception:  # noqa: BLE001
+        return None
+
+    class BnWebSearch(WebSearchInterceptionLogger):
+        async def try_short_circuit_search(self, model, messages, tools, custom_llm_provider, kwargs=None):
+            try:
+                # (the request came with Anthropic's web search: LiteLLM's mark of it is still there)
+                if (isinstance(kwargs, Mapping) and kwargs.get(WEBSEARCH_EMIT_NATIVE_BLOCKS_KEY) is True
+                        and isinstance(tools, list) and tools
+                        and not any(isinstance(t, Mapping) and is_anthropic_native_web_search_tool(t) for t in tools)):
+                    tools = [*tools, dict(NATIVE_WEB_SEARCH)]
+            except Exception:  # noqa: BLE001 — as LiteLLM would have done it
+                pass
+            return await super().try_short_circuit_search(model, messages, tools, custom_llm_provider, kwargs=kwargs)
+
+    return BnWebSearch(enabled_providers=list(SEARCH_PROVIDERS), search_tool_name=SEARCH_TOOL)
+
+
+web_search = web_search_interception()
+try:
+    search_backend()   # (the backend's price, registered as LiteLLM loads this hook: before its first search)
+except Exception:  # noqa: BLE001
+    pass

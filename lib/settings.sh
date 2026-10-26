@@ -172,6 +172,11 @@ _sv_xl_key() { [ -z "$1" ] || valid_xl_key "$1" || { SV_ERR="must be an Experien
 _sv_xl_models() {
   { valid_xl_models "$1" && [ "${#1}" -le "$SETTINGS_MAX_VALUE" ]; } || { SV_ERR="must be a comma list of the gateway's model ids (letters, digits, . _ : and -)"; return 1; }
 }
+_sv_ws_backend() { valid_websearch_backend "$1" || { SV_ERR="must be auto, off, agentcore, tavily, brave, perplexity or searxng (blank = auto)"; return 1; }; }
+_sv_ws_gateway() {
+  valid_websearch_gateway "$1" || { SV_ERR="must be an AgentCore gateway's MCP URL: https://GATEWAY_ID.gateway.bedrock-agentcore.REGION.amazonaws.com/mcp"; return 1; }
+}
+_sv_ws_key() { valid_websearch_key "$1" || { SV_ERR="must be an API key: 16-256 letters, digits, - and _"; return 1; }; }
 _sv_int_1_5000() {
   case "$1" in '') return 0 ;; [1-9] | [1-9][0-9] | [1-9][0-9][0-9] | [1-4][0-9][0-9][0-9] | 5000) return 0 ;; esac
   SV_ERR="must be a whole number from 1 to 5000 (blank = 1000)"; return 1
@@ -444,8 +449,9 @@ _settings_last_change() {
 
 # _settings_choices -> JSON: speech-to-text models per provider, which Bedrock ones the model check enabled (and which
 # Bedrock refuses audio for: lib/stt.sh — Settings shows Bedrock unavailable, with the reason), the
-# services ./stack restart takes, the chat models, and the folder the Code page's sandbox would see (code_workspace:
-# what Settings names before it turns the terminal on with the Code page; empty for a path JSON would need escapes in)
+# services ./stack restart takes, the chat models, the folder the Code page's sandbox would see (code_workspace:
+# what Settings names before it turns the terminal on with the Code page; empty for a path JSON would need escapes in),
+# and web search's line (lib/websearch.sh websearch_json: the backend in use, its check, what to do)
 _settings_choices() {
   local p m out='' first sep ready='' refused='' ws
   ws="$(code_workspace)"
@@ -459,9 +465,10 @@ _settings_choices() {
     done
     out="$out]"
   done
-  printf '{"stt_models": {%s}, "stt_bedrock_ready": [%s], "stt_bedrock_refused": [%s], "restart": [%s], "chat_models": [%s], "code_workspace": "%s", "code_models": [%s]}\n' "$out" "$ready" "$refused" \
+  printf '{"stt_models": {%s}, "stt_bedrock_ready": [%s], "stt_bedrock_refused": [%s], "restart": [%s], "chat_models": [%s], "code_workspace": "%s", "code_models": [%s], "websearch": %s}\n' "$out" "$ready" "$refused" \
     "$(for s in $RESTART_SERVICES; do printf '"%s",' "$s"; done | sed 's/,$//')" \
-    "$(for m in $(settings_chat_models); do printf '["%s", "%s"],' "$m" "$(_settings_display "$m")"; done | sed 's/,$//')" "$ws" "$(_settings_code_models)"
+    "$(for m in $(settings_chat_models); do printf '["%s", "%s"],' "$m" "$(_settings_display "$m")"; done | sed 's/,$//')" "$ws" "$(_settings_code_models)" \
+    "$(websearch_json 2>/dev/null || echo null)"
 }
 
 # _settings_code_models -> JSON rows for Settings › Claude Code › Models: [id, name, provider, vendor, compat, free,
@@ -909,10 +916,12 @@ _cfg_post() {
     _stt_apply   # re-renders, recreates LiteLLM, the stt container, Chat and the portal; restores the previous choice if stt fails
     before="$(cat "$cfg")"   # (LiteLLM was recreated with all of .env)
   fi
-  if _cfg_on litellm-cfg || _cfg_on openrouter || _cfg_on explabs; then
+  # web search (lib/websearch.sh): AgentCore's check first (free), whose answer decides whether auto picks it
+  if _cfg_on websearch; then websearch_before_render || true; fi
+  if _cfg_on litellm-cfg || _cfg_on openrouter || _cfg_on explabs || _cfg_on websearch; then
     render_config "$(_enabled_or_all)"
     if [ "$(cat "$cfg")" != "$before" ]; then run_phase "LiteLLM (new settings)" litellm dc up -d --no-deps --force-recreate --wait litellm
-    else svc="$svc litellm"; fi   # its environment (the webhook, the OpenRouter or Experiential Labs key) changed: Compose recreates it for that
+    else svc="$svc litellm"; fi   # its environment (the webhook, the OpenRouter, Experiential Labs or a search key) changed: Compose recreates it for that
   fi
   if _cfg_on rustfs; then   # every holder of the pair at once; rustfs-init (a dependency) runs again with it
     run_phase "Files (new sign-in)" "rustfs open-webui shared-mcp portal" dc up -d --wait rustfs open-webui shared-mcp portal
@@ -964,6 +973,8 @@ _cfg_post() {
     sync_budget_banner
     portal_session_end
   fi
+  # web search: one search with the backend now in use (on the setup key), and what it found for Settings
+  if _cfg_on websearch; then websearch_after_start --force; fi
   if _cfg_on code; then _cfg_code; fi   # last: it restarts the portal and Caddy itself (and turns the terminal on)
 }
 

@@ -65,14 +65,15 @@ test_every_env_key_is_in_the_settings_table_once() {
   # (the 85 keys of the inventory, + the portal password hash, + 11 new ones: session length, alert threshold, five
   # model pins, hidden models, nightly backups with their hour and how many to keep, + the browser terminal's 12,
   # Chat's origin and the Code page's 5, + its previews' 2, + their 4 over remote access, + auto mode's 2, + Git hosts'
-  # sign-in's 3: the GitHub App's client ID and name, the GitLab application's ID, + the Experiential Labs key and models)
-  assert_eq "$(settings_rows | wc -l | tr -d ' ')" 135
+  # sign-in's 3: the GitHub App's client ID and name, the GitLab application's ID, + the Experiential Labs key and models,
+  # + web search's 6: the backend, AgentCore's gateway, three search keys and a SearXNG URL)
+  assert_eq "$(settings_rows | wc -l | tr -d ' ')" 141
 }
 
 test_table_columns_are_valid() {
   local bad
   bad="$(settings_rows | awk -F'\t' '
-    $2 !~ /^(account|aws|budgets|voice|openrouter|explabs|files|updates|remote|advanced)$/ { print $1 " group" }
+    $2 !~ /^(account|aws|budgets|voice|openrouter|explabs|websearch|files|updates|remote|advanced)$/ { print $1 " group" }
     $3 !~ /^(-|s|k|u|h|S)$/ { print $1 " secret" }
     $4 !~ /^(edit|local|on-only|widen-local|companion|regen|ro|derived)$/ { print $1 " policy" }
     $4 == "regen" && $5 != "-" { print $1 " regen has no validator" }
@@ -239,15 +240,16 @@ test_portal_password_hash_follows_env_and_the_helper_keeps_its_own() {
 test_snapshot_masks_every_secret() {
   _env
   # (an Experiential Labs key's shape, made here: never a key-like literal in the repository)
-  local xl; xl="xpl_$(printf '%040d' 0 | tr 0 9)"
+  local xl ws; xl="xpl_$(printf '%040d' 0 | tr 0 9)"; ws="$(printf 'w%.0s' $(seq 1 24))5678"   # (and a search key's)
   set_env_batch ALERT_WEBHOOK_URL 'https://hooks.example.com/abc?token=hooktoken123' MY_OWN_SECRET 'mine123456789' \
-    TERMINAL_PROXY_SECRET 0123456789abcdef0123456789abcdef LITELLM_KEY_TERMINAL sk-term0123456789 EXPLABS_API_KEY "$xl"
+    TERMINAL_PROXY_SECRET 0123456789abcdef0123456789abcdef LITELLM_KEY_TERMINAL sk-term0123456789 EXPLABS_API_KEY "$xl" \
+    WEBSEARCH_BRAVE_API_KEY "$ws" WEBSEARCH_SEARXNG_URL 'https://search.example.org/sx?token=searchtoken1'
   settings_snapshot_write
   local f s v; f="$(settings_snapshot_file)"; s="$(cat "$f")"
   assert_eq "$(ls -l "$f" | cut -c1-10)" "-rw-r--r--"
   for v in 'correct horse battery' ${FAKE_AWS_3} sk-master0123456789 rustfs0123456789secret \
            mcp0123456789abcdef Bn9-0123456789abcdef hooktoken123 mine123456789 sk-setup0123456789 \
-           0123456789abcdef0123456789abcdef sk-term0123456789 "$xl" 9999; do
+           0123456789abcdef0123456789abcdef sk-term0123456789 "$xl" 9999 "$ws" wwww searchtoken1; do
     assert_not_contains "$s" "$v"
   done
   # the Experiential Labs key: set, and not a character of it (no hint either)
@@ -256,11 +258,13 @@ test_snapshot_masks_every_secret() {
   assert_contains "$s" '"hint": "AKIA…MNOP"'
   assert_contains "$s" '"hint": "https://hooks.example.com/…"'
   assert_contains "$s" '"hint": "…cdef"'
+  assert_contains "$(printf '%s\n' "$s" | grep '"key": "WEBSEARCH_BRAVE_API_KEY"')" '"hint": "…5678"'   # a search key: its last 4
+  assert_contains "$s" '"hint": "https://search.example.org/…"'
   assert_contains "$s" '"value": "admin@example.com"'
   assert_contains "$s" "\"base\": \"$(env_sha256)\""
   assert_contains "$s" '"key": "MY_OWN_SECRET", "group": "advanced", "secret": "S"'
   if command -v python3 >/dev/null 2>&1; then
-    python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); assert len(d["keys"]) == 136; assert d["last_change"] is None' "$f"
+    python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); assert len(d["keys"]) == 142; assert d["last_change"] is None' "$f"
   fi
 }
 

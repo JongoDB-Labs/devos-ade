@@ -722,6 +722,14 @@
       main.append(el("p", { class: "note", text: "Switched on, not in effect: the Code page is not reachable over remote access (REMOTE_TERMINAL=true), or remote access has no names yet (./stack up)." }));
     }
     if (k.key === "MODELS_HIDDEN") setValue(k.value ? k.value.split(",").map(modelName).join(", ") : "None hidden");
+    // web search for Claude Code: the backend in use and its check, or why there is none, and what to do (./stack writes it)
+    const w = k.key === "WEBSEARCH_BACKEND" && data.snapshot && data.snapshot.choices.websearch;
+    if (w) {
+      const line = !w.backend ? `Off: ${w.why}` : w.status === "ok" ? `In use: ${w.name} (checked: it answers)`
+        : w.status === "failed" ? `${w.name} does not work yet: ${w.why}` : `In use: ${w.name} (not checked yet${w.why ? `: ${w.why}` : ""})`;
+      main.append(el("p", { class: "note set-extra", text: line }));
+      for (const f of w.fix || []) main.append(el("p", { class: "note set-extra", text: f }));
+    }
     // the last release check and Check for updates (updatecheck.js): a click asks once, also with the daily check off
     if (k.key === "UPDATE_CHECK" && window.bnUpdateCheck && window.bnUpdateCheck.line) main.append(window.bnUpdateCheck.line("settings"));
     if (k.key === "BACKUP_HOUR" && keys.AUTO_UPDATE && keys.AUTO_UPDATE.value === "on") {

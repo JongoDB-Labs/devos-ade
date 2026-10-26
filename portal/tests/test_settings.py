@@ -364,6 +364,24 @@ def test_bedrock_voice_is_refused_with_the_reason_while_aws_refuses_its_audio(ma
     assert st.snapshot(sd)["choices"]["stt_bedrock_refused"] == ["voxtral-small"]
 
 
+def test_the_web_search_line_is_type_checked(dirs):
+    # (lib/websearch.sh websearch_json: Settings › Claude Code › Web search for Claude Code shows it under its row)
+    sd, _ = dirs
+    w = {"backend": "agentcore", "name": "Amazon Bedrock AgentCore Web Search", "provider": "agentcore", "usd_per_query": 0.007005,
+         "choice": "auto", "status": "failed", "why": "AWS refused bedrock-agentcore:InvokeGateway", "checked_at": "2026-10-26T06:00:00Z",
+         "fix": ["your AWS admin lets this key use the gateway (an IAM change; then ./stack websearch check):",
+                 "aws iam put-user-policy --user-name u --policy-name DevOSADEWebSearch --policy-document '{}'", 7]}
+    write_snapshot(sd, choices={**CHOICES, "websearch": w})
+    got = st.snapshot(sd)["choices"]["websearch"]
+    assert got == {"backend": "agentcore", "name": "Amazon Bedrock AgentCore Web Search", "status": "failed",
+                   "why": "AWS refused bedrock-agentcore:InvokeGateway", "checked_at": "2026-10-26T06:00:00Z", "fix": w["fix"][:2]}, got
+    for bad in ({**w, "backend": "google"}, {**w, "status": "great"}, "x", None):
+        write_snapshot(sd, choices={**CHOICES, "websearch": bad})
+        assert st.snapshot(sd)["choices"]["websearch"] is None
+    write_snapshot(sd)   # an older snapshot: none
+    assert st.snapshot(sd)["choices"]["websearch"] is None
+
+
 def test_stale_base_is_refused(make, dirs):
     sd, rq = dirs
     write_snapshot(sd); helper_up(sd)
