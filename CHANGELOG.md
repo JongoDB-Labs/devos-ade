@@ -12,7 +12,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   work as Claude Code's model with no difference but what it was trained on? It runs real Claude Code sessions
   (`devos-claude -p … --output-format stream-json`) in the terminal's sandbox image, through this checkout's terminal
   gateway, LiteLLM config and hook, on each provider family — Claude Haiku as the control, GPT-6 Luna and Mistral
-  Large 3 on Bedrock, an OpenRouter model, two Experiential Labs models — side by side, in a few minutes. Thirteen
+  Large 3 on Bedrock, an OpenRouter model, two Experiential Labs models — side by side, in a few minutes. Fourteen
   scenarios each, from turns with `--resume` and thinking replayed to Claude Code's tools, images, `/compact`, a model
   switch mid-session, a provider's error, WebFetch and WebSearch; each one's PASS or FAIL with the exact error, and
   the Bedrock spend LiteLLM booked (about $0.50 for every family). The stand-in for the Experiential Labs gateway

@@ -40,7 +40,7 @@
 # The sandbox is the terminal image (built from terminal/, or E2E_PARITY_TERMINAL_IMAGE) with compose.terminal.yaml's
 # environment and this checkout's terminal/bin/claude-bedrock, read-only, its home and /workspace in memory; its way
 # out (WebFetch) is a plain bridge network, as TERMINAL_EGRESS=host. Claude Code's tools may touch only
-# /workspace/<model>/<scenario> (--permission-mode acceptEdits with an allow list).
+# /workspace/<family>-<n>/<scenario> (--permission-mode acceptEdits with an allow list).
 # Bedrock spend: a few cents per model (cheap models, short prompts); every call LiteLLM books is logged and summed in
 # the results. Keys: only in this process's environment and the LiteLLM container's (-e NAME, never a value on a
 # command line); never in a file, the results or the logs (checked at the end).
@@ -210,8 +210,8 @@ def _images(messages):
 def _row(kwargs, ok, err=None):
     lp = kwargs.get("litellm_params") or {}
     meta = lp.get("metadata") or {}
-    return {"t": time.time(), "ok": ok, "model": kwargs.get("model"), "group": meta.get("model_group"),
-            "cost": kwargs.get("response_cost") or 0, "error": err, "images": _images(kwargs.get("messages"))}
+    return {"t": time.time(), "ok": ok, "call_id": kwargs.get("litellm_call_id"), "model": kwargs.get("model"),
+            "group": meta.get("model_group"), "cost": kwargs.get("response_cost") or 0, "error": err}
 
 
 class Spend(CustomLogger):
@@ -221,6 +221,39 @@ class Spend(CustomLogger):
                 f.write(json.dumps(row, default=str) + "\n")
         except Exception:  # noqa: BLE001
             pass
+
+    async def async_pre_call_hook(self, user_api_key_dict, cache, data, call_type):
+        # each request as Claude Code sent it (before any translation): the shape of its messages — roles and block
+        # types, never their text — its system prompt's first words, max_tokens and tools, to tell its calls apart
+        try:
+            msgs = data.get("messages") if isinstance(data, dict) else None
+            system = data.get("system")
+            head = system if isinstance(system, str) else " ".join(b.get("text", "") for b in system if isinstance(b, dict)) if isinstance(system, list) else ""
+            shape = []
+            for m in msgs if isinstance(msgs, list) else []:
+                c = m.get("content") if isinstance(m, dict) else None
+                kinds = c if isinstance(c, str) and not c else ("text" if isinstance(c, str) else [b.get("type") for b in c if isinstance(b, dict)] if isinstance(c, list) else None)
+                shape.append([m.get("role") if isinstance(m, dict) else None, kinds])
+            self._write({"t": time.time(), "ok": True, "kind": "raw", "group": data.get("model") if isinstance(data, dict) else None,
+                         "call_type": str(getattr(call_type, "value", call_type)), "system_head": head[:120],
+                         "max_tokens": data.get("max_tokens") if isinstance(data, dict) else None,
+                         "tools": len(data.get("tools") or []) if isinstance(data, dict) else None, "shape": shape[-12:]})
+        except Exception:  # noqa: BLE001
+            pass
+        return data
+
+    async def async_pre_call_deployment_hook(self, kwargs, call_type):
+        # each call as it goes to its deployment (the logs after it have no messages: turn_off_message_logging): the
+        # images it carries and its messages' roles
+        try:
+            meta = kwargs.get("litellm_metadata") or kwargs.get("metadata") or {}
+            msgs = kwargs.get("messages")
+            self._write({"t": time.time(), "ok": True, "kind": "pre", "call_id": kwargs.get("litellm_call_id"),
+                         "model": kwargs.get("model"), "group": meta.get("model_group"), "images": _images(msgs),
+                         "roles": [m.get("role") for m in msgs if isinstance(m, dict)][-40:] if isinstance(msgs, list) else None})
+        except Exception:  # noqa: BLE001
+            pass
+        return kwargs
 
     async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
         self._write(_row(kwargs, True))
@@ -245,6 +278,27 @@ PY
       bn_id: "parity-bad-bedrock"\
       bn_compat: "fails"\
       bn_code: false/' \
+      -e "$([ "$OR_REAL" = 1 ] && printf '%s' 's/^model_list:$/model_list:\
+  - model_name: "parity-bad-or"\
+    litellm_params:\
+      model: "openrouter\/parity\/no-such-model"\
+      api_key: os.environ\/OPENROUTER_API_KEY\
+    model_info:\
+      mode: "chat"\
+      bn_id: "parity-bad-or"\
+      bn_compat: "fails"\
+      bn_code: false/' || printf 's/^$//')" \
+      -e "$([ "$XL_REAL" = 1 ] && printf '%s' 's/^model_list:$/model_list:\
+  - model_name: "parity-bad-xl"\
+    litellm_params:\
+      model: "openai\/parity-no-such-model"\
+      api_base: "https:\/\/api.experientiallabs.ai\/v1"\
+      api_key: os.environ\/EXPLABS_API_KEY\
+    model_info:\
+      mode: "chat"\
+      bn_id: "parity-bad-xl"\
+      bn_compat: "fails"\
+      bn_code: false/' || printf 's/^$//')" \
       -e 's/^  callbacks: \["bn_hooks.proxy_handler_instance"\]$/  callbacks: ["bn_hooks.proxy_handler_instance", "parity_spend.handler"]/' \
       "$WORK/litellm/config.yaml.new" > "$WORK/litellm/config.yaml" && rm -f "$WORK/litellm/config.yaml.new"
   grep -q 'parity_spend.handler' "$WORK/litellm/config.yaml" || die "the rendered config names no hook (lib/litellm-hooks/bn_hooks.py)"

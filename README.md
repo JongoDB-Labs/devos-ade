@@ -2491,9 +2491,10 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
   --aws-env FILE` runs real Claude Code sessions (`devos-claude -p … --output-format stream-json`, its tools allowed in
   one test folder) in the terminal's sandbox image, through this checkout's terminal gateway, LiteLLM config and hook,
   on each provider family's models: Claude Haiku as the control, Bedrock's GPT-6 Luna and Mistral Large 3, an OpenRouter
-  model and two Experiential Labs models. Thirteen scenarios each: three turns with `--resume`, thinking replayed,
+  model and two Experiential Labs models. Fourteen scenarios each: three turns with `--resume`, thinking replayed,
   Claude Code's tools (Read, Write, Edit, Bash, Glob, Grep, its todo list), parallel tool calls, a tool call after
-  thinking, an image through Read and one in the prompt, `/compact` after a long read, `count_tokens` and `/context`,
+  thinking, an image through Read and one in the prompt (and one straight to `/v1/messages`, with a count of the images
+  that reach the provider), `/compact` after a long read, `count_tokens` and `/context`,
   a switch from Haiku (its thinking and tool calls) to the model and back, a provider's error as Claude Code and the
   Code page show it, WebFetch and WebSearch. Each one's PASS or FAIL with the exact error is in
   `tests/e2e/out/harness-parity.tsv` (and `.json`, with every session's stream-json and the Bedrock spend LiteLLM

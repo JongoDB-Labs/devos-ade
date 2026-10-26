@@ -1,5 +1,5 @@
 """The scenarios of tests/e2e/harness-parity.sh: REAL Claude Code sessions in the throwaway sandbox (claude-bedrock -p …
---output-format stream-json, its tools allowed in /workspace/<model>/<scenario> only), the models side by side (--jobs),
+--output-format stream-json, its tools allowed in /workspace/<family>-<n>/<scenario> only), the models side by side (--jobs),
 each model's scenarios one after another, each recorded as PASS or FAIL with the exact error (Claude Code's own words,
 and LiteLLM's for a call that failed) and its seconds; the run's Bedrock spend is what LiteLLM booked, by model group
 (the suite's callback in the LiteLLM container). A failure that comes from the model itself stays a FAIL here: the
@@ -46,7 +46,7 @@ def png(rgb, size=64):
 def seed_files():
     big = "".join(f"line {i}: the quick brown fox jumps over the lazy dog, entry {i * 7 % 1000}\n" for i in range(1, 1501))
     return {"notes.txt": f"Project notes.\nThe secret word is {SECRET}.\nNothing else here.\n".encode(),
-            "a.txt": b"alpha 41\n", "b.txt": b"beta 1\n", "red.png": png((220, 20, 20)), "big.txt": big.encode()}
+            "a.txt": b"alpha 41\n", "b.txt": b"beta 1\n", "picture.png": png((220, 20, 20)), "big.txt": big.encode()}
 
 
 def family(model):
@@ -246,21 +246,56 @@ class Suite:
         with self.lock:
             self.calls += self.ledger_since()
             groups = {model} | ({self.a.relay_model} if family(model) in ("openrouter", "explabs") else set())
-            return sum(int(r.get("images") or 0) for r in self.calls if r.get("t", 0) >= since and (r.get("group") in groups or r.get("model") in groups))
+            return sum(int(r.get("images") or 0) for r in self.calls if r.get("kind") == "pre" and r.get("t", 0) >= since
+                       and (r.get("group") in groups or r.get("model") in groups))
+
+    def stand_in_searched(self, model, since):
+        """Whether LiteLLM asked the stand-in for MODEL (an xl/ or or/ one) to search the web since SINCE
+        (web_search_options or the web plugin in a request it got)."""
+        log = "/tmp/xl-reqs.jsonl" if family(model) == "explabs" else "/tmp/or-reqs.jsonl"
+        p = subprocess.run(["docker", "exec", self.litellm, "cat", log], capture_output=True)
+        for line in p.stdout.decode("utf-8", "replace").splitlines():
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            b = d.get("body") or {}
+            if d.get("t", 0) >= since and model.split("/", 1)[1] in str(b.get("model")) and (
+                    b.get("web_search_options") is not None or any(isinstance(x, dict) and x.get("id") == "web" for x in b.get("plugins") or [])):
+                return True
+        return False
 
     def spend(self):
         by = {}
         for r in self.calls:
+            if "cost" not in r:   # (the requests and calls as they went, not what LiteLLM booked)
+                continue
             g = r.get("group") or r.get("model") or "?"
             by[g] = round(by.get(g, 0) + float(r.get("cost") or 0), 6)
         return round(sum(by.values()), 6), by
+
+    def failed_calls(self):
+        """Every call LiteLLM failed during the run: when, its model group, its error, its messages' roles as they went to
+        the provider, and the request of that group just before it as Claude Code sent it (its shape)."""
+        roles = {r.get("call_id"): r.get("roles") for r in self.calls if r.get("kind") == "pre" and r.get("call_id")}
+        raw = [r for r in self.calls if r.get("kind") == "raw"]
+        out = []
+        for r in self.calls:
+            if r.get("ok") is not False:
+                continue
+            group = r.get("group") or r.get("model")
+            sent = [x for x in raw if x.get("t", 0) <= r.get("t", 0) and x.get("group") == group]
+            out.append({"t": round(r.get("t", 0), 1), "group": group, "error": str(r.get("error"))[:400], "roles": roles.get(r.get("call_id")),
+                        "request": {k: sent[-1].get(k) for k in ("call_type", "system_head", "max_tokens", "tools", "shape")} if sent else None})
+        return out
 
     def write(self):
         total, by = self.spend()
         with open(os.path.join(self.a.out, "harness-parity.json"), "w", encoding="utf-8") as f:
             json.dump({"models": self.a.models.split(","), "or_mode": self.a.or_mode, "xl_mode": self.a.xl_mode,
                        "relay_model": self.a.relay_model, "rows": self.rows, "spend": total, "spend_by_model_group": by,
-                       "calls": len(self.calls), "failed_calls": sum(1 for r in self.calls if not r.get("ok"))}, f, indent=1)
+                       "calls": sum(1 for r in self.calls if r.get("kind") != "pre"),
+                       "failed_calls": self.failed_calls()}, f, indent=1)
         with open(os.path.join(self.a.out, "harness-parity.tsv"), "w", encoding="utf-8") as f:
             f.write("# model\tfamily\tscenario\tstatus\tseconds\tdetail\n")
             for r in self.rows:
@@ -347,7 +382,7 @@ def sc_think_tool(s, m, d, tag):
 
 def sc_image_read(s, m, d, tag):
     t0 = time.time()
-    r = s.claude(m, d, "Use Read on red.png and tell me its main colour in one word.", log=f"{tag}.jsonl")
+    r = s.claude(m, d, "Use Read on picture.png and tell me its main colour in one word.", log=f"{tag}.jsonl")
     flags = {"images_sent": s.images_sent(m, t0)}
     if not r.ok():
         return "FAIL", r.why(), flags
@@ -371,6 +406,47 @@ def sc_image_prompt(s, m, d, tag):
     if not has(r.text(), "red"):
         return "FAIL", f"answer {r.text()[:120]!r} (images in the calls to the provider: {flags['images_sent']})", flags
     return "PASS", "an image in the prompt reached the model", flags
+
+
+def sc_image_api(s, m, d, tag):
+    """The image in the prompt without Claude Code: Anthropic's Messages API through the gateway, the image alone with
+    the question and the image between texts, as Claude Code sends it (its reminder first) — whether the image
+    reaches the provider (the suite's count) and what the model answers."""
+    img = {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": base64.b64encode(png((220, 20, 20), 256)).decode()}}
+    q = {"type": "text", "text": "What colour is this image? Reply with one word."}
+    out, flags = [], {}
+    for name, content in (("alone", [img, q]), ("between", [{"type": "text", "text": "<system-reminder>Notes.</system-reminder>"}, img, q])):
+        t0 = time.time()
+        code, text = s.gateway("/v1/messages", {"model": m, "max_tokens": 50, "messages": [{"role": "user", "content": content}]})
+        try:
+            answer = " ".join(b.get("text", "") for b in json.loads(text).get("content") or [] if isinstance(b, dict))
+        except (ValueError, AttributeError):
+            answer = text[:200]
+        time.sleep(1)
+        flags[name] = {"http": code, "answer": answer[:80], "images_sent": s.images_sent(m, t0)}
+        out.append(f"{name}: HTTP {code} {answer[:60]!r} ({flags[name]['images_sent']} image sent)")
+    ok = all(v["http"] == "200" and has(v["answer"], "red") for v in flags.values())
+    return ("PASS" if ok else "FAIL"), "; ".join(out), flags
+
+
+def sc_side_calls(s, m, d, tag):
+    """Every call of a short session goes through (Claude Code's own side calls too): an image Claude Code cannot read
+    in the prompt, then a plain prompt — no call of the window may fail at the provider."""
+    t0 = time.time()
+    r1 = s.claude(m, d, stdin_json=_image_prompt(b"this is not a png at all", "Describe this image."), log=f"{tag}-1.jsonl")
+    r2 = s.claude(m, d, "Say hi.", log=f"{tag}-2.jsonl")
+    time.sleep(3)
+    with s.lock:
+        s.calls += s.ledger_since()
+        groups = {m} | ({s.a.relay_model} if family(m) in ("openrouter", "explabs") else set())
+        sent = [x for x in s.calls if x.get("kind") == "raw" and x.get("t", 0) >= t0 and x.get("group") in groups | {CONTROL}]
+        failed = [x for x in s.failed_calls() if x["t"] >= t0 and x["group"] in groups]
+    flags = {"requests": [{k: x.get(k) for k in ("group", "system_head", "max_tokens", "tools", "shape")} for x in sent][:12], "failed": failed}
+    if failed:
+        return "FAIL", f"{len(failed)} call(s) failed at the provider: {failed[0]['error'][:300]} — sent as {json.dumps(failed[0].get('request'))[:400]}", flags
+    if not r2.ok():
+        return "FAIL", r2.why(), flags
+    return "PASS", f"{len(sent)} request(s), none failed", flags
 
 
 def sc_compact(s, m, d, tag):
@@ -449,7 +525,12 @@ def code_page_events(s, lines):
 def sc_error(s, m, d, tag):
     # a provider's refusal: the stand-ins refuse PARITY-REFUSE as the gateway / OpenRouter would; Bedrock refuses an image
     # that is not one (its own ValidationException)
-    if family(m) in ("explabs", "openrouter"):
+    real = (family(m) == "explabs" and s.a.xl_mode == "real") or (family(m) == "openrouter" and s.a.or_mode == "real")
+    if real:
+        # (the real provider's own words: a deployment of the suite's whose model it does not have)
+        want = None
+        r = s.claude("parity-bad-xl" if family(m) == "explabs" else "parity-bad-or", d, "Say hi.", log=f"{tag}.jsonl")
+    elif family(m) in ("explabs", "openrouter"):
         want = "cybersecurity policy" if family(m) == "explabs" else "content policy (stand-in)"
         r = s.claude(m, d, "PARITY-REFUSE: say hi", log=f"{tag}.jsonl")
     else:
@@ -493,6 +574,7 @@ def sc_webfetch(s, m, d, tag):
 
 
 def sc_websearch(s, m, d, tag):
+    t0 = time.time()
     r = s.claude(m, d, "Use the WebSearch tool to search the web for: IANA example domain. Reply with one URL from the results only.", log=f"{tag}.jsonl")
     res = [(bad, t) for bad, t in r.tool_results()]
     flags = {"tools": r.tools(), "results": [t[:300] for _, t in res]}
@@ -509,14 +591,14 @@ def sc_websearch(s, m, d, tag):
         return "PASS", f"searched ({max(counts)} search): {r.text()[:120]!r}", flags
     if "Web search isn't available for" in said:
         return "PASS", f"said plainly: {said[:200]!r}", flags
-    # (the stand-in's search results: only a search finds them — the gateway's own search, which Claude Code counts as 0)
-    if family(m) in ("explabs", "openrouter") and ("iana.org/domains/reserved" in said or "https://example.com/" in said):
+    # (the gateway's own search, which Claude Code counts as 0: the stand-in got a request that asks for one)
+    if family(m) in ("explabs", "openrouter") and s.a.xl_mode != "real" and s.stand_in_searched(m, t0):
         return "PASS", f"searched at the provider (Claude Code counts 0 searches): {r.text()[:120]!r}", flags
     return "FAIL", f"no search ran and the tool did not say so: the model answered as though it had searched: {said[:300]!r}", flags
 
 
 SCENARIOS = {"turns": sc_turns, "thinking": sc_thinking, "tools": sc_tools, "parallel": sc_parallel, "think-tool": sc_think_tool,
-             "image-read": sc_image_read, "image-prompt": sc_image_prompt, "compact": sc_compact, "count-tokens": sc_count_tokens,
+             "image-read": sc_image_read, "image-prompt": sc_image_prompt, "image-api": sc_image_api, "side-calls": sc_side_calls, "compact": sc_compact, "count-tokens": sc_count_tokens,
              "switch": sc_switch, "error": sc_error, "webfetch": sc_webfetch, "websearch": sc_websearch}
 
 
@@ -556,11 +638,15 @@ def main():
 
     stop_at = time.time() + a.deadline_min * 60 if a.deadline_min > 0 else None
 
+    models = [x for x in a.models.split(",") if x]
+    # (a plain folder per model: a model once mistyped one named after an OpenRouter id, and looped on it)
+    folder = {m: f"{family(m)}-{i + 1}" for i, m in enumerate(models)}
+
     def one_model(m):
-        print(f"==> {m} ({family(m)})", file=sys.stderr, flush=True)
+        print(f"==> {m} ({family(m)}, /workspace/{folder[m]})", file=sys.stderr, flush=True)
         os.makedirs(os.path.join(s.logs, slug(m)), exist_ok=True)
         for scen in only.get(m, want):
-            d = f"/workspace/{slug(m)}/{scen}"
+            d = f"/workspace/{folder[m]}/{scen}"
             t0 = time.time()
             if stop_at and t0 > stop_at:
                 s.record(m, scen, "SKIP", 0, f"not started: past the run's {a.deadline_min} min", [])
@@ -572,7 +658,6 @@ def main():
                 status, detail, flags = "FAIL", f"the scenario broke: {type(e).__name__}: {e}", {}
             s.record(m, scen, status, time.time() - t0, detail, s.errors_for(m, t0), flags)
 
-    models = [x for x in a.models.split(",") if x]
     with ThreadPoolExecutor(max_workers=max(1, min(a.jobs, len(models)))) as pool:
         list(pool.map(one_model, models))
     time.sleep(3)   # (LiteLLM's logging callback runs after the answer)

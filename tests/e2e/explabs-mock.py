@@ -128,7 +128,7 @@ class Gateway(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
         with open(LOG, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"path": self.path, "bearer": self.headers.get("Authorization", "").startswith("Bearer "),
+            f.write(json.dumps({"t": time.time(), "path": self.path, "bearer": self.headers.get("Authorization", "").startswith("Bearer "),
                                 "body": body}) + "\n")
         byok = "byok" in str(body.get("model", ""))
         gen = uuid.uuid4().hex[:24]   # (this answer's id)
