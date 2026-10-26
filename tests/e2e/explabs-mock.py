@@ -53,7 +53,7 @@ SLOW_FILE = sys.argv[5] if len(sys.argv) > 5 else ""
 COST = 0.00042
 RELAY, RELAY_MODEL = os.environ.get("MOCK_RELAY", ""), os.environ.get("MOCK_RELAY_MODEL", "")
 FLAVOR = os.environ.get("MOCK_FLAVOR", "explabs")
-# what its web search finds (a relayed call that asks for one)
+# what its web search finds (a relayed call that asks for one; tests/e2e/harness-parity.py STAND_IN_FOUND names them)
 SEARCH_RESULTS = ({"title": "IANA-managed Reserved Domains", "url": "https://www.iana.org/domains/reserved",
                    "text": "example.com, example.net and example.org are reserved for use in documentation."},
                   {"title": "Example Domain", "url": "https://example.com/", "text": "This domain is for use in documentation examples."})
@@ -101,7 +101,7 @@ class Gateway(BaseHTTPRequestHandler):
         if url.path == "/search":   # a SearXNG instance's JSON search (LiteLLM's searxng search provider): fixed results
             q = parse_qs(url.query).get("q", [""])[0]
             with open(LOG, "a", encoding="utf-8") as f:
-                f.write(json.dumps({"path": "/search", "q": q}) + "\n")
+                f.write(json.dumps({"t": time.time(), "path": "/search", "q": q}) + "\n")
             return self._json(200, {"query": q, "number_of_results": len(SEARCH_RESULTS),
                                     "results": [{"title": r["title"], "url": r["url"], "content": r["text"], "engine": "stand-in"} for r in SEARCH_RESULTS]})
         m = re.fullmatch(r"/api/models/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})", url.path)

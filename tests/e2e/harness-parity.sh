@@ -18,6 +18,11 @@
 #   --keep / --reuse / --teardown   leave the throwaway running, run against a kept one, only remove it
 #   E2E_PARITY_JOBS=N  models run side by side, N at a time (default 3; each model's scenarios one after another)
 #   E2E_PARITY_MINUTES=M  no scenario starts after M minutes (SKIP; for a run that must end in time: a shared lock)
+#   E2E_WEBSEARCH=B   the search backend Claude Code's WebSearch gets (lib/websearch.sh): stand-in (the default: the
+#                     stand-in's SearXNG-shaped /search with fixed results), off (none: WebSearch must say so), agentcore
+#                     (Amazon Bedrock AgentCore Web Search: E2E_AGENTCORE_GATEWAY, its MCP URL, and E2E_AGENTCORE_TOOL
+#                     when its target is not named web-search-tool; one real search per WebSearch call, on this AWS key)
+#                     or searxng (a real SearXNG at E2E_SEARXNG_URL, reachable from the LiteLLM container)
 #
 # The families and their models:
 #   control     claude-haiku-5-5 (Anthropic's on Bedrock: what Claude Code expects)
@@ -114,6 +119,13 @@ fi
 [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ] || die "no AWS key (--aws-env FILE, or AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY)"
 export AWS_REGION_NAME="${AWS_REGION_NAME:-us-east-1}"
 OR_REAL=0; [ -z "${E2E_OPENROUTER_API_KEY:-}" ] || OR_REAL=1
+WS="${E2E_WEBSEARCH:-stand-in}"
+case "$WS" in
+  stand-in | off) ;;
+  agentcore) [ -n "${E2E_AGENTCORE_GATEWAY:-}" ] || die "E2E_WEBSEARCH=agentcore needs E2E_AGENTCORE_GATEWAY (the gateway's MCP URL)" ;;
+  searxng) [ -n "${E2E_SEARXNG_URL:-}" ] || die "E2E_WEBSEARCH=searxng needs E2E_SEARXNG_URL" ;;
+  *) die "E2E_WEBSEARCH must be stand-in, off, agentcore or searxng" ;;
+esac
 if [ "$XL_REAL" = 1 ] && [ -z "${E2E_EXPLABS_API_KEY:-}" ]; then die "--explabs-real needs E2E_EXPLABS_API_KEY"; fi
 OPENROUTER_API_KEY="${E2E_OPENROUTER_API_KEY:-stand-in-$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')}"
 EXPLABS_API_KEY="stand-in-$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')"
@@ -167,6 +179,10 @@ if [ "$REUSE" = 0 ]; then
         EXPLABS_MODELS) printf '%s' "$XL_MODELS" ;;
         CLAUDE_BEDROCK_OPUS_MODEL | CLAUDE_BEDROCK_SONNET_MODEL | CLAUDE_BEDROCK_HAIKU_MODEL) printf 'claude-haiku-5-5' ;;
         CODE_MODELS) printf 'all' ;;
+        # Claude Code's WebSearch (lib/websearch.sh): the stand-in's /search (SearXNG's shape), none, or a real one
+        WEBSEARCH_BACKEND) case "$WS" in stand-in) printf searxng ;; *) printf '%s' "$WS" ;; esac ;;
+        WEBSEARCH_SEARXNG_URL) case "$WS" in stand-in) printf 'http://127.0.0.1:%s' "$OR_PORT" ;; searxng) printf '%s' "$E2E_SEARXNG_URL" ;; esac ;;
+        WEBSEARCH_AGENTCORE_GATEWAY) [ "$WS" != agentcore ] || printf '%s' "$E2E_AGENTCORE_GATEWAY" ;;
       esac
     }
     CODE_COMPAT="$ROOT/catalog/code-models.tsv"; CODE_DISPLAY_TSV="$ROOT/catalog/display.tsv"
@@ -192,8 +208,14 @@ if [ "$REUSE" = 0 ]; then
       for id in $(xl_wanted); do xl_model_tsv "$id" < "$ROOT/tests/fixtures/explabs_catalog/$id.json"; done > "$WORK/xl.det"
       { printf '# fetched_at: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"; xl_join "$WORK/xl.ids" < "$WORK/xl.det"; } > "$(xl_cache_tsv)"
     fi
+    # (AgentCore's target, when not LiteLLM's default name: as the check would have listed it)
+    if [ "$WS" = agentcore ] && [ -n "${E2E_AGENTCORE_TOOL:-}" ]; then
+      mkdir -p "$(websearch_state_dir)"
+      printf 'status=ready\nurl=%s\ntool=%s\nat=%s\nfingerprint=%s\n' "$E2E_AGENTCORE_GATEWAY" "$E2E_AGENTCORE_TOOL" "$(date +%s)" "$(_ws_agentcore_fp)" > "$(_ws_state_file agentcore)"
+    fi
     render_litellm_config "$WORK/litellm/enabled-models.txt" "$AWS_REGION_NAME" false false false > "$WORK/litellm/config.yaml.new" || exit 1
     code_models_write "$WORK/litellm/enabled-models.txt" "$WORK/litellm/code-models.tsv"
+    websearch_write_json "$WORK/litellm/web-search.json"
   ) || die "could not render the config"
   cp "$ROOT/lib/litellm-hooks/bn_hooks.py" "$WORK/litellm/bn_hooks.py"
   # The suite's own callback (never in a real config): each call's model, cost and error, for the spend and the errors
@@ -313,9 +335,10 @@ PY
       bn_id: "parity-bad-xl"\
       bn_compat: "fails"\
       bn_code: false/' || printf 's/^$//')" \
-      -e 's/^  callbacks: \["bn_hooks.proxy_handler_instance"\]$/  callbacks: ["bn_hooks.proxy_handler_instance", "parity_spend.handler"]/' \
+      -e 's/^  callbacks: \["bn_hooks.proxy_handler_instance"/  callbacks: ["bn_hooks.proxy_handler_instance", "parity_spend.handler"/' \
       "$WORK/litellm/config.yaml.new" > "$WORK/litellm/config.yaml" && rm -f "$WORK/litellm/config.yaml.new"
   grep -q 'parity_spend.handler' "$WORK/litellm/config.yaml" || die "the rendered config names no hook (lib/litellm-hooks/bn_hooks.py)"
+  [ "$WS" = off ] || grep -q 'bn_hooks.web_search' "$WORK/litellm/config.yaml" || die "the rendered config has no web search (lib/websearch.sh)"
   # the stand-ins' list and catalog: the gateway's model ids (tests/fixtures) and its catalog answers
   cp "$ROOT/tests/fixtures/explabs_v1_models.json" "$WORK/mock/v1.json"
   cp "$ROOT/tests/fixtures/explabs_catalog/"*.json "$WORK/mock/catalog/"
@@ -398,7 +421,7 @@ rc=0
 LITELLM_PORT="$PORT" MASTER_FILE="$MASTER_FILE" python3 -I "$HERE/harness-parity.py" --name "$NAME" --out "$OUT" --models "$MODELS" \
   ${SCENARIOS:+--scenarios "$SCENARIOS"} --relay-model "$RELAY_MODEL" \
   --or-mode "$([ "$OR_REAL" = 1 ] && echo real || echo stand-in)" --xl-mode "$([ "$XL_REAL" = 1 ] && echo real || echo stand-in)" \
-  --code-dir "$ROOT/code" --jobs "${E2E_PARITY_JOBS:-3}" \
+  --code-dir "$ROOT/code" --jobs "${E2E_PARITY_JOBS:-3}" --websearch "$WS" \
   --deadline-min "${E2E_PARITY_MINUTES:-0}" || rc=$?
 
 # --- the keys, nowhere

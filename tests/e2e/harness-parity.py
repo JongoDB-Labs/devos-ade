@@ -265,6 +265,20 @@ class Suite:
                 return True
         return False
 
+    def stand_in_queries(self, since):
+        """The queries the stand-in's SearXNG-shaped /search answered since SINCE (the search backend of E2E_WEBSEARCH=stand-in:
+        LiteLLM's interception asks it for every search)."""
+        p = subprocess.run(["docker", "exec", self.litellm, "cat", "/tmp/or-reqs.jsonl"], capture_output=True)
+        out = []
+        for line in p.stdout.decode("utf-8", "replace").splitlines():
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            if d.get("path") == "/search" and d.get("t", 0) >= since:
+                out.append(str(d.get("q"))[:200])
+        return out
+
     def spend(self):
         by = {}
         for r in self.calls:
@@ -594,11 +608,22 @@ def sc_webfetch(s, m, d, tag):
     return "PASS", "fetched, summarised by the small model, answered", {}
 
 
+URL = re.compile(r"https?://[^\s<>()\[\]{}\"'`|\\]+")
+# what the stand-ins' own search finds (tests/e2e/explabs-mock.py SEARCH_RESULTS): the pages a search at the
+# Experiential Labs stand-in found, whether or not the model that read them wrote their addresses into WebSearch's result
+STAND_IN_FOUND = ("https://www.iana.org/domains/reserved", "https://example.com/")
+
+
+def urls(text):
+    """The web addresses in TEXT, as compared here: lowercase, without a trailing slash or punctuation."""
+    return {u.rstrip(".,;:!?*_").rstrip("/").lower() for u in URL.findall(text or "")}
+
+
 def sc_websearch(s, m, d, tag):
     t0 = time.time()
     r = s.claude(m, d, "Use the WebSearch tool to search the web for: IANA example domain. Reply with one URL from the results only.", log=f"{tag}.jsonl")
     res = [(bad, t) for bad, t in r.tool_results()]
-    flags = {"tools": r.tools(), "results": [t[:300] for _, t in res]}
+    flags = {"tools": r.tools(), "results": [t[:300] for _, t in res], "backend": s.a.websearch}
     if not r.ok():
         return "FAIL", r.why(), flags
     if "WebSearch" not in r.tools():
@@ -608,14 +633,32 @@ def sc_websearch(s, m, d, tag):
         return "FAIL", f"WebSearch failed: {bad[0][:500]}", flags
     said = " ".join(t for _, t in res)
     counts = [u.get("searchCount") for u in r.tool_use_results() if isinstance(u, dict) and "searchCount" in u]
-    if any(isinstance(c, int) and c > 0 for c in counts):
-        return "PASS", f"searched ({max(counts)} search): {r.text()[:120]!r}", flags
-    if "Web search isn't available for" in said:
-        return "PASS", f"said plainly: {said[:200]!r}", flags
-    # (the gateway's own search, which Claude Code counts as 0: the stand-in got a request that asks for one)
-    if family(m) in ("explabs", "openrouter") and s.a.xl_mode != "real" and s.stand_in_searched(m, t0):
-        return "PASS", f"searched at the provider (Claude Code counts 0 searches): {r.text()[:120]!r}", flags
-    return "FAIL", f"no search ran and the tool did not say so: the model answered as though it had searched: {said[:300]!r}", flags
+    searched = any(isinstance(c, int) and c > 0 for c in counts)
+    # (the Experiential Labs gateway's own search, which Claude Code counts as 0: the stand-in got a request that asks
+    # for one; OpenRouter's only without a backend — with one, LiteLLM searches for its models)
+    at_provider = (family(m) == "explabs" or (family(m) == "openrouter" and s.a.websearch == "off")) and \
+        s.a.xl_mode != "real" and s.stand_in_searched(m, t0)
+    if s.a.websearch == "off":   # no backend: searched at the gateway, or said plainly — never an answer from memory
+        if searched or at_provider:
+            return "PASS", f"searched{' at the provider (Claude Code counts 0 searches)' if at_provider else ''}: {r.text()[:120]!r}", flags
+        if "Web search isn't available for" in said:
+            return "PASS", f"said plainly: {said[:200]!r}", flags
+        return "FAIL", f"no search ran and the tool did not say so: the model answered as though it had searched: {said[:300]!r}", flags
+    # a backend: a real search ran (LiteLLM's interception, or the gateway's own), and the answer cites a page it found
+    if not (searched or at_provider):
+        return "FAIL", f"no search ran (searchCount {counts}): {said[:300]!r}", flags
+    if s.a.websearch == "stand-in" and family(m) != "explabs":
+        q = s.stand_in_queries(t0)
+        flags["backend_queries"] = q
+        if not q:
+            return "FAIL", f"WebSearch counted {counts} searches, but none reached the search backend: {said[:300]!r}", flags
+    found = urls(said) | (urls(" ".join(STAND_IN_FOUND)) if at_provider and s.a.xl_mode != "real" else set())
+    cited = sorted(urls(r.text()) & found)
+    flags["found"], flags["cited"] = sorted(found)[:10], cited
+    if not cited:
+        return "FAIL", f"searched, but the answer cites no page the search found: answer {r.text()[:200]!r}; found {sorted(found)[:6]}", flags
+    how = "at the gateway (Claude Code counts 0 searches)" if at_provider and not searched else f"{max(c for c in counts if isinstance(c, int))} search"
+    return "PASS", f"searched {how} with {s.a.websearch}, cited {cited[0]}", flags
 
 
 SCENARIOS = {"turns": sc_turns, "thinking": sc_thinking, "tools": sc_tools, "parallel": sc_parallel, "think-tool": sc_think_tool,
@@ -635,6 +678,7 @@ def main():
     ap.add_argument("--code-dir", default="")
     ap.add_argument("--jobs", type=int, default=3)
     ap.add_argument("--deadline-min", type=float, default=0)
+    ap.add_argument("--websearch", default="stand-in")
     ap.add_argument("--list", action="store_true")
     a = ap.parse_args()
     if a.list:

@@ -761,6 +761,10 @@ if ! part_on cli; then record cli read-only SKIP 0 "--only $ONLY"; else
   cli stt-status 0 'Speech-to-text: on — Bedrock Mistral Voxtral Small.*estimated|^  Bedrock speech-to-text was turned off: AWS no longer accepts audio for the Voxtral models' stt status
   cli remote-status 0 'Remote access: off' remote status
   cli openrouter-status 0 'OpenRouter: off' openrouter status
+  # Claude Code's WebSearch: the throwaway's key may not use AgentCore Web Search unless its account has a gateway for it
+  # (lib/websearch.sh): either way the line, and the admin's commands, without a search (status and aws-setup are free)
+  cli websearch-status 0 '^Web search for Claude Code: ' websearch status
+  cli websearch-aws-setup 0 'aws bedrock-agentcore-control create-gateway --region ' websearch aws-setup
   cli serve-stop 0 'is not running' serve --stop
   cli ssh-info 0 'Claude Code \(devos-claude\) from your phone' ssh-info
   if st help 2>&1 | grep -qE '^  password'; then
