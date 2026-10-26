@@ -499,6 +499,50 @@ assert asyncio.run(h.proxy_handler_instance.async_pre_call_deployment_hook(None,
 '
 }
 
+# the hook: Bedrock refuses, for Llama alone, a turn with tool results and text ("Conversation blocks and tool result
+# blocks cannot be provided in the same turn"), which LiteLLM makes of the results and the reminders after them: that
+# text (a system message under LiteLLM's note) goes at the end of the last result; a message with an image, an answer,
+# the next turn and any other model as they came
+test_litellm_hook_keeps_llama_tool_results_turns_alone() {
+  command -v python3 >/dev/null 2>&1 || return 77
+  _hook_models
+  PYTHONPATH="$TMP/h" python3 -c '
+import asyncio, copy, bn_hooks as h
+note = "Operator note (not from the user): the following was originally a mid-conversation system-role reminder."
+call = lambda *ids: {"role": "assistant", "content": None, "tool_calls": [{"id": i, "type": "function", "function": {"name": "Read", "arguments": "{}"}} for i in ids]}
+msgs = [{"role": "system", "content": "You are Claude Code."}, {"role": "user", "content": "read a and b"},
+        {"role": "system", "content": "<system-reminder>early</system-reminder>"},
+        call("t1", "t2"), {"role": "tool", "tool_call_id": "t1", "content": "alpha"},
+        {"role": "tool", "tool_call_id": "t2", "content": [{"type": "text", "text": "beta", "cache_control": {"type": "ephemeral"}}]},
+        {"role": "user", "content": [{"type": "text", "text": "<system-reminder>a.txt changed</system-reminder>"}, {"type": "text", "text": ""}]},
+        {"role": "system", "content": [{"type": "text", "text": "Agent aa7 finished."}]},
+        {"role": "assistant", "content": "a and b"}, {"role": "user", "content": "now c"}, call("t3"),
+        {"role": "tool", "tool_call_id": "t3", "content": "gamma"}, {"role": "system", "content": "<system-reminder>late</system-reminder>"}]
+run = lambda kw: asyncio.run(h.proxy_handler_instance.async_pre_call_deployment_hook(copy.deepcopy(kw), "acompletion"))
+kw = {"model": "bedrock/us.meta.llama3-3-70b-instruct-v1:0", "messages": msgs, "stream": True}
+out = run(kw)["messages"]
+assert out == [*msgs[:5],
+               {"role": "tool", "tool_call_id": "t2", "content": [{"type": "text", "text": "beta", "cache_control": {"type": "ephemeral"}},
+                                                                  {"type": "text", "text": "<system-reminder>a.txt changed</system-reminder>"},
+                                                                  {"type": "text", "text": note}, {"type": "text", "text": "Agent aa7 finished."}]},
+               *msgs[8:11],
+               {"role": "tool", "tool_call_id": "t3", "content": [{"type": "text", "text": "gamma"}, {"type": "text", "text": note},
+                                                                  {"type": "text", "text": "<system-reminder>late</system-reminder>"}]}], out
+assert run(kw)["messages"] == out   # (the same every time: a later turn keeps the earlier ones as they were)
+# as they came: a message with an image after the results (Llama takes none: Bedrock says so), any other model, no results
+img = [call("t1"), {"role": "tool", "tool_call_id": "t1", "content": "x"},
+       {"role": "user", "content": [{"type": "text", "text": "[The image output of tool call t1]"}, {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA=="}}]}]
+assert run({**kw, "messages": img})["messages"] == img
+for model in ("bedrock/us.openai.gpt-6-luna", "bedrock/mistral.mistral-large-3-675b-instruct", "openrouter/meta-llama/llama-3.3-70b-instruct"):
+    assert run({**kw, "model": model}) == {**kw, "model": model}, model
+plain = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}, {"role": "system", "content": "s"}, {"role": "user", "content": "x"}]
+assert run({**kw, "messages": plain})["messages"] == plain
+assert h.results_alone([{"role": "tool", "content": None}, {"role": "user", "content": "x"}]) == [{"role": "tool", "content": [{"type": "text", "text": "x"}]}]
+assert h.results_alone([None, 3, {"role": "tool"}]) == [None, 3, {"role": "tool"}]
+assert run({**kw, "messages": "x"}) == {**kw, "messages": "x"}
+'
+}
+
 
 # Names that YAML refuses or a terminal acts on (C1 controls such as U+009B, CSI; U+2028; bidi overrides; U+FFFE) never
 # reach LiteLLM's config, the model list or a terminal; a config that is not valid YAML is never put in place

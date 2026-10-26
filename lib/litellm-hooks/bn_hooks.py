@@ -57,7 +57,11 @@ goes through LiteLLM's own client with Bedrock's answer read on the way back (ll
 one text block and nothing but Llama's tool calls, each naming a tool the request offers with a JSON object of
 arguments that has every key the tool's schema requires (text_tool_calls), becomes those calls as toolUse blocks with
 stopReason tool_use — the answer Bedrock gives for the other models' calls, so LiteLLM's stream, its Chat Completions
-answer and Claude Code's tool_use all follow from it. Anything else stays the text it was.
+answer and Claude Code's tool_use all follow from it. Anything else stays the text it was. And on every call: Bedrock
+refuses, for Llama alone, a turn that holds tool results and text ("Conversation blocks and tool result blocks cannot
+be provided in the same turn") — the turn LiteLLM makes of Claude Code's tool results and the reminders that follow
+them. Those reminders (a system one under LiteLLM's note, a user one as it came) go at the end of the last result
+instead (llama_tool_turns).
 Nothing else is changed, and any problem here leaves the request exactly as it came: this must never be the reason a
 request fails.
 """
@@ -601,6 +605,70 @@ def llama_tool_calls(kwargs: dict) -> dict:
     return {**kwargs, "client": client} if client is not None else kwargs
 
 
+# LiteLLM's words before a mid-conversation system message it makes a user turn for Bedrock (its own constant when
+# there is one: mid_conversation_system.CONVERTED_SYSTEM_NOTE)
+_SYSTEM_NOTE = ("Operator note (not from the user): the following was originally a mid-conversation system-role "
+                "reminder.")
+
+
+def _system_note() -> str:
+    try:
+        from litellm.litellm_core_utils.prompt_templates.mid_conversation_system import CONVERTED_SYSTEM_NOTE
+
+        return CONVERTED_SYSTEM_NOTE if isinstance(CONVERTED_SYSTEM_NOTE, str) and CONVERTED_SYSTEM_NOTE else (
+            _SYSTEM_NOTE)
+    except Exception:  # noqa: BLE001
+        return _SYSTEM_NOTE
+
+
+def _texts(m) -> list | None:
+    """The texts of M when it is a user or system message of text alone (Chat Completions shape); None otherwise."""
+    if not isinstance(m, Mapping) or m.get("role") not in ("user", "system"):
+        return None
+    c = m.get("content")
+    if isinstance(c, str):
+        return [c] if c else []
+    if isinstance(c, list) and all(isinstance(p, Mapping) and p.get("type") == "text" and isinstance(p.get("text"), str)
+                                   for p in c):
+        return [p["text"] for p in c if p["text"]]
+    return None
+
+
+def results_alone(messages: list) -> list:
+    """MESSAGES (Chat Completions shape) with the text that follows tool results before the next answer — user messages
+    of text alone, and system ones under LiteLLM's note — at the end of the last of those results, as more of its
+    text; every other message as it came. (Bedrock's Converse puts that text in the results' turn, and refuses it there
+    for Llama: "Conversation blocks and tool result blocks cannot be provided in the same turn".)"""
+    out, i, changed = [], 0, False
+    while i < len(messages):
+        m = messages[i]
+        out.append(m)
+        i += 1
+        if (not isinstance(m, Mapping) or m.get("role") != "tool"
+                or (i < len(messages) and isinstance(messages[i], Mapping) and messages[i].get("role") == "tool")):
+            continue
+        extra = []
+        while i < len(messages) and (texts := _texts(messages[i])) is not None:
+            extra += ([_system_note()] if messages[i]["role"] == "system" and texts else []) + texts
+            i += 1
+            changed = True
+        if extra:
+            c = m.get("content")
+            parts = ([{"type": "text", "text": c}] if isinstance(c, str) and c
+                     else list(c) if isinstance(c, list) else [])
+            out[-1] = {**m, "content": parts + [{"type": "text", "text": t} for t in extra]}
+    return out if changed else messages
+
+
+def llama_tool_turns(kwargs: dict) -> dict:
+    """KWARGS for a call to a Llama model on Bedrock with its tool results' turns holding the results alone
+    (results_alone); unchanged for any other call."""
+    if not isinstance(kwargs, dict) or not isinstance(kwargs.get("messages"), list) or not _bedrock_llama(kwargs):
+        return kwargs
+    messages = results_alone(kwargs["messages"])
+    return {**kwargs, "messages": messages} if messages is not kwargs["messages"] else kwargs
+
+
 def _usage_field(usage, name):
     return usage.get(name) if isinstance(usage, Mapping) else getattr(usage, name, None)
 
@@ -642,7 +710,7 @@ class BnHooks(CustomLogger):
     async def async_pre_call_deployment_hook(self, kwargs, call_type):
         if not isinstance(kwargs, dict) or not _chat_call(call_type):
             return kwargs
-        for step in (xl_request, llama_tool_calls):
+        for step in (xl_request, llama_tool_calls, llama_tool_turns):
             try:
                 kwargs = step(kwargs)
             except Exception:  # noqa: BLE001 — never fail a request because of this hook
