@@ -634,7 +634,9 @@ test_a_last_line_without_a_newline_counts() {   # N4
 test_the_fetch_keeps_your_own_ssh_command() {   # N5
   _release_checkout
   mkdir -p "$TMP/gitbin"
-  printf '#!/bin/sh\ncase "$*" in *"config core.sshCommand"*) echo "ssh -i /keys/deploy"; exit 0 ;; esac\necho "$GIT_SSH_COMMAND" > "%s"\n' "$TMP/ssh" > "$TMP/gitbin/git"
+  # only the fetch records its ssh command: the heartbeat the fetch's wait runs every 3 s (on a busy computer the fake
+  # fetch can take that long) asks git for HEAD and the branch, which must not overwrite it
+  printf '#!/bin/sh\ncase "$*" in *"config core.sshCommand"*) echo "ssh -i /keys/deploy"; exit 0 ;; *" fetch "*) echo "$GIT_SSH_COMMAND" > "%s" ;; esac\n' "$TMP/ssh" > "$TMP/gitbin/git"
   chmod +x "$TMP/gitbin/git"
   ( unset GIT_SSH_COMMAND; PATH="$TMP/gitbin:$PATH" _auto_fetch ) 2>/dev/null
   assert_eq "$(cat "$TMP/ssh")" "ssh -i /keys/deploy -o BatchMode=yes -o ConnectTimeout=20"

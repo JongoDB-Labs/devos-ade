@@ -62,6 +62,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   portal asked it to wait before a second request, the switch's dialog could close during the wait and the second
   Confirm found nothing to click. The check now opens the dialog again from the switch, and keeps its stand-in helper
   fresh while it waits.
+- **Tests:** the unit test that an automatic update's fetch keeps your own ssh command no longer fails at random on a
+  busy computer. Its stand-in git recorded the ssh command on every call, and the helper's heartbeat (every 3 s while
+  a fetch runs) asks git for the checkout's HEAD and branch: a fetch slower than 3 s had its record overwritten with
+  an empty one. Only the fetch records it now.
 
 ## [0.27.1] - 2026-10-25
 
