@@ -6,6 +6,29 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Fixed
+
+- **The built-in SearXNG on Home and in `./stack`, like the other services.** Home's Services list it while it is on
+  (*SearXNG · web search (built-in) · ready*, or what Docker says when it is not: *starting*, *unhealthy*, *exited*);
+  with `WEBSEARCH_SEARXNG_BUILTIN=off` it is not listed, as speech-to-text is not while it is off. The portal still has
+  no way to SearXNG: its state and health come from `./stack`'s record of the containers, `.state/status/services.json`
+  (written by `./stack status`, up, setup, restart and Settings' switch, and by the update helper once a minute; a
+  record nobody rewrote for 5 minutes says how old it is). `./stack restart searxng` and `./stack logs searxng` work as
+  for the others (Settings › Diagnostics › Restart a service offers it while it is on); while it is off both say so.
+- **Settings on a phone: each setting's control under its name.** A card with a switch or a button on its right
+  (Change, Add key, Set the gateway) squeezed its name, its description and an option's info panel into about two
+  thirds of the card. Where a card is narrow — a phone, a tablet's column, a desktop next to the walkthrough — the
+  control now sits under the name line and the words use the card's full width, on every card; wider cards keep the
+  control beside them.
+- **The collapsed sidebar names its icons on keyboard focus too.** Tab through the icon rail (a collapsed desktop
+  sidebar, or a tablet's) shows each icon's name beside it, as hovering shows its tooltip; the walkthrough's button has
+  its name there too, and the Code tab's name is never its badge's count.
+- **Tests:** a plain `docker build --target test portal` (what `portal/e2e/install/run.sh` builds on) passes again: the
+  tests that read the repository's catalog skip without it, as the others always have, and the install check builds
+  with the repository's files, as `portal/test.sh` does. The end-to-end suite checks the built-in SearXNG's row on
+  Home, its restart and logs, the narrow Settings cards on a phone, a tablet and a desktop, and the collapsed sidebar
+  with the Code tab.
+
 ## [0.31.1] - 2026-10-26
 
 ### Changed
