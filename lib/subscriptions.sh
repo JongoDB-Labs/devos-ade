@@ -7,7 +7,7 @@
 # there with the same flows (--chat) — never the terminal's: nothing is copied between the two. This side never sees
 # a login: it asks the sandbox's `subscriptions status --tsv` (each tool's own status command, reduced to words) and
 # keeps only what passes the checks below, in .state/status/subscriptions.json (Chat's: subscriptions-chat.json) for
-# Settings › Claude Code › Your AI subscriptions.
+# Settings › Models & providers › Your AI subscriptions.
 #
 #   status [--chat]       asks the sandbox now (and Chat's, while the Code page is on), writes the status files,
 #                         prints them; --chat: Chat's alone
@@ -237,12 +237,12 @@ cmd_subscriptions() {
         printf '\n'
         SUBS_WHERE=chat; subs_refresh; _subs_status_print $? || true; SUBS_WHERE=terminal
       fi
-      printf '\nSign in: ./stack subscriptions login TOOL (here), or the Terminal tab'"'"'s Open menu; for Chat, ./stack subscriptions login TOOL --chat. Settings › Claude Code › Your AI subscriptions shows the same.\n' ;;
+      printf '\nSign in: ./stack subscriptions login TOOL (here), or the Terminal tab'"'"'s Open menu; for Chat, ./stack subscriptions login TOOL --chat. Settings › Models & providers shows the same.\n' ;;
     login | logout)
       [ $# -eq 1 ] || die "usage: ./stack subscriptions $sub TOOL [--chat]   (TOOL: ${SUBS_TOOLS// /, })"
       subs_valid_tool "$1" || die "no tool called '$(plain_text "$1")' — one of: ${SUBS_TOOLS// /, }"
       if [ "$SUBS_WHERE" = chat ]; then
-        case " $SUBS_CHAT_TOOLS " in *" $1 "*) ;; *) die "$(subs_name "$1") is not a Chat model (Settings › Claude Code › Your AI subscriptions says why): nothing to sign in to for Chat — one of: ${SUBS_CHAT_TOOLS// /, }" ;; esac
+        case " $SUBS_CHAT_TOOLS " in *" $1 "*) ;; *) die "$(subs_name "$1") is not a Chat model (Settings › Models & providers says why): nothing to sign in to for Chat — one of: ${SUBS_CHAT_TOOLS// /, }" ;; esac
       fi
       [ -f "$ENV_FILE" ] || die "run ./stack setup first"
       subs_need_sandbox

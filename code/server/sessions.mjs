@@ -25,7 +25,7 @@ const KEEP = 16;   // session objects kept (open or ended) for re-attaching; the
 const STDERR_LINES = 20, STDERR_WINDOW_MS = 10000;   // Claude Code's stderr in the log: at most this much per session
 const ALIAS_REFUSED = 'name the model in full (claude-…), not by an alias: with an alias Claude Code may run another model (Plan mode on Haiku plans on Sonnet)';
 // Claude on your plan: Settings' switch (CODE_CLAUDE_PLAN) is what lets a session use it
-export const PLAN_OFF = 'Claude on your plan is off: Settings › Claude Code › Your AI subscriptions has the switch (from the computer running this app)';
+export const PLAN_OFF = 'Claude on your plan is off: Settings › Models & providers › Claude Code has the switch (from the computer running this app)';
 const PLAN_NO_BUDGET = 'This session runs on your Claude plan: no budget in dollars (its usage counts against your plan\'s own limits)';
 const AUTO_OFF_MS = 15000;   // how long the first prompt waits for the start's flag settings (auto mode off …) and, in Auto, the switch to it
 const WATCH_MS = 5000;       // how long a turn's first prompt waits for the watched files' snapshot (then it goes anyway)

@@ -166,7 +166,7 @@
   // the portal's Settings tab, opened at a section or a setting (settings.js: #settings/<section> or #settings/<KEY>):
   // settings(WHERE, PLACE), or settings(WHERE) for the places named here
   const PLACES = { "Claude Code": "code", "Account & security": "account", "Spending & budgets": "spending", "Updates & backups": "updates",
-    "Remote access": "remote" };
+    "Remote access": "remote", "Models & providers": "providers" };
   const settings = (where, place) => el("a", { href: `#settings/${place || PLACES[where] || ""}`, text: `Settings → ${where}` });
   const list = (tag, items) => el(tag, { class: "tour-list" }, ...items.map((i) => el("li", {}, ...[].concat(i))));
   const ext = (href, text) => el("a", { href, target: "_blank", rel: "noopener noreferrer", "data-k": `link:${href}`, text });
@@ -367,7 +367,7 @@
           ["Create a key at ", ext("https://openrouter.ai/settings/keys", "openrouter.ai › Settings › API Keys"),
             ". Name it DevOS ADE; a credit limit is optional (it caps what the key can spend). It is shown once: copy it then."],
           ["Paste it into ", code(".env"), " after ", code("OPENROUTER_API_KEY="), " and run", cmd("./stack openrouter apply"),
-            "or run", cmd("./stack openrouter set"), "(it asks for the key, hidden), or paste it in ", settings("Chat & voice", "OPENROUTER_API_KEY"), " on this computer. Either way the key is checked with OpenRouter and what needs it restarts (~30 s)."],
+            "or run", cmd("./stack openrouter set"), "(it asks for the key, hidden), or paste it in ", settings("Models & providers", "OPENROUTER_API_KEY"), " › ", b("OpenRouter"), " on this computer. Either way the key is checked with OpenRouter and what needs it restarts (~30 s)."],
           ["An account without credits can only use free models, so apply and set then offer just those (",
             code("OPENROUTER_MODELS=free"), "). After buying credits, apply again or run ", code("./stack openrouter models all"), "."],
           ["On ", ext("https://openrouter.ai/settings/privacy", "Settings › Privacy"), ": most free models need ",
@@ -376,7 +376,7 @@
             b("Allow free endpoints that publish prompts"), " off. ", b("Filter the model catalog for API keys"),
             " (recommended) makes Chat list only the models your key can use."],
           ["Nothing to turn on at OpenRouter to watch it: the Spend card on Home gets an OpenRouter block (free and paid requests, top models, the daily free-request limit, recent failures with fixes) and the Actual/Equivalent switch; Admin → Logs has every request."]]),
-        note("Experiential Labs is another gateway, set up the same way: its key in ", settings("Chat & voice", "EXPLABS_API_KEY"),
+        note("Experiential Labs is another gateway, set up the same way: its key in ", settings("Models & providers", "EXPLABS_API_KEY"), " › ", b("Experiential Labs"),
           " on this computer or ", code("./stack config set EXPLABS_API_KEY"), " (hidden), and ", code("EXPLABS_MODELS"),
           " for its models (blank: qwen3.8-27b). Each is sent only the parameters it takes; a call on your own provider key there is billed by that provider ($0 here)."),
         note("The key goes in through your terminal, .env or Settings on this computer, never through this walkthrough."),
@@ -797,12 +797,13 @@
         list("ul", [
           [b("Terminal"), ": the ", b("Open"), " menu above it — Claude Code on Bedrock, a tool of yours, or a shell, each in a window of its own (the Code page's terminal panel has the same)."],
           [b("Chat"), ": the ", b("Who answers"), " menu above it — a Bedrock or OpenRouter model in Open WebUI, or one of your tools ", b("itself"), ", right there, in the folder you pick. Each subscription that is signed in is also ", b("a model in Open WebUI's menu"), " (Codex, Copilot, Grok, and Claude on your plan once you turn on ",
-            settings("Claude Code", "CODE_CLAUDE_PLAN"), " › ", b("Use my Claude plan in the Code page and Chat"), " — off by default: the choice is yours, and the row says what Anthropic's support article and its legal page each say): it answers in the same chat, without tools, on your plan — under each answer its tokens, never dollars. Chat has ", b("sign-ins of its own"), " (its own sandbox, apart from the terminal's): sign each in once more for Chat — the picker's ", b("Sign in for Chat…"), " leads to Settings, which shows the command (", code("./stack subscriptions login codex --chat"), "). Cursor is not a Chat model (it has no switch that turns its tools off). Google's plans no longer work in Gemini CLI: your own Gemini key is planned instead, like your other API keys."],
+            settings("Models & providers", "CODE_CLAUDE_PLAN"), " › ", b("Use my Claude plan in the Code page and Chat"), " — off by default: the choice is yours, and the row says what Anthropic's support article and its legal page each say): it answers in the same chat, without tools, on your plan — under each answer its tokens, never dollars. Chat has ", b("sign-ins of its own"), " (its own sandbox, apart from the terminal's): sign each in once more for Chat — the picker's ", b("Sign in for Chat…"), " leads to Settings, which shows the command (", code("./stack subscriptions login codex --chat"), "). Cursor is not a Chat model (it has no switch that turns its tools off). Google's plans no longer work in Gemini CLI: your own Gemini key is planned instead, like your other API keys."],
           [b("Code page"), ": the model picker's ", b("Who answers"), " switches to one of them — a new session in the project's folder with your conversation so far, once the project's settings are trusted for it (", b("A project's own settings"), ", above); its questions come as the usual permission cards."]]),
         p(b("Greyed out?"), " Its words say where it is turned on (a tool not in the sandbox, Claude on your plan off, a sign-in missing, the Code page off …), and it takes you there — to its setting, or for a sign-in to where that sign-in starts: in a menu, choose it, then ", b("Go to Settings"), " beside the menu. A menu never acts by itself: every choice — a model, a tool, Open WebUI — acts on the button beside it."),
-        note("Usage counts against each plan's own limits; DevOS ADE shows no $ for it. ", settings("Claude Code", "+subscriptions"), " › ",
-          b("Your AI subscriptions"), " is the one place to connect them: each tool's next step — ", b("Sign in (terminal and Code page)"), ", ", b("Sign in (Chat)"),
-          " — and on Claude's row the switch for your plan; whether each says it is signed in, ", b("Sign out"), " and ", b("Check again"), "; ", code("./stack subscriptions"), " in a terminal."),
+        note("Usage counts against each plan's own limits; DevOS ADE shows no $ for it. ", settings("Models & providers", "+subscriptions"), " › ",
+          b("Your AI subscriptions"), " is the one place to connect them, a card for each next to your keys' (Bedrock, OpenRouter, Experiential Labs): each tool's next step — ", b("Sign in"),
+          " for the terminal and the Code page, and ", b("Sign in"), " on its Chat line — and on Claude's card the switch for your plan; whether each says it is signed in, ",
+          b("Sign out"), " and ", b("Check again"), "; ", code("./stack subscriptions"), " in a terminal."),
       ],
       actions: () => (TERM.here ? [openTerminal()] : []),
     },

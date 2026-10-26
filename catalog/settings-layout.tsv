@@ -26,9 +26,19 @@ PORTAL_SESSION_DAYS	account	main	-	How long a sign-in lasts on each browser and 
 +devices	account	main	-	Every browser, phone and installed app that signed in with the portal password.
 LITELLM_STORE_PROMPTS	account	main	-	Keep the text of every prompt and answer in LiteLLM's logs (90 days, and in backups).
 
-@aws	AWS & models	The AWS key DevOS ADE calls Bedrock with, and which models that key can use.	README.md#models--access
-AWS_ACCESS_KEY_ID	aws	main	-	The IAM user key LiteLLM calls Bedrock with. A new one is checked with AWS first (free).
-AWS_SECRET_ACCESS_KEY	aws	with	AWS_ACCESS_KEY_ID	-
+@providers	Models & providers	Each key and sign-in here adds models to every picker: Chat's Who answers, the Code page, the terminal and devos-claude --model, with nothing else to set up. Keys stay on this computer; a provider without one sends nothing.	README.md#models--providers
+AWS_ACCESS_KEY_ID	providers	main	-	Claude and other vendors' models in your AWS account: an access key, or this EC2 machine's role.
+AWS_SECRET_ACCESS_KEY	providers	with	AWS_ACCESS_KEY_ID	-
+OPENROUTER_API_KEY	providers	main	-	Hundreds of other models, some free. Prompts to them go to openrouter.ai.
+OPENROUTER_MODELS	providers	main	OPENROUTER_API_KEY	Which of OpenRouter's models it adds: all, the free ones, the paid ones, or a list.
+EXPLABS_API_KEY	providers	main	-	One gateway in front of many models. Prompts to them go to api.experientiallabs.ai.
+EXPLABS_MODELS	providers	main	EXPLABS_API_KEY	Which of the gateway's models it adds.
++subscriptions	providers	main	-	Your plans' own tools in the sandbox (Claude, Codex, Copilot, Cursor, Grok, Gemini): sign in once, use them everywhere.
+CODE_CLAUDE_PLAN	providers	with	+subscriptions	-
+OPENROUTER_MAX_MODELS	providers	more	OPENROUTER_API_KEY	At most this many OpenRouter models, the newest first; a long list slows LiteLLM's start.
+OPENROUTER_INCLUDE_ALIASES	providers	more	OPENROUTER_API_KEY	Also offer OpenRouter's …-latest alias models.
+
+@aws	AWS & models	The AWS region Bedrock runs in, and which models your AWS key can use.	README.md#models--access
 AWS_REGION_NAME	aws	main	-	The AWS region your Bedrock models run in.
 +models	aws	main	-	Ask Bedrock again which models your key can use, e.g. after your AWS admin granted more.
 AWS_AUTH	aws	more	-	An access key (the usual), or this EC2 machine's own IAM role.
@@ -46,21 +56,15 @@ BUDGET_SETUP	spending	more	-	Monthly limit for model checks and smoke tests. Kee
 LITELLM_KEY_SETUP	spending	with	BUDGET_SETUP	-
 PRICE_UPDATES	spending	more	-	Update Bedrock prices daily from AWS's public price lists (no credentials are sent).
 
-@chat	Chat & voice	Chat's models, its microphone and voice calls, and OpenRouter's and Experiential Labs' models next to Bedrock.	README.md#chat-open-webui
+@chat	Chat & voice	Chat's default model, the models its picker leaves out, its title model, and its microphone and voice calls.	README.md#chat-open-webui
 CHAT_DEFAULT_MODEL	chat	main	-	The model a new chat starts with.
 OWUI_DEFAULT_MODEL	chat	with	CHAT_DEFAULT_MODEL	-
 MODELS_HIDDEN	chat	main	-	Models Chat's picker leaves out. They stay usable through the API and Claude Code.
 STT_PROVIDER	chat	main	-	Who turns your speech into text for Chat's microphone and voice calls.
 STT_MODEL	chat	with	STT_PROVIDER	-
 STT_API_KEY	chat	with	STT_PROVIDER	-
-OPENROUTER_API_KEY	chat	main	-	Optional: hundreds of other models next to Bedrock. Prompts to them go to openrouter.ai.
-OPENROUTER_MODELS	chat	main	OPENROUTER_API_KEY	Which OpenRouter models Chat and the API offer.
-EXPLABS_API_KEY	chat	main	-	Optional: one gateway in front of many models, next to Bedrock. Prompts to its models go to api.experientiallabs.ai.
-EXPLABS_MODELS	chat	main	EXPLABS_API_KEY	Which of the gateway's models Chat, the Code page and the API offer.
 CHAT_TASK_MODEL	chat	more	-	The model that writes chat titles, tags and follow-up suggestions: each chat's own unless you pin one.
 OWUI_TASK_MODEL	chat	with	CHAT_TASK_MODEL	-
-OPENROUTER_MAX_MODELS	chat	more	OPENROUTER_API_KEY	At most this many OpenRouter models, the newest first; a long list slows LiteLLM's start.
-OPENROUTER_INCLUDE_ALIASES	chat	more	OPENROUTER_API_KEY	Also offer OpenRouter's …-latest alias models.
 
 @code	Claude Code	The Code page (Claude Code in the browser, with a chat and your files), the browser Terminal, and the models Claude Code uses. The Code page runs in the Terminal's sandbox: one folder, one key, one budget. Both are on by default.	README.md#the-code-page
 CODE_ENABLED	code	main	-	The Code tab: Claude Code in the browser with a chat, permission prompts and your workspace's files (on by default).
@@ -70,8 +74,6 @@ CODE_AUTO_MODE	code	main	CODE_ENABLED	Offer Auto mode: a reviewer model approves
 +project-folders	code	main	CODE_ENABLED	Folders of this computer as Code page projects: mounted into its sandbox, read-write or read-only.
 +sessions-consent	code	main	CODE_ENABLED	What DevOS ADE may read of your Claude Code and devos-claude sessions and setup on this computer.
 +bring-setup	code	main	CODE_ENABLED	Your Claude Code setup and Git name and email from this computer, copied into the Code page's sandbox.
-+subscriptions	code	main	TERMINAL_ENABLED	Your plans' own tools in the sandbox (Claude, Codex, Gemini, Copilot, Cursor, Grok) and their sign-ins.
-CODE_CLAUDE_PLAN	code	with	+subscriptions	-
 TERMINAL_ENABLED	code	main	-	The Terminal tab: a shell with Claude Code in a sandbox container that sees one folder of yours.
 TERMINAL_WORKSPACE	code	with	TERMINAL_ENABLED	-
 TERMINAL_EGRESS	code	main	TERMINAL_ENABLED	The sandbox's internet: public addresses only (the default), with this computer's services too, or off.

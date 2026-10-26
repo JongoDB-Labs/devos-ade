@@ -41,8 +41,8 @@ services:
       # Settings › Claude Code › Auto mode (enforced here too: set_mode accepts auto, and sessions are not started with
       # auto mode off). The sandbox's managed settings must allow it as well (compose.terminal.yaml passes it there).
       CODE_AUTO_MODE: ${CODE_AUTO_MODE:-false}
-      # Settings › Claude Code › Your AI subscriptions › Use my Claude plan in the Code page and Chat (enforced here: a
-      # session or a Chat answer on your plan is started only while it is on; off by default — Anthropic's two texts
+      # Settings › Models & providers › Claude Code › Use my Claude plan in the Code page and Chat (enforced here:
+      # a session or a Chat answer on your plan is started only while it is on; off by default — Anthropic's two texts
       # pull apart, README "Your AI subscriptions"). A change recreates this container.
       CODE_CLAUDE_PLAN: ${CODE_CLAUDE_PLAN:-false}
       # Chat's models on your subscriptions: the key Open WebUI's connection to :8096 carries (through caddy:8098), never on a

@@ -125,7 +125,7 @@ class Settings:
     # no remote Code page); remote_preview (REMOTE_PREVIEW=true) says which, for the Code page's message.
     remote_preview_host: str = ""
     remote_preview: bool = False
-    # Settings › Claude Code › Your AI subscriptions › Use my Claude plan in the Code page and Chat (CODE_CLAUDE_PLAN,
+    # Settings › Models & providers › Claude Code › Use my Claude plan in the Code page and Chat (CODE_CLAUDE_PLAN,
     # compose.code.yaml): whether Claude on your plan is offered as a Chat model (the code container enforces it)
     claude_plan: bool = False
     # TERMINAL_EGRESS as the stack reads it (lib/common.sh egress_mode): internet (the default), host or off — with

@@ -34,9 +34,26 @@
   const ON_VALUES = ["true", "1", "yes", "on"], OFF_VALUES = ["false", "0", "no", "off"];
   const KEY_NAME = /^[A-Z][A-Z0-9_]{1,60}$/;   // (as the setup links' targets: catalog/setup-links.tsv)
   const SECTION_MEMO = "bn.settings.section";
-  // a row that stands for more than its key: named for what it shows
+  // a row that stands for more than its key: named for what it shows (a provider's key: the provider)
   const ROW_LABEL = { RUSTFS_ACCESS_KEY: "Files (RustFS) key pair", STT_PROVIDER: "Speech-to-text", TERMINAL_ENABLED: "Browser terminal",
-    REMOTE_MODE: "Remote access" };
+    REMOTE_MODE: "Remote access", AWS_ACCESS_KEY_ID: "Bedrock", OPENROUTER_API_KEY: "OpenRouter", EXPLABS_API_KEY: "Experiential Labs" };
+  // Settings › Models & providers: a card for each provider. A key's card is its row (providerRow): MODELS, the
+  // provider its models have in the snapshot's code_models (the pickers' list: litellm/code-models.tsv), and PICK,
+  // where you pick which of them it adds. A provider of another kind (a web search backend) fits the same way: its
+  // key's row here, with ADDS(k) saying what it adds instead of a count of models. Your subscriptions' cards:
+  // subscriptionsRow.
+  const PROVIDERS = {
+    AWS_ACCESS_KEY_ID: { models: "Bedrock", pick: ["+models", "Models your key can use"] },
+    OPENROUTER_API_KEY: { models: "OpenRouter", pick: ["OPENROUTER_MODELS", "OpenRouter's models"] },
+    EXPLABS_API_KEY: { models: "Experiential Labs", pick: ["EXPLABS_MODELS", "the gateway's models"] },
+  };
+  // the head over a group of a section's rows, before the first of them: the keys, your subscriptions (and a Search
+  // group next to them, for a web search backend's card)
+  const GROUP_HEAD = { AWS_ACCESS_KEY_ID: "Keys", "+subscriptions": "Subscriptions" };
+  // where a row moved to (Settings › Models & providers), said at the top of its old section with a link
+  const MOVED = { aws: [["AWS_ACCESS_KEY_ID", "The AWS key", "Models & providers › Bedrock"]],
+    chat: [["OPENROUTER_API_KEY", "OpenRouter's and Experiential Labs' keys and models", "Models & providers"]],
+    code: [["+subscriptions", "Your AI subscriptions and Use my Claude plan", "Models & providers"]] };
 
   let data = null;          // GET /api/settings
   let spend = null;         // /api/summary's spend (budget rows)
@@ -417,12 +434,24 @@
     const lede = el("p", { class: "note set-lede", text: s.lede });
     if (s.doc) lede.append(" ", el("a", { href: REPO + s.doc, target: "_blank", rel: "noopener", class: "set-learn", text: "Learn more" }));
     c.append(el("div", { class: "set-card-head" }, el("h2", { id: `set-${s.id}-title`, tabindex: "-1", text: s.title }), lede));
+    // (what moved to Models & providers: a line at the top of its old section, with a link to it there)
+    for (const [place, what, where] of MOVED[s.id] || []) {
+      if (rowOf[place] && rowOf[place].section !== s.id) {
+        c.append(el("p", { class: "note set-moved" }, `${what}: `, el("a", { href: `#settings/${place}`, text: where }), "."));
+      }
+    }
     const all = rowsIn(s.id);
     const main = all.filter((r) => r.place === "main"), more = all.filter((r) => r.place === "more");
     const list = s.id === "advanced" || s.id === "about";
     const body = el("div", { class: list ? "set-rows set-list" : "set-rows" });
     blocks(body, main, list);
     c.append(body);
+    // (under the providers' cards: which of their models each picker lists — Settings' own lists of them)
+    if (s.id === "providers") {
+      c.append(el("p", { class: "note set-prov-foot" }, "Which of these models each picker lists: ",
+        el("a", { href: "#settings/CODE_MODELS", text: "Models for Claude Code" }), " (the Code page and devos-claude) · ",
+        el("a", { href: "#settings/MODELS_HIDDEN", text: "Hidden in Chat's model picker" }), " (Chat)."));
+    }
     if (s.id === "diagnostics") c.append(el("div", { class: "set-report", id: "set-report", hidden: "" }));
     if (more.length) {
       const inner = el("div", { class: "set-rows" });
@@ -445,8 +474,11 @@
       if (r.parent && offParent(r)) {   // shown only by a search or an address: why it does nothing now
         const p = keys[offParent(r)] || { label: offParent(r), secret: "-" };
         const name = ROW_LABEL[p.key] || p.label;
-        block.append(el("p", { class: "note set-applies", text: plain(p) ? `Applies while ${name} is on.` : `Applies once ${name} is set.` }));
+        block.append(el("p", { class: "note set-applies", text: plain(p) ? `Applies while ${name} is on.` : PROVIDERS[p.key] ? `Applies once ${name} has a key.` : `Applies once ${name} is set.` }));
       }
+      // (a provider's card; the first of a group of rows under its head)
+      if (PROVIDERS[r.key]) block.classList.add("set-prov");
+      if (GROUP_HEAD[r.key] && r.section === "providers") container.append(el("h3", { class: "set-group-head", text: GROUP_HEAD[r.key] }));
       block.append(node);
       made[r.key] = block;
       const host = r.parent && here.has(r.parent) && made[r.parent];
@@ -491,6 +523,7 @@
     if (r.key === "CODE_ENABLED") return codeRow(r);
     if (r.key === "TERMINAL_ENABLED") return terminalRow(r);
     if (r.key === "REMOTE_MODE") return remoteStatus(r);
+    if (PROVIDERS[r.key]) return providerRow(k, r);
     return row(k, r);
   }
 
@@ -730,7 +763,9 @@
       $(".set-value", main).remove();
       actions.append(egressChoice(k));
     } else {
-      const b = el("button", { type: "button", class: "action", text: plain(k) || k.set ? "Change" : "Set",
+      // (a provider's key: its card's one action — the form adds, replaces or removes it)
+      const b = el("button", { type: "button", class: PROVIDERS[k.key] && !providerOn(k) ? "action primary" : "action",
+        text: PROVIDERS[k.key] ? (k.set ? "Replace key" : "Add key") : plain(k) || k.set ? "Change" : "Set",
         "aria-describedby": `set-name-${k.key}` });
       b.disabled = !canChange();
       b.addEventListener("click", () => openForm(rw, k));
@@ -817,6 +852,47 @@
     return g.filter((x) => x[1].length);
   }
   function codeModelLabel(m) { return `${m[1]}${m[3] && lower(m[3]) !== "anthropic" ? ` (${m[3]})` : ""} · ${COMPAT_WORD[m[4]] || "not tested"}${m[5] && !/free/i.test(m[1]) ? " · free" : ""}`; }
+
+  // --- Settings › Models & providers: each provider a card (PROVIDERS; your subscriptions': subscriptionsRow) ---
+  // its state in a word or two next to its name: TONE on (it adds something now), warn (it needs a step) or off
+  const provState = (words, tone) => el("span", { class: "set-prov-state", "data-tone": tone, text: words });
+  // its key is there (Bedrock: or this EC2 machine's own role, AWS_AUTH)
+  const providerOn = (k) => Boolean(k.set) || (k.key === "AWS_ACCESS_KEY_ID" && Boolean(keys.AWS_AUTH) && shown(keys.AWS_AUTH) === "instance-role");
+  // A key's card: its row (the key masked, Add key / Replace key — a local setting: from this computer only, the row
+  // says so elsewhere), its state, how many models it adds to every picker and where you pick which ones. Without a key
+  // it sends nothing: the pickers grey its models out and lead here (catalog/setup-links.tsv openrouter-off …).
+  function providerRow(k, r) {
+    const p = PROVIDERS[k.key];
+    const rw = row(k, r);
+    const on = providerOn(k);
+    const models = p.models ? codeModels().filter((m) => m[2] === p.models) : [];
+    const free = models.filter((m) => m[5]).length;
+    const label = $(".set-label", rw._main);
+    label.insertBefore(provState(!on ? "Not set up" : p.adds || models.length ? "On" : "On · no models yet", !on ? "off" : p.adds || models.length ? "on" : "warn"),
+      $(".set-badges", label));
+    // (without a key: its state says it, and Check (free) has nothing to check)
+    if (!on) {
+      const v = $(".set-value", rw._main);
+      if (v) v.remove();
+      const chk = $('[data-act="check-aws"]', rw._actions);
+      if (chk) chk.remove();
+    }
+    const adds = el("p", { class: "set-prov-adds" });
+    rw._main.append(adds);
+    if (!on) adds.append("Sends nothing until it has a key; then its models are in every picker.");
+    else if (p.adds) adds.append(p.adds(k));
+    else {
+      adds.append(models.length ? `Adds ${models.length} model${models.length === 1 ? "" : "s"}${free ? ` (${free} free)` : ""} to every picker. ` : "Adds no models yet. ",
+        "Which ones: ", el("a", { href: `#settings/${p.pick[0]}`, text: p.pick[1] }), ".");
+      // (the Code page and devos-claude list what Models for Claude Code says: all of them unless you narrowed it)
+      const scope = codeScope(keys.CODE_MODELS ? keys.CODE_MODELS.value : "");
+      if (models.length && scope !== "all") {
+        rw._main.append(el("p", { class: "note set-extra" }, `The Code page and devos-claude list ${scope === "anthropic" ? "Anthropic's (Claude) models only" : "only the models you picked"}: `,
+          el("a", { href: "#settings/CODE_MODELS", text: "Models for Claude Code" }), "."));
+      }
+    }
+    return rw;
+  }
 
   // --- the Code page (./stack code enable | disable, run by the update helper) and the browser terminal ---
   function codeSwitch(val) {
@@ -1357,24 +1433,28 @@
     return rw;
   }
 
-  // Your AI subscriptions (lib/subscriptions.sh, answers.py): each tool in the sandbox — the provider's own client —
-  // with what it said of its own login at the last check (yes · which kind / no / not known here), never a login. Two
-  // rows for each tool that is a Chat model: the terminal's and the Code page's sign-in, and Chat's own (Chat's
-  // sandbox: a sign-in apart, never the terminal's) — each with its own Sign in, Sign out and Check again. Signing in
-  // happens in the terminal (Open in the terminal) or, for Chat, with ./stack subscriptions login TOOL --chat; Sign out
-  // runs the tool's own sign-out and Check again asks that sandbox again, both through the update helper with the
+  // Your AI subscriptions (lib/subscriptions.sh, answers.py): a card for each tool in the sandbox — the provider's own
+  // client — with what it said of its own login at the last check (yes · which kind / no / not known here), never a
+  // login, and the pickers it answers in once signed in. Its next step first: Sign in (it opens in the terminal, where
+  // its own sign-in starts), or the setting it waits for (Tools in the sandbox, the browser terminal); Sign out. A tool
+  // that is a Chat model has a second line: Chat's own sign-in (Chat's sandbox: a sign-in apart, never the terminal's),
+  // with ./stack subscriptions login TOOL --chat and its own Sign out. Sign out runs the tool's own sign-out and Check
+  // again (one for each sandbox, under the cards) asks that sandbox again, both through the update helper with the
   // password (narrowing: wherever Settings actions are).
   const SUBS_CHAT_SIGNOUT = ["claude", "codex", "grok"];   // (settings.py SUBS_SIGNOUT_CHAT_TOOLS)
+  // the tools the Code page's Who answers offers (code/web/src/types.ts HARNESS_IDS; Gemini CLI is not one of them)
+  const SUBS_CODE_AGENTS = ["claude", "codex", "copilot", "cursor", "grok"];
+  const andList = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs[0] || "");
   function subscriptionsRow(r) {
     const rw = ownFrame(r, "Your AI subscriptions");
     const sb = data.subscriptions || { tools: [], sandbox: null, checked_at: null };
     const can = (act) => canChange() && (data.helper.subscriptions || []).includes(act);
-    const list = el("ul", { class: "set-projects", id: "set-subscriptions" });
+    const list = el("ul", { class: "set-prov-grid", id: "set-subscriptions" });
     const termHere = Boolean(APP_URLS.terminal);
     const stateOf = (t, s) => (s.installed === false ? ["not in the sandbox", ""] : s.installed == null ? ["not checked yet", ""]
       : s.signed_in === "yes" ? [`signed in${s.kind_words ? ` · ${s.kind_words}` : ""}${s.how === "file" ? " (its login file is there)" : ""}`, "badge-local"]
         : s.signed_in === "no" ? ["not signed in", ""] : [t.id === "copilot" ? "not known here — /user in Copilot says" : "not known here", ""]);
-    // (each with a name of its own: the tool's row it is in — the check asks every tool of that sandbox)
+    // (each with a name of its own: which sandbox it asks — every tool of it)
     const checkButton = (action, title, body, name) => {
       const b = el("button", { type: "button", class: "action", text: "Check again", "data-act": action });
       if (name) b.setAttribute("aria-label", name);
@@ -1383,22 +1463,35 @@
       return b;
     };
     for (const t of sb.tools || []) {
-      const li = el("li", { class: "set-project", "data-tool": t.id },
-        el("span", { class: "set-project-name", text: t.name }), " ",
-        el("span", { class: "note", text: `${t.provider} · ${t.plan}${t.version ? ` · ${t.version}` : ""} · ${t.command}` }));
-      // the terminal's and the Code page's sign-in — its one next step first: Sign in (it opens in the terminal), or the
-      // setting that puts it in the sandbox
+      // the card: its name and state (the terminal's and the Code page's sign-in; Chat's has a line of its own), whose
+      // plan it uses, and the pickers it answers in
       const st = stateOf(t, t);
-      const term = el("div", { class: "set-subs-where", "data-where": "terminal" },
-        el("span", { class: "note", text: t.chat ? "Terminal & Code page: " : "" }), el("span", { class: `badge ${st[1]}`.trim(), text: st[0] }));
+      const tone = t.installed === false ? "warn" : t.installed && t.signed_in === "yes" ? "on" : "off";
+      const pickers = [SUBS_CODE_AGENTS.includes(t.id) && "the Code page's Who answers", t.chat && "Chat's models", "the terminal's Open"].filter(Boolean);
+      const li = el("li", { class: "set-prov", "data-tool": t.id },
+        el("div", { class: "set-prov-head" }, el("span", { class: "set-project-name", text: t.name }), " ", provState(st[0], tone)),
+        el("p", { class: "note set-prov-meta", text: `${t.provider} · ${t.plan}${t.version ? ` · ${t.version}` : ""} · ${t.command}` }),
+        el("p", { class: "set-prov-adds", text: t.id === "claude"
+          ? `Adds Claude on your plan to ${andList(pickers)} — the first two while Use my Claude plan is on (below).`
+          : `Adds ${t.name} to ${andList(pickers)}.` }));
+      // the terminal's and the Code page's sign-in — its one next step first: Sign in (it opens in the terminal), or
+      // the setting that puts it in the sandbox, or the browser terminal it opens in
+      const term = el("div", { class: "set-subs-where", "data-where": "terminal" }, el("span", { class: "note", text: t.chat ? "Terminal & Code page: " : "" }));
       const acts = el("span", { class: "set-project-actions" });
       if (t.installed === false) {
         acts.append(el("a", { class: "action", href: "#settings/TERMINAL_AI_TOOLS", "data-act": "subscriptions-left-out", "data-setup": "tool-left-out",
           text: "Put it in the sandbox (Tools in the sandbox)", "aria-label": `Put it in the sandbox (Tools in the sandbox): ${t.name}` }));
+      } else if (!termHere) {
+        // (the terminal it signs in in is off here: where that is turned on — over remote access, or at all)
+        acts.append(data.here.remote && terminalOn()
+          ? el("a", { class: "action", href: "#settings/REMOTE_TERMINAL", "data-act": "subscriptions-terminal-off", "data-setup": "terminal-remote-off",
+            text: "Not over remote access: how to turn it on", "aria-label": `Not over remote access: how to turn the terminal on for ${t.name}` })
+          : el("a", { class: "action", href: "#settings/TERMINAL_ENABLED", "data-act": "subscriptions-terminal-off", "data-setup": "terminal-off",
+            text: "The browser terminal is off: how to turn it on", "aria-label": `The browser terminal is off: how to turn it on for ${t.name}` }));
       }
       if (t.installed !== false && termHere) {
         const signedIn = t.signed_in === "yes";
-        const open = el("button", { type: "button", class: signedIn ? "action" : "action primary", text: signedIn ? "Open in the terminal" : "Sign in (terminal and Code page)",
+        const open = el("button", { type: "button", class: signedIn ? "action" : "action primary", text: signedIn ? "Open in the terminal" : "Sign in",
           // (its name as shown first, then where it goes)
           "aria-label": signedIn ? `Open in the terminal: ${t.name}` : `Sign in (terminal and Code page): ${t.name} opens in the terminal, where its own sign-in starts`, "data-act": "subscriptions-open" });
         open.addEventListener("click", () => {
@@ -1421,13 +1514,11 @@
           `Sign ${t.name} out in the sandbox?`,
           `${t.name}'s own sign-out runs in the sandbox (the terminal's and the Code page's sign-in; Chat's is its own): its login there is removed. If anything in the sandbox may have read it, revoke it at ${t.provider} too.`, "Sign out"));
         acts.append(out);
-      } else if (t.signout === "inside" && t.installed !== false) {
+      }
+      term.append(acts);
+      if (t.signout === "inside" && t.installed !== false) {
         term.append(el("p", { class: "note", text: `${t.name} signs out inside it: ${t.id === "gemini" ? "/auth signout" : "/logout"} (Open in the terminal).` }));
       }
-      acts.append(checkButton("subscriptions-check", "Ask the sandbox's AI tools again?",
-        "Each tool's own status command runs in the sandbox (about a second each); only signed in or not, and which kind, is kept.",
-        `Check again: ${t.name} and the sandbox's other tools (terminal and Code page)`));
-      term.append(acts);
       li.append(term);
       // Chat's own sign-in (a Chat model only: catalog chat_model yes)
       if (t.chat) {
@@ -1437,7 +1528,7 @@
         const cacts = el("span", { class: "set-project-actions" });
         const cmd = `./stack subscriptions login ${t.id} --chat`;
         const chatIn = t.chat.signed_in === "yes";
-        const signin = el("button", { type: "button", class: chatIn ? "action" : "action primary", text: "Sign in (Chat)", "aria-expanded": "false",
+        const signin = el("button", { type: "button", class: chatIn ? "action" : "action primary", text: "Sign in", "aria-expanded": "false",
           "aria-label": `Sign in (Chat): ${t.name}'s command for a terminal on this computer`, "data-act": "subscriptions-chat-signin" });
         const how = el("p", { class: "set-cli", hidden: true }, el("span", { class: "note", text: `Chat's own sign-in, apart from the terminal's — in a terminal on this computer (its link and code show there): ` }),
           el("code", { text: cmd }), " ", copyButton(cmd, `Copy ${t.name}'s Chat sign-in command`));
@@ -1454,9 +1545,6 @@
         } else if (t.id === "copilot") {
           chat.append(el("p", { class: "note", text: "Copilot signs out inside it, and Chat has no screen of it: ./stack subscriptions logout copilot --chat says how." }));
         }
-        cacts.append(checkButton("subscriptions-check-chat", "Ask Chat's sandbox again?",
-          "Each Chat tool's own status command runs in Chat's sandbox; only signed in or not, and which kind, is kept.",
-          `Check again: ${t.name} and Chat's other tools`));
         chat.append(cacts, how);
         li.append(chat);
       }
@@ -1486,11 +1574,24 @@
     }
     if (!(sb.tools || []).length) list.append(el("li", { class: "note", text: "No tools listed (catalog/ai-tools.tsv is missing)." }));
     rw._main.append(list);
+    // (a search finds the row by its tools' names too)
+    rw.dataset.findExtra = `Your AI subscriptions ${(sb.tools || []).map((t) => `${t.name} ${t.provider}`).join(" ")}`;
+    // the last check of each sandbox, and Check again: the terminal's (and the Code page's), and Chat's
     const when = sb.checked_at ? new Date(sb.checked_at * 1000).toLocaleString() : "";
     const chatWhen = sb.chat_checked_at ? new Date(sb.chat_checked_at * 1000).toLocaleString() : "";
     const SB = { off: "The sandbox is off: ./stack terminal enable.", down: "The sandbox is not running: ./stack up.", error: "The sandbox did not answer at the last check." };
     const CSB = { off: "Chat's sandbox is off (it runs with the Code page).", down: "Chat's sandbox is not running: ./stack up.", error: "Chat's sandbox did not answer at the last check." };
-    rw._main.append(el("p", { class: "note set-extra", text: `${SB[sb.sandbox] || ""}${SB[sb.sandbox] ? " " : ""}${when ? `Checked ${when}.` : "Not checked yet."} ${CSB[sb.chat_sandbox] || ""}${chatWhen ? ` Chat's checked ${chatWhen}.` : ""} Each sign-in is the tool's own, and stays in its own file in that sandbox (Chat's apart from the terminal's): DevOS ADE never opens it, backups leave it out. Anything in that sandbox can read it — Sign out, and revoke it at the provider, if that worries you.` }));
+    rw._main.append(el("p", { class: "note set-subs-checked" }, `${SB[sb.sandbox] || ""}${SB[sb.sandbox] ? " " : ""}${when ? `Terminal and Code page: checked ${when}.` : "Terminal and Code page: not checked yet."} `,
+      checkButton("subscriptions-check", "Ask the sandbox's AI tools again?",
+        "Each tool's own status command runs in the sandbox (about a second each); only signed in or not, and which kind, is kept.",
+        "Check again: every tool in the sandbox (terminal and Code page)")));
+    if ((sb.tools || []).some((t) => t.chat)) {
+      rw._main.append(el("p", { class: "note set-subs-checked" }, `${CSB[sb.chat_sandbox] || ""}${CSB[sb.chat_sandbox] ? " " : ""}${chatWhen ? `Chat: checked ${chatWhen}.` : "Chat: not checked yet."} `,
+        checkButton("subscriptions-check-chat", "Ask Chat's sandbox again?",
+          "Each Chat tool's own status command runs in Chat's sandbox; only signed in or not, and which kind, is kept.",
+          "Check again: every tool for Chat")));
+    }
+    rw._main.append(el("p", { class: "note set-extra", text: "Each sign-in is the tool's own, and stays in its own file in that sandbox (Chat's apart from the terminal's): DevOS ADE never opens it, backups leave it out. Anything in that sandbox can read it — Sign out, and revoke it at the provider, if that worries you." }));
     if (!can("subscriptions-check")) {
       rw._main.append(!data.helper.running ? el("p", { class: "note set-extra", text: "Check again and Sign out need the update helper (./stack helper install)." })
         : !canChange() ? el("p", { class: "note set-extra" }, "Settings changes are off for remote access: ",

@@ -121,8 +121,8 @@ def test_the_page_scripts_name_the_gateways_group_and_its_settings_row():
 
 
 def test_the_greyed_entry_goes_to_a_live_settings_row():
-    # catalog/setup-links.tsv explabs-off: Settings › Chat & voice › Experiential Labs key, a row the page shows, a key
-    # set from this computer only (so its words say so), and the Code page's copy the same
+    # catalog/setup-links.tsv explabs-off: Settings › Models & providers › Experiential Labs (its card: the key's
+    # row), a row the page shows, a key set from this computer only (so its words say so), and the Code page's copy
     from pathlib import Path
     root = Path(answers.__file__).resolve().parents[2]
     table = root / "catalog" / "setup-links.tsv"
@@ -130,13 +130,13 @@ def test_the_greyed_entry_goes_to_a_live_settings_row():
         return
     links = answers.setup_links(table.parent)
     row = links["explabs-off"]
-    assert row["target"] == "setting:EXPLABS_API_KEY" and row["where"] == "Settings › Chat & voice › Experiential Labs key"
+    assert row["target"] == "setting:EXPLABS_API_KEY" and row["where"] == "Settings › Models & providers › Experiential Labs"
     assert row["says"].endswith(", from the computer running DevOS ADE.") and row["where"] in row["says"]
     settings = [l.split("\t") for l in (root / "catalog" / "settings.tsv").read_text(encoding="utf-8").splitlines() if l and not l.startswith("#")]
     key = next(f for f in settings if f[0] == "EXPLABS_API_KEY")
     assert key[3] == "local" and key[6] == "Experiential Labs key"
     layout = [l.split("\t") for l in (root / "catalog" / "settings-layout.tsv").read_text(encoding="utf-8").splitlines() if l and not l.startswith(("#", "@"))]
-    assert next(f for f in layout if f[0] == "EXPLABS_API_KEY")[1:3] == ["chat", "main"]
+    assert next(f for f in layout if f[0] == "EXPLABS_API_KEY")[1:3] == ["providers", "main"]
     code = root / "code" / "web" / "src" / "setuplinks.ts"
     if code.exists():
         assert f'"explabs-off": {{ target: "setting:EXPLABS_API_KEY", where: "{row["where"]}", says: "{row["says"]}" }}' in code.read_text(encoding="utf-8")

@@ -657,7 +657,7 @@ explabs_models_section() {
 explabs_costs_section() {
   local id pin pout p
   printf '\nExperiential Labs'
-  if ! explabs_enabled; then printf ': off — ./stack config set EXPLABS_API_KEY (or Settings › Chat & voice) adds a key\n'; return 0; fi
+  if ! explabs_enabled; then printf ': off — ./stack config set EXPLABS_API_KEY (or Settings › Models & providers) adds a key\n'; return 0; fi
   printf ' (prompts go to api.experientiallabs.ai and the model provider; spend is what the gateway reports per call, in the keys above)\n'
   while IFS=$'\t' read -r id pin pout; do
     p="$(xl_price_text "${pin#-}" "${pout#-}")"; case "$p" in '$'*) p="list price $p" ;; esac

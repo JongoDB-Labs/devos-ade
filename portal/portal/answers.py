@@ -203,7 +203,7 @@ def plan_models(s, remote: bool, rows: list[dict], links: dict | None = None, eg
                 "terminal-remote-off": "not over remote access (Terminal and Code page over remote access)",
                 "chat-egress-off": "off while the sandbox has no internet (Settings › Claude Code › Sandbox internet access: Off)",
                 "tool-left-out": "not in the sandbox",
-                "claude-plan-off": "off: Settings › Claude Code › Your AI subscriptions › Use my Claude plan in the Code page and Chat",
+                "claude-plan-off": "off: Settings › Models & providers › Claude Code › Use my Claude plan in the Code page and Chat",
                 "chat-signin": "Sign in for Chat… (a sign-in of its own, apart from the terminal's)"}
     out = []
     for t in rows:

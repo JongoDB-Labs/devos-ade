@@ -95,7 +95,7 @@
         // (one that only lacks Chat's own sign-in: "Sign in for Chat…", which goes to Settings' row for it; one that is
         // off for another reason: the choice that goes where that is turned on)
         ...(d && Array.isArray(d.plan_models) ? d.plan_models : []).map((m) => (m.signin === true && /^[a-z]{2,10}$/.test(m.tool || "")
-          ? { value: `signin:${m.tool}`, label: `${m.label} — Sign in for Chat…`, disabled: false, title: (setupOf(d, "chat-signin") || {}).says || "Chat has sign-ins of its own, apart from the terminal's: Settings › Claude Code › Your AI subscriptions shows how, from the computer running DevOS ADE." }
+          ? { value: `signin:${m.tool}`, label: `${m.label} — Sign in for Chat…`, disabled: false, title: (setupOf(d, "chat-signin") || {}).says || "Chat has sign-ins of its own, apart from the terminal's: Settings › Models & providers › Your AI subscriptions shows how, from the computer running DevOS ADE." }
           : m.ok ? { value: `model:${m.id}`, label: m.label, disabled: false, title: "A model in Open WebUI's list too; it answers in the same chat, on your plan (no $)." }
             : greyed(d, m.reason, m.tool, m.label, { value: `model:${m.id}`, label: `${m.label} — ${m.why}`, title: m.why }))),
         ...tools.filter((t) => t.chat_model !== "yes").map((t) => (
@@ -129,7 +129,7 @@
   // goLabelOf(DATA, VALUE) -> the words of the button beside a menu for a greyed item (setup:REASON:TOOL) or a sign-in
   // for Chat (signin:TOOL): "Go to Settings", or "Open it to sign in" (the tool itself in the terminal); "" for any
   // other choice. goNameOf(DATA, VALUE) -> that button's name for a screen reader: where it goes, from the table
-  // ("Go to Settings › Claude Code › Your AI subscriptions › Use my Claude plan"), "" when the table does not say (its
+  // ("Go to Settings › Models & providers › Claude Code › Use my Claude plan"), "" when the table does not say (its
   // words name it then)
   function goLabelOf(d, v) {
     const m = /^setup:([a-z][a-z-]{1,40}):([a-z]{0,10})$/.exec(v || "");

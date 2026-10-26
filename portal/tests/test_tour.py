@@ -233,14 +233,15 @@ def test_chat_and_subscriptions_steps_say_what_v0_24_changed():
                   "By default, an HTML block opens in a preview only when you click it", 'b("Run")', "numpy, pandas and matplotlib", "other packages are not available"):
         assert words in chat, words
     subs = _step(js, "subscriptions")
-    for words in ('settings("Claude Code", "CODE_CLAUDE_PLAN")', 'b("Use my Claude plan in the Code page and Chat")', "off by default",
+    for words in ('settings("Models & providers", "CODE_CLAUDE_PLAN")', 'b("Use my Claude plan in the Code page and Chat")', "off by default",
                   "the choice is yours", "the row says what Anthropic's support article and its legal page each say", 'b("A project\'s own settings")'):
         assert words in subs, words
     # greyed items: where each is turned on, and the button that goes there, said in the subscriptions step (never "a
     # link at once": a menu acts on its button alone); Your AI subscriptions, one place
     for words in ('b("Greyed out?")', "Its words say where it is turned on", "to where that sign-in starts", 'then ", b("Go to Settings"), " beside the menu',
                   "A menu never acts by itself: every choice — a model, a tool, Open WebUI — acts on the button beside it",
-                  "is the one place to connect them", 'b("Sign in (terminal and Code page)")', 'b("Sign in (Chat)")', "on Claude's row the switch for your plan"):
+                  "is the one place to connect them", 'settings("Models & providers", "+subscriptions")', 'b("Sign in")', "on its Chat line",
+                  "on Claude's card the switch for your plan"):
         assert words in subs, words
     # (no sentence of the old Accept edits)
     assert "file edits in the workspace go ahead" not in js

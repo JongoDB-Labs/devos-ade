@@ -45,7 +45,7 @@ test('the picker: a subscription that can start, and why one cannot', () => {
   assert.deepEqual(harnessState({ ...h, signed: 'no' }), { ok: false, says: SETUP_LINKS['tool-signin'].says, reason: 'tool-signin' });
   assert.deepEqual(harnessState({ ...h, installed: false }), { ok: false, says: SETUP_LINKS['tool-left-out'].says, reason: 'tool-left-out' });
   assert.deepEqual(harnessState({ ...h, allowed: false }), { ok: false, says: SETUP_LINKS['claude-plan-off'].says, reason: 'claude-plan-off' });
-  assert.match(harnessState({ ...h, allowed: false }).says, /Settings › Claude Code › Your AI subscriptions › Use my Claude plan/);
+  assert.match(harnessState({ ...h, allowed: false }).says, /Settings › Models & providers › Claude Code › Use my Claude plan/);
 });
 
 test('greyed items: every reason has a target, none dead — a setting of the portal or a sign-in; and how Settings is reached', () => {

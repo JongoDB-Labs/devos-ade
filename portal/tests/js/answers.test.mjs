@@ -213,13 +213,13 @@ test("leaving Settings drops a Chat sign-in asked for", () => {
   assert.match(tab, /if \(e\.detail === "settings"\) load\(\)\.then\(placeFromAddress\);\s*else \{ chatAsk\.drop\(\); window\.bnSubsChatSignin = "";/);
 });
 
-test("Your AI subscriptions: each tool's Sign out, Check again and Copy has a name of its own (the tool's, and which sign-in)", () => {
+test("Your AI subscriptions: each tool's Sign out and Copy, and each sandbox's Check again, has a name of its own (the tool's, and which sign-in)", () => {
   const js = source("settings.js");
   const row = js.split("function subscriptionsRow(r) {")[1].split("\n  function ")[0];
-  const names = [...row.matchAll(/"aria-label": `([^`]+)`|setAttribute\("aria-label", name\)|copyButton\(cmd, `([^`]+)`\)|`(Check again: [^`]+)`/g)]
-    .map((m) => m[1] || m[2] || m[3]).filter(Boolean);
+  const names = [...row.matchAll(/"aria-label": `([^`]+)`|setAttribute\("aria-label", name\)|copyButton\(cmd, `([^`]+)`\)|`(Check again: [^`]+)`|"(Check again: [^"]+)"/g)]
+    .map((m) => m[1] || m[2] || m[3] || m[4]).filter(Boolean);
   for (const want of ["Sign out: ${t.name} in the sandbox (terminal and Code page)", "Sign out: ${t.name} for Chat",
-    "Check again: ${t.name} and the sandbox's other tools (terminal and Code page)", "Check again: ${t.name} and Chat's other tools",
+    "Check again: every tool in the sandbox (terminal and Code page)", "Check again: every tool for Chat",
     "Copy ${t.name}'s Chat sign-in command"]) {
     assert.ok(names.includes(want), `${want} — not in ${JSON.stringify(names)}`);
   }
@@ -239,8 +239,8 @@ test("the button beside a menu is named for where it goes — Go to Settings ›
   const d = { ...data, setup: SETUP };
   assert.equal(A.setupOf(d, "claude-plan-off").where, SETUP["claude-plan-off"].where);
   assert.equal(A.goLabelOf(d, "setup:claude-plan-off:claude"), "Go to Settings");
-  assert.equal(A.goNameOf(d, "setup:claude-plan-off:claude"), "Go to Settings › Claude Code › Your AI subscriptions › Use my Claude plan");
-  assert.equal(A.goNameOf(d, "signin:codex"), "Go to Settings › Claude Code › Your AI subscriptions › Chat");
+  assert.equal(A.goNameOf(d, "setup:claude-plan-off:claude"), "Go to Settings › Models & providers › Claude Code › Use my Claude plan");
+  assert.equal(A.goNameOf(d, "signin:codex"), "Go to Settings › Models & providers › Your AI subscriptions › Chat");
   for (const r of Object.keys(SETUP)) {
     const v = `setup:${r}:codex`, label = A.goLabelOf(d, v), name = A.goNameOf(d, v);
     assert.ok(label === "Go to Settings" || label === "Open it to sign in", `${r}: ${label}`);
@@ -291,7 +291,7 @@ test("chat picker: Experiential Labs' models as a group next to OpenRouter's; wi
   const it = off.items[0];
   assert.deepEqual([it.value, it.disabled, it.title], ["setup:explabs-off:", false, SETUP["explabs-off"].says]);
   assert.equal(it.label, `Experiential Labs models — ${SETUP["explabs-off"].says}`);
-  assert.match(it.label, /add it in Settings › Chat & voice › Experiential Labs key/);
+  assert.match(it.label, /add it in Settings › Models & providers › Experiential Labs/);
   // it goes to Settings at the key's row, its button named for it
   assert.deepEqual(plain(A.setupPlace(A.setupOf({ setup: SETUP }, "explabs-off"), "")), { hash: "#settings/EXPLABS_API_KEY" });
   assert.equal(A.goLabelOf({ setup: SETUP }, it.value), "Go to Settings");

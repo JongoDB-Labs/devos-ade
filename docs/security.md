@@ -403,7 +403,7 @@ An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*)
   language, the Python runtime and its version, the operating system and CPU architecture of LiteLLM's container —
   `Linux`, `arm64` or `x64` —, the retry count and read timeout); nothing in them names you or this install. The two
   GETs above go with curl's own `User-Agent: curl/<version>`.
-- **The key.** In `.env` (mode 600), changed only from this computer (Settings › Chat & voice, policy `local`, or
+- **The key.** In `.env` (mode 600), changed only from this computer (Settings › Models & providers, policy `local`, or
   `./stack config set EXPLABS_API_KEY`, which asks without echo), checked with the gateway before it is stored. It
   reaches LiteLLM's environment (the config names `os.environ/EXPLABS_API_KEY`, never the value) and, when `./stack`
   reads the model list, curl's stdin (`curl_auth`: never a command line, a URL or a log). Nothing shows it back: the
@@ -3298,7 +3298,7 @@ never reads, copies, keeps, passes on or relays a login.**
   start: none of the sandbox's dotfiles, shell files or `~/.config`) and sign-ins of its own: each Chat tool's folder
   (`~/.claude-subscription`, `~/.codex`, `~/.copilot`, `~/.grok`) a volume of Chat's alone (`subs-chat-claude`,
   `subs-chat-codex`, `subs-chat-copilot`, `subs-chat-grok`), signed in there with the tool's own flow (`./stack
-  subscriptions login TOOL --chat`; Settings › Your AI subscriptions has a Chat row for each). The terminal's sign-ins
+  subscriptions login TOOL --chat`; Settings › Models & providers has a Chat line on each card). The terminal's sign-ins
   are never mounted there, nor Chat's in the terminal, and nothing copies a login between them: the terminal cannot
   read a Chat conversation or plant a file Chat's tools run (a Codex `notify`, a hooks file), and a Chat turn cannot
   plant one the terminal's tools would run with your workspace and keys. Chat's folders are writable, because each tool

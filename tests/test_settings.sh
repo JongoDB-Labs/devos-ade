@@ -116,11 +116,15 @@ test_config_list_follows_the_pages_sections() {
   out="$(NO_COLOR=1 config_list)"
   # the page's section titles, in its order (Diagnostics has no keys)
   assert_eq "$(printf '%s\n' "$out" | awk '/^[A-Z]/ && NR > 1' | tr '\n' '|')" \
-    "Account & security|AWS & models|Spending & budgets|Chat & voice|Claude Code|Files & sharing|Remote access|Updates & backups|Advanced|About this install|"
+    "Account & security|Models & providers|AWS & models|Spending & budgets|Chat & voice|Claude Code|Files & sharing|Remote access|Updates & backups|Advanced|About this install|"
   # the Code page with Bypass and Auto under it, in Claude Code (they were under Advanced); the terminal's budget with
   # the other budgets; a pair's second half and a switch's dependents indented under it
   assert_eq "$(printf '%s\n' "$out" | awk '/^Claude Code$/ { f = 1; next } /^[A-Z]/ { f = 0 } f && /CODE_/ { print $1 }' | tr '\n' ' ')" \
-    "CODE_ENABLED CODE_ALLOW_BYPASS CODE_AUTO_MODE CODE_CLAUDE_PLAN CODE_MODELS CODE_DEFAULT_MODEL "
+    "CODE_ENABLED CODE_ALLOW_BYPASS CODE_AUTO_MODE CODE_MODELS CODE_DEFAULT_MODEL "
+  # every key that adds models in Models & providers: Bedrock's, OpenRouter's (its models under it), Experiential Labs',
+  # and the Claude plan switch of Your AI subscriptions
+  assert_eq "$(printf '%s\n' "$out" | awk '/^Models & providers$/ { f = 1; next } /^[A-Z]/ { f = 0 } f && NF { print $1 }' | tr '\n' ' ')" \
+    "AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY OPENROUTER_API_KEY OPENROUTER_MODELS OPENROUTER_MAX_MODELS OPENROUTER_INCLUDE_ALIASES EXPLABS_API_KEY EXPLABS_MODELS CODE_CLAUDE_PLAN "
   assert_contains "$out" "    CODE_ALLOW_BYPASS            (blank)   (less protection: this computer only)"
   assert_contains "$(printf '%s\n' "$out" | awk '/^Spending & budgets$/ { f = 1; next } /^[A-Z]/ { f = 0 } f')" "  BUDGET_TERMINAL                50   (less protection: this computer only)"
   assert_contains "$out" "    AWS_SECRET_ACCESS_KEY        (set)   (this computer only)"

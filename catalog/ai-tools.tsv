@@ -1,7 +1,8 @@
 # Your AI subscriptions' own tools: the "who answers" pickers (Terminal, Chat, the Code page's terminal panel) and
-# Settings › Claude Code › Your AI subscriptions read this table (portal/portal/answers.py). Each tool is its provider's
-# own, unmodified client in the sandbox's image (terminal/Dockerfile's ai-tools stage), signed in there with its own
-# flow; the sandbox's terminal/bin/subscriptions has the same ids (tests/test_subscriptions.sh checks both lists).
+# Settings › Models & providers › Your AI subscriptions read this table (portal/portal/answers.py). Each tool is its
+# provider's own, unmodified client in the sandbox's image (terminal/Dockerfile's ai-tools stage), signed in there with
+# its own flow; the sandbox's terminal/bin/subscriptions has the same ids (tests/test_subscriptions.sh checks both
+# lists).
 #
 # id  name  provider  plan  command  signout  chat_model  chat_why  terms
 #   plan        whose plan it uses, in a few words

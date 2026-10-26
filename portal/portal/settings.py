@@ -50,7 +50,7 @@ MAX_VALUE = 2000
 CAPABILITY_MAX_AGE_S = 24 * 3600
 GROUPS = ("account", "aws", "budgets", "voice", "openrouter", "explabs", "files", "updates", "remote", "advanced")
 # the page's sections, in catalog/settings-layout.tsv; a row's place in its section; the page's own rows (no .env key)
-SECTIONS = ("account", "aws", "spending", "chat", "code", "files", "remote", "updates", "diagnostics", "advanced", "about")
+SECTIONS = ("account", "providers", "aws", "spending", "chat", "code", "files", "remote", "updates", "diagnostics", "advanced", "about")
 PLACES = ("main", "more", "with")
 OWN_ROWS = ("+devices", "+models", "+backups", "+test", "+check-aws", "+report", "+restart", "+git-hosts", "+project-folders", "+sessions-consent", "+bring-setup",
             "+subscriptions")

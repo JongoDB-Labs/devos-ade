@@ -176,9 +176,18 @@ def test_sections_hold_what_their_task_needs():
                  ("BUDGET_TERMINAL", "LITELLM_KEY_TERMINAL"), ("BUDGET_SETUP", "LITELLM_KEY_SETUP")):
         assert rows[b]["section"] == "spending" and where(k) == ("spending", "with", b)
     assert where("BUDGET_TERMINAL") == ("spending", "main", "")
-    # Chat's models with Chat, Claude Code's with Claude Code; voice and OpenRouter with Chat
+    # Chat's models with Chat, Claude Code's with Claude Code; voice with Chat
     assert rows["CHAT_DEFAULT_MODEL"]["section"] == "chat" and rows["CLAUDE_MODEL_OPUS"]["section"] == "code"
-    assert rows["STT_PROVIDER"]["section"] == "chat" and where("OPENROUTER_MODELS") == ("chat", "main", "OPENROUTER_API_KEY")
+    assert rows["STT_PROVIDER"]["section"] == "chat"
+    # every key and sign-in that adds models in one place, Models & providers: each provider's key a card of its own
+    # (its models' rows inside it), then your subscriptions; none of them left in AWS & models, Chat & voice or Claude
+    # Code
+    assert [k for k, r in rows.items() if r["section"] == "providers" and r["place"] == "main" and not r["parent"]] == \
+        ["AWS_ACCESS_KEY_ID", "OPENROUTER_API_KEY", "EXPLABS_API_KEY", "+subscriptions"]
+    assert where("AWS_SECRET_ACCESS_KEY") == ("providers", "with", "AWS_ACCESS_KEY_ID")
+    assert where("OPENROUTER_MODELS") == ("providers", "main", "OPENROUTER_API_KEY") and where("EXPLABS_MODELS") == ("providers", "main", "EXPLABS_API_KEY")
+    assert where("OPENROUTER_MAX_MODELS") == where("OPENROUTER_INCLUDE_ALIASES") == ("providers", "more", "OPENROUTER_API_KEY")
+    assert not [k for k, r in rows.items() if r["section"] in ("aws", "chat", "code") and re.match(r"(AWS_ACCESS|AWS_SECRET|OPENROUTER|EXPLABS)_", k)]
     # remote access's switches only while it is on; nightly backups' window and count only while they are on
     for k in ("TAILSCALE_ALLOWED_LOGIN", "REMOTE_ADMIN_ACTIONS", "REMOTE_TERMINAL"):
         assert where(k) == ("remote", "main", "REMOTE_MODE")
@@ -194,8 +203,9 @@ def test_sections_hold_what_their_task_needs():
     assert all(rows[k]["place"] in ("main", "more") or k in ("AWS_SECRET_ACCESS_KEY", "STT_API_KEY", "STT_MODEL", "RUSTFS_SECRET_KEY", "GIT_GITHUB_APP_SLUG",
                                                             "CODE_CLAUDE_PLAN")
                for k in editable)
-    # the Claude plan switch on Claude's row of Your AI subscriptions (where each tool is connected), not a row of its own
-    assert where("CODE_CLAUDE_PLAN") == ("code", "with", "+subscriptions")
+    # the Claude plan switch on Claude's card in Your AI subscriptions (where each tool is connected), not a row of its
+    # own
+    assert where("CODE_CLAUDE_PLAN") == ("providers", "with", "+subscriptions")
     # Git hosts' sign-in: the apps' IDs under the Code page's More (the GitHub App's name with its client ID)
     assert where("GIT_GITHUB_CLIENT_ID") == ("code", "more", "CODE_ENABLED") and where("GIT_GITLAB_CLIENT_ID") == ("code", "more", "CODE_ENABLED")
     assert where("GIT_GITHUB_APP_SLUG") == ("code", "with", "GIT_GITHUB_CLIENT_ID")
@@ -320,3 +330,39 @@ def test_the_page_stays_inside_the_csp():
             assert sink not in js, (name, sink)
     js = _js()
     assert 'try { localStorage.setItem(SECTION_MEMO, id); } catch (_)' in js   # the last section: best effort only
+
+
+@need_repo
+def test_models_and_providers_a_card_for_each_key_and_sign_in():
+    # Settings › Models & providers: each key's card is its own row (its policy, form and remote rule kept), named for
+    # its provider, with its state, how many models it adds and where you pick which — a place the layout knows
+    st._layout_cache.clear()
+    rows = {r["key"]: r for r in st.layout(REAL.parent)["rows"]}
+    table = _table()
+    js = _js()
+    assert 'AWS_ACCESS_KEY_ID: "Bedrock", OPENROUTER_API_KEY: "OpenRouter", EXPLABS_API_KEY: "Experiential Labs"' in js
+    provs = dict(re.findall(r'(\w+): \{ models: "[^"]+", pick: \["([^"]+)"', js[js.index("const PROVIDERS = {"):js.index("const GROUP_HEAD")]))
+    assert sorted(provs) == sorted(k for k, r in rows.items() if r["section"] == "providers" and r["place"] == "main" and not r["parent"]
+                                   and not k.startswith("+"))
+    for key, pick in provs.items():
+        assert table[key][3] == "local", key          # keys stay on this computer: never changed from your devices
+        assert pick in rows, (key, pick)
+    card = js[js.index("function providerRow(k, r) {"):js.index("// --- the Code page")]
+    assert "const rw = row(k, r);" in card
+    assert '"Sends nothing until it has a key; then its models are in every picker."' in card
+    assert "`Adds ${models.length} model${models.length === 1 ? \"\" : \"s\"}" in card and 'href: "#settings/CODE_MODELS"' in card
+    # (its one action: Add key, else Replace key — the form removes it)
+    assert 'text: PROVIDERS[k.key] ? (k.set ? "Replace key" : "Add key")' in js
+    # your subscriptions: a card each, in a grid; the pickers each answers in — the Code page's as types.ts has them
+    subs = js[js.index("function subscriptionsRow(r) {"):js.index("function sessionDays()")]
+    assert 'el("li", { class: "set-prov", "data-tool": t.id }' in subs and 'provState(st[0], tone)' in subs
+    agents = json.loads(re.search(r"const SUBS_CODE_AGENTS = (\[[^\]]*\]);", js).group(1))
+    ts = REPO / "code" / "web" / "src" / "types.ts"
+    if ts.is_file():
+        ids = re.search(r"export const HARNESS_IDS: readonly Harness\[\] = \[([^\]]*)\];", ts.read_text()).group(1)
+        assert agents == [x.strip().strip("'") for x in ids.split(",") if x.strip().strip("'") != "bedrock"]
+    # their old places say where they are now, with a link (MOVED: a section, the row it names, and where)
+    moved = js[js.index("const MOVED = {"):js.index("let data = null;")]
+    for sec, place in re.findall(r'(\w+): \[\["([^"]+)"', moved):
+        assert sec in st.SECTIONS and rows[place]["section"] == "providers" and sec != "providers", (sec, place)
+    assert {"aws", "chat", "code"} <= set(re.findall(r'(\w+): \[\["', moved))

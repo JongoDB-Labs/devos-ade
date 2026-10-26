@@ -28,11 +28,11 @@ disable` the Code page alone; either stays off across updates).
 | [**Settings**](#settings) | every setting of `.env`, shown in the portal | on (read-only until the update helper is installed) | `./stack helper install` makes it editable |
 | [**Terminal**](#claude-code-in-the-browser) | Claude Code in the browser, in a sandbox that sees one folder of yours (`~/devos-ade-workspace`) and reaches public internet addresses through an egress proxy of its own — not this computer's services or your network | on, as the Code page's sandbox (internet: public addresses only) | `./stack terminal disable` / `enable` (disable turns the Code page off too); its internet: Settings › Claude Code › Sandbox internet access |
 | [**Code page**](#the-code-page) | Claude Code as an IDE-like page: chat with any chat model of the catalog, @-mentions of the terminal, the changes, failed runs and file lines, permission modes, comments on a plan's lines, editor, file and dev-server previews, review changes, Git with remotes (Git hosts: clone, fetch, pull, push), Run & test | on (Bypass, Auto and remote access to it: off) | `./stack code disable` / `enable`, or Settings › Claude Code; the Code tab stays and says how while it is off |
-| [**Your AI subscriptions**](#your-ai-subscriptions) | your own plans in the sandbox, each through its provider's own, unmodified app signed in with its own sign-in: Claude Code on your Claude plan (`claude-sub`), Codex (ChatGPT), Gemini CLI, Copilot, Cursor, Grok — a **who answers** menu above the Terminal and Chat (where the tool itself opens in place of Open WebUI) and in the Code page's terminal panel; DevOS ADE never sees a login | on (the tools are in the sandbox; nothing is signed in) | `TERMINAL_AI_TOOLS` in `.env` (all, none or some); Settings › Claude Code › *Your AI subscriptions* |
+| [**Your AI subscriptions**](#your-ai-subscriptions) | your own plans in the sandbox, each through its provider's own, unmodified app signed in with its own sign-in: Claude Code on your Claude plan (`claude-sub`), Codex (ChatGPT), Gemini CLI, Copilot, Cursor, Grok — a **who answers** menu above the Terminal and Chat (where the tool itself opens in place of Open WebUI) and in the Code page's terminal panel; DevOS ADE never sees a login | on (the tools are in the sandbox; nothing is signed in) | `TERMINAL_AI_TOOLS` in `.env` (all, none or some); Settings › *Models & providers* |
 | [**Remote access**](#remote-access) | the portal from your phone or laptop over HTTPS ([on a phone](#using-it-on-your-phone)) | off | `./stack remote enable tailscale` / `disable` |
 | [**Voice**](#voice-speech-to-text) | speech-to-text for Chat's microphone and voice calls (Mistral Voxtral on Bedrock: AWS no longer accepts its audio since October 2026; your own OpenAI/Groq key, or the browser) | browser speech (Bedrock: on when your key can use Voxtral and AWS takes its audio) | `./stack stt set openai\|groq` / `bedrock` / `remove` |
-| [**OpenRouter**](#optional-openrouter) | hundreds of other models, some free | off | `./stack openrouter set` / `remove` |
-| [**Experiential Labs**](#optional-experiential-labs) | one gateway in front of many models, on its credits or your own provider keys | off | Settings › Chat & voice, or `./stack config set EXPLABS_API_KEY` |
+| [**OpenRouter**](#optional-openrouter) | hundreds of other models, some free | off | Settings › Models & providers, or `./stack openrouter set` / `remove` |
+| [**Experiential Labs**](#optional-experiential-labs) | one gateway in front of many models, on its credits or your own provider keys | off | Settings › Models & providers, or `./stack config set EXPLABS_API_KEY` |
 | [**Costs & budgets**](#costs--budgets) | a monthly budget per key, prices updated daily, `./stack costs` | on | Settings → Spending & budgets |
 | [**Updates**](#updating) | `./stack update` with a backup and `./stack rollback`; one-click on Home; automatic at night | one-click: setup asks; automatic: off | `./stack helper install`; `./stack helper auto on` / `off` |
 
@@ -626,8 +626,8 @@ subscription limits"*; its legal and compliance page still says developers may n
 own applications, or … route requests through Free, Pro, or Max plan credentials on behalf of their users"*.
 `claude-sub` is Claude Code itself, signed in by you with Anthropic's own flow on your own computer; DevOS ADE offers
 no Claude login and never holds the token. Claude on your plan in the Code page and as a Chat model — the Agent SDK
-running that same Claude Code, with its own login — waits for your choice: Settings › Claude Code › Your AI
-subscriptions, on Claude's row: **Use my Claude plan in the Code page and Chat** (off by default; turning it on works
+running that same Claude Code, with its own login — waits for your choice: Settings › Models & providers › Your AI
+subscriptions, on Claude Code's card: **Use my Claude plan in the Code page and Chat** (off by default; turning it on works
 from the computer running the stack).
 
 **Who answers** — one menu on each page:
@@ -643,7 +643,7 @@ from the computer running the stack).
   signed in with its own login, through the interface it ships for other apps (the Claude Agent SDK, Codex's app
   server, the ACP mode of Copilot and Grok) — in **Chat's own sandbox** (the sandbox's image, but a home of its own,
   no workspace and no project folder, and **sign-ins of its own**: each tool signs in once more for Chat, with the same
-  flow — `./stack subscriptions login codex --chat`, or Settings' Chat row for it; nothing is copied between the
+  flow — `./stack subscriptions login codex --chat`, or Settings' Chat line for it; nothing is copied between the
   terminal's sign-ins and Chat's), in an empty folder of the conversation's own, and **without
   tools**: each starts with every switch it has that turns its tools off, and at the first sign of a tool it still
   reaches for, the agent is killed there and then — nothing it says after reaches the answer (which says so; the chat
@@ -689,14 +689,15 @@ from the computer running the stack).
   files are a part of their own there: Claude Code on Bedrock and on your plan decide on Claude Code's part alone, as
   before, so a repository's `.github/` never keeps its CLAUDE.md and settings from them.
 
-Settings › Claude Code › **Your AI subscriptions** is the one place to connect them. It shows each tool, whether it
-said it is signed in and which kind (*ChatGPT*, *Claude Max* …: its own status command, or for Gemini CLI and Grok
-whether their login file is there — never opened; Copilot has no way to say: `/user` in it), its next step — **Sign in
-(terminal and Code page)**, which opens it in the terminal where its own sign-in starts, or for a tool left out of the
-sandbox the setting that puts it in — **Sign out** (its own sign-out) and **Check again** (both through the update
-helper, with the password); two rows for each Chat model: *Terminal & Code page* and *Chat*, each sign-in its own
-(Chat's **Sign in (Chat)** shows the command for a terminal on this computer: Chat's sandbox has no screen to sign in
-on); and on Claude's row the switch for Claude on your plan. Chat's sandbox always goes out through an egress proxy:
+Settings › [Models & providers](#models--providers) › **Your AI subscriptions** is the one place to connect them: a
+card for each tool, next to your keys' cards. It shows whether the tool said it is signed in and which kind
+(*ChatGPT*, *Claude Max* …: its own status command, or for Gemini CLI and Grok whether their login file is there —
+never opened; Copilot has no way to say: `/user` in it), the pickers it answers in, and its next step — **Sign in**,
+which opens it in the terminal where its own sign-in starts, or for a tool left out of the sandbox (or with the browser
+terminal off) the setting that puts it there — and **Sign out** (its own sign-out); two lines for each Chat model:
+*Terminal & Code page* and *Chat*, each sign-in its own (Chat's **Sign in** shows the command for a terminal on this
+computer: Chat's sandbox has no screen to sign in on); on Claude's card the switch for Claude on your plan; and under
+the cards **Check again** for each sandbox (Sign out and Check again go through the update helper, with the password). Chat's sandbox always goes out through an egress proxy:
 the terminal's, or — while the terminal's way out is the direct one (`TERMINAL_EGRESS=host`) — one of its own with the
 same rules (public addresses only; never this computer's services or your network), so your subscriptions stay Chat
 models whatever the terminal's way out is; with none (`off`) they are greyed, saying why. Usage counts against each
@@ -1686,10 +1687,11 @@ by what you came to do — a list on the left (on a phone, a section picker at t
 | Section | What is in it |
 |---|---|
 | **Account & security** | portal password, owner email, Admin (LiteLLM) password, session length, signed-in devices, storing prompts |
-| **AWS & models** | the AWS key (with *Check*), region, **Re-check models** |
+| **Models & providers** | a card for each provider: Bedrock (the AWS key, with *Check*, or this EC2 machine's role), OpenRouter (its key and models), Experiential Labs (its key and models) and *Your AI subscriptions* (Claude, Codex, Copilot, Cursor, Grok, Gemini: Sign in, Sign out, Check again; Claude's *Use my Claude plan*) — [below](#models--providers); *More*: OpenRouter's cap and aliases |
+| **AWS & models** | the region, **Re-check models** |
 | **Spending & budgets** | the budgets of Chat, `devos-claude` and the Terminal/Code page (with this period's spend), alert threshold and webhook; *More*: the setup key's budget, daily price updates |
-| **Chat & voice** | Chat's default model, models hidden from its picker, speech-to-text, OpenRouter, Experiential Labs (its key and models); *More*: the title/tag model, OpenRouter's cap and aliases |
-| **Claude Code** | the Code page with *Allow Bypass permissions* and *Auto mode*, the browser terminal (folder, *Sandbox internet access*, *Auto mode in the terminal*), Claude Code's main model, *Models for Claude Code*, the *Default model for new sessions*, *Project folders* ([folders of this computer](#folders-of-this-computer)), *What DevOS ADE may read on this computer* ([your sessions](#your-claude-code-and-devos-claude-sessions-from-this-computer) and setup: Take back) and *Bring your setup…* ([your setup](#your-claude-code-setup-from-this-computer)) and *Your AI subscriptions* ([each tool, signed in or not](#your-ai-subscriptions): Sign out, Check again); *More*: its sonnet/haiku slots, the sandbox's internet name lists (only these, never these), its memory and *Tools in the sandbox* (`TERMINAL_AI_TOOLS`) |
+| **Chat & voice** | Chat's default model, models hidden from its picker, speech-to-text; *More*: the title/tag model |
+| **Claude Code** | the Code page with *Allow Bypass permissions* and *Auto mode*, the browser terminal (folder, *Sandbox internet access*, *Auto mode in the terminal*), Claude Code's main model, *Models for Claude Code*, the *Default model for new sessions*, *Project folders* ([folders of this computer](#folders-of-this-computer)), *What DevOS ADE may read on this computer* ([your sessions](#your-claude-code-and-devos-claude-sessions-from-this-computer) and setup: Take back) and *Bring your setup…* ([your setup](#your-claude-code-setup-from-this-computer)); *More*: its sonnet/haiku slots, the sandbox's internet name lists (only these, never these), its memory and *Tools in the sandbox* (`TERMINAL_AI_TOOLS`) |
 | **Files & sharing** | the Files (RustFS) key pair and the shared MCP token (**Regenerate**) |
 | **Remote access** | status, allowed Tailscale login, remote admin actions, the Terminal and Code page remotely, previews remotely; *More*: Tailscale and own-domain details |
 | **Updates & backups** | daily release check (when it last checked, and **Check for updates**), automatic updates and their window, nightly backups (window, how many), **Back up now** and the list of backups; *More*: signed releases only, the helper's switches |
@@ -1776,6 +1778,31 @@ Values never go on a command line (`config set` asks; scripts use `./stack confi
 logged by key name only (`.state/helper/settings-audit.log`) and Home says "Settings changed: … at …" for a day.
 Keys that could send your data elsewhere (the AWS key, OpenRouter, Experiential Labs, speech-to-text providers, the alert
 webhook) change only from this computer, never from a remote device. Details: [docs/security.md](docs/security.md#settings).
+
+### Models & providers
+
+Settings › **Models & providers** is where every key and sign-in goes, and each one simply adds models: once a
+provider has its key or sign-in, its models are in every picker — Chat's *Who answers* (and Open WebUI's own menu),
+the Code page's model picker, the terminal's *Open* and `devos-claude --model` (`--models` lists them) — with nothing
+to set up page by page. A card for each provider:
+
+| Card | Its action | What it adds |
+|---|---|---|
+| **Bedrock** | *Add key* / *Replace key*: the AWS access key, checked with AWS first (*Check (free)*); or this EC2 machine's role (`./stack rotate-aws --use-instance-role`) | the models your AWS key can use (*AWS & models › Models your key can use*: Re-check) |
+| **OpenRouter** | *Add key* / *Replace key*, and *Remove the key* in its form | OpenRouter's models: all, the free ones, the paid ones or a list (*OpenRouter models*, in its card) |
+| **Experiential Labs** | *Add key* / *Replace key*, and *Remove the key* in its form | the gateway's models you list (*Experiential Labs models*, in its card) |
+| **Your AI subscriptions**: Claude Code, Codex, Copilot, Cursor, Grok, Gemini CLI | *Sign in* (it opens in the terminal, where its own sign-in starts) and *Sign out*; a Chat model's own *Sign in* for Chat; on Claude's card *Use my Claude plan in the Code page and Chat* | the tool in the Code page's *Who answers* (not Gemini CLI), as a Chat model (Claude, Codex, Copilot, Grok) and in the terminal's *Open* ([Your AI subscriptions](#your-ai-subscriptions)) |
+
+Each card says whether its provider is on (*On*, *Not set up*, *signed in · ChatGPT* …), how many models it adds
+(*Adds 24 models to every picker*, with how many are free) and where you pick which ones. The pickers list everything
+the providers add, narrowed only by Settings' own lists, named under the cards: *Models for Claude Code* (the Code page
+and `devos-claude`: all enabled, Anthropic's only, or a list — a card says when it leaves its models out) and *Hidden
+in Chat's model picker*. A provider without its key or sign-in sends nothing: its models are not served, and the
+pickers show a greyed entry that leads to its card (*OpenRouter models — … Settings › Models & providers › OpenRouter
+takes it*: [greyed out means "set it up here"](#your-ai-subscriptions)). Keys stay on this computer: added, replaced and
+removed only from the computer running DevOS ADE (on your devices each card says so, with the terminal command), and
+shown masked. Their old places — the AWS key in *AWS & models*, OpenRouter's and Experiential Labs' in *Chat & voice*,
+*Your AI subscriptions* in *Claude Code* — say where they are now, with a link.
 
 ## Remote access
 
@@ -1943,8 +1970,9 @@ add them next to your Bedrock models as `or/<id>`; it is **off unless you give i
 ./stack openrouter remove              # back to Bedrock only
 ```
 
-The portal's **Settings → Chat & voice → OpenRouter API key** does the same as `set` from the computer running DevOS ADE (not over
-remote access): paste the key there, and it is checked before anything changes.
+The portal's **Settings → Models & providers → OpenRouter** (*Add key*) does the same as `set` from the computer running DevOS
+ADE (not over remote access): paste the key there, and it is checked before anything changes; its card then says how
+many models it adds, and *OpenRouter models* in it picks which.
 
 An account without credits can only use free models, so `apply`, `set` and setup then offer just those
 (`OPENROUTER_MODELS=free`) unless you chose a set yourself. Once you have bought credits, the next `apply`,
@@ -2017,8 +2045,8 @@ connected there (*bring your own key*, BYOK), with no markup. DevOS ADE can add 
 ./stack status                         # one line: its models, and whether they run on the gateway's model details
 ```
 
-Or **Settings → Chat & voice → Experiential Labs key** from the computer running DevOS ADE (not over remote access):
-paste the key, and it is checked before anything changes. Blank removes it. Mint a key at
+Or **Settings → Models & providers → Experiential Labs** (*Add key*) from the computer running DevOS ADE (not over remote
+access): paste the key, and it is checked before anything changes; *Remove the key* takes it out. Mint a key at
 [platform.experientiallabs.ai › Settings › API keys](https://platform.experientiallabs.ai/settings/api-keys); the key is
 shown there once.
 
@@ -2060,7 +2088,7 @@ shown there once.
   refresh fails.
 - **Where they show up:** in LiteLLM as `xl/<id>`; in Chat as `<id> · Experiential Labs`, tagged *Experiential Labs*
   and the vendor, and as a group of Chat's **Who answers** menu (while there is no key, as for OpenRouter, a choice that
-  says so and takes you to Settings › Chat & voice › Experiential Labs key); on the Code page and in `devos-claude` as the *Experiential Labs* group (tool use as the details say: a
+  says so and takes you to Settings › Models & providers › Experiential Labs); on the Code page and in `devos-claude` as the *Experiential Labs* group (tool use as the details say: a
   model whose details say no tools is *chat only*; one whose details do not say, or fail safe, *not tested*); on Home
   as rows of the model table.
 - **What it costs.** The gateway reports what each call cost (`usage.cost`, USD), and that is what LiteLLM books —

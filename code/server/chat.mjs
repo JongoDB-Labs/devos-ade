@@ -285,7 +285,7 @@ export function createChatServer({ key, status, planAllowed = false, egressOff =
     const st = await status();
     const t = st?.tools?.[tool];
     const h = HARNESSES[tool];
-    if (tool === 'claude' && planAllowed !== true) return fail(res, 403, 'Claude on your plan is off: Settings › Claude Code › Your AI subscriptions has the switch');
+    if (tool === 'claude' && planAllowed !== true) return fail(res, 403, 'Claude on your plan is off: Settings › Models & providers › Claude Code has the switch');
     if (!t?.installed) return fail(res, 404, `${h.name} is not in the sandbox (Settings › Claude Code › More › Tools in the sandbox)`);
     if (t.signed === 'no') return fail(res, 409, `${h.name} is not signed in: open the Terminal tab (Open › ${h.name}) and sign in with its own sign-in, then ask again`);
     const msgs = readMessages(body.messages);
