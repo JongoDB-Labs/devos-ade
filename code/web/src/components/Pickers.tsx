@@ -156,6 +156,8 @@ function BedrockModelPicker({ compact }: { compact?: boolean }) {
       title={`Model: ${name}`}
       class="picker"
       panelClass="model-panel"
+      panelRole="dialog"
+      panelLabel="Model"
       testid="model-picker"
       openSignal={signal}
       focus=".mp-search"

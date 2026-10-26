@@ -28,8 +28,11 @@
 .side-tools .icon-btn.on { color: var(--accent); background: var(--active); }
 
 /* the top bar's chip */
+/* (the top bar: the chip keeps its project's name — at most about a quarter of the bar, then an ellipsis — while the
+   session's title gives way first: app.css .tb-left) */
 .proj-chip-dd { min-width: 0; }
-.proj-chip { max-width: 360px; border-color: var(--line) !important; background: var(--surface); }
+.tb-left > .proj-chip-dd { flex: none; }
+.proj-chip { max-width: min(360px, 26cqi); border-color: var(--line) !important; background: var(--surface); }
 .proj-chip .ic { flex: none; color: var(--muted); }
 .proj-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .proj-chip-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
@@ -53,7 +56,8 @@
 .gitr-loose ul { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 
 /* phones: the project above the session's title */
-.pt-project { display: inline-flex; align-items: center; gap: 3px; max-width: 100%; padding: 0; border: 0; background: none; color: var(--muted); font-size: 11px;
+/* (the phone's header: its project line a 24 px target, WCAG 2.5.8 — the line's own words stay small) */
+.pt-project { display: inline-flex; align-items: center; gap: 3px; max-width: 100%; min-height: 24px; padding: 0; border: 0; background: none; color: var(--muted); font-size: 11px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (pointer: coarse) {
   .proj-name { height: 40px; }

@@ -171,7 +171,8 @@ function TodoPanel() {
 export function ChatPane({ composerFooter, header = true, headerActions }: { composerFooter?: ComponentChildren; header?: boolean; headerActions?: ComponentChildren }) {
   const v = useSel(store, (s) => activeView(s));
   return (
-    <section class="chat" aria-label="Claude" data-testid="chat">
+    <main class="chat" aria-label="Claude" data-testid="chat">
+      <h1 class="sr">{v?.title || (v ? 'New session' : 'Claude Code')}</h1>
       {header && <ChatHeader actions={headerActions} />}
       <UnlockExpired />
       <BudgetBanner />
@@ -184,6 +185,6 @@ export function ChatPane({ composerFooter, header = true, headerActions }: { com
         <TaskList />
         <Composer footer={composerFooter} />
       </div>
-    </section>
+    </main>
   );
 }

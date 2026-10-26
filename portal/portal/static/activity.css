@@ -80,7 +80,7 @@
 .search-more { font: 400 11.5px var(--font-sans); text-transform: none; letter-spacing: 0; }
 .search-opt { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; padding: 7px 10px; border-radius: var(--r-m); cursor: pointer; }
 .search-opt[aria-selected="true"] { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
-.so-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.so-title { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }   /* (wraps: a setting's whole name, never "… › H…") */
 .so-sub { grid-column: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12.5px; }
 .so-ext { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: var(--muted); }
 .search-opt mark { padding: 0; border-radius: 2px; background: color-mix(in srgb, var(--accent) 30%, transparent); color: inherit; }
@@ -122,6 +122,7 @@
   .search-dlg { width: 100vw; height: var(--app-h, 100dvh); max-height: none; margin: 0; border: 0; border-radius: 0; }
   .search-box { padding-top: max(12px, env(safe-area-inset-top)); }
   .search-keys { display: none; }
+  .so-sub { overflow: visible; white-space: normal; overflow-wrap: anywhere; }   /* (a phone: where it is, whole) */
 }
 
 /* Touch screens: every control at least 44 px tall (as in mobile.css). */

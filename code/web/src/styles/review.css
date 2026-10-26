@@ -106,12 +106,13 @@
 .keys-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 4px 28px; }
 .keys-groups h3 { margin: 10px 0 6px; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
 
-/* --- the side panel's tabs: three fit (narrow: the chosen one keeps its name, the others their icon) --- */
+/* --- the side panel's tabs: all four with their names where they fit; narrower, the chosen one keeps its name and the
+   others their icon (with their name as a tooltip), never a name cut to "EXPLOR…" --- */
 .side { container-type: inline-size; }
 .side-tabs { overflow: hidden; }
 .side-tabs button { flex: 0 1 auto; min-width: 0; }
 .st-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@container (max-width: 340px) { .side-tabs button:not([aria-selected="true"]) .st-label { display: none; } }
+@container (max-width: 429.98px) { .side-tabs button:not([aria-selected="true"]) .st-label { display: none; } }
 .rv-row.picked { outline: 1px solid var(--accent); outline-offset: -1px; }
 
 .pill-warn { background: color-mix(in srgb, var(--bad) 14%, var(--surface)); color: var(--bad); gap: 4px; }

@@ -933,7 +933,7 @@ export async function setNotify(on: boolean): Promise<void> {
   if (perm === 'default') perm = await Notification.requestPermission().catch(() => 'denied' as NotificationPermission);
   if (perm !== 'granted') {
     // a frame of the portal on another host may not ask: the Code page in its own tab can
-    return toast('The browser does not allow notifications here. Allow them for this site, or open the Code page in its own tab.', 'error');
+    return toast('The browser does not allow notifications here. Allow them for this site, or open the Code page in its own tab.');
   }
   setPrefs((p) => ({ ...p, notify: true }));
 }

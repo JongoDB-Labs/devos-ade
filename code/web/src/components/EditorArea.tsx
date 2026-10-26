@@ -378,11 +378,12 @@ export function EditorTabs() {
   return (
     <div class="tabs-bar" role="tablist" aria-label="Open files" ref={bar}>
       {tabs.map((t) => (
+        // (the tab is its main button — a tab never holds another control —, Delete closes it from the keyboard; the ×
+        // beside it is the pointer's, out of the Tab order)
         <div
           key={t.key}
           class={`etab${t.key === active ? ' on' : ''}${t.kind === 'file' && t.dirty ? ' dirty' : ''}`}
-          role="tab"
-          aria-selected={t.key === active}
+          role="presentation"
           title={t.kind === 'devserver' ? `Preview of localhost:${t.port} in the sandbox` : t.kind === 'review' ? 'Review the changes' : t.path}
           onMouseDown={(e) => {
             if (e.button === 1) {
@@ -391,10 +392,30 @@ export function EditorTabs() {
             }
           }}
         >
-          <button type="button" class="etab-main" onClick={() => setActiveTab(t.key)}>
+          <button
+            type="button"
+            class="etab-main"
+            role="tab"
+            aria-selected={t.key === active}
+            aria-keyshortcuts="Delete"
+            onClick={() => setActiveTab(t.key)}
+            onKeyDown={(e) => {
+              if (e.key !== 'Delete') return;
+              e.preventDefault();
+              closeTab(t.key);
+              requestAnimationFrame(() => bar.current?.querySelector<HTMLElement>('.etab.on .etab-main')?.focus());
+            }}
+          >
             <TabTitle tab={t} all={tabs} />
           </button>
-          <button type="button" class="etab-x" title="Close" aria-label={`Close ${t.kind === 'devserver' ? `the preview of :${t.port}` : t.kind === 'review' ? 'the review' : basename(t.path)}`} onClick={() => closeTab(t.key)}>
+          <button
+            type="button"
+            class="etab-x"
+            tabIndex={-1}
+            aria-hidden="true"
+            title={`Close ${t.kind === 'devserver' ? `the preview of :${t.port}` : t.kind === 'review' ? 'the review' : basename(t.path)} (Delete)`}
+            onClick={() => closeTab(t.key)}
+          >
             <span class="etab-dot" aria-hidden="true" />
             <Icon name="close" size={13} />
           </button>

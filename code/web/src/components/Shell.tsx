@@ -169,7 +169,7 @@ function SessionTitle({ onClick }: { onClick: () => void }) {
   return (
     <button type="button" class="sess-switch" onClick={onClick} title="Projects and their sessions" data-testid="session-switch">
       <Icon name="history" size={15} />
-      <span class="sess-switch-title">{v ? v.title || 'New session' : 'No session'}</span>
+      <span class="sess-switch-title" title={v?.title || undefined}>{v ? v.title || 'New session' : 'No session'}</span>
       {pendingOther > 0 && (
         <span class="badge warn" title="Another session is waiting for your permission">
           {pendingOther}
@@ -969,9 +969,9 @@ function ChatHeaderPhone() {
       <button type="button" class="pt-project" onClick={() => setSheet('sessions')} title={`Project: ${project.name} (${project.path})`} data-testid="phone-project">
         <Icon name={project.workspace ? 'files' : 'folder'} size={11} /> {project.name}
       </button>
-      <span class="pt-title">{v?.title || (v ? 'New session' : 'Code')}</span>
+      <span class="pt-title" title={v?.title || undefined}>{v?.title || (v ? 'New session' : 'Code')}</span>
       {v && (
-        <span class={`state state-${v.state}`}>
+        <span class={`state state-${v.state}`} title={`${v.state === 'busy' ? 'working' : v.state}${model ? ` · ${model}` : ''}`}>
           {v.state === 'busy' ? <Spinner size={10} /> : <span class="sdot" />}
           {v.state === 'busy' ? 'working' : v.state}
           {model ? ` · ${model}` : ''}

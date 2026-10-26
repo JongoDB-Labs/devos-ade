@@ -92,6 +92,10 @@ export function Dropdown(props: {
   triggerClass?: string;
   /** what gets the focus when it opens (a selector in the panel; default: the checked item, else the first) */
   focus?: string;
+  /** a panel that holds more than menu items (a search field, its own buttons) is a dialog, named PANELLABEL: a menu
+   *  may hold menu items only */
+  panelRole?: 'menu' | 'dialog';
+  panelLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
@@ -171,7 +175,7 @@ export function Dropdown(props: {
       aria-label={props.title}
       aria-describedby={props.tip ? tipId(props.tip.id) : undefined}
       aria-keyshortcuts={props.tip?.keys ? ariaKeys(props.tip.keys) : undefined}
-      aria-haspopup="true"
+      aria-haspopup={props.panelRole === 'dialog' ? 'dialog' : 'true'}
       aria-expanded={open}
       disabled={props.disabled}
       data-testid={props.testid}
@@ -190,7 +194,7 @@ export function Dropdown(props: {
         button
       )}
       {open && (
-        <div ref={panel} class={`dd-panel${props.panelClass ? ' ' + props.panelClass : ''}`} role="menu">
+        <div ref={panel} class={`dd-panel${props.panelClass ? ' ' + props.panelClass : ''}`} role={props.panelRole ?? 'menu'} aria-label={props.panelLabel}>
           {props.children(close)}
         </div>
       )}

@@ -112,7 +112,7 @@ function Row(props: { id: string; title: string; sub: string; view?: SessionView
       ) : (
         <button type="button" class="sess-main" onClick={() => (props.picking ? props.onPick(!props.picked) : void (open ? activate(props.id) : resumeSession(props.id)))}
           title={props.gone ? 'Show this session (read only: its folder is no longer added)' : open ? 'Show this session' : 'Resume this session'}>
-          <span class="sess-title">
+          <span class="sess-title" title={props.title || undefined}>
             {props.harness && props.harness !== 'bedrock' && (
               <span class="imp-badge plan" title={props.harness === 'claude' ? 'Claude on your plan' : `${HARNESS_BADGE[props.harness]} on your plan`} data-testid="session-harness">
                 {HARNESS_BADGE[props.harness]}

@@ -11,8 +11,9 @@ body.shell { height: 100vh; display: grid; grid-template-columns: 200px minmax(0
 .tab:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 6%, transparent); }
 /* the page shown: a teal pill (the DevOS website marks its page with a pill; ADE's is its teal) */
 .tab[aria-current="page"] { background: var(--accent); color: var(--accent-ink); }
-.popout { display: grid; place-items: center; width: 30px; height: 30px; border-radius: var(--r-pill); color: var(--muted); opacity: 0.55; }
-.popout:hover, .popout:focus-visible { opacity: 1; color: var(--ink); }
+/* (the pop-out arrow: --muted itself, 3:1 and more on the sidebar — never faded below it) */
+.popout { display: grid; place-items: center; width: 30px; height: 30px; border-radius: var(--r-pill); color: var(--muted); }
+.popout:hover, .popout:focus-visible { color: var(--ink); }
 .logout { margin-top: auto; padding: 0 2px; }
 .logout button { width: 100%; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--r-pill); background: none; color: var(--muted); text-align: left; }
 .logout button:hover { color: var(--ink); border-color: var(--ink); }
@@ -55,6 +56,11 @@ html.nav-collapsed .nav-chev { transform: scaleX(-1); }   /* « collapses, » ex
   border-radius: var(--r-m); background: var(--surface); color: var(--ink); font: inherit; }
 .answers-folder select { max-width: 180px; }
 .answers-note { flex: 1 1 auto; overflow: hidden; color: var(--muted); white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
+@media (max-width: 767.98px) {
+  .answers-bar { padding: 0 10px; }
+  .answers-group { flex: 1 1 auto; }
+  .answers-bar select { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+}
 .frames.answers-on iframe[data-app="terminal"], .frames.answers-on iframe[data-app="chat"], .frames.answers-on iframe[data-app="chat-tool"] {
   top: var(--answers-h); height: calc(100% - var(--answers-h)); }
 .home { height: 100%; overflow-y: auto; padding: 28px clamp(16px, 4vw, 48px) 48px; }
@@ -75,6 +81,8 @@ html.nav-collapsed .nav-chev { transform: scaleX(-1); }   /* « collapses, » ex
 .release-line[data-state="error"] .rl-state, .release-line[data-state="limit"] .rl-state,
 .release-line[data-state="failed"] .rl-state { color: var(--warn); }
 .release-line .rl-link { color: var(--accent); font-weight: 500; }
+.release-line .rl-check, .release-line .rl-link { display: inline-flex; align-items: center; min-height: 24px; }
+.release-line .rl-more > summary { min-height: 24px; line-height: 24px; }
 .release-line .rl-check[aria-disabled="true"] { color: var(--muted); text-decoration: none; cursor: default; }
 /* About this check: why the line says what it says, and that nothing about this install is sent (also the button's description) */
 .release-line .rl-more > summary { cursor: pointer; color: var(--muted); }
@@ -188,7 +196,7 @@ td.provider .tier { margin-left: 6px; padding: 0 6px; border-radius: var(--r-s);
 
 #models-note, .logins .note { margin: 0 0 14px; }
 .logins .logins-list + .note { margin: 14px 0 0; }
-.logins-more summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+.logins-more summary { min-height: 24px; line-height: 24px; cursor: pointer; color: var(--muted); font-size: 14px; }
 .logins-more[open] summary { margin-bottom: 12px; }
 a.form-link { text-decoration: none; }
 a.form-link:not([href]) { display: none; }
@@ -204,6 +212,7 @@ a.form-link:not([href]) { display: none; }
 .update-sub { margin: 14px 0 6px; font-size: 14px; font-weight: 600; }
 .update-steps { margin: 0 0 12px; padding-left: 20px; font-size: 14px; display: grid; gap: 3px; }
 .update-notes { margin-top: 10px; font-size: 14px; }
+.update-notes summary, .release > summary { min-height: 24px; line-height: 24px; }
 .update-notes summary { cursor: pointer; color: var(--muted); }
 .notes-body { max-height: 260px; overflow-y: auto; margin-top: 8px; padding: 4px 12px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--bg); }
 .notes-body h4, .notes-body h5 { margin: 10px 0 4px; font-size: 14px; }
@@ -329,7 +338,7 @@ a.install-btn, .install-actions a.action { text-decoration: none; cursor: pointe
 .tab[aria-current="page"] .tab-badge:not(.bypass) { background: var(--accent-ink); color: var(--accent); }
 
 /* The browser terminal's line on the Claude Code card (terminal.js): a button that reads like a link. */
-.linkish { border: 0; padding: 0; background: none; color: var(--accent); font: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.linkish { min-height: 24px; border: 0; padding: 0; background: none; color: var(--accent); font: inherit; text-decoration: underline; text-underline-offset: 2px; }
 
 /* Home's Code card (code.js): the sessions that need you, Resume, and a prompt to open in Code */
 .code-card .code-status { margin: 0 0 10px; }
@@ -351,6 +360,8 @@ a.install-btn, .install-actions a.action { text-decoration: none; cursor: pointe
 .code-item.off .tab svg { opacity: 0.55; }
 .tab-off { margin-left: auto; padding: 0 6px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted);
   font-size: 11px; font-weight: 500; line-height: 16px; }
+/* (on the teal pill of the page shown: the pill's own ink, as a badge on a coloured button) */
+.tab[aria-current="page"] .tab-off { color: var(--accent-ink); border-color: var(--accent-ink); }
 .code-off-page { height: 100%; overflow-y: auto; padding: 28px clamp(16px, 4vw, 48px) 48px; }
 .code-off-head h1 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .code-off-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--r-m); background: var(--surface);

@@ -266,10 +266,10 @@
   function sectionNav() {
     const list = el("ul", {});
     for (const s of sections) {
-      if (s.id === "diagnostics") list.append(el("li", { class: "set-nav-sep", role: "presentation" }));
+      // (Diagnostics, Advanced and About apart: a rule above Diagnostics' item — the list holds list items only)
       const b = el("button", { type: "button", class: "set-nav-item", "data-section": s.id, text: s.title });
       b.addEventListener("click", (ev) => showSection(s.id, { focus: ev.detail === 0 }));
-      list.append(el("li", {}, b));
+      list.append(el("li", s.id === "diagnostics" ? { class: "set-nav-split" } : {}, b));
     }
     return el("nav", { class: "set-nav", "aria-label": "Settings sections" }, list);
   }
