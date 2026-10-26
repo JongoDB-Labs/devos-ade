@@ -24,7 +24,7 @@
     // is a tab of the bar, framed like Chat (its own phone layout: chat first, sheets for the rest; code.js). A page of
     // the portal shows on a phone too (app.js PAGES: the Code tab's explanation while the Code page is off).
     allowTab: (tab) => (PHONE.matches && DESKTOP_ONLY.has(tab) && !PAGES.includes(tab) ? "chat" : tab),
-    // Home first, on a phone too: what needs you (Home's Code card, the needs-you banner) and the first visit's
+    // Home first, on a phone too: what needs you (Home's Continue row, the needs-you banner) and the first visit's
     // welcome (tour.js: window.bnWelcome) start there.
     defaultTab: () => "home",
   };
@@ -97,7 +97,7 @@
     return hint;
   }
 
-  // --- Home on a phone: one health line that opens the full service list.
+  // --- Home's Services (every screen): one health line that opens the full service list.
   function healthLine() {
     const list = $("#services");
     if (!list) return;

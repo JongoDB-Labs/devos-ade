@@ -7,11 +7,12 @@
 // once the portal is idle, so the badge counts prompts before the tab is opened — on a phone too: the badge and
 // Activity's needs-you banner are how you learn a session waits; a browser that never opened it loads nothing from the
 // code host. Shown again on a phone, the page is told so ({type: "bn-portal-shown"}: it shows the session that waits for
-// you, its card in view); a session named here (Home's card, Activity, search, the portal's #code/<id> — a
+// you, its card in view); a session named here (Home's Continue row, Activity, search, the portal's #code/<id> — a
 // notification's address) is shown in place ({type: "bn-portal-session", id}) once the page runs, else by its deep link.
-// Home's Code card: the sessions that need you and the recent ones as the framed page
-// reports them (titles are sandbox data: text only, capped), Resume and Ask links (deep links: ?session=, and ?prompt=
-// — a draft the Code page marks as coming from a link, never sent by itself), and the terminal key's budget.
+// What the framed page reports (the sessions that need you, those open: titles are sandbox data, text only, capped)
+// goes to Home's Continue row (home.js, bn:code-status), Activity and the search; the ways in are deep links
+// (?session=, ?new=1&project=, ?git=, ?setup=; ?prompt= — a draft the Code page marks as coming from a link, never sent
+// by itself).
 // The tab is there while the Code page is off on this site too (turned off, or not allowed over remote access): muted,
 // with an "off" pill, it then shows a page of the portal's own — what the Code page is, what turning it on does and how —
 // with no frame, no badge and nothing loaded from the code host.
@@ -55,11 +56,11 @@
         title: "Open Code in its own window", "aria-label": "Open Code in its own window" }, icon(POPOUT))));
   }
 
-  // --- Home's Code card ---
+  // --- deep links into the Code page ---
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   const STATES = { waiting: "needs you", working: "working", idle: "idle" };
   let reported = null;   // {waiting, sessions} from the framed page; null until it reports
-  // linkTo({session, prompt}) -> the Code page's address with that deep link
+  // linkTo({session, prompt, new, project}) -> the Code page's address with that deep link
   function linkTo(params) {
     const u = new URL(appUrl("code"));
     for (const [k, v] of Object.entries(params)) if (v) u.searchParams.set(k, v);
@@ -76,48 +77,6 @@
       try { f.contentWindow.postMessage({ type: "bn-portal-session", id: params.session }, new URL(appUrl("code")).origin); return; } catch (_) { /* below */ }
     }
     appFrame("code").src = linkTo(params);
-  }
-  function codeCard() {
-    let card = $("section.code-card");
-    if (card) return card;
-    const claude = $("section.claude");
-    if (!claude) return null;
-    const input = el("input", { type: "text", id: "code-ask", maxlength: "4000", placeholder: "Ask Claude in Code…", "aria-label": "A prompt for the Code page" });
-    const form = el("form", { class: "code-ask" }, input, el("button", { type: "submit", class: "action primary", text: "Open in Code" }));
-    form.addEventListener("submit", (e) => { e.preventDefault(); const t = input.value.trim(); if (t) { openLink({ prompt: t }); input.value = ""; } });
-    const open = el("button", { type: "button", class: "linkish", text: "Open Code" });
-    open.addEventListener("click", () => showTab("code"));
-    card = el("section", { class: "code-card", "aria-labelledby": "code-card-title" },
-      el("h2", { id: "code-card-title", text: "Code" }),
-      el("p", { class: "note code-status", id: "code-status", "aria-live": "polite" }),
-      el("ul", { class: "code-sessions", id: "code-sessions" }),
-      form,
-      el("p", { class: "note", text: "Opens Code with your text in its prompt box, to read and send there: nothing is sent from here." }),
-      el("p", { class: "note code-budget", id: "code-budget", hidden: "" }),
-      el("p", { class: "note" }, open));
-    // high in the second column, under Services: "N sessions need you" is something to act on
-    const services = $("section.services");
-    if (services) services.after(card); else claude.before(card);
-    renderCard();
-    return card;
-  }
-  function renderCard() {
-    const status = $("#code-status"), list = $("#code-sessions");
-    if (!status || !list) return;
-    list.replaceChildren();
-    if (!reported) {
-      status.textContent = used() ? "Your sessions show here once the Code page has loaded (it loads in the background)." : "Claude Code with a chat, your files and permission prompts: open Code to start.";
-      return;
-    }
-    const n = reported.waiting;
-    status.textContent = n ? `${n} session${n === 1 ? "" : "s"} need${n === 1 ? "s" : ""} you` : reported.sessions.length ? "Nothing waits for you." : "No session is open.";
-    status.classList.toggle("waiting", n > 0);
-    for (const s of reported.sessions.slice(0, 5)) {
-      const resume = el("a", { class: "linkish", href: linkTo({ session: s.id }), text: s.state === "waiting" ? "Answer" : "Resume" });
-      resume.addEventListener("click", (e) => { e.preventDefault(); openLink({ session: s.id }); });
-      list.append(el("li", { class: `code-session ${s.state}` }, el("span", { class: "code-dot", "aria-hidden": "true" }),
-        el("span", { class: "code-title", text: s.title || "Untitled session" }), el("span", { class: "note code-state", text: STATES[s.state] }), resume));
-    }
   }
   // the framed page's Git hosts uses (its Git panel: your pushes and pulls, Claude's own git or gh getting a
   // credential), checked: ids, times, a few words each, at most 10 — shown as text by Activity
@@ -141,13 +100,6 @@
   function shownTitle(t) {
     return Array.from(t.slice(0, 240)).slice(0, 120).join("").replace(/[\t\n\r]/g, " ")
       .replace(INVISIBLE, (c) => `⟨U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")}⟩`);
-  }
-  function budgetLine(d) {
-    const p = $("#code-budget");
-    const k = d && d.spend && (d.spend.keys || []).find((x) => x.alias === "claude-code-terminal");
-    if (!p) return;
-    p.hidden = !k || k.error || typeof k.spend !== "number";
-    if (!p.hidden) p.textContent = `Its key (Terminal / Code page): ${usd(k.spend)}${k.max_budget != null ? ` of ${usd(k.max_budget)}` : ""} this period.`;
   }
 
   // The framed page says how many permission prompts wait ({type: "bn-code-status", pending: N, busy, bypass, waiting,
@@ -179,12 +131,11 @@
       reported = { waiting: Number.isInteger(e.data.waiting) && e.data.waiting > 0 ? Math.min(e.data.waiting, 99) : 0, sessions: takeSessions(e.data.sessions), git: takeGit(e.data.git),
         // how many Git hosts are connected (a number only; the walkthrough's "Connect a git host" step), null: not known
         hosts: Number.isInteger(e.data.hosts) && e.data.hosts >= 0 ? Math.min(e.data.hosts, 99) : null };
-      renderCard();
       // the frame reported since it (re)loaded: the global search may ask it (search.js); a reload (a deep link, the
       // unlock ending) waits for its next report
       if (!hooked.has(f)) { hooked.add(f); f.addEventListener("load", () => { loadedAt = Date.now(); }); }
       reportedAt = Date.now();
-      // Activity (activity.js): the sessions that wait for you — the same checked copy the card shows
+      // Home's Continue row (home.js) and Activity (activity.js): the sessions that wait for you, those open — checked
       document.dispatchEvent(new CustomEvent("bn:code-status", { detail: { waiting: reported.waiting, sessions: reported.sessions.map((x) => ({ ...x })), git: reported.git.map((x) => ({ ...x })), hosts: reported.hosts } }));
     });
     // A greyed item of the Code page chosen ({type: "bn-code-setup", reason}: catalog/setup-links.tsv — its Who
@@ -210,6 +161,8 @@
     ready: () => Boolean(reported) && reportedAt > loadedAt && Boolean(document.querySelector('#frames iframe[data-app="code"]')),
     sessions: () => (reported ? reported.sessions.map((x) => ({ id: x.id, title: x.title, state: x.state })) : []),
     openSession: (id) => { if (typeof id === "string" && UUID.test(id)) openLink({ session: id }); },
+    // Home's New session: the start of a new one (no earlier session shown), in that project of the page's list
+    newSession: (project) => openLink({ new: "1", project: typeof project === "string" && /^(ws|p_[0-9a-f]{8})$/.test(project) ? project : "" }),
     // Settings › Claude Code › Git hosts, an Activity item of one, the walkthrough: the Code page's Git hosts — and its
     // Clone dialog (the walkthrough; empty: nothing is cloned by a link)
     openGitHosts: () => openGit("hosts"),
@@ -390,8 +343,6 @@
   // An update nobody watched turning the Code page on by default (lib/code.sh code_default_notice) is said once in
   // Activity (activity.js, from /api/activity), with Keep and Turn off: it used to be a banner on Home.
 
-  // (Home's Code card first: the framed page's first report finds it there)
-  if (here) { codeCard(); document.addEventListener("bn:summary", (e) => budgetLine(e.detail)); }
   addTab();
   if (here) { listen(); routes(); window.addEventListener("load", preload, { once: true }); } else offPage();
   cardLine();

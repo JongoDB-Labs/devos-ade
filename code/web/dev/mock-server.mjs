@@ -1789,6 +1789,7 @@ const jsonBody = async (req) => {
   return req.bnBody;
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+let lastRecent = null;   // (POST /.bn/recent's last body: what the page told the "portal")
 
 function sessionInfo(x) {
   const cwd = x.cwd ?? WS;
@@ -2920,6 +2921,12 @@ function bn(req, res, url) {
     return json(res, 200, { session: id, rows: spendRows.get(id) ?? [], key: { ...keyBudget, error: null } });
   }
   if (url.pathname === '/.bn/terminal-launch' && req.method === 'POST') return bnTerminalLaunch(req, res);
+  // Home's Continue row (the portal keeps the page's report in memory): the last one, for a test to look at
+  if (url.pathname === '/.bn/recent' && req.method === 'POST') {
+    if (req.headers['x-requested-with'] !== 'bn-code') return json(res, 403, { error: 'cross-site request refused' });
+    return jsonBody(req).then((b) => { lastRecent = b; res.writeHead(204, { 'cache-control': 'no-store' }); res.end(); });
+  }
+  if (url.pathname === '/.bn/recent' && req.method === 'GET') return json(res, 200, lastRecent ?? {});
   if (url.pathname === '/.bn/answers') {
     // your AI subscriptions' tools in the sandbox (the portal's answers.py): none signed in here; a hostile name in
     // HOSTILE_MODE (the panel's Open menu shows it as text)

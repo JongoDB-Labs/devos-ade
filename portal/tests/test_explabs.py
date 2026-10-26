@@ -115,9 +115,9 @@ def test_the_page_scripts_name_the_gateways_group_and_its_settings_row():
     js = (root / "answers.js").read_text(encoding="utf-8")
     assert 'label: "Experiential Labs"' in js and 'setupOf(d, "explabs-off")' in js and "TODO(setup-links)" not in js
     st = (root / "settings.js").read_text(encoding="utf-8")
-    assert 'explabs: ["LiteLLM"]' in st and '"xl_key"' in st
+    assert 'explabs: ["the model gateway"]' in st and '"xl_key"' in st   # (LiteLLM, in the page's words)
     # removing the key restarts LiteLLM alone, and the dialog says so
-    assert "the Code page and the API; LiteLLM restarts (about 30 s)." in st
+    assert "the Code page and the API; the model gateway restarts (about 30 s)." in st
 
 
 def test_the_greyed_entry_goes_to_a_live_settings_row():

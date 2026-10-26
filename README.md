@@ -121,7 +121,8 @@ Then it:
 At the end it prints the portal address, the first time only (and only to a terminal) its password (always in
 `.env` as `PORTAL_PASSWORD`; `./stack password --show` prints it) and a `devos-claude` command to try, and, when
 run in a terminal, opens the portal: the installed app if you have one, else a browser tab (`BEDROCK_NOW_NO_OPEN=1`
-turns that off). On your first visit (not on a phone) the [walkthrough](#walkthrough) opens by itself.
+turns that off). On your first visit Home starts with [Get started](#home-continue-and-get-started): five steps
+that tick themselves off; the full [walkthrough](#walkthrough) is under **Walkthrough**.
 
 **What it takes:** about 5 GB of Docker images (downloaded once, announced first), 5–15 minutes on the first
 run depending on your connection (about 2 minutes after that), and under $0.05 of Bedrock usage to try it
@@ -169,7 +170,7 @@ your browser.
 
 | Tab | What it is | Sign-in |
 |---|---|---|
-| **Home** | Health of each service, spend per key against its budget, the models your key can use with prices, the price source, the `devos-claude` command; with the Code page on, its card (the sessions that need you, Resume, a prompt to open in Code). Under the title: *Up to date · checked 12 min ago ·* **Check for updates** ([Updating](#updating)). Refreshes every 30 s; makes no Bedrock calls. Above the tabs: **Search** (Ctrl/⌘+K) and the **Activity** bell ([Activity and search](#activity-and-search)). | the portal |
+| **Home** | First **Continue**: the Code sessions that need you, the recent ones and your newest chats, each a click away, with **New session** and **New chat** — and on a first visit **Get started** ([Home: Continue and Get started](#home-continue-and-get-started)). Under them: spend per key against its budget, the services (one line), the models your key can use (one line, the table with prices under it), the `devos-claude` command. Under the title: *Up to date · checked 12 min ago ·* **Check for updates** ([Updating](#updating)). Refreshes every 30 s; makes no Bedrock calls. Above the tabs: **Search** (Ctrl/⌘+K) and the **Activity** bell ([Activity and search](#activity-and-search)). | the portal |
 | **Chat** | Open WebUI at `chat.bedrock-now.localhost`: chat, documents/knowledge, images (if enabled) | automatic |
 | **Code** | On by default: Claude Code with a chat and your files, at `code.bedrock-now.localhost` ([The Code page](#the-code-page)); while it is off the tab stays, muted, and says how to turn it on | the portal, then the portal password again (12 hours) |
 | **Admin** | LiteLLM's UI at `admin.bedrock-now.localhost/ui`: keys, spend by model and day, logs | automatic |
@@ -213,13 +214,36 @@ date. Clicking it opens that version's release notes on GitHub (a build after a 
 update is available it carries a small dot and leads to the update card's release notes instead; after an update,
 reloading the page shows the new version.
 
+### Home: Continue and Get started
+
+**Continue** is the first thing on Home: what to pick up again, each one click (or tap) away.
+
+- **Needs you**: the Code sessions waiting for an answer (a permission prompt, a question, a plan) — **Answer** opens
+  the Code tab at that session (on a phone, the Code page in its own tab).
+- **Recent**: the latest Code sessions (**Resume**; *working* while a turn runs) and Chat's newest conversations
+  (**Open**: Chat at that conversation), newest first.
+- **New session** opens the Code page at a new session's start, in the project it shows (*New session in my-app*);
+  **New chat** opens a new conversation in Chat.
+
+The Code page itself tells the portal which of its sessions Home may show — whenever it is open in a browser that
+unlocked it, framed in the Code tab or not — and the portal keeps that in memory only (gone at Sign out); when the Code
+page has not been open for a while, Home says how old the list is. Chat's conversations come from Open WebUI's own list.
+
+**Get started** is a first visit's checklist, above Continue: sign in, add a model provider (or confirm Bedrock's),
+open Code and run a first session, open Chat and ask something, set a budget. Each step ticks itself off from what the
+portal sees — enabled chat models, a session the Code page reported, a conversation in Chat, a budget changed from its
+default (or **Keep these**) — and offers its next action. **Full walkthrough** opens the whole tour; **Hide** puts the
+checklist away in this browser, and the walkthrough's head (*Get started on Home*) brings it back. A browser that used
+Home before Get started existed does not see it.
+
 ### Walkthrough
 
-New here? **Walkthrough** at the bottom of the sidebar takes you through what a developer uses in DevOS ADE, in six
-parts you can fold away or skip (about 30 minutes for all of it, a few cents of usage). It opens by itself on your
-first visit (not on a phone, where it would cover Chat); on a desktop it widens the sidebar instead of covering an app
-(with the sidebar folded to its icons, it is a card beside them), on a tablet it is a card next to the icons, and on a
-phone it is under **More**.
+**Walkthrough** at the bottom of the sidebar takes you through what a developer uses in DevOS ADE, in six parts you can
+fold away or skip (about 30 minutes for all of it, a few cents of usage): the full tour, beside Get started's five
+steps (it no longer opens by itself on a first visit; Get started's **Full walkthrough** opens it). On a desktop it
+widens the sidebar instead of covering an app (with the sidebar folded to its icons, it is a card beside them), on a
+tablet it is a card next to the icons, and on a phone it is a sheet above the tab bar, under **More**, with the step's
+Back and Next pinned to its bottom.
 
 1. **Set up:** the Bedrock models your AWS key can use (and how to get more), optional OpenRouter models and voice,
    Claude Code on your computer (`devos-claude` and its lean `~/.claude-bedrock` config folder), **Connect a git
@@ -344,10 +368,10 @@ so a phone needs remote access (HTTPS) turned on first; a tablet or a small brow
   Android, open it in Chrome and tap **⋮ → Install app** (Chrome offers this over HTTPS only; over plain
   http it can still add a shortcut). It opens full screen with the DevOS ADE icon, like any other app.
 - **Phone layout:** a tab bar at the bottom with **Home**, **Chat**, **Code** and **More**. The first sign-in
-  opens on Home with the walkthrough's first step (a sheet you close with ✕); after that the phone remembers the tab
-  you used last. Home is compact: total spend and each key's budget bar, one health line
-  (tap it for every service), the update card when there is one, and the models as cards with an
-  **Enabled only** filter (on by default on a phone). Chat and Code fill the screen and shrink above the keyboard,
+  opens on Home with **Get started** at its top; after that the phone remembers the tab you used last. Home is compact:
+  Continue first (what to pick up again, a tap each), then total spend and each key's budget bar, one health line (tap
+  it for every service), the update card when there is one, and the models line (tap it for the models as cards, with
+  an **Enabled only** filter, on by default on a phone). Chat and Code fill the screen and shrink above the keyboard,
   so the message box stays visible.
 - **Code on a phone** is the Code page's own phone layout (the chat first; files, the editor, Git and the rest as
   sheets), unlocked once with the portal password. When a session waits for you (a permission card, a question, a
@@ -869,8 +893,9 @@ Service to define and approve) or `code.<your domain>` ([Remote access](#remote-
   have read it** (the Send button does), and it always goes into a **new session in Manual mode** — never into the
   session shown, never in the mode you last used. `?git=hosts` and `?git=clone` open the Git panel's Git hosts or
   (empty) Clone dialog — Settings › Claude Code › Git hosts, Activity and the walkthrough use them. All of them leave
-  the address bar at once (a reload does not bring the draft back), and they survive the unlock. Home's Code card uses
-  the first two.
+  the address bar at once (a reload does not bring the draft back), and they survive the unlock. `?new=1` opens a
+  new session's start (no earlier session shown) and `?project=` that project of the list: Home's **New session**.
+  Home's Continue row uses `?session=` and `?new=1`.
 - **Model, effort, cost.** You pick the model — [any chat model of the catalog](#models-for-claude-code), Bedrock's
   and OpenRouter's, with this stack's prices — and the effort; the meter shows each turn's and the session's cost and
   the context window's use. A switch Claude Code refuses is taken back and said ("Still on …"); the page lists the
@@ -893,10 +918,13 @@ Service to define and approve) or `code.<your domain>` ([Remote access](#remote-
   plugins, MCP, Settings), sessions to resume, files anywhere in the workspace and what you ran last, matched as you
   type and run by keyboard alone (`>` only actions, `#` only sessions). **Keyboard shortcuts** (`Ctrl/⌘+/` or `?`)
   lists every shortcut of the page.
-- **The status bar's quick actions** (desktop and tablet): *Terminal* (`Ctrl+\``), *Run* (`Alt+R`), *Ports*
-  (`Alt+P`), the permission mode (`Shift+Tab`, `Alt+M`) and the model — 28 px buttons (40 px on a touch screen) with an
-  icon and a label (on a tablet the less used ones as icons), each with a tip that says what it does and its shortcut,
-  on hover and on keyboard focus. On a phone they are in the ⋯ sheet, as 48 px rows.
+- **The status bar's quick actions** (desktop and tablet): *Keys* (the keyboard shortcuts), *Terminal* (`Ctrl+\``),
+  *Run* (`Alt+R`), *Ports* (`Alt+P`), the permission mode (`Shift+Tab`, `Alt+M`) and the model — 28 px buttons (40 px
+  on a touch screen) with an icon and a label (on a tablet the less used ones as icons), each with a tip that says what
+  it does and its shortcut, on hover and on keyboard focus. On a phone they are in the ⋯ sheet, as 48 px rows.
+- **Chat first.** On a desktop, until a file, a diff or a preview opens (and while the terminal is closed), the chat
+  has the middle of the page, beside the explorer; the editor and its tabs come in at the first file, with the chat at
+  the width you gave it on the right.
 
 #### Projects
 
@@ -1712,7 +1740,7 @@ by what you came to do — a list on the left (on a phone, a section picker at t
 |---|---|
 | **Account & security** | portal password, owner email, Admin (LiteLLM) password, session length, signed-in devices, storing prompts |
 | **Models & providers** | a card for each provider: Bedrock (the AWS key, with *Check*, or this EC2 machine's role), OpenRouter (its key and models), Experiential Labs (its key and models) and *Your AI subscriptions* (Claude, Codex, Copilot, Cursor, Grok, Gemini: Sign in, Sign out, Check again; Claude's *Use my Claude plan*); *Search*: Claude Code's WebSearch and its backends (the built-in SearXNG, AgentCore Web Search, Tavily, Brave Search, Perplexity, your own SearXNG; each with an **i** for its cost, what it sends and where its key comes from) — [below](#models--providers); *More*: OpenRouter's cap and aliases |
-| **AWS & models** | the region, **Re-check models** |
+| **Bedrock (AWS)** | the region, **Re-check models** |
 | **Spending & budgets** | the budgets of Chat, `devos-claude` and the Terminal/Code page (with this period's spend), alert threshold and webhook; *More*: the setup key's budget, daily price updates |
 | **Chat & voice** | Chat's default model, models hidden from its picker, speech-to-text; *More*: the title/tag model |
 | **Claude Code** | the Code page with *Allow Bypass permissions* and *Auto mode*, the browser terminal (folder, *Sandbox internet access*, *Auto mode in the terminal*), Claude Code's main model, *Models for Claude Code*, the *Default model for new sessions*, *Project folders* ([folders of this computer](#folders-of-this-computer)), *What DevOS ADE may read on this computer* ([your sessions](#your-claude-code-and-devos-claude-sessions-from-this-computer) and setup: Take back) and *Bring your setup…* ([your setup](#your-claude-code-setup-from-this-computer)); *More*: its sonnet/haiku slots, the sandbox's internet name lists (only these, never these), its memory and *Tools in the sandbox* (`TERMINAL_AI_TOOLS`) |
@@ -1724,8 +1752,11 @@ by what you came to do — a list on the left (on a phone, a section picker at t
 | **About this install** | read-only: what setup and `./stack` chose or wrote (embedding and voice models, origins, remote addresses …) |
 
 Each setting has a one-line description, its value in plain words, badges (*This computer only*, *Secret*,
-*Read-only*, what a change restarts) and, under **Details**, the full explanation, its `.env` key and the terminal
-command. Settings that belong to a switch sit under it and show only while it is on (a nightly backup's window, the
+*Read-only*, what a change restarts: *the model gateway* is LiteLLM, *the web server* Caddy) and, under **Details**,
+the full explanation in the page's words, then a footer **For the terminal** with its `.env` key and the command that
+changes it. On a phone a section is a short list of cards: each keeps its name, value and control, and folds its
+description, badges and notes under **Details**. Models & providers' groups (Keys, Subscriptions, Search) are a bar of
+links at its top. Settings that belong to a switch sit under it and show only while it is on (a nightly backup's window, the
 Code page's *Auto mode*, everything of remote access); rare ones are folded under **More settings**.
 **Search settings** finds a setting in every section by its name, key or description; **Changed from default**
 lists the plain settings whose value differs from `.env.example`'s (a blank value counts as the default; keys and
@@ -1820,7 +1851,7 @@ to set up page by page. A card for each provider:
 
 | Card | Its action | What it adds |
 |---|---|---|
-| **Bedrock** | *Add key* / *Replace key*: the AWS access key, checked with AWS first (*Check (free)*); or this EC2 machine's role (`./stack rotate-aws --use-instance-role`) | the models your AWS key can use (*AWS & models › Models your key can use*: Re-check) |
+| **Bedrock** | *Add key* / *Replace key*: the AWS access key, checked with AWS first (*Check (free)*); or this EC2 machine's role (`./stack rotate-aws --use-instance-role`) | the models your AWS key can use (*Bedrock (AWS) › Models your key can use*: Re-check) |
 | **OpenRouter** | *Add key* / *Replace key*, and *Remove the key* in its form | OpenRouter's models: all, the free ones, the paid ones or a list (*OpenRouter models*, in its card) |
 | **Experiential Labs** | *Add key* / *Replace key*, and *Remove the key* in its form | the gateway's models you list (*Experiential Labs models*, in its card) |
 | **Your AI subscriptions**: Claude Code, Codex, Copilot, Cursor, Grok, Gemini CLI | *Sign in* (it opens in the terminal, where its own sign-in starts) and *Sign out*; a Chat model's own *Sign in* for Chat; on Claude's card *Use my Claude plan in the Code page and Chat* | the tool in the Code page's *Who answers* (not Gemini CLI), as a Chat model (Claude, Codex, Copilot, Grok) and in the terminal's *Open* ([Your AI subscriptions](#your-ai-subscriptions)) |
@@ -1834,7 +1865,7 @@ in Chat's model picker*. A provider without its key or sign-in sends nothing: it
 pickers show a greyed entry that leads to its card (*OpenRouter models — … Settings › Models & providers › OpenRouter
 takes it*: [greyed out means "set it up here"](#your-ai-subscriptions)). Keys stay on this computer: added, replaced and
 removed only from the computer running DevOS ADE (on your devices each card says so, with the terminal command), and
-shown masked. Their old places — the AWS key in *AWS & models*, OpenRouter's and Experiential Labs' in *Chat & voice*,
+shown masked. Their old places — the AWS key in *Bedrock (AWS)* (*AWS & models* before v0.33.0), OpenRouter's and Experiential Labs' in *Chat & voice*,
 *Your AI subscriptions* in *Claude Code* — say where they are now, with a link.
 
 ## Remote access

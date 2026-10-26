@@ -37,7 +37,7 @@ from playwright.sync_api import expect as see
 
 import code_tidy
 from common import CLAUDE_CODE_VERSION, ENV, HOST, PORT, SHOTS, Skip, after_check, check, expect, http, origin
-from checks_browser import _confirm, _need_helper, _switch, _wait_job, goto_setting, login, open_settings, shot
+from checks_browser import Recorder, _confirm, _need_helper, _switch, _wait_job, goto_setting, login, open_settings, shot
 
 ON = ENV.get("CODE_ENABLED") == "true" and ENV.get("TERMINAL_ENABLED") == "true"
 HOSTILE = os.environ.get("E2E_CODE_HOSTILE") == "1"
@@ -2777,7 +2777,7 @@ def _term_wait(frame, pattern, timeout=60):
 def ui_guardrails(ctx):
     """UX-10 on the real stack (Haiku): an Always rule from a Bash card listed in ⋯ › Permissions and removed there; a
     budget with its stop (the backend restarts Claude Code with Claude Code's own maxBudgetUsd, the next answer still
-    comes, the meter shows the share); the session in the Done group; Home's Code card listing it; a ?prompt= link as a
+    comes, the meter shows the share); the session in the Done group; Home's Continue row listing it; a ?prompt= link as a
     marked draft (not focused; nothing sent, Enter once or held); Open in the terminal (the command typed in a new tmux window, a resume here refused
     until Claude Code exits there, then allowed)."""
     need_haiku()
@@ -2906,16 +2906,113 @@ def ui_guardrails(ctx):
                 pass
     # (the resume refused while the terminal ran it: an expected 409)
     csp_clean(page, rec, allow=[r"^409 POST " + re.escape(CODE) + r"/api/sessions$"])
-    # Home's Code card: the framed page reports its sessions; this one listed with a Resume link
+    # Home's Continue row: the Code page reports its sessions (to the framed tab, and to the portal); this one listed,
+    # a click away
     page.goto(origin() + "/")
-    page.wait_for_selector("section.code-card", timeout=20000)
+    page.wait_for_selector("section#continue:not([hidden])", timeout=20000)
     page.evaluate("() => { const b = document.querySelector('.tab[data-tab=code]'); if (b) b.click(); }")
     page.wait_for_timeout(4000)
     page.evaluate("() => { const b = document.querySelector('.tab[data-tab=home]'); if (b) b.click(); }")
-    see(page.locator(f"section.code-card .code-sessions a[href*='session={sid}']")).to_have_count(1, timeout=30000)
-    see(page.locator("#code-budget")).to_contain_text("this period", timeout=40000)
-    shot(page, "114-home-code-card")
-    return f"Always rule {rules[0]!r} listed and removed; budget $5 with its stop (restart said, answer came); Done group; link draft not focused and not sent by Enter; terminal typed the resume, a resume here refused, then allowed after /exit; Home's card lists the session"
+    see(page.locator(f"#continue a.cont-row[href*='session={sid}']")).to_have_count(1, timeout=30000)
+    shot(page, "114-home-continue")
+    return f"Always rule {rules[0]!r} listed and removed; budget $5 with its stop (restart said, answer came); Done group; link draft not focused and not sent by Enter; terminal typed the resume, a resume here refused, then allowed after /exit; Home's Continue row lists the session"
+
+
+@check("browser", "home-continue")
+def home_continue(ctx):
+    """Home's Continue row (home.js, portal/recent.py): the Code page tells the portal what Home may show of its sessions
+    (POST /.bn/recent, kept in memory for this sign-in), and Home lists them — one that needs you first, with Answer —
+    beside Chat's newest conversations (Open WebUI's own list); each opens where it lives (the Code tab at that session,
+    Chat at that conversation), and New session opens the Code page at a new session's start. One Haiku turn, asked
+    and then denied; the chat is made through Open WebUI's API (no model asked)."""
+    need_haiku()
+    c = Code(ctx, "home-continue")
+    sid = c.new_session(HAIKU, "default")
+    n = len(c.msgs())
+    # (a command that changes something: Manual mode asks first — a read-only one, such as date, would just run)
+    mark = f"bn-e2e-continue-{int(time.time())}.txt"
+    c.request({"type": "prompt", "session": sid, "text": f"Use the Bash tool to run exactly this command, once, and nothing else: touch {mark}"})
+    p = c.wait(lambda m: m.get("type") == "permission" and m.get("session") == sid, "permission prompt", 120, since=n)
+    # Home in the same browser (signed in, the Code page unlocked): the Code page stays open beside it and reports (a
+    # new ctx.page would close it — and a closed page reports nothing more)
+    hrec = Recorder("home-continue-home")
+    home = hrec.attach(c.page.context.new_page())
+    home.set_default_timeout(30000)
+    home.goto(origin() + "/")
+    home.wait_for_selector("#home:not([hidden])", timeout=20000)
+    # what the portal kept of the page's report: this session, waiting for you
+    d, rep, t0 = {}, {}, time.time()
+    while time.time() - t0 < 40:
+        d = home.evaluate("() => fetch('/api/continue', {headers: {'X-Requested-With': 'bedrock-now'}}).then(r => r.json())")
+        rep = (d.get("code") or {}).get("report") or {}
+        if any(x["id"] == sid and x["state"] == "waiting" for x in rep.get("sessions", [])):
+            break
+        home.wait_for_timeout(1000)
+    expect(any(x["id"] == sid and x["state"] == "waiting" for x in rep.get("sessions", [])), f"the report: {json.dumps(rep)[:400]}")
+    expect(rep.get("waiting", 0) >= 1 and d["code"]["here"] is True and "error" not in (d.get("chats") or {}), f"/api/continue: {json.dumps(d)[:400]}")
+    # a conversation of Chat's own (Open WebUI's API, in the Chat tab's frame: its session; no model is asked)
+    home.click(".tab[data-tab=chat]")
+    chat, t0 = None, time.time()
+    while time.time() - t0 < 40:
+        chat = next((f for f in home.frames if f.url.startswith(origin("chat"))), None)
+        try:
+            if chat and chat.evaluate("() => Boolean(localStorage.token)"):
+                break
+        except Exception:  # noqa: BLE001 — the frame navigating while it signs in
+            pass
+        home.wait_for_timeout(500)
+    title = f"e2e Continue {int(time.time())}"
+    cid = chat.evaluate("""(t) => fetch('/api/v1/chats/new', {method: 'POST', headers: {Authorization: 'Bearer ' + localStorage.token,
+        'Content-Type': 'application/json'}, body: JSON.stringify({chat: {title: t, models: [], messages: [], history: {messages: {}, currentId: null}}})})
+        .then(r => r.json()).then(j => j.id)""", title)
+    expect(isinstance(cid, str) and re.fullmatch(r"[0-9a-f-]{36}", cid), f"no chat made: {cid!r}")
+    home.click(".tab[data-tab=home]")
+    # (Chat's list is kept 20 s by the portal: Home's next refresh shows it)
+    ans = home.locator(f"#continue a.cont-row.waiting[href*='session={sid}']")
+    t0 = time.time()
+    while time.time() - t0 < 30 and ans.count() != 1:
+        home.wait_for_timeout(1000)
+    if ans.count() != 1:
+        d = home.evaluate("() => fetch('/api/continue', {headers: {'X-Requested-With': 'bedrock-now'}}).then(r => r.json())")
+        mine = next((x for x in ((d.get("code") or {}).get("report") or {}).get("sessions", []) if x["id"] == sid), None)
+        home.screenshot(path=str(SHOTS / "fail-home-continue.png"))
+        raise AssertionError(f"Home's Continue has no waiting row for {sid[:8]}: it shows {home.inner_text('#continue')[:300]!r}; "
+                             f"/api/continue says {mine} (waiting {((d.get('code') or {}).get('report') or {}).get('waiting')})")
+    see(home.locator("#continue h3.cont-group.waiting")).to_contain_text("Needs you")
+    home.wait_for_timeout(21000)
+    home.click("#refresh")
+    crow = home.locator(f"#continue a.cont-row.chat[href$='/c/{cid}']")
+    see(crow).to_have_count(1, timeout=30000)
+    see(crow).to_contain_text(title)
+    new = home.get_attribute("#continue [data-k=new-session]", "href") or ""
+    expect("new=1" in new and new.startswith(CODE + "/"), f"New session → {new}")
+    shot(home, "116-home-continue")
+    # Answer: the Code tab at that session (its deep link, kept through the unlock); the chat: Chat at it
+    ans.click()
+    home.wait_for_selector("iframe[data-app=code]:not([hidden])", timeout=10000)
+    src = home.get_attribute("iframe[data-app=code]", "src") or ""
+    expect(f"session={sid}" in src, f"the Code tab opened {src}")
+    home.click(".tab[data-tab=home]")
+    crow.click()
+    home.wait_for_selector("iframe[data-app=chat]:not([hidden])", timeout=10000)
+    src = home.get_attribute("iframe[data-app=chat]", "src") or ""
+    expect(src.endswith(f"/c/{cid}"), f"the Chat tab opened {src}")
+    # denied: the turn ends, and the session is no longer waiting in what the page reports next
+    m = len(c.msgs())
+    c.request({"type": "permission", "id": p["id"], "session": sid, "decision": "deny", "message": "not in this test"})
+    c.wait(lambda x: x.get("type") == "event" and x.get("session") == sid and x["ev"]["type"] == "result", "result", 120, since=m)
+    t0, state = time.time(), "waiting"
+    while time.time() - t0 < 40 and state == "waiting":
+        home.wait_for_timeout(2000)
+        d = home.evaluate("() => fetch('/api/continue', {headers: {'X-Requested-With': 'bedrock-now'}}).then(r => r.json())")
+        state = next((x["state"] for x in ((d.get("code") or {}).get("report") or {}).get("sessions", []) if x["id"] == sid), "gone")
+    expect(state in ("idle", "closed"), f"after the answer the report says {state!r}")
+    chat.evaluate("(id) => fetch('/api/v1/chats/' + id, {method: 'DELETE', headers: {Authorization: 'Bearer ' + localStorage.token}})", cid)
+    probs = c.rec.problems(allow=LOCKED_OK) + hrec.problems(allow=LOCKED_OK + [r"^401 GET " + re.escape(CODE) + r"/\?session=", r"No token found in localStorage"])
+    c.rec.save(); hrec.save()
+    expect(not probs, f"errors: {probs[:6]}")
+    return (f"session {sid[:8]} reported waiting (Needs you, Answer → the Code tab at it), then {state}; a chat listed beside it "
+            f"(→ Chat at /c/{cid[:8]}); New session → ?new=1")
 
 
 @check("browser", "code-settings-row")

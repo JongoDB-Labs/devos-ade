@@ -4,7 +4,22 @@
    layout: no new colours. */
 
 /* Pieces that exist only on some screens. */
-.tabs .more-item, .health-line { display: none; }
+.tabs .more-item { display: none; }
+
+/* Home's Services: one line that opens the full list (mobile.js healthLine), on every screen — the card's heading is
+   for screen readers; the line says it */
+.services h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.col > section.services { padding: 0; }
+.health-line { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 0 20px; border: 0;
+  background: none; color: var(--ink); text-align: left; font: inherit; font-weight: 500; border-radius: var(--r-xl); }
+.health-line:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.health-line .health-text { flex: 1; }
+.health-line.down .dot { background: var(--bad); }
+.health-line .chev { width: 8px; height: 8px; border: solid var(--muted); border-width: 0 1.6px 1.6px 0; transform: rotate(45deg) translateY(-2px); transition: transform .15s; }
+.health-line[aria-expanded="true"] .chev { transform: rotate(-135deg) translateY(-2px); }
+.services:not(.expanded) #services { display: none; }
+.services.expanded #services { padding: 0 20px 12px; }
+.services.expanded .svc-list li:first-child { border-top: 1px solid var(--line); padding-top: 8px; }
 .sheet[hidden] { display: none; }
 
 /* Models: "Enabled only" chip (every screen). */
@@ -140,7 +155,8 @@
   .more-btn[aria-expanded="true"] { color: var(--ink); }
   .kb-open .sidebar { display: none; }
 
-  /* Home, compact: spend, then health, then models as cards, then sign-ins. Claude Code stays on the desktop. */
+  /* Home, compact: Get started and Continue (above the grid), then spend, health, models (folded), sign-ins. Claude
+     Code in your terminal stays on the desktop. */
   .home { padding: max(18px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 32px max(16px, env(safe-area-inset-left)); }
   .home-head h1 { font-size: 1.6rem; }
   .code-off-page { padding: max(18px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 32px max(16px, env(safe-area-inset-left)); }
@@ -149,11 +165,28 @@
   .grid { display: flex; flex-direction: column; align-items: stretch; gap: 14px; margin-top: 16px; }
   .col { display: contents; }
   .col > section { padding: 16px; border-radius: var(--r-xl); }
-  .spend { order: 1; } .code-card { order: 1; } .services { order: 2; } .models { order: 3; } .logins { order: 4; } .maint { order: 5; }
+  .spend { order: 1; } .services { order: 2; } .models { order: 3; } .logins { order: 4; } .maint { order: 5; }
 
   /* Update card and progress, compact: the release and the button (if this device may use it); the step list
      and the terminal command are for the desktop. */
   .update-card, .job { margin-top: 14px; padding: 16px; }
+  /* Get started and Continue (home.js): a step's buttons under its words; a row's verb under its title */
+  .gs-card, .continue { margin-top: 14px; padding: 16px; }
+  .gs-head { grid-template-columns: 1fr auto; }
+  .gs-prog { grid-row: 2; }
+  .gs-tools { grid-row: 1 / 3; grid-column: 2; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .gs-tools .gs-tour { min-height: 32px; }
+  .gs-step { grid-template-columns: 24px minmax(0, 1fr); }
+  .gs-acts { grid-column: 2; justify-content: flex-start; }
+  .cont-head .cont-actions { flex: 1 1 100%; }
+  .cont-actions a.action { flex: 1 1 auto; text-align: center; }
+  /* (a row's title across the row, three lines at most; its verb next to the time) */
+  .cont-row { grid-template-columns: 32px minmax(0, 1fr) auto; grid-template-rows: auto auto; row-gap: 2px; align-items: start; }
+  .cont-main { display: contents; }
+  .cont-icon { grid-row: 1 / 3; align-self: center; }
+  .cont-title { grid-column: 2 / 4; -webkit-line-clamp: 3; }
+  .cont-meta { grid-column: 2; grid-row: 2; align-self: center; }
+  .cont-verb { grid-column: 3; grid-row: 2; }
   .update-card .update-sub, #update-steps, #update-card .cmdline code, #copy-update, #update-cli { display: none; }
   #update-card .cmdline .action { margin-left: 0; }
   .action { min-height: 44px; padding-inline: 16px; }
@@ -164,18 +197,9 @@
   .total { margin-bottom: 14px; }
   .note { font-size: 12.5px; }
 
-  .services h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .services { padding: 0; }
-  .health-line { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 0 16px; border: 0;
-    background: none; color: var(--ink); text-align: left; font-weight: 500; border-radius: var(--r-xl); }
-  .health-line .health-text { flex: 1; }
-  .health-line.down .dot { background: var(--bad); }
-  .health-line .chev { width: 8px; height: 8px; border: solid var(--muted); border-width: 0 1.6px 1.6px 0; transform: rotate(45deg) translateY(-2px); transition: transform .15s; }
-  .health-line[aria-expanded="true"] .chev { transform: rotate(-135deg) translateY(-2px); }
-  .services:not(.expanded) #services { display: none; }
+  .health-line { padding: 0 16px; }
   .services.expanded #services { padding: 0 16px 10px; }
   .svc-list li { grid-template-columns: 12px minmax(0, 1fr); }
-  .svc-list li:first-child { border-top: 1px solid var(--line); padding-top: 8px; }
   .svc-detail { grid-column: 2; text-align: left; }
 
   .chips { gap: 8px; }

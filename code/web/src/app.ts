@@ -23,6 +23,7 @@ import { buildReview, deletedText, reverseHunks, sessionStart, takesComments, un
 import { promptTitle } from './mentions';
 import { crossed, nextBudget, rememberBudget, storedBudget, type Budget } from './budget';
 import { firstWaiting, pageTitle, waitingSessions } from './groups';
+import { recentReport } from './recent';
 import { parseDeepLink, withoutDeepLink } from './deeplink';
 import { eventTime, sessionCost } from './spend';
 import { RECHECK_TEXT, WORKSPACE, WORKSPACE_ID, goneTops, holdForSettings, inProject, liveHostTops, mentionPath, projectFor, projectIdOk, projectOfCwd, readOnlyTops, settingsApplied, settingsStateFor, type Project, type SettingsState, type Where } from './projects';
@@ -995,6 +996,7 @@ function announce(): void {
   const bypass = Object.values(s.views).some((v) => v.mode === 'bypassPermissions' && v.state !== 'closed' && v.state !== 'ended');
   // "(2) waiting": the sessions that need you (a prompt, a question, a plan), as the session list's first group
   document.title = pageTitle(waitingSessions(s.views, s.pendingTotal), bypass);
+  scheduleRecent();
   const origin = s.server?.portalOrigin;
   if (origin && window.parent !== window) {
     try {
@@ -1016,7 +1018,7 @@ function portalGitEvents(s: AppState): { id: string; at: number; who: string; ac
     .map((e) => ({ id: e.id, at: e.at, who: e.who, action: e.action, host: label(e.host, 60), target: label(e.target, 200), ok: e.ok }));
 }
 
-/** What Home's Code card lists (the portal frames this page): the open sessions — those that wait for you first, then
+/** What Home's Continue row lists live (the portal frames this page): the open sessions — those that wait for you first, then
  *  those at work, then the most recently active — with a title (sandbox data: the portal shows it as text), at most 8. */
 function portalSessions(s: AppState): { id: string; title: string; state: string; waiting: number }[] {
   const order = (v: SessionView) => (v.permissions.length ? 0 : v.state === 'busy' || v.state === 'starting' ? 1 : 2);
@@ -1028,6 +1030,42 @@ function portalSessions(s: AppState): { id: string; title: string; state: string
       waiting: v.permissions.length }));
 }
 
+// Home's Continue row: what this page says of its sessions (recent.ts; POST /.bn/recent, which the portal keeps in
+// memory for this sign-in): sent a moment after they change, and every 2 minutes while the page is open and shown — the
+// portal says how old it is; once more a few seconds after one that did not get through (another open Code page's at
+// the same moment, the portal restarting). Only while connected: a page that lost its connection knows nothing new, and
+// another page's report is newer. The list of transcripts is the last one asked without a search (a search's is a part).
+const RECENT_DELAY_MS = 2500;
+const RECENT_RETRY_MS = 3000;
+const RECENT_EVERY_MS = 120_000;
+let recentTimer: ReturnType<typeof setTimeout> | null = null;
+let recentSent = '';
+let recentAt = 0;
+let recentAll: SessionInfo[] = [];
+function scheduleRecent(): void {
+  if (recentTimer !== null || typeof window === 'undefined') return;
+  recentTimer = setTimeout(() => { recentTimer = null; void sendRecent(false); }, RECENT_DELAY_MS);
+}
+async function sendRecent(again: boolean): Promise<void> {
+  const s = get();
+  if (!s.server || !socket.isOpen) return;   // (not connected (yet): nothing to say)
+  const p = s.projects.find((x) => x.id === s.project);
+  const body = recentReport(s.views, recentAll, waitingSessions(s.views, s.pendingTotal), p ? { id: p.id, name: p.name } : null);
+  const text = JSON.stringify(body);
+  if (text === recentSent && !(again && Date.now() - recentAt >= RECENT_EVERY_MS - 1000)) return;
+  recentSent = text;
+  recentAt = Date.now();
+  try {
+    await api.reportRecent(body);
+  } catch {
+    recentSent = '';   // (said again with the next change, and once a moment later)
+    if (!again) setTimeout(() => void sendRecent(true), RECENT_RETRY_MS);
+  }
+}
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  setInterval(() => { if (!document.hidden) void sendRecent(true); }, RECENT_EVERY_MS);
+}
+
 // ---------------------------------------------------------------- sessions
 
 function ensureView(id: string, init: Partial<SessionView> = {}): void {
@@ -1035,7 +1073,7 @@ function ensureView(id: string, init: Partial<SessionView> = {}): void {
 }
 
 export async function boot(): Promise<void> {
-  // a deep link (Home's Code card, a bookmark, a link someone sent): taken, then out of the address bar at once
+  // a deep link (Home's Continue row, a bookmark, a link someone sent): taken, then out of the address bar at once
   const link = typeof location !== 'undefined' ? parseDeepLink(location.search) : parseDeepLink('');
   if (link.any) {
     try {
@@ -1071,8 +1109,8 @@ export async function boot(): Promise<void> {
         harness: o.harness, plan: o.plan });
     }
     const shown = link.session ? await showLinked(link.session) : false;
-    // (a link's draft without a session: no session shown — sending it starts a new one, in Manual)
-    if (!shown && !link.prompt) {
+    // (a link's draft without a session, or Home's New session: no session shown — sending starts a new one)
+    if (!shown && !link.prompt && !link.fresh) {
       const last = get().prefs.lastSession;
       // (a link to a project shows that project's own sessions: the last one of it, if open)
       const inLinked = (o: { id: string }) => !linked || sessionProject(o.id) === linked.id;
@@ -1137,7 +1175,7 @@ export async function showWaiting(): Promise<void> {
   if (get().active !== id) await activate(id);
 }
 
-/** The portal names a session of this page (Home's Code card, Activity, a notification's #code/<id>): shown — or
+/** The portal names a session of this page (Home's Continue row, Activity, a notification's #code/<id>): shown — or
  *  resumed — as a deep link's is, in place (no reload, no unlock again, no unsaved edit lost), with no sheet over it. */
 export async function showFromPortal(id: string): Promise<void> {
   if (!isUuid(id)) return;
@@ -1173,7 +1211,9 @@ export async function refreshSessions(query = get().sessionsQuery): Promise<void
     const sessions = await api.listSessions(query);
     if (get().sessionsQuery !== query) return;
     noteWhere(sessions);
+    if (!query.trim()) recentAll = sessions;
     set((s) => ({ ...s, sessions, sessionsLoading: false, sessionsError: null }));
+    scheduleRecent();
   } catch (e) {
     set((s) => ({ ...s, sessionsLoading: false, sessionsError: errText(e) }));
   }

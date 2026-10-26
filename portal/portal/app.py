@@ -23,7 +23,7 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainT
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import activity, admin, answers, appicons, appsso, brand, chatsearch, icons, prices, searchindex, settings_api, summary, updates, webapp
+from . import activity, admin, answers, appicons, appsso, brand, chatsearch, icons, prices, recent, searchindex, settings_api, summary, updates, webapp
 from . import code as codepage
 from . import settings as settings_mod
 from .config import CODE, TERMINAL, Settings
@@ -713,6 +713,8 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
     # --- gives the page its id: the code container never sees the password and follows the request by its id. Over
     # --- remote access a look and suggestions are refused (each opens a dialog on the computer's screen).
     sessions_rate = settings_api.RateLimit(2, 200)
+    # the Code page's last report of its sessions, per sign-in (Home's Continue row: code_recent, api_continue)
+    reports = recent.Reports()
 
     def sessions_err(status: int, msg: str, retry: int = 0) -> Response:
         r = JSONResponse({"error": msg}, status_code=status)
@@ -785,6 +787,41 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         sessions_rate.hit()
         log.warning("code: %s requested%s", act, " (remote)" if rem else "")
         return _no_store(JSONResponse({"request": nonce, "action": act}, status_code=202))
+
+    # --- Home's Continue row (portal/recent.py): POST /.bn/recent on the code host (Caddy → here, after the code host's
+    # --- check) — the Code page's own script (its Origin, X-Requested-With: no other site can send that without a
+    # --- preflight, which is never allowed) says which of its sessions Home may show: ids, states, times and short titles,
+    # --- kept in memory for this sign-in. A few a minute (each open Code page sends one when they change, and every 2 min;
+    # --- a phone's and a computer's at the same moment), 20 in any 10 s and 3,600 an hour at most.
+    recent_rate = settings_api.RateLimit(0, 3600)
+    recent_burst = recent.Burst()
+
+    async def code_recent(request: Request) -> Response:
+        if (deny := code_guard(request)) is not None:
+            return deny
+        rem = remote(request)
+        if request.headers.get("origin") != settings.origin(CODE, rem) or request.headers.get("x-requested-with") != "bn-code" \
+                or request.headers.get("sec-fetch-site", "same-origin") != "same-origin":
+            return _no_store(JSONResponse({"error": "cross-site request refused"}, status_code=403))
+        length = request.headers.get("content-length", "")
+        if not length.isdigit() or not length.isascii() or int(length) > recent.MAX_BODY:
+            return _no_store(JSONResponse({"error": "request too large or without a length"}, status_code=413))
+        body = await request.body()
+        if len(body) > recent.MAX_BODY:
+            return _no_store(JSONResponse({"error": "request too large"}, status_code=413))
+        try:
+            report = recent.take_report(json.loads(body))
+        except ValueError:
+            report = None
+        if report is None:
+            return _no_store(JSONResponse({"error": "not a report of sessions"}, status_code=400))
+        if wait := recent_rate.retry_after() or recent_burst.take():
+            r = JSONResponse({"error": f"Too many reports: again in {wait} s."}, status_code=429)
+            r.headers["Retry-After"] = str(wait)
+            return _no_store(r)
+        recent_rate.hit()
+        reports.put(session_login(request.headers, settings), report)
+        return _no_store(Response(status_code=204))
 
     async def terminal_unlock_callback(request: Request) -> Response:
         rem = remote(request)
@@ -1228,8 +1265,10 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         return _no_store(resp)
 
     def end_admin_sessions() -> None:
-        """After a sign-out: every Admin (LiteLLM UI) session made until now goes too (appsso.Sweeper)."""
+        """After a sign-out: every Admin (LiteLLM UI) session made until now goes too (appsso.Sweeper), and what the Code
+        page reported for Home's Continue row (recent.Reports)."""
         sweeper.request(sessions.not_before or None)
+        reports.clear()
 
     async def logout(request: Request) -> Response:
         if not same_origin(request.headers, settings):
@@ -1491,6 +1530,20 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             return _no_store(JSONResponse({"error": str(e), "chats": []}))
         return _no_store(JSONResponse({"chats": found}))
 
+    # --- Home's Continue row (static/home.js, portal/recent.py): what the Code page last reported for this sign-in (where
+    # --- the Code page is on for this site) and Chat's newest conversations (Open WebUI's own list, as the search asks it)
+    recent_chats = recent.RecentChats(chats)
+
+    async def api_continue(request: Request) -> Response:
+        if (deny := api_guard(request)) is not None:
+            return deny
+        rem = remote(request)
+        here = settings.code_on(rem)
+        code = {"enabled": settings.code, "here": here,
+                "report": reports.get(session_login(request.headers, settings)) if here else None}
+        return _no_store(JSONResponse({"code": code, "chats": await recent_chats.get(request.app.state.http),
+                                       "now": int(time.time())}))
+
     versions = appicons.versions()   # (read once: a new icon after an update is a new ?v= and a new ETag)
 
     def brand_file(request: Request, path, media_type: str, version: str) -> Response:
@@ -1593,6 +1646,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             Route("/auth/code-terminal", code_terminal, methods=["GET"]),
             Route("/auth/code-terminal-launch", code_terminal_launch, methods=["POST"]),
             Route("/auth/code-sessions", code_sessions, methods=["POST"]),
+            Route("/auth/code-recent", code_recent, methods=["POST"]),
             Route("/auth/code-preview", code_preview, methods=["GET"]),
             Route("/auth/preview-callback", preview_callback, methods=["GET"]),
             Route("/auth/code-artifact", code_artifact, methods=["GET"]),
@@ -1610,6 +1664,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             Route("/api/activity", api_activity, methods=["GET"]),
             Route("/api/search/index", api_search_index, methods=["GET"]),
             Route("/api/search/chats", api_search_chats, methods=["GET"]),
+            Route("/api/continue", api_continue, methods=["GET"]),
             Route("/api/update/check", api_update_check, methods=["POST"]),
             *settings_api.routes(settings_api.Ctx(
                 settings=settings, sessions=sessions, throttle=throttle, remote=remote, api_guard=api_guard,

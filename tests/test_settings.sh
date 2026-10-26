@@ -117,7 +117,7 @@ test_config_list_follows_the_pages_sections() {
   out="$(NO_COLOR=1 config_list)"
   # the page's section titles, in its order (Diagnostics has no keys)
   assert_eq "$(printf '%s\n' "$out" | awk '/^[A-Z]/ && NR > 1' | tr '\n' '|')" \
-    "Account & security|Models & providers|AWS & models|Spending & budgets|Chat & voice|Claude Code|Files & sharing|Remote access|Updates & backups|Advanced|About this install|"
+    "Account & security|Models & providers|Bedrock (AWS)|Spending & budgets|Chat & voice|Claude Code|Files & sharing|Remote access|Updates & backups|Advanced|About this install|"
   # the Code page with Bypass and Auto under it, in Claude Code (they were under Advanced); the terminal's budget with
   # the other budgets; a pair's second half and a switch's dependents indented under it
   assert_eq "$(printf '%s\n' "$out" | awk '/^Claude Code$/ { f = 1; next } /^[A-Z]/ { f = 0 } f && /CODE_/ { print $1 }' | tr '\n' ' ')" \

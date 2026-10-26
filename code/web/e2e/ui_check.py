@@ -967,10 +967,22 @@ def uploads(browser):
     p.close()
 
 
-@check("layout: pane sizes and panels are remembered per browser")
+@check("layout: chat first until a file opens; pane sizes and panels are remembered per browser")
 def layout(browser):
     p = Page(browser, NORMAL, "layout", **DESKTOP)
     page = p.open()
+    # no file, diff or preview open (and the terminal closed): the chat has the middle, no empty editor beside it; the
+    # keyboard shortcuts it listed are the status bar's Keys
+    expect(page.locator(".main.chat-first")).to_have_count(1)
+    expect(page.get_by_test_id("editor-welcome")).to_be_hidden()
+    expect(page.get_by_test_id("split-right")).to_have_count(0)
+    chat = page.locator(".col-right").bounding_box()
+    assert chat["width"] > 700, f"the chat is {chat['width']} px wide with nothing open"
+    page.get_by_test_id("sb-keys").click()
+    expect(page.get_by_test_id("shortcuts-dialog")).to_be_visible()
+    page.keyboard.press("Escape")
+    page.locator(".tree-row[data-path='README.md']").click()
+    expect(page.locator(".main.chat-first")).to_have_count(0)
     split = page.get_by_test_id("split-right")
     box = split.bounding_box()
     page.mouse.move(box["x"] + 1, box["y"] + 300)
@@ -983,7 +995,10 @@ def layout(browser):
     page.wait_for_timeout(400)
     page.reload()
     expect(page.get_by_test_id("conn")).to_have_text("Connected", timeout=10_000)
-    assert abs(page.locator(".col-right").bounding_box()["width"] - w) < 2, "chat width not restored"
+    # (no file is open after a reload: the chat has the middle again, and the width it gets beside a file is kept)
+    expect(page.locator(".main.chat-first")).to_have_count(1)
+    kept = page.evaluate("JSON.parse(localStorage.getItem('bn.code.v1')).layout.right")
+    assert abs(kept - w) < 2, f"chat width not kept: {kept} vs {w}"
     expect(page.locator(".col-left")).to_have_count(0)
     page.keyboard.press("Control+b")
     # broken storage must not break the page

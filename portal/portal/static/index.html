@@ -32,6 +32,7 @@
 <script src="/static/terminal.js" defer></script>
 <script src="/static/answers.js" defer></script>
 <script src="/static/code.js" defer></script>
+<script src="/static/home.js" defer></script>
 <script src="/static/tour.js" defer></script>
 <script src="/static/settings.js" defer></script>
 <script src="/static/fuzzy.js" defer></script>
@@ -126,6 +127,10 @@
         <button type="button" class="quiet" id="app-note-later">Not now</button></p>
     </section>
 
+    <!-- Get started (a first run's five steps) and Continue (what to pick up again): home.js -->
+    <section id="get-started" class="gs-card" aria-labelledby="gs-title" hidden></section>
+    <section id="continue" class="continue" aria-labelledby="continue-title" hidden></section>
+
     <section id="update-card" class="update-card" aria-labelledby="update-title" hidden>
       <div class="update-head">
         <h2 id="update-title">Update available</h2>
@@ -186,6 +191,9 @@
 
       <section class="models" aria-labelledby="models-title">
         <h2 id="models-title">Models your AWS key can use</h2>
+        <p class="models-line" id="models-line"></p>
+        <details class="models-more" id="models-more">
+        <summary>The models, their prices and status</summary>
         <p class="note" id="models-note"></p>
         <p class="note" id="voice-note"></p>
         <p class="note" id="prices-note"></p>
@@ -205,6 +213,7 @@
             <tbody id="models"></tbody>
           </table>
         </div>
+        </details>
       </section>
       </div>
       <div class="col">
@@ -254,7 +263,7 @@
       <section class="claude" aria-labelledby="claude-title">
         <h2 id="claude-title">Claude Code in your terminal</h2>
         <p class="cmdline"><code id="claude-cmd">devos-claude</code> <button type="button" class="copy" id="copy-claude">Copy</button></p>
-        <p class="note">Runs Claude Code against Bedrock through this stack; plain <code>claude</code> is unchanged. Its spend shows in Bedrock spend, under Claude Code.</p>
+        <p class="note">Runs Claude Code against Bedrock through this stack; plain <code>claude</code> is unchanged. Its spend shows in Bedrock spend, under devos-claude (your terminal).</p>
       </section>
       </div>
     </div>

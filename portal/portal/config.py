@@ -45,12 +45,14 @@ TERMINAL = "terminal"
 # session AND a fresh password unlock of its own; remote with the terminal's switch (REMOTE_CODE_HOST, lib/code.sh).
 CODE = "code"
 
-# LiteLLM virtual keys shown on Home: (env var, key alias, label)
+# LiteLLM virtual keys shown on Home: (env var, key alias, label) — each named for where its spend comes from: the
+# claude-code key is devos-claude's (Claude Code in your own terminal), the terminal's is the Code page's and the
+# browser terminal's
 KEYS = (
-    ("LITELLM_KEY_CLAUDE_CODE", "claude-code", "Claude Code"),
+    ("LITELLM_KEY_CLAUDE_CODE", "claude-code", "devos-claude (your terminal)"),
     ("LITELLM_KEY_OPENWEBUI", "open-webui", "Chat (Open WebUI)"),
     ("LITELLM_KEY_SETUP", "setup", "Setup and tests"),
-    ("LITELLM_KEY_TERMINAL", "claude-code-terminal", "Terminal (browser)"),   # only once ./stack terminal made it
+    ("LITELLM_KEY_TERMINAL", "claude-code-terminal", "Code page & browser terminal"),   # only once ./stack terminal made it
 )
 OPTIONAL_KEYS = ("LITELLM_KEY_TERMINAL",)
 

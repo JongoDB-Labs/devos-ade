@@ -441,8 +441,9 @@ http://{$FILES_HOST} {
 # /.bn/unlock-callback, terminal_callback; ?open=TOOL: a window of that tool there, with a launch token the page's own
 # POST /.bn/terminal-launch made — else the terminal asks "Open … here?"), a preview link for a port in the
 # sandbox (/.bn/preview: locally its capability, from this unlock, caddy/preview-on.caddy; remotely a single-use
-# hand-off to the preview host, remote_preview below) and the sandboxed artifact viewer's address (/.bn/artifact: its
-# capability, from this unlock; caddy/artifact-on.caddy; local only). Any other /.bn/ path is nobody's.
+# hand-off to the preview host, remote_preview below), the sandboxed artifact viewer's address (/.bn/artifact: its
+# capability, from this unlock; caddy/artifact-on.caddy; local only) and what Home's Continue row may show of the page's
+# sessions (/.bn/recent: the page's own POST). Any other /.bn/ path is nobody's.
 (code_portal) {
 	@bn_code_preview path /.bn/preview
 	reverse_proxy @bn_code_preview portal:8000 {
@@ -484,6 +485,14 @@ http://{$FILES_HOST} {
 	@bn_code_sessions path /.bn/sessions
 	reverse_proxy @bn_code_sessions portal:8000 {
 		rewrite /auth/code-sessions
+	}
+	# (Home's Continue row: the page's own sessions — ids, states, times, short titles — which the portal keeps in memory)
+	request_body /.bn/recent {
+		max_size 16KB
+	}
+	@bn_code_recent path /.bn/recent
+	reverse_proxy @bn_code_recent portal:8000 {
+		rewrite /auth/code-recent
 	}
 	respond /.bn/* 404
 }

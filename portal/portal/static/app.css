@@ -344,21 +344,60 @@ a.install-btn, .install-actions a.action { text-decoration: none; cursor: pointe
 /* The browser terminal's line on the Claude Code card (terminal.js): a button that reads like a link. */
 .linkish { min-height: 24px; border: 0; padding: 0; background: none; color: var(--accent); font: inherit; text-decoration: underline; text-underline-offset: 2px; }
 
-/* Home's Code card (code.js): the sessions that need you, Resume, and a prompt to open in Code */
-.code-card .code-status { margin: 0 0 10px; }
-.code-card .code-status.waiting { color: var(--warn); font-weight: 600; }
-.code-sessions { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
-.code-sessions:empty { display: none; }
-.code-session { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.code-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-.code-session.waiting .code-dot { background: var(--warn); }
-.code-session.working .code-dot { background: var(--accent); }
-.code-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.code-state { margin: 0; flex: none; }
-.code-ask { display: flex; gap: 8px; margin: 0 0 6px; }
-.code-ask input { flex: 1; min-width: 0; font: inherit; font-size: 14px; padding: 6px 12px; border: 1px solid var(--line-strong); border-radius: var(--r-m);
-  background: var(--bg); color: var(--ink); }
-.code-card .note { margin: 6px 0 0; }
+/* Home's first cards (home.js): Get started (a first run's five steps) and Continue (what to pick up again), as wide as
+   the grid under them */
+.gs-card, .continue { max-width: 1180px; margin-top: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-xl);
+  padding: 18px 24px 16px; box-shadow: var(--card-edge); }
+.gs-card h2, .continue h2 { margin: 0; font-size: var(--t-1); line-height: 1.2; }
+.gs-head { display: grid; grid-template-columns: auto 1fr auto; align-items: baseline; gap: 6px 14px; }
+.gs-prog { margin: 0; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.gs-tools { display: flex; align-items: center; gap: 14px; font-size: 14px; }
+.gs-bar { grid-column: 1 / -1; height: 6px; border-radius: var(--r-pill); background: var(--track); overflow: hidden; }
+.gs-bar i { display: block; height: 100%; border-radius: var(--r-pill); background: var(--accent); transition: width .3s var(--ease); }
+.gs-steps { list-style: none; margin: 12px 0 0; padding: 0; display: grid; }
+.gs-step { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.gs-step:first-child { border-top: 0; }
+.gs-mark { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; border: 1.6px solid var(--line-strong); color: var(--accent-ink);
+  font-size: 13px; font-weight: 700; line-height: 1; }
+.gs-step.done .gs-mark { background: var(--ok); border-color: var(--ok); }
+.gs-body { display: grid; gap: 1px; min-width: 0; }
+.gs-name { font-weight: 600; }
+.gs-step.done .gs-name { color: var(--muted); font-weight: 500; }
+.gs-text { color: var(--muted); font-size: 13.5px; }
+.gs-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.gs-acts a.action { text-decoration: none; }
+.gs-card.all-done .gs-steps { display: none; }   /* (all five done: the head alone, until Hide) */
+
+.cont-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.cont-actions { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.cont-actions a.action { text-decoration: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* (links that look like buttons: their words in the middle when a touch screen makes them 44 px tall) */
+.cont-actions a.action, .gs-acts a.action { display: inline-flex; align-items: center; justify-content: center; }
+.cont-group { margin: 14px 0 4px; font: 600 11.5px/1.4 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.cont-group.waiting { color: var(--warn); }
+.cont-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.cont-list li + li { border-top: 1px solid var(--line); }
+.cont-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 48px; padding: 6px 8px; margin: 0 -8px;
+  border-radius: var(--r-m); color: var(--ink); text-decoration: none; }
+.cont-row:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.cont-row:hover .cont-verb { border-color: var(--ink); }
+.cont-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-m); background: var(--accent-soft); color: var(--accent); }
+.cont-row.chat .cont-icon { background: var(--bg-2); color: var(--steel); }
+.cont-icon svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.cont-main { display: grid; min-width: 0; }
+.cont-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; font-weight: 500; }
+/* (two lines at most, three on phones; the whole title in its tooltip and the row's name) */
+.cont-meta { color: var(--muted); font-size: 13px; }
+.cont-row.waiting .cont-meta { color: var(--warn); font-weight: 600; }
+.cont-row.working .cont-meta { color: var(--accent); }
+.cont-verb { padding: 3px 12px; border: 1px solid var(--line); border-radius: var(--r-pill); font-size: 13px; font-weight: 500; }
+.cont-row.waiting .cont-verb { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.cont-empty { margin: 12px 0 0; color: var(--muted); }
+.continue .cont-note { margin: 10px 0 0; }
+/* the models card: one line, the table and its notes folded under it */
+.models-line { margin: 0 0 6px; }
+.models-more > summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+.models-more[open] > summary { margin-bottom: 12px; }
 
 /* The Code tab while the Code page is off here (code.js): muted, an "off" pill; its page is the portal's own. */
 .code-item.off .tab svg { opacity: 0.55; }

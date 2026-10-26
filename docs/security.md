@@ -352,7 +352,7 @@ you type into the search travels from your device to the portal, as every reques
   (`e.source === frame.contentWindow`), the Code page only from the portal origin it was given (`/api/state`'s
   `portal_origin`) and from `window.parent`; each answers to that one origin only (never `"*"`). The messages:
   - Code page → portal `{type: "bn-code-status", pending, busy, bypass, waiting, sessions: [{id, title, state}], git,
-    hosts}` (as before: the badge and Home's Code card); Activity uses the same checked copy (ids that are UUIDs, known
+    hosts}` (as before: the badge and Home's Continue row); Activity uses the same checked copy (ids that are UUIDs, known
     states, at most 8, titles cut to 120 characters with invisible and direction-changing characters shown as
     `⟨U+…⟩`). `hosts` is how many Git hosts are connected — a number only (0–99, else nothing), never a host's name,
     URL or credential —, which the walkthrough's *Connect a git host* step uses to tick itself off.
@@ -372,8 +372,8 @@ you type into the search travels from your device to the portal, as every reques
     opens `code.<host>/?git=hosts` or `?git=clone` instead, a deep link kept through the unlock (below).
   - portal → Code page `{type: "bn-portal-shown"}` (the Code tab shown again on a phone): the Code page shows the
     session that waits for you, its card in view with no sheet over it — one of its own open sessions, chosen by the
-    page; nothing of the message is used. portal → Code page `{type: "bn-portal-session", id}` (Home's Code card,
-    Activity's *Answer*, the banner, search, the portal's `#code/<id>`): the Code page shows or resumes that session as
+    page; nothing of the message is used. portal → Code page `{type: "bn-portal-session", id}` (Home's Continue
+    row, Activity's *Answer*, the banner, search, the portal's `#code/<id>`): the Code page shows or resumes that session as
     its own deep link `?session=` would — a lowercase session id only, else nothing. Both go only to a Code tab whose
     page has reported since it loaded; otherwise the portal loads `code.<host>/?session=<id>`.
   A frame that is locked or not loaded (a browser that never opened Code) answers nothing:
@@ -1677,16 +1677,28 @@ only (never one of Claude Code's aliases, at most 128 characters), anything else
   and both parameters leave the address bar at once (`history.replaceState`), so a reload or a shared screenshot does
   not carry them on. The Code page's unlock form carries such a link through the password (a hidden field), and the
   portal rebuilds it from what checks out — the root path, `session` (a UUID), `prompt` (≤ 4,000 characters, no NUL)
-  and `git` (only `hosts` or `clone`: the Git panel's dialog, empty — nothing is cloned, added or changed by a link),
-  once each, at most 6,000 characters encoded (a longer one keeps its session) — so the redirect after the unlock
+  `git` (only `hosts` or `clone`: the Git panel's dialog, empty — nothing is cloned, added or changed by a link), `new`
+  (only `1`: a new session's start, nothing started until you send) and `project` (an id's shape: one of the page's
+  list, a link never makes one), once each, at most 6,000 characters encoded (a longer one keeps its session) — so the redirect after the unlock
   never goes elsewhere (another host, another path, `//…`, `javascript:` all end at `/`). The terminal's unlock form
   carries none. Phishing remains possible in the sense that a link can suggest a harmful prompt: the banner and the
   rule that you send it yourself are the defence — read a draft from a link before you send it.
-- [x] **Home's Code card shows only what the framed page reports.** The Code page posts its open sessions (at most 8:
-  id, title, state, count of prompts waiting) to the portal's origin only, with the badge's status message; the portal
-  takes it only from the code host's origin, keeps ids that are UUIDs and states it knows, cuts titles to 120
-  characters with control characters removed, and draws it as text. Its *Resume* and *Ask* only open the Code page
-  with a deep link (above). The card's spend line is the terminal key's, from Home's own summary.
+- [x] **Home's Continue row shows only what the Code page reports, and the portal still never reaches the code
+  container.** The framed page posts its open sessions to the portal's origin only, with the badge's status message
+  (above). For Home on any device — a phone frames no Code tab — the page also tells the portal itself: `POST
+  /.bn/recent` on the code host, which the main Caddy routes to the portal (`/auth/code-recent`) after the code host's
+  check, and the portal checks again: the code host's own name, a session and a fresh Code page unlock, the code host's
+  Origin, `X-Requested-With: bn-code` (no other site can send it without a preflight, never allowed) and
+  `Sec-Fetch-Site: same-origin`; at most 16 KB (Caddy caps it too) and one a second, 600 an hour. What it keeps: at most
+  8 sessions — ids that are UUIDs, states it knows (waiting, working, idle, closed), times, titles cut to 120
+  characters with control characters dropped and the invisible or direction-changing ones shown as `⟨U+…⟩` — how many
+  wait, and the project shown (an id of its shape and a name of 80 characters); in this process's memory only, never on
+  disk or in a log, one report per sign-in (the Tailscale login remotely), forgotten at Sign out and a new password.
+  `GET /api/continue` (a session and the custom header, as every `/api/` route) answers it only where the Code page is
+  on for that site, with Chat's newest conversations from Open WebUI's own list, asked as the global search asks it
+  (the owner's token stays in the portal; at most 5, id, title and time, kept 20 s). Home draws it all as text; *Answer*,
+  *Resume* and *New session* only open the Code page with a deep link (`?session=`, `?new=1&project=`, kept through the
+  unlock: below). The code container gets no new peer and no new secret: the page in your browser is what reports.
 
 ### Review changes and search in files
 

@@ -306,12 +306,16 @@ def test_new_steps_are_marked_for_a_browser_that_did_an_older_walkthrough():
     assert 'opener.classList.toggle("has-new", fresh > 0)' in js
     assert "if (st.cur && isNew(st.cur)) { st.seen.push(st.cur); save(); }" in js
     assert "const first = st.open === null;" in js and "if (first || PHONE.matches) st.open = false;" in js
-    # a first visit (and only one whose state could be stored) is greeted through ONE entry point, window.bnWelcome
-    # (Home's Get started checklist takes it over): by default the walkthrough, on a phone too — over Home only
+    # a first visit (and only one whose state could be stored) is greeted through ONE entry point, window.bnWelcome,
+    # which Home's Get started takes over (home.js, loaded first): the first run is its five steps, the walkthrough
+    # stays closed; the default (no Get started) opens the walkthrough, on a phone too — over Home only
     assert "if (!root.bnWelcome) root.bnWelcome = { start: welcome };" in js and "if (first && stored) root.bnWelcome.start();" in js
     assert js.count("root.bnWelcome.start();") == 1
     welcome = js[js.index("function welcome()"):].split("\n", 1)[0]
     assert 'if (!PHONE.matches || !location.hash || location.hash === "#home") setOpen(true, false);' in welcome
+    home = (STATIC / "home.js").read_text(encoding="utf-8")
+    start = home[home.index("window.bnWelcome = {"):home.index("window.bnGetStarted = {")]
+    assert "setOpen" not in start and "bnTour" not in start and "start: () =>" in start
     assert "seen" in js[js.index("function save()"):js.index("let st = resolve(load(), ORDER);")]
     css = (STATIC / "tour.css").read_text(encoding="utf-8")
     assert ".tour-new {" in css and ".tour-btn.has-new" in css

@@ -1,4 +1,5 @@
-// Walkthrough: takes a developer through all of DevOS ADE — setting it up (AWS models, OpenRouter, voice, Claude Code,
+// Walkthrough: the full tour, beside Home's Get started (home.js: a first run's five steps, which a first visit gets
+// instead of this panel; its Full walkthrough opens this). It takes a developer through all of DevOS ADE — setting it up (AWS models, OpenRouter, voice, Claude Code,
 // a git host, budgets), its apps behind the one portal sign-in, Chat, coding with Claude on the Code page (modes, models,
 // the workspace, @-mentions, clone, review and push, run and preview, what the sandbox reaches, plugins), the models from
 // your own tools (devos-claude, the LiteLLM API, the shared store) and keeping it running (Home, Activity and search,
@@ -252,10 +253,11 @@
       away();
       const card = where && $(`#home section.${where}`);
       if (!card) return;
-      if (where === "services" && PHONE.matches) {
+      if (where === "services") {
         const h = $(".health-line");
         if (h && h.getAttribute("aria-expanded") !== "true") h.click();
       }
+      if (where === "models") { const m = $("#models-more"); if (m) m.open = true; }
       requestAnimationFrame(() => {
         card.scrollIntoView({ behavior: REDUCED.matches ? "auto" : "smooth", block: "start" });
         card.classList.remove("tour-flash"); void card.offsetWidth; card.classList.add("tour-flash");
@@ -568,7 +570,7 @@
           [b("Open Code"), " and unlock it with the portal password (it stays unlocked for 12 hours in this browser)."],
           ["Type in the prompt box and press ", kbd("Enter"), ": the answer streams in, each command and file change as a card; ", b("Stop"), " (or ", kbd("Esc"), ") interrupts."],
           [b("New session"), " (+) starts another; the ", b("Projects"), " tab lists them by project, the open ones as ", b("Needs you"), ", ", b("Working"), " and ", b("Done"),
-            ". A session keeps working when you close the tab, and Home's Code card lists the ones that need you."]]),
+            ". A session keeps working when you close the tab, and Home's Continue row lists the ones that need you."]]),
         note("Every prompt is billed on the terminal's key (", code("claude-code-terminal"), "). A new session first writes Claude Code's prompt cache: about $0.004 on Haiku 5.5, $0.08 on Sonnet 5.5, $0.16 on Opus 5.5."),
       ],
       actions: () => [openCode()],
@@ -821,16 +823,19 @@
       title: "Home: your dashboard", info: true,
       body: () => [
         list("ul", [
-          [b("Services"), ": green means running."],
+          [b("Continue"), ": ", CODE.here ? "the Code sessions that need you (Answer), the recent ones (Resume) and " : "", "your newest chats, each one click away, with ",
+            CODE.here ? "New session and " : "", "New chat."],
+          [b("Get started"), ": five steps for a first run, each ticked by itself; ", b("Hide"), " puts it away, and the button below brings it back."],
           [b("Spend"), ": each app's key against its monthly budget, and the total of the last 30 days."],
-          [b("Models"), ": status, price, and why a model is not available."],
-          CODE.here ? [b("Code"), ": the sessions that need you, with Answer and Resume, and a box to start a prompt in Code."] : null].filter(Boolean)),
+          [b("Services"), ": one line, green while all are running; it opens the list."],
+          [b("Models"), ": how many are enabled; the table under it has each one's status, price, and why a model is not available."]]),
         note("If you use free OpenRouter or Experiential Labs models, the cost switch on the Spend card shows what you were actually charged ($0 for free models) or what the same usage would have cost at paid rates."),
         // (desktops: tablets always have the icon rail, phones the tab bar)
         !PHONE.matches && !TABLET.matches ? note("More room for an app: the button at the top of the sidebar (or ", kbd("Ctrl/⌘+\\"),
           ") folds it to its icons, and back; this browser remembers it.") : null,
       ],
-      actions: () => [showOnHome("spend", "Show spend"), showOnHome("services", "Show services"), showOnHome("models", "Show models")],
+      actions: () => [showOnHome("continue", "Show Continue"), showOnHome("spend", "Show spend"), showOnHome("services", "Show services"), showOnHome("models", "Show models"),
+        window.bnGetStarted ? button("Get started", "get-started", () => { window.bnGetStarted.open(); away(); }) : null],
     },
     activity: {
       title: "Activity and search", info: true,
@@ -1145,7 +1150,10 @@
       el("div", { class: "tour-bar", role: "progressbar", "aria-label": "Walkthrough progress", "aria-valuemin": "0",
         "aria-valuemax": String(ORDER.length), "aria-valuenow": String(n) }, bar),
       fresh && st.cur !== "" ? el("p", { class: "tour-newline", "data-k": "newline" }, `${plural(fresh, "step is", "steps are")} new since you last looked. `,
-        button("Show the first", "first-new", () => nav(firstNew()), "tour-link")) : "");
+        button("Show the first", "first-new", () => nav(firstNew()), "tour-link")) : "",
+      // (Home's Get started, once hidden there: brought back from here)
+      window.bnGetStarted && window.bnGetStarted.hidden() ? el("p", { class: "tour-newline" }, "The short version: ",
+        button("Get started on Home", "get-started-head", () => { window.bnGetStarted.open(); away(); }, "tour-link"), ", five steps.") : "");
 
     const parts = st.cur === "" ? [finishedCard()] : [];
     SECTIONS.forEach((sec, si) => {
@@ -1237,9 +1245,10 @@
 
   // --- wiring ---
   // The first visit in this browser (nothing of the walkthrough stored; app.js shows Home: no tab remembered yet) is
-  // greeted by window.bnWelcome.start() — ONE entry point, called once, here, which Home's Get started checklist takes
-  // over (it may set window.bnWelcome before this script runs, or replace welcome() below). Its default opens the
-  // walkthrough at its first step: beside the page on a big screen, the sheet above the tab bar (over Home) on a phone.
+  // greeted by window.bnWelcome.start() — ONE entry point, called once, here. Home's Get started (home.js, loaded before
+  // this script) sets it: the first run is its five steps, and this walkthrough stays closed beside them (Get started's
+  // Full walkthrough opens it). The default below, for a page without Get started, opens the walkthrough at its first
+  // step: beside the page on a big screen, the sheet above the tab bar (over Home) on a phone.
   // Not when storage is blocked (it would open again on every load). Phones start closed after any later visit, even one
   // that left it open (the sheet would cover the app). A browser that went through an older walkthrough is not opened
   // for what is new: the button says how many steps are.

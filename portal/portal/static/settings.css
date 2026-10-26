@@ -71,6 +71,21 @@
 .set-details > summary:hover { color: var(--ink); }
 .set-details .note { margin: 6px 0 0; }
 .set-envkey code { font-size: 12px; overflow-wrap: anywhere; }
+/* Models & providers' groups (Keys · Subscriptions · Search): a bar of links that stays at the top of the page while the
+   section scrolls; each group's head stops below it */
+.set-minnav { position: sticky; top: -28px; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px; margin: 12px -8px 0; padding: 8px;
+  background: var(--surface); border-bottom: 1px solid var(--line); }
+.set-card:has(.set-minnav) .set-group-head { scroll-margin-top: 64px; }
+.set-group-head:focus { outline: none; }
+/* Details' footer for the terminal: the setting's name in .env and its command, apart from the page's words */
+.set-term { margin-top: 10px; padding: 8px 10px; border-radius: var(--r-m); background: var(--bg); border: 1px solid var(--line); }
+.set-term-head { margin: 0; font: 600 11px/1.4 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.set-term .note, .set-term .set-cli { margin: 4px 0 0; }
+.set-term .set-cli code { background: var(--surface); }
+/* phones (settings.js compact): a row's badges, folded with its words under Details */
+.set-badges-line { margin: 8px 0 2px; }
+.set-badges-line .set-badges { margin: 0; }
+.set-details > :not(summary):first-of-type { margin-top: 8px; }
 .set-cli, .set-remote { grid-column: 1 / -1; margin: 6px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; }
 .set-cli .note { margin: 0; }
 .set-cli code { padding: 2px 8px; border-radius: var(--r-s); background: var(--bg); border: 1px solid var(--line); overflow-wrap: anywhere; }
@@ -291,6 +306,7 @@
   .set-layout { grid-template-columns: minmax(0, 1fr); gap: 0; margin-top: 12px; }
   .set-nav { display: none; }
   .set-card { padding: 16px 16px 10px; }
+  .set-minnav { position: static; margin: 12px 0 0; padding: 0 0 10px; }   /* (the section picker is what sticks here) */
   .set-card-head h2 { font-size: var(--t-1); }
   .set-children { padding-left: 12px; margin-left: 2px; }
   .set-form { max-width: none; }

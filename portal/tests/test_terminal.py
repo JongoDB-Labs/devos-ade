@@ -388,4 +388,4 @@ def test_terminal_key_is_shown_only_once_it_exists():
     base = {"PORTAL_PASSWORD": "pw", "PORTAL_SECRET": "x" * 40, "LITELLM_KEY_CLAUDE_CODE": "sk-cc"}
     assert [a for a, _, _ in from_env(base).keys] == ["claude-code", "open-webui", "setup"]
     keys = from_env({**base, "LITELLM_KEY_TERMINAL": "sk-term"}).keys
-    assert keys[-1] == ("claude-code-terminal", "Terminal (browser)", "sk-term")
+    assert keys[-1] == ("claude-code-terminal", "Code page & browser terminal", "sk-term")

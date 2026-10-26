@@ -92,6 +92,8 @@ body.resizing-x iframe, body.resizing-y iframe { pointer-events: none; }
 .main { display: flex; min-height: 0; min-width: 0; }
 .col-left, .col-right { flex: none; min-width: 0; display: flex; flex-direction: column; }
 .col-center { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--surface); }
+/* chat first (Shell.tsx Desktop): no file, diff or preview open and the terminal closed — the chat has the middle */
+.main.chat-first .col-right { flex: 1; }
 .col-bottom { flex: none; min-height: 0; display: flex; flex-direction: column; }
 
 .split { flex: none; position: relative; z-index: 3; background: var(--line); touch-action: none; }

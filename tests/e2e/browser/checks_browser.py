@@ -179,6 +179,10 @@ def home(ctx):
     page, rec = ctx.page("home")
     login(page)
     page.locator("#updated", has_text="Updated").wait_for(timeout=30000)
+    # Services: one line ("All 5 services running") that opens the list
+    page.locator(".health-line", has_text="services running").wait_for(timeout=30000)
+    expect(page.locator("#services").is_hidden(), "the service list is not folded under its line")
+    page.click(".health-line")
     page.wait_for_selector("#services li")
     summary = page.evaluate("""() => fetch('/api/summary', {headers: {'X-Requested-With': 'bedrock-now'}}).then(r => r.json())""")
     # 5, plus the speech-to-text container while Bedrock speech-to-text is on, and the built-in SearXNG while it is on (its
@@ -193,7 +197,9 @@ def home(ctx):
     if sx_on:
         sx = page.inner_text("#services li:last-child")
         expect("SearXNG" in sx and "web search (built-in)" in sx and "ready" in sx, f"the built-in SearXNG's row: {sx!r}")
-    labels = ("Claude Code", "Open WebUI", "Setup") + (("Terminal",) if ENV.get("LITELLM_KEY_TERMINAL") else ())
+    # (each key named for where its spend comes from: devos-claude in your terminal, Chat, setup, the Code page and
+    # the browser terminal)
+    labels = ("devos-claude (your terminal)", "Open WebUI", "Setup") + (("Code page & browser terminal",) if ENV.get("LITELLM_KEY_TERMINAL") else ())
     expect(page.locator("#meters li.meter").count() == len(labels), f"{len(labels)} spend meters")
     meters = page.inner_text("#meters")
     for label in labels:
@@ -203,6 +209,11 @@ def home(ctx):
     # The model table against the portal's own data (names, prices and statuses come from the catalog and the
     # model check, so nothing is hard-coded here): one row per model, every name, every price, logos.
     want_rows = summary["models"]["rows"]
+    # the card's one line, its table folded under it
+    line = page.inner_text("#models-line")
+    expect(re.match(rf"^{sum(1 for m in want_rows if m['enabled'])} of {len(want_rows)} models? enabled", line), f"models line {line!r}")
+    expect(page.locator("#models-more").get_attribute("open") is None, "the models table is not folded")
+    page.click("#models-more > summary")
     rows = page.locator("#models tr")
     expect(rows.count() == len(want_rows), f"{rows.count()} model rows, the portal knows {len(want_rows)}")
     text = page.inner_text("#models")
@@ -2457,6 +2468,12 @@ def _clipboard_after(page, click_sel: str) -> str:
 def walkthrough(ctx):
     page, rec = ctx.page("walkthrough", tour=True)   # a first visit: no walkthrough state yet
     login(page)
+    # a first visit: Home's Get started (five steps) is the first run, the walkthrough closed beside it — its Full
+    # walkthrough opens it, at the start
+    page.locator("#get-started:not([hidden]) .gs-step").first.wait_for(timeout=15000)
+    page.wait_for_timeout(500)
+    expect(page.locator("#tour").is_hidden(), "the walkthrough opened by itself on a first visit (Get started is the first run now)")
+    page.click("#get-started .gs-tour")
     page.wait_for_selector("#tour:not([hidden]) #tour-cur", timeout=15000)
     expect(_cur(page) == "welcome", f"opened on {_cur(page)!r}, not welcome")
     expect(page.locator("#tour-btn").is_hidden(), "the sidebar button shows while the walkthrough is open")
@@ -2610,16 +2627,74 @@ def walkthrough(ctx):
     probs = _problems_outside_reloads(rec, FRAME_NOISE)
     rec.save()
     expect(not probs, f"errors: {probs[:6]}")
-    return (f"opens on a first visit as a section of the {open_w:.0f} px sidebar (closed: {side['width']:.0f} px), beside the frames; {aws.strip()!r}; "
+    return (f"a first visit: Get started, the walkthrough closed; its Full walkthrough opens it as a section of the {open_w:.0f} px sidebar (closed: {side['width']:.0f} px), beside the frames; {aws.strip()!r}; "
             f"{asked} summaries in 65 s; Next through Set up; Open Chat/Admin/Files → signed in automatically, done; their "
             f"own sign-ins folded away, shown and copied; reload keeps the step; closed → {label!r}, stays closed; reload on Chat → "
             f"{chat_status.strip()[:40]!r}; skip/undo/finish/start over")
+
+
+@check("browser", "home-get-started")
+def get_started(ctx):
+    """Home's Get started (home.js): a first visit's five steps — sign in, a model provider, Code, Chat, a budget — each
+    ticked by what the portal sees (or, for the budgets, kept as they are on purpose), first on Home with the walkthrough
+    closed beside it; Full walkthrough opens the walkthrough; Hide puts it away for good in this browser, and the
+    walkthrough brings it back. On a phone too."""
+    page, rec = ctx.page("get-started", tour=True)   # a first visit
+    login(page)
+    page.locator("#get-started:not([hidden]) .gs-step").first.wait_for(timeout=15000)
+    ids = page.eval_on_selector_all("#get-started .gs-step", "els => els.map(e => e.dataset.step)")
+    expect(ids == ["signin", "models", "code", "chat", "budget"], f"steps {ids}")
+    expect(page.locator("#get-started .gs-step[data-step=signin].done").count() == 1, "Sign in is not ticked")
+    page.locator("#get-started .gs-step[data-step=models].done").wait_for(timeout=40000)   # Bedrock's chat models
+    expect("chat model" in page.inner_text("#get-started .gs-step[data-step=models]"), "the models step does not say how many")
+    # first on Home: Get started, then Continue, then the operations (spend, services, models)
+    tops = page.evaluate("() => ['#get-started', '#continue', '.grid'].map(s => document.querySelector(s).getBoundingClientRect().top)")
+    expect(tops == sorted(tops), f"Home's order {tops}")
+    expect(page.locator("#tour").is_hidden(), "the walkthrough opened by itself on a first visit")
+    shot(page, "gs01-get-started")
+    # the budgets: ticked once one differs from its default, or kept as they are
+    budget = page.locator("#get-started .gs-step[data-step=budget]")
+    page.wait_for_timeout(3000)   # (the settings it reads)
+    if "done" not in (budget.get_attribute("class") or ""):
+        budget.locator("button", has_text="Keep these").click()
+    page.locator("#get-started .gs-step[data-step=budget].done").wait_for(timeout=10000)
+    prog = page.inner_text("#get-started .gs-prog")
+    # Full walkthrough: the walkthrough, at its start
+    page.click("#get-started .gs-tour")
+    page.wait_for_selector("#tour:not([hidden]) #tour-cur", timeout=10000)
+    expect(_cur(page) == "welcome", f"Full walkthrough opened {_cur(page)!r}")
+    page.click("#tour .tour-x")
+    # Hide: gone, also after a reload; the walkthrough brings it back
+    page.click("#get-started .gs-hide")
+    page.wait_for_selector("#get-started", state="hidden")
+    _reload(page, rec)
+    page.wait_for_selector("#continue:not([hidden])", timeout=15000)
+    expect(page.locator("#get-started").is_hidden(), "Get started came back after a reload")
+    expect(page.evaluate("() => JSON.parse(localStorage.getItem('bn.getstarted')).hidden") is True, "not kept hidden")
+    page.click("#tour-btn")
+    page.click("#tour [data-k=get-started-head]")
+    page.wait_for_selector("#get-started:not([hidden]) .gs-step", timeout=10000)
+    # a phone: on Home too
+    ppage, prec = ctx.page("get-started-phone", device="phone", tour=True)
+    login(ppage)
+    ppage.click(".tab[data-tab=home]")
+    ppage.locator("#get-started:not([hidden]) .gs-step").first.wait_for(timeout=15000)
+    width = ppage.evaluate("document.querySelector('#home').scrollWidth")
+    expect(width <= 392, f"phone: Home scrolls sideways ({width}px)")
+    shot(ppage, "gs02-get-started-phone")
+    probs = _problems_outside_reloads(rec, FRAME_NOISE) + prec.problems(allow=FRAME_NOISE)
+    rec.save(); prec.save()
+    expect(not probs, f"errors: {probs[:6]}")
+    return f"five steps, first on Home, the walkthrough closed; {prog!r}; Full walkthrough → welcome; Hide kept across a reload, brought back by the walkthrough; phone"
 
 
 @check("browser", "walkthrough-tablet")
 def walkthrough_tablet(ctx):
     page, rec = ctx.page("walkthrough-tablet", device="tablet", tour=True)
     login(page)
+    page.wait_for_selector("#tour-btn:not([hidden])", timeout=15000)
+    expect(page.locator("#tour").is_hidden(), "the walkthrough opened by itself on a first visit (Get started is the first run now)")
+    page.click("#tour-btn")
     page.wait_for_selector("#tour:not([hidden]) #tour-cur", timeout=15000)
     rail = page.locator(".sidebar").bounding_box()
     card = page.locator("#tour").bounding_box()
@@ -2661,21 +2736,14 @@ def walkthrough_tablet(ctx):
 def walkthrough_phone(ctx):
     page, rec = ctx.page("walkthrough-phone", device="phone", tour=True)
     login(page)
-    # a first visit on a phone: Home, with the walkthrough at its first step (window.bnWelcome: Get started's entry
-    # point) — a sheet above the tab bar, its Back and Next in view
+    # a first visit on a phone: Home, with Get started at its top (window.bnWelcome is Get started's: the first run is
+    # its five steps); the walkthrough stays closed — it would cover Home — and opens from More
     page.wait_for_selector("#home:not([hidden])", timeout=20000)
-    page.wait_for_selector("#tour:not([hidden]) #tour-cur", timeout=15000)
-    expect(_cur(page) == "welcome", f"the first visit opened on {_cur(page)!r}")
-    page.wait_for_timeout(300)   # the sheet slides in
+    page.locator("#get-started:not([hidden]) .gs-step").first.wait_for(timeout=15000)
+    page.wait_for_timeout(500)
+    expect(page.locator("#tour").is_hidden(), "the walkthrough opened by itself on a phone's first visit")
     bar = page.locator(".sidebar").bounding_box()
-    sheet = page.locator("#tour").bounding_box()
-    expect(abs(sheet["y"] + sheet["height"] - bar["y"]) <= 2 and sheet["width"] >= 380, f"sheet {sheet} vs tab bar {bar}")
-    for k in ("back", "next"):
-        b = page.locator(f"#tour [data-k={k}]").bounding_box()
-        expect(b and b["y"] >= sheet["y"] and b["y"] + b["height"] <= bar["y"] + 1 and b["height"] >= 44, f"{k} {b} vs the sheet {sheet} and the tab bar {bar}")
     shot(page, "w07-walkthrough-phone-first-visit")
-    page.keyboard.press("Escape")
-    page.wait_for_selector("#tour", state="hidden")
     page.click("#more-btn")
     page.wait_for_selector("#more-sheet:not([hidden])")
     expect(page.locator("#more-tour").is_visible(), "no Walkthrough in More")
@@ -2685,6 +2753,16 @@ def walkthrough_phone(ctx):
     page.wait_for_timeout(300)   # the sheet slides in
     sheet = page.locator("#tour").bounding_box()
     expect(abs(sheet["y"] + sheet["height"] - bar["y"]) <= 2 and sheet["width"] >= 380, f"sheet {sheet} vs tab bar {bar}")
+    for k in ("back", "next"):
+        b = page.locator(f"#tour [data-k={k}]").bounding_box()
+        expect(b and b["y"] >= sheet["y"] and b["y"] + b["height"] <= bar["y"] + 1 and b["height"] >= 44, f"{k} {b} vs the sheet {sheet} and the tab bar {bar}")
+    # the step's Back and Next: pinned to the sheet's bottom, above the tab bar, while its text scrolls (UX-14)
+    nav = page.locator("#tour .tour-card > .tour-nav").bounding_box()
+    expect(nav and nav["y"] + nav["height"] <= bar["y"] + 1 and nav["y"] >= sheet["y"], f"Back/Next {nav} vs sheet {sheet} and tab bar {bar}")
+    nxt = page.locator("#tour [data-k=next]").bounding_box()
+    hit = page.evaluate("([x, y]) => { const e = document.elementFromPoint(x, y); return !!(e && e.closest('[data-k=next]')); }",
+                        [nxt["x"] + nxt["width"] / 2, nxt["y"] + nxt["height"] / 2])
+    expect(hit, "Next is covered (by the tab bar, or the sheet's edge)")
     shot(page, "w08-walkthrough-phone")
     page.click("#tour [data-k=sec-1]")   # open "Your apps (one sign-in)", jump to Admin
     page.click("#tour [data-k=go-signin-admin]")
@@ -2716,9 +2794,9 @@ def walkthrough_phone(ctx):
     page.wait_for_selector("#tour-btn:not([hidden])", state="attached")
     expect(page.locator("#tour").is_hidden(), "the walkthrough opened by itself after a reload on a phone")
     rec.save()
-    return ("a first visit: Home with the walkthrough's sheet at its first step, Back and Next in view above the tab bar; "
-            "closed after a reload; More → Walkthrough opens it; Open Admin is a new-tab link that lands signed in (step done); "
-            "Escape closes")
+    return ("a first visit: Home with Get started, the walkthrough closed; More → Walkthrough opens a sheet above the tab bar, "
+            "Back and Next pinned in view above it; closed after a reload; Open Admin is a new-tab link that lands signed in "
+            "(step done); Escape closes")
 
 
 def _seed_tour(page, state: dict):
@@ -2792,7 +2870,7 @@ def walkthrough_git_hosts(ctx):
         raise Skip("the Code page is off in this throwaway: no Connect a git host step")
     page, rec = ctx.page("walkthrough-git-hosts", tour=True)
     login(page)
-    page.wait_for_selector("#tour:not([hidden]) #tour-cur", timeout=15000)
+    page.wait_for_selector("#tour-btn:not([hidden])", timeout=15000)
     page.evaluate("() => window.bnTour.open('git-hosts')")
     _to_step(page, "git-hosts")
     card = page.inner_text("#tour .tour-step.cur")
@@ -2838,7 +2916,7 @@ def walkthrough_api(ctx):
     YOUR_KEY, and no secret of .env anywhere in the page."""
     page, rec = ctx.page("walkthrough-api", tour=True)
     login(page)
-    page.wait_for_selector("#tour:not([hidden]) #tour-cur", timeout=15000)
+    page.wait_for_selector("#tour-btn:not([hidden])", timeout=15000)
     page.evaluate("() => window.bnTour.open('api')")
     _to_step(page, "api")
     port = os.environ["E2E_LITELLM_PORT"]
@@ -2887,25 +2965,24 @@ def walkthrough_api(ctx):
 
 @check("browser", "walkthrough-storage")
 def walkthrough_storage(ctx):
-    """Whatever bn.tour holds, or when storage refuses, the page works and the walkthrough starts on Welcome."""
+    """Whatever bn.tour holds, or when storage refuses, the page works (Home's Continue row there) and the walkthrough —
+    closed at first: Get started is the first run — opens on Welcome."""
     hostile = json.dumps({"cur": "constructor", "done": "x", "base": {"open-webui": "1e9"}})
     cases = (("garbled", "localStorage.setItem('bn.tour', '{')", True),
              ("hostile", f"localStorage.setItem('bn.tour', {json.dumps(hostile)})", True),
              ("getItem throws", "Storage.prototype.getItem = function () { throw new Error('blocked') }", True),
              ("blocked", "Storage.prototype.getItem = Storage.prototype.setItem = function () { throw new Error('blocked') }", False))
     out = []
-    for i, (name, js, opens) in enumerate(cases):
+    for i, (name, js, _opens) in enumerate(cases):   # (each case now: closed at first, opened by its button)
         page, rec = ctx.page(f"walkthrough-storage-{i}", tour=True)
         page.context.add_init_script(f"(o => {{ if (location.origin === o) {{ {js}; }} }})({json.dumps(origin())});")
         login(page)
         page.wait_for_selector("#tour-btn:not([hidden])", state="attached")
-        if opens:
-            page.wait_for_selector("#tour:not([hidden]) #tour-cur", timeout=10000)
-        else:   # blocked storage: not opened by itself (it would on every load), the button still works
-            page.wait_for_timeout(500)
-            expect(page.locator("#tour").is_hidden(), f"[{name}] opened by itself although nothing can be saved")
-            page.click("#tour-btn")
-            page.wait_for_selector("#tour:not([hidden]) #tour-cur")
+        page.wait_for_selector("#continue:not([hidden])", timeout=15000)
+        page.wait_for_timeout(500)
+        expect(page.locator("#tour").is_hidden(), f"[{name}] opened by itself (Get started is the first run)")
+        page.click("#tour-btn")
+        page.wait_for_selector("#tour:not([hidden]) #tour-cur")
         expect(_cur(page) == "welcome", f"[{name}] opened on {_cur(page)!r}")
         if name == "hostile":
             saved = page.evaluate("() => JSON.parse(localStorage.getItem('bn.tour'))")
@@ -2913,7 +2990,7 @@ def walkthrough_storage(ctx):
         probs = rec.problems()
         rec.save()
         expect(not probs, f"[{name}] errors: {probs[:4]}")
-        out.append(f"{name} → {'opens' if opens else 'closed, opens on click'} on Welcome")
+        out.append(f"{name} → closed, opens on click on Welcome")
     return "; ".join(out)
 
 
@@ -3293,7 +3370,7 @@ def settings_providers(ctx):
     # the old places say where they went, and their links land on the card
     goto_setting(page, "aws")
     link = page.locator("#set-aws .set-moved a")
-    expect(link.count() == 1 and link.get_attribute("href") == "#settings/AWS_ACCESS_KEY_ID", "AWS & models: no link to the AWS key's card")
+    expect(link.count() == 1 and link.get_attribute("href") == "#settings/AWS_ACCESS_KEY_ID", "Bedrock (AWS): no link to the AWS key's card")
     link.click()
     page.wait_for_selector("#set-providers:not([hidden]) .set-row[data-key=AWS_ACCESS_KEY_ID]", timeout=20000)
     settings_drawn(page)
@@ -3317,7 +3394,35 @@ def settings_providers(ctx):
     probs = rec.problems()
     rec.save()
     expect(not probs, f"errors: {probs}")
-    return "; ".join(said) + f"; {len(tools)} subscription cards; AWS & models, Chat & voice and Claude Code link here"
+    # a phone: Settings' section is a short list of cards — each row's words (its summary, badges, notes, the terminal
+    # command) folded under its Details, its name, value and control in view; Details in the page's words, the
+    # setting's .env name only in its footer for the terminal; Models & providers' groups as a bar of links
+    ppage, prec = ctx.page("settings-providers-phone", device="phone")
+    login(ppage)
+    ppage.evaluate("location.hash = '#settings/providers'")
+    ppage.wait_for_selector("#set-providers:not([hidden])", timeout=20000)
+    heights = {}
+    for sec in ("providers", "code"):
+        ppage.evaluate(f"location.hash = '#settings/{sec}'")
+        ppage.wait_for_selector(f"#set-{sec}:not([hidden])", timeout=20000)
+        ppage.wait_for_timeout(500)
+        loose = ppage.locator(f"#set-{sec} .set-row > .set-main > .set-sum, #set-{sec} .set-row > .set-cli").count()
+        expect(loose == 0, f"phone: {loose} summaries or terminal lines of {sec} not folded under Details")
+        heights[sec] = ppage.evaluate("() => document.querySelector('#settings').scrollHeight")
+        if sec == "providers":
+            groups = ppage.eval_on_selector_all("#set-providers .set-minnav button", "els => els.map(e => e.textContent)")
+            expect(groups == ["Keys", "Subscriptions", "Search"], f"phone: the groups' bar {groups}")
+    row = ppage.locator("#set-code .set-row[data-key=CODE_ENABLED]")
+    row.locator(":scope > details.set-details > summary").click()
+    det = row.locator(":scope > details.set-details").inner_text()
+    # (inner_text as shown: the footer's heading is in capitals)
+    expect("for the terminal" in det.lower() and "CODE_ENABLED" in det and "true =" not in det, f"phone: the Code page's Details: {det[-300:]!r}")
+    shot(ppage, "22b-settings-phone-code-details", mask=[".set-value", ".set-adv-value"])
+    probs = prec.problems()
+    prec.save()
+    expect(not probs, f"phone errors: {probs[:6]}")
+    said.append(f"phone: sections folded to their cards (Models & providers {heights['providers']} px, Claude Code {heights['code']} px), Details in the page's words")
+    return "; ".join(said) + f"; {len(tools)} subscription cards; Bedrock (AWS), Chat & voice and Claude Code link here"
 
 
 # Each row with a control: [key, row, its name line, its control, its summary, its info panel (open), what it adds] as

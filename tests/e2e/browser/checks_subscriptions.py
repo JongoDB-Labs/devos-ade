@@ -89,7 +89,7 @@ def settings_row(ctx):
 def walkthrough_step(ctx):
     page, rec = ctx.page("walkthrough-subscriptions", tour=True)
     login(page)
-    page.wait_for_selector("#tour:not([hidden]) #tour-cur", timeout=15000)
+    page.wait_for_selector("#tour-btn:not([hidden])", timeout=15000)
     page.evaluate("() => window.bnTour.open('subscriptions')")
     page.locator("#tour .tour-step.cur", has_text="Your AI subscriptions and keys").wait_for(timeout=10000)
     card = page.inner_text("#tour .tour-step.cur")

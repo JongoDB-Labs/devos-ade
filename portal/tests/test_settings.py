@@ -222,10 +222,10 @@ def test_removing_a_key_says_what_that_key_does():
     form = js[js.index('} else if (k.validator === "or_key" || k.validator === "stt_key" || k.validator === "xl_key" || k.validator === "ws_key") {'):js.index('} else if (k.validator === "webhook") {')]
     assert "REMOVE_KEY[k.validator]" in form and "disappear" not in form
     stt = words[words.index("stt_key:"):words.index("xl_key:")]
-    assert "OpenRouter" not in stt and "OpenAI or Groq key is deleted" in stt and "LiteLLM, Chat and the portal restart" in stt
-    assert "or_key: \"OpenRouter's models disappear from Chat and the API; LiteLLM and the portal restart (about 40 s).\"" in words
+    assert "OpenRouter" not in stt and "OpenAI or Groq key is deleted" in stt and "the model gateway, Chat and the portal restart" in stt
+    assert "or_key: \"OpenRouter's models disappear from Chat and the API; the model gateway and the portal restart (about 40 s).\"" in words
     # (the Experiential Labs key restarts LiteLLM alone: RESTARTS.explabs)
-    assert "xl_key: \"Experiential Labs' models disappear from Chat, the Code page and the API; LiteLLM restarts (about 30 s).\"" in words
+    assert "xl_key: \"Experiential Labs' models disappear from Chat, the Code page and the API; the model gateway restarts (about 30 s).\"" in words
     # (a web search key, or SearXNG's URL: WebSearch stops searching with it)
     assert "ws_key: \"Claude Code's WebSearch stops searching with it" in words
 
@@ -1187,7 +1187,7 @@ def test_sandbox_internet_access_opens_further_only_here_and_closes_from_anywher
     assert 'for (const [val, label] of [["internet", "Internet only"], ["host", "+ this computer"], ["off", "Off"]])' in js
     assert "b.disabled = !canChange() || (val !== cur && localOnlyHere(k, val));" in js
     assert 'if (k.key === "TERMINAL_EGRESS") return EGRESS_RANK[egressMode(v)] > EGRESS_RANK[egressMode(old)];' in js
-    assert '"terminal-egress": ["Terminal"]' in js
+    assert '"terminal-egress": ["the terminal"]' in js
 
 
 def test_snapshot_names_the_code_pages_folder_as_text_only(dirs):

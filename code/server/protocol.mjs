@@ -243,7 +243,7 @@
 // An image without that build answers every page request 503 (main.mjs NO_BUILD); the API is the same.
 // The page tells the portal how many permission prompts wait (the Code tab's badge):
 //   parent.postMessage({type: "bn-code-status", pending: N, busy, bypass, waiting: SESSIONS, sessions: [{id, title,
-//                      state: waiting|working|idle, waiting: N}] (≤ 8: Home's Code card; titles are sandbox data)},
+//                      state: waiting|working|idle, waiting: N}] (≤ 8: Home's Continue row; titles are sandbox data)},
 //                      portal_origin)
 // and answers the portal's global search (web/src/portalbridge.ts; only from portal_origin and the parent window):
 //   portal -> page {type: "bn-portal-search", id: [A-Za-z0-9]{1,32}, q: ≤ 64 chars}

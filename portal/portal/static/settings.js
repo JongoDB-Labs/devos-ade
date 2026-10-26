@@ -19,18 +19,21 @@
   const STT_LABEL = { bedrock: "Bedrock (Mistral Voxtral, in your AWS account)", openai: "OpenAI", groq: "Groq", "": "Browser speech recognition (no voice calls)" };
   // (portal/settings.py STT_REFUSED: the API refuses Bedrock with the same words)
   const STT_REFUSED = "Bedrock speech-to-text is unavailable: AWS no longer accepts audio for the Voxtral models (since October 2026). Use browser speech, or your own OpenAI/Groq key.";
-  // what a change restarts, by settings.tsv's apply column (lib/settings.sh _cfg_post): the badge next to a setting
-  const RESTARTS = { "portal-pw": ["portal"], email: ["Chat", "portal"], "litellm-pw": ["portal"], portal: ["portal"],
-    "litellm-cfg": ["LiteLLM"], aws: ["LiteLLM"], pins: ["Chat", "portal"], "alert-pct": ["portal"], stt: ["LiteLLM", "Chat", "portal"],
-    openrouter: ["LiteLLM", "portal"], explabs: ["LiteLLM"], websearch: ["LiteLLM"], rustfs: ["Files", "Chat", "shared-mcp", "portal"], mcp: ["shared-mcp", "portal"],
-    code: ["portal", "Caddy"], "code-env": ["Code page"], "terminal-env": ["Terminal"], "terminal-egress": ["Terminal"], "remote-preview": ["portal", "Caddy"] };
+  // what a change restarts, by settings.tsv's apply column (lib/settings.sh _cfg_post): the badge next to a setting —
+  // in the page's words (LiteLLM is the model gateway, Caddy the web server, shared-mcp the shared file server)
+  const RESTARTS = { "portal-pw": ["the portal"], email: ["Chat", "the portal"], "litellm-pw": ["the portal"], portal: ["the portal"],
+    "litellm-cfg": ["the model gateway"], aws: ["the model gateway"], pins: ["Chat", "the portal"], "alert-pct": ["the portal"], stt: ["the model gateway", "Chat", "the portal"],
+    openrouter: ["the model gateway", "the portal"], explabs: ["the model gateway"], websearch: ["the model gateway"],
+    rustfs: ["Files", "Chat", "the shared file server", "the portal"], mcp: ["the shared file server", "the portal"],
+    code: ["the portal", "the web server"], "code-env": ["the Code page"], "terminal-env": ["the terminal"], "terminal-egress": ["the terminal"],
+    "remote-preview": ["the portal", "the web server"] };
   // what removing a key does, in each key's own words (the keys share one form; lib/settings.sh _cfg_post, _stt_apply)
   const REMOVE_KEY = {
-    or_key: "OpenRouter's models disappear from Chat and the API; LiteLLM and the portal restart (about 40 s).",
-    stt_key: "The OpenAI or Groq key is deleted. While Speech-to-text uses OpenAI or Groq the removal is refused (they need a key): switch it to the browser or Bedrock first. LiteLLM, Chat and the portal restart (about 40 s).",
+    or_key: "OpenRouter's models disappear from Chat and the API; the model gateway and the portal restart (about 40 s).",
+    stt_key: "The OpenAI or Groq key is deleted. While Speech-to-text uses OpenAI or Groq the removal is refused (they need a key): switch it to the browser or Bedrock first. the model gateway, Chat and the portal restart (about 40 s).",
     // (Experiential Labs' key restarts LiteLLM alone: RESTARTS.explabs)
-    xl_key: "Experiential Labs' models disappear from Chat, the Code page and the API; LiteLLM restarts (about 30 s).",
-    ws_key: "Claude Code's WebSearch stops searching with it (the next search backend set up takes over, or none); LiteLLM restarts (about 15 s).",
+    xl_key: "Experiential Labs' models disappear from Chat, the Code page and the API; the model gateway restarts (about 30 s).",
+    ws_key: "Claude Code's WebSearch stops searching with it (the next search backend set up takes over, or none); the model gateway restarts (about 15 s).",
   };
   // A provider key's form: where a key comes from (a "Get a key" link under the field), its shape as a placeholder, and
   // whether the portal asks the provider before the password (POST /api/settings/check-key, portal/keycheck.py: one free
@@ -220,7 +223,7 @@
     p.append(el("header", { class: "home-head set-head" },
       el("p", { class: "eyebrow", "aria-hidden": "true", text: "DevOS ADE · Settings" }),
       el("h1", { id: "settings-title", text: "Settings" }),
-      el("p", { class: "updated" }, when ? `From .env as of ${when} ` : "", el("button", { type: "button", class: "quiet", id: "set-reload", text: "Reload" }))));
+      el("p", { class: "updated" }, when ? `As of ${when} ` : "", el("button", { type: "button", class: "quiet", id: "set-reload", text: "Reload" }))));
     $("#set-reload", p).addEventListener("click", load);
     if (!data.available) {
       p.append(el("p", { class: "banner", text: "Settings are not available yet: run ./stack up once (it writes .state/status/settings.json, the masked copy of .env this page shows)." }));
@@ -465,7 +468,7 @@
     box.classList.add("helper-off");
     box.append(el("p", { class: "helper-off-title", text: title }),
       el("p", { class: "cmdline" }, el("code", { text: cmd }), " ", copyBtn),
-      el("p", { class: "note", text: "Everything below is read-only until then: the portal never writes .env itself. The update helper (a small job under your user, outside Docker) applies changes, after checking each one again. Or change a setting in a terminal with the command shown next to it." }));
+      el("p", { class: "note", text: "Everything below is read-only until then: the portal never changes your settings file itself. The update helper (a small job under your user, outside Docker) applies changes, after checking each one again. Or change a setting in a terminal: each one's Details has its command." }));
     return box;
   }
 
@@ -486,6 +489,18 @@
     const list = s.id === "advanced" || s.id === "about";
     const body = el("div", { class: list ? "set-rows set-list" : "set-rows" });
     blocks(body, main, list);
+    // Models & providers is long: its groups (Keys · Subscriptions · Search) as a small bar of links that stays at the
+    // top while the section scrolls
+    const heads = [...body.querySelectorAll(":scope > .set-group-head")];
+    if (heads.length > 1) {
+      const bar = el("nav", { class: "set-minnav", "aria-label": `${s.title}: its groups` });
+      for (const h of heads) {
+        const b = el("button", { type: "button", class: "chip", text: h.textContent });
+        b.addEventListener("click", () => { h.scrollIntoView({ block: "start" }); h.focus({ preventScroll: true }); });
+        bar.append(b);
+      }
+      c.append(bar);
+    }
     c.append(body);
     // (under the providers' cards: which of their models each picker lists — Settings' own lists of them)
     if (s.id === "providers") {
@@ -500,6 +515,7 @@
       c.append(el("details", { class: "set-more" }, el("summary", {}, "More settings ", el("span", { class: "set-more-count" })), inner));
     }
     c.append(pager(s.id));
+    compact(c);
     return c;
   }
 
@@ -519,7 +535,7 @@
       }
       // (a provider's card; the first of a group of rows under its head)
       if (PROVIDERS[r.key]) block.classList.add("set-prov");
-      if (GROUP_HEAD[r.key] && r.section === "providers") container.append(el("h3", { class: "set-group-head", text: GROUP_HEAD[r.key] }));
+      if (GROUP_HEAD[r.key] && r.section === "providers") container.append(el("h3", { class: "set-group-head", id: `set-group-${GROUP_HEAD[r.key].toLowerCase()}`, tabindex: "-1", text: GROUP_HEAD[r.key] }));
       block.append(node);
       made[r.key] = block;
       const host = r.parent && here.has(r.parent) && made[r.parent];
@@ -647,8 +663,8 @@
   const EGRESS_LABEL = { internet: "Internet only (not this computer's services)", host: "Internet and this computer's services", off: "Off" };
   const EGRESS_WHAT = {
     internet: "The sandbox reaches public internet addresses (npm, pip, git, documentation, Claude Code's web fetch) through its egress proxy, on ports 80, 443 and 22 — never this computer's own services, your local network or private addresses. The terminal restarts (about 10 s; its shells and open Code sessions end).",
-    host: "The sandbox itself goes on the internet, and reaches this computer's own services with it — on Docker Desktop LiteLLM, the shared MCP server, the portal's login and dev servers on its 127.0.0.1, through Docker's host address — and your local network, on any port: how v0.10.0 and earlier worked. Choose it only for a service of this computer or your network that the sandbox needs. The terminal restarts (about 10 s; its shells and open Code sessions end).",
-    off: "The sandbox gets no internet: only LiteLLM and the shared MCP server through its gateway (npm, pip and git clone stop working there). The terminal restarts (about 10 s; its shells and open Code sessions end)." };
+    host: "The sandbox itself goes on the internet, and reaches this computer's own services with it — on Docker Desktop the model gateway, the shared MCP server, the portal's login and dev servers on its 127.0.0.1, through Docker's host address — and your local network, on any port: how v0.10.0 and earlier worked. Choose it only for a service of this computer or your network that the sandbox needs. The terminal restarts (about 10 s; its shells and open Code sessions end).",
+    off: "The sandbox gets no internet: only the model gateway and the shared MCP server through its gateway (npm, pip and git clone stop working there). The terminal restarts (about 10 s; its shells and open Code sessions end)." };
   // Settings › Claude Code › Sandbox internet access: Internet only · + this computer · Off (opening it further: only here)
   function egressChoice(k) {
     const cur = egressMode(k.value);
@@ -703,10 +719,60 @@
     if (editable(k) || k.policy === "regen") {
       const what = [...new Set(String(k.apply || "").split(",").flatMap((a) => RESTARTS[a] || []))];
       if (k.key === "CODE_ENABLED") add("Builds the Code page", "badge-restart");
-      else if (what.length) add(`Restarts ${what.join(", ")}`, "badge-restart", "What a change restarts (about 10-40 s)");
+      else if (what.length) add(`Restarts ${what.join(", ")}`, "badge-restart", "What a change restarts, for about 10-40 s");
     }
     return out;
   }
+
+  // A setting's footer for the terminal (in its Details): its name in .env (and the keys shown inside its row) and, when
+  // given, the command line — the key names only here, where a terminal command is shown
+  function forTerminal(names, ...more) {
+    return el("div", { class: "set-term" }, el("p", { class: "set-term-head", text: "For the terminal" }),
+      el("p", { class: "note set-envkey" }, "In .env: ", el("code", { text: names.join(" · ") })), ...more);
+  }
+
+  // Phones: a section is a short list of cards. Each row keeps its name, its state and value and its control; what
+  // explains it — the summary line, its badges, notes, what a provider adds, the terminal command — folds under its
+  // Details (the same disclosure as everywhere; a row without one gets one). Anything holding a control stays where
+  // it is (a card's Sign in, a list of folders): only its words fold, inside it.
+  const PHONE = window.matchMedia("(max-width: 767.98px)");
+  const CONTROL = "button, select, input, textarea, [role=switch], a.action";
+  const KEEP = ".set-label, .set-value, .set-spend, .release-line, .set-applies, .set-toggle, .set-remote, .set-form, .set-actions, .set-details, .set-children, .set-term, .set-ws-info";
+  const ALWAYS = ".set-cli, .cmdline";   // (a terminal command and its Copy: words for the terminal, folded with them)
+  function foldInto(host, nodes) {
+    if (!nodes.length) return;
+    let d = host.querySelector(":scope > details.set-details");
+    if (!d) { d = el("details", { class: "set-details" }, el("summary", {}, "Details")); host.append(d); }
+    d.querySelector(":scope > summary").after(...nodes);
+  }
+  function compactRow(rw) {
+    if (rw.dataset.compact) return;
+    rw.dataset.compact = "1";
+    const fold = [];
+    const label = rw.querySelector(":scope > .set-main > .set-label");
+    const badges = label && label.querySelector(":scope > .set-badges");
+    if (badges && badges.children.length) fold.push(el("p", { class: "set-badges-line" }, badges));
+    const parts = [...rw.querySelectorAll(":scope > .set-main > *"), ...rw.querySelectorAll(":scope > *:not(.set-main)")];
+    for (const n of parts) {
+      if (n.matches(KEEP)) continue;
+      if (n.matches(ALWAYS) || (!n.querySelector(CONTROL) && !n.matches(CONTROL))) { fold.push(n); continue; }
+      // (a list of cards: each card's words fold inside it, its head and controls stay)
+      for (const li of n.querySelectorAll(":scope > li.set-prov")) {
+        foldInto(li, [...li.children].filter((x) => !x.matches(".set-prov-head, .set-details, .set-subs-where")
+          && (x.matches(ALWAYS) || !x.querySelector(CONTROL))));
+      }
+    }
+    // (a terminal command goes with the rest of what is for the terminal: Details' footer)
+    const term = rw.querySelector(":scope > details.set-details > .set-term");
+    foldInto(rw, fold.filter((n) => !(term && n.matches(".set-cli"))));
+    if (term) for (const n of fold) if (n.matches(".set-cli")) term.append(n);
+  }
+  function compact(root) {
+    if (!PHONE.matches) return;
+    for (const rw of root.querySelectorAll(".set-row")) compactRow(rw);
+  }
+  // (across the phone width: the page drawn again, folded or not)
+  PHONE.addEventListener("change", () => { if (data) render(); });
 
   // the frame of a row: name and badges, the summary, the value, and the full note folded under Details
   function frame(k, r, opts = {}) {
@@ -727,10 +793,11 @@
     }
     const actions = el("div", { class: "set-actions" });
     row.append(main, actions);
-    const details = el("details", { class: "set-details" }, el("summary", {}, "Details"),
-      el("p", { class: "note", text: k.note }),
-      el("p", { class: "note set-envkey" }, "In .env: ", el("code", { text: [k.key, ...(withOf[k.key] || [])].join(" · ") })));
-    if (opts.cli !== false && editable(k) && canChange()) details.append(cliLine(k));
+    // Details: what it does, in the page's words; then, apart, what a terminal needs — the setting's name in .env and the
+    // command that changes it
+    const term = forTerminal([k.key, ...(withOf[k.key] || [])]);
+    const details = el("details", { class: "set-details" }, el("summary", {}, "Details"), el("p", { class: "note", text: k.note }), term);
+    if (opts.cli !== false && editable(k) && canChange()) term.append(cliLine(k));
     row._details = details;
     row._main = main;
     row._actions = actions;
@@ -874,7 +941,7 @@
   function codeModelsNote() {
     const all = codeModels(), works = all.filter((m) => m[4] === "works").length;
     if (!all.length) return "The list appears after the next ./stack up (it writes litellm/code-models.tsv).";
-    return `${all.length} enabled chat model${all.length === 1 ? "" : "s"}, ${works} of them checked to work with Claude Code's tools. Others answer through LiteLLM's translation; tool use, thinking and prompt caching vary — the Code page's picker marks each.`;
+    return `${all.length} enabled chat model${all.length === 1 ? "" : "s"}, ${works} of them checked to work with Claude Code's tools. Others answer through the model gateway's translation; tool use, thinking and prompt caching vary — the Code page's picker marks each.`;
   }
   function codeModelsSeg(k, rw) {
     const cur = codeScope(k.value);
@@ -1234,7 +1301,7 @@
     } else if (k.key === "AWS_ACCESS_KEY_ID") {
       form.append(...field(`${id}-a`, "New access key ID (AKIA…)", "text", { maxlength: "20", autocapitalize: "characters" }),
         ...field(`${id}-b`, "New secret access key", "password", { maxlength: "40" }), err, status, getKeyLine(KEY_FORM.AWS_ACCESS_KEY_ID),
-        el("p", { class: "note", text: "Checked with AWS before anything changes (free), including Bedrock access. Then LiteLLM restarts (about 15 s) and a smoke test runs (~$0.0001); if it fails, the old key comes back. Deactivate the old key in IAM afterwards." }));
+        el("p", { class: "note", text: "Checked with AWS before anything changes (free), including Bedrock access. Then the model gateway restarts (about 15 s) and a smoke test runs (~$0.0001); if it fails, the old key comes back. Deactivate the old key in IAM afterwards." }));
       keyFields = [$(`#${id}-a`, form), $(`#${id}-b`, form)];
       const other = el("input", { type: "checkbox", id: `${id}-other` });
       form.append(el("label", { for: `${id}-other`, class: "set-radio" }, other, " The new key belongs to another AWS account (its models, quotas and bill are its own)"));
@@ -1372,7 +1439,7 @@
       if (k.set) {
         const rm = el("button", { type: "button", class: "quiet", text: sx ? "Remove the URL" : "Remove the webhook" });
         rm.addEventListener("click", () => confirmApply({ [k.key]: "" }, sx ? "Remove SearXNG's URL?" : "Remove the budget alert webhook?",
-          sx ? REMOVE_KEY.ws_key : "No more alerts are sent; LiteLLM restarts (about 15 s).", [k.key]));
+          sx ? REMOVE_KEY.ws_key : "No more alerts are sent; the model gateway restarts (about 15 s).", [k.key]));
         form.append(el("p", { class: "set-gen" }, rm));
       }
     } else {
@@ -2048,7 +2115,7 @@
         link("CLAUDE_MODEL_OPUS", "Claude Code"), ". Which ones Chat's picker lists: ",
         el("a", { href: `${(data.apps && data.apps.chat) || appUrl("chat")}admin/settings/models`, target: "_blank", rel: "noopener", text: "Chat › Admin settings › Models" }), "."),
       el("details", { class: "set-details" }, el("summary", {}, "Details"),
-        el("p", { class: "note", text: "Re-checking asks Bedrock which models your key can use (1-token requests, < $0.01; at most once an hour). LiteLLM restarts twice and setup picks the defaults again; about 2 minutes. Hiding a model in Chat's own admin settings does not block it for the API or Claude Code." })));
+        el("p", { class: "note", text: "Re-checking asks Bedrock which models your key can use (1-token requests, < $0.01; at most once an hour); the model gateway restarts twice and setup picks the defaults again; about 2 minutes. Hiding a model in Chat's own admin settings does not block it for the API or Claude Code." })));
     rw._actions.append(actionButton("models-recheck", "Re-check models"));
     return rw;
   }
@@ -2110,7 +2177,7 @@
 
   const ACTION_TEXT = {
     "check-aws": ["Check the AWS key?", "Asks AWS who the key belongs to and whether it may call Bedrock (free: no model runs)."],
-    "models-recheck": ["Re-check the models?", "About 2 minutes, < $0.01. LiteLLM restarts twice; Chat and Claude Code requests in flight may fail."],
+    "models-recheck": ["Re-check the models?", "About 2 minutes, < $0.01. The model gateway restarts twice; Chat and Claude Code requests in flight may fail."],
     backup: ["Back up now?", "Databases, stored files and .env into backups/<time>/. No service stops."],
     test: ["Run the smoke test?", "About 10 seconds, ~$0.0001 of Bedrock."],
     report: ["Create a status report?", "Runs read-only ./stack commands on this computer and shows the result here."],
@@ -2130,8 +2197,7 @@
       el("p", { class: "set-sum", text: r.summary || k.note }),
       el("details", { class: "set-details" }, el("summary", {}, "Details"),
         ...(r.summary && k.note ? [el("p", { class: "note", text: k.note })] : []),
-        el("p", { class: "note set-envkey" }, "In .env: ", el("code", { text: k.key })),
-        el("p", { class: "set-cli" }, el("span", { class: "note", text: "Changes with: " }), el("code", { class: "set-adv-cli", text: k.cli }), " ", copyButton(k.cli))));
+        forTerminal([k.key], el("p", { class: "set-cli" }, el("span", { class: "note", text: "Changes with: " }), el("code", { class: "set-adv-cli", text: k.cli }), " ", copyButton(k.cli)))));
     if (changedFromDefault(k)) it.dataset.changed = "1";
     return it;
   }

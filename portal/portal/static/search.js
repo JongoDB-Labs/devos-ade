@@ -9,7 +9,7 @@
 //                       and the frame's own window; the answer's shape, ids and lengths); titles and file names are
 //                       sandbox data, shown as text with invisible and direction-changing characters made visible.
 //                       Without the frame (a phone, a browser that never opened Code, the Code page locked) the
-//                       sessions Home's Code card knows, and a note instead of files
+//                       sessions the Code tab reported, and a note instead of files
 //   Chat conversations  Open WebUI's own search, asked by the portal server (/api/search/chats: portal/chatsearch.py);
 //                       if that fails, "Search in Chat" opens the Chat tab
 //   Walkthrough         its steps (tour.js); Enter opens the walkthrough at that step
@@ -180,7 +180,7 @@
   function entries() {
     const out = pages();
     if (index) out.push(...settingsEntries(index));
-    // Code sessions: the frame's answer for this query, else what Home's Code card knows (the open ones)
+    // Code sessions: the frame's answer for this query, else what the Code tab reported (the open ones)
     const sess = code.q === q && code.sessions ? code.sessions.map((s) => ({ ...s, prefiltered: true }))
       : (window.bnCode ? window.bnCode.sessions() : []).map((s) => ({ id: s.id, title: s.title }));
     for (const s of sess) out.push({ group: "code", key: `code:${s.id}`, title: s.title, sub: "Code session", alt: "", prefiltered: s.prefiltered, run: () => window.bnCode.openSession(s.id) });

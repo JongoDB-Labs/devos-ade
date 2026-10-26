@@ -323,6 +323,12 @@ function renderModels(models, prices) {
   if (xl) bits.push(`Experiential Labs models (xl/…) send prompts to api.experientiallabs.ai; list prices${xl.fetched_at ? ` as of ${ago(xl.fetched_at)}` : ""}, while spend is what the gateway reports for each call ($0 on your own provider key, which that provider bills).${xl.failsafe ? ` ${xl.failsafe} of them run without model details: no sampling parameter is sent, tools and the cap are (./stack status says why).` : ""} Settings › Chat & voice changes which ones are offered.`);
   // (more models: every key and sign-in that adds them is in one place)
   $("#models-note").replaceChildren(`${bits.join(" ")} More models: `, el("a", { href: "#settings/providers", text: "Settings › Models & providers" }), ".");
+  // the card's one line (the table, its notes and prices are folded under it): how many are enabled, from where
+  const on = models.rows.filter((m) => m.enabled), by = {};
+  for (const m of on) by[m.provider || "Bedrock"] = (by[m.provider || "Bedrock"] || 0) + 1;
+  const where = Object.keys(by).length > 1 ? ` (${Object.entries(by).map(([p, n]) => `${p} ${n}`).join(", ")})` : "";
+  $("#models-line").textContent = models.error && !models.rows.length ? models.error
+    : `${on.length} of ${models.rows.length} model${models.rows.length === 1 ? "" : "s"} enabled${where}.`;
   renderPrices(prices);
 }
 
@@ -880,7 +886,7 @@ async function refresh() {
     renderSpend(d.spend); renderOpenRouter(d.spend.openrouter, d.spend.openrouter_usage); renderServices(d.services); renderModels(d.models, d.prices); renderVoice(d.voice);
     renderUpdate(d.update);
     lastSummary = d;
-    document.dispatchEvent(new CustomEvent("bn:summary", { detail: d }));   // (code.js: the Code card's key budget)
+    document.dispatchEvent(new CustomEvent("bn:summary", { detail: d }));   // (home.js: Continue and Get started; tour.js)
     const cb = d.claude && d.claude.command; if (cb) $("#claude-cmd").textContent = cb;
     $("#load-error").hidden = true;
     $("#updated").textContent = `Updated ${new Date().toLocaleTimeString()}`;

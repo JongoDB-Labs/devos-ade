@@ -1,5 +1,6 @@
 """Chat conversations for the portal's global search (GET /api/search/chats?q=…): Open WebUI's own search API
-(GET /api/v1/chats/search?text=…), asked from here, inside the stack, as the owner.
+(GET /api/v1/chats/search?text=…), asked from here, inside the stack, as the owner — and the newest of them for Home's
+Continue row (GET /api/v1/chats/, the same way: portal/recent.py).
 
 How it signs in: exactly as the Chat tab does. Open WebUI trusts the X-Portal-User header for who you are
 (WEBUI_AUTH_TRUSTED_EMAIL_HEADER; Caddy sets it from the portal's own answer for every browser request), so the portal
@@ -104,12 +105,12 @@ class ChatSearch:
     def forget(self) -> None:
         self._token = None
 
-    async def search(self, client: httpx.AsyncClient, q: str) -> list[dict]:
-        """[{id, title, snippet, updated_at}] of the owner's chats matching Q (Open WebUI's own matching), newest first."""
+    async def _rows(self, client: httpx.AsyncClient, path: str, params: dict) -> list:
+        """GET PATH of Open WebUI as the owner (a fresh sign-in once after a 401): its answer, a JSON list."""
         for attempt in (0, 1):
             tok = await self.token(client, fresh=attempt == 1)
             try:
-                r = await client.get(f"{self.s.openwebui_url}/api/v1/chats/search", params={"text": q, "page": 1},
+                r = await client.get(f"{self.s.openwebui_url}{path}", params=params,
                                      headers={"Authorization": f"Bearer {tok}"}, timeout=TIMEOUT)
             except httpx.HTTPError as e:
                 raise SearchError(f"Chat did not answer ({type(e).__name__})") from None
@@ -128,16 +129,39 @@ class ChatSearch:
                 raise SearchError("Chat's answer was not JSON") from None
             if not isinstance(rows, list):
                 raise SearchError("Chat's answer was not a list")
-            out = []
-            for x in rows:
-                if not isinstance(x, dict) or not isinstance(x.get("id"), str) or not CHAT_ID.fullmatch(x["id"]):
-                    continue
-                upd = x.get("updated_at")
-                out.append({"id": x["id"], "title": clean(x.get("title"), MAX_TITLE) or "Untitled chat",
-                            "snippet": clean(x.get("snippet"), MAX_SNIPPET),
-                            "updated_at": upd if isinstance(upd, int) and not isinstance(upd, bool) and upd > 0 else None,
-                            "archived": x.get("archived") is True})
-                if len(out) >= MAX_RESULTS:
-                    break
-            return out
+            return rows
         raise SearchError("Chat refused the portal's session")
+
+    @staticmethod
+    def _row(x, snippet: bool) -> dict | None:
+        if not isinstance(x, dict) or not isinstance(x.get("id"), str) or not CHAT_ID.fullmatch(x["id"]):
+            return None
+        upd = x.get("updated_at")
+        out = {"id": x["id"], "title": clean(x.get("title"), MAX_TITLE) or "Untitled chat",
+               "updated_at": upd if isinstance(upd, int) and not isinstance(upd, bool) and upd > 0 else None}
+        if snippet:
+            out.update({"snippet": clean(x.get("snippet"), MAX_SNIPPET), "archived": x.get("archived") is True})
+        return out
+
+    async def search(self, client: httpx.AsyncClient, q: str) -> list[dict]:
+        """[{id, title, snippet, updated_at}] of the owner's chats matching Q (Open WebUI's own matching), newest first."""
+        out = []
+        for x in await self._rows(client, "/api/v1/chats/search", {"text": q, "page": 1}):
+            row = self._row(x, True)
+            if row is not None:
+                out.append(row)
+            if len(out) >= MAX_RESULTS:
+                break
+        return out
+
+    async def recent(self, client: httpx.AsyncClient, n: int) -> list[dict]:
+        """[{id, title, updated_at}] of the owner's N newest chats (Open WebUI's own list, its first page: newest
+        first; archived ones are not in it) — Home's Continue row (portal/recent.py)."""
+        out = []
+        for x in await self._rows(client, "/api/v1/chats/", {"page": 1}):
+            row = self._row(x, False)
+            if row is not None:
+                out.append(row)
+            if len(out) >= n:
+                break
+        return out

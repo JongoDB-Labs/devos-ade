@@ -26,6 +26,7 @@ import type { Harness, HarnessInfo, PlanUsage, AvailablePlugin, BnModel, Compat,
 import { MODES, COMPATS, HARNESS_IDS } from './types';
 import { normBudget, type Budget as SessionBudget } from './budget';
 import { promptTitle } from './mentions';
+import type { RecentReport } from './recent';
 import { cwdOk, goneCwdOk, normProject, normProjects, normSessionSettings, normSettingsView, projectIdOk, WORKSPACE_ID, WORKSPACE_PATH, type Project, type SettingsView } from './projects';
 
 type Obj = Record<string, unknown>;
@@ -1797,6 +1798,11 @@ export function normAnswers(raw: unknown): BnAnswers {
     });
   }
   return { here: obj(o.terminal)?.here === true, tools };
+}
+/** Home's Continue row: what this page says of its sessions (POST /.bn/recent — the portal takes it only from this page's
+ *  own request, X-Requested-With, and keeps it in memory for this sign-in; recent.ts makes it). */
+export async function reportRecent(report: RecentReport): Promise<void> {
+  await request('POST', '/.bn/recent', report, { 'X-Requested-With': 'bn-code' });
 }
 /** A launch token for the terminal panel's Open menu (POST /.bn/terminal-launch: the portal makes it only for this
  *  page's own request, X-Requested-With) -> the panel's address with it (/.bn/terminal?open=…&launch=…). */

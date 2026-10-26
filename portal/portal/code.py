@@ -212,25 +212,28 @@ async def spend(client: httpx.AsyncClient, s: Settings, session: str) -> tuple[i
         if not isinstance(pages, int) or page >= pages:
             break
     rows.sort(key=lambda x: x["startTime"] or "")
-    k = await summary._key_spend(client, s, "claude-code-terminal", "Terminal (browser)", key)
+    k = await summary._key_spend(client, s, "claude-code-terminal", "Code page & browser terminal", key)
     return 200, {"session": session, "rows": rows, "requests": len(rows), "total": round(sum(x["spend"] for x in rows), 6),
                  "key": {"alias": "claude-code-terminal", "spend": k["spend"], "max_budget": k["max_budget"],
                          "reset_at": k["reset_at"], "error": k["error"]}}
 
 
-# --- deep links into the Code page (Home's Code card, a bookmark, a link someone sent): /?session=<id>,
-# /?prompt=<text> and /?git=hosts|clone (Settings › Claude Code › Git hosts, Activity, the walkthrough: the Git panel's
-# Git hosts or Clone dialog, empty), kept through the Code page's unlock form so that the page gets them after the
-# password. Rebuilt from what checks out (never passed through as given); the page itself treats the prompt as a draft
+# --- deep links into the Code page (Home's Continue row, a bookmark, a link someone sent): /?session=<id>,
+# /?prompt=<text>, /?git=hosts|clone (Settings › Claude Code › Git hosts, Activity, the walkthrough: the Git panel's
+# Git hosts or Clone dialog, empty), /?new=1 (Home's New session: no earlier session shown) and /?project=<id> (the
+# project shown: one of the page's list only), kept through the Code page's unlock form so that the page gets them after
+# the password. Rebuilt from what checks out (never passed through as given); the page itself treats the prompt as a draft
 # marked as coming from a link, never sent by itself.
 DEEP_LINK_MAX = 6000      # the address as carried (a longer one keeps its session, not its prompt)
 PROMPT_MAX = 4000         # characters of a prompt (as the page caps it)
+PROJECT = re.compile(r"ws|p_[0-9a-f]{8}")   # a project's id (code/web/src/deeplink.ts)
 
 
 def deep_link(uri: str | None) -> str | None:
-    """'/?session=…&prompt=…&git=…' rebuilt from a request's path and query when it is a deep link into the Code page,
-    else None. Only the root path, only these three parameters (once each), a session id that is a UUID, a prompt of at
-    most PROMPT_MAX characters without NUL, git only hosts or clone."""
+    """'/?session=…&prompt=…&git=…&new=1&project=…' rebuilt from a request's path and query when it is a deep link into
+    the Code page, else None. Only the root path, only these parameters (once each), a session id that is a UUID, a
+    prompt of at most PROMPT_MAX characters without NUL, git only hosts or clone, new only 1, a project id's shape
+    (ws or p_ and 8 hex digits)."""
     if not isinstance(uri, str) or not uri.startswith("/?") or len(uri) > 64 * 1024:
         return None
     try:
@@ -239,13 +242,17 @@ def deep_link(uri: str | None) -> str | None:
         return None
     out: dict[str, str] = {}
     for k, v in pairs:
-        if k not in ("session", "prompt", "git") or k in out:
+        if k not in ("session", "prompt", "git", "new", "project") or k in out:
             continue
         if k == "session" and SESSION.fullmatch(v.lower()):
             out[k] = v.lower()
         elif k == "prompt" and v and "\x00" not in v:
             out[k] = v[:PROMPT_MAX]
         elif k == "git" and v in ("hosts", "clone"):
+            out[k] = v
+        elif k == "new" and v == "1":
+            out[k] = v
+        elif k == "project" and PROJECT.fullmatch(v):
             out[k] = v
     if not out:
         return None

@@ -465,6 +465,7 @@ function StatusBar() {
       )}
       {activeTab?.kind === 'file' && activeTab.dirty && <span class="sb-item">● unsaved</span>}
       <span class="sb-actions" role="group" aria-label="Quick actions" data-testid="sb-actions">
+        <KeysAction />
         <TerminalAction />
         <RunStatus />
         <PortsStatus />
@@ -494,6 +495,15 @@ function SbAction(props: { id: string; icon: string; label: string; tip: string;
         <span class="sb-label">{props.children ?? props.label}</span>
       </button>
     </Tip>
+  );
+}
+
+// The keyboard shortcuts (the empty editor listed some): their dialog, from the status bar, wherever the page is
+function KeysAction() {
+  return (
+    <SbAction id="keys" icon="keyboard" label="Keys" class="sb-opt" keys={keysFor('shortcuts')}
+      tip="Keyboard shortcuts: send, stop, the permission modes, the command palette, files and search."
+      onClick={() => setDialog('shortcuts')} />
   );
 }
 
@@ -730,6 +740,9 @@ const size = (prop: 'width' | 'height', px: number) => (el: HTMLElement | null) 
 
 function Desktop() {
   const layout = useSel(store, (s) => s.prefs.layout);
+  // Chat first: until a file, a diff or a preview opens (and while the terminal is closed) the chat takes the middle —
+  // it is where you start — instead of an empty editor; the keys the empty editor listed are the status bar's Keys
+  const chatFirst = useSel(store, (s) => s.tabs.length === 0) && !layout.terminal;
   const vw = useViewportWidth();
   // keep at least 320 px for the editor column
   const left = layout.explorer ? Math.min(layout.left, Math.max(BOUNDS.left[0], vw - layout.right - 320)) : 0;
@@ -737,7 +750,7 @@ function Desktop() {
   return (
     <div class="app desktop">
       <TopBar />
-      <div class="main">
+      <div class={`main${chatFirst ? ' chat-first' : ''}`}>
         {layout.explorer && (
           <>
             <div class="col-left" ref={size('width', left)}>
@@ -746,7 +759,7 @@ function Desktop() {
             <Splitter axis="x" value={left} min={BOUNDS.left[0]} max={BOUNDS.left[1]} onChange={(v) => setLayout({ left: v })} label="Resize explorer" testid="split-left" />
           </>
         )}
-        <div class="col-center">
+        <div class={`col-center${chatFirst ? ' hidden' : ''}`}>
           <div class="editor">
             <EditorTabs />
             <EditorPanes />
@@ -756,8 +769,8 @@ function Desktop() {
             <TerminalPanel />
           </div>
         </div>
-        <Splitter axis="x" sign={-1} value={right} min={BOUNDS.right[0]} max={BOUNDS.right[1]} onChange={(v) => setLayout({ right: v })} label="Resize chat" testid="split-right" />
-        <div class="col-right" ref={size('width', right)}>
+        {!chatFirst && <Splitter axis="x" sign={-1} value={right} min={BOUNDS.right[0]} max={BOUNDS.right[1]} onChange={(v) => setLayout({ right: v })} label="Resize chat" testid="split-right" />}
+        <div class="col-right" ref={(el) => { if (el) el.style.width = chatFirst ? '' : `${right}px`; }}>
           <ChatPane />
         </div>
       </div>

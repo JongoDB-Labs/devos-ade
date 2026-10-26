@@ -14,7 +14,7 @@
 //                                                       page is not reloaded and no unsaved edit is lost
 //   portal -> page  {type: 'bn-portal-shown'}            the portal shows this page again (its Code tab): on a phone, the
 //                                                       session that waits for you, its card in view (app.ts showWaiting)
-//   portal -> page  {type: 'bn-portal-session', id}      a session of this page (Home's Code card, Activity, a
+//   portal -> page  {type: 'bn-portal-session', id}      a session of this page (Home's Continue row, Activity, a
 //                                                       notification's #code/<id>): shown or resumed in place, as a deep
 //                                                       link's ?session= is (id: a session id's shape, nothing else)
 //

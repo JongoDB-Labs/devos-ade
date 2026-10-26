@@ -159,10 +159,10 @@ def test_code_tab_is_always_there_and_explains_itself_while_off():
     mobile = open("portal/static/mobile.js", encoding="utf-8").read()
     # the tab whatever the state (on a phone too: a tab of the bottom bar); the frame, its badge, the preload and the
     # code host only while on
-    tail = js[js.rindex("// (Home's Code card first"):]
-    assert "\n  addTab();\n" in tail
+    tail = js[js.rindex("\n  addTab();\n"):]
+    assert tail.startswith("\n  addTab();\n")
     assert "if (here) { listen(); routes(); window.addEventListener(\"load\", preload, { once: true }); } else offPage();" in tail
-    add = js[js.index("function addTab()"):js.index("// --- Home's Code card ---")]
+    add = js[js.index("function addTab()"):js.index("// --- deep links into the Code page ---")]
     off = add[add.index("if (!here) {"):]
     off = off[:off.index("return;")]
     assert 'class: "code-item off"' in off and 'class: "tab-off", text: "off"' in off and '"data-label": "Code (off)"' in off
@@ -265,7 +265,7 @@ def test_the_code_tab_on_a_phone_lands_on_the_session_that_waits_and_a_session_o
     place = routes[routes.index('document.addEventListener("bn:place"'):]
     assert 'd.tab === "code"' in place and "UUID.test(d.place)" in place and "openLink({ session: d.place })" in place
     # a session in place (no reload, no unlock again) once the page runs; else its deep link through the frame
-    link = js[js.index("function openLink(params)"):js.index("function codeCard()")]
+    link = js[js.index("function openLink(params)"):js.index("// the framed page's Git hosts uses")]
     assert 'postMessage({ type: "bn-portal-session", id: params.session }, new URL(appUrl("code")).origin)' in link
     assert "UUID.test(params.session)" in link and 'appFrame("code").src = linkTo(params);' in link and "window.open" not in link
 
@@ -361,6 +361,10 @@ def test_deep_links_are_rebuilt_from_what_checks_out():
     for bad in ("/?git=", "/?git=push", "/?git=HOSTS", "/?git=hosts%00", "/?git=../x"):
         assert dl(bad) is None, bad
     assert dl("/?git=clone&url=https://evil.example/x.git") == "/?git=clone"   # (no URL travels with it)
+    # Home's New session: a new session's start, in a project of the page's list (its id's shape only)
+    assert dl("/?new=1&project=p_0000aaaa") == "/?new=1&project=p_0000aaaa" and dl("/?project=ws") == "/?project=ws"
+    for bad in ("/?new=0", "/?new=yes", "/?project=../etc", "/?project=p_XYZ", "/?project=p_0000aaaa0"):
+        assert dl(bad) is None, bad
     for bad in (None, "", "/", "/api/state?session=x", "//evil.example/?prompt=x", "/x?prompt=a", "?prompt=a", "/?session=../../etc",
                 "/?prompt=", "/?prompt=a%00b", "/?" + "a=1&" * 20, "/?prompt=" + "a" * 70000):
         assert dl(bad) is None, bad
@@ -409,21 +413,27 @@ def test_the_terminals_unlock_form_carries_no_deep_link(cs):
         assert r.status_code == 401 and 'name="next"' not in r.text and "{{next}}" not in r.text
 
 
-def test_home_code_card_lists_what_the_code_page_reports_as_text():
+def test_what_the_code_page_reports_is_checked_and_shown_as_text():
+    # code.js takes the framed page's report (its origin, its frame), checked; Home's Continue row (home.js) shows it,
+    # and what the portal kept of the page's own report (/api/continue), as text
     js = (STATIC / "code.js").read_text(encoding="utf-8")
-    card = js[js.index("// --- Home's Code card ---"):js.index("function listen()")]
+    links = js[js.index("// --- deep links into the Code page ---"):js.index("function listen()")]
     for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"):
         assert sink not in js, sink
-    assert "UUID.test(x.id)" in card and ".slice(0, 120)" in card and ".slice(0, 8)" in card
-    assert 'u.searchParams.set(k, v)' in card and "openLink({ prompt: t })" in card and "openLink({ session: s.id })" in card
-    assert "nothing is sent from here" in card
+    assert "UUID.test(x.id)" in links and ".slice(0, 120)" in links and ".slice(0, 8)" in links
+    assert 'u.searchParams.set(k, v)' in links and "openLink({ session: id })" in js and 'openLink({ new: "1", project:' in js
     # titles: invisible and direction-changing characters shown as ⟨U+…⟩, as the Code page shows them
-    assert "title: typeof x.title === \"string\" ? shownTitle(x.title)" in card
-    inv = card.split("const INVISIBLE = ", 1)[1].split("\n", 1)[0]
-    for c in ("\\u202a-\\u202e", "\\u2066-\\u2069", "\\u200b-\\u200f", "\\ufeff", "\\u{e0000}-\\u{e007f}", "\\u0000-\\u001f", "\\u007f-\\u009f"):
-        assert c in inv or c.replace("\\u202a-", "\\u2028-") in inv, c
-    assert inv.endswith("/gu;") and "`⟨U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, \"0\")}⟩`" in card
+    assert "title: typeof x.title === \"string\" ? shownTitle(x.title)" in links
+    for f in ("code.js", "home.js"):
+        src = (STATIC / f).read_text(encoding="utf-8")
+        inv = src.split("const INVISIBLE = ", 1)[1].split("\n", 1)[0]
+        for c in ("\\u202a-\\u202e", "\\u2066-\\u2069", "\\u200b-\\u200f", "\\ufeff", "\\u{e0000}-\\u{e007f}", "\\u0000-\\u001f", "\\u007f-\\u009f"):
+            assert c in inv or c.replace("\\u202a-", "\\u2028-") in inv, (f, c)
+        assert inv.endswith("/gu;") and "`⟨U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, \"0\")}⟩`" in src, f
     assert "e.origin !== codeOrigin" in js   # only the code host's page may report
+    home = (STATIC / "home.js").read_text(encoding="utf-8")
+    assert 'api("/api/continue")' in home and 'document.addEventListener("bn:code-status"' in home
+    assert "UUID.test(s.id)" in home and "UUID.test(c.id)" in home
     app = (STATIC / "app.js").read_text(encoding="utf-8")
     assert 'new CustomEvent("bn:summary", { detail: d })' in app
 

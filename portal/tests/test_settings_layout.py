@@ -181,7 +181,7 @@ def test_sections_hold_what_their_task_needs():
     assert rows["STT_PROVIDER"]["section"] == "chat"
     # every key and sign-in that adds models in one place, Models & providers: each provider's key a card of its own
     # (its models' rows inside it), then your subscriptions, then Search: Claude Code's WebSearch and a card for each of
-    # its backends; none of them left in AWS & models, Chat & voice or Claude Code
+    # its backends; none of them left in Bedrock (AWS), Chat & voice or Claude Code
     assert [k for k, r in rows.items() if r["section"] == "providers" and r["place"] == "main" and not r["parent"]] == \
         ["AWS_ACCESS_KEY_ID", "OPENROUTER_API_KEY", "EXPLABS_API_KEY", "+subscriptions", "WEBSEARCH_BACKEND", "WEBSEARCH_SEARXNG_BUILTIN",
          "WEBSEARCH_AGENTCORE_GATEWAY", "WEBSEARCH_TAVILY_API_KEY", "WEBSEARCH_BRAVE_API_KEY", "WEBSEARCH_PERPLEXITY_API_KEY", "WEBSEARCH_SEARXNG_URL"]
@@ -440,3 +440,36 @@ def test_search_a_card_for_claude_codes_websearch_and_each_backend():
     form = js[js.index("function openForm(r, k) {"):js.index("function genPassword()")]
     assert 'k.validator === "ws_backend"' in form and 'k.validator === "ws_gateway"' in form and '|| k.validator === "ws_key"' in form
     assert 'sx ? "Remove the URL" : "Remove the webhook"' in form
+
+
+def test_details_in_the_pages_words_and_a_footer_for_the_terminal():
+    # UX-13: a setting's Details says it in plain words (the catalog's notes), then "For the terminal": its .env name and
+    # the command — the key names only there; badges name what restarts in the page's words
+    js = _js("settings.js")
+    frame = js[js.index("function frame(k, r, opts = {}) {"):js.index("// finish ROW")]
+    assert "forTerminal([k.key, ...(withOf[k.key] || [])])" in frame and "term.append(cliLine(k))" in frame
+    helper = js[js.index("function forTerminal(names, ...more) {"):js.index("const PHONE = ")]
+    assert '"For the terminal"' in helper and '"In .env: "' in helper and "set-envkey" in helper
+    assert '"litellm-cfg": ["the model gateway"]' in js and "Restarts LiteLLM" not in js and "From .env as of" not in js
+    # the visible sections' notes: no .env value words ("true =", "blank =") — those of Advanced and About may keep them
+    layout = {c[0]: c[1] for c in (l.split("\t") for l in (REPO / "catalog" / "settings-layout.tsv").read_text(encoding="utf-8").splitlines())
+              if len(c) >= 2 and not c[0].startswith(("#", "@"))}
+    for line in (REPO / "catalog" / "settings.tsv").read_text(encoding="utf-8").splitlines():
+        c = line.split("\t")
+        if line.startswith("#") or len(c) < 9 or c[0] == "key" or layout.get(c[0]) in ("advanced", "about", None):
+            continue
+        assert not re.search(r"(^|[ (])(true|false|blank|Blank|on|off|1) = ", c[7]), (c[0], c[7][:80])
+        assert not re.search(r"\.env\b(?!rc)", c[7]), (c[0], c[7][:80])   # (.envrc is a file Claude may touch)
+
+
+def test_a_phones_section_is_a_short_list_of_cards():
+    # UX-13: on a phone each row's words fold under its Details (the same disclosure); its name, value and control stay
+    js = _js("settings.js")
+    assert 'const PHONE = window.matchMedia("(max-width: 767.98px)");' in js
+    assert "compact(c);" in js[js.index("function card(s) {"):js.index("// blocks CONTAINER ROWS")]
+    rule = js[js.index("function compactRow(rw) {"):js.index("function compact(root) {")]
+    assert 'if (n.matches(KEEP)) continue;' in rule and "foldInto(rw, fold" in rule
+    keep = js.split("const KEEP = ", 1)[1].split("\n", 1)[0]
+    for k in (".set-label", ".set-value", ".set-actions", ".set-form", ".set-remote"):
+        assert k in keep, k
+    assert 'PHONE.addEventListener("change", () => { if (data) render(); });' in js

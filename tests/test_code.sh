@@ -772,6 +772,11 @@ test_caddy_code_site_snippets_and_remote_blocks() {
 		max_size 16KB
 	}"
   assert_contains "$pt" "rewrite /auth/code-sessions"
+  # (Home's Continue row: the page's report of its sessions, kept by the portal)
+  assert_contains "$pt" "request_body /.bn/recent {
+		max_size 16KB
+	}"
+  assert_contains "$pt" "rewrite /auth/code-recent"
   assert_contains "$pt" "respond /.bn/* 404"
   assert_contains "$(awk '/^\(code_unlock\)/,/^}/' "$STACK_DIR/caddy/Caddyfile")" "rewrite /auth/code-unlock"
   pg="$(awk '/^\(code_page\)/,/^}/' "$STACK_DIR/caddy/Caddyfile")"
@@ -794,7 +799,7 @@ test_caddy_code_site_snippets_and_remote_blocks() {
   a="$(cat "$STACK_DIR/portal/portal/app.py")"
   for r in 'Route("/auth/code-unlock", code_unlock, methods=["POST"])' 'Route("/auth/code-models", code_models, methods=["GET"])' \
            'Route("/auth/code-spend", code_spend, methods=["GET"])' 'Route("/auth/code-terminal", code_terminal, methods=["GET"])' \
-           'Route("/auth/code-sessions", code_sessions, methods=["POST"])'; do
+           'Route("/auth/code-sessions", code_sessions, methods=["POST"])' 'Route("/auth/code-recent", code_recent, methods=["POST"])'; do
     assert_contains "$a" "$r"
   done
   assert_contains "$(cat "$STACK_DIR/portal/portal/security.py")" 'REMOTE_CODE_COOKIE = "__Host-bn_code"'

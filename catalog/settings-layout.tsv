@@ -16,7 +16,7 @@
 # +report, +restart, +git-hosts, +project-folders, +sessions-consent, +bring-setup, +subscriptions. Sections are shown
 # in this order; rows in file order.
 
-@account	Account & security	Your password, the owner email, how long sign-ins last, and what LiteLLM keeps of your prompts.	README.md#the-portal-one-login-for-everything
+@account	Account & security	Your password, the owner email, how long sign-ins last, and what the model gateway keeps of your prompts.	README.md#the-portal-one-login-for-everything
 PORTAL_PASSWORD	account	main	-	The one password for the portal, Chat, Admin and Files; it also unlocks the Terminal and the Code page.
 PORTAL_PASSWORD_HASH	account	with	PORTAL_PASSWORD	-
 OPENWEBUI_ADMIN_EMAIL	account	main	-	Your account in Chat, and your sign-in name for Admin (LiteLLM).
@@ -24,7 +24,7 @@ LITELLM_UI_USER	account	with	OPENWEBUI_ADMIN_EMAIL	-
 LITELLM_UI_PASSWORD	account	main	-	Admin's own password: the portal signs you in to the Admin tab with it.
 PORTAL_SESSION_DAYS	account	main	-	How long a sign-in lasts on each browser and device.
 +devices	account	main	-	Every browser, phone and installed app that signed in with the portal password.
-LITELLM_STORE_PROMPTS	account	main	-	Keep the text of every prompt and answer in LiteLLM's logs (90 days, and in backups).
+LITELLM_STORE_PROMPTS	account	main	-	Keep the text of every prompt and answer in the model gateway's logs (90 days, and in backups).
 
 @providers	Models & providers	Each key and sign-in here adds models to every picker: Chat's Who answers, the Code page, the terminal and devos-claude --model, with nothing else to set up. Keys stay on this computer; a provider without one sends nothing. Search: what Claude Code's WebSearch searches with, on every model.	README.md#models--providers
 AWS_ACCESS_KEY_ID	providers	main	-	Claude and other vendors' models in your AWS account: an access key, or this EC2 machine's role.
@@ -42,15 +42,15 @@ WEBSEARCH_TAVILY_API_KEY	providers	main	-	Your own Tavily key. The search querie
 WEBSEARCH_BRAVE_API_KEY	providers	main	-	Your own Brave Search API key. The search queries go to search.brave.com.
 WEBSEARCH_PERPLEXITY_API_KEY	providers	main	-	Your own Perplexity key. The search queries go to perplexity.ai.
 WEBSEARCH_SEARXNG_URL	providers	main	-	A SearXNG of your own (free). The search queries go to it, and on to the engines it asks.
-OPENROUTER_MAX_MODELS	providers	more	OPENROUTER_API_KEY	At most this many OpenRouter models, the newest first; a long list slows LiteLLM's start.
+OPENROUTER_MAX_MODELS	providers	more	OPENROUTER_API_KEY	At most this many OpenRouter models, the newest first; a long list slows the model gateway's start.
 OPENROUTER_INCLUDE_ALIASES	providers	more	OPENROUTER_API_KEY	Also offer OpenRouter's …-latest alias models.
 
-@aws	AWS & models	The AWS region Bedrock runs in, and which models your AWS key can use.	README.md#models--access
+@aws	Bedrock (AWS)	The AWS region Bedrock runs in, and which models your AWS key can use.	README.md#models--access
 AWS_REGION_NAME	aws	main	-	The AWS region your Bedrock models run in.
 +models	aws	main	-	Ask Bedrock again which models your key can use, e.g. after your AWS admin granted more.
 AWS_AUTH	aws	more	-	An access key (the usual), or this EC2 machine's own IAM role.
 
-@spending	Spending & budgets	A monthly budget for each LiteLLM key, the warning before one runs out, and the prices costs are counted with. Budget changes take effect at once.	README.md#costs--budgets
+@spending	Spending & budgets	A monthly budget for each app's key, the warning before one runs out, and the prices costs are counted with. Budget changes take effect at once.	README.md#costs--budgets
 BUDGET_OPENWEBUI	spending	main	-	Monthly limit for Chat, with its document search and voice.
 LITELLM_KEY_OPENWEBUI	spending	with	BUDGET_OPENWEBUI	-
 BUDGET_CLAUDE_CODE	spending	main	-	Monthly limit for devos-claude in your own terminal.
@@ -58,7 +58,7 @@ LITELLM_KEY_CLAUDE_CODE	spending	with	BUDGET_CLAUDE_CODE	-
 BUDGET_TERMINAL	spending	main	-	Monthly limit for the Terminal tab and the Code page (they share one key).
 LITELLM_KEY_TERMINAL	spending	with	BUDGET_TERMINAL	-
 BUDGET_ALERT_PCT	spending	main	-	How much of a budget may be used before Home, Chat and ./stack costs warn.
-ALERT_WEBHOOK_URL	spending	main	-	Optional: a web address LiteLLM posts a budget alert to (Slack, ntfy, your own).
+ALERT_WEBHOOK_URL	spending	main	-	Optional: a web address the model gateway posts a budget alert to (Slack, ntfy, your own).
 BUDGET_SETUP	spending	more	-	Monthly limit for model checks and smoke tests. Keep it above $0.05.
 LITELLM_KEY_SETUP	spending	with	BUDGET_SETUP	-
 PRICE_UPDATES	spending	more	-	Update Bedrock prices daily from AWS's public price lists (no credentials are sent).
