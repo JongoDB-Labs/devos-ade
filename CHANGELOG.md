@@ -6,25 +6,6 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
-### Changed
-
-- **Look:** DevOS ADE now uses the DevOS design system, so it looks like the rest of DevOS. Page and section titles
-  are in a serif (Source Serif 4), the interface in Inter and code in JetBrains Mono. All three are the DevOS
-  website's own fonts, served by your computer: nothing loads from a CDN. Light mode is on warm paper and dark mode
-  uses the DevOS apps' warm "Ink" colours. The accent is ADE's teal, taken from its icon: it marks the main buttons,
-  the page you are on, links, progress and switches.
-  - **Portal:** buttons and chips are pills and cards have the website's rounder corners. Each page has a small teal
-    label above its title and a soft teal wash behind its head.
-  - **Code page:** the same colours and fonts. A permission card has an amber edge, like the apps' cards that need
-    you, and Claude's headings are in the serif.
-  - **Terminal:** the Ink colours, with a teal cursor and a teal current window.
-  - **Unchanged:** the layout, and every control and its name. Text keeps AA contrast or better (the numbers are in
-    `docs/design.md`). Form fields' borders now reach 3:1, and a disabled button is dashed instead of faded, so its
-    label stays readable.
-  - **Before you sign in:** the sign-in page's style sheets and fonts are reachable then, as `login.css` already was.
-
-## [0.28.2] - 2026-10-25
-
 ### Added
 
 - **Settings › Models & providers:** one place where every API key and subscription simply adds models. A card for
@@ -41,6 +22,36 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 - **Code page:** a provider without its key shows in the model picker, under *More providers*, as a greyed item that
   opens its card (*OpenRouter models — … Settings › Models & providers › OpenRouter takes it*); before, its group was
   simply missing. `/.bn/models` says which of OpenRouter and Experiential Labs has a key.
+
+### Changed
+
+- **Look:** DevOS ADE now uses the DevOS design system, so it looks like the rest of DevOS. Page and section titles
+  are in a serif (Source Serif 4), the interface in Inter and code in JetBrains Mono. All three are the DevOS
+  website's own fonts, served by your computer: nothing loads from a CDN. Light mode is on warm paper and dark mode
+  uses the DevOS apps' warm "Ink" colours. The accent is ADE's teal, taken from its icon: it marks the main buttons,
+  the page you are on, links, progress and switches.
+  - **Portal:** buttons and chips are pills and cards have the website's rounder corners. Each page has a small teal
+    label above its title and a soft teal wash behind its head.
+  - **Code page:** the same colours and fonts. A permission card has an amber edge, like the apps' cards that need
+    you, and Claude's headings are in the serif.
+  - **Terminal:** the Ink colours, with a teal cursor and a teal current window.
+  - **Unchanged:** the layout, and every control and its name. Text keeps AA contrast or better (the numbers are in
+    `docs/design.md`). Form fields' borders now reach 3:1, and a disabled button is dashed instead of faded, so its
+    label stays readable.
+  - **Before you sign in:** the sign-in page's style sheets and fonts are reachable then, as `login.css` already was.
+- **Settings:** the AWS key (from *AWS & models*), OpenRouter's and Experiential Labs' keys and models (from *Chat &
+  voice*) and *Your AI subscriptions* with *Use my Claude plan in the Code page and Chat* (from *Claude Code*) moved to
+  *Models & providers*; each old section says where they are now, with a link. Greyed items that waited for one of them
+  — OpenRouter's and Experiential Labs' models in Chat's *Who answers*, Claude on your plan, a Chat sign-in — name the
+  new place and open the card (`catalog/setup-links.tsv`); so do `./stack subscriptions`, `./stack costs` and the Code
+  page's own words. In each subscription's card, *Sign in* (the terminal's and the Code page's, and Chat's on its own
+  line) replaces *Sign in (terminal and Code page)* and *Sign in (Chat)*, and *Check again* is once for each sandbox,
+  under the cards. `./stack config` lists the section too.
+
+## [0.28.2] - 2026-10-25
+
+### Added
+
 - **Tests:** a harness parity suite, `tests/e2e/harness-parity.sh` (opt-in, by hand): does a model of another vendor
   work as Claude Code's model with no difference but what it was trained on? It runs real Claude Code sessions
   (`devos-claude -p … --output-format stream-json`) in the terminal's sandbox image, through this checkout's terminal
@@ -55,14 +66,6 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ### Changed
 
-- **Settings:** the AWS key (from *AWS & models*), OpenRouter's and Experiential Labs' keys and models (from *Chat &
-  voice*) and *Your AI subscriptions* with *Use my Claude plan in the Code page and Chat* (from *Claude Code*) moved to
-  *Models & providers*; each old section says where they are now, with a link. Greyed items that waited for one of them
-  — OpenRouter's and Experiential Labs' models in Chat's *Who answers*, Claude on your plan, a Chat sign-in — name the
-  new place and open the card (`catalog/setup-links.tsv`); so do `./stack subscriptions`, `./stack costs` and the Code
-  page's own words. In each subscription's card, *Sign in* (the terminal's and the Code page's, and Chat's on its own
-  line) replaces *Sign in (terminal and Code page)* and *Sign in (Chat)*, and *Check again* is once for each sandbox,
-  under the cards. `./stack config` lists the section too.
 - **Models for Claude Code:** the README says what still differs from model to model, as the harness parity suite
   found it (README › Models for Claude Code): WebSearch on Bedrock and OpenRouter, no thinking blocks where the
   provider returns no reasoning, no image input for a text-only model, Llama's tool calls written as text — and
