@@ -735,6 +735,13 @@ def auto_switch(ctx):
                     page.wait_for_timeout(max(0, min(5.0, end - time.time())) * 1000)
                 fresh_beat()
                 if not page.locator("#confirm-ok").is_visible():
+                    # (Home asks for the helper's status every 30 s and trusts a heartbeat for 30 s: an ask that came
+                    # while the fake one was nearly 30 s old leaves the switch disabled until the next — v0313a's
+                    # slower run clicked it then and waited out the click's 30 s. Kept fresh until Home has seen it.)
+                    on, t_en = page.locator("#auto-toggle [data-auto=on]"), time.time()
+                    while on.is_disabled() and time.time() - t_en < 45:
+                        fresh_beat()
+                        page.wait_for_timeout(1000)
                     page.click("#auto-toggle [data-auto=on]")
                     page.wait_for_selector("#confirm[open]")
                     page.fill("#confirm-password", ENV["PORTAL_PASSWORD"])
