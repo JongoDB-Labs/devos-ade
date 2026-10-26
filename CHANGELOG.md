@@ -6,6 +6,55 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+
+- **Tests: a layout sweep.** `tests/e2e/browser/layout_sweep.py` measures every page and state in the browser for what
+  collides or is cut off: text over text, a control or a badge over a title, a title, label or button cut by an
+  ellipsis or a box that hides it, a page that scrolls sideways, pointer targets under 24 × 24 px (WCAG 2.2, 2.5.8),
+  and controls you can Tab to that no scrolling brings into view. Each finding is kept once, with every size, theme and
+  state it was seen at and a cropped screenshot. Every end-to-end run has its fast run as `browser/layout-no-overlap`
+  (12 widths from 320 to 1920 px, both themes, the main pages): it fails on a finding that
+  `tests/e2e/browser/layout-allowlist.json` does not list with a reviewed reason. For releases,
+  `tests/e2e/ui-sweep.sh --layout full` measures every 40 px from 320 to 1920 at 600 and 1000 px high, every Settings
+  section and walkthrough step, the menus and info panels, and a Code page session against its mock backend.
+
+### Fixed
+
+- **Tests:** the Code page's browser check of Auto mode expects its reviewer to be Claude Haiku, as it has been since
+  v0.28.1 (it still expected Sonnet 5.5 and failed).
+- **Layout: nothing collides or is cut off between the sizes checked before** (390, 820 and 1440 px). The sweep found
+  problems in v0.31.0 at sizes no check had tried; each was fixed where it starts:
+  - **The Code page's top bar** kept its controls on the right at their size: squeezed, they ran over the model and
+    effort pickers (1100–1160 px), shrank the menu button to 10 px and cut the Editor button off. As the bar narrows it
+    now sheds words first (the session title, which the chat's head shows, then the brand's name and the meters'
+    labels), so the project's name stays whole instead of "W…"; the cost pill's figure is centred in a touch screen's
+    taller pill, no longer on its top edge.
+  - **Short windows:** the icon rail and the collapsed sidebar no longer push Sign out and the walkthrough below the
+    window at 600 px tall (their spacing tightens under 760 px; under 560 px the sidebar scrolls). A pending
+    permission card no longer squeezes the conversation to a 13 px sliver: the card scrolls inside first. More's sheet
+    scrolls instead of putting its title above the top of a phone.
+  - **Cut-off words:** the Code page's side tabs show icons rather than "EXPLOR…"; the terminal panel keeps the word
+    Terminal and its note no longer wraps over the chat; a phone's prompt box keeps its mode's name; a phone's menus
+    wrap a model's description rather than losing its switching cost, and the model picker shows a model's compatibility
+    note whole (its own rule to wrap was overridden); Who answers above Chat on a phone shows the whole choice; search
+    results show a setting's whole name; a session title cut in a list shows in full on hover.
+  - **Out of reach:** a user message's Restore and Fork sit under its text in a narrow conversation (they ran past its
+    left edge).
+  - **The command palette** wraps a command's name and what it does instead of ending them in "…" (a phone showed 7 %
+    of some); **the empty editor's shortcut list** scrolls inside the editor instead of running over the terminal panel
+    in a 600 px window.
+  - **Targets of 24 px at least** (WCAG 2.5.8): Settings' Details, the other folds and links on Home (Open Code, the
+    update line and a release's link, Credentials, the version on a phone), a tab's close, a message's Restore and Fork,
+    a code block's Copy, a tool's file, Thought, the file tree's ⋯ (on a touch screen it no longer overlaps the next
+    row's), New session, and the Code page's project line on a phone.
+- **Accessibility and polish from the UX audit:** the Settings section list holds list items only; the model picker is
+  a dialog named Model (it holds a search, which a menu may not), its choices in menus and a model's star a menu
+  checkbox; an editor tab no longer holds its close
+  button (Delete closes it from the keyboard); the Code page has a main landmark and a heading; a Markdown preview reads
+  in the UI font; the Code page's toasts sit below the chat's head, never over its controls, and "notifications not
+  allowed" is no longer an error; a focused resize handle shows a 5 px teal bar; the sidebar's pop-out arrows are no
+  longer faded below 3:1, and the "off" badge on the selected Code tab is readable.
+
 ## [0.31.3] - 2026-10-26
 
 ### Changed

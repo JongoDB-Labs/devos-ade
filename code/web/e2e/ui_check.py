@@ -456,7 +456,7 @@ def auto_mode(browser):
     names = page.locator(".mode-panel .mi-title").all_inner_texts()
     assert [n.strip() for n in names] == ["Read only", "Plan", "Manual", "Accept edits", "Auto"], names
     expect(page.get_by_test_id("mode-auto")).to_contain_text("reviewer model")
-    expect(page.get_by_test_id("mode-auto")).to_contain_text("Sonnet 5.5")
+    expect(page.get_by_test_id("mode-auto")).to_contain_text("reviewer (Claude Haiku)")
     expect(page.locator(".mode-panel")).to_contain_text("Plan → Auto")
     p.shot("desktop-auto-picker.png")
     page.keyboard.press("Escape")
