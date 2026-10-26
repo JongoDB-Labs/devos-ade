@@ -72,7 +72,7 @@ body.resizing-x iframe, body.resizing-y iframe { pointer-events: none; }
 .icon-btn { display: inline-grid; place-items: center; position: relative; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--muted); text-decoration: none; }
 .icon-btn:hover { background: var(--hover); color: var(--ink); }
 .icon-btn.on { color: var(--ink); background: var(--active); }
-.icon-btn.tiny { width: 22px; height: 22px; }
+.icon-btn.tiny { width: 24px; height: 24px; }   /* (24 px: WCAG 2.5.8) */
 /* buttons: the DevOS website's pills; the main one teal (ADE's accent) */
 .btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 13px; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--surface); color: var(--ink); font-weight: 500; white-space: nowrap; text-decoration: none;
   transition: border-color 0.2s, box-shadow 0.25s var(--ease), transform 0.25s var(--ease); }
@@ -323,7 +323,8 @@ body.resizing-x iframe, body.resizing-y iframe { pointer-events: none; }
 .diff-path { font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
 .diff-sides { font-size: 12px; }
 .diff-fallback { flex: 1; min-height: 0; overflow: auto; }
-.editor-welcome { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; color: var(--muted); text-align: center; }
+/* (a short editor — the terminal open in a 600 px window —: its shortcuts scroll inside it, never over the panel below) */
+.editor-welcome { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; align-items: center; justify-content: safe center; gap: 14px; padding: 24px; color: var(--muted); text-align: center; }
 .welcome-mark { display: grid; place-items: center; width: 52px; height: 52px; border-radius: var(--r-l); background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
 .welcome-mark.big { width: 68px; height: 68px; border-radius: 18px; }
 .keys { display: grid; gap: 6px; margin: 4px 0 0; min-width: min(320px, 100%); }

@@ -95,8 +95,10 @@
 .cp-item { display: flex; align-items: center; gap: 9px; padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13.5px; }
 .cp-item.on { background: var(--active); }
 .cp-item .ic { flex: none; color: var(--muted); }
-.cp-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cp-detail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+/* (a command's name and what it does wrap rather than end in "…": on a phone the detail goes under the name) */
+.cp-item { flex-wrap: wrap; row-gap: 1px; }
+.cp-label { min-width: 0; overflow-wrap: anywhere; }
+.cp-detail { flex: 1 1 14em; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
 .cp-item kbd { margin-left: auto; }
 .cp-empty { padding: 14px 10px; }
 .cp-foot { flex: none; display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 6px 12px; border-top: 1px solid var(--line); }

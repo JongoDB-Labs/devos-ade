@@ -226,6 +226,7 @@ a.form-link:not([href]) { display: none; }
 .notes-list { display: grid; gap: 6px; margin-top: 8px; }
 .release > summary { cursor: pointer; color: var(--ink); }
 .release > summary .rel-when { color: var(--muted); font-size: 13px; }
+.release > .note a, #update-link { display: inline-flex; align-items: center; min-height: 24px; }
 .release .notes-body { margin-top: 6px; }
 .update-more { font-size: 13px; color: var(--muted); }
 /* The portal restarting during an update or rollback: a calm line with the time it has taken. */
