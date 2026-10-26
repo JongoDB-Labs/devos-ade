@@ -2290,7 +2290,8 @@ export async function connectGitRepo(id: string): Promise<void> {
   setProject(id);
   showGit();
   await refreshGit(true);
-  if (!get().git.status?.repo) {
+  // (the project's own folder: a repository around it or inside it, which the panel may be showing, is not this one)
+  if (get().git.found !== 'self' || !get().git.status?.repo) {
     try {
       await api.projectGitInit(id);
       toast('A git repository now (git init): add its remote.', 'ok');
