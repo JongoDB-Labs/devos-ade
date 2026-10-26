@@ -323,7 +323,10 @@ def global_search(ctx):
     page.keyboard.press("Escape")
     expect(page.locator("#search[open]").count() == 0, "Escape did not close")
     # where a setting is changed comes first (UX-22): "budget" → Settings, its section Spending & budgets on top (active:
-    # Enter opens it), the walkthrough's Budgets below
+    # Enter opens it), the walkthrough's Budgets below. (The box first emptied: the choice made with ↓ above would otherwise
+    # stay chosen while it still matches — the search keeps a choice across typing.)
+    _search(page, "")
+    page.wait_for_selector("#search[open] #sg-pages")
     _search(page, "budget")
     _option(page, "settings", "Spending & budgets")
     groups = page.eval_on_selector_all("#search-list .search-group", "els => els.map((e) => e.id)")
