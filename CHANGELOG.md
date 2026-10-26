@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-10-26
+
 ### Added
 
 - **Settings › Models & providers:** one place where every API key and subscription simply adds models. A card for
@@ -2929,7 +2931,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.28.2...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.29.0...HEAD
+[0.29.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.28.2...v0.29.0
 [0.28.2]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.28.1...v0.28.2
 [0.28.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.28.0...v0.28.1
 [0.28.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.27.1...v0.28.0
