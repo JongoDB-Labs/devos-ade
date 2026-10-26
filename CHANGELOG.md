@@ -188,6 +188,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   `PUT /api/prefs`, in its own volume), so a new browser or a phone starts its next session where you left off. A
   default set or changed in Settings after your pick wins over it until you pick again. A browser's pick from before
   this version is taken over the first time it opens the Code page.
+- **The model picker lists the models you can use first.** It opened on *Who answers* — six subscriptions, most not
+  signed in, each with a long line — so on a phone the first model was at the bottom of the screen. The models come
+  first now; *Who answers* follows them with Claude Code on Bedrock and the subscriptions that can start here, and the
+  ones to sign in to are folded under one row, **Subscriptions (sign in to use)**, that opens them.
 
 ### Fixed
 

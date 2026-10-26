@@ -56,36 +56,63 @@ export function harnessState(h: HarnessInfo): { ok: boolean; says: string; reaso
   return { ok: true, says: h.signed === 'yes' ? 'signed in' : 'sign-in not known here' };
 }
 
-/** "Who answers" in the model picker: Claude Code on Bedrock, and each of your subscriptions (a switch: a new session
- *  with it here, the conversation so far carried over) */
+/** Who answers, split for the picker: Claude Code on Bedrock and the subscriptions that can start here (signed in, or
+ *  whose sign-in is not known here) — and the one answering now — shown; those that cannot start (not signed in, left
+ *  out of the sandbox, Claude on your plan off) folded under one row, so the models you can use come first (UX-06). */
+export function answerers(list: HarnessInfo[], current: Harness): { ready: HarnessInfo[]; signIn: HarnessInfo[] } {
+  const ready: HarnessInfo[] = [];
+  const signIn: HarnessInfo[] = [];
+  for (const h of list) (harnessState(h).ok || h.id === current ? ready : signIn).push(h);
+  return { ready, signIn };
+}
+
+/** "Who answers" in the model picker, after its models: Claude Code on Bedrock, and each of your subscriptions that can
+ *  start here (a switch: a new session with it here, the conversation so far carried over); the ones to sign in to
+ *  first under one row that opens them */
 function WhoAnswers({ current, close }: { current: Harness; close: () => void }) {
   const list = useSel(store, (s) => s.harnesses);
   const agents = useSel(store, (s) => s.server?.agents === true);
+  const [more, setMore] = useState(false);
   if (!agents) return null;
+  const { ready, signIn } = answerers(list ?? [], current);
+  const item = (h: HarnessInfo) => {
+    const st = harnessState(h);
+    // (one that cannot start here: a choice that goes where that is turned on — at once, its words saying where)
+    return (
+      <MenuItem key={h.id} checked={current === h.id} testid={`harness-${h.id}`} setup={!st.ok && current !== h.id ? st.reason : undefined}
+        onSelect={() => { close(); if (current === h.id) return; if (st.ok) void switchHarness(h.id); else if (st.reason) goSetup(st.reason, h.id); }}>
+        <span class="mi-title">{h.id === 'claude' ? 'Claude · your plan' : h.name}<span class="mp-badge tone-info">your plan</span></span>
+        <span class="mi-desc">{h.plan} · {st.says}</span>
+      </MenuItem>
+    );
+  };
   return (
     <div class="mp-group" role="group" aria-label="Who answers" data-testid="who-answers">
       <div class="mp-group-head">Who answers</div>
       <MenuItem checked={current === 'bedrock'} testid="harness-bedrock" onSelect={() => { close(); if (current !== 'bedrock') void switchHarness('bedrock'); }}>
         <span class="mi-title">Claude Code on Bedrock</span>
-        <span class="mi-desc">the models below, billed as {PRODUCT} bills them</span>
+        <span class="mi-desc">the models above, billed as {PRODUCT} bills them</span>
       </MenuItem>
-      {(list ?? []).map((h) => {
-        const st = harnessState(h);
-        // (one that cannot start here: a choice that goes where that is turned on — at once, its words saying where)
-        return (
-          <MenuItem key={h.id} checked={current === h.id} testid={`harness-${h.id}`} setup={!st.ok && current !== h.id ? st.reason : undefined}
-            onSelect={() => { close(); if (current === h.id) return; if (st.ok) void switchHarness(h.id); else if (st.reason) goSetup(st.reason, h.id); }}>
-            <span class="mi-title">{h.id === 'claude' ? 'Claude · your plan' : h.name}<span class="mp-badge tone-info">your plan</span></span>
-            <span class="mi-desc">{h.plan} · {st.says}</span>
-          </MenuItem>
-        );
-      })}
+      {ready.map(item)}
+      {signIn.length > 0 && (
+        <button type="button" class="mi mp-more" role="menuitem" aria-expanded={more} data-testid="harness-more" onClick={() => setMore(!more)}>
+          <span class="mi-body">
+            <span class="mi-title">Subscriptions (sign in to use)</span>
+            <span class="mi-desc">{signIn.map((h) => (h.id === 'claude' ? 'Claude' : h.name)).join(', ')}</span>
+          </span>
+          <span class="mi-hint">{signIn.length}</span>
+          <Icon name={more ? 'chevronUp' : 'chevronDown'} size={13} />
+        </button>
+      )}
+      {more && signIn.map(item)}
       {list === null && <div class="panel-note">Your subscriptions are being listed…</div>}
-      <div class="panel-note">
-        Each answers through its own app in the sandbox, signed in there with its own sign-in; usage counts against your plan (no $). Switching starts a new session in
-        this project's folder with your conversation so far.{' '}
-        <button type="button" class="link" role="menuitem" onClick={() => void refreshHarnesses(true)}>Check again</button>
-      </div>
+      {(more || ready.length > 0 || list === null) && (
+        <div class="panel-note">
+          Each answers through its own app in the sandbox, signed in there with its own sign-in; usage counts against your plan (no $). Switching starts a new session in
+          this project's folder with your conversation so far.{' '}
+          <button type="button" class="link" role="menuitem" onClick={() => void refreshHarnesses(true)}>Check again</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -115,7 +142,6 @@ function PlanModelPicker({ compact }: { compact?: boolean }) {
       }>
       {(close) => (
         <>
-          <WhoAnswers current={v.harness} close={close} />
           <div class="mp-group" role="group" aria-label={`${names}'s models`} data-testid="plan-models">
             <div class="mp-group-head">{names}'s models</div>
             {models.map((m) => (
@@ -126,6 +152,7 @@ function PlanModelPicker({ compact }: { compact?: boolean }) {
             ))}
             {!models.length && <div class="panel-note">Its models are listed once it has started (send a prompt).</div>}
           </div>
+          <WhoAnswers current={v.harness} close={close} />
         </>
       )}
     </Dropdown>
@@ -173,9 +200,6 @@ function BedrockModelPicker({ compact }: { compact?: boolean }) {
     >
       {(close) => (
         <>
-          <div role="menu" aria-label="Who answers">
-            <WhoAnswers current="bedrock" close={close} />
-          </div>
           <div class="panel-head mp-head">
             <span>Model</span>
             {bn?.scope && bn.scope.mode !== 'all' && (
@@ -292,6 +316,10 @@ function BedrockModelPicker({ compact }: { compact?: boolean }) {
               Show all models ({hidden} more: outside Settings › Claude Code › Models{models.some((m) => m.compat === 'fails') ? ', or failing' : ''})
             </label>
           )}
+          {/* who answers, after the models you can use (your subscriptions to sign in to: folded under one row) */}
+          <div role="menu" aria-label="Who answers">
+            <WhoAnswers current="bedrock" close={close} />
+          </div>
           <div class="panel-note">
             Prices per million input / output tokens, as {PRODUCT} bills them; free models cost $0. Claude Code speaks Anthropic's API with tools: other
             providers' models answer through LiteLLM's translation, and tool use, thinking, prompt caching and long contexts vary —{' '}

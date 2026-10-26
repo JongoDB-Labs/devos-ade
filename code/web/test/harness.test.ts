@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { harnessOf, normEvent, normPlan, normServerMsg } from '../src/api';
-import { planText, harnessState } from '../src/components/Pickers';
+import { planText, harnessState, answerers } from '../src/components/Pickers';
 import { SETUP_LINKS, settingsRoute, setupTarget, type SetupReason } from '../src/setuplinks';
 import { applyEvent, newView } from '../src/session';
 
@@ -46,6 +46,20 @@ test('the picker: a subscription that can start, and why one cannot', () => {
   assert.deepEqual(harnessState({ ...h, installed: false }), { ok: false, says: SETUP_LINKS['tool-left-out'].says, reason: 'tool-left-out' });
   assert.deepEqual(harnessState({ ...h, allowed: false }), { ok: false, says: SETUP_LINKS['claude-plan-off'].says, reason: 'claude-plan-off' });
   assert.match(harnessState({ ...h, allowed: false }).says, /Settings › Models & providers › Claude Code › Use my Claude plan/);
+});
+
+test('the picker: the subscriptions you can use shown, the ones to sign in to folded under one row (UX-06)', () => {
+  const h = (id: 'claude' | 'codex' | 'copilot' | 'cursor' | 'grok', signed: 'yes' | 'no' | 'unknown', more: { installed?: boolean; allowed?: boolean } = {}) =>
+    ({ id, name: id, provider: id, plan: `your ${id} plan`, installed: more.installed ?? true, signed, allowed: more.allowed ?? true });
+  // the audit's stack: none signed in, Copilot's sign-in not known, Claude on your plan off
+  const list = [h('claude', 'yes', { allowed: false }), h('codex', 'no'), h('copilot', 'unknown'), h('cursor', 'no'), h('grok', 'no', { installed: false })];
+  const a = answerers(list, 'bedrock');
+  assert.deepEqual(a.ready.map((x) => x.id), ['copilot']);
+  assert.deepEqual(a.signIn.map((x) => x.id), ['claude', 'codex', 'cursor', 'grok']);
+  // the one answering now is always shown; one signed in is shown
+  assert.deepEqual(answerers(list, 'codex').ready.map((x) => x.id), ['codex', 'copilot']);
+  assert.deepEqual(answerers([h('codex', 'yes'), h('cursor', 'no')], 'bedrock'), { ready: [h('codex', 'yes')], signIn: [h('cursor', 'no')] });
+  assert.deepEqual(answerers([], 'bedrock'), { ready: [], signIn: [] });
 });
 
 test('greyed items: every reason has a target, none dead — a setting of the portal or a sign-in; and how Settings is reached', () => {

@@ -4604,10 +4604,21 @@ def models_picker(browser):
     page.get_by_test_id("model-picker").click()
     panel = page.locator(".model-panel")
     expect(panel).to_be_visible()
-    # the search box has the focus; the groups in order: Who answers (Claude Code on Bedrock, your subscriptions) first
+    # the search box has the focus; the groups in order: the models first, then Who answers (Claude Code on Bedrock, your
+    # subscriptions that can start; the ones to sign in to folded under one row that opens them)
     expect(page.get_by_test_id("model-search")).to_be_focused()
     heads = panel.locator(".mp-group-head").all_inner_texts()
-    assert [h.lower() for h in heads] == ["who answers", "anthropic (claude)", "other providers on bedrock", "openrouter: free", "openrouter"], heads
+    assert [h.lower() for h in heads] == ["anthropic (claude)", "other providers on bedrock", "openrouter: free", "openrouter", "who answers"], heads
+    who = page.get_by_test_id("who-answers")
+    expect(who.get_by_test_id("harness-codex")).to_be_visible()        # (the mock: Codex signed in)
+    expect(who.get_by_test_id("harness-cursor")).to_have_count(0)      # (not signed in: folded)
+    more = who.get_by_test_id("harness-more")
+    expect(more).to_contain_text("Subscriptions (sign in to use)")
+    expect(more).to_have_attribute("aria-expanded", "false")
+    more.click()
+    expect(more).to_have_attribute("aria-expanded", "true")
+    expect(who.get_by_test_id("harness-cursor")).to_be_visible()
+    expect(page.get_by_test_id("model-search")).to_be_visible()        # (the panel stays open)
     bed = page.get_by_test_id("model-group-bedrock")
     expect(bed).to_contain_text("Llama 3.3 70B")
     expect(bed.get_by_test_id("compat-chat-only")).to_contain_text("chat only")
