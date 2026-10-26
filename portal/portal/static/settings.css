@@ -29,7 +29,9 @@
 .set-cards { display: grid; gap: 18px; min-width: 0; }
 
 /* a section */
-.set-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-xl); padding: 24px 26px 12px; scroll-margin-top: 16px; box-shadow: var(--card-edge); }
+/* (a container: a narrow card puts each setting's control under its name, below) */
+.set-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-xl); padding: 24px 26px 12px; scroll-margin-top: 16px; box-shadow: var(--card-edge);
+  container: set-card / inline-size; }
 .set-card-head h2 { margin: 0; font-size: var(--t-2); line-height: 1.15; letter-spacing: -0.015em; }
 .set-card-head h2:focus { outline: none; }
 .set-card-head h2:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
@@ -73,6 +75,22 @@
 .set-cli .note { margin: 0; }
 .set-cli code { padding: 2px 8px; border-radius: var(--r-s); background: var(--bg); border: 1px solid var(--line); overflow-wrap: anywhere; }
 .set-remote { color: var(--ink); padding: 6px 10px; border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); border-radius: 0 var(--r-s) var(--r-s) 0; }
+/* A narrow card (under 640 px inside: a phone, a tablet's column, a desktop beside the walkthrough): the control — a
+   switch, Change, Add key, Set the gateway — under the setting's name instead of beside it, and its words (what it is,
+   its value, an option's info panel, what a provider adds) the card's full width. The main column's pieces are then
+   the row's own items, the control placed after the name; the spacing stays the wide row's. */
+@container set-card (max-width: 639.98px) {
+  .set-row { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
+  .set-row > .set-main { display: contents; }
+  .set-row > .set-main > .set-label { order: -2; }
+  .set-row > .set-actions { order: -1; justify-content: flex-start; margin: 8px 0 4px; }
+  .set-row > .set-actions:empty { display: none; }
+  .set-row .set-toggle { align-items: flex-start; }
+  .set-row .set-toggle .note { text-align: left; max-width: none; }
+  .set-row > .set-details { margin-top: 6px; }
+  .set-row > :is(.set-cli, .set-remote, .set-backups) { margin-top: 10px; }
+  .set-row > .set-form { margin-top: 14px; }
+}
 
 /* Project folders (+project-folders): one line each, its buttons on the right; adding below */
 .set-projects { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
@@ -213,7 +231,7 @@
 .set-ws-info dt { font: 600 11.5px/1.6 var(--font-mono); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
 .set-ws-info dd { margin: 0; overflow-wrap: break-word; }
 .set-ws-info a { color: var(--accent); }
-/* (where the card's column is narrow — a phone, a tablet's column beside a switch — each label over its text) */
+/* (where the panel is narrow — a phone, a tablet's column — each label over its text) */
 @container (max-width: 479.98px) {
   .set-ws-info dl { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .set-ws-info dd + dt { margin-top: 8px; }
@@ -251,7 +269,8 @@
   .set-layout { grid-template-columns: 172px minmax(0, 1fr); gap: 20px; }
 }
 
-/* Phones: Settings opens from More; the section picker sticks to the top, one section at a time, controls under each setting */
+/* Phones: Settings opens from More; the section picker sticks to the top, one section at a time (each setting's control
+   under its name: the narrow card's rule above) */
 @media (max-width: 767.98px) {
   .tabs li:has(> [data-tab="settings"]) { display: none; }
   .settings-page { padding: max(18px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 32px max(16px, env(safe-area-inset-left)); }
@@ -267,11 +286,6 @@
   .set-nav { display: none; }
   .set-card { padding: 16px 16px 10px; }
   .set-card-head h2 { font-size: var(--t-1); }
-  .set-row { grid-template-columns: minmax(0, 1fr); }
-  .set-actions { justify-content: flex-start; }
-  .set-row.set-has-switch { grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; }
-  .set-row.set-has-switch > .set-actions { justify-content: flex-end; }
-  .set-row:not(.set-has-switch) .set-toggle { align-items: flex-start; }
   .set-children { padding-left: 12px; margin-left: 2px; }
   .set-form { max-width: none; }
   .set-pager .quiet { min-height: 44px; }

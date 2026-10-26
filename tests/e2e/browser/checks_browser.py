@@ -3197,6 +3197,63 @@ def settings_providers(ctx):
     return "; ".join(said) + f"; {len(tools)} subscription cards; AWS & models, Chat & voice and Claude Code link here"
 
 
+# Each row with a control: [key, row, its name line, its control, its summary, its info panel (open), what it adds] as
+# {left, top, right, bottom, width}; null for a piece it does not have
+NARROW_ROWS = """(sec) => { const box = (e) => { if (!e || !e.getClientRects().length) return null; const r = e.getBoundingClientRect();
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, max: parseFloat(getComputedStyle(e).maxWidth) || 1e6 }; };
+  return [...document.querySelectorAll(sec + ' .set-row')].filter((r) => r.getClientRects().length).map((r) => {
+    const a = r.querySelector(':scope > .set-actions');
+    return [r.dataset.key || r.dataset.own, box(r), box(r.querySelector('.set-label')), a && a.children.length ? box(a) : null,
+            box(r.querySelector('.set-sum')), box(r.querySelector('.set-ws-info:not([hidden])')), box(r.querySelector('.set-prov-adds'))]; })
+    .filter((x) => x[3]); }"""
+
+
+@check("browser", "settings-narrow-cards")
+def settings_narrow_cards(ctx):
+    """Settings' cards on a phone and a tablet: each setting's control (a switch, Change, Add key, Set the gateway) under
+    its name line, and its words the card's full width — not squeezed beside the control; on a desktop the control
+    stays beside them. Models & providers (the built-in SearXNG's info open) and Claude Code (its switches)."""
+    said = []
+    for device, narrow in (("phone", True), ("tablet", True), ("desktop", False)):
+        page, rec = ctx.page(f"settings-narrow-{device}", device=device)
+        login(page)
+        rows = []
+        for sec in ("providers", "code"):
+            page.evaluate(f"location.hash = '#settings/{sec}'")
+            page.wait_for_selector(f"#set-{sec}:not([hidden]) .set-row", timeout=20000)
+            settings_drawn(page)
+            if sec == "providers":
+                info = page.locator("#set-providers .set-row[data-key=WEBSEARCH_SEARXNG_BUILTIN] .set-info-btn")
+                if info.count():
+                    info.first.click()
+                    page.wait_for_selector("#set-providers .set-row[data-key=WEBSEARCH_SEARXNG_BUILTIN] .set-ws-info:not([hidden])")
+            rows += page.evaluate(NARROW_ROWS, f"#set-{sec}")
+            shot(page, f"17c-settings-narrow-{device}-{sec}")
+        expect(len(rows) >= 8, f"{device}: only {len(rows)} rows with a control")
+        bad = []
+        for key, row, label, act, summ, info, adds in rows:
+            if narrow:
+                # under the name line, at the row's left; every piece of text as wide as the row (within 2 px)
+                if not (label and act["top"] >= label["bottom"] - 1 and abs(act["left"] - row["left"]) < 2):
+                    bad.append(f"{key}: control {act} not under its name {label}")
+                if summ and act["bottom"] > summ["top"] + 1:
+                    bad.append(f"{key}: control below its summary")
+                # (as wide as the row, or as its own max-width: 70ch)
+                for what, b in (("summary", summ), ("info panel", info), ("adds", adds)):
+                    if b and b["width"] < min(row["width"], b["max"]) - 2:
+                        bad.append(f"{key}: its {what} {b['width']:.0f} of {row['width']:.0f} px")
+            elif not (label and act["left"] >= label["right"] - 1 and act["top"] < label["bottom"]):
+                bad.append(f"{key}: desktop control {act} not beside its name {label}")
+        expect(not bad, f"{device}: {bad[:6]}")
+        w = next((r[1]["width"] for r in rows if r[0] == "WEBSEARCH_SEARXNG_BUILTIN"), 0)
+        probs = rec.problems()
+        rec.save()
+        expect(not probs, f"{device}: errors {probs[:6]}")
+        said.append(f"{device}: {len(rows)} rows, the control {'under the name, the words full width' if narrow else 'beside them'}"
+                    f" (the built-in SearXNG's row {w:.0f} px)")
+    return "; ".join(said)
+
+
 @check("settings", "settings-page")
 def settings_page(ctx):
     d = _need_helper(ctx)
