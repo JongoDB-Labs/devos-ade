@@ -219,7 +219,8 @@
 // Answered by the portal on the same host (Caddy routes /.bn/* there, after the same check):
 //   POST /.bn/unlock (the unlock form)
 //   GET  /.bn/models  {models: [{id, name, alias, input_per_mtok, output_per_mtok, cache_read_per_mtok,
-//                     cache_write_per_mtok, cache_write_30k}], aliases: {opus, sonnet, haiku}, default, unit, note}
+//                     cache_write_per_mtok, cache_write_30k}], aliases: {opus, sonnet, haiku}, default, unit, note,
+//                     scope, providers: {openrouter, explabs} (whether each has a key)}
 //   GET  /.bn/spend?session=ID  {session, rows: [{startTime, model, spend, tokens, input_tokens, output_tokens,
 //                     cache_read_tokens, cache_write_tokens, status}], requests, total, key: {alias, spend, max_budget,
 //                     reset_at, error}}

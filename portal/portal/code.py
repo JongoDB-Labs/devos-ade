@@ -85,8 +85,9 @@ def models(s: Settings) -> dict:
     OpenRouter and Experiential Labs ones, with how each works as Claude Code's model and whether Settings › Claude Code ›
     Models lists it), with this stack's prices per million tokens (Bedrock's: the daily-updated list while fresh, as Home
     shows them; OpenRouter's: what LiteLLM bills; Experiential Labs': the list price, while LiteLLM books what the gateway
-    reports for each call; a free one is $0, never spend), and which of Claude Code's aliases maps where.
-    Before ./stack wrote the file: the enabled Claude models, as before."""
+    reports for each call; a free one is $0, never spend), which of Claude Code's aliases maps where, and whether
+    OpenRouter and Experiential Labs have a key (providers: without one the picker shows where it goes in, Settings ›
+    Models & providers). Before ./stack wrote the file: the enabled Claude models, as before."""
     prices = price_update.effective_prices(summary.price_paths(s))
     aliases = {k: v for k, v in s.claude_models.items() if k in ALIAS_ORDER and v}
     alias_of = {v: k for k, v in aliases.items()}
@@ -127,6 +128,7 @@ def models(s: Settings) -> dict:
     each = ", ".join(f"{m['display']} ${m['cache_write_30k']:.3f}" for m in listed if m["cache_write_30k"] is not None)
     return {"models": out, "aliases": aliases, "default": default, "unit": "USD per million tokens",
             "scope": {"mode": scope or "all", "listed": len(listed), "total": len(out)},
+            "providers": {"openrouter": bool(s.openrouter_api_key), "explabs": xl_on},
             "note": ("A new session, and every switch of model within one, makes its next turn write that model's prompt "
                      f"cache again: about 30k tokens{f' ({each})' if each else ''}. Models without cache prices write none; "
                      "free models cost $0.")}

@@ -1729,6 +1729,9 @@ export interface BnModels {
   defaultModel: string | null;
   /** Settings › Claude Code › Models: all, anthropic or list, and how many of the models it lists (null: not said) */
   scope?: { mode: 'all' | 'anthropic' | 'list'; listed: number; total: number } | null;
+  /** whether OpenRouter and Experiential Labs have a key (Settings › Models & providers): without one, the picker shows
+   *  where it goes in (null: an older portal does not say) */
+  providers?: { openrouter: boolean; explabs: boolean } | null;
 }
 /** Your AI subscriptions' tools in the sandbox, for the terminal panel's Open menu (/.bn/answers: the portal's
  *  answers.py) — each the provider's own client, with what it said of its own login at the last check. */
@@ -1822,7 +1825,9 @@ export function normModels(raw: unknown): BnModels {
   const sc = obj(o.scope);
   const mode = sc?.mode === 'anthropic' || sc?.mode === 'list' ? sc.mode : 'all';
   const scope = sc ? { mode: mode as 'all' | 'anthropic' | 'list', listed: models.filter((m) => m.listed).length, total: models.length } : null;
-  return { models, aliases, defaultModel: typeof o.default === 'string' ? label(o.default, 128) : null, scope };
+  const pv = obj(o.providers);
+  const providers = pv ? { openrouter: pv.openrouter === true, explabs: pv.explabs === true } : null;
+  return { models, aliases, defaultModel: typeof o.default === 'string' ? label(o.default, 128) : null, scope, providers };
 }
 
 export async function getSpend(session: string): Promise<{ rows: SpendRow[]; key: KeyBudget | null }> {

@@ -518,10 +518,14 @@ def test_models_are_every_model_of_code_models_tsv_with_compat_and_free_at_zero(
         assert by["or/meta-llama/llama-3.3-70b-instruct"]["cache_read_per_mtok"] == 0.11
         assert d["default"] == "claude-opus-5-5" and d["scope"] == {"mode": "anthropic", "listed": 5, "total": 6}
         assert "Claude Opus 5.5 $0.188" in d["note"] and "free models cost $0" in d["note"]
-    # without OpenRouter's key its models are gone at once (the file follows at the next render)
+        # which providers have a key (the picker's greyed "add it here" items: Settings › Models & providers)
+        assert d["providers"] == {"openrouter": True, "explabs": False}
+    # without OpenRouter's key its models are gone at once (the file follows at the next render), and the picker says
+    # where the key goes in
     with _client(replace(s, openrouter_api_key="")) as c:
         tok, ut = unlocked(c)
-        assert not [m for m in _guarded(c, "/auth/code-models", tok, ut).json()["models"] if m["provider"] == "OpenRouter"]
+        d = _guarded(c, "/auth/code-models", tok, ut).json()
+        assert not [m for m in d["models"] if m["provider"] == "OpenRouter"] and d["providers"]["openrouter"] is False
 
 
 def test_models_default_falls_back_to_a_listed_one(cs):

@@ -73,8 +73,8 @@ export const GROUP_TITLE: Record<ModelGroup, string> = {
   'or-paid': 'OpenRouter',
   xl: 'Experiential Labs',
 };
-// (while Experiential Labs has no key its group is absent here, as OpenRouter's is: Chat's Who answers shows where the
-// key goes in — catalog/setup-links.tsv explabs-off)
+// (while OpenRouter or Experiential Labs has no key its group is absent here: a greyed item of its own stands in, which
+// goes where the key goes in — providerSetups, catalog/setup-links.tsv openrouter-off and explabs-off)
 
 const isAnthropic = (m: BnModel): boolean => m.vendor.toLowerCase() === 'anthropic' && m.provider === 'Bedrock';
 
@@ -112,6 +112,15 @@ export function modelSections(models: BnModel[], o: { query?: string; starred?: 
     if (list.length) out.push({ group: g, models: list });
   }
   return out;
+}
+
+/** The providers without a key, as the picker's greyed items ("add it here": Settings › Models & providers, where the
+ *  key goes in), OpenRouter's first; none while the portal does not say (an older one). */
+export const PROVIDER_SETUP = { 'openrouter-off': 'OpenRouter', 'explabs-off': 'Experiential Labs' } as const;
+export function providerSetups(bn: BnModels | null | undefined): (keyof typeof PROVIDER_SETUP)[] {
+  const p = bn?.providers;
+  if (!p) return [];
+  return [...(p.openrouter ? [] : ['openrouter-off' as const]), ...(p.explabs ? [] : ['explabs-off' as const])];
 }
 
 /** How many models "Show all" would add. */

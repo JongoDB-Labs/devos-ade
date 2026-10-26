@@ -3,7 +3,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { normModels } from '../src/api';
-import { compatWarning, findModel, groupOf, hiddenCount, modelMatches, modelSections, COMPAT_INFO } from '../src/models';
+import { compatWarning, findModel, groupOf, hiddenCount, modelMatches, modelSections, providerSetups, COMPAT_INFO, PROVIDER_SETUP } from '../src/models';
+import { SETUP_LINKS } from '../src/setuplinks';
 import { parsePrefs, STARRED_MAX } from '../src/prefs';
 import { cacheNotice, CACHE_TTL_MS, caches } from '../src/budget';
 import { ariaKeys } from '../src/components/ui';
@@ -46,6 +47,20 @@ test('models: /.bn/models parsed with provider, vendor, compatibility, listing; 
   assert.deepEqual(bn.scope, { mode: 'anthropic', listed: 7, total: 8 });
   assert.equal(normModels({ models: [] }).scope, null);
   assert.equal(normModels(null).models.length, 0);
+});
+
+test('models: a provider without its key is a greyed item that goes where the key goes in (Settings › Models & providers)', () => {
+  // (the portal says which have a key; an older one says nothing: no item)
+  assert.equal(normModels(RAW).providers, null);
+  assert.deepEqual(providerSetups(normModels(RAW)), []);
+  assert.deepEqual(normModels({ ...RAW, providers: { openrouter: true, explabs: 'yes' } }).providers, { openrouter: true, explabs: false });
+  assert.deepEqual(providerSetups(normModels({ ...RAW, providers: { openrouter: false, explabs: false } })), ['openrouter-off', 'explabs-off']);
+  assert.deepEqual(providerSetups(normModels({ ...RAW, providers: { openrouter: true, explabs: false } })), ['explabs-off']);
+  assert.deepEqual(providerSetups(normModels({ ...RAW, providers: { openrouter: true, explabs: true } })), []);
+  for (const r of Object.keys(PROVIDER_SETUP) as (keyof typeof PROVIDER_SETUP)[]) {
+    assert.match(SETUP_LINKS[r].target, /^setting:(OPENROUTER|EXPLABS)_API_KEY$/);
+    assert.match(SETUP_LINKS[r].says, new RegExp(`Settings › Models & providers › ${PROVIDER_SETUP[r]}`));
+  }
 });
 
 test('models: the picker groups starred first, then Anthropic, Bedrock’s others, OpenRouter free, OpenRouter paid', () => {

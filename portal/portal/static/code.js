@@ -165,7 +165,7 @@
   // checks each against it)
   const CODE_SETUP = Object.freeze({ "tool-left-out": "TERMINAL_AI_TOOLS", "claude-plan-off": "CODE_CLAUDE_PLAN", "auto-off": "CODE_AUTO_MODE",
     "bypass-off": "CODE_ALLOW_BYPASS", "models-scope": "CODE_MODELS", "terminal-remote-off": "REMOTE_TERMINAL", "remote-preview": "REMOTE_PREVIEW",
-    "folder-read-only": "+project-folders" });
+    "folder-read-only": "+project-folders", "openrouter-off": "OPENROUTER_API_KEY", "explabs-off": "EXPLABS_API_KEY" });
   function listen() {
     let codeOrigin = "";
     try { codeOrigin = new URL(appUrl("code")).origin; } catch (_) { return; }

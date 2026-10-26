@@ -4,7 +4,7 @@ import { useState } from 'preact/hooks';
 import { useSel } from '../store';
 import { store, setModel, setMode, setEffort, activeView, defaultModel, refreshSpend, autoOk, setPrefs, toast, switchHarness, harnessName, planOf, refreshHarnesses, goSetup } from '../app';
 import { SETUP_LINKS, type SetupReason } from '../setuplinks';
-import { COMPAT_INFO, GROUP_TITLE, compatWarning, findModel, hiddenCount, modelSections } from '../models';
+import { COMPAT_INFO, GROUP_TITLE, PROVIDER_SETUP, compatWarning, findModel, hiddenCount, modelSections, providerSetups } from '../models';
 import { STARRED_MAX } from '../prefs';
 import { byokCount, meter } from '../spend';
 import { percent } from '../budget';
@@ -261,6 +261,18 @@ function BedrockModelPicker({ compact }: { compact?: boolean }) {
               })}
             </div>
           ))}
+          {/* a provider without its key: a greyed item that goes where the key goes in (Settings › Models & providers) */}
+          {!query && providerSetups(bn).length > 0 && (
+            <div class="mp-group" role="group" aria-label="More providers" data-testid="model-group-setup">
+              <div class="mp-group-head">More providers</div>
+              {providerSetups(bn).map((r) => (
+                <MenuItem key={r} testid={`model-${r}`} setup={r} onSelect={() => { close(); goSetup(r); }}>
+                  <span class="mi-title">{PROVIDER_SETUP[r]} models</span>
+                  <span class="mi-desc">{SETUP_LINKS[r].says}</span>
+                </MenuItem>
+              ))}
+            </div>
+          )}
           {drawn >= SHOWN_MAX && <div class="panel-note">More models match: search to narrow the list.</div>}
           {!sections.length && models.length > 0 && <div class="panel-note" data-testid="model-none">No model matches “{label(query, 40)}”.</div>}
           {!models.length && !err && <div class="panel-note">Loading models…</div>}
