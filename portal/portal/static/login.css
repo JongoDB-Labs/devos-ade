@@ -29,7 +29,14 @@ body.login { min-height: 100vh; display: grid; place-items: center; padding: 24p
 .lede { color: var(--muted); margin: 0 0 20px; }
 .login form { display: grid; gap: 8px; }
 .login label { font-weight: 500; font-size: var(--t-s); }
-.login input[type=password] { font: inherit; padding: 10px 12px; border-radius: var(--r-m); border: 1px solid var(--line-strong); background: var(--bg); color: var(--ink); }
+.login input[type=password], .login .pw-field input { font: inherit; padding: 10px 12px; border-radius: var(--r-m); border: 1px solid var(--line-strong); background: var(--bg); color: var(--ink); }
+/* the password and its Show / Hide (login.js), at the field's right end; without the script the button stays hidden */
+.pw-field { position: relative; display: grid; }
+.pw-field input { width: 100%; min-width: 0; }
+.pw-field:has(.pw-toggle:not([hidden])) input { padding-right: 78px; }
+.pw-toggle { position: absolute; top: 50%; right: 5px; transform: translateY(-50%); min-height: 36px; min-width: 64px; padding: 4px 12px;
+  border: 0; border-radius: var(--r-pill); background: transparent; color: var(--accent); font-weight: 600; font-size: var(--t-s); }
+.pw-toggle:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .login button[type=submit] { margin-top: 10px; padding: 11px 16px; border: 1px solid var(--accent); border-radius: var(--r-pill); background: var(--accent); color: var(--accent-ink);
   font-weight: 600; transition: transform 0.25s var(--ease), box-shadow 0.25s var(--ease); }
 .login button[type=submit]:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
@@ -40,6 +47,16 @@ body.login { min-height: 100vh; display: grid; place-items: center; padding: 24p
 .app-signin a { color: var(--accent); }
 .sso-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; margin: 0; }
 .app-signin a.sso-primary { padding: 10px 16px; border-radius: var(--r-pill); background: var(--accent); color: var(--accent-ink); font-weight: 600; text-decoration: none; }
+/* The error pages (static/error.html; portal/app.py _error_doc): the same card, a short code over the title, and where
+   to go instead as pill links */
+.error-panel .error-code { margin: 28px 0 0; }
+.error-panel h1 { margin-top: 8px; }
+.error-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; }
+.pill-link { display: inline-flex; align-items: center; min-height: 44px; padding: 10px 18px; border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill); color: var(--ink); font-weight: 600; text-decoration: none; transition: transform 0.25s var(--ease), box-shadow 0.25s var(--ease); }
+.pill-link:hover { border-color: var(--accent); }
+.pill-link.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.pill-link.primary:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
 @media (prefers-reduced-motion: reduce) {
-  .login button[type=submit] { transition: none; }
+  .login button[type=submit], .pill-link { transition: none; }
 }

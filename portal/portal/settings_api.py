@@ -19,7 +19,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from . import admin, answers, brand
+from . import admin, answers, brand, keycheck
 from . import settings as st
 from .security import NEXT_MAX_AGE, Sessions, cookie_params, hash_password, same_origin, verify_password
 
@@ -69,10 +69,16 @@ def err(status: int, msg: str, retry: int = 0, **extra) -> Response:
     return _no_store(r)
 
 
+# The in-form key check (check_key below): the keys whose form checks them before the password, and its body's cap
+KEY_VALIDATORS = ("or_key", "xl_key", "stt_key", "ws_key")
+CHECK_BODY = 2048
+
+
 def routes(ctx: Ctx) -> list[Route]:
     s = ctx.settings
     apply_rate = RateLimit(5, 30)
     action_rate = RateLimit(5, 30)
+    check_rate = RateLimit(1, 60)
 
     def is_remote(request: Request) -> bool:
         # remote if either says so: Caddy's verified marker, or the bare header (admin.is_remote) — the safe side
@@ -267,6 +273,55 @@ def routes(ctx: Ctx) -> list[Route]:
                             samesite="strict", secure=c["secure"])
         return resp
 
+    async def check_key(request: Request) -> Response:
+        """A provider key typed in a form, checked before the password (portal/keycheck.py): its shape by the same rule
+        as a change, then — for a provider with a free check — one call to that provider. No password (nothing changes),
+        but a session, X-Requested-With, the portal's own Origin, the remote rule and the key's own policy (a key that
+        could send data elsewhere: this computer only), at most one a second and 60 an hour. The key is never stored or
+        logged; the helper checks it again before anything is saved."""
+        if (deny := ctx.api_guard(request)) is not None:
+            return deny
+        if not same_origin(request.headers, s):
+            return err(403, "cross-site request refused")
+        if not allowed(request):
+            return err(403, "Settings changes are off for remote access (REMOTE_ADMIN_ACTIONS in .env).")
+        length = request.headers.get("content-length", "")
+        if not length.isdigit() or not length.isascii():
+            return err(411, "Content-Length required")
+        if int(length) > CHECK_BODY:
+            return err(413, "request too large")
+        body = await request.body()
+        try:
+            data = json.loads(body) if len(body) <= CHECK_BODY else None
+        except ValueError:
+            data = None
+        if not isinstance(data, dict):
+            return err(400, "not a JSON object")
+        key, value, prov = data.get("key"), data.get("value"), data.get("provider")
+        if not isinstance(key, str) or not isinstance(value, str) or (prov is not None and not isinstance(prov, str)):
+            return err(400, "key and value are text")
+        snap = st.snapshot(s.status_dir)
+        row = st.by_key(snap).get(key)
+        if snap is None or row is None or row["validator"] not in KEY_VALIDATORS:
+            return err(400, "not a key this form checks")
+        value = value.strip()
+        if (e := st.policy_error(row, value, not is_remote(request))):
+            return err(403, f"{row['label']} {e}.")
+        if not value:
+            return err(400, "Enter the new key.", fields={key: "is empty"})
+        if (e := st.validate(row["validator"], value, snap["remote_on"])):
+            return err(400, f"{row['label']} {e}.", fields={key: e})
+        p = keycheck.provider(key, prov)
+        if p is None:   # (a web search key, or speech-to-text without a provider that takes one: nothing to ask)
+            return _no_store(JSONResponse({"result": "unchecked", "message": "", "url": "", "models": None}))
+        if wait := check_rate.retry_after():
+            return err(429, f"Please wait {wait} s before checking another key.", wait)
+        check_rate.hit()
+        got = await keycheck.check(request.app.state.http, p, value)
+        log.warning("settings: %s checked with %s from the form: %s%s", key, p.host, got["result"],
+                    " (remote)" if is_remote(request) else "")
+        return _no_store(JSONResponse(got))
+
     def reveal_value(key: str) -> str:
         env = {"claude-code": "LITELLM_KEY_CLAUDE_CODE", "open-webui": "LITELLM_KEY_OPENWEBUI", "setup": "LITELLM_KEY_SETUP"}
         keys = {env[a]: v for a, _, v in s.keys if a in env}
@@ -442,6 +497,7 @@ def routes(ctx: Ctx) -> list[Route]:
     return [
         Route("/api/settings", get_settings, methods=["GET"]),
         Route("/api/settings/apply", apply, methods=["POST"]),
+        Route("/api/settings/check-key", check_key, methods=["POST"]),
         Route("/api/settings/reveal", reveal, methods=["POST"]),
         Route("/api/settings/action", action, methods=["POST"]),
         Route("/api/settings/project", project_action, methods=["POST"]),

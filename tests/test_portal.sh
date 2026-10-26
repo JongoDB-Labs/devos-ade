@@ -186,11 +186,33 @@ test_caddy_web_app_files_are_public_before_login() {
   for n in $names; do assert_contains "$line " " /icons/$n "; done
   assert_eq "$(printf '%s\n' "$line" | tr ' ' '\n' | grep -c '^/icons/')" "$(printf '%s\n' "$names" | wc -l | tr -d ' ')"
   # ...and never a wildcard, the provider logos or anything else under /icons/ or /static/ beyond the login page's
-  # own files: its style sheets, the logo and the three fonts (docs/design.md), each by name.
+  # own files: its style sheets, its script (the password's Show / Hide), the logo and the three fonts (docs/design.md),
+  # each by name.
   case "$line" in *"*"*) echo "public paths use a wildcard: $line" >&2; return 1 ;; esac
   case "$line" in *" /icons/"[!a]*) echo "public paths too broad: $line" >&2; return 1 ;; esac
   assert_eq "$(printf '%s\n' "$line" | tr ' ' '\n' | grep '^/static/' | sort | tr '\n' ' ')" \
-    "/static/fonts.css /static/fonts/inter-latin-wght-normal.woff2 /static/fonts/jetbrains-mono-latin-wght-normal.woff2 /static/fonts/source-serif-4-latin-wght-normal.woff2 /static/login.css /static/logo.svg /static/tokens.css "
+    "/static/fonts.css /static/fonts/inter-latin-wght-normal.woff2 /static/fonts/jetbrains-mono-latin-wght-normal.woff2 /static/fonts/source-serif-4-latin-wght-normal.woff2 /static/login.css /static/login.js /static/logo.svg /static/tokens.css "
+}
+
+test_caddy_unknown_host_is_the_portals_page_and_public_files_only() {
+  # A name that is not this install's (every catch-all, here and on the remote sites): the portal's one page for it
+  # (every page load rewritten there: no other path of the portal) and the sign-in page's public files it needs, by
+  # name; no cookie, sign-in header or proxy secret goes on (UX-10)
+  local f="$STACK_DIR/caddy/Caddyfile" snip pub assets
+  snip="$(sed -n '/^(unknown_host) {/,/^}/p' "$f")"
+  assert_contains "$snip" "rewrite @bn_unknown_page /auth/unknown-host?site={args[0]}"
+  for h in Cookie Authorization X-Portal-User X-Portal-Remote X-Portal-Proxy Tailscale-User-Login; do
+    assert_contains "$snip" "request_header -$h"
+  done
+  case "$snip" in *PORTAL_PROXY_SECRET* | *"request_header X-Portal"*) echo "the unknown host passes something on" >&2; return 1 ;; esac
+  pub="$(grep '@public path' "$f" | tr ' ' '\n' | grep '^/static/' | sort)"
+  assets="$(printf '%s\n' "$snip" | grep -E '^[[:space:]]*path ' | tr ' \t' '\n\n' | grep '^/' | sort)"
+  [ -n "$assets" ] || { echo "no files for the unknown host's page" >&2; return 1; }
+  case "$assets" in *"*"*) echo "a wildcard in the unknown host's files" >&2; return 1 ;; esac
+  [ -z "$(comm -13 <(printf '%s\n' "$pub") <(printf '%s\n' "$assets"))" ] || { echo "the unknown host's files are not all public" >&2; return 1; }
+  assert_contains "$(sed -n '/^http:\/\/ {/,/^}/p' "$f")" "import unknown_host local"
+  assert_contains "$(cat "$STACK_DIR/caddy/remote-tailscale.caddy")" "import unknown_host remote"
+  assert_contains "$(cat "$STACK_DIR/caddy/remote-domain.caddy")" "import unknown_host remote"
 }
 
 test_caddy_public_paths_have_one_definition_in_a_snippet() {

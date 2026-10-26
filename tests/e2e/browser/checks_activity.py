@@ -322,6 +322,19 @@ def global_search(ctx):
     page.emulate_media(color_scheme="light")
     page.keyboard.press("Escape")
     expect(page.locator("#search[open]").count() == 0, "Escape did not close")
+    # where a setting is changed comes first (UX-22): "budget" → Settings, its section Spending & budgets on top (active:
+    # Enter opens it), the walkthrough's Budgets below
+    _search(page, "budget")
+    _option(page, "settings", "Spending & budgets")
+    groups = page.eval_on_selector_all("#search-list .search-group", "els => els.map((e) => e.id)")
+    top = page.locator("#search-list .search-opt").first
+    expect(groups[0] == "sg-settings" and ("sg-tour" not in groups or groups.index("sg-settings") < groups.index("sg-tour")),
+           f"'budget': the groups {groups}")
+    expect(top.get_attribute("data-key") == "sec:spending" and page.get_attribute("#search-input", "aria-activedescendant") == top.get_attribute("id"),
+           f"'budget': the first result {top.inner_text()!r}")
+    page.keyboard.press("Enter")
+    page.wait_for_function("() => location.hash === '#settings/spending'", timeout=20000)
+    result_budget = "'budget' → Settings › Spending & budgets first"
     # a walkthrough step opens the walkthrough there
     _search(page, "One store for both")
     _option(page, "tour", "One store for both").click()
@@ -335,7 +348,13 @@ def global_search(ctx):
     page.fill("#search-input", "")
     page.wait_for_selector("#search[open] #sg-pages")
     page.keyboard.press("Escape")
-    result = ["setting by key → #settings/BUDGET_TERMINAL", "docs index in the image (README, docs/*)", "walkthrough step", "↑↓ Esc"]
+    # /?search (the 404 page's Search link) opens the search on Home
+    page.goto(origin() + "/?search")
+    page.wait_for_selector("#search[open]", timeout=15000)
+    expect("search" not in page.evaluate("location.search"), "the address keeps ?search")
+    page.keyboard.press("Escape")
+    result = ["setting by key → #settings/BUDGET_TERMINAL", "docs index in the image (README, docs/*)", result_budget, "walkthrough step",
+              "↑↓ Esc", "/?search opens it"]
     # Chat: a conversation found by Open WebUI's own search, opened in the Chat tab
     try:
         need("open-webui")

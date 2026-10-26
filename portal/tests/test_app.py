@@ -4,7 +4,7 @@ import httpx
 import pytest
 from starlette.testclient import TestClient
 
-from portal.app import create_app
+from portal.app import STATIC, create_app
 from portal.security import COOKIE, LoginThrottle
 
 ORIGIN = {"Origin": "http://bedrock-now.localhost"}
@@ -68,7 +68,7 @@ def test_login_is_post_only_with_same_origin(client):
 def test_wrong_password_then_throttled(client):
     for _ in range(LoginThrottle.FREE):
         r = login(client, password="nope")
-    assert r.status_code == 401 and "PORTAL_PASSWORD" in r.text
+    assert r.status_code == 401 and "That password is not right." in r.text and "./stack password --show" in r.text
     r = login(client)  # even the right password waits while locked
     assert r.status_code == 429 and int(r.headers["retry-after"]) > 0
     assert COOKIE not in r.headers.get("set-cookie", "")
@@ -248,35 +248,96 @@ def _where_client(settings, **kw):
                       base_url="http://bedrock-now.localhost", follow_redirects=False)
 
 
-def test_wrong_password_names_this_install(settings):
+FORGOT = "Forgot it? Run <code>./stack password --show</code> in"
+
+
+def test_wrong_password_says_so_once_and_the_hint_names_the_command_and_this_install(settings):
     with _where_client(settings, env_file="~/code/bn-dev/.env", project="bn-dev") as c:
         r = login(c, password="nope")
         assert r.status_code == 401
-        assert "It is PORTAL_PASSWORD in ~/code/bn-dev/.env (project bn-dev)." in r.text
-        assert "~/code/bn-dev/.env" in c.get("/login").text   # the "Forgot it?" hint too
+        # the error says it plainly; where the password comes from is said once, in the hint: the command, not a file
+        assert '<p class="error" id="login-error" role="alert">That password is not right.</p>' in r.text
+        assert r.text.count("~/code/bn-dev") == 1 and ".env" not in r.text and "PORTAL_PASSWORD" not in r.text
+        hint = f"{FORGOT} <code>~/code/bn-dev</code> (project bn-dev). You stay signed in for 30 days."
+        assert hint in r.text and hint in c.get("/login").text
+        # the field names the error and the hint; without login.js its Show button stays hidden
+        assert 'aria-describedby="login-error login-hint"' in r.text and 'aria-describedby="login-hint"' in c.get("/login").text
+        assert '<button type="button" class="pw-toggle" id="pw-toggle" aria-controls="password" hidden>Show</button>' in r.text
+        assert '<script src="/static/login.js' in r.text
 
 
 def test_install_location_is_escaped(settings):
-    with _where_client(settings, env_file="~/<b>x</b>/.env", project="p") as c:
+    with _where_client(settings, env_file="~/<b>x</b>/.env", project="p<i>") as c:
         r = login(c, password="nope")
-        assert "<b>x</b>" not in r.text and "&lt;b&gt;x&lt;/b&gt;" in r.text
+        assert "<b>x</b>" not in r.text and "&lt;b&gt;x&lt;/b&gt;" in r.text and "p&lt;i&gt;" in r.text
 
 
 def test_wrong_password_falls_back_without_a_location(client):
     r = login(client, password="nope")
-    assert "It is PORTAL_PASSWORD in the .env file of your DevOS ADE folder." in r.text
+    assert f"{FORGOT} your DevOS ADE folder." in r.text and "That password is not right." in r.text
     assert "{{" not in client.get("/login").text
+
+
+def test_the_login_script_is_the_show_button_only():
+    js = (STATIC / "login.js").read_text()
+    assert "fetch" not in js and "localStorage" not in js and "innerHTML" not in js
 
 
 def test_from_env_reads_the_install_location():
     from portal.config import from_env
     s = from_env({"PORTAL_PASSWORD": "p", "PORTAL_SECRET": "s" * 32, "PORTAL_ENV_FILE": " ~/bn/.env ", "PORTAL_PROJECT": "bn-dev"})
     assert (s.env_file, s.project) == ("~/bn/.env", "bn-dev")
-    assert s.password_where() == "~/bn/.env (project bn-dev)"
+    assert s.install_folder() == "~/bn"
     s = from_env({"PORTAL_PASSWORD": "p", "PORTAL_SECRET": "s" * 32})
-    assert s.password_where() == ""
+    assert s.install_folder() == ""
+    s = from_env({"PORTAL_PASSWORD": "p", "PORTAL_SECRET": "s" * 32, "PORTAL_ENV_FILE": "/elsewhere/my.env"})
+    assert s.install_folder() == ""   # (an env file elsewhere: the generic words)
 
 
 def test_favicon_ico_is_public_and_the_png(client):
     r = client.get("/favicon.ico", follow_redirects=False)
     assert r.status_code == 200 and r.headers["content-type"] == "image/png" and r.headers["cache-control"] == "no-cache"
+
+
+# --- the error pages (UX-10): the sign-in card's design, a way back, nothing of the request shown back ---
+
+def _strict(r):
+    csp = r.headers["content-security-policy"]
+    assert "default-src 'none'" in csp and "script-src" not in csp and "frame-ancestors 'none'" in csp and "form-action 'none'" in csp
+    assert r.headers["x-frame-options"] == "DENY" and r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["cache-control"] == "no-store" and r.headers["referrer-policy"] == "no-referrer"
+    assert "<script" not in r.text and "{{" not in r.text
+
+
+def test_a_page_that_is_not_there_is_the_404_page_with_home_and_search(client):
+    r = client.get("/no-such-page/%3Cscript%3E?q=%22%3E%3Cb%3Ex", headers={"Accept": "text/html,application/xhtml+xml"})
+    assert r.status_code == 404 and r.headers["content-type"].startswith("text/html")
+    _strict(r)
+    assert "This page does not exist" in r.text and "404 · Not found" in r.text
+    assert '<a class="pill-link primary" href="/">Go to Home</a>' in r.text and 'href="/?search">Search</a>' in r.text
+    assert "no-such-page" not in r.text and "<b>x" not in r.text and "&lt;b&gt;" not in r.text   # (nothing of the address)
+    for f in ("tokens.css", "fonts.css", "login.css", "logo.svg"):   # the sign-in page's own files: the same design
+        assert f'"/static/{f}' in r.text
+    # anything but a page load keeps the plain words
+    for path, accept in (("/api/no-such", "application/json"), ("/static/no-such.css", "text/css,*/*;q=0.1"), ("/nope", "*/*")):
+        r = client.get(path, headers={"Accept": accept})
+        assert r.status_code == 404 and r.text == "Not Found" and r.headers["x-content-type-options"] == "nosniff", path
+    assert client.post("/no-such-page", headers={"Accept": "text/html"}).text == "Not Found"
+
+
+def test_an_unknown_host_names_the_portal_and_nothing_it_was_asked(settings):
+    with _where_client(settings, port=8800) as c:
+        r = c.get("/auth/unknown-host?site=local", headers={"Host": "evil.example:8800", "Accept": "text/html", "X-Forwarded-Host": "evil.example"})
+        assert r.status_code == 404
+        _strict(r)
+        assert "Not an address of DevOS ADE" in r.text and "evil.example" not in r.text
+        assert '<a class="pill-link primary" href="http://bedrock-now.localhost:8800/">Go to DevOS ADE</a>' in r.text
+        assert "On this computer, DevOS ADE is at <code>http://bedrock-now.localhost:8800</code>." in r.text
+        assert 'href="/static/fonts.css"' in r.text   # (Caddy hands these over under that name too: same origin, the fonts load)
+        # the remote site's catch-all names the remote portal, once remote access is on; before, this computer's
+        assert "http://bedrock-now.localhost:8800/" in c.get("/auth/unknown-host?site=remote").text
+        assert c.post("/auth/unknown-host?site=local").status_code == 405
+    rs = replace(settings, remote_mode="tailscale", remote_host="bn.tail1234.ts.net")
+    with _where_client(rs) as c:
+        r = c.get("/auth/unknown-host?site=remote")
+        assert 'href="https://bn.tail1234.ts.net/"' in r.text and "Over remote access, DevOS ADE is at" in r.text

@@ -77,7 +77,20 @@ session you get the login page.
   sign-out is kept in the small `portal-state` volume (the portal's only writable storage besides `/tmp`, the
   price files in `litellm/prices/` and the update check's answer in `.state/update-check/`).
 - Chat, Admin and Files may be framed only by the portal (`Content-Security-Policy: frame-ancestors
-  <portal>`); the portal can't be framed at all. Host names other than the four answer 404.
+  <portal>`); the portal can't be framed at all. Host names other than the four answer 404: the portal's "not an
+  address of DevOS ADE" page, which links to the portal (Caddyfile `unknown_host`). Every page load under such a name
+  — any path, any query — is rewritten to that one page (`/auth/unknown-host`), so none reaches another route of the
+  portal; no cookie, `Authorization` or sign-in header is passed on, no proxy secret is added, and nothing the portal
+  sets comes back. The page shows nothing of the request (a DNS-rebinding page names itself), has no script
+  (`default-src 'none'`, styles, fonts and images from itself only, `frame-ancestors 'none'`, `no-store`), and gets
+  the sign-in page's public style sheets, fonts and logo under that name — the same files, by name, as before login;
+  any other method is 405. A DNS-rebinding page gets nothing of the stack: a fixed page and public files.
+- A portal page that is not there is a 404 page of the same design, with Go to Home and Search, and the same
+  policy; nothing of the address is shown back. A request that is not a page load keeps a plain `Not Found`.
+- The sign-in page's **Show** button (`static/login.js`, public like the page: it only switches the field between
+  hidden and shown, and back to hidden as the form posts) and its hint: the command that prints the password,
+  `./stack password --show`, with the install's folder and project on this computer only; never a `.env` path, and
+  nothing of the install over remote access. A wrong password says only that.
 - Open WebUI answers cross-origin requests only from Chat's own origin (`CORS_ALLOW_ORIGIN`: `CHAT_ORIGIN`, which
   `./stack` writes like `PORTAL_ORIGIN`, and the remote chat host while remote access is on). Its default, `*`, is
   answered with credentials allowed for any `Origin`: a page on another of the portal's hosts — the terminal's
@@ -198,6 +211,17 @@ The **Settings** tab shows every key of `.env` and changes the ones listed in
   login's lock-out), and, for a remote session, `REMOTE_ADMIN_ACTIONS=true`. A body over 12 KB is refused (Caddy:
   16 KB). The portal checks each value with the same rules as `./stack` (`portal/portal/settings.py` mirrors
   `lib/settings.sh`; one table of cases tests both) and allows one change every 5 seconds, 30 an hour.
+- **A key checked in its form.** Before the password, a provider key typed in Settings is checked by the portal
+  (`POST /api/settings/check-key`, `portal/portal/keycheck.py`): its shape by the same rule, then, for OpenRouter,
+  Experiential Labs and the speech-to-text providers, the free call `./stack` makes for it — OpenRouter's `GET
+  /api/v1/key`, the gateway's `GET /v1/models`, OpenAI's or Groq's `GET /models` — with the key as a Bearer token, to
+  that provider's fixed https address (nothing in the request names it), no redirect followed, an answer read up to
+  2 MB, within 8 seconds in all. It needs a session, `X-Requested-With` and the portal's own `Origin` (no password:
+  nothing changes), follows the remote rule and the key's own (a key that could send data elsewhere: this computer
+  only), and runs at most once a second and 60 times an hour. The answer says only accepted, rejected (with where keys
+  come from) or no answer; never the provider's words, which may quote the key. The key is not stored or logged, and
+  the helper checks it again before anything is saved. Web search keys have no free check (a search costs) and the
+  AWS key's needs STS: their forms check the shape only.
 - **The request.** For an allowed change the portal writes `.state/requests/cfg-<nonce>.req`: at most 8 KB of
   ASCII lines (`bedrock-now-settings 1`, `nonce`, `requested_at`, `base`, `origin local|remote`, `auth`,
   then `set KEY BASE64` or `regen KEY` for 1-20 keys, `end`), mode 640, renamed into place. `regen` asks for a new
@@ -385,7 +409,8 @@ An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*)
   background while it has a list read with the key `.env` holds, else waiting, up to about 100 s; the check of a new
   key makes the first alone):
   - `GET https://api.experientiallabs.ai/v1/models` **with the key** (on curl's stdin): the ids of the models this key
-    may call — the OpenAI list, which carries nothing else;
+    may call — the OpenAI list, which carries nothing else. The portal makes this one too, once, for a new key typed
+    in Settings, before the password ([a key checked in its form](#settings));
   - `GET https://api.experientiallabs.ai/api/models/<id>` **without the key**, one for each model `EXPLABS_MODELS`
     picks that the key may call (at most 40), side by side: that model in the gateway's public catalog — its
     deployments, each with its capabilities and list price, and the order the gateway tries them in. Its details are
@@ -621,7 +646,7 @@ portal's check and before the app:
   hand-offs) are redirects, and the unlock and sign-in pages load the portal's logo and style sheet; each app's own
   requests are same-origin. The e2e suite runs every app's flows with the guard on (here the stack's hosts are
   same-site with each other), and `browser/same-site-guard` sends fetches, a no-cors `POST` and a form post from a page
-  of another host of the site with no policy of its own (Caddy's "unknown host" page) to the other hosts — each with
+  of another host of the site with no policy of its own (Caddy's `/caddy-health` answer on such a name) to the other hosts — each with
   the session cookie, each refused; from the Chat page, Chat's own policy stops them — and a style sheet from the portal
   — before they are sent, while an image of Open WebUI's own loads.
 - [x] **A refusal says so**: `403` with a body naming the guard and `X-Bn-Refused` (shown in the browser's developer

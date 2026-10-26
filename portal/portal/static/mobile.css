@@ -127,7 +127,7 @@
   /* Update card and progress, compact: the release and the button (if this device may use it); the step list
      and the terminal command are for the desktop. */
   .update-card, .job { margin-top: 14px; padding: 16px; }
-  .update-card .update-sub, #update-steps, #update-card .cmdline code, #copy-update { display: none; }
+  .update-card .update-sub, #update-steps, #update-card .cmdline code, #copy-update, #update-cli { display: none; }
   #update-card .cmdline .action { margin-left: 0; }
   .action { min-height: 44px; padding-inline: 16px; }
   .admin-off .maint-actions, .admin-off #update-now { display: none; }

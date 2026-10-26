@@ -32,6 +32,30 @@
     xl_key: "Experiential Labs' models disappear from Chat, the Code page and the API; LiteLLM restarts (about 30 s).",
     ws_key: "Claude Code's WebSearch stops searching with it (the next search backend set up takes over, or none); LiteLLM restarts (about 15 s).",
   };
+  // A provider key's form: where a key comes from (a "Get a key" link under the field), its shape as a placeholder, and
+  // whether the portal asks the provider before the password (POST /api/settings/check-key, portal/keycheck.py: one free
+  // call; the helper checks it again either way). Web search keys and the AWS key have no such check here: the AWS key's
+  // needs STS and a Bedrock call, which the helper makes; a web search costs. (The web search links: WS_INFO's.)
+  const KEY_FORM = {
+    OPENROUTER_API_KEY: { get: "https://openrouter.ai/settings/keys", hint: "sk-or-v1-…", check: "OpenRouter" },
+    EXPLABS_API_KEY: { get: "https://platform.experientiallabs.ai/settings/api-keys", check: "Experiential Labs" },
+    AWS_ACCESS_KEY_ID: { get: "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html", getText: "IAM access keys (AWS docs)" },
+    WEBSEARCH_TAVILY_API_KEY: { ws: "tavily" }, WEBSEARCH_BRAVE_API_KEY: { ws: "brave" }, WEBSEARCH_PERPLEXITY_API_KEY: { ws: "perplexity" },
+  };
+  const STT_KEY_FORM = { openai: { get: "https://platform.openai.com/api-keys", hint: "sk-…", check: "OpenAI" },
+    groq: { get: "https://console.groq.com/keys", hint: "gsk_…", check: "Groq" } };
+  // where a key comes from: the only addresses a message's text is made a link to (a helper's "create one at https://…")
+  const KEY_HOSTS = new Set(["openrouter.ai", "platform.experientiallabs.ai", "platform.openai.com", "console.groq.com",
+    "app.tavily.com", "api-dashboard.search.brave.com", "console.perplexity.ai", "docs.aws.amazon.com"]);
+  // a key's shape, checked before the password (portal/settings.py's validators, in the same words)
+  const KEY_SHAPE = {
+    or_key: [/^[A-Za-z0-9_-]{1,256}$/, "must be an OpenRouter key (sk-or-…; letters, digits, - and _)"],
+    xl_key: [/^[A-Za-z0-9_-]{20,256}$/, "must be an Experiential Labs key (20-256 letters, digits, - and _)"],
+    stt_key: [/^[A-Za-z0-9_-]{20,512}$/, "must be an API key: 20-512 letters, digits, - and _"],
+    ws_key: [/^[A-Za-z0-9_-]{16,256}$/, "must be an API key: 16-256 letters, digits, - and _"],
+    aws_key_id: [/^AKIA[A-Z0-9]{16}$/, "must be an IAM user access key ID: AKIA and 16 more letters or digits"],
+    aws_secret: [/^[A-Za-z0-9/+]{40}$/, "must be 40 characters (letters, digits, / and +)"],
+  };
   const ON_VALUES = ["true", "1", "yes", "on"], OFF_VALUES = ["false", "0", "no", "off"];
   const KEY_NAME = /^[A-Z][A-Z0-9_]{1,60}$/;   // (as the setup links' targets: catalog/setup-links.tsv)
   const SECTION_MEMO = "bn.settings.section";
@@ -1188,6 +1212,11 @@
     const id = `f-${k.key}`;
     let collect = () => ({});
     const v = "value" in k ? k.value : "";
+    // what is wrong, and the key check's word: right under a key's field (a form's other fields: after them)
+    const err = el("p", { class: "error", id: `${id}-err`, role: "alert", hidden: "" });
+    const status = el("p", { class: "note set-check", id: `${id}-check`, "aria-live": "polite", hidden: "" });
+    let keyFields = [];   // a key's inputs: Save waits until each has a value
+    let asked = null;     // {key, name}: a key the provider is asked about before the password (KEY_FORM.check)
     if (k.validator === "portal_password" || k.validator === "litellm_password") {
       form.append(...field(`${id}-a`, "New password", "password", { minlength: "12", maxlength: "128" }),
         ...field(`${id}-b`, "Again", "password", { maxlength: "128" }));
@@ -1198,13 +1227,15 @@
       }
       collect = () => {
         const a = $(`#${id}-a`, form).value, b = $(`#${id}-b`, form).value;
+        if (!a) throw new Error("Enter the new password.");
         if (a !== b) throw new Error("The two passwords differ.");
         return { [k.key]: a };
       };
     } else if (k.key === "AWS_ACCESS_KEY_ID") {
       form.append(...field(`${id}-a`, "New access key ID (AKIA…)", "text", { maxlength: "20", autocapitalize: "characters" }),
-        ...field(`${id}-b`, "New secret access key", "password", { maxlength: "40" }),
+        ...field(`${id}-b`, "New secret access key", "password", { maxlength: "40" }), err, status, getKeyLine(KEY_FORM.AWS_ACCESS_KEY_ID),
         el("p", { class: "note", text: "Checked with AWS before anything changes (free), including Bedrock access. Then LiteLLM restarts (about 15 s) and a smoke test runs (~$0.0001); if it fails, the old key comes back. Deactivate the old key in IAM afterwards." }));
+      keyFields = [$(`#${id}-a`, form), $(`#${id}-b`, form)];
       const other = el("input", { type: "checkbox", id: `${id}-other` });
       form.append(el("label", { for: `${id}-other`, class: "set-radio" }, other, " The new key belongs to another AWS account (its models, quotas and bill are its own)"));
       collect = () => ({ AWS_ACCESS_KEY_ID: $(`#${id}-a`, form).value.trim(), AWS_SECRET_ACCESS_KEY: $(`#${id}-b`, form).value.trim() });
@@ -1315,7 +1346,14 @@
         el("p", { class: "note", text: "Your AWS admin sets the gateway up once for your AWS account: ./stack websearch aws-setup prints the commands." }));
       collect = () => ({ [k.key]: $(`#${id}`, form).value.trim() });
     } else if (k.validator === "or_key" || k.validator === "stt_key" || k.validator === "xl_key" || k.validator === "ws_key") {
-      form.append(...field(id, "New key", "password", { maxlength: "512" }));
+      // the field, what is wrong with it right under it, where a key comes from, and Remove (its own button: an empty
+      // Save never removes it)
+      const kf = KEY_FORM[k.key] || {};
+      form.append(...field(id, "New key", "password", { maxlength: "512", ...(kf.hint ? { placeholder: kf.hint } : {}) }), err, status);
+      const get = getKeyLine(kf);
+      if (get) form.append(get);
+      keyFields = [$(`#${id}`, form)];
+      if (kf.check) asked = { key: k.key, name: kf.check };
       collect = () => ({ [k.key]: $(`#${id}`, form).value.trim() });
       if (k.set) {
         const rm = el("button", { type: "button", class: "quiet", text: "Remove the key" });
@@ -1345,28 +1383,159 @@
       // emails in lowercase, as Chat keeps them
       collect = () => ({ [k.key]: k.validator === "email" ? $(`#${id}`, form).value.trim().toLowerCase() : $(`#${id}`, form).value.trim() });
     }
-    const err = el("p", { class: "error", role: "alert", hidden: "" });
+    if (!err.parentNode) form.append(err, status);
     const cancel = el("button", { type: "button", class: "quiet", text: "Cancel" });
     const save = el("button", { type: "submit", class: "action primary", text: "Save" });
-    form.append(err, el("p", { class: "confirm-buttons" }, cancel, save));
+    form.append(el("p", { class: "confirm-buttons" }, cancel, save));
     cancel.addEventListener("click", () => form.remove());
-    form.addEventListener("submit", (ev) => {
+    keyForm(form, keyFields, save, `${id}-err ${id}-check`);
+    form.addEventListener("submit", async (ev) => {
       ev.preventDefault();
+      if (form.dataset.busy) return;
       let values;
-      try { values = collect(); } catch (e) { err.textContent = e.message; err.hidden = false; return; }
+      try { values = collect(); } catch (e) { say(form, e.message); return; }
+      // nothing to save (an empty key, the value it has now) never asks for the password; nor does a key of the wrong
+      // shape (the portal and the helper refuse it with the same words)
+      const nothing = nothingToSave(values) || shapeError(values);
+      if (nothing) { say(form, nothing); return; }
       // the less protective direction of a widen-local value, from a remote device: refused here before the password
       // (the portal's settings.policy_error and the helper refuse it too, with the same words)
       const weak = Object.keys(values).find((n) => keys[n] && keys[n].policy === "widen-local" && localOnlyHere(keys[n], values[n]));
       if (weak) {
-        err.textContent = `${keys[weak].label} can only be ${WEAKEN_WORD[weak] || "turned on"} from the computer running DevOS ADE (the other way works everywhere).`;
-        err.hidden = false;
+        say(form, `${keys[weak].label} can only be ${WEAKEN_WORD[weak] || "turned on"} from the computer running DevOS ADE (the other way works everywhere).`);
         return;
       }
+      // a provider's key: asked of the provider now (free), before the password (a "Save anyway" after no answer: not again)
+      if (asked && form.dataset.unchecked !== values[asked.key] && !(await checkKey(form, asked, values[asked.key]))) return;
       confirmApply(values, `Save ${k.label}?`, typeof form._note === "function" ? form._note() : k.note, Object.keys(values), form, form.dataset.confirm ? [form.dataset.confirm] : []);
     });
     r.insertBefore(form, r.querySelector(":scope > .set-details"));
     const first = form.querySelector("input, select");
     if (first) first.focus();
+    return form;
+  }
+
+  // --- a key's form: Save once it is filled in, what is wrong right under the field, the provider asked first ---
+  // keyForm(FORM, FIELDS, SAVE, DESCRIBED): Save waits until each of FIELDS has a value (an empty Save changes nothing:
+  // it never opens the password dialog), the fields name the error and the check's word (aria-describedby), and an edit
+  // clears what was said about the value before.
+  function keyForm(form, fields, save, described) {
+    const fill = () => { save.disabled = Boolean(form.dataset.busy) || fields.some((x) => !x.hidden && !x.closest("[hidden]") && !x.value.trim()); };
+    for (const x of fields) x.setAttribute("aria-describedby", described);
+    form.addEventListener("input", () => {
+      const err = form.querySelector(":scope > .error");
+      if (err) err.hidden = true;
+      for (const x of form.querySelectorAll("[aria-invalid]")) x.removeAttribute("aria-invalid");
+      if (form.dataset.unchecked !== undefined) {   // a new value: checked again
+        delete form.dataset.unchecked;
+        save.textContent = "Save";
+      }
+      const st = form.querySelector(".set-check");
+      if (st) st.hidden = true;
+      fill();
+    });
+    form.addEventListener("change", fill);
+    form._fill = fill;
+    fill();
+  }
+
+  // say(FORM, …PARTS): what is wrong, under the field (text, and links to where a key comes from); the field marked
+  function say(form, ...parts) {
+    const err = form.querySelector(":scope > .error");
+    if (!err) return;
+    err.replaceChildren(...parts.flatMap((p) => (typeof p === "string" ? linkified(p) : [p])));
+    err.hidden = false;
+    const f = [...form.querySelectorAll("input[aria-describedby]")].find((x) => !x.closest("[hidden]"))
+      || form.querySelector("input:not([type=checkbox]):not([type=radio]), select");
+    if (f) { f.setAttribute("aria-invalid", "true"); f.focus(); }
+  }
+
+  // TEXT with the addresses of key pages (KEY_HOSTS) as links; any other address stays text
+  function linkified(text) {
+    const out = [];
+    let last = 0;
+    for (const m of String(text).matchAll(/https:\/\/[^\s<>"')]+/g)) {
+      const u = m[0].replace(/[.,;:]+$/, "");
+      let host = "";
+      try { host = new URL(u).hostname; } catch (_) { continue; }
+      if (!KEY_HOSTS.has(host)) continue;
+      out.push(text.slice(last, m.index), extLink([u.replace(/^https:\/\//, ""), u]));
+      last = m.index + u.length;
+    }
+    out.push(String(text).slice(last));
+    return out.filter((x) => x !== "");
+  }
+
+  // the "Get a key" line under a key's field (KEY_FORM; a web search key's: its info panel's own link)
+  function getKeyLine(kf) {
+    const ws = kf && kf.ws && WS_INFO[kf.ws] && WS_INFO[kf.ws].get ? WS_INFO[kf.ws].get[1] : null;
+    const link = ws || (kf && kf.get ? [kf.getText ? `Get a key: ${kf.getText}` : `Get a key at ${kf.get.replace(/^https:\/\//, "")}`, kf.get] : null);
+    return link ? el("p", { class: "note set-getkey" }, extLink(link)) : null;
+  }
+
+  // nothingToSave(VALUES) -> why there is nothing to save ("" when there is): an empty key or password, or the value a
+  // setting has now (a secret's is never known here: an empty field is its "unchanged")
+  function nothingToSave(values) {
+    const names = Object.keys(values);
+    if (!names.length) return "Nothing to save.";
+    const empty = names.filter((n) => keys[n] && !plain(keys[n]) && keys[n].secret !== "u" && !values[n]);
+    if (empty.length) {
+      if (names.length > 1) return "Enter both halves of the new key.";
+      return /password/.test(keys[empty[0]].validator) ? "Enter the new password." : "Enter the new key.";
+    }
+    const now = (n) => ("value" in keys[n] ? String(keys[n].value || "") : "");
+    if (names.every((n) => keys[n] && plain(keys[n]) && String(values[n]) === now(n))) return "That is the value it has now: nothing to save.";
+    return "";
+  }
+
+  // shapeError(VALUES) -> what is wrong with a key's shape (KEY_SHAPE), "" when nothing is
+  function shapeError(values) {
+    for (const [n, val] of Object.entries(values)) {
+      const kk = keys[n];
+      if (!kk || !val) continue;
+      if (kk.validator === "aws_key_id" && val.startsWith("ASIA")) return `${kk.label} is a temporary key (ASIA…), which expires: use a long-lived IAM user key (AKIA…).`;
+      const shape = KEY_SHAPE[kk.validator];
+      if (shape && !shape[0].test(val)) return `${kk.label} ${shape[1]}.`;
+    }
+    return "";
+  }
+
+  // checkKey(FORM, {key, name}, VALUE, PROVIDER) -> true to go on to the password: the provider asked now
+  // (/api/settings/check-key: one free call). Rejected: said under the field with where a key comes from, the key kept.
+  // No answer in time: said, and Save becomes "Save anyway" (the helper checks it again on this computer first).
+  async function checkKey(form, chk, value, provider) {
+    const save = form.querySelector("button[type=submit]"), st = form.querySelector(".set-check");
+    form.dataset.busy = "1";
+    save.disabled = true;
+    st.className = "note set-check";
+    st.textContent = `Checking the key with ${chk.name}…`;
+    st.hidden = false;
+    try {
+      const [r, d] = await post("/api/settings/check-key", { key: chk.key, value, ...(provider ? { provider } : {}) });
+      if (r.ok && (d.result === "ok" || d.result === "unchecked")) {
+        st.textContent = d.message || "";
+        st.classList.add("good");
+        st.hidden = !d.message;
+        return true;
+      }
+      st.hidden = true;
+      if (!r.ok) { say(form, d.error || `HTTP ${r.status}`); return false; }
+      if (d.result === "rejected") {
+        say(form, `${d.message} `, ...(d.url ? [extLink([`Get a new key at ${String(d.url).replace(/^https:\/\//, "")}`, d.url])] : []), ". Nothing was saved.");
+        return false;
+      }
+      form.dataset.unchecked = value;
+      save.textContent = "Save anyway";
+      say(form, `${d.message} Save anyway hands it to the update helper, which checks it again before anything changes.`);
+      return false;
+    } catch (e) {
+      st.hidden = true;
+      if (e.message !== "signed out") say(form, `Could not reach the portal (${e.message}).`);
+      return false;
+    } finally {
+      delete form.dataset.busy;
+      if (form._fill) form._fill(); else save.disabled = false;
+    }
   }
 
   function genPassword() {
@@ -1410,9 +1579,14 @@
       const refused = choices.stt_bedrock_refused || [];
       if (!choices.stt_bedrock_ready.length && refused.length) radios.append(el("p", { class: "note", text: STT_REFUSED }));
       const msel = el("select", { id: "stt-model" });
-      const keyIn = el("input", { id: "stt-key", type: "password", autocomplete: "new-password", maxlength: "512", placeholder: kk.set ? "keep the current key" : "" });
-      const keyRow = el("div", { class: "set-sub" }, el("label", { for: "stt-key", text: "API key" }), keyIn);
+      const keyIn = el("input", { id: "stt-key", type: "password", autocomplete: "new-password", maxlength: "512", placeholder: kk.set ? "keep the current key" : "",
+        "aria-describedby": "stt-key-err stt-key-check" });
+      const getKey = el("div", { class: "set-getkey-slot" });   // where an OpenAI or Groq key comes from (STT_KEY_FORM)
+      const keyRow = el("div", { class: "set-sub" }, el("label", { for: "stt-key", text: "API key" }), keyIn, getKey);
       const privacy = el("p", { class: "note" });
+      // what is wrong, right under the key's field, and the key check's word
+      const err = el("p", { class: "error", id: "stt-key-err", role: "alert", hidden: "" });
+      const status = el("p", { class: "note set-check", id: "stt-key-check", "aria-live": "polite", hidden: "" });
       const provider = () => form.querySelector("input[name=stt-provider]:checked").value;
       const describe = () => {   // what happens to your speech, and what it costs (docs/voice.md, lib/stt.sh)
         const p = provider();
@@ -1432,21 +1606,36 @@
         }
         msel.disabled = !p;
         keyRow.hidden = !(p === "openai" || p === "groq");
+        const kf = STT_KEY_FORM[p];
+        keyIn.placeholder = kk.set && p === prov ? "keep the current key" : kf ? kf.hint : "";
+        getKey.replaceChildren(...(kf ? [getKeyLine(kf)] : []));
         describe();
       };
       radios.addEventListener("change", sync);
       msel.addEventListener("change", describe);
-      form.append(radios, el("div", { class: "set-sub" }, el("label", { for: "stt-model", text: "Model" }), msel), keyRow, privacy);
-      const err = el("p", { class: "error", role: "alert", hidden: "" });
+      form.append(radios, el("div", { class: "set-sub" }, el("label", { for: "stt-model", text: "Model" }), msel), keyRow, err, status, privacy);
       const cancel = el("button", { type: "button", class: "quiet", text: "Cancel" });
-      form.append(err, el("p", { class: "confirm-buttons" }, cancel, el("button", { type: "submit", class: "action primary", text: "Save" })));
+      const save = el("button", { type: "submit", class: "action primary", text: "Save" });
+      form.append(el("p", { class: "confirm-buttons" }, cancel, save));
       cancel.addEventListener("click", () => form.remove());
-      form.addEventListener("submit", (ev) => {
+      keyForm(form, [], save, "stt-key-err stt-key-check");
+      form.addEventListener("submit", async (ev) => {
         ev.preventDefault();
-        const p = provider();
+        if (form.dataset.busy) return;
+        const p = provider(), key = keyIn.value.trim();
         const values = { STT_PROVIDER: p, STT_MODEL: p ? msel.value : "" };
-        if (keyIn.value.trim()) values.STT_API_KEY = keyIn.value.trim();
+        if (key) values.STT_API_KEY = key;
         if (p === "bedrock" || p === "") { if (kk.set) values.STT_API_KEY = ""; }
+        // nothing changed: no password dialog; OpenAI and Groq need a key (the helper refuses it without one), of the right
+        // shape, which the provider is asked about now (free) — the key kept in its field when it says no
+        if (p === prov && values.STT_MODEL === (prov ? model : "") && !key) { say(form, "That is the setting it has now: nothing to save."); return; }
+        const kf = STT_KEY_FORM[p];
+        if (kf && !key && !(kk.set && p === prov)) { say(form, `Enter your ${kf.check} API key.`); return; }
+        if (kf && key) {
+          const bad = shapeError({ STT_API_KEY: key });
+          if (bad) { say(form, bad); return; }
+          if (form.dataset.unchecked !== key && !(await checkKey(form, { key: "STT_API_KEY", name: kf.check }, key, p))) return;
+        }
         confirmApply(values, "Save speech-to-text?", "Chat restarts (about 30 s).", Object.keys(values), form);
       });
       sync();
@@ -2025,9 +2214,12 @@
       closeDialog();
       if (what.kind === "reveal") { showRevealed(what.key, d.value, what.show); return; }
       if (what.kind === "signout") { toast("Every other device is signed out"); return; }
+      // a form's change: what was typed is kept (in this page's memory only) until the helper's answer — a failure
+      // opens the form again with it, the reason under the field (reopen)
+      const restore = what.kind === "apply" && what.form ? kept(what.form) : null;
       if (what.form) what.form.remove();
       const label = ["action", "project", "sessions", "subscriptions"].includes(what.kind) ? what.action : "settings";
-      watch({ id: d.id, kind: label, keys: d.keys, password: Boolean(what.values && "PORTAL_PASSWORD" in what.values), at: Date.now() });
+      watch({ id: d.id, kind: label, keys: d.keys, password: Boolean(what.values && "PORTAL_PASSWORD" in what.values), at: Date.now(), restore });
       toast("Sent to the update helper");
     } catch (e) {
       if (e.message === "signed out") return;
@@ -2086,13 +2278,52 @@
     const job = a.job;
     const mine = Boolean(job && watching && watching.id && job.id === watching.id);   // the helper names each job after its request
     if (watching) watching.job = mine ? job : watching.job;
+    // the last step it was seen at: the one a failure is marked on (Check ✕ when it never got further)
+    if (mine && STEPS.some(([p]) => p === job.phase) && job.phase !== "done") watching.step = job.phase;
     const finished = mine && (job.phase === "done" || job.phase === "failed");
     renderJob();
     if (watching && !finished && Date.now() - watching.at < 15 * 60000) { pollTimer = setTimeout(poll, 2000); return; }
     if (finished) {
       if (job.action === "report" && job.phase === "done") showReport();
+      const w = watching;
       await load();
+      if (job.phase === "failed" && w && w.restore && reopen(w.restore, job.message || "")) {
+        watching = null;   // (said under the field instead of in the box at the top)
+        renderJob();
+      } else if (w) w.restore = null;
     }
+  }
+
+  // kept(FORM) -> what was typed in a form, to fill it in again: {row: its setting, fields: [[id, value or checked]]}
+  function kept(form) {
+    const rowEl = form.closest(".set-row[data-key]");
+    if (!rowEl) return null;
+    const fields = [...form.querySelectorAll("input[id], select[id]")]
+      .filter((x) => x.type !== "search" && x.type !== "button")
+      .map((x) => [x.id, x.type === "checkbox" || x.type === "radio" ? x.checked : x.value]);
+    return { row: rowEl.dataset.key, fields };
+  }
+
+  // reopen(KEPT, MESSAGE) -> true when the form is open again with what was typed, and why it failed under the field
+  // (an address of a key page as a link; "OPENROUTER_API_KEY: …" said without the key's name: the form is its)
+  function reopen(r, message) {
+    const rowEl = document.querySelector(`#settings .set-row[data-key="${r.row}"]`);
+    const btn = rowEl && rowEl.querySelector(":scope > .set-actions button.action:not([data-act])");
+    if (!btn || btn.disabled) return false;
+    btn.click();
+    const form = rowEl.querySelector(":scope > .set-form");
+    if (!form) return false;
+    for (const [fid, v] of r.fields) {
+      const x = form.querySelector(`#${CSS.escape(fid)}`);
+      if (!x) continue;
+      if (typeof v === "boolean") { x.checked = v; x.dispatchEvent(new Event("change", { bubbles: true })); } else x.value = v;
+    }
+    if (form._fill) form._fill();
+    const m = String(message).replace(/^[A-Z][A-Z0-9_]{1,60}: /, "");
+    const unchanged = / — nothing was changed\.?$/.test(m);
+    say(form, `Not saved: ${m.replace(/ — nothing was changed\.?$/, "").replace(/\.$/, "")}.${unchanged ? " Nothing was changed." : ""}`);
+    form.scrollIntoView({ block: "nearest" });
+    return true;
   }
 
   function renderJob() {
@@ -2110,9 +2341,11 @@
     steps.hidden = !settingsJob;
     if (settingsJob) {
       const at = STEPS.findIndex(([p]) => p === job.phase);
+      // a failure: the step it failed at marked ✕ (the last one seen; Check when it never got further), those before ✓
+      const bad = job.phase === "failed" ? Math.max(0, STEPS.findIndex(([p]) => p === w.step)) : -1;
       STEPS.forEach(([p, label], i) => {
-        const state = job.phase === "failed" ? "" : i < at || job.phase === "done" ? "ok" : i === at ? "now" : "";
-        steps.append(el("li", { class: state, text: label }));
+        const state = job.phase === "failed" ? (i < bad ? "ok" : i === bad ? "bad" : "") : i < at || job.phase === "done" ? "ok" : i === at ? "now" : "";
+        steps.append(el("li", { class: state, text: label, ...(state === "bad" ? { "aria-label": `${label}: failed` } : {}) }));
       });
     }
     const msg = $("#set-job-message");

@@ -105,7 +105,7 @@ class Settings:
     # Tailscale-User-Login are ignored (they could only come from another container calling portal:8000 directly).
     proxy_secret: str = field(default="", repr=False)
     # Where PORTAL_PASSWORD lives (./stack passes the .env path, ~ for $HOME, and the Compose project), so the
-    # login page of a second copy names its own .env. Blank: the generic wording.
+    # login page of a second copy names its own folder for ./stack password --show. Blank: the generic wording.
     env_file: str = ""
     project: str = ""
     # Voice on Home (lib/stt.sh): Open WebUI's engine ("web" = browser speech), the provider and its model.
@@ -134,11 +134,10 @@ class Settings:
     # own (compose.code-egress.yaml)
     terminal_egress: str = "internet"
 
-    def password_where(self) -> str:
-        """"~/bn/.env (project bn-dev)", or "" when ./stack did not say."""
-        if not self.env_file:
-            return ""
-        return f"{self.env_file} (project {self.project})" if self.project else self.env_file
+    def install_folder(self) -> str:
+        """The install's folder, where ./stack runs: "~/bn" for an env file ~/bn/.env; "" when ./stack did not say (or
+        the env file is elsewhere)."""
+        return self.env_file[: -len("/.env")] if self.env_file.endswith("/.env") and len(self.env_file) > 5 else ""
 
     def remote_on(self) -> bool:
         return self.remote_mode in REMOTE_MODES and bool(self.remote_host)

@@ -139,9 +139,16 @@
       </details>
       <h3 class="update-sub">What happens</h3>
       <ol id="update-steps" class="update-steps"></ol>
-      <p class="cmdline"><code id="update-cmd">./stack update</code> <button type="button" class="copy" id="copy-update">Copy</button>
-        <button type="button" class="action primary" id="update-now" data-action="update" hidden>Update now</button></p>
+      <!-- With the update helper: Update now first, the terminal command folded under it; without it: the command
+           (app.js placeUpdateCli moves #update-cli-line between the two places) -->
+      <p class="cmdline update-go" id="update-go" hidden><button type="button" class="action primary" id="update-now" data-action="update" hidden>Update now</button></p>
+      <div id="update-cli-plain"><p class="cmdline" id="update-cli-line"><code id="update-cmd">./stack update</code> <button type="button" class="copy" id="copy-update">Copy</button></p></div>
       <p class="note" id="update-hint">Run it in your DevOS ADE folder.</p>
+      <details class="update-cli" id="update-cli" hidden>
+        <summary>From a terminal instead</summary>
+        <div id="update-cli-fold"></div>
+        <p class="note">In your DevOS ADE folder: the same update, with its progress in the terminal.</p>
+      </details>
       <div id="update-helper-slot"></div>
     </section>
 

@@ -22,8 +22,8 @@ front for the apps; `PORTAL_HOST` in `.env`), so the two stacks never share brow
 automatically because the main stack holds the defaults. `--yes` never touches your
 `~/.local/bin/devos-claude` link; run `bin/devos-claude` from the copy's folder instead. Remove the copy
 with `./stack uninstall` inside it. Each copy has its own `PORTAL_PASSWORD`: its login page names the copy's
-`.env` and project (`It is PORTAL_PASSWORD in ~/devos-ade-test/.env (project bn-test).`; on this computer only,
-never to a remote visitor), and `./stack password` in a folder says the same.
+folder and project (`Forgot it? Run ./stack password --show in ~/devos-ade-test (project bn-test).`; on this computer
+only, never to a remote visitor), and `./stack password` in a folder says which `.env` holds it.
 
 ### How copies are kept apart
 

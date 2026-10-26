@@ -92,10 +92,20 @@
       .map((p) => ({ path: p, shown: shownText(p, 300) }));
     return { sessions, files, truncated: d.truncated === true, error: typeof d.error === "string" ? shownText(d.error, 200) : "" };
   }
+  // wordHit(TITLE, Q) -> every word of Q starts a word of TITLE ("budget" in "Spending & budgets", not in "nobudget")
+  function wordHit(title, q) {
+    const words = String(q || "").toLowerCase().split(/\s+/).filter(Boolean).slice(0, 16);
+    if (!words.length) return false;
+    const have = String(title || "").toLowerCase().slice(0, 256).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    return words.every((w) => have.some((h) => h.startsWith(w)));
+  }
   // Ranked groups for query Q: {group id: {shown: [{entry, hits}], more}}, each at most its PER_GROUP, the group with
   // the best match first (ties in GROUPS' order: what you typed exactly, in a walkthrough step's title, comes before
-  // settings that merely contain its letters). Entries a source already matched by itself (prefiltered: the Code
-  // page's, Chat's) stay even when fuzzy finds none of the query in their title.
+  // settings that merely contain its letters). Where a setting is changed comes first, though: when the words typed
+  // start words of a Settings section's or setting's title, Settings goes above the walkthrough and the docs, its
+  // sections before its settings ("budget": Spending & budgets, then Chat budget …; Enter opens where it is changed).
+  // Entries a source already matched by itself (prefiltered: the Code page's, Chat's) stay even when fuzzy finds none
+  // of the query in their title.
   function searchEntries(entries, q) {
     const by = {};
     for (const e of entries) (by[e.group] = by[e.group] || []).push(e);
@@ -110,8 +120,16 @@
         const seen = new Set(ranked.map((r) => r.item));
         ranked = ranked.concat(list.filter((e) => e.prefiltered && !seen.has(e)).map((e) => ({ item: e, score: -1, hits: [] })));
       }
-      if (ranked.length) out[g] = { best: ranked[0].score, shown: ranked.slice(0, max).map((r) => ({ entry: r.item, hits: r.hits })), more: Math.max(0, ranked.length - max) };
+      let words = false;
+      if (g === "settings") {   // word matches first, sections before settings; the rest as fuzzy ranked them (a stable sort)
+        const tier = (r) => (wordHit(r.item.title, q) ? (r.item.key.startsWith("sec:") ? 0 : 1) : 2);
+        ranked = ranked.map((r, i) => [tier(r), i, r]).sort((x, y) => x[0] - y[0] || x[1] - y[1]).map((x) => x[2]);
+        words = ranked.length > 0 && tier(ranked[0]) < 2;
+      }
+      if (ranked.length) out[g] = { best: Math.max(...ranked.map((r) => r.score)), words, shown: ranked.slice(0, max).map((r) => ({ entry: r.item, hits: r.hits })), more: Math.max(0, ranked.length - max) };
     }
+    // Settings with a word match: at least level with the walkthrough and the docs (and before them: GROUPS' order)
+    if (out.settings && out.settings.words) out.settings.best = Math.max(out.settings.best, ...["tour", "docs"].filter((g) => out[g]).map((g) => out[g].best));
     const order = GROUPS.map(([g]) => g).filter((g) => out[g]);
     const rank = (g) => GROUPS.findIndex(([x]) => x === g);
     order.sort((a, b) => out[b].best - out[a].best || rank(a) - rank(b));
@@ -120,7 +138,7 @@
     return sorted;
   }
 
-  const pure = { shownText, settingsEntries, docEntries, docsBase, takeCodeReply, searchEntries };
+  const pure = { shownText, settingsEntries, docEntries, docsBase, takeCodeReply, searchEntries, wordHit };
   root.bnSearch = { _pure: pure };
   if (typeof document === "undefined" || typeof document.querySelector !== "function") return;
 
@@ -393,4 +411,9 @@
     if (dlg.open) close(); else open();
   });
   window.bnSearch.open = open;
+  // /?search (the error pages' Search link): the search opens as Home does; the address loses it again
+  if (new URLSearchParams(location.search).has("search")) {
+    history.replaceState(null, "", location.pathname + location.hash);
+    setTimeout(() => open(), 0);
+  }
 })(typeof window !== "undefined" ? window : globalThis);

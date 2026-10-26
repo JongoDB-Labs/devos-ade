@@ -515,8 +515,7 @@ function renderUpdate(u) {
   $("#update-title").textContent = `${u.latest} available`;
   const bits = [`You have ${u.installed}.`];
   if (u.published_at) bits.push(`${u.latest} came out ${day(u.published_at)}.`);
-  if (u.checking) bits.push("Checking for a newer release…");
-  else if (u.checked_at) bits.push(`Checked ${checked(u.checked_at)}.`);
+  // (when it was checked: the line above the card says it, with Check for updates — once is enough)
   $("#update-meta").textContent = bits.join(" ");
   renderReleases(u);
   const link = $("#update-link");
@@ -711,7 +710,17 @@ function updateHint(a, usable) {
     const skipped = sk.at && (Date.now() / 1000 - sk.at) < 86400 && sk.reason ? ` The last window was skipped: ${sk.reason}.` : "";
     return `Will install automatically ${h >= 18 || h < 6 ? "tonight" : "today or tomorrow"} between ${from} and ${to} (this computer's time) — or Update now.${skipped}`;
   }
-  return "Or click Update now: the update helper runs it for you (asks for the portal password).";
+  return "The update helper runs it on this computer; it asks for the portal password first.";
+}
+
+// The update card's one action first: with the update helper usable here, Update now, and the terminal command folded
+// under it ("From a terminal instead"); without it, the command itself (UX-20)
+function placeUpdateCli(usable) {
+  const line = $("#update-cli-line");
+  if (!line) return;
+  (usable ? $("#update-cli-fold") : $("#update-cli-plain")).append(line);
+  $("#update-cli").hidden = !usable;
+  $("#update-go").hidden = !usable;
 }
 
 function renderAdmin(a) {
@@ -729,6 +738,7 @@ function renderAdmin(a) {
   rb.textContent = a.rollback && a.rollback.to ? `Roll back to ${a.rollback.to}` : "Roll back";
   $("#job-rollback").textContent = rb.textContent;
   $("#update-now").hidden = !usable;
+  placeUpdateCli(usable);
   renderAuto(a, usable);
   placeHelperOff();
   $("#update-hint").textContent = updateHint(a, usable);

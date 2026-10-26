@@ -158,6 +158,12 @@
 .set-unit input { flex: 1 1 auto; min-width: 0; }
 .set-unit .note { margin: 0; white-space: nowrap; }
 .set-form .error { margin: 4px 0 0; color: var(--bad); font-size: 14px; }
+.set-form .error a { color: inherit; font-weight: 600; }
+.set-form [aria-invalid=true] { border-color: var(--bad); }
+/* a provider key: the provider's answer to the check before the password, and where a key comes from */
+.set-form .set-check.good { color: var(--ok); }
+.set-form .set-getkey { margin: 2px 0 0; }
+.set-form .set-getkey a { color: var(--accent); }
 .set-form .confirm-buttons { margin-top: 8px; }
 .set-form .note { margin: 4px 0 0; }
 .set-gen { margin: 2px 0 0; }

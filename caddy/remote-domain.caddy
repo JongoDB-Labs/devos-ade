@@ -145,9 +145,25 @@ https://{$REMOTE_HOST}:8443, https://*.{$REMOTE_HOST}:8443 {
 		import remote_preview "https://{$REMOTE_CODE_HOST:code.remote.invalid} {$REMOTE_ORIGIN}"
 	}
 
+	# any other name under HOST, from the sidecar: the portal's "not an address of DevOS ADE" page, with a link to the
+	# remote portal (Caddyfile unknown_host; after the routes above, which answer their own names). Anyone else: nothing.
 	@other_caller not remote_ip {$REMOTE_SIDECAR_IP}/32
 	abort @other_caller
-	respond "unknown host" 404
+	@unknown_name {
+		remote_ip {$REMOTE_SIDECAR_IP}/32
+		not host {$REMOTE_HOST} {$REMOTE_CHAT_HOST} {$REMOTE_ADMIN_HOST} {$REMOTE_FILES_HOST} {$REMOTE_TERMINAL_HOST:terminal.remote.invalid} {$REMOTE_CODE_HOST:code.remote.invalid} {$REMOTE_PREVIEW_HOST:preview.remote.invalid}
+	}
+	route @unknown_name {
+		import unknown_host remote
+	}
+	# (while the portal does not answer: the words alone — for those names only, never another host's error)
+	handle_errors {
+		@unknown_name_down {
+			remote_ip {$REMOTE_SIDECAR_IP}/32
+			not host {$REMOTE_HOST} {$REMOTE_CHAT_HOST} {$REMOTE_ADMIN_HOST} {$REMOTE_FILES_HOST} {$REMOTE_TERMINAL_HOST:terminal.remote.invalid} {$REMOTE_CODE_HOST:code.remote.invalid} {$REMOTE_PREVIEW_HOST:preview.remote.invalid}
+		}
+		respond @unknown_name_down "unknown host" 404
+	}
 }
 
 # A REMOTE_PREVIEW_DOMAIN of its own (lib/code.sh writes REMOTE_PREVIEW_SITE=own; compose.domain.yaml): a site block

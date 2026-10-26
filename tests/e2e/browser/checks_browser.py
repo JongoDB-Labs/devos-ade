@@ -132,13 +132,22 @@ def login_page(ctx):
     for href in icons:  # pre-login: every icon/manifest the page links must load without a session
         r = page.request.get(href)
         expect(r.status == 200, f"{href} -> {r.status} before login")
-    expect("PORTAL_PASSWORD" in page.inner_text(".hint"), "no hint naming PORTAL_PASSWORD")
+    # forgot it: the command that prints it, in this install's folder (UX-11); a Show button for the password
+    hint = page.inner_text(".hint")
+    expect(hint.startswith("Forgot it? Run ./stack password --show in ") and ".env" not in hint, f"the hint {hint!r}")
+    toggle = page.locator("#pw-toggle")
+    expect(toggle.is_visible() and toggle.inner_text() == "Show" and toggle.get_attribute("aria-label") == "Show password", "no Show button")
     shot(page, "01-login")
     page.fill("#password", "definitely-wrong")
+    toggle.click()
+    expect(page.get_attribute("#password", "type") == "text" and toggle.inner_text() == "Hide", "Show did not show the password")
+    toggle.click()
+    expect(page.get_attribute("#password", "type") == "password", "Hide did not hide it again")
     page.click("form[action='/login'] button[type=submit]")
     page.wait_for_selector(".error[role=alert]")
     err = page.inner_text(".error")
-    expect("not right" in err and ".env" in err, f"wrong-password message {err!r}")
+    expect(err == "That password is not right." and page.inner_text("body").count("./stack password --show") == 1,
+           f"wrong-password message {err!r} (said plainly; the hint once)")
     shot(page, "02-login-wrong-password")
     page.fill("#password", ENV["PORTAL_PASSWORD"])
     page.click("form[action='/login'] button[type=submit]")
@@ -275,9 +284,11 @@ def update_card(ctx):
         page.wait_for_selector("#update-card:not([hidden])", timeout=15000)
         meta = page.inner_text("#update-meta")
         expect("v99.0.0" in page.inner_text("#update-card"), f"card lacks the tag: {meta}")
-        expect("Checked just now." in meta, f"the card does not say when it checked: {meta!r}")
-        expect(page.inner_text("#update-cmd") == "./stack update", "update command")
+        # when it was checked is said once, in the line above the card (with Check for updates), not again in the card
+        expect("Checked" not in meta and "checked just now" in page.inner_text("#release-line"), f"the card's meta {meta!r}")
+        expect(page.inner_text("#update-cmd") == "./stack update" and page.locator("#update-cmd").is_visible(), "update command")
         expect(page.locator("#update-now").is_hidden(), "Update now shown without the helper")
+        expect(page.locator("#update-cli").is_hidden(), "the terminal command folded away without the helper (it is the way then)")
         heads = page.eval_on_selector_all("#update-releases li", "ls => ls.map(l => l.innerText.replace(/\\s+/g, ' '))")
         expect(heads == ["v99.0.0 the newest fake release", "v98.0.0 a fake release in between", "v97.0.0 the oldest fake release"],
                f"one line per release, newest first: {heads}")
@@ -300,6 +311,13 @@ def update_card(ctx):
         page.reload()  # Home asks for the helper's state at load and every 30 s
         page.wait_for_selector("#update-now:not([hidden])", timeout=15000)
         expect(page.locator("#maint").is_visible(), "Maintenance card hidden while the helper runs")
+        # Update now leads; the command is folded under it ("From a terminal instead", closed) (UX-20)
+        order = page.evaluate("""() => { const a = document.querySelector('#update-now'), f = document.querySelector('#update-cli');
+            return { first: Boolean(a.compareDocumentPosition(f) & Node.DOCUMENT_POSITION_FOLLOWING), open: f.open, hidden: f.hidden,
+                     inside: Boolean(f.querySelector('#update-cmd')), summary: f.querySelector('summary').textContent }; }""")
+        expect(order == {"first": True, "open": False, "hidden": False, "inside": True, "summary": "From a terminal instead"},
+               f"the update card's order: {order}")
+        expect(page.inner_text("#update-hint").startswith("The update helper runs it on this computer"), f"hint {page.inner_text('#update-hint')!r}")
         before = set((STATE / "requests").glob("req-*.json"))
         page.click("#update-now")
         page.wait_for_selector("#confirm[open]")
@@ -1992,7 +2010,7 @@ def apps_portal_login_first(ctx):
 def same_site_guard(ctx):
     """Every app host refuses a script's request from another host of the same site — what a preview over remote access
     is (every Service of a tailnet is one site), and what the stack's own hosts are to each other here. From a page of
-    another host of the site with no policy of its own (Caddy's own "unknown host" page: any name under the site),
+    another host of the site with no policy of its own (Caddy's own health answer, /caddy-health, on any name under the site),
     signed in: fetches to the portal, Files and the Code page, a no-cors POST and a form post to Admin — each with the
     session cookie (same-site: SameSite=Strict sends it), each refused by Caddy before the app; a plain image from the
     portal passes (page loads too: every other check here runs with the guard on); an opaque origin (a sandboxed frame
@@ -2013,8 +2031,9 @@ def same_site_guard(ctx):
         cdp.on("Network.responseReceivedExtraInfo", lambda e: got.__setitem__(e["requestId"], (e.get("statusCode"), {k.lower(): v for k, v in (e.get("headers") or {}).items()})))
         return cdp
 
-    # (a host of the site no app answers: Caddy's own 404 page, no policy — the page a preview's script would be on)
-    src = origin("bn-guard-src") + "/"
+    # (a host of the site no app answers: Caddy's own health answer there, no policy — the page a preview's script would
+    # be on; the unknown host's own page has a strict policy of its own since UX-10, which would stop these first)
+    src = origin("bn-guard-src") + "/caddy-health"
     page.goto(src)
     page.wait_for_load_state("load")
     cdp = watch(page)
@@ -2938,16 +2957,23 @@ def _confirm(page, password=None, wait_sent=True):
 
 
 def _wait_job(page, timeout=240):
+    """The helper's answer to the last change: (ok, message). A change made in a form that fails comes back as that form
+    again, with the reason under its field ("Not saved: …"; the box at the top then goes)."""
     try:
-        page.wait_for_selector("#set-job:not([hidden]) .job-message.good, #set-job:not([hidden]) .job-message.bad", timeout=timeout * 1000)
+        page.wait_for_selector("#set-job:not([hidden]) .job-message.good, #set-job:not([hidden]) .job-message.bad, "
+                               "#settings .set-form > .error:not([hidden])", timeout=timeout * 1000)
     except Exception:  # noqa: BLE001 — say what the page shows instead of a bare timeout
         shown = page.evaluate("""() => [...document.querySelectorAll('#set-confirm[open] .error, #settings .set-form .error, #set-job')]
             .filter(n => !n.hidden && n.textContent.trim()).map(n => n.textContent.trim().slice(0, 160))""")
         shot(page, "settings-job-timeout", mask=[".set-value", ".set-adv-value"])
         raise AssertionError(f"no result from the helper within {timeout} s; the page shows: {shown or 'nothing'}")
     # settings.js loads the page again in the same tick it shows the result (aria-busy already set): its rows are
-    # replaced once that answers
+    # replaced once that answers (and a failed form's change opens that form again then)
     settings_drawn(page)
+    page.wait_for_timeout(150)
+    inline = page.locator("#settings .set-form > .error:not([hidden])")
+    if inline.count() and inline.first.inner_text().startswith("Not saved:"):
+        return False, inline.first.inner_text()
     return page.locator("#set-job .job-message.good").count() > 0, page.inner_text("#set-job-message")
 
 
@@ -3300,6 +3326,44 @@ def settings_narrow_cards(ctx):
     return "; ".join(said)
 
 
+@check("browser", "error-pages")
+def error_pages(ctx):
+    """UX-10: a page of the portal that is not there, and a name that is not this install's — each in the sign-in card's
+    design (its tokens and fonts, which load: the unknown name gets the portal's public files under that name), with a
+    way back that works (Go to Home; Search opens the search; Go to DevOS ADE), no console error and no CSP violation."""
+    page, rec = ctx.page("error-pages")
+    login(page)
+    fonts = """async () => { await document.fonts.ready;
+        return ['600 20px "DevOS Serif"', '400 15px "DevOS Sans"'].every((f) => document.fonts.check(f))
+          && [...document.fonts].some((f) => f.family.replace(/"/g, '') === 'DevOS Serif' && f.status === 'loaded'); }"""
+    # the portal's 404: Home and Search
+    page.goto(origin() + "/no-such-page")
+    page.wait_for_selector("main.error-panel h1")
+    expect(page.inner_text("h1") == "This page does not exist", f"404 title {page.inner_text('h1')!r}")
+    expect(page.evaluate(fonts), "the 404 page's fonts did not load")
+    shot(page, "error-portal-404")
+    page.locator("a.pill-link", has_text="Search").click()
+    page.wait_for_selector("#search[open]", timeout=15000)
+    page.keyboard.press("Escape")
+    page.goto(origin() + "/no-such-page")
+    page.locator("a.pill-link", has_text="Go to Home").click()
+    page.wait_for_selector("#home:not([hidden])", timeout=15000)
+    # a name that is not this install's (any name under the site: Caddy's catch-all)
+    other = f"http://nosuch.{HOST}:{PORT}/some/path?x=1"
+    page.goto(other)
+    page.wait_for_selector("main.error-panel h1")
+    expect(page.inner_text("h1") == "Not an address of DevOS ADE" and "nosuch" not in page.content(), "the unknown host's page")
+    expect(page.evaluate(fonts), "the unknown host's fonts did not load")
+    shot(page, "error-unknown-host")
+    page.locator("a.pill-link", has_text="Go to DevOS ADE").click()
+    page.wait_for_url(re.compile("^" + re.escape(origin()) + "/"), timeout=15000)
+    page.wait_for_selector(".shell", timeout=15000)
+    probs = rec.problems(allow=[r"^404 GET " + re.escape(origin()) + "/no-such-page$", r"^404 GET http://nosuch\."])
+    rec.save()
+    expect(not probs, f"errors: {probs}")
+    return "portal 404 and unknown host: the sign-in card's design, its fonts loaded; Search, Go to Home and Go to DevOS ADE work"
+
+
 @check("settings", "settings-page")
 def settings_page(ctx):
     d = _need_helper(ctx)
@@ -3347,6 +3411,70 @@ def settings_page(ctx):
     rec.save(); prec.save()
     expect(not probs, f"errors: {probs}")
     return "12 sections, one at a time; Advanced and About list the rest; no secret in the page; desktop light/dark and phone (picker) render"
+
+
+@check("settings", "settings-key-check")
+def settings_key_check(ctx):
+    """UX-05 with the real portal and update helper (fake keys made here: what they reach costs nothing). OpenRouter's
+    form: Save waits for a key; the key is asked of openrouter.ai by the portal before the password — a fake one is
+    rejected within seconds, said under the field with where keys come from, the key kept, no password dialog. The AWS
+    key: a fake pair goes through the password to the helper, whose free check refuses it; the form opens again with
+    the key ID in it and the helper's reason under it, nothing changed."""
+    import secrets as sec
+    import string
+    d = _need_helper(ctx)
+    base = d["snapshot"]["base"]
+    page, rec = ctx.page("settings-key-check")
+    login(page)
+    open_settings(page)
+    row = goto_setting(page, "OPENROUTER_API_KEY")
+    row.locator(":scope > .set-actions button.action:not([data-act])").click()
+    form = row.locator(".set-form")
+    save, field = form.locator("button[type=submit]"), form.locator("input[type=password]")
+    expect(save.is_disabled(), "OpenRouter's Save is enabled with an empty key")
+    expect(form.locator(".set-getkey a").get_attribute("href") == "https://openrouter.ai/settings/keys", "no Get a key link")
+    fake = "-".join(("sk", "or", "v1", sec.token_hex(32)))
+    field.fill(fake)
+    t0 = time.time()
+    save.click()
+    form.locator(":scope > .error:not([hidden])").wait_for(timeout=20000)
+    took = time.time() - t0
+    err = form.locator(":scope > .error").inner_text()
+    if "did not answer" in err or "Could not reach" in err:
+        said = f"openrouter.ai not reachable from the portal here ({err[:80]!r}), said in {took:.1f} s"
+        expect(save.inner_text() == "Save anyway", f"no Save anyway after no answer: {save.inner_text()!r}")
+    else:
+        expect(err.startswith("OpenRouter rejected this key (HTTP 401).") and "Nothing was saved." in err, f"a fake OpenRouter key: {err!r}")
+        expect(form.locator(":scope > .error a").get_attribute("href") == "https://openrouter.ai/settings/keys", "no link in the error")
+        said = f"a fake OpenRouter key rejected by openrouter.ai in {took:.1f} s, under the field"
+    expect(took < 12, f"the check took {took:.1f} s")
+    expect(field.input_value() == fake and page.locator("#set-confirm[open]").count() == 0, "the key was not kept, or the password asked")
+    shot(page, "24-settings-key-rejected", mask=[".set-value", ".set-adv-value"])
+    form.locator("button", has_text="Cancel").click()
+    # the AWS key: the helper's own check refuses a fake pair; the form comes back with it and why
+    row = goto_setting(page, "AWS_ACCESS_KEY_ID")
+    row.locator(":scope > .set-actions button.action:not([data-act])").click()
+    form = row.locator(".set-form")
+    kid = "AKIA" + "".join(sec.choice(string.ascii_uppercase + string.digits) for _ in range(16))
+    secret = "".join(sec.choice(string.ascii_letters + string.digits) for _ in range(40))
+    form.locator("input").nth(0).fill(kid)
+    expect(form.locator("button[type=submit]").is_disabled(), "the AWS key's Save is enabled with half a key")
+    form.locator("input").nth(1).fill(secret)
+    form.locator("button[type=submit]").click()
+    _confirm(page)
+    ok, msg = _wait_job(page, 240)
+    expect(not ok, f"a fake AWS key was saved: {msg}")
+    form = page.locator("#settings .set-row[data-key=AWS_ACCESS_KEY_ID] > .set-form")
+    expect(form.count() == 1 and msg.startswith("Not saved:"), f"the form did not come back with the reason: {msg!r}")
+    expect(form.locator("input").nth(0).input_value() == kid, "the key ID typed was not kept")
+    expect(page.locator("#set-job").is_hidden(), "the reason is also in the box at the top")
+    expect(_settings_api(ctx)["snapshot"]["base"] == base, ".env changed")
+    shot(page, "25-settings-aws-key-refused", mask=[".set-value", ".set-adv-value", "#settings .set-form input"])
+    form.locator("button", has_text="Cancel").click()
+    probs = rec.problems()
+    rec.save()
+    expect(not probs, f"errors: {probs}")
+    return f"{said}; a fake AWS key: the helper refused it, the form back with the key ID and {msg[:90]!r}; .env unchanged"
 
 
 @check("settings", "settings-budget-change")

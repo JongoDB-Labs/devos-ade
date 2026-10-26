@@ -248,6 +248,13 @@ a.form-link:not([href]) { display: none; }
 /* Without the helper: the one terminal step that turns one-click updates on (Maintenance, or the update card). */
 .helper-off { padding: 10px 12px; border: 1px dashed var(--line-strong); border-radius: var(--r-m); }
 #update-card .helper-off { margin-top: 12px; }
+/* Update now first; the terminal command under it, folded (app.js placeUpdateCli) */
+#update-card .update-go { margin: 4px 0 0; }
+#update-card .update-go .action { margin-left: 0; }
+#update-card .update-cli { margin-top: 10px; }
+#update-card .update-cli summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+#update-card .update-cli[open] summary { margin-bottom: 8px; }
+#update-card .update-cli .note { margin: 6px 0 0; }
 .helper-off-title { margin: 0 0 8px; font-weight: 600; font-size: 14px; }
 .helper-off .note { margin-top: 8px; }
 /* Automatic updates: Off | Nightly, like the model filter chips. */
@@ -270,6 +277,9 @@ a.form-link:not([href]) { display: none; }
 .job-done { list-style: none; margin: 0 0 8px; padding: 0; font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 2px 16px; }
 .job-done li::before { content: "✓ "; color: var(--ok); }
 .job-steps li.now::before { content: "◐ "; }
+/* the step a change failed at (Settings: the last one seen) */
+.job-steps li.bad { color: var(--bad); font-weight: 600; }
+.job-steps li.bad::before { content: "✕ "; }
 .job-message { margin: 4px 0 0; font-size: 15px; }
 .job-message.good { color: var(--ok); font-weight: 500; }
 .job-message.bad { color: var(--bad); }

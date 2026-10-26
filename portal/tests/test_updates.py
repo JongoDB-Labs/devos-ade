@@ -724,7 +724,9 @@ def test_home_lists_every_release_and_says_when_it_checked():
     assert 'id="update-releases"' in html and 'id="update-notes"' in html and 'id="update-notes-title"' in html
     assert "function renderReleases(u)" in js and "d.open = i === 0;" in js   # the newest open, the others folded
     assert "`What's new: ${rels.length} releases since ${u.installed}`" in js
-    assert "Checked ${checked(u.checked_at)}." in js and "release check: ${" in js
+    # when it was checked: once, in the release line above the card (updatecheck.js), not again in the card (UX-20)
+    assert "Checked ${checked(u.checked_at)}." not in js and "release check: ${" in js
+    assert "checked ${ago(u.checked_at, now)}" in (static / "updatecheck.js").read_text()
     assert "if (u && u.checking) renderUpdate.again = setTimeout(refresh, 6000);" in js
 
 

@@ -6,6 +6,31 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Changed
+
+- **Adding a provider key says at once whether it works (UX-05).** Save waits until the field has a key, and an empty
+  or unchanged Save, or a key of the wrong shape, never asks for the password: it is said under the field. OpenRouter's,
+  Experiential Labs' and OpenAI's or Groq's (speech-to-text) keys are then checked with the provider by the portal — the
+  free call setup makes, within 8 seconds instead of about 20 — before the password: a rejected key is said right under
+  the field, with a link to where keys come from, and stays there to fix; no answer in time offers **Save anyway** (the
+  update helper checks it again). Each key's form has a *Get a key at …* link (the AWS key: AWS's access keys page; a
+  search backend: its own) and shows the key's shape (`sk-or-v1-…`). A change the helper refuses opens its form again
+  with what you typed and the reason under the field, its address a link, and the progress box marks the step that
+  failed (✕).
+- **Error pages with a way back (UX-10).** A portal page that is not there and a host name that is not this install's
+  (127.0.0.1, a typo) are now DevOS ADE pages in the sign-in card's design, with its fonts: *Go to Home* and *Search*
+  (`/?search` opens the search), or *Go to DevOS ADE* with its address. They show nothing of the address asked for,
+  run no script and keep a strict policy; under an unknown name Caddy passes on no cookie and reaches no other route of
+  the portal. A preview's new-tab link opened outside the Code page now says to open it from the Ports panel.
+- **Sign-in (UX-11).** A wrong password says only *That password is not right.*; the hint below says what to do once:
+  *Forgot it? Run `./stack password --show` in* this install's folder (on this computer; over remote access without the
+  folder). A **Show** button shows the password as typed.
+- **Home's update card leads with Update now (UX-20)** when the update helper runs, with `./stack update` folded under
+  *From a terminal instead*; when it was checked is said once, in the line above the card.
+- **Search ranks where a setting is changed first (UX-22):** when the words typed start words of a Settings section's or
+  setting's title, Settings comes above the walkthrough and the docs, its sections first (*budget* → Spending &
+  budgets).
+
 ## [0.31.2] - 2026-10-26
 
 ### Fixed

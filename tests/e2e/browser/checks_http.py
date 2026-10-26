@@ -9,7 +9,7 @@ from urllib.parse import quote, urlencode
 from common import CHAT_CSP, ENV, HOST, LITELLM_PORT, PORT, Skip, check, csp_differs, expect, host_of, http, origin, portal_login, real_helper_running
 
 APPS = {"chat": "/", "admin": "/ui/", "files": "/rustfs/console/"}
-PUBLIC = ["/login", "/healthz", "/favicon.svg", "/static/tokens.css", "/static/fonts.css", "/static/login.css", "/static/logo.svg",
+PUBLIC = ["/login", "/healthz", "/favicon.svg", "/static/tokens.css", "/static/fonts.css", "/static/login.css", "/static/login.js", "/static/logo.svg",
           "/static/fonts/source-serif-4-latin-wght-normal.woff2", "/static/fonts/inter-latin-wght-normal.woff2",
           "/static/fonts/jetbrains-mono-latin-wght-normal.woff2", "/manifest.webmanifest", "/sw.js"]
 ICONS = ["16", "32", "48", "192", "512", "1024", "maskable-192", "maskable-512", "monochrome-512", "touch-180"]
@@ -166,15 +166,48 @@ def apps_sso(ctx):
 
 @check("http", "unknown-host-and-internal-paths")
 def unknown_host(ctx):
-    r = http("GET", None, "/", host_header=f"evil.example:{PORT}")
-    expect(r.status == 404, f"unknown host: {r.status}")
-    r = http("GET", None, "/", host_header=f"nope.{HOST}:{PORT}")
-    expect(r.status == 404, f"unknown subdomain: {r.status}")
+    """A name that is not this install's (UX-10): the portal's "not an address of DevOS ADE" page — 404, a link to the
+    portal, nothing of the request shown back, the sign-in page's design (its public files under that name too) — and
+    nothing else of the stack: every other path is the same page, a cookie is not passed on, a POST is refused."""
+    sess = portal_login()
+    for hh in (f"evil.example:{PORT}", f"nope.{HOST}:{PORT}", f"127.0.0.1:{PORT}"):
+        for path in ("/", "/login", "/api/summary?x=%3Cb%3E", "/auth/verify", "/static/app.js"):
+            r = http("GET", None, path, {**HTML, **API}, host_header=hh, cookie=sess)
+            expect(r.status == 404 and "Not an address of DevOS ADE" in r.text, f"{hh}{path}: {r.status} {r.text[:80]!r}")
+            expect(f'href="{origin()}/"' in r.text and "evil.example" not in r.text and "nope." not in r.text and "&lt;b&gt;" not in r.text,
+                   f"{hh}{path}: the page names {r.text[:200]!r}")
+            expect("bn_session" not in r.text and not r.headers_all("set-cookie"), f"{hh}{path}: a cookie")
+    csp = r.header("content-security-policy") or ""
+    expect("default-src 'none'" in csp and "script-src" not in csp and "frame-ancestors 'none'" in csp, f"unknown host CSP {csp!r}")
+    expect(r.header("x-frame-options") == "DENY" and r.header("x-content-type-options") == "nosniff"
+           and r.header("cache-control") == "no-store" and r.header("referrer-policy") == "no-referrer", f"unknown host headers {r.headers_list}")
+    # its style sheets, fonts and logo under that name (same origin: the fonts load); nothing else of /static/
+    for p in ("/static/tokens.css", "/static/fonts.css", "/static/login.css", "/static/logo.svg", "/static/fonts/inter-latin-wght-normal.woff2"):
+        a = http("GET", None, p, host_header=f"nope.{HOST}:{PORT}")
+        expect(a.status == 200 and not a.headers_all("set-cookie"), f"unknown host {p}: {a.status}")
+    expect(http("POST", None, "/", {"Content-Type": "text/plain"}, "x", host_header=f"nope.{HOST}:{PORT}").status == 405, "a POST to an unknown host")
     r = http("GET", None, "/auth/verify")
     expect(r.status == 404, f"/auth/verify from outside: {r.status}")
     r = http("GET", None, "/caddy-health", host_header=f"localhost:{PORT}")
     expect(r.status == 200, f"/caddy-health: {r.status}")
-    return "unknown Host → 404, /auth/verify not reachable, /caddy-health 200"
+    return ("unknown Host → the portal's 404 page (a link to the portal, nothing of the request, strict CSP) for every "
+            "path, its public files under that name, POST 405; /auth/verify not reachable, /caddy-health 200")
+
+
+@check("http", "portal-404-page")
+def portal_404(ctx):
+    """A page of the portal that is not there (UX-10), signed in: the 404 page in the sign-in card's design with Go to
+    Home and Search, no part of the address shown back; a script's request keeps the plain 404."""
+    sess = portal_login()
+    r = http("GET", None, "/no-such-page/%3Cscript%3E?q=%3Cb%3Ex", HTML, cookie=sess)
+    expect(r.status == 404 and "This page does not exist" in r.text, f"portal 404: {r.status} {r.text[:120]!r}")
+    expect('href="/">Go to Home</a>' in r.text and 'href="/?search">Search</a>' in r.text, "no way back from the 404 page")
+    expect("no-such-page" not in r.text and "&lt;b&gt;" not in r.text and "<script" not in r.text, "the 404 page shows the address")
+    csp = r.header("content-security-policy") or ""
+    expect("default-src 'none'" in csp and "script-src" not in csp, f"404 CSP {csp!r}")
+    r = http("GET", None, "/api/no-such", API, cookie=sess)
+    expect(r.status == 404 and r.text == "Not Found", f"an API 404: {r.status} {r.text[:60]!r}")
+    return "signed-in page 404 → the branded page (Home, Search; strict CSP, nothing reflected); API 404 plain"
 
 
 @check("http", "login-wrong-password")
@@ -182,10 +215,13 @@ def login_wrong(ctx):
     body = urlencode({"password": "definitely-not-it", "next": "/"})
     r = http("POST", None, "/login", {"Origin": origin(), "Content-Type": "application/x-www-form-urlencoded"}, body)
     expect(r.status == 401, f"HTTP {r.status}")
-    expect("That password is not right" in r.text and ".env" in r.text, "no 'password is not right … .env' message")
+    # said plainly, once; the way back is the command that prints it, in this install's folder (UX-11)
+    expect('role="alert">That password is not right.</p>' in r.text, "no 'That password is not right.' message")
+    expect("./stack password --show" in r.text and ".env" not in r.text and "PORTAL_PASSWORD" not in r.text, "the hint")
+    expect('id="pw-toggle"' in r.text, "no Show button for the password")
     expect(not r.headers_all("set-cookie"), "a cookie was set")
     expect(r.header("cache-control") == "no-store", f"cache-control {r.header('cache-control')}")
-    return "401 with the PORTAL_PASSWORD/.env hint, no cookie"
+    return "401 'That password is not right.', the ./stack password --show hint (no .env path), no cookie"
 
 
 @check("http", "login-csrf-origin")

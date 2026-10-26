@@ -18,6 +18,10 @@ lists each setting's enabled controls. It checks, for every key of settings.tsv:
   - a form with a less protective value on a remote device (a higher budget, a longer session) says so before the
     password is asked for; the same value on this computer reaches the password dialog;
   - without a layout file (a damaged checkout) every changeable key still has its control;
+  - a provider key's form (check_keys): Save waits for a key, a "Get a key" link and a format hint under the field, a
+    key of the wrong shape or an unchanged value never reaches the password dialog, the provider is asked first (a
+    stand-in for POST /api/settings/check-key: rejected → said under the field with a link, the key kept; no answer →
+    Save anyway), and a change the helper refuses opens the form again with the key and the reason;
   - no page error and no CSP violation anywhere.
 Prints a summary, writes /out/settings-policy.json, exits 1 on any failure.
 """
@@ -168,9 +172,37 @@ class Stub(http.server.BaseHTTPRequestHandler):
             f = (STATIC / path[len("/static/"):]).resolve()
             if STATIC.resolve() in f.parents and f.is_file():
                 return self.send(200, f.read_bytes(), TYPES.get(f.suffix, "application/octet-stream"))
+        if path == "/api/admin/status" and STUB["job"]:
+            return self.send(200, json.dumps({"running": True, "allowed": True, "job": STUB["job"], "in_progress": False}), "application/json")
         if path.startswith("/api/"):
             return self.send(503, json.dumps({"error": "a stub: only /api/settings answers"}), "application/json")
         return self.send(404, "not here", "text/plain")
+
+    def do_POST(self):
+        """The key check before the password (a stand-in provider: a key with "bad" in it is rejected, one with "slow"
+        gets no answer in time) and a change (202; its job then fails as STUB["fail"] says)."""
+        path = self.path.split("?")[0]
+        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+        if path == "/api/settings/check-key":
+            STUB["checks"].append(body)
+            v = body.get("value", "")
+            if "bad" in v:
+                d = {"result": "rejected", "message": "OpenRouter rejected this key (HTTP 401).", "url": "https://openrouter.ai/settings/keys", "models": None}
+            elif "slow" in v:
+                d = {"result": "unreachable", "message": "openrouter.ai did not answer within 8 s, so the key is not checked yet.",
+                     "url": "https://openrouter.ai/settings/keys", "models": None}
+            else:
+                d = {"result": "ok", "message": "OpenRouter accepts this key.", "url": "https://openrouter.ai/settings/keys", "models": None}
+            return self.send(200, json.dumps(d), "application/json")
+        if path == "/api/settings/apply":
+            STUB["applied"].append(body)
+            STUB["job"] = {"id": "e2e-job", "action": "settings", "phase": "failed", "message": STUB["fail"]}
+            return self.send(202, json.dumps({"id": "e2e-job", "keys": list((body.get("set") or {}).keys())}), "application/json")
+        return self.send(404, json.dumps({"error": "a stub"}), "application/json")
+
+
+STUB = {"checks": [], "applied": [], "job": None,
+        "fail": "OPENROUTER_API_KEY: OpenRouter rejected the key (HTTP 401) — create one at https://openrouter.ai/settings/keys — nothing was changed"}
 
 
 # --- the page ---
@@ -335,6 +367,128 @@ def check_forms(page, remote, failures, label):
                 form.locator("button", has_text="Cancel").click()
 
 
+def check_keys(page, failures, label):
+    """A provider key's form (UX-05): Save waits for a key, a key of the wrong shape and an unchanged value never reach
+    the password dialog, the provider is asked first (a rejected key: said under the field with a link to where keys
+    come from, the key kept; no answer: Save anyway), and a change the helper refuses opens the form again with the key
+    and the reason. Fake keys are made here at run time."""
+    def open_key(key, button):
+        page.evaluate("k => { location.hash = '#settings'; location.hash = '#settings/' + k; }", key)
+        row = page.locator(f"#settings .set-row[data-key={key}]")
+        row.wait_for(state="visible", timeout=10000)
+        row.locator(":scope > .set-actions button.action", has_text=button).click()
+        return row, row.locator(".set-form")
+
+    def said(form):
+        e = form.locator(":scope > .error")
+        return e.inner_text() if e.count() and e.is_visible() else ""
+
+    prefix = "-".join(("sk", "or", "v1", ""))
+    row, form = open_key("OPENROUTER_API_KEY", "Replace key")
+    save, field = form.locator("button[type=submit]"), form.locator("input[type=password]")
+    if not save.is_disabled():
+        failures.append(f"{label}: OpenRouter's Save is enabled with an empty key")
+    link = form.locator(".set-getkey a")
+    if link.count() != 1 or link.get_attribute("href") != "https://openrouter.ai/settings/keys" or link.get_attribute("target") != "_blank":
+        failures.append(f"{label}: no Get a key link under OpenRouter's field: {link.count()}")
+    if field.get_attribute("placeholder") != "sk-or-v1-…":
+        failures.append(f"{label}: OpenRouter's field has no format hint: {field.get_attribute('placeholder')!r}")
+    if form.locator("button", has_text="Remove the key").count() != 1:
+        failures.append(f"{label}: Remove the key is not its own button")
+    page.screenshot(path=str(OUT / "settings-key-empty.png"), clip=row.bounding_box())
+    # the wrong shape: said under the field, nothing asked
+    field.fill("has spaces so not a key")
+    save.click()
+    page.wait_for_timeout(200)
+    if "must be an OpenRouter key" not in said(form) or page.locator("#set-confirm[open]").count() or STUB["checks"]:
+        failures.append(f"{label}: a key of the wrong shape: said {said(form)!r}, checks {len(STUB['checks'])}")
+    if field.get_attribute("aria-invalid") != "true":
+        failures.append(f"{label}: the field is not marked invalid")
+    # rejected by the provider: under the field, with the link, the key kept, no password dialog
+    bad = prefix + "bad" + "0" * 30
+    field.fill(bad)
+    save.click()
+    form.locator(":scope > .error a").wait_for(timeout=5000)
+    err = said(form)
+    a = form.locator(":scope > .error a")
+    if ("OpenRouter rejected this key" not in err or a.get_attribute("href") != "https://openrouter.ai/settings/keys"
+            or field.input_value() != bad or page.locator("#set-confirm[open]").count()):
+        failures.append(f"{label}: a rejected key: {err!r}, link {a.get_attribute('href')}, kept {field.input_value() == bad}")
+    if not STUB["checks"] or STUB["checks"][-1] != {"key": "OPENROUTER_API_KEY", "value": bad}:
+        failures.append(f"{label}: the check asked {STUB['checks'][-1:]}")
+    page.screenshot(path=str(OUT / "settings-key-rejected.png"), clip=row.bounding_box())
+    # no answer in time: said, and Save anyway goes on to the password without asking again
+    field.fill(prefix + "slow" + "0" * 30)
+    save.click()
+    page.wait_for_function("() => document.querySelector('#settings .set-form button[type=submit]').textContent === 'Save anyway'", timeout=5000)
+    n = len(STUB["checks"])
+    if "did not answer within 8 s" not in said(form):
+        failures.append(f"{label}: no answer in time: {said(form)!r}")
+    save.click()
+    page.wait_for_selector("#set-confirm[open]", timeout=5000)
+    if len(STUB["checks"]) != n:
+        failures.append(f"{label}: Save anyway asked the provider again")
+    page.click("#set-confirm-cancel")
+    # accepted: the password dialog; the helper then refuses it: the form again, the key in it, the reason under it
+    good = prefix + "good" + "0" * 30
+    field.fill(good)
+    save.click()
+    page.wait_for_selector("#set-confirm[open]", timeout=5000)
+    if "OpenRouter accepts this key" not in form.locator(".set-check").inner_text():
+        failures.append(f"{label}: an accepted key is not said: {form.locator('.set-check').inner_text()!r}")
+    page.fill("#set-confirm-password", "the portal password")
+    page.click("#set-confirm-ok")
+    page.wait_for_function("() => { const e = document.querySelector('#settings .set-row[data-key=OPENROUTER_API_KEY] > .set-form > .error');"
+                           " return e && !e.hidden && /Not saved/.test(e.textContent); }", timeout=15000)
+    form = page.locator("#settings .set-row[data-key=OPENROUTER_API_KEY] > .set-form")
+    err = said(form)
+    if (not err.startswith("Not saved: OpenRouter rejected the key (HTTP 401)") or "Nothing was changed." not in err
+            or form.locator(":scope > .error a").get_attribute("href") != "https://openrouter.ai/settings/keys"
+            or form.locator("input[type=password]").input_value() != good or not page.locator("#set-job").is_hidden()):
+        failures.append(f"{label}: the helper's refusal: {err!r}, the key kept {form.locator('input[type=password]').input_value() == good}")
+    if STUB["applied"][-1]["set"] != {"OPENROUTER_API_KEY": good}:
+        failures.append(f"{label}: the change sent {list(STUB['applied'][-1]['set'])}")
+    page.screenshot(path=str(OUT / "settings-key-helper-refused.png"),
+                    clip=page.locator("#settings .set-row[data-key=OPENROUTER_API_KEY]").bounding_box())
+    form.locator("button", has_text="Cancel").click()
+    STUB["job"] = None
+    # the AWS key: Save once both halves are there; a temporary key is refused before the password
+    row, form = open_key("AWS_ACCESS_KEY_ID", "Replace key")
+    save = form.locator("button[type=submit]")
+    form.locator("input").nth(0).fill("ASIA" + "X" * 16)
+    if not save.is_disabled():
+        failures.append(f"{label}: the AWS key's Save is enabled with half a key")
+    form.locator("input").nth(1).fill("s" * 40)
+    save.click()
+    page.wait_for_timeout(200)
+    if "temporary key" not in said(form) or page.locator("#set-confirm[open]").count():
+        failures.append(f"{label}: a temporary AWS key: {said(form)!r}")
+    if form.locator(".set-getkey a").get_attribute("href") != "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html":
+        failures.append(f"{label}: the AWS key has no Get a key link")
+    form.locator("button", has_text="Cancel").click()
+    # a web search key: its Get a key link is its info panel's; no check request (a search costs)
+    n = len(STUB["checks"])
+    row, form = open_key("WEBSEARCH_TAVILY_API_KEY", "Replace key")
+    if form.locator(".set-getkey a").get_attribute("href") != "https://app.tavily.com/":
+        failures.append(f"{label}: Tavily has no Get a key link")
+    form.locator("input[type=password]").fill("tvly-" + "a" * 20)
+    form.locator("button[type=submit]").click()
+    page.wait_for_selector("#set-confirm[open]", timeout=5000)
+    page.click("#set-confirm-cancel")
+    if len(STUB["checks"]) != n:
+        failures.append(f"{label}: a web search key was sent to a check")
+    if form.count():
+        form.locator("button", has_text="Cancel").click()
+    # an unchanged value: no password dialog
+    row, form = open_key("BUDGET_OPENWEBUI", re.compile("Change|Set"))
+    form.locator("input").first.fill(ctx_values("on")["BUDGET_OPENWEBUI"])
+    form.locator("button[type=submit]").click()
+    page.wait_for_timeout(200)
+    if "nothing to save" not in said(form) or page.locator("#set-confirm[open]").count():
+        failures.append(f"{label}: an unchanged budget: {said(form)!r}")
+    form.locator("button", has_text="Cancel").click()
+
+
 def check_code_models(page, failures, label):
     """Settings › Claude Code › Models: All enabled · Anthropic only · Pick… (a filtered checklist in groups), and the
     default model's select in groups; screenshots for the record."""
@@ -415,6 +569,8 @@ def main():
                     check_forms(page, remote, failures, label)
                 if layout and state == "off" and not remote:
                     check_code_models(page, failures, label)
+                if layout and state == "on" and not remote:   # (every key set: Replace key, and Remove the key)
+                    check_keys(page, failures, label)
                 summary[label] = {"settings": len(seen), "changeable": sum(1 for o in seen.values() if changes(o))}
             except Exception:  # noqa: BLE001
                 failures.append(f"{label}: {traceback.format_exc(limit=3)}")

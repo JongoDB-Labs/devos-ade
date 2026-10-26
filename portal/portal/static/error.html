@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<title>{{title}} · DevOS ADE</title>
+<link rel="icon" href="{{base}}/static/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="{{base}}/static/tokens.css">
+{{fonts}}<link rel="stylesheet" href="{{base}}/static/login.css">
+</head>
+<body class="login">
+<main class="login-panel error-panel">
+  <div class="brand"><img src="{{base}}/static/logo.svg" alt="" width="36" height="36"><span>DevOS ADE</span></div>
+  <p class="eyebrow error-code">{{code}}</p>
+  <h1>{{heading}}</h1>
+  <p class="lede">{{text}}</p>
+  <p class="error-actions">{{actions}}</p>
+  {{more}}
+</main>
+</body>
+</html>

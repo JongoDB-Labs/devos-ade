@@ -1,7 +1,8 @@
 """Optional Experiential Labs data for Home, Chat's Who answers and the Code page: the chosen models, from
 litellm/explabs-models.json (./stack writes it whenever it renders LiteLLM's config: lib/explabs.sh, and removes it while
-the gateway is off). The portal never holds the gateway's key and never calls the gateway: what each call cost is
-LiteLLM's spend (the cost the gateway reported for it), like every other model's.
+the gateway is off). The portal never holds the gateway's key and calls the gateway only for Settings' check of a key
+you type (portal/keycheck.py: its model list, once, before the password): what each call cost is LiteLLM's spend (the
+cost the gateway reported for it), like every other model's.
 """
 
 from __future__ import annotations

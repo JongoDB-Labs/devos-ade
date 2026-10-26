@@ -140,8 +140,14 @@ http://{$REMOTE_PREVIEW_HOST:preview.remote.invalid}:8081 {
 	}
 }
 
+# Any other name the sidecar forwards: the portal's "not an address of DevOS ADE" page, with a link to the remote portal
+# (Caddyfile unknown_host). Anyone else: nothing.
 http://:8081 {
 	@not_sidecar not remote_ip {$REMOTE_SIDECAR_IP}/32
 	abort @not_sidecar
-	respond "unknown host" 404
+	@sidecar remote_ip {$REMOTE_SIDECAR_IP}/32
+	route @sidecar {
+		import unknown_host remote
+	}
+	import unknown_host_down
 }

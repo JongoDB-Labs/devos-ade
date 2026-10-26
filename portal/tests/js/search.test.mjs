@@ -86,3 +86,28 @@ test("an exact title in a later group comes before letters scattered through set
   ];
   assert.equal(Object.keys(plain(S.searchEntries(entries, "One store for both")))[0], "tour");
 });
+
+test("where a setting is changed comes first: a word match in Settings goes above the walkthrough, its section first (UX-22)", () => {
+  const entries = [
+    { group: "tour", key: "tour:budgets", title: "Budgets", sub: "Walkthrough · Set up", alt: "" },
+    { group: "settings", key: "row:ALERT_WEBHOOK_URL", title: "Budget alert webhook", sub: "Spending & budgets · ALERT_WEBHOOK_URL", alt: "" },
+    { group: "settings", key: "row:BUDGET_OPENWEBUI", title: "Chat budget", sub: "Spending & budgets · BUDGET_OPENWEBUI", alt: "" },
+    { group: "settings", key: "sec:spending", title: "Spending & budgets", sub: "Settings section", alt: "" },
+    { group: "docs", key: "doc:x", title: "Budgets", sub: "README.md", alt: "" },
+    { group: "pages", key: "p:settings", title: "Settings", sub: "", alt: "" },
+  ];
+  const g = plain(S.searchEntries(entries, "budget"));
+  assert.deepEqual(Object.keys(g), ["settings", "tour", "docs"]);
+  assert.deepEqual(g.settings.shown.map((x) => x.entry.title), ["Spending & budgets", "Budget alert webhook", "Chat budget"]);
+  // letters scattered through a title are no word match: the exact walkthrough title still leads then
+  const loose = plain(S.searchEntries([{ group: "settings", key: "row:X", title: "Big update daily", sub: "", alt: "" },
+    { group: "tour", key: "t", title: "Budgets", sub: "", alt: "" }], "budget"));
+  assert.equal(Object.keys(loose)[0], "tour");
+  // a page of the portal by its own name keeps its place before a setting that merely has the word
+  const page = plain(S.searchEntries([{ group: "settings", key: "row:BUDGET_TERMINAL", title: "Terminal budget", sub: "", alt: "" },
+    { group: "pages", key: "p:terminal", title: "Terminal", sub: "", alt: "" }, { group: "tour", key: "t", title: "Terminal", sub: "", alt: "" }], "terminal"));
+  assert.deepEqual(Object.keys(page), ["pages", "settings", "tour"]);
+  assert.equal(S.wordHit("Spending & budgets", "budget"), true);
+  assert.equal(S.wordHit("Nobudget here", "budget"), false);
+  assert.equal(S.wordHit("Chat budget", "chat budg"), true);
+});

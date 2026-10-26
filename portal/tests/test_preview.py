@@ -497,3 +497,21 @@ def test_a_preview_domain_of_its_own_gets_a_partitioned_third_party_cookie(rps):
         r = redeem(c, d["url"], host="preview.bn-usercontent.example.net", login=VIA)
         attrs = [a.strip().lower() for a in _cookie(r, "__Host-bn_preview").split(";")[1:]]
         assert "samesite=none" in attrs and "partitioned" in attrs and "secure" in attrs and "httponly" in attrs, attrs
+
+
+def test_a_preview_link_opened_elsewhere_says_how_to_open_it(ps):
+    """UX-10: the Ports panel's new-tab link pasted, bookmarked or on another device (no same-origin request) — a page that
+    says to open it from the Code page, with links there and Home (the portal's style sheets; nothing of the request)."""
+    with _client(ps) as c:
+        tok, ut = unlocked(c)
+        for h in ({}, {"Sec-Fetch-Site": "none"}, {"Sec-Fetch-Site": "cross-site"}):
+            r = mint(c, tok, ut, query="port=5173&path=/x%3Cb%3E", headers={**h, "Accept": "text/html"})
+            assert r.status_code == 403 and r.headers["content-type"].startswith("text/html"), h
+            assert "Open the preview from the Code page" in r.text and "Ports panel" in r.text
+            assert f'href="{CODE}/">Go to the Code page</a>' in r.text and f'href="{PORTAL}/static/login.css"' in r.text
+            assert "5173" not in r.text and "&lt;b&gt;" not in r.text and "fonts.css" not in r.text
+            csp = r.headers["content-security-policy"]
+            assert f"style-src {PORTAL};" in csp and "default-src 'none'" in csp and "frame-ancestors 'none'" in csp
+        # a script's request keeps the JSON answer
+        r = mint(c, tok, ut, query="port=5173&format=json", headers={})
+        assert r.status_code == 403 and r.json() == {"error": "open the preview from the Code page"}

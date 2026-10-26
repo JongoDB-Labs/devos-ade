@@ -101,20 +101,85 @@ def _error_page_preview(status: int = 403, more: str = "") -> HTMLResponse:
     return _no_store(resp)
 
 
+# The error pages' one design (static/error.html: the sign-in card's look, its tokens and fonts): a page that is not
+# there, a name that is not this install's, a preview link opened from elsewhere. Every value is escaped, and none comes
+# from the request: no path, host or query is ever shown back.
+ERROR_CSP = ("default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; "
+             "frame-ancestors 'none'")
+
+
+def _error_doc(code: str, heading: str, text: str, actions: list[tuple[str, str, bool]], base: str = "",
+               fonts: bool = True, more: str = "") -> str:
+    """CODE (a word over the title) and HEADING, TEXT, then ACTIONS: links [(text, href, primary)]. BASE: where the style
+    sheets and the logo come from — "" (this host), or the portal's origin from another of its hosts, whose fonts then
+    stay the system's (FONTS False: a font from another host needs CORS). MORE: a line of HTML the caller escaped."""
+    page = (STATIC / "error.html").read_text(encoding="utf-8")
+    b = html.escape(base, quote=True)
+    links = " ".join(f'<a class="pill-link{" primary" if primary else ""}" href="{html.escape(href, quote=True)}">'
+                     f'{html.escape(words)}</a>' for words, href, primary in actions)
+    fill = {"title": html.escape(heading), "base": b, "code": html.escape(code), "heading": html.escape(heading),
+            "text": html.escape(text), "actions": links, "more": more,
+            "fonts": f'<link rel="stylesheet" href="{b}/static/fonts.css">\n' if fonts else ""}
+    return re.sub(r"\{\{([a-z]+)\}\}", lambda m: fill[m.group(1)], page)
+
+
+def _error_response(page: str, status: int, csp: str = ERROR_CSP) -> HTMLResponse:
+    resp = HTMLResponse(page, status_code=status)
+    resp.headers["Content-Security-Policy"] = csp
+    resp.headers["X-Frame-Options"] = "DENY"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    return _no_store(resp)
+
+
+def _not_found_page() -> HTMLResponse:
+    """The portal's own 404 for a page load: Home and Search (on this host: /?search opens the search), never the address
+    asked for."""
+    return _error_response(_error_doc(
+        "404 · Not found", "This page does not exist",
+        f"Nothing in {brand.NAME} is at this address: the link may be old, or have a typo.",
+        [("Go to Home", "/", True), ("Search", "/?search", False)]), 404)
+
+
+def _unknown_host_page(portal: str, remote: bool = False) -> HTMLResponse:
+    """Caddy's answer for a host name that is not this install's (caddy/Caddyfile unknown_host): where it is instead
+    (PORTAL: this computer's portal, or the remote site's). The name asked for is never shown (a DNS-rebinding page
+    names itself); the page's style sheets, fonts and logo are the sign-in page's, which Caddy hands over under that
+    name too."""
+    where = "Over remote access" if remote else "On this computer"
+    more = f'<p class="hint">{where}, {brand.NAME} is at <code>{html.escape(portal)}</code>.</p>' if portal else ""
+    return _error_response(_error_doc(
+        "404 · Unknown address", f"Not an address of {brand.NAME}",
+        f"{brand.NAME} answers only to its own names. Open it at its address, and bookmark that one.",
+        [(f"Go to {brand.NAME}", f"{portal}/", True)] if portal else [], more=more), 404)
+
+
 HANDOFF_LOOP_COOKIE = "__Host-bn_handoffs_"   # + the app (chat/admin/files): one counter per app host
 HANDOFF_LOOP_MAX = 4   # hand-offs to one app host within a minute before the portal stops and explains
 
 
-GENERIC_WHERE = f"the .env file of your {brand.NAME} folder"
+WRONG_PASSWORD = "That password is not right."
+
+
+def _forgot(folder: str, project: str, rem: bool) -> str:
+    """The login page's "Forgot it?" line: the command that prints the password, where to run it. The install's folder
+    only on this computer's own site (none to remote visitors); a .env path never (./stack password --show reads it)."""
+    cmd = "<code>./stack password --show</code>"
+    if rem:
+        return f"Forgot it? On the computer running {brand.NAME}, run {cmd} in its {brand.NAME} folder."
+    if folder:
+        return (f"Forgot it? Run {cmd} in <code>{html.escape(folder)}</code>"
+                f"{f' (project {html.escape(project)})' if project else ''}.")
+    return f"Forgot it? Run {cmd} in your {brand.NAME} folder."
 
 
 def _login_page(next_url: str, error: str = "", status: int = 200, retry_after: int = 0,
-                where: str = "", days: int = 30) -> HTMLResponse:
+                forgot: str = "", days: int = 30) -> HTMLResponse:
     page = (STATIC / "login.html").read_text(encoding="utf-8")
-    err = f'<p class="error" role="alert">{html.escape(error)}</p>' if error else ""
-    hint = f"<code>{html.escape(where)}</code>" if where else html.escape(GENERIC_WHERE).replace(".env", "<code>.env</code>", 1)
+    err = f'<p class="error" id="login-error" role="alert">{html.escape(error)}</p>' if error else ""
     page = page.replace("{{next}}", html.escape(next_url, quote=True)).replace("{{error}}", err)
-    page = page.replace("{{where}}", hint).replace("{{days}}", str(days))
+    page = page.replace("{{described}}", "login-error login-hint" if error else "login-hint")
+    page = page.replace("{{forgot}}", forgot or _forgot("", "", False)).replace("{{days}}", str(days))
     resp = HTMLResponse(appicons.versioned(page), status_code=status)
     if retry_after:
         resp.headers["Retry-After"] = str(retry_after)
@@ -275,9 +340,11 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
     def remote(request: Request) -> bool:
         return is_remote(request.headers, settings)
 
-    def password_where(request: Request) -> str:
-        """The install's .env for the login page: local requests only (no folder names to remote visitors)."""
-        return "" if remote(request) else settings.password_where()
+    def forgot(request: Request) -> str:
+        """The login page's "Forgot it?" line: the install's folder on local requests only (no folder names to remote
+        visitors)."""
+        rem = remote(request)
+        return _forgot("" if rem else settings.install_folder(), "" if rem else settings.project, rem)
 
     def session_claims(request: Request) -> dict | None:
         rem, login = remote(request), session_login(request.headers, settings)
@@ -782,6 +849,18 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             return None
         return path
 
+    def preview_elsewhere(rem: bool) -> Response:
+        """A preview's "open in a new tab" link pasted, bookmarked or opened on another device (it works only as a click on
+        the Code page: the request must come from it): what to do instead, on the code host, styled by the portal's
+        public style sheets (the system's fonts: another host's need CORS)."""
+        portal, code = settings.origin(remote=rem), settings.origin(CODE, rem)
+        return _error_response(_error_doc(
+            "403 · Preview link", "Open the preview from the Code page",
+            "This link opens a preview only as a click in the Code page's Ports panel, not pasted, bookmarked or on another "
+            "device. Open the Code page and choose the port there.",
+            [("Go to the Code page", f"{code}/", True), (f"{brand.NAME} Home", f"{portal}/", False)], base=portal, fonts=False), 403,
+            f"default-src 'none'; style-src {portal}; img-src {portal}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+
     async def code_preview(request: Request) -> Response:
         if (deny := code_guard(request)) is not None:
             return deny
@@ -799,6 +878,8 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             return _no_store(JSONResponse({"error": preview_reason(rem)}, status_code=403 if rem else 404))
         if request.headers.get("sec-fetch-site") != "same-origin":
             log.warning("preview link refused: not from the Code page (Sec-Fetch-Site %s)", request.headers.get("sec-fetch-site", "none")[:40])
+            if not wants_json(request) and "text/html" in request.headers.get("accept", ""):
+                return preview_elsewhere(rem)
             return _no_store(JSONResponse({"error": "open the preview from the Code page"}, status_code=403))
         port = raw_port or ""
         if not (port.isascii() and port.isdigit() and not port.startswith("0") and len(port) <= 5 and int(port) <= 65535):
@@ -972,7 +1053,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         nxt = safe_next(request.query_params.get("next"), settings)
         if authed(request):
             return _no_store(RedirectResponse(nxt, status_code=303))
-        return _security_headers(_login_page(nxt, where=password_where(request), days=settings.session_days), settings)
+        return _security_headers(_login_page(nxt, forgot=forgot(request), days=settings.session_days), settings)
 
     async def login_post(request: Request) -> Response:
         if not same_origin(request.headers, settings):
@@ -995,14 +1076,11 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         wait = throttle.retry_after()
         if wait:
             return _security_headers(_login_page(nxt, f"Too many wrong passwords. Try again in {wait} s.", 429, wait,
-                                                 where=password_where(request), days=settings.session_days), settings)
+                                                 forgot=forgot(request), days=settings.session_days), settings)
         if not await asyncio.to_thread(verify_password, (form.get("password") or [""])[0], settings.password_hash):
             throttle.failure()
             log.warning("portal login failed (%d in a row)", throttle.failures)
-            where = password_where(request)
-            return _security_headers(_login_page(
-                nxt, f"That password is not right. It is PORTAL_PASSWORD in {where or GENERIC_WHERE}.", 401,
-                where=where, days=settings.session_days), settings)
+            return _security_headers(_login_page(nxt, WRONG_PASSWORD, 401, forgot=forgot(request), days=settings.session_days), settings)
         throttle.success()
         resp = RedirectResponse(nxt, status_code=303)
         set_session(resp, remote(request), session_login(request.headers, settings))
@@ -1457,6 +1535,20 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             return PlainTextResponse("not found", status_code=404)
         return FileResponse(f, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
 
+    # --- a page that is not there (UX-10): the error page for a page load, plain words for anything else ---
+    async def not_found(request: Request, exc) -> Response:
+        if request.method in ("GET", "HEAD") and "text/html" in request.headers.get("accept", ""):
+            return _not_found_page()
+        resp = PlainTextResponse("Not Found", status_code=404)
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        return _no_store(resp)
+
+    # --- a host name that is not this install's (caddy/Caddyfile unknown_host rewrites every page load there to this,
+    # --- ?site=local or remote; no cookie, no sign-in header): where the portal is instead. Nothing of the request is read
+    async def unknown_host(request: Request) -> Response:
+        rem = request.query_params.get("site") == "remote" and settings.remote_on()
+        return _unknown_host_page(settings.origin(remote=rem), rem)
+
     @asynccontextmanager
     async def lifespan(app: Starlette):
         # No cookie jar: nothing an upstream sets (LiteLLM's /v2/login sets its session cookie) is kept or sent on.
@@ -1486,6 +1578,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
     app = Starlette(
         routes=[
             Route("/healthz", healthz),
+            Route("/auth/unknown-host", unknown_host, methods=["GET", "HEAD"]),
             Route("/auth/verify", verify, methods=["GET", "HEAD"]),
             Route("/auth/handoff", auth_handoff, methods=["GET"]),
             Route("/auth/callback", auth_callback, methods=["GET"]),
@@ -1531,5 +1624,6 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         ],
         lifespan=lifespan,
         middleware=[Middleware(_CarryOver, upgrade=carry_upgrade)],
+        exception_handlers={404: not_found},
     )
     return app

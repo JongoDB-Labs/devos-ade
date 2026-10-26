@@ -1771,6 +1771,14 @@ the shared MCP token), after the password again. **Advanced** and **About this i
 reason and the command that changes each value (ports, host names, internal secrets, what setup derived). Restoring
 a backup stays a terminal command (`./stack restore`): it replaces every chat, key and file with an older state.
 
+**Before the password.** Save asks for the portal password only for a real change: an empty key or a value a setting
+already has says so under its field instead, as does a key of the wrong shape. A provider's key — OpenRouter,
+Experiential Labs, OpenAI or Groq for speech-to-text — is first asked of that provider by the portal (the free call
+setup makes, within 8 seconds): a key it rejects is said under the field with where keys come from, and stays in the
+field for a fix; when the provider does not answer in time, **Save anyway** hands it to the helper, which checks it
+again. Each key's form links to where its keys come from (*Get a key at …*) and shows their shape (`sk-or-v1-…`). A
+change the helper refuses opens its form again, with what you typed and the reason under the field.
+
 **How a change is applied.** Changes need the [update helper](#updating) (`./stack helper install`): the portal
 writes a small request, and the helper — outside Docker, as you — checks it again (the password against its own
 copy, the allowlist, each value) and runs `./stack config apply`: the live checks first, one `.env` write, only
@@ -2541,7 +2549,7 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
 | The portal stopped answering after an update ("This site can't be reached", the smoke test's portal checks `000`) while `./stack status` shows every service healthy | Docker Desktop kept forwarding the port to the Caddy container the update replaced. `./stack restart caddy` mends it, then `./stack update` finishes the update. Since v0.14.1 every update, `./stack up` and restore notice this and recreate Caddy by themselves; if it still does not answer, restart Docker (on a Mac: quit Docker Desktop and open it again), then `./stack up`. |
 | `http://bedrock-now.localhost` doesn't resolve | Use a current Chrome, Edge, Firefox or Safari; they resolve `*.localhost` themselves. Command-line tools may not: `curl --resolve bedrock-now.localhost:80:127.0.0.1 http://bedrock-now.localhost/login`. |
 | The portal shows its login page after you followed a link to it from another site | Expected with `SameSite=Strict`: such a visit arrives without the session cookie. Type or bookmark the URL. |
-| Forgot the portal password | It is `PORTAL_PASSWORD` in `.env`: `./stack password` says which file (the login page names it too, with the Compose project, so a second copy is not mixed up), `./stack password --show` prints it. After five wrong tries the login waits a few seconds (up to five minutes). |
+| Forgot the portal password | Run `./stack password --show` in your DevOS ADE folder: it prints it (it is `PORTAL_PASSWORD` in `.env`; `./stack password` says which file). The sign-in page says the same, with this install's folder and Compose project on this computer (so a second copy is not mixed up; over remote access without the folder), and its **Show** button shows what you typed. After five wrong tries the login waits a few seconds (up to five minutes). |
 | The old Open WebUI address (`127.0.0.1:8080`/`8082`) stopped working after an update | By design: browsers reach every app through the portal now. Open the URL from `./stack status`. |
 | A setting changed in Open WebUI's admin UI reverts after a restart | By design (`ENABLE_PERSISTENT_CONFIG=false`): `.env` and setup own the configuration. |
 | `devos-claude` ignores the stack, or uses the wrong model or key | An `env` block in Claude Code's user settings (`~/.claude-bedrock/settings.json`; `~/.claude/settings.json` with `CLAUDE_BEDROCK_USE_MY_CONFIG=1`) or the folder's `.claude/settings.json` (e.g. `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`) overrides the wrapper. Remove those keys. |

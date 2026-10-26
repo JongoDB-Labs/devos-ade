@@ -97,6 +97,12 @@ origin, never from a CDN.
 The sign-in and unlock pages that the Admin, Files, terminal and Code hosts serve read the portal's style sheets from
 the portal's host. Their CSP allows no fonts from there, so they use the system fonts in the same colours.
 
+The error pages — a portal page that is not there, a host name that is not this install's, a preview link opened
+outside the Code page — are the sign-in card too (`static/error.html`): a short code in the eyebrow style over the
+title, one sentence, and where to go instead as pill links, the main one teal. The portal's 404 and the unknown host's
+page have the fonts (Caddy hands the unknown name the sign-in page's public files under that name); the code host's
+preview page has the system fonts, as the unlock pages. They never show what was asked for (no path, host or query).
+
 ## Components
 
 - **Buttons:** pills. The main action (`.action.primary`: Sign in, Install app, Open in Code, Save, Confirm) is teal,
