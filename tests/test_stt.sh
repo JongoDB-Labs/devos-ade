@@ -837,8 +837,9 @@ test_compose_stt_service_is_locked_down() {
   default:"
   assert_contains "$(sed -n '/^networks:/,/^volumes:/p' "$STACK_DIR/compose.yaml")" "  stt:
     internal: true"
-  for svc in litellm caddy; do
-    assert_contains "$(sed -n "/^  $svc:/,/^  [a-z-]*:\$/p" "$STACK_DIR/compose.yaml" | sed '1d;$d')" "networks: [default, stt]" || { echo "$svc" >&2; return 1; }
+  # (LiteLLM: also the built-in SearXNG's network, lib/websearch.sh)
+  for svc in litellm:'networks: [default, stt, websearch]' caddy:'networks: [default, stt]'; do
+    assert_contains "$(sed -n "/^  ${svc%%:*}:/,/^  [a-z-]*:\$/p" "$STACK_DIR/compose.yaml" | sed '1d;$d')" "${svc#*:}" || { echo "$svc" >&2; return 1; }
   done
   # Open WebUI trusts X-Portal-User from its peers: it and the portal never share a network with stt
   for svc in open-webui portal postgres rustfs shared-mcp; do
@@ -854,10 +855,10 @@ test_dc_adds_the_stt_profile_only_for_bedrock() {
   mkdir -p "$TMP/bin"
   printf '#!/bin/sh\necho "$*"\nenv | grep -E "^(OWUI_STT_BASE_URL|STT_BEDROCK_MODEL|COMPOSE_PROFILES)=" || true\n' > "$TMP/bin/docker"; chmod +x "$TMP/bin/docker"
   printf 'STT_PROVIDER=openai\n' > "$ENV_FILE"
-  assert_not_contains "$(PATH="$TMP/bin:$PATH" dc ps)" "--profile"
+  assert_not_contains "$(PATH="$TMP/bin:$PATH" dc ps)" "--profile stt"
   printf 'STT_PROVIDER=bedrock\n' > "$ENV_FILE"
   out="$(PATH="$TMP/bin:$PATH" OWUI_STT_BASE_URL=http://evil STT_BEDROCK_MODEL=x COMPOSE_PROFILES=stt dc ps)"
-  assert_contains "$out" "--profile stt --env-file"
+  assert_contains "$out" "--profile stt --profile searxng --env-file"   # (and the built-in SearXNG's: on by default)
   assert_not_contains "$out" "evil"
   assert_not_contains "$out" "COMPOSE_PROFILES"
   printf 'X=1\n' > "$ENV_FILE"
@@ -866,8 +867,10 @@ test_dc_adds_the_stt_profile_only_for_bedrock() {
 
 test_stack_services_include_stt_only_for_bedrock() {
   printf 'X=1\n' > "$ENV_FILE"
-  assert_eq "$(stack_services)" "$STACK_SERVICES"
+  assert_eq "$(stack_services)" "$STACK_SERVICES searxng"   # (the built-in SearXNG: on by default)
   printf 'STT_PROVIDER=bedrock\n' > "$ENV_FILE"
+  assert_eq "$(stack_services)" "$STACK_SERVICES stt searxng"
+  printf 'STT_PROVIDER=bedrock\nWEBSEARCH_SEARXNG_BUILTIN=off\n' > "$ENV_FILE"
   assert_eq "$(stack_services)" "$STACK_SERVICES stt"
   ps="$(printf 'stt\trunning\thealthy\t0\n')"
   assert_contains "$(printf '%s\n' "$ps" | status_table)" "stt"
@@ -992,7 +995,7 @@ test_status_after_up_lists_stt_once() {
     printf 'stt\trunning\thealthy\t0\n' | status_table
   }
   assert_eq "$(_as_cmd_up | grep -c '^  stt ')" 1
-  assert_eq "$(stack_services)" "$STACK_BASE_SERVICES stt"
+  assert_eq "$(stack_services)" "$STACK_BASE_SERVICES stt searxng"
 }
 
 test_stack_test_checks_bedrock_speech_to_text() {

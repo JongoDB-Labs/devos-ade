@@ -34,7 +34,7 @@ test_code_is_off_by_default_and_needs_the_terminal() {
   printf 'CODE_ENABLED=true\nTERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=%s\n' "$TMP/ws" > "$ENV_FILE"
   assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml compose.terminal-proxy.yaml compose.code.yaml compose.code-proxy.yaml "
   assert_eq "$(code_services)" "code subs-chat"
-  assert_eq "$(optional_services)" "terminal-egress terminal-gateway terminal code subs-chat"
+  assert_eq "$(optional_services)" "terminal-egress terminal-gateway terminal code subs-chat searxng"   # (+ the built-in SearXNG: on by default)
   # (Chat's sandbox's way out follows the sandbox's: the direct one, or none at all)
   printf 'CODE_ENABLED=true\nTERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=%s\nTERMINAL_EGRESS=host\n' "$TMP/ws" > "$ENV_FILE"
   assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml compose.terminal-egress.yaml compose.code.yaml compose.code-egress.yaml "

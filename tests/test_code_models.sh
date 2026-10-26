@@ -123,7 +123,8 @@ test_render_config_writes_the_file_and_litellm_gets_the_bn_keys_and_the_hook() {
   cfg="$(cat "$TMP/litellm/config.yaml")"
   assert_contains "$cfg" "$(printf '      bn_id: "claude-big"\n      bn_name: "Claude Big"\n      bn_vendor: "Anthropic"\n      bn_compat: "works"\n      bn_code: true\n      bn_default: true')"
   assert_contains "$cfg" "$(printf '      bn_name: "Llama X"\n      bn_vendor: "Meta"\n      bn_compat: "chat-only"\n      bn_code: false')"
-  assert_contains "$cfg" '  callbacks: ["bn_hooks.proxy_handler_instance"]'
+  # (the hook, and with the built-in SearXNG — on by default — LiteLLM's web search interception as the hook has it)
+  assert_contains "$cfg" '  callbacks: ["bn_hooks.proxy_handler_instance", "bn_hooks.web_search"]'
   assert_eq "$(_code_rows "$TMP/litellm/code-models.tsv" | awk -F'\t' '$11 == 1 { print $1 }' | tr '\n' ' ')" "claude-big claude-small "
   rm "$TMP/lib/litellm-hooks/bn_hooks.py"
   render_config "$TMP/en"

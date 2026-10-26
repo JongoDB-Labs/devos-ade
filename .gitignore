@@ -15,6 +15,8 @@ __pycache__/
 *.pyc
 tailscale/*
 !tailscale/.gitkeep
+# the built-in SearXNG's settings.yml, rendered by ./stack (lib/websearch.sh)
+searxng/
 tests/e2e/out/
 tests/e2e/work/
 # node (code/, code/web/: npm ci from their lockfiles; code/web builds into dist/ inside the image)

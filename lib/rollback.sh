@@ -109,7 +109,7 @@ _rollback_litellm_hook() {
 
 # shellcheck disable=SC2120  # arguments come from the ./stack dispatcher
 cmd_rollback() {
-  local from branch fromv backup result at now_imgs d no_helper=0 no_stt=0 no_terminal=0 no_egress=0 no_chat_proxy=0 q quiet=()
+  local from branch fromv backup result at now_imgs d no_helper=0 no_stt=0 no_searxng=0 no_terminal=0 no_egress=0 no_chat_proxy=0 q quiet=()
   [ $# -eq 0 ] || die "usage: ./stack rollback [--yes]   (goes back to the version before the last ./stack update)"
   [ -f "$ENV_FILE" ] || die "run ./stack setup first"
   stack_lock rollback
@@ -152,6 +152,12 @@ cmd_rollback() {
   no_stt=0
   if ! git -C "$STACK_DIR" cat-file -e "$from:stt/Dockerfile" 2>/dev/null && declare -F stt_rollback_cleanup >/dev/null; then
     no_stt=1; stt_rollback_cleanup
+  fi
+  # A version from before the built-in SearXNG (no searxng service in its compose.yaml): its container goes now (that
+  # version would never stop it), its networks after the up (lib/websearch.sh).
+  no_searxng=0
+  if declare -F websearch_rollback_cleanup >/dev/null && ! git -C "$STACK_DIR" show "$from:compose.yaml" 2>/dev/null | grep -q '^  searxng:'; then
+    no_searxng=1; websearch_rollback_cleanup
   fi
   # A version from before the browser terminal, while it is on: its container goes (lib/terminal.sh); its networks
   # after the up.
@@ -202,6 +208,7 @@ cmd_rollback() {
   env BEDROCK_NOW_NO_OPEN=1 ${quiet[@]+"${quiet[@]}"} "$STACK_DIR/stack" up --yes ||
     die "the code and data are back, but ./stack up failed (see above) — run it again"
   [ "$no_stt" = 0 ] || stt_rollback_network_cleanup
+  [ "$no_searxng" = 0 ] || websearch_rollback_network_cleanup
   [ "$no_code" = 0 ] || code_network_cleanup
   [ "$no_terminal" = 0 ] || terminal_network_cleanup
   [ "$no_chat_proxy" = 0 ] || chat_proxy_rm

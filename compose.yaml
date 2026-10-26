@@ -107,7 +107,9 @@ services:
       - ./litellm:/app/config:ro,z
     ports:
       - "127.0.0.1:${LITELLM_PORT:-4000}:4000"
-    networks: [default, stt]   # stt: the speech-to-text container's only network (no internet access)
+    # stt: the speech-to-text container's only network (no internet access); websearch: the built-in SearXNG's (LiteLLM
+    # alone reaches it)
+    networks: [default, stt, websearch]
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:
@@ -288,6 +290,51 @@ services:
       litellm: { condition: service_healthy }
     logging: *logging
 
+  # The built-in web search for Claude Code's WebSearch (lib/websearch.sh: the default backend while you set up no other;
+  # the "searxng" profile, which ./stack turns on unless WEBSEARCH_SEARXNG_BUILTIN=off — off, no container). SearXNG, the
+  # official image pinned by digest, with settings.yml rendered by ./stack (searxng/, read-only: the engines it asks,
+  # JSON output, no limiter, no image proxy). No published port, no Caddy route: its one inbound network, "websearch"
+  # (internal), it shares with LiteLLM alone — never the portal, Open WebUI, the terminal, the Code page or their
+  # sandboxes. Its way out to the search engines is "websearch-out", a network of its own with nothing else on it (the
+  # internet, as LiteLLM's default network has it; docs/security.md says why not an egress proxy). Only search queries
+  # reach it, from LiteLLM; it holds no key of yours. Its secret (SearXNG's server.secret_key) is .env's
+  # WEBSEARCH_SEARXNG_SECRET, in its environment only: without one, SearXNG's own placeholder, which it refuses to start
+  # with.
+  searxng:
+    image: searxng/searxng:2026.10.11-ad46ebd7d@sha256:ddd642cae6eac75412938fd846ddbf440a2df029cfeae8a562b8b205f4e35e25
+    profiles: ["searxng"]
+    restart: unless-stopped
+    user: "977:977"   # the image's searxng user (its entrypoint would otherwise run as root)
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # What it writes: its cache (owned by its user) and Python's temporary files
+    tmpfs: ["/var/cache/searxng:size=32m,uid=977,gid=977,mode=0700", "/tmp:size=32m,mode=1777"]
+    mem_limit: 512m
+    pids_limit: 128
+    environment:
+      SEARXNG_SECRET: ${WEBSEARCH_SEARXNG_SECRET:-ultrasecretkey}
+      # (the checksum of searxng/settings.yml, from ./stack: a changed file recreates the container)
+      BN_SETTINGS_SUM: ${BN_SEARXNG_SETTINGS_SUM:-}
+    # Directory mount, read-only (like LiteLLM's: a file replaced by ./stack is seen at the next start)
+    volumes:
+      - ./searxng:/etc/searxng:ro,z
+    # Docker Desktop's names for your computer point nowhere in here (as in the terminal's sandbox)
+    extra_hosts:   # IPv4 TEST-NET and the IPv6 discard prefix: nothing answers there
+      - "host.docker.internal:192.0.2.1"
+      - "host.docker.internal:100::1"
+      - "gateway.docker.internal:192.0.2.1"
+      - "gateway.docker.internal:100::1"
+    networks: [websearch, websearch-out]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+      start_interval: 1s
+    logging: *logging
+
   # Login, Home dashboard, and the auth check Caddy asks before every request (/auth/verify).
   portal:
     # (+ compose.portal-docs.yaml, which ./stack adds where Docker Compose reads it: the search's docs index)
@@ -423,6 +470,11 @@ networks:
   # Speech-to-text (lib/stt.sh): internal (no internet access); its members are stt, LiteLLM and Caddy only.
   stt:
     internal: true
+  # The built-in SearXNG (lib/websearch.sh): internal; its members are LiteLLM and SearXNG only.
+  websearch:
+    internal: true
+  # Its way out to the search engines: SearXNG alone on it.
+  websearch-out:
 
 volumes:
   pgdata:

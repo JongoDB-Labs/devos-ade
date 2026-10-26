@@ -8,8 +8,12 @@ STACK_SERVICES="$STACK_BASE_SERVICES"
 # Built from STACK_BASE_SERVICES: callers keep a local STACK_SERVICES, which must not be extended twice.
 stack_services() { local extra; extra="$(optional_services)"; printf '%s\n' "$STACK_BASE_SERVICES${extra:+ $extra}"; }
 # optional_services -> the services .env turns on besides those: stt (Bedrock speech-to-text), terminal (./stack terminal),
-# code (./stack code)
-optional_services() { local s t c; s="$(stt_services)"; t="$(terminal_services)"; c="$(code_services)"; printf '%s\n' "$s${s:+${t:+ }}$t${c:+ $c}"; }
+# code (./stack code), searxng (the built-in web search: on unless WEBSEARCH_SEARXNG_BUILTIN=off, lib/websearch.sh)
+optional_services() {
+  local out='' x
+  for x in "$(stt_services)" "$(terminal_services)" "$(code_services)" "$(websearch_builtin_services)"; do [ -z "$x" ] || out="$out${out:+ }$x"; done
+  printf '%s\n' "$out"
+}
 
 cmd_help() {
   cat <<'EOF'
@@ -508,6 +512,9 @@ setup_secrets() {
   ensure_env BUDGET_OPENWEBUI 50
   ensure_env BUDGET_SETUP 5
   ensure_env LITELLM_STORE_PROMPTS false
+  # the built-in SearXNG (lib/websearch.sh): on by default (off stays off), and its own secret (never printed)
+  ensure_env WEBSEARCH_SEARXNG_BUILTIN on
+  ensure_env WEBSEARCH_SEARXNG_SECRET "$(gen_hex 32)"
   local email src def typed asked=0
   owner_email_lowercase   # lib/settings.sh: Chat keeps emails in lowercase
   email="$(get_env OPENWEBUI_ADMIN_EMAIL)"
@@ -614,6 +621,7 @@ cmd_setup() {
   setup_done "passwords and settings in .env"
   setup_bringup_and_probe
   stt_after_probe    # lib/stt.sh: Bedrock speech-to-text on by default when Voxtral is usable
+  websearch_builtin_up    # lib/websearch.sh: the built-in SearXNG up (on by default) or gone (off); never fatal
   websearch_after_start   # lib/websearch.sh: one search with the backend in use (on the setup key), or why there is none
   setup_step "creating keys and starting Open WebUI, the portal and the MCP server"
   setup_keys_and_ui
@@ -665,8 +673,10 @@ render_config() {
   # the models of the Code page and devos-claude (lib/code_models.sh), next to the config: the portal, devos-claude
   # and LiteLLM's hook (lib/litellm-hooks/bn_hooks.py) read it
   ! declare -F code_models_write >/dev/null || code_models_write "$1" "$(dirname "$out")/code-models.tsv"
-  # the search backend in use and its price per search (lib/websearch.sh), next to it: the hook and the portal read it
+  # the search backend in use and its price per search (lib/websearch.sh), next to it: the hook and the portal read it;
+  # and the built-in SearXNG's settings (searxng/), for this checkout's own config
   ! declare -F websearch_write_json >/dev/null || websearch_write_json "$(dirname "$out")/web-search.json"
+  ! declare -F websearch_searxng_write >/dev/null || [ "$out" != "$STACK_DIR/litellm/config.yaml" ] || websearch_searxng_write
   # the chosen Experiential Labs models for the portal (lib/explabs.sh; removed while it is off)
   ! declare -F explabs_write_portal_json >/dev/null || [ "$out" != "$STACK_DIR/litellm/config.yaml" ] || explabs_write_portal_json
 }
@@ -1218,11 +1228,21 @@ cmd_up() {
     repriced=1
     [ -z "$(dc ps -q --status running litellm 2>/dev/null)" ] || restart=1
   fi
+  # lib/websearch.sh: WEBSEARCH_* edited by hand in .env (the built-in SearXNG turned off, a key added): LiteLLM's search
+  # tool follows, and a running LiteLLM picks it up
+  if websearch_config_stale; then
+    render_config "$(_enabled_or_all)"
+    [ -z "$(dc ps -q --status running litellm 2>/dev/null)" ] || restart=1
+  fi
   if [ "$restart" = 1 ]; then
     log "restarting LiteLLM so it uses the new configuration from .env and the price list (~30 s; requests in flight may fail)"
     run_phase "LiteLLM (new configuration)" litellm dc up -d --no-deps --force-recreate --wait litellm
   fi
   stt_before_up   # lib/stt.sh: removes a stt container left from Bedrock speech-to-text
+  # lib/websearch.sh: the built-in SearXNG's settings before compose starts it (a changed file recreates it); turned off
+  # (WEBSEARCH_SEARXNG_BUILTIN=off by hand in .env), its container goes
+  websearch_searxng_write
+  if websearch_builtin_on; then ensure_env WEBSEARCH_SEARXNG_SECRET "$(gen_hex 32)"; else websearch_builtin_down; fi
   # The stack's own services only: the Tailscale sidecar (remote access) is started afterwards without waiting.
   # shellcheck disable=SC2086  # word-split the service list on purpose
   run_phase "$PRODUCT_NAME" "$STACK_SERVICES" dc up -d --wait $STACK_SERVICES
@@ -1275,6 +1295,7 @@ status_url() { # status_url SERVICE -> where to open it (browser UIs: through th
     terminal-egress) echo "- (the terminal's way out: public internet addresses only)" ;;
     chat-egress) echo "- (Chat's way out while the terminal's is direct: public internet addresses only)" ;;
     code) echo "$(portal_url code)   (the Code tab; ./stack code status)" ;;
+    searxng) echo "- (the built-in web search, LiteLLM's alone)" ;;
     *) echo "- (internal only)" ;;
   esac
 }

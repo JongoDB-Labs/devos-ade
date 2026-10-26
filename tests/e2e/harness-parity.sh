@@ -22,7 +22,10 @@
 #                     stand-in's SearXNG-shaped /search with fixed results), off (none: WebSearch must say so), agentcore
 #                     (Amazon Bedrock AgentCore Web Search: E2E_AGENTCORE_GATEWAY, its MCP URL, and E2E_AGENTCORE_TOOL
 #                     when its target is not named web-search-tool; one real search per WebSearch call, on this AWS key)
-#                     or searxng (a real SearXNG at E2E_SEARXNG_URL, reachable from the LiteLLM container)
+#                     or searxng (a real SearXNG at E2E_SEARXNG_URL, reachable from the LiteLLM container), or builtin
+#                     (the built-in SearXNG, as compose.yaml runs it: its pinned image and this checkout's settings.yml,
+#                     with a secret of the run's own, on an internal network with LiteLLM alone and one of its own to the
+#                     internet — real results from the search engines it asks, free)
 #
 # The families and their models:
 #   control     claude-haiku-5-5 (Anthropic's on Bedrock: what Claude Code expects)
@@ -38,7 +41,8 @@
 #
 # What runs (docker; on a machine with a shared heavy-job lock, run the whole script inside it): three containers named
 # bne2e-parity-litellm, -gateway and -sandbox (label io.bedrock-now.e2e=parity), networks bne2e-parity-term, -link
-# (both internal) and -out, all removed afterwards by those names; nothing is pruned. LiteLLM runs this checkout's
+# (both internal) and -out — with E2E_WEBSEARCH=builtin also bne2e-parity-searxng and its networks -ws (internal) and
+# -wsout —, all removed afterwards by those names; nothing is pruned. LiteLLM runs this checkout's
 # rendered config (lib/models.sh with its OpenRouter and Experiential Labs entries and the bn_* model info), its hook
 # (lib/litellm-hooks/bn_hooks.py) and the code-models.tsv the hook reads — no Postgres: the master key stands in for the
 # terminal's key. The gateway is this checkout's caddy/terminal-gateway.caddy (the only paths Claude Code may reach).
@@ -82,8 +86,8 @@ die() { printf 'xx  %s\n' "$*" >&2; exit 1; }
 command -v docker >/dev/null 2>&1 || die "needs docker"
 command -v python3 >/dev/null 2>&1 || die "needs python3"
 WORK="$ROOT/tests/e2e/work/$NAME"
-NETS="$NAME-term $NAME-link $NAME-out"
-CONTAINERS="$NAME-sandbox $NAME-gateway $NAME-litellm"
+NETS="$NAME-term $NAME-link $NAME-out $NAME-ws $NAME-wsout"
+CONTAINERS="$NAME-sandbox $NAME-gateway $NAME-litellm $NAME-searxng"
 
 # _ours KIND NAME -> 0 when the container or network NAME exists and carries this suite's label
 _ours() {
@@ -121,10 +125,10 @@ export AWS_REGION_NAME="${AWS_REGION_NAME:-us-east-1}"
 OR_REAL=0; [ -z "${E2E_OPENROUTER_API_KEY:-}" ] || OR_REAL=1
 WS="${E2E_WEBSEARCH:-stand-in}"
 case "$WS" in
-  stand-in | off) ;;
+  stand-in | off | builtin) ;;
   agentcore) [ -n "${E2E_AGENTCORE_GATEWAY:-}" ] || die "E2E_WEBSEARCH=agentcore needs E2E_AGENTCORE_GATEWAY (the gateway's MCP URL)" ;;
   searxng) [ -n "${E2E_SEARXNG_URL:-}" ] || die "E2E_WEBSEARCH=searxng needs E2E_SEARXNG_URL" ;;
-  *) die "E2E_WEBSEARCH must be stand-in, off, agentcore or searxng" ;;
+  *) die "E2E_WEBSEARCH must be stand-in, off, builtin, agentcore or searxng" ;;
 esac
 if [ "$XL_REAL" = 1 ] && [ -z "${E2E_EXPLABS_API_KEY:-}" ]; then die "--explabs-real needs E2E_EXPLABS_API_KEY"; fi
 OPENROUTER_API_KEY="${E2E_OPENROUTER_API_KEY:-stand-in-$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')}"
@@ -183,6 +187,8 @@ if [ "$REUSE" = 0 ]; then
         WEBSEARCH_BACKEND) case "$WS" in stand-in) printf searxng ;; *) printf '%s' "$WS" ;; esac ;;
         WEBSEARCH_SEARXNG_URL) case "$WS" in stand-in) printf 'http://127.0.0.1:%s' "$OR_PORT" ;; searxng) printf '%s' "$E2E_SEARXNG_URL" ;; esac ;;
         WEBSEARCH_AGENTCORE_GATEWAY) [ "$WS" != agentcore ] || printf '%s' "$E2E_AGENTCORE_GATEWAY" ;;
+        # (the built-in SearXNG: on only for builtin, so auto never falls back to it in the other modes)
+        WEBSEARCH_SEARXNG_BUILTIN) [ "$WS" = builtin ] && printf on || printf off ;;
       esac
     }
     CODE_COMPAT="$ROOT/catalog/code-models.tsv"; CODE_DISPLAY_TSV="$ROOT/catalog/display.tsv"
@@ -216,6 +222,7 @@ if [ "$REUSE" = 0 ]; then
     render_litellm_config "$WORK/litellm/enabled-models.txt" "$AWS_REGION_NAME" false false false > "$WORK/litellm/config.yaml.new" || exit 1
     code_models_write "$WORK/litellm/enabled-models.txt" "$WORK/litellm/code-models.tsv"
     websearch_write_json "$WORK/litellm/web-search.json"
+    [ "$WS" != builtin ] || websearch_searxng_write "$WORK/searxng"
   ) || die "could not render the config"
   cp "$ROOT/lib/litellm-hooks/bn_hooks.py" "$WORK/litellm/bn_hooks.py"
   # The suite's own callback (never in a real config): each call's model, cost and error, for the spend and the errors
@@ -344,6 +351,10 @@ PY
   cp "$ROOT/tests/fixtures/explabs_catalog/"*.json "$WORK/mock/catalog/"
   cp "$HERE/explabs-mock.py" "$WORK/mock/mock.py"
   chmod 755 "$WORK" "$WORK/litellm" "$WORK/mock" "$WORK/mock/catalog"; chmod 644 "$WORK/litellm/"* "$WORK/mock/"*.* "$WORK/mock/catalog/"*
+  if [ "$WS" = builtin ]; then
+    grep -q 'api_base: "http://searxng:8080"' "$WORK/litellm/config.yaml" || die "the rendered config does not search with the built-in SearXNG"
+    [ -s "$WORK/searxng/settings.yml" ] || die "no settings.yml for the built-in SearXNG"
+  fi
   chmod 600 "$MASTER_FILE"
 fi
 [ -r "$MASTER_FILE" ] || die "no kept throwaway (run without --reuse)"
@@ -381,6 +392,26 @@ if [ "$REUSE" = 0 ]; then
       exec litellm --config /app/config/config.yaml --port 4000" >/dev/null || die "could not start $NAME-litellm"
   docker network connect --alias litellm "$NAME-link" "$NAME-litellm" || die "could not connect $NAME-litellm"
 
+  if [ "$WS" = builtin ]; then
+    # the built-in SearXNG as compose.yaml runs it: its image, user, read-only file system, settings and limits; on an
+    # internal network with LiteLLM alone (as "searxng") and a way out of its own; a secret of this run's own (in its
+    # environment only: SearXNG refuses its placeholder)
+    SXIMAGE="$(sed -n 's/^    image: \(searxng\/searxng:[^ ]*\)$/\1/p' "$ROOT/compose.yaml" | head -n 1)"
+    [ -n "$SXIMAGE" ] || die "no searxng image in compose.yaml"
+    say "starting $NAME-searxng ($SXIMAGE)"
+    docker network create --internal --label io.bedrock-now.e2e=parity "$NAME-ws" >/dev/null || die "network $NAME-ws"
+    docker network create --label io.bedrock-now.e2e=parity "$NAME-wsout" >/dev/null || die "network $NAME-wsout"
+    SEARXNG_SECRET="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')" \
+    docker create --name "$NAME-searxng" --label io.bedrock-now.e2e=parity --network "$NAME-ws" --network-alias searxng \
+      --user 977:977 --read-only --cap-drop ALL --security-opt no-new-privileges:true --memory 512m --pids-limit 128 \
+      --tmpfs /var/cache/searxng:size=32m,uid=977,gid=977,mode=0700 --tmpfs /tmp:size=32m,mode=1777 \
+      --add-host host.docker.internal:192.0.2.1 --add-host gateway.docker.internal:192.0.2.1 \
+      -v "$WORK/searxng:/etc/searxng:ro" -e SEARXNG_SECRET "$SXIMAGE" >/dev/null || die "could not create $NAME-searxng"
+    docker network connect "$NAME-wsout" "$NAME-searxng" || die "could not connect $NAME-searxng"
+    docker start "$NAME-searxng" >/dev/null || die "could not start $NAME-searxng"
+    docker network connect "$NAME-ws" "$NAME-litellm" || die "could not connect $NAME-litellm to $NAME-ws"
+  fi
+
   say "starting $NAME-gateway (caddy/terminal-gateway.caddy)"
   # (both networks before it starts: Caddy binds to its name on each)
   docker create --name "$NAME-gateway" --label io.bedrock-now.e2e=parity --network "$NAME-term" --network-alias gateway \
@@ -413,6 +444,19 @@ if [ "$REUSE" = 0 ]; then
   done
   [ "$up" = 1 ] || { docker logs --tail 40 "$NAME-litellm" 2>&1 | tail -n 40 >&2; teardown; die "LiteLLM did not come up"; }
   say "LiteLLM is up"
+  if [ "$WS" = builtin ]; then
+    # the built-in SearXNG answers LiteLLM with real results before any scenario (its engines asked once)
+    got=''
+    for _ in $(seq 1 30); do
+      got="$(docker exec "$NAME-litellm" python -c 'import json, urllib.request
+d = json.load(urllib.request.urlopen("http://searxng:8080/search?q=IANA+example+domain&format=json", timeout=20))
+print(len(d.get("results", [])), ",".join(sorted({e for r in d.get("results", []) for e in r.get("engines", [])})))' 2>/dev/null)"
+      [ "${got%% *}" -gt 0 ] 2>/dev/null && break
+      sleep 3
+    done
+    [ "${got%% *}" -gt 0 ] 2>/dev/null || { docker logs --tail 30 "$NAME-searxng" 2>&1 | tail -n 30 >&2; teardown; die "the built-in SearXNG gave LiteLLM no results"; }
+    say "the built-in SearXNG answers LiteLLM: ${got%% *} results from ${got#* }"
+  fi
 fi
 PORT="$(cat "$WORK/.port")"
 

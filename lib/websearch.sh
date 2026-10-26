@@ -17,10 +17,16 @@
 #               (bedrock-agentcore:InvokeGateway): WEBSEARCH_AGENTCORE_GATEWAY, or found with
 #               bedrock-agentcore:ListGateways. $7 per 1,000 searches (+ $0.005 per 1,000 gateway calls).
 #   tavily | brave | perplexity   your own key (WEBSEARCH_<NAME>_API_KEY): the query goes to that company
-#   searxng     a SearXNG instance (WEBSEARCH_SEARXNG_URL, its JSON output on): the query goes to it, and from there to
-#               the search engines it asks
-# None set up: Claude Code's WebSearch says it is not available (lib/litellm-hooks/bn_hooks.py no_web_search), and
-# WebFetch still works.
+#   searxng     a SearXNG instance of yours (WEBSEARCH_SEARXNG_URL, its JSON output on): the query goes to it, and from
+#               there to the search engines it asks
+#   builtin     the built-in SearXNG (the default: on unless WEBSEARCH_SEARXNG_BUILTIN=off): a container of this stack
+#               ("searxng", compose profile searxng) that only LiteLLM reaches, on a network of their own; its way out is
+#               a network of its own (docs/security.md). It asks a few public search engines that answer a server
+#               without a key (WEBSEARCH_SEARXNG_ENGINES) from this computer's internet address: free, and they may
+#               rate-limit it. Its settings.yml is rendered here (searxng/), its secret is .env's
+#               WEBSEARCH_SEARXNG_SECRET (made by setup, passed in its environment only, never printed).
+# Auto takes one you set up first, the built-in SearXNG last. None (off, or the built-in one off with nothing else): Claude
+# Code's WebSearch says it is not available (lib/litellm-hooks/bn_hooks.py no_web_search), and WebFetch still works.
 #
 # The checks (one setup or ./stack websearch check, never more than one search):
 #   websearch_agentcore_check  before LiteLLM's config is rendered: lib/websearch_probe.py in a one-off container of
@@ -40,17 +46,36 @@
 #   websearch_before_render / websearch_after_start   setup and ./stack config set (the checks)
 #   websearch_status_line / websearch_summary_line   ./stack status, ./stack code status, setup's summary
 #   websearch_json   Settings' status line (lib/settings.sh: the snapshot's choices.websearch)
+#   websearch_searxng_write / websearch_builtin_services / websearch_builtin_up / websearch_builtin_down
+#                    the built-in SearXNG: its settings.yml (render_config, ./stack up), its container in ./stack up's
+#                    list, started by setup and ./stack config, removed while it is off
 #   cmd_websearch   ./stack websearch status | check | aws-setup
 
 # backend  LiteLLM search_provider  USD per search  the .env key that sets it up  name
-# Prices: AgentCore's from AWS (aws.amazon.com/bedrock/agentcore/pricing: Web Search $7 per 1,000 queries, gateway
-# calls $0.005 per 1,000); the others' pay-as-you-go list prices (Tavily $0.008 per credit, a basic search one credit;
-# Brave Search $5 per 1,000; Perplexity Search $5 per 1,000) — a provider's free monthly allowance is not known here.
+# Prices (checked 2026-10 on each one's pricing page): AgentCore's from AWS (aws.amazon.com/bedrock/agentcore/pricing:
+# Web Search $7 per 1,000 queries, gateway calls $0.005 per 1,000); the others' pay-as-you-go list prices (Tavily $0.008
+# per credit, a basic search one credit; Brave Search $5 per 1,000; Perplexity Search API $5 per 1,000) — a provider's
+# free monthly allowance (Tavily's 1,000 credits, Brave's $5) is not known here. SearXNG, yours or the built-in one: $0.
 WEBSEARCH_CATALOG='agentcore	agentcore	0.007005	WEBSEARCH_AGENTCORE_GATEWAY	Amazon Bedrock AgentCore Web Search
 tavily	tavily	0.008	WEBSEARCH_TAVILY_API_KEY	Tavily
 brave	brave	0.005	WEBSEARCH_BRAVE_API_KEY	Brave Search
 perplexity	perplexity	0.005	WEBSEARCH_PERPLEXITY_API_KEY	Perplexity Search
-searxng	searxng	0	WEBSEARCH_SEARXNG_URL	SearXNG'
+searxng	searxng	0	WEBSEARCH_SEARXNG_URL	SearXNG
+builtin	searxng	0	WEBSEARCH_SEARXNG_BUILTIN	built-in SearXNG'
+# The built-in SearXNG: where LiteLLM reaches it (its service on the websearch network), and the public engines it asks.
+# Chosen by testing (2026-10, SearXNG 2026.10.11 in a container, each engine alone and then together, 20 queries two
+# seconds apart; tests/test_websearch.sh keeps the list): Startpage (Google's results), Yahoo (Bing's), Yep (Ahrefs' own
+# index) and Mojeek (its own) answered; Mojeek rate-limited after ten (then the others answer alone, and SearXNG
+# leaves it out for a few minutes). Google, Bing, DuckDuckGo, Brave, Qwant, Wikipedia and Dogpile refused from the first
+# query (CAPTCHA, access denied, too many requests): left out. Engines that need a key: never.
+WEBSEARCH_SEARXNG_BUILTIN_URL=http://searxng:8080
+WEBSEARCH_SEARXNG_ENGINES="startpage yahoo yep mojeek"
+WEBSEARCH_SEARXNG_ENGINE_NAMES="Startpage, Yahoo, Yep and Mojeek"
+# How long it waits: each engine 4 s (one retry inside it), 8 s at most for a search, LiteLLM 15 s at most for the
+# whole call (its own default would be 6000 s): a slow engine never stalls Claude Code
+WEBSEARCH_SEARXNG_TIMEOUT=4.0
+WEBSEARCH_SEARXNG_MAX_TIMEOUT=8.0
+WEBSEARCH_SEARXNG_LITELLM_TIMEOUT=15
 WEBSEARCH_TOOL=web-search   # the search_tools entry LiteLLM's interception uses (and /v1/search/web-search; bn_hooks.py SEARCH_TOOL)
 # AgentCore Web Search's Regions (2026-10: docs.aws.amazon.com/bedrock-agentcore/latest/devguide/ › Web Search Tool ›
 # Availability): a gateway is looked for, and made, in AWS_REGION_NAME when it is one of them, else in us-east-1
@@ -132,14 +157,20 @@ websearch_agentcore_tool() {
   printf '%s\n' "${t:-$WEBSEARCH_DEFAULT_TOOL}"
 }
 
+# websearch_builtin_on -> 0 while the built-in SearXNG is on: WEBSEARCH_SEARXNG_BUILTIN anything but off (blank = on,
+# the default; setup writes on). lib/common.sh dc() reads it the same way for the compose profile searxng.
+websearch_builtin_on() { ! flag_off "$(get_env WEBSEARCH_SEARXNG_BUILTIN)"; }
+
 # websearch_set_up BACKEND -> 0 when BACKEND can be used: its key or URL is in .env; AgentCore: a gateway (set or found)
-# that the last check did not find unusable (ready, unverified — it could not tell — or not checked yet)
+# that the last check did not find unusable (ready, unverified — it could not tell — or not checked yet); the built-in
+# SearXNG: while it is on
 websearch_set_up() {
   case "$1" in
     agentcore)
       [ -n "$(websearch_agentcore_url)" ] || return 1
       case "$(websearch_agentcore_status)" in '' | ready | unverified) return 0 ;; esac
       return 1 ;;
+    builtin) websearch_builtin_on ;;
     '') return 1 ;;
     *) [ -n "$(_ws_field "$1" 1)" ] && [ -n "$(get_env "$(websearch_key "$1")")" ] ;;
   esac
@@ -170,8 +201,119 @@ websearch_yaml() {
   case "$b" in
     agentcore) printf '      api_base: "%s"\n      tool_name: "%s"\n' "$(websearch_agentcore_url)" "$(websearch_agentcore_tool)" ;;
     searxng) printf '      api_base: "%s"\n' "$(get_env WEBSEARCH_SEARXNG_URL)" ;;
+    # (timeout: LiteLLM's bound on the whole call — litellm.asearch's own — over SearXNG's per engine)
+    builtin) printf '      api_base: "%s"\n      timeout: %s\n' "$WEBSEARCH_SEARXNG_BUILTIN_URL" "$WEBSEARCH_SEARXNG_LITELLM_TIMEOUT" ;;
     *) printf '      api_key: os.environ/%s\n' "$(websearch_key "$b")" ;;
   esac
+}
+
+# websearch_config_stale -> 0 when LiteLLM's config searches with another backend than .env now gives (its search_tools
+# block, or none, differs from websearch_yaml's): ./stack up renders it again (a WEBSEARCH_* edited by hand)
+websearch_config_stale() {
+  local cfg="$STACK_DIR/litellm/config.yaml" have want
+  [ -f "$cfg" ] && [ -r "$(bn_hook_src)" ] || return 1
+  have="$(awk '/^search_tools:/ { f = 1; print; next } f && /^[^ ]/ { exit } f' "$cfg" | sed '/^[[:space:]]*$/d')"
+  want="$(websearch_yaml | sed '/^[[:space:]]*$/d')"
+  [ "$have" != "$want" ]
+}
+
+# --- the built-in SearXNG -------------------------------------------------------------------------------------------
+
+# websearch_searxng_settings -> its settings.yml: SearXNG's defaults narrowed to WEBSEARCH_SEARXNG_ENGINES (each one on,
+# whatever its default), JSON output on, no limiter (only LiteLLM reaches it), no image proxy, autocomplete or favicons
+# (nothing it fetches on a page's behalf), short timeouts. No secret in it: server.secret_key comes from SearXNG's
+# environment (SEARXNG_SECRET, compose.yaml), so this file is readable by its container (644) and holds nothing to hide.
+websearch_searxng_settings() {
+  # (IFS as usual: it is also run inside an IFS=$'\037' read's here-string — websearch_check_state's fingerprint)
+  local e IFS=$' \t\n'
+  cat <<EOF
+# The built-in SearXNG of DevOS ADE: rendered by ./stack (lib/websearch.sh websearch_searxng_settings) — edits are
+# overwritten. Only LiteLLM reaches it (compose.yaml, docs/security.md); it asks the engines below for Claude Code's
+# WebSearch. Its signing key comes from the environment (SEARXNG_SECRET), never from this file.
+use_default_settings:
+  engines:
+    keep_only: [$(printf '%s' "$WEBSEARCH_SEARXNG_ENGINES" | sed 's/ /, /g')]
+general:
+  debug: false
+  instance_name: "DevOS ADE web search"
+  enable_metrics: false
+search:
+  safe_search: 0
+  autocomplete: ""
+  favicon_resolver: ""
+  formats: [html, json]
+server:
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  method: GET
+valkey:
+  url: false
+outgoing:
+  request_timeout: $WEBSEARCH_SEARXNG_TIMEOUT
+  max_request_timeout: $WEBSEARCH_SEARXNG_MAX_TIMEOUT
+  retries: 1
+engines:
+EOF
+  for e in $WEBSEARCH_SEARXNG_ENGINES; do
+    printf '  - name: %s\n    disabled: false\n    inactive: false\n' "$e"
+  done
+}
+
+# websearch_searxng_dir -> where its settings are (searxng/ of this checkout, mounted read-only at /etc/searxng)
+websearch_searxng_dir() { printf '%s/searxng\n' "$STACK_DIR"; }
+
+# websearch_searxng_write [DIR] — settings.yml (and limiter.toml, which SearXNG reads even with the limiter off: an
+# empty one, so it says nothing about it) in DIR (default searxng/), each replaced only when it changed, atomically,
+# readable by its container (folder 755, files 644). Written whether it is on or not (a file of settings, nothing runs).
+# lib/common.sh dc() hands compose its checksum, so a changed file recreates the container. Never fatal.
+websearch_searxng_write() {
+  local d="${1:-$(websearch_searxng_dir)}" tmp
+  mkdir -p "$d" 2>/dev/null && chmod 755 "$d" 2>/dev/null || return 0
+  tmp="$(mktemp "$d/.settings.XXXXXX")" || return 0
+  websearch_searxng_settings > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 0; }
+  if cmp -s "$tmp" "$d/settings.yml"; then rm -f "$tmp"; else chmod 644 "$tmp"; mv -f "$tmp" "$d/settings.yml" || rm -f "$tmp"; fi
+  if [ ! -f "$d/limiter.toml" ] && tmp="$(mktemp "$d/.limiter.XXXXXX")"; then
+    printf '# The built-in SearXNG has its limiter off (only LiteLLM reaches it): nothing to set here.\n' > "$tmp" &&
+      chmod 644 "$tmp" && mv -f "$tmp" "$d/limiter.toml" || rm -f "$tmp"
+  fi
+  return 0
+}
+
+# websearch_builtin_services -> "searxng" while it is on (lib/commands.sh optional_services: ./stack up's list)
+websearch_builtin_services() { ! websearch_builtin_on || echo searxng; }
+
+# websearch_builtin_up — setup and ./stack config: its settings written, its secret made when there is none, then on:
+# its container started (recreated when its settings or secret changed); off: removed. Never fatal: a container that
+# does not start is said, and its search check says why WebSearch does not work.
+websearch_builtin_up() {
+  websearch_searxng_write
+  if ! websearch_builtin_on; then websearch_builtin_down; return 0; fi
+  ensure_env WEBSEARCH_SEARXNG_SECRET "$(gen_hex 32)"
+  run_phase "Web search (the built-in SearXNG)" searxng dc up -d --no-deps --wait searxng ||
+    warn "the built-in SearXNG did not start — ./stack logs searxng says why; Claude Code's WebSearch fails until it does (./stack websearch status)"
+  return 0
+}
+
+# websearch_builtin_down — off: its container removed (named with its profile on: off, compose would not see it). Only
+# when there is one; never fatal.
+websearch_builtin_down() {
+  [ -n "$(_WS_SEARXNG_PROFILE=1 dc ps -aq searxng 2>/dev/null)" ] || return 0
+  _WS_SEARXNG_PROFILE=1 dc rm -sf searxng >/dev/null 2>&1 || warn "could not remove the built-in SearXNG's container — ./stack down removes it"
+}
+
+# websearch_rollback_cleanup — ./stack rollback to a version without the built-in SearXNG (its compose.yaml has no
+# searxng service, so it would never stop it): its container removed by its Compose labels (before that version's up),
+# and its networks after it (websearch_rollback_network_cleanup). Never fatal.
+websearch_rollback_cleanup() {
+  local p ids
+  p="$(project_name)"
+  ids="$(docker ps -aq --filter "label=com.docker.compose.project=$p" --filter "label=com.docker.compose.service=searxng" 2>/dev/null || true)"
+  # shellcheck disable=SC2086  # one id per word
+  [ -z "$ids" ] || docker rm -f $ids >/dev/null 2>&1 || warn "could not remove the built-in SearXNG's container — remove it with: docker rm -f $p-searxng-1"
+}
+websearch_rollback_network_cleanup() {
+  docker network rm "$(project_name)_websearch" "$(project_name)_websearch-out" >/dev/null 2>&1 || true
 }
 
 # _ws_json_str TEXT -> TEXT as a JSON string's inside: no control character, quotes and backslashes escaped
@@ -186,14 +328,15 @@ _ws_url_masked() {
   if [ "$1" = "$h" ]; then printf '%s' "$h"; else printf '%s/…' "$h"; fi
 }
 
-# _ws_redact TEXT -> TEXT without the search keys, the setup key or the SearXNG address (whole, or what of it may carry
-# a token: its user:password, password, path and query, and each value of the query): a search's error text is kept
-# as the reason Settings' card and ./stack status show, and a backend may echo what it was sent
+# _ws_redact TEXT -> TEXT without the search keys, the setup key, the built-in SearXNG's secret or the SearXNG address
+# (whole, or what of it may carry a token: its user:password, password, path and query, and each value of the query): a
+# search's error text is kept as the reason Settings' card and ./stack status show, and a backend may echo what it was
+# sent
 _ws_redact() {
   local t="$1" v u rest auth pq q kv
   local -a parts=()
   for v in "$(get_env WEBSEARCH_TAVILY_API_KEY)" "$(get_env WEBSEARCH_BRAVE_API_KEY)" \
-           "$(get_env WEBSEARCH_PERPLEXITY_API_KEY)" "$(setup_key 2>/dev/null)"; do
+           "$(get_env WEBSEARCH_PERPLEXITY_API_KEY)" "$(setup_key 2>/dev/null)" "$(get_env WEBSEARCH_SEARXNG_SECRET)"; do
     [ "${#v}" -lt 8 ] || t="${t//"$v"/***}"
   done
   u="$(get_env WEBSEARCH_SEARXNG_URL)"
@@ -218,16 +361,33 @@ _ws_redact() {
 # AgentCore's own state (its check's answer, its gateway, what makes it usable) — litellm/web-search.json, and
 # Settings › Models & providers' search cards (the settings snapshot's choices.websearch)
 websearch_json() {
-  local b p=0 st why fix='' at line ac='' up='' k
+  local b p=0 st why fix='' at line ac='' up='' k eng='' bi=off
   b="$(websearch_backend)"; [ -z "$b" ] || p="$(websearch_price "$b")"
   IFS=$'\037' read -r st why at <<< "$(websearch_check_state "$b")"
   while IFS= read -r line; do [ -z "$line" ] || fix="$fix${fix:+, }\"$(_ws_json_str "$line")\""; done <<< "$(websearch_fix "$b")"
   while IFS= read -r line; do [ -z "$line" ] || ac="$ac${ac:+, }\"$(_ws_json_str "$line")\""; done <<< "$(websearch_agentcore_fix)"
   for k in $(websearch_backends); do ! websearch_set_up "$k" || up="$up${up:+, }\"$k\""; done
-  printf '{"backend": "%s", "name": "%s", "provider": "%s", "usd_per_query": %s, "choice": "%s", "status": "%s", "why": "%s", "checked_at": "%s", "fix": [%s], "set_up": [%s], "agentcore": {"status": "%s", "gateway": "%s", "why": "%s", "fix": [%s]}}\n' \
-    "$b" "$(_ws_json_str "$(websearch_name "$b")")" "$(_ws_field "$b" 2)" "$p" "$(websearch_choice)" \
-    "$st" "$(_ws_json_str "$why")" "$at" "$fix" "$up" \
+  for k in $WEBSEARCH_SEARXNG_ENGINES; do eng="$eng${eng:+, }\"$k\""; done
+  ! websearch_builtin_on || bi=on
+  printf '{"backend": "%s", "name": "%s", "provider": "%s", "usd_per_query": %s, "choice": "%s", "reason": "%s", "status": "%s", "why": "%s", "checked_at": "%s", "fix": [%s], "set_up": [%s], "builtin": {"state": "%s", "engines": [%s]}, "agentcore": {"status": "%s", "gateway": "%s", "why": "%s", "fix": [%s]}}\n' \
+    "$b" "$(_ws_json_str "$(websearch_name "$b")")" "$(_ws_field "$b" 2)" "$p" "$(websearch_choice)" "$(_ws_json_str "$(websearch_reason "$b")")" \
+    "$st" "$(_ws_json_str "$why")" "$at" "$fix" "$up" "$bi" "$eng" \
     "$(websearch_agentcore_status)" "$(_ws_json_str "$(websearch_agentcore_url)")" "$(_ws_json_str "$(_ws_state agentcore why)")" "$ac"
+}
+
+# websearch_reason [BACKEND] -> why BACKEND (default: the one in use) is the one, in a few words: "auto: no key set up,
+# so the built-in SearXNG", "chosen: WEBSEARCH_BACKEND=tavily", … ("" without one: websearch_why_none says why)
+websearch_reason() {
+  local b="${1-$(websearch_backend)}" c
+  [ -n "$b" ] || return 0
+  c="$(websearch_choice)"
+  if [ "$c" != auto ]; then printf 'chosen: WEBSEARCH_BACKEND=%s\n' "$c"; return 0; fi
+  case "$b" in
+    agentcore) echo "auto: AgentCore Web Search comes first while its gateway is usable" ;;
+    tavily | brave | perplexity) printf 'auto: your %s key, the first one set up\n' "$(websearch_name "$b")" ;;
+    searxng) echo "auto: your SearXNG's address (no AgentCore gateway or search key set up)" ;;
+    builtin) echo "auto: no key set up, so the built-in SearXNG" ;;
+  esac
 }
 
 # websearch_write_json [OUT] — websearch_json to OUT (default litellm/web-search.json, next to the config), replaced
@@ -286,6 +446,8 @@ why=the check did not run (LiteLLM's image could not start a container)" ;;
 _ws_search_fp() {
   { printf 'backend=%s\nset=%s\n' "$1" "$(get_env "$(websearch_key "$1")")"
     [ "$1" != agentcore ] || { printf 'gw=%s\ntool=%s\n' "$(websearch_agentcore_url)" "$(websearch_agentcore_tool)"; grep -E '^AWS_' "$ENV_FILE" 2>/dev/null || true; }
+    # (the built-in SearXNG: its settings — another list of engines is checked again)
+    [ "$1" != builtin ] || websearch_searxng_settings
   } | openssl dgst -sha256 | awk '{ print $NF }'
 }
 
@@ -335,7 +497,9 @@ websearch_classify() {
   text="$(_ws_redact "$text")"   # (kept as the reason: never what the backend was sent)
   lower="$(printf '%s' "$text" | tr '[:upper:]' '[:lower:]')"
   case "$code" in
-    200) if printf '%s' "$text" | grep -q 'results'; then printf 'ok\t\n'; else printf 'failed\tno results: %s\n' "$(printf '%s' "$text" | cut -c1-160)"; fi
+    200) if printf '%s' "$text" | grep -qE 'results ?: ?\[ ?\{|results ?: ?\[[^]]'; then printf 'ok\t\n'
+         elif [ "$b" = builtin ]; then printf 'failed\tits search engines answered nothing (they may be refusing this computer'"'"'s address for now)\n'
+         else printf 'failed\tno results: %s\n' "$(printf '%s' "$text" | cut -c1-160)"; fi
          return 0 ;;
     000 | '') printf 'unverified\tLiteLLM did not answer\n'; return 0 ;;
   esac
@@ -346,11 +510,11 @@ websearch_classify() {
     *"insufficient permissions"* | *accessdenied* | *"not authorized"*) [ "$b" != agentcore ] || { printf 'failed\tAWS refused bedrock-agentcore:InvokeGateway\n'; return 0; } ;;
   esac
   case "$code" in
-    401 | 403) [ "$b" = agentcore ] || [ "$b" = searxng ] || { printf 'failed\t%s refused the key (HTTP %s)\n' "$(websearch_name "$b")" "$code"; return 0; } ;;
+    401 | 403) [ "$b" = agentcore ] || [ "$b" = searxng ] || [ "$b" = builtin ] || { printf 'failed\t%s refused the key (HTTP %s)\n' "$(websearch_name "$b")" "$code"; return 0; } ;;
     429) printf 'unverified\t%s is busy or out of searches right now (HTTP 429)\n' "$(websearch_name "$b")"; return 0 ;;
   esac
   case "$lower" in
-    *"api key"* | *api_key* | *unauthorized* | *"invalid key"*) [ "$b" = agentcore ] || { printf 'failed\t%s refused the key\n' "$(websearch_name "$b")"; return 0; } ;;
+    *"api key"* | *api_key* | *unauthorized* | *"invalid key"*) [ "$b" = agentcore ] || [ "$b" = builtin ] || { printf 'failed\t%s refused the key\n' "$(websearch_name "$b")"; return 0; } ;;
   esac
   printf 'failed\tHTTP %s: %s\n' "$code" "$(printf '%s' "$text" | sed 's/^[[:space:]]*//' | cut -c1-200)"
 }
@@ -389,28 +553,31 @@ websearch_price_words() {
   case "$1" in
     agentcore) printf '%s a search, on your AWS bill\n' "$(money "$p")" ;;
     searxng) printf 'free: your own SearXNG\n' ;;
+    builtin) printf 'free\n' ;;
     *) printf '%s a search at its list price, on your %s account\n' "$(money "$p")" "$(websearch_name "$1")" ;;
   esac
 }
 
 # websearch_why_none -> why no backend is used (WEBSEARCH_BACKEND, or what AgentCore's check found)
+# (auto finds none only while the built-in SearXNG is off: said last)
 websearch_why_none() {
-  local c st
+  local c st off='; the built-in SearXNG is off (WEBSEARCH_SEARXNG_BUILTIN=off)'
   c="$(websearch_choice)"
   case "$c" in
     off) echo "turned off (WEBSEARCH_BACKEND=off)"; return 0 ;;
     agentcore) echo "WEBSEARCH_BACKEND=agentcore, and no AgentCore gateway is set or found"; return 0 ;;
+    builtin) echo "WEBSEARCH_BACKEND=builtin, and the built-in SearXNG is off (WEBSEARCH_SEARXNG_BUILTIN=off)"; return 0 ;;
     auto) ;;
     *) echo "WEBSEARCH_BACKEND=$c, and $(websearch_key "$c") is not set"; return 0 ;;
   esac
   st="$(websearch_agentcore_status)"
   case "$st:$(_ws_state agentcore why)" in
-    denied:*) echo "no search backend set up: AgentCore Web Search found a gateway this AWS key may not use (bedrock-agentcore:InvokeGateway)" ;;
-    no-target:*) echo "no search backend set up: the AgentCore gateway has no web search target" ;;
-    no-gateway:bedrock-agentcore:ListGateways) echo "no search backend set up: no AgentCore gateway is set, and this AWS key may not look for one (bedrock-agentcore:ListGateways)" ;;
-    "no-gateway:not found") echo "no search backend set up: WEBSEARCH_AGENTCORE_GATEWAY names no AgentCore gateway that exists" ;;
-    no-gateway:*) echo "no search backend set up: no AgentCore gateway with a web search target in $(websearch_agentcore_region), and no search key or SearXNG URL" ;;
-    *) echo "no search backend set up (an AgentCore gateway, a search key or a SearXNG URL)" ;;
+    denied:*) echo "no search backend set up: AgentCore Web Search found a gateway this AWS key may not use (bedrock-agentcore:InvokeGateway)$off" ;;
+    no-target:*) echo "no search backend set up: the AgentCore gateway has no web search target$off" ;;
+    no-gateway:bedrock-agentcore:ListGateways) echo "no search backend set up: no AgentCore gateway is set, and this AWS key may not look for one (bedrock-agentcore:ListGateways)$off" ;;
+    "no-gateway:not found") echo "no search backend set up: WEBSEARCH_AGENTCORE_GATEWAY names no AgentCore gateway that exists$off" ;;
+    no-gateway:*) echo "no search backend set up: no AgentCore gateway with a web search target in $(websearch_agentcore_region), and no search key or SearXNG URL$off" ;;
+    *) echo "no search backend set up (an AgentCore gateway, a search key or a SearXNG URL)$off" ;;
   esac
 }
 
@@ -478,6 +645,7 @@ websearch_fix() {
       denied | no-target) ;;
       *) echo "or your own search key or SearXNG: ./stack config set WEBSEARCH_TAVILY_API_KEY (or _BRAVE_, _PERPLEXITY_) | WEBSEARCH_SEARXNG_URL" ;;
     esac
+    websearch_builtin_on || echo "or the built-in SearXNG (free, no key): ./stack config set WEBSEARCH_SEARXNG_BUILTIN on"
     return 0
   fi
   IFS=$'\037' read -r st why _ <<< "$(websearch_check_state "$b")"
@@ -492,6 +660,7 @@ websearch_fix() {
       echo "your AWS admin gives the gateway's service role bedrock-agentcore:InvokeWebSearch on arn:aws:bedrock-agentcore:$r:aws:tool/web-search.v1 (an IAM change; ./stack websearch aws-setup, step 1, has the policy; then ./stack websearch check)" ;;
     agentcore:*) echo "./stack websearch check tries again; ./stack logs litellm has LiteLLM's side" ;;
     searxng:*) echo "your SearXNG ($(_ws_url_masked "$(get_env WEBSEARCH_SEARXNG_URL)")) must answer /search?q=test&format=json from LiteLLM's container (JSON output on in its settings.yml: search.formats); then ./stack websearch check" ;;
+    builtin:*) echo "./stack logs searxng says why; ./stack websearch check tries again. Search engines may refuse this computer's address for a while: a Tavily, Brave or Perplexity key gives steadier results (./stack config set WEBSEARCH_TAVILY_API_KEY)" ;;
     *) echo "a new key: ./stack config set $(websearch_key "$b") (then it is checked again)" ;;
   esac
 }
@@ -532,9 +701,11 @@ websearch_status() {
     case "$b" in
       agentcore) printf '  Sent        only the search query, to Amazon Bedrock AgentCore Web Search in your AWS account (gateway %s); it stays inside AWS\n' "$(websearch_agentcore_url)" ;;
       searxng) printf '  Sent        only the search query, to your SearXNG (%s) and from there to the search engines it asks\n' "$(_ws_url_masked "$(get_env WEBSEARCH_SEARXNG_URL)")" ;;
+      builtin) printf '  Sent        only the search query, to the built-in SearXNG (a container only LiteLLM reaches) and from there to %s, from this computer'"'"'s internet address: they may rate-limit it (a key gives steadier results)\n' "$WEBSEARCH_SEARXNG_ENGINE_NAMES" ;;
       *) printf '  Sent        only the search query, to %s with your key\n' "$(websearch_name "$b")" ;;
     esac
     printf '  Cost        %s; booked on the LiteLLM key of the session that searched, like its model'"'"'s spend\n' "$(websearch_price_words "$b")"
+    printf '  Why         %s\n' "$(websearch_reason "$b")"
   fi
   printf '  Backend     WEBSEARCH_BACKEND=%s:' "$c"
   for k in $(websearch_backends); do
@@ -543,6 +714,8 @@ websearch_status() {
     else printf ' %s –' "$k"; fi
   done
   printf '\n'
+  if websearch_builtin_on; then printf '  Built-in    SearXNG on (WEBSEARCH_SEARXNG_BUILTIN): free, no key; it asks %s\n' "$WEBSEARCH_SEARXNG_ENGINE_NAMES"
+  else printf '  Built-in    SearXNG off (WEBSEARCH_SEARXNG_BUILTIN=off): no container\n'; fi
   case "$(websearch_agentcore_status)" in
     ready) printf '  AgentCore   gateway %s answers this key (tool %s)\n' "$(_ws_state agentcore url)" "$(_ws_state agentcore tool)" ;;
     denied) printf '  AgentCore   gateway %s: this key may not use it (bedrock-agentcore:InvokeGateway)\n' "$(_ws_state agentcore url)" ;;
@@ -556,7 +729,7 @@ websearch_status() {
     unverified) printf '  AgentCore   not verified: %s\n' "$(_ws_state agentcore why)" ;;
   esac
   if [ -n "$(websearch_fix "$b")" ]; then printf '  To do       '; websearch_fix "$b" | sed '2,$s/^/              /'; fi
-  printf '  Settings    ./stack config set WEBSEARCH_BACKEND (auto | off | %s), WEBSEARCH_AGENTCORE_GATEWAY, WEBSEARCH_TAVILY_API_KEY, …\n' "$(websearch_backends | paste -sd'|' - | sed 's/|/ | /g')"
+  printf '  Settings    ./stack config set WEBSEARCH_BACKEND (auto | off | %s), WEBSEARCH_SEARXNG_BUILTIN (on | off), WEBSEARCH_AGENTCORE_GATEWAY, WEBSEARCH_TAVILY_API_KEY, …\n' "$(websearch_backends | paste -sd'|' - | sed 's/|/ | /g')"
 }
 
 websearch_usage() {
@@ -566,9 +739,10 @@ Usage: ./stack websearch [status | check | aws-setup]
   check       Check again: AgentCore's gateway and permission (free), then one search (~$0.007 at most,
               on the setup key); LiteLLM restarts when the backend changes
   aws-setup   The one-time AWS setup of AgentCore Web Search, as commands for your AWS admin (none runs here)
-Backends: WEBSEARCH_BACKEND=auto (blank: the first set up of agentcore, tavily, brave, perplexity, searxng) | off | one
-of them. Keys and URLs: ./stack config set WEBSEARCH_AGENTCORE_GATEWAY | WEBSEARCH_TAVILY_API_KEY |
-WEBSEARCH_BRAVE_API_KEY | WEBSEARCH_PERPLEXITY_API_KEY | WEBSEARCH_SEARXNG_URL. README: "Web search for Claude Code".
+Backends: WEBSEARCH_BACKEND=auto (blank: the first set up of agentcore, tavily, brave, perplexity, searxng, else the
+built-in SearXNG, builtin) | off | one of them. Keys and URLs: ./stack config set WEBSEARCH_AGENTCORE_GATEWAY |
+WEBSEARCH_TAVILY_API_KEY | WEBSEARCH_BRAVE_API_KEY | WEBSEARCH_PERPLEXITY_API_KEY | WEBSEARCH_SEARXNG_URL; the
+built-in SearXNG (free, on by default): WEBSEARCH_SEARXNG_BUILTIN=on|off. README: "Web search for Claude Code".
 EOF
 }
 
@@ -588,6 +762,7 @@ cmd_websearch() {
       render_config "$(_enabled_or_all)"
       if ! _cfg_stack_running; then websearch_write_json; websearch_status; log "the stack is stopped: ./stack up applies it (and checks one search)"; return 0; fi
       [ "$(cat "$cfg")" = "$before" ] || run_phase "LiteLLM (web search)" litellm dc up -d --no-deps --force-recreate --wait litellm
+      websearch_builtin_up   # the built-in SearXNG up (or gone, while it is off) before its search
       websearch_after_start --force ;;
     -h | --help | help) websearch_usage ;;
     *) websearch_usage >&2; exit 2 ;;

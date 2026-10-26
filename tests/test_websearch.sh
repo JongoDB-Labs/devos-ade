@@ -12,14 +12,16 @@ GW='https://devos-ade-web-search-abc123def4.gateway.bedrock-agentcore.us-east-1.
 KEY="$(printf 'k%.0s' $(seq 1 8))0123456789_-abcdef"
 US="$(printf '\037')"   # (websearch_check_state's separator)
 
-# STACK_DIR in $TMP (nothing of this checkout's litellm/ is written); the probe's script and the catalog stay the repo's
+# STACK_DIR in $TMP (nothing of this checkout's litellm/ or searxng/ is written); the probe's script and the catalog stay
+# the repo's. The built-in SearXNG is off unless WS_BUILTIN says otherwise (most tests here are about the backends you set
+# up; WS_BUILTIN= leaves it blank, the default: on)
 _ws_env() {
   local repo="$STACK_DIR"
   STACK_DIR="$TMP"; mkdir -p "$TMP/litellm" "$STATE_DIR"
   eval "websearch_probe_src() { printf '%s\\n' '$repo/lib/websearch_probe.py'; }; bn_hook_src() { printf '%s\\n' '$repo/lib/litellm-hooks/bn_hooks.py'; }"
   printf 'claude-big\tchat\tbedrock/invoke/us.anthropic.big\t-\t-\ngpt-x\tchat\tbedrock/us.openai.gpt-x\t-\t-\n' > "$TMP/cat.tsv"
   export CATALOG="$TMP/cat.tsv" PRICES="$repo/none.tsv"
-  printf 'AWS_REGION_NAME=us-east-1\n%s' "${1:-}" > "$ENV_FILE"
+  printf 'AWS_REGION_NAME=us-east-1\nWEBSEARCH_SEARXNG_BUILTIN=%s\n%s' "${WS_BUILTIN-off}" "${1:-}" > "$ENV_FILE"
 }
 # _probe_says LINES — the AgentCore check's container answers LINES (KEY=VALUE, as lib/websearch_probe.py prints)
 _probe_says() {
@@ -43,7 +45,9 @@ test_no_backend_renders_no_search_and_the_hook_alone() {
   assert_contains "$cfg" '  callbacks: ["bn_hooks.proxy_handler_instance"]'
   websearch_write_json "$TMP/ws.json"
   python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); assert d["backend"] == "" and d["status"] == "off" and d["usd_per_query"] == 0, d
-assert "no search backend set up" in d["why"] and len(d["fix"]) == 2 and "aws-setup" in d["fix"][0], d' "$TMP/ws.json"
+assert "no search backend set up" in d["why"] and d["why"].endswith("the built-in SearXNG is off (WEBSEARCH_SEARXNG_BUILTIN=off)"), d
+assert len(d["fix"]) == 3 and "aws-setup" in d["fix"][0] and d["fix"][2].endswith("./stack config set WEBSEARCH_SEARXNG_BUILTIN on"), d
+assert d["builtin"]["state"] == "off" and d["reason"] == "", d' "$TMP/ws.json"
 }
 
 test_a_key_renders_its_search_tool_and_the_interception_for_bedrock_and_openrouter() {
@@ -97,8 +101,8 @@ WEBSEARCH_SEARXNG_URL=https://search.example.org
 }
 
 test_validators() {
-  for v in '' auto off agentcore tavily brave perplexity searxng; do valid_websearch_backend "$v" || { echo "refused: $v" >&2; return 1; }; done
-  for v in google AUTO 'tavily,brave' ' off'; do ! valid_websearch_backend "$v" || { echo "taken: $v" >&2; return 1; }; done
+  for v in '' auto off agentcore tavily brave perplexity searxng builtin; do valid_websearch_backend "$v" || { echo "refused: $v" >&2; return 1; }; done
+  for v in google AUTO 'tavily,brave' ' off' Builtin; do ! valid_websearch_backend "$v" || { echo "taken: $v" >&2; return 1; }; done
   valid_websearch_gateway "" && valid_websearch_gateway "$GW"
   for v in "${GW/https/http}" "$GW/x" 'https://evil.example/mcp' "${GW%/mcp}.evil.example/mcp" 'https://a.gateway.bedrock-agentcore.us-east-1.amazonaws.com.evil.example/mcp'; do
     ! valid_websearch_gateway "$v" || { echo "taken: $v" >&2; return 1; }
@@ -107,10 +111,13 @@ test_validators() {
   for v in short 'a b c d e f g h i j' "$KEY\"" "$(printf 'x%.0s' $(seq 1 257))"; do ! valid_websearch_key "$v" || { echo "taken: $v" >&2; return 1; }; done
   . "$STACK_DIR/lib/settings.sh"
   setting_validate WEBSEARCH_BACKEND off && setting_validate WEBSEARCH_AGENTCORE_GATEWAY "$GW" && setting_validate WEBSEARCH_TAVILY_API_KEY "$KEY"
+  setting_validate WEBSEARCH_BACKEND builtin && setting_validate WEBSEARCH_SEARXNG_BUILTIN off && setting_validate WEBSEARCH_SEARXNG_BUILTIN on
+  ! setting_validate WEBSEARCH_SEARXNG_BUILTIN true
+  assert_contains "$SV_ERR" "must be on or off"
   ! setting_validate WEBSEARCH_AGENTCORE_GATEWAY https://evil.example/mcp
   assert_contains "$SV_ERR" "must be an AgentCore gateway's MCP URL"
   # every web search key applies through ./stack config's websearch step
-  CFG_ORDER="WEBSEARCH_BACKEND WEBSEARCH_SEARXNG_URL"; assert_eq "$(_cfg_classes)" " websearch "
+  CFG_ORDER="WEBSEARCH_BACKEND WEBSEARCH_SEARXNG_URL WEBSEARCH_SEARXNG_BUILTIN"; assert_eq "$(_cfg_classes)" " websearch "
 }
 
 # --- AgentCore Web Search's check (lib/websearch_probe.py in LiteLLM's image; here its answers) ---
@@ -201,7 +208,7 @@ url=$GW
 why=not found"
   websearch_before_render --force
   assert_eq "$(websearch_backend)" ""
-  assert_eq "$(websearch_why_none)" "no search backend set up: WEBSEARCH_AGENTCORE_GATEWAY names no AgentCore gateway that exists"
+  assert_eq "$(websearch_why_none)" "no search backend set up: WEBSEARCH_AGENTCORE_GATEWAY names no AgentCore gateway that exists; the built-in SearXNG is off (WEBSEARCH_SEARXNG_BUILTIN=off)"
   assert_contains "$(NO_COLOR=1 websearch_status)" "AgentCore   no gateway at $GW (it does not exist)"
   # could not tell (no answer, a container that did not start, garbage): kept as unverified, never turned off
   set_env WEBSEARCH_AGENTCORE_GATEWAY "$GW"
@@ -377,6 +384,12 @@ for model in ("gpt-x", "claude-big", "or/a/b"):
     d = {**copy.deepcopy(req), "model": model}
     assert run(copy.deepcopy(d)) == d, model
 assert litellm.registered[-1] == {"agentcore/search": {"input_cost_per_query": 0.007005, "litellm_provider": "agentcore", "mode": "search"}}, litellm.registered
+# the built-in SearXNG (the default): its searches booked at $0, WebSearch left to the interception
+write({"backend": "builtin", "provider": "searxng", "usd_per_query": 0})
+for model in ("gpt-x", "claude-big", "or/a/b"):
+    d = {**copy.deepcopy(req), "model": model}
+    assert run(copy.deepcopy(d)) == d, model
+assert litellm.registered[-1] == {"searxng/search": {"input_cost_per_query": 0.0, "litellm_provider": "searxng", "mode": "search"}}, litellm.registered
 # a price that is no price: not registered (the one LiteLLM has stands), the backend still used
 n = len(litellm.registered)
 for bad in (-1, 5, "0.1", True, float("nan")):
@@ -512,4 +525,261 @@ hook = re.search(r'^WEB_SEARCH_OFF = "(.+)"$', open(sys.argv[2], encoding="utf-8
 for model in ("gpt-6-luna", "or/openai/gpt-oss-120b:free", "claude-haiku-5-5"):
     assert re.search(pat, hook.format(model=model)), (pat, hook)
 PY
+}
+
+# --- the built-in SearXNG (the default): auto's last choice, its settings, its container, its secret ---
+
+test_the_built_in_searxng_is_the_default_without_a_key() {
+  WS_BUILTIN='' _ws_env   # (blank: the default, on)
+  assert_eq "$(websearch_backend)" builtin
+  cfg="$(_render)"
+  assert_contains "$cfg" "$(printf 'search_tools:\n  - search_tool_name: "web-search"\n    litellm_params:\n      search_provider: "searxng"\n      api_base: "http://searxng:8080"\n      timeout: 15')"
+  assert_contains "$cfg" '  callbacks: ["bn_hooks.proxy_handler_instance", "bn_hooks.web_search"]'
+  printf '%s\n' "$cfg" > "$TMP/c.yaml"; litellm_config_safe "$TMP/c.yaml"
+  websearch_write_json "$TMP/ws.json"
+  python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1]))
+assert (d["backend"], d["name"], d["provider"], d["usd_per_query"], d["choice"]) == ("builtin", "built-in SearXNG", "searxng", 0, "auto"), d
+assert d["reason"] == "auto: no key set up, so the built-in SearXNG" and d["set_up"] == ["builtin"], d
+assert d["builtin"] == {"state": "on", "engines": ["startpage", "yahoo", "yep", "mojeek"]}, d["builtin"]' "$TMP/ws.json"
+  out="$(NO_COLOR=1 websearch_status)"
+  assert_contains "$out" "Web search for Claude Code: built-in SearXNG (free; not checked)"
+  assert_contains "$out" "Sent        only the search query, to the built-in SearXNG (a container only LiteLLM reaches) and from there to Startpage, Yahoo, Yep and Mojeek, from this computer's internet address: they may rate-limit it"
+  assert_contains "$out" "Cost        free; booked on the LiteLLM key"
+  assert_contains "$out" "Why         auto: no key set up, so the built-in SearXNG"
+  assert_contains "$out" "Backend     WEBSEARCH_BACKEND=auto: agentcore – tavily – brave – perplexity – searxng – builtin ✓ (in use)"
+  assert_contains "$out" "Built-in    SearXNG on (WEBSEARCH_SEARXNG_BUILTIN): free, no key; it asks Startpage, Yahoo, Yep and Mojeek"
+  assert_contains "$(websearch_summary_line)" "Web search      built-in SearXNG for Claude Code's WebSearch"
+  assert_eq "$(websearch_fix builtin)" ""   # nothing to do while it works
+  # on by name too (what setup writes)
+  set_env WEBSEARCH_SEARXNG_BUILTIN on; assert_eq "$(websearch_backend)" builtin
+  # the hook: a search booked at $0 (searxng/search), WebSearch never said to be unavailable
+  assert_eq "$(sed -n 's/.*"usd_per_query": \([0-9.]*\),.*/\1/p' "$TMP/ws.json")" 0
+}
+
+test_auto_takes_what_you_set_up_first_and_the_built_in_searxng_last() {
+  WS_BUILTIN=on _ws_env
+  assert_eq "$(websearch_backend)" builtin
+  set_env WEBSEARCH_SEARXNG_URL https://search.example.org
+  assert_eq "$(websearch_backend)" searxng; assert_eq "$(websearch_reason)" "auto: your SearXNG's address (no AgentCore gateway or search key set up)"
+  set_env WEBSEARCH_PERPLEXITY_API_KEY "$KEY"; assert_eq "$(websearch_backend)" perplexity
+  set_env WEBSEARCH_BRAVE_API_KEY "$KEY"; assert_eq "$(websearch_backend)" brave
+  set_env WEBSEARCH_TAVILY_API_KEY "$KEY"; assert_eq "$(websearch_backend)" tavily
+  assert_eq "$(websearch_reason)" "auto: your Tavily key, the first one set up"
+  set_env WEBSEARCH_AGENTCORE_GATEWAY "$GW"; assert_eq "$(websearch_backend)" agentcore
+  assert_eq "$(websearch_reason)" "auto: AgentCore Web Search comes first while its gateway is usable"
+  # AgentCore's gateway unusable (its check: this key may not use it): the next one
+  _probe_says "status=denied
+url=$GW
+why=bedrock-agentcore:InvokeGateway"
+  websearch_before_render --force; assert_eq "$(websearch_backend)" tavily
+  for k in WEBSEARCH_AGENTCORE_GATEWAY WEBSEARCH_TAVILY_API_KEY WEBSEARCH_BRAVE_API_KEY WEBSEARCH_PERPLEXITY_API_KEY WEBSEARCH_SEARXNG_URL; do set_env "$k" ''; done
+  rm -rf "$(websearch_state_dir)"
+  assert_eq "$(websearch_backend)" builtin
+  # by name: the built-in one even with a key set up; off: none, the built-in one on or not
+  set_env WEBSEARCH_TAVILY_API_KEY "$KEY"; set_env WEBSEARCH_BACKEND builtin
+  assert_eq "$(websearch_backend)" builtin; assert_eq "$(websearch_reason)" "chosen: WEBSEARCH_BACKEND=builtin"
+  set_env WEBSEARCH_BACKEND off; assert_eq "$(websearch_backend)" ""; assert_not_contains "$(_render)" search_tools
+  assert_eq "$(websearch_fix "")" ""
+  # the built-in one off: auto has only what you set up; by name, none (and why)
+  set_env WEBSEARCH_BACKEND auto; set_env WEBSEARCH_SEARXNG_BUILTIN off
+  assert_eq "$(websearch_backend)" tavily
+  set_env WEBSEARCH_TAVILY_API_KEY ''; assert_eq "$(websearch_backend)" ""
+  assert_contains "$(websearch_why_none)" "; the built-in SearXNG is off (WEBSEARCH_SEARXNG_BUILTIN=off)"
+  assert_contains "$(NO_COLOR=1 websearch_status)" "Built-in    SearXNG off (WEBSEARCH_SEARXNG_BUILTIN=off): no container"
+  set_env WEBSEARCH_BACKEND builtin; assert_eq "$(websearch_backend)" ""
+  assert_eq "$(websearch_why_none)" "WEBSEARCH_BACKEND=builtin, and the built-in SearXNG is off (WEBSEARCH_SEARXNG_BUILTIN=off)"
+  # any spelling of off is off; anything else (a typo included) leaves it on
+  for v in OFF false 0 no; do set_env WEBSEARCH_SEARXNG_BUILTIN "$v"; ! websearch_builtin_on || { echo "on with $v" >&2; return 1; }; done
+  for v in on true yes '' bogus; do set_env WEBSEARCH_SEARXNG_BUILTIN "$v"; websearch_builtin_on || { echo "off with $v" >&2; return 1; }; done
+}
+
+test_the_built_in_searxngs_settings_file() {
+  WS_BUILTIN='' _ws_env
+  websearch_searxng_write "$TMP/sx"
+  assert_eq "$(perm_of "$TMP/sx")" 755
+  assert_eq "$(perm_of "$TMP/sx/settings.yml")" 644
+  assert_eq "$(perm_of "$TMP/sx/limiter.toml")" 644
+  f="$(cat "$TMP/sx/settings.yml")"
+  assert_not_contains "$f" secret_key   # (from its environment only)
+  assert_contains "$f" "keep_only: [startpage, yahoo, yep, mojeek]"
+  # keyless engines only, none of those that refused a server in testing (lib/websearch.sh WEBSEARCH_SEARXNG_ENGINES)
+  assert_eq "$WEBSEARCH_SEARXNG_ENGINES" "startpage yahoo yep mojeek"
+  for e in google bing duckduckgo brave qwant wikipedia dogpile 'google cse' 'yandex api' 'wolframalpha_api' marginalia; do
+    assert_not_contains " $WEBSEARCH_SEARXNG_ENGINES " " $e "
+  done
+  if python3 -I -c 'import yaml' 2>/dev/null; then
+    python3 -I -c 'import sys, yaml; d = yaml.safe_load(open(sys.argv[1]))
+assert d["search"]["formats"] == ["html", "json"] and d["search"]["autocomplete"] == "" and d["search"]["favicon_resolver"] == "", d["search"]
+assert d["server"] == {"limiter": False, "public_instance": False, "image_proxy": False, "method": "GET"}, d["server"]
+assert d["outgoing"] == {"request_timeout": 4.0, "max_request_timeout": 8.0, "retries": 1}, d["outgoing"]
+assert d["use_default_settings"] == {"engines": {"keep_only": ["startpage", "yahoo", "yep", "mojeek"]}}, d["use_default_settings"]
+assert d["engines"] == [{"name": e, "disabled": False, "inactive": False} for e in ("startpage", "yahoo", "yep", "mojeek")], d["engines"]
+assert d["general"]["enable_metrics"] is False and d["valkey"] == {"url": False}, d' "$TMP/sx/settings.yml"
+  fi
+  # the same settings: the file is left as it is (its checksum, which compose sees, too)
+  touch -t 202001010000 "$TMP/sx/settings.yml"; before="$(ls -l "$TMP/sx/settings.yml")"
+  websearch_searxng_write "$TMP/sx"; assert_eq "$(ls -l "$TMP/sx/settings.yml")" "$before"
+  # LiteLLM bounds the whole search well under Claude Code's patience, SearXNG each engine under that
+  [ "${WEBSEARCH_SEARXNG_TIMEOUT%.*}" -lt "${WEBSEARCH_SEARXNG_MAX_TIMEOUT%.*}" ] && [ "${WEBSEARCH_SEARXNG_MAX_TIMEOUT%.*}" -lt "$WEBSEARCH_SEARXNG_LITELLM_TIMEOUT" ]
+  # render_config writes the checkout's own (searxng/ next to litellm/), whether it is on or not
+  render_config "" >/dev/null 2>&1
+  assert_eq "$(cat "$TMP/searxng/settings.yml")" "$f"
+  ls "$TMP/litellm/config.yaml" >/dev/null
+}
+
+# dc() — the "searxng" profile while it is on, the settings' checksum in compose's environment (a changed file recreates
+# it); ./stack up's services; off: no profile, no service, and its container removed
+test_the_built_in_searxngs_container_follows_its_switch() {
+  WS_BUILTIN='' _ws_env
+  docker() { printf '%s | sum=%s\n' "$*" "${BN_SEARXNG_SETTINGS_SUM:-}" >> "$TMP/docker"; case "$*" in *" ps -aq searxng") [ ! -f "$TMP/running" ] || echo abc123 ;; esac; }
+  websearch_searxng_write
+  dc ps >/dev/null
+  assert_contains "$(cat "$TMP/docker")" "--profile searxng --env-file"
+  assert_contains "$(cat "$TMP/docker")" " | sum=$(cksum < "$TMP/searxng/settings.yml" | awk '{ print $1 }')"
+  assert_contains " $(optional_services) " " searxng "
+  assert_eq "$(websearch_builtin_services)" searxng
+  assert_contains "$(status_url searxng)" "the built-in web search, LiteLLM's alone"
+  # (a shell's WEBSEARCH_SEARXNG_BUILTIN never decides: .env does)
+  : > "$TMP/docker"; WEBSEARCH_SEARXNG_BUILTIN=off dc ps >/dev/null; assert_contains "$(cat "$TMP/docker")" "--profile searxng"
+  set_env WEBSEARCH_SEARXNG_BUILTIN off
+  : > "$TMP/docker"; dc ps >/dev/null
+  assert_not_contains "$(cat "$TMP/docker")" "searxng"
+  assert_not_contains " $(optional_services) " " searxng "
+  # off: its container goes, named with the profile on; none there: nothing removed
+  : > "$TMP/docker"; websearch_builtin_down
+  assert_not_contains "$(cat "$TMP/docker")" "rm -sf"
+  : > "$TMP/running"; : > "$TMP/docker"; websearch_builtin_down
+  assert_contains "$(cat "$TMP/docker")" "--profile searxng --env-file $ENV_FILE rm -sf searxng"
+  # websearch_builtin_up: off → removed; on → started (its secret made first, when there is none)
+  run_phase() { shift 2; "$@"; }
+  : > "$TMP/docker"; websearch_builtin_up 2>/dev/null
+  assert_contains "$(cat "$TMP/docker")" "rm -sf searxng"
+  assert_eq "$(get_env WEBSEARCH_SEARXNG_SECRET)" ""
+  set_env WEBSEARCH_SEARXNG_BUILTIN on; : > "$TMP/docker"; websearch_builtin_up 2>/dev/null
+  assert_contains "$(cat "$TMP/docker")" "--profile searxng --env-file $ENV_FILE up -d --no-deps --wait searxng"
+  [ -z "${WEBSEARCH_SEARXNG_SECRET:-}" ] && [ "$(get_env WEBSEARCH_SEARXNG_SECRET | tr -d '0-9a-f' | wc -c | tr -d ' ')" = 0 ] && [ "$(get_env WEBSEARCH_SEARXNG_SECRET | wc -c | tr -d ' ')" = 64 ]
+  # a container that does not start: said, never fatal
+  run_phase() { return 1; }
+  out="$(websearch_builtin_up 2>&1)"; assert_contains "$out" "the built-in SearXNG did not start — ./stack logs searxng says why"
+}
+
+# its secret: made once (setup), kept, in .env and in its container's environment only — never printed by setup, status,
+# the checks, ./stack config list or Settings' snapshot, never in its settings file, LiteLLM's config or web-search.json
+test_the_built_in_searxngs_secret_is_never_printed() {
+  WS_BUILTIN='' _ws_env
+  docker() { :; }
+  run_phase() { shift 2; "$@"; }
+  out="$(websearch_builtin_up 2>&1; websearch_builtin_up 2>&1)"
+  sec="$(get_env WEBSEARCH_SEARXNG_SECRET)"
+  [ "${#sec}" = 64 ] || { echo "no secret made" >&2; return 1; }
+  websearch_builtin_up 2>/dev/null; assert_eq "$(get_env WEBSEARCH_SEARXNG_SECRET)" "$sec"   # kept
+  litellm_call() { printf '{"results":[{"url":"https://example.com"}]}' > "$5"; printf 200; }
+  render_config "" >/dev/null 2>&1
+  out="$out$(websearch_status 2>&1; websearch_status_line 2>&1; websearch_report 2>&1; websearch_after_start --force 2>&1; websearch_json 2>&1; websearch_summary_line 2>&1)"
+  . "$T_ROOT/lib/settings.sh"
+  out="$out$(config_list 2>&1)"
+  settings_snapshot_write >/dev/null 2>&1 || true
+  for f in "$TMP/searxng/settings.yml" "$TMP/searxng/limiter.toml" "$TMP/litellm/config.yaml" "$TMP/litellm/web-search.json" "$(settings_snapshot_file)"; do
+    [ ! -f "$f" ] || out="$out$(cat "$f")"
+  done
+  [ -s "$(settings_snapshot_file)" ] || { echo "no settings snapshot written" >&2; return 1; }
+  assert_contains "$(cat "$(settings_snapshot_file)")" WEBSEARCH_SEARXNG_SECRET
+  assert_not_contains "$out" "$sec"
+  assert_not_contains "$out" "${sec:0:16}"
+  # an error text that held it (a SearXNG that echoed it): redacted before it is kept or shown
+  assert_eq "$(_ws_redact "error near $sec here")" "error near *** here"
+  printf '{"error":{"message":"bad %s"}}' "$sec" > "$TMP/b"
+  assert_not_contains "$(websearch_classify builtin 500 "$TMP/b")" "$sec"
+  # compose: in the searxng service's environment, nowhere else (SearXNG's own placeholder without one: it refuses it)
+  assert_eq "$(grep -v '^ *#' "$T_ROOT/compose.yaml" | grep -c 'WEBSEARCH_SEARXNG_SECRET')" 1
+  assert_contains "$(cat "$T_ROOT/compose.yaml")" 'SEARXNG_SECRET: ${WEBSEARCH_SEARXNG_SECRET:-ultrasecretkey}'
+  for f in "$T_ROOT"/compose.*.yaml; do assert_not_contains "$(cat "$f")" SEARXNG; done
+}
+
+test_the_search_check_and_the_status_lines_say_built_in_searxng() {
+  WS_BUILTIN='' _ws_env "LITELLM_KEY_SETUP=sk-setup-test
+LITELLM_PORT=9
+"
+  litellm_call() { echo "$*" >> "$TMP/calls"; printf '{"object":"search","results":[{"title":"t","url":"https://example.com","snippet":"s"}]}' > "$5"; printf 200; }
+  websearch_search_check
+  assert_contains "$(cat "$TMP/calls")" 'sk-setup-test POST /v1/search/web-search {"query":"Amazon Web Services","max_results":1} '
+  assert_eq "$(NO_COLOR=1 websearch_status_line)" "Web search for Claude Code: built-in SearXNG (free; checked $(date -u +%Y-%m-%d))"
+  assert_eq "$(NO_COLOR=1 websearch_status_line --short)" "built-in SearXNG (free; checked $(date -u +%Y-%m-%d))"
+  assert_contains "$(websearch_report 2>&1)" "Web search for Claude Code: on — built-in SearXNG (free); checked: it answers"
+  # another engine list: checked again
+  WEBSEARCH_SEARXNG_ENGINES="startpage yahoo"; assert_eq "$(websearch_check_state builtin | cut -d "$US" -f1)" unchecked
+  WEBSEARCH_SEARXNG_ENGINES="startpage yahoo yep mojeek"; assert_eq "$(websearch_check_state builtin | cut -d "$US" -f1)" ok
+  # every engine refusing this computer: no results — said so, with what to do (never "the key")
+  litellm_call() { printf '{"object":"search","results":[]}' > "$5"; printf 200; }
+  websearch_search_check --force
+  assert_eq "$(websearch_check_state builtin | cut -d "$US" -f1,2)" "failed${US}its search engines answered nothing (they may be refusing this computer's address for now)"
+  assert_contains "$(NO_COLOR=1 websearch_status_line)" "Web search for Claude Code: built-in SearXNG does not work — its search engines answered nothing"
+  assert_contains "$(websearch_fix builtin)" "./stack logs searxng says why"
+  assert_contains "$(websearch_fix builtin)" "a Tavily, Brave or Perplexity key gives steadier results"
+  # SearXNG down (LiteLLM's 500 for the connection): failed, its words; never "refused the key"
+  printf '{"error":{"message":"litellm.APIConnectionError: All connection attempts failed"}}' > "$TMP/b"
+  assert_contains "$(websearch_classify builtin 500 "$TMP/b")" "$(printf 'failed\tHTTP 500: ')"
+  printf '{"error":{"message":"Unauthorized"}}' > "$TMP/b"
+  assert_not_contains "$(websearch_classify builtin 401 "$TMP/b")" "refused the key"
+  # ./stack code status prints the same line, short; ./stack status the whole one
+  assert_contains "$(cat "$T_ROOT/lib/code.sh")" "printf '  Web search %s\\n' \"\$(websearch_status_line --short)\""
+  assert_contains "$(cat "$T_ROOT/lib/commands.sh")" "printf '  %s\\n' \"\$(websearch_status_line)\""
+}
+
+# compose.yaml as Docker Compose renders it (no daemon): the service hardened like the others, its networks (LiteLLM and
+# SearXNG alone on websearch; SearXNG alone on websearch-out; never the default network, no port), with every overlay on
+test_compose_renders_the_built_in_searxng_isolated() {
+  [ -n "${BN_REAL_DOCKER:-}" ] && "$BN_REAL_DOCKER" compose version >/dev/null 2>&1 || { echo "no docker compose" >&2; return 77; }
+  docker() { case "$*" in *" config --format json") "$BN_REAL_DOCKER" "$@" ;; *) echo "unexpected docker $*" >&2; return 97 ;; esac; }
+  mkdir -p "$TMP/ws"
+  printf 'POSTGRES_PASSWORD=p\nRUSTFS_ACCESS_KEY=a\nRUSTFS_SECRET_KEY=s\nLITELLM_MASTER_KEY=m\nLITELLM_SALT_KEY=s\nLITELLM_UI_PASSWORD=u\nWEBUI_SECRET_KEY=w\nOPENWEBUI_ADMIN_EMAIL=a@b.c\nOPENWEBUI_ADMIN_PASSWORD=p\nSHARED_MCP_TOKEN=t\nTERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=%s\nCODE_ENABLED=true\nSTT_PROVIDER=bedrock\nWEBSEARCH_SEARXNG_SECRET=%s\n' "$TMP/ws" "$(printf 'f%.0s' $(seq 1 64))" > "$ENV_FILE"
+  out="$(dc config --format json 2>&1)" || { echo "$out" >&2; return 1; }
+  printf '%s' "$out" | python3 -I -c '
+import json, sys
+d = json.load(sys.stdin)
+s = d["services"]; x = s["searxng"]
+assert x["image"].startswith("searxng/searxng:20") and "@sha256:" in x["image"], x["image"]
+assert x["user"] == "977:977" and x["read_only"] is True and x["cap_drop"] == ["ALL"] and x["security_opt"] == ["no-new-privileges:true"], x
+assert x["restart"] == "unless-stopped" and x["pids_limit"] == 128 and int(x["mem_limit"]) == 512 * 1024 * 1024, x
+assert sorted(t.split(":")[0] for t in x["tmpfs"]) == ["/tmp", "/var/cache/searxng"], x["tmpfs"]
+assert "ports" not in x and "expose" not in x, x
+assert sorted(x["networks"]) == ["websearch", "websearch-out"], x["networks"]
+assert x["healthcheck"]["test"][-1] == "http://127.0.0.1:8080/healthz", x["healthcheck"]
+assert [(v["type"], v["source"].rsplit("/", 1)[-1], v["target"], v.get("read_only")) for v in x["volumes"]] == [("bind", "searxng", "/etc/searxng", True)], x["volumes"]
+assert x["environment"]["SEARXNG_SECRET"] == "f" * 64, "the secret from .env"
+assert {"host.docker.internal=192.0.2.1", "host.docker.internal=100::1"} <= set(x["extra_hosts"]) or {"host.docker.internal:192.0.2.1"} <= set(x["extra_hosts"]), x["extra_hosts"]
+on = lambda n: sorted(k for k, v in s.items() if n in (v.get("networks") or {}))
+assert on("websearch") == ["litellm", "searxng"], on("websearch")
+assert on("websearch-out") == ["searxng"], on("websearch-out")
+assert d["networks"]["websearch"]["internal"] is True and not d["networks"]["websearch-out"].get("internal"), d["networks"]
+for name in ("terminal", "code", "subs-chat", "portal", "open-webui", "caddy", "shared-mcp", "stt", "terminal-gateway", "terminal-egress"):
+    assert not set(s[name].get("networks") or {}) & {"websearch", "websearch-out"}, name
+# nothing it could be reached through: no Caddy site names it
+'
+  for f in "$T_ROOT"/caddy/*; do assert_not_contains "$(cat "$f")" searxng; done
+  # without its secret: SearXNG's own placeholder, which it refuses to start with (never an empty key)
+  sed -i.bak '/^WEBSEARCH_SEARXNG_SECRET=/d' "$ENV_FILE"
+  assert_contains "$(dc config --format json)" '"SEARXNG_SECRET": "ultrasecretkey"'
+  # off: no searxng service at all (LiteLLM keeps its empty websearch network)
+  printf 'WEBSEARCH_SEARXNG_BUILTIN=off\n' >> "$ENV_FILE"
+  out="$(dc config --format json 2>&1)" || { echo "$out" >&2; return 1; }
+  printf '%s' "$out" | python3 -I -c 'import json, sys; d = json.load(sys.stdin); assert "searxng" not in d["services"], sorted(d["services"])'
+}
+
+# ./stack up after WEBSEARCH_* was edited by hand in .env (the built-in SearXNG turned off, a key added): LiteLLM's config
+# no longer matches — rendered again (and LiteLLM restarted); matching, left alone
+test_up_renders_again_when_the_search_backend_changed_by_hand() {
+  WS_BUILTIN='' _ws_env
+  render_config "" >/dev/null 2>&1
+  ! websearch_config_stale || { echo "stale right after a render" >&2; return 1; }
+  set_env WEBSEARCH_SEARXNG_BUILTIN off
+  websearch_config_stale
+  render_config "" >/dev/null 2>&1
+  ! websearch_config_stale; assert_not_contains "$(cat "$TMP/litellm/config.yaml")" search_tools
+  set_env WEBSEARCH_TAVILY_API_KEY "$KEY"; websearch_config_stale
+  render_config "" >/dev/null 2>&1; ! websearch_config_stale
+  assert_contains "$(cat "$TMP/litellm/config.yaml")" 'search_provider: "tavily"'
+  set_env WEBSEARCH_TAVILY_API_KEY ''; set_env WEBSEARCH_SEARXNG_BUILTIN on; websearch_config_stale
+  # (cmd_up does it before the stack comes up)
+  assert_contains "$(sed -n '/^cmd_up() {/,/^}/p' "$T_ROOT/lib/commands.sh")" 'if websearch_config_stale; then'
 }

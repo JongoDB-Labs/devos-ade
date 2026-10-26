@@ -20,8 +20,11 @@
 #   --skip-cli-mutating   skip backup/restore, down/up, rotate-aws, update and rollback (the slow part)
 #   --deep-update    also a real update to a new (local) commit and a rollback from it (two more setups)
 #   --no-claude      skip the devos-claude check
-#   --only PARTS     run only these parts (comma list of cli, browser, voice, claude, mutating; default all).
-#                    Setup, the spend guard and the devos-claude link check always run.
+#   --only PARTS     run only these parts (comma list of cli, browser, voice, claude, websearch, mutating; default all).
+#                    Setup, the spend guard and the devos-claude link check always run. websearch: the built-in SearXNG
+#                    (the default search backend) — its container, who can and cannot reach it, the status lines,
+#                    ./stack websearch check, a real WebSearch through Claude Code on Haiku in the terminal (needs the
+#                    terminal), and off and on again
 #   E2E_IMAGE_REUSE=0  build every image setup builds (default: the images of the same files are built once, by the
 #                    first run, and later runs' setups take them from the suite's image cache, bne2e-cache/NAME:KEY —
 #                    tests/e2e/docker-reuse; the cache keeps the images of one tree; setup/image-cache says what it did)
@@ -142,7 +145,7 @@ BUDGETS="BUDGET_CLAUDE_CODE=0.04 BUDGET_OPENWEBUI=0.04 BUDGET_SETUP=0.02"
 NOTTY="$HERE/notty"
 
 OUT="$ROOT/tests/e2e/out"; WORK=''; PROJECT=bne2e; AWS_ENV_FILE=''; KEEP=0; REUSE=0; TEARDOWN_ONLY=0
-SKIP_MUTATING=0; DEEP_UPDATE=0; NO_CLAUDE=0; ONLY="cli,browser,voice,claude,mutating"
+SKIP_MUTATING=0; DEEP_UPDATE=0; NO_CLAUDE=0; ONLY="cli,browser,voice,claude,websearch,mutating"
 TERMINAL=0; [ "${E2E_TERMINAL:-0}" != 1 ] || TERMINAL=1
 CODE=1; [ "${E2E_NO_CODE:-0}" != 1 ] || CODE=0   # (on by default, as on a new install; E2E_CODE=1 is that too)
 HELPER=0; [ "${E2E_HELPER:-0}" != 1 ] || HELPER=1
@@ -175,7 +178,7 @@ while [ $# -gt 0 ]; do
     --host-config) HOST_CONFIG=1; shift ;;
     --subscriptions) SUBSCRIPTIONS=1; shift ;;
     --host-egress) HOST_EGRESS=1; shift ;;
-    --only) ONLY="${2:?--only needs a list (cli,browser,voice,claude,mutating)}"; shift 2 ;;
+    --only) ONLY="${2:?--only needs a list (cli,browser,voice,claude,websearch,mutating)}"; shift 2 ;;
     -h | --help) awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) echo "unknown option: $1 (tests/e2e/run.sh --help)" >&2; exit 2 ;;
   esac
@@ -196,7 +199,7 @@ fi
 . "$ROOT/lib/ports.sh"   # port_in_use (lsof → ss → /dev/tcp), the same check ./stack uses
 
 for part in $(printf '%s' "$ONLY" | tr ',' ' '); do
-  case "$part" in cli | browser | voice | claude | mutating) ;; *) echo "--only: unknown part '$part' (cli, browser, voice, claude, mutating)" >&2; exit 2 ;; esac
+  case "$part" in cli | browser | voice | claude | websearch | mutating) ;; *) echo "--only: unknown part '$part' (cli, browser, voice, claude, websearch, mutating)" >&2; exit 2 ;; esac
 done
 part_on() { case ",$ONLY," in *",$1,"*) return 0 ;; esac; return 1; }   # part_on PART -> 0 when --only includes it
 # The terminal's devos-claude -p (browser suite) is a second Claude Code run, on the terminal's own key.
@@ -420,7 +423,7 @@ terminal_probe() {
   # (rebind-try.sh first: rb_try, for the DNS-rebinding probes)
   { cat "$HERE/rebind-try.sh"; cat <<'SH'; } | docker exec -i -e HG="$2" -e LP="$(get_env LITELLM_PORT)" -e PP="$(get_env PORTAL_PORT)" "$1" bash -s
 tcp() { if timeout 4 bash -c "exec 3<>/dev/tcp/$1/$2" 2>/dev/null; then echo open; else echo closed; fi; }
-for t in portal:8000 open-webui:8080 postgres:5432 rustfs:9000 litellm:4000 shared-mcp:8000 stt:8000 caddy:8080 \
+for t in portal:8000 open-webui:8080 postgres:5432 rustfs:9000 litellm:4000 shared-mcp:8000 stt:8000 caddy:8080 searxng:8080 \
          gateway:8080 gateway:8090 gateway:8081 gateway:7681 gateway:7682 gateway:80; do
   printf '%s\t%s\n' "$t" "$(tcp "${t%%:*}" "${t##*:}")"
 done
@@ -553,7 +556,7 @@ proxy-rebind	$REBIND_RB"
     public_probe_steady pub_try egress_since || true
     printf '%s\n%s' "$probe" "$PUBLIC_LOG" > "$LOGS/terminal-isolation.log"; redact "$LOGS/terminal-isolation.log"
     bad=''; dns_note=''
-    for k in portal:8000 open-webui:8080 postgres:5432 rustfs:9000 litellm:4000 shared-mcp:8000 stt:8000 caddy:8080 \
+    for k in portal:8000 open-webui:8080 postgres:5432 rustfs:9000 litellm:4000 shared-mcp:8000 stt:8000 caddy:8080 searxng:8080 \
              gateway:8080 gateway:8090 gateway:8081 gateway:7681 gateway:7682 gateway:80; do
       printf '%s\n' "$probe" | grep -q "^$k	closed" || bad="$bad $k-reachable"
     done
@@ -618,7 +621,7 @@ proxy-rebind	$REBIND_RB"
     [ -z "$out" ] || bad="$bad gateway-neighbours:$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-80)"
     if [ -z "$bad" ]; then
       steady=''; [ "$PUBLIC_TRIES" -le 1 ] || steady="(the public probes passed at try $PUBLIC_TRIES; at first ${PUBLIC_DNS_SEEN:-they failed}) "
-      record terminal terminal-isolation PASS "$(( $(now) - t0 ))" "${steady}only the gateway's paths (LiteLLM's Anthropic API with its own key, shared-mcp's tools with the token and 401 without; 404 for /ui/, /key/generate, /bedrock/…, /spend/logs, /v1/chat/completions and ../ or // paths) and the internet through its egress proxy alone (no direct route: 000 to the registry and this computer, no outside names in its DNS; curl, Node's fetch, npm install, pip download, git over https and ssh work through it; refused with 403 before any connection: host.docker.internal, gateway.docker.internal, the host gateway's LiteLLM and portal ports, 127.0.0.1, localhost, ::1, ::ffff:127.0.0.1, 10/8, 172.16/12, 192.168/16, 100.64/10, 169.254.169.254, fd00::1, fe80::1, the stack's containers by name, CONNECT to private addresses, port 25, and public names resolving to 127.0.0.1, 10.x and the metadata address; refusals logged without paths; the proxy runs as 65534, read-only, no capabilities); LiteLLM via the loopback ($lbr): refused; Claude Code's WebFetch: $(printf '%s\n' "$probe" | awk -F'\t' '$1 == "claude-webfetch" { print substr($2, 1, 60) }'); make there; no portal, Open WebUI, Postgres, RustFS, LiteLLM/shared-mcp directly, stt, main Caddy or other gateway ports; ttyd on a socket only (no TCP listener), 407 at the gateway without the secret, which is nowhere in the sandbox; the gateway's neighbours: LiteLLM, not the portal, Open WebUI or the data; Docker's host names → 192.0.2.1 / 100::1; your uid; no Docker socket; no master or claude-code key; $(printf '%s\n' "$probe" | awk -F'\t' '$1 == "claude" { print $2 }')${rebind_note:-}"
+      record terminal terminal-isolation PASS "$(( $(now) - t0 ))" "${steady}only the gateway's paths (LiteLLM's Anthropic API with its own key, shared-mcp's tools with the token and 401 without; 404 for /ui/, /key/generate, /bedrock/…, /spend/logs, /v1/chat/completions and ../ or // paths) and the internet through its egress proxy alone (no direct route: 000 to the registry and this computer, no outside names in its DNS; curl, Node's fetch, npm install, pip download, git over https and ssh work through it; refused with 403 before any connection: host.docker.internal, gateway.docker.internal, the host gateway's LiteLLM and portal ports, 127.0.0.1, localhost, ::1, ::ffff:127.0.0.1, 10/8, 172.16/12, 192.168/16, 100.64/10, 169.254.169.254, fd00::1, fe80::1, the stack's containers by name, CONNECT to private addresses, port 25, and public names resolving to 127.0.0.1, 10.x and the metadata address; refusals logged without paths; the proxy runs as 65534, read-only, no capabilities); LiteLLM via the loopback ($lbr): refused; Claude Code's WebFetch: $(printf '%s\n' "$probe" | awk -F'\t' '$1 == "claude-webfetch" { print substr($2, 1, 60) }'); make there; no portal, Open WebUI, Postgres, RustFS, LiteLLM/shared-mcp directly, stt, the built-in SearXNG, main Caddy or other gateway ports; ttyd on a socket only (no TCP listener), 407 at the gateway without the secret, which is nowhere in the sandbox; the gateway's neighbours: LiteLLM, not the portal, Open WebUI or the data; Docker's host names → 192.0.2.1 / 100::1; your uid; no Docker socket; no master or claude-code key; $(printf '%s\n' "$probe" | awk -F'\t' '$1 == "claude" { print $2 }')${rebind_note:-}"
     else record terminal terminal-isolation FAIL "$(( $(now) - t0 ))" "${dns_note:+$dns_note — }unexpected:$bad (log $LOGS/terminal-isolation.log)"; fi
     # A failed request to ttyd (the terminal stopped) writes no request headers — so not the secret — into the
     # gateway's log; the secret goes to the main Caddy's wget on stdin, never onto a command line here
@@ -668,7 +671,7 @@ import http from 'node:http';
 const tcp = (host, port) => new Promise((r) => { const s = net.connect({ host, port, timeout: 4000 });
   const d = (x) => { s.destroy(); r(x); }; s.on('connect', () => d('open')); s.on('timeout', () => d('closed')); s.on('error', () => d('closed')); });
 for (const [h, p] of [['litellm', 4000], ['portal', 8000], ['open-webui', 8080], ['postgres', 5432], ['rustfs', 9000], ['shared-mcp', 8000],
-  ['stt', 8000], ['terminal', 7681], ['gateway', 8091], ['terminal-upstream', 7681], ['1.1.1.1', 443], ['host.docker.internal', 80], ['caddy', 8080]]) {
+  ['stt', 8000], ['searxng', 8080], ['terminal', 7681], ['gateway', 8091], ['terminal-upstream', 7681], ['1.1.1.1', 443], ['host.docker.internal', 80], ['caddy', 8080]]) {
   console.log(`${h}:${p}\t${await tcp(h, p)}`);
 }
 console.log(`secrets-in-env\t${Object.keys(process.env).filter((k) => /KEY|TOKEN|SECRET|PASSWORD/.test(k)).sort().join(',')}`);
@@ -711,7 +714,7 @@ if [ "$CODE" = 1 ]; then
     probe="$(code_probe "$cc" 2>&1)"; printf '%s\n' "$probe" > "$LOGS/code-isolation.log"; redact "$LOGS/code-isolation.log"
     # (Open WebUI among them: it signs in by X-Portal-User from any peer, so the code container never shares a network
     # with it — Chat's models are reached through the main Caddy's internal site)
-    for k in litellm:4000 portal:8000 open-webui:8080 postgres:5432 rustfs:9000 shared-mcp:8000 stt:8000 terminal:7681 gateway:8091 \
+    for k in litellm:4000 portal:8000 open-webui:8080 postgres:5432 rustfs:9000 shared-mcp:8000 stt:8000 searxng:8080 terminal:7681 gateway:8091 \
              terminal-upstream:7681 1.1.1.1:443 host.docker.internal:80; do
       printf '%s\n' "$probe" | grep -q "^$k	closed" || bad="$bad $k-reachable"
     done
@@ -733,9 +736,198 @@ if [ "$CODE" = 1 ]; then
     for k in LITELLM_KEY_TERMINAL LITELLM_KEY_CLAUDE_CODE LITELLM_MASTER_KEY SHARED_MCP_TOKEN TERMINAL_PROXY_SECRET; do ! env_has "$k" "$ins" || bad="$bad has-$k"; done
     unset ins
     if [ -z "$bad" ]; then
-      record code code-isolation PASS "$(( $(now) - t0 ))" "code container: only Caddy (code-link), no LiteLLM, portal, Open WebUI (a forged X-Portal-User through Caddy: refused), data, stt, sandbox, gateway or internet; no workspace mount (mounts: the two socket folders :ro, the project folders' list :ro, /tmp, Docker's init, its own state volume for Git hosts), read-only, no Claude Code binary, its secrets CODE_PROXY_SECRET and CODE_CHAT_KEY, your uid; 407 without the secret; the sandbox cannot reach it; bn-coded's socket folder 700"
+      record code code-isolation PASS "$(( $(now) - t0 ))" "code container: only Caddy (code-link), no LiteLLM, portal, Open WebUI (a forged X-Portal-User through Caddy: refused), data, stt, the built-in SearXNG, sandbox, gateway or internet; no workspace mount (mounts: the two socket folders :ro, the project folders' list :ro, /tmp, Docker's init, its own state volume for Git hosts), read-only, no Claude Code binary, its secrets CODE_PROXY_SECRET and CODE_CHAT_KEY, your uid; 407 without the secret; the sandbox cannot reach it; bn-coded's socket folder 700"
     else record code code-isolation FAIL "$(( $(now) - t0 ))" "unexpected:$bad (log $LOGS/code-isolation.log)"; fi
   fi
+fi
+
+# --- 1d. web search: the built-in SearXNG, the default search backend (lib/websearch.sh; --only websearch) ---
+# ws_svc SERVICE -> its running container's id
+ws_svc() { docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$1" | head -n 1; }
+# ws_reach CONTAINER TOOL -> open | closed: whether CONTAINER opens a TCP connection to searxng:8080 (a name it cannot
+# resolve: closed), with the tool its image has (py, node, bash, wget)
+ws_reach() {
+  case "$2" in
+    py) docker exec -i "$1" sh -c 'command -v python3 >/dev/null && exec python3 - || exec python -' <<'PY' 2>/dev/null ;;
+import socket
+try:
+    socket.create_connection(("searxng", 8080), 4).close(); print("open")
+except Exception:
+    print("closed")
+PY
+    node) docker exec "$1" node -e 'const s = require("net").connect({ host: "searxng", port: 8080, timeout: 4000 }); const d = (x) => { s.destroy(); console.log(x); }; s.on("connect", () => d("open")); s.on("timeout", () => d("closed")); s.on("error", () => d("closed"));' 2>/dev/null ;;
+    bash) docker exec "$1" bash -c 'timeout 5 bash -c "exec 3<>/dev/tcp/searxng/8080" 2>/dev/null && echo open || echo closed' 2>/dev/null ;;
+    wget) docker exec "$1" sh -c 'wget -q -T 4 -O /dev/null http://searxng:8080/healthz >/dev/null 2>&1 && echo open || echo closed' 2>/dev/null ;;
+  esac
+}
+# ws_litellm_search QUERY -> "N<TAB>ENGINES<TAB>UNRESPONSIVE": a search LiteLLM's container asks the built-in SearXNG
+# itself (its JSON output, as LiteLLM's search tool asks it)
+ws_litellm_search() {
+  docker exec -i -e Q="$1" "$(ws_svc litellm)" python - <<'PY' 2>&1
+import json, os, urllib.parse, urllib.request
+try:
+    d = json.load(urllib.request.urlopen("http://searxng:8080/search?" + urllib.parse.urlencode({"q": os.environ["Q"], "format": "json"}), timeout=20))
+    eng = sorted({e for r in d.get("results", []) for e in r.get("engines", [])})
+    print("%d\t%s\t%s" % (len(d.get("results", [])), ",".join(eng), ";".join("%s:%s" % (u[0], u[1]) for u in d.get("unresponsive_engines", []))))
+except Exception as e:
+    print("0\t\terror %s: %s" % (type(e).__name__, str(e)[:160]))
+PY
+}
+# ws_claude_websearch CONTAINER LOG -> one Claude Code WebSearch on Haiku in the terminal (its own key, through its
+# gateway): "PASS<TAB>detail" when it searched (WebSearch's searchCount > 0, no tool error) and the answer cites a page
+# the search found, else "FAIL<TAB>why" (lib: tests/e2e/harness-parity.py sc_websearch, the same rule)
+ws_claude_websearch() {
+  docker exec -i "$1" bash -c 'cd /tmp && timeout 240 claude -p --model "$ANTHROPIC_DEFAULT_HAIKU_MODEL" --allowedTools WebSearch \
+    --output-format stream-json --verbose "Use the WebSearch tool to search the web for: IANA example domain. Reply with one URL from the results only." </dev/null 2>&1' > "$2" 2>&1
+  python3 -I - "$2" <<'PY'
+import json, re, sys
+ev = []
+for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
+    try:
+        ev.append(json.loads(line))
+    except ValueError:
+        pass
+tools = [b.get("name") for e in ev if e.get("type") == "assistant" for b in (e.get("message") or {}).get("content") or [] if isinstance(b, dict) and b.get("type") == "tool_use"]
+res = []
+for e in ev:
+    if e.get("type") != "user":
+        continue
+    for b in (e.get("message") or {}).get("content") or []:
+        if isinstance(b, dict) and b.get("type") == "tool_result":
+            c = b.get("content")
+            res.append((b.get("is_error") is True, c if isinstance(c, str) else " ".join(x.get("text", "") for x in c or [] if isinstance(x, dict))))
+counts = [u.get("searchCount") for e in ev if e.get("type") == "user" and isinstance(e.get("tool_use_result"), dict) for u in [e["tool_use_result"]] if "searchCount" in u]
+final = next((e for e in ev if e.get("type") == "result"), {})
+text = final.get("result") if isinstance(final.get("result"), str) else ""
+U = re.compile(r"https?://[^\s<>()\[\]{}\"'`|\\]+")
+urls = lambda t: {u.rstrip(".,;:!?*_").rstrip("/").lower() for u in U.findall(t or "")}
+said = " ".join(t for _, t in res)
+cited = sorted(urls(text) & urls(said))
+why = None
+if final.get("subtype") != "success" or final.get("is_error"):
+    why = f"no answer: {str(final)[:200]}"
+elif "WebSearch" not in tools:
+    why = f"WebSearch not called (tools {tools}): {text[:120]!r}"
+elif any(b for b, _ in res):
+    why = f"WebSearch failed: {[t for b, t in res if b][0][:200]}"
+elif not any(isinstance(c, int) and c > 0 for c in counts):
+    why = f"no search ran (searchCount {counts}): {said[:200]!r}"
+elif not cited:
+    why = f"the answer cites no page it found: {text[:160]!r}; found {sorted(urls(said))[:5]}"
+cost = final.get("total_cost_usd")
+print(("FAIL\t" + why) if why else f"PASS\t{max(c for c in counts if isinstance(c, int))} search(es), cited {cited[0]} (Claude Code's own estimate ${cost})")
+PY
+}
+if ! part_on websearch; then record websearch websearch SKIP 0 "--only $ONLY"
+else
+  say "web search: the built-in SearXNG (its container, who reaches it, a real search, Claude Code's WebSearch)"
+  t0="$(now)"; bad=''
+  sx="$(ws_svc searxng)"
+  if [ -z "$sx" ]; then record websearch searxng-container FAIL 0 "no running searxng container (WEBSEARCH_SEARXNG_BUILTIN=$(get_env WEBSEARCH_SEARXNG_BUILTIN))"
+  else
+    # hardened like the others: its own user, read-only, no capabilities, no new privileges, limits, healthy, no port;
+    # its two networks alone
+    hard="$(docker inspect -f '{{.Config.User}} {{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}} {{.HostConfig.SecurityOpt}} {{.HostConfig.Memory}} {{.HostConfig.PidsLimit}} {{len .HostConfig.PortBindings}} {{.State.Health.Status}} {{.HostConfig.RestartPolicy.Name}}' "$sx" 2>&1)"
+    [ "$hard" = "977:977 true [ALL] [no-new-privileges:true] 536870912 128 0 healthy unless-stopped" ] || bad="$bad hardening:$hard"
+    nets="$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$sx" 2>&1)"
+    [ "$nets" = "${PROJECT}_websearch ${PROJECT}_websearch-out " ] || bad="$bad networks:$nets"
+    [ "$(docker network inspect -f '{{.Internal}}' "${PROJECT}_websearch" 2>/dev/null)" = true ] || bad="$bad websearch-not-internal"
+    members="$(docker network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "${PROJECT}_websearch" 2>/dev/null | tr ' ' '\n' | sed -nE 's/^.*[-_](litellm|searxng)[-_][0-9]+$/\1/p' | sort | tr '\n' ' ')"
+    nmem="$(docker network inspect -f '{{len .Containers}}' "${PROJECT}_websearch" 2>/dev/null)"
+    [ "$members" = "litellm searxng " ] && [ "$nmem" = 2 ] || bad="$bad websearch-members:${members:-?}($nmem)"
+    [ "$(docker network inspect -f '{{len .Containers}}' "${PROJECT}_websearch-out" 2>/dev/null)" = 1 ] || bad="$bad websearch-out-shared"
+    # its secret: 64 hex characters from .env, in its environment — never SearXNG's placeholder (compared, never printed)
+    sec="$(get_env WEBSEARCH_SEARXNG_SECRET)"
+    envsec="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$sx" 2>/dev/null | sed -n 's/^SEARXNG_SECRET=//p')"
+    case "$sec" in *[!0-9a-f]* | '') bad="$bad secret-not-made" ;; esac
+    [ "${#sec}" = 64 ] && [ "$envsec" = "$sec" ] || bad="$bad secret-not-in-its-environment"
+    unset envsec
+    if [ -z "$bad" ]; then record websearch searxng-container PASS "$(( $(now) - t0 ))" "running, healthy: user 977, read-only, no capabilities, no-new-privileges, 512 MB, 128 processes, no port; on ${PROJECT}_websearch (internal: LiteLLM and SearXNG alone) and ${PROJECT}_websearch-out (its own); its secret from .env (64 hex) in its environment"
+    else record websearch searxng-container FAIL "$(( $(now) - t0 ))" "unexpected:$bad"; fi
+    # who reaches it: LiteLLM alone. Every other container of the stack (the sandboxes, the Code page's, the portal, Open
+    # WebUI, Caddy, the gateway, the proxies, the data) cannot even resolve its name; Caddy has no site for it
+    t0="$(now)"; bad=''; seen=''
+    for sv in portal:py open-webui:py shared-mcp:py caddy:wget terminal-gateway:wget terminal:bash subs-chat:bash code:node terminal-egress:node chat-egress:node postgres:bash stt:py; do
+      c="$(ws_svc "${sv%%:*}")"; [ -n "$c" ] || continue
+      r="$(ws_reach "$c" "${sv#*:}")"; seen="$seen ${sv%%:*}"
+      [ "$r" = closed ] || bad="$bad ${sv%%:*}:${r:-no-answer}"
+    done
+    for need in portal open-webui caddy; do case " $seen " in *" $need "*) ;; *) bad="$bad not-probed:$need" ;; esac; done
+    [ "$TERMINAL" = 0 ] || case " $seen " in *" terminal "*) ;; *) bad="$bad not-probed:terminal" ;; esac
+    if [ "$CODE" = 1 ]; then for need in code subs-chat; do case " $seen " in *" $need "*) ;; *) bad="$bad not-probed:$need" ;; esac; done; fi
+    # nor through the sandbox's egress proxy (it resolves names itself: a name of the stack is no public address)
+    tc="$(ws_svc terminal)"
+    if [ -n "$tc" ] && [ -n "$(ws_svc terminal-egress)" ]; then
+      px="$(docker exec "$tc" sh -c 'env -u NO_PROXY -u no_proxy curl -s -m 15 -x http://egress:3128 -o /dev/null -w "%{http_code}" http://searxng:8080/healthz' 2>/dev/null)"
+      case "$px" in 200) bad="$bad through-the-egress-proxy" ;; esac
+    fi
+    # Caddy: no site, no path leads there (its own name under the portal's host, a path on the portal's host)
+    for h in "searxng.$HOST" "$HOST"; do
+      for pth in "/search?q=test&format=json" "/searxng/search?q=test&format=json" "/healthz"; do
+        body="$(curl -s -m 10 -H "Host: $h" "http://127.0.0.1:$(get_env PORTAL_PORT)$pth" 2>/dev/null | head -c 20000)"
+        case "$body" in *unresponsive_engines* | *'"number_of_results"'* | *SearXNG*) bad="$bad caddy:$h$pth" ;; esac
+      done
+    done
+    if [ -z "$bad" ]; then record websearch searxng-isolation PASS "$(( $(now) - t0 ))" "unreachable (its name does not even resolve) from:$seen; not through the sandbox's egress proxy (${px:-no proxy}); no Caddy site or path leads to it (searxng.$HOST, /search, /searxng/, /healthz)"
+    else record websearch searxng-isolation FAIL "$(( $(now) - t0 ))" "reached or unchecked:$bad"; fi
+    # LiteLLM reaches it, and it gives real results (one search, from its container, as LiteLLM's search tool asks)
+    t0="$(now)"; got=''
+    for try in 1 2 3; do
+      got="$(ws_litellm_search "IANA example domain")"
+      [ "${got%%	*}" -gt 0 ] 2>/dev/null && break
+      sleep 20
+    done
+    n="${got%%	*}"; rest="${got#*	}"; eng="${rest%%	*}"; un="${rest#*	}"
+    if [ "${n:-0}" -gt 0 ] 2>/dev/null; then record websearch litellm-reaches-searxng PASS "$(( $(now) - t0 ))" "LiteLLM's container → searxng:8080: $n results (try $try) from ${eng:-?}${un:+; unresponsive: $un}"
+    else record websearch litellm-reaches-searxng FAIL "$(( $(now) - t0 ))" "no results after $try tries: ${got:-no answer}"; fi
+  fi
+  # the status lines, and ./stack websearch check: one real search through LiteLLM (the setup key; free)
+  cli websearch-check-builtin 0 'Web search for Claude Code: on — built-in SearXNG \(free\); checked: it answers' websearch check
+  cli websearch-status-builtin 0 '^Web search for Claude Code: built-in SearXNG \(free; checked [0-9]{4}-[0-9]{2}-[0-9]{2}\)' websearch status
+  cli websearch-status-why 0 'Why +auto: no key set up, so the built-in SearXNG' websearch status
+  cli status-says-builtin 0 'Web search for Claude Code: built-in SearXNG \(free; checked' status
+  if [ "$CODE" = 1 ]; then cli code-status-says-builtin 0 'Web search built-in SearXNG \(free; checked' code status; fi
+  # its secret: in no log of this run, and not in SearXNG's own
+  t0="$(now)"; sec="$(get_env WEBSEARCH_SEARXNG_SECRET)"; n=0
+  if [ -n "$sec" ]; then
+    n="$( { cat "$LOGS"/cli-*.log 2>/dev/null; docker logs "$(ws_svc searxng)" 2>&1; docker logs "$(ws_svc litellm)" 2>&1; } | grep -c -F "$sec" || true)"
+  fi
+  if [ -n "$sec" ] && [ "$n" = 0 ]; then record websearch secret-never-printed PASS "$(( $(now) - t0 ))" "WEBSEARCH_SEARXNG_SECRET in none of this run's ./stack logs, SearXNG's or LiteLLM's"
+  else record websearch secret-never-printed FAIL "$(( $(now) - t0 ))" "${sec:+printed $n time(s)}${sec:-no secret in .env}"; fi
+  unset sec
+  # Claude Code's WebSearch on Haiku (Bedrock), in the terminal, with the built-in SearXNG: a real search whose answer
+  # cites a page it found. The engines may refuse a burst for a while: tried again (three tries, a minute apart)
+  if [ "$TERMINAL" = 0 ]; then record websearch claude-websearch-haiku SKIP 0 "needs the terminal (Claude Code runs in its sandbox): not with --no-code alone"
+  elif [ "$NO_CLAUDE" = 1 ]; then record websearch claude-websearch-haiku SKIP 0 "--no-claude"
+  else
+    t0="$(now)"; tc="$(ws_svc terminal)"; out=''
+    for try in 1 2 3; do
+      out="$(ws_claude_websearch "$tc" "$LOGS/websearch-claude-$try.jsonl")"; redact "$LOGS/websearch-claude-$try.jsonl"
+      case "$out" in PASS*) break ;; esac
+      [ "$try" = 3 ] || sleep 60
+    done
+    case "$out" in
+      PASS*) record websearch claude-websearch-haiku PASS "$(( $(now) - t0 ))" "Claude Code's WebSearch on $(get_env CLAUDE_BEDROCK_HAIKU_MODEL) (Bedrock), built-in SearXNG: ${out#PASS	} (try $try; $LOGS/websearch-claude-$try.jsonl)" ;;
+      *) record websearch claude-websearch-haiku FAIL "$(( $(now) - t0 ))" "${out#FAIL	} (3 tries; $LOGS/websearch-claude-3.jsonl)" ;;
+    esac
+  fi
+  # off: no container (WEBSEARCH_SEARXNG_BUILTIN=off through ./stack config apply, as Settings' switch does), WebSearch
+  # says it is not available (no other backend here); on again: back, and a search through it
+  t0="$(now)"; bad=''
+  printf 'set WEBSEARCH_SEARXNG_BUILTIN %s\n' "$(printf off | openssl base64 -A)" > "$LOGS/websearch-off.in"
+  ( clean_env; cd "$STACK" && "$NOTTY" "$STACK/stack" config apply --stdin < "$LOGS/websearch-off.in" ) > "$LOGS/websearch-off.log" 2>&1 || bad="$bad apply-off-failed"
+  redact "$LOGS/websearch-off.log"
+  [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=searxng)" ] || bad="$bad container-left"
+  st websearch status > "$LOGS/websearch-off-status.log" 2>&1; redact "$LOGS/websearch-off-status.log"
+  grep -q '^Web search for Claude Code: off — no search backend set up' "$LOGS/websearch-off-status.log" || bad="$bad status:$(head -n 1 "$LOGS/websearch-off-status.log" | cut -c1-120)"
+  grep -q 'search_tools' "$STACK/litellm/config.yaml" && bad="$bad config-still-searches"
+  printf 'set WEBSEARCH_SEARXNG_BUILTIN %s\n' "$(printf on | openssl base64 -A)" > "$LOGS/websearch-on.in"
+  ( clean_env; cd "$STACK" && "$NOTTY" "$STACK/stack" config apply --stdin < "$LOGS/websearch-on.in" ) > "$LOGS/websearch-on.log" 2>&1 || bad="$bad apply-on-failed"
+  redact "$LOGS/websearch-on.log"
+  [ "$(docker inspect -f '{{.State.Health.Status}}' "$(ws_svc searxng)" 2>/dev/null)" = healthy ] || bad="$bad not-back"
+  grep -q 'Web search for Claude Code: on — built-in SearXNG (free); checked: it answers' "$LOGS/websearch-on.log" || bad="$bad on-not-checked"
+  if [ -z "$bad" ]; then record websearch off-and-on-again PASS "$(( $(now) - t0 ))" "off: its container removed, no search in LiteLLM's config, WebSearch off (no other backend); on: healthy again and one search answered"
+  else record websearch off-and-on-again FAIL "$(( $(now) - t0 ))" "unexpected:$bad (logs $LOGS/websearch-off.log, $LOGS/websearch-on.log)"; fi
 fi
 
 # --- 2. read-only CLI checks ---

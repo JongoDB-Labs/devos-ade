@@ -32,6 +32,14 @@
   "terminal-proxy": {
    "external": false,
    "name": "bn-two_terminal-proxy"
+  },
+  "websearch": {
+   "external": false,
+   "name": "bn-two_websearch"
+  },
+  "websearch-out": {
+   "external": false,
+   "name": "bn-two_websearch-out"
   }
  },
  "services": {
@@ -109,7 +117,8 @@
    "networks": [
     "default",
     "stt",
-    "terminal-link"
+    "terminal-link",
+    "websearch"
    ],
    "ports": [
     {
@@ -240,6 +249,24 @@
    ],
    "ports": [],
    "volumes": []
+  },
+  "searxng": {
+   "container_name": null,
+   "image": "searxng/searxng:2026.10.11-ad46ebd7d@sha256:ddd642cae6eac75412938fd846ddbf440a2df029cfeae8a562b8b205f4e35e25",
+   "labels": {},
+   "networks": [
+    "websearch",
+    "websearch-out"
+   ],
+   "ports": [],
+   "volumes": [
+    {
+     "read_only": true,
+     "source": "<STACK>/searxng",
+     "target": "/etc/searxng",
+     "type": "bind"
+    }
+   ]
   },
   "shared-mcp": {
    "container_name": null,

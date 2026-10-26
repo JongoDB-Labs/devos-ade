@@ -31,7 +31,7 @@ test_terminal_is_off_by_default() {
   if terminal_on; then return 1; fi
   assert_eq "$(terminal_services)" ""
   assert_eq "$(compose_overlays)" ""
-  assert_eq "$(optional_services)" ""
+  assert_eq "$(optional_services)" "searxng"   # (the built-in SearXNG alone: on by default)
   assert_contains "$(terminal_status)" "Terminal: off — ./stack terminal enable"
 }
 
@@ -98,7 +98,7 @@ test_compose_overlays_add_the_terminal_and_its_way_out() {
   assert_contains "$(terminal_why_out)" "TERMINAL_WORKSPACE is empty"
   docker() { printf '%s\n' "$*" > "$TMP/args"; }
   printf 'TERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=/w\n' > "$ENV_FILE"; dc ps
-  assert_contains "$(cat "$TMP/args")" "-f $STACK_DIR/compose.terminal.yaml -f $STACK_DIR/compose.terminal-proxy.yaml --env-file"
+  assert_contains "$(cat "$TMP/args")" "-f $STACK_DIR/compose.terminal.yaml -f $STACK_DIR/compose.terminal-proxy.yaml --profile searxng --env-file"
   for f in compose.terminal.yaml compose.terminal-proxy.yaml compose.terminal-egress.yaml; do [ -f "$STACK_DIR/$f" ] || { echo "missing $f" >&2; return 1; }; done
 }
 
@@ -300,7 +300,7 @@ test_a_workspace_gone_or_no_longer_allowed_leaves_the_terminal_out() {
   _stubs
   terminal_enable > /dev/null 2>&1 || return 1
   assert_eq "$(terminal_services)" "terminal-egress terminal-gateway terminal"
-  assert_eq "$(stack_services)" "$STACK_BASE_SERVICES terminal-egress terminal-gateway terminal"
+  assert_eq "$(stack_services)" "$STACK_BASE_SERVICES terminal-egress terminal-gateway terminal searxng"
   set_env TERMINAL_EGRESS host; assert_eq "$(terminal_services)" "terminal-gateway terminal"
   set_env TERMINAL_EGRESS off; assert_eq "$(terminal_services)" "terminal-gateway terminal"
   set_env TERMINAL_EGRESS ''

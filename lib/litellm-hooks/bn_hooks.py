@@ -19,7 +19,8 @@ catalog/code-models.tsv and OpenRouter's list):
   under a line saying which call they came from (what LiteLLM does itself for an OpenAI-shaped provider).
 - Claude Code's WebSearch asks the model for Anthropic's web search, a tool the provider runs (type web_search_…).
   Bedrock runs none and OpenRouter barely: with a search backend (web-search.json next to this file, written by
-  ./stack: lib/websearch.sh), LiteLLM's web search interception runs the search for those models (web_search below: the
+  ./stack: lib/websearch.sh; the built-in SearXNG unless another is set up or web search is off, its searches at $0),
+  LiteLLM's web search interception runs the search for those models (web_search below: the
   config names it after this hook), and each search is booked at the backend's price per search (registered with
   LiteLLM here: its own map has none for some, $0 for AgentCore). Without one, LiteLLM refuses it for Claude on Bedrock
   (telling you to set up a search of LiteLLM's own), and for another vendor's model on Bedrock or OpenRouter it is left

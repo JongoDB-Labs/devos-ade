@@ -172,7 +172,7 @@ _sv_xl_key() { [ -z "$1" ] || valid_xl_key "$1" || { SV_ERR="must be an Experien
 _sv_xl_models() {
   { valid_xl_models "$1" && [ "${#1}" -le "$SETTINGS_MAX_VALUE" ]; } || { SV_ERR="must be a comma list of the gateway's model ids (letters, digits, . _ : and -)"; return 1; }
 }
-_sv_ws_backend() { valid_websearch_backend "$1" || { SV_ERR="must be auto, off, agentcore, tavily, brave, perplexity or searxng (blank = auto)"; return 1; }; }
+_sv_ws_backend() { valid_websearch_backend "$1" || { SV_ERR="must be auto, off, agentcore, tavily, brave, perplexity, searxng or builtin (blank = auto)"; return 1; }; }
 _sv_ws_gateway() {
   valid_websearch_gateway "$1" || { SV_ERR="must be an AgentCore gateway's MCP URL: https://GATEWAY_ID.gateway.bedrock-agentcore.REGION.amazonaws.com/mcp"; return 1; }
 }
@@ -975,8 +975,9 @@ _cfg_post() {
     sync_budget_banner
     portal_session_end
   fi
-  # web search: one search with the backend now in use (on the setup key), and what it found for Settings
-  if _cfg_on websearch; then websearch_after_start --force; fi
+  # web search: the built-in SearXNG up or gone (WEBSEARCH_SEARXNG_BUILTIN), then one search with the backend now in use
+  # (on the setup key), and what it found for Settings
+  if _cfg_on websearch; then websearch_builtin_up; websearch_after_start --force; fi
   if _cfg_on code; then _cfg_code; fi   # last: it restarts the portal and Caddy itself (and turns the terminal on)
 }
 
