@@ -1,4 +1,4 @@
-"""The scenarios of tests/e2e/harness-parity.sh: REAL Claude Code sessions in the throwaway sandbox (claude-bedrock -p …
+"""The scenarios of tests/e2e/harness-parity.sh: REAL Claude Code sessions in the throwaway sandbox (devos-claude -p …
 --output-format stream-json, its tools allowed in /workspace/<family>-<n>/<scenario> only), the models side by side (--jobs),
 each model's scenarios one after another, each recorded as PASS or FAIL with the exact error (Claude Code's own words,
 and LiteLLM's for a call that failed) and its seconds; the run's Bedrock spend is what LiteLLM booked, by model group
@@ -64,7 +64,7 @@ def slug(model):
 
 
 class Run:
-    """One claude-bedrock -p session: its stream-json events, parsed."""
+    """One devos-claude -p session: its stream-json events, parsed."""
 
     def __init__(self, rc, out, err, seconds):
         self.rc, self.err, self.seconds = rc, err, seconds
@@ -172,7 +172,7 @@ class Suite:
         return out if rc == 0 else None
 
     def claude(self, model, cwd, prompt=None, resume=None, env=None, stdin_json=None, log=None, timeout=420):
-        args = ["timeout", str(timeout - 20), "claude-bedrock", "-p"]
+        args = ["timeout", str(timeout - 20), "devos-claude", "-p"]
         if prompt is not None:
             args.append(prompt)
         args += ["--model", model, "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits",

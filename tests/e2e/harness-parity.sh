@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Opt-in harness parity suite (run by hand; not part of tests/run.sh, CI or tests/e2e/run.sh): REAL Claude Code sessions
-# (claude-bedrock -p … --output-format stream-json, as the Code page and the terminal run them) on each provider
+# (devos-claude -p … --output-format stream-json, as the Code page and the terminal run them) on each provider
 # family's models, in a throwaway pair of this checkout's LiteLLM and sandbox: does a model of another vendor work as
 # Claude Code's model with no difference but what the model was trained on? Each scenario (tests/e2e/harness-parity.py)
 # records PASS or FAIL with the exact error, per model.
@@ -38,7 +38,7 @@
 # (lib/litellm-hooks/bn_hooks.py) and the code-models.tsv the hook reads — no Postgres: the master key stands in for the
 # terminal's key. The gateway is this checkout's caddy/terminal-gateway.caddy (the only paths Claude Code may reach).
 # The sandbox is the terminal image (built from terminal/, or E2E_PARITY_TERMINAL_IMAGE) with compose.terminal.yaml's
-# environment and this checkout's terminal/bin/claude-bedrock, read-only, its home and /workspace in memory; its way
+# environment and this checkout's terminal/bin/devos-claude, read-only, its home and /workspace in memory; its way
 # out (WebFetch) is a plain bridge network, as TERMINAL_EGRESS=host. Claude Code's tools may touch only
 # /workspace/<family>-<n>/<scenario> (--permission-mode acceptEdits with an allow list).
 # Bedrock spend: a few cents per model (cheap models, short prompts); every call LiteLLM books is logged and summed in
@@ -269,7 +269,7 @@ class Spend(CustomLogger):
 handler = Spend()
 PY
   # no Postgres here: no database_url; the suite's callback beside the hook; and a deployment of the suite's own whose
-  # model id Bedrock does not know (the error scenario: Bedrock's own words), named for claude-bedrock like the others
+  # model id Bedrock does not know (the error scenario: Bedrock's own words), named for devos-claude like the others
   sed -e '/^  database_url: /d' \
       -e 's/^model_list:$/model_list:\
   - model_name: "parity-bad-bedrock"\
@@ -362,7 +362,7 @@ if [ "$REUSE" = 0 ]; then
     --tmpfs /tmp:size=1g,mode=1777 --tmpfs /home/claude:uid=10104,gid=10104,mode=0700,size=1g \
     --tmpfs /workspace:uid=10104,gid=10104,mode=0755,size=256m \
     --add-host host.docker.internal:192.0.2.1 --add-host gateway.docker.internal:192.0.2.1 \
-    -v "$ROOT/terminal/bin/claude-bedrock:/usr/local/bin/claude-bedrock:ro" \
+    -v "$ROOT/terminal/bin/devos-claude:/usr/local/bin/devos-claude:ro" \
     -e ANTHROPIC_BASE_URL=http://gateway:8091 -e ANTHROPIC_AUTH_TOKEN \
     -e ANTHROPIC_MODEL=claude-haiku-5-5 -e ANTHROPIC_DEFAULT_OPUS_MODEL=claude-haiku-5-5 \
     -e ANTHROPIC_DEFAULT_SONNET_MODEL=claude-haiku-5-5 -e ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-5-5 \
