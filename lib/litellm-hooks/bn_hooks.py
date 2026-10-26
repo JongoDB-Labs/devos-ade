@@ -17,6 +17,13 @@ catalog/code-models.tsv and OpenRouter's list):
   for another vendor's model ("This model doesn't support the image field for user messages"), though it takes one in
   the user's message: for those models the images of a tool result go right after the results, in the same message,
   under a line saying which call they came from (what LiteLLM does itself for an OpenAI-shaped provider).
+- Claude Code's WebSearch asks the model for Anthropic's web search, a tool the provider runs (type web_search_…).
+  Bedrock runs none: LiteLLM refuses it for Claude there (telling you to set up a search of LiteLLM's own), and for
+  another vendor's model on Bedrock or OpenRouter it is left out or not booked, and the model answers from what it
+  knows as though it had searched. For those models the request becomes one that has the model answer WEB_SEARCH_OFF
+  and nothing else (no tools, a short answer): the WebSearch tool hands that to the model as its result, and the model
+  says so. The Experiential Labs gateway runs the search itself (LiteLLM asks it with web_search_options; its fee is in
+  the cost the gateway reports): its models' requests go as they came.
 
 For the Experiential Labs gateway's models (lib/explabs.sh: model_info bn_xl: true), on each call to the gateway:
 - Before it: the model goes by its own id (with extended thinking on, LiteLLM renames it openai/responses/<id> for
@@ -49,20 +56,21 @@ from collections.abc import Mapping
 from litellm.integrations.custom_logger import CustomLogger
 
 _TSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "code-models.tsv")
-_EMPTY = {"limits": {}, "other": frozenset()}
+_EMPTY = {"limits": {}, "other": frozenset(), "no_search": frozenset()}
 _cache: dict = {"stamp": None, **_EMPTY}
 
 
 def _read() -> dict:
     """code-models.tsv, read again when the file changed: {"limits": {model id: max output tokens}, "other": the ids of
-    another vendor's models on Bedrock} (id col 1, provider col 3, vendor col 4, max_out col 13)."""
+    another vendor's models on Bedrock, "no_search": the ids of the models whose provider runs no web search for
+    Claude Code (Bedrock's, OpenRouter's)} (id col 1, provider col 3, vendor col 4, max_out col 13)."""
     try:
         st = os.stat(_TSV)
         stamp = (st.st_mtime_ns, st.st_size)
     except OSError:
         return _EMPTY
     if stamp != _cache["stamp"]:
-        out, other = {}, set()
+        out, other, no_search = {}, set(), set()
         try:
             with open(_TSV, encoding="utf-8") as f:
                 for line in f:
@@ -71,11 +79,13 @@ def _read() -> dict:
                     c = line.rstrip("\n").split("\t")
                     if len(c) >= 13 and c[12].isdigit() and 0 < int(c[12]) < 10_000_000:
                         out[c[0]] = int(c[12])
+                    if len(c) >= 3 and c[2] in ("Bedrock", "OpenRouter"):
+                        no_search.add(c[0])
                     if len(c) >= 4 and c[2] == "Bedrock" and c[3] not in ("Anthropic", "", "-"):
                         other.add(c[0])
         except (OSError, ValueError):
-            out, other = {}, set()
-        _cache.update(stamp=stamp, limits=out, other=frozenset(other))
+            out, other, no_search = {}, set(), set()
+        _cache.update(stamp=stamp, limits=out, other=frozenset(other), no_search=frozenset(no_search))
     return _cache
 
 
@@ -161,6 +171,32 @@ def lift_tool_images(data: dict) -> dict:
         changed = True
     if changed:
         data["messages"] = out
+    return data
+
+
+# --- Claude Code's WebSearch where no search runs (Bedrock, OpenRouter) ---
+
+WEB_SEARCH_OFF = "Web search isn't available for {model} in DevOS ADE. Use WebFetch with a URL."
+
+
+def _web_search_tool(t) -> bool:
+    return isinstance(t, Mapping) and isinstance(t.get("type"), str) and t["type"].startswith("web_search")
+
+
+def no_web_search(data: dict) -> dict:
+    """DATA, when it asks a model whose provider runs no web search for Anthropic's web search (a tool whose type starts
+    with web_search: Claude Code's WebSearch), made a request for WEB_SEARCH_OFF instead: no tools, nothing to think
+    about, a short answer that is that sentence alone. Unchanged otherwise."""
+    model, tools = data.get("model"), data.get("tools")
+    if not isinstance(model, str) or model not in _read()["no_search"] or not isinstance(tools, list) or not any(map(_web_search_tool, tools)):
+        return data
+    line = WEB_SEARCH_OFF.format(model=model)
+    for k in ("tools", "tool_choice", "thinking", "output_config", "temperature", "top_p", "top_k", "stop_sequences"):
+        data.pop(k, None)
+    data["system"] = ("No web search can run here. Reply with exactly the line between the markers, word for word, and "
+                      f"nothing else.\n<<<\n{line}\n>>>")
+    data["messages"] = [{"role": "user", "content": "Reply now."}]
+    data["max_tokens"] = 200
     return data
 
 
@@ -327,7 +363,7 @@ def book_gateway_cost(response) -> None:
 
 class BnHooks(CustomLogger):
     async def async_pre_call_hook(self, user_api_key_dict, cache, data, call_type):  # noqa: ARG002 — LiteLLM's signature
-        for step in (cap_request, drop_token_counts, lift_tool_images):
+        for step in (cap_request, drop_token_counts, lift_tool_images, no_web_search):
             try:
                 if isinstance(data, dict):
                     step(data)

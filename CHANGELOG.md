@@ -33,6 +33,13 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   inside a tool result for those models, though it takes one in a message; LiteLLM's hook now moves a tool result's
   images right after the results, in the same message, under a line naming the call (what LiteLLM already does for
   OpenRouter and Experiential Labs).
+- **WebSearch with a model on Bedrock or OpenRouter:** Claude Code's WebSearch now answers "Web search isn't available
+  for <model> in DevOS ADE. Use WebFetch with a URL." — never results made up from memory. WebSearch asks the model for
+  Anthropic's web search, which the provider runs, and Bedrock runs none: for Claude it failed with LiteLLM's advice to
+  set up a search of LiteLLM's own, and GPT-6 or Mistral answered from what they knew under "Web search results for
+  query: …", as though they had searched (OpenRouter searches for a few models only, at a price LiteLLM does not
+  book). The Experiential Labs gateway runs the search itself, its fee in the cost it reports: its models are
+  unchanged.
 
 ## [0.28.1] - 2026-10-25
 

@@ -249,6 +249,36 @@ for m in ([{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "
 '
 }
 
+# the hook: Claude Code's WebSearch (Anthropic's web_search tool, which the provider runs) for a model whose provider runs
+# none — Bedrock's (LiteLLM refuses it for Claude; another vendor's model answered from memory as though it had
+# searched) and OpenRouter's — becomes a request for one plain sentence saying so: no tools, no thinking, a short answer
+# (the WebSearch tool hands it to the model as its result); Experiential Labs (the gateway searches) and other requests
+# as they came
+test_litellm_hook_says_web_search_is_not_available() {
+  command -v python3 >/dev/null 2>&1 || return 77
+  _hook_models
+  PYTHONPATH="$TMP/h" python3 -c '
+import asyncio, copy, bn_hooks as h
+ws = {"type": "web_search_20250305", "name": "web_search", "max_uses": 8}
+req = {"max_tokens": 32000, "stream": True, "system": [{"type": "text", "text": "You are an assistant for performing a web search tool use"}],
+       "messages": [{"role": "user", "content": "Perform a web search for the query: IANA example domain"}],
+       "tools": [ws], "tool_choice": {"type": "auto"}, "thinking": {"type": "enabled", "budget_tokens": 2048}, "metadata": {"user_id": "u"}}
+run = lambda d: asyncio.run(h.proxy_handler_instance.async_pre_call_hook(None, None, d, "anthropic_messages"))
+for model in ("gpt-x", "claude-big", "or/a/b"):
+    out = run({**copy.deepcopy(req), "model": model})
+    line = f"Web search isn'"'"'t available for {model} in DevOS ADE. Use WebFetch with a URL."
+    assert out == {"model": model, "max_tokens": 200, "stream": True, "metadata": {"user_id": "u"},
+                   "system": "No web search can run here. Reply with exactly the line between the markers, word for word, and nothing else.\n<<<\n" + line + "\n>>>",
+                   "messages": [{"role": "user", "content": "Reply now."}]}, out
+# the gateway that searches, a model the file does not list, other tools, odd shapes: as they came
+for d in ({**req, "model": "xl/q"}, {**req, "model": "unlisted"}, {**req, "model": "gpt-x", "tools": [{"name": "Read", "input_schema": {"type": "object"}}]},
+          {**req, "model": "gpt-x", "tools": "web_search"}, {**req, "model": "gpt-x", "tools": [None, 3, {"type": 7}]}, {**req, "model": ["gpt-x"]}):
+    assert run(copy.deepcopy(d)) == d, d
+assert run(None) is None
+'
+}
+
+
 # Names that YAML refuses or a terminal acts on (C1 controls such as U+009B, CSI; U+2028; bidi overrides; U+FFFE) never
 # reach LiteLLM's config, the model list or a terminal; a config that is not valid YAML is never put in place
 test_unsafe_model_names_never_reach_yaml_or_a_terminal() {
