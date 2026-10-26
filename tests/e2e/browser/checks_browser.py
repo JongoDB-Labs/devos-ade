@@ -2251,7 +2251,7 @@ def sidebar_collapse(ctx):
         expect(f["title"] and f["content"] == json.dumps(f["title"]) and f["pos"] == "absolute" and f["left"] > f["w"],
                f"{f['id']}: no name beside it on focus ({f})")
     expect({"home", "chat", "admin", "files", "settings", "search-btn", "tour-btn"} <= set(named), f"focus names: only {named}")
-    expect(page.get_attribute("#tour-btn", "title") == "Walkthrough", f"the walkthrough's button: {page.get_attribute('#tour-btn', 'title')!r}")
+    expect((page.get_attribute("#tour-btn", "title") or "").startswith("Walkthrough: "), f"the walkthrough's button: {page.get_attribute('#tour-btn', 'title')!r}")
     # the Code tab with the rail: its icon named, its frame (or its off page) takes the room; Ctrl+\ from its button
     code_tab = page.locator(".tab[data-tab=code]")
     code_note = "no Code tab"

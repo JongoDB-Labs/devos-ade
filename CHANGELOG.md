@@ -21,8 +21,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   control now sits under the name line and the words use the card's full width, on every card; wider cards keep the
   control beside them.
 - **The collapsed sidebar names its icons on keyboard focus too.** Tab through the icon rail (a collapsed desktop
-  sidebar, or a tablet's) shows each icon's name beside it, as hovering shows its tooltip; the walkthrough's button has
-  its name there too, and the Code tab's name is never its badge's count.
+  sidebar, or a tablet's) shows each icon's name beside it — the walkthrough's button its progress too — as hovering
+  shows its tooltip; the Code tab's name is never its badge's count.
 - **Tests:** a plain `docker build --target test portal` (what `portal/e2e/install/run.sh` builds on) passes again: the
   tests that read the repository's catalog skip without it, as the others always have, and the install check builds
   with the repository's files, as `portal/test.sh` does. The end-to-end suite checks the built-in SearXNG's row on
