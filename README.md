@@ -414,7 +414,8 @@ arguments. Its folder, settings and LiteLLM tags keep the old name
   `devos-claude --model mistral-large-3` (or a name: `--model "Mistral Large 3"`; an OpenRouter id with or without
   `or/`) starts on one. An unknown model is refused before Claude Code starts, naming the choices. For a cheaper
   session: `CLAUDE_BEDROCK_MODEL=claude-haiku-5-5 devos-claude`. Without either, a session starts on Settings ›
-  Claude Code › Default model for new sessions (`CODE_DEFAULT_MODEL`; blank: the main model).
+  Claude Code › Default model for new sessions (`CODE_DEFAULT_MODEL`; blank: Claude Sonnet, the Sonnet slot; the main
+  model only when no Sonnet is enabled). `devos-claude --models` marks it and says which rule applies.
 - **`/model` in a session** lists the same models by name, price and how they work, instead of Claude Code's own
   lineup of aliases (`Opus`, `Sonnet`, `Haiku`: with an alias Claude Code picks the model itself, and *Plan* mode on
   Haiku plans on Sonnet) — a `modelPicker` in the wrapper's `--settings` (Claude Code's flag tier; at most 150 rows,
@@ -1193,10 +1194,12 @@ Bedrock, an OpenRouter model and Experiential Labs' models as on Claude, except:
 menu list (`CODE_MODELS`): **All enabled** (the default), **Anthropic only** (Claude, Bedrock's and OpenRouter's), or
 **Pick…** — a checklist in the same groups, with a filter. A list for convenience, not a limit: the terminal's key may
 use every model either way, and *Show all models* in the picker shows the rest. **Default model for new sessions**
-(`CODE_DEFAULT_MODEL`): the model a new Code page session starts on and devos-claude starts with; blank = Claude Sonnet
-on the Code page (the stack's current Sonnet; the main model when no Sonnet is enabled) and the main model
-(`CLAUDE_MODEL_OPUS`) for devos-claude. The Code page starts on the model you picked last instead — kept for your
-sign-in, so every browser, phone and the installed app alike — unless this default was set or changed since that pick. Both re-render LiteLLM's config (the browser
+(`CODE_DEFAULT_MODEL`): the model a new Code page session starts on and devos-claude starts with, here and in the
+browser terminal; blank (or a model that is not enabled) = Claude Sonnet (the Sonnet slot, `CLAUDE_MODEL_SONNET`: the
+stack's current Sonnet; the main model only when no Sonnet is enabled) — never Opus by default, whose first turn costs
+about twice Sonnet's. Plain `claude` in the browser terminal starts on the Sonnet slot too. The Code page starts on the
+model you picked last instead — kept for your sign-in, so every browser, phone and the installed app alike — unless this
+default was set or changed since that pick. Both re-render LiteLLM's config (the browser
 terminal learns the list from LiteLLM's `/model/info`), so LiteLLM restarts (about 15 s). In a terminal:
 `./stack config set CODE_MODELS` (it asks: `all`, `anthropic` or a comma list of ids), `./stack config set
 CODE_DEFAULT_MODEL` (a model id, such as `mistral-large-3`).

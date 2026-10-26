@@ -562,6 +562,13 @@
     if (OFF_VALUES.includes(lower(v))) return false;
     return Boolean(keys.REMOTE_MODE && keys.REMOTE_MODE.value === "domain" && keys.REMOTE_PREVIEW_DOMAIN && keys.REMOTE_PREVIEW_DOMAIN.value);
   }
+  // Default model for new sessions left blank: Claude Sonnet (the Sonnet slot), the main model only without one —
+  // never Opus by default (lib/code_models.sh code_models_start)
+  function codeDefaultAuto() {
+    const sonnet = keys.CLAUDE_BEDROCK_SONNET_MODEL ? shown(keys.CLAUDE_BEDROCK_SONNET_MODEL) : "";
+    if (sonnet && sonnet !== "blank" && sonnet !== "not set") return `${modelName(sonnet)} (Claude Sonnet)`;
+    return `${modelName(keys.CLAUDE_BEDROCK_OPUS_MODEL ? shown(keys.CLAUDE_BEDROCK_OPUS_MODEL) : "")} (the main model: no Sonnet enabled)`;
+  }
   // what a blank value means (the stack's own default), for the keys whose default is not .env.example's value
   const BLANK = { PORTAL_SESSION_DAYS: "30 days", BUDGET_ALERT_PCT: "80%", BACKUP_HOUR: hourRange(2), BACKUP_KEEP: "7",
     AUTO_UPDATE_HOUR: hourRange(3), OPENROUTER_MODELS: "all", OPENROUTER_MAX_MODELS: "1000", EXPLABS_MODELS: "qwen3.8-27b",
@@ -570,7 +577,7 @@
     PORTAL_HOST: "bedrock-now.localhost", PORTAL_PORT: "80, else 8800", CHAT_HOST: "chat. + the portal's address",
     ADMIN_HOST: "admin. + the portal's address", FILES_HOST: "files. + the portal's address",
     TERMINAL_HOST: "terminal. + the portal's address", CODE_HOST: "code. + the portal's address",
-    CODE_MODELS: "every enabled model", CODE_DEFAULT_MODEL: "Claude Sonnet on the Code page, the main model for devos-claude" };
+    CODE_MODELS: "every enabled model", CODE_DEFAULT_MODEL: "Claude Sonnet (the Sonnet slot)" };
   // display K -> the value in words: "$50 a month", "30 days (default)", "On", "Not set", "••••••••"
   function display(k) {
     const v = shown(k);
@@ -730,7 +737,7 @@
     const ownKey = (withOf[k.key] || []).find((w) => /^LITELLM_KEY_/.test(w));
     if (alias && ownKey && keys[ownKey] && keys[ownKey].set && REVEALABLE.has(ownKey)) actions.append(revealButton(ownKey, "Copy key", false));
     if (k.key === "AWS_ACCESS_KEY_ID") actions.append(actionButton("check-aws", "Check (free)"));
-    if (k.validator === "code_model") setValue(k.value ? modelName(k.value) : `Automatic: ${modelName(keys.CLAUDE_BEDROCK_OPUS_MODEL ? shown(keys.CLAUDE_BEDROCK_OPUS_MODEL) : "")} (the main model)`);
+    if (k.validator === "code_model") setValue(k.value ? modelName(k.value) : `Automatic: ${codeDefaultAuto()}`);
     if (k.validator === "model_pin") {   // a pin, and the model setup chose (shown while there is no pin)
       const d = keys[(withOf[k.key] || [])[0]];
       setValue(shown(k) === "blank" || !k.set ? `Automatic: ${modelName(d ? shown(d) : "")}` : `Pinned: ${modelName(shown(k))}`);
@@ -1270,7 +1277,7 @@
       };
     } else if (k.validator === "code_model") {
       const sel = el("select", { id });
-      sel.append(el("option", { value: "", text: `automatic: the main model (${modelName(keys.CLAUDE_BEDROCK_OPUS_MODEL ? shown(keys.CLAUDE_BEDROCK_OPUS_MODEL) : "")})` }));
+      sel.append(el("option", { value: "", text: `automatic: ${codeDefaultAuto()}` }));
       for (const [title, list] of codeGroups()) {
         const og = el("optgroup", { label: title });
         for (const m of list) {

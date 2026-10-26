@@ -58,6 +58,46 @@ CODE_DEFAULT_MODEL=claude-small
   assert_eq "$(CODE_MODELS=x code_models_scope)" all   # .env decides, not the shell
 }
 
+test_the_default_is_sonnet_unless_settings_name_one_never_opus_by_default() {
+  # (a new session — the Code page's, devos-claude's here and in the browser terminal — starts on Settings' default for
+  # new sessions while it names an enabled model, else the Sonnet slot, else the main model)
+  _cm_env 'CLAUDE_BEDROCK_SONNET_MODEL=claude-small
+'
+  printf 'claude-big\nclaude-small\nllama-x\n' > "$TMP/en"
+  assert_eq "$(code_models_rows "$TMP/en" | awk -F'\t' '$12 == 1 { print $1 }')" claude-small
+  code_models_write "$TMP/en"
+  assert_eq "$(code_models_start | tr '\t' ' ')" "claude-small sonnet"
+  assert_eq "$(code_models_default)" claude-small
+  assert_eq "$(code_models_why sonnet)" "Settings › Claude Code › Default model for new sessions is blank, so the Sonnet slot (CLAUDE_MODEL_SONNET)"
+  table="$(code_models_table "")"
+  assert_contains "$table" "* claude-small"
+  assert_not_contains "$table" "* claude-big"
+  assert_contains "$table" "* Default for new sessions: Claude Small (claude-small): Settings › Claude Code › Default model for new sessions is blank, so the Sonnet slot"
+  assert_contains "$(CLAUDE_BEDROCK_MODEL=llama-x code_models_table "")" "CLAUDE_BEDROCK_MODEL=llama-x in your environment starts devos-claude on that one instead"
+  # LiteLLM's model_info says which and why (the browser terminal's devos-claude --models)
+  yaml="$(printf '  - model_name: "claude-small"\n    model_info:\n      mode: "chat"\n' | code_models_inject "$TMP/litellm/code-models.tsv")"
+  assert_contains "$yaml" "$(printf '      bn_default: true\n      bn_default_why: "sonnet"')"
+  # Settings name one: that one
+  printf 'CODE_DEFAULT_MODEL=llama-x\n' >> "$ENV_FILE"
+  assert_eq "$(code_models_rows "$TMP/en" | awk -F'\t' '$12 == 1 { print $1 }')" llama-x
+  assert_eq "$(code_models_start | tr '\t' ' ')" "llama-x settings"   # (.env now, before ./stack writes the file again)
+  assert_eq "$(code_models_why settings)" "Settings › Claude Code › Default model for new sessions (CODE_DEFAULT_MODEL)"
+  # one that is not enabled: as blank, said so
+  sed -i.bak 's/^CODE_DEFAULT_MODEL=.*/CODE_DEFAULT_MODEL=gone-model/' "$ENV_FILE"
+  assert_eq "$(code_models_rows "$TMP/en" | awk -F'\t' '$12 == 1 { print $1 }')" claude-small
+  assert_eq "$(code_models_start | tr '\t' ' ')" "claude-small sonnet"
+  assert_eq "$(code_models_why sonnet)" "Settings › Claude Code › Default model for new sessions names gone-model, which is not enabled, so the Sonnet slot (CLAUDE_MODEL_SONNET)"
+  # no Sonnet enabled: the main model; neither: the first listed
+  printf 'claude-big\nllama-x\n' > "$TMP/en"
+  sed -i.bak '/^CODE_DEFAULT_MODEL=/d' "$ENV_FILE"
+  assert_eq "$(code_models_rows "$TMP/en" | awk -F'\t' '$12 == 1 { print $1 }')" claude-big
+  code_models_write "$TMP/en"
+  assert_eq "$(code_models_start | tr '\t' ' ')" "claude-big main"
+  printf 'llama-x\nmistral-y\n' > "$TMP/en"
+  code_models_write "$TMP/en"
+  assert_eq "$(code_models_start | tr '\t' ' ')" "llama-x first"
+}
+
 test_openrouter_rows_free_at_zero_tools_and_the_output_cap() {
   _cm_env; _or_cache
   out="$(code_models_rows "")"

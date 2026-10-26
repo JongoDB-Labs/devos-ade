@@ -50,9 +50,10 @@ model_rows() {
     | select($all == "all" or .model_info.bn_code == true)
     | [.model_name, ((.model_info.bn_name // .model_name) | safe), ((.model_info.bn_vendor // "-") | safe), (.model_info.input_cost_per_token // "-" | tostring),
        (.model_info.output_cost_per_token // "-" | tostring), (.model_info.bn_compat // "untested"),
-       (if .model_info.bn_code == true then 1 else 0 end), (if .model_info.bn_default == true then 1 else 0 end)] | @tsv' 2>/dev/null |
+       (if .model_info.bn_code == true then 1 else 0 end), (if .model_info.bn_default == true then 1 else 0 end),
+       ((.model_info.bn_default_why // "-") | safe)] | @tsv' 2>/dev/null |
     awk -F'\t' -v OFS='\t' 'function m(v,  s) { if (v !~ /^[0-9.eE+-]+$/) return "-"; s = sprintf("%.6f", v * 1000000); sub(/0+$/, "", s); sub(/\.$/, "", s); return s }
-      !seen[$1]++ { i = m($4); o = m($5); print $1, $2, $3, i, o, (i == "0" && o == "0" ? 1 : 0), $6, $7, $8 }'
+      !seen[$1]++ { i = m($4); o = m($5); print $1, $2, $3, i, o, (i == "0" && o == "0" ? 1 : 0), $6, $7, $8, $9 }'
 }
 # price_word IN OUT FREE -> "$0.72/$0.72 per 1M" or "free ($0)"
 price_word() {
@@ -60,6 +61,16 @@ price_word() {
     BEGIN { if (f == 1) print "free ($0)"; else if (i == "-" || o == "-") print "price unknown"; else printf "%s/%s per 1M\n", m(i), m(o) }'
 }
 compat_word() { case "$1" in works) echo works ;; chat-only) echo "chat only (no tools)" ;; fails) echo fails ;; *) echo "not tested" ;; esac; }
+# default_why WHY -> why the default for new sessions is that model (bn_default_why: lib/code_models.sh code_models_start)
+default_why() {
+  case "$1" in
+    settings) echo "Settings › Claude Code › Default model for new sessions names it" ;;
+    sonnet) echo "Settings › Claude Code › Default model for new sessions names no enabled model, so the Sonnet slot" ;;
+    main) echo "Settings › Claude Code › Default model for new sessions names no enabled model and no Claude Sonnet is enabled, so the main model" ;;
+    first) echo "no default set and neither Claude Sonnet nor the main model enabled, so the first one listed" ;;
+    *) echo "Settings › Claude Code › Default model for new sessions (or Claude Sonnet when that names none)" ;;
+  esac
+}
 # resolve_model NAME WHERE -> the id NAME means (id, name, OpenRouter id without or/, opus/sonnet/haiku: that slot),
 # [1m] kept; dies naming the choices. Without the list (LiteLLM did not answer) only the aliases are mapped.
 resolve_model() {
@@ -113,18 +124,27 @@ case "${1:-}" in
     if [ "${2:-}" = all ]; then printf 'Every enabled chat model (* = the default for new sessions):\n'
     else printf 'The models of Settings › Claude Code › Models (* = the default for new sessions; --models all: every enabled one):\n'; fi
     printf '  %-44s %-28s %-20s %s\n' MODEL NAME PRICE "WITH CLAUDE CODE"
-    printf '%s\n' "$rows" | while IFS=$'\t' read -r id name vend pin pout free compat _listed def; do
+    printf '%s\n' "$rows" | while IFS=$'\t' read -r id name vend pin pout free compat _listed def _why; do
       printf '%s %-44s %-28s %-20s %s\n' "$([ "$def" = 1 ] && echo '*' || echo ' ')" "$id" "$(printf '%s' "$name" | cut -c1-28)" \
         "$(price_word "$pin" "$pout" "$free")" "$(compat_word "$compat") · $vend"
     done
+    d="$(model_rows all | awk -F'\t' '!f && $9 == 1 { print $1 "\t" $2 "\t" $10; f = 1 }')"
+    if [ -n "$d" ]; then
+      IFS=$'\t' read -r did dname dwhy <<EOT
+$d
+EOT
+      printf '\n* Default for new sessions: %s (%s): %s.\n' "$dname" "$did" "$(default_why "$dwhy")"
+    else printf '\nDefault for new sessions: %s (the Sonnet slot: LiteLLM names no default).\n' "${ANTHROPIC_DEFAULT_SONNET_MODEL:-${CLAUDE_BEDROCK_OPUS_MODEL:-none}}"; fi
+    [ -z "${CLAUDE_BEDROCK_MODEL:-}" ] || printf '  CLAUDE_BEDROCK_MODEL=%s in this shell starts devos-claude on that one instead.\n' "$CLAUDE_BEDROCK_MODEL"
     printf '\ndevos-claude --model <id or name> starts on one; /model in a session switches (by full id: an alias lets Claude Code\n'
     printf 'pick the model itself). Only models that "work" can use tools — read, edit and run things.\n'
     exit 0 ;;
   -h | --help)
     cat <<EOT
 devos-claude: Claude Code on AWS Bedrock via DevOS ADE, in the browser terminal
-  Model    ${CLAUDE_BEDROCK_OPUS_MODEL:-not set up} (main, unless Settings › Claude Code › Models names a default); --model <id or name> or
-           CLAUDE_BEDROCK_MODEL=<name> picks another, devos-claude --models lists them
+  Model    the default of Settings › Claude Code › Default model for new sessions, else Claude Sonnet
+           (${ANTHROPIC_DEFAULT_SONNET_MODEL:-${CLAUDE_BEDROCK_OPUS_MODEL:-not set up}}); --model <id or name> or CLAUDE_BEDROCK_MODEL=<name> picks
+           another, devos-claude --models lists them and says which applies
   Proxy    LiteLLM through the stack's gateway ($gw), key 'claude-code-terminal' (BUDGET_TERMINAL; Home shows it)
   Files    /workspace is the folder ./stack terminal enable shared; nothing else of your computer is here
   Config   this terminal's own ~/.claude (terminal-home volume), lean: nothing from your computer's ~/.claude
@@ -141,10 +161,12 @@ esac
 curl -fsS -m 3 -o /dev/null "$gw/health/liveliness" 2>/dev/null || die "LiteLLM does not answer at $gw — is the stack up? (./stack status on your computer)"
 load_model_info
 # The model, by its full id: --model of yours, else CLAUDE_BEDROCK_MODEL, else the default of Settings › Claude Code ›
-# Models (blank there: the main model). Given one of Claude Code's aliases it picks the model itself (with "haiku", Plan
-# mode plans on Sonnet): an alias becomes its slot's id, and --model is rewritten to the id (up to a `--` of yours).
+# Models (bn_default: the one it names while enabled, else the Sonnet slot, else the main model — lib/code_models.sh;
+# without one, the Sonnet slot: never Opus by default). Given one of Claude Code's aliases it picks the model itself
+# (with "haiku", Plan mode plans on Sonnet): an alias becomes its slot's id, and --model is rewritten to the id (up to a
+# `--` of yours).
 def="$(model_rows all | awk -F'\t' '!f && $9 == 1 { print $1; f = 1 }')"
-model="${CLAUDE_BEDROCK_MODEL:-${def:-${CLAUDE_BEDROCK_OPUS_MODEL:-}}}"
+model="${CLAUDE_BEDROCK_MODEL:-${def:-${ANTHROPIC_DEFAULT_SONNET_MODEL:-${CLAUDE_BEDROCK_OPUS_MODEL:-}}}}"
 [ -n "$model" ] || die "no Claude model is enabled for your AWS key — run ./stack setup on your computer"
 where='the default model'; [ -z "${CLAUDE_BEDROCK_MODEL:-}" ] || where=CLAUDE_BEDROCK_MODEL
 model="$(resolve_model "$model" "$where")"

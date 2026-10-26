@@ -38,7 +38,9 @@ services:
       # plain `claude` in here uses Bedrock too.
       ANTHROPIC_BASE_URL: http://gateway:8091
       ANTHROPIC_AUTH_TOKEN: ${LITELLM_KEY_TERMINAL:-}
-      ANTHROPIC_MODEL: ${CLAUDE_BEDROCK_OPUS_MODEL:-}
+      # (plain `claude` here starts on the Sonnet slot, as devos-claude does without a default of Settings: never on
+      # Opus by default — a first turn there costs ~2x)
+      ANTHROPIC_MODEL: ${CLAUDE_BEDROCK_SONNET_MODEL:-${CLAUDE_BEDROCK_OPUS_MODEL:-}}
       ANTHROPIC_DEFAULT_OPUS_MODEL: ${CLAUDE_BEDROCK_OPUS_MODEL:-}
       ANTHROPIC_DEFAULT_SONNET_MODEL: ${CLAUDE_BEDROCK_SONNET_MODEL:-}
       ANTHROPIC_DEFAULT_HAIKU_MODEL: ${CLAUDE_BEDROCK_HAIKU_MODEL:-}

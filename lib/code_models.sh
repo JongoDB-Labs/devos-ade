@@ -65,8 +65,9 @@ valid_code_model() { [ -z "$1" ] || valid_code_model_id "$1"; }
 # code_models_rows ENABLED_FILE -> the rows. Inputs: the catalog's chat models enabled in ENABLED_FILE (all of them for
 # ""), their names and vendors (display.tsv: name, tags' first entry), prices ($PRICES: the prices in use), OpenRouter's
 # selected models (lib/openrouter.sh, with a key), the chosen Experiential Labs models (lib/explabs.sh, with a key: their
-# list prices), catalog/code-models.tsv, and .env's CODE_MODELS, CODE_DEFAULT_MODEL
-# and CLAUDE_BEDROCK_OPUS_MODEL (the default when CODE_DEFAULT_MODEL is blank or not enabled).
+# list prices), catalog/code-models.tsv, and .env's CODE_MODELS, CODE_DEFAULT_MODEL, CLAUDE_BEDROCK_SONNET_MODEL
+# (the default when CODE_DEFAULT_MODEL is blank or not enabled: never Opus by default, a first turn there costs ~2x)
+# and CLAUDE_BEDROCK_OPUS_MODEL (the default when no Sonnet is enabled either).
 code_models_rows() {
   local en="${1:-}" all=0 orf xlf rc=0 disp compat
   [ -n "$en" ] && [ -r "$en" ] || { en=/dev/null; all=1; }
@@ -77,7 +78,8 @@ code_models_rows() {
   if declare -F openrouter_enabled >/dev/null && openrouter_enabled; then or_selected > "$orf" 2>/dev/null || :; fi
   if declare -F explabs_enabled >/dev/null && explabs_enabled; then explabs_code_rows > "$xlf" 2>/dev/null || :; fi
   F_EN="$en" F_DISP="$disp" F_PRICES="${PRICES:-/dev/null}" F_COMPAT="$compat" F_CAT="$CATALOG" F_OR="$orf" F_XL="$xlf" \
-  ALL="$all" SCOPE="$(get_env CODE_MODELS)" DEF="$(get_env CODE_DEFAULT_MODEL)" MAIN="$(get_env CLAUDE_BEDROCK_OPUS_MODEL)" \
+  ALL="$all" SCOPE="$(get_env CODE_MODELS)" DEF="$(get_env CODE_DEFAULT_MODEL)" SONNET="$(get_env CLAUDE_BEDROCK_SONNET_MODEL)" \
+  MAIN="$(get_env CLAUDE_BEDROCK_OPUS_MODEL)" \
   MAX="$CODE_MODELS_MAX" LC_ALL=C awk -F'\t' -v OFS='\t' -v UNSAFE="$CODE_UNSAFE" '
     function clean(s) { gsub(/[\001-\037\177"\\]/, "", s); gsub(UNSAFE, "", s); gsub(/  +/, " ", s); sub(/^ +/, "", s); sub(/ +$/, "", s); return s }
     function d(v) { return (v == "" ? "-" : v) }
@@ -139,6 +141,7 @@ code_models_rows() {
     END {
       def = ""
       for (i = 1; i <= n; i++) if (I[i] == ENVIRON["DEF"]) def = I[i]
+      if (def == "") for (i = 1; i <= n; i++) if (I[i] == ENVIRON["SONNET"]) def = I[i]
       if (def == "") for (i = 1; i <= n; i++) if (I[i] == ENVIRON["MAIN"]) def = I[i]
       for (i = 1; i <= n; i++) {
         li = (scope == "all") || (scope == "anthropic" && tolower(V[i]) == "anthropic") || (scope == "list" && (I[i] in want))
@@ -172,15 +175,17 @@ code_models_write() {
 
 # code_models_inject ROWS_FILE < LiteLLM config -> the same config with, after `mode: "chat"` of each model in
 # ROWS_FILE, its bn_* lines: bn_id (its own name: /model/info also lists an alias of the catalog — claude-sonnet-5 —
-# with its target's model_info), bn_name, bn_vendor, bn_compat, bn_code (listed in the Code page and the terminal) and
-# bn_default (the one new sessions start with). Only what the terminal's devos-claude needs from /model/info.
+# with its target's model_info), bn_name, bn_vendor, bn_compat, bn_code (listed in the Code page and the terminal),
+# bn_default (the one new sessions start with) and bn_default_why (why: code_models_start's word). Only what the
+# terminal's devos-claude needs from /model/info.
 code_models_inject() {
-  F="$1" LC_ALL=C awk -F'\t' '
+  F="$1" DEF="$(get_env CODE_DEFAULT_MODEL)" SONNET="$(get_env CLAUDE_BEDROCK_SONNET_MODEL)" MAIN="$(get_env CLAUDE_BEDROCK_OPUS_MODEL)" LC_ALL=C awk -F'\t' '
+    function why(id) { return id == ENVIRON["DEF"] ? "settings" : id == ENVIRON["SONNET"] ? "sonnet" : id == ENVIRON["MAIN"] ? "main" : "first" }
     BEGIN { f = ENVIRON["F"]; while ((getline line < f) > 0) { if (line ~ /^#/) continue; split(line, c, "\t"); if (c[1] == "") continue
               # a name or vendor only when it is plain printable ASCII (anything else: left out, the id stands in)
               nm = (c[2] ~ /^[ -~]+$/ && c[2] !~ /["\\]/) ? sprintf("      bn_name: \"%s\"\n", c[2]) : ""
               vd = (c[4] ~ /^[ -~]+$/ && c[4] !~ /["\\]/) ? sprintf("      bn_vendor: \"%s\"\n", c[4]) : ""
-              info[c[1]] = sprintf("      bn_id: \"%s\"\n%s%s      bn_compat: \"%s\"\n      bn_code: %s\n%s", c[1], nm, vd, c[10], (c[11] == 1 ? "true" : "false"), (c[12] == 1 ? "      bn_default: true\n" : "")) }
+              info[c[1]] = sprintf("      bn_id: \"%s\"\n%s%s      bn_compat: \"%s\"\n      bn_code: %s\n%s", c[1], nm, vd, c[10], (c[11] == 1 ? "true" : "false"), (c[12] == 1 ? "      bn_default: true\n      bn_default_why: \"" why(c[1]) "\"\n" : "")) }
             close(f) }
     /^  - model_name: "/ { cur = $0; sub(/^  - model_name: "/, "", cur); sub(/".*$/, "", cur) }
     { print }
@@ -216,8 +221,33 @@ code_model_resolve() {
 # code_model_row ID [FILE] -> the row of ID
 code_model_row() { _code_rows "${2:-}" | I="$1" awk -F'\t' '!f && $1 == ENVIRON["I"] { print; f = 1 }'; }
 
-# code_models_default [FILE] -> the id new sessions start with
-code_models_default() { _code_rows "${1:-}" | awk -F'\t' '!f && $12 == 1 { print $1; f = 1 }'; }
+# code_models_start [FILE] -> "ID<TAB>WHY": the model new sessions start on, by .env as it is now (a file written before
+# a change of it says the same once ./stack renders again) — Settings' CODE_DEFAULT_MODEL while it names an enabled
+# model (WHY settings), else the Sonnet slot (sonnet), else the main model (main), else the first listed (first)
+code_models_start() {
+  _code_rows "${1:-}" | DEF="$(get_env CODE_DEFAULT_MODEL)" SONNET="$(get_env CLAUDE_BEDROCK_SONNET_MODEL)" MAIN="$(get_env CLAUDE_BEDROCK_OPUS_MODEL)" \
+    awk -F'\t' '{ have[$1] = 1 } first == "" && $11 == 1 { first = $1 }
+      END { d = ENVIRON["DEF"]; s = ENVIRON["SONNET"]; m = ENVIRON["MAIN"]
+            if (d != "" && (d in have)) print d "\tsettings"; else if (s != "" && (s in have)) print s "\tsonnet"
+            else if (m != "" && (m in have)) print m "\tmain"; else if (first != "") print first "\tfirst" }'
+}
+# code_models_default [FILE] -> the id new sessions start with (code_models_start)
+code_models_default() { code_models_start "${1:-}" | cut -f1; }
+# code_models_why WHY -> why that model is the default, in words (devos-claude --models, --help)
+code_models_why() {
+  local d; d="$(get_env CODE_DEFAULT_MODEL)"
+  case "$1" in
+    settings) printf 'Settings › Claude Code › Default model for new sessions (CODE_DEFAULT_MODEL)\n' ;;
+    sonnet | main | first)
+      if [ -n "$d" ]; then printf 'Settings › Claude Code › Default model for new sessions names %s, which is not enabled, so ' "$d"
+      else printf 'Settings › Claude Code › Default model for new sessions is blank, so '; fi
+      case "$1" in
+        sonnet) printf 'the Sonnet slot (CLAUDE_MODEL_SONNET)\n' ;;
+        main) printf 'the main model (CLAUDE_MODEL_OPUS): no Claude Sonnet is enabled\n' ;;
+        *) printf 'the first model listed: neither Claude Sonnet nor the main model is enabled\n' ;;
+      esac ;;
+  esac
+}
 
 # code_bg_follows MODEL HAIKU [FILE] -> 0 when Claude Code's own work (its "haiku" model: titles, summaries, its Explore
 # subagent; and its subagents) runs on MODEL, a model that is not one of Bedrock's Claude models: a free one always (a
@@ -245,17 +275,23 @@ _code_compat_word() {
   case "$1" in works) echo "works" ;; chat-only) echo "chat only (no tools)" ;; fails) echo "fails" ;; *) echo "not tested" ;; esac
 }
 
-# code_models_table [FILE] [all] -> devos-claude --models: the listed models (all of them with "all"), one per line
+# code_models_table [FILE] [all] -> devos-claude --models: the listed models (all of them with "all"), one per line; *
+# marks the default for new sessions (code_models_start), and the line after says which and why
 code_models_table() {
-  local f="${1:-}" every="${2:-}" id name prov vend pin pout _cr _cw free compat listed def _mo _cx _note n=0
+  local f="${1:-}" every="${2:-}" id name prov vend pin pout _cr _cw free compat listed _def _mo _cx _note n=0 start dflt why dname=''
+  start="$(code_models_start "$f")"; dflt="${start%%$'\t'*}"; why="${start#*$'\t'}"
   printf '  %-44s %-28s %-24s %s\n' MODEL NAME PRICE "WITH CLAUDE CODE"
-  while IFS=$'\t' read -r id name prov vend pin pout _cr _cw free compat listed def _mo _cx _note; do
-    [ "$listed" = 1 ] || [ "$every" = all ] || continue
+  while IFS=$'\t' read -r id name prov vend pin pout _cr _cw free compat listed _def _mo _cx _note; do
+    [ "$id" != "$dflt" ] || dname="$name"
+    [ "$listed" = 1 ] || [ "$every" = all ] || [ "$id" = "$dflt" ] || continue
     n=$((n + 1))
-    printf '%s %-44s %-28s %-24s %s\n' "$([ "$def" = 1 ] && echo '*' || echo ' ')" "$id" "$(printf '%s' "$name" | cut -c1-28)" \
+    printf '%s %-44s %-28s %-24s %s\n' "$([ "$id" = "$dflt" ] && echo '*' || echo ' ')" "$id" "$(printf '%s' "$name" | cut -c1-28)" \
       "$(_code_price "$pin" "$pout" "$free")" "$(_code_compat_word "$compat") · $vend on $prov"
   done < <(_code_rows "$f")
   [ "$n" -gt 0 ] || printf '  (none: run ./stack models --recheck, or check Settings › Claude Code › Models)\n'
+  [ -n "$dflt" ] || return 0
+  printf '\n* Default for new sessions: %s (%s): %s.\n' "${dname:-$dflt}" "$dflt" "$(code_models_why "$why")"
+  [ -z "${CLAUDE_BEDROCK_MODEL:-}" ] || printf '  CLAUDE_BEDROCK_MODEL=%s in your environment starts devos-claude on that one instead.\n' "$CLAUDE_BEDROCK_MODEL"
 }
 
 # _code_json_str S -> S as a JSON string (names hold no quotes or backslashes; control characters are dropped anyway)

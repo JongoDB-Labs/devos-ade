@@ -55,9 +55,9 @@ case "${1:-}" in
     exit 0 ;;
   -h | --help)
     opus="$(get_env CLAUDE_BEDROCK_OPUS_MODEL)"; port="$(get_env LITELLM_PORT)"
-    def="$(code_models_default)"; def="${def:-$opus}"
+    start="$(code_models_start)"; def="${start%%$'\t'*}"; def="${def:-$(get_env CLAUDE_BEDROCK_SONNET_MODEL)}"; def="${def:-$opus}"
     if [ -n "$opus" ] && [ -n "$port" ]; then
-      m="$def (default); --model <id or name> or CLAUDE_BEDROCK_MODEL=<name> picks another, devos-claude --models lists them"
+      m="$def (default: $(code_models_why "${start#*$'\t'}" | sed 's/^Settings › Claude Code › Default model for new sessions/Settings/')); --model <id or name> or CLAUDE_BEDROCK_MODEL=<name> picks another, devos-claude --models lists them"
       p="LiteLLM on 127.0.0.1:$port, key 'claude-code' (monthly budget; ./stack costs)"
       c="billed per token by Bedrock (OpenRouter's models: by OpenRouter, free ones \$0; Experiential Labs': what the gateway reports, \$0 on your own provider key); $def: $(_cb_price "$def")"
     else
@@ -112,10 +112,11 @@ unset ANTHROPIC_API_KEY CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX CLAUDE_CO
 export ANTHROPIC_BASE_URL="http://127.0.0.1:$port"
 export ANTHROPIC_AUTH_TOKEN="$key"
 # The model, by its full id: --model of yours, else CLAUDE_BEDROCK_MODEL, else the default of Settings › Claude Code ›
-# Models (CODE_DEFAULT_MODEL; blank: the main model). Any model of litellm/code-models.tsv, by id or name (_cb_model);
+# Models (CODE_DEFAULT_MODEL while it names an enabled model; else the Sonnet slot, else the main model:
+# code_models_start — never Opus by default). Any model of litellm/code-models.tsv, by id or name (_cb_model);
 # given one of Claude Code's aliases (haiku, sonnet, opus) Claude Code picks the model itself — with "haiku" it plans on
 # Sonnet in Plan mode — so an alias becomes its slot's id. --model is rewritten to that id (up to a `--` of yours).
-def="$(code_models_default)"
+def="$(code_models_default)"; def="${def:-$(get_env CLAUDE_BEDROCK_SONNET_MODEL)}"
 where='the default model'; [ -z "${CLAUDE_BEDROCK_MODEL:-}" ] || where=CLAUDE_BEDROCK_MODEL
 ANTHROPIC_MODEL="$(_cb_model "${CLAUDE_BEDROCK_MODEL:-${def:-$opus}}" "$where")"
 cb_args=(); want=''; i=0

@@ -591,6 +591,35 @@ test_wrapper_models_lists_the_listed_models_with_prices_and_how_they_work() {
   assert_contains "$out" "no model list yet"
 }
 
+# A session starts on Settings' default for new sessions while it names an enabled model, else the Sonnet slot, else
+# the main model — never Opus by default; --models marks it and says why; --model still wins
+test_wrapper_default_is_settings_else_sonnet_and_models_says_why() {
+  _wrapper_env; _code_tsv 1   # (a file ./stack wrote before: it marks the main model)
+  printf 'CLAUDE_BEDROCK_SONNET_MODEL=claude-haiku-5-5\n' >> "$ENV_FILE"   # (Haiku stands in for the Sonnet slot)
+  CLAUDE_BEDROCK_QUIET=1 _run_wrapper -p hi > "$TMP/out" 2> /dev/null
+  assert_eq "$(grep '^MODEL ' "$TMP/out")" "MODEL claude-haiku-5-5"
+  out="$(_run_wrapper --models 2>&1)" || { echo "$out" >&2; return 1; }
+  assert_contains "$out" "* claude-haiku-5-5"
+  assert_not_contains "$out" "* claude-opus-5-5"
+  assert_contains "$out" "* Default for new sessions: Claude Haiku 5.5 (claude-haiku-5-5): Settings › Claude Code › Default model for new sessions is blank, so the Sonnet slot (CLAUDE_MODEL_SONNET)."
+  assert_contains "$(_run_wrapper --help 2>&1)" "claude-haiku-5-5 (default: Settings is blank, so the Sonnet slot (CLAUDE_MODEL_SONNET))"
+  # Settings name one: that one, said so; --model still picks another
+  printf 'CODE_DEFAULT_MODEL=llama-3-3-70b\n' >> "$ENV_FILE"
+  CLAUDE_BEDROCK_QUIET=1 _run_wrapper -p hi > "$TMP/out" 2> /dev/null
+  assert_eq "$(grep '^MODEL ' "$TMP/out")" "MODEL llama-3-3-70b"
+  assert_contains "$(_run_wrapper --models 2>&1)" "* Default for new sessions: Llama 3.3 70B (llama-3-3-70b): Settings › Claude Code › Default model for new sessions (CODE_DEFAULT_MODEL)."
+  CLAUDE_BEDROCK_QUIET=1 _run_wrapper --model claude-opus-5-5 -p hi > "$TMP/out" 2> /dev/null
+  assert_eq "$(grep '^MODEL ' "$TMP/out")" "MODEL claude-opus-5-5"
+  # one that is not enabled: the Sonnet slot, said so
+  sed -i.bak 's/^CODE_DEFAULT_MODEL=.*/CODE_DEFAULT_MODEL=gone-model/' "$ENV_FILE"
+  assert_contains "$(_run_wrapper --models 2>&1)" "names gone-model, which is not enabled, so the Sonnet slot"
+  # no Sonnet: the main model
+  sed -i.bak '/^CLAUDE_BEDROCK_SONNET_MODEL=/d; /^CODE_DEFAULT_MODEL=/d' "$ENV_FILE"
+  CLAUDE_BEDROCK_QUIET=1 _run_wrapper -p hi > "$TMP/out" 2> /dev/null
+  assert_eq "$(grep '^MODEL ' "$TMP/out")" "MODEL claude-opus-5-5"
+  assert_contains "$(_run_wrapper --models 2>&1)" "the main model (CLAUDE_MODEL_OPUS): no Claude Sonnet is enabled"
+}
+
 test_wrapper_model_by_id_name_or_alias_rewritten_to_the_id_and_unknown_refused() {
   _wrapper_env; _code_tsv
   _run_wrapper --model "llama 3.3 70b" -p hi > "$TMP/out" 2> "$TMP/err"
@@ -654,6 +683,7 @@ test_wrapper_runs_auto_modes_reviewer_on_haiku_whatever_the_model() {
 
 test_wrapper_starts_on_the_default_of_settings_and_lists_the_models_in_model() {
   _wrapper_env; _code_tsv 0 1; unset CLAUDE_BEDROCK_AUTO_MODE
+  printf 'CODE_DEFAULT_MODEL=llama-3-3-70b\n' >> "$ENV_FILE"   # (what ./stack marked the file's default from)
   _run_wrapper -p hi > "$TMP/out" 2> /dev/null
   assert_eq "$(grep '^MODEL ' "$TMP/out")" "MODEL llama-3-3-70b"
   a="$(head -n 1 "$TMP/out")"

@@ -1121,6 +1121,17 @@ JSON
   assert_not_contains "$out" "mistral-large-3"
   assert_not_contains "$out" "cohere"
   assert_not_contains "$out" "claude-sonnet-5 "   # an alias of the catalog is not a model of its own
+  # which model is the default for new sessions, and why (bn_default_why: lib/code_models.sh code_models_start)
+  assert_contains "$out" "* Default for new sessions: Llama 3.3 70B (llama-3-3-70b): Settings › Claude Code › Default model for new sessions (or Claude Sonnet when that names none)."
+  sed 's/"bn_default": true}/"bn_default": true, "bn_default_why": "settings"}/' "$TMP/info.json" > "$TMP/info-why.json"
+  out="$(INFO="$TMP/info-why.json" run INFO="$TMP/info-why.json" 2>&1)" || { echo "$out" >&2; return 1; }
+  assert_contains "$out" "(llama-3-3-70b): Settings › Claude Code › Default model for new sessions names it."
+  # LiteLLM naming no default (an older stack): the Sonnet slot, never the main model (Opus)
+  grep -v '"bn_default": true' "$TMP/info.json" > "$TMP/info-none.json"
+  ARGS=(-p hi); out="$(run INFO="$TMP/info-none.json" CLAUDE_BEDROCK_QUIET=1 ANTHROPIC_DEFAULT_SONNET_MODEL=claude-haiku-5-5)" || { echo "$out" >&2; return 1; }
+  assert_contains "$out" "MODEL claude-haiku-5-5"
+  ARGS=(--models); out="$(run INFO="$TMP/info-none.json" ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-5-5 2>&1)" || true
+  assert_contains "$out" "Default for new sessions: claude-sonnet-5-5 (the Sonnet slot: LiteLLM names no default)."
   ARGS=(--models all); out="$(run 2>&1)"
   assert_contains "$out" "mistral-large-3"
   assert_contains "$out" "E[2Jvil31m"   # what a terminal or the menu would act on is gone, the rest stays readable
