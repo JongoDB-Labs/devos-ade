@@ -2287,6 +2287,28 @@ TOUR_NEW = 5 + (12 if TOUR_CODE else 1) + (1 if TOUR_TERM and not TOUR_CODE else
 # checks): not the walkthrough's doing.
 FRAME_NOISE = [r"^401 GET " + re.escape(origin("files")) + r"/rustfs/admin/v3/",
                r"^console\.error .*No token found in localStorage"]
+# What a reload of the portal cuts off: the requests still in flight in the app frames (Admin's dashboard and Chat keep
+# asking their servers for a while after they open), which those pages report as "TypeError: Failed to fetch". Excused
+# only between the check's own reload and its end (_reload): before and after it, the same line is a failure.
+CUT_OFF_BY_RELOAD = r"^console\.error .*TypeError: Failed to fetch"
+
+
+def _reload(page, rec):
+    """page.reload(), the span it takes marked in REC (_problems_outside_reloads)."""
+    rec.mark("reload")
+    page.reload()
+    rec.mark("reloaded")
+
+
+def _problems_outside_reloads(rec, allow) -> list[str]:
+    """rec.problems(allow=ALLOW), with the requests a reload of the check's own cut off (CUT_OFF_BY_RELOAD) excused
+    between its "reload" and "reloaded" marks — and nothing else excused anywhere."""
+    out, start, inside = [], 0, False
+    for i, e in enumerate(rec.events):
+        if e["t"] == "mark" and e["label"] in ("reload", "reloaded"):
+            out += rec.problems(allow=[*allow, CUT_OFF_BY_RELOAD] if inside else allow, start=start, end=i)
+            start, inside = i, e["label"] == "reload"
+    return out + rec.problems(allow=[*allow, CUT_OFF_BY_RELOAD] if inside else allow, start=start)
 
 
 def _summaries(rec, since: int) -> int:
@@ -2423,7 +2445,7 @@ def walkthrough(ctx):
 
     # Reload: still open, on the same step, with the same progress.
     done = page.inner_text("#tour .tour-prog")
-    page.reload()
+    _reload(page, rec)
     page.wait_for_selector("#tour:not([hidden]) #tour-cur")
     expect(_cur(page) == "signin-files", f"after a reload on {_cur(page)!r}")
     expect(page.inner_text("#tour .tour-prog") == done, f"progress {page.inner_text('#tour .tour-prog')!r}, was {done!r}")
@@ -2436,7 +2458,7 @@ def walkthrough(ctx):
     side = _settled_width(page, ".sidebar")
     expect(side["width"] <= 210, f"sidebar still {side['width']} px wide")
     shot(page, "w06-walkthrough-closed")
-    page.reload()
+    _reload(page, rec)
     page.wait_for_selector("#tour-btn:not([hidden])")
     expect(page.locator("#tour").is_hidden(), "the walkthrough reopened by itself after being closed")
     page.click("#tour-btn")
@@ -2450,7 +2472,7 @@ def walkthrough(ctx):
     _to_step(page, "chat")
     page.click("#tour [data-k=open-chat]")
     page.wait_for_selector("iframe[data-app=chat]:not([hidden])")
-    page.reload()
+    _reload(page, rec)
     page.wait_for_selector("#tour:not([hidden]) #tour-cur")
     expect(_cur(page) == "chat" and page.locator("iframe[data-app=chat]").is_visible(), "not back on Chat at the chat step")
     page.wait_for_function("() => { const s = document.querySelector('#tour .tour-step.cur .tour-status'); "
@@ -2480,7 +2502,7 @@ def walkthrough(ctx):
     _to_step(page, "welcome")
     left = int(re.match(r"\d+", page.inner_text("#tour .tour-prog")).group(0))
     expect(left <= 4, f"Start over left {left} steps done")
-    probs = rec.problems(allow=FRAME_NOISE)
+    probs = _problems_outside_reloads(rec, FRAME_NOISE)
     rec.save()
     expect(not probs, f"errors: {probs[:6]}")
     return (f"opens on a first visit as a section of the {open_w:.0f} px sidebar (closed: {side['width']:.0f} px), beside the frames; {aws.strip()!r}; "

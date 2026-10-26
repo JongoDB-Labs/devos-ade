@@ -4600,10 +4600,10 @@ def models_picker(browser):
     page.get_by_test_id("model-picker").click()
     panel = page.locator(".model-panel")
     expect(panel).to_be_visible()
-    # the search box has the focus; the groups in order
+    # the search box has the focus; the groups in order: Who answers (Claude Code on Bedrock, your subscriptions) first
     expect(page.get_by_test_id("model-search")).to_be_focused()
     heads = panel.locator(".mp-group-head").all_inner_texts()
-    assert [h.lower() for h in heads] == ["anthropic (claude)", "other providers on bedrock", "openrouter: free", "openrouter"], heads
+    assert [h.lower() for h in heads] == ["who answers", "anthropic (claude)", "other providers on bedrock", "openrouter: free", "openrouter"], heads
     bed = page.get_by_test_id("model-group-bedrock")
     expect(bed).to_contain_text("Llama 3.3 70B")
     expect(bed.get_by_test_id("compat-chat-only")).to_contain_text("chat only")
