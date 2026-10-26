@@ -389,25 +389,31 @@ spend_resume() { SPEND_MARK="$(_spend_read)" || SPEND_ERR="${SPEND_ERR:+$SPEND_E
 spend_total() { spend_cut; [ -z "$SPEND_ERR" ] || { printf 'unanswered: %s\n' "$SPEND_ERR" >&2; return 1; }; printf '%.4f\n' "$SPEND_ACC"; }
 spend_ok() { awk -v s="${1:-0}" -v l="$2" 'BEGIN { exit !(s + 0 < l + 0) }'; }
 
-# --- spend on Claude Opus (the no-opus-spend check): no flow of the suite may fall back to the dearest model. This run's
-# rows of LiteLLM's spend log on an Opus model (opus_spend.py), summed piecewise like the total — spend_start and
-# spend_resume start a window, spend_cut reads it (a restore rolls the log back). A reading that does not answer is an
-# error (opus_total prints nothing), never $0. ---
-OPUS_ACC=0; OPUS_FROM=''; OPUS_MODELS=''; OPUS_ERR=''
+# --- spend on Claude Opus (the no-opus-spend check): no session of the suite may fall back to the dearest model. This
+# run's rows of LiteLLM's spend log on an Opus model by a session's key — the Code page's and terminal's, devos-claude's,
+# Chat's (opus_spend.py); setup's model probe and ./stack test (the setup or master key) are said, never counted —
+# summed piecewise like the total: spend_start and spend_resume start a window, spend_cut reads it (a restore rolls the
+# log back). A reading that does not answer is an error (opus_total prints nothing), never $0. ---
+OPUS_ACC=0; OPUS_FROM=''; OPUS_MODELS=''; OPUS_ERR=''; OPUS_OTHER=0
 now_ms() { printf '%s000\n' "$(date +%s)"; }
-# opus_now SINCE_MS -> "SPEND<TAB>MODELS": the Opus rows of the throwaway's spend log since then
+# opus_now SINCE_MS -> "SPEND<TAB>MODELS<TAB>OTHER": the Opus rows of the throwaway's spend log since then — by a
+# session's key (SPEND, MODELS) and by any other (OTHER: setup's probe)
 opus_now() { python3 -I "$HERE/opus_spend.py" "$STACK/.env" "$1"; }
 opus_cut() {
   local r from="$OPUS_FROM"
   [ -n "$from" ] || return 0
   OPUS_FROM="$(now_ms)"
   r="$(opus_now "$from" 2>/dev/null)" && [ -n "$r" ] || { OPUS_ERR="${OPUS_ERR:+$OPUS_ERR, }a reading"; return 0; }
-  OPUS_ACC="$(awk -v a="$OPUS_ACC" -v s="${r%%$'\t'*}" 'BEGIN { printf "%.6f", a + s }')"
-  case "$r" in *$'\t'?*) OPUS_MODELS="${OPUS_MODELS:+$OPUS_MODELS,}${r#*$'\t'}" ;; esac
+  local spend models other rest
+  # (fields by hand: a TAB read by `read` is whitespace, and an empty MODELS between two TABs would vanish)
+  spend="${r%%$'\t'*}"; rest="${r#*$'\t'}"; models="${rest%%$'\t'*}"; other="${rest#*$'\t'}"
+  OPUS_ACC="$(awk -v a="$OPUS_ACC" -v s="${spend:-0}" 'BEGIN { printf "%.6f", a + s }')"
+  OPUS_OTHER="$(awk -v a="$OPUS_OTHER" -v s="${other:-0}" 'BEGIN { printf "%.6f", a + s }')"
+  [ -z "$models" ] || OPUS_MODELS="${OPUS_MODELS:+$OPUS_MODELS,}$models"
 }
-# opus_total -> "SPEND<TAB>MODELS" of this run (after spend_total, which reads the last window); nothing if a reading
-# did not answer
-opus_total() { [ -z "$OPUS_ERR" ] || { printf 'unanswered: %s\n' "$OPUS_ERR" >&2; return 1; }; printf '%.4f\t%s\n' "$OPUS_ACC" "$OPUS_MODELS"; }
+# opus_total -> "SPEND<TAB>MODELS<TAB>OTHER" of this run (after spend_total, which reads the last window); nothing if a
+# reading did not answer
+opus_total() { [ -z "$OPUS_ERR" ] || { printf 'unanswered: %s\n' "$OPUS_ERR" >&2; return 1; }; printf '%.4f\t%s\t%.6f\n' "$OPUS_ACC" "$OPUS_MODELS" "$OPUS_OTHER"; }
 # needs_opus_ran DECLARED RESULTS -> the checks of DECLARED (tests/e2e/needs-opus.tsv: suite/check per line) that ran in
 # this run (passed or failed), comma-separated; nothing when none did
 needs_opus_ran() {
@@ -417,11 +423,14 @@ needs_opus_ran() {
 }
 # no_opus_verdict OPUS_TOTAL ALLOWED -> "PASS|FAIL<TAB>message" for the no-opus-spend check
 no_opus_verdict() {
-  local spend="${1%%$'\t'*}" models="${1#*$'\t'}"
+  local spend models other rest note=''
+  spend="${1%%$'\t'*}"; rest="${1#*$'\t'}"; models="${rest%%$'\t'*}"; other="${rest#*$'\t'}"
+  case "$1" in *$'\t'*$'\t'*) ;; *) other=0 ;; esac
+  awk -v s="${other:-0}" 'BEGIN { exit !(s + 0 > 0) }' && note=" (setup's model probe and ./stack test: \$$other on Opus, not counted)"
   if [ -z "$1" ]; then printf 'FAIL\tLiteLLM'"'"'s spend log did not answer: this run'"'"'s spend on Claude Opus is unknown\n'
-  elif ! awk -v s="$spend" 'BEGIN { exit !(s + 0 > 0) }'; then printf 'PASS\tno spend on a Claude Opus model in this run\n'
-  elif [ -n "${2:-}" ]; then printf 'PASS\t$%s on Claude Opus (%s), declared by %s (tests/e2e/needs-opus.tsv)\n' "$spend" "$models" "$2"
-  else printf 'FAIL\t$%s on Claude Opus (%s): no check declared it needs Opus (tests/e2e/needs-opus.tsv) — a flow fell back to the dearest model\n' "$spend" "$models"; fi
+  elif ! awk -v s="$spend" 'BEGIN { exit !(s + 0 > 0) }'; then printf 'PASS\tno session spent on a Claude Opus model in this run%s\n' "$note"
+  elif [ -n "${2:-}" ]; then printf 'PASS\t$%s on Claude Opus (%s), declared by %s (tests/e2e/needs-opus.tsv)%s\n' "$spend" "$models" "$2" "$note"
+  else printf 'FAIL\t$%s on Claude Opus by a session (%s): no check declared it needs Opus (tests/e2e/needs-opus.tsv) — a flow fell back to the dearest model%s\n' "$spend" "$models" "$note"; fi
 }
 
 # The throwaway's Code page and devos-claude start on Haiku (Settings › Claude Code › Default model for new sessions): no

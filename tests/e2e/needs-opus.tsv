@@ -1,4 +1,4 @@
 # Checks that may spend on a Claude Opus model (tests/e2e/run.sh no-opus-spend). None does: the throwaway's sessions
-# start on Haiku (lib.sh seed_cheap_default) and every check asks for Haiku. Any spend on Opus in a run fails it unless
-# a check listed here ran — so a check that truly needs Opus says so here, with why, and keeps it to one short turn.
+# start on Haiku (lib.sh seed_cheap_default) and every check asks for Haiku. A session's spend on Opus in a run (setup's
+# model probe never counts) fails it unless a check listed here ran — so a check that truly needs Opus says so here, with why, and keeps it to one short turn.
 # suite/check<TAB>why

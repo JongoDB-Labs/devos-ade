@@ -21,7 +21,8 @@
 #   --deep-update    also a real update to a new (local) commit and a rollback from it (two more setups)
 #   --no-claude      skip the devos-claude check
 #   --only PARTS     run only these parts (comma list of cli, browser, voice, claude, websearch, mutating; default all).
-#                    Setup, the spend guard (with no-opus-spend: any spend on Claude Opus fails the run unless a
+#                    Setup, the spend guard (with no-opus-spend: a session's spend on Claude Opus — the Code page's,
+#                    the terminal's, devos-claude's or Chat's key; never setup's model probe — fails the run unless a
 #                    check that ran is declared in tests/e2e/needs-opus.tsv; the throwaway's new sessions start on
 #                    Haiku) and the devos-claude link check always run. websearch: the built-in SearXNG
 #                    (the default search backend) — its container, who can and cannot reach it, the status lines,
@@ -1828,9 +1829,10 @@ elif spend_ok "$spend" "$SPEND_LIMIT"; then record spend spend-guard PASS 0 "Bed
 else record spend spend-guard FAIL 0 "Bedrock spend of this run \$$spend >= \$$SPEND_LIMIT"; fi
 printf 'Bedrock spend of this run (LiteLLM /global/spend, summed around restores): $%s\n' "${spend:-unknown}" > "$OUT/spend.txt"
 
-# --- 6b. no spend on Claude Opus: the throwaway's sessions start on Haiku (seed_cheap_default) and every check picks
-# Haiku, so Opus spend means a flow fell back to the dearest model — unless a check that ran is declared in
-# tests/e2e/needs-opus.tsv (none is) ---
+# --- 6b. no session spent on Claude Opus: the throwaway's sessions start on Haiku (seed_cheap_default) and every check
+# picks Haiku, so a session's Opus spend (the Code page's, the terminal's, devos-claude's or Chat's key) means a flow
+# fell back to the dearest model — unless a check that ran is declared in tests/e2e/needs-opus.tsv (none is). Setup's
+# model probe (one 1-token request to every model, on the setup key) is said, never counted ---
 opus="$(opus_total 2> "$LOGS/opus.err")" || opus=''
 verdict="$(no_opus_verdict "$opus" "$(needs_opus_ran "$HERE/needs-opus.tsv" "$RESULTS")")"
 record spend no-opus-spend "${verdict%%$'\t'*}" 0 "${verdict#*$'\t'}"

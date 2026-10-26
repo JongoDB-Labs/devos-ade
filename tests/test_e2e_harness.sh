@@ -105,20 +105,23 @@ test_e2e_unanswered_spend_is_an_error_not_zero() {
 test_e2e_opus_spend_fails_the_run_unless_a_check_that_ran_declared_it() {
   _fake_docker
   spend_now() { echo 0.001; }
-  opus_now() { printf '%s\n' "${FAKE_OPUS-0.000000	}"; echo "since $1" >> "$TMP/opus-calls"; }
-  OPUS_ACC=0; OPUS_MODELS=''; OPUS_ERR=''
+  opus_now() { printf '%s\n' "${FAKE_OPUS-0.000000		0.000000}"; echo "since $1" >> "$TMP/opus-calls"; }
+  OPUS_ACC=0; OPUS_MODELS=''; OPUS_ERR=''; OPUS_OTHER=0
   spend_start
   [ -n "$OPUS_FROM" ] || { echo "no window started" >&2; return 1; }
-  FAKE_OPUS=$'0.012000\tclaude-opus-5-5'; spend_cut; FAKE_OPUS=$'0.000000\t'; spend_resume   # a restore in between
-  FAKE_OPUS=$'0.003000\tclaude-opus-5-5'; spend_total > /dev/null
-  assert_eq "$(opus_total)" "$(printf '0.0150\tclaude-opus-5-5,claude-opus-5-5')"
+  FAKE_OPUS=$'0.012000\tclaude-opus-5-5\t0.000066'; spend_cut; FAKE_OPUS=$'0.000000\t\t0.000000'; spend_resume   # a restore in between
+  FAKE_OPUS=$'0.003000\tclaude-opus-5-5\t0.000000'; spend_total > /dev/null
+  assert_eq "$(opus_total)" "$(printf '0.0150\tclaude-opus-5-5,claude-opus-5-5\t0.000066')"
   assert_eq "$(grep -c since "$TMP/opus-calls")" 2
-  # the verdicts: none, Opus spend (undeclared, declared and ran), unknown
-  assert_eq "$(no_opus_verdict "$(printf '0.0000\t')" '' | cut -f1)" PASS
-  v="$(no_opus_verdict "$(printf '0.0150\tclaude-opus-5-5')" '')"
+  # the verdicts: none, only setup's probe (said, not counted), a session's Opus spend (undeclared, declared and ran), unknown
+  assert_eq "$(no_opus_verdict "$(printf '0.0000\t\t0.000000')" '' | cut -f1)" PASS
+  v="$(no_opus_verdict "$(printf '0.0000\t\t0.000066')" '')"
+  assert_eq "${v%%$'\t'*}" PASS
+  assert_contains "$v" "setup's model probe and ./stack test: \$0.000066 on Opus, not counted"
+  v="$(no_opus_verdict "$(printf '0.0150\tclaude-opus-5-5\t0.000066')" '')"
   assert_eq "${v%%$'\t'*}" FAIL
-  assert_contains "$v" '$0.0150 on Claude Opus (claude-opus-5-5): no check declared it needs Opus'
-  assert_contains "$(no_opus_verdict "$(printf '0.0150\tclaude-opus-5-5')" browser/code-x)" $'PASS\t$0.0150 on Claude Opus (claude-opus-5-5), declared by browser/code-x'
+  assert_contains "$v" '$0.0150 on Claude Opus by a session (claude-opus-5-5): no check declared it needs Opus'
+  assert_contains "$(no_opus_verdict "$(printf '0.0150\tclaude-opus-5-5\t0.000000')" browser/code-x)" $'PASS\t$0.0150 on Claude Opus (claude-opus-5-5), declared by browser/code-x'
   assert_contains "$(no_opus_verdict '' '')" $'FAIL\tLiteLLM'
   FAKE_OPUS=''; OPUS_ERR=''; OPUS_FROM=1; opus_cut
   if opus_total > /dev/null 2>&1; then echo "an unanswered reading gave a total" >&2; return 1; fi
@@ -135,19 +138,29 @@ test_e2e_opus_spend_fails_the_run_unless_a_check_that_ran_declared_it() {
 }
 
 # opus_spend.py against a stand-in LiteLLM: the master key from the throwaway's .env in the header (never printed), the
-# rows since the moment on a model or model group naming Opus, every page; an error is an error
-test_e2e_opus_spend_reads_litellms_log_by_model() {
+# rows since the moment on a model or model group naming Opus, every page, counted only for a session's key — setup's
+# model probe (the setup key, or the master key before it exists: one 1-token request to every model) is said, never
+# counted: a probe-only Opus row passes, a session's Opus row fails
+test_e2e_opus_spend_counts_sessions_keys_never_setups_probe() {
   command -v python3 >/dev/null 2>&1 || return 77
-  local key; key="sk-$(printf 'e2e-master-%s' "$$")"
+  local key term cc owui setup
+  key="sk-$(printf 'e2e-master-%s' "$$")"; term="sk-$(printf 'e2e-term-%s' "$$")"; cc="sk-$(printf 'e2e-cc-%s' "$$")"
+  owui="sk-$(printf 'e2e-owui-%s' "$$")"; setup="sk-$(printf 'e2e-setup-%s' "$$")"
   cat > "$TMP/fake_litellm.py" <<'PY'
-import json, signal, sys
+import hashlib, json, signal, sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
-signal.alarm(20)   # (it ends by itself: three requests, or 20 s)
-key = sys.argv[1]
-PAGES = {1: [{"model": "bedrock/us.anthropic.claude-opus-5-5", "model_group": "claude-opus-5-5", "spend": 0.02, "startTime": "2026-10-26T10:00:05.000Z"},
-             {"model": "claude-haiku-5-5", "model_group": "claude-haiku-5-5", "spend": 0.004, "startTime": "2026-10-26T10:00:06+00:00"},
-             {"model": "claude-opus-5-5", "spend": 0.5, "startTime": "2026-10-26T09:59:00Z"}, "junk", {"model": "x-opus", "spend": "NaN", "startTime": "2026-10-26T10:00:07Z"}],
-         2: [{"model": "claude-opus-4-1", "spend": 0.001, "startTime": "2026-10-26T10:01:00"}]}
+signal.alarm(20)   # (it ends by itself: its requests, or 20 s)
+key, scenario = sys.argv[1], sys.argv[2]
+h = lambda k: hashlib.sha256(k.encode()).hexdigest()
+term, cc, owui, setup = (h(k) for k in sys.argv[3:7])
+probe = [{"model": "claude-opus-5-5", "model_group": "claude-opus-5-5", "api_key": setup, "spend": 0.000066, "startTime": "2026-10-26T10:00:01Z", "completion_tokens": 1},
+         {"model": "claude-opus-4-1", "api_key": h(key), "spend": 0.00005, "startTime": "2026-10-26T10:00:02Z"},
+         {"model": "claude-haiku-5-5", "api_key": term, "spend": 0.004, "startTime": "2026-10-26T10:00:06+00:00"}]
+session = [{"model": "bedrock/us.anthropic.claude-opus-5-5", "model_group": "claude-opus-5-5", "api_key": term, "spend": 0.02, "startTime": "2026-10-26T10:00:05.000Z"},
+           {"model": "claude-opus-5-5", "api_key": owui, "spend": 0.5, "startTime": "2026-10-26T09:59:00Z"}, "junk",
+           {"model": "x-opus", "api_key": cc, "spend": "NaN", "startTime": "2026-10-26T10:00:07Z"},
+           {"model": "claude-opus-4-1", "metadata": {"user_api_key_alias": "claude-code"}, "spend": 0.001, "startTime": "2026-10-26T10:01:00"}]
+PAGES = {1: probe, 2: session if scenario == "session" else []}
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_GET(self):
@@ -158,23 +171,40 @@ class H(BaseHTTPRequestHandler):
         self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
 srv = HTTPServer(("127.0.0.1", 0), H)
 print(srv.server_address[1], flush=True)
-for _ in range(3):
+for _ in range(2):   # (both pages; a refused reading ends at the first, and the test asks once more)
     srv.handle_request()
 PY
-  python3 -I "$TMP/fake_litellm.py" "$key" > "$TMP/port" 2> /dev/null < /dev/null &
-  local pid=$!
-  for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$TMP/port" ] && break; sleep 0.2; done
-  printf 'LITELLM_PORT=%s\nLITELLM_MASTER_KEY=old\nLITELLM_MASTER_KEY=%s\n' "$(cat "$TMP/port")" "$key" > "$TMP/env"
   since="$(python3 -I -c 'from datetime import datetime, timezone; print(int(datetime(2026, 10, 26, 10, 0, tzinfo=timezone.utc).timestamp() * 1000))')"
-  rc=0; out="$(python3 -I "$STACK_DIR/tests/e2e/opus_spend.py" "$TMP/env" "$since" 2>&1)" || rc=$?
-  printf 'LITELLM_PORT=%s\nLITELLM_MASTER_KEY=wrong\n' "$(cat "$TMP/port")" > "$TMP/env2"
-  brc=0; bad="$(python3 -I "$STACK_DIR/tests/e2e/opus_spend.py" "$TMP/env2" "$since" 2>&1)" || brc=$?
-  wait "$pid" 2>/dev/null || true
-  assert_eq "$rc" 0
-  assert_eq "$out" "$(printf '0.021000\tclaude-opus-4-1,claude-opus-5-5')"
-  assert_eq "$brc" 1
+  _read() {   # _read SCENARIO ENV_MASTER -> what opus_spend.py printed (rc in $TMP/rc)
+    rm -f "$TMP/port"
+    python3 -I "$TMP/fake_litellm.py" "$key" "$1" "$term" "$cc" "$owui" "$setup" > "$TMP/port" 2> /dev/null < /dev/null &
+    local pid=$! rc=0 out
+    for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$TMP/port" ] && break; sleep 0.2; done
+    printf 'LITELLM_PORT=%s\nLITELLM_MASTER_KEY=old\nLITELLM_MASTER_KEY=%s\nLITELLM_KEY_TERMINAL=%s\nLITELLM_KEY_CLAUDE_CODE=%s\nLITELLM_KEY_OPENWEBUI=%s\nLITELLM_KEY_SETUP=%s\n' \
+      "$(cat "$TMP/port")" "$2" "$term" "$cc" "$owui" "$setup" > "$TMP/env"
+    out="$(python3 -I "$STACK_DIR/tests/e2e/opus_spend.py" "$TMP/env" "$since" 2>&1)" || rc=$?
+    [ "$2" = "$key" ] || { python3 -I -c 'import sys, urllib.request; urllib.request.urlopen(sys.argv[1], timeout=2)' "http://127.0.0.1:$(cat "$TMP/port")/end" > /dev/null 2>&1 || true; }
+    wait "$pid" 2>/dev/null || true
+    echo "$rc" > "$TMP/rc"; printf '%s\n' "$out"
+  }
+  # setup's probe alone (the setup key; the master key before it exists): nothing counted, said
+  out="$(_read probe "$key")"
+  assert_eq "$(cat "$TMP/rc")" 0
+  assert_eq "$out" "$(printf '0.000000\t\t0.000116')"
+  v="$(no_opus_verdict "$out" '')"
+  assert_eq "${v%%$'\t'*}" PASS
+  assert_contains "$v" "setup's model probe and ./stack test: \$0.000116 on Opus, not counted"
+  # a session's Opus rows (the terminal's key; devos-claude's by its alias; not before the moment, not a bad figure): counted
+  out="$(_read session "$key")"
+  assert_eq "$out" "$(printf '0.021000\tclaude-opus-4-1,claude-opus-5-5\t0.000116')"
+  v="$(no_opus_verdict "$out" '')"
+  assert_eq "${v%%$'\t'*}" FAIL
+  assert_contains "$v" '$0.021000 on Claude Opus by a session (claude-opus-4-1,claude-opus-5-5)'
+  # a wrong master key: an error, never $0
+  bad="$(_read probe wrong)"
+  assert_eq "$(cat "$TMP/rc")" 1
   assert_contains "$bad" "did not answer"
-  assert_not_contains "$out$bad" "$key"
+  for k in "$key" "$term" "$cc" "$owui" "$setup"; do assert_not_contains "$out$bad" "$k"; done
 }
 
 test_e2e_volumes_of_unknown_origin_are_foreign() {
