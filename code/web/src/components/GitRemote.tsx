@@ -32,7 +32,7 @@ import * as api from '../api';
 import type { GitAuth, GitHostKind, GitHostView, GitPlan, GitRemoteState, GitSignInConfig, GitSignInFlow, GitStatus, SandboxWords } from '../types';
 import { chooseRepos, cloneTarget, compareHint, countdown, hostHint, hostLinks, importCommand, importedReach, NEVER_ASKS, remoteFor, remoteRef, signInLife, signInReach, signInReady, syncState } from '../git';
 import { SandboxSaid } from './Said';
-import { inProject } from '../projects';
+import { inProject, type Project } from '../projects';
 import { ago, label } from '../text';
 import { Icon, Spinner } from './icons';
 import { Dialog } from './ui';
@@ -46,7 +46,9 @@ const credSuffix = (r: { source?: string; account?: string | null }): string =>
 
 /** The project whose repository the panel shows (the project chip's list: picking one here shows that project) — and,
  *  when the project's folder is no repository itself, the repository found for it (the one around it, or those inside
- *  it: picking one of these shows it, the project stays). */
+ *  it: picking one of these shows it, the project stays). Each choice is named short (a project by its name, a
+ *  repository by its folder), so the narrow side panel shows it whole; the whole of it (a project's folder too) is the
+ *  picker's title. */
 export function RepoPicker() {
   const repo = useSel(store, (s) => s.git.repo);
   const found = useSel(store, (s) => s.git.found);
@@ -54,10 +56,18 @@ export function RepoPicker() {
   const projects = useSel(store, (s) => s.projects);
   const foundRepo = found === 'above' || found === 'inside';
   if (projects.length < 2 && !(found === 'inside' && inside.length > 1)) return null;
+  const shown = projects.filter((p) => !p.gone);
+  const named = (p: Project) => (p.workspace ? 'Workspace' : label(p.name, 80));
+  // (two projects of one name: each with its folder)
+  const twice = (p: Project) => shown.filter((x) => named(x) === named(p)).length > 1;
+  const cur = shown.find((p) => p.root === repo);
+  const title = foundRepo
+    ? `Repository ${repo ? label(repo, 300) : 'the workspace folder'}, ${found === 'above' ? 'around' : 'inside'} this project's folder`
+    : cur ? `Project ${named(cur)}: ${cur.workspace ? 'the workspace folder' : label(cur.path || cur.root, 300)}` : 'The project whose repository the Git panel shows';
   return (
     <label class="gitr-repo small" title="The project whose repository the Git panel shows (the top bar's project chip: its folder), or a repository found in its folder">
       <Icon name="folder" size={13} />
-      <select value={foundRepo ? `repo:${repo}` : repo} aria-label="Repository" data-testid="git-repo"
+      <select value={foundRepo ? `repo:${repo}` : repo} aria-label="Repository" title={title} data-testid="git-repo"
         onChange={(e) => {
           const v = (e.currentTarget as HTMLSelectElement).value;
           void (v.startsWith('repo:') ? selectGitRepo(v.slice(5), { inside: true }) : selectGitRepo(v));
@@ -66,16 +76,16 @@ export function RepoPicker() {
           <optgroup label={found === 'above' ? 'The repository around this folder' : 'Repositories in this folder'}>
             {(found === 'above' ? [repo] : inside).map((r) => (
               <option key={`repo:${r}`} value={`repo:${r}`}>
-                {r ? label(r, 120) : 'Workspace (the workspace folder)'}
+                {r ? label(r, 120) : 'Workspace'}
               </option>
             ))}
           </optgroup>
         )}
         {projects.length >= 2 && (
           <optgroup label="Projects">
-            {projects.filter((p) => !p.gone).map((p) => (
+            {shown.map((p) => (
               <option key={p.id} value={p.root}>
-                {p.workspace ? 'Workspace (the workspace folder)' : `${p.name} (${label(p.root, 120)})`}
+                {twice(p) ? `${named(p)} (${label(p.root, 120)})` : named(p)}
               </option>
             ))}
           </optgroup>

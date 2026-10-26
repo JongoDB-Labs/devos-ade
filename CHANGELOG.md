@@ -6,6 +6,33 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Changed
+
+- **The model picker lists the models you can use first.** It opened on *Who answers* — six subscriptions, most not
+  signed in, each with a long line — so on a phone the first model was at the bottom of the screen. The models come
+  first now; *Who answers* follows them with Claude Code on Bedrock and the subscriptions that can start here, and the
+  ones to sign in to are folded under one row, **Subscriptions (sign in to use)**, that opens them.
+
+### Fixed
+
+- **A finished turn costs the same after a reload.** The Code page showed a turn's cost from LiteLLM's rows between its
+  prompt and its end — but a reloaded page rebuilt its turns at the moment of the reload, so it counted only the last
+  minute's rows: a first turn read $0.0049 live and $0.0007 after a reload, while the session's total stayed $0.0049
+  (LiteLLM's spend, the true figure). The code container now stamps each event with its time, and a page that
+  re-attaches (a reload, a second tab, a phone) rebuilds the turns at their own times.
+- **A session that waits for you says so.** While a permission card, a question or a plan waited for an answer, the
+  session's chip, a phone's title and the prompt box said *working*. They now say *waiting for you* (the amber dot of
+  the card's lamp), the prompt box says Claude waits for your answer above, and the card takes the focus and is scrolled
+  into view — also from an empty prompt box you just sent from (a key that lands on the card still answers nothing;
+  text you are typing keeps the box's focus).
+- **The Git panel finds the repository of the project's folder.** It said *not a git repository* for a folder that is
+  none itself, even with a repository in it (a clone in the workspace, with a change waiting). It now shows the folder's
+  own repository, else the one the folder is in (around it, up to the workspace), else the one directly inside it — the
+  one you picked, else one the session changed files in, else the first; with several, the picker offers the others —
+  and says which it shows. The picker names each choice short (a project by its name, a repository by its folder), so
+  the side panel shows it whole, with the rest in its title. It looks for a `.git` entry (no git runs to find it), and every command still runs only in a
+  repository's own top folder (docs/security.md › The Git panel).
+
 ## [0.31.4] - 2026-10-26
 
 ### Added
@@ -188,30 +215,6 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   `PUT /api/prefs`, in its own volume), so a new browser or a phone starts its next session where you left off. A
   default set or changed in Settings after your pick wins over it until you pick again. A browser's pick from before
   this version is taken over the first time it opens the Code page.
-- **The model picker lists the models you can use first.** It opened on *Who answers* — six subscriptions, most not
-  signed in, each with a long line — so on a phone the first model was at the bottom of the screen. The models come
-  first now; *Who answers* follows them with Claude Code on Bedrock and the subscriptions that can start here, and the
-  ones to sign in to are folded under one row, **Subscriptions (sign in to use)**, that opens them.
-
-### Fixed
-
-- **A finished turn costs the same after a reload.** The Code page showed a turn's cost from LiteLLM's rows between its
-  prompt and its end — but a reloaded page rebuilt its turns at the moment of the reload, so it counted only the last
-  minute's rows: a first turn read $0.0049 live and $0.0007 after a reload, while the session's total stayed $0.0049
-  (LiteLLM's spend, the true figure). The code container now stamps each event with its time, and a page that
-  re-attaches (a reload, a second tab, a phone) rebuilds the turns at their own times.
-- **A session that waits for you says so.** While a permission card, a question or a plan waited for an answer, the
-  session's chip, a phone's title and the prompt box said *working*. They now say *waiting for you* (the amber dot of
-  the card's lamp), the prompt box says Claude waits for your answer above, and the card takes the focus and is scrolled
-  into view — also from an empty prompt box you just sent from (a key that lands on the card still answers nothing;
-  text you are typing keeps the box's focus).
-- **The Git panel finds the repository of the project's folder.** It said *not a git repository* for a folder that is
-  none itself, even with a repository in it (a clone in the workspace, with a change waiting). It now shows the folder's
-  own repository, else the one the folder is in (around it, up to the workspace), else the one directly inside it — the
-  one you picked, else one the session changed files in, else the first; with several, the picker offers the others —
-  and says which it shows. It looks for a `.git` entry (no git runs to find it), and every command still runs only in a
-  repository's own top folder (docs/security.md › The Git panel).
-
 ## [0.31.0] - 2026-10-26
 
 ### Added
