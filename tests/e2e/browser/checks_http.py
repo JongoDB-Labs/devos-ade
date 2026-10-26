@@ -186,6 +186,10 @@ def unknown_host(ctx):
         a = http("GET", None, p, host_header=f"nope.{HOST}:{PORT}")
         expect(a.status == 200 and not a.headers_all("set-cookie"), f"unknown host {p}: {a.status}")
     expect(http("POST", None, "/", {"Content-Type": "text/plain"}, "x", host_header=f"nope.{HOST}:{PORT}").status == 405, "a POST to an unknown host")
+    # the unknown host's error fallback ("unknown host" while the portal does not answer) is its own: another site's error
+    # on the same listener keeps its own answer (Caddy's 413 for a login body over 16 KB)
+    big = http("POST", None, "/login", {"Origin": origin(), "Content-Type": "application/x-www-form-urlencoded"}, "x" * 20000)
+    expect(big.status == 413 and "unknown host" not in big.text, f"a 20 KB login: {big.status} {big.text[:60]!r}")
     r = http("GET", None, "/auth/verify")
     expect(r.status == 404, f"/auth/verify from outside: {r.status}")
     r = http("GET", None, "/caddy-health", host_header=f"localhost:{PORT}")
