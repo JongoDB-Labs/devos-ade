@@ -777,3 +777,109 @@ test_e2e_setup_alone_builds_through_the_image_cache() {
   [ "$(grep -c 'ST_IMAGES=1 ' "$STACK_DIR/tests/e2e/run.sh" | tr -d ' ')" = 1 ] || { echo "ST_IMAGES=1 beyond setup" >&2; return 1; }
   assert_contains "$r" '[ "${E2E_IMAGE_REUSE:-1}" = 0 ] || E2E_IMAGE_TREE="$(image_cache_tree)"'
 }
+
+# --- the browser suite's tidy-up after a Code page check that fails (tests/e2e/browser/code_tidy.py), against the Code
+# page's mock backend (code/web/dev/mock-server.mjs: its limit of four open sessions, a question that waits for an
+# answer); no browser, no stack ---
+test_e2e_failed_code_check_closes_its_sessions_so_the_next_can_open_one() {
+  command -v python3 >/dev/null 2>&1 && command -v node >/dev/null 2>&1 || { echo "no python3 or node" >&2; return 77; }
+  [ -d "$STACK_DIR/code/web/node_modules/ws" ] || { echo "code/web has no node_modules (npm ci there): the mock backend needs ws" >&2; return 77; }
+  local port pid rc=0
+  port="$(python3 -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')" || return 1
+  MOCK_QUIET=1 node "$STACK_DIR/code/web/dev/mock-server.mjs" --port "$port" --host 127.0.0.1 --fast > "$TMP/mock.log" 2>&1 &
+  pid=$!
+  cat > "$TMP/tidy.py" <<'PY'
+import json, subprocess, sys, time, urllib.error, urllib.request
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+import code_tidy
+BASE = f"http://127.0.0.1:{sys.argv[2]}"
+
+def api(method, path, body=None):
+    data = None if body is None else json.dumps(body).encode()
+    req = urllib.request.Request(BASE + path, data=data, method=method, headers={"Content-Type": "application/json"} if data else {})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            status, text = r.status, r.read().decode()
+    except urllib.error.HTTPError as e:
+        status, text = e.code, e.read().decode()
+    try:
+        j = json.loads(text)
+    except ValueError:
+        j = None
+    return {"status": status, "json": j, "text": text[:2000]}
+
+def tracked(method, path, body=None):   # checks_code's Code.api: every answer noted
+    r = api(method, path, body)
+    code_tidy.note(method, path, r)
+    return r
+
+def opened():
+    return {s["id"]: s for s in api("GET", "/api/state")["json"]["sessions"] if s["open"]}
+
+def check(cond, what):
+    if not cond:
+        sys.exit(f"FAIL: {what}")
+
+for _ in range(100):
+    try:
+        if api("GET", "/api/state")["status"] == 200:
+            break
+    except OSError:
+        time.sleep(0.1)
+else:
+    sys.exit("FAIL: the mock backend did not start")
+new = {"model": "claude-haiku-5-5", "mode": "default"}
+# sessions the page opened itself (not through Code.api): one idle, one waiting for an answer to a question
+keep = api("POST", "/api/sessions", new)["json"]["id"]
+stuck = api("POST", "/api/sessions", new)["json"]["id"]
+# (the page's WebSocket: ws, which the mock needs too — from code/web)
+js = ("import WebSocket from 'ws'; const [port, sid] = process.argv.slice(1); const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);"
+      "ws.on('open', () => { ws.send(JSON.stringify({ type: 'attach', session: sid, since: 0 }));"
+      " ws.send(JSON.stringify({ type: 'prompt', session: sid, text: 'Ask me which retry policy to use' })); });"
+      "setTimeout(() => process.exit(0), 1500);")
+subprocess.run(["node", "--input-type=module", "-e", js, sys.argv[2], stuck], cwd=sys.argv[3], check=True, timeout=30)
+t0 = time.time()
+while time.time() - t0 < 10 and not (opened().get(stuck, {}).get("pending") or 0):
+    time.sleep(0.1)
+check(opened()[stuck]["state"] == "busy" and opened()[stuck]["pending"] == 1, f"the question is not waiting: {opened().get(stuck)}")
+# a check opens two sessions through the page's API, then fails: the backend's limit is reached
+mine = [tracked("POST", "/api/sessions", new)["json"]["id"] for _ in range(2)]
+check(code_tidy.OPENED == set(mine), f"noted {code_tidy.OPENED}, opened {mine}")
+r = tracked("POST", "/api/sessions", new)
+check(r["status"] == 409 and "4 sessions are working or waiting for you" in r["text"], f"a fifth session without the tidy-up: {r}")
+check(code_tidy.OPENED == set(mine), "a refused session was noted")
+# the tidy-up: the check's two and the waiting one closed (that one stopped first), the idle one of the page kept
+stopped = []
+said = code_tidy.close_left(tracked, stopped.append)
+check(stopped == [stuck], f"stopped {stopped}, not the waiting one only")
+check(set(opened()) == {keep}, f"open after the tidy-up: {list(opened())} (want only {keep})")
+check(said.startswith("closed 3 sessions it left: ") and f"{stuck[:8]} (busy, 1 waiting, stopped)" in said
+      and all(f"{x[:8]} (idle)" in said for x in mine) and "still open" not in said, f"said {said!r}")
+check(not code_tidy.OPENED, "OPENED kept after the tidy-up")
+# the next check opens a session
+r = tracked("POST", "/api/sessions", new)
+check(r["status"] == 200, f"the next check's session: {r}")
+code_tidy.OPENED.clear()   # (that check passed: what it left stays)
+check(code_tidy.close_left(tracked) == "", "nothing was left, yet something was closed")
+check(len(opened()) == 2, f"the idle sessions were closed: {list(opened())}")
+# only a session opened is noted (…/continue too); a backend that does not answer: said, OPENED forgotten
+sid = "0b5e5a4e-3c1d-4f6e-9a2b-7c8d9e0f1a2b"
+code_tidy.note("POST", f"/api/sessions/{keep}/continue", {"status": 200, "json": {"id": sid}})
+code_tidy.note("POST", "/api/projects", {"status": 200, "json": {"id": "1b5e5a4e-3c1d-4f6e-9a2b-7c8d9e0f1a2b"}})
+code_tidy.note("GET", "/api/sessions", {"status": 200, "json": {"id": "2b5e5a4e-3c1d-4f6e-9a2b-7c8d9e0f1a2b"}})
+code_tidy.note("POST", "/api/sessions", {"status": 200, "json": {"id": "../../etc"}})
+check(code_tidy.OPENED == {sid}, f"noted {code_tidy.OPENED}")
+try:
+    code_tidy.close_left(lambda method, path: {"status": 502, "json": None, "text": "bad gateway"})
+    sys.exit("FAIL: an unanswered /api/state was not said")
+except RuntimeError as e:
+    check("GET /api/state: 502" in str(e), f"said {e}")
+check(not code_tidy.OPENED, "OPENED kept after a failed tidy-up")
+print("ok:", said)
+PY
+  python3 -I "$TMP/tidy.py" "$STACK_DIR/tests/e2e/browser" "$port" "$STACK_DIR/code/web" > "$TMP/out" 2>&1 || rc=$?
+  kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true   # (the mock: stopped either way)
+  [ "$rc" = 0 ] || { cat "$TMP/out" "$TMP/mock.log" >&2; return 1; }
+  assert_contains "$(cat "$TMP/out")" "ok: closed 3 sessions it left: "
+}

@@ -214,6 +214,10 @@ def need(app: str) -> None:
 
 CHECKS: list[tuple[str, str, object]] = []
 RESULTS = OUT / "results.tsv"
+# Called after every check as fn(ctx, ok) (ok: it passed; failed or skipped: not): a module whose checks can leave
+# something on the stack that would fail the checks after it puts it right here (checks_code: the Code page's
+# sessions). What it says is printed under the check's line (run.log); it never changes a result.
+AFTER: list = []
 
 
 def check(suite: str, cid: str):
@@ -221,6 +225,11 @@ def check(suite: str, cid: str):
         CHECKS.append((suite, cid, fn))
         return fn
     return deco
+
+
+def after_check(fn):
+    AFTER.append(fn)
+    return fn
 
 
 TAG = os.environ.get("E2E_TAG", "")   # a repeated browser run (e.g. after ./stack stt remove) names its results id@TAG
@@ -240,8 +249,10 @@ def run_all(ctx) -> int:
     (OUT / "expected.txt").write_text(f"{len(selected)}\n", encoding="ascii")   # run.sh: every check must report
     for suite, cid, fn in selected:
         t0 = time.time()
+        ok = False
         try:
             msg = fn(ctx) or "ok"
+            ok = True
             _record(suite, cid, "PASS", time.time() - t0, msg)
         except Skip as e:
             _record(suite, cid, "SKIP", time.time() - t0, str(e))
@@ -251,6 +262,13 @@ def run_all(ctx) -> int:
             (OUT / "tracebacks").mkdir(exist_ok=True)
             (OUT / "tracebacks" / f"{suite}-{cid}.txt").write_text(redact(tb), encoding="utf-8")
             _record(suite, cid, "FAIL", time.time() - t0, f"{type(e).__name__}: {e}")
+        for after in AFTER:
+            try:
+                said = after(ctx, ok)
+            except Exception as e:  # noqa: BLE001 — tidying up never changes a result: said, and the next check runs
+                said = f"tidying up failed: {type(e).__name__}: {e}"
+            if said:
+                print(f"  {'tidy':<5} {suite}/{cid}: {redact(said).replace(chr(10), ' ')[:600]}", flush=True)
     return fails
 
 

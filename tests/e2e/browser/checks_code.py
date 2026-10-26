@@ -35,7 +35,8 @@ from urllib.parse import urlencode
 
 from playwright.sync_api import expect as see
 
-from common import CLAUDE_CODE_VERSION, ENV, HOST, PORT, SHOTS, Skip, check, expect, http, origin
+import code_tidy
+from common import CLAUDE_CODE_VERSION, ENV, HOST, PORT, SHOTS, Skip, after_check, check, expect, http, origin
 from checks_browser import _confirm, _need_helper, _switch, _wait_job, goto_setting, login, open_settings, shot
 
 ON = ENV.get("CODE_ENABLED") == "true" and ENV.get("TERMINAL_ENABLED") == "true"
@@ -126,6 +127,7 @@ class Code:
         self.page.evaluate(CLIENT_JS)
         self.page.evaluate("() => window.__bn.open()")
         self.seen = 0
+        _used(self.page, self.rec)
 
     @classmethod
     def on(cls, page, rec, goto=True):
@@ -137,10 +139,14 @@ class Code:
         page.wait_for_function("() => document.querySelector('meta[name=bn-csp-nonce]') !== null", timeout=20000)
         page.evaluate(CLIENT_JS)
         page.evaluate("() => window.__bn.open()")
+        _used(page, rec)
         return c
 
     def api(self, method, path, body=None, headers=None):
-        return self.page.evaluate("([m, p, b, h]) => window.__bn.api(m, p, b, h)", [method, path, body, headers])
+        r = self.page.evaluate("([m, p, b, h]) => window.__bn.api(m, p, b, h)", [method, path, body, headers])
+        code_tidy.note(method, path, r)   # (a session opened here is closed if the check fails: tidy_sessions)
+        _used(self.page, self.rec)   # (also a client an earlier check made, as ctx.preview_code)
+        return r
 
     def send(self, msg):
         self.page.evaluate("(m) => window.__bn.send(m)", msg)
@@ -186,6 +192,47 @@ class Code:
         sid = r["json"]["id"]
         self.request({"type": "attach", "session": sid, "since": 0})
         return sid
+
+
+# The pages on the code host the running check used (Code, Code.on, ui_page), newest last: after a failure or a skip,
+# the client that closes what it left (tidy_sessions)
+_USED: list = []
+
+
+def _used(page, rec):
+    if not _USED or _USED[-1][0] is not page:
+        _USED.append((page, rec))
+
+
+def _tidy_client(ctx, used):
+    """The check's own page when it still shows the code host, else a new one."""
+    for page, rec in reversed(used):
+        try:
+            if not page.is_closed() and page.url.startswith(CODE + "/"):
+                c = Code.on(page, rec, goto=False)
+                if c.api("GET", "/api/state")["status"] == 200:
+                    return c
+        except Exception:  # noqa: BLE001 — a page left in any state: the next one, else a new page
+            pass
+    return Code(ctx, "code-tidy")
+
+
+@after_check
+def tidy_sessions(ctx, ok):
+    """After a check that failed or skipped on the code host: the sessions it opened, and any still working or waiting
+    for an answer, stopped and closed (code_tidy) — else one turn left hanging fails every later check that opens a
+    session (409: the backend's four at once), and the page those load (a new browser each: it shows an open session
+    first) still shows it. A check that passed keeps what it left: later checks use its sessions (code_session,
+    code_ui_session)."""
+    used = _USED[:]
+    try:
+        if ok or not (used or code_tidy.OPENED):
+            return ""
+        c = _tidy_client(ctx, used)
+        return code_tidy.close_left(c.api, lambda sid: c.request({"type": "interrupt", "session": sid}, timeout=10))
+    finally:
+        del _USED[:]
+        code_tidy.OPENED.clear()
 
 
 def text_of(evs):
@@ -735,6 +782,7 @@ def ui_page(ctx, name, device="desktop", session=None):
         see(page.get_by_test_id("msg-user").first).to_be_visible(timeout=30000)
         settled(page, "msg-user")
     ctx.code_ui_rec, ctx.code_ui_page = rec, page
+    _used(page, rec)   # (the sessions the page opens itself: closed if the check fails while one works or waits)
     return page, rec
 
 

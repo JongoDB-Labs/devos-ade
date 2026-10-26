@@ -6,6 +6,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Fixed
+
+- **Tests:** a Code page check in the end-to-end suite that fails (or skips) now stops and closes the sessions it
+  left: the ones it opened, and any still working or waiting for an answer. One turn left hanging — Bedrock
+  unreachable, a question that never came — no longer fails the later checks at the Code page's limit of four sessions
+  working at once, or leaves the next check's page showing that session instead of a new one. What was closed is
+  printed under the check's line in the run's log. `tests/test_e2e_harness.sh` checks it against the Code page's mock
+  backend.
+
 ## [0.30.0] - 2026-10-26
 
 ### Added
