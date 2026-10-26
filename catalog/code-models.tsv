@@ -15,10 +15,12 @@
 # the tool call; Llama 3.3 70B needed the output cap (Bedrock refuses more than 8,192) and then wrote its tool call as
 # plain text. Amazon Nova Micro (not in the catalog) works too once capped at 10,000. Checked again 2026-10-25 with
 # Claude Code 2.1.309 (tests/e2e/harness-parity.sh: turns, thinking, tools, images, /compact, a model switch, errors,
-# WebFetch, WebSearch): Mistral Large 3 gets the images but misreads them.
+# WebFetch, WebSearch): Mistral Large 3 gets the images but misreads them. 2026-10-26: Bedrock hands Llama's tool call
+# back as text, in Meta's documented form; LiteLLM's hook makes it the tool call (lib/litellm-hooks/bn_hooks.py), and
+# Llama's tool calls round-trip.
 # pattern	status	max_out	note
 claude-*	works	-	Anthropic's own: tools, thinking and prompt caching as Claude Code expects.
 gpt-6-*	works	-	Tools work through LiteLLM's translation; no thinking blocks, prompt caching as OpenAI does it.
 grok-4-7	works	-	Tools work through LiteLLM's translation; no thinking blocks, no prompt-cache writes.
 mistral-large-3	works	-	Tools work through LiteLLM's translation; no thinking blocks, no prompt caching. Images reach it, but it misreads them (a plain red picture read as white or blue).
-llama-3-3-70b	chat-only	8192	Answers, but writes its tool calls as plain text: Claude Code cannot read, edit or run anything with it.
+llama-3-3-70b	works	8192	Tools work (Bedrock hands its calls back as text; LiteLLM's hook makes them tool calls), though it often gets a call wrong at first; no thinking blocks, no prompt caching, no image input.

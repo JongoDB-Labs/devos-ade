@@ -28,24 +28,16 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   with the repository's files, as `portal/test.sh` does. The end-to-end suite checks the built-in SearXNG's row on
   Home, its restart and logs, the narrow Settings cards on a phone, a tablet and a desktop, and the collapsed sidebar
   with the Code tab.
-
-## [0.31.1] - 2026-10-26
-
-### Changed
-
-- **A new Code page session starts on Claude Sonnet, not Opus.** Wherever no model had been picked — a new browser, a
-  phone, the installed app — a session started on Claude Opus, the dearest model: one trivial first turn cost $0.184 on
-  Opus against about $0.005 on Haiku. The Code page's default is now Claude Sonnet (the stack's current Sonnet), unless
-  Settings › Claude Code › Default model for new sessions (`CODE_DEFAULT_MODEL`) names one.
-- **devos-claude starts on the same default** — on your computer and in the browser terminal: Settings' Default model
-  for new sessions while it names an enabled model, else the Sonnet slot, else the main model (only when no Sonnet is
-  enabled). `--model` and `CLAUDE_BEDROCK_MODEL` still pick another. `devos-claude --models` marks the default and says
-  which rule applied (*Settings … is blank, so the Sonnet slot*). Plain `claude` in the browser terminal starts on the
-  Sonnet slot too.
-- **The model you pick is kept for your sign-in, not per browser.** The code container keeps your last pick (`GET` /
-  `PUT /api/prefs`, in its own volume), so a new browser or a phone starts its next session where you left off. A
-  default set or changed in Settings after your pick wins over it until you pick again. A browser's pick from before
-  this version is taken over the first time it opens the Code page.
+- **Llama 3.3 70B uses Claude Code's tools.** Bedrock takes the tools for it but hands its tool call back as the text
+  Llama wrote, in Meta's documented form (`{"type": "function", "name": …, "parameters": {…}}`), so Claude Code showed
+  that text and ran nothing. LiteLLM's hook (`lib/litellm-hooks/bn_hooks.py`) now reads Bedrock's answer: one that is
+  nothing but such calls, each of a tool the request offered and with every argument that tool requires, becomes those
+  tool calls, as Bedrock returns them for the other models; anything else (a word around it, a code block, an unknown
+  tool, JSON that does not parse) stays text. Bedrock also refused, for Llama alone, a tool result's turn with Claude
+  Code's reminders in it ("Conversation blocks and tool result blocks cannot be provided in the same turn"): they now
+  go at the end of the result. Its badge is now **works**, its note in the model picker and `devos-claude --models`
+  says how, and the harness parity suite runs it with Bedrock's family. README › Models for Claude Code says what
+  still differs: no thinking blocks, no image input, and calls it often gets wrong at first.
 
 ### Changed
 
@@ -73,6 +65,24 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   value or pinned image changes exactly the services that use it; setup's bring-up never forces a recreate; the
   images are built once. The update e2e (`tests/e2e/upgrade.sh`) checks that Home's card lists every step the
   update's log reports, in order and with its time, and allows a service the new release adds.
+
+## [0.31.1] - 2026-10-26
+
+### Changed
+
+- **A new Code page session starts on Claude Sonnet, not Opus.** Wherever no model had been picked — a new browser, a
+  phone, the installed app — a session started on Claude Opus, the dearest model: one trivial first turn cost $0.184 on
+  Opus against about $0.005 on Haiku. The Code page's default is now Claude Sonnet (the stack's current Sonnet), unless
+  Settings › Claude Code › Default model for new sessions (`CODE_DEFAULT_MODEL`) names one.
+- **devos-claude starts on the same default** — on your computer and in the browser terminal: Settings' Default model
+  for new sessions while it names an enabled model, else the Sonnet slot, else the main model (only when no Sonnet is
+  enabled). `--model` and `CLAUDE_BEDROCK_MODEL` still pick another. `devos-claude --models` marks the default and says
+  which rule applied (*Settings … is blank, so the Sonnet slot*). Plain `claude` in the browser terminal starts on the
+  Sonnet slot too.
+- **The model you pick is kept for your sign-in, not per browser.** The code container keeps your last pick (`GET` /
+  `PUT /api/prefs`, in its own volume), so a new browser or a phone starts its next session where you left off. A
+  default set or changed in Settings after your pick wins over it until you pick again. A browser's pick from before
+  this version is taken over the first time it opens the Code page.
 
 ## [0.31.0] - 2026-10-26
 

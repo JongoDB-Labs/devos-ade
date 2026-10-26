@@ -1146,11 +1146,11 @@ model kept in this browser (starred ones first). Claude Code speaks Anthropic's 
 translates `/v1/messages` for every other provider, but tool use, thinking, prompt caching and long contexts vary, so
 each model has a badge from [`catalog/code-models.tsv`](catalog/code-models.tsv):
 
-| Badge | Meaning | Checked (Claude Code 2.1.296 through LiteLLM 1.105.0, one turn that must run a shell command) |
+| Badge | Meaning | Checked (Claude Code 2.1.296 through LiteLLM 1.105.0, one turn that must run a shell command; Llama: 2.1.309, the harness parity suite) |
 |---|---|---|
 | (none) | Anthropic's own: tools, thinking, prompt caching | Claude Opus, Sonnet, Haiku |
-| **works** | a tool call round-trips; no thinking blocks, prompt caching as the provider does it | GPT-6 Sol and Luna, Grok 4.7, Mistral Large 3 (and Amazon Nova Micro, not in the catalog) |
-| **chat only** | it answers but cannot use tools: Claude Code cannot read, edit or run anything | Llama 3.3 70B (writes its tool calls as text) |
+| **works** | a tool call round-trips; no thinking blocks, prompt caching as the provider does it | GPT-6 Sol and Luna, Grok 4.7, Mistral Large 3, Llama 3.3 70B (and Amazon Nova Micro, not in the catalog) |
+| **chat only** | it answers but cannot use tools: Claude Code cannot read, edit or run anything | — |
 | **not tested** | nobody checked: OpenRouter's and Experiential Labs' models that list tool use | — |
 | **fails** | a session on it errors; hidden behind *Show all models* | — |
 
@@ -1163,6 +1163,12 @@ Bedrock's Llama refuses more than 8,192 (OpenRouter's limits come from its model
 model on Bedrock, leaves out Claude Code's running token count after each tool result (LiteLLM turns that system
 message into a note after the result, and GPT-6 sometimes ended its turn on it without an answer) and moves the images
 of a tool result (the Read tool's) to the message after it (Bedrock refuses them inside a result for those models).
+For Llama on Bedrock it also reads Bedrock's answer: Bedrock takes the tools but hands Llama's tool call back as the
+text Llama wrote, in Meta's documented form (`{"type": "function", "name": …, "parameters": {…}}`), so Claude Code
+showed that text and ran nothing. An answer that is nothing but such calls, each of a tool the request offered and with
+every argument that tool requires, becomes those tool calls, as Bedrock returns them for the other models; anything
+else (a word around it, a code block, an unknown tool, JSON that does not parse) stays text. Bedrock also refuses, for
+Llama alone, a tool result's turn with Claude Code's reminders in it: the hook puts them at the end of the result.
 Claude Code's WebSearch works on every model: LiteLLM runs the search for Bedrock's and OpenRouter's models, with the
 built-in SearXNG unless you set up another backend ([Web search for Claude Code](#web-search-for-claude-code)). With web
 search turned off, the hook answers it for a model on Bedrock or OpenRouter with *Web search isn't available for
@@ -1175,20 +1181,20 @@ no Claude Code stop mid-turn, the next prompt is refused once the spend logs rea
 works as before.
 
 What still differs is the model's own doing. [`tests/e2e/harness-parity.sh`](#testing) runs real Claude Code sessions
-on each family (Claude Code 2.1.309 through LiteLLM 1.105.0, last on 2026-10-25): turns with `--resume`, thinking
+on each family (Claude Code 2.1.309 through LiteLLM 1.105.0, last on 2026-10-26): turns with `--resume`, thinking
 replayed, Read, Write, Edit, Bash, Glob, Grep and the todo list, parallel tool calls, an image through Read and in the
 prompt, `/compact`, `count_tokens` and `/context`, a switch of model mid-session (Claude's thinking and tool calls
 replayed to another vendor's model and back), a provider's error on the Code page, WebFetch and — with a search
-backend — WebSearch (searched, and the answer cites a page it found) work the same on GPT-6 Luna and Mistral Large 3 on
-Bedrock, an OpenRouter model and Experiential Labs' models as on Claude, except:
+backend — WebSearch (searched, and the answer cites a page it found) work the same on GPT-6 Luna, Mistral Large 3 and
+Llama 3.3 70B on Bedrock, an OpenRouter model and Experiential Labs' models as on Claude, except:
 
 | Model | What differs | What you see |
 |---|---|---|
 | Only with web search off (`WEBSEARCH_BACKEND=off`, or the built-in SearXNG off and no other backend): every model on Bedrock or OpenRouter, Claude included | WebSearch: no web search runs there ([Web search for Claude Code](#web-search-for-claude-code)) | WebSearch's result says so: *Web search isn't available for … Use WebFetch with a URL.* |
-| GPT-6, Mistral Large 3, and the models of OpenRouter and Experiential Labs that hide their reasoning | No thinking blocks: the provider returns no reasoning to show (a model whose provider returns it, such as DeepSeek on Experiential Labs, shows it) | No *Thought* in the transcript; the picker's note says *no thinking blocks* |
+| GPT-6, Mistral Large 3, Llama 3.3 70B, and the models of OpenRouter and Experiential Labs that hide their reasoning | No thinking blocks: the provider returns no reasoning to show (a model whose provider returns it, such as DeepSeek on Experiential Labs, shows it) | No *Thought* in the transcript; the picker's note says *no thinking blocks* |
 | Mistral Large 3 (Bedrock) | It gets the images but misreads them (a plain red picture read as white or blue) | The picker's note says so |
-| Text-only models, such as DeepSeek V4.1 Flash (Experiential Labs) | No image input | The provider's refusal in the error box: *… does not take image input* |
-| Llama 3.3 70B (Bedrock) | It writes its tool calls as text | The *chat only* badge |
+| Text-only models, such as DeepSeek V4.1 Flash (Experiential Labs) and Llama 3.3 70B (Bedrock) | No image input | The provider's refusal in the error box: *… does not take image input* (Bedrock: *This model doesn't support the image content block …*) |
+| Llama 3.3 70B (Bedrock) | Its tool calls run (Bedrock hands them back as text; LiteLLM's hook makes them tool calls), but it often gets them wrong: values Claude Code refuses (`null` for an optional list, `"null"` for a number), which it fixes once Claude Code says why; a short `limit` on Read; steps of a longer task left out (in the suite's seven-step task it wrote a word it never read) | Claude Code's *InputValidationError* as a tool result, then the call again; a task done in part |
 
 **Settings › Claude Code › Models for Claude Code** picks which models the picker and devos-claude's `/model`
 menu list (`CODE_MODELS`): **All enabled** (the default), **Anthropic only** (Claude, Bedrock's and OpenRouter's), or
@@ -2554,7 +2560,7 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
 | Settings shows everything but nothing can be changed | Changes need the update helper: `./stack helper install` (or use `./stack config set KEY` in a terminal). From a remote device they also need `REMOTE_ADMIN_ACTIONS=true`. |
 | The Code page's **Start** or **Run** says "the terminal's tmux has hooks … or loader variables … set" | Something in the sandbox (or your tmux settings) changed the terminal's tmux, so a new window might not run what you saw. Run the command in the terminal yourself, remove them (`tmux set-hook -gu …`, `tmux set-environment -gu …`), or restart the terminal (`./stack terminal disable`, then `enable`; that ends its tmux session). |
 | A remote address of the terminal, the Code page or its previews does not answer | Each is a Tailscale Service of its own: define it in the admin console and approve it (`./stack remote status` lists the Services; [docs/remote.md](docs/remote.md)). |
-| On the Code page or in `devos-claude`, a model answers but never reads, edits or runs anything (or writes its tool calls out as text) | It is marked **chat only** (Llama 3.3 70B; OpenRouter models whose listing names no tool use): it cannot use Claude Code's tools. Pick a Claude model or one marked **works** — in the picker, with `/model`, or `devos-claude --model` (`devos-claude --models` says how each works); a **not tested** one may do the same ([Models for Claude Code](#models-for-claude-code)). |
+| On the Code page or in `devos-claude`, a model answers but never reads, edits or runs anything (or writes its tool calls out as text) | It is marked **chat only** (OpenRouter and Experiential Labs models whose listing names no tool use): it cannot use Claude Code's tools. Pick a Claude model or one marked **works** — in the picker, with `/model`, or `devos-claude --model` (`devos-claude --models` says how each works); a **not tested** one may do the same ([Models for Claude Code](#models-for-claude-code)). |
 | In the sandbox, a download, `npm install` or `git clone` fails with 403 from the proxy (curl: `CONNECT tunnel failed, response 403`) | The egress proxy refused it: `./stack logs terminal-egress` says why. A name left out by `TERMINAL_EGRESS_ALLOW` or listed in `TERMINAL_EGRESS_DENY`: change the list in `.env`, then `./stack up`; a port other than 80, 443 and 22: `TERMINAL_EGRESS_ALLOW=*,name:PORT`. Something on this computer or your network (a dev server or registry on your Mac, a git server on your LAN) is never reached through the proxy: Settings › Claude Code › Sandbox internet access › **+ this computer** (`host`, from this computer only; [what it opens](#claude-code-in-the-browser)). |
 | Ctrl/⌘+K opens Chat's search or the Code page's command palette, not the portal's Search (or Ctrl/⌘+\\ does not fold the sidebar) | While the focus is inside an app's tab, the key goes to that app (Chat and the Code page have a Ctrl/⌘+K of their own). Click the search box at the top of the sidebar (on a phone **More → Search**) or the button above it, or click the sidebar first. |
 | Search finds no sections of the README or `docs/` ("this portal's image has no index of them") | The portal was built without that index: by an earlier release with a Docker Compose that does not read `build.additional_contexts`, or by a plain `docker build`. This version needs Docker Compose 2.24.4 or newer (`docker compose version` shows yours; `./stack setup` and `./stack update` stop on an older one and say so): update it, then `./stack setup` rebuilds the portal with the index. Meanwhile the docs are on GitHub. |
@@ -2640,11 +2646,12 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
   the gateway, each on a key of its own, in throwaway containers (`bne2e-free-*`, removed afterwards). Every request
   must be on the free model and booked $0 (none on a Claude model: those are priced there), each key's spend $0, and
   Home's Equivalent must price the same usage (`tests/e2e/out/free-models.json`).
-- **Harness parity** (opt-in, a few minutes, about $0.50 of Bedrock for every family): `tests/e2e/harness-parity.sh
-  --aws-env FILE` runs real Claude Code sessions (`devos-claude -p … --output-format stream-json`, its tools allowed in
-  one test folder) in the terminal's sandbox image, through this checkout's terminal gateway, LiteLLM config and hook,
-  on each provider family's models: Claude Haiku as the control, Bedrock's GPT-6 Luna and Mistral Large 3, an OpenRouter
-  model and two Experiential Labs models. Fourteen scenarios each: three turns with `--resume`, thinking replayed,
+- **Harness parity** (opt-in, a few minutes, about $0.50 of Bedrock for every family, $1 for Bedrock's):
+  `tests/e2e/harness-parity.sh --aws-env FILE` runs real Claude Code sessions (`devos-claude -p … --output-format
+  stream-json`, its tools allowed in one test folder) in the terminal's sandbox image, through this checkout's terminal
+  gateway, LiteLLM config and hook, on each provider family's models: Claude Haiku as the control, Bedrock's GPT-6
+  Luna, Mistral Large 3 and Llama 3.3 70B, an OpenRouter model and two Experiential Labs models. Fourteen scenarios
+  each: three turns with `--resume`, thinking replayed,
   Claude Code's tools (Read, Write, Edit, Bash, Glob, Grep, its todo list), parallel tool calls, a tool call after
   thinking, an image through Read and one in the prompt (and one straight to `/v1/messages`, with a count of the images
   that reach the provider), `/compact` after a long read, `count_tokens` and `/context`,

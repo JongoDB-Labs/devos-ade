@@ -157,15 +157,16 @@ def other_provider(ctx):
 
 @check("browser", "code-session-llama-capped")
 def llama_capped(ctx):
-    """Llama 3.3 70B (chat only): Bedrock refuses more than 8,192 output tokens and Claude Code asks for 32,000 — LiteLLM's
-    hook (lib/litellm-hooks/bn_hooks.py) lowers it, so the session answers."""
+    """Llama 3.3 70B: Bedrock refuses more than 8,192 output tokens and Claude Code asks for 32,000 — LiteLLM's hook
+    (lib/litellm-hooks/bn_hooks.py) lowers it, so the session answers. (Its tool calls, which Bedrock hands back as
+    text, are the hook's too: tests/e2e/harness-parity.sh runs them.)"""
     need_haiku()
     c = Code(ctx, "code-llama")
     bn = _models(c)
     m = next((x for x in bn["models"] if x["id"] == "llama-3-3-70b"), None)
     if not m:
         raise Skip("Llama 3.3 70B is not enabled for this key")
-    expect(m["compat"] == "chat-only" and m["max_output_tokens"] == 8192, f"llama: {m}")
+    expect(m["compat"] == "works" and m["max_output_tokens"] == 8192, f"llama: {m}")
     sid = c.new_session(m["id"], "default")
     evs = c.turn(sid, "Reply with exactly the word: pong")
     res = [e for e in evs if e["type"] == "result"][-1]
@@ -198,7 +199,7 @@ def ui_models(ctx):
     groups = page.locator(".model-panel .mp-group").evaluate_all("els => els.map((e) => e.dataset.testid)")
     llama = page.get_by_test_id("model-llama-3-3-70b")
     if llama.count():
-        see(llama.get_by_test_id("compat-chat-only")).to_have_text("chat only")
+        see(llama.get_by_test_id("compat-works")).to_have_text("works")
     shot(page, "71-code-model-picker")
     page.get_by_test_id("model-search").fill("haiku")
     see(page.locator(".model-panel .mp-row")).to_have_count(1)

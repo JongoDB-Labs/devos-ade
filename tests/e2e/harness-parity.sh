@@ -29,7 +29,7 @@
 #
 # The families and their models:
 #   control     claude-haiku-5-5 (Anthropic's on Bedrock: what Claude Code expects)
-#   bedrock     gpt-6-luna, mistral-large-3 (another vendor's model through Bedrock's Converse)
+#   bedrock     gpt-6-luna, mistral-large-3, llama-3-3-70b (another vendor's model through Bedrock's Converse)
 #   openrouter  with E2E_OPENROUTER_API_KEY: OpenRouter's free models (E2E_OPENROUTER_MODELS, default
 #               openai/gpt-oss-120b:free,qwen/qwen3-coder:free; their list read keyless from openrouter.ai). Without it:
 #               a stand-in for OpenRouter (tests/e2e/explabs-mock.py, MOCK_FLAVOR=openrouter) answered by gpt-6-luna on
@@ -147,7 +147,7 @@ if [ -z "$MODELS" ]; then
   for f in $(printf '%s' "$FAMILIES" | tr ',' ' '); do
     case "$f" in
       control) MODELS="$MODELS,claude-haiku-5-5" ;;
-      bedrock) MODELS="$MODELS,gpt-6-luna,mistral-large-3" ;;
+      bedrock) MODELS="$MODELS,gpt-6-luna,mistral-large-3,llama-3-3-70b" ;;
       openrouter) MODELS="$MODELS,$(printf '%s' "$OR_MODELS" | tr ',' '\n' | sed 's#^#or/#' | paste -sd, -)" ;;
       explabs) MODELS="$MODELS,$(printf '%s' "$XL_MODELS" | tr ',' '\n' | sed 's#^#xl/#' | paste -sd, -)" ;;
       *) die "unknown family: $f (control, bedrock, openrouter, explabs)" ;;
