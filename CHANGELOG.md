@@ -58,6 +58,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
     too, so "your home folder or a folder around it" came before "a temporary folder itself".
   Every test runs on both, except where the machine decides: on Linux, three are skipped without PyYAML (two) or the
   de_DE.UTF-8 locale (one), and the one about case-insensitive spellings needs macOS's case-insensitive file system.
+- **Tests:** the e2e's check of Home's automatic-updates switch no longer fails at random on a slower computer. When the
+  portal asked it to wait before a second request, the switch's dialog could close during the wait and the second
+  Confirm found nothing to click. The check now opens the dialog again from the switch, and keeps its stand-in helper
+  fresh while it waits.
 
 ## [0.27.1] - 2026-10-25
 
