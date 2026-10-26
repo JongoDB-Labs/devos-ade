@@ -37,6 +37,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   else to set up; without one it sends nothing, and its card says so. Keys stay on this computer: on your devices each
   card says where they are added, with the terminal command. Under the cards, the two lists that narrow the pickers:
   *Models for Claude Code* and *Hidden in Chat's model picker* (a card says when the first leaves its models out).
+  Home's model table links there (*More models*).
 - **Code page:** a provider without its key shows in the model picker, under *More providers*, as a greyed item that
   opens its card (*OpenRouter models — … Settings › Models & providers › OpenRouter takes it*); before, its group was
   simply missing. `/.bn/models` says which of OpenRouter and Experiential Labs has a key.
