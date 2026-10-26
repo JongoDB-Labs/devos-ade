@@ -1690,7 +1690,7 @@ by what you came to do — a list on the left (on a phone, a section picker at t
 | Section | What is in it |
 |---|---|
 | **Account & security** | portal password, owner email, Admin (LiteLLM) password, session length, signed-in devices, storing prompts |
-| **Models & providers** | a card for each provider: Bedrock (the AWS key, with *Check*, or this EC2 machine's role), OpenRouter (its key and models), Experiential Labs (its key and models) and *Your AI subscriptions* (Claude, Codex, Copilot, Cursor, Grok, Gemini: Sign in, Sign out, Check again; Claude's *Use my Claude plan*) — [below](#models--providers); *More*: OpenRouter's cap and aliases |
+| **Models & providers** | a card for each provider: Bedrock (the AWS key, with *Check*, or this EC2 machine's role), OpenRouter (its key and models), Experiential Labs (its key and models) and *Your AI subscriptions* (Claude, Codex, Copilot, Cursor, Grok, Gemini: Sign in, Sign out, Check again; Claude's *Use my Claude plan*); *Search*: Claude Code's WebSearch and its backends (AgentCore Web Search, Tavily, Brave Search, Perplexity, SearXNG) — [below](#models--providers); *More*: OpenRouter's cap and aliases |
 | **AWS & models** | the region, **Re-check models** |
 | **Spending & budgets** | the budgets of Chat, `devos-claude` and the Terminal/Code page (with this period's spend), alert threshold and webhook; *More*: the setup key's budget, daily price updates |
 | **Chat & voice** | Chat's default model, models hidden from its picker, speech-to-text; *More*: the title/tag model |
@@ -1795,6 +1795,7 @@ to set up page by page. A card for each provider:
 | **OpenRouter** | *Add key* / *Replace key*, and *Remove the key* in its form | OpenRouter's models: all, the free ones, the paid ones or a list (*OpenRouter models*, in its card) |
 | **Experiential Labs** | *Add key* / *Replace key*, and *Remove the key* in its form | the gateway's models you list (*Experiential Labs models*, in its card) |
 | **Your AI subscriptions**: Claude Code, Codex, Copilot, Cursor, Grok, Gemini CLI | *Sign in* (it opens in the terminal, where its own sign-in starts) and *Sign out*; a Chat model's own *Sign in* for Chat; on Claude's card *Use my Claude plan in the Code page and Chat* | the tool in the Code page's *Who answers* (not Gemini CLI), as a Chat model (Claude, Codex, Copilot, Grok) and in the terminal's *Open* ([Your AI subscriptions](#your-ai-subscriptions)) |
+| **Search**: *Web search*, then *AgentCore Web Search*, *Tavily*, *Brave Search*, *Perplexity*, *SearXNG* | *Web search*: *Change* — automatic (the first one set up), off, or one by name; each backend: *Set the gateway* / *Add key* / *Add its URL*, and *Remove* in its form | real web results for Claude Code's WebSearch on every model: which backend it uses now, its check, and what to do — the command for your AWS admin when AgentCore needs one ([Web search for Claude Code](#web-search-for-claude-code)) |
 
 Each card says whether its provider is on (*On*, *Not set up*, *signed in · ChatGPT* …), how many models it adds
 (*Adds 24 models to every picker*, with how many are free) and where you pick which ones. The pickers list everything
@@ -2173,8 +2174,9 @@ used) and forbid storing results in bulk.
 ./stack config set WEBSEARCH_BACKEND           # auto | off | agentcore | tavily | brave | perplexity | searxng
 ```
 
-Or **Settings › Claude Code › Web search for Claude Code** (its gateway, keys and URL under *More settings*), from the
-computer running DevOS ADE. A change re-renders LiteLLM's config (LiteLLM restarts, about 15 s) and checks the backend
+Or **Settings › Models & providers › Search**: a card for Claude Code's WebSearch (the backend it uses now, its
+check, and what to do — the IAM command for your admin as code, with *Copy*) and one for each backend, from the
+computer running DevOS ADE. On the Code page, WebSearch's *not available* result links there. A change re-renders LiteLLM's config (LiteLLM restarts, about 15 s) and checks the backend
 with one search. `./stack status` and `./stack code status` say which backend is in use.
 
 ## Run it on a cloud VM

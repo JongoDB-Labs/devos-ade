@@ -22,7 +22,7 @@
   // what a change restarts, by settings.tsv's apply column (lib/settings.sh _cfg_post): the badge next to a setting
   const RESTARTS = { "portal-pw": ["portal"], email: ["Chat", "portal"], "litellm-pw": ["portal"], portal: ["portal"],
     "litellm-cfg": ["LiteLLM"], aws: ["LiteLLM"], pins: ["Chat", "portal"], "alert-pct": ["portal"], stt: ["LiteLLM", "Chat", "portal"],
-    openrouter: ["LiteLLM", "portal"], explabs: ["LiteLLM"], rustfs: ["Files", "Chat", "shared-mcp", "portal"], mcp: ["shared-mcp", "portal"],
+    openrouter: ["LiteLLM", "portal"], explabs: ["LiteLLM"], websearch: ["LiteLLM"], rustfs: ["Files", "Chat", "shared-mcp", "portal"], mcp: ["shared-mcp", "portal"],
     code: ["portal", "Caddy"], "code-env": ["Code page"], "terminal-env": ["Terminal"], "terminal-egress": ["Terminal"], "remote-preview": ["portal", "Caddy"] };
   // what removing a key does, in each key's own words (the keys share one form; lib/settings.sh _cfg_post, _stt_apply)
   const REMOVE_KEY = {
@@ -30,13 +30,16 @@
     stt_key: "The OpenAI or Groq key is deleted. While Speech-to-text uses OpenAI or Groq the removal is refused (they need a key): switch it to the browser or Bedrock first. LiteLLM, Chat and the portal restart (about 40 s).",
     // (Experiential Labs' key restarts LiteLLM alone: RESTARTS.explabs)
     xl_key: "Experiential Labs' models disappear from Chat, the Code page and the API; LiteLLM restarts (about 30 s).",
+    ws_key: "Claude Code's WebSearch stops searching with it (the next search backend set up takes over, or none); LiteLLM restarts (about 15 s).",
   };
   const ON_VALUES = ["true", "1", "yes", "on"], OFF_VALUES = ["false", "0", "no", "off"];
   const KEY_NAME = /^[A-Z][A-Z0-9_]{1,60}$/;   // (as the setup links' targets: catalog/setup-links.tsv)
   const SECTION_MEMO = "bn.settings.section";
   // a row that stands for more than its key: named for what it shows (a provider's key: the provider)
   const ROW_LABEL = { RUSTFS_ACCESS_KEY: "Files (RustFS) key pair", STT_PROVIDER: "Speech-to-text", TERMINAL_ENABLED: "Browser terminal",
-    REMOTE_MODE: "Remote access", AWS_ACCESS_KEY_ID: "Bedrock", OPENROUTER_API_KEY: "OpenRouter", EXPLABS_API_KEY: "Experiential Labs" };
+    REMOTE_MODE: "Remote access", AWS_ACCESS_KEY_ID: "Bedrock", OPENROUTER_API_KEY: "OpenRouter", EXPLABS_API_KEY: "Experiential Labs",
+    WEBSEARCH_BACKEND: "Web search", WEBSEARCH_AGENTCORE_GATEWAY: "AgentCore Web Search", WEBSEARCH_TAVILY_API_KEY: "Tavily",
+    WEBSEARCH_BRAVE_API_KEY: "Brave Search", WEBSEARCH_PERPLEXITY_API_KEY: "Perplexity", WEBSEARCH_SEARXNG_URL: "SearXNG" };
   // Settings › Models & providers: a card for each provider. A key's card is its row (providerRow): MODELS, the
   // provider its models have in the snapshot's code_models (the pickers' list: litellm/code-models.tsv), and PICK,
   // where you pick which of them it adds. A provider of another kind (a web search backend) fits the same way: its
@@ -46,10 +49,18 @@
     AWS_ACCESS_KEY_ID: { models: "Bedrock", pick: ["+models", "Models your key can use"] },
     OPENROUTER_API_KEY: { models: "OpenRouter", pick: ["OPENROUTER_MODELS", "OpenRouter's models"] },
     EXPLABS_API_KEY: { models: "Experiential Labs", pick: ["EXPLABS_MODELS", "the gateway's models"] },
+    // Search: Claude Code's WebSearch (lib/websearch.sh; the snapshot's choices.websearch) — the backend it searches
+    // with now, then a card for each backend: AWS's own first, then your own key's, then SearXNG
+    WEBSEARCH_BACKEND: { on: () => Boolean(webSearch().backend), state: wsChoiceState, adds: wsChoiceAdds, off: wsChoiceOff, button: ["Change", "Change"] },
+    WEBSEARCH_AGENTCORE_GATEWAY: wsCard("agentcore", "Amazon's web index, inside AWS", "$7 per 1,000 searches, on your AWS bill", ["Change gateway", "Set the gateway"]),
+    WEBSEARCH_TAVILY_API_KEY: wsCard("tavily", "tavily.com", "about $0.008 a search at its list price"),
+    WEBSEARCH_BRAVE_API_KEY: wsCard("brave", "search.brave.com", "about $0.005 a search at its list price"),
+    WEBSEARCH_PERPLEXITY_API_KEY: wsCard("perplexity", "perplexity.ai", "about $0.005 a search at its list price"),
+    WEBSEARCH_SEARXNG_URL: wsCard("searxng", "your SearXNG, and on to the search engines it asks", "free", ["Change URL", "Add its URL"]),
   };
   // the head over a group of a section's rows, before the first of them: the keys, your subscriptions (and a Search
   // group next to them, for a web search backend's card)
-  const GROUP_HEAD = { AWS_ACCESS_KEY_ID: "Keys", "+subscriptions": "Subscriptions" };
+  const GROUP_HEAD = { AWS_ACCESS_KEY_ID: "Keys", "+subscriptions": "Subscriptions", WEBSEARCH_BACKEND: "Search" };
   // where a row moved to (Settings › Models & providers), said at the top of its old section with a link
   const MOVED = { aws: [["AWS_ACCESS_KEY_ID", "The AWS key", "Models & providers › Bedrock"]],
     chat: [["OPENROUTER_API_KEY", "OpenRouter's and Experiential Labs' keys and models", "Models & providers"]],
@@ -549,7 +560,7 @@
   const BLANK = { PORTAL_SESSION_DAYS: "30 days", BUDGET_ALERT_PCT: "80%", BACKUP_HOUR: hourRange(2), BACKUP_KEEP: "7",
     AUTO_UPDATE_HOUR: hourRange(3), OPENROUTER_MODELS: "all", OPENROUTER_MAX_MODELS: "1000", EXPLABS_MODELS: "qwen3.8-27b",
     TERMINAL_EGRESS: "Internet only",
-    TERMINAL_MEM_LIMIT: "4g", TERMINAL_AI_TOOLS: "all", REMOTE_MODE: "off", AWS_AUTH: "an access key", REMOTE_SUBNET: "10.255.255.248/29",
+    WEBSEARCH_BACKEND: "automatic: the first one set up", TERMINAL_MEM_LIMIT: "4g", TERMINAL_AI_TOOLS: "all", REMOTE_MODE: "off", AWS_AUTH: "an access key", REMOTE_SUBNET: "10.255.255.248/29",
     PORTAL_HOST: "bedrock-now.localhost", PORTAL_PORT: "80, else 8800", CHAT_HOST: "chat. + the portal's address",
     ADMIN_HOST: "admin. + the portal's address", FILES_HOST: "files. + the portal's address",
     TERMINAL_HOST: "terminal. + the portal's address", CODE_HOST: "code. + the portal's address",
@@ -722,14 +733,6 @@
       main.append(el("p", { class: "note", text: "Switched on, not in effect: the Code page is not reachable over remote access (REMOTE_TERMINAL=true), or remote access has no names yet (./stack up)." }));
     }
     if (k.key === "MODELS_HIDDEN") setValue(k.value ? k.value.split(",").map(modelName).join(", ") : "None hidden");
-    // web search for Claude Code: the backend in use and its check, or why there is none, and what to do (./stack writes it)
-    const w = k.key === "WEBSEARCH_BACKEND" && data.snapshot && data.snapshot.choices.websearch;
-    if (w) {
-      const line = !w.backend ? `Off: ${w.why}` : w.status === "ok" ? `In use: ${w.name} (checked: it answers)`
-        : w.status === "failed" ? `${w.name} does not work yet: ${w.why}` : `In use: ${w.name} (not checked yet${w.why ? `: ${w.why}` : ""})`;
-      main.append(el("p", { class: "note set-extra", text: line }));
-      for (const f of w.fix || []) main.append(el("p", { class: "note set-extra", text: f }));
-    }
     // the last release check and Check for updates (updatecheck.js): a click asks once, also with the daily check off
     if (k.key === "UPDATE_CHECK" && window.bnUpdateCheck && window.bnUpdateCheck.line) main.append(window.bnUpdateCheck.line("settings"));
     if (k.key === "BACKUP_HOUR" && keys.AUTO_UPDATE && keys.AUTO_UPDATE.value === "on") {
@@ -773,7 +776,7 @@
     } else {
       // (a provider's key: its card's one action — the form adds, replaces or removes it)
       const b = el("button", { type: "button", class: PROVIDERS[k.key] && !providerOn(k) ? "action primary" : "action",
-        text: PROVIDERS[k.key] ? (k.set ? "Replace key" : "Add key") : plain(k) || k.set ? "Change" : "Set",
+        text: PROVIDERS[k.key] ? (PROVIDERS[k.key].button || ["Replace key", "Add key"])[k.set ? 0 : 1] : plain(k) || k.set ? "Change" : "Set",
         "aria-describedby": `set-name-${k.key}` });
       b.disabled = !canChange();
       b.addEventListener("click", () => openForm(rw, k));
@@ -862,11 +865,76 @@
   function codeModelLabel(m) { return `${m[1]}${m[3] && lower(m[3]) !== "anthropic" ? ` (${m[3]})` : ""} · ${COMPAT_WORD[m[4]] || "not tested"}${m[5] && !/free/i.test(m[1]) ? " · free" : ""}`; }
 
   // --- Settings › Models & providers: each provider a card (PROVIDERS; your subscriptions': subscriptionsRow) ---
+  // Search (lib/websearch.sh websearch_json): which backend Claude Code's WebSearch searches with, its check and what
+  // to do, the backends set up, and AgentCore Web Search's own state (its gateway, what your AWS admin runs)
+  function webSearch() {
+    const w = data && data.snapshot && data.snapshot.choices.websearch;
+    return w || { backend: "", name: "", status: "off", why: "", fix: [], set_up: [], agentcore: { status: "", gateway: "", why: "", fix: [] } };
+  }
+  const WS_NAME = { agentcore: "AgentCore Web Search", tavily: "Tavily", brave: "Brave Search", perplexity: "Perplexity", searxng: "SearXNG" };
+  // lines of what to do, as ./stack says them: a command (aws …, ./stack …) as code with its Copy button
+  function wsLines(lines) {
+    const f = document.createDocumentFragment();
+    for (const line of lines || []) {
+      const cmd = /^(aws |\.\/stack )/.test(line);
+      // (blocks of the card's line of what it adds — a p: divs, never a p in a p)
+      f.append(cmd ? el("div", { class: "set-cli" }, el("code", { text: line }), " ", copyButton(line, "Copy the command"))
+        : el("div", { class: "note set-extra", text: line }));
+    }
+    return f;
+  }
+  function wsChoiceState(k, on) {
+    const w = webSearch();
+    return !on ? ["Off", "off"] : w.status === "failed" ? ["Needs a step", "warn"] : ["On", "on"];
+  }
+  function wsChoiceAdds() {
+    const w = webSearch();
+    const f = document.createDocumentFragment();
+    f.append(`Claude Code's WebSearch searches with ${WS_NAME[w.backend] || w.name} on every model: only the query goes there. `,
+      w.status === "ok" ? `Checked${w.checked_at ? ` ${new Date(w.checked_at).toLocaleDateString()}` : ""}: it answers.`
+        : w.status === "failed" ? `It does not work yet: ${w.why}.` : "Not checked yet.");
+    f.append(wsLines(w.fix));
+    return f;
+  }
+  function wsChoiceOff() {
+    const w = webSearch();
+    const f = document.createDocumentFragment();
+    f.append(`Claude Code's WebSearch says it is not available (WebFetch still works): ${w.why || "no search backend is set up"}.`);
+    f.append(wsLines(w.fix));
+    return f;
+  }
+  // a backend's card: set up (its key, URL or gateway) or not, in use or not, where the query goes, what it costs
+  function wsCard(b, where, cost, button) {
+    return {
+      backend: b, button,
+      on: () => webSearch().set_up.includes(b),
+      state: (k, on) => {
+        const w = webSearch();
+        if (b === "agentcore" && ["denied", "no-target"].includes(w.agentcore.status)) return ["Needs your AWS admin", "warn"];
+        return w.backend === b ? (w.status === "failed" ? ["In use · needs a step", "warn"] : ["In use", "on"]) : on ? ["Set up", "off"] : ["Not set up", "off"];
+      },
+      adds: () => {
+        const w = webSearch();
+        const f = document.createDocumentFragment();
+        f.append(w.backend === b ? `Claude Code's WebSearch searches with it: the queries go to ${where} (${cost}). ` : `Set up: the queries would go to ${where} (${cost}). WebSearch uses ${WS_NAME[w.backend] || "none"} now (the first one set up, or Web search's choice above). `);
+        if (b === "agentcore" && w.agentcore.gateway && !(keys.WEBSEARCH_AGENTCORE_GATEWAY && keys.WEBSEARCH_AGENTCORE_GATEWAY.value)) f.append(`Its gateway, found by itself: ${w.agentcore.gateway}.`);
+        return f;
+      },
+      off: () => {
+        const f = document.createDocumentFragment();
+        f.append(`Sends nothing until it is set up; then Claude Code's WebSearch can search with it: the queries go to ${where} (${cost}).`);
+        if (b === "agentcore") f.append(wsLines(webSearch().agentcore.fix));
+        return f;
+      },
+    };
+  }
   // its state in a word or two next to its name: TONE on (it adds something now), warn (it needs a step) or off
   // (a badge, as the others next to a name: the page's tag style)
   const provState = (words, tone) => el("span", { class: "badge set-prov-state", "data-tone": tone, text: words });
   // its key is there (Bedrock: or this EC2 machine's own role, AWS_AUTH); a provider that is a switch: it is on
-  const providerOn = (k) => (plain(k) ? isOn(k.key) : Boolean(k.set) || (k.key === "AWS_ACCESS_KEY_ID" && Boolean(keys.AWS_AUTH) && shown(keys.AWS_AUTH) === "instance-role"));
+  // (a provider that says it itself: ON)
+  const providerOn = (k) => (PROVIDERS[k.key] && PROVIDERS[k.key].on ? PROVIDERS[k.key].on(k)
+    : plain(k) ? isOn(k.key) : Boolean(k.set) || (k.key === "AWS_ACCESS_KEY_ID" && Boolean(keys.AWS_AUTH) && shown(keys.AWS_AUTH) === "instance-role"));
   // A key's card: its row (the key masked, Add key / Replace key — a local setting: from this computer only, the row
   // says so elsewhere), its state, how many models it adds to every picker and where you pick which ones. Without a key
   // it sends nothing: the pickers grey its models out and lead here (catalog/setup-links.tsv openrouter-off …). A
@@ -878,8 +946,8 @@
     const models = p.models ? codeModels().filter((m) => m[2] === p.models) : [];
     const free = models.filter((m) => m[5]).length;
     const label = $(".set-label", rw._main);
-    label.insertBefore(provState(!on ? (plain(k) ? "Off" : "Not set up") : p.adds || models.length ? "On" : "On · no models yet", !on ? "off" : p.adds || models.length ? "on" : "warn"),
-      $(".set-badges", label));
+    const state = p.state ? p.state(k, on) : [!on ? (plain(k) ? "Off" : "Not set up") : p.adds || models.length ? "On" : "On · no models yet", !on ? "off" : p.adds || models.length ? "on" : "warn"];
+    label.insertBefore(provState(...state), $(".set-badges", label));
     // (without a key: its state says it, and Check (free) has nothing to check)
     if (!on) {
       const v = $(".set-value", rw._main);
@@ -889,7 +957,7 @@
     }
     const adds = el("p", { class: "set-prov-adds" });
     rw._main.append(adds);
-    if (!on) adds.append(p.off || "Sends nothing until it has a key; then its models are in every picker.");
+    if (!on) adds.append(typeof p.off === "function" ? p.off(k) : p.off || "Sends nothing until it has a key; then its models are in every picker.");
     else if (p.adds) adds.append(p.adds(k));
     else {
       adds.append(models.length ? `Adds ${models.length} model${models.length === 1 ? "" : "s"}${free ? ` (${free} free)` : ""} to every picker. ` : "Adds no models yet. ",
@@ -1115,7 +1183,22 @@
         if (!m) return k.note;
         return `${m[1]} (${m[0]}): ${m[7] || "price unknown"}, ${COMPAT_WORD[m[4]] || "not tested"} with Claude Code. ${k.note}`;
       };
-    } else if (k.validator === "or_key" || k.validator === "stt_key" || k.validator === "xl_key") {
+    } else if (k.validator === "ws_backend") {
+      const sel = el("select", { id });
+      for (const [val, text] of [["", "Automatic: the first one set up (AgentCore Web Search, then your keys, then SearXNG)"], ["off", "Off: WebSearch says it is not available"],
+        ...Object.entries(WS_NAME).map(([b, n]) => [b, `${n} only`])]) {
+        const o = el("option", { value: val, text });
+        if (val === (v === "auto" ? "" : v)) o.selected = true;
+        sel.append(o);
+      }
+      form.append(el("label", { for: id, text: "Claude Code's WebSearch searches with" }), sel);
+      collect = () => ({ [k.key]: sel.value });
+    } else if (k.validator === "ws_gateway") {
+      form.append(...field(id, "The gateway's MCP URL (blank: found by itself)", "url", { value: v, maxlength: "300",
+        placeholder: "https://GATEWAY_ID.gateway.bedrock-agentcore.REGION.amazonaws.com/mcp" }),
+        el("p", { class: "note", text: "Your AWS admin sets the gateway up once for your AWS account: ./stack websearch aws-setup prints the commands." }));
+      collect = () => ({ [k.key]: $(`#${id}`, form).value.trim() });
+    } else if (k.validator === "or_key" || k.validator === "stt_key" || k.validator === "xl_key" || k.validator === "ws_key") {
       form.append(...field(id, "New key", "password", { maxlength: "512" }));
       collect = () => ({ [k.key]: $(`#${id}`, form).value.trim() });
       if (k.set) {
@@ -1124,15 +1207,18 @@
         form.append(el("p", { class: "set-gen" }, rm));
       }
     } else if (k.validator === "webhook") {
+      // (a SearXNG's URL takes the webhook's rule: https, or http to a host of your own network)
+      const sx = k.key === "WEBSEARCH_SEARXNG_URL";
       form.append(...field(id, "URL", "url", { maxlength: "2000" }));
       collect = () => {
         const u = $(`#${id}`, form).value.trim();
-        if (!u) throw new Error(k.set ? "Enter the new URL, or use Remove the webhook." : "Enter the URL.");
+        if (!u) throw new Error(k.set ? `Enter the new URL, or use ${sx ? "Remove the URL" : "Remove the webhook"}.` : "Enter the URL.");
         return { [k.key]: u };
       };
       if (k.set) {
-        const rm = el("button", { type: "button", class: "quiet", text: "Remove the webhook" });
-        rm.addEventListener("click", () => confirmApply({ [k.key]: "" }, "Remove the budget alert webhook?", "No more alerts are sent; LiteLLM restarts (about 15 s).", [k.key]));
+        const rm = el("button", { type: "button", class: "quiet", text: sx ? "Remove the URL" : "Remove the webhook" });
+        rm.addEventListener("click", () => confirmApply({ [k.key]: "" }, sx ? "Remove SearXNG's URL?" : "Remove the budget alert webhook?",
+          sx ? REMOVE_KEY.ws_key : "No more alerts are sent; LiteLLM restarts (about 15 s).", [k.key]));
         form.append(el("p", { class: "set-gen" }, rm));
       }
     } else {

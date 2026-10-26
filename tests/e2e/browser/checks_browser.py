@@ -3034,8 +3034,8 @@ def settings_sections(ctx):
 @check("browser", "settings-providers")
 def settings_providers(ctx):
     """Settings › Models & providers (no helper needed: nothing changes): a card for every key and sign-in that adds
-    models — Bedrock, OpenRouter, Experiential Labs, each of Your AI subscriptions — each with its state, what it adds
-    to the pickers and its one action (a key's form opens and is cancelled; a tool's Sign in is never pressed: it starts
+    models — Bedrock, OpenRouter, Experiential Labs, each of Your AI subscriptions — and Search's (Claude Code's
+    WebSearch, each of its backends), each with its state, what it adds and its one action (a key's form opens and is cancelled; a tool's Sign in is never pressed: it starts
     the provider's own sign-in); the old places say where they went, and a greyed item of Chat's Who answers leads to
     its card (catalog/setup-links.tsv)."""
     d = _settings_api(ctx)
@@ -3048,7 +3048,7 @@ def settings_providers(ctx):
     sec = page.locator("#set-providers")
     expect(page.locator(".set-nav-item[aria-current=true]").inner_text() == "Models & providers", "the list does not mark the section")
     heads = [x.strip() for x in sec.locator(".set-group-head").all_text_contents()]
-    expect(heads == ["Keys", "Subscriptions"], f"the groups' heads: {heads}")
+    expect(heads == ["Keys", "Subscriptions", "Search"], f"the groups' heads: {heads}")
     said = []
     for key, name, prov in (("AWS_ACCESS_KEY_ID", "Bedrock", "Bedrock"), ("OPENROUTER_API_KEY", "OpenRouter", "OpenRouter"),
                             ("EXPLABS_API_KEY", "Experiential Labs", "Experiential Labs")):
@@ -3097,6 +3097,31 @@ def settings_providers(ctx):
         else:
             expect(act == "subscriptions-open" and step.inner_text() == ("Open in the terminal" if t["signed_in"] == "yes" else "Sign in"),
                    f"{t['id']}: next step {act} {step.inner_text()!r}")
+    # Search: Claude Code's WebSearch (the backend in use, or why none) and a card for each backend (lib/websearch.sh:
+    # the snapshot's choices.websearch), each with its state, what it adds and its one action (a form, cancelled)
+    ws = d["snapshot"]["choices"].get("websearch") or {}
+    for key, name in (("WEBSEARCH_BACKEND", "Web search"), ("WEBSEARCH_AGENTCORE_GATEWAY", "AgentCore Web Search"),
+                      ("WEBSEARCH_TAVILY_API_KEY", "Tavily"), ("WEBSEARCH_BRAVE_API_KEY", "Brave Search"),
+                      ("WEBSEARCH_PERPLEXITY_API_KEY", "Perplexity"), ("WEBSEARCH_SEARXNG_URL", "SearXNG")):
+        card = sec.locator(f".set-dep.set-prov > .set-row[data-key={key}]")
+        expect(card.count() == 1, f"{name}: no card")
+        expect(card.locator(".set-name").first.inner_text() == name, f"{key}'s card is not named {name}")
+        state = card.locator(".set-prov-state").inner_text()
+        adds = card.locator(".set-prov-adds").inner_text()
+        if key == "WEBSEARCH_BACKEND":
+            expect((state in ("On", "Needs a step")) if ws.get("backend") else state == "Off", f"{name}: {state!r} with backend {ws.get('backend')!r}")
+            expect(("WebSearch searches with" in adds) if ws.get("backend") else ("WebSearch says it is not available" in adds), f"{name}: {adds!r}")
+        else:
+            expect(state in ("In use", "In use · needs a step", "Set up", "Not set up", "Needs your AWS admin"), f"{name}: state {state!r}")
+            expect("the queries" in adds, f"{name}: {adds!r} says not where the queries go")
+        btn = card.locator(":scope > .set-actions button.action:not([data-act])")
+        expect(btn.count() == 1 and btn.is_enabled() == can, f"{name}: its action {btn.all_inner_texts()}, enabled with the helper {'on' if can else 'off'}")
+        if can:
+            btn.click()
+            form = card.locator(".set-form")
+            expect(form.locator("input, select").count() >= 1, f"{name}: the form has no field")
+            form.locator("button", has_text="Cancel").click()
+        said.append(f"{name}: {state}")
     shot(page, "17c-settings-providers")
     # the old places say where they went, and their links land on the card
     goto_setting(page, "aws")

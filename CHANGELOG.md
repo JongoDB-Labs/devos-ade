@@ -16,8 +16,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   admin sets up once per account (`./stack websearch aws-setup` prints the commands; DevOS ADE never changes IAM).
   Setup checks it (free: the gateway, found by itself when your key may list them, and your key's permission; then one
   search) and names what is missing with the command for your admin (`bedrock-agentcore:InvokeGateway`, …). Or your
-  own Tavily, Brave Search or Perplexity key, or a SearXNG URL (`./stack config set WEBSEARCH_…`, Settings › Claude
-  Code). Each search is booked like model spend, on the key of the session that searched, against its budget.
+  own Tavily, Brave Search or Perplexity key, or a SearXNG URL (`./stack config set WEBSEARCH_…`, or Settings › Models
+  & providers › Search: a card for WebSearch — the backend in use, its check, the command for your admin with *Copy* —
+  and one for each backend; on the Code page, WebSearch's *not available* result links there). Each search is booked
+  like model spend, on the key of the session that searched, against its budget.
   `./stack websearch status | check | aws-setup`; `./stack status` and `./stack code status` say which backend is in
   use. Without one, WebSearch still says it is not available (README › Web search for Claude Code). The harness
   parity suite's WebSearch scenario now requires a real search whose answer cites a page it found, on every family.
@@ -40,7 +42,6 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 - **Code page:** a provider without its key shows in the model picker, under *More providers*, as a greyed item that
   opens its card (*OpenRouter models — … Settings › Models & providers › OpenRouter takes it*); before, its group was
   simply missing. `/.bn/models` says which of OpenRouter and Experiential Labs has a key.
-
 
 ### Changed
 

@@ -10,6 +10,7 @@
 GW='https://devos-ade-web-search-abc123def4.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp'
 # a key-shaped value of no provider, built here (never a literal of one)
 KEY="$(printf 'k%.0s' $(seq 1 8))0123456789_-abcdef"
+US="$(printf '\037')"   # (websearch_check_state's separator)
 
 # STACK_DIR in $TMP (nothing of this checkout's litellm/ is written); the probe's script and the catalog stay the repo's
 _ws_env() {
@@ -268,14 +269,18 @@ LITELLM_PORT=9
   litellm_call() { echo "$*" >> "$TMP/calls"; printf '{"results":[{"url":"https://example.com"}]}' > "$5"; printf 200; }
   websearch_search_check
   assert_contains "$(cat "$TMP/calls")" 'sk-setup-test POST /v1/search/web-search {"query":"Amazon Web Services","max_results":1} '
-  assert_eq "$(websearch_check_state tavily | cut -f1)" ok
+  assert_eq "$(websearch_check_state tavily | cut -d "$US" -f1)" ok
+  # (an empty reason stays a field of its own: the date is the check's)
+  assert_contains "$(NO_COLOR=1 websearch_status_line)" "Web search for Claude Code: Tavily (\$0.008 a search at its list price, on your Tavily account; checked $(date -u +%Y-%m-%d))"
+  websearch_write_json "$TMP/ws.json"
+  python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); assert d["why"] == "" and d["checked_at"].startswith("20"), d' "$TMP/ws.json"
   websearch_search_check; assert_eq "$(wc -l < "$TMP/calls" | tr -d ' ')" 1   # reused
   websearch_search_check --force; assert_eq "$(wc -l < "$TMP/calls" | tr -d ' ')" 2
   set_env WEBSEARCH_TAVILY_API_KEY "${KEY}x"   # a new key: checked again
-  assert_eq "$(websearch_check_state tavily | cut -f1)" unchecked
+  assert_eq "$(websearch_check_state tavily | cut -d "$US" -f1)" unchecked
   litellm_call() { echo "$*" >> "$TMP/calls"; printf '{"error":{"message":"Unauthorized"}}' > "$5"; printf 401; }
   websearch_search_check
-  assert_eq "$(websearch_check_state tavily | cut -f1,2)" "$(printf 'failed\tTavily refused the key (HTTP 401)')"
+  assert_eq "$(websearch_check_state tavily | cut -d "$US" -f1,2)" "failed${US}Tavily refused the key (HTTP 401)"
   assert_contains "$(websearch_status_line)" "Web search for Claude Code: Tavily does not work — Tavily refused the key (HTTP 401)"
   assert_contains "$(websearch_fix tavily)" "./stack config set WEBSEARCH_TAVILY_API_KEY"
   # no backend: no search
@@ -457,4 +462,18 @@ assert go([native], mark) == [native] and go([], mark) == [] and go(None, mark) 
   # another LiteLLM, without the interception: None, never an error at import (the pinned one, 1.105.0, has it)
   rm -rf "$TMP/h/litellm/integrations/websearch_interception"
   PYTHONPATH="$TMP/h" python3 -c 'import bn_hooks as h; assert h.web_search is None'
+}
+
+# the Code page's WebSearch card links the hook's sentence to where a backend is set up (code/web: ToolCard.tsx
+# WEB_SEARCH_OFF): the sentence the hook writes is the one it looks for
+test_the_code_page_knows_the_hooks_sentence() {
+  command -v python3 >/dev/null 2>&1 || return 77
+  python3 -I - "$STACK_DIR/code/web/src/components/ToolCard.tsx" "$STACK_DIR/lib/litellm-hooks/bn_hooks.py" <<'PY'
+import re, sys
+src = open(sys.argv[1], encoding="utf-8").read()
+pat = re.search(r"export const WEB_SEARCH_OFF = /(.+)/;", src).group(1)
+hook = re.search(r'^WEB_SEARCH_OFF = "(.+)"$', open(sys.argv[2], encoding="utf-8").read(), re.M).group(1)
+for model in ("gpt-6-luna", "or/openai/gpt-oss-120b:free", "claude-haiku-5-5"):
+    assert re.search(pat, hook.format(model=model)), (pat, hook)
+PY
 }

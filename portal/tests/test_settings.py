@@ -219,13 +219,15 @@ def test_removing_a_key_says_what_that_key_does():
     js = (STATIC / "settings.js").read_text(encoding="utf-8")
     words = js[js.index("const REMOVE_KEY = {"):js.index("const ON_VALUES")]
     # each key that has a Remove button has words of its own: never OpenRouter's for the speech-to-text key
-    form = js[js.index('} else if (k.validator === "or_key" || k.validator === "stt_key" || k.validator === "xl_key") {'):js.index('} else if (k.validator === "webhook") {')]
+    form = js[js.index('} else if (k.validator === "or_key" || k.validator === "stt_key" || k.validator === "xl_key" || k.validator === "ws_key") {'):js.index('} else if (k.validator === "webhook") {')]
     assert "REMOVE_KEY[k.validator]" in form and "disappear" not in form
     stt = words[words.index("stt_key:"):words.index("xl_key:")]
     assert "OpenRouter" not in stt and "OpenAI or Groq key is deleted" in stt and "LiteLLM, Chat and the portal restart" in stt
     assert "or_key: \"OpenRouter's models disappear from Chat and the API; LiteLLM and the portal restart (about 40 s).\"" in words
     # (the Experiential Labs key restarts LiteLLM alone: RESTARTS.explabs)
     assert "xl_key: \"Experiential Labs' models disappear from Chat, the Code page and the API; LiteLLM restarts (about 30 s).\"" in words
+    # (a web search key, or SearXNG's URL: WebSearch stops searching with it)
+    assert "ws_key: \"Claude Code's WebSearch stops searching with it" in words
 
 
 def test_no_snapshot_or_a_bad_one(dirs):
@@ -365,16 +367,23 @@ def test_bedrock_voice_is_refused_with_the_reason_while_aws_refuses_its_audio(ma
 
 
 def test_the_web_search_line_is_type_checked(dirs):
-    # (lib/websearch.sh websearch_json: Settings › Claude Code › Web search for Claude Code shows it under its row)
+    # (lib/websearch.sh websearch_json: Settings › Models & providers' search cards)
     sd, _ = dirs
     w = {"backend": "agentcore", "name": "Amazon Bedrock AgentCore Web Search", "provider": "agentcore", "usd_per_query": 0.007005,
          "choice": "auto", "status": "failed", "why": "AWS refused bedrock-agentcore:InvokeGateway", "checked_at": "2026-10-26T06:00:00Z",
          "fix": ["your AWS admin lets this key use the gateway (an IAM change; then ./stack websearch check):",
                  "aws iam put-user-policy --user-name u --policy-name DevOSADEWebSearch --policy-document '{}'", 7]}
+    gw = "https://devos-ade-web-search-abc123def4.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
+    w["set_up"] = ["agentcore", "tavily", "google", 3]
+    w["agentcore"] = {"status": "ready", "gateway": gw, "why": "", "fix": []}
     write_snapshot(sd, choices={**CHOICES, "websearch": w})
     got = st.snapshot(sd)["choices"]["websearch"]
     assert got == {"backend": "agentcore", "name": "Amazon Bedrock AgentCore Web Search", "status": "failed",
-                   "why": "AWS refused bedrock-agentcore:InvokeGateway", "checked_at": "2026-10-26T06:00:00Z", "fix": w["fix"][:2]}, got
+                   "why": "AWS refused bedrock-agentcore:InvokeGateway", "checked_at": "2026-10-26T06:00:00Z", "fix": w["fix"][:2],
+                   "set_up": ["agentcore", "tavily"], "agentcore": {"status": "ready", "gateway": gw, "why": "", "fix": []}}, got
+    # AgentCore's state: only its own words, and a gateway's URL only
+    write_snapshot(sd, choices={**CHOICES, "websearch": {**w, "agentcore": {"status": "great", "gateway": "https://evil.example/mcp"}}})
+    assert st.snapshot(sd)["choices"]["websearch"]["agentcore"] == {"status": "", "gateway": "", "why": "", "fix": []}
     for bad in ({**w, "backend": "google"}, {**w, "status": "great"}, "x", None):
         write_snapshot(sd, choices={**CHOICES, "websearch": bad})
         assert st.snapshot(sd)["choices"]["websearch"] is None

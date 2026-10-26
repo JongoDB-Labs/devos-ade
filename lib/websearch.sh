@@ -178,16 +178,20 @@ websearch_yaml() {
 _ws_json_str() { printf '%s' "$1" | LC_ALL=C tr -d '\000-\037\177' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
 
 # websearch_json -> one JSON object: the backend in use and its price per search (lib/litellm-hooks/bn_hooks.py reads
-# them), what WEBSEARCH_BACKEND says, the checks' answers and what to do (fix: lines) — litellm/web-search.json, and
-# Settings' status line (the settings snapshot's choices.websearch)
+# them), what WEBSEARCH_BACKEND says, the checks' answers and what to do (fix: lines), the backends set up, and
+# AgentCore's own state (its check's answer, its gateway, what makes it usable) — litellm/web-search.json, and
+# Settings › Models & providers' search cards (the settings snapshot's choices.websearch)
 websearch_json() {
-  local b p=0 st why fix='' at line
+  local b p=0 st why fix='' at line ac='' up='' k
   b="$(websearch_backend)"; [ -z "$b" ] || p="$(websearch_price "$b")"
-  IFS=$'\t' read -r st why at <<< "$(websearch_check_state "$b")"
+  IFS=$'\037' read -r st why at <<< "$(websearch_check_state "$b")"
   while IFS= read -r line; do [ -z "$line" ] || fix="$fix${fix:+, }\"$(_ws_json_str "$line")\""; done <<< "$(websearch_fix "$b")"
-  printf '{"backend": "%s", "name": "%s", "provider": "%s", "usd_per_query": %s, "choice": "%s", "status": "%s", "why": "%s", "checked_at": "%s", "fix": [%s]}\n' \
+  while IFS= read -r line; do [ -z "$line" ] || ac="$ac${ac:+, }\"$(_ws_json_str "$line")\""; done <<< "$(websearch_agentcore_fix)"
+  for k in $(websearch_backends); do ! websearch_set_up "$k" || up="$up${up:+, }\"$k\""; done
+  printf '{"backend": "%s", "name": "%s", "provider": "%s", "usd_per_query": %s, "choice": "%s", "status": "%s", "why": "%s", "checked_at": "%s", "fix": [%s], "set_up": [%s], "agentcore": {"status": "%s", "gateway": "%s", "why": "%s", "fix": [%s]}}\n' \
     "$b" "$(_ws_json_str "$(websearch_name "$b")")" "$(_ws_field "$b" 2)" "$p" "$(websearch_choice)" \
-    "$st" "$(_ws_json_str "$why")" "$at" "$fix"
+    "$st" "$(_ws_json_str "$why")" "$at" "$fix" "$up" \
+    "$(websearch_agentcore_status)" "$(_ws_json_str "$(websearch_agentcore_url)")" "$(_ws_json_str "$(_ws_state agentcore why)")" "$ac"
 }
 
 # websearch_write_json [OUT] — websearch_json to OUT (default litellm/web-search.json, next to the config), replaced
@@ -249,18 +253,19 @@ _ws_search_fp() {
   } | openssl dgst -sha256 | awk '{ print $NF }'
 }
 
-# websearch_check_state BACKEND -> "STATUS<TAB>WHY<TAB>CHECKED_AT" of the last search check with BACKEND as it is set up
-# now: ok | failed | unverified; "unchecked" before one; "off" without a backend (WHY: why none is used)
+# websearch_check_state BACKEND -> "STATUS<US>WHY<US>CHECKED_AT" (US: the unit separator, \037 — a field may be empty,
+# which a tab, a whitespace to read, would fold away) of the last search check with BACKEND as it is set up now: ok |
+# failed | unverified; "unchecked" before one; "off" without a backend (WHY: why none is used)
 websearch_check_state() {
   local b="$1" st at
-  if [ -z "$b" ]; then printf 'off\t%s\t\n' "$(websearch_why_none)"; return 0; fi
+  if [ -z "$b" ]; then printf 'off\037%s\037\n' "$(websearch_why_none)"; return 0; fi
   if [ "$(_ws_state search backend)" = "$b" ] && [ "$(_ws_state search fingerprint)" = "$(_ws_search_fp "$b")" ]; then
     st="$(_ws_state search status)"; at="$(_ws_state search at)"
     case "$at" in '' | *[!0-9]*) at='' ;; *) at="$(date -u -r "$at" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$at" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || true)" ;; esac
-    printf '%s\t%s\t%s\n' "${st:-unchecked}" "$(_ws_state search why)" "$at"
+    printf '%s\037%s\037%s\n' "${st:-unchecked}" "$(_ws_state search why)" "$at"
     return 0
   fi
-  printf 'unchecked\t\t\n'
+  printf 'unchecked\037\037\n'
 }
 
 # websearch_search_check [--force] — one search through LiteLLM (its /v1/search/web-search, with the setup key: the
@@ -269,7 +274,7 @@ websearch_check_state() {
 websearch_search_check() {
   local force="${1:-}" b d tmp code body st why at age
   b="$(websearch_backend)"; [ -n "$b" ] || return 0
-  if [ "$force" != --force ] && [ "$(websearch_check_state "$b" | cut -f1)" = ok ]; then
+  if [ "$force" != --force ] && [ "$(websearch_check_state "$b" | cut -d "$(printf '\037')" -f1)" = ok ]; then
     at="$(_ws_state search at)"; case "$at" in '' | *[!0-9]*) at=0 ;; esac
     age=$(( $(date +%s) - at ))
     [ "$age" -ge 0 ] && [ "$age" -lt "$WEBSEARCH_REUSE_MAX_S" ] && return 0
@@ -326,7 +331,7 @@ websearch_after_start() {
 websearch_report() {
   local b st why
   b="$(websearch_backend)"
-  IFS=$'\t' read -r st why _ <<< "$(websearch_check_state "$b")"
+  IFS=$'\037' read -r st why _ <<< "$(websearch_check_state "$b")"
   if [ -z "$b" ]; then
     log "Web search for Claude Code: off — $why. Claude Code's WebSearch says so; WebFetch works (./stack websearch status)"
     websearch_fix "" | sed 's/^/    /' >&2
@@ -409,24 +414,35 @@ $(websearch_user_policy_cmd "arn:aws:bedrock-agentcore:$r:$a:gateway/GATEWAY_ID"
 EOF
 }
 
+# websearch_agentcore_fix -> what makes AgentCore Web Search usable with this key, as its check found it (lines; nothing
+# while it is ready)
+websearch_agentcore_fix() {
+  local url gid r
+  case "$(websearch_agentcore_status)" in
+    ready) ;;
+    denied) url="$(_ws_state agentcore url)"; gid="$(_ws_gateway_id "$url")"; r="$(_ws_url_region "$url")"
+            echo "AgentCore Web Search: your AWS admin lets this key use the gateway $gid (an IAM change; then ./stack websearch check):"
+            websearch_user_policy_cmd "arn:aws:bedrock-agentcore:$r:$(_ws_account):gateway/$gid" ;;
+    no-target) url="$(_ws_state agentcore url)"; gid="$(_ws_gateway_id "$url")"
+               echo "AgentCore Web Search: your AWS admin adds a web search target to the gateway $gid (then ./stack websearch check):"
+               websearch_aws_setup | grep 'create-gateway-target' | sed "s/GATEWAY_ID/$gid/" ;;
+    *) echo "AgentCore Web Search (no other key; \$7 per 1,000 searches): your AWS admin sets it up once — ./stack websearch aws-setup prints the commands" ;;
+  esac
+}
+
 # websearch_fix BACKEND -> what turns web search on, or makes BACKEND work (lines; nothing when there is nothing to do)
 websearch_fix() {
   local b="$1" st why url gid r a
   if [ -z "$b" ]; then
     [ "$(websearch_choice)" != off ] || return 0
+    websearch_agentcore_fix
     case "$(websearch_agentcore_status)" in
-      denied) url="$(_ws_state agentcore url)"; gid="$(_ws_gateway_id "$url")"; r="$(_ws_url_region "$url")"
-              echo "AgentCore Web Search: your AWS admin lets this key use the gateway $gid (an IAM change; then ./stack websearch check):"
-              websearch_user_policy_cmd "arn:aws:bedrock-agentcore:$r:$(_ws_account):gateway/$gid" ;;
-      no-target) url="$(_ws_state agentcore url)"; gid="$(_ws_gateway_id "$url")"
-                 echo "AgentCore Web Search: your AWS admin adds a web search target to the gateway $gid (then ./stack websearch check):"
-                 websearch_aws_setup | grep 'create-gateway-target' | sed "s/GATEWAY_ID/$gid/" ;;
-      *) echo "AgentCore Web Search (no other key; \$7 per 1,000 searches): your AWS admin sets it up once — ./stack websearch aws-setup prints the commands"
-         echo "or your own search key or SearXNG: ./stack config set WEBSEARCH_TAVILY_API_KEY (or _BRAVE_, _PERPLEXITY_) | WEBSEARCH_SEARXNG_URL" ;;
+      denied | no-target) ;;
+      *) echo "or your own search key or SearXNG: ./stack config set WEBSEARCH_TAVILY_API_KEY (or _BRAVE_, _PERPLEXITY_) | WEBSEARCH_SEARXNG_URL" ;;
     esac
     return 0
   fi
-  IFS=$'\t' read -r st why _ <<< "$(websearch_check_state "$b")"
+  IFS=$'\037' read -r st why _ <<< "$(websearch_check_state "$b")"
   [ "$st" = failed ] || return 0
   case "$b:$why" in
     agentcore:*InvokeGateway*)
@@ -453,7 +469,7 @@ websearch_status_line() {
   out_colors
   [ "${1:-}" != --short ] || p=''
   b="$(websearch_backend)"
-  IFS=$'\t' read -r st why at <<< "$(websearch_check_state "$b")"
+  IFS=$'\037' read -r st why at <<< "$(websearch_check_state "$b")"
   if [ -z "$b" ]; then printf '%soff — %s (./stack websearch status)\n' "$p" "$why"; return 0; fi
   case "$st" in
     ok) printf '%s%s (%s; checked %s)\n' "$p" "$(websearch_name "$b")" "$(websearch_price_words "$b")" "${at%%T*}" ;;
@@ -472,7 +488,7 @@ websearch_summary_line() {
 websearch_status() {
   local b c st why at k sel
   b="$(websearch_backend)"; c="$(websearch_choice)"
-  IFS=$'\t' read -r st why at <<< "$(websearch_check_state "$b")"
+  IFS=$'\037' read -r st why at <<< "$(websearch_check_state "$b")"
   websearch_status_line
   if [ -n "$b" ]; then
     case "$b" in

@@ -195,6 +195,11 @@
 .set-moved a, .set-prov-foot a { color: var(--accent); }
 .set-prov-foot { margin: 4px 0 10px; }
 .set-finding .set-group-head, .set-finding .set-prov-foot, .set-finding .set-moved { display: none; }
+/* Search's cards (Claude Code's WebSearch): what to do, under what a card adds — a line of the page's note text, a command
+   as code with its Copy (the design's tokens only, as .note and .set-cli have them) */
+.set-prov-adds > .set-extra { margin: 6px 0 0; }
+.set-prov-adds > .set-cli { margin: 6px 0 0; }
+.set-prov-adds > .set-cli code { font: 12.5px/1.5 var(--font-mono); }
 
 /* the backup list */
 .set-backups { grid-column: 1 / -1; margin-top: 6px; overflow-x: auto; }

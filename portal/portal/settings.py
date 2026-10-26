@@ -168,16 +168,26 @@ def snapshot(status_dir: Path) -> dict | None:
 
 WS_BACKENDS = ("", "agentcore", "tavily", "brave", "perplexity", "searxng")
 WS_STATUS = ("ok", "failed", "unverified", "unchecked", "off")
+WS_AGENTCORE = ("", "ready", "denied", "no-gateway", "no-target", "unverified")
+
+
+def _lines(v) -> list:
+    return [_s(f, 900) for f in v[:5] if isinstance(f, str)] if isinstance(v, list) else []
 
 
 def _websearch(w) -> dict | None:
-    """Settings' web search line, as ./stack wrote it ({backend, name, status, why, checked_at, fix: [lines]}), every
-    field checked; None without one (an older snapshot)."""
+    """Settings › Models & providers' search cards, as ./stack wrote them (lib/websearch.sh websearch_json): the backend
+    in use, its check and what to do, the backends set up, and AgentCore's own state — every field checked; None without
+    one (an older snapshot)."""
     if not isinstance(w, dict) or w.get("backend") not in WS_BACKENDS or w.get("status") not in WS_STATUS:
         return None
+    ac = w.get("agentcore") if isinstance(w.get("agentcore"), dict) else {}
+    gw = ac.get("gateway") if isinstance(ac.get("gateway"), str) and _WS_GATEWAY.fullmatch(ac["gateway"]) else ""
     return {"backend": w["backend"], "name": _s(w.get("name"), 80), "status": w["status"], "why": _s(w.get("why"), 300),
-            "checked_at": _s(w.get("checked_at"), 40),
-            "fix": [_s(f, 900) for f in (w.get("fix") or [])[:5] if isinstance(f, str)] if isinstance(w.get("fix"), list) else []}
+            "checked_at": _s(w.get("checked_at"), 40), "fix": _lines(w.get("fix")),
+            "set_up": [b for b in (w.get("set_up") or []) if b in WS_BACKENDS and b][:5] if isinstance(w.get("set_up"), list) else [],
+            "agentcore": {"status": ac.get("status") if ac.get("status") in WS_AGENTCORE else "", "gateway": gw,
+                          "why": _s(ac.get("why"), 300), "fix": _lines(ac.get("fix"))}}
 
 
 _layout_cache: dict = {}

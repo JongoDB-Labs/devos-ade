@@ -26,7 +26,7 @@ PORTAL_SESSION_DAYS	account	main	-	How long a sign-in lasts on each browser and 
 +devices	account	main	-	Every browser, phone and installed app that signed in with the portal password.
 LITELLM_STORE_PROMPTS	account	main	-	Keep the text of every prompt and answer in LiteLLM's logs (90 days, and in backups).
 
-@providers	Models & providers	Each key and sign-in here adds models to every picker: Chat's Who answers, the Code page, the terminal and devos-claude --model, with nothing else to set up. Keys stay on this computer; a provider without one sends nothing.	README.md#models--providers
+@providers	Models & providers	Each key and sign-in here adds models to every picker: Chat's Who answers, the Code page, the terminal and devos-claude --model, with nothing else to set up. Keys stay on this computer; a provider without one sends nothing. Search: what Claude Code's WebSearch searches with, on every model.	README.md#models--providers
 AWS_ACCESS_KEY_ID	providers	main	-	Claude and other vendors' models in your AWS account: an access key, or this EC2 machine's role.
 AWS_SECRET_ACCESS_KEY	providers	with	AWS_ACCESS_KEY_ID	-
 OPENROUTER_API_KEY	providers	main	-	Hundreds of other models, some free. Prompts to them go to openrouter.ai.
@@ -35,6 +35,12 @@ EXPLABS_API_KEY	providers	main	-	One gateway in front of many models. Prompts to
 EXPLABS_MODELS	providers	main	EXPLABS_API_KEY	Which of the gateway's models it adds.
 +subscriptions	providers	main	-	Your plans' own tools in the sandbox (Claude, Codex, Copilot, Cursor, Grok, Gemini): sign in once, use them everywhere.
 CODE_CLAUDE_PLAN	providers	with	+subscriptions	-
+WEBSEARCH_BACKEND	providers	main	-	Claude Code's WebSearch on every model: which search runs it (the first one set up below, or none).
+WEBSEARCH_AGENTCORE_GATEWAY	providers	main	-	Amazon's own web search, on your AWS key: no other key, and the query stays inside AWS.
+WEBSEARCH_TAVILY_API_KEY	providers	main	-	Your own Tavily key. The search queries go to tavily.com.
+WEBSEARCH_BRAVE_API_KEY	providers	main	-	Your own Brave Search API key. The search queries go to search.brave.com.
+WEBSEARCH_PERPLEXITY_API_KEY	providers	main	-	Your own Perplexity key. The search queries go to perplexity.ai.
+WEBSEARCH_SEARXNG_URL	providers	main	-	A SearXNG of your own (free). The search queries go to it, and on to the engines it asks.
 OPENROUTER_MAX_MODELS	providers	more	OPENROUTER_API_KEY	At most this many OpenRouter models, the newest first; a long list slows LiteLLM's start.
 OPENROUTER_INCLUDE_ALIASES	providers	more	OPENROUTER_API_KEY	Also offer OpenRouter's …-latest alias models.
 
@@ -84,16 +90,10 @@ CLAUDE_MODEL_OPUS	code	main	-	The model Claude Code works with: devos-claude's m
 CLAUDE_BEDROCK_OPUS_MODEL	code	with	CLAUDE_MODEL_OPUS	-
 CODE_MODELS	code	main	-	The models the Code page's picker and the terminal's /model list: all enabled, Anthropic only, or a list you pick.
 CODE_DEFAULT_MODEL	code	main	-	The model new Code page sessions and devos-claude start on.
-WEBSEARCH_BACKEND	code	main	-	Claude Code's WebSearch on every model: AgentCore Web Search on your AWS key, your own search key, or SearXNG.
 CLAUDE_MODEL_SONNET	code	more	-	Claude Code's sonnet slot.
 CLAUDE_BEDROCK_SONNET_MODEL	code	with	CLAUDE_MODEL_SONNET	-
 CLAUDE_MODEL_HAIKU	code	more	-	Claude Code's haiku slot: quick background tasks.
 CLAUDE_BEDROCK_HAIKU_MODEL	code	with	CLAUDE_MODEL_HAIKU	-
-WEBSEARCH_AGENTCORE_GATEWAY	code	more	-	Web search: the AgentCore gateway with a web search target (blank: found by itself, when your key may list them).
-WEBSEARCH_TAVILY_API_KEY	code	more	-	Web search: your own Tavily key (the queries go to tavily.com).
-WEBSEARCH_BRAVE_API_KEY	code	more	-	Web search: your own Brave Search API key (the queries go to search.brave.com).
-WEBSEARCH_PERPLEXITY_API_KEY	code	more	-	Web search: your own Perplexity key (the queries go to perplexity.ai).
-WEBSEARCH_SEARXNG_URL	code	more	-	Web search: a SearXNG instance with JSON output on (free; the queries go to it).
 TERMINAL_MEM_LIMIT	code	more	TERMINAL_ENABLED	The sandbox container's memory limit.
 TERMINAL_AI_TOOLS	code	more	TERMINAL_ENABLED	Which of your AI subscriptions' own tools the sandbox holds.
 GIT_GITHUB_CLIENT_ID	code	more	CODE_ENABLED	Sign in with GitHub (Git hosts): the GitHub App's client ID (blank: DevOS ADE's own).

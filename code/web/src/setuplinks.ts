@@ -22,6 +22,7 @@ export const SETUP_LINKS = {
   "remote-preview": { target: "setting:REMOTE_PREVIEW", where: "Settings › Remote access › Previews over remote access", says: "Previews are off over remote access: Settings › Remote access › Previews over remote access turns them on, from the computer running DevOS ADE." },
   "folder-read-only": { target: "setting:+project-folders", where: "Settings › Claude Code › Project folders", says: "Read-only: a folder of this computer added read-only — Settings › Claude Code › Project folders changes that, from the computer running DevOS ADE." },
   "remote-admin-off": { target: "setting:REMOTE_ADMIN_ACTIONS", where: "Settings › Remote access › Update, settings and diagnostics from your devices", says: "Off for remote access: Settings › Remote access › Update, settings and diagnostics from your devices turns it on, from the computer running DevOS ADE." },
+  "websearch-off": { target: "setting:WEBSEARCH_BACKEND", where: "Settings › Models & providers › Web search", says: "Claude Code's WebSearch has no search backend here: Settings › Models & providers › Web search shows how to turn it on, from the computer running DevOS ADE." },
 } as const;
 /** A reason something here is off (a key of SETUP_LINKS: a reason the table does not have does not compile). */
 export type SetupReason = keyof typeof SETUP_LINKS;

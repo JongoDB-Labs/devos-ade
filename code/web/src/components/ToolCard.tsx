@@ -7,7 +7,8 @@ import type { Item } from '../session';
 import { compact, countChanges, hunkLines, lineDiff, type DiffLine } from '../diff';
 import { displayPath, mcpParts } from '../permission';
 import { cleanPath, label, prettyJson, preview, safe, LIMITS } from '../text';
-import { openDiff, openFile } from '../app';
+import { goSetup, openDiff, openFile } from '../app';
+import { SETUP_LINKS } from '../setuplinks';
 import { previewableName } from '../preview/sniff';
 import { Icon, Spinner } from './icons';
 import { MarkdownView } from './MarkdownView';
@@ -103,6 +104,9 @@ function editLines(it: ToolItem): { lines: DiffLine[]; add: number; del: number;
   }
   return { lines, add: lines.filter((l) => l.kind === 'add').length, del: lines.filter((l) => l.kind === 'del').length, more: Math.max(0, edits.length - MAX_EDITS) };
 }
+
+/** The words of WebSearch's result while no search backend is set up (lib/litellm-hooks/bn_hooks.py WEB_SEARCH_OFF). */
+export const WEB_SEARCH_OFF = /Web search isn't available for .{1,200} in DevOS ADE\. Use WebFetch with a URL\./;
 
 const ICONS: Record<string, string> = {
   Bash: 'terminal',
@@ -291,10 +295,23 @@ function Body({ it, nested }: { it: ToolItem; nested?: ComponentChildren }) {
           {r && <Output text={r.text} />}
         </>
       );
+    case 'WebSearch':
+      // no search backend: its result says so (lib/litellm-hooks/bn_hooks.py WEB_SEARCH_OFF), and here is where one is set up
+      return r ? (
+        <>
+          <Output text={r.text} lines={20} class={r.isError ? 'err' : ''} />
+          {WEB_SEARCH_OFF.test(r.text) ? (
+            <p class="muted small" data-testid="websearch-off">
+              {SETUP_LINKS['websearch-off'].says}{' '}
+              <button type="button" class="linkish setup-link" data-setup="websearch-off" aria-label={`Go to ${SETUP_LINKS['websearch-off'].where}`}
+                onClick={() => goSetup('websearch-off')}>{SETUP_LINKS['websearch-off'].where}</button>
+            </p>
+          ) : null}
+        </>
+      ) : null;
     case 'Read':
     case 'Glob':
     case 'Grep':
-    case 'WebSearch':
     case 'BashOutput':
     case 'AskUserQuestion':
     case 'Skill':

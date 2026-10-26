@@ -180,10 +180,11 @@ def test_sections_hold_what_their_task_needs():
     assert rows["CHAT_DEFAULT_MODEL"]["section"] == "chat" and rows["CLAUDE_MODEL_OPUS"]["section"] == "code"
     assert rows["STT_PROVIDER"]["section"] == "chat"
     # every key and sign-in that adds models in one place, Models & providers: each provider's key a card of its own
-    # (its models' rows inside it), then your subscriptions; none of them left in AWS & models, Chat & voice or Claude
-    # Code
+    # (its models' rows inside it), then your subscriptions, then Search: Claude Code's WebSearch and a card for each of
+    # its backends; none of them left in AWS & models, Chat & voice or Claude Code
     assert [k for k, r in rows.items() if r["section"] == "providers" and r["place"] == "main" and not r["parent"]] == \
-        ["AWS_ACCESS_KEY_ID", "OPENROUTER_API_KEY", "EXPLABS_API_KEY", "+subscriptions"]
+        ["AWS_ACCESS_KEY_ID", "OPENROUTER_API_KEY", "EXPLABS_API_KEY", "+subscriptions", "WEBSEARCH_BACKEND", "WEBSEARCH_AGENTCORE_GATEWAY",
+         "WEBSEARCH_TAVILY_API_KEY", "WEBSEARCH_BRAVE_API_KEY", "WEBSEARCH_PERPLEXITY_API_KEY", "WEBSEARCH_SEARXNG_URL"]
     assert where("AWS_SECRET_ACCESS_KEY") == ("providers", "with", "AWS_ACCESS_KEY_ID")
     assert where("OPENROUTER_MODELS") == ("providers", "main", "OPENROUTER_API_KEY") and where("EXPLABS_MODELS") == ("providers", "main", "EXPLABS_API_KEY")
     assert where("OPENROUTER_MAX_MODELS") == where("OPENROUTER_INCLUDE_ALIASES") == ("providers", "more", "OPENROUTER_API_KEY")
@@ -342,8 +343,10 @@ def test_models_and_providers_a_card_for_each_key_and_sign_in():
     js = _js()
     assert 'AWS_ACCESS_KEY_ID: "Bedrock", OPENROUTER_API_KEY: "OpenRouter", EXPLABS_API_KEY: "Experiential Labs"' in js
     provs = dict(re.findall(r'(\w+): \{ models: "[^"]+", pick: \["([^"]+)"', js[js.index("const PROVIDERS = {"):js.index("const GROUP_HEAD")]))
+    # (and Search's: Claude Code's WebSearch, then a card for each backend — what it adds, not models: the next test)
+    search = [k for k in rows if k.startswith("WEBSEARCH_")]
     assert sorted(provs) == sorted(k for k, r in rows.items() if r["section"] == "providers" and r["place"] == "main" and not r["parent"]
-                                   and not k.startswith("+"))
+                                   and not k.startswith("+") and k not in search)
     for key, pick in provs.items():
         assert table[key][3] == "local", key          # keys stay on this computer: never changed from your devices
         assert pick in rows, (key, pick)
@@ -352,7 +355,7 @@ def test_models_and_providers_a_card_for_each_key_and_sign_in():
     assert '"Sends nothing until it has a key; then its models are in every picker."' in card
     assert "`Adds ${models.length} model${models.length === 1 ? \"\" : \"s\"}" in card and 'href: "#settings/CODE_MODELS"' in card
     # (its one action: Add key, else Replace key — the form removes it)
-    assert 'text: PROVIDERS[k.key] ? (k.set ? "Replace key" : "Add key")' in js
+    assert 'text: PROVIDERS[k.key] ? (PROVIDERS[k.key].button || ["Replace key", "Add key"])[k.set ? 0 : 1]' in js
     # your subscriptions: a card each, in a grid; the pickers each answers in — the Code page's as types.ts has them
     subs = js[js.index("function subscriptionsRow(r) {"):js.index("function sessionDays()")]
     assert 'el("li", { class: "set-prov", "data-tool": t.id }' in subs and 'provState(st[0], tone)' in subs
@@ -366,3 +369,32 @@ def test_models_and_providers_a_card_for_each_key_and_sign_in():
     for sec, place in re.findall(r'(\w+): \[\["([^"]+)"', moved):
         assert sec in st.SECTIONS and rows[place]["section"] == "providers" and sec != "providers", (sec, place)
     assert {"aws", "chat", "code"} <= set(re.findall(r'(\w+): \[\["', moved))
+
+
+def test_search_a_card_for_claude_codes_websearch_and_each_backend():
+    # Settings › Models & providers › Search (lib/websearch.sh): Claude Code's WebSearch — the backend it searches with
+    # now, its check and what to do — then a card for each backend, AWS's own first; each says what it adds (real
+    # results for WebSearch) instead of a count of models, where the query goes and what it costs; all of them local
+    st._layout_cache.clear()
+    rows = {r["key"]: r for r in st.layout(REAL.parent)["rows"]}
+    table = _table()
+    js = _js()
+    search = [k for k, r in rows.items() if k.startswith("WEBSEARCH_")]
+    assert search[0] == "WEBSEARCH_BACKEND" and all(rows[k]["section"] == "providers" for k in search)
+    assert 'WEBSEARCH_BACKEND: "Search" }' in js   # (its group's head)
+    provs = js[js.index("const PROVIDERS = {"):js.index("const GROUP_HEAD")]
+    for k in search:
+        assert f"{k}: " in provs, k
+        assert table[k][3] == "local", k   # what is searched with, and where the queries go: from this computer only
+    for b, k in (("agentcore", "WEBSEARCH_AGENTCORE_GATEWAY"), ("tavily", "WEBSEARCH_TAVILY_API_KEY"), ("brave", "WEBSEARCH_BRAVE_API_KEY"),
+                 ("perplexity", "WEBSEARCH_PERPLEXITY_API_KEY"), ("searxng", "WEBSEARCH_SEARXNG_URL")):
+        assert f'{k}: wsCard("{b}",' in provs, k
+    card = js[js.index("function wsCard(b, where, cost, button) {"):js.index("function providerRow(k, r) {")]
+    assert "webSearch().set_up.includes(b)" in card and '["Needs your AWS admin", "warn"]' in card
+    # the commands for your AWS admin as code, each with its Copy button
+    lines = js[js.index("function wsLines(lines) {"):js.index("function wsChoiceState")]
+    assert 'el("code", { text: line })' in lines and "copyButton(line" in lines
+    # its forms: a choice of the backend, a key's (with Remove), the gateway's URL, SearXNG's URL (not the webhook's words)
+    form = js[js.index("function openForm(r, k) {"):js.index("function genPassword()")]
+    assert 'k.validator === "ws_backend"' in form and 'k.validator === "ws_gateway"' in form and '|| k.validator === "ws_key"' in form
+    assert 'sx ? "Remove the URL" : "Remove the webhook"' in form

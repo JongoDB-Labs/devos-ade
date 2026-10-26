@@ -89,3 +89,14 @@ test('a read-only project folder links where that is changed: the file tree, the
   }
   assert.equal(SETUP_LINKS['folder-read-only'].target, 'setting:+project-folders');
 });
+
+test("WebSearch's result without a search backend links where one is set up (Settings › Models & providers › Web search)", () => {
+  const src = readFileSync(new URL('../src/components/ToolCard.tsx', import.meta.url), 'utf8');
+  const at = src.indexOf('data-testid="websearch-off"');
+  assert.ok(at > 0, 'ToolCard: websearch-off');
+  assert.match(src.slice(at, at + 500), /onClick=\{\(\) => goSetup\('websearch-off'\)\}/);
+  assert.equal(SETUP_LINKS['websearch-off'].target, 'setting:WEBSEARCH_BACKEND');
+  const re = new RegExp(/export const WEB_SEARCH_OFF = \/(.+)\/;/.exec(src)?.[1] ?? '^$');
+  assert.ok(re.test("Web search isn't available for gpt-6-luna in DevOS ADE. Use WebFetch with a URL."));
+  assert.ok(!re.test('Web search results for query: "x"'));
+});
