@@ -5,6 +5,14 @@
 import type { SpendRow } from './types';
 import type { Turn } from './session';
 
+/** When an event happened, on this browser's clock: the backend's time for it plus how far this browser's clock is
+ *  ahead (skew, from the `attached` message), never later than now; without either, now. A replay's events (a reload,
+ *  a second tab, a phone) keep their own times, so a reloaded session's turns — and the LiteLLM rows each one gets —
+ *  are the ones shown live: a turn's cost does not change with a reload. */
+export function eventTime(at: number | null, skew: number | null, now = Date.now()): number {
+  return at === null || skew === null ? now : Math.min(now, at + skew);
+}
+
 /** LiteLLM writes spend logs in batches; until a turn is this old, "no rows yet" means "not known yet". */
 export const SETTLE_MS = 60_000;
 

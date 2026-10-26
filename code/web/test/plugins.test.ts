@@ -65,7 +65,7 @@ test('the backend\'s shapes (protocol.mjs) read as meant', () => {
   assert.deepEqual(msg({ type: 'hello', pending: 2, limits: { maxImages: 4 } }), { kind: 'hello', pending: 2, maxImages: 4 });
   assert.deepEqual(msg({ type: 'pending', count: 3 }), { kind: 'pending', count: 3 });
   assert.deepEqual(msg({ type: 'attached', session: S, epoch: 'ab12cd34', state: 'idle', from: 1, last: 9, gap: false }),
-    { kind: 'attached', session: S, from: 1, last: 9, gap: false, epoch: 'ab12cd34' });
+    { kind: 'attached', session: S, from: 1, last: 9, gap: false, epoch: 'ab12cd34', now: null });
   assert.equal(msg({ type: 'attached', session: S, from: 'x', last: 9 }), null);
   assert.deepEqual(msg({ type: 'reply', req: 'p1', ok: false, error: 'empty or too long prompt' }), { kind: 'reply', req: 'p1', ok: false, error: 'empty or too long prompt', data: null, said: null });
   // rewind_files: the reply's data, read as a checkpoint result (paths shown relative to the workspace)

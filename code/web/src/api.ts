@@ -400,6 +400,10 @@ function absUrl(v: unknown): string {
 }
 
 /** A process's epoch: a short id the backend gives each Claude Code process of a session. */
+/** A time the backend gives (ms since 1970): a whole number between 2001 and 2286, else null. */
+export function clockMs(v: unknown): number | null {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 1e12 && v < 1e13 ? v : null;
+}
 function epochOf(v: unknown): string | null {
   return typeof v === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(v) ? v : typeof v === 'number' && Number.isInteger(v) && v >= 0 ? String(v) : null;
 }
@@ -462,7 +466,7 @@ export function normServerMsg(raw: string): ServerMsg | null {
       const ev = normEvent(o.ev);
       const seq = num(o.seq, NaN);
       if (!session || !ev || !Number.isInteger(seq) || seq < 0) return null;
-      return { kind: 'event', session, seq, epoch: epochOf(o.epoch), ev };
+      return { kind: 'event', session, seq, epoch: epochOf(o.epoch), ev, at: clockMs(o.at) };
     }
     case 'permission': {
       const req = normPermission(o);
@@ -474,7 +478,7 @@ export function normServerMsg(raw: string): ServerMsg | null {
       const from = num(o.from, NaN);
       const last = num(o.last, NaN);
       if (!session || !Number.isInteger(from) || !Number.isInteger(last) || from < 0 || last < 0) return null;
-      return { kind: 'attached', session, from, last, gap: o.gap === true, epoch: epochOf(o.epoch) };
+      return { kind: 'attached', session, from, last, gap: o.gap === true, epoch: epochOf(o.epoch), now: clockMs(o.now) };
     }
     case 'session_state': {
       const state = sessionState(o.state);

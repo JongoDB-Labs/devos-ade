@@ -24,7 +24,7 @@ import { promptTitle } from './mentions';
 import { crossed, nextBudget, rememberBudget, storedBudget, type Budget } from './budget';
 import { pageTitle, waitingSessions } from './groups';
 import { parseDeepLink, withoutDeepLink } from './deeplink';
-import { sessionCost } from './spend';
+import { eventTime, sessionCost } from './spend';
 import { RECHECK_TEXT, WORKSPACE, WORKSPACE_ID, goneTops, holdForSettings, inProject, liveHostTops, mentionPath, projectFor, projectIdOk, projectOfCwd, readOnlyTops, settingsApplied, settingsStateFor, type Project, type SettingsState, type Where } from './projects';
 import { PRODUCT } from './brand';
 
@@ -745,7 +745,7 @@ function handle(m: ServerMsg): void {
         if (!v) return;
       }
       if (needHistory.has(m.session)) historyAfterReplay(m.session, 250);
-      const next = applySeq(v, m.seq, m.ev);
+      const next = applySeq(v, m.seq, m.ev, eventTime(m.at, backendSkew));
       if (next === v) return;
       updateView(m.session, () => next);
       if (m.ev.kind === 'user' || m.ev.kind === 'result') turnMarks.set(m.session, (turnMarks.get(m.session) ?? 0) + 1);
@@ -757,6 +757,7 @@ function handle(m: ServerMsg): void {
       // process now: start over from what the replay brings next, and put the transcript in front of it once the
       // replay has settled.
       reattaching.delete(m.session);
+      if (m.now !== null) backendSkew = Date.now() - m.now;
       // what follows up to `last` is a replay of what already happened (not news: no dot in the session list)
       replayTo.set(m.session, m.last);
       const v = get().views[m.session];
@@ -954,6 +955,8 @@ function notify(title: string, body: string, session: string): void {
 
 /** Per session, the last event seq an attach replays (a page that just opened sees old turns end again). */
 const replayTo = new Map<string, number>();
+/** How far this browser's clock is ahead of the backend's (ms), from the last `attached` (null: not known yet). */
+let backendSkew: number | null = null;
 function onEvent(id: string, ev: Ev, wasBusy = false, replayed = false): void {
   if (ev.kind === 'result') {
     // finished while you were elsewhere: a dot in the session list until you look (never for a replayed turn)

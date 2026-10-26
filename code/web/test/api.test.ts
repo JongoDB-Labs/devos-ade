@@ -6,7 +6,7 @@ const S = '3f2a7c1e-9b4d-4e8a-a1c2-0d9e8f7a6b5c';
 const msg = (o: unknown) => normServerMsg(JSON.stringify(o));
 
 test('event messages need a valid session, an integer seq and a known event', () => {
-  assert.deepEqual(msg({ type: 'event', session: S, seq: 3, ev: { type: 'delta', text: 'hi' } }), { kind: 'event', session: S, seq: 3, epoch: null, ev: { kind: 'delta', text: 'hi', parent: null } });
+  assert.deepEqual(msg({ type: 'event', session: S, seq: 3, ev: { type: 'delta', text: 'hi' } }), { kind: 'event', session: S, seq: 3, epoch: null, ev: { kind: 'delta', text: 'hi', parent: null }, at: null });
   assert.equal(msg({ type: 'event', session: S, seq: 3, epoch: 'a1b2c3d4', ev: { type: 'delta', text: 'hi' } })?.kind === 'event' && 'ok', 'ok');
   assert.equal(msg({ type: 'event', session: '../../etc', seq: 3, ev: { type: 'delta', text: 'x' } }), null);
   assert.equal(msg({ type: 'event', session: S, seq: 1.5, ev: { type: 'delta', text: 'x' } }), null);

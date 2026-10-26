@@ -335,12 +335,16 @@
 //                                               Claude works in the session
 // server -> client:
 //   {type: "hello", pending, limits}                          once, on connect
-//   {type: "attached", session, epoch, state, from, last, gap}   gap: events after the page's `since` are gone, or
+//   {type: "attached", session, epoch, state, from, last, gap, now}   gap: events after the page's `since` are gone, or
 //                                                             since > last, or the page's epoch is not this process's
-//                                                             (re-read the history, then show the replay after it)
-//   {type: "event", session, epoch, seq, ev}                  seq 1, 2, 3 … per process (holes are normal: finished
+//                                                             (re-read the history, then show the replay after it);
+//                                                             now: this computer's clock (ms)
+//   {type: "event", session, epoch, seq, ev, at}              seq 1, 2, 3 … per process (holes are normal: finished
 //                                                             blocks replace their deltas); epoch: 8 hex characters,
-//                                                             new for every process of the session
+//                                                             new for every process of the session; at: when it
+//                                                             happened (ms, this computer's clock — a replay's events
+//                                                             keep their own times, so a reloaded page's turns, and
+//                                                             their costs from LiteLLM's rows, are the live ones)
 //   {type: "permission", id, session, tool, input, complete, reason, reasonType, blockedPath, rules, projectRules,
 //          defaultNo, noAlways, expiresAt}
 //          reasonType: why Claude Code asks (the SDK's decisionReasonType: rule, hook, classifier — Auto mode paused

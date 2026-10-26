@@ -189,6 +189,14 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   default set or changed in Settings after your pick wins over it until you pick again. A browser's pick from before
   this version is taken over the first time it opens the Code page.
 
+### Fixed
+
+- **A finished turn costs the same after a reload.** The Code page showed a turn's cost from LiteLLM's rows between its
+  prompt and its end — but a reloaded page rebuilt its turns at the moment of the reload, so it counted only the last
+  minute's rows: a first turn read $0.0049 live and $0.0007 after a reload, while the session's total stayed $0.0049
+  (LiteLLM's spend, the true figure). The code container now stamps each event with its time, and a page that
+  re-attaches (a reload, a second tab, a phone) rebuilds the turns at their own times.
+
 ## [0.31.0] - 2026-10-26
 
 ### Added

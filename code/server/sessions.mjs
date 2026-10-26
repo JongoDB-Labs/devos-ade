@@ -227,8 +227,9 @@ export class Session {
   }
 
   emit(ev) {
-    const seq = this.ring.push(ev);
-    this.mgr.onEvent(this, seq, ev);
+    const at = Date.now();
+    const seq = this.ring.push(ev, at);
+    this.mgr.onEvent(this, seq, ev, at);
   }
 
   setState(state, error = null) {

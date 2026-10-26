@@ -206,8 +206,9 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     spawnAgent, agentStore: agents, planAllowed: planAllowed === true, versions: { server: versions.sdk || '0' },
     plainPaths: async (root, paths) => (await call({ op: 'paths.plain', root, paths }, { timeoutMs: 15000 })).result,
     gitHosts: () => hostStore.list(),
-    onEvent: (s, seq, ev) => {
-      toAttached(s.id, { type: 'event', session: s.id, epoch: s.epoch, seq, ev });
+    // (at: when it happened, this computer's clock: the page rebuilds a reloaded session's turns at their own times)
+    onEvent: (s, seq, ev, at) => {
+      toAttached(s.id, { type: 'event', session: s.id, epoch: s.epoch, seq, ev, ...(Number.isFinite(at) ? { at } : {}) });
       // a title given before the session had a transcript: written once its first turn is over
       if (ev.type === 'result' && s.pendingTitle && s.hasTranscript) {
         const title = s.pendingTitle;
@@ -666,8 +667,9 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
         if (otherProcess) since = 0;
         const r = s.ring.since(since);
         const gap = r.gap || otherProcess;
-        sendTo(c, { type: 'attached', session: s.id, epoch: s.epoch, state: s.state, from: s.ring.first, last: s.ring.last, gap });
-        for (const e of r.events) sendTo(c, { type: 'event', session: s.id, epoch: s.epoch, seq: e.seq, ev: e.ev });
+        // (now: this computer's clock, so the page can place the replayed events' times on its own)
+        sendTo(c, { type: 'attached', session: s.id, epoch: s.epoch, state: s.state, from: s.ring.first, last: s.ring.last, gap, now: Date.now() });
+        for (const e of r.events) sendTo(c, { type: 'event', session: s.id, epoch: s.epoch, seq: e.seq, ev: e.ev, ...(Number.isFinite(e.at) ? { at: e.at } : {}) });
         for (const p of broker.forSession(s.id)) sendTo(c, { type: 'permission', ...p });
         sendTo(c, stateMsg(s));
         return reply({ attached: s.id });

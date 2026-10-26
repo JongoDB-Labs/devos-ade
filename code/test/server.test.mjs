@@ -470,6 +470,12 @@ test('WebSocket: another site\'s Origin refused; prompt, events, re-attach with 
   await until(b.inbox, (m) => m.type === 'event' && m.ev.type === 'result');
   assert.deepEqual(b.inbox.filter((m) => m.type === 'event').map((m) => [m.seq, m.ev.type]), [[4, 'text'], [5, 'result']]);
   assert.deepEqual([b.inbox.find((m) => m.type === 'attached').gap, b.inbox.find((m) => m.type === 'attached').epoch], [false, epoch]);
+  // each event says when it happened (this computer's clock), the attach says the time now — and a replay keeps every
+  // event's own time: a reloaded page rebuilds its turns, and their costs from LiteLLM's rows, as they were live
+  const live = a.inbox.filter((m) => m.type === 'event');
+  assert.ok(live.every((m) => Number.isInteger(m.at) && Math.abs(Date.now() - m.at) < 60_000), JSON.stringify(live.map((m) => m.at)));
+  assert.ok(Number.isInteger(b.inbox.find((m) => m.type === 'attached').now));
+  for (const r of b.inbox.filter((m) => m.type === 'event')) assert.equal(r.at, live.find((m) => m.seq === r.seq).at, `seq ${r.seq}: its own time on replay`);
   // a page that saw another process of this session (or counts past this one) gets all of it, with gap set
   for (const [att, req] of [[{ since: 2, epoch: 'deadbeef' }, 'ep1'], [{ since: 99 }, 'ep2']]) {
     const n = b.inbox.length;

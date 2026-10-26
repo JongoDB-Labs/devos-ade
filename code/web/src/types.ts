@@ -569,14 +569,15 @@ export interface Task {
 
 /** What the server pushes over the WebSocket, normalised. */
 export type ServerMsg =
-  | { kind: 'event'; session: string; seq: number; epoch: string | null; ev: Ev }
+  /** at: when it happened, by the backend's clock (ms; null: an older backend does not say) */
+  | { kind: 'event'; session: string; seq: number; epoch: string | null; ev: Ev; at: number | null }
   | { kind: 'permission'; req: PermissionReq }
   | { kind: 'permission_done'; id: string; session: string | null }
   | { kind: 'session_state'; session: string; state: SessionState; model: string | null; mode: Mode | null; budget?: Budget | null; lastActive?: number;
       settings?: SessionSettings | null; harness?: Harness; plan?: PlanUsage | null }
   /** the answer to `attach`: replayed events start at `from`; `gap`: some after the page's `since` are gone (or the
-   *  process changed: another `epoch`) */
-  | { kind: 'attached'; session: string; from: number; last: number; gap: boolean; epoch: string | null }
+   *  process changed: another `epoch`); now: the backend's clock (ms; null: an older backend) */
+  | { kind: 'attached'; session: string; from: number; last: number; gap: boolean; epoch: string | null; now: number | null }
   /** the CLI reset the conversation (/clear, a plan exit with a fresh context): it goes on as `next` */
   | { kind: 'reset'; session: string; next: string }
   /** the answer to a message that carried `req` */
