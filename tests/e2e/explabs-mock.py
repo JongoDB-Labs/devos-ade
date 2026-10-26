@@ -9,8 +9,9 @@ model whose id holds "byok") —
 streamed or not, and each request body is appended to a JSONL file for the script to check. A Chat Completions request
 with a reasoning effort is answered with the model's reasoning too (reasoning_content, as the gateway's reasoning lanes
 return it); one whose history carries LiteLLM's own fields (thinking_blocks, provider_specific_fields) is refused with
-the gateway's 400 ("Invalid value for 'messages.3.thinking_blocks'"). Never the key: only "Bearer" is looked for in the
-header.
+the gateway's 400 ("Invalid value for 'messages.3.thinking_blocks'"). Every answer has an id of its own, as the gateway's
+do: LiteLLM keys its spend log by it, and keeps only the first of two rows with one id. Never the key: only "Bearer" is
+looked for in the header.
 Usage: python3 explabs-mock.py PORT LOG V1_JSON CATALOG_DIR [SLOW_FILE]
 """
 
@@ -19,6 +20,7 @@ import os
 import re
 import sys
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
@@ -95,11 +97,12 @@ class Gateway(BaseHTTPRequestHandler):
             f.write(json.dumps({"path": self.path, "bearer": self.headers.get("Authorization", "").startswith("Bearer "),
                                 "body": body}) + "\n")
         byok = "byok" in str(body.get("model", ""))
+        gen = uuid.uuid4().hex[:24]   # (this answer's id)
         cost = 0 if byok or str(body.get("model", "")).endswith(":free") else COST
         now = int(time.time())
         if self.path.endswith("/responses"):
             usage = {"input_tokens": 58, "output_tokens": 48, "total_tokens": 106, "cost": cost, "is_byok": byok}
-            resp = {"id": "resp_1", "object": "response", "created_at": now, "status": "completed", "model": body.get("model"),
+            resp = {"id": f"resp_{gen}", "object": "response", "created_at": now, "status": "completed", "model": body.get("model"),
                     "output": [{"type": "message", "id": "msg_1", "status": "completed", "role": "assistant",
                                 "content": [{"type": "output_text", "text": "DevOS ADE test OK", "annotations": []}]}],
                     "usage": usage, "parallel_tool_calls": True, "tool_choice": "auto", "tools": []}
@@ -115,7 +118,7 @@ class Gateway(BaseHTTPRequestHandler):
         usage = {"prompt_tokens": 58, "completion_tokens": 48, "total_tokens": 106,
                  "completion_tokens_details": {"reasoning_tokens": 38}, "cost": cost, "is_byok": byok}
         if body.get("stream"):
-            base = {"id": "gen-1", "object": "chat.completion.chunk", "created": now, "model": body.get("model")}
+            base = {"id": f"gen-{gen}", "object": "chat.completion.chunk", "created": now, "model": body.get("model")}
             return self._sse([("", {**base, "choices": [{"index": 0, "delta": {"content": "DevOS ADE "}, "finish_reason": None}]}),
                               ("", {**base, "choices": [{"index": 0, "delta": {"content": "test OK"}, "finish_reason": None}]}),
                               ("", {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}),
@@ -123,7 +126,7 @@ class Gateway(BaseHTTPRequestHandler):
         message = {"role": "assistant", "content": "DevOS ADE test OK"}
         if body.get("reasoning_effort"):
             message["reasoning_content"] = "Thought about it"
-        self._json(200, {"id": "gen-1", "object": "chat.completion", "created": now, "model": body.get("model"),
+        self._json(200, {"id": f"gen-{gen}", "object": "chat.completion", "created": now, "model": body.get("model"),
                          "choices": [{"index": 0, "message": message, "finish_reason": "stop"}],
                          "usage": usage, "provider": "experiential_cloud"})
 

@@ -12,7 +12,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   to end: a Code page session, a Chat conversation with its title and tags, and `devos-claude --model
   xl/deepseek-v4.1-flash:free -p …` in the terminal, against a stand-in for Experiential Labs, each on a key of its own.
   Every request must be on the free model at $0 (the Claude models are priced there, so one that fell back would
-  show), each key's spend $0, and Home's Equivalent must price the same usage.
+  show) and booked to the key it came on, Chat's answer, title and tags to Open WebUI's; each key's spend must stay
+  $0, and Home's Equivalent must price the same usage.
 
 ### Changed
 

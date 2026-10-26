@@ -15,15 +15,19 @@
 #                        now leaves it
 # What it checks, each on a key of its own: a Code page session on xl/deepseek-v4.1-flash:free, a Chat conversation on
 # it with its title and tags made, and `devos-claude --model xl/deepseek-v4.1-flash:free -p …` in the terminal all
-# answer; every request LiteLLM logged is on that model at $0 (none on a Claude model: Claude Code's background work and
-# Chat's titles follow the model), so is everything the stand-in got; each key's spend stays $0; and Home's Equivalent
+# answer; everything the stand-in got is for that model (none for a Claude model: Claude Code's background work and
+# Chat's titles follow the model); every call is booked to the key it came on, under that key's alias — Chat's three
+# (the answer, its title, its tags) to Open WebUI's, which its budget and Home's Chat row count — at $0, none to another
+# key or to none; each key's spend stays $0; and Home's Equivalent
 # view (portal/portal/usage.py, run against this LiteLLM) prices the same usage at deepseek-v4.1-flash's prices while
 # Actual stays $0.
 #
 #   --terminal-image IMG, --code-image IMG, --owui-image IMG   the images (default: the newest bne2e-cache/terminal,
 #                        bne2e-cache/code and bne2e-cache/open-webui that tests/e2e/run.sh left; this checkout's
 #                        changed files are mounted over theirs)
-#   --out DIR            results (default tests/e2e/out, gitignored): free-models.json
+#   --out DIR            results (default tests/e2e/out, gitignored): free-models.json, free-models-spend.json (each
+#                        spend-log row: the key it was booked to, its alias, tags, end user; the key's hash cut short)
+#                        and free-models-standin.json (each call the stand-in got)
 # Docker runs it: on a machine that shares a heavy-job lock, run the whole script inside that lock.
 set -uo pipefail
 umask 077
@@ -239,38 +243,7 @@ else
 fi
 
 # --- what LiteLLM booked: every request on the free model at $0, each key's spend $0 ---
-say "waiting for LiteLLM's spend log"
-today="$(date -u +%Y-%m-%d)"
-logs() { api GET "/spend/logs/v2?start_date=$today%2000:00:00&end_date=$today%2023:59:59&page_size=200" > "$WORK/logs.json"; }
-for _ in $(seq 1 45); do
-  logs
-  python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1]))["data"]; a = {(r.get("metadata") or {}).get("user_api_key_alias") for r in d}
-sys.exit(0 if {"e2e-code", "e2e-terminal", "e2e-chat"} <= a and sum(1 for r in d if (r.get("metadata") or {}).get("user_api_key_alias") == "e2e-chat") >= 3 else 1)' "$WORK/logs.json" 2>/dev/null && break
-  sleep 2
-done
-python3 -I - "$WORK/logs.json" "$MODEL" > "$WORK/booked.txt" <<'PY'
-import json, sys
-rows, model = json.load(open(sys.argv[1]))["data"], sys.argv[2]
-by = {}
-for r in rows:
-    md = r.get("metadata") or {}
-    by.setdefault(md.get("user_api_key_alias"), []).append((r.get("model_group"), r.get("status") or md.get("status"), float(r.get("spend") or 0)))
-for alias in ("e2e-code", "e2e-terminal", "e2e-chat"):
-    got = by.get(alias, [])
-    others = sorted({g for g, _, _ in got if g != model})
-    print(alias, len(got), sum(s for _, _, s in got), ",".join(others) or "-", sum(1 for _, st, _ in got if st not in (None, "success")), sep="\t")
-PY
-while IFS=$'\t' read -r alias n spend others failed; do
-  if [ "$n" -gt 0 ] && [ "$others" = - ] && [ "$failed" = 0 ] && python3 -I -c 'import sys; sys.exit(0 if float(sys.argv[1]) == 0 else 1)' "$spend"; then
-    ok "$alias: $n request(s), every one on $MODEL, booked \$0"
-  else
-    fail "$alias: $n request(s), \$$spend booked, other models: $others, failed: $failed"
-  fi
-done < "$WORK/booked.txt"
-for k in "e2e-code:$KCODE" "e2e-terminal:$KTERM" "e2e-chat:$KCHAT"; do
-  s="$(curl_auth "${k#*:}" -sS -m 10 "http://127.0.0.1:$LPORT/key/info" 2>/dev/null | python3 -I -c 'import json, sys; print(json.load(sys.stdin)["info"]["spend"])' 2>/dev/null)"
-  [ "$s" = 0.0 ] || [ "$s" = 0 ] && ok "${k%%:*}: the key's spend (Actual) is \$0" || fail "${k%%:*}: the key's spend is ${s:-unknown}"
-done
+# (what the stand-in got: every call that reached a model, whichever key it came on)
 docker exec "$LL" cat /tmp/reqs.jsonl > "$WORK/reqs.jsonl" 2>/dev/null || : > "$WORK/reqs.jsonl"
 python3 -I -c 'import json, sys
 ms = [json.loads(l)["body"].get("model") for l in open(sys.argv[1]) if l.strip()]
@@ -278,6 +251,65 @@ bad = sorted({m for m in ms if m != sys.argv[2]})
 print(len(ms), ",".join(bad) or "-")' "$WORK/reqs.jsonl" "${MODEL#xl/}" > "$WORK/standin.txt"
 read -r n bad < "$WORK/standin.txt"
 [ "$n" -gt 0 ] && [ "$bad" = - ] && ok "the stand-in got $n request(s), all for ${MODEL#xl/}" || fail "the stand-in got $n request(s); other models: $bad"
+
+say "waiting for LiteLLM's spend log (a row for each of the $n calls)"
+today="$(date -u +%Y-%m-%d)"
+logs() { api GET "/spend/logs/v2?start_date=$today%2000:00:00&end_date=$today%2023:59:59&page_size=200" > "$WORK/logs.json"; }
+for _ in $(seq 1 45); do
+  logs
+  python3 -I -c 'import json, sys; sys.exit(0 if len(json.load(open(sys.argv[1]))["data"]) >= int(sys.argv[2]) else 1)' "$WORK/logs.json" "$n" 2>/dev/null && break
+  sleep 2
+done
+# Each row, by the key it was booked to: LiteLLM keeps a key's sha256 (api_key) and its alias (metadata). The rows go to
+# the results without either key: the hash cut to 12 characters, a key's own alias beside it.
+KC="$KCODE" KT="$KTERM" KH="$KCHAT" python3 -I - "$WORK/logs.json" "$MODEL" "$OUT/free-models-spend.json" > "$WORK/booked.txt" <<'PY'
+import hashlib, json, os, sys
+rows, model, dump = json.load(open(sys.argv[1]))["data"], sys.argv[2], sys.argv[3]
+keys = {hashlib.sha256(os.environ[v].encode()).hexdigest(): a for v, a in (("KC", "e2e-code"), ("KT", "e2e-terminal"), ("KH", "e2e-chat"))}
+out, by = [], {}
+for r in rows:
+    md = r.get("metadata") if isinstance(r.get("metadata"), dict) else {}
+    key = keys.get(r.get("api_key"), "another key" if r.get("api_key") else "no key")
+    row = {"key": key, "api_key": str(r.get("api_key") or "")[:12], "alias": md.get("user_api_key_alias"),
+           "model_group": r.get("model_group"), "call_type": r.get("call_type"), "status": r.get("status") or md.get("status"),
+           "spend": r.get("spend"), "end_user": r.get("end_user"), "request_tags": r.get("request_tags"),
+           "session_id": r.get("session_id"), "user_agent": md.get("user_agent"), "startTime": r.get("startTime")}
+    out.append(row); by.setdefault(key, []).append(row)
+json.dump(out, open(dump, "w"), indent=1)
+for key in ("e2e-code", "e2e-terminal", "e2e-chat", "another key", "no key"):
+    got = by.get(key, [])
+    others = sorted({str(x["model_group"]) for x in got if x["model_group"] != model})
+    aliases = sorted({str(x["alias"]) for x in got if x["alias"] != key})
+    print(key, len(got), sum(float(x["spend"] or 0) for x in got), ",".join(others) or "-", ",".join(aliases) or "-",
+          sum(1 for x in got if x["status"] not in (None, "success")), sep="\t")
+PY
+# every call booked to the key it came on, under that key's alias: Chat's three — the answer, its title, its tags — on
+# Open WebUI's (its budget, Home's Chat row); none to another key or to none
+while IFS=$'\t' read -r key rows spend others aliases failed; do
+  case "$key" in
+    'another key' | 'no key') [ "$rows" = 0 ] && ok "no row booked to $key" || fail "$rows row(s) booked to $key ($OUT/free-models-spend.json)" ;;
+    *) want=1; [ "$key" != e2e-chat ] || want=3
+       if [ "$rows" -ge "$want" ] && { [ "$key" != e2e-chat ] || [ "$rows" = 3 ]; } && [ "$others" = - ] && [ "$aliases" = - ] && [ "$failed" = 0 ] &&
+          python3 -I -c 'import sys; sys.exit(0 if float(sys.argv[1]) == 0 else 1)' "$spend"; then
+         ok "$key: $rows request(s) booked to its key and alias, every one on $MODEL at \$0"
+       else
+         fail "$key: $rows row(s) (want $([ "$key" = e2e-chat ] && echo 3 || echo 'at least 1')), \$$spend, other models: $others, other aliases: $aliases, failed: $failed ($OUT/free-models-spend.json)"
+       fi ;;
+  esac
+done < "$WORK/booked.txt"
+for k in "e2e-code:$KCODE" "e2e-terminal:$KTERM" "e2e-chat:$KCHAT"; do
+  s="$(curl_auth "${k#*:}" -sS -m 10 "http://127.0.0.1:$LPORT/key/info" 2>/dev/null | python3 -I -c 'import json, sys; print(json.load(sys.stdin)["info"]["spend"])' 2>/dev/null)"
+  [ "$s" = 0.0 ] || [ "$s" = 0 ] && ok "${k%%:*}: the key's spend (Actual) is \$0" || fail "${k%%:*}: the key's spend is ${s:-unknown}"
+done
+# (the stand-in's record beside it, for a row that went astray: each call's path and model, and whether it said who)
+python3 -I -c 'import json, sys
+out = []
+for l in open(sys.argv[1]):
+    if l.strip():
+        d = json.loads(l); b = d.get("body") or {}
+        out.append({"path": d.get("path"), "model": b.get("model"), "stream": b.get("stream"), "user": "user" in b, "metadata": "metadata" in b,
+                    "first_message": str(((b.get("messages") or [{}])[0] or {}).get("content", ""))[:80]})
+json.dump(out, open(sys.argv[2], "w"), indent=1)' "$WORK/reqs.jsonl" "$OUT/free-models-standin.json" 2>/dev/null || true
 
 # --- Home's Equivalent view against this LiteLLM: the same usage priced, Actual $0 ---
 say "Home's Equivalent view (portal/portal/usage.py) against this LiteLLM"
@@ -314,7 +346,9 @@ fi
 # --- nothing of the keys in the results ---
 _result 1; RESULT_DONE=1
 for k in "$MASTER" "$KCODE" "$KTERM" "$KCHAT" "$XLKEY"; do
-  if grep -qF -- "$k" "$RESULT" 2>/dev/null; then RESULT_DONE=0; fail "a key was in the results (removed)"; rm -f "$RESULT"; break; fi
+  for f in "$RESULT" "$OUT/free-models-spend.json" "$OUT/free-models-standin.json"; do
+    if grep -qF -- "$k" "$f" 2>/dev/null; then RESULT_DONE=0; fail "a key was in $(basename "$f") (removed)"; rm -f "$f"; fi
+  done
 done
 say "results: $RESULT"
 if [ "$FAILS" -gt 0 ]; then printf '\n%d check(s) failed\n' "$FAILS"; exit 1; fi
