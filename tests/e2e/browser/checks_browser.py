@@ -440,8 +440,17 @@ def update_check_button(ctx):
         expect(text.startswith("Update available — v99.0.0 · checked just now"), f"available: {text!r}")
         page.wait_for_selector("#update-card:not([hidden])", timeout=5000)
         page.wait_for_timeout(1200)   # (a smooth scroll)
-        top = page.evaluate("document.querySelector('#update-card').getBoundingClientRect().top")
-        expect(top < 80, f"the update card was not scrolled to: its top at {top}")
+        # (scrolled to: its top near the top of the window — or, where the page is too short for that, the page scrolled
+        # as far as it goes with the card in view)
+        top, at_end, bottom = page.evaluate("""() => {
+            const card = document.querySelector('#update-card'), r = card.getBoundingClientRect();
+            let el = card.parentElement;
+            while (el && !(el.scrollHeight > el.clientHeight + 1 && /(auto|scroll)/.test(getComputedStyle(el).overflowY))) el = el.parentElement;
+            const sc = el || document.scrollingElement;
+            return [r.top, sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 2, r.bottom];
+        }""")
+        expect(top < 80 or (at_end and 0 <= top < page.viewport_size["height"] and bottom > 0),
+               f"the update card was not scrolled to: its top at {top} (scrolled to the end: {at_end})")
         shot(page, "04d-home-update-check-found")
         states.append("click: checking → v99.0.0, card scrolled to")
         # 3. a second click at once: the portal's floor (its answer, here from the route)

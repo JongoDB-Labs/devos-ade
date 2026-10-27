@@ -22,6 +22,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ### Fixed
 
+- **Code page:** a message's Restore and Fork sit inside it wherever the conversation is narrower than 640 px (at
+  560–640 px they were cut by the list's edge, focusable but out of reach); a model's details in the model picker
+  show in full as a tooltip where the menu cuts them.
+- **Tests:** the check of Home's Check for updates accepts the update card scrolled into view as far as a short page
+  goes; the check of a session on another provider's model switches a Haiku session of its own, not one an earlier
+  check may have left in Plan mode.
 - **Tests:** the layout check's reviewed exceptions also cover the sign-in form's Show button, which sits inside the
   password field's reserved right padding by design, and a long Code session title cut in the Projects list (its full
   text in the tooltip) until sessions get short titles (JON-517).

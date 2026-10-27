@@ -142,7 +142,9 @@ def other_provider(ctx):
     cached = sum(r["cache_read_tokens"] for r in rows if mine(r))
     expect(rows and spent > 0, f"no spend under {m['id']}: {rows[:3]}")
     # a Haiku session switches to it (by its full id; the picker's flag settings spare Claude Code its 5 s check) and back
-    sid2 = getattr(ctx, "code_session", None) or c.new_session(HAIKU, "default")
+    # (a Haiku session of its own, in Default: the shared one can be left in another mode by an earlier check — on
+    # v0314a it was in Plan, and the model wrote a plan instead of answering)
+    sid2 = c.new_session(HAIKU, "default")
     c.request({"type": "attach", "session": sid2, "since": 10 ** 9})
     c.request({"type": "set_model", "session": sid2, "model": m["id"]}, timeout=90)
     evs2 = c.turn(sid2, "Reply with exactly the word: ok")

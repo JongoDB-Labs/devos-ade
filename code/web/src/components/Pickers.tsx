@@ -241,11 +241,13 @@ function BedrockModelPicker({ compact }: { compact?: boolean }) {
                           </span>
                         )}
                       </span>
-                      <span class="mi-desc">
-                        {[m.vendor && m.vendor !== 'Anthropic' ? m.vendor : '', m.provider !== 'Bedrock' ? m.provider : '', m.alias ? m.alias : '', m.id].filter(Boolean).join(' · ')}
-                        {m.context ? ` · ${tokens(m.context)} context` : ''}
-                        {hasSession && m.id !== current && m.cacheWrite !== null ? ` · switching ≈ ${money((CACHE_TOKENS * m.cacheWrite) / 1e6)}` : ''}
-                      </span>
+                      {(() => {
+                        // (its full text in a tooltip too: a narrow menu cuts the end of it)
+                        const desc = [m.vendor && m.vendor !== 'Anthropic' ? m.vendor : '', m.provider !== 'Bedrock' ? m.provider : '', m.alias ? m.alias : '', m.id].filter(Boolean).join(' · ')
+                          + (m.context ? ` · ${tokens(m.context)} context` : '')
+                          + (hasSession && m.id !== current && m.cacheWrite !== null ? ` · switching ≈ ${money((CACHE_TOKENS * m.cacheWrite) / 1e6)}` : '');
+                        return <span class="mi-desc" title={desc}>{desc}</span>;
+                      })()}
                       {m.compat !== 'works' && m.note && <span class="mi-desc mp-note">{m.note}</span>}
                     </MenuItem>
                     <button

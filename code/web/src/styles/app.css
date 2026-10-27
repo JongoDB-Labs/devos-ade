@@ -479,7 +479,9 @@ body.resizing-x iframe, body.resizing-y iframe { pointer-events: none; }
 .msg-actions { position: absolute; right: 100%; top: 4px; display: flex; gap: 2px; padding-right: 6px; }
 .msg-actions .icon-btn { opacity: 0; }
 .msg-user:hover .msg-actions .icon-btn, .msg-actions .icon-btn:focus-visible { opacity: 1; }
-@container msgs (max-width: 559.98px) {
+/* (below 640 px of messages the actions sit inside the message: beside it, at 560–640 they were cut by the list's
+   edge, focusable but out of reach) */
+@container msgs (max-width: 639.98px) {
   .msg-user { display: flex; flex-direction: column; }
   .msg-actions { order: 1; position: static; justify-content: flex-end; margin: 2px -8px -6px 0; padding: 0; }
   .msg-actions .icon-btn { opacity: 0.6; }
