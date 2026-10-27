@@ -176,7 +176,7 @@ test_update_with_devos_claude_linked_adds_the_old_name() {
 
 test_setup_and_update_reach_offer_symlink() {
   # setup's finishing step links them; ./stack update finishes with ./stack setup --yes (in its own process)
-  assert_contains "$(declare -f cmd_setup)" "offer_symlink"
+  assert_contains "$(declare -f cmd_setup _setup_finish)" "offer_symlink"
   assert_contains "$(declare -f cmd_update)" '"$STACK_DIR/stack" setup --yes'
 }
 

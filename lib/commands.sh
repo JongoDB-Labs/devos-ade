@@ -263,6 +263,21 @@ _build_ticker() {   # WHAT PID — building's: a line to fd 8 every BUILD_TICK_S
   done
 }
 
+# timed_step LABEL CMD... — CMD in this shell (its own messages shown as they are, unlike run_phase's), timed as a step
+# of its own: "==> LABEL: starting…" before it in a helper job's log, "==> LABEL ready (16s)" after it — so no stretch
+# of setup or an update goes untimed on Home's update card (lib/helper.sh _job_steps), and a terminal sees the time too.
+# CMD runs as a plain command: under set -e a failure ends the command right there, as it would without this; where
+# set -e is off, a failure is said ("LABEL failed after 16s") and returned.
+timed_step() {
+  local label="$1" start rc
+  shift
+  start="$(_now)"; phase_start "$label"
+  "$@"; rc=$?
+  if [ "$rc" = 0 ]; then log "$(phase_line "$label" $(($(_now) - start)))"
+  else warn "$label failed after $(fmt_elapsed $(($(_now) - start)))"; fi
+  return "$rc"
+}
+
 image_size_mb() { # rough on-disk size of a pinned image, for the first-run download notice
   case "$1" in
     *litellm*) echo 1750 ;; *open-webui*) echo 950 ;; *aws-cli*) echo 680 ;; *pgvector*) echo 660 ;; *rustfs*) echo 360 ;;
@@ -321,32 +336,38 @@ owui_vendor_try() {
 }
 
 # setup_build_images [--sandboxes] — the images setup builds, in one compose call, which builds them side by side
-# (Docker's cache makes an unchanged one a matter of seconds): the portal, shared-mcp and Open WebUI; with --sandboxes
-# (./stack setup, ./stack update) also the browser terminal's, its egress proxy's and the Code page's, while they are on
-# and their folder usable. SETUP_BUILT then names them (lib/common.sh built_now), and each one's own step takes it as it
-# is. Never fatal: a build that fails names none, and each step builds its own image as before — which says the
-# failure where it belongs (setup stops for the stack's own images, not for the terminal's or the Code page's). A
-# helper job's log gets "still building" lines while it runs, like a phase's (building).
+# (Docker's cache makes an unchanged one a matter of seconds): the portal, shared-mcp and Open WebUI. With --sandboxes
+# (./stack setup, ./stack update) the browser terminal's, its egress proxy's and the Code page's too, while they are on
+# and their folder usable — in a compose call of their own, in the background (lib/steps.sh sandbox_build_start): LiteLLM,
+# Open WebUI and the portal come up meanwhile, and the terminal's step waits for them (sandbox_build_wait). Your
+# subscriptions' tools are part of the terminal's image: installing them again never holds up Chat or the portal.
+# SETUP_BUILT then names what was built (lib/common.sh built_now), and each one's own step takes it as it is. Each image
+# is a step of its own on Home's card, with when it was ready and whether it came from Docker's cache or what was built
+# again (build_steps). Never fatal: a build that fails names none, and each step builds its own image as before — which
+# says the failure where it belongs (setup stops for the stack's own images, not for the terminal's or the Code page's).
+# A helper job's log gets "still building" lines while it runs, like a phase's (building).
 # shellcheck disable=SC2034  # SETUP_BUILT: read by built_now (lib/common.sh)
 setup_build_images() {
-  local svcs=(portal shared-mcp open-webui) args e out start _PHASE_TICK=''
+  local svcs=(portal shared-mcp open-webui) sbx=() args e out start _PHASE_TICK=''
   SETUP_BUILT=''; _OWUI_TRY="$(owui_vendor_try)"
   args=(--build-arg "BN_VENDOR_TRY=$_OWUI_TRY")
   if [ "${1:-}" = --sandboxes ] && terminal_on && [ -z "$(terminal_why_out)" ]; then
     # (each build argument is its image's alone: no other Dockerfile here declares it)
-    terminal_build_args; args+=("${TERMINAL_BUILD_ARGS[@]}"); svcs+=(terminal)
-    e="$(terminal_egress_build_service)"; [ -z "$e" ] || svcs+=("$e")
-    if code_ready; then fix_checkout_modes; svcs+=(code); fi
+    terminal_build_args; sbx+=(terminal)
+    e="$(terminal_egress_build_service)"; [ -z "$e" ] || sbx+=("$e")
+    if code_ready; then fix_checkout_modes; sbx+=(code); fi
+    sandbox_build_start "${TERMINAL_BUILD_ARGS[@]}" -- "${sbx[@]}"
   fi
   [ -t 2 ] || _PHASE_TICK=1
   out="$(mktemp)"; start="$(_now)"; phase_start Images
-  if building "the images (${svcs[*]})" dc build -q "${args[@]}" "${svcs[@]}" 8>&2 > "$out" 2>&1; then
-    rm -f "$out"; SETUP_BUILT=" ${svcs[*]} "
+  if building "the images (${svcs[*]})" build_plain "${args[@]}" "${svcs[@]}" 8>&2 > "$out" 2>&1; then
+    SETUP_BUILT=" ${svcs[*]} "
+    build_steps "$out"; rm -f "$out"
     log "$(phase_line Images $(($(_now) - start)))"
     return 0
   fi
   warn "the images did not build side by side ($(fmt_elapsed $(($(_now) - start)))) — each is built on its own next; the build's last messages:"
-  tail -n 12 "$out" | sed 's/^/    /' >&2; rm -f "$out"
+  sed 's/^[0-9]* //' "$out" | tail -n 12 | sed 's/^/    /' >&2; rm -f "$out"
   return 0
 }
 
@@ -631,9 +652,36 @@ _setup_interrupted() {
   case "$1" in INT) exit 130 ;; *) exit 143 ;; esac
 }
 
+# setup's own steps, each timed as one (cmd_setup)
+_setup_settings() {
+  setup_ports
+  setup_done "ports chosen (the portal: $(portal_url))"; setup_step "asking about remote access"
+  setup_remote_choice   # lib/remote.sh: asks once — this computer only (default), or your devices too
+  remote_net_preflight  # remote access on: its Docker network usable? else this run goes on without it
+  setup_step "writing passwords and settings into .env"
+  setup_secrets
+  setup_step "asking about OpenRouter and voice"
+  setup_openrouter   # optional; lib/openrouter.sh
+  setup_explabs      # optional; lib/explabs.sh (no question: Settings or ./stack config set EXPLABS_API_KEY)
+  setup_stt          # optional; lib/stt.sh
+}
+_setup_smoke_test() {
+  ensure_portal_reachable   # (the terminal's and the Code page's fronts recreate Caddy too)
+  cmd_test
+}
+_setup_finish() {
+  offer_symlink
+  offer_helper   # lib/helper.sh: asks once; --yes installs it only with BEDROCK_NOW_HELPER=1
+  if [ -n "$SETUP_REMOTE_MODE" ]; then remote_enable "$SETUP_REMOTE_MODE"; else remote_up_hook; fi
+  record_setup_commit   # lib/rollback.sh: ./stack update calls "nothing new" only for this commit
+  services_status_write   # Home's record of the containers, as setup leaves them (the built-in SearXNG's row)
+  subs_refresh_reap   # lib/subscriptions.sh: what your subscriptions' tools say, asked in the background since they started
+}
+
 cmd_setup() {
   check_prereqs
   _SIGNAL_HOOK=_setup_interrupted; _signal_traps_restore   # Ctrl-C: what was done, and how to go on
+  SUBS_REFRESH_BG=1   # (lib/subscriptions.sh: what the tools say is asked in the background, while setup goes on)
   [ ! -f "$ENV_FILE" ] || stack_lock setup
   forget_setup_commit   # lib/rollback.sh: written again only if this setup succeeds
   [ -f "$ENV_FILE" ] || { cp "$STACK_DIR/.env.example" "$ENV_FILE"; chmod 600 "$ENV_FILE"; }
@@ -646,30 +694,22 @@ cmd_setup() {
   mkdir -p "$STATE_DIR"; chmod 700 "$STATE_DIR"
   ensure_portal_dirs; write_version_file   # lib/version.sh: what the portal mounts, and the installed version
   fix_bind_mount_perms
+  # (each stretch below is a step of its own on Home's update card, with its time: timed_step, run_phase)
   setup_step "checking your AWS key"
-  setup_aws_creds
+  timed_step "AWS key check" setup_aws_creds
   setup_done "AWS key checked"; setup_step "choosing ports"
-  setup_ports
-  setup_done "ports chosen (the portal: $(portal_url))"; setup_step "asking about remote access"
-  setup_remote_choice   # lib/remote.sh: asks once — this computer only (default), or your devices too
-  remote_net_preflight  # remote access on: its Docker network usable? else this run goes on without it
-  setup_step "writing passwords and settings into .env"
-  setup_secrets
-  setup_step "asking about OpenRouter and voice"
-  setup_openrouter   # optional; lib/openrouter.sh
-  setup_explabs      # optional; lib/explabs.sh (no question: Settings or ./stack config set EXPLABS_API_KEY)
-  setup_stt          # optional; lib/stt.sh
+  timed_step "Ports and settings in .env" _setup_settings
   setup_done "passwords and settings in .env"
-  setup_bringup_and_probe --sandboxes   # (the terminal's and the Code page's images too, with the rest, side by side)
-  stt_after_probe    # lib/stt.sh: Bedrock speech-to-text on by default when Voxtral is usable
+  setup_bringup_and_probe --sandboxes   # (the terminal's and the Code page's images too, in the background meanwhile)
+  timed_step "Voice" stt_after_probe    # lib/stt.sh: Bedrock speech-to-text on by default when Voxtral is usable
   websearch_builtin_up    # lib/websearch.sh: the built-in SearXNG up (on by default) or gone (off); never fatal
-  websearch_after_start   # lib/websearch.sh: one search with the backend in use (on the setup key), or why there is none
+  timed_step "Web search check" websearch_after_start   # lib/websearch.sh: one search with the backend in use (on the setup key), or why there is none
   setup_step "creating keys and starting Open WebUI, the portal and the MCP server"
   setup_keys_and_ui
   write_mcp_config
   setup_done "keys created; Open WebUI, the portal and the MCP server started"
   setup_step "turning on the Code page and its terminal (on by default, unless turned off)"
-  code_default_on       # lib/code.sh: the Code page and its sandbox (the terminal) on by default, unless turned off
+  timed_step "Code page default" code_default_on   # lib/code.sh: the Code page and its sandbox (the terminal) on by default, unless turned off
   SETUP_CODE_DEFAULT="$CODE_DEFAULT_ON"   # until it settles: a Ctrl-C undoes it (_setup_interrupted)
   setup_step "building and starting the browser terminal and the Code page (the first time about 1.6 GB, a few minutes)"
   terminal_setup_hook   # lib/terminal.sh: the browser terminal, when on — rebuilt with the current keys; never fatal
@@ -678,14 +718,9 @@ cmd_setup() {
   SETUP_CODE_DEFAULT=0  # (settled: a Ctrl-C from here on leaves the Code page as it is)
   ! code_ready || setup_done "the terminal and the Code page started"
   setup_step "running the smoke test"
-  ensure_portal_reachable   # (the terminal's and the Code page's fronts recreate Caddy too)
-  cmd_test
+  timed_step "Smoke test" _setup_smoke_test
   setup_done "smoke test passed"; setup_step "finishing (devos-claude link, one-click updates, remote access)"
-  offer_symlink
-  offer_helper   # lib/helper.sh: asks once; --yes installs it only with BEDROCK_NOW_HELPER=1
-  if [ -n "$SETUP_REMOTE_MODE" ]; then remote_enable "$SETUP_REMOTE_MODE"; else remote_up_hook; fi
-  record_setup_commit   # lib/rollback.sh: ./stack update calls "nothing new" only for this commit
-  services_status_write   # Home's record of the containers, as setup leaves them (the built-in SearXNG's row)
+  timed_step "Finishing" _setup_finish
   _SIGNAL_HOOK=''; _signal_traps_restore   # done: Ctrl-C from here on only skips the summary or the browser
   print_summary
   [ "$(host_os)" != Darwin ] || docker_autostart_hint_weekly   # lib/host.sh: read-only check, at most weekly
@@ -830,35 +865,34 @@ setup_bringup_and_probe() {
   ensure_prices_dir
   setup_step "building the images"
   setup_build_images "$@"
-  if built_now portal || dc build -q portal >/dev/null 2>&1; then refresh_prices 1
-  else warn "could not build the portal image yet — prices stay as they are (./stack logs portal after setup)"; fi
+  timed_step "Prices" _setup_prices
   # Nothing the probe depends on changed since it last answered (SETUP_REPROBE=1: ./stack models --recheck asks
   # again): LiteLLM starts once, with the models it found, instead of twice around a new probe
   if [ "${SETUP_REPROBE:-0}" != 1 ] && age="$(probe_reusable)"; then
     log "model check: not run again — nothing it depends on changed (the same AWS key, region, model catalog and LiteLLM; the last check $age ago). ./stack models --recheck checks again"
-    render_config "$en"
+    timed_step "LiteLLM config (model check kept)" render_config "$en"
     setup_step "downloading images"
-    ensure_images
-    owui_build || die "could not build Open WebUI's image (./stack logs is empty for a build: run ./stack setup again and read its output)"
+    timed_step "Image downloads checked" _setup_downloads
+    timed_step "Open WebUI image" _setup_owui_image
     # lib/websearch.sh: AgentCore Web Search's check (free; in LiteLLM's image) when its last answer no longer stands:
     # the config follows the new one
-    if websearch_before_render; then render_config "$en"; fi
+    timed_step "Web search (AgentCore) check" _setup_websearch_render "$en"
     setup_step "starting Postgres + RustFS"
     run_phase "Postgres + RustFS" "postgres rustfs" _up_data_services
     setup_done "Postgres + RustFS started"
-    choose_defaults
+    timed_step "Default models" choose_defaults
     setup_step "starting LiteLLM with the models your key can use"
     run_phase "LiteLLM ($(wc -l < "$en" | tr -d ' ') models)" litellm up_services --no-deps litellm
-    ensure_virtual_key LITELLM_KEY_SETUP setup "$(get_env BUDGET_SETUP)"
+    timed_step "LiteLLM setup key" ensure_virtual_key LITELLM_KEY_SETUP setup "$(get_env BUDGET_SETUP)"
     setup_done "model check kept"
     return 0
   fi
   log "rendering LiteLLM config with the full catalog for probing"
   on_exit _restore_litellm_config
-  render_config ""
+  timed_step "LiteLLM config (full catalog, for the model check)" render_config ""
   setup_step "downloading images"
-  ensure_images
-  owui_build || die "could not build Open WebUI's image (./stack logs is empty for a build: run ./stack setup again and read its output)"
+  timed_step "Image downloads checked" _setup_downloads
+  timed_step "Open WebUI image" _setup_owui_image
   setup_step "starting Postgres + RustFS"
   run_phase "Postgres + RustFS" "postgres rustfs" _up_data_services
   setup_done "Postgres + RustFS started"
@@ -868,6 +902,24 @@ setup_bringup_and_probe() {
   setup_done "LiteLLM started"
   # Probe and smoke-test spend is booked on its own key, so ./stack costs shows what setup itself cost.
   setup_step "checking which models your AWS key can use"
+  timed_step "Model check" _setup_model_check "$en"
+  setup_done "model check done"; setup_step "restarting LiteLLM with the models your key can use"
+  run_phase "LiteLLM ($(wc -l < "$en" | tr -d ' ') models)" litellm up_services --no-deps litellm
+}
+# setup_bringup_and_probe's own steps, each timed as one
+_setup_prices() {
+  if built_now portal || dc build -q portal >/dev/null 2>&1; then refresh_prices 1
+  else warn "could not build the portal image yet — prices stay as they are (./stack logs portal after setup)"; fi
+}
+# (an update's downloads first, which ran side by side with the builds: lib/steps.sh pulls_wait; then any image still
+# missing, as on a first setup)
+_setup_downloads() { pulls_wait; ensure_images; }
+_setup_owui_image() {
+  owui_build || die "could not build Open WebUI's image (./stack logs is empty for a build: run ./stack setup again and read its output)"
+}
+_setup_websearch_render() { if websearch_before_render; then render_config "$1"; fi; }
+_setup_model_check() {
+  local en="$1"
   ensure_virtual_key LITELLM_KEY_SETUP setup "$(get_env BUDGET_SETUP)"
   log "probing which models your AWS key can use (chat/embedding/rerank/speech-to-text: 1-token requests, speech-to-text also half a second of audio, < \$0.01 total; images: free check)"
   probe_models "$en.new" "$STACK_DIR/litellm/probe-results.tsv"
@@ -879,8 +931,6 @@ setup_bringup_and_probe() {
   render_config "$en"
   off_exit _restore_litellm_config
   choose_defaults
-  setup_done "model check done"; setup_step "restarting LiteLLM with the models your key can use"
-  run_phase "LiteLLM ($(wc -l < "$en" | tr -d ' ') models)" litellm up_services --no-deps litellm
 }
 
 _up_data_services() { dc up -d --wait postgres rustfs && dc up -d rustfs-init; }
@@ -992,22 +1042,32 @@ ensure_openwebui_api_key() {
 
 setup_keys_and_ui() {
   local mcp_key
+  timed_step "LiteLLM keys and Admin sign-in" _setup_litellm_keys
+  timed_step "Voice service" stt_setup_service   # lib/stt.sh: the stt container (Bedrock speech-to-text) before Open WebUI; never fatal
+  # Open WebUI, the portal and Caddy in one compose call, and shared-mcp with them once it has Open WebUI's API key (setup
+  # again, an update): compose starts each as soon as what it depends on is up — Open WebUI and the portal side by side
+  mcp_key="$(get_env OPENWEBUI_API_KEY)"
+  if [ -n "$mcp_key" ]; then up_front open-webui portal caddy shared-mcp; else up_front open-webui portal caddy; fi
+  timed_step "Portal sign-in and Chat's API key" _setup_portal_signin
+  # shared-mcp on its own when it had no key (a first setup), or its key was just made anew (its environment changed)
+  [ -n "$mcp_key" ] && [ "$(get_env OPENWEBUI_API_KEY)" = "$mcp_key" ] || run_phase "shared-mcp" shared-mcp _build_and_up_mcp
+  timed_step "Open WebUI syncs (models, prices, banner)" _setup_owui_syncs
+}
+# setup_keys_and_ui's own steps, each timed as one
+_setup_litellm_keys() {
   log "creating LiteLLM virtual keys with monthly budgets"
   ensure_virtual_key LITELLM_KEY_CLAUDE_CODE claude-code "$(get_env BUDGET_CLAUDE_CODE)"
   ensure_virtual_key LITELLM_KEY_OPENWEBUI open-webui "$(get_env BUDGET_OPENWEBUI)"
   alert_pct_mark || true   # lib/settings.sh: all three keys alert at BUDGET_ALERT_PCT now
   setup_litellm_admin
-  stt_setup_service   # lib/stt.sh: the stt container (Bedrock speech-to-text) before Open WebUI; never fatal
-  # Open WebUI, the portal and Caddy in one compose call, and shared-mcp with them once it has Open WebUI's API key (setup
-  # again, an update): compose starts each as soon as what it depends on is up — Open WebUI and the portal side by side
-  mcp_key="$(get_env OPENWEBUI_API_KEY)"
-  if [ -n "$mcp_key" ]; then up_front open-webui portal caddy shared-mcp; else up_front open-webui portal caddy; fi
+}
+_setup_portal_signin() {
   ensure_portal_reachable   # lib/portal.sh: Docker Desktop forwarding the portal's port to the Caddy it replaced
   portal_session_or_die
   settings_reconcile   # lib/settings.sh: Chat's owner and the Admin sign-in match .env (a change cut short, a restore)
   ensure_openwebui_api_key
-  # shared-mcp on its own when it had no key (a first setup), or its key was just made anew (its environment changed)
-  [ -n "$mcp_key" ] && [ "$(get_env OPENWEBUI_API_KEY)" = "$mcp_key" ] || run_phase "shared-mcp" shared-mcp _build_and_up_mcp
+}
+_setup_owui_syncs() {
   sync_openwebui_models
   openrouter_sync_owui   # optional; lib/openrouter.sh
   explabs_sync_owui      # optional; lib/explabs.sh
@@ -1954,7 +2014,7 @@ _update_reexec_genuine() {
 # version and backup it recorded (--to moves the code on first, e.g. to a fix; BEDROCK_NOW_UPDATE_FINISHING=1).
 # The record is written right after the checkout, before the exec, so a stop at any point after it counts as such.
 cmd_update() {
-  local to='' backup from='' branch='' hint moved=0 force=0 finishing=0 reexec=0 yes=() usage="usage: ./stack update [--to <tag|branch>] [--force]"
+  local to='' backup from='' branch='' hint moved=0 force=0 finishing=0 reexec=0 yes=() pullenv=() usage="usage: ./stack update [--to <tag|branch>] [--force]"
   while [ $# -gt 0 ]; do
     case "$1" in
       --to) case "${2:-}" in '' | -*) die "$usage" ;; esac; to="$2"; shift 2 ;;
@@ -1984,7 +2044,7 @@ cmd_update() {
     hint="./stack update finishes it, or ./stack rollback goes back (by hand: $(_rollback_cmd "$from" "$branch") && ./stack restore $backup)"
     if [ -n "$to" ]; then
       log "update: 2/4 code (git)"
-      update_checkout "$to"
+      timed_step "New code (git)" update_checkout "$to"
       [ "$CODE_CHANGED" != 1 ] ||
         exec env BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_UPDATE_FINISHING=1 BEDROCK_NOW_UPDATE_BACKUP="$backup" \
           BEDROCK_NOW_UPDATE_FROM="$from" BEDROCK_NOW_UPDATE_BRANCH="$branch" "$STACK_DIR/stack" update ${yes[@]+"${yes[@]}"}
@@ -1997,12 +2057,11 @@ cmd_update() {
       return 0
     fi
     log "update: 1/4 backup"
-    _backup_named auto
-    prune_auto_backups 5
+    timed_step "Backup" _update_backup
     backup="$LAST_BACKUP"
     if [ -e "$STACK_DIR/.git" ]; then from="$(_git rev-parse HEAD)"; branch="$(_git symbolic-ref -q --short HEAD || true)"; fi
     log "update: 2/4 code (git)"
-    update_checkout "$to"
+    timed_step "New code (git)" update_checkout "$to"
     if [ "$CODE_CHANGED" = 1 ]; then
       # What ./stack rollback needs, now that the code moved: a stop before the new code runs is an unfinished update.
       update_record_write "$from" "$branch" "$backup"
@@ -2026,15 +2085,24 @@ cmd_update() {
     # written by this version before the exec; an older version's ./stack update did not).
     update_record_write "$from" "$branch" "$backup"
     # The images in use now (the old version's): kept after the update as the one previous version (lib/images.sh).
-    images_snapshot_before "$from"
+    timed_step "Images of the version before kept (for rollback)" images_snapshot_before "$from"
   elif [ "$finishing" = 1 ] && [ ! -f "$(images_dir)/before.tsv" ]; then
-    images_snapshot_before "$from"   # stopped before it: setup has not run, so :local is still the old build
+    # stopped before it: setup has not run, so :local is still the old build
+    timed_step "Images of the version before kept (for rollback)" images_snapshot_before "$from"
   fi
-  log "update: 3/4 images (pulling the versions pinned in compose.yaml)"
-  dc pull --ignore-buildable || {
-    [ "$?" -lt 128 ] || die "update stopped during 3/4 images — $hint"   # Ctrl-C: Compose ends with 128 + the signal
-    die "image pull failed or was stopped (network/registry?) — $hint"
-  }
+  # The images compose.yaml pins: all at once, in the background (lib/steps.sh pulls_start), while setup builds; setup
+  # waits for them before it starts anything with them (pulls_wait), and a download that fails stops it there. When
+  # the list cannot be read, one compose call here as before.
+  log "update: 3/4 images (downloading the versions pinned in compose.yaml, side by side, while setup builds)"
+  PULLS_DIR=''; PULLS_PID=''
+  if ! timed_step "Image downloads started" pulls_start; then
+    PULLS_DIR=''; PULLS_PID=''
+    timed_step "Image downloads" dc pull --ignore-buildable || {
+      [ "$?" -lt 128 ] || die "update stopped during 3/4 images — $hint"   # Ctrl-C: Compose ends with 128 + the signal
+      die "image pull failed or was stopped (network/registry?) — $hint"
+    }
+  fi
+  [ -z "$PULLS_DIR" ] || pullenv=(BEDROCK_NOW_PULLS_DIR="$PULLS_DIR" BEDROCK_NOW_PULLS_PID="$PULLS_PID")
   log "update: 4/4 setup (non-interactive; keeps .env, keys and AWS creds)"
   # Separate process (keeps set -e working inside setup); AWS creds and the optional OpenRouter settings come
   # from .env, never from this shell (a removed OpenRouter key stays removed).
@@ -2043,8 +2111,8 @@ cmd_update() {
     -u EXPLABS_API_KEY -u EXPLABS_MODELS \
     -u STT_PROVIDER -u STT_API_KEY -u STT_MODEL -u BEDROCK_NOW_STT_FROM_ENV \
     -u COMPOSE_PROJECT_NAME -u BEDROCK_NOW_CODE_UPDATED -u BEDROCK_NOW_UPDATE_BACKUP -u BEDROCK_NOW_UPDATE_FROM -u BEDROCK_NOW_UPDATE_BRANCH \
-    -u BEDROCK_NOW_UPDATE_FINISHING \
-    "$STACK_DIR/stack" setup --yes ||
+    -u BEDROCK_NOW_UPDATE_FINISHING -u BEDROCK_NOW_PULLS_DIR -u BEDROCK_NOW_PULLS_PID \
+    ${pullenv[@]+"${pullenv[@]}"} "$STACK_DIR/stack" setup --yes ||
     die "update: setup failed (see the messages above) — $hint"
   if [ "$moved" != 1 ]; then
     log "update: done (no new version; ./stack rollback still goes back to the version before the last real update)"
@@ -2052,11 +2120,14 @@ cmd_update() {
   fi
   update_record_done
   # Only now that the new version runs: remove what the update before this one replaced (keeps one previous).
-  images_after_update || warn "could not clean up old images — ./stack clean tries again"
+  timed_step "Old images cleaned up" _update_cleanup
   [ -z "$from" ] || log "updated to $(installed_version). Something wrong? ./stack rollback goes back (code, data and images)"
-  update_whats_new "$from"
+  timed_step "What's new" update_whats_new "$from"
   offer_helper --after-update   # lib/helper.sh: asks (default yes) unless declined before
 }
+# cmd_update's own steps, each timed as one
+_update_backup() { _backup_named auto; prune_auto_backups 5; }
+_update_cleanup() { images_after_update || warn "could not clean up old images — ./stack clean tries again"; return 0; }
 
 # releases_between FROM_COMMIT -> one line per release the update brought, newest first: "v0.9.0 — Git panel and Run &
 # test" (each release tag's own subject line), the releases after the one FROM_COMMIT is (or follows) up to HEAD's;
@@ -2204,6 +2275,8 @@ cmd_uninstall() {
 . "$STACK_DIR/lib/websearch.sh"
 # Image cleanup and disk usage (./stack update, ./stack clean, ./stack status).
 . "$STACK_DIR/lib/images.sh"
+# The slow parts of setup and an update, side by side and timed: image downloads, builds, the sandboxes' images.
+. "$STACK_DIR/lib/steps.sh"
 # Installed version, the portal's release check, and the .state folders the portal mounts.
 . "$STACK_DIR/lib/version.sh"
 # origin follows the project's repository to its new name on GitHub (./stack update, once).

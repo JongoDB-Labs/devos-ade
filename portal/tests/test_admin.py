@@ -262,8 +262,9 @@ def test_a_jobs_steps_pass_with_their_types_checked(make_client, dirs):
     j = c.get("/api/admin/status", headers=API).json()["job"]
     assert (j["step"], j["step_started_at"], j["steps"]) == ("", None, [])
     (st / "helper-status.json").write_text(json.dumps({"id": "j", "action": "update", "phase": "restarting", "updated_at": now,
-                                                         "steps": [{"label": f"S{i}", "took": "1s"} for i in range(60)]}))
-    assert len(c.get("/api/admin/status", headers=API).json()["job"]["steps"]) == 40
+                                                         "steps": [{"label": f"S{i}", "took": "1s"} for i in range(100)]}))
+    # (an update's every step, from the backup to what's new: lib/helper.sh JOB_STEPS_MAX)
+    assert len(c.get("/api/admin/status", headers=API).json()["job"]["steps"]) == 80
 
 
 def test_symlinked_or_huge_status_files_are_ignored(make_client, dirs, tmp_path):

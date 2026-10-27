@@ -119,14 +119,16 @@ test_update_job_reports_phases_version_and_freed() {
   assert_eq "$(_phase_of "$TMP/log" | cut -f1)" "restoring"
 }
 
-# Home's progress card: the steps of the job as its log says them (lib/commands.sh phase_start, phase_line, setup_step)
+# Home's progress card: the steps of the job as its log says them (lib/commands.sh phase_start, phase_line, setup_step,
+# timed_step) — every step of the whole job, from the backup to what's new, each "update: N/4" stage included
 test_job_steps_say_what_runs_and_what_is_done() {
   JOB_ID=j1; JOB_STEPS_ID=''; JOB_STEPS_SIZE=''
-  printf '%s\n' '==> update: 3/4 images' '==> Old WebUI ready (9s)' '==> update: 4/4 setup' '==> doing: checking your AWS key' \
+  printf '%s\n' '==> update: 1/4 backup' '==> Backup: starting…' '==> Backup ready (9s)' '==> update: 3/4 images' '==> Download litellm:1.105.0 ready (1m10s)' \
+    '==> update: 4/4 setup' '==> doing: checking your AWS key' \
     '==> Postgres + RustFS: starting…' '==> Postgres + RustFS ready (1m50s)' 'noise' '==> doing: checking which models your AWS key can use' > "$TMP/log"
   _job_steps "$TMP/log"
-  # (only this part of the job: what came before update: 4/4 is not one of its steps)
-  assert_eq "$JOB_STEPS_JSON" '[{"label": "Postgres + RustFS", "took": "1m50s"}]'
+  # (the backup and the downloads too: each stage of the update is on the card, not only setup's)
+  assert_eq "$JOB_STEPS_JSON" '[{"label": "Backup", "took": "9s"}, {"label": "Download litellm:1.105.0", "took": "1m10s"}, {"label": "Postgres + RustFS", "took": "1m50s"}]'
   assert_eq "$JOB_STEP" "checking which models your AWS key can use"
   case "$JOB_STEP_AT" in ''|*[!0-9]*) echo "no start time: $JOB_STEP_AT" >&2; return 1 ;; esac
   # the same log again: nothing read again, the start time kept
@@ -138,14 +140,57 @@ test_job_steps_say_what_runs_and_what_is_done() {
   printf '%s\n' '==> Terminal ready (3m11s)' '==> Code "page" ready (23s)' >> "$TMP/log"
   _job_steps "$TMP/log"
   assert_eq "$JOB_STEP|$JOB_STEP_AT" "|"
-  assert_eq "$JOB_STEPS_JSON" '[{"label": "Postgres + RustFS", "took": "1m50s"}, {"label": "Terminal", "took": "3m11s"}, {"label": "Code page", "took": "23s"}]'
-  # at most 40, and another job starts afresh
-  for i in $(seq 1 45); do printf '==> S%s ready (1s)\n' "$i"; done >> "$TMP/log"
+  assert_eq "$JOB_STEPS_JSON" '[{"label": "Backup", "took": "9s"}, {"label": "Download litellm:1.105.0", "took": "1m10s"}, {"label": "Postgres + RustFS", "took": "1m50s"}, {"label": "Terminal", "took": "3m11s"}, {"label": "Code page", "took": "23s"}]'
+  # at most JOB_STEPS_MAX (80), and another job starts afresh
+  for i in $(seq 1 90); do printf '==> S%s ready (1s)\n' "$i"; done >> "$TMP/log"
   _job_steps "$TMP/log"
-  assert_eq "$(printf '%s' "$JOB_STEPS_JSON" | grep -o '"label"' | wc -l | tr -d ' ')" 40
+  assert_eq "$(printf '%s' "$JOB_STEPS_JSON" | grep -o '"label"' | wc -l | tr -d ' ')" 80
   JOB_ID=j2; printf '%s\n' '==> rollback: 3/3 setup' '==> Portal: starting…' > "$TMP/log2"
   _job_steps "$TMP/log2"
   assert_eq "$JOB_STEP|$JOB_STEPS_JSON" "Portal|[]"
+}
+
+# The helper's job log: each line after the local time it was written (_job_stamp), and the card and the error read it
+# the same with or without that time (the update into this version is logged by the helper of the version before)
+test_job_log_lines_carry_their_time_and_read_the_same() {
+  local out
+  out="$(printf 'one\n==> two ready (3s)\nno newline at the end' | _job_stamp)"
+  assert_eq "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" 3
+  printf '%s\n' "$out" | grep -Eqv '^[0-2][0-9]:[0-5][0-9]:[0-5][0-9] ' && { echo "a line without its time: $out" >&2; return 1; }
+  assert_eq "$(printf '%s\n' "$out" | sed -n 3p | cut -c10-)" "no newline at the end"
+  # the time is this computer's local time (within a few seconds of date's)
+  t="$(printf '%s\n' "$out" | head -n 1 | cut -c1-8)"; now="$(date +%H:%M:%S)"
+  d=$(( ( $(echo "$now" | awk -F: '{ print $1 * 3600 + $2 * 60 + $3 }') - $(echo "$t" | awk -F: '{ print $1 * 3600 + $2 * 60 + $3 }') + 86400 ) % 86400 ))
+  [ "$d" -le 5 ] || { echo "stamped $t, the clock says $now" >&2; return 1; }
+  # a time zone east and west of UTC, and a half hour one
+  date() { case "$1" in +%z) echo "${FAKE_TZ}" ;; +%s) echo 3600 ;; *) command date "$@" ;; esac; }
+  FAKE_TZ=+0530; assert_eq "$(_utc_offset_s)" 19800
+  FAKE_TZ=-0500; assert_eq "$(_utc_offset_s)" -18000
+  FAKE_TZ=+0000; assert_eq "$(printf 'x\n' | _job_stamp)" "01:00:00 x"
+  FAKE_TZ=-0200; assert_eq "$(printf 'x\n' | _job_stamp)" "23:00:00 x"
+  FAKE_TZ=garbage; assert_eq "$(_utc_offset_s)" 0
+  unset -f date
+  # the readers: steps and the last error, stamped or not
+  JOB_ID=s1; JOB_STEPS_ID=''; JOB_STEPS_SIZE=''
+  printf '%s\n' '20:02:40 ==> update: 1/4 backup' '20:02:41 ==> Backup: starting…' '20:02:50 ==> Backup ready (9s)' \
+    '20:02:51 ==> Terminal: starting…' '20:02:52 xx  image download failed (network/registry?): litellm' '20:02:53 last line' > "$TMP/log"
+  _job_steps "$TMP/log"
+  assert_eq "$JOB_STEPS_JSON|$JOB_STEP" '[{"label": "Backup", "took": "9s"}]|Terminal'
+  assert_eq "$(_last_error "$TMP/log")" "image download failed (network/registry?): litellm"
+  printf '%s\n' 'xx  plain error' 'after' > "$TMP/log"
+  assert_eq "$(_last_error "$TMP/log")" "plain error"
+  printf '%s\n' '20:02:53 no error line' > "$TMP/log"
+  assert_eq "$(_last_error "$TMP/log")" "no error line"
+}
+
+# A real job's log is stamped as it runs, and the job's status is still ./stack's
+test_the_job_log_is_stamped_and_the_status_kept() {
+  _checkout; _req update
+  helper_poll_once 2>/dev/null
+  head -n 1 "$(helper_dir)/last-update.log" | grep -Eq '^[0-2][0-9]:[0-5][0-9]:[0-5][0-9] ==> update: 1/4 backup$' ||
+    { echo "not stamped: $(head -n 1 "$(helper_dir)/last-update.log")" >&2; return 1; }
+  assert_contains "$(_status)" '"phase": "done"'
+  # (a failed job's message read from its stamped log, without the time: test_failed_job_reports_the_error_and_the_way_back)
 }
 
 test_update_job_status_carries_its_steps_and_only_its_own() {
@@ -353,8 +398,9 @@ test_setup_offers_the_helper_but_yes_installs_it_only_when_asked() {
   [ ! -f "$TMP/svc" ] || { echo "--yes must not install" >&2; return 1; }
   ASSUME_YES=1 BEDROCK_NOW_HELPER=1 offer_helper
   assert_eq "$(cat "$TMP/svc")" "INSTALL"
-  body="$(sed -n '/^cmd_setup() {/,/^}/p' "$T_ROOT/lib/commands.sh")"
+  body="$(sed -n '/^_setup_finish() {/,/^}/p; /^cmd_setup() {/,/^}/p' "$T_ROOT/lib/commands.sh")"
   assert_contains "$body" "offer_helper"
+  assert_contains "$body" 'timed_step "Finishing" _setup_finish'
 }
 
 test_requests_dir_is_private() {

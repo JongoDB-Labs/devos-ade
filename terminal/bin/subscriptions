@@ -110,15 +110,30 @@ kind_words() {
   esac
 }
 
+# tsv_row ID -> its line of `status --tsv`: id, installed yes/no, version, signed in, kind, how
+tsv_row() {
+  local v s k h
+  v="$(version "$1")"
+  if [ -n "$v" ]; then read -r s k h <<< "$(state "$1")"; printf '%s\tyes\t%s\t%s\t%s\t%s\n' "$1" "$v" "$s" "$k" "$h"
+  else printf '%s\tno\t-\tno\t-\tnone\n' "$1"; fi
+}
+
 cmd_status() {
   local tsv=0 id v s k h
   case "${1:-}" in --tsv) tsv=1 ;; '') ;; *) die "usage: subscriptions status [--tsv]" ;; esac
   if [ "$tsv" = 1 ]; then
+    # (each tool asked side by side, each within LIMIT_S: the answer takes as long as the slowest one, not all of them
+    # in a row — ./stack asks after every update; one at a time where no temporary folder can be made)
+    local d=''
+    d="$(mktemp -d 2>/dev/null)" || d=''
     for id in $(ids_all); do
-      v="$(version "$id")"
-      if [ -n "$v" ]; then read -r s k h <<< "$(state "$id")"; printf '%s\tyes\t%s\t%s\t%s\t%s\n' "$id" "$v" "$s" "$k" "$h"
-      else printf '%s\tno\t-\tno\t-\tnone\n' "$id"; fi
+      if [ -n "$d" ]; then tsv_row "$id" > "$d/$id" & else tsv_row "$id"; fi
     done
+    if [ -n "$d" ]; then
+      wait
+      for id in $(ids_all); do cat "$d/$id" 2>/dev/null || printf '%s\tno\t-\tno\t-\tnone\n' "$id"; done
+      rm -rf "$d"
+    fi
     return 0
   fi
   printf '%-20s %-19s %-34s %s\n' TOOL VERSION "SIGNED IN" COMMAND

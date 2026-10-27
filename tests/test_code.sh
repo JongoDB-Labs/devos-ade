@@ -290,8 +290,9 @@ test_disable_while_it_was_never_chosen_keeps_it_off() {
 
 test_setup_turns_it_on_before_the_hooks_and_settles_after_them() {
   body="$(sed -n '/^cmd_setup() {/,/^}/p' "$STACK_DIR/lib/commands.sh" | tr -d ' ')"
-  case "$body" in *setup_keys_and_ui*code_default_on*terminal_setup_hook*code_setup_hook*code_default_settle*cmd_test*) ;;
+  case "$body" in *setup_keys_and_ui*code_default_on*terminal_setup_hook*code_setup_hook*code_default_settle*_setup_smoke_test*) ;;
     *) echo "setup order" >&2; return 1 ;; esac
+  assert_contains "$(sed -n '/^_setup_smoke_test() {/,/^}/p' "$STACK_DIR/lib/commands.sh")" "cmd_test"
   # ./stack update's What's new says it while it is on
   _stubs; code_default_on > /dev/null 2>&1 || return 1
   stt_enabled() { return 1; }; helper_installed() { return 0; }; remote_on() { return 0; }

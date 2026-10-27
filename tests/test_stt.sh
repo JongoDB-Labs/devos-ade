@@ -453,8 +453,10 @@ test_costs_and_summary_sections() {
 
 test_setup_runs_stt_step_before_bringup() {
   body="$(sed -n '/^cmd_setup() {/,/^}/p' "$STACK_DIR/lib/commands.sh" | tr -d ' ')"
-  case "$body" in *setup_stt*setup_bringup_and_probe*) ;; *) echo "setup_stt must run before setup_bringup_and_probe" >&2; return 1 ;; esac
-  assert_contains "$(sed -n '/^setup_keys_and_ui() {/,/^}/p' "$STACK_DIR/lib/commands.sh")" "stt_sync_owui"
+  # (setup_stt: in the step of setup's settings, _setup_settings)
+  case "$body" in *_setup_settings*setup_bringup_and_probe*) ;; *) echo "setup_stt must run before setup_bringup_and_probe" >&2; return 1 ;; esac
+  assert_contains "$(sed -n '/^_setup_settings() {/,/^}/p' "$STACK_DIR/lib/commands.sh")" "setup_stt"
+  assert_contains "$(sed -n '/^setup_keys_and_ui() {/,/^}/p; /^_setup_owui_syncs() {/,/^}/p' "$STACK_DIR/lib/commands.sh")" "stt_sync_owui"
   assert_contains "$(sed -n '/^cmd_up() {/,/^}/p' "$STACK_DIR/lib/commands.sh")" "stt_after_up"
   assert_contains "$(cat "$STACK_DIR/stack")" "cmd_stt"
 }
@@ -922,7 +924,7 @@ test_bedrock_costs_and_summary_lines() {
 
 test_setup_and_recheck_run_the_bedrock_steps_in_order() {
   body="$(sed -n '/^cmd_setup() {/,/^}/p' "$STACK_DIR/lib/commands.sh" | tr -d ' ')"
-  case "$body" in *setup_stt*setup_bringup_and_probe*stt_after_probe*setup_keys_and_ui*) ;; *) echo "setup order" >&2; return 1 ;; esac
+  case "$body" in *_setup_settings*setup_bringup_and_probe*stt_after_probe*setup_keys_and_ui*) ;; *) echo "setup order" >&2; return 1 ;; esac
   keys="$(sed -n '/^setup_keys_and_ui() {/,/^}/p' "$STACK_DIR/lib/commands.sh" | tr -d ' ')"
   case "$keys" in *stt_setup_service*'up_frontopen-webui'*) ;; *) echo "stt container before Open WebUI" >&2; return 1 ;; esac
   rc="$(sed -n '/^models_recheck() {/,/^}/p' "$STACK_DIR/lib/commands.sh")"

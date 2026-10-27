@@ -377,10 +377,11 @@ test_update_snapshots_before_images_and_cleans_only_after_setup_succeeded() {
   images_after_update() { echo "after" >> "$TMP/calls"; }
   update_record_write() { :; }
   fake_reexec; BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_UPDATE_BACKUP=backups/b BEDROCK_NOW_UPDATE_FROM=abc123 cmd_update 2>/dev/null
-  assert_eq "$(tr '\n' ';' < "$TMP/calls")" "snapshot abc123;dc pull;after;"
+  # (dc config: the images to download side by side — none listed by this stub, so one compose pull as before)
+  assert_eq "$(tr '\n' ';' < "$TMP/calls")" "snapshot abc123;dc config;dc pull;after;"
   : > "$TMP/calls"
   if (fake_reexec; FAKE_RC=3 BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_UPDATE_FROM=abc123 cmd_update) 2>/dev/null; then return 1; fi
-  assert_eq "$(tr '\n' ';' < "$TMP/calls")" "snapshot abc123;dc pull;"
+  assert_eq "$(tr '\n' ';' < "$TMP/calls")" "snapshot abc123;dc config;dc pull;"
 }
 
 test_no_global_prune_anywhere() {

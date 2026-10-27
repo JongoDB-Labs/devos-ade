@@ -190,9 +190,13 @@ test_setup_builds_every_image_side_by_side_once() {
   subs_tools_arg() { echo all; }
   printf 'TERMINAL_EGRESS=internet\n' > "$ENV_FILE"
   setup_build_images --sandboxes 2> "$TMP/err" || return 1
-  assert_eq "$(cat "$TMP/dc")" "dc build -q --build-arg BN_VENDOR_TRY=0 --build-arg APT_REFRESH=$(date -u +%G-%V) --build-arg BN_AI_TOOLS=all portal shared-mcp open-webui terminal terminal-egress code"
+  # (the sandboxes' images in a build of their own, in the background — lib/steps.sh — collected at the terminal's step)
+  sandbox_build_wait 2>> "$TMP/err"
+  assert_eq "$(sort "$TMP/dc")" "$(printf '%s\n' "dc --progress plain build --build-arg APT_REFRESH=$(date -u +%G-%V) --build-arg BN_AI_TOOLS=all terminal terminal-egress code" \
+    "dc --progress plain build --build-arg BN_VENDOR_TRY=0 portal shared-mcp open-webui" | sort)"
   assert_eq "$SETUP_BUILT" " portal shared-mcp open-webui terminal terminal-egress code "
   assert_contains "$(cat "$TMP/err")" "Images ready ("
+  assert_contains "$(cat "$TMP/err")" "Sandbox images ready ("
   # its steps build nothing more
   : > "$TMP/dc"
   python_runner_status() { :; }
@@ -202,13 +206,17 @@ test_setup_builds_every_image_side_by_side_once() {
   assert_eq "$(grep -c '^dc build' "$TMP/dc")" 0
   # without --sandboxes (./stack models --recheck): the stack's own images only
   : > "$TMP/dc"; setup_build_images 2>/dev/null
-  assert_eq "$(cat "$TMP/dc")" "dc build -q --build-arg BN_VENDOR_TRY=0 portal shared-mcp open-webui"
-  # the build fails: none is taken as built, so each step builds its own
-  dc() { echo "dc $*" >> "$TMP/dc"; case "$*" in *" portal shared-mcp open-webui terminal "*) echo "failed to solve: terminal"; return 1 ;; esac; return 0; }
+  assert_eq "$(cat "$TMP/dc")" "dc --progress plain build --build-arg BN_VENDOR_TRY=0 portal shared-mcp open-webui"
+  [ -z "$SANDBOX_BUILD_PID" ] || { echo "a background build without --sandboxes" >&2; return 1; }
+  # the builds fail: none is taken as built, so each step builds its own
+  dc() { echo "dc $*" >> "$TMP/dc"; case "$*" in *" terminal terminal-egress code") echo "failed to solve: terminal"; return 1 ;;
+    *" portal shared-mcp open-webui") echo "failed to solve: portal"; return 1 ;; esac; return 0; }
   : > "$TMP/dc"; setup_build_images --sandboxes 2> "$TMP/err" || return 1
+  sandbox_build_wait 2>> "$TMP/err"
   assert_eq "$SETUP_BUILT" ""
   assert_contains "$(cat "$TMP/err")" "each is built on its own next"
   assert_contains "$(cat "$TMP/err")" "failed to solve: terminal"
+  assert_contains "$(cat "$TMP/err")" "failed to solve: portal"
   owui_build; terminal_build; code_build
   assert_contains "$(cat "$TMP/dc")" "dc build -q --build-arg BN_VENDOR_TRY=0 open-webui"
   assert_contains "$(cat "$TMP/dc")" "dc build -q --build-arg APT_REFRESH=$(date -u +%G-%V) --build-arg BN_AI_TOOLS=all terminal"

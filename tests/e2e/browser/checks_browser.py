@@ -659,15 +659,32 @@ def update_last_job_and_reconnecting(ctx):
         page.unroute(api)
         page.locator("#job-reconnect-text", has_text="Reconnected: the portal was away for").wait_for(timeout=15000)
         states.append("back: " + page.inner_text("#job-reconnect-text"))
-        # 4. done: "Updated to …", no step running; Settings' notice gone and its list loaded again
+        # 4. done: "Updated to …", no step running; every step of the whole update with its time, from the backup to
+        # what's new (lib/helper.sh _job_steps: a helper of this version reads them all, up to 80); Settings' notice gone
         t = int(time.time())
+        whole = [("Backup", "9s"), ("New code (git)", "2s"), ("Images of the version before kept (for rollback)", "1s"),
+                 ("Image downloads started", "1s"), ("AWS key check", "3s"), ("Ports and settings in .env", "1s"),
+                 ("Image portal (from Docker's cache)", "2s"), ("Image open-webui (rebuilt from RUN echo \"vendor: try 0\" && pyth…, 41s)", "44s"),
+                 ("Images", "45s"), ("Prices", "2s"), ("LiteLLM config (model check kept)", "0s"), ("Download litellm:1.105.0", "1m10s"),
+                 ("Image downloads", "25s"), ("Image downloads checked", "25s"), ("Open WebUI image", "1s"), ("Web search (AgentCore) check", "0s"),
+                 ("Postgres + RustFS", "8s"), ("Default models", "0s"), ("LiteLLM (13 models)", "26s"), ("LiteLLM setup key", "1s"), ("Voice", "0s"),
+                 ("Web search (the built-in SearXNG)", "5s"), ("Web search check", "6s"), ("LiteLLM keys and Admin sign-in", "2s"), ("Voice service", "0s"),
+                 ("Open WebUI + portal + shared-mcp (http://bedrock-now.localhost)", "11s"), ("Portal sign-in and Chat's API key", "3s"),
+                 ("Open WebUI syncs (models, prices, banner)", "9s"), ("Code page default", "0s"), ("Terminal: its key and project folders", "1s"),
+                 ("Subscription tools (installed: codex; kept: copilot cursor gemini grok)", "38s"), ("Image terminal (rebuilt from RUN sh /tmp/tools/install.sh, 38s)", "2m05s"),
+                 ("Image code (from Docker's cache)", "3s"), ("Sandbox images", "40s"), ("Terminal", "9s"), ("Code page", "9s"), ("Chat's sandbox", "4s"),
+                 ("Open WebUI with your subscriptions", "1s"), ("Smoke test", "12s"), ("Finishing", "2s"), ("Old images cleaned up", "6s"), ("What's new", "0s")]
         _write_json(files["helper-status.json"], {"id": "f" * 32, "action": "update", "phase": "done", "message": "Updated to v9.9.9",
                                                   "started_at": now - 40, "updated_at": t, "finished_at": t, "version": "v9.9.9",
                                                   "trigger": "request", "step": "", "step_started_at": None,
-                                                  "steps": [{"label": "Postgres + RustFS", "took": "1m50s"}, {"label": "Terminal", "took": "3m11s"}]})
+                                                  "steps": [{"label": l, "took": tk} for l, tk in whole]})
         page.locator("#job-title", has_text="finished").wait_for(timeout=15000)
         expect(page.inner_text("#job-message") == "Updated to v9.9.9", f"message: {page.inner_text('#job-message')!r}")
         expect(page.locator("#job-step").is_hidden(), "a step shown after the update ended")
+        shown = [x.strip() for x in page.locator("#job-done li").all_inner_texts()]
+        expect(shown == [f"{l} · {tk}" for l, tk in whole], f"the update's steps on its card: {shown!r}")
+        shot(page, "06d-home-update-every-step-timed")
+        states.append(f"done: all {len(shown)} steps of the update on the card, each with its time")
         page.goto(page.url.split("#")[0] + "#settings")
         page.wait_for_selector("#settings-title", timeout=15000)
         expect(page.locator("#settings-updating").count() == 0 or page.locator("#settings-updating").is_hidden(), "Settings still says an update is finishing")

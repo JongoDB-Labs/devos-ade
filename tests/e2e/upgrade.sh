@@ -266,21 +266,36 @@ cp "$STACK/.state/status/helper-status.json" "$LOGS/helper-status.json" 2>/dev/n
 s="$(cat "$LOGS/helper-status.json" 2>/dev/null)"
 case "$s" in *'"phase": "done"'*) check update-now 0 "the helper's update finished: $(printf '%s' "$s" | sed -n 's/.*"message": "\([^"]*\)".*/\1/p')" ;;
   *) check update-now 1 "the helper's update did not finish well: $s" ;; esac
-# Home's progress card: every step the update's log says is done ("==> LABEL ready (T)" after its last "update: N/4"
-# line, as lib/helper.sh _job_steps reads them) is in the helper's status — what Home lists — in that order and with
-# its time, and none is left running
+# Home's progress card: every step the update's log says is done ("==> LABEL ready (T)", as lib/helper.sh _job_steps
+# reads them) is in the helper's status — what Home lists — in that order and each with its time, and none is left
+# running. A helper of this version or later (its log's lines carry their time, "20:02:40 ==> …") lists the whole job,
+# from the backup to what's new; an older one — the helper of the version updated FROM runs the update — the steps
+# after the log's last "update: N/4" line. The steps' table goes to $OUT/steps.tsv (label, time).
 cp "$STACK/.state/helper/last-update.log" "$LOGS/update-job.log" 2>/dev/null; redact "$LOGS/update-job.log"
-python3 - "$LOGS/update-job.log" "$LOGS/helper-status.json" > "$OUT/steps.check" 2>&1 <<'PY'
+python3 - "$LOGS/update-job.log" "$LOGS/helper-status.json" "$OUT/steps.tsv" > "$OUT/steps.check" 2>&1 <<'PY'
 import json, re, sys
-lines = [l.rstrip("\n") for l in open(sys.argv[1], encoding="utf-8", errors="replace")]
-start = max([i for i, l in enumerate(lines) if re.match(r"^==> (update: [1-4]/4|rollback: [1-3]/3)", l)], default=-1)
-want = [(m.group(1), m.group(2)) for m in (re.match(r"^==> (.*) ready \((.*)\)$", l) for l in lines[start + 1:]) if m][:40]
+STAMP = re.compile(r"^[0-2][0-9]:[0-5][0-9]:[0-5][0-9] ")
+raw = [l.rstrip("\n") for l in open(sys.argv[1], encoding="utf-8", errors="replace")]
+stamped = bool(raw) and all(STAMP.match(l) for l in raw if l.strip())
+lines = [STAMP.sub("", l) for l in raw]
+if stamped:
+    start, cap = -1, 80
+else:
+    start, cap = max([i for i, l in enumerate(lines) if re.match(r"^==> (update: [1-4]/4|rollback: [1-3]/3)", l)], default=-1), 40
+want = [(m.group(1), m.group(2)) for m in (re.match(r"^==> (.*) ready \((.*)\)$", l) for l in lines[start + 1:]) if m][:cap]
 st = json.load(open(sys.argv[2]))
 got = [(s["label"], s["took"]) for s in st.get("steps") or []]
 assert want, "the update's log names no step"
 assert got == want, f"Home lists {got}, the log says {want}"
 assert not st.get("step"), f"a step left running: {st.get('step')}"
-print(f"{len(got)} steps on Home's card, as the log has them: " + ", ".join(f"{l} {t}" for l, t in got))
+untimed = [l for l, t in got if not re.fullmatch(r"[0-9]{1,4}m[0-9]{2}s|[0-9]{1,4}s", t or "")]
+assert not untimed, f"steps without their time: {untimed}"
+if stamped:
+    assert any(l == "Backup" for l, _ in got) and any(l.startswith("Smoke test") for l, _ in got), "the whole job's steps (the backup, the smoke test)"
+with open(sys.argv[3], "w") as f:
+    for l, t in got:
+        f.write(f"{l}\t{t}\n")
+print(f"{len(got)} steps on Home's card ({'the whole job, a stamped log' if stamped else 'after the last update: N/4 line, an older helper'}), each with its time: " + ", ".join(f"{l} {t}" for l, t in got))
 PY
 check home-card-steps "$?" "$(tail -n 1 "$OUT/steps.check")"
 

@@ -46,7 +46,7 @@ test_update_records_what_rollback_needs_before_images_change() {
   # recorded before 3/4 images, marked done only after setup
   # (also right after the checkout, before the exec: a stop in between is then an unfinished update)
   assert_contains "$(printf '%s\n' "$body" | grep -n 'update_record_write\|update: 3/4\|update_record_done' | cut -d: -f2- | tr -d ' ' | tr '\n' '|')" \
-    'update_record_write"$from""$branch""$backup"|update_record_write"$from""$branch""$backup"|log"update:3/4images(pullingtheversionspinnedincompose.yaml)"|update_record_done|'
+    'update_record_write"$from""$branch""$backup"|update_record_write"$from""$branch""$backup"|log"update:3/4images(downloadingtheversionspinnedincompose.yaml,sidebyside,whilesetupbuilds)"|update_record_done|'
 }
 
 test_rollback_restores_code_data_and_local_builds() {
@@ -248,6 +248,7 @@ _finish_stubs() { # logs every step ./stack update takes; the fixture's ./stack 
   _backup_named() { echo BACKUP >> "$TMP/steps"; LAST_BACKUP=backups/20261013-000000-auto; }
   prune_auto_backups() { echo PRUNE >> "$TMP/steps"; }
   update_checkout() { echo "CHECKOUT ${1:-}" >> "$TMP/steps"; CODE_CHANGED=0; }
+  # (dc config: the list of images to download, empty here — so one compose pull, as before: lib/steps.sh pulls_start)
   dc() { echo "dc $1" >> "$TMP/steps"; }
   images_snapshot_before() { echo SNAPSHOT >> "$TMP/steps"; }; images_after_update() { echo AFTER >> "$TMP/steps"; }
 }
@@ -258,7 +259,7 @@ test_rerunning_an_unfinished_update_finishes_it() {
   before="$(cat "$(update_record_file)")"
   ASSUME_YES=1 cmd_update > /dev/null 2> "$TMP/err"
   # no new backup (it would be of the half-updated state) and no new snapshot: rollback keeps its target
-  assert_eq "$(tr '\n' ';' < "$TMP/steps")" "dc pull;AFTER;"
+  assert_eq "$(tr '\n' ';' < "$TMP/steps")" "dc config;dc pull;AFTER;"
   assert_eq "$(cat "$CALLS")" "new setup --yes"
   assert_contains "$(cat "$TMP/err")" "the last update (from v0.2.1) did not finish — finishing it"
   assert_contains "$(cat "$TMP/err")" "backups/20261012-000000-auto"
@@ -293,7 +294,7 @@ test_finishing_with_to_moves_on_and_keeps_the_rollback_point() {
   mkdir -p "$STATE_DIR/images"; : > "$STATE_DIR/images/before.tsv"
   fake_reexec; BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_UPDATE_FINISHING=1 BEDROCK_NOW_UPDATE_FROM="$OLD" \
     BEDROCK_NOW_UPDATE_BACKUP=backups/20261012-000000-auto cmd_update > /dev/null 2>&1
-  assert_eq "$(tr '\n' ';' < "$TMP/steps")" "dc pull;AFTER;"
+  assert_eq "$(tr '\n' ';' < "$TMP/steps")" "dc config;dc pull;AFTER;"
   assert_contains "$(cat "$(update_record_file)")" "result=done"
   assert_contains "$(cat "$(update_record_file)")" "$(printf '%s\n' "$before" | grep '^at=')"
   assert_eq "$(cat "$CALLS.update")" "new setup --yes finishing=unset from= backup="   # never passed on to setup
@@ -325,7 +326,7 @@ test_an_update_stopped_right_after_the_checkout_is_finished_and_rolls_back_right
   : > "$TMP/steps"; : > "$CALLS"
   ASSUME_YES=1 cmd_update > /dev/null 2> "$TMP/err"
   assert_contains "$(cat "$TMP/err")" "did not finish — finishing it"
-  assert_eq "$(tr '\n' ';' < "$TMP/steps")" "SNAPSHOT;dc pull;AFTER;"
+  assert_eq "$(tr '\n' ';' < "$TMP/steps")" "SNAPSHOT;dc config;dc pull;AFTER;"
   assert_eq "$(cat "$CALLS")" "newest setup --yes"
   # and rollback goes back to v0.3.0 with that update's own backup
   : > "$CALLS"
@@ -338,7 +339,7 @@ test_finishing_takes_the_snapshot_an_unfinished_update_did_not_get_to() {
   _fixture; _record; _finish_stubs   # no before.tsv: it stopped before 3/4 (setup never ran: :local is the old build)
   images_snapshot_before() { echo "SNAPSHOT $1" >> "$TMP/steps"; }
   ASSUME_YES=1 cmd_update > /dev/null 2>&1
-  assert_eq "$(tr '\n' ';' < "$TMP/steps")" "SNAPSHOT $OLD;dc pull;AFTER;"
+  assert_eq "$(tr '\n' ';' < "$TMP/steps")" "SNAPSHOT $OLD;dc config;dc pull;AFTER;"
 }
 
 test_re_exec_variables_from_the_environment_are_not_trusted() {
@@ -355,7 +356,7 @@ test_re_exec_variables_from_the_environment_are_not_trusted() {
   : > "$TMP/steps"; _record_set result "done"
   fake_reexec; BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_UPDATE_FINISHING=1 BEDROCK_NOW_UPDATE_FROM="$NEW" \
     BEDROCK_NOW_UPDATE_BACKUP=backups/20261013-000001-auto cmd_update > /dev/null 2>&1
-  assert_eq "$(tr '\n' ';' < "$TMP/steps")" "SNAPSHOT;dc pull;AFTER;"
+  assert_eq "$(tr '\n' ';' < "$TMP/steps")" "SNAPSHOT;dc config;dc pull;AFTER;"
   assert_contains "$(cat "$(update_record_file)")" "result=done"
 }
 
@@ -366,7 +367,7 @@ test_the_re_exec_from_a_version_without_the_lock_is_trusted() {
   BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_UPDATE_FROM="$OLD" BEDROCK_NOW_UPDATE_BACKUP=backups/20261012-000000-auto \
     BEDROCK_NOW_UPDATE_BRANCH='' ASSUME_YES=1 cmd_update > /dev/null 2> "$TMP/err"
   assert_not_contains "$(cat "$TMP/err")" "is ignored"
-  assert_eq "$(tr '\n' ';' < "$TMP/steps")" "SNAPSHOT;dc pull;AFTER;"
+  assert_eq "$(tr '\n' ';' < "$TMP/steps")" "SNAPSHOT;dc config;dc pull;AFTER;"
   assert_contains "$(cat "$(update_record_file)")" "from=$OLD"
   assert_contains "$(cat "$(update_record_file)")" "result=done"
 }

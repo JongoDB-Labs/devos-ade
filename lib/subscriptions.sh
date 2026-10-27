@@ -147,6 +147,35 @@ subs_refresh() {
   return "$rc"
 }
 
+# subs_refresh_start [chat] — subs_refresh (Chat's sandbox's with "chat"), never fatal, its output nowhere. In setup and
+# ./stack update (SUBS_REFRESH_BG=1) in the background: asking each tool in the sandbox can take a minute (a signed-in
+# tool may ask its own service, each at most 15 s), and nothing after it needs the answer — it is for Settings. setup
+# waits for it at its end (subs_refresh_reap), only as long as SUBS_REAP_S. Elsewhere it is asked here and now.
+SUBS_REFRESH_PIDS=''
+subs_refresh_start() {
+  local where=terminal
+  [ "${1:-}" != chat ] || where=chat
+  if [ "${SUBS_REFRESH_BG:-0}" != 1 ]; then (SUBS_WHERE="$where"; subs_refresh >/dev/null 2>&1) || true; return 0; fi
+  ( trap - EXIT; SUBS_WHERE="$where"; subs_refresh ) </dev/null >/dev/null 2>&1 &
+  SUBS_REFRESH_PIDS="$SUBS_REFRESH_PIDS $!"
+}
+# subs_refresh_reap — setup's end: the background asks of subs_refresh_start, waited for at most SUBS_REAP_S seconds
+# (30) in all; one that takes longer finishes on its own (it holds no lock and writes only its status file). Says when
+# it waited. Never fatal.
+subs_refresh_reap() {
+  local p left='' deadline n=0
+  [ -n "$SUBS_REFRESH_PIDS" ] || return 0
+  deadline=$((SECONDS + ${SUBS_REAP_S:-30}))
+  for p in $SUBS_REFRESH_PIDS; do
+    while kill -0 "$p" 2>/dev/null && [ "$SECONDS" -lt "$deadline" ]; do sleep 1; n=1; done
+    if kill -0 "$p" 2>/dev/null; then left="$left $p"; else wait "$p" 2>/dev/null || true; fi
+  done
+  SUBS_REFRESH_PIDS=''
+  [ -z "$left" ] || log "your subscriptions' tools are still being asked what they say (Settings shows it when they have answered)"
+  [ "$n" = 0 ] || [ -n "$left" ] || log "your subscriptions' tools answered (Settings › Your AI subscriptions)"
+  return 0
+}
+
 # subs_print — the last answer, as a table (names and words from this side, never the sandbox's text)
 subs_print() {
   local id inst ver signed kind how line words

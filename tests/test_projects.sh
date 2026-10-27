@@ -323,7 +323,8 @@ test_cli_wiring() {
   assert_contains "$(cmd_help)" "  project      Folders of this computer as projects of the Code page"
   assert_contains "$(projects_usage)" "--yes-it-holds-keys"
   assert_contains "$(sed -n '/^cmd_up()/,/^}/p' "$STACK_DIR/lib/commands.sh")" "projects_up_hook"
-  assert_contains "$(sed -n '/^terminal_setup_hook()/,/^}/p' "$STACK_DIR/lib/terminal.sh")" "projects_up_hook"
+  assert_contains "$(sed -n '/^terminal_setup_hook()/,/^}/p' "$STACK_DIR/lib/terminal.sh")" "_terminal_setup_prep"
+  assert_contains "$(sed -n '/^_terminal_setup_prep()/,/^}/p' "$STACK_DIR/lib/terminal.sh")" "projects_up_hook"
 }
 
 test_compose_renders_the_folders_into_the_sandbox_only() {

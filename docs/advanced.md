@@ -163,13 +163,30 @@ Files a service reads again on its own (the portal's `catalog/` and `litellm/`, 
 `web-search.json`, Tailscale's `serve.json`) restart nothing. A container that is running but unhealthy is recreated as
 well. `./stack restart SERVICE` still recreates one service on request.
 
-Setup builds every image it needs in one step (the portal, shared-mcp, Open WebUI and, while they are on, the terminal,
-its egress proxy and the Code page), side by side; an unchanged image takes a few seconds from Docker's cache. Then it
-starts the services in groups, one compose call each: Postgres and RustFS; LiteLLM; Open WebUI, the portal, Caddy and
-shared-mcp; the terminal with what fronts it; the Code page. Within a group, Compose starts each service as soon as
-what it depends on is up. Each group is one step on Home's update card. If the joint build fails, each image is built
-again on its own, so the failure is reported where it belongs: setup stops for the stack's own images, and goes on
-without the terminal or the Code page for theirs.
+Setup builds every image it needs side by side: the portal, shared-mcp and Open WebUI first, and, while they are on,
+the terminal, its egress proxy and the Code page in a build of their own in the background, while LiteLLM, Open WebUI
+and the portal come up; the terminal's step waits for it. An unchanged image takes a few seconds from Docker's cache.
+Then it starts the services in groups, one compose call each: Postgres and RustFS; LiteLLM; Open WebUI, the portal,
+Caddy and shared-mcp; the terminal with what fronts it; the Code page. Within a group, Compose starts each service as
+soon as what it depends on is up. If a joint build fails, each image is built again on its own, so the failure is
+reported where it belongs: setup stops for the stack's own images, and goes on without the terminal or the Code page
+for theirs.
+
+`./stack update` downloads the images `compose.yaml` pins all at once, in the background, while setup builds; setup
+waits for them before it starts anything with them, and a download that fails stops it there. An image pinned by its
+digest that is already on this computer is not asked for again (a tag is: Docker fetches a rebuilt image under it).
+Your subscriptions' tools (the terminal image's `ai-tools` stage) are kept in that stage's own build cache under the
+hash of their pins (version and checksums, or lockfile, platform and Node): an edit of `terminal/tools/install.sh` or
+of its npm flags makes Docker run the stage again, which then copies the tools whose pins stayed instead of
+downloading them, and installs the rest side by side.
+
+Every stretch of setup and of an update is a step of its own on Home's update card, with how long it took: the backup,
+the new code, each image's download, each image's build (from Docker's cache, or what step was built again), your
+subscriptions' tools (installed or kept), each group of services, the key and settings steps, the Open WebUI syncs,
+the smoke test, the clean-up of old images and what's new. The helper's log of the job,
+`.state/helper/last-update.log`, has the local time of each of its lines (`20:02:40 ==> Backup ready (9s)`). The
+first update into this version is still run by the helper of the version before it, which shows only the steps from
+setup on and writes its log without the time; the updates after it show the whole job.
 
 ## Model names, icons and tiers
 

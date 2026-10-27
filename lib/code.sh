@@ -103,7 +103,10 @@ code_preview_domain() {
 
 # (its sources must be readable: fix_checkout_modes)
 # (one setup built already in this command — lib/commands.sh setup_build_images — is taken as it is)
-code_build() { built_now code && return 0; fix_checkout_modes; building "the Code page image" dc build -q code; }
+code_build() {
+  [ -z "${SANDBOX_BUILD_PID:-}" ] || sandbox_build_wait >&2   # (setup's background build of it first: lib/steps.sh)
+  built_now code && return 0; fix_checkout_modes; building "the Code page image" dc build -q code
+}
 # The portal (the Code tab, the unlock), the main Caddy (the code site: a changed Caddyfile is read only at start), the
 # terminal's gateway (it is recreated only when its PREVIEW_PROXY_SECRET changed: at enable — ttyd's connections then
 # drop for a moment and reconnect), then the code container and Chat's sandbox (subs-chat: your subscriptions as Chat
@@ -127,10 +130,14 @@ _subs_chat_up() {
   elif declare -F chat_proxy_rm >/dev/null; then
     chat_proxy_rm
   fi
-  # (then what its own sign-ins say, for Settings and Chat's picker — never fatal; lib/subscriptions.sh)
-  out="$(up_services subs-chat 2>&1)" && { (SUBS_WHERE=chat; subs_refresh >/dev/null 2>&1) || true; return 0; }
+  # (then what its own sign-ins say, for Settings and Chat's picker — in the background; never fatal; lib/subscriptions.sh)
+  out="$(up_services subs-chat 2>&1)" && { subs_refresh_start chat; return 0; }
   warn "Chat's sandbox (subs-chat) did not start: your subscriptions cannot answer in Chat until it does — ./stack logs subs-chat"
   printf '%s\n' "$out" | tail -n 8 | sed 's/^/    /' >&2
+  return 0
+}
+_code_owui_up() {
+  up_services --no-deps open-webui > /dev/null 2>&1 || warn "Open WebUI did not restart with its connection to your subscriptions — ./stack up"
   return 0
 }
 # code_spawn_ready — bn-coded listens in the running terminal (a terminal container started by a version without it
@@ -406,14 +413,15 @@ code_setup_hook() {
   ! declare -F chat_proxy_leave >/dev/null || chat_proxy_leave
   code_ready || return 0
   code_secrets
+  sandbox_build_wait   # (lib/steps.sh: when the terminal's step did not wait for it already)
   out="$(mktemp)"; start="$(_now)"; phase_start "Code page"
   # (the gateway again: a no-op, unless the previews' secret was made just now — the first setup after an update)
   if { code_build && up_services terminal-gateway code; } > "$out" 2>&1; then
     rm -f "$out"; log "$(phase_line "Code page" $(($(_now) - start)))"
     # Chat's sandbox (subs-chat): its own, after (not starting is said; the Code page and setup go on); Open WebUI with
-    # its connection to the code container (recreated: its connections changed)
-    _subs_chat_up
-    up_services --no-deps open-webui > /dev/null 2>&1 || warn "Open WebUI did not restart with its connection to your subscriptions — ./stack up"
+    # its connection to the code container (recreated: its connections changed). Each a step of its own.
+    timed_step "Chat's sandbox" _subs_chat_up
+    timed_step "Open WebUI with your subscriptions" _code_owui_up
     return 0
   fi
   CODE_SETUP_FAILED=1; CODE_SETUP_WHY="the Code page's image did not build or its container did not start"

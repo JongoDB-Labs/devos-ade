@@ -124,14 +124,17 @@ COMMAND = re.compile(r"[a-z][a-z-]{0,23}(?: [a-z][a-z-]{0,23})?")
 TOOK = re.compile(r"[0-9]{1,4}m[0-9]{2}s|[0-9]{1,4}s")
 
 
+STEPS_MAX = 80   # (lib/helper.sh JOB_STEPS_MAX: an update's every step, from the backup to what's new)
+
+
 def _steps(v) -> list:
-    """The phases a job finished so far, as the helper read them from its log ([{label, took}], at most 40)."""
+    """The phases a job finished so far, as the helper read them from its log ([{label, took}], at most STEPS_MAX)."""
     out = []
     for x in v if isinstance(v, list) else []:
         if isinstance(x, dict) and isinstance(x.get("label"), str) and x["label"].strip():
             took = x.get("took")
             out.append({"label": x["label"][:120], "took": took if isinstance(took, str) and TOOK.fullmatch(took) else ""})
-        if len(out) == 40:
+        if len(out) == STEPS_MAX:
             break
     return out
 

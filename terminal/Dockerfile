@@ -7,8 +7,11 @@
 # Your AI subscriptions' own tools (tools/install.sh; README "Your AI subscriptions"): Codex, Gemini CLI, Copilot CLI,
 # Cursor CLI and Grok Build, each the provider's unmodified client at the version and checksum pinned below (npm ones by
 # their lockfiles in tools/). A stage of its own, with no APT_REFRESH: the weekly refresh of the image's packages never
-# downloads them again — only a new pin does. TERMINAL_AI_TOOLS in .env (BN_AI_TOOLS: all, none or a comma list)
-# chooses which go in; Claude Code is always there. Signing in happens later, in the sandbox, with each tool's own flow.
+# downloads them again — only a new pin does. And each tool once installed is kept in this stage's own build cache
+# (the cache mount below), under the hash of its pins: when Docker runs the stage again for an edit of install.sh (or
+# of its npm flags), the tools whose pins stayed are copied from there, never downloaded again, and the others install
+# side by side. TERMINAL_AI_TOOLS in .env (BN_AI_TOOLS: all, none or a comma list) chooses which go in; Claude Code is
+# always there. Signing in happens later, in the sandbox, with each tool's own flow.
 FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS ai-tools
 RUN apt-get -o Acquire::Retries=5 update && apt-get -o Acquire::Retries=5 install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
 ARG BN_AI_TOOLS=all
@@ -23,7 +26,7 @@ ARG CURSOR_VERSION=2026.10.22-27dcf5f
 ARG CURSOR_SHA256_AMD64=85296944e4600a83c4b764f578d1502bf9c416db200d33a593e8f3ecabfdc294
 ARG CURSOR_SHA256_ARM64=22a36df9720830668ccd4d707e5190204ab9c8a0efb2f068cc914895f804d3ec
 COPY tools/ /tmp/tools/
-RUN sh /tmp/tools/install.sh
+RUN --mount=type=cache,id=devos-ade-ai-tools,target=/var/cache/bn-tools,sharing=locked sh /tmp/tools/install.sh
 
 FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
 

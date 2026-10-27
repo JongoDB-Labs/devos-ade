@@ -754,8 +754,9 @@ test_ensure_portal_reachable_leaves_caddy_alone_otherwise() {
   # sign-in and before the smoke test (the update path: ./stack update runs setup, which never calls ./stack up)
   _before cmd_up ensure_portal_reachable portal_session_start
   _before cmd_restore ensure_portal_reachable settings_reconcile_with_session
-  _before setup_keys_and_ui ensure_portal_reachable portal_session_or_die
-  _before cmd_setup ensure_portal_reachable cmd_test
+  # (setup's: each in a step of its own — the portal's sign-in, the smoke test — that checks it first)
+  _before _setup_portal_signin ensure_portal_reachable portal_session_or_die
+  _before _setup_smoke_test ensure_portal_reachable cmd_test
 }
 
 test_every_caddy_up_checks_the_port_forward() {
@@ -771,7 +772,8 @@ test_every_caddy_up_checks_the_port_forward() {
   for f in _terminal_front _terminal_up; do
     assert_contains "$(sed -n "/^$f() {/,/^}/p" "$T_ROOT/lib/terminal.sh")" "ensure_portal_reachable"
   done
-  assert_contains "$(sed -n '/^setup_keys_and_ui() {/,/^}/p' "$T_ROOT/lib/commands.sh" | grep -A1 'up_front open-webui portal caddy shared-mcp')" "ensure_portal_reachable"
+  assert_contains "$(sed -n '/^setup_keys_and_ui() {/,/^}/p' "$T_ROOT/lib/commands.sh" | grep -A1 'up_front open-webui portal caddy shared-mcp')" "_setup_portal_signin"
+  assert_eq "$(sed -n '/^_setup_portal_signin() {/,/^}/p' "$T_ROOT/lib/commands.sh" | sed -n 2p | awk '{ print $1 }')" "ensure_portal_reachable"
   # a Settings change that restarts Caddy, and ./stack restart caddy, check it before the portal is used
   assert_contains "$(sed -n '/^_cfg_post() {/,/^}/p' "$T_ROOT/lib/settings.sh")" '*" caddy "*) ensure_portal_reachable'
   assert_contains "$(sed -n '/^cmd_restart() {/,/^}/p' "$T_ROOT/lib/settings.sh")" '[ "$s" != caddy ] || ensure_portal_reachable'

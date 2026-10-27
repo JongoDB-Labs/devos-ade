@@ -344,7 +344,9 @@ test_cmd_costs_names_the_price_source() {
 test_setup_refreshes_prices_before_rendering() {
   body="$(sed -n '/^setup_bringup_and_probe() {/,/^}/p' "$REAL_ROOT/lib/commands.sh")"
   first_render="$(printf '%s\n' "$body" | grep -n 'render_config' | head -n 1 | cut -d: -f1)"
-  refresh="$(printf '%s\n' "$body" | grep -n 'refresh_prices' | head -n 1 | cut -d: -f1)"
+  # (the prices are a step of their own: _setup_prices)
+  refresh="$(printf '%s\n' "$body" | grep -n '_setup_prices' | head -n 1 | cut -d: -f1)"
+  assert_contains "$(sed -n '/^_setup_prices() {/,/^}/p' "$REAL_ROOT/lib/commands.sh")" "refresh_prices 1"
   [ -n "$refresh" ] && [ "$refresh" -lt "$first_render" ] || { echo "refresh_prices must come before render_config" >&2; return 1; }
 }
 

@@ -741,41 +741,75 @@ _phase_of() {
   esac
 }
 
+# _job_stamp — stdin to stdout, each line after the local time it was read: "20:02:40 ==> update: 1/4 backup" (the
+# helper's job logs: when each line was written, for the update's every step). Bash only, no process per line — the
+# clock is the epoch read once plus SECONDS, in the UTC offset read at the start and again each minute (a switch to or
+# from summer time moves it). A last line without its newline is kept too. _job_unstamp strips it again (the
+# readers below take a log with or without it: the update into this version is logged by the helper before it).
+JOB_STAMP_RE='[0-2][0-9]:[0-5][0-9]:[0-5][0-9]'
+_job_stamp() {
+  local line t0 off=0 at=-60 t
+  t0="$(date +%s)"; SECONDS=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ $((SECONDS - at)) -ge 60 ]; then off="$(_utc_offset_s)"; at=$SECONDS; fi
+    t=$(( ((t0 + SECONDS + off) % 86400 + 86400) % 86400 ))
+    printf '%02d:%02d:%02d %s\n' $((t / 3600)) $((t % 3600 / 60)) $((t % 60)) "$line"
+  done
+}
+# _utc_offset_s -> the local time zone's offset from UTC now, in seconds (date +%z: +0530 -> 19800, -0500 -> -18000)
+_utc_offset_s() {
+  local z s=1 h m
+  z="$(date +%z 2>/dev/null)"
+  case "$z" in [+-][0-9][0-9][0-9][0-9]) ;; *) echo 0; return 0 ;; esac
+  [ "${z:0:1}" = + ] || s=-1
+  h=$((10#${z:1:2})); m=$((10#${z:3:2}))
+  echo $((s * (h * 3600 + m * 60)))
+}
+# _job_unstamp LINE -> UNSTAMPED: LINE without _job_stamp's time (as it is when it has none); bash only
+_job_unstamp() {
+  # shellcheck disable=SC2254  # (the pattern on purpose)
+  case "$1" in $JOB_STAMP_RE' '*) UNSTAMPED="${1:9}" ;; *) UNSTAMPED="$1" ;; esac
+}
+
 # _job_steps LOG — what the job's log says of its steps, from the lines ./stack writes in a helper job (lib/commands.sh
-# phase_start, phase_line, setup_step), after its last "update: N/4" or "rollback: N/3" line:
+# phase_start, phase_line, setup_step, timed_step), from its first line to its last — the backup, the code, each
+# image's download and build, setup's every step, the clean-up and what's new (each "update: N/4" stage has its own):
 #   JOB_STEP        what runs now: a phase started and not ready yet, or setup's step ("" between them)
-#   JOB_STEPS_JSON  the phases ready so far, in order: [{"label": "Postgres + RustFS", "took": "1m50s"}, …] (at most 40)
+#   JOB_STEPS_JSON  the phases ready so far, in order: [{"label": "Postgres + RustFS", "took": "1m50s"}, …] (at most
+#                   JOB_STEPS_MAX)
 #   JOB_STEP_AT     when JOB_STEP was first seen (the poll's clock; empty with no step)
-# Read again only when the log has grown. Labels and times as JSON-safe text.
-JOB_STEP=''; JOB_STEP_AT=''; JOB_STEPS_JSON='[]'; JOB_STEPS_ID=''; JOB_STEPS_SIZE=''
+# Read again only when the log has grown. Labels and times as JSON-safe text. Its lines with or without _job_stamp's time.
+JOB_STEP=''; JOB_STEP_AT=''; JOB_STEPS_JSON='[]'; JOB_STEPS_ID=''; JOB_STEPS_SIZE=''; JOB_STEPS_MAX=80
 _job_steps() {
-  local size line label took cur='' arr='' n=0
+  local size line label took cur='' arr='' n=0 UNSTAMPED
   size="$(wc -c < "$1" 2>/dev/null | tr -d ' ')"
   [ "$JOB_STEPS_ID" != "$JOB_ID" ] || [ "$size" != "$JOB_STEPS_SIZE" ] || return 0
   [ "$JOB_STEPS_ID" = "$JOB_ID" ] || { JOB_STEP=''; JOB_STEP_AT=''; }
   JOB_STEPS_ID="$JOB_ID"; JOB_STEPS_SIZE="$size"
   while IFS= read -r line; do
+    _job_unstamp "$line"; line="$UNSTAMPED"
     case "$line" in
-      '==> update: '[1-4]/4* | '==> rollback: '[1-3]/3*) cur=''; arr=''; n=0 ;;
       '==> '*': starting…') cur="${line#==> }"; cur="${cur%: starting…}" ;;
       '==> doing: '*) cur="${line#==> doing: }" ;;
       '==> '*' ready ('*')')
         label="${line#==> }"; took="${label##* ready (}"; took="${took%)}"; label="${label% ready (*}"
-        if [ "$n" -lt 40 ]; then
+        if [ "$n" -lt "$JOB_STEPS_MAX" ]; then
           arr="$arr${arr:+, }{\"label\": \"$(_json_str "$label")\", \"took\": \"$(_json_str "$took")\"}"; n=$((n + 1))
         fi
         [ "$cur" != "$label" ] || cur='' ;;
     esac
-  done < <(grep -E '^==> ' "$1" 2>/dev/null | tail -n 400)
+  done < <(grep -E "^($JOB_STAMP_RE )?==> " "$1" 2>/dev/null | tail -n 3000)
   [ "$cur" = "$JOB_STEP" ] || { JOB_STEP="$cur"; JOB_STEP_AT="$( [ -z "$cur" ] || date +%s)"; }
   JOB_STEPS_JSON="[$arr]"
 }
 
-# _last_error LOG -> the most useful line of a failed run (the last "xx" line, else the last line)
+# _last_error LOG -> the most useful line of a failed run (the last "xx" line, else the last line), without its time
 _last_error() {
-  local l
-  l="$(grep -E '^xx ' "$1" 2>/dev/null | tail -n 1 | sed 's/^xx  *//')"
+  local l UNSTAMPED
+  l="$(grep -E "^($JOB_STAMP_RE )?xx " "$1" 2>/dev/null | tail -n 1)"
   [ -n "$l" ] || l="$(tail -n 1 "$1" 2>/dev/null)"
+  _job_unstamp "$l"; l="$UNSTAMPED"
+  case "$l" in 'xx '*) l="${l#xx}"; l="${l#"${l%%[! ]*}"}" ;; esac
   printf '%s\n' "$l"
 }
 
@@ -812,6 +846,14 @@ _keep_awake() {
   return 0
 }
 
+# _job_run ACTION — ./stack ACTION --yes in this checkout, as the helper's job, each line of what it says with its time
+# (_job_stamp); ends with ./stack's exit status, once the last line is written (the stamping is part of this process)
+_job_run() {
+  set +e
+  ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" "$1" --yes ) </dev/null 2>&1 | _job_stamp
+  return "${PIPESTATUS[0]}"
+}
+
 # helper_run_job ACTION ID [auto] — runs ./stack ACTION --yes in this checkout and reports progress. "auto": the
 # automatic update of JOB_TARGET (its own record and wording; one that cannot start is "skipped", not "failed")
 helper_run_job() {
@@ -840,7 +882,7 @@ helper_run_job() {
     rollback) helper_write_status restoring "Going back to the previous version" ;;
     update) helper_write_status backing-up "Backing up your data" ;;
   esac
-  ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" "$action" --yes ) </dev/null > "$logf" 2>&1 &
+  _job_run "$action" > "$logf" 2>&1 &
   pid=$!
   [ "$action" = clean ] || _keep_awake "$pid"
   while kill -0 "$pid" 2>/dev/null; do

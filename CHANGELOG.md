@@ -6,6 +6,27 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Changed
+
+- **Updates account for every second (JON-519).** Home's update card lists every step of the update with how long it
+  took, from the backup to what's new: the new code, each image's download, each image's build (from Docker's cache,
+  or which step was built again), your subscriptions' tools (installed or kept), each group of services, LiteLLM's and
+  Chat's keys, the Open WebUI syncs, the smoke test, the clean-up of old images. No stretch is left as "Restarting the
+  services". The helper's log of the job (`.state/helper/last-update.log`) has the local time of every line
+  (`20:02:40 ==> Backup ready (9s)`), and `./stack setup` and `./stack update` in a terminal print each step's time. The
+  first update into this version is still logged by the helper of the version before it: its card starts at setup
+  and its log has no times; the updates after it show the whole job.
+- **Updates spend less time waiting.** The images an update downloads come all at once, in the background, while
+  setup builds; an image pinned by its digest that is already here is not asked for again. The terminal's, its egress
+  proxy's and the Code page's images build in the background while LiteLLM, Open WebUI and the portal come up (the
+  Code page keeps running on its current sandbox until then). Asking your subscriptions' tools what they say (for
+  Settings) no longer holds up setup: each tool is asked side by side, in the background.
+- **Your subscriptions' tools are installed again only when their pins change.** Each tool, once installed and
+  checked, is kept in the terminal image's build cache under the hash of what it is (its version and checksums, or
+  its lockfile, the platform and Node). An edit of `terminal/tools/install.sh` or of npm's flags, such as v0.31.3's
+  retries, now costs a copy instead of downloading all five again; a new pin installs that tool alone, and the tools
+  install side by side. The first build after this update installs them once more (the stage's own line changed).
+
 ## [0.32.1] - 2026-10-27
 
 ### Fixed

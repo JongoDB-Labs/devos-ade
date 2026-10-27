@@ -235,6 +235,7 @@ terminal_ids() {
 # this command (lib/commands.sh setup_build_images, with the same arguments) is taken as it is.
 terminal_build() {
   local e
+  [ -z "${SANDBOX_BUILD_PID:-}" ] || sandbox_build_wait >&2   # (setup's background build of it first: lib/steps.sh)
   if ! built_now terminal; then
     terminal_build_args
     building "the terminal image" dc build -q "${TERMINAL_BUILD_ARGS[@]}" terminal || return 1
@@ -580,30 +581,45 @@ terminal_after_up() {
   return 0
 }
 
+# _terminal_setup_prep — terminal_setup_hook's first step: the secret, the project folders' mounts (each folder checked
+# again), the workspace still usable (else _TERMINAL_LEFT_OUT=1 and TERMINAL_SETUP_FAILED=1, said) and its own LiteLLM
+# key (budget synced; none at all: TERMINAL_SETUP_FAILED=1, and it is started all the same)
+_TERMINAL_LEFT_OUT=0
+_terminal_setup_prep() {
+  local why
+  _TERMINAL_LEFT_OUT=0
+  terminal_secrets
+  projects_up_hook   # lib/projects.sh: the project folders' mounts, each folder checked again
+  why="$(terminal_why_out)"
+  if [ -n "$why" ]; then _TERMINAL_LEFT_OUT=1; TERMINAL_SETUP_FAILED=1; TERMINAL_SETUP_WHY="$why"; warn "Terminal: not started — $why (./stack terminal enable --workspace DIR)"; return 0; fi
+  if ! terminal_key; then
+    warn "Terminal: could not create or update its LiteLLM key (claude-code-terminal) — see ./stack logs litellm"
+    [ -n "$(get_env LITELLM_KEY_TERMINAL)" ] || { TERMINAL_SETUP_FAILED=1; TERMINAL_SETUP_WHY="no LiteLLM key for its sandbox (is LiteLLM up?)"; }
+  fi
+  return 0
+}
+
 # terminal_setup_hook — setup / ./stack update: its key (budget synced), a new image (new code, this week's packages)
 # and containers with the current keys. Never stops setup: a failure leaves the previous ones running, with a warning
 # (TERMINAL_SETUP_FAILED=1: lib/code.sh code_default_settle undoes a default that did not come up).
 TERMINAL_SETUP_FAILED=0; TERMINAL_SETUP_WHY=''
 # shellcheck disable=SC2034  # TERMINAL_SETUP_FAILED, TERMINAL_SETUP_WHY: read by lib/code.sh
 terminal_setup_hook() {
-  local out start why
+  local out start
   TERMINAL_SETUP_FAILED=0; TERMINAL_SETUP_WHY=''
   terminal_remote_sync
   chat_proxy_leave   # (before any up: setup and update)
   terminal_on || return 0
-  terminal_secrets
-  projects_up_hook   # lib/projects.sh: the project folders' mounts, each folder checked again
-  why="$(terminal_why_out)"
-  if [ -n "$why" ]; then TERMINAL_SETUP_FAILED=1; TERMINAL_SETUP_WHY="$why"; warn "Terminal: not started — $why (./stack terminal enable --workspace DIR)"; return 0; fi
-  if ! terminal_key; then
-    warn "Terminal: could not create or update its LiteLLM key (claude-code-terminal) — see ./stack logs litellm"
-    [ -n "$(get_env LITELLM_KEY_TERMINAL)" ] || { TERMINAL_SETUP_FAILED=1; TERMINAL_SETUP_WHY="no LiteLLM key for its sandbox (is LiteLLM up?)"; }
-  fi
+  timed_step "Terminal: its key and project folders" _terminal_setup_prep
+  [ "$_TERMINAL_LEFT_OUT" = 0 ] || return 0
+  # (the sandbox's images, built in the background since setup began: lib/steps.sh — a step of its own, each image too)
+  sandbox_build_wait
   out="$(mktemp)"; start="$(_now)"; phase_start Terminal
   if _terminal_build_and_up > "$out" 2>&1; then
     rm -f "$out"; log "$(phase_line "Terminal" $(($(_now) - start)))"; terminal_after_up
-    # (a new image: what its AI tools say now, for Settings — never fatal; lib/subscriptions.sh)
-    subs_refresh >/dev/null 2>&1 || true
+    # (a new image: what its AI tools say now, for Settings — in the background, never holding up what follows; never
+    # fatal; lib/subscriptions.sh)
+    subs_refresh_start
     return 0
   fi
   TERMINAL_SETUP_FAILED=1; TERMINAL_SETUP_WHY="the terminal's image did not build or its container did not start"

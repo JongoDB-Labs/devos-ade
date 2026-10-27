@@ -97,7 +97,7 @@ test_cmd_update_reexec_skips_backup_and_checkout() {
   update_checkout() { echo CHECKOUT >> "$TMP/calls"; }
   _backup_named() { echo BACKUP >> "$TMP/calls"; }; prune_auto_backups() { :; }; dc() { echo "dc $*" >> "$TMP/calls"; }
   fake_reexec; BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_UPDATE_BACKUP=backups/b BEDROCK_NOW_UPDATE_FROM=abc123 cmd_update 2> "$TMP/err"
-  assert_eq "$(tr '\n' ';' < "$TMP/calls")" "dc pull --ignore-buildable;STACK setup --yes done=unset backup=unset from=unset;"
+  assert_eq "$(tr '\n' ';' < "$TMP/calls")" "dc config --images;dc pull --ignore-buildable;STACK setup --yes done=unset backup=unset from=unset;"
   assert_contains "$(cat "$TMP/err")" "update: 3/4 images"
   assert_contains "$(cat "$TMP/err")" "update: 4/4 setup"
 }
@@ -214,7 +214,7 @@ test_update_with_something_new_still_backs_up_first() {
 test_update_force_reruns_setup_when_nothing_is_new() {
   _fixture; git -C "$STACK_DIR" -c advice.detachedHead=false checkout -q v0.2.0; _noop_stubs
   (ASSUME_YES=1 cmd_update --force) 2> "$TMP/err" || return 1
-  assert_eq "$(tr '\n' ';' < "$TMP/calls")" "BACKUP;PRUNE;dc pull;STACK setup --yes done=unset backup=unset from=unset;"
+  assert_eq "$(tr '\n' ';' < "$TMP/calls")" "BACKUP;PRUNE;dc config;dc pull;STACK setup --yes done=unset backup=unset from=unset;"
   assert_contains "$(cat "$TMP/err")" "already on v0.2.0"
   assert_contains "$(cat "$TMP/err")" "no new version"
   if out="$( (cmd_update --bogus) 2>&1)"; then return 1; fi
@@ -310,7 +310,7 @@ test_setup_records_its_commit_when_it_succeeds_so_the_next_update_is_a_no_op() {
   [ ! -e "$(setup_commit_file)" ] || { echo "a failed setup kept the record of the one before" >&2; return 1; }
   # the setup at the end of an update is that same cmd_setup, run by ./stack setup --yes
   assert_contains "$(sed -n '/^cmd_update() {/,/^}/p' "$T_ROOT/lib/commands.sh")" '"$STACK_DIR/stack" setup --yes'
-  assert_contains "$(sed -n '/^cmd_setup() {/,/^}/p' "$T_ROOT/lib/commands.sh")" "record_setup_commit"
+  assert_contains "$(sed -n '/^cmd_setup() {/,/^}/p; /^_setup_finish() {/,/^}/p' "$T_ROOT/lib/commands.sh")" "record_setup_commit"
 }
 
 test_an_untrusted_re_exec_runs_every_step() {
@@ -318,7 +318,7 @@ test_an_untrusted_re_exec_runs_every_step() {
   # v0.1.1 checks out the new code itself and execs it with BEDROCK_NOW_CODE_UPDATED=1 alone
   (BEDROCK_NOW_CODE_UPDATED=1 ASSUME_YES=1 cmd_update) 2> "$TMP/err" || return 1
   assert_contains "$(cat "$TMP/err")" "is ignored (./stack update sets it only for itself) — running every step"
-  assert_eq "$(tr '\n' ';' < "$TMP/calls")" "BACKUP;PRUNE;dc pull;STACK setup --yes done=unset backup=unset from=unset;"
+  assert_eq "$(tr '\n' ';' < "$TMP/calls")" "BACKUP;PRUNE;dc config;dc pull;STACK setup --yes done=unset backup=unset from=unset;"
   # v0.2.1's way, but its backup is older than an hour (e.g. a fetch that hung)
   : > "$TMP/calls"; b=backups/20260101-000000-auto; mkdir -p "$STACK_DIR/$b"; : > "$STACK_DIR/$b/litellm.dump"; : > "$STACK_DIR/$b/openwebui.dump"
   touch -t 202601010000 "$STACK_DIR/$b"
