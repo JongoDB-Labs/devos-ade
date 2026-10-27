@@ -290,12 +290,17 @@ export function makeGitRemote({ call: sandboxCall, openBroker = null, store = ne
   async function state(repo) {
     if (!repoOk(repo)) throw err(400, 'not a repository folder of the workspace');
     let st;
-    // Reading a repository the sandbox will not read now — its folder gone while the panel refreshed (gitFolderGone), or
-    // otherwise refused: repo:false, as for a folder that is not a git repository. A read of the remote state is only
-    // what remotes a repository has; a refusal of it is never a 4xx on the page (a trailing refresh of a just-removed
-    // repository, say). Writes (remoteSet, fetch, pull, push) still refuse loudly — this is the read alone.
-    try { st = remoteStateOf((await call({ op: 'git.remote.state', repo }, { timeoutMs: 45000 })).result); }
-    catch (e) { if (e instanceof SandboxError && e.kind === 'refused') return remoteStateOf({ repo: false, reason: 'not a git repository' }); throw e; }
+    // Reading a repository the sandbox will not read now — its folder gone while the panel refreshed, or otherwise
+    // refused: repo:false, as for a folder that is not a git repository. A read of the remote state is only what remotes
+    // a repository has; a refusal of it is never a 4xx on the page (a trailing refresh of a just-removed repository,
+    // say). The raw sandboxCall is read here (not the wrapping `call`), so a refusal arrives as the SandboxError it is,
+    // not already turned into a 4xx; any other failure is labelled as `call` would (sandboxFailure). Writes (remoteSet,
+    // fetch, pull, push) still refuse loudly — this is the read alone.
+    try { st = remoteStateOf((await sandboxCall({ op: 'git.remote.state', repo }, { timeoutMs: 45000 })).result); }
+    catch (e) {
+      if (e instanceof SandboxError && e.kind === 'refused') return remoteStateOf({ repo: false, reason: 'not a git repository' });
+      throw sandboxFailure(e);
+    }
     if (!st.repo) return st;
     const hosts = store.read().hosts;
     const look = (u) => {
