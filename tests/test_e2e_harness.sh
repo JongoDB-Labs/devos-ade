@@ -931,6 +931,18 @@ check(L.allowed(rows, "overlap", "overlap|code|div.etab", "home") is None, "anot
 check(not L.load_allowlist() or all(r.get("why") for r in L.load_allowlist()), "no entry without a reason")
 # a state's page: one finding per component and page, whatever the state
 check(L.page_of("settings-providers") == "settings" and L.page_of("code-mock-session-permission") == "code" and L.page_of("home-details-open") == "home", "pages")
+# a finding the sweep records is allowed by an entry whose sig names it as the summary prints it (its check first):
+# the reviewed entries of layout-allowlist.json match the findings they were written for
+sw = L.Sweep.__new__(L.Sweep)
+sw.cfg = L.Cfg(origin="http://x", password="p", out=None, shots=False)
+sw.findings, sw.allow = {}, L.load_allowlist()
+at = lambda state: {"state": state, "device": "phone", "w": 320, "h": 800, "theme": "light"}
+sw.add(None, "overlap", "control over control", "signin|form > div.pw-field > button#pw-toggle.pw-toggle|form > div.pw-field > input#password", at("signin"), a={"path": "p"}, detail="d")
+sw.add(None, "clipped text", "ellipsis", "code|li[data-testid=session-row].sess > button.sess-main > span.sess-title", at("code-side-projects"), a={"path": "p"}, detail="d")
+sw.add(None, "clipped text", "ellipsis", "code|div[data-testid=git-panel].gitp > label.gitr-repo.small > select[data-testid=git-repo]", at("code-side-git"), a={"path": "p"}, detail="d")
+got = {k: v["allowed"] for k, v in sw.findings.items()}
+check(got[next(k for k in got if k.startswith("overlap|signin"))] and got[next(k for k in got if k.endswith("span.sess-title"))], f"the reviewed entries match their findings: {got}")
+check(not got[next(k for k in got if "git-repo" in k)], f"the Git panel's picker is no longer allowed to be cut (JON-512): {got}")
 # workers' results: one finding seen by two is one, its sizes and states joined; the first screenshot kept
 f = lambda **k: {"sig": "overlap|home|a|b", "check": "overlap", "allowed": False, "seen": 1, "widths": [], "heights": [800],
                  "themes": ["light"], "states": [], "devices": ["phone"], "shot": "", **k}

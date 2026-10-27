@@ -250,7 +250,8 @@ class Sweep:
         key = f"{check}|{sig}"
         f = self.findings.get(key)
         if f is None:
-            why = allowed(self.allow, check, sig, where["state"])
+            # (an entry's sig names the whole signature, its check first — as the summary prints it)
+            why = allowed(self.allow, check, key, where["state"])
             f = self.findings[key] = {"sig": key, "check": check, "kind": kind, "allowed": why is not None, "why": why or "",
                                       "a": strip(a), "b": strip(b) if b else None, "detail": detail, "first": dict(where),
                                       "seen": 0, "widths": set(), "heights": set(), "themes": set(), "states": set(), "devices": set(), "shot": ""}
