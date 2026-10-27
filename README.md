@@ -2481,7 +2481,9 @@ time. The portal cannot install software on your computer by design, so this one
 until then Home shows "One-click updates are off" with that command and a Copy button. With the helper, Home
 shows **Update now** (first in the update card, with `./stack update` folded under *From a terminal instead*),
 **Roll back** and **Clean up old images**. Each asks for the portal password again, and
-Home shows the progress and the result, e.g. "Updated to v0.3.0 · freed 3.1 GB". While the update restarts the
+Home shows the progress and the result, e.g. "Updated to v0.3.0 · freed 3.1 GB". The progress card lists every step
+of the update with how long it took — the backup, the new code, each image's download and build, your subscriptions'
+tools, each group of services, the smoke test — so no part of it looks stuck. While the update restarts the
 portal (about a minute or two), Home cannot reach it: the progress card then says it is reconnecting and for how
 long, and picks up by itself. Home's last job is the newest of any origin: a `./stack update`, `rollback`, `setup`,
 `config`, `code` or similar command you run in a terminal shows there too ("./stack code enable finished · Run in
