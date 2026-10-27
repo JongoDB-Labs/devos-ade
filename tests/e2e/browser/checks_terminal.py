@@ -335,6 +335,7 @@ def phone(ctx):
     need_on()
     page, rec = ctx.page("terminal-phone", device="phone")
     login(page)
+    page.click(".tab[data-tab=chat]")   # a phone's first sign-in opens Home, not Chat
     page.wait_for_selector("iframe[data-app=chat]", timeout=20000)
     expect(not page.locator(".tab[data-tab=terminal]").is_visible(), "Terminal in the phone's bottom bar")
     page.click("#more-btn")

@@ -35,6 +35,10 @@ def home_voice(ctx):
     page, rec = ctx.page("home-voice")
     login(page)
     note = page.locator("#voice-note")
+    page.locator("#models-more").wait_for(state="attached", timeout=30000)
+    # the voice line lives in Home's collapsed "more" details (JON-515): open it
+    if not page.evaluate("() => document.getElementById('models-more').open"):
+        page.click("#models-more > summary")
     note.wait_for(timeout=30000)
     page.locator("#voice-note", has_text="Voice:").wait_for(timeout=30000)
     text = note.inner_text()

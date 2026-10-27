@@ -2465,13 +2465,26 @@ def _clipboard_after(page, click_sel: str) -> str:
     return clip
 
 
+def gs_shown(page, timeout=15000):
+    """Wait for Home's Get started card; True when all five steps are ticked ('You're set up': the card keeps its head and
+    CSS collapses the steps, display:none), False on the first-install state where the steps show. A fresh stack is the
+    second; the full stage, run late, is the first. Either way the step elements exist."""
+    page.locator("#get-started:not([hidden]) .gs-step").first.wait_for(state="attached", timeout=timeout)
+    done = page.evaluate("() => document.querySelector('#get-started').classList.contains('all-done')")
+    if done:
+        expect("You're set up" in page.text_content("#get-started .gs-head h2"), "all-done but the head does not say You're set up")
+    else:
+        page.locator("#get-started:not([hidden]) .gs-step").first.wait_for(state="visible", timeout=timeout)
+    return done
+
+
 @check("browser", "walkthrough")
 def walkthrough(ctx):
     page, rec = ctx.page("walkthrough", tour=True)   # a first visit: no walkthrough state yet
     login(page)
     # a first visit: Home's Get started (five steps) is the first run, the walkthrough closed beside it — its Full
     # walkthrough opens it, at the start
-    page.locator("#get-started:not([hidden]) .gs-step").first.wait_for(timeout=15000)
+    gs_shown(page)
     page.wait_for_timeout(500)
     expect(page.locator("#tour").is_hidden(), "the walkthrough opened by itself on a first visit (Get started is the first run now)")
     page.click("#get-started .gs-tour")
@@ -2642,12 +2655,12 @@ def get_started(ctx):
     walkthrough brings it back. On a phone too."""
     page, rec = ctx.page("get-started", tour=True)   # a first visit
     login(page)
-    page.locator("#get-started:not([hidden]) .gs-step").first.wait_for(timeout=15000)
+    gs_shown(page)
     ids = page.eval_on_selector_all("#get-started .gs-step", "els => els.map(e => e.dataset.step)")
     expect(ids == ["signin", "models", "code", "chat", "budget"], f"steps {ids}")
     expect(page.locator("#get-started .gs-step[data-step=signin].done").count() == 1, "Sign in is not ticked")
-    page.locator("#get-started .gs-step[data-step=models].done").wait_for(timeout=40000)   # Bedrock's chat models
-    expect("chat model" in page.inner_text("#get-started .gs-step[data-step=models]"), "the models step does not say how many")
+    page.locator("#get-started .gs-step[data-step=models].done").wait_for(state="attached", timeout=40000)   # Bedrock's chat models
+    expect("chat model" in page.text_content("#get-started .gs-step[data-step=models]"), "the models step does not say how many")
     # first on Home: Get started, then Continue, then the operations (spend, services, models)
     tops = page.evaluate("() => ['#get-started', '#continue', '.grid'].map(s => document.querySelector(s).getBoundingClientRect().top)")
     expect(tops == sorted(tops), f"Home's order {tops}")
@@ -2658,7 +2671,7 @@ def get_started(ctx):
     page.wait_for_timeout(3000)   # (the settings it reads)
     if "done" not in (budget.get_attribute("class") or ""):
         budget.locator("button", has_text="Keep these").click()
-    page.locator("#get-started .gs-step[data-step=budget].done").wait_for(timeout=10000)
+    page.locator("#get-started .gs-step[data-step=budget].done").wait_for(state="attached", timeout=10000)
     prog = page.inner_text("#get-started .gs-prog")
     # Full walkthrough: the walkthrough, at its start
     page.click("#get-started .gs-tour")
@@ -2674,12 +2687,12 @@ def get_started(ctx):
     expect(page.evaluate("() => JSON.parse(localStorage.getItem('bn.getstarted')).hidden") is True, "not kept hidden")
     page.click("#tour-btn")
     page.click("#tour [data-k=get-started-head]")
-    page.wait_for_selector("#get-started:not([hidden]) .gs-step", timeout=10000)
+    gs_shown(page, 10000)
     # a phone: on Home too
     ppage, prec = ctx.page("get-started-phone", device="phone", tour=True)
     login(ppage)
     ppage.click(".tab[data-tab=home]")
-    ppage.locator("#get-started:not([hidden]) .gs-step").first.wait_for(timeout=15000)
+    gs_shown(ppage)
     width = ppage.evaluate("document.querySelector('#home').scrollWidth")
     expect(width <= 392, f"phone: Home scrolls sideways ({width}px)")
     shot(ppage, "gs02-get-started-phone")
@@ -2740,7 +2753,7 @@ def walkthrough_phone(ctx):
     # a first visit on a phone: Home, with Get started at its top (window.bnWelcome is Get started's: the first run is
     # its five steps); the walkthrough stays closed — it would cover Home — and opens from More
     page.wait_for_selector("#home:not([hidden])", timeout=20000)
-    page.locator("#get-started:not([hidden]) .gs-step").first.wait_for(timeout=15000)
+    gs_shown(page)
     page.wait_for_timeout(500)
     expect(page.locator("#tour").is_hidden(), "the walkthrough opened by itself on a phone's first visit")
     bar = page.locator(".sidebar").bounding_box()
