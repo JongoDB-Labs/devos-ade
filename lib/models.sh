@@ -133,6 +133,47 @@ first_enabled() { # first_enabled ENABLED_FILE PREF... -> first pref present, or
   return 0
 }
 
+# --- extra Bedrock models beyond the catalog (BEDROCK_MODELS: the model browser, lib/model_browser.sh) ---
+# A Bedrock foundation-model or inference-profile id, added by hand or from the browser, that catalog/models.tsv does
+# not carry. Rendered as its own model_list entry (bedrock/converse/<id>, the general chat path), priced by LiteLLM's
+# own cost map. Never an ARN (it names the AWS account) and never a catalog id (that would double-render).
+# valid_bedrock_extra_id ID -> 0 when ID is one we can render safely
+valid_bedrock_extra_id() {
+  case "$1" in '' | arn:* | [!A-Za-z0-9]* | *[!A-Za-z0-9._:/-]*) return 1 ;; esac
+  [ "${#1}" -le 160 ]
+}
+# valid_bedrock_models VALUE -> 0 for blank or a comma list of such ids
+valid_bedrock_models() {
+  local m rest
+  case "$1" in '') return 0 ;; ,* | *, | *,,*) return 1 ;; esac
+  rest="$1,"
+  while [ -n "$rest" ]; do m="${rest%%,*}"; rest="${rest#*,}"; valid_bedrock_extra_id "$m" || return 1; done
+}
+# _catalog_bedrock_ids -> every Bedrock id and name the catalog renders (so an extra one never collides)
+_catalog_bedrock_ids() {
+  catalog_rows | while IFS=$'\t' read -r name _ model _ _; do
+    printf '%s\n' "$name"; printf '%s\n' "$(printf '%s' "$model" | sed -e 's#^bedrock/##' -e 's#^invoke/##' -e 's#^converse/##')"
+  done
+}
+# bedrock_extra_wanted -> the ids BEDROCK_MODELS names, valid, each once, that the catalog does not already render
+bedrock_extra_wanted() {
+  local v cat; v="$(get_env BEDROCK_MODELS)"; [ -n "$v" ] || return 0
+  cat="$(_catalog_bedrock_ids)"
+  printf '%s\n' "$v" | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' |
+    C="$cat" awk 'BEGIN { n = split(ENVIRON["C"], l, "\n"); for (i = 1; i <= n; i++) have[l[i]] = 1 }
+      $0 != "" && !($0 in have) && !seen[$0]++' |
+    while IFS= read -r m; do valid_bedrock_extra_id "$m" && printf '%s\n' "$m"; done
+}
+# bedrock_extra_yaml REGION -> model_list entries for the extra Bedrock models (same indentation as render); nothing
+# without BEDROCK_MODELS. REGION is the default region (per-model region is not offered for added models).
+bedrock_extra_yaml() {
+  local id region="$1"
+  bedrock_extra_wanted | while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    printf '  - model_name: "%s"\n    litellm_params:\n      model: "bedrock/converse/%s"\n      aws_region_name: os.environ/AWS_REGION_NAME\n    model_info:\n      mode: "chat"\n' "$id" "$id"
+  done
+}
+
 # render_litellm_config ENABLED_FILE REGION STORE_PROMPTS(true|false) [ALERTING(true|false)] [ENV_LOGIN_OFF(true|false)]
 #   -> YAML on stdout. STORE_PROMPTS is anything-but-"true" = false; ALERTING=true adds webhook budget alerts;
 # ENV_LOGIN_OFF=true (setup created a LiteLLM database admin) turns off the shared UI_USERNAME/UI_PASSWORD login.
@@ -193,6 +234,9 @@ _render_litellm_config_base() {
     fi
   done 3< <(catalog_rows)
   [ "$n" -gt 0 ] || die "no models to render (none of the catalog models are enabled)"
+  # Extra Bedrock models the browser added beyond the catalog (BEDROCK_MODELS, lib/model_browser.sh): rendered in the
+  # same region, no price in the config (LiteLLM's own cost map prices them). A catalog model's id is never re-rendered.
+  bedrock_extra_yaml "$region"
   # Optional OpenRouter models ("or/<id>", lib/openrouter.sh): nothing without OPENROUTER_API_KEY in .env.
   ! declare -F openrouter_yaml >/dev/null || openrouter_yaml
   # Optional Experiential Labs models ("xl/<id>", lib/explabs.sh): nothing without EXPLABS_API_KEY in .env.

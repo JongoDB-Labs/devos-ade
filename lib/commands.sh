@@ -1106,8 +1106,9 @@ cmd_models() {
   local f="$STACK_DIR/litellm/probe-results.tsv" ts bad
   case "${1:-}" in
     --recheck) models_recheck; return ;;
+    browse) shift; cmd_models_browse "$@"; return ;;   # the model browser's lists (lib/model_browser.sh)
     '') ;;
-    *) die "usage: ./stack models [--recheck]" ;;
+    *) die "usage: ./stack models [--recheck | browse [--refresh]]" ;;
   esac
   [ -s "$f" ] || die "no saved model check yet — run ./stack models --recheck (or ./stack setup)"
   ts="$(awk -F'\t' '!/^#/ && NF >= 6 { print $6; exit }' "$f")"
@@ -2294,6 +2295,8 @@ cmd_uninstall() {
 . "$STACK_DIR/lib/explabs.sh"
 # The models of the Code page and devos-claude: litellm/code-models.tsv and their bn_* model_info (render_config).
 . "$STACK_DIR/lib/code_models.sh"
+# The model browser's lists (Settings › Models & providers › Browse models): ./stack models browse (lib/model_browser.sh).
+. "$STACK_DIR/lib/model_browser.sh"
 # Optional speech-to-text for Open WebUI's voice calls (setup step, ./stack stt, costs/summary lines).
 . "$STACK_DIR/lib/stt.sh"
 # Web search for Claude Code's WebSearch on every model (LiteLLM's web search interception; ./stack websearch).

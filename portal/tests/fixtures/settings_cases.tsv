@@ -208,6 +208,15 @@ code_model	0	bad	or/~anthropic/claude-sonnet-latest
 code_model	0	bad	a@b
 code_model	0	bad	claude-haiku-5-5[1m]
 code_model	0	ok	or/meta-llama/llama-3.3-70b-instruct:free
+bedrock_models	0	ok
+bedrock_models	0	ok	us.anthropic.claude-haiku-4-5-20251001-v1:0
+bedrock_models	0	ok	anthropic.claude-3-5-haiku-20241022-v1:0,us.meta.llama4-maverick-17b-instruct-v1:0
+bedrock_models	0	bad	arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-5-haiku
+bedrock_models	0	bad	a,,b
+bedrock_models	0	bad	,a
+bedrock_models	0	bad	a b
+bedrock_models	0	bad	a@b
+bedrock_models	0	bad	model\nid
 egress	0	ok	internet
 egress	0	ok	host
 egress	0	ok	off

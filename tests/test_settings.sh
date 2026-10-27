@@ -66,8 +66,9 @@ test_every_env_key_is_in_the_settings_table_once() {
   # model pins, hidden models, nightly backups with their hour and how many to keep, + the browser terminal's 12,
   # Chat's origin and the Code page's 5, + its previews' 2, + their 4 over remote access, + auto mode's 2, + Git hosts'
   # sign-in's 3: the GitHub App's client ID and name, the GitLab application's ID, + the Experiential Labs key and models,
-  # + web search's 6: the backend, AgentCore's gateway, three search keys and a SearXNG URL)
-  assert_eq "$(settings_rows | wc -l | tr -d ' ')" 143
+  # + web search's 6: the backend, AgentCore's gateway, three search keys and a SearXNG URL,
+  # + BEDROCK_MODELS: the extra Bedrock models the model browser adds beyond the catalog, JON-520)
+  assert_eq "$(settings_rows | wc -l | tr -d ' ')" 144
 }
 
 test_table_columns_are_valid() {
@@ -125,7 +126,7 @@ test_config_list_follows_the_pages_sections() {
   # every key that adds models in Models & providers: Bedrock's, OpenRouter's (its models under it), Experiential Labs',
   # and the Claude plan switch of Your AI subscriptions; then Search: Claude Code's WebSearch and its backends
   assert_eq "$(printf '%s\n' "$out" | awk '/^Models & providers$/ { f = 1; next } /^[A-Z]/ { f = 0 } f && NF { print $1 }' | tr '\n' ' ')" \
-    "AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY OPENROUTER_API_KEY OPENROUTER_MODELS OPENROUTER_MAX_MODELS OPENROUTER_INCLUDE_ALIASES EXPLABS_API_KEY EXPLABS_MODELS CODE_CLAUDE_PLAN WEBSEARCH_BACKEND WEBSEARCH_SEARXNG_BUILTIN WEBSEARCH_AGENTCORE_GATEWAY WEBSEARCH_TAVILY_API_KEY WEBSEARCH_BRAVE_API_KEY WEBSEARCH_PERPLEXITY_API_KEY WEBSEARCH_SEARXNG_URL "
+    "AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY BEDROCK_MODELS OPENROUTER_API_KEY OPENROUTER_MODELS OPENROUTER_MAX_MODELS OPENROUTER_INCLUDE_ALIASES EXPLABS_API_KEY EXPLABS_MODELS CODE_CLAUDE_PLAN WEBSEARCH_BACKEND WEBSEARCH_SEARXNG_BUILTIN WEBSEARCH_AGENTCORE_GATEWAY WEBSEARCH_TAVILY_API_KEY WEBSEARCH_BRAVE_API_KEY WEBSEARCH_PERPLEXITY_API_KEY WEBSEARCH_SEARXNG_URL "
   assert_contains "$out" "    CODE_ALLOW_BYPASS            (blank)   (less protection: this computer only)"
   assert_contains "$(printf '%s\n' "$out" | awk '/^Spending & budgets$/ { f = 1; next } /^[A-Z]/ { f = 0 } f')" "  BUDGET_TERMINAL                50   (less protection: this computer only)"
   assert_contains "$out" "    AWS_SECRET_ACCESS_KEY        (set)   (this computer only)"
@@ -264,7 +265,7 @@ test_snapshot_masks_every_secret() {
   assert_contains "$s" "\"base\": \"$(env_sha256)\""
   assert_contains "$s" '"key": "MY_OWN_SECRET", "group": "advanced", "secret": "S"'
   if command -v python3 >/dev/null 2>&1; then
-    python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); assert len(d["keys"]) == 144; assert d["last_change"] is None' "$f"
+    python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); assert len(d["keys"]) == 145; assert d["last_change"] is None' "$f"
   fi
 }
 

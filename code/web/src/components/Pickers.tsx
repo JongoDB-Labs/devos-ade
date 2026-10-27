@@ -2,7 +2,7 @@
 // (/.bn/models), never from the CLI; costs come from DevOS ADE's spend logs (/.bn/spend).
 import { useState } from 'preact/hooks';
 import { useSel } from '../store';
-import { store, setModel, setMode, setEffort, activeView, defaultModel, refreshSpend, autoOk, setPrefs, toast, switchHarness, harnessName, planOf, refreshHarnesses, goSetup } from '../app';
+import { store, setModel, setMode, setEffort, activeView, defaultModel, refreshSpend, autoOk, setPrefs, toast, switchHarness, harnessName, planOf, refreshHarnesses, goSetup, openModelBrowser } from '../app';
 import { SETUP_LINKS, type SetupReason } from '../setuplinks';
 import { COMPAT_INFO, GROUP_TITLE, PROVIDER_SETUP, compatWarning, findModel, hiddenCount, modelSections, providerSetups } from '../models';
 import { STARRED_MAX } from '../prefs';
@@ -316,6 +316,10 @@ function BedrockModelPicker({ compact }: { compact?: boolean }) {
               Show all models ({hidden} more: outside Settings › Claude Code › Models{models.some((m) => m.compat === 'fails') ? ', or failing' : ''})
             </label>
           )}
+          {/* More models…: the portal's browser — search Bedrock, OpenRouter and Experiential Labs and add one (JON-520) */}
+          <button type="button" class="linkish mp-more" data-testid="model-more" onClick={() => { close(); openModelBrowser(); }}>
+            More models… <span class="mp-more-note">search Bedrock, OpenRouter and Experiential Labs, add or remove</span>
+          </button>
           {/* who answers, after the models you can use (your subscriptions to sign in to: folded under one row) */}
           <div role="menu" aria-label="Who answers">
             <WhoAnswers current="bedrock" close={close} />

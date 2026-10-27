@@ -108,9 +108,11 @@ export function initEvent(m) {
 // (its stream, a process that ended), apart: the page shows them in the box, never as ours
 // provider: the words are a model provider's answer, passed on by Claude Code (an API error): the page shows them without
 // the Git sign-in line, which is about codes; fix: 'model' — the way on is another model (the page offers its picker)
-export const errorEvent = (message, said = null, { provider = false, fix = null } = {}) => ({ type: 'error', message: str(message, 2000), text: str(message, 2000),
+// resend: true when sending the same prompt again is the way on (JON-521's ended free promotion: the resend is charged) —
+// the page then offers "Send again (charged)" besides "Pick another model"
+export const errorEvent = (message, said = null, { provider = false, fix = null, resend = false } = {}) => ({ type: 'error', message: str(message, 2000), text: str(message, 2000),
   ...(typeof said === 'string' && said ? { said: short(said, 300), saidBy: 'claude' } : {}),
-  ...(provider ? { provider: true } : {}), ...(fix === 'model' ? { fix } : {}) });
+  ...(provider ? { provider: true } : {}), ...(fix === 'model' ? { fix } : {}), ...(resend ? { resend: true } : {}) });
 // the SDK's names for an API error (SDKAssistantMessageError, sdk.d.ts): shown as they are — anything else in that field
 // of Claude Code's stream is its own text, apart (code/test/normalize.test.mjs checks the list against the SDK's)
 // the SDK's result subtypes (SDKResultSuccess / SDKResultError, sdk.d.ts): a turn's end said by them — anything else
@@ -139,7 +141,7 @@ export const PROMO_ENDED_SAID = 'Experiential Labs: the free promotion for this 
 // words): never a word of theirs in ours
 export function apiErrorFor(error, words) {
   if (NOT_GRANTED.test(words)) return [NOT_GRANTED_SAID, { provider: true, fix: 'model' }];
-  if (PROMO_ENDED.test(words)) return [PROMO_ENDED_SAID, { provider: true, fix: 'model' }];
+  if (PROMO_ENDED.test(words)) return [PROMO_ENDED_SAID, { provider: true, fix: 'model', resend: true }];
   return [API_ERROR_SAID[error] ?? 'The request to the model failed', { provider: true }];
 }
 

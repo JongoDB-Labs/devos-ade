@@ -2309,6 +2309,30 @@ export function openPortalSettings(reason: SetupReason, win: Window = window): v
   else toast(SETUP_LINKS[reason].says, 'info');
 }
 
+/** The portal's model browser (Settings › Models & providers › Browse models, models.js) — the picker's "More models…"
+ *  and JON-521's "pick another model": through the portal that frames this page (a message its code.js checks), else a
+ *  tab of its own; with no portal known, a hint. PROVIDER narrows it to one card (bedrock | openrouter | explabs). */
+export function openModelBrowser(provider = '', win: Window = window): void {
+  const origin = get().server?.portalOrigin;
+  let base: string | null = null;
+  try {
+    if (origin) base = new URL(origin).origin;
+  } catch {
+    base = null;
+  }
+  const prov = /^(bedrock|openrouter|explabs)$/.test(provider) ? provider : '';
+  if (win.parent !== win && base) {
+    try {
+      win.parent.postMessage({ type: 'bn-code-models', provider: prov }, base);
+      return;
+    } catch {
+      /* not the portal's frame after all: a tab of its own */
+    }
+  }
+  if (base) win.open(`${base}/#modelbrowser${prov ? `/${prov}` : ''}`, '_blank', 'noopener');
+  else toast(`Browse models in Settings › Models & providers, on the computer running ${PRODUCT}.`, 'info');
+}
+
 /** One of your subscriptions' tools in the terminal panel, in the project's folder (a launch token this page asks the
  *  portal for: /.bn/terminal-launch), where its own sign-in starts when it is not signed in; on a phone, a tab of its
  *  own — opened by a tap on the toast (no popup blocker stops it). */

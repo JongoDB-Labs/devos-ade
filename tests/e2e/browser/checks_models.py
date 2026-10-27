@@ -310,3 +310,143 @@ def settings_code_models(ctx):
         notes.append(f"{label} in {time.time() - t0:.0f} s ({len(others)} other models now {'hidden' if val else 'listed'})")
     rec.save()
     return "; ".join(notes)
+
+
+# ---------------------------------------------------------------- Browse models (JON-520: portal/portal/static/models.js)
+
+def _browse(ctx) -> dict:
+    """GET /api/models/browse (the model browser's lists), as the page reads it."""
+    from common import http
+    r = http("GET", None, "/api/models/browse", {"X-Requested-With": "bedrock-now"}, cookie=ctx.session())
+    expect(r.status == 200, f"/api/models/browse {r.status} {r.body[:200]}")
+    return json.loads(r.body)
+
+
+@check("browser", "model-browser")
+def model_browser(ctx):
+    """Browse models (Settings › Models & providers › Browse models): the lists of Bedrock, OpenRouter and Experiential
+    Labs read on the computer (never a key in the page), search and the filters, the links from Settings and the Code
+    picker. Screenshots light and dark at 390, 820 and 1440 px. No model call."""
+    from common import origin
+    page, rec = ctx.page("model-browser")
+    login(page)
+    # the API: Bedrock's list is read on the computer; the page holds no key
+    d = _browse(ctx)
+    expect("bedrock" in d["providers"], f"no Bedrock provider: {list(d['providers'])}")
+    br = d["providers"]["bedrock"]
+    expect(br["on"] and br["rows"], f"Bedrock off or empty: on={br['on']}, {len(br['rows'])} rows")
+    claude = [r for r in br["rows"] if r["vendor"] == "Anthropic"]
+    expect(claude, "no Anthropic models listed for Bedrock")
+    # the page: rows, search narrows, a filter works
+    page.goto(origin() + "/#modelbrowser")
+    page.wait_for_selector("#modelbrowser:not([hidden]) .mb-row", timeout=30000)
+    rows0 = page.locator("#modelbrowser .mb-row").count()
+    expect(rows0 >= len(claude), f"page shows {rows0} rows, API had ≥{len(claude)} Claude")
+    # a built-in Claude model says it is in the pickers, not add/removable
+    built = page.locator(".mb-row", has=page.locator(".mb-state", has_text=re.compile("picker|Built in"))).first
+    see(built).to_be_visible(timeout=10000)
+    # screenshots: light and dark at three widths
+    names = []
+    for w in (390, 820, 1440):
+        page.set_viewport_size({"width": w, "height": 900})
+        for theme in ("light", "dark"):
+            page.emulate_media(color_scheme=theme)
+            page.wait_for_timeout(200)
+            nm = f"model-browser-{w}-{theme}"
+            shot(page, nm, mask_locators=[page.locator(".mb-id")])
+            names.append(nm)
+    page.emulate_media(color_scheme="light")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    # search by name narrows the list; clearing restores it
+    page.fill("#mb-search", "zzxxqq-nothing")
+    page.wait_for_timeout(300)
+    expect(page.locator("#modelbrowser .mb-row").count() == 0, "search for nonsense still showed rows")
+    page.fill("#mb-search", "claude")
+    page.wait_for_timeout(300)
+    nclaude = page.locator("#modelbrowser .mb-row").count()
+    expect(0 < nclaude <= rows0, f"search 'claude' showed {nclaude} of {rows0}")
+    shot(page, "model-browser-search")
+    page.fill("#mb-search", "")
+    # the "works with Claude Code" filter keeps only models marked works
+    wf = page.locator('#modelbrowser [data-filter="works"]')
+    if wf.count():
+        wf.click()
+        page.wait_for_timeout(300)
+        bad = page.locator("#modelbrowser .mb-row .mb-compat:not(.mb-compat-works)").count()
+        expect(bad == 0, f"the works filter left {bad} non-works rows")
+        wf.click()
+    # the provider segment narrows to Bedrock
+    page.locator('#modelbrowser [data-prov="bedrock"]').click()
+    page.wait_for_timeout(200)
+    provs = page.locator("#modelbrowser .mb-row .mb-prov").evaluate_all("els => [...new Set(els.map(e => e.textContent))]")
+    expect(provs == ["Bedrock"], f"provider filter showed {provs}")
+    # the Settings card links here, and the Code picker's "More models…" is wired to it (settings.js / Pickers.tsx)
+    page.goto(origin() + "/#settings/providers")
+    page.wait_for_selector("#settings:not([hidden])", timeout=20000)
+    page.wait_for_timeout(400)
+    link = page.locator('#settings a[href="#modelbrowser/bedrock"]').first
+    expect(link.count() > 0, "no Browse models link on the Bedrock card")
+    rec.save()
+    return (f"Bedrock lists {len(br['rows'])} ({len(claude)} Anthropic); OpenRouter on={d['providers']['openrouter']['on']}, "
+            f"Experiential on={d['providers']['explabs']['on']}; search/filters work; shots {len(names)}+2")
+
+
+@check("settings", "model-browser-add")
+def model_browser_add(ctx):
+    """Add a model from the browser, then remove it — the change goes through ./stack config apply (the update helper),
+    and the model then shows enabled in the pickers' source (/api/models/browse reads litellm/code-models.tsv). A Bedrock
+    model the key can use but the catalog does not carry (no model call); skipped if the list offers none to add."""
+    from common import http, origin
+    _need_helper(ctx)
+    d = _browse(ctx)
+    if not d["can_change"]:
+        raise Skip(f"changes not available: {d['why_not']}")
+    add = next((r for r in d["providers"]["bedrock"]["rows"] if r["can"] == "add"), None)
+    if add is None:
+        raise Skip("the Bedrock list offers no model to add beyond the catalog (all built in, or the key may not list)")
+    mid = add["id"]
+    page, rec = ctx.page("model-browser-add")
+    login(page)
+    page.goto(origin() + "/#modelbrowser")
+    page.wait_for_selector("#modelbrowser:not([hidden]) .mb-row", timeout=30000)
+    row = page.locator(f'#modelbrowser .mb-row[data-id="{mid}"]')
+    row.scroll_into_view_if_needed()
+    row.locator('button[data-act="add"]').click()
+    page.wait_for_selector("#mb-confirm[open]", timeout=10000)
+    page.fill("#mb-confirm-password", ENV["PORTAL_PASSWORD"])
+    page.click("#mb-confirm-ok")
+    # the helper applies it and only LiteLLM restarts; the page polls /api/admin/status and reloads the lists
+    ok = False
+    for _ in range(120):
+        page.wait_for_timeout(2000)
+        b = _browse(ctx)
+        r = next((x for x in b["providers"]["bedrock"]["rows"] if x["id"] == mid), None)
+        if r and (r["enabled"] or r["chosen"]) and r["can"] == "remove":
+            ok = True
+            break
+        if page.locator("#mb-job.bad").count():
+            raise AssertionError(f"the helper refused: {page.inner_text('#mb-job')[:200]}")
+    expect(ok, f"{mid} did not become enabled/removable within ~4 min")
+    # it is in BEDROCK_MODELS now
+    s = json.loads(http("GET", None, "/api/settings", {"X-Requested-With": "bedrock-now"}, cookie=ctx.session()).body)
+    bm = next((k.get("value", "") for k in s["snapshot"]["keys"] if k["key"] == "BEDROCK_MODELS"), "")
+    expect(mid in bm, f"BEDROCK_MODELS is {bm!r}, not holding {mid}")
+    shot(page, "model-browser-added")
+    # remove it again
+    row = page.locator(f'#modelbrowser .mb-row[data-id="{mid}"]')
+    row.scroll_into_view_if_needed()
+    row.locator('button[data-act="remove"]').click()
+    page.wait_for_selector("#mb-confirm[open]", timeout=10000)
+    page.fill("#mb-confirm-password", ENV["PORTAL_PASSWORD"])
+    page.click("#mb-confirm-ok")
+    gone = False
+    for _ in range(120):
+        page.wait_for_timeout(2000)
+        b = _browse(ctx)
+        r = next((x for x in b["providers"]["bedrock"]["rows"] if x["id"] == mid), None)
+        if r and r["can"] == "add" and not r["chosen"]:
+            gone = True
+            break
+    expect(gone, f"{mid} was not removed within ~4 min")
+    rec.save()
+    return f"added {mid} (→ BEDROCK_MODELS, enabled in the pickers), then removed it; only LiteLLM restarted"

@@ -377,6 +377,7 @@
         note("Experiential Labs is another gateway, set up the same way: its key in ", settings("Models & providers", "EXPLABS_API_KEY"), " › ", b("Experiential Labs"),
           " on this computer or ", code("./stack config set EXPLABS_API_KEY"), " (hidden), and ", code("EXPLABS_MODELS"),
           " for its models (blank: qwen3.8-27b). Each is sent only the parameters it takes; a call on your own provider key there is billed by that provider ($0 here)."),
+        note(b("Browse models"), " on each provider's card (and ", b("More models…"), " in the Code page's picker) searches what Bedrock, OpenRouter and Experiential Labs offer with your keys — by name, price, context, tool use or how they work with Claude Code — and adds or removes one with a click. The lists are read on this computer, never with a key in your browser."),
         note("Claude Code's WebSearch works on every model without a key: the built-in SearXNG searches for it, free. A Tavily, Brave Search or Perplexity key, or AgentCore Web Search, gives steadier results: ",
           settings("Models & providers", "WEBSEARCH_SEARXNG_BUILTIN"), " › ", b("Search"), " (each option's ", b("i"), " says what it costs and sends)."),
         note("The key goes in through your terminal, .env or Settings on this computer, never through this walkthrough."),

@@ -78,6 +78,8 @@
   // where you pick which of them it adds. A provider of another kind (a web search backend) fits the same way: its
   // key's row here — or its switch's —, with ADDS(k) saying what it adds instead of a count of models and OFF what it
   // does while it is off. Your subscriptions' cards: subscriptionsRow.
+  // a provider card's key -> the model browser's provider (models.js #modelbrowser/<provider>)
+  const BROWSE_PROVIDER = { AWS_ACCESS_KEY_ID: "bedrock", OPENROUTER_API_KEY: "openrouter", EXPLABS_API_KEY: "explabs" };
   const PROVIDERS = {
     AWS_ACCESS_KEY_ID: { models: "Bedrock", pick: ["+models", "Models your key can use"] },
     OPENROUTER_API_KEY: { models: "OpenRouter", pick: ["OPENROUTER_MODELS", "OpenRouter's models"] },
@@ -1169,8 +1171,12 @@
     if (!on) adds.append(typeof p.off === "function" ? p.off(k) : p.off || "Sends nothing until it has a key; then its models are in every picker.");
     else if (p.adds) adds.append(p.adds(k));
     else {
+      // Pick which models the provider adds: Browse models (models.js, the #modelbrowser page, searched and filtered),
+      // or the plain setting row. BROWSE_PROVIDER maps a key's card to the browser's provider.
+      const bp = BROWSE_PROVIDER[k.key];
       adds.append(models.length ? `Adds ${models.length} model${models.length === 1 ? "" : "s"}${free ? ` (${free} free)` : ""} to every picker. ` : "Adds no models yet. ",
-        "Which ones: ", el("a", { href: `#settings/${p.pick[0]}`, text: p.pick[1] }), ".");
+        "Pick which: ", el("a", { href: bp ? `#modelbrowser/${bp}` : `#settings/${p.pick[0]}`, text: "Browse models" }),
+        ...(bp ? [" (search, filter, add or remove), or ", el("a", { href: `#settings/${p.pick[0]}`, text: p.pick[1] })] : []), ".");
       // Experiential Labs: chosen models its key's list does not name — left out, never swapped for another alias
       // (JON-521: a "…:free" alias the key does not list is refused by the gateway)
       const left = k.key === "EXPLABS_API_KEY" ? ((data.explabs && data.explabs.missing) || []) : [];

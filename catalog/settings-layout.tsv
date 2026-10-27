@@ -44,6 +44,7 @@ WEBSEARCH_PERPLEXITY_API_KEY	providers	main	-	Your own Perplexity key. The searc
 WEBSEARCH_SEARXNG_URL	providers	main	-	A SearXNG of your own (free). The search queries go to it, and on to the engines it asks.
 OPENROUTER_MAX_MODELS	providers	more	OPENROUTER_API_KEY	At most this many OpenRouter models, the newest first; a long list slows the model gateway's start.
 OPENROUTER_INCLUDE_ALIASES	providers	more	OPENROUTER_API_KEY	Also offer OpenRouter's …-latest alias models.
+BEDROCK_MODELS	providers	more	AWS_ACCESS_KEY_ID	Extra Bedrock models beyond the catalog, added from Browse models.
 
 @aws	Bedrock (AWS)	The AWS region Bedrock runs in, and which models your AWS key can use.	README.md#models--access
 AWS_REGION_NAME	aws	main	-	The AWS region your Bedrock models run in.

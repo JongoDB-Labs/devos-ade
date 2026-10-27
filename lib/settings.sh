@@ -207,6 +207,10 @@ _sv_code_models() {
   valid_code_models "$1" && [ "${#1}" -le "$SETTINGS_MAX_VALUE" ] || { SV_ERR="must be all, anthropic or a comma list of model ids"; return 1; }
 }
 _sv_code_model() { valid_code_model "$1" || { SV_ERR="must be a model id (blank = the main model)"; return 1; }; }
+_sv_bedrock_models() {
+  valid_bedrock_models "$1" && [ "${#1}" -le "$SETTINGS_MAX_VALUE" ] ||
+    { SV_ERR="must be a comma list of Bedrock model or inference-profile ids (letters, digits, . _ : / and -; never an ARN)"; return 1; }
+}
 # a Git host sign-in's application (client) ID, and a GitHub App's name in its URL (public values; blank: DevOS ADE's own)
 _sv_oauth_client_id() {
   [ -z "$1" ] || _sv_re "$1" '^[A-Za-z0-9._-]{1,128}$' || { SV_ERR="must be an application (client) ID: letters, digits, ., _ and - (blank = $PRODUCT_NAME's own app)"; return 1; }

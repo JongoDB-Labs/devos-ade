@@ -23,6 +23,16 @@ import { PRODUCT } from '../brand';
 
 const PAGE = 300;
 
+/** The text of the last prompt you sent in this session (JON-521's "Send again (charged)"), or '' — the newest 'user'
+ *  item that is not a folded replay. */
+function lastPrompt(view: SessionView): string {
+  for (let i = view.items.length - 1; i >= 0; i--) {
+    const it = view.items[i];
+    if (it.t === 'user' && !it.folded && it.text) return it.text;
+  }
+  return '';
+}
+
 /** "Restore files to here": what a dry run found, and Restore. */
 function RewindPanel() {
   const rw = useSel(store, (s) => s.rewind);
@@ -391,6 +401,10 @@ export function MessageList({ view }: { view: SessionView | undefined }) {
           <div key={it.k} class={`notice notice-${it.level}`} data-testid={it.fix === 'model' ? 'notice-model' : undefined}>
             {it.level === 'error' && <Icon name="alert" size={14} />}
             <span>{it.fix === 'model' ? nameTheModel(it.text, modelLabel(bn, view?.model ?? '')) : it.text}</span>
+            {/* JON-521: the ended-promotion notice — sending the same prompt again is the user's choice, and charged */}
+            {it.resend && view && (
+              <button type="button" class="linkish notice-fix" data-testid="notice-resend" onClick={() => { const p = lastPrompt(view); if (p) void sendPrompt(p, []); }}>Send again (charged)</button>
+            )}
             {it.fix === 'model' && (
               <button type="button" class="linkish notice-fix" data-testid="notice-pick-model" onClick={() => openModelMenu()}>Pick another model</button>
             )}

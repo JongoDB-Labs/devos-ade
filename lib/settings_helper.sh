@@ -743,6 +743,8 @@ settings_helper_tick() {
   local f l seen ran=1; f="$(settings_capability_file)"; seen="$(helper_dir)/backups-seen"
   [ -f "$(helper_password_file)" ] || helper_password_sync 2>/dev/null || true
   settings_snapshot_refresh 2>/dev/null || true
+  # the model browser's lists read again in the background when the portal asked and they are stale (lib/model_browser.sh)
+  ! declare -F model_browser_tick >/dev/null || model_browser_tick 2>/dev/null || true
   l="$( (ls "$STACK_DIR/backups" 2>/dev/null || true) | cksum)"
   if [ "$l" != "$(head -c 64 "$seen" 2>/dev/null)" ] || [ ! -f "$(status_dir)/backups.json" ]; then
     write_backups_json 2>/dev/null && printf '%s' "$l" > "$seen" || true

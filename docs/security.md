@@ -467,6 +467,32 @@ An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*)
   whose details name no cap field gets it as `max_tokens`), on Chat Completions and on a call LiteLLM moves to the
   Responses API (there, as `max_output_tokens`): it bounds what an answer can cost.
 
+## The model browser
+
+**Browse models** (Settings › Models & providers › *Browse models*; `portal/portal/model_browser.py`,
+`lib/model_browser.sh`) searches what each provider offers. Every provider list is read **on the computer running DevOS
+ADE, never in your browser, and never with a provider key held in the portal**:
+
+- **Bedrock.** `ListFoundationModels` and `ListInferenceProfiles` run in a one-off container of the model gateway's
+  image with the AWS sign-in LiteLLM itself uses (`.env`'s key or the instance role) — the same way the model check and
+  the web-search probe already call AWS. Both are read-only and free; the AWS key never reaches the portal. A key that
+  may not list them is told so (the browser then shows the built-in catalog instead). Prices, context, tool use and
+  image input come from the model gateway's own price map, not a network call.
+- **Experiential Labs.** `GET /v1/models` with the key (on `curl`'s stdin, never a command line, URL or log — as
+  `lib/explabs.sh` always reads it) gives the ids the key may call; the public catalog (`/api/models`, keyless, so
+  nothing about you is sent) gives each model's price, context, tools and image input. The key stays in `.env` and
+  reaches only LiteLLM and the gateway.
+- **OpenRouter** is a public list (`GET https://openrouter.ai/api/v1/models`, no key), read by the portal server-side.
+
+The stack writes the Bedrock and Experiential Labs lists to `.state/status/model-browser/` (read-only in the portal)
+and the portal reads them field by field; each is cached about an hour and re-read in the background by the update
+helper when the page asks (a free, read-only refresh, no password). **Adding or removing** a model is an ordinary
+settings change: it goes through the same front door as every other (the portal password typed again, the update
+helper, `./stack config apply`, the remote-access rules), writing `EXPLABS_MODELS`, `OPENROUTER_MODELS` or
+`BEDROCK_MODELS`; only the model gateway is re-rendered and restarted. **Try it** makes one capped call on the setup key
+(its budget counts it), shows the cost first, and refuses an expensive model — Opus included — without an explicit
+confirmation.
+
 ## Web search for Claude Code
 
 Claude Code's WebSearch on Bedrock's and OpenRouter's models (`lib/websearch.sh`; README › *Web search for Claude

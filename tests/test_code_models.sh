@@ -592,3 +592,46 @@ test_settings_choices_name_each_models_price() {
   out="$(_settings_code_models)"
   assert_eq "$out" '["llama-x", "Llama X", "Bedrock", "Meta", "chat-only", false, true, "$0.72/$0.72 per 1M"], ["or/a/b:free", "B", "OpenRouter", "A", "untested", true, false, "free ($0)"]'
 }
+
+# JON-520: extra Bedrock models the browser adds beyond the catalog (BEDROCK_MODELS) are rendered into LiteLLM and show
+# in the Code page's rows (devos-claude --models reads these) with their compat from catalog/code-models.tsv
+test_added_bedrock_models_render_and_show_in_the_code_rows() {
+  _cm_env 'BEDROCK_MODELS=us.anthropic.claude-haiku-4-5-20251001-v1:0,meta.llama4-x-v1:0'
+  # the ids BEDROCK_MODELS names, valid, each once (an ARN is dropped; a catalog id is never double-rendered)
+  assert_eq "$(bedrock_extra_wanted | tr '\n' ' ')" "us.anthropic.claude-haiku-4-5-20251001-v1:0 meta.llama4-x-v1:0 "
+  ! valid_bedrock_extra_id 'arn:aws:bedrock:us-east-1::foundation-model/x'; valid_bedrock_extra_id 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
+  # rendered as their own model_list entries (converse path, the region), no price in the config (LiteLLM prices them)
+  local yaml; yaml="$(bedrock_extra_yaml us-east-1)"
+  assert_contains "$yaml" "$(printf '  - model_name: "us.anthropic.claude-haiku-4-5-20251001-v1:0"\n    litellm_params:\n      model: "bedrock/converse/us.anthropic.claude-haiku-4-5-20251001-v1:0"')"
+  assert_contains "$yaml" 'aws_region_name: os.environ/AWS_REGION_NAME'
+  # the Code page rows: both added models, provider Bedrock, vendor from the id, compat from the catalog (claude-* works)
+  printf 'claude-big\n' > "$TMP/en"
+  out="$(code_models_rows "$TMP/en")"
+  assert_contains "$(printf '%s\n' "$out" | cut -f1)" us.anthropic.claude-haiku-4-5-20251001-v1:0
+  assert_contains "$(printf '%s\n' "$out" | cut -f1)" meta.llama4-x-v1:0
+  assert_eq "$(printf '%s\n' "$out" | _col 3 us.anthropic.claude-haiku-4-5-20251001-v1:0)" Bedrock
+  assert_eq "$(printf '%s\n' "$out" | _col 4 us.anthropic.claude-haiku-4-5-20251001-v1:0)" Anthropic
+  assert_eq "$(printf '%s\n' "$out" | _col 10 us.anthropic.claude-haiku-4-5-20251001-v1:0)" untested   # a raw id does not match claude-* (honest: not checked)
+  assert_eq "$(printf '%s\n' "$out" | _col 4 meta.llama4-x-v1:0)" Meta
+  # a catalog model named in BEDROCK_MODELS is not double-rendered (its name and its bedrock id are both excluded)
+  printf 'CLAUDE_BEDROCK_OPUS_MODEL=claude-big\nBEDROCK_MODELS=claude-big,us.anthropic.big\n' > "$ENV_FILE"
+  assert_eq "$(bedrock_extra_wanted)" ""
+}
+
+# JON-520: adding two Experiential Labs models (EXPLABS_MODELS, as the browser's Add does) shows both in the Code rows
+test_two_added_experiential_models_show_in_the_code_rows() {
+  . "$STACK_DIR/lib/explabs.sh" 2>/dev/null || true
+  _cm_env 'EXPLABS_API_KEY=xpl_000000000000000000000000000000000000test
+EXPLABS_MODELS=qwen3.8-27b,gpt-5-mini'
+  # the gateway's list cached (as a refresh writes it) for this key: both chosen models with details
+  mkdir -p "$TMP/litellm"
+  xl_ids < "$T_ROOT/tests/fixtures/explabs_v1_models.json" > "$TMP/ids"; : > "$TMP/det"
+  while IFS= read -r id; do id="${id%:free}"; [ ! -r "$T_ROOT/tests/fixtures/explabs_catalog/$id.json" ] || xl_model_tsv "$id" < "$T_ROOT/tests/fixtures/explabs_catalog/$id.json" >> "$TMP/det"; done < "$TMP/ids"
+  { printf '# fetched_at: 2026-10-24T00:00:00Z\n'; xl_free_rows "$TMP/ids" < "$TMP/det" | xl_join "$TMP/ids"; } > "$TMP/litellm/explabs-models.tsv"
+  mkdir -p "$(dirname "$(xl_key_mark)")"; xl_key_hash "$(get_env EXPLABS_API_KEY)" > "$(xl_key_mark)"
+  printf 'claude-big\n' > "$TMP/en"
+  out="$(code_models_rows "$TMP/en")"
+  assert_contains "$(printf '%s\n' "$out" | cut -f1)" xl/qwen3.8-27b
+  assert_contains "$(printf '%s\n' "$out" | cut -f1)" xl/gpt-5-mini
+  assert_eq "$(printf '%s\n' "$out" | _col 3 xl/qwen3.8-27b)" "Experiential Labs"
+}

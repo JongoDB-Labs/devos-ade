@@ -93,7 +93,7 @@ export type Ev =
   | { kind: 'local'; text: string; said?: SandboxWords }
   | { kind: 'status'; text: string; mode: Mode | null; model: string | null }
   | { kind: 'result'; subtype: string; turns: number; durationMs: number; usage: Usage; isError: boolean; consumed?: string[] }
-  | { kind: 'error'; text: string; said?: SandboxWords; provider?: boolean; fix?: 'model' }
+  | { kind: 'error'; text: string; said?: SandboxWords; provider?: boolean; fix?: 'model'; resend?: boolean }
   /** files of the workspace that run on your computer changed (in a turn, or between turns) */
   | { kind: 'watch'; id: string; when: 'turn' | 'between'; changes: WatchChange[]; incomplete: string }
   /** a call denied without asking you: by Auto mode's classifier ("classifier": reason = the rule it matched, or why

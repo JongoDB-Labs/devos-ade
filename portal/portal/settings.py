@@ -546,6 +546,16 @@ def _code_model(v, remote_on=False):
     return None if v == "" or MODEL_ID.fullmatch(v) else "must be a model id (blank = the main model)"
 
 
+# A Bedrock model or inference-profile id to render beyond the catalog (lib/models.sh valid_bedrock_extra_id): letters,
+# digits, . _ : / and -, at most 160, never an ARN.
+_BEDROCK_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}")
+
+
+def _bedrock_models(v, remote_on=False):
+    ok = v == "" or (len(v) <= MAX_VALUE and all(not m.startswith("arn:") and _BEDROCK_ID.fullmatch(m) for m in v.split(",")))
+    return None if ok else "must be a comma list of Bedrock model or inference-profile ids (letters, digits, . _ : / and -; never an ARN)"
+
+
 def _oauth_client_id(v, remote_on=False):
     return None if v == "" or re.fullmatch(r"[A-Za-z0-9._-]{1,128}", v) else \
         f"must be an application (client) ID: letters, digits, ., _ and - (blank = {brand.NAME}'s own app)"
@@ -585,7 +595,8 @@ VALIDATORS = {
     "pct": _range(50, 99, "must be a percentage from 50 to 99 (blank = 80)"),
     "keep": _range(1, 60, "must be a whole number from 1 to 60 (blank = 7)"),
     "model_pin": _model_pin, "models_list": _models_list, "pw_hash": _pw_hash,
-    "code_models": _code_models, "code_model": _code_model, "oauth_client_id": _oauth_client_id, "app_slug": _app_slug,
+    "code_models": _code_models, "code_model": _code_model, "bedrock_models": _bedrock_models,
+    "oauth_client_id": _oauth_client_id, "app_slug": _app_slug,
 }
 
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")

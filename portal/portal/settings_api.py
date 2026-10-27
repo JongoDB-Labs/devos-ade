@@ -19,7 +19,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from . import admin, answers, brand, explabs, keycheck
+from . import admin, answers, brand, code, explabs, keycheck
+from . import model_browser as mb
 from . import settings as st
 from .security import NEXT_MAX_AGE, Sessions, cookie_params, hash_password, same_origin, verify_password
 
@@ -497,7 +498,147 @@ def routes(ctx: Ctx) -> list[Route]:
             return err(403, "Diagnostics are off for remote access (REMOTE_ADMIN_ACTIONS in .env).")
         return _no_store(JSONResponse(st.report(s.status_dir)))
 
+    # --- the model browser (portal/portal/model_browser.py; Browse models) ---
+    browse_rate = RateLimit(1, 120)
+    try_rate = RateLimit(3, 40)
+
+    def _keys_on(rows: dict) -> dict:
+        aws = rows.get("AWS_ACCESS_KEY_ID") or {}
+        return {"bedrock": bool(aws.get("set")) or bool((rows.get("AWS_AUTH") or {}).get("value")),
+                "openrouter": bool(s.openrouter_api_key), "explabs": bool((rows.get("EXPLABS_API_KEY") or {}).get("set"))}
+
+    def _setup_key() -> str:
+        return next((k for a, _, k in s.keys if a == "setup" and k), "")
+
+    async def models_browse(request: Request) -> Response:
+        # a read, like GET /api/settings: the session and X-Requested-With (api_guard) are the gate; no Origin on a GET
+        if (deny := ctx.api_guard(request)) is not None:
+            return deny
+        st.sweep_requests(s.request_dir)
+        snap = st.snapshot(s.status_dir)
+        if snap is None:
+            return _no_store(JSONResponse({"error": "Settings are not available yet: run ./stack up once."}, status_code=409))
+        rows = st.by_key(snap)
+        values = {k: (r.get("value") or "") for k, r in rows.items()}
+        keys_on = _keys_on(rows)
+        refresh = request.query_params.get("refresh") == "1"
+        or_public = request.query_params.get("openrouter") == "public"
+        or_rows, or_meta = ([], {"at": None, "error": None})
+        if keys_on["openrouter"] or or_public:
+            if (wait := browse_rate.retry_after()) and refresh:
+                return err(429, f"Please wait {wait} s before reading the lists again.", wait)
+            or_rows, or_meta = await mb.openrouter_list(request.app.state.http, refresh=refresh)
+            if refresh:
+                browse_rate.hit()
+        code_rows, _scope = code.read_code_models(s.litellm_dir)
+        data = mb.browse(s.status_dir, s.catalog_dir, s.litellm_dir, values, keys_on, or_rows, or_meta, code_rows)
+        # ask the update helper to read any stale list again (no password: a free, read-only listing)
+        asked = False
+        for prov, p in data.items():
+            if p["on"] and p["stale"] and prov != "openrouter":
+                p["reading"] = True
+                asked = True
+        if (asked or refresh) and admin.helper_state(s.status_dir)["running"]:
+            try:
+                (s.request_dir / mb.WANTED).write_text("", encoding="utf-8")
+            except OSError:
+                pass
+        state = admin.helper_state(s.status_dir)
+        cap = st.capability(s.status_dir)
+        can_change = state["running"] and cap["settings"] and allowed(request)
+        why_not = "" if can_change else (
+            "Settings changes are off for remote access (REMOTE_ADMIN_ACTIONS in .env)." if not allowed(request)
+            else f"{admin.not_running(state)}. ./stack helper install, or ./stack config set in a terminal.")
+        return _no_store(JSONResponse({
+            "providers": data, "base": snap["base"], "can_change": bool(can_change), "why_not": why_not,
+            "try": bool(_setup_key()) and allowed(request) and state["running"],
+        }))
+
+    def _find(data: dict, provider: str, source_id: str) -> dict | None:
+        return next((r for r in (data.get(provider) or {}).get("rows", []) if r["source_id"] == source_id), None)
+
+    async def models_plan(request: Request) -> Response:
+        """The setting change that adds or removes one model (no password; the change itself goes through apply)."""
+        if (deny := ctx.api_guard(request)) is not None:
+            return deny
+        if not same_origin(request.headers, s):
+            return err(403, "cross-site request refused")
+        if not allowed(request):
+            return err(403, "Settings changes are off for remote access (REMOTE_ADMIN_ACTIONS in .env).")
+        try:
+            body = json.loads(await request.body())
+        except ValueError:
+            return err(400, "not JSON")
+        provider, ident, act = (body or {}).get("provider"), (body or {}).get("id"), (body or {}).get("action")
+        if provider not in mb.SETTING or act not in ("add", "remove") or not isinstance(ident, str) or len(ident) > 200:
+            return err(400, "bad request")
+        snap = st.snapshot(s.status_dir)
+        if snap is None:
+            return err(409, "Settings are not available yet.")
+        rows = st.by_key(snap)
+        key = mb.SETTING[provider]
+        row = rows.get(key)
+        if row is None:
+            return err(400, "not a setting this version serves")
+        value = row.get("value") or ""
+        free = last = None
+        if provider in ("openrouter", "explabs"):
+            or_rows, or_meta = (await mb.openrouter_list(request.app.state.http)) if provider == "openrouter" else ([], {})
+            data = mb.browse(s.status_dir, s.catalog_dir, s.litellm_dir, {k: (r.get("value") or "") for k, r in rows.items()},
+                             _keys_on(rows), or_rows, or_meta, code.read_code_models(s.litellm_dir)[0])
+            r = _find(data, provider, ident)
+            free = bool(r["free"]) if r else None
+            if provider == "explabs":
+                terms = [t for t in (value or mb.XL_DEFAULT).replace("xl/", "").split(",") if t.strip()]
+                last = act == "remove" and len(terms) <= 1
+        res = mb.plan(provider, value, ident, act == "add", free=free, last=last)
+        if res is None:
+            return _no_store(JSONResponse({"ok": False, "error": "Nothing to change — it is already as you asked."}))
+        new_key, new_value = res
+        e = st.policy_error(row, new_value, not is_remote(request)) or st.validate(row["validator"], new_value, snap["remote_on"])
+        note = f"{mb.PROVIDER[provider]}'s models update and the model gateway restarts (about 30 s)."
+        return _no_store(JSONResponse({"ok": e is None, "key": new_key, "value": new_value, "note": note, "error": e}))
+
+    async def models_try(request: Request) -> Response:
+        """Try it: the cost of one short call first (estimate), then — on confirm, with an expensive model acknowledged —
+        the call itself on the setup key (its budget and Home's Setup row count it). Never starts on Opus by itself: an
+        expensive model runs only when the page sent expensive_ok."""
+        if (deny := ctx.api_guard(request)) is not None:
+            return deny
+        if not same_origin(request.headers, s):
+            return err(403, "cross-site request refused")
+        if not allowed(request):
+            return err(403, "Try it is off for remote access (REMOTE_ADMIN_ACTIONS in .env).")
+        try:
+            body = json.loads(await request.body())
+        except ValueError:
+            return err(400, "not JSON")
+        model = (body or {}).get("model")
+        if not isinstance(model, str) or not st.MODEL_ID.fullmatch(model):
+            return err(400, "bad model id")
+        code_rows, _ = code.read_code_models(s.litellm_dir)
+        row = next((r for r in code_rows if r["id"] == model), None)
+        if row is None:
+            return err(404, "That model is not one this stack serves.")
+        est = mb.try_estimate({"in": row["prices"].get("in"), "out": row["prices"].get("out"), "id": model, "free": row["free"]})
+        if not (body or {}).get("confirm"):
+            return _no_store(JSONResponse({"ok": True, **est}))
+        if est["expensive"] and not (body or {}).get("expensive_ok"):
+            return err(403, "This model is expensive: confirm before spending on it.", expensive=True)
+        key = _setup_key()
+        if not key:
+            return err(503, "No setup key yet (run ./stack setup).")
+        if wait := try_rate.retry_after():
+            return err(429, f"Please wait {wait} s before another Try.", wait)
+        try_rate.hit()
+        out = await mb.try_model(request.app.state.http, s.litellm_url, key, model)
+        log.warning("settings: Try it ran on %s (%s)%s", model, out["status"], " (remote)" if is_remote(request) else "")
+        return _no_store(JSONResponse(out))
+
     return [
+        Route("/api/models/browse", models_browse, methods=["GET"]),
+        Route("/api/models/browse/plan", models_plan, methods=["POST"]),
+        Route("/api/models/try", models_try, methods=["POST"]),
         Route("/api/settings", get_settings, methods=["GET"]),
         Route("/api/settings/apply", apply, methods=["POST"]),
         Route("/api/settings/check-key", check_key, methods=["POST"]),

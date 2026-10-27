@@ -69,15 +69,18 @@ valid_code_model() { [ -z "$1" ] || valid_code_model_id "$1"; }
 # (the default when CODE_DEFAULT_MODEL is blank or not enabled: never Opus by default, a first turn there costs ~2x)
 # and CLAUDE_BEDROCK_OPUS_MODEL (the default when no Sonnet is enabled either).
 code_models_rows() {
-  local en="${1:-}" all=0 orf xlf rc=0 disp compat
+  local en="${1:-}" all=0 orf xlf bxf rc=0 disp compat
   [ -n "$en" ] && [ -r "$en" ] || { en=/dev/null; all=1; }
   disp="$(_code_display)"; compat="$(_code_compat)"
   [ -r "$disp" ] || disp=/dev/null; [ -r "$compat" ] || compat=/dev/null
   orf="$(mktemp)" || return 1
   xlf="$(mktemp)" || { rm -f "$orf"; return 1; }
+  bxf="$(mktemp)" || { rm -f "$orf" "$xlf"; return 1; }
   if declare -F openrouter_enabled >/dev/null && openrouter_enabled; then or_selected > "$orf" 2>/dev/null || :; fi
   if declare -F explabs_enabled >/dev/null && explabs_enabled; then explabs_code_rows > "$xlf" 2>/dev/null || :; fi
-  F_EN="$en" F_DISP="$disp" F_PRICES="${PRICES:-/dev/null}" F_COMPAT="$compat" F_CAT="$CATALOG" F_OR="$orf" F_XL="$xlf" \
+  # extra Bedrock models added beyond the catalog (BEDROCK_MODELS, lib/models.sh): one id per line
+  if declare -F bedrock_extra_wanted >/dev/null; then bedrock_extra_wanted > "$bxf" 2>/dev/null || :; fi
+  F_EN="$en" F_DISP="$disp" F_PRICES="${PRICES:-/dev/null}" F_COMPAT="$compat" F_CAT="$CATALOG" F_OR="$orf" F_XL="$xlf" F_BX="$bxf" \
   ALL="$all" SCOPE="$(get_env CODE_MODELS)" DEF="$(get_env CODE_DEFAULT_MODEL)" SONNET="$(get_env CLAUDE_BEDROCK_SONNET_MODEL)" \
   MAIN="$(get_env CLAUDE_BEDROCK_OPUS_MODEL)" \
   MAX="$CODE_MODELS_MAX" LC_ALL=C awk -F'\t' -v OFS='\t' -v UNSAFE="$CODE_UNSAFE" '
@@ -96,6 +99,12 @@ code_models_rows() {
       else if (tools == "1") { cs = "untested"; cn = "Not checked with Claude Code here; " prov " lists tool use for it." }
       else { cs = "untested"; cn = "Not checked with Claude Code here: tool use, thinking and prompt caching may not work." }
     }
+    # an extra Bedrock model vendor, from the id prefix (us.anthropic.… , anthropic.… , meta.llama… , amazon.nova…)
+    function bvendor(id,  v) { v = id; sub(/^(us|eu|apac|global)\./, "", v); sub(/\..*/, "", v)
+      if (v == "anthropic") return "Anthropic"; if (v == "meta") return "Meta"; if (v == "amazon") return "Amazon"
+      if (v == "mistral") return "Mistral"; if (v == "cohere") return "Cohere"; if (v == "ai21") return "AI21"
+      if (v == "deepseek") return "DeepSeek"; if (v == "openai") return "OpenAI"; if (v == "xai") return "xAI"
+      if (v == "") return "Other"; return toupper(substr(v, 1, 1)) substr(v, 2) }
     function add(id, name, prov, vend, pin, pout, pcr, pcw, free, tools, maxo, ctx) {
       # (a model id by the one rule above, valid_code_model_id: no "~" alias of OpenRouter, at most 128 characters)
       if (n >= ENVIRON["MAX"] + 0 || (id in seen) || id !~ /^[A-Za-z0-9][A-Za-z0-9._:\/-]*$/ || length(id) > 128) return
@@ -138,6 +147,13 @@ code_models_rows() {
       add($1, $2, "Experiential Labs", $3, d($4), d($5), d($6), d($7), ($8 == 1 ? 1 : 0), $9, $10, $11)
       next
     }
+    FILENAME == ENVIRON["F_BX"] {
+      # one extra Bedrock id per line (BEDROCK_MODELS): priced by LiteLLM, not the catalog — unknown here; compat from
+      # catalog/code-models.tsv (claude-* etc.) or untested
+      if ($1 == "" || $1 ~ /^#/) next
+      add($1, $1, "Bedrock", bvendor($1), "-", "-", "-", "-", 0, "", "", "")
+      next
+    }
     END {
       def = ""
       for (i = 1; i <= n; i++) if (I[i] == ENVIRON["DEF"]) def = I[i]
@@ -152,8 +168,8 @@ code_models_rows() {
         D = (I[i] == def) ? 1 : 0
         print I[i], N[i], P[i], V[i], IN[i], OU[i], CR[i], CW[i], FR[i], CS[i], (D ? 1 : L[i]), D, MO[i], CX[i], NT[i]
       }
-    }' "$en" "$disp" "${PRICES:-/dev/null}" "$compat" "$CATALOG" "$orf" "$xlf" || rc=$?
-  rm -f "$orf" "$xlf"
+    }' "$en" "$disp" "${PRICES:-/dev/null}" "$compat" "$CATALOG" "$orf" "$xlf" "$bxf" || rc=$?
+  rm -f "$orf" "$xlf" "$bxf"
   return "$rc"
 }
 

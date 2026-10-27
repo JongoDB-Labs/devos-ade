@@ -1858,7 +1858,25 @@ to set up page by page. A card for each provider:
 | **Search**: *Web search*, then *Built-in SearXNG*, *AgentCore Web Search*, *Tavily*, *Brave Search*, *Perplexity*, *Your own SearXNG* | *Web search*: *Change* — automatic (the first one you set up, else the built-in SearXNG), off, or one by name; *Built-in SearXNG*: its switch (on by default); each other backend: *Set the gateway* / *Add key* / *Add its URL*, and *Remove* in its form; each one's **i**: its cost and free tier (with its pricing page), what is sent, how steady and private it is, where to get a key | real web results for Claude Code's WebSearch on every model: which backend it uses now and why, its check, and what to do — the command for your AWS admin when AgentCore needs one ([Web search for Claude Code](#web-search-for-claude-code)) |
 
 Each card says whether its provider is on (*On*, *Not set up*, *signed in · ChatGPT* …), how many models it adds
-(*Adds 24 models to every picker*, with how many are free) and where you pick which ones. The pickers list everything
+(*Adds 24 models to every picker*, with how many are free) and where you pick which ones — **Pick which: Browse
+models**.
+
+**Browse models** (also **More models…** in the Code page's model picker) is one page that searches what Bedrock,
+OpenRouter and Experiential Labs offer with your keys, the way you would search each provider's own site — by name, id
+or vendor — with every model's price per million tokens, context window, tool use, image input and how it works with
+Claude Code, and filters (provider, free or paid, output price, context size, tool use, image input, *works with Claude
+Code*). Each row shows whether it is in your pickers now, with **Add** and **Remove**; a change goes through your portal
+password and the update helper like any other, and only the model gateway restarts, so the model then shows everywhere
+— Chat, the Code page, the terminal and `devos-claude --models`. You can add several Experiential Labs models, pick
+OpenRouter's as a list, and serve Bedrock models beyond the built-in catalog (a foundation model or inference profile
+your AWS key can use — the catalog stays the curated base, marked *Built in*). **Try it** makes one short, capped call
+and shows the cost first; it never runs on an expensive model (Opus included) without you confirming. The lists are
+read on the computer running DevOS ADE, never in your browser and never with a provider key in the portal (Bedrock's
+through a one-off, read-only model-gateway container; Experiential Labs' with your key the same way the gateway is
+always called; OpenRouter's from its public list), cached about an hour and refreshed in the background
+([docs/security.md](docs/security.md#the-model-browser)).
+
+The pickers list everything
 the providers add, narrowed only by Settings' own lists, named under the cards: *Models for Claude Code* (the Code page
 and `devos-claude`: all enabled, Anthropic's only, or a list — a card says when it leaves its models out) and *Hidden
 in Chat's model picker*. A provider without its key or sign-in sends nothing: its models are not served, and the

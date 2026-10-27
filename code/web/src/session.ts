@@ -38,7 +38,7 @@ export type Item =
     }
   | { t: 'local'; k: number; text: string; said?: SandboxWords }
   | { t: 'result'; k: number; subtype: string; turns: number; durationMs: number; usage: Usage; isError: boolean; turn: number; models?: string[]; picked?: string }
-  | { t: 'notice'; k: number; text: string; level: 'info' | 'warn' | 'error'; said?: SandboxWords | null; provider?: boolean; fix?: 'model' }
+  | { t: 'notice'; k: number; text: string; level: 'info' | 'warn' | 'error'; said?: SandboxWords | null; provider?: boolean; fix?: 'model'; resend?: boolean }
   /** files that run on your computer changed: the card with diffs and Revert */
   | { t: 'watch'; k: number; id: string; when: 'turn' | 'between'; changes: WatchChange[]; incomplete: string }
   /** a call denied without asking you (Auto mode's classifier, a rule …): the card with the reason and "Allow once" */
@@ -320,7 +320,7 @@ export function applyEvent(v: SessionView, ev: Ev, now = Date.now()): SessionVie
     }
     case 'error':
       return push(v, { t: 'notice', k: v.nextKey, text: ev.text, level: 'error', ...(ev.said ? { said: ev.said } : {}),
-        ...(ev.provider ? { provider: true } : {}), ...(ev.fix ? { fix: ev.fix } : {}) });
+        ...(ev.provider ? { provider: true } : {}), ...(ev.fix ? { fix: ev.fix } : {}), ...(ev.resend ? { resend: true } : {}) });
     case 'blocked':
       // (replayed: the same call's block is shown once)
       if (ev.toolUseId && v.items.some((it) => it.t === 'blocked' && it.toolUseId === ev.toolUseId)) return v;

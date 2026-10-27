@@ -6,6 +6,28 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+
+- **Browse models: search every provider and add the ones you want (JON-520).** Settings › Models & providers now has
+  **Browse models** on each provider's card (and **More models…** in the Code page's model picker): one page that
+  searches what Bedrock, OpenRouter and Experiential Labs offer with your keys — by name, id or vendor — with each
+  model's price per million tokens, context window, tool use, image input and how it works with Claude Code, and
+  filters for provider, free or paid, output price, context size, tool use, image input and "works with Claude Code".
+  Each row shows whether it is in your pickers now, with **Add** and **Remove**. Adding or removing goes through the
+  same path as every other setting (your portal password, the update helper, `./stack config apply`), so only the model
+  gateway restarts, and the model then appears everywhere models show — Chat, the Code page, the terminal's Open and
+  `devos-claude --models` — with its price and compatibility note. **Experiential Labs** models can now be several
+  (`EXPLABS_MODELS` as a list); **OpenRouter** is edited as a list as well as `free`/`paid`/`all`; and **Bedrock** can
+  serve models beyond the built-in catalog (a new `BEDROCK_MODELS`, for a foundation model or inference profile your
+  AWS key can use that the catalog does not carry). **Try it** makes one short, capped call to a model and shows the
+  cost first — never on an expensive model (Opus included) without you confirming.
+  - The lists are read on the computer, never in your browser and never with a key in the portal: Bedrock's with
+    `ListFoundationModels`/`ListInferenceProfiles` through a one-off model-gateway container (read-only, free, the
+    stack's AWS sign-in), Experiential Labs' with `GET /v1/models` using the key the same way the gateway is always
+    called, and OpenRouter's from its public list. Each is cached (about an hour) and refreshed in the background.
+  - The Code page's not-granted and ended-promotion messages (JON-521) now carry a direct action: **Pick another
+    model**, and **Send again (charged)** where sending again is the way on.
+
 ## [0.33.1] - 2026-10-28
 
 ### Security

@@ -1,0 +1,70 @@
+/* Browse models (models.js, the #modelbrowser page): the search/filter toolbar, the provider sources line and the model
+   rows. It reuses the page frame (.settings-page) and the shared chips/badge/action/note classes; only the mb-* classes
+   are here. Colors are tokens (tokens.css), so light and dark follow the theme. */
+
+.models-browse { max-width: 1080px; margin: 0 auto; }
+.mb-head { margin-bottom: 16px; }
+.mb-head h1 { margin: 2px 0 4px; }
+.mb-lede { max-width: 70ch; }
+.mb-job { max-width: 1080px; margin: 0 0 14px; padding: 8px 12px; border-radius: var(--r-m); background: var(--hover, var(--bg-2)); }
+.mb-job.good { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); }
+.mb-job.bad { background: color-mix(in srgb, var(--bad) 12%, transparent); color: var(--bad); }
+
+/* which provider each list comes from, and when it was read */
+.mb-sources { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.mb-source { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; font-size: 13px; }
+.mb-source-name { font-weight: 600; }
+.mb-source-error { color: var(--bad); }
+.mb-reading { color: var(--muted); }
+.mb-refresh-line { margin: 0 0 14px; }
+.mb-helper { color: var(--warn); margin: 0 0 12px; }
+
+/* the toolbar: search, provider segment, price segment, the toggles and the two selects */
+.mb-toolbar { position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 8px 0 10px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
+.mb-search { width: 100%; max-width: 520px; box-sizing: border-box; padding: 9px 12px; border: 1px solid var(--line); border-radius: var(--r-m);
+  background: var(--surface); color: var(--ink); font: inherit; }
+.mb-search:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+.mb-search-row { margin-bottom: 10px; }
+.mb-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.mb-limits { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.mb-limit { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.mb-limit select { padding: 4px 8px; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--surface); color: var(--ink); font: inherit; }
+.mb-count { margin: 6px 0 10px; }
+
+/* the rows */
+.mb-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.mb-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 14px;
+  border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); }
+.mb-main { min-width: 0; flex: 1; }
+.mb-name { margin: 0 0 2px; display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; }
+.mb-title { font-weight: 600; }
+.mb-vendor { font-size: 12px; }
+.mb-id { margin: 0 0 6px; }
+.mb-id code { font: 12px/1.4 var(--font-mono); color: var(--muted); overflow-wrap: anywhere; }
+.mb-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+.mb-prov[data-provider="bedrock"] { border-color: var(--accent); }
+.mb-compat-works { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); }
+.mb-compat-chat-only, .mb-compat-untested { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); }
+.mb-compat-fails { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--line)); }
+.mb-facts { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+.mb-price { color: var(--ink); font-variant-numeric: tabular-nums; }
+.mb-state { color: var(--muted); }
+.mb-state.on { color: var(--ok); font-weight: 500; }
+.mb-actions { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.mb-why { text-align: right; max-width: 24ch; }
+.mb-empty { padding: 16px; text-align: center; }
+
+/* Try it, inline under a row */
+.mb-try { flex-basis: 100%; margin-top: 8px; padding: 8px 10px; border-radius: var(--r-s); background: var(--hover, var(--bg-2)); }
+.mb-try-buttons { display: flex; gap: 8px; margin: 6px 0 0; }
+.mb-try .good { color: var(--ok); }
+.mb-try .error { color: var(--bad); }
+.mb-ack { display: flex; align-items: center; gap: 6px; font-size: 13px; margin-top: 4px; }
+.mb-ack-need { color: var(--bad); }
+
+@media (max-width: 767.98px) {
+  .mb-row { flex-direction: column; }
+  .mb-actions { flex-direction: row; align-self: stretch; justify-content: flex-start; }
+  .mb-why { text-align: left; max-width: none; }
+  .mb-toolbar { position: static; }
+}

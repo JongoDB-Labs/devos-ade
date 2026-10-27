@@ -184,7 +184,7 @@ def test_code_tab_is_always_there_and_explains_itself_while_off():
     # the folder as Settings names it, asked from the portal's own API when the page shows (never the code host)
     fill = js[js.index("async function fillFolder()"):js.index("// Home's \"Claude Code in your terminal\" card")]
     assert 'api("/api/settings")' in fill and "TERMINAL_WORKSPACE" in fill and "code_workspace" in fill and "textContent" in fill
-    assert "const PAGES = [\"home\", \"settings\"];" in app
+    assert "const PAGES = [\"home\", \"settings\", \"modelbrowser\"];" in app
     assert "for (const p of PAGES) { const s = document.getElementById(p); if (s) s.hidden = tab !== p; }" in app
     # (in the icon rail its tooltip: "Code (off)"; a tab's name is its own words, never its badge's count)
     assert "!PAGES.includes(tab) ? \"chat\" : tab" in mobile and "b.dataset.label || ownText(b)" in mobile

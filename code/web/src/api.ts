@@ -277,9 +277,10 @@ export function normEvent(v: unknown): Ev | null {
         consumed: Array.isArray(o.consumed) ? o.consumed.slice(0, 64).filter(isUuid).map((u: string) => u.toLowerCase()) : [],
       };
     case 'error':
-      // provider: a model provider's words (shown without the Git sign-in line); fix 'model': another model is the way on
+      // provider: a model provider's words (shown without the Git sign-in line); fix 'model': another model is the way on;
+      // resend: sending the same prompt again is the way on (JON-521's ended promotion — charged)
       return { kind: 'error', text: label(o.message ?? o.text, LIMITS.short), ...saidIn(o), ...(o.provider === true ? { provider: true } : {}),
-        ...(o.fix === 'model' ? { fix: 'model' as const } : {}) };
+        ...(o.fix === 'model' ? { fix: 'model' as const } : {}), ...(o.resend === true ? { resend: true } : {}) };
     case 'blocked': {
       // (an input is shown in full or not at all, with the permission prompts' caps)
       const shown = permissionInput(o.input);

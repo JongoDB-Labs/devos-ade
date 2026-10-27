@@ -32,7 +32,7 @@ function recalled() { try { return localStorage.getItem("bn.tab"); } catch (_) {
 
 // the portal's own pages (each a section with that id); everything else is an app in a frame. code.js adds "code" while
 // the Code page is off on this site: its tab then shows what the Code page is and how to turn it on, with no frame.
-const PAGES = ["home", "settings"];
+const PAGES = ["home", "settings", "modelbrowser"];   // modelbrowser: Browse models (models.js), reached by link, no sidebar tab
 // appFrame TAB -> its frame: created (hidden) on first need and kept, so switching tabs never reloads an app
 function appFrame(tab) {
   let f = $(`#frames iframe[data-app="${tab}"]`);

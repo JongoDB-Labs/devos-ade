@@ -545,6 +545,19 @@ def st_settings_main(S, p, device):
         yield f"settings-{s}", "#settings:not([hidden])"
 
 
+def st_modelbrowser(S, p, device):
+    """(fast) Browse models (models.js): the rows list, and with a search typed (the toolbar sticky over the rows)."""
+    S.login(p)
+    p.goto(S.cfg.origin + "/#modelbrowser")
+    p.wait_for_selector("#modelbrowser:not([hidden]) .mb-row, #modelbrowser:not([hidden]) .mb-empty", timeout=30000)
+    p.wait_for_timeout(500)
+    yield "modelbrowser", "#modelbrowser:not([hidden])"
+    if p.locator("#mb-search").count():
+        p.fill("#mb-search", "claude")
+        p.wait_for_timeout(300)
+        yield "modelbrowser-search", "#modelbrowser:not([hidden])"
+
+
 def tour_open(S, p, device, step="welcome"):
     p.add_init_script("(o => { try { if (location.origin === o && !sessionStorage.getItem('lay.tour')) { sessionStorage.setItem('lay.tour', '1');"
                       f" localStorage.setItem('bn.tour', JSON.stringify({{open: true, cur: {json.dumps(step)}, done: ['signin-portal'], skipped: [], seen: []}})); }} }} catch (e) {{}} }})"
@@ -770,6 +783,7 @@ STATES = [
     State("search", st_search),
     State("settings", st_settings, fast=False),
     State("settings-main", st_settings_main),
+    State("modelbrowser", st_modelbrowser),
     State("walkthrough", st_walkthrough, tour=True, fast=False),
     State("walkthrough-first", st_walkthrough_fast, tour=True),
     State("walkthrough-sidebar-collapsed", st_walkthrough_collapsed, devices=("desktop",), tour=True, min_w=1100),

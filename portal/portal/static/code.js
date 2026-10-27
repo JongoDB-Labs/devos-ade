@@ -143,7 +143,16 @@
     // same frame only — the place looked up here (CODE_SETUP), never one the frame names
     window.addEventListener("message", (e) => {
       const f = codeFrame();
-      if (e.origin !== codeOrigin || !f || e.source !== f.contentWindow || !e.data || e.data.type !== "bn-code-setup") return;
+      if (e.origin !== codeOrigin || !f || e.source !== f.contentWindow || !e.data) return;
+      // "More models…" (and JON-521's "pick another model"): the model browser, optionally at one provider's card
+      if (e.data.type === "bn-code-models") {
+        const prov = e.data.provider;
+        const hash = `#modelbrowser${typeof prov === "string" && /^(bedrock|openrouter|explabs)$/.test(prov) ? `/${prov}` : ""}`;
+        if (location.hash === hash && typeof window.showTab === "function") window.showTab(hash.slice(1));
+        else location.hash = hash;
+        return;
+      }
+      if (e.data.type !== "bn-code-setup") return;
       const reason = e.data.reason;
       if (typeof reason !== "string" || !Object.hasOwn(CODE_SETUP, reason)) return;
       const hash = `#settings/${CODE_SETUP[reason]}`;

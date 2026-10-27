@@ -1224,3 +1224,59 @@ def test_settings_page_has_the_code_page_row_and_its_read_only_workspace():
     assert "localOnlyHere(k, other)" in js and "needsTerminal" not in js
     assert "data.snapshot.choices.code_workspace" in js and "it turns the browser terminal on too, with the folder ${ws}" in js
     assert "./stack code enable" in js and "./stack code disable" in js and "restarts the terminal" not in js
+
+
+# --- the model browser's routes (portal/portal/model_browser.py; the parsing itself: tests/test_model_browser.py) ---
+
+def _bedrock_list(sd):
+    d = sd / "model-browser"
+    d.mkdir(exist_ok=True)
+    (d / "bedrock.json").write_text(json.dumps({"provider": "bedrock", "status": "ok", "region": "us-east-1",
+        "at": int(time.time()), "models": [
+            {"id": "anthropic.claude-3-5-haiku-20241022-v1:0", "model_id": "anthropic.claude-3-5-haiku-20241022-v1:0",
+             "name": "Claude 3.5 Haiku", "vendor": "Anthropic", "how": "on-demand", "lifecycle": "ACTIVE",
+             "prices": {"in": 0.8, "out": 4.0}, "context": 200000, "max_out": 8192, "tools": True, "images": True}]}))
+
+
+BEDROCK_MODELS_ROW = row("BEDROCK_MODELS", "aws", "-", "edit", "bedrock_models", "litellm-cfg", value="")
+
+
+def test_models_browse_route_lists_bedrock(make, dirs):
+    sd, _ = dirs
+    write_snapshot(sd, KEYS + [BEDROCK_MODELS_ROW]); helper_up(sd); _bedrock_list(sd)
+    c = make()
+    r = c.get("/api/models/browse", headers=API)
+    assert r.status_code == 200
+    d = r.json()
+    assert d["base"] == BASE and d["can_change"] is True
+    br = d["providers"]["bedrock"]
+    assert br["on"] is True and br["region"] == "us-east-1"
+    ids = {x["source_id"] for x in br["rows"]}
+    assert "anthropic.claude-3-5-haiku-20241022-v1:0" in ids
+    hk = next(x for x in br["rows"] if x["source_id"] == "anthropic.claude-3-5-haiku-20241022-v1:0")
+    assert hk["can"] == "add" and hk["in"] == 0.8   # not in the (empty) catalog here: addable
+    # without X-Requested-With, and signed out, it is refused (api_guard)
+    assert c.get("/api/models/browse").status_code in (400, 403)
+    assert make(login=False).get("/api/models/browse", headers=API).status_code == 401
+
+
+def test_models_plan_route(make, dirs):
+    sd, _ = dirs
+    write_snapshot(sd, KEYS + [BEDROCK_MODELS_ROW]); helper_up(sd); _bedrock_list(sd)
+    c = make()
+    i = "anthropic.claude-3-5-haiku-20241022-v1:0"
+    r = c.post("/api/models/browse/plan", content=json.dumps({"provider": "bedrock", "id": i, "action": "add"}), headers=H)
+    assert r.status_code == 200
+    d = r.json()
+    assert d["ok"] is True and d["key"] == "BEDROCK_MODELS" and d["value"] == i and d["error"] is None
+    # an unknown provider is refused
+    assert c.post("/api/models/browse/plan", content=json.dumps({"provider": "nope", "id": i, "action": "add"}), headers=H).status_code == 400
+
+
+def test_models_try_needs_a_served_model(make, dirs):
+    sd, _ = dirs
+    write_snapshot(sd, KEYS); helper_up(sd)
+    c = make()
+    # no code-models.tsv here: the model is not served, so Try refuses it (no spend)
+    r = c.post("/api/models/try", content=json.dumps({"model": "claude-haiku-5-5", "estimate": True}), headers=H)
+    assert r.status_code == 404
