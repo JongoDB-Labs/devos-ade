@@ -460,3 +460,11 @@ a.install-btn, .install-actions a.action { text-decoration: none; cursor: pointe
 .code-default-notice p { margin: 0; max-width: 90ch; }
 .code-default-notice code { overflow-wrap: anywhere; }
 .code-default-actions { display: flex; gap: 8px; margin-top: 10px !important; }
+
+/* Send feedback (feedback.js): on Home and in Settings › About — links that open a public GitHub issue */
+.feedback { margin-top: 18px; }
+.feedback h2 { margin: 0 0 6px; }
+.fb-warn { border-left: 3px solid var(--warn, var(--line)); padding-left: 10px; }
+.fb-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.fb-link { text-decoration: none; display: inline-block; }
+.fb-facts { overflow-wrap: anywhere; }

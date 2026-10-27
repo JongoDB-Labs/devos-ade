@@ -1,0 +1,32 @@
+name: Question or other feedback
+description: A question, or anything else that is not a bug or a feature request.
+title: "[Other] "
+labels: ["feedback", "question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is PUBLIC. Anyone can read it. Do not include keys, passwords, prompts, file contents, or repository or project names. DevOS ADE only asks for its version, your OS and your Docker Compose version.
+  - type: input
+    id: version
+    attributes:
+      label: DevOS ADE version
+      description: Shown on Home next to the title.
+      placeholder: v0.32.2
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: For example macOS 15.1, or Ubuntu 24.04.
+  - type: input
+    id: compose
+    attributes:
+      label: Docker Compose version
+      description: Run `docker compose version --short`.
+      placeholder: 2.40.3
+  - type: textarea
+    id: what
+    attributes:
+      label: Your question or feedback
+    validations:
+      required: true

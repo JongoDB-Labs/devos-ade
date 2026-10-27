@@ -148,3 +148,16 @@ test_a_plain_read_without_perl_does_not_wait_for_the_watchdog() {   # verify N7:
   # for a busy machine (in whole seconds a run within 4 s never measures more than 4, one of 6 s never less than 6).
   [ $(($(date +%s) - t0)) -le 4 ] || { echo "three plain reads took $(($(date +%s) - t0)) s" >&2; return 1; }
 }
+
+# Send feedback (JON-440 G1) reads this computer's OS and Docker Compose version from version.json: nothing else of it
+test_version_file_has_the_os_and_compose_version_for_send_feedback() {
+  _repo; printf 'COMPOSE_PROJECT_NAME=bn-t\n' > "$ENV_FILE"
+  _BN_COMPOSE_VERSION='2.40.3-desktop.1' write_version_file
+  f="$STATE_DIR/status/version.json"
+  python3 -I -c 'import json, re, sys; d = json.load(open(sys.argv[1]))
+assert d["compose"] == "2.40.3-desktop.1", d
+assert re.fullmatch(r"(macOS|Linux)[A-Za-z0-9._ +-]{0,34}", d["os"]), d' "$f"
+  # (a Docker that is not asked, as in every test: empty, never a call to docker)
+  write_version_file
+  assert_contains "$(cat "$f")" '"compose": ""'
+}

@@ -57,11 +57,29 @@ version_newer() {
     for (i = 1; i <= 3; i++) { if (x[i] + 0 > y[i] + 0) exit 0; if (x[i] + 0 < y[i] + 0) exit 1 } exit 1 }'
 }
 
+# host_facts_label -> "OS<TAB>Compose version" for Send feedback (JON-440 G1): the only two facts of this computer a
+# prefilled public issue carries besides the DevOS ADE version. OS: macOS and its version, or Linux and its
+# distribution; Compose: docker compose version --short (the one already asked this run, if any; none under
+# BEDROCK_NOW_COMPOSE_CONTEXTS, the tests' switch). Plain [A-Za-z0-9._ +-] only; unknown: empty.
+host_facts_label() {
+  local os='' dist='' cv="${_BN_COMPOSE_VERSION:-}"
+  case "$(uname -s 2>/dev/null)" in
+    Darwin) os="macOS $(sw_vers -productVersion 2>/dev/null || true)" ;;
+    Linux) dist="$( (. /etc/os-release 2>/dev/null && printf '%s %s' "${ID:-}" "${VERSION_ID:-}") || true)"
+      os="Linux${dist:+ $dist}" ;;
+  esac
+  [ -n "$cv" ] || [ -n "${BEDROCK_NOW_COMPOSE_CONTEXTS:-}" ] || cv="$(docker compose version --short 2>/dev/null || true)"
+  os="$(printf '%s' "$os" | LC_ALL=C tr -cd 'A-Za-z0-9._ +-' | cut -c1-40)"
+  cv="$(printf '%s' "$cv" | LC_ALL=C tr -cd 'A-Za-z0-9._+-' | cut -c1-40)"
+  printf '%s\t%s\n' "$os" "$cv"
+}
+
 # write_version_file — .state/status/version.json for the portal: the installed version, its commit, commit date
-# and branch (the version label on Home) and the images this compose.yaml pins (for the download estimate). Values
+# and branch (the version label on Home), the images this compose.yaml pins (for the download estimate), and this
+# computer's OS and Docker Compose version (host_facts_label: Settings › About's Send feedback). Values
 # are plain [A-Za-z0-9._/:@+-]; anything else is left out.
 write_version_file() {
-  local d f v c b t refs='' r
+  local d f v c b t refs='' r facts os cv
   d="$(status_dir)"; mkdir -p "$d" 2>/dev/null || return 0
   v="$(installed_version)"
   c="$( [ -e "$STACK_DIR/.git" ] && git -C "$STACK_DIR" rev-parse --short HEAD 2>/dev/null || true)"
@@ -76,9 +94,10 @@ write_version_file() {
   done <<EOF
 $(compose_refs < "$STACK_DIR/compose.yaml" 2>/dev/null)
 EOF
+  facts="$(host_facts_label)"; os="${facts%%	*}"; cv="${facts#*	}"
   f="$(mktemp "$d/.version.XXXXXX")" || return 0
-  printf '{"version": "%s", "commit": "%s", "commit_date": "%s", "branch": "%s", "images": [%s], "written_at": %s}\n' \
-    "$v" "$c" "$t" "$b" "$refs" "$(date +%s)" > "$f"
+  printf '{"version": "%s", "commit": "%s", "commit_date": "%s", "branch": "%s", "images": [%s], "os": "%s", "compose": "%s", "written_at": %s}\n' \
+    "$v" "$c" "$t" "$b" "$refs" "$os" "$cv" "$(date +%s)" > "$f"
   chmod 644 "$f"; mv "$f" "$d/version.json"
 }
 

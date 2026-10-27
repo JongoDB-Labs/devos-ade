@@ -524,6 +524,8 @@
     }
     c.append(body);
     if (fold) c.append(fold);
+    // (About: Send feedback — a link that opens GitHub; static/feedback.js)
+    if (s.id === "about" && window.bnFeedback && window.bnFeedback.card) c.append(window.bnFeedback.card("set-feedback"));
     // (under the providers' cards: which of their models each picker lists — Settings' own lists of them)
     if (s.id === "providers") {
       c.append(el("p", { class: "note set-prov-foot" }, "Which of these models each picker lists: ",

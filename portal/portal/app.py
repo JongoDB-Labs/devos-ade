@@ -23,7 +23,7 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainT
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import activity, admin, answers, appicons, appsso, brand, chatsearch, codeexport, icons, prices, recent, searchindex, settings_api, summary, updates, webapp
+from . import activity, admin, answers, appicons, appsso, brand, chatsearch, codeexport, feedback, icons, prices, recent, searchindex, settings_api, summary, updates, webapp
 from . import code as codepage
 from . import settings as settings_mod
 from .config import CODE, TERMINAL, Settings
@@ -1532,6 +1532,12 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             return deny
         return _no_store(JSONResponse({"items": activity.items(settings, remote(request)), "generated_at": int(time.time())}))
 
+    # --- Send feedback (static/feedback.js, portal/feedback.py): the addresses of a prefilled public GitHub issue ---
+    async def api_feedback(request: Request) -> Response:
+        if (deny := api_guard(request)) is not None:
+            return deny
+        return _no_store(JSONResponse(feedback.payload(settings.status_dir)))
+
     # --- the global search (static/search.js): the Settings page's sections and settings, the docs index built into the
     # --- image, and Chat's conversations through Open WebUI's own search (portal/searchindex.py, portal/chatsearch.py)
     async def api_search_index(request: Request) -> Response:
@@ -1739,6 +1745,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             Route("/api/admin/status", api_admin_status, methods=["GET"]),
             Route("/api/admin/request", api_admin_request, methods=["POST"]),
             Route("/api/activity", api_activity, methods=["GET"]),
+            Route("/api/feedback", api_feedback, methods=["GET"]),
             Route("/api/search/index", api_search_index, methods=["GET"]),
             Route("/api/search/chats", api_search_chats, methods=["GET"]),
             Route("/api/continue", api_continue, methods=["GET"]),

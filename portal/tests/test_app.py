@@ -347,3 +347,78 @@ def test_the_login_page_fills_its_template_once(client):
     # a next= address holding a placeholder stays text: never the error box or another value
     r = client.get("/login?next=%2F%7B%7Berror%7D%7D%7B%7Bforgot%7D%7D")
     assert "{{error}}{{forgot}}" in r.text and 'role="alert"' not in r.text
+
+
+# --- Send feedback (JON-440 G1): the prefilled public GitHub issue, built here, never sent from here ---
+def _fb_client(settings, tmp_path, version):
+    import json as _json
+    from dataclasses import replace
+    st = tmp_path / "fbstatus"
+    st.mkdir(exist_ok=True)
+    (st / "version.json").write_text(_json.dumps(version))
+    s = replace(settings, status_dir=st)
+    c = TestClient(create_app(s, transport=httpx.MockTransport(lambda r: (_ for _ in ()).throw(httpx.ConnectError("offline")))),
+                   base_url=f"http://{s.origin()[7:]}", follow_redirects=False)
+    c.__enter__()
+    c.post("/login", data={"password": "correct horse"}, headers={"Origin": s.origin()})
+    return c
+
+
+def test_feedback_links_carry_the_version_os_and_compose_version_only(settings, tmp_path):
+    from urllib.parse import parse_qs, urlsplit
+    c = _fb_client(settings, tmp_path, {"version": "v0.32.2", "os": "macOS 15.1", "compose": "2.40.3-desktop.1",
+                                        "commit": "abc1234", "branch": "main", "images": ["x/y:1"], "path": "/Users/me/secret-repo"})
+    r = c.get("/api/feedback", headers={"X-Requested-With": "bedrock-now"})
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
+    d = r.json()
+    assert d["facts"] == {"version": "v0.32.2", "os": "macOS 15.1", "compose": "2.40.3-desktop.1"}
+    assert "public" in d["public_warning"].lower() and "sent" not in d["public_warning"].lower()
+    assert set(d["links"]) == {"bug", "feature", "other"}
+    want = {"bug": "bug.yml", "feature": "feature.yml", "other": "question.yml"}
+    for kind, url in d["links"].items():
+        u = urlsplit(url)
+        assert (u.scheme, u.netloc, u.path) == ("https", "github.com", "/JongoDB-Labs/devos-ade/issues/new"), url
+        q = parse_qs(u.query)
+        assert set(q) == {"template", "title", "version", "os", "compose"}, q          # nothing else rides along
+        assert q["template"] == [want[kind]] and q["os"] == ["macOS 15.1"] and q["compose"] == ["2.40.3-desktop.1"]
+        for leaked in ("secret-repo", "/Users", "abc1234", "x/y", "main"):
+            assert leaked not in url
+
+
+def test_feedback_links_never_pass_unchecked_values_or_a_missing_file(settings, tmp_path):
+    c = _fb_client(settings, tmp_path, {"version": "v1&labels=x", "os": "a\nb", "compose": 7})
+    d = c.get("/api/feedback", headers={"X-Requested-With": "bedrock-now"}).json()
+    assert d["facts"] == {"version": "unknown", "os": "unknown", "compose": "unknown"}
+    assert "labels=x" not in d["links"]["bug"]
+    (tmp_path / "fbstatus" / "version.json").unlink()
+    assert c.get("/api/feedback", headers={"X-Requested-With": "bedrock-now"}).json()["facts"]["version"] == "unknown"
+
+
+def test_feedback_needs_a_session_and_the_custom_header(settings, tmp_path):
+    c = _fb_client(settings, tmp_path, {})
+    assert c.get("/api/feedback").status_code == 400
+    with TestClient(create_app(settings, transport=httpx.MockTransport(lambda r: (_ for _ in ()).throw(httpx.ConnectError("x")))),
+                    base_url=f"http://{settings.origin()[7:]}") as anon:
+        assert anon.get("/api/feedback", headers={"X-Requested-With": "bedrock-now"}).status_code == 401
+
+
+def test_feedback_page_pieces_are_wired_and_the_script_holds_no_tracker_key():
+    idx = (STATIC / "index.html").read_text()
+    assert 'id="feedback"' in idx and "/static/feedback.js" in idx
+    js = (STATIC / "feedback.js").read_text()
+    assert "linear" not in js.lower() and "api_key" not in js.lower() and "lin_api" not in js
+    assert "bnFeedback.card(\"set-feedback\")" in (STATIC / "settings.js").read_text()
+
+
+def test_issue_forms_match_the_prefilled_links_and_label_feedback():
+    """.github/ISSUE_TEMPLATE/*.yml (G2): the field ids Send feedback prefills, the label the Linear sync keys on."""
+    import re
+    from portal import feedback
+    d = STATIC.parents[2] / ".github" / "ISSUE_TEMPLATE"
+    for kind, (name, title) in feedback.KINDS.items():
+        text = (d / name).read_text()
+        assert re.search(r'^title: "' + re.escape(title) + '"$', text, re.M), name
+        assert re.search(r'^labels: \[.*"feedback".*\]$', text, re.M), name
+        ids = re.findall(r"^    id: (\w+)$", text, re.M)
+        assert {"version", "os", "compose"} <= set(ids), (name, ids)
+        assert "PUBLIC" in text and "keys, passwords, prompts, file contents" in text
