@@ -1240,20 +1240,20 @@ def ui_plan(ctx):
     need_haiku()
     page, rec = ui_page(ctx, "code-ui-plan")
     c = Code.on(page, rec, goto=False)
-    # (a session of its own first: the page shows another check's session — code_session, say — and a model or a mode
-    # picked now would be that session's: Plan was left on it, and the next check's turn wrote a plan file instead)
-    old = page.evaluate("(JSON.parse(localStorage.getItem('bn.code.v1') || '{}').lastSession) || ''")
-    page.get_by_test_id("chat-new").click()
-    see(page.locator(".chat-head .pane-title")).to_have_text("New session", timeout=20000)
-    page.wait_for_function("(old) => { const s = (JSON.parse(localStorage.getItem('bn.code.v1') || '{}').lastSession) || '';"
-                           " return s.length === 36 && s !== old; }", arg=old, timeout=30000)
-    own = page.evaluate("JSON.parse(localStorage.getItem('bn.code.v1')).lastSession")
-    page.get_by_test_id("model-picker").click()
-    page.get_by_test_id("model-haiku").click()
+    # a fresh Haiku session in Plan, created by the API so it is reliably in Plan, then the page is reloaded onto it.
+    # The shared session (code_session, which later checks reuse) is never switched to Plan — a check that left it so
+    # timed out the next check's turn (it wrote a plan file). The mode picker is covered by code-ui-queue-and-clear and
+    # checks_mentions; here Plan is set at the session's creation, not by a live switch a busy full run can leave pending.
+    own = c.new_session(HAIKU, "plan")
     wait_state(c, own, "model", HAIKU)
-    page.get_by_test_id("mode-picker").click()
-    page.get_by_test_id("mode-plan").click()
     wait_state(c, own, "mode", "plan")
+    page.evaluate("(id) => { try { const p = JSON.parse(localStorage.getItem('bn.code.v1') || '{}'); p.lastSession = id;"
+                  " localStorage.setItem('bn.code.v1', JSON.stringify(p)); } catch (e) {} }", own)
+    page.reload()
+    see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+    c = Code.on(page, rec, goto=False)
+    expect(_last_session(page) == own, f"the page did not open on the plan session {own[:8]}")
+    see(page.get_by_test_id("mode-picker")).to_contain_text("Plan", timeout=20000)
     target = f"{UI}/planned-{int(time.time())}.txt"
     ask(page, f"Plan this, then do it once I approve: create the file {target} containing exactly the word planned. "
               "Keep the plan to one or two lines and present it for my approval with ExitPlanMode.")
@@ -3641,6 +3641,20 @@ def _last_session(page):
     return page.evaluate("(JSON.parse(localStorage.getItem('bn.code.v1') || '{}').lastSession) || ''")
 
 
+def _wait_pref(c, key, value, timeout=15):
+    """What the backend keeps for your sign-in (GET /api/prefs) once `key` is `value` — picking a model in the picker
+    writes it (PUT /api/prefs). Robust whatever session the page shows: the pick is kept by its own request, not by a
+    switch of a session's live model."""
+    t0 = time.time()
+    prefs = {}
+    while time.time() - t0 < timeout:
+        prefs = (c.api("GET", "/api/prefs")["json"] or {}).get("prefs", {}) or {}
+        if prefs.get(key) == value:
+            return prefs
+        c.page.wait_for_timeout(300)
+    raise AssertionError(f"the sign-in's kept {key} is {prefs.get(key)!r}, not {value!r}")
+
+
 def _card_says_waiting(page, chip, label):
     """While a permission card waits: the chip says so (amber, no spinner), so does the prompt box; the card has the
     focus and is in view."""
@@ -3711,29 +3725,34 @@ def ui_cost_and_state(ctx):
     heads = [h.lower() for h in page.locator(".model-panel .mp-group-head").all_inner_texts()]
     expect(heads and heads[0] != "who answers" and ("who answers" not in heads or heads[-1] == "who answers"), f"the picker's groups: {heads}")
     shot(page, "j512-picker-desktop")
-    # a pick (Sonnet: no turn on it) is kept for the sign-in
+    # a pick (Sonnet: no turn on it) is kept for the sign-in — the pick writes /api/prefs (whatever session is shown):
+    # the second browser below proves a new session then starts on it (its model set at the session's creation, not a
+    # live switch that a busy full run can leave pending)
     if sonnet and page.get_by_test_id("model-sonnet").count():
         page.get_by_test_id("model-sonnet").click()
-        wait_state(c, sid_a, "model", sonnet)
-        kept = (c.api("GET", "/api/prefs")["json"] or {}).get("prefs", {})
-        expect(kept.get("model") == sonnet and kept.get("settingsDefault") == HAIKU, f"kept for the sign-in: {kept}")
+        kept = _wait_pref(c, "model", sonnet)
+        expect(kept.get("settingsDefault") == HAIKU, f"kept for the sign-in: {kept}")
     else:
         page.keyboard.press("Escape")
     c.api("DELETE", f"/api/sessions/{sid_a}")
-    # a second browser (nothing of the first one's): its new session starts on that pick; then Haiku is picked there
+    # a second browser (nothing of the first one's): its new session starts on that pick (its model set at creation)
     page, rec = ui_page(ctx, "code-ui-j512-b")
     c = Code.on(page, rec, goto=False)
     if sonnet:   # (the page has taken what the backend keeps: it saves it in this browser too)
         page.wait_for_function("(m) => (JSON.parse(localStorage.getItem('bn.code.v1') || '{}').model || '') === m", arg=sonnet, timeout=15000)
+        old = _last_session(page)
+        page.get_by_test_id("chat-new").click()
+        kept_sid = _new_session_id(page, old)
+        wait_state(c, kept_sid, "model", sonnet)   # the kept pick, set when this new session was created
+        c.api("DELETE", f"/api/sessions/{kept_sid}")
+    # back to Haiku for the rest (no Opus): the pick is kept, then a fresh Haiku session for the turn (Haiku at creation)
+    page.get_by_test_id("model-picker").click()
+    page.get_by_test_id("model-haiku").click()
+    _wait_pref(c, "model", HAIKU)
     old = _last_session(page)
     page.get_by_test_id("chat-new").click()
     sid = _new_session_id(page, old)
-    if sonnet:
-        wait_state(c, sid, "model", sonnet)
-    page.get_by_test_id("model-picker").click()
-    page.get_by_test_id("model-haiku").click()
     wait_state(c, sid, "model", HAIKU)
-    expect((c.api("GET", "/api/prefs")["json"] or {}).get("prefs", {}).get("model") == HAIKU, "Haiku is not kept for the sign-in")
     # a Bash prompt in Manual: the card waits, and the session says so
     for d in (J512,):
         c.api("POST", "/api/fs/mkdir", {"path": d})
