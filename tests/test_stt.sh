@@ -926,7 +926,9 @@ test_setup_and_recheck_run_the_bedrock_steps_in_order() {
   body="$(sed -n '/^cmd_setup() {/,/^}/p' "$STACK_DIR/lib/commands.sh" | tr -d ' ')"
   case "$body" in *_setup_settings*setup_bringup_and_probe*stt_after_probe*setup_keys_and_ui*) ;; *) echo "setup order" >&2; return 1 ;; esac
   keys="$(sed -n '/^setup_keys_and_ui() {/,/^}/p' "$STACK_DIR/lib/commands.sh" | tr -d ' ')"
-  case "$keys" in *stt_setup_service*'up_frontopen-webui'*) ;; *) echo "stt container before Open WebUI" >&2; return 1 ;; esac
+  # (the stt container in the keys' step, _setup_litellm_keys, before Open WebUI)
+  case "$keys" in *_setup_litellm_keys*'up_frontopen-webui'*) ;; *) echo "stt container before Open WebUI" >&2; return 1 ;; esac
+  assert_contains "$(sed -n '/^_setup_litellm_keys() {/,/^}/p' "$STACK_DIR/lib/commands.sh")" "stt_setup_service"
   rc="$(sed -n '/^models_recheck() {/,/^}/p' "$STACK_DIR/lib/commands.sh")"
   assert_contains "$rc" "stt_after_probe"
   assert_contains "$rc" "stt_setup_service"

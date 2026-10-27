@@ -39,12 +39,12 @@ test_setup_and_update_time_each_of_their_stretches() {
     assert_contains "$c" "$want"
   done
   c="$(sed -n '/^setup_bringup_and_probe() {/,/^}/p' "$STACK_DIR/lib/commands.sh")"
-  for want in 'timed_step "Prices" _setup_prices' 'timed_step "Image downloads checked" _setup_downloads' 'timed_step "Open WebUI image" _setup_owui_image' \
-              'timed_step "Default models" choose_defaults' 'timed_step "LiteLLM setup key"' 'timed_step "Model check" _setup_model_check'; do
+  for want in 'timed_step "Prices" _setup_prices' 'timed_step "Image downloads" _setup_downloads' 'timed_step "Open WebUI image" _setup_owui_image' \
+              'timed_step "LiteLLM config: web search check, default models"' 'timed_step "LiteLLM setup key"' 'timed_step "Model check" _setup_model_check'; do
     assert_contains "$c" "$want"
   done
   c="$(sed -n '/^setup_keys_and_ui() {/,/^}/p' "$STACK_DIR/lib/commands.sh")"
-  for want in 'timed_step "LiteLLM keys and Admin sign-in"' 'timed_step "Portal sign-in and Chat'"'"'s API key"' 'timed_step "Open WebUI syncs (models, prices, banner)"'; do
+  for want in 'timed_step "LiteLLM keys, Admin sign-in, voice service"' 'timed_step "Portal sign-in and Chat'"'"'s API key"' 'timed_step "Open WebUI syncs (models, prices, banner)"'; do
     assert_contains "$c" "$want"
   done
   c="$(sed -n '/^cmd_update() {/,/^}/p' "$STACK_DIR/lib/commands.sh")"
@@ -96,7 +96,7 @@ test_an_update_downloads_side_by_side_and_skips_digest_pins_that_are_here() {
   BEDROCK_NOW_PULLS_DIR="$PULLS_DIR" BEDROCK_NOW_PULLS_PID="$PULLS_PID" pulls_wait 2> "$TMP/wait"
   assert_eq "$(sort "$TMP/pulls" | tr '\n' ' ')" "pull ghcr.io/berriai/litellm:1.105.0 pull pgvector/pgvector:0.8.7-pg17 pull searxng/searxng:1@sha256:bbbb "
   for want in "Download litellm:1.105.0 ready (" "Download pgvector:0.8.7-pg17 ready (" "Download searxng:1 ready (" \
-              "here already, pinned by digest (not asked again): caddy:2.11.7-alpine" "Image downloads ready ("; do
+              "here already, pinned by digest (not asked again): caddy:2.11.7-alpine"; do
     assert_contains "$(cat "$TMP/wait")" "$want"
   done
   [ ! -e "$PULLS_DIR" ] || { echo "the downloads' folder was left" >&2; return 1; }

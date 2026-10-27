@@ -69,14 +69,15 @@ pulls_start() {
 }
 
 # pulls_wait — setup run by ./stack update (BEDROCK_NOW_PULLS_DIR): its downloads, before anything starts with an image
-# of this version. Each one as a step of its own ("Download litellm:1.105.0 ready (1m10s)"), the wait as "Image
-# downloads"; one that failed stops setup there, with the image's own last words (nothing runs a new image yet: the
-# update can be finished, or rolled back, as after any setup that stopped). A still running or stopped download
-# process says so every 2½ minutes (BUILD_TICK_S), or is counted as failed when it is gone.
+# of this version. Each one as a step of its own ("Download litellm:1.105.0 ready (1m10s)": its own time, side by side
+# with the others and setup's builds; the caller's step times the wait); one that failed stops setup there, with the
+# image's own last words (nothing runs a new image yet: the update can be finished, or rolled back, as after any setup
+# that stopped). Still waiting, it says so every 2½ minutes (BUILD_TICK_S); a download process that is gone counts as
+# failed for what it had not finished.
 pulls_wait() {
   local d="${BEDROCK_NOW_PULLS_DIR:-}" pid="${BEDROCK_NOW_PULLS_PID:-}" f r t rc bad='' start next
   [ -n "$d" ] && [ -d "$d" ] || return 0
-  start="$(_now)"; phase_start "Image downloads"; next=$((SECONDS + BUILD_TICK_S))
+  start="$(_now)"; next=$((SECONDS + BUILD_TICK_S))
   while [ ! -f "$d/done" ]; do
     if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then break; fi
     sleep 1
@@ -96,7 +97,6 @@ pulls_wait() {
   done
   [ ! -s "$d/skipped" ] || log "here already, pinned by digest (not asked again): $(while IFS= read -r r; do printf '%s ' "$(image_short "$r")"; done < "$d/skipped")"
   [ -z "$bad" ] || die "image download failed (network/registry?):$bad — nothing was started with this version's images yet"
-  log "$(phase_line "Image downloads" $(($(_now) - start)))"
   rm -rf "$d"
 }
 

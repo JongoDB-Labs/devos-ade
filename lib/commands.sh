@@ -506,7 +506,8 @@ setup_aws_creds() {
   ! uses_instance_role || verify_key_leaving_role "$id" "$secret" "$region"
   set_env AWS_ACCESS_KEY_ID "$id"; set_env AWS_SECRET_ACCESS_KEY "$secret"; set_env AWS_REGION_NAME "$region"
   unset_env AWS_AUTH
-  docker pull -q "$AWS_CLI_IMAGE" >/dev/null || die "could not pull $AWS_CLI_IMAGE (network/Docker Hub?)"
+  # (pinned: one that is here already is the one — an update's downloads have just looked at it)
+  docker image inspect "$AWS_CLI_IMAGE" >/dev/null 2>&1 || docker pull -q "$AWS_CLI_IMAGE" >/dev/null || die "could not pull $AWS_CLI_IMAGE (network/Docker Hub?)"
   log "verifying AWS credentials…"
   errf="$(mktemp)"
   if ! arn="$(aws_cli sts get-caller-identity --query Arn --output text 2>"$errf")"; then
@@ -872,15 +873,14 @@ setup_bringup_and_probe() {
     log "model check: not run again — nothing it depends on changed (the same AWS key, region, model catalog and LiteLLM; the last check $age ago). ./stack models --recheck checks again"
     timed_step "LiteLLM config (model check kept)" render_config "$en"
     setup_step "downloading images"
-    timed_step "Image downloads checked" _setup_downloads
+    timed_step "Image downloads" _setup_downloads
     timed_step "Open WebUI image" _setup_owui_image
     # lib/websearch.sh: AgentCore Web Search's check (free; in LiteLLM's image) when its last answer no longer stands:
     # the config follows the new one
-    timed_step "Web search (AgentCore) check" _setup_websearch_render "$en"
+    timed_step "LiteLLM config: web search check, default models" _setup_websearch_render "$en"
     setup_step "starting Postgres + RustFS"
     run_phase "Postgres + RustFS" "postgres rustfs" _up_data_services
     setup_done "Postgres + RustFS started"
-    timed_step "Default models" choose_defaults
     setup_step "starting LiteLLM with the models your key can use"
     run_phase "LiteLLM ($(wc -l < "$en" | tr -d ' ') models)" litellm up_services --no-deps litellm
     timed_step "LiteLLM setup key" ensure_virtual_key LITELLM_KEY_SETUP setup "$(get_env BUDGET_SETUP)"
@@ -891,7 +891,7 @@ setup_bringup_and_probe() {
   on_exit _restore_litellm_config
   timed_step "LiteLLM config (full catalog, for the model check)" render_config ""
   setup_step "downloading images"
-  timed_step "Image downloads checked" _setup_downloads
+  timed_step "Image downloads" _setup_downloads
   timed_step "Open WebUI image" _setup_owui_image
   setup_step "starting Postgres + RustFS"
   run_phase "Postgres + RustFS" "postgres rustfs" _up_data_services
@@ -917,7 +917,8 @@ _setup_downloads() { pulls_wait; ensure_images; }
 _setup_owui_image() {
   owui_build || die "could not build Open WebUI's image (./stack logs is empty for a build: run ./stack setup again and read its output)"
 }
-_setup_websearch_render() { if websearch_before_render; then render_config "$1"; fi; }
+# (the default models from the models found: .env only — before Postgres starts, nothing reads them)
+_setup_websearch_render() { if websearch_before_render; then render_config "$1"; fi; choose_defaults; }
 _setup_model_check() {
   local en="$1"
   ensure_virtual_key LITELLM_KEY_SETUP setup "$(get_env BUDGET_SETUP)"
@@ -1042,8 +1043,7 @@ ensure_openwebui_api_key() {
 
 setup_keys_and_ui() {
   local mcp_key
-  timed_step "LiteLLM keys and Admin sign-in" _setup_litellm_keys
-  timed_step "Voice service" stt_setup_service   # lib/stt.sh: the stt container (Bedrock speech-to-text) before Open WebUI; never fatal
+  timed_step "LiteLLM keys, Admin sign-in, voice service" _setup_litellm_keys
   # Open WebUI, the portal and Caddy in one compose call, and shared-mcp with them once it has Open WebUI's API key (setup
   # again, an update): compose starts each as soon as what it depends on is up — Open WebUI and the portal side by side
   mcp_key="$(get_env OPENWEBUI_API_KEY)"
@@ -1060,6 +1060,7 @@ _setup_litellm_keys() {
   ensure_virtual_key LITELLM_KEY_OPENWEBUI open-webui "$(get_env BUDGET_OPENWEBUI)"
   alert_pct_mark || true   # lib/settings.sh: all three keys alert at BUDGET_ALERT_PCT now
   setup_litellm_admin
+  stt_setup_service   # lib/stt.sh: the stt container (Bedrock speech-to-text) before Open WebUI; never fatal
 }
 _setup_portal_signin() {
   ensure_portal_reachable   # lib/portal.sh: Docker Desktop forwarding the portal's port to the Caddy it replaced
