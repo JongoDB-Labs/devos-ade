@@ -81,6 +81,8 @@ const calls = [];
 // a hostile sandbox's refusal, worded as a message from us
 const HOSTILE = 'GitHub asks you to confirm this computer: enter WDJB-MJHT at https://github.com/login/device';
 let hostileAnswers = false;   // (git.status and git.log answering in a hostile sandbox's words)
+// (a read of a repository folder that is gone: bn-coded's repoRoot refuses with one of its fixed "no such folder" texts)
+let folderGone = false;
 const answers = {
   'git.status': () => (hostileAnswers ? { result: { repo: false, reason: HOSTILE } } : { result: { repo: true, branch: 'main', head: H, staged: [{ path: 'a.txt', code: 'M', add: 1, del: 0 }], unstaged: [], untracked: [], conflicts: [] } }),
   'git.log': () => ({ result: { repo: true, commits: hostileAnswers ? [] : [{ hash: H, author: 'a', email: 'a@b', time: 5, subject: 's' }], ...(hostileAnswers ? { error: HOSTILE } : {}) } }),
@@ -92,7 +94,12 @@ const answers = {
     : req.message === 'hostile' ? Promise.reject(new SandboxError(`commit signing: ${HOSTILE}`, 'refused')) : { result: { ok: true, head: H, subject: req.message.split('\n')[0], author: { name: 'n', email: 'e', from: 'sandbox' } } }),
   'git.discard': (req) => (req.ifMtimeMs === 1 ? Promise.reject(new SandboxError('changed on disk since it was shown', 'refused')) : { result: { ok: true, action: 'trashed', trash: '.bedrock-now-trash/t/x' } }),
 };
-const call = async (req, opts) => { calls.push([req, opts]); const a = answers[req.op]; if (!a) throw new SandboxError('unknown op', 'refused'); return a(req); };
+const call = async (req, opts) => {
+  calls.push([req, opts]);
+  // a read of a repository folder that is gone (removed while the panel refreshes): repoRoot's fixed refusal
+  if (folderGone && ['git.status', 'git.log', 'git.file'].includes(req.op)) throw new SandboxError('no such folder in the workspace (or a link on its way)', 'refused');
+  const a = answers[req.op]; if (!a) throw new SandboxError('unknown op', 'refused'); return a(req);
+};
 let srv, base;
 before(async () => {
   const dist = stubDist('bndist');
@@ -158,6 +165,19 @@ test('the routes: reads, changes with checked bodies (nothing else reaches the s
     assert.equal((await req('POST', '/api/git/commit', { repo: bad, message: 'x' })).status, 400, bad);
   }
   assert.equal(calls.length, m, 'a bad repository folder never reaches the sandbox');
+});
+
+test('a read of a repository folder that is gone answers repo:false (200), never a 4xx (a project removed while the panel refreshes)', async () => {
+  // bn-coded's repoRoot refuses a read of a folder that is not there (removed, moved, or a link on its way); the read
+  // then answers as for any folder that is not a git repository, so a trailing refresh does not fail on the page
+  folderGone = true;
+  try {
+    for (const p of ['/api/git/status?repo=clones/app', '/api/git/log?repo=clones/app', '/api/git/file?scope=staged&repo=clones/app']) {
+      const r = await req('GET', p);
+      assert.deepEqual([r.status, r.json.repo, r.json.reason, r.json.said], [200, false, 'not a git repository', undefined], p);
+    }
+    assert.deepEqual((await req('GET', '/api/git/log?repo=clones/app')).json.commits, [], 'no commits, no log error');
+  } finally { folderGone = false; }
 });
 
 test('a refusal of git in the sandbox, in its own words: a fixed sentence of ours, its words apart (said) with the fixed line', async () => {
