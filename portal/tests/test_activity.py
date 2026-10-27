@@ -273,3 +273,47 @@ def test_voice_turned_off_because_aws_refuses_the_audio_is_one_item(s):
     (s.status_dir / "stt-notice.json").write_text("{not json")
     assert activity.stt_notice_item(s) is None
 
+
+
+# --- local container health (lib/health.sh; JON-440 G4): a synthetic, disposable failure shown in Activity ---
+def health(events, **kw):
+    return {"version": 1, "written_at": int(time.time()), "services": [], "events": events, **kw}
+
+
+def test_container_health_events_show_in_activity_and_nothing_else_does(s):
+    now = int(time.time())
+    write(s.status_dir, "container-health.json", health([
+        {"at": now - 500, "service": "litellm", "kind": "restart", "count": 3, "exit_code": 1},
+        {"at": now - 400, "service": "portal", "kind": "unhealthy", "count": 0, "exit_code": 0},
+        {"at": now - 300, "service": "caddy", "kind": "exit", "count": 0, "exit_code": 3},
+        {"at": now - 200, "service": "searxng", "kind": "oom", "count": 0, "exit_code": 137},
+        {"at": now - 9 * 86400, "service": "postgres", "kind": "exit", "count": 0, "exit_code": 1},      # too old
+        {"at": now - 100, "service": "../etc", "kind": "exit", "count": 0, "exit_code": 1},              # not a service name
+        {"at": now - 100, "service": "caddy", "kind": "rm -rf", "count": 0, "exit_code": 1},             # not a kind
+    ]))
+    got = {i["title"]: i for i in activity.health_items(s.status_dir, now)}
+    assert set(got) == {"litellm restarted 3 times", "portal became unhealthy", "caddy exited with code 3",
+                        "searxng ran out of memory"}, got
+    assert got["caddy exited with code 3"]["level"] == "bad" and got["portal became unhealthy"]["level"] == "warn"
+    assert got["litellm restarted 3 times"]["kind"] == "health" and got["litellm restarted 3 times"]["data"]["count"] == 3
+    assert "this computer only" in got["caddy exited with code 3"]["text"]
+    items = client(s).get("/api/activity", headers=API).json()["items"]
+    assert [i["kind"] for i in items].count("health") == 4
+
+
+def test_container_health_one_restart_is_one_item_with_its_own_id_and_the_list_is_capped(s):
+    now = int(time.time())
+    write(s.status_dir, "container-health.json", health(
+        [{"at": now - 100 + i, "service": "portal", "kind": "restart", "count": 1, "exit_code": 0} for i in range(9)]))
+    its = activity.health_items(s.status_dir, now)
+    assert len(its) == activity.HEALTH_MAX and len({i["id"] for i in its}) == len(its)
+    assert its[0]["title"] == "portal restarted once" and its[0]["at"] > its[-1]["at"]
+
+
+def test_container_health_unreadable_or_odd_files_show_nothing(s):
+    now = int(time.time())
+    for text in ("not json", "[]", json.dumps({"events": "x"}), json.dumps({"events": [1, None, {"service": 5}]}),
+                 json.dumps({"events": [{"at": True, "service": "a", "kind": "exit"}]})):
+        write(s.status_dir, "container-health.json", text)
+        assert activity.health_items(s.status_dir, now) == []
+    assert activity.items(s, False) == []

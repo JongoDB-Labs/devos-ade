@@ -1489,6 +1489,7 @@ services_status_write() {
   tmp="$(mktemp "$d/.services.XXXXXX" 2>/dev/null)" || return 0
   { printf '{"version": 1, "written_at": %s, "services": [%s]}\n' "$(date +%s)" "$out" > "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$f"; } 2>/dev/null ||
     rm -f "$tmp"
+  ! declare -F health_record_write >/dev/null || health_record_write || true   # lib/health.sh: restarts, exit codes, unhealthy (local)
   return 0
 }
 # services_status_tick — the update helper, every loop: the record ./stack keeps (setup, up and status write it)
@@ -2320,6 +2321,8 @@ cmd_uninstall() {
 . "$STACK_DIR/lib/repo_rename.sh"
 # ./stack rollback (back to the version before the last update).
 . "$STACK_DIR/lib/rollback.sh"
+# Local container health: restart counts, exit codes and unhealthy transitions for Activity (JON-440 G4; never sent).
+. "$STACK_DIR/lib/health.sh"
 # The optional host helper (one-click Update / Rollback / Clean from the portal): ./stack helper.
 . "$STACK_DIR/lib/helper.sh"
 # Settings (./stack config, ./stack restart, the snapshot for the portal) and the helper's settings requests.
