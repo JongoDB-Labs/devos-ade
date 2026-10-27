@@ -1810,6 +1810,12 @@ def ui_git_remotes(ctx):
     # each clone became a project of its own (the repository picker lists projects)
     roots = {x["root"] for x in c.api("GET", "/api/projects")["json"]["projects"]}
     expect({a, b} <= roots, f"the clones are not projects: {sorted(roots)}")
+    # The flow is done: no CSP violation or failed request through all of it (one 400 is allowed — a plan POST the page
+    # makes to learn a remote's first URL). Checked here, before the clean-up below removes the clones: the panel keeps
+    # a repository selected while its folder and project are deleted, so a trailing read of it can race the removal and
+    # 4xx (status/log/remote); the page handles that itself (it shows no repository), and it is this check's own
+    # teardown, not part of the flow — so it is not counted.
+    csp_clean(page, rec, [r"^400 POST .*/api/git/", r"console.error Failed to load resource.*400"])
     # clean up: the hosts, the clones and their project records
     for h in c.api("GET", "/api/git/hosts")["json"]["hosts"]:
         c.api("DELETE", f"/api/git/hosts/{h['id']}")
@@ -1817,7 +1823,6 @@ def ui_git_remotes(ctx):
     _drop_projects(c, (a, b))
     for d in (a, b):
         c.api("DELETE", f"/api/fs?path={d}")
-    csp_clean(page, rec, [r"^400 POST .*/api/git/", r"console.error Failed to load resource.*400"])
     return ("Git hosts: a token (with the server's CA) and an SSH key made by the Code page (host key learned by Test connection); "
             f"clone over https into {a}/ (its plan first), a commit pushed after its confirmation, e2e/feature published with Open a pull request "
             f"({pr_href}), a clone over ssh into {b}/, a second push from {a}, fetch and a fast-forward pull in {b}; "
