@@ -3743,6 +3743,8 @@ def ui_cost_and_state(ctx):
     c = Code.on(page, rec, goto=False)
     for f in ("denied.txt", "denied-phone.txt"):
         expect(c.api("GET", f"/api/fs/file?path={J512}/{f}")["status"] == 404, f"{f} was written: the card was denied")
+    # (a short title for what it leaves in the Projects list: its first prompt is long)
+    c.api("POST", f"/api/sessions/{sid}/title", {"title": "e2e j512"})
     c.api("DELETE", f"/api/sessions/{sid}")
     # (the denied files' 404s are this check's own reads)
     csp_clean(page, rec, [r"^404 GET .*/api/fs/file\?path=" + re.escape(J512) + "/denied", r"console.error Failed to load resource.*404"])
