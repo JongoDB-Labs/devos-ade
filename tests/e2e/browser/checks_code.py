@@ -37,7 +37,7 @@ from playwright.sync_api import expect as see
 
 import code_tidy
 from common import CLAUDE_CODE_VERSION, ENV, HOST, PORT, SHOTS, Skip, after_check, check, expect, http, origin
-from checks_browser import Recorder, _confirm, _need_helper, _switch, _wait_job, goto_setting, login, open_settings, shot
+from checks_browser import Recorder, _confirm, _need_helper, _switch, _wait_job, goto_setting, login, open_settings, rshot, shot, sso_signed_in
 
 ON = ENV.get("CODE_ENABLED") == "true" and ENV.get("TERMINAL_ENABLED") == "true"
 HOSTILE = os.environ.get("E2E_CODE_HOSTILE") == "1"
@@ -4058,3 +4058,135 @@ def ui_cost_and_state(ctx):
     return (f"default {HAIKU} (Settings'), never Opus; a pick ({sonnet or 'none'}) kept for the sign-in and taken by a second browser; "
             f"waiting for you while a card waits (chip, prompt box, title; the card focused, in view) on a desktop and a phone; "
             f"the turn cost {live['turn']} live and after a reload; the picker's models first; the Git panel's repository inside and around a folder")
+
+
+EXPORT_DIR = "e2e-export-808"
+EXPORT_FILES = {   # what the project holds (a git repository: .gitignore keeps two of these out of the default zip)
+    ".gitignore": "ignored-dir/\n*.log\n",
+    "README.md": "# Export 808\nünï código — a name with accents\n",
+    ".env": "SECRET=not-a-real-secret\n",
+    "src/main.py": "print('hello from the sandbox')\n",
+    "node_modules/dep/index.js": "module.exports = 1;\n",
+    "ignored-dir/cache.txt": "ignored by .gitignore\n",
+    "debug.log": "ignored by .gitignore\n",
+}
+EXPORT_DEFAULT = {".gitignore", "README.md", ".env", "src/main.py"}   # (not node_modules, .git or what .gitignore names)
+
+
+@check("browser", "code-export-to-files")
+def export_to_files(ctx):
+    """Export to Files (JON-808): a project made in the sandbox is zipped there (what git keeps: .gitignore respected,
+    no .git, no node_modules), passed through the code server, handed by the Code page to the portal that frames it and
+    written to the Files app (RustFS) — a bucket of its own, code-exports — where the console lists it and downloads it;
+    the zip unpacks to the same tree (accents and .env included: the dialog says it may hold secrets). Everything and
+    .git history are toggles; with no portal around the page (the code host in a tab of its own) the zip is saved by the
+    browser instead and is the same. One Haiku-free check: no session is started."""
+    need_on()
+    import io
+    import zipfile
+    page, rec = ctx.page("code-export")
+    login(page)
+    page.click(".tab[data-tab=code]")
+    f = code_frame(page)
+    unlock_page(f)
+    f = code_frame(page)
+    f.wait_for_function("() => document.querySelector('meta[name=bn-csp-nonce]') !== null", timeout=20000)
+    f.evaluate(CLIENT_JS)
+
+    def api(method, path, body=None):
+        return f.evaluate("([m, p, b]) => window.__bn.api(m, p, b)", [method, path, body])
+
+    pid = None
+    try:
+        # seed a project in the sandbox (through the page's own API: its folder, git init, the files)
+        for stale in [x for x in api("GET", "/api/projects")["json"]["projects"] if x["root"] == EXPORT_DIR]:
+            api("DELETE", f"/api/projects/{stale['id']}")
+        api("DELETE", f"/api/fs?path={EXPORT_DIR}")
+        made = api("POST", "/api/projects", {"kind": "new", "folder": EXPORT_DIR, "name": "Export 808", "git": True})
+        expect(made["status"] == 200, f"new project: {made}")
+        pid = made["json"]["project"]["id"]
+        dirs = sorted({d for n in EXPORT_FILES for d in [str(Path(n).parent)] if d != "."} | {"node_modules", "src"})
+        for d in dirs:
+            api("POST", "/api/fs/mkdir", {"path": f"{EXPORT_DIR}/{d}"})
+        for n, text in EXPORT_FILES.items():
+            w = api("PUT", f"/api/fs/file?path={EXPORT_DIR}/{n}", {"text": text, "create": True})
+            expect(w["status"] == 200, f"writing {n}: {w}")
+        # the plan, through the API: the default, everything, and the history
+        plan = api("GET", f"/api/projects/{pid}/export?dry=1")["json"]
+        expect(plan["files"] == len(EXPORT_DEFAULT) and plan["via"] == "git" and not plan["over"], f"default plan {plan}")
+        allp = api("GET", f"/api/projects/{pid}/export?dry=1&include=all")["json"]
+        expect(allp["files"] == len(EXPORT_FILES), f"everything: {allp}")
+        gitp = api("GET", f"/api/projects/{pid}/export?dry=1&git=1")["json"]
+        expect(gitp["files"] > len(EXPORT_DEFAULT), f"with .git: {gitp}")
+        # a path of another folder, a bad id and no project: refused
+        expect(api("GET", "/api/projects/p_00000000/export?dry=1")["status"] == 404, "an unknown project")
+        # the page: Projects tab › the project's menu › Export to Files…
+        f.get_by_test_id("side-sessions").click()
+        row = f.locator(f"[data-testid=project][data-project='{pid}']")
+        row.get_by_test_id("project-menu").click()
+        f.get_by_test_id("project-menu-export").click()
+        dlg = f.get_by_test_id("export-dialog")
+        see(dlg).to_be_visible(timeout=10000)
+        see(f.get_by_test_id("export-plan")).to_contain_text(f"{len(EXPORT_DEFAULT)} files", timeout=30000)
+        see(f.get_by_test_id("export-secrets")).to_contain_text(".env")
+        shot(page, "j808-export-dialog")
+        f.get_by_test_id("export-go").click()
+        done = f.get_by_test_id("export-done")
+        see(done).to_be_visible(timeout=120000)
+        name = done.get_attribute("data-key")
+        expect(re.fullmatch(r"Export-808-\d{8}-\d{6}\.zip", name or ""), f"the zip's name {name!r}")
+        shot(page, "j808-export-done")
+        dlg.get_by_role("button", name="Close").last.click()
+        # in Files: the console lists the bucket and the object, and downloads it
+        page.click(".tab[data-tab=files]")
+        page.wait_for_selector("iframe[data-app=files]")
+        scope = page.frame_locator("iframe[data-app=files]")
+        sso_signed_in(page, scope, rec, "files", "Files tab (portal frame)", "j808")
+        scope.locator("tr", has_text="code-exports").first.wait_for(timeout=30000)
+        scope.get_by_text("code-exports", exact=True).first.click()
+        scope.locator("tr", has_text=name).first.wait_for(timeout=30000)
+        rshot(page, scope, "j808-files-listing")
+        scope.get_by_label(f"Actions: {name}").click()
+        with page.expect_download(timeout=60000) as dl:
+            scope.get_by_role("menuitem", name="Download").click()
+        data = Path(dl.value.path()).read_bytes()
+        z = zipfile.ZipFile(io.BytesIO(data))
+        expect(z.testzip() is None, "the zip is damaged")
+        got = {n: z.read(n).decode() for n in z.namelist()}
+        want = {n: t for n, t in EXPORT_FILES.items() if n in EXPORT_DEFAULT}
+        expect(got == want, f"unpacked tree differs: got {sorted(got)} want {sorted(want)}; content equal: { {n: got.get(n) == t for n, t in want.items()} }")
+        # the code host in a tab of its own (no portal around it): no Export to Files, the same zip saved by the browser
+        top, trec = ctx.page("code-export-top")
+        login(top)
+        top.goto(CODE + "/")
+        unlock_page(top)
+        see(top.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+        top.get_by_test_id("side-sessions").click()
+        top.locator(f"[data-testid=project][data-project='{pid}']").get_by_test_id("project-menu").click()
+        top.get_by_test_id("project-menu-export").click()
+        see(top.get_by_test_id("export-plan")).to_contain_text(f"{len(EXPORT_DEFAULT)} files", timeout=30000)
+        expect(top.get_by_test_id("export-go").count() == 0, "Export to Files offered without a portal around the page")
+        top.get_by_test_id("export-include-all").check()
+        see(top.get_by_test_id("export-plan")).to_contain_text(f"{len(EXPORT_FILES)} files", timeout=30000)
+        top.get_by_test_id("export-include-default").check()
+        see(top.get_by_test_id("export-plan")).to_contain_text(f"{len(EXPORT_DEFAULT)} files", timeout=30000)
+        with top.expect_download(timeout=60000) as dl2:
+            top.get_by_test_id("export-download").click()
+        z2 = zipfile.ZipFile(io.BytesIO(Path(dl2.value.path()).read_bytes()))
+        expect({n: z2.read(n).decode() for n in z2.namelist()} == want, "the browser's own download differs from the one in Files")
+        see(top.get_by_test_id("export-saved")).to_be_visible()
+        probs = rec.problems(allow=LOCKED_OK + [r"401 GET .*/rustfs/admin/v3/.*", r"400 GET .*\?(retention|legal-hold)=$"])
+        probs += trec.problems(allow=LOCKED_OK)
+        rec.save()
+        trec.save()
+        expect(not probs, f"errors (CSP violations included): {probs[:6]}")
+    finally:
+        try:
+            if pid:
+                api("DELETE", f"/api/projects/{pid}")
+            api("DELETE", f"/api/fs?path={EXPORT_DIR}")
+        except Exception:  # noqa: BLE001 — cleanup never hides the failure
+            pass
+    return (f"a git project of {len(EXPORT_FILES)} files zipped in the sandbox without .git, node_modules or what .gitignore names ({len(EXPORT_DEFAULT)} files), "
+            f"handed by the Code page to the portal and listed in Files (code-exports/{name}), downloaded from the console and unpacked to the same tree; "
+            "Everything and .git history change the plan; the code host alone has no Export to Files and saves the same zip; no CSP violations")

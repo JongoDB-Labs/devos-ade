@@ -1888,6 +1888,30 @@ server, read-only, and both read files a hostile repository or sandbox shapes.
   and 5,000 candidates per search — a session title or file name from the sandbox cannot make it slow. It runs nothing
   you would not run from the page's menus.
 
+### Export to Files
+
+*Export to Files* (Projects menu, ⌘K) puts a project's files, zipped, into the Files app. The path keeps the sandbox's
+isolation: the code container gets no route to RustFS, and the Code page's host cannot reach it either.
+
+- [x] **The zip is built in the sandbox, from the project's folder only.** `fs.zip` takes the project's `root` (the
+  records' folder, checked like every op's) and zips regular files below it — never through a link, each opened
+  `O_NOFOLLOW`. In a git repository the list is `git ls-files --cached --others --exclude-standard` run as `git.diff`
+  runs git (fixed arguments and environment: no fsmonitor, hook, filter or driver of the repository runs); otherwise a
+  bounded walk that leaves out `.git`, the trash and dependency/build folders. `node_modules` and `.git` are never in the
+  default zip; *Everything* and *Include .git* are the owner's choices. Test: `code/test/bn-coded-zip.test.mjs`.
+- [x] **Size and memory are capped.** The whole list is stat'ed first: over 200 MiB before compression (or 50,000
+  files) is refused before a byte is sent, saying how big the project is. The zip is deflated one file at a time with
+  data descriptors and passed through the code server to the page with back-pressure at every hop: nothing holds a whole
+  tree but the page's own copy (once, within the cap).
+- [x] **Browser to portal to RustFS.** The page checks the zip is whole, hands it to the portal that frames it
+  (`bn-code-export`, from this frame and to that origin only; `bn-portal-export` back, likewise), and the portal's
+  `POST /api/code-export` (session, `X-Requested-With`, same origin, Code and Files on) streams it to RustFS with the
+  key pair it already holds — only into the `code-exports` bucket (made when missing; the stack's buckets are never
+  touched), only under a name of `[A-Za-z0-9._-]` ending `.zip`, only a body that starts as a zip and is exactly as long
+  as announced, at most 220 MiB, one at a time. It lists, reads and deletes nothing. Test: `portal/tests/test_codeexport.py`.
+- **The zip may hold secrets** (`.env` files, keys the project holds): the dialog says so. It is the owner's own file in
+  the owner's own Files store, as private as the project.
+
 ### Context mentions and plan comments
 
 The prompt box takes context besides your text: `@terminal`, `@diff`, `@problems` and `@file#L5-10` (also the editor's
