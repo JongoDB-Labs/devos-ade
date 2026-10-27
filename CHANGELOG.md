@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.31.5] - 2026-10-27
+
 ### Changed
 
 - **The model picker lists the models you can use first.** It opened on *Who answers* — six subscriptions, most not
@@ -15,6 +17,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ### Fixed
 
+- **Tests: no test run spends on Opus.** The end-to-end throwaways start Code sessions on Claude Haiku, and a new
+  final check, `spend/no-opus-spend`, fails a run in which a session key (the Code page, the browser terminal,
+  devos-claude or Chat) spent on an Opus model (setup's one-token model probe is reported, not counted). A Code page
+  check that leaves the shared session in a mode other than Default now fails.
 - **A finished turn costs the same after a reload.** The Code page showed a turn's cost from LiteLLM's rows between its
   prompt and its end — but a reloaded page rebuilt its turns at the moment of the reload, so it counted only the last
   minute's rows: a first turn read $0.0049 live and $0.0007 after a reload, while the session's total stayed $0.0049
@@ -3215,7 +3221,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.4...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.5...HEAD
+[0.31.5]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.4...v0.31.5
 [0.31.4]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.3...v0.31.4
 [0.31.3]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.2...v0.31.3
 [0.31.2]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.1...v0.31.2
