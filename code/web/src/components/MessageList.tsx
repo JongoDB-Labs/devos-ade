@@ -15,7 +15,7 @@ import { SandboxSaid } from './Said';
 import type { SandboxWords } from '../types';
 import { BlockedCard } from './BlockedCard';
 import { modelLabel } from './Pickers';
-import { otherModels } from '../models';
+import { nameTheModel, otherModels } from '../models';
 import { Icon, Spinner } from './icons';
 import { memo } from './ui';
 import { splitContext } from '../mentions';
@@ -316,6 +316,7 @@ export function MessageList({ view }: { view: SessionView | undefined }) {
   const [limit, setLimit] = useState(PAGE);
   const [showJump, setShowJump] = useState(false);
   const items = view?.items ?? [];
+  const bn = useSel(store, (s) => s.models?.models);
 
   const costs = useMemo(() => (view?.spend ? turnCosts(view.turns, view.spend) : null), [view?.spend, view?.turns]);
   const pendingTools = useMemo(() => new Set((view?.permissions ?? []).map((p) => JSON.stringify(p.input))), [view?.permissions]);
@@ -389,7 +390,7 @@ export function MessageList({ view }: { view: SessionView | undefined }) {
         return (
           <div key={it.k} class={`notice notice-${it.level}`} data-testid={it.fix === 'model' ? 'notice-model' : undefined}>
             {it.level === 'error' && <Icon name="alert" size={14} />}
-            <span>{it.text}</span>
+            <span>{it.fix === 'model' ? nameTheModel(it.text, modelLabel(bn, view?.model ?? '')) : it.text}</span>
             {it.fix === 'model' && (
               <button type="button" class="linkish notice-fix" data-testid="notice-pick-model" onClick={() => openModelMenu()}>Pick another model</button>
             )}

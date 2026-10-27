@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { normModels } from '../src/api';
-import { compatWarning, findModel, groupOf, hiddenCount, modelMatches, modelSections, providerSetups, COMPAT_INFO, PROVIDER_SETUP } from '../src/models';
+import { compatWarning, findModel, groupOf, hiddenCount, modelMatches, modelSections, nameTheModel, providerSetups, COMPAT_INFO, PROVIDER_SETUP } from '../src/models';
 import { SETUP_LINKS } from '../src/setuplinks';
 import { parsePrefs, STARRED_MAX } from '../src/prefs';
 import { cacheNotice, CACHE_TTL_MS, caches } from '../src/budget';
@@ -166,4 +166,11 @@ test('models: a new session starts on your last pick — an Experiential Labs or
   // no pick: DevOS ADE's default; a pick no longer served (Experiential Labs' key removed): the default, and said
   assert.deepEqual(startModel('', bn), { model: 'claude-opus-5-5', missed: null });
   assert.deepEqual(startModel('xl/gone:free', bn), { model: 'claude-opus-5-5', missed: 'xl/gone:free' });
+});
+
+test('a provider error whose way on is another model names the session\'s model by DevOS ADE\'s name (JON-521)', () => {
+  const promo = 'Experiential Labs: the free promotion for this model has ended. From now on its requests are charged to your Experiential Labs credits. Send your message again to continue, or pick another model.';
+  assert.equal(nameTheModel(promo, 'glm-5.3-uncensored'), 'Experiential Labs: the free promotion for glm-5.3-uncensored has ended. From now on its requests are charged to your Experiential Labs credits. Send your message again to continue, or pick another model.');
+  assert.equal(nameTheModel("Your Experiential Labs key isn't allowed to use this model", 'deepseek-v4.1-flash:free'), "Your Experiential Labs key isn't allowed to use deepseek-v4.1-flash:free");
+  assert.equal(nameTheModel(promo, ''), promo);   // (not known: "this model")
 });

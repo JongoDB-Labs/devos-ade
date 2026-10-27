@@ -131,10 +131,15 @@ const API_ERROR_SAID = Object.freeze({ authentication_failed: 'The model\'s prov
 // it: lib/litellm-hooks/bn_hooks.py XL_NOT_GRANTED) — another model is the way on (JON-521)
 const NOT_GRANTED = /isn't allowed to use this model|not granted to this (?:identity|organi[sz]ation)|model alias is not granted|model_not_granted/i;
 export const NOT_GRANTED_SAID = 'Your Experiential Labs key isn\'t allowed to use this model';
+// The gateway's one-time notice that a model's free promotion has ended (its 402, or the hook's 400 for it: XL_PROMO_ENDED):
+// a prompt sent again is charged — the person's choice, never made for them (JON-521)
+const PROMO_ENDED = /free promotion for [\s\S]{1,80}? has ended|one-time notice|will be charged to your credit balance/i;
+export const PROMO_ENDED_SAID = 'Experiential Labs: the free promotion for this model has ended. From now on its requests are charged to your Experiential Labs credits. Send your message again to continue, or pick another model.';
 // apiErrorFor(error, words) -> [our sentence, {provider, fix}] for an API error (the SDK's name for it, the provider's
 // words): never a word of theirs in ours
 export function apiErrorFor(error, words) {
   if (NOT_GRANTED.test(words)) return [NOT_GRANTED_SAID, { provider: true, fix: 'model' }];
+  if (PROMO_ENDED.test(words)) return [PROMO_ENDED_SAID, { provider: true, fix: 'model' }];
   return [API_ERROR_SAID[error] ?? 'The request to the model failed', { provider: true }];
 }
 

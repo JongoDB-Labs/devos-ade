@@ -2,7 +2,8 @@
 // query, spawn-client) in the code image, its Claude Code run by bn-coded in the terminal image over the shared socket,
 // as the code container runs one. Opens a session on MODEL, sends the same prompt TIMES times, one after the other (each
 // once the turn before it has its result), and prints one JSON line: {model, turns: [{errors, result}]} — each turn's
-// error events as the page gets them (message, fix, provider, said) and its result (is_error, text). Never a permission:
+// error events as the page gets them (message, fix, provider, said), its result (is_error, text) and when it ended (ms):
+// never a permission —
 // the stand-in answers in text. Usage (in the code image, from /opt/code): node e2e-explabs-refusals.mjs MODEL [TIMES]
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { SessionManager } from './server/sessions.mjs';
@@ -32,6 +33,7 @@ for (let i = 0; i < times; i++) {
   turns.push({
     errors: events.filter((e) => e.type === 'error').map((e) => ({ message: e.message, fix: e.fix ?? null, provider: e.provider === true, said: e.said ?? null })),
     result: { is_error: result.is_error === true, text: String(result.text ?? '').slice(0, 600), ok: JSON.stringify(result).includes('DevOS ADE test OK') },
+    endedAt: Date.now(),   // (the harness counts the gateway's calls up to here: one turn's own)
   });
 }
 clearTimeout(timer);

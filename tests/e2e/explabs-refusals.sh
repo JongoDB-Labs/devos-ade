@@ -10,12 +10,17 @@
 #                         list named it — so a call on it reaches the gateway, which refuses it.
 #   bne2e-xlref-term      the terminal image (claude, bn-coded) with this checkout's devos-claude and bn-coded.mjs
 #   (a run of the code image) this checkout's code/server: Code page sessions through bn-coded
-# What it checks (JON-521): the gateway's 403 "The requested model alias is not granted to this identity" reaches every
+# What it checks (JON-521) — first, the gateway's 403 "The requested model alias is not granted to this identity" reaches every
 # caller as a 400 invalid_request_error saying "Your Experiential Labs key isn't allowed to use this model" (LiteLLM's
 # hook) — on /v1/messages, Claude Code's, and on Chat Completions; a Code page session shows that sentence with another
 # model as the way on (fix: model) and the gateway's words apart, as a provider's (no Git sign-in line); devos-claude -p
 # in the terminal says the same and never "Please run /login"; Claude Code never sends a refused prompt again (LiteLLM's own
-# router tries a 403 up to twice more: a refusal, free).
+# router tries a 403 up to twice more: a refusal, free). Then the gateway's one-time 402 when a model's free promotion
+# has ended (the stand-in's MOCK_PROMO_ENDED: deepseek-v4.1-flash, qwen3.8-27b, gpt-5-mini): every caller gets a 400
+# saying "Experiential Labs: the free promotion for … has ended. From now on its requests are charged to your Experiential
+# Labs credits. Send your message again to continue, or pick another model."; nothing sends it again by itself — exactly
+# one call at the gateway for the refused prompt, LiteLLM's, the Code page's or devos-claude's —; the next send is
+# answered, and LiteLLM books what the gateway reported for it (Actual spend, never $0).
 #
 #   --terminal-image IMG, --code-image IMG   the images (default: the newest bne2e-cache/terminal and bne2e-cache/code
 #                        that tests/e2e/run.sh left; this checkout's changed files are mounted over theirs)
@@ -95,7 +100,7 @@ export STACK_DIR ENV_FILE STATE_DIR
 EXPLABS_API="http://127.0.0.1:$MOCK_PORT/v1"; BEDROCK_NOW_TESTING=1
 # (the key LiteLLM sends: one the stand-in lists no free alias for; made here, never a key-like literal)
 XLKEY="mock-nofree-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
-get_env() { case "$1" in EXPLABS_API_KEY) printf '%s' "$XLKEY" ;; EXPLABS_MODELS) printf '%s,deepseek-v4.1-flash' "${REFUSED#xl/}" ;; esac; }
+get_env() { case "$1" in EXPLABS_API_KEY) printf '%s' "$XLKEY" ;; EXPLABS_MODELS) printf '%s,deepseek-v4.1-flash,qwen3.8-27b,gpt-5-mini' "${REFUSED#xl/}" ;; esac; }
 STACK_DIR="$WORK"; mkdir -p "$STATE_DIR"
 xl_cache_current() { [ -s "$(xl_cache_tsv)" ]; }
 xl_ids < "$ROOT/tests/fixtures/explabs_v1_models.json" > "$WORK/ids"; : > "$WORK/det"
@@ -133,7 +138,8 @@ LPORT="$(free_port 18590)"
 say "LiteLLM ($LIMG) with the stand-in, on 127.0.0.1:$LPORT"
 EXPLABS_API_KEY="$XLKEY" LITELLM_MASTER_KEY="$MASTER" docker run -d --name "$LL" --label "$LABEL" --network "$NET" --network-alias litellm \
   -p "127.0.0.1:$LPORT:4000" -v "$WORK/litellm:/app/config:ro" -v "$WORK/mock:/mock:ro" \
-  -e EXPLABS_API_KEY -e LITELLM_MASTER_KEY -e STORE_MODEL_IN_DB=False -e LITELLM_LOCAL_MODEL_COST_MAP=True --entrypoint sh "$LIMG" -c \
+  -e EXPLABS_API_KEY -e LITELLM_MASTER_KEY -e STORE_MODEL_IN_DB=False -e LITELLM_LOCAL_MODEL_COST_MAP=True \
+  -e MOCK_PROMO_ENDED="deepseek-v4.1-flash qwen3.8-27b gpt-5-mini" --entrypoint sh "$LIMG" -c \
   "PY=\$(command -v python3 || command -v python); \$PY /mock/mock.py $MOCK_PORT /tmp/reqs.jsonl /mock/v1.json /mock/catalog & exec litellm --config /app/config/config.yaml --port 4000" \
   >/dev/null || stop "could not start $LL"
 up=0
@@ -224,12 +230,64 @@ n=$(( $(standin_calls "${REFUSED#xl/}") - before ))
 if [ "$n" -ge 1 ] && [ "$n" -le 3 ]; then ok "devos-claude's prompt: one request of Claude Code's ($n call(s) at the gateway with LiteLLM's own retries of a free 403)"
 else fail "devos-claude's prompt reached the gateway $n time(s) (want 1 to 3: Claude Code tried again)"; fi
 
+# --- 4. the gateway's one-time notice that a free promotion has ended: said, never sent again by itself ---
+PROMO_SAID="the free promotion for"
+CHARGED="From now on its requests are charged to your Experiential Labs credits. Send your message again to continue, or pick another model."
+# (LiteLLM itself, on Chat Completions: the 400 in plain words, one call at the gateway; the next is answered and charged)
+say "LiteLLM's answer for xl/gpt-5-mini, whose free promotion has ended"
+code="$(post /v1/chat/completions '{"model":"xl/gpt-5-mini","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}' "$WORK/p1.json")"
+n="$(standin_calls gpt-5-mini)"
+if [ "$code" = 400 ] && grep -q "Experiential Labs: $PROMO_SAID" "$WORK/p1.json" && grep -qF "$CHARGED" "$WORK/p1.json" && [ "$n" = 1 ]; then
+  ok "LiteLLM: 400 "Experiential Labs: the free promotion for … has ended …", and the gateway asked once (no retry)"
+else fail "LiteLLM on the ended promotion: HTTP $code, $n call(s): $(head -c 400 "$WORK/p1.json")"; fi
+cost="$(curl_auth "$MASTER" -sS -m 60 -X POST -H 'Content-Type: application/json' --data-binary '{"model":"xl/gpt-5-mini","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}' \
+  -D "$WORK/p2.h" -o "$WORK/p2.json" -w '%{http_code}' "http://127.0.0.1:$LPORT/v1/chat/completions" 2>/dev/null)"
+booked="$(tr -d '\r' < "$WORK/p2.h" | sed -n 's/^x-litellm-response-cost: //Ip' | head -n 1)"
+if [ "$cost" = 200 ] && python3 -I -c 'import sys; sys.exit(0 if float(sys.argv[1]) > 0 else 1)' "${booked:-0}" 2>/dev/null; then
+  ok "sent again, it is answered and booked at what the gateway reported (\$$booked: Actual spend, not \$0)"
+else fail "sent again: HTTP $cost, booked ${booked:-nothing}: $(head -c 300 "$WORK/p2.json")"; fi
+
+# (a Code page session: the first prompt refused with the notice, the second — sent by you — answered)
+say "a Code page session on xl/deepseek-v4.1-flash, whose free promotion has ended: two prompts"
+code_session xl/deepseek-v4.1-flash 2 > "$WORK/code2.json"
+docker exec "$LL" cat /tmp/reqs.jsonl > "$WORK/reqs.jsonl" 2>/dev/null || : > "$WORK/reqs.jsonl"
+if python3 -I - "$WORK/code2.json" "$WORK/reqs.jsonl" "$CHARGED" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+t1, t2 = d["turns"]
+e = [x for x in t1["errors"] if x["fix"] == "model" and x["provider"]]
+assert e and e[0]["message"].startswith("Experiential Labs: the free promotion for this model has ended.") and e[0]["message"].endswith(sys.argv[3]), t1
+assert "GLM" in (e[0]["said"] or "") or "free promotion" in (e[0]["said"] or ""), e   # (the gateway's words, apart)
+assert t1["result"]["is_error"] and not t1["result"]["ok"], t1
+assert t2["result"]["ok"] and not t2["errors"], t2                                       # (sent again: answered)
+calls = [json.loads(l) for l in open(sys.argv[2]) if l.strip()]
+first = [c for c in calls if (c.get("body") or {}).get("model") == "deepseek-v4.1-flash" and c["t"] * 1000 <= t1["endedAt"]]
+assert len(first) == 1, len(first)                                                      # (never sent again by itself)
+PY
+then ok "the Code page says the promotion ended, that sending again is charged (another model as the way on); one call at the gateway; sent again, answered"
+else fail "the Code page session on the ended promotion: $(head -c 900 "$WORK/code2.json") $(tail -c 300 "$WORK/code.err")"; fi
+
+# (devos-claude in the terminal: the same notice, never /login; sent again, answered)
+say "devos-claude --model xl/qwen3.8-27b -p … twice"
+out1="$(docker exec -w /workspace "$TC" timeout 180 devos-claude --model xl/qwen3.8-27b -p 'Reply with exactly: DevOS ADE test OK' 2>&1)"
+n1="$(standin_calls qwen3.8-27b)"
+out2="$(docker exec -w /workspace "$TC" timeout 180 devos-claude --model xl/qwen3.8-27b -p 'Reply with exactly: DevOS ADE test OK' 2>&1)"
+printf '%s\n---\n%s\n' "$out1" "$out2" > "$WORK/term2.out"
+case "$out1" in
+  *'/login'*) fail "devos-claude asks for /login on the ended promotion: $(printf '%s' "$out1" | tail -c 400)" ;;
+  *"$PROMO_SAID"*"$CHARGED"*) [ "$n1" = 1 ] && ok "devos-claude says the promotion ended and that sending again is charged; one call at the gateway" ||
+      fail "devos-claude's refused prompt reached the gateway $n1 time(s) (want 1)" ;;
+  *) fail "devos-claude on the ended promotion: $(printf '%s' "$out1" | tail -c 500)" ;;
+esac
+case "$out2" in *'DevOS ADE test OK'*) ok "devos-claude, sent again: answered" ;; *) fail "devos-claude sent again: $(printf '%s' "$out2" | tail -c 400)" ;; esac
+
 # (the stand-in's record beside the results: each call's path, model and whether it was keyed)
 docker exec "$LL" cat /tmp/reqs.jsonl 2>/dev/null | python3 -I -c 'import json, sys
 out = [{"path": d.get("path"), "model": (d.get("body") or {}).get("model"), "bearer": d.get("bearer")} for d in (json.loads(l) for l in sys.stdin if l.strip())]
 json.dump(out, open(sys.argv[1], "w"), indent=1)' "$OUT/explabs-refusals-standin.json" 2>/dev/null || true
 # the key is nowhere in what this run keeps
-if printf '%s\n' "$XLKEY" | grep -qF -f - "$OUT/explabs-refusals-standin.json" "$WORK/msg.json" "$WORK/cc.json" "$WORK/code1.json" "$WORK/term.out" 2>/dev/null; then
+if printf '%s\n' "$XLKEY" | grep -qF -f - "$OUT/explabs-refusals-standin.json" "$WORK/msg.json" "$WORK/cc.json" "$WORK/code1.json" "$WORK/term.out" \
+     "$WORK/p1.json" "$WORK/p2.json" "$WORK/code2.json" "$WORK/term2.out" 2>/dev/null; then
   fail "the stand-in key is in a result file"
 else ok "the gateway key is in no result"; fi
 

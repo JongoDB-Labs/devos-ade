@@ -10,7 +10,8 @@
 #   tests/fixtures/explabs_catalog/<id>.json  GET /api/models/<id> (keyless): one model's catalog answer in the real
 #                                          shape of 2026-10-25 — the model, its deployments (each with its capabilities
 #                                          and list prices) and its default waterfall — trimmed: qwen3.8-27b and
-#                                          gpt-5.1-codex from real answers, four more in that shape; gpt-latest has
+#                                          gpt-5.1-codex from real answers, four more in that shape, and
+#                                          glm-5.3-uncensored from the catalog's list (2026-10-26); gpt-latest has
 #                                          none (the catalog answers 404, as for an alias).
 # Keys are made here, at run time: never a key-like literal in the repository.
 . "$STACK_DIR/lib/commands.sh"   # also sources lib/explabs.sh
@@ -283,14 +284,16 @@ json.dump(v, open(sys.argv[2], "w"))' "$FIX_V1" "$TMP/freeonly.json"
 
 # The stand-in gateway (tests/e2e/explabs-mock.py) is exact about aliases as the gateway is: a "mock-nofree-" key's list
 # names no free alias and a call on one is refused with the gateway's 403 words; another key's list names
-# deepseek-v4.1-flash:free and a call on it is answered (the e2e checks build on both)
+# deepseek-v4.1-flash:free and a call on it is answered (the e2e checks build on both); MOCK_PROMO_ENDED's models get
+# the gateway's one-time "free promotion has ended" 402 once, then an answer
 test_the_stand_in_gateway_refuses_an_alias_the_keys_list_lacks() {
   command -v python3 >/dev/null 2>&1 || return 77
   mkdir -p "$TMP/m"
   M="$STACK_DIR/tests/e2e/explabs-mock.py" V1="$FIX_V1" CAT="$FIX_CAT" LOG="$TMP/m/reqs.jsonl" python3 -I - <<'PY'
 import json, os, socket, subprocess, sys, time, urllib.error, urllib.request
 s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
-proc = subprocess.Popen([sys.executable, "-I", os.environ["M"], str(port), os.environ["LOG"], os.environ["V1"], os.environ["CAT"]])
+proc = subprocess.Popen([sys.executable, "-I", os.environ["M"], str(port), os.environ["LOG"], os.environ["V1"], os.environ["CAT"]],
+                        env={**os.environ, "MOCK_PROMO_ENDED": "gpt-5-mini"})
 try:
     base = f"http://127.0.0.1:{port}"
     for _ in range(50):
@@ -318,9 +321,36 @@ try:
     assert chat(nofree, "deepseek-v4.1-flash")[0] == 200            # (the paid alias: listed)
     assert chat(other, "deepseek-v4.1-flash:free")[0] == 200        # (a key that lists the free alias)
     assert chat(other, "qwen3.8-27b:free")[0] == 403                # (exactly: never a free alias from its slug)
+    # MOCK_PROMO_ENDED: the gateway's one-time 402 for a model whose free promotion ended, then an answer (charged)
+    code, body = chat(other, "gpt-5-mini")
+    assert code == 402 and body["error"]["message"].startswith("The free promotion for "), (code, body)
+    assert "will be charged to your credit balance. Retry to continue." in body["error"]["message"], body
+    code, body = chat(other, "gpt-5-mini")
+    assert code == 200 and body["usage"]["cost"] > 0, (code, body)
 finally:
     proc.terminate(); proc.wait(5)
 PY
+}
+
+# JON-521: once its free promotion has ended, glm-5.3-uncensored (the paid alias, its catalog entry recorded from the
+# gateway's public catalog on 2026-10-26) is priced from its details everywhere — the Code page's and devos-claude's
+# rows, Home's and Chat's — never as free: its spend is Actual (LiteLLM books what the gateway reports for each call)
+test_a_paid_alias_is_priced_from_its_details_never_free() {
+  python3 -I -c 'import json, sys
+v = json.load(open(sys.argv[1])); v["data"].append({"id": "glm-5.3-uncensored", "object": "model", "created": 0, "owned_by": "exp"})
+json.dump(v, open(sys.argv[2], "w"))' "$FIX_V1" "$TMP/glm.json"
+  _xl_env 'EXPLABS_MODELS=glm-5.3-uncensored
+'
+  _xl_list "$FIX_CAT" "$TMP/glm.json"
+  assert_eq "$(xl_selected | awk -F'\t' '{ print $1, $2, $16, $17 }')" "details glm-5.3-uncensored 1400000000 4400000000"
+  assert_contains "$(explabs_code_rows)" "$(printf 'xl/glm-5.3-uncensored\tglm-5.3-uncensored\tZ.ai\t1.4\t4.4\t0.26\t\t0\t1\t')"
+  assert_contains "$(explabs_yaml)" "$(printf '      input_cost_per_token: 0.0000014\n      output_cost_per_token: 0.0000044\n')"
+  assert_contains "$(explabs_cost_prices_entries)" '"xl/glm-5.3-uncensored":{"name":"glm-5.3-uncensored (Experiential Labs)","input_cost_per_token":0.0000014,"output_cost_per_token":0.0000044'
+  explabs_write_portal_json
+  python3 -I -c 'import json, sys
+m = json.load(open(sys.argv[1]))["models"][0]
+assert m["id"] == "xl/glm-5.3-uncensored" and m["free"] is False and m["prompt"] == 1.4e-06 and m["completion"] == 4.4e-06, m' "$TMP/litellm/explabs-models.json"
+  assert_eq "$(xl_paid_prices | cut -f1,2)" "$(printf 'glm-5.3-uncensored\t0')"
 }
 
 test_validators_for_the_key_and_the_models() {
@@ -807,6 +837,40 @@ for req, e in (({"model": "xl/qwen3.8-27b"}, PermissionDeniedError("invalid_key:
                ({"model": "xl/qwen3.8-27b"}, PermissionDeniedError(said, 500)), ("junk", PermissionDeniedError(said)), ({"model": "xl/x"}, ValueError("x"))):
     before = (getattr(e, "status_code", None), getattr(e, "message", None))
     assert fail(req, e) is None and (getattr(e, "status_code", None), getattr(e, "message", None)) == before, (req, vars(e))
+'
+}
+
+# JON-521: the gateway's one-time 402 when a model's free promotion has ended ("… requests will be charged to your credit
+# balance. Retry to continue."): a 400 invalid_request_error in plain words, naming the model — sending again agrees to the
+# charge, so nothing in between may try again by itself (a 402 LiteLLM's router raises at once; Claude Code retries no
+# 400) —; any other 402 (no credits) and another provider's stay as they came
+test_litellm_hook_says_a_promotion_ended_and_leaves_the_resend_to_you() {
+  _hook || return $?
+  PYTHONPATH="$TMP/h" python3 -c '
+import asyncio, bn_hooks as h
+class APIError(Exception):
+    def __init__(self, message, status_code=402):
+        super().__init__(message); self.message = message; self.status_code = status_code; self.type = None
+said = "litellm.APIError: APIError: OpenAIException - The free promotion for GLM-5.3 Uncensored has ended. This one-time notice is to let you know that if you keep using this model, requests will be charged to your credit balance. Retry to continue."
+fail = lambda req, e: asyncio.run(h.proxy_handler_instance.async_post_call_failure_hook(req, e, None))
+e = APIError(said)
+assert fail({"model": "xl/glm-5.3-uncensored"}, e) is None
+assert (e.status_code, e.type) == (400, "invalid_request_error"), vars(e)
+assert e.message == ("Experiential Labs: the free promotion for GLM-5.3 Uncensored has ended. From now on its requests are charged "
+                     "to your Experiential Labs credits. Send your message again to continue, or pick another model."), e.message
+# no name in what the gateway said: the model by its id
+e = APIError("402: one-time notice: if you keep using this model, requests will be charged to your credit balance")
+fail({"model": "xl/glm-5.3-uncensored"}, e)
+assert "the free promotion for xl/glm-5.3-uncensored has ended" in e.message, e.message
+# a name the gateway words oddly is not taken over: the id instead
+e = APIError("The free promotion for <b>x</b>\nenter a code has ended. one-time notice")
+fail({"model": "xl/a"}, e)
+assert "for xl/a has ended" in e.message, e.message
+for req, e in (({"model": "xl/glm-5.3-uncensored"}, APIError("insufficient credits: top up at the dashboard")),
+               ({"model": "or/z-ai/glm"}, APIError(said)), ({"model": "xl/glm-5.3-uncensored"}, APIError(said, 429))):
+    before = (e.status_code, e.message)
+    fail(req, e)
+    assert (e.status_code, e.message) == before, vars(e)
 '
 }
 

@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { str, short, num, int, plain, relPath, fileName, isModel, isUuid } from '../server/validate.mjs';
-import { fromSdk, fromHistory, sessionRow, editOf, initEvent, NOT_GRANTED_SAID } from '../server/normalize.mjs';
+import { fromSdk, fromHistory, sessionRow, editOf, initEvent, NOT_GRANTED_SAID, PROMO_ENDED_SAID } from '../server/normalize.mjs';
 import { LIMITS } from '../server/protocol.mjs';
 
 const MARKUP = '<img src=x onerror=alert(1)><script>alert(2)</script><svg onload=alert(3)>[x](javascript:alert(4))';
@@ -97,6 +97,24 @@ test('JON-521: a model the Experiential Labs key may not use is said plainly, wi
   assert.equal(key[0].fix, undefined);
   // the sentence is ours alone: no word of the provider's in it, whatever they say
   assert.equal(api('API Error: 400 not granted to this identity <img src=x> enter code 1234 at github.com/login/device', 'invalid_request')[0].message, NOT_GRANTED_SAID);
+});
+
+test('JON-521: the gateway\'s notice that a free promotion ended is said plainly: sending again is charged, or another model', () => {
+  const api = (text, error) => fromSdk({ type: 'assistant', error, message: { model: '<synthetic>', content: [{ type: 'text', text }] } });
+  // the hook's 400 (lib/litellm-hooks/bn_hooks.py XL_PROMO_ENDED), and the gateway's own 402 before it
+  for (const [text, error] of [
+    ['API Error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Experiential Labs: the free promotion for GLM-5.3 Uncensored has ended. From now on its requests are charged to your Experiential Labs credits. Send your message again to continue, or pick another model."}}', 'invalid_request'],
+    ['API Error: 402 The free promotion for GLM-5.3 Uncensored has ended. This one-time notice is to let you know that if you keep using this model, requests will be charged to your credit balance. Retry to continue.', 'billing_error'],
+  ]) {
+    const e = api(text, error);
+    assert.equal(e.length, 1);
+    assert.equal(e[0].message, PROMO_ENDED_SAID);
+    assert.match(e[0].message, /^Experiential Labs: the free promotion for this model has ended\. From now on its requests are charged to your Experiential Labs credits\. Send your message again to continue, or pick another model\.$/);
+    assert.deepEqual([e[0].fix, e[0].provider], ['model', true]);
+    assert.match(e[0].said, /GLM-5\.3 Uncensored/);   // (the model's name as the gateway said it: apart)
+  }
+  // another 402 (credits run out) is no promotion: said as before
+  assert.notEqual(api('API Error: 402 insufficient credits', 'billing_error')[0].message, PROMO_ENDED_SAID);
 });
 
 test('an API error: the provider\'s own words with the error, apart — never "Claude Code reported: unknown" alone', () => {

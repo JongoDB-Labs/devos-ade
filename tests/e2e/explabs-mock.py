@@ -14,6 +14,10 @@ do: LiteLLM keys its spend log by it, and keeps only the first of two rows with 
 "Bearer" is looked for in the header, and one mark of the stand-in's own — a key that starts "mock-nofree-" is a key
 whose list names no free alias at all (the owner's, 2026-10-26: 317 ids, none ":free"): its GET /v1/models leaves every
 "…:free" id of V1_JSON out, and a call on one is refused as the gateway refuses an alias the list does not name (JON-521).
+With MOCK_PROMO_ENDED (model ids, space-separated: environment only) the first call on each of those models is answered
+as the gateway answered on 2026-10-26 when a model's free promotion had ended: 402, "The free promotion for <its name>
+has ended. This one-time notice is to let you know that if you keep using this model, requests will be charged to your
+credit balance. Retry to continue." — once; the next call on it is answered (and charged).
 Its refusals are the gateway's (its llms.txt, read 2026-10-24, and what it answered on 2026-10-25), in its error envelope:
 a message field outside OpenAI's Chat Completions ("Invalid value for 'messages.3.thinking_blocks'", 400 invalid_value:
 the gateway refused LiteLLM's thinking_blocks so; any other unknown field of a message or a tool call is refused the
@@ -43,6 +47,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -155,6 +160,9 @@ class Gateway(BaseHTTPRequestHandler):
         refused = _refusal(body, self.headers) if FLAVOR == "explabs" else None
         if refused:
             return self._json(*refused)
+        notice = _promo_ended(body.get("model")) if FLAVOR == "explabs" else None
+        if notice:
+            return self._json(*notice)
         if _asks_refusal(body.get("messages")):
             if FLAVOR == "openrouter":
                 return self._json(400, {"error": {"code": 400, "message": "Provider returned error: content policy (stand-in)",
@@ -343,6 +351,24 @@ def _refusal(body, headers):
         if text_only and isinstance(m.get("content"), list) and any(isinstance(p, dict) and p.get("type") == "image_url" for p in m["content"]):
             return _err("unsupported_capability", f"{model} does not take image input (messages)", "messages")
     return None
+
+
+PROMO = set(os.environ.get("MOCK_PROMO_ENDED", "").split())
+_promo_lock, _promo_said = threading.Lock(), set()
+
+
+def _promo_ended(model):
+    """The gateway's one-time 402 for a model whose free promotion has ended (MOCK_PROMO_ENDED): the first call only."""
+    if model not in PROMO:
+        return None
+    with _promo_lock:
+        if model in _promo_said:
+            return None
+        _promo_said.add(model)
+    name = (_catalog(model) or {}).get("display_name") or model
+    return 402, {"error": {"message": f"The free promotion for {name} has ended. This one-time notice is to let you know that if you keep "
+                                      "using this model, requests will be charged to your credit balance. Retry to continue.",
+                           "type": "payment_required", "param": None, "code": "promotion_ended"}}
 
 
 def _asks_refusal(messages):

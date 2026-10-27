@@ -20,6 +20,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   Experiential Labs key isn't allowed to use this model* with **Pick another model**. A provider's own words under a
   Code page error no longer carry the line about Git sign-in codes. A free alias your key does list keeps its model's
   details at $0, even when the list does not name the model itself.
+- **When an Experiential Labs model's free promotion ends, you decide whether to pay (JON-521).** The gateway's
+  one-time notice (402 *The free promotion for GLM-5.3 Uncensored has ended … requests will be charged to your credit
+  balance. Retry to continue.*) — which a retry accepts — is never sent again by anything in between: LiteLLM's hook
+  makes it a plain model error (a 400, which neither LiteLLM nor Claude Code tries again), and the Code page, the
+  terminal and `devos-claude` say *Experiential Labs: the free promotion for glm-5.3-uncensored has ended. From now on
+  its requests are charged to your Experiential Labs credits. Send your message again to continue, or pick another
+  model.*, the Code page with **Pick another model**. The model is priced from the gateway's details everywhere (the
+  pickers, Home, Chat's cost line), so what it costs from then on is Actual spend. The Code page names the model in
+  these messages by its own name for it.
 
 ## [0.32.0] - 2026-10-27
 

@@ -1,0 +1,65 @@
+{
+ "model": {
+  "slug": "glm-5.3-uncensored",
+  "display_name": "GLM-5.3 Uncensored",
+  "release_date": null,
+  "context_window": 1048576,
+  "max_output_tokens": 131072,
+  "max_input_tokens": 917504,
+  "input_modalities": [
+   "text"
+  ],
+  "output_modalities": [
+   "text"
+  ],
+  "supported_params": {
+   "stop": true,
+   "tools": true,
+   "top_k": true,
+   "top_p": true,
+   "logprobs": true,
+   "reasoning": true,
+   "temperature": true,
+   "structured_outputs": true
+  },
+  "maker": "Z.ai",
+  "status": "active",
+  "id": "m-glm53unc"
+ },
+ "providers": [
+  {
+   "id": "glm-5.3-uncensored-experiential_cloud",
+   "model_id": "m-glm53unc",
+   "provider": "experiential_cloud",
+   "status": "active",
+   "routable": true,
+   "billing_source": "host_managed",
+   "input_nano_usd_per_million": 1400000000,
+   "cached_input_nano_usd_per_million": 260000000,
+   "cache_write_input_nano_usd_per_million": null,
+   "output_nano_usd_per_million": 4400000000,
+   "capabilities": {
+    "supports_tools": true,
+    "supports_top_k": true,
+    "supports_top_p": true,
+    "supports_logprobs": true,
+    "supports_reasoning": true,
+    "supports_streaming": true,
+    "supports_temperature": true,
+    "chat_max_tokens_field": "max_tokens",
+    "supports_structured_output": false,
+    "sampling_requires_reasoning_none": false
+   }
+  }
+ ],
+ "default_provider_ids": [
+  "glm-5.3-uncensored-experiential_cloud"
+ ],
+ "default_waterfall": [
+  {
+   "position": 0,
+   "model_provider_id": "glm-5.3-uncensored-experiential_cloud",
+   "status": "active"
+  }
+ ]
+}

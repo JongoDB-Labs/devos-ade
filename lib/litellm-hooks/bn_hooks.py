@@ -51,6 +51,11 @@ For the Experiential Labs gateway's models (lib/explabs.sh: model_info bn_xl: tr
   to this identity" (an alias the key's GET /v1/models does not list, such as a "…:free" one) — the error the caller
   gets is a 400 invalid_request_error saying so in plain words (XL_NOT_GRANTED): with a 403 Claude Code would take it
   for an expired sign-in and ask for /login. Any other 401 or 403 (a key the gateway rejects) stays as it came.
+- When it is the gateway's one-time notice that a model's free promotion has ended (402: "The free promotion for
+  GLM-5.3 Uncensored has ended. … requests will be charged to your credit balance. Retry to continue."), the caller gets
+  a 400 invalid_request_error saying so (XL_PROMO_ENDED): sending it again agrees to the charge, which is yours to
+  decide — a status no one in between tries again by itself (LiteLLM's router raises a 402 at once, and Claude Code
+  retries neither; a 400 it shows as the model's error).
 
 For a Llama model on Bedrock (its model id names meta.llama), on each call with tools: Bedrock's Converse takes the
 tools (toolConfig) but hands Llama's tool call back as the text Llama wrote, in Meta's documented form ({"type":
@@ -710,6 +715,13 @@ XL_NOT_GRANTED = ("Your Experiential Labs key isn't allowed to use this model ({
                   "lists the ones your key has).")
 
 
+# The gateway's one-time notice that a free promotion has ended: a 402 whose retry is charged (seen 2026-10-26)
+PROMO_ENDED = re.compile(r"free promotion for .{1,80}? has ended|one-time notice|will be charged to your credit balance", re.I | re.S)
+PROMO_NAME = re.compile(r"free promotion for ([A-Za-z0-9][A-Za-z0-9 .:_+()-]{0,58}?) has ended")
+XL_PROMO_ENDED = ("Experiential Labs: the free promotion for {name} has ended. From now on its requests are charged to your "
+                  "Experiential Labs credits. Send your message again to continue, or pick another model.")
+
+
 def _xl_group(request_data) -> str | None:
     """The model group REQUEST_DATA (the proxy's request) asked for, when it is an Experiential Labs model ("xl/…", or
     model_info bn_xl); else None."""
@@ -732,6 +744,28 @@ def xl_not_granted(request_data, exc) -> bool:
     if not NOT_GRANTED.search(f"{getattr(exc, 'message', '')} {exc}"):
         return False
     said = XL_NOT_GRANTED.format(model=group)
+    exc.status_code = 400
+    exc.message = said
+    exc.type = "invalid_request_error"
+    try:
+        exc.args = (said,)
+    except Exception:  # noqa: BLE001
+        pass
+    return True
+
+
+def xl_promo_ended(request_data, exc) -> bool:
+    """EXC is the gateway's one-time 402 for a model whose free promotion ended: changed in place into a 400
+    invalid_request_error with XL_PROMO_ENDED (the model's name as the gateway says it, else its id) — never tried
+    again here or by Claude Code: sending it again is the user's consent to the charge. -> whether it was one."""
+    group = _xl_group(request_data)
+    if group is None or getattr(exc, "status_code", None) != 402:
+        return False
+    text = f"{getattr(exc, 'message', '')} {exc}"
+    if not PROMO_ENDED.search(text):
+        return False
+    m = PROMO_NAME.search(text)
+    said = XL_PROMO_ENDED.format(name=m.group(1) if m else group)
     exc.status_code = 400
     exc.message = said
     exc.type = "invalid_request_error"
@@ -772,7 +806,7 @@ class BnHooks(CustomLogger):
 
     async def async_post_call_failure_hook(self, request_data, original_exception, user_api_key_dict, traceback_str=None):  # noqa: ARG002
         try:
-            xl_not_granted(request_data, original_exception)
+            xl_not_granted(request_data, original_exception) or xl_promo_ended(request_data, original_exception)
         except Exception:  # noqa: BLE001 — the error as it came
             pass
         return None

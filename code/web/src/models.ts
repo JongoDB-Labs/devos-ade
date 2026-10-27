@@ -128,6 +128,12 @@ export function providerSetups(bn: BnModels | null | undefined): (keyof typeof P
   return [...(p.openrouter ? [] : ['openrouter-off' as const]), ...(p.explabs ? [] : ['explabs-off' as const])];
 }
 
+/** A provider's error whose way on is another model (the server's fix: 'model') says "this model": named here by
+ *  DevOS ADE's own name for the session's model (never a word of the provider's), when the page knows it. */
+export function nameTheModel(text: string, name: string): string {
+  return name ? text.replace(/\bthis model\b/, name) : text;
+}
+
 /** How many models "Show all" would add. */
 export function hiddenCount(models: BnModel[]): number {
   return models.filter((m) => !m.listed || m.compat === 'fails').length;
