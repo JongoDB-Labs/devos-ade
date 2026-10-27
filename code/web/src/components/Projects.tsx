@@ -54,6 +54,7 @@ import { ago, label } from '../text';
 import { Icon, Spinner } from './icons';
 import { SandboxSaid } from './Said';
 import { Cmd, Dialog, Dropdown, MenuItem, copyText } from './ui';
+import { ExportDialog } from './Export';
 import { ImportSheet, Suggestions, TOOL_BADGE, TOOL_LABEL } from './Import';
 import { SetupSheet } from './Setup';
 import { modelLabel } from './Pickers';
@@ -237,6 +238,9 @@ function ProjectMenu({ p, onRename }: { p: Project; onRename: () => void }) {
           </MenuItem>
           <MenuItem icon="copy" onSelect={() => (close(), void copyText(p.path).then((ok) => toast(ok ? 'Path copied.' : 'Could not copy the path.', ok ? 'ok' : 'error')))} testid="project-menu-copy-path">
             Copy path
+            </MenuItem>
+          <MenuItem icon="upload" onSelect={() => (close(), openProjectDialog({ kind: 'export', id: p.id }))} testid="project-menu-export">
+            Export to Files…
           </MenuItem>
           {/* (a read-only folder: where that is changed — setuplinks.ts) */}
           <MenuItem icon="branch" setup={p.readOnly ? 'folder-read-only' : undefined} testid="project-menu-git"
@@ -560,6 +564,9 @@ export function ProjectChip({ compact = false }: { compact?: boolean }) {
           <MenuItem icon="terminal" onSelect={() => (close(), void openProjectTerminal(p.id))}>
             Open a terminal here
           </MenuItem>
+          <MenuItem icon="upload" onSelect={() => (close(), openProjectDialog({ kind: 'export', id: p.id }))} testid="project-chip-export">
+            Export to Files…
+          </MenuItem>
         </>
       )}
     </Dropdown>
@@ -575,6 +582,7 @@ export function ProjectDialogs() {
   if (d.kind === 'new') return <NewProjectDialog tab={d.tab} onClose={close} />;
   if (d.kind === 'remove') return <RemoveProjectDialog id={d.id} onClose={close} />;
   if (d.kind === 'delete-session') return <DeleteSessionDialog id={d.id} title={d.title} onClose={close} />;
+  if (d.kind === 'export') return <ExportDialog id={d.id} onClose={close} />;
   if (d.kind === 'settings') return <SettingsDialog id={d.id} start={d.start} onClose={close} />;
   if (d.kind === 'import') return <ImportSheet id={d.id} onClose={close} />;
   if (d.kind === 'setup') return <SetupSheet project={d.id} tool={d.tool ?? null} onClose={close} />;

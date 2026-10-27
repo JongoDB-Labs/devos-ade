@@ -27,6 +27,7 @@ import { MODES, COMPATS, HARNESS_IDS } from './types';
 import { normBudget, type Budget as SessionBudget } from './budget';
 import { promptTitle } from './mentions';
 import type { RecentReport } from './recent';
+import { normExportPlan, zipWhole, type ExportOptions, type ExportPlan } from './exportzip';
 import { cwdOk, goneCwdOk, normProject, normProjects, normSessionSettings, normSettingsView, projectIdOk, WORKSPACE_ID, WORKSPACE_PATH, type Project, type SettingsView } from './projects';
 
 type Obj = Record<string, unknown>;
@@ -908,6 +909,54 @@ export async function projectTerminal(id: string): Promise<{ window: string | nu
   if (!projectIdOk(id)) throw new ApiError(400, 'bad project id');
   const o = await request('POST', `/api/projects/${id}/terminal`);
   return { window: typeof o.window === 'string' && /^[A-Za-z0-9_.-]{1,30}$/.test(o.window) ? o.window : null };
+}
+/** Export to Files, step 1: what the zip of the project's files would hold (nothing is zipped). */
+export async function exportPlan(id: string, opts: ExportOptions): Promise<ExportPlan> {
+  if (!projectIdOk(id)) throw new ApiError(400, 'bad project id');
+  const plan = normExportPlan(await request('GET', `/api/projects/${id}/export${q({ dry: 1, include: opts.include, git: opts.git ? 1 : 0 })}`));
+  if (!plan) throw new ApiError(502, 'The answer about the export does not fit.');
+  return plan;
+}
+/** Export to Files, step 2: the zip, from the sandbox through the backend — streamed in here once (at most CAP bytes of files
+ *  before compression, so about as many here), and checked whole. onProgress(bytes so far). */
+export async function exportZip(id: string, opts: ExportOptions, name: string, cap: number, onProgress: (n: number) => void = () => {}, signal?: AbortSignal): Promise<Blob> {
+  if (!projectIdOk(id)) throw new ApiError(400, 'bad project id');
+  let res: Response;
+  try {
+    res = await fetch(`/api/projects/${id}/export${q({ include: opts.include, git: opts.git ? 1 : 0, name })}`, { credentials: 'same-origin', cache: 'no-store', signal });
+  } catch {
+    throw new ApiError(0, 'The Code page could not reach its server.');
+  }
+  if (!res.ok) {
+    let o: Obj = {};
+    try {
+      o = obj(JSON.parse(await res.text())) ?? {};
+    } catch { /* not JSON */ }
+    throw new ApiError(res.status, label(o.error ?? o.message, 500) || `${res.status} ${label(res.statusText, 100)}`.trim(), o);
+  }
+  if (!res.body) throw new ApiError(502, 'The browser gave no stream to read the zip from.');
+  const parts: Uint8Array[] = [];
+  let got = 0;
+  const reader = res.body.getReader();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      got += value.length;
+      // (a zip of files within the cap is never much larger than they are: stored files add ~100 bytes each)
+      if (got > cap + (cap >> 3) + (1 << 20)) throw new ApiError(413, 'The zip is larger than the export limit.');
+      parts.push(value);
+      onProgress(got);
+    }
+  } catch (e) {
+    void reader.cancel().catch(() => {});
+    if (e instanceof ApiError) throw e;
+    throw new ApiError(0, 'The download of the zip broke off: nothing was exported.');
+  }
+  const blob = new Blob(parts as BlobPart[], { type: 'application/zip' });
+  const head = new Uint8Array(await blob.slice(0, 4).arrayBuffer()), tail = new Uint8Array(await blob.slice(Math.max(0, blob.size - 22)).arrayBuffer());
+  if (!zipWhole(head, tail, blob.size)) throw new ApiError(502, 'The zip did not arrive whole: nothing was exported.');
+  return blob;
 }
 /** Connect a git repository, first step: the project's folder made a repository (git init). */
 export async function projectGitInit(id: string): Promise<void> {

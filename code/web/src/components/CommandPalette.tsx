@@ -103,6 +103,7 @@ function actions(s: AppState): Item[] {
     a('project-new', 'New project…', () => openProjectDialog({ kind: 'new', tab: 'empty' }), 'folder', 'an empty folder (git init), a clone, or a folder of the workspace'),
     a('project-git', 'Connect a git repository', () => void connectGitRepo(currentProject(s).id), 'branch', `${label(currentProject(s).name, 60)}: git init, its remote`),
     a('project-terminal', 'Open a terminal in this project', () => void openProjectTerminal(currentProject(s).id), 'terminal', label(currentProject(s).path, 120)),
+    a('project-export', 'Export this project to Files…', () => openProjectDialog({ kind: 'export', id: currentProject(s).id }), 'upload', `${label(currentProject(s).name, 60)}: a zip in the Files app`),
     a('terminal', s.prefs.layout.terminal ? 'Hide the terminal' : 'Show the terminal', toggleTerminal, 'terminal', '', keysFor('terminal')),
     a('explorer', s.prefs.layout.explorer ? 'Hide the explorer' : 'Show the explorer', toggleExplorer, 'sidebar', '', keysFor('explorer')),
     a('ports', 'Ports & previews…', () => setDialog('ports'), 'port', '', keysFor('ports')),

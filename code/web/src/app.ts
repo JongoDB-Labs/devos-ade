@@ -241,6 +241,8 @@ export interface RewindState {
 export type ProjectDialog =
   | { kind: 'new'; tab: 'empty' | 'clone' | 'folder' | 'computer' }
   | { kind: 'remove'; id: string }
+  /** Export to Files: the project's files as a zip (Export.tsx) */
+  | { kind: 'export'; id: string }
   | { kind: 'file'; ids: string[] }
   /** Delete a session: what goes, said first (Projects.tsx) */
   | { kind: 'delete-session'; id: string; title: string }
