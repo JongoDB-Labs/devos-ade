@@ -268,6 +268,18 @@ const KNOWN = new Set(GIT_REASONS);
 const PLAIN = new Set([...GIT_REASONS, ...GIT_REFUSALS, ...SANDBOX_REFUSALS, ...ANSWER_ERRORS]);
 // plainRefusal(message) -> true when a refusal of bn-coded's is one of its fixed texts (a reason or a refusal)
 export const plainRefusal = (m) => typeof m === 'string' && PLAIN.has(m);
+// the repository folder a Git panel READ is about is not there: bn-coded's repoRoot refuses with one of these fixed
+// texts (the folder was removed, moved, or is a link on its way — e.g. a project removed while the panel refreshes). A
+// read then answers repo:false (as for a folder that is not a git repository), 200, never a 4xx, so a trailing refresh
+// of a repository that has just gone is not an error (code/server: gitStatus/gitLog/gitFile, gitremote state).
+const FOLDER_GONE = new Set([
+  'not a folder of the workspace',
+  'no such folder in the workspace (or a link on its way)',
+  'that folder of this computer is not here (the sandbox restarts to see it)',
+  'not a folder of the project',
+  'no such folder in the project (or a link on its way)',
+]);
+export const gitFolderGone = (m) => typeof m === 'string' && FOLDER_GONE.has(m);
 export const GIT_ANSWERED = 'git could not answer';
 export const GIT_LOG_FAILED = 'git could not read the log';
 

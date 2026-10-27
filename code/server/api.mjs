@@ -15,7 +15,7 @@ import { isUuid, relPath, fileName, short, str, int, num, oneOf, isFullModel } f
 import { DraftError, draftPrompt, runDraft } from './gitdraft.mjs';
 import { repoOk } from './gitremote.mjs';
 import { SandboxSaid, refused } from './said.mjs';
-import { reasonOf, answerOf, GIT_LOG_FAILED } from './gitreasons.mjs';
+import { reasonOf, answerOf, gitFolderGone, GIT_LOG_FAILED } from './gitreasons.mjs';
 import { watched } from './watch.mjs';
 import { WS, WORKSPACE_ID, PROJECTS_MAX, TRUST_EPOCH, absOf, cwdOk, hostRoots, nameOk, rootOk } from './projects.mjs';
 import { BYPASS_ASK, READ_ONLY_DENY } from './modes.mjs';
@@ -449,8 +449,18 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     if (!repoOk(r)) throw new HttpError(400, 'not a repository folder of the workspace');
     return r;
   };
-  const gitStatus = async (repo) => gitStatusOf((await gitCall({ op: 'git.status', repo: repoOf(repo) })).result);
-  const gitLog = async (repo) => gitLogOf((await gitCall({ op: 'git.log', repo: repoOf(repo) })).result);
+  // a Git panel read of a repository folder that is gone (removed while the panel refreshes): repo:false, as for a
+  // folder that is not a git repository — never a 4xx (gitGone), so a trailing refresh of a just-removed repository is
+  // not a console error or a failed request on the page
+  const gitGone = (e) => e instanceof SandboxError && e.kind === 'refused' && gitFolderGone(e.message);
+  const gitStatus = async (repo) => {
+    try { return gitStatusOf((await gitCall({ op: 'git.status', repo: repoOf(repo) })).result); }
+    catch (e) { if (gitGone(e)) return gitStatusOf({ repo: false, reason: 'not a git repository' }); throw e; }
+  };
+  const gitLog = async (repo) => {
+    try { return gitLogOf((await gitCall({ op: 'git.log', repo: repoOf(repo) })).result); }
+    catch (e) { if (gitGone(e)) return gitLogOf({ repo: false, reason: 'not a git repository' }); throw e; }
+  };
   // one file's staged or unstaged (or new) changes; scope staged without a path: every staged change (a commit message)
   async function gitFile(params) {
     const scope = ['staged', 'unstaged', 'untracked'].includes(params?.scope) ? params.scope : null;
@@ -458,8 +468,10 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     const p = params.path === undefined || params.path === null || params.path === '' ? null : params.path;
     if (p !== null && !gitPathOk(p)) throw new HttpError(400, 'bad path');
     if (p === null && scope !== 'staged') throw new HttpError(400, 'a path, please');
-    const { result, stdout } = await gitCall({ op: 'git.file', repo: repoOf(params.repo), scope, ...(p ? { path: p } : {}) }, { maxBytes: 3 << 20 });
-    return gitFileOf(result, stdout.toString('utf8'), p, scope);
+    try {
+      const { result, stdout } = await gitCall({ op: 'git.file', repo: repoOf(params.repo), scope, ...(p ? { path: p } : {}) }, { maxBytes: 3 << 20 });
+      return gitFileOf(result, stdout.toString('utf8'), p, scope);
+    } catch (e) { if (gitGone(e)) return gitFileOf({ repo: false, reason: 'not a git repository' }, '', p, scope); throw e; }
   }
   const gitStage = async (body) => ({ ok: (await gitCall({ op: 'git.stage', repo: repoOf(body?.repo), ...gitTargets(body) }, { timeoutMs: 60000 })).result?.ok === true });
   const gitUnstage = async (body) => ({ ok: (await gitCall({ op: 'git.unstage', repo: repoOf(body?.repo), ...gitTargets(body) }, { timeoutMs: 60000 })).result?.ok === true });

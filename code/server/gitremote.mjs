@@ -13,7 +13,8 @@ import { hostRoots } from './projects.mjs';
 import { makeOAuth } from './oauth.mjs';
 import { agentAnswer, FAILURE, knownHostFingerprint, KNOWN_HOSTS } from './sshagent.mjs';
 import { short, int } from './validate.mjs';
-import { reasonOf } from './gitreasons.mjs';
+import { reasonOf, gitFolderGone } from './gitreasons.mjs';
+import { SandboxError } from './spawn-client.mjs';
 import { SandboxSaid, sandboxFailure, NEVER_ASKS } from './said.mjs';
 import { PRODUCT } from './brand.mjs';
 
@@ -288,7 +289,11 @@ export function makeGitRemote({ call: sandboxCall, openBroker = null, store = ne
   };
   async function state(repo) {
     if (!repoOk(repo)) throw err(400, 'not a repository folder of the workspace');
-    const st = remoteStateOf((await call({ op: 'git.remote.state', repo }, { timeoutMs: 45000 })).result);
+    let st;
+    // a repository folder that is gone (removed while the panel refreshes): repo:false, as for a folder that is not a
+    // git repository — never a 4xx, so a trailing refresh of a just-removed repository is not an error on the page
+    try { st = remoteStateOf((await call({ op: 'git.remote.state', repo }, { timeoutMs: 45000 })).result); }
+    catch (e) { if (e instanceof SandboxError && e.kind === 'refused' && gitFolderGone(e.message)) return remoteStateOf({ repo: false, reason: 'not a git repository' }); throw e; }
     if (!st.repo) return st;
     const hosts = store.read().hosts;
     const look = (u) => {

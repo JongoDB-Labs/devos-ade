@@ -32,6 +32,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   and says which it shows. The picker names each choice short (a project by its name, a repository by its folder), so
   the side panel shows it whole, with the rest in its title. It looks for a `.git` entry (no git runs to find it), and every command still runs only in a
   repository's own top folder (docs/security.md › The Git panel).
+- **The Git panel no longer errors over a folder that has just been removed.** Removing a project (or any folder the
+  panel was reading) while its status, history, a file's changes or its remotes were on their way left a failed request
+  and a console error on the page: a read of a folder that is gone was answered as a refusal. Such a read now answers
+  *not a git repository*, the same as for any folder that is not one, so a trailing refresh of a folder that has just
+  gone passes quietly.
 
 ## [0.31.4] - 2026-10-26
 
