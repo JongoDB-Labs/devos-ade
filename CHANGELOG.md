@@ -22,6 +22,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ### Fixed
 
+- **Tests:** the layout check's reviewed exceptions also cover the sign-in form's Show button, which sits inside the
+  password field's reserved right padding by design, and a long Code session title cut in the Projects list (its full
+  text in the tooltip) until sessions get short titles (JON-517).
 - **Tests:** the Code page's browser check of Auto mode expects its reviewer to be Claude Haiku, as it has been since
   v0.28.1 (it still expected Sonnet 5.5 and failed).
 - **Layout: nothing collides or is cut off between the sizes checked before** (390, 820 and 1440 px). The sweep found
