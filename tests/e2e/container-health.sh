@@ -38,6 +38,7 @@ printf 'COMPOSE_PROJECT_NAME=%s\n' "$P" > "$ENV_FILE"; mkdir -p "$STATE_DIR"
 # shellcheck disable=SC1091
 . lib/common.sh; . lib/ports.sh; . lib/portal.sh; . lib/models.sh; . lib/prices.sh
 . "$ROOT/lib/commands.sh"
+health_ids() { docker ps -a -q --filter "label=com.docker.compose.project=$P"; }   # (the fixture has no compose file)
 health_record_write
 J="$(health_json_file)"
 ev() { python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); print(sum(1 for e in d["events"] if e["service"] == sys.argv[2] and e["kind"] == sys.argv[3] and (e["count"], e["exit_code"]) == (int(sys.argv[4]), int(sys.argv[5]))))' "$J" "$@"; }

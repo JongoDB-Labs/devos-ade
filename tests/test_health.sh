@@ -84,7 +84,7 @@ test_services_status_write_also_records_health() {
   docker() {
     case "$*" in
       *" ps -a --format "*) printf 'litellm\trunning\thealthy\n' ;;
-      "ps -a -q"*) printf 'abc\n' ;;
+      *" ps -a -q"*) printf 'abc123abc123\n' ;;
       inspect*) printf 'litellm|3|running|0|healthy|false|0001-01-01T00:00:00Z\n' ;;
     esac
   }

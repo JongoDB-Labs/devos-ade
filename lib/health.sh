@@ -14,7 +14,7 @@
 # or oom (killed for memory). Each is recorded once: a restart by the count, an exit by the time it ended, an
 # unhealthy by its change. The first look has no snapshot to compare with, so only what is wrong then (restarts
 # already counted, an unhealthy or failed container) is recorded. A container made again (./stack down, up) starts
-# its count over: that is not a restart. Only containers of this checkout's Compose project are looked at.
+# its count over: that is not a restart. Only containers of this checkout's Compose project (dc ps) are looked at.
 HEALTH_EVENTS_MAX=50
 
 health_json_file() { printf '%s/container-health.json\n' "$(status_dir)"; }
@@ -23,11 +23,15 @@ health_json_file() { printf '%s/container-health.json\n' "$(status_dir)"; }
 _health_word() { printf '%s' "$1" | LC_ALL=C tr -cd 'a-z0-9_-' | cut -c1-40; }
 _health_num() { local n; n="$(printf '%s' "$1" | LC_ALL=C tr -cd '0-9' | cut -c1-12)"; printf '%s' "${n:-0}"; }
 
+# health_ids -> the ids of this project's containers, one a line (tests/e2e/container-health.sh asks by label instead)
+health_ids() { dc ps -a -q 2>/dev/null; }
+
 # health_inspect -> one line per container of this project: service|restarts|state|exit|health|oom|finished
 # (a Docker that does not answer: nothing, status 1). Overridable by tests' stubs of docker.
 health_inspect() {
   local ids
-  ids="$(docker ps -a -q --filter "label=com.docker.compose.project=$(project_name)" 2>/dev/null)" || return 1
+  ids="$(health_ids)" || return 1
+  ids="$(printf '%s\n' "$ids" | grep -E '^[0-9a-f]{12,64}$' || true)"   # (container ids only)
   [ -n "$ids" ] || return 0
   # shellcheck disable=SC2086  # one id per word
   docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}|{{.RestartCount}}|{{.State.Status}}|{{.State.ExitCode}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}|{{.State.OOMKilled}}|{{.State.FinishedAt}}' $ids 2>/dev/null
