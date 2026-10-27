@@ -10,5 +10,17 @@
   "sig": "^clipped text\\|code\\|.*span\\.sess-title$",
   "state": "^code",
   "why": "A Code session's title in the Projects list is its first prompt; a long one is cut with an ellipsis and its full text in the row's tooltip. The real fix is short, readable session titles (UX audit E10, JON-517); remove this entry with that change."
+ },
+ {
+  "check": "clipped text",
+  "sig": "^clipped text\\|code\\|div\\.tb-left > button\\[data-testid=session-switch\\]\\.sess-switch > span\\.sess-switch-title$",
+  "state": "^code",
+  "why": "The desktop top bar's session switch shows the session's title, which is its first prompt: a long one is cut with an ellipsis in a title bar (its full text in the session list's tooltip). The real fix is short, readable session titles (UX audit E10, JON-517); remove this entry with that change."
+ },
+ {
+  "check": "clipped text",
+  "sig": "^clipped text\\|code\\|header\\[data-testid=topbar\\]\\.topbar\\.phone-top > div\\.phone-title > span\\.pt-title$",
+  "state": "^code",
+  "why": "A phone's Code header shows the session's title, its first prompt: on a 320–390 px phone a long one is cut with an ellipsis, as a title bar does. The real fix is short, readable session titles (JON-517); remove this entry with that change."
  }
 ]

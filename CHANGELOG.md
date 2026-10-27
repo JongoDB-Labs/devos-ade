@@ -6,6 +6,82 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+
+- **Code is a tab of the phone's bar: Home · Chat · Code · More.** It frames the Code page like Chat (its own phone
+  layout: the chat first, files, the editor, Git and the rest as sheets), unlocked once with the portal password,
+  instead of opening from More in a new browser tab — which, from an installed iPhone app, meant Safari and another
+  sign-in. While the Code page is off (or off over remote access) the tab shows *off* and its page says how to turn it
+  on. Home's Continue row, Activity's *Answer*, search and the walkthrough open sessions and files there too, in place
+  once the page runs (no reload, no unlock again, no unsaved edit lost).
+- **A session that needs you, on a phone:** the Code tab shows a badge (the page loads in the background in a browser
+  that has used it, on a phone too), and the other tabs a banner — *Claude needs you in Code*, the session's title,
+  **Answer** (that session, its card in view) and ✕ (read; it stays in Activity). The banner is built from Activity's
+  own items, and a browser notification of a waiting session now opens that session too (`#code/<session id>`, also
+  from the installed app's service worker): the path a push notification will take once DevOS Mobile and the
+  Companion bring one. No Web Push yet.
+- **Home leads with Continue: what to pick up again, one click away.** The Code sessions that need you come first
+  (*Needs you*, **Answer**), then the recent Code sessions and Chat's newest conversations (**Resume**, **Open**), with
+  **New session** (in the project the Code page shows: *New session in ui-sweep*) and **New chat**. On a phone too,
+  where no Code tab is framed: the Code page, open in any browser that unlocked it, tells the portal what Home may show
+  of its sessions (`POST /.bn/recent` on the code host, after its check: ids, states, times and short titles as text),
+  which the portal keeps in memory only, per sign-in, and forgets at Sign out; Home says how old it is when the Code page
+  is not open. Chat's conversations come from Open WebUI's own list, asked as the global search asks it. The portal
+  still never reaches the code container (docs/security.md › The Code page). A Code page link with `?new=1` opens a new
+  session's start, and `?project=` is kept through the unlock.
+- **Get started: five steps for a first run, in place of the 37-step walkthrough opening by itself.** On Home, first:
+  sign in, add a model provider (or confirm Bedrock's), open Code and run a first session, open Chat and ask something,
+  set a budget — each ticked by what the portal sees (enabled chat models, a session the Code page reported, a chat in
+  Open WebUI, a budget changed from its default, or **Keep these**). **Full walkthrough** opens the whole tour, which
+  stays under the Walkthrough button; **Hide** puts the checklist away in this browser, and the walkthrough brings it
+  back. A browser that used Home before keeps its Home as it was.
+
+### Changed
+
+- **Opening the Code page while a session waits for you shows that session, its card in view**: the one you looked at
+  last if it waits, else the waiting one active most recently. On a phone no sheet covers the card (the Projects sheet
+  used to open over it), and showing the Code tab again on a phone goes to the waiting session the same way.
+- **The permission card on a phone:** **Allow once** and **Deny** are full-width buttons 48 px tall at the bottom of the
+  card, always in view: what is asked (the command, the diff, why, the *Always* options, full width too) scrolls above
+  them inside the card. Deny's message box no longer brings up the keyboard by itself: tap it to type, or tap **Deny** to
+  send.
+- **A phone's first sign-in opens Home** (it opened Chat), with *Get started* at its top (the walkthrough is under
+  More); later visits remember the last tab, as before. What greets a first visit is one entry point,
+  `window.bnWelcome.start()` (tour.js), which Home's *Get started* takes over.
+- **The phone's More sheet is titled More** (it said *Desktop site*): Settings, Activity, Search and the walkthrough
+  first, then Admin, Files and the Terminal under *In a new tab*, then Sign out.
+- **The walkthrough on a phone:** its Back and Next stay in view at the bottom of the sheet, above the tab bar, instead
+  of sliding under it while a long step scrolls.
+- **Chat's Who answers on a phone** shows a visible *Who answers* label and the choice's name whole (*Open WebUI ▾*,
+  not *Open WebUI — its owr*); a tap opens the system's picker with every choice in full.
+- **Home's operations are compact, under Continue:** Services is one line (*All 6 services running*) that opens the
+  list; Models is one line (*11 of 17 models enabled*) with the table, its notes and prices folded under it; the spend
+  meters are named for where their spend comes from — *devos-claude (your terminal)* and *Code page & browser
+  terminal* (they read *Claude Code* and *Terminal (browser)*). The Code card is gone: Continue has its sessions.
+- **Settings speak the page's words.** Each setting's Details explains it in plain words (*On: …*, *30 by default*, the
+  names the page uses) instead of `.env`'s (*true = …*, *blank = 30*, other keys' names), and a footer, *For the
+  terminal*, holds its name in `.env` and the command that changes it. Badges say *Restarts the model gateway* (not
+  *LiteLLM*), *the web server* (Caddy) and *the shared file server*; the page's header says *As of …*; *AWS & models*
+  is now **Bedrock (AWS)**, apart from *Models & providers*, whose groups — Keys, Subscriptions, Search — are a bar of
+  links at its top that stays there while it scrolls.
+- **Settings on a phone: a section is a short list of cards.** Each card keeps its name, its state and value and its
+  control; its summary, badges, notes, what a provider adds and the terminal command fold under its **Details** —
+  Models & providers goes from about 8,100 px to 4,800 and Claude Code from 5,800 to 2,800 (folds closed), the
+  remaining height being the subscriptions' Sign in buttons.
+- **The Code page puts the chat first.** Until a file, a diff or a preview opens (and while the terminal is closed),
+  the chat has the middle of the page instead of an empty editor beside a narrow chat; the keyboard shortcuts it listed
+  are the status bar's **Keys**.
+
+### Fixed
+
+- **Tests:** the collapsed-sidebar check's phone step waits for the tab bar, as a phone's sign-in now lands on Home;
+  the layout check's reviewed exceptions add a long session title in the Code page's top bar and phone header, until
+  short session titles (JON-517).
+- **A tap on Allow once timed out on a phone when you came back to a waiting session.** The Code page opened its
+  Projects sheet over the session on purpose (to list who needed you), and the sheet took the tap meant for the card
+  behind it. The page now opens the waiting session itself, with no sheet (see Changed); the sheet still groups the
+  sessions that need you when you open it.
+
 ## [0.31.5] - 2026-10-27
 
 ### Changed

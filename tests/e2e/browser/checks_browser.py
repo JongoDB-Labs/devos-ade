@@ -2370,7 +2370,8 @@ def sidebar_collapse(ctx):
     page.context.add_init_script(NAV_CSP)
     _stored_nav(page, "collapsed")
     login(page)
-    page.wait_for_selector("iframe[data-app=chat]", timeout=20000)
+    # (a phone's sign-in lands on Home since v0.32.0, no longer in Chat: the tab bar is what this step looks at)
+    page.wait_for_selector("#more-btn", state="visible", timeout=20000)
     bar = page.locator(".sidebar").bounding_box()
     expect(bar["y"] + bar["height"] >= 844 - 2 and bar["width"] >= 380 and not page.locator("#nav-toggle").is_visible(),
            f"phone: the tab bar {bar}, the button shown")
