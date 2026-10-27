@@ -127,6 +127,15 @@
 //                                           as an attachment (nosniff). The previews fetch these bytes and render
 //                                           them themselves; nothing from the workspace is ever served for the
 //                                           browser to render
+//   GET    /api/projects/ID/export?include=default|all&git=0|1&dry=1   Export to Files, step 1: {files, bytes, cap, over,
+//                                           via: git|walk, skippedLinks, skippedOther, name} — what the zip would hold
+//                                           (default: what git keeps, or a walk without dependency and build folders;
+//                                           all: every file; git=1: and the .git folder), nothing zipped; `name` is a
+//                                           file name for it (<project>-<time>.zip)
+//   GET    /api/projects/ID/export?include=…&git=…&name=N.zip   step 2: the zip, streamed (application/zip, an attachment,
+//                                           nosniff, no length). Over the limit (200 MiB before compression, 50,000
+//                                           files): 413 {error} before any byte; an export already running: 429. Failing
+//                                           half way ends the connection (the page checks the zip's end record)
 //   PUT    /api/fs/file?path=P {text, ifMtimeMs?, create?}   {path, size, mtimeMs}; 409 {error: "changed on disk …"}
 //                                           when ifMtimeMs is given and the file changed since; create: true only writes
 //                                           a file that is not there (409 "exists already" otherwise)
@@ -464,6 +473,7 @@ export const LIMITS = Object.freeze({
   maxUploadBytes: 25 << 20,
   maxTextFileBytes: 2 << 20,      // what the editor gets of a file
   maxDownloadBytes: 25 << 20,
+  maxExportBytes: 200 << 20,      // Export to Files: the project's files before compression (the page holds the zip once)
   watchShownChars: 65536,         // a watched file's text in a `watch` event (each side of its diff)
 });
 

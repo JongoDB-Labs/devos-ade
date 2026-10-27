@@ -155,7 +155,7 @@ function answerAsk(conn, p, onAsk) {
  *   input: bytes sent as STDIN frames, then STDIN_END (fs.write)
  *   onAsk(q) -> answer: a remote git operation's credential question (gitremote.mjs); without it every ASK gets {}
  */
-export function sandboxCall(req, { timeoutMs = 60000, maxBytes = MAX_RESULT, input = null, sock = SOCK, onAsk = null } = {}) {
+export function sandboxCall(req, { timeoutMs = 60000, maxBytes = MAX_RESULT, input = null, sock = SOCK, onAsk = null, onStdout = null, signal = null } = {}) {
   return new Promise((resolve, reject) => {
     const conn = net.connect(sock);
     const parser = new FrameParser();
@@ -165,6 +165,14 @@ export function sandboxCall(req, { timeoutMs = 60000, maxBytes = MAX_RESULT, inp
     const timer = setTimeout(() => settle(reject, new SandboxError('the sandbox did not answer in time', 'timeout')), timeoutMs);
     conn.on('error', (e) => settle(reject, new SandboxError(`sandbox unreachable: ${e.code || e.message}`, 'unreachable')));
     conn.write(frame(T.OPEN, req));
+    // onStdout(chunk, resume): STDOUT goes to it instead of being kept (a long answer — a zip — passes through, never
+    // held whole; maxBytes then counts the RESULT only). Returning false pauses the connection until resume() is called
+    // (the sandbox waits when its socket is full). signal: aborting it ends the call (and the sandbox's work).
+    const resume = () => { if (!conn.destroyed) conn.resume(); };
+    if (signal) {
+      if (signal.aborted) return settle(reject, new SandboxError('cancelled', 'failed'));
+      signal.addEventListener('abort', () => settle(reject, new SandboxError('cancelled', 'failed')), { once: true });
+    }
     if (input) {
       for (const f of dataFrames(T.STDIN, input)) conn.write(f);
       conn.write(frame(T.STDIN_END, Buffer.alloc(0)));
@@ -173,7 +181,7 @@ export function sandboxCall(req, { timeoutMs = 60000, maxBytes = MAX_RESULT, inp
       let frames;
       try { frames = parser.push(chunk); } catch (e) { return settle(reject, new SandboxError(e.message, 'too-large')); }
       for (const [type, p] of frames) {
-        size += p.length;
+        if (!(onStdout && type === T.STDOUT)) size += p.length;
         if (size > maxBytes) return settle(reject, new SandboxError('the sandbox answer is too large', 'too-large'));
         if (type === T.RESULT) {
           let v;
@@ -183,8 +191,14 @@ export function sandboxCall(req, { timeoutMs = 60000, maxBytes = MAX_RESULT, inp
         }
         if (type === T.ERROR) return settle(reject, new SandboxError(printable(json(p).error || 'refused'), 'refused'));
         if (type === T.ASK) { if (!settled) answerAsk(conn, p, onAsk); continue; }
-        if (type === T.STDOUT) out.push(p);
-        else if (type === T.STDERR) err.push(p);
+        if (type === T.STDOUT) {
+          if (!onStdout) out.push(p);
+          else {
+            let keep = true;
+            try { keep = onStdout(p, resume) !== false; } catch (e) { return settle(reject, e instanceof Error ? e : new Error(String(e))); }
+            if (!keep) conn.pause();
+          }
+        } else if (type === T.STDERR) err.push(p);
         else if (type === T.EXIT) {
           const e = json(p);
           return settle(resolve, {

@@ -439,7 +439,7 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     // there, removal (the record; its folder into the trash only when named again), its terminal, git init in it
     if (p === '/api/projects' && m === 'GET') return send(res, 200, await api.listProjects());
     if (p === '/api/projects' && m === 'POST') return send(res, 200, await api.addProject(await readJson(req)));
-    if ((mm = /^\/api\/projects\/(ws|p_[0-9a-f]{8})(?:\/(sessions|terminal|git-init|settings|trust))?$/.exec(p))) {
+    if ((mm = /^\/api\/projects\/(ws|p_[0-9a-f]{8})(?:\/(sessions|terminal|git-init|settings|trust|export))?$/.exec(p))) {
       const id = mm[1], what = mm[2] || '';
       // its own Claude Code settings: what they set, and your trust in exactly these files (or no longer)
       if (what === 'settings' && m === 'GET') return send(res, 200, await trust.view(recordOf(id)));
@@ -459,6 +459,38 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
       if (!what && m === 'DELETE') return send(res, 200, await api.removeProject(id, { trash: q.get('trash') === '1', confirm: q.get('confirm') }));
       if (what === 'sessions' && m === 'POST') return send(res, 200, api.fileSessions(id, await readJson(req)));
       if (what === 'terminal' && m === 'POST') return send(res, 200, await api.projectTerminal(rootFor(id)));
+      // Export to Files: step 1 (dry=1) says what the zip would hold; step 2 streams it from the sandbox to this response
+      // (the page puts it in Files, or saves it; nothing here reaches RustFS). One at a time per sandbox (bn-coded).
+      if (what === 'export' && m === 'GET') {
+        const rec = recordOf(id), r = rootFor(id);
+        const opts = { include: q.get('include') === 'all' ? 'all' : 'default', git: q.get('git') === '1' };
+        const stamp = new Date().toISOString().replace(/\.\d+Z$/, '').replace(/[-:]/g, '').replace('T', '-');
+        const base = String(rec.name || 'project').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[-.]+|-+$/g, '').slice(0, 60) || 'project';
+        const name = `${base}-${stamp}.zip`;
+        if (q.get('dry') === '1') return send(res, 200, { ...(await api.exportPlan(r, opts)), name });
+        const asked = q.get('name');
+        const file = asked !== null && /^[A-Za-z0-9._-]{1,120}\.zip$/.test(asked) && !asked.startsWith('.') ? asked : name;
+        const ac = new AbortController();
+        res.on('close', () => ac.abort());
+        let started = false;
+        const onData = (chunk, resume) => {
+          if (!started) {
+            started = true;
+            res.writeHead(200, { 'content-type': 'application/zip', 'content-disposition': attachment(file), 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+          }
+          if (res.write(chunk)) return true;
+          res.once('drain', resume);
+          return false;
+        };
+        try {
+          await api.exportStream(r, opts, { onData, signal: ac.signal });
+        } catch (e) {
+          if (started || res.headersSent) { res.destroy(); return undefined; }   // (half a zip: the connection ends, the page sees it)
+          throw e;
+        }
+        if (!started) res.writeHead(200, { 'content-type': 'application/zip', 'content-disposition': attachment(file), 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+        return res.end();
+      }
       if (what === 'git-init' && m === 'POST') {
         const r = rootFor(id);
         return send(res, 200, await api.projectGitInit(r));

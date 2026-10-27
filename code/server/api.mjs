@@ -363,6 +363,32 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     return stdout.subarray(0, LIMITS.maxDownloadBytes);
   }
 
+  // --- Export to Files: a project folder's files as a zip, built in the sandbox (bn-coded fs.zip) and passed through ---
+  // opts: {include: 'default' | 'all', git: bool}; everything the sandbox answers is checked (counts only, no names)
+  const exportReq = (root, opts, extra) => ({ op: 'fs.zip', ...rootField(root), include: opts?.include === 'all' ? 'all' : 'default', git: opts?.git === true,
+    max: LIMITS.maxExportBytes, ...extra });
+  const exportMeta = (r) => ({ files: int(r.files, 0, 1e7) ?? 0, bytes: int(r.bytes, 0, 1e13) ?? 0, cap: LIMITS.maxExportBytes, over: r.over === true,
+    via: r.via === 'git' ? 'git' : 'walk', skippedLinks: int(r.skippedLinks, 0, 1e7) ?? 0, skippedOther: int(r.skippedOther, 0, 1e7) ?? 0 });
+  const exportError = (e) => {
+    if (e instanceof SandboxError && e.kind === 'refused' && /^too large|^too many files/.test(e.message)) return new HttpError(413, e.message);
+    if (e instanceof SandboxError && e.kind === 'refused' && /^busy/.test(e.message)) return new HttpError(429, e.message);
+    return e;
+  };
+  /** what an export would hold: {files, bytes, cap, over, via, skippedLinks, skippedOther} — nothing is zipped */
+  async function exportPlan(root, opts) {
+    try {
+      return exportMeta((await call(exportReq(root, opts, { dry: true }), { timeoutMs: 60000 })).result);
+    } catch (e) { throw exportError(e); }
+  }
+  /** the zip, through onData(chunk, resume) (false: wait for resume()); resolves {files, bytes, zipBytes, via, …}. A refusal
+   *  (over the limit, busy) comes before the first chunk. */
+  async function exportStream(root, opts, { onData, signal }) {
+    try {
+      const { result } = await call(exportReq(root, opts, {}), { timeoutMs: 15 * 60 * 1000, onStdout: onData, signal });
+      return { ...exportMeta(result), zipBytes: int(result.zipBytes, 0, 1e13) ?? 0 };
+    } catch (e) { throw exportError(e); }
+  }
+
   const written = (r) => ({ path: okPath(r.path), size: int(r.size, 0, 1e15), mtimeMs: num(r.mtimeMs, 0, 1e14) });
 
   async function writeFile(path, body) {
@@ -973,7 +999,7 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     return { ok: true };
   }
 
-  return { listSessions, messages, parentOf, title, archive, deleteSession, sessionTerminal, pathTerminal, toTerminal, notRunning, cwdFor, harnessOf, carryText, permissions, permissionRemove, list, readFile, download, writeFile, upload, mkdir, rename, remove, find, grep, gitDiff,
+  return { listSessions, messages, parentOf, title, archive, deleteSession, sessionTerminal, pathTerminal, toTerminal, notRunning, cwdFor, harnessOf, carryText, permissions, permissionRemove, list, readFile, download, exportPlan, exportStream, writeFile, upload, mkdir, rename, remove, find, grep, gitDiff,
     gitStatus, gitLog, gitFile, gitStage, gitUnstage, gitCommit, gitDiscard, gitDraft, memory, memoryWrite, plugins, available, pluginAction,
     marketplaces: async () => ({ marketplaces: (await plugins()).marketplaces }), marketplaceAdd, marketplaceRemove, marketplaceUpdate, mcpAdd, mcpRemove,
     ports, stopPort, launch, launchStart, runTasks, runStart, runResults, runShow, terminalCapture,

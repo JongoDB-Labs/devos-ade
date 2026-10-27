@@ -280,6 +280,10 @@
 	request_body /api/settings/* {
 		max_size 16KB
 	}
+	# Export to Files: the Code page's zip (the portal checks its length: at most 220 MiB = 231 MB).
+	request_body /api/code-export {
+		max_size 231MB
+	}
 	# The public paths (snippet above) need no session; everything else does.
 	import public_paths
 	reverse_proxy @public portal:8000

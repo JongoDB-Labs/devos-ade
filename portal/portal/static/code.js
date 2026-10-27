@@ -159,6 +159,30 @@
       if (location.hash === hash && typeof window.showTab === "function") window.showTab(hash.slice(1));
       else location.hash = hash;
     });
+    // Export to Files ({type: "bn-code-export", id, name, blob}: a project's zip, built and downloaded by the Code page): the
+    // portal writes it into Files (POST /api/code-export, codeexport.py: the Code page cannot reach Files itself), and says
+    // how it went ({type: "bn-portal-export", id, ok, key?, url?, error?}) — from the same frame only, to its origin only, a
+    // name and size of the shapes the route takes (it checks them all again)
+    const EXPORT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,115}\.zip$/, EXPORT_MAX = 220 * 1024 * 1024;
+    window.addEventListener("message", async (e) => {
+      const f = codeFrame();
+      if (e.origin !== codeOrigin || !f || e.source !== f.contentWindow || !e.data || e.data.type !== "bn-code-export") return;
+      const d = e.data;
+      if (typeof d.id !== "string" || !/^[A-Za-z0-9]{1,32}$/.test(d.id)) return;
+      const reply = (m) => { try { f.contentWindow.postMessage({ type: "bn-portal-export", id: d.id, ...m }, codeOrigin); } catch (_) { /* gone */ } };
+      if (!(d.blob instanceof Blob) || typeof d.name !== "string" || !EXPORT_NAME.test(d.name) || d.blob.size > EXPORT_MAX) { reply({ ok: false, error: "that is not a zip an export can take" }); return; }
+      try {
+        const r = await fetch(`/api/code-export?name=${encodeURIComponent(d.name)}`, { method: "POST", headers: { "X-Requested-With": "bedrock-now" }, body: d.blob, credentials: "same-origin" });
+        let j = {};
+        try { j = await r.json(); } catch (_) { /* not JSON */ }
+        if (!r.ok || !j.ok) { reply({ ok: false, error: String(j.error || `Files answered HTTP ${r.status}`).slice(0, 300) }); return; }
+        let url = "";
+        try { url = `${new URL(appUrl("files")).origin}/rustfs/console/browser/${encodeURIComponent(String(j.bucket))}`; } catch (_) { /* none */ }
+        reply({ ok: true, key: String(j.key), bucket: String(j.bucket), url });
+      } catch (_) {
+        reply({ ok: false, error: "the portal did not answer" });
+      }
+    });
   }
   const hooked = new WeakSet();
   let reportedAt = 0, loadedAt = 0;

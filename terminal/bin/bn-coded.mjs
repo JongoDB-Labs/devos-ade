@@ -27,6 +27,8 @@
 //                   in the sandbox's own view, so a symlink can only lead somewhere this container sees anyway. A
 //                   delete moves into the root's trash (<root>/.bedrock-now-trash)
 //   fs.find         paths under the root whose name matches (a bounded walk: the @-picker over the whole folder)
+//   fs.zip          the root's files as a zip, streamed (Export to Files): what git keeps (or a bounded walk without
+//                   dependency folders), size-capped; dry: only how many files and bytes
 //   fs.grep         a text (or a ripgrep regex) searched in the files of the root: ripgrep with fixed arguments, or
 //                   a bounded walk (literal text only); caps on hits, file size and time
 //   project.create / project.check / project.trash / project.settings
@@ -115,6 +117,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
+import { once } from 'node:events';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import dns from 'node:dns';
@@ -1343,6 +1347,153 @@ export function fsFind(q, limit, root = WS_ROOT) {
     }
   }
   return { paths, truncated };
+}
+
+// --- fs.zip: a project folder's files as a zip, streamed (STDOUT frames, then RESULT) — the page's "Export to Files".
+// --- Which files: by default what git would keep (`git ls-files --cached --others --exclude-standard`: .gitignore
+// --- respected, .git left out) in a git repository, else a bounded walk that skips .git, the trash and dependencies /
+// --- build output (the fs.find list); never node_modules. include "all": every file but the trash (and .git); git: true
+// --- adds the .git folder too. Regular files only (never a link followed), each opened O_NOFOLLOW, from the root's own
+// --- folder, so nothing outside it can be named. The whole list is stat'ed first: over `max` bytes (or ZIP_MAX_FILES
+// --- files) is refused before a byte is sent, saying how big it is (dry: only that answer, no zip). Deflate (zlib) with
+// --- data descriptors, one file at a time: memory is a few chunks, whatever the project's size.
+export const ZIP_MAX_FILES = 50000;
+export const ZIP_DEFAULT_MAX = 200 << 20, ZIP_HARD_MAX = 1 << 30;
+const ZIP_WALK_DEPTH = 64;
+const ZIP_PREFIX_SKIP = new Set([TRASH, 'node_modules']);
+const dosTime = (ms) => {
+  const d = new Date(Number.isFinite(ms) ? ms : Date.now());
+  const y = d.getFullYear();
+  if (y < 1980) return { time: 0, date: (1 << 5) | 1 };
+  return { time: (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), date: ((y - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate() };
+};
+// zipList(root, {include, git, max}) -> {files: [{rel, size, mtimeMs, mode}], bytes, via: 'git'|'walk', skippedLinks,
+// skippedOther}: throws 'too many files' past ZIP_MAX_FILES
+export async function zipList(root, { include = 'default', git = false } = {}) {
+  const all = include === 'all';
+  const out = new Map();
+  let skippedLinks = 0, skippedOther = 0, via = 'walk';
+  const add = (rel) => {
+    if (out.has(rel)) return;
+    let st;
+    try { st = fs.lstatSync(path.join(root.abs, rel)); } catch { return; }   // (listed by git, deleted since)
+    if (st.isSymbolicLink()) { skippedLinks++; return; }
+    if (!st.isFile()) { if (!st.isDirectory()) skippedOther++; return; }
+    if (out.size >= ZIP_MAX_FILES) throw new Error(`too many files (more than ${ZIP_MAX_FILES}): leave out the dependency folders or export a smaller folder`);
+    out.set(rel, { rel, size: st.size, mtimeMs: st.mtimeMs, mode: st.mode & 0o777 });
+  };
+  const gitFolder = isDirHere(path.join(root.abs, '.git'));
+  if (!all && gitFolder) {
+    const r = await runCapped(GIT, [...GIT_PRE, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: root.abs,
+      env: gitEnv([], {}, { ceiling: path.dirname(root.abs) }), timeoutMs: 20000, maxOut: 16 << 20 });
+    if (!r.missing && !r.timedOut && !r.cut && r.code === 0) {
+      via = 'git';
+      for (const p of r.out.toString('utf8').split('\0')) {
+        if (!p || !gitRel(p) || p.split('/').some((s) => ZIP_PREFIX_SKIP.has(s) || fold(s) === '.git')) continue;
+        add(p);
+      }
+    }
+  }
+  if (via !== 'git') {
+    const stack = [['', 0]];
+    while (stack.length) {
+      const [dir, depth] = stack.pop();
+      let ents;
+      try { ents = fs.readdirSync(path.join(root.abs, dir), { withFileTypes: true }); } catch { skippedOther++; continue; }
+      for (const e of ents) {
+        const rel = dir ? `${dir}/${e.name}` : e.name;
+        if (e.isDirectory()) {
+          if (e.name === TRASH || fold(e.name) === '.git' || (!all && FIND_SKIP.has(e.name))) continue;
+          if (depth + 1 < ZIP_WALK_DEPTH) stack.push([rel, depth + 1]); else skippedOther++;
+        } else add(rel);
+      }
+    }
+  }
+  if (git && gitFolder) {
+    // (the repository's own folder: objects, refs, config — its history; links in it are left out like everywhere)
+    const stack = ['.git'];
+    while (stack.length) {
+      const dir = stack.pop();
+      let ents;
+      try { ents = fs.readdirSync(path.join(root.abs, dir), { withFileTypes: true }); } catch { skippedOther++; continue; }
+      for (const e of ents) {
+        const rel = `${dir}/${e.name}`;
+        if (e.isDirectory()) stack.push(rel); else add(rel);
+      }
+    }
+  }
+  const files = [...out.values()].sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
+  return { files, bytes: files.reduce((n, f) => n + f.size, 0), via, skippedLinks, skippedOther };
+}
+const mib = (n) => `${(n / (1 << 20)).toFixed(1)} MiB`;
+// fsZip(send, drain, req, root) -> RESULT {files, bytes, via, skippedLinks, skippedOther, cap, over, zipBytes?}
+// (send(type, payload) writes a frame; drain() -> a promise that resolves when more may be written (the reader keeps up);
+// gone() -> the reader went away)
+export async function fsZip(send, drain, req, root = WS_ROOT, gone = () => false) {
+  const cap = Number.isInteger(req.max) && req.max > 0 ? Math.min(req.max, ZIP_HARD_MAX) : ZIP_DEFAULT_MAX;
+  const include = req.include === 'all' ? 'all' : 'default';
+  const l = await zipList(root, { include, git: req.git === true });
+  const meta = { files: l.files.length, bytes: l.bytes, via: l.via, skippedLinks: l.skippedLinks, skippedOther: l.skippedOther, cap, over: l.bytes > cap };
+  if (req.dry === true) return meta;
+  if (meta.over) throw new Error(`too large: ${l.files.length} files, ${mib(l.bytes)} before compression; the limit is ${mib(cap)}. Leave out dependency and build folders (the default) or export a smaller folder`);
+  let offset = 0;
+  const out = (b) => { if (gone()) throw new Error('the connection ended'); send(T.STDOUT, b); offset += b.length; };
+  const central = [];
+  for (const f of l.files) {
+    let fd;
+    try { fd = fs.openSync(path.join(root.abs, f.rel), fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | fs.constants.O_NOFOLLOW); } catch { meta.skippedOther++; continue; }
+    try {
+      const st = fs.fstatSync(fd);
+      if (!st.isFile()) { meta.skippedOther++; continue; }
+      const name = Buffer.from(f.rel, 'utf8');
+      const { time, date } = dosTime(st.mtimeMs);
+      const method = st.size === 0 ? 0 : 8;
+      const start = offset;
+      const lh = Buffer.alloc(30);
+      lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(0x0808, 6); lh.writeUInt16LE(method, 8);
+      lh.writeUInt16LE(time, 10); lh.writeUInt16LE(date, 12); lh.writeUInt16LE(name.length, 26);
+      out(Buffer.concat([lh, name]));
+      let crc = 0, usize = 0, csize = 0;
+      if (method === 8) {
+        const z = zlib.createDeflateRaw({ level: 6 });
+        let broke = null;
+        // (a reader that does not keep up pauses the compressor too: nothing piles up here)
+        z.on('data', (c) => {
+          try { csize += c.length; out(c); } catch (e) { broke = e; z.destroy(); return; }
+          if (!gone()) { z.pause(); drain().then(() => z.resume(), () => z.resume()); }
+        });
+        const ended = new Promise((res, rej) => { z.on('end', res); z.on('error', rej); z.on('close', () => rej(broke || new Error('the compressor stopped'))); }).catch((e) => { throw broke || e; });
+        ended.catch(() => {});
+        while (usize < st.size) {
+          const b = readSlice(fd, usize, Math.min(1 << 20, st.size - usize));
+          if (!b.length) break;
+          crc = zlib.crc32(b, crc); usize += b.length;
+          if (broke || gone()) break;
+          if (!z.write(b)) await Promise.race([once(z, 'drain'), ended]);
+        }
+        z.end();
+        await ended;
+      } else crc = 0;
+      const dd = Buffer.alloc(16);
+      dd.writeUInt32LE(0x08074b50, 0); dd.writeUInt32LE(crc >>> 0, 4); dd.writeUInt32LE(csize, 8); dd.writeUInt32LE(usize, 12);
+      out(dd);
+      central.push({ name, method, time, date, crc: crc >>> 0, csize, usize, start, mode: st.mode & 0o777 });
+      await drain();
+    } finally { fs.closeSync(fd); }
+  }
+  const cdStart = offset;
+  for (const c of central) {
+    const h = Buffer.alloc(46);
+    h.writeUInt32LE(0x02014b50, 0); h.writeUInt16LE((3 << 8) | 20, 4); h.writeUInt16LE(20, 6); h.writeUInt16LE(0x0808, 8); h.writeUInt16LE(c.method, 10);
+    h.writeUInt16LE(c.time, 12); h.writeUInt16LE(c.date, 14); h.writeUInt32LE(c.crc, 16); h.writeUInt32LE(c.csize, 20); h.writeUInt32LE(c.usize, 24);
+    h.writeUInt16LE(c.name.length, 28); h.writeUInt32LE(((0o100000 | c.mode) << 16) >>> 0, 38); h.writeUInt32LE(c.start, 42);
+    out(Buffer.concat([h, c.name]));
+  }
+  const cdSize = offset - cdStart;
+  const e = Buffer.alloc(22);
+  e.writeUInt32LE(0x06054b50, 0); e.writeUInt16LE(central.length, 8); e.writeUInt16LE(central.length, 10); e.writeUInt32LE(cdSize, 12); e.writeUInt32LE(cdStart, 16);
+  out(e);
+  return { ...meta, files: central.length, zipBytes: offset };
 }
 
 // --- runCapped: a helper program (git, rg) with fixed arguments, no stdin (or `input`: these bytes, then EOF), a
@@ -5551,7 +5702,7 @@ export const CHAT_SWEEP_MS = 5000;
 
 // --- one connection, one op ---
 const running = { claude: 0, cli: 0, agent: 0 };
-const helpers = { git: 0, grep: 0, gitRead: 0, gitWrite: 0, gitNet: 0, capture: 0, subs: 0 };
+const helpers = { zip: 0, git: 0, grep: 0, gitRead: 0, gitWrite: 0, gitNet: 0, capture: 0, subs: 0 };
 let brokerSock = null;
 export function serve(sock) {
   const parser = new FrameParser();
@@ -5719,6 +5870,16 @@ export function serve(sock) {
         case 'fs.read': return finish(T.RESULT, fsRead(send, req.path, req.max, root()));
         case 'fs.write': writer = fsWriteBegin(req, root()); return undefined;   // the data follows as STDIN frames
         case 'fs.find': return finish(T.RESULT, fsFind(req.q, req.limit, root()));
+        // the project's files as a zip (the Export to Files action): streamed as STDOUT frames, one export at a time
+        case 'fs.zip': {
+          const r0 = root();
+          if (helpers.zip >= 1) return fail('busy: another export is running, try again in a moment');
+          helpers.zip++;
+          const drain = () => (!sock.writableNeedDrain || sock.destroyed ? Promise.resolve()
+            : new Promise((res) => { const go = () => { sock.off('drain', go); sock.off('close', go); res(); }; sock.on('drain', go); sock.on('close', go); }));
+          fsZip(send, drain, req, r0, () => sock.destroyed).then((r) => finish(T.RESULT, r), (e) => fail(e.message)).finally(() => { helpers.zip--; });
+          return undefined;
+        }
         // (two of each at once: a page typing fast, or many tabs, never piles up processes here)
         case 'git.diff':
         case 'fs.grep': {

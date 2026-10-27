@@ -23,7 +23,7 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainT
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import activity, admin, answers, appicons, appsso, brand, chatsearch, icons, prices, recent, searchindex, settings_api, summary, updates, webapp
+from . import activity, admin, answers, appicons, appsso, brand, chatsearch, codeexport, icons, prices, recent, searchindex, settings_api, summary, updates, webapp
 from . import code as codepage
 from . import settings as settings_mod
 from .config import CODE, TERMINAL, Settings
@@ -1370,6 +1370,34 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         url = settings.origin(TERMINAL, rem) + answers.terminal_link(answers.terminal_args(mode, tool, token, folder, roots()))
         return _no_store(JSONResponse({"url": url}))
 
+    # --- Export to Files (codeexport.py): the Code page's zip of a project, handed up by the Code tab's script (code.js),
+    # --- written to the Files app's bucket with the RustFS key pair the portal holds. One at a time, streamed.
+    export_busy = asyncio.Lock()
+
+    async def api_code_export(request: Request) -> Response:
+        if (deny := api_guard(request)) is not None:
+            return deny
+        if not same_origin(request.headers, settings):
+            return _no_store(JSONResponse({"error": "cross-site request refused"}, status_code=403))
+        if not settings.code_on(remote(request)) or not (settings.rustfs_access_key and settings.rustfs_secret_key):
+            return _no_store(JSONResponse({"error": "the Code page or Files is off here"}, status_code=404))
+        length = request.headers.get("content-length", "")
+        if not length.isdigit() or not length.isascii() or len(length) > 12:
+            return _no_store(JSONResponse({"error": "a Content-Length is needed"}, status_code=411))
+        name = request.query_params.get("name", "")
+        if export_busy.locked():
+            return _no_store(JSONResponse({"error": "another export is on its way: try again in a moment"}, status_code=429))
+        async with export_busy:
+            try:
+                async with httpx.AsyncClient(transport=transport, follow_redirects=False) as http:
+                    key = await codeexport.put_zip(http, settings, name, int(length), request.stream())
+            except codeexport.ExportError as e:
+                return _no_store(JSONResponse({"error": str(e)}, status_code=e.status))
+            except Exception as e:   # a client that went away half way, and the like
+                log.info("code export failed: %s", type(e).__name__)
+                return _no_store(JSONResponse({"error": "the zip did not arrive whole"}, status_code=400))
+        return _no_store(JSONResponse({"ok": True, "bucket": codeexport.BUCKET, "key": key.split("/", 1)[1], "size": int(length)}))
+
     # --- who answers (answers.py): the pickers of the Terminal and Chat tabs and Settings › Your AI subscriptions —
     # --- the tools in the sandbox and whether each says it is signed in (never a login), and Chat's models
     async def api_answers(request: Request) -> Response:
@@ -1706,6 +1734,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             Route("/api/summary", api_summary),
             Route("/api/answers", api_answers, methods=["GET"]),
             Route("/api/terminal/launch", api_terminal_launch, methods=["POST"]),
+            Route("/api/code-export", api_code_export, methods=["POST"]),
             Route("/api/logins", api_logins),
             Route("/api/admin/status", api_admin_status, methods=["GET"]),
             Route("/api/admin/request", api_admin_request, methods=["POST"]),

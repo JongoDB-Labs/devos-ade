@@ -72,9 +72,23 @@ const answers = {
   'terminal.window': (req) => ({ result: { ok: true, window: req.root ? path.basename(req.root) : 'workspace', id: '@9' } }),
   'terminal.resume': (req) => ({ result: { ok: true, window: `resume-${req.id.slice(0, 8)}` } }),
   'git.init': () => ({ result: { ok: true } }),
+  // Export to Files: the zip passes through onStdout, never held whole (state.zip: 'over' / 'busy' refuse, 'half' fails half way)
+  'fs.zip': async (req, opts) => {
+    const meta = { files: 2, bytes: 11, via: 'git', skippedLinks: 1, skippedOther: 0, cap: req.max, over: state.zip === 'over' };
+    if (req.dry) return { result: meta };
+    if (state.zip === 'over') throw new SandboxError('too large: 2 files, 300.0 MiB before compression; the limit is 200.0 MiB', 'refused');
+    if (state.zip === 'busy') throw new SandboxError('busy: another export is running, try again in a moment', 'refused');
+    let kept = true;
+    for (const c of [Buffer.from('PK-one'), Buffer.from('PK-two')]) {
+      if (kept === false) await new Promise((r) => setTimeout(r, 5));
+      kept = opts.onStdout(c, () => {});
+      if (state.zip === 'half') throw new SandboxError('the sandbox closed the connection');
+    }
+    return { result: { ...meta, zipBytes: 12 }, stdout: Buffer.alloc(0) };
+  },
   'git.repos': (req) => ({ result: { repos: req.root ? [{ path: '' }, { path: 'lib/inner' }, { path: '../x' }] : [{ path: 'app' }] } }),
 };
-const call = async (req) => { calls.push(req); const a = answers[req.op]; if (!a) throw new SandboxError('unknown op', 'refused'); return a(req); };
+const call = async (req, opts) => { calls.push(req); const a = answers[req.op]; if (!a) throw new SandboxError('unknown op', 'refused'); return a(req, opts); };
 const queries = [];
 const fq = fakeQuery();
 const query = (a) => { const q = fq(a); queries.push(q); return q; };
@@ -657,4 +671,49 @@ test('a project\'s terminal, git init; removal: the record only, its folder into
   assert.deepEqual((await req('GET', '/api/projects')).json.projects.map((p) => p.id), ['ws']);
   // its sessions are shown where their folder is: the Workspace
   assert.equal((await req('GET', '/api/sessions')).json.sessions.find((s) => s.id === S.app).project, 'ws');
+});
+
+test('Export to Files: the plan (dry), then the zip passed through; over the limit, busy and a failure half way are said', async () => {
+  const made = await req('POST', '/api/projects', { kind: 'new', folder: 'exp', name: 'Exp app', git: false });
+  assert.equal(made.status, 200, JSON.stringify(made.json));
+  const P = `/api/projects/${made.json.project.id}/export`;
+  let r = await req('GET', `${P}?dry=1`);
+  assert.equal(r.status, 200);
+  assert.deepEqual(last('fs.zip'), { op: 'fs.zip', root: '/workspace/exp', include: 'default', git: false, max: 200 << 20, dry: true });
+  assert.deepEqual({ ...r.json, name: undefined }, { files: 2, bytes: 11, cap: 200 << 20, over: false, via: 'git', skippedLinks: 1, skippedOther: 0, name: undefined });
+  assert.match(r.json.name, /^Exp-app-\d{8}-\d{6}\.zip$/);
+  // the options travel; the Workspace names no root
+  await req('GET', `${P}?dry=1&include=all&git=1`);
+  assert.deepEqual(last('fs.zip'), { op: 'fs.zip', root: '/workspace/exp', include: 'all', git: true, max: 200 << 20, dry: true });
+  await req('GET', '/api/projects/ws/export?dry=1');
+  assert.equal(last('fs.zip').root, undefined);
+  // the zip
+  const res = await fetch(`${base}${P}?name=my-app.zip`, { headers: { 'X-Bn-Code-Proxy': SECRET } });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('content-type'), 'application/zip');
+  assert.match(res.headers.get('content-disposition'), /^attachment; filename="my-app\.zip"/);
+  assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(Buffer.from(await res.arrayBuffer()).toString(), 'PK-onePK-two');
+  assert.equal(last('fs.zip').dry, undefined);
+  // a name the page makes up is not taken: the server's own
+  const odd = await fetch(`${base}${P}?name=${encodeURIComponent('../x"y.zip')}`, { headers: { 'X-Bn-Code-Proxy': SECRET } });
+  assert.match(odd.headers.get('content-disposition'), /filename="Exp-app-\d{8}-\d{6}\.zip"/);
+  await odd.arrayBuffer();
+  // refusals come before any byte, as JSON
+  state.zip = 'over';
+  r = await req('GET', `${P}?dry=1`);
+  assert.equal(r.json.over, true);
+  r = await req('GET', P);
+  assert.equal(r.status, 413);
+  assert.match(r.json.error, /too large: 2 files, 300\.0 MiB/);
+  state.zip = 'busy';
+  assert.equal((await req('GET', P)).status, 429);
+  // a failure after bytes went out ends the connection: the page sees a broken download
+  state.zip = 'half';
+  await assert.rejects(async () => { const x = await fetch(`${base}${P}`, { headers: { 'X-Bn-Code-Proxy': SECRET } }); await x.arrayBuffer(); });
+  state.zip = undefined;
+  // an id the records do not have: refused before the sandbox is asked
+  const n = calls.length;
+  assert.equal((await req('GET', '/api/projects/p_00000000/export?dry=1')).status, 404);
+  assert.equal(calls.length, n);
 });
