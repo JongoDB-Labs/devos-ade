@@ -1049,8 +1049,7 @@ sw.add(None, "clipped text", "ellipsis", "code|li[data-testid=session-row].sess 
 sw.add(None, "clipped text", "ellipsis", "code|div[data-testid=git-panel].gitp > label.gitr-repo.small > select[data-testid=git-repo]", at("code-side-git"), a={"path": "p"}, detail="d")
 got = {k: v["allowed"] for k, v in sw.findings.items()}
 check(got[next(k for k in got if k.startswith("overlap|signin"))] and got[next(k for k in got if k.endswith("span.sess-title"))], f"the reviewed entries match their findings: {got}")
-# (v0.31.4 still lists the Git panel's picker: its own fix, JON-512, removes the entry and expects it refused here)
-check(got[next(k for k in got if "git-repo" in k)], f"the Git panel's picker is matched by its entry too: {got}")
+check(not got[next(k for k in got if "git-repo" in k)], f"the Git panel's picker is no longer allowed to be cut (JON-512): {got}")
 # workers' results: one finding seen by two is one, its sizes and states joined; the first screenshot kept
 f = lambda **k: {"sig": "overlap|home|a|b", "check": "overlap", "allowed": False, "seen": 1, "widths": [], "heights": [800],
                  "themes": ["light"], "states": [], "devices": ["phone"], "shot": "", **k}
