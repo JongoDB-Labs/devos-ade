@@ -830,12 +830,36 @@ def question_or_answer(page, timeout=120000):
                            arg=_asked[id(page)], timeout=timeout)
 
 
+# The shared session's mode (code-session-streams-an-answer's, which later checks reuse) as the backend says it, asked
+# from the check's last page while it is on the code host; None: not known (another host, the session not open)
+SHARED_MODE = """async (sid) => { try { const r = await fetch('/api/state', { credentials: 'same-origin' }); if (!r.ok) return null;
+  const s = ((await r.json()).sessions || []).find((x) => x.id === sid); return s ? s.mode : null; } catch (e) { return null; } }"""
+
+
+def shared_mode_after(ctx, name):
+    """A check that passed must leave the shared session (ctx.code_session) in Default, as later checks reuse it: a mode
+    picked while a page shows it (before New session) is that session's — Plan once was, and the next check's turn wrote
+    a plan file instead of answering."""
+    sid = getattr(ctx, "code_session", None)
+    page = getattr(ctx, "code_ui_page", None)
+    if not sid or page is None or not page.url.startswith(CODE):
+        return
+    try:
+        mode = page.evaluate(SHARED_MODE, sid)
+    except Exception:  # noqa: BLE001 — a page that went away says nothing
+        return
+    expect(mode in (None, "default"), f"{name} left the shared session {sid[:8]} (code_session) in {mode}, not Default: later checks reuse it")
+
+
 def saved(fn):
     """The check's network/console log is kept even when it fails (the Recorder of its last page); a failure also
-    leaves a screenshot and what the page showed last (out/browser/shots/fail-*.png, out/browser/fail-*.txt)."""
+    leaves a screenshot and what the page showed last (out/browser/shots/fail-*.png, out/browser/fail-*.txt). A check
+    that passed must leave the shared session in Default (shared_mode_after)."""
     def run(ctx):
         try:
-            return fn(ctx)
+            out = fn(ctx)
+            shared_mode_after(ctx, fn.__name__)
+            return out
         except Exception:
             page = getattr(ctx, "code_ui_page", None)
             if page is not None:
@@ -1216,12 +1240,20 @@ def ui_plan(ctx):
     need_haiku()
     page, rec = ui_page(ctx, "code-ui-plan")
     c = Code.on(page, rec, goto=False)
-    page.get_by_test_id("model-picker").click()
-    page.get_by_test_id("model-haiku").click()
-    page.get_by_test_id("mode-picker").click()
-    page.get_by_test_id("mode-plan").click()
+    # (a session of its own first: the page shows another check's session — code_session, say — and a model or a mode
+    # picked now would be that session's: Plan was left on it, and the next check's turn wrote a plan file instead)
+    old = page.evaluate("(JSON.parse(localStorage.getItem('bn.code.v1') || '{}').lastSession) || ''")
     page.get_by_test_id("chat-new").click()
     see(page.locator(".chat-head .pane-title")).to_have_text("New session", timeout=20000)
+    page.wait_for_function("(old) => { const s = (JSON.parse(localStorage.getItem('bn.code.v1') || '{}').lastSession) || '';"
+                           " return s.length === 36 && s !== old; }", arg=old, timeout=30000)
+    own = page.evaluate("JSON.parse(localStorage.getItem('bn.code.v1')).lastSession")
+    page.get_by_test_id("model-picker").click()
+    page.get_by_test_id("model-haiku").click()
+    wait_state(c, own, "model", HAIKU)
+    page.get_by_test_id("mode-picker").click()
+    page.get_by_test_id("mode-plan").click()
+    wait_state(c, own, "mode", "plan")
     target = f"{UI}/planned-{int(time.time())}.txt"
     ask(page, f"Plan this, then do it once I approve: create the file {target} containing exactly the word planned. "
               "Keep the plan to one or two lines and present it for my approval with ExitPlanMode.")
