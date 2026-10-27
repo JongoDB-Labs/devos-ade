@@ -248,14 +248,17 @@ def test_a_jobs_steps_pass_with_their_types_checked(make_client, dirs):
     c = make_client()
     beat(st)
     now = int(time.time())
+    # (a settings change's steps carry a sub-second "took": "0.4s" — admin.TOOK accepts one tenth; "4.s" does not)
     steps = [{"label": "Postgres + RustFS", "took": "1m50s"}, {"label": "Terminal", "took": "3m11s"}, {"label": "Code page", "took": "<b>"},
+             {"label": "Restart · LiteLLM's models (live, no restart)", "took": "0.4s"}, {"label": "Verify", "took": "4.s"},
              {"label": "", "took": "1s"}, {"took": "2s"}, "x", {"label": 5}]
     (st / "helper-status.json").write_text(json.dumps({"id": "j", "action": "update", "phase": "restarting", "message": "Restarting the services",
                                                          "started_at": now - 600, "updated_at": now, "step": "Terminal", "step_started_at": now - 130,
                                                          "steps": steps}))
     j = c.get("/api/admin/status", headers=API).json()["job"]
     assert j["step"] == "Terminal" and j["step_started_at"] == now - 130
-    assert j["steps"] == [{"label": "Postgres + RustFS", "took": "1m50s"}, {"label": "Terminal", "took": "3m11s"}, {"label": "Code page", "took": ""}]
+    assert j["steps"] == [{"label": "Postgres + RustFS", "took": "1m50s"}, {"label": "Terminal", "took": "3m11s"}, {"label": "Code page", "took": ""},
+                          {"label": "Restart · LiteLLM's models (live, no restart)", "took": "0.4s"}, {"label": "Verify", "took": ""}]
     # a status from before (no steps) or with the wrong types: empty, never an error
     (st / "helper-status.json").write_text(json.dumps({"id": "j", "action": "update", "phase": "restarting", "updated_at": now,
                                                          "step": ["x"], "step_started_at": "soon", "steps": {"a": 1}}))

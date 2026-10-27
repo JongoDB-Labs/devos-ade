@@ -355,8 +355,12 @@ _stub_stack() {   # services up, LiteLLM and the portal answer; every call is lo
   curl() { echo 200; }
   litellm_key_status() { echo 200; }
   render_config() { echo "render" >> "$TMP/calls"; }
+  # (LiteLLM's container, for its models changed live: none here — lib/litellm_live.sh then says to restart it)
+  _compose_cid() { :; }
   mkdir -p "$STACK_DIR/litellm" 2>/dev/null || true
 }
+# _todo -> what the change left to its follow-up (lib/settings.sh _cfg_followup), one word per line
+_todo() { cat "$(cfg_followup_todo)" 2>/dev/null || true; }
 
 _in_checkout() {   # a fake checkout whose litellm/config.yaml exists (apply needs it after the first setup)
   STACK_DIR="$TMP/co"; mkdir -p "$STACK_DIR/litellm"; : > "$STACK_DIR/litellm/config.yaml"
@@ -371,10 +375,16 @@ test_apply_budget_change_end_to_end() {
   assert_eq "$(get_env BUDGET_SETUP)/$(get_env BUDGET_OPENWEBUI)" "6.5/75"
   assert_contains "$(cat "$TMP/calls")" "key LITELLM_KEY_SETUP setup 6.5"
   assert_contains "$(cat "$TMP/calls")" "key LITELLM_KEY_OPENWEBUI open-webui 75"
-  assert_contains "$(cat "$TMP/calls")" "banner"
+  assert_not_contains "$(cat "$TMP/calls")" "banner"   # Chat's banner: after Done, in the follow-up
+  assert_contains "$(_todo)" "banner"
   assert_not_contains "$(cat "$TMP/calls")" "dc up"   # budgets need no restart
   assert_contains "$(cat "$TMP/err")" "config: 4/4 verifying"
-  assert_contains "$(cat "$TMP/err")" "saved: BUDGET_SETUP, BUDGET_OPENWEBUI"
+  assert_contains "$(cat "$TMP/err")" "saved: BUDGET_SETUP, BUDGET_OPENWEBUI (in "
+  # every phase and step timed (JON-533): Settings' progress card shows them
+  for l in "config: 1/4 checked in " "config: 2/4 saved in " "config: 3/4 restarted in " "config: 4/4 verified in " \
+           "Check · the new values ready (" "Save · .env written ready (" "Restart · the keys' budgets in LiteLLM ready (" "Verify · LiteLLM's keys ready ("; do
+    assert_contains "$(cat "$TMP/err")" "$l"
+  done
   assert_contains "$(tail -n 1 "$(settings_audit_file)")" "result=ok via=portal-local keys=BUDGET_SETUP,BUDGET_OPENWEBUI"
   [ ! -e "$(settings_dir)/pending.env" ]
   assert_contains "$(cat "$(settings_snapshot_file)")" "\"base\": \"$(env_sha256)\""
@@ -478,7 +488,8 @@ test_apply_owner_email_migrates_the_same_account() {
   _owui_drop_strays() { echo "strays $1" >> "$TMP/calls"; }
   owner_signin_check() { echo "signin $1" >> "$TMP/calls"; }
   _lines OPENWEBUI_ADMIN_EMAIL=new@example.com | _apply 2>/dev/null
-  assert_eq "$(tr '\n' ';' < "$TMP/calls" | sed 's/session;//g')" "delete u-stray;move u-owner new@example.com;dc up -d --no-deps --wait open-webui portal;strays admin@example.com;banner;signin u-owner;"
+  assert_eq "$(tr '\n' ';' < "$TMP/calls" | sed 's/session;//g')" "delete u-stray;move u-owner new@example.com;dc up -d --no-deps --wait open-webui portal;strays admin@example.com;signin u-owner;"
+  assert_contains "$(_todo)" "banner"   # (Chat restarted: its banner after Done)
   assert_eq "$(get_env OPENWEBUI_ADMIN_EMAIL)/$(get_env LITELLM_UI_USER)" "new@example.com/new@example.com"
 }
 
@@ -508,10 +519,14 @@ test_apply_aws_key_is_checked_live_first_and_tested_after() {
   set_env AWS_AUTH instance-role
   aws_key_live_check() { echo "live $1 $([ "$2" = "${FAKE_AWS_5}" ] && echo secret-ok) $4" >> "$TMP/calls"; }
   cmd_test() { echo "smoke test" >> "$TMP/calls"; }
+  probe_litellm() { echo "probe $1 $2" >> "$TMP/calls"; echo 200; }
+  set_env CLAUDE_BEDROCK_HAIKU_MODEL claude-haiku-5-5
   _lines AWS_ACCESS_KEY_ID=${FAKE_AWS_2} AWS_SECRET_ACCESS_KEY=${FAKE_AWS_5} | _apply 2> "$TMP/err"
   assert_eq "$(head -n 1 "$TMP/calls")" "live ${FAKE_AWS_2} secret-ok the new key"
   assert_contains "$(cat "$TMP/calls")" "dc up -d --no-deps --wait litellm"
-  assert_eq "$(tail -n 1 "$TMP/calls")" "smoke test"
+  # verified with one 1-token request on the cheapest Claude model, not the whole smoke test (JON-533)
+  assert_eq "$(tail -n 1 "$TMP/calls")" "probe chat claude-haiku-5-5"
+  assert_not_contains "$(cat "$TMP/calls")" "smoke test"
   assert_eq "$(get_env AWS_AUTH)" ""
   assert_contains "$(cat "$TMP/err")" "deactivate the old key (AKIA…MNOP)"
 }
@@ -519,9 +534,10 @@ test_apply_aws_key_is_checked_live_first_and_tested_after() {
 test_apply_aws_smoke_test_failure_puts_the_old_key_back() {
   _env; _in_checkout; _stub_stack
   aws_key_live_check() { :; }
-  cmd_test() { die "1 check(s) failed — see ./stack logs"; }
+  probe_litellm() { echo 403; }
+  set_env CLAUDE_BEDROCK_HAIKU_MODEL claude-haiku-5-5
   if out="$( (_lines AWS_ACCESS_KEY_ID=${FAKE_AWS_2} AWS_SECRET_ACCESS_KEY=${FAKE_AWS_5} | _apply) 2>&1)"; then return 1; fi
-  assert_contains "$out" "failed while checking the result: 1 check(s) failed"
+  assert_contains "$out" "failed while checking the result: Bedrock does not answer through LiteLLM with the new key (HTTP 403)"
   assert_eq "$(get_env AWS_ACCESS_KEY_ID)" ${FAKE_AWS_0}
   assert_eq "$(get_env AWS_SECRET_ACCESS_KEY)" ${FAKE_AWS_3}
 }
@@ -1443,16 +1459,17 @@ test_pins_and_hidden_models_must_be_enabled_chat_models() {
 }
 
 # The Experiential Labs key (lib/explabs.sh): checked with the gateway before anything changes (its model list, free),
-# then the list read again with it, LiteLLM recreated with its models, Open WebUI's names; a refused key changes
-# nothing; removed, its list and Open WebUI's entries go. The key itself: never in a command line, a message, the
-# audit log or the snapshot (the gateway's answers are stubbed)
+# the list cached for it made from what that check read (no second read), LiteLLM recreated for its new environment;
+# the chosen models' details and Open WebUI's names after Done, in the follow-up; a refused key changes nothing; removed,
+# its list goes. The key itself: never in a command line, a message, the audit log or the snapshot (the gateway's
+# answers are stubbed)
 test_apply_the_experiential_labs_key() {
   _env; _in_checkout; _stub_stack
   local xl; xl="xpl_$(printf '%040d' 0 | tr 0 c)"
   printf 'model_list: []\n' > "$STACK_DIR/litellm/config.yaml"
-  xl_validate_key() { echo "validate" >> "$TMP/calls"; [ "$1" = "$xl" ] || { XL_ERR="the gateway rejected the key (HTTP 401)"; return 1; }; }
-  explabs_refresh() { echo "refresh ${1:-now}" >> "$TMP/calls"; echo "  - model_name: \"xl/qwen3.8-27b\"" >> "$STACK_DIR/litellm/config.yaml"; }
-  _xl_owui_refresh() { echo "owui-xl" >> "$TMP/calls"; }
+  xl_fetch_ids() { echo "validate" >> "$TMP/calls"; [ "$2" = "$xl" ] || { XL_ERR="the gateway rejected the key (HTTP 401)"; return 1; }; printf 'qwen3.8-27b\ngpt-5-mini\n' > "$1"; }
+  explabs_refresh() { echo "refresh ${1:-now}" >> "$TMP/calls"; }
+  render_config() { echo "render" >> "$TMP/calls"; echo "  - model_name: \"xl/qwen3.8-27b\"" >> "$STACK_DIR/litellm/config.yaml"; }
   # refused by the gateway: nothing changes, and the message says why without the key
   if (_lines "EXPLABS_API_KEY=xpl_$(printf '%040d' 0 | tr 0 d)" | _apply --via portal --origin local --base "$(env_sha256)") 2> "$TMP/err"; then return 1; fi
   assert_contains "$(cat "$TMP/err")" "EXPLABS_API_KEY: the gateway rejected the key (HTTP 401) — nothing was changed"
@@ -1462,32 +1479,40 @@ test_apply_the_experiential_labs_key() {
   if (_lines "EXPLABS_API_KEY=$xl" | _apply --via portal --origin remote) 2> "$TMP/err"; then return 1; fi
   assert_contains "$(cat "$TMP/err")" "EXPLABS_API_KEY can only be changed from the computer running"
   assert_not_contains "$(cat "$TMP/calls")" "validate"
-  # accepted: stored, the list read again (now), LiteLLM recreated with the new models, Open WebUI named; no portal restart
+  # accepted: stored; its list cached from what its check read (the details read before kept for its ids), never a
+  # second read now; LiteLLM recreated for its new key (Compose: its environment); the details and Open WebUI after Done
   : > "$TMP/calls"
+  mkdir -p "$(dirname "$(xl_cache_tsv)")"
+  printf '# fetched_at: x\nqwen3.8-27b\t1\t1\t\t\t\t\t1\t\t\t\tmax_tokens\t8192\t32768\t0.0000003\t0.0000006\t\t\nold-model\t1\n' > "$(xl_cache_tsv)"
   _lines "EXPLABS_API_KEY=$xl" | _apply --via portal --origin local --base "$(env_sha256)" 2> "$TMP/err"
   assert_eq "$(get_env EXPLABS_API_KEY)" "$xl"
-  assert_eq "$(sed -n 1,2p "$TMP/calls" | tr '\n' ' ')" "validate refresh now "
-  assert_contains "$(cat "$TMP/calls")" "dc up -d --no-deps --force-recreate --wait litellm"
-  assert_contains "$(cat "$TMP/calls")" "owui-xl"
-  assert_not_contains "$(cat "$TMP/calls")" "--wait portal"
+  assert_eq "$(head -n 1 "$TMP/calls")" "validate"
+  assert_not_contains "$(cat "$TMP/calls")" "refresh"
+  assert_eq "$(xl_cached_rows | cut -f1 | tr '\n' ' ')" "qwen3.8-27b gpt-5-mini "              # the new key's list
+  assert_eq "$(xl_cached_rows | awk -F'\t' '$1 == "qwen3.8-27b" { print $16 }')" "0.0000006"   # its details kept
+  xl_cache_current
+  assert_contains "$(cat "$TMP/calls")" "dc up -d --no-deps --wait litellm"
+  assert_not_contains "$(cat "$TMP/calls")" "--wait litellm portal"
+  assert_contains "$(_todo)" "owui-xl"
   assert_contains "$(tail -n 1 "$(settings_audit_file)")" "result=ok via=portal-local keys=EXPLABS_API_KEY"
   assert_contains "$(cat "$(settings_snapshot_file)")" '"key": "EXPLABS_API_KEY", "group": "explabs", "secret": "S"'
   assert_not_contains "$(cat "$TMP/err" "$TMP/calls" "$(settings_audit_file)" "$(settings_snapshot_file)")" "$xl"
   assert_not_contains "$(cat "$TMP/err" "$TMP/calls" "$(settings_audit_file)" "$(settings_snapshot_file)")" "cccccccc"
-  # the models: from anywhere; the list read only when older than 12 h
-  : > "$TMP/calls"
+  # the models: from anywhere, from the list cached (no network now); a model without its details yet: read after Done
+  : > "$TMP/calls"; rm -f "$(cfg_followup_todo)"
   _lines EXPLABS_MODELS=qwen3.8-27b,gpt-5-mini | _apply --via portal --origin remote 2>/dev/null
   assert_eq "$(get_env EXPLABS_MODELS)" qwen3.8-27b,gpt-5-mini
-  assert_contains "$(cat "$TMP/calls")" "refresh 720"
+  assert_not_contains "$(cat "$TMP/calls")" "refresh"
   assert_not_contains "$(cat "$TMP/calls")" "validate"
-  # removed: the line stays empty (off), the list and its key mark go, Open WebUI's entries with them
+  assert_contains "$(_todo)" "xl-details"
+  # removed: the line stays empty (off), the list and its key mark go, Open WebUI's entries after Done
   printf 'x\n' > "$(xl_cache_tsv)"; mkdir -p "$STATE_DIR"; printf 'x\n' > "$(xl_key_mark)"
-  : > "$TMP/calls"
+  : > "$TMP/calls"; rm -f "$(cfg_followup_todo)"
   _lines EXPLABS_API_KEY= | _apply 2>/dev/null
   assert_eq "$(grep -c '^EXPLABS_API_KEY=$' "$ENV_FILE")" 1
   [ ! -e "$(xl_cache_tsv)" ] && [ ! -e "$(xl_key_mark)" ]
   assert_not_contains "$(cat "$TMP/calls")" "refresh"
-  assert_contains "$(cat "$TMP/calls")" "owui-xl"
+  assert_contains "$(_todo)" "owui-xl"
 }
 
 test_apply_openrouter_key_plans_models_like_openrouter_set() {
@@ -1520,8 +1545,39 @@ test_litellm_restarts_when_only_its_environment_changes() {
   assert_not_contains "$(cat "$TMP/calls")" "force-recreate"
   : > "$TMP/calls"
   render_config() { echo render >> "$TMP/calls"; echo "# changed $RANDOM" >> "$STACK_DIR/litellm/config.yaml"; }
-  _lines LITELLM_STORE_PROMPTS=true | _apply 2>/dev/null                       # the config changes: recreated
-  assert_contains "$(cat "$TMP/calls")" "dc up -d --no-deps --force-recreate --wait litellm"
+  litellm_live_sync() { echo "live" >> "$TMP/calls"; LITELLM_LIVE_ERR="settings besides the model list changed"; return 3; }
+  _lines LITELLM_STORE_PROMPTS=true | _apply 2> "$TMP/err"                     # the config changes, not only its models
+  # tried live, then recreated by Compose for its config's checksum (BN_LITELLM_CONFIG_SUM): no --force-recreate needed
+  assert_eq "$(grep -v '^render' "$TMP/calls" | tr '\n' ';')" "live;dc up -d --no-deps --wait litellm;"
+  assert_contains "$(cat "$TMP/err")" "LiteLLM restarts for this change: settings besides the model list changed"
+}
+
+test_litellm_env_keys_are_compose_s() {   # lib/settings.sh LITELLM_ENV_KEYS: the .env keys of LiteLLM's environment
+  local have want
+  have="$(printf '%s\n' $LITELLM_ENV_KEYS | sort -u | tr '\n' ' ')"
+  want="$(awk '/^  litellm:$/ { f = 1; next } f && /^  [a-z]/ { f = 0 } f' "$T_ROOT/compose.yaml" |
+    sed -n 's/.*\${\([A-Z_][A-Z0-9_]*\).*/\1/p; s/^ *\([A-Z_][A-Z0-9_]*\):[[:space:]]*$/\1/p' | grep -vx BN_LITELLM_CONFIG_SUM | sort -u | tr '\n' ' ')"
+  assert_eq "$have" "$want"
+}
+
+# A model list (EXPLABS_MODELS, OPENROUTER_MODELS, CODE_*): LiteLLM's models changed live, no restart, no Compose call
+# for it (JON-533); a live change that fails is said and LiteLLM restarted instead
+test_a_model_list_change_reaches_litellm_live_without_a_restart() {
+  _env; _in_checkout; _stub_stack
+  printf 'model_list: []\n' > "$STACK_DIR/litellm/config.yaml"
+  local before; before="$(litellm_config_sum_now)"
+  render_config() { echo render >> "$TMP/calls"; echo '  - model_name: "claude-haiku-5-5"' >> "$STACK_DIR/litellm/config.yaml"; }
+  litellm_live_sync() { echo "live $1 $(cat "$2")" >> "$TMP/calls"; LITELLM_LIVE_SAID="1 changed"; }
+  _lines CODE_DEFAULT_MODEL= | _apply 2> "$TMP/err"
+  assert_eq "$(tr '\n' ';' < "$TMP/calls")" "render;live $before model_list: [];"   # (the sum and copy of the config it served)
+  assert_contains "$(cat "$TMP/err")" "LiteLLM took the new model list without a restart (1 changed)"
+  assert_contains "$(cat "$TMP/err")" "Restart · LiteLLM's models (live, no restart) ready ("
+  assert_not_contains "$(cat "$TMP/calls")" "dc up"
+  : > "$TMP/calls"
+  litellm_live_sync() { echo "live" >> "$TMP/calls"; LITELLM_LIVE_ERR="LiteLLM refused x (HTTP 500)"; return 1; }
+  _lines CODE_DEFAULT_MODEL=claude-haiku-5-5 | _apply 2> "$TMP/err"
+  assert_contains "$(cat "$TMP/err")" "LiteLLM could not take the new model list live (LiteLLM refused x (HTTP 500)) — it restarts instead"
+  assert_contains "$(cat "$TMP/calls")" "dc up -d --no-deps --wait litellm"
 }
 
 test_first_openrouter_key_recreates_litellm_although_refresh_rendered_already() {
@@ -1530,7 +1586,8 @@ test_first_openrouter_key_recreates_litellm_although_refresh_rendered_already() 
   or_validate_key() { return 0; }; or_plan_models() { :; }; or_plan_notes() { :; }; _or_owui_refresh() { :; }
   openrouter_refresh() { echo "  - or/model" >> "$STACK_DIR/litellm/config.yaml"; }   # (renders itself)
   _lines OPENROUTER_API_KEY=sk-or-v1-0123456789abcdef0123456789abcdef | _apply 2>/dev/null
-  assert_contains "$(cat "$TMP/calls")" "dc up -d --no-deps --force-recreate --wait litellm"
+  # (its key is in LiteLLM's and the portal's environment: Compose recreates both, LiteLLM with the new config too)
+  assert_contains "$(cat "$TMP/calls")" "dc up -d --no-deps --wait litellm portal"
   : > "$TMP/calls"; openrouter_refresh() { :; }
   _lines OPENROUTER_API_KEY=sk-or-v1-ffffffffffffffffffffffffffffffff | _apply 2>/dev/null   # another key, same models
   assert_contains "$(cat "$TMP/calls")" "dc up -d --no-deps --wait litellm portal"

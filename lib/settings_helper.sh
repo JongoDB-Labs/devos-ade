@@ -200,26 +200,76 @@ _settings_phase() {
   esac
 }
 
+# A settings job's log (.state/helper/last-settings.log) has the time each line came at the start of it, "[20:32:21.412] "
+# (_settings_stamp: perl's clock, else date's whole seconds): where the time of a slow change went stays readable after
+# it. _settings_unstamp LOG -> the lines without it.
+_settings_stamp() {
+  if command -v perl >/dev/null 2>&1; then
+    perl -MPOSIX=strftime -MTime::HiRes=time -ne 'BEGIN { $| = 1 } $t = time; printf "[%s.%03d] %s", strftime("%H:%M:%S", localtime($t)), ($t - int($t)) * 1000, $_'
+  else
+    local l; while IFS= read -r l || [ -n "$l" ]; do printf '[%s] %s\n' "$(date +%H:%M:%S)" "$l"; done
+  fi
+}
+_settings_unstamp() { sed 's/^\[[0-9:.]*\] //' "$1" 2>/dev/null; }
+
+# _settings_steps LOG — what Settings' progress card shows of a change (lib/helper.sh's JOB_STEP, JOB_STEP_AT,
+# JOB_STEPS_JSON, for helper_write_status), from the lines ./stack config apply writes (lib/settings.sh): each step
+# done with its time ("Restart · LiteLLM's models (live, no restart) ready (0.9s)"), each phase's time ("config: 3/4
+# restarted in 1.2s" -> "Restart"), the whole change's ("saved: … (in 2.1s)" -> "Done"), and the step that runs now
+# ("…: starting…"). At most 40, read again only when the log has grown.
+_settings_steps() {
+  local size line label took cur='' arr='' n=0
+  size="$(wc -c < "$1" 2>/dev/null | tr -d ' ')"
+  [ "$JOB_STEPS_ID" != "$JOB_ID" ] || [ "$size" != "$JOB_STEPS_SIZE" ] || return 0
+  [ "$JOB_STEPS_ID" = "$JOB_ID" ] || { JOB_STEP=''; JOB_STEP_AT=''; }
+  JOB_STEPS_ID="$JOB_ID"; JOB_STEPS_SIZE="$size"
+  while IFS= read -r line; do
+    label=''; took=''
+    case "$line" in
+      '==> config: '[1-4]'/4 '*' in '*)
+        took="${line##* in }"
+        case "$line" in '==> config: 1/4'*) label=Check ;; '==> config: 2/4'*) label=Save ;; '==> config: 3/4'*) label=Restart ;; *) label=Verify ;; esac ;;
+      '==> saved: '*' (in '*')') took="${line##* (in }"; took="${took%)}"; label=Done ;;
+      '==> '*': starting…') cur="${line#==> }"; cur="${cur%: starting…}" ;;
+      '==> '*' ready ('*')')
+        label="${line#==> }"; took="${label##* ready (}"; took="${took%)}"; label="${label% ready (*}"
+        [ "$cur" != "$label" ] || cur='' ;;
+    esac
+    if [ -n "$label" ] && [ "$n" -lt 40 ]; then
+      arr="$arr${arr:+, }{\"label\": \"$(_json_str "$label")\", \"took\": \"$(_json_str "$took")\"}"; n=$((n + 1))
+    fi
+  done < <(_settings_unstamp "$1" | grep -E '^==> ' | tail -n 400)
+  [ "$cur" = "$JOB_STEP" ] || { JOB_STEP="$cur"; JOB_STEP_AT="$( [ -z "$cur" ] || date +%s)"; }
+  JOB_STEPS_JSON="[$arr]"
+}
+
 # helper_run_settings ID — ./stack config apply --stdin with the request's values on stdin (a pipe from this shell:
 # never a command line, an environment variable or a file), progress into the status file
 # _settings_tick — a settings job's progress into the status file (_wait_beating's tick; logf: the job's log)
-_settings_tick() { local ph; if ph="$(_settings_phase "$logf")"; then helper_write_status "${ph%%	*}" "${ph#*	}"; fi; }
+_settings_tick() {
+  local ph
+  _settings_steps "$logf"
+  if ph="$(_settings_phase "$logf")"; then helper_write_status "${ph%%	*}" "${ph#*	}"; fi
+}
 
 helper_run_settings() {
-  local logf pid rc=0 msg lim idle
+  local logf pid rc=0 msg lim idle rcf plain
   JOB_ID="$1"; JOB_ACTION=settings; JOB_TRIGGER=''; JOB_STARTED="$(date +%s)"; JOB_FINISHED=''; JOB_FREED=''; JOB_VERSION=''; JOB_RESULT=''
+  JOB_STEPS_ID=''; JOB_STEPS_SIZE=''; JOB_STEP=''; JOB_STEP_AT=''; JOB_STEPS_JSON='[]'
   helper_write_status checking "Checking the new settings"
   _kind_count settings-jobs settings
-  logf="$(helper_dir)/last-settings.log"
-  : > "$logf"; chmod 600 "$logf"
+  logf="$(helper_dir)/last-settings.log"; rcf="$(helper_dir)/last-settings.rc"
+  : > "$logf"; chmod 600 "$logf"; rm -f "$rcf"
   set -m   # (its own process group: _end_job ends all of it)
-  printf '%s' "$SREQ_LINES" | ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" config apply --stdin \
-    --base "$SREQ_BASE" --origin "$SREQ_ORIGIN" --via portal ${SREQ_CONFIRM:+--confirm "$SREQ_CONFIRM"} --yes ) > "$logf" 2>&1 &
+  # (its exit status through a file: the pipeline's last command is the time stamper)
+  printf '%s' "$SREQ_LINES" | ( r=0; cd "$STACK_DIR" && env BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" config apply --stdin \
+    --base "$SREQ_BASE" --origin "$SREQ_ORIGIN" --via portal ${SREQ_CONFIRM:+--confirm "$SREQ_CONFIRM"} --yes || r=$?; echo "$r" > "$rcf" ) 2>&1 | _settings_stamp > "$logf" &
   pid=$!
   set +m
   SREQ_LINES=''; SREQ_AUTH=''
   read -r lim idle <<< "$(_job_deadline settings)"
-  _WAIT_TICK=_settings_tick _wait_beating "$pid" "$lim" "$logf" "$idle" || rc=$?
+  # (every quarter second for its first 30 s: a change that takes seconds is said Done within a quarter second of it)
+  _WAIT_FAST_S=30 _WAIT_TICK=_settings_tick _wait_beating "$pid" "$lim" "$logf" "$idle" || rc=$?
   JOB_FINISHED="$(date +%s)"
   if [ "$rc" = 124 ] || [ "$rc" = 125 ]; then
     JOB_RESULT=failed
@@ -227,10 +277,13 @@ helper_run_settings() {
     else helper_write_status failed "$(_stopped_text settings "$lim" last-settings.log)"; fi
     return 0
   fi
-  if [ "$rc" -ne 0 ]; then
-    JOB_RESULT=failed; helper_write_status failed "$(_last_error "$logf")"; return 0
+  rc="$(head -c 8 "$rcf" 2>/dev/null | tr -cd '0-9' || true)"; rm -f "$rcf"
+  _settings_steps "$logf"; JOB_STEP=''; JOB_STEP_AT=''
+  if [ "${rc:-1}" -ne 0 ]; then
+    plain="$(mktemp)"; _settings_unstamp "$logf" > "$plain"
+    JOB_RESULT=failed; helper_write_status failed "$(_last_error "$plain")"; rm -f "$plain"; return 0
   fi
-  msg="$(sed -n 's/^==> saved: /Saved: /p' "$logf" | tail -n 1)"
+  msg="$(_settings_unstamp "$logf" | sed -n 's/^==> saved: /Saved: /p' | tail -n 1)"
   grep -q 'the portal password changed' "$logf" && msg="$msg. Every other browser and device was signed out."
   JOB_RESULT="done"; helper_write_status "done" "${msg:-Saved}"
 }
@@ -366,7 +419,7 @@ _end_job() {
 }
 # _wait_beating PID [MAX_S [LOG IDLE_S]] -> its exit code, once it ended; the heartbeat goes on meanwhile (the portal
 # shows a helper whose heartbeat is older than 30 s as not running), and _WAIT_TICK (a function, when set) runs each
-# time. Past MAX_S in all (0: none) it is ended: 124; when LOG has not grown for IDLE_S (0: no such limit): 125.
+# time: every HELPER_JOB_POLL_S (2 s), or a quarter second for the first _WAIT_FAST_S seconds when that is set. Past MAX_S in all (0: none) it is ended: 124; when LOG has not grown for IDLE_S (0: no such limit): 125.
 _wait_beating() {
   local rc=0 lim="${2:-0}" log="${3:-}" idle="${4:-0}" t0 now size seen last
   t0="$(date +%s)"; last="$t0"; seen=-1
@@ -381,7 +434,9 @@ _wait_beating() {
       elif [ "$(( now - last ))" -ge "$idle" ]; then _end_job "$1"; wait "$1" 2>/dev/null || true; return 125; fi
     fi
     [ -z "${_WAIT_TICK:-}" ] || "$_WAIT_TICK" || true
-    helper_heartbeat || true; sleep "${HELPER_JOB_POLL_S:-2}"
+    helper_heartbeat || true
+    # (_WAIT_FAST_S: a job that usually takes seconds is looked at every quarter second for that long)
+    if [ -n "${_WAIT_FAST_S:-}" ] && [ "$(( now - t0 ))" -lt "$_WAIT_FAST_S" ]; then sleep 0.25; else sleep "${HELPER_JOB_POLL_S:-2}"; fi
   done
   wait "$1" || rc=$?
   return "$rc"
@@ -572,6 +627,22 @@ settings_poll_once() {
   return 1
 }
 
+# helper_nap SECONDS — the helper loop's pause between its rounds (lib/helper.sh helper_main), cut short by a request
+# (looked for every quarter second, by name only: no file is read here): 0 when one is waiting, 1 after SECONDS. A
+# change from Settings starts within a quarter second, not up to HELPER_POLL_S later. SECONDS of 0 (or not a whole
+# number, as a test sets) is one plain `sleep SECONDS` and 1, exactly as the pause it replaces — tests hook `sleep`.
+helper_nap() {
+  local rq f n=0 max
+  case "${1:-3}" in '' | *[!0-9]*) sleep "${1:-3}"; return 1 ;; esac
+  [ "$1" -gt 0 ] || { sleep "$1"; return 1; }
+  rq="$(request_dir)"; max=$(( $1 * 4 ))
+  while [ "$n" -lt "$max" ]; do
+    for f in "$rq"/cfg-*.req "$rq"/act-*.json "$rq"/req-*.json "$rq"/ses-*.json; do [ -e "$f" ] && return 0; done
+    sleep 0.25; n=$((n + 1))
+  done
+  return 1
+}
+
 # _name_nonce FILE_NAME -> the nonce in a request's file name (32 hex), else nothing: the job id Settings waits for
 _name_nonce() { local n="${1#*-}"; n="${n%%.*}"; case "$n" in *[!0-9a-f]*) ;; *) [ "${#n}" != 32 ] || printf '%s\n' "$n" ;; esac; }
 
@@ -586,6 +657,9 @@ _refuse_diag() {
 # _settings_busy -> fails with the reason while ./stack holds the lock or a job runs (stdout: nothing)
 _settings_busy() {
   local holder; holder="$(stack_lock_holder)"
+  # (the last change's follow-up — lib/settings.sh _cfg_followup — is no reason to wait: the change stops it, and its
+  # own follow-up does what was left)
+  case "${holder#* }" in config-followup) holder='' ;; esac
   [ -z "$holder" ] || { echo "Busy: ./stack ${holder#* } is running right now. Try again when it has finished."; return 1; }
   ! _status_in_progress || { echo "another action is still running"; return 1; }
 }

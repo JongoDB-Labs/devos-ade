@@ -374,7 +374,7 @@ config_sums() {
   local policy="${1:-}" c=() g
   [ -n "$policy" ] || policy="$(claude_policy)"
   for g in "$STACK_DIR"/caddy/*.caddy; do [ "${g##*/}" = terminal-gateway.caddy ] || c+=("${g##*/}"); done
-  printf 'BN_LITELLM_CONFIG_SUM=%s\n' "$(files_sum "$STACK_DIR/litellm" config.yaml bn_hooks.py)"
+  printf 'BN_LITELLM_CONFIG_SUM=%s\n' "$(litellm_compose_sum)"
   printf 'BN_CADDY_CONFIG_SUM=%s\n' "$(files_sum "$STACK_DIR/caddy" Caddyfile ${c[@]+"${c[@]}"})"
   printf 'BN_GATEWAY_CONFIG_SUM=%s\n' "$(files_sum "$STACK_DIR/caddy" terminal-gateway.caddy)"
   # (as v0.31.0 gave it: the checksum alone, so an update to this version leaves an unchanged SearXNG running)
@@ -382,6 +382,20 @@ config_sums() {
   printf 'BN_SEARXNG_SETTINGS_SUM=%s\n' "$g"
   printf 'BN_TERMINAL_POLICY_SUM=%s\n' "$(files_sum "$STACK_DIR/terminal/managed" "$policy.json")"
   printf 'BN_CHAT_POLICY_SUM=%s\n' "$(files_sum "$STACK_DIR/terminal/managed" chat.json)"
+}
+# LiteLLM's model list changes without a restart (lib/litellm_live.sh): once it has taken a config.yaml live, that
+# file is what it serves although it did not start with it. litellm_live_sum_file then holds "SUM BASE": the checksum of
+# that config.yaml (with its hook) and the BN_CONFIG_SUM of the container that took it. While config.yaml is still
+# that one, BN_LITELLM_CONFIG_SUM stays BASE: Compose recreates LiteLLM for a config it does not serve yet, never for one
+# it was given live. Any other config.yaml (rendered and not given to it live) has its own checksum again.
+litellm_live_sum_file() { printf '%s\n' "$STATE_DIR/litellm-live.sum"; }
+litellm_config_sum_now() { files_sum "$STACK_DIR/litellm" config.yaml bn_hooks.py; }
+litellm_compose_sum() {
+  local s live='' base=''
+  s="$(litellm_config_sum_now)"
+  [ ! -r "$(litellm_live_sum_file)" ] || read -r live base < "$(litellm_live_sum_file)" 2>/dev/null || true
+  if [ -n "$s" ] && [ "$live" = "$s" ] && [ -n "$base" ]; then s="$base"; fi
+  printf '%s\n' "$s"
 }
 # files_sum DIR NAME... -> "CRC-BYTES" (cksum) of the names and contents of DIR's files NAME… that exist, in the order
 # given; nothing when none exists

@@ -6,6 +6,9 @@
 .set-helper .cmdline { margin: 6px 0 0; }
 .set-helper a { color: var(--accent); }
 .set-job { margin-top: 18px; }
+/* a change's steps with their times (lib/settings_helper.sh): one per line, the phases' times on the chips above */
+.set-job .job-done.set-job-done { display: block; }
+.set-job .job-done.set-job-done li { margin: 1px 0; }
 
 /* search and "Changed from default" */
 .set-find { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 18px 0 0; }
@@ -125,6 +128,7 @@
 .badge-local { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
 .badge-secret { color: var(--ink); }
 .badge-restart { border-style: dashed; }
+.badge-live { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
 
 /* a switch: On/Off in words, then the track */
 .switch { display: inline-flex; flex-direction: row-reverse; align-items: center; gap: 8px; border: 0; background: none; padding: 2px; color: var(--ink); font-size: 13.5px; }

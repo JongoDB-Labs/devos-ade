@@ -1155,6 +1155,7 @@ helper_main() {
     if helper_poll_once; then helper_heartbeat || true; return 0; fi
     if helper_auto_tick; then helper_heartbeat || true; return 0; fi
     [ "${1:-}" != --once ] || return 0
-    sleep "$HELPER_POLL_S"
+    # (a request that comes meanwhile is taken at once: lib/settings_helper.sh helper_nap)
+    if helper_nap "$HELPER_POLL_S" && helper_poll_once; then helper_heartbeat || true; return 0; fi
   done
 }

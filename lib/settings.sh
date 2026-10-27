@@ -222,11 +222,9 @@ _sv_models_list() {
 
 # settings_chat_models -> the chat models the last model check enabled (all of the catalog's before the first)
 settings_chat_models() {
-  local en name mode
-  en="$(_enabled_or_all)"
-  while IFS=$'\t' read -r name mode _ <&3; do
-    [ "$mode" = chat ] && is_enabled "$name" "$en" && printf '%s\n' "$name"
-  done 3< <(catalog_rows)
+  # (one pass: is_enabled's rule — every model before the first check — for the whole catalog)
+  catalog_rows | E="$(_enabled_or_all)" awk -F'\t' 'BEGIN { f = ENVIRON["E"]; if (f != "") while ((getline l < f) > 0) en[l] = 1 }
+    $2 == "chat" && (f == "" || ($1 in en)) { print $1 }'
   return 0
 }
 
@@ -364,7 +362,9 @@ settings_check_batch() {
   if cfg_has OPENWEBUI_ADMIN_EMAIL; then
     [ "$(_lc "$(cfg_new OPENWEBUI_ADMIN_EMAIL)")" != "$(_lc "$(get_env OPENWEBUI_ADMIN_EMAIL)")" ] || die "that is the owner email you have now"
   fi
-  chat="$(settings_chat_models)"
+  # (the enabled chat models and the Code page's list only when the change names a model: read once)
+  if cfg_has CHAT_DEFAULT_MODEL || cfg_has CHAT_TASK_MODEL || cfg_has CLAUDE_MODEL_OPUS || cfg_has CLAUDE_MODEL_SONNET ||
+     cfg_has CLAUDE_MODEL_HAIKU || cfg_has MODELS_HIDDEN; then chat="$(settings_chat_models)"; else chat=''; fi
   for k in CHAT_DEFAULT_MODEL CHAT_TASK_MODEL CLAUDE_MODEL_OPUS CLAUDE_MODEL_SONNET CLAUDE_MODEL_HAIKU; do
     cfg_has "$k" && [ -n "$(cfg_new "$k")" ] || continue
     printf '%s\n' "$chat" | grep -qxF "$(cfg_new "$k")" || die "$k: $(cfg_new "$k") is not a chat model your AWS key can use (./stack models)"
@@ -376,7 +376,7 @@ settings_check_batch() {
     done
   fi
   # Settings › Claude Code › Models: models the stack serves (litellm/code-models.tsv; not checked before it exists)
-  code="$(_code_rows 2>/dev/null | cut -f1)"
+  code=''; if cfg_has CODE_DEFAULT_MODEL || cfg_has CODE_MODELS; then code="$(_code_rows 2>/dev/null | cut -f1)"; fi
   if [ -n "$code" ] && cfg_has CODE_DEFAULT_MODEL && [ -n "$(cfg_new CODE_DEFAULT_MODEL)" ]; then
     printf '%s\n' "$code" | grep -qxF "$(cfg_new CODE_DEFAULT_MODEL)" || die "CODE_DEFAULT_MODEL: $(cfg_new CODE_DEFAULT_MODEL) is not a chat model this stack serves (devos-claude --models all)"
   fi
@@ -688,6 +688,7 @@ cmd_config() {
     apply) [ -f "$ENV_FILE" ] || die "run ./stack setup first"; case "${1:-}" in --stdin) ;; *) die "usage: ./stack config apply --stdin [--base HEX] [--origin local|remote]" ;; esac
            guard_project; config_apply_stdin "$@" ;;
     check-aws) [ -f "$ENV_FILE" ] || die "run ./stack setup first"; config_check_aws ;;
+    followup) [ -f "$ENV_FILE" ] || exit 0; config_followup ;;   # (internal: what a change left to the background)
     report) [ -f "$ENV_FILE" ] || die "run ./stack setup first"; config_report ;;
     regenerate)
       [ -f "$ENV_FILE" ] || die "run ./stack setup first"
@@ -700,24 +701,67 @@ cmd_config() {
 
 # --- the apply pipeline ---
 # 1 lock · 2 validate (+ base) · 3 live checks · 4 old values saved · 5 pre-steps in LiteLLM / Open WebUI · 6 one
-# .env write · 7 restarts (only what the change needs) · 8 free checks (the paid smoke test only for an AWS key) ·
-# on failure: old values back, pre-steps reversed, restarted again · 9 snapshot and audit line.
+# .env write · 7 what the change needs: LiteLLM's models changed live, the services whose settings changed restarted
+# side by side · 8 quick checks of what changed · on failure: old values back, pre-steps reversed, restarted again ·
+# 9 snapshot and audit line · 10 after Done, in the background: Open WebUI's names, tags, prices and banner, and the
+# providers' catalogs (_cfg_followup).
+# Every phase and step says how long it took (JON-533): "config: N/4 …" when a phase starts and "config: N/4 … in
+# 0.4s" when it ends, "LABEL ready (0.3s)" after each step (_cfg_t; in the helper's log also "LABEL: starting…"
+# before it): lib/settings_helper.sh reads them for Settings' progress card, with the time each line came.
 
 CFG_VIA=''; CFG_KEYS_TEXT=''; CFG_CLASSES=''; CFG_PRE_LPW=0; CFG_PRE_EMAIL=0; CFG_OWUI_OWNER=''; CFG_OWUI_STRAY=''
-CFG_TERMINAL_WAS_OFF=0
+CFG_TERMINAL_WAS_OFF=0; CFG_T_ALL=''; CFG_PH_N=0; CFG_PH_T=''; CFG_PH_WORD=''
 
 _cfg_refuse() {   # _cfg_refuse MESSAGE — before anything changed
   settings_audit refused "$CFG_VIA" "$CFG_ORDER" "$1"
   die "$1 — nothing was changed"
 }
 
+# _ms_now -> milliseconds since the epoch: bash 5's EPOCHREALTIME (no process), else perl's clock, else whole seconds
+_ms_now() {
+  if [ -n "${EPOCHREALTIME:-}" ]; then local t="${EPOCHREALTIME//[!0-9]/}"; printf '%s\n' "${t:0:13}"; return 0; fi
+  perl -MTime::HiRes=time -e 'printf "%d\n", time() * 1000' 2>/dev/null || printf '%s000\n' "$(date +%s)"
+}
+# _fmt_ms MS -> "0.4s" under 10 s, else fmt_elapsed's "12s" / "2m05s"
+_fmt_ms() {
+  local ms="${1:-0}"
+  case "$ms" in '' | *[!0-9]*) ms=0 ;; esac
+  if [ "$ms" -lt 10000 ]; then printf '%d.%ds\n' $((ms / 1000)) $(((ms % 1000) / 100)); else fmt_elapsed $((ms / 1000)); fi
+}
+# _cfg_t LABEL CMD… — CMD in this shell, timed: "LABEL ready (0.4s)" once it worked; in the helper's log "LABEL:
+# starting…" before it (Settings shows the step that runs, and for how long). CMD's status.
+_cfg_t() {
+  local label="$1" t0 rc=0
+  shift
+  t0="$(_ms_now)"
+  phase_start "$label"
+  "$@" || rc=$?
+  [ "$rc" != 0 ] || log "$label ready ($(_fmt_ms $(( $(_ms_now) - t0 ))))"
+  return "$rc"
+}
+# _cfg_phase N WORD [WHAT] / _cfg_phase_end — "config: N/4 WORD WHAT", and the phase before it ended: "config: M/4
+# DONE_WORD in 0.3s"
+_cfg_phase() {
+  _cfg_phase_end
+  CFG_PH_N="$1"; CFG_PH_T="$(_ms_now)"
+  case "$2" in checking) CFG_PH_WORD=checked ;; saving) CFG_PH_WORD=saved ;; restarting) CFG_PH_WORD=restarted ;; *) CFG_PH_WORD=verified ;; esac
+  log "config: $1/4 $2${3:+ $3}"
+}
+_cfg_phase_end() {
+  [ "$CFG_PH_N" != 0 ] || return 0
+  log "config: $CFG_PH_N/4 $CFG_PH_WORD in $(_fmt_ms $(( $(_ms_now) - CFG_PH_T )))"
+  CFG_PH_N=0
+}
+
 config_apply() {
   local origin="$1" via="$2" base="${3:-}"
   CFG_VIA="$via"; [ "$via" = cli ] || CFG_VIA="$via-$origin"
+  CFG_T_ALL="$(_ms_now)"
+  _cfg_followup_stop   # (the last change's follow-up: what it had left is done after this one)
   stack_lock config
   quiet_compose
-  log "config: 1/4 checking ($CFG_ORDER)"
-  _cfg_step settings_check_batch "$origin" || _cfg_refuse "$CFG_ERR"
+  _cfg_phase 1 checking "($CFG_ORDER)"
+  _cfg_step _cfg_t "Check · the new values" settings_check_batch "$origin" || _cfg_refuse "$CFG_ERR"
   if [ -n "$base" ] && [ "$base" != "$(env_sha256)" ]; then
     _cfg_refuse "settings changed on disk since you opened the page — reload it and try again"
   fi
@@ -727,44 +771,49 @@ config_apply() {
     _cfg_refuse "LiteLLM is not running, so the change cannot be applied now: ./stack up (or ./stack status) first"
   fi
   _cfg_live_checks
-  log "config: 2/4 saving"
-  _cfg_save_old
+  _cfg_phase 2 saving
+  _cfg_t "Save · the previous values kept" _cfg_save_old
   # the Code page on with the terminal off turns the terminal on too (_cfg_code): a rollback turns it off again
   if _cfg_on code && [ "$(cfg_new CODE_ENABLED)" = true ] && ! terminal_on; then CFG_TERMINAL_WAS_OFF=1; fi
   _cfg_pre || _cfg_rollback "changing the sign-ins" "$CFG_ERR"
-  _cfg_step _cfg_write || _cfg_rollback "saving .env" "$CFG_ERR"
-  log "config: 3/4 restarting what the change needs"
+  _cfg_step _cfg_t "Save · .env written" _cfg_write || _cfg_rollback "saving .env" "$CFG_ERR"
+  _cfg_phase 3 restarting "what the change needs"
   _cfg_step _cfg_post || _cfg_rollback "restarting" "$CFG_ERR"
-  log "config: 4/4 verifying"
+  _cfg_phase 4 verifying
   _cfg_step _cfg_verify || _cfg_rollback "checking the result" "$CFG_ERR"
+  _cfg_phase_end
   _cfg_done
 }
 
-# _cfg_step CMD ARGS… — CMD in a subshell (a die inside ends only it); its messages pass on, its last error is
-# in CFG_ERR
+# _cfg_step CMD ARGS… — CMD in a subshell (a die inside ends only it); its messages pass on as they come (the helper's
+# log shows each step while it runs), the message of the die that ended it is in CFG_ERR
 _cfg_step() {
   local errf rc=0
   errf="$(mktemp)"
-  ( "$@" ) 2>"$errf" || rc=$?
-  cat "$errf" >&2
-  CFG_ERR="$(sed -n 's/^xx  *//p' "$errf" | tail -n 1)"
+  ( _CFG_ERRF="$errf"; on_exit _cfg_step_said; "$@" ) || rc=$?
+  CFG_ERR="$(tail -n 1 "$errf" 2>/dev/null || true)"
   rm -f "$errf"
   return "$rc"
 }
+# (_cfg_step's EXIT hook in its subshell: what die said there)
+_cfg_step_said() { [ -z "${_BN_DIE_MSG:-}" ] || printf '%s\n' "$_BN_DIE_MSG" > "$_CFG_ERRF" 2>/dev/null || true; }
 
 _cfg_live_checks() {
   if cfg_has AWS_ACCESS_KEY_ID; then
     local acct; acct="$(mktemp)"
-    AWS_ACCOUNT_OUT="$acct" _cfg_step aws_key_live_check "$(cfg_new AWS_ACCESS_KEY_ID)" "$(cfg_new AWS_SECRET_ACCESS_KEY)" "$(get_env AWS_REGION_NAME)" "the new key" ||
+    AWS_ACCOUNT_OUT="$acct" _cfg_step _cfg_t "Check · the new AWS key (AWS)" aws_key_live_check "$(cfg_new AWS_ACCESS_KEY_ID)" "$(cfg_new AWS_SECRET_ACCESS_KEY)" "$(get_env AWS_REGION_NAME)" "the new key" ||
       { rm -f "$acct"; _cfg_refuse "$CFG_ERR"; }
     _cfg_account_check "$(cat "$acct")"; rm -f "$acct"
   fi
   if cfg_has OPENROUTER_API_KEY && [ -n "$(cfg_new OPENROUTER_API_KEY)" ]; then
-    or_validate_key "$(cfg_new OPENROUTER_API_KEY)" || _cfg_refuse "OPENROUTER_API_KEY: $OR_ERR"
+    _cfg_t "Check · the new key (openrouter.ai)" or_validate_key "$(cfg_new OPENROUTER_API_KEY)" || _cfg_refuse "OPENROUTER_API_KEY: $OR_ERR"
   fi
-  # (lib/explabs.sh: the gateway's model list, read with the new key — free; the key on curl's stdin only)
+  # (lib/explabs.sh: the gateway's model list, read with the new key — free; the key on curl's stdin only). The ids it
+  # read are kept for this change (CFG_XL_IDS): the list cached for the new key is made from them (xl_cache_rekey)
   if cfg_has EXPLABS_API_KEY && [ -n "$(cfg_new EXPLABS_API_KEY)" ]; then
-    xl_validate_key "$(cfg_new EXPLABS_API_KEY)" || _cfg_refuse "EXPLABS_API_KEY: $XL_ERR"
+    valid_xl_key "$(cfg_new EXPLABS_API_KEY)" || _cfg_refuse "EXPLABS_API_KEY: that does not look like an Experiential Labs key (20-256 letters, digits, - and _)"
+    CFG_XL_IDS="$(mktemp)"; on_exit _cfg_xl_ids_rm
+    _cfg_t "Check · the new key (Experiential Labs)" xl_fetch_ids "$CFG_XL_IDS" "$(cfg_new EXPLABS_API_KEY)" || _cfg_refuse "EXPLABS_API_KEY: $XL_ERR"
   fi
   case "$(cfg_effective STT_PROVIDER)" in
     openai | groq)
@@ -806,7 +855,8 @@ _cfg_account_check() {
   _cfg_refuse "the new key belongs to another AWS account ($(account_masked "$1"); the current one: $(account_masked "$old")): $how"
 }
 
-_cfg_stack_running() { [ -n "$(get_env LITELLM_MASTER_KEY)" ] && [ -n "$(dc ps -q --status running litellm 2>/dev/null)" ]; }
+# (LiteLLM's container by Compose's labels — docker ps, no Compose call: asked several times in a change)
+_cfg_stack_running() { [ -n "$(get_env LITELLM_MASTER_KEY)" ] && [ -n "$(_compose_cid litellm)" ]; }
 
 # _cfg_email_check — the owner's Chat account is found (by the current email) and the new email is free, or held
 # only by a stray account (role pending, no chats: what a bare .env edit creates), which the change then deletes
@@ -837,12 +887,18 @@ CFG_DERIVED="LITELLM_UI_USER AWS_AUTH PORTAL_PASSWORD_HASH OPENROUTER_MODELS OWU
   REMOTE_PREVIEW_SITE"
 _cfg_saved_keys() { printf '%s\n' $CFG_ORDER $CFG_DERIVED | awk 'NF && !seen[$0]++'; }
 
+_cfg_xl_ids_rm() { [ -z "${CFG_XL_IDS:-}" ] || rm -f "$CFG_XL_IDS"; }
+
 _cfg_save_old() {
-  local k d f
-  for k in $(_cfg_saved_keys); do
-    printf -v "CFG_OLD_$k" '%s' "$(get_env "$k")"
-    printf -v "CFG_HAD_$k" '%s' "$(grep -q "^$k=" "$ENV_FILE" 2>/dev/null && echo 1)"
-  done
+  local k v had d f
+  # (one read of .env for all of them: each key's last value, as get_env, and whether it has a line at all)
+  # (fields split by \037, which no value holds: a TAB would let read merge an empty field with the next)
+  while IFS=$'\037' read -r k had v; do
+    printf -v "CFG_OLD_$k" '%s' "$v"
+    printf -v "CFG_HAD_$k" '%s' "$had"
+  done < <(_cfg_saved_keys | awk 'NR == FNR { want[$1] = 1; next }
+    { i = index($0, "="); if (i < 2) next; k = substr($0, 1, i - 1); if (k in want) { v[k] = substr($0, i + 1); h[k] = 1 } }
+    END { for (k in want) printf "%s\037%s\037%s\n", k, (k in h) ? 1 : "", v[k] }' - "$ENV_FILE" 2>/dev/null)
   CFG_OLD_STT_CHOICE="$(cat "$STATE_DIR/stt-choice" 2>/dev/null || true)"
   CFG_HAD_STT_CHOICE="$([ -f "$STATE_DIR/stt-choice" ] && echo 1 || true)"
   d="$(settings_dir)"; mkdir -p "$d" && chmod 700 "$d"; f="$d/pending.env"
@@ -854,13 +910,13 @@ _cfg_save_old() {
 _cfg_pre() {
   CFG_ERR=''
   if cfg_has LITELLM_UI_PASSWORD && [ "$(get_env LITELLM_DB_ADMIN_READY)" = true ] && _cfg_stack_running; then
-    _cfg_step litellm_admin_password "$(get_env OPENWEBUI_ADMIN_EMAIL)" "$(get_env LITELLM_UI_PASSWORD)" "$(cfg_new LITELLM_UI_PASSWORD)" || return 1
+    _cfg_step _cfg_t "Save · the Admin password in LiteLLM" litellm_admin_password "$(get_env OPENWEBUI_ADMIN_EMAIL)" "$(get_env LITELLM_UI_PASSWORD)" "$(cfg_new LITELLM_UI_PASSWORD)" || return 1
     CFG_PRE_LPW=1
   fi
   if cfg_has OPENWEBUI_ADMIN_EMAIL && [ -n "$CFG_OWUI_OWNER" ]; then
     [ -z "$CFG_OWUI_STRAY" ] || _owui_delete_user "$CFG_OWUI_STRAY" || { CFG_ERR="could not delete the stray Chat account holding the new email"; return 1; }
     CFG_PRE_EMAIL=1
-    _owner_email_move "$CFG_OWUI_OWNER" "$(cfg_new OPENWEBUI_ADMIN_EMAIL)" || { CFG_ERR="$OWNER_ERR"; return 1; }
+    _cfg_t "Save · the owner email in Chat and LiteLLM" _owner_email_move "$CFG_OWUI_OWNER" "$(cfg_new OPENWEBUI_ADMIN_EMAIL)" || { CFG_ERR="$OWNER_ERR"; return 1; }
   fi
   return 0
 }
@@ -890,12 +946,20 @@ _cfg_write() {
 }
 
 # _cfg_openrouter — as ./stack openrouter set|remove|models do (lib/openrouter.sh): a new key's account decides the
-# automatic free set, a removed key undoes it, OPENROUTER_MODELS set here is your choice from then on
+# automatic free set, a removed key undoes it, OPENROUTER_MODELS set here is your choice from then on. The model list
+# comes from the cache (no network now: the list read last stays until the follow-up reads it again — after a new key,
+# or when it is older than 12 h); only a first key, with no list yet, waits for openrouter.ai.
 _cfg_openrouter() {
   if cfg_has OPENROUTER_MODELS; then rm -f "$(or_models_auto)"; fi
+  _cfg_followup owui-or
   if openrouter_enabled; then
     if cfg_has OPENROUTER_API_KEY; then or_plan_models "$(get_env OPENROUTER_API_KEY)"; fi
-    openrouter_refresh
+    if [ -s "$(or_cache_tsv)" ]; then
+      or_write_portal_json
+      if cfg_has OPENROUTER_API_KEY || [ -z "$(find "$(or_cache_tsv)" -mmin -720 2>/dev/null)" ]; then _cfg_followup or-refresh; fi
+    else
+      openrouter_refresh
+    fi
     or_plan_notes
     return 0
   fi
@@ -903,40 +967,97 @@ _cfg_openrouter() {
   rm -f "$(or_cache_tsv)" "$(or_cache_json)" "$(or_models_auto)"
 }
 
-# _cfg_explabs — the gateway's model list read again with the key .env now holds (a new key: another organisation's
-# models); without one, its list and Open WebUI's entries go (lib/explabs.sh)
+# _cfg_explabs — the chosen models from the list cached for the key .env now holds (no network now). A new key: its
+# list is the one its check just read (CFG_XL_IDS), each model with the details read before (a model's details are the
+# catalog's, the same for every key: xl_cache_rekey). A chosen model whose details are not there yet runs fail safe
+# until the follow-up reads them from the gateway's catalog and gives them to LiteLLM live (xl-details); so does a list
+# older than 12 h. Without a key: its list and Open WebUI's entries go (lib/explabs.sh).
 _cfg_explabs() {
+  _cfg_followup owui-xl
   if explabs_enabled; then
-    if cfg_has EXPLABS_API_KEY; then explabs_refresh; else explabs_refresh 720; fi
+    if cfg_has EXPLABS_API_KEY && [ -s "${CFG_XL_IDS:-}" ]; then xl_cache_rekey "$CFG_XL_IDS"; fi
+    xl_fresh 720 || _cfg_followup xl-details
     return 0
   fi
   rm -f "$(xl_cache_tsv)" "$(xl_key_mark)" "$(xl_error_file)" "$(xl_pending_file)"
 }
 
-# _cfg_post — restarts only what the change needs (Compose recreates a container only when its settings changed)
+# xl_cache_rekey IDS_FILE — the list cached for a new key: the ids its check read (IDS_FILE, in the gateway's order),
+# each with the details the cache had for it (fail safe without), marked as read with the key .env holds now
+xl_cache_rekey() {
+  local f tmp
+  f="$(xl_cache_tsv)"; mkdir -p "$(dirname "$f")" "$STATE_DIR"
+  tmp="$(mktemp "$f.XXXXXX")" || return 0
+  { printf '# fetched_at: %s\n# source: %s/models (the ids, as listed for your key); details as read before\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$EXPLABS_API"
+    printf '# id\ttemperature\ttop_p\ttop_k\tfrequency_penalty\tpresence_penalty\tlogprobs\ttools\tstructured_output\treasoning\tsampling_requires_reasoning_none\tmax_tokens_field\tmax_out\tcontext\tin\tout\tcache_read\tcache_write\n'
+    xl_cached_rows | xl_join "$1"; } > "$tmp" || { rm -f "$tmp"; return 0; }
+  chmod 644 "$tmp"; mv "$tmp" "$f"
+  ( umask 077; xl_key_hash "$(get_env EXPLABS_API_KEY)" > "$(xl_key_mark)" )
+  rm -f "$(xl_error_file)"
+}
+
+# The .env keys LiteLLM's container has in its environment (compose.yaml's litellm service: tests/test_settings.sh holds
+# this list to it). A change of one recreates it (Compose: its configuration changed), whatever else changed.
+LITELLM_ENV_KEYS="ALERT_WEBHOOK_URL AWS_ACCESS_KEY_ID AWS_REGION_NAME AWS_SECRET_ACCESS_KEY EXPLABS_API_KEY LITELLM_MASTER_KEY
+  LITELLM_PORT LITELLM_SALT_KEY LITELLM_UI_PASSWORD OPENROUTER_API_KEY POSTGRES_PASSWORD STT_API_KEY WEBSEARCH_BRAVE_API_KEY
+  WEBSEARCH_PERPLEXITY_API_KEY WEBSEARCH_TAVILY_API_KEY"
+# _cfg_litellm_env_changes -> 0 when the change sets one of them (a webhook, a provider's, a search or an AWS key…)
+_cfg_litellm_env_changes() {
+  local k
+  for k in $CFG_ORDER; do case " $(printf '%s' "$LITELLM_ENV_KEYS" | tr -s ' \n' '  ') " in *" $k "*) return 0 ;; esac; done
+  return 1
+}
+
+# _cfg_litellm_models OLD_SUM OLD_FILE — LiteLLM's models changed live to what config.yaml lists now (lib/litellm_live.sh);
+# 1 when that cannot be done (said): Compose recreates LiteLLM instead (its config's checksum), so any live-sum mark is
+# dropped first — the container that comes up serves the config on disk, and litellm_compose_sum returns its checksum
+_cfg_litellm_models() {
+  local rc=0
+  litellm_live_sync "$1" "$2" || rc=$?
+  case "$rc" in
+    0) log "LiteLLM took the new model list without a restart (${LITELLM_LIVE_SAID:-done})"; return 0 ;;
+    3) log "LiteLLM restarts for this change: ${LITELLM_LIVE_ERR:-more than its model list changed}" ;;
+    *) warn "LiteLLM could not take the new model list live (${LITELLM_LIVE_ERR:-no answer}) — it restarts instead" ;;
+  esac
+  rm -f "$(litellm_live_sum_file)"
+  return 1
+}
+
+# _cfg_post — what the change needs, after .env: the providers' model lists from their caches, LiteLLM's config
+# rendered and its models changed live (no restart) when only its model list changed, then every service whose
+# settings changed restarted side by side in one Compose call (Compose recreates only those whose configuration —
+# compose's hash, with the config files' checksums — changed: BN_*_SUM, lib/common.sh), the keys' budgets. Open WebUI's
+# names, tags, prices and banner, and the catalogs, come after Done (_cfg_followup).
 _cfg_post() {
-  local svc='' k cfg="$STACK_DIR/litellm/config.yaml" before=''
-  [ ! -f "$cfg" ] || before="$(cat "$cfg")"   # before anything here re-renders it (openrouter_refresh does)
-  if _cfg_on openrouter; then _cfg_openrouter; fi
-  if _cfg_on explabs; then _cfg_explabs; fi
-  if _cfg_on remote-preview; then code_remote_sync; fi   # the remote preview address follows (blank when off)
+  local svc='' k cfg="$STACK_DIR/litellm/config.yaml" before='' old_sum='' oldf='' rc=0
+  if [ -f "$cfg" ]; then before="$(cat "$cfg")"; old_sum="$(litellm_config_sum_now)"; fi   # (before anything here renders it)
+  if _cfg_on openrouter; then _cfg_t "Restart · OpenRouter's models (from the list cached)" _cfg_openrouter; fi
+  if _cfg_on explabs; then _cfg_t "Restart · Experiential Labs' models (from the list cached)" _cfg_explabs; fi
+  if _cfg_on remote-preview; then _cfg_t "Restart · the remote preview address" code_remote_sync; fi   # (blank when off)
   # .env first, so ./stack up applies them too when the stack is stopped
-  if _cfg_on pins && [ -s "$STACK_DIR/litellm/enabled-models.txt" ]; then choose_defaults; fi
+  if _cfg_on pins && [ -s "$STACK_DIR/litellm/enabled-models.txt" ]; then _cfg_t "Restart · the models chosen" choose_defaults; fi
   if [ -z "$(get_env LITELLM_MASTER_KEY)" ] || [ ! -f "$cfg" ]; then ! _cfg_on code || _cfg_code; log "saved — ./stack setup applies it"; return 0; fi
   if ! _cfg_stack_running; then ! _cfg_on code || _cfg_code; log "saved — the stack is stopped; ./stack up applies it"; return 0; fi
   if _cfg_on stt; then
-    _stt_apply   # re-renders, recreates LiteLLM, the stt container, Chat and the portal; restores the previous choice if stt fails
-    before="$(cat "$cfg")"   # (LiteLLM was recreated with all of .env)
+    _cfg_t "Restart · speech-to-text" _stt_apply   # re-renders, recreates LiteLLM, the stt container, Chat and the portal; restores the previous choice if stt fails
+    before="$(cat "$cfg")"; old_sum="$(litellm_config_sum_now)"   # (LiteLLM was recreated with all of .env)
   fi
   # web search (lib/websearch.sh): AgentCore's check first (free), whose answer decides whether auto picks it
-  if _cfg_on websearch; then websearch_before_render || true; fi
+  if _cfg_on websearch; then _cfg_t "Restart · web search's backend" websearch_before_render || true; fi
   if _cfg_on litellm-cfg || _cfg_on openrouter || _cfg_on explabs || _cfg_on websearch; then
-    render_config "$(_enabled_or_all)"
-    if [ "$(cat "$cfg")" != "$before" ]; then run_phase "LiteLLM (new settings)" litellm dc up -d --no-deps --force-recreate --wait litellm
-    else svc="$svc litellm"; fi   # its environment (the webhook, the OpenRouter, Experiential Labs or a search key) changed: Compose recreates it for that
+    _cfg_t "Restart · LiteLLM's config" render_config "$(_enabled_or_all)"
+    # its environment changed (a webhook, a provider's or a search key): Compose recreates it, with the new config; else
+    # only its config did: its models live when only they changed (no restart), else Compose recreates it (the config's
+    # checksum)
+    if _cfg_litellm_env_changes; then svc="$svc litellm"
+    elif [ "$(cat "$cfg")" != "$before" ]; then
+      oldf="$(mktemp)"; printf '%s\n' "$before" > "$oldf"
+      _cfg_t "Restart · LiteLLM's models (live, no restart)" _cfg_litellm_models "$old_sum" "$oldf" || svc="$svc litellm"
+      rm -f "$oldf"
+    fi
   fi
   if _cfg_on rustfs; then   # every holder of the pair at once; rustfs-init (a dependency) runs again with it
-    run_phase "Files (new sign-in)" "rustfs open-webui shared-mcp portal" dc up -d --wait rustfs open-webui shared-mcp portal
+    run_phase "Restart · Files (new sign-in)" "rustfs open-webui shared-mcp portal" dc up -d --wait rustfs open-webui shared-mcp portal
   fi
   if _cfg_on mcp; then write_mcp_config; svc="$svc shared-mcp"; fi
   if _cfg_on pins; then svc="$svc open-webui"; fi
@@ -945,13 +1066,15 @@ _cfg_post() {
   # LiteLLM at once, and the container picks .env up at the next ./stack up)
   if _cfg_on litellm-pw && [ "$(get_env LITELLM_DB_ADMIN_READY)" != true ]; then svc="$svc litellm"; fi
   if _cfg_on email; then svc="$svc open-webui"; fi
-  if _cfg_on portal || _cfg_on portal-pw || _cfg_on email || _cfg_on litellm-pw || _cfg_on openrouter || _cfg_on mcp || _cfg_on pins || _cfg_on alert-pct; then svc="$svc portal"; fi
+  # the portal: only for what its environment holds (OpenRouter: its key — not the model list, which it reads from a file)
+  if _cfg_on portal || _cfg_on portal-pw || _cfg_on email || _cfg_on litellm-pw || _cfg_on mcp || _cfg_on pins || _cfg_on alert-pct ||
+     cfg_has OPENROUTER_API_KEY; then svc="$svc portal"; fi
   # the terminal's managed settings follow TERMINAL_AUTO_MODE / CODE_AUTO_MODE (a read-only file of terminal/managed,
   # lib/common.sh claude_policy: compose recreates it when that file changes): first, so the code container finds it ready
   if _cfg_on terminal-env && terminal_ready; then svc="$svc terminal"; fi
   # the sandbox's way out (TERMINAL_EGRESS): its egress proxy up or gone, the terminal on its new networks — before the
   # code container's restart below, which waits for a healthy terminal
-  if _cfg_on terminal-egress; then terminal_egress_apply || die "the terminal did not come back with its new way to the internet"; fi
+  if _cfg_on terminal-egress; then _cfg_t "Restart · the terminal's way out" terminal_egress_apply || die "the terminal did not come back with its new way to the internet"; fi
   # the code container reads CODE_ALLOW_BYPASS / CODE_AUTO_MODE at its start (compose recreates it for the new value)
   if _cfg_on code-env && code_ready && ! _cfg_on code; then svc="$svc code"; fi
   # previews over remote access: the sidecar's Services (it reads its config again by itself), the portal and Caddy
@@ -960,35 +1083,52 @@ _cfg_post() {
     remote_serve_sync; svc="$svc portal caddy"
     if code_remote_preview_wanted; then code_remote_preview_tradeoff | sed 's/^/  /' >&2; fi
   fi
-  svc="$(printf '%s\n' $svc | awk '!seen[$0]++' | tr '\n' ' ' | sed 's/ $//')"
-  # shellcheck disable=SC2086  # word-split the service list on purpose
-  [ -z "$svc" ] || run_phase "Restart:$svc" "${svc# }" dc up -d --no-deps --wait $svc
-  case " $svc " in *" caddy "*) ensure_portal_reachable ;; esac   # lib/portal.sh: before the sign-in that verifies it
-  if _cfg_on budget || _cfg_on alert-pct; then
-    for k in BUDGET_CLAUDE_CODE BUDGET_OPENWEBUI BUDGET_SETUP BUDGET_TERMINAL; do
-      cfg_has "$k" || _cfg_on alert-pct || continue   # a new alert threshold: every key's soft budget
-      case "$k" in BUDGET_CLAUDE_CODE) ensure_virtual_key LITELLM_KEY_CLAUDE_CODE claude-code "$(get_env "$k")" ;;
-        BUDGET_OPENWEBUI) ensure_virtual_key LITELLM_KEY_OPENWEBUI open-webui "$(get_env "$k")" ;;
-        # the browser terminal's key (with its routes: lib/terminal.sh), only once ./stack terminal made it
-        BUDGET_TERMINAL) [ -z "$(get_env LITELLM_KEY_TERMINAL)" ] || terminal_key ||
-          die "could not update the budget of LiteLLM key 'claude-code-terminal' — see ./stack logs litellm" ;;
-        *) ensure_virtual_key LITELLM_KEY_SETUP setup "$(get_env "$k")" ;; esac
-    done
-    if _cfg_on alert-pct; then alert_pct_mark; fi
+  # web search's built-in SearXNG (WEBSEARCH_SEARXNG_BUILTIN): on, it starts beside the others (its own Compose call:
+  # one that does not come up is said, never a reason to undo the change — as lib/websearch.sh websearch_builtin_up);
+  # off, its container goes
+  local ws_pid='' ws_t0=''
+  if _cfg_on websearch; then
+    websearch_searxng_write
+    if websearch_builtin_on; then
+      ensure_env WEBSEARCH_SEARXNG_SECRET "$(gen_hex 32)"
+      ws_t0="$(_ms_now)"; ( dc up -d --no-deps --wait searxng ) >/dev/null 2>&1 & ws_pid=$!
+    else _cfg_t "Restart · the built-in SearXNG removed" websearch_builtin_down; fi
   fi
-  if _cfg_on budget || _cfg_on email || _cfg_on openrouter || _cfg_on explabs || _cfg_on rustfs || _cfg_on pins || _cfg_on alert-pct || _cfg_on owui-models; then
+  svc="$(printf '%s\n' $svc | awk '!seen[$0]++' | tr '\n' ' ' | sed 's/ $//')"
+  # (one Compose call, the services side by side; those whose configuration did not change keep running)
+  # shellcheck disable=SC2086  # word-split the service list on purpose
+  [ -z "$svc" ] || run_phase "Restart · ${svc// /, }" "${svc# }" dc up -d --no-deps --wait $svc
+  case " $svc " in *" caddy "*) ensure_portal_reachable ;; esac   # lib/portal.sh: before the sign-in that verifies it
+  if [ -n "$ws_pid" ]; then
+    if wait "$ws_pid"; then log "Restart · the built-in SearXNG ready ($(_fmt_ms $(( $(_ms_now) - ws_t0 ))))"
+    else warn "the built-in SearXNG did not start — ./stack logs searxng says why; Claude Code's WebSearch fails until it does (./stack websearch status)"; fi
+  fi
+  if _cfg_on websearch; then services_status_write; _cfg_followup websearch-check; fi
+  if _cfg_on budget || _cfg_on alert-pct; then _cfg_t "Restart · the keys' budgets in LiteLLM" _cfg_budgets; _cfg_followup banner; fi
+  # Chat's own part of the change, now: the owner's email (stray accounts), the models hidden in its picker
+  if _cfg_on email || _cfg_on owui-models; then
     portal_session_start || die "could not sign in to the portal after the restart (HTTP ${PORTAL_LOGIN_CODE:-?})"
-    if _cfg_on email; then _owui_drop_strays "$(cfg_old OPENWEBUI_ADMIN_EMAIL)" || true; fi
-    if _cfg_on openrouter; then _or_owui_refresh; fi
-    if _cfg_on explabs; then _xl_owui_refresh; fi
-    if _cfg_on owui-models; then owui_apply_hidden; fi
-    sync_budget_banner
+    if _cfg_on email; then _cfg_t "Restart · Chat's stray accounts" _owui_drop_strays "$(cfg_old OPENWEBUI_ADMIN_EMAIL)" || true; fi
+    if _cfg_on owui-models; then _cfg_t "Restart · the models hidden in Chat" owui_apply_hidden; fi
     portal_session_end
   fi
-  # web search: the built-in SearXNG up or gone (WEBSEARCH_SEARXNG_BUILTIN), then one search with the backend now in use
-  # (on the setup key), and what it found for Settings
-  if _cfg_on websearch; then websearch_builtin_up; websearch_after_start --force; fi
+  if _cfg_on rustfs || _cfg_on pins || _cfg_on email; then _cfg_followup banner; fi   # (Chat restarted: its banner is in memory only)
   if _cfg_on code; then _cfg_code; fi   # last: it restarts the portal and Caddy itself (and turns the terminal on)
+}
+
+# _cfg_budgets — each key's budget in LiteLLM as BUDGET_* now says (a new alert threshold: every key's soft budget)
+_cfg_budgets() {
+  local k
+  for k in BUDGET_CLAUDE_CODE BUDGET_OPENWEBUI BUDGET_SETUP BUDGET_TERMINAL; do
+    cfg_has "$k" || _cfg_on alert-pct || continue
+    case "$k" in BUDGET_CLAUDE_CODE) ensure_virtual_key LITELLM_KEY_CLAUDE_CODE claude-code "$(get_env "$k")" ;;
+      BUDGET_OPENWEBUI) ensure_virtual_key LITELLM_KEY_OPENWEBUI open-webui "$(get_env "$k")" ;;
+      # the browser terminal's key (with its routes: lib/terminal.sh), only once ./stack terminal made it
+      BUDGET_TERMINAL) [ -z "$(get_env LITELLM_KEY_TERMINAL)" ] || terminal_key ||
+        die "could not update the budget of LiteLLM key 'claude-code-terminal' — see ./stack logs litellm" ;;
+      *) ensure_virtual_key LITELLM_KEY_SETUP setup "$(get_env "$k")" ;; esac
+  done
+  if _cfg_on alert-pct; then alert_pct_mark; fi
 }
 
 # _cfg_code — CODE_ENABLED: ./stack code enable | disable (lib/code.sh), which write CODE_ENABLED themselves, build or
@@ -1010,28 +1150,52 @@ _cfg_code() {
   fi
 }
 
-# _cfg_verify — free checks of what changed; the paid smoke test (~$0.0001) only after an AWS key change
+# _cfg_verify — quick checks of what the change touched (free, but for one 1-token request after a new AWS key): LiteLLM
+# answers when the change reached it (a model list changed live was checked model by model already: lib/litellm_live.sh),
+# its keys when their budgets changed or it restarted, the Admin sign-in after a new Admin password, the portal's
+# sign-in when the portal restarted or its password changed (and Chat's owner sign-in after a new email), the file
+# store's and shared-mcp's new secrets, and Bedrock through LiteLLM with a new AWS key
 _cfg_verify() {
-  local k code
+  local k code keys=''
   _cfg_stack_running || return 0
-  code="$(curl -s -m 10 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$(get_env LITELLM_PORT)/health/liveliness" || true)"
-  [ "$code" = 200 ] || die "LiteLLM does not answer (HTTP ${code:-000}) — ./stack logs litellm"
-  for k in LITELLM_KEY_CLAUDE_CODE LITELLM_KEY_OPENWEBUI LITELLM_KEY_SETUP; do
-    [ -z "$(get_env "$k")" ] || [ "$(litellm_key_status "$(get_env "$k")")" = 200 ] || die "LiteLLM no longer accepts its keys"
-  done
+  if _cfg_on litellm-cfg || _cfg_on openrouter || _cfg_on explabs || _cfg_on websearch || _cfg_on aws || _cfg_on litellm-pw || _cfg_on stt; then
+    _cfg_t "Verify · LiteLLM answers" _cfg_litellm_alive || die "LiteLLM does not answer (HTTP ${CFG_CODE:-000}) — ./stack logs litellm"
+    keys=LITELLM_KEY_SETUP
+  fi
+  if _cfg_on budget || _cfg_on alert-pct || _cfg_on aws; then keys="LITELLM_KEY_CLAUDE_CODE LITELLM_KEY_OPENWEBUI LITELLM_KEY_SETUP"; fi
+  # shellcheck disable=SC2086  # (names, a word each)
+  [ -z "$keys" ] || _cfg_t "Verify · LiteLLM's keys" _cfg_keys_ok $keys || die "LiteLLM no longer accepts its keys"
   if _cfg_on litellm-pw && [ "$(get_env LITELLM_DB_ADMIN_READY)" = true ]; then
-    k="$(mktemp)"; code="$(_litellm_login "$(get_env OPENWEBUI_ADMIN_EMAIL)" "$(get_env LITELLM_UI_PASSWORD)" "$k")"
-    litellm_drop_session_key "$(json_get token < "$k")"; rm -f "$k"
-    [ "$code" = 200 ] || die "the Admin (LiteLLM) sign-in does not work with the new password (HTTP $code)"
+    _cfg_t "Verify · the Admin sign-in" _cfg_admin_signin_ok || die "the Admin (LiteLLM) sign-in does not work with the new password (HTTP $CFG_CODE)"
   fi
-  portal_session_start || die "the portal does not accept PORTAL_PASSWORD from .env (HTTP ${PORTAL_LOGIN_CODE:-?})"
-  if _cfg_on email; then
-    owner_signin_check "$CFG_OWUI_OWNER" || die "Chat does not sign you in as the owner with the new email ($OWNER_ERR)"
+  if _cfg_on portal || _cfg_on portal-pw || _cfg_on email || _cfg_on litellm-pw || _cfg_on mcp || _cfg_on pins || _cfg_on alert-pct ||
+     _cfg_on rustfs || _cfg_on remote-preview || _cfg_on code || cfg_has OPENROUTER_API_KEY; then
+    _cfg_t "Verify · the portal's sign-in" portal_session_start || die "the portal does not accept PORTAL_PASSWORD from .env (HTTP ${PORTAL_LOGIN_CODE:-?})"
+    if _cfg_on email; then
+      owner_signin_check "$CFG_OWUI_OWNER" || die "Chat does not sign you in as the owner with the new email ($OWNER_ERR)"
+    fi
+    portal_session_end
   fi
-  portal_session_end
-  if _cfg_on rustfs; then _rustfs_pair_works || die "the file store does not accept the new key pair"; fi
-  if _cfg_on mcp; then _mcp_token_works || die "shared-mcp does not accept the new token"; fi
-  if _cfg_on aws; then cmd_test; fi
+  if _cfg_on rustfs; then _cfg_t "Verify · the file store's new key pair" _rustfs_pair_works || die "the file store does not accept the new key pair"; fi
+  if _cfg_on mcp; then _cfg_t "Verify · shared-mcp's new token" _mcp_token_works || die "shared-mcp does not accept the new token"; fi
+  if _cfg_on aws; then _cfg_t "Verify · Bedrock with the new key (1 token)" _cfg_bedrock_works || die "Bedrock does not answer through LiteLLM with the new key (HTTP $CFG_CODE) — ./stack test says more"; fi
+}
+_cfg_litellm_alive() {
+  CFG_CODE="$(curl -s -m 10 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$(get_env LITELLM_PORT)/health/liveliness" || true)"
+  [ "$CFG_CODE" = 200 ]
+}
+_cfg_keys_ok() { local k; for k in "$@"; do [ -z "$(get_env "$k")" ] || [ "$(litellm_key_status "$(get_env "$k")")" = 200 ] || return 1; done; }
+_cfg_admin_signin_ok() {
+  local k; k="$(mktemp)"; CFG_CODE="$(_litellm_login "$(get_env OPENWEBUI_ADMIN_EMAIL)" "$(get_env LITELLM_UI_PASSWORD)" "$k")"
+  litellm_drop_session_key "$(json_get token < "$k")"; rm -f "$k"
+  [ "$CFG_CODE" = 200 ]
+}
+# _cfg_bedrock_works — one 1-token request on the cheapest Claude model (the setup key: ~$0.00001), as setup's model check
+_cfg_bedrock_works() {
+  local m tmp
+  m="$(get_env CLAUDE_BEDROCK_HAIKU_MODEL)"; [ -n "$m" ] || return 0
+  tmp="$(mktemp)"; CFG_CODE="$(probe_litellm chat "$m" "$tmp")"; rm -f "$tmp"
+  [ "$CFG_CODE" = 200 ]
 }
 
 # _rustfs_pair_works — both buckets list with the key pair in .env (an aws-cli job on the stack's network)
@@ -1083,18 +1247,143 @@ _cfg_rollback() {
   rm -f "$(settings_dir)/pending.env"
   settings_audit failed "$CFG_VIA" "$CFG_ORDER" "$1"
   settings_snapshot_write
+  _cfg_followup_start   # (Open WebUI and the catalogs, for the previous settings again)
   die "failed while $1${2:+: $2} — previous settings restored$undone"
 }
 
 _cfg_done() {
   rm -f "$(settings_dir)/pending.env"
   settings_audit ok "$CFG_VIA" "$CFG_ORDER"
-  settings_snapshot_write
-  log "saved: $(printf '%s\n' $CFG_ORDER | grep -vx PORTAL_PASSWORD_HASH | tr '\n' ',' | sed 's/,$//; s/,/, /g')"
+  _cfg_t "Done · the settings page's snapshot" settings_snapshot_write
+  log "saved: $(printf '%s\n' $CFG_ORDER | grep -vx PORTAL_PASSWORD_HASH | tr '\n' ',' | sed 's/,$//; s/,/, /g')${CFG_T_ALL:+ (in $(_fmt_ms $(( $(_ms_now) - CFG_T_ALL ))))}"
   if _cfg_on portal-pw; then log "the portal password changed: every browser and device signs in again (the one that changed it stays signed in)"; fi
   if _cfg_on mcp; then log "running devos-claude sessions and other MCP clients need the new token (.state/mcp.json; devos-claude reads it at its next start)"; fi
   if _cfg_on aws && [ -n "$(cfg_old AWS_ACCESS_KEY_ID)" ]; then log "remember to deactivate the old key ($(_settings_mask AWS_ACCESS_KEY_ID "$(cfg_old AWS_ACCESS_KEY_ID)")) in IAM, or ask your AWS admin to"; fi
+  _cfg_followup_start
   return 0
+}
+
+# --- after Done (JON-533): what only follows from a change, in the background ---
+# A change is Done once what it changes works. What merely follows from it runs after that, in `./stack config
+# followup`, which _cfg_followup_start starts on its own (a process group of its own, without a terminal; its log:
+# .state/config/followup.log). What a change leaves to it (_cfg_followup WHAT…, one per line in
+# .state/config/followup.todo, each crossed off once done):
+#   xl-details        the chosen Experiential Labs models' details read from the gateway's catalog (a model chosen
+#                     now runs fail safe until then: lib/explabs.sh) and given to LiteLLM live, then owui-xl
+#   or-refresh        OpenRouter's model list read again (a new key's, or a list older than 12 h), LiteLLM live
+#   owui-or, owui-xl  Open WebUI's names, tags and the cost line's prices of OpenRouter's / Experiential Labs' models
+#   banner            Chat's budget banner (a budget, an alert threshold, or Chat restarted: it keeps it in memory)
+#   websearch-check   one search with the backend in use (what Settings › Web search shows of it)
+# The next change stops a follow-up still running (_cfg_followup_stop) and its own does what was left. Only the step
+# that renders LiteLLM's config again takes the stack's lock, waiting for it (a change, an update) up to a minute.
+cfg_followup_todo() { printf '%s/followup.todo\n' "$(settings_dir)"; }
+_cfg_followup() {
+  local d w
+  d="$(settings_dir)"; mkdir -p "$d" 2>/dev/null && chmod 700 "$d" 2>/dev/null || return 0
+  for w in "$@"; do grep -qx "$w" "$(cfg_followup_todo)" 2>/dev/null || printf '%s\n' "$w" >> "$(cfg_followup_todo)"; done
+}
+_cfg_todo() { grep -qx "$1" "$(cfg_followup_todo)" 2>/dev/null; }
+_cfg_todo_done() {
+  local f t; f="$(cfg_followup_todo)"
+  [ -f "$f" ] || return 0
+  t="$(mktemp "$f.XXXXXX")" || return 0
+  grep -vx "$1" "$f" > "$t" 2>/dev/null || true
+  if [ -s "$t" ]; then mv "$t" "$f"; else rm -f "$t" "$f"; fi
+}
+
+# _cfg_followup_start — the follow-up, when there is anything to follow up: its own process group (the helper ends a
+# job's group when it is stopped; a change's Done must not take its follow-up with it), stdin from /dev/null
+_cfg_followup_start() {
+  local d p
+  [ -s "$(cfg_followup_todo)" ] && [ -x "$STACK_DIR/stack" ] || return 0
+  [ "${BEDROCK_NOW_NO_FOLLOWUP:-0}" != 1 ] || return 0
+  d="$(settings_dir)"
+  [ "$(wc -c < "$d/followup.log" 2>/dev/null || echo 0)" -lt 200000 ] || mv -f "$d/followup.log" "$d/followup.log.old" 2>/dev/null || true
+  set -m
+  ( trap '' HUP; cd "$STACK_DIR" && exec env BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" config followup ) </dev/null >> "$d/followup.log" 2>&1 &
+  p=$!
+  set +m
+  ( umask 077; _xl_pid_line "$p" > "$d/followup.pid" )
+}
+
+# _cfg_followup_stop — a follow-up still running is stopped (it and what it runs: the pid its file names, when that is
+# still it — lib/explabs.sh _xl_pid_of); what it had not done yet stays in followup.todo
+_cfg_followup_stop() {
+  local f p n=0
+  f="$(settings_dir)/followup.pid"
+  [ -e "$f" ] || return 0
+  p="$(_xl_pid_of "$f")"
+  if [ -n "$p" ] && [ "$p" != "$$" ]; then
+    _xl_kill_tree "$p"
+    while kill -0 "$p" 2>/dev/null && [ "$n" -lt 30 ]; do n=$((n + 1)); sleep 0.1; done
+    kill -0 "$p" 2>/dev/null && kill -KILL "$p" 2>/dev/null || true
+  fi
+  rm -f "$f"
+}
+
+# config_followup — ./stack config followup: what the last changes left to do (_cfg_followup), each step timed in its log
+config_followup() {
+  local d
+  d="$(settings_dir)"
+  [ -s "$(cfg_followup_todo)" ] || return 0
+  quiet_compose
+  ( umask 077; _xl_pid_line "$$" > "$d/followup.pid" )
+  on_exit _cfg_followup_end
+  log "after a settings change ($(date '+%F %T')): $(tr '\n' ' ' < "$(cfg_followup_todo)")"
+  if _cfg_todo xl-details; then
+    if explabs_enabled; then _cfg_t "Follow-up · Experiential Labs' model details" _followup_xl || true; fi
+    _cfg_todo_done xl-details
+  fi
+  if _cfg_todo or-refresh; then
+    if openrouter_enabled; then _cfg_t "Follow-up · OpenRouter's model list" _cfg_followup_apply openrouter_refresh || true; fi
+    _cfg_todo_done or-refresh
+  fi
+  if _cfg_todo owui-or || _cfg_todo owui-xl || _cfg_todo banner; then
+    [ -n "$(_compose_cid open-webui)" ] && portal_session_start || { warn "Open WebUI is not running — its names, tags and banner follow at the next ./stack up"; return 0; }
+    if _cfg_todo owui-or; then _cfg_t "Follow-up · Open WebUI: OpenRouter's models" _or_owui_refresh || true; _cfg_todo_done owui-or; fi
+    if _cfg_todo owui-xl; then _cfg_t "Follow-up · Open WebUI: Experiential Labs' models" _xl_owui_refresh || true; _cfg_todo_done owui-xl; fi
+    if _cfg_todo banner; then _cfg_t "Follow-up · Chat's budget banner" sync_budget_banner || true; _cfg_todo_done banner; fi
+    portal_session_end
+  fi
+  if _cfg_todo websearch-check; then _cfg_t "Follow-up · one web search" websearch_after_start --force || true; _cfg_todo_done websearch-check; fi
+  return 0
+}
+_cfg_followup_end() { local f; f="$(settings_dir)/followup.pid"; [ "$(_xl_pid_of "$f")" != "$$" ] || rm -f "$f"; }
+
+# _followup_xl — the chosen models' details read (lib/explabs.sh, without rendering: it leaves xl_pending_file when they
+# changed), then given to LiteLLM live, and Open WebUI's names and prices after them
+_followup_xl() {
+  XL_BACKGROUND=1 explabs_refresh || true
+  [ -e "$(xl_pending_file)" ] || return 0
+  _cfg_followup_apply render_config "$(_enabled_or_all)" || return 1
+  rm -f "$(xl_pending_file)"
+  _cfg_followup owui-xl
+}
+
+# _cfg_followup_apply CMD… — under the stack's lock (waiting up to a minute for a change or an update that holds it):
+# CMD (which renders litellm/config.yaml again, or not), then LiteLLM's models changed live to it — or LiteLLM recreated,
+# when that cannot be done live. 1 when the lock never came free (the next ./stack up or change applies it).
+_cfg_followup_apply() {
+  local n=0
+  while [ -n "$(stack_lock_holder)" ]; do
+    [ "$n" -lt 240 ] || { warn "the stack is busy: what was read is used from the next ./stack up or settings change"; return 1; }
+    n=$((n + 1)); sleep 0.25
+  done
+  ( stack_lock config-followup
+    local cfg="$STACK_DIR/litellm/config.yaml" old_sum oldf rc=0
+    [ -f "$cfg" ] || exit 0
+    old_sum="$(litellm_config_sum_now)"; oldf="$(mktemp)"; cp "$cfg" "$oldf"
+    "$@"
+    if [ -n "$(_compose_cid litellm)" ] && ! cmp -s "$cfg" "$oldf"; then
+      litellm_live_sync "$old_sum" "$oldf" || rc=$?
+      case "$rc" in
+        0) log "LiteLLM took the new model list without a restart (${LITELLM_LIVE_SAID:-done})" ;;
+        *) log "LiteLLM restarts for its new model list: ${LITELLM_LIVE_ERR:-not live}"
+           rm -f "$(litellm_live_sum_file)"   # (recreated with the config on disk; its checksum, not a live mark)
+           run_phase "Follow-up · LiteLLM (restarted)" litellm dc up -d --no-deps --wait litellm ;;
+      esac
+    fi
+    rm -f "$oldf" )
 }
 
 # --- AWS, LiteLLM and Open WebUI pieces the pipeline and the reconcile share ---

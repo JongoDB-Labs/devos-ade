@@ -6,6 +6,30 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Changed
+
+- **Settings changes apply in seconds (JON-533).** A change through the portal's Settings — or `./stack config set` —
+  is now timed end to end, and only what the change needs is done on the critical path:
+  - **A model-list change — the Experiential Labs set, the OpenRouter set, the Code page's default model or list — no
+    longer restarts the model gateway.** LiteLLM takes the new model list as it runs, through its own model admin API
+    (`/model/new`, `/config/update`), so these changes finish in about 5 seconds instead of ~25–50 s. `litellm/config.yaml`
+    stays the record (a restart reads it as before); the live change is made to match it exactly — each model's params,
+    its hook's `model_info`, prices and the Code page's metadata. The admin API uses the master key, which never leaves
+    the host and the LiteLLM container. Settings marks these settings *No restart*.
+  - **The providers' model lists come from the cache, never a network read before the change.** A new Experiential Labs
+    key reuses the ids its own check just read; the gateway's catalog (which took up to ~50 s to send) and OpenRouter's
+    list are read afterwards, in the background, and handed to LiteLLM live when they bring changes. A model chosen
+    before its details are read runs fail-safe until then, as on `./stack up`.
+  - **Open WebUI's names, tags, cost line and budget banner, and the web-search check, run after *Done*,** in a
+    background follow-up (`./stack config followup`) the next change supersedes — they no longer hold up the change.
+  - **Only the services whose configuration changed restart, side by side in one Compose call,** and *Verify* is a
+    quick health check of what changed (a 1-token Bedrock call only after a new AWS key), not the full smoke test.
+  - **Each step is named and timed on the Settings progress card** (Check · Save · Restart · Verify · Done, with the
+    time each took and the step running now), and the helper's settings log carries a timestamp per line.
+  - The portal picks up a change within a quarter-second and polls for its result several times a second while it runs.
+  - Safety is unchanged: a failed change still rolls back to the previous `.env` and config and says what failed; the
+    password step and the remote-access policies are the same.
+
 ## [0.32.2] - 2026-10-27
 
 ### Changed

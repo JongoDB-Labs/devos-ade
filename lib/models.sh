@@ -141,12 +141,25 @@ first_enabled() { # first_enabled ENABLED_FILE PREF... -> first pref present, or
 render_litellm_config() {
   local rows rc=0
   # with lib/code_models.sh (./stack): the chat models' bn_* model_info for devos-claude in the terminal
-  if ! declare -F code_models_inject >/dev/null; then _render_litellm_config_base "$@"; return; fi
+  if ! declare -F code_models_inject >/dev/null; then _render_litellm_config_base "$@" | litellm_model_ids; return; fi
   rows="$(mktemp)" || die "cannot create a temp file"
   code_models_rows "${1:-}" > "$rows" 2>/dev/null || : > "$rows"
-  _render_litellm_config_base "$@" | code_models_inject "$rows" || rc=$?
+  _render_litellm_config_base "$@" | code_models_inject "$rows" | litellm_model_ids || rc=$?
   rm -f "$rows"
   return "$rc"
+}
+
+# litellm_model_ids < LiteLLM config -> the same, each model with a stable id: model_info's first line "id:
+# "bn-<its name>"" (the name's characters other than A-Z, a-z, 0-9, . and - written as _XX, its hex: one id per name,
+# never two). LiteLLM keeps a deployment by its id: ./stack replaces one at runtime by it (lib/litellm_live.sh), and a
+# restart finds the same ones. Model names are ASCII (the catalog's, or/… and xl/… ids).
+litellm_model_ids() {
+  LC_ALL=C awk 'BEGIN { for (i = 1; i < 256; i++) ord[sprintf("%c", i)] = i }
+    function esc(s,  o, i, c) { o = ""; for (i = 1; i <= length(s); i++) { c = substr(s, i, 1); o = o (c ~ /[A-Za-z0-9.-]/ ? c : sprintf("_%02X", ord[c])) } return o }
+    /^[^ ]/ { cur = "" }
+    /^  - model_name: "/ { cur = $0; sub(/^  - model_name: "/, "", cur); sub(/".*$/, "", cur) }
+    { print }
+    /^    model_info:$/ && cur != "" { printf "      id: \"bn-%s\"\n", esc(cur) }'
 }
 _render_litellm_config_base() {
   local enabled="$1" region="$2" store="${3:-false}" alerting="${4:-false}" env_login_off="${5:-false}" name mode model aliases mregion r region_yaml a msg_off aliases_out="" n=0 ws='' cbs

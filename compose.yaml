@@ -81,7 +81,10 @@ services:
       PROXY_LOGOUT_URL: /ui/login/?sso=off
       # Deletes expired UI session keys (one per sign-in, the portal's included) once a day instead of keeping them.
       LITELLM_EXPIRED_UI_SESSION_KEY_CLEANUP_ENABLED: "true"
-      STORE_MODEL_IN_DB: "False"
+      # Models in its database: what lets ./stack change the model list at runtime through LiteLLM's model admin API
+      # (master key only), without a restart (lib/litellm_live.sh). config.yaml stays the record: ./stack deletes the
+      # rows it adds right after, so a restart reads config.yaml alone.
+      STORE_MODEL_IN_DB: "True"
       LITELLM_LOCAL_MODEL_COST_MAP: "True"   # no runtime price-map fetch; the config carries our prices (lib/prices.sh)
       # An access key from .env, passed only when set (no value here = taken from .env, else left out). Without
       # one (AWS_AUTH=instance-role on EC2) boto3 finds the instance role through IMDS (hop limit 2; docs/cloud-vm.md).

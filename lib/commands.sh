@@ -2288,6 +2288,8 @@ cmd_uninstall() {
 . "$STACK_DIR/lib/helper.sh"
 # Settings (./stack config, ./stack restart, the snapshot for the portal) and the helper's settings requests.
 . "$STACK_DIR/lib/settings.sh"
+# LiteLLM's model list changed without a restart (its model admin API: a settings change, a catalog read again).
+. "$STACK_DIR/lib/litellm_live.sh"
 . "$STACK_DIR/lib/settings_helper.sh"
 # EC2 instance role, ./stack serve (keep the Mac awake), ./stack ssh-info.
 . "$STACK_DIR/lib/host.sh"

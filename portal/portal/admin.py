@@ -121,7 +121,7 @@ def _auto(beat: dict) -> dict:
 COMMAND = re.compile(r"[a-z][a-z-]{0,23}(?: [a-z][a-z-]{0,23})?")
 
 
-TOOK = re.compile(r"[0-9]{1,4}m[0-9]{2}s|[0-9]{1,4}s")
+TOOK = re.compile(r"[0-9]{1,4}m[0-9]{2}s|[0-9]{1,4}(?:\.[0-9])?s")   # "1m50s", "12s", "0.4s" (a settings change's steps)
 
 
 STEPS_MAX = 80   # (lib/helper.sh JOB_STEPS_MAX: an update's every step, from the backup to what's new)

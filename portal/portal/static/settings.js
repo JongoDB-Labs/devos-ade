@@ -27,6 +27,9 @@
     rustfs: ["Files", "Chat", "the shared file server", "the portal"], mcp: ["the shared file server", "the portal"],
     code: ["the portal", "the web server"], "code-env": ["the Code page"], "terminal-env": ["the terminal"], "terminal-egress": ["the terminal"],
     "remote-preview": ["the portal", "the web server"] };
+  // the settings the model gateway takes without a restart (lib/litellm_live.sh: only its model list changes): a badge
+  // that says so, instead of what their apply class restarts for a key
+  const LIVE = new Set(["EXPLABS_MODELS", "OPENROUTER_MODELS", "OPENROUTER_MAX_MODELS", "OPENROUTER_INCLUDE_ALIASES", "CODE_MODELS", "CODE_DEFAULT_MODEL"]);
   // what removing a key does, in each key's own words (the keys share one form; lib/settings.sh _cfg_post, _stt_apply)
   const REMOVE_KEY = {
     or_key: "OpenRouter's models disappear from Chat and the API; the model gateway and the portal restart (about 40 s).",
@@ -719,7 +722,8 @@
     if (editable(k) || k.policy === "regen") {
       const what = [...new Set(String(k.apply || "").split(",").flatMap((a) => RESTARTS[a] || []))];
       if (k.key === "CODE_ENABLED") add("Builds the Code page", "badge-restart");
-      else if (what.length) add(`Restarts ${what.join(", ")}`, "badge-restart", "What a change restarts, for about 10-40 s");
+      else if (LIVE.has(k.key)) add("No restart", "badge-live", "Applied in seconds: the model gateway takes the new model list as it runs");
+      else if (what.length) add(`Restarts ${what.join(", ")}`, "badge-restart", "What a change restarts, for about 10-20 s");
     }
     return out;
   }
@@ -2340,15 +2344,30 @@
   function jobBox() {
     return el("section", { class: "job set-job", id: "set-job", "aria-live": "polite", hidden: "" },
       el("div", { class: "job-head" }, el("h2", { id: "set-job-title" }), el("button", { type: "button", class: "quiet", id: "set-job-dismiss", text: "Dismiss" })),
-      el("ol", { class: "job-steps", id: "set-job-steps" }), el("p", { class: "job-message", id: "set-job-message" }), el("p", { class: "note", id: "set-job-note" }));
+      el("ol", { class: "job-steps", id: "set-job-steps" }), el("p", { class: "job-step", id: "set-job-step", hidden: "" }),
+      el("ol", { class: "job-done set-job-done", id: "set-job-done", hidden: "" }),
+      el("p", { class: "job-message", id: "set-job-message" }), el("p", { class: "note", id: "set-job-note" }));
+  }
+  // what a change's steps took, as the helper read them from its log (job.steps: lib/settings_helper.sh _settings_steps):
+  // "Check", "Save", "Restart", "Verify" and "Done" are the phases' and the whole change's times; the others its steps
+  // ("Restart · LiteLLM's models (live, no restart)"). took: "0.4s", "12s", "1m05s" -> "0.4 s", "12 s", "1 min 5 s"
+  const tookText = (t) => String(t || "").replace(/^(\d+)m0?(\d+)s$/, "$1 min $2 s").replace(/^([\d.]+)s$/, "$1 s");
+  function stepsOf(job) {
+    const phases = {}, steps = [];
+    for (const x of Array.isArray(job.steps) ? job.steps : []) {
+      if (STEPS.some(([, label]) => label === x.label)) phases[x.label] = x.took; else steps.push(x);
+    }
+    return { phases, steps };
   }
 
   const STEPS = [["checking", "Check"], ["applying", "Save"], ["restarting", "Restart"], ["verifying", "Verify"], ["done", "Done"]];
+  // how soon to ask again: every 400 ms for a change's first 20 s (most take a few seconds: Done shows at once), then 2 s
+  const pollEvery = () => (watching && Date.now() - watching.at < 20000 ? 400 : 2000);
   function watch(w) {
     watching = w;
     renderJob();
     clearTimeout(pollTimer);
-    pollTimer = setTimeout(poll, 1500);
+    pollTimer = setTimeout(poll, 400);
   }
 
   async function poll() {
@@ -2370,7 +2389,7 @@
     if (mine && STEPS.some(([p]) => p === job.phase) && job.phase !== "done") watching.step = job.phase;
     const finished = mine && (job.phase === "done" || job.phase === "failed");
     renderJob();
-    if (watching && !finished && Date.now() - watching.at < 15 * 60000) { pollTimer = setTimeout(poll, 2000); return; }
+    if (watching && !finished && Date.now() - watching.at < 15 * 60000) { pollTimer = setTimeout(poll, pollEvery()); return; }
     if (finished) {
       if (job.action === "report" && job.phase === "done") showReport();
       const w = watching;
@@ -2427,15 +2446,28 @@
         "project-pick": "Project folder", "project-remove": "Project folder removed", "project-mode-ro": "Project folder read-only" }[w.kind] || `Restart of ${String(w.kind).slice(8)}`;
     const steps = $("#set-job-steps"); steps.replaceChildren();
     steps.hidden = !settingsJob;
+    const nowEl = $("#set-job-step"), doneEl = $("#set-job-done");
+    nowEl.textContent = ""; doneEl.replaceChildren();
     if (settingsJob) {
       const at = STEPS.findIndex(([p]) => p === job.phase);
+      const { phases, steps: done } = stepsOf(job);
       // a failure: the step it failed at marked ✕ (the last one seen; Check when it never got further), those before ✓
       const bad = job.phase === "failed" ? Math.max(0, STEPS.findIndex(([p]) => p === w.step)) : -1;
       STEPS.forEach(([p, label], i) => {
         const state = job.phase === "failed" ? (i < bad ? "ok" : i === bad ? "bad" : "") : i < at || job.phase === "done" ? "ok" : i === at ? "now" : "";
-        steps.append(el("li", { class: state, text: label, ...(state === "bad" ? { "aria-label": `${label}: failed` } : {}) }));
+        const text = phases[label] ? `${label} · ${tookText(phases[label])}` : label;
+        steps.append(el("li", { class: state, text, ...(state === "bad" ? { "aria-label": `${label}: failed` } : {}) }));
       });
+      // the step that runs now and for how long so far (a slow one never looks stuck), and every step done with its time
+      const running = job.phase !== "done" && job.phase !== "failed";
+      if (running && job.step) {
+        const s = job.step_started_at && job.updated_at ? Math.max(0, job.updated_at - job.step_started_at) : 0;
+        nowEl.textContent = s >= 1 ? `${job.step}, ${s} s so far` : job.step;
+      }
+      doneEl.replaceChildren(...done.map((x) => el("li", { text: x.took ? `${x.label} · ${tookText(x.took)}` : x.label })));
     }
+    nowEl.hidden = !nowEl.textContent;
+    doneEl.hidden = !doneEl.children.length;
     const msg = $("#set-job-message");
     msg.textContent = job.message || "";
     msg.className = `job-message ${job.phase === "failed" ? "bad" : job.phase === "done" ? "good" : ""}`;
