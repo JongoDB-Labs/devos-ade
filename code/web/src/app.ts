@@ -3402,7 +3402,15 @@ export function refreshGit(repos = false): Promise<void> {
             if (repo && e instanceof api.ApiError && e.status === 400) status = { ...api.normGitStatus({}), reason: `${e.message} (${repo})` };
             else throw e;
           }
-          const log = status.repo ? await api.getGitLog(repo) : { commits: [] as GitCommit[], error: null, said: null };
+          // the panel moved to another repository while this read ran (a switch, a project removed): drop this one — its
+          // folder may be gone now, so its log and remote would only 400 (the next iteration reads the repo now shown)
+          if (get().git.repo !== repo) continue;
+          // a 400 on the log (the folder went between the status above and here: a clone deleted, a project removed) is
+          // the folder gone, as git.status's 400 is: not an error to surface — the next refresh resolves the repository
+          const log = status.repo ? await api.getGitLog(repo).catch((e) => {
+            if (e instanceof api.ApiError && e.status === 400) return { commits: [] as GitCommit[], error: null, said: null };
+            throw e;
+          }) : { commits: [] as GitCommit[], error: null, said: null };
           const remote = status.repo ? await api.getGitRemote(repo).catch(() => null) : null;
           if (get().git.repo !== repo) continue;
           // (the folder shown is no repository: one may have been made or cloned in or around it since — found again)
