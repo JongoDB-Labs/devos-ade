@@ -47,6 +47,10 @@ For the Experiential Labs gateway's models (lib/explabs.sh: model_info bn_xl: tr
 - After it: the cost LiteLLM books is the one the gateway reported for the call (usage.cost, USD), $0 when the call ran
   on your own provider key (usage.is_byok), never one computed from the list prices in the config. (A streamed reply's
   usage.cost is booked by LiteLLM itself.)
+- When it fails because the key may not use that model — the gateway's 403 "The requested model alias is not granted
+  to this identity" (an alias the key's GET /v1/models does not list, such as a "…:free" one) — the error the caller
+  gets is a 400 invalid_request_error saying so in plain words (XL_NOT_GRANTED): with a 403 Claude Code would take it
+  for an expired sign-in and ask for /login. Any other 401 or 403 (a key the gateway rejects) stays as it came.
 
 For a Llama model on Bedrock (its model id names meta.llama), on each call with tools: Bedrock's Converse takes the
 tools (toolConfig) but hands Llama's tool call back as the text Llama wrote, in Meta's documented form ({"type":
@@ -697,6 +701,47 @@ def book_gateway_cost(response) -> None:
     hidden["additional_headers"] = {**(dict(headers) if isinstance(headers, Mapping) else {}), COST_HEADER: c}
 
 
+# The gateway's words when the key may not use a model (or one of its aliases): 403, "The requested model alias is not
+# granted to this identity. GET /v1/models lists the model aliases available to this key." (seen 2026-10-26), and its
+# model_not_granted code
+NOT_GRANTED = re.compile(r"not granted to this (?:identity|organi[sz]ation)|model alias is not granted|model_not_granted", re.I)
+XL_NOT_GRANTED = ("Your Experiential Labs key isn't allowed to use this model ({model}): the model list the gateway gives "
+                  "your key does not have it. Pick another model (Settings › Models & providers › Experiential Labs "
+                  "lists the ones your key has).")
+
+
+def _xl_group(request_data) -> str | None:
+    """The model group REQUEST_DATA (the proxy's request) asked for, when it is an Experiential Labs model ("xl/…", or
+    model_info bn_xl); else None."""
+    if not isinstance(request_data, Mapping):
+        return None
+    model = request_data.get("model")
+    meta = [request_data] + [request_data.get(k) for k in ("metadata", "litellm_metadata") if isinstance(request_data.get(k), Mapping)]
+    if (isinstance(model, str) and model.startswith("xl/")) or any(is_xl(m) for m in meta):
+        return model if isinstance(model, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,140}", model) else "xl/…"
+    return None
+
+
+def xl_not_granted(request_data, exc) -> bool:
+    """EXC (a failed call to the gateway) is its 403 for a model the key may not use: changed in place into a 400
+    invalid_request_error with XL_NOT_GRANTED as its message — the error the proxy then answers with, on /v1/messages
+    (which reads the exception itself, not a hook's answer) as on Chat Completions. -> whether it was one."""
+    group = _xl_group(request_data)
+    if group is None or getattr(exc, "status_code", None) != 403:
+        return False
+    if not NOT_GRANTED.search(f"{getattr(exc, 'message', '')} {exc}"):
+        return False
+    said = XL_NOT_GRANTED.format(model=group)
+    exc.status_code = 400
+    exc.message = said
+    exc.type = "invalid_request_error"
+    try:
+        exc.args = (said,)
+    except Exception:  # noqa: BLE001
+        pass
+    return True
+
+
 class BnHooks(CustomLogger):
     async def async_pre_call_hook(self, user_api_key_dict, cache, data, call_type):  # noqa: ARG002 — LiteLLM's signature
         for step in (cap_request, drop_token_counts, lift_tool_images, no_web_search):
@@ -724,6 +769,13 @@ class BnHooks(CustomLogger):
         except Exception:  # noqa: BLE001 — a cost never fails an answer
             pass
         return response
+
+    async def async_post_call_failure_hook(self, request_data, original_exception, user_api_key_dict, traceback_str=None):  # noqa: ARG002
+        try:
+            xl_not_granted(request_data, original_exception)
+        except Exception:  # noqa: BLE001 — the error as it came
+            pass
+        return None
 
 
 proxy_handler_instance = BnHooks()

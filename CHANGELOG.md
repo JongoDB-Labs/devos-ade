@@ -6,6 +6,21 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Fixed
+
+- **An Experiential Labs free alias your key does not list is no longer enabled (JON-521).** A model chosen as
+  `<slug>:free` stayed in every picker whenever the key's list named `<slug>`, though the gateway refuses an alias the
+  list does not name (403 "The requested model alias is not granted to this identity"): the Code page then said *The
+  model's provider refused the key* with an unrelated line about Git sign-in codes, and Claude Code in the terminal
+  asked for `/login`. Now a chosen id is enabled only when the key's list names it exactly, `:free` included; anything
+  else is left out — never swapped for the paid alias — and setup, `./stack status` and `./stack models`, Home's model
+  list and Settings › Models & providers › Experiential Labs say so, naming the alias the list has instead (*your key
+  lists 'glm-5.3-uncensored' (billed on your credits)*). If the gateway still refuses a model this way, LiteLLM's hook
+  makes it a plain model error (a 400: Claude Code shows it as one, with no `/login`), and the Code page says *Your
+  Experiential Labs key isn't allowed to use this model* with **Pick another model**. A provider's own words under a
+  Code page error no longer carry the line about Git sign-in codes. A free alias your key does list keeps its model's
+  details at $0, even when the list does not name the model itself.
+
 ## [0.32.0] - 2026-10-27
 
 ### Added

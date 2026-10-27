@@ -67,7 +67,32 @@ def read(litellm_dir: Path) -> dict | None:
     fetched = data.get("fetched_at") if isinstance(data.get("fetched_at"), str) and len(data["fetched_at"]) <= 40 else None
     err = data.get("error") if isinstance(data.get("error"), str) else None
     return {"fetched_at": fetched, "details": data.get("details") is True, "error": err[:300] if err else None,
-            "models": models}
+            "models": models, "missing": _missing(data.get("missing"))}
+
+
+def _missing(v) -> list[dict]:
+    """The chosen ids the key's list does not name exactly (left out: lib/explabs.sh xl_missing), each with the other
+    alias of that model the list has instead ({id, alternative}; alternative None when it has none) — an older file
+    has none."""
+    out = []
+    for m in (v if isinstance(v, list) else [])[:MAX_MODELS]:
+        if not isinstance(m, dict) or not isinstance(m.get("id"), str) or not ID.fullmatch(m["id"]):
+            continue
+        alt = m.get("alternative")
+        out.append({"id": m["id"], "alternative": alt if isinstance(alt, str) and ID.fullmatch(alt) else None})
+    return out
+
+
+def missing_text(m: dict) -> str:
+    """Why a chosen id is left out, and what the key's list has instead (lib/explabs.sh xl_missing_text says the same)."""
+    ident = m["id"][3:]
+    alt = m["alternative"][3:] if m.get("alternative") else None
+    if alt and ident.endswith(":free"):
+        return (f"{ident} is not on your key's model list (it has no free alias for it), so it is left out; "
+                f"your key lists {alt} (billed on your credits): add that one to use it.")
+    if alt:
+        return f"{ident} is not on your key's model list, so it is left out; your key lists {alt} (its free alias): add that one to use it."
+    return f"{ident} is not on your key's model list, so it is left out (the gateway would refuse it)."
 
 
 def price_short(m: dict) -> str:
@@ -88,6 +113,11 @@ def rows(data: dict | None) -> list[dict]:
                     "why": "ok (fail safe)" if m["failsafe"] else "ok",
                     "reason": f"Experiential Labs model (EXPLABS_MODELS); {why}", "price": price_short(m),
                     "provider": PROVIDER, "access": "free" if m["free"] else "paid", "icon": None})
+    # chosen, but not on the key's list: left out (never another alias in its place)
+    for m in (data or {}).get("missing") or []:
+        out.append({"name": m["id"], "display": m["id"][3:], "tier": None, "kind": "chat", "enabled": False,
+                    "why": "not on your key's list", "reason": missing_text(m), "price": "–", "provider": PROVIDER,
+                    "access": "free" if m["id"].endswith(":free") else "paid", "icon": None})
     return out
 
 
@@ -96,4 +126,5 @@ def summary(data: dict | None) -> dict | None:
     if data is None:
         return None
     return {"fetched_at": data["fetched_at"], "details": data["details"], "error": data["error"],
-            "count": len(data["models"]), "failsafe": sum(1 for m in data["models"] if m["failsafe"])}
+            "count": len(data["models"]), "failsafe": sum(1 for m in data["models"] if m["failsafe"]),
+            "missing": [{**m, "text": missing_text(m)} for m in data["missing"]]}

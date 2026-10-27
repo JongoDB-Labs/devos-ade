@@ -106,8 +106,11 @@ export function initEvent(m) {
 // An error of the session (the page shows `message`; `text` is the same, for older readers)
 // errorEvent(message, said) -> an error in the conversation: message a sentence of ours; said — Claude Code's own words
 // (its stream, a process that ended), apart: the page shows them in the box, never as ours
-export const errorEvent = (message, said = null) => ({ type: 'error', message: str(message, 2000), text: str(message, 2000),
-  ...(typeof said === 'string' && said ? { said: short(said, 300), saidBy: 'claude' } : {}) });
+// provider: the words are a model provider's answer, passed on by Claude Code (an API error): the page shows them without
+// the Git sign-in line, which is about codes; fix: 'model' — the way on is another model (the page offers its picker)
+export const errorEvent = (message, said = null, { provider = false, fix = null } = {}) => ({ type: 'error', message: str(message, 2000), text: str(message, 2000),
+  ...(typeof said === 'string' && said ? { said: short(said, 300), saidBy: 'claude' } : {}),
+  ...(provider ? { provider: true } : {}), ...(fix === 'model' ? { fix } : {}) });
 // the SDK's names for an API error (SDKAssistantMessageError, sdk.d.ts): shown as they are — anything else in that field
 // of Claude Code's stream is its own text, apart (code/test/normalize.test.mjs checks the list against the SDK's)
 // the SDK's result subtypes (SDKResultSuccess / SDKResultError, sdk.d.ts): a turn's end said by them — anything else
@@ -122,6 +125,18 @@ const TASK = ['pending', 'running', 'completed', 'failed', 'stopped', 'killed', 
 const API_ERROR_SAID = Object.freeze({ authentication_failed: 'The model\'s provider refused the key', rate_limit: 'The model\'s provider is limiting requests right now',
   overloaded: 'The model\'s provider is overloaded right now', invalid_request: 'The model\'s provider refused the request',
   model_not_found: 'The model was not found', server_error: 'The model\'s provider had an error', max_output_tokens: 'The answer reached its output limit' });
+
+// An API error a provider's words tell more of, said as ours: the Experiential Labs gateway's refusal of a model the key's
+// list does not name (its 403 "The requested model alias is not granted to this identity", or LiteLLM's hook's 400 for
+// it: lib/litellm-hooks/bn_hooks.py XL_NOT_GRANTED) — another model is the way on (JON-521)
+const NOT_GRANTED = /isn't allowed to use this model|not granted to this (?:identity|organi[sz]ation)|model alias is not granted|model_not_granted/i;
+export const NOT_GRANTED_SAID = 'Your Experiential Labs key isn\'t allowed to use this model';
+// apiErrorFor(error, words) -> [our sentence, {provider, fix}] for an API error (the SDK's name for it, the provider's
+// words): never a word of theirs in ours
+export function apiErrorFor(error, words) {
+  if (NOT_GRANTED.test(words)) return [NOT_GRANTED_SAID, { provider: true, fix: 'model' }];
+  return [API_ERROR_SAID[error] ?? 'The request to the model failed', { provider: true }];
+}
 
 // apiErrorWords(m) -> Claude Code's words for an API error (the text of its synthetic message), the provider's message
 // first: "API Error: 400 litellm.BadRequestError: BedrockException - {"message":"This model doesn't support …"}\n\n
@@ -170,7 +185,8 @@ export function fromSdk(m) {
         // their own above "Claude Code reported: unknown", the SDK's name for an error it does not classify
         const words = apiErrorWords(m);
         if (!words) return [...out, errorEvent(`Claude Code reported: ${m.error}`)];
-        return [...out.filter((e) => e.type !== 'local'), errorEvent(API_ERROR_SAID[m.error] ?? 'The request to the model failed', words)];
+        const [said, how] = apiErrorFor(m.error, words);
+        return [...out.filter((e) => e.type !== 'local'), errorEvent(said, words, how)];
       }
       return out;
     }

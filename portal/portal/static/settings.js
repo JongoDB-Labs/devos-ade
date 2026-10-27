@@ -1167,6 +1167,15 @@
     else {
       adds.append(models.length ? `Adds ${models.length} model${models.length === 1 ? "" : "s"}${free ? ` (${free} free)` : ""} to every picker. ` : "Adds no models yet. ",
         "Which ones: ", el("a", { href: `#settings/${p.pick[0]}`, text: p.pick[1] }), ".");
+      // Experiential Labs: chosen models its key's list does not name — left out, never swapped for another alias
+      // (JON-521: a "…:free" alias the key does not list is refused by the gateway)
+      const left = k.key === "EXPLABS_API_KEY" ? ((data.explabs && data.explabs.missing) || []) : [];
+      if (left.length) {
+        state[0] = models.length ? "On · some left out" : "Needs a step";
+        const badge = $(".set-prov-state", label); if (badge) { badge.textContent = state[0]; badge.dataset.tone = "warn"; }
+        rw._main.append(el("p", { class: "note set-extra set-prov-left", "data-testid": "explabs-left-out" },
+          ...left.map((m) => `${m.text} `), "Change which: ", el("a", { href: `#settings/${p.pick[0]}`, text: p.pick[1] }), "."));
+      }
       // (the Code page and devos-claude list what Models for Claude Code says: all of them unless you narrowed it)
       const scope = codeScope(keys.CODE_MODELS ? keys.CODE_MODELS.value : "");
       if (models.length && scope !== "all") {

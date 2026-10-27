@@ -51,11 +51,35 @@ def test_home_lists_them_with_the_list_price_and_says_which_run_fail_safe(settin
     assert (rows["xl/qwen3.8-27b"]["price"], rows["xl/qwen3.8-27b"]["access"]) == ("$0.32/$2.40 /1M", "paid")
     assert (rows["xl/deepseek-v4.1-flash:free"]["price"], rows["xl/deepseek-v4.1-flash:free"]["access"]) == ("free", "free")
     assert rows["xl/gpt-latest"]["price"] == "price unknown" and rows["xl/gpt-latest"]["why"] == "ok (fail safe)"
-    assert m["explabs"] == {"fetched_at": "2026-10-24T00:00:00Z", "details": True, "error": None, "count": 3, "failsafe": 1}
+    assert m["explabs"] == {"fetched_at": "2026-10-24T00:00:00Z", "details": True, "error": None, "count": 3, "failsafe": 1, "missing": []}
     # off: no rows, and nothing to say
     (settings.litellm_dir / explabs.FILE).unlink()
     m = summary.models_with_openrouter(settings)
     assert m["explabs"] is None and not [r for r in m["rows"] if r["provider"] == "Experiential Labs"]
+
+
+def test_a_free_alias_the_keys_list_lacks_is_said_on_home_and_never_swapped(settings):
+    """JON-521: EXPLABS_MODELS names "<slug>:free" and the key's list has no such alias — ./stack leaves it out and
+    names the alias the list has (its "missing"); Home lists it as not available, with the paid alias named, and the
+    portal never offers the paid one in its place."""
+    _write(settings, {**DOC, "models": [], "missing": [
+        {"id": "xl/glm-5.3-uncensored:free", "alternative": "xl/glm-5.3-uncensored"}, {"id": "xl/nope", "alternative": None},
+        {"id": "xl/bad id", "alternative": None}, {"id": "xl/x", "alternative": "or/elsewhere"}, "junk"]})
+    d = explabs.read(settings.litellm_dir)
+    assert d["models"] == []
+    assert d["missing"] == [{"id": "xl/glm-5.3-uncensored:free", "alternative": "xl/glm-5.3-uncensored"},
+                            {"id": "xl/nope", "alternative": None}, {"id": "xl/x", "alternative": None}]
+    m = summary.models_with_openrouter(settings)
+    rows = {r["name"]: r for r in m["rows"] if r["provider"] == "Experiential Labs"}
+    r = rows["xl/glm-5.3-uncensored:free"]
+    assert r["enabled"] is False and r["why"] == "not on your key's list"
+    assert "your key lists glm-5.3-uncensored (billed on your credits)" in r["reason"]
+    assert "xl/glm-5.3-uncensored" not in rows          # the paid alias is named, never offered in its place
+    assert m["explabs"]["missing"][0]["text"].startswith("glm-5.3-uncensored:free is not on your key's model list")
+    assert explabs.missing_text({"id": "xl/nope", "alternative": None}).endswith("(the gateway would refuse it).")
+    # an older file (no "missing"): nothing left out
+    _write(settings)
+    assert explabs.read(settings.litellm_dir)["missing"] == []
 
 
 def test_who_answers_groups_them_and_greys_the_entry_while_off(settings):

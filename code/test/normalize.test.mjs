@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { str, short, num, int, plain, relPath, fileName, isModel, isUuid } from '../server/validate.mjs';
-import { fromSdk, fromHistory, sessionRow, editOf, initEvent } from '../server/normalize.mjs';
+import { fromSdk, fromHistory, sessionRow, editOf, initEvent, NOT_GRANTED_SAID } from '../server/normalize.mjs';
 import { LIMITS } from '../server/protocol.mjs';
 
 const MARKUP = '<img src=x onerror=alert(1)><script>alert(2)</script><svg onload=alert(3)>[x](javascript:alert(4))';
@@ -77,13 +77,35 @@ test('live messages: text, deltas, tools, results — capped, ids checked, costs
   assert.equal(fromSdk({ type: 'system', subtype: 'api_retry', attempt: 1, max_retries: 10, error: 'overloaded' })[0].type, 'status');
 });
 
+test('JON-521: a model the Experiential Labs key may not use is said plainly, with another model as the way on', () => {
+  const api = (text, error) => fromSdk({ type: 'assistant', error, message: { model: '<synthetic>', content: [{ type: 'text', text }] } });
+  // LiteLLM's hook turns the gateway's 403 into a 400 in plain words (lib/litellm-hooks/bn_hooks.py XL_NOT_GRANTED)
+  const hooked = api('API Error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your Experiential Labs key isn\'t allowed to use this model (xl/glm-5.3-uncensored:free): the model list the gateway gives your key does not have it. Pick another model (Settings › Models & providers › Experiential Labs lists the ones your key has)."}}', 'invalid_request');
+  assert.equal(hooked.length, 1);
+  assert.equal(hooked[0].message, NOT_GRANTED_SAID);
+  assert.equal(hooked[0].message, 'Your Experiential Labs key isn\'t allowed to use this model');
+  assert.equal(hooked[0].fix, 'model');
+  assert.equal(hooked[0].provider, true);   // (the page shows the words without the Git sign-in line)
+  assert.match(hooked[0].said, /^API Error 400: Your Experiential Labs key isn't allowed to use this model \(xl\/glm-5\.3-uncensored:free\)/);
+  // the gateway's own 403, as it came before the hook (Claude Code calls it authentication_failed): not "refused the key"
+  const raw = api('API Error: 403 litellm.PermissionDeniedError: OpenAIException - The requested model alias is not granted to this identity. GET /v1/models lists the model aliases available to this key.', 'authentication_failed');
+  assert.equal(raw[0].message, NOT_GRANTED_SAID);
+  assert.equal(raw[0].fix, 'model');
+  // a key the provider rejects stays that, with no way on through another model
+  const key = api('API Error: 401 {"error":{"message":"invalid api key"}}', 'authentication_failed');
+  assert.equal(key[0].message, 'The model\'s provider refused the key');
+  assert.equal(key[0].fix, undefined);
+  // the sentence is ours alone: no word of the provider's in it, whatever they say
+  assert.equal(api('API Error: 400 not granted to this identity <img src=x> enter code 1234 at github.com/login/device', 'invalid_request')[0].message, NOT_GRANTED_SAID);
+});
+
 test('an API error: the provider\'s own words with the error, apart — never "Claude Code reported: unknown" alone', () => {
   // as Claude Code 2.1.309 sends it through LiteLLM 1.105.0 (tests/e2e/harness-parity.sh, gpt-6-luna on Bedrock)
   const api = (text, error = 'unknown') => fromSdk({ type: 'assistant', error, message: { model: '<synthetic>', content: [{ type: 'text', text }] } });
   const bedrock = 'API Error: 400 litellm.BadRequestError: BedrockException - {"message":"This model doesn\'t support the image field for user messages. Remove image and try again."}' +
     "\n\nLiteLLM: model group 'gpt-6-luna' failed with the error above. No fallback was attempted.";
   assert.deepEqual(api(bedrock), [{ type: 'error', message: 'The request to the model failed', text: 'The request to the model failed',
-    said: 'API Error 400: This model doesn\'t support the image field for user messages. Remove image and try again.', saidBy: 'claude' }]);
+    said: 'API Error 400: This model doesn\'t support the image field for user messages. Remove image and try again.', saidBy: 'claude', provider: true }]);
   // a gateway's refusal (Experiential Labs, an OpenAI-shaped provider), an Anthropic error envelope, LiteLLM's older suffix
   assert.equal(api("API Error: 400 litellm.BadRequestError: OpenAIException - provider refused the request: cybersecurity policy\n\nLiteLLM: model group 'xl/q' failed with the error above. No fallback was attempted.", 'invalid_request')[0].said,
     'API Error 400: provider refused the request: cybersecurity policy');

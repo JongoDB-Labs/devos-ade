@@ -54,6 +54,10 @@ test('the backend\'s shapes (protocol.mjs) read as meant', () => {
   assert.deepEqual(r, { kind: 'result', subtype: 'success', turns: 2, durationMs: 1200, usage: { input: 3, output: 4, cacheRead: 5, cacheWrite: 6 }, isError: false, consumed: ['11111111-1111-4111-8111-111111111111'] });
   const e = normEvent({ type: 'error', message: 'Claude Code process exited with code 1', text: 'same' });
   assert.deepEqual(e, { kind: 'error', text: 'Claude Code process exited with code 1' });
+  // a model provider's error (JON-521): its words apart, without the Git sign-in line; another model as the way on
+  const pe = normEvent({ type: 'error', message: "Your Experiential Labs key isn't allowed to use this model", said: 'API Error 400: not granted', saidBy: 'claude', provider: true, fix: 'model' });
+  assert.deepEqual(pe, { kind: 'error', text: "Your Experiential Labs key isn't allowed to use this model", said: { said: 'API Error 400: not granted', by: 'claude' }, provider: true, fix: 'model' });
+  assert.deepEqual(normEvent({ type: 'error', message: 'x', provider: 'yes', fix: 'javascript:alert(1)' }), { kind: 'error', text: 'x' });
   const st = normEvent({ type: 'status', status: '', permissionMode: 'acceptEdits', model: 'haiku', effort: 'low' });
   assert.deepEqual(st, { kind: 'status', text: '', mode: 'acceptEdits', model: 'haiku' });
   const p = msg({ type: 'permission', id: S, session: S, tool: 'AskUserQuestion', input: { questions: [] }, reason: '', blockedPath: null, suggestions: [], rules: [], expiresAt: 1 });

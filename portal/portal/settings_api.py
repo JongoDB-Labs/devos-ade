@@ -19,7 +19,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from . import admin, answers, brand, keycheck
+from . import admin, answers, brand, explabs, keycheck
 from . import settings as st
 from .security import NEXT_MAX_AGE, Sessions, cookie_params, hash_password, same_origin, verify_password
 
@@ -157,6 +157,9 @@ def routes(ctx: Ctx) -> list[Route]:
             "apps": s.app_urls(ctx.remote(request)), "user": s.user_email, "backups": st.backups(s.status_dir),
             "remote": {"on": s.remote_on(), "mode": s.remote_mode if s.remote_on() else "off",
                        "url": s.origin(remote=True) if s.remote_on() else ""},
+            # Experiential Labs' chosen models its key's list does not name (left out; the card says so, with the
+            # alias the list has instead: lib/explabs.sh xl_missing)
+            "explabs": {"missing": [{**m, "text": explabs.missing_text(m)} for m in (explabs.read(s.litellm_dir) or {}).get("missing") or []]},
         }))
 
     def check_values(values: dict, snap: dict, local: bool, same_password: bool = False) -> dict:

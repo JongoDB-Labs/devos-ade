@@ -258,6 +258,14 @@ function xl_vendor(id) {
 }'
 
 xl_key_hash() { printf '%s' "$1" | openssl dgst -sha256 | awk '{ print $NF }'; }
+# xl_free_rows IDS_FILE < xl_model_tsv rows -> the same rows, then for each "<slug>:free" of IDS_FILE (the key's list)
+# whose slug has a row here, that row under the free alias's id (the catalog knows the slug; its free tier is the same
+# model): a listed free tier keeps its model's details even when the key does not list the slug itself
+xl_free_rows() {
+  awk -F'\t' -v OFS='\t' 'FILENAME == ARGV[1] { if ($1 ~ /:free$/) fr[++n] = $1; next } { print; if (!($1 in row)) row[$1] = $0 }
+    END { for (i = 1; i <= n; i++) { b = fr[i]; sub(/:free$/, "", b); if (b in row) { $0 = row[b]; $1 = fr[i]; print } } }' "$1" -
+}
+
 # xl_join IDS_FILE < xl_model_tsv rows -> one row per id of IDS_FILE (the key's list, in its order): its details row,
 # or the id alone when there is none (not chosen, or the catalog has none: fail safe). A row the key's list lacks is not
 # kept.
@@ -277,8 +285,11 @@ xl_fetched_at() { local f; f="$(xl_cache_tsv)"; [ -r "$f" ] || return 0; sed -n 
 
 # xl_selected -> one line per model EXPLABS_MODELS picks: STATE then the xl_model_tsv fields. STATE = details (the
 # cached list for this key has its details) or failsafe (no list for this key, or no details for it in the list:
-# XL_FAILSAFE_DROPS). With a list, an id it does not have is left out (the gateway would refuse it); "<slug>:free"
-# takes its slug's details, at $0. Empty without a key.
+# XL_FAILSAFE_DROPS). With a list, only an id it lists EXACTLY is kept: "<slug>:free" too — the gateway refuses an
+# alias the key's list does not name (403 "The requested model alias is not granted to this identity"), so a free tier
+# is never assumed from its slug, and never swapped for the paid alias either (xl_missing says what the list has
+# instead). A listed "<slug>:free" with no details of its own takes its slug's, at $0. Without a list for this key
+# (not read yet) every chosen id is kept, fail safe. Empty without a key.
 xl_selected() {
   local have=0 rows
   explabs_enabled || return 0
@@ -286,16 +297,15 @@ xl_selected() {
   xl_wanted | H="$have" R="$rows" awk -F'\t' -v OFS='\t' '
     BEGIN { n = split(ENVIRON["R"], l, "\n"); for (i = 1; i <= n; i++) { split(l[i], c, "\t"); if (c[1] != "") row[c[1]] = l[i] } }
     { id = $1; base = id; free = sub(/:free$/, "", base)
-      # (a model the list names without any details: as fail safe as one it does not know)
-      if (id in row) { split(row[id], c, "\t"); print (bare(c) ? "failsafe" : "details"), row[id]; next }
-      if (!free && ENVIRON["H"] == 1) next
-      # a free tier: its slug'"'"'s details (or none), its prices $0 (fields 15-18: in out cache_read cache_write)
-      for (i = 2; i <= 18; i++) c[i] = ""
-      if (free && (base in row)) split(row[base], c, "\t")
-      else if (ENVIRON["H"] == 1) next
-      if (free) { c[15] = 0; c[16] = 0; c[17] = ""; c[18] = "" }
+      if (id in row) {
+        split(row[id], c, "\t")
+        # (a listed free tier without details of its own: those of its slug, when the list has them — at $0, below)
+        if (free && bare(c) && (base in row)) split(row[base], c, "\t")
+      } else if (ENVIRON["H"] == 1) next   # (not on the list read for this key: left out, said by xl_missing)
+      else for (i = 2; i <= 18; i++) c[i] = ""   # (no list for this key yet: fail safe)
+      if (free) { c[15] = 0; c[16] = 0; c[17] = ""; c[18] = "" }   # (a free tier: $0; fields 15-18 in out cache_read cache_write)
       s = id; for (i = 2; i <= 18; i++) s = s OFS c[i]
-      print ((free && (base in row) && !bare(c)) ? "details" : "failsafe"), s }
+      print (bare(c) ? "failsafe" : "details"), s }
     function bare(c,  i) { for (i = 2; i <= 12; i++) if (c[i] != "") return 0; return 1 }'
 }
 # xl_paid_prices -> one line per chosen model, for the Equivalent cost view: id (no "xl/"), free (1 for a "<slug>:free"
@@ -318,11 +328,27 @@ xl_paid_prices() {
       print id, (free ? 1 : 0), xl_shift(a, 15), xl_shift(b, 15), xl_shift(r, 15), xl_shift(w, 15) }'
 }
 
-# xl_missing -> the ids EXPLABS_MODELS names that the list read for this key does not have (nothing without a list)
+# xl_missing -> one line per id EXPLABS_MODELS names that the list read for this key does not have EXACTLY: the id,
+# TAB, and what the list has instead, when it has the other alias of the same model — "<slug>" for a "<slug>:free" it
+# does not list (the paid alias, billed on your credits), "<slug>:free" for a "<slug>" — else nothing after the TAB.
+# Nothing without a list. Never chosen in its place: xl_selected leaves the id out, and this says so.
 xl_missing() {
   xl_cache_current || return 0
-  xl_wanted | R="$(xl_cached_rows | cut -f1)" awk 'BEGIN { n = split(ENVIRON["R"], l, "\n"); for (i = 1; i <= n; i++) have[l[i]] = 1 }
-    { b = $1; sub(/:free$/, "", b) } !($1 in have) && !(b in have)'
+  xl_wanted | R="$(xl_cached_rows | cut -f1)" awk -v OFS='\t' 'BEGIN { n = split(ENVIRON["R"], l, "\n"); for (i = 1; i <= n; i++) have[l[i]] = 1 }
+    !($1 in have) { b = $1; alt = ""
+      if (sub(/:free$/, "", b)) { if (b in have) alt = b } else if (($1 ":free") in have) alt = $1 ":free"
+      print $1, alt }'
+}
+
+# xl_missing_text ID ALTERNATIVE -> why ID is left out, in words, with what the key lists instead (xl_missing's line)
+xl_missing_text() {
+  local t="'$1' (EXPLABS_MODELS) is not on your key's model list"
+  case "$1:$2" in
+    *':free:'?*) t="$t (it has no free alias for it) — left out; your key lists '$2' (billed on your credits): add that one to use it" ;;
+    *:?*':free') t="$t — left out; your key lists '$2' (its free alias): add that one to use it" ;;
+    *) t="$t — left out (the gateway would refuse it)" ;;
+  esac
+  printf '%s\n' "$t"
 }
 
 # xl_yaml_entries < xl_selected -> LiteLLM model_list entries (render_litellm_config's indentation). model_info carries
@@ -372,7 +398,9 @@ xl_price_text() {
 # explabs_write_portal_json — litellm/explabs-models.json for the portal (Home's model list, Chat's Who answers and the
 # Code page): the chosen models with their list prices (USD per token), whether each runs on the gateway's details or
 # fail safe, and when the list was read; and as "paid" the prices Home's Equivalent view puts on its free usage
-# (xl_paid_prices; null when none is known). Removed while Experiential Labs is off. No key in it, ever.
+# (xl_paid_prices; null when none is known); as "missing" the chosen ids the key's list does not have exactly, left
+# out, each with the other alias the list has instead (xl_missing; Home and Settings say so). Removed while
+# Experiential Labs is off. No key in it, ever.
 explabs_write_portal_json() {
   local f tmp
   f="$(xl_cache_json)"
@@ -380,7 +408,7 @@ explabs_write_portal_json() {
   mkdir -p "$(dirname "$f")" 2>/dev/null || return 0
   tmp="$(mktemp "$f.XXXXXX")" || return 0
   xl_selected | FA="$(xl_fetched_at)" CUR="$(xl_cache_current && echo 1 || echo 0)" ERR="$(xl_error_text | tr -d '"\\')" \
-    P="$(xl_paid_prices)" awk -F'\t' "$XL_AWK"'
+    P="$(xl_paid_prices)" MISS="$(xl_missing)" awk -F'\t' "$XL_AWK"'
     function num(v) { return v == "" ? "null" : v }
     BEGIN { m = split(ENVIRON["P"], l, "\n"); for (i = 1; i <= m; i++) { split(l[i], c, "\t")
       if (c[3] != "" && c[4] != "") paid[c[1]] = sprintf("{\"prompt\":%s,\"completion\":%s,\"cache_read\":%s,\"cache_write\":%s}", c[3], c[4], num(c[5]), num(c[6])) } }
@@ -392,6 +420,12 @@ explabs_write_portal_json() {
       printf "{\"fetched_at\":%s,\"details\":%s,\"error\":%s,\"models\":[", (ENVIRON["CUR"] == 1 && ENVIRON["FA"] != "" ? "\"" ENVIRON["FA"] "\"" : "null"),
         (ENVIRON["CUR"] == 1 ? "true" : "false"), (ENVIRON["ERR"] != "" ? "\"" ENVIRON["ERR"] "\"" : "null")
       for (i = 1; i <= n; i++) printf "%s%s", (i > 1 ? "," : ""), r[i]
+      # the chosen ids the list read for this key does not have exactly (xl_missing: valid ids, no quote in them),
+      # with what it has instead
+      printf "],\"missing\":["
+      m = split(ENVIRON["MISS"], ms, "\n"); k = 0
+      for (i = 1; i <= m; i++) { if (ms[i] == "") continue; split(ms[i], c, "\t")
+        printf "%s{\"id\":\"xl/%s\",\"alternative\":%s}", (k++ ? "," : ""), c[1], (c[2] != "" ? "\"xl/" c[2] "\"" : "null") }
       print "]}"
     }' > "$tmp" || { rm -f "$tmp"; return 0; }
   chmod 644 "$tmp"; mv "$tmp" "$f"
@@ -499,14 +533,15 @@ xl_fetch_models() {
   # XL_MODEL_TIMEOUT
   left=$((XL_REFRESH_BUDGET - ($(date +%s) - t0))); [ "$left" -ge 5 ] || left=5
   [ "$left" -le "$XL_MODEL_TIMEOUT" ] || left="$XL_MODEL_TIMEOUT"
-  # the chosen models the key may call (a free tier: its model's details)
-  xl_wanted | sed 's/:free$//' | awk 'FILENAME == ARGV[1] { have[$1] = 1; next } ($1 in have) && !seen[$1]++' "$ids" - > "$want"
+  # the chosen models the key may call — listed exactly, "<slug>:free" too — by their catalog slug (a free tier: its
+  # model's details)
+  xl_wanted | awk 'FILENAME == ARGV[1] { have[$1] = 1; next } ($1 in have) { sub(/:free$/, ""); if (!seen[$1]++) print }' "$ids" - > "$want"
   if xl_cache_current; then old="$(_xl_mktemp)"; xl_cached_rows > "$old"; fi
   XL_MODEL_LIMIT="$left" xl_fetch_details "$det" "$want" "$old" || rc=2
   { printf '# fetched_at: %s\n# source: %s/models (the ids, as listed for your key) and %s/<id> (the chosen ones'"'"' details)\n' \
       "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$EXPLABS_API" "$EXPLABS_CATALOG"
     printf '# id\ttemperature\ttop_p\ttop_k\tfrequency_penalty\tpresence_penalty\tlogprobs\ttools\tstructured_output\treasoning\tsampling_requires_reasoning_none\tmax_tokens_field\tmax_out\tcontext\tin\tout\tcache_read\tcache_write\n'
-    xl_join "$ids" < "$det"; } > "$out"
+    xl_free_rows "$ids" < "$det" | xl_join "$ids"; } > "$out"
   rm -f "$ids" "$det" "$want"; [ -z "$old" ] || rm -f "$old"
   return "$rc"
 }
@@ -588,7 +623,7 @@ _explabs_refresh_in() {
       chmod 644 "$tmp"; mv "$tmp" "$f"
       ( umask 077; printf '%s\n' "$khash" > "$(xl_key_mark)" )
       if [ "$rc" = 0 ]; then rm -f "$(xl_error_file)"; else _xl_record_error; fi
-      xl_missing | while IFS= read -r m; do warn "Experiential Labs: '$m' (EXPLABS_MODELS) is not a model your key may call — left out"; done
+      xl_missing | while IFS=$'\t' read -r m alt; do warn "Experiential Labs: $(xl_missing_text "$m" "${alt:-}")"; done
       if [ "$rc" = 2 ]; then
         if [ "$(xl_failsafe_count)" = 0 ]; then warn "Experiential Labs: $XL_ERR — keeping the model details read before"
         else warn "Experiential Labs: $XL_ERR — until the details can be read its models are sent no sampling or penalty parameter (temperature, top_p, …), only tools and the max_tokens cap (./stack up or Settings tries again)"; fi
@@ -621,6 +656,8 @@ explabs_status_line() {
   explabs_enabled || return 0
   out_colors
   fs="$(xl_failsafe_count)"; at="$(xl_error_at)"; bg=''
+  # (the chosen ids the key's list does not have: each said on a line of its own, after this one)
+  local miss; miss="$(xl_missing)"
   ! xl_bg_running || bg='; a refresh is under way in the background'
   if [ "$fs" -gt 0 ]; then
     # (no failure: the gateway's public catalog has no details for it — an organisation's own model, say)
@@ -638,6 +675,7 @@ explabs_status_line() {
   else
     printf 'Experiential Labs: %s — model details read %s%s\n' "$(xl_counts)" "$(xl_fetched_at)" "$bg"
   fi
+  [ -z "$miss" ] || printf '%s\n' "$miss" | while IFS=$'\t' read -r m alt; do printf '%s  %s%s\n' "$O_YEL" "$(xl_missing_text "$m" "${alt:-}")" "$O_OFF"; done
 }
 
 # explabs_summary_line — print_summary: one line while it is on
@@ -650,6 +688,7 @@ explabs_summary_line() {
 explabs_models_section() {
   explabs_enabled || return 0
   printf '\nExperiential Labs: %s, EXPLABS_MODELS=%s\n' "$(xl_counts)" "$(get_env EXPLABS_MODELS)"
+  xl_missing | while IFS=$'\t' read -r m alt; do printf '  %s\n' "$(xl_missing_text "$m" "${alt:-}")"; done
   printf '  ./stack config set EXPLABS_MODELS changes the set (exact gateway ids, comma-separated)\n'
 }
 

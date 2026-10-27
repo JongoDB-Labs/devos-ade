@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 import type { Item, Queued, SessionView } from '../session';
 import { shownCost, turnCosts } from '../spend';
 import { duration, money, tokens } from '../text';
-import { forkFrom, loadEarlier, openGitDialog, rewindCancel, rewindConfirm, rewindPreview, sendPrompt, showGit, store, currentProject, openProjectDialog } from '../app';
+import { forkFrom, loadEarlier, openGitDialog, rewindCancel, rewindConfirm, rewindPreview, sendPrompt, showGit, store, currentProject, openProjectDialog, openModelMenu } from '../app';
 import { useSel } from '../store';
 import { MarkdownView } from './MarkdownView';
 import { ToolCard } from './ToolCard';
@@ -387,10 +387,14 @@ export function MessageList({ view }: { view: SessionView | undefined }) {
         return <BlockedCard key={it.k} session={view?.id ?? ''} it={it} mode={view?.mode ?? null} />;
       case 'notice':
         return (
-          <div key={it.k} class={`notice notice-${it.level}`}>
+          <div key={it.k} class={`notice notice-${it.level}`} data-testid={it.fix === 'model' ? 'notice-model' : undefined}>
             {it.level === 'error' && <Icon name="alert" size={14} />}
             <span>{it.text}</span>
-            {it.said && <SandboxSaid words={it.said} />}
+            {it.fix === 'model' && (
+              <button type="button" class="linkish notice-fix" data-testid="notice-pick-model" onClick={() => openModelMenu()}>Pick another model</button>
+            )}
+            {/* (a provider's words through Claude Code: no Git sign-in line — that one is about codes) */}
+            {it.said && <SandboxSaid words={it.said} never={!it.provider} />}
           </div>
         );
     }

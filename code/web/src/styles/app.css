@@ -622,6 +622,7 @@ body.resizing-x iframe, body.resizing-y iframe { pointer-events: none; }
 .turn-model { color: var(--warn); font-weight: 600; }
 .notice { display: flex; align-items: center; gap: 6px; align-self: center; max-width: 100%; padding: 3px 11px; border-radius: var(--r-pill); background: var(--hover); color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .notice-error { align-self: stretch; border-radius: var(--r-m); padding: 7px 10px; background: color-mix(in srgb, var(--bad) 10%, transparent); color: var(--bad); }
+.notice-fix { flex: none; font-size: inherit; color: inherit; text-decoration: underline; }
 .notice-warn { color: var(--warn); }
 .working { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; padding: 2px 0; }
 .working-status { padding: 1px 8px; border-radius: var(--r-pill); background: var(--hover); font-size: 11.5px; overflow-wrap: anywhere; }

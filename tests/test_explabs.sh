@@ -4,7 +4,9 @@
 # Chat's rows, the status lines — and the key, which never shows up anywhere but .env and curl's stdin.
 # The gateway answers in two places, and the fixtures are split the same way:
 #   tests/fixtures/explabs_v1_models.json  GET /v1/models with the key: the OpenAI list, ids only (id, object, created,
-#                                          owned_by) — the real answer's shape, trimmed to seven ids;
+#                                          owned_by) — the real answer's shape, trimmed to seven ids, plus one free
+#                                          alias it lists (deepseek-v4.1-flash:free; a key that lists none of them, as
+#                                          the owner's does: the test builds one without it);
 #   tests/fixtures/explabs_catalog/<id>.json  GET /api/models/<id> (keyless): one model's catalog answer in the real
 #                                          shape of 2026-10-25 — the model, its deployments (each with its capabilities
 #                                          and list prices) and its default waterfall — trimmed: qwen3.8-27b and
@@ -28,8 +30,9 @@ _xl_env() {
 _xl_list() {
   local id
   xl_ids < "$2" > "$TMP/ids"; : > "$TMP/det"
-  while IFS= read -r id; do [ ! -r "$1/$id.json" ] || xl_model_tsv "$id" < "$1/$id.json" >> "$TMP/det"; done < "$TMP/ids"
-  { printf '# fetched_at: 2026-10-24T00:00:00Z\n'; xl_join "$TMP/ids" < "$TMP/det"; } > "$TMP/litellm/explabs-models.tsv"
+  # (by the catalog's slug: a free alias's details are its model's, as a refresh reads them)
+  while IFS= read -r id; do id="${id%:free}"; [ ! -r "$1/$id.json" ] || xl_model_tsv "$id" < "$1/$id.json" >> "$TMP/det"; done < "$TMP/ids"
+  { printf '# fetched_at: 2026-10-24T00:00:00Z\n'; xl_free_rows "$TMP/ids" < "$TMP/det" | xl_join "$TMP/ids"; } > "$TMP/litellm/explabs-models.tsv"
   xl_key_hash "${XL_KEY_USE:-$XL_KEY}" > "$(xl_key_mark)"
 }
 # ... and the fixtures' list cached as read with that key.
@@ -106,7 +109,7 @@ test_the_catalog_gives_a_model_the_details_of_the_deployment_that_serves_it() {
 # /v1/models is the key's list of ids, never details: the real answer carries id, object, created and owned_by only,
 # and even an answer that carried more is read for its ids alone
 test_the_keys_list_is_read_for_its_ids_and_nothing_else() {
-  assert_eq "$(xl_ids < "$FIX_V1" | tr '\n' ' ')" "chatgpt-image-latest claude-fable-5 deepseek-v4.1-flash gpt-5-mini gpt-5.1-codex gpt-latest qwen3.8-27b "
+  assert_eq "$(xl_ids < "$FIX_V1" | tr '\n' ' ')" "chatgpt-image-latest claude-fable-5 deepseek-v4.1-flash deepseek-v4.1-flash:free gpt-5-mini gpt-5.1-codex gpt-latest qwen3.8-27b "
   python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1]))["data"]
 assert all(set(m) == {"id", "object", "created", "owned_by"} for m in d), "the fixture is not the real shape"' "$FIX_V1"
   assert_eq "$(printf '{"data":[{"id":"ok-1"},{"id":"bad id"},{"id":"ok-1"},{"id":"a/b"}]}' | xl_ids)" ok-1
@@ -141,11 +144,13 @@ json.dump(v, open(sys.argv[2], "w"))' "$FIX_V1" "$TMP/v1.json"
   _xl_env 'EXPLABS_MODELS=qwen3.8-27b,our-own-model,not-for-this-key,qwen3.8-27b:free
 '
   V1_BODY="$TMP/v1.json" CATALOG_DIR="$TMP/cat" explabs_refresh 2> "$TMP/err"
-  assert_eq "$(xl_selected | cut -f1,2 | tr '\t\n' ': ')" "details:qwen3.8-27b failsafe:our-own-model details:qwen3.8-27b:free "
-  assert_contains "$(cat "$TMP/err")" "'not-for-this-key' (EXPLABS_MODELS) is not a model your key may call — left out"
-  # asked: the two the key may call, each once (the free tier is its model's); never the others
+  # (qwen3.8-27b:free: the key lists no such alias — left out, never swapped for the paid one, which is named)
+  assert_eq "$(xl_selected | cut -f1,2 | tr '\t\n' ': ')" "details:qwen3.8-27b failsafe:our-own-model "
+  assert_contains "$(cat "$TMP/err")" "'not-for-this-key' (EXPLABS_MODELS) is not on your key's model list — left out (the gateway would refuse it)"
+  assert_contains "$(cat "$TMP/err")" "'qwen3.8-27b:free' (EXPLABS_MODELS) is not on your key's model list (it has no free alias for it) — left out; your key lists 'qwen3.8-27b' (billed on your credits)"
+  # asked: the two the key may call, each once; never the others
   assert_eq "$(grep '^curl keyless ' "$TMP/calls" | sed 's/.*\/api\/models\///' | sort | tr '\n' ' ')" "our-own-model qwen3.8-27b "
-  assert_eq "$(xl_cached_rows | cut -f1 | grep -c .)" 8                        # the key's 7 + its own; never not-for-this-key
+  assert_eq "$(xl_cached_rows | cut -f1 | grep -c .)" 9                        # the key's 8 + its own; never not-for-this-key
   assert_eq "$(xl_cached_rows | awk -F'\t' '$2 != ""' | cut -f1)" qwen3.8-27b   # details: the chosen ones alone
   [ ! -e "$(xl_error_file)" ]
   assert_contains "$(explabs_status_line)" "1 without model details (the gateway's public catalog has none for it), so fail safe"
@@ -223,12 +228,99 @@ test_the_allow_list_picks_the_models() {
 '
   assert_eq "$(xl_selected | cut -f2 | tr '\n' ' ')" "gpt-5-mini deepseek-v4.1-flash deepseek-v4.1-flash:free "
   assert_eq "$(xl_selected | awk -F'\t' '$2 == "deepseek-v4.1-flash:free" { print $1, $3, $16, $17 }')" "details 1 0 0"
-  assert_eq "$(xl_missing | tr '\n' ' ')" "nope "
+  assert_eq "$(xl_missing | tr '\t\n' ': ')" "nope: "
   assert_contains "$(explabs_yaml)" "$(printf '  - model_name: "xl/deepseek-v4.1-flash:free"\n    litellm_params:\n      model: "openai/deepseek-v4.1-flash:free"')"
   assert_contains "$(explabs_yaml | grep -A 12 'deepseek-v4.1-flash:free"$')" "$(printf '      input_cost_per_token: 0\n      output_cost_per_token: 0\n')"
   # no key: nothing, whatever EXPLABS_MODELS says
   printf 'EXPLABS_MODELS=qwen3.8-27b\n' > "$ENV_FILE"
   assert_eq "$(xl_selected)$(explabs_yaml)$(explabs_code_rows)$(explabs_owui_models)$(explabs_cost_prices_entries)" ""
+}
+
+# JON-521: a key whose list names no free alias (the owner's: 317 ids, none ":free"). "<slug>:free" is enabled only
+# when the list names it exactly — the gateway answers 403 "The requested model alias is not granted to this identity"
+# for one it does not — and it is never swapped for the paid alias: left out, and the alias the list has is named
+# (setup's warning, ./stack status and models, and Home and Settings through the portal's file)
+test_a_free_alias_the_keys_list_lacks_is_left_out_and_never_swapped() {
+  python3 -I -c 'import json, sys
+v = json.load(open(sys.argv[1])); v["data"] = [m for m in v["data"] if not m["id"].endswith(":free")]
+json.dump(v, open(sys.argv[2], "w"))' "$FIX_V1" "$TMP/nofree.json"
+  _xl_env 'EXPLABS_MODELS=deepseek-v4.1-flash:free
+'
+  _xl_list "$FIX_CAT" "$TMP/nofree.json"
+  assert_eq "$(xl_cached_rows | cut -f1 | grep -c ':free$')" 0
+  assert_eq "$(xl_selected)" ""                                            # not the free alias, and never the paid one
+  assert_eq "$(explabs_yaml)" ""
+  assert_eq "$(xl_missing | tr '\t\n' '|;')" "deepseek-v4.1-flash:free|deepseek-v4.1-flash;"
+  assert_eq "$(xl_missing_text deepseek-v4.1-flash:free deepseek-v4.1-flash)" \
+    "'deepseek-v4.1-flash:free' (EXPLABS_MODELS) is not on your key's model list (it has no free alias for it) — left out; your key lists 'deepseek-v4.1-flash' (billed on your credits): add that one to use it"
+  out="$(explabs_status_line)"
+  assert_contains "$out" "Experiential Labs: no model"
+  assert_contains "$out" "your key lists 'deepseek-v4.1-flash' (billed on your credits)"
+  assert_contains "$(explabs_models_section)" "'deepseek-v4.1-flash:free' (EXPLABS_MODELS) is not on your key's model list"
+  explabs_write_portal_json
+  python3 -I -c 'import json, sys
+d = json.load(open(sys.argv[1]))
+assert d["models"] == [], d
+assert d["missing"] == [{"id": "xl/deepseek-v4.1-flash:free", "alternative": "xl/deepseek-v4.1-flash"}], d' "$TMP/litellm/explabs-models.json"
+  # the other way: a slug chosen while the list names only its free alias — left out too, the free alias named
+  python3 -I -c 'import json, sys
+v = json.load(open(sys.argv[1])); v["data"] = [m for m in v["data"] if m["id"] != "deepseek-v4.1-flash"]
+json.dump(v, open(sys.argv[2], "w"))' "$FIX_V1" "$TMP/freeonly.json"
+  _xl_env 'EXPLABS_MODELS=deepseek-v4.1-flash,deepseek-v4.1-flash:free
+'
+  _xl_list "$FIX_CAT" "$TMP/freeonly.json"
+  # (the listed free alias keeps its model's details from the catalog, though the key does not list the slug: at $0)
+  assert_eq "$(xl_selected | awk -F'\t' '{ print $1, $2, $3, $16, $17 }')" "details deepseek-v4.1-flash:free 1 0 0"
+  assert_eq "$(xl_missing | tr '\t\n' '|;')" "deepseek-v4.1-flash|deepseek-v4.1-flash:free;"
+  assert_contains "$(xl_missing_text deepseek-v4.1-flash deepseek-v4.1-flash:free)" "your key lists 'deepseek-v4.1-flash:free' (its free alias)"
+  # a refresh with such a list: the free alias's details are its slug's (asked once, by the slug)
+  _stub_curl
+  V1_BODY="$TMP/freeonly.json" explabs_refresh 2> "$TMP/err"
+  assert_eq "$(grep '^curl keyless ' "$TMP/calls" | sed 's/.*\/api\/models\///' | tr '\n' ' ')" "deepseek-v4.1-flash "
+  assert_eq "$(xl_cached_rows | awk -F'\t' '$1 == "deepseek-v4.1-flash:free" { print $8, $14 }')" "1 1048576"
+  assert_contains "$(cat "$TMP/err")" "'deepseek-v4.1-flash' (EXPLABS_MODELS) is not on your key's model list — left out; your key lists 'deepseek-v4.1-flash:free'"
+}
+
+# The stand-in gateway (tests/e2e/explabs-mock.py) is exact about aliases as the gateway is: a "mock-nofree-" key's list
+# names no free alias and a call on one is refused with the gateway's 403 words; another key's list names
+# deepseek-v4.1-flash:free and a call on it is answered (the e2e checks build on both)
+test_the_stand_in_gateway_refuses_an_alias_the_keys_list_lacks() {
+  command -v python3 >/dev/null 2>&1 || return 77
+  mkdir -p "$TMP/m"
+  M="$STACK_DIR/tests/e2e/explabs-mock.py" V1="$FIX_V1" CAT="$FIX_CAT" LOG="$TMP/m/reqs.jsonl" python3 -I - <<'PY'
+import json, os, socket, subprocess, sys, time, urllib.error, urllib.request
+s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
+proc = subprocess.Popen([sys.executable, "-I", os.environ["M"], str(port), os.environ["LOG"], os.environ["V1"], os.environ["CAT"]])
+try:
+    base = f"http://127.0.0.1:{port}"
+    for _ in range(50):
+        try:
+            urllib.request.urlopen(base + "/api/models/none", timeout=1)
+        except urllib.error.HTTPError:
+            break
+        except OSError:
+            time.sleep(0.1)
+    nofree, other = "mock-nofree-" + "0" * 32, "mock-key-" + "1" * 32
+    def get(key):
+        r = urllib.request.urlopen(urllib.request.Request(base + "/v1/models", headers={"Authorization": f"Bearer {key}"}), timeout=5)
+        return [m["id"] for m in json.load(r)["data"]]
+    def chat(key, model):
+        req = urllib.request.Request(base + "/v1/chat/completions", method="POST", headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                                     data=json.dumps({"model": model, "messages": [{"role": "user", "content": "hi"}]}).encode())
+        try:
+            return 200, json.load(urllib.request.urlopen(req, timeout=5))
+        except urllib.error.HTTPError as e:
+            return e.code, json.load(e)
+    assert "deepseek-v4.1-flash:free" in get(other) and not [m for m in get(nofree) if m.endswith(":free")], get(nofree)
+    code, body = chat(nofree, "deepseek-v4.1-flash:free")
+    assert code == 403 and body["error"]["code"] == "model_not_granted", (code, body)
+    assert body["error"]["message"].startswith("The requested model alias is not granted to this identity."), body
+    assert chat(nofree, "deepseek-v4.1-flash")[0] == 200            # (the paid alias: listed)
+    assert chat(other, "deepseek-v4.1-flash:free")[0] == 200        # (a key that lists the free alias)
+    assert chat(other, "qwen3.8-27b:free")[0] == 403                # (exactly: never a free alias from its slug)
+finally:
+    proc.terminate(); proc.wait(5)
+PY
 }
 
 test_validators_for_the_key_and_the_models() {
@@ -343,7 +435,7 @@ test_the_catalog_failing_while_the_keys_list_works_runs_fail_safe() {
   _xl_env 'EXPLABS_MODELS=qwen3.8-27b,nope
 '
   CATALOG_CODE=503 explabs_refresh 2> "$TMP/err"
-  assert_contains "$(cat "$TMP/err")" "'nope' (EXPLABS_MODELS) is not a model your key may call — left out"
+  assert_contains "$(cat "$TMP/err")" "'nope' (EXPLABS_MODELS) is not on your key's model list — left out"
   assert_contains "$(cat "$TMP/err")" "Experiential Labs: api.experientiallabs.ai answered HTTP 503 for the details of qwen3.8-27b — until the details can be read its models are sent no sampling or penalty parameter"
   assert_eq "$(xl_selected | cut -f1,2 | tr '\t\n' ': ')" "failsafe:qwen3.8-27b "
   local st; st="$(explabs_status_line)"
@@ -684,6 +776,38 @@ _hook() {
     '    go = model.startswith("gpt-5.5") and bool(tools) and reasoning_effort not in (None, "none")' \
     '    return {"mode": "responses" if go else "chat"}, model' > "$TMP/h/litellm/main.py"
   cp "$STACK_DIR/lib/litellm-hooks/bn_hooks.py" "$TMP/h/bn_hooks.py"
+}
+
+# JON-521: the gateway's 403 for a model the key may not use ("The requested model alias is not granted to this
+# identity") reaches the caller as a 400 invalid_request_error in plain words — Claude Code shows a model error, not an
+# expired sign-in ("Please run /login") — changed in place, as /v1/messages reads the exception itself; a real auth
+# failure (401, or a 403 that says something else), another provider's 403 and other errors stay as they came
+test_litellm_hook_turns_the_gateways_not_granted_into_a_model_error() {
+  _hook || return $?
+  PYTHONPATH="$TMP/h" python3 -c '
+import asyncio, bn_hooks as h
+class PermissionDeniedError(Exception):
+    def __init__(self, message, status_code=403):
+        super().__init__(message); self.message = message; self.status_code = status_code; self.type = None; self.code = "model_not_granted"
+said = "litellm.PermissionDeniedError: OpenAIException - {\"error\":{\"message\":\"The requested model alias is not granted to this identity. GET /v1/models lists the model aliases available to this key.\",\"code\":\"model_not_granted\"}}"
+fail = lambda req, e: asyncio.run(h.proxy_handler_instance.async_post_call_failure_hook(req, e, None))
+e = PermissionDeniedError(said)
+assert fail({"model": "xl/glm-5.3-uncensored:free", "messages": []}, e) is None   # (in place: /v1/messages reads e)
+assert (e.status_code, e.type) == (400, "invalid_request_error"), vars(e)
+assert e.message.startswith("Your Experiential Labs key isn\x27t allowed to use this model (xl/glm-5.3-uncensored:free)"), e.message
+assert "/login" not in e.message and str(e) == e.message
+# by model_info too (a request whose group name says nothing)
+e = PermissionDeniedError("model \x27x\x27 is not granted to this organization")
+fail({"model": "alias", "litellm_metadata": {"model_info": {"bn_xl": True}}}, e)
+assert e.status_code == 400 and "(alias)" in e.message, e.message
+# stays: a key the gateway rejects (401; a 403 that says nothing of a grant), another provider, another error
+for req, e in (({"model": "xl/qwen3.8-27b"}, PermissionDeniedError("invalid_key: the key was revoked", 401)),
+               ({"model": "xl/qwen3.8-27b"}, PermissionDeniedError("forbidden: your organization is suspended")),
+               ({"model": "or/a/b"}, PermissionDeniedError(said)),
+               ({"model": "xl/qwen3.8-27b"}, PermissionDeniedError(said, 500)), ("junk", PermissionDeniedError(said)), ({"model": "xl/x"}, ValueError("x"))):
+    before = (getattr(e, "status_code", None), getattr(e, "message", None))
+    assert fail(req, e) is None and (getattr(e, "status_code", None), getattr(e, "message", None)) == before, (req, vars(e))
+'
 }
 
 test_litellm_hook_sends_each_gateway_model_only_what_it_takes() {

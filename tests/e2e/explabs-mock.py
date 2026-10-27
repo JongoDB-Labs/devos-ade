@@ -10,8 +10,10 @@ streamed or not, and each request body is appended to a JSONL file for the scrip
 with a reasoning effort is answered with the model's reasoning too (reasoning_content, as the gateway's reasoning lanes
 return it); one whose history carries LiteLLM's own fields (thinking_blocks, provider_specific_fields) is refused with
 the gateway's 400 ("Invalid value for 'messages.3.thinking_blocks'"). Every answer has an id of its own, as the gateway's
-do: LiteLLM keys its spend log by it, and keeps only the first of two rows with one id. Never the key: only "Bearer" is
-looked for in the header.
+do: LiteLLM keys its spend log by it, and keeps only the first of two rows with one id. Never the key itself: only
+"Bearer" is looked for in the header, and one mark of the stand-in's own — a key that starts "mock-nofree-" is a key
+whose list names no free alias at all (the owner's, 2026-10-26: 317 ids, none ":free"): its GET /v1/models leaves every
+"…:free" id of V1_JSON out, and a call on one is refused as the gateway refuses an alias the list does not name (JON-521).
 Its refusals are the gateway's (its llms.txt, read 2026-10-24, and what it answered on 2026-10-25), in its error envelope:
 a message field outside OpenAI's Chat Completions ("Invalid value for 'messages.3.thinking_blocks'", 400 invalid_value:
 the gateway refused LiteLLM's thinking_blocks so; any other unknown field of a message or a tool call is refused the
@@ -19,7 +21,9 @@ same way here, a strict reading), two tool calls with one id in an assistant tur
 65,536 characters (400), a parameter the model's catalog entry does not list (top_k, frequency_penalty,
 presence_penalty, top_logprobs; 400 unsupported_parameter), an image for a model whose catalog entry takes text only
 (400 unsupported_capability, naming "messages"), a plugin other than "web" (400), a request without messages (400) and a
-model the list does not have (403 model_not_granted). A user message holding PARITY-REFUSE is refused as a provider's policy refusal (400 refusal,
+model the list does not have — exactly: a "<slug>:free" alias only when the list names it — (403 model_not_granted, in
+the gateway's words: "The requested model alias is not granted to this identity. GET /v1/models lists the model aliases
+available to this key."). A user message holding PARITY-REFUSE is refused as a provider's policy refusal (400 refusal,
 "provider refused the request: cybersecurity policy"), for the harness parity suite's error check.
 With MOCK_RELAY (LiteLLM's base URL, its key in MOCK_RELAY_KEY: environment only) a request that passes is answered by
 a real model, MOCK_RELAY_MODEL, through that LiteLLM's Chat Completions (tests/e2e/harness-parity.sh: Claude Code's
@@ -121,8 +125,7 @@ class Gateway(BaseHTTPRequestHandler):
         if not self.headers.get("Authorization", "").startswith("Bearer "):
             return self._json(401, {"error": {"code": "invalid_key", "type": "authentication_error"}})
         if url.path == "/v1/models":
-            with open(V1, encoding="utf-8") as f:
-                return self._json(200, json.load(f))
+            return self._json(200, _listed(self.headers))
         self._json(404, {"error": {"code": "not_found"}})
 
     def do_POST(self):
@@ -149,7 +152,7 @@ class Gateway(BaseHTTPRequestHandler):
             # (as the gateway and OpenRouter answer it: never relayed)
             return self._json(400, {"error": {"message": "Invalid 'messages': empty array. Expected an array with minimum length 1.",
                                               "type": "invalid_request_error", "param": "messages", "code": "invalid_request"}})
-        refused = _refusal(body) if FLAVOR == "explabs" else None
+        refused = _refusal(body, self.headers) if FLAVOR == "explabs" else None
         if refused:
             return self._json(*refused)
         if _asks_refusal(body.get("messages")):
@@ -284,14 +287,26 @@ def _catalog(model):
         return None
 
 
-def _refusal(body):
+NO_FREE = "Bearer mock-nofree-"   # (a key of the stand-in's own whose list names no free alias)
+NOT_GRANTED = "The requested model alias is not granted to this identity. GET /v1/models lists the model aliases available to this key."
+
+
+def _listed(headers):
+    """GET /v1/models as this key gets it: V1_JSON, without its "…:free" aliases for a mock-nofree- key."""
+    with open(V1, encoding="utf-8") as f:
+        v = json.load(f)
+    if headers.get("Authorization", "").startswith(NO_FREE):
+        v["data"] = [m for m in v.get("data") or [] if not str(m.get("id", "")).endswith(":free")]
+    return v
+
+
+def _refusal(body, headers):
     """The gateway's answer to a request it refuses ((status, envelope)), or None."""
     model = body.get("model")
-    with open(V1, encoding="utf-8") as f:
-        ids = {m.get("id") for m in json.load(f).get("data") or []}
+    ids = {m.get("id") for m in _listed(headers).get("data") or []}
     base = model.removesuffix(":free") if isinstance(model, str) else model   # (a free tier: its slug's model)
-    if model not in ids and base not in ids:
-        return _err("model_not_granted", f"model {model!r} is not granted to this organization", "model", 403)
+    if model not in ids:   # (exactly: a free alias only when the list names it)
+        return _err("model_not_granted", NOT_GRANTED, "model", 403)
     info = _catalog(base) or {}
     supported = info.get("supported_params") or {}
     for p in _ASKABLE:

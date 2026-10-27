@@ -327,8 +327,10 @@ function renderModels(models, prices) {
   const on = models.rows.filter((m) => m.enabled), by = {};
   for (const m of on) by[m.provider || "Bedrock"] = (by[m.provider || "Bedrock"] || 0) + 1;
   const where = Object.keys(by).length > 1 ? ` (${Object.entries(by).map(([p, n]) => `${p} ${n}`).join(", ")})` : "";
+  // (Experiential Labs models chosen that the key's list does not name: left out, said here — the table is folded)
+  const left = (xl && xl.missing) || [];
   $("#models-line").textContent = models.error && !models.rows.length ? models.error
-    : `${on.length} of ${models.rows.length} model${models.rows.length === 1 ? "" : "s"} enabled${where}.`;
+    : `${on.length} of ${models.rows.length} model${models.rows.length === 1 ? "" : "s"} enabled${where}.${left.length ? ` Experiential Labs: ${left.map((m) => m.text).join(" ")}` : ""}`;
   renderPrices(prices);
 }
 
