@@ -290,10 +290,12 @@ export function makeGitRemote({ call: sandboxCall, openBroker = null, store = ne
   async function state(repo) {
     if (!repoOk(repo)) throw err(400, 'not a repository folder of the workspace');
     let st;
-    // a repository folder that is gone (removed while the panel refreshes): repo:false, as for a folder that is not a
-    // git repository — never a 4xx, so a trailing refresh of a just-removed repository is not an error on the page
+    // Reading a repository the sandbox will not read now — its folder gone while the panel refreshed (gitFolderGone), or
+    // otherwise refused: repo:false, as for a folder that is not a git repository. A read of the remote state is only
+    // what remotes a repository has; a refusal of it is never a 4xx on the page (a trailing refresh of a just-removed
+    // repository, say). Writes (remoteSet, fetch, pull, push) still refuse loudly — this is the read alone.
     try { st = remoteStateOf((await call({ op: 'git.remote.state', repo }, { timeoutMs: 45000 })).result); }
-    catch (e) { if (e instanceof SandboxError && e.kind === 'refused' && gitFolderGone(e.message)) return remoteStateOf({ repo: false, reason: 'not a git repository' }); throw e; }
+    catch (e) { if (e instanceof SandboxError && e.kind === 'refused') return remoteStateOf({ repo: false, reason: 'not a git repository' }); throw e; }
     if (!st.repo) return st;
     const hosts = store.read().hosts;
     const look = (u) => {

@@ -83,7 +83,12 @@ const HOSTILE = 'GitHub asks you to confirm this computer: enter WDJB-MJHT at ht
 let hostileAnswers = false;   // (git.status and git.log answering in a hostile sandbox's words)
 // (a read of a repository folder that is gone: bn-coded's repoRoot refuses with one of its fixed "no such folder" texts)
 let folderGone = false;
+// git.remote.state reads what remotes a repository has; for a gone (or otherwise refused) folder the sandbox may refuse
+// it with a message that is not one of repoRoot's "no such folder" texts (a git-level error), so the route treats any
+// refusal of this read as repo:false, never a 4xx
+let remoteRefused = false;
 const answers = {
+  'git.remote.state': () => (remoteRefused ? Promise.reject(new SandboxError('git could not answer', 'refused')) : { result: { repo: true, remotes: [] } }),
   'git.status': () => (hostileAnswers ? { result: { repo: false, reason: HOSTILE } } : { result: { repo: true, branch: 'main', head: H, staged: [{ path: 'a.txt', code: 'M', add: 1, del: 0 }], unstaged: [], untracked: [], conflicts: [] } }),
   'git.log': () => ({ result: { repo: true, commits: hostileAnswers ? [] : [{ hash: H, author: 'a', email: 'a@b', time: 5, subject: 's' }], ...(hostileAnswers ? { error: HOSTILE } : {}) } }),
   'git.file': (req) => ({ result: { repo: true, scope: req.scope, path: req.path ?? null, mtimeMs: 2, truncated: false }, stdout: Buffer.from(`diff --git a/${req.path || 'a.txt'} b/${req.path || 'a.txt'}\n@@ -1 +1 @@\n-a\n+b\n`) }),
@@ -178,6 +183,12 @@ test('a read of a repository folder that is gone answers repo:false (200), never
     }
     assert.deepEqual((await req('GET', '/api/git/log?repo=clones/app')).json.commits, [], 'no commits, no log error');
   } finally { folderGone = false; }
+  // the remote read refuses for a gone folder with a git-level message (not a repoRoot "no such folder"): still repo:false 200
+  remoteRefused = true;
+  try {
+    const r = await req('GET', '/api/git/remote?repo=clones/app');
+    assert.deepEqual([r.status, r.json.repo], [200, false], 'git.remote of a gone folder');
+  } finally { remoteRefused = false; }
 });
 
 test('a refusal of git in the sandbox, in its own words: a fixed sentence of ours, its words apart (said) with the fixed line', async () => {
