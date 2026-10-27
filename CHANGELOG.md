@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-10-27
+
 ### Added
 
 - **Code is a tab of the phone's bar: Home · Chat · Code · More.** It frames the Code page like Chat (its own phone
@@ -3298,6 +3300,7 @@ Initial public release.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
 [Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.5...HEAD
+[0.32.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.5...v0.32.0
 [0.31.5]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.4...v0.31.5
 [0.31.4]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.3...v0.31.4
 [0.31.3]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.2...v0.31.3
