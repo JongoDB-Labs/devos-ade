@@ -170,12 +170,24 @@ def llama_capped(ctx):
         raise Skip("Llama 3.3 70B is not enabled for this key")
     expect(m["compat"] == "works" and m["max_output_tokens"] == 8192, f"llama: {m}")
     sid = c.new_session(m["id"], "default")
-    evs = c.turn(sid, "Reply with exactly the word: pong")
-    res = [e for e in evs if e["type"] == "result"][-1]
-    text = "".join(e["text"] for e in evs if e["type"] == "text")
-    expect(res["subtype"] == "success" and not res.get("is_error") and "maximum tokens" not in text, f"llama: {res} {text[:200]!r}")
+    n = len(c.msgs())
+    c.request({"type": "prompt", "session": sid, "text": "Reply with exactly the word: pong"})
+    # The hook's one job here: lower Claude Code's 32,000 max_tokens ask under Bedrock's 8,192 cap for this model, so the
+    # request is accepted instead of refused ("maximum tokens"). That is proved the moment the model answers at all —
+    # assistant text or a tool call — with no such refusal. We do NOT wait for the whole turn to finish: a weak model
+    # can wander into a tool call that errors and loop (JON-805), with no result in the window though max_tokens was
+    # never the problem. If max_tokens were not capped the request is refused, which surfaces as "maximum tokens" in the
+    # events (and the model still emits an event, so the wait returns).
+    c.wait(lambda msg: msg.get("type") == "event" and msg.get("session") == sid
+           and msg.get("ev", {}).get("type") in ("text", "tool_use", "result"), "Llama to start answering", 120, since=n)
+    evs = c.events(sid, n)
+    blob = json.dumps(evs)
+    expect("maximum tokens" not in blob, f"llama: refused for max_tokens — the hook did not cap it: {blob[:400]}")
+    text = "".join(e.get("text", "") for e in evs if e["type"] == "text")
+    c.api("DELETE", f"/api/sessions/{sid}")   # it may still be looping (JON-805); stop it so it does not 409 later checks
     c.rec.save()
-    return f"Llama 3.3 70B answered {text.strip()[:40]!r} ({res['subtype']}): max_tokens capped at 8,192 by LiteLLM's hook"
+    how = f"answered {text.strip()[:40]!r}" if text.strip() else ("made a tool call" if any(e["type"] == "tool_use" for e in evs) else "started")
+    return f"Llama 3.3 70B {how}: LiteLLM's hook capped max_tokens at 8,192 (no 'maximum tokens' refusal; JON-805 tracks the weak-model tool loop)"
 
 
 @check("browser", "code-ui-models-and-status-bar")
