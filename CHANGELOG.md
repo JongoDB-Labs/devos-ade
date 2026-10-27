@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.32.2] - 2026-10-27
+
 ### Changed
 
 - **Updates account for every second (JON-519).** Home's update card lists every step of the update with how long it
@@ -3347,6 +3349,7 @@ Initial public release.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
 [Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.5...HEAD
+[0.32.2]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.32.1...v0.32.2
 [0.32.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.32.0...v0.32.1
 [0.32.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.5...v0.32.0
 [0.31.5]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.4...v0.31.5
