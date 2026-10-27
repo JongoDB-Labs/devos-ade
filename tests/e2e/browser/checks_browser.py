@@ -2610,8 +2610,13 @@ def walkthrough_tablet(ctx):
     page.click("#tour [data-k=sec-1]")
     page.click("#tour [data-k=go-signin-admin]")
     _to_step(page, "signin-admin")
+    # (every toast shown from here on is recorded: one stays 1.8 s and the next can replace it, so on a slow run the
+    # compass hint came and went before a wait for it began — v0313b)
+    page.evaluate("""() => { const t = document.querySelector('#toast'); window.__bnToasts = [];
+        new MutationObserver(() => { if (t.classList.contains('show')) window.__bnToasts.push(t.textContent); })
+          .observe(t, { attributes: true, childList: true, characterData: true, subtree: true }); }""")
     page.click("#tour [data-k=open-admin]")
-    page.locator("#toast.show", has_text="compass button").wait_for(timeout=3000)
+    page.wait_for_function("() => (window.__bnToasts || []).some((m) => m.includes('compass button'))", timeout=5000)
     page.wait_for_selector("#tour", state="hidden", timeout=5000)
     need("litellm")
     keys = page.frame_locator("iframe[data-app=admin]").locator(SSO_DONE["admin"]).first

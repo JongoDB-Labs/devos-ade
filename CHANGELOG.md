@@ -38,6 +38,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 - **Tests:** the end-to-end check of Home's automatic-update switch keeps its stand-in update helper's heartbeat
   fresh until Home has seen it before it clicks the switch again; on a slow run it clicked while Home still showed the
   switch disabled and gave up.
+- **Tests:** the walkthrough's tablet check records every toast from before its click, so the 1.8 s hint that the
+  walkthrough is under the compass button is never missed on a slow run.
 - **Setup and updates ride out a slow download.** Building DevOS ADE's images downloads Python, npm and Debian
   packages, with each tool's default patience: pip gave up on one read after 15 s, and the build — setup's, an
   update's, or a test run's — failed on a connection that was only slow (seen on 2026-10-26: `files.pythonhosted.org`
