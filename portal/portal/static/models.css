@@ -134,6 +134,7 @@
 .mb-own-host .lm-box { margin-top: 0; }
 .lm-quick { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .lm-quick .quiet { padding: 2px 8px; }
+@media (max-width: 767.98px) { .lm-quick { gap: 6px; } .lm-quick > .note { flex: 0 0 100%; } .lm-quick .quiet { padding: 5px 10px; } }
 .lm-add input[type=text], .lm-add input[type=password] { box-sizing: border-box; padding: 9px 12px; border: 1px solid var(--line); border-radius: var(--r-m);
   background: var(--surface); color: var(--ink); font: inherit; }
 .lm-add input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }

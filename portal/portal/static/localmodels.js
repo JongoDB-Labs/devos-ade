@@ -251,7 +251,7 @@
       quick.append(q);
     }
     const form = el("form", { class: "lm-add", id: "ms-add" }, el("div", { class: "lm-add-row" }, url), quick, el("div", { class: "lm-add-row" }, name, key), keyNote, trustRow,
-      el("div", { class: "lm-add-row" }, go, el("span", { class: "note", text: state.can_change ? "Asks the server for its models from this computer. Nothing is saved until you add it; checking this computer (localhost) needs no password, another computer asks for it." : state.why_not })));
+      el("div", { class: "lm-add-row" }, go, el("span", { class: "note", text: state.can_change ? "Nothing is saved until you add it. Localhost needs no password; another computer asks for it." : state.why_not })));
     form.addEventListener("submit", (ev) => {
       ev.preventDefault(); sync();
       const u = srv.url.trim();
@@ -262,7 +262,7 @@
       if (onThisComputer(u)) { runProbe(u); return; }
       render();                                                   // (the last check's result goes now, not when this one answers)
       ask({ op: "probe", url: u, name: "", key: srv.key, trust: srv.trust && /^https:/i.test(u), models: [] }, "Check this server?",
-        `${u} is another computer: it is asked for its model list (GET /v1/models) from this computer. Nothing is saved yet.`, "Check");
+        `${u} is another computer: this computer asks it for its model list (GET /v1/models).`, "Check");
     });
     return form;
   }
@@ -272,7 +272,7 @@
     if (!p) return "";
     const pbox = el("div", { class: `lm-probe ${p.status === "ok" ? "good" : "bad"}`, id: "ms-probe", role: "status" });
     if (p.status === "ok") {
-      pbox.append(el("p", {}, badge("answering", "on"), ` ${p.url} answers and has ${p.models.length} model${p.models.length === 1 ? "" : "s"}. Tick the ones you want in your pickers.`));
+      pbox.append(el("p", {}, badge("answering", "on"), ` ${p.url} has ${p.models.length} model${p.models.length === 1 ? "" : "s"}. Tick the ones you want.`));
       if (p.warning) pbox.append(el("p", { class: "lm-warn warn", id: "ms-warn", text: p.warning }));
       const ul = el("ul", { class: "lm-models", id: "ms-models" });
       for (const m of p.models) {
@@ -283,7 +283,7 @@
       pbox.append(ul);
     } else {
       pbox.append(el("p", {}, badge(FAIL[p.status] || "Failed", "warn"), ` ${p.reason || p.message || "no answer"}`));
-      if (["down"].includes(p.status)) pbox.append(el("p", { class: "note", text: "Check that the server is running and the address and port are right. You can still add it now; its models appear when it answers." }));
+      if (["down"].includes(p.status)) pbox.append(el("p", { class: "note", text: "Check that the server is running and the address and port are right. You can still add it; its models show when it answers." }));
       if (p.warning) pbox.append(el("p", { class: "lm-warn warn", id: "ms-warn", text: p.warning }));
     }
     const saveLabel = () => (p.status === "ok" ? `Add server with ${srv.picked.size} model${srv.picked.size === 1 ? "" : "s"}` : "Add it anyway");
@@ -293,7 +293,7 @@
       const name = uniqueName(p.url, srv.name);
       const models = p.status === "ok" ? [...srv.picked] : ["*"];       // (a server that is down: whatever it serves once it answers)
       ask({ op: "save", name, url: p.url, key: srv.key, trust: p.trust, models }, `Add ${name}?`,
-        `${p.url} joins the model gateway${p.status === "ok" ? ` with ${models.length} model${models.length === 1 ? "" : "s"}` : " (it is not answering now; its models appear when it does)"}: they show in Chat, the Code page and the terminal marked Local, at $0.${p.warning ? ` ${p.warning}` : ""}`, "Add server");
+        `${p.url} joins the model gateway${p.status === "ok" ? ` with ${models.length} model${models.length === 1 ? "" : "s"}` : ", though it is not answering yet"}. ${p.status === "ok" ? "They show" : "Its models show, once it answers,"} in Chat, the Code page and the terminal marked Local, at $0.${p.warning ? ` ${p.warning}` : ""}`, "Add server");
     });
     pbox.append(el("p", {}, saveBtn));
     return pbox;
@@ -360,8 +360,8 @@
     if (thisComputer) ul.append(el("li", { class: "lm-item lm-this", id: "lm-this", "data-server-row": "this-computer" }, el("div", { class: "lm-item-main" }, el("p", { class: "lm-name" }, el("b", { text: "This computer" }), " ", badge("Local", "on")), thisComputer)));
     for (const s of list) ul.append(serverRow(s));
     if (ul.children.length) sec.append(el("h4", { class: "lm-h", text: thisComputer ? "Where models run" : "Your model servers" }), ul);
-    if (!list.length) sec.append(el("p", { class: "note", id: "ms-empty", text: "No model servers yet. Add the computer that runs your models below: this one (localhost) or another on your network. Its models then show in every picker, free." }));
-    sec.append(...(part === "server" ? [] : [el("h4", { class: "lm-h", id: "ms-add-h", text: "Add a model server" })]), el("p", { class: "note", text: "A computer on your network running models, or this one. Any OpenAI-compatible server works: Ollama, LM Studio, vLLM, llama.cpp." }), addForm(), probeResult());
+    if (!list.length) sec.append(el("p", { class: "note", id: "ms-empty", text: "No model servers yet." }));
+    sec.append(...(part === "server" ? [] : [el("h4", { class: "lm-h", id: "ms-add-h", text: "Add a model server" })]), el("p", { class: "note", text: "Any OpenAI-compatible server works, on this computer or another on your network." }), addForm(), probeResult());
     if (srv.wait) sec.append(el("p", { class: "note", role: "status", id: "ms-wait", text: srv.wait.op === "probe" ? "Checking the server…" : "Waiting for the update helper…" }));
     if (srv.note) sec.append(el("p", { class: `note ${/did not|not |refused|cannot/i.test(srv.note) ? "lm-warn warn" : ""}`, id: "ms-note", role: "status", text: srv.note }));
     return sec;
