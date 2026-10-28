@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-10-28
+
 ### Changed
 
 - **Updating DevOS ADE now brings every core service to its newest tested release (JON-815).** The pins had lagged
