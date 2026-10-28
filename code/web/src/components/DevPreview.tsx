@@ -18,7 +18,7 @@ import type { LaunchEntry, PortInfo } from '../types';
 import { label, visible } from '../text';
 import { SandboxSaid } from './Said';
 import { Icon, Spinner } from './icons';
-import { Dialog, copyText, useMedia } from './ui';
+import { Dialog, Dropdown, MenuItem, copyText, useMedia } from './ui';
 import { PRODUCT } from '../brand';
 
 /** What the preview frame may do: run its scripts on its own origin (another site), forms, popups (as new tabs, outside
@@ -227,7 +227,7 @@ function PortRow({ p, onDone }: { p: PortInfo; onDone?: () => void }) {
   }, [confirm]);
   const where = p.addrs.some((a) => a === '0.0.0.0' || a === '::') ? 'all addresses' : 'localhost';
   return (
-    <li class="port-row" data-testid="port-row" data-port={p.port}>
+    <li class="port-row" data-testid="port-row" data-port={p.port} data-ctx="">
       <span class="port-num">:{p.port}</span>
       <span class="port-cmd" title={`${p.cmd || 'process not known'}${p.pid ? ` (pid ${p.pid})` : ''} — listens on ${where} (${p.addrs.join(', ')})`}>
         {p.cmd ? label(p.cmd, 120) : <span class="muted">process not known</span>}
@@ -267,6 +267,24 @@ function PortRow({ p, onDone }: { p: PortInfo; onDone?: () => void }) {
         >
           {confirm ? 'Stop it?' : 'Stop'}
         </button>
+        <Dropdown title={`Actions for :${p.port}`} class="item-more" align="right" trigger={<Icon name="more" size={14} />} testid="port-menu" ctx>
+          {(close) => (
+            <>
+              <MenuItem icon="window" disabled={!available} onSelect={() => (close(), onDone?.(), void openPreview(p.port))} testid="port-menu-preview">
+                {available ? 'Preview' : 'Preview (not available here)'}
+              </MenuItem>
+              <MenuItem icon="external" disabled={!available} onSelect={() => (close(), void window.open(previewTabUrl(p.port), '_blank', 'noopener,noreferrer'))} testid="port-menu-new-tab">
+                Open in a new tab
+              </MenuItem>
+              <MenuItem icon="copy" onSelect={() => (close(), void copyText(new URL(previewTabUrl(p.port), location.href).href))} testid="port-menu-copy">
+                Copy the preview link
+              </MenuItem>
+              <MenuItem icon="stop" danger disabled={!p.pid} onSelect={() => (close(), setConfirm(true))} testid="port-menu-stop">
+                {p.pid ? 'Stop it… (asks again in the row)' : 'Stop (its process is not known here)'}
+              </MenuItem>
+            </>
+          )}
+        </Dropdown>
       </span>
     </li>
   );

@@ -15,6 +15,7 @@ import { approveRun, approvedRun, askDraft, outcome, outcomeText, plainCommand }
 import { approveLaunch, approvedLaunch, switchedAway, type Viewport } from './devpreview';
 import { loadPrefs, savePrefs, type Layout, type Prefs } from './prefs';
 import { applyHunks } from './diff';
+import type { SessionAction } from './portalbridge';
 import { basename, cleanPath, dirname, isUuid, joinPath, label, money, setHostTops } from './text';
 import { sniff, viewFor, type FileView, type Sniffed } from './preview/sniff';
 import type { GitCommit, GitEntry, GitEvent, GitFile, GitNetAction, GitPlan, GitRemoteState, GitReview, GitScope, GitStatus, GrepResult, SandboxWords } from './types';
@@ -241,6 +242,8 @@ export type ProjectDialog =
   | { kind: 'new'; tab: 'empty' | 'clone' | 'folder' | 'computer' }
   | { kind: 'remove'; id: string }
   | { kind: 'file'; ids: string[] }
+  /** Delete a session: what goes, said first (Projects.tsx) */
+  | { kind: 'delete-session'; id: string; title: string }
   /** a project's own Claude Code settings: what they set, Trust / Stop trusting (start: then a new session there) */
   | { kind: 'settings'; id: string; start?: NewSessionOptions }
   /** your Claude Code and devos-claude sessions of a folder of this computer, copied into the sandbox (Import.tsx) */
@@ -1183,6 +1186,21 @@ export async function showFromPortal(id: string): Promise<void> {
   await showLinked(id);
 }
 
+/** Home's item menu on a session (portalbridge.ts bn-portal-session-do): the same actions as the session's own menu here —
+ *  Delete and Add to project open their dialogs on this page (the portal shows the Code tab), nothing is deleted unasked. */
+export async function sessionDoFromPortal(id: string, action: SessionAction, title?: string): Promise<void> {
+  if (!isUuid(id)) return;
+  set((x) => (x.sheet ? { ...x, sheet: null } : x));
+  const known = get().sessions.find((x) => x.id === id);
+  const name = get().views[id]?.title || known?.title || known?.firstPrompt || '';
+  if (action === 'rename') await renameSessionById(id, title ?? '');
+  else if (action === 'archive' || action === 'unarchive') await archiveSessionById(id, action === 'archive');
+  else if (action === 'fork') await resumeSession(id, true);
+  else if (action === 'delete') openProjectDialog({ kind: 'delete-session', id, title: name });
+  else if (action === 'file') openProjectDialog({ kind: 'file', ids: [id] });
+  else if (action === 'terminal') await openSessionFolderTerminal(id);
+}
+
 /** The draft from a link was sent or put away. */
 export function dropLinkDraft(): void {
   set((s) => (s.linkDraft ? { ...s, linkDraft: null } : s));
@@ -1632,6 +1650,81 @@ export async function renameSessionById(id: string, title: string): Promise<void
     set((s) => ({ ...s, sessions: s.sessions.map((x) => (x.id === id ? { ...x, title: label(t, 200) } : x)) }));
   } catch (e) {
     failed(e, 'Rename failed');
+  }
+}
+
+// --- the item menus (JON-821): what a session's, a file's and a folder's menus do beyond the older actions ---
+
+/** The address that opens a session on this page (the deep link ?session=ID). */
+export function sessionLink(id: string): string {
+  const u = new URL(location.href);
+  u.search = '';
+  u.hash = '';
+  u.searchParams.set('session', id);
+  return u.href;
+}
+
+/** Archive a session (or list it again): a label, nothing of it changes. A session open here is closed first (its
+ *  process ends, the transcript stays), unless a turn runs in it. */
+export async function archiveSessionById(id: string, on: boolean): Promise<void> {
+  if (!isUuid(id)) return;
+  const v = get().views[id];
+  if (on && (v?.state === 'busy' || v?.state === 'starting')) return toast('A turn is running in it: stop it first, then archive it.', 'error');
+  try {
+    await api.archiveSession(id, on);
+    if (on && v && v.state !== 'closed') await closeSessionById(id);
+    set((s) => ({ ...s, sessions: s.sessions.map((x) => (x.id === id ? { ...x, archived: on || undefined } : x)) }));
+    toast(on ? 'Archived: it is listed under Archived in its project.' : 'Listed with the others again.', 'ok');
+    void refreshSessions();
+  } catch (e) {
+    failed(e, on ? 'Not archived' : 'Not listed again');
+  }
+}
+
+/** Delete a session for good (its dialog first: Projects.tsx DeleteSessionDialog): its transcript leaves the sandbox. */
+export async function deleteSessionById(id: string): Promise<boolean> {
+  if (!isUuid(id)) return false;
+  try {
+    await api.deleteSession(id);
+  } catch (e) {
+    failed(e, 'Not deleted');
+    return false;
+  }
+  attached.delete(id);
+  set((s) => {
+    const views = { ...s.views };
+    delete views[id];
+    return { ...s, views, active: s.active === id ? null : s.active, sessions: s.sessions.filter((x) => x.id !== id) };
+  });
+  announce();
+  toast('Deleted: its transcript is gone from the sandbox.', 'ok');
+  void refreshSessions();
+  return true;
+}
+
+/** The terminal opened (a tab of its own on a phone), then a message about the window it made. */
+function terminalShown(where: string, window: string | null): void {
+  if (!isPhone()) setLayout({ terminal: true });
+  toast(`A terminal window in ${where}${window ? ` (${window})` : ''}.`, 'ok');
+}
+/** A new terminal window in the folder a session works in. */
+export async function openSessionFolderTerminal(id: string): Promise<void> {
+  if (isPhone()) window.open(terminalUrl() ?? '/.bn/terminal', '_blank', 'noopener,noreferrer');
+  try {
+    const r = await api.sessionFolderTerminal(id);
+    terminalShown(get().where[id]?.cwd ?? get().sessions.find((x) => x.id === id)?.cwd ?? 'its folder', r.window);
+  } catch (e) {
+    toast(`No terminal window: ${errText(e)}`, 'error');
+  }
+}
+/** A new terminal window in a folder of the explorer, or in the folder a file is in. */
+export async function openPathTerminal(path: string, dir: boolean): Promise<void> {
+  if (isPhone()) window.open(terminalUrl() ?? '/.bn/terminal', '_blank', 'noopener,noreferrer');
+  try {
+    const r = await api.pathTerminal(path, dir);
+    terminalShown(dir ? path || 'the workspace' : path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : 'the workspace', r.window);
+  } catch (e) {
+    toast(`No terminal window: ${errText(e)}`, 'error');
   }
 }
 

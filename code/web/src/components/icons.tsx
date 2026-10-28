@@ -31,6 +31,8 @@ const P: Record<string, string> = {
   pencil: 'M13.5 4.5l2 2L7 15l-3 1 1-3z',
   fork: 'M6 4v6a3 3 0 0 0 3 3h2a3 3 0 0 1 3 3M14 4v8M6 4a1.5 1.5 0 1 0 0 .01M14 4a1.5 1.5 0 1 0 0 .01',
   copy: 'M7 7h9v9H7zM4 13V4h9',
+  link: 'M8 12l4-4M7 9.5 5.5 11a3 3 0 0 0 4.2 4.2L11 14M13 10.5 14.5 9a3 3 0 0 0-4.2-4.2L9 6',
+  archive: 'M3 5h14v3H3zM4.5 8v8h11V8M8 11.5h4',
   external: 'M11 4h5v5M16 4l-7 7M14 12v4H4V6h4',
   diff: 'M6 3v8M2 7h8M12 13h6M14 3l-4 14',
   model: 'M10 2.5l6.5 3.75v7.5L10 17.5l-6.5-3.75v-7.5zM10 10v7.5M10 10l6.5-3.75M10 10L3.5 6.25',

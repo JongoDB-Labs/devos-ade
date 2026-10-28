@@ -2,7 +2,7 @@
 // (/.bn/models), never from the CLI; costs come from DevOS ADE's spend logs (/.bn/spend).
 import { useState } from 'preact/hooks';
 import { useSel } from '../store';
-import { store, setModel, setMode, setEffort, activeView, defaultModel, refreshSpend, autoOk, setPrefs, toast, switchHarness, harnessName, planOf, refreshHarnesses, goSetup, openModelBrowser } from '../app';
+import { store, newSession, setModel, setMode, setEffort, activeView, defaultModel, refreshSpend, autoOk, setPrefs, toast, switchHarness, harnessName, planOf, refreshHarnesses, goSetup, openModelBrowser } from '../app';
 import { SETUP_LINKS, type SetupReason } from '../setuplinks';
 import { COMPAT_INFO, GROUP_TITLE, PROVIDER_SETUP, compatWarning, findModel, hiddenCount, modelSections, providerSetups } from '../models';
 import { STARRED_MAX } from '../prefs';
@@ -11,7 +11,7 @@ import { percent } from '../budget';
 import type { BnModel, Harness, HarnessInfo, PlanUsage } from '../types';
 import { MODE_INFO, offeredModes, startMode } from '../modes';
 import { label, money, perMtok, tokens } from '../text';
-import { Dropdown, MenuItem } from './ui';
+import { Dropdown, MenuItem, copyText } from './ui';
 import { Icon } from './icons';
 import { PRODUCT } from '../brand';
 
@@ -245,7 +245,7 @@ function BedrockModelPicker({ compact }: { compact?: boolean }) {
                 const info = COMPAT_INFO[m.compat];
                 const star = starred.includes(m.id);
                 return (
-                  <div class={`mp-row${m.compat === 'fails' ? ' mp-fails' : ''}`} key={m.id}>
+                  <div class={`mp-row${m.compat === 'fails' ? ' mp-fails' : ''}`} key={m.id} data-ctx="">
                     <MenuItem
                       checked={m.id === current}
                       testid={`model-${m.alias ?? m.id}`}
@@ -289,6 +289,27 @@ function BedrockModelPicker({ compact }: { compact?: boolean }) {
                     >
                       <Icon name="star" size={14} />
                     </button>
+                    <Dropdown title={`Actions for ${m.name}`} class="item-more mp-more" align="right" trigger={<Icon name="more" size={14} />} testid={`model-menu-${m.alias ?? m.id}`} ctx>
+                      {(closeItem) => (
+                        <>
+                          <MenuItem icon="check" onSelect={() => (closeItem(), pick(m), setQuery(''), close())} testid="model-menu-use">
+                            Use this model
+                          </MenuItem>
+                          <MenuItem icon="plus" onSelect={() => (closeItem(), close(), void newSession({ model: m.id }))} testid="model-menu-try">
+                            Try it in a new session
+                          </MenuItem>
+                          <MenuItem icon="copy" onSelect={() => (closeItem(), void copyText(m.id).then((ok) => toast(ok ? `Copied ${m.id}` : 'Could not copy the id.', ok ? 'ok' : 'error')))} testid="model-menu-copy-id">
+                            Copy id
+                          </MenuItem>
+                          <MenuItem icon="star" onSelect={() => (closeItem(), toggleStar(m.id))} testid="model-menu-star">
+                            {star ? 'Unstar' : 'Star (list it first)'}
+                          </MenuItem>
+                          <MenuItem icon="external" onSelect={() => (closeItem(), close(), openModelBrowser())} testid="model-menu-browse">
+                            Add or remove it in Browse models
+                          </MenuItem>
+                        </>
+                      )}
+                    </Dropdown>
                   </div>
                 );
               })}

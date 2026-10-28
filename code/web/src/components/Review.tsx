@@ -11,6 +11,7 @@ import {
   addComment,
   keepHunks,
   openFile,
+  openPathTerminal,
   refreshReview,
   removeComment,
   reviewFiles,
@@ -28,7 +29,7 @@ import { rowsOf, sessionStart, shownFiles, totals, undoBlocker, type ReviewFile,
 import { label, safe } from '../text';
 import type { Hunk } from '../types';
 import { Icon, Spinner } from './icons';
-import { Dialog, useMedia } from './ui';
+import { Dialog, Dropdown, MenuItem, copyText, useMedia } from './ui';
 import { SandboxSaid } from './Said';
 import { addDiff } from '../attach';
 
@@ -194,7 +195,7 @@ function FileBlock({ f, busy, kept }: { f: ReviewFile; busy: string | null; kept
   };
   return (
     <section class="rv-file" id={`rv-${encodeURIComponent(f.path)}`} data-testid="review-file" data-path={f.path}>
-      <header class="rv-file-head">
+      <header class="rv-file-head" data-ctx="">
         <button type="button" class="icon-btn" aria-expanded={open} aria-label={open ? 'Collapse' : 'Expand'} onClick={() => setOpen(!open)}>
           <Icon name={open ? 'chevronDown' : 'chevronRight'} size={14} />
         </button>
@@ -227,6 +228,30 @@ function FileBlock({ f, busy, kept }: { f: ReviewFile; busy: string | null; kept
             {busy === f.path ? <Spinner size={12} /> : <Icon name="undo" size={13} />} Undo{f.status === 'added' ? ' (trash)' : ''}
           </button>
         </span>
+        <Dropdown title={`Actions for ${f.path}`} class="item-more rv-more" align="right" trigger={<Icon name="more" size={14} />} testid="review-file-menu" ctx>
+          {(close) => (
+            <>
+              <MenuItem icon="file" disabled={f.status === 'deleted'} onSelect={() => (close(), void openFile(f.path))} testid="review-menu-open">
+                {f.status === 'deleted' ? 'Open the file (it is deleted)' : 'Open the file'}
+              </MenuItem>
+              <MenuItem icon="chevronDown" onSelect={() => (close(), setOpen(!open))} testid="review-menu-fold">
+                {open ? 'Collapse its changes' : 'Show its changes'}
+              </MenuItem>
+              <MenuItem icon="check" onSelect={() => (close(), keepHunks(f.hunks.length ? f.hunks.map((h) => h.id) : [`file:${f.path}`]))} testid="review-menu-keep">
+                Keep its changes
+              </MenuItem>
+              <MenuItem icon="undo" danger disabled={!!blocker || !!busy} onSelect={() => (close(), run())} testid="review-menu-undo">
+                {blocker ? `Undo (${blocker})` : `Undo the changes${f.status === 'added' ? ' (move it to the trash)' : ''}…`}
+              </MenuItem>
+              <MenuItem icon="terminal" onSelect={() => (close(), void openPathTerminal(f.path, false))} testid="review-menu-terminal">
+                Open its folder in a terminal
+              </MenuItem>
+              <MenuItem icon="copy" onSelect={() => (close(), void copyText(f.path))} testid="review-menu-copy-path">
+                Copy path
+              </MenuItem>
+            </>
+          )}
+        </Dropdown>
       </header>
       {open && (
         <div class="rv-file-body">

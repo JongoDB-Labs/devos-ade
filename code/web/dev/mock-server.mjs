@@ -746,6 +746,7 @@ const saved = new Map(); // id -> {id, title, firstPrompt, branch, modified, tra
 // repositories of their own (root -> {remote: url | null}); what the project endpoints were asked
 let projectsMock = [];
 const filedMock = new Map();
+const archivedMock = new Set();   // sessions archived by hand (the item menus)
 // a project's own Claude Code settings (root -> {version, files: {name: text}}) and the versions you trusted (id -> version)
 const settingsMock = new Map();
 const trustMock = new Map();
@@ -1793,7 +1794,7 @@ let lastRecent = null;   // (POST /.bn/recent's last body: what the page told th
 
 function sessionInfo(x) {
   const cwd = x.cwd ?? WS;
-  return { id: x.id, title: x.title, first_prompt: x.firstPrompt, branch: x.branch, modified: x.modified, cwd, project: placeOf(x.id, cwd), ...(x.imported ? { imported: x.imported } : {}) };
+  return { id: x.id, title: x.title, first_prompt: x.firstPrompt, branch: x.branch, modified: x.modified, cwd, project: placeOf(x.id, cwd), ...(x.imported ? { imported: x.imported } : {}), ...(archivedMock.has(x.id) ? { archived: true } : {}) };
 }
 
 // --- the Import sheet ---
@@ -2197,6 +2198,40 @@ async function api(req, res, url) {
     sessions.set(id, s);
     log('open', id, b.resume ? (b.fork ? 'fork of ' + b.resume : 'resume') : 'new', s.model, s.mode);
     return json(res, 200, { id, existing: false, ...(fresh ? { fresh } : {}) });
+  }
+  // the item menus: Archive, Delete (its own id named again), a terminal in a session's or a file's folder
+  let im;
+  if ((im = /^\/api\/sessions\/([^/]+)\/(archive|delete|folder-terminal)$/.exec(p)) && m === 'POST') {
+    const id = im[1];
+    if (!UUID.test(id)) return json(res, 400, { error: 'bad session id' });
+    const b = im[2] === 'folder-terminal' ? {} : await jsonBody(req);
+    const live = sessions.get(id);
+    if (im[2] === 'archive') {
+      if (typeof b.archived !== 'boolean') return json(res, 400, { error: 'archived: true or false' });
+      if (b.archived) archivedMock.add(id); else archivedMock.delete(id);
+      projectLog.push(`${b.archived ? 'archive' : 'unarchive'} ${id}`);
+      return json(res, 200, { ok: true, archived: b.archived, count: 1 });
+    }
+    if (im[2] === 'delete') {
+      if (b.confirm !== id) return json(res, 400, { error: 'confirm: the session\'s own id (the page asks first, naming the session)' });
+      if (live && (live.state === 'busy' || live.state === 'starting')) return json(res, 409, { error: 'a turn is running in this session: stop it first' });
+      if (inTerminal.has(id)) return json(res, 409, { error: 'This conversation is open in the terminal (or elsewhere in the sandbox) right now: exit Claude Code there (/exit), then try again here.' });
+      if (!live && !saved.has(id)) return json(res, 404, { error: 'no such session' });
+      if (live) { live.setState('closed'); sessions.delete(id); }
+      saved.delete(id); archivedMock.delete(id); filedMock.delete(id);
+      projectLog.push(`delete ${id}`);
+      return json(res, 200, { ok: true, deleted: id });
+    }
+    const cwd = live?.cwd ?? saved.get(id)?.cwd ?? WS;
+    projectLog.push(`terminal ${cwd}`);
+    return json(res, 200, { ok: true, window: cwd.split('/').pop() || 'workspace' });
+  }
+  if (p === '/api/fs/terminal' && m === 'POST') {
+    const b = await jsonBody(req);
+    if (typeof b.path !== 'string' || !b.path || b.path.includes('..') || b.path.split('/').includes('.git')) return json(res, 400, { error: 'bad path' });
+    const dir = b.dir === true ? b.path : b.path.includes('/') ? b.path.slice(0, b.path.lastIndexOf('/')) : '';
+    projectLog.push(`terminal ${dir.startsWith('/') ? dir : absOf(dir)}`);
+    return json(res, 200, { ok: true, window: (dir.split('/').pop() || 'workspace') });
   }
   let tm;
   if ((tm = /^\/api\/sessions\/([^/]+)\/terminal$/.exec(p)) && m === 'POST') {
@@ -3187,6 +3222,7 @@ const server = http.createServer(async (req, res) => {
         settingsMock.clear();
         trustMock.clear();
         filedMock.clear();
+        archivedMock.clear();
         projectGit.clear();
         userPrefs = { model: null, settingsDefault: null, at: null };
         projectLog.length = 0;

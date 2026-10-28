@@ -58,6 +58,19 @@ test('shown and session: the portal shows the page again, or names a session —
   }
 });
 
+test('session-do: Home\'s item menu names a session and one of its few actions — a checked title for rename, nothing else taken', () => {
+  const req = (data: unknown, origin = PORTAL, source: unknown = parent) => takeRequest(data, origin, source, PORTAL, parent);
+  const id = '11111111-1111-4111-8111-111111111111';
+  for (const action of ['archive', 'unarchive', 'fork', 'file', 'delete', 'terminal']) {
+    assert.deepEqual(req({ type: 'bn-portal-session-do', id, action, title: 'ignored', url: 'https://x' }), { kind: 'session-do', session: id, action }, action);
+  }
+  assert.deepEqual(req({ type: 'bn-portal-session-do', id, action: 'rename', title: '  A new name ' }), { kind: 'session-do', session: id, action: 'rename', title: 'A new name' });
+  for (const title of ['', '   ', 'two\nlines', 'x'.repeat(201), 'tab\there', 7, null, undefined]) assert.equal(req({ type: 'bn-portal-session-do', id, action: 'rename', title }), null, String(title));
+  for (const action of ['remove', 'Delete', 'delete ', 'rm -rf', '', null, 7, ['delete']]) assert.equal(req({ type: 'bn-portal-session-do', id, action }), null, String(action));
+  assert.equal(req({ type: 'bn-portal-session-do', id: 'nope', action: 'delete' }), null);
+  for (const [origin, source] of [['http://evil.example', parent], [PORTAL, { tag: 'other' }], ['null', parent]] as [string, unknown][]) assert.equal(req({ type: 'bn-portal-session-do', id, action: 'delete' }, origin, source), null);
+});
+
 test('sessions by title or first prompt, best first, as single-line labels; files only, capped', () => {
   const sessions = [
     { id: '11111111-1111-4111-8111-111111111111', title: 'Fix the login page', firstPrompt: '' },
@@ -95,6 +108,7 @@ test('the listener answers the portal only, to its origin; the newest request wi
     openGit: (d) => dialogs.push(d),
     shown: () => shown.push('shown'),
     showSession: (id) => shown.push(id),
+    sessionDo: (id, action, title) => shown.push(`${action}:${id.slice(0, 2)}${title ? `:${title}` : ''}`),
   }, win);
   const send = (data: unknown, origin = PORTAL, source: unknown = parentWin) => {
     const e = new MessageEvent('message', { data, origin });
@@ -115,6 +129,8 @@ test('the listener answers the portal only, to its origin; the newest request wi
   send({ type: 'bn-portal-session', id: '22222222-2222-4222-8222-222222222222' }, PORTAL, {});   // not the parent: nothing
   send({ type: 'bn-portal-shown' });
   send({ type: 'bn-portal-session', id: '11111111-1111-4111-8111-111111111111' });
+  send({ type: 'bn-portal-session-do', id: '11111111-1111-4111-8111-111111111111', action: 'delete' }, 'http://evil.example');   // another site: nothing
+  send({ type: 'bn-portal-session-do', id: '11111111-1111-4111-8111-111111111111', action: 'rename', title: 'New' });
   await new Promise((r) => setTimeout(r, 0));
   release();
   for (let i = 0; i < 20 && posted.length < 2; i++) await new Promise((r) => setTimeout(r, 0));
@@ -124,5 +140,5 @@ test('the listener answers the portal only, to its origin; the newest request wi
   assert.equal((posted[0].msg.sessions as { title: string }[])[0].title, 'notes about zebras');
   assert.deepEqual(opened, ['notes/z.md']);
   assert.deepEqual(dialogs, ['hosts']);
-  assert.deepEqual(shown, ['shown', '11111111-1111-4111-8111-111111111111']);
+  assert.deepEqual(shown, ['shown', '11111111-1111-4111-8111-111111111111', 'rename:11:New']);
 });

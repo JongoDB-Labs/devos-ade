@@ -16,6 +16,7 @@ import {
   loadGitDiff,
   openFile,
   openGitDiff,
+  openPathTerminal,
   refreshGit,
   repoFile,
   setGitMessage,
@@ -33,7 +34,7 @@ import { SETUP_LINKS } from '../setuplinks';
 import type { GitEntry, GitScope, GitStatus } from '../types';
 import { Icon, Spinner } from './icons';
 import { ReadOnlyHunks } from './Review';
-import { Dialog, useMedia } from './ui';
+import { Dialog, Dropdown, MenuItem, copyText, useMedia } from './ui';
 import { FoundNote, GitDialogs, NoRepoActions, RemoteBar, RepoPicker } from './GitRemote';
 import { SandboxSaid } from './Said';
 import { PRODUCT } from '../brand';
@@ -292,7 +293,7 @@ function Row({ e, kind, busy, coarse, onDiscard }: { e: GitEntry; kind: Kind; bu
   const what = kind === 'conflicts' ? 'A conflict' : codeTitle(e.code, kind === 'untracked');
   const mine = busy === e.path;
   return (
-    <div class={`gitp-row${coarse ? ' touch' : ''}`} role="listitem" data-testid="git-file" data-path={e.path} data-group={kind}>
+    <div class={`gitp-row${coarse ? ' touch' : ''}`} role="listitem" data-testid="git-file" data-path={e.path} data-group={kind} data-ctx="">
       <button
         type="button"
         class="gitp-open"
@@ -353,6 +354,40 @@ function Row({ e, kind, busy, coarse, onDiscard }: { e: GitEntry; kind: Kind; bu
             <Icon name="plus" size={14} />
           </button>
         )}
+        <Dropdown title={`Actions for ${e.path}`} class="item-more" align="right" trigger={<Icon name="more" size={14} />} testid="git-file-menu" ctx>
+          {(close) => (
+            <>
+              {kind !== 'conflicts' && (
+                <MenuItem icon="diff" onSelect={() => (close(), openGitDiff(e.path, SCOPE[kind]))} testid="git-menu-diff">
+                  Show its changes
+                </MenuItem>
+              )}
+              <MenuItem icon="file" onSelect={() => (close(), void openFile(repoFile(e.path), 'source'))} testid="git-menu-open" disabled={kind !== 'untracked' && e.code === 'D'}>
+                {e.code === 'D' && kind !== 'untracked' ? 'Open the file (it is deleted)' : 'Open the file'}
+              </MenuItem>
+              <MenuItem icon="terminal" onSelect={() => (close(), void openPathTerminal(repoFile(e.path), false))} testid="git-menu-terminal">
+                Open its folder in a terminal
+              </MenuItem>
+              <MenuItem icon="copy" onSelect={() => (close(), void copyText(repoFile(e.path)))} testid="git-menu-copy-path">
+                Copy path
+              </MenuItem>
+              {kind === 'staged' ? (
+                <MenuItem icon="minus" disabled={!!busy} onSelect={() => (close(), void unstageGit([e.path]))} testid="git-menu-unstage">
+                  Unstage
+                </MenuItem>
+              ) : (
+                <MenuItem icon="plus" disabled={!!busy} onSelect={() => (close(), void stageGit([e.path]))} testid="git-menu-stage">
+                  Stage
+                </MenuItem>
+              )}
+              {(kind === 'unstaged' || kind === 'untracked') && (
+                <MenuItem icon={kind === 'untracked' ? 'trash' : 'undo'} danger disabled={!!busy} onSelect={() => (close(), onDiscard({ e, kind }))} testid="git-menu-discard">
+                  {kind === 'untracked' ? 'Move to the trash…' : 'Discard the changes…'}
+                </MenuItem>
+              )}
+            </>
+          )}
+        </Dropdown>
       </span>
     </div>
   );

@@ -305,6 +305,8 @@ export interface SessionInfo {
   imported?: ImportedFrom | null;
   /** who answered in it: Claude Code on Bedrock (also when not said), Claude on your plan, a subscription's agent */
   harness?: Harness;
+  /** archived by hand (Archive in its menu): listed under Archived, nothing of the session changed */
+  archived?: boolean;
 }
 
 // ---------------------------------------------------------------- sessions of this computer (the Import sheet)

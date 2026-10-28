@@ -17,6 +17,11 @@
 //   portal -> page  {type: 'bn-portal-session', id}      a session of this page (Home's Continue row, Activity, a
 //                                                       notification's #code/<id>): shown or resumed in place, as a deep
 //                                                       link's ?session= is (id: a session id's shape, nothing else)
+//   portal -> page  {type: 'bn-portal-session-do', id, action, title?}   Home's item menu on a Code session: rename (title: 1 to
+//                                                       200 characters, one line), archive, unarchive, fork, file (Add to
+//                                                       project: its dialog opens here), delete (its dialog opens here,
+//                                                       naming what goes), terminal (a terminal window in its folder);
+//                                                       id: a session id's shape, action: exactly these words
 //
 // Titles and paths are this workspace's (sandbox data): the portal shows them as text, with invisible and
 // direction-changing characters made visible. Searching is the session list's own fuzzy matching (fuzzy.ts: linear,
@@ -32,14 +37,20 @@ const MAX_FILES = 30;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+export const SESSION_ACTIONS = ['rename', 'archive', 'unarchive', 'fork', 'file', 'delete', 'terminal'] as const;
+export type SessionAction = (typeof SESSION_ACTIONS)[number];
+
 export interface PortalRequest {
-  kind: 'search' | 'open' | 'git' | 'shown' | 'session';
+  kind: 'search' | 'open' | 'git' | 'shown' | 'session' | 'session-do';
   id?: string;
   q?: string;
   path?: string;
   dialog?: 'hosts' | 'clone';
-  /** kind 'session': the session's id */
+  /** kind 'session' and 'session-do': the session's id */
   session?: string;
+  /** kind 'session-do': what to do, and (rename) the new title */
+  action?: SessionAction;
+  title?: string;
 }
 
 /** A message from the portal, checked: who sent it (ORIGIN must be the portal's, SOURCE the parent window) and its
@@ -65,6 +76,14 @@ export function takeRequest(data: unknown, origin: string, source: unknown, port
   if (d.type === 'bn-portal-session') {
     if (typeof d.id !== 'string' || !UUID.test(d.id)) return null;
     return { kind: 'session', session: d.id };
+  }
+  if (d.type === 'bn-portal-session-do') {
+    if (typeof d.id !== 'string' || !UUID.test(d.id) || !SESSION_ACTIONS.includes(d.action as SessionAction)) return null;
+    if (d.action === 'rename') {
+      if (typeof d.title !== 'string' || /[\u0000-\u001f\u007f]/.test(d.title) || d.title.trim() === '' || d.title.length > 200) return null;
+      return { kind: 'session-do', session: d.id, action: 'rename', title: d.title.trim() };
+    }
+    return { kind: 'session-do', session: d.id, action: d.action as SessionAction };
   }
   return null;
 }
@@ -95,6 +114,8 @@ export interface BridgeDeps {
   shown?: () => unknown;
   /** a session of this page, shown or resumed in place */
   showSession?: (id: string) => unknown;
+  /** Home's item menu on one of its sessions */
+  sessionDo?: (id: string, action: SessionAction, title?: string) => unknown;
 }
 
 function originOf(o: string | null): string | null {
@@ -151,5 +172,6 @@ export function listenPortal(deps: BridgeDeps, win: Window = window): void {
     else if (req.kind === 'git' && req.dialog && deps.openGit) void deps.openGit(req.dialog);
     else if (req.kind === 'shown' && deps.shown) void deps.shown();
     else if (req.kind === 'session' && req.session && deps.showSession) void deps.showSession(req.session);
+    else if (req.kind === 'session-do' && req.session && req.action && deps.sessionDo) void deps.sessionDo(req.session, req.action, req.title);
   });
 }

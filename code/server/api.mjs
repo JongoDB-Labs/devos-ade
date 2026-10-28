@@ -956,8 +956,9 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     if (typeof b?.path !== 'string' || !b.path) throw new HttpError(400, 'bad path');
     const p = need(relPath(b.path), 'path');
     const dir = b?.dir === true ? p : p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '';
-    const r = dir ? folderRoot(`${WS}/${dir}`) : null;
-    if (dir && !r) throw new HttpError(400, 'a folder of the workspace, up to 8 levels deep (never .git or the trash)');
+    // (a path of a folder of this computer is absolute, as the explorer names it there)
+    const r = dir ? folderRoot(p.startsWith('/') ? dir : `${WS}/${dir}`) : null;
+    if ((dir || p.startsWith('/')) && !r) throw new HttpError(400, 'a folder of the workspace (up to 8 levels deep, never .git or the trash) or of this computer');
     return projectTerminal(r);
   }
   // Connect a git repository: a project's folder made a repository (git init: no template, the first branch main)

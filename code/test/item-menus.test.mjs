@@ -189,3 +189,9 @@ test('Projects.archive: labels kept, listed again, forgotten with a deleted sess
     assert.throws(() => store.archive([], true), /ids/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('POST /api/fs/terminal: an absolute path is accepted only inside a folder of this computer the records know', async () => {
+  const r = await req('POST', '/api/fs/terminal', { path: '/etc/passwd' });
+  assert.equal(r.status, 400);
+  assert.equal((await req('POST', '/api/fs/terminal', { path: '/workspace/app/x.ts' })).status, 200, 'the workspace by its absolute path too');
+});

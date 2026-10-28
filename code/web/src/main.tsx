@@ -1,7 +1,7 @@
 // Entry point: render the shell and start talking to the backend.
 import { render } from 'preact';
 import { AppShell } from './components/Shell';
-import { boot, openFile, openGitDialog, showFromPortal, showGit, showWaiting, store } from './app';
+import { boot, openFile, openGitDialog, sessionDoFromPortal, showFromPortal, showGit, showWaiting, store } from './app';
 import { fsFind } from './api';
 import { listenPortal } from './portalbridge';
 // the DevOS design tokens and fonts first (docs/design.md; the portal has the same two files)
@@ -22,4 +22,4 @@ void boot();
 // the portal's global search may ask this page for its sessions and files, and the portal open a file, the Git panel's
 // Git hosts / Clone dialog or a session in place, or say it shows this page again (only the portal that frames it)
 listenPortal({ portal: () => store.get().server?.portalOrigin ?? null, sessions: () => store.get().sessions, find: fsFind, openFile,
-  openGit: (dialog) => { showGit(); openGitDialog(dialog); }, shown: showWaiting, showSession: showFromPortal });
+  openGit: (dialog) => { showGit(); openGitDialog(dialog); }, shown: showWaiting, showSession: showFromPortal, sessionDo: sessionDoFromPortal });

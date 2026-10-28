@@ -75,7 +75,23 @@ export function Tip(props: { text: string; keys?: string; id: string; children: 
 export const tipId = (id: string): string => `tip-${id}`;
 export const nextTipId = (): string => `t${++tipSeq}`;
 
+// What keeps the browser's own context menu (and its own long-press): text fields, the editor, the terminal, a text
+// selection's links. Everything else carrying data-ctx gets the item menu.
+const OWN_MENU = 'input, textarea, select, [contenteditable=""], [contenteditable="true"], .cm-editor, .xterm';
+const LONG_PRESS_MS = 480;
+const LONG_PRESS_SLOP = 10;
+// the dropdowns open now, the newest last: Escape and the arrows belong to that one alone (a menu opened from inside another)
+const openStack: object[] = [];
+/** The control a focus goes back to when an item menu closes: the item itself when it takes focus, else its own button. */
+function focusTarget(item: HTMLElement): HTMLElement | null {
+  if (item.tabIndex >= 0) return item;
+  return item.querySelector<HTMLElement>('[tabindex="0"], a[href], button:not(.dd-trigger):not(:disabled), input:not([type=hidden]), .dd-trigger');
+}
+
 export function Dropdown(props: {
+  /** an item menu: this item's right-click, long-press (touch) and Shift+F10 / the context-menu key open this same menu
+   *  at the pointer (or the focused control) — the item is the nearest ancestor with data-ctx, else the parent */
+  ctx?: boolean;
   trigger: ComponentChildren;
   title: string;
   /** a styled tooltip instead of the browser's title: what it does and its shortcut (keys) */
@@ -100,6 +116,11 @@ export function Dropdown(props: {
   const [open, setOpen] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  // where an item menu opened (the pointer, or the focused control), and the item it belongs to
+  const at = useRef<{ x: number; y: number } | null>(null);
+  const item = useRef<HTMLElement | null>(null);
+  const token = useRef({});
   const signal = useRef(props.openSignal);
   useEffect(() => {
     if (props.openSignal === signal.current) return;
@@ -108,8 +129,80 @@ export function Dropdown(props: {
   }, [props.openSignal]);
   const close = () => {
     setOpen(false);
-    btn.current?.focus();
+    // (an item menu: back to the item; its own button's menu: back to that button)
+    const back = at.current && item.current ? focusTarget(item.current) : null;
+    (back ?? btn.current)?.focus();
   };
+  const openAt = (x: number, y: number) => {
+    if (props.disabled) return;
+    at.current = { x, y };
+    setOpen(true);
+  };
+
+  // --- an item menu: right-click, long-press, the keyboard ---
+  useEffect(() => {
+    if (!props.ctx || !root.current) return;
+    const target = root.current.closest<HTMLElement>('[data-ctx]') ?? root.current.parentElement;
+    if (!target) return;
+    item.current = target;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let start = { x: 0, y: 0 };
+    let heldAt = 0;
+    const own = (e: Event) => e.target instanceof Element && (e.target.closest(OWN_MENU) !== null || panel.current?.contains(e.target) === true);
+    const stop = () => { if (timer) clearTimeout(timer); timer = null; };
+    const onContext = (e: MouseEvent) => {
+      if (e.target instanceof Element && panel.current?.contains(e.target)) { e.preventDefault(); return; }
+      if (own(e) || e.defaultPrevented) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // (a keyboard's context-menu key reports the pointer at 0,0: its own handler below places it)
+      if (e.clientX === 0 && e.clientY === 0 && e.detail === 0) return;
+      openAt(e.clientX, e.clientY);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) || own(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const f = document.activeElement instanceof HTMLElement && target.contains(document.activeElement) ? document.activeElement : target;
+      const r = f.getBoundingClientRect();
+      item.current = target;
+      openAt(Math.min(r.left + 24, r.right - 4), r.top + Math.min(r.height, 28));
+    };
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse' || e.button !== 0 || own(e)) return;
+      stop();
+      start = { x: e.clientX, y: e.clientY };
+      timer = setTimeout(() => {
+        timer = null;
+        heldAt = Date.now();
+        openAt(start.x, start.y);
+      }, LONG_PRESS_MS);
+    };
+    const onMove = (e: PointerEvent) => {
+      if (timer && Math.hypot(e.clientX - start.x, e.clientY - start.y) > LONG_PRESS_SLOP) stop();
+    };
+    // the lift of a long press is not a tap on the item
+    const onClick = (e: MouseEvent) => {
+      if (Date.now() - heldAt < 700) { e.preventDefault(); e.stopPropagation(); }
+    };
+    target.addEventListener('contextmenu', onContext);
+    target.addEventListener('keydown', onKey);
+    target.addEventListener('pointerdown', onDown);
+    target.addEventListener('pointermove', onMove);
+    target.addEventListener('pointerup', stop);
+    target.addEventListener('pointercancel', stop);
+    target.addEventListener('click', onClick, true);
+    return () => {
+      stop();
+      target.removeEventListener('contextmenu', onContext);
+      target.removeEventListener('keydown', onKey);
+      target.removeEventListener('pointerdown', onDown);
+      target.removeEventListener('pointermove', onMove);
+      target.removeEventListener('pointerup', stop);
+      target.removeEventListener('pointercancel', stop);
+      target.removeEventListener('click', onClick, true);
+    };
+  }, [props.ctx, props.disabled]);
 
   useLayoutEffect(() => {
     if (!open || !btn.current || !panel.current) return;
@@ -118,17 +211,28 @@ export function Dropdown(props: {
     const vw = innerWidth;
     const vh = innerHeight;
     const w = Math.min(p.offsetWidth, vw - 16);
-    let left = props.align === 'right' ? r.right - w : r.left;
-    left = Math.max(8, Math.min(left, vw - w - 8));
-    const below = vh - r.bottom;
-    const h = p.offsetHeight;
-    p.style.left = `${left}px`;
-    if (below >= Math.min(h, 320) + 8 || below > r.top) {
-      p.style.top = `${r.bottom + 4}px`;
-      p.style.maxHeight = `${Math.max(160, below - 12)}px`;
+    const point = at.current;
+    p.style.top = '';
+    p.style.bottom = '';
+    if (point) {
+      // at the pointer (or the focused control), kept inside the window: moved left and up as far as it needs
+      const h = Math.min(p.offsetHeight, vh - 16);
+      p.style.left = `${Math.max(8, Math.min(point.x, vw - w - 8))}px`;
+      p.style.top = `${Math.max(8, Math.min(point.y, vh - h - 8))}px`;
+      p.style.maxHeight = `${vh - 16}px`;
     } else {
-      p.style.bottom = `${vh - r.top + 4}px`;
-      p.style.maxHeight = `${Math.max(160, r.top - 12)}px`;
+      let left = props.align === 'right' ? r.right - w : r.left;
+      left = Math.max(8, Math.min(left, vw - w - 8));
+      const below = vh - r.bottom;
+      const h = p.offsetHeight;
+      p.style.left = `${left}px`;
+      if (below >= Math.min(h, 320) + 8 || below > r.top) {
+        p.style.top = `${r.bottom + 4}px`;
+        p.style.maxHeight = `${Math.max(160, below - 12)}px`;
+      } else {
+        p.style.bottom = `${vh - r.top + 4}px`;
+        p.style.maxHeight = `${Math.max(160, r.top - 12)}px`;
+      }
     }
     const first = (props.focus ? p.querySelector<HTMLElement>(props.focus) : null) ?? p.querySelector<HTMLElement>('[aria-checked="true"], [role=menuitem], [role=menuitemradio], input, button');
     first?.focus({ preventScroll: true });
@@ -138,11 +242,14 @@ export function Dropdown(props: {
 
   useEffect(() => {
     if (!open) return;
+    const me = token.current;
+    openStack.push(me);
     const down = (e: PointerEvent) => {
       const t = e.target as Node;
       if (!panel.current?.contains(t) && !btn.current?.contains(t)) setOpen(false);
     };
     const key = (e: KeyboardEvent) => {
+      if (openStack[openStack.length - 1] !== me) return;   // (a menu opened inside this one has the keys)
       if (e.key === 'Escape') {
         e.stopPropagation();
         close();
@@ -156,13 +263,20 @@ export function Dropdown(props: {
       }
     };
     const resize = () => setOpen(false);
+    // (a scroll of the page behind it moves what it points at: an item menu closes; a scroll inside it does not)
+    const scroll = (e: Event) => { if (at.current && !(e.target instanceof Node && panel.current?.contains(e.target))) setOpen(false); };
     document.addEventListener('pointerdown', down, true);
     document.addEventListener('keydown', key, true);
+    document.addEventListener('scroll', scroll, true);
     addEventListener('resize', resize);
     return () => {
+      const i = openStack.indexOf(me);
+      if (i >= 0) openStack.splice(i, 1);
       document.removeEventListener('pointerdown', down, true);
       document.removeEventListener('keydown', key, true);
+      document.removeEventListener('scroll', scroll, true);
       removeEventListener('resize', resize);
+      at.current = null;
     };
   }, [open]);
 
@@ -179,13 +293,16 @@ export function Dropdown(props: {
       aria-expanded={open}
       disabled={props.disabled}
       data-testid={props.testid}
-      onClick={() => setOpen(!open)}
+      onClick={() => {
+        at.current = null;
+        setOpen(!open);
+      }}
     >
       {props.trigger}
     </button>
   );
   return (
-    <div class={`dd${props.class ? ' ' + props.class : ''}`} onClick={(e) => e.stopPropagation()}>
+    <div ref={root} class={`dd${props.class ? ' ' + props.class : ''}`} onClick={(e) => e.stopPropagation()}>
       {props.tip ? (
         <Tip id={props.tip.id} text={props.tip.text} keys={props.tip.keys} off={open}>
           {button}

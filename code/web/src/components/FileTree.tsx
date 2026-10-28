@@ -20,6 +20,7 @@ import {
   activeView,
   currentProject,
   goSetup,
+  openPathTerminal,
 } from '../app';
 import { SETUP_LINKS } from '../setuplinks';
 import { downloadUrl } from '../api';
@@ -116,6 +117,8 @@ export function FileTree({ onOpen }: { onOpen?: () => void }) {
 
   const first = Math.max(0, Math.floor(win.top / rowH) - 10);
   const last = Math.min(rows.length, Math.ceil((win.top + win.height) / rowH) + 10);
+  // the one row Tab reaches (the selected one when it is drawn, else the first drawn); the arrows move between rows
+  const tabRow = (rows.slice(first, last).find((x) => x.path === selected) ?? rows.slice(first, last).find((x) => x.entry))?.path ?? null;
 
   const targetDir = (): string => {
     if (selected === null || (root && selected !== root && !selected.startsWith(`${root}/`))) return root;
@@ -254,6 +257,7 @@ export function FileTree({ onOpen }: { onOpen?: () => void }) {
             }
             const e = r.entry;
             const isDir = e.type === 'dir';
+            const tabbable = r.path === tabRow;
             const open = isDir && expanded[r.path];
             const mark = marks[r.path];
             return (
@@ -262,6 +266,19 @@ export function FileTree({ onOpen }: { onOpen?: () => void }) {
                 ref={place}
                 class={`tree-row${selected === r.path ? ' sel' : ''}${drop === r.path ? ' drop' : ''}`}
                 role="treeitem"
+                data-ctx=""
+                tabIndex={tabbable ? 0 : -1}
+                onKeyDown={(ev) => {
+                  if (ev.target !== ev.currentTarget) return;
+                  if (ev.key === 'Enter' || ev.key === ' ') {
+                    ev.preventDefault();
+                    (ev.currentTarget as HTMLElement).click();
+                  } else if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+                    ev.preventDefault();
+                    const next = ev.key === 'ArrowDown' ? (ev.currentTarget as HTMLElement).nextElementSibling : (ev.currentTarget as HTMLElement).previousElementSibling;
+                    if (next instanceof HTMLElement && next.matches('.tree-row[data-path]')) next.focus();
+                  }
+                }}
                 aria-expanded={isDir ? !!open : undefined}
                 aria-selected={selected === r.path}
                 title={`${visible(r.path)}${e.size !== null && !isDir ? ` · ${bytes(e.size)}` : ''}`}
@@ -289,14 +306,17 @@ export function FileTree({ onOpen }: { onOpen?: () => void }) {
                 {e.type === 'symlink' && <span class="tree-tag">link</span>}
                 {mark && <span class={`tree-mark m-${mark}`} title={mark === 'A' ? 'Created by Claude in this session' : 'Changed by Claude in this session'}>{mark}</span>}
                 {isDir && !mark && markedDirs.has(r.path) && <span class="tree-dot" title="Contains files Claude changed" />}
-                <Dropdown title={`Actions for ${visible(r.name)}`} class="tree-more" align="right" trigger={<Icon name="more" size={14} />}>
+                <Dropdown title={`Actions for ${visible(r.name)}`} class="tree-more" align="right" trigger={<Icon name="more" size={14} />} testid="tree-menu" ctx>
                   {(close) => (
                     <>
                       {!isDir && (
-                        <MenuItem icon="file" onSelect={() => (close(), void openFile(r.path), onOpen?.())}>
+                        <MenuItem icon="file" onSelect={() => (close(), void openFile(r.path), onOpen?.())} testid="tree-open">
                           Open
                         </MenuItem>
                       )}
+                      <MenuItem icon="terminal" onSelect={() => (close(), void openPathTerminal(r.path, isDir))} testid="tree-terminal">
+                        {isDir ? 'Open a terminal here' : 'Open its folder in a terminal'}
+                      </MenuItem>
                       <MenuItem icon="at" onSelect={() => (close(), mention(isDir ? `${r.path}/` : r.path))}>
                         Mention in chat
                       </MenuItem>
@@ -311,16 +331,17 @@ export function FileTree({ onOpen }: { onOpen?: () => void }) {
                         </>
                       )}
                       {!ro && (
-                        <MenuItem icon="pencil" onSelect={() => (close(), setEditVal(r.name), setEdit({ kind: 'rename', path: r.path }))}>
+                        <MenuItem icon="pencil" onSelect={() => (close(), setEditVal(r.name), setEdit({ kind: 'rename', path: r.path }))} testid="tree-rename">
                           Rename
                         </MenuItem>
                       )}
-                      <MenuItem icon="copy" onSelect={() => (close(), void copyText(r.path))}>
+                      <MenuItem icon="copy" onSelect={() => (close(), void copyText(r.path))} testid="tree-copy-path">
                         Copy path
                       </MenuItem>
                       {!isDir && (
                         <MenuItem
                           icon="download"
+                          testid="tree-download"
                           onSelect={() => {
                             close();
                             const a = document.createElement('a');
@@ -334,7 +355,7 @@ export function FileTree({ onOpen }: { onOpen?: () => void }) {
                         </MenuItem>
                       )}
                       {!ro && (
-                        <MenuItem icon="trash" danger onSelect={() => (close(), setConfirmDel(r.path))}>
+                        <MenuItem icon="trash" danger onSelect={() => (close(), setConfirmDel(r.path))} testid="tree-delete">
                           Delete
                         </MenuItem>
                       )}

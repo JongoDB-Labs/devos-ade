@@ -83,6 +83,20 @@ test('the Projects tab: each project\'s open sessions and the others it ran', ()
   assert.deepEqual(by.ws.recent.map((x) => x.id), ['s2']);
 });
 
+test('archived sessions: listed apart from the recent ones, in their own project; the flag only from a true', () => {
+  const projects = normProjects([P('p_0000000a', 'website')]);
+  const row = (id: string, archived: unknown) => normSessionInfo({ id, title: id, cwd: '/workspace/website', project: 'p_0000000a', archived })!;
+  const a = '0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a', b = '0b0b0b0b-0b0b-4b0b-8b0b-0b0b0b0b0b0b', c = '0c0c0c0c-0c0c-4c0c-8c0c-0c0c0c0c0c0c';
+  assert.equal(row(a, true).archived, true);
+  assert.equal(row(b, 'yes').archived, undefined, 'only true counts');
+  const listed = [row(a, true), row(b, undefined), row(c, true)];
+  const where = Object.fromEntries(listed.map((x) => [x.id, { project: x.project, cwd: x.cwd }]));
+  const by = sessionsByProject(projects, [c], listed, where);
+  assert.deepEqual(by.p_0000000a.archived.map((x) => x.id), [a]);
+  assert.deepEqual(by.p_0000000a.recent.map((x) => x.id), [b]);
+  assert.deepEqual(by.p_0000000a.open, [c], 'one open here stays shown where it is open');
+});
+
 test('@-mentions: relative to the folder the session runs in, else absolute in /workspace; typed paths back', () => {
   assert.equal(mentionPath('src/a.ts', '/workspace'), 'src/a.ts', 'the Workspace: as before projects');
   assert.equal(mentionPath('app/src/a.ts', '/workspace/app'), 'src/a.ts');

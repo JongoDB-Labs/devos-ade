@@ -211,13 +211,15 @@ export function projectOfCwd(cwd: string, projects: Project[]): string {
 export interface ProjectSessions {
   open: string[];
   recent: SessionInfo[];
+  /** archived by hand: listed under Archived, never among the recent ones */
+  archived: SessionInfo[];
 }
 export function sessionsByProject(projects: Project[], open: string[], listed: SessionInfo[], where: Record<string, Where>): Record<string, ProjectSessions> {
   const out: Record<string, ProjectSessions> = {};
-  for (const p of projects) out[p.id] = { open: [], recent: [] };
+  for (const p of projects) out[p.id] = { open: [], recent: [], archived: [] };
   const openSet = new Set(open);
   for (const id of open) out[projectFor(id, where, projects)].open.push(id);
-  for (const s of listed) if (!openSet.has(s.id)) out[projectFor(s.id, where, projects)].recent.push(s);
+  for (const s of listed) if (!openSet.has(s.id)) out[projectFor(s.id, where, projects)][s.archived ? 'archived' : 'recent'].push(s);
   return out;
 }
 

@@ -712,6 +712,7 @@ export function normSessionInfo(v: unknown): SessionInfo | null {
     project: projectIdOk(o.project) ? o.project : WORKSPACE_ID,
     imported: importedFrom(o.imported),
     harness: harnessOf(o.harness),
+    ...(o.archived === true ? { archived: true } : {}),
   };
 }
 const IMPORT_TOOLS: readonly ImportTool[] = ['claude', 'claude-bedrock'];
@@ -801,6 +802,28 @@ export async function openInTerminal(id: string): Promise<{ window: string | nul
   const o = await request('POST', `/api/sessions/${id}/terminal`);
   const window = typeof o.window === 'string' && /^resume-[0-9a-f]{8}$/.test(o.window) ? o.window : null;
   return { window, command: `devos-claude --resume ${id.toLowerCase()}` };
+}
+
+/** Archive a session (or list it again): a label of the page's records — nothing of the session changes. */
+export async function archiveSession(id: string, archived: boolean): Promise<void> {
+  if (!isUuid(id)) throw new ApiError(400, 'bad session id');
+  await request('POST', `/api/sessions/${id}/archive`, { archived });
+}
+/** Delete a session: its transcript leaves the sandbox's store (the files it changed stay). The session's own id is
+ *  named again, as the backend asks. */
+export async function deleteSession(id: string): Promise<void> {
+  if (!isUuid(id)) throw new ApiError(400, 'bad session id');
+  await request('POST', `/api/sessions/${id}/delete`, { confirm: id.toLowerCase() });
+}
+const windowOf = (o: { window?: unknown }): string | null => (typeof o.window === 'string' && /^[A-Za-z0-9_.-]{1,30}$/.test(o.window) ? o.window : null);
+/** A new terminal window in the folder a session works in. */
+export async function sessionFolderTerminal(id: string): Promise<{ window: string | null }> {
+  if (!isUuid(id)) throw new ApiError(400, 'bad session id');
+  return { window: windowOf(await request('POST', `/api/sessions/${id}/folder-terminal`)) };
+}
+/** A new terminal window in a folder of the workspace, or in the folder a file is in. */
+export async function pathTerminal(path: string, dir: boolean): Promise<{ window: string | null }> {
+  return { window: windowOf(await request('POST', '/api/fs/terminal', { path, dir })) };
 }
 
 /** One settings file's permission rules (the Permissions view). Rules are text from the sandbox: shown with safe(),

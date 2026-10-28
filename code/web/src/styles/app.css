@@ -1138,3 +1138,16 @@ body.resizing-x iframe, body.resizing-y iframe { pointer-events: none; }
 .problem-time { flex: none; }
 .problem-more { align-self: flex-start; margin: 0 0 4px 4px; }
 .sheet-body > .run-panel-body .problem-main { min-height: 40px; }
+
+/* item menus (JON-821): the same menu opens by right-click, long-press (touch), Shift+F10 / the context-menu key on the
+   focused item, or its ⋯ button (ui.tsx Dropdown ctx); the ⋯ shows on hover and focus, always on touch */
+[data-ctx] { -webkit-touch-callout: none; }
+.item-more { opacity: 0; flex: none; }
+[data-ctx]:hover .item-more, [data-ctx]:focus-within .item-more, .item-more:focus-within { opacity: 1; }
+.item-more .dd-trigger { width: 26px; height: 26px; padding: 0; justify-content: center; color: var(--muted); }
+.sess:focus-within .sess-more, .tree-row:focus-within .tree-more, .proj-head:focus-within .proj-more { opacity: 1; }
+.tree-row:focus-visible, .sess-main:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.group-fold { width: 100%; border: 0; background: none; text-align: left; cursor: pointer; }
+.group-fold:hover { color: var(--ink); }
+.rv-file-head .item-more { margin-left: 2px; }
+@media (hover: none), (pointer: coarse) { .item-more, .tree-more, .sess-more, .proj-head .proj-more { opacity: 1 !important; } }

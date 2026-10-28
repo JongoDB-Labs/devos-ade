@@ -14,10 +14,14 @@ import {
   store,
   activate,
   addToProject,
+  archiveSessionById,
   closeSessionById,
   continueAfterSettings,
   continueHere,
   connectGitRepo,
+  deleteSessionById,
+  openSessionFolderTerminal,
+  sessionLink,
   createProject,
   currentProject,
   newSession,
@@ -49,7 +53,7 @@ import type { Harness, ImportedFrom, SessionInfo } from '../types';
 import { ago, label } from '../text';
 import { Icon, Spinner } from './icons';
 import { SandboxSaid } from './Said';
-import { Cmd, Dialog, Dropdown, MenuItem } from './ui';
+import { Cmd, Dialog, Dropdown, MenuItem, copyText } from './ui';
 import { ImportSheet, Suggestions, TOOL_BADGE, TOOL_LABEL } from './Import';
 import { SetupSheet } from './Setup';
 import { modelLabel } from './Pickers';
@@ -75,7 +79,7 @@ function StateDot({ v }: { v: SessionView | undefined }) {
 export const HARNESS_BADGE: Record<Harness, string> = { bedrock: '', claude: 'Plan', codex: 'Codex', copilot: 'Copilot', cursor: 'Cursor', grok: 'Grok' };
 
 function Row(props: { id: string; title: string; sub: string; view?: SessionView; active: boolean; picking: boolean; picked: boolean; onPick: (on: boolean) => void;
-  gone?: boolean; imported?: ImportedFrom | null; continueTo?: { id: string; name: string } | null; harness?: Harness }) {
+  gone?: boolean; imported?: ImportedFrom | null; continueTo?: { id: string; name: string } | null; harness?: Harness; archived?: boolean }) {
   const [renaming, setRenaming] = useState(false);
   const [val, setVal] = useState(props.title);
   const input = useRef<HTMLInputElement>(null);
@@ -85,7 +89,7 @@ function Row(props: { id: string; title: string; sub: string; view?: SessionView
   const open = props.view && props.view.state !== 'closed';
   const busy = props.view?.state === 'busy' || props.view?.state === 'starting';
   return (
-    <li class={`sess${props.active ? ' active' : ''}${props.view?.unseen ? ' unseen' : ''}`} data-testid="session-row" data-session={props.id}>
+    <li class={`sess${props.active ? ' active' : ''}${props.view?.unseen ? ' unseen' : ''}`} data-testid="session-row" data-session={props.id} data-ctx={props.gone ? undefined : ''}>
       {props.picking && (
         <input type="checkbox" class="sess-pick" checked={props.picked} aria-label={`Select ${props.title || 'this session'}`}
           onChange={(e) => props.onPick((e.currentTarget as HTMLInputElement).checked)} data-testid="session-pick" />
@@ -131,17 +135,20 @@ function Row(props: { id: string; title: string; sub: string; view?: SessionView
         <StateDot v={props.view} />
       </span>
       {props.gone ? null : (
-      <Dropdown title="Session actions" class="sess-more" align="right" trigger={<Icon name="more" />} testid="session-menu">
+      <Dropdown title="Session actions" class="sess-more" align="right" trigger={<Icon name="more" />} testid="session-menu" ctx>
         {(close) => (
           <>
-            <MenuItem icon="play" onSelect={() => (close(), void (open ? activate(props.id) : resumeSession(props.id)))}>
+            <MenuItem icon="play" onSelect={() => (close(), void (open ? activate(props.id) : resumeSession(props.id)))} testid="session-open">
               {open ? 'Show' : 'Resume'}
             </MenuItem>
-            <MenuItem icon="fork" onSelect={() => (close(), void resumeSession(props.id, true))}>
-              Fork (new session from here)
+            <MenuItem icon="external" onSelect={() => (close(), void window.open(sessionLink(props.id), '_blank', 'noopener,noreferrer'))} testid="session-new-tab">
+              Open in a new tab
             </MenuItem>
-            <MenuItem icon="pencil" onSelect={() => (close(), setVal(props.title), setRenaming(true))}>
+            <MenuItem icon="pencil" onSelect={() => (close(), setVal(props.title), setRenaming(true))} testid="session-rename">
               Rename
+            </MenuItem>
+            <MenuItem icon="fork" onSelect={() => (close(), void resumeSession(props.id, true))} testid="session-fork">
+              Fork (new session from here)
             </MenuItem>
             <MenuItem icon="folder" onSelect={() => (close(), openProjectDialog({ kind: 'file', ids: [props.id] }))} testid="session-add-to-project">
               Add to project…
@@ -151,14 +158,26 @@ function Row(props: { id: string; title: string; sub: string; view?: SessionView
                 Continue in {props.continueTo.name} (a new session in its folder)
               </MenuItem>
             )}
+            <MenuItem icon="terminal" onSelect={() => (close(), void openSessionFolderTerminal(props.id))} testid="session-folder-terminal">
+              Open its folder in a terminal
+            </MenuItem>
             <MenuItem icon="terminal" disabled={busy} onSelect={() => (close(), void openInTerminal(props.id))} testid="session-to-terminal">
               {busy ? 'Open in the terminal (once this turn ends)' : 'Open in the terminal'}
             </MenuItem>
+            <MenuItem icon="link" onSelect={() => (close(), void copyText(sessionLink(props.id)).then((ok) => toast(ok ? 'Link copied.' : 'Could not copy the link.', ok ? 'ok' : 'error')))} testid="session-copy-link">
+              Copy link
+            </MenuItem>
+            <MenuItem icon="archive" disabled={busy && !props.archived} onSelect={() => (close(), void archiveSessionById(props.id, !props.archived))} testid="session-archive">
+              {props.archived ? 'Unarchive' : busy ? 'Archive (once this turn ends)' : 'Archive'}
+            </MenuItem>
             {open && (
-              <MenuItem icon="stop" onSelect={() => (close(), void closeSessionById(props.id))}>
+              <MenuItem icon="stop" onSelect={() => (close(), void closeSessionById(props.id))} testid="session-close">
                 Close (stops its process; the transcript stays)
               </MenuItem>
             )}
+            <MenuItem icon="trash" danger disabled={busy} onSelect={() => (close(), openProjectDialog({ kind: 'delete-session', id: props.id, title: props.title }))} testid="session-delete">
+              {busy ? 'Delete… (once this turn ends)' : 'Delete…'}
+            </MenuItem>
           </>
         )}
       </Dropdown>
@@ -195,7 +214,7 @@ const foldersLink = (portal: string | null): string | null => (portal ? `${porta
 function ProjectMenu({ p, onRename }: { p: Project; onRename: () => void }) {
   if (p.gone)
     return (
-      <Dropdown title={`${p.name}: actions`} class="sess-more proj-more" align="right" trigger={<Icon name="more" />} testid="project-menu">
+      <Dropdown title={`${p.name}: actions`} class="sess-more proj-more" align="right" trigger={<Icon name="more" />} testid="project-menu" ctx>
         {(close) => (
           <MenuItem icon="trash" onSelect={() => (close(), openProjectDialog({ kind: 'remove', id: p.id }))} testid="project-menu-remove">
             Forget this folder…
@@ -204,14 +223,20 @@ function ProjectMenu({ p, onRename }: { p: Project; onRename: () => void }) {
       </Dropdown>
     );
   return (
-    <Dropdown title={`${p.name}: actions`} class="sess-more proj-more" align="right" trigger={<Icon name="more" />} testid="project-menu">
+    <Dropdown title={`${p.name}: actions`} class="sess-more proj-more" align="right" trigger={<Icon name="more" />} testid="project-menu" ctx>
       {(close) => (
         <>
+          <MenuItem icon="folder" onSelect={() => (close(), setProject(p.id))} testid="project-menu-open">
+            Open (show its files, Git and sessions)
+          </MenuItem>
           <MenuItem icon="plus" onSelect={() => (close(), void newSession({ project: p.id }))} testid="project-menu-new-session">
             New session
           </MenuItem>
           <MenuItem icon="terminal" onSelect={() => (close(), void openProjectTerminal(p.id))} testid="project-menu-terminal">
             Open a terminal here
+          </MenuItem>
+          <MenuItem icon="copy" onSelect={() => (close(), void copyText(p.path).then((ok) => toast(ok ? 'Path copied.' : 'Could not copy the path.', ok ? 'ok' : 'error')))} testid="project-menu-copy-path">
+            Copy path
           </MenuItem>
           {/* (a read-only folder: where that is changed — setuplinks.ts) */}
           <MenuItem icon="branch" setup={p.readOnly ? 'folder-read-only' : undefined} testid="project-menu-git"
@@ -269,6 +294,7 @@ export function ProjectsPanel() {
   const [picked, setPicked] = useState<string[]>([]);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
+  const [archShown, setArchShown] = useState<Record<string, boolean>>({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const by = useMemo(() => sessionsByProject(projects, Object.keys(views), sessions, where), [projects, views, sessions, where]);
@@ -291,7 +317,7 @@ export function ProjectsPanel() {
   };
   const row = (id: string, title: string, sub: string, v?: SessionView, gone = false, p?: Project) => (
     <Row key={id} id={id} view={v} active={id === active} title={title} sub={sub} picking={picking && !gone} picked={picked.includes(id)} onPick={(on) => pick(id, on)}
-      gone={gone} imported={info.get(id)?.imported ?? null} continueTo={p && !gone ? continueTo(id, p) : null} harness={v?.harness ?? info.get(id)?.harness} />
+      gone={gone} archived={info.get(id)?.archived === true} imported={info.get(id)?.imported ?? null} continueTo={p && !gone ? continueTo(id, p) : null} harness={v?.harness ?? info.get(id)?.harness} />
   );
   const live = projects.filter((p) => !p.gone);
   const gone = projects.filter((p) => p.gone);
@@ -313,7 +339,7 @@ export function ProjectsPanel() {
     return (
       <section key={p.id} class={`proj${p.id === current ? ' current' : ''}${p.gone ? ' gone' : ''}`} data-testid="project" data-project={p.id}
         data-host={p.host ? (p.readOnly ? 'ro' : 'rw') : undefined}>
-        <div class="proj-head">
+        <div class="proj-head" data-ctx="">
           <button type="button" class="proj-toggle icon-btn tiny" aria-expanded={open} aria-label={open ? `Fold ${p.name}` : `Unfold ${p.name}`}
             onClick={() => setExpanded((x) => ({ ...x, [p.id]: !open }))} data-testid="project-toggle">
             <Icon name={open ? 'chevronDown' : 'chevronRight'} size={13} />
@@ -386,7 +412,19 @@ export function ProjectsPanel() {
                 </ul>
               </>
             )}
-            {!mine.open.length && !mine.recent.length && (
+            {mine.archived.length > 0 && (
+              <>
+                <button type="button" class="group-head group-fold" aria-expanded={!!archShown[p.id]} onClick={() => setArchShown((x) => ({ ...x, [p.id]: !x[p.id] }))} data-testid="archived-toggle">
+                  <Icon name={archShown[p.id] ? 'chevronDown' : 'chevronRight'} size={12} /> Archived ({mine.archived.length})
+                </button>
+                {archShown[p.id] && (
+                  <ul class="sess-list" data-testid="archived-list">
+                    {mine.archived.map((x: SessionInfo) => row(x.id, x.title || x.firstPrompt, [ago(x.modified), x.branch].filter(Boolean).join(' · '), undefined, p.gone, p))}
+                  </ul>
+                )}
+              </>
+            )}
+            {!mine.open.length && !mine.recent.length && !mine.archived.length && (
               <div class="side-note">{q ? 'No sessions match.' : loading ? 'Loading…' : 'No sessions here yet.'}</div>
             )}
             {p.gone ? (
@@ -536,6 +574,7 @@ export function ProjectDialogs() {
   const close = () => openProjectDialog(null);
   if (d.kind === 'new') return <NewProjectDialog tab={d.tab} onClose={close} />;
   if (d.kind === 'remove') return <RemoveProjectDialog id={d.id} onClose={close} />;
+  if (d.kind === 'delete-session') return <DeleteSessionDialog id={d.id} title={d.title} onClose={close} />;
   if (d.kind === 'settings') return <SettingsDialog id={d.id} start={d.start} onClose={close} />;
   if (d.kind === 'import') return <ImportSheet id={d.id} onClose={close} />;
   if (d.kind === 'setup') return <SetupSheet project={d.id} tool={d.tool ?? null} onClose={close} />;
@@ -808,6 +847,31 @@ function RemoveProjectDialog({ id, onClose }: { id: string; onClose: () => void 
         </button>
         <button type="button" class="btn danger" disabled={busy || (trash && confirm !== p.root)} onClick={() => void go()} data-testid="remove-project-go">
           {busy ? <Spinner size={12} /> : null} {trash ? 'Remove, and trash its folder' : 'Remove from Code'}
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
+/** Delete a session: what goes, said exactly, then the transcript is removed from the sandbox. */
+function DeleteSessionDialog({ id, title, onClose }: { id: string; title: string; onClose: () => void }) {
+  const info = useSel(store, (s) => s.sessions.find((x) => x.id === id));
+  const [busy, setBusy] = useState(false);
+  const shown = label(title || info?.title || info?.firstPrompt, 120) || 'Untitled session';
+  return (
+    <Dialog title="Delete this session?" onClose={onClose} testid="delete-session-dialog">
+      <p><strong>{shown}</strong></p>
+      <p class="muted small">
+        Its conversation (its transcript{info?.size ? `, ${info.size < 1024 ? `${info.size} bytes` : `${Math.round(info.size / 1024)} KiB`}` : ''}) is deleted from the sandbox for good: it can no longer be resumed or forked, and there is no trash for it.
+        The files it changed in {info?.cwd ? <code>{label(info.cwd, 200)}</code> : 'its folder'} stay as they are.
+      </p>
+      <div class="dlg-buttons">
+        <button type="button" class="btn ghost" onClick={onClose}>
+          Cancel
+        </button>
+        <button type="button" class="btn danger" disabled={busy} data-testid="delete-session-confirm"
+          onClick={() => { setBusy(true); void deleteSessionById(id).then((ok) => (ok ? onClose() : setBusy(false))); }}>
+          {busy ? <Spinner size={12} /> : null} Delete the session
         </button>
       </div>
     </Dialog>
