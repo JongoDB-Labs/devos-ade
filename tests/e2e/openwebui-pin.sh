@@ -86,7 +86,8 @@ ok "the Open WebUI image builds on the pinned base and starts healthy"
 cid="$(docker ps -q --no-trunc --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=open-webui")"
 pinned="$(sed -n 's|^        image: ghcr.io/open-webui/open-webui:[^@ ]*@\(sha256:[0-9a-f]*\)$|\1|p' "$STACK/compose.yaml")"
 have "the image's base-image label names the pinned digest" "$(docker image inspect -f '{{index .Config.Labels "dev.devos-ade.base-image"}}' "$(docker inspect -f '{{.Image}}' "$cid")")" "$pinned"
-ver="$(docker exec "$cid" python3 -c 'import open_webui,importlib.metadata as m; print(m.version("open-webui"))' 2>/dev/null || true)"
+# the version Open WebUI itself reports (/api/config): the package's own metadata is not installed in the image
+ver="$(docker exec "$cid" python3 -c 'import json,urllib.request; print(json.load(urllib.request.urlopen("http://localhost:8080/api/config", timeout=30))["version"])' 2>/dev/null || true)"
 have "Open WebUI reports the pinned version" "$ver" "0.12.4"
 
 # the API, from inside the container (Caddy is not part of this project)
@@ -94,9 +95,11 @@ cat > "$STACK/.state/owui_call.py" <<'PY'
 import json, sys, urllib.request, urllib.error
 method, path, token = sys.argv[1], sys.argv[2], sys.argv[3]
 body = sys.argv[4] if len(sys.argv) > 4 else None
+who = sys.argv[5] if len(sys.argv) > 5 else None
 req = urllib.request.Request("http://localhost:8080" + path, data=body.encode() if body else None, method=method)
 req.add_header("Content-Type", "application/json")
 if token: req.add_header("Authorization", "Bearer " + token)
+if who: req.add_header("X-Portal-User", who)   # as Caddy sends it after the portal's sign-in (WEBUI_AUTH_TRUSTED_EMAIL_HEADER)
 try:
     r = urllib.request.urlopen(req, timeout=30); print(r.status, r.read().decode()[:4000])
 except urllib.error.HTTPError as e:
@@ -110,9 +113,9 @@ body_of() { printf '%s' "${1#* }"; }
 check "/health" "$(code_of "$(call GET /health '')")" 200
 cfg="$(call GET /api/config '')"; check "/api/config" "$(code_of "$cfg")" 200
 have "/api/config names the version" "$cfg" '"version"'
-pw="$(sed -n 's/^OPENWEBUI_ADMIN_PASSWORD=//p' "$STACK/.env")"
-r="$(call POST /api/v1/auths/signin '' "{\"email\":\"e2e@example.com\",\"password\":\"$pw\"}")"
-check "the admin signs in (/api/v1/auths/signin)" "$(code_of "$r")" 200
+# the stack signs the admin in by the trusted header Caddy sets after the portal's sign-in, never by a password form
+r="$(call POST /api/v1/auths/signin '' '{"email":"","password":""}' e2e@example.com)"
+check "the admin signs in by the trusted header (/api/v1/auths/signin)" "$(code_of "$r")" 200
 tok="$(body_of "$r" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
 r="$(call POST /api/v1/auths/api_key "$tok")"
 check "an API key can be made (/api/v1/auths/api_key)" "$(code_of "$r")" 200
