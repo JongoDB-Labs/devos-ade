@@ -5,6 +5,7 @@ behind the portal's session and X-Requested-With, an id of the shape Chat uses, 
 (no such chat, not allowed, down) said as it is, never a stack trace or a token."""
 
 from dataclasses import replace
+from pathlib import Path
 
 import httpx
 import pytest
@@ -12,6 +13,8 @@ from starlette.testclient import TestClient
 
 from portal.app import create_app
 from portal.security import COOKIE
+
+STATIC = Path(__file__).resolve().parents[1] / "portal" / "static"
 
 PW = "correct horse"
 PORTAL = "http://bedrock-now.localhost"
@@ -156,3 +159,19 @@ def test_a_burst_of_changes_is_slowed(cs):
         signed_in(c)
         codes = [c.post(f"/api/chats/{C1}/rename", json={"title": f"t{i}"}, headers=API).status_code for i in range(8)]
         assert codes[:4] == [200] * 4 and 429 in codes
+
+
+# --- the front end's shared menu (static/ctxmenu.js): loaded, and built the way the portal's CSP needs ---
+def test_index_loads_the_menu_assets_before_the_pages_that_use_it():
+    html = (STATIC / "index.html").read_text()
+    assert '/static/ctxmenu.css' in html
+    js = html.index('/static/ctxmenu.js')
+    for page in ("home.js", "models.js", "settings.js", "activity.js", "mobile.js"):
+        assert js < html.index(f'/static/{page}'), page
+
+
+def test_menu_code_builds_nodes_without_html_or_inline_styles():
+    for name in ("ctxmenu.js", "home.js"):
+        src = (STATIC / name).read_text()
+        assert "innerHTML" not in src and "insertAdjacentHTML" not in src, name
+        assert 'setAttribute("style"' not in src and "cssText" not in src, name

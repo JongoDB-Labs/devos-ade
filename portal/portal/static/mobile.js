@@ -194,6 +194,19 @@
       if (n) n.textContent += " From this Home Screen app they open in Safari, which asks for the portal password once.";
     }
     sheet(); healthLine(); statusFilter(); fit();
+    // Item menu on the nav (ctxmenu.js, JON-821): Open, and for an app its own window and its link. The phone's bar has no ⋯
+    // (no room: ctxmenu.css hides it there); a long press or the context-menu key opens it.
+    bnMenu.bind(".tabs", ".tabs > li", (li) => {
+      const tab = li.querySelector(".tab"), pop = li.querySelector(".popout");
+      if (!tab) return [];
+      const name = (tab.textContent || "").trim() || tab.dataset.tab;
+      const out = [{ id: "open", label: `Open ${name}`, run: () => tab.click() }];
+      if (pop && pop.href) {
+        out.push({ id: "new-window", label: "Open in its own window", href: pop.href },
+          { id: "copy-link", label: "Copy link", run: () => copy(pop.href, "the link") });
+      }
+      return out;
+    }, { label: (li) => ((li.querySelector(".tab") || {}).textContent || "").trim() });
     const hint = voiceHint();
     if (hint) { hint.hidden = current !== "chat"; $("#frames").classList.toggle("hint-on", current === "chat"); }
     // Rotating a tablet down to phone width while Admin, Files or the Terminal is open: fall back to Chat.

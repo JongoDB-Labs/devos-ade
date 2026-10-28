@@ -302,12 +302,39 @@
     return li;
   }
 
+  // Item menu (ctxmenu.js, JON-821): the row's own buttons, so a right-click, its ⋯ button, a long press and Shift+F10 do what the
+  // buttons do — and say why when one does not apply. Copy id is the id a picker or an .env value uses.
+  function rowActions(li) {
+    const r = rows().find((x) => x.id === li.dataset.id);
+    if (!r) return [];
+    const btn = (act) => li.querySelector(`.mb-actions [data-act="${act}"]`);
+    const out = [];
+    const t = btn("try");
+    out.push({ id: "try", label: "Try it", ...(t ? {} : { disabled: true, reason: r.enabled ? "Chat has no test to run here" : "Add the model first: Try it runs it from your pickers" }), run: () => t.click() });
+    const a = btn("add") || btn("remove");
+    if (a) {
+      const word = r.can === "add" ? "Add" : "Remove";
+      out.push({ id: r.can, label: `${word} ${r.can === "add" ? "to" : "from"} my pickers`, ...(a.disabled ? { disabled: true, reason: (r.local ? "Not available for this model right now" : data.why_not) || "Changes need the update helper (./stack helper install)" } : {}), run: () => a.click() });
+    } else out.push({ id: "add", label: "Add to my pickers", disabled: true, reason: r.builtin ? "Built in: it is always there" : (r.why || "This model cannot be added") });
+    out.push({ id: "copy-id", label: "Copy model id", sep: true, run: () => copy(r.id, "the model id") });
+    if (r.source_id && r.source_id !== r.id) out.push({ id: "copy-source", label: "Copy the provider's id", run: () => copy(r.source_id, "the provider's id") });
+    return out;
+  }
+  let menuBound = false;
+  function bindMenus() {
+    const p = page();
+    if (menuBound || !p) return;
+    menuBound = true;
+    bnMenu.bind(p, ".mb-row", rowActions, { label: (li) => (li.querySelector(".mb-title") || {}).textContent });
+  }
+
   function drawList() {
     const list = $("#mb-list"), count = $("#mb-count");
     if (!list) return;
     const all = rows().filter(matches).sort(order);
     count.textContent = `${all.length} model${all.length === 1 ? "" : "s"}${f.q ? ` match “${f.q.slice(0, 40)}”` : ""}`;
     list.replaceChildren(...all.slice(0, shown).map(rowEl));
+    bindMenus();
     const more = $("#mb-more");
     more.hidden = all.length <= shown;
     more.textContent = `Show ${Math.min(PAGE, all.length - shown)} more`;

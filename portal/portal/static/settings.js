@@ -2597,6 +2597,19 @@
     if (m) { try { goTo(decodeURIComponent(m[1])); } catch (_) { goTo(m[1]); } }
   }
 
+  // Item menu (ctxmenu.js, JON-821): Copy for a row — its name, the setting's key (as .env spells it), its value (only a
+  // plain one shown on the page: a secret is never put in a menu), a link to it. Nothing here changes a setting.
+  bnMenu.bind(page(), ".set-row[data-key]", (row) => {
+    const key = row.dataset.key, name = (row.querySelector(".set-name") || {}).textContent || key;
+    const v = row.querySelector(".set-value[data-value]");
+    return [
+      { id: "copy-name", label: "Copy name", run: () => copy(name, "the name") },
+      { id: "copy-key", label: "Copy setting key", run: () => copy(key, "the key") },
+      { id: "copy-value", label: "Copy value", ...(v && v.dataset.value ? {} : { disabled: true, reason: v ? "It is blank" : "Secrets and lists are not copied from here" }), run: () => copy(v.dataset.value, "the value") },
+      { id: "copy-link", label: "Copy link to this setting", sep: true, run: () => copy(`${location.origin}${location.pathname}#settings/${key}`, "the link") },
+    ];
+  }, { label: (row) => (row.querySelector(".set-name") || {}).textContent });
+
   document.addEventListener("bn:tab", (e) => {
     if (e.detail === "settings") load().then(placeFromAddress);
     else { chatAsk.drop(); window.bnSubsChatSignin = ""; if (e.detail === "home" && data) renderNotice(); }

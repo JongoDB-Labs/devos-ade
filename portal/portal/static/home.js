@@ -9,6 +9,12 @@
 // from the API is parsed as HTML; titles are sandbox or Chat data, shown as text with their invisible characters made
 // visible (code.js shownTitle, recent.py shown). What this browser keeps (localStorage bn.getstarted, every access in
 // try/catch): Get started hidden or not, and "Keep these" for the budgets.
+// Item menus (ctxmenu.js; JON-821): each Continue row opens one on a right-click, its ⋯ button, a long press or Shift+F10.
+// A Chat conversation: Open, Open in a new tab, Copy link, Rename, Archive, Delete — the portal asks Open WebUI as the owner
+// (POST /api/chats/ID/rename|archive|delete, portal/chatsearch.py). A Code session: Open, Open in a new tab, Copy link here;
+// Rename, Fork, Add to project, Open its folder in a terminal, Archive and Delete are asked of the Code page itself (the
+// portal never reaches the code container: window.bnCode.sessionDo, a message to the framed page, which opens its own
+// dialogs — nothing is deleted without them) and are off, with the reason, until that page has run in this browser.
 "use strict";
 
 (() => {
@@ -143,8 +149,71 @@
       el("span", { class: "cont-main" }, el("span", { class: "cont-title", title: full, text: title }),
         el("span", { class: "cont-meta", text: `${code ? "Code" : "Chat"}${words ? ` · ${words}` : ""}` })),
       el("span", { class: "cont-verb", "aria-hidden": "true", text: verb }));
-    return el("li", {}, a);
+    return el("li", { "data-kind": kind, "data-id": item.id, "data-name": full }, a);
   }
+
+  // --- the item menus ---
+  const post = async (path, body) => {
+    const r = await fetch(path, { method: "POST", credentials: "same-origin", cache: "no-store",
+      headers: { ...API_HEADERS, "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 401) { location.assign("/login"); throw new Error("signed out"); }
+    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+    return d;
+  };
+  const absolute = (href) => { try { return new URL(href, location.href).href; } catch (_) { return href; } };
+  const NEEDS_CODE = "Open the Code tab once, so Home can ask it";
+  // a Chat conversation: Open WebUI's own change, then Continue is asked again at once
+  async function chatChange(what, id, body, done) {
+    try {
+      await post(`/api/chats/${id}/${what}`, body);
+      toast(done);
+      fetchContinue();
+    } catch (e) { toast(`Not done: ${e.message}`); }
+  }
+  function chatActions(li) {
+    const id = li.dataset.id, name = li.dataset.name;
+    return [
+      { id: "open", label: "Open", run: () => openChat(id) },
+      { id: "new-tab", label: "Open in a new tab", href: chatLink(id) },
+      { id: "copy-link", label: "Copy link", run: () => copy(absolute(chatLink(id)), "the link") },
+      { id: "rename", label: "Rename…", sep: true, run: async () => {
+        const t = await bnMenu.ask({ title: "Rename the conversation", label: "Name", value: name === "Untitled chat" ? "" : name, ok: "Rename" });
+        if (t) chatChange("rename", id, { title: t }, "Renamed");
+      } },
+      { id: "archive", label: "Archive", run: () => chatChange("archive", id, {}, "Archived: Chat lists it under Archived chats") },
+      { id: "delete", label: "Delete…", danger: true, run: async () => {
+        const ok = await bnMenu.confirm({ title: "Delete this conversation?", ok: "Delete the conversation", danger: true,
+          lines: [name, "The conversation is deleted from Chat for good: its messages and what it was titled go, and there is no trash for it. Files and settings elsewhere are not touched."] });
+        if (ok) chatChange("delete", id, { confirm: id }, "Deleted");
+      } },
+    ];
+  }
+  // a Code session: here what the portal knows; the rest is the Code page's own (see the top of this file)
+  function codeActions(li) {
+    const id = li.dataset.id, name = li.dataset.name;
+    const ready = Boolean(window.bnCode && window.bnCode.ready && window.bnCode.ready());
+    const ask = (action, title) => () => {
+      if (window.bnCode.sessionDo(id, action, title)) { if (action === "archive") { toast("Archived: the Code page lists it under Archived"); soon(1500); } }
+      else toast("The Code page did not answer: open the Code tab and try again.");
+    };
+    const off = ready ? {} : { disabled: true, reason: NEEDS_CODE };
+    return [
+      { id: "open", label: li.dataset.state === "waiting" ? "Open (it needs you)" : "Open", run: () => openSession(id) },
+      { id: "new-tab", label: "Open in a new tab", href: codeLink({ session: id }) },
+      { id: "rename", label: "Rename…", ...off, run: async () => {
+        const t = await bnMenu.ask({ title: "Rename the session", label: "Name", value: name === "Untitled session" ? "" : name, ok: "Rename" });
+        if (t) { ask("rename", t)(); toast("Renamed"); soon(1500); }
+      } },
+      { id: "fork", label: "Fork (a new session from here)", ...off, run: ask("fork") },
+      { id: "file", label: "Add to project…", ...off, run: ask("file") },
+      { id: "terminal", label: "Open its folder in a terminal", ...off, run: ask("terminal") },
+      { id: "copy-link", label: "Copy link", run: () => copy(absolute(codeLink({ session: id })), "the link") },
+      { id: "archive", label: "Archive", sep: true, ...off, run: ask("archive") },
+      { id: "delete", label: "Delete…", danger: true, ...off, run: ask("delete") },
+    ];
+  }
+  bnMenu.bind(contBox, ".cont-list > li", (li) => (li.dataset.kind === "code" ? codeActions(li) : chatActions(li)), { links: true, label: (li) => li.dataset.name });
   function renderContinue() {
     const now = cont && Number.isFinite(cont.now) ? cont.now : Date.now() / 1000;
     const rep = CODE.here ? codeReport() : null;

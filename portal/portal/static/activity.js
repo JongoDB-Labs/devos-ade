@@ -428,6 +428,21 @@
     else if (it.link) act("Open", () => go(it.link));
     return out;
   }
+  // Item menu (ctxmenu.js, JON-821): the item's own buttons again — its main action, read or unread, dismiss or restore — and Copy text
+  function itemActions(li) {
+    const ctl = (sel) => li.querySelector(`.act-actions ${sel}`);
+    const main = ctl("button:not(.act-read):not(.act-x):not(.quiet), button.action");
+    const read = ctl(".act-read"), x = ctl(".act-x"), restore = li.classList.contains("gone") ? ctl("button.quiet") : null;
+    const out = [];
+    if (main) out.push({ id: "open", label: main.textContent.trim() || "Open", run: () => main.click() });
+    if (read) out.push({ id: "read", label: read.textContent.trim(), run: () => read.click() });
+    if (restore) out.push({ id: "restore", label: "Restore", run: () => restore.click() });
+    if (x) out.push({ id: "dismiss", label: "Dismiss (this browser)", run: () => x.click() });
+    const text = (li.querySelector(".act-text") || li.querySelector(".act-name") || {}).textContent;
+    if (text) out.push({ id: "copy", label: "Copy text", sep: out.length > 0, run: () => copy(text, "the text") });
+    return out;
+  }
+  bnMenu.bind(panel, ".act-list > li", itemActions, { label: (li) => (li.querySelector(".act-name") || {}).textContent });
   function itemNode(it) {
     const unread = isUnread(it, state), gone = Boolean(state.dismissed[it.id]);
     const li = el("li", { class: `act-item act-${it.level}${unread ? " unread" : ""}${gone ? " gone" : ""}`, "data-id": it.id, "data-kind": it.kind });

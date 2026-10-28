@@ -1,0 +1,49 @@
+/* Item menus (ctxmenu.js): the one menu a right-click, the ⋯ button, a long press or Shift+F10 opens on a list item, and the
+   two small dialogs (a confirmation that says what happens, a name to type). The design tokens only: light and dark follow
+   the page. */
+.ctx-menu { position: fixed; z-index: 90; min-width: 200px; max-width: min(340px, calc(100vw - 16px)); overflow-y: auto; padding: 5px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r-l); box-shadow: var(--card-edge), var(--shadow-pop);
+  font-size: var(--t-s); outline: none; }
+.ctx-item { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; min-height: 34px; padding: 7px 11px; border: 0; border-radius: var(--r-m);
+  background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.ctx-item:hover, .ctx-item:focus-visible { background: var(--accent-soft); outline: none; }
+.ctx-item:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.ctx-item.danger { color: var(--bad); }
+.ctx-item.is-disabled { color: var(--muted); cursor: not-allowed; }
+.ctx-item.is-disabled:hover { background: none; }
+.ctx-why { font-size: var(--t-xs); color: var(--muted); line-height: 1.35; white-space: normal; }
+.ctx-sep { height: 1px; margin: 5px 6px; background: var(--line); }
+/* the item's ⋯ button: on hover and focus, always on touch */
+.has-ctx { position: relative; }
+.ctx-more { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid transparent; border-radius: var(--r-pill);
+  background: var(--surface); color: var(--muted); opacity: 0; cursor: pointer; z-index: 1; }
+.ctx-more svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+.has-ctx:hover > .ctx-more, .has-ctx:focus-within > .ctx-more, .ctx-more:focus-visible, .ctx-more[aria-expanded="true"] { opacity: 1; }
+.ctx-more:hover, .ctx-more[aria-expanded="true"] { border-color: var(--line); color: var(--ink); }
+.ctx-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (hover: none), (pointer: coarse) {
+  .ctx-more { opacity: 1; width: 40px; height: 40px; }
+  .ctx-item { min-height: 44px; }
+}
+[data-ctx-item], .has-ctx { -webkit-touch-callout: none; }
+/* where the button sits in each list: out of the way of what is already on the right */
+.cont-list > li.has-ctx > .cont-row { padding-right: 52px; }
+.cont-list > li.has-ctx > .ctx-more { top: 50%; right: 4px; margin-top: -14px; }
+.mb-row.has-ctx { padding-right: 52px; }
+.svc-list > li.has-ctx { padding-right: 36px; }
+.svc-list > li.has-ctx > .ctx-more { top: 50%; margin-top: -14px; right: 0; }
+.tabs > li.has-ctx > .ctx-more { top: 50%; right: 2px; margin-top: -14px; width: 24px; height: 24px; background: transparent; }
+.tabs > li.has-ctx .popout { margin-right: 20px; }
+@media (pointer: coarse) { .cont-list > li.has-ctx > .ctx-more { margin-top: -20px; } }
+/* the two small dialogs */
+.ctx-dlg { border: 1px solid var(--line); border-radius: var(--r-xl); padding: 22px 24px; width: min(460px, calc(100vw - 32px)); background: var(--surface); color: var(--ink); box-shadow: var(--shadow-pop); }
+.ctx-dlg::backdrop { background: rgb(0 0 0 / 0.38); }
+.ctx-dlg h2 { margin: 0 0 8px; font-size: var(--t-1); line-height: 1.2; }
+.ctx-dlg p { margin: 8px 0 0; font-size: 14px; overflow-wrap: anywhere; }
+.ctx-ask { display: block; margin-top: 12px; font-size: 13px; color: var(--muted); }
+.ctx-ask input { display: block; width: 100%; margin-top: 4px; padding: 8px 11px; border: 1px solid var(--line-strong); border-radius: var(--r-m); background: var(--bg); color: var(--ink); font: inherit; }
+.ctx-dlg-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px !important; }
+.action.danger { background: var(--bad); border-color: var(--bad); color: var(--accent-ink); font-weight: 600; }
+.action.danger:hover:not(:disabled) { border-color: var(--ink); }
+/* the phone's tab bar has no room for a ⋯ button: a long press or the context-menu key opens the menu there */
+@media (max-width: 767.98px) { .tabs > li > .ctx-more { display: none; } }

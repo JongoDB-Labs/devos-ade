@@ -191,6 +191,19 @@
       showTab("code");
       f.contentWindow.postMessage({ type: "bn-portal-open", path }, origin);
     },
+    // Home's item menu (JON-821): one of the Code page's own actions on a session, asked of the framed page (it checks the id,
+    // runs its own flow and dialogs — a delete is confirmed there). Rename and archive stay on Home; the rest show the tab.
+    // True when the message was sent.
+    sessionDo: (id, action, title) => {
+      const f = document.querySelector('#frames iframe[data-app="code"]');
+      let origin = "";
+      try { origin = new URL(appUrl("code")).origin; } catch (_) { return false; }
+      if (!f || !window.bnCode.ready() || typeof id !== "string" || !UUID.test(id)) return false;
+      if (!["rename", "archive", "unarchive", "fork", "file", "delete", "terminal"].includes(action)) return false;
+      if (!["rename", "archive", "unarchive"].includes(action)) showTab("code");
+      f.contentWindow.postMessage({ type: "bn-portal-session-do", id, action, ...(action === "rename" ? { title: String(title || "").slice(0, 200) } : {}) }, origin);
+      return true;
+    },
   };
 
   // The Git panel's Git hosts or Clone dialog. A Code tab whose page is running (it reported since it loaded) is asked
