@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-10-28
+
 ### Added
 
 - **Local models and model servers are on Browse models, and in the Code picker (JON-816).** Browse models has a **Run
