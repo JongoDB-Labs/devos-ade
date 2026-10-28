@@ -1260,6 +1260,18 @@ def test_models_browse_route_lists_bedrock(make, dirs):
     assert make(login=False).get("/api/models/browse", headers=API).status_code == 401
 
 
+def test_models_browse_says_reading_only_while_the_helper_runs(make, dirs):
+    sd, rd = dirs
+    write_snapshot(sd, KEYS + [BEDROCK_MODELS_ROW])   # Bedrock on, its list never read
+    c = make()
+    br = c.get("/api/models/browse", headers=API).json()["providers"]["bedrock"]
+    assert br["stale"] is True and not br.get("reading")   # nobody to read it: the page must not say it is reading
+    assert not (rd / "models-wanted").exists()
+    helper_up(sd)
+    br = c.get("/api/models/browse", headers=API).json()["providers"]["bedrock"]
+    assert br["reading"] is True and (rd / "models-wanted").exists()
+
+
 def test_models_plan_route(make, dirs):
     sd, _ = dirs
     write_snapshot(sd, KEYS + [BEDROCK_MODELS_ROW]); helper_up(sd); _bedrock_list(sd)

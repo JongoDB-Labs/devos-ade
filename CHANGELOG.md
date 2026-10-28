@@ -27,7 +27,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
     called, and OpenRouter's from its public list. Each is cached (about an hour) and refreshed in the background.
     The update helper reads them once by itself on a new or updated stack, so the first open finds them there; a list
     still being read says so (*reading it on this computer…*) and the page shows it by itself when it arrives,
-    keeping what you are typing in the search.
+    keeping what you are typing in the search. Without the update helper, Bedrock's built-in models show and the list
+    says it is *read on this computer once the update helper runs*.
   - **Try it** says what the call was booked at — *cost $0* for a free or local model (LiteLLM leaves its cost header
     out at $0; the figure it worked out is read instead).
   - The Code page's not-granted and ended-promotion messages (JON-521) now carry a direct action: **Pick another

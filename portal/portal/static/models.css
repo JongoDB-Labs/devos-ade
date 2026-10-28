@@ -15,7 +15,6 @@
 .mb-source { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; font-size: 13px; }
 .mb-source-name { font-weight: 600; }
 .mb-source-error { color: var(--bad); }
-.mb-reading { color: var(--muted); }
 .mb-refresh-line { margin: 0 0 14px; }
 .mb-helper { color: var(--warn); margin: 0 0 12px; }
 

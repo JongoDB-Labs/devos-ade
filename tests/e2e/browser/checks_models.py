@@ -20,7 +20,7 @@ from playwright.sync_api import expect as see
 
 from common import ENV, Skip, check, expect
 from checks_api import lite
-from checks_browser import _confirm, _need_helper, _wait_job, goto_setting, login, open_settings, shot
+from checks_browser import _confirm, _need_helper, _settings_api, _wait_job, goto_setting, login, open_settings, shot
 from checks_code import HAIKU, LOCKED_OK, Code, csp_clean, need_haiku, need_on, saved, ui_page
 from checks_terminal import new_shell_window, term_text, terminal_frame, type_line, unlock_in, wait_text, wait_xterm
 
@@ -330,23 +330,28 @@ def model_browser(ctx):
     from common import origin
     page, rec = ctx.page("model-browser")
     login(page)
-    # the API: Bedrock's list is read on the computer (the update helper, once by itself on a new stack, or when the
-    # page asks); the page holds no key
-    t0 = time.time()
-    while True:
-        d = _browse(ctx)
-        expect("bedrock" in d["providers"], f"no Bedrock provider: {list(d['providers'])}")
-        br = d["providers"]["bedrock"]
-        if br.get("at") or br.get("error") or time.time() - t0 > 180:
-            break
-        time.sleep(3)
-    expect(br.get("at") and not br.get("error"), f"Bedrock's list was not read in {time.time() - t0:.0f} s: {br.get('error') or 'not read yet'}")
+    # the API: Bedrock's list is read on the computer by the update helper (once by itself on a new stack, or when the
+    # page asks: settings/model-browser-add checks that read); the page holds no key. In this pass the helper is not
+    # running, so a list not read yet shows the catalog's models and says it is read once the helper runs, never
+    # "reading it…"
+    d = _browse(ctx)
+    expect("bedrock" in d["providers"], f"no Bedrock provider: {list(d['providers'])}")
+    br = d["providers"]["bedrock"]
     expect(br["on"] and br["rows"], f"Bedrock off or empty: on={br['on']}, {len(br['rows'])} rows")
-    claude = [r for r in br["rows"] if r["vendor"] == "Anthropic"]
+    expect(not br.get("error"), f"Bedrock's list: {br.get('error')}")
+    read, helper_on = bool(br.get("at")), _settings_api(ctx)["helper"]["running"]
+    if not read:
+        expect(all(r.get("builtin") for r in br["rows"]), "a list not read yet showed models beyond the catalog")
+        expect(br.get("reading") is helper_on, f"reading={br.get('reading')!r} with the update helper running={helper_on}")
+    claude = [r for r in br["rows"] if r["vendor"] == "Anthropic" or (not read and "claude" in r["name"].lower())]
     expect(claude, "no Anthropic models listed for Bedrock")
     # the page: rows, search narrows, a filter works
     page.goto(origin() + "/#modelbrowser")
     page.wait_for_selector("#modelbrowser:not([hidden]) .mb-row", timeout=30000)
+    if not read:
+        say = page.inner_text('#modelbrowser .mb-source[data-provider="bedrock"]')
+        want = "reading it on this computer" if helper_on else "read on this computer once the update helper runs"
+        expect(want in say, f"Bedrock's list not read yet; the page says {say[:300]!r}")
     rows0 = page.locator("#modelbrowser .mb-row").count()
     expect(rows0 >= len(claude), f"page shows {rows0} rows, API had ≥{len(claude)} Claude")
     # a built-in Claude model says it is in the pickers, not add/removable
@@ -405,7 +410,17 @@ def model_browser_add(ctx):
     model the key can use but the catalog does not carry (no model call); skipped if the list offers none to add."""
     from common import http, origin
     _need_helper(ctx)
-    d = _browse(ctx)
+    # the helper reads Bedrock's list by itself (a new stack's first read, or the page asked): its models beyond the
+    # catalog arrive, Anthropic's named as such
+    t0 = time.time()
+    while True:
+        d = _browse(ctx)
+        br = d["providers"]["bedrock"]
+        if br.get("at") or br.get("error") or time.time() - t0 > 180:
+            break
+        time.sleep(3)
+    expect(br.get("at") and not br.get("error"), f"the update helper did not read Bedrock's list in {time.time() - t0:.0f} s: {br.get('error') or 'not read yet'}")
+    expect(any(r["vendor"] == "Anthropic" for r in br["rows"]), "no Anthropic models in Bedrock's list as read")
     if not d["can_change"]:
         raise Skip(f"changes not available: {d['why_not']}")
     add = next((r for r in d["providers"]["bedrock"]["rows"] if r["can"] == "add"), None)

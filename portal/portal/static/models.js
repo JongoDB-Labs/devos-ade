@@ -168,6 +168,10 @@
         what = p.rows.length ? `its public list (no key: browse only), ${ago(p.at)}` : "no key: ";
       } else if (!p.on) what = "no key: its models are listed once you add one";
       else what = `${p.rows.length} model${p.rows.length === 1 ? "" : "s"}${k === "bedrock" && p.region ? ` in ${p.region}` : ""}, ${ago(p.at)}`;
+      // a stale list: being read now, or (no update helper) when it will be; in the same text, so a narrow screen wraps
+      // its words rather than starting a line with "·"
+      if (p.on && p.stale && p.reading) what += ` · reading it${p.at ? " again" : ""} on this computer…`;
+      else if (p.on && p.stale && p.reading === false) what += " · read on this computer once the update helper runs";
       li.append(head, " ", el("span", { class: "note", text: what }));
       if (!p.on && k === "openrouter" && !p.rows.length) {
         const b = el("button", { type: "button", class: "linkish", "data-testid": "mb-or-public", text: "Browse its public list" });
@@ -176,7 +180,6 @@
       }
       if (!p.on) li.append(" ", el("a", { href: `#settings/${k === "bedrock" ? "AWS_ACCESS_KEY_ID" : k === "openrouter" ? "OPENROUTER_API_KEY" : "EXPLABS_API_KEY"}`, text: "Add a key" }));
       if (p.error) li.append(el("span", { class: "mb-source-error", role: "status", text: p.error }));
-      if (p.on && p.stale && p.reading) li.append(el("span", { class: "note mb-reading", text: ` · reading it${p.at ? " again" : ""} on this computer…` }));
       box.append(li);
     }
     return box;

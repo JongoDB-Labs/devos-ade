@@ -532,13 +532,14 @@ def routes(ctx: Ctx) -> list[Route]:
                 browse_rate.hit()
         code_rows, _scope = code.read_code_models(s.litellm_dir)
         data = mb.browse(s.status_dir, s.catalog_dir, s.litellm_dir, values, keys_on, or_rows, or_meta, code_rows)
-        # ask the update helper to read any stale list again (no password: a free, read-only listing)
-        asked = False
+        # ask the update helper to read any stale list again (no password: a free, read-only listing); without the
+        # helper nobody reads it, so the list says so instead of "reading" (reading: False)
+        asked, helper_on = False, admin.helper_state(s.status_dir)["running"]
         for prov, p in data.items():
             if p["on"] and p["stale"] and prov != "openrouter":
-                p["reading"] = True
+                p["reading"] = helper_on
                 asked = True
-        if (asked or refresh) and admin.helper_state(s.status_dir)["running"]:
+        if (asked or refresh) and helper_on:
             try:
                 (s.request_dir / mb.WANTED).write_text("", encoding="utf-8")
             except OSError:

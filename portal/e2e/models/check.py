@@ -80,13 +80,13 @@ ANSWER = {
 
 # The first open on a new stack: Bedrock's list not read yet (the update helper reads it in the background), so the
 # answer has only the catalog's models, without a vendor; PENDING["until"] says how long the stub answers so
-PENDING = {"until": 0.0}
+PENDING = {"until": 0.0, "helper": True}   # helper: False, no update helper to read it (the list says so)
 
 
 def pending_answer() -> dict:
     a = json.loads(json.dumps(ANSWER))
     br = a["providers"]["bedrock"]
-    br.update(at=None, stale=True, reading=True, status=None,
+    br.update(at=None, stale=True, reading=PENDING["helper"], status=None,
               rows=[dict(r, vendor="", **{"in": None, "out": None}) for r in br["rows"] if r["builtin"]])
     return a
 
@@ -199,8 +199,24 @@ def main() -> int:
                                        and "reading" not in later and focus == ["mb-search", "Nova"])
             result["errors"] += errors
             browser.close()
+            # no update helper: nothing reads the list, so it says when it will be read, never "reading it…"
+            browser = pw.chromium.launch()
+            page = browser.new_page(viewport={"width": 390, "height": 900})
+            errors = []
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            PENDING.update(until=time.time() + 60, helper=False)
+            page.goto(f"{BASE}/#modelbrowser", wait_until="domcontentloaded")
+            page.wait_for_selector("#modelbrowser:not([hidden]) .mb-row", timeout=20000)
+            said = page.inner_text('#modelbrowser .mb-source[data-provider="bedrock"]')
+            page.screenshot(path=str(OUT / "model-browser-no-helper.png"))
+            result["shots"].append("model-browser-no-helper.png")
+            PENDING.update(until=0.0, helper=True)
+            result["no_helper"] = said
+            result["no_helper_ok"] = "read on this computer once the update helper runs" in said and "reading it" not in said
+            result["errors"] += errors
+            browser.close()
         result["ok"] = (result["rows"] >= 5 and result.get("narrow_ok") and result.get("filter_ok") and result.get("first_open_ok")
-                        and not result["errors"])
+                        and result.get("no_helper_ok") and not result["errors"])
     except Exception as e:  # noqa: BLE001
         result["errors"].append(f"{type(e).__name__}: {e}")
         traceback.print_exc()
