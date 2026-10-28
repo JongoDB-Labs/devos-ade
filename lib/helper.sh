@@ -623,9 +623,31 @@ helper_write_status() {
     "$(_json_str "$JOB_ID")" "$(_json_str "$JOB_ACTION")" "$(_json_str "$1")" "$(_json_str "$2")" "${JOB_STARTED:-null}" "$(date +%s)" \
     "${JOB_FINISHED:-null}" "${JOB_FREED:-null}" "$(_json_str "$JOB_VERSION")" "$(_json_str "${JOB_TRIGGER:-request}")" \
     "$(_json_str "$step")" "$step_at" "$steps" > "$tmp" &&
-    chmod 644 "$tmp" && mv "$tmp" "$f"; then return 0; fi
+    chmod 644 "$tmp" && mv "$tmp" "$f"; then
+    case "$1" in done | failed | skipped) _helper_keep_finished "$f" ;; esac
+    return 0
+  fi
   rm -f "$tmp" 2>/dev/null || true
   printf '%s could not write %s\n' "$(date '+%F %T')" "$f" >&2
+  return 0
+}
+
+# _helper_keep_finished STATUS_FILE — a finished job's last status also kept in .state/status/helper-finished/<id>.json
+# (the newest HELPER_FINISHED_KEEP, 8): a job the helper starts at once after another — a nightly backup that a change
+# turned on inside its window — takes helper-status.json before the page that asked for the change has read its
+# result there; the page finds it here by its id (portal/portal/admin.py helper_state "finished"). Never fatal.
+HELPER_FINISHED_KEEP=8
+_helper_keep_finished() {
+  local d id x n=0
+  id="$(printf '%s' "$JOB_ID" | LC_ALL=C tr -c 'A-Za-z0-9._-' '_' | cut -c1-80)"
+  case "$id" in '' | .*) return 0 ;; esac
+  d="$(status_dir)/helper-finished"
+  { mkdir -p "$d" && chmod 755 "$d"; } 2>/dev/null || return 0
+  if cp "$1" "$d/.$id.tmp" 2>/dev/null && chmod 644 "$d/.$id.tmp" 2>/dev/null && mv -f "$d/.$id.tmp" "$d/$id.json" 2>/dev/null; then :
+  else rm -f "$d/.$id.tmp" 2>/dev/null || true; return 0; fi
+  for x in $(ls -t "$d" 2>/dev/null); do
+    case "$x" in *.json) n=$((n + 1)); [ "$n" -le "$HELPER_FINISHED_KEEP" ] || rm -f "$d/$x" 2>/dev/null || true ;; esac
+  done
   return 0
 }
 

@@ -180,9 +180,26 @@ def newest_job(helper: dict | None, terminal: dict | None, now: float | None = N
     return max(jobs, key=_when) if jobs else None   # (max keeps the first of equals: the helper's)
 
 
+FINISHED_KEEP = 8   # lib/helper.sh HELPER_FINISHED_KEEP
+FINISHED_NAME = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}\.json")
+
+
+def finished_jobs(status_dir: Path) -> list[dict]:
+    """The helper's last finished jobs, newest first (.state/status/helper-finished/<id>.json, lib/helper.sh
+    _helper_keep_finished): where a page finds its job's result once the helper has started another job right after it."""
+    d = status_dir / "helper-finished"
+    try:
+        names = [n for n in os.listdir(d) if FINISHED_NAME.fullmatch(n)]
+    except OSError:
+        return []
+    jobs = [j for j in (_job(_read(d / n, 32 * 1024), "helper") for n in names[:4 * FINISHED_KEEP]) if j and j["id"]]
+    return sorted(jobs, key=_when, reverse=True)[:FINISHED_KEEP]
+
+
 def helper_state(status_dir: Path, now: float | None = None) -> dict:
-    """{running, heartbeat_at, rollback, auto, job}: what Home needs, every field type-checked (files come from the host).
-    job: the newest of the helper's last job and the last ./stack command run in a terminal (its "origin" says which)."""
+    """{running, heartbeat_at, rollback, auto, job, finished}: what Home needs, every field type-checked (files come
+    from the host). job: the newest of the helper's last job and the last ./stack command run in a terminal (its
+    "origin" says which); finished: the helper's last finished jobs (finished_jobs), for a page waiting on one of them."""
     now = time.time() if now is None else now
     beat = _read(status_dir / "helper.json")
     hb = _int(beat.get("heartbeat"))
@@ -198,6 +215,7 @@ def helper_state(status_dir: Path, now: float | None = None) -> dict:
                      "backup": _str(rb.get("backup"), 120), "unfinished": rb.get("unfinished") is True},
         "auto": _auto(beat),
         "job": job,
+        "finished": finished_jobs(status_dir),
     }
 
 

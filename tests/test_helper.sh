@@ -259,6 +259,31 @@ slash'
   if command -v python3 >/dev/null 2>&1; then python3 -I -c 'import json,sys; json.load(open(sys.argv[1]))' "$(helper_status_file)"; fi
 }
 
+test_a_finished_job_is_kept_under_its_id_the_newest_eight() {
+  _checkout
+  local d="$STATE_DIR/status/helper-finished" i
+  JOB_ID=abc123; JOB_ACTION=settings; helper_write_status running 'Restart'
+  [ ! -e "$d/abc123.json" ]                                                   # (running: only helper-status.json)
+  helper_write_status done 'saved'
+  assert_eq "$(cat "$d/abc123.json")" "$(cat "$(helper_status_file)")"
+  # the next job takes helper-status.json at once: the change's result stays here, under its id
+  JOB_ID=nightly-1; JOB_ACTION=backup-nightly; helper_write_status running 'Nightly backup'
+  assert_contains "$(cat "$d/abc123.json")" '"phase": "done"'
+  assert_contains "$(cat "$(helper_status_file)")" '"id": "nightly-1"'
+  # an id is a file name of its own and nothing else (one that would start with a dot is not kept)
+  JOB_ID='a/b c'; helper_write_status failed 'refused'
+  [ -f "$d/a_b_c.json" ] || { ls -a "$d"; return 1; }
+  JOB_ID='../x'; helper_write_status failed 'refused'
+  assert_eq "$(ls -A "$d" | tr '\n' ' ')" "a_b_c.json abc123.json "
+  JOB_ID=''; helper_write_status done ok                                     # (no id: nothing kept)
+  assert_eq "$(ls -A "$d" | tr '\n' ' ')" "a_b_c.json abc123.json "
+  # only the newest HELPER_FINISHED_KEEP (8) stay: the oldest go first
+  touch -t 202601010001 "$d/abc123.json"; touch -t 202601010002 "$d/a_b_c.json"
+  for i in 1 2 3 4 5 6 7; do JOB_ID="j$i"; helper_write_status done ok; touch -t "20260101010$i" "$d/j$i.json"; done
+  assert_eq "$(ls "$d" | grep -c '\.json$')" 8
+  [ ! -e "$d/abc123.json" ] && [ -e "$d/a_b_c.json" ] && [ -e "$d/j1.json" ] && [ -e "$d/j7.json" ]
+}
+
 test_heartbeat_names_the_rollback_target() {
   _checkout
   helper_heartbeat

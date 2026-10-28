@@ -2382,8 +2382,11 @@
       pollTimer = setTimeout(poll, 2000);
       return;
     }
-    const job = a.job;
-    const mine = Boolean(job && watching && watching.id && job.id === watching.id);   // the helper names each job after its request
+    // the helper names each job after its request; one it started right after this one (a nightly backup a change turned
+    // on inside its window) may have the status already: this one's result is then among the finished (admin.py)
+    let job = a.job;
+    if (watching && watching.id && !(job && job.id === watching.id)) job = (a.finished || []).find((j) => j && j.id === watching.id) || job;
+    const mine = Boolean(job && watching && watching.id && job.id === watching.id);
     if (watching) watching.job = mine ? job : watching.job;
     // the last step it was seen at: the one a failure is marked on (Check ✕ when it never got further)
     if (mine && STEPS.some(([p]) => p === job.phase) && job.phase !== "done") watching.step = job.phase;

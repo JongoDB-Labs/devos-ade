@@ -173,7 +173,8 @@ class Stub(http.server.BaseHTTPRequestHandler):
             if STATIC.resolve() in f.parents and f.is_file():
                 return self.send(200, f.read_bytes(), TYPES.get(f.suffix, "application/octet-stream"))
         if path == "/api/admin/status" and STUB["job"]:
-            return self.send(200, json.dumps({"running": True, "allowed": True, "job": STUB["job"], "in_progress": False}), "application/json")
+            return self.send(200, json.dumps({"running": True, "allowed": True, "job": STUB["job"], "in_progress": False,
+                                              "finished": STUB["finished"]}), "application/json")
         if path.startswith("/api/"):
             return self.send(503, json.dumps({"error": "a stub: only /api/settings answers"}), "application/json")
         return self.send(404, "not here", "text/plain")
@@ -199,11 +200,14 @@ class Stub(http.server.BaseHTTPRequestHandler):
         if path == "/api/settings/apply":
             STUB["applied"].append(body)
             STUB["job"] = {"id": "e2e-job", "action": "settings", "phase": "failed", "message": STUB["fail"]}
+            if STUB["hide"]:   # (the helper started its nightly backup right after: the change's result is among the finished)
+                STUB["finished"] = [{**STUB["job"], "finished_at": int(time.time())}]
+                STUB["job"] = {"id": "nightly-1", "action": "backup-nightly", "phase": "running", "message": "Nightly backup", "started_at": int(time.time())}
             return self.send(202, json.dumps({"id": "e2e-job", "keys": list((body.get("set") or {}).keys())}), "application/json")
         return self.send(404, json.dumps({"error": "a stub"}), "application/json")
 
 
-STUB = {"checks": [], "applied": [], "job": None,
+STUB = {"checks": [], "applied": [], "job": None, "hide": False, "finished": [],
         "fail": "OPENROUTER_API_KEY: OpenRouter rejected the key (HTTP 401) — create one at https://openrouter.ai/settings/keys — nothing was changed"}
 
 
@@ -474,6 +478,24 @@ def check_keys(page, failures, label):
                     clip=page.locator("#settings .set-row[data-key=OPENROUTER_API_KEY]").bounding_box())
     form.locator("button", has_text="Cancel").click()
     STUB["job"] = None
+    # the same refusal when the helper started another job at once after it (a nightly backup a change turned on in its
+    # window): the change's result is found among the helper's finished jobs, not lost behind the newer one's status
+    STUB["hide"] = True
+    row, form = open_key("OPENROUTER_API_KEY", "Replace key")
+    form.locator("input[type=password]").fill(good)
+    form.locator("button[type=submit]").click()
+    page.wait_for_selector("#set-confirm[open]", timeout=5000)
+    page.fill("#set-confirm-password", "the portal password")
+    page.click("#set-confirm-ok")
+    try:
+        page.wait_for_function("() => { const e = document.querySelector('#settings .set-row[data-key=OPENROUTER_API_KEY] > .set-form > .error');"
+                               " return e && !e.hidden && /Not saved: OpenRouter rejected/.test(e.textContent); }", timeout=15000)
+    except Exception:  # noqa: BLE001
+        failures.append(f"{label}: a change's result behind a newer job of the helper is never shown: {page.inner_text('#set-job')[:200]!r}")
+    form = page.locator("#settings .set-row[data-key=OPENROUTER_API_KEY] > .set-form")
+    if form.count():
+        form.locator("button", has_text="Cancel").click()
+    STUB.update(hide=False, job=None, finished=[])
     # the AWS key: Save once both halves are there; a temporary key is refused before the password
     row, form = open_key("AWS_ACCESS_KEY_ID", "Replace key")
     save = form.locator("button[type=submit]")

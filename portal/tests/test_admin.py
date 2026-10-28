@@ -550,3 +550,39 @@ def test_home_says_what_an_update_ends_and_reconnects_calmly():
     assert "job-reconnect-time" in html and "The portal is restarting as part of this — reconnecting…" in js
     assert "Reconnected: the portal was away for ${mmss(" in js
     assert "if (adminState && adminState.in_progress) { pollAdmin(); }" in js
+
+
+def test_the_helpers_finished_jobs_are_listed_newest_first_type_checked_and_bounded(dirs):
+    st, rq = dirs
+    d = st / "helper-finished"
+    d.mkdir()
+    now = int(time.time())
+    for i in range(12):
+        (d / f"j{i}.json").write_text(json.dumps({"id": f"j{i}", "action": "settings", "phase": "done", "message": f"saved {i}",
+                                                  "started_at": now - 100 + i, "updated_at": now - 100 + i, "finished_at": now - 100 + i}))
+    (d / ".hidden.json").write_text(json.dumps({"id": "hidden", "phase": "done", "finished_at": now}))      # (not a name it keeps)
+    (d / "notes.txt").write_text("x")
+    (d / "bad.json").write_text("[1, 2]")                                                                 # (not an object: skipped)
+    (d / "link.json").symlink_to(st / "helper.json")                                                     # (a symlink: never read)
+    f = admin.helper_state(st)["finished"]
+    assert [j["id"] for j in f] == [f"j{i}" for i in range(11, 3, -1)]                                    # the newest 8
+    assert all(j["origin"] == "helper" and j["phase"] == "done" for j in f)
+    (d / "j11.json").write_text(json.dumps({"id": "<script>" * 20, "action": ["x"], "phase": "done", "finished_at": now}))
+    j = admin.helper_state(st)["finished"][0]
+    assert len(j["id"]) <= 64 and j["action"] == ""
+    import shutil
+    shutil.rmtree(d)
+    assert admin.helper_state(st)["finished"] == []                                                      # (an older helper: none)
+
+
+def test_a_changes_result_is_found_after_the_helper_started_another_job(dirs, make_client):
+    st, rq = dirs
+    beat(st)
+    c = make_client()
+    now = int(time.time())
+    (st / "helper-finished").mkdir()
+    (st / "helper-finished" / "abc.json").write_text(json.dumps({"id": "abc", "action": "settings", "phase": "done", "message": "saved",
+                                                                  "finished_at": now - 1}))
+    job(st, "running", id="nightly-1", action="backup-nightly", updated_at=now)
+    s = c.get("/api/admin/status", headers=API).json()
+    assert s["job"]["id"] == "nightly-1" and [j["id"] for j in s["finished"]] == ["abc"] and s["finished"][0]["phase"] == "done"
