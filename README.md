@@ -2015,7 +2015,8 @@ reports as *no Marketplace access*, *no model access* or *access denied*, with t
 > 2. **Make sure the IAM user has these actions** on the models above:
 >    - `bedrock:InvokeModel`
 >    - `bedrock:InvokeModelWithResponseStream` (needed for streaming chat and Claude Code)
->    - optional: `bedrock:ListFoundationModels`
+>    - optional: `bedrock:ListFoundationModels` and `bedrock:ListInferenceProfiles` (read-only listings: Browse models
+>      shows the exact list of models, Claude included, only with both)
 > 3. **Rotate the long-lived access key on a short schedule**, and deliver new keys through a secrets manager or
 >    password vault rather than in documents or chat.
 >

@@ -86,7 +86,7 @@ PENDING = {"until": 0.0, "helper": True}   # helper: False, no update helper to 
 def pending_answer() -> dict:
     a = json.loads(json.dumps(ANSWER))
     br = a["providers"]["bedrock"]
-    br.update(at=None, stale=True, reading=PENDING["helper"], status=None,
+    br.update(at=None, stale=True, reading=PENDING["helper"], status=None, profiles=PENDING.get("profiles"),
               rows=[dict(r, vendor="", **{"in": None, "out": None}) for r in br["rows"] if r["builtin"]])
     return a
 
@@ -209,6 +209,15 @@ def main() -> int:
             page.wait_for_selector("#modelbrowser:not([hidden]) .mb-row", timeout=20000)
             said = page.inner_text('#modelbrowser .mb-source[data-provider="bedrock"]')
             page.screenshot(path=str(OUT / "model-browser-no-helper.png"))
+            # and a key that may not list Bedrock's inference profiles: said, with the permission that gives the exact list
+            PENDING.update(profiles="denied")
+            page.reload(wait_until="domcontentloaded")
+            page.wait_for_selector('#modelbrowser [data-testid="mb-profiles-note"]', timeout=20000)
+            note = page.inner_text('#modelbrowser [data-testid="mb-profiles-note"]')
+            page.screenshot(path=str(OUT / "model-browser-profiles-denied.png"))
+            result["shots"].append("model-browser-profiles-denied.png")
+            result["profiles_note_ok"] = "bedrock:ListInferenceProfiles" in note
+            PENDING.update(profiles=None)
             result["shots"].append("model-browser-no-helper.png")
             PENDING.update(until=0.0, helper=True)
             result["no_helper"] = said
@@ -216,7 +225,8 @@ def main() -> int:
             result["errors"] += errors
             browser.close()
         result["ok"] = (result["rows"] >= 5 and result.get("narrow_ok") and result.get("filter_ok") and result.get("first_open_ok")
-                        and result.get("no_helper_ok") and not result["errors"])
+                        and result.get("no_helper_ok") and result.get("profiles_note_ok")
+                        and not result["errors"])
     except Exception as e:  # noqa: BLE001
         result["errors"].append(f"{type(e).__name__}: {e}")
         traceback.print_exc()

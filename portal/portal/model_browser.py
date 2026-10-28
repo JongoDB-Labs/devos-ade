@@ -268,7 +268,8 @@ def explabs_rows(status_dir: Path) -> tuple[list[dict], dict]:
 
 def bedrock_rows(status_dir: Path) -> tuple[list[dict], dict]:
     """Bedrock's text models in the region (model-browser/bedrock.json: ListFoundationModels and its inference profiles,
-    with LiteLLM's own prices where it knows them). -> (rows, {at, status, why, region})"""
+    with LiteLLM's own prices where it knows them). -> (rows, {at, status, why, region, profiles: whether its profiles could
+    be listed})"""
     doc = _read(status_dir / DIR / "bedrock.json", 4 * 1024 * 1024)
     out = []
     for m in doc.get("models") or []:
@@ -286,7 +287,8 @@ def bedrock_rows(status_dir: Path) -> tuple[list[dict], dict]:
             break
     status = doc.get("status") if doc.get("status") in ("ok", "denied", "error") else None
     return out, {"at": doc.get("at") if isinstance(doc.get("at"), int) else None, "status": status,
-                 "why": _text(doc.get("why"), 300), "region": _text(doc.get("region"), 30)}
+                 "why": _text(doc.get("why"), 300), "region": _text(doc.get("region"), 30),
+                 "profiles": doc.get("profiles") if doc.get("profiles") in ("ok", "denied", "error") else None}
 
 
 async def openrouter_list(client: httpx.AsyncClient, now: float | None = None, refresh: bool = False) -> tuple[list[dict], dict]:
@@ -394,7 +396,7 @@ def browse(status_dir: Path, catalog_dir: Path, litellm_dir: Path, values: dict,
         out[prov] = {"on": bool(keys_on.get(prov)), "key": SETTING[prov], "value": value, "at": at,
                      "stale": age is None or age > MAX_AGE_S, "error": meta.get("error") or (meta.get("why") if meta.get("status") in ("denied", "error") else None),
                      "status": meta.get("status"), "rows": shown,
-                     **({"region": meta.get("region")} if prov == "bedrock" else {})}
+                     **({"region": meta.get("region"), "profiles": meta.get("profiles")} if prov == "bedrock" else {})}
     # Bedrock without a list read (or one the key may not read): the catalog's models, so the page still says what it has
     if not out["bedrock"]["rows"]:
         for bid, c in cat.items():

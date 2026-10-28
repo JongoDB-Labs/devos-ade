@@ -180,6 +180,12 @@
       }
       if (!p.on) li.append(" ", el("a", { href: `#settings/${k === "bedrock" ? "AWS_ACCESS_KEY_ID" : k === "openrouter" ? "OPENROUTER_API_KEY" : "EXPLABS_API_KEY"}`, text: "Add a key" }));
       if (p.error) li.append(el("span", { class: "mb-source-error", role: "status", text: p.error }));
+      // Bedrock's inference profiles not listed (Claude is served only through them): its models show by their usual id
+      if (k === "bedrock" && p.on && (p.profiles === "denied" || p.profiles === "error")) {
+        li.append(el("span", { class: "note", "data-testid": "mb-profiles-note", text: p.profiles === "denied"
+          ? "Your AWS key may not list inference profiles (bedrock:ListInferenceProfiles), so models called through one, Claude among them, show by their usual profile id. Allow it for the exact list: it is read-only and free."
+          : "Bedrock's inference profiles could not be read, so models called through one, Claude among them, show by their usual profile id." }));
+      }
       box.append(li);
     }
     return box;

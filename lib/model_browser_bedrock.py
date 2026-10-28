@@ -142,6 +142,10 @@ def main():
             ident, how = mid, "on-demand"
         else:
             profs = sorted(serves.get(mid) or [], key=lambda p: next((i for i, x in enumerate(prefer) if p.startswith(x)), len(prefer)))
+            if not profs and out["profiles"] != "ok" and "INFERENCE_PROFILE" in kinds:
+                # the key may not list the profiles (Claude is served only through them): the system-defined one's
+                # usual id for the region's geography, us.<model id>, as the catalog calls it; the page says so
+                profs = [prefer[0] + mid]
             if not profs:
                 continue   # (provisioned throughput only: nothing this stack can call)
             ident, how = profs[0], "profile"

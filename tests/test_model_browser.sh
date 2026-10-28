@@ -67,3 +67,51 @@ test_a_helper_folder_that_cannot_be_written_never_reads_every_loop() {
   chmod 755 "$(helper_dir)"
   assert_eq "$(_mb_reads)" 0
 }
+
+# lib/model_browser_bedrock.py against a stand-in boto3 (FAKE_PROFILES: ok or denied); prints its JSON
+_mb_reader() {
+  local f="$TMP/fakepy"; mkdir -p "$f/boto3" "$f/botocore"
+  : > "$f/botocore/__init__.py"
+  printf 'class Config:\n    def __init__(self, **k): pass\n' > "$f/botocore/config.py"
+  cat > "$f/botocore/exceptions.py" <<'PY'
+class BotoCoreError(Exception): pass
+class NoCredentialsError(BotoCoreError): pass
+class ClientError(Exception):
+    def __init__(self, code, op):
+        self.response = {"Error": {"Code": code}}
+        self.operation_name = op
+PY
+  cat > "$f/boto3/__init__.py" <<'PY'
+import os
+from botocore.exceptions import ClientError
+FMS = [{"modelId": "anthropic.claude-haiku-4-5-20251001-v1:0", "modelName": "Claude Haiku 4.5", "providerName": "Anthropic",
+        "inputModalities": ["TEXT", "IMAGE"], "outputModalities": ["TEXT"], "inferenceTypesSupported": ["INFERENCE_PROFILE"]},
+       {"modelId": "amazon.nova-pro-v1:0", "modelName": "Nova Pro", "providerName": "Amazon",
+        "inputModalities": ["TEXT"], "outputModalities": ["TEXT"], "inferenceTypesSupported": ["ON_DEMAND"]}]
+class _Bedrock:
+    def list_foundation_models(self, **k): return {"modelSummaries": FMS}
+    def list_inference_profiles(self, **k):
+        if os.environ.get("FAKE_PROFILES") == "denied":
+            raise ClientError("AccessDeniedException", "ListInferenceProfiles")
+        return {"inferenceProfileSummaries": [{"inferenceProfileId": "global.anthropic.claude-haiku-4-5-20251001-v1:0", "status": "ACTIVE",
+                "models": [{"modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0"}]}]}
+def client(name, **k): return _Bedrock()
+PY
+  PYTHONPATH="$f" python3 "$STACK_DIR/lib/model_browser_bedrock.py" us-east-1
+}
+
+test_bedrock_list_names_the_profile_a_claude_model_is_called_through() {
+  out="$(FAKE_PROFILES=ok _mb_reader)"
+  assert_contains "$out" '"profiles":"ok"'
+  assert_contains "$out" '"id":"global.anthropic.claude-haiku-4-5-20251001-v1:0"'
+  assert_contains "$out" '"id":"amazon.nova-pro-v1:0"'
+}
+
+test_a_key_that_may_not_list_profiles_still_lists_claude_by_its_usual_profile() {
+  out="$(FAKE_PROFILES=denied _mb_reader)"
+  assert_contains "$out" '"status":"ok"'
+  assert_contains "$out" '"profiles":"denied"'
+  # AWS's system-defined profile for the region's geography: us.<model id> (what the catalog calls too)
+  assert_contains "$out" '"id":"us.anthropic.claude-haiku-4-5-20251001-v1:0"'
+  assert_contains "$out" '"vendor":"Anthropic"'
+}

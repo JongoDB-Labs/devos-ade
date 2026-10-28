@@ -29,6 +29,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
     still being read says so (*reading it on this computer…*) and the page shows it by itself when it arrives,
     keeping what you are typing in the search. Without the update helper, Bedrock's built-in models show and the list
     says it is *read on this computer once the update helper runs*.
+  - **Claude is listed even when your AWS key may not list inference profiles.** Current Claude models on Bedrock
+    are served only through cross-region inference profiles. A key without `bedrock:ListInferenceProfiles` now gets
+    them by their usual profile id (`us.…`, as the built-in catalog calls them), and the page says so with the
+    permission that gives the exact list. The IAM guidance (README, `docs/cloud-vm.md`) adds it as an optional,
+    read-only permission next to `bedrock:ListFoundationModels`.
   - **Try it** says what the call was booked at — *cost $0* for a free or local model (LiteLLM leaves its cost header
     out at $0; the figure it worked out is read instead).
   - The Code page's not-granted and ended-promotion messages (JON-521) now carry a direct action: **Pick another

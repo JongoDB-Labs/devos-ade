@@ -146,6 +146,22 @@ def test_bedrock_rows_and_the_denied_path(tmp_path):
     assert rows == [] and meta["status"] == "denied" and "ListFoundationModels" in meta["why"]
 
 
+def test_a_key_that_may_not_list_profiles_is_said_with_the_list(tmp_path):
+    """Claude is served only through inference profiles: a key without bedrock:ListInferenceProfiles gets them by their
+    usual id (lib/model_browser_bedrock.py), and the answer says the ids were not listed."""
+    d = _mbdir(tmp_path)
+    (d / "bedrock.json").write_text(json.dumps({"provider": "bedrock", "status": "ok", "region": "us-east-1", "at": 2000,
+        "profiles": "denied", "models": [{"id": "us.anthropic.claude-haiku-4-5-20251001-v1:0", "model_id": "x", "name": "Claude Haiku 4.5",
+        "vendor": "Anthropic", "how": "profile", "lifecycle": "ACTIVE", "prices": None}]}), encoding="utf-8")
+    rows, meta = mb.bedrock_rows(tmp_path)
+    assert meta["profiles"] == "denied" and rows[0]["vendor"] == "Anthropic"
+    data = mb.browse(tmp_path, _catalog(tmp_path), tmp_path / "litellm", {}, {"bedrock": True}, [], {"at": None, "error": None}, [])
+    assert data["bedrock"]["profiles"] == "denied"
+    (d / "bedrock.json").write_text(json.dumps({"provider": "bedrock", "status": "ok", "region": "us-east-1", "at": 2000,
+        "profiles": "<script>", "models": []}), encoding="utf-8")
+    assert mb.bedrock_rows(tmp_path)[1]["profiles"] is None   # only ok / denied / error
+
+
 # --- the setting change that adds or removes one model ---
 
 def test_plan_experiential_labs_list():
