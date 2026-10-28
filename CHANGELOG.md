@@ -10,13 +10,14 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 - **Updating DevOS ADE now brings every core service to its newest tested release (JON-815).** The pins had lagged
   upstream because nobody bumped them; each release now does, and *Update now* (or `./stack update`) moves them:
-  LiteLLM 1.105.0 → 1.106.3, Open WebUI 0.12.0 → 0.12.4 (a security release), RustFS 1.0.1 → 1.0.3, the AWS CLI
+  LiteLLM 1.105.0 → 1.106.3, Open WebUI 0.12.0 → 0.12.3, RustFS 1.0.1 → 1.0.3, the AWS CLI
   2.37.12 → 2.38.5, SearXNG 2026.10.11 → 2026.10.24, the Node base image 24.21.0 → 24.22.1, Codex CLI 0.163.0 →
   0.164.0, gh 2.102.0 → 2.103.2, newer Starlette and certifi in the portal, shared MCP and speech-to-text images
   (`--require-hashes` locks re-made). Every image is now pinned by digest.
   - **`bin/bump-core-services` (a maintainer's tool; every release runs it).** For each pin it takes the newest stable
     upstream release at least 3 days old, so a release upstream pulls within days is never pinned; a release whose
-    notes announce security fixes skips the wait. It resolves the digest, rewrites `compose.yaml`, the Dockerfiles,
+    notes say "security fix" is only flagged for review: the wait is skipped only when a maintainer passes
+    `--allow-security <GHSA/CVE id>` and the GitHub Advisory Database confirms it for that repository. It resolves the digest, rewrites `compose.yaml`, the Dockerfiles,
     the sandbox tools' versions and checksums and the pip hash locks, and prints an old → new table with release-note
     links (`--check` only reports). [docs/releasing.md](docs/releasing.md).
   - **The update card's *What's new* lists the service moves** (*Core services: LiteLLM 1.105.0 → 1.106.3 · …*), and so

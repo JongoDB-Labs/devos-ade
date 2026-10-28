@@ -22,8 +22,14 @@ What it does, per pin:
 - **Cooldown.** The newest stable upstream release that is **at least 3 days old** (`--cooldown-days`; `--now` sets the
   clock). Fast-moving AI projects have shipped compromised or broken releases that were pulled within days; waiting
   keeps those out. Pre-releases and drafts never count. A pin never moves backwards.
-- **Security exception.** A release whose notes announce security fixes (a CVE or GHSA id, "security advisory", "security
-  fix") is taken at once, and the table says why. Words like "improved security" do not count.
+- **Security exception (explicit, never from the notes).** Release-note text never skips the cooldown: an upstream that is
+  compromised can write "security fix" in its notes. When a newer release's notes say so, the tool only reports it
+  (`!! name: REVIEW: upstream says security fix ...`) and keeps the cooldown pick. A maintainer who has read the advisory
+  re-runs with `--allow-security <GHSA-... or CVE-...>` (repeatable). The tool checks that id against the GitHub Advisory
+  Database (`gh`-style API call to `/advisories`), requires the advisory to be for that exact repository, and takes the
+  OLDEST release at or past the advisory's patched version (the smallest step that fixes it). An unknown id, an advisory
+  for another package, or a patch no release has yet is refused and nothing skips the cooldown. It never bypasses on its
+  own, interactive or not.
 - **Digests.** Every image is pinned as `name:tag@sha256:…` (the multi-arch index). A release that stays the same keeps
   its digest; base images (`python:3.12-slim`, `alpine:3.24`) keep their tag and only move their digest, once the tag's
   last push is past the cooldown.

@@ -27,15 +27,28 @@ def rel(tag, when, body="", pre=False):
             "html_url": f"https://github.com/x/y/releases/tag/{tag}"}
 
 
+def ghsa(aid, repo, patched, pkg=None):
+    return {"ghsa_id": aid, "source_code_location": "https://github.com/" + repo,
+            "vulnerabilities": [{"package": {"ecosystem": "other", "name": pkg or repo.split("/")[1]}, "first_patched_version": patched}]}
+
+
 class FakeNet:
     """Answers the three network calls from tables; any other request fails the test."""
 
-    def __init__(self, gh=None, hub=None, digests=None, hashes=None):
+    def __init__(self, gh=None, hub=None, digests=None, hashes=None, adv=None):
         self.gh, self.hub, self.digests, self.hashes = gh or {}, hub or {}, digests or {}, hashes or {}
+        self.adv = adv or {}   # advisory id -> advisory dict (GHSA) ; CVE id -> list
         self.calls = []
 
     def json(self, url):
         self.calls.append(url)
+        if "/advisories" in url:
+            if "cve_id=" in url:
+                return self.adv.get(url.split("cve_id=")[1], [])
+            key = url.rsplit("/", 1)[-1]
+            if key in self.adv:
+                return self.adv[key]
+            raise urllib.error.HTTPError(url, 404, "not found", None, None)
         for repo, rels in self.gh.items():
             if f"/repos/{repo}/releases" in url:
                 return rels if "page=1" in url else []
@@ -86,11 +99,33 @@ class PickTests(unittest.TestCase):
         c = self.cands(("2.0.0", "2026-10-24T12:00:01Z", ""), ("1.9.0", "2026-09-01T00:00:00Z", ""))
         self.assertEqual(bump.pick(c, "1.9.0", now())[0].version, "1.9.0")
 
-    def test_a_security_fix_skips_the_cooldown(self):
-        c = self.cands(("1.0.4", "2026-10-27T10:00:00Z", "This release contains security fixes. CVE-2026-1234"), ("1.0.3", "2026-10-01T00:00:00Z", ""))
+    SEC = ("1.0.4", "2026-10-27T10:00:00Z", "This release contains security fixes. CVE-2026-1234")
+
+    def test_notes_that_say_security_never_skip_the_cooldown(self):
+        c = self.cands(self.SEC, ("1.0.3", "2026-10-01T00:00:00Z", ""))
         chosen, _, why = bump.pick(c, "1.0.1", now())
-        self.assertEqual(chosen.version, "1.0.4")
-        self.assertIn("security fix", why)
+        self.assertEqual(chosen.version, "1.0.3")
+        self.assertIn("REVIEW: upstream says security fix in 1.0.4", why)
+        self.assertIn("--allow-security", why)
+        self.assertIn("held back", why)
+
+    def test_a_confirmed_advisory_skips_the_cooldown_to_the_oldest_patched_release(self):
+        c = self.cands(("1.0.5", "2026-10-27T11:00:00Z", ""), self.SEC, ("1.0.3", "2026-10-01T00:00:00Z", ""))
+        chosen, newest, why = bump.pick(c, "1.0.1", now(), patched=("1.0.4", "GHSA-aaaa-bbbb-cccc"))
+        self.assertEqual((chosen.version, newest.version), ("1.0.4", "1.0.5"))   # not the newest: the smallest step that fixes it
+        self.assertIn("security fix: GHSA-aaaa-bbbb-cccc", why)
+
+    def test_an_advisory_does_not_move_a_release_already_past_the_patch(self):
+        c = self.cands(("1.0.6", "2026-10-01T00:00:00Z", ""), ("1.0.5", "2026-09-01T00:00:00Z", ""))
+        chosen, _, why = bump.pick(c, "1.0.1", now(), patched=("1.0.4", "GHSA-aaaa-bbbb-cccc"))
+        self.assertEqual(chosen.version, "1.0.6")
+        self.assertNotIn("security fix", why)
+
+    def test_an_advisory_with_no_release_at_the_patch_changes_nothing(self):
+        c = self.cands(("1.0.3", "2026-10-01T00:00:00Z", ""))
+        chosen, _, why = bump.pick(c, "1.0.1", now(), patched=("1.0.4", "GHSA-aaaa-bbbb-cccc"))
+        self.assertEqual(chosen.version, "1.0.3")
+        self.assertIn("no release at or past it", why)
 
     def test_words_that_only_mention_security_do_not_count(self):
         c = self.cands(("1.0.4", "2026-10-27T10:00:00Z", "Various improvements to performance, stability, and security."), ("1.0.3", "2026-10-01T00:00:00Z", ""))
@@ -141,9 +176,10 @@ class ImageTargetTests(unittest.TestCase):
                   bump.E2E_TESTED: '{"open-webui": "v0.12.0-slim"}'})
         net = FakeNet(gh={"open-webui/open-webui": [rel("v0.12.4", "2026-10-25T08:00:00Z", "🛡️ **Security Advisory**: This release contains **security fixes**."),
                                                     rel("v0.12.3", "2026-10-16T08:00:00Z")]},
-                      digests={"open-webui/open-webui:v0.12.4-slim": D(9)})
+                      digests={"open-webui/open-webui:v0.12.4-slim": D(9)},
+                      adv={"GHSA-xxxx-yyyy-zzzz": ghsa("GHSA-xxxx-yyyy-zzzz", "open-webui/open-webui", "0.12.4")})
         fs = bump.Files(d)
-        m = self.target("open-webui").run(net, fs, now(), 3)
+        m = self.target("open-webui").run(net, fs, now(), 3, bump.Allow(["GHSA-xxxx-yyyy-zzzz"], net))
         fs.flush()
         self.assertEqual(m.new, "0.12.4")
         self.assertIn("security fix", m.why)
@@ -339,6 +375,76 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(bump.registry_of("caddy"), ("registry-1.docker.io", "library/caddy"))
         self.assertEqual(bump.registry_of("rustfs/rustfs"), ("registry-1.docker.io", "rustfs/rustfs"))
         self.assertEqual(bump.registry_of("ghcr.io/berriai/litellm"), ("ghcr.io", "berriai/litellm"))
+
+
+class AllowSecurityTests(unittest.TestCase):
+    """Release notes never skip the cooldown; only --allow-security with an advisory the database confirms does."""
+    PIN = "  rustfs:\n    image: rustfs/rustfs:1.0.1\n"
+
+    def setUp(self):
+        self.d = tree({"compose.yaml": self.PIN})
+
+    def net(self, adv=None):
+        return FakeNet(gh={"rustfs/rustfs": [rel("1.0.4", "2026-10-27T08:00:00Z", "Security fix: CVE-2026-9999 is patched."),
+                                             rel("1.0.3", "2026-10-17T00:00:00Z")]},
+                       digests={"rustfs/rustfs:1.0.3": D(4), "rustfs/rustfs:1.0.4": D(5)}, adv=adv)
+
+    def run_main(self, net, *args):
+        out = io.StringIO()
+        rc = bump.main(["--now", NOW, "--only", "rustfs", *args], net=net, root=self.d, out=out)
+        return rc, out.getvalue()
+
+    def test_notes_alone_are_reported_and_not_taken(self):
+        rc, out = self.run_main(self.net(), "--check")
+        self.assertIn("!! rustfs: REVIEW: upstream says security fix in 1.0.4", out)
+        self.assertIn("re-run with --allow-security", out)
+        self.assertNotIn("1.0.4@", read(self.d, "compose.yaml"))
+        rc, out = self.run_main(self.net())   # a real (non-check) run never auto-bypasses either
+        self.assertIn("rustfs/rustfs:1.0.3@" + D(4), read(self.d, "compose.yaml"))
+
+    def test_an_unknown_advisory_is_refused(self):
+        rc, out = self.run_main(self.net(), "--allow-security", "GHSA-nope-nope-nope")
+        self.assertEqual(rc, 1)
+        self.assertIn("refused: not found in the GitHub Advisory Database", out)
+        self.assertIn("rustfs/rustfs:1.0.3@" + D(4), read(self.d, "compose.yaml"))   # the cooldown pick, not 1.0.4
+
+    def test_an_advisory_of_another_package_is_refused(self):
+        net = self.net({"GHSA-aaaa-bbbb-cccc": ghsa("GHSA-aaaa-bbbb-cccc", "someone/else", "1.0.4")})
+        rc, out = self.run_main(net, "--allow-security", "GHSA-aaaa-bbbb-cccc")
+        self.assertEqual(rc, 1)
+        self.assertIn("matches no pinned core service", out)
+        self.assertNotIn("1.0.4@", read(self.d, "compose.yaml"))
+
+    def test_a_cve_with_no_record_is_refused(self):
+        rc, out = self.run_main(self.net(), "--allow-security", "CVE-2026-9999")
+        self.assertEqual(rc, 1)
+        self.assertNotIn("1.0.4@", read(self.d, "compose.yaml"))
+
+    def test_an_advisory_whose_patch_is_not_in_the_release_does_not_skip_the_cooldown(self):
+        net = self.net({"GHSA-aaaa-bbbb-cccc": ghsa("GHSA-aaaa-bbbb-cccc", "rustfs/rustfs", "1.0.9")})
+        rc, out = self.run_main(net, "--allow-security", "GHSA-aaaa-bbbb-cccc")
+        self.assertIn("no release at or past it exists yet", out)
+        self.assertNotIn("1.0.4@", read(self.d, "compose.yaml"))
+
+    def test_a_matching_advisory_allows_the_patched_release(self):
+        net = self.net({"GHSA-aaaa-bbbb-cccc": ghsa("GHSA-aaaa-bbbb-cccc", "rustfs/rustfs", "1.0.4")})
+        rc, out = self.run_main(net, "--allow-security", "GHSA-aaaa-bbbb-cccc")
+        self.assertEqual(rc, 0)
+        self.assertIn("security fix: GHSA-aaaa-bbbb-cccc is patched in 1.0.4", out)
+        self.assertIn("rustfs/rustfs:1.0.4@" + D(5), read(self.d, "compose.yaml"))
+        self.assertNotIn("REVIEW", out)
+
+    def test_a_cve_id_is_looked_up_the_same_way(self):
+        net = self.net({"CVE-2026-9999": [ghsa("GHSA-aaaa-bbbb-cccc", "rustfs/rustfs", "1.0.4")]})
+        rc, _ = self.run_main(net, "--allow-security", "CVE-2026-9999")
+        self.assertEqual(rc, 0)
+        self.assertIn("rustfs/rustfs:1.0.4@" + D(5), read(self.d, "compose.yaml"))
+
+    def test_the_flag_in_check_mode_changes_no_file(self):
+        net = self.net({"GHSA-aaaa-bbbb-cccc": ghsa("GHSA-aaaa-bbbb-cccc", "rustfs/rustfs", "1.0.4")})
+        rc, out = self.run_main(net, "--check", "--allow-security", "GHSA-aaaa-bbbb-cccc")
+        self.assertEqual(rc, 3)
+        self.assertEqual(read(self.d, "compose.yaml"), self.PIN)
 
 
 class MainTests(unittest.TestCase):

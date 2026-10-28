@@ -5,8 +5,8 @@ For maintainers, run from a checkout before each DevOS ADE release (docs/releasi
 (./stack update only pulls what a release already pins). It does not run anything of the stack.
 
 For every pin it finds the newest stable upstream release that is past a COOLDOWN (at least 3 days old, so a release
-that is pulled within days never gets pinned), unless that release is a security fix (its notes say so: it is taken at
-once). Then it resolves the image DIGEST, rewrites the pins in place and prints an old -> new table with release-note
+that is pulled within days never gets pinned), unless a maintainer names its security advisory with --allow-security (checked against the GitHub Advisory Database;
+release-note text alone never skips the cooldown, it is only reported). Then it resolves the image DIGEST, rewrites the pins in place and prints an old -> new table with release-note
 links:
 
   compose.yaml, open-webui/Dockerfile, caddy/Dockerfile      LiteLLM, Open WebUI, RustFS, Caddy, pgvector, SearXNG, aws-cli
@@ -150,29 +150,113 @@ class Candidate:
         return m.group(0) if m else ""
 
 
-def pick(cands: list[Candidate], current: str, now: dt.datetime, cooldown: int = COOLDOWN_DAYS):
-    """(chosen, newest, why) from stable releases. chosen: the newest at least COOLDOWN days old, or the newest of
-    all when it is a security fix (never older than CURRENT: no downgrade). newest: the newest of all. why: '' |
-    'security' | 'held back: newest X is Nd old' (when chosen is not newest)."""
+def pick(cands: list[Candidate], current: str, now: dt.datetime, cooldown: int = COOLDOWN_DAYS, patched=None):
+    """(chosen, newest, why) from stable releases. chosen: the newest at least COOLDOWN days old (never older than
+    CURRENT: no downgrade). Release-note text NEVER skips the cooldown (a compromised upstream can write anything in
+    its notes): a release that says "security fix" is only REPORTED ("REVIEW: ..."). The one bypass is PATCHED = (version,
+    advisory id) of an advisory the maintainer named with --allow-security and that the GitHub Advisory Database
+    confirms for this very repo: then the OLDEST release at or past the patched version is taken (the smallest step
+    that fixes it) when nothing past the cooldown is. newest: the newest of all. why: '' | 'security fix: ...' |
+    'REVIEW: ...' | 'held back: newest X is Nd old' (joined with '; ')."""
     if not cands:
         return None, None, ""
     cands = sorted(cands, key=lambda c: vkey(c.version), reverse=True)
     newest = cands[0]
-    chosen, why = None, ""
+    chosen, notes = None, []
     for c in cands:
         if vkey(c.version) < vkey(current):
-            break
-        if c.security():
-            chosen, why = c, f"security fix: \"{c.security()}\""
             break
         if age_days(c.released, now) >= cooldown:
             chosen = c
             break
+    bypassed = False
+    if patched:
+        pv, aid = patched
+        if chosen is None or vkey(chosen.version) < vkey(pv):
+            fix = [c for c in cands if vkey(c.version) >= max(vkey(pv), vkey(current))]
+            if fix:
+                chosen, bypassed = min(fix, key=lambda c: vkey(c.version)), True
+                notes.append(f"security fix: {aid} is patched in {pv}; cooldown skipped (--allow-security)")
+            else:
+                notes.append(f"{aid} is patched in {pv}, but no release at or past it exists yet")
     if chosen is None:  # nothing past the cooldown is newer than what is pinned
         chosen = next((c for c in cands if c.version == current), None) or Candidate(current, newest.released, newest.url)
-    if chosen is not None and chosen is not newest and not why:
-        why = f"held back: {newest.version} is {int(age_days(newest.released, now))}d old (cooldown {cooldown}d)"
-    return chosen, newest, why
+    if not bypassed:
+        for c in cands:   # newer than the pick, and its own notes call it a security fix
+            if vkey(c.version) > vkey(chosen.version) and c.security():
+                notes.insert(0, f"REVIEW: upstream says security fix in {c.version} (\"{c.security()}\"): review it, then re-run "
+                                f"with --allow-security <GHSA or CVE id>")
+                break
+    if chosen is not newest and not bypassed:
+        notes.append(f"held back: {newest.version} is {int(age_days(newest.released, now))}d old (cooldown {cooldown}d)")
+    return chosen, newest, "; ".join(notes)
+
+
+class Allow:
+    """The maintainer's --allow-security IDS (GHSA-... or CVE-...), each checked against the GitHub Advisory Database
+    (never the release notes): the advisory must be for the repo of the target, and gives the patched version."""
+
+    def __init__(self, ids, net):
+        self.ids, self.net = list(ids), net
+        self.advs: dict = {}       # id -> [advisory dicts] | error text
+        self.matched: dict = {}    # id -> repo it was confirmed for
+
+    def advisory(self, aid: str):
+        if aid not in self.advs:
+            try:
+                if aid.upper().startswith("GHSA-"):
+                    d = self.net.json(f"https://api.github.com/advisories/{aid}")
+                    self.advs[aid] = [d] if isinstance(d, dict) and d.get("ghsa_id") else f"not found in the GitHub Advisory Database"
+                else:
+                    d = self.net.json(f"https://api.github.com/advisories?cve_id={aid}")
+                    self.advs[aid] = [x for x in d if isinstance(x, dict)] if isinstance(d, list) and d else "not found in the GitHub Advisory Database"
+            except urllib.error.HTTPError as e:
+                self.advs[aid] = ("not found in the GitHub Advisory Database" if e.code == 404
+                                  else f"the GitHub Advisory Database answered HTTP {e.code}")
+            except (urllib.error.URLError, http.client.HTTPException, ValueError, OSError) as e:
+                self.advs[aid] = f"the GitHub Advisory Database did not answer ({type(e).__name__}: {e})"
+        return self.advs[aid]
+
+    @staticmethod
+    def _for_repo(adv: dict, repo: str) -> list:
+        """The patched versions of the advisory's vulnerabilities when it is for REPO (owner/name), else []."""
+        r = repo.lower()
+        src = (adv.get("source_code_location") or "").lower().rstrip("/")
+        vulns = adv.get("vulnerabilities") or []
+        by_src = src.endswith("github.com/" + r)
+        by_pkg = any(((v.get("package") or {}).get("name") or "").lower() in (r.split("/")[-1], "github.com/" + r)
+                     or ((v.get("package") or {}).get("name") or "").lower().startswith("github.com/" + r + "/") for v in vulns)
+        if not (by_src or by_pkg):
+            return []
+        return [v["first_patched_version"] for v in vulns if v.get("first_patched_version")]
+
+    def patched_for(self, repo: str):
+        """(patched version, id) of the lowest patched version over the ids confirmed for REPO, or None."""
+        best = None
+        for aid in self.ids:
+            advs = self.advisory(aid)
+            if isinstance(advs, str):
+                continue
+            for adv in advs:
+                for pv in self._for_repo(adv, repo):
+                    self.matched[aid] = repo
+                    if best is None or vkey(pv) < vkey(best[0]):
+                        best = (pv, aid)
+        return best
+
+    def refusals(self) -> list:
+        out = []
+        for aid in self.ids:
+            if aid in self.matched:
+                continue
+            advs = self.advisory(aid)
+            if isinstance(advs, str):
+                out.append(f"--allow-security {aid} refused: {advs}")
+            else:
+                where = ", ".join(sorted({(a.get("source_code_location") or "?") for a in advs}))
+                out.append(f"--allow-security {aid} refused: the advisory is for {where} (no patched version), "
+                           f"which matches no pinned core service")
+        return out
 
 
 # ------------------------------------------------------------------------------------------------------ sources
@@ -319,9 +403,9 @@ class ImageTarget:
                 return m.group("d")[1:]
         return None
 
-    def run(self, net, fs: Files, now, cooldown) -> Move:
+    def run(self, net, fs: Files, now, cooldown, allow=None) -> Move:
         cur = self.current(fs)
-        chosen, newest, why = pick(self.source.candidates(net), cur, now, cooldown)
+        chosen, newest, why = pick(self.source.candidates(net), cur, now, cooldown, patched_of(self.source, allow))
         if chosen is None:
             raise SystemExit(f"{self.name}: no stable release found upstream")
         v = chosen.version
@@ -359,7 +443,7 @@ class BaseTarget:
     def __init__(self, name, label, repo, tag, files):
         self.name, self.label, self.repo, self.tag, self.files = name, label, repo, tag, files
 
-    def run(self, net, fs: Files, now, cooldown) -> Move:
+    def run(self, net, fs: Files, now, cooldown, allow=None) -> Move:
         hub = HubTags(self.repo, re.escape(self.tag).join(["(", ")"]), self.tag)
         cands = [c for c in hub.candidates(net) if c.version == self.tag]
         pat = re.compile(r"(?<![\w/.\-])" + re.escape(self.repo) + ":" + re.escape(self.tag) + r"(?:" + DIGEST_RX + r")?(?![\w.\-])")
@@ -388,12 +472,12 @@ class ToolTarget:
         # assets: {"AMD64": "url template with {v}", "ARM64": "..."}
         self.name, self.label, self.source, self.prefix, self.assets, self.file = name, label, source, prefix, assets, file
 
-    def run(self, net, fs: Files, now, cooldown) -> Move:
+    def run(self, net, fs: Files, now, cooldown, allow=None) -> Move:
         s = fs.get(self.file)
         cur = arg_value(s, self.prefix + "_VERSION")
         if cur is None:
             raise SystemExit(f"{self.name}: no ARG {self.prefix}_VERSION in {self.file}")
-        chosen, newest, why = pick(self.source.candidates(net), cur, now, cooldown)
+        chosen, newest, why = pick(self.source.candidates(net), cur, now, cooldown, patched_of(self.source, allow))
         if chosen is None:
             raise SystemExit(f"{self.name}: no stable release found upstream")
         if chosen.version != cur:
@@ -439,6 +523,11 @@ class PipLock:
         ch = moved + added + gone
         return Move(self.name, f"{len(old)} pins", f"{len(old)} pins, {len(ch)} moved" if ch else f"{len(old)} pins",
                     "", "https://pypi.org/", "; ".join(ch[:12]) + (" …" if len(ch) > 12 else ""))
+
+
+def patched_of(source, allow):
+    """The (patched version, id) a --allow-security advisory confirms for the source's GitHub repo (None: no bypass)."""
+    return allow.patched_for(source.repo) if allow and isinstance(source, GithubReleases) else None
 
 
 def run_cmd(cmd, cwd):
@@ -525,12 +614,17 @@ def main(argv=None, net=None, root=None, runner=None, out=sys.stdout) -> int:
     ap.add_argument("--check", action="store_true", help="only report; change no file (exit 3 when something would move)")
     ap.add_argument("--only", help="comma list of target names")
     ap.add_argument("--now", help="the clock the cooldown counts from (ISO time; default now)")
+    ap.add_argument("--allow-security", action="append", default=[], metavar="ID",
+                    help="GHSA-... or CVE-... id of a security advisory: skips the cooldown for the oldest release that "
+                         "patches it, after the GitHub Advisory Database confirms it for that repo (repeatable). Release-note "
+                         "text alone never skips the cooldown.")
     ap.add_argument("--cooldown-days", type=int, default=COOLDOWN_DAYS)
     a = ap.parse_args(argv)
     root = root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     net = net or Net()
     now = parse_time(a.now) if a.now else dt.datetime.now(dt.timezone.utc)
     only = set(filter(None, (a.only or "").split(",")))
+    allow = Allow(a.allow_security, net) if a.allow_security else None
     fs = Files(root)
     moves: dict = {}
     errors = []
@@ -541,19 +635,26 @@ def main(argv=None, net=None, root=None, runner=None, out=sys.stdout) -> int:
             if isinstance(t, PipLock):
                 moves[t.name] = t.run(net, fs, now, a.cooldown_days, runner)
             elif t.name in HOLDS:   # looked at on a copy that is never written
-                m = t.run(net, Files(root), now, a.cooldown_days)
+                m = t.run(net, Files(root), now, a.cooldown_days, allow)
                 m.why, m.new, m.held = f"HELD ({HOLDS[t.name]}); would move to {m.new}", m.old, True
                 moves[t.name] = m
             else:
-                moves[t.name] = t.run(net, fs, now, a.cooldown_days)
+                moves[t.name] = t.run(net, fs, now, a.cooldown_days, allow)
         except (urllib.error.URLError, http.client.HTTPException, subprocess.CalledProcessError, OSError, KeyError, ValueError) as e:
             errors.append(f"{t.name}: {type(e).__name__}: {e}")
     ml = list(moves.values())
     print(table(ml), file=out)
     if not only and not errors:
         fs.put(MANIFEST, write_manifest(moves, now))
+    for m in ml:
+        if m.why.startswith("REVIEW"):
+            print(f"!! {m.name}: {m.why}", file=out)
     for e in errors:
         print("error: " + e, file=out)
+    if allow:
+        for r in allow.refusals():
+            errors.append(r)
+            print("error: " + r, file=out)
     print("not covered: " + NOT_COVERED, file=out)
     pending = [m for m in ml if m.changed]
     if a.check:
