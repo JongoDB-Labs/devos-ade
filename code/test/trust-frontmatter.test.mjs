@@ -324,7 +324,9 @@ test('stripJsonc and pluginsOf: linear in the text', () => {
   assertLinear((n) => `${'/* x */'.repeat(n)}`, stripJsonc, 'block comments');
   assertLinear((n) => `"${'\\"'.repeat(n)}`, stripJsonc, 'an open string of escapes');
   assertLinear((n) => `${'\\u0061'.repeat(n)}`, (t) => pluginsOf('a.toml', t), 'escapes in TOML');
-  assertLinear((n) => `${'['.repeat(n)}`, (t) => pluginsOf('a.json', t), 'an open nesting');
+  // (at most 64K opened, 512K at 8×: deeper, V8's own JSON.parse grows by about 2.3× a doubling — its stack outgrows
+  // the caches — and 2M at 8× sat on the 16× line; a quadratic shape still shows, 64× at these sizes)
+  assertLinear((n) => `${'['.repeat(n)}`, (t) => pluginsOf('a.json', t), 'an open nesting', { max: 1 << 16 });
 });
 
 test('Claude on your plan has its own plugin record: a plugin installed for Bedrock but not on your plan — Bedrock sessions get the project\'s settings, plan sessions start with your own, said why', async () => {
