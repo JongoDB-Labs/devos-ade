@@ -940,13 +940,17 @@ else
   cli logs-searxng-off 1 'the built-in SearXNG is off \(WEBSEARCH_SEARXNG_BUILTIN=off\): no container, no logs' logs searxng || bad="$bad logs-off"
   cli restart-searxng-off 1 'the built-in SearXNG is off \(WEBSEARCH_SEARXNG_BUILTIN=off\): no container to restart' restart searxng || bad="$bad restart-off"
   printf 'set WEBSEARCH_SEARXNG_BUILTIN %s\n' "$(printf on | openssl base64 -A)" > "$LOGS/websearch-on.in"
+  fu="$STACK/.state/config/followup.log"; fu_at="$(wc -c < "$fu" 2>/dev/null || echo 0)"
   ( clean_env; cd "$STACK" && "$NOTTY" "$STACK/stack" config apply --stdin < "$LOGS/websearch-on.in" ) > "$LOGS/websearch-on.log" 2>&1 || bad="$bad apply-on-failed"
   redact "$LOGS/websearch-on.log"
   [ "$(docker inspect -f '{{.State.Health.Status}}' "$(ws_svc searxng)" 2>/dev/null)" = healthy ] || bad="$bad not-back"
-  grep -q 'Web search for Claude Code: on — built-in SearXNG (free); checked: it answers' "$LOGS/websearch-on.log" || bad="$bad on-not-checked"
+  # (the search that checks it is the change's follow-up since JON-533: after Done, logged in .state/config/followup.log)
+  for _ in $(seq 1 60); do grep -qx websearch-check "$STACK/.state/config/followup.todo" 2>/dev/null || break; sleep 2; done
+  tail -c +"$((fu_at + 1))" "$fu" 2>/dev/null > "$LOGS/websearch-on-followup.log"; redact "$LOGS/websearch-on-followup.log"
+  grep -q 'Web search for Claude Code: on — built-in SearXNG (free); checked: it answers' "$LOGS/websearch-on-followup.log" || bad="$bad on-not-checked"
   grep -q '{"service": "searxng", "state": "running", "health": "healthy"}' "$STACK/.state/status/services.json" 2>/dev/null || bad="$bad home-record-not-back"
   if [ -z "$bad" ]; then record websearch off-and-on-again PASS "$(( $(now) - t0 ))" "off: its container removed, no search in LiteLLM's config, WebSearch off (no other backend), no row in Home's record, logs and restart say it is off; on: healthy again, one search answered, its row back"
-  else record websearch off-and-on-again FAIL "$(( $(now) - t0 ))" "unexpected:$bad (logs $LOGS/websearch-off.log, $LOGS/websearch-on.log)"; fi
+  else record websearch off-and-on-again FAIL "$(( $(now) - t0 ))" "unexpected:$bad (logs $LOGS/websearch-off.log, $LOGS/websearch-on.log, $LOGS/websearch-on-followup.log)"; fi
 fi
 
 # --- 2. read-only CLI checks ---
