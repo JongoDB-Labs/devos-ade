@@ -434,6 +434,8 @@ async def try_model(client: httpx.AsyncClient, litellm_url: str, key: str, model
     except httpx.HTTPError as e:
         return {"ok": False, "status": 0, "text": "", "cost": None, "error": f"the model gateway did not answer ({type(e).__name__})"}
     cost = _num(r.headers.get("x-litellm-response-cost"))
+    if cost is None and _num(r.headers.get("x-litellm-response-cost-original")) is not None:
+        cost = 0.0   # (LiteLLM leaves its cost header out at $0; -original says it worked a cost out)
     try:
         d = r.json()
     except ValueError:

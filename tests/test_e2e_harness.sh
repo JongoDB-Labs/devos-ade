@@ -892,7 +892,20 @@ test_e2e_failed_code_check_closes_its_sessions_so_the_next_can_open_one() {
   command -v python3 >/dev/null 2>&1 && command -v node >/dev/null 2>&1 || { echo "no python3 or node" >&2; return 77; }
   [ -d "$STACK_DIR/code/web/node_modules/ws" ] || { echo "code/web has no node_modules (npm ci there): the mock backend needs ws" >&2; return 77; }
   local port pid rc=0
-  port="$(python3 -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')" || return 1
+  # (the mock serves its preview site on PORT+100: both free, and below 65536 — an ephemeral port can be 65500)
+  port="$(python3 -I -c '
+import socket
+for _ in range(500):
+    s, t = socket.socket(), socket.socket()
+    try:
+        s.bind(("127.0.0.1", 0)); p = s.getsockname()[1]
+        if p + 100 < 65536:
+            t.bind(("127.0.0.1", p + 100)); print(p); break
+    except OSError:
+        pass
+    finally:
+        s.close(); t.close()
+')" && [ -n "$port" ] || return 1
   MOCK_QUIET=1 node "$STACK_DIR/code/web/dev/mock-server.mjs" --port "$port" --host 127.0.0.1 --fast > "$TMP/mock.log" 2>&1 &
   pid=$!
   cat > "$TMP/tidy.py" <<'PY'

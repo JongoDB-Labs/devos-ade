@@ -3,7 +3,10 @@ real key), the setting change that adds or removes one model (plan), the whole b
 and what can be done), and Try it's cost estimate. The lists come from .state/status/model-browser/ (lib/model_browser.sh
 writes them) and OpenRouter's public list; nothing here holds a key."""
 
+import asyncio
 import json
+
+import httpx
 
 from portal import model_browser as mb
 
@@ -254,6 +257,23 @@ def test_try_estimate_caps_and_flags_expensive():
     assert free["usd"] == 0.0 and free["expensive"] is False
     unknown = mb.try_estimate({"in": None, "out": None, "id": "z", "free": False})
     assert unknown["usd"] is None and unknown["expensive"] is True    # unknown price: treat as needing confirmation
+
+
+def _tried(headers: dict) -> dict:
+    body = {"choices": [{"message": {"content": "Hello there"}}]}
+    t = httpx.MockTransport(lambda req: httpx.Response(200, json=body, headers=headers))
+
+    async def go():
+        async with httpx.AsyncClient(transport=t) as c:
+            return await mb.try_model(c, "http://litellm:4000", "sk-x", "lm/tiny")
+    return asyncio.run(go())
+
+
+def test_try_says_what_litellm_booked_and_a_free_model_is_0():
+    assert _tried({"x-litellm-response-cost": "1.3e-05", "x-litellm-response-cost-original": "1.3e-05"})["cost"] == 1.3e-05
+    # LiteLLM 1.106 leaves its cost header out at $0; the -original one says a cost was worked out
+    assert _tried({"x-litellm-response-cost-original": "0.0"})["cost"] == 0.0
+    assert _tried({})["cost"] is None   # no cost worked out: unknown, never $0
 
 
 def test_missing_text_matches_the_shell_wording():
