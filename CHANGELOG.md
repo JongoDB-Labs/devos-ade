@@ -6,8 +6,6 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
-## [0.34.0] - 2026-10-28
-
 ### Added
 
 - **Local models and model servers are on Browse models, and in the Code picker (JON-816).** Browse models has a **Run
@@ -67,6 +65,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
     runner. The update helper gains two fixed-field actions (`local-pull`, `local-remove`); the portal works out a
     download's size, license and tool support itself from Hugging Face, never from the page. The embedder stays
     Bedrock-only.
+
+## [0.34.0] - 2026-10-28
+
+### Added
 
 - **Browse models: search every provider and add the ones you want (JON-520).** Settings › Models & providers now has
   **Browse models** on each provider's card (and **More models…** in the Code page's model picker): one page that
