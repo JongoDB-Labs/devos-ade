@@ -126,17 +126,18 @@ cmd_models_browse() {
   if openrouter_enabled; then printf '  OpenRouter         its public list, read by the portal\n'; fi
 }
 
-# model_browser_tick — the update helper, each loop: when the portal asked (model_browser_wanted_file) and no job runs,
-# the lists older than an hour read again, in the background, at most every MODEL_BROWSER_TICK_MIN minutes
+# model_browser_tick — the update helper, each loop: when the portal asked (model_browser_wanted_file), or no list was
+# ever read here (the first open of the page then finds them), the lists older than an hour read again, in the
+# background, at most every MODEL_BROWSER_TICK_MIN minutes. While a read runs or the stack is busy, the request waits.
 model_browser_tick() {
   local w last pid; w="$(model_browser_wanted_file)"; last="$(helper_dir)/model-browser-last"
-  [ -e "$w" ] || return 0
-  rm -f "$w"
-  ! _mb_fresh "$last" "$MODEL_BROWSER_TICK_MIN" || return 0
+  [ -e "$w" ] || [ ! -e "$last" ] || return 0
   pid="$(cat "$(helper_dir)/model-browser.pid" 2>/dev/null || true)"
   case "$pid" in '' | *[!0-9]*) ;; *) ! kill -0 "$pid" 2>/dev/null || return 0 ;; esac
   [ -z "$(stack_lock_holder)" ] || return 0
-  : > "$last"
+  rm -f "$w"
+  ! _mb_fresh "$last" "$MODEL_BROWSER_TICK_MIN" || return 0
+  date +%s > "$last"   # (not empty: _mb_fresh counts an empty file as never written)
   ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper NO_COLOR=1 "$STACK_DIR/stack" models browse ) </dev/null > "$(helper_dir)/model-browser.log" 2>&1 &
   printf '%s\n' "$!" > "$(helper_dir)/model-browser.pid"
 }

@@ -78,6 +78,19 @@ ANSWER = {
     "base": "0" * 64, "can_change": True, "why_not": "", "try": True,
 }
 
+# The first open on a new stack: Bedrock's list not read yet (the update helper reads it in the background), so the
+# answer has only the catalog's models, without a vendor; PENDING["until"] says how long the stub answers so
+PENDING = {"until": 0.0}
+
+
+def pending_answer() -> dict:
+    a = json.loads(json.dumps(ANSWER))
+    br = a["providers"]["bedrock"]
+    br.update(at=None, stale=True, reading=True, status=None,
+              rows=[dict(r, vendor="", **{"in": None, "out": None}) for r in br["rows"] if r["builtin"]])
+    return a
+
+
 APPS_META = ('<meta name="bn-apps" content="{}">\n<meta name="bn-terminal" content="{&quot;enabled&quot;: false, &quot;here&quot;: false}">\n'
              '<meta name="bn-code" content="{&quot;enabled&quot;: false, &quot;here&quot;: false}">')
 
@@ -103,7 +116,7 @@ class Stub(http.server.BaseHTTPRequestHandler):
             page = (STATIC / "index.html").read_text(encoding="utf-8")
             return self.send(200, page.replace("</head>", APPS_META + "\n</head>", 1), "text/html; charset=utf-8")
         if path == "/api/models/browse":
-            return self.send(200, json.dumps(ANSWER), "application/json")
+            return self.send(200, json.dumps(pending_answer() if time.time() < PENDING["until"] else ANSWER), "application/json")
         if path == "/api/admin/status":
             return self.send(200, json.dumps({"running": True, "allowed": True, "job": None, "in_progress": False}), "application/json")
         if path.startswith("/static/"):
@@ -161,7 +174,33 @@ def main() -> int:
                 css = [e for e in errors if "Content Security Policy" in e or "Refused to" in e]
                 result["errors"] += css
                 browser.close()
-        result["ok"] = result["rows"] >= 5 and result.get("narrow_ok") and result.get("filter_ok") and not result["errors"]
+            # the first open: the list arrives while you type in the search, and the page shows it by itself
+            browser = pw.chromium.launch()
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            errors = []
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            PENDING["until"] = time.time() + 6
+            page.goto(f"{BASE}/#modelbrowser", wait_until="domcontentloaded")
+            page.wait_for_selector("#modelbrowser:not([hidden]) .mb-row", timeout=20000)
+            first = page.inner_text('#modelbrowser .mb-source[data-provider="bedrock"]')
+            page.click("#mb-search")
+            page.keyboard.type("Nova")
+            arrived = True
+            try:
+                page.wait_for_selector("#modelbrowser .mb-row:has-text('Nova Pro')", timeout=20000)
+            except Exception:  # noqa: BLE001
+                arrived = False
+            later = page.inner_text('#modelbrowser .mb-source[data-provider="bedrock"]')
+            focus = page.evaluate("() => [document.activeElement && document.activeElement.id, document.activeElement && document.activeElement.value]")
+            page.screenshot(path=str(OUT / "model-browser-first-open.png"))
+            result["shots"].append("model-browser-first-open.png")
+            result["first_open"] = {"before": first, "after": later, "arrived": arrived, "focus": focus}
+            result["first_open_ok"] = ("reading it on this computer" in first and arrived and "read" in later
+                                       and "reading" not in later and focus == ["mb-search", "Nova"])
+            result["errors"] += errors
+            browser.close()
+        result["ok"] = (result["rows"] >= 5 and result.get("narrow_ok") and result.get("filter_ok") and result.get("first_open_ok")
+                        and not result["errors"])
     except Exception as e:  # noqa: BLE001
         result["errors"].append(f"{type(e).__name__}: {e}")
         traceback.print_exc()

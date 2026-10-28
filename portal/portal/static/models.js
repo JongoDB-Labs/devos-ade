@@ -10,7 +10,7 @@
   const COMPAT = { works: "Works with Claude Code", "chat-only": "Chat only", fails: "Fails in Claude Code", untested: "Not tested with Claude Code" };
   const PAGE = 60;   // rows drawn at a time ("Show more" adds as many)
   const MEMO = "bn.models.filters";
-  let data = null, loading = null, shown = PAGE, watching = null, timer = null, orPublic = false;
+  let data = null, loading = null, shown = PAGE, watching = null, timer = null, orPublic = false, readTimer = null, readSince = 0;
   const f = { q: "", prov: "all", cost: "any", tools: false, images: false, works: false, mine: false, maxOut: "", minCtx: "" };
   try { Object.assign(f, JSON.parse(localStorage.getItem(MEMO) || "{}"), { q: "" }); } catch (_) { /* storage blocked: fine */ }
   const keep = () => { try { localStorage.setItem(MEMO, JSON.stringify({ ...f, q: "" })); } catch (_) { /* fine */ } };
@@ -23,6 +23,48 @@
     const m = Math.round((Date.now() / 1000 - at) / 60);
     return m < 1 ? "read just now" : m < 60 ? `read ${m} min ago` : m < 1440 ? `read ${Math.round(m / 60)} h ago` : `read ${Math.round(m / 1440)} days ago`;
   };
+
+  // a list the update helper is reading (the first open, or one older than an hour): the answer is read again every
+  // 3 s for up to 3 minutes, and the page redrawn once a list arrives — not while a Try it is open, and keeping the
+  // field you are typing in, its caret and the scroll
+  const readingOf = (d) => JSON.stringify(Object.entries((d && d.providers) || {}).map(([k, p]) => [k, p.at, !!p.reading, p.error || ""]));
+  function watchReading() {
+    clearTimeout(readTimer);
+    const reading = data && data.providers && Object.values(data.providers).some((p) => p.reading);
+    if (!reading) { readSince = 0; return; }
+    if (!readSince) readSince = Date.now();
+    if (Date.now() - readSince > 180000) return;
+    readTimer = setTimeout(reread, 3000);
+  }
+  async function reread() {
+    const p = page();
+    if (!p || p.hidden || loading) return;
+    if (p.querySelector(".mb-try")) { readTimer = setTimeout(reread, 3000); return; }
+    let d;
+    try {
+      d = await api(`/api/models/browse${orPublic ? "?openrouter=public" : ""}`);
+    } catch (e) {
+      if (e.message !== "signed out") readTimer = setTimeout(reread, 3000);
+      return;
+    }
+    if (readingOf(d) !== readingOf(data) && !p.querySelector(".mb-try")) {
+      data = d;
+      redraw();
+    }
+    watchReading();
+  }
+  function redraw() {
+    const a = document.activeElement, p = page();
+    const id = a && a.id && p && p.contains(a) ? a.id : "";
+    const sel = id && typeof a.selectionStart === "number" ? [a.selectionStart, a.selectionEnd] : null;
+    const y = window.scrollY;
+    render();
+    window.scrollTo(0, y);
+    const b = id && document.getElementById(id);
+    if (!b) return;
+    b.focus({ preventScroll: true });
+    if (sel) try { b.setSelectionRange(sel[0], sel[1]); } catch (_) { /* (a field without a caret) */ }
+  }
 
   async function load(refresh = false) {
     if (loading) return loading;
@@ -42,6 +84,7 @@
         if (p) p.removeAttribute("aria-busy");
       }
       render();
+      watchReading();
     })();
     return loading;
   }
@@ -133,7 +176,7 @@
       }
       if (!p.on) li.append(" ", el("a", { href: `#settings/${k === "bedrock" ? "AWS_ACCESS_KEY_ID" : k === "openrouter" ? "OPENROUTER_API_KEY" : "EXPLABS_API_KEY"}`, text: "Add a key" }));
       if (p.error) li.append(el("span", { class: "mb-source-error", role: "status", text: p.error }));
-      if (p.on && p.stale && p.reading) li.append(el("span", { class: "note mb-reading", text: " · reading it again on this computer…" }));
+      if (p.on && p.stale && p.reading) li.append(el("span", { class: "note mb-reading", text: ` · reading it${p.at ? " again" : ""} on this computer…` }));
       box.append(li);
     }
     return box;
@@ -338,6 +381,7 @@
   }
   document.addEventListener("bn:tab", (e) => {
     if (e.detail !== "modelbrowser") return;
+    readSince = 0;
     place();
     render();
     load();

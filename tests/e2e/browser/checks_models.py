@@ -330,10 +330,17 @@ def model_browser(ctx):
     from common import origin
     page, rec = ctx.page("model-browser")
     login(page)
-    # the API: Bedrock's list is read on the computer; the page holds no key
-    d = _browse(ctx)
-    expect("bedrock" in d["providers"], f"no Bedrock provider: {list(d['providers'])}")
-    br = d["providers"]["bedrock"]
+    # the API: Bedrock's list is read on the computer (the update helper, once by itself on a new stack, or when the
+    # page asks); the page holds no key
+    t0 = time.time()
+    while True:
+        d = _browse(ctx)
+        expect("bedrock" in d["providers"], f"no Bedrock provider: {list(d['providers'])}")
+        br = d["providers"]["bedrock"]
+        if br.get("at") or br.get("error") or time.time() - t0 > 180:
+            break
+        time.sleep(3)
+    expect(br.get("at") and not br.get("error"), f"Bedrock's list was not read in {time.time() - t0:.0f} s: {br.get('error') or 'not read yet'}")
     expect(br["on"] and br["rows"], f"Bedrock off or empty: on={br['on']}, {len(br['rows'])} rows")
     claude = [r for r in br["rows"] if r["vendor"] == "Anthropic"]
     expect(claude, "no Anthropic models listed for Bedrock")

@@ -1352,19 +1352,23 @@ def ui_plan(ctx):
     need_haiku()
     page, rec = ui_page(ctx, "code-ui-plan")
     c = Code.on(page, rec, goto=False)
-    # a fresh Haiku session in Plan, created by the API so it is reliably in Plan, then the page is reloaded onto it.
+    # a fresh Haiku session in Plan, created by the API so it is reliably in Plan, then the page is opened on it.
     # The shared session (code_session, which later checks reuse) is never switched to Plan — a check that left it so
     # timed out the next check's turn (it wrote a plan file). The mode picker is covered by code-ui-queue-and-clear and
     # checks_mentions; here Plan is set at the session's creation, not by a live switch a busy full run can leave pending.
     own = c.new_session(HAIKU, "plan")
     wait_state(c, own, "model", HAIKU)
     wait_state(c, own, "mode", "plan")
-    page.evaluate("(id) => { try { const p = JSON.parse(localStorage.getItem('bn.code.v1') || '{}'); p.lastSession = id;"
-                  " localStorage.setItem('bn.code.v1', JSON.stringify(p)); } catch (e) {} }", own)
-    page.reload()
+    # opened by its link (as Home's Continue opens one): on load the page shows a session that waits for you before the
+    # one shown last, and an earlier check of a full run can leave one waiting
+    page.goto(f"{CODE}/?session={own}")
     see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
     c = Code.on(page, rec, goto=False)
-    expect(_last_session(page) == own, f"the page did not open on the plan session {own[:8]}")
+    try:
+        page.wait_for_function("(id) => (JSON.parse(localStorage.getItem('bn.code.v1') || '{}').lastSession) === id", arg=own, timeout=20000)
+    except Exception:
+        pass
+    expect(_last_session(page) == own, f"the page did not open on the plan session {own[:8]} (it shows {_last_session(page)[:8]})")
     see(page.get_by_test_id("mode-picker")).to_contain_text("Plan", timeout=20000)
     target = f"{UI}/planned-{int(time.time())}.txt"
     ask(page, f"Plan this, then do it once I approve: create the file {target} containing exactly the word planned. "
@@ -3001,8 +3005,9 @@ def home_continue(ctx):
     m = len(c.msgs())
     c.request({"type": "permission", "id": p["id"], "session": sid, "decision": "deny", "message": "not in this test"})
     c.wait(lambda x: x.get("type") == "event" and x.get("session") == sid and x["ev"]["type"] == "result", "result", 120, since=m)
+    # (the report can say "working" for a moment after the result, before it settles)
     t0, state = time.time(), "waiting"
-    while time.time() - t0 < 40 and state == "waiting":
+    while time.time() - t0 < 40 and state not in ("idle", "closed"):
         home.wait_for_timeout(2000)
         d = home.evaluate("() => fetch('/api/continue', {headers: {'X-Requested-With': 'bedrock-now'}}).then(r => r.json())")
         state = next((x["state"] for x in ((d.get("code") or {}).get("report") or {}).get("sessions", []) if x["id"] == sid), "gone")

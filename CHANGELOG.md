@@ -25,6 +25,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
     `ListFoundationModels`/`ListInferenceProfiles` through a one-off model-gateway container (read-only, free, the
     stack's AWS sign-in), Experiential Labs' with `GET /v1/models` using the key the same way the gateway is always
     called, and OpenRouter's from its public list. Each is cached (about an hour) and refreshed in the background.
+    The update helper reads them once by itself on a new or updated stack, so the first open finds them there; a list
+    still being read says so (*reading it on this computer…*) and the page shows it by itself when it arrives,
+    keeping what you are typing in the search.
+  - **Try it** says what the call was booked at — *cost $0* for a free or local model (LiteLLM leaves its cost header
+    out at $0; the figure it worked out is read instead).
   - The Code page's not-granted and ended-promotion messages (JON-521) now carry a direct action: **Pick another
     model**, and **Send again (charged)** where sending again is the way on.
 
