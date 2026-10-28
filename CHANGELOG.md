@@ -6,8 +6,6 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
-## [0.35.0] - 2026-10-28
-
 ### Added
 
 - **Right-click menus on items throughout the ADE (JON-821).** Every item with actions has one menu, opened by a
@@ -23,6 +21,33 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   or a path's folder (`/folder-terminal`, `/api/fs/terminal`), and Chat's rename, archive and delete through the portal
   (`POST /api/chats/ID/rename|archive|delete`, as the owner, rate-limited, logged). `docs/design.md` lists the menu of every
   item, page by page.
+
+### Changed
+
+- **Home and Settings no longer scroll for ever: their content is laid out as sized widgets that use the screen (JON-812).**
+  On a wide window Home now puts **Get started** and **Continue** side by side at the top, the update card under them in two
+  columns (what's new beside what happens), and then **Bedrock spend**, the services and models, the sign-ins and
+  **Claude Code in your terminal** next to each other in three columns instead of one tall stack: a first visit that took
+  about 2,400 px of scrolling now takes about 1,600 px, and a returning one about 1,600 instead of 1,900. Long lists keep
+  to a size of their own and scroll inside their card (Continue, **What's new**, the models table) and nothing is cut
+  off: everything stays one click away. The same goes for the rest:
+  - **Settings › Models & providers** shows **Keys**, **Subscriptions**, **Local models** and **Search** one at a time (they were one
+    4,700 px page); a search or a link still finds a setting in any of them.
+  - Settings sections use two or three columns when the window is wide, and **Advanced** and **About this install** show
+    their first ten values and fold the rest under **Show the rest** (a search opens it).
+  - **Browse models** is a grid of cards, as many columns as fit.
+  - On a phone Home drops what is repeated elsewhere: Recent shows four, a finished Get started step is one line, and
+    the models table scrolls inside its card.
+  - **Code page:** its page already fitted the window (the explorer, Projects, Git, Review, Ports and the chat each
+    scroll inside their own pane); the empty chat now uses a wide window: **Pick up where you left off** and
+    **Projects** are two cards of their own height beside each other under the first prompts, shown from a 720 px wide
+    chat pane and a 760 px tall window. A phone and a narrow pane look as before.
+  - The layout follows the page's own width, so opening the walkthrough (its wider sidebar) gives Home fewer columns
+    instead of squeezing three. No page scrolls sideways at any width.
+
+## [0.35.0] - 2026-10-28
+
+### Added
 
 - **Local models and model servers are on Browse models, and in the Code picker (JON-816).** Browse models has a **Run
   models yourself** card with two ways in: **Download from Hugging Face** and **Add a model server (localhost by default)**.
@@ -81,29 +106,6 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
     runner. The update helper gains two fixed-field actions (`local-pull`, `local-remove`); the portal works out a
     download's size, license and tool support itself from Hugging Face, never from the page. The embedder stays
     Bedrock-only.
-
-### Changed
-
-- **Home and Settings no longer scroll for ever: their content is laid out as sized widgets that use the screen (JON-812).**
-  On a wide window Home now puts **Get started** and **Continue** side by side at the top, the update card under them in two
-  columns (what's new beside what happens), and then **Bedrock spend**, the services and models, the sign-ins and
-  **Claude Code in your terminal** next to each other in three columns instead of one tall stack: a first visit that took
-  about 2,400 px of scrolling now takes about 1,600 px, and a returning one about 1,600 instead of 1,900. Long lists keep
-  to a size of their own and scroll inside their card (Continue, **What's new**, the models table) and nothing is cut
-  off: everything stays one click away. The same goes for the rest:
-  - **Settings › Models & providers** shows **Keys**, **Subscriptions**, **Local models** and **Search** one at a time (they were one
-    4,700 px page); a search or a link still finds a setting in any of them.
-  - Settings sections use two or three columns when the window is wide, and **Advanced** and **About this install** show
-    their first ten values and fold the rest under **Show the rest** (a search opens it).
-  - **Browse models** is a grid of cards, as many columns as fit.
-  - On a phone Home drops what is repeated elsewhere: Recent shows four, a finished Get started step is one line, and
-    the models table scrolls inside its card.
-  - **Code page:** its page already fitted the window (the explorer, Projects, Git, Review, Ports and the chat each
-    scroll inside their own pane); the empty chat now uses a wide window: **Pick up where you left off** and
-    **Projects** are two cards of their own height beside each other under the first prompts, shown from a 720 px wide
-    chat pane and a 760 px tall window. A phone and a narrow pane look as before.
-  - The layout follows the page's own width, so opening the walkthrough (its wider sidebar) gives Home fewer columns
-    instead of squeezing three. No page scrolls sideways at any width.
 
 ## [0.34.0] - 2026-10-28
 
