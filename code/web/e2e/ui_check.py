@@ -1010,6 +1010,28 @@ def layout(browser):
     p.close()
 
 
+@check("empty chat as widgets (JON-812): wide pane shows Pick up / Projects cards that scroll inside themselves, the page fits the viewport, a phone shows none")
+def welcome_widgets(browser):
+    post(NORMAL + "/__mock/reset")
+    for w, h, mob in ((1440, 900, False), (2560, 1440, False), (390, 844, True)):
+        p = Page(browser, NORMAL, f"widgets-{w}", viewport={"width": w, "height": h}, is_mobile=mob, has_touch=mob, color_scheme="light")
+        page = p.open()
+        assert page.evaluate("document.documentElement.scrollHeight <= innerHeight"), f"the page is taller than the window at {w}"
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), f"horizontal overflow at {w}"
+        if mob:
+            expect(page.get_by_test_id("welcome-widgets")).to_be_hidden()
+        else:
+            expect(page.get_by_test_id("welcome-recent")).to_be_visible()
+            # the chat list does not scroll for them: the cards keep to their own height
+            assert page.evaluate("(() => { const m = document.querySelector('.messages'); return m.scrollHeight <= m.clientHeight + 1; })()"), f"the chat pane scrolls for the widgets at {w}"
+            assert page.evaluate("(() => { const c = document.querySelector('[data-testid=welcome-recent]'); return c.getBoundingClientRect().height <= 260; })()"), "a card is not sized"
+            if w == 1440:
+                page.get_by_test_id("welcome-recent").locator("button").first.click()
+                expect(page.get_by_test_id("welcome-widgets")).to_be_hidden(timeout=10_000)
+        p.assert_clean()
+        p.close()
+
+
 @check("tablet (1024×768): chat + editor, terminal drawer")
 def tablet(browser):
     post(NORMAL + "/__mock/reset")

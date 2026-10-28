@@ -5,8 +5,8 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Item, Queued, SessionView } from '../session';
 import { shownCost, turnCosts } from '../spend';
-import { duration, money, tokens } from '../text';
-import { forkFrom, loadEarlier, openGitDialog, rewindCancel, rewindConfirm, rewindPreview, sendPrompt, showGit, store, currentProject, openProjectDialog, openModelMenu } from '../app';
+import { ago, duration, label, money, tokens } from '../text';
+import { forkFrom, loadEarlier, openGitDialog, rewindCancel, rewindConfirm, rewindPreview, sendPrompt, showGit, store, currentProject, openProjectDialog, openModelMenu, resumeSession, setProject } from '../app';
 import { useSel } from '../store';
 import { MarkdownView } from './MarkdownView';
 import { ToolCard } from './ToolCard';
@@ -261,6 +261,51 @@ function gitDialog(d: 'clone' | 'hosts'): void {
   openGitDialog(d);
 }
 
+/** The empty chat's two widgets, shown when the pane is wide: the sessions you can pick up and the projects, each a
+ *  card of its own size that scrolls inside itself (CSS: .welcome-widgets). */
+function WelcomeWidgets() {
+  const sessions = useSel(store, (s) => s.sessions);
+  const projects = useSel(store, (s) => s.projects);
+  const views = useSel(store, (s) => s.views);
+  const recent = [...sessions].filter((x) => !views[x.id]).sort((a, b) => b.modified - a.modified);
+  const shown = projects.filter((p) => !p.gone);
+  if (!recent.length && shown.length < 2) return null;
+  return (
+    <div class="welcome-widgets" data-testid="welcome-widgets">
+      {recent.length > 0 && (
+        <section class="wcard" data-testid="welcome-recent">
+          <h3>Pick up where you left off</h3>
+          <ul class="wlist">
+            {recent.slice(0, 30).map((x) => (
+              <li key={x.id}>
+                <button type="button" onClick={() => void resumeSession(x.id)}>
+                  <span class="wl-title">{label(x.title || x.firstPrompt, 200) || 'Untitled session'}</span>
+                  <span class="wl-sub">{[ago(x.modified), x.branch].filter(Boolean).join(' · ')}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {shown.length > 1 && (
+        <section class="wcard" data-testid="welcome-projects">
+          <h3>Projects</h3>
+          <ul class="wlist">
+            {shown.map((p) => (
+              <li key={p.id}>
+                <button type="button" onClick={() => setProject(p.id)}>
+                  <span class="wl-title">{label(p.name, 120)}</span>
+                  <span class="wl-sub">{p.path}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
+  );
+}
+
 function Welcome() {
   const ideas = ['Explain how this project is organised', 'Find and fix a failing test', 'Add a README section about setup', '/init'];
   const hosts = useSel(store, (s) => s.git.hosts);
@@ -299,6 +344,7 @@ function Welcome() {
           ? 'Project settings in /workspace/.claude (including hooks) apply here as they do in the terminal.'
           : `This project's own Claude Code configuration (${project.path}/.claude, .mcp.json) applies only once you trust it: ⋯ › Claude Code settings…`}
       </p>
+      <WelcomeWidgets />
     </div>
   );
 }
