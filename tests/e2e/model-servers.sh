@@ -27,7 +27,9 @@ trap cleanup EXIT; cleanup; mkdir -p "$WORK/litellm" "$WORK/state" "$OUT"; chmod
 LIMG="$(sed -n 's/^    image: \(ghcr.io\/berriai\/litellm:[^ ]*\)$/\1/p' "$ROOT/compose.yaml" | head -n 1)"
 KEYV="e2e-key-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
 docker run -d --name "$FK" --label "$LABEL" -e FAKE_KEY="$KEYV" -v "$HERE/fake-openai.py:/fake.py:ro" --entrypoint python3 "$LIMG" /fake.py >/dev/null || { fail "the fake server did not start"; exit 1; }
-IP="$(docker inspect -f '{{.NetworkSettings.IPAddress}}' "$FK")"
+# (the address on its network: Docker 29 dropped the old top-level .NetworkSettings.IPAddress)
+IP="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "$FK" | awk '{ print $1 }')"
+[ -n "$IP" ] || { fail "the fake server has no address on Docker's network"; exit 1; }
 STACK_DIR="$ROOT"; ENV_FILE="$WORK/.env"; STATE_DIR="$WORK/state"; : > "$ENV_FILE"; export STACK_DIR ENV_FILE STATE_DIR
 # shellcheck source=/dev/null
 . "$ROOT/lib/common.sh"; . "$ROOT/lib/ports.sh"; . "$ROOT/lib/portal.sh"; . "$ROOT/lib/models.sh"; . "$ROOT/lib/commands.sh"
