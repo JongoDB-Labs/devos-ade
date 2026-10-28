@@ -160,25 +160,48 @@ local_mlx_uninstall() {
   rm -rf "$d/venv" "$d/server.log"
   if [ "${1:-}" = --models ]; then rm -rf "$d/hf" "$d"; fi
 }
-# the repo check before a download: config.json's model_file/auto_map and any .py file refuse it (stdout: why, or nothing)
+# the repo check before a download: config.json's model_file/auto_map and any .py file refuse it. Prints ONE line: "sha <40 hex>"
+# (the commit that was checked: the download is pinned to it, so a push after the check is never fetched) or "no <why>".
 _local_mlx_vet() {  # _local_mlx_vet REPO  (HF_TOKEN in the environment)
   local d; d="$(local_mlx_dir)"
   HF_HOME="$d/hf" HF_HUB_DISABLE_TELEMETRY=1 "$d/venv/bin/python" -I -c '
 import json, sys
 from huggingface_hub import HfApi, hf_hub_download
 repo = sys.argv[1]
-files = [s.rfilename for s in HfApi().model_info(repo, files_metadata=False).siblings]
+info = HfApi().model_info(repo, files_metadata=False)
+sha = info.sha
+files = [s.rfilename for s in info.siblings]
 py = [f for f in files if f.endswith(".py")]
-if py: print("it ships Python files (%s): running them is how this kind of model runs code on your computer" % ", ".join(py[:3])); sys.exit(0)
-if "config.json" not in files: print("it has no config.json: not an MLX model"); sys.exit(0)
-cfg = json.load(open(hf_hub_download(repo, "config.json")))
+if py: print("no it ships Python files (%s): running them is how this kind of model runs code on your computer" % ", ".join(py[:3])); sys.exit(0)
+if "config.json" not in files: print("no it has no config.json: not an MLX model"); sys.exit(0)
+cfg = json.load(open(hf_hub_download(repo, "config.json", revision=sha)))
 bad = [k for k in ("model_file", "auto_map") if k in cfg]
-if bad: print("its config.json asks to run custom code (%s)" % ", ".join(bad))
+if bad: print("no its config.json asks to run custom code (%s)" % ", ".join(bad)); sys.exit(0)
+print("sha " + sha)
 ' "$1" 2>&1 | tail -n 1 | cut -c1-300
+}
+# _local_mlx_recheck REPO SHA -> why the DOWNLOADED snapshot may not be used (nothing: it is fine). The same config.json
+# rule, on the files on disk, so what is served is what was checked, whatever the Hub answered at download time.
+_local_mlx_recheck() {
+  local snap; snap="$(local_mlx_repo_dir "$1")/snapshots/$2"
+  [[ $2 =~ ^[0-9a-f]{40}$ ]] || { printf 'the vetted revision is not a commit\n'; return 0; }
+  [ -d "$snap" ] || { printf 'the download is not the revision that was checked (%s)\n' "${2:0:12}"; return 0; }
+  python3 -I -c '
+import json, os, sys
+snap = sys.argv[1]
+py = [f for _, _, fs in os.walk(snap) for f in fs if f.endswith(".py")]
+if py: print("the download contains Python files (%s)" % ", ".join(py[:3])); sys.exit(0)
+cfg = os.path.join(snap, "config.json")
+if not os.path.isfile(cfg): print("the download has no config.json"); sys.exit(0)
+try: c = json.load(open(cfg))
+except Exception: print("its config.json could not be read"); sys.exit(0)
+bad = [k for k in ("model_file", "auto_map") if k in c]
+if bad: print("its config.json asks to run custom code (%s)" % ", ".join(bad))
+' "$snap" 2>/dev/null | head -n 1 | cut -c1-300 || true
 }
 # _local_pull_mlx REPO BYTES TOOLS CTX PM LIC — install (once), vet, download, serve, register
 _local_pull_mlx() {
-  local repo="$1" bytes="$2" tools="$3" ctx="$4" pm="$5" lic="$6" quant=mlx d logf pid why done_b rc=0 id
+  local repo="$1" bytes="$2" tools="$3" ctx="$4" pm="$5" lic="$6" quant=mlx d logf pid why done_b rc=0 id sha=''
   d="$(local_mlx_dir)"
   if [ ! -x "$d/venv/bin/mlx_lm.server" ]; then
     _local_job pulling "$repo" "$quant" 0 "$bytes" "Setting up MLX (one time, about a minute): mlx-lm into this stack's own Python environment"
@@ -186,13 +209,15 @@ _local_pull_mlx() {
   fi
   _local_job pulling "$repo" "$quant" 0 "$bytes" "Checking $repo is safe to run (no custom code)"
   why="$(HF_TOKEN="$(get_env HF_TOKEN)" _local_mlx_vet "$repo")"
+  case "$why" in "sha "*) sha="${why#sha }"; why='' ;; "no "*) why="${why#no }" ;; *) why="${why:-the check gave no answer}" ;; esac
+  [ -n "$why" ] || [[ $sha =~ ^[0-9a-f]{40}$ ]] || why="the check did not give a revision to download"
   if [ -n "$why" ]; then
     local rd; rd="$(local_mlx_repo_dir "$repo")"; rm -rf -- "$rd"
     _local_job failed "$repo" "$quant" 0 "$bytes" "Not downloaded: $why. DevOS ADE never runs a model's own code."
     die "refused: $why"
   fi
   logf="$(local_dir)/pull.log"; : > "$logf"; chmod 600 "$logf"
-  ( HF_HOME="$d/hf" HF_HUB_DISABLE_TELEMETRY=1 HF_TOKEN="$(get_env HF_TOKEN)" "$d/venv/bin/hf" download "$repo" --exclude '*.py' ) </dev/null > "$logf" 2>&1 &
+  ( HF_HOME="$d/hf" HF_HUB_DISABLE_TELEMETRY=1 HF_TOKEN="$(get_env HF_TOKEN)" "$d/venv/bin/hf" download "$repo" --revision "$sha" --exclude '*.py' ) </dev/null > "$logf" 2>&1 &
   pid=$!
   while kill -0 "$pid" 2>/dev/null; do
     done_b="$({ du -sk "$(local_mlx_repo_dir "$repo")" 2>/dev/null || true; } | awk '{ print $1 * 1024 }')"
@@ -205,12 +230,18 @@ _local_pull_mlx() {
     _local_job failed "$repo" "$quant" 0 "$bytes" "The download failed ($(tail -n 2 "$logf" | LC_ALL=C tr -cd ' -~\n' | tr '\n' ' ' | cut -c1-200)). A gated model needs a Hugging Face token (Settings › Models & providers) and its license accepted on huggingface.co."
     die "the download failed"
   fi
+  why="$(_local_mlx_recheck "$repo" "$sha")"
+  if [ -n "$why" ]; then
+    local rd; rd="$(local_mlx_repo_dir "$repo")"; rm -rf -- "$rd"
+    _local_job failed "$repo" "$quant" 0 "$bytes" "Deleted, not registered: after the download, $why. DevOS ADE never runs a model's own code."
+    die "refused after the download: $why"
+  fi
   [ "$bytes" -gt 0 ] 2>/dev/null || bytes="$({ du -sk "$(local_mlx_repo_dir "$repo")" 2>/dev/null || true; } | awk '{ print $1 * 1024 }')"
   _local_job registering "$repo" "$quant" "$bytes" "$bytes" "Starting the MLX server and registering the model (a few seconds)"
   local_mlx_up || { _local_job failed "$repo" "$quant" "$bytes" "$bytes" "Downloaded, but the MLX server did not start: see $(local_mlx_dir)/server.log"; die "mlx server did not start"; }
   id="$repo"
   valid_local_entry "mlx:$id" || { _local_job failed "$repo" "$quant" 0 "$bytes" "The model name is one this stack cannot serve."; die "unusable model id"; }
-  local_registry_put mlx "$id" "$repo" "$quant" "$bytes" "$lic" "$([ "$tools" = yes ] && echo 1 || { [ "$tools" = no ] && echo 0 || echo -; })" "$ctx" "$pm"
+  local_registry_put mlx "$id" "$repo" "$quant" "$bytes" "$lic" "$([ "$tools" = yes ] && echo 1 || { [ "$tools" = no ] && echo 0 || echo -; })" "$ctx" "$pm" "$sha"
   local_register_apply add "mlx:$id" || { _local_job failed "$repo" "$quant" "$bytes" "$bytes" "Downloaded, but the model gateway did not take it: ./stack local-models status"; die "registration failed"; }
   _local_job done "$repo" "$quant" "$bytes" "$bytes" "Ready: $(local_model_name "mlx:$id") is in Chat, the Code page and the terminal (the first answer waits while it loads)"
   rm -f "$(local_dir)/job.pid"
@@ -247,7 +278,7 @@ valid_msrv_list() {
   while IFS= read -r e; do e="$(printf '%s' "$e" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"; valid_msrv_entry "$e" || return 1; n=$((n + 1)); done < <(printf '%s\n' "$v" | tr ',' '\n')
   [ "$n" -le 8 ]
 }
-valid_msrv_keys() { [ -z "$1" ] && return 0; ! printf '%s' "$1" | tr ',' '\n' | grep -qvE '^[a-z0-9][a-z0-9-]{0,23}=[A-Za-z0-9._~+/=-]{1,200}$'; }
+valid_msrv_keys() { [ -z "$1" ] && return 0; ! printf '%s' "$1" | tr ',' '\n' | grep -qvE '^[a-z0-9][a-z0-9-]{0,23}=([0-9a-f]{16}:)?[A-Za-z0-9._~+/=-]{1,200}$'; }
 valid_msrv_models() { [ -z "$1" ] || ! printf '%s' "$1" | tr ',' '\n' | grep -qvE '^[a-z0-9][a-z0-9-]{0,23}:(\*|[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127})$'; }
 
 # msrv_norm_url URL -> the stored form (scheme://host[:port][/path], no /v1, no trailing slash), or fails: userinfo, query and
@@ -271,7 +302,37 @@ msrv_rows() {   # name TAB url TAB trust(1|0)
 }
 msrv_url() { msrv_rows | awk -F'\t' -v n="$1" '$1 == n && !d++ { print $2 }'; }
 msrv_trust() { msrv_rows | awk -F'\t' -v n="$1" '$1 == n && !d++ { print $3 }'; }
-msrv_key() { _msrv_items MODEL_SERVER_KEYS | awk -F= -v n="$1" '$1 == n && !d++ { print substr($0, length(n) + 2) }'; }
+# --- a key is bound to the address it was saved for: MODEL_SERVER_KEYS is name=<16 hex>:<key>, the hex being the first 16
+# characters of sha256("<stored address>[;trust]"). Whatever changes MODEL_SERVERS (the form, ./stack config set, the
+# portal's generic row, a hand-edited .env) the key stops matching and msrv_key returns nothing: it is sent only to the exact
+# address (and trust setting) it was saved for. A key from before this binding (name=key, no hex) cannot be tied to the address it was
+# typed for, so it is NOT used: it is ignored and reported ("enter it again"), never silently bound to whatever the
+# address is today. (A colon is not in the key alphabet, so the separator is unambiguous.)
+_msrv_hash() {   # _msrv_hash URL TRUST(1|0)
+  local v="$1"; [ "${2:-0}" != 1 ] || v="$v;trust"
+  if command -v shasum >/dev/null 2>&1; then printf '%s' "$v" | shasum -a 256 | cut -c1-16; else printf '%s' "$v" | sha256sum | cut -c1-16; fi
+}
+# _msrv_key_raw NAME -> the stored value for NAME (hex:key, or a bare old-format key)
+_msrv_key_raw() { _msrv_items MODEL_SERVER_KEYS | awk -F= -v n="$1" '$1 == n && !d++ { print substr($0, length(n) + 2) }'; }
+# msrv_key_state NAME -> none (no key) | ok | moved (the address changed since) | old (saved before keys were tied to an address)
+msrv_key_state() {
+  local raw u tr_; raw="$(_msrv_key_raw "$1")"
+  [ -n "$raw" ] || { printf 'none\n'; return 0; }
+  [[ $raw =~ ^[0-9a-f]{16}:. ]] || { printf 'old\n'; return 0; }
+  u="$(msrv_url "$1")"; tr_="$(msrv_trust "$1")"
+  if [ -n "$u" ] && [ "${raw%%:*}" = "$(_msrv_hash "$u" "$tr_")" ]; then printf 'ok\n'; else printf 'moved\n'; fi
+}
+# msrv_key NAME -> the key, only when it is bound to this server's current address; nothing otherwise
+msrv_key() { [ "$(msrv_key_state "$1")" = ok ] || return 0; _msrv_key_raw "$1" | cut -d: -f2-; }
+# msrv_key_note NAME -> why a stored key is not used (nothing when there is none or it is in use)
+msrv_key_note() {
+  case "$(msrv_key_state "$1")" in
+    moved) printf 'key cleared: the address changed\n' ;;
+    old) printf 'key not used: it was saved before keys were tied to an address; enter it again\n' ;;
+  esac
+}
+# _msrv_bound NAME URL TRUST KEY -> the MODEL_SERVER_KEYS entry for it
+_msrv_bound() { printf '%s=%s:%s' "$1" "$(_msrv_hash "$2" "$3")" "$4"; }
 # msrv_gateway_url NAME -> the base the gateway container uses: localhost, 127.x, ::1 and 0.0.0.0 are THIS computer (the
 # container's own loopback is not), reached as host.docker.internal
 msrv_gateway_url() {
@@ -299,12 +360,20 @@ msrv_reached_as() {
   esac
 }
 # msrv_warn URL -> a plain-http warning for a public address (private ranges, localhost and *.local/ts.net are fine)
-msrv_warn() {
+msrv_warn() {   # msrv_warn URL [TRUST(1|0) [CHECKED_ADDRESS]]
   case "$1" in
-    https://*) return 0 ;;
+    https://*) [ "${2:-0}" = 1 ] && [ -n "${3:-}" ] && ! _msrv_private "$3" && printf 'Self-signed certificate trusted on a public address: it cannot be told apart from an impostor. Prefer a CA-signed certificate.\n'
+               return 0 ;;
     http://localhost* | http://127.* | http://\[::1\]* | http://10.* | http://192.168.* | http://172.1[6-9].* | http://172.2[0-9].* | http://172.3[01].* | http://100.* | http://*.local* | http://*.ts.net* | http://*.internal* | http://host.docker.internal*) return 0 ;;
   esac
   printf 'This is plain http to a public address: prompts and answers travel unencrypted. Use https if the server has it.\n'
+}
+# _msrv_private ADDR -> 0 for a loopback or private address (ADDR in msrv_target's standard form)
+_msrv_private() {
+  case "$1" in
+    127.* | ::1 | ::ffff:127.* | 10.* | 192.168.* | 172.1[6-9].* | 172.2[0-9].* | 172.3[01].* | 100.6[4-9].* | 100.[7-9][0-9].* | 100.1[01][0-9].* | 100.12[0-7].* | ::ffff:10.* | ::ffff:192.168.* | fc* | fd*) return 0 ;;
+  esac
+  return 1
 }
 # _msrv_classify CURL_RC HTTP -> the reason in words for the first thing that failed
 _msrv_classify() {
@@ -392,9 +461,10 @@ msrv_enabled() {
   done | awk -F'\t' '!s[$1 "/" $2]++' | head -n "$LOCAL_MODELS_MAX"
 }
 msrv_yaml() {
-  local n id ctx key base
+  local n id ctx key base note
   while IFS=$'\t' read -r n id ctx; do
     base="$(msrv_gateway_url "$n")" || continue; key="$(msrv_key "$n")"
+    [ -n "$key" ] || { note="$(msrv_key_note "$n")"; [ -z "$note" ] || warn "model server $n: $note" >&2; }
     printf '  - model_name: "ms/%s/%s"\n    litellm_params:\n      model: "openai/%s"\n      api_base: "%s"\n      api_key: "%s"\n%s      timeout: 600\n      input_cost_per_token: 0\n      output_cost_per_token: 0\n    model_info:\n      mode: "chat"\n' \
       "$n" "$id" "$id" "$base" "${key:-none}" "$([ "$(msrv_trust "$n")" = 1 ] && printf '      ssl_verify: false\n')"
   done < <(msrv_enabled)
@@ -412,7 +482,7 @@ msrv_code_rows() {
 # msrv_set_list KEY NEW — one settings change (live in LiteLLM)
 msrv_put() { CFG_ORDER=''; cfg_put "$1" "$2"; config_apply local cli ''; }
 msrv_add() {  # msrv_add NAME URL [--trust] — the key (if any) is given with ./stack local-models server key NAME
-  local n="${1:-}" u="${2:-}" trust="${3:-}" cur new ne r
+  local n="${1:-}" u="${2:-}" trust="${3:-}" cur new ne r w
   valid_msrv_name "$n" || die "the name is lowercase letters, digits and - (at most 24)"
   u="$(msrv_norm_url "$u")" || die "that is not a server address: use http(s)://host[:port] (no user:password@, no query)"
   [ -z "$(msrv_url "$n")" ] || die "there is already a server named $n (./stack local-models server rm $n first)"
@@ -421,7 +491,7 @@ msrv_add() {  # msrv_add NAME URL [--trust] — the key (if any) is given with .
   valid_msrv_list "$new" || die "too many servers (8 at most) or an unusable address"
   r="$(msrv_target "$u")"
   case "$r" in blocked* | numeric*) die "refused: ${r#*$'\t'}" ;; esac
-  [ -z "$(msrv_warn "$u")" ] || warn "$(msrv_warn "$u")"
+  w="$(msrv_warn "$u" "$([ "$trust" = --trust ] && echo 1 || echo 0)" "$(printf '%s' "$r" | cut -f2)")"; [ -z "$w" ] || warn "$w"
   CFG_ORDER=''; cfg_put MODEL_SERVERS "$new"; config_apply local cli ''
   log "added $n ($(msrv_reached_as "$n")); probing"
   msrv_probe_all; local_status_write
@@ -459,7 +529,7 @@ msrv_store_key() {
   local n="$1" k="$2" new='' e
   [[ $k =~ ^[A-Za-z0-9._~+/=-]{1,200}$ ]] || [ -z "$k" ] || die "that does not look like an API key"
   while IFS= read -r e; do [ -n "$e" ] && [ "${e%%=*}" != "$n" ] && new="${new:+$new,}$e"; done < <(_msrv_items MODEL_SERVER_KEYS)
-  [ -z "$k" ] || new="${new:+$new,}$n=$k"
+  [ -z "$k" ] || new="${new:+$new,}$(_msrv_bound "$n" "$(msrv_url "$n")" "$(msrv_trust "$n")" "$k")"
   CFG_ORDER=''; cfg_put MODEL_SERVER_KEYS "$new"; msrv_probe_all; config_apply local cli ''; local_status_write
   log "key for $n $([ -n "$k" ] && echo stored || echo removed)"
   return 0
@@ -501,10 +571,10 @@ msrv_apply() {
     probe | probe-local)
       u="$(msrv_norm_url "$url")" || { rmdir "$lockd"; msrv_result "$ref" probe "$name" false "that is not a server address: use http(s)://host[:port] (no user:password@, no query)"; return 0; }
       # (a stored key goes only to that server's own saved address: never to a new address typed under its name)
-      if [ "$op" = probe ] && [ -z "$k" ] && [ -n "$name" ] && [ "$u" = "$(msrv_url "$name")" ]; then k="$(msrv_key "$name")"; fi
+      if [ "$op" = probe ] && [ -z "$k" ] && [ -n "$name" ] && [ "$u" = "$(msrv_url "$name")" ] && [ "$tr_" = "$(msrv_trust "$name")" ]; then k="$(msrv_key "$name")"; fi
       # (probe-local: the helper's password-free Check server — this computer's addresses only)
       r="$(msrv_probe_url "$u" "$k" "$tr_" "$([ "$op" = probe-local ] && echo loopback)")"; IFS=$'\t' read -r st detail addr <<< "$r"
-      msrv_result "$ref" probe "$name" true "" "$st" "$detail" "$(msrv_warn "$u")" "" "$([ -n "$k" ] && echo true || echo false)" "$([ "$tr_" = 1 ] && echo true || echo false)" "$u" ;;
+      msrv_result "$ref" probe "$name" true "" "$st" "$detail" "$(msrv_warn "$u" "$tr_" "$addr")" "" "$([ -n "$k" ] && echo true || echo false)" "$([ "$tr_" = 1 ] && echo true || echo false)" "$u" ;;
     *)
       out="$( ( msrv_apply_op "$op" "$name" "$url" "$tr_" "$k" "$models" ) 2>&1 )" || rc=$?
       msg="$(printf '%s\n' "$out" | tail -n 1 | sed -e 's/^xx  //' -e 's/^[[:space:]]*//')"
@@ -515,7 +585,7 @@ msrv_apply() {
 }
 # msrv_apply_op OP NAME URL TRUST(1|0) KEY MODELS — run in a subshell by msrv_apply (a die ends only it)
 msrv_apply_op() {
-  local op="$1" n="$2" url="$3" tr_="$4" k="$5" models="$6" u ne cur new old e r st detail addr keys
+  local op="$1" n="$2" url="$3" tr_="$4" k="$5" models="$6" u ne cur new old e r st detail addr keys keyout=''
   case "$op" in
     save)     # a new server, or (the name is taken) a changed address for one: its key then goes unless a new one comes with it
       valid_msrv_name "$n" || die "the name is lowercase letters, digits and - (at most 24)"
@@ -527,8 +597,9 @@ msrv_apply_op() {
       else cur="$(get_env MODEL_SERVERS)"; new="${cur:+$cur,}$ne"; fi
       valid_msrv_list "$new" || die "too many servers (8 at most) or an unusable address"
       keys=''; while IFS= read -r e; do [ -n "$e" ] && [ "${e%%=*}" != "$n" ] && keys="${keys:+$keys,}$e"; done < <(_msrv_items MODEL_SERVER_KEYS)
-      if [ -n "$k" ]; then keys="${keys:+$keys,}$n=$k"                                    # (a key sent with the request is the only one used)
-      elif [ -n "$old" ] && [ "$u" = "$old" ]; then k="$(msrv_key "$n")"; [ -z "$k" ] || keys="${keys:+$keys,}$n=$k"   # (the same address: its key stays)
+      if [ -n "$k" ]; then keys="${keys:+$keys,}$(_msrv_bound "$n" "$u" "$tr_" "$k")"      # (a key sent with the request is the only one used)
+      elif [ -n "$old" ] && [ "$u" = "$old" ]; then k="$(msrv_key "$n")"; [ -z "$k" ] || keys="${keys:+$keys,}$(_msrv_bound "$n" "$u" "$tr_" "$k")"   # (the same address: its key stays, bound again)
+      elif [ -n "$(_msrv_key_raw "$n")" ]; then keyout='; key cleared: the address changed'; warn "key for $n cleared: the address changed"
       fi                                                                                   # (a changed address without a key: none)
       r="$(msrv_probe_url "$u" "$k" "$tr_")"; IFS=$'\t' read -r st detail addr <<< "$r"
       case "$st" in blocked | numeric | dns) die "refused: $detail" ;; esac
@@ -539,7 +610,7 @@ msrv_apply_op() {
       CFG_ORDER=''; cfg_put MODEL_SERVERS "$new"; cfg_put MODEL_SERVER_KEYS "$keys"
       cfg_put MODEL_SERVER_MODELS "$(_msrv_models_for "$n" "$models")"
       config_apply local cli ''
-      msrv_probe_all; log "saved $n: $st" ;;
+      msrv_probe_all; log "saved $n: $st$keyout" ;;
     models)
       [ -n "$(msrv_url "$n")" ] || die "no server named $n"
       new="$(_msrv_models_for "$n" "$models")"; valid_msrv_models "$new" || die "unusable model list"
@@ -603,14 +674,14 @@ local_gpu() {
 }
 
 # --- the registry: what ./stack downloaded ---
-# a row: runtime id repo quant bytes license tools context params_m added   (TAB; "-" = unknown)
+# a row: runtime id repo quant bytes license tools context params_m added revision   (TAB; "-" = unknown)
 _local_clean() { printf '%s' "$1" | LC_ALL=C tr -cd 'A-Za-z0-9._:/+-' | cut -c1-"${2:-128}"; }
 local_registry_rows() { [ -r "$(local_registry)" ] && grep -v '^#' "$(local_registry)" || true; }
-local_registry_put() { # local_registry_put RUNTIME ID REPO QUANT BYTES LICENSE TOOLS CTX PARAMS_M
+local_registry_put() { # local_registry_put RUNTIME ID REPO QUANT BYTES LICENSE TOOLS CTX PARAMS_M [REVISION]
   local f tmp; f="$(local_registry)"; mkdir -p "$(local_dir)" && chmod 700 "$(local_dir)" 2>/dev/null || true
   tmp="$(mktemp "$f.XXXXXX")" || return 1
   { local_registry_rows | awk -F'\t' -v r="$1" -v i="$2" '!($1 == r && $2 == i)'
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8" "$9" "$(date +%s)"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8" "$9" "$(date +%s)" "${10:--}"
   } > "$tmp" && chmod 600 "$tmp" && mv "$tmp" "$f"
 }
 local_registry_drop() { # local_registry_drop RUNTIME ID
@@ -730,7 +801,7 @@ local_status_write() {
   declare -a seen_ids=()
   while IFS= read -r row; do
     [ -n "$row" ] || continue
-    IFS=$'\t' read -r r id repo quant bytes lic tools ctx pm added <<< "$row"
+    IFS=$'\t' read -r r id repo quant bytes lic tools ctx pm added rev <<< "$row"
     present=true
     if [ "${_LOCAL_FAST:-0}" != 1 ] && { { [ "$r" = dmr ] && [ "$d" = ready ]; } || { [ "$r" = ollama ] && [ "$o" = ready ]; } || [ "$r" = mlx ]; }; then
       ids="$(local_runner_ids "$r" || true)"
@@ -738,13 +809,13 @@ local_status_write() {
     fi
     case "$bytes" in '' | *[!0-9]*) bytes=0 ;; esac
     total=$((total + bytes))
-    inst="$inst$sep{\"runtime\":$(_local_q "$r" 20),\"id\":$(_local_q "$id"),\"name\":$(_local_q "$(local_model_name "$r:$id")"),\"repo\":$(_local_q "$repo" 200),\"quant\":$(_local_q "$quant" 64),\"bytes\":$bytes,\"license\":$(_local_q "$lic" 60),\"tools\":$(_local_q "$tools" 4),\"context\":$(_local_q "$ctx" 12),\"params_m\":$(_local_q "$pm" 12),\"present\":$present,\"registered\":$(local_models_wanted | grep -qxF "$r:$id" && echo true || echo false),\"added\":$(_local_q "${added:-0}" 12)}"
+    inst="$inst$sep{\"runtime\":$(_local_q "$r" 20),\"id\":$(_local_q "$id"),\"name\":$(_local_q "$(local_model_name "$r:$id")"),\"repo\":$(_local_q "$repo" 200),\"quant\":$(_local_q "$quant" 64),\"bytes\":$bytes,\"license\":$(_local_q "$lic" 60),\"tools\":$(_local_q "$tools" 4),\"context\":$(_local_q "$ctx" 12),\"params_m\":$(_local_q "$pm" 12),\"present\":$present,\"registered\":$(local_models_wanted | grep -qxF "$r:$id" && echo true || echo false),\"added\":$(_local_q "${added:-0}" 12),\"revision\":$(_local_q "$([[ ${rev:-} =~ ^[0-9a-f]{40}$ ]] && echo "$rev")" 40)}"
     sep=','
   done < <(local_registry_rows)
   local sv='' ssep='' n u tr_ st
   while IFS=$'\t' read -r n u tr_; do
     [ -n "$n" ] || continue; st="$(msrv_status_of "$n")"
-    sv="$sv$ssep{\"name\":$(_local_q "$n" 24),\"url\":$(_local_q "$u" 200),\"reached_as\":$(_local_q "$(msrv_reached_as "$n")" 240),\"trust\":$([ "$tr_" = 1 ] && echo true || echo false),\"key\":$([ -n "$(msrv_key "$n")" ] && echo true || echo false),\"status\":$(_local_q "${st%%$'\t'*}" 8),\"detail\":$(_local_q "${st#*$'\t'}" 2000),\"warning\":$(_local_q "$(msrv_warn "$u")" 200),\"enabled\":$(_local_q "$(_msrv_items MODEL_SERVER_MODELS | awk -F: -v n="$n" '$1 == n { sub(/^[^:]*:/, ""); printf "%s%s", s, $0; s = ";" }')" 1500)}"
+    sv="$sv$ssep{\"name\":$(_local_q "$n" 24),\"url\":$(_local_q "$u" 200),\"reached_as\":$(_local_q "$(msrv_reached_as "$n")" 240),\"trust\":$([ "$tr_" = 1 ] && echo true || echo false),\"key\":$([ -n "$(msrv_key "$n")" ] && echo true || echo false),\"status\":$(_local_q "${st%%$'\t'*}" 8),\"detail\":$(_local_q "${st#*$'\t'}" 2000),\"warning\":$(_local_q "$(msrv_warn "$u" "$tr_" "$(msrv_addr_of "$n")")" 200),\"key_note\":$(_local_q "$(msrv_key_note "$n")" 120),\"enabled\":$(_local_q "$(_msrv_items MODEL_SERVER_MODELS | awk -F: -v n="$n" '$1 == n { sub(/^[^:]*:/, ""); printf "%s%s", s, $0; s = ";" }')" 1500)}"
     ssep=','
   done < <(msrv_rows)
   printf '{"at":%s,"runtime":{"kind":"%s","dmr":"%s","ollama":"%s","mlx":"%s","how":%s,"command":"./stack local-models enable"},"gpu":%s,"memory_bytes":%s,"disk_bytes":%s,"installed":[%s],"servers":[%s],"result":%s,"job":%s}\n' \

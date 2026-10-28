@@ -624,7 +624,7 @@ helper_run_diag() {
 # at a time (./stack local-models says so itself too); its progress is .state/status/local-models.json.
 local_helper_start() {
   local action="$1" f="$2" nonce="$3" repo quant bytes tools ctx pm lic logf
-  if [ "$action" = local-server ] || [ "$action" = local-probe ]; then local_server_start "$f"; return 0; fi
+  if [ "$action" = local-server ] || [ "$action" = local-probe ]; then _kind_count server-jobs "$action"; local_server_start "$f"; return 0; fi
   IFS='|' read -r repo quant bytes tools ctx pm lic <<< "$f"
   _kind_count local-jobs "$action"
   if local_job_running; then _refuse_diag "a download is already running (Settings › Models & providers › Local models shows it)" "$nonce"; return 0; fi

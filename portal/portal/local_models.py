@@ -320,7 +320,8 @@ def read_status(status_dir: Path, now: float | None = None) -> dict:
                           "name": _text(i.get("name"), 160), "repo": i["repo"], "quant": i["quant"], "bytes": _int(i.get("bytes")) or 0,
                           "license": _text(i.get("license"), 40) if LICENSE.fullmatch(_text(i.get("license"), 40) or "-") else "",
                           "tools": {"1": "yes", "0": "no"}.get(str(i.get("tools")), "unknown"),
-                          "present": i.get("present") is not False, "registered": i.get("registered") is True})
+                          "present": i.get("present") is not False, "registered": i.get("registered") is True,
+                          "revision": i.get("revision") if re.fullmatch(r"[0-9a-f]{40}", i.get("revision") or "") else ""})
     servers = []
     for s in (d.get("servers") if isinstance(d.get("servers"), list) else [])[:8]:
         if not isinstance(s, dict) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,23}", s.get("name") or ""):
@@ -336,7 +337,7 @@ def read_status(status_dir: Path, now: float | None = None) -> dict:
         servers.append({"name": s["name"], "url": _text(s.get("url"), 200), "reached_as": _text(s.get("reached_as"), 240),
                         "trust": s.get("trust") is True, "key": s.get("key") is True, "up": up,
                         "reason": "" if up else _text(s.get("detail"), 300), "warning": _text(s.get("warning"), 200),
-                        "models": models, "all": "*" in en, "enabled": [x for x in en if x != "*"][:200]})
+                        "key_note": _text(s.get("key_note"), 120), "models": models, "all": "*" in en, "enabled": [x for x in en if x != "*"][:200]})
     return {"known": at is not None, "at": at, "servers": servers, "result": clean_result(d.get("result")), "stale": at is None or now - at > MAX_AGE_S,
             "runtime": {"kind": kind, "how": _text(rt.get("how"), 400), "command": "./stack local-models enable",
                         "dmr": _text(rt.get("dmr"), 20), "ollama": _text(rt.get("ollama"), 20)},

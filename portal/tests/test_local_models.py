@@ -579,7 +579,8 @@ def test_the_form_answer_is_read_from_the_status_matched_by_its_ref_and_has_no_k
                    "detail": "qwen/Qwen3-8B|32768;llama3:8b|0;<b>x</b>|0", "warning": "This is plain http to a public address: x", "reached_as": "",
                    "key": True, "trust": False, "url": "http://203.0.113.9:8000", "at": int(time.time()), "api_key": KEY, "authorization": KEY}
     d["servers"] = [{"name": "lab", "url": "http://10.0.0.5:8000", "reached_as": "http://10.0.0.5:8000/v1", "trust": False, "key": True, "status": "ok",
-                     "detail": "a|0;b|4096", "warning": "", "enabled": "a", "api_key": KEY}]
+                     "detail": "a|0;b|4096", "warning": "", "enabled": "a", "api_key": KEY,
+                     "key_note": "key cleared: the address changed"}]
     (sd / "local-models.json").write_text(json.dumps(d))
     r = c.get("/api/local-models", headers=API)
     assert r.status_code == 200
@@ -589,6 +590,7 @@ def test_the_form_answer_is_read_from_the_status_matched_by_its_ref_and_has_no_k
     assert res["models"][0]["context"] == 32768 and "plain http" in res["warning"]
     assert KEY not in r.text and "api_key" not in r.text and "authorization" not in r.text   # no field a key could ride in
     srv = r.json()["servers"][0]
+    assert srv["key_note"] == "key cleared: the address changed"
     assert srv["key"] is True and srv["enabled"] == ["a"] and [m["id"] for m in srv["models"]] == ["a", "b"]
     # a failed probe says its class and reason; junk is dropped
     d["result"] = {"ref": "fedcba9876543210", "op": "probe", "ok": True, "status": "dns", "detail": "its name does not resolve", "url": "http://x"}

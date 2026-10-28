@@ -94,7 +94,7 @@
         el("p", { class: "lm-name" }, el("b", { text: i.repo }), ` ${i.quant} `, badge("Local", "on"), badge("$0"),
           i.present ? "" : badge("missing from the runtime", "warn", "The runtime no longer lists it: remove it here, or download it again."),
           i.registered ? "" : badge("not served", "warn")),
-        el("p", { class: "note", text: `${size(i.bytes)} · ${i.license || "license unknown"} · ${RUNTIME[i.runtime] || ""}` })), rm));
+        el("p", { class: "note", text: `${size(i.bytes)} · ${i.license || "license unknown"} · ${RUNTIME[i.runtime] || ""}${i.revision ? ` · revision ${i.revision.slice(0, 12)}` : ""}` })), rm));
     }
     return list;
   }
@@ -197,7 +197,7 @@
       srv.picked = new Set(r.models.map((m) => m.id));     // (all on by default)
       srv.note = r.ok ? "" : (r.message || "That did not work.");
     } else if (r.ok) {
-      if (w.op === "save") srv = { ...srv, url: "", name: "", key: "", trust: false, probe: null, picked: null, note: `Added ${w.name}.` };
+      if (w.op === "save") srv = { ...srv, url: "", name: "", key: "", trust: false, probe: null, picked: null, note: `Added ${w.name}.${/key cleared: the address changed/.test(r.message || "") ? " Key cleared: the address changed." : ""}` };
       else if (w.op === "remove") srv.note = `Removed ${w.name}.`;
       else if (w.op === "key") { srv.keyFor = null; srv.keyText = ""; srv.note = `Key for ${w.name} updated.`; }
       else { delete srv.staged[w.name]; srv.note = `Models on ${w.name} updated.`; }
@@ -304,6 +304,7 @@
       s.key ? badge("key set") : "", s.trust ? badge("self-signed trusted", "warn") : "");
     const main = el("div", { class: "lm-item-main" }, head, el("p", { class: "note", text: `${s.url}${s.reached_as && !s.reached_as.startsWith("http") ? ` · ${s.reached_as}` : ""}` }));
     if (s.warning) main.append(el("p", { class: "lm-warn warn", text: s.warning }));
+    if (s.key_note) main.append(el("p", { class: "lm-warn warn", text: s.key_note }));
     if (!s.up) main.append(el("p", { class: "lm-warn warn", text: `Unavailable: ${s.reason || "no answer"}` }));
     if (s.up || s.enabled.length) {
       const ul = el("ul", { class: "lm-models", "data-server": s.name });

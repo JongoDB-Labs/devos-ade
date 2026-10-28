@@ -371,7 +371,8 @@ test_the_stack_command_is_in_help() {
 }
 
 # --- MLX (Apple silicon's primary runtime): a fake uv, launchctl and venv; nothing real runs ---
-_fake_mlx() {   # _fake_mlx [vet-reason]
+SHA_A="$(printf 'a%.0s' $(seq 40))"; SHA_B="$(printf 'b%.0s' $(seq 40))"   # (two commits of the same repo)
+_fake_mlx() {   # _fake_mlx — VET_REASON / VET_SHA (set before) say what the vet answers; FAKE_DL_SHA / FAKE_CFG what the download writes
   local b; unset LOCAL_MLX; export LOCAL_MLX=force; mkdir -p "$TMP/home"; HOME="$TMP/home"; export HOME
   uname() { case "$1" in -s) echo Darwin ;; -m) echo arm64 ;; *) command uname "$@" ;; esac; }
   command() { if [ "$1" = -v ] && [ "$2" = uv ]; then return 0; fi; builtin command "$@"; }
@@ -380,8 +381,17 @@ _fake_mlx() {   # _fake_mlx [vet-reason]
     case "$1" in
       venv) local d; for d in "$@"; do :; done; mkdir -p "$d/bin"
         printf '#!/bin/sh\nexit 0\n' > "$d/bin/mlx_lm.server"
-        printf '#!/bin/sh\n[ -z "%s" ] || echo "%s"\n' "$VET_REASON" "$VET_REASON" > "$d/bin/python"
-        printf '#!/bin/sh\nmkdir -p "$HF_HOME/hub/models--mlx-community--Tiny-4bit/blobs"; head -c 2000000 /dev/zero > "$HF_HOME/hub/models--mlx-community--Tiny-4bit/blobs/w"; echo "$HF_TOKEN" > "$HF_HOME/token-seen"; case "$*" in *"--exclude *.py"*) echo excluded > "$HF_HOME/excl";; esac\n' > "$d/bin/hf"
+        # the vet prints "sha <commit>" or "no <why>"; the fake hf writes the snapshot of $FAKE_DL_SHA (default: the revision it was asked for)
+        printf '#!/bin/sh\nif [ -n "%s" ]; then echo "no %s"; else echo "sha %s"; fi\n' "$VET_REASON" "$VET_REASON" "${VET_SHA:-$SHA_A}" > "$d/bin/python"
+        cat > "$d/bin/hf" <<'EOS'
+#!/bin/sh
+rev=''; prev=''; for a in "$@"; do [ "$prev" = --revision ] && rev="$a"; prev="$a"; done
+mkdir -p "$HF_HOME"; echo "$*" > "$HF_HOME/hf-args"; echo "$HF_TOKEN" > "$HF_HOME/token-seen"
+case "$*" in *"--exclude *.py"*) echo excluded > "$HF_HOME/excl";; esac
+sha="${FAKE_DL_SHA:-$rev}"; r="$HF_HOME/hub/models--mlx-community--Tiny-4bit"
+mkdir -p "$r/blobs" "$r/snapshots/$sha"; head -c 2000000 /dev/zero > "$r/blobs/w"
+if [ -n "$FAKE_CFG" ]; then printf '%s' "$FAKE_CFG" > "$r/snapshots/$sha/config.json"; else printf '{"model_type":"llama"}' > "$r/snapshots/$sha/config.json"; fi
+EOS
         chmod +x "$d/bin/"*; return 0 ;;
       pip) grep -q -- "--require-hashes" <<< "$*" && echo hashes > "$TMP/uv-pip" ; return 0 ;;
     esac
@@ -405,6 +415,9 @@ test_mlx_is_the_runtime_on_apple_silicon_and_a_pull_installs_vets_downloads_serv
   assert_not_contains "$(cat "$HOME/Library/LaunchAgents/"dev.devos.ade.mlx.*.plist)" "$TOKEN_FAKE"   # the token never reaches the server
   assert_contains "$(cat "$HOME/Library/LaunchAgents/"dev.devos.ade.mlx.*.plist)" "HF_HUB_OFFLINE"
   assert_eq "$(cat "$STATE_DIR/mlx/hf/excl")" excluded                   # no .py file is ever fetched
+  assert_contains "$(cat "$STATE_DIR/mlx/hf/hf-args")" "--revision $SHA_A"   # the download is pinned to the commit that was vetted
+  assert_contains "$(local_registry_rows)" "$SHA_A"                         # and the registry keeps it
+  local_status_write; assert_contains "$(cat "$(local_status_file)")" "\"revision\":\"$SHA_A\""
   assert_eq "$(local_models_yaml | grep -c 'openai/mlx-community/Tiny-4bit')" 1
   assert_contains "$(local_models_yaml)" 'api_base: "http://host.docker.internal:18765/v1"'
   assert_contains "$(local_models_yaml)" 'input_cost_per_token: 0'
@@ -492,9 +505,9 @@ test_a_probe_lists_what_a_server_serves_with_its_context_and_says_each_failure_e
 }
 
 test_a_servers_key_goes_to_curl_on_stdin_and_never_in_an_argument_or_the_status_file_and_trust_is_per_server() {
-  _lm_env 'MODEL_SERVERS=lab=http://10.0.0.5:8000,self=https://nas.lan:8443;trust
-MODEL_SERVER_KEYS=lab=secretkey123456
-'
+  _lm_env "MODEL_SERVERS=lab=http://10.0.0.5:8000,self=https://nas.lan:8443;trust
+MODEL_SERVER_KEYS=lab=$(_msrv_hash http://10.0.0.5:8000 0):secretkey123456
+"
   _fake_srv 0 200 "$VLLM"
   msrv_probe lab >/dev/null; msrv_probe self >/dev/null
   assert_not_contains "$(cat "$TMP/curl.args")" secretkey123456
@@ -506,10 +519,10 @@ MODEL_SERVER_KEYS=lab=secretkey123456
 }
 
 test_enabled_models_are_registered_at_zero_namespaced_per_server_and_an_unreachable_one_is_marked() {
-  _lm_env 'MODEL_SERVERS=lab=http://10.0.0.5:8000,mac=http://localhost:8080
+  _lm_env "MODEL_SERVERS=lab=http://10.0.0.5:8000,mac=http://localhost:8080
 MODEL_SERVER_MODELS=lab:*,mac:phi
-MODEL_SERVER_KEYS=lab=secretkey123456
-'
+MODEL_SERVER_KEYS=lab=$(_msrv_hash http://10.0.0.5:8000 0):secretkey123456
+"
   _fake_srv 0 200 "$VLLM"
   msrv_probe_all
   local y; y="$(local_models_yaml)"
@@ -534,7 +547,7 @@ test_adding_enabling_and_removing_a_server_apply_live_and_a_removal_takes_its_mo
   assert_eq "$(get_env MODEL_SERVER_MODELS)" "lab:llama3:8b"
   assert_contains "$(local_models_yaml)" 'model_name: "ms/lab/llama3:8b"'
   printf 'abcdef123456\n' | msrv_set_key lab >/dev/null 2>&1
-  assert_eq "$(get_env MODEL_SERVER_KEYS)" "lab=abcdef123456"
+  assert_eq "$(get_env MODEL_SERVER_KEYS)" "lab=$(_msrv_hash http://10.0.0.5:8000 0):abcdef123456"
   msrv_rm lab >/dev/null 2>&1
   assert_eq "$(get_env MODEL_SERVERS)" ""; assert_eq "$(get_env MODEL_SERVER_MODELS)" ""; assert_eq "$(get_env MODEL_SERVER_KEYS)" ""
   assert_eq "$(local_models_yaml)" ""
@@ -626,9 +639,9 @@ MODEL_SERVER_MODELS=lab:*
 }
 
 test_probe_errors_never_echo_what_a_server_sent_and_the_key_stays_out_of_every_output() {
-  _lm_env 'MODEL_SERVERS=lab=http://10.0.0.5:8000
-MODEL_SERVER_KEYS=lab=secretkey123456
-'
+  _lm_env "MODEL_SERVERS=lab=http://10.0.0.5:8000
+MODEL_SERVER_KEYS=lab=$(_msrv_hash http://10.0.0.5:8000 0):secretkey123456
+"
   local out
   _fake_srv 0 500 'TOPSECRET-BODY {"error":"internal path /etc/shadow"}'
   out="$(msrv_probe lab 2>&1)"; assert_not_contains "$out" TOPSECRET; assert_not_contains "$out" shadow; assert_contains "$out" "HTTP 500"
@@ -679,7 +692,7 @@ test_the_form_save_registers_the_ticked_models_live_with_the_key_and_a_blocked_o
   _apply save lab http://10.0.0.5:8000 false secretkey123456 'llama3:8b'
   assert_contains "$(_result)" '"ok":true'
   assert_eq "$(get_env MODEL_SERVERS)" "lab=http://10.0.0.5:8000"
-  assert_eq "$(get_env MODEL_SERVER_KEYS)" "lab=secretkey123456"
+  assert_eq "$(get_env MODEL_SERVER_KEYS)" "lab=$(_msrv_hash http://10.0.0.5:8000 0):secretkey123456"
   assert_eq "$(get_env MODEL_SERVER_MODELS)" "lab:llama3:8b"
   assert_contains "$(local_models_yaml)" 'model_name: "ms/lab/llama3:8b"'
   assert_not_contains "$(local_models_yaml)" 'qwen/Qwen3-8B'                # (only what was ticked)
@@ -698,7 +711,7 @@ test_the_form_changes_models_and_key_and_removes_a_server_and_its_models_and_key
   assert_contains "$(local_models_yaml)" 'model_name: "ms/lab/qwen/Qwen3-8B"'
   _apply models lab '' false '' ''; assert_eq "$(get_env MODEL_SERVER_MODELS)" ""   # (none on)
   _apply models lab '' false '' '*'; assert_eq "$(get_env MODEL_SERVER_MODELS)" "lab:*"
-  _apply key lab '' false newkey7654321 '';  assert_eq "$(get_env MODEL_SERVER_KEYS)" "lab=newkey7654321"
+  _apply key lab '' false newkey7654321 '';  assert_eq "$(get_env MODEL_SERVER_KEYS)" "lab=$(_msrv_hash https://nas.lan:8443 1):newkey7654321"
   _apply key lab '' false '' '';  assert_eq "$(get_env MODEL_SERVER_KEYS)" ""
   _apply models nope '' false '' '*'; assert_contains "$(_result)" "no server named nope"
   _apply remove lab '' false '' ''
@@ -710,7 +723,7 @@ test_the_form_changes_models_and_key_and_removes_a_server_and_its_models_and_key
 test_a_stored_key_goes_only_to_its_own_saved_address_and_a_changed_address_drops_it() {
   _lm_env ''; _fake_srv 0 200 "$VLLM"
   _apply save lab http://10.0.0.5:8000 false oldkey123456789 'llama3:8b'
-  assert_eq "$(get_env MODEL_SERVER_KEYS)" "lab=oldkey123456789"
+  assert_eq "$(get_env MODEL_SERVER_KEYS)" "lab=$(_msrv_hash http://10.0.0.5:8000 0):oldkey123456789"
   # probing the saved address (under the server's name, no key typed) reuses the stored key
   : > "$TMP/curl.stdin"; _apply probe lab http://10.0.0.5:8000 false '' ''
   assert_contains "$(cat "$TMP/curl.stdin")" "Authorization: Bearer oldkey123456789"
@@ -725,7 +738,7 @@ test_a_stored_key_goes_only_to_its_own_saved_address_and_a_changed_address_drops
   assert_contains "$(cat "$TMP/curl.stdin")" "Bearer typedkey123456"; assert_not_contains "$(cat "$TMP/curl.stdin")" oldkey123456789
   # saving the same address keeps its key; saving a changed address without a key clears it (and sends it nowhere)
   _apply save lab http://10.0.0.5:8000 false '' 'llama3:8b'
-  assert_eq "$(get_env MODEL_SERVER_KEYS)" "lab=oldkey123456789"
+  assert_eq "$(get_env MODEL_SERVER_KEYS)" "lab=$(_msrv_hash http://10.0.0.5:8000 0):oldkey123456789"
   : > "$TMP/curl.stdin"; : > "$TMP/curl.args"
   _apply save lab http://10.0.0.99:8000 false '' 'llama3:8b'
   assert_eq "$(get_env MODEL_SERVERS)" "lab=http://10.0.0.99:8000"
@@ -734,6 +747,138 @@ test_a_stored_key_goes_only_to_its_own_saved_address_and_a_changed_address_drops
   assert_contains "$(local_models_yaml)" 'api_base: "http://10.0.0.99:8000/v1"'
   # saving a changed address with a new key keeps the new one
   _apply save lab http://10.0.0.77:8000 false newkey987654321 'llama3:8b'
-  assert_eq "$(get_env MODEL_SERVER_KEYS)" "lab=newkey987654321"
+  assert_eq "$(get_env MODEL_SERVER_KEYS)" "lab=$(_msrv_hash http://10.0.0.77:8000 0):newkey987654321"
   assert_not_contains "$(_result) $(cat "$(local_status_file)")" newkey987654321
+}
+
+# --- the download is the revision that was vetted, and what landed on disk is checked again before it is served ---
+test_a_download_is_pinned_to_the_vetted_commit_and_a_different_one_at_download_time_is_refused() {
+  _lm_env; _fake_apply; VET_REASON=''; VET_SHA="$SHA_A"; unset FAKE_CFG; export FAKE_DL_SHA="$SHA_B"; _fake_mlx
+  launchctl() { echo "$*" >> "$TMP/launchctl.log"; MLX_UP=1; return 0; }
+  # the Hub answers another commit than the one that was checked (a push in between, or anything else): refused, not served
+  ! ( local_pull mlx-community/Tiny-4bit mlx --bytes 2000000 ) >/dev/null 2>&1
+  assert_contains "$(cat "$STATE_DIR/mlx/hf/hf-args")" "--revision $SHA_A"
+  assert_contains "$(cat "$(local_job_file)")" '"state":"failed"'
+  assert_contains "$(cat "$(local_job_file)")" "not the revision that was checked"
+  [ ! -d "$STATE_DIR/mlx/hf/hub/models--mlx-community--Tiny-4bit" ]
+  assert_eq "$(get_env LOCAL_MODELS)" ""; assert_eq "$(local_registry_rows)" ""
+  # a vet that gives no commit at all downloads nothing
+  unset FAKE_DL_SHA; rm -f "$STATE_DIR/mlx/hf/hf-args"
+  printf '#!/bin/sh\necho garbage\n' > "$STATE_DIR/mlx/venv/bin/python"; chmod +x "$STATE_DIR/mlx/venv/bin/python"
+  ! ( local_pull mlx-community/Tiny-4bit mlx --bytes 2000000 ) >/dev/null 2>&1
+  [ ! -e "$STATE_DIR/mlx/hf/hf-args" ]
+  assert_eq "$(get_env LOCAL_MODELS)" ""
+}
+test_a_config_that_fails_the_check_after_the_download_is_deleted_and_never_registered() {
+  _lm_env; _fake_apply; VET_REASON=''; VET_SHA="$SHA_A"; unset FAKE_DL_SHA; export FAKE_CFG='{"model_type":"llama","auto_map":{"AutoModel":"x.Y"}}'; _fake_mlx
+  launchctl() { echo "$*" >> "$TMP/launchctl.log"; MLX_UP=1; return 0; }
+  ! ( local_pull mlx-community/Tiny-4bit mlx --bytes 2000000 ) >/dev/null 2>&1
+  assert_contains "$(cat "$(local_job_file)")" "Deleted, not registered"
+  assert_contains "$(cat "$(local_job_file)")" "custom code (auto_map)"
+  [ ! -d "$STATE_DIR/mlx/hf/hub/models--mlx-community--Tiny-4bit" ]
+  assert_eq "$(get_env LOCAL_MODELS)" ""; assert_eq "$(local_registry_rows)" ""
+  [ ! -e "$TMP/launchctl.log" ] || assert_not_contains "$(cat "$TMP/launchctl.log")" bootstrap   # (never served)
+  export FAKE_CFG='{"model_file":"x.py"}'
+  ! ( local_pull mlx-community/Tiny-4bit mlx --bytes 2000000 ) >/dev/null 2>&1
+  assert_contains "$(cat "$(local_job_file)")" "model_file"
+  assert_eq "$(local_registry_rows)" ""
+  unset FAKE_CFG
+}
+
+# --- a key follows only the address it was saved for, by whatever path the address changed ---
+test_a_key_is_bound_to_its_address_so_a_changed_address_from_any_path_sends_it_nowhere() {
+  local u=http://10.0.0.5:8000 y
+  _lm_env "MODEL_SERVERS=lab=$u
+MODEL_SERVER_MODELS=lab:*
+MODEL_SERVER_KEYS=lab=$(_msrv_hash $u 0):secretkey123456
+"
+  _fake_srv 0 200 "$VLLM"; msrv_probe_all
+  assert_eq "$(msrv_key lab)" secretkey123456; assert_eq "$(msrv_key_state lab)" ok
+  assert_contains "$(local_models_yaml 2>/dev/null)" 'api_key: "secretkey123456"'
+  # ./stack config set MODEL_SERVERS (or the generic Settings row, or a hand edit): the address changes, the keys line does not
+  sed -i.bak 's#10.0.0.5#10.0.0.99#' "$ENV_FILE"
+  assert_eq "$(msrv_key lab)" ""; assert_eq "$(msrv_key_state lab)" moved
+  assert_eq "$(msrv_key_note lab)" "key cleared: the address changed"
+  : > "$TMP/curl.stdin"; : > "$TMP/curl.args"
+  msrv_probe lab >/dev/null; msrv_probe_all
+  assert_not_contains "$(cat "$TMP/curl.stdin" "$TMP/curl.args")" secretkey123456        # not in the probe's curl stdin or arguments
+  assert_not_contains "$(cat "$TMP/curl.stdin")" Authorization
+  y="$(local_models_yaml 2>"$TMP/yaml.err")"
+  assert_not_contains "$y" secretkey123456; assert_contains "$y" 'api_base: "http://10.0.0.99:8000/v1"'; assert_contains "$y" 'api_key: "none"'
+  assert_contains "$(cat "$TMP/yaml.err")" "key cleared: the address changed"            # setup/apply says it
+  local_status_write
+  assert_not_contains "$(cat "$(local_status_file)")" secretkey123456
+  assert_contains "$(cat "$(local_status_file)")" '"key":false'; assert_contains "$(cat "$(local_status_file)")" '"key_note":"key cleared: the address changed"'
+  # the form's probe under that name sends no key either
+  : > "$TMP/curl.stdin"; _apply probe lab http://10.0.0.99:8000 false '' ''
+  assert_not_contains "$(cat "$TMP/curl.stdin")" secretkey123456
+  # turning trust on for the same address is a change too (an unverified certificate would hand the key to anyone on the path)
+  sed -i.bak 's#10.0.0.99:8000#10.0.0.5:8000#' "$ENV_FILE"; assert_eq "$(msrv_key lab)" secretkey123456
+  sed -i.bak 's#lab=http://10.0.0.5:8000#lab=http://10.0.0.5:8000;trust#' "$ENV_FILE"; assert_eq "$(msrv_key lab)" ""
+  # another server's key does not apply, and a key that is not bound at all (saved before this existed) is not used
+  _lm_env "MODEL_SERVERS=lab=$u,other=http://10.0.0.6:8000
+MODEL_SERVER_MODELS=lab:*
+MODEL_SERVER_KEYS=lab=legacykey123456,other=$(_msrv_hash $u 0):stolenkey1234
+"
+  assert_eq "$(msrv_key lab)" ""; assert_eq "$(msrv_key_state lab)" old; assert_contains "$(msrv_key_note lab)" "enter it again"
+  assert_eq "$(msrv_key other)" ""                                                        # (a hash of lab's address does not unlock other's)
+  msrv_probe_all; : > "$TMP/curl.stdin"; msrv_probe lab >/dev/null
+  assert_not_contains "$(cat "$TMP/curl.stdin")" legacykey123456
+  # both forms are valid values for the setting
+  valid_msrv_keys "lab=legacykey123456,b=$(_msrv_hash $u 0):k1"
+  ! valid_msrv_keys "lab=abc:def:ghi"
+}
+
+# --- https: the gateway resolves the name itself; the re-probe takes out a server whose name turns to a refused address ---
+test_an_https_server_whose_name_now_resolves_to_a_metadata_address_is_unregistered_at_the_next_probe() {
+  _lm_env 'MODEL_SERVERS=gpu=https://gpu.example.org:8443
+MODEL_SERVER_MODELS=gpu:*
+'
+  _fake_srv 0 200 "$VLLM"; msrv_probe_all
+  assert_contains "$(local_models_yaml)" 'api_base: "https://gpu.example.org:8443/v1"'    # (the gateway is given the name, for SNI and the certificate)
+  : > "$TMP/applied.env"
+  export MSRV_TEST_RESOLVE='gpu.example.org=169.254.169.254'                               # the name now answers the IMDS address
+  msrv_probe_all
+  assert_eq "$(local_models_yaml)" ""
+  assert_contains "$(cat "$TMP/applied.env")" "MODEL_SERVER_MODELS"                        # the gateway was told, live
+}
+
+test_a_self_signed_certificate_trusted_on_a_public_address_is_warned_about_in_the_form_and_the_cli() {
+  _lm_env ''; _fake_srv 0 200 "$VLLM"
+  assert_contains "$(msrv_warn https://gpu.example.org 1 203.0.113.7)" "cannot be told apart from an impostor"
+  assert_eq "$(msrv_warn https://gpu.example.org 1 192.168.1.9)" ""; assert_eq "$(msrv_warn https://gpu.example.org 1 100.101.2.3)" ""
+  assert_eq "$(msrv_warn https://gpu.example.org 1 127.0.0.1)" ""; assert_eq "$(msrv_warn https://gpu.example.org 1 fd12::5)" ""
+  assert_eq "$(msrv_warn https://gpu.example.org 0 203.0.113.7)" ""                         # (no trust: a CA-checked certificate)
+  _apply probe '' https://gpu.example.org true '' ''
+  assert_contains "$(_result)" "cannot be told apart from an impostor"; assert_contains "$(_result)" '"status":"ok"'   # (a warning, not a block)
+  _apply probe '' https://box.lan true '' ''; assert_not_contains "$(_result)" impostor    # (box.lan is 192.168.1.9)
+  local out; out="$(msrv_add pub https://gpu.example.org --trust 2>&1)"
+  assert_contains "$out" "cannot be told apart from an impostor"
+  assert_eq "$(get_env MODEL_SERVERS)" "pub=https://gpu.example.org;trust"                  # (saved all the same)
+  local_status_write; assert_contains "$(cat "$(local_status_file)")" impostor
+}
+
+# --- the model-server rate limit counts what the helper starts ---
+test_model_server_requests_are_counted_so_the_per_day_and_interval_caps_bite() {
+  . "$STACK_DIR/lib/helper.sh"; . "$STACK_DIR/lib/settings_helper.sh"
+  _lm_env; mkdir -p "$STATE_DIR/helper"
+  STACK_DIR="$TMP/fakestack"; mkdir -p "$STACK_DIR"; printf '#!/bin/sh\nexit 0\n' > "$STACK_DIR/stack"; chmod +x "$STACK_DIR/stack"
+  LOCAL_SERVER_MIN_INTERVAL_S=0; LOCAL_SERVER_MAX_PER_DAY=3
+  local i f="probe||http://localhost:11434|false||0123456789abcdef"
+  for i in 1 2 3; do
+    _act_limits local-probe 2>/dev/null || { echo "refused too early at $i" >&2; return 1; }
+    local_helper_start local-probe "$f" "$(printf 'ab%.0s' $(seq 16))"
+  done
+  assert_eq "$(wc -l < "$STATE_DIR/helper/server-jobs" | tr -d ' ')" 3                       # (counted, as local-jobs are)
+  local why; why="$(_act_limits local-probe 2>&1)" && { echo "the cap did not bite" >&2; return 1; }
+  assert_contains "$why" "limit of 3 a day is reached"
+  why="$(_act_limits local-server 2>&1)" && { echo "the cap did not bite for local-server" >&2; return 1; }
+  assert_contains "$why" "limit of 3 a day is reached"
+  [ ! -e "$STATE_DIR/helper/local-jobs" ]                                                    # (downloads have their own count)
+  # the interval too
+  rm -f "$STATE_DIR/helper/server-jobs"; LOCAL_SERVER_MIN_INTERVAL_S=3600; LOCAL_SERVER_MAX_PER_DAY=600
+  _act_limits local-server 2>/dev/null
+  local_helper_start local-server "save|lab|http://10.0.0.5:8000|false||*|0123456789abcdef" "$(printf 'cd%.0s' $(seq 16))"
+  why="$(_act_limits local-server 2>&1)" && { echo "the interval did not bite" >&2; return 1; }
+  assert_contains "$why" "too soon after the last one"
 }

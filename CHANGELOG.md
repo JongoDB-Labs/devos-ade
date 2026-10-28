@@ -18,6 +18,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   the default) no longer asks for the portal password: it only reads, behind the portal session, and the update helper
   refuses any address but this computer's, judged on the address it pins. Checking another computer on your network,
   saving, removing, keys and downloads still ask for it.
+  Security follow-ups from review: a server's API key is stored tied to its address and is sent only there, whichever
+  way the address was changed (a key from before this is ignored with a note to enter it again); a download is pinned to
+  the commit that was checked and its `config.json` is checked again on disk before the model is served; a self-signed
+  certificate trusted on a public address is warned about; and the model-server rate limit now counts.
 
 - **Local models: download a model from Hugging Face and use it in Code, Chat and the terminal (JON-816).** Settings ›
   Models & providers has a **Local models** section (collapsed until you have one): search Hugging Face for GGUF models,
