@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.32.3] - 2026-10-28
+
 ### Changed
 
 - **Settings changes apply in seconds (JON-533).** A change through the portal's Settings — or `./stack config set` —
@@ -3373,6 +3375,7 @@ Initial public release.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
 [Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.5...HEAD
+[0.32.3]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.32.2...v0.32.3
 [0.32.2]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.32.1...v0.32.2
 [0.32.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.32.0...v0.32.1
 [0.32.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.5...v0.32.0
