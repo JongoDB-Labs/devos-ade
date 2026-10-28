@@ -117,6 +117,15 @@ case "$ssoh" in X-Bn-Git-*) pass "the sign-in header has a secret name made by .
 # (the plain name Forgejo's documentation uses is not the one it takes: a forged copy of it signs nobody in)
 direct="$(docker run --rm --network "${P}_localgit" "$P-client" sh -c "curl -s -m 10 -o /tmp/b -w '%{http_code} ' -H 'X-Webauth-User: devos' -H 'Accept: text/html' http://forgejo:3000/devos/e2e-one; grep -c 'user/logout\\|Sign Out' /tmp/b || true" 2>/dev/null | tr '\n' ' ')"
 case "$direct" in "303 0 "* | "404 0 "* | "401 0 "*) pass "a forged sign-in header from another peer of the localgit network is not trusted ($direct)" ;; *) fail "a forged sign-in header from another peer is not trusted (got: $direct)" ;; esac
+# (the old public fallback name, and a wrong secret, from another peer: not trusted either, and no fallback name exists)
+old="$(docker run --rm --network "${P}_localgit" "$P-client" sh -c "curl -s -m 10 -o /tmp/b -w '%{http_code} ' -H 'X-Bn-Git-Unset: devos' -H 'Accept: text/html' http://forgejo:3000/devos/e2e-one; grep -c 'user/logout\\|Sign Out' /tmp/b || true" 2>/dev/null | tr '\n' ' ')"
+case "$old" in "303 0 "* | "404 0 "* | "401 0 "*) pass "a forged X-Bn-Git-Unset from another peer is not trusted ($old)" ;; *) fail "a forged X-Bn-Git-Unset from another peer is not trusted (got: $old)" ;; esac
+check "the compose file has no fallback name" "$(grep -c 'X-Bn-Git-Unset' "$W/compose.yaml" || true)" 0
+check "Forgejo's X-Forwarded-For trust is Caddy's address alone, one hop" "$(dc exec -T forgejo sh -c "grep -E '^REVERSE_PROXY_(TRUSTED_PROXIES|LIMIT)' /var/lib/gitea/app.ini" | tr -d '\r' | tr '\n' ' ')" "REVERSE_PROXY_LIMIT = 1 REVERSE_PROXY_TRUSTED_PROXIES = 10.255.255.238/32 "
+check "Caddy has the pinned address on the localgit network" "$(docker inspect -f '{{(index .NetworkSettings.Networks "'"${P}"'_localgit").IPAddress}}' "$(dc ps -q caddy)")" 10.255.255.238
+# through Caddy, a client's own copy of the secret name or of the old name is removed: what is signed in is the owner, not what it sent
+fake="$(curl -s -m 10 -H "Host: $host" -H "$ssoh: nobody" -H 'X-Bn-Git-Unset: nobody' "http://127.0.0.1:$PORT/devos/e2e-one" | grep -c 'nobody')"
+check "a client's own copy of the secret name is replaced at Caddy's web site" "$fake" 0
 # the name itself is what signs in: shown to a peer that knows it (this run's Caddy path is the only holder), a control that it works
 known="$(docker run --rm --network "${P}_localgit" "$P-client" sh -c "curl -s -m 10 -o /tmp/b -w '%{http_code} ' -H '$ssoh: devos' -H 'Accept: text/html' http://forgejo:3000/devos/e2e-one; grep -c 'user/logout\\|Sign Out' /tmp/b || true" 2>/dev/null | tr '\n' ' ')"
 case "$known" in "200 "[1-9]*) pass "(control) a peer that knows the secret name is signed in: the name is the whole control ($known)" ;; *) fail "(control) the secret name signs in ($known)" ;; esac

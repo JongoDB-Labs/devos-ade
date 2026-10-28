@@ -22,6 +22,7 @@ https://:8093 {
 		request_header -X-Webauth-User
 		request_header -X-Webauth-Email
 		request_header -X-Webauth-Fullname
+		request_header -X-Bn-Git-*
 		request_header -Cookie
 		@git path_regexp ^/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\.git/(info/refs|git-upload-pack|git-receive-pack)$
 		reverse_proxy @git forgejo:3000

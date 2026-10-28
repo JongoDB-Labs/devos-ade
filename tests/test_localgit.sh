@@ -430,6 +430,10 @@ test_the_web_site_signs_the_owner_in_only_after_the_portal_and_the_sandboxs_path
   for f in caddy/localgit-gateway-on.caddy; do assert_contains "$(cat "$T_ROOT/$f")" "request_header -X-Webauth-User"; done
   mirrors="$(printf '%s\n' "$s" | sed -n '/^http:\/\/:8099 {/,/^}/p')"
   assert_contains "$mirrors" "request_header -X-Webauth-User"
+  assert_contains "$mirrors" "request_header -X-Bn-Git-*"
+  assert_contains "$(cat "$T_ROOT/caddy/localgit-gateway-on.caddy")" "request_header -X-Bn-Git-*"
+  # the web site strips the whole family before it sets its own (a step of its own: Caddy deletes after it sets within one block)
+  assert_contains "$site" "request_header -X-Bn-Git-*"
   assert_not_contains "$mirrors" "header_up"
   # the internal site: reads, a migration and the mirror paths — never a delete of a repository, the admin or the account API
   assert_contains "$mirrors" "method GET"
@@ -438,7 +442,7 @@ test_the_web_site_signs_the_owner_in_only_after_the_portal_and_the_sandboxs_path
   assert_not_contains "$mirrors" "admin"
   assert_eq "$(printf '%s\n' "$mirrors" | grep -c 'reverse_proxy')" 3
   y="$(sed -n '/^  forgejo:/,/^  portal:/p' "$T_ROOT/compose.yaml")"
-  assert_contains "$y" 'FORGEJO__service__ENABLE_REVERSE_PROXY_AUTHENTICATION: "true"'
+  assert_contains "$y" 'FORGEJO__service__ENABLE_REVERSE_PROXY_AUTHENTICATION: ${LOCALGIT_SSO_ON:-false}'
   assert_contains "$y" 'FORGEJO__service__ENABLE_REVERSE_PROXY_AUTO_REGISTRATION: "false"'
   assert_contains "$y" 'FORGEJO__service__ENABLE_REVERSE_PROXY_AUTHENTICATION_API: "false"'
   }
@@ -447,9 +451,18 @@ test_the_sign_in_header_has_a_secret_name_only_caddy_and_forgejo_know() {
   # (Forgejo's trusted-proxy setting does not limit who may send it — tests/e2e/localgit proves a forged header from another peer
   # signs in — so the control is the name: a secret of ./stack's, in the environments of Caddy and Forgejo alone)
   y="$(sed -n '/^  forgejo:/,/^  portal:/p' "$T_ROOT/compose.yaml")"
-  assert_contains "$y" 'FORGEJO__security__REVERSE_PROXY_AUTHENTICATION_USER: ${LOCALGIT_SSO_HEADER:-X-Bn-Git-Unset}'
+  assert_contains "$y" 'FORGEJO__security__REVERSE_PROXY_AUTHENTICATION_USER: ${LOCALGIT_SSO_HEADER:-}'
   assert_not_contains "$y" 'REVERSE_PROXY_AUTHENTICATION_USER: X-Webauth-User'
-  assert_contains "$(sed -n '/^  caddy:/,/^  [a-z-]*:$/p' "$T_ROOT/compose.yaml")" 'LOCALGIT_SSO_HEADER: ${LOCALGIT_SSO_HEADER:-X-Bn-Git-Unset}'
+  assert_contains "$(sed -n '/^  caddy:/,/^  [a-z-]*:$/p' "$T_ROOT/compose.yaml")" 'LOCALGIT_SSO_HEADER: ${LOCALGIT_SSO_HEADER:-}'
+  # fail closed: no public fallback name anywhere, and the sign-in is off by default (and without a secret)
+  assert_not_contains "$(cat "$T_ROOT/compose.yaml" "$T_ROOT/caddy/localgit-on.caddy" "$T_ROOT/lib/localgit.sh" "$T_ROOT/lib/common.sh")" "X-Bn-Git-Unset"
+  assert_not_contains "$(cat "$T_ROOT/compose.yaml")" 'ENABLE_REVERSE_PROXY_AUTHENTICATION: "true"'
+  # the second layer: Forgejo's X-Forwarded-For trust is Caddy's fixed address alone, one hop, never a wildcard
+  assert_contains "$y" 'FORGEJO__security__REVERSE_PROXY_TRUSTED_PROXIES: 10.255.255.238/32'
+  assert_contains "$y" 'FORGEJO__security__REVERSE_PROXY_LIMIT: "1"'
+  assert_not_contains "$y" 'TRUSTED_PROXIES: "*"'
+  assert_contains "$(cat "$T_ROOT/compose.yaml")" 'ipv4_address: 10.255.255.238'
+  assert_contains "$(cat "$T_ROOT/compose.yaml")" 'subnet: 10.255.255.224/28'
   assert_contains "$(cat "$T_ROOT/caddy/localgit-on.caddy")" 'header_up {$LOCALGIT_SSO_HEADER} devos'
   for f in portal terminal litellm open-webui shared-mcp postgres rustfs searxng stt code; do
     assert_not_contains "$(sed -n "/^  $f:/,/^  [a-z-]*:\$/p" "$T_ROOT/compose.yaml")" "LOCALGIT_SSO_HEADER" || { echo "$f gets the secret name" >&2; return 1; }
@@ -459,7 +472,16 @@ test_the_sign_in_header_has_a_secret_name_only_caddy_and_forgejo_know() {
   h="$(get_env LOCALGIT_SSO_HEADER)"
   case "$h" in X-Bn-Git-????????????????????????????????) ;; *) echo "not a secret name: $h" >&2; return 1 ;; esac
   localgit_secrets; assert_eq "$(get_env LOCALGIT_SSO_HEADER)" "$h"
-  # never passed on from the shell
-  printf 'X=1\n' > "$ENV_FILE"; mkdir -p "$TMP/bin"; printf '#!/bin/sh\nenv | grep ^LOCALGIT_SSO_HEADER= || true\n' > "$TMP/bin/docker"; chmod +x "$TMP/bin/docker"
-  assert_eq "$(PATH="$TMP/bin:$PATH" LOCALGIT_SSO_HEADER=evil dc ps)" ""
+  # never passed on from the shell: .env decides, and every dc call makes the secret and turns the sign-in on only with it
+  printf 'X=1\n' > "$ENV_FILE"; mkdir -p "$TMP/bin"; printf '#!/bin/sh\nenv | grep "^LOCALGIT_SSO_" || true\n' > "$TMP/bin/docker"; chmod +x "$TMP/bin/docker"
+  out="$(PATH="$TMP/bin:$PATH" LOCALGIT_SSO_HEADER=evil LOCALGIT_SSO_ON=true dc ps)"
+  assert_not_contains "$out" "evil"
+  assert_contains "$out" "LOCALGIT_SSO_ON=true"
+  assert_contains "$out" "LOCALGIT_SSO_HEADER=$(get_env LOCALGIT_SSO_HEADER)"
+  case "$(get_env LOCALGIT_SSO_HEADER)" in X-Bn-Git-????????????????????????????????) ;; *) echo "dc made no secret" >&2; return 1 ;; esac
+  # no secret (and the switch off, so none is made): the sign-in is off
+  printf 'LOCALGIT=off\n' > "$ENV_FILE"
+  out="$(PATH="$TMP/bin:$PATH" LOCALGIT_SSO_ON=true dc ps)"
+  assert_contains "$out" "LOCALGIT_SSO_ON=false"
+  assert_eq "$(get_env LOCALGIT_SSO_HEADER)" ""
 }

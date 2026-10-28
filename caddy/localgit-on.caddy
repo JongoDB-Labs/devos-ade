@@ -7,6 +7,8 @@ http://{$GIT_HOST} {
 	route {
 		import local_request
 		import not_from_preview
+		# nothing a client sends under the sign-in header's family of names (X-Bn-Git-*) reaches Forgejo
+		request_header -X-Bn-Git-*
 		import portal_auth
 		reverse_proxy forgejo:3000 {
 			import drop_session_cookie
@@ -42,6 +44,7 @@ http://:8099 {
 		request_header -X-Webauth-User
 		request_header -X-Webauth-Email
 		request_header -X-Webauth-Fullname
+		request_header -X-Bn-Git-*
 		request_header -Cookie
 		request_body {
 			max_size 64KB

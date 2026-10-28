@@ -303,10 +303,18 @@ env_file_display() {
   printf '%s\n' "$f"
 }
 
+# localgit_sso_ensure — while the git server is on, the secret name of the portal sign-in's header is in .env (made once).
+# Every dc call makes sure of it, so no way of starting the stack (setup, up, update, restore, recreate) runs without it.
+localgit_sso_ensure() {
+  ! flag_off "$(get_env LOCALGIT)" || return 0
+  [ -n "$(get_env LOCALGIT_SSO_HEADER)" ] || set_env LOCALGIT_SSO_HEADER "X-Bn-Git-$(gen_hex 16)"
+}
+
 # dc ARGS... — docker compose for this checkout. -p and the COMPOSE_PROJECT_NAME seen by compose's own
 # interpolation are both forced to project_name, so a stray shell value is ignored (with one warning).
 dc() {
   local p; p="$(project_name)"
+  localgit_sso_ensure 2>/dev/null || true
   if [ -n "${COMPOSE_PROJECT_NAME:-}" ] && [ "$COMPOSE_PROJECT_NAME" != "$p" ] && [ -z "${_DC_PROJECT_WARNED:-}" ]; then
     warn "COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT_NAME in your shell is ignored: this checkout is project '$p' (from .env or the default)"
     _DC_PROJECT_WARNED=1
@@ -338,7 +346,7 @@ dc() {
   # The browser terminal too: an exported TERMINAL_WORKSPACE must never decide what the container sees.
   ( unset OPENROUTER_API_KEY OPENROUTER_MODELS OPENROUTER_MAX_MODELS EXPLABS_API_KEY EXPLABS_MODELS STT_PROVIDER STT_API_KEY STT_MODEL OWUI_STT_ENGINE \
       WEBSEARCH_TAVILY_API_KEY WEBSEARCH_BRAVE_API_KEY WEBSEARCH_PERPLEXITY_API_KEY WEBSEARCH_SEARXNG_SECRET WEBSEARCH_SEARXNG_BUILTIN \
-      LOCALGIT LOCALGIT_ADMIN_PASSWORD LOCALGIT_SSO_HEADER LOCALGIT_MIRROR_EGRESS LOCALGIT_MIRROR_HOSTS GIT_HOST GIT_ORIGIN BN_LOCALGIT_MODE BN_LOCALGIT_TLS \
+      LOCALGIT LOCALGIT_ADMIN_PASSWORD LOCALGIT_SSO_HEADER LOCALGIT_SSO_ON LOCALGIT_MIRROR_EGRESS LOCALGIT_MIRROR_HOSTS GIT_HOST GIT_ORIGIN BN_LOCALGIT_MODE BN_LOCALGIT_TLS \
       OWUI_STT_BASE_URL STT_BEDROCK_MODEL COMPOSE_PROFILES \
       AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_REGION_NAME \
       TERMINAL_ENABLED TERMINAL_WORKSPACE TERMINAL_EGRESS TERMINAL_EGRESS_ALLOW TERMINAL_EGRESS_DENY TERMINAL_HOST TERMINAL_UID TERMINAL_GID TERMINAL_MEM_LIMIT \
@@ -350,6 +358,7 @@ $sums
 SUMS
     # which of terminal/managed/*.json the sandbox gets as Claude Code's managed settings (read-only): from .env alone
     TERMINAL_CLAUDE_POLICY="$policy" BN_PROJECTS_PUBLIC="$STATE_DIR/projects/public" \
+    LOCALGIT_SSO_HEADER="$(get_env LOCALGIT_SSO_HEADER)" LOCALGIT_SSO_ON="$([ -n "$(get_env LOCALGIT_SSO_HEADER)" ] && echo true || echo false)" \
     BN_LOCALGIT_TLS="$STATE_DIR/localgit/tls" BN_LOCALGIT_MODE="$(flag_off "$(get_env LOCALGIT)" && echo off || echo on)" \
     BEDROCK_NOW_ENV_DISPLAY="$(env_file_display)" COMPOSE_PROJECT_NAME="$p" docker compose -p "$p" --project-directory "$STACK_DIR" -f "$STACK_DIR/compose.yaml" ${f[@]+"${f[@]}"} \
       --env-file "$ENV_FILE" "$@" )

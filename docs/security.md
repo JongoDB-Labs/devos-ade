@@ -2320,8 +2320,11 @@ one command that sets it, never on a command line).
   containers) to `devos` in that site's proxy block (route order: a request the portal refused never gets it, and a client's
   own copies of it and of `X-Webauth-*` are removed). Forgejo's `REVERSE_PROXY_TRUSTED_PROXIES` does NOT limit this header
   (it only governs X-Forwarded-For; the e2e proved a forged `X-Webauth-User` from another container on the network still
-  signed in), so the secret name is the control: a peer on the `localgit` network that does not know it cannot sign in, and
-  `REVERSE_PROXY_LIMIT` is 1. As defense in depth every other path also removes `X-Webauth-*`: the gateway and Caddy's
+  signed in), so the secret name is the control: a peer on the `localgit` network that does not know it cannot sign in.
+  It fails closed: the sign-in is on (`LOCALGIT_SSO_ON`, set by `dc()` only together with a non-empty secret) only while the
+  secret exists, `dc()` makes the secret on every path that starts the stack, and there is no fallback name. As a second
+  layer Caddy has a fixed address on `localgit` and `REVERSE_PROXY_TRUSTED_PROXIES` is that `/32` alone (never `*`), with
+  `REVERSE_PROXY_LIMIT` 1. As defense in depth every other path also removes `X-Webauth-*` and `X-Bn-Git-*`: the gateway and Caddy's
   internal `:8099` site, and the sandbox cannot reach Forgejo any other way. It signs nobody in for the API or git
   (`ENABLE_REVERSE_PROXY_AUTHENTICATION_API` off) and never registers an account; the owner's password in `.env` remains the
   fallback form.

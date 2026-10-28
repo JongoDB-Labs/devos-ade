@@ -383,10 +383,15 @@ services:
       # setting does not limit it: tests/e2e/localgit proves it), so the control is that nobody else can name it: the
       # terminal's gateway and Caddy's :8099 site never see the name, and also remove the plain X-Webauth-* names. No
       # registration from it; it never signs in the API or git.
-      FORGEJO__service__ENABLE_REVERSE_PROXY_AUTHENTICATION: "true"
+      # Fails closed: it is on only while ./stack has made the secret name (dc() in lib/common.sh sets LOCALGIT_SSO_ON to true
+      # only with a non-empty LOCALGIT_SSO_HEADER); with none, the sign-in is off and there is no name to guess.
+      FORGEJO__service__ENABLE_REVERSE_PROXY_AUTHENTICATION: ${LOCALGIT_SSO_ON:-false}
       FORGEJO__service__ENABLE_REVERSE_PROXY_AUTO_REGISTRATION: "false"
       FORGEJO__service__ENABLE_REVERSE_PROXY_AUTHENTICATION_API: "false"
-      FORGEJO__security__REVERSE_PROXY_AUTHENTICATION_USER: ${LOCALGIT_SSO_HEADER:-X-Bn-Git-Unset}
+      FORGEJO__security__REVERSE_PROXY_AUTHENTICATION_USER: ${LOCALGIT_SSO_HEADER:-}
+      # Second layer: Forgejo takes X-Forwarded-For only from Caddy's fixed address (it does not limit the sign-in header itself:
+      # the secret name above does that), one hop.
+      FORGEJO__security__REVERSE_PROXY_TRUSTED_PROXIES: 10.255.255.238/32
       FORGEJO__security__REVERSE_PROXY_LIMIT: "1"
       FORGEJO__repository__DEFAULT_PRIVATE: private
       FORGEJO__repository__ENABLE_PUSH_CREATE_USER: "true"   # a push to a missing repository of the owner makes it (private): the Code page's Publish
@@ -517,7 +522,7 @@ services:
       # The built-in git server's site (caddy/localgit-on.caddy; lib/localgit.sh: BN_LOCALGIT_MODE is on while LOCALGIT is)
       GIT_HOST: ${GIT_HOST:-git.${PORTAL_HOST:-bedrock-now.localhost}}
       LOCALGIT_MODE: ${BN_LOCALGIT_MODE:-off}
-      LOCALGIT_SSO_HEADER: ${LOCALGIT_SSO_HEADER:-X-Bn-Git-Unset}   # the name of the sign-in header Forgejo takes (a secret of ./stack's)
+      LOCALGIT_SSO_HEADER: ${LOCALGIT_SSO_HEADER:-}   # the name of the sign-in header Forgejo takes (a secret of ./stack's)
       CADDY_AUTO_HTTPS: "off"   # compose.domain.yaml: disable_redirects (certificates for the remote site)
       # Remote site (caddy/remote-<mode>.caddy; ./stack remote). The .invalid names only keep the file valid
       # while the sidecar has not told us the tailnet's name yet: nothing can match them.
@@ -540,7 +545,11 @@ services:
       - ./caddy:/etc/caddy:ro,z
     ports:
       - "127.0.0.1:${PORTAL_PORT:-80}:8080"   # only 8080: the internal :8090 site (speech-to-text) is not published
-    networks: [default, stt, localgit]
+    networks:
+      default:
+      stt:
+      localgit:
+        ipv4_address: 10.255.255.238   # fixed: Forgejo's trusted proxy (REVERSE_PROXY_TRUSTED_PROXIES)
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/caddy-health"]
       interval: 10s
@@ -564,6 +573,9 @@ networks:
   # terminal's gateway only.
   localgit:
     internal: true
+    ipam:
+      config:
+        - subnet: 10.255.255.224/28   # outside Docker's default pools (like the Tailscale sidecar's); Caddy is .238
 
 volumes:
   pgdata:
