@@ -236,6 +236,11 @@ default (or **Keep these**) — and offers its next action. **Full walkthrough**
 checklist away in this browser, and the walkthrough's head (*Get started on Home*) brings it back. A browser that used
 Home before Get started existed does not see it.
 
+On a wide window Home is a dashboard, not one long page: Get started and Continue side by side, the update card in two
+columns, then spend, services, models, sign-ins and the terminal's `devos-claude` in three; a long list scrolls inside its
+card. Settings' **Models & providers** is three tabs (**Keys**, **Subscriptions**, **Search**), and **Browse models** a grid.
+A phone keeps one column.
+
 ### Walkthrough
 
 **Walkthrough** at the bottom of the sidebar takes you through what a developer uses in DevOS ADE, in six parts you can

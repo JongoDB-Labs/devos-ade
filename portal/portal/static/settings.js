@@ -327,6 +327,8 @@
     if (!r) return;
     const more = r.closest("details.set-more");
     if (more) more.open = true;
+    const tab = r.closest(".set-tabbed > [data-group]");
+    if (tab) showGroup(tab.parentElement, tab.dataset.group);
     for (let d = r.closest(".set-dep"); d; d = d.parentElement.closest(".set-dep")) d.classList.add("set-forced");
     applyView();
     // what takes the focus: a Chat sign-in asked for (Sign in for Chat…: that tool's Chat row, its Sign in); else the
@@ -494,19 +496,35 @@
     const list = s.id === "advanced" || s.id === "about";
     const body = el("div", { class: list ? "set-rows set-list" : "set-rows" });
     blocks(body, main, list);
-    // Models & providers is long: its groups (Keys · Subscriptions · Search) as a small bar of links that stays at the
-    // top while the section scrolls
+    // the read-only lists (Advanced, About this install) show their first rows and fold the rest: a search or an address
+    // opens it (More settings' rule), so nothing is out of reach
+    const FOLD = 10;
+    let fold = null;
+    if (list && body.children.length > FOLD + 2) {
+      const rest = el("div", { class: "set-rows set-list" });
+      rest.append(...[...body.children].slice(FOLD));
+      fold = (el("details", { class: "set-more set-fold" }, el("summary", {}, "Show the rest ", el("span", { class: "set-more-count" })), rest));
+    }
+    // Models & providers is long: its groups (Keys · Subscriptions · Search) are tabs — one group at a time, so the page
+    // is the height of its longest group, not of all three (a search or an address shows what it finds, whichever group)
     const heads = [...body.querySelectorAll(":scope > .set-group-head")];
     if (heads.length > 1) {
       const bar = el("nav", { class: "set-minnav", "aria-label": `${s.title}: its groups` });
+      const names = heads.map((h) => h.textContent.toLowerCase());
+      let g = names[0];
+      for (const ch of body.children) { if (ch.matches(".set-group-head")) g = ch.textContent.toLowerCase(); ch.dataset.group = g; }
+      body.classList.add("set-tabbed");
+      body.dataset.group = names[0];
       for (const h of heads) {
-        const b = el("button", { type: "button", class: "chip", text: h.textContent });
-        b.addEventListener("click", () => { h.scrollIntoView({ block: "start" }); h.focus({ preventScroll: true }); });
+        const b = el("button", { type: "button", class: "chip", "data-group": h.textContent.toLowerCase(), "aria-pressed": "false", text: h.textContent });
+        b.addEventListener("click", () => showGroup(body, b.dataset.group));
         bar.append(b);
       }
+      bar.querySelector(".chip").setAttribute("aria-pressed", "true");
       c.append(bar);
     }
     c.append(body);
+    if (fold) c.append(fold);
     // (under the providers' cards: which of their models each picker lists — Settings' own lists of them)
     if (s.id === "providers") {
       c.append(el("p", { class: "note set-prov-foot" }, "Which of these models each picker lists: ",
@@ -522,6 +540,14 @@
     c.append(pager(s.id));
     compact(c);
     return c;
+  }
+
+  // showGroup BODY NAME — the tab NAME of a tabbed section (Models & providers), its chip pressed
+  function showGroup(body, name) {
+    if (!body || !body.classList.contains("set-tabbed")) return;
+    body.dataset.group = name;
+    const bar = body.closest(".set-card").querySelector(".set-minnav");
+    if (bar) for (const b of bar.querySelectorAll(".chip")) b.setAttribute("aria-pressed", String(b.dataset.group === name));
   }
 
   // blocks CONTAINER ROWS — each row in a block of its own, followed by the rows that belong to it (indented)

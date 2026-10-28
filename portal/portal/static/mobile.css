@@ -103,9 +103,9 @@
   .sidebar { overflow-y: auto; overscroll-behavior: contain; }
 }
 
-/* ---------- Phones and tablets: the models table becomes a card list ---------- */
-@media (max-width: 1099.98px) {
-  .table-wrap { overflow: visible; margin: 0; }
+/* ---------- A narrow models widget (a phone, a tablet, a column of Home's grid): the table becomes a card list ---------- */
+@container models-card (max-width: 719.98px) {
+  .table-wrap { overflow: auto; margin: 0; max-height: 26rem; }
   .models table, .models tbody { display: block; }
   .models thead { display: none; }
   .models tbody tr { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "name name status" "prov kind price" "why why why";
@@ -170,6 +170,9 @@
   /* Update card and progress, compact: the release and the button (if this device may use it); the step list
      and the terminal command are for the desktop. */
   .update-card, .job { margin-top: 14px; padding: 16px; }
+  .update-releases { max-height: 8.5rem; }
+  .home-top { margin-top: 14px; gap: 14px; }
+  .home-top > section { margin-top: 0; }
   /* Get started and Continue (home.js): a step's buttons under its words; a row's verb under its title */
   .gs-card, .continue { margin-top: 14px; padding: 16px; }
   .gs-head { grid-template-columns: 1fr auto; }
@@ -178,7 +181,13 @@
   .gs-tools .gs-tour { min-height: 32px; }
   .gs-step { grid-template-columns: 24px minmax(0, 1fr); }
   .gs-acts { grid-column: 2; justify-content: flex-start; }
-  .cont-head .cont-actions { flex: 1 1 100%; }
+  /* less to scroll past: Recent shows four (the Code and Chat tabs list them all); a step done is one line; Admin and
+     Files' explanation is the sheet's under More */
+  .cont-list[aria-label="Recent sessions and chats"] li:nth-child(n+5) { display: none; }
+  .gs-step.done .gs-text { display: none; }
+  .logins > .note { display: none; }
+  .meters { gap: 12px; }
+  .cont-head .cont-actions { flex: 1 1 100%; flex-wrap: nowrap; }
   .cont-actions a.action { flex: 1 1 auto; text-align: center; }
   /* (a row's title across the row, three lines at most; its verb next to the time) */
   .cont-row { grid-template-columns: 32px minmax(0, 1fr) auto; grid-template-rows: auto auto; row-gap: 2px; align-items: start; }

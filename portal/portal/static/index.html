@@ -131,10 +131,14 @@
     </section>
 
     <!-- Get started (a first run's five steps) and Continue (what to pick up again): home.js -->
-    <section id="get-started" class="gs-card" aria-labelledby="gs-title" hidden></section>
-    <section id="continue" class="continue" aria-labelledby="continue-title" hidden></section>
+    <!-- (.home-top: the two side by side from 1100 px, each alone as wide as the page; see docs/design.md, Dashboards) -->
+    <div class="home-top">
+      <section id="get-started" class="gs-card" aria-labelledby="gs-title" hidden></section>
+      <section id="continue" class="continue" aria-labelledby="continue-title" hidden></section>
+    </div>
 
     <section id="update-card" class="update-card" aria-labelledby="update-title" hidden>
+      <div class="update-main">
       <div class="update-head">
         <h2 id="update-title">Update available</h2>
         <p class="note" id="update-meta"></p>
@@ -147,6 +151,8 @@
         <div id="update-notes" class="notes-list"></div>
         <p class="note"><a id="update-link" target="_blank" rel="noopener noreferrer">On GitHub</a></p>
       </details>
+      </div>
+      <div class="update-side">
       <h3 class="update-sub">What happens</h3>
       <ol id="update-steps" class="update-steps"></ol>
       <!-- With the update helper: Update now first, the terminal command folded under it; without it: the command
@@ -160,6 +166,7 @@
         <p class="note">In your DevOS ADE folder: the same update, with its progress in the terminal.</p>
       </details>
       <div id="update-helper-slot"></div>
+      </div>
     </section>
 
     <section id="job" class="job" aria-live="polite" hidden>

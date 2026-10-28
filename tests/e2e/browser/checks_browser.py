@@ -3297,6 +3297,11 @@ def settings_providers(ctx):
     expect(page.locator(".set-nav-item[aria-current=true]").inner_text() == "Models & providers", "the list does not mark the section")
     heads = [x.strip() for x in sec.locator(".set-group-head").all_text_contents()]
     expect(heads == ["Keys", "Subscriptions", "Search"], f"the groups' heads: {heads}")
+    # (JON-812) the groups are tabs, one at a time: Keys first; the others' cards are not shown until their tab is
+    tab_names = [x.strip() for x in sec.locator(".set-minnav .chip").all_text_contents()]
+    expect(tab_names == heads and sec.locator(".set-minnav .chip[aria-pressed=true]").inner_text() == "Keys", f"the tabs: {tab_names}")
+    expect(sec.locator("#set-subscriptions").is_hidden() and sec.locator(".set-dep[data-key=WEBSEARCH_BACKEND]").is_hidden(),
+           "the Subscriptions and Search cards show on the Keys tab")
     said = []
     for key, name, prov in (("AWS_ACCESS_KEY_ID", "Bedrock", "Bedrock"), ("OPENROUTER_API_KEY", "OpenRouter", "OpenRouter"),
                             ("EXPLABS_API_KEY", "Experiential Labs", "Experiential Labs")):
@@ -3325,6 +3330,7 @@ def settings_providers(ctx):
             form.locator("button", has_text="Cancel").click()
         said.append(f"{name}: {state}, {want}")
     # your subscriptions: a card each, with its state, the pickers it answers in and its next step
+    sec.locator(".set-minnav .chip", has_text="Subscriptions").click()
     tools = (d.get("subscriptions") or {}).get("tools") or []
     cards = sec.locator("#set-subscriptions > li.set-prov[data-tool]")
     expect(cards.count() == len(tools) and len(tools) >= 6, f"{cards.count()} subscription cards for {len(tools)} tools")
@@ -3349,6 +3355,7 @@ def settings_providers(ctx):
     # the snapshot's choices.websearch) — the built-in SearXNG first (its switch), then the others — each with its state,
     # what it adds, its one action (a form, cancelled; the built-in one's switch) and its info button (what it costs and
     # sends, how steady and private it is, where its key comes from: opened by a click, closed by Escape)
+    sec.locator(".set-minnav .chip", has_text="Search").click()
     ws = d["snapshot"]["choices"].get("websearch") or {}
     for key, name, b in (("WEBSEARCH_BACKEND", "Web search", ""), ("WEBSEARCH_SEARXNG_BUILTIN", "Built-in SearXNG", "builtin"),
                          ("WEBSEARCH_AGENTCORE_GATEWAY", "AgentCore Web Search", "agentcore"), ("WEBSEARCH_TAVILY_API_KEY", "Tavily", "tavily"),

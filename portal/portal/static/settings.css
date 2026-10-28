@@ -320,3 +320,56 @@
 @media (min-width: 768px) {
   .sheet-links button.sheet-link { font: inherit; }
 }
+
+/* ---------- Dashboards (docs/design.md): a section's rows use the card's width ---------- */
+/* From 1360 px the page is as wide as the window lets it (to 1560 px): the section list stays 200 px, the card takes the rest */
+@media (min-width: 1360px) {
+  .set-head, .settings-page > .banner, .set-helper, .set-job, .set-find, .set-layout { max-width: 1560px; }
+}
+/* A wide card (its own width, not the window's: the walkthrough or a collapsed sidebar change it) lays a section out in
+   columns where that makes it shorter: the read-only lists (Advanced, About this install: one line each) and Models &
+   providers' tabs (a card each) from 800 px, two and then three columns; the other sections, whose settings keep a control
+   beside the name, from 1100 px in two. The ones that hold a form, a list or a table (the page's own rows, +name) take
+   the full row. Each setting is a container of its own: in a column under 520 px its control goes under its name, as in
+   a narrow card above (a column is that narrow), so a long control never squeezes the words beside it. */
+.set-rows > .set-dep { container: set-dep / inline-size; }
+@container set-card (min-width: 800px) {
+  .set-list, .set-tabbed { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 36px; align-items: start; }
+}
+@container set-card (min-width: 1100px) {
+  .set-rows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 36px; align-items: start; }
+}
+@container set-card (min-width: 800px) {
+  .set-list > .set-dep { border-top: 1px solid var(--line); }
+  .set-rows > .set-group-head, .set-rows > .set-dep[data-key^="+"] { grid-column: 1 / -1; }
+}
+@container set-card (min-width: 1100px) {
+  .set-rows > .set-dep { border-top: 1px solid var(--line); }
+}
+@container set-card (min-width: 1240px) {
+  .set-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container set-dep (max-width: 519.98px) {
+  .set-row { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
+  .set-row > .set-main { display: contents; }
+  .set-row > .set-main > .set-label { order: -2; }
+  .set-row > .set-actions { order: -1; justify-content: flex-start; margin: 8px 0 4px; }
+  .set-row > .set-actions:empty { display: none; }
+  .set-row .set-toggle { align-items: flex-start; }
+  .set-row .set-toggle .note { text-align: left; max-width: none; }
+  .set-row > .set-details { margin-top: 6px; }
+  .set-row > :is(.set-cli, .set-remote, .set-backups) { margin-top: 10px; }
+  .set-row > .set-form { margin-top: 14px; }
+}
+/* Models & providers: Keys · Subscriptions · Search, one at a time (settings.js showGroup); the head each tab replaces is
+   hidden, and a search or "Changed from default" looks through all three */
+#settings:not(.set-finding) .set-tabbed[data-group="keys"] > [data-group]:not([data-group="keys"]),
+#settings:not(.set-finding) .set-tabbed[data-group="subscriptions"] > [data-group]:not([data-group="subscriptions"]),
+#settings:not(.set-finding) .set-tabbed[data-group="search"] > [data-group]:not([data-group="search"]) { display: none; }
+.set-tabbed > .set-group-head { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); margin: 0; }
+.set-finding .set-tabbed > .set-group-head { position: static; width: auto; height: auto; clip-path: none; margin: 18px 0 8px; }
+.set-minnav { position: static; margin: 12px 0 8px; padding: 0 0 10px; }
+@container set-card (min-width: 800px) {
+  .set-tabbed > .set-dep.set-prov { margin-bottom: 0; }
+  .set-tabbed > .set-dep { border-top: 0; }
+}

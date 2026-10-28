@@ -3,6 +3,7 @@
    are here. Colors are tokens (tokens.css), so light and dark follow the theme. */
 
 .models-browse { max-width: 1080px; margin: 0 auto; }
+@media (min-width: 1360px) { .models-browse { max-width: 1560px; } .mb-job { max-width: none; } }
 .mb-head { margin-bottom: 16px; }
 .mb-head h1 { margin: 2px 0 4px; }
 .mb-lede { max-width: 70ch; }
@@ -32,7 +33,9 @@
 .mb-count { margin: 6px 0 10px; }
 
 /* the rows */
-.mb-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+/* a grid of cards: as many columns as fit, so a list of fifty is not a stack of fifty (JON-816's Local models section is a
+   second .mb-list, or its own block above it, in the same grid) */
+.mb-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 10px; align-items: start; }
 .mb-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 14px;
   border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); }
 .mb-main { min-width: 0; flex: 1; }
@@ -63,6 +66,7 @@
 .mb-ack-need { color: var(--bad); }
 
 @media (max-width: 767.98px) {
+  .mb-provs { max-width: 100%; overflow-x: auto; }   /* (four joined pills: 347 px at their widest, a 320 px phone's 288 px: they scroll inside their own row, never the page) */
   .mb-row { flex-direction: column; }
   .mb-actions { flex-direction: row; align-self: stretch; justify-content: flex-start; }
   .mb-why { text-align: left; max-width: none; }

@@ -92,5 +92,7 @@ def test_the_walkthrough_and_the_tabs_tooltips_follow_the_rail():
         assert "bnNav.rail()" in js and 'addEventListener("bn:nav"' in js
     # the card's behaviour (Escape closes it, it steps aside for an app) is the rail's, not only a tablet's
     assert "TABLET.matches)" not in tour.replace("bnNav.rail() : TABLET.matches)", "")
-    # a collapsed sidebar keeps the rail with the walkthrough open; Home keeps its two columns then
-    assert "html:not(.nav-collapsed) body.tour-open .grid" in css("tour.css")
+    # a collapsed sidebar keeps the rail with the walkthrough open; Home's widgets then follow the page's own width (a
+    # container query on .home), so the walkthrough's wide sidebar needs no rule of its own
+    assert "container: home / inline-size" in css("app.css") and "@container home (min-width: 1060px)" in css("app.css")
+    assert "tour-open .grid" not in css("tour.css")

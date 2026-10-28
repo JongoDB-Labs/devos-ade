@@ -149,6 +149,34 @@ The terminal (ttyd, `terminal/bin/bn-terminal`; tmux, `terminal/tmux.conf`) is I
 It keeps the system's monospace font. ttyd's page allows fonts only as `data:` URLs, and xterm.js measures its
 character cells once, when it opens. A web font that arrived later would draw text out of step with the cells.
 
+## Dashboards: sized widgets, not a long scroll
+
+Home, Settings and Browse models lay their content out as widgets sized to it, so the page is a screen or two, not a
+stack. The rules, so a new card drops in without a new pattern:
+
+- **The page's own width decides, not the window's.** Home is a container (`container: home / inline-size`) and its
+  widgets follow it: under 760 px one column; 760-1059 px two; from 1060 px three, to a page 1760 px wide. A wider
+  sidebar (the walkthrough open) therefore needs no rule of its own. Settings' card (`set-card`) does the same for its
+  settings: two columns from 800 px, three from 1240 px; each setting is a container too (`set-dep`), and under 520 px its
+  control goes under its name.
+- **Home's order is the priority:** the first row is `.home-top`, Get started and Continue side by side (alone, each as
+  wide as the page); then the update card, a job in progress; then `.grid`, whose widgets are placed by name
+  (`grid-area`: spend, svc, models, logins, maint, claude). A new widget gets a name and a place in the
+  `grid-template-areas` of the three widths, in app.css. **Service versions (JON-815)** go inside the update card's
+  *What's new* (`#update-releases`, which scrolls inside at 11 rem, 8.5 rem on a phone, so more lines never lengthen the
+  page).
+- **A widget has a height of its own.** A list that can be long scrolls inside its card (`max-height` and
+  `overflow-y: auto`: Continue's lists, the models table, What's new); a detail folds under a `<details>` (the
+  *Details* of a setting, the models table, the credentials, *Show the rest* under the long read-only lists).
+- **One page, several unrelated panels: tabs.** Models & providers shows Keys, Subscriptions or Search, one at a time
+  (the chips of `.set-minnav`, `showGroup` in settings.js); a search, *Changed from default* or an address opens whatever
+  it finds, whichever tab. Any card that needs the same takes `data-group` on its blocks and a chip per group.
+- **Browse models is a grid of cards** (`.mb-list`: as many columns as fit, to 1560 px wide). **Local models
+  (JON-816)** is a second block in that grid, or its own `.mb-list` above it, with the same row (`.mb-row`).
+- **A phone keeps one column** and drops what the tabs, the Code page and Chat already show: Recent shows four, a step
+  done is a line, the explanation of the Admin and Files sign-in is the More sheet's.
+- No horizontal page scroll at any width; the tokens and components are the ones above.
+
 ## Do and don't
 
 - **Do** use the tokens. A new colour first becomes a token in both `tokens.css` copies, with its contrast in this

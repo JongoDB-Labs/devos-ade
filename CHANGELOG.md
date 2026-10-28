@@ -159,6 +159,23 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ### Changed
 
+- **Home and Settings no longer scroll for ever: their content is laid out as sized widgets that use the screen (JON-812).**
+  On a wide window Home now puts **Get started** and **Continue** side by side at the top, the update card under them in two
+  columns (what's new beside what happens), and then **Bedrock spend**, the services and models, the sign-ins and
+  **Claude Code in your terminal** next to each other in three columns instead of one tall stack: a first visit that took
+  about 2,400 px of scrolling now takes about 1,600 px, and a returning one about 1,600 instead of 1,900. Long lists keep
+  to a size of their own and scroll inside their card (Continue, **What's new**, the models table) and nothing is cut
+  off: everything stays one click away. The same goes for the rest:
+  - **Settings › Models & providers** shows **Keys**, **Subscriptions** and **Search** one at a time (they were one
+    4,700 px page); a search or a link still finds a setting in any of them.
+  - Settings sections use two or three columns when the window is wide, and **Advanced** and **About this install** show
+    their first ten values and fold the rest under **Show the rest** (a search opens it).
+  - **Browse models** is a grid of cards, as many columns as fit.
+  - On a phone Home drops what is repeated elsewhere: Recent shows four, a finished Get started step is one line, and
+    the models table scrolls inside its card.
+  - The layout follows the page's own width, so opening the walkthrough (its wider sidebar) gives Home fewer columns
+    instead of squeezing three. No page scrolls sideways at any width.
+
 - **Settings changes apply in seconds (JON-533).** A change through the portal's Settings — or `./stack config set` —
   is now timed end to end, and only what the change needs is done on the critical path:
   - **A model-list change — the Experiential Labs set, the OpenRouter set, the Code page's default model or list — no
