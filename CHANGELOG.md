@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-10-28
+
 ### Added
 
 - **Browse models: search every provider and add the ones you want (JON-520).** Settings › Models & providers now has
