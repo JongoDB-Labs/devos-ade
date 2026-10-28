@@ -19,6 +19,7 @@ import { str, short, isUuid, isId } from './validate.mjs';
 import { commandsOf, mcpOf, pluginsOf } from './normalize.mjs';
 import { GitHosts, HostError } from './githosts.mjs';
 import { makeGitRemote } from './gitremote.mjs';
+import { makeMirrors } from './mirrors.mjs';
 import { NEVER_ASKS, CLAUDE_SAID, sandboxWords } from './said.mjs';
 import { SandboxError } from './spawn-client.mjs';
 import { Projects, ProjectError, projectIdOk, WS, absOf } from './projects.mjs';
@@ -281,6 +282,11 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
   // the sessions of /api/state, each with the project it is shown in
   const listed = () => { let place = null; try { place = proj().placer(); } catch { /* none */ } return mgr.list().map((x) => ({ ...x, project: place ? place(x.id, x.cwd) : 'ws' })); };
   // Git hosts and the Git panel's remote operations (gitremote.mjs): every use goes to the pages (Activity)
+  const mirrorsApi = makeMirrors({ store: hostStore });
+  // mirrorsView() -> {available, mirrors}: none (and not an error) while the built-in server is not connected or does not answer
+  const mirrorsView = async () => {
+    try { return { available: true, mirrors: await mirrorsApi.list() }; } catch (e) { return { available: false, mirrors: [], why: short(e?.message, 200) }; }
+  };
   let gitRemoteApi = null;
   const gitRemote = () => (gitRemoteApi ??= makeGitRemote({ call, openBroker, store: hostStore, log: logger, connect: gitConnect, apps: gitApps,
     oauthDelay: gitOAuthDelay,
@@ -508,6 +514,9 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
       const remote = req.headers['x-bn-remote'] === '1';
       const g = () => gitRemote();
       if (p === '/api/git/hosts' && m === 'GET') return send(res, 200, g().hostsView(remote));
+      // the built-in git server's mirrors and when they last synced (mirrors.mjs): read-only here — a mirror is made from the computer
+      // running DevOS ADE (./stack git-server mirror …), which also gives the git server its way out to the remote
+      if (p === '/api/git/mirrors' && m === 'GET') return send(res, 200, await mirrorsView());
       if (p === '/api/git/hosts' && m === 'POST') return send(res, 200, { host: g().addHost(await readJson(req, 96 << 10), remote) });
       // a sign-in (oauth.mjs): started, followed (the page asks every few seconds; this side polls the provider), cancelled
       if (p === '/api/git/oauth' && m === 'POST') return send(res, 200, await g().startSignIn(await readJson(req, 96 << 10), remote));

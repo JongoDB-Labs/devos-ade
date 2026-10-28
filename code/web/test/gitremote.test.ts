@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { chooseRepos, cloneTarget, compareHint, countdown, hostHint, hostLinks, importCommand, importedReach, NEVER_ASKS, remoteFor, remoteRef, SAID_BY, signInLife, signInReach, signInReady, syncState, within } from '../src/git';
-import { ApiError, normGitFileDiff, normGitLog, normGitReview, normGitStatus, normGitEvent, normServerMsg, problemOf, normGitHost, normGitPlan, normGitRemoteState, normSignInConfig, normSignInFlow, repoPath, isBranchName, isPrLink, saidOf, signInLink } from '../src/api';
+import { ApiError, normGitFileDiff, normGitLog, normGitReview, normGitStatus, normGitEvent, normServerMsg, problemOf, normGitHost, normGitPlan, normGitRemoteState, normSignInConfig, normSignInFlow, repoPath, isBranchName, isPrLink, normGitMirror, saidOf, signInLink } from '../src/api';
 import type { GitHostView } from '../src/types';
 
 const host = (over: Record<string, unknown> = {}) => ({ id: 'h_0123456789ab', kind: 'github', label: 'GitHub', host: 'github.com', port: null, auth: 'ssh', username: 'git',
@@ -222,4 +222,13 @@ test('pull request links the page opens: https pages, or the built-in git server
     'http://git.bedrock-now.localhost/devos/r/compare/feature/x', 'http://git.bn.localhost:8800/devos/r/compare/main']) assert.equal(isPrLink(ok), true, ok);
   for (const bad of ['http://github.com/o/r/pull/new/x', 'http://git.example.com/devos/r', 'http://evil.example/.localhost/x', 'http://localhost/x', 'javascript:alert(1)',
     'https://x.example/a b', 'http://git.bn.localhost', 'ftp://git.bn.localhost/x', '//git.bn.localhost/x', 'http://git.bn.localhost.evil.example/x', null, 7, undefined]) assert.equal(isPrLink(bad), false, String(bad));
+});
+
+test('the built-in git server\'s mirrors: only what the page may show — checked names, times and cut texts, push and pull kept apart', () => {
+  const ok = { direction: 'push', repo: 'devos/app', remote: 'https://github.com/o/app.git', interval: '8h0m0s', syncOnCommit: true, lastSync: '2026-10-28T03:00:00Z', lastError: null };
+  assert.deepEqual(normGitMirror(ok), ok);
+  assert.equal(normGitMirror({ ...ok, direction: 'pull', lastError: 'x\u0007y'.repeat(300) })!.lastError!.length < 1200, true);
+  assert.equal(/[\u0000-\u001f]/.test(normGitMirror({ ...ok, lastError: 'a\nb\u0007c' })!.lastError!), false);
+  assert.equal(normGitMirror({ ...ok, lastSync: 'yesterday' })!.lastSync, null);
+  for (const bad of [null, 7, { ...ok, direction: 'both' }, { ...ok, repo: '../x' }, { ...ok, repo: 'a/b/c' }, { ...ok, repo: 7 }]) assert.equal(normGitMirror(bad), null, JSON.stringify(bad));
 });

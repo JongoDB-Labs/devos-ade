@@ -1,0 +1,15 @@
+# The built-in git server while it has a mirror (lib/localgit.sh; lib/common.sh compose_overlays adds this file while ./stack's
+# record, LOCALGIT_MIRROR_EGRESS and LOCALGIT_MIRROR_HOSTS in .env, says a mirror exists — the record is rewritten from the
+# mirrors the server really has, never edited by hand): Forgejo is also on "localgit-out", a network to the internet of its own
+# with nothing else on it, so it can push to or fetch from the remotes — and, by its own [migrations] ALLOWED_DOMAINS (compose.yaml:
+# the mirrors' host names, from .env), only those; its default refusal of private, loopback and link-local addresses stays on
+# (ALLOW_LOCALNETWORKS), so this computer and your network stay out of reach. With no mirror this file is not used and
+# Forgejo has no way out at all.
+services:
+  forgejo:
+    networks:
+      localgit-out: {}
+
+networks:
+  # (not internal: this is the way out; Forgejo alone is on it)
+  localgit-out:

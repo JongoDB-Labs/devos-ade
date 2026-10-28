@@ -819,6 +819,21 @@ export type GitScope = 'staged' | 'unstaged' | 'untracked';
 // --- the Git panel's remotes and Git hosts (GET /api/git/remote, /api/git/hosts …: code/server/gitremote.mjs) ---
 export type GitHostKind = 'github' | 'gitlab' | 'other';
 export type GitAuth = 'token' | 'ssh' | 'oauth';
+/** One mirror of the built-in git server (GET /api/git/mirrors): a push mirror (the remote is a copy; its refs are force-updated) or a pull mirror (a read-only local copy). */
+export interface GitMirrorView {
+  direction: 'push' | 'pull';
+  repo: string;
+  remote: string;
+  interval: string;
+  syncOnCommit: boolean;
+  lastSync: string | null;
+  lastError: string | null;
+}
+export interface GitMirrorsView {
+  /** false while the built-in server is off, not connected or does not answer (no list) */
+  available: boolean;
+  mirrors: GitMirrorView[];
+}
 /** A signed-in host's sign-in as the page sees it: never its tokens. */
 export interface GitOAuthView {
   provider: 'github' | 'gitlab';

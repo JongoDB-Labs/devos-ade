@@ -13,7 +13,10 @@
 #   refused, the token in no .git/config, event or host view; the gateway answers git's paths only (the web UI, the API,
 #   raw files: 404; no credential: 401); Forgejo, the internet and github.com are unreachable from that network; the web UI
 #   through the main Caddy behind the portal's check, framed by the portal only, other Host names refused; the repository
-#   survives a recreated container.
+#   survives a recreated container; mirroring: push and pull mirrors to a connected host (a second Forgejo plays GitHub, https with
+#   a certificate of this run's own) through Caddy's internal :8099 site, the git server's way out made by ./stack's own function only
+#   for that host and taken away with the last mirror, a host that way out was not made for refused, deletes and the admin API not
+#   passed by the internal site.
 set -o pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 W="$(cd "$HERE/../../.." && pwd)"
@@ -54,7 +57,7 @@ cd "$W" || exit 2
 # shellcheck disable=SC1091
 . lib/common.sh; . lib/ports.sh; . lib/portal.sh; . lib/models.sh; . lib/commands.sh; . lib/prices.sh
 cleanup() {
-  docker rm -f "$P-portal-stub" >/dev/null 2>&1
+  docker rm -f "$P-portal-stub" "$P-remote" "$P-mclient" >/dev/null 2>&1
   _LG_PROFILE=1 dc down -v --remove-orphans >/dev/null 2>&1
   docker volume rm "${P}_gitdata" >/dev/null 2>&1
   docker rmi -f "$P-client" >/dev/null 2>&1
@@ -102,8 +105,12 @@ sleep 2
 host="git.$P.localhost:$PORT"
 home="$(curl -s -m 10 -w '\n%{http_code}' -H "Host: $host" -H 'Accept: text/html' "http://127.0.0.1:$PORT/")"
 [ "$(printf '%s' "$home" | tail -n 1)" = 200 ] && printf '%s' "$home" | grep -q 'Forgejo' && pass "the web UI answers through Caddy (Forgejo's page)" || fail "the web UI answers through Caddy ($(printf '%s' "$home" | tail -n 1))"
-login="$(curl -s -m 10 -D "$S/login.hdr" -H "Host: $host" "http://127.0.0.1:$PORT/user/login")"
-printf '%s' "$login" | grep -q 'Forgejo' && pass "its sign-in page is Forgejo's" || fail "its sign-in page is Forgejo's"
+signed="$(curl -s -m 10 -H "Host: $host" -H 'Accept: text/html' "http://127.0.0.1:$PORT/devos/e2e-one")"
+printf '%s' "$signed" | grep -q 'user/logout\|data-tooltip-content="devos"\|Sign Out' && pass "the portal's session signs the owner in (no password)" || fail "the owner is signed in through Caddy"
+spoof="$(curl -s -m 10 -H "Host: $host" -H 'X-Webauth-User: nobody' "http://127.0.0.1:$PORT/devos/e2e-one" | grep -c 'nobody')"
+check "a client's own X-Webauth-User is replaced, never trusted" "$spoof" 0
+login="$(curl -s -m 10 -D "$S/login.hdr" -H "Host: $host" "http://127.0.0.1:$PORT/devos/e2e-one")"
+printf '%s' "$login" | grep -q 'Forgejo' && pass "its pages are Forgejo's" || fail "its pages are Forgejo's"
 grep -qi '^content-security-policy: frame-ancestors http://'"$P"'.localhost:'"$PORT"'\r\?$' "$S/login.hdr" && pass "framed by the portal only (CSP frame-ancestors)" || fail "framed by the portal only ($(grep -i 'content-security-policy' "$S/login.hdr" | head -n 1))"
 grep -qi '^x-frame-options' "$S/login.hdr" && fail "no X-Frame-Options left" || pass "no X-Frame-Options left"
 other="$(curl -s -m 10 -H "Host: 127.0.0.1:$PORT" "http://127.0.0.1:$PORT/user/login")"
@@ -112,6 +119,57 @@ printf '%s' "$other" | grep -q 'Forgejo' && fail "another Host name never reache
 # --- persistence: the volume keeps the repositories ---
 dc up -d --no-deps --force-recreate --wait forgejo >/dev/null 2>&1
 check "the repository survives a recreated container" "$(dc exec -T forgejo curl -s -H "$auth" http://127.0.0.1:3000/api/v1/repos/devos/e2e-one | python3 -c 'import sys, json; print(json.load(sys.stdin)["full_name"])')" devos/e2e-one
+# --- mirroring: Forgejo's own repository mirroring to a connected host, the way out only while a mirror exists ---
+# (a second Forgejo plays GitHub: https, a certificate of this run's own, on the network the git server gets only for a mirror)
+nets() { docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$(dc ps -q forgejo)" | tr ' ' '\n' | sed '/^$/d' | sort | tr '\n' ' '; }
+check "before a mirror the git server has the internal network alone" "$(nets)" "${P}_localgit "
+mkdir -p "$S/remote"
+rcfg="$S/remote/c.cnf"; printf '[req]\ndistinguished_name=dn\nx509_extensions=v3\nprompt=no\n[dn]\nCN=remote-git\n[v3]\nsubjectAltName=DNS:remote-git\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,digitalSignature,keyCertSign\nextendedKeyUsage=serverAuth\n' > "$rcfg"
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 2 -config "$rcfg" -keyout "$S/remote/tls.key" -out "$S/remote/tls.crt" >/dev/null 2>&1
+chmod 644 "$S/remote"/tls.*
+# (the git server trusts that one certificate for the remote: a test-only file of the projects overlay ./stack reads while it exists)
+mkdir -p "$S/state/projects"
+printf 'services:\n  forgejo:\n    environment:\n      SSL_CERT_FILE: /var/lib/gitea/remote-ca.pem\n      GIT_SSL_CAINFO: /var/lib/gitea/remote-ca.pem\n' > "$S/state/projects/compose.yaml"
+_lg_mirror_egress_apply remote-git > "$S/egress.log" 2>&1 && pass "the way out is made for remote-git (./stack's own function)" || { fail "the way out is made ($(tail -n 3 "$S/egress.log" | tr '\n' ' '))"; }
+check "while a mirror exists: the internal network and a way out of its own" "$(nets)" "${P}_localgit ${P}_localgit-out "
+check "the way out is not internal" "$(docker network inspect -f '{{.Internal}}' "${P}_localgit-out")" false
+check "the allowed names are the mirrors' hosts only" "$(dc exec -T forgejo sh -c 'grep ALLOWED_DOMAINS /var/lib/gitea/app.ini' | tr -d '\r')" "ALLOWED_DOMAINS = remote-git"
+RIMG="$(dc config --images 2>/dev/null | grep forgejo | head -n 1)"
+docker rm -f "$P-remote" >/dev/null 2>&1
+docker create --name "$P-remote" --network "${P}_localgit-out" --network-alias remote-git -e GITEA_APP_INI=/var/lib/gitea/app.ini -e FORGEJO__security__INSTALL_LOCK=true \
+  -e FORGEJO__database__DB_TYPE=sqlite3 -e FORGEJO__server__PROTOCOL=https -e FORGEJO__server__CERT_FILE=/certs/tls.crt -e FORGEJO__server__KEY_FILE=/certs/tls.key \
+  -e FORGEJO__server__ROOT_URL=https://remote-git:3000/ -e FORGEJO__server__DISABLE_SSH=true -e FORGEJO__server__START_SSH_SERVER=false \
+  -e FORGEJO__repository__ENABLE_PUSH_CREATE_USER=true -e FORGEJO__service__DISABLE_REGISTRATION=true "$RIMG" >/dev/null 2>&1 || fail "the stand-in remote is created"
+docker cp "$S/remote" "$P-remote:/certs" >/dev/null 2>&1
+docker start "$P-remote" >/dev/null 2>&1 || fail "the stand-in remote starts"
+for i in $(seq 1 60); do docker exec "$P-remote" curl -ksf https://localhost:3000/api/healthz >/dev/null 2>&1 && break; sleep 1; done
+docker exec "$P-remote" forgejo admin user create --admin --username rem --email rem@example.com --password 'Rem9-0123456789abcdef' --must-change-password=false >/dev/null 2>&1
+rtok="$(docker exec "$P-remote" forgejo admin user generate-access-token --username rem --token-name m --scopes all --raw 2>/dev/null | tail -n 1 | tr -d '\r')"
+check "the stand-in remote has an account and a token" "${#rtok}" 40
+docker exec "$P-remote" curl -ks -H "Authorization: token $rtok" -H 'Content-Type: application/json' -d '{"name":"copy","private":true}' https://localhost:3000/api/v1/user/repos >/dev/null 2>&1
+docker cp "$S/remote/tls.crt" "$(dc ps -q forgejo):/var/lib/gitea/remote-ca.pem" >/dev/null 2>&1
+dc restart forgejo >/dev/null 2>&1; for i in $(seq 1 60); do dc exec -T forgejo curl -fsS http://127.0.0.1:3000/api/healthz >/dev/null 2>&1 && break; sleep 1; done
+# (the client is on the default network, where Caddy's :8099 site is, and on the stand-in's network, to read the remote it checks)
+export E2E_GIT_TOKEN="$tok" E2E_GIT_CA="$(cat "$S/state/localgit/tls/tls.crt")" E2E_REMOTE_TOKEN="$rtok" E2E_REMOTE_CA="$(cat "$S/remote/tls.crt")"
+docker rm -f "$P-mclient" >/dev/null 2>&1
+docker create --name "$P-mclient" --network "${P}_default" -e E2E_GIT_TOKEN -e E2E_GIT_CA -e E2E_REMOTE_TOKEN -e E2E_REMOTE_CA -e NODE_TLS_REJECT_UNAUTHORIZED=0 \
+  -v "$W":/repo:ro -v "$HERE/mirror.mjs":/mirror.mjs:ro "$P-client" node /mirror.mjs >/dev/null 2>&1
+docker network connect "${P}_localgit-out" "$P-mclient" >/dev/null 2>&1
+docker start -a "$P-mclient" > "$S/mirror.log" 2>&1
+mrc=$?
+docker rm -f "$P-mclient" >/dev/null 2>&1
+unset E2E_GIT_TOKEN E2E_GIT_CA E2E_REMOTE_TOKEN E2E_REMOTE_CA
+grep -E '^(ok|FAIL) ' "$S/mirror.log" | sed -e 's/^ok   /PASS /' | cut -c1-230
+[ "$mrc" = 0 ] && pass "the mirror client's checks all passed" || { fail "the mirror client exited $mrc"; tail -n 15 "$S/mirror.log"; dc logs --tail 25 forgejo 2>&1 | tail -n 25; }
+# a pull mirror is a repository: it stays until deleted; the way out follows the mirrors that really exist (here: its host)
+dc exec -T forgejo curl -s -X DELETE -H "$auth" http://127.0.0.1:3000/api/v1/repos/devos/pulled >/dev/null 2>&1
+_lg_mirror_egress_apply "" > "$S/egress2.log" 2>&1 && pass "no mirror left: the way out is taken away (./stack's own function)" || fail "the way out is taken away"
+check "after the last mirror: the internal network alone again" "$(nets)" "${P}_localgit "
+check "and no allowed names are left in its settings" "$(dc exec -T forgejo sh -c 'grep "ALLOWED_DOMAINS" /var/lib/gitea/app.ini' | tr -d '\r')" "ALLOWED_DOMAINS = "
+check "the stand-in remote is no longer reachable from the git server" "$(dc exec -T forgejo sh -c "curl -ks -m 4 -o /dev/null -w '%{http_code}' https://remote-git:3000/ ; true" | tr -d '\r')" 000
+rm -f "$S/state/projects/compose.yaml"
+docker rm -f "$P-remote" >/dev/null 2>&1
+
 # --- off: the container and the site go, the volume stays ---
 set_env LOCALGIT off
 dc rm -sf forgejo >/dev/null 2>&1; _LG_PROFILE=1 dc rm -sf forgejo >/dev/null 2>&1

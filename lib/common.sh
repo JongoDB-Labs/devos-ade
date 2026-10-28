@@ -338,7 +338,7 @@ dc() {
   # The browser terminal too: an exported TERMINAL_WORKSPACE must never decide what the container sees.
   ( unset OPENROUTER_API_KEY OPENROUTER_MODELS OPENROUTER_MAX_MODELS EXPLABS_API_KEY EXPLABS_MODELS STT_PROVIDER STT_API_KEY STT_MODEL OWUI_STT_ENGINE \
       WEBSEARCH_TAVILY_API_KEY WEBSEARCH_BRAVE_API_KEY WEBSEARCH_PERPLEXITY_API_KEY WEBSEARCH_SEARXNG_SECRET WEBSEARCH_SEARXNG_BUILTIN \
-      LOCALGIT LOCALGIT_ADMIN_PASSWORD GIT_HOST GIT_ORIGIN BN_LOCALGIT_MODE BN_LOCALGIT_TLS \
+      LOCALGIT LOCALGIT_ADMIN_PASSWORD LOCALGIT_MIRROR_EGRESS LOCALGIT_MIRROR_HOSTS GIT_HOST GIT_ORIGIN BN_LOCALGIT_MODE BN_LOCALGIT_TLS \
       OWUI_STT_BASE_URL STT_BEDROCK_MODEL COMPOSE_PROFILES \
       AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_REGION_NAME \
       TERMINAL_ENABLED TERMINAL_WORKSPACE TERMINAL_EGRESS TERMINAL_EGRESS_ALLOW TERMINAL_EGRESS_DENY TERMINAL_HOST TERMINAL_UID TERMINAL_GID TERMINAL_MEM_LIMIT \
@@ -485,6 +485,9 @@ compose_reads_contexts() {
 }
 
 # --- the built-in git server (lib/localgit.sh has the rest) ---
+# localgit_mirror_wanted -> 0 while the git server has a mirror to reach (compose.localgit-mirror.yaml: a network of its own to the
+# internet, limited to the mirrors' host names): it is on, and ./stack's record (reconciled with the server's own mirrors) has hosts
+localgit_mirror_wanted() { localgit_on && flag_on "$(get_env LOCALGIT_MIRROR_EGRESS)" && [ -n "$(get_env LOCALGIT_MIRROR_HOSTS)" ]; }
 # localgit_on -> 0 while the built-in git server is on: LOCALGIT anything but off (blank = on, the default)
 localgit_on() { ! flag_off "$(get_env LOCALGIT)"; }
 # localgit_overlay_wanted -> 0 while the sandbox's gateway should also serve it (compose.localgit.yaml): it is on, and so is
@@ -565,6 +568,8 @@ compose_overlays() {
       esac
     fi
   fi
+  # (independent of the terminal: the git server alone, while it has a mirror)
+  ! localgit_mirror_wanted || echo compose.localgit-mirror.yaml
   return 0
 }
 

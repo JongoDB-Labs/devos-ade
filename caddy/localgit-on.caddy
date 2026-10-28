@@ -1,7 +1,7 @@
 # The built-in git server's web UI (LOCALGIT on, the default; lib/localgit.sh sets BN_LOCALGIT_MODE=on). Imported by
-# Caddyfile; the snippets are defined there. Forgejo's own sign-in applies (the owner's account made at setup: ./stack
-# status says where its password is) — behind the portal's check like every other app host, so a browser needs the
-# portal session first. The sandbox does not come this way: its git reaches Forgejo through the terminal's gateway
+# Caddyfile; the snippets are defined there. Behind the portal's check like every other app host, so a browser needs the
+# portal session first — and then it is signed in to Forgejo as the owner (header_up below); Forgejo's own form (the
+# owner's password, ./stack status says where) stays as the fallback. The sandbox does not come this way: its git reaches Forgejo through the terminal's gateway
 # (caddy/localgit-gateway-on.caddy), which shares only the internal "localgit" network with it.
 http://{$GIT_HOST} {
 	route {
@@ -11,6 +11,54 @@ http://{$GIT_HOST} {
 		reverse_proxy forgejo:3000 {
 			import drop_session_cookie
 			import frame_by_portal_only
+			# Signed in by the portal: Forgejo's reverse-proxy authentication takes the owner's account from this header. It
+			# is set here, after the portal's check above (a client-sent one is replaced), on this site only; the terminal's
+			# gateway removes it from everything the sandbox sends, and the code container's internal site (:8099) too.
+			header_up X-Webauth-User devos
+			header_up -X-Webauth-Email
+			header_up -X-Webauth-Fullname
 		}
+	}
+}
+
+# The built-in git server's mirroring API, for the code container alone (code/server/mirrors.mjs: it holds the connected git
+# hosts' credentials and makes the mirrors, from ./stack git-server mirror …; the Code page lists their status). Port 8099 is
+# not published; it answers on Caddy's container networks — the code container reaches it over the network it shares with
+# Caddy. A few API paths of this one service and nothing else (a repository's own record, its push mirrors, a mirror sync,
+# a migration that makes a pull mirror, the owner's repository list); Forgejo needs the owner's own access token for
+# every one (this site adds none), and nothing that signs in for the portal, Tailscale or a reverse proxy goes through.
+http://:8099 {
+	route {
+		request_header -X-Portal-User
+		request_header -X-Portal-Remote
+		request_header -X-Portal-Proxy
+		request_header -X-Bn-Code-Proxy
+		request_header -Tailscale-User-Login
+		request_header -Tailscale-User-Name
+		request_header -Tailscale-User-Profile-Pic
+		request_header -Tailscale-Headers-Info
+		request_header -X-Webauth-User
+		request_header -X-Webauth-Email
+		request_header -X-Webauth-Fullname
+		request_header -Cookie
+		request_body {
+			max_size 64KB
+		}
+		@unclean vars_regexp {http.request.uri.path} `(^|/)\.\.?(/|$)|//`
+		respond @unclean 404
+		# (reads of the owner's repository list and of one repository's record; never a change or a delete of the repository)
+		@read {
+			method GET
+			path_regexp ^/api/v1/(user/repos|repos/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+)$
+		}
+		@migrate {
+			method POST
+			path /api/v1/repos/migrate
+		}
+		@mirrors path_regexp ^/api/v1/repos/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/(push_mirrors(/[A-Za-z0-9._-]+)?|push_mirrors-sync|mirror-sync)$
+		reverse_proxy @read forgejo:3000
+		reverse_proxy @migrate forgejo:3000
+		reverse_proxy @mirrors forgejo:3000
+		respond 404
 	}
 }

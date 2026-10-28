@@ -137,3 +137,6 @@ p.said-never { margin: 6px 0 2px; }
 .gitr-setup-steps summary { display: inline; cursor: pointer; color: var(--accent); text-decoration: underline; }
 .gitr-setup-steps ol { margin: 6px 0 4px; padding-left: 20px; display: grid; gap: 3px; }
 .gitr-needs-id { align-self: center; }
+.gitr-mirrors { margin-top: 12px; }
+.gitr-mirrors h4 { margin: 0 0 4px; font-size: inherit; }
+.gitr-mirrors ul { margin: 6px 0 0; padding-left: 16px; display: grid; gap: 4px; }

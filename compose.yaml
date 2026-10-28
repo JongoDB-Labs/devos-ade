@@ -377,6 +377,15 @@ services:
       FORGEJO__picture__DISABLE_GRAVATAR: "true"
       FORGEJO__service__DISABLE_REGISTRATION: "true"
       FORGEJO__service__REQUIRE_SIGNIN_VIEW: "true"
+      # The portal signs the owner in (caddy/localgit-on.caddy): after its session check Caddy sets X-Webauth-User to the
+      # owner's account, and only on that site's path. Forgejo trusts the header from its peers on the internal "localgit"
+      # network — Caddy, and the terminal's gateway, which removes it before Forgejo (caddy/localgit-gateway-on.caddy); the
+      # sandbox cannot reach Forgejo any other way. No registration from it, and it never signs in the API or git.
+      FORGEJO__service__ENABLE_REVERSE_PROXY_AUTHENTICATION: "true"
+      FORGEJO__service__ENABLE_REVERSE_PROXY_AUTO_REGISTRATION: "false"
+      FORGEJO__service__ENABLE_REVERSE_PROXY_AUTHENTICATION_API: "false"
+      FORGEJO__security__REVERSE_PROXY_AUTHENTICATION_USER: X-Webauth-User
+      FORGEJO__security__REVERSE_PROXY_TRUSTED_PROXIES: "*"
       FORGEJO__repository__DEFAULT_PRIVATE: private
       FORGEJO__repository__ENABLE_PUSH_CREATE_USER: "true"   # a push to a missing repository of the owner makes it (private): the Code page's Publish
       FORGEJO__actions__ENABLED: "false"
@@ -384,6 +393,11 @@ services:
       FORGEJO__federation__ENABLED: "false"
       FORGEJO__openid__ENABLE_OPENID_SIGNIN: "false"
       FORGEJO__other__SHOW_FOOTER_VERSION: "false"
+      # Mirroring (lib/localgit.sh): the only host names it may reach — .env's record of the mirrors there are; blank with none
+      # (and then Forgejo has no way out at all: compose.localgit-mirror.yaml gives it one while a mirror exists). Its own refusal of
+      # private, loopback and link-local addresses stays on.
+      FORGEJO__migrations__ALLOWED_DOMAINS: ${LOCALGIT_MIRROR_HOSTS:-}
+      FORGEJO__migrations__ALLOW_LOCALNETWORKS: "false"
       FORGEJO__log__LEVEL: Warn
     volumes:
       - gitdata:/var/lib/gitea

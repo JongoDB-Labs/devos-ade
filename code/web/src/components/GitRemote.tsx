@@ -29,7 +29,7 @@ import {
   openProjectDialog,
 } from '../app';
 import * as api from '../api';
-import type { GitAuth, GitHostKind, GitHostView, GitPlan, GitRemoteState, GitSignInConfig, GitSignInFlow, GitStatus, SandboxWords } from '../types';
+import type { GitAuth, GitHostKind, GitHostView, GitMirrorsView, GitPlan, GitRemoteState, GitSignInConfig, GitSignInFlow, GitStatus, SandboxWords } from '../types';
 import { chooseRepos, cloneTarget, compareHint, countdown, hostHint, hostLinks, importCommand, importedReach, NEVER_ASKS, remoteFor, remoteRef, signInLife, signInReach, signInReady, syncState } from '../git';
 import { SandboxSaid } from './Said';
 import { inProject, type Project } from '../projects';
@@ -552,6 +552,7 @@ export function GitHostsDialog({ onClose }: { onClose: () => void }) {
           <Icon name="plus" size={13} /> Connect a git host…
         </button>
       ))}
+      {view && <MirrorsSection />}
       {events.length > 0 && (
         <details class="gitr-events small" data-testid="git-events">
           <summary>Recent use ({events.length})</summary>
@@ -569,6 +570,35 @@ export function GitHostsDialog({ onClose }: { onClose: () => void }) {
         </details>
       )}
     </Dialog>
+  );
+}
+
+// The built-in git server's mirrors and when they last synced (read-only: a mirror is made on the computer running DevOS ADE with
+// `./stack git-server mirror add`, which also gives the git server its way out to the remote). Nothing is shown while there is none
+// or the server does not answer.
+function MirrorsSection() {
+  const [m, setM] = useState<GitMirrorsView | null>(null);
+  useEffect(() => {
+    let live = true;
+    api.getGitMirrors().then((v) => { if (live) setM(v); }, () => { if (live) setM(null); });
+    return () => { live = false; };
+  }, []);
+  if (!m || !m.available || !m.mirrors.length) return null;
+  return (
+    <section class="gitr-mirrors small" data-testid="git-mirrors">
+      <h4>Mirrors of the built-in git server</h4>
+      <ul role="list">
+        {m.mirrors.map((x) => (
+          <li key={`${x.direction} ${x.repo} ${x.remote}`} class={x.lastError ? 'warn-text' : ''} data-testid="git-mirror">
+            <strong>{x.repo}</strong> {x.direction === 'push' ? '→' : '←'} {x.remote} ·{' '}
+            {x.direction === 'push' ? 'push mirror: the remote is a copy, its refs are force-updated' : 'pull mirror: a read-only copy of the remote'} · every {x.interval}
+            {x.syncOnCommit ? ' and on every push here' : ''} · {x.lastSync ? `last sync ${ago(Date.parse(x.lastSync))}` : 'not synced yet'}
+            {x.lastError ? ` — failed: ${x.lastError}` : ''}
+          </li>
+        ))}
+      </ul>
+      <p class="muted">Made and removed with <code>./stack git-server mirror</code> on the computer running {PRODUCT}.</p>
+    </section>
   );
 }
 

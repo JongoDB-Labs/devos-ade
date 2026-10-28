@@ -81,6 +81,7 @@ ok(code('https://gateway:8093/') === '404', 'the web UI is not on the gateway (4
 ok(code('https://gateway:8093/api/v1/version') === '404', 'the API is not on the gateway (404)');
 ok(code('https://gateway:8093/devos/e2e-one.git/info/refs?service=git-upload-pack') === '401', 'git without a credential: 401 (private)');
 ok(code('https://gateway:8093/devos/e2e-one/raw/branch/main/README.md', `-u devos:${token}`) === '404', 'raw file paths are not git: 404');
+ok(code('https://gateway:8093/devos/e2e-one.git/info/refs?service=git-upload-pack', "-H 'X-Webauth-User: devos'") === '401', 'a sign-in header from the sandbox is removed by the gateway (still 401)');
 ok(sh("curl -s -m 5 -o /dev/null -w '%{http_code}' --noproxy '*' http://forgejo:3000/ ; true") === '000', 'forgejo itself does not resolve from the sandbox network');
 ok(sh("curl -s -m 5 -o /dev/null -w '%{http_code}' --noproxy '*' https://1.1.1.1/ ; true") === '000', 'no internet from the sandbox network');
 ok(sh("curl -s -m 5 -o /dev/null -w '%{http_code}' --noproxy '*' https://github.com/ ; true") === '000', 'no github.com from the sandbox network');

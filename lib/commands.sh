@@ -78,6 +78,8 @@ Usage: ./stack <command> [--yes]
                (each change restarts the sandbox: --now, --when-idle or --later)
   git-host     The Code page's Git hosts from a CLI login on this computer: import gh | import glab
                [--host HOST]   (the token goes to the code container on stdin, never printed; you confirm)
+  git-server   The built-in git server (Forgejo): status | mirror list | add push|pull REPO URL | sync | remove
+               (mirrors to your connected GitHub / GitLab; its way out to them only while a mirror exists)
   sessions     Your Claude Code and devos-claude sessions on this computer, copied into a project's sandbox
                (only after you allow it here; nothing is written back): list | import --project NAME
                | scan | fetch | consent [--always|--once|--revoke] | suggest   (secrets redacted by default)
@@ -1391,6 +1393,7 @@ cmd_up() {
   [ ! -f "$STACK_DIR/litellm/config.yaml" ] || { websearch_search_check; websearch_write_json; }
   terminal_after_up   # TERMINAL_EGRESS: what its way out no longer uses goes once the container has left it
   localgit_after_up   # lib/localgit.sh: the git server's owner account and the Code page's host for it (both up now); never fatal
+  localgit_mirror_reconcile   # lib/localgit.sh: the git server's way out follows the mirrors it really has; never fatal
   remote_up_hook
   ensure_portal_reachable   # lib/portal.sh: Docker Desktop forwarding the portal's port to a Caddy it replaced
   # Open WebUI keeps banners in memory only: re-apply the budget banner (through the portal, like setup).

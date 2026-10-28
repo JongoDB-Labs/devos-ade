@@ -17,7 +17,16 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   publish (a push creates a missing repository, private) and *Open a pull request* work as with GitHub — also with the
   sandbox's internet off or direct: an egress carve-out like LiteLLM's, a TLS listener on the terminal's gateway
   (`https://gateway:8093`) that forwards only git's smart-HTTP paths to Forgejo, over an internal network no other
-  service shares. Mirroring to remote hosts and signing in from the portal follow.
+  service shares.
+- **The portal signs you in to the git server, and it can mirror to GitHub or GitLab (JON-810).** Opening the git server's web
+  UI with your portal session signs you in as the owner through Forgejo's reverse-proxy authentication (Caddy sets the header
+  after the portal's check, on that site only; the sandbox's gateway and the internal mirror site strip it): no password. And
+  `./stack git-server mirror add push|pull REPO URL` uses the Git host you connected (an access token) for Forgejo's own
+  repository mirroring: a *push* mirror keeps a remote copy of a local repository (on every push here and every 8 hours;
+  it force-updates the remote's refs), a *pull* mirror a read-only local copy of a remote; `mirror list`, `sync`, `remove`
+  and the Code page's Git hosts dialog show the last sync and any error (the repository's Settings in the web UI too). The
+  git server has no way out to the internet until a mirror exists; while one does, a network of its own, limited to the
+  mirrors' host names. What it does, the token handed to Forgejo and the force-update are said and confirmed first.
 
 ## [0.38.0] - 2026-10-28
 

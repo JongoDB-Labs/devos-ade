@@ -313,3 +313,133 @@ test_the_settings_row_and_the_help_know_it() {
   grep -q '_cfg_on localgit; then localgit_up' "$T_ROOT/lib/settings.sh" || { echo "Settings' apply does not know localgit" >&2; return 1; }
   grep -q '^LOCALGIT_ADMIN_PASSWORD' "$T_ROOT/.env.example" && grep -q '^LOCALGIT=' "$T_ROOT/.env.example" || { echo ".env.example lacks the keys" >&2; return 1; }
 }
+
+# --- mirroring (./stack git-server mirror …) ---
+
+test_the_mirror_overlay_follows_the_record_and_the_switch() {
+  printf 'X=1\n' > "$ENV_FILE"
+  assert_not_contains "$(compose_overlays | tr '\n' ' ')" "compose.localgit-mirror.yaml"
+  printf 'LOCALGIT_MIRROR_EGRESS=on\nLOCALGIT_MIRROR_HOSTS=github.com\n' > "$ENV_FILE"
+  assert_contains "$(compose_overlays | tr '\n' ' ')" "compose.localgit-mirror.yaml"     # (with no terminal too: the git server alone)
+  printf 'LOCALGIT_MIRROR_EGRESS=on\nLOCALGIT_MIRROR_HOSTS=\n' > "$ENV_FILE"
+  assert_not_contains "$(compose_overlays | tr '\n' ' ')" "compose.localgit-mirror.yaml"  # (no host named: no way out)
+  printf 'LOCALGIT_MIRROR_EGRESS=off\nLOCALGIT_MIRROR_HOSTS=github.com\n' > "$ENV_FILE"
+  assert_not_contains "$(compose_overlays | tr '\n' ' ')" "compose.localgit-mirror.yaml"
+  printf 'LOCALGIT=off\nLOCALGIT_MIRROR_EGRESS=on\nLOCALGIT_MIRROR_HOSTS=github.com\n' > "$ENV_FILE"
+  assert_not_contains "$(compose_overlays | tr '\n' ' ')" "compose.localgit-mirror.yaml"  # (off: nothing of it)
+  # the file: forgejo on a network of its own to the internet, not internal, and nothing else on it
+  c="$(cat "$T_ROOT/compose.localgit-mirror.yaml")"
+  assert_contains "$c" "localgit-out: {}"
+  assert_not_contains "$(sed -n '/^networks:/,$p' "$T_ROOT/compose.localgit-mirror.yaml" | grep -v '^ *#')" "internal"
+  # the names it may reach come from compose.yaml (blank with no mirror), the private-address refusal stays on
+  y="$(sed -n '/^  forgejo:/,/^  portal:/p' "$T_ROOT/compose.yaml")"
+  assert_contains "$y" 'FORGEJO__migrations__ALLOWED_DOMAINS: ${LOCALGIT_MIRROR_HOSTS:-}'
+  assert_contains "$y" 'FORGEJO__migrations__ALLOW_LOCALNETWORKS: "false"'
+}
+
+test_the_way_out_follows_the_hosts_and_is_changed_only_when_they_change() {
+  printf 'X=1\n' > "$ENV_FILE"
+  run_phase() { shift 2; "$@"; }; services_status_write() { :; }
+  dc() { echo "dc $*" >> "$TMP/calls"; }
+  : > "$TMP/calls"; _lg_mirror_egress_apply "" 2>/dev/null
+  assert_eq "$(cat "$TMP/calls")" ""                                          # (nothing there, nothing wanted: nothing done)
+  _lg_mirror_egress_apply "github.com" 2>/dev/null
+  assert_eq "$(get_env LOCALGIT_MIRROR_HOSTS)/$(get_env LOCALGIT_MIRROR_EGRESS)" "github.com/on"
+  assert_contains "$(cat "$TMP/calls")" "up -d --no-deps --wait forgejo"
+  : > "$TMP/calls"; _lg_mirror_egress_apply "github.com" 2>/dev/null; assert_eq "$(cat "$TMP/calls")" ""   # (the same: nothing)
+  _lg_mirror_egress_apply "github.com,gitlab.com" 2>/dev/null
+  assert_eq "$(get_env LOCALGIT_MIRROR_HOSTS)" "github.com,gitlab.com"
+  : > "$TMP/calls"; _lg_mirror_egress_apply "" 2>/dev/null
+  assert_eq "$(get_env LOCALGIT_MIRROR_HOSTS)/$(get_env LOCALGIT_MIRROR_EGRESS)" "/off"
+  assert_contains "$(cat "$TMP/calls")" "up -d --no-deps --wait forgejo"
+}
+
+test_reconcile_asks_the_server_and_changes_nothing_it_cannot_ask() {
+  printf 'LOCALGIT_MIRROR_EGRESS=on\nLOCALGIT_MIRROR_HOSTS=github.com\nTERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=/w\nCODE_ENABLED=true\n' > "$ENV_FILE"
+  code_ready() { return 0; }; _lg_running() { return 0; }; services_status_write() { :; }; run_phase() { shift 2; "$@"; }
+  dc() { echo "dc $*" >> "$TMP/calls"; case "$*" in "ps -q --status running code") echo abc ;; esac; }
+  _lg_hosts_csv() { return 1; }                                               # (the server cannot be asked)
+  : > "$TMP/calls"; localgit_mirror_reconcile
+  assert_eq "$(get_env LOCALGIT_MIRROR_HOSTS)" "github.com"
+  _lg_hosts_csv() { printf 'gitlab.com'; }                                    # (it has a mirror to gitlab.com only)
+  localgit_mirror_reconcile 2>/dev/null
+  assert_eq "$(get_env LOCALGIT_MIRROR_HOSTS)" "gitlab.com"
+  _lg_hosts_csv() { printf ''; }
+  localgit_mirror_reconcile 2>/dev/null
+  assert_eq "$(get_env LOCALGIT_MIRROR_EGRESS)" "off"
+  code_ready() { return 1; }; : > "$TMP/calls"; localgit_mirror_reconcile; assert_eq "$(cat "$TMP/calls")" ""   # (no Code page: nothing)
+}
+
+test_adding_a_mirror_says_what_it_does_asks_makes_the_way_out_first_and_undoes_it_on_failure() {
+  printf 'LOCALGIT_MIRROR_EGRESS=off\n' > "$ENV_FILE"
+  _lg_code_ready() { return 0; }; stack_lock() { :; }; stack_unlock() { :; }; stack_lock_ours() { return 1; }
+  services_status_write() { :; }; run_phase() { shift 2; "$@"; }
+  ASK=y; _githost_confirm() { echo "ASKED" >> "$TMP/calls"; [ "$ASK" = y ]; }
+  _lg_hosts_csv() { printf 'gitlab.com'; }
+  dc() { echo "dc $*" >> "$TMP/calls"; }
+  OP_OK=1
+  _lg_mirror_op() { echo "op $1" >> "$TMP/calls"; _LG_ANSWER='{"ok":true}'; [ "$OP_OK" = 1 ] || { _LG_ANSWER='{"ok":false,"error":"the git server refused: nope"}'; return 1; }; }
+  localgit_mirror_reconcile() { echo "reconcile" >> "$TMP/calls"; }
+  : > "$TMP/calls"
+  out="$(localgit_mirror_add push app https://github.com/me/app --interval 2h 2>&1)"
+  assert_contains "$out" "FORCE-UPDATES the remote's refs"
+  assert_contains "$out" "handed to Forgejo"
+  assert_contains "$out" "limited to: gitlab.com"
+  assert_contains "$out" "github.com"
+  c="$(tr '\n' '|' < "$TMP/calls")"
+  assert_contains "$c" 'ASKED|'
+  # the allowed names first (the existing hosts and the new one), the mirror after
+  a="${c%%up -d --no-deps --wait forgejo*}"; assert_not_contains "$a" "op {"
+  assert_eq "$(get_env LOCALGIT_MIRROR_HOSTS)" "gitlab.com,github.com"
+  assert_contains "$c" '"op":"add","direction":"push","repo":"app","remote":"https://github.com/me/app","syncOnCommit":true,"interval":"2h"'
+  # a mirror the server refused: the way out is reconciled with the mirrors there are, and it is said
+  : > "$TMP/calls"; OP_OK=0
+  out="$(localgit_mirror_add pull src https://github.com/me/src 2>&1)" && { echo "a refused mirror said ok" >&2; return 1; }
+  assert_contains "$out" "no mirror made: the git server refused: nope"
+  assert_contains "$(cat "$TMP/calls")" "reconcile"
+  # not confirmed: nothing is made, no way out
+  : > "$TMP/calls"; set_env LOCALGIT_MIRROR_HOSTS ''; ASK=n
+  out="$(localgit_mirror_add push app https://github.com/me/app 2>&1)" && return 1
+  assert_contains "$out" "No mirror made."
+  assert_not_contains "$(cat "$TMP/calls")" "op {"
+  assert_eq "$(get_env LOCALGIT_MIRROR_HOSTS)" ""
+}
+
+test_the_mirror_commands_refuse_what_is_not_theirs() {
+  _lg_code_ready() { return 0; }
+  for args in "push" "push app" "sideways app https://github.com/o/r" "push 'a b' https://github.com/o/r" "push app http://github.com/o/r" "push app git@github.com:o/r.git" \
+              "push -x https://github.com/o/r" "push app https://github.com/o/r --interval 5x" "push app https://github.com/o/r --bogus"; do
+    out="$(eval "localgit_mirror_add $args" 2>&1)" && { echo "accepted: $args" >&2; return 1; }
+  done
+  out="$(localgit_mirror_sync '' 2>&1)" && return 1; assert_contains "$out" "usage: ./stack git-server mirror sync"
+  out="$(localgit_mirror_remove app 2>&1)" && return 1; assert_contains "$out" "usage: ./stack git-server mirror remove"
+  assert_contains "$(cmd_help)" "git-server   The built-in git server (Forgejo)"
+  assert_contains "$("$BASH" "$STACK_DIR/stack" git-server --help 2>&1)" "Usage: ./stack git-server status"
+  assert_contains "$(localgit_mirror_usage)" "FORCE-UPDATES"
+  assert_contains "$(localgit_mirror_usage)" "A normal remote you fetch from and push to is a different thing"
+}
+
+test_the_web_site_signs_the_owner_in_only_after_the_portal_and_the_sandboxs_paths_remove_the_header() {
+  s="$(cat "$T_ROOT/caddy/localgit-on.caddy")"
+  # the header is set in the proxy block of the site that imports portal_auth, after it (route order), and nowhere else
+  assert_eq "$(printf '%s\n' "$s" | grep -c 'header_up X-Webauth-User devos')" 1
+  site="$(printf '%s\n' "$s" | sed -n '/^http:\/\/{\$GIT_HOST} {/,/^}/p')"
+  assert_contains "$site" "header_up X-Webauth-User devos"
+  [ "$(printf '%s\n' "$site" | grep -n 'import portal_auth' | cut -d: -f1)" -lt "$(printf '%s\n' "$site" | grep -n 'header_up X-Webauth-User' | cut -d: -f1)" ] || { echo "the header is set before the portal's check" >&2; return 1; }
+  # the other ways to Forgejo remove one a client sent
+  for f in caddy/localgit-gateway-on.caddy; do assert_contains "$(cat "$T_ROOT/$f")" "request_header -X-Webauth-User"; done
+  mirrors="$(printf '%s\n' "$s" | sed -n '/^http:\/\/:8099 {/,/^}/p')"
+  assert_contains "$mirrors" "request_header -X-Webauth-User"
+  assert_not_contains "$mirrors" "header_up X-Webauth-User"
+  # the internal site: reads, a migration and the mirror paths — never a delete of a repository, the admin or the account API
+  assert_contains "$mirrors" "method GET"
+  assert_contains "$mirrors" "path /api/v1/repos/migrate"
+  assert_contains "$mirrors" 'push_mirrors(/[A-Za-z0-9._-]+)?|push_mirrors-sync|mirror-sync'
+  assert_not_contains "$mirrors" "admin"
+  assert_eq "$(printf '%s\n' "$mirrors" | grep -c 'reverse_proxy')" 3
+  y="$(sed -n '/^  forgejo:/,/^  portal:/p' "$T_ROOT/compose.yaml")"
+  assert_contains "$y" 'FORGEJO__service__ENABLE_REVERSE_PROXY_AUTHENTICATION: "true"'
+  assert_contains "$y" 'FORGEJO__service__ENABLE_REVERSE_PROXY_AUTO_REGISTRATION: "false"'
+  assert_contains "$y" 'FORGEJO__service__ENABLE_REVERSE_PROXY_AUTHENTICATION_API: "false"'
+  assert_contains "$y" 'FORGEJO__security__REVERSE_PROXY_AUTHENTICATION_USER: X-Webauth-User'
+}

@@ -129,6 +129,8 @@ PORTAL_HOST	advanced	-	ro	-	-	Portal address	Moves the very address and sign-in 
 PORTAL_PORT	advanced	-	ro	-	-	Portal port	The port the portal is published on (80, else 8800).	edit .env, then ./stack setup
 PORTAL_ORIGIN	advanced	-	derived	-	-	Portal origin	http://PORTAL_HOST[:PORT]: the only page that may frame the apps.	./stack up
 CHAT_ORIGIN	advanced	-	derived	-	-	Chat origin	http://CHAT_HOST[:PORT]: the only origin (with the remote chat host) Chat answers cross-origin requests from.	./stack up
+LOCALGIT_MIRROR_EGRESS	advanced	-	derived	-	-	Git server mirror egress	on while the built-in git server has a mirror to a remote host (./stack git-server mirror …): it then has a network to the internet of its own, limited to the host names in the next setting. Off (blank): no way out at all.	./stack git-server mirror list
+LOCALGIT_MIRROR_HOSTS	advanced	-	derived	-	-	Git server mirror hosts	The host names the built-in git server's mirrors reach (comma separated): all it may reach while a mirror exists. Rewritten from the mirrors it has.	./stack git-server mirror list
 GIT_ORIGIN	advanced	-	derived	-	-	Git server origin	http://GIT_HOST[:PORT]: where the built-in git server's web UI is, and where a push's pull-request link opens.	./stack up
 CHAT_HOST	advanced	-	ro	-	-	Chat address	Blank = chat.PORTAL_HOST.	edit .env, then ./stack setup
 ADMIN_HOST	advanced	-	ro	-	-	Admin address	Blank = admin.PORTAL_HOST.	edit .env, then ./stack setup

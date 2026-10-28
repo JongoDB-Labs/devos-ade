@@ -2314,8 +2314,14 @@ one command that sets it, never on a command line).
   alone. The portal, Open WebUI, LiteLLM, the databases and the sandbox are not on it. (A mirror's way out to GitHub or
   GitLab will be a network of its own, added only while one is set up.)
 - **The web UI** is a site of the main Caddy (`git.<portal host>`) behind the same portal check and same-site guard as
-  Admin and Files, framed by the portal only; its session cookie is never given to Forgejo. Forgejo's own sign-in still
-  applies (the owner account, until the portal signs you in as it does for Admin and Files).
+  Admin and Files, framed by the portal only; its session cookie is never given to Forgejo. **The portal signs you in**
+  through Forgejo's reverse-proxy authentication: after `portal_auth` has said yes, Caddy sets `X-Webauth-User: devos` in
+  that site's proxy block (route order: a request the portal refused never gets it, and a client's own copy is replaced).
+  Forgejo trusts the header from its peers on the `localgit` network — Caddy, the terminal's gateway and the mirror site
+  below — and every path except the web site removes it: the gateway (`X-Webauth-*`) and Caddy's internal `:8099` site
+  strip it, and the sandbox cannot reach Forgejo any other way. It signs nobody in for the API or git
+  (`ENABLE_REVERSE_PROXY_AUTHENTICATION_API` off) and never registers an account; the owner's password in `.env` remains the
+  fallback form.
 - **The sandbox's git — the egress carve-out.** The sandbox's only peer is the terminal's gateway, which gets a second
   listener, `https://gateway:8093` (`caddy/localgit-gateway-on.caddy`, only while `compose.localgit.yaml` says so: the
   terminal and `LOCALGIT` on), bound to the sandbox's own network. It forwards one family of paths to Forgejo —
@@ -2336,9 +2342,28 @@ one command that sets it, never on a command line).
   runs it, never the page). From there it follows the Git hosts rules above: the sandbox gets it for one operation,
   through the fd-3 channel, only for the host of the URL you confirmed, at most three times, and it is in no `.git/config`,
   environment, event or answer.
-- **Not covered yet.** Claude's own `git` in the terminal (not the Code page's operations) has no CA for the host; a
-  mirror's egress and credentials; remote access (Tailscale / your domain) has no git site; `forgejo dump` is not part of
-  `./stack backup`.
+- **Mirroring** (`./stack git-server mirror …`; Forgejo's own push and pull mirrors) runs server-side, made from this
+  computer only, by the code container — the holder of the connected hosts' credentials — through a second internal Caddy site
+  (`:8099`, not published; reachable on Caddy's container networks) that passes a handful of API paths of the one service
+  (the owner's repository list and one repository's record as reads, a migration, a repository's push mirrors and their
+  sync) and nothing else: no delete of a repository, no admin or account API, no web UI, no cookies, no sign-in headers.
+  Forgejo needs the owner's own repository-scoped token for each (`write:repository`; creating a repository for a mirror is
+  a push or a migration, so `write:user` is not needed). The remote credential is a connected host's **access token** —
+  never a sign-in's, whose token lasts hours and cannot be renewed inside Forgejo — handed to Forgejo, which keeps it
+  encrypted with its own secret in the `gitdata` volume (that is the cost of a mirror that works while this page is
+  closed; `mirror remove` deletes it there). The command says all that, and that a push mirror force-updates the remote's
+  refs (the remote is a copy; a normal remote you fetch from and push to is the Git panel's), and asks first.
+  **The way out is the mirror's:** with none, Forgejo has no route to the internet at all. While one exists
+  `compose.localgit-mirror.yaml` also puts it on `localgit-out`, a network of its own with nothing else on it, and its
+  `[migrations] ALLOWED_DOMAINS` is `./stack`'s record of the mirrors' host names (rewritten from what the server really
+  has, at each mirror change and `./stack up`; a mirror made by hand in Forgejo's own web UI gets a way out at the next
+  `./stack git-server mirror reconcile` or `./stack up`), with Forgejo's refusal of private, loopback and link-local
+  addresses on — this computer and your network stay out of reach. That is Forgejo's own check, not a network-level
+  allowlist (an egress proxy like the sandbox's would be): while a mirror exists, a compromised Forgejo could reach any
+  public address. Removing the last mirror removes the network.
+- **Not covered yet.** Claude's own `git` in the terminal (not the Code page's operations) has no CA for the host; a mirror
+  to a GitLab or Gitea of your own behind a private CA (Forgejo has one CA store, not one per remote); remote access
+  (Tailscale / your domain) has no git site; `forgejo dump` is not part of `./stack backup`.
 
 ### Signing in to a Git host (OAuth)
 

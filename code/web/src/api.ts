@@ -20,7 +20,7 @@ import {
   readOnlyTopOf,
   safe,
 } from './text';
-import type { Harness, HarnessInfo, PlanUsage, AvailablePlugin, BnModel, Compat, Catalog, KeyBudget, RuleLine, CliModel, Command, ContextUsage, EditInfo, Ev, FileData, FsEntry, GitBranch, GitCommit, GitEntry, GitEvent, GitFile, GitFileDiff, GitHostRef, GitHostView, GitImported, GitOAuthView, GitSignInConfig, GitSignInFlow, GitIdentity, GitPlan, GitRemote, GitRemoteState, GitRemoteUrl, GitReview, GitRunResult, GitScope, GitStatus, GrepResult, Hunk, ImageBlock, InitInfo, InstalledPlugin, LoadedPlugin, Marketplace, McpServer, Mode, LaunchEntry, LaunchList, OpenSession, Outcome, PermissionReq, PortInfo, PreviewInfo, PreviewLink, RunList, RunResult, RunSource, RunSourceInfo, RunTask, ServerMsg, ServerState, SessionInfo, UserPrefs, SessionState, SpendRow, Suggestion, WatchChange, SandboxWords, ImportTool, ImportedFrom, ImportRow, ImportView, ImportFinding,
+import type { GitMirrorView, GitMirrorsView, Harness, HarnessInfo, PlanUsage, AvailablePlugin, BnModel, Compat, Catalog, KeyBudget, RuleLine, CliModel, Command, ContextUsage, EditInfo, Ev, FileData, FsEntry, GitBranch, GitCommit, GitEntry, GitEvent, GitFile, GitFileDiff, GitHostRef, GitHostView, GitImported, GitOAuthView, GitSignInConfig, GitSignInFlow, GitIdentity, GitPlan, GitRemote, GitRemoteState, GitRemoteUrl, GitReview, GitRunResult, GitScope, GitStatus, GrepResult, Hunk, ImageBlock, InitInfo, InstalledPlugin, LoadedPlugin, Marketplace, McpServer, Mode, LaunchEntry, LaunchList, OpenSession, Outcome, PermissionReq, PortInfo, PreviewInfo, PreviewLink, RunList, RunResult, RunSource, RunSourceInfo, RunTask, ServerMsg, ServerState, SessionInfo, UserPrefs, SessionState, SpendRow, Suggestion, WatchChange, SandboxWords, ImportTool, ImportedFrom, ImportRow, ImportView, ImportFinding,
   ImportPreview, ImportResult, ImportRequest, ImportCounts, ProjectSuggestion, SetupTool, SetupKind, SetupRow, SetupView, SetupCounts, SetupPreview, SetupFlag, SetupWrite,
   SetupSecret, SetupFinding, SetupResult } from './types';
 import { MODES, COMPATS, HARNESS_IDS } from './types';
@@ -1477,6 +1477,21 @@ export async function getGitHosts(): Promise<GitHostsView> {
   const o = await request('GET', '/api/git/hosts');
   return { hosts: arr(o.hosts, 32).map(normGitHost).filter((h): h is GitHostView => h !== null), events: arr(o.events, 50).map(normGitEvent).filter((e): e is GitEvent => e !== null), local: o.local === true,
     signIn: normSignInConfig(o.signIn) };
+}
+// the built-in git server's mirrors, read-only here (made with ./stack git-server mirror on the computer running the stack): every
+// text checked and cut — the git server's words are data
+const MIRROR_REPO = /^[A-Za-z0-9][A-Za-z0-9._-]{0,38}\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+const ISO = /^\d{4}-\d\d-\d\dT[\d:.]+(Z|[+-]\d\d:\d\d)$/;
+export function normGitMirror(v: unknown): GitMirrorView | null {
+  const o = obj(v);
+  if (!o || (o.direction !== 'push' && o.direction !== 'pull') || typeof o.repo !== 'string' || !MIRROR_REPO.test(o.repo)) return null;
+  return { direction: o.direction, repo: o.repo, remote: label(typeof o.remote === 'string' ? o.remote : '', 300), interval: label(typeof o.interval === 'string' ? o.interval : '', 20),
+    syncOnCommit: o.syncOnCommit === true, lastSync: typeof o.lastSync === 'string' && ISO.test(o.lastSync) ? o.lastSync : null,
+    lastError: typeof o.lastError === 'string' && o.lastError ? label(o.lastError, 300) : null };
+}
+export async function getGitMirrors(): Promise<GitMirrorsView> {
+  const o = await request('GET', '/api/git/mirrors');
+  return { available: o.available === true, mirrors: arr(o.mirrors, 200).map(normGitMirror).filter((m): m is GitMirrorView => m !== null) };
 }
 // signInLink(url, host, port) -> the provider's page to enter the code on, only when it is https on that Git host (the
 // code container checked it too); else null

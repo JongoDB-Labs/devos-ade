@@ -348,6 +348,8 @@ async function gitRemotePanel(p, m, url, req) {
     }
     return [200, { repos: [...(!root && gitRepo ? [{ path: '' }] : []), ...inside.map((r) => ({ path: r }))], above }];
   }
+  if (p === '/api/git/mirrors' && m === 'GET') return [200, { available: true, mirrors: [{ direction: 'push', repo: 'devos/app', remote: 'https://github.com/you/app.git', interval: '8h0m0s', syncOnCommit: true, lastSync: '2026-10-28T03:00:00Z', lastError: null },
+    { direction: 'pull', repo: 'devos/up', remote: 'https://gitlab.com/g/up.git', interval: '1h0m0s', syncOnCommit: false, lastSync: null, lastError: 'authentication failed' }] }];
   if (p === '/api/git/hosts' && m === 'GET') return [200, { hosts: gitHostsMock.map(hostView), events: gitEventsMock.slice(0, 50), local: true, signIn: signInConfig() }];
   if (p === '/api/git/oauth' && m === 'POST') {
     const b = await jsonBody(req);

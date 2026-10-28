@@ -39,6 +39,7 @@ if [ "$want_help" = 1 ]; then
     code) code_usage; exit 0 ;;
     project) projects_usage; exit 0 ;;
     git-host) githost_usage; exit 0 ;;
+    git-server) localgit_mirror_usage; exit 0 ;;
     sessions) sessions_usage; exit 0 ;;
     websearch) websearch_usage; exit 0 ;;
     subscriptions) subscriptions_usage; exit 0 ;;
@@ -85,6 +86,7 @@ case "$cmd" in
   websearch) [ ! -f "$ENV_FILE" ] || guard_project; cmd_websearch "$@" ;;
   local-models) cmd_local_models "$@" ;;   # (pull and rm guard the project themselves: a download takes no lock until it registers)
   project) [ ! -f "$ENV_FILE" ] || guard_project; cmd_project "$@" ;;
+  git-server) [ ! -f "$ENV_FILE" ] || guard_project; cmd_git_server "$@" ;;   # (mirrors: may recreate the git server for its way out)
   git-host) [ ! -f "$ENV_FILE" ] || guard_project --no-claim; cmd_git_host "$@" ;;   # (no Compose change: an exec)
   sessions) [ ! -f "$ENV_FILE" ] || guard_project --no-claim; cmd_sessions "$@" ;;   # (no Compose change: a reader container and an exec)
   subscriptions) [ ! -f "$ENV_FILE" ] || guard_project --no-claim; cmd_subscriptions "$@" ;;   # (no Compose change: an exec)

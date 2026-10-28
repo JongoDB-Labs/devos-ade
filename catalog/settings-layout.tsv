@@ -185,6 +185,8 @@ OWUI_STT_ENGINE	about	main	-	Chat's speech-to-text engine; follows the speech-to
 OWUI_STT_BASE_URL	about	main	-	Where Chat sends recordings.
 PORTAL_ORIGIN	about	main	-	The only page that may frame the apps.
 CHAT_ORIGIN	about	main	-	The origin Chat answers cross-origin requests from.
+LOCALGIT_MIRROR_EGRESS	about	main	-	Whether the built-in git server has a way out to a remote it mirrors to.
+LOCALGIT_MIRROR_HOSTS	about	main	-	The host names its mirrors reach.
 GIT_ORIGIN	about	main	-	Where the built-in git server's web UI is.
 PREVIEW_DOMAIN	about	main	-	The site the Code page's previews of dev servers are served from.
 TS_TAILNET	about	main	-	Your tailnet, read from the sidecar.

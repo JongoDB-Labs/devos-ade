@@ -186,3 +186,212 @@ localgit_summary_line() {
   localgit_on || return 0
   printf '  Git        %s (the built-in git server: repositories on this computer; sign in as %s)\n' "$(localgit_web_url)" "$LOCALGIT_USER"
 }
+
+# --- mirroring: ./stack git-server mirror … (code/server/mirrors.mjs, run in the code container: it holds the connected git
+# hosts' credentials and reaches the git server through Caddy's internal :8099 site) ---
+# Forgejo's own repository mirroring: a push mirror keeps a GitHub / GitLab copy of a local repository up to date (the local
+# one is the source; the remote's refs are force-updated), a pull mirror keeps a read-only local copy of a remote. Off until
+# one is made: the git server has no way out to the internet at all until then. While a mirror exists it gets a network of its
+# own (localgit-out, compose.localgit-mirror.yaml) and Forgejo may reach only the mirrors' host names (its [migrations]
+# ALLOWED_DOMAINS, never this computer's own addresses or your network: its own refusal of private addresses stays on).
+# LOCALGIT_MIRROR_EGRESS / LOCALGIT_MIRROR_HOSTS in .env are ./stack's record of that, rewritten from what the server really
+# has (localgit_mirror_reconcile) — never edited by hand.
+
+localgit_mirror_usage() {
+  cat <<'EOT'
+Usage: ./stack git-server status
+       ./stack git-server mirror list
+       ./stack git-server mirror add push|pull REPO REMOTE_URL [--interval 8h] [--no-sync-on-commit] [--yes]
+       ./stack git-server mirror sync REPO [--pull]
+       ./stack git-server mirror remove REPO NAME
+       ./stack git-server mirror reconcile
+
+  The built-in git server (Forgejo) mirrors to the git hosts you connected in the Code page (Git hosts), with an
+  access token for the remote (a sign-in cannot be used: its token lasts hours and cannot be renewed inside Forgejo).
+  REPO is a repository of the owner on the built-in server (a push creates it); REMOTE_URL an https:// URL of a
+  connected host.
+    push   REPO is the source and the remote a copy: every push to REPO here, and every INTERVAL, Forgejo pushes ALL its
+           branches and tags and FORCE-UPDATES the remote's — what is only there is overwritten. The remote repository
+           must exist (empty is fine). A normal remote you fetch from and push to is a different thing: use the Git panel.
+    pull   a new private repository REPO, a read-only copy of the remote that Forgejo fetches every INTERVAL.
+  The token is handed to Forgejo, which keeps it (encrypted with its own secret, in the gitdata volume) because it pushes
+  and fetches on its own later. Until a mirror exists the git server has no network to the internet; while one does it
+  has one of its own, limited to the mirrors' host names. You confirm first (--yes: without asking). Only on the computer
+  running DevOS ADE, with the Code page running. Status (last sync, last error): this list, the Code page's Git hosts
+  dialog, and the repository's Settings › Mirror settings in the git server's web UI.
+EOT
+}
+
+# _lg_code_ready -> the Code page's container runs (it keeps Git hosts and makes the mirrors), else why not
+_lg_code_ready() {
+  localgit_on || die "the built-in git server is off (LOCALGIT=off): ./stack config set LOCALGIT on turns it on"
+  code_on || die "the Code page is off: ./stack code enable turns it on (the connected git hosts are its)"
+  code_ready || die "the Code page is left out: the browser terminal it runs in is off or not ready (./stack code status)"
+  [ -n "$(dc ps -q --status running code 2>/dev/null | head -n 1)" ] || die "the Code page's container is not running: ./stack up"
+  _lg_running || die "the built-in git server is not running: ./stack up (./stack logs forgejo)"
+}
+
+# _lg_mirror_op JSON -> 0 and the answer line in _LG_ANSWER; the request goes on stdin (nothing secret in it)
+_lg_mirror_op() {
+  _LG_ANSWER="$(printf '%s' "$1" | dc exec -T code node server/mirror-host.mjs 2>/dev/null | grep '^{"ok":' | tail -n 1)" || true
+  case "$_LG_ANSWER" in '{"ok":true'*) return 0 ;; esac
+  return 1
+}
+# _lg_op_error -> the error text of the last answer
+_lg_op_error() {
+  local e; e="$(printf '%s' "$_LG_ANSWER" | sed -n 's/.*"error":"\([^"]*\)".*/\1/p')"
+  case "$_LG_ANSWER" in '') echo "the Code page's container did not answer (./stack code status; ./stack logs code)" ;; *) echo "${e:-it failed}" ;; esac
+}
+# _lg_hosts_csv -> the host names of the mirrors there are (from the server itself), comma separated; fails if it cannot ask
+_lg_hosts_csv() {
+  _lg_mirror_op '{"op":"hosts"}' || return 1
+  printf '%s' "$_LG_ANSWER" | sed -n 's/.*"hosts":\[\([^]]*\)\].*/\1/p' | tr -d '"'
+}
+
+# _lg_mirror_egress_apply HOSTS_CSV -> .env's record and Forgejo's way out follow (blank: no mirror, no way out): the container is
+# recreated when its networks or its allowed names change (a few seconds), and nothing is done when they did not
+_lg_mirror_egress_apply() {
+  local hosts="$1" now_hosts now_on want=off
+  now_hosts="$(get_env LOCALGIT_MIRROR_HOSTS)"; now_on="$(get_env LOCALGIT_MIRROR_EGRESS)"
+  [ -z "$hosts" ] || want=on
+  if [ "$want" = "${now_on:-off}" ] && [ "$hosts" = "$now_hosts" ]; then return 0; fi
+  set_env LOCALGIT_MIRROR_HOSTS "$hosts"; set_env LOCALGIT_MIRROR_EGRESS "$want"
+  if [ "$want" = on ]; then log "the git server gets a way out to $hosts only (while a mirror exists)"
+  else log "no mirror is left: the git server has no way out to the internet again"; fi
+  run_phase "Local git server (its way out: $want)" forgejo dc up -d --no-deps --wait forgejo || return 1
+  services_status_write
+}
+
+# localgit_mirror_reconcile — ./stack up, mirror changes: the way out matches the mirrors the server has. Asked of the server
+# (through the Code page's container); when that cannot be asked, nothing changes. Never fatal.
+localgit_mirror_reconcile() {
+  local hosts
+  localgit_on || return 0
+  code_ready && [ -n "$(dc ps -q --status running code 2>/dev/null | head -n 1)" ] || return 0
+  _lg_running || return 0
+  hosts="$(_lg_hosts_csv)" || return 0
+  _lg_mirror_egress_apply "$hosts" || warn "the git server's way out could not be changed — ./stack logs forgejo"
+  return 0
+}
+
+cmd_git_server() {
+  local sub="${1:-}"; [ $# -eq 0 ] || shift
+  case "$sub" in
+    status) localgit_status_line; ! flag_on "$(get_env LOCALGIT_MIRROR_EGRESS)" || printf '  Mirrors    a way out exists for: %s\n' "$(get_env LOCALGIT_MIRROR_HOSTS)" ;;
+    mirror) localgit_mirror_cmd "$@" ;;
+    '' | help | -h | --help) localgit_mirror_usage ;;
+    *) localgit_mirror_usage >&2; die "unknown: ./stack git-server $sub" ;;
+  esac
+}
+
+localgit_mirror_cmd() {
+  local act="${1:-}"; [ $# -eq 0 ] || shift
+  case "$act" in
+    list) _lg_code_ready; localgit_mirror_list ;;
+    add) localgit_mirror_add "$@" ;;
+    sync) localgit_mirror_sync "$@" ;;
+    remove) localgit_mirror_remove "$@" ;;
+    reconcile) _lg_code_ready; localgit_mirror_reconcile ;;
+    '' | help | -h | --help) localgit_mirror_usage ;;
+    *) localgit_mirror_usage >&2; die "unknown: ./stack git-server mirror $act" ;;
+  esac
+}
+
+# localgit_mirror_list -> one line per mirror: direction, repository, remote, interval, last sync, last error
+localgit_mirror_list() {
+  _lg_mirror_op '{"op":"list"}' || die "could not list the mirrors: $(_lg_op_error)"
+  python3 -I -c '
+import json, sys
+d = json.loads(sys.argv[1])
+ms = d.get("mirrors", [])
+if not ms:
+    print("  No mirrors. ./stack git-server mirror add push|pull REPO REMOTE_URL makes one (./stack git-server --help).")
+for m in ms:
+    kind = "push (the remote is a copy: its refs are force-updated)" if m["direction"] == "push" else "pull (read-only copy of the remote)"
+    print("  %-5s %s  <->  %s" % (m["direction"], m["repo"], m["remote"]))
+    print("        %s; every %s%s" % (kind, m["interval"], ", and on every push here" if m.get("syncOnCommit") else ""))
+    print("        last sync: %s%s" % (m["lastSync"] or "never", ("; last error: " + m["lastError"]) if m.get("lastError") else ""))
+    if m.get("name"):
+        print("        name: %s (./stack git-server mirror remove %s %s)" % (m["name"], m["repo"].split("/")[-1], m["name"]))
+' "$(printf '%s' "$_LG_ANSWER")" 2>/dev/null || printf '%s\n' "$_LG_ANSWER"
+}
+
+# _lg_remote_host URL -> the host name of an https:// URL (nothing for another)
+_lg_remote_host() {
+  local u="$1" h
+  case "$u" in https://*) ;; *) return 1 ;; esac
+  h="${u#https://}"; h="${h%%/*}"; h="${h%%:*}"; h="${h##*@}"
+  _gh_host_ok "$h" || return 1
+  printf '%s\n' "$h"
+}
+
+localgit_mirror_add() {
+  { set +x; } 2>/dev/null
+  local dir="${1:-}" repo="${2:-}" url="${3:-}" interval='' sync=true host cur json own=1
+  [ $# -ge 3 ] || { localgit_mirror_usage >&2; die "usage: ./stack git-server mirror add push|pull REPO REMOTE_URL"; }
+  shift 3
+  case "$dir" in push | pull) ;; *) die "push or pull (./stack git-server --help)" ;; esac
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --interval) [ $# -ge 2 ] || die "--interval needs a value (8h, 30m)"; interval="$2"; shift 2 ;;
+      --interval=*) interval="${1#--interval=}"; shift ;;
+      --no-sync-on-commit) sync=false; shift ;;
+      *) localgit_mirror_usage >&2; die "unknown: $1" ;;
+    esac
+  done
+  host="$(_lg_remote_host "$url")" || die "the remote must be an https:// URL of a connected git host (https://github.com/owner/repo)"
+  case "$repo" in '' | *[!A-Za-z0-9._-]* | -*) die "REPO: the repository's name on the built-in server (letters, digits, . _ -)" ;; esac
+  case "$interval" in '' | [1-9]*[mh] | 0) ;; *) die "--interval: 10m to 999h (8h, 30m), or 0 for a push mirror that pushes only when something is pushed here" ;; esac
+  _lg_code_ready
+  cur="$(_lg_hosts_csv)" || die "could not ask the git server which mirrors it has: $(_lg_op_error)"
+  case ",$cur," in *",$host,"*) ;; *) cur="${cur:+$cur,}$host" ;; esac
+  printf '\nMirror %s: %s  %s  %s?\n' "$dir" "$repo" "$([ "$dir" = push ] && echo '->' || echo '<-')" "$url"
+  if [ "$dir" = push ]; then
+    printf '  The local repository is the source. On every push to it here%s, Forgejo pushes ALL its branches and tags to\n' "${interval:+ and every $interval}"
+    printf '  the remote and FORCE-UPDATES the remote'"'"'s refs: anything that is only there is overwritten. Not a normal remote.\n'
+  else
+    printf '  A new PRIVATE repository %s on the built-in server: a read-only copy of the remote, fetched every %s.\n' "$repo" "${interval:-8h}"
+  fi
+  printf '  The connected host'"'"'s access token for %s is handed to Forgejo, which keeps it (encrypted with its own secret, in the\n' "$host"
+  printf '  gitdata volume) to do this on its own later. For as long as a mirror exists the git server gets a network of its own\n'
+  printf '  to the internet, limited to: %s.\n\n' "${cur//,/, }"
+  _githost_confirm "Make it?" || { printf 'No mirror made.\n'; return 1; }
+  ! stack_lock_ours || own=0
+  stack_lock git-server
+  # the way out first (its allowed names must hold the remote's before Forgejo checks the address), the mirror then; a mirror
+  # that was not made leaves the way out as the mirrors that exist need it
+  if ! _lg_mirror_egress_apply "$cur"; then
+    localgit_mirror_reconcile; [ "$own" = 0 ] || stack_unlock; die "the git server could not get its way out — ./stack logs forgejo"
+  fi
+  json="{\"op\":\"add\",\"direction\":\"$dir\",\"repo\":$(_lg_json_str "$repo"),\"remote\":$(_lg_json_str "$url"),\"syncOnCommit\":$sync${interval:+,\"interval\":\"$interval\"}}"
+  if ! _lg_mirror_op "$json"; then
+    local why; why="$(_lg_op_error)"
+    localgit_mirror_reconcile; [ "$own" = 0 ] || stack_unlock
+    die "no mirror made: $why"
+  fi
+  [ "$own" = 0 ] || stack_unlock
+  printf 'Mirror made: %s %s. ./stack git-server mirror list shows its last sync.\n' "$dir" "$repo"
+  if [ "$dir" = push ]; then _lg_mirror_op "{\"op\":\"sync\",\"repo\":$(_lg_json_str "$repo")}" >/dev/null 2>&1 && printf 'A first push to the remote was asked for.\n' || true; fi
+}
+
+localgit_mirror_sync() {
+  local repo="${1:-}" dir=push; [ $# -eq 0 ] || shift
+  [ "${1:-}" != --pull ] || dir=pull
+  case "$repo" in '' | *[!A-Za-z0-9._-]* | -*) die "usage: ./stack git-server mirror sync REPO [--pull]" ;; esac
+  _lg_code_ready
+  _lg_mirror_op "{\"op\":\"sync\",\"repo\":$(_lg_json_str "$repo"),\"direction\":\"$dir\"}" || die "not synced: $(_lg_op_error)"
+  printf 'A %s sync of %s was asked for: ./stack git-server mirror list shows when it is done.\n' "$dir" "$repo"
+}
+
+localgit_mirror_remove() {
+  local repo="${1:-}" name="${2:-}" own=1
+  case "$repo$name" in '' | *[!A-Za-z0-9._-]*) die "usage: ./stack git-server mirror remove REPO NAME (the name: ./stack git-server mirror list)" ;; esac
+  [ -n "$repo" ] && [ -n "$name" ] || die "usage: ./stack git-server mirror remove REPO NAME"
+  _lg_code_ready
+  ! stack_lock_ours || own=0
+  stack_lock git-server
+  _lg_mirror_op "{\"op\":\"remove\",\"repo\":$(_lg_json_str "$repo"),\"name\":$(_lg_json_str "$name")}" || { [ "$own" = 0 ] || stack_unlock; die "not removed: $(_lg_op_error)"; }
+  localgit_mirror_reconcile
+  [ "$own" = 0 ] || stack_unlock
+  printf 'Mirror %s of %s removed (the remote repository is untouched; Forgejo forgot the token).\n' "$name" "$repo"
+}

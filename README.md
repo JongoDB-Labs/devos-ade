@@ -1463,7 +1463,19 @@ uninstall` removes it, turning the server off keeps it).
   the terminal's gateway on a TLS listener that forwards only git's paths of a repository (never the web UI, the API or
   anything else), with a certificate `./stack` made for the name `gateway` and the Code page hands to git as the one CA it
   trusts for that host. Claude's own `git` in the terminal is not wired to it yet (the Code page's operations are).
-- **Mirroring to GitHub or GitLab** and signing in to the web UI from the portal are the next steps.
+- **Signed in by the portal.** Opening the web UI with your portal session signs you in as `devos` — no password
+  (Caddy adds Forgejo's reverse-proxy sign-in header after the portal's check, on that site only; the sandbox's gateway removes
+  it from everything the sandbox sends). The owner password in `.env` stays as a fallback.
+- **Mirroring to GitHub or GitLab** (Forgejo's own repository mirroring), from this computer:
+  `./stack git-server mirror add push REPO https://github.com/you/repo` keeps a **copy** of a local repository on the remote — on
+  every push here and every 8 hours Forgejo pushes all branches and tags and **force-updates** the remote's refs (the remote must
+  exist, empty is fine; this is not a collaborative remote — use the Git panel's fetch and push for that);
+  `mirror add pull REPO URL` makes a read-only local copy of a remote. It reuses the git host you connected in the Code page,
+  with an **access token** (a sign-in's token lasts hours and cannot be renewed inside Forgejo): the token is handed to Forgejo,
+  which keeps it encrypted in its volume to do this on its own, and you confirm that first. Until a mirror exists the git server has
+  no way out to the internet; while one does, it has a network of its own limited to the mirrors' host names.
+  `./stack git-server mirror list`, the Code page's Git hosts dialog and the repository's Settings in the web UI show the last sync
+  and any error; `mirror sync`, `mirror remove` do what they say.
 
 #### Remote repositories: Git hosts, clone, push and pull
 
@@ -2485,6 +2497,7 @@ troubleshooting: [docs/voice.md](docs/voice.md).
 | `./stack sessions [list\|import --project N\|scan\|fetch\|consent\|suggest]` | Your Claude Code and `devos-claude` sessions of a project folder copied into the sandbox, after you allowed it here (secrets redacted by default; nothing written back; [above](#your-claude-code-and-devos-claude-sessions-from-this-computer)) | none (a resume: per token) |
 | `./stack sessions config [list\|import\|scan\|open\|consent]` | Bring your setup: items of your Claude Code setup (`CLAUDE.md`, skills, agents, commands, MCP servers, plugins, four settings) and your Git name and email copied into the sandbox, after you allowed it here (never env or logins; nothing written back; [above](#your-claude-code-setup-from-this-computer)) | none (what you bring: tokens in every request) |
 | `./stack git-host import gh\|glab [--host HOST]` | A login of the GitHub CLI or the GitLab CLI on this computer as a Git host of the Code page ([above](#remote-repositories-git-hosts-clone-push-and-pull)): the token goes to the code container on stdin (never a command line, a file or the browser); what it reaches is shown and confirmed first. glab: a personal access token only (an OAuth login of glab's is refused) | none |
+| `./stack git-server status \| mirror list \| mirror add push\|pull REPO URL \| mirror sync REPO \| mirror remove REPO NAME` | The [built-in git server](#the-built-in-git-server-forgejo)'s mirroring to a connected GitHub / GitLab (an access token): a push mirror keeps a remote copy of a local repository (its refs force-updated), a pull mirror a read-only local copy of a remote. What it does and the token handed to Forgejo are shown and confirmed first; the git server has no way out to the internet until a mirror exists | none |
 | `./stack password [--show]` | Where the portal password is (`PORTAL_PASSWORD` in this folder's `.env`); `--show` prints it, only to a terminal | none |
 | `./stack config [list\|get KEY\|set KEY…\|apply --stdin\|check-aws\|report\|regenerate rustfs\|mcp-token]` | Every setting, secrets masked; `set` asks for values (hidden for secrets) and applies them like the portal's [Settings](#settings) | none (`check-aws` is free; an AWS key change runs the test: ~$0.0001) |
 | `./stack restart SERVICE` | Recreate one service with its current settings (`litellm`, `open-webui`, `shared-mcp`, `stt`, `rustfs`, `caddy`; `searxng` while the built-in SearXNG is on) | none |
