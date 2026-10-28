@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-10-28
+
 ### Added
 
 - **Right-click menus on items throughout the ADE (JON-821).** Every item with actions has one menu, opened by a
