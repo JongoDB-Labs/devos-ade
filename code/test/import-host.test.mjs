@@ -221,3 +221,45 @@ test('a lock is read safely: a link never followed, a FIFO never blocks, 64 byte
   store.add({ kind: 'other', host: 'd.example', auth: 'ssh' });
   assert.equal(fs.existsSync(lock), false);
 });
+
+// ./stack's own hand-over of the built-in git server's host (lib/localgit.sh localgit_register_host, source "localgit")
+test('the built-in git server: its host made once with the certificate as the CA, then kept in step; the token in no answer', () => {
+  const dir = path.join(ROOT, 'localgit');
+  const ca = fs.readFileSync(path.resolve(import.meta.dirname, '../../tests/fixtures/localgit-ca.pem'), 'utf8');
+  const tok = ['lg', 'tok_', 'Z'.repeat(20), Date.now()].join('');   // (made here: no token-shaped literal)
+  // the CA alone while the host is not there: "no token" — nothing is stored
+  let r = run(dir, JSON.stringify({ source: 'localgit', ca, account: 'devos' }));
+  assert.equal(r.status, 1);
+  assert.equal(JSON.parse(r.stdout).error, 'no token');
+  assert.equal(new GitHosts({ dir }).read().hosts.length, 0);
+  // with the token: made — gateway:8093, a token host of kind other, builtin, the CA kept, the account its user name
+  r = run(dir, JSON.stringify({ source: 'localgit', ca, account: 'devos', token: tok }));
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(JSON.parse(r.stdout), { ok: true, host: { label: 'Local git server', host: 'gateway', account: 'devos', scopes: [], source: 'localgit', created: true } });
+  assert.ok(!r.stdout.includes(tok) && !r.stderr.includes(tok));
+  const store = new GitHosts({ dir });
+  const h = store.read().hosts[0];
+  assert.deepEqual([h.kind, h.host, h.port, h.auth, h.username, h.token, h.builtin, h.ca], ['other', 'gateway', 8093, 'token', 'devos', tok, 'localgit', ca]);
+  const view = GitHosts.public(h);
+  assert.deepEqual([view.builtin, view.hasToken, view.ca, view.port], ['localgit', true, true, 8093]);
+  assert.ok(!JSON.stringify(store.list()).includes(tok) && !JSON.stringify(store.events(5)).includes(tok));
+  // the CA again (every ./stack up): the host is there, nothing created, its token kept
+  r = run(dir, JSON.stringify({ source: 'localgit', ca, account: 'devos' }));
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(JSON.parse(r.stdout).host.created, false);
+  assert.equal(new GitHosts({ dir }).read().hosts[0].token, tok);
+  assert.equal(new GitHosts({ dir }).read().hosts.length, 1);
+  // a new token and a new certificate replace the old ones in the same host
+  const tok2 = ['lg', 'tok_', 'Y'.repeat(20), Date.now()].join('');
+  r = run(dir, JSON.stringify({ source: 'localgit', ca, account: 'devos', token: tok2 }));
+  assert.equal(r.status, 0);
+  assert.equal(new GitHosts({ dir }).read().hosts[0].token, tok2);
+  // refused: no certificate, a bad one, a bad token, a bad account
+  for (const bad of [{ account: 'devos', token: tok }, { ca: 'not a certificate', account: 'devos', token: tok }, { ca, account: 'devos', token: 'with space x' }]) {
+    r = run(path.join(ROOT, 'localgit-bad'), JSON.stringify({ source: 'localgit', ...bad }));
+    assert.equal(r.status, 1, JSON.stringify(bad));
+  }
+  assert.equal(run(path.join(ROOT, 'localgit-bad'), JSON.stringify({ source: 'localgit', ca, token: tok })).status, 1);   // (no account)
+  // a host list with it: the same host name and port is refused to the page's own add (one credential per host)
+  assert.throws(() => store.add({ kind: 'other', host: 'gateway', port: 8093, auth: 'token', token: tok, username: 'x' }), /connected with an access token already/);
+});

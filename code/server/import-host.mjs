@@ -16,6 +16,13 @@ export function importLogin(input, store = new GitHosts()) {
   let b;
   try { b = JSON.parse(input); } catch { throw new HostError(400, 'not the import\'s input (one JSON object on stdin)'); }
   if (!b || typeof b !== 'object' || Array.isArray(b)) throw new HostError(400, 'not the import\'s input (one JSON object on stdin)');
+  // (localgit: ./stack's own hand-over of the built-in git server's host, lib/localgit.sh — its CA, and its token when the
+  // host is not there yet; never from the page)
+  if (b.source === 'localgit') {
+    const r = store.addLocalGit({ ca: b.ca, token: b.token, account: b.account });
+    if (r.created) store.event({ action: 'host', host: r.host.label, target: r.host.host, text: 'the built-in git server connected (./stack)' });
+    return { label: r.host.label, host: r.host.host, account: r.host.username, scopes: [], source: 'localgit', created: r.created };
+  }
   const source = b.source === 'gh' || b.source === 'glab' ? b.source : null;
   if (!source) throw new HostError(400, 'source: gh or glab');
   const h = store.addImport({ source, host: b.host, label: b.label || undefined, token: b.token, account: b.account || null,

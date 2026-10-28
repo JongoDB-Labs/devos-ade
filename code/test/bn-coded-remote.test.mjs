@@ -167,6 +167,25 @@ test('the operations\' private folder: made 700, an existing one set back to 700
   assert.throws(() => coded.privateDir(file));
 });
 
+test('the built-in local git server (gateway:8093) never goes through the egress proxy; every other remote does', () => {
+  const saved = process.env.HTTPS_PROXY;
+  process.env.HTTPS_PROXY = 'http://egress:3128';
+  try {
+    const local = coded.parseRemoteUrl('https://gateway:8093/devos/r.git');
+    assert.equal(coded.isLocalGit(local), true);
+    assert.equal(coded.netProxyFor(local), '');
+    for (const u of ['https://gateway/devos/r.git', 'https://gateway:8091/devos/r.git', 'https://litellm:4000/x', 'https://github.com/o/r.git',
+      'ssh://gateway:8093/devos/r.git', 'git@gateway:devos/r.git']) {
+      const p = coded.parseRemoteUrl(u);
+      assert.equal(coded.isLocalGit(p), false, u);
+      assert.equal(coded.netProxyFor(p), 'http://egress:3128', u);
+    }
+    delete process.env.HTTPS_PROXY;   // (TERMINAL_EGRESS=host or off: no proxy at all)
+    assert.equal(coded.netProxyFor(coded.parseRemoteUrl('https://github.com/o/r.git')), '');
+    assert.equal(coded.netProxyFor(coded.parseRemoteUrl('https://gateway:8093/devos/r.git')), '');
+  } finally { if (saved === undefined) delete process.env.HTTPS_PROXY; else process.env.HTTPS_PROXY = saved; }
+});
+
 test('the overrides: every http.* setting of the connection for the plain key and the exact URL; the alias; the ssh command', () => {
   const cfg = coded.gitNetConfig('https://h/r.git', { token: true, ca: '/ca.pem', capath: '/cap', proxy: '' });
   const m = new Map(cfg.map(([k, v]) => [k, v]));

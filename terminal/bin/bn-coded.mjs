@@ -2376,6 +2376,15 @@ export const knownHostOk = (l) => typeof l === 'string' && KNOWN_HOST.test(l);
 const PEM = /^-----BEGIN CERTIFICATE-----\n[A-Za-z0-9+/=\n]{40,20000}\n-----END CERTIFICATE-----\n?(?:-----BEGIN CERTIFICATE-----\n[A-Za-z0-9+/=\n]{40,20000}\n-----END CERTIFICATE-----\n?){0,9}$/;
 const SSH_PUB = /^ssh-ed25519 [A-Za-z0-9+/]{68}(={0,2})( [\x21-\x7e]{1,100})?$/;
 const EGRESS_PROXY = /^http:\/\/[A-Za-z0-9.-]{1,253}:[0-9]{1,5}\/?$/;
+// The built-in local git server (compose.localgit.yaml; code/server/githosts.mjs LOCALGIT): the terminal gateway's TLS listener
+// gateway:8093 on the sandbox's own internal network. It is reached directly — never through the egress proxy, which refuses
+// the stack's names by design — with every TERMINAL_EGRESS mode alike (the carve-out is the gateway's: git's smart HTTP paths
+// to one service). Only this exact host and port; its certificate is the host's CA (auth.ca), as for any host with one.
+export const LOCALGIT_NET = Object.freeze({ host: 'gateway', port: 8093 });
+export const isLocalGit = (p) => p.scheme === 'https' && p.host === LOCALGIT_NET.host && p.port === LOCALGIT_NET.port;
+// netProxyFor(parsed) -> the egress proxy a remote operation's git uses (HTTPS_PROXY as the sandbox has it), '' for none: always
+// none for the built-in local git server
+export const netProxyFor = (p) => (isLocalGit(p) ? '' : egressProxy());
 const egressProxy = () => { const v = process.env.HTTPS_PROXY || process.env.https_proxy || ''; return EGRESS_PROXY.test(v) ? v.replace(/\/$/, '') : ''; };
 
 // every http.* setting that decides where a request goes, whom it trusts or what it carries: set for the plain key and
@@ -2520,7 +2529,7 @@ const closeServer = (s) => new Promise((r) => { if (!s) return r(); s.close(() =
 // taken and handed back — the code container keeps it; only for a test the page asked for)}
 async function netSetup(dir, parsed, url, auth, ask) {
   const counter = { n: 0 };
-  const proxy = egressProxy();
+  const proxy = netProxyFor(parsed);
   const kind = auth?.kind;
   if (!['none', 'token', 'ssh'].includes(kind)) throw new Error('auth: none, token or ssh');
   if (parsed.scheme === 'https') {

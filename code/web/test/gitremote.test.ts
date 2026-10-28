@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { chooseRepos, cloneTarget, compareHint, countdown, hostHint, hostLinks, importCommand, importedReach, NEVER_ASKS, remoteFor, remoteRef, SAID_BY, signInLife, signInReach, signInReady, syncState, within } from '../src/git';
-import { ApiError, normGitFileDiff, normGitLog, normGitReview, normGitStatus, normGitEvent, normServerMsg, problemOf, normGitHost, normGitPlan, normGitRemoteState, normSignInConfig, normSignInFlow, repoPath, isBranchName, saidOf, signInLink } from '../src/api';
+import { ApiError, normGitFileDiff, normGitLog, normGitReview, normGitStatus, normGitEvent, normServerMsg, problemOf, normGitHost, normGitPlan, normGitRemoteState, normSignInConfig, normSignInFlow, repoPath, isBranchName, isPrLink, saidOf, signInLink } from '../src/api';
 import type { GitHostView } from '../src/types';
 
 const host = (over: Record<string, unknown> = {}) => ({ id: 'h_0123456789ab', kind: 'github', label: 'GitHub', host: 'github.com', port: null, auth: 'ssh', username: 'git',
@@ -215,4 +215,11 @@ test('the sandbox\'s words on every route and over the WebSocket: whose they are
   const ok = normServerMsg(JSON.stringify({ type: 'reply', req: 'r2', ok: true, said: hostile }));
   assert.ok(ok && ok.kind === 'reply' && ok.said === null);
   assert.equal(SAID_BY.sandbox, 'the sandbox said:');
+});
+
+test('pull request links the page opens: https pages, or the built-in git server\'s own .localhost address over plain http — nothing else', () => {
+  for (const ok of ['https://github.com/o/r/pull/new/feat/x', 'https://gitlab.example:8443/g/r/-/merge_requests/new?merge_request%5Bsource_branch%5D=a',
+    'http://git.bedrock-now.localhost/devos/r/compare/feature/x', 'http://git.bn.localhost:8800/devos/r/compare/main']) assert.equal(isPrLink(ok), true, ok);
+  for (const bad of ['http://github.com/o/r/pull/new/x', 'http://git.example.com/devos/r', 'http://evil.example/.localhost/x', 'http://localhost/x', 'javascript:alert(1)',
+    'https://x.example/a b', 'http://git.bn.localhost', 'ftp://git.bn.localhost/x', '//git.bn.localhost/x', 'http://git.bn.localhost.evil.example/x', null, 7, undefined]) assert.equal(isPrLink(bad), false, String(bad));
 });

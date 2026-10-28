@@ -459,3 +459,12 @@ test('the routes: a failure in git in the sandbox\'s words — a fixed sentence,
     await req('DELETE', `/api/git/hosts/${id}`);
   }
 });
+
+test('pull request links of the built-in git server: its own web address, never gateway', () => {
+  const p = parseRemoteUrl('https://gateway:8093/devos/repo.git');
+  const origin = 'http://git.bn.localhost:8800';
+  assert.equal(prLink('forgejo', p, 'feat/x', { origin }), 'http://git.bn.localhost:8800/devos/repo/compare/feat/x');
+  assert.equal(prLink('forgejo', p, 'a b', { origin: 'http://git.bn.localhost' }), 'http://git.bn.localhost/devos/repo/compare/a%20b');
+  for (const bad of ['', 'git.bn.localhost', 'javascript:alert(1)', 'http://x.example/evil path', 'http://a.b/c']) assert.equal(prLink('forgejo', p, 'x', { origin: bad }), null, bad);
+  assert.equal(prLink('forgejo', p, 'x'), null);
+});

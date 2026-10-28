@@ -19,6 +19,11 @@ import { PRODUCT_SLUG } from './brand.mjs';
 
 export const STATE_DIR = process.env.BN_CODE_STATE || '/var/lib/bn-code';
 export const KINDS = ['github', 'gitlab', 'other'];
+// The built-in local git server (Forgejo; ./stack's lib/localgit.sh): the sandbox reaches it as https://gateway:8093 (the
+// terminal gateway's TLS listener, caddy/localgit-gateway-on.caddy), an egress carve-out like LiteLLM's. Its host is made by
+// ./stack (import-host.mjs, source localgit) with the server's own certificate as the one CA trusted for it: kind other,
+// marked builtin so the page and the pull-request link know it. Its credential is a token scoped to repositories.
+export const LOCALGIT = Object.freeze({ id: 'localgit', host: 'gateway', port: 8093, label: 'Local git server' });
 export const HOSTS_MAX = 32, EVENTS_MAX = 200, KNOWN_MAX = 16;
 // a host name (lower case, as kept): also what the note in Claude's instructions may name (gitnote.mjs)
 export const HOST = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)*$/;
@@ -178,7 +183,7 @@ export class GitHosts {
   static public(h) {
     return { id: h.id, kind: h.kind, label: h.label, host: h.host, port: h.port ?? null, auth: h.auth, username: h.username,
       hasToken: Boolean(GitHosts.secret(h)), tokenSetAt: h.auth === 'oauth' ? h.oauth?.signedInAt ?? null : h.tokenSetAt ?? null,
-      imported: h.auth === 'token' && h.imported ? { ...h.imported } : null, oauth: h.auth === 'oauth' ? GitHosts.publicOAuth(h.oauth) : null,
+      imported: h.auth === 'token' && h.imported ? { ...h.imported } : null, builtin: h.builtin === LOCALGIT.id ? LOCALGIT.id : null, oauth: h.auth === 'oauth' ? GitHosts.publicOAuth(h.oauth) : null,
       publicKey: h.ssh?.publicKey ?? null, fingerprint: h.ssh?.fingerprint ?? null, keySetAt: h.ssh?.createdAt ?? null,
       knownHosts: (h.knownHosts || []).map(knownHostFingerprint).filter(Boolean), builtinHostKeys: (KNOWN_HOSTS[h.host] || []).length > 0,
       ca: typeof h.ca === 'string', claude: h.claude === true, claudeSince: h.claudeSince ?? null, createdAt: h.createdAt };
@@ -203,7 +208,7 @@ export class GitHosts {
   // add({kind, label, host, port, auth, username, token, ca, knownHosts}) -> the new host (public), with its public
   // key when one was made
   // (imported: only addImport's own, checked object — never from a request: the page's POST cannot claim a login)
-  add(b, { imported = null } = {}) {
+  add(b, { imported = null, builtin = null } = {}) {
     const kind = KINDS.includes(b?.kind) ? b.kind : null;
     if (!kind) throw new HostError(400, 'kind: github, gitlab or other');
     const d = DEFAULTS[kind];
@@ -223,6 +228,7 @@ export class GitHosts {
       if (typeof b.token !== 'string' || !TOKEN.test(b.token)) throw new HostError(400, 'the access token, please (printable characters, no spaces)');
       h.token = b.token; h.tokenSetAt = this.now();
       if (imported) h.imported = imported;
+      if (builtin) h.builtin = builtin;
       if (b.ca !== undefined && b.ca !== null && b.ca !== '') h.ca = checkCa(b.ca);
     } else {
       const k = newKey(`${PRODUCT_SLUG} ${label}`);
@@ -250,6 +256,29 @@ export class GitHosts {
       tokenType: source === 'gh' ? githubTokenType(b.token) : 'pat', expiresAt: msTime(b.expiresAt), importedAt: this.now() };
     const h = this.add({ kind: source === 'gh' ? 'github' : 'gitlab', host: b.host, label: b.label, auth: 'token', token: b.token }, { imported });
     return h;
+  }
+  // addLocalGit({account, token, ca}) -> {host (public), created}: the built-in local git server as a host — made once, then
+  // kept in step: its CA (the certificate ./stack made) and, when one is sent, its token and account. A host that is there
+  // without a token to send (the CA only) is left as it is; one that is missing needs the token (400 "no token").
+  addLocalGit(b) {
+    const ca = checkCa(b?.ca);
+    const account = typeof b?.account === 'string' && ACCOUNT.test(b.account) ? b.account : null;
+    const have = this.read().hosts.find((x) => x.builtin === LOCALGIT.id);
+    if (have) {
+      const out = this.change(have.id, (h) => {
+        h.ca = ca; h.label = h.label || LOCALGIT.label;
+        if (typeof b?.token === 'string') {
+          if (!TOKEN.test(b.token)) throw new HostError(400, 'the access token, please (printable characters, no spaces)');
+          h.token = b.token; h.tokenSetAt = this.now();
+        }
+        if (account) h.username = account;
+      });
+      return { host: out, created: false };
+    }
+    if (typeof b?.token !== 'string') throw new HostError(400, 'no token');
+    if (!account) throw new HostError(400, 'the account the token belongs to, please');
+    const host = this.add({ kind: 'other', host: LOCALGIT.host, port: LOCALGIT.port, label: LOCALGIT.label, auth: 'token', username: account, token: b.token, ca }, { builtin: LOCALGIT.id });
+    return { host, created: true };
   }
   // addOAuth({kind, host, port, label, ca, oauth}) -> the new host (public): a sign-in (oauth.mjs) — one https
   // credential per host and port, like a token

@@ -8,7 +8,7 @@
 // first (its answers are data). A signed-in host's token (oauth.mjs) is renewed here before an operation that uses
 // it, and is then given like an access token.
 import crypto from 'node:crypto';
-import { GitHosts, HostError, githubTokenType, httpsAuth } from './githosts.mjs';
+import { GitHosts, HostError, LOCALGIT, githubTokenType, httpsAuth } from './githosts.mjs';
 import { hostRoots } from './projects.mjs';
 import { makeOAuth } from './oauth.mjs';
 import { agentAnswer, FAILURE, knownHostFingerprint, KNOWN_HOSTS } from './sshagent.mjs';
@@ -69,15 +69,18 @@ export const sameCredHost = (asked, p) => typeof asked === 'string' && asked.toL
 // webPath(p) -> owner/repo of a parsed URL (no .git, no leading ~/ or /)
 const webPath = (p) => p.path.replace(/^~?\/*/, '').replace(/\.git\/?$/, '').replace(/\/+$/, '');
 const seg = (b) => b.split('/').map(encodeURIComponent).join('/');
-// prLink(kind, p, branch) -> the host's page to open a pull (merge) request from `branch`: GitHub's pull/new, GitLab's
-// merge_requests/new — no API call, nothing sent; null for another kind of host
-export function prLink(kind, p, branch) {
+// prLink(kind, p, branch, {origin}) -> the host's page to open a pull (merge) request from `branch`: GitHub's pull/new,
+// GitLab's merge_requests/new, the built-in Forgejo's compare — no API call, nothing sent; null for another kind of host.
+// forgejo: the sandbox reaches the server as gateway:8093 (git only), the browser at its own host name — `origin`, the
+// server's web address (LOCALGIT_WEB_ORIGIN, from ./stack: http://git.<portal host>[:port]); none known, no link.
+export function prLink(kind, p, branch, { origin = '' } = {}) {
+  if (kind === 'forgejo') return /^https?:\/\/[a-z0-9.-]{1,253}(:[0-9]{1,5})?$/.test(origin) ? `${origin}/${webPath(p)}/compare/${seg(branch)}` : null;
   const web = `https://${p.host}${p.scheme === 'https' && p.port !== null ? `:${p.port}` : ''}`;
   if (kind === 'github') return `${web}/${webPath(p)}/pull/new/${seg(branch)}`;
   if (kind === 'gitlab') return `${web}/${webPath(p)}/-/merge_requests/new?merge_request%5Bsource_branch%5D=${encodeURIComponent(branch)}`;
   return null;
 }
-const kindOf = (host, p) => host?.kind && host.kind !== 'other' ? host.kind : p.host === 'github.com' ? 'github' : p.host === 'gitlab.com' ? 'gitlab' : 'other';
+const kindOf = (host, p) => host?.builtin === LOCALGIT.id ? 'forgejo' : host?.kind && host.kind !== 'other' ? host.kind : p.host === 'github.com' ? 'github' : p.host === 'gitlab.com' ? 'gitlab' : 'other';
 
 // --- the sandbox's answers, checked (it can say anything) ---
 const HEX = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
@@ -152,7 +155,7 @@ const localOnly = (remote, what) => { if (remote) throw err(403, `${what} only f
 // connect(host, port) — sandboxTunnel (a sign-in's requests to its provider, TLS here); apps — Settings' application IDs;
 // appDefaults — the project's own (oauth.mjs DEFAULT_APPS; tests give others)
 export function makeGitRemote({ call: sandboxCall, openBroker = null, store = new GitHosts(), onEvent = () => {}, now = () => Date.now(), log = () => {}, connect = null, apps = {},
-  appDefaults = undefined, oauthDelay = null }) {
+  appDefaults = undefined, oauthDelay = null, webOrigin = process.env.LOCALGIT_WEB_ORIGIN || '' }) {
   const plans = new Map();
   // every op of the sandbox's: its failures labelled as its own (sandboxFailure)
   const call = async (req, opts) => { try { return await sandboxCall(req, opts); } catch (e) { throw sandboxFailure(e); } };
@@ -422,7 +425,7 @@ export function makeGitRemote({ call: sandboxCall, openBroker = null, store = ne
       out.branch = pl.branch; out.dst = pl.dst;
       out.created = result?.created === true; out.upToDate = result?.upToDate === true; out.upstream = result?.upstream !== false;
       out.sha = HEX.test(result?.sha || '') ? result.sha : null;
-      out.prLink = ok && !out.upToDate ? prLink(kindOf(h, pl.p), pl.p, pl.dst) : null;
+      out.prLink = ok && !out.upToDate ? prLink(kindOf(h, pl.p), pl.p, pl.dst, { origin: webOrigin }) : null;
     }
     if (pl.action === 'pull') out.updated = result?.updated === true;
     if (pl.action === 'clone') { out.path = pl.target; out.shallow = result?.shallow === true; }

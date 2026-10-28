@@ -1640,14 +1640,16 @@ export async function gitClonePlan(url: string, target: string, depth: number | 
   writable(target);
   return normGitPlan(await request('POST', '/api/git/clone', { url, target, ...(depth ? { depth } : {}) }));
 }
-// a link the page may open: GitHub's or GitLab's page on an https URL (the backend builds it; checked again)
-const PR_LINK = /^https:\/\/[a-z0-9.-]{1,253}(:[0-9]{1,5})?\/[\x21-\x7e]{1,2000}$/;
+// a link the page may open: GitHub's or GitLab's page on an https URL, or the built-in git server's own web address (plain
+// http, only for a .localhost name) — the backend builds it; checked again
+const PR_LINK = /^(https:\/\/[a-z0-9.-]{1,253}|http:\/\/[a-z0-9.-]{1,240}\.localhost)(:[0-9]{1,5})?\/[\x21-\x7e]{1,2000}$/;
+export const isPrLink = (v: unknown): v is string => typeof v === 'string' && PR_LINK.test(v);
 /** Run a plan you confirmed (its credential only for that host, while it runs). */
 export async function gitRun(planId: string): Promise<GitRunResult> {
   const o = await request('POST', '/api/git/run', { planId });
   return { ok: o.ok === true, action: NET.includes(o.action as (typeof NET)[number]) ? (o.action as GitRunResult['action']) : 'fetch', display: label(o.display, 300),
     branch: isBranchName(o.branch) ? o.branch : null, dst: isBranchName(o.dst) ? o.dst : null, created: o.created === true, upToDate: o.upToDate === true, updated: o.updated === true,
-    prLink: typeof o.prLink === 'string' && PR_LINK.test(o.prLink) ? o.prLink : null, path: repoPath(o.path) };
+    prLink: isPrLink(o.prLink) ? o.prLink : null, path: repoPath(o.path) };
 }
 
 export interface GrepQuery {
