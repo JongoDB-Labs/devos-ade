@@ -76,12 +76,12 @@ ensure_portal_reachable() {
   return 0
 }
 
-# app_host [SUB] -> PORTAL_HOST, or an app's host name: CHAT_HOST / ADMIN_HOST / FILES_HOST / TERMINAL_HOST / CODE_HOST from .env, else
+# app_host [SUB] -> PORTAL_HOST, or an app's host name: CHAT_HOST / ADMIN_HOST / FILES_HOST / GIT_HOST / TERMINAL_HOST / CODE_HOST from .env, else
 # SUB.PORTAL_HOST (the default; any other SUB is always SUB.PORTAL_HOST)
 app_host() {
   local h k=''
   h="$(portal_host)"
-  case "${1:-}" in '') printf '%s\n' "$h"; return 0 ;; chat) k=CHAT_HOST ;; admin) k=ADMIN_HOST ;; files) k=FILES_HOST ;; terminal) k=TERMINAL_HOST ;; code) k=CODE_HOST ;; esac
+  case "${1:-}" in '') printf '%s\n' "$h"; return 0 ;; chat) k=CHAT_HOST ;; admin) k=ADMIN_HOST ;; files) k=FILES_HOST ;; git) k=GIT_HOST ;; terminal) k=TERMINAL_HOST ;; code) k=CODE_HOST ;; esac
   [ -z "$k" ] || k="$(get_env "$k")"
   printf '%s\n' "${k:-$1.$h}"
 }
@@ -156,7 +156,7 @@ portal_app_name() {
 
 # save_portal_origin — PORTAL_ORIGIN (= portal_url) in .env, for Caddy's frame-ancestors, and CHAT_ORIGIN (=
 # portal_url chat), Open WebUI's CORS_ALLOW_ORIGIN; rewritten whenever the host or port is decided (and at every up).
-save_portal_origin() { set_env PORTAL_ORIGIN "$(portal_url)"; set_env CHAT_ORIGIN "$(portal_url chat)"; }
+save_portal_origin() { set_env PORTAL_ORIGIN "$(portal_url)"; set_env CHAT_ORIGIN "$(portal_url chat)"; set_env GIT_ORIGIN "$(portal_url git)"; }
 
 # setup_portal_host — PORTAL_HOST in .env: kept if set (validated), else derived from the project name.
 setup_portal_host() {
@@ -171,7 +171,7 @@ setup_portal_host() {
 # cookie named "token".
 check_app_hosts() {
   local k v seen; seen=" $(portal_host) "
-  for k in CHAT_HOST ADMIN_HOST FILES_HOST TERMINAL_HOST CODE_HOST; do
+  for k in CHAT_HOST ADMIN_HOST FILES_HOST GIT_HOST TERMINAL_HOST CODE_HOST; do
     v="$(get_env "$k")"
     if [ -n "$v" ]; then
       valid_hostname "$v" || die "$k=$v in .env is not a valid host name"

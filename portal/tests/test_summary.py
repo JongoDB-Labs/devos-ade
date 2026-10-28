@@ -243,3 +243,30 @@ def test_settings_read_voice_from_env():
     assert (s.stt_engine, s.stt_provider, s.stt_model) == ("openai", "bedrock", "voxtral-mini")
     s = from_env({**base, "STT_PROVIDER": "groq", "STT_MODEL": "whisper-large-v3"})
     assert (s.stt_engine, s.stt_model) == ("web", "whisper-large-v3")
+
+
+@respx.mock
+def test_services_include_the_built_in_git_server_from_stacks_record(settings, tmp_path):
+    # the built-in git server, Forgejo (lib/localgit.sh): the same kind of row from the same record, listed after
+    # SearXNG's while the record has it — LOCALGIT=off: ./stack lists no forgejo, no row
+    from dataclasses import replace
+    s = replace(settings, status_dir=tmp_path / "status")
+    now = int(time.time())
+    assert summary.forgejo(s, now) is None   # no record yet
+    _services_json(s.status_dir, [{"service": "litellm", "state": "running", "health": "healthy"}], now)
+    assert summary.forgejo(s, now) is None   # off
+    _services_json(s.status_dir, [{"service": "forgejo", "state": "running", "health": "healthy"}], now - 20)
+    assert summary.forgejo(s, now) == {"id": "forgejo", "name": "Forgejo", "role": "git server (built-in)", "ok": True, "detail": "ready"}
+    _services_json(s.status_dir, [{"service": "forgejo", "state": "running", "health": "unhealthy"}], now)
+    assert (summary.forgejo(s, now)["ok"], summary.forgejo(s, now)["detail"]) == (False, "unhealthy")
+    _services_json(s.status_dir, [{"service": "searxng", "state": "running", "health": "healthy"},
+                                  {"service": "forgejo", "state": "running", "health": "healthy"}], now)
+    for url in ("http://litellm:4000/health/readiness", "http://open-webui:8080/health", "http://rustfs:9000/health",
+                "http://shared-mcp:8000/healthz"):
+        respx.get(url).respond(200, json={"db": "connected"})
+
+    async def run(st):
+        async with httpx.AsyncClient() as c:
+            return await summary.services(c, st)
+
+    assert [x["id"] for x in anyio.run(run, s)][-2:] == ["searxng", "forgejo"]

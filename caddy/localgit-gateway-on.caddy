@@ -1,0 +1,30 @@
+# The sandbox's way to the built-in git server (compose.localgit.yaml sets BN_LOCALGIT_GATEWAY=on): https://gateway:8093,
+# on the internal "terminal" network alone, TLS with the certificate ./stack made for the name "gateway" (lib/localgit.sh:
+# .state/localgit/tls, which the code container hands to the sandbox's git as the one CA it trusts for this host). It is
+# an egress carve-out in the way LiteLLM's paths on :8091 are — a few paths to one stack service, never the internet or
+# the network around it: only git's smart HTTP protocol of a repository (info/refs, git-upload-pack, git-receive-pack)
+# goes through; Forgejo's web UI, its API and its sign-in are 404 here. Credentials are the host's token (the Code page's
+# Git hosts), which git sends as the repository's login; the gateway adds nothing and strips what could pose as a
+# sign-in by the portal or a reverse proxy.
+https://:8093 {
+	bind gateway
+	tls /etc/bn-localgit/tls.crt /etc/bn-localgit/tls.key
+	route {
+		@unclean vars_regexp {http.request.uri.path} `(^|/)\.\.?(/|$)|//`
+		respond @unclean 404
+		request_header -X-Portal-User
+		request_header -X-Portal-Remote
+		request_header -X-Portal-Proxy
+		request_header -Tailscale-User-Login
+		request_header -Tailscale-User-Name
+		request_header -Tailscale-User-Profile-Pic
+		request_header -Tailscale-Headers-Info
+		request_header -X-Webauth-User
+		request_header -X-Webauth-Email
+		request_header -X-Webauth-Fullname
+		request_header -Cookie
+		@git path_regexp ^/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\.git/(info/refs|git-upload-pack|git-receive-pack)$
+		reverse_proxy @git forgejo:3000
+		respond 404
+	}
+}

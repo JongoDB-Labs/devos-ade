@@ -1445,6 +1445,26 @@ too.
   session's permission mode. Like anything in the terminal, tasks run in the sandbox, not on your computer. Details:
   [docs/security.md](docs/security.md#previews-of-dev-servers-in-the-sandbox) (*Run & test*).
 
+#### The built-in git server (Forgejo)
+
+A git server of your own on this computer, for projects that should push, pull and keep their branches and pull requests
+without GitHub or an off-site GitLab. It is on by default (**Settings › Claude Code › Local git server**, or
+`./stack config set LOCALGIT off`): one small container (Forgejo, the community fork of Gitea; about 110 MB of memory,
+SQLite, no SSH, no registration, no mail) with its repositories in a Docker volume of its own (`gitdata`: `./stack
+uninstall` removes it, turning the server off keeps it).
+
+- **Its web UI** is at `git.<your portal host>` (`http://git.bedrock-now.localhost`), behind the portal's sign-in like Admin
+  and Files. Sign in as `devos` — a site admin made by setup — with the password in `.env` (`LOCALGIT_ADMIN_PASSWORD`;
+  `./stack status` says so). Repositories are private by default.
+- **From the Code page** it is a Git host called *Local git server*, connected by setup with a token scoped to repositories
+  only (never shown, never in `.env`): clone `https://gateway:8093/devos/REPO.git`, fetch, pull, push and **Publish** exactly
+  as with GitHub — a push to a repository that does not exist yet creates it (private). **Open a pull request** after a
+  push opens the server's compare page. It works with the sandbox's internet **off** too: the sandbox reaches it through
+  the terminal's gateway on a TLS listener that forwards only git's paths of a repository (never the web UI, the API or
+  anything else), with a certificate `./stack` made for the name `gateway` and the Code page hands to git as the one CA it
+  trusts for that host. Claude's own `git` in the terminal is not wired to it yet (the Code page's operations are).
+- **Mirroring to GitHub or GitLab** and signing in to the web UI from the portal are the next steps.
+
 #### Remote repositories: Git hosts, clone, push and pull
 
 The Git panel works with remotes too — GitHub, GitLab or any git server over https or ssh — without your

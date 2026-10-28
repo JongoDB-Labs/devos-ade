@@ -2299,6 +2299,47 @@ operation you started, sent only where you saw it go.
   Enterprise Server host. `code/test/gitnote.test.mjs`: the note for no, one and two hosts, allowed or not, gh's
   hosts, odd names, long accounts and labels never in it, and one restart after a change (not two).
 
+### The built-in git server (Forgejo)
+
+`LOCALGIT` (on by default; Settings › Claude Code › *Local git server*) runs Forgejo in its own container — rootless (uid
+1000), pinned by digest, read-only file system, no capabilities, `no-new-privileges`, memory and process limits, SQLite, no
+SSH server, no registration, no mail, no Actions, no federation, repositories private by default (`ENABLE_PUSH_CREATE_USER`
+lets a push to a missing repository of the owner create it). What it keeps — repositories, its database and its own
+secrets (`app.ini`, made at its first start) — is the `gitdata` volume: not in `.env`, the portal, the update helper's
+requests or a backup file. Its owner account `devos` is a site admin whose password is `.env`'s
+`LOCALGIT_ADMIN_PASSWORD` (set on the server again at each `./stack up`; it is only ever in the environment of the
+one command that sets it, never on a command line).
+
+- **No way out.** Its one network, `localgit`, is **internal** (no internet) and shared with Caddy and the terminal's gateway
+  alone. The portal, Open WebUI, LiteLLM, the databases and the sandbox are not on it. (A mirror's way out to GitHub or
+  GitLab will be a network of its own, added only while one is set up.)
+- **The web UI** is a site of the main Caddy (`git.<portal host>`) behind the same portal check and same-site guard as
+  Admin and Files, framed by the portal only; its session cookie is never given to Forgejo. Forgejo's own sign-in still
+  applies (the owner account, until the portal signs you in as it does for Admin and Files).
+- **The sandbox's git — the egress carve-out.** The sandbox's only peer is the terminal's gateway, which gets a second
+  listener, `https://gateway:8093` (`caddy/localgit-gateway-on.caddy`, only while `compose.localgit.yaml` says so: the
+  terminal and `LOCALGIT` on), bound to the sandbox's own network. It forwards one family of paths to Forgejo —
+  `/<owner>/<repo>.git/info/refs`, `…/git-upload-pack`, `…/git-receive-pack` — and answers 404 for everything else: no web
+  UI, no API, no raw files, no sign-in page; `.`/`..` and empty path segments are refused; cookies and the identity
+  headers of the portal, Tailscale and a reverse proxy (`X-Webauth-*`) are removed before Forgejo. It is the same kind of
+  carve-out as LiteLLM's paths on `:8091`, not general egress: with `TERMINAL_EGRESS=off`, `host` or `internet` alike the
+  sandbox reaches this one service and no more (the git operations of the Code page never use the egress proxy for it, which
+  would refuse a container's name by design).
+- **TLS, with a CA of its own.** `./stack` makes a certificate for the name `gateway` (EC P-256, ten years, renewed a month
+  before it ends) in `.state/localgit/tls` — readable by all users of this computer, as the gateway's user is another one
+  on Linux, and what it protects is traffic between two containers — which the gateway mounts read-only. The code
+  container hands that certificate to the sandbox's git as the one CA it trusts for that host (a Git host's own CA
+  setting), so a token never travels unencrypted, and a certificate for another name is not trusted for it.
+- **The credential** is a Forgejo access token of the owner account scoped to `write:repository` and `read:user` (it
+  cannot change the account, make organisations, or administer the site), made by `forgejo admin user
+  generate-access-token` and handed to the code container on stdin (`import-host.mjs`, source `localgit`: only ./stack
+  runs it, never the page). From there it follows the Git hosts rules above: the sandbox gets it for one operation,
+  through the fd-3 channel, only for the host of the URL you confirmed, at most three times, and it is in no `.git/config`,
+  environment, event or answer.
+- **Not covered yet.** Claude's own `git` in the terminal (not the Code page's operations) has no CA for the host; a
+  mirror's egress and credentials; remote access (Tailscale / your domain) has no git site; `forgejo dump` is not part of
+  `./stack backup`.
+
 ### Signing in to a Git host (OAuth)
 
 **Sign in with GitHub** and **Sign in with GitLab** (README: *Remote repositories*) connect a Git host with a token the

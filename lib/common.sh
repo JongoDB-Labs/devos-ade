@@ -330,12 +330,15 @@ dc() {
   if [ "${_STT_PROFILE:-}" = 1 ] || [ "$(get_env STT_PROVIDER)" = bedrock ]; then f+=(--profile stt); fi
   # The built-in SearXNG (lib/websearch.sh): in the "searxng" profile, on unless WEBSEARCH_SEARXNG_BUILTIN=off
   if [ "${_WS_SEARXNG_PROFILE:-}" = 1 ] || ! flag_off "$(get_env WEBSEARCH_SEARXNG_BUILTIN)"; then f+=(--profile searxng); fi
+  # The built-in git server, Forgejo (lib/localgit.sh): in the "forgejo" profile, on unless LOCALGIT=off
+  if [ "${_LG_PROFILE:-}" = 1 ] || ! flag_off "$(get_env LOCALGIT)"; then f+=(--profile forgejo); fi
   # the checksums of the configuration files the services read only at their start (config_sums, below): every compose
   # call passes the same ones, so none recreates a service whose files did not change, and each recreates one whose did
   local policy sums; policy="$(claude_policy)"; sums="$(config_sums "$policy")"
   # The browser terminal too: an exported TERMINAL_WORKSPACE must never decide what the container sees.
   ( unset OPENROUTER_API_KEY OPENROUTER_MODELS OPENROUTER_MAX_MODELS EXPLABS_API_KEY EXPLABS_MODELS STT_PROVIDER STT_API_KEY STT_MODEL OWUI_STT_ENGINE \
       WEBSEARCH_TAVILY_API_KEY WEBSEARCH_BRAVE_API_KEY WEBSEARCH_PERPLEXITY_API_KEY WEBSEARCH_SEARXNG_SECRET WEBSEARCH_SEARXNG_BUILTIN \
+      LOCALGIT LOCALGIT_ADMIN_PASSWORD GIT_HOST GIT_ORIGIN BN_LOCALGIT_MODE BN_LOCALGIT_TLS \
       OWUI_STT_BASE_URL STT_BEDROCK_MODEL COMPOSE_PROFILES \
       AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_REGION_NAME \
       TERMINAL_ENABLED TERMINAL_WORKSPACE TERMINAL_EGRESS TERMINAL_EGRESS_ALLOW TERMINAL_EGRESS_DENY TERMINAL_HOST TERMINAL_UID TERMINAL_GID TERMINAL_MEM_LIMIT \
@@ -347,6 +350,7 @@ $sums
 SUMS
     # which of terminal/managed/*.json the sandbox gets as Claude Code's managed settings (read-only): from .env alone
     TERMINAL_CLAUDE_POLICY="$policy" BN_PROJECTS_PUBLIC="$STATE_DIR/projects/public" \
+    BN_LOCALGIT_TLS="$STATE_DIR/localgit/tls" BN_LOCALGIT_MODE="$(flag_off "$(get_env LOCALGIT)" && echo off || echo on)" \
     BEDROCK_NOW_ENV_DISPLAY="$(env_file_display)" COMPOSE_PROJECT_NAME="$p" docker compose -p "$p" --project-directory "$STACK_DIR" -f "$STACK_DIR/compose.yaml" ${f[@]+"${f[@]}"} \
       --env-file "$ENV_FILE" "$@" )
 }
@@ -362,7 +366,7 @@ SUMS
 #                                              code-models.tsv and web-search.json again by itself when they change)
 #   BN_CADDY_CONFIG_SUM      caddy             caddy/Caddyfile and the caddy/*.caddy it imports (Caddy's admin API is off:
 #                                              it reads them only at start)
-#   BN_GATEWAY_CONFIG_SUM    terminal-gateway  caddy/terminal-gateway.caddy, its only file
+#   BN_GATEWAY_CONFIG_SUM    terminal-gateway  caddy/terminal-gateway.caddy and the localgit-gateway-*.caddy it imports
 #   BN_SEARXNG_SETTINGS_SUM  searxng           searxng/settings.yml (the built-in web search)
 #   BN_TERMINAL_POLICY_SUM   terminal          terminal/managed/<policy>.json, Claude Code's managed settings (a mount of
 #                                              one file: once git replaced it, a running container no longer sees it)
@@ -373,10 +377,10 @@ SUMS
 config_sums() {
   local policy="${1:-}" c=() g
   [ -n "$policy" ] || policy="$(claude_policy)"
-  for g in "$STACK_DIR"/caddy/*.caddy; do [ "${g##*/}" = terminal-gateway.caddy ] || c+=("${g##*/}"); done
+  for g in "$STACK_DIR"/caddy/*.caddy; do case "${g##*/}" in terminal-gateway.caddy | localgit-gateway-*.caddy) ;; *) c+=("${g##*/}") ;; esac; done
   printf 'BN_LITELLM_CONFIG_SUM=%s\n' "$(litellm_compose_sum)"
   printf 'BN_CADDY_CONFIG_SUM=%s\n' "$(files_sum "$STACK_DIR/caddy" Caddyfile ${c[@]+"${c[@]}"})"
-  printf 'BN_GATEWAY_CONFIG_SUM=%s\n' "$(files_sum "$STACK_DIR/caddy" terminal-gateway.caddy)"
+  printf 'BN_GATEWAY_CONFIG_SUM=%s\n' "$(files_sum "$STACK_DIR/caddy" terminal-gateway.caddy localgit-gateway-on.caddy localgit-gateway-off.caddy)"
   # (as v0.31.0 gave it: the checksum alone, so an update to this version leaves an unchanged SearXNG running)
   g=''; [ ! -f "$STACK_DIR/searxng/settings.yml" ] || g="$(cksum < "$STACK_DIR/searxng/settings.yml" | awk '{ print $1 }')"
   printf 'BN_SEARXNG_SETTINGS_SUM=%s\n' "$g"
@@ -480,6 +484,49 @@ compose_reads_contexts() {
   [ "$_BN_COMPOSE_CTX" = yes ]
 }
 
+# --- the built-in git server (lib/localgit.sh has the rest) ---
+# localgit_on -> 0 while the built-in git server is on: LOCALGIT anything but off (blank = on, the default)
+localgit_on() { ! flag_off "$(get_env LOCALGIT)"; }
+# localgit_overlay_wanted -> 0 while the sandbox's gateway should also serve it (compose.localgit.yaml): it is on, and so is
+# the terminal (the sandbox's gateway exists then) — and its certificate is there
+localgit_overlay_wanted() {
+  localgit_on && flag_on "$(get_env TERMINAL_ENABLED)" && [ -n "$(get_env TERMINAL_WORKSPACE)" ] && localgit_tls_ensure
+}
+localgit_tls_dir() { printf '%s/localgit/tls\n' "$STATE_DIR"; }
+
+# localgit_tls_ensure -> 0 with a certificate for the name "gateway" in .state/localgit/tls (tls.crt, tls.key): made once, made
+# again a month before it ends. World-readable files in a folder of 755: the gateway's user (the terminal's) is not yours on
+# Linux, and what they protect is the sandbox's git to one internal service, whose CA (this very certificate) only the code
+# container hands to git. A self-signed certificate that is its own CA (basicConstraints CA:TRUE): git trusts exactly it.
+localgit_tls_ensure() {
+  local d crt key cfg rc=0
+  d="$(localgit_tls_dir)"; crt="$d/tls.crt"; key="$d/tls.key"
+  if [ -s "$crt" ] && [ -s "$key" ] && openssl x509 -in "$crt" -noout -checkend 2592000 >/dev/null 2>&1; then return 0; fi
+  command -v openssl >/dev/null 2>&1 || return 1
+  mkdir -p "$d" 2>/dev/null || return 1
+  cfg="$(mktemp)" || return 1
+  cat > "$cfg" <<'EOF'
+[req]
+distinguished_name = dn
+x509_extensions = v3
+prompt = no
+[dn]
+CN = gateway
+[v3]
+subjectAltName = DNS:gateway
+basicConstraints = critical,CA:TRUE
+keyUsage = critical,digitalSignature,keyCertSign
+extendedKeyUsage = serverAuth
+EOF
+  if openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 -config "$cfg" \
+      -keyout "$key.new" -out "$crt.new" >/dev/null 2>&1; then
+    chmod 644 "$key.new" "$crt.new"; chmod 755 "$d" "$STATE_DIR/localgit" 2>/dev/null || true
+    mv "$key.new" "$key" && mv "$crt.new" "$crt" || rc=1
+  else rc=1; rm -f "$key.new" "$crt.new"; fi
+  rm -f "$cfg"
+  return "$rc"
+}
+
 # compose_overlays -> extra compose files for this checkout: remote access (REMOTE_MODE in .env, lib/remote.sh)
 # adds the Tailscale sidecar, and own-domain mode also the Caddy build with a DNS plugin; the browser terminal
 # (TERMINAL_ENABLED=true, lib/terminal.sh) its container, and its way out to the internet (TERMINAL_EGRESS, read by
@@ -505,6 +552,8 @@ compose_overlays() {
       internet) echo compose.terminal-proxy.yaml ;;
       host) echo compose.terminal-egress.yaml ;;
     esac
+    # the built-in git server as the sandbox's git host: the gateway's TLS listener (lib/localgit.sh)
+    ! localgit_overlay_wanted || echo compose.localgit.yaml
     if flag_on "$(get_env CODE_ENABLED)"; then
       echo compose.code.yaml
       # (Chat's sandbox's way out: the terminal's proxy; with the direct one, a proxy of its own; none with none —

@@ -50,6 +50,8 @@ services:
       CODE_CHAT_KEY: ${CODE_CHAT_KEY:-}
       # What the page's Bypass dialog says about the sandbox: its internet access, and the folder of yours it sees (a
       # label only: this container mounts no folder)
+      # The built-in git server's web address (lib/localgit.sh; blank while it is off): where a push's pull-request link opens
+      LOCALGIT_WEB_ORIGIN: ${GIT_ORIGIN:-}
       TERMINAL_EGRESS: ${TERMINAL_EGRESS:-}
       CODE_WORKSPACE_LABEL: ${TERMINAL_WORKSPACE:-}
       # Git hosts' Sign in with GitHub / GitLab (code/server/oauth.mjs): the applications' client IDs and the GitHub App's

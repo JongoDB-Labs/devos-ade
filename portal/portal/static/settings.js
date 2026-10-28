@@ -72,7 +72,7 @@
     WEBSEARCH_TAVILY_API_KEY: "Tavily", WEBSEARCH_BRAVE_API_KEY: "Brave Search", WEBSEARCH_PERPLEXITY_API_KEY: "Perplexity",
     WEBSEARCH_SEARXNG_URL: "Your own SearXNG" };
   // a switch whose blank value means on (the stack's default; setup writes it): shown on while blank
-  const DEFAULT_ON = new Set(["WEBSEARCH_SEARXNG_BUILTIN"]);
+  const DEFAULT_ON = new Set(["WEBSEARCH_SEARXNG_BUILTIN", "LOCALGIT"]);
   // Settings › Models & providers: a card for each provider. A key's card is its row (providerRow): MODELS, the
   // provider its models have in the snapshot's code_models (the pickers' list: litellm/code-models.tsv), and PICK,
   // where you pick which of them it adds. A provider of another kind (a web search backend) fits the same way: its

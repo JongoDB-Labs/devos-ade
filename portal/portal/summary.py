@@ -150,9 +150,9 @@ async def services(client: httpx.AsyncClient, s: Settings) -> list[dict]:
         stt = await _health(client, f"{s.stt_url}/healthz")
         out.append({"id": "stt", "name": "Speech-to-text", "role": "voice (Bedrock Voxtral)", "ok": stt[0],
                     "detail": "ready" if stt[0] else stt[2]})
-    sx = searxng(s)
-    if sx:
-        out.append(sx)
+    for row in (searxng(s), forgejo(s)):
+        if row:
+            out.append(row)
     return out
 
 
@@ -171,14 +171,14 @@ def _ago(seconds: int) -> str:
     return f"{m} min ago" if m < 120 else f"{m // 60} h ago" if m < 48 * 60 else f"{m // 1440} days ago"
 
 
-def searxng(s: Settings, now: float | None = None) -> dict | None:
-    """Home's row for the built-in SearXNG from ./stack's record, or None: off, no record yet, or no record at all
+def _built_in(s: Settings, service: str, name: str, role: str, now: float | None = None) -> dict | None:
+    """Home's row for a built-in container from ./stack's record, or None: off, no record yet, or no record at all
     (anything but Docker's own words for its state is shown as unknown)."""
     d = hostfiles.read_json(s.status_dir / SERVICES_FILE, 16 * 1024)
     rows, at = d.get("services"), d.get("written_at")
     if not isinstance(rows, list) or not isinstance(at, int) or isinstance(at, bool) or at <= 0:
         return None
-    row = next((r for r in rows if isinstance(r, dict) and r.get("service") == "searxng"), None)
+    row = next((r for r in rows if isinstance(r, dict) and r.get("service") == service), None)
     if row is None:
         return None
     state, health = (str(row.get(k) or "") for k in ("state", "health"))
@@ -189,7 +189,17 @@ def searxng(s: Settings, now: float | None = None) -> dict | None:
     age = int((now if now is not None else datetime.now(timezone.utc).timestamp()) - at)
     if age > SERVICES_FRESH_S:
         detail += f" (checked {_ago(age)})"
-    return {"id": "searxng", "name": "SearXNG", "role": "web search (built-in)", "ok": ok, "detail": detail}
+    return {"id": service, "name": name, "role": role, "ok": ok, "detail": detail}
+
+
+def searxng(s: Settings, now: float | None = None) -> dict | None:
+    """Home's row for the built-in SearXNG (see _built_in)."""
+    return _built_in(s, "searxng", "SearXNG", "web search (built-in)", now)
+
+
+def forgejo(s: Settings, now: float | None = None) -> dict | None:
+    """Home's row for the built-in git server, Forgejo (lib/localgit.sh; only LOCALGIT on has a container and a row)."""
+    return _built_in(s, "forgejo", "Forgejo", "git server (built-in)", now)
 
 
 # Mirrors lib/stt.sh: Voxtral's audio counts ~12.5 input tokens per second, plus ~200 output tokens per minute.

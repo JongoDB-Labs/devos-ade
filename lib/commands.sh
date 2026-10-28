@@ -8,10 +8,11 @@ STACK_SERVICES="$STACK_BASE_SERVICES"
 # Built from STACK_BASE_SERVICES: callers keep a local STACK_SERVICES, which must not be extended twice.
 stack_services() { local extra; extra="$(optional_services)"; printf '%s\n' "$STACK_BASE_SERVICES${extra:+ $extra}"; }
 # optional_services -> the services .env turns on besides those: stt (Bedrock speech-to-text), terminal (./stack terminal),
-# code (./stack code), searxng (the built-in web search: on unless WEBSEARCH_SEARXNG_BUILTIN=off, lib/websearch.sh)
+# code (./stack code), searxng (the built-in web search: on unless WEBSEARCH_SEARXNG_BUILTIN=off, lib/websearch.sh), forgejo
+# (the built-in git server: on unless LOCALGIT=off, lib/localgit.sh)
 optional_services() {
   local out='' x
-  for x in "$(stt_services)" "$(terminal_services)" "$(code_services)" "$(websearch_builtin_services)"; do [ -z "$x" ] || out="$out${out:+ }$x"; done
+  for x in "$(stt_services)" "$(terminal_services)" "$(code_services)" "$(websearch_builtin_services)" "$(localgit_services)"; do [ -z "$x" ] || out="$out${out:+ }$x"; done
   printf '%s\n' "$out"
 }
 
@@ -28,7 +29,7 @@ Usage: ./stack <command> [--yes]
                "Install app" installs it (setup and up open it too; BEDROCK_NOW_NO_OPEN=1
                turns that off)
   logs [svc]   Follow logs (litellm, open-webui, rustfs, postgres, shared-mcp, portal, caddy, stt, terminal, code,
-               subs-chat, searxng)
+               subs-chat, searxng, forgejo)
   test         Smoke-test every service end to end (~$0.0001 Bedrock)
   costs        Bedrock prices for your enabled models + spend per key
   prices       Check Bedrock prices now (public price lists; daily anyway)
@@ -90,7 +91,7 @@ Usage: ./stack <command> [--yes]
   config       Every setting in .env, secrets masked (the portal's Settings tab shows the same):
                list | get KEY | set KEY [KEY…] (asks; hidden for secrets) | apply --stdin
                | check-aws (free) | report | regenerate rustfs|mcp-token
-  restart      Restart one service: litellm | open-webui | shared-mcp | stt | rustfs | caddy | searxng
+  restart      Restart one service: litellm | open-webui | shared-mcp | stt | rustfs | caddy | searxng | forgejo
   uninstall    Remove the containers, ALL data volumes and this install's built images
                (keeps .env and backups/)
 
@@ -583,6 +584,7 @@ setup_secrets() {
   # the built-in SearXNG (lib/websearch.sh): on by default (off stays off), and its own secret (never printed)
   ensure_env WEBSEARCH_SEARXNG_BUILTIN on
   ensure_env WEBSEARCH_SEARXNG_SECRET "$(gen_hex 32)"
+  localgit_secrets   # lib/localgit.sh: the built-in git server on by default (off stays off), and its owner account's password
   local email src def typed asked=0
   owner_email_lowercase   # lib/settings.sh: Chat keeps emails in lowercase
   email="$(get_env OPENWEBUI_ADMIN_EMAIL)"
@@ -711,6 +713,7 @@ cmd_setup() {
   timed_step "Voice" stt_after_probe    # lib/stt.sh: Bedrock speech-to-text on by default when Voxtral is usable
   websearch_builtin_up    # lib/websearch.sh: the built-in SearXNG up (on by default) or gone (off); never fatal
   timed_step "Web search check" websearch_after_start   # lib/websearch.sh: one search with the backend in use (on the setup key), or why there is none
+  timed_step "Git server" localgit_start               # lib/localgit.sh: the built-in git server up (on by default) or gone (off); never fatal
   setup_step "creating keys and starting Open WebUI, the portal and the MCP server"
   setup_keys_and_ui
   write_mcp_config
@@ -722,6 +725,7 @@ cmd_setup() {
   terminal_setup_hook   # lib/terminal.sh: the browser terminal, when on — rebuilt with the current keys; never fatal
   code_setup_hook       # lib/code.sh: the Code page, when on (after the terminal: its sandbox) — rebuilt; never fatal
   code_default_settle   # lib/code.sh: a default that did not come up is off again (said); the next setup tries again
+  localgit_after_up     # lib/localgit.sh: the git server's owner account and the Code page's host for it, now that both run; never fatal
   SETUP_CODE_DEFAULT=0  # (settled: a Ctrl-C from here on leaves the Code page as it is)
   ! code_ready || setup_done "the terminal and the Code page started"
   setup_step "running the smoke test"
@@ -1225,6 +1229,7 @@ SUMMARY
   explabs_summary_line
   stt_summary_line
   websearch_summary_line
+  localgit_summary_line
   terminal_summary_line
   code_summary_line
   remote_summary_line
@@ -1375,6 +1380,8 @@ cmd_up() {
   # (WEBSEARCH_SEARXNG_BUILTIN=off by hand in .env), its container goes
   websearch_searxng_write
   if websearch_builtin_on; then ensure_env WEBSEARCH_SEARXNG_SECRET "$(gen_hex 32)"; else websearch_builtin_down; fi
+  # lib/localgit.sh: the git server's secret and certificate before compose starts it; turned off by hand in .env, its container goes
+  if localgit_on; then localgit_secrets; localgit_tls_ensure || true; else localgit_remove; fi
   # The stack's own services only: the Tailscale sidecar (remote access) is started afterwards without waiting.
   # shellcheck disable=SC2086  # word-split the service list on purpose
   run_phase "$PRODUCT_NAME" "$STACK_SERVICES" dc up -d --wait $STACK_SERVICES
@@ -1383,6 +1390,7 @@ cmd_up() {
   # lib/websearch.sh: a search backend changed while the stack was stopped is checked now (one search, on the setup key)
   [ ! -f "$STACK_DIR/litellm/config.yaml" ] || { websearch_search_check; websearch_write_json; }
   terminal_after_up   # TERMINAL_EGRESS: what its way out no longer uses goes once the container has left it
+  localgit_after_up   # lib/localgit.sh: the git server's owner account and the Code page's host for it (both up now); never fatal
   remote_up_hook
   ensure_portal_reachable   # lib/portal.sh: Docker Desktop forwarding the portal's port to a Caddy it replaced
   # Open WebUI keeps banners in memory only: re-apply the budget banner (through the portal, like setup).
@@ -1414,6 +1422,8 @@ cmd_up() {
 cmd_down()   { ! declare -F xl_bg_stop >/dev/null || xl_bg_stop; dc down; }   # (lib/explabs.sh: its background read stops too)
 cmd_logs() {
   # (the built-in SearXNG while it is off: no container, so nothing to follow — said, not Compose's "no such service")
+  case " $* " in *" forgejo "*) localgit_on ||
+    die "the built-in git server is off (LOCALGIT=off): no container, no logs — ./stack config set LOCALGIT on turns it on" ;; esac
   case " $* " in *" searxng "*) websearch_builtin_on ||
     die "the built-in SearXNG is off (WEBSEARCH_SEARXNG_BUILTIN=off): no container, no logs — ./stack config set WEBSEARCH_SEARXNG_BUILTIN on turns it on" ;; esac
   dc logs -f --tail=200 "$@"
@@ -1433,6 +1443,7 @@ status_url() { # status_url SERVICE -> where to open it (browser UIs: through th
     chat-egress) echo "- (Chat's way out while the terminal's is direct: public internet addresses only)" ;;
     code) echo "$(portal_url code)   (the Code tab; ./stack code status)" ;;
     searxng) echo "- (the built-in web search, LiteLLM's alone)" ;;
+    forgejo) echo "$(portal_url git)   (the built-in git server)" ;;
     *) echo "- (internal only)" ;;
   esac
 }
@@ -1533,6 +1544,7 @@ cmd_status() {
   # lib/explabs.sh: its models, and when they run without model details (fail safe: no sampling parameters)
   xl="$(explabs_status_line)"; [ -z "$xl" ] || printf '  %s\n' "$xl"
   [ ! -f "$ENV_FILE" ] || printf '  %s\n' "$(websearch_status_line)"   # lib/websearch.sh: Claude Code's WebSearch
+  [ ! -f "$ENV_FILE" ] || localgit_status_line   # lib/localgit.sh: the built-in git server
   # lib/stt.sh: Bedrock speech-to-text turned off because AWS refuses its audio — said until a voice choice is made
   ! stt_notice_on || printf '  %sVoice: %s%s\n' "$O_YEL" "$STT_REFUSED_NOTICE" "$O_OFF"
 }
@@ -2268,6 +2280,7 @@ cmd_uninstall() {
   if confirm "Take a backup first?"; then cmd_backup; fi
   ! declare -F xl_bg_stop >/dev/null || xl_bg_stop   # (lib/explabs.sh: a background read of the model details)
   dc down -v --remove-orphans
+  localgit_uninstall_cleanup   # lib/localgit.sh: its repositories' volume, also while it is off (compose does not see it then)
   code_uninstall_cleanup       # lib/code.sh: its network, socket volume and image (before the terminal's)
   terminal_uninstall_cleanup   # lib/terminal.sh: its volume, networks and image, also while it is off
   projects_uninstall_cleanup   # lib/projects.sh: the generated files (the list stays; the folders are never touched)
@@ -2309,6 +2322,8 @@ cmd_uninstall() {
 . "$STACK_DIR/lib/stt.sh"
 # Web search for Claude Code's WebSearch on every model (LiteLLM's web search interception; ./stack websearch).
 . "$STACK_DIR/lib/websearch.sh"
+# The built-in local git server (Forgejo): its container, certificate, owner account and the Code page's host for it.
+. "$STACK_DIR/lib/localgit.sh"
 # Image cleanup and disk usage (./stack update, ./stack clean, ./stack status).
 . "$STACK_DIR/lib/images.sh"
 # The core services' versions (./stack versions, status, Settings) and the digest check at the end of ./stack update.

@@ -32,17 +32,17 @@ test_code_is_off_by_default_and_needs_the_terminal() {
   assert_eq "$(code_services)" ""
   mkdir -p "$TMP/ws"
   printf 'CODE_ENABLED=true\nTERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=%s\n' "$TMP/ws" > "$ENV_FILE"
-  assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml compose.terminal-proxy.yaml compose.code.yaml compose.code-proxy.yaml "
+  assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml compose.terminal-proxy.yaml compose.localgit.yaml compose.code.yaml compose.code-proxy.yaml "
   assert_eq "$(code_services)" "code subs-chat"
-  assert_eq "$(optional_services)" "terminal-egress terminal-gateway terminal code subs-chat searxng"   # (+ the built-in SearXNG: on by default)
+  assert_eq "$(optional_services)" "terminal-egress terminal-gateway terminal code subs-chat searxng forgejo"   # (+ the built-in SearXNG: on by default)
   # (Chat's sandbox's way out follows the sandbox's: the direct one, or none at all)
   printf 'CODE_ENABLED=true\nTERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=%s\nTERMINAL_EGRESS=host\n' "$TMP/ws" > "$ENV_FILE"
-  assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml compose.terminal-egress.yaml compose.code.yaml compose.code-egress.yaml "
+  assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml compose.terminal-egress.yaml compose.localgit.yaml compose.code.yaml compose.code-egress.yaml "
   printf 'CODE_ENABLED=true\nTERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=%s\nTERMINAL_EGRESS=off\n' "$TMP/ws" > "$ENV_FILE"
-  assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml compose.code.yaml compose.code-offline.yaml "
+  assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml compose.localgit.yaml compose.code.yaml compose.code-offline.yaml "
   for f in compose.code-proxy.yaml compose.code-egress.yaml compose.code-offline.yaml; do [ -f "$STACK_DIR/$f" ] || return 1; done
   printf 'CODE_ENABLED=false\nTERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=%s\n' "$TMP/ws" > "$ENV_FILE"
-  assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml compose.terminal-proxy.yaml "
+  assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml compose.terminal-proxy.yaml compose.localgit.yaml "
   [ -f "$STACK_DIR/compose.code.yaml" ] || return 1
 }
 
@@ -456,7 +456,7 @@ test_help_and_dispatcher() {
   assert_contains "$(sed -n '/^if \[ "$want_help" = 1 \]/,/^fi/p' "$STACK_DIR/stack")" "code) code_usage; exit 0 ;;"
   assert_contains "$(cat "$STACK_DIR/stack")" 'code) [ ! -f "$ENV_FILE" ] || guard_project; cmd_code "$@" ;;'
   assert_contains "$(cmd_help)" "logs [svc]   Follow logs (litellm, open-webui, rustfs, postgres, shared-mcp, portal, caddy, stt, terminal, code,
-               subs-chat, searxng)"
+               subs-chat, searxng, forgejo)"
   for k in CODE_ENABLED CODE_HOST CODE_PROXY_SECRET REMOTE_CODE_HOST; do assert_contains "$(cat "$STACK_DIR/.env.example")" "$k="; done
 }
 

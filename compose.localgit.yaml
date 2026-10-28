@@ -1,0 +1,21 @@
+# The built-in git server (compose.yaml: forgejo; lib/localgit.sh) as the sandbox's git host: lib/common.sh adds this file
+# to every docker compose call while LOCALGIT is on and the browser terminal is (compose.terminal.yaml). The terminal's
+# gateway — the sandbox's one peer — then also listens on https://gateway:8093 (caddy/localgit-gateway-on.caddy: only git's
+# smart HTTP paths of a repository, to Forgejo), on the internal "localgit" network it shares with Forgejo and Caddy. That
+# is the egress carve-out for this one service, in the way LiteLLM's paths on :8091 are: the sandbox's git reaches it with
+# TERMINAL_EGRESS=internet, host or off alike — never the internet, never another service. TLS: the certificate ./stack made
+# for the name "gateway" (lib/localgit.sh localgit_tls_ensure, a folder of .state read-only here), which the code container
+# hands the sandbox's git as the one CA it trusts for that host.
+services:
+  terminal-gateway:
+    environment:
+      BN_LOCALGIT_GATEWAY: "on"   # caddy/terminal-gateway.caddy imports localgit-gateway-on.caddy
+    volumes:
+      # Never created by Docker: ./stack makes it before compose reads this file
+      - type: bind
+        source: ${BN_LOCALGIT_TLS:?run ./stack up}
+        target: /etc/bn-localgit
+        read_only: true
+        bind: { create_host_path: false, selinux: z }
+    networks:
+      localgit: {}

@@ -345,6 +345,58 @@ services:
       start_interval: 1s
     logging: *logging
 
+  # The built-in local git server (lib/localgit.sh; the "forgejo" profile, which ./stack turns on unless LOCALGIT=off — off,
+  # no container). Forgejo (the community fork of Gitea), rootless, pinned by digest: repositories, branches and pull
+  # requests on this computer, with a web UI at git.PORTAL_HOST (Caddy: caddy/localgit-on.caddy) and the sandbox's git over
+  # the terminal gateway's TLS listener (caddy/localgit-gateway-on.caddy, compose.localgit.yaml) — never over the internet.
+  # SQLite, no SSH server, no registration, no mail, no Actions: one small container (about 110 MB at rest). Its one
+  # network, "localgit" (internal: no way out to the internet — a mirror's way out is added only while one is set up),
+  # it shares with Caddy and the terminal's gateway alone. Everything it keeps — repositories, the database, its own
+  # secrets (app.ini, made at its first start) — is the gitdata volume. The settings are the environment's (Forgejo reads
+  # its FORGEJO__<section>__<name> variables at each start); the owner's account is made by ./stack (lib/localgit.sh), its password .env's
+  # LOCALGIT_ADMIN_PASSWORD.
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:17.0.1-rootless@sha256:5ef02fbcf22beef56b8c844952ffad58cfe177b6f98e46e6abb5df90b88dc8d3
+    profiles: ["forgejo"]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:size=256m,uid=1000,gid=1000,mode=1777"]
+    mem_limit: 768m
+    pids_limit: 256
+    environment:
+      GITEA_APP_INI: /var/lib/gitea/app.ini
+      FORGEJO__security__INSTALL_LOCK: "true"
+      FORGEJO__database__DB_TYPE: sqlite3
+      FORGEJO__server__ROOT_URL: ${GIT_ORIGIN:-http://git.bedrock-now.localhost}/
+      FORGEJO__server__DOMAIN: ${GIT_HOST:-git.bedrock-now.localhost}
+      FORGEJO__server__DISABLE_SSH: "true"          # git over https only (the sandbox's; ./stack's Code page host)
+      FORGEJO__server__START_SSH_SERVER: "false"
+      FORGEJO__server__OFFLINE_MODE: "true"         # no gravatar, no CDN
+      FORGEJO__picture__DISABLE_GRAVATAR: "true"
+      FORGEJO__service__DISABLE_REGISTRATION: "true"
+      FORGEJO__service__REQUIRE_SIGNIN_VIEW: "true"
+      FORGEJO__repository__DEFAULT_PRIVATE: private
+      FORGEJO__repository__ENABLE_PUSH_CREATE_USER: "true"   # a push to a missing repository of the owner makes it (private): the Code page's Publish
+      FORGEJO__actions__ENABLED: "false"
+      FORGEJO__mailer__ENABLED: "false"
+      FORGEJO__federation__ENABLED: "false"
+      FORGEJO__openid__ENABLE_OPENID_SIGNIN: "false"
+      FORGEJO__other__SHOW_FOOTER_VERSION: "false"
+      FORGEJO__log__LEVEL: Warn
+    volumes:
+      - gitdata:/var/lib/gitea
+    networks: [localgit]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+      start_interval: 1s
+    logging: *logging
+
   # Login, Home dashboard, and the auth check Caddy asks before every request (/auth/verify).
   portal:
     # (+ compose.portal-docs.yaml, which ./stack adds where Docker Compose reads it: the search's docs index)
@@ -446,6 +498,9 @@ services:
       CHAT_HOST: ${CHAT_HOST:-chat.${PORTAL_HOST:-bedrock-now.localhost}}
       ADMIN_HOST: ${ADMIN_HOST:-admin.${PORTAL_HOST:-bedrock-now.localhost}}
       FILES_HOST: ${FILES_HOST:-files.${PORTAL_HOST:-bedrock-now.localhost}}
+      # The built-in git server's site (caddy/localgit-on.caddy; lib/localgit.sh: BN_LOCALGIT_MODE is on while LOCALGIT is)
+      GIT_HOST: ${GIT_HOST:-git.${PORTAL_HOST:-bedrock-now.localhost}}
+      LOCALGIT_MODE: ${BN_LOCALGIT_MODE:-off}
       CADDY_AUTO_HTTPS: "off"   # compose.domain.yaml: disable_redirects (certificates for the remote site)
       # Remote site (caddy/remote-<mode>.caddy; ./stack remote). The .invalid names only keep the file valid
       # while the sidecar has not told us the tailnet's name yet: nothing can match them.
@@ -468,7 +523,7 @@ services:
       - ./caddy:/etc/caddy:ro,z
     ports:
       - "127.0.0.1:${PORTAL_PORT:-80}:8080"   # only 8080: the internal :8090 site (speech-to-text) is not published
-    networks: [default, stt]
+    networks: [default, stt, localgit]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/caddy-health"]
       interval: 10s
@@ -488,9 +543,14 @@ networks:
     internal: true
   # Its way out to the search engines: SearXNG alone on it.
   websearch-out:
+  # The built-in git server (lib/localgit.sh): internal; its members are Forgejo, Caddy and (compose.localgit.yaml) the
+  # terminal's gateway only.
+  localgit:
+    internal: true
 
 volumes:
   pgdata:
   s3data:
   owui:
   portal-state:
+  gitdata:

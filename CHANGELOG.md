@@ -6,6 +6,19 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+
+- **A built-in local git server, Forgejo (JON-810).** Projects can push, pull and manage git on this computer, with no
+  GitHub or off-site GitLab: a new container (`forgejo`, rootless, pinned by digest, SQLite, no SSH or registration;
+  about 110 MB at rest, on by default; Settings › Claude Code › *Local git server*, `LOCALGIT=off`) with a web UI at
+  `git.<portal host>` behind the portal's sign-in, its repositories in the `gitdata` volume, and an owner account `devos`
+  made by setup (`LOCALGIT_ADMIN_PASSWORD` in `.env`). For the Code page it is a Git host, *Local git server*: setup
+  hands the Code page a repository-scoped token and the server's certificate, and clone, fetch, pull (fast-forward), push,
+  publish (a push creates a missing repository, private) and *Open a pull request* work as with GitHub — also with the
+  sandbox's internet off or direct: an egress carve-out like LiteLLM's, a TLS listener on the terminal's gateway
+  (`https://gateway:8093`) that forwards only git's smart-HTTP paths to Forgejo, over an internal network no other
+  service shares. Mirroring to remote hosts and signing in from the portal follow.
+
 ## [0.38.0] - 2026-10-28
 
 ### Added

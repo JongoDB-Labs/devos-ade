@@ -175,6 +175,7 @@ code_enable() {
   run_phase "Code page image (build; the first one takes a few minutes)" code code_build
   run_phase "Code page + portal + Caddy" "code portal caddy" _code_up
   code_default_forget_failures
+  localgit_after_up   # lib/localgit.sh: the built-in git server's host in Git hosts, now that the Code page runs
   [ "$own" = 0 ] || stack_unlock
   printf '\n'; code_status
   printf '\nOpen the Code tab on Home (%s) and unlock it with the portal password.\n' "$(portal_url)"

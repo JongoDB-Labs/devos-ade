@@ -48,6 +48,10 @@ http://:8091 {
 	}
 }
 
+# The sandbox's git on the built-in git server (https://gateway:8093): localgit-gateway-on.caddy while compose.localgit.yaml
+# says so (BN_LOCALGIT_GATEWAY=on), else nothing.
+import localgit-gateway-{$BN_LOCALGIT_GATEWAY:off}.caddy
+
 # On "terminal-link" alone ("terminal-upstream"), for the main Caddy: ttyd, on its UNIX socket (it has no TCP
 # listener). The main Caddy has asked the portal (session, fresh unlock, Origin) and adds the terminal's secret
 # header; without it — or without a real secret in this container's environment — ttyd is not asked at all. The

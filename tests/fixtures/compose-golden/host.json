@@ -17,6 +17,10 @@
    "external": false,
    "name": "bedrock-now_default"
   },
+  "localgit": {
+   "external": false,
+   "name": "bedrock-now_localgit"
+  },
   "remote": {
    "external": false,
    "name": "bedrock-now_remote"
@@ -54,6 +58,7 @@
    "networks": [
     "code-link",
     "default",
+    "localgit",
     "remote",
     "stt",
     "terminal-link"
@@ -122,6 +127,22 @@
      "source": "<STATE>/projects/public",
      "target": "/etc/bn-code/projects",
      "type": "bind"
+    }
+   ]
+  },
+  "forgejo": {
+   "container_name": null,
+   "image": "codeberg.org/forgejo/forgejo:17.0.1-rootless@sha256:5ef02fbcf22beef56b8c844952ffad58cfe177b6f98e46e6abb5df90b88dc8d3",
+   "labels": {},
+   "networks": [
+    "localgit"
+   ],
+   "ports": [],
+   "volumes": [
+    {
+     "source": "gitdata",
+     "target": "/var/lib/gitea",
+     "type": "volume"
     }
    ]
   },
@@ -423,6 +444,7 @@
    "image": "caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f",
    "labels": {},
    "networks": [
+    "localgit",
     "terminal",
     "terminal-link"
    ],
@@ -445,6 +467,12 @@
      "source": "preview-socket",
      "target": "/run/bn-preview",
      "type": "volume"
+    },
+    {
+     "read_only": true,
+     "source": "<STATE>/localgit/tls",
+     "target": "/etc/bn-localgit",
+     "type": "bind"
     }
    ]
   }
@@ -465,6 +493,10 @@
   "code-state": {
    "external": false,
    "name": "bedrock-now_code-state"
+  },
+  "gitdata": {
+   "external": false,
+   "name": "bedrock-now_gitdata"
   },
   "owui": {
    "external": false,

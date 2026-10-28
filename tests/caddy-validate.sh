@@ -8,8 +8,8 @@
 #                                                  (caddy/Dockerfile: docker build -t <image> caddy)
 #
 # Combinations: remote off / tailscale / domain (× REMOTE_PREVIEW_SITE off / own) × the terminal off/on × the Code
-# page (and its previews) off/on (the Code page only with the terminal) × the remote preview host set or not; then
-# terminal-gateway.caddy. Exit 0 when every one validates.
+# page (and its previews) off/on (the Code page only with the terminal) × the remote preview host set or not × the
+# built-in git server's site off/on; then terminal-gateway.caddy without and with the git server's TLS listener. Exit 0 when every one validates.
 set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE="caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f"
@@ -32,7 +32,7 @@ run() {
 }
 
 base=(PORTAL_HOST=bn.localhost PORTAL_ORIGIN=http://bn.localhost:8800 CHAT_HOST=chat.bn.localhost ADMIN_HOST=admin.bn.localhost
-      FILES_HOST=files.bn.localhost CADDY_AUTO_HTTPS=off REMOTE_SIDECAR_IP=10.255.255.254 PORTAL_PROXY_SECRET="$(printf 'p%.0s' $(seq 1 64))")
+      FILES_HOST=files.bn.localhost GIT_HOST=git.bn.localhost CADDY_AUTO_HTTPS=off REMOTE_SIDECAR_IP=10.255.255.254 PORTAL_PROXY_SECRET="$(printf 'p%.0s' $(seq 1 64))")
 for rm in off tailscale domain; do
   img="$IMAGE"
   if [ "$rm" = domain ]; then
@@ -65,7 +65,9 @@ for rm in off tailscale domain; do
     for pv in "${previews[@]}"; do
       p=()
       case "$pv" in none) ;; own:*) p=(REMOTE_PREVIEW_HOST="${pv#own:}" REMOTE_PREVIEW_SITE=own) ;; *) p=(REMOTE_PREVIEW_HOST="$pv") ;; esac
-      run "$img" "remote-$rm terminal-$tm code-$cm preview-${pv%%:*}" "${base[@]}" "${r[@]}" "${t[@]}" "${c[@]}" ${p[@]+"${p[@]}"}
+      for lg in off on; do
+        run "$img" "remote-$rm terminal-$tm code-$cm preview-${pv%%:*} git-$lg" "${base[@]}" "${r[@]}" "${t[@]}" "${c[@]}" ${p[@]+"${p[@]}"} LOCALGIT_MODE=$lg
+      done
     done
   done; done
 done
@@ -76,5 +78,19 @@ if out="$(docker run --rm --network none -e PREVIEW_PROXY_SECRET=001122334455667
 else
   fails=$((fails + 1)); printf 'FAIL terminal-gateway.caddy\n%s\n' "$out" | tail -n 3
 fi
+# the gateway's TLS listener for the built-in git server (caddy/localgit-gateway-on.caddy): its certificate and key as ./stack
+# makes them (lib/common.sh localgit_tls_ensure), in a folder made here
+tls="$(mktemp -d)"
+cfg="$tls/c.cnf"; printf '[req]\ndistinguished_name=dn\nx509_extensions=v3\nprompt=no\n[dn]\nCN=gateway\n[v3]\nsubjectAltName=DNS:gateway\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,digitalSignature,keyCertSign\nextendedKeyUsage=serverAuth\n' > "$cfg"
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 2 -config "$cfg" -keyout "$tls/tls.key" -out "$tls/tls.crt" >/dev/null 2>&1
+chmod 755 "$tls"; chmod 644 "$tls"/tls.*
+n=$((n + 1))
+if out="$(docker run --rm --network none -e BN_LOCALGIT_GATEWAY=on -e PREVIEW_PROXY_SECRET=00112233445566778899aabbccddeeff -e TERMINAL_PROXY_SECRET=0123456789abcdef0123456789abcdef \
+      -v "$here/caddy:/etc/caddy:ro" -v "$tls:/etc/bn-localgit:ro" --entrypoint caddy "$IMAGE" validate --config /etc/caddy/terminal-gateway.caddy --adapter caddyfile 2>&1)"; then
+  printf 'ok   terminal-gateway.caddy with the git server (BN_LOCALGIT_GATEWAY=on)\n'
+else
+  fails=$((fails + 1)); printf 'FAIL terminal-gateway.caddy with the git server\n%s\n' "$out" | tail -n 3
+fi
+rm -rf "$tls"
 printf '\n%d of %d combinations validate\n' "$((n - fails))" "$n"
 [ "$fails" -eq 0 ]

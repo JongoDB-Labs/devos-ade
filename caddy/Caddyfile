@@ -5,6 +5,8 @@
 #   {$ADMIN_HOST}    LiteLLM admin UI       (default admin.PORTAL_HOST; signed in by the portal: app_sso below)
 #   {$FILES_HOST}    RustFS console         (default files.PORTAL_HOST; Host passed through unchanged: the console
 #                                           signs S3 requests with it; signed in by the portal: app_sso below)
+#   {$GIT_HOST}      the built-in git server (only while LOCALGIT is on: localgit-on.caddy; default git.PORTAL_HOST; the
+#                                           portal's session, then Forgejo's own sign-in)
 #   {$TERMINAL_HOST} the browser terminal   (only with ./stack terminal enable: terminal-on.caddy; default
 #                                           terminal.PORTAL_HOST; a session AND a fresh password unlock)
 #   {$CODE_HOST}     the Code page          (only with ./stack code enable: code-on.caddy; default code.PORTAL_HOST;
@@ -666,6 +668,10 @@ http:// {
 	}
 	import unknown_host_down
 }
+
+# The built-in git server's web UI (the Forgejo container, LOCALGIT on by default): localgit-off.caddy (nothing) or
+# localgit-on.caddy (BN_LOCALGIT_MODE=on, from lib/localgit.sh).
+import localgit-{$LOCALGIT_MODE:off}.caddy
 
 # The browser terminal: terminal-off.caddy (nothing; the default) or terminal-on.caddy (compose.terminal.yaml).
 import terminal-{$TERMINAL_MODE:off}.caddy

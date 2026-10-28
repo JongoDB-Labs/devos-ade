@@ -38,7 +38,7 @@ test_compose_overlays_follow_the_mode() {
   printf 'REMOTE_MODE=tailscale\n' > "$ENV_FILE"; assert_eq "$(compose_overlays)" "compose.tailscale.yaml"
   printf 'REMOTE_MODE=domain\n' > "$ENV_FILE"; assert_eq "$(compose_overlays)" "compose.tailscale.yaml compose.domain.yaml"
   docker() { printf '%s\n' "$*" > "$TMP/args"; }
-  dc ps; assert_contains "$(cat "$TMP/args")" "-f $STACK_DIR/compose.tailscale.yaml -f $STACK_DIR/compose.domain.yaml --profile searxng --env-file"
+  dc ps; assert_contains "$(cat "$TMP/args")" "-f $STACK_DIR/compose.tailscale.yaml -f $STACK_DIR/compose.domain.yaml --profile searxng --profile forgejo --env-file"
   printf 'REMOTE_MODE=off\n' > "$ENV_FILE"; dc ps; assert_not_contains "$(cat "$TMP/args")" "tailscale"
   for f in compose.tailscale.yaml compose.domain.yaml; do [ -f "$STACK_DIR/$f" ] || { echo "missing $f" >&2; return 1; }; done
 }

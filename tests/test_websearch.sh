@@ -634,7 +634,7 @@ test_the_built_in_searxngs_container_follows_its_switch() {
   docker() { printf '%s | sum=%s\n' "$*" "${BN_SEARXNG_SETTINGS_SUM:-}" >> "$TMP/docker"; case "$*" in *" ps -aq searxng") [ ! -f "$TMP/running" ] || echo abc123 ;; esac; }
   websearch_searxng_write
   dc ps >/dev/null
-  assert_contains "$(cat "$TMP/docker")" "--profile searxng --env-file"
+  assert_contains "$(cat "$TMP/docker")" "--profile searxng --profile forgejo --env-file"
   assert_contains "$(cat "$TMP/docker")" " | sum=$(cksum < "$TMP/searxng/settings.yml" | awk '{ print $1 }')"
   assert_contains " $(optional_services) " " searxng "
   assert_eq "$(websearch_builtin_services)" searxng
@@ -649,14 +649,14 @@ test_the_built_in_searxngs_container_follows_its_switch() {
   : > "$TMP/docker"; websearch_builtin_down
   assert_not_contains "$(cat "$TMP/docker")" "rm -sf"
   : > "$TMP/running"; : > "$TMP/docker"; websearch_builtin_down
-  assert_contains "$(cat "$TMP/docker")" "--profile searxng --env-file $ENV_FILE rm -sf searxng"
+  assert_contains "$(cat "$TMP/docker")" "--profile searxng --profile forgejo --env-file $ENV_FILE rm -sf searxng"
   # websearch_builtin_up: off → removed; on → started (its secret made first, when there is none)
   run_phase() { shift 2; "$@"; }
   : > "$TMP/docker"; websearch_builtin_up 2>/dev/null
   assert_contains "$(cat "$TMP/docker")" "rm -sf searxng"
   assert_eq "$(get_env WEBSEARCH_SEARXNG_SECRET)" ""
   set_env WEBSEARCH_SEARXNG_BUILTIN on; : > "$TMP/docker"; websearch_builtin_up 2>/dev/null
-  assert_contains "$(cat "$TMP/docker")" "--profile searxng --env-file $ENV_FILE up -d --no-deps --wait searxng"
+  assert_contains "$(cat "$TMP/docker")" "--profile searxng --profile forgejo --env-file $ENV_FILE up -d --no-deps --wait searxng"
   [ -z "${WEBSEARCH_SEARXNG_SECRET:-}" ] && [ "$(get_env WEBSEARCH_SEARXNG_SECRET | tr -d '0-9a-f' | wc -c | tr -d ' ')" = 0 ] && [ "$(get_env WEBSEARCH_SEARXNG_SECRET | wc -c | tr -d ' ')" = 64 ]
   # a container that does not start: said, never fatal
   run_phase() { return 1; }
@@ -683,11 +683,11 @@ test_the_built_in_searxng_on_home_and_in_restart_and_logs() {
   python3 -I -c 'import json, sys, time; d = json.load(open(sys.argv[1]))
 assert d["version"] == 1 and abs(d["written_at"] - time.time()) < 60, d
 s = {r["service"]: (r["state"], r["health"]) for r in d["services"]}
-assert [r["service"] for r in d["services"]] == "caddy portal open-webui litellm rustfs shared-mcp postgres searxng".split(), d
+assert [r["service"] for r in d["services"]] == "caddy portal open-webui litellm rustfs shared-mcp postgres searxng forgejo".split(), d
 assert s["searxng"] == ("running", "healthy") and s["portal"] == ("exited", "") and s["caddy"] == ("not created", ""), s' "$f"
   # only Docker's words: nothing of a stranger answer breaks the file
   services_status_write "$(printf 'searxng\trunning"},{\thealthy\\n<x>\n')"
-  python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); r = d["services"][-1]
+  python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); r = next(x for x in d["services"] if x["service"] == "searxng")
 assert r == {"service": "searxng", "state": "running", "health": "healthynx"}, r' "$f"
   # a Docker that does not answer: the last record stays
   services_status_write; before="$(cat "$f")"; touch "$TMP/no-docker"
@@ -700,11 +700,11 @@ assert r == {"service": "searxng", "state": "running", "health": "healthynx"}, r
   # ./stack restart searxng: recreated with the searxng profile on, then the record written again
   stack_lock() { :; }; quiet_compose() { :; }; run_phase() { shift 2; "$@"; }; portal_session_end() { :; }
   : > "$TMP/docker"; cmd_restart searxng
-  assert_contains "$(cat "$TMP/docker")" "--profile searxng --env-file $ENV_FILE up -d --no-deps --force-recreate --wait searxng"
+  assert_contains "$(cat "$TMP/docker")" "--profile searxng --profile forgejo --env-file $ENV_FILE up -d --no-deps --force-recreate --wait searxng"
   assert_contains "$(sed -n '2p' "$TMP/docker")" "ps -a --format"
   assert_contains " $(restart_choices) " " searxng "
   # ./stack logs searxng follows its log like the others'
-  : > "$TMP/docker"; cmd_logs searxng; assert_contains "$(cat "$TMP/docker")" "--profile searxng --env-file $ENV_FILE logs -f --tail=200 searxng"
+  : > "$TMP/docker"; cmd_logs searxng; assert_contains "$(cat "$TMP/docker")" "--profile searxng --profile forgejo --env-file $ENV_FILE logs -f --tail=200 searxng"
   # off: no row on Home (Settings' switch writes the record), no restart, no logs — said
   set_env WEBSEARCH_SEARXNG_BUILTIN off
   websearch_builtin_up >/dev/null 2>&1
@@ -721,7 +721,7 @@ assert r == {"service": "searxng", "state": "running", "health": "healthynx"}, r
   assert_contains "$(cat "$f")" '{"service": "searxng", "state": "running", "health": "healthy"}'
   # its commands in ./stack help
   assert_contains "$(cmd_help_for restart)" "| caddy | searxng"
-  assert_contains "$(cmd_help_for logs)" "subs-chat, searxng)"
+  assert_contains "$(cmd_help_for logs)" "subs-chat, searxng, forgejo)"
 }
 
 # its secret: made once (setup), kept, in .env and in its container's environment only — never printed by setup, status,

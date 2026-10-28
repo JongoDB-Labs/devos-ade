@@ -90,6 +90,8 @@ CODE_AUTO_MODE	code	main	CODE_ENABLED	Offer Auto mode: a reviewer model approves
 +bring-setup	code	main	CODE_ENABLED	Your Claude Code setup and Git name and email from this computer, copied into the Code page's sandbox.
 TERMINAL_ENABLED	code	main	-	The Terminal tab: a shell with Claude Code in a sandbox container that sees one folder of yours.
 TERMINAL_WORKSPACE	code	with	TERMINAL_ENABLED	-
+LOCALGIT	code	main	-	A git server on this computer (Forgejo): the sandbox pushes and pulls to it with no internet (on by default).
+LOCALGIT_ADMIN_PASSWORD	code	more	LOCALGIT	The built-in git server's owner password (user devos): setup made it; sign in at the server with it.
 TERMINAL_EGRESS	code	main	TERMINAL_ENABLED	The sandbox's internet: public addresses only (the default), with this computer's services too, or off.
 TERMINAL_EGRESS_ALLOW	code	more	TERMINAL_ENABLED	Only these names on the internet, and other ports (blank: every public name on 80, 443 and 22).
 TERMINAL_EGRESS_DENY	code	more	TERMINAL_ENABLED	Never these names on the internet.
@@ -152,6 +154,7 @@ PORTAL_PORT	advanced	main	-	The port the portal is published on (80, else 8800).
 CHAT_HOST	advanced	main	-	Chat's address (blank: chat. and the portal's address).
 ADMIN_HOST	advanced	main	-	Admin's address (blank: admin. and the portal's address).
 FILES_HOST	advanced	main	-	Files' address (blank: files. and the portal's address).
+GIT_HOST	advanced	main	-	The git server's address (blank: git. and the portal's address).
 TERMINAL_HOST	advanced	main	-	The Terminal's address (blank: terminal. and the portal's address).
 CODE_HOST	advanced	main	-	The Code page's address (blank: code. and the portal's address).
 LITELLM_PORT	advanced	main	-	The port of LiteLLM's API on this computer, for tools like devos-claude.
@@ -182,6 +185,7 @@ OWUI_STT_ENGINE	about	main	-	Chat's speech-to-text engine; follows the speech-to
 OWUI_STT_BASE_URL	about	main	-	Where Chat sends recordings.
 PORTAL_ORIGIN	about	main	-	The only page that may frame the apps.
 CHAT_ORIGIN	about	main	-	The origin Chat answers cross-origin requests from.
+GIT_ORIGIN	about	main	-	Where the built-in git server's web UI is.
 PREVIEW_DOMAIN	about	main	-	The site the Code page's previews of dev servers are served from.
 TS_TAILNET	about	main	-	Your tailnet, read from the sidecar.
 REMOTE_HOST	about	main	-	The portal's remote address.

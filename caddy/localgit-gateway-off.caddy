@@ -1,0 +1,2 @@
+# The terminal's gateway without the built-in git server (LOCALGIT=off, or no terminal): no git listener. Imported by
+# terminal-gateway.caddy.

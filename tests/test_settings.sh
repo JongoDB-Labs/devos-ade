@@ -67,8 +67,9 @@ test_every_env_key_is_in_the_settings_table_once() {
   # Chat's origin and the Code page's 5, + its previews' 2, + their 4 over remote access, + auto mode's 2, + Git hosts'
   # sign-in's 3: the GitHub App's client ID and name, the GitLab application's ID, + the Experiential Labs key and models,
   # + web search's 6: the backend, AgentCore's gateway, three search keys and a SearXNG URL,
-  # + BEDROCK_MODELS: the extra Bedrock models the model browser adds beyond the catalog, JON-520)
-  assert_eq "$(settings_rows | wc -l | tr -d ' ')" 149
+  # + BEDROCK_MODELS: the extra Bedrock models the model browser adds beyond the catalog, JON-520,
+  # + the built-in git server's 4: its switch, its owner's password, its host name and its origin)
+  assert_eq "$(settings_rows | wc -l | tr -d ' ')" 153
 }
 
 test_table_columns_are_valid() {
@@ -265,7 +266,7 @@ test_snapshot_masks_every_secret() {
   assert_contains "$s" "\"base\": \"$(env_sha256)\""
   assert_contains "$s" '"key": "MY_OWN_SECRET", "group": "advanced", "secret": "S"'
   if command -v python3 >/dev/null 2>&1; then
-    python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); assert len(d["keys"]) == 150; assert d["last_change"] is None' "$f"
+    python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); assert len(d["keys"]) == 154; assert d["last_change"] is None' "$f"
   fi
 }
 

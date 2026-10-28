@@ -31,7 +31,7 @@ test_terminal_is_off_by_default() {
   if terminal_on; then return 1; fi
   assert_eq "$(terminal_services)" ""
   assert_eq "$(compose_overlays)" ""
-  assert_eq "$(optional_services)" "searxng"   # (the built-in SearXNG alone: on by default)
+  assert_eq "$(optional_services)" "searxng forgejo"   # (the built-in SearXNG and git server: on by default)
   assert_contains "$(terminal_status)" "Terminal: off — ./stack terminal enable"
 }
 
@@ -83,22 +83,24 @@ test_compose_overlays_add_the_terminal_and_its_way_out() {
   # the default (blank, internet, or an older install's on): the egress proxy; host: the sandbox on the internet itself
   for v in '' internet on true; do
     printf 'TERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=/w\nTERMINAL_EGRESS=%s\n' "$v" > "$ENV_FILE"
-    assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml compose.terminal-proxy.yaml "
+    assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml compose.terminal-proxy.yaml compose.localgit.yaml "
   done
   printf 'TERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=/w\nTERMINAL_EGRESS=host\n' > "$ENV_FILE"
-  assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml compose.terminal-egress.yaml "
+  assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml compose.terminal-egress.yaml compose.localgit.yaml "
   printf 'TERMINAL_ENABLED=yes\nTERMINAL_WORKSPACE=/w\nTERMINAL_EGRESS=no\n' > "$ENV_FILE"
-  assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml "
+  assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml compose.localgit.yaml "   # (the git server's listener: with the sandbox's internet off too)
+  printf 'TERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=/w\nTERMINAL_EGRESS=off\nLOCALGIT=off\n' > "$ENV_FILE"
+  assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml "   # (LOCALGIT=off: no listener)
   printf 'TERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=/w\nREMOTE_MODE=tailscale\n' > "$ENV_FILE"
-  assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.tailscale.yaml compose.terminal.yaml compose.terminal-proxy.yaml "
-  REMOTE_DEGRADED=1; assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml compose.terminal-proxy.yaml "; REMOTE_DEGRADED=0
+  assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.tailscale.yaml compose.terminal.yaml compose.terminal-proxy.yaml compose.localgit.yaml "
+  REMOTE_DEGRADED=1; assert_eq "$(compose_overlays | tr '\n' ' ')" "compose.terminal.yaml compose.terminal-proxy.yaml compose.localgit.yaml "; REMOTE_DEGRADED=0
   printf 'TERMINAL_ENABLED=false\nTERMINAL_WORKSPACE=/w\n' > "$ENV_FILE"; assert_eq "$(compose_overlays)" ""
   # on, but no folder: compose could not read the file at all, so it stays out (./stack up says why)
   printf 'TERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=\n' > "$ENV_FILE"; assert_eq "$(compose_overlays)" ""
   assert_contains "$(terminal_why_out)" "TERMINAL_WORKSPACE is empty"
   docker() { printf '%s\n' "$*" > "$TMP/args"; }
   printf 'TERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=/w\n' > "$ENV_FILE"; dc ps
-  assert_contains "$(cat "$TMP/args")" "-f $STACK_DIR/compose.terminal.yaml -f $STACK_DIR/compose.terminal-proxy.yaml --profile searxng --env-file"
+  assert_contains "$(cat "$TMP/args")" "-f $STACK_DIR/compose.terminal.yaml -f $STACK_DIR/compose.terminal-proxy.yaml -f $STACK_DIR/compose.localgit.yaml --profile searxng --profile forgejo --env-file"
   for f in compose.terminal.yaml compose.terminal-proxy.yaml compose.terminal-egress.yaml; do [ -f "$STACK_DIR/$f" ] || { echo "missing $f" >&2; return 1; }; done
 }
 
@@ -299,7 +301,7 @@ test_a_workspace_gone_or_no_longer_allowed_leaves_the_terminal_out() {
   _stubs
   terminal_enable > /dev/null 2>&1 || return 1
   assert_eq "$(terminal_services)" "terminal-egress terminal-gateway terminal"
-  assert_eq "$(stack_services)" "$STACK_BASE_SERVICES terminal-egress terminal-gateway terminal searxng"
+  assert_eq "$(stack_services)" "$STACK_BASE_SERVICES terminal-egress terminal-gateway terminal searxng forgejo"
   set_env TERMINAL_EGRESS host; assert_eq "$(terminal_services)" "terminal-gateway terminal"
   set_env TERMINAL_EGRESS off; assert_eq "$(terminal_services)" "terminal-gateway terminal"
   set_env TERMINAL_EGRESS ''
@@ -695,7 +697,15 @@ assert d["networks"]["terminal"]["internal"] is True and not d["networks"]["term
 assert d["services"]["terminal"]["depends_on"]["terminal-egress"]["condition"] == "service_started"
 assert d["networks"]["terminal-link"]["internal"] is True
 assert g["networks"]["terminal"]["aliases"] == ["gateway"] and g["networks"]["terminal-link"]["aliases"] == ["terminal-upstream"]
-assert sorted(g["networks"]) == ["terminal", "terminal-link"], g["networks"]
+# (the built-in git server, on by default: the gateway TLS listener, an egress carve-out for that one service, on the
+# internal localgit network it shares with Forgejo and Caddy; the sandbox itself is never on it)
+assert sorted(g["networks"]) == ["localgit", "terminal", "terminal-link"], g["networks"]
+assert "localgit" not in t["networks"] and "localgit" in d["services"]["forgejo"]["networks"] and "terminal" not in d["services"]["forgejo"]["networks"]
+assert d["networks"]["localgit"]["internal"] is True
+assert sorted(d["services"]["forgejo"]["networks"]) == ["localgit"] and d["services"]["forgejo"]["read_only"] and d["services"]["forgejo"]["cap_drop"] == ["ALL"]
+assert g["environment"]["BN_LOCALGIT_GATEWAY"] == "on"
+tls = [v for v in g["volumes"] if v["target"] == "/etc/bn-localgit"]
+assert len(tls) == 1 and tls[0]["type"] == "bind" and tls[0]["read_only"] is True and not tls[0]["bind"].get("create_host_path"), tls
 assert g["read_only"] and "ports" not in g and g["user"] == "501:20"
 assert [v["target"] for v in t["volumes"] if v.get("source") == "terminal-socket"] == ["/run/bn-ttyd"], t["volumes"]
 assert [(v["target"], v.get("read_only")) for v in g["volumes"] if v.get("source") == "terminal-socket"] == [("/run/bn-ttyd", True)], g["volumes"]

@@ -14,13 +14,14 @@ SETTINGS_MAX_KEYS=20          # keys in one change
 SETTINGS_MAX_VALUE=2000       # bytes of one value (a webhook URL is the longest)
 PW_HASH_ITER=600000           # PBKDF2-HMAC-SHA256 rounds of a new portal password hash
 PW_HASH_MIN_ITER=100000       # the least a hash from the portal may use
-RESTART_SERVICES="litellm open-webui shared-mcp stt rustfs caddy searxng"   # ./stack restart (never portal or postgres)
+RESTART_SERVICES="litellm open-webui shared-mcp stt rustfs caddy searxng forgejo"   # ./stack restart (never portal or postgres)
 # restart_choices -> the services Settings › Diagnostics offers to restart: RESTART_SERVICES, without the built-in
 # SearXNG while it is off (WEBSEARCH_SEARXNG_BUILTIN=off: no container)
 restart_choices() {
   local s out=''
   for s in $RESTART_SERVICES; do
     [ "$s" != searxng ] || ! declare -F websearch_builtin_on >/dev/null || websearch_builtin_on || continue
+    [ "$s" != forgejo ] || ! declare -F localgit_on >/dev/null || localgit_on || continue
     out="$out${out:+ }$s"
   done
   printf '%s\n' "$out"
@@ -1125,6 +1126,8 @@ _cfg_post() {
     portal_session_end
   fi
   if _cfg_on rustfs || _cfg_on pins || _cfg_on email; then _cfg_followup banner; fi   # (Chat restarted: its banner is in memory only)
+  # the built-in git server up or gone (LOCALGIT), with its account and the Code page's host
+  if _cfg_on localgit; then _cfg_t "Restart · the built-in git server" localgit_up; fi
   if _cfg_on code; then _cfg_code; fi   # last: it restarts the portal and Caddy itself (and turns the terminal on)
 }
 
@@ -1742,7 +1745,7 @@ _report_scrub() {
         gsub(/\033\[[0-9;]*m/, "", line); print line }' )
 }
 
-# cmd_restart SERVICE — recreates one service (litellm, open-webui, shared-mcp, stt, rustfs, caddy, searxng) with its
+# cmd_restart SERVICE — recreates one service (litellm, open-webui, shared-mcp, stt, rustfs, caddy, searxng, forgejo) with its
 # current settings; Chat's budget banner is put back afterwards (Chat keeps it in memory only), and Home's record of
 # the containers is written again (services.json: the built-in SearXNG's state there)
 cmd_restart() {
@@ -1752,6 +1755,8 @@ cmd_restart() {
   [ $# -eq 1 ] || die "usage: ./stack restart SERVICE"
   [ -f "$ENV_FILE" ] || die "run ./stack setup first"
   [ "$s" != stt ] || [ "$(stt_provider)" = bedrock ] || die "the stt container runs only with Bedrock speech-to-text (./stack stt status)"
+  [ "$s" != forgejo ] || localgit_on ||
+    die "the built-in git server is off (LOCALGIT=off): no container to restart — ./stack config set LOCALGIT on turns it on"
   [ "$s" != searxng ] || websearch_builtin_on ||
     die "the built-in SearXNG is off (WEBSEARCH_SEARXNG_BUILTIN=off): no container to restart — ./stack config set WEBSEARCH_SEARXNG_BUILTIN on turns it on"
   stack_lock restart

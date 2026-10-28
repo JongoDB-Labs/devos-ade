@@ -1,0 +1,16 @@
+# The built-in git server's web UI (LOCALGIT on, the default; lib/localgit.sh sets BN_LOCALGIT_MODE=on). Imported by
+# Caddyfile; the snippets are defined there. Forgejo's own sign-in applies (the owner's account made at setup: ./stack
+# status says where its password is) — behind the portal's check like every other app host, so a browser needs the
+# portal session first. The sandbox does not come this way: its git reaches Forgejo through the terminal's gateway
+# (caddy/localgit-gateway-on.caddy), which shares only the internal "localgit" network with it.
+http://{$GIT_HOST} {
+	route {
+		import local_request
+		import not_from_preview
+		import portal_auth
+		reverse_proxy forgejo:3000 {
+			import drop_session_cookie
+			import frame_by_portal_only
+		}
+	}
+}

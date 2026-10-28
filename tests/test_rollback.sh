@@ -390,8 +390,10 @@ test_rollback_to_a_version_without_bedrock_speech_to_text_removes_it() {   # rev
   assert_contains "$(cat "$TMP/docker")" "docker ps -aq --filter label=com.docker.compose.project=bn-t --filter label=com.docker.compose.service=stt"
   assert_contains "$(cat "$TMP/docker")" "docker rm -f c0ffee"
   # its network, once the old version's ./stack up has moved the containers off it (then the built-in SearXNG's: that
-  # version has none either)
-  assert_eq "$(tail -n 2 "$TMP/docker" | tr '\n' '|')" "docker network rm bn-t_stt|docker network rm bn-t_websearch bn-t_websearch-out|"
+  # version has none either, nor the built-in git server's: its volume stays)
+  assert_eq "$(tail -n 3 "$TMP/docker" | tr '\n' '|')" "docker network rm bn-t_stt|docker network rm bn-t_websearch bn-t_websearch-out|docker network rm bn-t_localgit|"
+  assert_contains "$(cat "$TMP/docker")" "label=com.docker.compose.service=forgejo"
+  assert_not_contains "$(cat "$TMP/docker")" "volume rm"
   e="$(cat "$ENV_FILE")"
   for v in STT_PROVIDER STT_MODEL OWUI_STT_ENGINE OWUI_STT_BASE_URL STT_BEDROCK_MODEL; do assert_not_contains "$e" "$v=" || return 1; done
   [ ! -e "$STATE_DIR/stt-service" ]

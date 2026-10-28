@@ -396,7 +396,7 @@ def test_search_a_card_for_claude_codes_websearch_and_each_backend():
     assert "webSearch().set_up.includes(b)" in card and '["Needs your AWS admin", "warn"]' in card
     # the built-in SearXNG: its switch (on by default: blank shows on), In use / On · not in use / Off
     assert table["WEBSEARCH_SEARXNG_BUILTIN"][4] == "on_off" and table["WEBSEARCH_SEARXNG_BUILTIN"][5] == "websearch"
-    assert 'const DEFAULT_ON = new Set(["WEBSEARCH_SEARXNG_BUILTIN"]);' in js
+    assert 'const DEFAULT_ON = new Set(["WEBSEARCH_SEARXNG_BUILTIN", "LOCALGIT"]);' in js
     assert '["On · not in use", "off"] : ["Off", "off"]' in card
     # the WebSearch card says which one and why (lib/websearch.sh websearch_reason)
     assert "w.reason ? ` (${w.reason})`" in js[js.index("function wsChoiceAdds() {"):js.index("function wsChoiceOff()")]

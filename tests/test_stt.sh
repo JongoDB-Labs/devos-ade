@@ -843,7 +843,7 @@ test_compose_stt_service_is_locked_down() {
   assert_contains "$(sed -n '/^networks:/,/^volumes:/p' "$STACK_DIR/compose.yaml")" "  stt:
     internal: true"
   # (LiteLLM: also the built-in SearXNG's network, lib/websearch.sh)
-  for svc in litellm:'networks: [default, stt, websearch]' caddy:'networks: [default, stt]'; do
+  for svc in litellm:'networks: [default, stt, websearch]' caddy:'networks: [default, stt, localgit]'; do
     assert_contains "$(sed -n "/^  ${svc%%:*}:/,/^  [a-z-]*:\$/p" "$STACK_DIR/compose.yaml" | sed '1d;$d')" "${svc#*:}" || { echo "$svc" >&2; return 1; }
   done
   # Open WebUI trusts X-Portal-User from its peers: it and the portal never share a network with stt
@@ -863,7 +863,7 @@ test_dc_adds_the_stt_profile_only_for_bedrock() {
   assert_not_contains "$(PATH="$TMP/bin:$PATH" dc ps)" "--profile stt"
   printf 'STT_PROVIDER=bedrock\n' > "$ENV_FILE"
   out="$(PATH="$TMP/bin:$PATH" OWUI_STT_BASE_URL=http://evil STT_BEDROCK_MODEL=x COMPOSE_PROFILES=stt dc ps)"
-  assert_contains "$out" "--profile stt --profile searxng --env-file"   # (and the built-in SearXNG's: on by default)
+  assert_contains "$out" "--profile stt --profile searxng --profile forgejo --env-file"   # (and the built-in SearXNG's: on by default)
   assert_not_contains "$out" "evil"
   assert_not_contains "$out" "COMPOSE_PROFILES"
   printf 'X=1\n' > "$ENV_FILE"
@@ -872,10 +872,10 @@ test_dc_adds_the_stt_profile_only_for_bedrock() {
 
 test_stack_services_include_stt_only_for_bedrock() {
   printf 'X=1\n' > "$ENV_FILE"
-  assert_eq "$(stack_services)" "$STACK_SERVICES searxng"   # (the built-in SearXNG: on by default)
+  assert_eq "$(stack_services)" "$STACK_SERVICES searxng forgejo"   # (the built-in SearXNG and git server: on by default)
   printf 'STT_PROVIDER=bedrock\n' > "$ENV_FILE"
-  assert_eq "$(stack_services)" "$STACK_SERVICES stt searxng"
-  printf 'STT_PROVIDER=bedrock\nWEBSEARCH_SEARXNG_BUILTIN=off\n' > "$ENV_FILE"
+  assert_eq "$(stack_services)" "$STACK_SERVICES stt searxng forgejo"
+  printf 'STT_PROVIDER=bedrock\nWEBSEARCH_SEARXNG_BUILTIN=off\nLOCALGIT=off\n' > "$ENV_FILE"
   assert_eq "$(stack_services)" "$STACK_SERVICES stt"
   ps="$(printf 'stt\trunning\thealthy\t0\n')"
   assert_contains "$(printf '%s\n' "$ps" | status_table)" "stt"
@@ -1002,7 +1002,7 @@ test_status_after_up_lists_stt_once() {
     printf 'stt\trunning\thealthy\t0\n' | status_table
   }
   assert_eq "$(_as_cmd_up | grep -c '^  stt ')" 1
-  assert_eq "$(stack_services)" "$STACK_BASE_SERVICES stt searxng"
+  assert_eq "$(stack_services)" "$STACK_BASE_SERVICES stt searxng forgejo"
 }
 
 test_stack_test_checks_bedrock_speech_to_text() {
