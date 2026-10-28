@@ -32,8 +32,10 @@ command -v uv >/dev/null 2>&1 || { echo "needs uv (brew install uv)" >&2; exit 2
 LL=bne2e-mlx-litellm; LABEL=io.bedrock-now.e2e=local-models
 WORK="$ROOT/tests/e2e/work/bne2e-mlx"; PORT=""
 cleanup() {
+  local rc=$?
   [ -z "${STATE_DIR:-}" ] || ! declare -F local_mlx_uninstall >/dev/null || local_mlx_uninstall --models >/dev/null 2>&1
   [ "$(docker container inspect -f '{{index .Config.Labels "io.bedrock-now.e2e"}}' "$LL" 2>/dev/null)" != local-models ] || docker rm -f "$LL" >/dev/null 2>&1
+  { [ "$rc" = 0 ] && [ "$FAILS" = 0 ]; } || { [ ! -f "$WORK/pull.log" ] || { mkdir -p "$OUT" && cp "$WORK/pull.log" "$OUT/local-models-mlx-pull.log"; }; } 2>/dev/null
   rm -rf "$WORK"
   mkdir -p "$OUT" 2>/dev/null && printf '%s\n' ${CHECKS[@]+"${CHECKS[@]}"} | python3 -I -c 'import json, sys
 print(json.dumps({"failures": int(sys.argv[1]), "checks": [dict(zip(("status", "check"), l.rstrip("\n").split("\t", 1))) for l in sys.stdin if "\t" in l]}, indent=1))' "$FAILS" > "$OUT/local-models-mlx.json" 2>/dev/null
@@ -64,7 +66,8 @@ fi
 [ "$RT" = mlx ] && ok "1 the runtime is MLX" || { fail "1 the runtime is $RT, not mlx"; exit 1; }
 
 say "pulling hf.co/$REPO:$QUANT with $RT"
-LOCAL_POLL_S=2 local_pull "$REPO" "$QUANT" --tools yes --params-m 494 --context 32768 --license apache-2.0 >"$WORK/pull.log" 2>&1 || { fail "2 the download failed: $(tail -n 3 "$WORK/pull.log" | tr '\n' ' ')"; exit 1; }
+# (a subshell: local_pull exits on some failures, which would end this script before it says why)
+( LOCAL_POLL_S=2 local_pull "$REPO" "$QUANT" --tools yes --params-m 494 --context 32768 --license apache-2.0 ) >"$WORK/pull.log" 2>&1 || { fail "2 the download failed: $(tail -n 3 "$WORK/pull.log" | tr '\n' ' ')"; exit 1; }
 ENTRY="$(get_env LOCAL_MODELS)"; NAME="$(local_model_name "${ENTRY%%,*}")"
 case "$ENTRY" in mlx:*) ok "2 downloaded and registered: LOCAL_MODELS=$ENTRY" ;; *) fail "2 LOCAL_MODELS is '$ENTRY'" ;; esac
 
