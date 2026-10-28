@@ -150,7 +150,7 @@ class Candidate:
         return m.group(0) if m else ""
 
 
-def pick(cands: list[Candidate], current: str, now: dt.datetime, cooldown: int = COOLDOWN_DAYS, patched=None):
+def pick(cands: list[Candidate], current: str, now: dt.datetime, cooldown: int = COOLDOWN_DAYS, patched=None, embargo=None):
     """(chosen, newest, why) from stable releases. chosen: the newest at least COOLDOWN days old (never older than
     CURRENT: no downgrade). Release-note text NEVER skips the cooldown (a compromised upstream can write anything in
     its notes): a release that says "security fix" is only REPORTED ("REVIEW: ..."). The one bypass is PATCHED = (version,
@@ -170,7 +170,10 @@ def pick(cands: list[Candidate], current: str, now: dt.datetime, cooldown: int =
             chosen = c
             break
     bypassed = False
-    if patched:
+    if embargo is not None and vkey(embargo.version) >= vkey(current):   # validated by Allow.embargoed(); a maintainer's override
+        chosen, bypassed = embargo, True
+        notes.append("security override: advisory pending (--allow-security-embargoed)")
+    elif patched:
         pv, aid = patched
         if chosen is None or vkey(chosen.version) < vkey(pv):
             fix = [c for c in cands if vkey(c.version) >= max(vkey(pv), vkey(current))]
@@ -192,14 +195,47 @@ def pick(cands: list[Candidate], current: str, now: dt.datetime, cooldown: int =
     return chosen, newest, "; ".join(notes)
 
 
+class Refused(Exception):
+    """A maintainer's --allow-security... request that the tool refuses (nothing skips the cooldown)."""
+
+
 class Allow:
     """The maintainer's --allow-security IDS (GHSA-... or CVE-...), each checked against the GitHub Advisory Database
     (never the release notes): the advisory must be for the repo of the target, and gives the patched version."""
 
-    def __init__(self, ids, net):
+    def __init__(self, ids, net, embargo=None, reason=""):
         self.ids, self.net = list(ids), net
         self.advs: dict = {}       # id -> [advisory dicts] | error text
         self.matched: dict = {}    # id -> repo it was confirmed for
+        self.embargo, self.reason = dict(embargo or {}), (reason or "").strip()   # service -> version (no leading v)
+        self.used: dict = {}       # service -> Candidate, the embargoed overrides this run applied
+
+    def embargoed(self, target, cands, current):
+        """The Candidate of an --allow-security-embargoed override for TARGET (an ImageTarget), or None when none was
+        asked for it. Raises Refused unless: a reason was given; the release is an official, stable release of the
+        canonical GitHub repo (the one of the image's own org: never a fork) that is not older than the pin; and its notes
+        say it contains security fixes. The image digest then comes from the official registry like every pin."""
+        want = self.embargo.get(target.name)
+        if want is None:
+            return None
+        who = f"--allow-security-embargoed {target.name}={want}"
+        if not self.reason:
+            raise Refused(f"{who} refused: --reason \"...\" is required (why this release skips the cooldown)")
+        src = target.source
+        if not isinstance(src, GithubReleases):
+            raise Refused(f"{who} refused: {target.name} has no GitHub releases to confirm the security statement in")
+        org = target.images[0][0].split("/")[-2].lower() if "/" in target.images[0][0] else ""
+        if src.repo.split("/")[0].lower() != org:
+            raise Refused(f"{who} refused: {src.repo} is not the canonical repository of the {org or '?'} image")
+        c = next((x for x in cands if x.version == want), None)
+        if c is None:
+            raise Refused(f"{who} refused: {want} is not a stable release of {src.repo}")
+        if vkey(c.version) < vkey(current):
+            raise Refused(f"{who} refused: the pin is already newer ({current})")
+        if not c.security():
+            raise Refused(f"{who} refused: the release notes of {c.version} contain no security statement")
+        self.used[target.name] = c
+        return c
 
     def advisory(self, aid: str):
         if aid not in self.advs:
@@ -327,6 +363,7 @@ class Files:
         changed = []
         for rel, s in self.text.items():
             if s != self.orig[rel]:
+                os.makedirs(os.path.dirname(os.path.join(self.root, rel)), exist_ok=True)
                 with open(os.path.join(self.root, rel), "w", encoding="utf-8") as f:
                     f.write(s)
                 changed.append(rel)
@@ -405,7 +442,9 @@ class ImageTarget:
 
     def run(self, net, fs: Files, now, cooldown, allow=None) -> Move:
         cur = self.current(fs)
-        chosen, newest, why = pick(self.source.candidates(net), cur, now, cooldown, patched_of(self.source, allow))
+        cands = self.source.candidates(net)
+        emb = allow.embargoed(self, cands, cur) if allow else None
+        chosen, newest, why = pick(cands, cur, now, cooldown, patched_of(self.source, allow), emb)
         if chosen is None:
             raise SystemExit(f"{self.name}: no stable release found upstream")
         v = chosen.version
@@ -581,6 +620,31 @@ HOLDS = {"tailscale": "remote access needs a real tailnet to test; bump it by ha
 NOT_COVERED = "Cursor CLI and the npm tool lockfiles (terminal/claude-code, terminal/tools/*) are bumped by hand"
 
 MANIFEST = "catalog/core-services.tsv"
+OVERRIDES = "catalog/core-services-overrides.tsv"
+OVERRIDES_HEADER = ("# Security overrides of the 3-day cooldown (bin/bump-core-services --allow-security-embargoed): a pin taken before its\n"
+                    "# advisory was public. bump-core-services --check says when the GHSA appears; then delete the row.\n"
+                    "#\n# service  version  date  reason  release_url\n")
+
+
+def read_overrides(text: str) -> list:
+    return [l.split("\t") for l in text.splitlines() if l.strip() and not l.startswith("#") and l.count("\t") >= 4]
+
+
+def write_overrides(rows: list) -> str:
+    return OVERRIDES_HEADER + "".join("\t".join(r[:5]) + "\n" for r in rows)
+
+
+def public_advisory(net, repo: str, version: str) -> str:
+    """The GHSA id of a published advisory of REPO that is patched in VERSION ('' when none is public yet)."""
+    try:
+        advs = net.json(f"https://api.github.com/repos/{repo}/security-advisories?per_page=100")
+    except (urllib.error.URLError, http.client.HTTPException, ValueError, OSError):
+        return ""
+    for a in advs if isinstance(advs, list) else []:
+        for v in a.get("vulnerabilities") or []:
+            if version in re.split(r"[,\s]+", (v.get("patched_versions") or "").replace("v", "")):
+                return a.get("ghsa_id") or ""
+    return ""
 HEADER = ("# The core services DevOS ADE pins, and the newest stable upstream release when bin/bump-core-services last ran\n"
           "# (docs/releasing.md: every release runs it). ./stack versions and Settings read it: the pinned version comes from\n"
           "# compose.yaml itself, this table adds what upstream has and where its notes are.\n"
@@ -618,13 +682,33 @@ def main(argv=None, net=None, root=None, runner=None, out=sys.stdout) -> int:
                     help="GHSA-... or CVE-... id of a security advisory: skips the cooldown for the oldest release that "
                          "patches it, after the GitHub Advisory Database confirms it for that repo (repeatable). Release-note "
                          "text alone never skips the cooldown.")
+    ap.add_argument("--allow-security-embargoed", action="append", default=[], metavar="SERVICE=VERSION",
+                    help="for an upstream that announces security fixes before the advisory is public: take this release of "
+                         "SERVICE (needs --reason). Only an official release of the canonical repo whose notes say it has "
+                         "security fixes; recorded in catalog/core-services-overrides.tsv until the advisory appears.")
+    ap.add_argument("--reason", default="", help="why --allow-security-embargoed skips the cooldown (recorded)")
     ap.add_argument("--cooldown-days", type=int, default=COOLDOWN_DAYS)
     a = ap.parse_args(argv)
     root = root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     net = net or Net()
     now = parse_time(a.now) if a.now else dt.datetime.now(dt.timezone.utc)
     only = set(filter(None, (a.only or "").split(",")))
-    allow = Allow(a.allow_security, net) if a.allow_security else None
+    emb = {}
+    for spec in a.allow_security_embargoed:
+        name, _, ver = spec.partition("=")
+        if not name or not ver:
+            print(f"error: --allow-security-embargoed {spec} refused: use SERVICE=VERSION", file=out)
+            return 1
+        emb[name] = ver.lstrip("v")
+    known = {t.name for t in targets() if isinstance(t, ImageTarget)}
+    for name in emb:
+        if name not in known:
+            print(f"error: --allow-security-embargoed {name}=... refused: no such pinned image service ({', '.join(sorted(known))})", file=out)
+            return 1
+    if emb and not a.reason.strip():
+        print("error: --allow-security-embargoed refused: --reason \"...\" is required (why the cooldown is skipped)", file=out)
+        return 1
+    allow = Allow(a.allow_security, net, emb, a.reason) if (a.allow_security or emb) else None
     fs = Files(root)
     moves: dict = {}
     errors = []
@@ -640,14 +724,31 @@ def main(argv=None, net=None, root=None, runner=None, out=sys.stdout) -> int:
                 moves[t.name] = m
             else:
                 moves[t.name] = t.run(net, fs, now, a.cooldown_days, allow)
+        except Refused as e:
+            errors.append(str(e))
         except (urllib.error.URLError, http.client.HTTPException, subprocess.CalledProcessError, OSError, KeyError, ValueError) as e:
             errors.append(f"{t.name}: {type(e).__name__}: {e}")
+    # security overrides: the ones recorded before + the ones this run applied
+    rows = read_overrides(fs.get(OVERRIDES))
+    for name, c in (allow.used if allow else {}).items():
+        rows = [r for r in rows if not (r[0] == name and r[1] == c.version)] + [
+            [name, c.version, now.strftime("%Y-%m-%d"), " ".join(a.reason.split()), c.url]]
+    fs.put(OVERRIDES, write_overrides(rows) if rows else fs.get(OVERRIDES))
+    by_target = {t.name: t for t in targets()}
+    for r in rows:
+        m = moves.get(r[0])
+        if m is None or m.new != r[1]:
+            continue
+        m.why = m.why.replace("security override: advisory pending (--allow-security-embargoed)", "").strip("; ")
+        ghsa = public_advisory(net, by_target[r[0]].source.repo, r[1]) if isinstance(getattr(by_target[r[0]], "source", None), GithubReleases) else ""
+        m.why = ((f"security override: advisory {ghsa} is now public, retire the override (delete its row in {OVERRIDES})" if ghsa
+                  else "security override: advisory pending") + ("; " + m.why if m.why else "")).strip()
     ml = list(moves.values())
     print(table(ml), file=out)
     if not only and not errors:
         fs.put(MANIFEST, write_manifest(moves, now))
     for m in ml:
-        if m.why.startswith("REVIEW"):
+        if m.why.startswith("REVIEW") or "is now public" in m.why:
             print(f"!! {m.name}: {m.why}", file=out)
     for e in errors:
         print("error: " + e, file=out)

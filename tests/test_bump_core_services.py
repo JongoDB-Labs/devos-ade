@@ -35,13 +35,16 @@ def ghsa(aid, repo, patched, pkg=None):
 class FakeNet:
     """Answers the three network calls from tables; any other request fails the test."""
 
-    def __init__(self, gh=None, hub=None, digests=None, hashes=None, adv=None):
+    def __init__(self, gh=None, hub=None, digests=None, hashes=None, adv=None, secadv=None):
         self.gh, self.hub, self.digests, self.hashes = gh or {}, hub or {}, digests or {}, hashes or {}
+        self.secadv = secadv or {}   # repo -> published repository advisories
         self.adv = adv or {}   # advisory id -> advisory dict (GHSA) ; CVE id -> list
         self.calls = []
 
     def json(self, url):
         self.calls.append(url)
+        if "/security-advisories" in url:
+            return self.secadv.get(url.split("/repos/")[1].split("/security-advisories")[0], [])
         if "/advisories" in url:
             if "cve_id=" in url:
                 return self.adv.get(url.split("cve_id=")[1], [])
@@ -445,6 +448,83 @@ class AllowSecurityTests(unittest.TestCase):
         rc, out = self.run_main(net, "--check", "--allow-security", "GHSA-aaaa-bbbb-cccc")
         self.assertEqual(rc, 3)
         self.assertEqual(read(self.d, "compose.yaml"), self.PIN)
+
+
+class EmbargoTests(unittest.TestCase):
+    """--allow-security-embargoed: a security release whose advisory is not public yet (explicit, recorded, never automatic)."""
+    PIN = "  rustfs:\n    image: rustfs/rustfs:1.0.1\n"
+    SEC = "This release contains security fixes not listed in this changelog; advisories follow CVE assignment."
+    REASON = "unlisted security fixes pending CVE assignment"
+
+    def setUp(self):
+        self.d = tree({"compose.yaml": self.PIN})
+
+    def net(self, notes=None, **kw):
+        return FakeNet(gh={"rustfs/rustfs": [rel("1.0.4", "2026-10-27T08:00:00Z", self.SEC if notes is None else notes),
+                                             rel("1.0.3", "2026-10-17T00:00:00Z")]},
+                       digests={"rustfs/rustfs:1.0.3": D(4), "rustfs/rustfs:1.0.4": D(5)}, **kw)
+
+    def run_main(self, net, *args):
+        out = io.StringIO()
+        rc = bump.main(["--now", NOW, "--only", "rustfs", *args], net=net, root=self.d, out=out)
+        return rc, out.getvalue()
+
+    def test_without_a_reason_it_is_refused(self):
+        rc, out = self.run_main(self.net(), "--allow-security-embargoed", "rustfs=1.0.4")
+        self.assertEqual(rc, 1)
+        self.assertIn("--reason", out)
+        self.assertEqual(read(self.d, "compose.yaml"), self.PIN)
+
+    def test_notes_without_a_security_statement_are_refused(self):
+        rc, out = self.run_main(self.net(notes="Bug fixes."), "--allow-security-embargoed", "rustfs=1.0.4", "--reason", self.REASON)
+        self.assertEqual(rc, 1)
+        self.assertIn("no security statement", out)
+        self.assertEqual(read(self.d, "compose.yaml"), self.PIN)   # a refused request leaves that service where it is
+
+    def test_a_release_that_does_not_exist_is_refused(self):
+        rc, out = self.run_main(self.net(), "--allow-security-embargoed", "rustfs=9.9.9", "--reason", self.REASON)
+        self.assertEqual(rc, 1)
+        self.assertIn("is not a stable release", out)
+
+    def test_a_fork_is_not_the_canonical_repository(self):
+        net = FakeNet(gh={"evil/rustfs": [rel("1.0.4", "2026-10-27T08:00:00Z", self.SEC)]}, digests={"rustfs/rustfs:1.0.4": D(5)})
+        t = bump.ImageTarget("rustfs", "RustFS", bump.GithubReleases("evil/rustfs", r"(\d+\.\d+\.\d+)"), [("rustfs/rustfs", "{v}")], ["compose.yaml"])
+        allow = bump.Allow([], net, {"rustfs": "1.0.4"}, self.REASON)
+        with self.assertRaises(bump.Refused) as cm:
+            t.run(net, bump.Files(self.d), now(), 3, allow)
+        self.assertIn("not the canonical repository", str(cm.exception))
+
+    def test_everything_holding_it_is_accepted_pinned_by_digest_and_recorded(self):
+        rc, out = self.run_main(self.net(), "--allow-security-embargoed", "rustfs=v1.0.4", "--reason", self.REASON)
+        self.assertEqual(rc, 0)
+        self.assertIn("rustfs/rustfs:1.0.4@" + D(5), read(self.d, "compose.yaml"))
+        self.assertIn("security override: advisory pending", out)
+        row = [l for l in read(self.d, bump.OVERRIDES).splitlines() if l.startswith("rustfs\t")][0].split("\t")
+        self.assertEqual(row[:2], ["rustfs", "1.0.4"])
+        self.assertEqual(row[2], "2026-10-27")
+        self.assertEqual(row[3], self.REASON)
+        self.assertTrue(row[4].endswith("/1.0.4"))
+
+    def test_check_shows_it_without_recording(self):
+        rc, out = self.run_main(self.net(), "--check", "--allow-security-embargoed", "rustfs=1.0.4", "--reason", self.REASON)
+        self.assertEqual(rc, 3)
+        self.assertIn("security override: advisory pending", out)
+        self.assertEqual(read(self.d, "compose.yaml"), self.PIN)
+        self.assertFalse(os.path.exists(os.path.join(self.d, bump.OVERRIDES)))
+
+    def test_a_later_check_keeps_saying_pending_then_says_when_the_advisory_is_public(self):
+        self.run_main(self.net(), "--allow-security-embargoed", "rustfs=1.0.4", "--reason", self.REASON)
+        rc, out = self.run_main(self.net(), "--check")   # no flag: the recorded override is still shown
+        self.assertEqual(rc, 0)
+        self.assertIn("security override: advisory pending", out)
+        pub = [{"ghsa_id": "GHSA-pubd-pubd-pubd", "vulnerabilities": [{"patched_versions": "1.0.4"}]}]
+        rc, out = self.run_main(self.net(secadv={"rustfs/rustfs": pub}), "--check")
+        self.assertIn("advisory GHSA-pubd-pubd-pubd is now public, retire the override", out)
+
+    def test_an_unknown_service_is_refused(self):
+        rc, out = self.run_main(self.net(), "--allow-security-embargoed", "nope=1.0.4", "--reason", self.REASON)
+        self.assertEqual(rc, 1)
+        self.assertIn("no such pinned image service", out)
 
 
 class MainTests(unittest.TestCase):

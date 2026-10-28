@@ -136,7 +136,7 @@ services:
       args:
         # the pinned Open WebUI, by digest: its pyodide-lock.json pins every vendored wheel (open-webui/Dockerfile's
         # default is the same: tests/test_openwebui.sh)
-        image: ghcr.io/open-webui/open-webui:v0.12.3-slim@sha256:5adfb0355bbe4a5860c0ba9482cc0b40f573de3749a21a64cf4789391a14fffc
+        image: ghcr.io/open-webui/open-webui:v0.12.4-slim@sha256:41812075aede8ada8497cb2b71c76412978633eee72775bb77796f593d03b677
     image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/open-webui:local   # per project, like portal
     pull_policy: never
     restart: unless-stopped

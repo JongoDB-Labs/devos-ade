@@ -2469,7 +2469,7 @@ pgvector, SearXNG, Caddy, the AWS CLI that creates the buckets) and every base i
 to bring them to the newest stable upstream release that is at least 3 days old, so a release that upstream pulls
 within days never reaches you (a security fix skips the wait). So *Update now* (or `./stack update`) brings LiteLLM and
 the rest to their newest tested versions: the update card's *What's new* lists them (*Core services: LiteLLM 1.105.0 →
-1.106.3 · Open WebUI 0.12.0 → 0.12.3 …*), and the end of `./stack update` does too. When setup ends, the update checks
+1.106.3 · Open WebUI 0.12.0 → 0.12.4 …*), and the end of `./stack update` does too. When setup ends, the update checks
 that every service it recreated runs exactly the image this release pins (by digest); a service that does not fails the
 update, and `./stack rollback` goes back. **`./stack versions`** (and Settings → Updates & backups → *Core services*, one
 line with the table folded under it; `./stack status` has a line too) shows each service's running version, the version

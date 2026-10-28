@@ -30,6 +30,14 @@ What it does, per pin:
   OLDEST release at or past the advisory's patched version (the smallest step that fixes it). An unknown id, an advisory
   for another package, or a patch no release has yet is refused and nothing skips the cooldown. It never bypasses on its
   own, interactive or not.
+- **Embargoed advisory** (`--allow-security-embargoed <service>=<version> --reason "<text>"`). For an upstream that
+  announces security fixes before the advisory is public (no GHSA exists to check). Never automatic. The tool requires
+  the reason; a stable release of the image's own canonical GitHub repository (the org of the image, never a fork); notes of
+  that release that contain a security statement; and the digest comes from the official registry as for every pin. It is
+  recorded in `catalog/core-services-overrides.tsv` (service, version, date, reason, release URL); the table, and so the
+  release notes, say "security override: advisory pending". Once the GHSA is public, `--check` says "advisory GHSA-...
+  is now public, retire the override": delete its row. Provenance (attestations) is not required: not every project
+  publishes any.
 - **Digests.** Every image is pinned as `name:tag@sha256:…` (the multi-arch index). A release that stays the same keeps
   its digest; base images (`python:3.12-slim`, `alpine:3.24`) keep their tag and only move their digest, once the tag's
   last push is past the cooldown.

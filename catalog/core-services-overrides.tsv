@@ -1,0 +1,5 @@
+# Security overrides of the 3-day cooldown (bin/bump-core-services --allow-security-embargoed): a pin taken before its
+# advisory was public. bump-core-services --check says when the GHSA appears; then delete the row.
+#
+# service  version  date  reason  release_url
+open-webui	0.12.4	2026-10-28	Upstream v0.12.4 notes: contains unlisted security fixes pending CVE assignment; strongly recommend updating. 0.12.1–0.12.3 carry no such notice.	https://github.com/open-webui/open-webui/releases/tag/v0.12.4
