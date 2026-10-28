@@ -2598,7 +2598,8 @@
   }
 
   // Item menu (ctxmenu.js, JON-821): Copy for a row — its name, the setting's key (as .env spells it), its value (only a
-  // plain one shown on the page: a secret is never put in a menu), a link to it. Nothing here changes a setting.
+  // plain one shown on the page: a secret is never put in a menu), a link to it. Nothing here changes a setting. No ⋯: a row's
+  // switch or button sits where it would; a right-click, a long press or the context-menu key opens the menu.
   bnMenu.bind(page(), ".set-row[data-key]", (row) => {
     const key = row.dataset.key, name = (row.querySelector(".set-name") || {}).textContent || key;
     const v = row.querySelector(".set-value[data-value]");
@@ -2608,7 +2609,7 @@
       { id: "copy-value", label: "Copy value", ...(v && v.dataset.value ? {} : { disabled: true, reason: v ? "It is blank" : "Secrets and lists are not copied from here" }), run: () => copy(v.dataset.value, "the value") },
       { id: "copy-link", label: "Copy link to this setting", sep: true, run: () => copy(`${location.origin}${location.pathname}#settings/${key}`, "the link") },
     ];
-  }, { label: (row) => (row.querySelector(".set-name") || {}).textContent });
+  }, { label: (row) => (row.querySelector(".set-name") || {}).textContent, more: false });
 
   document.addEventListener("bn:tab", (e) => {
     if (e.detail === "settings") load().then(placeFromAddress);

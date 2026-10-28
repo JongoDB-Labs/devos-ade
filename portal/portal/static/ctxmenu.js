@@ -11,7 +11,7 @@
 //     actions: [{ id, label, danger, disabled, reason (why it is off: shown under the label), href (opens in a new tab),
 //                 hidden, sep (a divider before it), run }] — hidden ones are left out; none left: no menu
 //     links: true keeps the menu on a link inside the item (Home's rows are links); false leaves other links alone
-//     more: false leaves out the ⋯ button (the phone's tab bar has no room for one)
+//     more: false leaves out the ⋯ button (an item whose own buttons sit where it would: the tabs, Activity, Settings rows)
 //   bnMenu.confirm({ title, lines, ok, danger }) -> Promise<boolean>      a dialog that says exactly what happens
 //   bnMenu.ask({ title, label, value, ok, max }) -> Promise<string|null>   a one-line text, for Rename
 "use strict";
@@ -158,11 +158,11 @@
     root.addEventListener("pointercancel", stop);
     // the lift of a long press is not a tap on the item (nor on a link in it)
     root.addEventListener("click", (e) => { if (Date.now() - held < 700 && itemOf(e.target)) { e.preventDefault(); e.stopPropagation(); } }, true);
-    if (opts.more === false) return;
-    // the ⋯ button in each item, put there as items come and go
+    // each item marked (no touch callout on a long press: ctxmenu.css), and given its ⋯ button, as items come and go
     const mark = () => {
       for (const item of root.querySelectorAll(itemSel)) {
-        if (item.querySelector(":scope > .ctx-more")) continue;
+        if (!item.hasAttribute("data-ctx-item")) item.setAttribute("data-ctx-item", "");
+        if (opts.more === false || item.querySelector(":scope > .ctx-more")) continue;
         item.classList.add("has-ctx");
         const b = el("button", { type: "button", class: "ctx-more", "aria-haspopup": "menu", "aria-expanded": "false", "aria-label": `Actions${nameOf(item) ? ` for ${nameOf(item)}` : ""}`, title: "Actions (or right-click)" });
         b.append(dots());

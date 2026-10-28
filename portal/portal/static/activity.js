@@ -428,7 +428,8 @@
     else if (it.link) act("Open", () => go(it.link));
     return out;
   }
-  // Item menu (ctxmenu.js, JON-821): the item's own buttons again — its main action, read or unread, dismiss or restore — and Copy text
+  // Item menu (ctxmenu.js, JON-821): the item's own buttons again — its main action, read or unread, dismiss or restore — and Copy text.
+  // No ⋯: those buttons are on the item already (a right-click, a long press or the context-menu key opens the menu)
   function itemActions(li) {
     const ctl = (sel) => li.querySelector(`.act-actions ${sel}`);
     const main = ctl("button:not(.act-read):not(.act-x):not(.quiet), button.action");
@@ -442,7 +443,7 @@
     if (text) out.push({ id: "copy", label: "Copy text", sep: out.length > 0, run: () => copy(text, "the text") });
     return out;
   }
-  bnMenu.bind(panel, ".act-list > li", itemActions, { label: (li) => (li.querySelector(".act-name") || {}).textContent });
+  bnMenu.bind(panel, ".act-list > li", itemActions, { label: (li) => (li.querySelector(".act-name") || {}).textContent, more: false });
   function itemNode(it) {
     const unread = isUnread(it, state), gone = Boolean(state.dismissed[it.id]);
     const li = el("li", { class: `act-item act-${it.level}${unread ? " unread" : ""}${gone ? " gone" : ""}`, "data-id": it.id, "data-kind": it.kind });

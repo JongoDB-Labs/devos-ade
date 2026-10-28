@@ -427,7 +427,7 @@ a.install-btn, .install-actions a.action { text-decoration: none; cursor: pointe
 .continue .cont-note { margin: 10px 0 0; }
 /* the models card: one line, the table and its notes folded under it */
 .models-line { margin: 0 0 6px; }
-.models-more > summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+.models-more > summary { cursor: pointer; color: var(--muted); font-size: 14px; min-height: 24px; line-height: 24px; }
 .models-more[open] > summary { margin-bottom: 12px; }
 
 /* The Code tab while the Code page is off here (code.js): muted, an "off" pill; its page is the portal's own. */

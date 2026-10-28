@@ -9,8 +9,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 ### Added
 
 - **Right-click menus on items throughout the ADE (JON-821).** Every item with actions has one menu, opened by a
-  right-click, a long press, Shift+F10 (or the context-menu key) on the focused item, or its **⋯** button (on hover and
-  focus; always shown on touch). The same list serves all four, and the menu stays inside the window. On Home, a **Recent**
+  right-click, a long press, Shift+F10 (or the context-menu key) on the focused item, and in a list whose items have no
+  buttons of their own (Home's Recent, Browse models) by its **⋯** button too (on hover and focus; always shown on touch). The same list serves all four, and the menu stays inside the window. On Home, a **Recent**
   row: a Code session offers Open, Open in a new tab, Rename, Fork, Add to project, Open its folder in a terminal,
   Copy link, Archive and Delete; a Chat conversation offers Open, Open in a new tab, Copy link, Rename, Archive and
   Delete. The Code page's session list, projects, explorer, changes, review, ports and model picker have theirs;

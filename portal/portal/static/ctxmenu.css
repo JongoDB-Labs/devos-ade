@@ -13,7 +13,8 @@
 .ctx-item.is-disabled:hover { background: none; }
 .ctx-why { font-size: var(--t-xs); color: var(--muted); line-height: 1.35; white-space: normal; }
 .ctx-sep { height: 1px; margin: 5px 6px; background: var(--line); }
-/* the item's ⋯ button: on hover and focus, always on touch */
+/* the item's ⋯ button: on hover and focus, always on touch (lists whose items have no buttons of their own: Home's Continue,
+   Browse models, the services; the tabs, Activity and Settings rows open the menu without one) */
 .has-ctx { position: relative; }
 .ctx-more { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid transparent; border-radius: var(--r-pill);
   background: var(--surface); color: var(--muted); opacity: 0; cursor: pointer; z-index: 1; }
@@ -27,14 +28,13 @@
 }
 [data-ctx-item], .has-ctx { -webkit-touch-callout: none; }
 /* where the button sits in each list: out of the way of what is already on the right */
-.cont-list > li.has-ctx > .cont-row { padding-right: 52px; }
-.cont-list > li.has-ctx > .ctx-more { top: 50%; right: 4px; margin-top: -14px; }
+/* (Continue's row is a link: its ⋯ sits beside it, not over it) */
+.cont-list > li.has-ctx { display: flex; align-items: center; gap: 4px; }
+.cont-list > li.has-ctx > .cont-row { flex: 1 1 auto; min-width: 0; margin-right: 0; }
+.cont-list > li.has-ctx > .ctx-more { position: static; flex: none; }
 .mb-row.has-ctx { padding-right: 52px; }
 .svc-list > li.has-ctx { padding-right: 36px; }
 .svc-list > li.has-ctx > .ctx-more { top: 50%; margin-top: -14px; right: 0; }
-.tabs > li.has-ctx > .ctx-more { top: 50%; right: 2px; margin-top: -14px; width: 24px; height: 24px; background: transparent; }
-.tabs > li.has-ctx .popout { margin-right: 20px; }
-@media (pointer: coarse) { .cont-list > li.has-ctx > .ctx-more { margin-top: -20px; } }
 /* the two small dialogs */
 .ctx-dlg { border: 1px solid var(--line); border-radius: var(--r-xl); padding: 22px 24px; width: min(460px, calc(100vw - 32px)); background: var(--surface); color: var(--ink); box-shadow: var(--shadow-pop); }
 .ctx-dlg::backdrop { background: rgb(0 0 0 / 0.38); }
@@ -45,5 +45,3 @@
 .ctx-dlg-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px !important; }
 .action.danger { background: var(--bad); border-color: var(--bad); color: var(--accent-ink); font-weight: 600; }
 .action.danger:hover:not(:disabled) { border-color: var(--ink); }
-/* the phone's tab bar has no room for a ⋯ button: a long press or the context-menu key opens the menu there */
-@media (max-width: 767.98px) { .tabs > li > .ctx-more { display: none; } }

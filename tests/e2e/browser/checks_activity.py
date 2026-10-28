@@ -501,7 +501,7 @@ def _menu_inside(page) -> bool:
 @check("browser", "item-menus")
 def item_menus(ctx):
     """Item menus (JON-821, portal/static/ctxmenu.js) in the real portal: a right-click on a navigation tab, a Settings row
-    and Home's Continue rows opens the one menu (also by Shift+F10 on the focused item, and by the ⋯ button); Escape
+    and Home's Continue rows opens the one menu (also by Shift+F10 on the focused item, and a Continue row's ⋯); Escape
     closes it with the focus back on the item; a text field keeps the browser's own menu. Nothing is changed or deleted."""
     page, rec = ctx.page("item-menus")
     login(page)

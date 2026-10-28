@@ -131,8 +131,9 @@ preview page has the system fonts, as the unlock pages. They never show what was
 
 Every item that has actions has one menu, and four ways to open it. A right-click opens it at the pointer. A long press
 (about half a second, touch and pen) does the same, and the lift is not taken as a tap. Shift+F10 or the context-menu
-key opens it on the focused item. A "⋯" button on the item opens it too: shown on hover and focus, always shown on
-touch. One list of actions feeds all four, so they cannot differ. Arrows, Home, End, Enter and Esc work inside, Esc
+key opens it on the focused item. In a list whose items have no buttons of their own (Home's Continue, Browse models,
+the services), a "⋯" button beside the item opens it too: shown on hover and focus, always shown on touch. The tabs,
+Activity items and Settings rows have no "⋯": their own buttons sit where it would. One list of actions feeds all four, so they cannot differ. Arrows, Home, End, Enter and Esc work inside, Esc
 and a choice return the focus to the item, and the menu is kept inside the viewport at every width. It is a `--surface`
 panel with `--line` and `--shadow-pop`, a danger action in `--bad`, and an action that does not apply is muted, with
 the reason under it, never hidden without a word.
@@ -152,7 +153,7 @@ cannot run itself.
 | Browse models | A model row | Try it, Add to or Remove from my pickers (off with the reason when the update helper is missing), Copy model id, Copy the provider's id |
 | Settings | A setting's row | Copy name, Copy setting key, Copy value (never a secret), Copy link to this setting |
 | Activity | An item | its main action, Mark as read or unread, Dismiss or Restore, Copy text |
-| Navigation | A tab | Open, Open in its own window, Copy link (the phone's tab bar: long press or the key, no "⋯") |
+| Navigation | A tab | Open, Open in its own window, Copy link (a right-click, a long press or the key; no "⋯") |
 | Code: Projects | A session | Show or Resume, Open in a new tab, Rename, Fork, Add to project, Continue in a project, Open its folder in a terminal, Open in the terminal, Copy link, Archive or Unarchive, Close, Delete (confirmed) |
 | Code: Projects | A project | Open, New session here, Open in a terminal, Rename, Copy path, Remove from Code |
 | Code: Explorer | A file or folder | Open, Open a terminal here (its folder), Mention in chat, Rename, Copy path, Download, Delete (confirmed) |

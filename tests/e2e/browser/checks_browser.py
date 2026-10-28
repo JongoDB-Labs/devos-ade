@@ -3499,13 +3499,18 @@ def settings_narrow_cards(ctx):
             page.evaluate(f"location.hash = '#settings/{sec}'")
             page.wait_for_selector(f"#set-{sec}:not([hidden]) .set-row", timeout=20000)
             settings_drawn(page)
-            if sec == "providers":
-                info = page.locator("#set-providers .set-row[data-key=WEBSEARCH_SEARXNG_BUILTIN] .set-info-btn")
-                if info.count():
+            # Models & providers shows one group at a time (Keys, Subscriptions, Local models, Search: its tabs): each in turn
+            groups = page.eval_on_selector_all(f"#set-{sec} .set-minnav .chip", "els => els.map(e => e.dataset.group)") or [None]
+            for g in groups:
+                if g:
+                    page.click(f'#set-{sec} .set-minnav .chip[data-group="{g}"]')
+                    page.wait_for_selector(f'#set-{sec} .set-tabbed[data-group="{g}"]')
+                info = page.locator(f"#set-{sec} .set-row[data-key=WEBSEARCH_SEARXNG_BUILTIN] .set-info-btn")
+                if sec == "providers" and info.count() and info.first.is_visible():
                     info.first.click()
                     page.wait_for_selector("#set-providers .set-row[data-key=WEBSEARCH_SEARXNG_BUILTIN] .set-ws-info:not([hidden])")
-            rows += page.evaluate(NARROW_ROWS, f"#set-{sec}")
-            shot(page, f"17c-settings-narrow-{device}-{sec}")
+                rows += page.evaluate(NARROW_ROWS, f"#set-{sec}")
+                shot(page, f"17c-settings-narrow-{device}-{sec}" + (f"-{g.replace(' ', '-')}" if g else ""))
         expect(len(rows) >= 8, f"{device}: only {len(rows)} rows with a control")
         bad = []
         for key, row, label, act, summ, info, adds in rows:
