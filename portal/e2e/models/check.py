@@ -86,6 +86,8 @@ PENDING = {"until": 0.0, "helper": True}   # helper: False, no update helper to 
 def pending_answer() -> dict:
     a = json.loads(json.dumps(ANSWER))
     br = a["providers"]["bedrock"]
+    if PENDING.get("explabs_off"):   # a provider without a key: its line says so, with "Add a key"
+        a["providers"]["explabs"].update(on=False, rows=[], at=None)
     br.update(at=None, stale=True, reading=PENDING["helper"], status=None, profiles=PENDING.get("profiles"),
               rows=[dict(r, vendor="", **{"in": None, "out": None}) for r in br["rows"] if r["builtin"]])
     return a
@@ -204,11 +206,16 @@ def main() -> int:
             page = browser.new_page(viewport={"width": 390, "height": 900})
             errors = []
             page.on("pageerror", lambda e: errors.append(str(e)))
-            PENDING.update(until=time.time() + 60, helper=False)
+            PENDING.update(until=time.time() + 60, helper=False, explabs_off=True)
             page.goto(f"{BASE}/#modelbrowser", wait_until="domcontentloaded")
             page.wait_for_selector("#modelbrowser:not([hidden]) .mb-row", timeout=20000)
             said = page.inner_text('#modelbrowser .mb-source[data-provider="bedrock"]')
             page.screenshot(path=str(OUT / "model-browser-no-helper.png"))
+            # every link and button on the source lines is a 24 px target (the layout sweep's rule: WCAG 2.5.8)
+            small = page.evaluate("""() => [...document.querySelectorAll('#modelbrowser .mb-source a, #modelbrowser .mb-source button')]
+              .map((e) => [e.textContent.trim(), Math.round(e.getBoundingClientRect().height)]).filter(([, h]) => h < 24)""")
+            result["targets"] = small
+            result["targets_ok"] = not small and page.locator('#modelbrowser .mb-source a', has_text="Add a key").count() > 0
             # and a key that may not list Bedrock's inference profiles: said, with the permission that gives the exact list
             PENDING.update(profiles="denied")
             page.reload(wait_until="domcontentloaded")
@@ -217,7 +224,7 @@ def main() -> int:
             page.screenshot(path=str(OUT / "model-browser-profiles-denied.png"))
             result["shots"].append("model-browser-profiles-denied.png")
             result["profiles_note_ok"] = "bedrock:ListInferenceProfiles" in note
-            PENDING.update(profiles=None)
+            PENDING.update(profiles=None, explabs_off=False)
             result["shots"].append("model-browser-no-helper.png")
             PENDING.update(until=0.0, helper=True)
             result["no_helper"] = said
@@ -225,7 +232,7 @@ def main() -> int:
             result["errors"] += errors
             browser.close()
         result["ok"] = (result["rows"] >= 5 and result.get("narrow_ok") and result.get("filter_ok") and result.get("first_open_ok")
-                        and result.get("no_helper_ok") and result.get("profiles_note_ok")
+                        and result.get("no_helper_ok") and result.get("profiles_note_ok") and result.get("targets_ok")
                         and not result["errors"])
     except Exception as e:  # noqa: BLE001
         result["errors"].append(f"{type(e).__name__}: {e}")
