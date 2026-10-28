@@ -1,16 +1,34 @@
 // Browse models (#models; Settings › Models & providers' "Pick which", the Code page's More models…): search the models
-// Bedrock, OpenRouter and Experiential Labs could add with your keys, filter them, and add or remove one. The lists
+// Bedrock, OpenRouter and Experiential Labs could add with your keys, filter them, and add or remove one. Models you run
+// yourself are here too (localmodels.js): the ones downloaded to this computer and each saved model server's models, with
+// the same Add / Remove, and two entry points that open its flow: Download from Hugging Face, Add a model server. The lists
 // come from /api/models/browse (portal/portal/model_browser.py: read on this computer, never in this page); a change
 // is a settings change like any other (/api/settings/apply: the portal password, the update helper, ./stack config
 // apply). Loaded after app.js (el, $, api, toast, showTab come from there). DOM built with el() and textContent only.
 "use strict";
 
 (() => {
-  const PROV = { bedrock: "Bedrock", openrouter: "OpenRouter", explabs: "Experiential Labs" };
+  const PROV = { bedrock: "Bedrock", openrouter: "OpenRouter", explabs: "Experiential Labs", local: "On this computer", server: "Model server" };
+  const PROVS = ["bedrock", "openrouter", "explabs", "local", "server"];
   const COMPAT = { works: "Works with Claude Code", "chat-only": "Chat only", fails: "Fails in Claude Code", untested: "Not tested with Claude Code" };
   const PAGE = 60;   // rows drawn at a time ("Show more" adds as many)
   const MEMO = "bn.models.filters";
-  let data = null, loading = null, shown = PAGE, watching = null, timer = null, orPublic = false, readTimer = null, readSince = 0;
+  let data = null, loading = null, shown = PAGE, watching = null, timer = null, orPublic = false, readTimer = null, readSince = 0, own = null;   // own: the panel of Download / Add a server, open on "download" | "server" | "both"
+  const L = () => window.bnLocal || null;
+  let hooked = false, ownFocus = "";
+  // (localmodels.js loads after this file: hooked on the first load) the models you run yourself changed — a download, a toggle,
+  // a save: the list and the counts follow, the open panel stays as it is
+  function hook() {
+    if (hooked || !L()) return;
+    hooked = true;
+    L().onChange(() => {
+      if (!data || data.error || !page() || page().hidden || !$("#mb-list")) return;
+      drawList();
+      const o = $("#mb-own .note"); if (o) o.textContent = ownLine();
+      const so = $(".mb-sources"); if (so) so.replaceWith(sources());
+      for (const b of document.querySelectorAll(".mb-provs .chip .count")) { const k = b.parentNode.dataset.prov; if (k) b.textContent = String(k === "all" ? allRows().length : countOf(k)); }
+    });
+  }
   const f = { q: "", prov: "all", cost: "any", tools: false, images: false, works: false, mine: false, maxOut: "", minCtx: "" };
   try { Object.assign(f, JSON.parse(localStorage.getItem(MEMO) || "{}"), { q: "" }); } catch (_) { /* storage blocked: fine */ }
   const keep = () => { try { localStorage.setItem(MEMO, JSON.stringify({ ...f, q: "" })); } catch (_) { /* fine */ } };
@@ -25,8 +43,8 @@
   };
 
   // a list the update helper is reading (the first open, or one older than an hour): the answer is read again every
-  // 3 s for up to 3 minutes, and the page redrawn once a list arrives — not while a Try it is open, and keeping the
-  // field you are typing in, its caret and the scroll
+  // 3 s for up to 3 minutes, and the page redrawn once a list arrives — not while a Try it or the Download / Add a
+  // server panel is open, and keeping the field you are typing in, its caret and the scroll
   const readingOf = (d) => JSON.stringify(Object.entries((d && d.providers) || {}).map(([k, p]) => [k, p.at, !!p.reading, p.error || ""]));
   function watchReading() {
     clearTimeout(readTimer);
@@ -39,7 +57,7 @@
   async function reread() {
     const p = page();
     if (!p || p.hidden || loading) return;
-    if (p.querySelector(".mb-try")) { readTimer = setTimeout(reread, 3000); return; }
+    if (p.querySelector(".mb-try") || own) { readTimer = setTimeout(reread, 3000); return; }
     let d;
     try {
       d = await api(`/api/models/browse${orPublic ? "?openrouter=public" : ""}`);
@@ -47,7 +65,7 @@
       if (e.message !== "signed out") readTimer = setTimeout(reread, 3000);
       return;
     }
-    if (readingOf(d) !== readingOf(data) && !p.querySelector(".mb-try")) {
+    if (readingOf(d) !== readingOf(data) && !p.querySelector(".mb-try") && !own) {
       data = d;
       redraw();
     }
@@ -76,6 +94,8 @@
         if (refresh) q.set("refresh", "1");
         if (orPublic) q.set("openrouter", "public");
         data = await api(`/api/models/browse${q.toString() ? `?${q}` : ""}`);
+        hook();
+        if (L()) await L().ensure().catch(() => null);     // (the models you run yourself: not needed for the rest to show)
       } catch (e) {
         if (e.message === "signed out") return;
         data = { error: e.message };
@@ -94,8 +114,11 @@
     if (!data || !data.providers) return [];
     const out = [];
     for (const [k, p] of Object.entries(data.providers)) if (f.prov === "all" || f.prov === k) out.push(...p.rows);
+    if (L() && (f.prov === "all" || f.prov === "local" || f.prov === "server")) out.push(...L().rows().filter((r) => f.prov === "all" || r.provider === f.prov));
     return out;
   }
+  const allRows = () => [...Object.values(data.providers || {}).flatMap((p) => p.rows), ...(L() ? L().rows() : [])];
+  const countOf = (k) => (k === "local" || k === "server" ? (L() ? L().rows().filter((r) => r.provider === k).length : 0) : ((data.providers || {})[k] || { rows: [] }).rows.length);
   function matches(r) {
     const words = f.q.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 8);
     const hay = `${r.id} ${r.source_id} ${r.name} ${r.vendor} ${PROV[r.provider]}${r.free ? " free" : ""}`.toLowerCase();
@@ -136,9 +159,9 @@
       autocomplete: "off", spellcheck: "false", maxlength: "80", value: f.q });
     search.addEventListener("input", () => { f.q = search.value; shown = PAGE; drawList(); });
     const provs = el("div", { class: "chips seg mb-provs", role: "group", "aria-label": "Provider" });
-    for (const k of ["all", "bedrock", "openrouter", "explabs"]) {
-      const n = k === "all" ? rows().length : ((data.providers || {})[k] || { rows: [] }).rows.length;
-      provs.append(chip([k === "all" ? "All" : PROV[k], " ", el("span", { class: "count", text: String(n) })], f.prov === k, () => { f.prov = k; shown = PAGE; keep(); render(); }, { "data-prov": k }));
+    for (const k of ["all", ...PROVS]) {
+      const n = k === "all" ? allRows().length : countOf(k);
+      provs.append(chip([k === "all" ? "All" : k === "server" ? "Model servers" : PROV[k], " ", el("span", { class: "count", text: String(n) })], f.prov === k, () => { f.prov = k; shown = PAGE; keep(); render(); }, { "data-prov": k }));
     }
     const cost = el("div", { class: "chips seg mb-cost", role: "group", "aria-label": "Price" });
     for (const [k, t] of [["any", "Any price"], ["free", "Free"], ["paid", "Paid"]]) cost.append(chip(t, f.cost === k, () => { f.cost = k; shown = PAGE; keep(); render(); }, { "data-cost": k }));
@@ -188,7 +211,51 @@
       }
       box.append(li);
     }
+    if (L() && L().summary()) {
+      const sum = L().summary();
+      for (const [k, what] of [["local", sum.downloaded ? `${sum.downloaded} downloaded` : "nothing downloaded yet: use Download from Hugging Face"],
+        ["server", sum.servers ? `${sum.servers} server${sum.servers === 1 ? "" : "s"} added` : "none yet: use Add a model server"]]) {
+        box.append(el("li", { class: "mb-source", "data-provider": k }, el("span", { class: "mb-source-name", text: PROV[k] }), " ", el("span", { class: "note", text: what })));
+      }
+    }
     return box;
+  }
+
+  // the two entry points for models you run yourself, and the flow they open (localmodels.js draws it here)
+  function ownLine() {
+    const sum = L() && L().summary();
+    if (sum && sum.job) return `Downloading ${sum.job.repo}${sum.job.quant ? `:${sum.job.quant}` : ""}: ${sum.job.message || sum.job.state}${sum.job.pct != null ? ` (${sum.job.pct}%)` : ""}`;
+    return sum && sum.known ? `${sum.downloaded} downloaded to this computer · ${sum.servers} model server${sum.servers === 1 ? "" : "s"} added. Their models are in the list below, free.` : "Models that run on your own hardware cost nothing and stay on your network.";
+  }
+  function ownCard() {
+    const card = el("section", { class: "mb-own", id: "mb-own", "aria-labelledby": "mb-own-title" });
+    const mk = (id, act, title, hint, label) => {
+      const b = el("button", { type: "button", class: "action primary", id, "data-act": act, "aria-expanded": String(!!own && (own === "both" || own === act.slice(4))), text: label });
+      b.addEventListener("click", () => openOwn(act.slice(4)));
+      return el("div", { class: "mb-own-way" }, el("h3", { class: "mb-own-h", text: title }), el("p", { class: "note", text: hint }), b);
+    };
+    card.append(el("h2", { class: "mb-own-title", id: "mb-own-title", text: "Run models yourself" }),
+      el("p", { class: "note", text: ownLine() }),
+      el("div", { class: "mb-own-ways" },
+        mk("mb-own-download", "own-download", "Download a model", "Pick one from Hugging Face. It is saved on this computer and runs here.", "Download from Hugging Face"),
+        mk("mb-own-server", "own-server", "Use a model server", "A computer on your network that is already running models, or this one. localhost is filled in for you. (Any OpenAI-compatible server works.)", "Add a model server (localhost by default)")));
+    const slot = el("div", { class: "mb-own-panel", id: "mb-own-panel" });
+    card.append(slot);
+    if (own && L()) {
+      const close = el("button", { type: "button", class: "quiet", id: "mb-own-close", text: "Close" });
+      close.addEventListener("click", () => { own = null; L().unpanel(slot); render(); });
+      slot.append(el("p", { class: "mb-own-bar" }, el("b", { text: own === "download" ? "Download a model" : own === "server" ? "Add a model server" : "Download a model or add a model server" }), " ", close));
+      const host = el("div", { class: "mb-own-host" });
+      slot.append(host);
+      const first = ownFocus; ownFocus = "";            // (only the click that opened it moves the focus: a later redraw leaves it)
+      queueMicrotask(() => L().panel(host, {}, first));
+    }
+    return card;
+  }
+  function openOwn(what) {
+    own = what; ownFocus = what === "both" ? "" : what;
+    render();
+    const c = $("#mb-own"); if (c && c.scrollIntoView) c.scrollIntoView({ block: "start" });
   }
 
   function priceText(r) {
@@ -200,12 +267,14 @@
   function rowEl(r) {
     const badges = el("span", { class: "mb-badges" });
     badges.append(el("span", { class: "badge mb-prov", "data-provider": r.provider, text: PROV[r.provider] }));
+    if (r.local && r.provider === "server") badges.append(el("span", { class: "badge", text: r.vendor.replace(/^on /, "") }));
     if (r.free) badges.append(el("span", { class: "badge", "data-tone": "on", text: "Free" }));
     if (r.tools === true) badges.append(el("span", { class: "badge", text: "Tools" }));
     if (r.images === true) badges.append(el("span", { class: "badge", text: "Images" }));
     badges.append(el("span", { class: `badge mb-compat mb-compat-${r.compat}`, title: r.compat_note || "", text: COMPAT[r.compat] || "Not tested with Claude Code" }));
     if (r.lifecycle === "legacy") badges.append(el("span", { class: "badge", "data-tone": "warn", text: "Legacy" }));
-    const state = r.builtin ? (r.enabled ? "Built in · in your pickers" : "Built in · not available")
+    const state = r.local ? (r.enabled ? "In your pickers" : r.provider === "local" ? "Downloaded · not served" : "Not in your pickers")
+      : r.builtin ? (r.enabled ? "Built in · in your pickers" : "Built in · not available")
       : r.enabled ? "In your pickers" : r.chosen ? "Added · applies with the change" : "";
     const facts = el("p", { class: "mb-facts" }, el("span", { class: "mb-price", text: priceText(r) }),
       r.context ? el("span", { text: `${ctx(r.context)} context` }) : null,
@@ -214,8 +283,8 @@
     if (r.can === "add" || r.can === "remove") {
       const b = el("button", { type: "button", class: `action${r.can === "add" ? " primary" : ""}`, "data-act": r.can, text: r.can === "add" ? "Add" : "Remove",
         "aria-label": `${r.can === "add" ? "Add" : "Remove"} ${r.name}` });
-      b.disabled = !data.can_change;
-      b.addEventListener("click", () => change(r, r.can));
+      b.disabled = r.local ? !r.canChange : !data.can_change;
+      b.addEventListener("click", () => (r.local ? r.local(r.can) : change(r, r.can)));
       actions.append(b);
     } else if (r.why && !r.builtin) actions.append(el("span", { class: "note mb-why", text: r.why }));
     if (r.enabled && data.try) {
@@ -242,7 +311,11 @@
     const more = $("#mb-more");
     more.hidden = all.length <= shown;
     more.textContent = `Show ${Math.min(PAGE, all.length - shown)} more`;
-    if (!all.length) list.append(el("li", { class: "mb-empty note", text: rows().length ? "No model matches these filters." : "No list yet." }));
+    if (!all.length) {
+      const none = f.prov === "local" ? "Nothing is downloaded yet. Use “Download from Hugging Face” above." : f.prov === "server" ? "No model servers yet. Use “Add a model server” above."
+        : rows().length ? "No model matches these filters." : "No list yet.";
+      list.append(el("li", { class: "mb-empty note", text: none }));
+    }
   }
 
   function render() {
@@ -251,7 +324,7 @@
     const head = el("header", { class: "mb-head" },
       el("p", { class: "eyebrow" }, el("a", { href: "#settings/providers", text: "Settings › Models & providers" })),
       el("h1", { id: "models-title", text: "Browse models" }),
-      el("p", { class: "note mb-lede", text: "Search what Bedrock, OpenRouter and Experiential Labs offer with your keys, and add a model to every picker: Chat, the Code page, the terminal and devos-claude. Each change is saved on this computer by the update helper, after your portal password, and applied in seconds: the model gateway takes the new list as it runs, without a restart." }));
+      el("p", { class: "note mb-lede", text: "Search what Bedrock, OpenRouter and Experiential Labs offer with your keys, plus models you download or run on your own computers, and add a model to every picker: Chat, the Code page, the terminal and devos-claude. Each change is saved on this computer by the update helper, after your portal password, and applied in seconds: the model gateway takes the new list as it runs, without a restart." }));
     if (!data) { p.replaceChildren(head, el("p", { class: "note", text: "Loading…" })); return; }
     if (data.error) { p.replaceChildren(head, el("p", { class: "banner", text: `Could not load the lists: ${data.error}` })); return; }
     const status = el("p", { id: "mb-job", class: "mb-job", role: "status", "aria-live": "polite", hidden: "" });
@@ -260,7 +333,7 @@
     const helper = data.can_change ? null : el("p", { class: "note mb-helper", text: data.why_not || "Changes need the update helper (./stack helper install)." });
     const more = el("button", { type: "button", class: "quiet", id: "mb-more", hidden: "" });
     more.addEventListener("click", () => { shown += PAGE; drawList(); });
-    p.replaceChildren(head, status, sources(), el("p", { class: "mb-refresh-line" }, refresh), helper || "", toolbar(),
+    p.replaceChildren(head, status, ownCard(), sources(), el("p", { class: "mb-refresh-line" }, refresh), helper || "", toolbar(),
       el("p", { class: "note mb-count", id: "mb-count", "aria-live": "polite" }), el("ul", { class: "mb-list", id: "mb-list", "aria-label": "Models" }), more);
     drawList();
     renderJob();
@@ -385,8 +458,9 @@
 
   // --- the page: #modelbrowser[/<provider>] ---
   function place() {
-    const m = /^#modelbrowser\/(bedrock|openrouter|explabs)$/.exec(location.hash);
-    if (m) { f.prov = m[1]; shown = PAGE; }
+    const m = /^#modelbrowser\/(bedrock|openrouter|explabs|local|server|add)$/.exec(location.hash);
+    if (m && m[1] === "add") { own = "both"; f.prov = "all"; shown = PAGE; }        // (the Code page's "Add a local model or a model server…")
+    else if (m) { f.prov = m[1]; shown = PAGE; }
   }
   document.addEventListener("bn:tab", (e) => {
     if (e.detail !== "modelbrowser") return;
@@ -400,5 +474,6 @@
   document.addEventListener("DOMContentLoaded", () => {
     if (location.hash.startsWith("#modelbrowser")) { place(); render(); load(); }
   });
+  // the models you run yourself changed (a download, a toggle, a save): the list and the counts follow, the panel stays as it is
   window.bnModels = { open: (prov) => { showTab(prov ? `modelbrowser/${prov}` : "modelbrowser"); } };
 })();

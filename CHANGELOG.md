@@ -10,6 +10,60 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ### Added
 
+- **Local models and model servers are on Browse models, and in the Code picker (JON-816).** Browse models has a **Run
+  models yourself** card with two ways in: **Download from Hugging Face** and **Add a model server (localhost by default)**.
+  Both open the same form as Settings, in a panel on that page. The models you downloaded and each saved server's models
+  are listed next to the providers' (filters *On this computer* and *Model servers*), with the same Add / Remove. The Code
+  page's **More models…** gains **Add a local model or a model server…**. **Check server** of this computer (localhost —
+  the default) no longer asks for the portal password: it only reads, behind the portal session, and the update helper
+  refuses any address but this computer's, judged on the address it pins. Checking another computer on your network,
+  saving, removing, keys and downloads still ask for it.
+
+- **Local models: download a model from Hugging Face and use it in Code, Chat and the terminal (JON-816).** Settings ›
+  Models & providers has a **Local models** section (collapsed until you have one): search Hugging Face for GGUF models,
+  see each quantization's size, license and whether it fits this computer's memory, and **Download** it with a progress
+  bar. A downloaded model is registered with the model gateway live, in seconds, and shows up in the Code page's picker,
+  Chat and the terminal marked **Local**, free, at $0 Actual (never a dollar of spend). **Remove** deletes it and shows
+  the disk used. Tool use is said honestly: a model without tool support, or under 3B parameters, is chat only; under 7B
+  is flagged as weak at Claude Code's tools; none is called working until it is checked, and every answer is capped at
+  4096 tokens so a model that loops stops.
+  - On **Apple silicon it runs natively with MLX** (`mlx_lm.server`, on the Mac's GPU through Metal; a container cannot
+    reach Metal): DevOS ADE installs a pinned, hash-locked `mlx-lm` into its own `uv` environment under the stack's
+    state folder (nothing system-wide; needs `uv`), runs the server as a launchd user agent on 127.0.0.1 only, and
+    downloads models from Hugging Face's MLX catalog (mlx-community has the pre-quantized ones) into the stack's own
+    Hugging Face folder, so disk use and Remove are exact. `mlx_lm.server` holds one model at a time and loads the one a
+    request names, so the first answer after switching models waits for the load (the model gateway allows 15 minutes).
+    Never `--trust-remote-code`: a repo that ships Python files, or whose `config.json` has `model_file` or `auto_map`, is
+    refused with the reason (CVE-2026-5843). `./stack local-models uninstall [--models]` (and `./stack uninstall`)
+    remove the agent, the environment and, on request, the models.
+  - Everywhere else it runs on **Docker Model Runner** (Docker Desktop 4.71 or newer, or `docker-model-plugin` on Linux;
+    GGUF models, CUDA when present) first and a host **Ollama**
+    second. With neither running the section says how to switch one on, and `./stack local-models enable` does it
+    after asking (it changes a Docker Desktop setting, so it never happens silently). Also `./stack local-models
+    status|pull ORG/REPO QUANT|rm ORG/REPO QUANT`.
+  - **Model servers: point the gateway at any OpenAI-compatible server by address** (vLLM, Ollama, LM Studio,
+    llama-server, TGI, another Mac's `mlx_lm.server` …); this computer is the default. `./stack local-models server add
+    NAME http://host:port` (with or without `/v1`), `server key NAME` (the key is read from the terminal, never an
+    argument or URL), `server enable NAME ID|*`, `server rm NAME` (or the form in Settings › Models & providers › Local models: Check server, tick its models, Add; per-server model boxes, Edit key, Remove; all with the portal password through the update helper): the
+    server is probed at `/v1/models`, what it serves is listed with its context length when it says one, the models you
+    enable are registered live (seconds, no restart) as `ms/<name>/<id>`, marked Local, free, tool use unknown, capped at
+    4096 tokens. `localhost`, `127.0.0.1` and `::1` mean this computer and are reached from the gateway as
+    `host.docker.internal` (the Settings page says so). Probe failures say what failed: DNS, refused, timeout, TLS
+    certificate (trust one self-signed server with `;trust`, never globally), 401, no `/v1/models`. Cloud-metadata and link-local
+    targets (169.254.0.0/16, fe80::/10, 100.100.100.200, fd00:ec2::254, metadata names, IPv4 wrapped in IPv6) and
+    non-standard numeric addresses (octal, hex, short) are always refused, the checked address is the one used, and a
+    server is registered only after its address passed the check (docs/security.md). Plain http to a
+    public address is allowed with a warning that prompts travel unencrypted. A server that is down is probed about
+    once a minute and its models say "UNAVAILABLE" with the reason; removing a server unregisters its models and key.
+  - Downloads come from Hugging Face only. A gated model needs an optional **Hugging Face token** (stored like every
+    other secret, passed to the runtime's environment, never in a URL, argument or log). The runner is unauthenticated
+    on this computer: keep it, and Ollama, off the network, and keep both current (llama.cpp has had GGUF-parsing
+    fixes).
+  - The model gateway gets `host.docker.internal` (a host-gateway entry) to reach a host Ollama or Docker Engine's
+    runner. The update helper gains two fixed-field actions (`local-pull`, `local-remove`); the portal works out a
+    download's size, license and tool support itself from Hugging Face, never from the page. The embedder stays
+    Bedrock-only.
+
 - **Browse models: search every provider and add the ones you want (JON-520).** Settings › Models & providers now has
   **Browse models** on each provider's card (and **More models…** in the Code page's model picker): one page that
   searches what Bedrock, OpenRouter and Experiential Labs offer with your keys — by name, id or vendor — with each

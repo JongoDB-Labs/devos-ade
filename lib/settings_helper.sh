@@ -23,6 +23,16 @@
 #                                                        (narrowing: from anywhere; lib/sessions.sh) — setup-claude,
 #                                                        setup-claude-bedrock, setup-git, setup-all: of your setup
 #                                                        (Bring your setup; lib/sessions_config.sh)
+#                                        local-pull   {…,"repo":"org/name","quant":"Q4_K_M","bytes":N,"tools":"yes|no|unknown",
+#                                                      "context":N,"params_m":N,"license":"apache-2.0"}  ./stack local-models pull
+#                                        local-remove {…,"repo":"org/name","quant":"Q4_K_M"}   ./stack local-models rm
+#                                        local-server {…,"op":"probe|save|models|key|remove","name":"…","url":"http(s)://…",
+#                                                      "trust":BOOL,"key":"<base64>","models":"id,id|*","ref":"<hex>"}
+#                                                      ./stack local-models server apply (the model-server form; lib/local_models.sh)
+#                                        local-probe  {…,"url":"http(s)://…","trust":BOOL,"key":"<base64>","ref":"<hex>"}
+#                                                      the form's "Check server" of THIS computer (localhost, 127.x, ::1): read-only, NO
+#                                                      "auth" (the portal writes it behind its session, CSRF and origin checks); the probe
+#                                                      refuses any address but loopback, judged on the pinned address (lib/msrv_target.py)
 #                                        subscriptions-check {…}  ./stack subscriptions status (lib/subscriptions.sh)
 #                                        subscriptions-signout {…,"tool":"claude|codex|cursor|grok"}  that tool's own
 #                                                        sign-out in the sandbox (narrowing)
@@ -46,7 +56,12 @@ SESSIONS_REVOKE_ACTIONS="sessions-revoke"   # (the Code page's own requests: ses
 SUBS_HELPER_ACTIONS="subscriptions-check subscriptions-signout subscriptions-check-chat subscriptions-signout-chat"   # your AI subscriptions (lib/subscriptions.sh)
 PICK_MIN_INTERVAL_S="${PICK_MIN_INTERVAL_S:-60}"
 PICK_MAX_PER_DAY="${PICK_MAX_PER_DAY:-10}"
-ACT_MAX_BYTES=768   # (a project action carries a few more fields than a diagnostic)
+ACT_MAX_BYTES=3072   # (a project action carries a few more fields than a diagnostic; a local-model download a few more: its facts)
+# Local models (lib/local_models.sh): a download or a removal, started in the background (no stack lock while it downloads);
+# its progress is in .state/status/local-models.json. Every field fixed: a Hugging Face repo and quant name, never a path or URL.
+LOCAL_HELPER_ACTIONS="local-pull local-remove local-server local-probe"
+LOCAL_MIN_INTERVAL_S="${LOCAL_MIN_INTERVAL_S:-5}"
+LOCAL_MAX_PER_DAY="${LOCAL_MAX_PER_DAY:-200}"
 settings_capability_file() { printf '%s/helper-settings.json\n' "$(status_dir)"; }
 report_file() { printf '%s/report.txt\n' "$(status_dir)"; }
 
@@ -307,6 +322,27 @@ act_check_request() {
   elif _sv_re "$body" '^\{"action":"(project-remove|project-mode-ro)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})","when":"(now|idle)","project":"(p_[0-9a-f]{8})"\}$'; then
     action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="${BASH_REMATCH[4]}"
     when="${BASH_REMATCH[5]}"; project="${BASH_REMATCH[6]}"
+  # (local models: a download or a removal of a Hugging Face repo's quant — the fields packed in project's place)
+  elif _sv_re "$body" '^\{"action":"(local-pull)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})","repo":"([A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95})","quant":"([A-Za-z0-9][A-Za-z0-9._-]{0,63})","bytes":([0-9]{1,13}),"tools":"(yes|no|unknown)","context":([0-9]{1,9}),"params_m":([0-9]{1,9}),"license":"([A-Za-z0-9.+-]{1,40})"\}$'; then
+    action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="${BASH_REMATCH[4]}"
+    project="${BASH_REMATCH[5]}|${BASH_REMATCH[6]}|${BASH_REMATCH[7]}|${BASH_REMATCH[8]}|${BASH_REMATCH[9]}|${BASH_REMATCH[10]}|${BASH_REMATCH[11]}"
+  elif _sv_re "$body" '^\{"action":"(local-remove)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})","repo":"([A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95})","quant":"([A-Za-z0-9][A-Za-z0-9._-]{0,63})"\}$'; then
+    action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="${BASH_REMATCH[4]}"
+    project="${BASH_REMATCH[5]}|${BASH_REMATCH[6]}"
+  # (model servers: the Add form's probe and save, the per-model toggles, the key, the removal; the fields packed in project's
+  # place as op|name|url|trust|key_b64|models|ref. macOS's regex library has no empty alternative and counts to 255 at most, so
+  # optional groups and unbounded classes here and the lengths after)
+  elif _sv_re "$body" '^\{"action":"(local-server)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})","op":"(probe|save|models|key|remove)","name":"([a-z0-9][a-z0-9-]{0,23})?","url":"(https?://[]A-Za-z0-9._:[/~-]+)?","trust":(true|false),"key":"([A-Za-z0-9+/]*={0,2})","models":"([A-Za-z0-9._:/@+*,-]*)","ref":"([0-9a-f]{8,32})"\}$'; then
+    action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="${BASH_REMATCH[4]}"
+    project="${BASH_REMATCH[5]}|${BASH_REMATCH[6]}|${BASH_REMATCH[7]}|${BASH_REMATCH[8]}|${BASH_REMATCH[9]}|${BASH_REMATCH[10]}|${BASH_REMATCH[11]}"
+    [ "${#BASH_REMATCH[7]}" -le 200 ] && [ "${#BASH_REMATCH[9]}" -le 280 ] && [ "${#BASH_REMATCH[10]}" -le 1600 ] || { echo "a field is too long" >&2; return 1; }
+  # (the form's Check server: a probe of this computer's own addresses and nothing else, so no password — op probe-local, which
+  # lib/local_models.sh refuses for any other address; another computer is checked through local-server, with the password.
+  # auth is "-" from here on, which no password's base64 can be)
+  elif _sv_re "$body" '^\{"action":"(local-probe)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","url":"(https?://[]A-Za-z0-9._:[/~-]+)","trust":(true|false),"key":"([A-Za-z0-9+/]*={0,2})","ref":"([0-9a-f]{8,32})"\}$'; then
+    action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="-"
+    project="probe-local||${BASH_REMATCH[4]}|${BASH_REMATCH[5]}|${BASH_REMATCH[6]}||${BASH_REMATCH[7]}"
+    [ "${#BASH_REMATCH[4]}" -le 200 ] && [ "${#BASH_REMATCH[6]}" -le 280 ] || { echo "a field is too long" >&2; return 1; }
   # (what DevOS ADE may read of your sessions here: taken back by the project's id, or all — the tool in mode's place)
   # (setup-*: what may be read of your setup — Bring your setup, lib/sessions_config.sh —, by tool, with project all)
   elif _sv_re "$body" '^\{"action":"(sessions-revoke)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})","project":"(p_[0-9a-f]{8}|all)","tool":"(claude|claude-bedrock|both|suggest|setup-claude|setup-claude-bedrock|setup-git|setup-all)"\}$'; then
@@ -324,7 +360,7 @@ act_check_request() {
   fi
   [ "${#auth}" -le 400 ] || { echo "the password is longer than 300 bytes (the portal refuses those too)" >&2; return 1; }
   [ "$n" = "$nonce" ] || { echo "nonce does not match the file name" >&2; return 1; }
-  case " $DIAG_ACTIONS $PROJECT_ACTIONS $SESSIONS_REVOKE_ACTIONS $SUBS_HELPER_ACTIONS " in *" $action "*) ;; *) echo "action not allowed" >&2; return 1 ;; esac
+  case " $DIAG_ACTIONS $PROJECT_ACTIONS $SESSIONS_REVOKE_ACTIONS $SUBS_HELPER_ACTIONS $LOCAL_HELPER_ACTIONS " in *" $action "*) ;; *) echo "action not allowed" >&2; return 1 ;; esac
   now="$(date +%s)"
   [ "$ts" -le $((now + 30)) ] || { echo "dated in the future" >&2; return 1; }
   [ $((now - ts)) -le "$HELPER_MAX_AGE_S" ] || { echo "stale (older than ${HELPER_MAX_AGE_S}s)" >&2; return 1; }
@@ -366,6 +402,8 @@ helper_pick_folder() {
 _act_limits() {
   case "$1" in
     project-pick) _kind_limits pick-jobs "$(_helper_num "$PICK_MIN_INTERVAL_S" 60)" "$(_helper_num "$PICK_MAX_PER_DAY" 10)" ;;
+    local-server | local-probe) _kind_limits server-jobs "$(_helper_num "$LOCAL_SERVER_MIN_INTERVAL_S" 1)" "$(_helper_num "$LOCAL_SERVER_MAX_PER_DAY" 600)" ;;
+    local-*) _kind_limits local-jobs "$(_helper_num "$LOCAL_MIN_INTERVAL_S" 5)" "$(_helper_num "$LOCAL_MAX_PER_DAY" 200)" ;;
     *) _diag_limits "$1" ;;
   esac
 }
@@ -581,6 +619,36 @@ helper_run_diag() {
   helper_write_status "done" "$msg"
 }
 
+# local_helper_start ACTION FIELDS NONCE — a local-model download or removal (lib/local_models.sh), in the background: the
+# request is checked (password, rate, fields) by now; FIELDS is repo|quant[|bytes|tools|context|params_m|license]. One
+# at a time (./stack local-models says so itself too); its progress is .state/status/local-models.json.
+local_helper_start() {
+  local action="$1" f="$2" nonce="$3" repo quant bytes tools ctx pm lic logf
+  if [ "$action" = local-server ] || [ "$action" = local-probe ]; then local_server_start "$f"; return 0; fi
+  IFS='|' read -r repo quant bytes tools ctx pm lic <<< "$f"
+  _kind_count local-jobs "$action"
+  if local_job_running; then _refuse_diag "a download is already running (Settings › Models & providers › Local models shows it)" "$nonce"; return 0; fi
+  logf="$(helper_dir)/local-job.log"; : > "$logf"; chmod 600 "$logf"
+  if [ "$action" = local-pull ]; then
+    ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" local-models pull "$repo" "$quant" \
+        --bytes "$bytes" --tools "$tools" --context "$ctx" --params-m "$pm" --license "$lic" ) </dev/null > "$logf" 2>&1 &
+  else
+    ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" local-models rm "$repo" "$quant" ) </dev/null > "$logf" 2>&1 &
+  fi
+  printf '%s\n' "$!" > "$(helper_dir)/local-job.pid"
+}
+
+# local_server_start FIELDS — a model-server operation (op|name|url|trust|key_b64|models|ref), in the background: written to a
+# mode-600 file (the key is never on a command line) that ./stack local-models server apply reads and removes
+local_server_start() {
+  local f="$1" op name url trust key models ref rf
+  IFS='|' read -r op name url trust key models ref <<< "$f"
+  rf="$(mktemp "$(helper_dir)/server-req.XXXXXX")" || return 0; chmod 600 "$rf"
+  printf 'op=%s\nname=%s\nurl=%s\ntrust=%s\nkey=%s\nmodels=%s\nref=%s\n' "$op" "$name" "$url" "$trust" "$key" "$models" "$ref" > "$rf"
+  ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" local-models server apply "$rf" ) \
+    </dev/null > "$(helper_dir)/local-server.log" 2>&1 &
+}
+
 # settings_poll_once — one settings or diagnostic request per call, if any (moved into the private inbox first, like
 # lib/helper.sh does with req-*.json). 0 when a job ran. Never exits the helper: no code changes here.
 settings_poll_once() {
@@ -613,8 +681,13 @@ settings_poll_once() {
           rm -rf "$box"
           read -r action res auth when project mode hide <<< "$res"   # res: the nonce from here on
           _remember_nonce "$res"
-          if reason="$(_auth_ok "$auth" 2>&1)" && reason="$(_act_limits "$action" 2>&1)"; then
-            auth=''; helper_run_diag "$action" "$res" "$when" "$project" "$mode" "$hide"; return 0
+          # (local-probe is the one request with no password: read-only, and still rate-limited like the rest)
+          if { [ "$action" = local-probe ] && [ "$auth" = - ] || reason="$(_auth_ok "$auth" 2>&1)"; } && reason="$(_act_limits "$action" 2>&1)"; then
+            auth=''
+            case "$action" in
+              local-*) local_helper_start "$action" "$project" "$res"; return 0 ;;   # (in the background: no lock, no job slot)
+            esac
+            helper_run_diag "$action" "$res" "$when" "$project" "$mode" "$hide"; return 0
           fi
           auth=''
         else
@@ -745,17 +818,20 @@ settings_helper_tick() {
   settings_snapshot_refresh 2>/dev/null || true
   # the model browser's lists read again in the background when the portal asked and they are stale (lib/model_browser.sh)
   ! declare -F model_browser_tick >/dev/null || model_browser_tick 2>/dev/null || true
+  # the local models' file (runtime, downloads, disk) written again when the portal asked (lib/local_models.sh)
+  ! declare -F local_models_tick >/dev/null || local_models_tick 2>/dev/null || true
   l="$( (ls "$STACK_DIR/backups" 2>/dev/null || true) | cksum)"
   if [ "$l" != "$(head -c 64 "$seen" 2>/dev/null)" ] || [ ! -f "$(status_dir)/backups.json" ]; then
     write_backups_json 2>/dev/null && printf '%s' "$l" > "$seen" || true
   fi
   ! backup_nightly_tick || ran=0
   if [ ! -f "$f" ] || [ -n "$(find "$f" -mmin +10 2>/dev/null)" ]; then
-    printf '{"settings": 1, "diagnostics": [%s], "projects": [%s], "sessions": [%s], "subscriptions": [%s], "screen": %s, "written_at": %s}\n' \
+    printf '{"settings": 1, "diagnostics": [%s], "projects": [%s], "sessions": [%s], "subscriptions": [%s], "local": [%s], "screen": %s, "written_at": %s}\n' \
       "$(for a in $DIAG_ACTIONS; do printf '"%s",' "$a"; done | sed 's/,$//')" \
       "$(for a in $PROJECT_ACTIONS; do printf '"%s",' "$a"; done | sed 's/,$//')" \
       "$(for a in $SESSIONS_REVOKE_ACTIONS ${SESSIONS_ACTIONS:-}; do printf '"%s",' "$a"; done | sed 's/,$//')" \
-      "$(for a in $SUBS_HELPER_ACTIONS; do printf '"%s",' "$a"; done | sed 's/,$//')" "$(helper_screen && echo true || echo false)" "$(date +%s)" > "$f.tmp" 2>/dev/null &&
+      "$(for a in $SUBS_HELPER_ACTIONS; do printf '"%s",' "$a"; done | sed 's/,$//')" \
+      "$(for a in $LOCAL_HELPER_ACTIONS; do printf '"%s",' "$a"; done | sed 's/,$//')" "$(helper_screen && echo true || echo false)" "$(date +%s)" > "$f.tmp" 2>/dev/null &&
       chmod 644 "$f.tmp" && mv "$f.tmp" "$f"
   fi
   return "$ran"

@@ -54,7 +54,7 @@ GROUPS = ("account", "aws", "budgets", "voice", "openrouter", "explabs", "websea
 SECTIONS = ("account", "providers", "aws", "spending", "chat", "code", "files", "remote", "updates", "diagnostics", "advanced", "about")
 PLACES = ("main", "more", "with")
 OWN_ROWS = ("+devices", "+models", "+backups", "+test", "+check-aws", "+report", "+restart", "+git-hosts", "+project-folders", "+sessions-consent", "+bring-setup",
-            "+subscriptions", "+services")
+            "+subscriptions", "+services", "+local-models")
 DOC = re.compile(r"(README\.md|docs/[a-z0-9-]{1,40}\.md)(#[a-z0-9-]{1,80})?")
 EDITABLE = ("edit", "local", "on-only", "widen-local")
 REGEN = ("RUSTFS_ACCESS_KEY", "SHARED_MCP_TOKEN")   # what "Regenerate" asks for (the RustFS pair is one action)
@@ -85,6 +85,8 @@ SESSIONS = "sessions.json"                     # what DevOS ADE may read of your
 SESSIONS_TOOLS = ("claude", "claude-bedrock")   # (claude-bedrock: devos-claude's sessions, by its internal name)
 # Your AI subscriptions (lib/subscriptions.sh): ask the sandbox again, or a tool's own sign-out — by its id, never more
 # (…-chat: the same for Chat's sandbox, its own sign-ins: --chat — of the Chat models with a sign-out command)
+LOCAL_SERVER_OPS = ("probe", "save", "models", "key", "remove")
+LOCAL_ACTIONS = ("local-pull", "local-remove")   # (lib/settings_helper.sh LOCAL_HELPER_ACTIONS: Local models, lib/local_models.sh)
 SUBS_ACTIONS = ("subscriptions-check", "subscriptions-signout", "subscriptions-check-chat", "subscriptions-signout-chat")
 SUBS_SIGNOUT_TOOLS = ("claude", "codex", "cursor", "grok")   # (Gemini CLI and Copilot sign out inside them)
 SUBS_SIGNOUT_CHAT_TOOLS = ("claude", "codex", "grok")
@@ -260,7 +262,8 @@ def capability(status_dir: Path, now: float | None = None) -> dict:
     projects = [a for a in d.get("projects") or [] if a in PROJECT_ACTIONS] if ok else []
     sessions = [a for a in d.get("sessions") or [] if a in SESSIONS_ACTIONS + SESSIONS_REQUESTS] if ok else []
     subs = [a for a in d.get("subscriptions") or [] if a in SUBS_ACTIONS] if ok else []
-    return {"settings": ok, "diagnostics": acts, "projects": projects, "sessions": sessions, "subscriptions": subs,
+    local = [a for a in d.get("local") or [] if a in LOCAL_ACTIONS + ("local-server", "local-probe")] if ok else []
+    return {"settings": ok, "diagnostics": acts, "projects": projects, "sessions": sessions, "subscriptions": subs, "local": local,
             "screen": ok and d.get("screen") is True}
 
 
@@ -556,6 +559,38 @@ def _bedrock_models(v, remote_on=False):
     return None if ok else "must be a comma list of Bedrock model or inference-profile ids (letters, digits, . _ : / and -; never an ARN)"
 
 
+# A registered local model (lib/local_models.sh valid_local_entry): "dmr:<id>" or "ollama:<id>", at most 24 in a list.
+_LOCAL_ENTRY = re.compile(r"(dmr|ollama|mlx):[A-Za-z0-9][A-Za-z0-9._:/-]{0,125}")
+
+
+def _local_models(v, remote_on=False):
+    ok = v == "" or (len(v) <= MAX_VALUE and len(v.split(",")) <= 24 and all(_LOCAL_ENTRY.fullmatch(m) for m in v.split(",")))
+    return None if ok else "must be a comma list of dmr:<id> or ollama:<id> (letters, digits, . _ : / and -; at most 24)"
+
+
+_MSRV_URL = r"https?://(?:[A-Za-z0-9._-]+|\[[0-9A-Fa-f:]+\])(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~/-]*)?(?:;trust)?"
+
+
+def _model_servers(v, remote_on=False):   # (lib/local_models.sh valid_msrv_list)
+    items = [x.strip() for x in v.split(",")] if v else []
+    ok = len(v) <= MAX_VALUE and len(items) <= 8 and all(re.fullmatch(r"[a-z0-9][a-z0-9-]{0,23}=" + _MSRV_URL, x) for x in items)
+    return None if ok else "must be a comma list of name=http(s)://host[:port] (at most 8; no user:password@)"
+
+
+def _model_server_keys(v, remote_on=False):
+    ok = v == "" or all(re.fullmatch(r"[a-z0-9][a-z0-9-]{0,23}=[A-Za-z0-9._~+/=-]{1,200}", x) for x in v.split(","))
+    return None if ok else "must be name=key pairs"
+
+
+def _model_server_models(v, remote_on=False):
+    ok = v == "" or all(re.fullmatch(r"[a-z0-9][a-z0-9-]{0,23}:(\*|[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127})", x) for x in v.split(","))
+    return None if ok else "must be name:model-id (or name:* for all) pairs"
+
+
+def _hf_token(v, remote_on=False):
+    return None if v == "" or re.fullmatch(r"hf_[A-Za-z0-9]{20,200}", v) else "must be a Hugging Face token (hf_ and letters and digits)"
+
+
 def _oauth_client_id(v, remote_on=False):
     return None if v == "" or re.fullmatch(r"[A-Za-z0-9._-]{1,128}", v) else \
         f"must be an application (client) ID: letters, digits, ., _ and - (blank = {brand.NAME}'s own app)"
@@ -595,7 +630,7 @@ VALIDATORS = {
     "pct": _range(50, 99, "must be a percentage from 50 to 99 (blank = 80)"),
     "keep": _range(1, 60, "must be a whole number from 1 to 60 (blank = 7)"),
     "model_pin": _model_pin, "models_list": _models_list, "pw_hash": _pw_hash,
-    "code_models": _code_models, "code_model": _code_model, "bedrock_models": _bedrock_models,
+    "code_models": _code_models, "code_model": _code_model, "bedrock_models": _bedrock_models, "local_models": _local_models, "model_servers": _model_servers, "model_server_keys": _model_server_keys, "model_server_models": _model_server_models, "hf_token": _hf_token,
     "oauth_client_id": _oauth_client_id, "app_slug": _app_slug,
 }
 
@@ -806,6 +841,82 @@ def write_sessions_action(request_dir: Path, password: str, project: str, tool: 
     raw = json.dumps({"action": "sessions-revoke", "requested_at": int(time.time() if now is None else now), "nonce": nonce, "auth": _b64(password),
                       "project": project, "tool": tool}, separators=(",", ":")).encode("ascii")
     if len(raw) > 768:   # (the helper's limit: lib/settings_helper.sh ACT_MAX_BYTES)
+        raise ValueError("too large")
+    _write_atomic(request_dir, "act", f"act-{nonce}.json", raw)
+    return nonce
+
+
+_LOCAL_REPO = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}")
+_LOCAL_QUANT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+_LOCAL_LICENSE = re.compile(r"[A-Za-z0-9.+-]{1,40}")
+
+
+def write_local_action(request_dir: Path, password: str, action: str, repo: str, quant: str, *, size: int = 0, tools: str = "unknown",
+                       context: int = 0, params_m: int = 0, license: str = "unknown", now: float | None = None) -> str:
+    """REQUEST_DIR/act-<nonce>.json: a local-model download (local-pull: a Hugging Face repo and quant, with the facts the
+    page worked out: size, tool use, context, parameters, license) or removal (local-remove: the two names alone) for the
+    helper, with the password. Never a URL or a path. -> nonce"""
+    if action not in LOCAL_ACTIONS or not _LOCAL_REPO.fullmatch(repo) or not _LOCAL_QUANT.fullmatch(quant):
+        raise ValueError("bad request")
+    if len(password.encode("utf-8", "surrogatepass")) > MAX_AUTH:
+        raise ValueError("password too long")
+    nonce = secrets.token_hex(16)
+    body = {"action": action, "requested_at": int(time.time() if now is None else now), "nonce": nonce, "auth": _b64(password),
+            "repo": repo, "quant": quant}
+    if action == "local-pull":
+        if tools not in ("yes", "no", "unknown") or not _LOCAL_LICENSE.fullmatch(license) or min(size, context, params_m) < 0 \
+                or size > 10 ** 13 or context > 10 ** 9 or params_m > 10 ** 9:
+            raise ValueError("bad request")
+        body.update({"bytes": int(size), "tools": tools, "context": int(context), "params_m": int(params_m), "license": license})
+    raw = json.dumps(body, separators=(",", ":")).encode("ascii")
+    if len(raw) > 1280:   # (the helper's limit: lib/settings_helper.sh ACT_MAX_BYTES)
+        raise ValueError("too large")
+    _write_atomic(request_dir, "act", f"act-{nonce}.json", raw)
+    return nonce
+
+
+_MSRV_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,23}")
+_MSRV_REQ_URL = re.compile(r"https?://[]A-Za-z0-9._:[/~-]{1,200}")
+_MSRV_KEY = re.compile(r"[A-Za-z0-9._~+/=-]{1,200}")
+_MSRV_MODELS = re.compile(r"(\*|[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127})(,(\*|[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}))*")
+
+
+def write_local_server_action(request_dir: Path, password: str, op: str, *, name: str = "", url: str = "", trust: bool = False,
+                              key: str = "", models: str = "", ref: str = "", now: float | None = None) -> str:
+    """REQUEST_DIR/act-<nonce>.json: one model-server operation for the helper, with the password — probe a candidate
+    address (nothing saved), save it with the models to register, change a saved server's models or key (key "" removes
+    it), or remove it. The API key travels base64 in this one owner-only file, like the password; it is never echoed
+    anywhere. Every field is checked here and again by the helper. -> nonce"""
+    if op not in LOCAL_SERVER_OPS or (name and not _MSRV_NAME.fullmatch(name)) or (url and not _MSRV_REQ_URL.fullmatch(url)) \
+            or (key and not _MSRV_KEY.fullmatch(key)) or (models and not _MSRV_MODELS.fullmatch(models)) or len(models) > 1600 \
+            or not re.fullmatch(r"[0-9a-f]{8,32}", ref):
+        raise ValueError("bad request")
+    if op in ("save", "models", "key", "remove") and not name or op in ("probe", "save") and not url:
+        raise ValueError("bad request")
+    if len(password.encode("utf-8", "surrogatepass")) > MAX_AUTH:
+        raise ValueError("password too long")
+    nonce = secrets.token_hex(16)
+    body = {"action": "local-server", "requested_at": int(time.time() if now is None else now), "nonce": nonce, "auth": _b64(password),
+            "op": op, "name": name, "url": url, "trust": bool(trust), "key": _b64(key) if key else "", "models": models, "ref": ref}
+    raw = json.dumps(body, separators=(",", ":")).encode("ascii")
+    if len(raw) > 3072:   # (the helper's limit: lib/settings_helper.sh ACT_MAX_BYTES)
+        raise ValueError("too large")
+    _write_atomic(request_dir, "act", f"act-{nonce}.json", raw)
+    return nonce
+
+
+def write_local_probe_action(request_dir: Path, *, url: str, trust: bool = False, key: str = "", ref: str = "", now: float | None = None) -> str:
+    """REQUEST_DIR/act-<nonce>.json: the form's "Check server" — ask a candidate address for its model list, nothing
+    saved. Read-only for the stack, so it carries NO password (the portal writes it only behind its session, CSRF and
+    origin checks; the helper has the same probe and SSRF guards as ever, lib/msrv_target.py). The API key, if one was
+    typed, travels base64 in this one owner-only file and is never echoed. -> nonce"""
+    if not url or not _MSRV_REQ_URL.fullmatch(url) or (key and not _MSRV_KEY.fullmatch(key)) or not re.fullmatch(r"[0-9a-f]{8,32}", ref):
+        raise ValueError("bad request")
+    nonce = secrets.token_hex(16)
+    body = {"action": "local-probe", "requested_at": int(time.time() if now is None else now), "nonce": nonce,
+            "url": url, "trust": bool(trust), "key": _b64(key) if key else "", "ref": ref}
+    raw = json.dumps(body, separators=(",", ":")).encode("ascii")
+    if len(raw) > 3072:
         raise ValueError("too large")
     _write_atomic(request_dir, "act", f"act-{nonce}.json", raw)
     return nonce

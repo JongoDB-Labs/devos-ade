@@ -181,6 +181,12 @@ class Stub(http.server.BaseHTTPRequestHandler):
         if path == "/api/admin/status" and STUB["job"]:
             return self.send(200, json.dumps({"running": True, "allowed": True, "job": STUB["job"], "in_progress": False,
                                               "finished": STUB["finished"]}), "application/json")
+        if path == "/api/models/browse":
+            return self.send(200, json.dumps(BROWSE), "application/json")
+        if path == "/api/local-models":
+            body = json.dumps(lm_state())
+            LM["gets"].append(body)          # (every answer kept: no key may be in any of them)
+            return self.send(200, body, "application/json")
         if path.startswith("/api/"):
             return self.send(503, json.dumps({"error": "a stub: only /api/settings answers"}), "application/json")
         return self.send(404, "not here", "text/plain")
@@ -210,7 +216,84 @@ class Stub(http.server.BaseHTTPRequestHandler):
                 STUB["finished"] = [{**STUB["job"], "finished_at": int(time.time())}]
                 STUB["job"] = {"id": "nightly-1", "action": "backup-nightly", "phase": "running", "message": "Nightly backup", "started_at": int(time.time())}
             return self.send(202, json.dumps({"id": "e2e-job", "keys": list((body.get("set") or {}).keys())}), "application/json")
+        if path == "/api/local-models/probe":    # (Check server of this computer: read-only, no password asked or sent)
+            LM["probes"].append(body)
+            if not re.match(r"(https?://)?(localhost|127\.\d+\.\d+\.\d+|\[::1\])(:\d+)?(/|$)", body.get("url", "")):
+                return self.send(403, json.dumps({"error": "Checking another computer asks for your portal password."}), "application/json")
+            return self.send(202, json.dumps(lm_helper({"op": "probe", "url": body.get("url", ""), "key": body.get("key", ""), "trust": body.get("trust")})), "application/json")
+        if path == "/api/local-models/change":
+            LM["changes"].append(body)
+            if not body.get("password"):
+                return self.send(403, json.dumps({"error": "a password"}), "application/json")
+            if body.get("action") == "local-remove":
+                LM["installed"] = [i for i in LM["installed"] if i["repo"] != body.get("repo")]
+            return self.send(202, json.dumps({"id": "e2e-lc", "action": body.get("action")}), "application/json")
+        if path == "/api/local-models/server":
+            LM["posts"].append(body)
+            if not body.get("password"):
+                return self.send(403, json.dumps({"error": "a password"}), "application/json")
+            return self.send(202, json.dumps(lm_helper(body)), "application/json")
         return self.send(404, json.dumps({"error": "a stub"}), "application/json")
+
+
+# The model-server form's other side: what the portal answers (GET /api/local-models) and what the update helper makes of a
+# request (lib/local_models.sh msrv_apply), simplified: a fake network where 10.0.0.5 serves two models, 203.0.113.9 is
+# plain http to a public address, "down" in the address is refused, 169.254 is blocked. The key is never in any answer.
+LM = {"servers": [], "result": None, "posts": [], "gets": [], "probes": [], "changes": [], "installed": []}
+# GET /api/models/browse (the shape portal/model_browser.py produces; two built-in Bedrock models and nothing more)
+BROWSE = {"providers": {"bedrock": {"on": True, "key": "BEDROCK_MODELS", "value": "", "at": int(time.time()) - 300, "stale": False, "error": None, "status": "ok", "region": "us-east-1", "rows": [
+    {"provider": "bedrock", "id": "claude-haiku-5-5", "source_id": "us.anthropic.claude-haiku-5-5", "name": "Claude Haiku 5.5", "vendor": "Anthropic", "free": False, "in": 0.8, "out": 4.0,
+     "context": 200000, "tools": True, "images": True, "compat": "works", "compat_note": "", "enabled": True, "chosen": True, "can": "none", "why": "built in: in every picker", "builtin": True, "lifecycle": "", "note": ""},
+    {"provider": "bedrock", "id": "amazon.nova-pro-v1:0", "source_id": "amazon.nova-pro-v1:0", "name": "Nova Pro", "vendor": "Amazon", "free": False, "in": 0.8, "out": 3.2, "context": 300000,
+     "tools": True, "images": True, "compat": "untested", "compat_note": "", "enabled": False, "chosen": False, "can": "add", "why": "", "builtin": False, "lifecycle": "", "note": ""}]}},
+    "base": "0" * 64, "can_change": True, "why_not": "", "try": False}
+LM_MODELS = [{"id": "qwen/Qwen3-8B", "context": 32768}, {"id": "llama3:8b", "context": None}]
+
+
+def lm_state():
+    return {"known": True, "at": int(time.time()), "stale": False, "wait": False, "can_change": True, "why_not": "", "hf_token_set": False,
+            "runtime": {"kind": "none", "how": "No model runner is running on this computer.", "command": "./stack local-models enable", "dmr": "", "ollama": ""},
+            "gpu": "none", "memory": 16 * 1024 ** 3, "disk": sum(i["bytes"] for i in LM["installed"]), "installed": LM["installed"], "servers": LM["servers"], "result": LM["result"],
+            "job": {"state": "idle", "repo": "", "quant": "", "done_bytes": 0, "total_bytes": 0, "message": "", "at": None}}
+
+
+def lm_helper(b):
+    ref, op, name, url = secrets_ref(), b["op"], b.get("name", ""), b.get("url", "")
+    r = {"ref": ref, "op": op, "name": name, "ok": True, "message": "", "status": "", "models": [], "reason": "", "warning": "",
+         "key": bool(b.get("key")), "trust": bool(b.get("trust")), "url": url, "at": int(time.time())}
+    if op == "probe":
+        full = url if "://" in url else "http://" + url
+        r["url"] = full
+        if "169.254" in full:
+            r.update(status="blocked", reason="that address is a cloud-metadata or link-local address, which is never used")
+        elif "down" in full:
+            r.update(status="down", reason="connection refused: nothing is listening at that address and port, or a firewall is in the way")
+        else:
+            r.update(status="ok", models=LM_MODELS)
+            if "203.0.113" in full:
+                r["warning"] = "This is plain http to a public address: prompts and answers travel unencrypted. Use https if the server has it."
+    elif op == "save":
+        ids = b.get("models") or []
+        LM["servers"].append({"name": name, "url": url, "reached_as": url + "/v1", "trust": bool(b.get("trust")), "key": bool(b.get("key")), "up": True,
+                              "reason": "", "warning": "", "models": LM_MODELS, "all": ids == ["*"], "enabled": [i for i in ids if i != "*"]})
+    else:
+        sv = next((x for x in LM["servers"] if x["name"] == name), None)
+        if sv is None:
+            r.update(ok=False, message=f"no server named {name}")
+        elif op == "models":
+            ids = b.get("models") or []
+            sv["all"], sv["enabled"] = ids == ["*"], [i for i in ids if i != "*"]
+        elif op == "key":
+            sv["key"] = bool(b.get("key"))
+        elif op == "remove":
+            LM["servers"].remove(sv)
+    LM["result"] = r
+    return {"id": "e2e-lm", "op": op, "ref": ref}
+
+
+def secrets_ref():
+    import secrets
+    return secrets.token_hex(8)
 
 
 STUB = {"checks": [], "applied": [], "job": None, "hide": False, "finished": [],
@@ -615,6 +698,227 @@ def check_code_models(page, failures, label):
         row.locator(".set-form button", has_text="Cancel").click()
 
 
+def check_servers(page, failures, label):
+    """Settings > Models & providers > Local models: This computer first; add a server (address, name, key, trust only for
+    https) -> check it from the helper's side -> the models it serves each with a box -> add; the row's per-model
+    switches, Edit key, Remove; the key in no answer and not on the page; the card scrolls inside, the page does not grow."""
+    KEY = "secretkey" + "0123456789"
+    PWD = "correct horse"
+    LM.update(servers=[], result=None, posts=[], gets=[], probes=[], changes=[], installed=[])
+
+    def ask(ok_text):
+        page.wait_for_selector("#set-confirm[open]", timeout=5000)
+        page.fill("#set-confirm-password", PWD)
+        page.click("#set-confirm-ok")
+
+    def check_server(here=False):   # Check server: this computer with no password dialog (nothing but the address, trust and key
+        page.click("#ms-check")     # goes); another computer asks for the password first
+        if not here:
+            ask("Check")
+            return
+        page.wait_for_timeout(150)
+        if page.locator("#set-confirm[open]").count():
+            failures.append(f"{label}: Check server of this computer opened the password dialog")
+
+    page.goto(BASE + "/#settings")
+    page.wait_for_selector("#settings .set-card:not([hidden])", timeout=20000)
+    page.click(".set-nav-item[data-section='providers']")
+    page.wait_for_selector("#lm-server-list", timeout=10000)
+    first = page.eval_on_selector("#lm-server-list > li:first-child", "e => e.dataset.serverRow")
+    if first != "this-computer":
+        failures.append(f"{label}: the first row of the servers is {first!r}, not this computer")
+    # the form: trust only for https
+    page.fill("#ms-url", "10.0.0.5:8000")
+    page.fill("#ms-key", KEY)
+    if page.locator("#ms-trust-row").is_visible():
+        failures.append(f"{label}: the trust option is shown for an http address")
+    page.fill("#ms-url", "https://nas.lan:8443")
+    if not page.locator("#ms-trust-row").is_visible():
+        failures.append(f"{label}: the trust option is not shown for an https address")
+    if page.get_attribute("#ms-key", "type") != "password":
+        failures.append(f"{label}: the key field is not a password field")
+    # a refused address says why, and Save is not offered
+    page.fill("#ms-url", "169.254.169.254")
+    check_server()
+    page.wait_for_selector("#ms-probe.bad", timeout=10000)
+    if "cloud-metadata" not in page.inner_text("#ms-probe") or page.locator("#ms-save").is_enabled():
+        failures.append(f"{label}: a blocked address is not refused inline: {page.inner_text('#ms-probe')[:200]!r}")
+    # this computer: no password
+    page.fill("#ms-url", "localhost:11434")
+    check_server(here=True)
+    page.wait_for_selector("#ms-probe.good", timeout=10000)
+    page.fill("#ms-url", "10.0.0.5:8000")
+    check_server()
+    page.wait_for_selector("#ms-probe.good", timeout=10000)
+    boxes = page.locator("#ms-models input[type=checkbox]")
+    checked = [boxes.nth(i).is_checked() for i in range(boxes.count())]
+    if checked != [True, True]:
+        failures.append(f"{label}: the found models are not all ticked by default: {checked}")
+    if "32k" not in page.inner_text("#ms-models"):
+        failures.append(f"{label}: the context length is not shown: {page.inner_text('#ms-models')!r}")
+    if page.locator("#ms-warn").count():
+        failures.append(f"{label}: a private address got the plain-http warning")
+    # a public plain-http address shows the warning before saving
+    page.fill("#ms-url", "203.0.113.9:8000")
+    check_server()
+    page.wait_for_selector("#ms-warn", timeout=10000)
+    if "plain http" not in page.inner_text("#ms-warn"):
+        failures.append(f"{label}: the plain-http warning is {page.inner_text('#ms-warn')!r}")
+    # a server that is down
+    page.fill("#ms-url", "down.example.org")
+    check_server()
+    page.wait_for_function("() => /Not reachable/.test(document.querySelector('#ms-probe')?.innerText || '')", timeout=10000)
+    # the good one: untick one model, name it, add it
+    page.fill("#ms-url", "10.0.0.5:8000"); page.fill("#ms-name", "lab")
+    check_server()
+    page.wait_for_selector("#ms-probe.good", timeout=10000)
+    page.locator("#ms-models input[data-model='llama3:8b']").uncheck()
+    if "1 model" not in page.inner_text("#ms-save"):
+        failures.append(f"{label}: the Add button does not count the ticked models: {page.inner_text('#ms-save')!r}")
+    page.click("#ms-save"); ask("Add server")
+    row = page.locator("[data-server-row=lab]")
+    row.wait_for(state="visible", timeout=10000)
+    save = next((p for p in LM["posts"] if p["op"] == "save"), None)
+    if not save or save["models"] != ["qwen/Qwen3-8B"] or save["key"] != KEY or save["name"] != "lab" or save["password"] != PWD:
+        failures.append(f"{label}: the save request is {save}")
+    if page.locator("#ms-probe").count():
+        failures.append(f"{label}: the probe result stays after the server was added")
+    on = row.locator("input[data-model='qwen/Qwen3-8B']").is_checked(), row.locator("input[data-model='llama3:8b']").is_checked()
+    if on != (True, False):
+        failures.append(f"{label}: the new row shows its models {on}, expected (True, False)")
+    # a per-model switch, applied once
+    row.locator("input[data-model='llama3:8b']").check()
+    row.locator("[data-act=server-models]").click(); ask("Apply")
+    page.wait_for_function("() => !document.querySelector('[data-act=server-models]')", timeout=10000)
+    mod = next((p for p in LM["posts"] if p["op"] == "models"), None)
+    if not mod or sorted(mod["models"]) != ["llama3:8b", "qwen/Qwen3-8B"]:
+        failures.append(f"{label}: the models request is {mod}")
+    # Edit key: never shown, sent once
+    row.locator("[data-act=server-key]").click()
+    row.locator(".lm-keyin").fill("newkey" + "7654321")
+    row.get_by_role("button", name="Save key").click(); ask("Save key")
+    page.wait_for_function("() => !document.querySelector('.lm-keyin')", timeout=10000)
+    # Remove asks once, then the row is gone
+    row.locator("[data-act=server-remove]").click(); ask("Remove")
+    page.wait_for_function("() => !document.querySelector('[data-server-row=lab]')", timeout=10000)
+    ops = [p["op"] for p in LM["posts"]]
+    if len(LM["probes"]) != 1 or any("password" in p or not p.get("url", "").startswith(("localhost", "http://localhost")) for p in LM["probes"]):
+        failures.append(f"{label}: a password-free check went to another computer or carried a password: {LM['probes']}")
+    others = [p for p in LM["posts"] if p["op"] == "probe"]
+    if len(others) != 5 or any(p.get("password") != PWD for p in others):
+        failures.append(f"{label}: another computer's check did not go with the password: {others}")
+    if ops.count("remove") != 1 or "key" not in ops:
+        failures.append(f"{label}: the form sent {ops}")
+    everything = "\n".join(LM["gets"]) + page.inner_text("#lm-servers")
+    for secret in (KEY, "newkey" + "7654321"):
+        if secret in everything:
+            failures.append(f"{label}: a key came back from the portal or is on the page")
+    # the card scrolls inside; the page does not grow sideways at a phone's width
+    page.set_viewport_size({"width": 390, "height": 800})
+    page.wait_for_timeout(150)
+    if page.evaluate("() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"):
+        failures.append(f"{label}: the servers card makes the page wider than the screen at 390 px")
+    page.set_viewport_size({"width": 1280, "height": 900})
+
+
+def check_browse(page, failures, label):
+    """Browse models with the models you run yourself (JON-816): the two entry points, a downloaded model and each saved
+    server's models listed next to the providers' with Add / Remove, Download from Hugging Face and Add a model server
+    opening the Settings form in a panel (localhost filled in; Check server asks for no password; saving asks for one),
+    the filters, an empty state that says what to do, and screenshots at desktop and phone width (OUT/shots-browse)."""
+    PWD = "correct horse"
+    shots = OUT / "shots-browse"
+    shots.mkdir(parents=True, exist_ok=True)
+    LM.update(servers=[], result=None, posts=[], gets=[], probes=[], changes=[],
+              installed=[{"runtime": "dmr", "id": "hf.co/acme/tiny-GGUF:Q4_K_M", "name": "lm/acme/tiny-GGUF:q4_k_m", "repo": "acme/tiny-GGUF", "quant": "Q4_K_M",
+                          "bytes": 800 * 1024 ** 2, "license": "apache-2.0", "tools": "yes", "present": True, "registered": True}])
+
+    def shot(name, at=None):
+        if at:
+            page.evaluate("(sel) => document.querySelector(sel).scrollIntoView({block: 'start'})", at)
+            page.wait_for_timeout(100)
+        page.screenshot(path=str(shots / f"{name}.png"), full_page=at is None)
+
+    def ask():
+        page.wait_for_selector("#set-confirm[open]", timeout=5000)
+        page.fill("#set-confirm-password", PWD)
+        page.click("#set-confirm-ok")
+
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(BASE + "/?browse=1#modelbrowser")
+    page.wait_for_selector("#modelbrowser:not([hidden]) #mb-own", timeout=20000)
+    page.wait_for_selector(".mb-row[data-provider=local]", timeout=10000)
+    for sel, text in (("#mb-own-download", "Download from Hugging Face"), ("#mb-own-server", "Add a model server (localhost by default)")):
+        if page.locator(sel).count() != 1 or text not in page.inner_text(sel):
+            failures.append(f"{label}: the entry point {sel} is missing or says {page.inner_text(sel) if page.locator(sel).count() else None!r}")
+    row = page.locator(".mb-row[data-id='lm/acme/tiny-GGUF:q4_k_m']")
+    if row.count() != 1 or "Remove" not in row.inner_text() or "free" not in row.inner_text():
+        failures.append(f"{label}: the downloaded model is not listed with Remove and its price: {row.inner_text() if row.count() else None!r}")
+    if "On this computer" not in page.inner_text("#modelbrowser .mb-provs") or "Model servers" not in page.inner_text("#modelbrowser .mb-provs"):
+        failures.append(f"{label}: the filters have no local and server chips")
+    shot("1-browse-desktop")
+    # Add a model server: localhost is the default, Check server needs no password
+    page.click("#mb-own-server")
+    page.wait_for_selector("#mb-own-panel #ms-url", timeout=5000)
+    if page.input_value("#ms-url") != "localhost:11434":
+        failures.append(f"{label}: the address does not default to localhost: {page.input_value('#ms-url')!r}")
+    if page.evaluate("document.activeElement && document.activeElement.id") != "ms-url" or not page.evaluate("document.querySelector('#mb-own-panel').contains(document.activeElement)"):
+        failures.append(f"{label}: the address field is not focused")
+    if "No model servers yet" not in page.inner_text("#mb-own-panel"):
+        failures.append(f"{label}: no empty state for the servers: {page.inner_text('#mb-own-panel')[:300]!r}")
+    shot("2-add-server-desktop")
+    page.click("#mb-own-panel #ms-check")
+    page.wait_for_selector("#mb-own-panel #ms-probe.good", timeout=10000)
+    if page.locator("#set-confirm[open]").count() or len(LM["probes"]) != 1 or "password" in LM["probes"][0]:
+        failures.append(f"{label}: Check server asked for a password: {LM['probes']}")
+    shot("3-check-server-desktop")
+    page.click("#mb-own-panel #ms-save"); ask()
+    page.wait_for_selector(".mb-row[data-id='ms/localhost/qwen/Qwen3-8B']", timeout=10000)
+    srow = page.locator(".mb-row[data-id='ms/localhost/qwen/Qwen3-8B']")
+    if "In your pickers" not in srow.inner_text() or "Model server" not in srow.inner_text():
+        failures.append(f"{label}: a server's model row says {srow.inner_text()!r}")
+    save = next((x for x in LM["posts"] if x["op"] == "save"), None)
+    if not save or not save.get("password"):
+        failures.append(f"{label}: the save did not ask for the password: {save}")
+    # Remove / Add on a server's model: the same affordance, one password
+    srow.locator("button[data-act=remove]").click(); ask()
+    page.wait_for_function("() => document.querySelector(\".mb-row[data-id='ms/localhost/qwen/Qwen3-8B'] button[data-act=add]\")", timeout=10000)
+    shot("4-browse-with-server-desktop")
+    # Download from Hugging Face: the search is there and focused
+    page.click("#mb-own-download")
+    page.wait_for_function("() => document.activeElement && document.activeElement.id === 'lm-search' && document.querySelector('#mb-own-panel').contains(document.activeElement)", timeout=5000)
+    if not page.evaluate("document.querySelector('#mb-own-panel #lm-find').open"):
+        failures.append(f"{label}: Download from Hugging Face did not open the search")
+    shot("5-download-desktop")
+    # removing the downloaded model asks for the password; then the filter's empty state says what to do
+    row.locator("button[data-act=remove]").click(); ask()
+    page.wait_for_function("() => !document.querySelector(\".mb-row[data-provider=local]\")", timeout=10000)
+    page.click("#mb-own-close")
+    page.click("[data-prov=local]")
+    if "Download from Hugging Face" not in page.inner_text("#mb-list"):
+        failures.append(f"{label}: the empty local list does not say what to do: {page.inner_text('#mb-list')!r}")
+    if not any(c.get("password") and c.get("action") == "local-remove" for c in LM["changes"]):
+        failures.append(f"{label}: removing a local model did not ask for the password: {LM['changes']}")
+    page.click("[data-prov=all]")
+    # the link from the Code picker: #modelbrowser/add opens the panel with both ways
+    page.goto(BASE + "/?browse=2#modelbrowser/add")
+    page.wait_for_selector("#mb-own-panel #lm-box #ms-url", timeout=10000)
+    if page.locator("#mb-own-panel #lm-find").count() != 1:
+        failures.append(f"{label}: the add panel has no download part")
+    # a phone: nothing wider than the screen, the entry points and the form readable
+    page.set_viewport_size({"width": 390, "height": 800})
+    page.wait_for_timeout(200)
+    shot("6-add-panel-phone", "#mb-own-panel")
+    shot("6b-add-panel-phone-form", "#mb-own-panel #ms-url")
+    if page.evaluate("() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"):
+        failures.append(f"{label}: Browse models is wider than the screen at 390 px")
+    page.click("#mb-own-close")
+    shot("7-browse-phone")
+    if page.evaluate("() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"):
+        failures.append(f"{label}: Browse models is wider than the screen at 390 px (panel closed)")
+    page.set_viewport_size({"width": 1280, "height": 900})
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", PORT), Stub)
@@ -641,6 +945,8 @@ def main():
                 if layout and state == "off" and not remote:
                     check_code_models(page, failures, label)
                     check_services(page, failures, label)
+                    check_servers(page, failures, label)
+                    check_browse(page, failures, label)
                 if layout and state == "on" and not remote:   # (every key set: Replace key, and Remove the key)
                     check_keys(page, failures, label)
                 summary[label] = {"settings": len(seen), "changeable": sum(1 for o in seen.values() if changes(o))}

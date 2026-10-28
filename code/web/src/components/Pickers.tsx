@@ -320,6 +320,10 @@ function BedrockModelPicker({ compact }: { compact?: boolean }) {
           <button type="button" class="linkish mp-more" data-testid="model-more" onClick={() => { close(); openModelBrowser(); }}>
             More models… <span class="mp-more-note">search Bedrock, OpenRouter and Experiential Labs, add or remove</span>
           </button>
+          {/* models of your own: download one, or point at a computer running models (the portal's Browse models, its panel for that; JON-816) */}
+          <button type="button" class="linkish mp-more" data-testid="model-add-local" onClick={() => { close(); openModelBrowser('add'); }}>
+            Add a local model or a model server… <span class="mp-more-note">download one, or use a computer on your network running models</span>
+          </button>
           {/* who answers, after the models you can use (your subscriptions to sign in to: folded under one row) */}
           <div role="menu" aria-label="Who answers">
             <WhoAnswers current="bedrock" close={close} />

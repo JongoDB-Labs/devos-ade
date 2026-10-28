@@ -1836,8 +1836,9 @@ export function normModels(raw: unknown): BnModels {
       if (!MODEL_ID.test(id) || seen.has(id)) return null;
       seen.add(id);
       const alias = Object.entries(aliases).find(([, v]) => v === id)?.[0] ?? (typeof x.alias === 'string' ? label(x.alias, 40) : null);
-      const free = x.free === true;
-      const provider = x.provider === 'OpenRouter' || x.provider === 'Experiential Labs' ? x.provider : 'Bedrock';
+      const provider = x.provider === 'OpenRouter' || x.provider === 'Experiential Labs' || x.provider === 'Local' ? x.provider : 'Bedrock';
+      // a local model runs on this computer: $0, never spend (shown as free)
+      const free = x.free === true || provider === 'Local';
       const ctx = nonneg(x.context);
       return {
         id,

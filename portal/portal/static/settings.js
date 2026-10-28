@@ -29,7 +29,7 @@
     "remote-preview": ["the portal", "the web server"] };
   // the settings the model gateway takes without a restart (lib/litellm_live.sh: only its model list changes): a badge
   // that says so, instead of what their apply class restarts for a key
-  const LIVE = new Set(["EXPLABS_MODELS", "OPENROUTER_MODELS", "OPENROUTER_MAX_MODELS", "OPENROUTER_INCLUDE_ALIASES", "CODE_MODELS", "CODE_DEFAULT_MODEL", "BEDROCK_MODELS"]);
+  const LIVE = new Set(["EXPLABS_MODELS", "OPENROUTER_MODELS", "OPENROUTER_MAX_MODELS", "OPENROUTER_INCLUDE_ALIASES", "CODE_MODELS", "CODE_DEFAULT_MODEL", "BEDROCK_MODELS", "LOCAL_MODELS", "MODEL_SERVERS", "MODEL_SERVER_MODELS"]);
   // what removing a key does, in each key's own words (the keys share one form; lib/settings.sh _cfg_post, _stt_apply)
   const REMOVE_KEY = {
     or_key: "OpenRouter's models disappear from Chat and the API; the model gateway and the portal restart (about 40 s).",
@@ -577,7 +577,7 @@
     const own = { "+devices": sessionsRow, "+models": modelsRow, "+backups": backupRow, "+test": actionRow, "+check-aws": actionRow,
       "+report": actionRow, "+restart": restartRow, "+git-hosts": gitHostsRow, "+project-folders": projectFoldersRow,
       "+sessions-consent": sessionsConsentRow, "+bring-setup": bringSetupRow,
-      "+subscriptions": subscriptionsRow, "+services": servicesRow };
+      "+subscriptions": subscriptionsRow, "+services": servicesRow, "+local-models": localModelsRow };
     if (r.key.startsWith("+")) return own[r.key] ? own[r.key](r) : null;
     const k = keys[r.key];
     if (!k) return null;
@@ -1945,6 +1945,12 @@
   // the tools the Code page's Who answers offers (code/web/src/types.ts HARNESS_IDS; Gemini CLI is not one of them)
   const SUBS_CODE_AGENTS = ["claude", "codex", "copilot", "cursor", "grok"];
   const andList = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs[0] || "");
+  // Local models (localmodels.js): models downloaded from Hugging Face and run on this computer; it fills the row's frame
+  function localModelsRow(r) {
+    const rw = ownFrame(r, "Local models");
+    if (window.bnLocal) window.bnLocal.mount(rw, { askPassword, canChange });
+    return rw;
+  }
   function subscriptionsRow(r) {
     const rw = ownFrame(r, "Your AI subscriptions");
     const sb = data.subscriptions || { tools: [], sandbox: null, checked_at: null };
@@ -2298,6 +2304,7 @@
     $("#set-confirm-password").focus();
   }
 
+  window.bnAskPassword = askPassword;   // (localmodels.js, on Browse models: a save, a removal or a download asks here too)
   function confirmApply(values, title, note, keyNames, form, confirm = []) {
     askPassword({ kind: "apply", values, form, confirm, keys: keyNames, label: title.replace(/^Save |\?$/g, "") }, title,
       `${note || ""} Applied on this computer by the update helper, which checks it again first.`, "Save", keyNames);
@@ -2324,6 +2331,8 @@
       else if (what.kind === "action") [r, d] = await post("/api/settings/action", { password: pw, action: what.action });
       else if (what.kind === "sessions") [r, d] = await post("/api/settings/sessions", { password: pw, action: what.action, project: what.project, tool: what.tool });
       else if (what.kind === "subscriptions") [r, d] = await post("/api/settings/subscriptions", { password: pw, action: what.action, ...(what.tool ? { tool: what.tool } : {}) });
+      else if (what.kind === "server") [r, d] = await post("/api/local-models/server", { password: pw, op: what.op, name: what.name || "", url: what.url || "", trust: what.trust === true, key: what.key || "", models: what.models || [] });
+      else if (what.kind === "local") [r, d] = await post("/api/local-models/change", { password: pw, action: what.action, repo: what.repo, quant: what.quant });
       else if (what.kind === "project") {
         [r, d] = await post("/api/settings/project", { password: pw, action: what.action, when: what.when,
           ...(what.project ? { project: what.project } : { mode: what.mode, hide: what.hide }) });
@@ -2342,6 +2351,8 @@
       closeDialog();
       if (what.kind === "reveal") { showRevealed(what.key, d.value, what.show); return; }
       if (what.kind === "signout") { toast("Every other device is signed out"); return; }
+      if (what.kind === "server") { toast(what.op === "probe" ? "Checking the server" : "Sent to the update helper"); if (window.bnLocal) window.bnLocal.serverSent(what, d); return; }
+      if (what.kind === "local") { toast(what.action === "local-pull" ? "Download started" : "Removing"); if (window.bnLocal) window.bnLocal.started(); return; }
       // a form's change: what was typed is kept (in this page's memory only) until the helper's answer — a failure
       // opens the form again with it, the reason under the field (reopen)
       const restore = what.kind === "apply" && what.form ? kept(what.form) : null;

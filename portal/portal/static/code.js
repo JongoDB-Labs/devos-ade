@@ -147,7 +147,7 @@
       // "More models…" (and JON-521's "pick another model"): the model browser, optionally at one provider's card
       if (e.data.type === "bn-code-models") {
         const prov = e.data.provider;
-        const hash = `#modelbrowser${typeof prov === "string" && /^(bedrock|openrouter|explabs)$/.test(prov) ? `/${prov}` : ""}`;
+        const hash = `#modelbrowser${typeof prov === "string" && /^(bedrock|openrouter|explabs|local|server|add)$/.test(prov) ? `/${prov}` : ""}`;
         if (location.hash === hash && typeof window.showTab === "function") window.showTab(hash.slice(1));
         else location.hash = hash;
         return;

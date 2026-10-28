@@ -493,6 +493,68 @@ helper, `./stack config apply`, the remote-access rules), writing `EXPLABS_MODEL
 (its budget counts it), shows the cost first, and refuses an expensive model — Opus included — without an explicit
 confirmation.
 
+## Local models
+
+Local models (`./stack local-models`, Settings › Models & providers › Local models) download GGUF files from Hugging
+Face and run them in Docker Model Runner or Ollama on the computer.
+
+- **Only Hugging Face.** Repo and quantization names are validated (`org/name`, a quant tag) in the portal, the update
+  helper and the CLI before anything runs; a URL or path is refused. The portal works out a download's size, license and
+  tool support itself from Hugging Face's public API, never from the page, and the helper request has fixed, regex-checked
+  fields (`local-pull`, `local-remove`) behind the portal password, with rate limits.
+- **The token.** The optional Hugging Face token is a secret like the others. It is only given to the runtime's
+  environment on the host for a download: never an argument, a URL, a log or the portal. Whether Docker's `docker model
+  pull` honors it for gated repos is not documented; if it does not, a gated model fails with a message saying so.
+- **MLX (Apple silicon).** `mlx_lm.server` runs as a launchd user agent bound to 127.0.0.1, offline
+  (`HF_HUB_OFFLINE=1`: it can never fetch anything itself), in a uv environment of this stack's own with `mlx-lm`
+  pinned and hash-locked (`catalog/mlx-requirements.lock`; never below the line that gates CVE-2026-5843, where an old
+  mlx-lm ran the Python file a model's `config.json` named). `--trust-remote-code` is never passed; before a download a
+  repo with `model_file` or `auto_map` in its `config.json`, or with any `.py` file, is refused, and no `.py` file is
+  ever fetched. The Hugging Face token is only in the download's environment, never the server's. Its API is
+  unauthenticated: only the model gateway talks to it. Docker Model Runner needs Docker Desktop 4.71.0 or newer (the
+  fix for its MLX backend).
+- **The runtime.** llama.cpp parses model files, and has had GGUF-parsing vulnerabilities: keep Docker Desktop or the
+  plugin, and Ollama, current, and download from authors you trust. Docker Model Runner's API is unauthenticated (host
+  port 12434 on Docker Engine); do not expose it, nor Ollama's 11434, beyond this computer and the model gateway.
+- **Model servers** (any OpenAI-compatible address). The address is validated (no `user:password@`, no query), the API
+  key is read from the terminal or Settings, handed to curl on stdin for the probe and written only as that model's
+  `api_key` in the gateway's generated config (readable by that config's readers on this computer). Plain http to a public
+  address is allowed with a warning; a self-signed certificate is trusted per server (`ssl_verify: false` for that
+  server's models only, never global). Everything a server answers is untrusted data. Servers are probed about once a
+  minute from the update helper (a GET of `/v1/models`).
+- **The Settings form.** A candidate address is probed by the update helper on the host (never by the portal's container). **Check server of this computer** (localhost, `127.x.x.x`, `::1`) is read-only and carries no password: it is a `local-probe` request (`POST /api/local-models/probe`: the portal session, `X-Requested-With`, same-origin and remote-admin rules and the one-a-second rate limit, one owner-only request file with an address, trust, key and ref and no `auth`; the helper accepts no password-less request of any other kind, and a `local-server` request without a password is refused in every op), and every address guard below applies to it unchanged. It reaches this computer only: the portal refuses any other host, and the helper judges the address the probe is pinned to (so a name cannot resolve to loopback for the check and elsewhere for the request) and refuses anything but loopback. Checking another computer is a `local-server` probe, with the password — without it, a stolen portal session could use the host to map which addresses and ports on your network answer. Saving, removing, a key change and a model toggle are `local-server` requests: session and password, as before. The API key travels base64 in that one file, is read by `./stack local-models server apply` from a mode-600 file (never an argument), and is in no answer, status file or log. A stored key is sent only to that server's own saved address; saving a changed address drops it unless a new key comes with the change.
+- **Where a model server may not be (SSRF).** The probe runs on the host, so it must not become a way to reach cloud metadata
+  (ADE also runs on cloud VMs). One place judges an address (`lib/msrv_target.py`, `python3 -I`, standard library; no python3
+  means refused): a canonical IP literal is used as it is, a numeric-looking host that is not in standard form (octal,
+  hex, short, decimal or leading-zero forms, which curl and getaddrinfo read as another address) is refused with "write
+  the address in standard form (e.g. 192.168.1.20)", and a name is resolved with getaddrinfo and EVERY address is checked.
+  Whoever asks, link-local (169.254.0.0/16, fe80::/10), multicast, broadcast, reserved (240/4), 0.0.0.0/8, the unspecified
+  address, 100.100.100.200, fd00:ec2::254 and the names metadata.google.internal, metadata.azure.internal and
+  instance-data are refused ("no model server lives there"), and so is any IPv6 address that wraps a refused IPv4 one
+  (IPv4-mapped, IPv4-compatible, 6to4, Teredo's server and client, NAT64 64:ff9b::/96 and 64:ff9b:1::/48). Loopback and
+  private addresses (10/8, 172.16/12, 192.168/16, 100.64/10 Tailscale, fd00::/8) stay allowed; only localhost, 127/8 and
+  ::1 mean this computer (reached from the gateway as host.docker.internal; there is no 0.0.0.0 mapping). The probe is
+  pinned to the checked address (`--resolve`), redirects are not followed, and the check repeats on every probe (about
+  once a minute).
+  **Fail closed:** a server is registered in the gateway only when its latest check validated its address (a DNS
+  failure, a number in a non-standard form, a refused address, or no check yet registers nothing); a validated server
+  that does not answer stays registered and its models say "UNAVAILABLE" with the reason. An http server is given to the
+  gateway by its checked IP address (the name is kept for display), so the gateway calls exactly what was checked; an
+  https server is given by name (the certificate and SNI need it), so its name is re-checked every minute and a server
+  whose name starts resolving to a refused address is taken out of the gateway at that check (a settings change that
+  finds nothing to change defers this to the next config render, which also reads only validated servers).
+  **What remains:** for an https server the gateway container resolves the name itself when it calls a model, so a hostile
+  DNS server that answers the check and the gateway differently could, for up to a minute, aim a call at a metadata
+  address. The gateway container has no egress filter (unlike the Code and Chat sandboxes, which go through an egress
+  proxy that refuses metadata): its access to 169.254.169.254 is NOT blocked by this stack. The owner chose the name;
+  on EC2 enforce IMDSv2 with a hop limit of 1 (the default for new instances), which a container cannot cross. The response
+  body of a probe is never shown: only its status class and the model ids parsed from it. Only the signed-in owner can
+  add or change a server (the settings API: a session, the `X-Requested-With` header, a same-site origin and the portal
+  password; `portal/tests/test_settings.py` test_apply_needs_session_header_origin_and_password and
+  `portal/tests/test_local_models.py`); the Code and Chat sandboxes have no portal session or password.
+- **The gateway** reaches the runtime at `host.docker.internal` (a host-gateway entry on the litellm service only). A
+  local model costs nothing and is capped at 4096 output tokens. The embedder stays Bedrock-only.
+
 ## Web search for Claude Code
 
 Claude Code's WebSearch on Bedrock's and OpenRouter's models (`lib/websearch.sh`; README › *Web search for Claude

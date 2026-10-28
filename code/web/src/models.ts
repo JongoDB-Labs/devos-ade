@@ -68,7 +68,7 @@ export const COMPAT_INFO: Record<Compat, { badge: string; tone: 'ok' | 'warn' | 
 };
 
 /** The groups of the model picker, in order. */
-export const MODEL_GROUPS = ['starred', 'anthropic', 'bedrock', 'or-free', 'or-paid', 'xl'] as const;
+export const MODEL_GROUPS = ['starred', 'anthropic', 'bedrock', 'or-free', 'or-paid', 'xl', 'local'] as const;
 export type ModelGroup = (typeof MODEL_GROUPS)[number];
 export const GROUP_TITLE: Record<ModelGroup, string> = {
   starred: 'Starred',
@@ -77,6 +77,7 @@ export const GROUP_TITLE: Record<ModelGroup, string> = {
   'or-free': 'OpenRouter: free',
   'or-paid': 'OpenRouter',
   xl: 'Experiential Labs',
+  local: 'Local models and model servers',
 };
 // (while OpenRouter or Experiential Labs has no key its group is absent here: a greyed item of its own stands in, which
 // goes where the key goes in — providerSetups, catalog/setup-links.tsv openrouter-off and explabs-off)
@@ -87,6 +88,7 @@ const isAnthropic = (m: BnModel): boolean => m.vendor.toLowerCase() === 'anthrop
 export function groupOf(m: BnModel): Exclude<ModelGroup, 'starred'> {
   if (m.provider === 'OpenRouter') return m.free ? 'or-free' : 'or-paid';
   if (m.provider === 'Experiential Labs') return 'xl';
+  if (m.provider === 'Local') return 'local';
   return isAnthropic(m) ? 'anthropic' : 'bedrock';
 }
 

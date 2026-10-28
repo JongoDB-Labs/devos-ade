@@ -67,3 +67,73 @@
   .mb-why { text-align: left; max-width: none; }
   .mb-toolbar { position: static; }
 }
+
+/* Local models (localmodels.js; Settings › Models & providers): compact — folded while empty, long lists scroll inside */
+.lm-box { margin-top: 8px; }
+.lm-runtime { margin: 0 0 8px; color: var(--muted); }
+.lm-how { margin: 0 0 8px; padding: 8px 12px; border-radius: var(--r-m); background: var(--hover, var(--bg-2)); }
+.lm-how p { margin: 4px 0; }
+.lm-cmd { font: 13px/1.4 var(--font-mono); padding: 2px 6px; border-radius: var(--r-s); background: var(--surface); border: 1px solid var(--line); }
+.lm-sec { margin: 6px 0; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); padding: 6px 12px; }
+.lm-sec > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.lm-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 20rem; overflow: auto; }
+.lm-item { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-s); flex-wrap: wrap; }
+.lm-item-main { min-width: 0; flex: 1 1 18rem; }
+.lm-name { margin: 0 0 2px; display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; overflow-wrap: anywhere; }
+.lm-search { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.lm-search .mb-search { flex: 1 1 16rem; }
+.lm-quants { list-style: none; margin: 6px 0 0; padding: 0; flex-basis: 100%; display: flex; flex-direction: column; gap: 4px; max-height: 14rem; overflow: auto; }
+.lm-quant { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; padding: 4px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.lm-q { font-weight: 600; min-width: 6.5em; font-variant-numeric: tabular-nums; }
+.lm-size { min-width: 4.5em; font-variant-numeric: tabular-nums; }
+.lm-fit { font-weight: 500; }
+.lm-fit-yes { color: var(--ok); }
+.lm-fit-tight { color: var(--warn); }
+.lm-fit-no { color: var(--bad); }
+.lm-fit-unknown { color: var(--muted); }
+.lm-fit-text { flex: 1 1 14rem; }
+.lm-warn { flex-basis: 100%; margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+.lm-warn.warn { color: var(--warn); }
+.lm-job { margin: 0 0 8px; padding: 8px 12px; border-radius: var(--r-m); background: var(--hover, var(--bg-2)); }
+.lm-job p { margin: 0 0 4px; }
+.lm-job progress { width: min(100%, 24rem); vertical-align: middle; }
+.lm-job.good { background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.lm-job.bad { background: color-mix(in srgb, var(--bad) 12%, transparent); color: var(--bad); }
+/* model servers: one card whose list scrolls inside it (the page does not grow) */
+.lm-servers { padding: 8px 12px; }
+.lm-h { margin: 8px 0 4px; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: none; }
+.lm-servers .lm-scroll { max-height: min(60vh, 34rem); }
+.lm-this { display: block; }
+.lm-this .lm-sec { background: transparent; }
+.lm-models { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 12rem; overflow: auto; font-size: 13px; }
+.lm-models label { display: inline-flex; align-items: center; gap: 6px; }
+.lm-acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: flex-start; }
+.lm-add { display: flex; flex-direction: column; gap: 8px; }
+.lm-add-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.lm-add-row input { flex: 1 1 12rem; min-width: 0; }
+.lm-add-row input#ms-url { flex: 2 1 18rem; }
+.lm-trust { font-size: 13px; }
+.lm-keyrow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.lm-keyrow input { flex: 1 1 14rem; min-width: 0; }
+.lm-probe { margin: 8px 0 0; padding: 8px 12px; border-radius: var(--r-m); background: var(--hover, var(--bg-2)); }
+.lm-probe p { margin: 0 0 6px; }
+.lm-probe.good { background: color-mix(in srgb, var(--ok) 10%, transparent); }
+.lm-probe.bad { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+@media (max-width: 767.98px) { .lm-item { flex-direction: column; } .lm-quant { align-items: flex-start; } }
+
+/* models you run yourself (models.js ownCard, localmodels.js): two ways in, and the flow they open, in a card of its own */
+.mb-own { margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); }
+.mb-own-title { margin: 0 0 2px; font-size: 16px; }
+.mb-own-ways { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 10px; margin-top: 10px; }
+.mb-own-way { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-m); }
+.mb-own-way p { margin: 0 0 4px; }
+.mb-own-way button { margin-top: auto; max-width: 100%; white-space: normal; text-align: left; }
+.mb-own-h { margin: 0; font-size: 14px; }
+.mb-own-panel:not(:empty) { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line); }
+.mb-own-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 4px; }
+.mb-own-host .lm-box { margin-top: 0; }
+.lm-quick { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.lm-quick .quiet { padding: 2px 8px; }
+.lm-add input[type=text], .lm-add input[type=password] { box-sizing: border-box; padding: 9px 12px; border: 1px solid var(--line); border-radius: var(--r-m);
+  background: var(--surface); color: var(--ink); font: inherit; }
+.lm-add input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }

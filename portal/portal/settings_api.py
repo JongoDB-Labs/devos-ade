@@ -10,6 +10,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
+import secrets
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -20,10 +22,13 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 from . import admin, answers, brand, code, explabs, keycheck
+from . import local_models as lm
 from . import model_browser as mb
 from . import settings as st
 from .security import NEXT_MAX_AGE, Sessions, cookie_params, hash_password, same_origin, verify_password
 
+# the password-free Check server: this computer only (localhost, 127.x.x.x, ::1), the address's host and nothing else
+_LOOPBACK_URL = re.compile(r"https?://(?:localhost|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|\[::1\]|\[::ffff:127\.\d{1,3}\.\d{1,3}\.\d{1,3}\])(?::\d{1,5})?(?:/|$)", re.I)
 log = logging.getLogger("portal.settings")
 
 
@@ -636,7 +641,212 @@ def routes(ctx: Ctx) -> list[Route]:
         log.warning("settings: Try it ran on %s (%s)%s", model, out["status"], " (remote)" if is_remote(request) else "")
         return _no_store(JSONResponse(out))
 
+    # --- Local models (portal/portal/local_models.py; Settings › Models & providers › Local models) ---
+    local_search_rate = RateLimit(6, 60)
+
+    def _local_can(request: Request) -> tuple[bool, str]:
+        state = admin.helper_state(s.status_dir)
+        cap = st.capability(s.status_dir)
+        if not allowed(request):
+            return False, "Settings changes are off for remote access (REMOTE_ADMIN_ACTIONS in .env)."
+        if not state["running"]:
+            return False, f"{admin.not_running(state)}. ./stack helper install, or ./stack local-models pull ORG/REPO QUANT in a terminal."
+        if "local-pull" not in cap["local"]:
+            return False, "This update helper does not do local models yet: ./stack helper install refreshes it."
+        return True, ""
+
+    async def local_models_get(request: Request) -> Response:
+        """The Local models section: the runtime ./stack found (or how to turn one on), this computer's memory, what is
+        downloaded and its disk, and the download's progress — read from .state/status/local-models.json, asked for again
+        (no password: a free, read-only look) while it is more than half a minute old."""
+        if (deny := ctx.api_guard(request)) is not None:
+            return deny
+        data = lm.read_status(s.status_dir)
+        job_live = data["job"]["state"] in ("pulling", "registering", "removing")
+        if (data["stale"] or request.query_params.get("refresh") == "1") and not job_live and admin.helper_state(s.status_dir)["running"]:
+            try:
+                (s.request_dir / lm.WANTED).write_text("", encoding="utf-8")
+            except OSError:
+                pass
+        ok, why = _local_can(request)
+        rows = st.by_key(st.snapshot(s.status_dir))
+        return _no_store(JSONResponse({**data, "can_change": ok, "why_not": why,
+                                       "hf_token_set": bool((rows.get("HF_TOKEN") or {}).get("set")),
+                                       "wait": data["stale"] and not data["known"]}))
+
+    async def local_models_search(request: Request) -> Response:
+        """Hugging Face's GGUF repos for ?q= (public API from here, no key); with ?repo=org/name that repo's quants, each with
+        its size, license and whether it fits this computer's memory."""
+        if (deny := ctx.api_guard(request)) is not None:
+            return deny
+        data = lm.read_status(s.status_dir)
+        repo = request.query_params.get("repo")
+        if repo:
+            row, e = await lm.repo_files(request.app.state.http, repo, fmt=("mlx" if data["runtime"]["kind"] == "mlx" else "gguf"))
+            if e or row is None:
+                return _no_store(JSONResponse({"error": e or "not found"}, status_code=502 if e and "did not answer" in e else 404))
+            return _no_store(JSONResponse({"repo": lm.annotate(row, data["memory"], data["gpu"], data["installed"])}))
+        if wait := local_search_rate.retry_after():
+            return err(429, f"Please wait {wait} s before searching again.", wait)
+        local_search_rate.hit()
+        rows, e = await lm.search(request.app.state.http, request.query_params.get("q", ""), fmt=("mlx" if data["runtime"]["kind"] == "mlx" else "gguf"))
+        return _no_store(JSONResponse({"rows": rows, "error": e}))
+
+    async def local_models_change(request: Request) -> Response:
+        """A download or a removal: the password, a repo and a quant. The facts of a download (size, tool use, context,
+        license) are worked out here from Hugging Face's answer, never taken from the page."""
+        st.sweep_requests(s.request_dir)
+        got = await front_door(request)
+        if isinstance(got, Response):
+            return got
+        data, password = got
+        act = data.get("action")
+        repo, quant = data.get("repo"), data.get("quant")
+        if act not in st.LOCAL_ACTIONS or not isinstance(repo, str) or not isinstance(quant, str) \
+                or not lm.REPO.fullmatch(repo) or not lm.QUANT.fullmatch(quant):
+            return err(400, "bad request")
+        ok, why = _local_can(request)
+        if not ok:
+            return err(403 if not allowed(request) else 503, why)
+        if admin.job_in_progress(admin.helper_state(s.status_dir)) and act == "local-pull":
+            return err(409, "Another action is still running.")
+        status = lm.read_status(s.status_dir)
+        if status["job"]["state"] in ("pulling", "registering", "removing"):
+            return err(409, "A download or a removal is still running.")
+        fields: dict = {}
+        if act == "local-pull":
+            if status["runtime"]["kind"] == "none":
+                return err(409, f"No model runner is running on this computer. {status['runtime']['how']}")
+            row, e = await lm.repo_files(request.app.state.http, repo, fmt=("mlx" if status["runtime"]["kind"] == "mlx" else "gguf"))
+            if row is None:
+                return err(502, e or "Hugging Face did not describe that repo.")
+            if row.get("blocked"):
+                return err(422, row["blocked"])
+            q = lm.find_quant(row, quant)
+            if q is None:
+                return err(404, "That repo has no such quantization.")
+            fields = lm.pull_fields(row, q)
+            quant = q["quant"]
+        elif not any(i["repo"].lower() == repo.lower() and i["quant"].lower() == quant.lower() for i in status["installed"]):
+            return err(404, "That is not a model downloaded here.")
+        if wait := action_rate.retry_after():
+            return err(429, f"Please wait {wait} s before the next action.", wait)
+        try:
+            nonce = st.write_local_action(s.request_dir, password, act, repo, quant,
+                                          size=fields.get("bytes", 0), tools=fields.get("tools", "unknown"), context=fields.get("context", 0),
+                                          params_m=fields.get("params_m", 0), license=fields.get("license", "unknown"))
+        except ValueError:
+            return err(413, f"The portal password is longer than {st.MAX_AUTH} bytes: set a shorter one with ./stack config set PORTAL_PASSWORD.")
+        except OSError as e:
+            log.warning("cannot write the %s request to %s (%s)", act, s.request_dir, e)
+            return err(500, "Could not hand the request to the helper (see ./stack logs portal).")
+        action_rate.hit()
+        log.warning("local models: %s %s:%s%s", act, repo, quant, " (remote)" if is_remote(request) else "")
+        return _no_store(JSONResponse({"id": nonce, "action": act}, status_code=202))
+
+
+    server_rate = RateLimit(1, 300)
+
+    async def local_models_server(request: Request) -> Response:
+        """The model-server form: probe a candidate address (nothing saved), save it with the models to register, change
+        a saved server's models or key, remove it. Session + password like the rest of Settings; the work is the helper's,
+        on this computer (so no server address is ever fetched from the portal's container). The API key goes to the
+        helper in the one owner-only request and is never answered or logged; the page reads the outcome from the status
+        (result, matched by the ref returned here)."""
+        got = await front_door(request)
+        if isinstance(got, Response):
+            return got
+        data, password = got
+        op, name, url = data.get("op"), data.get("name") or "", data.get("url") or ""
+        key, models = data.get("key") or "", data.get("models") or []
+        if op not in st.LOCAL_SERVER_OPS or not all(isinstance(x, str) for x in (name, url, key)) \
+                or not isinstance(models, list) or not all(isinstance(x, str) for x in models) or len(models) > 200:
+            return err(400, "bad request")
+        ok, why = _local_can(request)
+        if ok and "local-server" not in st.capability(s.status_dir)["local"]:
+            ok, why = False, "This update helper does not do model servers yet: ./stack helper install refreshes it."
+        if not ok:
+            return err(403 if not allowed(request) else 503, why)
+        if wait := server_rate.retry_after():
+            return err(429, f"Please wait {wait} s before the next change.", wait)
+        url = url.strip()
+        if url and "://" in url and not re.match(r"https?://", url):
+            return err(400, "The address starts with http:// or https:// (or is just host:port).")
+        if url and "://" not in url:
+            url = "http://" + url
+        trust = data.get("trust") is True and url.startswith("https://")   # (a certificate only exists for https)
+        ref = secrets.token_hex(8)
+        try:
+            nonce = st.write_local_server_action(s.request_dir, password, op, name=name, url=url, trust=trust, key=key.strip(),
+                                                 models=",".join(models), ref=ref)
+        except ValueError as e:
+            if "password" in str(e):
+                return err(413, f"The portal password is longer than {st.MAX_AUTH} bytes: set a shorter one with ./stack config set PORTAL_PASSWORD.")
+            return err(400, "That address, name, key or model list is not one DevOS ADE can use (names: lowercase letters, digits and -).")
+        except OSError as e:
+            log.warning("cannot write the model-server request to %s (%s)", s.request_dir, e)
+            return err(500, "Could not hand the request to the helper (see ./stack logs portal).")
+        server_rate.hit()
+        log.warning("model servers: %s %s%s", op, name or "(candidate)", " (remote)" if is_remote(request) else "")
+        return _no_store(JSONResponse({"id": nonce, "op": op, "ref": ref}, status_code=202))
+
+    async def local_models_probe(request: Request) -> Response:
+        """"Check server": ask a candidate address for its model list. Read-only for the stack and nothing is saved, so no
+        password: but the same door as every other change otherwise (session, X-Requested-With, same Origin, the remote
+        rule, a bounded JSON body) and the same rate limit. The probe itself is the helper's, on this computer, with every
+        SSRF guard it always had (metadata and link-local refused, the name canonicalized, the checked address pinned): the
+        portal fetches nothing. The key, if typed, goes to the helper in the one owner-only request and is never answered."""
+        if (deny := ctx.api_guard(request)) is not None:
+            return deny
+        if not same_origin(request.headers, s):
+            return err(403, "cross-site request refused")
+        if not allowed(request):
+            return err(403, "Settings changes are off for remote access (REMOTE_ADMIN_ACTIONS in .env).")
+        length = request.headers.get("content-length", "")
+        if not length.isdigit() or not length.isascii() or int(length) > st.MAX_BODY:
+            return err(411 if not length.isdigit() else 413, "Content-Length required" if not length.isdigit() else "request too large")
+        try:
+            data = json.loads(await request.body())
+        except ValueError:
+            return err(400, "not JSON")
+        if not isinstance(data, dict):
+            return err(400, "not a JSON object")
+        url, key = data.get("url") or "", data.get("key") or ""
+        if not isinstance(url, str) or not isinstance(key, str) or not url.strip():
+            return err(400, "bad request")
+        ok, why = _local_can(request)
+        if ok and "local-probe" not in st.capability(s.status_dir)["local"]:
+            ok, why = False, "This update helper cannot check servers without the password yet: ./stack helper install refreshes it."
+        if not ok:
+            return err(403 if not allowed(request) else 503, why)
+        if wait := server_rate.retry_after():
+            return err(429, f"Please wait {wait} s before the next check.", wait)
+        url = url.strip()
+        if "://" in url and not re.match(r"https?://", url):
+            return err(400, "The address starts with http:// or https:// (or is just host:port).")
+        if "://" not in url:
+            url = "http://" + url
+        # (no password only for this computer's own addresses; the helper judges the pinned address again and refuses the rest)
+        if not _LOOPBACK_URL.match(url):
+            return err(403, "Checking another computer asks for your portal password.")
+        trust = data.get("trust") is True and url.startswith("https://")
+        ref = secrets.token_hex(8)
+        try:
+            nonce = st.write_local_probe_action(s.request_dir, url=url, trust=trust, key=key.strip(), ref=ref)
+        except ValueError:
+            return err(400, "That address or key is not one DevOS ADE can use.")
+        except OSError as e:
+            log.warning("cannot write the model-server check to %s (%s)", s.request_dir, e)
+            return err(500, "Could not hand the request to the helper (see ./stack logs portal).")
+        server_rate.hit()
+        return _no_store(JSONResponse({"id": nonce, "op": "probe", "ref": ref}, status_code=202))
+
     return [
+        Route("/api/local-models", local_models_get, methods=["GET"]),
+        Route("/api/local-models/search", local_models_search, methods=["GET"]),
+        Route("/api/local-models/change", local_models_change, methods=["POST"]),
+        Route("/api/local-models/server", local_models_server, methods=["POST"]),
+        Route("/api/local-models/probe", local_models_probe, methods=["POST"]),
         Route("/api/models/browse", models_browse, methods=["GET"]),
         Route("/api/models/browse/plan", models_plan, methods=["POST"]),
         Route("/api/models/try", models_try, methods=["POST"]),

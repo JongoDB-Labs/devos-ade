@@ -63,6 +63,10 @@ Usage: ./stack <command> [--yes]
                status | set bedrock [small|mini] | set openai|groq [model] | remove   (see docs/voice.md)
   websearch    Claude Code's WebSearch on every model (LiteLLM runs the search): status | check
                (~$0.007 at most) | aws-setup (AgentCore Web Search's one-time AWS setup, for your admin)
+  local-models Models downloaded from Hugging Face and run on this computer (Docker Model Runner, else Ollama):
+               status | pull ORG/REPO [QUANT] | rm ORG/REPO [QUANT] | enable | uninstall [--models]
+               server list|add NAME URL [--trust]|key NAME|enable NAME ID|disable NAME ID|rm NAME   (any OpenAI-compatible server)
+               (Settings › Models & providers › Local models; Apple silicon runs models with MLX, else Docker Model Runner, else Ollama)
   terminal     Claude Code in the browser: a Terminal tab, a sandbox that sees only one folder of yours
                status | enable [--workspace DIR] | disable   (asks for the portal password again)
   code         Claude Code in the browser with a chat: a Code tab with permission prompts, models and
@@ -2266,6 +2270,7 @@ cmd_uninstall() {
   code_uninstall_cleanup       # lib/code.sh: its network, socket volume and image (before the terminal's)
   terminal_uninstall_cleanup   # lib/terminal.sh: its volume, networks and image, also while it is off
   projects_uninstall_cleanup   # lib/projects.sh: the generated files (the list stays; the folders are never touched)
+  ! declare -F local_mlx_uninstall >/dev/null || local_mlx_uninstall --models   # lib/local_models.sh: the MLX server agent, its venv and models
   sessions_uninstall_cleanup   # lib/sessions.sh: the Code page's request folder and the looks (what you allowed stays)
   local_builds_remove          # lib/images.sh: <project>/portal:local, …:previous, by exact name (never a prune)
   ! helper_installed || helper_uninstall
@@ -2297,6 +2302,8 @@ cmd_uninstall() {
 . "$STACK_DIR/lib/code_models.sh"
 # The model browser's lists (Settings › Models & providers › Browse models): ./stack models browse (lib/model_browser.sh).
 . "$STACK_DIR/lib/model_browser.sh"
+# Local models (Hugging Face GGUFs on Docker Model Runner or Ollama, served through LiteLLM): ./stack local-models.
+. "$STACK_DIR/lib/local_models.sh"
 # Optional speech-to-text for Open WebUI's voice calls (setup step, ./stack stt, costs/summary lines).
 . "$STACK_DIR/lib/stt.sh"
 # Web search for Claude Code's WebSearch on every model (LiteLLM's web search interception; ./stack websearch).

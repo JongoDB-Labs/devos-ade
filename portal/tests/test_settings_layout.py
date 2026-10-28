@@ -183,7 +183,7 @@ def test_sections_hold_what_their_task_needs():
     # (its models' rows inside it), then your subscriptions, then Search: Claude Code's WebSearch and a card for each of
     # its backends; none of them left in Bedrock (AWS), Chat & voice or Claude Code
     assert [k for k, r in rows.items() if r["section"] == "providers" and r["place"] == "main" and not r["parent"]] == \
-        ["AWS_ACCESS_KEY_ID", "OPENROUTER_API_KEY", "EXPLABS_API_KEY", "+subscriptions", "WEBSEARCH_BACKEND", "WEBSEARCH_SEARXNG_BUILTIN",
+        ["AWS_ACCESS_KEY_ID", "OPENROUTER_API_KEY", "EXPLABS_API_KEY", "+subscriptions", "+local-models", "WEBSEARCH_BACKEND", "WEBSEARCH_SEARXNG_BUILTIN",
          "WEBSEARCH_AGENTCORE_GATEWAY", "WEBSEARCH_TAVILY_API_KEY", "WEBSEARCH_BRAVE_API_KEY", "WEBSEARCH_PERPLEXITY_API_KEY", "WEBSEARCH_SEARXNG_URL"]
     assert where("AWS_SECRET_ACCESS_KEY") == ("providers", "with", "AWS_ACCESS_KEY_ID")
     assert where("OPENROUTER_MODELS") == ("providers", "main", "OPENROUTER_API_KEY") and where("EXPLABS_MODELS") == ("providers", "main", "EXPLABS_API_KEY")
@@ -202,7 +202,7 @@ def test_sections_hold_what_their_task_needs():
             assert table[k][3] == "derived", k
     editable = [k for k, t in table.items() if t[3] in ("edit", "local", "on-only", "widen-local", "regen")]
     assert all(rows[k]["place"] in ("main", "more") or k in ("AWS_SECRET_ACCESS_KEY", "STT_API_KEY", "STT_MODEL", "RUSTFS_SECRET_KEY", "GIT_GITHUB_APP_SLUG",
-                                                            "CODE_CLAUDE_PLAN")
+                                                            "CODE_CLAUDE_PLAN", "HF_TOKEN", "MODEL_SERVERS", "MODEL_SERVER_KEYS", "MODEL_SERVER_MODELS")
                for k in editable)
     # the Claude plan switch on Claude's card in Your AI subscriptions (where each tool is connected), not a row of its
     # own

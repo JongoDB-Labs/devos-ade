@@ -1886,6 +1886,35 @@ removed only from the computer running DevOS ADE (on your devices each card says
 shown masked. Their old places — the AWS key in *Bedrock (AWS)* (*AWS & models* before v0.33.0), OpenRouter's and Experiential Labs' in *Chat & voice*,
 *Your AI subscriptions* in *Claude Code* — say where they are now, with a link.
 
+### Local models
+
+**Model servers.** Besides downloading to this computer, the same section points the gateway at any OpenAI-compatible
+server by address: `./stack local-models server add lab http://10.0.0.5:8000` (this computer's own is `localhost`, which the
+gateway reaches as `host.docker.internal`), then `server key lab` for a key, `server enable lab '*'` (or one model id) and
+`server rm lab`; Settings › Models & providers › Local models has the same as a form: **This computer** first, then each server (reachable or not and why, a box for each model it serves, Edit key, Remove), and **Add a server** (address, optional name and key, a trust box for https): Check server probes it from this computer and lists its models (all ticked, with context lengths) and any plain-http-to-public warning, Add server registers the ticked ones live. Every step asks for the portal password and goes through the update helper; the key is never shown again. A stored key is only ever sent to that server's own saved address. Its models appear as `ms/lab/<id>`, Local, free, tool
+use unknown; a down server's models say why (DNS, refused, TLS, 401, no `/v1/models`). A self-signed server is trusted one
+server at a time (`--trust`), and plain http to a public address is allowed with a warning. A Tailscale MagicDNS name may not
+resolve inside the gateway container: use the server's tailnet IP.
+
+The **Local models** section of Models & providers (collapsed until you have a model) downloads a model from Hugging
+Face and runs it on this computer, free: search GGUF models, pick a quantization (each shows its size, license and
+whether it fits this computer's memory: Apple silicon's GPU share, an NVIDIA card's VRAM, or the CPU's), and
+**Download** with a progress bar. The model is registered with the model gateway live, in seconds, and is in Chat, the
+Code page's picker and the terminal marked **Local**, free, $0 Actual. **Remove** deletes it. Tool use is stated
+honestly: no tool support or under 3B parameters is chat only, under 7B is weak at Claude Code's tools, and none is
+called working until checked; answers are capped at 4096 tokens so a model that loops stops.
+
+On **Apple silicon** the models run natively with **MLX** (`mlx_lm.server` on the Mac's GPU): the first download sets up a
+pinned, hash-locked `mlx-lm` in the stack's own `uv` environment (install `uv` first: `brew install uv`) and a launchd
+user agent on 127.0.0.1; models come from Hugging Face's MLX catalog (mlx-community) into the stack's own folder, are
+checked to carry no custom code, and the first answer after switching models waits while the new one loads. `./stack
+local-models uninstall [--models]` removes it all. Everywhere else it needs a runtime on this computer: **Docker Model Runner** (Docker Desktop 4.71 or newer) first (Docker Desktop: Settings › AI, or `docker desktop
+enable model-runner --tcp 12434`; Linux: `docker-model-plugin` and `docker model install-runner`), **Ollama** second.
+With neither running the section says so and `./stack local-models enable` switches Docker's on after asking. Commands:
+`./stack local-models status`, `pull ORG/REPO QUANT`, `rm ORG/REPO QUANT`, `enable`. A gated model needs a Hugging Face
+token (Settings, optional; never in a URL or log). The runner has no login of its own: keep it and Ollama off the
+network ([docs/security.md](docs/security.md#local-models)).
+
 ## Remote access
 
 The portal from your phone or laptop, over HTTPS, without opening a port to the internet:

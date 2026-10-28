@@ -207,6 +207,14 @@ _sv_code_models() {
   valid_code_models "$1" && [ "${#1}" -le "$SETTINGS_MAX_VALUE" ] || { SV_ERR="must be all, anthropic or a comma list of model ids"; return 1; }
 }
 _sv_code_model() { valid_code_model "$1" || { SV_ERR="must be a model id (blank = the main model)"; return 1; }; }
+_sv_local_models() {
+  valid_local_models "$1" && [ "${#1}" -le "$SETTINGS_MAX_VALUE" ] ||
+    { SV_ERR="must be a comma list of dmr:<id> or ollama:<id> (letters, digits, . _ : / and -; at most $LOCAL_MODELS_MAX)"; return 1; }
+}
+_sv_model_servers() { valid_msrv_list "$1" && [ "${#1}" -le "$SETTINGS_MAX_VALUE" ] || { SV_ERR="must be a comma list of name=http(s)://host[:port] (at most 8; no user:password@)"; return 1; }; }
+_sv_model_server_keys() { valid_msrv_keys "$1" || { SV_ERR="must be name=key pairs"; return 1; }; }
+_sv_model_server_models() { valid_msrv_models "$1" || { SV_ERR="must be name:model-id (or name:* for all) pairs"; return 1; }; }
+_sv_hf_token() { valid_hf_token "$1" || { SV_ERR="must be a Hugging Face token (hf_ and letters and digits)"; return 1; }; }
 _sv_bedrock_models() {
   valid_bedrock_models "$1" && [ "${#1}" -le "$SETTINGS_MAX_VALUE" ] ||
     { SV_ERR="must be a comma list of Bedrock model or inference-profile ids (letters, digits, . _ : / and -; never an ARN)"; return 1; }

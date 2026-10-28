@@ -116,6 +116,10 @@ services:
     # stt: the speech-to-text container's only network (no internet access); websearch: the built-in SearXNG's (LiteLLM
     # alone reaches it)
     networks: [default, stt, websearch]
+    # Local models (lib/local_models.sh): a model runner on this computer — Docker Model Runner's TCP port or a host
+    # Ollama — is host.docker.internal. Docker Desktop names it already (this maps it to the same host); Docker Engine
+    # on Linux needs the line.
+    extra_hosts: ["host.docker.internal:host-gateway"]
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:

@@ -4705,6 +4705,59 @@ def models_picker(browser):
     p.close()
 
 
+@check("models-picker-local: enabled local and model-server models listed like the others; More models… and Add a local model or a model server… go to the portal")
+def models_picker_local(browser):
+    post(NORMAL + "/__mock/reset")
+    p = Page(browser, NORMAL, "models-picker-local", **DESKTOP)
+    many = _many_models()
+    many["models"] += [
+        {"id": "lm/acme/tiny-gguf:q4_k_m", "name": "tiny (Q4_K_M)", "provider": "Local", "vendor": "acme", "free": True, "compat": "untested", "listed": True,
+         "input_per_mtok": 0, "output_per_mtok": 0, "context": 8192, "note": "Not checked with Claude Code. Runs on this computer, $0."},
+        {"id": "ms/localhost/qwen/qwen3-8b", "name": "qwen3-8b", "provider": "Local", "vendor": "localhost", "free": True, "compat": "untested", "listed": True,
+         "input_per_mtok": 0, "output_per_mtok": 0, "context": 32768, "note": "Not checked with Claude Code. Runs on a model server, $0."},
+    ]
+    p.page.route("**/.bn/models", lambda r: r.fulfill(status=200, content_type="application/json", body=json.dumps(many)))
+    p.page.add_init_script("window.__opened = []; window.open = (u, ...a) => { window.__opened.push(String(u)); return null; };")
+    page = p.open()
+    page.get_by_test_id("model-picker").click()
+    panel = page.locator(".model-panel")
+    expect(panel).to_be_visible()
+    local = page.get_by_test_id("model-group-local")
+    expect(local.locator(".mp-group-head")).to_have_text("Local models and model servers")
+    expect(local).to_contain_text("tiny (Q4_K_M)")
+    expect(local).to_contain_text("qwen3-8b")
+    expect(local.get_by_test_id("free-tag").first).to_have_text("free")
+    more, add = page.get_by_test_id("model-more"), page.get_by_test_id("model-add-local")
+    expect(more).to_be_visible()
+    expect(add).to_be_visible()
+    expect(add).to_contain_text("Add a local model or a model server…")
+    add.scroll_into_view_if_needed()
+    p.shot("models-picker-local.png")
+    add.click()
+    page.wait_for_timeout(200)
+    opened = page.evaluate("window.__opened")
+    toast = page.get_by_test_id("toast")
+    # (in the mock there is no portal to go to: a tab at #modelbrowser/add, or the hint that says where Browse models is)
+    assert any(u.endswith("#modelbrowser/add") for u in opened) or toast.count() > 0, (opened, toast.count())
+    p.assert_clean()
+    p.close()
+    # a phone: the same list and both links, readable and inside the screen
+    ph = Page(browser, NORMAL, "models-picker-local-phone", viewport={"width": 390, "height": 844}, device_scale_factor=2, is_mobile=True, has_touch=True, color_scheme="light")
+    ph.page.route("**/.bn/models", lambda r: r.fulfill(status=200, content_type="application/json", body=json.dumps(many)))
+    page = ph.open()
+    send(page, "hello")
+    wait_turns(page, 1)
+    page.get_by_test_id("phone-menu-btn").click()
+    page.get_by_test_id("model-picker").first.click()
+    page.get_by_test_id("model-add-local").scroll_into_view_if_needed()
+    expect(page.get_by_test_id("model-add-local")).to_be_visible()
+    box = page.get_by_test_id("model-add-local").bounding_box()
+    assert box["x"] >= 0 and box["x"] + box["width"] <= 390 and box["height"] >= 24, box
+    ph.shot("models-picker-local-phone.png")
+    ph.assert_clean()
+    ph.close()
+
+
 # ---------------------------------------------------------------- projects (components/Projects.tsx, src/projects.ts)
 
 def project_ids(base=NORMAL):

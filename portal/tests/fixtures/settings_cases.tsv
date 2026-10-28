@@ -266,3 +266,28 @@ ws_key	0	bad	short-key-123
 ws_key	0	bad	has space in the key value
 ws_key	0	bad	quote"inside-the-key-value
 ws_key	0	bad	newline\ninside-the-key-value
+local_models	0	ok
+local_models	0	ok	dmr:hf.co/bartowski/smollm2-135m-instruct-gguf:q4_k_m
+local_models	0	ok	dmr:hf.co/a/b:q4,ollama:hf.co/C/d:Q8_0
+local_models	0	bad	hf.co/a/b:q4
+local_models	0	bad	dmr:
+local_models	0	bad	dmr:a b
+local_models	0	bad	dmr:a,,ollama:b
+local_models	0	bad	lmstudio:a
+hf_token	0	ok
+hf_token	0	ok	hf_xxxxxxxxxxxxxxxxxxxxxxxx
+hf_token	0	bad	abcdefghijklmnopqrstuvwxyz0123
+hf_token	0	bad	hf_short
+hf_token	0	bad	hf_abcdefghijklmnopqrstuvwxyz 0123
+model_servers	0	ok
+model_servers	0	ok	lab=http://10.0.0.5:8000
+model_servers	0	ok	lab=http://10.0.0.5:8000,mac=https://[::1]:8080/v1;trust
+model_servers	0	bad	lab=http://user:pw@10.0.0.5:8000
+model_servers	0	bad	lab=ftp://10.0.0.5
+model_servers	0	bad	Lab=http://10.0.0.5
+model_servers	0	bad	lab=http://10.0.0.5/?k=1
+model_server_keys	0	ok
+model_server_keys	0	ok	lab=abc123.-_
+model_server_keys	0	bad	lab
+model_server_models	0	ok	lab:*,lab:qwen/Qwen3-8B:latest
+model_server_models	0	bad	lab:

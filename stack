@@ -55,7 +55,7 @@ case "$cmd" in setup | rotate-aws | help | -h | --help) ;; *) [ ! -f "$ENV_FILE"
 # still look; uninstall checks even without .env, lists what it deletes, and releases the project afterwards).
 # Commands that may write .env refresh the settings snapshot the portal shows when they end (lib/settings.sh).
 case "$cmd" in
-  setup | up | restore | update | rollback | rotate-aws | openrouter | stt | remote | helper | config | models | terminal | code | websearch) on_exit settings_snapshot_refresh ;;
+  setup | up | restore | update | rollback | rotate-aws | openrouter | stt | remote | helper | config | models | terminal | code | websearch | local-models) on_exit settings_snapshot_refresh ;;
 esac
 case "$cmd" in
   setup) cmd_setup "$@" ;;
@@ -83,6 +83,7 @@ case "$cmd" in
   terminal) [ ! -f "$ENV_FILE" ] || guard_project; cmd_terminal "$@" ;;
   code) [ ! -f "$ENV_FILE" ] || guard_project; cmd_code "$@" ;;
   websearch) [ ! -f "$ENV_FILE" ] || guard_project; cmd_websearch "$@" ;;
+  local-models) cmd_local_models "$@" ;;   # (pull and rm guard the project themselves: a download takes no lock until it registers)
   project) [ ! -f "$ENV_FILE" ] || guard_project; cmd_project "$@" ;;
   git-host) [ ! -f "$ENV_FILE" ] || guard_project --no-claim; cmd_git_host "$@" ;;   # (no Compose change: an exec)
   sessions) [ ! -f "$ENV_FILE" ] || guard_project --no-claim; cmd_sessions "$@" ;;   # (no Compose change: a reader container and an exec)

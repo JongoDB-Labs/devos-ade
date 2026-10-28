@@ -69,18 +69,21 @@ valid_code_model() { [ -z "$1" ] || valid_code_model_id "$1"; }
 # (the default when CODE_DEFAULT_MODEL is blank or not enabled: never Opus by default, a first turn there costs ~2x)
 # and CLAUDE_BEDROCK_OPUS_MODEL (the default when no Sonnet is enabled either).
 code_models_rows() {
-  local en="${1:-}" all=0 orf xlf bxf rc=0 disp compat
+  local en="${1:-}" all=0 orf xlf bxf lmf rc=0 disp compat
   [ -n "$en" ] && [ -r "$en" ] || { en=/dev/null; all=1; }
   disp="$(_code_display)"; compat="$(_code_compat)"
   [ -r "$disp" ] || disp=/dev/null; [ -r "$compat" ] || compat=/dev/null
   orf="$(mktemp)" || return 1
   xlf="$(mktemp)" || { rm -f "$orf"; return 1; }
   bxf="$(mktemp)" || { rm -f "$orf" "$xlf"; return 1; }
+  lmf="$(mktemp)" || { rm -f "$orf" "$xlf" "$bxf"; return 1; }
   if declare -F openrouter_enabled >/dev/null && openrouter_enabled; then or_selected > "$orf" 2>/dev/null || :; fi
   if declare -F explabs_enabled >/dev/null && explabs_enabled; then explabs_code_rows > "$xlf" 2>/dev/null || :; fi
   # extra Bedrock models added beyond the catalog (BEDROCK_MODELS, lib/models.sh): one id per line
   if declare -F bedrock_extra_wanted >/dev/null; then bedrock_extra_wanted > "$bxf" 2>/dev/null || :; fi
-  F_EN="$en" F_DISP="$disp" F_PRICES="${PRICES:-/dev/null}" F_COMPAT="$compat" F_CAT="$CATALOG" F_OR="$orf" F_XL="$xlf" F_BX="$bxf" \
+  # local models downloaded from Hugging Face (LOCAL_MODELS, lib/local_models.sh): free ($0, on this computer)
+  if declare -F local_models_code_rows >/dev/null; then local_models_code_rows > "$lmf" 2>/dev/null || :; fi
+  F_EN="$en" F_DISP="$disp" F_PRICES="${PRICES:-/dev/null}" F_COMPAT="$compat" F_CAT="$CATALOG" F_OR="$orf" F_XL="$xlf" F_BX="$bxf" F_LM="$lmf" \
   ALL="$all" SCOPE="$(get_env CODE_MODELS)" DEF="$(get_env CODE_DEFAULT_MODEL)" SONNET="$(get_env CLAUDE_BEDROCK_SONNET_MODEL)" \
   MAIN="$(get_env CLAUDE_BEDROCK_OPUS_MODEL)" \
   MAX="$CODE_MODELS_MAX" LC_ALL=C awk -F'\t' -v OFS='\t' -v UNSAFE="$CODE_UNSAFE" '
@@ -109,6 +112,7 @@ code_models_rows() {
       # (a model id by the one rule above, valid_code_model_id: no "~" alias of OpenRouter, at most 128 characters)
       if (n >= ENVIRON["MAX"] + 0 || (id in seen) || id !~ /^[A-Za-z0-9][A-Za-z0-9._:\/-]*$/ || length(id) > 128) return
       seen[id] = 1; compat(id, tools, prov)
+      if (prov == "Local") { cs = LM_CS; cn = LM_CN }   # (the status and note of a local model: local_model_compat)
       if ((cm == "" || cm == "-") && maxo != "" && maxo != "-") cm = maxo   # the provider limit OpenRouter names, unless a row of ours says
       if (cm !~ /^[1-9][0-9]*$/) cm = "-"
       n++; I[n] = id; N[n] = d(clean(name)); P[n] = prov; V[n] = d(clean(vend)); IN[n] = pin; OU[n] = pout; CR[n] = pcr; CW[n] = pcw
@@ -147,6 +151,13 @@ code_models_rows() {
       add($1, $2, "Experiential Labs", $3, d($4), d($5), d($6), d($7), ($8 == 1 ? 1 : 0), $9, $10, $11)
       next
     }
+    FILENAME == ENVIRON["F_LM"] {
+      # id name vendor compat note max_out context (local_models_code_rows): $0, on this computer — never spend
+      if ($1 == "" || $1 ~ /^#/) next
+      LM_CS = ($4 ~ /^(works|chat-only|fails|untested)$/ ? $4 : "untested"); LM_CN = $5
+      add($1, $2, "Local", $3, 0, 0, "-", "-", 1, "", $6, $7)
+      next
+    }
     FILENAME == ENVIRON["F_BX"] {
       # one extra Bedrock id per line (BEDROCK_MODELS): priced by LiteLLM, not the catalog — unknown here; compat from
       # catalog/code-models.tsv (claude-* etc.) or untested
@@ -168,8 +179,8 @@ code_models_rows() {
         D = (I[i] == def) ? 1 : 0
         print I[i], N[i], P[i], V[i], IN[i], OU[i], CR[i], CW[i], FR[i], CS[i], (D ? 1 : L[i]), D, MO[i], CX[i], NT[i]
       }
-    }' "$en" "$disp" "${PRICES:-/dev/null}" "$compat" "$CATALOG" "$orf" "$xlf" "$bxf" || rc=$?
-  rm -f "$orf" "$xlf" "$bxf"
+    }' "$en" "$disp" "${PRICES:-/dev/null}" "$compat" "$CATALOG" "$orf" "$xlf" "$bxf" "$lmf" || rc=$?
+  rm -f "$orf" "$xlf" "$bxf" "$lmf"
   return "$rc"
 }
 
@@ -315,7 +326,7 @@ _code_json_str() { printf '"%s"' "$(printf '%s' "$1" | tr -d '\000-\037"\\')"; }
 
 # _code_prov_suffix PROVIDER -> " · OpenRouter" / " · Experiential Labs" after a model's name in /model; nothing for Bedrock
 # (a function: bash 3.2 cannot parse a case statement inside $(…))
-_code_prov_suffix() { case "$1" in OpenRouter | "Experiential Labs") printf ' · %s' "$1" ;; esac; }
+_code_prov_suffix() { case "$1" in OpenRouter | "Experiential Labs" | Local) printf ' · %s' "$1" ;; esac; }
 
 # code_picker_json [FILE] [AUTO_OFF(1|0)] -> the --settings JSON for devos-claude: Claude Code's /model menu lists the
 # listed models by their full ids with our names, prices and how they work (modelPicker, replacing its own lineup of

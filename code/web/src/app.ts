@@ -2311,7 +2311,8 @@ export function openPortalSettings(reason: SetupReason, win: Window = window): v
 
 /** The portal's model browser (Settings › Models & providers › Browse models, models.js) — the picker's "More models…"
  *  and JON-521's "pick another model": through the portal that frames this page (a message its code.js checks), else a
- *  tab of its own; with no portal known, a hint. PROVIDER narrows it to one card (bedrock | openrouter | explabs). */
+ *  tab of its own; with no portal known, a hint. PROVIDER narrows it to one card (bedrock | openrouter | explabs | local | server), or 'add' opens the panel that
+ *  downloads a local model or adds a model server. */
 export function openModelBrowser(provider = '', win: Window = window): void {
   const origin = get().server?.portalOrigin;
   let base: string | null = null;
@@ -2320,7 +2321,7 @@ export function openModelBrowser(provider = '', win: Window = window): void {
   } catch {
     base = null;
   }
-  const prov = /^(bedrock|openrouter|explabs)$/.test(provider) ? provider : '';
+  const prov = /^(bedrock|openrouter|explabs|local|server|add)$/.test(provider) ? provider : '';
   if (win.parent !== win && base) {
     try {
       win.parent.postMessage({ type: 'bn-code-models', provider: prov }, base);

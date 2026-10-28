@@ -165,6 +165,9 @@ body.resizing-x iframe, body.resizing-y iframe { pointer-events: none; }
 .mp-star.on { opacity: 1; color: var(--warn); }
 .mp-star.on .ic path { fill: currentColor; }
 .mp-all { display: flex; align-items: center; gap: 8px; padding: 8px 9px 2px; color: var(--muted); font-size: 12px; cursor: pointer; }
+.model-panel .linkish.mp-more { display: block; width: 100%; box-sizing: border-box; margin: 0; padding: 6px 9px; text-align: left; text-decoration: none; font-size: 13px; }
+.model-panel .linkish.mp-more:hover { text-decoration: underline; text-underline-offset: 2px; }
+.linkish.mp-more .mp-more-note { display: block; color: var(--muted); font-size: 12px; text-decoration: none !important; }
 .panel-head { padding: 6px 9px 4px; font: 600 10.5px var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 .panel-note { padding: 8px 9px 4px; margin-top: 4px; border-top: 1px solid var(--line-soft); color: var(--muted); font-size: 12px; line-height: 1.4; max-width: 400px; }
 .mi { display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 9px; border: 0; border-radius: var(--r-m); background: none; color: var(--ink); text-align: left; }

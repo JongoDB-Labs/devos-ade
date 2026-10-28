@@ -241,6 +241,9 @@ _render_litellm_config_base() {
   ! declare -F openrouter_yaml >/dev/null || openrouter_yaml
   # Optional Experiential Labs models ("xl/<id>", lib/explabs.sh): nothing without EXPLABS_API_KEY in .env.
   ! declare -F explabs_yaml >/dev/null || explabs_yaml
+  # Local models downloaded from Hugging Face (LOCAL_MODELS, lib/local_models.sh): Docker Model Runner's or Ollama's, on
+  # this computer; no key, prices 0. Nothing without LOCAL_MODELS.
+  ! declare -F local_models_yaml >/dev/null || local_models_yaml
   # Optional speech-to-text model "stt" (lib/stt.sh): nothing without STT_PROVIDER + STT_API_KEY in .env.
   ! declare -F stt_yaml >/dev/null || stt_yaml
   printf '\nrouter_settings:\n'

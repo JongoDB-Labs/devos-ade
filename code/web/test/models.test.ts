@@ -174,3 +174,15 @@ test('a provider error whose way on is another model names the session\'s model 
   assert.equal(nameTheModel("Your Experiential Labs key isn't allowed to use this model", 'deepseek-v4.1-flash:free'), "Your Experiential Labs key isn't allowed to use deepseek-v4.1-flash:free");
   assert.equal(nameTheModel(promo, ''), promo);   // (not known: "this model")
 });
+
+test('JON-816: a local model (downloaded from Hugging Face, run on this computer) is its own group, free at $0, never spend', () => {
+  const bn = normModels({ models: [
+    { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', provider: 'Bedrock', vendor: 'Anthropic', compat: 'works', listed: true, input_per_mtok: 0.11, output_per_mtok: 0.55 },
+    { id: 'lm/bartowski/smollm2-135m-instruct-gguf:q4_k_m', name: 'smollm2-135m-instruct-gguf Q4_K_M', provider: 'Local', vendor: 'bartowski', compat: 'chat-only', listed: true, input_per_mtok: 7, context: 8192, note: 'Chat only.' },
+  ] });
+  const m = bn.models[1];
+  assert.deepEqual([m.provider, m.free, m.input, m.output, m.cacheWrite, m.compat], ['Local', true, 0, 0, null, 'chat-only']);
+  assert.equal(groupOf(m), 'local');
+  assert.deepEqual(modelSections(bn.models, { all: true }).map((s) => s.group), ['anthropic', 'local']);
+  assert.ok(modelMatches(m, 'local free'));
+});
