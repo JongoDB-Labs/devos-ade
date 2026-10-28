@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-10-29
+
 ### Added
 
 - **A built-in local git server, Forgejo (JON-810).** Projects can push, pull and manage git on this computer, with no
