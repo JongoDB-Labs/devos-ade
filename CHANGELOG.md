@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-10-28
+
 ### Added
 
 - **Export a Code project to Files as a zip (JON-808).** **Export to Files…** (a project's menu and right-click menu, the
