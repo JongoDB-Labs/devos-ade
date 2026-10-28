@@ -55,13 +55,15 @@ _svc_container() {
 _svc_image_id() { docker inspect --format '{{.Image}}' "$1" 2>/dev/null; }
 
 # _svc_running_ref SERVICE CID PINNED -> the reference the container runs: its image's tag, or for Open WebUI's local
-# build the base image it says it was built on (the label)
+# build the base image it says it was built on (the label). The label is read from the container, which Docker gives a
+# copy of its image's labels when it creates it: on Docker's containerd image store a rebuild that came wholly from the
+# cache gets a new id (its provenance attestation is new), the old image is gone, and Compose rightly keeps the container.
 _svc_running_ref() {
   local cfg lab
   cfg="$(docker inspect --format '{{.Config.Image}}' "$2" 2>/dev/null)" || return 0
   case "$cfg" in
     *:local | *:previous | '')
-      lab="$(docker image inspect --format "{{index .Config.Labels \"$BN_BASE_LABEL\"}}" "$(_svc_image_id "$2")" 2>/dev/null || true)"
+      lab="$(docker inspect --format "{{index .Config.Labels \"$BN_BASE_LABEL\"}}" "$2" 2>/dev/null || true)"
       case "$lab" in '<no value>') lab='' ;; esac
       printf '%s\n' "$lab" ;;
     *) printf '%s\n' "$cfg" ;;
@@ -74,14 +76,29 @@ _svc_matches() {
   local pinned="$2" cid="$3" want img have
   want="$(ref_digest "$pinned")"
   img="$(_svc_image_id "$cid")"; [ -n "$img" ] || return 1
-  if [ -n "$want" ]; then
-    have="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$img" 2>/dev/null)" || return 1
+  if [ -n "$want" ] && have="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$img" 2>/dev/null)"; then
     printf '%s\n' "$have" | grep -q "@$want\$" && return 0
-    # a local build (Open WebUI): it says which pinned image it was built on
-    [ "$(_svc_running_ref "$1" "$cid" "$pinned")" = "$pinned" ]
-  else
-    [ "$(_svc_running_ref "$1" "$cid" "$pinned")" = "$pinned" ]
+  elif [ -n "$want" ]; then
+    # an image that cannot be read: only a local build may still say what it is (its container's label, above)
+    case "$(docker inspect --format '{{.Config.Image}}' "$cid" 2>/dev/null)" in *:local | *:previous) ;; *) return 1 ;; esac
   fi
+  # a local build (Open WebUI): it says which pinned image it was built on
+  [ "$(_svc_running_ref "$1" "$cid" "$pinned")" = "$pinned" ]
+}
+
+# _svc_runs_build CID REF -> 0 when the container runs REF's image: the same id, or (Docker's containerd image store, a
+# rebuild from the cache: _svc_running_ref) the same image for the container's platform
+_svc_runs_build() {
+  local img built md plat
+  img="$(_svc_image_id "$1")"
+  built="$(docker image inspect --format '{{.Id}}' "$2" 2>/dev/null || true)"
+  [ -n "$img" ] && [ -n "$built" ] || return 1
+  [ "$img" != "$built" ] || return 0
+  read -r md plat <<EOF
+$(docker inspect --format '{{with .ImageManifestDescriptor}}{{.Digest}} {{with .Platform}}{{.OS}}/{{.Architecture}}{{with .Variant}}/{{.}}{{end}}{{end}}{{end}}' "$1" 2>/dev/null || true)
+EOF
+  [ -n "$md" ] && [ -n "$plat" ] || return 1
+  [ "$(docker image inspect --platform "$plat" --format '{{.Id}}' "$2" 2>/dev/null || true)" = "$md" ]
 }
 
 # versions_row ID -> "id<TAB>name<TAB>running<TAB>pinned<TAB>newest<TAB>state<TAB>notes_url":
@@ -172,7 +189,7 @@ EOF
 # the portal, shared-mcp and stt). Prints each mismatch; 0 when all match, 1 otherwise. A service with no container
 # (an optional one that is off) is skipped; one whose image cannot be read fails.
 update_verify_images() {
-  local id pinned cid bad=0 p img built
+  local id pinned cid bad=0 p
   p="$(project_name)"
   for id in $(core_service_ids); do
     pinned="$(compose_service_image "$id")"; [ -n "$pinned" ] || continue
@@ -183,11 +200,8 @@ update_verify_images() {
   done
   for id in portal shared-mcp stt; do
     cid="$(_svc_container "$id")"; [ -n "$cid" ] || continue
-    img="$(_svc_image_id "$cid")"
-    built="$(docker image inspect --format '{{.Id}}' "$p/$id:local" 2>/dev/null || true)"
-    if [ -z "$img" ] || [ -z "$built" ] || [ "$img" != "$built" ]; then
-      printf '  %s does not run the image this update built (%s:local)\n' "$id" "$id" >&2; bad=1
-    fi
+    _svc_runs_build "$cid" "$p/$id:local" ||
+      { printf '  %s does not run the image this update built (%s:local)\n' "$id" "$id" >&2; bad=1; }
   done
   return "$bad"
 }

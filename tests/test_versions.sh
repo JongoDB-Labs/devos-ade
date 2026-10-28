@@ -19,8 +19,12 @@ _stub_docker() {
       "inspect --format {{.Image}} cid-"*) cut -d'|' -f1 "$TMP/ctr/${last#cid-}" ;;
       "inspect --format {{.Config.Image}} cid-"*) cut -d'|' -f2 "$TMP/ctr/${last#cid-}" ;;
       "image inspect --format {{range .RepoDigests}}{{println .}}{{end}} "*) [ -f "$TMP/img/$last.digest" ] || return 1; cat "$TMP/img/$last.digest" ;;
-      "image inspect --format {{index .Config.Labels \"dev.devos-ade.base-image\"}} "*) [ -f "$TMP/img/$last.label" ] || return 1; cat "$TMP/img/$last.label" ;;
+      # (Docker copies an image's labels into the container it creates: the container's own, else its image's)
+      "inspect --format {{index .Config.Labels \"dev.devos-ade.base-image\"}} cid-"*)
+        svc="${last#cid-}"; cat "$TMP/ctr/$svc.label" 2>/dev/null || cat "$TMP/img/$(cut -d'|' -f1 "$TMP/ctr/$svc").label" 2>/dev/null ;;
+      "inspect --format {{with .ImageManifestDescriptor}}"*" cid-"*) cat "$TMP/ctr/${last#cid-}.manifest" 2>/dev/null || true ;;
       "image inspect --format {{.Id}} "*) cat "$TMP/ref/$(printf '%s' "$last" | tr '/:' '__')" 2>/dev/null || return 1 ;;
+      "image inspect --platform linux/amd64 --format {{.Id}} "*) cat "$TMP/ref/$(printf '%s' "$last" | tr '/:' '__').amd64" 2>/dev/null || return 1 ;;
       *) echo "unexpected docker $*" >&2; return 1 ;;
     esac
   }
@@ -115,6 +119,30 @@ test_a_local_build_that_is_not_the_fresh_one_fails() {
   _stub_docker; _all_match
   _built bn-t/portal:local img-portal-new
   if update_verify_images 2> "$TMP/err"; then echo "a stale portal passed" >&2; return 1; fi
+  assert_contains "$(cat "$TMP/err")" "portal does not run the image this update built"
+}
+
+# Docker's containerd image store: a rebuild that came wholly from the cache gets a new image id (its provenance
+# attestation is new), the old image is gone, and Compose keeps the container, which runs the same image
+test_open_webui_rebuilt_from_the_cache_is_read_from_its_container() {
+  _stub_docker; _all_match
+  rm "$TMP/img/img-open-webui.digest" "$TMP/img/img-open-webui.label"
+  compose_service_image open-webui > "$TMP/ctr/open-webui.label"
+  update_verify_images 2> "$TMP/err" || { cat "$TMP/err" >&2; return 1; }
+  assert_eq "$(versions_row open-webui | cut -f6)" "current"
+  printf 'ghcr.io/open-webui/open-webui:v0.12.0-slim@sha256:%s\n' "$(printf 'a%.0s' $(seq 64))" > "$TMP/ctr/open-webui.label"
+  if update_verify_images 2> "$TMP/err"; then echo "an old Open WebUI base passed" >&2; return 1; fi
+  assert_contains "$(cat "$TMP/err")" "open-webui runs ghcr.io/open-webui/open-webui:v0.12.0-slim"
+}
+
+test_a_local_build_rebuilt_from_the_cache_matches_by_its_platform_manifest() {
+  _stub_docker; _all_match
+  _built bn-t/portal:local img-portal-new
+  printf 'sha256:m1 linux/amd64\n' > "$TMP/ctr/portal.manifest"
+  _built bn-t/portal:local.amd64 sha256:m1
+  update_verify_images 2> "$TMP/err" || { cat "$TMP/err" >&2; return 1; }
+  _built bn-t/portal:local.amd64 sha256:m2   # really another image
+  if update_verify_images 2> "$TMP/err"; then echo "another portal image passed" >&2; return 1; fi
   assert_contains "$(cat "$TMP/err")" "portal does not run the image this update built"
 }
 
