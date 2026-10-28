@@ -38,7 +38,9 @@ PER_MINUTE = 60
 
 
 class SearchError(Exception):
-    pass
+    def __init__(self, msg: str = "", status: int = 502):
+        super().__init__(msg)
+        self.status = status
 
 
 def clean(v, n: int) -> str:
@@ -165,3 +167,58 @@ class ChatSearch:
             if len(out) >= n:
                 break
         return out
+
+    # --- Home's item menu (static/ctxmenu.js, home.js): rename, archive and delete one of the owner's conversations, as the
+    # --- owner, through Open WebUI's own API (POST /api/v1/chats/ID, POST …/archive, DELETE …/ID) — the same calls Chat's own
+    # --- sidebar makes. Only a chat id of this shape and a checked title are passed on; Open WebUI decides what the owner may.
+
+    async def _act(self, client: httpx.AsyncClient, method: str, chat_id: str, suffix: str = "", body: dict | None = None):
+        """One call about one chat as the owner (a fresh sign-in once after a 401): Open WebUI's JSON answer."""
+        if not CHAT_ID.fullmatch(chat_id or ""):
+            raise SearchError("not a conversation id", 400)
+        for attempt in (0, 1):
+            tok = await self.token(client, fresh=attempt == 1)
+            try:
+                r = await client.request(method, f"{self.s.openwebui_url}/api/v1/chats/{chat_id}{suffix}", json=body,
+                                         headers={"Authorization": f"Bearer {tok}"}, timeout=TIMEOUT)
+            except httpx.HTTPError as e:
+                raise SearchError(f"Chat did not answer ({type(e).__name__})") from None
+            if r.status_code == 401 and attempt == 0:
+                self.forget()
+                continue
+            if r.status_code in (404, 403):
+                raise SearchError("Chat has no such conversation of yours" if r.status_code == 404 else "Chat does not let you change that conversation", r.status_code)
+            if r.status_code != 200:
+                if r.status_code == 401:
+                    self.forget()
+                raise SearchError(f"Chat answered HTTP {r.status_code}")
+            if len(r.content) > MAX_ANSWER:
+                raise SearchError("Chat's answer was too large")
+            try:
+                return r.json()
+            except ValueError:
+                raise SearchError("Chat's answer was not JSON") from None
+        raise SearchError("Chat refused the portal's session")
+
+    async def rename(self, client: httpx.AsyncClient, chat_id: str, title) -> str:
+        """The conversation's new title (Open WebUI keeps the rest of the chat as it is)."""
+        t = clean(title, MAX_TITLE)
+        if not t:
+            raise SearchError("a title of 1 to 200 characters", 400)
+        await self._act(client, "POST", chat_id, "", {"chat": {"title": t}})
+        return t
+
+    async def archive(self, client: httpx.AsyncClient, chat_id: str) -> bool:
+        """The conversation archived (Open WebUI's archive endpoint toggles, so it is asked first: one already archived is
+        left as it is). True: it is archived now."""
+        now = await self._act(client, "GET", chat_id)
+        if isinstance(now, dict) and now.get("archived") is True:
+            return True
+        done = await self._act(client, "POST", chat_id, "/archive")
+        return isinstance(done, dict) and done.get("archived") is True
+
+    async def delete(self, client: httpx.AsyncClient, chat_id: str) -> None:
+        """The conversation deleted for good (Open WebUI has no trash for it)."""
+        ok = await self._act(client, "DELETE", chat_id)
+        if ok is not True:
+            raise SearchError("Chat did not delete it")

@@ -1530,10 +1530,58 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             return _no_store(JSONResponse({"error": str(e), "chats": []}))
         return _no_store(JSONResponse({"chats": found}))
 
-    # --- Home's Continue row (static/home.js, portal/recent.py): what the Code page last reported for this sign-in (where
-    # --- the Code page is on for this site) and Chat's newest conversations (Open WebUI's own list, as the search asks it)
     recent_chats = recent.RecentChats(chats)
 
+    # --- Home's item menu for a Chat conversation (static/home.js, portal/chatsearch.py): rename, archive, delete — Open
+    # --- WebUI's own calls as the owner. api_guard (a session, X-Requested-With) like every other change; a few a second.
+    # --- Delete names the conversation's own id again (the page's dialog says exactly what goes).
+    chat_writes = chatsearch.RateLimit()
+
+    async def _chat_act(request: Request, what: str) -> Response:
+        if (deny := api_guard(request)) is not None:
+            return deny
+        cid = request.path_params["cid"]
+        if not chatsearch.CHAT_ID.fullmatch(cid):
+            return _no_store(JSONResponse({"error": "not a conversation id"}, status_code=400))
+        try:
+            body = await request.json() if request.headers.get("content-length", "0") not in ("", "0") else {}
+        except ValueError:
+            return _no_store(JSONResponse({"error": "bad request"}, status_code=400))
+        body = body if isinstance(body, dict) else {}
+        # (checked before the rate limit counts it: a refused request costs Chat nothing)
+        if what == "rename" and not chatsearch.clean(body.get("title"), chatsearch.MAX_TITLE):
+            return _no_store(JSONResponse({"error": "a title of 1 to 200 characters"}, status_code=400))
+        if what == "delete" and body.get("confirm") != cid:
+            return _no_store(JSONResponse({"error": "confirm: the conversation's own id (the page asks first, naming it)"}, status_code=400))
+        if not chat_writes.take():
+            return _no_store(JSONResponse({"error": "Too many changes at once: try again in a moment."}, status_code=429))
+        try:
+            if what == "rename":
+                out = {"ok": True, "title": await chats.rename(request.app.state.http, cid, body.get("title"))}
+            elif what == "archive":
+                out = {"ok": True, "archived": await chats.archive(request.app.state.http, cid)}
+            else:
+                await chats.delete(request.app.state.http, cid)
+                out = {"ok": True, "deleted": cid}
+        except chatsearch.SearchError as e:
+            log.warning("chat %s %s: %s", what, cid[:8], e)
+            return _no_store(JSONResponse({"error": str(e)}, status_code=e.status))
+        recent_chats.forget()
+        log.warning("chat: conversation %s %s from Home's menu%s", cid[:8], {"rename": "renamed", "archive": "archived", "delete": "deleted"}[what],
+                    " (remote)" if remote(request) else "")
+        return _no_store(JSONResponse(out))
+
+    async def api_chat_rename(request: Request) -> Response:
+        return await _chat_act(request, "rename")
+
+    async def api_chat_archive(request: Request) -> Response:
+        return await _chat_act(request, "archive")
+
+    async def api_chat_delete(request: Request) -> Response:
+        return await _chat_act(request, "delete")
+
+    # --- Home's Continue row (static/home.js, portal/recent.py): what the Code page last reported for this sign-in (where
+    # --- the Code page is on for this site) and Chat's newest conversations (Open WebUI's own list, as the search asks it)
     async def api_continue(request: Request) -> Response:
         if (deny := api_guard(request)) is not None:
             return deny
@@ -1665,6 +1713,9 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             Route("/api/search/index", api_search_index, methods=["GET"]),
             Route("/api/search/chats", api_search_chats, methods=["GET"]),
             Route("/api/continue", api_continue, methods=["GET"]),
+            Route("/api/chats/{cid}/rename", api_chat_rename, methods=["POST"]),
+            Route("/api/chats/{cid}/archive", api_chat_archive, methods=["POST"]),
+            Route("/api/chats/{cid}/delete", api_chat_delete, methods=["POST"]),
             Route("/api/update/check", api_update_check, methods=["POST"]),
             *settings_api.routes(settings_api.Ctx(
                 settings=settings, sessions=sessions, throttle=throttle, remote=remote, api_guard=api_guard,

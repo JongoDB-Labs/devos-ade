@@ -136,6 +136,10 @@ class RecentChats:
         self._at = 0.0
         self._last: dict | None = None
 
+    def forget(self) -> None:
+        """What was kept goes (a conversation was renamed, archived or deleted from Home's menu: the next ask is fresh)."""
+        self._last = None
+
     async def get(self, client: httpx.AsyncClient) -> dict:
         """{items: [...]} or {items: [], error: "why"} (an answer, not an error status: Home says it and links Chat)."""
         if self._last is not None and self.clock() - self._at < CHATS_TTL_S:
