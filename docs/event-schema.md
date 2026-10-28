@@ -75,6 +75,7 @@ terminal, code, Tailscale, the egress proxies), plus `other`.
 - `caddy`
 - `chat-egress`
 - `code`
+- `forgejo`
 - `litellm`
 - `open-webui`
 - `portal`
@@ -104,6 +105,7 @@ the code):
 - `Chat's sandbox`
 - `Code page default`
 - `Finishing`
+- `Git server`
 - `Image downloads`
 - `Image downloads started`
 - `Images of the version before kept (for rollback)`
