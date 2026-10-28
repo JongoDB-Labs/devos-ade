@@ -310,7 +310,7 @@ test_the_settings_row_and_the_help_know_it() {
   printf 'LOCALGIT=off\n' > "$ENV_FILE"; assert_not_contains " $(restart_choices) " " forgejo "
   printf 'X=1\n' > "$ENV_FILE"; assert_contains " $(restart_choices) " " forgejo "
   assert_contains "$(cmd_help)" "searxng | forgejo"
-  grep -q '_cfg_on localgit; then localgit_up' "$T_ROOT/lib/settings.sh" || { echo "Settings' apply does not know localgit" >&2; return 1; }
+  grep -qE '_cfg_on localgit; then (_cfg_t "[^"]+" )?localgit_up' "$T_ROOT/lib/settings.sh" || { echo "Settings' apply does not know localgit" >&2; return 1; }
   grep -q '^LOCALGIT_ADMIN_PASSWORD' "$T_ROOT/.env.example" && grep -q '^LOCALGIT=' "$T_ROOT/.env.example" || { echo ".env.example lacks the keys" >&2; return 1; }
 }
 
