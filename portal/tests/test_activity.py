@@ -321,8 +321,12 @@ def test_container_health_unreadable_or_odd_files_show_nothing(s):
 
 def test_the_event_schema_contract_names_the_kinds_activity_shows_and_pins_the_shared_redaction():
     """docs/event-schema.md (G5): spec only; the shared JON-169 rules are pinned by hash, never reimplemented here."""
+    import os
     import re
-    doc = (Path(__file__).resolve().parents[2] / "docs" / "event-schema.md").read_text()
+    f = Path(os.environ.get("BN_REPO_DIR") or Path(__file__).resolve().parents[2]) / "docs" / "event-schema.md"
+    if not f.is_file():
+        pytest.skip("the repository's docs are not here: portal/test.sh passes them to the test image")
+    doc = f.read_text()
     assert "devos-ade/events/1" in doc
     for kind in ("restart", "unhealthy", "exit", "oom"):
         assert f"`container.{kind}`" in doc

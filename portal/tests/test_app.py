@@ -412,9 +412,13 @@ def test_feedback_page_pieces_are_wired_and_the_script_holds_no_tracker_key():
 
 def test_issue_forms_match_the_prefilled_links_and_label_feedback():
     """.github/ISSUE_TEMPLATE/*.yml (G2): the field ids Send feedback prefills, the label the Linear sync keys on."""
+    import os
     import re
+    from pathlib import Path
     from portal import feedback
-    d = STATIC.parents[2] / ".github" / "ISSUE_TEMPLATE"
+    d = Path(os.environ.get("BN_REPO_DIR") or STATIC.parents[2]) / ".github" / "ISSUE_TEMPLATE"
+    if not d.is_dir():
+        pytest.skip("the repository's issue forms are not here: portal/test.sh passes them to the test image")
     for kind, (name, title) in feedback.KINDS.items():
         text = (d / name).read_text()
         assert re.search(r'^title: "' + re.escape(title) + '"$', text, re.M), name

@@ -121,6 +121,7 @@ the code):
 - `Portal sign-in and Chat's API key`
 - `Ports and settings in .env`
 - `Prices`
+- `Services run the pinned images`
 - `Smoke test`
 - `Terminal: its key and project folders`
 - `Voice`
