@@ -175,6 +175,12 @@ stack. The rules, so a new card drops in without a new pattern:
   (JON-816)** is a second block in that grid, or its own `.mb-list` above it, with the same row (`.mb-row`).
 - **A phone keeps one column** and drops what the tabs, the Code page and Chat already show: Recent shows four, a step
   done is a line, the explanation of the Admin and Files sign-in is the More sheet's.
+- **The Code page is an app shell, so its page never scrolls** (`body` is `overflow: hidden`, `.app` is the viewport's
+  height): the explorer, Projects, Git, Review, Ports and the chat each scroll inside their own pane. Where it was a
+  page of its own, the empty chat, it is two cards (`.wcard`: *Pick up where you left off*, *Projects*) in
+  `.welcome-widgets`, shown when the chat pane is 720 px wide or more and the window 760 px tall or more (a container
+  query on `.messages`), each at most 200 px (24vh) tall with its list scrolling inside (`.wlist`); a phone or a narrow
+  pane keeps the single welcome column. A new Code widget takes that card and list.
 - No horizontal page scroll at any width; the tokens and components are the ones above.
 
 ## Do and don't

@@ -84,6 +84,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   - **Browse models** is a grid of cards, as many columns as fit.
   - On a phone Home drops what is repeated elsewhere: Recent shows four, a finished Get started step is one line, and
     the models table scrolls inside its card.
+  - **Code page:** its page already fitted the window (the explorer, Projects, Git, Review, Ports and the chat each
+    scroll inside their own pane); the empty chat now uses a wide window: **Pick up where you left off** and
+    **Projects** are two cards of their own height beside each other under the first prompts, shown from a 720 px wide
+    chat pane and a 760 px tall window. A phone and a narrow pane look as before.
   - The layout follows the page's own width, so opening the walkthrough (its wider sidebar) gives Home fewer columns
     instead of squeezing three. No page scrolls sideways at any width.
 
