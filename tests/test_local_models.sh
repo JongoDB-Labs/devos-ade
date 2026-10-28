@@ -417,6 +417,8 @@ test_mlx_is_the_runtime_on_apple_silicon_and_a_pull_installs_vets_downloads_serv
   assert_eq "$(cat "$STATE_DIR/mlx/hf/excl")" excluded                   # no .py file is ever fetched
   assert_contains "$(cat "$STATE_DIR/mlx/hf/hf-args")" "--revision $SHA_A"   # the download is pinned to the commit that was vetted
   assert_contains "$(local_registry_rows)" "$SHA_A"                         # and the registry keeps it
+  # the server loads it by name offline, through the cache's refs/main (a pinned download writes none): the vetted commit
+  assert_eq "$(cat "$STATE_DIR/mlx/hf/hub/models--mlx-community--Tiny-4bit/refs/main")" "$SHA_A"
   local_status_write; assert_contains "$(cat "$(local_status_file)")" "\"revision\":\"$SHA_A\""
   assert_eq "$(local_models_yaml | grep -c 'openai/mlx-community/Tiny-4bit')" 1
   assert_contains "$(local_models_yaml)" 'api_base: "http://host.docker.internal:18765/v1"'

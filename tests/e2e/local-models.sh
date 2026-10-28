@@ -54,9 +54,9 @@ STACK_DIR="$ROOT"; ENV_FILE="$WORK/.env"; STATE_DIR="$WORK/state"; : > "$ENV_FIL
 export STACK_DIR ENV_FILE STATE_DIR
 # shellcheck source=/dev/null
 . "$ROOT/lib/common.sh"; . "$ROOT/lib/ports.sh"; . "$ROOT/lib/portal.sh"; . "$ROOT/lib/models.sh"; . "$ROOT/lib/commands.sh"
-# the config apply of a real stack is LiteLLM's live reload (its own test: tests/test_litellm_live.sh); here the one
-# container is started on the rendered config instead
-config_apply() { :; }
+# a real config apply saves .env, then reloads LiteLLM live (its own test: tests/test_litellm_live.sh); here it saves
+# .env only, and the one container is started on the rendered config instead
+config_apply() { _cfg_write; CFG_ORDER=''; }
 get_env() { K="$1" awk 'index($0, ENVIRON["K"] "=") == 1 { v = substr($0, length(ENVIRON["K"]) + 2) } END { printf "%s", v }' "$ENV_FILE"; }
 
 RT="$(local_runtime)"
@@ -73,20 +73,25 @@ case "$ENTRY" in dmr:* | ollama:*) ok "2 downloaded and registered: LOCAL_MODELS
 
 # --- LiteLLM on this checkout's rendered config ---
 { printf 'model_list:\n'; local_models_yaml; printf 'litellm_settings:\n  drop_params: true\n'; } > "$WORK/litellm/config.yaml"
-if grep -q 'input_cost_per_token: 0$' "$WORK/litellm/config.yaml" && grep -q 'output_cost_per_token: 0$' "$WORK/litellm/config.yaml" && ! grep -q 'api_key' "$WORK/litellm/config.yaml"; then ok "3 LiteLLM's entry for $NAME is $0 and needs no key"; else fail "3 the rendered entry is wrong: $(cat "$WORK/litellm/config.yaml")"; fi
+if grep -q 'input_cost_per_token: 0$' "$WORK/litellm/config.yaml" && grep -q 'output_cost_per_token: 0$' "$WORK/litellm/config.yaml" && ! grep -q 'api_key' "$WORK/litellm/config.yaml"; then ok "3 LiteLLM's entry for $NAME is \$0 and needs no key"; else fail "3 the rendered entry is wrong: $(cat "$WORK/litellm/config.yaml")"; fi
 chmod 755 "$WORK" "$WORK/litellm"; chmod 644 "$WORK/litellm/config.yaml"
 PORT="$(python3 -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
-docker run -d --name "$LL" --label "$LABEL" --add-host host.docker.internal:host-gateway -p "127.0.0.1:$PORT:4000" \
+MK="sk-e2e-$(python3 -I -c 'import secrets; print(secrets.token_hex(16))')"   # (LiteLLM 1.106 does not start without a strong master key)
+LITELLM_MASTER_KEY="$MK" docker run -d --name "$LL" -e LITELLM_MASTER_KEY --label "$LABEL" --add-host host.docker.internal:host-gateway -p "127.0.0.1:$PORT:4000" \
   -v "$WORK/litellm/config.yaml:/app/config.yaml:ro" "$LIMG" --config /app/config.yaml --port 4000 >/dev/null || { fail "4 LiteLLM did not start"; exit 1; }
 for _ in $(seq 1 90); do curl -fsS -m 3 "http://127.0.0.1:$PORT/health/liveliness" >/dev/null 2>&1 && break; sleep 2; done
 HDR="$WORK/hdr"; BODY="$WORK/body"
 BODYJ="$(python3 -I -c 'import json, sys; print(json.dumps({"model": sys.argv[1], "max_tokens": 24, "messages": [{"role": "user", "content": "Say hello in three words."}]}))' "$NAME")"
-if curl -sS -m 300 -D "$HDR" -o "$BODY" -H 'Content-Type: application/json' -d "$BODYJ" "http://127.0.0.1:$PORT/v1/chat/completions" \
+if curl -sS -m 300 -D "$HDR" -o "$BODY" -H 'Content-Type: application/json' -H "Authorization: Bearer $MK" -d "$BODYJ" "http://127.0.0.1:$PORT/v1/chat/completions" \
   && python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); assert d["choices"][0]["message"]["content"].strip()' "$BODY" 2>/dev/null; then
-  ok "4 a chat completion went through LiteLLM on $NAME"
+  ok "4 a chat completion went through LiteLLM on $NAME"; ANSWERED=1
 else fail "4 no answer through LiteLLM: $(head -c 300 "$BODY" 2>/dev/null) $(docker logs --tail 5 "$LL" 2>&1 | tr '\n' ' ')"; fi
+# (LiteLLM 1.106 leaves x-litellm-response-cost out when it is 0; -original is there whenever a cost was worked out)
 COST="$(tr -d '\r' < "$HDR" | sed -n 's/^[Xx]-[Ll]itellm-[Rr]esponse-[Cc]ost: *//p' | head -n 1)"
-if [ -z "$COST" ] || awk -v c="$COST" 'BEGIN { exit !(c + 0 == 0) }'; then ok "6 the answer is booked at \$0 (cost header '${COST:-none}')"; else fail "6 the answer cost $COST"; fi
+ORIG="$(tr -d '\r' < "$HDR" | sed -n 's/^[Xx]-[Ll]itellm-[Rr]esponse-[Cc]ost-[Oo]riginal: *//p' | head -n 1)"
+if [ -z "${ANSWERED:-}" ]; then fail "6 nothing answered, so nothing was booked"
+elif [ -n "$ORIG" ] && awk -v c="$ORIG" -v d="${COST:-0}" 'BEGIN { exit !(c + 0 == 0 && d + 0 == 0) }'; then ok "6 the answer is booked at \$0 (cost ${COST:-0}, worked out as $ORIG)"
+else fail "6 the answer was booked at '${COST:-none}' (worked out as '${ORIG:-nothing}'), not \$0"; fi
 
 # --- the Code page's rows (what /.bn/models serves) ---
 ROWS="$(code_models_rows "" 2>/dev/null | awk -F'\t' -v n="$NAME" '$1 == n')"

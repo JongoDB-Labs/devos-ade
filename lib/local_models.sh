@@ -236,6 +236,9 @@ _local_pull_mlx() {
     _local_job failed "$repo" "$quant" 0 "$bytes" "Deleted, not registered: after the download, $why. DevOS ADE never runs a model's own code."
     die "refused after the download: $why"
   fi
+  # the server loads a model by its name offline (HF_HUB_OFFLINE), through the cache's refs/main, which a download pinned
+  # to a commit does not write: it names the vetted commit, so the snapshot served is the one checked
+  mkdir -p "$(local_mlx_repo_dir "$repo")/refs" && printf '%s' "$sha" > "$(local_mlx_repo_dir "$repo")/refs/main"
   [ "$bytes" -gt 0 ] 2>/dev/null || bytes="$({ du -sk "$(local_mlx_repo_dir "$repo")" 2>/dev/null || true; } | awk '{ print $1 * 1024 }')"
   _local_job registering "$repo" "$quant" "$bytes" "$bytes" "Starting the MLX server and registering the model (a few seconds)"
   local_mlx_up || { _local_job failed "$repo" "$quant" "$bytes" "$bytes" "Downloaded, but the MLX server did not start: see $(local_mlx_dir)/server.log"; die "mlx server did not start"; }

@@ -31,7 +31,7 @@ IP="$(docker inspect -f '{{.NetworkSettings.IPAddress}}' "$FK")"
 STACK_DIR="$ROOT"; ENV_FILE="$WORK/.env"; STATE_DIR="$WORK/state"; : > "$ENV_FILE"; export STACK_DIR ENV_FILE STATE_DIR
 # shellcheck source=/dev/null
 . "$ROOT/lib/common.sh"; . "$ROOT/lib/ports.sh"; . "$ROOT/lib/portal.sh"; . "$ROOT/lib/models.sh"; . "$ROOT/lib/commands.sh"
-config_apply() { :; }   # (the live reload of a real stack: tests/test_litellm_live.sh; here one container is started on the rendered config)
+config_apply() { _cfg_write; CFG_ORDER=''; }   # (.env saved; a real stack then reloads LiteLLM live, tests/test_litellm_live.sh: here one container is started on the rendered config)
 get_env() { K="$1" awk 'index($0, ENVIRON["K"] "=") == 1 { v = substr($0, length(ENVIRON["K"]) + 2) } END { printf "%s", v }' "$ENV_FILE"; }
 cfg_put() { grep -v "^$1=" "$ENV_FILE" > "$ENV_FILE.n"; printf '%s=%s\n' "$1" "$2" >> "$ENV_FILE.n"; mv "$ENV_FILE.n" "$ENV_FILE"; }
 for _ in $(seq 1 30); do curl -s -m 2 -o /dev/null "http://$IP:8000/v1/models" && break; sleep 1; done
@@ -42,12 +42,18 @@ st="$(msrv_status_of fake)"; case "$st" in ok*fake/tiny-chat\|8192*) ok "1 the p
 msrv_enable fake '*' on >/dev/null 2>&1
 { printf 'model_list:\n'; local_models_yaml; } > "$WORK/litellm/config.yaml"; chmod 644 "$WORK/litellm/config.yaml"
 PORT="$(python3 -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
-docker run -d --name "$LL" --label "$LABEL" -p "127.0.0.1:$PORT:4000" -v "$WORK/litellm/config.yaml:/app/config.yaml:ro" "$LIMG" --config /app/config.yaml --port 4000 >/dev/null
+MK="sk-e2e-$(python3 -I -c 'import secrets; print(secrets.token_hex(16))')"   # (LiteLLM 1.106 does not start without a strong master key)
+LITELLM_MASTER_KEY="$MK" docker run -d --name "$LL" -e LITELLM_MASTER_KEY --label "$LABEL" -p "127.0.0.1:$PORT:4000" -v "$WORK/litellm/config.yaml:/app/config.yaml:ro" "$LIMG" --config /app/config.yaml --port 4000 >/dev/null
 for _ in $(seq 1 90); do curl -fsS -m 3 "http://127.0.0.1:$PORT/health/liveliness" >/dev/null 2>&1 && break; sleep 2; done
-curl -sS -m 60 -D "$WORK/hdr" -o "$WORK/body" -H 'Content-Type: application/json' -d '{"model":"ms/fake/fake/tiny-chat","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}' "http://127.0.0.1:$PORT/v1/chat/completions"
-grep -q "Hello from the fake server" "$WORK/body" && ok "3 a chat completion went through LiteLLM to the server by IP" || fail "3 no answer: $(head -c 300 "$WORK/body")"
+curl -sS -m 60 -D "$WORK/hdr" -o "$WORK/body" -H 'Content-Type: application/json' -H "Authorization: Bearer $MK" -d '{"model":"ms/fake/fake/tiny-chat","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}' "http://127.0.0.1:$PORT/v1/chat/completions"
+if grep -q "Hello from the fake server" "$WORK/body"; then ok "3 a chat completion went through LiteLLM to the server by IP"; ANSWERED=1
+else fail "3 no answer: $(head -c 300 "$WORK/body") $(docker logs --tail 5 "$LL" 2>&1 | tr '\n' ' ')"; fi
+# (LiteLLM 1.106 leaves x-litellm-response-cost out when it is 0; -original is there whenever a cost was worked out)
 COST="$(tr -d '\r' < "$WORK/hdr" | sed -n 's/^[Xx]-[Ll]itellm-[Rr]esponse-[Cc]ost: *//p' | head -n 1)"
-{ [ -z "$COST" ] || awk -v c="$COST" 'BEGIN { exit !(c + 0 == 0) }'; } && ok "4 booked at \$0" || fail "4 the answer cost $COST"
+ORIG="$(tr -d '\r' < "$WORK/hdr" | sed -n 's/^[Xx]-[Ll]itellm-[Rr]esponse-[Cc]ost-[Oo]riginal: *//p' | head -n 1)"
+if [ -z "${ANSWERED:-}" ]; then fail "4 nothing answered, so nothing was booked"
+elif [ -n "$ORIG" ] && awk -v c="$ORIG" -v d="${COST:-0}" 'BEGIN { exit !(c + 0 == 0 && d + 0 == 0) }'; then ok "4 booked at \$0 (cost ${COST:-0}, worked out as $ORIG)"
+else fail "4 the answer was booked at '${COST:-none}' (worked out as '${ORIG:-nothing}'), not \$0"; fi
 R="$(code_models_rows "" 2>/dev/null | awk -F'\t' '$1 == "ms/fake/fake/tiny-chat"')"
 { [ "$(printf '%s' "$R" | cut -f3)" = Local ] && [ "$(printf '%s' "$R" | cut -f9)" = 1 ]; } && ok "5 the Code page lists it as Local and free" || fail "5 rows: '$R'"
 docker stop "$FK" >/dev/null; st="$(msrv_probe fake)"
