@@ -5599,6 +5599,163 @@ def setup_hostile(browser):
     p.close()
 
 
+def long_press(p, cdp, locator, hold=700):
+    """A finger held on the middle of an element (touch events through the protocol: pointerType touch)."""
+    box = locator.bounding_box()
+    x, y = box["x"] + min(box["width"] / 2, 120), box["y"] + box["height"] / 2
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y}]})
+    p.page.wait_for_timeout(hold)
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+    p.page.wait_for_timeout(150)
+
+
+def menu_in_viewport(page):
+    """The open item menu (role menu) lies inside the viewport."""
+    return page.evaluate("""() => { const ms = [...document.querySelectorAll('[role=menu]')].filter((m) => m.getClientRects().length > 0);
+      const m = ms[ms.length - 1]; if (!m) return false; const r = m.getBoundingClientRect();
+      return r.left >= 0 && r.top >= 0 && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight + 0.5; }""")
+
+
+def plog(base=None):
+    return mock_get(base or NORMAL, "/__mock/project-log")["log"]
+
+
+@check("item menus: right-click, Shift+F10 and a long press on a session, a project, a file and a model open the item's actions; Archive, Delete (confirmed), folder terminal, Copy path; the editor keeps the browser's menu")
+def item_menus(browser):
+    post(NORMAL + "/__mock/reset")
+    post(NORMAL + "/__mock/projects?seed=1")
+    ids = project_ids()
+    web = ids["website"]
+    p = Page(browser, NORMAL, "item-menus", **DESKTOP)
+    page = p.open()
+    page.get_by_test_id("side-sessions").click()
+    ws = proj(page, "ws")
+    expect(ws.get_by_test_id("session-row")).to_have_count(4, timeout=10_000)
+    # a session: right-click lists its actions, in the viewport; Escape closes and the focus is back
+    pick = ws.get_by_test_id("session-row").nth(1).locator(".sess-main").inner_text().strip().splitlines()[0]
+    row = ws.get_by_test_id("session-row").filter(has_text=pick)
+    expect(row).to_have_count(1)
+    row.click(button="right")
+    menu = page.get_by_role("menu")
+    expect(menu).to_have_count(1)
+    for t in ("session-open", "session-new-tab", "session-rename", "session-fork", "session-add-to-project", "session-folder-terminal",
+              "session-copy-link", "session-archive", "session-delete"):
+        expect(page.get_by_test_id(t)).to_have_count(1)
+    assert menu_in_viewport(page), "the session menu leaves the viewport"
+    p.shot("item-menu-session.png")
+    page.keyboard.press("Escape")
+    expect(menu).to_have_count(0)
+    # the keyboard: Shift+F10 on the focused row's button opens it, the arrows move, Escape returns the focus
+    row.locator(".sess-main").focus()
+    page.keyboard.press("Shift+F10")
+    expect(page.get_by_role("menu")).to_have_count(1)
+    page.keyboard.press("ArrowDown")
+    page.keyboard.press("Escape")
+    expect(page.get_by_role("menu")).to_have_count(0)
+    assert page.evaluate("() => !!document.activeElement.closest('[data-testid=session-row]')"), "the focus did not return to the session row"
+    # the same actions from the visible ⋯ button
+    row.hover()
+    row.get_by_test_id("session-menu").click()
+    expect(page.get_by_test_id("session-archive")).to_have_count(1)
+    page.keyboard.press("Escape")
+    # Open its folder in a terminal: the folder of the session reaches the backend
+    row.click(button="right")
+    page.get_by_test_id("session-folder-terminal").click()
+    page.wait_for_timeout(400)
+    assert any(x.startswith("terminal /workspace") for x in plog()), plog()
+    # Archive: out of the list, under Archived (n); Unarchive brings it back
+    row.click(button="right")
+    page.get_by_test_id("session-archive").click()
+    expect(ws.get_by_test_id("session-row")).to_have_count(3, timeout=10_000)
+    assert any(x.startswith("archive ") for x in plog()), plog()
+    ws.get_by_test_id("archived-toggle").click()
+    arch = ws.get_by_test_id("archived-list").get_by_test_id("session-row").filter(has_text=pick)
+    expect(arch).to_have_count(1)
+    p.shot("item-menu-archived.png")
+    arch.click(button="right")
+    page.get_by_test_id("session-archive").click()
+    expect(ws.get_by_test_id("session-row").filter(has_text=pick)).to_have_count(1, timeout=10_000)
+    assert any(x.startswith("unarchive ") for x in plog()), plog()
+    # Delete: confirmed, says what goes, Cancel keeps it
+    row = ws.get_by_test_id("session-row").filter(has_text=pick)
+    row.click(button="right")
+    page.get_by_test_id("session-delete").click()
+    dlg = page.get_by_test_id("delete-session-dialog")
+    expect(dlg).to_contain_text("for good")
+    expect(dlg).to_contain_text("The files it changed")
+    p.shot("item-menu-delete-session.png")
+    dlg.get_by_role("button", name="Cancel").click()
+    expect(dlg).to_have_count(0)
+    assert not any(x.startswith("delete ") for x in plog()), plog()
+    row.click(button="right")
+    page.get_by_test_id("session-delete").click()
+    page.get_by_test_id("delete-session-confirm").click()
+    expect(ws.get_by_test_id("session-row").filter(has_text=pick)).to_have_count(0, timeout=10_000)
+    assert any(x.startswith("delete ") for x in plog()), plog()
+    # a project's header
+    proj(page, web).locator(".proj-head").click(button="right")
+    for t in ("project-menu-open", "project-menu-copy-path"):
+        expect(page.get_by_test_id(t)).to_have_count(1)
+    page.keyboard.press("Escape")
+    # a file of the explorer: Open, a terminal in its folder, Copy path, Download, Rename, Delete
+    page.get_by_test_id("side-files").click()
+    page.get_by_test_id("project-chip").click()
+    page.get_by_test_id("project-chip-item").filter(has_text="Workspace").click()
+    f = page.locator(".tree-row[data-path='README.md']")
+    expect(f).to_have_count(1, timeout=10_000)
+    f.click(button="right")
+    for t in ("tree-open", "tree-terminal", "tree-copy-path", "tree-rename", "tree-delete", "tree-download"):
+        expect(page.get_by_test_id(t)).to_have_count(1)
+    assert menu_in_viewport(page), "the file menu leaves the viewport"
+    p.shot("item-menu-file.png")
+    page.get_by_test_id("tree-terminal").click()
+    page.wait_for_timeout(400)
+    assert [x for x in plog() if x.startswith("terminal /workspace")], plog()
+    # the model picker: a model's menu
+    page.get_by_test_id("model-picker").click()
+    mrow = page.locator(".mp-row").first
+    mrow.click(button="right")
+    expect(page.locator("[data-testid=model-menu-use]")).to_have_count(1)
+    expect(page.locator("[data-testid=model-menu-copy-id]")).to_have_count(1)
+    p.shot("item-menu-model.png")
+    page.keyboard.press("Escape")
+    page.keyboard.press("Escape")
+    # the prompt (a text field) keeps the browser's own menu
+    page.get_by_test_id("prompt").click(button="right")
+    expect(page.get_by_role("menu")).to_have_count(0)
+    p.assert_clean()
+    p.close()
+    # a phone: the ⋯ is always there, a long press opens the menu inside the screen
+    post(NORMAL + "/__mock/reset")
+    post(NORMAL + "/__mock/projects?seed=1")
+    p = Page(browser, NORMAL, "item-menus-phone", viewport={"width": 390, "height": 844}, color_scheme="dark", has_touch=True, is_mobile=True)
+    page = p.open()
+    cdp = p.ctx.new_cdp_session(page)
+    page.get_by_test_id("phone-sessions").tap()
+    sheet = page.get_by_test_id("sheet-sessions")
+    row = proj(sheet, "ws").get_by_test_id("session-row").first
+    expect(row).to_be_visible(timeout=10_000)
+    assert row.get_by_test_id("session-menu").is_visible(), "the ⋯ is hidden on touch"
+    long_press(p, cdp, row.locator(".sess-main"))
+    expect(page.get_by_role("menu")).to_have_count(1)
+    assert menu_in_viewport(page), "the phone's menu leaves the screen"
+    p.shot("item-menu-phone-dark.png")
+    page.keyboard.press("Escape")
+    p.assert_clean()
+    p.close()
+    # a tablet, light
+    p = Page(browser, NORMAL, "item-menus-tablet", viewport={"width": 820, "height": 1180}, color_scheme="light")
+    page = p.open()
+    page.get_by_test_id("side-sessions").click()
+    row = proj(page, "ws").get_by_test_id("session-row").first
+    expect(row).to_be_visible(timeout=10_000)
+    row.click(button="right")
+    assert menu_in_viewport(page), "the tablet's menu leaves the screen"
+    p.shot("item-menu-tablet-light.png")
+    p.assert_clean()
+    p.close()
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     procs = start_mocks()
