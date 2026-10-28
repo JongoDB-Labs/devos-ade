@@ -2403,6 +2403,7 @@ troubleshooting: [docs/voice.md](docs/voice.md).
 | `./stack config [list\|get KEY\|set KEY…\|apply --stdin\|check-aws\|report\|regenerate rustfs\|mcp-token]` | Every setting, secrets masked; `set` asks for values (hidden for secrets) and applies them like the portal's [Settings](#settings) | none (`check-aws` is free; an AWS key change runs the test: ~$0.0001) |
 | `./stack restart SERVICE` | Recreate one service with its current settings (`litellm`, `open-webui`, `shared-mcp`, `stt`, `rustfs`, `caddy`; `searxng` while the built-in SearXNG is on) | none |
 | `./stack uninstall` | Remove the containers, ALL data volumes and this install's built images (keeps `.env` and `backups/`) | none |
+| `./stack versions` | Each core service: the version it runs, the one this release pins, the newest upstream | none |
 | `./stack help` | All of the above; `./stack <command> --help` shows one | none |
 
 `--yes` (or `-y`) accepts defaults (non-interactive; AWS credentials can then come from `AWS_ACCESS_KEY_ID` /
@@ -2461,6 +2462,20 @@ anything happens; they are never discarded. If a later step fails, or the new ve
 pre-update backup (taking a backup of the current state first) and starts the previous images, which are still on
 disk. It also works when the update failed half-way. The failure message also shows the manual way
 (`git … && ./stack restore <backup>`).
+
+**Every core service comes along.** A release pins each core service (LiteLLM, Open WebUI, RustFS, PostgreSQL with
+pgvector, SearXNG, Caddy, the AWS CLI that creates the buckets) and every base image by digest, and the maintainers run
+`bin/bump-core-services` before each release (a tool for them, never run on your computer: [docs/releasing.md](docs/releasing.md))
+to bring them to the newest stable upstream release that is at least 3 days old, so a release that upstream pulls
+within days never reaches you (a security fix skips the wait). So *Update now* (or `./stack update`) brings LiteLLM and
+the rest to their newest tested versions: the update card's *What's new* lists them (*Core services: LiteLLM 1.105.0 →
+1.106.3 · Open WebUI 0.12.0 → 0.12.4 …*), and the end of `./stack update` does too. When setup ends, the update checks
+that every service it recreated runs exactly the image this release pins (by digest); a service that does not fails the
+update, and `./stack rollback` goes back. **`./stack versions`** (and Settings → Updates & backups → *Core services*, one
+line with the table folded under it; `./stack status` has a line too) shows each service's running version, the version
+this release pins and the newest upstream when this release was made, and says either *Update now brings it to X* or
+*newer upstream exists (X); the next DevOS ADE release will bring it*. LiteLLM's own *The latest version is…* banner in
+Admin is not shown: LiteLLM only moves with a DevOS ADE release.
 
 **What an update or a rollback ends:** an update restarts only the services whose image or configuration changed
 (the rest keep running; [what setup and an update restart](docs/advanced.md#what-setup-and-an-update-restart)).

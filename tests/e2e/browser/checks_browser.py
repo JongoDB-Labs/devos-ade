@@ -305,6 +305,9 @@ def update_card(ctx):
                f"one line per release, newest first: {heads}")
         title = page.inner_text("#update-releases-title")
         expect(re.fullmatch(r"What's new: 3 releases since v\d+\.\d+\.\d+\S*", title), f"releases title {title!r}")
+        # the core services the update moves, on one line inside the card under What's new (JON-815)
+        svc = page.inner_text("#update-services") if page.locator("#update-services").is_visible() else ""
+        expect(svc.startswith("Core services: LiteLLM ") and "\u2192 9.9.9" in svc, f"the update card lists the service moves: {svc!r}")
         page.click(".update-notes summary")
         opened = page.eval_on_selector_all("#update-notes details.release", "ds => ds.map(d => d.open)")
         expect(opened == [True, False, False], f"the newest open, the others folded: {opened}")

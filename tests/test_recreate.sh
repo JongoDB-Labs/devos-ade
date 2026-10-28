@@ -64,7 +64,7 @@ test_a_changed_env_value_or_image_recreates_the_services_that_use_it() {
   h="$(_hashes)"; printf 'TERMINAL_AUTO_MODE=true\n' >> "$ENV_FILE"; assert_eq "$(_changed "$h")" terminal
   # an image pinned anew (an update's compose.yaml): that service. (An image built here keeps its name and gets a new
   # ID: compose compares the container's image with it at each up — setup builds every image before its ups.)
-  h="$(_hashes)"; sed -i.bak 's#ghcr.io/berriai/litellm:1.105.0#ghcr.io/berriai/litellm:1.106.0#' "$STACK_DIR/compose.yaml"
+  h="$(_hashes)"; sed -i.bak -E 's#(ghcr.io/berriai/litellm:)[0-9.]+#\19.99.9#' "$STACK_DIR/compose.yaml"
   assert_eq "$(_changed "$h")" litellm
 }
 

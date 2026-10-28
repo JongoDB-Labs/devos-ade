@@ -15,7 +15,7 @@
 #            the backend and the sandbox's bn-coded and bn-preview (with Debian's git and ripgrep, as in the sandbox),
 #            and the sandbox's egress proxy (terminal/egress/bn-egress.mjs)
 #   (last)   the runtime image — what setup and update build (no target): web and deps only, never webtest, gitnew or test
-FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS web
+FROM node:24.22.1-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS web
 WORKDIR /src
 # build-web.sh always exists; "web*" adds code/web's files when there is such a folder (nothing otherwise)
 COPY build-web.sh web* /src/
@@ -30,7 +30,7 @@ RUN if [ -f package.json ]; then npm test; else echo "no code/web: no frontend t
 # -rN builds, so an exact pin would stop building at the next one. Only code/test.sh (--target test) builds this stage
 # and `test`: setup and update build the runtime stage at the end (compose.code.yaml: no target), which needs neither —
 # an Alpine change here can never break an install or an update.
-FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS gitnew
+FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS gitnew
 RUN apk add --no-cache "git~2.54" "git-daemon~2.54" "nodejs~24" openssh-client openssh-server openssl
 WORKDIR /opt/code
 COPY server/frames.mjs server/sshagent.mjs ./server/
@@ -40,7 +40,7 @@ COPY --from=terminal bin/bn-coded.mjs bin/bn-git-credential bin/bn-gh /opt/termi
 ENV BN_TERMINAL_DIR=/opt/terminal BN_TEST_REQUIRE_CONFIG_HOOKS=1 BN_TEST_EXPECT_SANDBOX=1
 RUN git --version && node --test --test-reporter=spec test/bn-coded-git.test.mjs test/bn-coded-remote.test.mjs && touch /tmp/gitnew-tested
 
-FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS deps
+FROM node:24.22.1-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS deps
 WORKDIR /opt/code
 COPY package.json package-lock.json .npmrc ./
 RUN npm ci --omit=optional --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=error --fetch-retries=5 --fetch-retry-maxtimeout=120000 --fetch-timeout=300000 \
@@ -73,7 +73,7 @@ ENV BN_TERMINAL_DIR=/opt/terminal BN_TEST_EXPECT_SANDBOX=1
 RUN node --test --test-reporter=spec $(for f in test/*.test.mjs; do grep -qxF "${f#test/}" test/one-at-a-time.txt || echo "$f"; done) \
  && node --test --test-concurrency=1 --test-reporter=spec $(sed 's|^|test/|' test/one-at-a-time.txt)
 
-FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
+FROM node:24.22.1-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea
 WORKDIR /opt/code
 COPY --from=deps /opt/code/node_modules ./node_modules
 COPY package.json ./

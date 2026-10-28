@@ -316,6 +316,45 @@ def _mb(ref: str) -> int:
     return DEFAULT_MB
 
 
+# The core services an update can move, by image repository (lib/versions.sh and catalog/core-services.tsv name the same).
+CORE_SERVICES = (("ghcr.io/berriai/litellm", "LiteLLM"), ("ghcr.io/open-webui/open-webui", "Open WebUI"), ("rustfs/rustfs", "RustFS"),
+                 ("pgvector/pgvector", "PostgreSQL (pgvector)"), ("searxng/searxng", "SearXNG"), ("caddy", "Caddy"),
+                 ("amazon/aws-cli", "AWS CLI"))
+
+
+def ref_version(ref: str) -> str:
+    """'ghcr.io/open-webui/open-webui:v0.12.4-slim@sha256:…' -> '0.12.4' (the release its tag names; '' without a tag)."""
+    name, _, _ = ref.partition("@")
+    repo, sep, tag = name.rpartition(":")
+    if not sep or "/" in tag:
+        return ""
+    tag = tag[1:] if tag.startswith("v") and tag[1:2].isdigit() else tag
+    return re.sub(r"-(slim|alpine|builder-alpine|pg\d+)$", "", tag)
+
+
+def service_moves(new_images: list[str] | None, current: list[str]) -> list[dict]:
+    """The core services whose pinned release the update changes: [{name, from, to}] (the release's own compose.yaml
+    against this install's). A new digest of the same release is not a move."""
+    if not new_images or not current:
+        return []
+
+    def by_repo(refs):
+        out = {}
+        for r in refs:
+            repo = r.partition("@")[0].rpartition(":")[0] if ":" in r.partition("@")[0].rsplit("/", 1)[-1] else r.partition("@")[0]
+            out.setdefault(repo, r)
+        return out
+
+    new, cur = by_repo(new_images), by_repo(current)
+    moves = []
+    for repo, name in CORE_SERVICES:
+        if repo in new and repo in cur:
+            a, b = ref_version(cur[repo]), ref_version(new[repo])
+            if a and b and a != b:
+                moves.append({"name": name, "from": a, "to": b})
+    return moves
+
+
 def estimate(new_images: list[str] | None, current: list[str]) -> dict:
     """What the update downloads: pinned images whose reference changed (local builds are rebuilt, not pulled)."""
     if new_images is None:
@@ -590,7 +629,7 @@ def status(paths: Paths, enabled: bool) -> dict:
     out = {"enabled": enabled, "installed": inst["version"] or None, "branch": inst["branch"] or None,
            "commit": inst["commit"] or None, "commit_date": inst["commit_date"] or None,
            "release_url": release_url(inst["version"]),
-           "latest": None, "available": False, "releases": [], "behind": 0, "more": False,
+           "latest": None, "available": False, "releases": [], "services": [], "behind": 0, "more": False,
            "checked_at": None, "error": None, "error_at": None, "limited": False, "refused": False, "retry_at": None,
            "by": None,
            "stale": False, "command": "./stack update"}
@@ -622,6 +661,8 @@ def status(paths: Paths, enabled: bool) -> dict:
             # True when even older releases than the list holds are part of the jump (only the newest PER_PAGE are kept)
             "more": bool(rels) and len(known) >= PER_PAGE and rels[-1]["tag"] == known[-1]["tag"],
             "estimate": estimate(imgs if isinstance(imgs, list) else None, inst["images"]),
+            # the core services the update moves (LiteLLM 1.105.0 -> 1.106.3 …): listed under What's new
+            "services": service_moves(imgs if isinstance(imgs, list) else None, inst["images"]),
         })
     return out
 

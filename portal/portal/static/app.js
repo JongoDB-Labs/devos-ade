@@ -442,7 +442,8 @@ function openRelease(tag) {
 }
 function renderReleases(u) {
   const rels = releasesOf(u);
-  const key = JSON.stringify([u.installed, u.more, rels.map((r) => [r.tag, r.headline, (r.notes || "").length])]);
+  const moves = Array.isArray(u.services) ? u.services : [];
+  const key = JSON.stringify([u.installed, u.more, rels.map((r) => [r.tag, r.headline, (r.notes || "").length]), moves]);
   if (lastNotes === key) return;
   lastNotes = key;
   const list = $("#update-releases"), box = $("#update-notes");
@@ -462,6 +463,14 @@ function renderReleases(u) {
     box.append(d);
   });
   if (u.more) box.append(el("p", { class: "update-more", text: "Older releases are part of this update too: the changelog on GitHub lists them." }));
+  // the core services this update moves, on one line inside the card (LiteLLM 1.105.0 → 1.106.3 · …)
+  const svc = $("#update-services");
+  svc.replaceChildren();
+  svc.hidden = !moves.length;
+  if (moves.length) {
+    svc.append(el("b", { text: "Core services: " }),
+      moves.map((m) => `${m.name} ${m.from} → ${m.to}`).join(" · "), " — the update brings each to its newest tested release.");
+  }
   const many = rels.length > 1;
   $("#update-releases-title").textContent = many ? `What's new: ${rels.length} releases since ${u.installed}` : "What's new";
   $("#update-releases-title").hidden = list.hidden = false;

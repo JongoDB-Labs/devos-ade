@@ -154,7 +154,7 @@ def routes(ctx: Ctx) -> list[Route]:
             # your AI subscriptions' tools in the sandbox and what each says of its own login (answers.py; never a login)
             "subscriptions": answers.tools(s.catalog_dir, s.status_dir),
             "here": {"remote": rem, "allowed": allowed(request)},
-            "apps": s.app_urls(ctx.remote(request)), "user": s.user_email, "backups": st.backups(s.status_dir),
+            "apps": s.app_urls(ctx.remote(request)), "user": s.user_email, "backups": st.backups(s.status_dir), "versions": st.versions(s.status_dir),
             "remote": {"on": s.remote_on(), "mode": s.remote_mode if s.remote_on() else "off",
                        "url": s.origin(remote=True) if s.remote_on() else ""},
             # Experiential Labs' chosen models its key's list does not name (left out; the card says so, with the

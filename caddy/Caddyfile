@@ -130,6 +130,16 @@
 	header_up Cookie "(^|;\s*)token=[^;]*" ""
 }
 
+# LiteLLM's admin UI shows a "The latest version is …" banner from its own GitHub release lookup (/get/latest_release_info,
+# which LiteLLM has no setting to turn off). Here LiteLLM only moves with a DevOS ADE release (./stack update, which
+# brings every core service to its newest tested release), so the banner would only confuse: that one answer is null
+# ("no release info", which the UI takes as nothing to show) and LiteLLM is never asked.
+(litellm_no_banner) {
+	@bn_litellm_latest path /get/latest_release_info
+	header @bn_litellm_latest Content-Type "application/json"
+	respond @bn_litellm_latest "null" 200
+}
+
 # The files host also answers RustFS's S3 API (the console signs its requests for this name), so a stored file opened
 # there would run on the console's origin, next to the credentials it keeps in localStorage. Everything but the console
 # and the sign-in hand-off is inert there: a sandbox (no scripts, an origin of its own), framed only by the portal
@@ -306,6 +316,7 @@ http://{$ADMIN_HOST} {
 		import not_from_preview
 		import portal_auth
 		import app_sso
+		import litellm_no_banner
 		reverse_proxy litellm:4000 {
 			import drop_session_cookie
 			import litellm_upstream

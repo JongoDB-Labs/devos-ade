@@ -60,6 +60,7 @@ esac
 case "$cmd" in
   setup) cmd_setup "$@" ;;
   status) [ ! -f "$ENV_FILE" ] || guard_project --warn; cmd_status "$@" ;;
+  versions) [ ! -f "$ENV_FILE" ] || guard_project --warn; cmd_versions "$@" ;;   # read only: docker inspect
   uninstall) guard_uninstall; cmd_uninstall "$@"; release_project ;;
   down | logs | costs | models)   # stop or read: check, but don't claim the project
     [ ! -f "$ENV_FILE" ] || guard_project --no-claim

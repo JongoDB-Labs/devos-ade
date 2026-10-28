@@ -36,6 +36,7 @@ STT_REFUSED = ("Bedrock speech-to-text is unavailable: AWS no longer accepts aud
 
 SNAPSHOT = "settings.json"
 BACKUPS = "backups.json"
+VERSIONS = "versions.json"
 CAPABILITY = "helper-settings.json"
 REPORT = "report.txt"
 MAX_SNAPSHOT = 512 * 1024
@@ -53,7 +54,7 @@ GROUPS = ("account", "aws", "budgets", "voice", "openrouter", "explabs", "websea
 SECTIONS = ("account", "providers", "aws", "spending", "chat", "code", "files", "remote", "updates", "diagnostics", "advanced", "about")
 PLACES = ("main", "more", "with")
 OWN_ROWS = ("+devices", "+models", "+backups", "+test", "+check-aws", "+report", "+restart", "+git-hosts", "+project-folders", "+sessions-consent", "+bring-setup",
-            "+subscriptions")
+            "+subscriptions", "+services")
 DOC = re.compile(r"(README\.md|docs/[a-z0-9-]{1,40}\.md)(#[a-z0-9-]{1,80})?")
 EDITABLE = ("edit", "local", "on-only", "widen-local")
 REGEN = ("RUSTFS_ACCESS_KEY", "SHARED_MCP_TOKEN")   # what "Regenerate" asks for (the RustFS pair is one action)
@@ -339,6 +340,24 @@ def backups(status_dir: Path) -> dict:
     return {"written_at": d.get("written_at") if isinstance(d.get("written_at"), int) else None, "backups": out[-200:],
             "nightly": {"on": n.get("on") is True, "hour": n.get("hour") if isinstance(n.get("hour"), int) else 2,
                         "keep": n.get("keep") if isinstance(n.get("keep"), int) else 7}}
+
+
+def versions(status_dir: Path) -> dict:
+    """The core services' versions ./stack writes (lib/versions.sh): what runs, what this release pins, the newest
+    upstream the maintainers found when it was made; one sentence per service for the page."""
+    d = _read_json(status_dir / VERSIONS, 64 * 1024)
+    ver = re.compile(r"[A-Za-z0-9._+-]{1,60}")
+    out = []
+    for x in d.get("services") or []:
+        if not isinstance(x, dict) or not isinstance(x.get("id"), str) or not re.fullmatch(r"[a-z0-9-]{1,40}", x["id"]):
+            continue
+        v = {k: (x[k] if isinstance(x.get(k), str) and ver.fullmatch(x[k]) else "") for k in ("running", "pinned", "newest")}
+        state = x.get("state") if x.get("state") in ("current", "behind", "pending", "stopped") else "current"
+        notes = x.get("notes") if isinstance(x.get("notes"), str) and re.fullmatch(r"https://(github\.com|hub\.docker\.com)/[A-Za-z0-9._/~-]{1,200}", x["notes"]) else ""
+        name = x.get("name") if isinstance(x.get("name"), str) and len(x["name"]) <= 40 and not re.search(r"[\x00-\x1f\x7f<>]", x["name"]) else x["id"]
+        out.append({"id": x["id"], "name": name, **v, "state": state, "notes": notes})
+    checked = d.get("checked") if isinstance(d.get("checked"), str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", d["checked"]) else ""
+    return {"written_at": d.get("written_at") if isinstance(d.get("written_at"), int) else None, "checked": checked, "services": out[:20]}
 
 
 def report(status_dir: Path) -> dict:

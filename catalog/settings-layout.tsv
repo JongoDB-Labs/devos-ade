@@ -13,7 +13,7 @@
 #            values: set and not off) — search and "Changed from default" show them anyway, saying so
 #   SUMMARY  one plain line (- for with rows)
 # Rows whose KEY starts with + are the page's own rows (no .env key): +devices, +models, +backups, +test, +check-aws,
-# +report, +restart, +git-hosts, +project-folders, +sessions-consent, +bring-setup, +subscriptions. Sections are shown
+# +report, +restart, +git-hosts, +project-folders, +sessions-consent, +bring-setup, +subscriptions, +services. Sections are shown
 # in this order; rows in file order.
 
 @account	Account & security	Your password, the owner email, how long sign-ins last, and what the model gateway keeps of your prompts.	README.md#the-portal-one-login-for-everything
@@ -128,6 +128,7 @@ BACKUP_NIGHTLY	updates	main	-	Back up every night, keeping the newest few.
 BACKUP_HOUR	updates	main	BACKUP_NIGHTLY	When the three-hour backup window starts (this computer's time).
 BACKUP_KEEP	updates	main	BACKUP_NIGHTLY	How many nightly backups to keep. Yours, and the one a rollback needs, are never removed.
 +backups	updates	main	-	Back up now, and the backups on this computer.
++services	updates	main	-	What version each core service runs, what this release pins, and the newest upstream.
 UPDATE_REQUIRE_SIGNED_TAGS	updates	more	-	Install only releases whose signature git verifies.
 BEDROCK_NOW_HELPER_ALLOW_BRANCH	updates	more	-	Let the update helper update a checkout that follows a branch (a switch of the helper itself).
 HELPER_PORTAL_UID	updates	more	-	Linux: the host user that may own the portal's request files (a switch of the helper itself).

@@ -1,0 +1,568 @@
+#!/usr/bin/env python3
+"""bump-core-services: the maintainer's tool that brings every pinned core service to its newest TESTED release.
+
+For maintainers, run from a checkout before each DevOS ADE release (docs/releasing.md); never on a user's computer
+(./stack update only pulls what a release already pins). It does not run anything of the stack.
+
+For every pin it finds the newest stable upstream release that is past a COOLDOWN (at least 3 days old, so a release
+that is pulled within days never gets pinned), unless that release is a security fix (its notes say so: it is taken at
+once). Then it resolves the image DIGEST, rewrites the pins in place and prints an old -> new table with release-note
+links:
+
+  compose.yaml, open-webui/Dockerfile, caddy/Dockerfile      LiteLLM, Open WebUI, RustFS, Caddy, pgvector, SearXNG, aws-cli
+  portal/, shared-mcp/, stt/, code/, terminal/ Dockerfiles   the python / node / alpine base images (tag kept, digest moved)
+  terminal/Dockerfile ARGs                                   Codex, Copilot CLI, ttyd, gh (versions + SHA-256 of the files)
+  */requirements.txt                                         the pip locks, re-locked with hashes (uv pip compile)
+  catalog/core-services.tsv                                  what ./stack versions and Settings show as "newest upstream"
+
+  bin/bump-core-services            bump everything
+  bin/bump-core-services --check    only report (exit 0: up to date, 3: something to bump); changes no file
+  bin/bump-core-services --only litellm,gh     only these targets (names in the table)
+  bin/bump-core-services --now 2026-10-27T12:00:00Z    the clock the cooldown counts from (default: now)
+
+Python 3 standard library only. GITHUB_TOKEN (optional) raises GitHub's API rate limit.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import hashlib
+import http.client
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+COOLDOWN_DAYS = 3
+SECURITY_RX = re.compile(r"\bCVE-\d{4}-\d+|\bGHSA-[0-9a-z]{4}-|security (fix|patch|advisory|update|vulnerab)|vulnerabilit|"
+                         r"\bsecurity\b.{0,40}\b(fix|patch)", re.I)
+DIGEST_RX = r"@sha256:[0-9a-f]{64}"
+ACCEPT = ", ".join(["application/vnd.oci.image.index.v1+json", "application/vnd.docker.distribution.manifest.list.v2+json",
+                    "application/vnd.oci.image.manifest.v1+json", "application/vnd.docker.distribution.manifest.v2+json"])
+
+
+# ------------------------------------------------------------------------------------------------------ network
+class Net:
+    """The only place that touches the network (tests replace it with a fake that has the same three methods)."""
+
+    def __init__(self, timeout: int = 60):
+        self.timeout = timeout
+
+    def _open(self, url: str, headers: dict | None = None, method: str = "GET"):
+        req = urllib.request.Request(url, headers=headers or {}, method=method)
+        return urllib.request.urlopen(req, timeout=self.timeout)
+
+    @staticmethod
+    def retrying(fn, tries: int = 4):
+        """fn(), again after a dropped connection or a timeout (4xx answers are real answers: not retried)."""
+        for i in range(tries):
+            try:
+                return fn()
+            except urllib.error.HTTPError:
+                raise
+            except (urllib.error.URLError, http.client.HTTPException, TimeoutError, ConnectionError):
+                if i == tries - 1:
+                    raise
+                time.sleep(2 * (i + 1))
+
+    def json(self, url: str):
+        h = {"Accept": "application/json", "User-Agent": "devos-ade-bump"}
+        if "api.github.com" in url and os.environ.get("GITHUB_TOKEN"):
+            h["Authorization"] = "Bearer " + os.environ["GITHUB_TOKEN"]
+
+        def go():
+            with self._open(url, h) as r:
+                return json.load(r)
+        return self.retrying(go)
+
+    def sha256(self, url: str) -> str:
+        def go():
+            h = hashlib.sha256()
+            with self._open(url, {"User-Agent": "devos-ade-bump"}) as r:
+                for chunk in iter(lambda: r.read(1 << 20), b""):
+                    h.update(chunk)
+            return h.hexdigest()
+        return self.retrying(go)
+
+    def digest(self, registry: str, name: str, tag: str) -> str:
+        """The digest of registry/name:tag (the multi-arch index, as `docker pull` pins it), via the registry API."""
+        url = f"https://{registry}/v2/{name}/manifests/{tag}"
+        hdrs = {"Accept": ACCEPT, "User-Agent": "devos-ade-bump"}
+        try:
+            r = self._open(url, hdrs, "HEAD")
+        except urllib.error.HTTPError as e:
+            if e.code != 401:
+                raise
+            ch = e.headers.get("WWW-Authenticate", "")
+            realm = re.search(r'realm="([^"]+)"', ch)
+            if not realm:
+                raise
+            q = "&".join(f"{k}={v}" for k, v in re.findall(r'(service|scope)="([^"]+)"', ch))
+            tok = self.json(realm.group(1) + ("?" + q if q else ""))
+            hdrs["Authorization"] = "Bearer " + (tok.get("token") or tok.get("access_token") or "")
+            r = self._open(url, hdrs, "HEAD")
+        with r:
+            return r.headers["Docker-Content-Digest"]
+
+
+# ------------------------------------------------------------------------------------------------------ helpers
+def parse_time(s: str) -> dt.datetime:
+    s = s.strip().replace("Z", "+00:00")
+    d = dt.datetime.fromisoformat(s if "T" in s or " " in s else s + "T00:00:00+00:00")
+    return d if d.tzinfo else d.replace(tzinfo=dt.timezone.utc)
+
+
+def vkey(v: str) -> tuple:
+    return tuple(int(x) for x in re.findall(r"\d+", v))
+
+
+def age_days(then: dt.datetime, now: dt.datetime) -> float:
+    return (now - then).total_seconds() / 86400
+
+
+def registry_of(repo: str) -> tuple[str, str]:
+    """('ghcr.io', 'berriai/litellm') / ('registry-1.docker.io', 'library/caddy')."""
+    first = repo.split("/")[0]
+    if "." in first:
+        return first, repo[len(first) + 1:]
+    return "registry-1.docker.io", repo if "/" in repo else "library/" + repo
+
+
+def hub_repo(repo: str) -> str:
+    return repo if "/" in repo else "library/" + repo
+
+
+class Candidate:
+    """One upstream release of a target: its version, when it came out, its notes page and notes text."""
+
+    def __init__(self, version, released, url="", notes=""):
+        self.version, self.released, self.url, self.notes = version, released, url, notes
+
+    def security(self) -> str:
+        """The words of the notes that make this a security fix ('' when none)."""
+        m = SECURITY_RX.search(self.notes or "")
+        return m.group(0) if m else ""
+
+
+def pick(cands: list[Candidate], current: str, now: dt.datetime, cooldown: int = COOLDOWN_DAYS):
+    """(chosen, newest, why) from stable releases. chosen: the newest at least COOLDOWN days old, or the newest of
+    all when it is a security fix (never older than CURRENT: no downgrade). newest: the newest of all. why: '' |
+    'security' | 'held back: newest X is Nd old' (when chosen is not newest)."""
+    if not cands:
+        return None, None, ""
+    cands = sorted(cands, key=lambda c: vkey(c.version), reverse=True)
+    newest = cands[0]
+    chosen, why = None, ""
+    for c in cands:
+        if vkey(c.version) < vkey(current):
+            break
+        if c.security():
+            chosen, why = c, f"security fix: \"{c.security()}\""
+            break
+        if age_days(c.released, now) >= cooldown:
+            chosen = c
+            break
+    if chosen is None:  # nothing past the cooldown is newer than what is pinned
+        chosen = next((c for c in cands if c.version == current), None) or Candidate(current, newest.released, newest.url)
+    if chosen is not None and chosen is not newest and not why:
+        why = f"held back: {newest.version} is {int(age_days(newest.released, now))}d old (cooldown {cooldown}d)"
+    return chosen, newest, why
+
+
+# ------------------------------------------------------------------------------------------------------ sources
+class GithubReleases:
+    """Stable (not draft, not pre-release) GitHub releases whose tag matches TAG_RX (group 1 = the version)."""
+
+    def __init__(self, repo: str, tag_rx: str):
+        self.repo, self.tag_rx = repo, re.compile(tag_rx)
+
+    def candidates(self, net: Net) -> list[Candidate]:
+        out = []
+        for page in (1, 2, 3):
+            rels = net.json(f"https://api.github.com/repos/{self.repo}/releases?per_page=60&page={page}")
+            for r in rels:
+                m = self.tag_rx.fullmatch(r.get("tag_name") or "")
+                if not m or r.get("draft") or r.get("prerelease"):
+                    continue
+                out.append(Candidate(m.group(1), parse_time(r["published_at"]),
+                                     r.get("html_url") or f"https://github.com/{self.repo}/releases/tag/{r['tag_name']}",
+                                     r.get("body") or ""))
+            if len(rels) < 60 or len(out) >= 40:
+                break
+        return out
+
+
+class HubTags:
+    """Docker Hub tags of REPO matching TAG_RX (group 1 = the version); the tag's push date is its release date."""
+
+    def __init__(self, repo: str, tag_rx: str, name_filter: str = ""):
+        self.repo, self.tag_rx, self.name_filter = repo, re.compile(tag_rx), name_filter
+
+    def candidates(self, net: Net) -> list[Candidate]:
+        url = (f"https://hub.docker.com/v2/repositories/{hub_repo(self.repo)}/tags?page_size=100&ordering=last_updated"
+               + (f"&name={self.name_filter}" if self.name_filter else ""))
+        out, pages = [], 0
+        while url and pages < 6:
+            d = net.json(url)
+            for t in d.get("results", []):
+                m = self.tag_rx.fullmatch(t.get("name") or "")
+                when = t.get("tag_last_pushed") or t.get("last_updated")
+                if m and when:
+                    out.append(Candidate(m.group(1), parse_time(when), f"https://hub.docker.com/r/{self.repo}/tags"))
+            url, pages = d.get("next"), pages + 1
+        return out
+
+
+# ------------------------------------------------------------------------------------------------------ edits
+class Files:
+    """A tiny read/modify/write layer: edits are kept in memory and written only by flush() (never with --check)."""
+
+    def __init__(self, root: str):
+        self.root, self.text, self.orig = root, {}, {}
+
+    def get(self, rel: str) -> str:
+        if rel not in self.text:
+            try:
+                with open(os.path.join(self.root, rel), encoding="utf-8") as f:
+                    self.orig[rel] = self.text[rel] = f.read()
+            except FileNotFoundError:
+                self.orig[rel] = self.text[rel] = ""
+        return self.text[rel]
+
+    def put(self, rel: str, s: str) -> None:
+        self.get(rel)
+        self.text[rel] = s
+
+    def flush(self) -> list[str]:
+        changed = []
+        for rel, s in self.text.items():
+            if s != self.orig[rel]:
+                with open(os.path.join(self.root, rel), "w", encoding="utf-8") as f:
+                    f.write(s)
+                changed.append(rel)
+        return changed
+
+
+NUM_VERSION = r"\d+(?:\.\d+)*"
+
+
+def tag_rx_of(template: str, vrx: str = NUM_VERSION) -> str:
+    """'{v}-slim' -> a regex whose group 'v' is the version part."""
+    return re.escape(template).replace(re.escape("{v}"), "(?P<v>" + vrx + ")")
+
+
+def image_rx(repo: str, template: str, vrx: str = NUM_VERSION) -> re.Pattern:
+    return re.compile(r"(?<![\w/.\-])" + re.escape(repo) + ":" + tag_rx_of(template, vrx) + r"(?P<d>" + DIGEST_RX + r")?(?![\w.\-])")
+
+
+def current_image_version(text: str, repo: str, template: str, vrx: str = NUM_VERSION) -> str | None:
+    m = image_rx(repo, template, vrx).search(text)
+    return m.group("v") if m else None
+
+
+def rewrite_image(text: str, repo: str, template: str, version: str, digest: str | None, vrx: str = NUM_VERSION) -> str:
+    new = f"{repo}:{template.replace('{v}', version)}" + (f"@{digest}" if digest else "")
+    return image_rx(repo, template, vrx).sub(lambda m: new, text)
+
+
+def arg_value(text: str, name: str) -> str | None:
+    m = re.search(rf"^ARG {re.escape(name)}=(\S*)", text, re.M)
+    return m.group(1) if m else None
+
+
+def rewrite_arg(text: str, name: str, value: str) -> str:
+    return re.sub(rf"^(ARG {re.escape(name)}=)\S*", lambda m: m.group(1) + value, text, flags=re.M)
+
+
+# ------------------------------------------------------------------------------------------------------ targets
+E2E_TESTED = "tests/e2e/browser/common.py"
+GOLDEN_DIR = "tests/fixtures/compose-golden"
+
+
+class Move:
+    def __init__(self, name, old, new, newest, url="", why="", released=None, held=False):
+        self.name, self.old, self.new, self.newest, self.url, self.why = name, old, new, newest, url, why
+        self.released, self.held = released, held
+        self.newest_url, self.newest_released = url, released   # of the newest release (ImageTarget sets them)
+
+    @property
+    def changed(self) -> bool:
+        return self.old != self.new
+
+
+class ImageTarget:
+    """A pinned image (compose.yaml and/or Dockerfiles): moves to the newest release past the cooldown, with its
+    digest. IMAGES: [(repo, tag template with {v})], the same version for every one (Caddy: -alpine and -builder-alpine)."""
+
+    def __init__(self, name, label, source, images, files, args=(), service="", vrx=NUM_VERSION, tested=""):
+        self.name, self.label, self.source, self.images, self.files, self.args, self.service = name, label, source, images, files, args, service
+        self.vrx, self.tested = vrx, tested
+
+    def current(self, fs: Files) -> str:
+        repo, tpl = self.images[0]
+        for f in self.files:
+            v = current_image_version(fs.get(f), repo, tpl, self.vrx)
+            if v:
+                return v
+        raise SystemExit(f"{self.name}: no pin for {repo} in {', '.join(self.files)}")
+
+    def pinned_digest(self, fs: Files, repo: str, tpl: str) -> str | None:
+        for f in self.files:
+            m = image_rx(repo, tpl, self.vrx).search(fs.get(f))
+            if m and m.group("d"):
+                return m.group("d")[1:]
+        return None
+
+    def run(self, net, fs: Files, now, cooldown) -> Move:
+        cur = self.current(fs)
+        chosen, newest, why = pick(self.source.candidates(net), cur, now, cooldown)
+        if chosen is None:
+            raise SystemExit(f"{self.name}: no stable release found upstream")
+        v = chosen.version
+        digests = {}
+        for repo, tpl in self.images:
+            held = self.pinned_digest(fs, repo, tpl) if v == cur else None  # the same release keeps its digest (cooldown)
+            if held:
+                digests[(repo, tpl)] = held
+            else:
+                reg, nm = registry_of(repo)
+                digests[(repo, tpl)] = net.digest(reg, nm, tpl.replace("{v}", v))
+        # (+ tests/fixtures/compose-golden/*.json: the images compose renders, which tests/test_brand.sh compares)
+        goldens = sorted(str(q.relative_to(fs.root)) for q in Path(fs.root, GOLDEN_DIR).glob("*.json"))
+        for f in list(self.files) + goldens:
+            s = fs.get(f)
+            for repo, tpl in self.images:
+                s = rewrite_image(s, repo, tpl, v, digests[(repo, tpl)], self.vrx)
+            for argname in self.args:
+                if f in self.files:
+                    s = rewrite_arg(s, argname, v)
+            fs.put(f, s)
+        if self.tested:  # tests/e2e/browser/common.py: the versions the e2e suite was run with
+            t = fs.get(E2E_TESTED)
+            fs.put(E2E_TESTED, re.sub(rf'("{re.escape(self.tested)}": ")[^"]*(")',
+                                      lambda m: m.group(1) + self.images[0][1].replace("{v}", v) + m.group(2), t))
+        m = Move(self.name, cur, v, newest.version, chosen.url, why, chosen.released, chosen is not newest)
+        m.newest_url, m.newest_released = newest.url, newest.released
+        return m
+
+
+class BaseTarget:
+    """A base image whose tag is kept (python:3.12-slim): only its digest moves, and only when the tag's newest push is
+    past the cooldown. Node pins a patch version in the tag (node:24.21.0-trixie-slim), so it is an ImageTarget."""
+
+    def __init__(self, name, label, repo, tag, files):
+        self.name, self.label, self.repo, self.tag, self.files = name, label, repo, tag, files
+
+    def run(self, net, fs: Files, now, cooldown) -> Move:
+        hub = HubTags(self.repo, re.escape(self.tag).join(["(", ")"]), self.tag)
+        cands = [c for c in hub.candidates(net) if c.version == self.tag]
+        pat = re.compile(r"(?<![\w/.\-])" + re.escape(self.repo) + ":" + re.escape(self.tag) + r"(?:" + DIGEST_RX + r")?(?![\w.\-])")
+        old = ""
+        for f in self.files:
+            m = re.search(re.escape(self.repo) + ":" + re.escape(self.tag) + "@(sha256:[0-9a-f]{64})", fs.get(f))
+            if m:
+                old = m.group(1)
+                break
+        if not cands:
+            return Move(self.name, old[:19], old[:19], old[:19])
+        c = cands[0]
+        reg, nm = registry_of(self.repo)
+        if age_days(c.released, now) < cooldown:
+            return Move(self.name, old[:19], old[:19], "newer push", c.url, f"held back: pushed {int(age_days(c.released, now))}d ago", c.released, True)
+        dg = net.digest(reg, nm, self.tag)
+        for f in self.files:
+            fs.put(f, pat.sub(f"{self.repo}:{self.tag}@{dg}", fs.get(f)))
+        return Move(self.name, old[:19], dg[:19], dg[:19], c.url, "", c.released)
+
+
+class ToolTarget:
+    """A release binary downloaded in terminal/Dockerfile: VERSION arg and the SHA-256 args of its two files."""
+
+    def __init__(self, name, label, source, prefix, assets, file="terminal/Dockerfile"):
+        # assets: {"AMD64": "url template with {v}", "ARM64": "..."}
+        self.name, self.label, self.source, self.prefix, self.assets, self.file = name, label, source, prefix, assets, file
+
+    def run(self, net, fs: Files, now, cooldown) -> Move:
+        s = fs.get(self.file)
+        cur = arg_value(s, self.prefix + "_VERSION")
+        if cur is None:
+            raise SystemExit(f"{self.name}: no ARG {self.prefix}_VERSION in {self.file}")
+        chosen, newest, why = pick(self.source.candidates(net), cur, now, cooldown)
+        if chosen is None:
+            raise SystemExit(f"{self.name}: no stable release found upstream")
+        if chosen.version != cur:
+            s = rewrite_arg(s, self.prefix + "_VERSION", chosen.version)
+            for arch, tpl in self.assets.items():
+                s = rewrite_arg(s, f"{self.prefix}_SHA256_{arch}", net.sha256(tpl.replace("{v}", chosen.version)))
+            fs.put(self.file, s)
+        return Move(self.name, cur, chosen.version, newest.version, chosen.url, why, chosen.released, chosen is not newest)
+
+
+class PipLock:
+    """requirements.in -> requirements.txt with hashes (uv pip compile --generate-hashes), nothing newer than the
+    cooldown (--exclude-newer). Reports the packages that moved."""
+
+    def __init__(self, name, directory):
+        self.name, self.dir = name, directory
+
+    @staticmethod
+    def pins(text: str) -> dict:
+        return {m.group(1).lower(): m.group(2) for m in re.finditer(r"^([A-Za-z0-9_.\-]+)==(\S+)", text, re.M)}
+
+    def run(self, net, fs: Files, now, cooldown, runner=None, apply=True) -> Move:
+        rel = f"{self.dir}/requirements.txt"
+        old = self.pins(fs.get(rel))
+        cutoff = (now - dt.timedelta(days=cooldown)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, "requirements.txt")
+            with open(out, "w", encoding="utf-8") as f:
+                f.write(fs.get(rel))
+            cmd = ["uv", "pip", "compile", "--quiet", "--generate-hashes", "--python-version", "3.12", "--upgrade",
+                   "--exclude-newer", cutoff, "requirements.in", "-o", out]
+            (runner or run_cmd)(cmd, os.path.join(fs.root, self.dir))
+            with open(out, encoding="utf-8") as f:
+                new_text = f.read()
+        # uv writes the -o path into its header: keep the file's own header
+        new_text = re.sub(r"(-o )\S+requirements\.txt", r"\1requirements.txt", new_text)
+        new = self.pins(new_text)
+        moved = [f"{n} {old[n]} -> {new[n]}" for n in sorted(new) if n in old and old[n] != new[n]]
+        added = [f"{n} {new[n]} (new)" for n in sorted(new) if n not in old]
+        gone = [f"{n} (removed)" for n in sorted(old) if n not in new]
+        if moved or added or gone:
+            fs.put(rel, new_text)
+        ch = moved + added + gone
+        return Move(self.name, f"{len(old)} pins", f"{len(old)} pins, {len(ch)} moved" if ch else f"{len(old)} pins",
+                    "", "https://pypi.org/", "; ".join(ch[:12]) + (" …" if len(ch) > 12 else ""))
+
+
+def run_cmd(cmd, cwd):
+    subprocess.run(cmd, cwd=cwd, check=True)
+
+
+def targets() -> list:
+    gh = lambda repo, rx: GithubReleases(repo, rx)
+    ver = r"(\d+\.\d+\.\d+)"
+    return [
+        ImageTarget("litellm", "LiteLLM", gh("BerriAI/litellm", "v" + ver), [("ghcr.io/berriai/litellm", "{v}")], ["compose.yaml"], service="litellm", tested="litellm"),
+        ImageTarget("open-webui", "Open WebUI", gh("open-webui/open-webui", "v" + ver), [("ghcr.io/open-webui/open-webui", "v{v}-slim")],
+                    ["compose.yaml", "open-webui/Dockerfile"], service="open-webui", tested="open-webui"),
+        ImageTarget("rustfs", "RustFS", gh("rustfs/rustfs", ver), [("rustfs/rustfs", "{v}")], ["compose.yaml"], service="rustfs", tested="rustfs"),
+        ImageTarget("caddy", "Caddy", gh("caddyserver/caddy", "v" + ver), [("caddy", "{v}-alpine"), ("caddy", "{v}-builder-alpine")],
+                    ["compose.yaml", "compose.terminal.yaml", "caddy/Dockerfile", "tests/caddy-validate.sh"], args=("CADDY_VERSION",), service="caddy"),
+        ImageTarget("tailscale", "Tailscale (remote access)", gh("tailscale/tailscale", "v" + ver), [("tailscale/tailscale", "v{v}")], ["compose.tailscale.yaml"]),
+        ImageTarget("pgvector", "PostgreSQL (pgvector)", HubTags("pgvector/pgvector", ver + "-pg17", "-pg17"), [("pgvector/pgvector", "{v}-pg17")],
+                    ["compose.yaml"], service="postgres"),
+        ImageTarget("searxng", "SearXNG", HubTags("searxng/searxng", r"(\d{4}\.\d+\.\d+-[0-9a-f]+)", "20"), [("searxng/searxng", "{v}")],
+                    ["compose.yaml"], service="searxng", vrx=r"\d{4}\.\d+\.\d+-[0-9a-f]+"),
+        ImageTarget("aws-cli", "AWS CLI (bucket setup)", HubTags("amazon/aws-cli", ver, "2."), [("amazon/aws-cli", "{v}")], ["compose.yaml"], service="rustfs-init"),
+        ImageTarget("node", "Node base image", HubTags("node", r"(24\.\d+\.\d+)-trixie-slim", "-trixie-slim"), [("node", "{v}-trixie-slim")],
+                    ["portal/Dockerfile", "code/Dockerfile", "terminal/Dockerfile", "terminal/egress/Dockerfile"]),
+        BaseTarget("python-slim", "Python base image (slim)", "python", "3.12-slim", ["portal/Dockerfile", "shared-mcp/Dockerfile"]),
+        BaseTarget("python-alpine", "Python base image (alpine)", "python", "3.12-alpine", ["stt/Dockerfile"]),
+        BaseTarget("alpine", "Alpine base image", "alpine", "3.24", ["code/Dockerfile"]),
+        ToolTarget("codex", "Codex CLI", gh("openai/codex", "rust-v" + ver), "CODEX",
+                   {"AMD64": "https://github.com/openai/codex/releases/download/rust-v{v}/codex-x86_64-unknown-linux-musl.tar.gz",
+                    "ARM64": "https://github.com/openai/codex/releases/download/rust-v{v}/codex-aarch64-unknown-linux-musl.tar.gz"}),
+        ToolTarget("copilot", "Copilot CLI", gh("github/copilot-cli", "v" + ver), "COPILOT",
+                   {"AMD64": "https://github.com/github/copilot-cli/releases/download/v{v}/copilot-linux-x64.tar.gz",
+                    "ARM64": "https://github.com/github/copilot-cli/releases/download/v{v}/copilot-linux-arm64.tar.gz"}),
+        ToolTarget("ttyd", "ttyd", gh("tsl0922/ttyd", ver), "TTYD",
+                   {"AMD64": "https://github.com/tsl0922/ttyd/releases/download/{v}/ttyd.x86_64",
+                    "ARM64": "https://github.com/tsl0922/ttyd/releases/download/{v}/ttyd.aarch64"}),
+        ToolTarget("gh", "GitHub CLI (sandbox)", gh("cli/cli", "v" + ver), "GH",
+                   {"AMD64": "https://github.com/cli/cli/releases/download/v{v}/gh_{v}_linux_amd64.tar.gz",
+                    "ARM64": "https://github.com/cli/cli/releases/download/v{v}/gh_{v}_linux_arm64.tar.gz"}),
+        PipLock("pip-portal", "portal"), PipLock("pip-shared-mcp", "shared-mcp"), PipLock("pip-stt", "stt"),
+    ]
+
+
+# Pins a maintainer holds back on purpose: reported (old -> new, with the reason), never rewritten, until the hold is
+# removed here. A hold is for something the maintainers cannot test with what they have.
+HOLDS = {"tailscale": "remote access needs a real tailnet to test; bump it by hand after testing there"}
+
+# Not covered (said in the report): Cursor CLI (no release feed or checksum: terminal/Dockerfile's CURSOR_* are moved by
+# hand), the npm tools' lockfiles (terminal/claude-code, terminal/tools/gemini and grok: npm install in those folders),
+# TTYD_PAGE_SCRIPT_SHA256 (changes only with a new ttyd).
+NOT_COVERED = "Cursor CLI and the npm tool lockfiles (terminal/claude-code, terminal/tools/*) are bumped by hand"
+
+MANIFEST = "catalog/core-services.tsv"
+HEADER = ("# The core services DevOS ADE pins, and the newest stable upstream release when bin/bump-core-services last ran\n"
+          "# (docs/releasing.md: every release runs it). ./stack versions and Settings read it: the pinned version comes from\n"
+          "# compose.yaml itself, this table adds what upstream has and where its notes are.\n"
+          "#\n# id (compose service)  name  newest_upstream  released (date)  notes_url  checked (date)\n")
+
+
+def write_manifest(moves: dict, now: dt.datetime) -> str:
+    rows = []
+    for t in targets():
+        if not isinstance(t, ImageTarget) or not t.service or t.name not in moves:
+            continue
+        m = moves[t.name]
+        rows.append("\t".join([t.service, t.label, m.newest, (m.newest_released or now).strftime("%Y-%m-%d"),
+                               m.newest_url or m.url, now.astimezone().strftime("%Y-%m-%d")]))
+    return HEADER + "\n".join(rows) + "\n"
+
+
+# ------------------------------------------------------------------------------------------------------ main
+def table(moves: list[Move]) -> str:
+    rows = [("Service", "Old", "New", "Notes")]
+    for m in moves:
+        arrow = m.new if m.changed else "(up to date)"
+        note = (m.url or "") + (f"  [{m.why}]" if m.why else "")
+        rows.append((m.name, m.old, arrow, note.strip()))
+    w = [max(len(r[i]) for r in rows) for i in range(3)]
+    return "\n".join("  ".join(r[i].ljust(w[i]) for i in range(3)) + "  " + r[3] for r in rows)
+
+
+def main(argv=None, net=None, root=None, runner=None, out=sys.stdout) -> int:
+    ap = argparse.ArgumentParser(prog="bump-core-services", description="Bring every pinned core service to its newest tested release.")
+    ap.add_argument("--check", action="store_true", help="only report; change no file (exit 3 when something would move)")
+    ap.add_argument("--only", help="comma list of target names")
+    ap.add_argument("--now", help="the clock the cooldown counts from (ISO time; default now)")
+    ap.add_argument("--cooldown-days", type=int, default=COOLDOWN_DAYS)
+    a = ap.parse_args(argv)
+    root = root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    net = net or Net()
+    now = parse_time(a.now) if a.now else dt.datetime.now(dt.timezone.utc)
+    only = set(filter(None, (a.only or "").split(",")))
+    fs = Files(root)
+    moves: dict = {}
+    errors = []
+    for t in targets():
+        if only and t.name not in only:
+            continue
+        try:
+            if isinstance(t, PipLock):
+                moves[t.name] = t.run(net, fs, now, a.cooldown_days, runner)
+            elif t.name in HOLDS:   # looked at on a copy that is never written
+                m = t.run(net, Files(root), now, a.cooldown_days)
+                m.why, m.new, m.held = f"HELD ({HOLDS[t.name]}); would move to {m.new}", m.old, True
+                moves[t.name] = m
+            else:
+                moves[t.name] = t.run(net, fs, now, a.cooldown_days)
+        except (urllib.error.URLError, http.client.HTTPException, subprocess.CalledProcessError, OSError, KeyError, ValueError) as e:
+            errors.append(f"{t.name}: {type(e).__name__}: {e}")
+    ml = list(moves.values())
+    print(table(ml), file=out)
+    if not only and not errors:
+        fs.put(MANIFEST, write_manifest(moves, now))
+    for e in errors:
+        print("error: " + e, file=out)
+    print("not covered: " + NOT_COVERED, file=out)
+    pending = [m for m in ml if m.changed]
+    if a.check:
+        print(f"{len(pending)} of {len(ml)} to bump (cooldown {a.cooldown_days} days; --check changed nothing)", file=out)
+        return 1 if errors else (3 if pending else 0)
+    changed = fs.flush()
+    print(f"{len(pending)} bumped; files changed: {', '.join(changed) or 'none'}", file=out)
+    return 1 if errors else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

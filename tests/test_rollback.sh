@@ -528,3 +528,29 @@ test_rollback_to_a_version_with_litellms_hook_keeps_it() {
   ASSUME_YES=1 cmd_rollback > /dev/null 2>&1
   assert_contains "$(cat "$STACK_DIR/litellm/config.yaml")" "callbacks"
 }
+
+# --- ./stack update checks that every service runs the image this release pins (lib/versions.sh) ---
+
+test_a_service_not_on_the_pinned_image_fails_the_update_and_rollback_stays_possible() {
+  _fixture; _record; _finish_stubs
+  mkdir -p "$STATE_DIR/images"; : > "$STATE_DIR/images/before.tsv"
+  update_verify_images() { echo "  litellm runs ghcr.io/berriai/litellm:1.105.0, not the 1.106.3 this release pins" >&2; return 1; }
+  if out="$( (ASSUME_YES=1 cmd_update) 2>&1)"; then echo "a stale service passed the update" >&2; return 1; fi
+  assert_contains "$out" "litellm runs ghcr.io/berriai/litellm:1.105.0"
+  assert_contains "$out" "a service is not running the image this release pins"
+  assert_contains "$out" "./stack rollback"
+  # not done: the record still says running, so the next ./stack update finishes it and ./stack rollback goes back
+  assert_contains "$(cat "$(update_record_file)")" "result=running"
+  assert_not_contains "$(cat "$TMP/steps")" "AFTER"   # the old images are not cleaned up under an update that failed
+  ASSUME_YES=1 cmd_rollback > /dev/null 2>&1
+  assert_eq "$(git -C "$STACK_DIR" rev-parse HEAD)" "$OLD"
+}
+
+test_a_passing_check_lets_the_update_finish() {
+  _fixture; _record; _finish_stubs
+  mkdir -p "$STATE_DIR/images"; : > "$STATE_DIR/images/before.tsv"
+  update_verify_images() { echo VERIFY >> "$TMP/steps"; return 0; }
+  ASSUME_YES=1 cmd_update > /dev/null 2>&1
+  assert_eq "$(tr '\n' ';' < "$TMP/steps")" "dc config;dc pull;VERIFY;AFTER;"
+  assert_contains "$(cat "$(update_record_file)")" "result=done"
+}

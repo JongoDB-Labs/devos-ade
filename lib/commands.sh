@@ -23,6 +23,7 @@ Usage: ./stack <command> [--yes]
   up | down    Start / stop the stack
   status       Services, health, URLs and disk use (the portal: one login for every browser UI)
                --disk measures disk use now (otherwise reused for 5 minutes)
+  versions     Each core service: what runs, what this release pins, the newest upstream
   open         The installed DevOS ADE app, else the portal in your browser, where
                "Install app" installs it (setup and up open it too; BEDROCK_NOW_NO_OPEN=1
                turns that off)
@@ -676,6 +677,7 @@ _setup_finish() {
   if [ -n "$SETUP_REMOTE_MODE" ]; then remote_enable "$SETUP_REMOTE_MODE"; else remote_up_hook; fi
   record_setup_commit   # lib/rollback.sh: ./stack update calls "nothing new" only for this commit
   services_status_write   # Home's record of the containers, as setup leaves them (the built-in SearXNG's row)
+  write_versions_json     # lib/versions.sh: Settings' Core services
   subs_refresh_reap   # lib/subscriptions.sh: what your subscriptions' tools say, asked in the background since they started
 }
 
@@ -1498,7 +1500,7 @@ services_status_tick() {
 
 # shellcheck disable=SC2120  # arguments come from the ./stack dispatcher
 cmd_status() {
-  local ps upd py xl fresh='' O_RED O_GRN O_YEL O_OFF
+  local ps upd py xl vl fresh='' O_RED O_GRN O_YEL O_OFF
   case "${1:-}" in '') ;; --disk) fresh=--fresh ;; *) die "usage: ./stack status [--disk]   (--disk: measure disk use now)" ;; esac
   out_colors
   check_docker_daemon   # a stopped daemon would otherwise look like "not created" everywhere
@@ -1519,6 +1521,8 @@ cmd_status() {
     printf '  %sUpdate available: %s%s (you have %s) — ./stack update   (release notes on Home)\n' "$O_YEL" "$upd" "$O_OFF" "$(installed_version)"
   fi
   printf '  %s\n' "$(helper_status_line)"   # lib/helper.sh: one-click and automatic updates
+  vl="$(versions_status_line 2>/dev/null || true)"; [ -z "$vl" ] || printf '  %s\n' "$vl"   # lib/versions.sh
+  write_versions_json 2>/dev/null || true   # (Settings' Core services)
   py="$(python_runner_line)"; [ -z "$py" ] || printf '  %s\n' "$py"   # lib/owui.sh: what Chat's Python runner can import
   # lib/explabs.sh: its models, and when they run without model details (fail safe: no sampling parameters)
   xl="$(explabs_status_line)"; [ -z "$xl" ] || printf '  %s\n' "$xl"
@@ -2115,6 +2119,10 @@ cmd_update() {
     -u BEDROCK_NOW_UPDATE_FINISHING -u BEDROCK_NOW_PULLS_DIR -u BEDROCK_NOW_PULLS_PID \
     ${pullenv[@]+"${pullenv[@]}"} "$STACK_DIR/stack" setup --yes ||
     die "update: setup failed (see the messages above) — $hint"
+  # Every service this update recreated runs the image this release pins (by digest); one that does not fails the update
+  # the way a failed setup does: the record stays "running", so ./stack rollback goes back (lib/versions.sh)
+  timed_step "Services run the pinned images" update_verify_images ||
+    die "update: a service is not running the image this release pins (see above) — $hint"
   if [ "$moved" != 1 ]; then
     log "update: done (no new version; ./stack rollback still goes back to the version before the last real update)"
     offer_helper --after-update; return 0
@@ -2152,6 +2160,21 @@ releases_between() {
 # newest_release_tags -> every vX.Y.Z tag, newest first (pre-releases excluded; see newest_release_tag)
 newest_release_tags() { _git -c versionsort.suffix=- tag -l 'v[0-9]*' --sort=-v:refname 2>/dev/null | grep -v -- '-' || true; }
 
+# service_moves FROM_COMMIT -> one line per core service whose pinned version the update moved: "LiteLLM 1.105.0 → 1.106.3"
+service_moves() {
+  local old id a b tmp
+  [ -e "$STACK_DIR/.git" ] && [ -n "${1:-}" ] || return 0
+  tmp="$(mktemp)" || return 0
+  if git -C "$STACK_DIR" show "$1:compose.yaml" > "$tmp" 2>/dev/null; then
+    for id in $(core_service_ids); do
+      a="$(ref_version "$(compose_service_image "$id" "$tmp")")"; b="$(ref_version "$(compose_service_image "$id")")"
+      [ -n "$a" ] && [ -n "$b" ] && [ "$a" != "$b" ] || continue
+      printf '%s %s → %s\n' "$(_core_field "$id" 2)" "$a" "$b"
+    done
+  fi
+  rm -f "$tmp"; old=''; return 0
+}
+
 # update_whats_new [FROM_COMMIT] — after an update to a new version: each release it brought, with its headline (all of
 # them, when it jumped over several), then a few lines: voice, the Code page (while on: it is on by default now), the
 # sandbox's internet (once, from a version before its egress proxy), remote
@@ -2164,6 +2187,7 @@ update_whats_new() {
   if [ "${n:-0}" -gt 1 ]; then printf "\nWhat's new in %s (%s releases since %s):\n" "$(installed_version)" "$n" "$(_git describe --tags --abbrev=0 "$1" 2>/dev/null)"
   else printf "\nWhat's new in %s:\n" "$(installed_version)"; fi
   [ -z "$rels" ] || printf '%s\n' "$rels" | sed 's/^/  /'
+  service_moves "${1:-}" | sed 's/^/  Service update: /'
   if stt_enabled; then printf '  Voice: %s speech-to-text is on (./stack stt status)\n' "$(stt_provider_label "$(stt_provider)")"
   elif stt_notice_on; then printf '  Voice: %s\n' "$STT_REFUSED_NOTICE"
   elif stt_bedrock_refused; then printf '  Voice: browser speech only — ./stack stt set openai|groq turns on speech-to-text with your own key (docs/voice.md)\n'
@@ -2276,6 +2300,8 @@ cmd_uninstall() {
 . "$STACK_DIR/lib/websearch.sh"
 # Image cleanup and disk usage (./stack update, ./stack clean, ./stack status).
 . "$STACK_DIR/lib/images.sh"
+# The core services' versions (./stack versions, status, Settings) and the digest check at the end of ./stack update.
+. "$STACK_DIR/lib/versions.sh"
 # The slow parts of setup and an update, side by side and timed: image downloads, builds, the sandboxes' images.
 . "$STACK_DIR/lib/steps.sh"
 # Installed version, the portal's release check, and the .state folders the portal mounts.

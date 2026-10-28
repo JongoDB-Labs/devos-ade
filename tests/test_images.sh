@@ -4,6 +4,8 @@
 # REF "<none>" for an untagged image), container images in $CTR_IMAGES, other checkouts in $OTHER_DIRS.
 # Like Docker 29 (containerd image store), `docker image ls` leaves untagged images out unless -a is given.
 . "$STACK_DIR/lib/commands.sh"
+# ./stack update checks the containers it recreated (lib/versions.sh: tests/test_versions.sh): no Docker here
+update_verify_images() { :; }
 
 _store() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "${4:-}" >> "$TMP/imgs"; }   # _store ID REF SIZE [LABEL]
 _refs_of() { awk -F'\t' -v i="$1" '$1 == i && $2 != "<none>" { print $2 }' "$TMP/imgs"; }

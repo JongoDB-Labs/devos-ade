@@ -170,7 +170,7 @@
   function fallbackLayout() {
     const rows = Object.keys(keys).map((k) => (FALLBACK_WITH[k] && keys[FALLBACK_WITH[k]]
       ? { key: k, section: "all", place: "with", parent: FALLBACK_WITH[k], summary: "" } : { key: k, section: "all", place: "main", parent: "", summary: "" }));
-    for (const own of ["+devices", "+models", "+backups", "+test", "+check-aws", "+report", "+restart", "+git-hosts", "+project-folders", "+sessions-consent", "+bring-setup", "+subscriptions"]) rows.push({ key: own, section: "all", place: "main", parent: "", summary: "" });
+    for (const own of ["+devices", "+models", "+backups", "+test", "+check-aws", "+report", "+restart", "+git-hosts", "+project-folders", "+sessions-consent", "+bring-setup", "+subscriptions", "+services"]) rows.push({ key: own, section: "all", place: "main", parent: "", summary: "" });
     return { sections: [{ id: "all", title: "All settings", lede: "The page's layout (catalog/settings-layout.tsv) could not be read: every setting in one list.", doc: "" }], rows };
   }
 
@@ -575,7 +575,7 @@
     const own = { "+devices": sessionsRow, "+models": modelsRow, "+backups": backupRow, "+test": actionRow, "+check-aws": actionRow,
       "+report": actionRow, "+restart": restartRow, "+git-hosts": gitHostsRow, "+project-folders": projectFoldersRow,
       "+sessions-consent": sessionsConsentRow, "+bring-setup": bringSetupRow,
-      "+subscriptions": subscriptionsRow };
+      "+subscriptions": subscriptionsRow, "+services": servicesRow };
     if (r.key.startsWith("+")) return own[r.key] ? own[r.key](r) : null;
     const k = keys[r.key];
     if (!k) return null;
@@ -2134,6 +2134,36 @@
   }
 
   function fmtBytes(b) { return b == null ? "" : b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.round(b / 1e3)} KB`; }
+
+  // Core services: one line (all current / how many have a newer upstream), the table folded under it
+  function servicesRow(r) {
+    const rw = ownFrame(r, "Core services");
+    const main = rw._main;
+    const v = data.versions || {}, list = v.services || [];
+    if (!list.length) {
+      main.append(el("p", { class: "note set-extra", text: "Not read yet: ./stack status (or any ./stack command that starts the stack) writes it." }));
+      return rw;
+    }
+    const pending = list.filter((s) => s.state === "pending"), behind = list.filter((s) => s.state === "behind");
+    main.append(el("p", { class: "note set-extra", text: pending.length
+      ? `${pending.length} not on this release's pinned version: Update now (Home) or ./stack update brings ${pending.length === 1 ? "it" : "them"}.`
+      : behind.length ? `All on this release's pinned versions; ${behind.length} ${behind.length === 1 ? "has" : "have"} a newer upstream release that the next DevOS ADE release will bring.`
+        : "Every core service runs the newest release tested for this DevOS ADE." }));
+    const say = (s) => s.state === "pending" ? `Update now brings it to ${s.pinned}`
+      : s.state === "behind" ? `newer upstream exists (${s.newest}); the next DevOS ADE release will bring it`
+        : s.state === "stopped" ? "not running" : "current";
+    const tbody = el("tbody");
+    for (const s of list) {
+      tbody.append(el("tr", {}, el("td", { text: s.name }), el("td", { text: s.running || "–" }), el("td", { text: s.pinned || "–" }),
+        el("td", {}, s.notes && /^https:\/\//.test(s.notes) ? el("a", { href: s.notes, target: "_blank", rel: "noopener noreferrer", text: s.newest || "–" }) : (s.newest || "–")),
+        el("td", { text: say(s) })));
+    }
+    rw.append(el("details", { class: "set-details" }, el("summary", {}, "Versions"),
+      el("div", { class: "set-backups" }, el("table", {},
+        el("thead", {}, el("tr", {}, ...["Service", "Running", "This release", "Newest upstream", ""].map((h) => el("th", { scope: "col", text: h })))), tbody)),
+      el("p", { class: "note", text: `Pinned by digest, a few days after upstream ships each release${v.checked ? ` (newest upstream as of ${v.checked})` : ""}. Updating DevOS ADE brings every service to the release it pins. ./stack versions prints the same.` })));
+    return rw;
+  }
 
   function backupRow(r) {
     const rw = ownFrame(r, "Backups");

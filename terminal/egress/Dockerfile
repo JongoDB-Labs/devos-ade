@@ -1,7 +1,7 @@
 # The sandbox's egress proxy (compose.terminal-proxy.yaml; TERMINAL_EGRESS=internet, the default): bn-egress.mjs, Node
 # built-ins only, on the same pinned Node base as the terminal and Code page images (their layers are shared: this image
 # adds a few kilobytes). Built on your computer, never pulled; nothing is installed and nothing is fetched at runtime.
-FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
+FROM node:24.22.1-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea
 COPY bn-egress.mjs /opt/bn-egress/bn-egress.mjs
 # readable by the user compose runs it as (65534, nobody), whatever modes the checkout has (an update helper's umask 077
 # writes 600 files); checked for syntax here, so a broken file stops the build instead of the sandbox's internet

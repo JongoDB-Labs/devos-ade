@@ -2,6 +2,8 @@
 # shellcheck disable=SC2010  # ls | grep -c over our own temp files (plain names)
 # Task 13: backup / restore / update / rotate-aws / uninstall — Docker and AWS are stubbed.
 . "$STACK_DIR/lib/commands.sh"
+# ./stack update checks the containers it recreated (lib/versions.sh: tests/test_versions.sh): no Docker here
+update_verify_images() { :; }
 # Never touch real Docker images from these tests (lib/images.sh is covered by tests/test_images.sh).
 images_snapshot_before() { :; }; images_after_update() { :; }; disk_line() { echo "Disk: (stub)"; }
 

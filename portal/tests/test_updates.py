@@ -1086,3 +1086,25 @@ def test_the_page_offers_check_for_updates_on_home_settings_and_search():
     assert "Check for updates" in (static / "search.js").read_text()
     assert "Check for updates" in (static / "tour.js").read_text()
     assert "bnUpdateCheck" in (static / "app.js").read_text()
+
+
+def test_service_moves_name_each_core_service_the_update_moves():
+    cur = ["ghcr.io/berriai/litellm:1.105.0", "ghcr.io/open-webui/open-webui:v0.12.0-slim@sha256:" + "a" * 64,
+           "rustfs/rustfs:1.0.1", "caddy:2.11.7-alpine@sha256:" + "b" * 64, "PROJECT/portal:local"]
+    new = ["ghcr.io/berriai/litellm:1.106.3@sha256:" + "c" * 64, "ghcr.io/open-webui/open-webui:v0.12.4-slim@sha256:" + "d" * 64,
+           "rustfs/rustfs:1.0.1@sha256:" + "e" * 64, "caddy:2.11.7-alpine@sha256:" + "f" * 64, "PROJECT/portal:local"]
+    assert updates.service_moves(new, cur) == [{"name": "LiteLLM", "from": "1.105.0", "to": "1.106.3"},
+                                               {"name": "Open WebUI", "from": "0.12.0", "to": "0.12.4"}]   # same release, new digest: no move
+    assert updates.service_moves(None, cur) == [] and updates.service_moves(new, []) == []
+    assert updates.ref_version("pgvector/pgvector:0.8.7-pg17@sha256:" + "a" * 64) == "0.8.7"
+    assert updates.ref_version("localhost:5000/x") == ""
+
+
+def test_the_update_card_lists_the_service_moves(paths):
+    write_version(paths)
+    gh = GitHub()
+    asyncio.run(updates.check(httpx.AsyncClient(transport=httpx.MockTransport(gh)), paths))
+    st = updates.status(paths, True)
+    assert st["available"] is True
+    assert st["services"] == [{"name": "LiteLLM", "from": "1.105.0", "to": "1.106.0"}]
+    assert updates.status(Paths(update_dir=paths.update_dir / "none", status_dir=paths.status_dir), True)["services"] == []

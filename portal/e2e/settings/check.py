@@ -137,6 +137,12 @@ def settings_json():
             # (Your AI subscriptions: the catalog's tools, not checked yet — the row a setting may be shown inside)
             "subscriptions": an.tools(REPO / "catalog", Path(tempfile.mkdtemp())),
             "backups": {"written_at": None, "backups": [], "nightly": {"on": on, "hour": 2, "keep": 7}},
+            # the core services (./stack versions): one behind upstream, one that Update now brings
+            "versions": {"written_at": 1, "checked": "2026-10-27", "services": [
+                {"id": "litellm", "name": "LiteLLM", "running": "1.106.3", "pinned": "1.106.3", "newest": "1.106.5", "state": "behind",
+                 "notes": "https://github.com/BerriAI/litellm/releases/tag/v1.106.5"},
+                {"id": "rustfs", "name": "RustFS", "running": "1.0.1", "pinned": "1.0.3", "newest": "1.0.3", "state": "pending", "notes": ""},
+                {"id": "caddy", "name": "Caddy", "running": "2.11.7", "pinned": "2.11.7", "newest": "2.11.7", "state": "current", "notes": ""}]},
             "remote": {"on": on, "mode": "tailscale" if on else "off", "url": "https://bn.tail1234.ts.net" if on else ""}}
 
 
@@ -533,6 +539,27 @@ def check_keys(page, failures, label):
     form.locator("button", has_text="Cancel").click()
 
 
+def check_services(page, failures, label):
+    """Settings › Updates & backups › Core services: one line, the versions folded under it, the plain sentence per service."""
+    page.evaluate("k => { location.hash = '#settings'; location.hash = '#settings/' + k; }", "+services")
+    row = page.locator("#settings .set-row[data-own='+services']")
+    row.wait_for(state="visible", timeout=10000)
+    text = row.inner_text()
+    if "1 not on this release's pinned version" not in text:
+        failures.append(f"{label}: Core services does not say what Update now brings: {text[:200]}")
+    table = row.locator("table")
+    if table.is_visible():
+        failures.append(f"{label}: Core services shows its table before Versions is opened (Settings must stay uncluttered)")
+    if row.bounding_box()["height"] > 170:
+        failures.append(f"{label}: Core services is {row.bounding_box()['height']:.0f}px tall folded")
+    row.locator("summary", has_text="Versions").click()
+    body = table.inner_text()
+    for want in ("LiteLLM", "newer upstream exists (1.106.5); the next DevOS ADE release will bring it", "Update now brings it to 1.0.3", "current"):
+        if want not in body:
+            failures.append(f"{label}: Core services' table lacks {want!r}: {body[:300]}")
+    page.screenshot(path=str(OUT / "settings-core-services.png"), clip=row.bounding_box())
+
+
 def check_code_models(page, failures, label):
     """Settings › Claude Code › Models: All enabled · Anthropic only · Pick… (a filtered checklist in groups), and the
     default model's select in groups; screenshots for the record."""
@@ -613,6 +640,7 @@ def main():
                     check_forms(page, remote, failures, label)
                 if layout and state == "off" and not remote:
                     check_code_models(page, failures, label)
+                    check_services(page, failures, label)
                 if layout and state == "on" and not remote:   # (every key set: Replace key, and Remove the key)
                     check_keys(page, failures, label)
                 summary[label] = {"settings": len(seen), "changeable": sum(1 for o in seen.values() if changes(o))}

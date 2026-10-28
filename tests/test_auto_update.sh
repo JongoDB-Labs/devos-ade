@@ -4,6 +4,8 @@
 # origin with a fake ./stack, recovery after a crash, and what the heartbeat tells Home. The clock is injected
 # (_auto_clock), except in the one test of the real clock.
 . "$STACK_DIR/lib/commands.sh"
+# ./stack update checks the containers it recreated (lib/versions.sh: tests/test_versions.sh): no Docker here
+update_verify_images() { :; }
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 NONCE=0123456789abcdef0123456789abcdef
 

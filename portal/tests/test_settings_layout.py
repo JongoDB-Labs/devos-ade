@@ -473,3 +473,17 @@ def test_a_phones_section_is_a_short_list_of_cards():
     for k in (".set-label", ".set-value", ".set-actions", ".set-form", ".set-remote"):
         assert k in keep, k
     assert 'PHONE.addEventListener("change", () => { if (data) render(); });' in js
+
+
+def test_core_services_row_reads_versions_json_and_refuses_odd_values(tmp_path):
+    (tmp_path / "versions.json").write_text(json.dumps({"version": 1, "written_at": 5, "checked": "2026-10-27", "services": [
+        {"id": "litellm", "name": "LiteLLM", "running": "1.106.3", "pinned": "1.106.3", "newest": "1.106.5", "state": "behind",
+         "notes": "https://github.com/BerriAI/litellm/releases/tag/v1.106.5"},
+        {"id": "Bad Id", "name": "x"},
+        {"id": "rustfs", "name": "<b>RustFS</b>", "running": "1.0.1 && rm", "pinned": "1.0.3", "newest": "1.0.4", "state": "weird", "notes": "javascript:alert(1)"}]}))
+    v = st.versions(tmp_path)
+    assert v["checked"] == "2026-10-27" and [s["id"] for s in v["services"]] == ["litellm", "rustfs"]
+    assert v["services"][0]["state"] == "behind" and v["services"][0]["notes"].startswith("https://github.com/")
+    bad = v["services"][1]
+    assert bad["name"] == "rustfs" and bad["running"] == "" and bad["state"] == "current" and bad["notes"] == ""
+    assert st.versions(tmp_path / "none") == {"written_at": None, "checked": "", "services": []}

@@ -22,7 +22,7 @@ MAX_SECTIONS = 2000
 MAX_LINE = 2000
 EXCERPT = 160
 # the page's own rows (no .env key): what the Settings page calls them
-OWN_TITLES = {"+devices": "Signed-in devices", "+models": "Model check (Check again)", "+backups": "Backups (Back up now)",
+OWN_TITLES = {"+devices": "Signed-in devices", "+models": "Model check (Check again)", "+backups": "Backups (Back up now)", "+services": "Core services (versions of LiteLLM, Open WebUI, RustFS)",
               "+test": "Smoke test", "+check-aws": "AWS key check", "+report": "Status report", "+restart": "Restart a service",
               "+git-hosts": "Git hosts (push, pull, clone)", "+subscriptions": "Your AI subscriptions (Claude, Codex, Gemini, Copilot, Cursor, Grok)"}
 

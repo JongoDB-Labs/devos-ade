@@ -42,7 +42,7 @@ FILTER = os.environ.get("E2E_FILTER", "")
 CHECKS_RE = os.environ.get("E2E_CHECKS", "")
 # The app versions the app-specific selectors were written against (compose.yaml pins them; browser.sh passes the
 # pinned tags). Checks that drive these UIs skip, saying why, on any other version instead of failing obscurely.
-TESTED_WITH = {"open-webui": "v0.12.0-slim", "litellm": "1.105.0", "rustfs": "1.0.1"}
+TESTED_WITH = {"open-webui": "v0.12.4-slim", "litellm": "1.106.3", "rustfs": "1.0.3"}
 PINNED = {"open-webui": os.environ.get("E2E_OWUI_TAG", ""), "litellm": os.environ.get("E2E_LITELLM_TAG", ""),
           "rustfs": os.environ.get("E2E_RUSTFS_TAG", "")}
 # Where the *.HOST names and 127.0.0.1-published ports are reachable from this container.

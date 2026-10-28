@@ -28,7 +28,7 @@ RUN mkdir -p /src /out && python -m portal.searchindex /src /out/docs-index.json
 # pinned Node image as the Code page (shared layers). Only the test stage needs it: never setup, update or the runtime.
 # The greyed items' table (catalog/setup-links.tsv) from the repo context, where the tests look for it (/catalog): its
 # tests skip, saying so, in a plain `docker build portal` that has none.
-FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS jstest
+FROM node:24.22.1-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS jstest
 WORKDIR /app
 COPY --from=repo catalo[g]/setup-links.tsv /catalog/
 COPY portal/static/*.js ./portal/static/

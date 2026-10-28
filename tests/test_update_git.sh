@@ -2,6 +2,8 @@
 # ./stack update moves the checkout itself: newest release tag on a tag install, fast-forward on a branch.
 # Uses a throwaway local "origin" repo — no network.
 . "$STACK_DIR/lib/commands.sh"
+# ./stack update checks the containers it recreated (lib/versions.sh: tests/test_versions.sh): no Docker here
+update_verify_images() { :; }
 # Never touch real Docker images from these tests (lib/images.sh is covered by tests/test_images.sh).
 images_snapshot_before() { :; }; images_after_update() { :; }; disk_line() { echo "Disk: (stub)"; }
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com

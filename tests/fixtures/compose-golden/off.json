@@ -104,7 +104,7 @@
   },
   "litellm": {
    "container_name": null,
-   "image": "ghcr.io/berriai/litellm:1.105.0",
+   "image": "ghcr.io/berriai/litellm:1.106.3@sha256:74d0696a9f0afcc993c7659d246f0c542f003368298633e852228250779f1032",
    "labels": {},
    "networks": [
     "default",
@@ -196,7 +196,7 @@
   },
   "postgres": {
    "container_name": null,
-   "image": "pgvector/pgvector:0.8.7-pg17",
+   "image": "pgvector/pgvector:0.8.7-pg17@sha256:ac08538c6f8b9904c33c8224c5e5706dbe760aca29db1d096972b4052c22a75d",
    "labels": {},
    "networks": [
     "default"
@@ -218,7 +218,7 @@
   },
   "rustfs": {
    "container_name": null,
-   "image": "rustfs/rustfs:1.0.1",
+   "image": "rustfs/rustfs:1.0.3@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b",
    "labels": {},
    "networks": [
     "default"
@@ -234,7 +234,7 @@
   },
   "rustfs-init": {
    "container_name": null,
-   "image": "amazon/aws-cli:2.37.12",
+   "image": "amazon/aws-cli:2.38.5@sha256:c8156a0e74e13929a42d7e60f0d4e14e7d28d980cd21822505d4bff80e5460c1",
    "labels": {},
    "networks": [
     "default"
@@ -244,7 +244,7 @@
   },
   "searxng": {
    "container_name": null,
-   "image": "searxng/searxng:2026.10.11-ad46ebd7d@sha256:ddd642cae6eac75412938fd846ddbf440a2df029cfeae8a562b8b205f4e35e25",
+   "image": "searxng/searxng:2026.10.24-ef0ec03da@sha256:7c7cbe509429e82755104b2a95f52085a98633c95d53f44e4e905fa3a59f08c8",
    "labels": {},
    "networks": [
     "websearch",

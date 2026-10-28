@@ -90,6 +90,7 @@ https://{$REMOTE_HOST}:8443, https://*.{$REMOTE_HOST}:8443 {
 		import handoff_callback
 		import portal_auth
 		import app_sso
+		import litellm_no_banner
 		reverse_proxy litellm:4000 {
 			import remote_upstream
 			import litellm_upstream

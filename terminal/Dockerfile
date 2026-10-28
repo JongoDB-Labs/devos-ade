@@ -12,12 +12,12 @@
 # of its npm flags), the tools whose pins stayed are copied from there, never downloaded again, and the others install
 # side by side. TERMINAL_AI_TOOLS in .env (BN_AI_TOOLS: all, none or a comma list) chooses which go in; Claude Code is
 # always there. Signing in happens later, in the sandbox, with each tool's own flow.
-FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS ai-tools
+FROM node:24.22.1-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS ai-tools
 RUN apt-get -o Acquire::Retries=5 update && apt-get -o Acquire::Retries=5 install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
 ARG BN_AI_TOOLS=all
-ARG CODEX_VERSION=0.163.0
-ARG CODEX_SHA256_AMD64=beb339e8ecd9ba057a6bb2dc81ad8ca474812edfbf0fc5056ca818797648dde4
-ARG CODEX_SHA256_ARM64=a7261e65f4a96d8f4ca65a069c6cf2dc2c33defc341e48078acefda9461fffe4
+ARG CODEX_VERSION=0.164.0
+ARG CODEX_SHA256_AMD64=90dd0b03b28afcb7fa733a4f73b413db2916a47347efd43fb669cc1c774ee8e4
+ARG CODEX_SHA256_ARM64=29a507a2a3fd8f6cd94b96b762d281d299d15d7902dee6132d314b78cf9108eb
 ARG COPILOT_VERSION=1.0.103
 ARG COPILOT_SHA256_AMD64=9aeb4430e9ac9523546db07b227c7aba179a4710a55f9ac29ad143b0f9e1b325
 ARG COPILOT_SHA256_ARM64=728a91dffb9a02817bd98c5b01bf2f9cb08c4fdac3c0ca8c48d7f1ccbfe282a1
@@ -28,7 +28,7 @@ ARG CURSOR_SHA256_ARM64=22a36df9720830668ccd4d707e5190204ab9c8a0efb2f068cc914895
 COPY tools/ /tmp/tools/
 RUN --mount=type=cache,id=devos-ade-ai-tools,target=/var/cache/bn-tools,sharing=locked sh /tmp/tools/install.sh
 
-FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
+FROM node:24.22.1-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea
 
 # ./stack passes the ISO week (lib/terminal.sh): a new value invalidates Docker's cache from here on, so Debian's
 # security fixes reach the packages below at most a week late (the next ./stack setup, update or terminal enable).
@@ -57,9 +57,9 @@ RUN set -eu; \
 # gh, the GitHub CLI: its release tarball checked against its SHA-256. It is never logged in here: the gh on PATH is
 # bin/bn-gh, which gives this one (/usr/local/lib/gh/gh) your login for one command at a time, and only for a GitHub
 # host you let Claude use (Git panel › Hosts) — through the same broker as git's, each use in Activity.
-ARG GH_VERSION=2.102.0
-ARG GH_SHA256_AMD64=bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386
-ARG GH_SHA256_ARM64=7862c86c72f43df3a2d93ddde6f473285b4e2af61b494849846827e513ef6484
+ARG GH_VERSION=2.103.2
+ARG GH_SHA256_AMD64=62ccf747115ddc61237efffdde66a3c8f70ba249433dc64f70801089b59c59c8
+ARG GH_SHA256_ARM64=4c3e99a50bd8b181a3fe9d69b25dd978bac768148d88f01507c6b4d1ef61a443
 RUN set -eu; \
     case "$(dpkg --print-architecture)" in \
       amd64) a=amd64; sum="$GH_SHA256_AMD64" ;; \
