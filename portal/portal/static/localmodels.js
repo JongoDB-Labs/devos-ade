@@ -139,6 +139,7 @@
     const input = el("input", { type: "search", id: "lm-search", class: "mb-search", placeholder: "Search Hugging Face, e.g. qwen coder, llama 3.2, smollm2", "aria-label": "Search Hugging Face for models to download", value: query });
     const go = el("button", { type: "submit", class: "action", text: "Search" });
     const form = el("form", { class: "lm-search" }, input, go);
+    input.addEventListener("input", () => { query = input.value; });     // (kept: a redraw while it is typed in builds it from query)
     form.addEventListener("submit", (ev) => { ev.preventDefault(); find(input.value.trim()); });
     const out = el("div", { class: "lm-search-box" }, form);
     if (busy) out.append(el("p", { class: "note", role: "status", text: "Searching Hugging Face…" }));
@@ -259,6 +260,7 @@
       if (srv.name && taken(srv.name)) { srv.note = `There is already a server named ${srv.name}.`; render(); return; }
       srv.probe = null; srv.picked = null; srv.note = "";
       if (onThisComputer(u)) { runProbe(u); return; }
+      render();                                                   // (the last check's result goes now, not when this one answers)
       ask({ op: "probe", url: u, name: "", key: srv.key, trust: srv.trust && /^https:/i.test(u), models: [] }, "Check this server?",
         `${u} is another computer: it is asked for its model list (GET /v1/models) from this computer. Nothing is saved yet.`, "Check");
     });
@@ -370,6 +372,7 @@
     if (state.error) { box.replaceChildren(el("p", { class: "error", text: state.error })); return; }
     // (a redraw while the form is being typed in keeps the focus and what was typed: the form is only rebuilt from srv)
     const here = document.activeElement && document.activeElement.id;
+    const caret = here === "lm-search" || here === "ms-url" ? document.activeElement.selectionStart : null;
     if (!srv.url && !(state.servers || []).length) srv.url = "localhost:11434";     // (localhost is the default)
     const body = el("div", { class: "lm-body" });
     const j = job();
@@ -389,7 +392,11 @@
       const w = want; want = "";
       const t = box.querySelector(w === "download" ? "#lm-search" : "#ms-url");
       if (t) { t.focus({ preventScroll: true }); t.scrollIntoView({ block: "center" }); }
-    } else if (here && ["ms-url", "ms-name", "ms-key"].includes(here) && box.querySelector(`#${here}`)) box.querySelector(`#${here}`).focus();
+    } else if (here && ["ms-url", "ms-name", "ms-key", "lm-search"].includes(here) && box.querySelector(`#${here}`)) {
+      const t = box.querySelector(`#${here}`);
+      t.focus({ preventScroll: true });
+      if (caret !== null) try { t.setSelectionRange(caret, caret); } catch (e) { /* (not a text field) */ }
+    }
   }
 
   // --- for Browse models: the downloaded models and each server's models as rows, with the same add / remove words ---
