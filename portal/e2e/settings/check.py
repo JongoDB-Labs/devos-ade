@@ -925,6 +925,74 @@ def check_browse(page, failures, label):
     page.set_viewport_size({"width": 1280, "height": 900})
 
 
+def check_menus(page, failures, label):
+    """Item menus (ctxmenu.js, JON-821) on Settings rows: right-click, Shift+F10 and a long press open Copy name, key, value and
+    link; a secret's value is never offered; the menu fits the viewport; screenshots at 390, 820 and 1440, light and dark."""
+    shots = OUT / "shots-menus"
+    shots.mkdir(parents=True, exist_ok=True)
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(BASE + "/#settings/CODE_ENABLED")
+    page.wait_for_selector(".set-row[data-key]", timeout=20000)
+    rows = page.locator(".set-row[data-key]")
+    plain = page.locator(".set-row[data-key]:has(.set-value[data-value])").first
+    plain.click(button="right")
+    page.wait_for_selector(".ctx-menu", timeout=3000)
+    items = page.locator(".ctx-menu .ctx-item").all_inner_texts()
+    for want in ("Copy name", "Copy setting key", "Copy value", "Copy link to this setting"):
+        if not any(want in i for i in items):
+            failures.append(f"{label}: the settings row menu has no {want!r}: {items}")
+    if page.locator('.ctx-menu .ctx-item[aria-disabled="true"]:has-text("Copy value")').count():
+        failures.append(f"{label}: Copy value is off on a plain row")
+    page.locator('.ctx-menu .ctx-item:has-text("Copy setting key")').click()
+    if page.locator(".ctx-menu").count():
+        failures.append(f"{label}: the menu stayed open after an action")
+    # a masked row (a key, a password): Copy value says why it is off
+    masked = page.locator(".set-row[data-key]:has(.set-value.masked)").first
+    if masked.count():
+        masked.click(button="right")
+        page.wait_for_selector(".ctx-menu", timeout=3000)
+        if not page.locator('.ctx-menu .ctx-item[aria-disabled="true"]:has-text("Copy value")').count():
+            failures.append(f"{label}: Copy value is offered on a masked row")
+        page.keyboard.press("Escape")
+    # the keyboard: Shift+F10 on a focused control of a row
+    ctl = plain.locator("button, a, input, select").first
+    if ctl.count():
+        ctl.focus()
+        page.keyboard.press("Shift+F10")
+        page.wait_for_selector(".ctx-menu", timeout=3000)
+        page.keyboard.press("ArrowDown")
+        page.keyboard.press("Escape")
+        if page.locator(".ctx-menu").count() or page.evaluate("() => document.activeElement && document.activeElement.closest('.set-row') !== null") is not True:
+            failures.append(f"{label}: Shift+F10 / Escape did not open and close the row menu, focus back on the row")
+    # screenshots, light and dark, three widths
+    for scheme in ("light", "dark"):
+        page.emulate_media(color_scheme=scheme)
+        for w, h in ((390, 844), (820, 1180), (1440, 900)):
+            page.set_viewport_size({"width": w, "height": h})
+            page.wait_for_timeout(150)
+            plain.scroll_into_view_if_needed()
+            page.wait_for_timeout(700)   # (smooth scrolling: the menu closes on a scroll)
+            box = plain.bounding_box()
+            page.mouse.click(box["x"] + min(box["width"] - 4, 60), box["y"] + 12, button="right")
+            page.wait_for_selector(".ctx-menu", timeout=3000)
+            inside = page.evaluate("""() => { const r = document.querySelector('.ctx-menu').getBoundingClientRect();
+              return r.left >= 0 && r.top >= 0 && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight + 0.5; }""")
+            if not inside:
+                failures.append(f"{label}: the settings menu leaves the viewport at {w}x{h} ({scheme})")
+            page.screenshot(path=str(shots / f"settings-menu-{w}-{scheme}.png"))
+            page.keyboard.press("Escape")
+    page.emulate_media(color_scheme="light")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    # a text field keeps the browser's own menu
+    page.goto(BASE + "/#settings")
+    page.wait_for_selector(".set-row[data-key]", timeout=20000)
+    fld = page.locator(".set-row input[type=text], .set-row input[type=number], .set-row select").first
+    if fld.count() and fld.is_visible():
+        fld.click(button="right")
+        if page.locator(".ctx-menu").count():
+            failures.append(f"{label}: a settings field lost the browser's own menu")
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", PORT), Stub)
@@ -953,6 +1021,7 @@ def main():
                     check_services(page, failures, label)
                     check_servers(page, failures, label)
                     check_browse(page, failures, label)
+                    check_menus(page, failures, label)
                 if layout and state == "on" and not remote:   # (every key set: Replace key, and Remove the key)
                     check_keys(page, failures, label)
                 summary[label] = {"settings": len(seen), "changeable": sum(1 for o in seen.values() if changes(o))}

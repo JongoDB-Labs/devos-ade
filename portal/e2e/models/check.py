@@ -130,6 +130,86 @@ class Stub(http.server.BaseHTTPRequestHandler):
         return self.send(404, "not here", "text/plain")
 
 
+def long_press(page, cdp, x, y, hold=700):
+    """A finger held on (x, y): touchStart, a wait longer than the menu's 480 ms, touchEnd."""
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y}]})
+    page.wait_for_timeout(hold)
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+    page.wait_for_timeout(150)
+
+
+def menu_inside(page):
+    """The open menu's box lies inside the viewport."""
+    return page.evaluate("""() => { const m = document.querySelector('.ctx-menu'); if (!m) return false; const r = m.getBoundingClientRect();
+      return r.left >= 0 && r.top >= 0 && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight + 0.5; }""")
+
+
+def menus(pw, result):
+    """Item menus (ctxmenu.js, JON-821) on a model row: right-click, Shift+F10 on the focused button, a long press."""
+    out = {}
+    browser = pw.chromium.launch()
+    ctx = browser.new_context(viewport={"width": 1280, "height": 900})
+    page = ctx.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(f"{BASE}/#modelbrowser", wait_until="domcontentloaded")
+    page.wait_for_selector("#modelbrowser:not([hidden]) .mb-row", timeout=20000)
+    row = page.locator('#modelbrowser .mb-row[data-id="amazon.nova-pro-v1:0"]')
+    row.click(button="right")
+    page.wait_for_selector(".ctx-menu", timeout=3000)
+    labels = page.locator(".ctx-menu .ctx-item").all_inner_texts()
+    out["right_click_items"] = labels
+    out["right_click_ok"] = any("Add to my pickers" in l for l in labels) and any("Copy model id" in l for l in labels) and menu_inside(page)
+    # a model that is not added has no Try it: shown off, with the reason
+    out["try_off"] = page.locator('.ctx-menu .ctx-item[aria-disabled="true"]').count() >= 1 and "Add the model first" in page.inner_text(".ctx-menu")
+    page.screenshot(path=str(OUT / "model-menu-1280.png"))
+    result["shots"].append("model-menu-1280.png")
+    page.keyboard.press("Escape")
+    out["esc_closes"] = page.locator(".ctx-menu").count() == 0
+    # the keyboard: Shift+F10 on the focused row button opens it, arrows move, Escape closes and the focus is back
+    btn = row.locator(".mb-actions button").first
+    btn.focus()
+    page.keyboard.press("Shift+F10")
+    page.wait_for_selector(".ctx-menu", timeout=3000)
+    page.keyboard.press("ArrowDown")
+    first_focus = page.evaluate("() => document.activeElement && document.activeElement.className")
+    page.keyboard.press("Escape")
+    back = page.evaluate("() => document.activeElement && document.activeElement.textContent")
+    out["keyboard_ok"] = "ctx-item" in (first_focus or "") and (back or "").strip() == "Add" and page.locator(".ctx-menu").count() == 0
+    # the ⋯ button on hover
+    row.hover()
+    more = row.locator(".ctx-more")
+    out["more_button"] = more.count() == 1 and more.is_visible()
+    more.click()
+    page.wait_for_selector(".ctx-menu", timeout=3000)
+    page.locator('.ctx-menu .ctx-item:has-text("Copy model id")').click()
+    out["menu_closed_after_action"] = page.locator(".ctx-menu").count() == 0
+    # the text field keeps the browser's own menu
+    page.locator("#mb-search").click(button="right")
+    out["field_keeps_browser_menu"] = page.locator(".ctx-menu").count() == 0
+    result["errors"] += errors
+    browser.close()
+    # touch: a long press opens it, the ⋯ is always there, and it fits a phone
+    browser = pw.chromium.launch()
+    ctx = browser.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True)
+    page = ctx.new_page()
+    cdp = ctx.new_cdp_session(page)
+    page.goto(f"{BASE}/#modelbrowser", wait_until="domcontentloaded")
+    page.wait_for_selector("#modelbrowser:not([hidden]) .mb-row", timeout=20000)
+    row = page.locator('#modelbrowser .mb-row[data-id="amazon.nova-pro-v1:0"]')
+    row.scroll_into_view_if_needed()
+    page.wait_for_timeout(700)   # (smooth scrolling: the menu closes on a scroll)
+    box = row.bounding_box()
+    out["touch_more_visible"] = row.locator(".ctx-more").is_visible()
+    long_press(page, cdp, box["x"] + 60, box["y"] + 20)
+    out["long_press_ok"] = page.locator(".ctx-menu").count() == 1 and menu_inside(page)
+    page.screenshot(path=str(OUT / "model-menu-390.png"))
+    result["shots"].append("model-menu-390.png")
+    browser.close()
+    result["menus"] = out
+    result["menus_ok"] = all(v for k, v in out.items() if k not in ("right_click_items",))
+
+
 def main() -> int:
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", PORT), Stub)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -231,7 +311,8 @@ def main() -> int:
             result["no_helper_ok"] = "read on this computer once the update helper runs" in said and "reading it" not in said
             result["errors"] += errors
             browser.close()
-        result["ok"] = (result["rows"] >= 5 and result.get("narrow_ok") and result.get("filter_ok") and result.get("first_open_ok")
+            menus(pw, result)
+        result["ok"] = (result.get("menus_ok") and result["rows"] >= 5 and result.get("narrow_ok") and result.get("filter_ok") and result.get("first_open_ok")
                         and result.get("no_helper_ok") and result.get("profiles_note_ok") and result.get("targets_ok")
                         and not result["errors"])
     except Exception as e:  # noqa: BLE001
