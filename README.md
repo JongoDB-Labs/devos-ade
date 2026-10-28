@@ -224,6 +224,10 @@ reloading the page shows the new version.
   (**Open**: Chat at that conversation), newest first.
 - **New session** opens the Code page at a new session's start, in the project it shows (*New session in my-app*);
   **New chat** opens a new conversation in Chat.
+- **Right-click** a row (or press Shift+F10, long-press on a phone, or use its **⋯**) for its menu: Open, Open in a new
+  tab, Copy link, Rename, Archive, Delete (asked first), and for a Code session Fork, Add to project and Open its folder
+  in a terminal. The same menus are on the Code page's sessions, projects, files and changes, on Browse models, Settings
+  rows, Activity and the tabs ([the list](docs/design.md#item-menus)).
 
 The Code page itself tells the portal which of its sessions Home may show — whenever it is open in a browser that
 unlocked it, framed in the Code tab or not — and the portal keeps that in memory only (gone at Sign out); when the Code

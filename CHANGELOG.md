@@ -10,6 +10,20 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ### Added
 
+- **Right-click menus on items throughout the ADE (JON-821).** Every item with actions has one menu, opened by a
+  right-click, a long press, Shift+F10 (or the context-menu key) on the focused item, or its **⋯** button (on hover and
+  focus; always shown on touch). The same list serves all four, and the menu stays inside the window. On Home, a **Recent**
+  row: a Code session offers Open, Open in a new tab, Rename, Fork, Add to project, Open its folder in a terminal,
+  Copy link, Archive and Delete; a Chat conversation offers Open, Open in a new tab, Copy link, Rename, Archive and
+  Delete. The Code page's session list, projects, explorer, changes, review, ports and model picker have theirs;
+  Browse models rows (Try it, Add or Remove, Copy id), Settings rows (Copy name, key, value, link), Activity items and
+  the navigation tabs too. Text fields, the editor and the terminal keep the browser's menu. Delete asks first and says
+  exactly what goes. New behind the menus: **Archive** and **Delete** for a Code session (`POST /api/sessions/ID/archive`,
+  `/delete`: the transcript is deleted from the sandbox, refused while the session is running), a terminal in a session's
+  or a path's folder (`/folder-terminal`, `/api/fs/terminal`), and Chat's rename, archive and delete through the portal
+  (`POST /api/chats/ID/rename|archive|delete`, as the owner, rate-limited, logged). `docs/design.md` lists the menu of every
+  item, page by page.
+
 - **Local models and model servers are on Browse models, and in the Code picker (JON-816).** Browse models has a **Run
   models yourself** card with two ways in: **Download from Hugging Face** and **Add a model server (localhost by default)**.
   Both open the same form as Settings, in a panel on that page. The models you downloaded and each saved server's models

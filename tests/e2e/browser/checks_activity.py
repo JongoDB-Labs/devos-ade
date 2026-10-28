@@ -491,3 +491,62 @@ def global_search_timing(ctx):
     expect(took < 3, f"typing hostile queries took {took:.1f} s")
     rec.save()
     return f"5,000 × 1 KiB near-misses and a 200,000-character title: {ms:.0f} ms; the box caps at 64 characters"
+
+
+def _menu_inside(page) -> bool:
+    return page.evaluate("""() => { const m = document.querySelector('.ctx-menu'); if (!m) return false; const r = m.getBoundingClientRect();
+      return r.left >= 0 && r.top >= 0 && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight + 0.5; }""")
+
+
+@check("browser", "item-menus")
+def item_menus(ctx):
+    """Item menus (JON-821, portal/static/ctxmenu.js) in the real portal: a right-click on a navigation tab, a Settings row
+    and Home's Continue rows opens the one menu (also by Shift+F10 on the focused item, and by the ⋯ button); Escape
+    closes it with the focus back on the item; a text field keeps the browser's own menu. Nothing is changed or deleted."""
+    page, rec = ctx.page("item-menus")
+    login(page)
+    page.wait_for_selector(".shell")
+    page.locator("#updated", has_text="Updated").wait_for(timeout=30000)
+    # the navigation: Open, Open in its own window, Copy link
+    tab = page.locator('.tabs > li:has([data-tab="chat"])')
+    tab.click(button="right")
+    page.wait_for_selector(".ctx-menu")
+    labels = [t.strip() for t in page.locator(".ctx-menu .ctx-item").all_inner_texts()]
+    expect(any("Open Chat" in x for x in labels) and any("own window" in x for x in labels) and any("Copy link" in x for x in labels), f"the tab menu: {labels}")
+    expect(_menu_inside(page), "the tab menu leaves the window")
+    page.keyboard.press("Escape")
+    expect(page.locator(".ctx-menu").count() == 0, "Escape did not close the tab menu")
+    # the keyboard: Shift+F10 on the focused tab button
+    page.locator('.tabs [data-tab="admin"]').focus()
+    page.keyboard.press("Shift+F10")
+    page.wait_for_selector(".ctx-menu")
+    page.keyboard.press("ArrowDown")
+    page.keyboard.press("Escape")
+    expect(page.evaluate("() => document.activeElement && document.activeElement.dataset.tab") == "admin", "the focus did not return to the tab")
+    # Home's Continue: whatever rows there are (a fresh stack has none: the check then only needs the buttons)
+    rows = page.locator("#continue .cont-list > li")
+    shown = rows.count()
+    if shown:
+        rows.first.click(button="right")
+        page.wait_for_selector(".ctx-menu")
+        got = [t.strip() for t in page.locator(".ctx-menu .ctx-item").all_inner_texts()]
+        expect(any("Open in a new tab" in x for x in got) and any("Copy link" in x for x in got), f"the Continue row's menu: {got}")
+        expect(_menu_inside(page), "the Continue menu leaves the window")
+        shot(page, "item-menu-home")
+        page.keyboard.press("Escape")
+    # Settings: a row's Copy actions; a field keeps the browser's menu
+    page.click('.tabs [data-tab="settings"]')
+    page.wait_for_selector(".set-row[data-key]", state="attached", timeout=30000)
+    row = page.locator(".set-row[data-key]:visible").first
+    row.scroll_into_view_if_needed()
+    page.wait_for_timeout(700)   # (smooth scrolling closes a menu)
+    row.click(button="right")
+    page.wait_for_selector(".ctx-menu")
+    got = [t.strip() for t in page.locator(".ctx-menu .ctx-item").all_inner_texts()]
+    expect(any("Copy name" in x for x in got) and any("Copy setting key" in x for x in got), f"the Settings row's menu: {got}")
+    shot(page, "item-menu-settings")
+    page.keyboard.press("Escape")
+    page.locator("#settings input[type=search], #settings input[type=text]").first.click(button="right")
+    expect(page.locator(".ctx-menu").count() == 0, "a Settings field lost the browser's own menu")
+    rec.save()
+    return f"nav tab, Settings row and {shown} Continue row(s) open the item menu by right-click and Shift+F10, inside the window; fields keep the browser's menu"
