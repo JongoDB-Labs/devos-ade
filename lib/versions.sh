@@ -119,7 +119,7 @@ write_versions_json() {
   [ -f "$ENV_FILE" ] || return 0
   d="$(status_dir)"; mkdir -p "$d" 2>/dev/null || return 0
   rows="$(core_versions_table 2>/dev/null)" || return 0
-  checked="$(awk -F'\t' '!/^#/ && $6 { print $6; exit }' "$(core_services_tsv)" 2>/dev/null)"
+  checked="$(awk -F'\t' '!/^#/ && $6 { print $6; exit }' "$(core_services_tsv)" 2>/dev/null || true)"   # (no list: none)
   tmp="$(mktemp "$d/.versions.XXXXXX")" || return 0
   {
     printf '{"version": 1, "written_at": %s, "checked": "%s", "services": [' "$(date +%s)" "$(printf '%s' "$checked" | LC_ALL=C tr -cd '0-9-')"

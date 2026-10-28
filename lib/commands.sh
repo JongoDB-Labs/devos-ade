@@ -677,7 +677,7 @@ _setup_finish() {
   if [ -n "$SETUP_REMOTE_MODE" ]; then remote_enable "$SETUP_REMOTE_MODE"; else remote_up_hook; fi
   record_setup_commit   # lib/rollback.sh: ./stack update calls "nothing new" only for this commit
   services_status_write   # Home's record of the containers, as setup leaves them (the built-in SearXNG's row)
-  write_versions_json     # lib/versions.sh: Settings' Core services
+  write_versions_json || true   # lib/versions.sh: Settings' Core services (never what decides a setup)
   subs_refresh_reap   # lib/subscriptions.sh: what your subscriptions' tools say, asked in the background since they started
 }
 
