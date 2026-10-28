@@ -77,7 +77,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   about 2,400 px of scrolling now takes about 1,600 px, and a returning one about 1,600 instead of 1,900. Long lists keep
   to a size of their own and scroll inside their card (Continue, **What's new**, the models table) and nothing is cut
   off: everything stays one click away. The same goes for the rest:
-  - **Settings › Models & providers** shows **Keys**, **Subscriptions** and **Search** one at a time (they were one
+  - **Settings › Models & providers** shows **Keys**, **Subscriptions**, **Local models** and **Search** one at a time (they were one
     4,700 px page); a search or a link still finds a setting in any of them.
   - Settings sections use two or three columns when the window is wide, and **Advanced** and **About this install** show
     their first ten values and fold the rest under **Show the rest** (a search opens it).

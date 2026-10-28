@@ -238,7 +238,7 @@ Home before Get started existed does not see it.
 
 On a wide window Home is a dashboard, not one long page: Get started and Continue side by side, the update card in two
 columns, then spend, services, models, sign-ins and the terminal's `devos-claude` in three; a long list scrolls inside its
-card. Settings' **Models & providers** is three tabs (**Keys**, **Subscriptions**, **Search**), and **Browse models** a grid.
+card. Settings' **Models & providers** is four tabs (**Keys**, **Subscriptions**, **Local models**, **Search**), and **Browse models** a grid.
 A phone keeps one column.
 
 ### Walkthrough
@@ -1760,7 +1760,7 @@ Each setting has a one-line description, its value in plain words, badges (*This
 *Read-only*, what a change restarts: *the model gateway* is LiteLLM, *the web server* Caddy) and, under **Details**,
 the full explanation in the page's words, then a footer **For the terminal** with its `.env` key and the command that
 changes it. On a phone a section is a short list of cards: each keeps its name, value and control, and folds its
-description, badges and notes under **Details**. Models & providers' groups (Keys, Subscriptions, Search) are a bar of
+description, badges and notes under **Details**. Models & providers' groups (Keys, Subscriptions, Local models, Search) are a bar of
 links at its top. Settings that belong to a switch sit under it and show only while it is on (a nightly backup's window, the
 Code page's *Auto mode*, everything of remote access); rare ones are folded under **More settings**.
 **Search settings** finds a setting in every section by its name, key or description; **Changed from default**

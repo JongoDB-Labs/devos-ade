@@ -98,7 +98,7 @@
   };
   // the head over a group of a section's rows, before the first of them: the keys, your subscriptions (and a Search
   // group next to them, for a web search backend's card)
-  const GROUP_HEAD = { AWS_ACCESS_KEY_ID: "Keys", "+subscriptions": "Subscriptions", WEBSEARCH_BACKEND: "Search" };
+  const GROUP_HEAD = { AWS_ACCESS_KEY_ID: "Keys", "+subscriptions": "Subscriptions", WEBSEARCH_BACKEND: "Search", "+local-models": "Local models" };
   // where a row moved to (Settings › Models & providers), said at the top of its old section with a link
   const MOVED = { aws: [["AWS_ACCESS_KEY_ID", "The AWS key", "Models & providers › Bedrock"]],
     chat: [["OPENROUTER_API_KEY", "OpenRouter's and Experiential Labs' keys and models", "Models & providers"]],
@@ -505,7 +505,7 @@
       rest.append(...[...body.children].slice(FOLD));
       fold = (el("details", { class: "set-more set-fold" }, el("summary", {}, "Show the rest ", el("span", { class: "set-more-count" })), rest));
     }
-    // Models & providers is long: its groups (Keys · Subscriptions · Search) are tabs — one group at a time, so the page
+    // Models & providers is long: its groups (Keys · Subscriptions · Search · Local models) are tabs — one group at a time, so the page
     // is the height of its longest group, not of all three (a search or an address shows what it finds, whichever group)
     const heads = [...body.querySelectorAll(":scope > .set-group-head")];
     if (heads.length > 1) {
@@ -566,7 +566,7 @@
       }
       // (a provider's card; the first of a group of rows under its head)
       if (PROVIDERS[r.key]) block.classList.add("set-prov");
-      if (GROUP_HEAD[r.key] && r.section === "providers") container.append(el("h3", { class: "set-group-head", id: `set-group-${GROUP_HEAD[r.key].toLowerCase()}`, tabindex: "-1", text: GROUP_HEAD[r.key] }));
+      if (GROUP_HEAD[r.key] && r.section === "providers") container.append(el("h3", { class: "set-group-head", id: `set-group-${GROUP_HEAD[r.key].toLowerCase().replace(/ /g, "-")}`, tabindex: "-1", text: GROUP_HEAD[r.key] }));
       block.append(node);
       made[r.key] = block;
       const host = r.parent && here.has(r.parent) && made[r.parent];

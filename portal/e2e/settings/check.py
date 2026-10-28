@@ -360,10 +360,15 @@ def walk(page, failures, label):
         page.click(f".set-nav-item[data-section='{sid}']")
         page.wait_for_selector(f"#set-{sid}:not([hidden])")
         page.evaluate("() => document.querySelectorAll('#settings details.set-more').forEach((d) => { d.open = true; })")
-        for o in page.evaluate(COLLECT, f"#set-{sid} .set-row[data-key], #set-{sid} .set-adv-item[data-key], #set-{sid} .set-row[data-own], "
-                                        f"#set-{sid} .set-row[data-own] [data-for]"):
-            if o["visible"]:
-                seen[o["key"]] = o
+        # (a section with tabs, Models & providers' Keys / Subscriptions / Search: each tab in turn, as the rows of the others are hidden)
+        tabs = page.locator(f"#set-{sid} .set-minnav .chip")
+        for t in range(max(tabs.count(), 1)):
+            if tabs.count():
+                tabs.nth(t).click()
+            for o in page.evaluate(COLLECT, f"#set-{sid} .set-row[data-key], #set-{sid} .set-adv-item[data-key], #set-{sid} .set-row[data-own], "
+                                            f"#set-{sid} .set-row[data-own] [data-for]"):
+                if o["visible"]:
+                    seen[o["key"]] = o
     rows = [r for r in (LAYOUT["rows"] if MODE["layout"] else []) if not r["key"].startswith("+") and r["place"] != "with"]
     for r in rows:
         if r["key"] in seen:
@@ -723,6 +728,7 @@ def check_servers(page, failures, label):
     page.goto(BASE + "/#settings")
     page.wait_for_selector("#settings .set-card:not([hidden])", timeout=20000)
     page.click(".set-nav-item[data-section='providers']")
+    page.click("#set-providers .set-minnav .chip[data-group='local models']")
     page.wait_for_selector("#lm-server-list", timeout=10000)
     first = page.eval_on_selector("#lm-server-list > li:first-child", "e => e.dataset.serverRow")
     if first != "this-computer":

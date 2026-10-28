@@ -168,7 +168,7 @@ stack. The rules, so a new card drops in without a new pattern:
 - **A widget has a height of its own.** A list that can be long scrolls inside its card (`max-height` and
   `overflow-y: auto`: Continue's lists, the models table, What's new); a detail folds under a `<details>` (the
   *Details* of a setting, the models table, the credentials, *Show the rest* under the long read-only lists).
-- **One page, several unrelated panels: tabs.** Models & providers shows Keys, Subscriptions or Search, one at a time
+- **One page, several unrelated panels: tabs.** Models & providers shows Keys, Subscriptions, Local models or Search, one at a time
   (the chips of `.set-minnav`, `showGroup` in settings.js); a search, *Changed from default* or an address opens whatever
   it finds, whichever tab. Any card that needs the same takes `data-group` on its blocks and a chip per group.
 - **Browse models is a grid of cards** (`.mb-list`: as many columns as fit, to 1560 px wide). **Local models

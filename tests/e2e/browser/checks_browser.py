@@ -3296,7 +3296,7 @@ def settings_providers(ctx):
     sec = page.locator("#set-providers")
     expect(page.locator(".set-nav-item[aria-current=true]").inner_text() == "Models & providers", "the list does not mark the section")
     heads = [x.strip() for x in sec.locator(".set-group-head").all_text_contents()]
-    expect(heads == ["Keys", "Subscriptions", "Search"], f"the groups' heads: {heads}")
+    expect(heads == ["Keys", "Subscriptions", "Local models", "Search"], f"the groups' heads: {heads}")
     # (JON-812) the groups are tabs, one at a time: Keys first; the others' cards are not shown until their tab is
     tab_names = [x.strip() for x in sec.locator(".set-minnav .chip").all_text_contents()]
     expect(tab_names == heads and sec.locator(".set-minnav .chip[aria-pressed=true]").inner_text() == "Keys", f"the tabs: {tab_names}")
@@ -3460,7 +3460,7 @@ def settings_providers(ctx):
         heights[sec] = ppage.evaluate("() => document.querySelector('#settings').scrollHeight")
         if sec == "providers":
             groups = ppage.eval_on_selector_all("#set-providers .set-minnav button", "els => els.map(e => e.textContent)")
-            expect(groups == ["Keys", "Subscriptions", "Search"], f"phone: the groups' bar {groups}")
+            expect(groups == ["Keys", "Subscriptions", "Local models", "Search"], f"phone: the groups' bar {groups}")
     row = ppage.locator("#set-code .set-row[data-key=CODE_ENABLED]")
     row.locator(":scope > details.set-details > summary").click()
     det = row.locator(":scope > details.set-details").inner_text()
