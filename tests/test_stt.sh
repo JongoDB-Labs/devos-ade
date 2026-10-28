@@ -43,6 +43,7 @@ test_render_openai_default_model() {
       model: "openai/gpt-4o-mini-transcribe"
       api_key: os.environ/STT_API_KEY
     model_info:
+      id: "bn-stt"
       mode: "audio_transcription"'
   # gpt-4o-*-transcribe is billed by tokens (OpenAI reports them): no verbose_json needed
   assert_not_contains "$out" "verbose_json"
@@ -63,6 +64,7 @@ test_render_groq_and_per_second_models_ask_for_duration() {
   assert_contains "$out" '      response_format: "verbose_json"'
   # ...and carries its per-second price (LiteLLM 1.105 logs Groq transcriptions as $0 without it)
   assert_contains "$out" '    model_info:
+      id: "bn-stt"
       mode: "audio_transcription"
       input_cost_per_second: 0.00001111'
   printf 'STT_PROVIDER=openai\nSTT_API_KEY=%s\nSTT_MODEL=whisper-1\n' "$OKEY" > "$ENV_FILE"
@@ -609,6 +611,7 @@ test_render_stt_catalog_models_as_chat_without_an_stt_entry() {
       model: "bedrock/mistral.voxtral-small-24b-2507"
       aws_region_name: os.environ/AWS_REGION_NAME
     model_info:
+      id: "bn-voxtral-small"
       mode: "chat"
       input_cost_per_token: 0.0000001
       output_cost_per_token: 0.0000003'

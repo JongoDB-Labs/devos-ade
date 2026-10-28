@@ -167,6 +167,7 @@ test_render_includes_openrouter_with_a_key() {
       model: "openrouter/meta-llama/llama-3.3-70b-instruct"
       api_key: os.environ/OPENROUTER_API_KEY
     model_info:
+      id: "bn-or_2Fmeta-llama_2Fllama-3.3-70b-instruct"
       mode: "chat"
       input_cost_per_token: 0.00000022
       output_cost_per_token: 0.0000005

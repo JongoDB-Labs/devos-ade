@@ -632,13 +632,14 @@ settings_poll_once() {
 # change from Settings starts within a quarter second, not up to HELPER_POLL_S later. SECONDS of 0 (or not a whole
 # number, as a test sets) is one plain `sleep SECONDS` and 1, exactly as the pause it replaces — tests hook `sleep`.
 helper_nap() {
-  local rq f n=0 max
+  # (the plain pauses come before any local: a test's `sleep` counts in its own variables, which a local here would hide)
   case "${1:-3}" in '' | *[!0-9]*) sleep "${1:-3}"; return 1 ;; esac
   [ "$1" -gt 0 ] || { sleep "$1"; return 1; }
-  rq="$(request_dir)"; max=$(( $1 * 4 ))
-  while [ "$n" -lt "$max" ]; do
+  local rq f nap_i=0 nap_max
+  rq="$(request_dir)"; nap_max=$(( $1 * 4 ))
+  while [ "$nap_i" -lt "$nap_max" ]; do
     for f in "$rq"/cfg-*.req "$rq"/act-*.json "$rq"/req-*.json "$rq"/ses-*.json; do [ -e "$f" ] && return 0; done
-    sleep 0.25; n=$((n + 1))
+    sleep 0.25; nap_i=$((nap_i + 1))
   done
   return 1
 }
