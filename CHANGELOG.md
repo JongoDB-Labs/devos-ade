@@ -6,6 +6,20 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+
+- **Send feedback (JON-440).** Settings › About and the bottom of Home have a **Send feedback** card. **Bug**, **Feature**
+  and **Other** open the repository's GitHub issue form, already started with this install's DevOS ADE version, operating
+  system and Docker Compose version, and nothing else. You read it, change it and submit it on GitHub. The card says the
+  issue is public and what to leave out (keys, passwords, prompts, file contents, project names), and never says a report
+  was sent: nothing is sent from DevOS ADE. The repository has issue forms for each kind (`.github/ISSUE_TEMPLATE`).
+- **Activity shows a container that restarted, exited with an error, ran out of memory or turned unhealthy (JON-440).**
+  `lib/health.sh` reads Docker's own counts each time the stack's status is written, and keeps the events in
+  `.state/status/container-health.json` on this computer only, for a week. Only this stack's services are looked at;
+  a container made again by `./stack up` is not a restart.
+- **`docs/event-schema.md`:** the contract for the events a future opt-in report would carry (kinds, fields, the
+  dedupe key, the shared redaction it must use). It is a spec only: nothing collects or sends events.
+
 ## [0.37.0] - 2026-10-28
 
 ### Added

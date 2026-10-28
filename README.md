@@ -245,6 +245,13 @@ columns, then spend, services, models, sign-ins and the terminal's `devos-claude
 card. Settings' **Models & providers** is four tabs (**Keys**, **Subscriptions**, **Local models**, **Search**), and **Browse models** a grid.
 A phone keeps one column.
 
+### Send feedback
+
+**Send feedback** (the bottom of Home, and Settings › About) opens the repository's GitHub issue form for a **Bug**, a
+**Feature** or **Other**, already started with this install's DevOS ADE version, operating system and Docker Compose
+version. You read, change and submit it on GitHub; nothing is sent from DevOS ADE. The issue is public: leave out
+keys, passwords, prompts, file contents and project names.
+
 ### Walkthrough
 
 **Walkthrough** at the bottom of the sidebar takes you through what a developer uses in DevOS ADE, in six parts you can
@@ -301,7 +308,9 @@ what you have not read yet, and its panel lists, newest first:
   and the last `./stack` command typed in a terminal that changed the stack — running, then finished or failed, for a
   week;
 - the Code page **turned on by an update nobody watched**, with **Keep** and **Turn off**;
-- a **model check** that could not check every model, and **failed OpenRouter requests** of the last 24 hours.
+- a **model check** that could not check every model, and **failed OpenRouter requests** of the last 24 hours;
+- a **container** of the stack that restarted, exited with an error, ran out of memory or turned unhealthy (Docker's
+  own counts, kept on this computer for a week).
 
 **Mark as read**, **Mark all as read** and **✕** (dismiss; **Show dismissed** brings them back) are kept in this
 browser only. **Browser notifications** in the panel are off until you turn them on (the browser asks once): then a new
