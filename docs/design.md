@@ -155,7 +155,7 @@ cannot run itself.
 | Activity | An item | its main action, Mark as read or unread, Dismiss or Restore, Copy text |
 | Navigation | A tab | Open, Open in its own window, Copy link (a right-click, a long press or the key; no "⋯") |
 | Code: Projects | A session | Show or Resume, Open in a new tab, Rename, Fork, Add to project, Continue in a project, Open its folder in a terminal, Open in the terminal, Copy link, Archive or Unarchive, Close, Delete (confirmed) |
-| Code: Projects | A project | Open, New session here, Open in a terminal, Rename, Copy path, Remove from Code |
+| Code: Projects | A project | Open, New session here, Open in a terminal, Rename, Copy path, Export to Files…, Remove from Code |
 | Code: Explorer | A file or folder | Open, Open a terminal here (its folder), Mention in chat, Rename, Copy path, Download, Delete (confirmed) |
 | Code: Changes (Git) | A changed file | Open the diff, Open the file, Open its folder in a terminal, Copy path, Stage or Unstage, Discard (confirmed) |
 | Code: Review | A file's header | Open, Fold, Keep, Undo, Open its folder in a terminal, Copy path |

@@ -238,7 +238,7 @@ function ProjectMenu({ p, onRename }: { p: Project; onRename: () => void }) {
           </MenuItem>
           <MenuItem icon="copy" onSelect={() => (close(), void copyText(p.path).then((ok) => toast(ok ? 'Path copied.' : 'Could not copy the path.', ok ? 'ok' : 'error')))} testid="project-menu-copy-path">
             Copy path
-            </MenuItem>
+          </MenuItem>
           <MenuItem icon="upload" onSelect={() => (close(), openProjectDialog({ kind: 'export', id: p.id }))} testid="project-menu-export">
             Export to Files…
           </MenuItem>

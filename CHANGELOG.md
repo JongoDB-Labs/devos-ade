@@ -6,6 +6,16 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+
+- **Export a Code project to Files as a zip (JON-808).** **Export to Files…** (a project's menu and right-click menu, the
+  project chip, and the command palette) zips the project's files in the sandbox and puts the zip in the Files app, in a
+  bucket called `code-exports`, for you to download. In a git project it zips the tracked and
+  untracked-but-not-ignored files; otherwise it leaves out `.git` and dependency folders. It refuses a zip over 220 MiB and
+  shows the size and file count first. The zip is built by the sandbox (`fs.zip`), streamed through the
+  code server (`/api/projects/ID/export`) and stored by the portal (`POST /api/code-export`, as the owner, rate-limited,
+  logged). New check: `code-export-to-files`.
+
 ## [0.36.0] - 2026-10-28
 
 ### Added
