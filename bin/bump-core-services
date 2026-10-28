@@ -36,10 +36,12 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
 COOLDOWN_DAYS = 3
+REPUSH_DAYS = 1   # an image built this long after its release was pushed again since (not the release's own publishing)
 SECURITY_RX = re.compile(r"\bCVE-\d{4}-\d+|\bGHSA-[0-9a-z]{4}-|security (fix|patch|advisory|update|vulnerab)|vulnerabilit|"
                          r"\bsecurity\b.{0,40}\b(fix|patch)", re.I)
 DIGEST_RX = r"@sha256:[0-9a-f]{64}"
@@ -48,14 +50,30 @@ ACCEPT = ", ".join(["application/vnd.oci.image.index.v1+json", "application/vnd.
 
 
 # ------------------------------------------------------------------------------------------------------ network
+TOKEN_SERVICES = {"auth.docker.io"}   # Docker Hub's token service (ghcr.io answers on its own host)
+
+
+def https_host(url: str) -> str:
+    """The host of an https URL without a user part, lowercased; '' for anything else."""
+    try:
+        u = urllib.parse.urlsplit(url)
+        host = u.hostname
+    except ValueError:
+        return ""
+    return (host or "").lower() if u.scheme == "https" and u.username is None and u.password is None else ""
+
+
 class Net:
-    """The only place that touches the network (tests replace it with a fake that has the same three methods)."""
+    """The only place that touches the network (tests replace it with a fake that has the same four methods)."""
 
     def __init__(self, timeout: int = 60):
         self.timeout = timeout
+        self._tokens: dict = {}   # (registry, name) -> the registry's Authorization value
 
-    def _open(self, url: str, headers: dict | None = None, method: str = "GET"):
+    def _open(self, url: str, headers: dict | None = None, method: str = "GET", auth: str = ""):
         req = urllib.request.Request(url, headers=headers or {}, method=method)
+        if auth:   # never carried to where a redirect points (a registry's blob store, a renamed repo's new address)
+            req.add_unredirected_header("Authorization", auth)
         return urllib.request.urlopen(req, timeout=self.timeout)
 
     @staticmethod
@@ -73,11 +91,12 @@ class Net:
 
     def json(self, url: str):
         h = {"Accept": "application/json", "User-Agent": "devos-ade-bump"}
-        if "api.github.com" in url and os.environ.get("GITHUB_TOKEN"):
-            h["Authorization"] = "Bearer " + os.environ["GITHUB_TOKEN"]
+        # GITHUB_TOKEN only for GitHub's API itself: a URL that merely mentions it (a registry's sign-in address,
+        # Docker Hub's next page) never gets it
+        auth = "Bearer " + os.environ["GITHUB_TOKEN"] if https_host(url) == "api.github.com" and os.environ.get("GITHUB_TOKEN") else ""
 
         def go():
-            with self._open(url, h) as r:
+            with self._open(url, h, auth=auth) as r:
                 return json.load(r)
         return self.retrying(go)
 
@@ -90,30 +109,62 @@ class Net:
             return h.hexdigest()
         return self.retrying(go)
 
-    def digest(self, registry: str, name: str, tag: str) -> str:
-        """The digest of registry/name:tag (the multi-arch index, as `docker pull` pins it), via the registry API."""
-        url = f"https://{registry}/v2/{name}/manifests/{tag}"
-        hdrs = {"Accept": ACCEPT, "User-Agent": "devos-ade-bump"}
+    def _registry(self, registry: str, name: str, path: str, accept: str, method: str = "GET"):
+        """registry/v2/name/PATH, signing in by the registry's token challenge when it asks — only at an https address
+        on the registry itself or a known token service (a challenge can name any URL)."""
+        url = f"https://{registry}/v2/{name}/{path}"
+        hdrs = {"Accept": accept, "User-Agent": "devos-ade-bump"}
+        tok = self._tokens.get((registry, name), "")
         try:
-            r = self._open(url, hdrs, "HEAD")
+            return self._open(url, hdrs, method, auth=tok)
         except urllib.error.HTTPError as e:
-            if e.code != 401:
+            if e.code != 401:   # (401 with a kept token: it expired, sign in again)
                 raise
             ch = e.headers.get("WWW-Authenticate", "")
             realm = re.search(r'realm="([^"]+)"', ch)
             if not realm:
                 raise
+            if https_host(realm.group(1)) not in {registry, *TOKEN_SERVICES}:
+                raise ValueError(f"{registry} asked to sign in at {realm.group(1)!r}: not https on the registry or a known token service") from None
             q = "&".join(f"{k}={v}" for k, v in re.findall(r'(service|scope)="([^"]+)"', ch))
-            tok = self.json(realm.group(1) + ("?" + q if q else ""))
-            hdrs["Authorization"] = "Bearer " + (tok.get("token") or tok.get("access_token") or "")
-            r = self._open(url, hdrs, "HEAD")
-        with r:
+            t = self.json(realm.group(1) + ("?" + q if q else ""))
+            tok = "Bearer " + (t.get("token") or t.get("access_token") or "")
+            self._tokens[(registry, name)] = tok
+            return self._open(url, hdrs, method, auth=tok)
+
+    def digest(self, registry: str, name: str, tag: str) -> str:
+        """The digest of registry/name:tag (the multi-arch index, as `docker pull` pins it), via the registry API."""
+        with self._registry(registry, name, f"manifests/{tag}", ACCEPT, "HEAD") as r:
             return r.headers["Docker-Content-Digest"]
+
+    def built(self, registry: str, name: str, digest: str) -> dt.datetime | None:
+        """When the image behind DIGEST was built: its linux/amd64 (else first linux) config's `created`; None when it
+        does not say."""
+        def get(path, accept):
+            def go():
+                with self._registry(registry, name, path, accept) as r:
+                    return json.load(r)
+            return self.retrying(go)
+        m = get(f"manifests/{digest}", ACCEPT)
+        if m.get("manifests"):   # an index: one platform's manifest (attestations say os "unknown")
+            linux = [x for x in m["manifests"] if (x.get("platform") or {}).get("os") == "linux"]
+            one = next((x for x in linux if x["platform"].get("architecture") == "amd64"), linux[0] if linux else None)
+            if not one:
+                return None
+            m = get(f"manifests/{one['digest']}", ACCEPT)
+        cfg = (m.get("config") or {}).get("digest")
+        if not cfg:
+            return None
+        when = get(f"blobs/{cfg}", "application/vnd.oci.image.config.v1+json, application/json, */*").get("created")
+        try:
+            return parse_time(when) if when else None
+        except ValueError:
+            return None
 
 
 # ------------------------------------------------------------------------------------------------------ helpers
 def parse_time(s: str) -> dt.datetime:
-    s = s.strip().replace("Z", "+00:00")
+    s = re.sub(r"(\.\d{6})\d+", r"\1", s.strip().replace("Z", "+00:00"))   # (an image's created: nanoseconds)
     d = dt.datetime.fromisoformat(s if "T" in s or " " in s else s + "T00:00:00+00:00")
     return d if d.tzinfo else d.replace(tzinfo=dt.timezone.utc)
 
@@ -336,6 +387,8 @@ class HubTags:
                 if m and when:
                     out.append(Candidate(m.group(1), parse_time(when), f"https://hub.docker.com/r/{self.repo}/tags"))
             url, pages = d.get("next"), pages + 1
+            if url and https_host(url) != "hub.docker.com":
+                raise ValueError(f"Docker Hub's next page is not on https://hub.docker.com: {url!r}")
         return out
 
 
@@ -448,7 +501,7 @@ class ImageTarget:
         if chosen is None:
             raise SystemExit(f"{self.name}: no stable release found upstream")
         v = chosen.version
-        digests = {}
+        digests, hold = {}, ""
         for repo, tpl in self.images:
             held = self.pinned_digest(fs, repo, tpl) if v == cur else None  # the same release keeps its digest (cooldown)
             if held:
@@ -456,6 +509,15 @@ class ImageTarget:
             else:
                 reg, nm = registry_of(repo)
                 digests[(repo, tpl)] = net.digest(reg, nm, tpl.replace("{v}", v))
+                # (a release inside the cooldown is here only by a security override, which knows it is new)
+                if age_days(chosen.released, now) >= cooldown:
+                    note, wait = built_check(net, self.name, reg, nm, tpl.replace("{v}", v), digests[(repo, tpl)],
+                                             chosen.released, now, cooldown)
+                    why, hold = "; ".join(x for x in (why, note) if x), hold or wait
+        if hold:   # the cooldown counts from the build when it is later: nothing moves yet
+            m = Move(self.name, cur, cur, newest.version, chosen.url, "; ".join(x for x in (hold, why) if x), chosen.released, True)
+            m.newest_url, m.newest_released = newest.url, newest.released
+            return m
         # (+ tests/fixtures/compose-golden/*.json: the images compose renders, which tests/test_brand.sh compares)
         goldens = sorted(str(q.relative_to(fs.root)) for q in Path(fs.root, GOLDEN_DIR).glob("*.json"))
         for f in list(self.files) + goldens:
@@ -473,6 +535,22 @@ class ImageTarget:
         m = Move(self.name, cur, v, newest.version, chosen.url, why, chosen.released, chosen is not newest)
         m.newest_url, m.newest_released = newest.url, newest.released
         return m
+
+
+def built_check(net, target: str, reg: str, name: str, tag: str, digest: str, released, now, cooldown: int):
+    """(note, hold) for a digest just read: the cooldown was judged on the release (or the tag's push), but a tag
+    pushed again since would slip in under it. The image's build time inside the cooldown holds the move back — and
+    refuses it when the build is well after the release (REPUSH_DAYS): the tag was pushed again, look upstream."""
+    built = net.built(reg, name, digest)
+    if built is None:
+        return "the image's build time is unreadable: the cooldown counted from the release", ""
+    if age_days(built, now) >= cooldown:
+        return "", ""
+    if age_days(released, built) > REPUSH_DAYS:
+        raise Refused(f"{target} refused: {name}:{tag} ({digest[:19]}) was built {age_days(built, now):.1f} days ago, "
+                      f"{age_days(released, built):.0f} days after its release, inside the {cooldown}-day cooldown: the tag "
+                      "was pushed again since? Not pinned; look upstream before taking it")
+    return "", f"held back: {name}:{tag} was built {age_days(built, now):.1f}d ago (the cooldown counts from the build)"
 
 
 class BaseTarget:
@@ -499,9 +577,12 @@ class BaseTarget:
         if age_days(c.released, now) < cooldown:
             return Move(self.name, old[:19], old[:19], "newer push", c.url, f"held back: pushed {int(age_days(c.released, now))}d ago", c.released, True)
         dg = net.digest(reg, nm, self.tag)
+        why, hold = built_check(net, self.name, reg, nm, self.tag, dg, c.released, now, cooldown) if dg != old else ("", "")
+        if hold:
+            return Move(self.name, old[:19], old[:19], "newer push", c.url, hold, c.released, True)
         for f in self.files:
             fs.put(f, pat.sub(f"{self.repo}:{self.tag}@{dg}", fs.get(f)))
-        return Move(self.name, old[:19], dg[:19], dg[:19], c.url, "", c.released)
+        return Move(self.name, old[:19], dg[:19], dg[:19], c.url, why, c.released)
 
 
 class ToolTarget:

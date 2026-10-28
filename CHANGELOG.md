@@ -6,6 +6,21 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.33.1] - 2026-10-28
+
+### Security
+
+- **`bin/bump-core-services` (the maintainer's tool that moves the core-service pins) sends credentials only where they
+  belong.** `GITHUB_TOKEN` went to any address that merely contained `api.github.com` (a registry's sign-in address,
+  Docker Hub's next-page link); it now goes only to `https://api.github.com`. A registry's sign-in challenge could name
+  any address to fetch a token from; it must now be https on the registry itself or Docker Hub's token service, and
+  Docker Hub's next-page link must stay on Docker Hub. Neither token is carried across a redirect. Nothing in a running
+  DevOS ADE used this path; the tool runs on a maintainer's machine.
+- **The 3-day cooldown now covers the digest, not only the release.** The tool judged the cooldown on the release date
+  but read the image digest afterwards, so a tag pushed again since would have been pinned. It now reads each new
+  image's build time: built inside the cooldown, the move waits; built more than a day after its release, it is refused
+  for a maintainer to look upstream. [docs/releasing.md](docs/releasing.md).
+
 ## [0.33.0] - 2026-10-28
 
 ### Changed

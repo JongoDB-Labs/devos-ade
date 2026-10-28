@@ -33,10 +33,11 @@ def ghsa(aid, repo, patched, pkg=None):
 
 
 class FakeNet:
-    """Answers the three network calls from tables; any other request fails the test."""
+    """Answers the four network calls from tables; any other request fails the test."""
 
-    def __init__(self, gh=None, hub=None, digests=None, hashes=None, adv=None, secadv=None):
+    def __init__(self, gh=None, hub=None, digests=None, hashes=None, adv=None, secadv=None, built=None):
         self.gh, self.hub, self.digests, self.hashes = gh or {}, hub or {}, digests or {}, hashes or {}
+        self.built_at = built or {}   # digest -> when its image was built (default: long ago)
         self.secadv = secadv or {}   # repo -> published repository advisories
         self.adv = adv or {}   # advisory id -> advisory dict (GHSA) ; CVE id -> list
         self.calls = []
@@ -63,6 +64,11 @@ class FakeNet:
     def digest(self, registry, name, tag):
         self.calls.append(f"digest {registry}/{name}:{tag}")
         return self.digests[f"{name}:{tag}"]
+
+    def built(self, registry, name, digest):
+        self.calls.append(f"built {registry}/{name}@{digest}")
+        when = self.built_at.get(digest, "2026-01-01T00:00:00Z")
+        return bump.parse_time(when) if when else None
 
     def sha256(self, url):
         self.calls.append("sha256 " + url)
@@ -235,6 +241,34 @@ class ImageTargetTests(unittest.TestCase):
         self.assertEqual((m.new, m.newest), ("0.8.8", "0.9.0"))
         self.assertIn("pgvector:0.8.8-pg17@" + D(8), read(d, "compose.yaml"))
 
+    def test_a_tag_pushed_again_after_its_release_is_refused(self):
+        d = tree({"compose.yaml": "  rustfs:\n    image: rustfs/rustfs:1.0.1\n"})
+        net = FakeNet(gh={"rustfs/rustfs": [rel("1.0.3", "2026-10-10T00:00:00Z")]},
+                      digests={"rustfs/rustfs:1.0.3": D(4)}, built={D(4): "2026-10-26T00:00:00Z"})
+        fs = bump.Files(d)
+        with self.assertRaisesRegex(bump.Refused, "pushed again"):
+            self.target("rustfs").run(net, fs, now(), 3)
+        self.assertEqual(fs.flush(), [])
+
+    def test_an_image_published_with_its_release_waits_out_the_cooldown_from_its_build(self):
+        d = tree({"compose.yaml": "  rustfs:\n    image: rustfs/rustfs:1.0.1\n"})
+        net = FakeNet(gh={"rustfs/rustfs": [rel("1.0.3", "2026-10-24T08:00:00Z")]},   # 3.2 days old
+                      digests={"rustfs/rustfs:1.0.3": D(4)}, built={D(4): "2026-10-24T14:00:00Z"})   # 2.9 days old
+        fs = bump.Files(d)
+        m = self.target("rustfs").run(net, fs, now(), 3)
+        self.assertEqual((m.old, m.new), ("1.0.1", "1.0.1"))
+        self.assertIn("held back", m.why)
+        self.assertEqual(fs.flush(), [])
+
+    def test_an_unreadable_build_time_is_noted(self):
+        d = tree({"compose.yaml": "  rustfs:\n    image: rustfs/rustfs:1.0.1\n"})
+        net = FakeNet(gh={"rustfs/rustfs": [rel("1.0.3", "2026-10-17T00:00:00Z")]},
+                      digests={"rustfs/rustfs:1.0.3": D(4)}, built={D(4): None})
+        fs = bump.Files(d)
+        m = self.target("rustfs").run(net, fs, now(), 3)
+        self.assertEqual(m.new, "1.0.3")
+        self.assertIn("build time is unreadable", m.why)
+
     def test_searxng_date_tags(self):
         d = tree({"compose.yaml": "    image: searxng/searxng:2026.10.11-ad46ebd7d@%s\n" % D(1)})
         tags = [{"name": "2026.10.27-28423d332", "tag_last_pushed": "2026-10-27T01:00:00Z"}, {"name": "2026.10.24-ef0ec03da", "tag_last_pushed": "2026-10-24T01:00:00Z"}]
@@ -259,6 +293,16 @@ class BaseAndToolTests(unittest.TestCase):
             self.assertEqual(m.changed, moved)
             self.assertEqual(D(2) in read(d, "portal/Dockerfile"), moved)
             self.assertEqual(D(2) in read(d, "shared-mcp/Dockerfile"), moved)
+
+    def test_a_base_image_built_well_after_its_push_is_refused(self):
+        text = "FROM python:3.12-slim@%s AS base\n" % D(1)
+        d = tree({"portal/Dockerfile": text})
+        net = FakeNet(hub={"library/python": [{"name": "3.12-slim", "tag_last_pushed": "2026-10-20T00:00:00Z"}]},
+                      digests={"library/python:3.12-slim": D(2)}, built={D(2): "2026-10-26T00:00:00Z"})
+        fs = bump.Files(d)
+        with self.assertRaises(bump.Refused):   # built 6 days after the push the cooldown was judged on
+            bump.BaseTarget("python-slim", "Python", "python", "3.12-slim", ["portal/Dockerfile"]).run(net, fs, now(), 3)
+        self.assertEqual(fs.flush(), [])
 
     def test_a_tool_gets_its_version_and_the_sha256_of_each_file(self):
         df = "ARG GH_VERSION=2.102.0\nARG GH_SHA256_AMD64=aaa\nARG GH_SHA256_ARM64=bbb\nARG OTHER=1\n"
@@ -351,6 +395,13 @@ class HoldAndRetryTests(unittest.TestCase):
             bump.time.sleep = orig
 
 
+class _Body:
+    def __init__(self, d): self.d = d
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def read(self, *a): return __import__("json").dumps(self.d).encode()
+
+
 class RegistryTests(unittest.TestCase):
     def test_digest_follows_the_registry_token_challenge(self):
         calls = []
@@ -362,9 +413,9 @@ class RegistryTests(unittest.TestCase):
 
         net = bump.Net()
 
-        def fake_open(url, headers=None, method="GET"):
-            calls.append((method, url, (headers or {}).get("Authorization")))
-            if not (headers or {}).get("Authorization"):
+        def fake_open(url, headers=None, method="GET", auth=""):
+            calls.append((method, url, auth))
+            if not auth:
                 raise urllib.error.HTTPError(url, 401, "no", {"WWW-Authenticate": 'Bearer realm="https://ghcr.io/token",service="ghcr.io",scope="repository:x/y:pull"'}, None)
             return R()
 
@@ -373,6 +424,104 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(net.digest("ghcr.io", "x/y", "1.0"), D(5))
         self.assertEqual([c[0] for c in calls], ["HEAD", "HEAD"])
         self.assertEqual(calls[1][2], "Bearer T")
+
+    def test_an_expired_token_signs_in_again(self):
+        class R:
+            headers = {"Docker-Content-Digest": D(5)}
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        net, tokens = bump.Net(), iter(["T2"])
+
+        def fake_open(url, headers=None, method="GET", auth=""):
+            if auth != "Bearer T2":   # T1 has expired by the second call
+                raise urllib.error.HTTPError(url, 401, "no", {"WWW-Authenticate": 'Bearer realm="https://ghcr.io/token"'}, None)
+            return R()
+        net._open = fake_open
+        net.json = lambda url: {"token": next(tokens)}
+        net._tokens[("ghcr.io", "x/y")] = "Bearer T1"
+        self.assertEqual(net.digest("ghcr.io", "x/y", "1.0"), D(5))
+
+    def challenged_by(self, realm):
+        net, asked = bump.Net(), []
+
+        def fake_open(url, headers=None, method="GET", auth=""):
+            raise urllib.error.HTTPError(url, 401, "no", {"WWW-Authenticate": f'Bearer realm="{realm}",service="x"'}, None)
+        net._open = fake_open
+        net.json = lambda url: asked.append(url) or {"token": "T"}
+        return net, asked
+
+    def test_a_sign_in_address_off_the_registry_is_refused(self):
+        for realm in ("https://evil.example/token", "http://ghcr.io/token", "https://ghcr.io.evil.example/token",
+                      "https://user@ghcr.io/token", "https://api.github.com/token"):
+            net, asked = self.challenged_by(realm)
+            with self.assertRaises(ValueError, msg=realm):
+                net.digest("ghcr.io", "x/y", "1.0")
+            self.assertEqual(asked, [], realm)
+
+    def test_docker_hubs_token_service_is_accepted(self):
+        net, asked = self.challenged_by("https://auth.docker.io/token")
+        with self.assertRaises(urllib.error.HTTPError):   # (the fake keeps refusing; the token was asked for)
+            net.digest("registry-1.docker.io", "library/caddy", "2")
+        self.assertEqual(len(asked), 1)
+        self.assertTrue(asked[0].startswith("https://auth.docker.io/token?"))
+
+    def github_token_sent_to(self, url):
+        sent = []
+
+        class R:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self, *a): return b"{}"
+
+        net = bump.Net()
+        net._open = lambda u, headers=None, method="GET", auth="": sent.append(auth) or R()
+        os.environ["GITHUB_TOKEN"] = "ght"
+        try:
+            net.json(url)
+        finally:
+            del os.environ["GITHUB_TOKEN"]
+        return sent[0]
+
+    def test_the_github_token_goes_only_to_githubs_api(self):
+        self.assertEqual(self.github_token_sent_to("https://api.github.com/repos/x/y/releases"), "Bearer ght")
+        for url in ("https://evil.example/?api.github.com", "https://api.github.com.evil.example/x",
+                    "http://api.github.com/repos/x/y", "https://hub.docker.com/v2/x?next=api.github.com"):
+            self.assertEqual(self.github_token_sent_to(url), "", url)
+
+    def test_the_token_is_never_carried_across_a_redirect(self):
+        net = bump.Net()
+        seen = {}
+        orig = bump.urllib.request.urlopen
+        bump.urllib.request.urlopen = lambda req, timeout=None: seen.update(
+            plain=req.headers, unredirected=req.unredirected_hdrs)
+        try:
+            net._open("https://ghcr.io/v2/x/y/manifests/1", {"Accept": "a"}, "HEAD", auth="Bearer T")
+        finally:
+            bump.urllib.request.urlopen = orig
+        self.assertNotIn("Authorization", seen["plain"])
+        self.assertEqual(seen["unredirected"].get("Authorization"), "Bearer T")
+
+    def test_a_hub_next_page_off_docker_hub_is_refused(self):
+        class N:
+            def json(self, url):
+                return {"results": [], "next": "https://evil.example/v2/repositories/library/python/tags?page=2"}
+        with self.assertRaises(ValueError):
+            bump.HubTags("python", r"(3\.12-slim)").candidates(N())
+
+    def test_the_build_time_is_read_from_the_linux_amd64_config(self):
+        docs = {
+            "manifests/" + D(1): {"manifests": [{"digest": D(2), "platform": {"os": "unknown", "architecture": "unknown"}},
+                                                {"digest": D(3), "platform": {"os": "linux", "architecture": "arm64"}},
+                                                {"digest": D(4), "platform": {"os": "linux", "architecture": "amd64"}}]},
+            "manifests/" + D(4): {"config": {"digest": D(5)}},
+            "blobs/" + D(5): {"created": "2026-10-20T08:00:00.123456789Z"},
+        }
+        net = bump.Net()
+        net._registry = lambda reg, name, path, accept, method="GET": _Body(docs[path])
+        self.assertEqual(net.built("ghcr.io", "x/y", D(1)), dt.datetime(2026, 10, 20, 8, 0, 0, 123456, tzinfo=dt.timezone.utc))
+        docs["blobs/" + D(5)] = {}
+        self.assertIsNone(net.built("ghcr.io", "x/y", D(1)))
 
     def test_registry_names(self):
         self.assertEqual(bump.registry_of("caddy"), ("registry-1.docker.io", "library/caddy"))

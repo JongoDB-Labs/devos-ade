@@ -41,6 +41,16 @@ What it does, per pin:
 - **Digests.** Every image is pinned as `name:tag@sha256:…` (the multi-arch index). A release that stays the same keeps
   its digest; base images (`python:3.12-slim`, `alpine:3.24`) keep their tag and only move their digest, once the tag's
   last push is past the cooldown.
+- **A digest is held to the cooldown too.** The cooldown is judged on the release (or the tag's push), but the digest is
+  read now, and a tag can be pushed again. So each new digest's image build time (its config's `created`, linux/amd64)
+  is read: built inside the cooldown, the move waits (`held back: ... was built Nd ago`); built more than a day after
+  its release, it is refused (`the tag was pushed again since? ... look upstream`) and nothing is pinned. An image that
+  does not say when it was built is noted (`build time is unreadable`). It is a second check, not proof: whoever pushes
+  an image writes its `created`.
+- **Where credentials go.** `GITHUB_TOKEN` is sent only to `https://api.github.com`. A registry's sign-in token goes only
+  to that registry, and only when it asks to sign in at an https address on the registry itself or Docker Hub's token
+  service (`auth.docker.io`); any other address is refused. Neither is carried across a redirect. Docker Hub's next-page
+  link must stay on `https://hub.docker.com`.
 - **Rewrites.** `compose.yaml`, `compose.terminal.yaml`, `compose.tailscale.yaml`, `open-webui/Dockerfile`,
   `caddy/Dockerfile`, `tests/caddy-validate.sh`, the python/node/alpine bases of `portal/`, `shared-mcp/`, `stt/`,
   `code/` and `terminal/`, terminal/Dockerfile's `CODEX_`, `COPILOT_`, `TTYD_` and `GH_` versions with the SHA-256 of
