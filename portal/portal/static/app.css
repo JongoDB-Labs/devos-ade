@@ -101,16 +101,17 @@ html.nav-collapsed .nav-chev { transform: scaleX(-1); }   /* « collapses, » ex
 .grid { max-width: 1760px; margin-top: 24px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
 .col { display: contents; }   /* (the two columns are only a source order: the grid below places the widgets) */
 /* Widgets, by size: Bedrock spend (the tall one) beside a column of the short ones, Claude Code in your terminal at the
-   far side. 961-1359 px: two columns; from 1360 px: three. Under 961 px one column (phones: mobile.css). */
+   far side, Send feedback under it. 961-1359 px: two columns; from 1360 px: three. Under 961 px one column (phones:
+   mobile.css). */
 .spend { grid-area: spend; } .services { grid-area: svc; } .models { grid-area: models; } .logins { grid-area: logins; }
-.maint { grid-area: maint; } .claude { grid-area: claude; }
+.maint { grid-area: maint; } .claude { grid-area: claude; } .col > .feedback { grid-area: fb; margin-top: 0; }
 @media (min-width: 961px) {
   .grid { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 20px 24px;
-    grid-template-areas: "spend svc" "spend models" "spend logins" "maint maint" "claude claude"; }
+    grid-template-areas: "spend svc" "spend models" "spend logins" "maint maint" "claude fb"; }
 }
 @container home (min-width: 1060px) {
   .grid { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 0.9fr);
-    grid-template-areas: "spend svc claude" "spend models claude" "spend logins claude" "spend maint claude"; }
+    grid-template-areas: "spend svc claude" "spend models claude" "spend logins fb" "spend maint fb"; }
 }
 .col > section { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-xl); padding: 20px 24px; box-shadow: var(--card-edge); }
 .grid h2 { margin: 0 0 12px; font-size: var(--t-1); line-height: 1.2; }
