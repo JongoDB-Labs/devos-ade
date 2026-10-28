@@ -749,6 +749,20 @@ test_a_stored_key_goes_only_to_its_own_saved_address_and_a_changed_address_drops
   _apply save lab http://10.0.0.77:8000 false newkey987654321 'llama3:8b'
   assert_eq "$(get_env MODEL_SERVER_KEYS)" "lab=$(_msrv_hash http://10.0.0.77:8000 0):newkey987654321"
   assert_not_contains "$(_result) $(cat "$(local_status_file)")" newkey987654321
+  # the same https address with its certificate no longer checked (trust turned on) and no key typed: the key is not
+  # carried over to the unchecked connection — cleared, said, sent nowhere; typed again with trust, it is kept
+  _apply save tls https://10.0.0.8:8443 false tlskey123456789 'llama3:8b'
+  assert_contains "$(get_env MODEL_SERVER_KEYS)" "tls=$(_msrv_hash https://10.0.0.8:8443 0):tlskey123456789"
+  : > "$TMP/curl.stdin"
+  _apply save tls https://10.0.0.8:8443 true '' 'llama3:8b'
+  assert_eq "$(get_env MODEL_SERVERS)" "lab=http://10.0.0.77:8000,tls=https://10.0.0.8:8443;trust"
+  assert_not_contains "$(get_env MODEL_SERVER_KEYS)" tlskey123456789
+  assert_not_contains "$(cat "$TMP/curl.stdin")" tlskey123456789
+  assert_contains "$(_result)" "key cleared: the certificate setting changed"
+  _apply save tls https://10.0.0.8:8443 true tlskey123456789 'llama3:8b'
+  assert_contains "$(get_env MODEL_SERVER_KEYS)" "tls=$(_msrv_hash https://10.0.0.8:8443 1):tlskey123456789"
+  _apply save tls https://10.0.0.8:8443 true '' 'llama3:8b'                 # (trust as it was: the key stays)
+  assert_contains "$(get_env MODEL_SERVER_KEYS)" "tls=$(_msrv_hash https://10.0.0.8:8443 1):tlskey123456789"
 }
 
 # --- the download is the revision that was vetted, and what landed on disk is checked again before it is served ---

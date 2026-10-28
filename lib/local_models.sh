@@ -598,7 +598,10 @@ msrv_apply_op() {
       valid_msrv_list "$new" || die "too many servers (8 at most) or an unusable address"
       keys=''; while IFS= read -r e; do [ -n "$e" ] && [ "${e%%=*}" != "$n" ] && keys="${keys:+$keys,}$e"; done < <(_msrv_items MODEL_SERVER_KEYS)
       if [ -n "$k" ]; then keys="${keys:+$keys,}$(_msrv_bound "$n" "$u" "$tr_" "$k")"      # (a key sent with the request is the only one used)
-      elif [ -n "$old" ] && [ "$u" = "$old" ]; then k="$(msrv_key "$n")"; [ -z "$k" ] || keys="${keys:+$keys,}$(_msrv_bound "$n" "$u" "$tr_" "$k")"   # (the same address: its key stays, bound again)
+      elif [ -n "$old" ] && [ "$u" = "$old" ] && [ "$tr_" = "$(msrv_trust "$n")" ]; then   # (the same address and trust: its key stays)
+        k="$(msrv_key "$n")"; [ -z "$k" ] || keys="${keys:+$keys,}$(_msrv_bound "$n" "$u" "$tr_" "$k")"
+      elif [ -n "$old" ] && [ "$u" = "$old" ] && [ -n "$(_msrv_key_raw "$n")" ]; then    # (trust changed: the key is typed again for it)
+        keyout='; key cleared: the certificate setting changed'; warn "key for $n cleared: whether its certificate is checked changed — enter the key again"
       elif [ -n "$(_msrv_key_raw "$n")" ]; then keyout='; key cleared: the address changed'; warn "key for $n cleared: the address changed"
       fi                                                                                   # (a changed address without a key: none)
       r="$(msrv_probe_url "$u" "$k" "$tr_")"; IFS=$'\t' read -r st detail addr <<< "$r"
