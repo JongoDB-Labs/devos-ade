@@ -29,7 +29,7 @@
     "remote-preview": ["the portal", "the web server"] };
   // the settings the model gateway takes without a restart (lib/litellm_live.sh: only its model list changes): a badge
   // that says so, instead of what their apply class restarts for a key
-  const LIVE = new Set(["EXPLABS_MODELS", "OPENROUTER_MODELS", "OPENROUTER_MAX_MODELS", "OPENROUTER_INCLUDE_ALIASES", "CODE_MODELS", "CODE_DEFAULT_MODEL"]);
+  const LIVE = new Set(["EXPLABS_MODELS", "OPENROUTER_MODELS", "OPENROUTER_MAX_MODELS", "OPENROUTER_INCLUDE_ALIASES", "CODE_MODELS", "CODE_DEFAULT_MODEL", "BEDROCK_MODELS"]);
   // what removing a key does, in each key's own words (the keys share one form; lib/settings.sh _cfg_post, _stt_apply)
   const REMOVE_KEY = {
     or_key: "OpenRouter's models disappear from Chat and the API; the model gateway and the portal restart (about 40 s).",

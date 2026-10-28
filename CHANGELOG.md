@@ -14,8 +14,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   model's price per million tokens, context window, tool use, image input and how it works with Claude Code, and
   filters for provider, free or paid, output price, context size, tool use, image input and "works with Claude Code".
   Each row shows whether it is in your pickers now, with **Add** and **Remove**. Adding or removing goes through the
-  same path as every other setting (your portal password, the update helper, `./stack config apply`), so only the model
-  gateway restarts, and the model then appears everywhere models show — Chat, the Code page, the terminal's Open and
+  same path as every other setting (your portal password, the update helper, `./stack config apply`) and applies in
+  seconds — the model gateway takes the new list as it runs, without a restart — and the model then appears everywhere models show — Chat, the Code page, the terminal's Open and
   `devos-claude --models` — with its price and compatibility note. **Experiential Labs** models can now be several
   (`EXPLABS_MODELS` as a list); **OpenRouter** is edited as a list as well as `free`/`paid`/`all`; and **Bedrock** can
   serve models beyond the built-in catalog (a new `BEDROCK_MODELS`, for a foundation model or inference profile your
@@ -27,6 +27,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
     called, and OpenRouter's from its public list. Each is cached (about an hour) and refreshed in the background.
   - The Code page's not-granted and ended-promotion messages (JON-521) now carry a direct action: **Pick another
     model**, and **Send again (charged)** where sending again is the way on.
+
+### Fixed
+
+- **Settings no longer says a model-list change restarts the model gateway.** The notes for *OpenRouter models* and
+  *Experiential Labs models* still said the gateway restarts (about 30 s); since 0.32.3 such a change applies in seconds,
+  as their *No restart* badge says.
 
 ## [0.33.1] - 2026-10-28
 

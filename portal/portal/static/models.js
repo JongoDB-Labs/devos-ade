@@ -199,7 +199,7 @@
     const head = el("header", { class: "mb-head" },
       el("p", { class: "eyebrow" }, el("a", { href: "#settings/providers", text: "Settings › Models & providers" })),
       el("h1", { id: "models-title", text: "Browse models" }),
-      el("p", { class: "note mb-lede", text: "Search what Bedrock, OpenRouter and Experiential Labs offer with your keys, and add a model to every picker: Chat, the Code page, the terminal and devos-claude. Each change is saved on this computer by the update helper, after your portal password; only the model gateway restarts." }));
+      el("p", { class: "note mb-lede", text: "Search what Bedrock, OpenRouter and Experiential Labs offer with your keys, and add a model to every picker: Chat, the Code page, the terminal and devos-claude. Each change is saved on this computer by the update helper, after your portal password, and applied in seconds: the model gateway takes the new list as it runs, without a restart." }));
     if (!data) { p.replaceChildren(head, el("p", { class: "note", text: "Loading…" })); return; }
     if (data.error) { p.replaceChildren(head, el("p", { class: "banner", text: `Could not load the lists: ${data.error}` })); return; }
     const status = el("p", { id: "mb-job", class: "mb-job", role: "status", "aria-live": "polite", hidden: "" });
