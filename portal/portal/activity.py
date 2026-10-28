@@ -38,7 +38,10 @@ MODELS_DAYS = 7           # so is a model check that could not check every model
 MAX_TEXT = 400
 HEALTH_DAYS = 7           # a container's restart, unhealthy turn or failed exit is listed for a week
 HEALTH_MAX = 5            # the newest few: a crash loop is one story, not a flood
-SERVICE = re.compile(r"[a-z0-9][a-z0-9_-]{0,39}")
+# the subjects a health record may name: the stack's own services, else "other" (lib/health.sh HEALTH_SERVICES, the same
+# closed set as docs/event-schema.md; a test keeps the three together)
+SERVICES = frozenset("caddy chat-egress code litellm open-webui portal postgres rustfs rustfs-init searxng shared-mcp stt "
+                     "subs-chat tailscale terminal terminal-egress terminal-gateway other".split())
 LEVELS = ("info", "good", "warn", "bad")
 ID = re.compile(r"[A-Za-z0-9:._@+-]{1,160}")
 LINK = re.compile(r"#[a-z]+(?:/[A-Za-z0-9_+-]{1,64}){0,2}")
@@ -209,25 +212,26 @@ def health_items(status_dir: Path, now: float) -> list[dict]:
     evs = d.get("events") if isinstance(d, dict) else None
     out = []
     for e in (evs if isinstance(evs, list) else [])[::-1]:
-        if not isinstance(e, dict) or not isinstance(e.get("service"), str) or not SERVICE.fullmatch(e["service"]):
+        if not isinstance(e, dict) or not isinstance(e.get("service"), str) or e["service"] not in SERVICES:
             continue
         at, kind, svc = e.get("at"), e.get("kind"), e["service"]
         if not isinstance(at, int) or isinstance(at, bool) or at <= 0 or now - at > HEALTH_DAYS * 86400 or at > now + 300:
             continue
         n, code = _count(e.get("count")), _count(e.get("exit_code"))
+        who = "A container of yours" if svc == "other" else svc   # ("other": not one of the stack's own; never named)
         if kind == "restart":
-            level, title = "warn", f"{svc} restarted" + (f" {n} times" if n > 1 else " once")
+            level, title = "warn", f"{who} restarted" + (f" {n} times" if n > 1 else " once")
             text = "Docker restarted this container on its own" + (f" (it last ended with code {code})" if code else "") + "."
         elif kind == "unhealthy":
-            level, title, text = "warn", f"{svc} became unhealthy", "Its health check is failing."
+            level, title, text = "warn", f"{who} became unhealthy", "Its health check is failing."
         elif kind == "exit":
-            level, title, text = "bad", f"{svc} exited with code {code}", "It stopped by itself."
+            level, title, text = "bad", f"{who} exited with code {code}", "It stopped by itself."
         elif kind == "oom":
-            level, title, text = "bad", f"{svc} ran out of memory", "Docker stopped it for using more memory than it may."
+            level, title, text = "bad", f"{who} ran out of memory", "Docker stopped it for using more memory than it may."
         else:
             continue
         it = _item(f"health:{svc}:{kind}:{at}", "health", level, title,
-                   f"{text} Recorded on this computer only; ./stack logs {svc} says why.", at, "#settings/diagnostics")
+                   f"{text} Recorded on this computer only." + (f" ./stack logs {svc} says why." if svc != "other" else ""), at, "#settings/diagnostics")
         if it:
             it["data"] = {"service": svc, "event": kind, "count": n, "exit_code": code}
             out.append(it)

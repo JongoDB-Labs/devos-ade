@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Synthetic-failure fixture for local container health (JON-440 G4, lib/health.sh), with REAL disposable containers:
+# (their names are not the stack's, so they are recorded as "other", which is also checked)
 # three tiny containers carrying a throwaway Compose project's labels that exit with code 3, restart by themselves and
 # go unhealthy. Asserts lib/health.sh counts each, and that the portal's Activity feed (portal/activity.py) shows them.
 # The stack's own services are never touched: only containers of the throwaway project "bnhealthfx<pid>" are made and,
@@ -42,10 +43,11 @@ health_ids() { docker ps -a -q --filter "label=com.docker.compose.project=$P"; }
 health_record_write
 J="$(health_json_file)"
 ev() { python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); print(sum(1 for e in d["events"] if e["service"] == sys.argv[2] and e["kind"] == sys.argv[3] and (e["count"], e["exit_code"]) == (int(sys.argv[4]), int(sys.argv[5]))))' "$J" "$@"; }
-[ "$(ev fx-exit exit 0 3)" = 1 ] && ok "exit code 3 recorded" || bad "exit code 3 not recorded"
-[ "$(ev fx-restart restart 3 1)" = 1 ] && ok "3 restarts counted" || bad "restarts not counted: $(cat "$J")"
-[ "$(ev fx-unhealthy unhealthy 0 0)" = 1 ] && ok "unhealthy turn recorded" || bad "unhealthy not recorded"
-[ "$(python3 -I -c 'import json, sys; print(sum(1 for e in json.load(open(sys.argv[1]))["events"] if e["service"] == "fx-ok"))' "$J")" = 0 ] && ok "the healthy one has no events" || bad "healthy container has events"
+[ "$(ev other exit 0 3)" = 1 ] && ok "exit code 3 recorded" || bad "exit code 3 not recorded"
+[ "$(ev other restart 3 1)" = 1 ] && ok "3 restarts counted" || bad "restarts not counted: $(cat "$J")"
+[ "$(ev other unhealthy 0 0)" = 1 ] && ok "unhealthy turn recorded" || bad "unhealthy not recorded"
+[ "$(python3 -I -c 'import json, sys; print(len(json.load(open(sys.argv[1]))["events"]))' "$J")" = 4 ] && ok "exactly the failures are events (exit 3; restarts, then its last exit; unhealthy): the healthy one has none" || bad "wrong number of events"
+case "$(cat "$J")" in *fx-*) bad "a fixture name (not a stack service) reached the record" ;; *) ok "none of the containers is named: they are all other" ;; esac
 before="$(python3 -I -c 'import json, sys; print(len(json.load(open(sys.argv[1]))["events"]))' "$J")"
 health_record_write
 [ "$(python3 -I -c 'import json, sys; print(len(json.load(open(sys.argv[1]))["events"]))' "$J")" = "$before" ] && ok "a second look counts nothing twice" || bad "events counted twice"
@@ -59,7 +61,7 @@ from pathlib import Path
 from portal import activity
 for i in activity.health_items(Path(sys.argv[1]), time.time()): print(i["level"], i["title"])' "$TMP/status" 2>&1)"
 miss=''
-for w in "bad fx-exit exited with code 3" "warn fx-restart restarted 3 times" "warn fx-unhealthy became unhealthy"; do
+for w in "bad A container of yours exited with code 3" "warn A container of yours restarted 3 times" "warn A container of yours became unhealthy"; do
   case "$out" in *"$w"*) ;; *) miss="$miss [$w]" ;; esac
 done
 [ -z "$miss" ] && ok "Activity lists exit, restarts and unhealthy" || bad "Activity is missing$miss: $out"

@@ -11,11 +11,22 @@
 #
 # An event: kind restart (RestartCount grew: count = by how much), unhealthy (health turned to unhealthy), exit (a
 # container ended with a code other than 0 and 143, which `docker stop` gives; 137 only when it was out of memory)
-# or oom (killed for memory). Each is recorded once: a restart by the count, an exit by the time it ended, an
+# or oom (killed for memory; its exit_code is recorded as Docker reports it, usually 137). Each is recorded once: a restart by the count, an exit by the time it ended, an
 # unhealthy by its change. The first look has no snapshot to compare with, so only what is wrong then (restarts
 # already counted, an unhealthy or failed container) is recorded. A container made again (./stack down, up) starts
 # its count over: that is not a restart. Only containers of this checkout's Compose project (dc ps) are looked at.
 HEALTH_EVENTS_MAX=50
+# The subjects a record may name: the stack's own services, as the compose files define them (compose.yaml and its
+# overlays), and nothing else. A container of this project that is not one of them (a service you added to the
+# project yourself) is recorded as "other" and never by name. docs/event-schema.md lists the same set; a test checks
+# both against the compose files.
+HEALTH_SERVICES="caddy chat-egress code litellm open-webui portal postgres rustfs rustfs-init searxng shared-mcp stt subs-chat tailscale terminal terminal-egress terminal-gateway"
+# An event row is immutable: at (the local clock as it is, never corrected), count and exit_code are fixed when the
+# row is first written and never recomputed (a replayed event must make the same dedupe key). Rows are only ever
+# appended, and the oldest dropped from the front past HEALTH_EVENTS_MAX.
+
+# health_subject NAME -> NAME when it is one of HEALTH_SERVICES, else "other"
+health_subject() { case " $HEALTH_SERVICES " in *" $1 "*) printf '%s' "$1" ;; *) printf other ;; esac; }
 
 health_json_file() { printf '%s/container-health.json\n' "$(status_dir)"; }
 
@@ -40,7 +51,7 @@ health_inspect() {
 # health_record_write [LINES] — compares the containers now (LINES, else health_inspect) with the last snapshot,
 # appends the new events and rewrites container-health.json. Never fatal; writes nothing without an answer.
 health_record_write() {
-  local d now lines prev_f ev_f snap tmp line svc rs st ex hl oom fin p_rs p_hl p_fin n new='' sj='' ej=''
+  local d now lines prev_f ev_f snap tmp line svc key rs st ex hl oom fin p_rs p_hl p_fin n new='' sj='' ej=''
   [ -f "$ENV_FILE" ] || return 0
   d="$(status_dir)"; mkdir -p "$d" 2>/dev/null || return 0
   if [ $# -gt 0 ]; then lines="$1"; else lines="$(health_inspect)" || return 0; fi
@@ -51,8 +62,12 @@ health_record_write() {
     rs="$(_health_num "$rs")"; ex="$(_health_num "$ex")"; st="$(_health_word "$st")"; hl="$(_health_word "$hl")"
     oom="$(_health_word "$oom")"; fin="$(printf '%s' "$fin" | LC_ALL=C tr -cd '0-9TZ:.-' | cut -c1-40)"
     case "$oom" in true) ;; *) oom=false ;; esac
+    # what a record names: a known service, else "other" (never the name). The snapshot, which stays on this computer
+    # and is never sent, tells two such containers apart by a checksum of the name; svc is only ever the subject.
+    key="$svc"; svc="$(health_subject "$svc")"
+    [ "$svc" != other ] || key="other~$(printf '%s' "$key" | cksum | cut -d' ' -f1)"
     p_rs=0; p_hl=''; p_fin=''
-    line="$(grep "^$svc|" "$prev_f" 2>/dev/null | head -n 1 || true)"
+    line="$(grep "^$key|" "$prev_f" 2>/dev/null | head -n 1 || true)"
     [ -z "$line" ] || IFS='|' read -r _ p_rs _ _ p_hl _ p_fin <<EOFP
 $line
 EOFP
@@ -66,7 +81,7 @@ EOFP
       elif [ "$ex" != 0 ] && [ "$ex" != 143 ] && [ "$ex" != 137 ]; then new="$new$now|$svc|exit|0|$ex
 "; fi
     fi
-    snap="$snap$svc|$rs|$st|$ex|$hl|$oom|$fin
+    snap="$snap$key|$rs|$st|$ex|$hl|$oom|$fin
 "
     sj="$sj${sj:+, }{\"service\": \"$svc\", \"restarts\": $rs, \"state\": \"$st\", \"exit_code\": $ex, \"health\": \"$hl\"}"
   done <<EOF2

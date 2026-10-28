@@ -59,7 +59,7 @@ test_a_clean_stop_and_a_recreated_container_are_not_failures() {
 test_only_docker_words_reach_the_record_and_a_silent_docker_writes_nothing() {
   _hl_env
   health_record_write "$(printf 'evil"}|1|run"ning|0\\n|healthy<x>|false|2026\n')"
-  python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); assert d["services"][0]["service"] == "evil" and d["services"][0]["state"] == "running", d' "$(health_json_file)"
+  python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); assert d["services"][0]["service"] == "other" and d["services"][0]["state"] == "running", d' "$(health_json_file)"
   before="$(cat "$(health_json_file)")"
   health_record_write ""
   assert_eq "$(cat "$(health_json_file)")" "$before"
@@ -90,4 +90,43 @@ test_services_status_write_also_records_health() {
   }
   services_status_write
   assert_contains "$(cat "$(health_json_file)")" '"kind": "restart", "count": 3'
+}
+
+test_only_the_stacks_own_services_are_named_and_anything_else_is_other() {
+  _hl_env
+  health_record_write "$(printf 'litellm|0|running|0|healthy|false|0001-01-01T00:00:00Z\nmy-secret-project-db|0|running|0|healthy|false|0001-01-01T00:00:00Z\nother-thing|0|running|0|healthy|false|0001-01-01T00:00:00Z\n')"
+  health_record_write "$(printf 'litellm|0|running|0|healthy|false|0001-01-01T00:00:00Z\nmy-secret-project-db|2|running|0|healthy|false|0001-01-01T00:00:00Z\nother-thing|0|exited|9|healthy|false|2026-10-27T10:00:00Z\n')"
+  python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1]))
+e = sorted((x["service"], x["kind"], x["count"], x["exit_code"]) for x in d["events"])
+assert e == [("other", "exit", 0, 9), ("other", "restart", 2, 0)], e   # two different strangers: each its own baseline
+assert sorted(r["service"] for r in d["services"]) == ["litellm", "other", "other"], d' "$(health_json_file)"
+  local f
+  for f in "$(health_json_file)" "$STATE_DIR/status/container-events.tsv"; do assert_not_contains "$(cat "$f")" "secret-project"; done
+}
+
+test_the_subject_set_is_the_compose_files_services() {
+  local want got
+  want="$(cd "$STACK_DIR" && for f in compose*.yaml; do awk '/^services:/{s=1;next} /^[a-z]/{s=0} s&&/^  [a-z][a-z0-9_-]*:/{sub(":","",$1);print $1}' "$f"; done | sort -u | tr '\n' ' ')"
+  got="$(printf '%s\n' $HEALTH_SERVICES | sort -u | tr '\n' ' ')"
+  assert_eq "$got" "$want"
+  # the contract lists the same set and the same step names (lib/*.sh timed_step literals)
+  local svc step doc="$STACK_DIR/docs/event-schema.md"
+  for svc in $HEALTH_SERVICES other; do assert_contains "$(cat "$doc")" "\`$svc\`"; done
+  grep -ho 'timed_step "[^"]*"' "$STACK_DIR"/lib/*.sh | sed 's/^timed_step "//; s/"$//' | sort -u > "$TMP/steps"
+  while IFS= read -r step; do assert_contains "$(cat "$doc")" "\`$step\`"; done < "$TMP/steps"
+}
+
+test_event_rows_never_change_once_written() {
+  _hl_env
+  local ev="$STATE_DIR/status/container-events.tsv" before
+  health_record_write "$(printf 'portal|0|running|0|healthy|false|0001-01-01T00:00:00Z\n')"
+  health_record_write "$(printf 'portal|2|running|0|unhealthy|false|0001-01-01T00:00:00Z\n')"
+  before="$(cat "$ev")"
+  sleep 1   # (the clock moves on: the old rows keep their time, count and exit code)
+  health_record_write "$(printf 'portal|2|running|0|unhealthy|false|0001-01-01T00:00:00Z\n')"
+  health_record_write "$(printf 'portal|3|exited|5|healthy|false|2026-10-27T10:00:00Z\n')"
+  assert_eq "$(head -n "$(printf '%s\n' "$before" | wc -l | tr -d ' ')" "$ev")" "$before"
+  # (restart events carry the exit code Docker had then, an oom its own as reported)
+  health_record_write "$(printf 'caddy|0|exited|137|healthy|true|2026-10-27T11:00:00Z\n')"
+  assert_contains "$(cat "$ev")" "|caddy|oom|0|137"
 }

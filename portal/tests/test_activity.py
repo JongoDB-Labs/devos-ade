@@ -288,7 +288,7 @@ def test_container_health_events_show_in_activity_and_nothing_else_does(s):
         {"at": now - 300, "service": "caddy", "kind": "exit", "count": 0, "exit_code": 3},
         {"at": now - 200, "service": "searxng", "kind": "oom", "count": 0, "exit_code": 137},
         {"at": now - 9 * 86400, "service": "postgres", "kind": "exit", "count": 0, "exit_code": 1},      # too old
-        {"at": now - 100, "service": "../etc", "kind": "exit", "count": 0, "exit_code": 1},              # not a service name
+        {"at": now - 100, "service": "my-own-service", "kind": "exit", "count": 0, "exit_code": 1},        # not in the closed set
         {"at": now - 100, "service": "caddy", "kind": "rm -rf", "count": 0, "exit_code": 1},             # not a kind
     ]))
     got = {i["title"]: i for i in activity.health_items(s.status_dir, now)}
@@ -327,7 +327,12 @@ def test_the_event_schema_contract_names_the_kinds_activity_shows_and_pins_the_s
     for kind in ("restart", "unhealthy", "exit", "oom"):
         assert f"`container.{kind}`" in doc
     hashes = re.findall(r"\| (?:rules|corpus) sha256 \| `([0-9a-f]{64})` \|", doc)
-    assert len(hashes) == 2 and len(set(hashes)) == 2
+    assert hashes == ["fcfe40e7cf9553eef07157683e64ff479cdfeae2c23c0cf6d7036402d640aa20",
+                      "5eac13df0b72ecb53b9cf506cccc6735736a195428037c3a33de7edf2d428836"]
+    assert "companion/v0.24.2" in doc and "Redact(s, len(s)) != s" in doc
+    sh = (Path(__file__).resolve().parents[2] / "lib" / "health.sh").read_text()
+    listed = re.search(r'^HEALTH_SERVICES="([^"]+)"', sh, re.M).group(1).split()
+    assert sorted(listed + ["other"]) == sorted(activity.SERVICES)
     assert "does **not** have its own redaction" in doc
     # the contract's dedupe rule, as a function of the event alone
     import hashlib
