@@ -53,7 +53,7 @@
 //                   over it itself (the certificate checked there), so only bytes this side cannot read pass here
 //   memory.read / memory.write
 //                   your user memory for Claude Code in the sandbox (~/.claude/CLAUDE.md): that one fixed file
-//   sessions.list / sessions.load / sessions.title / sessions.running
+//   sessions.list / sessions.load / sessions.title / sessions.delete / sessions.running
 //                   this sandbox's Claude Code transcripts of the workspace and its folders (~/.claude/projects/
 //                   -workspace*/*.jsonl, each placed by the working folder it records — the folder names are lossy),
 //                   and whether a process other than this one's children runs a session now (the terminal, after Open
@@ -763,6 +763,23 @@ export function sessionsTitle(id, title, cwd, store) {
     fs.writeSync(fd, lastByte === 10 ? line : `\n${line}`);
   } finally { fs.closeSync(fd); }
   return { ok: true };
+}
+
+// sessions.delete {id, cwd, store}: a session's transcript (<id>.jsonl, a regular file: never through a link) and its own
+// folder of subagents' and tool results' files (<id>/, a real folder) leave the store. Nothing else: the files a session
+// changed in a project stay as they are. The code container asks only after its own checks (no turn running, not
+// running in the terminal) and a confirmed request; it refuses a session it does not list.
+export function sessionsDelete(id, cwd, store) {
+  const file = transcriptFile(id, cwd, { store });
+  if (!file) throw new Error('no such session');
+  let st;
+  try { st = fs.lstatSync(file); } catch { throw new Error('no such session'); }
+  if (!st.isFile()) throw new Error('not a transcript');
+  fs.unlinkSync(file);
+  const dir = file.slice(0, -'.jsonl'.length);
+  let sub = false;
+  try { if (fs.lstatSync(dir).isDirectory()) { fs.rmSync(dir, { recursive: true, force: true }); sub = true; } } catch { /* none */ }
+  return { ok: true, folder: sub };
 }
 
 // --- sessions.import / sessions.export: a transcript copied into this sandbox's store by the code container (a session
@@ -5682,6 +5699,7 @@ export function serve(sock) {
         case 'sessions.list': return finish(T.RESULT, { sessions: sessionsList(storeArg(req.store)) });
         case 'sessions.load': return finish(T.RESULT, sessionsLoad(req.id, req.cwd, storeArg(req.store)));
         case 'sessions.title': return finish(T.RESULT, sessionsTitle(req.id, req.title, req.cwd, storeArg(req.store)));
+        case 'sessions.delete': return finish(T.RESULT, sessionsDelete(req.id, req.cwd, storeArg(req.store)));
         // (a copy into the store — its data follows as STDIN frames; and one read whole, for a fork into another folder)
         case 'sessions.import': writer = sessionsImportBegin(req); return undefined;
         case 'sessions.export': return finish(T.RESULT, sessionsExport(send, req.id, req.cwd));

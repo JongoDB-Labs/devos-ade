@@ -97,7 +97,7 @@ export const absOf = (rel) => (rel.startsWith('/') ? rel : rel ? `${WS}/${rel}` 
 // the folder holds the working folder (itself, or a folder below it)
 const holds = (rel, cwd) => cwd === absOf(rel) || cwd.startsWith(`${absOf(rel)}/`);
 
-const empty = () => ({ version: 1, projects: [], filed: {}, hostTrust: {}, gone: [], seen: [] });
+const empty = () => ({ version: 1, projects: [], filed: {}, archived: {}, hostTrust: {}, gone: [], seen: [] });
 const WORKSPACE = Object.freeze({ id: WORKSPACE_ID, name: 'Workspace', root: '', created: null, workspace: true });
 
 export class Projects {
@@ -155,7 +155,11 @@ export class Projects {
     for (const [k, pid] of Object.entries(f).slice(0, FILED_MAX)) {
       if (isUuid(k) && (pid === WORKSPACE_ID || projects.some((p) => p.id === pid) || hostIds.has(pid))) filed[k] = pid;
     }
-    return { version: 1, projects, filed, hostTrust, gone, seen };
+    // sessions archived by hand: a label too (the list hides them under "Archived"; nothing of the session changes)
+    const archived = {};
+    const ar = v.archived && typeof v.archived === 'object' && !Array.isArray(v.archived) ? v.archived : {};
+    for (const [k, at] of Object.entries(ar).slice(0, FILED_MAX)) if (isUuid(k) && Number.isInteger(at) && at > 0) archived[k] = at;
+    return { version: 1, projects, filed, archived, hostTrust, gone, seen };
   }
   write(v) {
     fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
@@ -323,6 +327,29 @@ export class Projects {
       }
       return { ok: true, filed: ids.length };
     });
+  }
+  /** archive(ids, on) -> these sessions archived (a label: the list hides them under Archived; nothing of them changes) or
+   *  shown again (on false) */
+  archive(ids, on) {
+    if (!Array.isArray(ids) || !ids.length || ids.length > 100 || !ids.every(isUuid)) throw new ProjectError(400, 'ids: 1 to 100 session ids');
+    if (typeof on !== 'boolean') throw new ProjectError(400, 'archived: true or false');
+    return this.update((v) => {
+      for (const id of ids) {
+        if (!on) { delete v.archived[id]; continue; }
+        if (!(id in v.archived) && Object.keys(v.archived).length >= FILED_MAX) throw new ProjectError(409, `at most ${FILED_MAX} sessions archived: delete some first`);
+        v.archived[id] = this.now();
+      }
+      return { ok: true, archived: on, count: ids.length };
+    });
+  }
+  /** archivedIds() -> the set of archived session ids */
+  archivedIds() { return new Set(Object.keys(this.read().archived)); }
+  /** forgetSession(id) — a deleted session's labels (filed, archived) go with it */
+  forgetSession(id) {
+    if (!isUuid(id)) return;
+    const v = this.read();
+    if (!(id in v.filed) && !(id in v.archived)) return;
+    this.update((w) => { delete w.filed[id]; delete w.archived[id]; });
   }
   /** folderOf(cwd, v) -> the project whose folder holds a working folder (the deepest one; a folder of this computer, or
    *  one no longer added, too), else Workspace. */

@@ -240,7 +240,8 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
   });
   function onStateBoth(a, b) { toAll(stateMsg(a)); toAll(stateMsg(b)); }
   const api = makeApi({ call, sessions: mgr, projects: { list: () => proj().list(), get: (id) => proj().get(id), add: (b) => proj().add(b), rename: (id, n) => proj().rename(id, n),
-    remove: (id) => proj().remove(id), file: (ids, pid) => proj().file(ids, pid), placer: () => proj().placer(), syncHosts: () => proj().syncHosts() },
+    remove: (id) => proj().remove(id), file: (ids, pid) => proj().file(ids, pid), placer: () => proj().placer(), syncHosts: () => proj().syncHosts(),
+      archive: (ids, on) => proj().archive(ids, on), archivedIds: () => proj().archivedIds(), forgetSession: (id) => proj().forgetSession(id), hosts: () => proj().hosts() },
     reloadPollMs, reloadMaxMs, log: logger,
     settingsKnown: (id) => trust.known(id), agentStore: agents, plan: () => planAllowed === true });
   // rootFor(v) -> the project a request names (?project= or {project}): its {id, rel, abs} from the records — never a
@@ -393,6 +394,11 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
     }
     if ((mm = /^\/api\/sessions\/([^/]+)\/title$/.exec(p)) && m === 'POST') return send(res, 200, await api.title(mm[1], await readJson(req)));
     if ((mm = /^\/api\/sessions\/([^/]+)\/terminal$/.exec(p)) && m === 'POST') return send(res, 200, await api.toTerminal(mm[1]));
+    // the item menus: a session archived (or listed again), deleted (its transcript; confirmed by its id), a terminal in its folder
+    if ((mm = /^\/api\/sessions\/([^/]+)\/archive$/.exec(p)) && m === 'POST') return send(res, 200, api.archive(mm[1], await readJson(req)));
+    if ((mm = /^\/api\/sessions\/([^/]+)\/delete$/.exec(p)) && m === 'POST') return send(res, 200, await api.deleteSession(mm[1], await readJson(req)));
+    if ((mm = /^\/api\/sessions\/([^/]+)\/folder-terminal$/.exec(p)) && m === 'POST') return send(res, 200, await api.sessionTerminal(mm[1]));
+    if (p === '/api/fs/terminal' && m === 'POST') return send(res, 200, await api.pathTerminal(await readJson(req)));
     if (p === '/api/permissions' && m === 'GET') return send(res, 200, await api.permissions(rootFor(q.get('project'))));
     if (p === '/api/permissions/remove' && m === 'POST') return send(res, 200, await api.permissionRemove(await readJson(req)));
     if ((mm = /^\/api\/sessions\/([^/]+)$/.exec(p)) && m === 'DELETE') {

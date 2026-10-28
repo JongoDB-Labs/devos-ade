@@ -61,6 +61,17 @@
 //                                           ends (409 while a turn runs), then a new window of the terminal's tmux
 //                                           session runs `devos-claude --resume ID` (typed into its shell: bn-coded's
 //                                           terminal.resume); until Claude Code exits there, resuming it here is refused
+//   POST   /api/sessions/ID/archive {archived: bool}  {ok, archived, count}: the session listed under Archived (true) or
+//                                           with the others again (false) — a label of this page's records, nothing of the
+//                                           session changes (the item menus: right-click, ⋯, long-press)
+//   POST   /api/sessions/ID/delete {confirm: ID}  {ok, deleted}: the session's transcript (and its subagents' and tool
+//                                           results' folder) leaves the sandbox's store (bn-coded sessions.delete); its
+//                                           process here ends; the files it changed stay. 400 unless confirm is its own id;
+//                                           409 while a turn runs in it, while the terminal runs it, or for a folder no
+//                                           longer added; 404 not there; 501 a sandbox from before this
+//   POST   /api/sessions/ID/folder-terminal  {ok, window}: a new window of the terminal in the folder the session works in
+//   POST   /api/fs/terminal {path, dir?}   {ok, window}: a new window of the terminal in that folder of the workspace (dir:
+//                                           true) or in the folder the file is in (the explorer's "Open in terminal")
 //   Projects (projects.mjs; ?project=ID or {project: ID} on the calls that work in one — /api/fs/find, /api/fs/grep,
 //   /api/git/diff, /api/git/repos, /api/memory, /api/permissions, DELETE /api/fs, /api/run(/start), /api/launch(/start)
 //   and a new session — an id of the records, never a folder: 400 not an id, 404 not a project; none or "ws": the

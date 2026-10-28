@@ -116,6 +116,11 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     if (projects) {
       try { place = projects.placer(); } catch (e) { log(`projects: ${short(e?.message || String(e), 200)}: sessions listed in the Workspace`); }
     }
+    // (sessions archived by hand: flagged, the page lists them under Archived)
+    let archived = new Set();
+    if (projects) {
+      try { archived = projects.archivedIds(); } catch { archived = new Set(); }
+    }
     // (the folders of this computer no longer added: their sessions are listed there — read, never resumed)
     let gone = [];
     try { gone = projects ? projects.list().filter((p) => p.gone).map((p) => p.root) : []; } catch { gone = []; }
@@ -132,14 +137,14 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
       const outside = !cwdOk(cwd);
       if (outside && !inGone(cwd)) continue;
       noteCwd(r.id, cwd);
-      rows.push({ ...r, cwd, project: place(r.id, cwd), harness, ...(outside ? { gone: true } : {}) });
+      rows.push({ ...r, cwd, project: place(r.id, cwd), harness, ...(outside ? { gone: true } : {}), ...(archived.has(r.id) ? { archived: true } : {}) });
     }
     // the sessions with your subscriptions' agents (the page's own record of them)
     for (const a of agentStore ? agentStore.list().slice(0, SESSIONS_MAX) : []) {
       if (!cwdOk(a.cwd)) continue;
       noteCwd(a.id, a.cwd);
       rows.push({ id: a.id, title: a.title, first_prompt: a.title, branch: '', firstPrompt: a.title, lastPrompt: '', customTitle: '', gitBranch: '',
-        modified: a.modified, size: a.size, created: a.created, cwd: a.cwd, project: place(a.id, a.cwd), harness: a.harness });
+        modified: a.modified, size: a.size, created: a.created, cwd: a.cwd, project: place(a.id, a.cwd), harness: a.harness, ...(archived.has(a.id) ? { archived: true } : {}) });
     }
     rows.sort((a, b) => b.modified - a.modified);
     const open = new Map(sessions.list().map((s) => [s.id, s]));
@@ -884,6 +889,77 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     const want = windowName(baseName(root?.rel ? root.abs : WS), 30, 'workspace');
     return { ok: result?.ok === true, window: result?.window === want ? want : null };
   }
+
+  // --- the item menus' actions (JON-821): Archive, Delete, and a terminal in a session's or a file's folder ---
+  // archive(id, body) — a session archived by hand (body.archived: true) or listed again (false): a label of this page's
+  // records, like Add to project; the session itself is not touched
+  function archive(id, body) {
+    if (!isUuid(id)) throw new HttpError(400, 'bad session id');
+    if (!projects) throw new HttpError(501, 'no project records here');
+    return projects.archive([id], body?.archived);
+  }
+  // deleteSession(id, body) — a session's transcript leaves the sandbox's store (bn-coded sessions.delete), and the
+  // records forget its labels. body.confirm must be the session's own id: a request that was not asked for in the page's
+  // dialog (naming the session) does nothing. Refused while a turn runs in it, while it runs in the terminal, and for a
+  // session of the folders no longer added (read only). The files it changed in a project are not touched.
+  async function deleteSession(id, body) {
+    if (!isUuid(id)) throw new HttpError(400, 'bad session id');
+    if (body?.confirm !== id) throw new HttpError(400, 'confirm: the session\'s own id (the page asks first, naming the session)');
+    const s = sessions.get?.(id);
+    if (s && (s.state === 'busy' || s.state === 'starting')) throw new HttpError(409, 'a turn is running in this session: stop it first');
+    const a = agentStore?.get(id);
+    const cwd = await cwdFor(id);
+    if (!cwdOk(cwd)) throw new HttpError(409, 'its folder is no longer added: its sessions are read only here');
+    if (!a) await notRunning(id);
+    if (s?.open) s.close();
+    if (a) agentStore.remove(id);
+    else {
+      try {
+        await call({ op: 'sessions.delete', id, ...cwdField(cwd), ...storeField(id) });
+      } catch (e) {
+        if (unknownOp(e)) throw new HttpError(501, 'the sandbox is older than this Code page: ./stack up restarts it');
+        if (e instanceof SandboxError && e.kind === 'refused' && /no such session/.test(e.message)) throw refused(404, e, HttpError);
+        throw e;
+      }
+    }
+    cwds.delete(id); planIds.delete(id);
+    log(`session ${id.slice(0, 8)} deleted from the Code page's menu`);
+    try { projects?.forgetSession(id); } catch (e) { log(`projects: ${short(e?.message || String(e), 200)}`); }
+    return { ok: true, deleted: id };
+  }
+  // The folder a terminal window opens in for a place of the workspace (a session's working folder, a file's folder): a
+  // folder of the workspace up to ROOT_DEPTH levels (bn-coded checks it again: a real folder, no link, never .git or the
+  // trash), or a folder of this computer (its top: a folder below it is not offered); else the workspace itself.
+  const TERM_DEPTH = 8;
+  function folderRoot(cwd) {
+    if (cwd === WS) return null;
+    if (cwd.startsWith(`${WS}/`)) {
+      const rel = cwd.slice(WS.length + 1);
+      const segs = rel.split('/');
+      if (segs.length > TERM_DEPTH || segs.some((x) => !x || x === '.' || x === '..' || x === '.git' || x.startsWith('.bedrock-now-trash') || /[\x00-\x1f\x7f]/.test(x))) return null;
+      return { rel, abs: cwd };
+    }
+    const top = projects?.hosts().find((h) => cwd === h.path || cwd.startsWith(`${h.path}/`));
+    return top ? { rel: top.path, abs: top.path } : null;   // (a folder of this computer: its root's rel is its path, as projects.rootOf gives)
+  }
+  // sessionTerminal(id) — a new window of the terminal in the folder a session works in (not its conversation: that is
+  // "Open in the terminal")
+  async function sessionTerminal(id) {
+    if (!isUuid(id)) throw new HttpError(400, 'bad session id');
+    const cwd = await cwdFor(id);
+    if (!cwdOk(cwd)) throw new HttpError(409, 'its folder is no longer added');
+    return projectTerminal(folderRoot(cwd));
+  }
+  // pathTerminal({path, dir}) — a new window of the terminal in a place of the explorer: the folder itself, or the
+  // folder a file is in
+  async function pathTerminal(b) {
+    if (typeof b?.path !== 'string' || !b.path) throw new HttpError(400, 'bad path');
+    const p = need(relPath(b.path), 'path');
+    const dir = b?.dir === true ? p : p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '';
+    const r = dir ? folderRoot(`${WS}/${dir}`) : null;
+    if (dir && !r) throw new HttpError(400, 'a folder of the workspace, up to 8 levels deep (never .git or the trash)');
+    return projectTerminal(r);
+  }
   // Connect a git repository: a project's folder made a repository (git init: no template, the first branch main)
   async function projectGitInit(root) {
     try {
@@ -896,7 +972,7 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     return { ok: true };
   }
 
-  return { listSessions, messages, parentOf, title, toTerminal, notRunning, cwdFor, harnessOf, carryText, permissions, permissionRemove, list, readFile, download, writeFile, upload, mkdir, rename, remove, find, grep, gitDiff,
+  return { listSessions, messages, parentOf, title, archive, deleteSession, sessionTerminal, pathTerminal, toTerminal, notRunning, cwdFor, harnessOf, carryText, permissions, permissionRemove, list, readFile, download, writeFile, upload, mkdir, rename, remove, find, grep, gitDiff,
     gitStatus, gitLog, gitFile, gitStage, gitUnstage, gitCommit, gitDiscard, gitDraft, memory, memoryWrite, plugins, available, pluginAction,
     marketplaces: async () => ({ marketplaces: (await plugins()).marketplaces }), marketplaceAdd, marketplaceRemove, marketplaceUpdate, mcpAdd, mcpRemove,
     ports, stopPort, launch, launchStart, runTasks, runStart, runResults, runShow, terminalCapture,
