@@ -12,8 +12,8 @@
 #            to the provider with os.environ/STT_API_KEY (compose passes that key to the litellm container only),
 #            and Open WebUI transcribes through LiteLLM with its own virtual key (model "stt").
 #
-# Off (no provider), Open WebUI keeps the browser's Web Speech API (AUDIO_STT_ENGINE=web), and v0.12 then refuses
-# Call ("Call feature is not supported when using Web STT engine"). Call reads answers aloud with the browser's
+# Off (no provider), Open WebUI keeps the browser's Web Speech API (AUDIO_STT_ENGINE=web), and v0.12.4 then offers no
+# Call button (earlier v0.12 refused Call with an error). Call reads answers aloud with the browser's
 # voices (AUDIO_TTS_ENGINE=""), so no server text-to-speech is needed.
 # Only .env counts: an STT_* variable in your shell is ignored (dc() strips it; setup adopts shell values only
 # after asking, see setup_stt). A key goes only to its provider (curl -K -, never argv) and to LiteLLM.

@@ -13,7 +13,6 @@ from checks_browser import chat_frame, login, shot
 from common import ENV, Skip, check, expect, need, origin
 
 FIXTURE = Path(__file__).parent / "fixtures" / "speech.webm"   # espeak-ng: fixtures/make-speech.sh
-WEB_STT = "Call feature is not supported when using Web STT engine"
 # Since October 2026 Bedrock refuses audio for both Voxtral models: ./stack turns Bedrock speech-to-text off once and
 # says so (lib/stt.sh STT_REFUSED_NOTICE) — on Home's voice line and as one Activity item
 # (where speech-to-text is turned on: the link the voice line ends with, catalog/setup-links.tsv voice-off)
@@ -67,22 +66,24 @@ def home_voice(ctx):
 
 @check("browser", "chat-voice-call")
 def chat_call(ctx):
-    """Call with server speech-to-text: the call opens ("Listening…", End call), no Web-STT error; without it: the
-    Web-STT message (README troubleshooting row)."""
+    """Call with server speech-to-text: the call opens ("Listening…", End call); without it Open WebUI (v0.12.4) offers
+    no Call button at all (README troubleshooting row)."""
     need("open-webui")
     page, rec = ctx.page("chat-call")
     page.context.grant_permissions(["microphone"], origin=origin("chat"))
     login(page)
     fl, f = chat_frame(page)
-    fl.locator("button[aria-label='Voice mode']").click()
     if stt_mode() == "browser":
-        fl.locator(f"text={WEB_STT}").first.wait_for(timeout=10000)
+        # (the empty message box's button is Send, greyed: Call would take its place)
+        fl.locator("button[aria-label='Send message']").wait_for(timeout=15000)
+        page.wait_for_timeout(2000)
+        expect(not fl.locator("button[aria-label='Voice mode']").count(), "Call is offered without server speech-to-text")
         shot(page, "10-chat-call-web-stt")
         rec.save()
-        return f"browser speech: Call → '{WEB_STT}'"
+        return "browser speech: no Call button"
+    fl.locator("button[aria-label='Voice mode']").click()
     fl.locator("button[aria-label='End call']").wait_for(timeout=15000)
     fl.locator("text=Listening").first.wait_for(timeout=15000)
-    expect(not fl.locator(f"text={WEB_STT}").count(), "the Web-STT error was shown although speech-to-text is on")
     shot(page, "10-chat-call-open")
     fl.locator("button[aria-label='End call']").click()
     # A blocked screen wake lock is reported by chat-voice-call-wake-lock alone; anything else counts here.

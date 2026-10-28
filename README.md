@@ -2281,8 +2281,8 @@ into `.env` before the first setup ([how](#quickstart)).
 
 ## Voice: speech-to-text
 
-Open WebUI's microphone and **Call** button need server speech-to-text (without it Call says *"Call feature is
-not supported when using Web STT engine"*). DevOS ADE uses **Mistral Voxtral on Bedrock** for it: no extra
+Open WebUI's microphone and **Call** button need server speech-to-text (without it Chat shows no Call button).
+DevOS ADE uses **Mistral Voxtral on Bedrock** for it: no extra
 key, and your recorded speech stays in your AWS account. Setup turns it on by default when its model check
 finds Voxtral usable with your AWS key, and says so in one line (an interactive setup asks once: Bedrock,
 OpenAI, Groq or browser only).
@@ -2634,7 +2634,7 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
 | Your browser's developer console shows warnings or errors inside Admin, Files or Chat (*preloaded … but not used*, *width(0) and height(0) of chart*, a 404 for `rebalance/status`, *No token found in localStorage*) | Expected: they come from LiteLLM, RustFS and Open WebUI themselves, not from DevOS ADE, and change nothing. [tests/e2e/INVENTORY.md](tests/e2e/INVENTORY.md#known-issues) says where each comes from. |
 | The installed app still shows the old name or icon | Chrome asks before changing an installed app's name and icon, at its next check. Accept it, or uninstall the app from its window (⋮ › Uninstall) and install it again from the portal. |
 | Speech-to-text error in Chat | Your browser has no speech recognition (e.g. Firefox), or you use an installed / home-screen app. [Server speech-to-text](#voice-speech-to-text) works there: `./stack stt set bedrock`. |
-| "Call feature is not supported when using Web STT engine" | Voice calls need [server speech-to-text](#voice-speech-to-text): `./stack stt set bedrock` (no key; `./stack stt status` says why it is off), or `openai` / `groq`. |
+| No **Call** button in Chat (next to the microphone) | Voice calls need [server speech-to-text](#voice-speech-to-text): `./stack stt set bedrock` (no key; `./stack stt status` says why it is off), or `openai` / `groq`. |
 | "Error transcribing chunk: External: …" | The message after it says what failed (budget, model access, throttling, a too-long recording); see [docs/voice.md](docs/voice.md#troubleshooting). |
 | Admin says "automatic sign-in did not work" | It names the reason (LiteLLM not running, or it refused the password the portal has). If you changed the Admin password inside LiteLLM, set it in **Settings → Account & security** too; meanwhile **Sign in with the password instead** opens LiteLLM's own form. Files likewise (RustFS not running, or a key pair edited by hand: `./stack config regenerate rustfs`). |
 | LiteLLM's own form refuses `admin` | Once setup has created the database admin, sign in with `OPENWEBUI_ADMIN_EMAIL` / `LITELLM_UI_PASSWORD` (Home → Credentials shows both); the shared `admin` login is off. |

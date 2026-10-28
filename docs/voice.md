@@ -3,8 +3,8 @@
 Back to the [README](../README.md#voice-speech-to-text).
 
 Open WebUI's **Call** button (the sound-wave button next to the microphone) needs a server speech-to-text
-service; with only the browser's speech recognition (the Web Speech API), Open WebUI v0.12 refuses Call with
-*"Call feature is not supported when using Web STT engine"*. DevOS ADE offers these choices:
+service; with only the browser's speech recognition (the Web Speech API), Open WebUI shows no Call button.
+DevOS ADE offers these choices:
 
 | Choice | Key | Where your speech goes | Price per minute of audio |
 |---|---|---|---|
