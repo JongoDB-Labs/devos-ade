@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-10-28
+
 ### Added
 
 - **Send feedback (JON-440).** Settings › About and the bottom of Home have a **Send feedback** card. **Bug**, **Feature**
