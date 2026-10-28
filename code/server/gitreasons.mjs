@@ -165,6 +165,7 @@ export const SANDBOX_REFUSALS = Object.freeze([
   'bad data',
   'a folder on its way is a link',
   'the connection ended',
+  'the folder is gone',
   'no answer',
   'too many plugin or MCP commands at once',
   'too many Claude Code processes',

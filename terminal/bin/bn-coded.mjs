@@ -1354,9 +1354,10 @@ export function fsFind(q, limit, root = WS_ROOT) {
 // --- respected, .git left out) in a git repository, else a bounded walk that skips .git, the trash and dependencies /
 // --- build output (the fs.find list); never node_modules. include "all": every file but the trash (and .git); git: true
 // --- adds the .git folder too. Regular files only (never a link followed), each opened O_NOFOLLOW, from the root's own
-// --- folder, so nothing outside it can be named. The whole list is stat'ed first: over `max` bytes (or ZIP_MAX_FILES
-// --- files) is refused before a byte is sent, saying how big it is (dry: only that answer, no zip). Deflate (zlib) with
-// --- data descriptors, one file at a time: memory is a few chunks, whatever the project's size.
+// --- folder and checked where the open landed (zipOpen: a folder swapped for a link meanwhile), so nothing outside it
+// --- can be named. The whole list is stat'ed first: over `max` bytes (or ZIP_MAX_FILES files) is refused before a byte
+// --- is sent, saying how big it is (dry: only that answer, no zip). Deflate (zlib) with data descriptors, one file at a
+// --- time: memory is a few chunks, whatever the project's size.
 export const ZIP_MAX_FILES = 50000;
 export const ZIP_DEFAULT_MAX = 200 << 20, ZIP_HARD_MAX = 1 << 30;
 const ZIP_WALK_DEPTH = 64;
@@ -1426,6 +1427,30 @@ export async function zipList(root, { include = 'default', git = false } = {}) {
   return { files, bytes: files.reduce((n, f) => n + f.size, 0), via, skippedLinks, skippedOther };
 }
 const mib = (n) => `${(n / (1 << 20)).toFixed(1)} MiB`;
+// zipOpen(root, rel, real) -> the open fd of rel, a regular file of root (real: root's realpath); 'link' when the way
+// there is a link; null when it cannot be opened. The file itself is opened O_NOFOLLOW; a folder on the way swapped for
+// a link since the list was made is caught where the open landed (/proc/self/fd). Without /proc (not Linux: the tests'
+// Macs) each folder on the way is lstat'ed first instead.
+const PROC_FD = fs.existsSync('/proc/self/fd');
+export function zipOpen(root, rel, real) {
+  if (!PROC_FD) {
+    let p = root.abs;
+    for (const seg of rel.split('/').slice(0, -1)) {
+      p = path.join(p, seg);
+      try { if (!fs.lstatSync(p).isDirectory()) return 'link'; } catch { return null; }
+    }
+  }
+  let fd;
+  try { fd = fs.openSync(path.join(root.abs, rel), fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | fs.constants.O_NOFOLLOW); } catch (e) {
+    return e.code === 'ELOOP' ? 'link' : null;
+  }
+  if (PROC_FD) {
+    let at = null;
+    try { at = fs.readlinkSync(`/proc/self/fd/${fd}`); } catch { /* below */ }
+    if (at !== path.join(real, rel)) { fs.closeSync(fd); return 'link'; }
+  }
+  return fd;
+}
 // fsZip(send, drain, req, root) -> RESULT {files, bytes, via, skippedLinks, skippedOther, cap, over, zipBytes?}
 // (send(type, payload) writes a frame; drain() -> a promise that resolves when more may be written (the reader keeps up);
 // gone() -> the reader went away)
@@ -1439,9 +1464,12 @@ export async function fsZip(send, drain, req, root = WS_ROOT, gone = () => false
   let offset = 0;
   const out = (b) => { if (gone()) throw new Error('the connection ended'); send(T.STDOUT, b); offset += b.length; };
   const central = [];
+  let real;
+  try { real = fs.realpathSync(root.abs); } catch { throw new Error('the folder is gone'); }
   for (const f of l.files) {
-    let fd;
-    try { fd = fs.openSync(path.join(root.abs, f.rel), fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | fs.constants.O_NOFOLLOW); } catch { meta.skippedOther++; continue; }
+    const fd = zipOpen(root, f.rel, real);
+    if (fd === 'link') { meta.skippedLinks++; continue; }
+    if (fd === null) { meta.skippedOther++; continue; }
     try {
       const st = fs.fstatSync(fd);
       if (!st.isFile()) { meta.skippedOther++; continue; }

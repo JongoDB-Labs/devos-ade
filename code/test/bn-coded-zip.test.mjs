@@ -123,6 +123,24 @@ test('confinement: the root only; a root through a link or outside the workspace
   assert.ok(Object.keys(readZip(bytes)).includes('proj/src/a.ts'));
 });
 
+test('a folder swapped for a link after the list was made: its files are left out, never read through the link', () => {
+  const R = path.join(WS, 'swap');
+  put(R, 'sub/secret.txt', 'inside');
+  put(OUT, 'sub-out/secret.txt', 'outside');
+  const root = { abs: R }, real = fs.realpathSync(R);
+  const fd = coded.zipOpen(root, 'sub/secret.txt', real);
+  assert.equal(typeof fd, 'number');
+  fs.closeSync(fd);
+  // (listed while sub was a folder; then sub is a link to a folder outside the project)
+  fs.rmSync(path.join(R, 'sub'), { recursive: true });
+  fs.symlinkSync(path.join(OUT, 'sub-out'), path.join(R, 'sub'));
+  assert.equal(coded.zipOpen(root, 'sub/secret.txt', real), 'link');
+  // the file itself a link: refused by O_NOFOLLOW
+  fs.symlinkSync(path.join(OUT, 'secret.txt'), path.join(R, 'top.txt'));
+  assert.equal(coded.zipOpen(root, 'top.txt', real), 'link');
+  assert.equal(coded.zipOpen(root, 'gone.txt', real), null);
+});
+
 test('an empty project is a valid, empty zip', async () => {
   fs.mkdirSync(path.join(WS, 'nothing'));
   const { r, bytes } = await zip({ root: path.join(WS, 'nothing') });
