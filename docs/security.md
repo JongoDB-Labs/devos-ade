@@ -2315,11 +2315,14 @@ one command that sets it, never on a command line).
   GitLab will be a network of its own, added only while one is set up.)
 - **The web UI** is a site of the main Caddy (`git.<portal host>`) behind the same portal check and same-site guard as
   Admin and Files, framed by the portal only; its session cookie is never given to Forgejo. **The portal signs you in**
-  through Forgejo's reverse-proxy authentication: after `portal_auth` has said yes, Caddy sets `X-Webauth-User: devos` in
-  that site's proxy block (route order: a request the portal refused never gets it, and a client's own copy is replaced).
-  Forgejo trusts the header from its peers on the `localgit` network — Caddy, the terminal's gateway and the mirror site
-  below — and every path except the web site removes it: the gateway (`X-Webauth-*`) and Caddy's internal `:8099` site
-  strip it, and the sandbox cannot reach Forgejo any other way. It signs nobody in for the API or git
+  through Forgejo's reverse-proxy authentication: after `portal_auth` has said yes, Caddy sets a header whose NAME is a
+  random secret (`LOCALGIT_SSO_HEADER`, `X-Bn-Git-<32 hex>`, made once in `.env`, given only to the Caddy and Forgejo
+  containers) to `devos` in that site's proxy block (route order: a request the portal refused never gets it, and a client's
+  own copies of it and of `X-Webauth-*` are removed). Forgejo's `REVERSE_PROXY_TRUSTED_PROXIES` does NOT limit this header
+  (it only governs X-Forwarded-For; the e2e proved a forged `X-Webauth-User` from another container on the network still
+  signed in), so the secret name is the control: a peer on the `localgit` network that does not know it cannot sign in, and
+  `REVERSE_PROXY_LIMIT` is 1. As defense in depth every other path also removes `X-Webauth-*`: the gateway and Caddy's
+  internal `:8099` site, and the sandbox cannot reach Forgejo any other way. It signs nobody in for the API or git
   (`ENABLE_REVERSE_PROXY_AUTHENTICATION_API` off) and never registers an account; the owner's password in `.env` remains the
   fallback form.
 - **The sandbox's git — the egress carve-out.** The sandbox's only peer is the terminal's gateway, which gets a second

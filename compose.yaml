@@ -377,15 +377,17 @@ services:
       FORGEJO__picture__DISABLE_GRAVATAR: "true"
       FORGEJO__service__DISABLE_REGISTRATION: "true"
       FORGEJO__service__REQUIRE_SIGNIN_VIEW: "true"
-      # The portal signs the owner in (caddy/localgit-on.caddy): after its session check Caddy sets X-Webauth-User to the
-      # owner's account, and only on that site's path. Forgejo trusts the header from its peers on the internal "localgit"
-      # network — Caddy, and the terminal's gateway, which removes it before Forgejo (caddy/localgit-gateway-on.caddy); the
-      # sandbox cannot reach Forgejo any other way. No registration from it, and it never signs in the API or git.
+      # The portal signs the owner in (caddy/localgit-on.caddy): after its session check Caddy sets a header — named by a secret of
+      # ./stack's, LOCALGIT_SSO_HEADER (X-Bn-Git-<32 hex>, in .env, known to Caddy and Forgejo alone) — to the owner's account, on
+      # that site's path only. Forgejo takes that header from ANY peer on the internal "localgit" network (its trusted-proxy
+      # setting does not limit it: tests/e2e/localgit proves it), so the control is that nobody else can name it: the
+      # terminal's gateway and Caddy's :8099 site never see the name, and also remove the plain X-Webauth-* names. No
+      # registration from it; it never signs in the API or git.
       FORGEJO__service__ENABLE_REVERSE_PROXY_AUTHENTICATION: "true"
       FORGEJO__service__ENABLE_REVERSE_PROXY_AUTO_REGISTRATION: "false"
       FORGEJO__service__ENABLE_REVERSE_PROXY_AUTHENTICATION_API: "false"
-      FORGEJO__security__REVERSE_PROXY_AUTHENTICATION_USER: X-Webauth-User
-      FORGEJO__security__REVERSE_PROXY_TRUSTED_PROXIES: "*"
+      FORGEJO__security__REVERSE_PROXY_AUTHENTICATION_USER: ${LOCALGIT_SSO_HEADER:-X-Bn-Git-Unset}
+      FORGEJO__security__REVERSE_PROXY_LIMIT: "1"
       FORGEJO__repository__DEFAULT_PRIVATE: private
       FORGEJO__repository__ENABLE_PUSH_CREATE_USER: "true"   # a push to a missing repository of the owner makes it (private): the Code page's Publish
       FORGEJO__actions__ENABLED: "false"
@@ -515,6 +517,7 @@ services:
       # The built-in git server's site (caddy/localgit-on.caddy; lib/localgit.sh: BN_LOCALGIT_MODE is on while LOCALGIT is)
       GIT_HOST: ${GIT_HOST:-git.${PORTAL_HOST:-bedrock-now.localhost}}
       LOCALGIT_MODE: ${BN_LOCALGIT_MODE:-off}
+      LOCALGIT_SSO_HEADER: ${LOCALGIT_SSO_HEADER:-X-Bn-Git-Unset}   # the name of the sign-in header Forgejo takes (a secret of ./stack's)
       CADDY_AUTO_HTTPS: "off"   # compose.domain.yaml: disable_redirects (certificates for the remote site)
       # Remote site (caddy/remote-<mode>.caddy; ./stack remote). The .invalid names only keep the file valid
       # while the sidecar has not told us the tailnet's name yet: nothing can match them.

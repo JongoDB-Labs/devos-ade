@@ -32,7 +32,7 @@ run() {
 }
 
 base=(PORTAL_HOST=bn.localhost PORTAL_ORIGIN=http://bn.localhost:8800 CHAT_HOST=chat.bn.localhost ADMIN_HOST=admin.bn.localhost
-      FILES_HOST=files.bn.localhost GIT_HOST=git.bn.localhost CADDY_AUTO_HTTPS=off REMOTE_SIDECAR_IP=10.255.255.254 PORTAL_PROXY_SECRET="$(printf 'p%.0s' $(seq 1 64))")
+      FILES_HOST=files.bn.localhost GIT_HOST=git.bn.localhost LOCALGIT_SSO_HEADER=X-Bn-Git-0123456789abcdef0123456789abcdef CADDY_AUTO_HTTPS=off REMOTE_SIDECAR_IP=10.255.255.254 PORTAL_PROXY_SECRET="$(printf 'p%.0s' $(seq 1 64))")
 for rm in off tailscale domain; do
   img="$IMAGE"
   if [ "$rm" = domain ]; then

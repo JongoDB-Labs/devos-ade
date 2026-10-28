@@ -19,8 +19,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   (`https://gateway:8093`) that forwards only git's smart-HTTP paths to Forgejo, over an internal network no other
   service shares.
 - **The portal signs you in to the git server, and it can mirror to GitHub or GitLab (JON-810).** Opening the git server's web
-  UI with your portal session signs you in as the owner through Forgejo's reverse-proxy authentication (Caddy sets the header
-  after the portal's check, on that site only; the sandbox's gateway and the internal mirror site strip it): no password. And
+  UI with your portal session signs you in as the owner through Forgejo's reverse-proxy authentication (Caddy sets a header with a
+  secret random name after the portal's check, on that site only, so no other container can forge it; the sandbox's gateway
+  and the internal mirror site strip `X-Webauth-*` too): no password. And
   `./stack git-server mirror add push|pull REPO URL` uses the Git host you connected (an access token) for Forgejo's own
   repository mirroring: a *push* mirror keeps a remote copy of a local repository (on every push here and every 8 hours;
   it force-updates the remote's refs), a *pull* mirror a read-only local copy of a remote; `mirror list`, `sync`, `remove`

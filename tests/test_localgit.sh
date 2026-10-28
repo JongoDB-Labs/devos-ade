@@ -422,15 +422,15 @@ test_the_mirror_commands_refuse_what_is_not_theirs() {
 test_the_web_site_signs_the_owner_in_only_after_the_portal_and_the_sandboxs_paths_remove_the_header() {
   s="$(cat "$T_ROOT/caddy/localgit-on.caddy")"
   # the header is set in the proxy block of the site that imports portal_auth, after it (route order), and nowhere else
-  assert_eq "$(printf '%s\n' "$s" | grep -c 'header_up X-Webauth-User devos')" 1
+  assert_eq "$(printf '%s\n' "$s" | grep -c 'header_up {$LOCALGIT_SSO_HEADER} devos')" 1
   site="$(printf '%s\n' "$s" | sed -n '/^http:\/\/{\$GIT_HOST} {/,/^}/p')"
-  assert_contains "$site" "header_up X-Webauth-User devos"
-  [ "$(printf '%s\n' "$site" | grep -n 'import portal_auth' | cut -d: -f1)" -lt "$(printf '%s\n' "$site" | grep -n 'header_up X-Webauth-User' | cut -d: -f1)" ] || { echo "the header is set before the portal's check" >&2; return 1; }
+  assert_contains "$site" 'header_up {$LOCALGIT_SSO_HEADER} devos'
+  [ "$(printf '%s\n' "$site" | grep -n 'import portal_auth' | cut -d: -f1)" -lt "$(printf '%s\n' "$site" | grep -n 'header_up {$LOCALGIT_SSO_HEADER}' | cut -d: -f1)" ] || { echo "the header is set before the portal's check" >&2; return 1; }
   # the other ways to Forgejo remove one a client sent
   for f in caddy/localgit-gateway-on.caddy; do assert_contains "$(cat "$T_ROOT/$f")" "request_header -X-Webauth-User"; done
   mirrors="$(printf '%s\n' "$s" | sed -n '/^http:\/\/:8099 {/,/^}/p')"
   assert_contains "$mirrors" "request_header -X-Webauth-User"
-  assert_not_contains "$mirrors" "header_up X-Webauth-User"
+  assert_not_contains "$mirrors" "header_up"
   # the internal site: reads, a migration and the mirror paths — never a delete of a repository, the admin or the account API
   assert_contains "$mirrors" "method GET"
   assert_contains "$mirrors" "path /api/v1/repos/migrate"
@@ -441,5 +441,25 @@ test_the_web_site_signs_the_owner_in_only_after_the_portal_and_the_sandboxs_path
   assert_contains "$y" 'FORGEJO__service__ENABLE_REVERSE_PROXY_AUTHENTICATION: "true"'
   assert_contains "$y" 'FORGEJO__service__ENABLE_REVERSE_PROXY_AUTO_REGISTRATION: "false"'
   assert_contains "$y" 'FORGEJO__service__ENABLE_REVERSE_PROXY_AUTHENTICATION_API: "false"'
-  assert_contains "$y" 'FORGEJO__security__REVERSE_PROXY_AUTHENTICATION_USER: X-Webauth-User'
+  }
+
+test_the_sign_in_header_has_a_secret_name_only_caddy_and_forgejo_know() {
+  # (Forgejo's trusted-proxy setting does not limit who may send it — tests/e2e/localgit proves a forged header from another peer
+  # signs in — so the control is the name: a secret of ./stack's, in the environments of Caddy and Forgejo alone)
+  y="$(sed -n '/^  forgejo:/,/^  portal:/p' "$T_ROOT/compose.yaml")"
+  assert_contains "$y" 'FORGEJO__security__REVERSE_PROXY_AUTHENTICATION_USER: ${LOCALGIT_SSO_HEADER:-X-Bn-Git-Unset}'
+  assert_not_contains "$y" 'REVERSE_PROXY_AUTHENTICATION_USER: X-Webauth-User'
+  assert_contains "$(sed -n '/^  caddy:/,/^  [a-z-]*:$/p' "$T_ROOT/compose.yaml")" 'LOCALGIT_SSO_HEADER: ${LOCALGIT_SSO_HEADER:-X-Bn-Git-Unset}'
+  assert_contains "$(cat "$T_ROOT/caddy/localgit-on.caddy")" 'header_up {$LOCALGIT_SSO_HEADER} devos'
+  for f in portal terminal litellm open-webui shared-mcp postgres rustfs searxng stt code; do
+    assert_not_contains "$(sed -n "/^  $f:/,/^  [a-z-]*:\$/p" "$T_ROOT/compose.yaml")" "LOCALGIT_SSO_HEADER" || { echo "$f gets the secret name" >&2; return 1; }
+  done
+  assert_not_contains "$(cat "$T_ROOT/compose.terminal.yaml" "$T_ROOT/compose.code.yaml" "$T_ROOT/compose.localgit.yaml")" "LOCALGIT_SSO_HEADER"
+  : > "$ENV_FILE"; localgit_secrets
+  h="$(get_env LOCALGIT_SSO_HEADER)"
+  case "$h" in X-Bn-Git-????????????????????????????????) ;; *) echo "not a secret name: $h" >&2; return 1 ;; esac
+  localgit_secrets; assert_eq "$(get_env LOCALGIT_SSO_HEADER)" "$h"
+  # never passed on from the shell
+  printf 'X=1\n' > "$ENV_FILE"; mkdir -p "$TMP/bin"; printf '#!/bin/sh\nenv | grep ^LOCALGIT_SSO_HEADER= || true\n' > "$TMP/bin/docker"; chmod +x "$TMP/bin/docker"
+  assert_eq "$(PATH="$TMP/bin:$PATH" LOCALGIT_SSO_HEADER=evil dc ps)" ""
 }

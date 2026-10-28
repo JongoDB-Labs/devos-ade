@@ -43,6 +43,7 @@ localgit_services() { ! localgit_on || echo forgejo; }
 localgit_secrets() {
   ensure_env LOCALGIT "on"
   ensure_env LOCALGIT_ADMIN_PASSWORD "Lg9-$(gen_hex 14)"
+  ensure_env LOCALGIT_SSO_HEADER "X-Bn-Git-$(gen_hex 16)"   # the name of the header the portal sign-in uses: nobody else knows it (compose.yaml)
 }
 
 # (the shell's own quoting below is on purpose: the container's sh expands $1, $LG_PW and $LG_EMAIL, never this shell)

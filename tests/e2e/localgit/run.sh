@@ -109,6 +109,18 @@ signed="$(curl -s -m 10 -H "Host: $host" -H 'Accept: text/html' "http://127.0.0.
 printf '%s' "$signed" | grep -q 'user/logout\|data-tooltip-content="devos"\|Sign Out' && pass "the portal's session signs the owner in (no password)" || fail "the owner is signed in through Caddy"
 spoof="$(curl -s -m 10 -H "Host: $host" -H 'X-Webauth-User: nobody' "http://127.0.0.1:$PORT/devos/e2e-one" | grep -c 'nobody')"
 check "a client's own X-Webauth-User is replaced, never trusted" "$spoof" 0
+# Forgejo takes a sign-in header from ANY peer of the localgit network (its trusted-proxy setting does not limit that: measured in
+# an earlier version of this suite, a forged header from another container signed in), so the control is the header's secret name:
+# a forged plain X-Webauth-User sent straight to Forgejo from another peer signs nobody in
+ssoh="$(get_env LOCALGIT_SSO_HEADER)"
+case "$ssoh" in X-Bn-Git-*) pass "the sign-in header has a secret name made by ./stack" ;; *) fail "the sign-in header has a secret name ($ssoh)" ;; esac
+# (the plain name Forgejo's documentation uses is not the one it takes: a forged copy of it signs nobody in)
+direct="$(docker run --rm --network "${P}_localgit" "$P-client" sh -c "curl -s -m 10 -o /tmp/b -w '%{http_code} ' -H 'X-Webauth-User: devos' -H 'Accept: text/html' http://forgejo:3000/devos/e2e-one; grep -c 'user/logout\\|Sign Out' /tmp/b || true" 2>/dev/null | tr '\n' ' ')"
+case "$direct" in "303 0 "* | "404 0 "* | "401 0 "*) pass "a forged sign-in header from another peer of the localgit network is not trusted ($direct)" ;; *) fail "a forged sign-in header from another peer is not trusted (got: $direct)" ;; esac
+# the name itself is what signs in: shown to a peer that knows it (this run's Caddy path is the only holder), a control that it works
+known="$(docker run --rm --network "${P}_localgit" "$P-client" sh -c "curl -s -m 10 -o /tmp/b -w '%{http_code} ' -H '$ssoh: devos' -H 'Accept: text/html' http://forgejo:3000/devos/e2e-one; grep -c 'user/logout\\|Sign Out' /tmp/b || true" 2>/dev/null | tr '\n' ' ')"
+case "$known" in "200 "[1-9]*) pass "(control) a peer that knows the secret name is signed in: the name is the whole control ($known)" ;; *) fail "(control) the secret name signs in ($known)" ;; esac
+check "no container but Caddy's and Forgejo's has the name in its environment" "$(docker ps -q --filter "label=com.docker.compose.project=$P" | while read -r c; do docker inspect -f '{{.Name}} {{range .Config.Env}}{{println .}}{{end}}' "$c" | grep -l "$ssoh" >/dev/null 2>&1 && docker inspect -f '{{.Name}}' "$c"; done | sort | tr '\n' ' ')" "/e2e-localgit-caddy-1 /e2e-localgit-forgejo-1 "
 login="$(curl -s -m 10 -D "$S/login.hdr" -H "Host: $host" "http://127.0.0.1:$PORT/devos/e2e-one")"
 printf '%s' "$login" | grep -q 'Forgejo' && pass "its pages are Forgejo's" || fail "its pages are Forgejo's"
 grep -qi '^content-security-policy: frame-ancestors http://'"$P"'.localhost:'"$PORT"'\r\?$' "$S/login.hdr" && pass "framed by the portal only (CSP frame-ancestors)" || fail "framed by the portal only ($(grep -i 'content-security-policy' "$S/login.hdr" | head -n 1))"

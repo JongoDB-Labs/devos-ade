@@ -1464,8 +1464,9 @@ uninstall` removes it, turning the server off keeps it).
   anything else), with a certificate `./stack` made for the name `gateway` and the Code page hands to git as the one CA it
   trusts for that host. Claude's own `git` in the terminal is not wired to it yet (the Code page's operations are).
 - **Signed in by the portal.** Opening the web UI with your portal session signs you in as `devos` — no password
-  (Caddy adds Forgejo's reverse-proxy sign-in header after the portal's check, on that site only; the sandbox's gateway removes
-  it from everything the sandbox sends). The owner password in `.env` stays as a fallback.
+  (Caddy adds Forgejo's reverse-proxy sign-in header after the portal's check, on that site only; the header's name is a
+  random secret (`LOCALGIT_SSO_HEADER`) known only to Caddy and Forgejo, so no other container can forge it; the sandbox's
+  gateway also strips `X-Webauth-*`). The owner password in `.env` stays as a fallback.
 - **Mirroring to GitHub or GitLab** (Forgejo's own repository mirroring), from this computer:
   `./stack git-server mirror add push REPO https://github.com/you/repo` keeps a **copy** of a local repository on the remote — on
   every push here and every 8 hours Forgejo pushes all branches and tags and **force-updates** the remote's refs (the remote must

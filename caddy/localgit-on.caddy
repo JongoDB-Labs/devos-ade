@@ -12,9 +12,11 @@ http://{$GIT_HOST} {
 			import drop_session_cookie
 			import frame_by_portal_only
 			# Signed in by the portal: Forgejo's reverse-proxy authentication takes the owner's account from this header. It
-			# is set here, after the portal's check above (a client-sent one is replaced), on this site only; the terminal's
-			# gateway removes it from everything the sandbox sends, and the code container's internal site (:8099) too.
-			header_up X-Webauth-User devos
+			# is set here, after the portal's check above, on this site only, under a name only Caddy and Forgejo know (a secret of
+			# ./stack's: Forgejo takes the header from any peer, so the name is the control); the plain names are removed, as the
+			# terminal's gateway and the code container's internal site (:8099) remove them from everything they pass.
+			header_up {$LOCALGIT_SSO_HEADER} devos
+			header_up -X-Webauth-User
 			header_up -X-Webauth-Email
 			header_up -X-Webauth-Fullname
 		}
