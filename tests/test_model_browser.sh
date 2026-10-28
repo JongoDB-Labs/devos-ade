@@ -59,3 +59,11 @@ test_requests_are_read_at_most_every_tick_minutes() {
   assert_eq "$(_mb_reads)" 0
   [ ! -e "$(model_browser_wanted_file)" ]   # (read a moment ago: nothing new to read)
 }
+
+test_a_helper_folder_that_cannot_be_written_never_reads_every_loop() {
+  [ "$(id -u)" != 0 ] || { echo "running as root: cannot make a folder unwritable" >&2; return 77; }
+  _mb_fake; chmod 500 "$(helper_dir)"
+  model_browser_tick
+  chmod 755 "$(helper_dir)"
+  assert_eq "$(_mb_reads)" 0
+}

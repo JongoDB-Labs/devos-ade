@@ -30,6 +30,7 @@ EOS
   git init -q "$STACK_DIR"; git -C "$STACK_DIR" add stack; git -C "$STACK_DIR" commit -qm one; git -C "$STACK_DIR" tag v0.3.0
   git -C "$STACK_DIR" checkout -q --detach   # a release install (on a branch, the helper refuses updates)
   mkdir -p "$STATE_DIR/images" "$(request_dir)" "$(helper_dir)"
+  date +%s > "$(helper_dir)/model-browser-last"   # the model browser's lists already read (tests/test_model_browser.sh)
   export CALLS="$TMP/calls" STATE_DIR HELPER_JOB_POLL_S=0
   HELPER_MIN_INTERVAL_S=0   # the limits have their own tests
   _keep_awake() { :; }      # never caffeinate/systemd-inhibit for real (tests/test_auto_update.sh tests it)

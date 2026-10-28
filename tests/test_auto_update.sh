@@ -53,6 +53,7 @@ EOS
   git -C "$STACK_DIR" -c advice.detachedHead=false checkout -q v0.3.0
   printf 'POSTGRES_PASSWORD=p\nCOMPOSE_PROJECT_NAME=bn-t\nAUTO_UPDATE=on\n' > "$ENV_FILE"
   mkdir -p "$STATE_DIR/images" "$(request_dir)" "$(helper_dir)" "$(update_check_dir)"
+  date +%s > "$(helper_dir)/model-browser-last"   # the model browser's lists already read (tests/test_model_browser.sh)
   _seen v0.4.0
   export CALLS="$TMP/calls" STATE_DIR HELPER_JOB_POLL_S=0
   HELPER_MIN_INTERVAL_S=0

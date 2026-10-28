@@ -137,7 +137,7 @@ model_browser_tick() {
   [ -z "$(stack_lock_holder)" ] || return 0
   rm -f "$w"
   ! _mb_fresh "$last" "$MODEL_BROWSER_TICK_MIN" || return 0
-  date +%s > "$last"   # (not empty: _mb_fresh counts an empty file as never written)
+  date +%s 2>/dev/null > "$last" || return 0   # (not empty: _mb_fresh counts an empty file as never written; unwritable: never a read every loop)
   ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper NO_COLOR=1 "$STACK_DIR/stack" models browse ) </dev/null > "$(helper_dir)/model-browser.log" 2>&1 &
   printf '%s\n' "$!" > "$(helper_dir)/model-browser.pid"
 }
