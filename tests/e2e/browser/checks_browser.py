@@ -1592,7 +1592,8 @@ def chat_rag(ctx):
 
 # --- Admin (LiteLLM UI) and Files (RustFS console): the portal signs you in (portal/portal/appsso.py) ---
 
-SSO_DONE = {"admin": "text=Virtual Keys", "files": "text=Create Bucket"}
+# (LiteLLM's Notifications button: in its top bar at every width, where its menu folds away on a phone)
+SSO_DONE = {"admin": 'role=button[name="Notifications"]', "files": "text=Create Bucket"}
 SSO_FORM = {"admin": "input[name=username]", "files": "input[placeholder='Please enter account']"}
 # What LiteLLM's own Logout leaves in its page until its form replaces it (nothing the owner sees): the session it has
 # just revoked answers 401 on whichever of LiteLLM's API routes the dashboard still asks — requests in flight and
@@ -1656,7 +1657,12 @@ def litellm_logout(page, fl, rec, label: str) -> int:
     """LiteLLM's own Logout (account menu) in the Admin frame FL: its own form shows (?sso=off), never a new automatic
     sign-in. Returns where the page's events from the click on start (rec.events[i:]); on failure says where LiteLLM
     went instead."""
-    fl.get_by_role("button", name=re.compile(r"^Account menu")).click()
+    menu = fl.get_by_role("button", name=re.compile(r"^Account menu"))
+    fold = fl.get_by_role("button", name="Open navigation")
+    menu.or_(fold).first.wait_for()
+    if not menu.count():   # a phone: LiteLLM's menu, with the account in it, is folded away
+        fold.click()
+    menu.click()
     logout = fl.get_by_text(re.compile(r"^(Log ?out|Sign ?out)$", re.I)).first
     logout.wait_for()
     since = len(rec.events)
@@ -1692,13 +1698,15 @@ def admin_ui(ctx):
     shot(page, "11-admin-signed-in")
     f = frame_of(page, "admin")
     t0 = time.time()
-    while time.time() - t0 < 30 and "claude-code" not in f.inner_text("body"):
+    row = lambda alias, text: re.search(rf"(?m)^{re.escape(alias)}\s*$", text)   # its row's first line (not claude-code-terminal)
+    while time.time() - t0 < 30 and not row("claude-code", f.inner_text("body")):
         page.wait_for_timeout(500)
     body = f.inner_text("body")
     for alias, budget in (("claude-code", ENV["BUDGET_CLAUDE_CODE"]), ("open-webui", ENV["BUDGET_OPENWEBUI"]),
                           ("setup", ENV["BUDGET_SETUP"])):
-        i = body.find(alias)
-        expect(i >= 0, f"key {alias} not listed")
+        m = row(alias, body)
+        expect(m, f"key {alias} not listed")
+        i = m.start()
         m = re.search(r"of \$([0-9][0-9,]*(?:\.[0-9]+)?)", body[i:i + 400])   # "… $0.0004 of $50" in its row
         shown = m.group(1).replace(",", "") if m else ""
         # LiteLLM's key table shows budgets in whole dollars (the throwaway's $0.04 reads "$0"): compare at that precision
@@ -2212,7 +2220,7 @@ def phone(ctx):
     expect(page.inner_text("#more-title") == "More", f"the sheet is titled {page.inner_text('#more-title')!r}")
     expect(page.inner_text("#more-newtab") == "In a new tab", "no In a new tab heading")
     links = page.eval_on_selector_all("#more-sheet .sheet-link[data-app]", "els => els.map(a => [a.dataset.app, a.href, a.target])")
-    want = [["admin", origin("admin") + "/ui/", "_blank"], ["files", origin("files") + "/rustfs/console/", "_blank"]]
+    want = [["admin", origin("admin") + "/ui/api-keys/", "_blank"], ["files", origin("files") + "/rustfs/console/", "_blank"]]
     if ENV.get("TERMINAL_ENABLED") == "true":   # the browser terminal (--terminal): full screen from More
         want.append(["terminal", origin("terminal") + "/", "_blank"])
     expect(links == want, f"More links {links}")
@@ -2804,7 +2812,7 @@ def walkthrough_phone(ctx):
     a = page.locator("#tour a[data-k=open-admin]")
     expect(a.count() == 1, "Open Admin is not a link on a phone")
     href, target = a.get_attribute("href"), a.get_attribute("target")
-    expect(href == origin("admin") + "/ui/" and target == "_blank", f"Open Admin → {href} ({target})")
+    expect(href == origin("admin") + "/ui/api-keys/" and target == "_blank", f"Open Admin → {href} ({target})")
     page.click("#tour [data-k=fallback-admin] summary")
     page.locator("#tour .tour-cred", has_text=ENV["LITELLM_UI_USER"]).wait_for(timeout=10000)
     shot(page, "w09-walkthrough-phone-admin")

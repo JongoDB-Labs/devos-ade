@@ -2,7 +2,7 @@
 // No framework, no build step, nothing loaded from the internet. Data comes from /api/* only.
 "use strict";
 
-const APPS = { chat: "/", admin: "/ui/", files: "/rustfs/console/" };
+const APPS = { chat: "/", admin: "/ui/api-keys/", files: "/rustfs/console/" };   // (portal/config.py APPS)
 const API_HEADERS = { "X-Requested-With": "bedrock-now" };
 const REFRESH_MS = 30000;
 let logins = null;

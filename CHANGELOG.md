@@ -29,9 +29,13 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
     *Update now brings it to X* or *newer upstream exists; the next DevOS ADE release will bring it*.
   - **An update checks what it started.** After setup, every recreated service must run the image this release pins
     (digest match; Open WebUI's local build must be on the pinned base; the portal, shared MCP and speech-to-text
-    builds must be the ones just built). A mismatch fails the update, and `./stack rollback` goes back.
+    builds must be the ones just built, which a rebuild from Docker's cache still is although its image id is new). A
+    mismatch fails the update, and `./stack rollback` goes back.
   - **LiteLLM's own *The latest version is…* banner in Admin is gone** (LiteLLM has no setting for it; Caddy answers
     its one lookup route): LiteLLM only moves with a DevOS ADE release, so the banner could only confuse.
+  - **What the new versions change for you.** LiteLLM 1.106.3 starts its Admin on a new *Home* dashboard; the portal
+    still opens Admin on *Virtual Keys*, as before (Home is the first item in LiteLLM's menu). Open WebUI 0.12.4
+    shows no *Call* button while speech-to-text is your browser's, where it used to show it and then refuse.
 
 ## [0.32.3] - 2026-10-28
 

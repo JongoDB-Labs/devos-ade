@@ -295,7 +295,7 @@ def api_routes(ctx):
     expect(d["spend"]["total_error"] is None, f"total: {d['spend']['total_error']}")
     rows = d["models"]["rows"]
     expect(rows and any(m["enabled"] for m in rows), "no enabled models")
-    apps = {"chat": origin("chat") + "/", "admin": origin("admin") + "/ui/", "files": origin("files") + "/rustfs/console/"}
+    apps = {"chat": origin("chat") + "/", "admin": origin("admin") + "/ui/api-keys/", "files": origin("files") + "/rustfs/console/"}
     if ENV.get("TERMINAL_ENABLED") == "true":   # the browser terminal (--terminal)
         apps["terminal"] = origin("terminal") + "/"
         if ENV.get("CODE_ENABLED") == "true":   # the Code page (--code)

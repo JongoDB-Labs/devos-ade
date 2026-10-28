@@ -82,7 +82,7 @@ def test_local_only_settings_are_unchanged(settings):
     assert settings.portal_origins() == ["http://bedrock-now.localhost"]
     assert settings.app_origins() == ["http://chat.bedrock-now.localhost", "http://admin.bedrock-now.localhost",
                                       "http://files.bedrock-now.localhost"]
-    assert settings.app_urls()["admin"] == "http://admin.bedrock-now.localhost/ui/"
+    assert settings.app_urls()["admin"] == "http://admin.bedrock-now.localhost/ui/api-keys/"
 
 
 def test_per_app_hosts_and_remote_site_from_env():
@@ -393,7 +393,7 @@ def test_home_gets_the_app_urls_of_its_site(rclient):
     assert r.status_code == 200
     m = re.search(r'<meta name="bn-apps" content="([^"]*)">', r.text)
     urls = json.loads(m.group(1).replace("&quot;", '"'))
-    assert urls == {"chat": f"https://{CHAT}/", "admin": f"https://bn-admin.{TN}/ui/",
+    assert urls == {"chat": f"https://{CHAT}/", "admin": f"https://bn-admin.{TN}/ui/api-keys/",
                     "files": f"https://bn-files.{TN}/rustfs/console/"}
     # The remote app's own link scheme, as in its manifest (not the local copy's web+bedrocknow).
     scheme = rclient.get("/manifest.webmanifest", headers=REMOTE).json()["protocol_handlers"][0]["protocol"]
@@ -401,7 +401,7 @@ def test_home_gets_the_app_urls_of_its_site(rclient):
     assert f"https://{CHAT}" in r.headers["content-security-policy"]
     assert "frame-src 'self' " in r.headers["content-security-policy"]   # the hand-off redirect inside frames
     r = rclient.get("/api/logins", headers={**REMOTE, "X-Requested-With": "bedrock-now", "Cookie": f"{REMOTE_COOKIE}={tok}"})
-    assert r.json()["admin"]["url"] == f"https://bn-admin.{TN}/ui/"
+    assert r.json()["admin"]["url"] == f"https://bn-admin.{TN}/ui/api-keys/"
 
 
 # --- the installable web app on the remote site ---

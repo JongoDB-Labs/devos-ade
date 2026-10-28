@@ -31,8 +31,9 @@ _PREVIEW_DOMAIN = re.compile(r"[a-z0-9]([a-z0-9-]{0,52}[a-z0-9])?-preview\.local
 _HOSTNAME = re.compile(r"(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")
 
 # The apps the portal fronts and their start paths (Caddy routes them; see caddy/Caddyfile). Each has its own host
-# name: CHAT_HOST / ADMIN_HOST / FILES_HOST, by default chat./admin./files. under PORTAL_HOST.
-APPS = {"chat": "/", "admin": "/ui/", "files": "/rustfs/console/"}
+# name: CHAT_HOST / ADMIN_HOST / FILES_HOST, by default chat./admin./files. under PORTAL_HOST. Admin opens on LiteLLM's
+# Virtual Keys (its /ui/ is a Home dashboard since 1.106: one click away, first in its menu).
+APPS = {"chat": "/", "admin": "/ui/api-keys/", "files": "/rustfs/console/"}
 APP_HOST_ENV = {"chat": "CHAT_HOST", "admin": "ADMIN_HOST", "files": "FILES_HOST"}
 REMOTE_APP_HOST_ENV = {"chat": "REMOTE_CHAT_HOST", "admin": "REMOTE_ADMIN_HOST", "files": "REMOTE_FILES_HOST"}
 REMOTE_MODES = ("tailscale", "domain")
