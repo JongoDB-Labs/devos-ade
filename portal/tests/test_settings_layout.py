@@ -384,7 +384,7 @@ def test_search_a_card_for_claude_codes_websearch_and_each_backend():
     assert search[0] == "WEBSEARCH_BACKEND" and search[1] == "WEBSEARCH_SEARXNG_BUILTIN"
     # (the built-in SearXNG's secret: with the other generated secrets, never a card)
     assert rows["WEBSEARCH_SEARXNG_SECRET"]["section"] == "advanced" and table["WEBSEARCH_SEARXNG_SECRET"][2:4] == ["S", "ro"]
-    assert 'WEBSEARCH_BACKEND: "Search" }' in js   # (its group's head)
+    assert 'WEBSEARCH_BACKEND: "Search",' in js   # (its group's head)
     provs = js[js.index("const PROVIDERS = {"):js.index("const GROUP_HEAD")]
     for k in search:
         assert f"{k}: " in provs, k
