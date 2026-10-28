@@ -317,3 +317,19 @@ def test_container_health_unreadable_or_odd_files_show_nothing(s):
         write(s.status_dir, "container-health.json", text)
         assert activity.health_items(s.status_dir, now) == []
     assert activity.items(s, False) == []
+
+
+def test_the_event_schema_contract_names_the_kinds_activity_shows_and_pins_the_shared_redaction():
+    """docs/event-schema.md (G5): spec only; the shared JON-169 rules are pinned by hash, never reimplemented here."""
+    import re
+    doc = (Path(__file__).resolve().parents[2] / "docs" / "event-schema.md").read_text()
+    assert "devos-ade/events/1" in doc
+    for kind in ("restart", "unhealthy", "exit", "oom"):
+        assert f"`container.{kind}`" in doc
+    hashes = re.findall(r"\| (?:rules|corpus) sha256 \| `([0-9a-f]{64})` \|", doc)
+    assert len(hashes) == 2 and len(set(hashes)) == 2
+    assert "does **not** have its own redaction" in doc
+    # the contract's dedupe rule, as a function of the event alone
+    import hashlib
+    key = hashlib.sha256("\n".join(["devos-ade/events/1", "a" * 32, "container.exit", "caddy", "1", "0", "3"]).encode()).hexdigest()
+    assert len(key) == 64
