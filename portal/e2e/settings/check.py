@@ -932,23 +932,28 @@ def check_menus(page, failures, label):
     shots.mkdir(parents=True, exist_ok=True)
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(BASE + "/#settings/CODE_ENABLED")
-    page.wait_for_selector(".set-row[data-key]", timeout=20000)
-    rows = page.locator(".set-row[data-key]")
-    plain = page.locator(".set-row[data-key]:has(.set-value[data-value])").first
+    page.wait_for_selector(".set-row[data-key]:visible", timeout=20000)
+    plain = page.locator(".set-row[data-key]:visible").first
+    plain.scroll_into_view_if_needed()
+    page.wait_for_timeout(700)   # (smooth scrolling: the menu closes on a scroll)
     plain.click(button="right")
     page.wait_for_selector(".ctx-menu", timeout=3000)
     items = page.locator(".ctx-menu .ctx-item").all_inner_texts()
     for want in ("Copy name", "Copy setting key", "Copy value", "Copy link to this setting"):
         if not any(want in i for i in items):
             failures.append(f"{label}: the settings row menu has no {want!r}: {items}")
-    if page.locator('.ctx-menu .ctx-item[aria-disabled="true"]:has-text("Copy value")').count():
-        failures.append(f"{label}: Copy value is off on a plain row")
+    has_value = plain.locator(".set-value[data-value]:not([data-value=''])").count() == 1
+    off = page.locator('.ctx-menu .ctx-item[aria-disabled="true"]:has-text("Copy value")').count()
+    if bool(off) == has_value:
+        failures.append(f"{label}: Copy value is {'off' if off else 'on'} on a row whose plain value is {'shown' if has_value else 'blank or secret'}")
     page.locator('.ctx-menu .ctx-item:has-text("Copy setting key")').click()
     if page.locator(".ctx-menu").count():
         failures.append(f"{label}: the menu stayed open after an action")
     # a masked row (a key, a password): Copy value says why it is off
-    masked = page.locator(".set-row[data-key]:has(.set-value.masked)").first
+    masked = page.locator(".set-row[data-key]:visible:has(.set-value.masked)").first
     if masked.count():
+        masked.scroll_into_view_if_needed()
+        page.wait_for_timeout(700)
         masked.click(button="right")
         page.wait_for_selector(".ctx-menu", timeout=3000)
         if not page.locator('.ctx-menu .ctx-item[aria-disabled="true"]:has-text("Copy value")').count():
@@ -984,10 +989,12 @@ def check_menus(page, failures, label):
     page.emulate_media(color_scheme="light")
     page.set_viewport_size({"width": 1280, "height": 900})
     # a text field keeps the browser's own menu
-    page.goto(BASE + "/#settings")
-    page.wait_for_selector(".set-row[data-key]", timeout=20000)
-    fld = page.locator(".set-row input[type=text], .set-row input[type=number], .set-row select").first
-    if fld.count() and fld.is_visible():
+    page.goto(BASE + "/#settings/CODE_ENABLED")
+    page.wait_for_selector(".set-row[data-key]:visible", timeout=20000)
+    fld = page.locator(".set-row input[type=text]:visible, .set-row input[type=number]:visible, .set-row select:visible").first
+    if fld.count():
+        fld.scroll_into_view_if_needed()
+        page.wait_for_timeout(700)
         fld.click(button="right")
         if page.locator(".ctx-menu").count():
             failures.append(f"{label}: a settings field lost the browser's own menu")

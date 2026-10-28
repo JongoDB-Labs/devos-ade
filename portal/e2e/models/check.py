@@ -155,6 +155,8 @@ def menus(pw, result):
     page.goto(f"{BASE}/#modelbrowser", wait_until="domcontentloaded")
     page.wait_for_selector("#modelbrowser:not([hidden]) .mb-row", timeout=20000)
     row = page.locator('#modelbrowser .mb-row[data-id="amazon.nova-pro-v1:0"]')
+    row.scroll_into_view_if_needed()
+    page.wait_for_timeout(700)   # (smooth scrolling: the menu closes on a scroll)
     row.click(button="right")
     page.wait_for_selector(".ctx-menu", timeout=3000)
     labels = page.locator(".ctx-menu .ctx-item").all_inner_texts()
