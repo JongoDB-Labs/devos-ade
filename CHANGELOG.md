@@ -29,9 +29,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   read-only, drops every capability, runs as your user and is offline: it fetches nothing and loads only the snapshot
   DevOS ADE downloaded and checked. A model with code of its own (`custom_code`, a `.py` file, `auto_map` or
   `model_file` in its config) is refused, before the download and again on disk; `trust_remote_code` is never set.
-- **A runtime's key is never in a log DevOS ADE shows.** vLLM's log lists the arguments it started with, its key among
-  them; Settings' log, Activity and setup's report of a service that did not come up now show any runtime's key as
-  `[its API key]`.
+- **A runtime's key is never in a log DevOS ADE shows.** Should a runtime print its key (in the settings it lists at a
+  start, say), Settings' log, Activity and setup's report of a service that did not come up show it as `[its API key]`.
+  vLLM 0.32 does not print it.
 
 ## [0.43.0] - 2026-10-29
 

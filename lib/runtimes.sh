@@ -1165,8 +1165,8 @@ _rt_container_log() {
   if [ -n "$out" ]; then printf '%s\n' "$out"
   elif [ -s "$f" ]; then printf '(no container now: the log of its last start, which failed)\n'; tail -n "$2" "$f"; fi
 }
-# rt_key_redact — a filter: every runtime's API key in what passes through comes out as [its API key] (vLLM's log lists
-# the arguments it was started with, its key among them; a log is shown in Settings, Activity and setup's report)
+# rt_key_redact — a filter: every runtime's API key in what passes through comes out as [its API key] (should a runtime
+# print its key, in the settings it lists at a start say; a log is shown in Settings, Activity and setup's report)
 rt_key_redact() {
   local id k e=''
   for id in $RUNTIME_IDS; do k="$(rt_api_key "$id")"; [ -z "$k" ] || e="$e${e:+;}s/$k/[its API key]/g"; done

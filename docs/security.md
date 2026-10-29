@@ -619,18 +619,19 @@ DevOS ADE's own Ollama, llama.cpp, LM Studio or vLLM: Runtimes, below).
   points at a snapshot it downloaded and checked, from its `hub/` folder mounted read-only, and fetches nothing. vLLM
   checks no Host either, so it requires an **API key** for its API (made at install as llama.cpp's: 32 random bytes in
   `.state/runtimes/vllm/etc`, mode 600, folders mode 700); it reads the key from `etc/serve.yaml` (mode 600, mounted
-  read-only; never an argument), and the model gateway's generated config carries it. vLLM's log lists the arguments it
-  started with, the key among them, so every log DevOS ADE shows (Settings, Activity, setup's report of a service that
-  did not come up) has any runtime's key replaced by `[its API key]`. Its `/health` takes no key and says only whether
-  it is up. **No code of the model's own:** `trust_remote_code` is never set. A repo tagged `custom_code` or `mlx`, or
-  with no `config.json` or no top-level `.safetensors`, is refused before anything is fetched; the download takes only
-  its top-level `.safetensors`, `.json`, `.txt` and `.jinja` files and `tokenizer.model` (never a pickle such as
-  `pytorch_model.bin`, nor a folder of other weights), from the commit checked, each checked against the hash Hugging
-  Face lists; and a snapshot with a `.py` file, or a `config.json` that names code (`auto_map`, `model_file`) or cannot
-  be read, is deleted and never served. **What is left:** safetensors weights are data, not code, but a flaw in the code
-  that reads a model (vLLM's, PyTorch's, the tokenizer's) could still be reached by a crafted one, and could run code it
-  writes in `/tmp`; the container's isolation above bounds what that code could reach. Remove deletes the model's folder (stopping vLLM first when it was the one
-  served); Uninstall deletes its folder, its key, every model in it and its image.
+  read-only; never an argument), and the model gateway's generated config carries it. vLLM 0.32 does not print the key;
+  should a later one (in the settings it lists at a start, say), every log DevOS ADE shows (Settings, Activity, setup's
+  report of a service that did not come up) has any runtime's key replaced by `[its API key]`. Its `/health` takes no
+  key and says only whether it is up. **No code of the model's own:** `trust_remote_code` is never set. A repo tagged
+  `custom_code` or `mlx`, or with no `config.json` or no top-level `.safetensors`, is refused before anything is
+  fetched; the download takes only its top-level `.safetensors`, `.json`, `.txt` and `.jinja` files and
+  `tokenizer.model` (never a pickle such as `pytorch_model.bin`, nor a folder of other weights), from the commit
+  checked, each checked against the hash Hugging Face lists; and a snapshot with a `.py` file, or a `config.json` that
+  names code (`auto_map`, `model_file`) or cannot be read, is deleted and never served. **What is left:** safetensors
+  weights are data, not code, but a flaw in the code that reads a model (vLLM's, PyTorch's, the tokenizer's) could still
+  be reached by a crafted one, and could run code it writes in `/tmp`; the container's isolation above bounds what that
+  code could reach. Remove deletes the model's folder (stopping vLLM first when it was the one served); Uninstall
+  deletes its folder, its key, every model in it and its image.
 - **Model servers** (any OpenAI-compatible address). The address is validated (no `user:password@`, no query), the API
   key is read from the terminal or Settings, handed to curl on stdin for the probe and written only as that model's
   `api_key` in the gateway's generated config (readable by that config's readers on this computer). Plain http to a public
