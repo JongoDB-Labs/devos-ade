@@ -520,7 +520,8 @@
         bar.append(b);
       }
       c.append(bar);
-      showGroup(body, names[0], bar);
+      body.dataset.sec = s.id;
+      showGroup(body, names.includes(openTab[s.id]) ? openTab[s.id] : names[0], bar);   // (a redraw keeps the tab you were on)
     }
     c.append(body);
     if (fold) c.append(fold);
@@ -544,10 +545,13 @@
   }
 
   // showGroup BODY NAME [BAR] — the tab NAME of a tabbed section (Models & providers), its chip pressed: the other groups'
-  // blocks marked set-tab-off (hidden unless a search looks through them all), whatever the groups are called
+  // blocks marked set-tab-off (hidden unless a search looks through them all), whatever the groups are called. The tab is
+  // remembered per section (openTab), so a redraw — the window crossing the phone width, a change saved — keeps it.
+  const openTab = {};
   function showGroup(body, name, bar) {
     if (!body || !body.classList.contains("set-tabbed")) return;
     body.dataset.group = name;
+    if (body.dataset.sec) openTab[body.dataset.sec] = name;
     for (const ch of body.children) ch.classList.toggle("set-tab-off", ch.dataset.group !== name);
     bar = bar || (body.closest(".set-card") && body.closest(".set-card").querySelector(".set-minnav"));
     if (bar) for (const b of bar.querySelectorAll(".chip")) b.setAttribute("aria-pressed", String(b.dataset.group === name));
