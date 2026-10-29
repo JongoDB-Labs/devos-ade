@@ -1975,8 +1975,9 @@ unfinished part whenever it stops: each file goes into a part of its own that a 
 continues from, and is checked against the SHA-256 (or git hash) Hugging Face lists for it before it is used. `./stack
 local-models uninstall [--models]` removes it all. Everywhere else it needs a runtime on this computer: **Docker Model Runner** (Docker Desktop 4.71 or newer) first (Docker Desktop: Settings › AI, or `docker desktop
 enable model-runner --tcp 12434`; Linux: `docker-model-plugin` and `docker model install-runner`), **Ollama** second
-(DevOS ADE's own, from **Runtimes** below, or one of yours), **llama.cpp** third (DevOS ADE's own, from **Runtimes**).
-**Downloads go to** (`LOCAL_RUNTIME`) picks one instead of that order: MLX, Docker Model Runner, Ollama or llama.cpp. With none running the section says so and `./stack local-models enable`
+(DevOS ADE's own, from **Runtimes** below, or one of yours), **llama.cpp** third and **LM Studio** fourth (DevOS ADE's
+own, from **Runtimes**). **Downloads go to** (`LOCAL_RUNTIME`) picks one instead of that order: MLX, Docker Model
+Runner, Ollama, llama.cpp or LM Studio. With none running the section says so and `./stack local-models enable`
 switches Docker's on after asking. Commands:
 `./stack local-models status` (with the download's progress, speed and time left), `pull ORG/REPO QUANT`, `pause`, `resume`,
 `cancel`, `rm ORG/REPO QUANT`, `enable`. With Docker Model Runner or Ollama, Pause stops the runtime's pull (Ollama continues
@@ -1984,7 +1985,7 @@ it on Resume) and Cancel leaves its unfinished part to the runtime. A gated mode
 token (Settings, optional; never in a URL or log). The runner has no login of its own: keep it and Ollama off the
 network ([docs/security.md](docs/security.md#local-models)).
 
-**Runtimes.** DevOS ADE installs, runs and watches **Ollama** and **llama.cpp** itself, like its own containers: Settings › Models &
+**Runtimes.** DevOS ADE installs, runs and watches **Ollama**, **llama.cpp** and **LM Studio** itself, like its own containers: Settings › Models &
 providers › Local models › **Runtimes** shows each runtime's state (Running, Stopped, Not installed, or **Yours** for an
 Ollama you run yourself), its version, its address, the models it has loaded (and how much of them is on the GPU), how
 many times it ended and was started again, and its log. **Install** (the portal password) downloads the version this
@@ -1997,7 +1998,7 @@ pins a newer Ollama, **Update to …**; **Uninstall** removes it with its models
 (ready, how many models are loaded), and Activity says when it ended and was started again, stopped answering or failed
 to install. An Ollama that already answers on 11434 and is not DevOS ADE's (the Ollama app, or one you started) is never
 installed over, stopped or removed. The same from a terminal: `./stack runtimes [status]`, `install ollama`, `start
-ollama`, `stop ollama`, `uninstall ollama`, `cancel`, `logs ollama [N]` (and the same with `llamacpp`).
+ollama`, `stop ollama`, `uninstall ollama`, `cancel`, `logs ollama [N]` (and the same with `llamacpp` and `lmstudio`).
 
 **llama.cpp** (`llama-server` in router mode) is the plainest of them: it serves the GGUF files you download, nothing
 else. On a Mac it is llama.cpp's own build from github.com/ggml-org/llama.cpp (the release this one pins, checked
@@ -2009,6 +2010,16 @@ kept in `.state/runtimes/llamacpp/etc`, mode 600) that the model gateway sends, 
 pinned to the commit it checked and each file checked against its SHA-256, into the stack's folder; llama.cpp is started
 again to read it (its loaded models unload). At most 2 models stay loaded at once, each with a context of up to 32k.
 Remove deletes the model's files (the repo's whole folder once no other quantization of it is left).
+
+**LM Studio** runs on Apple-silicon Macs (it has no Intel-Mac build; on Linux llama.cpp and Ollama serve the same
+models). It is not open source: Install says so and names its terms (lmstudio.ai/app-terms: personal use, or your
+organization's internal use), which installing it accepts. DevOS ADE downloads LM Studio's daemon (`llmster`, the
+version this release pins, about 615 MB and about 2 GB unpacked) from lmstudio.ai, checks it against the SHA-512 this
+release pins, and lets LM Studio's own installer put it in the stack's folder with a home of its own, so the LM Studio
+app and your `~/.lmstudio` are left alone; its self-updates are off. It runs as a launchd agent of this stack with its
+server on 127.0.0.1:11439 only. A download with **Downloads go to: LM Studio** is fetched and checked as for llama.cpp,
+then given to LM Studio as a link (`lms import --symbolic-link`, never a second copy), and the model gateway asks for it
+by the name LM Studio gives it; it loads on its first request. Remove unloads it and deletes its files.
 
 ## Remote access
 

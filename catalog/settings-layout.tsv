@@ -47,7 +47,7 @@ OPENROUTER_MAX_MODELS	providers	more	OPENROUTER_API_KEY	At most this many OpenRo
 OPENROUTER_INCLUDE_ALIASES	providers	more	OPENROUTER_API_KEY	Also offer OpenRouter's …-latest alias models.
 BEDROCK_MODELS	providers	more	AWS_ACCESS_KEY_ID	Extra Bedrock models beyond the catalog, added from Browse models.
 LOCAL_MODELS	providers	more	-	Models downloaded from Hugging Face and served on this computer, from the Local models section.
-LOCAL_RUNTIME	providers	more	-	Where local-model downloads go (auto, mlx, dmr, ollama or llamacpp): Local models › Runtimes picks it.
+LOCAL_RUNTIME	providers	more	-	Where local-model downloads go (auto, mlx, dmr, ollama, llamacpp or lmstudio): Local models › Runtimes picks it.
 MODEL_SERVERS	providers	more	-	Model servers, as text: the Local models form above adds and removes them; this is the same list for ./stack config.
 MODEL_SERVER_KEYS	providers	more	-	Model servers' API keys (secret): the form above sets them.
 MODEL_SERVER_MODELS	providers	more	-	Which of each server's models are on: the ticks in the form above.

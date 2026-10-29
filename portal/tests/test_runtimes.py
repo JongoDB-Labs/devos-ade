@@ -54,7 +54,7 @@ def test_the_runtimes_file_is_read_field_by_field(tmp_path):
     _rt(tmp_path, os="windows; rm", one={"state": "rm -rf", "kind": "<b>", "address": "0.0.0.0:11434", "version": "1.0 && x", "managed": "yes",
                                          "loaded": [{"name": "../../etc"}, {"name": "ok:1b", "bytes": -1}], "restarts": True, "last_exit": "9"},
         job={"id": "evil", "op": "rm", "state": "running", "message": "x" * 900, "done_bytes": "5"},
-        events=[{"at": 5, "id": "ollama", "kind": "wat", "text": "x"}, {"at": "5", "id": "ollama", "kind": "up"}, {"at": 7, "id": "lmstudio", "kind": "up"}])
+        events=[{"at": 5, "id": "ollama", "kind": "wat", "text": "x"}, {"at": "5", "id": "ollama", "kind": "up"}, {"at": 7, "id": "localai", "kind": "up"}])
     d = lm.read_runtimes(tmp_path)
     r = d["runtimes"][0]
     assert d["os"] == "other" and r["state"] == "unsupported" and r["kind"] == "none" and r["address"] == "" and r["version"] == ""
@@ -130,6 +130,29 @@ def test_llamacpp_is_read_beside_ollama_with_its_linux_address_and_named_everywh
     assert s["runtime"]["kind"] == "llamacpp" and s["runtime"]["llamacpp"] == "ready" and s["installed"][0]["runtime"] == "llamacpp"
 
 
+def test_lmstudio_is_read_beside_the_others_named_everywhere_and_a_download_choice(tmp_path):
+    ls = {"id": "lmstudio", "name": "LM Studio", "state": "running", "managed": True, "kind": "agent", "version": "0.0.25-1", "pinned": "0.0.25-1",
+          "address": "127.0.0.1:11439", "loaded": [{"name": "org/M-GGUF", "bytes": 0, "gpu_bytes": 0}],
+          "memory_bytes": 0, "gpu_bytes": 0, "restarts": 0, "last_exit": None, "size": "about 615 MB (about 2 GB once unpacked)", "why_not": ""}
+    _rt(tmp_path)
+    d = json.loads((tmp_path / "runtimes.json").read_text())
+    d["runtimes"].append(ls)
+    d["events"].append({"at": d["at"] - 30, "id": "lmstudio", "kind": "installed", "text": "LM Studio 0.0.25-1 was installed and runs on 127.0.0.1:11439"})
+    (tmp_path / "runtimes.json").write_text(json.dumps(d))
+    r = lm.read_runtimes(tmp_path)
+    x = r["runtimes"][-1]
+    assert (x["id"], x["name"], x["version"], x["address"], x["loaded"][0]["name"]) == ("lmstudio", "LM Studio", "0.0.25-1", "127.0.0.1:11439", "org/M-GGUF")
+    assert r["events"][-1]["id"] == "lmstudio" and lm.read_runtime_logs(tmp_path, "lmstudio") == {"text": "", "at": None}
+    assert st.write_runtime_action(tmp_path, "install", "lmstudio", PW, now=1)
+    assert activity.runtime_items(tmp_path, d["at"])[0]["title"].startswith("LM Studio")
+    assert st.VALIDATORS["local_models"]("lmstudio:org/M-GGUF:Q4_K_M,llamacpp:org/M-GGUF:Q4_K_M") is None
+    assert st.VALIDATORS["local_runtime"]("lmstudio") is None and st.VALIDATORS["local_runtime"]("lm-studio") is not None
+    (tmp_path / lm.STATUS_FILE).write_text(json.dumps({"at": int(time.time()), "runtime": {"kind": "lmstudio", "lmstudio": "ready"},
+        "installed": [{"runtime": "lmstudio", "id": "org/M-GGUF:Q4_K_M", "repo": "org/M-GGUF", "quant": "Q4_K_M", "bytes": 5}]}))
+    s = lm.read_status(tmp_path)
+    assert s["runtime"]["kind"] == "lmstudio" and s["runtime"]["lmstudio"] == "ready" and s["installed"][0]["runtime"] == "lmstudio"
+
+
 def _clear(rq):
     for f in rq.glob("act-*.json"):
         f.unlink()
@@ -175,6 +198,10 @@ def test_nothing_is_installed_over_an_ollama_of_yours_or_while_a_job_runs(app):
     assert r.status_code == 409 and "already runs on 127.0.0.1:11434" in r.json()["error"]
     _rt(sd, one={"id": "llamacpp", "name": "llama.cpp", "state": "external", "managed": False})
     assert "llama.cpp cannot be installed here: something that is not DevOS ADE's already answers on 127.0.0.1:11438" in _pw(c, "install", "llamacpp").json()["error"]
+    _rt(sd, one={"id": "lmstudio", "name": "LM Studio", "state": "external", "managed": False})
+    assert "LM Studio cannot be installed here: something that is not DevOS ADE's already answers on 127.0.0.1:11439" in _pw(c, "install", "lmstudio").json()["error"]
+    _rt(sd, one={"id": "lmstudio", "name": "LM Studio", "state": "unsupported", "managed": False, "why_not": "LM Studio has no build for Intel Macs"})
+    assert "LM Studio cannot be installed here: LM Studio has no build for Intel Macs." in _pw(c, "install", "lmstudio").json()["error"]
     _rt(sd, one={"state": "unsupported", "managed": False, "why_not": "DevOS ADE runs it on macOS and Linux only"})
     assert "macOS and Linux only" in _pw(c, "install").json()["error"]
     _rt(sd, one={"state": "installing"}, job={"id": "ollama", "op": "install", "state": "running", "done_bytes": 5, "total_bytes": 10, "message": "Downloading"})
@@ -202,7 +229,7 @@ def test_stop_cancel_and_logs_need_no_password_and_each_only_when_it_means_somet
     assert _free(c, "cancel").status_code == 202 and _bodies(rq)[0]["op"] == "cancel"
     for bad in ("install", "uninstall", "", None, "stop; rm"):
         assert _free(c, bad).status_code == 400
-    assert _free(c, "stop", rid="lmstudio").status_code == 400
+    assert _free(c, "stop", rid="localai").status_code == 400
     assert c.post("/api/local-models/runtime-stop", headers=H, content="[1]").status_code == 400
 
 

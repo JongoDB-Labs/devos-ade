@@ -11,3 +11,10 @@ ARG LLAMACPP_VERSION=0.8.0
 ARG LLAMACPP_BUILD=b11960
 ARG LLAMACPP_SHA256_MACOS_ARM64=58e5a5e1d7c2bf66cedd9c29e0323f3e570660a70a1e2156d32eed08f4cc1e3c
 ARG LLAMACPP_SHA256_MACOS_X64=d1e6c9ddcaed9a3b1bb8f3d946bdb3481c7b919357a4029dcb747762397f1da5
+
+# LM Studio's daemon (llmster) for Apple-silicon Macs, from llmster.lmstudio.ai (https://lmstudio.ai/install.sh names the
+# version): its SHA-512 is the .sha512 file published beside it, checked against the archive itself, and its size (the
+# server does not say it). LM Studio is not open source (lmstudio.ai/app-terms); it has no Intel Mac build. Bumped by hand.
+ARG LMSTUDIO_VERSION=0.0.25-1
+ARG LMSTUDIO_SHA512_MACOS_ARM64=edf1fb01f49b6ea101b3bd7027b4516eb73261d7b0df871c4286fac7011eb4f12633f7f03c9c6a66322659231c248989b7d235528b41bd2f30d87ce085c13b32
+ARG LMSTUDIO_BYTES_MACOS_ARM64=615370329

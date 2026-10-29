@@ -975,11 +975,12 @@ def check_downloads(page, failures, label):
 
 
 def check_runtimes(page, failures, label):
-    """The runtimes DevOS ADE installs and runs (JON-829, Ollama and llama.cpp): Install asks for the password and says what it downloads;
+    """The runtimes DevOS ADE installs and runs (JON-829, Ollama, llama.cpp and LM Studio): Install asks for the password and says what it downloads;
     its progress, with Cancel (no password); a running one says what it has loaded and what it uses, Stop and Log with no
     password, Start and Uninstall with it; an Ollama of yours has no button that changes it; Update when this release pins
     another version; "Downloads go to" changes LOCAL_RUNTIME like any setting; llama.cpp beside it, its Install saying where
-    it comes from and what reaches it, a downloads choice once it is DevOS ADE's; nothing wider than a phone."""
+    it comes from and what reaches it, a downloads choice once it is DevOS ADE's; LM Studio's naming its terms, why it does not
+    run where it does not; nothing wider than a phone."""
     pw, gb = "correct horse", 1024 ** 3
     base = {"id": "ollama", "name": "Ollama", "state": "not-installed", "managed": False, "kind": "agent", "version": "", "pinned": "0.40.11",
             "address": "127.0.0.1:11434", "loaded": [], "memory": 0, "gpu_memory": 0, "restarts": None, "last_exit": None, "size": "about 180 MB", "why_not": ""}
@@ -1110,6 +1111,40 @@ def check_runtimes(page, failures, label):
             failures.append(f"{label}: llama.cpp's container is said to be on 127.0.0.1, or a size it does not know is shown: {txt!r}")
         if not page.locator("#lm-rt-choice option[value=llamacpp]").count():
             failures.append(f"{label}: Downloads go to does not offer DevOS ADE's llama.cpp")
+        # LM Studio: its Install says it is not open source and names its terms, its SHA-512 and no key (Escape: nothing sent)
+        ls = {**base, "id": "lmstudio", "name": "LM Studio", "pinned": "0.0.25-1", "address": "127.0.0.1:11439",
+              "size": "about 615 MB (about 2 GB once unpacked)"}
+        open_rt(running, more=[ls])
+        page.wait_for_selector("#lm-rt-lmstudio[data-state=not-installed]", timeout=10000)
+        if "lmstudio.ai/app-terms" not in page.inner_text("#lm-rt-lmstudio"):
+            failures.append(f"{label}: LM Studio's row does not name its terms before Install: {page.inner_text('#lm-rt-lmstudio')!r}")
+        if page.locator("#lm-rt-choice option[value=lmstudio]").count():
+            failures.append(f"{label}: Downloads go to offers an LM Studio that is not installed")
+        page.click("#lm-rt-lmstudio [data-act=rt-install]")
+        text = password(ok=False)
+        if not all(w in text for w in ("615 MB", "from lmstudio.ai", "SHA-512", "127.0.0.1:11439", "not open source", "lmstudio.ai/app-terms")) \
+                or "key of its own" in text:
+            failures.append(f"{label}: LM Studio's Install dialog does not say what it does: {text!r}")
+        if [p["op"] for p in RT["posts"]] != ["install", "start"]:
+            failures.append(f"{label}: a dismissed LM Studio Install sent something: {RT['posts']}")
+        # where it does not run (Linux, an Intel Mac): why, and no Install
+        open_rt(running, more=[{**ls, "state": "unsupported", "kind": "none",
+                                "why_not": "DevOS ADE runs LM Studio on Apple-silicon Macs (here, llama.cpp and Ollama serve the same models)"}])
+        page.wait_for_selector("#lm-rt-lmstudio[data-state=unsupported]", timeout=10000)
+        if "Apple-silicon Macs" not in page.inner_text("#lm-rt-lmstudio") or page.locator("#lm-rt-lmstudio [data-act=rt-install]").count():
+            failures.append(f"{label}: an LM Studio that does not run here does not say why, or offers Install: {page.inner_text('#lm-rt-lmstudio')!r}")
+        # DevOS ADE's own, running: what it has loaded (no size: it does not say), and a downloads choice
+        open_rt(running, more=[{**ls, "state": "running", "managed": True, "kind": "agent", "version": "0.0.25-1",
+                                "loaded": [{"name": "org/M-GGUF", "bytes": 0, "gpu_bytes": 0}]}])
+        page.wait_for_selector("#lm-rt-lmstudio[data-state=running]", timeout=10000)
+        txt = page.inner_text("#lm-rt-lmstudio")
+        for w in ("LM Studio", "0.0.25-1", "127.0.0.1:11439", "org/M-GGUF", "launchd", "127.0.0.1 only"):
+            if w not in txt:
+                failures.append(f"{label}: a running LM Studio does not say {w!r}: {txt!r}")
+        if "(?)" in txt or "This release pins" in txt:
+            failures.append(f"{label}: a running LM Studio shows a size it does not know, or an update it does not have: {txt!r}")
+        if not page.locator("#lm-rt-choice option[value=lmstudio]").count():
+            failures.append(f"{label}: Downloads go to does not offer DevOS ADE's LM Studio")
         # a phone's width: nothing wider than the screen
         page.set_viewport_size({"width": 390, "height": 800})
         page.wait_for_timeout(200)

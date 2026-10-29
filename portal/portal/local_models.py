@@ -320,12 +320,12 @@ def read_status(status_dir: Path, now: float | None = None) -> dict:
     d = hostfiles.read_json(status_dir / STATUS_FILE, 256 * 1024)
     at = _int(d.get("at"))
     rt = d.get("runtime") if isinstance(d.get("runtime"), dict) else {}
-    kind = rt.get("kind") if rt.get("kind") in ("mlx", "dmr", "ollama", "llamacpp", "none") else "none"
+    kind = rt.get("kind") if rt.get("kind") in ("mlx", "dmr", "ollama", "llamacpp", "lmstudio", "none") else "none"
     installed = []
     for i in (d.get("installed") if isinstance(d.get("installed"), list) else [])[:200]:
         if not isinstance(i, dict) or not REPO.fullmatch(i.get("repo") or "") or not QUANT.fullmatch(i.get("quant") or ""):
             continue
-        installed.append({"runtime": i.get("runtime") if i.get("runtime") in ("mlx", "dmr", "ollama", "llamacpp") else "", "id": _text(i.get("id"), 160),
+        installed.append({"runtime": i.get("runtime") if i.get("runtime") in ("mlx", "dmr", "ollama", "llamacpp", "lmstudio") else "", "id": _text(i.get("id"), 160),
                           "name": _text(i.get("name"), 160), "repo": i["repo"], "quant": i["quant"], "bytes": _int(i.get("bytes")) or 0,
                           "license": _text(i.get("license"), 40) if LICENSE.fullmatch(_text(i.get("license"), 40) or "-") else "",
                           "tools": {"1": "yes", "0": "no"}.get(str(i.get("tools")), "unknown"),
@@ -350,7 +350,7 @@ def read_status(status_dir: Path, now: float | None = None) -> dict:
     return {"known": at is not None, "at": at, "servers": servers, "result": clean_result(d.get("result")), "stale": at is None or now - at > MAX_AGE_S,
             "runtime": {"kind": kind, "how": _text(rt.get("how"), 400), "command": "./stack local-models enable",
                         "dmr": _text(rt.get("dmr"), 20), "ollama": _text(rt.get("ollama"), 20), "mlx": _text(rt.get("mlx"), 20),
-                        "llamacpp": _text(rt.get("llamacpp"), 20)},
+                        "llamacpp": _text(rt.get("llamacpp"), 20), "lmstudio": _text(rt.get("lmstudio"), 20)},
             "gpu": _text(d.get("gpu"), 40) or "none", "memory": _int(d.get("memory_bytes")) or 0,
             "disk": _int(d.get("disk_bytes")) or 0, "installed": installed,
             "job": _clean_job(d.get("job") if isinstance(d.get("job"), dict) else {})}
@@ -358,8 +358,9 @@ def read_status(status_dir: Path, now: float | None = None) -> dict:
 
 # --- the model runtimes DevOS ADE installs and runs itself (lib/runtimes.sh: status/runtimes.json) ---
 RUNTIMES_FILE = "runtimes.json"
-RUNTIME_IDS = ("ollama", "llamacpp")
-RUNTIME_NAMES = {"ollama": "Ollama", "llamacpp": "llama.cpp"}
+RUNTIME_IDS = ("ollama", "llamacpp", "lmstudio")
+RUNTIME_NAMES = {"ollama": "Ollama", "llamacpp": "llama.cpp", "lmstudio": "LM Studio"}
+RUNTIME_PORTS = {"ollama": 11434, "llamacpp": 11438, "lmstudio": 11439}   # (lib/runtimes.sh rt_port)
 RT_STATES = ("installing", "running", "starting", "stopped", "not-installed", "external", "unsupported")
 RT_JOB_OPS = ("install", "start", "stop", "uninstall")
 RT_JOB_STATES = ("idle", "running", "done", "failed", "cancelled")

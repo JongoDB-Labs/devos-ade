@@ -383,7 +383,7 @@ test_local_runtime_sends_downloads_to_the_one_named() {
   assert_eq "$(local_runtime)" none
   assert_contains "$(local_how_text)" "Downloads go to Ollama (Settings › Local models › Runtimes), which is not running: install it"
   _sv_local_runtime "" && _sv_local_runtime auto && _sv_local_runtime ollama
-  ! _sv_local_runtime lmstudio 2>/dev/null && ! _sv_local_runtime 'ollama;x' 2>/dev/null
+  ! _sv_local_runtime localai 2>/dev/null && ! _sv_local_runtime 'ollama;x' 2>/dev/null
 }
 
 # --- the update helper's requests ---

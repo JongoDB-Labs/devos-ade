@@ -561,12 +561,12 @@ def _bedrock_models(v, remote_on=False):
 
 
 # A registered local model (lib/local_models.sh valid_local_entry): "<runtime>:<id>", at most 24 in a list.
-_LOCAL_ENTRY = re.compile(r"(dmr|ollama|mlx|llamacpp):[A-Za-z0-9][A-Za-z0-9._:/-]{0,125}")
+_LOCAL_ENTRY = re.compile(r"(dmr|ollama|mlx|llamacpp|lmstudio):[A-Za-z0-9][A-Za-z0-9._:/-]{0,125}")
 
 
 def _local_models(v, remote_on=False):
     ok = v == "" or (len(v) <= MAX_VALUE and len(v.split(",")) <= 24 and all(_LOCAL_ENTRY.fullmatch(m) for m in v.split(",")))
-    return None if ok else "must be a comma list of dmr:, mlx:, ollama: or llamacpp:<id> (letters, digits, . _ : / and -; at most 24)"
+    return None if ok else "must be a comma list of dmr:, mlx:, ollama:, llamacpp: or lmstudio:<id> (letters, digits, . _ : / and -; at most 24)"
 
 
 _MSRV_URL = r"https?://(?:[A-Za-z0-9._-]+|\[[0-9A-Fa-f:]+\])(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~/-]*)?(?:;trust)?"
@@ -621,7 +621,7 @@ VALIDATORS = {
     "egress": _one_of("internet", "host", "off", "", msg="must be internet, host or off (blank = internet)"),
     "hour": _hour,
     "stt_provider": _one_of("bedrock", "openai", "groq", "", msg="must be bedrock, openai, groq or blank (the browser)"),
-    "local_runtime": _one_of("", "auto", "mlx", "dmr", "ollama", "llamacpp", msg="must be auto, mlx, dmr, ollama or llamacpp (blank = auto)"),
+    "local_runtime": _one_of("", "auto", "mlx", "dmr", "ollama", "llamacpp", "lmstudio", msg="must be auto, mlx, dmr, ollama, llamacpp or lmstudio (blank = auto)"),
     "stt_key": _stt_key, "stt_model": _stt_model, "or_key": _or_key, "or_mode": _or_mode, "int_1_5000": _int_1_5000,
     "xl_key": _xl_key, "xl_models": _xl_models,
     "ws_backend": _one_of("", "auto", "off", "agentcore", "tavily", "brave", "perplexity", "searxng", "builtin",
@@ -890,7 +890,7 @@ def write_local_stop_action(request_dir: Path, op: str, now: float | None = None
     return nonce
 
 
-RUNTIME_IDS = ("ollama", "llamacpp")   # (lib/runtimes.sh RUNTIME_IDS)
+RUNTIME_IDS = ("ollama", "llamacpp", "lmstudio")   # (lib/runtimes.sh RUNTIME_IDS)
 RUNTIME_OPS_PW = ("install", "start", "uninstall")   # with the password (local-runtime)
 RUNTIME_OPS_FREE = ("stop", "cancel", "logs")        # without (local-runtime-stop): a stop, or a read of its log
 

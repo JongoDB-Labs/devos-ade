@@ -504,8 +504,8 @@ confirmation.
 ## Local models
 
 Local models (`./stack local-models`, Settings › Models & providers › Local models) download GGUF files from Hugging
-Face and run them in Docker Model Runner, Ollama or llama.cpp on the computer (an Ollama of yours, or DevOS ADE's own
-Ollama or llama.cpp: Runtimes, below).
+Face and run them in Docker Model Runner, Ollama, llama.cpp or LM Studio on the computer (an Ollama of yours, or DevOS
+ADE's own Ollama, llama.cpp or LM Studio: Runtimes, below).
 
 - **Only Hugging Face.** Repo and quantization names are validated (`org/name`, a quant tag) in the portal, the update
   helper and the CLI before anything runs; a URL or path is refused. The portal works out a download's size, license and
@@ -580,6 +580,25 @@ Ollama or llama.cpp: Runtimes, below).
   downloader) takes only that quantization's `.gguf` files from the commit it checked (never a vision projector), each
   checked against the SHA-256 Hugging Face lists before it is used; a split model whose parts are not all listed is
   refused.
+- **LM Studio** (`lib/runtimes.sh`, the third runtime DevOS ADE installs; Apple-silicon Macs only). It is not open source:
+  its archive (`<version>-darwin-arm64.full.tar.gz` of the version in `catalog/runtimes.pins`) comes from
+  llmster.lmstudio.ai over https only and is checked against the SHA-512 pinned beside it before anything is unpacked.
+  It is a bundle of about 40,000 files (Node, Python and llama.cpp backends), so its links may point up and back into
+  its own tree; one that points out of it, an absolute path, a `..` in a name, or anything but files, folders and links
+  refuses the whole archive. LM Studio's own installer (`llmster bootstrap`) then runs once, as the user, with the
+  stack's `.state/runtimes/lmstudio/home` (mode 700) as its home, so it never writes to your `~/.lmstudio` or the LM
+  Studio app's settings; what it starts is stopped, and from then on a launchd user agent of this stack (mode-600
+  plist, as the user) runs `lib/lmstudio-agent.sh`, which starts llmster from the place its installer recorded (only
+  inside that home; resolved at install, so the agent needs nothing but bash) and its server with `--bind 127.0.0.1`
+  on 11439, without CORS. `lms` is always pointed at this instance's own server file (`LMS_API_SERVER_INFO_PATH`), never
+  at an LM Studio app on the same Mac. Its updates are off (`LMS_DAEMON_DISABLE_UPDATES`): it runs the version pinned.
+  **Its API has no key:** LM Studio can make one only in its app, not from its command line, and it does not check the
+  Host a request names, so, like MLX's server, a web page that points a name at this computer (DNS rebinding) could
+  send it requests while it runs. Without CORS such a page cannot read the answers in a browser that enforces it, but
+  it could make it load a model it has. Keep it stopped when you do not use it, and remove LM Studio if that matters
+  more to you than having it. It is given only the files downloaded for it (each checked as for llama.cpp, from the
+  commit checked), by link: `lms import --symbolic-link`, each path a snapshot of its own `hub/` folder checked to
+  contain no `..`. Uninstall stops it and deletes its folder with every model in it.
 - **Model servers** (any OpenAI-compatible address). The address is validated (no `user:password@`, no query), the API
   key is read from the terminal or Settings, handed to curl on stdin for the probe and written only as that model's
   `api_key` in the gateway's generated config (readable by that config's readers on this computer). Plain http to a public

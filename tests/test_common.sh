@@ -121,6 +121,13 @@ test_shell_regexes_never_count_above_255() {
   ! [[ x =~ ^x{1,400}$ ]] || [ "$(uname -s)" != Darwin ]
 }
 
+# macOS's bash 3.2 ends "$(case X in a) …" at the pattern's ")": what runs is "case X in a", and the rest is text
+test_no_case_inside_a_command_substitution() {
+  local hits
+  hits="$(grep -nE '\$\(case ' "$T_ROOT"/lib/*.sh "$T_ROOT/stack" "$T_ROOT/setup.sh" "$T_ROOT"/bin/* "$T_ROOT"/tests/e2e/*.sh 2>/dev/null || true)"
+  assert_eq "$hits" ""
+}
+
 test_every_test_runs_with_a_home_of_its_own() {
   # tests/run.sh: setup (the Code page's ~/bedrock-now-workspace) or devos-claude (~/.claude-bedrock) run by a test
   # must never reach your real home folder

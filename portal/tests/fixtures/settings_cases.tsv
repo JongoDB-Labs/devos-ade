@@ -273,7 +273,8 @@ local_models	0	bad	hf.co/a/b:q4
 local_models	0	bad	dmr:
 local_models	0	bad	dmr:a b
 local_models	0	bad	dmr:a,,ollama:b
-local_models	0	bad	lmstudio:a
+local_models	0	ok	lmstudio:a
+local_models	0	bad	localai:a
 hf_token	0	ok
 hf_token	0	ok	hf_xxxxxxxxxxxxxxxxxxxxxxxx
 hf_token	0	bad	abcdefghijklmnopqrstuvwxyz0123
@@ -296,4 +297,5 @@ local_runtime	0	ok	auto
 local_runtime	0	ok	ollama
 local_runtime	0	ok	llamacpp
 local_runtime	0	bad	llama.cpp
-local_runtime	0	bad	lmstudio
+local_runtime	0	ok	lmstudio
+local_runtime	0	bad	lm-studio
