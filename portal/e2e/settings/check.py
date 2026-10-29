@@ -1149,7 +1149,7 @@ def check_runtimes(page, failures, label):
             failures.append(f"{label}: Downloads go to does not offer DevOS ADE's LM Studio")
         # vLLM (Linux): its Install says it is an image only the model gateway reaches, with a key of its own (Escape: nothing sent)
         vl = {**base, "id": "vllm", "name": "vLLM", "kind": "container", "pinned": "0.32.0", "address": "vllm:8000 (the model gateway's network only)",
-              "size": "about 1.7 GB (its image)"}
+              "size": "about 1.7 GB to download, 7.4 GB once unpacked (its image)"}
         open_rt(running, more=[vl])
         page.wait_for_selector("#lm-rt-vllm[data-state=not-installed]", timeout=10000)
         if page.locator("#lm-rt-choice option[value=vllm]").count():

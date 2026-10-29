@@ -303,7 +303,7 @@ def test_vllm_is_read_with_its_network_address_and_home_says_when_it_waits_for_a
     s = replace(settings, status_dir=tmp_path)
     vl = {"id": "vllm", "name": "vLLM", "state": "waiting", "managed": True, "kind": "container", "version": "0.32.0", "pinned": "0.32.0",
           "address": "vllm:8000 (the model gateway's network only)", "loaded": [], "memory_bytes": 0, "gpu_bytes": 0, "restarts": None,
-          "last_exit": None, "size": "about 1.7 GB (its image)", "why_not": ""}
+          "last_exit": None, "size": "about 1.7 GB to download, 7.4 GB once unpacked (its image)", "why_not": ""}
     _rt(tmp_path, os="linux", runtimes=[vl])
     (r,) = lm.read_runtimes(tmp_path)["runtimes"]
     assert (r["name"], r["state"], r["address"]) == ("vLLM", "waiting", "vllm:8000 (the model gateway's network only)")

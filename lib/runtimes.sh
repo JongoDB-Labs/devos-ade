@@ -119,7 +119,7 @@ rt_size() {
     llamacpp:mac) [ "$(uname -m)" = arm64 ] && echo "about 16 MB" || echo "about 12 MB" ;;
     llamacpp:*) echo "about 290 MB (its image; about 2.4 GB with NVIDIA's libraries)" ;;
     lmstudio:*) echo "about 615 MB (about 2 GB once unpacked)" ;;
-    vllm:*) if _rt_vllm_gpu; then echo "about 9.2 GB (its image, with NVIDIA's libraries)"; else echo "about 1.7 GB (its image)"; fi ;;
+    vllm:*) if _rt_vllm_gpu; then echo "about 9.2 GB to download (its image, with NVIDIA's libraries)"; else echo "about 1.7 GB to download, 7.4 GB once unpacked (its image)"; fi ;;
     *) case "$(uname -m)" in aarch64 | arm64) echo "about 2.8 GB (its image)" ;; *) echo "about 3.4 GB (its image, with NVIDIA's libraries)" ;; esac ;;
   esac
 }
@@ -1112,7 +1112,7 @@ rt_uninstall() {
     # shellcheck disable=SC2046
     _RT_PROFILE="$id" dc rm -sf $(rt_services "$id") </dev/null >/dev/null 2>&1 || true
     for v in $(_rt_volumes "$id"); do docker volume rm "$(project_name)_$v" >/dev/null 2>&1 || true; done
-    # vLLM's image too (1.7 GB; 9 GB with NVIDIA's libraries), no other service's: Docker keeps it while a container of
+    # vLLM's image too (7.4 GB on disk; more with NVIDIA's libraries), no other service's: Docker keeps it while a container of
     # another copy of the stack has it, and a copy that has none pulls it again when it next serves a model
     # shellcheck disable=SC2046
     [ "$id" != vllm ] || for v in $(_RT_PROFILE=vllm dc config --images vllm 2>/dev/null); do docker image rm "$v" >/dev/null 2>&1 || true; done

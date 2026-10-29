@@ -611,7 +611,8 @@ DevOS ADE's own Ollama, llama.cpp, LM Studio or vLLM: Runtimes, below).
 - **vLLM** (`lib/runtimes.sh`, the fourth runtime DevOS ADE installs; Linux only). vLLM's own image pinned by digest
   (`vllm/vllm-openai-cpu:v<version>-x86_64`, or `vllm/vllm-openai:v<version>` with the NVIDIA GPUs:
   `compose.vllm-gpu.yaml`), in the "vllm" profile only while it serves a model (installed with none, it has no
-  container), with a read-only root (a tmpfs `/tmp` and its own cache folder are its only writable places), every
+  container), with a read-only root (a tmpfs `/tmp` of at most 2 GB and its own cache folder are its only writable
+  places; `/tmp` allows exec, since vLLM compiles its kernels there with Triton at its start and loads them), every
   capability dropped, no-new-privileges, at most 4096 processes, as your user (as llama.cpp), and publishing no port: its
   only network is "vllm" (internal: the model gateway and it). It is offline (`HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE`)
   with its usage reports off (`VLLM_NO_USAGE_STATS`, `DO_NOT_TRACK`): it loads `/models/current`, a link the stack
@@ -627,8 +628,8 @@ DevOS ADE's own Ollama, llama.cpp, LM Studio or vLLM: Runtimes, below).
   `pytorch_model.bin`, nor a folder of other weights), from the commit checked, each checked against the hash Hugging
   Face lists; and a snapshot with a `.py` file, or a `config.json` that names code (`auto_map`, `model_file`) or cannot
   be read, is deleted and never served. **What is left:** safetensors weights are data, not code, but a flaw in the code
-  that reads a model (vLLM's, PyTorch's, the tokenizer's) could still be reached by a crafted one; the container's
-  isolation above bounds what it could reach. Remove deletes the model's folder (stopping vLLM first when it was the one
+  that reads a model (vLLM's, PyTorch's, the tokenizer's) could still be reached by a crafted one, and could run code it
+  writes in `/tmp`; the container's isolation above bounds what that code could reach. Remove deletes the model's folder (stopping vLLM first when it was the one
   served); Uninstall deletes its folder, its key, every model in it and its image.
 - **Model servers** (any OpenAI-compatible address). The address is validated (no `user:password@`, no query), the API
   key is read from the terminal or Settings, handed to curl on stdin for the probe and written only as that model's

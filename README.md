@@ -2025,8 +2025,8 @@ start, without a key (LM Studio makes one only in its app): docs/security.md say
 then given to LM Studio as a link (`lms import --symbolic-link`, never a second copy), and the model gateway asks for it
 by the name LM Studio gives it; it loads on its first request. Remove unloads it and deletes its files.
 
-**vLLM** runs on Linux: on the NVIDIA GPUs when Docker has them (its CUDA image, about 9.2 GB), else on an x86-64
-processor with AVX2 (its CPU image, about 1.7 GB). On a Mac the row says why not: MLX, llama.cpp and Ollama serve models
+**vLLM** runs on Linux: on the NVIDIA GPUs when Docker has them (its CUDA image, about 9.2 GB to download), else on an
+x86-64 processor with AVX2 (its CPU image, about 1.7 GB to download and 7.4 GB on disk). On a Mac the row says why not: MLX, llama.cpp and Ollama serve models
 on its GPU. Its image (the release this one pins, by digest) runs as a container of the stack that publishes no port at
 all: only the model gateway reaches it, on a network of their own, with an API key of its own (made at install, mode
 600). vLLM serves one model at a time, the whole model as its authors published it (safetensors weights, not GGUF):

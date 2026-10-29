@@ -671,8 +671,9 @@ services:
   # snapshot (safetensors weights, read-only, checked against the Hub's hashes when they arrived) — with etc/serve.yaml
   # (its name, context, tool-call parser and API key: every /v1 request needs it). On an internal network with the model
   # gateway alone: it publishes nothing and reaches nothing (offline: it downloads nothing itself, and never runs a
-  # model's own code). It runs as you (BN_VLLM_USER), read-only but for its compile cache (cache/), with no
-  # capabilities. This is the CPU build (x86-64 with AVX2 or AVX-512); compose.vllm-gpu.yaml swaps in the NVIDIA one when
+  # model's own code). It runs as you (BN_VLLM_USER), read-only but for its compile cache (cache/) and /tmp, with no
+  # capabilities. /tmp allows exec: at its start vLLM compiles its kernels there (Triton) and loads them, which a noexec
+  # /tmp (Docker's default) refuses ("failed to map segment from shared object"). This is the CPU build (x86-64 with AVX2 or AVX-512); compose.vllm-gpu.yaml swaps in the NVIDIA one when
   # Docker had the NVIDIA runtime at install.
   vllm:
     image: vllm/vllm-openai-cpu:v0.32.0-x86_64@sha256:827ef38187f9b52f2bb838695ef815ec5b65f4bf3e4c061b002b2b0a19cb0701
@@ -684,7 +685,7 @@ services:
     security_opt: ["no-new-privileges:true"]
     pids_limit: 4096
     shm_size: 4gb
-    tmpfs: [/tmp]
+    tmpfs: ["/tmp:exec,size=2g,mode=1777"]
     environment:
       HOME: /cache
       USER: devos            # (who Python's getpass says it is: this user has no passwd entry in the image)

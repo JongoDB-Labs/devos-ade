@@ -110,6 +110,8 @@ test_the_container_publishes_nothing_reaches_nothing_runs_no_model_code_and_drop
   assert_contains "$svc" "read_only: true"
   assert_contains "$svc" "cap_drop: [ALL]"
   assert_contains "$svc" "no-new-privileges"
+  # (its /tmp allows exec, and is capped: vLLM loads the kernels it compiles there at its start)
+  assert_contains "$svc" 'tmpfs: ["/tmp:exec,size=2g,mode=1777"]'
   assert_not_contains "$svc" "seccomp=unconfined"
   assert_not_contains "$svc" "cap_add"
   assert_contains "$svc" 'entrypoint: ["vllm", "serve"]'
@@ -139,6 +141,7 @@ assert on("vllm") == ["litellm", "vllm"], on("vllm")
 assert d["networks"]["vllm"]["internal"] is True, d["networks"]["vllm"]
 assert "ports" not in v and list(v["networks"]) == ["vllm"], v
 assert v["user"] == "1234:5678" and v["read_only"] is True and v["cap_drop"] == ["ALL"], v
+assert v["tmpfs"] == ["/tmp:exec,size=2g,mode=1777"], v["tmpfs"]
 assert "vllm-openai-cpu" in v["image"] and "deploy" not in v, v
 assert v["entrypoint"] == ["vllm", "serve"] and v["command"] == ["/models/current", "--config", "/etc/vllm/serve.yaml"], v
 m = {x["target"]: (x["source"], x.get("read_only")) for x in v["volumes"]}
@@ -162,14 +165,14 @@ test_it_runs_on_linux_with_nvidia_gpus_or_an_x86_64_cpu_with_avx2() {
   _vl_env
   assert_eq "$(rt_why_not vllm)" ""
   assert_eq "$(rt_kind vllm)" container
-  assert_eq "$(rt_size vllm)" "about 1.7 GB (its image)"
+  assert_eq "$(rt_size vllm)" "about 1.7 GB to download, 7.4 GB once unpacked (its image)"
   assert_eq "$(rt_address vllm)" "vllm:8000 (the model gateway's network only)"
   printf 'flags\t\t: fpu sse2 avx\n' > "$TMP/cpuinfo"
   assert_contains "$(rt_why_not vllm)" "vLLM needs NVIDIA GPUs, or a processor with AVX2"
   assert_eq "$(rt_state vllm)" unsupported
   : > "$TMP/no-nvidiactl"   # (this computer's NVIDIA driver)
   assert_eq "$(rt_why_not vllm)" ""
-  assert_eq "$(rt_size vllm)" "about 9.2 GB (its image, with NVIDIA's libraries)"
+  assert_eq "$(rt_size vllm)" "about 9.2 GB to download (its image, with NVIDIA's libraries)"
   rm -f "$TMP/no-nvidiactl"; FAKE_ARCH=aarch64
   assert_contains "$(rt_why_not vllm)" "an x86-64 processor"
   FAKE_OS=Darwin; FAKE_ARCH=arm64
