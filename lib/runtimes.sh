@@ -104,7 +104,7 @@ rt_plist() { printf '%s/Library/LaunchAgents/%s.plist\n' "$HOME" "$(rt_label "$1
 _rt_launchd() { launchctl print "gui/$(id -u)/$(rt_label "$1")" 2>/dev/null; }
 # _rt_agent_field ID FIELD -> FIELD's value in launchctl print (its own lines only, one tab in: pid, runs, last exit code);
 # nothing while it is not loaded
-_rt_agent_field() { _rt_launchd "$1" | awk -v f="$2" 'index($0, "\t" f " = ") == 1 { print substr($0, length(f) + 5); exit }' || true; }
+_rt_agent_field() { _rt_launchd "$1" | awk -v f="$2" '!n && index($0, "\t" f " = ") == 1 { print substr($0, length(f) + 5); n = 1 }' || true; }
 _rt_agent_loaded() { _rt_launchd "$1" >/dev/null; }
 _rt_xml() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
 # _rt_ollama_plist -> the agent: 127.0.0.1 only, the stack's own models folder and HOME, cloud features off
@@ -141,8 +141,9 @@ _rt_agent_up() {
 _rt_agent_down() {
   local n=0 was=0
   ! _rt_agent_loaded "$1" || was=1
+  local plist; plist="$(rt_plist "$1")"
   launchctl bootout "gui/$(id -u)/$(rt_label "$1")" >/dev/null 2>&1 || true
-  rm -f "$(rt_plist "$1")"
+  rm -f "$plist"
   [ "$was" = 1 ] || return 0
   while [ -n "$(_rt_ollama_version)" ] && [ "$n" -lt 40 ]; do sleep 0.25; n=$((n + 1)); done
 }
@@ -246,12 +247,14 @@ _rt_sha256() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | c
 # path, no .., no link out of DIR, nothing else) and it unpacked into DIR (made here: empty)
 _rt_unpack() {
   local tgz="$1" dir="$2" bad
-  bad="$(tar -tzf "$tgz" 2>/dev/null | awk '/^\// || /(^|\/)\.\.(\/|$)/ { print; exit }')" || return 1
+  # (each list read to its end: under pipefail a reader that stops early would end tar with SIGPIPE)
+  bad="$(tar -tzf "$tgz" 2>/dev/null | awk '!n && (/^\// || /(^|\/)\.\.(\/|$)/) { print; n = 1 }')" || return 1
   [ -z "$bad" ] || return 1
   bad="$(tar -tvzf "$tgz" 2>/dev/null | awk '
+    n { next }
     { t = substr($0, 1, 1) }
-    t != "-" && t != "d" && t != "l" { print; exit }
-    t == "l" { i = index($0, " -> "); if (i == 0) { print; exit } x = substr($0, i + 4); if (x ~ /\// || x == ".." || x == ".") { print; exit } }')" || return 1
+    t != "-" && t != "d" && t != "l" { print; n = 1; next }
+    t == "l" { i = index($0, " -> "); if (i == 0) { print; n = 1; next } x = substr($0, i + 4); if (x ~ /\// || x == ".." || x == ".") { print; n = 1 } }')" || return 1
   [ -z "$bad" ] || return 1
   rm -rf "$dir" && mkdir -p "$dir" && chmod 700 "$dir" || return 1
   tar -xzf "$tgz" -C "$dir" --no-same-owner 2>/dev/null

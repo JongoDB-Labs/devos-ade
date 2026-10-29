@@ -610,7 +610,7 @@ test_compose_terminal_is_a_sandbox() {
     assert_not_contains "$t" "$bad"
   done
   # the gateway: the main Caddy's pinned image, hardened, the only peer of the terminal, as its user (ttyd's socket)
-  assert_contains "$g" "image: $(sed -n 's/^    image: \(caddy:[^ ]*\)$/\1/p' "$STACK_DIR/compose.yaml")"
+  assert_contains "$g" "image: $(sed -n 's/^    image: \(caddy:[^ ]*\)$/\1/p' "$STACK_DIR/compose.yaml" | head -n 1)"   # (the main Caddy's: Ollama's gate has the same)
   for want in "read_only: true" "cap_drop: [ALL]" "aliases: [terminal-upstream]" "aliases: [gateway]" "/etc/caddy/terminal-gateway.caddy" \
               'user: "${TERMINAL_UID:-10104}:${TERMINAL_GID:-10104}"' "- terminal-socket:/run/bn-ttyd:ro" \
               'TERMINAL_PROXY_SECRET: ${TERMINAL_PROXY_SECRET:-}' "terminal-link:"; do

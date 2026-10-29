@@ -418,76 +418,6 @@ services:
       start_interval: 1s
     logging: *logging
 
-  # Ollama, a local-model runtime DevOS ADE installs and runs itself (lib/runtimes.sh: Settings › Models & providers ›
-  # Local models › Runtimes, ./stack runtimes install ollama). This container is its Linux form: in the "ollama" profile,
-  # only while it is installed (on a Mac it runs natively instead, for Metal). The model gateway reaches it as
-  # ollama:11434 on "ollama" (internal: LiteLLM and Ollama only); "ollama-out" is its way to Hugging Face, shared with
-  # its gate alone. Nothing publishes it: ./stack's downloads, and your own tools, reach it through ollama-gate on
-  # 127.0.0.1:11434. Its models are the ollama-models volume. compose.ollama-gpu.yaml adds the NVIDIA GPUs. Cloud
-  # features off; nothing is pulled but what ./stack local-models pull asks for (from Hugging Face).
-  ollama:
-    image: ollama/ollama:0.40.11@sha256:dea72d1e22270fe095b68fdf756d2b489d615643c5a2eaebbc5f569181e322d8
-    profiles: ["ollama"]
-    restart: unless-stopped
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
-    pids_limit: 512
-    environment:
-      # (all of the container's addresses: its two networks. Ollama checks a request's Host only when it listens on
-      # loopback, so here ollama-gate does: caddy/ollama-gate.caddy)
-      OLLAMA_HOST: 0.0.0.0:11434
-      OLLAMA_NO_CLOUD: "1"
-      OLLAMA_KEEP_ALIVE: 10m
-    volumes:
-      - ollama-models:/root/.ollama
-    networks: [ollama, ollama-out]
-    healthcheck:
-      test: ["CMD", "ollama", "ps"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-      start_interval: 2s
-    logging: *logging
-
-  # The one way to DevOS ADE's Ollama from this computer, on Linux (caddy/ollama-gate.caddy; the same pinned image as the
-  # main Caddy; in the "ollama" profile with it): 127.0.0.1:11434, as a native Ollama listens. Only a request named for
-  # loopback (127.0.0.1, localhost) goes on to Ollama; any other name — a web page that pointed a name of its own at
-  # 127.0.0.1 (DNS rebinding) — is 403, the check Ollama itself makes only when it listens on loopback.
-  ollama-gate:
-    image: caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
-    profiles: ["ollama"]
-    restart: unless-stopped
-    command: ["caddy", "run", "--config", "/etc/caddy/ollama-gate.caddy", "--adapter", "caddyfile"]
-    user: "65534:65534"
-    read_only: true
-    cap_drop: [ALL]
-    cap_add: [NET_BIND_SERVICE]   # the image's caddy binary carries this file capability; exec fails without it
-    security_opt: ["no-new-privileges:true"]
-    tmpfs: ["/data:uid=65534,gid=65534,mode=0700", "/config:uid=65534,gid=65534,mode=0700"]
-    mem_limit: 128m
-    pids_limit: 100
-    environment:
-      # (the checksum of caddy/ollama-gate.caddy, from ./stack: read only at start, so a changed file recreates the
-      # container — lib/common.sh config_sums)
-      BN_CONFIG_SUM: ${BN_OLLAMA_GATE_CONFIG_SUM:-}
-    # Directory mount, like the main Caddy's (a file replaced by git is seen after a restart).
-    volumes:
-      - ./caddy:/etc/caddy:ro,z
-    ports:
-      - "127.0.0.1:11434:11434"
-    networks: [ollama-out]
-    depends_on:
-      ollama: { condition: service_started }
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:11435/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-      start_period: 30s
-      start_interval: 1s
-    logging: *logging
-
   # Login, Home dashboard, and the auth check Caddy asks before every request (/auth/verify).
   portal:
     # (+ compose.portal-docs.yaml, which ./stack adds where Docker Compose reads it: the search's docs index)
@@ -622,6 +552,76 @@ services:
         ipv4_address: 10.255.255.238   # fixed: Forgejo's trusted proxy (REVERSE_PROXY_TRUSTED_PROXIES)
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/caddy-health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+      start_interval: 1s
+    logging: *logging
+
+  # Ollama, a local-model runtime DevOS ADE installs and runs itself (lib/runtimes.sh: Settings › Models & providers ›
+  # Local models › Runtimes, ./stack runtimes install ollama). This container is its Linux form: in the "ollama" profile,
+  # only while it is installed (on a Mac it runs natively instead, for Metal). The model gateway reaches it as
+  # ollama:11434 on "ollama" (internal: LiteLLM and Ollama only); "ollama-out" is its way to Hugging Face, shared with
+  # its gate alone. Nothing publishes it: ./stack's downloads, and your own tools, reach it through ollama-gate on
+  # 127.0.0.1:11434. Its models are the ollama-models volume. compose.ollama-gpu.yaml adds the NVIDIA GPUs. Cloud
+  # features off; nothing is pulled but what ./stack local-models pull asks for (from Hugging Face).
+  ollama:
+    image: ollama/ollama:0.40.11@sha256:dea72d1e22270fe095b68fdf756d2b489d615643c5a2eaebbc5f569181e322d8
+    profiles: ["ollama"]
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 512
+    environment:
+      # (all of the container's addresses: its two networks. Ollama checks a request's Host only when it listens on
+      # loopback, so here ollama-gate does: caddy/ollama-gate.caddy)
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_NO_CLOUD: "1"
+      OLLAMA_KEEP_ALIVE: 10m
+    volumes:
+      - ollama-models:/root/.ollama
+    networks: [ollama, ollama-out]
+    healthcheck:
+      test: ["CMD", "ollama", "ps"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+      start_interval: 2s
+    logging: *logging
+
+  # The one way to DevOS ADE's Ollama from this computer, on Linux (caddy/ollama-gate.caddy; the same pinned image as the
+  # main Caddy; in the "ollama" profile with it): 127.0.0.1:11434, as a native Ollama listens. Only a request named for
+  # loopback (127.0.0.1, localhost) goes on to Ollama; any other name — a web page that pointed a name of its own at
+  # 127.0.0.1 (DNS rebinding) — is 403, the check Ollama itself makes only when it listens on loopback.
+  ollama-gate:
+    image: caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
+    profiles: ["ollama"]
+    restart: unless-stopped
+    command: ["caddy", "run", "--config", "/etc/caddy/ollama-gate.caddy", "--adapter", "caddyfile"]
+    user: "65534:65534"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]   # the image's caddy binary carries this file capability; exec fails without it
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/data:uid=65534,gid=65534,mode=0700", "/config:uid=65534,gid=65534,mode=0700"]
+    mem_limit: 128m
+    pids_limit: 100
+    environment:
+      # (the checksum of caddy/ollama-gate.caddy, from ./stack: read only at start, so a changed file recreates the
+      # container — lib/common.sh config_sums)
+      BN_CONFIG_SUM: ${BN_OLLAMA_GATE_CONFIG_SUM:-}
+    # Directory mount, like the main Caddy's (a file replaced by git is seen after a restart).
+    volumes:
+      - ./caddy:/etc/caddy:ro,z
+    ports:
+      - "127.0.0.1:11434:11434"
+    networks: [ollama-out]
+    depends_on:
+      ollama: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:11435/health"]
       interval: 10s
       timeout: 5s
       retries: 6

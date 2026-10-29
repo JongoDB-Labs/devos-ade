@@ -84,6 +84,7 @@ test_the_container_is_reached_through_its_gate_on_loopback_only_and_drops_its_pr
   assert_contains "$gate" '"127.0.0.1:11434:11434"'
   assert_contains "$gate" "networks: [ollama-out]"
   assert_contains "$gate" '"/etc/caddy/ollama-gate.caddy"'
+  assert_contains "$gate" "image: $(awk '/^  caddy:$/,/^    image:/' "$STACK_DIR/compose.yaml" | sed -n 's/^    image: //p')"   # (the main Caddy's, bumped with it)
   assert_contains "$gate" "read_only: true"
   assert_contains "$gate" "cap_drop: [ALL]"
   assert_contains "$gate" "no-new-privileges"

@@ -63,7 +63,7 @@ test_the_runtime_is_found_docker_first_then_ollama_else_none_with_how() {
   assert_eq "$(local_runtime)" dmr
   _fake_dmr off
   assert_eq "$(local_dmr_state)" not-enabled
-  curl() { case "$*" in *11434/api/version*) return 0 ;; esac; return 7; }
+  curl() { case "$*" in */api/version*) return 0 ;; esac; return 7; }   # (wherever LOCAL_OLLAMA_URL points: tests/run.sh, never a real one)
   assert_eq "$(local_runtime)" ollama                  # Docker's runner is off: Ollama answers
   curl() { return 7; }
   assert_eq "$(local_runtime)" none
