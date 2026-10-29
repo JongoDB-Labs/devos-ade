@@ -317,6 +317,20 @@ class BaseAndToolTests(unittest.TestCase):
         self.assertEqual(m.new, "2.103.2")
         self.assertEqual(read(d, "terminal/Dockerfile"), f"ARG GH_VERSION=2.103.2\nARG GH_SHA256_AMD64={'c' * 64}\nARG GH_SHA256_ARM64={'d' * 64}\nARG OTHER=1\n")
 
+    def test_ollama_moves_its_mac_build_and_its_image_to_the_same_release(self):
+        pins = "# header\nARG OLLAMA_VERSION=0.40.9\nARG OLLAMA_SHA256_DARWIN=aaa\n"
+        d = tree({"catalog/runtimes.pins": pins})
+        url = "https://github.com/ollama/ollama/releases/download/v0.40.11/ollama-darwin.tgz"
+        net = FakeNet(gh={"ollama/ollama": [rel("v0.41.0-rc1", "2026-10-27T00:00:00Z", pre=True), rel("v0.40.12", "2026-10-27T00:00:00Z"),
+                                            rel("v0.40.11", "2026-10-24T00:00:00Z")]}, hashes={url: "e" * 64})
+        fs = bump.Files(d)
+        m = next(t for t in bump.targets() if t.name == "ollama-mac").run(net, fs, now(), 3)
+        fs.flush()
+        self.assertEqual((m.old, m.new), ("0.40.9", "0.40.11"))   # (0.40.12 is inside the cooldown; the rc is never one)
+        self.assertEqual(read(d, "catalog/runtimes.pins"), f"# header\nARG OLLAMA_VERSION=0.40.11\nARG OLLAMA_SHA256_DARWIN={'e' * 64}\n")
+        image = next(t for t in bump.targets() if t.name == "ollama")
+        self.assertEqual((image.source.repo, image.files), ("ollama/ollama", ["compose.yaml"]))
+
     def test_an_unchanged_tool_downloads_nothing(self):
         d = tree({"terminal/Dockerfile": "ARG TTYD_VERSION=1.7.7\nARG TTYD_SHA256_AMD64=a\nARG TTYD_SHA256_ARM64=b\n"})
         net = FakeNet(gh={"tsl0922/ttyd": [rel("1.7.7", "2024-03-30T00:00:00Z")]})

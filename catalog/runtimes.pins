@@ -1,0 +1,6 @@
+# The model runtimes DevOS ADE installs on this computer itself (lib/runtimes.sh: a Mac runs them natively, for Metal),
+# pinned: the version and the SHA-256 of the file downloaded. The same ARG form as terminal/Dockerfile's, so
+# bin/bump-core-services moves them (targets "ollama"). On Linux each runs as a container instead, pinned by digest in
+# compose.yaml.
+ARG OLLAMA_VERSION=0.40.11
+ARG OLLAMA_SHA256_DARWIN=aea7d3f2e32371b7644a6e2ec8d4f26820a0e3965918cce8a46cef3e947f6291

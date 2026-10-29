@@ -340,6 +340,8 @@ dc() {
   if [ "${_WS_SEARXNG_PROFILE:-}" = 1 ] || ! flag_off "$(get_env WEBSEARCH_SEARXNG_BUILTIN)"; then f+=(--profile searxng); fi
   # The built-in git server, Forgejo (lib/localgit.sh): in the "forgejo" profile, on unless LOCALGIT=off
   if [ "${_LG_PROFILE:-}" = 1 ] || ! flag_off "$(get_env LOCALGIT)"; then f+=(--profile forgejo); fi
+  # Ollama as a container (lib/runtimes.sh, Linux): in the "ollama" profile while this stack installed it
+  if [ "${_RT_PROFILE:-}" = 1 ] || { declare -F rt_compose_on >/dev/null && rt_compose_on ollama; }; then f+=(--profile ollama); fi
   # the checksums of the configuration files the services read only at their start (config_sums, below): every compose
   # call passes the same ones, so none recreates a service whose files did not change, and each recreates one whose did
   local policy sums; policy="$(claude_policy)"; sums="$(config_sums "$policy")"
@@ -579,6 +581,8 @@ compose_overlays() {
   fi
   # (independent of the terminal: the git server alone, while it has a mirror)
   ! localgit_mirror_wanted || echo compose.localgit-mirror.yaml
+  # the runtimes' GPUs (lib/runtimes.sh: Ollama's container with the NVIDIA runtime)
+  ! declare -F runtime_overlays >/dev/null || runtime_overlays
   return 0
 }
 

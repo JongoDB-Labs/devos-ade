@@ -2,10 +2,12 @@
 # Local models (JON-816): models downloaded from Hugging Face and run on this computer, served to LiteLLM, so they show
 # in Chat, the Code page and the terminal like any other model — marked Local, $0.
 #
-# Runtime (this computer's, never a container of the stack): Docker Model Runner first (docker model …: built into
-# Docker Desktop, docker-model-plugin on Docker Engine; llama.cpp on the host, with Metal on Apple silicon), else a host
-# Ollama (hf.co/… pulls too). Nothing is installed or switched on by itself: when none runs, the portal says how, and
-# ./stack local-models enable does it after asking.
+# Runtime: MLX on Apple silicon (below), else Docker Model Runner (docker model …: built into Docker Desktop,
+# docker-model-plugin on Docker Engine; llama.cpp on the host, with Metal on Apple silicon), else Ollama (hf.co/… pulls
+# too): DevOS ADE's own (lib/runtimes.sh: installed from Settings › Local models › Runtimes, a launchd agent on a Mac, a
+# container of the stack on Linux) or one of yours. LOCAL_RUNTIME picks one (blank: that order). Nothing is installed or
+# switched on by itself: when none runs, the portal says how, and ./stack local-models enable (Docker Model Runner) or
+# ./stack runtimes install ollama does it after asking.
 #
 #   ./stack local-models [status]                 the runtime, what is downloaded, disk used (and writes the portal's file)
 #   ./stack local-models pull REPO QUANT [opts]   download hf.co/REPO:QUANT, then register it (LOCAL_MODELS, applied live)
@@ -91,7 +93,13 @@ local_dmr_base() {
   os="$(docker info --format '{{.OperatingSystem}}' 2>/dev/null || true)"
   case "$os" in *"Docker Desktop"*) printf 'http://model-runner.docker.internal/engines/llama.cpp\n' ;; *) printf 'http://host.docker.internal:12434/engines/llama.cpp\n' ;; esac
 }
-local_ollama_base() { printf '%s\n' "${LOCAL_OLLAMA_BASE:-http://host.docker.internal:11434}"; }
+# local_ollama_base -> where the model gateway reaches Ollama: the stack's own container on its network (Linux, lib/runtimes.sh),
+# else this computer's (DevOS ADE's launchd agent on a Mac, or one of yours) as host.docker.internal
+local_ollama_base() {
+  if [ -n "${LOCAL_OLLAMA_BASE:-}" ]; then printf '%s\n' "$LOCAL_OLLAMA_BASE"
+  elif declare -F rt_compose_on >/dev/null && rt_compose_on ollama; then printf 'http://ollama:11434\n'
+  else printf 'http://host.docker.internal:11434\n'; fi
+}
 
 
 # --- MLX: the primary runtime on Apple silicon (JON-816, owner's decision) ---
@@ -646,17 +654,32 @@ msrv_apply_op() {
   esac
 }
 
-# local_runtime -> "mlx" (Apple silicon with uv), "dmr", "ollama" or "none": the one pulls go to (Docker Model Runner first)
+# local_runtime -> "mlx", "dmr", "ollama" or "none": the one pulls go to. LOCAL_RUNTIME names one (none while it cannot
+# take a download: local_how_text says why); blank or auto: MLX on Apple silicon with uv, else Docker Model Runner, else Ollama
 local_runtime() {
+  case "$(get_env LOCAL_RUNTIME)" in
+    mlx) local_mlx_capable && echo mlx || echo none; return 0 ;;
+    dmr) [ "$(local_dmr_state)" = ready ] && echo dmr || echo none; return 0 ;;
+    ollama) [ "$(local_ollama_state)" = ready ] && echo ollama || echo none; return 0 ;;
+  esac
   ! local_mlx_capable || { echo mlx; return 0; }
   [ "$(local_dmr_state)" != ready ] || { echo dmr; return 0; }
   [ "$(local_ollama_state)" != ready ] || { echo ollama; return 0; }
   echo none
 }
+# _local_ollama_how -> how to have an Ollama running (DevOS ADE's own, from Runtimes; or one of yours)
+_local_ollama_how() {
+  if declare -F rt_installed >/dev/null && rt_installed ollama; then echo "start it in Settings › Local models › Runtimes (./stack runtimes start ollama)."
+  else echo "install it in Settings › Local models › Runtimes (./stack runtimes install ollama), or start an Ollama of yours."; fi
+}
 
 # local_how_text -> one line: how to turn a runtime on (for the portal, and ./stack local-models enable)
 local_how_text() {
   local d o; d="$(local_dmr_state)"; o="$(local_ollama_state)"
+  case "$(get_env LOCAL_RUNTIME)" in
+    ollama) [ "$o" = ready ] || { echo "Downloads go to Ollama (Settings › Local models › Runtimes), which is not running: $(_local_ollama_how)"; return 0; } ;;
+    mlx) local_mlx_capable || { echo "Downloads go to MLX (Settings › Local models › Runtimes), which needs Apple silicon and uv: brew install uv (or https://docs.astral.sh/uv/)."; return 0; } ;;
+  esac
   [ "$(local_mlx_state)" != no-uv ] || { echo "On Apple silicon the models run with MLX, which needs uv: brew install uv (or https://docs.astral.sh/uv/), then download again. Docker Model Runner (Docker Desktop 4.71 or newer) also works."; return 0; }
   case "$d" in
     not-enabled)
@@ -813,10 +836,17 @@ local_status_write() {
     [ "$m" != no-uv ] || how="$(local_how_text)"
     _LOCAL_M="$m"; _LOCAL_D="$d"; _LOCAL_O="$o"; _LOCAL_GPU="$gpu"; _LOCAL_MEM="$mem"; _LOCAL_HOW="$how"
   fi
-  rt=none
-  case "$m" in ready | stopped | not-installed) rt=mlx ;; esac
-  [ "$rt" != none ] || [ "$d" != ready ] || rt=dmr
-  [ "$rt" != none ] || [ "$o" != ready ] || rt=ollama
+  rt=none   # (as local_runtime, from the states already read)
+  case "$(get_env LOCAL_RUNTIME)" in
+    mlx) case "$m" in ready | stopped | not-installed) rt=mlx ;; esac ;;
+    dmr) [ "$d" != ready ] || rt=dmr ;;
+    ollama) [ "$o" != ready ] || rt=ollama ;;
+    *)
+      case "$m" in ready | stopped | not-installed) rt=mlx ;; esac
+      [ "$rt" != none ] || [ "$d" != ready ] || rt=dmr
+      [ "$rt" != none ] || [ "$o" != ready ] || rt=ollama ;;
+  esac
+  [ "$rt" != none ] || [ -n "$how" ] || how="$(local_how_text)"
   [ -n "$job" ] || job="$(cat "$(local_job_file)" 2>/dev/null || true)"
   case "$job" in '{'*'}') ;; *) job='{"state":"idle"}' ;; esac
   declare -a seen_ids=()
@@ -855,6 +885,7 @@ local_models_tick() {
   [ -z "$(find "$last" -mmin -0.15 2>/dev/null)" ] || return 0
   : > "$last"
   _with_deadline 40 local_status_write 2>/dev/null || true
+  ! declare -F rt_status_write >/dev/null || _with_deadline 20 rt_status_write 2>/dev/null || true   # (lib/runtimes.sh: the Runtimes panel's)
 }
 
 # --- the job ---

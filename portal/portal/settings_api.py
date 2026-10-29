@@ -670,9 +670,13 @@ def routes(ctx: Ctx) -> list[Route]:
                 pass
         ok, why = _local_can(request)
         rows = st.by_key(st.snapshot(s.status_dir))
-        return _no_store(JSONResponse({**data, "can_change": ok, "why_not": why, "can_stop": ok and "local-stop" in st.capability(s.status_dir)["local"],
+        cap = st.capability(s.status_dir)["local"]
+        choice = (rows.get("LOCAL_RUNTIME") or {}).get("value") or ""
+        return _no_store(JSONResponse({**data, "can_change": ok, "why_not": why, "can_stop": ok and "local-stop" in cap,
                                        "hf_token_set": bool((rows.get("HF_TOKEN") or {}).get("set")),
-                                       "wait": data["stale"] and not data["known"]}))
+                                       "wait": data["stale"] and not data["known"],
+                                       "runtimes": lm.read_runtimes(s.status_dir), "can_runtime": ok and "local-runtime" in cap,
+                                       "choice": choice if choice in ("auto", "mlx", "dmr", "ollama") else "auto"}))
 
     async def local_models_search(request: Request) -> Response:
         """Hugging Face's GGUF repos for ?q= (public API from here, no key); with ?repo=org/name that repo's quants, each with
@@ -790,6 +794,101 @@ def routes(ctx: Ctx) -> list[Route]:
         log.warning("local models: %s %s:%s%s", op, j["repo"], j["quant"], " (remote)" if is_remote(request) else "")
         return _no_store(JSONResponse({"id": nonce, "op": op}, status_code=202))
 
+    runtime_rate = RateLimit(1, 5)
+    runtime_free_rate = RateLimit(1, 2)
+    runtime_log_rate = RateLimit(1, 1)   # (its own: reading the log never holds up a Stop or a Cancel)
+
+    def _runtime_can(request: Request) -> tuple[bool, str]:
+        ok, why = _local_can(request)
+        if ok and "local-runtime" not in st.capability(s.status_dir)["local"]:
+            ok, why = False, "This update helper does not install runtimes yet: ./stack helper install refreshes it."
+        return ok, why
+
+    async def local_models_runtime(request: Request) -> Response:
+        """A model runtime installed, started or removed (lib/runtimes.sh: ./stack runtimes OP ID on the computer). Session +
+        password like the rest of Settings; the page follows the job in GET /api/local-models (runtimes.job)."""
+        got = await front_door(request)
+        if isinstance(got, Response):
+            return got
+        data, password = got
+        op, rid = data.get("op"), data.get("id")
+        if op not in st.RUNTIME_OPS_PW or rid not in st.RUNTIME_IDS:
+            return err(400, "bad request")
+        ok, why = _runtime_can(request)
+        if not ok:
+            return err(403 if not allowed(request) else 503, why)
+        r = lm.read_runtimes(s.status_dir)
+        if r["job"]["state"] == "running":
+            return err(409, "A runtime job is running: wait for it.")
+        cur = next((x for x in r["runtimes"] if x["id"] == rid), None)
+        if op == "install" and cur and cur["state"] in ("external", "unsupported"):
+            return err(409, f"Ollama cannot be installed here: {cur['why_not'] or 'an Ollama of yours already runs on 127.0.0.1:11434'}.")
+        if wait := runtime_rate.retry_after():
+            return err(429, f"Please wait {wait} s.", wait)
+        try:
+            nonce = st.write_runtime_action(s.request_dir, op, rid, password)
+        except ValueError:
+            return err(413, f"The portal password is longer than {st.MAX_AUTH} bytes: set a shorter one with ./stack config set PORTAL_PASSWORD.")
+        except OSError as e:
+            log.warning("cannot write the runtime %s request to %s (%s)", op, s.request_dir, e)
+            return err(500, "Could not hand the request to the helper (see ./stack logs portal).")
+        runtime_rate.hit()
+        log.warning("runtimes: %s %s%s", op, rid, " (remote)" if is_remote(request) else "")
+        return _no_store(JSONResponse({"id": nonce, "op": op}, status_code=202))
+
+    async def local_models_runtime_stop(request: Request) -> Response:
+        """A runtime stopped, the running install cancelled, or its log asked for. No password: it stops something or reads
+        its log, and spends nothing; otherwise the same door as every other change (session, X-Requested-With, same Origin,
+        the remote rule, a bounded JSON body)."""
+        if (deny := ctx.api_guard(request)) is not None:
+            return deny
+        if not same_origin(request.headers, s):
+            return err(403, "cross-site request refused")
+        if not allowed(request):
+            return err(403, "Settings changes are off for remote access (REMOTE_ADMIN_ACTIONS in .env).")
+        length = request.headers.get("content-length", "")
+        if not length.isdigit() or not length.isascii() or int(length) > st.MAX_BODY:
+            return err(411 if not length.isdigit() else 413, "Content-Length required" if not length.isdigit() else "request too large")
+        try:
+            data = json.loads(await request.body())
+        except ValueError:
+            return err(400, "not JSON")
+        op, rid = (data.get("op"), data.get("id")) if isinstance(data, dict) else (None, None)
+        if op not in st.RUNTIME_OPS_FREE or rid not in st.RUNTIME_IDS:
+            return err(400, "bad request")
+        ok, why = _runtime_can(request)
+        if not ok:
+            return err(403 if not allowed(request) else 503, why)
+        r = lm.read_runtimes(s.status_dir)
+        cur = next((x for x in r["runtimes"] if x["id"] == rid), None)
+        if op == "stop" and not (cur and cur["managed"] and cur["state"] in ("running", "starting")):
+            return err(409, "It is not running (and one of yours is never stopped from here).")
+        if op == "cancel" and not (r["job"]["state"] == "running" and r["job"]["op"] == "install"):
+            return err(409, "No install is running.")
+        if op != "logs" and r["job"]["state"] == "running" and op != "cancel":
+            return err(409, "A runtime job is running: wait for it.")
+        rate = runtime_log_rate if op == "logs" else runtime_free_rate
+        if wait := rate.retry_after():
+            return err(429, f"Please wait {wait} s.", wait)
+        try:
+            nonce = st.write_runtime_action(s.request_dir, op, rid)
+        except OSError as e:
+            log.warning("cannot write the runtime %s request to %s (%s)", op, s.request_dir, e)
+            return err(500, "Could not hand the request to the helper (see ./stack logs portal).")
+        rate.hit()
+        if op != "logs":
+            log.warning("runtimes: %s %s%s", op, rid, " (remote)" if is_remote(request) else "")
+        return _no_store(JSONResponse({"id": nonce, "op": op}, status_code=202))
+
+    async def local_models_runtime_logs(request: Request) -> Response:
+        """The last lines of a runtime's log, as the helper last copied them (POST …/runtime-stop op logs asks for a fresh copy)."""
+        if (deny := ctx.api_guard(request)) is not None:
+            return deny
+        rid = request.query_params.get("id")
+        if rid not in st.RUNTIME_IDS:
+            return err(400, "bad request")
+        return _no_store(JSONResponse(lm.read_runtime_logs(s.status_dir, rid)))
+
     server_rate = RateLimit(1, 300)
 
     async def local_models_server(request: Request) -> Response:
@@ -893,6 +992,9 @@ def routes(ctx: Ctx) -> list[Route]:
         Route("/api/local-models/server", local_models_server, methods=["POST"]),
         Route("/api/local-models/probe", local_models_probe, methods=["POST"]),
         Route("/api/local-models/stop", local_models_stop, methods=["POST"]),
+        Route("/api/local-models/runtime", local_models_runtime, methods=["POST"]),
+        Route("/api/local-models/runtime-stop", local_models_runtime_stop, methods=["POST"]),
+        Route("/api/local-models/runtime-logs", local_models_runtime_logs, methods=["GET"]),
         Route("/api/models/browse", models_browse, methods=["GET"]),
         Route("/api/models/browse/plan", models_plan, methods=["POST"]),
         Route("/api/models/try", models_try, methods=["POST"]),

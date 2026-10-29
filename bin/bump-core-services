@@ -670,6 +670,8 @@ def targets() -> list:
         ImageTarget("searxng", "SearXNG", HubTags("searxng/searxng", r"(\d{4}\.\d+\.\d+-[0-9a-f]+)", "20"), [("searxng/searxng", "{v}")],
                     ["compose.yaml"], service="searxng", vrx=r"\d{4}\.\d+\.\d+-[0-9a-f]+"),
         ImageTarget("aws-cli", "AWS CLI (bucket setup)", HubTags("amazon/aws-cli", ver, "2."), [("amazon/aws-cli", "{v}")], ["compose.yaml"], service="rustfs-init"),
+        # Ollama (lib/runtimes.sh): its image on Linux, its own release build on a Mac (catalog/runtimes.pins) — the same release
+        ImageTarget("ollama", "Ollama (local models, Linux)", gh("ollama/ollama", "v" + ver), [("ollama/ollama", "{v}")], ["compose.yaml"]),
         ImageTarget("node", "Node base image", HubTags("node", r"(24\.\d+\.\d+)-trixie-slim", "-trixie-slim"), [("node", "{v}-trixie-slim")],
                     ["portal/Dockerfile", "code/Dockerfile", "terminal/Dockerfile", "terminal/egress/Dockerfile"]),
         BaseTarget("python-slim", "Python base image (slim)", "python", "3.12-slim", ["portal/Dockerfile", "shared-mcp/Dockerfile"]),
@@ -687,6 +689,8 @@ def targets() -> list:
         ToolTarget("gh", "GitHub CLI (sandbox)", gh("cli/cli", "v" + ver), "GH",
                    {"AMD64": "https://github.com/cli/cli/releases/download/v{v}/gh_{v}_linux_amd64.tar.gz",
                     "ARM64": "https://github.com/cli/cli/releases/download/v{v}/gh_{v}_linux_arm64.tar.gz"}),
+        ToolTarget("ollama-mac", "Ollama (local models, macOS)", gh("ollama/ollama", "v" + ver), "OLLAMA",
+                   {"DARWIN": "https://github.com/ollama/ollama/releases/download/v{v}/ollama-darwin.tgz"}, file="catalog/runtimes.pins"),
         PipLock("pip-portal", "portal"), PipLock("pip-shared-mcp", "shared-mcp"), PipLock("pip-stt", "stt"),
     ]
 

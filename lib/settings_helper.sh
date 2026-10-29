@@ -36,6 +36,11 @@
 #                                        local-stop   {…,"op":"pause|cancel"}  ./stack local-models pause|cancel: the running
 #                                                      download stopped (cancel also deletes a paused one's part). NO "auth":
 #                                                      it only ever stops something and spends nothing (session, CSRF, origin)
+#                                        local-runtime {…,"op":"install|start|uninstall","id":"ollama"}  ./stack runtimes OP ID
+#                                                      (lib/runtimes.sh: a model runtime DevOS ADE installs and runs itself)
+#                                        local-runtime-stop {…,"op":"stop|cancel|logs","id":"ollama"}  ./stack runtimes stop ID,
+#                                                      cancel (the running install), logs ID --portal (its last lines for
+#                                                      Settings). NO "auth": it stops something or reads its log, nothing more
 #                                        subscriptions-check {…}  ./stack subscriptions status (lib/subscriptions.sh)
 #                                        subscriptions-signout {…,"tool":"claude|codex|cursor|grok"}  that tool's own
 #                                                        sign-out in the sandbox (narrowing)
@@ -62,7 +67,7 @@ PICK_MAX_PER_DAY="${PICK_MAX_PER_DAY:-10}"
 ACT_MAX_BYTES=3072   # (a project action carries a few more fields than a diagnostic; a local-model download a few more: its facts)
 # Local models (lib/local_models.sh): a download or a removal, started in the background (no stack lock while it downloads);
 # its progress is in .state/status/local-models.json. Every field fixed: a Hugging Face repo and quant name, never a path or URL.
-LOCAL_HELPER_ACTIONS="local-pull local-remove local-server local-probe local-stop"
+LOCAL_HELPER_ACTIONS="local-pull local-remove local-server local-probe local-stop local-runtime local-runtime-stop"
 LOCAL_MIN_INTERVAL_S="${LOCAL_MIN_INTERVAL_S:-5}"
 LOCAL_MAX_PER_DAY="${LOCAL_MAX_PER_DAY:-200}"
 settings_capability_file() { printf '%s/helper-settings.json\n' "$(status_dir)"; }
@@ -349,6 +354,12 @@ act_check_request() {
   # (Pause or Cancel of the running download: no password either — it stops, and spends nothing; the op in project's place)
   elif _sv_re "$body" '^\{"action":"(local-stop)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","op":"(pause|cancel)"\}$'; then
     action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="-"; project="${BASH_REMATCH[4]}"
+  # (a model runtime installed, started or removed: with the password; op|id in project's place)
+  elif _sv_re "$body" '^\{"action":"(local-runtime)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})","op":"(install|start|uninstall)","id":"(ollama)"\}$'; then
+    action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="${BASH_REMATCH[4]}"; project="${BASH_REMATCH[5]}|${BASH_REMATCH[6]}"
+  # (a runtime stopped, its install cancelled, or its log read: no password — it stops or reads, and spends nothing)
+  elif _sv_re "$body" '^\{"action":"(local-runtime-stop)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","op":"(stop|cancel|logs)","id":"(ollama)"\}$'; then
+    action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="-"; project="${BASH_REMATCH[4]}|${BASH_REMATCH[5]}"
   # (what DevOS ADE may read of your sessions here: taken back by the project's id, or all — the tool in mode's place)
   # (setup-*: what may be read of your setup — Bring your setup, lib/sessions_config.sh —, by tool, with project all)
   elif _sv_re "$body" '^\{"action":"(sessions-revoke)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})","project":"(p_[0-9a-f]{8}|all)","tool":"(claude|claude-bedrock|both|suggest|setup-claude|setup-claude-bedrock|setup-git|setup-all)"\}$'; then
@@ -408,7 +419,7 @@ helper_pick_folder() {
 _act_limits() {
   case "$1" in
     project-pick) _kind_limits pick-jobs "$(_helper_num "$PICK_MIN_INTERVAL_S" 60)" "$(_helper_num "$PICK_MAX_PER_DAY" 10)" ;;
-    local-stop) _kind_limits stop-jobs 1 "$(_helper_num "$LOCAL_MAX_PER_DAY" 200)" ;;
+    local-stop | local-runtime-stop) _kind_limits stop-jobs 1 "$(_helper_num "$LOCAL_MAX_PER_DAY" 200)" ;;
     local-server | local-probe) _kind_limits server-jobs "$(_helper_num "$LOCAL_SERVER_MIN_INTERVAL_S" 1)" "$(_helper_num "$LOCAL_SERVER_MAX_PER_DAY" 600)" ;;
     local-*) _kind_limits local-jobs "$(_helper_num "$LOCAL_MIN_INTERVAL_S" 5)" "$(_helper_num "$LOCAL_MAX_PER_DAY" 200)" ;;
     *) _diag_limits "$1" ;;
@@ -637,6 +648,7 @@ local_helper_start() {
     ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" local-models "$f" ) </dev/null > "$(helper_dir)/local-stop.log" 2>&1 &
     return 0
   fi
+  if [ "$action" = local-runtime ] || [ "$action" = local-runtime-stop ]; then runtime_helper_start "$action" "$f" "$nonce"; return 0; fi
   IFS='|' read -r repo quant bytes tools ctx pm lic <<< "$f"
   _kind_count local-jobs "$action"
   if local_job_running; then _refuse_diag "a download is already running (Settings › Models & providers › Local models shows it)" "$nonce"; return 0; fi
@@ -648,6 +660,20 @@ local_helper_start() {
     ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" local-models rm "$repo" "$quant" ) </dev/null > "$logf" 2>&1 &
   fi
   printf '%s\n' "$!" > "$(helper_dir)/local-job.pid"
+}
+
+# runtime_helper_start ACTION OP|ID NONCE — a model runtime's install, start, removal, stop, cancel or log (lib/runtimes.sh),
+# in the background; one job at a time (./stack runtimes says so itself too); its progress is .state/status/runtimes.json
+runtime_helper_start() {
+  local action="$1" op id nonce="$3"
+  IFS='|' read -r op id <<< "$2"
+  _kind_count "$([ "$action" = local-runtime ] && echo local-jobs || echo stop-jobs)" "$action"
+  case "$op" in
+    logs) ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper NO_COLOR=1 "$STACK_DIR/stack" runtimes logs "$id" --portal ) </dev/null > /dev/null 2>&1 & return 0 ;;
+    cancel) ;;
+    *) if rt_job_running; then _refuse_diag "a runtime job is already running (Settings › Models & providers › Local models › Runtimes shows it)" "$nonce"; return 0; fi ;;
+  esac
+  ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" runtimes "$op" ${id:+"$id"} ) </dev/null > "$(helper_dir)/local-runtime.log" 2>&1 &
 }
 
 # local_server_start FIELDS — a model-server operation (op|name|url|trust|key_b64|models|ref), in the background: written to a
@@ -693,8 +719,9 @@ settings_poll_once() {
           rm -rf "$box"
           read -r action res auth when project mode hide <<< "$res"   # res: the nonce from here on
           _remember_nonce "$res"
-          # (local-probe and local-stop are the requests with no password: read-only, or a stop; rate-limited like the rest)
-          if { { [ "$action" = local-probe ] || [ "$action" = local-stop ]; } && [ "$auth" = - ] || reason="$(_auth_ok "$auth" 2>&1)"; } && reason="$(_act_limits "$action" 2>&1)"; then
+          # (local-probe, local-stop and local-runtime-stop are the requests with no password: read-only, or a stop;
+          # rate-limited like the rest)
+          if { { [ "$action" = local-probe ] || [ "$action" = local-stop ] || [ "$action" = local-runtime-stop ]; } && [ "$auth" = - ] || reason="$(_auth_ok "$auth" 2>&1)"; } && reason="$(_act_limits "$action" 2>&1)"; then
             auth=''
             case "$action" in
               local-*) local_helper_start "$action" "$project" "$res"; return 0 ;;   # (in the background: no lock, no job slot)

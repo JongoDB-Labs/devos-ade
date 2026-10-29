@@ -349,10 +349,75 @@ def read_status(status_dir: Path, now: float | None = None) -> dict:
                         "key_note": _text(s.get("key_note"), 120), "models": models, "all": "*" in en, "enabled": [x for x in en if x != "*"][:200]})
     return {"known": at is not None, "at": at, "servers": servers, "result": clean_result(d.get("result")), "stale": at is None or now - at > MAX_AGE_S,
             "runtime": {"kind": kind, "how": _text(rt.get("how"), 400), "command": "./stack local-models enable",
-                        "dmr": _text(rt.get("dmr"), 20), "ollama": _text(rt.get("ollama"), 20)},
+                        "dmr": _text(rt.get("dmr"), 20), "ollama": _text(rt.get("ollama"), 20), "mlx": _text(rt.get("mlx"), 20)},
             "gpu": _text(d.get("gpu"), 40) or "none", "memory": _int(d.get("memory_bytes")) or 0,
             "disk": _int(d.get("disk_bytes")) or 0, "installed": installed,
             "job": _clean_job(d.get("job") if isinstance(d.get("job"), dict) else {})}
+
+
+# --- the model runtimes DevOS ADE installs and runs itself (lib/runtimes.sh: status/runtimes.json) ---
+RUNTIMES_FILE = "runtimes.json"
+RUNTIME_IDS = ("ollama",)
+RT_STATES = ("installing", "running", "starting", "stopped", "not-installed", "external", "unsupported")
+RT_JOB_OPS = ("install", "start", "stop", "uninstall")
+RT_JOB_STATES = ("idle", "running", "done", "failed", "cancelled")
+RT_EVENTS = ("installed", "removed", "started", "stopped", "restart", "down", "up", "failed")
+RT_MAX_AGE_S = 180                   # older: the helper is not writing it (it does every minute)
+_ADDRESS = re.compile(r"127\.0\.0\.1:[0-9]{1,5}")
+_VERSION = re.compile(r"[0-9A-Za-z.+-]{1,40}")
+
+
+def _rt_one(r: dict) -> dict | None:
+    if not isinstance(r, dict) or r.get("id") not in RUNTIME_IDS:
+        return None
+    loaded = []
+    for m in (r.get("loaded") if isinstance(r.get("loaded"), list) else [])[:32]:
+        if isinstance(m, dict) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,159}", m.get("name") or "") and ".." not in m["name"]:
+            loaded.append({"name": m["name"], "bytes": _int(m.get("bytes")) or 0, "gpu_bytes": _int(m.get("gpu_bytes")) or 0})
+    ver, pin = _text(r.get("version"), 40), _text(r.get("pinned"), 40)
+    return {"id": r["id"], "name": {"ollama": "Ollama"}[r["id"]], "state": r.get("state") if r.get("state") in RT_STATES else "unsupported",
+            "managed": r.get("managed") is True, "kind": r.get("kind") if r.get("kind") in ("agent", "container") else "none",
+            "version": ver if _VERSION.fullmatch(ver) else "", "pinned": pin if _VERSION.fullmatch(pin) else "",
+            "address": r["address"] if _ADDRESS.fullmatch(r.get("address") or "") else "", "loaded": loaded,
+            "memory": _int(r.get("memory_bytes")) or 0, "gpu_memory": _int(r.get("gpu_bytes")) or 0,
+            "restarts": _int(r.get("restarts"), 10 ** 6), "last_exit": _int(r.get("last_exit"), 256),
+            "size": _text(r.get("size"), 80), "why_not": _text(r.get("why_not"), 200)}
+
+
+def read_runtimes(status_dir: Path, now: float | None = None) -> dict:
+    """.state/status/runtimes.json (lib/runtimes.sh rt_status_write), field by field: each runtime (state, version, its
+    address, the models loaded and their memory, restarts), the one job (install, start, stop, uninstall) and the last
+    events (Activity)."""
+    now = time.time() if now is None else now
+    d = hostfiles.read_json(status_dir / RUNTIMES_FILE, 128 * 1024)
+    at = _int(d.get("at"))
+    rts = [x for x in (_rt_one(r) for r in (d.get("runtimes") if isinstance(d.get("runtimes"), list) else [])[:8]) if x]
+    j = d.get("job") if isinstance(d.get("job"), dict) else {}
+    job = {"id": j.get("id") if j.get("id") in RUNTIME_IDS else "", "op": j.get("op") if j.get("op") in RT_JOB_OPS else "",
+           "state": j.get("state") if j.get("state") in RT_JOB_STATES else "idle",
+           "done_bytes": _int(j.get("done_bytes")) or 0, "total_bytes": _int(j.get("total_bytes")) or 0,
+           "message": _text(j.get("message"), 400), "at": _int(j.get("at"))}
+    events = []
+    for e in (d.get("events") if isinstance(d.get("events"), list) else [])[-30:]:
+        if isinstance(e, dict) and e.get("id") in RUNTIME_IDS and e.get("kind") in RT_EVENTS and _int(e.get("at")) is not None:
+            events.append({"at": _int(e.get("at")), "id": e["id"], "kind": e["kind"], "text": _text(e.get("text"), 300)})
+    return {"known": at is not None, "at": at, "stale": at is None or now - at > RT_MAX_AGE_S,
+            "os": d.get("os") if d.get("os") in ("mac", "linux") else "other", "runtimes": rts, "job": job, "events": events}
+
+
+def read_runtime_logs(status_dir: Path, runtime: str) -> dict:
+    """status/runtime-logs/<id>.txt (./stack runtimes logs ID --portal, when Settings asks): its last lines, printable only"""
+    if runtime not in RUNTIME_IDS:
+        return {"text": "", "at": None}
+    p = status_dir / "runtime-logs" / f"{runtime}.txt"
+    try:
+        if p.is_symlink() or not p.is_file():
+            return {"text": "", "at": None}
+        raw = p.read_bytes()[-256 * 1024:].decode("utf-8", "replace")
+        return {"text": "\n".join("".join(c for c in line if c.isprintable() or c == "\t")[:400] for line in raw.splitlines()[-2000:]),
+                "at": int(p.stat().st_mtime)}
+    except OSError:
+        return {"text": "", "at": None}
 
 
 def find_quant(row: dict, quant: str) -> dict | None:

@@ -183,6 +183,9 @@ class Stub(http.server.BaseHTTPRequestHandler):
                                               "finished": STUB["finished"]}), "application/json")
         if path == "/api/models/browse":
             return self.send(200, json.dumps(BROWSE), "application/json")
+        if path == "/api/local-models/runtime-logs":
+            return self.send(200, json.dumps({"text": 'time=2026-10-28T10:00:00 level=INFO msg="Listening on 127.0.0.1:11434 (version 0.40.11)"', "at": int(time.time())}),
+                             "application/json")
         if path == "/api/local-models":
             body = json.dumps(lm_state())
             LM["gets"].append(body)          # (every answer kept: no key may be in any of them)
@@ -228,6 +231,31 @@ class Stub(http.server.BaseHTTPRequestHandler):
             if body.get("action") == "local-remove":
                 LM["installed"] = [i for i in LM["installed"] if i["repo"] != body.get("repo")]
             return self.send(202, json.dumps({"id": "e2e-lc", "action": body.get("action")}), "application/json")
+        if path == "/api/local-models/runtime":   # (a runtime's install, start or removal: with the password; the helper's job follows)
+            RT["posts"].append(body)
+            if not body.get("password"):
+                return self.send(403, json.dumps({"error": "a password"}), "application/json")
+            now, one = int(time.time()), RT["one"]
+            if body.get("op") == "install":
+                RT["job"] = {"id": "ollama", "op": "install", "state": "running", "done_bytes": 50 * 1048576, "total_bytes": 181324349,
+                             "message": "Downloading Ollama 0.40.11 from GitHub", "at": now}
+                one.update(state="installing")
+            elif body.get("op") == "start":
+                RT["job"] = {"id": "ollama", "op": "start", "state": "done", "done_bytes": 0, "total_bytes": 0, "message": "Ollama is running on 127.0.0.1:11434", "at": now}
+                one.update(state="running")
+            return self.send(202, json.dumps({"id": "e2e-rt", "op": body.get("op")}), "application/json")
+        if path == "/api/local-models/runtime-stop":   # (Stop, Cancel of an install, a log read: no password)
+            RT["free"].append(body)
+            now, one, op = int(time.time()), RT["one"], body.get("op")
+            if op == "cancel" and (RT["job"] or {}).get("state") == "running":
+                RT["job"] = {**RT["job"], "state": "cancelled", "message": "Cancelled: what arrived is kept, and the next install continues from it.", "at": now}
+                one.update(state="not-installed")
+            elif op == "stop" and one["managed"] and one["state"] == "running":
+                RT["job"] = {"id": "ollama", "op": "stop", "state": "done", "done_bytes": 0, "total_bytes": 0, "message": "Ollama is stopped", "at": now}
+                one.update(state="stopped", loaded=[])
+            elif op != "logs":
+                return self.send(409, json.dumps({"error": "It is not running."}), "application/json")
+            return self.send(202, json.dumps({"id": "e2e-rt-free", "op": op}), "application/json")
         if path == "/api/local-models/stop":   # (Pause / Cancel: no password; the helper then says paused or cancelled)
             LM["stops"].append(body)
             j = LM["job"] or IDLE_JOB
@@ -259,13 +287,19 @@ BROWSE = {"providers": {"bedrock": {"on": True, "key": "BEDROCK_MODELS", "value"
      "tools": True, "images": True, "compat": "untested", "compat_note": "", "enabled": False, "chosen": False, "can": "add", "why": "", "builtin": False, "lifecycle": "", "note": ""}]}},
     "base": "0" * 64, "can_change": True, "why_not": "", "try": False}
 LM_MODELS = [{"id": "qwen/Qwen3-8B", "context": 32768}, {"id": "llama3:8b", "context": None}]
+# The runtimes DevOS ADE installs (GET /api/local-models' "runtimes", lib/runtimes.sh's file as the portal reads it): none until
+# check_runtimes sets one
+RT = {"one": None, "job": None, "posts": [], "free": [], "choice": "auto"}
+RT_IDLE = {"id": "", "op": "", "state": "idle", "done_bytes": 0, "total_bytes": 0, "message": "", "at": None}
 
 
 def lm_state():
     return {"known": True, "at": int(time.time()), "stale": False, "wait": False, "can_change": True, "why_not": "", "hf_token_set": False,
             "runtime": {"kind": "none", "how": "No model runner is running on this computer.", "command": "./stack local-models enable", "dmr": "", "ollama": ""},
             "gpu": "none", "memory": 16 * 1024 ** 3, "disk": sum(i["bytes"] for i in LM["installed"]), "installed": LM["installed"], "servers": LM["servers"], "result": LM["result"],
-            "can_stop": LM["can_stop"], "job": LM["job"] or IDLE_JOB}
+            "can_stop": LM["can_stop"], "job": LM["job"] or IDLE_JOB, "can_runtime": True, "choice": RT["choice"],
+            "runtimes": {"known": True, "at": int(time.time()), "stale": False, "os": "mac", "runtimes": [RT["one"]] if RT["one"] else [],
+                         "job": RT["job"] or RT_IDLE, "events": []}}
 
 
 def lm_helper(b):
@@ -940,6 +974,128 @@ def check_downloads(page, failures, label):
         LM.update(job=None, can_stop=True)
 
 
+def check_runtimes(page, failures, label):
+    """The runtimes DevOS ADE installs and runs (JON-829, Ollama): Install asks for the password and says what it downloads;
+    its progress, with Cancel (no password); a running one says what it has loaded and what it uses, Stop and Log with no
+    password, Start and Uninstall with it; an Ollama of yours has no button that changes it; Update when this release pins
+    another version; "Downloads go to" changes LOCAL_RUNTIME like any setting; nothing wider than a phone."""
+    pw, gb = "correct horse", 1024 ** 3
+    base = {"id": "ollama", "name": "Ollama", "state": "not-installed", "managed": False, "kind": "agent", "version": "", "pinned": "0.40.11",
+            "address": "127.0.0.1:11434", "loaded": [], "memory": 0, "gpu_memory": 0, "restarts": None, "last_exit": None, "size": "about 180 MB", "why_not": ""}
+    running = {**base, "state": "running", "managed": True, "version": "0.40.11", "loaded": [{"name": "qwen3:8b", "bytes": 6 * gb, "gpu_bytes": 6 * gb}],
+               "memory": 6 * gb, "gpu_memory": 6 * gb, "restarts": 1, "last_exit": 2}
+
+    def open_rt(one, job=None):
+        RT.update(one=dict(one), job=job)
+        page.goto(BASE + "/#settings")
+        page.reload()
+        page.wait_for_selector("#settings .set-card:not([hidden])", timeout=20000)
+        page.click(".set-nav-item[data-section='providers']")
+        page.click("#set-providers .set-minnav .chip[data-group='local models']")
+        page.wait_for_selector("#lm-runtimes", timeout=10000)
+        if not page.evaluate("() => document.querySelector('#lm-runtimes').open"):
+            page.click("#lm-runtimes > summary")
+        page.wait_for_selector(f"#lm-rt-ollama[data-state={one['state']}]", timeout=10000)
+
+    def no_dialog(what):
+        page.wait_for_timeout(250)
+        if page.locator("#set-confirm[open]").count():
+            failures.append(f"{label}: {what} opened the password dialog")
+            page.keyboard.press("Escape")
+
+    def password(ok=True):
+        page.wait_for_selector("#set-confirm[open]", timeout=5000)
+        text = page.inner_text("#set-confirm-text")
+        if ok:
+            page.fill("#set-confirm-password", pw)
+            page.click("#set-confirm-ok")
+            page.wait_for_function("() => !document.querySelector('#set-confirm[open]')", timeout=10000)
+        else:
+            page.keyboard.press("Escape")
+        return text
+
+    try:
+        # not installed: Install says what it downloads, from where, checked how, and asks for the password
+        open_rt(base)
+        page.locator("#lm-runtimes").screenshot(path=str(OUT / "settings-runtimes-none.png"))
+        page.click("#lm-rt-ollama [data-act=rt-install]")
+        text = password()
+        if not all(w in text for w in ("180 MB", "github.com/ollama/ollama", "SHA-256", "127.0.0.1:11434", "Uninstall removes them")):
+            failures.append(f"{label}: Install's dialog does not say what it does: {text!r}")
+        if RT["posts"][-1:] != [{"password": pw, "op": "install", "id": "ollama"}]:
+            failures.append(f"{label}: Install sent {[{k: v for k, v in p.items() if k != 'password'} for p in RT['posts']]}")
+        # its progress, and Cancel with no password
+        page.wait_for_selector("#lm-rt-job[data-state=running]", timeout=10000)
+        page.locator("#lm-rt-ollama").screenshot(path=str(OUT / "settings-runtimes-installing.png"))
+        txt = page.inner_text("#lm-rt-progress")
+        if "50 MB of 173 MB" not in txt or "29%" not in txt:
+            failures.append(f"{label}: an install does not say its progress: {txt!r}")
+        if page.locator("#lm-rt-ollama [data-act=rt-uninstall]").count():
+            failures.append(f"{label}: an install in progress offers Uninstall")
+        page.click("#lm-rt-job [data-act=rt-cancel]")
+        no_dialog("Cancel of an install")
+        page.wait_for_selector("#lm-rt-job[data-state=cancelled]", timeout=10000)
+        if [f["op"] for f in RT["free"]] != ["cancel"] or any("password" in f for f in RT["free"]):
+            failures.append(f"{label}: Cancel sent {RT['free']}")
+        # running, a model loaded: what it uses and how it has fared; Log and Stop with no password; Start with it
+        open_rt(running)
+        txt = page.inner_text("#lm-rt-ollama")
+        for w in ("Running", "0.40.11", "127.0.0.1:11434", "qwen3:8b (6.0 GB, 6.0 GB on the GPU)", "started again 1 time (last exit code 2)", "launchd"):
+            if w not in txt:
+                failures.append(f"{label}: a running runtime does not say {w!r}: {txt!r}")
+        page.click("#lm-rt-ollama [data-act=rt-logs]")
+        no_dialog("Log")
+        page.wait_for_function("() => ((document.querySelector('#lm-rt-log-ollama') || {}).textContent || '').includes('Listening on 127.0.0.1:11434')", timeout=15000)
+        page.locator("#lm-rt-ollama").screenshot(path=str(OUT / "settings-runtimes-running.png"))
+        page.click("#lm-rt-ollama [data-act=rt-stop]")
+        no_dialog("Stop")
+        page.wait_for_selector("#lm-rt-ollama[data-state=stopped]", timeout=10000)
+        page.wait_for_selector("#lm-rt-ollama [data-act=rt-start]:not([disabled])", timeout=10000)
+        page.click("#lm-rt-ollama [data-act=rt-start]")
+        password()
+        page.wait_for_selector("#lm-rt-ollama[data-state=running]", timeout=10000)
+        if [f["op"] for f in RT["free"]] != ["cancel", "logs", "stop"] or [p["op"] for p in RT["posts"]] != ["install", "start"]:
+            failures.append(f"{label}: the runtime buttons sent {RT['free']} and {[p['op'] for p in RT['posts']]}")
+        # Uninstall asks, and says the models go with it (Escape: nothing sent)
+        open_rt({**running, "state": "stopped", "loaded": []})
+        page.click("#lm-rt-ollama [data-act=rt-uninstall]")
+        text = password(ok=False)
+        if "every model downloaded to it" not in text:
+            failures.append(f"{label}: Uninstall's dialog does not say the models go: {text!r}")
+        if [p["op"] for p in RT["posts"]] != ["install", "start"]:
+            failures.append(f"{label}: a dismissed Uninstall sent something: {RT['posts']}")
+        # an Ollama of yours: said, and no button that changes it
+        open_rt({**base, "state": "external", "version": "0.39.0"})
+        for a in ("rt-install", "rt-start", "rt-stop", "rt-uninstall", "rt-update", "rt-logs"):
+            if page.locator(f"#lm-rt-ollama [data-act={a}]").count():
+                failures.append(f"{label}: an Ollama of yours has {a}")
+        if "An Ollama of yours" not in page.inner_text("#lm-rt-ollama"):
+            failures.append(f"{label}: an Ollama of yours is not said: {page.inner_text('#lm-rt-ollama')!r}")
+        # this release pins a newer one: Update to it
+        open_rt({**running, "version": "0.40.9"})
+        if page.locator("#lm-rt-ollama [data-act=rt-update]").inner_text() != "Update to 0.40.11":
+            failures.append(f"{label}: no Update to the pinned version")
+        # "Downloads go to": LOCAL_RUNTIME, with the password; the select stays as it is until the change is applied
+        STUB["applied"].clear()
+        page.select_option("#lm-rt-choice", "ollama")
+        password()
+        sent = STUB["applied"][-1]["set"] if STUB["applied"] else None
+        if sent != {"LOCAL_RUNTIME": "ollama"}:
+            failures.append(f"{label}: Downloads go to sent {sent}")
+        if page.input_value("#lm-rt-choice") != "auto":
+            failures.append(f"{label}: Downloads go to shows {page.input_value('#lm-rt-choice')!r} before the change was applied")
+        # a phone's width: nothing wider than the screen
+        page.set_viewport_size({"width": 390, "height": 800})
+        page.wait_for_timeout(200)
+        if page.evaluate("() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"):
+            failures.append(f"{label}: the Runtimes panel makes the page wider than the screen at 390 px")
+        page.locator("#lm-runtimes").screenshot(path=str(OUT / "settings-runtimes-390.png"))
+    finally:
+        page.set_viewport_size({"width": 1280, "height": 900})
+        RT.update(one=None, job=None, posts=[], free=[], choice="auto")
+        STUB["job"] = None
+
+
 def check_browse(page, failures, label):
     """Browse models with the models you run yourself (JON-816): the two entry points, a downloaded model and each saved
     server's models listed next to the providers' with Add / Remove, Download from Hugging Face and Add a model server
@@ -1141,6 +1297,7 @@ def main():
                     check_services(page, failures, label)
                     check_servers(page, failures, label)
                     check_downloads(page, failures, label)
+                    check_runtimes(page, failures, label)
                     check_browse(page, failures, label)
                     check_menus(page, failures, label)
                 if layout and state == "on" and not remote:   # (every key set: Replace key, and Remove the key)

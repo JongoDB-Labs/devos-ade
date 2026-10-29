@@ -9,7 +9,7 @@ from pathlib import Path
 
 import httpx
 
-from . import explabs, hostfiles, icons, openrouter, updates, usage
+from . import explabs, hostfiles, icons, local_models, openrouter, updates, usage
 from . import prices as price_update
 from .config import Settings
 
@@ -150,7 +150,7 @@ async def services(client: httpx.AsyncClient, s: Settings) -> list[dict]:
         stt = await _health(client, f"{s.stt_url}/healthz")
         out.append({"id": "stt", "name": "Speech-to-text", "role": "voice (Bedrock Voxtral)", "ok": stt[0],
                     "detail": "ready" if stt[0] else stt[2]})
-    for row in (searxng(s), forgejo(s)):
+    for row in (searxng(s), forgejo(s), *runtimes(s)):
         if row:
             out.append(row)
     return out
@@ -200,6 +200,28 @@ def searxng(s: Settings, now: float | None = None) -> dict | None:
 def forgejo(s: Settings, now: float | None = None) -> dict | None:
     """Home's row for the built-in git server, Forgejo (lib/localgit.sh; only LOCALGIT on has a container and a row)."""
     return _built_in(s, "forgejo", "Forgejo", "git server (built-in)", now)
+
+
+def runtimes(s: Settings, now: float | None = None) -> list[dict]:
+    """Home's rows for the model runtimes DevOS ADE installed and runs (lib/runtimes.sh: Ollama, a launchd agent on a Mac
+    or a container on Linux), from its record (status/runtimes.json, the update helper's every minute). One that is not
+    DevOS ADE's (an Ollama of yours) has no row: the stack does not run it."""
+    now = datetime.now(timezone.utc).timestamp() if now is None else now
+    d = local_models.read_runtimes(s.status_dir, now)
+    out = []
+    for r in d["runtimes"]:
+        if not r["managed"] or r["state"] in ("external", "not-installed", "unsupported"):
+            continue
+        ok = r["state"] == "running"
+        n = len(r["loaded"])
+        detail = (f"ready · {n} model{'s' if n != 1 else ''} loaded" if n else "ready") if ok else r["state"]
+        if r["restarts"]:
+            detail += f" · restarted {r['restarts']}×"
+        if d["stale"] and d["at"] is not None:
+            detail += f" (checked {_ago(int(now - d['at']))})"
+        role = "local models (this Mac's GPU)" if r["kind"] == "agent" else "local models (container)"
+        out.append({"id": f"runtime-{r['id']}", "name": r["name"], "role": role, "ok": ok, "detail": detail})
+    return out
 
 
 # Mirrors lib/stt.sh: Voxtral's audio counts ~12.5 input tokens per second, plus ~200 output tokens per minute.

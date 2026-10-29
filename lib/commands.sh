@@ -12,7 +12,7 @@ stack_services() { local extra; extra="$(optional_services)"; printf '%s\n' "$ST
 # (the built-in git server: on unless LOCALGIT=off, lib/localgit.sh)
 optional_services() {
   local out='' x
-  for x in "$(stt_services)" "$(terminal_services)" "$(code_services)" "$(websearch_builtin_services)" "$(localgit_services)"; do [ -z "$x" ] || out="$out${out:+ }$x"; done
+  for x in "$(stt_services)" "$(terminal_services)" "$(code_services)" "$(websearch_builtin_services)" "$(localgit_services)" "$(runtime_services)"; do [ -z "$x" ] || out="$out${out:+ }$x"; done
   printf '%s\n' "$out"
 }
 
@@ -67,7 +67,10 @@ Usage: ./stack <command> [--yes]
   local-models Models downloaded from Hugging Face and run on this computer (Docker Model Runner, else Ollama):
                status | pull ORG/REPO [QUANT] | pause | resume | cancel | rm ORG/REPO [QUANT] | enable | uninstall [--models]
                server list|add NAME URL [--trust]|key NAME|enable NAME ID|disable NAME ID|rm NAME   (any OpenAI-compatible server)
-               (Settings › Models & providers › Local models; Apple silicon runs models with MLX, else Docker Model Runner, else Ollama)
+               (Settings › Models & providers › Local models; Apple silicon runs models with MLX, else Docker Model Runner, else Ollama;
+               LOCAL_RUNTIME picks one)
+  runtimes     The model runtimes DevOS ADE installs and runs itself (Ollama; macOS natively, Linux as a container):
+               status | install ID | start ID | stop ID | uninstall ID | cancel | logs ID [LINES]
   terminal     Claude Code in the browser: a Terminal tab, a sandbox that sees only one folder of yours
                status | enable [--workspace DIR] | disable   (asks for the portal password again)
   code         Claude Code in the browser with a chat: a Code tab with permission prompts, models and
@@ -1393,6 +1396,7 @@ cmd_up() {
   [ ! -f "$STACK_DIR/litellm/config.yaml" ] || { websearch_search_check; websearch_write_json; }
   terminal_after_up   # TERMINAL_EGRESS: what its way out no longer uses goes once the container has left it
   localgit_after_up   # lib/localgit.sh: the git server's owner account and the Code page's host for it (both up now); never fatal
+  runtimes_up_hook    # lib/runtimes.sh: the installed runtimes' launchd agents (macOS; Linux's are containers above); never fatal
   localgit_mirror_reconcile   # lib/localgit.sh: the git server's way out follows the mirrors it really has; never fatal
   remote_up_hook
   ensure_portal_reachable   # lib/portal.sh: Docker Desktop forwarding the portal's port to a Caddy it replaced
@@ -1422,7 +1426,7 @@ cmd_up() {
   cmd_status
   maybe_auto_open
 }
-cmd_down()   { ! declare -F xl_bg_stop >/dev/null || xl_bg_stop; dc down; }   # (lib/explabs.sh: its background read stops too)
+cmd_down()   { ! declare -F xl_bg_stop >/dev/null || xl_bg_stop; dc down; runtimes_down_hook; }   # (lib/explabs.sh: its background read stops too; lib/runtimes.sh: the runtimes' agents)
 cmd_logs() {
   # (the built-in SearXNG while it is off: no container, so nothing to follow — said, not Compose's "no such service")
   case " $* " in *" forgejo "*) localgit_on ||
@@ -1516,6 +1520,7 @@ services_status_tick() {
   now="$(date +%s)"
   if [ "$at" -le "$now" ] && [ $((now - at)) -lt "$SERVICES_STATUS_EVERY_S" ]; then return 0; fi
   services_status_write
+  ! declare -F runtimes_watch >/dev/null || runtimes_watch || true   # lib/runtimes.sh: a runtime that ended, stopped answering or answers again
 }
 
 # shellcheck disable=SC2120  # arguments come from the ./stack dispatcher
@@ -2288,6 +2293,7 @@ cmd_uninstall() {
   terminal_uninstall_cleanup   # lib/terminal.sh: its volume, networks and image, also while it is off
   projects_uninstall_cleanup   # lib/projects.sh: the generated files (the list stays; the folders are never touched)
   ! declare -F local_mlx_uninstall >/dev/null || local_mlx_uninstall --models   # lib/local_models.sh: the MLX server agent, its venv and models
+  ! declare -F runtimes_uninstall_all >/dev/null || runtimes_uninstall_all     # lib/runtimes.sh: the runtimes it installed and their models (an Ollama of yours stays)
   sessions_uninstall_cleanup   # lib/sessions.sh: the Code page's request folder and the looks (what you allowed stays)
   local_builds_remove          # lib/images.sh: <project>/portal:local, …:previous, by exact name (never a prune)
   ! helper_installed || helper_uninstall
@@ -2321,6 +2327,8 @@ cmd_uninstall() {
 . "$STACK_DIR/lib/model_browser.sh"
 # Local models (Hugging Face GGUFs on Docker Model Runner or Ollama, served through LiteLLM): ./stack local-models.
 . "$STACK_DIR/lib/local_models.sh"
+# The model runtimes DevOS ADE installs, runs and watches itself (Ollama): ./stack runtimes.
+. "$STACK_DIR/lib/runtimes.sh"
 # Optional speech-to-text for Open WebUI's voice calls (setup step, ./stack stt, costs/summary lines).
 . "$STACK_DIR/lib/stt.sh"
 # Web search for Claude Code's WebSearch on every model (LiteLLM's web search interception; ./stack websearch).

@@ -31,14 +31,19 @@
   let stopping = null, confirmCancel = false, stopNote = "";
 
   async function load(refresh = false) {
+    const before = state && state.choice;
     try { state = await api(`/api/local-models${refresh ? "?refresh=1" : ""}`); } catch (e) { if (e.message === "signed out") return; state = { error: e.message }; }
     if (stopping && (!state.job || state.job.state !== stopping.from || Date.now() - stopping.at > 30000)) stopping = null;
+    if (rtSending && (rtJobLive() || Date.now() - rtSending.at > 20000 || rtJobAt() >= Math.floor(rtSending.at / 1000))) rtSending = null;
+    if (before && state.choice && before !== state.choice) rtChoiceAt = Date.now();
     render();
     for (const fn of listeners) { try { fn(); } catch (_) { /* a listener's own trouble */ } }
     clearTimeout(timer);
-    // quickly while a download runs (or is being stopped), or until the first file is there; otherwise only when looked at again
-    if (live() || stopping) timer = setTimeout(load, 1000);
+    // quickly while a download or a runtime's job runs (or is being stopped), or until the first file is there; otherwise
+    // only when looked at again. A new "Downloads go to": the runtime line is read again once the helper rewrote it.
+    if (live() || stopping || rtJobLive() || rtSending) timer = setTimeout(load, 1000);
     else if (state && state.wait) timer = setTimeout(load, 2000);
+    else if (rtChoiceAt && Date.now() - rtChoiceAt < 30000 && ((state.at || 0) + 1) * 1000 < rtChoiceAt) timer = setTimeout(() => load(true), 2000);
   }
 
   // Pause keeps what arrived (Resume continues from it); Cancel deletes it. No password: they only stop something (the portal's
@@ -53,6 +58,139 @@
       if (!r.ok) { stopping = null; stopNote = d.error || `That did not work (HTTP ${r.status}).`; render(); return; }
     } catch (e) { stopping = null; stopNote = `Could not reach the portal (${e.message}).`; render(); return; }
     clearTimeout(timer); timer = setTimeout(load, 1000);
+  }
+
+  // --- the runtimes DevOS ADE installs and runs itself (lib/runtimes.sh: Ollama). Install, Start and Uninstall ask for the
+  // password; Stop, Cancel (of an install) and Log do not (they stop something or read its log). ---
+  const RT_STATE = { running: ["Running", "on"], starting: ["Starting", ""], stopped: ["Stopped", "warn"], installing: ["Installing", ""],
+    "not-installed": ["Not installed", ""], external: ["Yours", ""], unsupported: ["Not on this computer", ""] };
+  const CHOICE = { auto: "Automatic", mlx: "MLX", dmr: "Docker Model Runner", ollama: "Ollama" };
+  let rtNote = "", rtLogs = null, rtSending = null, rtOpen = false;   // rtLogs: { id, text, at, asked } while the log is shown
+  let rtChoiceAt = 0;   // when "Downloads go to" changed: the runtime line is looked at again until the helper rewrote it
+  const rtJobLive = () => !!(state && state.runtimes && state.runtimes.job.state === "running");
+  const rtJobAt = () => (state && state.runtimes && state.runtimes.job.at) || 0;
+
+  async function rtFree(op, id) {
+    rtNote = "";
+    if (op !== "logs") { rtSending = { op, id, at: Date.now() }; render(); }
+    try {
+      const r = await fetch("/api/local-models/runtime-stop", { method: "POST", credentials: "same-origin", cache: "no-store",
+        headers: { ...API_HEADERS, "Content-Type": "application/json" }, body: JSON.stringify({ op, id }) });
+      const d = await r.json().catch(() => ({}));
+      if (r.status === 401) { location.assign("/login"); return false; }
+      if (!r.ok) { rtSending = null; rtNote = d.error || `That did not work (HTTP ${r.status}).`; render(); return false; }
+    } catch (e) { rtSending = null; rtNote = `Could not reach the portal (${e.message}).`; render(); return false; }
+    if (op !== "logs") { clearTimeout(timer); timer = setTimeout(load, 1000); }
+    return true;
+  }
+  async function showLogs(id) {
+    if (rtLogs && rtLogs.id === id) { rtLogs = null; render(); return; }
+    rtLogs = { id, text: "", at: null, asked: Date.now() }; render();
+    if (!(await rtFree("logs", id))) { rtLogs = null; render(); return; }
+    for (let i = 0; i < 12 && rtLogs && rtLogs.id === id; i++) {
+      await new Promise((ok) => setTimeout(ok, 750));
+      try {
+        const d = await api(`/api/local-models/runtime-logs?id=${encodeURIComponent(id)}`);
+        if (rtLogs && rtLogs.id === id && d.at && d.at * 1000 >= rtLogs.asked - 2000) { rtLogs = { ...rtLogs, text: d.text || "(The log is empty.)", at: d.at }; render(); return; }
+      } catch (e) { if (e.message === "signed out") return; }
+    }
+    if (rtLogs && rtLogs.id === id) { rtLogs = { ...rtLogs, text: `(The update helper did not copy the log in time: ./stack runtimes logs ${id} shows it in a terminal.)` }; render(); }
+  }
+
+  function runtimeRow(r) {
+    const R = state.runtimes, j = R.job;
+    const [word, tone] = RT_STATE[r.state] || [r.state, ""];
+    const up = r.state === "running" || r.state === "external";
+    const row = el("div", { class: "lm-rt", id: `lm-rt-${r.id}`, "data-state": r.state },
+      el("p", { class: "lm-rt-head" }, el("b", { text: r.name }), " ", badge(word, tone),
+        r.version && r.state !== "not-installed" && r.state !== "unsupported" ? ` ${r.version}` : "", up && r.address ? ` · ${r.address}` : ""));
+    const note = (t, id) => row.append(el("p", { class: "note", ...(id ? { id } : {}), text: t }));
+    if (up) note(r.loaded.length ? `Loaded now: ${r.loaded.map((m) => `${m.name} (${size(m.bytes)}${m.gpu_bytes ? `, ${size(m.gpu_bytes)} on the GPU` : ""})`).join(", ")}.`
+      : "Nothing loaded: a model loads on its first request, and unloads after 10 idle minutes.", `lm-rt-loaded-${r.id}`);
+    if (r.state === "external") note("An Ollama of yours (not DevOS ADE's) answers here: downloads can go to it, and DevOS ADE never stops, updates or removes it.");
+    if (r.state === "unsupported") note(`It does not run here: ${r.why_not}.`);
+    if (r.state === "not-installed") note(r.kind === "agent" ? `DevOS ADE can install it on this Mac (${r.size}): it runs natively, with the GPU, on 127.0.0.1 only.`
+      : `DevOS ADE can run it as a container of the stack (${r.size}), reachable on 127.0.0.1 only.`);
+    if (r.managed) {
+      note(`DevOS ADE's own: ${r.kind === "agent" ? "a background service of this Mac (launchd), with the GPU" : "a container of the stack"}, on 127.0.0.1 only.`
+        + (r.restarts ? ` It ended by itself and was started again ${r.restarts} time${r.restarts === 1 ? "" : "s"}${r.last_exit !== null ? ` (last exit code ${r.last_exit})` : ""}.` : "")
+        + (r.kind === "agent" && r.pinned && r.version && r.pinned !== r.version ? ` This release pins ${r.pinned}.` : ""));
+    }
+    const can = !!(state.can_change && state.can_runtime) && !rtJobLive() && !rtSending;
+    const pw = (op, title, text, ok) => askPw({ kind: "runtime", op, id: r.id }, title, text, ok);
+    const acts = el("div", { class: "lm-job-acts" });
+    if (r.state === "not-installed") {
+      acts.append(button("rt-install", `Install ${r.name}`, "primary", () => pw("install", `Install ${r.name} ${r.pinned}?`, r.kind === "agent"
+        ? `It downloads ${r.size} from github.com/ollama/ollama, checks it against the SHA-256 this release pins, and runs it on this Mac (127.0.0.1:11434 only, with the GPU). It and its models stay in this stack's folder; Uninstall removes them.`
+        : `Docker downloads Ollama's image (${r.size}, pinned by this release), and it runs as a container of the stack, on 127.0.0.1:11434 only. Its models go in a Docker volume of its own; Uninstall removes them.`, "Install")));
+    }
+    if (r.managed && (r.state === "running" || r.state === "starting")) acts.append(button("rt-stop", "Stop", "", () => rtFree("stop", r.id)));
+    if (r.managed && r.state === "stopped") acts.append(button("rt-start", "Start", "primary", () => pw("start", `Start ${r.name}?`, `It runs on ${r.address || "127.0.0.1:11434"} again, and its models are served again.`, "Start")));
+    if (r.managed && r.kind === "agent" && r.pinned && r.version && r.pinned !== r.version && r.state !== "installing") {
+      acts.append(button("rt-update", `Update to ${r.pinned}`, "", () => pw("install", `Update ${r.name} to ${r.pinned}?`, `It downloads ${r.pinned} (${r.size}, checked against this release's SHA-256), then starts it again; its models stay.`, "Update")));
+    }
+    if (r.managed) acts.append(button("rt-logs", rtLogs && rtLogs.id === r.id ? "Hide log" : "Log", "quiet", () => showLogs(r.id)));
+    if (r.managed) acts.append(button("rt-uninstall", "Uninstall", "danger", () => pw("uninstall", `Uninstall ${r.name}?`,
+      `It stops, and ${r.name} and every model downloaded to it are deleted from this computer: they leave Chat, the Code page and the terminal at once.`, "Uninstall")));
+    for (const b of acts.querySelectorAll("button")) if (b.dataset.act !== "rt-logs" && !can) b.disabled = true;
+    if (acts.childElementCount) row.append(acts);
+    if (j.id === r.id && j.state !== "idle" && (j.state === "running" || Date.now() / 1000 - (j.at || 0) < 900)) {
+      const pct = j.total_bytes ? Math.min(100, Math.round((100 * j.done_bytes) / j.total_bytes)) : null;
+      const jt = j.state === "failed" ? "bad" : j.state === "done" ? "good" : j.state === "cancelled" ? "warn" : "";
+      const jb = el("div", { class: `lm-job ${jt}`, id: "lm-rt-job", "data-state": j.state, role: "status" }, el("p", { text: j.message }));
+      if (j.state === "running" && j.op === "install" && j.total_bytes) {
+        jb.append(el("p", { class: "note", id: "lm-rt-progress", text: `${size(j.done_bytes)} of ${size(j.total_bytes)} · ${pct}%` }), el("progress", { max: "100", value: String(pct) }));
+      }
+      if (j.state === "running" && j.op === "install") {
+        const c = button("rt-cancel", "Cancel", "", () => rtFree("cancel", r.id));
+        c.disabled = !!rtSending;
+        jb.append(el("div", { class: "lm-job-acts" }, c));
+      }
+      row.append(jb);
+    } else if (rtSending && rtSending.id === r.id) {
+      row.append(el("p", { class: "note", role: "status", id: "lm-rt-job", text: "Waiting for the update helper…" }));
+    }
+    if (rtLogs && rtLogs.id === r.id) row.append(el("pre", { class: "lm-rt-log", id: `lm-rt-log-${r.id}`, tabindex: "0", text: rtLogs.text || "Asking the update helper for its log…" }));
+    return row;
+  }
+
+  // "Downloads go to": LOCAL_RUNTIME, changed like any setting (the password; Settings only — Browse models says it)
+  function choiceRow() {
+    const cur = CHOICE[state.choice] ? state.choice : "auto", rt = state.runtime;
+    const ol = (state.runtimes.runtimes || []).find((r) => r.id === "ollama");
+    const now = rt.kind === "none" ? "none running now" : `now ${RUNTIME[rt.kind] || rt.kind}`;
+    const has = { auto: true, mlx: ["ready", "stopped", "not-installed"].includes(rt.mlx), dmr: rt.dmr === "ready", ollama: !!ol && (ol.managed || ol.state === "external") };
+    if (!(helpers && helpers.askPassword) || part) return el("p", { class: "note", id: "lm-rt-choice-text", text: `Downloads go to: ${CHOICE[cur]}${cur === "auto" ? ` (${now})` : ""}.` });
+    const sel = el("select", { id: "lm-rt-choice", "aria-label": "Downloads go to" });
+    for (const k of ["auto", "mlx", "dmr", "ollama"]) {
+      if (!has[k] && k !== cur) continue;
+      const o = el("option", { value: k, text: k === "auto" ? `Automatic (${now})` : CHOICE[k] });
+      if (k === cur) o.selected = true;
+      sel.append(o);
+    }
+    sel.disabled = !state.can_change || live();
+    sel.addEventListener("change", () => {
+      const v = sel.value;
+      sel.value = cur;   // (it shows the new one once the change is applied, not before: a cancelled dialog changes nothing)
+      askPw({ kind: "apply", values: { LOCAL_RUNTIME: v === "auto" ? "" : v } }, `Send downloads to ${CHOICE[v]}?`,
+        `New downloads go to ${v === "auto" ? "the first runtime found (MLX on Apple silicon, else Docker Model Runner, else Ollama)" : CHOICE[v]}, and Browse lists the models it takes. The models already downloaded stay where they are and keep working.`, "Save");
+    });
+    return el("label", { class: "lm-rt-choice" }, "Downloads go to ", sel);
+  }
+
+  function runtimesSec() {
+    const R = state.runtimes;
+    if (!R || !R.runtimes || !R.runtimes.length) return null;
+    const sum = R.runtimes.map((r) => `${r.name} ${(RT_STATE[r.state] || [r.state])[0].toLowerCase()}`).join(", ");
+    const sec = el("details", { class: "lm-sec", id: "lm-runtimes", ...(rtOpen || rtJobLive() || rtSending || rtLogs ? { open: "" } : {}) },
+      el("summary", { text: `Runtimes · ${sum} · ${CHOICE[state.choice] && state.choice !== "auto" ? `downloads go to ${CHOICE[state.choice]}`
+        : state.runtime.kind === "none" ? "nothing takes a download yet" : `downloads go to ${RUNTIME[state.runtime.kind] || state.runtime.kind}`}` }));
+    sec.addEventListener("toggle", () => { rtOpen = sec.open; });
+    sec.append(el("p", { class: "note", text: "The programs that run downloaded models. DevOS ADE installs, starts, updates and watches its own here; Home and Activity say when one stops." }));
+    for (const r of R.runtimes) sec.append(runtimeRow(r));
+    sec.append(choiceRow());
+    if (rtNote) sec.append(el("p", { class: "note lm-warn warn", id: "lm-rt-note", role: "status", text: rtNote }));
+    return sec;
   }
 
   async function find(q) {
@@ -81,7 +219,7 @@
         const cmd = el("code", { class: "lm-cmd", text: rt.command });
         const cp = el("button", { type: "button", class: "quiet", text: "Copy" });
         cp.addEventListener("click", () => { try { navigator.clipboard.writeText(rt.command); cp.textContent = "Copied"; } catch (_) { /* the command is shown */ } });
-        how.append(el("p", {}, "To turn it on, run this in a terminal on this computer: ", cmd, " ", cp, " It asks before it changes anything. Or install Ollama. You can still use a model server below."));
+        how.append(el("p", {}, "To turn it on, run this in a terminal on this computer: ", cmd, " ", cp, ` It asks before it changes anything. Or install Ollama${state.runtimes && state.runtimes.runtimes.some((r) => r.id === "ollama" && r.state === "not-installed") ? " under Runtimes below, with one click" : ""}. You can still use a model server below.`));
       }
       return how;
     }
@@ -423,6 +561,8 @@
     const body = el("div", { class: "lm-body" });
     const j = job();
     const mine = el("div", { class: "lm-this-body" }, runtimeLine());
+    const rts = runtimesSec();
+    if (rts) mine.append(rts);
     if (j) mine.append(j);
     if (!state.can_change && state.why_not) mine.append(el("p", { class: "note", text: state.why_not }));
     const have = state.installed.length;
@@ -507,6 +647,8 @@
     // settings.js: the update helper took a download or a removal: watch its progress here
     // settings.js: a model-server request went to the update helper (what: the form's request, d: the portal's answer)
     serverSent(what, d) { if (what.key) what.key = ""; waitFor(d.ref, what.op, what.name || ""); },
+    // settings.js: a runtime's install, start or removal went to the update helper
+    runtimeSent(what) { rtNote = ""; rtOpen = true; rtSending = { op: what.op, id: what.id, at: Date.now() }; render(); clearTimeout(timer); timer = setTimeout(load, 1000); },
     started() { confirmCancel = false; stopNote = ""; state = state && { ...state, job: { ...(state.job || {}), state: "registering", message: "Waiting for the update helper…", repo: "", quant: "", resumable: false } }; render(); clearTimeout(timer); timer = setTimeout(load, 1000); },
   };
 })();

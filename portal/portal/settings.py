@@ -262,7 +262,8 @@ def capability(status_dir: Path, now: float | None = None) -> dict:
     projects = [a for a in d.get("projects") or [] if a in PROJECT_ACTIONS] if ok else []
     sessions = [a for a in d.get("sessions") or [] if a in SESSIONS_ACTIONS + SESSIONS_REQUESTS] if ok else []
     subs = [a for a in d.get("subscriptions") or [] if a in SUBS_ACTIONS] if ok else []
-    local = [a for a in d.get("local") or [] if a in LOCAL_ACTIONS + ("local-server", "local-probe", "local-stop")] if ok else []
+    local = [a for a in d.get("local") or [] if a in LOCAL_ACTIONS + ("local-server", "local-probe", "local-stop", "local-runtime",
+                                                                      "local-runtime-stop")] if ok else []
     return {"settings": ok, "diagnostics": acts, "projects": projects, "sessions": sessions, "subscriptions": subs, "local": local,
             "screen": ok and d.get("screen") is True}
 
@@ -620,6 +621,7 @@ VALIDATORS = {
     "egress": _one_of("internet", "host", "off", "", msg="must be internet, host or off (blank = internet)"),
     "hour": _hour,
     "stt_provider": _one_of("bedrock", "openai", "groq", "", msg="must be bedrock, openai, groq or blank (the browser)"),
+    "local_runtime": _one_of("", "auto", "mlx", "dmr", "ollama", msg="must be auto, mlx, dmr or ollama (blank = auto)"),
     "stt_key": _stt_key, "stt_model": _stt_model, "or_key": _or_key, "or_mode": _or_mode, "int_1_5000": _int_1_5000,
     "xl_key": _xl_key, "xl_models": _xl_models,
     "ws_backend": _one_of("", "auto", "off", "agentcore", "tavily", "brave", "perplexity", "searxng", "builtin",
@@ -885,6 +887,30 @@ def write_local_stop_action(request_dir: Path, op: str, now: float | None = None
     raw = json.dumps({"action": "local-stop", "requested_at": int(time.time() if now is None else now), "nonce": nonce, "op": op},
                      separators=(",", ":")).encode("ascii")
     _write_atomic(request_dir, "act", f"act-{nonce}.json", raw)
+    return nonce
+
+
+RUNTIME_IDS = ("ollama",)   # (lib/runtimes.sh RUNTIME_IDS)
+RUNTIME_OPS_PW = ("install", "start", "uninstall")   # with the password (local-runtime)
+RUNTIME_OPS_FREE = ("stop", "cancel", "logs")        # without (local-runtime-stop): a stop, or a read of its log
+
+
+def write_runtime_action(request_dir: Path, op: str, runtime: str, password: str = "", now: float | None = None) -> str:
+    """REQUEST_DIR/act-<nonce>.json: a model runtime's install, start or removal (local-runtime, with the password), or its
+    stop, the running install's cancel or a read of its log (local-runtime-stop: no password — it stops something or
+    reads, and spends nothing; the portal writes it behind its session, CSRF and origin checks, the helper rate-limits
+    it). The op and the runtime's id only. -> nonce"""
+    if runtime not in RUNTIME_IDS or op not in RUNTIME_OPS_PW + RUNTIME_OPS_FREE:
+        raise ValueError("bad request")
+    nonce = secrets.token_hex(16)
+    body = {"action": "local-runtime" if op in RUNTIME_OPS_PW else "local-runtime-stop",
+            "requested_at": int(time.time() if now is None else now), "nonce": nonce}
+    if op in RUNTIME_OPS_PW:
+        if not password or len(password.encode("utf-8", "surrogatepass")) > MAX_AUTH:
+            raise ValueError("bad request")
+        body["auth"] = _b64(password)
+    body.update({"op": op, "id": runtime})
+    _write_atomic(request_dir, "act", f"act-{nonce}.json", json.dumps(body, separators=(",", ":")).encode("ascii"))
     return nonce
 
 

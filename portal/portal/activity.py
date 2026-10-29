@@ -28,7 +28,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from . import admin, hostfiles, summary, updates
+from . import admin, hostfiles, local_models, summary, updates
 from . import code as codepage
 from .config import Settings
 
@@ -40,7 +40,7 @@ HEALTH_DAYS = 7           # a container's restart, unhealthy turn or failed exit
 HEALTH_MAX = 5            # the newest few: a crash loop is one story, not a flood
 # the subjects a health record may name: the stack's own services, else "other" (lib/health.sh HEALTH_SERVICES, the same
 # closed set as docs/event-schema.md; a test keeps the three together)
-SERVICES = frozenset("caddy chat-egress code forgejo litellm open-webui portal postgres rustfs rustfs-init searxng shared-mcp stt "
+SERVICES = frozenset("caddy chat-egress code forgejo litellm ollama open-webui portal postgres rustfs rustfs-init searxng shared-mcp stt "
                      "subs-chat tailscale terminal terminal-egress terminal-gateway other".split())
 LEVELS = ("info", "good", "warn", "bad")
 ID = re.compile(r"[A-Za-z0-9:._@+-]{1,160}")
@@ -240,12 +240,40 @@ def health_items(status_dir: Path, now: float) -> list[dict]:
     return out
 
 
+# What a runtime's event says (lib/runtimes.sh _rt_event: its text is the stack's own words): level, title, notify. Its
+# ending by itself, stopping answering or failing is news; what you did from Settings or a terminal is listed quietly.
+RT_EVENT = {"restart": ("warn", "{n} ended and was started again", True), "down": ("bad", "{n} stopped answering", True),
+            "failed": ("bad", "{n}: something did not work", True), "up": ("good", "{n} answers again", False),
+            "installed": ("info", "{n} installed", False), "removed": ("info", "{n} uninstalled", False),
+            "started": ("info", "{n} started", False), "stopped": ("info", "{n} stopped", False)}
+
+
+def runtime_items(status_dir: Path, now: float) -> list[dict]:
+    """The model runtimes DevOS ADE runs (status/runtimes.json's events): newest first, at most HEALTH_MAX, for a week."""
+    d = local_models.read_runtimes(status_dir, now)
+    names = {r["id"]: r["name"] for r in d["runtimes"]}
+    out = []
+    for e in d["events"][::-1]:
+        if now - e["at"] > HEALTH_DAYS * 86400 or e["at"] > now + 300:
+            continue
+        level, title, notify = RT_EVENT[e["kind"]]
+        it = _item(f"runtime:{e['id']}:{e['kind']}:{e['at']}", "runtime", level, title.format(n=names.get(e["id"], e["id"].capitalize())),
+                   e["text"] + (f" ./stack runtimes logs {e['id']} shows its log." if level in ("warn", "bad") else ""), e["at"],
+                   "#settings/+local-models", notify)
+        if it:
+            out.append(it)
+        if len(out) >= HEALTH_MAX:
+            break
+    return out
+
+
 def items(s: Settings, rem: bool, now: float | None = None) -> list[dict]:
     """Every server-side item, newest first, at most MAX_ITEMS. One source failing never hides the others."""
     now = time.time() if now is None else now
     out: list[dict] = []
     for fn in (lambda: [update_item(s)], lambda: job_items(s.status_dir, now), lambda: [code_default_item(s, rem)],
-               lambda: [models_item(s, now)], lambda: [stt_notice_item(s)], lambda: health_items(s.status_dir, now)):
+               lambda: [models_item(s, now)], lambda: [stt_notice_item(s)], lambda: health_items(s.status_dir, now),
+               lambda: runtime_items(s.status_dir, now)):
         try:
             out += [x for x in fn() if x]
         except (OSError, ValueError, KeyError, TypeError, AttributeError):

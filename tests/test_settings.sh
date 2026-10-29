@@ -69,8 +69,8 @@ test_every_env_key_is_in_the_settings_table_once() {
   # + web search's 6: the backend, AgentCore's gateway, three search keys and a SearXNG URL,
   # + BEDROCK_MODELS: the extra Bedrock models the model browser adds beyond the catalog, JON-520,
   # + the built-in git server's 7: its switch, its owner's password, its host name, its origin, its mirrors' hosts and
-  # their way out, and the portal sign-in's header name)
-  assert_eq "$(settings_rows | wc -l | tr -d ' ')" 156
+  # their way out, and the portal sign-in's header name, + LOCAL_RUNTIME: the runtime local-model downloads go to, JON-829)
+  assert_eq "$(settings_rows | wc -l | tr -d ' ')" 157
 }
 
 test_table_columns_are_valid() {
@@ -128,7 +128,7 @@ test_config_list_follows_the_pages_sections() {
   # every key that adds models in Models & providers: Bedrock's, OpenRouter's (its models under it), Experiential Labs',
   # and the Claude plan switch of Your AI subscriptions; then Search: Claude Code's WebSearch and its backends
   assert_eq "$(printf '%s\n' "$out" | awk '/^Models & providers$/ { f = 1; next } /^[A-Z]/ { f = 0 } f && NF { print $1 }' | tr '\n' ' ')" \
-    "AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY BEDROCK_MODELS OPENROUTER_API_KEY OPENROUTER_MODELS OPENROUTER_MAX_MODELS OPENROUTER_INCLUDE_ALIASES EXPLABS_API_KEY EXPLABS_MODELS CODE_CLAUDE_PLAN WEBSEARCH_BACKEND WEBSEARCH_SEARXNG_BUILTIN WEBSEARCH_AGENTCORE_GATEWAY WEBSEARCH_TAVILY_API_KEY WEBSEARCH_BRAVE_API_KEY WEBSEARCH_PERPLEXITY_API_KEY WEBSEARCH_SEARXNG_URL LOCAL_MODELS MODEL_SERVERS MODEL_SERVER_KEYS MODEL_SERVER_MODELS HF_TOKEN "
+    "AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY BEDROCK_MODELS OPENROUTER_API_KEY OPENROUTER_MODELS OPENROUTER_MAX_MODELS OPENROUTER_INCLUDE_ALIASES EXPLABS_API_KEY EXPLABS_MODELS CODE_CLAUDE_PLAN WEBSEARCH_BACKEND WEBSEARCH_SEARXNG_BUILTIN WEBSEARCH_AGENTCORE_GATEWAY WEBSEARCH_TAVILY_API_KEY WEBSEARCH_BRAVE_API_KEY WEBSEARCH_PERPLEXITY_API_KEY WEBSEARCH_SEARXNG_URL LOCAL_MODELS LOCAL_RUNTIME MODEL_SERVERS MODEL_SERVER_KEYS MODEL_SERVER_MODELS HF_TOKEN "
   assert_contains "$out" "    CODE_ALLOW_BYPASS            (blank)   (less protection: this computer only)"
   assert_contains "$(printf '%s\n' "$out" | awk '/^Spending & budgets$/ { f = 1; next } /^[A-Z]/ { f = 0 } f')" "  BUDGET_TERMINAL                50   (less protection: this computer only)"
   assert_contains "$out" "    AWS_SECRET_ACCESS_KEY        (set)   (this computer only)"
@@ -267,7 +267,7 @@ test_snapshot_masks_every_secret() {
   assert_contains "$s" "\"base\": \"$(env_sha256)\""
   assert_contains "$s" '"key": "MY_OWN_SECRET", "group": "advanced", "secret": "S"'
   if command -v python3 >/dev/null 2>&1; then
-    python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); assert len(d["keys"]) == 157; assert d["last_change"] is None' "$f"
+    python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); assert len(d["keys"]) == 158; assert d["last_change"] is None' "$f"
   fi
 }
 
@@ -1207,13 +1207,13 @@ test_helper_without_a_screen_says_so_and_tells_the_portal() {
   assert_contains "$(cat "$(helper_status_file)")" "No dialog can be shown on this computer (no screen, or no folder chooser): in a terminal there, ./stack project add DIR"
   [ ! -e "$CALLS" ]
   rm -f "$(settings_capability_file)"; settings_helper_tick || true
-  assert_contains "$(cat "$(settings_capability_file)")" '"projects": ["project-pick","project-remove","project-mode-ro"], "sessions": ["sessions-revoke","sessions-scan","sessions-fetch","sessions-suggest","sessions-copy","setup-scan","setup-fetch","setup-copy"], "subscriptions": ["subscriptions-check","subscriptions-signout","subscriptions-check-chat","subscriptions-signout-chat"], "local": ["local-pull","local-remove","local-server","local-probe","local-stop"], "screen": false'
+  assert_contains "$(cat "$(settings_capability_file)")" '"projects": ["project-pick","project-remove","project-mode-ro"], "sessions": ["sessions-revoke","sessions-scan","sessions-fetch","sessions-suggest","sessions-copy","setup-scan","setup-fetch","setup-copy"], "subscriptions": ["subscriptions-check","subscriptions-signout","subscriptions-check-chat","subscriptions-signout-chat"], "local": ["local-pull","local-remove","local-server","local-probe","local-stop","local-runtime","local-runtime-stop"], "screen": false'
   # a helper that offers something new says so at once, not up to ten minutes later (a helper restarted after an update)
   local at; at="$(sed -n 's/.*"written_at": \([0-9]*\).*/\1/p' "$(settings_capability_file)")"
   settings_helper_tick || true
   assert_contains "$(cat "$(settings_capability_file)")" "\"written_at\": $at}"   # (nothing changed: not written again)
   LOCAL_HELPER_ACTIONS="$LOCAL_HELPER_ACTIONS local-next"; settings_helper_tick || true
-  assert_contains "$(cat "$(settings_capability_file)")" '"local-stop","local-next"]'
+  assert_contains "$(cat "$(settings_capability_file)")" '"local-runtime-stop","local-next"]'
 }
 
 test_helper_rechecks_models_at_most_hourly() {

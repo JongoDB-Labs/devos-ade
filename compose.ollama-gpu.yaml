@@ -1,0 +1,11 @@
+# Ollama's container with this computer's NVIDIA GPUs (lib/runtimes.sh runtime_overlays: added while Ollama is installed
+# here and Docker had the NVIDIA runtime when it was installed; ./stack runtimes uninstall ollama, then install, decides again).
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

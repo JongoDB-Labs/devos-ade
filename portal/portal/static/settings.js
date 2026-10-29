@@ -2366,6 +2366,7 @@
       else if (what.kind === "subscriptions") [r, d] = await post("/api/settings/subscriptions", { password: pw, action: what.action, ...(what.tool ? { tool: what.tool } : {}) });
       else if (what.kind === "server") [r, d] = await post("/api/local-models/server", { password: pw, op: what.op, name: what.name || "", url: what.url || "", trust: what.trust === true, key: what.key || "", models: what.models || [] });
       else if (what.kind === "local") [r, d] = await post("/api/local-models/change", { password: pw, action: what.action, repo: what.repo, quant: what.quant });
+      else if (what.kind === "runtime") [r, d] = await post("/api/local-models/runtime", { password: pw, op: what.op, id: what.id });
       else if (what.kind === "project") {
         [r, d] = await post("/api/settings/project", { password: pw, action: what.action, when: what.when,
           ...(what.project ? { project: what.project } : { mode: what.mode, hide: what.hide }) });
@@ -2386,6 +2387,7 @@
       if (what.kind === "signout") { toast("Every other device is signed out"); return; }
       if (what.kind === "server") { toast(what.op === "probe" ? "Checking the server" : "Sent to the update helper"); if (window.bnLocal) window.bnLocal.serverSent(what, d); return; }
       if (what.kind === "local") { toast(what.action === "local-pull" ? "Download started" : "Removing"); if (window.bnLocal) window.bnLocal.started(); return; }
+      if (what.kind === "runtime") { toast({ install: "Installing", start: "Starting", uninstall: "Uninstalling" }[what.op] || "Sent to the update helper"); if (window.bnLocal) window.bnLocal.runtimeSent(what); return; }
       // a form's change: what was typed is kept (in this page's memory only) until the helper's answer — a failure
       // opens the form again with it, the reason under the field (reopen)
       const restore = what.kind === "apply" && what.form ? kept(what.form) : null;

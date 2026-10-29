@@ -194,6 +194,7 @@
     else if (it && it.kind === "openrouter") title = "OpenRouter requests failed";
     else if (it && it.kind === "voice") title = "Voice changed to browser speech";
     else if (it && it.kind === "health") title = "A container had a problem";
+    else if (it && it.kind === "runtime") title = "A local model runtime had a problem";
     return { title, body: NOTE_BODY };
   }
 
@@ -383,7 +384,7 @@
     if (s < 172800) return `${Math.round(s / 3600)} h ago`;
     return `${Math.round(s / 86400)} days ago`;
   }
-  const KIND_LABEL = { budget: "Budget", update: "Update", job: "Job", "code-default": "Code page", code: "Code", models: "Models", openrouter: "OpenRouter", voice: "Voice", health: "Container" };
+  const KIND_LABEL = { budget: "Budget", update: "Update", job: "Job", "code-default": "Code page", code: "Code", models: "Models", openrouter: "OpenRouter", voice: "Voice", health: "Container", runtime: "Runtime" };
 
   function go(link) {
     if (!LINK.test(link)) return;
@@ -426,6 +427,7 @@
     else if (it.kind === "openrouter") act("Show on Home", () => onHome("#openrouter"));
     else if (it.kind === "voice") act("Voice in Settings", () => go(it.link));
     else if (it.kind === "health") act("Diagnostics", () => go(it.link));
+    else if (it.kind === "runtime") act("Local models", () => go(it.link));
     else if (it.kind === "job") act(it.link === "#home" ? "Show on Home" : "Open Settings", () => (it.link === "#home" ? onHome("#job") : go(it.link)));
     else if (it.link) act("Open", () => go(it.link));
     return out;
