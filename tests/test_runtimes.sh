@@ -106,7 +106,7 @@ test_compose_renders_ollama_isolated_behind_its_gate() {
   [ -n "${BN_REAL_DOCKER:-}" ] && "$BN_REAL_DOCKER" compose version >/dev/null 2>&1 || { echo "no docker compose" >&2; return 77; }
   docker() { case "$*" in *" config --format json") "$BN_REAL_DOCKER" "$@" ;; *) echo "unexpected docker $*" >&2; return 97 ;; esac; }
   printf 'POSTGRES_PASSWORD=p\nRUSTFS_ACCESS_KEY=a\nRUSTFS_SECRET_KEY=s\nLITELLM_MASTER_KEY=m\nLITELLM_SALT_KEY=s\nLITELLM_UI_PASSWORD=u\nWEBUI_SECRET_KEY=w\nOPENWEBUI_ADMIN_EMAIL=a@b.c\nOPENWEBUI_ADMIN_PASSWORD=p\nSHARED_MCP_TOKEN=t\nSTT_PROVIDER=bedrock\n' > "$ENV_FILE"
-  local out; out="$(_RT_PROFILE=1 dc config --format json 2>&1)" || { echo "$out" >&2; return 1; }
+  local out; out="$(_RT_PROFILE=ollama dc config --format json 2>&1)" || { echo "$out" >&2; return 1; }
   printf '%s' "$out" | python3 -I -c '
 import json, sys
 d = json.load(sys.stdin); s = d["services"]

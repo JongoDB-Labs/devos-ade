@@ -78,6 +78,10 @@ rt_why_not() {
 }
 
 # --- what answers ---
+# _rt_version ID -> what answers on its address says it is (its version; nothing: nothing answers there)
+_rt_version() { case "$1" in ollama) _rt_ollama_version ;; esac; }
+# _rt_ps ID -> the models it has loaded now, one per line: name TAB bytes TAB bytes in GPU memory (0: not known)
+_rt_ps() { case "$1" in ollama) _rt_ollama_ps ;; esac; }
 # _rt_ollama_version -> the version the Ollama on 127.0.0.1:11434 says (nothing: none answers)
 _rt_ollama_version() {
   curl -s -m 3 "$(_local_ollama_url)/api/version" 2>/dev/null | sed -n 's/.*"version" *: *"\([0-9A-Za-z.+-]*\)".*/\1/p' | head -n 1 | cut -c1-40 || true
@@ -107,6 +111,7 @@ _rt_launchd() { launchctl print "gui/$(id -u)/$(rt_label "$1")" 2>/dev/null; }
 _rt_agent_field() { _rt_launchd "$1" | awk -v f="$2" '!n && index($0, "\t" f " = ") == 1 { print substr($0, length(f) + 5); n = 1 }' || true; }
 _rt_agent_loaded() { _rt_launchd "$1" >/dev/null; }
 _rt_xml() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+_rt_plist() { case "$1" in ollama) _rt_ollama_plist ;; esac; }
 # _rt_ollama_plist -> the agent: 127.0.0.1 only, the stack's own models folder and HOME, cloud features off
 _rt_ollama_plist() {
   local d; d="$(_rt_xml "$(rt_dir ollama)")"
@@ -131,7 +136,7 @@ _rt_agent_up() {
   local id="$1" plist lbl n=0; plist="$(rt_plist "$1")"; lbl="$(rt_label "$1")"
   mkdir -p "$HOME/Library/LaunchAgents" "$(rt_dir "$id")/models" "$(rt_dir "$id")/home"
   _rt_log_rotate "$id"
-  _rt_ollama_plist > "$plist.tmp" && chmod 600 "$plist.tmp" && mv -f "$plist.tmp" "$plist" || return 1
+  _rt_plist "$id" > "$plist.tmp" && chmod 600 "$plist.tmp" && mv -f "$plist.tmp" "$plist" || return 1
   if _rt_agent_loaded "$id"; then
     launchctl bootout "gui/$(id -u)/$lbl" >/dev/null 2>&1 || true
     while _rt_agent_loaded "$id" && [ "$n" -lt 20 ]; do sleep 0.25; n=$((n + 1)); done
@@ -145,7 +150,7 @@ _rt_agent_down() {
   launchctl bootout "gui/$(id -u)/$(rt_label "$1")" >/dev/null 2>&1 || true
   rm -f "$plist"
   [ "$was" = 1 ] || return 0
-  while [ -n "$(_rt_ollama_version)" ] && [ "$n" -lt 40 ]; do sleep 0.25; n=$((n + 1)); done
+  while [ -n "$(_rt_version "$1")" ] && [ "$n" -lt 40 ]; do sleep 0.25; n=$((n + 1)); done
 }
 
 # --- Linux: the compose service ---
@@ -155,8 +160,18 @@ rt_compose_on() { [ "$(rt_os)" = linux ] && rt_installed "$1"; }
 rt_services() { case "$1" in ollama) echo "ollama ollama-gate" ;; esac; }
 # runtime_services -> the runtime containers ./stack up starts (lib/commands.sh optional_services)
 runtime_services() { local id out=''; for id in $RUNTIME_IDS; do ! rt_compose_on "$id" || out="$out${out:+ }$(rt_services "$id")"; done; printf '%s\n' "$out"; }
+# runtime_profiles -> the compose profiles of the runtime containers (lib/common.sh dc): each installed one's, and the one
+# _RT_PROFILE names (its own pull, rm and logs, before it is installed or after it is not)
+runtime_profiles() { local id; for id in $RUNTIME_IDS; do ! { rt_compose_on "$id" || [ "${_RT_PROFILE:-}" = "$id" ]; } || echo "$id"; done; }
 # runtime_overlays -> the compose files of their GPUs (lib/common.sh compose_overlays)
-runtime_overlays() { ! rt_compose_on ollama || [ "$(cat "$(rt_dir ollama)/gpu" 2>/dev/null)" != nvidia ] || echo compose.ollama-gpu.yaml; }
+runtime_overlays() {
+  local id
+  for id in $RUNTIME_IDS; do
+    ! rt_compose_on "$id" || [ "$(cat "$(rt_dir "$id")/gpu" 2>/dev/null)" != nvidia ] || echo "compose.$id-gpu.yaml"
+  done
+}
+# _rt_volumes ID -> its compose volumes (Linux: deleted with it)
+_rt_volumes() { case "$1" in ollama) echo ollama-models ;; esac; }
 _rt_container_state() { dc ps -a --format '{{.State}}' "$1" 2>/dev/null | head -n 1 | LC_ALL=C tr -cd 'a-z' | cut -c1-20; }
 
 # --- the state ---
@@ -166,7 +181,7 @@ rt_state() {
   [ -z "$(rt_why_not "$id")" ] || { echo unsupported; return 0; }
   j="$(cat "$(rt_job_file)" 2>/dev/null || true)"
   if rt_job_running && [ "$(_local_json_str "$j" id)" = "$id" ] && [ "$(_local_json_str "$j" op)" = install ]; then echo installing; return 0; fi
-  v="$(_rt_ollama_version)"
+  v="$(_rt_version "$id")"
   if ! rt_installed "$id"; then [ -n "$v" ] && echo external || echo not-installed; return 0; fi
   if [ "$(rt_kind "$id")" = agent ]; then
     if [ -n "$v" ] && _rt_agent_loaded "$id"; then echo running
@@ -310,7 +325,7 @@ _rt_install_ollama_linux() {
   # (the GPU is decided once, here: dc() must not ask Docker on every call)
   if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep '"nvidia"' >/dev/null; then echo nvidia > "$d/gpu"; else rm -f "$d/gpu"; fi
   _rt_job running "$id" install 0 0 "Downloading Ollama's image ($(rt_size "$id"))"
-  _RT_PROFILE=1 dc pull -q ollama </dev/null > "$d/install.log" 2>&1 || _rt_fail "$id" install "Docker could not download Ollama's image: $(tail -n 2 "$d/install.log" | LC_ALL=C tr -cd ' -~\n' | tr '\n' ' ' | cut -c1-200)"
+  _RT_PROFILE=ollama dc pull -q ollama </dev/null > "$d/install.log" 2>&1 || _rt_fail "$id" install "Docker could not download Ollama's image: $(tail -n 2 "$d/install.log" | LC_ALL=C tr -cd ' -~\n' | tr '\n' ' ' | cut -c1-200)"
   if [ -f "$(_rt_cancel_file)" ]; then rm -f "$(_rt_cancel_file)" "$(rt_root)/job.pid"; _rt_job cancelled "$id" install 0 0 "Cancelled."; return 0; fi
   rt_pinned_version "$id" > "$d/installed"
 }
@@ -328,7 +343,7 @@ rt_install() {
     confirm "Install $(rt_name "$id") $(rt_pinned_version "$id") ($(rt_size "$id")$([ "$(rt_os)" = mac ] && echo ", from github.com/ollama/ollama, into .state/runtimes/$id" || echo ", Ollama's image")), running on $(rt_address "$id") only?" || die "nothing was installed"
   fi
   _rt_begin "$id"; rm -f "$(_rt_cancel_file)"
-  case "$(rt_os)" in mac) _rt_install_ollama_mac ;; linux) _rt_install_ollama_linux ;; esac
+  case "$(rt_os)" in mac) "_rt_install_${id}_mac" ;; linux) "_rt_install_${id}_linux" ;; esac
   rt_installed "$id" || return 0   # (cancelled)
   _rt_job running "$id" install 0 0 "Starting it"
   _rt_start_now "$id" || _rt_fail "$id" install "$(rt_name "$id") is installed but did not start: $(_rt_log_hint "$id")"
@@ -344,13 +359,13 @@ _rt_start_now() {
   local id="$1" n=0
   if [ "$(rt_kind "$id")" = agent ]; then
     [ -x "$(rt_dir "$id")/bin/ollama" ] || return 1
-    [ -z "$(_rt_ollama_version)" ] || _rt_agent_loaded "$id" || return 1   # (another Ollama holds the port)
+    [ -z "$(_rt_version "$id")" ] || _rt_agent_loaded "$id" || return 1   # (something else holds the port)
     _rt_agent_up "$id" || return 1
   else
     # shellcheck disable=SC2046
     dc up -d $(rt_services "$id") </dev/null >/dev/null 2>&1 || return 1
   fi
-  while [ "$n" -lt "${RT_START_WAIT:-60}" ]; do [ -z "$(_rt_ollama_version)" ] || return 0; sleep 1; n=$((n + 1)); done
+  while [ "$n" -lt "${RT_START_WAIT:-60}" ]; do [ -z "$(_rt_version "$id")" ] || return 0; sleep 1; n=$((n + 1)); done
   return 1
 }
 _rt_log_hint() { rt_logs_text "$1" 3 | tr '\n' ' ' | cut -c1-200; }
@@ -410,7 +425,7 @@ _rt_unregister() {
   config_apply local cli ''
 }
 rt_uninstall() {
-  local id="${1:-}" d
+  local id="${1:-}" d v
   valid_runtime_id "$id" || die "not a runtime: $id ($RUNTIME_IDS)"
   rt_installed "$id" || [ -d "$(rt_dir "$id")/bin" ] || die "$(rt_name "$id") is not installed by DevOS ADE (one of yours is never removed from here)"
   if [ -t 0 ] && [ "${BEDROCK_NOW_JOB_ORIGIN:-}" != helper ] && [ "${ASSUME_YES:-0}" != 1 ]; then
@@ -424,8 +439,8 @@ rt_uninstall() {
     _rt_agent_down "$id"
   else
     # shellcheck disable=SC2046
-    _RT_PROFILE=1 dc rm -sf $(rt_services "$id") </dev/null >/dev/null 2>&1 || true
-    docker volume rm "$(project_name)_ollama-models" >/dev/null 2>&1 || true
+    _RT_PROFILE="$id" dc rm -sf $(rt_services "$id") </dev/null >/dev/null 2>&1 || true
+    for v in $(_rt_volumes "$id"); do docker volume rm "$(project_name)_$v" >/dev/null 2>&1 || true; done
   fi
   rm -rf "$d"
   _rt_event "$id" removed "$(rt_name "$id") was removed with its models"
@@ -434,11 +449,11 @@ rt_uninstall() {
 }
 # runtimes_uninstall_all — ./stack uninstall: every runtime this stack installed (an Ollama of yours stays)
 runtimes_uninstall_all() {
-  local id
+  local id v
   for id in $RUNTIME_IDS; do
     rt_installed "$id" || [ -d "$(rt_dir "$id")" ] || continue
     [ "$(rt_kind "$id")" != agent ] || _rt_agent_down "$id"
-    [ "$(rt_os)" != linux ] || docker volume rm "$(project_name)_ollama-models" >/dev/null 2>&1 || true
+    if [ "$(rt_os)" = linux ]; then for v in $(_rt_volumes "$id"); do docker volume rm "$(project_name)_$v" >/dev/null 2>&1 || true; done; fi
     rm -rf "$(rt_dir "$id")"
   done
   rm -rf "$(rt_root)"
@@ -465,7 +480,7 @@ rt_logs_text() {
   case "$n" in '' | *[!0-9]*) n="$RT_LOG_LINES" ;; esac
   [ "$n" -le 2000 ] || n=2000
   if [ "$(rt_kind "$id")" = agent ]; then [ ! -f "$(rt_dir "$id")/server.log" ] || tail -n "$n" "$(rt_dir "$id")/server.log"
-  else _RT_PROFILE=1 dc logs --no-color --tail "$n" ollama 2>/dev/null || true; fi | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' | LC_ALL=C tr -cd '\t\n -~' | cut -c1-400
+  else _RT_PROFILE="$id" dc logs --no-color --tail "$n" "$(rt_services "$id" | cut -d' ' -f1)" 2>/dev/null || true; fi | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' | LC_ALL=C tr -cd '\t\n -~' | cut -c1-400
 }
 # rt_logs_write ID — the portal's copy (status/runtime-logs/ID.txt), when Settings asks for it
 rt_logs_write() {
@@ -477,14 +492,14 @@ rt_logs_write() {
 _rt_status_one() {
   local id="$1" st v ver pin loaded='' mem=0 vram=0 name b vb n=0 restarts='' code='' why
   st="$(rt_state "$id")"; why="$(rt_why_not "$id")"; pin="$(rt_pinned_version "$id")"; ver=''
-  case "$st" in running | external) ver="$(_rt_ollama_version)" ;; esac
+  case "$st" in running | external) ver="$(_rt_version "$id")" ;; esac
   [ -n "$ver" ] || ver="$(rt_installed_version "$id")"
   if [ "$st" = running ] || [ "$st" = external ]; then
     while IFS=$'\t' read -r name b vb; do
       [ -n "$name" ] || continue
       loaded="$loaded${loaded:+,}{\"name\":$(_local_q "$name" 160),\"bytes\":${b:-0},\"gpu_bytes\":${vb:-0}}"
       mem=$((mem + ${b:-0})); vram=$((vram + ${vb:-0})); n=$((n + 1))
-    done < <(_rt_ollama_ps)
+    done < <(_rt_ps "$id")
   fi
   if rt_installed "$id" && [ "$(rt_kind "$id")" = agent ] && _rt_agent_loaded "$id"; then
     restarts="$(_rt_agent_field "$id" runs | tr -cd '0-9')"; [ -z "$restarts" ] || restarts=$((restarts - 1))
@@ -515,8 +530,8 @@ _rt_status_lines() {
   for id in $RUNTIME_IDS; do
     st="$(rt_state "$id")"
     case "$st" in
-      running) line="running $(_rt_ollama_version) on $(rt_address "$id")$([ "$(rt_kind "$id")" = agent ] && echo " (launchd agent)" || echo " (container)")" ;;
-      external) line="yours: an Ollama $(_rt_ollama_version) that is not DevOS ADE's answers on $(rt_address "$id")" ;;
+      running) line="running $(_rt_version "$id") on $(rt_address "$id")$([ "$(rt_kind "$id")" = agent ] && echo " (launchd agent)" || echo " (container)")" ;;
+      external) line="yours: $(rt_name "$id") $(_rt_version "$id") that is not DevOS ADE's answers on $(rt_address "$id")" ;;
       not-installed) line="not installed (./stack runtimes install $id: $(rt_size "$id"))" ;;
       unsupported) line="does not run here: $(rt_why_not "$id")" ;;
       stopped) line="stopped (./stack runtimes start $id)" ;;
@@ -525,7 +540,7 @@ _rt_status_lines() {
     esac
     printf '%-10s  %s\n' "$(rt_name "$id")" "$line"
     if [ "$st" = running ] || [ "$st" = external ]; then
-      _rt_ollama_ps | while IFS=$'\t' read -r n b vb; do printf '            loaded: %s (%s, %s on the GPU)\n' "$n" "$(_local_size "$b")" "$(_local_size "$vb")"; done
+      _rt_ps "$id" | while IFS=$'\t' read -r n b vb; do printf '            loaded: %s (%s, %s on the GPU)\n' "$n" "$(_local_size "$b")" "$(_local_size "$vb")"; done
     fi
   done
 }
