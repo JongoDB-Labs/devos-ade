@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.44.1] - 2026-10-29
+
 ### Fixed
 - **A failed model download names the Hugging Face token only when Hugging Face refused it (JON-832).** Every failure said
   a gated model needs a token, a dropped connection too, which pointed to the wrong fix; and the page cut the message off
@@ -3796,7 +3798,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.0...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.1...HEAD
+[0.44.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.0...v0.44.1
 [0.44.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.43.0...v0.44.0
 [0.43.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.42.0...v0.43.0
 [0.42.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.41.0...v0.42.0
