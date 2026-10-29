@@ -589,16 +589,25 @@ ADE's own Ollama, llama.cpp or LM Studio: Runtimes, below).
   stack's `.state/runtimes/lmstudio/home` (mode 700) as its home, so it never writes to your `~/.lmstudio` or the LM
   Studio app's settings; what it starts is stopped, and from then on a launchd user agent of this stack (mode-600
   plist, as the user) runs `lib/lmstudio-agent.sh`, which starts llmster from the place its installer recorded (only
-  inside that home; resolved at install, so the agent needs nothing but bash) and its server with `--bind 127.0.0.1`
-  on 11439, without CORS. `lms` is always pointed at this instance's own server file (`LMS_API_SERVER_INFO_PATH`), never
-  at an LM Studio app on the same Mac. Its updates are off (`LMS_DAEMON_DISABLE_UPDATES`): it runs the version pinned.
-  **Its API has no key:** LM Studio can make one only in its app, not from its command line, and it does not check the
-  Host a request names, so, like MLX's server, a web page that points a name at this computer (DNS rebinding) could
-  send it requests while it runs. Without CORS such a page cannot read the answers in a browser that enforces it, but
-  it could make it load a model it has. Keep it stopped when you do not use it, and remove LM Studio if that matters
-  more to you than having it. It is given only the files downloaded for it (each checked as for llama.cpp, from the
-  commit checked), by link: `lms import --symbolic-link`, each path a snapshot of its own `hub/` folder checked to
-  contain no `..`. Uninstall stops it and deletes its folder with every model in it.
+  inside that home; resolved at install) and its server with `--bind 127.0.0.1`, without CORS, on a port chosen free at
+  each start. `lms` is always pointed at this instance's own server file (`LMS_API_SERVER_INFO_PATH`), never at an LM
+  Studio app on the same Mac. Its updates are off (`LMS_DAEMON_DISABLE_UPDATES`): it runs the version pinned.
+  **Its gate.** LM Studio's server has no key that can be set from outside its app, it does not check the Host a request
+  names, and its API can download a model, load one and read its log, so a web page that points a name of its own at
+  this computer (DNS rebinding: the page is then same-origin, and no CORS stops it) could use it. 127.0.0.1:11439, the
+  only address DevOS ADE gives out, is therefore a gate (`lib/lmstudio-gate.py`, standard-library Python run with `-I`,
+  started by the agent once LM Studio answers): it lets a request through only when its Host is 127.0.0.1, localhost or
+  host.docker.internal (the model gateway's) at 11439, it carries the key made at install (`etc/api-key`, 64 hex
+  characters, mode 600, in folders of mode 700; compared in constant time; never on a command line or in a log: the
+  model gateway's config and `./stack`'s own requests, by `curl -H @etc/auth.hdr`, have it), and it asks for the
+  OpenAI-compatible API (`/v1/...`) or the list of loaded models; LM Studio's own download, load, log and chat API is
+  refused, as is a path with a `..` or `.` segment, `//` or `%`. One request per connection; a chunked request body is refused (411), a
+  body over 64 MB too; the key is removed before the request goes on, and the gate logs nothing. **What is left:** LM
+  Studio's own port (127.0.0.1, a new one at each start) has no key, so a program of any user on this Mac can use it,
+  and a rebinding page that found it by scanning ports could too. Keep LM Studio stopped when you do not use it, and
+  remove it if that matters more to you than having it. It is given only the files downloaded for it (each checked as
+  for llama.cpp, from the commit checked), by link: `lms import --symbolic-link`, each path a snapshot of its own `hub/`
+  folder checked to contain no `..`. Uninstall stops it and deletes its folder, its key and every model in it.
 - **Model servers** (any OpenAI-compatible address). The address is validated (no `user:password@`, no query), the API
   key is read from the terminal or Settings, handed to curl on stdin for the probe and written only as that model's
   `api_key` in the gateway's generated config (readable by that config's readers on this computer). Plain http to a public

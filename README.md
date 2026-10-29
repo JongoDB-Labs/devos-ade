@@ -2016,8 +2016,11 @@ models). It is not open source: Install says so and names its terms (lmstudio.ai
 organization's internal use), which installing it accepts. DevOS ADE downloads LM Studio's daemon (`llmster`, the
 version this release pins, about 615 MB and about 2 GB unpacked) from lmstudio.ai, checks it against the SHA-512 this
 release pins, and lets LM Studio's own installer put it in the stack's folder with a home of its own, so the LM Studio
-app and your `~/.lmstudio` are left alone; its self-updates are off. It runs as a launchd agent of this stack with its
-server on 127.0.0.1:11439 only. A download with **Downloads go to: LM Studio** is fetched and checked as for llama.cpp,
+app and your `~/.lmstudio` are left alone; its self-updates are off. It runs as a launchd agent of this stack, reached
+on 127.0.0.1:11439 through a gate of DevOS ADE's (`lib/lmstudio-gate.py`): this computer's own names only, a key of its
+own (made at install; the model gateway has it), and the OpenAI-compatible API only — not LM Studio's own API that
+downloads and loads models or reads its log. LM Studio's own server listens on another 127.0.0.1 port, chosen at each
+start, without a key (LM Studio makes one only in its app): docs/security.md says what that leaves open. A download with **Downloads go to: LM Studio** is fetched and checked as for llama.cpp,
 then given to LM Studio as a link (`lms import --symbolic-link`, never a second copy), and the model gateway asks for it
 by the name LM Studio gives it; it loads on its first request. Remove unloads it and deletes its files.
 

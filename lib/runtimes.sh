@@ -34,8 +34,9 @@
 # only. The archive (pinned with its SHA-512 and size in catalog/runtimes.pins: lmstudio.ai's server says no size and
 # cannot continue a download) is unpacked into pkg/ and LM Studio's own installer (`llmster bootstrap`) puts it in
 # home/.lmstudio, with home/ as its HOME (never yours); llmster.run records where it went. Its agent runs
-# lib/lmstudio-agent.sh: llmster, then its server on 127.0.0.1:11439 (no CORS; no key: LM Studio makes those only in its
-# app). Models downloaded to it (as for llama.cpp, into hub/) are given to it as links (`lms import --symbolic-link`),
+# lib/lmstudio-agent.sh: llmster, its server on 127.0.0.1 at a port chosen at each start (no CORS; LM Studio makes keys
+# only in its app), and in front of it the gate, lib/lmstudio-gate.py, on 127.0.0.1:11439: this computer's names only,
+# the key made at install (etc/api-key, as llama.cpp's), the OpenAI-compatible API only. Models downloaded to it (as for llama.cpp, into hub/) are given to it as links (`lms import --symbolic-link`),
 # and models.tsv keeps the key LM Studio serves each one by. Linux: not here (llama.cpp and Ollama serve the same models).
 #
 #   ./stack runtimes [status]           each runtime: state, version, address, models loaded, memory in use
@@ -160,7 +161,7 @@ _local_lmstudio_url() { printf '%s\n' "${LOCAL_LMSTUDIO_URL:-http://127.0.0.1:$(
 # server that is not this stack's; nothing while none answers
 _rt_lmstudio_version() {
   local code
-  code="$(curl -s -m 3 -o /dev/null -w '%{http_code}' "$(_local_lmstudio_url)/v1/models" 2>/dev/null || true)"
+  code="$(curl -s -m 3 -o /dev/null -w '%{http_code}' -H @"$(rt_dir lmstudio)/etc/auth.hdr" "$(_local_lmstudio_url)/v1/models" 2>/dev/null || true)"
   case "$code" in '' | 000) return 0 ;; esac
   rt_installed lmstudio && _rt_agent_loaded lmstudio && [ "$code" = 200 ] || { echo unknown; return 0; }
   rt_installed_version lmstudio
@@ -168,7 +169,8 @@ _rt_lmstudio_version() {
 # _rt_lmstudio_ps -> the models it has loaded (GET /api/v0/models: each model's state), as _rt_ps; their memory is not
 # said there (0)
 _rt_lmstudio_ps() {
-  curl -s -m 3 "$(_local_lmstudio_url)/api/v0/models" 2>/dev/null | python3 -I -c '
+  [ -s "$(rt_dir lmstudio)/etc/auth.hdr" ] || return 0
+  curl -s -m 3 -H @"$(rt_dir lmstudio)/etc/auth.hdr" "$(_local_lmstudio_url)/api/v0/models" 2>/dev/null | python3 -I -c '
 import json, re, sys
 try:
     ms = json.load(sys.stdin).get("data") or []
@@ -258,7 +260,7 @@ EOF
 # rt_lmstudio_home -> LM Studio's own folder (its HOME is the stack's, never yours: ~/.lmstudio stays the LM Studio app's)
 rt_lmstudio_home() { printf '%s/home/.lmstudio\n' "$(rt_dir lmstudio)"; }
 # _rt_lmstudio_plist -> the agent: lib/lmstudio-agent.sh runs llmster (LM Studio's daemon) with the stack's HOME and its
-# updates off (the version stays the one pinned), then its server on 127.0.0.1 only, with no CORS
+# updates off (the version stays the one pinned), its server on 127.0.0.1 only, with no CORS, and the gate in front
 _rt_lmstudio_plist() {
   local d; d="$(_rt_xml "$(rt_dir lmstudio)")"
   cat <<EOF
@@ -266,7 +268,7 @@ _rt_lmstudio_plist() {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>Label</key><string>$(rt_label lmstudio)</string>
-<key>ProgramArguments</key><array><string>/bin/bash</string><string>$(_rt_xml "$STACK_DIR/lib/lmstudio-agent.sh")</string><string>$(rt_port lmstudio)</string><string>$d/llmster.run</string></array>
+<key>ProgramArguments</key><array><string>/bin/bash</string><string>$(_rt_xml "$STACK_DIR/lib/lmstudio-agent.sh")</string><string>$(rt_port lmstudio)</string><string>$d/llmster.run</string><string>$d/etc/api-key</string></array>
 <key>EnvironmentVariables</key><dict><key>HOME</key><string>$d/home</string><key>LMS_DAEMON_DISABLE_UPDATES</key><string>1</string><key>PATH</key><string>/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
 <key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>10</integer>
 <key>StandardOutPath</key><string>$d/server.log</string><key>StandardErrorPath</key><string>$d/server.log</string>
@@ -536,7 +538,7 @@ _rt_install_llamacpp_mac() {
 # and installed by its own bootstrap into the stack's folder (HOME is the stack's: ~/.lmstudio, the LM Studio app's, is
 # never touched); what the bootstrap left running is stopped (launchd runs it from here on)
 _rt_install_lmstudio_mac() {
-  local id=lmstudio d ver sha bytes url part h
+  local id=lmstudio d ver sha bytes url part h x
   d="$(rt_dir "$id")"; ver="$(rt_pin LMSTUDIO_VERSION)"; sha="$(rt_pin LMSTUDIO_SHA512_MACOS_ARM64)"; bytes="$(rt_pin LMSTUDIO_BYTES_MACOS_ARM64)"
   [[ $ver =~ ^[0-9]+(\.[0-9]+){1,3}(-[0-9]+)?$ ]] && [[ $sha =~ ^[0-9a-f]{128}$ ]] && [[ $bytes =~ ^[0-9]{1,12}$ ]] || _rt_fail "$id" install "catalog/runtimes.pins has no pin for LM Studio"
   url="$(_rt_lmstudio_downloads)/$ver-darwin-arm64.full.tar.gz"
@@ -554,7 +556,8 @@ _rt_install_lmstudio_mac() {
   h="$(rt_lmstudio_home)"
   _rt_lms daemon down >/dev/null 2>&1 || true   # (the bootstrap may have started it: launchd runs it from now on)
   rm -rf "$d/pkg" "$part"
-  [ -x "$h/bin/lms" ] && _rt_lmstudio_run > "$d/llmster.run" && [ -s "$d/llmster.run" ] && chmod 600 "$d/llmster.run" \
+  _rt_key_make "$id" || _rt_fail "$id" install "Could not make LM Studio's key (.state/runtimes/$id/etc): nothing was installed."
+  [ -x "$h/bin/lms" ] && x="$(_rt_lmstudio_run)" && [ -n "$x" ] && printf '%s\t%s\n' "$x" "$(_rt_python)" > "$d/llmster.run" && chmod 600 "$d/llmster.run" \
     || { rm -f "$d/llmster.run"; _rt_fail "$id" install "LM Studio's installer left no lms or llmster in .state/runtimes/$id/home/.lmstudio: $(tail -n 2 "$d/install.log" | LC_ALL=C tr -cd ' -~\n' | tr '\n' ' ' | cut -c1-200)"; }
   rm -f "$d/install.log"
   printf '%s\n' "$ver" > "$d/installed"
@@ -562,9 +565,12 @@ _rt_install_lmstudio_mac() {
 _rt_install_lmstudio_linux() { _rt_fail lmstudio install "$(rt_why_not lmstudio)"; }
 # LM Studio's downloads (tests point it at a stand-in on this computer)
 _rt_lmstudio_downloads() { printf '%s\n' "${RUNTIMES_LMSTUDIO_URL:-https://llmster.lmstudio.ai/download}"; }
+# _rt_python -> the python3 ./stack runs, by the path a later update of it keeps (its gate runs on it: launchd's PATH has
+# no python3 of yours)
+_rt_python() { local p; p="$(command -v python3 2>/dev/null || true)"; case "$p" in /*) [ -x "$p" ] && printf '%s\n' "$p" || echo /usr/bin/python3 ;; *) echo /usr/bin/python3 ;; esac; }
 # _rt_lmstudio_run -> llmster as its installer recorded it (.internal/llmster-install-location.json), as `lms daemon up`
 # starts it: its program, its folder and its first argument ("." or "-": none), TAB-separated, each resolved; nothing
-# unless both are in the stack's folder (llmster.run: lib/lmstudio-agent.sh reads it, with nothing but bash)
+# unless both are in the stack's folder (llmster.run, with _rt_python after them: lib/lmstudio-agent.sh reads it)
 _rt_lmstudio_run() {
   python3 -I -c 'import json, os, sys
 d = json.load(open(sys.argv[1])); h = os.path.realpath(sys.argv[2])
@@ -607,18 +613,25 @@ _rt_llamacpp_user() {
 # _rt_llamacpp_etc — etc/ (700): its API key (made once: 32 random bytes, in hex), the request header that carries it
 # (auth.hdr, for ./stack's own looks: curl -H @file, never an argument), and presets.ini
 _rt_llamacpp_etc() {
-  local d e k; d="$(rt_dir llamacpp)"; e="$d/etc"
-  mkdir -p "$e" "$d/hub" && chmod 700 "$e" "$d/hub" || return 1
+  _rt_key_make llamacpp && mkdir -p "$(rt_dir llamacpp)/hub" && chmod 700 "$(rt_dir llamacpp)/hub" || return 1
+  rt_llamacpp_presets_write
+}
+# _rt_key_make ID — its API key, once (an install again keeps it: the model gateway's config goes on working): 32 random
+# bytes in hex in etc/api-key, and etc/auth.hdr, the header ./stack's own requests send it in (curl -H @file, never an
+# argument); etc/ mode 700, both mode 600
+_rt_key_make() {
+  local e k; e="$(rt_dir "$1")/etc"
+  mkdir -p "$e" && chmod 700 "$e" || return 1
   k="$(cat "$e/api-key" 2>/dev/null || true)"
   if ! [[ $k =~ ^[0-9a-f]{64}$ ]]; then
     k="$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')"; [[ $k =~ ^[0-9a-f]{64}$ ]] || return 1
     ( umask 077; printf '%s\n' "$k" > "$e/api-key.tmp" ) && mv -f "$e/api-key.tmp" "$e/api-key" || return 1
   fi
-  ( umask 077; printf 'Authorization: Bearer %s\n' "$k" > "$e/auth.hdr" ) || return 1
-  rt_llamacpp_presets_write
+  ( umask 077; printf 'Authorization: Bearer %s\n' "$k" > "$e/auth.hdr" )
 }
-# rt_llamacpp_key -> its API key (the model gateway's config has it: lib/local_models.sh); nothing before an install
-rt_llamacpp_key() { local k; k="$(cat "$(rt_dir llamacpp)/etc/api-key" 2>/dev/null || true)"; [[ $k =~ ^[0-9a-f]{64}$ ]] && printf '%s\n' "$k" || true; }
+# rt_api_key ID -> its API key (the model gateway's config has it: lib/local_models.sh); nothing before an install
+rt_api_key() { local k; k="$(cat "$(rt_dir "$1")/etc/api-key" 2>/dev/null || true)"; [[ $k =~ ^[0-9a-f]{64}$ ]] && printf '%s\n' "$k" || true; }
+rt_llamacpp_key() { rt_api_key llamacpp; }
 # models.tsv (lib/local_models.sh writes it): one row per model downloaded to llama.cpp — its id (the preset's name, as
 # the model gateway asks for it), its first GGUF file under hub/, its context (- : not known), its files (comma list)
 rt_llamacpp_models() { printf '%s/models.tsv\n' "$(rt_dir llamacpp)"; }

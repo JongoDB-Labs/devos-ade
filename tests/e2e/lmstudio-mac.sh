@@ -5,8 +5,9 @@
 # SHA-512, installed by its own bootstrap into the scratch stack's folder (its own HOME: your ~/.lmstudio is not touched)
 # and run as a launchd user agent of the scratch stack (a label of its own; the trap removes it). LM Studio is not open
 # source: running this accepts its terms (lmstudio.ai/app-terms), so it asks for --accept-terms. Checks: 1 install:
-# running, the agent's plist, as this user, 127.0.0.1:11439 alone, ~/.lmstudio untouched; 2 a foreign web page cannot
-# read its answers (CORS); 3 a small GGUF model downloaded the way Settings does it, handed to LM Studio by link, answered
+# running, the agent's plist, as this user, its gate on 127.0.0.1:11439 and LM Studio's own server on another port of
+# 127.0.0.1, ~/.lmstudio untouched; 2 the gate: nothing without the key, nothing for another name (DNS rebinding),
+# nothing of LM Studio's API but the OpenAI-compatible one (no model download), no CORS for a foreign page; 3 a small GGUF model downloaded the way Settings does it, handed to LM Studio by link, answered
 # by the key LM Studio gave it, listed as loaded, then removed; 4 llmster killed: launchd starts it again and the watch
 # records it; 5 Stop: no agent, no llmster, nothing on 11439; Start: it answers again; 6 its log; 7 Uninstall: its
 # folder, its models, the plist, the port and every process of it gone.
@@ -59,7 +60,7 @@ export ASSUME_YES=1
 agent_pid() { _rt_launchd lmstudio | awk '$1 == "pid" && $2 == "=" { print $3; exit }'; }
 # tree PID -> PID and every process under it
 tree() { ps -A -o pid=,ppid= | awk -v r="$1" '{ p[$1] = $2 } END { for (x in p) { y = x; while (y != "" && y != r && y != 1 && y != 0) y = p[y]; if (y == r) print x } }'; }
-answers() { [ "$(curl -s -o /dev/null -w '%{http_code}' -m 3 "$API/v1/models")" = 200 ]; }
+answers() { [ "$(curl -s -o /dev/null -w '%{http_code}' -m 3 -H @"$WORK/state/runtimes/lmstudio/etc/auth.hdr" "$API/v1/models")" = 200 ]; }
 not() { ! "$@"; }
 wait_for() { local n=0 max="$1"; shift; while [ "$n" -lt "$max" ]; do "$@" && return 0; sleep 1; n=$((n + 1)); done; return 1; }
 status_json() { rt_status_write; python3 -I -c "$1" "$(rt_status_file)"; }
@@ -93,14 +94,24 @@ check "1 launchd runs it (pid ${PID:-none})" [ -n "$PID" ]
 check "1 as this user, not root" [ "$(ps -o user= -p "${PID:-0}" 2>/dev/null | tr -d ' ')" = "$(id -un)" ]
 PIDS="$(tree "${PID:-0}" | paste -sd, -)"
 LISTEN="$(lsof -nP -a -p "${PIDS:-0}" -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 { print $9 }' | sort -u | tr '\n' ' ')"
-check "1 it listens on 127.0.0.1:11439 ($LISTEN)" grep -F "127.0.0.1:11439 " <<< "$LISTEN"
+check "1 its gate listens on 127.0.0.1:11439 ($LISTEN)" grep -F "127.0.0.1:11439 " <<< "$LISTEN"
+BPORT="$(sed -n "s/^lmstudio-agent: LM Studio's server on 127\.0\.0\.1:\([0-9]*\),.*/\1/p" "$D/server.log" 2>/dev/null | tail -n 1)"
+check "1 LM Studio's own server is on another port of 127.0.0.1 (${BPORT:-none})" sh -c '[ -n "$1" ] && [ "$1" != 11439 ] && grep -F "127.0.0.1:$1 " <<EOF >/dev/null
+$2
+EOF' _ "$BPORT" "$LISTEN"
 check "1 nothing of it listens beyond this computer ($LISTEN)" not grep -vE '^(127\.0\.0\.1|\[::1\]):[0-9]+$' <(tr ' ' '\n' <<< "$LISTEN" | sed '/^$/d')
 check "1 your ~/.lmstudio is untouched" [ "$(ls -la "$HOME/.lmstudio" 2>/dev/null | sed 1d; stat -f %m "$HOME/.lmstudio" 2>/dev/null)" = "$LMS_BEFORE" ]
 
-# --- 2: a web page ---
+# --- 2: the gate ---
+HDR="$D/etc/auth.hdr"
+check "2 a request without the key is refused" [ "$(code "$API/v1/models")" = 401 ]
+check "2 with the key it is answered" [ "$(code -H @"$HDR" "$API/v1/models")" = 200 ]
+check "2 a request for another name (DNS rebinding) is refused, with the key too" [ "$(code -H @"$HDR" -H 'Host: rebind.example:11439' "$API/v1/models")" = 403 ]
+check "2 LM Studio's model download is not reachable, with the key too" [ "$(code -X POST -H @"$HDR" -H 'Content-Type: application/json' -d '{}' "$API/api/v1/models/download")" = 403 ]
+check "2 nor its log" [ "$(code -H @"$HDR" "$API/api/v1/log/entries")" = 403 ]
 check "2 a foreign web page is not allowed to read its answers (CORS)" \
-  not grep -iE '^access-control-allow-origin: *(\*|https://rebind\.example)' <(curl -s -D - -o /dev/null -m 10 -H 'Origin: https://rebind.example' "$API/v1/models")
-say "note: a request for another name (Host: rebind.example) gets $(code -H 'Host: rebind.example:11439' "$API/v1/models") (LM Studio has no key from its command line: docs/security.md)"
+  not grep -iE '^access-control-allow-origin: *(\*|https://rebind\.example)' <(curl -s -D - -o /dev/null -m 10 -H 'Origin: https://rebind.example' -H @"$HDR" "$API/v1/models")
+say "note: LM Studio's own server on 127.0.0.1:${BPORT:-?} has no key (LM Studio makes keys only in its app): docs/security.md"
 
 # --- 3: a model, downloaded the way Settings does it, answered, listed as loaded, removed ---
 if [ "$MODEL" = 1 ]; then
@@ -112,9 +123,10 @@ if [ "$MODEL" = 1 ]; then
     check "3 LM Studio has it by link, not a copy" sh -c '[ -n "$(find "$1/models" -type l -name "*.gguf" 2>/dev/null)" ] && [ -z "$(find "$1/models" -type f -name "*.gguf" 2>/dev/null)" ]' _ "$H"
     check "3 LOCAL_MODELS has it" grep -F "lmstudio:$ID" "$ENV_FILE"
     check "3 the gateway's entry names it by its key" grep -F "model: \"openai/$KEY\"" <(LOCAL_MODELS="lmstudio:$ID" local_models_yaml)
-    curl -s -m 300 -H 'Content-Type: application/json' "$API/v1/chat/completions" \
+    check "3 the gateway's entry carries the gate's key" grep -F "api_key: \"$(rt_api_key lmstudio)\"" <(LOCAL_MODELS="lmstudio:$ID" local_models_yaml)
+    curl -s -m 300 -H @"$HDR" -H 'Content-Type: application/json' "$API/v1/chat/completions" \
       -d "{\"model\":\"$KEY\",\"messages\":[{\"role\":\"user\",\"content\":\"Hi\"}],\"max_tokens\":4}" > "$WORK/chat.json" 2>&1
-    check "3 it answers a chat completion (loaded on its first request)" python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); assert d["choices"][0]["message"], d' "$WORK/chat.json"
+    check "3 it answers a chat completion through the gate (loaded on its first request)" python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); assert d["choices"][0]["message"], d' "$WORK/chat.json"
     check "3 it is listed as loaded" status_json 'import json, sys
 r = [x for x in json.load(open(sys.argv[1]))["runtimes"] if x["id"] == "lmstudio"][0]
 assert [m for m in r["loaded"] if m["name"] == sys.argv[2]], r["loaded"]' "$KEY"

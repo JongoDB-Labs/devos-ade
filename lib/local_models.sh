@@ -944,10 +944,11 @@ local_models_yaml() {
         printf '  - model_name: "%s"\n    litellm_params:\n      model: "openai/%s"\n      api_base: "%s"\n      api_key: "%s"\n      timeout: 900\n      input_cost_per_token: 0\n      output_cost_per_token: 0\n    model_info:\n      mode: "chat"\n' \
           "$name" "$id" "$(local_llamacpp_base)" "$(rt_llamacpp_key)"; continue ;;
       lmstudio:*)
-        # (LM Studio serves it by the key it gave it: models.tsv; it has no API key of its own here — lib/runtimes.sh)
+        # (LM Studio serves it by the key it gave it: models.tsv; through its gate, with the API key DevOS ADE made for it —
+        # lib/runtimes.sh; the generated config's readers can see that key)
         k="$(rt_lmstudio_key "$id")"; [ -n "$k" ] || continue
-        printf '  - model_name: "%s"\n    litellm_params:\n      model: "openai/%s"\n      api_base: "%s"\n      api_key: "none"\n      timeout: 900\n      input_cost_per_token: 0\n      output_cost_per_token: 0\n    model_info:\n      mode: "chat"\n' \
-          "$name" "$k" "$(local_lmstudio_base)"; continue ;;
+        printf '  - model_name: "%s"\n    litellm_params:\n      model: "openai/%s"\n      api_base: "%s"\n      api_key: "%s"\n      timeout: 900\n      input_cost_per_token: 0\n      output_cost_per_token: 0\n    model_info:\n      mode: "chat"\n' \
+          "$name" "$k" "$(local_lmstudio_base)" "$(rt_api_key lmstudio)"; continue ;;
       dmr:*) [ -n "$dmr" ] || dmr="$(local_dmr_base)"; base="$dmr"; kind=docker_model_runner ;;
       *) [ -n "$ol" ] || ol="$(local_ollama_base)"; base="$ol"; kind=ollama_chat ;;
     esac

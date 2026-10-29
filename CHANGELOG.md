@@ -15,17 +15,21 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   is not open source and names its terms (lmstudio.ai/app-terms), which installing it accepts. It downloads LM Studio's
   daemon (the version this release pins, about 615 MB) from lmstudio.ai, checks it against its SHA-512, and lets LM
   Studio's own installer put it in the stack's folder with a home of its own: the LM Studio app and your `~/.lmstudio`
-  are left alone, and it does not update itself. It runs as a launchd agent with its server on 127.0.0.1:11439. Where it
-  cannot run (an Intel Mac, Linux) the row says why. In a terminal: `./stack runtimes install lmstudio` and the rest.
+  are left alone, and it does not update itself. It runs as a launchd agent, reached on 127.0.0.1:11439 through a gate
+  with a key of its own (Security, below). Where it cannot run (an Intel Mac, Linux) the row says why. In a terminal:
+  `./stack runtimes install lmstudio` and the rest.
 - **Downloads go to: LM Studio.** A GGUF download goes to LM Studio when you pick it (or when it is the only runtime
   running), fetched and checked as for llama.cpp, then handed to LM Studio as a link (no second copy) and served through
   the model gateway in Chat, the Code page and the terminal at $0. Remove unloads it and deletes its files.
 
 ### Security
-- LM Studio's server has no API key (LM Studio makes one only in its app), so, like MLX's, a web page that points a name
-  at this computer could send it requests while it runs; it allows no other origin to read its answers (no CORS), listens
-  on 127.0.0.1 only, and is given only the files downloaded and checked for it. docs/security.md says so; stop it when
-  you do not use it. Its archive's links may only point inside its own tree.
+- **LM Studio is reached only through a gate** (`lib/lmstudio-gate.py`) on 127.0.0.1:11439. LM Studio's own server has
+  no key that can be set from outside its app and does not check the name a request is sent to, so a web page that
+  points a name at this computer (DNS rebinding) could have made it download or load a model or read its log. The gate
+  lets a request through only when it is sent to this computer's own names, carries the key made at install (mode 600,
+  never on a command line or in a log) and asks for the OpenAI-compatible API; LM Studio's own server moves to a
+  127.0.0.1 port chosen at each start. That port has no key: docs/security.md says what that leaves open; stop LM
+  Studio when you do not use it. Its archive's links may only point inside its own tree.
 
 ### Fixed
 - **Remove's message when a runtime does not delete a model** came out garbled on macOS (its bash 3.2 ends a

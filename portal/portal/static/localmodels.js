@@ -77,7 +77,7 @@
       sha: "SHA-256", key: true, terms: "" },
     lmstudio: { repo: "lmstudio.ai", port: "127.0.0.1:11439", reach: "on 127.0.0.1:11439 only",
       idle: "a model loads on its first request", keep: "", store: "Its models stay in this stack's folder",
-      sha: "SHA-512", key: false, terms: " LM Studio is not open source: installing it accepts its terms (lmstudio.ai/app-terms), for personal or your organization's internal use." },
+      sha: "SHA-512", key: true, terms: " LM Studio is not open source: installing it accepts its terms (lmstudio.ai/app-terms), for personal or your organization's internal use." },
   };
   const rtInfo = (id) => RT_INFO[id] || RT_INFO.ollama;
   let rtNote = "", rtLogs = null, rtSending = null, rtOpen = false;   // rtLogs: { id, text, at, asked } while the log is shown
@@ -126,10 +126,10 @@
     if (r.state === "external") note(r.id === "ollama" ? "An Ollama of yours (not DevOS ADE's) answers here: downloads can go to it, and DevOS ADE never stops, updates or removes it."
       : `Something that is not DevOS ADE's answers on ${rtInfo(r.id).port}, the address ${r.name} would have: DevOS ADE does not install ${r.name} while it does, and never stops it.`);
     if (r.state === "unsupported") note(`It does not run here: ${r.why_not}.`);
-    if (r.state === "not-installed") note(r.kind === "agent" ? `DevOS ADE can install it on this Mac (${r.size}): it runs natively, with the GPU, on 127.0.0.1 only.${rtInfo(r.id).terms}`
+    if (r.state === "not-installed") note(r.kind === "agent" ? `DevOS ADE can install it on this Mac (${r.size}): it runs natively, with the GPU, on 127.0.0.1 only${rtInfo(r.id).key ? ", behind a key of its own" : ""}.${rtInfo(r.id).terms}`
       : `DevOS ADE can run it as a container of the stack (${r.size}), ${r.id === "ollama" ? "reachable on 127.0.0.1 only" : rtInfo(r.id).reach}.`);
     if (r.managed) {
-      note(`DevOS ADE's own: ${r.kind === "agent" ? "a background service of this Mac (launchd), with the GPU" : "a container of the stack"}, ${r.kind === "agent" || r.id === "ollama" ? "on 127.0.0.1 only" : rtInfo(r.id).reach}.`
+      note(`DevOS ADE's own: ${r.kind === "agent" ? "a background service of this Mac (launchd), with the GPU" : "a container of the stack"}, ${r.kind === "agent" ? `on 127.0.0.1 only${rtInfo(r.id).key ? ", behind a key of its own" : ""}` : r.id === "ollama" ? "on 127.0.0.1 only" : rtInfo(r.id).reach}.`
         + (r.restarts ? ` It ended by itself and was started again ${r.restarts} time${r.restarts === 1 ? "" : "s"}${r.last_exit !== null ? ` (last exit code ${r.last_exit})` : ""}.` : "")
         + (r.kind === "agent" && r.pinned && r.version && r.pinned !== r.version ? ` This release pins ${r.pinned}.` : ""));
     }

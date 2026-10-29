@@ -171,13 +171,22 @@ test_install_downloads_the_pinned_archive_checks_its_sha512_and_its_own_installe
   [ -x "$h/bin/lms" ] && [ ! -e "$d/pkg" ] && [ -z "$(find "$d" -maxdepth 1 -name '*.part')" ] && [ ! -e "$d/install.log" ]
   [ ! -e "$HOME/.lmstudio" ]   # (yours, the LM Studio app's: never touched)
   assert_eq "$(perm_of "$d/home")" 700
-  # where llmster is, for its agent: resolved, in the stack's folder
-  assert_eq "$(cat "$d/llmster.run")" "$(printf '%s\t%s\t.' "$(cd "$h/llmster/$VER" && pwd -P)/llmster" "$(cd "$h/llmster/$VER" && pwd -P)")"
+  # where llmster is, for its agent: resolved, in the stack's folder; and the python3 its gate runs on
+  assert_eq "$(cat "$d/llmster.run")" "$(printf '%s\t%s\t.\t%s' "$(cd "$h/llmster/$VER" && pwd -P)/llmster" "$(cd "$h/llmster/$VER" && pwd -P)" "$(command -v python3)")"
   assert_eq "$(perm_of "$d/llmster.run")" 600
+  # its gate's key: 32 random bytes in hex, in a folder of its own; ./stack's own looks send it from a header file
+  local k; k="$(cat "$d/etc/api-key")"; [[ $k =~ ^[0-9a-f]{64}$ ]]
+  assert_eq "$(perm_of "$d/etc")" 700
+  assert_eq "$(perm_of "$d/etc/api-key")" 600
+  assert_eq "$(perm_of "$d/etc/auth.hdr")" 600
+  assert_eq "$(rt_api_key lmstudio)" "$k"
+  assert_contains "$(cat "$TMP/curl.args")" "-H @$d/etc/auth.hdr http://127.0.0.1:9/v1/models"
+  assert_not_contains "$(cat "$TMP/curl.args")" "$k"
   # the agent: this stack's label, lib/lmstudio-agent.sh on 11439, the stack's HOME, its updates off
   local p x; p="$(rt_plist lmstudio)"; x="$(cat "$p")"
   assert_contains "$p" "$HOME/Library/LaunchAgents/dev.devos.ade.lmstudio."
-  assert_contains "$x" "<string>/bin/bash</string><string>$STACK_DIR/lib/lmstudio-agent.sh</string><string>11439</string><string>$d/llmster.run</string>"
+  assert_contains "$x" "<string>/bin/bash</string><string>$STACK_DIR/lib/lmstudio-agent.sh</string><string>11439</string><string>$d/llmster.run</string><string>$d/etc/api-key</string>"
+  assert_not_contains "$x" "$k"
   assert_contains "$x" "<key>HOME</key><string>$d/home</string><key>LMS_DAEMON_DISABLE_UPDATES</key><string>1</string>"
   ! command -v plutil >/dev/null 2>&1 || plutil -lint "$p" >/dev/null
   # the job, the event, the portal's file (its row third)
@@ -189,6 +198,10 @@ assert (r["id"], r["name"], r["state"], r["managed"], r["kind"], r["version"], r
   # the models it has loaded (no size: it does not say one)
   printf '{"data":[{"id":"m-q4_k_m","state":"loaded"},{"id":"n","state":"not-loaded"}]}' > "$TMP/ls-models.json"
   assert_eq "$(_rt_ps lmstudio)" "$(printf 'm-q4_k_m\t0\t0')"
+  assert_contains "$(cat "$TMP/curl.args")" "-H @$d/etc/auth.hdr http://127.0.0.1:9/api/v0/models"
+  # again: the same key (the model gateway's config keeps working)
+  ( rt_install lmstudio ) > /dev/null 2>&1
+  assert_eq "$(cat "$d/etc/api-key")" "$k"
   # stop and start: the agent goes and comes back
   rt_stop lmstudio > /dev/null 2>&1; assert_eq "$(rt_state lmstudio)" stopped
   rt_start lmstudio > /dev/null 2>&1; assert_eq "$(rt_state lmstudio)" running
@@ -260,33 +273,120 @@ PY
   done
 }
 
-test_the_agent_runs_llmster_where_it_was_installed_then_its_server_on_loopback_and_stops_both() {
-  local h v ap lp; h="$TMP/h"; v="$h/.lmstudio/llmster/$VER"
+_free_port() { python3 -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
+_key() { od -An -tx1 -N32 /dev/urandom | tr -d ' \n'; }
+
+test_the_agent_runs_llmster_its_server_on_a_port_of_its_own_and_the_gate_in_front_and_stops_them_all() {
+  local h v ap lp port bp k; h="$TMP/h"; v="$h/.lmstudio/llmster/$VER"; port="$(_free_port)"; k="$TMP/api-key"
   mkdir -p "$h/.lmstudio/bin" "$v"; v="$(cd "$v" && pwd -P)"   # (as install records it: resolved)
+  _key > "$k"
   printf '#!/bin/sh\nprintf "%%s|%%s\\n" "$*" "$LMS_API_SERVER_INFO_PATH" >> "%s/lms.args"\n[ ! -f "%s/server-fails" ] || exit 1\n' "$TMP" "$TMP" > "$h/.lmstudio/bin/lms"
   printf '#!/bin/sh\necho "$$|$*|$(pwd)" > "%s/llmster.ran"\nexec sleep 20\n' "$TMP" > "$v/llmster"
   chmod +x "$h/.lmstudio/bin/lms" "$v/llmster"
-  printf '%s\t%s\t.\n' "$v/llmster" "$v" > "$TMP/run"
-  HOME="$h" /bin/bash "$STACK_DIR/lib/lmstudio-agent.sh" 11439 "$TMP/run" > "$TMP/agent.out" 2>&1 &
+  printf '%s\t%s\t.\t%s\n' "$v/llmster" "$v" "$(command -v python3)" > "$TMP/run"
+  HOME="$h" /bin/bash "$STACK_DIR/lib/lmstudio-agent.sh" "$port" "$TMP/run" "$k" > "$TMP/agent.out" 2>&1 &
   ap=$!
   _wait_for '[ -s "$TMP/lms.args" ] && [ -s "$TMP/llmster.ran" ]' || { kill "$ap"; return 1; }
-  assert_eq "$(cat "$TMP/lms.args")" "server start --port 11439 --bind 127.0.0.1|$h/.lmstudio/.internal/http-server.json"
+  # LM Studio's server: 127.0.0.1, a port of its own (never the gate's), lms pointed at this llmster alone
+  bp="$(sed -n 's/^server start --port \([0-9]*\) --bind 127\.0\.0\.1|.*/\1/p' "$TMP/lms.args")"
+  [[ $bp =~ ^[0-9]+$ ]] && [ "$bp" != "$port" ]
+  assert_eq "$(cut -d'|' -f2 "$TMP/lms.args")" "$h/.lmstudio/.internal/http-server.json"
   lp="$(cut -d'|' -f1 "$TMP/llmster.ran")"
   assert_eq "$(cut -d'|' -f2- "$TMP/llmster.ran")" ".|$v"
+  # the gate on PORT: nothing without the key; with it, on to LM Studio's port (nothing there in this test: 502)
+  _wait_for '[ "$("$BN_REAL_CURL" -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$port/v1/models")" = 401 ]' || { kill "$ap"; return 1; }
+  assert_eq "$("$BN_REAL_CURL" -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $(cat "$k")" "http://127.0.0.1:$port/v1/models")" 502
+  assert_contains "$(cat "$TMP/agent.out")" "lmstudio-agent: LM Studio's server on 127.0.0.1:$bp, its gate on 127.0.0.1:$port"
   kill -0 "$ap" && kill -0 "$lp"
-  # launchd's stop: the agent ends, and llmster with it
+  # launchd's stop: the agent ends, and llmster and the gate with it
   kill -TERM "$ap"; wait "$ap" || { kill "$lp" 2>/dev/null; return 1; }
   _wait_for '! kill -0 "$lp" 2>/dev/null'
-  # a recorded place out of its HOME: nothing runs
+  _wait_for '[ "$("$BN_REAL_CURL" -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$port/v1/models")" = 000 ]'
+  # a recorded place out of its HOME, or no python3 for the gate: nothing runs
   rm -f "$TMP/llmster.ran"
-  printf '%s\t%s\t-\n' /bin/sleep /bin > "$TMP/run"
-  if HOME="$h" /bin/bash "$STACK_DIR/lib/lmstudio-agent.sh" 11439 "$TMP/run" > "$TMP/agent.out" 2>&1; then return 1; fi
+  printf '%s\t%s\t-\t%s\n' /bin/sleep /bin "$(command -v python3)" > "$TMP/run"
+  if HOME="$h" /bin/bash "$STACK_DIR/lib/lmstudio-agent.sh" "$port" "$TMP/run" "$k" > "$TMP/agent.out" 2>&1; then return 1; fi
   assert_contains "$(cat "$TMP/agent.out")" "lmstudio-agent: no llmster in $h/.lmstudio"
+  printf '%s\t%s\t-\t%s\n' "$v/llmster" "$v" python3 > "$TMP/run"
+  if HOME="$h" /bin/bash "$STACK_DIR/lib/lmstudio-agent.sh" "$port" "$TMP/run" "$k" > "$TMP/agent.out" 2>&1; then return 1; fi
+  assert_contains "$(cat "$TMP/agent.out")" "lmstudio-agent: no python3 or key for its gate"
+  [ ! -e "$TMP/llmster.ran" ]
   # a server that does not start while llmster has ended: it says so and ends
   printf '#!/bin/sh\necho "$$" > "%s/llmster.ran"\nexit 3\n' "$TMP" > "$v/llmster"; : > "$TMP/server-fails"
-  printf '%s\t%s\t-\n' "$v/llmster" "$v" > "$TMP/run"
-  if HOME="$h" /bin/bash "$STACK_DIR/lib/lmstudio-agent.sh" 11439 "$TMP/run" > "$TMP/agent.out" 2>&1; then return 1; fi
-  assert_contains "$(cat "$TMP/agent.out")" "lmstudio-agent: its server did not start on 127.0.0.1:11439"
+  printf '%s\t%s\t-\t%s\n' "$v/llmster" "$v" "$(command -v python3)" > "$TMP/run"
+  if HOME="$h" /bin/bash "$STACK_DIR/lib/lmstudio-agent.sh" "$port" "$TMP/run" "$k" > "$TMP/agent.out" 2>&1; then return 1; fi
+  assert_contains "$(cat "$TMP/agent.out")" "lmstudio-agent: its server did not start on 127.0.0.1:"
+}
+
+# The gate in front of a stand-in LM Studio server (it answers each request with what it was sent; /v1/stream sends its
+# answer in three parts, a second apart)
+test_the_gate_lets_through_only_this_computers_names_with_the_key_and_the_openai_api() {
+  local port bp k gp c; port="$(_free_port)"; k="$(_key)"; printf '%s\n' "$k" > "$TMP/api-key"; c="$BN_REAL_CURL"
+  cat > "$TMP/backend.py" <<'PY'
+import json, sys, time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+class H(BaseHTTPRequestHandler):
+    def _go(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(n).decode() if n else ""
+        if self.path == "/v1/stream":
+            self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.end_headers()
+            for i in range(3):
+                self.wfile.write(b"data: %d\n\n" % i); self.wfile.flush(); time.sleep(1)
+            return
+        out = json.dumps({"method": self.command, "path": self.path, "headers": {k.lower(): v for k, v in self.headers.items()}, "body": body}).encode()
+        self.send_response(200); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(out))); self.end_headers()
+        self.wfile.write(out)
+    do_GET = do_POST = do_DELETE = _go
+    def log_message(self, *a): pass
+s = ThreadingHTTPServer(("127.0.0.1", 0), H)
+open(sys.argv[1], "w").write(str(s.server_address[1]))
+s.serve_forever()
+PY
+  python3 -I "$TMP/backend.py" "$TMP/bp" </dev/null >/dev/null 2>&1 &
+  BACK_PID=$!
+  _wait_for '[ -s "$TMP/bp" ]'; bp="$(cat "$TMP/bp")"
+  python3 -I "$STACK_DIR/lib/lmstudio-gate.py" "$port" "$bp" "$TMP/api-key" </dev/null > "$TMP/gate.out" 2>&1 &
+  gp=$!
+  _wait_for '[ "$("$c" -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$port/v1/models")" != 000 ]' || { kill "$gp" "$BACK_PID"; return 1; }
+  local A="Authorization: Bearer $k" u="http://127.0.0.1:$port"
+  _code() { "$c" -s -o /dev/null -w '%{http_code}' "$@"; }
+  # no key, a wrong one: refused
+  assert_eq "$(_code "$u/v1/models")" 401
+  assert_eq "$(_code -H "Authorization: Bearer $(_key)" "$u/v1/models")" 401
+  # a name that is not this computer's (a page's, pointed here): refused, with the key too
+  assert_eq "$(_code -H "$A" -H "Host: rebind.example:$port" "$u/v1/models")" 403
+  assert_eq "$(_code -H "$A" -H "Host: 127.0.0.1:$bp" "$u/v1/models")" 403
+  # the rest of LM Studio's API: never, with the key too
+  local x; for x in /api/v1/models/download /api/v1/models/load /api/v1/log/entries /api/v1/chat /api/v0/chat/completions /v1/../api/v1/models/download /v1/%2e%2e/api/v1/log/entries /; do
+    assert_eq "$(_code --path-as-is -X POST -H "$A" -H 'Content-Type: application/json' -d '{}' "$u$x")" 403
+  done
+  assert_eq "$(_code -X POST -H "$A" -d '{}' "$u/api/v0/models")" 403
+  # a body sent in chunks: refused (a request body is passed on by its length only)
+  assert_eq "$(_code -H "$A" -H 'Transfer-Encoding: chunked' -d '{}' "$u/v1/chat/completions")" 411
+  # through: by the names this computer has, the key not passed on, one request per connection, the body as sent
+  local r; r="$("$c" -s -H "$A" "$u/v1/models")"
+  python3 -I -c 'import json, sys; d = json.loads(sys.argv[1]); h = d["headers"]
+assert (d["method"], d["path"], h["host"], h["connection"]) == ("GET", "/v1/models", "127.0.0.1:" + sys.argv[2], "close"), d
+assert "authorization" not in h, d' "$r" "$bp"
+  r="$("$c" -s -H "$A" -H "Host: host.docker.internal:$port" -H 'Content-Type: application/json' -d '{"model":"m","messages":[]}' "$u/v1/chat/completions")"
+  python3 -I -c 'import json, sys; d = json.loads(sys.argv[1])
+assert (d["method"], d["path"], d["body"]) == ("POST", "/v1/chat/completions", "{\"model\":\"m\",\"messages\":[]}"), d' "$r"
+  # a client that waits for 100 Continue before its body (curl's, for a large one): answered by the gate, not passed on
+  r="$("$c" -s -m 8 --expect100-timeout 20 -H "$A" -H 'Expect: 100-continue' -d '{"n":1}' "$u/v1/embeddings")"
+  python3 -I -c 'import json, sys; d = json.loads(sys.argv[1])
+assert (d["path"], d["body"]) == ("/v1/embeddings", "{\"n\":1}") and "expect" not in d["headers"], d' "$r"
+  assert_eq "$(_code -H "$A" -H 'Expect: something-else' -d '{}' "$u/v1/embeddings")" 417
+  assert_eq "$(_code -H "$A" -H "Host: localhost:$port" "$u/api/v0/models")" 200
+  # a streamed answer: each part as it comes
+  r="$("$c" -s -N -H "$A" "$u/v1/stream")"
+  assert_eq "$r" "$(printf 'data: 0\n\ndata: 1\n\ndata: 2')"
+  # LM Studio not answering: said so
+  kill "$BACK_PID"; wait "$BACK_PID" 2>/dev/null || true
+  assert_eq "$(_code -H "$A" "$u/v1/models")" 502
+  kill "$gp"; wait "$gp" 2>/dev/null || true
+  # nothing it was sent is in its output
+  assert_eq "$(cat "$TMP/gate.out")" ""
 }
 
 # --- its models: by link, by the key LM Studio gives them ---
@@ -314,7 +414,7 @@ test_a_gguf_download_goes_to_lm_studio_by_link_and_the_gateway_names_it_by_its_k
   assert_contains "$y" '- model_name: "lm/org/M-GGUF:Q4_K_M"'
   assert_contains "$y" 'model: "openai/m-q4_k_m"'
   assert_contains "$y" 'api_base: "http://host.docker.internal:11439/v1"'
-  assert_contains "$y" 'api_key: "none"'
+  assert_contains "$y" "api_key: \"$(rt_api_key lmstudio)\""
   assert_contains "$y" "input_cost_per_token: 0"
   # the portal's file: LM Studio ready, the model on disk and registered
   local_status_write

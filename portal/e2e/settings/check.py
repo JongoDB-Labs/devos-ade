@@ -1111,7 +1111,7 @@ def check_runtimes(page, failures, label):
             failures.append(f"{label}: llama.cpp's container is said to be on 127.0.0.1, or a size it does not know is shown: {txt!r}")
         if not page.locator("#lm-rt-choice option[value=llamacpp]").count():
             failures.append(f"{label}: Downloads go to does not offer DevOS ADE's llama.cpp")
-        # LM Studio: its Install says it is not open source and names its terms, its SHA-512 and no key (Escape: nothing sent)
+        # LM Studio: its Install says it is not open source and names its terms, its SHA-512 and its key (Escape: nothing sent)
         ls = {**base, "id": "lmstudio", "name": "LM Studio", "pinned": "0.0.25-1", "address": "127.0.0.1:11439",
               "size": "about 615 MB (about 2 GB once unpacked)"}
         open_rt(running, more=[ls])
@@ -1122,8 +1122,8 @@ def check_runtimes(page, failures, label):
             failures.append(f"{label}: Downloads go to offers an LM Studio that is not installed")
         page.click("#lm-rt-lmstudio [data-act=rt-install]")
         text = password(ok=False)
-        if not all(w in text for w in ("615 MB", "from lmstudio.ai", "SHA-512", "127.0.0.1:11439", "not open source", "lmstudio.ai/app-terms")) \
-                or "key of its own" in text:
+        if not all(w in text for w in ("615 MB", "from lmstudio.ai", "SHA-512", "127.0.0.1:11439", "not open source", "lmstudio.ai/app-terms",
+                                       "key of its own")):
             failures.append(f"{label}: LM Studio's Install dialog does not say what it does: {text!r}")
         if [p["op"] for p in RT["posts"]] != ["install", "start"]:
             failures.append(f"{label}: a dismissed LM Studio Install sent something: {RT['posts']}")
@@ -1138,7 +1138,7 @@ def check_runtimes(page, failures, label):
                                 "loaded": [{"name": "org/M-GGUF", "bytes": 0, "gpu_bytes": 0}]}])
         page.wait_for_selector("#lm-rt-lmstudio[data-state=running]", timeout=10000)
         txt = page.inner_text("#lm-rt-lmstudio")
-        for w in ("LM Studio", "0.0.25-1", "127.0.0.1:11439", "org/M-GGUF", "launchd", "127.0.0.1 only"):
+        for w in ("LM Studio", "0.0.25-1", "127.0.0.1:11439", "org/M-GGUF", "launchd", "127.0.0.1 only, behind a key of its own"):
             if w not in txt:
                 failures.append(f"{label}: a running LM Studio does not say {w!r}: {txt!r}")
         if "(?)" in txt or "This release pins" in txt:
