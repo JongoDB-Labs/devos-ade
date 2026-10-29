@@ -1957,7 +1957,11 @@ resolve inside the gateway container: use the server's tailnet IP.
 The **Local models** section of Models & providers (collapsed until you have a model) downloads a model from Hugging
 Face and runs it on this computer, free: search GGUF models, pick a quantization (each shows its size, license and
 whether it fits this computer's memory: Apple silicon's GPU share, an NVIDIA card's VRAM, or the CPU's), and
-**Download** with a progress bar. The model is registered with the model gateway live, in seconds, and is in Chat, the
+**Download** with a progress bar that says the speed and the time left (and, after two minutes with nothing arriving, that
+the download is stuck and what to do). **Pause** stops it and keeps what arrived; **Resume** (it asks for the password, like
+Download) continues from there; **Cancel** stops it and deletes what arrived, after asking. Pause and Cancel need no password:
+they only stop something. While a download is paused no other one starts: resume or cancel it first. The model is
+registered with the model gateway live, in seconds, and is in Chat, the
 Code page's picker and the terminal marked **Local**, free, $0 Actual. **Remove** deletes it. Tool use is stated
 honestly: no tool support or under 3B parameters is chat only, under 7B is weak at Claude Code's tools, and none is
 called working until checked; answers are capped at 4096 tokens so a model that loops stops.
@@ -1965,11 +1969,16 @@ called working until checked; answers are capped at 4096 tokens so a model that 
 On **Apple silicon** the models run natively with **MLX** (`mlx_lm.server` on the Mac's GPU): the first download sets up a
 pinned, hash-locked `mlx-lm` in the stack's own `uv` environment (install `uv` first: `brew install uv`) and a launchd
 user agent on 127.0.0.1; models come from Hugging Face's MLX catalog (mlx-community) into the stack's own folder, are
-checked to carry no custom code, and the first answer after switching models waits while the new one loads. `./stack
+checked to carry no custom code, and the first answer after switching models waits while the new one loads. The stack
+downloads them itself (`lib/hf_fetch.py`, curl, four files at a time) rather than with `hf download`, which deletes a file's
+unfinished part whenever it stops: each file goes into a part of its own that a pause, a crash or a dropped connection
+continues from, and is checked against the SHA-256 (or git hash) Hugging Face lists for it before it is used. `./stack
 local-models uninstall [--models]` removes it all. Everywhere else it needs a runtime on this computer: **Docker Model Runner** (Docker Desktop 4.71 or newer) first (Docker Desktop: Settings › AI, or `docker desktop
 enable model-runner --tcp 12434`; Linux: `docker-model-plugin` and `docker model install-runner`), **Ollama** second.
 With neither running the section says so and `./stack local-models enable` switches Docker's on after asking. Commands:
-`./stack local-models status`, `pull ORG/REPO QUANT`, `rm ORG/REPO QUANT`, `enable`. A gated model needs a Hugging Face
+`./stack local-models status` (with the download's progress, speed and time left), `pull ORG/REPO QUANT`, `pause`, `resume`,
+`cancel`, `rm ORG/REPO QUANT`, `enable`. With Docker Model Runner or Ollama, Pause stops the runtime's pull (Ollama continues
+it on Resume) and Cancel leaves its unfinished part to the runtime. A gated model needs a Hugging Face
 token (Settings, optional; never in a URL or log). The runner has no login of its own: keep it and Ollama off the
 network ([docs/security.md](docs/security.md#local-models)).
 

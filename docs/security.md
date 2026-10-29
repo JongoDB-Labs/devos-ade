@@ -510,15 +510,28 @@ Face and run them in Docker Model Runner or Ollama on the computer.
   helper and the CLI before anything runs; a URL or path is refused. The portal works out a download's size, license and
   tool support itself from Hugging Face's public API, never from the page, and the helper request has fixed, regex-checked
   fields (`local-pull`, `local-remove`) behind the portal password, with rate limits.
+- **Pause and Cancel** need no password: they only ever stop the running download (Cancel also deletes an unfinished
+  download's part, never a model that downloaded whole: that is Remove's, with the password). `POST
+  /api/local-models/stop` keeps every other door of a change (the portal session, `X-Requested-With`, same origin, the
+  remote-admin rule, a bounded body, a rate limit) and writes a `local-stop` request whose only field is the op (`pause` or
+  `cancel`); the helper accepts it with no `auth` and nothing else in it, counts it on its own (one a second at most), and
+  runs `./stack local-models pause|cancel`. Resume is a download again, with the password.
 - **The token.** The optional Hugging Face token is a secret like the others. It is only given to the runtime's
-  environment on the host for a download: never an argument, a URL, a log or the portal. Whether Docker's `docker model
+  environment on the host for a download: never an argument, a URL, a log or the portal. For an MLX download,
+  `lib/hf_fetch.py` hands it to curl on stdin as an `Authorization` header for huggingface.co; curl does not send a custom
+  `Authorization` header on to the other host a download redirects to (Hugging Face's CDN), and https is required for every
+  hop (`--proto =https --proto-redir =https`). Whether Docker's `docker model
   pull` honors it for gated repos is not documented; if it does not, a gated model fails with a message saying so.
 - **MLX (Apple silicon).** `mlx_lm.server` runs as a launchd user agent bound to 127.0.0.1, offline
   (`HF_HUB_OFFLINE=1`: it can never fetch anything itself), in a uv environment of this stack's own with `mlx-lm`
   pinned and hash-locked (`catalog/mlx-requirements.lock`; never below the line that gates CVE-2026-5843, where an old
   mlx-lm ran the Python file a model's `config.json` named). `--trust-remote-code` is never passed; before a download a
   repo with `model_file` or `auto_map` in its `config.json`, or with any `.py` file, is refused, and no `.py` file is
-  ever fetched. The vet resolves and prints the commit it checked; the download is pinned to that commit (`hf download --revision <sha>`), so a push between the check and the download is never fetched. After the download the snapshot's `config.json` (and the absence of any `.py` file) is checked again on disk before the model is registered or served; a failure deletes the download and says so. The commit is kept in the registry and shown in Settings. The Hugging Face token is only in the download's environment, never the server's. Its API is
+  ever fetched. The vet resolves and prints the commit it checked, and writes that commit's file list (each file's size, the
+  SHA-256 of a large file, the git blob id of a small one); the download (`lib/hf_fetch.py`) is pinned to that commit, so a
+  push between the check and the download is never fetched, takes only the listed paths (one that could leave the snapshot
+  folder refuses the whole list), and checks every file against its hash before it is renamed into place: one that does not
+  match is deleted and the download fails. An unfinished file is a `.part` that is never served. After the download the snapshot's `config.json` (and the absence of any `.py` file) is checked again on disk before the model is registered or served; a failure deletes the download and says so. The commit is kept in the registry and shown in Settings. The Hugging Face token is only in the download's environment, never the server's. Its API is
   unauthenticated: only the model gateway talks to it. Docker Model Runner needs Docker Desktop 4.71.0 or newer (the
   fix for its MLX backend).
 - **The runtime.** llama.cpp parses model files, and has had GGUF-parsing vulnerabilities: keep Docker Desktop or the
