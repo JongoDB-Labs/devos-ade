@@ -40,7 +40,7 @@ HEALTH_DAYS = 7           # a container's restart, unhealthy turn or failed exit
 HEALTH_MAX = 5            # the newest few: a crash loop is one story, not a flood
 # the subjects a health record may name: the stack's own services, else "other" (lib/health.sh HEALTH_SERVICES, the same
 # closed set as docs/event-schema.md; a test keeps the three together)
-SERVICES = frozenset("caddy chat-egress code litellm open-webui portal postgres rustfs rustfs-init searxng shared-mcp stt "
+SERVICES = frozenset("caddy chat-egress code forgejo litellm open-webui portal postgres rustfs rustfs-init searxng shared-mcp stt "
                      "subs-chat tailscale terminal terminal-egress terminal-gateway other".split())
 LEVELS = ("info", "good", "warn", "bad")
 ID = re.compile(r"[A-Za-z0-9:._@+-]{1,160}")
