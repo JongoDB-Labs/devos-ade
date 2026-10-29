@@ -6,6 +6,31 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.40.1] - 2026-10-29
+
+### Fixed
+- **A local model download can be paused, resumed and cancelled** (Settings › Models & providers › Local models, and the
+  panel on Browse models). **Pause** stops it and keeps what arrived; **Resume** continues from there; **Cancel** stops it
+  and deletes what arrived, after asking. Pause and Cancel need no password (they only stop something); Resume asks for
+  it, like a download. `./stack local-models pause | resume | cancel` do the same in a terminal. While one download is
+  paused, no other starts.
+- **A download says its speed and the time left,** and after two minutes with nothing arriving says it is stuck and what to
+  do. `./stack local-models status` shows the same.
+- **MLX downloads are much faster and continue after a stop.** On Apple silicon the stack now downloads a model's files
+  itself (curl, four at a time, from Hugging Face's CDN) instead of with `hf download`, whose new transfer path ran at a
+  fraction of the connection's speed (0.3 MB/s, where a plain download from the same Mac got 10 to 19 MB/s) and which deletes
+  a file's unfinished part whenever it stops. Each file now goes into a part that a pause, a crash or a dropped connection
+  continues from, and is checked against the SHA-256 (or git hash) Hugging Face lists for it before it is used.
+- **Settings keeps the tab you are on** (Keys, Subscriptions, Local models, Search) when the page redraws: when the window
+  crosses the phone width, or after a change is saved. It went back to the first tab.
+- **A new update helper's actions show at once.** The helper rewrites what it tells the portal it can do as soon as that
+  changes, rather than up to ten minutes later, so new buttons work right after an update.
+
+### Security
+- Pause and Cancel go through the portal's session, origin and remote-admin checks and a `local-stop` helper request whose
+  only field is the op. The Hugging Face token reaches curl on stdin, never a command line, and is never sent past
+  huggingface.co (docs/security.md, Local models).
+
 ## [0.40.0] - 2026-10-29
 
 ### Added
@@ -3649,7 +3674,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.40.0...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.40.1...HEAD
+[0.40.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.40.0...v0.40.1
 [0.40.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.39.0...v0.40.0
 [0.39.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.37.0...v0.38.0
