@@ -6,6 +6,32 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-10-29
+
+### Added
+- **Ollama as a core service DevOS ADE installs, runs and watches (JON-829).** Settings › Models & providers › Local
+  models › **Runtimes** shows Ollama's state (Running, Stopped, Not installed, or **Yours** for one you run yourself), its
+  version and address, the models it has loaded (and how much of them is on the GPU), how often it ended and was started
+  again, and its log. **Install** downloads the version this release pins, with a progress bar and **Cancel**: on a Mac
+  Ollama's own build, checked against a pinned SHA-256 and run natively on the GPU as a launchd agent of this stack; on
+  Linux Ollama's image, pinned by digest, as a container of the stack (with the NVIDIA GPUs when Docker has them). It
+  answers on 127.0.0.1:11434 only. **Stop**, **Start**, **Update to …** (when an update of DevOS ADE pins a newer one)
+  and **Uninstall** (with its models). In a terminal: `./stack runtimes [status] | install | start | stop | uninstall |
+  cancel | logs`.
+- **Home lists Ollama with the other services,** and **Activity** says when it ended and was started again, stopped
+  answering or could not be installed.
+- **Downloads go to** (`LOCAL_RUNTIME`, in the same section): MLX, Docker Model Runner or Ollama, instead of the automatic
+  order.
+- `bin/bump-core-services` moves Ollama's Mac build and its Linux image to the same release together.
+
+### Security
+- An Ollama that already runs on this computer and is not DevOS ADE's is never installed over, stopped or removed.
+- On Linux, Ollama publishes nothing and shares an internal network with the model gateway alone. A small gate
+  (`ollama-gate`, the pinned Caddy) publishes 127.0.0.1:11434 and lets only requests for 127.0.0.1 or localhost through,
+  the check a native Ollama makes itself: a web page that points a name of its own at this computer (DNS rebinding) gets
+  403. The Mac's archive is refused whole if it holds anything but plain files, folders and links beside them
+  (docs/security.md, Local models).
+
 ## [0.40.1] - 2026-10-29
 
 ### Fixed

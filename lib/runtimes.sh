@@ -82,14 +82,20 @@ rt_why_not() {
 _rt_ollama_version() {
   curl -s -m 3 "$(_local_ollama_url)/api/version" 2>/dev/null | sed -n 's/.*"version" *: *"\([0-9A-Za-z.+-]*\)".*/\1/p' | head -n 1 | cut -c1-40 || true
 }
-# _rt_ollama_ps -> the models loaded now, one per line: name TAB bytes TAB bytes in GPU memory
+# _rt_ollama_ps -> the models loaded now, one per line: name TAB bytes TAB bytes in GPU memory (read as JSON: each model's
+# "details" is an object of its own, and size_vram comes after it; a name keeps only the characters a model name has)
 _rt_ollama_ps() {
-  curl -s -m 3 "$(_local_ollama_url)/api/ps" 2>/dev/null | tr '{}' '\n\n' | awk '
-    match($0, /"name" *: *"[^"]*"/) { n = substr($0, RSTART, RLENGTH); sub(/^"name" *: *"/, "", n); sub(/"$/, "", n)
-      s = 0; v = 0
-      if (match($0, /"size" *: *[0-9]+/)) { s = substr($0, RSTART, RLENGTH); sub(/^"size" *: */, "", s) }
-      if (match($0, /"size_vram" *: *[0-9]+/)) { v = substr($0, RSTART, RLENGTH); sub(/^"size_vram" *: */, "", v) }
-      gsub(/[^A-Za-z0-9._:\/@+-]/, "", n); if (n != "") printf "%s\t%d\t%d\n", substr(n, 1, 160), s, v }' || true
+  curl -s -m 3 "$(_local_ollama_url)/api/ps" 2>/dev/null | python3 -I -c '
+import json, re, sys
+try:
+    ms = json.load(sys.stdin).get("models") or []
+except Exception:
+    ms = []
+n0 = lambda x: x if isinstance(x, int) and not isinstance(x, bool) and x >= 0 else 0
+for m in ms if isinstance(ms, list) else []:
+    n = re.sub(r"[^A-Za-z0-9._:/@+-]", "", str(m.get("name") or ""))[:160] if isinstance(m, dict) else ""
+    if n:
+        print("%s\t%d\t%d" % (n, n0(m.get("size")), n0(m.get("size_vram"))))' 2>/dev/null || true
 }
 
 # --- macOS: the launchd user agent ---

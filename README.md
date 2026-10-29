@@ -1974,13 +1974,30 @@ downloads them itself (`lib/hf_fetch.py`, curl, four files at a time) rather tha
 unfinished part whenever it stops: each file goes into a part of its own that a pause, a crash or a dropped connection
 continues from, and is checked against the SHA-256 (or git hash) Hugging Face lists for it before it is used. `./stack
 local-models uninstall [--models]` removes it all. Everywhere else it needs a runtime on this computer: **Docker Model Runner** (Docker Desktop 4.71 or newer) first (Docker Desktop: Settings › AI, or `docker desktop
-enable model-runner --tcp 12434`; Linux: `docker-model-plugin` and `docker model install-runner`), **Ollama** second.
-With neither running the section says so and `./stack local-models enable` switches Docker's on after asking. Commands:
+enable model-runner --tcp 12434`; Linux: `docker-model-plugin` and `docker model install-runner`), **Ollama** second
+(DevOS ADE's own, from **Runtimes** below, or one of yours). **Downloads go to** (`LOCAL_RUNTIME`) picks one instead of
+that order: MLX, Docker Model Runner or Ollama. With none running the section says so and `./stack local-models enable`
+switches Docker's on after asking. Commands:
 `./stack local-models status` (with the download's progress, speed and time left), `pull ORG/REPO QUANT`, `pause`, `resume`,
 `cancel`, `rm ORG/REPO QUANT`, `enable`. With Docker Model Runner or Ollama, Pause stops the runtime's pull (Ollama continues
 it on Resume) and Cancel leaves its unfinished part to the runtime. A gated model needs a Hugging Face
 token (Settings, optional; never in a URL or log). The runner has no login of its own: keep it and Ollama off the
 network ([docs/security.md](docs/security.md#local-models)).
+
+**Runtimes.** DevOS ADE installs, runs and watches **Ollama** itself, like its own containers: Settings › Models &
+providers › Local models › **Runtimes** shows each runtime's state (Running, Stopped, Not installed, or **Yours** for an
+Ollama you run yourself), its version, its address, the models it has loaded (and how much of them is on the GPU), how
+many times it ended and was started again, and its log. **Install** (the portal password) downloads the version this
+release pins, with a progress bar and **Cancel** (what arrived is kept for the next try): on a Mac Ollama's own build
+from github.com/ollama/ollama, checked against the SHA-256 this release pins before anything is unpacked, run as a
+launchd user agent of this stack on the GPU (Metal), its models in the stack's folder; on Linux Ollama's image (pinned
+by digest) as a container of the stack, with the NVIDIA GPUs when Docker has them, its models in a Docker volume. Either
+way it answers on 127.0.0.1:11434 only. **Stop** (no password: it only stops) and **Start**; after a DevOS ADE update that
+pins a newer Ollama, **Update to …**; **Uninstall** removes it with its models. Home lists it with the other services
+(ready, how many models are loaded), and Activity says when it ended and was started again, stopped answering or failed
+to install. An Ollama that already answers on 11434 and is not DevOS ADE's (the Ollama app, or one you started) is never
+installed over, stopped or removed. The same from a terminal: `./stack runtimes [status]`, `install ollama`, `start
+ollama`, `stop ollama`, `uninstall ollama`, `cancel`, `logs ollama [N]`.
 
 ## Remote access
 

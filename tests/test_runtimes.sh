@@ -172,6 +172,15 @@ assert (r["id"], r["state"], r["managed"], r["kind"], r["version"], r["address"]
 assert d["os"] == "mac" and d["job"]["state"] == "done" and d["events"][0]["kind"] == "installed"' "$(rt_status_file)"
   ( rt_install ollama ) > /dev/null 2>&1   # (again: the same version is fetched and swapped in; still running)
   assert_eq "$(rt_state ollama)" running
+  # Update (Settings' "Update to …": an install over an older version): the pinned one in its place, its models kept,
+  # the running agent ended and started again on the new program
+  echo 0.40.10 > "$d/installed"; echo m > "$d/models/kept"; : > "$TMP/launchctl.args"
+  rt_install ollama > "$TMP/out" 2>&1 || { cat "$TMP/out" >&2; return 1; }
+  assert_eq "$(rt_installed_version ollama)" 0.40.11
+  [ -f "$d/models/kept" ] && [ ! -e "$d/bin.old" ]
+  assert_contains "$(cat "$TMP/launchctl.args")" "bootout gui/$(id -u)/$(rt_label ollama)"
+  assert_contains "$(cat "$TMP/launchctl.args")" "bootstrap gui/$(id -u) $p"
+  assert_eq "$(rt_state ollama)" running
 }
 
 test_a_file_that_does_not_match_its_sha256_is_deleted_and_nothing_is_installed() {
@@ -315,6 +324,23 @@ test_logs_are_printable_and_the_portal_gets_a_copy() {
   cmd_runtimes logs ollama --portal
   assert_eq "$(cat "$STATE_DIR/status/runtime-logs/ollama.txt")" "$(printf 'time=1 level=INFO msg=up\nred')"
   ! ( cmd_runtimes logs ../x ) 2>/dev/null
+}
+
+# the models loaded now, from Ollama's /api/ps as it answers (each model's details are an object of their own, before
+# size_vram): name, size and the part in GPU memory; a name is printable, a broken answer is nothing
+test_the_models_loaded_are_read_with_their_gpu_memory() {
+  _rt_env
+  rt_install ollama > /dev/null 2>&1 || return 1
+  cat > "$TMP/ps.json" <<'JSON'
+{"models":[{"name":"qwen3:8b","model":"qwen3:8b","size":6000000000,"digest":"2ae6","details":{"parent_model":"","format":"gguf","family":"qwen3","families":["qwen3"],"parameter_size":"8.2B","quantization_level":"Q4_K_M"},"expires_at":"2026-10-28T14:38:31.83753-07:00","size_vram":5000000000,"context_length":4096},
+ {"name":"hf.co/bartowski/SmolLM2-135M-Instruct-GGUF:Q4_K_M\u001b[31m","model":"x","size":100000000,"details":{"format":"gguf"},"size_vram":0}]}
+JSON
+  assert_eq "$(_rt_ollama_ps)" "$(printf 'qwen3:8b\t6000000000\t5000000000\nhf.co/bartowski/SmolLM2-135M-Instruct-GGUF:Q4_K_M31m\t100000000\t0')"
+  rt_status_write
+  python3 -I -c 'import json,sys; r=json.load(open(sys.argv[1]))["runtimes"][0]
+assert r["loaded"][0] == {"name": "qwen3:8b", "bytes": 6000000000, "gpu_bytes": 5000000000}, r["loaded"]
+assert (r["memory_bytes"], r["gpu_bytes"]) == (6100000000, 5000000000), r' "$(rt_status_file)"
+  printf 'not json' > "$TMP/ps.json"; assert_eq "$(_rt_ollama_ps)" ""
 }
 
 # --- Linux: the compose profile ---

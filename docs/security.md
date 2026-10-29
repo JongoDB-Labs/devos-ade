@@ -504,7 +504,8 @@ confirmation.
 ## Local models
 
 Local models (`./stack local-models`, Settings › Models & providers › Local models) download GGUF files from Hugging
-Face and run them in Docker Model Runner or Ollama on the computer.
+Face and run them in Docker Model Runner or Ollama on the computer (an Ollama of yours, or DevOS ADE's own: Runtimes,
+below).
 
 - **Only Hugging Face.** Repo and quantization names are validated (`org/name`, a quant tag) in the portal, the update
   helper and the CLI before anything runs; a URL or path is refused. The portal works out a download's size, license and
@@ -537,6 +538,29 @@ Face and run them in Docker Model Runner or Ollama on the computer.
 - **The runtime.** llama.cpp parses model files, and has had GGUF-parsing vulnerabilities: keep Docker Desktop or the
   plugin, and Ollama, current, and download from authors you trust. Docker Model Runner's API is unauthenticated (host
   port 12434 on Docker Engine); do not expose it, nor Ollama's 11434, beyond this computer and the model gateway.
+- **Runtimes DevOS ADE installs (Ollama; `lib/runtimes.sh`).** What is installed is pinned by this release and nothing
+  else: on a Mac Ollama's `ollama-darwin.tgz` of the version in `catalog/runtimes.pins`, from github.com over https only
+  (also after its redirect), checked against the SHA-256 pinned beside it before it is unpacked (a mismatch deletes it);
+  the archive is refused whole if any member is not a plain file, a folder or a symlink to a name beside it (an absolute
+  path or a `..` anywhere, a link whose target has a `/`, a hard link, a device or a FIFO), and it is unpacked as the
+  user (no owner kept). It runs as a
+  launchd user agent of this stack (`dev.devos.ade.ollama.<a checksum of the stack's folder>`, a mode-600 plist that
+  exists only while it should run), as the user, never root, bound to 127.0.0.1:11434, with its own models folder and
+  HOME in `.state/runtimes/ollama` (never your `~/.ollama`) and Ollama's cloud features off (`OLLAMA_NO_CLOUD=1`).
+  Listening on loopback, Ollama itself refuses a request whose Host is not a loopback name (DNS rebinding) and a
+  cross-origin request from a page it does not allow. On Linux it is Ollama's image pinned by digest, in the "ollama"
+  profile only while installed, with every capability dropped and no-new-privileges, publishing nothing: it is on
+  "ollama" (internal: the model gateway and Ollama only) and "ollama-out" (its way to Hugging Face for a pull, shared
+  with its gate only). There it listens on the container's addresses, which turns Ollama's own Host check off, so
+  `ollama-gate` (the pinned Caddy, unprivileged, read-only, `caddy/ollama-gate.caddy`) publishes 127.0.0.1:11434 and
+  forwards only requests for 127.0.0.1 or localhost; any other name is 403 (`tests/caddy-validate.sh` runs it in front
+  of a stub). Install, Start, Update and Uninstall take the portal password and go through the update helper as a
+  `local-runtime` request with fixed, regex-checked fields (the op, and the id `ollama`); Stop, Cancel and the log are a
+  password-less `local-runtime-stop` request (they only stop something or read its log), each with the portal's other
+  doors and its own rate limit. The log the portal shows is the last lines of Ollama's own log, printable characters
+  only. An Ollama that already answers on 127.0.0.1:11434 and is not this stack's is never installed over, stopped or
+  removed. Uninstall deletes its folder (or its container and volume) with every model in it, after taking those models
+  out of the model gateway.
 - **Model servers** (any OpenAI-compatible address). The address is validated (no `user:password@`, no query), the API
   key is read from the terminal or Settings, handed to curl on stdin for the probe and written only as that model's
   `api_key` in the gateway's generated config (readable by that config's readers on this computer). Plain http to a public
@@ -573,8 +597,9 @@ Face and run them in Docker Model Runner or Ollama on the computer.
   add or change a server (the settings API: a session, the `X-Requested-With` header, a same-site origin and the portal
   password; `portal/tests/test_settings.py` test_apply_needs_session_header_origin_and_password and
   `portal/tests/test_local_models.py`); the Code and Chat sandboxes have no portal session or password.
-- **The gateway** reaches the runtime at `host.docker.internal` (a host-gateway entry on the litellm service only). A
-  local model costs nothing and is capped at 4096 output tokens. The embedder stays Bedrock-only.
+- **The gateway** reaches the runtime at `host.docker.internal` (a host-gateway entry on the litellm service only), or
+  DevOS ADE's own Ollama on Linux as `ollama:11434` on their internal network. A local model costs nothing and is capped
+  at 4096 output tokens. The embedder stays Bedrock-only.
 
 ## Web search for Claude Code
 
