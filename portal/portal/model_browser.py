@@ -4,10 +4,11 @@ use, image input and how each works as Claude Code's model, which are in the pic
 that adds or removes one. Nothing here holds a key of AWS or Experiential Labs:
 
 - Bedrock and Experiential Labs: what ./stack read (lib/model_browser.sh) into STATUS_DIR/model-browser/ — Bedrock's
-  ListFoundationModels and ListInferenceProfiles with LiteLLM's own AWS sign-in; the ids the Experiential Labs key may
-  call and the gateway's public catalog's pages. Read field by field; a list older than an hour is read again by the
-  update helper when this page asks (REQUEST_DIR/models-wanted: no password — a free, read-only listing, at most every
-  10 minutes).
+  foundation models and inference profiles (the system's and your application ones) in its region and the models only
+  other regions offer, with LiteLLM's own AWS sign-in (an application profile's ARN is never in that file); the ids the
+  Experiential Labs key may call and the gateway's public catalog's pages. Read field by field; a list older than an
+  hour is read again by the update helper when this page asks (REQUEST_DIR/models-wanted: no password — a free,
+  read-only listing, at most every 10 minutes; Read again writes "force" in it: every list, at most every minute).
 - OpenRouter: its public list (GET https://openrouter.ai/api/v1/models, no key: nothing about you is sent), read here
   and kept an hour — while its key is in .env, or when you ask to browse it without one.
 

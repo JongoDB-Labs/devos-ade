@@ -58,7 +58,7 @@ earlier keeps working), with this inline policy (replace `111122223333` with you
     {
       "Sid": "ListModelsOptional",
       "Effect": "Allow",
-      "Action": ["bedrock:ListFoundationModels", "bedrock:ListInferenceProfiles"],
+      "Action": ["bedrock:ListFoundationModels", "bedrock:ListInferenceProfiles", "bedrock:GetInferenceProfile"],
       "Resource": "*"
     }
   ]
@@ -76,10 +76,13 @@ earlier keeps working), with this inline policy (replace `111122223333` with you
   ```
 - `bedrock:Rerank` is for Open WebUI's document reranking (Cohere/Amazon rerank models); it has no
   resource-level scoping, so it needs `"*"` (the reranker model itself is covered by `bedrock:InvokeModel`).
-- `bedrock:ListFoundationModels` and `bedrock:ListInferenceProfiles` are optional, read-only and free; they let
-  Settings › Models & providers › Browse models list exactly what your key can add. Current Claude models are
-  served only through inference profiles, so without `ListInferenceProfiles` the browser shows them by their usual
-  `us.` profile id and says so. Neither has resource-level scoping here, so the statement uses `"*"`.
+- `bedrock:ListFoundationModels`, `bedrock:ListInferenceProfiles` and `bedrock:GetInferenceProfile` are optional,
+  read-only and free; they let Settings › Models & providers › Browse models list exactly what your key can add, in
+  every region (and your own application inference profiles). Current Claude models are served only through inference
+  profiles, so without `ListInferenceProfiles` the browser shows them by their usual `us.` profile id, checks each with
+  `GetInferenceProfile` where it may, and marks the rest *Not confirmed*. The list actions have no resource-level
+  scoping, so the statement uses `"*"`. Calling a model that only another region offers needs `bedrock:InvokeModel`
+  on that region's ARN too (the statement above allows `us-*` only).
 - **Tighter, optional:** to allow foundation models *only* when reached through your `us.` profiles, add
   `"Condition": {"StringLike": {"bedrock:InferenceProfileArn": "arn:aws:bedrock:us-*:111122223333:inference-profile/us.*"}}`
   to a copy of the first statement that lists only the profile-routed models, and keep the directly called ones
@@ -110,7 +113,7 @@ earlier keeps working), with this inline policy (replace `111122223333` with you
 >    `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` on US foundation models
 >    (`arn:aws:bedrock:us-*::foundation-model/*`) and our `us.` inference profiles
 >    (`arn:aws:bedrock:us-*:<account>:inference-profile/us.*`), `bedrock:Rerank` (resource `*`), optional
->    `bedrock:ListFoundationModels` and `bedrock:ListInferenceProfiles` — plus the managed policy `AmazonSSMManagedInstanceCore` for Session Manager.
+>    `bedrock:ListFoundationModels`, `bedrock:ListInferenceProfiles` and `bedrock:GetInferenceProfile` — plus the managed policy `AmazonSSMManagedInstanceCore` for Session Manager.
 > 2. **Enable model access / the Marketplace subscription** for the models I need (`<model>` …) in `us-east-1`.
 > 3. Let me **launch an instance with that role**, or attach it to `<instance-id>` for me.
 >

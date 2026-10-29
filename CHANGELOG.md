@@ -6,6 +6,31 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+
+- **Browse models lists every model each key can use, as the provider's own site would (JON-823).** Bedrock is read in
+  every region, not just the stack's: the models only another region offers are listed once each, from the nearest
+  region that has them (same geography first), marked with that region and *your requests go to that region*; a new
+  **Region** filter (any, this region, other regions) and the source line (*86 models in us-east-1, 9 more that only
+  other regions offer (17 regions read, 14 not turned on for your account, 2 not answering)*) say what was read. Your own **application
+  inference profiles** are listed by name (*Your profile*), called by their ARN and priced as the model they wrap.
+  Each provider says what it did not list and why (*Not listed: 2 that do not take and give text; 1 embedding or rerank
+  model; 7 context-length variants of a listed model*; OpenRouter's batch-only, image or audio and unpriced models),
+  and search finds a region or *not confirmed*. **Read again** now reads the lists fresh instead of waiting for the hour's cache.
+
+### Changed
+
+- **A guessed Bedrock inference profile is checked or marked.** A key that may not list profiles
+  (`bedrock:ListInferenceProfiles`) still gets Claude and the other profile-only models by their usual `us.` ids; each
+  is now confirmed with `bedrock:GetInferenceProfile` where the key may, dropped if Bedrock says it does not exist,
+  and otherwise marked **Not confirmed** (the page counts them and names the permission).
+
+### Security
+
+- An application inference profile's ARN names your AWS account: it is kept in a private state file
+  (`.state/bedrock/app-profiles.tsv`, mode 600, not mounted into the portal) and reaches only the model gateway's
+  config; the portal and the page see `app/<id>` and the profile's name.
+
 ## [0.39.0] - 2026-10-29
 
 ### Added

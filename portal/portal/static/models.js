@@ -204,9 +204,11 @@
       else if (k === "bedrock" && p.region && p.rows.length) {
         // its region's models, then the ones only other regions offer, and how many regions were read
         const other = p.rows.filter((r) => r.region && r.region !== p.region).length, n = p.rows.length - other;
-        const looked = Object.keys(p.regions || {}).length, off = Object.values(p.regions || {}).filter((v) => v === "off").length;
+        const st = Object.values(p.regions || {}), count = (v) => st.filter((x) => x === v).length;
+        const looked = count("ok"), off = count("off"), refused = count("denied"), mute = count("error");
         what = `${n} model${n === 1 ? "" : "s"} in ${p.region}${other ? `, ${other} more that only other regions offer` : ""}`
-          + `${looked > 1 ? ` (${looked} regions read${off ? `, ${off} not turned on for your account` : ""})` : ""}, ${ago(p.at)}`;
+          + `${st.length > 1 ? ` (${looked} region${looked === 1 ? "" : "s"} read${off ? `, ${off} not turned on for your account` : ""}`
+            + `${refused ? `, ${refused} refused your key` : ""}${mute ? `, ${mute} not answering` : ""})` : ""}, ${ago(p.at)}`;
       } else what = `${p.rows.length} model${p.rows.length === 1 ? "" : "s"}${k === "bedrock" && p.region ? ` in ${p.region}` : ""}, ${ago(p.at)}`;
       // a stale list: being read now, or (no update helper) when it will be; in the same text, so a narrow screen wraps
       // its words rather than starting a line with "·"

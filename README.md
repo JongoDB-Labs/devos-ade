@@ -1920,7 +1920,14 @@ Code*). Each row shows whether it is in your pickers now, with **Add** and **Rem
 password and the update helper like any other, and only the model gateway restarts, so the model then shows everywhere
 — Chat, the Code page, the terminal and `devos-claude --models`. You can add several Experiential Labs models, pick
 OpenRouter's as a list, and serve Bedrock models beyond the built-in catalog (a foundation model or inference profile
-your AWS key can use — the catalog stays the curated base, marked *Built in*). **Try it** makes one short, capped call
+your AWS key can use — the catalog stays the curated base, marked *Built in*). Bedrock is read in **every region**, not
+just the stack's: a model only another region offers is listed once, from the nearest region that has it, marked with
+that region (your requests to it go there; the **Region** filter shows this region's or the others'), and your own
+**application inference profiles** are listed by name (*Your profile*, priced as the model they wrap). Each provider
+says what it did not list and why (*Not listed:* context-length variants, embedding models, models that do not answer
+in text, OpenRouter's batch-only and unpriced ones), so the page matches the provider's own list. A key that may not
+list inference profiles still gets Claude by its usual `us.` id, checked with `bedrock:GetInferenceProfile` where it
+may and otherwise marked **Not confirmed**. **Read again** reads every list fresh. **Try it** makes one short, capped call
 and shows the cost first; it never runs on an expensive model (Opus included) without you confirming. The lists are
 read on the computer running DevOS ADE, never in your browser and never with a provider key in the portal (Bedrock's
 through a one-off, read-only model-gateway container; Experiential Labs' with your key the same way the gateway is
@@ -2095,8 +2102,8 @@ reports as *no Marketplace access*, *no model access* or *access denied*, with t
 > 2. **Make sure the IAM user has these actions** on the models above:
 >    - `bedrock:InvokeModel`
 >    - `bedrock:InvokeModelWithResponseStream` (needed for streaming chat and Claude Code)
->    - optional: `bedrock:ListFoundationModels` and `bedrock:ListInferenceProfiles` (read-only listings: Browse models
->      shows the exact list of models, Claude included, only with both)
+>    - optional: `bedrock:ListFoundationModels`, `bedrock:ListInferenceProfiles` and `bedrock:GetInferenceProfile`
+>      (read-only listings: Browse models shows the exact list of models, Claude included, only with them)
 > 3. **Rotate the long-lived access key on a short schedule**, and deliver new keys through a secrets manager or
 >    password vault rather than in documents or chat.
 >

@@ -473,10 +473,18 @@ An optional gateway (`lib/explabs.sh`; README › *Optional: Experiential Labs*)
 `lib/model_browser.sh`) searches what each provider offers. Every provider list is read **on the computer running DevOS
 ADE, never in your browser, and never with a provider key held in the portal**:
 
-- **Bedrock.** `ListFoundationModels` and `ListInferenceProfiles` run in a one-off container of the model gateway's
-  image with the AWS sign-in LiteLLM itself uses (`.env`'s key or the instance role) — the same way the model check and
-  the web-search probe already call AWS. Both are read-only and free; the AWS key never reaches the portal. A key that
-  may not list them is told so (the browser then shows the built-in catalog instead). Prices, context, tool use and
+- **Bedrock.** `ListFoundationModels`, `ListInferenceProfiles` and `GetInferenceProfile` run in a one-off container of
+  the model gateway's image with the AWS sign-in LiteLLM itself uses (`.env`'s key or the instance role) — the same way
+  the model check and the web-search probe already call AWS. All are read-only and free; the AWS key never reaches the
+  portal. A key that may not list them is told so (the browser then shows the built-in catalog instead). The other
+  regions are read the same way (`ListFoundationModels` in each region Bedrock has, in parallel, a few seconds each and
+  45 seconds in all); a region your account has not turned on answers so and is counted, never retried. A model only
+  another region offers is called in that region (its row says so: your prompts go there), so a policy that limits
+  where data goes should leave it out, or not grant `bedrock:InvokeModel` there.
+- **Your application inference profiles.** Their ARN names your AWS account, so it never reaches the portal: the stack
+  keeps each one in `.state/bedrock/app-profiles.tsv` (its folder mode 700, the file 600, not mounted into any
+  container) and writes it only into the model gateway's config when you add the profile. The page and the portal see
+  `app/<id>` and the profile's name; a profile id the stack has no ARN for is not rendered. Prices, context, tool use and
   image input come from the model gateway's own price map, not a network call.
 - **Experiential Labs.** `GET /v1/models` with the key (on `curl`'s stdin, never a command line, URL or log — as
   `lib/explabs.sh` always reads it) gives the ids the key may call; the public catalog (`/api/models`, keyless, so
