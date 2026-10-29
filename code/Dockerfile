@@ -11,7 +11,8 @@
 #   gitnew   the Git panel's unit tests once more with git 2.54 (Alpine 3.24): config-based hooks, which Debian's git
 #            lacks, are proven switched off there (the test may not skip) — its remote operations' too (with openssl,
 #            OpenSSH and git-daemon's git http-backend for their test servers)
-#   test     the unit tests, both halves (code/test.sh builds this stage; it needs --build-context terminal=terminal):
+#   test     the unit tests, both halves (code/test.sh builds this stage; it needs --build-context terminal=terminal
+#            and fixtures=tests/fixtures):
 #            the backend and the sandbox's bn-coded and bn-preview (with Debian's git and ripgrep, as in the sandbox),
 #            and the sandbox's egress proxy (terminal/egress/bn-egress.mjs)
 #   (last)   the runtime image — what setup and update build (no target): web and deps only, never webtest, gitnew or test
@@ -66,6 +67,8 @@ COPY --from=terminal egress/bn-egress.mjs /opt/terminal/egress/
 COPY --from=terminal claude-code/package.json /opt/terminal/claude-code/package.json
 # (its pins: the GitHub Copilot CLI's is the one whose reading of .github/ was audited — trust-frontmatter.test.mjs)
 COPY --from=terminal Dockerfile /opt/terminal/Dockerfile
+# (the built-in git server's test certificate, as ./stack hands it over: the Git hosts' and mirrors' tests read it)
+COPY --from=fixtures localgit-ca.pem /opt/tests/fixtures/localgit-ca.pem
 # (BN_TEST_EXPECT_SANDBOX: as in gitnew — no test may skip here for want of the sandbox's tools)
 ENV BN_TERMINAL_DIR=/opt/terminal BN_TEST_EXPECT_SANDBOX=1
 # (the files of test/one-at-a-time.txt check that parsing stays linear, by timing: run after the others, one at a time —

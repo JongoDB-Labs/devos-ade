@@ -5,5 +5,6 @@
 # Usage: code/test.sh [more docker build options, e.g. --no-cache]
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec docker build --target test --build-context terminal="$here/../terminal" --output type=cacheonly --progress=plain \
+exec docker build --target test --build-context terminal="$here/../terminal" --build-context fixtures="$here/../tests/fixtures" \
+  --output type=cacheonly --progress=plain \
   -f "$here/Dockerfile" "$@" "$here"
