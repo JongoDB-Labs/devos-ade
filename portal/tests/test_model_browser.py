@@ -5,6 +5,7 @@ writes them) and OpenRouter's public list; nothing here holds a key."""
 
 import asyncio
 import json
+import time
 
 import httpx
 
@@ -86,6 +87,58 @@ def test_openrouter_rows_drop_the_unusable():
     assert [r["source_id"] for r in rows] == ["a/b"]
     r = rows[0]
     assert r["in"] == 1.0 and r["out"] == 2.0 and r["images"] is True and r["tools"] is True
+
+
+def _or_read(handler, monkeypatch, kept=None, refresh=False):
+    """openrouter_list against a stand-in openrouter.ai (HANDLER), with a 0.3 s deadline and KEPT as the copy kept
+    from before (or none). -> (rows, meta, seconds it took)"""
+    monkeypatch.setattr(mb, "OR_DEADLINE_S", 0.3)
+    monkeypatch.setattr(mb, "_or_cache", {"v": kept} if kept else {})
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+            t0 = time.monotonic()
+            rows, meta = await mb.openrouter_list(c, refresh=refresh)
+            return rows, meta, time.monotonic() - t0
+    return asyncio.run(go())
+
+
+async def _trickle(req):
+    # (each piece well within the 20 s a single read may take, the whole far longer than the deadline)
+    async def body():
+        yield b'{"data": ['
+        for _ in range(50):
+            await asyncio.sleep(0.05)
+            yield b" "
+        yield b"]}"
+    return httpx.Response(200, content=body())
+
+
+async def _silent(req):
+    await asyncio.sleep(5)
+    return httpx.Response(200, json={"data": []})
+
+
+def test_a_slow_openrouter_ends_at_the_deadline_with_the_copy_kept(monkeypatch):
+    # Read again while openrouter.ai answers in pieces: the browse answer comes in seconds, with the copy kept
+    kept_rows = mb.openrouter_rows(_OR_DOC)
+    rows, meta, took = _or_read(_trickle, monkeypatch, kept=(time.time() - 120, kept_rows, {}), refresh=True)
+    assert took < 1.5, took
+    assert rows == kept_rows
+    assert meta["error"] == "kept from before: openrouter.ai did not answer in 0.3 s"
+
+
+def test_a_silent_openrouter_ends_at_the_deadline_and_says_so(monkeypatch):
+    rows, meta, took = _or_read(_silent, monkeypatch)
+    assert took < 1.5, took
+    assert rows == [] and meta["at"] is None
+    assert meta["error"] == "openrouter.ai did not answer in 0.3 s"
+
+
+def test_openrouter_within_the_deadline_is_read_and_kept(monkeypatch):
+    rows, meta, _ = _or_read(lambda req: httpx.Response(200, json=_OR_DOC), monkeypatch)
+    assert meta["error"] is None and "meta-llama/llama-3.3-70b-instruct" in {r["source_id"] for r in rows}
+    assert mb._or_cache["v"][1] == rows
 
 
 # --- Experiential Labs: the key's ids joined with the public catalog ---

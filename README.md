@@ -1927,7 +1927,8 @@ that region (your requests to it go there; the **Region** filter shows this regi
 says what it did not list and why (*Not listed:* context-length variants, embedding models, models that do not answer
 in text, OpenRouter's batch-only and unpriced ones), so the page matches the provider's own list. A key that may not
 list inference profiles still gets Claude by its usual `us.` id, checked with `bedrock:GetInferenceProfile` where it
-may and otherwise marked **Not confirmed**. **Read again** reads every list fresh. **Try it** makes one short, capped call
+may and otherwise marked **Not confirmed**. **Read again** reads every list fresh; it answers within seconds, so
+when openrouter.ai is slow (over 15 s) the copy read before stays, and the page says so. **Try it** makes one short, capped call
 and shows the cost first; it never runs on an expensive model (Opus included) without you confirming. The lists are
 read on the computer running DevOS ADE, never in your browser and never with a provider key in the portal (Bedrock's
 through a one-off, read-only model-gateway container; Experiential Labs' with your key the same way the gateway is

@@ -19,6 +19,7 @@ short request through LiteLLM on the setup key, its cost said first.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -33,6 +34,7 @@ WANTED = "models-wanted"
 MAX_AGE_S = 3600                     # a list older than this is read again (when this page is open)
 OR_API = "https://openrouter.ai/api/v1/models"
 OR_TIMEOUT = httpx.Timeout(20.0, connect=5.0)
+OR_DEADLINE_S = 15.0                 # the whole read of OpenRouter's list: past it, the copy kept (Read again answers in seconds)
 OR_MAX_BYTES = 8 * 1024 * 1024
 MAX_FILE = 8 * 1024 * 1024
 MAX_PAGES = 4
@@ -339,7 +341,10 @@ async def openrouter_list(client: httpx.AsyncClient, now: float | None = None, r
     if hit and now - hit[0] < MAX_AGE_S and not (refresh and now - hit[0] > 60):
         return hit[1], {"at": int(hit[0]), "error": None, "left_out": hit[2]}
     try:
-        r = await client.get(OR_API, timeout=OR_TIMEOUT, headers={"Accept": "application/json"})
+        try:   # (the whole read, however slowly it comes: OR_TIMEOUT is per read, and the browse answer waits on this)
+            r = await asyncio.wait_for(client.get(OR_API, timeout=OR_TIMEOUT, headers={"Accept": "application/json"}), OR_DEADLINE_S)
+        except asyncio.TimeoutError:
+            raise ValueError(f"openrouter.ai did not answer in {OR_DEADLINE_S:g} s") from None
         if r.status_code != 200:
             raise ValueError(f"openrouter.ai answered HTTP {r.status_code}")
         if len(r.content) > OR_MAX_BYTES:
