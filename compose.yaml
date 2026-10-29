@@ -114,8 +114,8 @@ services:
     ports:
       - "127.0.0.1:${LITELLM_PORT:-4000}:4000"
     # stt: the speech-to-text container's only network (no internet access); websearch: the built-in SearXNG's (LiteLLM
-    # alone reaches it); ollama: DevOS ADE's own Ollama's, on Linux (LiteLLM alone reaches it)
-    networks: [default, stt, websearch, ollama]
+    # alone reaches it); ollama, llamacpp: DevOS ADE's own Ollama's and llama.cpp's, on Linux (LiteLLM alone reaches them)
+    networks: [default, stt, websearch, ollama, llamacpp]
     # Local models (lib/local_models.sh): a model runner on this computer — Docker Model Runner's TCP port or a host
     # Ollama — is host.docker.internal. Docker Desktop names it already (this maps it to the same host); Docker Engine
     # on Linux needs the line.
@@ -629,6 +629,42 @@ services:
       start_interval: 1s
     logging: *logging
 
+  # DevOS ADE's own llama.cpp, on Linux (lib/runtimes.sh; in the "llamacpp" profile while it is installed): llama-server in
+  # router mode — the models downloaded in Settings › Local models (read-only, checked against the Hub's hashes when they
+  # arrived) and its settings, presets.ini and its API key, mounted read-only from .state/runtimes/llamacpp. On an
+  # internal network with the model gateway alone: it publishes nothing and reaches nothing (it downloads nothing itself).
+  # Every request but /health needs its key. It runs as you (BN_LLAMACPP_USER: rootless Docker's root is you), read-only,
+  # with no capabilities. compose.llamacpp-gpu.yaml swaps in the CUDA image when Docker had the NVIDIA runtime at install.
+  llamacpp:
+    image: ghcr.io/ggml-org/llama.cpp:server-b11960@sha256:8052c13edd987de8858f8150031e025ac3d66823f09cf3ec8220899c4abce220
+    profiles: ["llamacpp"]
+    restart: unless-stopped
+    user: "${BN_LLAMACPP_USER:-65534:65534}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 2048
+    tmpfs: [/tmp]
+    environment:
+      HOME: /tmp
+      LLAMA_CACHE: /tmp/cache
+      LLAMA_ARG_HOST: 0.0.0.0
+      LLAMA_ARG_PORT: "8080"
+    command: ["--models-preset", "/etc/llamacpp/presets.ini", "--api-key-file", "/etc/llamacpp/api-key", "--no-ui",
+              "--cors-origins", "localhost", "--models-max", "2", "--models-memory-margin", "1024"]
+    volumes:
+      - ${BN_LLAMACPP_DIR:-./.state/runtimes/llamacpp}/hub:/models:ro,z
+      - ${BN_LLAMACPP_DIR:-./.state/runtimes/llamacpp}/etc:/etc/llamacpp:ro,z
+    networks: [llamacpp]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-m", "5", "-o", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+      start_interval: 2s
+    logging: *logging
+
 networks:
   default:
   # Speech-to-text (lib/stt.sh): internal (no internet access); its members are stt, LiteLLM and Caddy only.
@@ -645,6 +681,9 @@ networks:
   # Its way out to Hugging Face (its pulls), and its gate's way to it (ollama-gate publishes 127.0.0.1:11434): Ollama and
   # ollama-gate only.
   ollama-out:
+  # DevOS ADE's own llama.cpp, on Linux (lib/runtimes.sh): internal; its members are LiteLLM and llama.cpp only.
+  llamacpp:
+    internal: true
   # The built-in git server (lib/localgit.sh): internal; its members are Forgejo, Caddy and (compose.localgit.yaml) the
   # terminal's gateway only.
   localgit:

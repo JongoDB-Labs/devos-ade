@@ -7,7 +7,9 @@
 # too): DevOS ADE's own (lib/runtimes.sh: installed from Settings › Local models › Runtimes, a launchd agent on a Mac, a
 # container of the stack on Linux) or one of yours. LOCAL_RUNTIME picks one (blank: that order). Nothing is installed or
 # switched on by itself: when none runs, the portal says how, and ./stack local-models enable (Docker Model Runner) or
-# ./stack runtimes install ollama does it after asking.
+# ./stack runtimes install ollama does it after asking. llama.cpp (DevOS ADE's own, from Runtimes too) takes a download
+# only when named (LOCAL_RUNTIME=llamacpp) or when none of those runs: the GGUF files of the quantization, checked against
+# the Hub's hashes (lib/hf_fetch.py), into its own folder; llama-server serves every one of them (lib/runtimes.sh).
 #
 #   ./stack local-models [status]                 the runtime, what is downloaded, disk used (and writes the portal's file)
 #   ./stack local-models pull REPO QUANT [opts]   download hf.co/REPO:QUANT, then register it (LOCAL_MODELS, applied live)
@@ -42,7 +44,7 @@ valid_hf_repo() { [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-
 valid_hf_quant() { [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]]; }
 # a registered model: "dmr:<id>" or "ollama:<id>"; <id> as valid_code_model_id (a letter or digit, then letters, digits and
 # . _ : / -), at most 126 characters
-valid_local_entry() { [[ $1 =~ ^(dmr|ollama|mlx):[A-Za-z0-9][A-Za-z0-9._:/-]{0,125}$ ]]; }
+valid_local_entry() { [[ $1 =~ ^(dmr|ollama|mlx|llamacpp):[A-Za-z0-9][A-Za-z0-9._:/-]{0,125}$ ]]; }
 # valid_local_models VALUE -> 0 for blank or a comma list of them (at most LOCAL_MODELS_MAX)
 valid_local_models() {
   local m rest n=0
@@ -83,6 +85,16 @@ local_ollama_state() {
   if curl -s -m 3 -o /dev/null "$(_local_ollama_url)/api/version" 2>/dev/null; then echo ready
   elif command -v ollama >/dev/null 2>&1; then echo not-running
   else echo not-installed; fi
+}
+# local_llamacpp_state -> "ready|not-running|not-installed": DevOS ADE's own llama.cpp (lib/runtimes.sh)
+local_llamacpp_state() {
+  declare -F rt_installed >/dev/null && rt_installed llamacpp || { echo not-installed; return 0; }
+  [ "$(rt_state llamacpp)" = running ] && echo ready || echo not-running
+}
+# local_llamacpp_base -> where the model gateway reaches it: its container by name (Linux), this Mac's agent as
+# host.docker.internal
+local_llamacpp_base() {
+  if [ "$(rt_os)" = linux ]; then echo http://llamacpp:8080/v1; else printf 'http://host.docker.internal:%s/v1\n' "$(rt_port llamacpp)"; fi
 }
 # local_dmr_base -> the address LiteLLM's container reaches Docker Model Runner at (engine path included). On Docker
 # Desktop: model-runner.docker.internal (no port); on Docker Engine: the host's TCP port 12434 (compose gives LiteLLM
@@ -270,6 +282,120 @@ _local_pull_mlx() {
   local_registry_put mlx "$id" "$repo" "$quant" "$bytes" "$lic" "$([ "$tools" = yes ] && echo 1 || { [ "$tools" = no ] && echo 0 || echo -; })" "$ctx" "$pm" "$sha"
   local_register_apply add "mlx:$id" || { _local_job failed "$repo" "$quant" "$bytes" "$bytes" "Downloaded, but the model gateway did not take it: ./stack local-models status"; die "registration failed"; }
   _local_job done "$repo" "$quant" "$bytes" "$bytes" "Ready: $(local_model_name "mlx:$id") is in Chat, the Code page and the terminal (the first answer waits while it loads)"
+  rm -f "$(local_dir)/job.pid"
+}
+
+# --- llama.cpp: DevOS ADE's own (lib/runtimes.sh); a model is the GGUF files of one quantization ---
+# _local_gguf_vet REPO QUANT MANIFEST -> ONE line: "sha <40 hex><TAB><its first file><TAB><bytes>" (the commit checked: the
+# download is pinned to it, so a push after the check is never fetched) or "no <why>". MANIFEST gets the quantization's
+# GGUF files at that commit (path, size, SHA-256, git blob id) for lib/hf_fetch.py: one file, or every part of a split
+# one (…-00001-of-0000N.gguf); never a vision projector (mmproj) or anything but GGUF. A file whose name has the
+# quantization (Q4_K_M matches …-Q4_K_M.gguf and Q4_K_M/…, never …-Q4_K_M_L or IQ4_K_M); of two, the shorter name. The
+# Hub is asked with the token in a header curl reads from stdin (HF_TOKEN in the environment).
+_local_gguf_vet() {
+  local body code ep; body="$(local_dir)/vet.json"; ep="${HF_ENDPOINT:-https://huggingface.co}"; ep="${ep%/}"
+  code="$({ [ -z "${HF_TOKEN:-}" ] || printf 'Authorization: Bearer %s\n' "$HF_TOKEN"; } | curl -q -sS -m 60 -H @- -o "$body" -w '%{http_code}' "$ep/api/models/$1/revision/main?blobs=true" 2>/dev/null || true)"
+  case "$code" in
+    200) ;;
+    401 | 403) rm -f "$body"; echo "no Hugging Face does not let this computer see it: a gated or private model needs a Hugging Face token (Settings › Models & providers) and its license accepted on huggingface.co"; return 0 ;;
+    404) rm -f "$body"; echo "no Hugging Face has no model $1"; return 0 ;;
+    *) rm -f "$body"; echo "no Hugging Face did not answer (HTTP ${code:-none}): try again"; return 0 ;;
+  esac
+  python3 -I -c '
+import json, re, sys
+body, quant, man = sys.argv[1:4]
+try:
+    info = json.load(open(body))
+except Exception:
+    print("no Hugging Face'"'"'s answer could not be read"); sys.exit(0)
+sha = info.get("sha") if isinstance(info, dict) else None
+if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+    print("no Hugging Face gave no commit for it"); sys.exit(0)
+tag = re.compile(r"(?:^|[^A-Za-z0-9])" + re.escape(quant) + r"(?:[^A-Za-z0-9_]|$)", re.I)
+split = re.compile(r"^(.*)-(\d{5})-of-(\d{5})\.gguf$", re.I)
+groups = {}
+for f in info.get("siblings") or []:
+    n = f.get("rfilename") if isinstance(f, dict) else None
+    if not isinstance(n, str) or not n.lower().endswith(".gguf") or "mmproj" in n.rsplit("/", 1)[-1].lower() or not tag.search(n):
+        continue
+    m = split.match(n)
+    groups.setdefault((m.group(1), m.group(3)) if m else (n, ""), []).append(f)
+if not groups:
+    print("no it has no GGUF file for %s" % quant); sys.exit(0)
+key = sorted(groups, key=lambda k: (len(k[0]), k))[0]
+files = sorted(groups[key], key=lambda f: f["rfilename"])
+if key[1] and len(files) != int(key[1]):
+    print("no it has %d of the %d parts of %s" % (len(files), int(key[1]), key[0].rsplit("/", 1)[-1][:80])); sys.exit(0)
+rows, total = [], 0
+for f in files:
+    n, lfs = f["rfilename"], f.get("lfs") if isinstance(f.get("lfs"), dict) else {}
+    size, h, b = lfs.get("size", f.get("size")), str(lfs.get("sha256") or ""), str(f.get("blobId") or "")
+    if not re.fullmatch(r"[A-Za-z0-9._/+-]{1,200}", n) or ".." in n.split("/"):
+        print("no a file has a name this stack does not download (%s)" % n[:80]); sys.exit(0)
+    if not isinstance(size, int) or isinstance(size, bool) or size <= 0 or not (re.fullmatch(r"[0-9a-f]{64}", h) or (not h and re.fullmatch(r"[0-9a-f]{40}", b))):
+        print("no Hugging Face did not give the size and hash of %s" % n[:80]); sys.exit(0)
+    rows.append("%s\t%d\t%s\t%s\n" % (n, size, h, b)); total += size
+with open(man, "w") as m:
+    m.writelines(rows)
+print("sha %s\t%s\t%d" % (sha, files[0]["rfilename"], total))
+' "$body" "$2" "$3" 2>&1 | tail -n 1 | cut -c1-400
+  rm -f "$body"
+}
+# _local_manifest_bytes MANIFEST REPO_DIR -> the bytes of its files that arrived (each finished blob, or its part)
+_local_manifest_bytes() {
+  local n=0 name size h b f
+  while IFS=$'\t' read -r name size h b; do
+    f="$2/blobs/${h:-$b}"
+    if [ -f "$f" ]; then n=$((n + $(_rt_bytes "$f"))); elif [ -f "$f.part" ]; then n=$((n + $(_rt_bytes "$f.part"))); fi
+  done < "$1"
+  echo "$n"
+}
+# _local_pull_llamacpp REPO QUANT BYTES TOOLS CTX PM LIC — vet, download (lib/hf_fetch.py: the system's python3 -I,
+# standard library only), add to llama.cpp (models.tsv, presets.ini, started again), register
+_local_pull_llamacpp() {
+  local repo="$1" quant="$2" bytes="$3" tools="$4" ctx="$5" pm="$6" lic="$7" hub rd man v why='' sha='' first id logf pid done_b=0 rc=0 stop
+  hub="$(rt_dir llamacpp)/hub"; rd="$hub/models--${repo//\//--}"; id="$repo:$quant"
+  valid_local_entry "llamacpp:$id" || { _local_job failed "$repo" "$quant" 0 "$bytes" "The model name is one this stack cannot serve."; die "unusable model id"; }
+  _local_job pulling "$repo" "$quant" 0 "$bytes" "Finding the $quant files of $repo on Hugging Face"
+  man="$(local_dir)/manifest.tsv"; : > "$man"; chmod 600 "$man"
+  v="$(HF_TOKEN="$(get_env HF_TOKEN)" _local_gguf_vet "$repo" "$quant" "$man")"
+  case "$v" in
+    "sha "*) v="${v#sha }"; sha="${v%%$'\t'*}"; v="${v#*$'\t'}"; first="${v%%$'\t'*}"; v="${v#*$'\t'}"; [ "$v" -gt 0 ] 2>/dev/null && bytes="$v" ;;
+    "no "*) why="${v#no }" ;;
+    *) why="${v:-the check gave no answer}" ;;
+  esac
+  [ -n "$why" ] || { [[ $sha =~ ^[0-9a-f]{40}$ ]] && [ -n "$first" ]; } || why="the check did not give a revision and a file to download"
+  if [ -n "$why" ]; then _local_job failed "$repo" "$quant" 0 "$bytes" "Not downloaded: $why."; die "not downloaded: $why"; fi
+  stop="$(_local_stop_asked)"
+  if [ -n "$stop" ]; then _local_stopped "$stop" llamacpp "$repo" "$quant" 0 "$bytes"; return 0; fi
+  logf="$(local_dir)/pull.log"; : > "$logf"; chmod 600 "$logf"
+  mkdir -p "$hub" && chmod 700 "$hub"
+  ( export HF_TOKEN; HF_TOKEN="$(get_env HF_TOKEN)"; exec python3 -I "$STACK_DIR/lib/hf_fetch.py" "$repo" "$sha" "$hub" "$man" ) </dev/null > "$logf" 2>&1 &
+  pid=$!; printf '%s\n' "$pid" > "$(local_dl_pid_file)"
+  _local_speed_reset
+  while kill -0 "$pid" 2>/dev/null; do
+    done_b="$(_local_manifest_bytes "$man" "$rd")"
+    _local_speed "$done_b" "$bytes"
+    _local_job pulling "$repo" "$quant" "$done_b" "$bytes" "$(_local_dl_message "$repo:$quant")" "$_LS_RATE" "$_LS_ETA" "$_LS_STALLED"
+    sleep "${LOCAL_POLL_S:-1}"
+  done
+  wait "$pid" || rc=$?
+  rm -f "$(local_dl_pid_file)"
+  stop="$(_local_stop_asked)"
+  if [ "$stop" = cancel ] || { [ "$stop" = pause ] && [ "$rc" -ne 0 ]; }; then _local_stopped "$stop" llamacpp "$repo" "$quant" "$done_b" "$bytes"; return 0; fi
+  rm -f "$(local_stop_file)"
+  if [ "$rc" -ne 0 ]; then
+    _local_job failed "$repo" "$quant" "$done_b" "$bytes" "The download stopped ($(tail -n 2 "$logf" | LC_ALL=C tr -cd ' -~\n' | tr '\n' ' ' | cut -c1-200)). What arrived is kept: Resume continues from it, Cancel deletes it. A gated model needs a Hugging Face token (Settings › Models & providers) and its license accepted on huggingface.co."
+    die "the download failed"
+  fi
+  [ -f "$rd/snapshots/$sha/$first" ] || { _local_job failed "$repo" "$quant" "$done_b" "$bytes" "The download has no $first."; die "the download is incomplete"; }
+  _local_job registering "$repo" "$quant" "$bytes" "$bytes" "Adding it to llama.cpp and the model gateway (a few seconds)"
+  rt_llamacpp_model_put "$id" "models--${repo//\//--}/snapshots/$sha/$first" "$ctx" "$(cut -f1 "$man" | paste -sd, -)" \
+    || { _local_job failed "$repo" "$quant" "$bytes" "$bytes" "Downloaded, but it could not be added to llama.cpp (.state/runtimes/llamacpp)."; die "llama.cpp did not take it"; }
+  rt_llamacpp_reload || { _local_job failed "$repo" "$quant" "$bytes" "$bytes" "Downloaded, but llama.cpp did not answer again after taking it: ./stack runtimes logs llamacpp"; die "llama.cpp did not start again"; }
+  local_registry_put llamacpp "$id" "$repo" "$quant" "$bytes" "$lic" "$([ "$tools" = yes ] && echo 1 || { [ "$tools" = no ] && echo 0 || echo -; })" "$ctx" "$pm" "$sha"
+  local_register_apply add "llamacpp:$id" || { _local_job failed "$repo" "$quant" "$bytes" "$bytes" "Downloaded, but the model gateway did not take it: ./stack local-models status"; die "registration failed"; }
+  _local_job done "$repo" "$quant" "$bytes" "$bytes" "Ready: $(local_model_name "llamacpp:$id") is in Chat, the Code page and the terminal (the first answer waits while it loads)"
   rm -f "$(local_dir)/job.pid"
 }
 
@@ -654,17 +780,20 @@ msrv_apply_op() {
   esac
 }
 
-# local_runtime -> "mlx", "dmr", "ollama" or "none": the one pulls go to. LOCAL_RUNTIME names one (none while it cannot
-# take a download: local_how_text says why); blank or auto: MLX on Apple silicon with uv, else Docker Model Runner, else Ollama
+# local_runtime -> "mlx", "dmr", "ollama", "llamacpp" or "none": the one pulls go to. LOCAL_RUNTIME names one (none while
+# it cannot take a download: local_how_text says why); blank or auto: MLX on Apple silicon with uv, else Docker Model
+# Runner, else Ollama, else DevOS ADE's llama.cpp
 local_runtime() {
   case "$(get_env LOCAL_RUNTIME)" in
     mlx) local_mlx_capable && echo mlx || echo none; return 0 ;;
     dmr) [ "$(local_dmr_state)" = ready ] && echo dmr || echo none; return 0 ;;
     ollama) [ "$(local_ollama_state)" = ready ] && echo ollama || echo none; return 0 ;;
+    llamacpp) [ "$(local_llamacpp_state)" = ready ] && echo llamacpp || echo none; return 0 ;;
   esac
   ! local_mlx_capable || { echo mlx; return 0; }
   [ "$(local_dmr_state)" != ready ] || { echo dmr; return 0; }
   [ "$(local_ollama_state)" != ready ] || { echo ollama; return 0; }
+  [ "$(local_llamacpp_state)" != ready ] || { echo llamacpp; return 0; }
   echo none
 }
 # _local_ollama_how -> how to have an Ollama running (DevOS ADE's own, from Runtimes; or one of yours)
@@ -673,11 +802,18 @@ _local_ollama_how() {
   else echo "install it in Settings › Local models › Runtimes (./stack runtimes install ollama), or start an Ollama of yours."; fi
 }
 
+# _local_llamacpp_how -> how to have DevOS ADE's llama.cpp running
+_local_llamacpp_how() {
+  if [ "$(local_llamacpp_state)" = not-running ]; then echo "start it in Settings › Local models › Runtimes (./stack runtimes start llamacpp)."
+  else echo "install it in Settings › Local models › Runtimes (./stack runtimes install llamacpp)."; fi
+}
+
 # local_how_text -> one line: how to turn a runtime on (for the portal, and ./stack local-models enable)
 local_how_text() {
   local d o; d="$(local_dmr_state)"; o="$(local_ollama_state)"
   case "$(get_env LOCAL_RUNTIME)" in
     ollama) [ "$o" = ready ] || { echo "Downloads go to Ollama (Settings › Local models › Runtimes), which is not running: $(_local_ollama_how)"; return 0; } ;;
+    llamacpp) [ "$(local_llamacpp_state)" = ready ] || { echo "Downloads go to llama.cpp (Settings › Local models › Runtimes), which is not running: $(_local_llamacpp_how)"; return 0; } ;;
     mlx) local_mlx_capable || { echo "Downloads go to MLX (Settings › Local models › Runtimes), which needs Apple silicon and uv: brew install uv (or https://docs.astral.sh/uv/)."; return 0; } ;;
   esac
   [ "$(local_mlx_state)" != no-uv ] || { echo "On Apple silicon the models run with MLX, which needs uv: brew install uv (or https://docs.astral.sh/uv/), then download again. Docker Model Runner (Docker Desktop 4.71 or newer) also works."; return 0; }
@@ -775,8 +911,9 @@ local_models_code_rows() {
 }
 
 # --- LiteLLM ---
-# local_models_yaml -> model_list entries (render_litellm_config): each a docker_model_runner/… or ollama_chat/… deployment
-# (both speak Chat Completions: no Responses API detour), no key, prices 0 (never spend); nothing without LOCAL_MODELS
+# local_models_yaml -> model_list entries (render_litellm_config): each a docker_model_runner/…, ollama_chat/… or openai/…
+# (MLX, llama.cpp) deployment (all speak Chat Completions: no Responses API detour), prices 0 (never spend); nothing
+# without LOCAL_MODELS
 local_models_yaml() {
   local e id name base kind dmr='' ol=''
   while IFS= read -r e; do
@@ -786,6 +923,10 @@ local_models_yaml() {
       mlx:*)
         printf '  - model_name: "%s"\n    litellm_params:\n      model: "openai/%s"\n      api_base: "%s"\n      api_key: "none"\n      timeout: 900\n      input_cost_per_token: 0\n      output_cost_per_token: 0\n    model_info:\n      mode: "chat"\n' \
           "$name" "$id" "$(local_mlx_base)"; continue ;;
+      llamacpp:*)
+        # (its API key: every request to it needs one — lib/runtimes.sh; the generated config's readers can see it)
+        printf '  - model_name: "%s"\n    litellm_params:\n      model: "openai/%s"\n      api_base: "%s"\n      api_key: "%s"\n      timeout: 900\n      input_cost_per_token: 0\n      output_cost_per_token: 0\n    model_info:\n      mode: "chat"\n' \
+          "$name" "$id" "$(local_llamacpp_base)" "$(rt_llamacpp_key)"; continue ;;
       dmr:*) [ -n "$dmr" ] || dmr="$(local_dmr_base)"; base="$dmr"; kind=docker_model_runner ;;
       *) [ -n "$ol" ] || ol="$(local_ollama_base)"; base="$ol"; kind=ollama_chat ;;
     esac
@@ -809,6 +950,9 @@ local_runner_ids() {
   case "$1" in
     dmr) _with_deadline 15 docker model list --openai 2>/dev/null | grep -o '"id" *: *"[^"]*"' | sed 's/^"id" *: *"//; s/"$//' ;;
     mlx) ls "$(local_mlx_hub)" 2>/dev/null | sed -n 's/^models--//p' | sed 's/--/\//' ;;
+    llamacpp) # (the models whose first file is on disk)
+      declare -F rt_llamacpp_models >/dev/null && [ -f "$(rt_llamacpp_models)" ] || return 0
+      local i rel _r; while IFS=$'\t' read -r i rel _r; do [ ! -f "$(rt_dir llamacpp)/hub/$rel" ] || printf '%s\n' "$i"; done < "$(rt_llamacpp_models)" ;;
     ollama) curl -s -m 8 "$(_local_ollama_url)/api/tags" 2>/dev/null | grep -o '"name" *: *"[^"]*"' | sed 's/^"name" *: *"//; s/"$//' ;;
   esac
 }
@@ -827,24 +971,26 @@ _local_result_json() {
   case "$r" in '{'*'}') printf '%s' "$r" ;; *) printf 'null' ;; esac
 }
 local_status_write() {
-  local d o m rt how gpu mem inst='' sep='' row r id repo quant bytes lic tools ctx pm added present ids total=0 job="${1:-}"
+  local d o m l rt how gpu mem inst='' sep='' row r id repo quant bytes lic tools ctx pm added present ids total=0 job="${1:-}"
   # (a download's once-a-second progress writes reuse the first look at the runtime and the machine)
-  if [ "${_LOCAL_FAST:-0}" = 1 ] && [ -n "${_LOCAL_D:-}" ]; then d="$_LOCAL_D"; o="$_LOCAL_O"; m="$_LOCAL_M"; gpu="$_LOCAL_GPU"; mem="$_LOCAL_MEM"; how="$_LOCAL_HOW"
+  if [ "${_LOCAL_FAST:-0}" = 1 ] && [ -n "${_LOCAL_D:-}" ]; then d="$_LOCAL_D"; o="$_LOCAL_O"; m="$_LOCAL_M"; l="$_LOCAL_L"; gpu="$_LOCAL_GPU"; mem="$_LOCAL_MEM"; how="$_LOCAL_HOW"
   else
-    d="$(local_dmr_state)"; o="$(local_ollama_state)"; m="$(local_mlx_state)"; gpu="$(local_gpu)"; mem="$(local_memory_bytes)"
-    how=''; { [ "$d" = ready ] || [ "$o" = ready ] || local_mlx_capable; } || how="$(local_how_text)"
+    d="$(local_dmr_state)"; o="$(local_ollama_state)"; m="$(local_mlx_state)"; l="$(local_llamacpp_state)"; gpu="$(local_gpu)"; mem="$(local_memory_bytes)"
+    how=''; { [ "$d" = ready ] || [ "$o" = ready ] || [ "$l" = ready ] || local_mlx_capable; } || how="$(local_how_text)"
     [ "$m" != no-uv ] || how="$(local_how_text)"
-    _LOCAL_M="$m"; _LOCAL_D="$d"; _LOCAL_O="$o"; _LOCAL_GPU="$gpu"; _LOCAL_MEM="$mem"; _LOCAL_HOW="$how"
+    _LOCAL_M="$m"; _LOCAL_D="$d"; _LOCAL_O="$o"; _LOCAL_L="$l"; _LOCAL_GPU="$gpu"; _LOCAL_MEM="$mem"; _LOCAL_HOW="$how"
   fi
   rt=none   # (as local_runtime, from the states already read)
   case "$(get_env LOCAL_RUNTIME)" in
     mlx) case "$m" in ready | stopped | not-installed) rt=mlx ;; esac ;;
     dmr) [ "$d" != ready ] || rt=dmr ;;
     ollama) [ "$o" != ready ] || rt=ollama ;;
+    llamacpp) [ "$l" != ready ] || rt=llamacpp ;;
     *)
       case "$m" in ready | stopped | not-installed) rt=mlx ;; esac
       [ "$rt" != none ] || [ "$d" != ready ] || rt=dmr
-      [ "$rt" != none ] || [ "$o" != ready ] || rt=ollama ;;
+      [ "$rt" != none ] || [ "$o" != ready ] || rt=ollama
+      [ "$rt" != none ] || [ "$l" != ready ] || rt=llamacpp ;;
   esac
   [ "$rt" != none ] || [ -n "$how" ] || how="$(local_how_text)"
   [ -n "$job" ] || job="$(cat "$(local_job_file)" 2>/dev/null || true)"
@@ -854,7 +1000,7 @@ local_status_write() {
     [ -n "$row" ] || continue
     IFS=$'\t' read -r r id repo quant bytes lic tools ctx pm added rev <<< "$row"
     present=true
-    if [ "${_LOCAL_FAST:-0}" != 1 ] && { { [ "$r" = dmr ] && [ "$d" = ready ]; } || { [ "$r" = ollama ] && [ "$o" = ready ]; } || [ "$r" = mlx ]; }; then
+    if [ "${_LOCAL_FAST:-0}" != 1 ] && { { [ "$r" = dmr ] && [ "$d" = ready ]; } || { [ "$r" = ollama ] && [ "$o" = ready ]; } || [ "$r" = mlx ] || [ "$r" = llamacpp ]; }; then
       ids="$(local_runner_ids "$r" || true)"
       printf '%s\n' "$ids" | grep -xF "$id" >/dev/null || present=false
     fi
@@ -869,8 +1015,8 @@ local_status_write() {
     sv="$sv$ssep{\"name\":$(_local_q "$n" 24),\"url\":$(_local_q "$u" 200),\"reached_as\":$(_local_q "$(msrv_reached_as "$n")" 240),\"trust\":$([ "$tr_" = 1 ] && echo true || echo false),\"key\":$([ -n "$(msrv_key "$n")" ] && echo true || echo false),\"status\":$(_local_q "${st%%$'\t'*}" 8),\"detail\":$(_local_q "${st#*$'\t'}" 2000),\"warning\":$(_local_q "$(msrv_warn "$u" "$tr_" "$(msrv_addr_of "$n")")" 200),\"key_note\":$(_local_q "$(msrv_key_note "$n")" 120),\"enabled\":$(_local_q "$(_msrv_items MODEL_SERVER_MODELS | awk -F: -v n="$n" '$1 == n { sub(/^[^:]*:/, ""); printf "%s%s", s, $0; s = ";" }')" 1500)}"
     ssep=','
   done < <(msrv_rows)
-  printf '{"at":%s,"runtime":{"kind":"%s","dmr":"%s","ollama":"%s","mlx":"%s","how":%s,"command":"./stack local-models enable"},"gpu":%s,"memory_bytes":%s,"disk_bytes":%s,"installed":[%s],"servers":[%s],"result":%s,"job":%s}\n' \
-    "$(date +%s)" "$rt" "$d" "$o" "$m" "$(_local_q "$how" 400)" "$(_local_q "$gpu" 40)" "$mem" "$total" "$inst" "$sv" "$(_local_result_json)" "$job" | _local_put "$(local_status_file)"
+  printf '{"at":%s,"runtime":{"kind":"%s","dmr":"%s","ollama":"%s","mlx":"%s","llamacpp":"%s","how":%s,"command":"./stack local-models enable"},"gpu":%s,"memory_bytes":%s,"disk_bytes":%s,"installed":[%s],"servers":[%s],"result":%s,"job":%s}\n' \
+    "$(date +%s)" "$rt" "$d" "$o" "$m" "$l" "$(_local_q "$how" 400)" "$(_local_q "$gpu" 40)" "$mem" "$total" "$inst" "$sv" "$(_local_result_json)" "$job" | _local_put "$(local_status_file)"
 }
 
 # local_models_tick — the update helper, each loop: when the portal asked (local_wanted_file), the file written again,
@@ -941,12 +1087,18 @@ _local_kill_tree() {
   case "$1" in '' | *[!0-9]*) return 0 ;; esac
   pkill "-$2" -P "$1" 2>/dev/null || true; kill "-$2" "$1" 2>/dev/null || true
 }
-# _local_discard RUNTIME REPO — an unfinished MLX download's files deleted: never a model this stack has whole (that is
-# Remove's). Docker Model Runner and Ollama keep their own unfinished parts.
+# _local_discard RUNTIME REPO — an unfinished MLX or llama.cpp download's files deleted: never a model this stack has whole
+# (that is Remove's; llama.cpp: another quantization of the same repo keeps its files, only this one's parts go). Docker
+# Model Runner and Ollama keep their own unfinished parts.
 _local_discard() {
-  [ "$1" = mlx ] && valid_hf_repo "$2" || return 0
-  [ -z "$(local_registry_rows | awk -F'\t' -v r="$2" '$1 == "mlx" && tolower($3) == tolower(r)')" ] || return 0
-  local d; d="$(local_mlx_repo_dir "$2")"
+  case "$1" in mlx | llamacpp) valid_hf_repo "$2" || return 0 ;; *) return 0 ;; esac
+  local d n h b
+  if [ "$1" = llamacpp ]; then d="$(rt_dir llamacpp)/hub/models--${2//\//--}"; else d="$(local_mlx_repo_dir "$2")"; fi
+  if [ -n "$(local_registry_rows | awk -F'\t' -v r="$2" -v t="$1" '$1 == t && tolower($3) == tolower(r)')" ]; then
+    [ "$1" = llamacpp ] && [ -f "$(local_dir)/manifest.tsv" ] || return 0
+    while IFS=$'\t' read -r n _ h b; do [[ ${h:-$b} =~ ^[0-9a-f]{40,64}$ ]] && rm -f -- "$d/blobs/${h:-$b}.part"; done < "$(local_dir)/manifest.tsv"
+    return 0
+  fi
   rm -rf -- "$d"
 }
 # _local_stopped pause|cancel RUNTIME REPO QUANT DONE TOTAL — the download stopped as asked. Paused keeps what arrived (Resume,
@@ -958,9 +1110,14 @@ _local_stopped() {
     _local_job paused "$repo" "$quant" "$done_b" "$total" "Paused at $(_local_size "$done_b")$([ "$total" -gt 0 ] 2>/dev/null && echo " of $(_local_size "$total")"). Resume continues from there."
   else
     _local_discard "$rt" "$repo"
-    _local_job cancelled "$repo" "$quant" 0 "$total" "Cancelled$([ "$rt" = mlx ] && echo ": what had arrived was deleted")."
+    _local_job cancelled "$repo" "$quant" 0 "$total" "Cancelled$({ [ "$rt" = mlx ] || [ "$rt" = llamacpp ]; } && echo ": what had arrived was deleted")."
   fi
   rm -f "$(local_dir)/job.pid"
+}
+# _local_job_runtime QUANT -> the runtime the last download went to (job.rt; an MLX one has no quantization)
+_local_job_runtime() {
+  local r; r="$(cat "$(local_dir)/job.rt" 2>/dev/null || true)"
+  case "$r" in mlx | dmr | ollama | llamacpp) echo "$r" ;; *) [ "$1" = mlx ] && echo mlx || echo other ;; esac
 }
 # local_stop pause|cancel — the running download stopped: pause keeps what arrived, cancel deletes it. Cancel also deletes a
 # paused or failed download's part. Waits (seconds) until the download's process says so; one that does not is stopped here.
@@ -977,11 +1134,11 @@ local_stop() {
     if local_job_running; then
       _local_kill_tree "$(cat "$(local_dir)/job.pid" 2>/dev/null || true)" TERM
       _local_kill_tree "$(cat "$(local_dl_pid_file)" 2>/dev/null || true)" KILL
-      _local_stopped "$op" "$([ "$quant" = mlx ] && echo mlx || echo other)" "$repo" "$quant" "$(_local_json_num "$j" done_bytes)" "$(_local_json_num "$j" total_bytes)"
+      _local_stopped "$op" "$(_local_job_runtime "$quant")" "$repo" "$quant" "$(_local_json_num "$j" done_bytes)" "$(_local_json_num "$j" total_bytes)"
     fi
     log "$([ "$op" = pause ] && echo Paused || echo Cancelled): $repo"
   elif [ "$op" = cancel ] && [ -n "$repo" ] && { [ "$st" = paused ] || [ "$st" = failed ]; }; then
-    _local_stopped cancel "$([ "$quant" = mlx ] && echo mlx || echo other)" "$repo" "$quant" 0 "$(_local_json_num "$j" total_bytes)"
+    _local_stopped cancel "$(_local_job_runtime "$quant")" "$repo" "$quant" 0 "$(_local_json_num "$j" total_bytes)"
     log "Cancelled: $repo"
   else
     log "No download is running"
@@ -1048,10 +1205,12 @@ local_pull() {
     _local_job failed "$repo" "$quant" 0 "$bytes" "No model runner is running. $(local_how_text)"
     die "no model runner: $(local_how_text)"
   fi
+  printf '%s\n' "$rt" > "$(local_dir)/job.rt"
   if [ "$rt" = mlx ]; then
     valid_hf_repo "$repo" || die "not a Hugging Face repo (org/name): $repo"
     _local_pull_mlx "$repo" "$bytes" "$tools" "$ctx" "$pm" "$lic"; return $?
   fi
+  if [ "$rt" = llamacpp ]; then _local_pull_llamacpp "$repo" "$quant" "$bytes" "$tools" "$ctx" "$pm" "$lic"; return $?; fi
   _local_job pulling "$repo" "$quant" 0 "$bytes" "Downloading $ref with $([ "$rt" = dmr ] && echo "Docker Model Runner" || echo Ollama)"
   _LOCAL_FAST=1   # (the first look is taken: the progress writes reuse it)
   logf="$(local_dir)/pull.log"; : > "$logf"; chmod 600 "$logf"
@@ -1123,8 +1282,9 @@ local_rm() {
     mlx) rd="$(local_mlx_repo_dir "$id")"; rm -rf -- "$rd" || rc=$? ;;
     dmr) _with_deadline 120 docker model rm "$id" >/dev/null 2>&1 || rc=$? ;;
     ollama) curl -sS -m 60 -X DELETE "$(_local_ollama_url)/api/delete" -H 'Content-Type: application/json' -d "{\"model\":\"$id\"}" >/dev/null 2>&1 || rc=$? ;;
+    llamacpp) rt_llamacpp_forget "$id" || rc=$? ;;
   esac
-  if [ "$rc" -ne 0 ]; then _local_job failed "$repo" "$quant" 0 0 "Taken out of the pickers, but the runtime did not delete the files (is it running?): $([ "$rt" = dmr ] && echo "docker model rm $id" || echo "ollama rm $id")"; die "the runtime did not delete it"; fi
+  if [ "$rc" -ne 0 ]; then _local_job failed "$repo" "$quant" 0 0 "Taken out of the pickers, but the runtime did not delete the files (is it running?): $(case "$rt" in dmr) echo "docker model rm $id" ;; llamacpp) echo "./stack runtimes status" ;; *) echo "ollama rm $id" ;; esac)"; die "the runtime did not delete it"; fi
   local_registry_drop "$rt" "$id"
   _local_job done "$repo" "$quant" 0 0 "Removed"
   rm -f "$(local_dir)/job.pid"

@@ -9,6 +9,10 @@
    "external": false,
    "name": "bedrock-now_default"
   },
+  "llamacpp": {
+   "external": false,
+   "name": "bedrock-now_llamacpp"
+  },
   "localgit": {
    "external": false,
    "name": "bedrock-now_localgit"
@@ -133,6 +137,7 @@
    "labels": {},
    "networks": [
     "default",
+    "llamacpp",
     "ollama",
     "stt",
     "terminal-link",

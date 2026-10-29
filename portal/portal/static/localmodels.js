@@ -1,7 +1,7 @@
 // Local models and model servers (Settings › Models & providers › Local models, and the panel on Browse models;
 // portal/portal/local_models.py, lib/local_models.sh): search
 // Hugging Face for MLX (Apple silicon) or GGUF models, see each quant's size, license and whether it fits this computer's memory, download one
-// (with progress), remove one, and see the disk used. The model runs on this computer (Docker Model Runner, else Ollama)
+// (with progress), remove one, and see the disk used. The model runs on this computer (MLX, Docker Model Runner, Ollama or llama.cpp)
 // and is served by the model gateway: it shows in Chat, the Code page and the terminal marked Local, at $0.
 // Loaded after settings.js, which calls mount(frame, helpers) while it draws the row and handles the password dialog
 // (helpers.askPassword; its submit calls started() once the update helper has the request). models.js (Browse models)
@@ -16,7 +16,7 @@
   const size = (n) => (!n ? "?" : n >= GB ? `${(n / GB).toFixed(n >= 10 * GB ? 0 : 1)} GB` : `${Math.max(1, Math.round(n / 1048576))} MB`);
   const count = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n || 0));
   const ctxk = (n) => (n % 1024 === 0 ? `${n / 1024}k` : count(n));
-  const RUNTIME = { mlx: "MLX (this Mac's GPU)", dmr: "Docker Model Runner", ollama: "Ollama", none: "no model runner" };
+  const RUNTIME = { mlx: "MLX (this Mac's GPU)", dmr: "Docker Model Runner", ollama: "Ollama", llamacpp: "llama.cpp", none: "no model runner" };
   const GPU = (g, mem) => (g === "metal" ? `Apple GPU (Metal), ${size(mem)} memory` : g.startsWith("cuda:") ? `NVIDIA GPU (${size(Number(g.slice(5)))}), ${size(mem)} memory` : `CPU only, ${size(mem)} memory`);
   let box = null, helpers = null, state = null, timer = null, query = "", results = null, open = null, detail = null, busy = false, message = "";
   let want = "", openFind = false, part = "";    // part: what the panel on Browse models shows, "download" | "server" | "" (both, and always in Settings)                     // (what an entry point asked to see first: "download" | "server")
@@ -60,11 +60,20 @@
     clearTimeout(timer); timer = setTimeout(load, 1000);
   }
 
-  // --- the runtimes DevOS ADE installs and runs itself (lib/runtimes.sh: Ollama). Install, Start and Uninstall ask for the
+  // --- the runtimes DevOS ADE installs and runs itself (lib/runtimes.sh: Ollama, llama.cpp). Install, Start and Uninstall ask for the
   // password; Stop, Cancel (of an install) and Log do not (they stop something or read its log). ---
   const RT_STATE = { running: ["Running", "on"], starting: ["Starting", ""], stopped: ["Stopped", "warn"], installing: ["Installing", ""],
     "not-installed": ["Not installed", ""], external: ["Yours", ""], unsupported: ["Not on this computer", ""] };
-  const CHOICE = { auto: "Automatic", mlx: "MLX", dmr: "Docker Model Runner", ollama: "Ollama" };
+  const CHOICE = { auto: "Automatic", mlx: "MLX", dmr: "Docker Model Runner", ollama: "Ollama", llamacpp: "llama.cpp" };
+  // each runtime: where it comes from, where it answers when nothing says, what loads and unloads its models, and what
+  // its container is reached by (llama.cpp's on Linux: the model gateway's network only, no port here)
+  const RT_INFO = {
+    ollama: { repo: "github.com/ollama/ollama", port: "127.0.0.1:11434", reach: "on 127.0.0.1:11434 only",
+      idle: "a model loads on its first request, and unloads after 10 idle minutes", keep: "", store: "Its models go in a Docker volume of its own" },
+    llamacpp: { repo: "github.com/ggml-org/llama.cpp", port: "127.0.0.1:11438", reach: "reachable by the model gateway only (no port on this computer), with a key of its own",
+      idle: "a model loads on its first request", keep: " At most 2 stay loaded: the one used longest ago makes room for another.", store: "Its models stay in this stack's folder" },
+  };
+  const rtInfo = (id) => RT_INFO[id] || RT_INFO.ollama;
   let rtNote = "", rtLogs = null, rtSending = null, rtOpen = false;   // rtLogs: { id, text, at, asked } while the log is shown
   let rtChoiceAt = 0;   // when "Downloads go to" changed: the runtime line is looked at again until the helper rewrote it
   const rtJobLive = () => !!(state && state.runtimes && state.runtimes.job.state === "running");
@@ -105,14 +114,16 @@
       el("p", { class: "lm-rt-head" }, el("b", { text: r.name }), " ", badge(word, tone),
         r.version && r.state !== "not-installed" && r.state !== "unsupported" ? ` ${r.version}` : "", up && r.address ? ` · ${r.address}` : ""));
     const note = (t, id) => row.append(el("p", { class: "note", ...(id ? { id } : {}), text: t }));
-    if (up) note(r.loaded.length ? `Loaded now: ${r.loaded.map((m) => `${m.name} (${size(m.bytes)}${m.gpu_bytes ? `, ${size(m.gpu_bytes)} on the GPU` : ""})`).join(", ")}.`
-      : "Nothing loaded: a model loads on its first request, and unloads after 10 idle minutes.", `lm-rt-loaded-${r.id}`);
-    if (r.state === "external") note("An Ollama of yours (not DevOS ADE's) answers here: downloads can go to it, and DevOS ADE never stops, updates or removes it.");
+    // (llama.cpp does not say a loaded model's size: none shown)
+    if (up) note((r.loaded.length ? `Loaded now: ${r.loaded.map((m) => `${m.name}${m.bytes ? ` (${size(m.bytes)}${m.gpu_bytes ? `, ${size(m.gpu_bytes)} on the GPU` : ""})` : ""}`).join(", ")}.`
+      : `Nothing loaded: ${rtInfo(r.id).idle}.`) + rtInfo(r.id).keep, `lm-rt-loaded-${r.id}`);
+    if (r.state === "external") note(r.id === "ollama" ? "An Ollama of yours (not DevOS ADE's) answers here: downloads can go to it, and DevOS ADE never stops, updates or removes it."
+      : `Something that is not DevOS ADE's answers on ${rtInfo(r.id).port}, the address ${r.name} would have: DevOS ADE does not install ${r.name} while it does, and never stops it.`);
     if (r.state === "unsupported") note(`It does not run here: ${r.why_not}.`);
     if (r.state === "not-installed") note(r.kind === "agent" ? `DevOS ADE can install it on this Mac (${r.size}): it runs natively, with the GPU, on 127.0.0.1 only.`
-      : `DevOS ADE can run it as a container of the stack (${r.size}), reachable on 127.0.0.1 only.`);
+      : `DevOS ADE can run it as a container of the stack (${r.size}), ${r.id === "ollama" ? "reachable on 127.0.0.1 only" : rtInfo(r.id).reach}.`);
     if (r.managed) {
-      note(`DevOS ADE's own: ${r.kind === "agent" ? "a background service of this Mac (launchd), with the GPU" : "a container of the stack"}, on 127.0.0.1 only.`
+      note(`DevOS ADE's own: ${r.kind === "agent" ? "a background service of this Mac (launchd), with the GPU" : "a container of the stack"}, ${r.kind === "agent" || r.id === "ollama" ? "on 127.0.0.1 only" : rtInfo(r.id).reach}.`
         + (r.restarts ? ` It ended by itself and was started again ${r.restarts} time${r.restarts === 1 ? "" : "s"}${r.last_exit !== null ? ` (last exit code ${r.last_exit})` : ""}.` : "")
         + (r.kind === "agent" && r.pinned && r.version && r.pinned !== r.version ? ` This release pins ${r.pinned}.` : ""));
     }
@@ -121,11 +132,11 @@
     const acts = el("div", { class: "lm-job-acts" });
     if (r.state === "not-installed") {
       acts.append(button("rt-install", `Install ${r.name}`, "primary", () => pw("install", `Install ${r.name} ${r.pinned}?`, r.kind === "agent"
-        ? `It downloads ${r.size} from github.com/ollama/ollama, checks it against the SHA-256 this release pins, and runs it on this Mac (127.0.0.1:11434 only, with the GPU). It and its models stay in this stack's folder; Uninstall removes them.`
-        : `Docker downloads Ollama's image (${r.size}, pinned by this release), and it runs as a container of the stack, on 127.0.0.1:11434 only. Its models go in a Docker volume of its own; Uninstall removes them.`, "Install")));
+        ? `It downloads ${r.size} from ${rtInfo(r.id).repo}, checks it against the SHA-256 this release pins, and runs it on this Mac (${rtInfo(r.id).port} only, with the GPU${r.id === "ollama" ? "" : ", behind a key of its own"}). It and its models stay in this stack's folder; Uninstall removes them.`
+        : `Docker downloads ${r.name}'s image (${r.size}, pinned by this release), and it runs as a container of the stack, ${rtInfo(r.id).reach}. ${rtInfo(r.id).store}; Uninstall removes them.`, "Install")));
     }
     if (r.managed && (r.state === "running" || r.state === "starting")) acts.append(button("rt-stop", "Stop", "", () => rtFree("stop", r.id)));
-    if (r.managed && r.state === "stopped") acts.append(button("rt-start", "Start", "primary", () => pw("start", `Start ${r.name}?`, `It runs on ${r.address || "127.0.0.1:11434"} again, and its models are served again.`, "Start")));
+    if (r.managed && r.state === "stopped") acts.append(button("rt-start", "Start", "primary", () => pw("start", `Start ${r.name}?`, `It runs on ${r.address || rtInfo(r.id).port} again, and its models are served again.`, "Start")));
     if (r.managed && r.kind === "agent" && r.pinned && r.version && r.pinned !== r.version && r.state !== "installing") {
       acts.append(button("rt-update", `Update to ${r.pinned}`, "", () => pw("install", `Update ${r.name} to ${r.pinned}?`, `It downloads ${r.pinned} (${r.size}, checked against this release's SHA-256), then starts it again; its models stay.`, "Update")));
     }
@@ -157,12 +168,13 @@
   // "Downloads go to": LOCAL_RUNTIME, changed like any setting (the password; Settings only — Browse models says it)
   function choiceRow() {
     const cur = CHOICE[state.choice] ? state.choice : "auto", rt = state.runtime;
-    const ol = (state.runtimes.runtimes || []).find((r) => r.id === "ollama");
+    const own = (id) => (state.runtimes.runtimes || []).find((r) => r.id === id);
+    const ol = own("ollama"), lc = own("llamacpp");
     const now = rt.kind === "none" ? "none running now" : `now ${RUNTIME[rt.kind] || rt.kind}`;
-    const has = { auto: true, mlx: ["ready", "stopped", "not-installed"].includes(rt.mlx), dmr: rt.dmr === "ready", ollama: !!ol && (ol.managed || ol.state === "external") };
+    const has = { auto: true, mlx: ["ready", "stopped", "not-installed"].includes(rt.mlx), dmr: rt.dmr === "ready", ollama: !!ol && (ol.managed || ol.state === "external"), llamacpp: !!lc && lc.managed };
     if (!(helpers && helpers.askPassword) || part) return el("p", { class: "note", id: "lm-rt-choice-text", text: `Downloads go to: ${CHOICE[cur]}${cur === "auto" ? ` (${now})` : ""}.` });
     const sel = el("select", { id: "lm-rt-choice", "aria-label": "Downloads go to" });
-    for (const k of ["auto", "mlx", "dmr", "ollama"]) {
+    for (const k of ["auto", "mlx", "dmr", "ollama", "llamacpp"]) {
       if (!has[k] && k !== cur) continue;
       const o = el("option", { value: k, text: k === "auto" ? `Automatic (${now})` : CHOICE[k] });
       if (k === cur) o.selected = true;
@@ -173,7 +185,7 @@
       const v = sel.value;
       sel.value = cur;   // (it shows the new one once the change is applied, not before: a cancelled dialog changes nothing)
       askPw({ kind: "apply", values: { LOCAL_RUNTIME: v === "auto" ? "" : v } }, `Send downloads to ${CHOICE[v]}?`,
-        `New downloads go to ${v === "auto" ? "the first runtime found (MLX on Apple silicon, else Docker Model Runner, else Ollama)" : CHOICE[v]}, and Browse lists the models it takes. The models already downloaded stay where they are and keep working.`, "Save");
+        `New downloads go to ${v === "auto" ? "the first runtime found (MLX on Apple silicon, else Docker Model Runner, else Ollama, else llama.cpp)" : CHOICE[v]}, and Browse lists the models it takes. The models already downloaded stay where they are and keep working.`, "Save");
     });
     return el("label", { class: "lm-rt-choice" }, "Downloads go to ", sel);
   }
@@ -211,6 +223,12 @@
   const badge = (text, tone, title) => el("span", { class: "badge", ...(tone ? { "data-tone": tone } : {}), ...(title ? { title } : {}), text });
   const noteTone = { "chat-only": "warn", weak: "warn", untested: "" };
 
+  // " Or install Ollama or llama.cpp under Runtimes below, with one click." (the ones not installed yet), else ""
+  const canInstall = () => {
+    const n = ((state.runtimes && state.runtimes.runtimes) || []).filter((r) => r.state === "not-installed").map((r) => r.name);
+    return n.length ? ` Or install ${n.join(" or ")} under Runtimes below, with one click.` : "";
+  };
+
   function runtimeLine() {
     const rt = state.runtime;
     if (rt.kind === "none") {
@@ -219,7 +237,7 @@
         const cmd = el("code", { class: "lm-cmd", text: rt.command });
         const cp = el("button", { type: "button", class: "quiet", text: "Copy" });
         cp.addEventListener("click", () => { try { navigator.clipboard.writeText(rt.command); cp.textContent = "Copied"; } catch (_) { /* the command is shown */ } });
-        how.append(el("p", {}, "To turn it on, run this in a terminal on this computer: ", cmd, " ", cp, ` It asks before it changes anything. Or install Ollama${state.runtimes && state.runtimes.runtimes.some((r) => r.id === "ollama" && r.state === "not-installed") ? " under Runtimes below, with one click" : ""}. You can still use a model server below.`));
+        how.append(el("p", {}, "To turn it on, run this in a terminal on this computer: ", cmd, " ", cp, ` It asks before it changes anything.${canInstall()} You can still use a model server below.`));
       }
       return how;
     }

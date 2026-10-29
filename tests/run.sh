@@ -59,8 +59,8 @@ export STACK_DIR="$T_ROOT" ENV_FILE="$TMP/.env" STATE_DIR="$TMP/.state" BEDROCK_
 # dc() never asks the Compose version in a test (a test that stubs docker would see an extra call): the docs overlay off
 export BEDROCK_NOW_COMPOSE_CONTEXTS=0 BEDROCK_NOW_COMPOSE_OVERRIDES=1
 export HOME="$TMP/home" DOCKER_CONFIG="$BN_REAL_DOCKER_CONFIG"; mkdir -p "$HOME"
-# an Ollama this computer may run is never asked (lib/runtimes.sh looks at what answers on 11434): the closed port 9
-export LOCAL_OLLAMA_URL=http://127.0.0.1:9
+# an Ollama or llama.cpp this computer may run is never asked (lib/runtimes.sh looks at what answers on 11434, 11438): the closed port 9
+export LOCAL_OLLAMA_URL=http://127.0.0.1:9 LOCAL_LLAMACPP_URL=http://127.0.0.1:9
 ( set -euo pipefail
   . lib/common.sh; . lib/ports.sh; . lib/portal.sh; . lib/models.sh; . lib/prices.sh; . tests/assert.sh
   . "$T_FILE"

@@ -504,8 +504,8 @@ confirmation.
 ## Local models
 
 Local models (`./stack local-models`, Settings › Models & providers › Local models) download GGUF files from Hugging
-Face and run them in Docker Model Runner or Ollama on the computer (an Ollama of yours, or DevOS ADE's own: Runtimes,
-below).
+Face and run them in Docker Model Runner, Ollama or llama.cpp on the computer (an Ollama of yours, or DevOS ADE's own
+Ollama or llama.cpp: Runtimes, below).
 
 - **Only Hugging Face.** Repo and quantization names are validated (`org/name`, a quant tag) in the portal, the update
   helper and the CLI before anything runs; a URL or path is refused. The portal works out a download's size, license and
@@ -561,6 +561,25 @@ below).
   only. An Ollama that already answers on 127.0.0.1:11434 and is not this stack's is never installed over, stopped or
   removed. Uninstall deletes its folder (or its container and volume) with every model in it, after taking those models
   out of the model gateway.
+- **llama.cpp** (`lib/runtimes.sh`, the second runtime DevOS ADE installs). On a Mac llama.cpp's
+  `llama-<build>-bin-macos-<arch>.tar.gz` of the build in `catalog/runtimes.pins`, from github.com over https only,
+  checked against the SHA-256 pinned beside it and unpacked under the same archive rules as Ollama's; it runs as a launchd
+  user agent of this stack (mode-600 plist, as the user) bound to 127.0.0.1:11438. On Linux llama.cpp's server image
+  pinned by digest (`server-<build>`, or `server-cuda-<build>` with the NVIDIA GPUs), in the "llamacpp" profile only
+  while installed, read-only, every capability dropped, no-new-privileges, as your user (root only where Docker's root is
+  you, or ./stack runs as root), and publishing no port: its only network is "llamacpp" (internal: the model gateway and
+  it), and its models and settings are mounted read-only. llama.cpp does not check the Host a request names, so neither
+  way relies on that: it requires an **API key** for everything but `/health` (`--api-key-file`; 32 random bytes made at
+  install in `.state/runtimes/llamacpp/etc`, mode 700, never in the plist, an argument, a log or the portal), which a web
+  page pointing a name at this computer (DNS rebinding) cannot know. The model gateway's generated config carries it as
+  that model's `api_key` (readable by that config's readers on this computer); `./stack`'s own requests send it from a
+  mode-600 header file (`curl -H @file`). Its web UI is off (`--no-ui`), CORS is limited to localhost
+  (`--cors-origins localhost`), it fetches nothing itself (no `-hf`: `LLAMA_CACHE` is in its own folder and the models
+  are files it is given), and it loads only the files `presets.ini` names, which the stack writes from its own record:
+  each a path under its own `hub/` folder, checked to contain no `..`. The download (`lib/hf_fetch.py`, the MLX
+  downloader) takes only that quantization's `.gguf` files from the commit it checked (never a vision projector), each
+  checked against the SHA-256 Hugging Face lists before it is used; a split model whose parts are not all listed is
+  refused.
 - **Model servers** (any OpenAI-compatible address). The address is validated (no `user:password@`, no query), the API
   key is read from the terminal or Settings, handed to curl on stdin for the probe and written only as that model's
   `api_key` in the gateway's generated config (readable by that config's readers on this computer). Plain http to a public
@@ -598,7 +617,8 @@ below).
   password; `portal/tests/test_settings.py` test_apply_needs_session_header_origin_and_password and
   `portal/tests/test_local_models.py`); the Code and Chat sandboxes have no portal session or password.
 - **The gateway** reaches the runtime at `host.docker.internal` (a host-gateway entry on the litellm service only), or
-  DevOS ADE's own Ollama on Linux as `ollama:11434` on their internal network. A local model costs nothing and is capped
+  DevOS ADE's own Ollama on Linux as `ollama:11434` and llama.cpp as `llamacpp:8080`, each on an internal network of
+  their own. A local model costs nothing and is capped
   at 4096 output tokens. The embedder stays Bedrock-only.
 
 ## Web search for Claude Code

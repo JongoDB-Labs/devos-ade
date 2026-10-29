@@ -203,8 +203,8 @@ def forgejo(s: Settings, now: float | None = None) -> dict | None:
 
 
 def runtimes(s: Settings, now: float | None = None) -> list[dict]:
-    """Home's rows for the model runtimes DevOS ADE installed and runs (lib/runtimes.sh: Ollama, a launchd agent on a Mac
-    or a container on Linux), from its record (status/runtimes.json, the update helper's every minute). One that is not
+    """Home's rows for the model runtimes DevOS ADE installed and runs (lib/runtimes.sh: Ollama and llama.cpp, each a launchd
+    agent on a Mac or a container on Linux), from its record (status/runtimes.json, the update helper's every minute). One that is not
     DevOS ADE's (an Ollama of yours) has no row: the stack does not run it."""
     now = datetime.now(timezone.utc).timestamp() if now is None else now
     d = local_models.read_runtimes(s.status_dir, now)

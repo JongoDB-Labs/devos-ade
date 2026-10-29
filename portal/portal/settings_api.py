@@ -676,7 +676,7 @@ def routes(ctx: Ctx) -> list[Route]:
                                        "hf_token_set": bool((rows.get("HF_TOKEN") or {}).get("set")),
                                        "wait": data["stale"] and not data["known"],
                                        "runtimes": lm.read_runtimes(s.status_dir), "can_runtime": ok and "local-runtime" in cap,
-                                       "choice": choice if choice in ("auto", "mlx", "dmr", "ollama") else "auto"}))
+                                       "choice": choice if choice in ("auto", "mlx", "dmr", "ollama", "llamacpp") else "auto"}))
 
     async def local_models_search(request: Request) -> Response:
         """Hugging Face's GGUF repos for ?q= (public API from here, no key); with ?repo=org/name that repo's quants, each with
@@ -822,7 +822,9 @@ def routes(ctx: Ctx) -> list[Route]:
             return err(409, "A runtime job is running: wait for it.")
         cur = next((x for x in r["runtimes"] if x["id"] == rid), None)
         if op == "install" and cur and cur["state"] in ("external", "unsupported"):
-            return err(409, f"Ollama cannot be installed here: {cur['why_not'] or 'an Ollama of yours already runs on 127.0.0.1:11434'}.")
+            taken = "an Ollama of yours already runs on 127.0.0.1:11434" if rid == "ollama" \
+                else "something that is not DevOS ADE's already answers on 127.0.0.1:11438, the address it would have"
+            return err(409, f"{lm.RUNTIME_NAMES[rid]} cannot be installed here: {cur['why_not'] or taken}.")
         if wait := runtime_rate.retry_after():
             return err(429, f"Please wait {wait} s.", wait)
         try:

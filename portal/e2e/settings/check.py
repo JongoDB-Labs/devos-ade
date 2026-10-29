@@ -289,7 +289,7 @@ BROWSE = {"providers": {"bedrock": {"on": True, "key": "BEDROCK_MODELS", "value"
 LM_MODELS = [{"id": "qwen/Qwen3-8B", "context": 32768}, {"id": "llama3:8b", "context": None}]
 # The runtimes DevOS ADE installs (GET /api/local-models' "runtimes", lib/runtimes.sh's file as the portal reads it): none until
 # check_runtimes sets one
-RT = {"one": None, "job": None, "posts": [], "free": [], "choice": "auto"}
+RT = {"one": None, "more": [], "job": None, "posts": [], "free": [], "choice": "auto"}   # (more: the runtimes after it, as they are)
 RT_IDLE = {"id": "", "op": "", "state": "idle", "done_bytes": 0, "total_bytes": 0, "message": "", "at": None}
 
 
@@ -298,7 +298,7 @@ def lm_state():
             "runtime": {"kind": "none", "how": "No model runner is running on this computer.", "command": "./stack local-models enable", "dmr": "", "ollama": ""},
             "gpu": "none", "memory": 16 * 1024 ** 3, "disk": sum(i["bytes"] for i in LM["installed"]), "installed": LM["installed"], "servers": LM["servers"], "result": LM["result"],
             "can_stop": LM["can_stop"], "job": LM["job"] or IDLE_JOB, "can_runtime": True, "choice": RT["choice"],
-            "runtimes": {"known": True, "at": int(time.time()), "stale": False, "os": "mac", "runtimes": [RT["one"]] if RT["one"] else [],
+            "runtimes": {"known": True, "at": int(time.time()), "stale": False, "os": "mac", "runtimes": ([RT["one"]] if RT["one"] else []) + RT["more"],
                          "job": RT["job"] or RT_IDLE, "events": []}}
 
 
@@ -975,18 +975,19 @@ def check_downloads(page, failures, label):
 
 
 def check_runtimes(page, failures, label):
-    """The runtimes DevOS ADE installs and runs (JON-829, Ollama): Install asks for the password and says what it downloads;
+    """The runtimes DevOS ADE installs and runs (JON-829, Ollama and llama.cpp): Install asks for the password and says what it downloads;
     its progress, with Cancel (no password); a running one says what it has loaded and what it uses, Stop and Log with no
     password, Start and Uninstall with it; an Ollama of yours has no button that changes it; Update when this release pins
-    another version; "Downloads go to" changes LOCAL_RUNTIME like any setting; nothing wider than a phone."""
+    another version; "Downloads go to" changes LOCAL_RUNTIME like any setting; llama.cpp beside it, its Install saying where
+    it comes from and what reaches it, a downloads choice once it is DevOS ADE's; nothing wider than a phone."""
     pw, gb = "correct horse", 1024 ** 3
     base = {"id": "ollama", "name": "Ollama", "state": "not-installed", "managed": False, "kind": "agent", "version": "", "pinned": "0.40.11",
             "address": "127.0.0.1:11434", "loaded": [], "memory": 0, "gpu_memory": 0, "restarts": None, "last_exit": None, "size": "about 180 MB", "why_not": ""}
     running = {**base, "state": "running", "managed": True, "version": "0.40.11", "loaded": [{"name": "qwen3:8b", "bytes": 6 * gb, "gpu_bytes": 6 * gb}],
                "memory": 6 * gb, "gpu_memory": 6 * gb, "restarts": 1, "last_exit": 2}
 
-    def open_rt(one, job=None):
-        RT.update(one=dict(one), job=job)
+    def open_rt(one, job=None, more=()):
+        RT.update(one=dict(one), job=job, more=[dict(m) for m in more])
         page.goto(BASE + "/#settings")
         page.reload()
         page.wait_for_selector("#settings .set-card:not([hidden])", timeout=20000)
@@ -1084,6 +1085,31 @@ def check_runtimes(page, failures, label):
             failures.append(f"{label}: Downloads go to sent {sent}")
         if page.input_value("#lm-rt-choice") != "auto":
             failures.append(f"{label}: Downloads go to shows {page.input_value('#lm-rt-choice')!r} before the change was applied")
+        # llama.cpp beside it: not installed, its Install says where it comes from and what reaches it (Escape: nothing sent);
+        # no downloads choice for it until it is DevOS ADE's
+        lc = {**base, "id": "llamacpp", "name": "llama.cpp", "pinned": "0.8.0", "address": "127.0.0.1:11438", "size": "about 16 MB"}
+        open_rt(running, more=[lc])
+        page.wait_for_selector("#lm-rt-llamacpp[data-state=not-installed]", timeout=10000)
+        if page.locator("#lm-rt-choice option[value=llamacpp]").count():
+            failures.append(f"{label}: Downloads go to offers a llama.cpp that is not installed")
+        page.click("#lm-rt-llamacpp [data-act=rt-install]")
+        text = password(ok=False)
+        if not all(w in text for w in ("16 MB", "github.com/ggml-org/llama.cpp", "SHA-256", "127.0.0.1:11438", "key of its own")):
+            failures.append(f"{label}: llama.cpp's Install dialog does not say what it does: {text!r}")
+        if [p["op"] for p in RT["posts"]] != ["install", "start"]:
+            failures.append(f"{label}: a dismissed llama.cpp Install sent something: {RT['posts']}")
+        # Linux's: a container only the model gateway reaches; then a downloads choice
+        open_rt(running, more=[{**lc, "state": "running", "managed": True, "kind": "container", "version": "0.8.0",
+                                "address": "llamacpp:8080 (the model gateway's network only)", "loaded": [{"name": "org/M-GGUF:Q4_K_M", "bytes": 0, "gpu_bytes": 0}]}])
+        page.wait_for_selector("#lm-rt-llamacpp[data-state=running]", timeout=10000)
+        txt = page.inner_text("#lm-rt-llamacpp")
+        for w in ("llama.cpp", "0.8.0", "the model gateway's network only", "org/M-GGUF:Q4_K_M", "reachable by the model gateway only", "At most 2 stay loaded"):
+            if w not in txt:
+                failures.append(f"{label}: a running llama.cpp does not say {w!r}: {txt!r}")
+        if "127.0.0.1 only" in txt or "(?)" in txt:
+            failures.append(f"{label}: llama.cpp's container is said to be on 127.0.0.1, or a size it does not know is shown: {txt!r}")
+        if not page.locator("#lm-rt-choice option[value=llamacpp]").count():
+            failures.append(f"{label}: Downloads go to does not offer DevOS ADE's llama.cpp")
         # a phone's width: nothing wider than the screen
         page.set_viewport_size({"width": 390, "height": 800})
         page.wait_for_timeout(200)
@@ -1092,7 +1118,7 @@ def check_runtimes(page, failures, label):
         page.locator("#lm-runtimes").screenshot(path=str(OUT / "settings-runtimes-390.png"))
     finally:
         page.set_viewport_size({"width": 1280, "height": 900})
-        RT.update(one=None, job=None, posts=[], free=[], choice="auto")
+        RT.update(one=None, more=[], job=None, posts=[], free=[], choice="auto")
         STUB["job"] = None
 
 

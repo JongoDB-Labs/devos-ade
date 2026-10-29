@@ -112,6 +112,15 @@ test_piped_greps_never_end_early() {
   ( set -o pipefail; seq 1 200000 | grep -x 3 >/dev/null )
 }
 
+# A regex's count above 255 (RE_DUP_MAX on macOS: {1,400}) does not compile there, so [[ =~ ]] is false for every value
+test_shell_regexes_never_count_above_255() {
+  local hits
+  hits="$(grep -nE '\{[0-9]*,?(2[6-9][0-9]|25[6-9]|[3-9][0-9]{2}|[0-9]{4,})\}' "$T_ROOT"/lib/*.sh "$T_ROOT/stack" "$T_ROOT/setup.sh" \
+    "$T_ROOT"/tests/e2e/*.sh 2>/dev/null | grep -E '=~|grep -[a-zA-Z]*E' || true)"
+  assert_eq "$hits" ""
+  ! [[ x =~ ^x{1,400}$ ]] || [ "$(uname -s)" != Darwin ]
+}
+
 test_every_test_runs_with_a_home_of_its_own() {
   # tests/run.sh: setup (the Code page's ~/bedrock-now-workspace) or devos-claude (~/.claude-bedrock) run by a test
   # must never reach your real home folder

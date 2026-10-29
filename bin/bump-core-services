@@ -701,8 +701,10 @@ HOLDS = {"tailscale": "remote access needs a real tailnet to test; bump it by ha
 
 # Not covered (said in the report): Cursor CLI (no release feed or checksum: terminal/Dockerfile's CURSOR_* are moved by
 # hand), the npm tools' lockfiles (terminal/claude-code, terminal/tools/gemini and grok: npm install in those folders),
-# TTYD_PAGE_SCRIPT_SHA256 (changes only with a new ttyd).
-NOT_COVERED = "Cursor CLI and the npm tool lockfiles (terminal/claude-code, terminal/tools/*) are bumped by hand"
+# TTYD_PAGE_SCRIPT_SHA256 (changes only with a new ttyd), llama.cpp (a release names its build only in an asset, nightly-tag.txt:
+# the build's macOS archives and its GHCR images are pinned by hand, together).
+NOT_COVERED = ("Cursor CLI, the npm tool lockfiles (terminal/claude-code, terminal/tools/*) and llama.cpp (catalog/runtimes.pins "
+               "LLAMACPP_*, its images in compose.yaml and compose.llamacpp-gpu.yaml) are bumped by hand")
 
 MANIFEST = "catalog/core-services.tsv"
 OVERRIDES = "catalog/core-services-overrides.tsv"

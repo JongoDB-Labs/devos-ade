@@ -40,7 +40,7 @@ HEALTH_DAYS = 7           # a container's restart, unhealthy turn or failed exit
 HEALTH_MAX = 5            # the newest few: a crash loop is one story, not a flood
 # the subjects a health record may name: the stack's own services, else "other" (lib/health.sh HEALTH_SERVICES, the same
 # closed set as docs/event-schema.md; a test keeps the three together)
-SERVICES = frozenset("caddy chat-egress code forgejo litellm ollama ollama-gate open-webui portal postgres rustfs rustfs-init searxng shared-mcp stt "
+SERVICES = frozenset("caddy chat-egress code forgejo litellm llamacpp ollama ollama-gate open-webui portal postgres rustfs rustfs-init searxng shared-mcp stt "
                      "subs-chat tailscale terminal terminal-egress terminal-gateway other".split())
 LEVELS = ("info", "good", "warn", "bad")
 ID = re.compile(r"[A-Za-z0-9:._@+-]{1,160}")
@@ -257,7 +257,7 @@ def runtime_items(status_dir: Path, now: float) -> list[dict]:
         if now - e["at"] > HEALTH_DAYS * 86400 or e["at"] > now + 300:
             continue
         level, title, notify = RT_EVENT[e["kind"]]
-        it = _item(f"runtime:{e['id']}:{e['kind']}:{e['at']}", "runtime", level, title.format(n=names.get(e["id"], e["id"].capitalize())),
+        it = _item(f"runtime:{e['id']}:{e['kind']}:{e['at']}", "runtime", level, title.format(n=names.get(e["id"]) or local_models.RUNTIME_NAMES.get(e["id"], e["id"])),
                    e["text"] + (f" ./stack runtimes logs {e['id']} shows its log." if level in ("warn", "bad") else ""), e["at"],
                    "#settings/+local-models", notify)
         if it:

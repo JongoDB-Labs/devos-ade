@@ -4,3 +4,10 @@
 # compose.yaml.
 ARG OLLAMA_VERSION=0.40.11
 ARG OLLAMA_SHA256_DARWIN=aea7d3f2e32371b7644a6e2ec8d4f26820a0e3965918cce8a46cef3e947f6291
+# llama.cpp (github.com/ggml-org/llama.cpp): its stable release and the build it is (the release's nightly-tag.txt), and
+# the SHA-256 of that build's macOS archives (llama-<build>-bin-macos-arm64|x64.tar.gz). Linux: compose.yaml's llamacpp
+# images (server-<build>, and server-cuda-<build> in compose.llamacpp-gpu.yaml), pinned by digest. Bumped by hand.
+ARG LLAMACPP_VERSION=0.8.0
+ARG LLAMACPP_BUILD=b11960
+ARG LLAMACPP_SHA256_MACOS_ARM64=58e5a5e1d7c2bf66cedd9c29e0323f3e570660a70a1e2156d32eed08f4cc1e3c
+ARG LLAMACPP_SHA256_MACOS_X64=d1e6c9ddcaed9a3b1bb8f3d946bdb3481c7b919357a4029dcb747762397f1da5

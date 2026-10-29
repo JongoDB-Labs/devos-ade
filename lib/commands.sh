@@ -1453,6 +1453,7 @@ status_url() { # status_url SERVICE -> where to open it (browser UIs: through th
     forgejo) echo "$(portal_url git)   (the built-in git server)" ;;
     ollama) echo "- (local models: LiteLLM's alone; ./stack runtimes status)" ;;
     ollama-gate) echo "http://127.0.0.1:11434   (Ollama's API, for this computer's loopback names only)" ;;
+    llamacpp) echo "- (local models: LiteLLM's alone; ./stack runtimes status)" ;;
     *) echo "- (internal only)" ;;
   esac
 }

@@ -6,6 +6,30 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-10-29
+
+### Added
+- **llama.cpp as a core service DevOS ADE installs, runs and watches (JON-829),** beside Ollama under Settings › Models &
+  providers › Local models › **Runtimes**: Install (with progress and Cancel), Stop, Start, Update to …, Uninstall, its
+  log, the models it has loaded, Home's row and Activity's items, as for Ollama. On a Mac llama.cpp's own build (the
+  release this one pins, checked against its SHA-256) runs natively on the GPU as a launchd agent on 127.0.0.1:11438; on
+  Linux its image (pinned by digest, the CUDA one with NVIDIA GPUs) runs as a container of the stack. In a terminal:
+  `./stack runtimes install llamacpp` and the rest.
+- **Downloads go to: llama.cpp.** A GGUF download goes to llama.cpp when you pick it (or when it is the only runtime
+  running): the quantization's file, or every part of a split one, from the commit DevOS ADE checked, each file checked
+  against its SHA-256, then served through the model gateway in Chat, the Code page and the terminal at $0. Remove
+  deletes its files.
+
+### Security
+- llama.cpp needs an API key of its own for every request (made at install, mode 600, never on a command line, in a log or
+  in the portal; the model gateway sends it), so a web page that points a name at this computer cannot use it. Its web UI
+  is off, CORS is limited to localhost, and it never downloads anything itself. On Linux its container publishes no port
+  at all: only the model gateway reaches it, on an internal network of their own, with its models mounted read-only.
+
+### Fixed
+- **Shell checks of a name's length on macOS:** a regular expression with a count above 255 (macOS's limit) never matched
+  there; the two new ones are written another way, and a test keeps any from coming back.
+
 ## [0.41.0] - 2026-10-29
 
 ### Added

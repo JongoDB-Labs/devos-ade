@@ -9,6 +9,10 @@
    "external": false,
    "name": "bn-two_default"
   },
+  "llamacpp": {
+   "external": false,
+   "name": "bn-two_llamacpp"
+  },
   "localgit": {
    "external": false,
    "name": "bn-two_localgit"
@@ -141,6 +145,7 @@
    "labels": {},
    "networks": [
     "default",
+    "llamacpp",
     "ollama",
     "stt",
     "terminal-link",

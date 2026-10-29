@@ -843,7 +843,7 @@ test_compose_stt_service_is_locked_down() {
   assert_contains "$(sed -n '/^networks:/,/^volumes:/p' "$STACK_DIR/compose.yaml")" "  stt:
     internal: true"
   # (LiteLLM: also the built-in SearXNG's network, lib/websearch.sh, and DevOS ADE's Ollama's, lib/runtimes.sh)
-  for svc in litellm:'networks: [default, stt, websearch, ollama]' caddy:'      localgit:'; do
+  for svc in litellm:'networks: [default, stt, websearch, ollama, llamacpp]' caddy:'      localgit:'; do
     assert_contains "$(sed -n "/^  ${svc%%:*}:/,/^  [a-z-]*:\$/p" "$STACK_DIR/compose.yaml" | sed '1d;$d')" "${svc#*:}" || { echo "$svc" >&2; return 1; }
   done
   # Open WebUI trusts X-Portal-User from its peers: it and the portal never share a network with stt

@@ -98,6 +98,38 @@ def _bodies(rq):
     return [json.loads(f.read_text()) for f in sorted(rq.glob("act-*.json"))]
 
 
+def test_llamacpp_is_read_beside_ollama_with_its_linux_address_and_named_everywhere(tmp_path):
+    lc = {"id": "llamacpp", "name": "llama.cpp", "state": "running", "managed": True, "kind": "container", "version": "0.8.0", "pinned": "0.8.0",
+          "address": "llamacpp:8080 (the model gateway's network only)", "loaded": [{"name": "org/M-GGUF:Q4_K_M", "bytes": 0, "gpu_bytes": 0}],
+          "memory_bytes": 0, "gpu_bytes": 0, "restarts": 0, "last_exit": None, "size": "about 290 MB", "why_not": ""}
+    _rt(tmp_path)
+    d = json.loads((tmp_path / "runtimes.json").read_text())
+    d["runtimes"].append(lc)
+    d["events"].append({"at": d["at"] - 30, "id": "llamacpp", "kind": "restart", "text": "llama.cpp ended (exit code 1) and was started again"})
+    (tmp_path / "runtimes.json").write_text(json.dumps(d))
+    r = lm.read_runtimes(tmp_path)
+    assert [x["id"] for x in r["runtimes"]] == ["ollama", "llamacpp"]
+    x = r["runtimes"][1]
+    assert (x["name"], x["kind"], x["address"], x["loaded"][0]["name"]) == ("llama.cpp", "container", "llamacpp:8080 (the model gateway's network only)", "org/M-GGUF:Q4_K_M")
+    assert r["events"][-1]["id"] == "llamacpp"
+    # any other name for its address is not one
+    for bad in ("llamacpp:8080", "ollama:11434 (the model gateway's network only)", "0.0.0.0:11438"):
+        d["runtimes"][1]["address"] = bad
+        (tmp_path / "runtimes.json").write_text(json.dumps(d))
+        assert lm.read_runtimes(tmp_path)["runtimes"][1]["address"] == "", bad
+    assert st.write_runtime_action(tmp_path, "install", "llamacpp", PW, now=1)
+    # Activity names it as it is written
+    got = activity.runtime_items(tmp_path, d["at"])
+    assert got[0]["title"] == "llama.cpp ended and was started again"
+    # the downloads: llama.cpp is a runtime a model can be registered with, and a download choice
+    assert st.VALIDATORS["local_models"]("llamacpp:org/M-GGUF:Q4_K_M,ollama:qwen3:8b") is None
+    assert st.VALIDATORS["local_runtime"]("llamacpp") is None and st.VALIDATORS["local_runtime"]("llama.cpp") is not None
+    (tmp_path / lm.STATUS_FILE).write_text(json.dumps({"at": int(time.time()), "runtime": {"kind": "llamacpp", "llamacpp": "ready"},
+        "installed": [{"runtime": "llamacpp", "id": "org/M-GGUF:Q4_K_M", "repo": "org/M-GGUF", "quant": "Q4_K_M", "bytes": 5}]}))
+    s = lm.read_status(tmp_path)
+    assert s["runtime"]["kind"] == "llamacpp" and s["runtime"]["llamacpp"] == "ready" and s["installed"][0]["runtime"] == "llamacpp"
+
+
 def _clear(rq):
     for f in rq.glob("act-*.json"):
         f.unlink()
@@ -141,6 +173,8 @@ def test_nothing_is_installed_over_an_ollama_of_yours_or_while_a_job_runs(app):
     _rt(sd, one={"state": "external", "managed": False})
     r = _pw(c, "install")
     assert r.status_code == 409 and "already runs on 127.0.0.1:11434" in r.json()["error"]
+    _rt(sd, one={"id": "llamacpp", "name": "llama.cpp", "state": "external", "managed": False})
+    assert "llama.cpp cannot be installed here: something that is not DevOS ADE's already answers on 127.0.0.1:11438" in _pw(c, "install", "llamacpp").json()["error"]
     _rt(sd, one={"state": "unsupported", "managed": False, "why_not": "DevOS ADE runs it on macOS and Linux only"})
     assert "macOS and Linux only" in _pw(c, "install").json()["error"]
     _rt(sd, one={"state": "installing"}, job={"id": "ollama", "op": "install", "state": "running", "done_bytes": 5, "total_bytes": 10, "message": "Downloading"})

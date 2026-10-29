@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Model runtimes as core services (JON-829): the local-model runtimes DevOS ADE installs, starts, stops, updates and
 # watches itself, on the same footing as its containers (Settings › Models & providers › Local models › Runtimes, Home,
-# Activity, ./stack runtimes). This release: Ollama.
+# Activity, ./stack runtimes): Ollama and llama.cpp.
 #
 #   macOS   Ollama's own release build (github.com/ollama/ollama, ollama-darwin.tgz: the version and its SHA-256 pinned in
 #           catalog/runtimes.pins, checked before anything is unpacked) in .state/runtimes/ollama/bin, run as a launchd
@@ -19,6 +19,17 @@
 # An Ollama that already answers on 127.0.0.1:11434 and is not this stack's is "yours": downloads can go to it as they
 # did before (LOCAL_RUNTIME), and it is never installed over, stopped or removed.
 #
+# llama.cpp (github.com/ggml-org/llama.cpp): llama-server in router mode, one server for every model downloaded to it
+# (Settings › Local models, lib/local_models.sh: the GGUF files of a quantization, checked against the Hub's hashes),
+# each a section of etc/presets.ini named as the model gateway asks for it; it loads a model at its first request and
+# unloads the oldest past two. Every request but /health needs its API key (etc/api-key, made at install: the model
+# gateway's config has it), it serves no web UI, and it downloads nothing itself.
+#   macOS   the release's own build for this Mac (llama-<build>-bin-macos-arm64|x64.tar.gz: pinned with its SHA-256 in
+#           catalog/runtimes.pins) in .state/runtimes/llamacpp/bin, a launchd user agent like Ollama's, on 127.0.0.1:11438.
+#   Linux   its image (compose.yaml "llamacpp", pinned by digest; the CUDA one with compose.llamacpp-gpu.yaml) on an
+#           internal network with the model gateway alone, which reaches it as llamacpp:8080: it publishes nothing and
+#           reaches nothing. It runs as you (rootless Docker: its root), read-only, the models and etc/ mounted read-only.
+#
 #   ./stack runtimes [status]           each runtime: state, version, address, models loaded, memory in use
 #   ./stack runtimes install ID         download it (pinned, hash-checked) and start it (asks first in a terminal)
 #   ./stack runtimes start | stop ID
@@ -30,13 +41,15 @@
 # job.json (the one install, start, stop or uninstall running), events.tsv (what happened, for Activity), and the
 # portal's read-only copy .state/status/runtimes.json (Settings, Home, Activity).
 
-RUNTIME_IDS="ollama"
+RUNTIME_IDS="ollama llamacpp"
+RT_LLAMACPP_MODELS_MAX=2               # models llama.cpp keeps loaded at once (the oldest is unloaded)
+RT_LLAMACPP_CTX=8192                   # a model's context when its own is not known (at most 32768)
 RT_EVENTS_MAX=30                       # events kept for Activity
 RT_LOG_MAX=$((10 * 1024 * 1024))       # a server log this big is moved aside at the next start
 RT_LOG_LINES=200                       # the lines Logs shows
 
 valid_runtime_id() { case " $RUNTIME_IDS " in *" ${1:-x} "*) return 0 ;; esac; return 1; }
-rt_name() { case "$1" in ollama) echo Ollama ;; *) echo "$1" ;; esac; }
+rt_name() { case "$1" in ollama) echo Ollama ;; llamacpp) echo llama.cpp ;; *) echo "$1" ;; esac; }
 rt_os() { case "$(uname -s)" in Darwin) echo mac ;; Linux) echo linux ;; *) echo other ;; esac; }
 rt_root() { printf '%s/runtimes\n' "$STATE_DIR"; }
 rt_dir() { printf '%s/%s\n' "$(rt_root)" "$1"; }
@@ -47,13 +60,21 @@ rt_status_file() { printf '%s/runtimes.json\n' "$(status_dir)"; }
 rt_pin() { sed -n "s/^ARG $1=\\([^[:space:]]*\\).*/\\1/p" "$STACK_DIR/catalog/runtimes.pins" 2>/dev/null | head -n 1 || true; }
 # GitHub's address for the downloads (tests point it at a stand-in on this computer)
 _rt_github() { printf '%s\n' "${RUNTIMES_GITHUB:-https://github.com}"; }
-rt_port() { case "$1" in ollama) echo 11434 ;; esac; }
-# rt_pinned_version ID -> the version this release pins (macOS: catalog/runtimes.pins; Linux: compose.yaml's image)
+rt_port() { case "$1" in ollama) echo 11434 ;; llamacpp) echo 11438 ;; esac; }
+# rt_pinned_version ID -> the version this release pins (macOS: catalog/runtimes.pins; Linux: compose.yaml's image —
+# llama.cpp's image names its build, the pins say which release that is)
 rt_pinned_version() {
-  if [ "$(rt_os)" = linux ]; then awk '/^ *image: ollama\/ollama:/ { sub(/.*ollama\/ollama:/, ""); sub(/@.*/, ""); print; exit }' "$STACK_DIR/compose.yaml"
-  else rt_pin OLLAMA_VERSION; fi
+  case "$1" in
+    llamacpp) rt_pin LLAMACPP_VERSION ;;
+    *) if [ "$(rt_os)" = linux ]; then awk '!f && /^ *image: ollama\/ollama:/ { sub(/.*ollama\/ollama:/, ""); sub(/@.*/, ""); print; f = 1 }' "$STACK_DIR/compose.yaml"
+       else rt_pin OLLAMA_VERSION; fi ;;
+  esac
 }
-rt_address() { printf '127.0.0.1:%s\n' "$(rt_port "$1")"; }
+# rt_address ID -> where it answers (llama.cpp on Linux: the model gateway's network only)
+rt_address() {
+  if [ "$1" = llamacpp ] && [ "$(rt_os)" = linux ]; then echo "llamacpp:8080 (the model gateway's network only)"
+  else printf '127.0.0.1:%s\n' "$(rt_port "$1")"; fi
+}
 # rt_installed ID -> 0 when this stack installed it (and has not removed it)
 rt_installed() { [ -s "$(rt_dir "$1")/installed" ]; }
 rt_installed_version() { [ -s "$(rt_dir "$1")/installed" ] || return 0; head -n 1 "$(rt_dir "$1")/installed" | LC_ALL=C tr -cd '0-9A-Za-z.+-' | cut -c1-40; }
@@ -63,15 +84,17 @@ _rt_bytes() { if [ -f "$1" ]; then wc -c < "$1" | tr -d ' '; else echo 0; fi; }
 rt_kind() { case "$(rt_os)" in mac) echo agent ;; linux) echo container ;; *) echo none ;; esac; }
 # rt_size ID -> what an install downloads, in words (the dialog says it before anything starts)
 rt_size() {
-  case "$(rt_os)" in
-    mac) echo "about 180 MB" ;;
+  case "$1:$(rt_os)" in
+    ollama:mac) echo "about 180 MB" ;;
+    llamacpp:mac) [ "$(uname -m)" = arm64 ] && echo "about 16 MB" || echo "about 12 MB" ;;
+    llamacpp:*) echo "about 290 MB (its image; about 2.4 GB with NVIDIA's libraries)" ;;
     *) case "$(uname -m)" in aarch64 | arm64) echo "about 2.8 GB (its image)" ;; *) echo "about 3.4 GB (its image, with NVIDIA's libraries)" ;; esac ;;
   esac
 }
 # rt_why_not ID -> why it cannot run on this computer (nothing: it can)
 rt_why_not() {
   case "$(rt_os)" in
-    mac) [ "$(uname -m)" = arm64 ] || [ "$(uname -m)" = x86_64 ] || echo "this Mac's processor is not one Ollama builds for" ;;
+    mac) [ "$(uname -m)" = arm64 ] || [ "$(uname -m)" = x86_64 ] || echo "this Mac's processor is not one $(rt_name "$1") builds for" ;;
     linux) command -v docker >/dev/null 2>&1 || echo "it runs as a container here, and Docker is not installed" ;;
     *) echo "DevOS ADE runs it on macOS and Linux only" ;;
   esac
@@ -79,9 +102,9 @@ rt_why_not() {
 
 # --- what answers ---
 # _rt_version ID -> what answers on its address says it is (its version; nothing: nothing answers there)
-_rt_version() { case "$1" in ollama) _rt_ollama_version ;; esac; }
+_rt_version() { case "$1" in ollama) _rt_ollama_version ;; llamacpp) _rt_llamacpp_version ;; esac; }
 # _rt_ps ID -> the models it has loaded now, one per line: name TAB bytes TAB bytes in GPU memory (0: not known)
-_rt_ps() { case "$1" in ollama) _rt_ollama_ps ;; esac; }
+_rt_ps() { case "$1" in ollama) _rt_ollama_ps ;; llamacpp) _rt_llamacpp_ps ;; esac; }
 # _rt_ollama_version -> the version the Ollama on 127.0.0.1:11434 says (nothing: none answers)
 _rt_ollama_version() {
   curl -s -m 3 "$(_local_ollama_url)/api/version" 2>/dev/null | sed -n 's/.*"version" *: *"\([0-9A-Za-z.+-]*\)".*/\1/p' | head -n 1 | cut -c1-40 || true
@@ -101,6 +124,43 @@ for m in ms if isinstance(ms, list) else []:
     if n:
         print("%s\t%d\t%d" % (n, n0(m.get("size")), n0(m.get("size_vram"))))' 2>/dev/null || true
 }
+_local_llamacpp_url() { printf '%s\n' "${LOCAL_LLAMACPP_URL:-http://127.0.0.1:$(rt_port llamacpp)}"; }
+# _rt_llamacpp_version -> the version installed, while a llama.cpp answers (its /health; Linux: its container's health
+# check), "unknown" for a server that is not this stack's; nothing while none answers
+_rt_llamacpp_version() {
+  local code
+  if [ "$(rt_os)" = linux ]; then
+    rt_installed llamacpp && [ "$(dc ps --format '{{.Health}}' llamacpp 2>/dev/null | head -n 1)" = healthy ] || return 0
+  else
+    code="$(curl -s -m 3 -o /dev/null -w '%{http_code}' "$(_local_llamacpp_url)/health" 2>/dev/null || true)"
+    case "$code" in '' | 000) return 0 ;; esac
+    rt_installed llamacpp && _rt_agent_loaded llamacpp || { echo unknown; return 0; }
+  fi
+  rt_installed_version llamacpp
+}
+# _rt_llamacpp_ps -> the models it has loaded (GET /models, with its key: each model's status), as _rt_ps; their memory
+# is not given (0)
+_rt_llamacpp_ps() {
+  local d; d="$(rt_dir llamacpp)"
+  [ -s "$d/etc/auth.hdr" ] || return 0
+  if [ "$(rt_os)" = linux ]; then dc exec -T llamacpp curl -s -m 3 -H @/etc/llamacpp/auth.hdr http://127.0.0.1:8080/models </dev/null 2>/dev/null
+  else curl -s -m 3 -H @"$d/etc/auth.hdr" "$(_local_llamacpp_url)/models" 2>/dev/null; fi | python3 -I -c '
+import json, re, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    d = {}
+ms = d.get("data") if isinstance(d, dict) else d
+for m in ms if isinstance(ms, list) else []:
+    if not isinstance(m, dict):
+        continue
+    st = m.get("status")
+    if (st.get("value") if isinstance(st, dict) else st) != "loaded":
+        continue
+    n = re.sub(r"[^A-Za-z0-9._:/@+-]", "", str(m.get("id") or m.get("name") or ""))[:160]
+    if n:
+        print("%s\t0\t0" % n)' 2>/dev/null || true
+}
 
 # --- macOS: the launchd user agent ---
 rt_label() { printf 'dev.devos.ade.%s.%s\n' "$1" "$(printf '%s' "$STATE_DIR" | cksum | cut -d' ' -f1)"; }
@@ -111,7 +171,11 @@ _rt_launchd() { launchctl print "gui/$(id -u)/$(rt_label "$1")" 2>/dev/null; }
 _rt_agent_field() { _rt_launchd "$1" | awk -v f="$2" '!n && index($0, "\t" f " = ") == 1 { print substr($0, length(f) + 5); n = 1 }' || true; }
 _rt_agent_loaded() { _rt_launchd "$1" >/dev/null; }
 _rt_xml() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
-_rt_plist() { case "$1" in ollama) _rt_ollama_plist ;; esac; }
+_rt_plist() { case "$1" in ollama) _rt_ollama_plist ;; llamacpp) _rt_llamacpp_plist ;; esac; }
+# _rt_program ID -> the program its agent runs
+_rt_program() { case "$1" in ollama) echo "$(rt_dir ollama)/bin/ollama" ;; llamacpp) echo "$(rt_dir llamacpp)/bin/llama-server" ;; esac; }
+# _rt_folders ID -> the folders of its own its agent needs
+_rt_folders() { case "$1" in ollama) echo "models home" ;; llamacpp) echo "home cache hub etc" ;; esac; }
 # _rt_ollama_plist -> the agent: 127.0.0.1 only, the stack's own models folder and HOME, cloud features off
 _rt_ollama_plist() {
   local d; d="$(_rt_xml "$(rt_dir ollama)")"
@@ -127,14 +191,32 @@ _rt_ollama_plist() {
 </dict></plist>
 EOF
 }
+# _rt_llamacpp_plist -> the agent: router mode on 127.0.0.1 only, its presets and API key, no web UI, CORS for localhost
+_rt_llamacpp_plist() {
+  local d a='' x; d="$(_rt_xml "$(rt_dir llamacpp)")"
+  for x in --host 127.0.0.1 --port "$(rt_port llamacpp)" --models-preset "$d/etc/presets.ini" --api-key-file "$d/etc/api-key" --no-ui \
+    --cors-origins localhost --models-max "$RT_LLAMACPP_MODELS_MAX" --models-memory-margin 1024; do a="$a<string>$x</string>"; done
+  cat <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>$(rt_label llamacpp)</string>
+<key>ProgramArguments</key><array><string>$d/bin/llama-server</string>$a</array>
+<key>EnvironmentVariables</key><dict><key>HOME</key><string>$d/home</string><key>LLAMA_CACHE</key><string>$d/cache</string></dict>
+<key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>10</integer>
+<key>StandardOutPath</key><string>$d/server.log</string><key>StandardErrorPath</key><string>$d/server.log</string>
+</dict></plist>
+EOF
+}
 # _rt_log_rotate ID — a server log past RT_LOG_MAX is moved aside (one old one kept)
 _rt_log_rotate() {
   local f; f="$(rt_dir "$1")/server.log"
   [ "$(_rt_bytes "$f")" -le "$RT_LOG_MAX" ] || mv -f "$f" "$f.1" 2>/dev/null || true
 }
 _rt_agent_up() {
-  local id="$1" plist lbl n=0; plist="$(rt_plist "$1")"; lbl="$(rt_label "$1")"
-  mkdir -p "$HOME/Library/LaunchAgents" "$(rt_dir "$id")/models" "$(rt_dir "$id")/home"
+  local id="$1" plist lbl n=0 f; plist="$(rt_plist "$1")"; lbl="$(rt_label "$1")"
+  mkdir -p "$HOME/Library/LaunchAgents"
+  for f in $(_rt_folders "$id"); do mkdir -p "$(rt_dir "$id")/$f"; done
   _rt_log_rotate "$id"
   _rt_plist "$id" > "$plist.tmp" && chmod 600 "$plist.tmp" && mv -f "$plist.tmp" "$plist" || return 1
   if _rt_agent_loaded "$id"; then
@@ -156,8 +238,8 @@ _rt_agent_down() {
 # --- Linux: the compose service ---
 # rt_compose_on ID -> 0 while its container is part of the stack (installed here, on Linux): dc() adds its profile
 rt_compose_on() { [ "$(rt_os)" = linux ] && rt_installed "$1"; }
-# rt_services ID -> its compose services (Linux): Ollama and its gate
-rt_services() { case "$1" in ollama) echo "ollama ollama-gate" ;; esac; }
+# rt_services ID -> its compose services (Linux): Ollama and its gate; llama.cpp
+rt_services() { case "$1" in ollama) echo "ollama ollama-gate" ;; llamacpp) echo llamacpp ;; esac; }
 # runtime_services -> the runtime containers ./stack up starts (lib/commands.sh optional_services)
 runtime_services() { local id out=''; for id in $RUNTIME_IDS; do ! rt_compose_on "$id" || out="$out${out:+ }$(rt_services "$id")"; done; printf '%s\n' "$out"; }
 # runtime_profiles -> the compose profiles of the runtime containers (lib/common.sh dc): each installed one's, and the one
@@ -167,7 +249,9 @@ runtime_profiles() { local id; for id in $RUNTIME_IDS; do ! { rt_compose_on "$id
 runtime_overlays() {
   local id
   for id in $RUNTIME_IDS; do
-    ! rt_compose_on "$id" || [ "$(cat "$(rt_dir "$id")/gpu" 2>/dev/null)" != nvidia ] || echo "compose.$id-gpu.yaml"
+    # (also while it is being installed: its pull is of the GPU's image)
+    { rt_compose_on "$id" || [ "${_RT_PROFILE:-}" = "$id" ]; } || continue
+    [ "$(cat "$(rt_dir "$id")/gpu" 2>/dev/null)" != nvidia ] || echo "compose.$id-gpu.yaml"
   done
 }
 # _rt_volumes ID -> its compose volumes (Linux: deleted with it)
@@ -279,46 +363,78 @@ _rt_remote_size() {
   local n; n="$(curl -q -sSIL --max-redirs 5 -m 20 "$1" 2>/dev/null | tr -d '\r' | awk 'tolower($1) == "content-length:" { n = $2 } END { print n + 0 }')"
   case "$n" in '' | *[!0-9]*) echo 0 ;; *) echo "$n" ;; esac
 }
-_rt_install_ollama_mac() {
-  local id=ollama d ver sha url part total have rc=0 pid
-  d="$(rt_dir "$id")"; ver="$(rt_pin OLLAMA_VERSION)"; sha="$(rt_pin OLLAMA_SHA256_DARWIN)"
-  [[ $ver =~ ^[0-9]+(\.[0-9]+){1,3}$ ]] && [[ $sha =~ ^[0-9a-f]{64}$ ]] || _rt_fail "$id" install "catalog/runtimes.pins has no pin for Ollama"
-  url="$(_rt_github)/ollama/ollama/releases/download/v$ver/ollama-darwin.tgz"
-  part="$d/ollama-darwin-$ver.tgz.part"
-  find "$d" -maxdepth 1 -name 'ollama-darwin-*.tgz.part' ! -name "ollama-darwin-$ver.tgz.part" -exec rm -f {} + 2>/dev/null || true
+# _rt_download ID WHAT URL SHA256 PART — GitHub's file into PART (continuing what an earlier one left), checked against
+# the pinned SHA-256 (_RT_TOTAL: its size). 1: cancelled (the job says so); a failure ends here (_rt_fail)
+_rt_download() {
+  local id="$1" what="$2" url="$3" sha="$4" part="$5" d total have rc=0 pid
+  d="$(rt_dir "$id")"
   total="$(_rt_remote_size "$url")"
   have="$(_rt_bytes "$part")"
   if [ "$total" -eq 0 ] || [ "$have" -lt "$total" ]; then
-    _rt_job running "$id" install "$have" "$total" "Downloading Ollama $ver from GitHub"
+    _rt_job running "$id" install "$have" "$total" "Downloading $what from GitHub"
     # (https only, also after GitHub's redirect to its file host; -C -: continues what an earlier one left)
     ( exec curl -q -fsSL --proto '=https' --proto-redir '=https' --max-redirs 5 --connect-timeout 30 --speed-limit 1024 --speed-time 60 \
         --retry 3 -C - -o "$part" "$url" ) </dev/null > "$d/install.log" 2>&1 &
     pid=$!; printf '%s\n' "$pid" > "$(rt_root)/dl.pid"
     while kill -0 "$pid" 2>/dev/null; do
-      _rt_job running "$id" install "$(_rt_bytes "$part")" "$total" "Downloading Ollama $ver from GitHub"
+      _rt_job running "$id" install "$(_rt_bytes "$part")" "$total" "Downloading $what from GitHub"
       sleep "${RT_POLL_S:-1}"
     done
     wait "$pid" || rc=$?
     rm -f "$(rt_root)/dl.pid"
     if [ -f "$(_rt_cancel_file)" ]; then
       rm -f "$(_rt_cancel_file)" "$(rt_root)/job.pid"; _rt_job cancelled "$id" install 0 "$total" "Cancelled: what arrived is kept, and the next install continues from it."
-      return 0
+      return 1
     fi
     [ "$rc" -eq 0 ] || _rt_fail "$id" install "The download from GitHub stopped (curl exit $rc). Install again: it continues from what arrived."
   fi
   _rt_job running "$id" install "$total" "$total" "Checking it against the SHA-256 this release pins"
   if [ "$(_rt_sha256 "$part")" != "$sha" ]; then
     rm -f "$part"
-    _rt_fail "$id" install "What arrived does not match the SHA-256 DevOS ADE pins for Ollama $ver, so it was deleted and nothing was installed."
+    _rt_fail "$id" install "What arrived does not match the SHA-256 DevOS ADE pins for $what, so it was deleted and nothing was installed."
   fi
-  _rt_job running "$id" install "$total" "$total" "Unpacking it"
-  _rt_unpack "$part" "$d/bin.new" || { rm -rf "$d/bin.new"; _rt_fail "$id" install "The archive holds something other than Ollama's files (a path out of its folder): nothing was installed."; }
-  [ -f "$d/bin.new/ollama" ] && [ ! -L "$d/bin.new/ollama" ] && [ -x "$d/bin.new/ollama" ] || { rm -rf "$d/bin.new"; _rt_fail "$id" install "The archive has no ollama program: nothing was installed."; }
+  _RT_TOTAL="$total"
+}
+# _rt_swap_in ID PART VERSION — bin.new (checked) becomes bin, the agent stopped first; the download deleted
+_rt_swap_in() {
+  local id="$1" d; d="$(rt_dir "$1")"
   ! _rt_agent_loaded "$id" || _rt_agent_down "$id"
   rm -rf "$d/bin.old"; [ ! -d "$d/bin" ] || mv "$d/bin" "$d/bin.old"
-  mv "$d/bin.new" "$d/bin" || _rt_fail "$id" install "Could not move the new Ollama into place (.state/runtimes/$id): nothing was installed."
-  rm -rf "$d/bin.old" "$part" "$d/install.log"
-  printf '%s\n' "$ver" > "$d/installed"
+  mv "$d/bin.new" "$d/bin" || _rt_fail "$id" install "Could not move the new $(rt_name "$id") into place (.state/runtimes/$id): nothing was installed."
+  rm -rf "$d/bin.old" "$2" "$d/install.log"
+  printf '%s\n' "$3" > "$d/installed"
+}
+_rt_install_ollama_mac() {
+  local id=ollama d ver sha url part
+  d="$(rt_dir "$id")"; ver="$(rt_pin OLLAMA_VERSION)"; sha="$(rt_pin OLLAMA_SHA256_DARWIN)"
+  [[ $ver =~ ^[0-9]+(\.[0-9]+){1,3}$ ]] && [[ $sha =~ ^[0-9a-f]{64}$ ]] || _rt_fail "$id" install "catalog/runtimes.pins has no pin for Ollama"
+  url="$(_rt_github)/ollama/ollama/releases/download/v$ver/ollama-darwin.tgz"
+  part="$d/ollama-darwin-$ver.tgz.part"
+  find "$d" -maxdepth 1 -name 'ollama-darwin-*.tgz.part' ! -name "ollama-darwin-$ver.tgz.part" -exec rm -f {} + 2>/dev/null || true
+  _rt_download "$id" "Ollama $ver" "$url" "$sha" "$part" || return 0
+  _rt_job running "$id" install "$_RT_TOTAL" "$_RT_TOTAL" "Unpacking it"
+  _rt_unpack "$part" "$d/bin.new" || { rm -rf "$d/bin.new"; _rt_fail "$id" install "The archive holds something other than Ollama's files (a path out of its folder): nothing was installed."; }
+  [ -f "$d/bin.new/ollama" ] && [ ! -L "$d/bin.new/ollama" ] && [ -x "$d/bin.new/ollama" ] || { rm -rf "$d/bin.new"; _rt_fail "$id" install "The archive has no ollama program: nothing was installed."; }
+  _rt_swap_in "$id" "$part" "$ver"
+}
+_rt_install_llamacpp_mac() {
+  local id=llamacpp d ver build arch sha url part
+  d="$(rt_dir "$id")"; ver="$(rt_pin LLAMACPP_VERSION)"; build="$(rt_pin LLAMACPP_BUILD)"
+  case "$(uname -m)" in arm64) arch=arm64; sha="$(rt_pin LLAMACPP_SHA256_MACOS_ARM64)" ;; *) arch=x64; sha="$(rt_pin LLAMACPP_SHA256_MACOS_X64)" ;; esac
+  [[ $ver =~ ^[0-9]+(\.[0-9]+){1,3}$ ]] && [[ $build =~ ^b[0-9]{1,7}$ ]] && [[ $sha =~ ^[0-9a-f]{64}$ ]] || _rt_fail "$id" install "catalog/runtimes.pins has no pin for llama.cpp"
+  url="$(_rt_github)/ggml-org/llama.cpp/releases/download/$build/llama-$build-bin-macos-$arch.tar.gz"
+  part="$d/llama-$build-bin-macos-$arch.tar.gz.part"
+  find "$d" -maxdepth 1 -name 'llama-*.tar.gz.part' ! -name "${part##*/}" -exec rm -f {} + 2>/dev/null || true
+  _rt_download "$id" "llama.cpp $ver" "$url" "$sha" "$part" || return 0
+  _rt_job running "$id" install "$_RT_TOTAL" "$_RT_TOTAL" "Unpacking it"
+  _rt_unpack "$part" "$d/bin.new" || { rm -rf "$d/bin.new"; _rt_fail "$id" install "The archive holds something other than llama.cpp's files (a path out of its folder): nothing was installed."; }
+  # (its files are in one folder, llama-<build>: up one level, so the agent's program is bin/llama-server)
+  if [ -d "$d/bin.new/llama-$build" ] && [ ! -L "$d/bin.new/llama-$build" ]; then
+    { mv "$d/bin.new/llama-$build" "$d/bin.flat" && rm -rf "$d/bin.new" && mv "$d/bin.flat" "$d/bin.new"; } || { rm -rf "$d/bin.new" "$d/bin.flat"; _rt_fail "$id" install "Could not unpack llama.cpp (.state/runtimes/$id): nothing was installed."; }
+  fi
+  [ -f "$d/bin.new/llama-server" ] && [ ! -L "$d/bin.new/llama-server" ] && [ -x "$d/bin.new/llama-server" ] || { rm -rf "$d/bin.new"; _rt_fail "$id" install "The archive has no llama-server program: nothing was installed."; }
+  _rt_llamacpp_etc || _rt_fail "$id" install "Could not write llama.cpp's settings (.state/runtimes/$id/etc): nothing was installed."
+  _rt_swap_in "$id" "$part" "$ver"
 }
 _rt_install_ollama_linux() {
   local id=ollama d; d="$(rt_dir "$id")"
@@ -329,6 +445,99 @@ _rt_install_ollama_linux() {
   if [ -f "$(_rt_cancel_file)" ]; then rm -f "$(_rt_cancel_file)" "$(rt_root)/job.pid"; _rt_job cancelled "$id" install 0 0 "Cancelled."; return 0; fi
   rt_pinned_version "$id" > "$d/installed"
 }
+_rt_install_llamacpp_linux() {
+  local id=llamacpp d; d="$(rt_dir "$id")"
+  if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep '"nvidia"' >/dev/null; then echo nvidia > "$d/gpu"; else rm -f "$d/gpu"; fi
+  _rt_llamacpp_user > "$d/user" && _rt_llamacpp_etc || _rt_fail "$id" install "Could not write llama.cpp's settings (.state/runtimes/$id/etc): nothing was installed."
+  _rt_job running "$id" install 0 0 "Downloading llama.cpp's image ($(rt_size "$id"))"
+  _RT_PROFILE=llamacpp dc pull -q llamacpp </dev/null > "$d/install.log" 2>&1 || _rt_fail "$id" install "Docker could not download llama.cpp's image: $(tail -n 2 "$d/install.log" | LC_ALL=C tr -cd ' -~\n' | tr '\n' ' ' | cut -c1-200)"
+  if [ -f "$(_rt_cancel_file)" ]; then rm -f "$(_rt_cancel_file)" "$(rt_root)/job.pid"; _rt_job cancelled "$id" install 0 0 "Cancelled."; return 0; fi
+  rt_pin LLAMACPP_VERSION > "$d/installed"
+}
+# _rt_llamacpp_user -> who its container runs as: you, so it reads the folders this stack made for it (mode 700); rootless
+# Docker (its root is you) and ./stack run as root: 0:0 — with every capability dropped, it reads only what is its own
+_rt_llamacpp_user() {
+  if [ "$(id -u)" = 0 ] || docker info -f '{{.SecurityOptions}}' 2>/dev/null | grep rootless >/dev/null; then echo 0:0; return 0; fi
+  printf '%s:%s\n' "$(id -u)" "$(id -g)"
+}
+# _rt_llamacpp_etc — etc/ (700): its API key (made once: 32 random bytes, in hex), the request header that carries it
+# (auth.hdr, for ./stack's own looks: curl -H @file, never an argument), and presets.ini
+_rt_llamacpp_etc() {
+  local d e k; d="$(rt_dir llamacpp)"; e="$d/etc"
+  mkdir -p "$e" "$d/hub" && chmod 700 "$e" "$d/hub" || return 1
+  k="$(cat "$e/api-key" 2>/dev/null || true)"
+  if ! [[ $k =~ ^[0-9a-f]{64}$ ]]; then
+    k="$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')"; [[ $k =~ ^[0-9a-f]{64}$ ]] || return 1
+    ( umask 077; printf '%s\n' "$k" > "$e/api-key.tmp" ) && mv -f "$e/api-key.tmp" "$e/api-key" || return 1
+  fi
+  ( umask 077; printf 'Authorization: Bearer %s\n' "$k" > "$e/auth.hdr" ) || return 1
+  rt_llamacpp_presets_write
+}
+# rt_llamacpp_key -> its API key (the model gateway's config has it: lib/local_models.sh); nothing before an install
+rt_llamacpp_key() { local k; k="$(cat "$(rt_dir llamacpp)/etc/api-key" 2>/dev/null || true)"; [[ $k =~ ^[0-9a-f]{64}$ ]] && printf '%s\n' "$k" || true; }
+# models.tsv (lib/local_models.sh writes it): one row per model downloaded to llama.cpp — its id (the preset's name, as
+# the model gateway asks for it), its first GGUF file under hub/, its context (- : not known), its files (comma list)
+rt_llamacpp_models() { printf '%s/models.tsv\n' "$(rt_dir llamacpp)"; }
+# rt_llamacpp_presets_write — etc/presets.ini: the defaults ([*]: Jinja chat templates, so tool calls; a context of
+# RT_LLAMACPP_CTX), then a section per model: its file (a Mac: under hub/ here; Linux: the container's /models) and its
+# context, at most 32768
+rt_llamacpp_presets_write() {
+  local d e root id rel ctx _f; d="$(rt_dir llamacpp)"; e="$d/etc"
+  [ -d "$e" ] || return 0
+  if [ "$(rt_os)" = linux ]; then root=/models; else root="$d/hub"; fi
+  {
+    printf '; DevOS ADE (lib/runtimes.sh) writes this file: the models downloaded in Settings › Local models\n[*]\njinja = true\nc = %s\n' "$RT_LLAMACPP_CTX"
+    while IFS=$'\t' read -r id rel ctx _f; do
+      [[ $id =~ ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,125}$ ]] && [[ $rel =~ ^[A-Za-z0-9._/+-]+$ ]] && [ "${#rel}" -le 400 ] && [[ /$rel/ != */../* ]] || continue
+      printf '\n[%s]\nmodel = %s/%s\n' "$id" "$root" "$rel"
+      case "$ctx" in '' | *[!0-9]*) ;; *) [ "$ctx" -le 32768 ] || ctx=32768; printf 'c = %s\n' "$ctx" ;; esac
+    done < <(cat "$(rt_llamacpp_models)" 2>/dev/null || true)
+  } > "$e/presets.ini.tmp" && chmod 600 "$e/presets.ini.tmp" && mv -f "$e/presets.ini.tmp" "$e/presets.ini"
+}
+# rt_llamacpp_model_put ID FILE CTX FILES — a model in models.tsv (in place of one of the same id) and in presets.ini
+rt_llamacpp_model_put() {
+  local f tmp; f="$(rt_llamacpp_models)"
+  [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,125}$ ]] && [[ $2 =~ ^[A-Za-z0-9._/+-]+$ ]] && [ "${#2}" -le 400 ] && [[ /$2/ != */../* ]] \
+    && [[ $4 =~ ^[A-Za-z0-9._/+,-]+$ ]] && [ "${#4}" -le 4000 ] || return 1   # (macOS regex: no count above 255)
+  mkdir -p "$(rt_dir llamacpp)" && tmp="$(mktemp "$f.XXXXXX")" || return 1
+  { awk -F'\t' -v i="$1" '$1 != i' "$f" 2>/dev/null || true; printf '%s\t%s\t%s\t%s\n' "$1" "$2" "${3:--}" "$4"; } > "$tmp" && chmod 600 "$tmp" && mv -f "$tmp" "$f" || return 1
+  rt_llamacpp_presets_write
+}
+# rt_llamacpp_forget ID — a model out of models.tsv and presets.ini (llama.cpp started again without it) and its files
+# deleted: its repo's whole folder when no other quantization of it is left, else its own files and their blobs
+rt_llamacpp_forget() {
+  local f row rel files rd sha other tmp x t
+  f="$(rt_llamacpp_models)"
+  row="$(awk -F'\t' -v i="$1" '!d && $1 == i { print; d = 1 }' "$f" 2>/dev/null || true)"
+  [ -n "$row" ] || return 0
+  IFS=$'\t' read -r _ rel _ files <<< "$row"
+  [[ $rel =~ ^models--[A-Za-z0-9._-]+--[A-Za-z0-9._-]+/snapshots/[0-9a-f]{40}/ ]] || return 1
+  rd="$(rt_dir llamacpp)/hub/${rel%%/*}"; sha="${rel#*/snapshots/}"; sha="${sha%%/*}"
+  tmp="$(mktemp "$f.XXXXXX")" || return 1
+  awk -F'\t' -v i="$1" '$1 != i' "$f" > "$tmp" && chmod 600 "$tmp" && mv -f "$tmp" "$f" || return 1
+  rt_llamacpp_presets_write
+  rt_llamacpp_reload || true   # (it stops serving the model either way: the gateway no longer names it)
+  other="$(awk -F'\t' -v r="${rel%%/*}/" '!d && index($2, r) == 1 { print; d = 1 }' "$f")"
+  if [ -z "$other" ]; then rm -rf -- "$rd"; return 0; fi
+  for x in ${files//,/ }; do
+    [[ $x =~ ^[A-Za-z0-9._/+-]{1,200}$ ]] && [[ /$x/ != */../* ]] || continue
+    t="$(readlink "$rd/snapshots/$sha/$x" 2>/dev/null || true)"
+    [[ ${t##*/} =~ ^[0-9a-f]{40,64}$ ]] && rm -f -- "$rd/blobs/${t##*/}"
+    rm -f -- "$rd/snapshots/$sha/$x"
+  done
+}
+# rt_llamacpp_reload — a running llama.cpp started again, so it reads presets.ini (a model added or removed): its loaded
+# models are unloaded. 1: it did not answer again
+rt_llamacpp_reload() {
+  local n=0
+  rt_installed llamacpp || return 0
+  case "$(rt_state llamacpp)" in running | starting) ;; *) return 0 ;; esac
+  if [ "$(rt_kind llamacpp)" = agent ]; then launchctl kickstart -k "gui/$(id -u)/$(rt_label llamacpp)" >/dev/null 2>&1 || return 1
+  else dc restart llamacpp </dev/null >/dev/null 2>&1 || return 1; fi
+  sleep 1
+  while [ "$n" -lt "${RT_START_WAIT:-60}" ]; do [ -z "$(_rt_version llamacpp)" ] || { _rt_watch_mark llamacpp; return 0; }; sleep 1; n=$((n + 1)); done
+  return 1
+}
 # rt_install ID — download, check and start it (one job; a terminal asks first)
 rt_install() {
   local id="${1:-}" st why
@@ -336,11 +545,11 @@ rt_install() {
   why="$(rt_why_not "$id")"; [ -z "$why" ] || die "$(rt_name "$id") does not run here: $why"
   st="$(rt_state "$id")"
   case "$st" in
-    external) die "An Ollama that is not DevOS ADE's already answers on $(rt_address "$id") (the Ollama app, or one you started): downloads can go to it as it is (Settings › Local models). To have DevOS ADE run its own, quit that one first." ;;
+    external) die "$(_rt_external_text "$id")" ;;
     installing) die "$(rt_name "$id") is being installed" ;;
   esac
   if [ -t 0 ] && [ "${BEDROCK_NOW_JOB_ORIGIN:-}" != helper ] && [ "${ASSUME_YES:-0}" != 1 ]; then
-    confirm "Install $(rt_name "$id") $(rt_pinned_version "$id") ($(rt_size "$id")$([ "$(rt_os)" = mac ] && echo ", from github.com/ollama/ollama, into .state/runtimes/$id" || echo ", Ollama's image")), running on $(rt_address "$id") only?" || die "nothing was installed"
+    confirm "Install $(rt_name "$id") $(rt_pinned_version "$id") ($(rt_size "$id")$([ "$(rt_os)" = mac ] && echo ", from github.com/$(_rt_repo "$id"), into .state/runtimes/$id" || echo ", $(rt_name "$id")'s image")), running on $(rt_address "$id") only?" || die "nothing was installed"
   fi
   _rt_begin "$id"; rm -f "$(_rt_cancel_file)"
   case "$(rt_os)" in mac) "_rt_install_${id}_mac" ;; linux) "_rt_install_${id}_linux" ;; esac
@@ -353,12 +562,21 @@ rt_install() {
   log "$(rt_name "$id") $(rt_installed_version "$id") is running on $(rt_address "$id")"
 }
 
+_rt_repo() { case "$1" in ollama) echo ollama/ollama ;; llamacpp) echo ggml-org/llama.cpp ;; esac; }
+# _rt_external_text ID -> why it is not installed over what already answers on its address
+_rt_external_text() {
+  case "$1" in
+    ollama) echo "An Ollama that is not DevOS ADE's already answers on $(rt_address ollama) (the Ollama app, or one you started): downloads can go to it as it is (Settings › Local models). To have DevOS ADE run its own, quit that one first." ;;
+    *) echo "Something that is not DevOS ADE's already answers on $(rt_address "$1"), the address $(rt_name "$1") would have: quit it first." ;;
+  esac
+}
+
 # --- start, stop ---
 # _rt_start_now ID -> 0 once it answers (60 s at most)
 _rt_start_now() {
   local id="$1" n=0
   if [ "$(rt_kind "$id")" = agent ]; then
-    [ -x "$(rt_dir "$id")/bin/ollama" ] || return 1
+    [ -x "$(_rt_program "$id")" ] || return 1
     [ -z "$(_rt_version "$id")" ] || _rt_agent_loaded "$id" || return 1   # (something else holds the port)
     _rt_agent_up "$id" || return 1
   else
@@ -374,7 +592,7 @@ rt_start() {
   valid_runtime_id "$id" || die "not a runtime: $id ($RUNTIME_IDS)"
   rt_installed "$id" || die "$(rt_name "$id") is not installed by DevOS ADE: ./stack runtimes install $id"
   [ "$(rt_state "$id")" != running ] || { log "$(rt_name "$id") is running"; return 0; }
-  [ "$(rt_state "$id")" != external ] || die "Another Ollama answers on $(rt_address "$id"): quit it first"
+  [ "$(rt_state "$id")" != external ] || die "$(_rt_external_text "$id")"
   _rt_begin "$id"
   _rt_job running "$id" start 0 0 "Starting $(rt_name "$id")"
   _rt_start_now "$id" || _rt_fail "$id" start "$(rt_name "$id") did not start: $(_rt_log_hint "$id")"
@@ -531,7 +749,8 @@ _rt_status_lines() {
     st="$(rt_state "$id")"
     case "$st" in
       running) line="running $(_rt_version "$id") on $(rt_address "$id")$([ "$(rt_kind "$id")" = agent ] && echo " (launchd agent)" || echo " (container)")" ;;
-      external) line="yours: $(rt_name "$id") $(_rt_version "$id") that is not DevOS ADE's answers on $(rt_address "$id")" ;;
+      external) [ "$id" = ollama ] && line="yours: $(rt_name "$id") $(_rt_version "$id") that is not DevOS ADE's answers on $(rt_address "$id")" \
+                  || line="its address is taken: something that is not DevOS ADE's answers on $(rt_address "$id")" ;;
       not-installed) line="not installed (./stack runtimes install $id: $(rt_size "$id"))" ;;
       unsupported) line="does not run here: $(rt_why_not "$id")" ;;
       stopped) line="stopped (./stack runtimes start $id)" ;;
