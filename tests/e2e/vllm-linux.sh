@@ -54,7 +54,7 @@ cleanup() {
   [ "$(docker container inspect -f '{{index .Config.Labels "io.bedrock-now.e2e"}}' "$LL" 2>/dev/null)" != vllm ] || docker rm -f "$LL" >/dev/null 2>&1
   for c in $(docker ps -aq --filter "label=com.docker.compose.project=$P"); do docker rm -f "$c" >/dev/null 2>&1; done
   docker network rm "$NET" >/dev/null 2>&1 || true
-  { [ "$rc" = 0 ] && [ "$FAILS" = 0 ]; } || for f in install pull rm uninstall; do [ ! -f "$WORK/$f.log" ] || { mkdir -p "$OUT" && cp "$WORK/$f.log" "$OUT/vllm-linux-$f.log"; }; done 2>/dev/null
+  { [ "$rc" = 0 ] && [ "$FAILS" = 0 ]; } || for f in install pull rm uninstall failed up; do [ ! -f "$WORK/$f.log" ] || { mkdir -p "$OUT" && cp "$WORK/$f.log" "$OUT/vllm-linux-$f.log"; }; done 2>/dev/null
   rm -rf "$WORK"
   mkdir -p "$OUT" 2>/dev/null && printf '%s\n' ${CHECKS[@]+"${CHECKS[@]}"} | python3 -I -c 'import json, sys
 print(json.dumps({"failures": int(sys.argv[1]), "checks": [dict(zip(("status", "check"), l.rstrip("\n").split("\t", 1))) for l in sys.stdin if "\t" in l]}, indent=1))' "$FAILS" > "$OUT/vllm-linux.json" 2>/dev/null
@@ -98,7 +98,9 @@ else fail "1 after install: state $(rt_state vllm), containers '$(_RT_PROFILE=vl
 say "downloading $REPO and serving it (its first start can take minutes)"
 T0="$(date +%s)"
 ( LOCAL_POLL_S=2 local_pull "$REPO" safetensors --tools no --params-m 135 --context 8192 --license apache-2.0 ) > "$WORK/pull.log" 2>&1 \
-  || { fail "2 the download or its start failed: $(tail -n 3 "$WORK/pull.log" | tr '\n' ' ') — $(rt_logs_text vllm 5 | tr '\n' ' ')"; exit 1; }
+  || { fail "2 the download or its start failed: $(tail -n 3 "$WORK/pull.log" | tr '\n' ' ')"
+       if [ -s "$D/failed.log" ]; then say "the log of that start:"; tail -n 60 "$D/failed.log" >&2; cp "$D/failed.log" "$WORK/failed.log"; fi
+       [ ! -s "$D/up.log" ] || cp "$D/up.log" "$WORK/up.log"; exit 1; }
 if [ "$(rt_vllm_serving)" = "$REPO" ] && [ "$(rt_state vllm)" = running ] && [ -n "$(_rt_version vllm)" ]; then
   ok "2 served $REPO after $(($(date +%s) - T0)) s: $(grep -E '^(max-model-len|tool-call-parser):' "$D/etc/serve.yaml" | tr '\n' ' ')"
 else fail "2 serving '$(rt_vllm_serving)', state $(rt_state vllm)"; fi

@@ -33,14 +33,17 @@ _vl_env() {
       "info --format {{json .Runtimes}}") if [ -f "$TMP/nvidia" ]; then echo '{"nvidia":{},"runc":{}}'; else echo '{"runc":{}}'; fi ;;
       "info -f {{.SecurityOptions}}") echo '[name=seccomp,profile=builtin]' ;;
       *" pull -q vllm") : ;;
-      *" up -d --force-recreate vllm" | *" up -d vllm") : > "$TMP/vl-up"; cp "$(rt_dir vllm)/etc/serve.yaml" "$TMP/served.yaml" 2>/dev/null || true ;;
+      *" up -d --force-recreate vllm" | *" up -d vllm")
+        if [ -f "$TMP/vl-upfail" ]; then echo "Error response from daemon: no such image: vllm/vllm-openai-cpu" >&2; return 1; fi
+        : > "$TMP/vl-up"; cp "$(rt_dir vllm)/etc/serve.yaml" "$TMP/served.yaml" 2>/dev/null || true ;;
       *" ps --format {{.Health}} vllm") [ -f "$TMP/vl-up" ] && { [ -f "$TMP/vl-fail" ] && echo starting || echo healthy; } ;;
       *" ps -a --format {{.State}} vllm") [ ! -f "$TMP/vl-up" ] || echo running ;;
       *" ps -aq vllm") [ ! -f "$TMP/vl-up" ] || echo cid-vllm ;;
       "inspect -f {{.RestartCount}} cid-vllm") [ -f "$TMP/vl-fail" ] && echo 1 || echo 0 ;;
       *" rm -sf vllm" | *" stop vllm") rm -f "$TMP/vl-up" ;;
       *" config --images vllm") if [ -f "$(rt_dir vllm)/gpu" ]; then echo vllm/vllm-openai:gpu; else echo vllm/vllm-openai-cpu:cpu; fi ;;
-      *" logs --no-color --tail "*" vllm") if [ -f "$TMP/vl-log" ]; then cat "$TMP/vl-log"; else echo "ValueError: Qwen9ForCausalLM is not supported"; fi ;;
+      *" logs --no-color --tail "*" vllm") [ -f "$TMP/vl-up" ] || return 0   # (no container, no log)
+        if [ -f "$TMP/vl-log" ]; then cat "$TMP/vl-log"; else echo "ValueError: Qwen9ForCausalLM is not supported"; fi ;;
     esac
   }
   config_apply() { printf '%s|%s|%s\n' "$*" "$CFG_ORDER" "$(cfg_new LOCAL_MODELS)" >> "$TMP/apply"; }   # (what it would write)
@@ -319,17 +322,33 @@ test_a_model_vllm_cannot_load_leaves_the_one_before_served_and_stays_downloaded(
   [ -f "$d/hub/models--org--B/snapshots/$SHA_B/config.json" ]
   assert_eq "$(_reg org/B | cut -d'|' -f1)" org/B
   [ ! -s "$TMP/apply" ]
-  # with none before: no container, waiting again
+  # with none before: no container, waiting again — and its log is that start's, said so (Settings' Log, ./stack runtimes logs)
   rm -f "$d/etc/serve.yaml" "$d/serving" "$d/hub/current" "$TMP/vl-up"
   ! rt_vllm_serve org/B org/B "$SHA_B" "" > /dev/null 2>&1
   assert_eq "$(rt_state vllm)" waiting
   assert_contains "$(cat "$TMP/docker")" " rm -sf vllm"
+  assert_eq "$_RT_VLLM_HINT" "ValueError: Qwen9ForCausalLM is not supported"
+  assert_eq "$(rt_logs_text vllm)" "$(printf '(no container now: the log of its last start, which failed)\nValueError: Qwen9ForCausalLM is not supported')"
+  # Docker would not start it: Docker's words, from the download's job to its last line
+  rm -f "$TMP/vl-fail"; : > "$TMP/vl-upfail"
+  _vl_hub
+  ( local_pull org/B safetensors ) > "$TMP/out" 2>&1 && { kill "$HUB_PID"; return 1; }
+  kill "$HUB_PID"
+  assert_contains "$(cat "$TMP/out")" "vLLM could not serve it: Docker could not start it: Error response from daemon: no such image: vllm/vllm-openai-cpu"
+  assert_contains "$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["message"])' "$(local_job_file)")" "(Docker could not start it: Error response from daemon: no such image"
+  assert_eq "$(rt_state vllm)" waiting
+  # a start that works again: its log is its container's, the failed one's is gone
+  rm -f "$TMP/vl-upfail"; _vl_hub
+  ( local_pull org/B safetensors ) > "$TMP/out" 2>&1 || { kill "$HUB_PID"; cat "$TMP/out" >&2; return 1; }
+  kill "$HUB_PID"
+  [ ! -e "$d/failed.log" ]
+  assert_not_contains "$(rt_logs_text vllm)" "no container now"
 }
 
 test_its_log_never_shows_its_key() {
   _vl_env
   rt_install vllm > /dev/null 2>&1
-  local k; k="$(rt_api_key vllm)"
+  local k; k="$(rt_api_key vllm)"; : > "$TMP/vl-up"
   printf "INFO [utils.py] non-default args: {'model_tag': '/models/current', 'api_key': ['%s']}\nValueError: no\n" "$k" > "$TMP/vl-log"
   assert_contains "$(rt_logs_text vllm)" "'api_key': ['[its API key]']"
   assert_not_contains "$(rt_logs_text vllm)" "$k"

@@ -501,7 +501,7 @@ _local_pull_hub() {
     _local_job registering "$repo" "$quant" "$bytes" "$bytes" "Starting vLLM with it: loading the model (minutes on a CPU)"
     if ! rt_vllm_serve "$id" "$repo" "$sha" "$ctx" _local_vllm_loading; then
       _local_job failed "$repo" "$quant" "$bytes" "$bytes" "Downloaded, but vLLM could not serve it (${_RT_VLLM_HINT:-./stack runtimes logs vllm}). It stays downloaded (Remove deletes it)$([ -n "$prev" ] && [ "$prev" != "$id" ] && echo "; vLLM serves $prev again")."
-      die "vLLM could not serve it: ./stack runtimes logs vllm"
+      die "vLLM could not serve it: ${_RT_VLLM_HINT:-./stack runtimes logs vllm}"
     fi
     # (no tool-call parser for it: vLLM answers a request with tools with an error)
     [ "$_RT_VLLM_PARSER" != none ] || tools=no

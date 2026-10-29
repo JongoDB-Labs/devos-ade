@@ -920,13 +920,15 @@ _rt_vllm_serve_write() {
   printf '%s\t%s\t%s\n' "$1" "$5" "$6" > "$d/serving"
 }
 # rt_vllm_serve ID REPO COMMIT CTX [FN] — vLLM started again serving that downloaded snapshot (its context at most
-# RT_VLLM_CTX_CPU, or RT_VLLM_CTX_GPU on NVIDIA GPUs, and at most its own). 0 once it answers; 1 when it did not (the
-# log says why): it serves the model it served before again, or none ("waiting"). _RT_VLLM_PARSER: the parser chosen.
-# FN SECONDS while it loads (_rt_vllm_wait)
+# RT_VLLM_CTX_CPU, or RT_VLLM_CTX_GPU on NVIDIA GPUs, and at most its own). 0 once it answers; 1 when it did not, with
+# _RT_VLLM_HINT saying why (its log's last lines, or Docker's) and the log of that start kept (failed.log: Settings'
+# Log shows it while there is no container): it serves the model it served before again, or none ("waiting").
+# _RT_VLLM_PARSER: the parser chosen. FN SECONDS while it loads (_rt_vllm_wait)
 rt_vllm_serve() {
   local id="$1" repo="$2" sha="$3" ctx="${4:-}" fn="${5:-}" d rel facts parser mctx cap prev=''
-  d="$(rt_dir vllm)"; rel="models--${repo//\//--}/snapshots/$sha"
-  [[ $id =~ ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,125}$ ]] && [[ $sha =~ ^[0-9a-f]{40}$ ]] && [ -f "$d/hub/$rel/config.json" ] || return 1
+  d="$(rt_dir vllm)"; rel="models--${repo//\//--}/snapshots/$sha"; _RT_VLLM_HINT=''
+  [[ $id =~ ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,125}$ ]] && [[ $sha =~ ^[0-9a-f]{40}$ ]] && [ -f "$d/hub/$rel/config.json" ] \
+    || { _RT_VLLM_HINT="its files are not where vLLM reads them (.state/runtimes/vllm/hub)"; return 1; }
   facts="$(_rt_vllm_facts "$d/hub/$rel")"; parser="${facts%%$'\t'*}"; mctx="${facts#*$'\t'}"
   case "$parser" in hermes | mistral | llama3_json) ;; *) parser=none ;; esac
   _RT_VLLM_PARSER="$parser"
@@ -936,15 +938,22 @@ rt_vllm_serve() {
   [ "$ctx" -le "$cap" ] || ctx="$cap"
   if rt_vllm_serving >/dev/null; then
     prev=1; cp -p "$d/etc/serve.yaml" "$d/etc/serve.yaml.prev" && cp -p "$d/serving" "$d/serving.prev" \
-      && printf '%s\n' "$(readlink "$d/hub/current")" > "$d/current.prev" || return 1
+      && printf '%s\n' "$(readlink "$d/hub/current")" > "$d/current.prev" || { _RT_VLLM_HINT="its settings could not be saved (.state/runtimes/vllm)"; return 1; }
   fi
-  _rt_vllm_serve_write "$id" "$rel" "$ctx" "$parser" "$repo" "$sha" || return 1
-  if dc up -d --force-recreate vllm </dev/null >/dev/null 2>&1 && _rt_vllm_wait "$fn"; then
-    rm -f "$d/etc/serve.yaml.prev" "$d/serving.prev" "$d/current.prev"
-    _rt_watch_mark vllm; _rt_event vllm started "vLLM serves $id"
-    return 0
+  _rt_vllm_serve_write "$id" "$rel" "$ctx" "$parser" "$repo" "$sha" || { _RT_VLLM_HINT="its settings could not be written (.state/runtimes/vllm/etc)"; return 1; }
+  rm -f "$d/failed.log"
+  if dc up -d --force-recreate vllm </dev/null > "$d/up.log" 2>&1; then
+    if _rt_vllm_wait "$fn"; then
+      rm -f "$d/etc/serve.yaml.prev" "$d/serving.prev" "$d/current.prev"
+      _rt_watch_mark vllm; _rt_event vllm started "vLLM serves $id"
+      return 0
+    fi
+    rt_logs_text vllm 200 > "$d/failed.log" 2>/dev/null || true
+    _RT_VLLM_HINT="$(_rt_log_hint vllm)"
+    [ -n "$_RT_VLLM_HINT" ] || _RT_VLLM_HINT="it ended before it answered, saying nothing (./stack runtimes logs vllm)"
+  else
+    _RT_VLLM_HINT="Docker could not start it: $(tail -n 2 "$d/up.log" | rt_key_redact | LC_ALL=C tr -cd ' -~\n' | tr '\n' ' ' | sed 's/ *$//' | cut -c1-200)"
   fi
-  _RT_VLLM_HINT="$(_rt_log_hint vllm)"
   if [ -n "$prev" ] && [ -s "$d/etc/serve.yaml.prev" ]; then   # (back to the one it served before: it loads in the background)
     mv -f "$d/etc/serve.yaml.prev" "$d/etc/serve.yaml"; mv -f "$d/serving.prev" "$d/serving"
     ln -sfn "$(cat "$d/current.prev")" "$d/hub/current"; rm -f "$d/current.prev"
@@ -1146,7 +1155,15 @@ rt_logs_text() {
   case "$n" in '' | *[!0-9]*) n="$RT_LOG_LINES" ;; esac
   [ "$n" -le 2000 ] || n=2000
   if [ "$(rt_kind "$id")" = agent ]; then [ ! -f "$(rt_dir "$id")/server.log" ] || tail -n "$n" "$(rt_dir "$id")/server.log"
-  else _RT_PROFILE="$id" dc logs --no-color --tail "$n" "$(rt_services "$id" | cut -d' ' -f1)" 2>/dev/null || true; fi | rt_key_redact | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' | LC_ALL=C tr -cd '\t\n -~' | cut -c1-400
+  else _rt_container_log "$id" "$n"; fi | rt_key_redact | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' | LC_ALL=C tr -cd '\t\n -~' | cut -c1-400
+}
+# _rt_container_log ID N — its container's last N lines; with no container (vLLM after a start that failed with no model
+# to go back to): that start's log, as rt_vllm_serve kept it (failed.log), under a line that says so
+_rt_container_log() {
+  local out f; f="$(rt_dir "$1")/failed.log"
+  out="$(_RT_PROFILE="$1" dc logs --no-color --tail "$2" "$(rt_services "$1" | cut -d' ' -f1)" 2>/dev/null || true)"
+  if [ -n "$out" ]; then printf '%s\n' "$out"
+  elif [ -s "$f" ]; then printf '(no container now: the log of its last start, which failed)\n'; tail -n "$2" "$f"; fi
 }
 # rt_key_redact — a filter: every runtime's API key in what passes through comes out as [its API key] (vLLM's log lists
 # the arguments it was started with, its key among them; a log is shown in Settings, Activity and setup's report)
