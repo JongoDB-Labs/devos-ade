@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-10-29
+
 ### Added
 
 - **Browse models lists every model each key can use, as the provider's own site would (JON-823).** Bedrock is read in
@@ -3647,7 +3649,16 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.31.5...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.40.0...HEAD
+[0.40.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.39.0...v0.40.0
+[0.39.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.38.0...v0.39.0
+[0.38.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.37.0...v0.38.0
+[0.37.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.36.0...v0.37.0
+[0.36.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.35.0...v0.36.0
+[0.35.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.34.0...v0.35.0
+[0.34.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.33.1...v0.34.0
+[0.33.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.33.0...v0.33.1
+[0.33.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.32.3...v0.33.0
 [0.32.3]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.32.2...v0.32.3
 [0.32.2]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.32.1...v0.32.2
 [0.32.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.32.0...v0.32.1
