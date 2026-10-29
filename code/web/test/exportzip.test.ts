@@ -2,7 +2,7 @@
 // and what the page takes from the portal's answer — only from the portal that frames it, for its own request, in a shape it knows.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { EXPORT_NAME, exportMessage, fmtBytes, normExportPlan, portalExport, takeExportReply, zipWhole } from '../src/exportzip';
+import { EXPORT_NAME, exportMessage, fmtBytes, normExportPlan, originOf, portalExport, takeExportReply, zipWhole } from '../src/exportzip';
 import { ApiError, exportPlan, exportZip } from '../src/api';
 
 const PLAN = { files: 3, bytes: 1234, cap: 200 << 20, over: false, via: 'git', skippedLinks: 1, skippedOther: 0, name: 'My-app-20261027-101500.zip' };
@@ -124,4 +124,24 @@ test('exportPlan and exportZip: the backend\'s plan; the zip streamed in and che
   await withFetch(() => Response.json({ files: 'many' }), async () => {
     await assert.rejects(exportPlan('p_0000000a', { include: 'default', git: false }), /does not fit/);
   });
+});
+
+test('the portal\'s origin as the page keeps it (/api/state\'s portal_origin read as a URL: "http://host/") still matches its answers', async () => {
+  // (the page's store holds URL.href, with a trailing slash; a message's origin never has one: compared as it was, the
+  // portal's answer was never taken and Export to Files waited out its ten minutes)
+  const href = new URL('http://bedrock-now.localhost:8080').href, parent = {}, id = 'abc123';
+  assert.equal(href, 'http://bedrock-now.localhost:8080/');
+  assert.equal(originOf(href), 'http://bedrock-now.localhost:8080');
+  assert.equal(originOf('nope'), null);
+  assert.equal(originOf(null), null);
+  const ok = { type: 'bn-portal-export', id, ok: true, key: 'a.zip', bucket: 'code-exports' };
+  assert.deepEqual(takeExportReply(ok, 'http://bedrock-now.localhost:8080', parent, href, parent, id), { ok: true, key: 'a.zip', bucket: 'code-exports', url: null });
+  assert.equal(takeExportReply(ok, 'http://bedrock-now.localhost', parent, href, parent, id), null, 'another port');
+  // handed over and answered with that origin
+  const w = new Win();
+  const p = portalExport(new Blob(['PK']), 'a.zip', w as unknown as Window, href, 5000);
+  const [msg, to] = (w.parent.posted[0] as [{ id: string }, string]);
+  assert.equal(to, 'http://bedrock-now.localhost:8080');
+  w.dispatchEvent(Object.assign(new Event('message'), { origin: 'http://bedrock-now.localhost:8080', data: { ...ok, id: msg.id }, source: w.parent }));
+  assert.deepEqual(await p, { key: 'a.zip', bucket: 'code-exports', url: null });
 });

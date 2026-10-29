@@ -4138,8 +4138,16 @@ def export_to_files(ctx):
         see(f.get_by_test_id("export-secrets")).to_contain_text(".env")
         shot(page, "j808-export-dialog")
         f.get_by_test_id("export-go").click()
-        done = f.get_by_test_id("export-done")
-        see(done).to_be_visible(timeout=120000)
+        # done, or what went wrong — said at once, in the dialog's own words (a wait for done alone hid an error for 120 s)
+        done, err = f.get_by_test_id("export-done"), f.get_by_test_id("export-error")
+        try:
+            see(done.or_(err)).to_be_visible(timeout=120000)
+        except AssertionError:
+            shot(page, "j808-export-waiting")
+            raise AssertionError(f"Export to Files neither finished nor failed in 120 s; the dialog says: {dlg.inner_text()[-400:]!r}") from None
+        if err.count():
+            shot(page, "j808-export-error")
+            expect(False, f"Export to Files failed: {err.inner_text()!r}")
         name = done.get_attribute("data-key")
         expect(re.fullmatch(r"Export-808-\d{8}-\d{6}\.zip", name or ""), f"the zip's name {name!r}")
         shot(page, "j808-export-done")

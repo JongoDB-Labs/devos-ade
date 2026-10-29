@@ -75,18 +75,19 @@ export function ExportDialog({ id, onClose }: { id: string; onClose: () => void 
       <p class="muted small">
         A zip of <code>{p.path}</code>, made in the sandbox{framed ? ', then put in the Files app (a bucket called code-exports) for you to download' : ''}.
       </p>
+      {/* (each label's words in one span: a .gitr-check label is a flex row, where loose text and <code> stand apart) */}
       <fieldset class="gitr-form small" disabled={working}>
         <label class="gitr-check small">
           <input type="radio" name="export-include" checked={include === 'default'} onChange={() => setInclude('default')} data-testid="export-include-default" />
-          The project's files: what git keeps (.gitignore respected), without <code>.git</code> and <code>node_modules</code>
+          <span>The project's files: what git keeps (.gitignore respected), without <code>.git</code> and <code>node_modules</code></span>
         </label>
         <label class="gitr-check small">
           <input type="radio" name="export-include" checked={include === 'all'} onChange={() => setInclude('all')} data-testid="export-include-all" />
-          Everything, dependency and build folders too
+          <span>Everything, dependency and build folders too</span>
         </label>
         <label class="gitr-check small">
           <input type="checkbox" checked={git} onChange={(e) => setGit((e.currentTarget as HTMLInputElement).checked)} data-testid="export-git" />
-          Include the <code>.git</code> folder (the project's history)
+          <span>Include the <code>.git</code> folder (the project's history)</span>
         </label>
       </fieldset>
       <p class="small" data-testid="export-plan" aria-live="polite">

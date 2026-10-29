@@ -65,10 +65,23 @@ export function exportMessage(id: string, name: string, blob: Blob): { type: 'bn
 
 export type ExportReply = { ok: true; key: string; bucket: string; url: string | null } | { ok: false; error: string };
 
+/** PORTAL (/api/state's portal_origin, as the page keeps it: a URL, "http://host/") as an origin ("http://host"), the form
+ *  a message's origin has; null when it is not one. */
+export function originOf(portal: string | null): string | null {
+  if (!portal) return null;
+  try {
+    const o = new URL(portal).origin;
+    return o === 'null' ? null : o;
+  } catch {
+    return null;
+  }
+}
+
 /** A message from the portal, checked: who sent it (ORIGIN the portal's, SOURCE the parent window), whose it is (ID) and its
  *  shape — or null. */
 export function takeExportReply(data: unknown, origin: string, source: unknown, portal: string | null, parent: unknown, id: string): ExportReply | null {
-  if (!portal || origin !== portal || !parent || source !== parent || !data || typeof data !== 'object') return null;
+  const want = originOf(portal);
+  if (!want || origin !== want || !parent || source !== parent || !data || typeof data !== 'object') return null;
   const d = data as Record<string, unknown>;
   if (d.type !== 'bn-portal-export' || d.id !== id) return null;
   if (d.ok === true) {
@@ -104,7 +117,7 @@ export function portalExport(blob: Blob, name: string, win: Window, portal: stri
     const timer = setTimeout(() => done(() => reject(new Error('The portal did not answer in time: the zip may not be in Files.'))), timeoutMs);
     win.addEventListener('message', on);
     try {
-      win.parent.postMessage(exportMessage(id, name, blob), portal);
+      win.parent.postMessage(exportMessage(id, name, blob), originOf(portal) ?? portal);
     } catch {
       done(() => reject(new Error('The portal could not be reached from this page.')));
     }
