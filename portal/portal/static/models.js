@@ -222,10 +222,12 @@
       }
       if (!p.on) li.append(" ", el("a", { href: `#settings/${k === "bedrock" ? "AWS_ACCESS_KEY_ID" : k === "openrouter" ? "OPENROUTER_API_KEY" : "EXPLABS_API_KEY"}`, text: "Add a key" }));
       if (p.error) li.append(el("span", { class: "mb-source-error", role: "status", text: p.error }));
+      // the notes under its count, each a line of its own: Bedrock's inference profiles not listed, what is not listed
+      const more = el("div", { class: "mb-source-more" });
       // Bedrock's inference profiles not listed (Claude is served only through them): its models show by their usual id
       if (k === "bedrock" && p.on && (p.profiles === "denied" || p.profiles === "error")) {
         const guessed = p.rows.filter((r) => r.guessed).length;
-        li.append(el("span", { class: "note", "data-testid": "mb-profiles-note", text: (p.profiles === "denied"
+        more.append(el("span", { class: "note", "data-testid": "mb-profiles-note", text: (p.profiles === "denied"
           ? "Your AWS key may not list inference profiles (bedrock:ListInferenceProfiles), so models called through one, Claude among them, show by their usual profile id"
           : "Bedrock's inference profiles could not be read, so models called through one, Claude among them, show by their usual profile id")
           + (guessed ? `: ${guessed} marked Not confirmed` : "")
@@ -242,7 +244,8 @@
       if (lo["no-price"]) parts.push(`${lo["no-price"]} without a price (OpenRouter's routers)`);
       if (lo.id) parts.push(`${lo.id} with an id this stack cannot use`);
       if (lo.cap) parts.push(`${lo.cap} past the list's limit`);
-      if (parts.length) li.append(el("span", { class: "note", "data-testid": `mb-left-out-${k}`, text: `Not listed: ${parts.join("; ")}.` }));
+      if (parts.length) more.append(el("span", { class: "note", "data-testid": `mb-left-out-${k}`, text: `Not listed: ${parts.join("; ")}.` }));
+      if (more.childNodes.length) li.append(more);
       box.append(li);
     }
     if (L() && L().summary()) {

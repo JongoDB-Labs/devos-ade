@@ -22,3 +22,4 @@ tests/e2e/work/
 # node (code/, code/web/: npm ci from their lockfiles; code/web builds into dist/ inside the image)
 node_modules/
 code/web/dist/
+portal/e2e/*/out/

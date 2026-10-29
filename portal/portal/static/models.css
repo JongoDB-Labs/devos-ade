@@ -15,6 +15,9 @@
 .mb-sources { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 20px; }
 .mb-source { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; font-size: 13px; }
 .mb-source-name { font-weight: 600; }
+.mb-source .note { margin: 0; }
+/* a provider's profiles note and Not listed: under its count, each a line of its own (no shrink: never beside the count) */
+.mb-source-more { flex: 0 0 100%; display: grid; gap: 4px; justify-items: start; }
 .mb-source > a { display: inline-flex; align-items: center; min-height: 24px; }   /* "Add a key": a 24 px target wherever it lands */
 .mb-source-error { color: var(--bad); }
 .mb-refresh-line { margin: 0 0 14px; }

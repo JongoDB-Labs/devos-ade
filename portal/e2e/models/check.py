@@ -32,11 +32,11 @@ TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": 
 
 
 def _r(provider, source_id, ident, name, vendor, in_, out, context, tools, images, free, compat, enabled, chosen, can,
-       why="", builtin=False, lifecycle="", note=""):
+       why="", builtin=False, lifecycle="", note="", region="", kind="", guessed=False, model_id=""):
     return {"provider": provider, "id": ident, "source_id": source_id, "name": name, "vendor": vendor, "free": free,
             "in": in_, "out": out, "context": context, "tools": tools, "images": images, "compat": compat,
             "compat_note": "", "enabled": enabled, "chosen": chosen, "can": can, "why": why, "builtin": builtin,
-            "lifecycle": lifecycle, "note": note}
+            "lifecycle": lifecycle, "note": note, "region": region, "kind": kind, "guessed": guessed, "model_id": model_id}
 
 
 # A recorded answer in the shape portal/portal/model_browser.py.browse() produces.
@@ -55,7 +55,22 @@ ANSWER = {
                "Llama 4 Maverick", "Meta", 0.24, 0.97, 1000000, True, True, False, "untested", False, False, "add"),
             _r("bedrock", "amazon.nova-pro-v1:0", "amazon.nova-pro-v1:0", "Nova Pro", "Amazon", 0.8, 3.2, 300000, True,
                True, False, "untested", False, False, "add"),
-        ]},
+            # JON-823: your application inference profile, and models only other regions offer
+            _r("bedrock", "app/k3x9q2m7w1ab", "app/k3x9q2m7w1ab", "team-claude-sonnet-production", "Anthropic", 3.0, 15.0,
+               200000, True, True, False, "untested", False, False, "add", region="us-east-1", kind="app-profile",
+               model_id="anthropic.claude-sonnet-4-5-20250929-v1:0",
+               note="Your application inference profile, for anthropic.claude-sonnet-4-5-20250929-v1:0: billed as that model, under your profile's tags."),
+            _r("bedrock", "us-east-2/qwen.qwen3-235b-a22b-2507-v1:0", "us-east-2/qwen.qwen3-235b-a22b-2507-v1:0",
+               "Qwen3 235B A22B 2507", "Qwen", 0.22, 0.88, 262144, True, False, False, "untested", False, False, "add",
+               region="us-east-2", model_id="qwen.qwen3-235b-a22b-2507-v1:0",
+               note="Only us-east-2 offers it: your requests go to that region."),
+            _r("bedrock", "eu-west-2/mistral.magistral-small-2509", "eu-west-2/mistral.magistral-small-2509",
+               "Magistral Small 1.2", "Mistral AI", 0.5, 1.5, 128000, True, True, False, "untested", False, False, "add",
+               region="eu-west-2", model_id="mistral.magistral-small-2509",
+               note="Only eu-west-2 offers it: your requests go to that region."),
+        ], "profiles": "ok", "apps": "ok", "left_out": {"not-text": 2, "embeddings": 1, "variant": 7},
+           "regions": {"us-east-1": "ok", "us-east-2": "ok", "us-west-2": "ok", "eu-west-2": "ok", "ap-northeast-1": "ok",
+                       "af-south-1": "off", "il-central-1": "off", "me-central-1": "error"}},
         "openrouter": {"on": True, "key": "OPENROUTER_MODELS", "value": "all", "at": AT, "stale": False,
                        "error": None, "status": None, "rows": [
             _r("openrouter", "meta-llama/llama-3.3-70b-instruct", "or/meta-llama/llama-3.3-70b-instruct",
@@ -64,7 +79,7 @@ ANSWER = {
                False, True, True, "chat-only", True, True, "remove"),
             _r("openrouter", "openai/gpt-5-vision", "or/openai/gpt-5-vision", "GPT-5 Vision", "OpenAI", 2.0, 8.0, 400000,
                True, True, False, "untested", False, True, "remove"),
-        ]},
+        ], "left_out": {"batch": 71, "not-text": 16, "no-price": 5}},
         "explabs": {"on": True, "key": "EXPLABS_MODELS", "value": "qwen3.8-27b", "at": AT, "stale": False,
                     "error": None, "status": None, "rows": [
             _r("explabs", "qwen3.8-27b", "xl/qwen3.8-27b", "Qwen3.8 27B", "Qwen", 0.32, 2.4, 1000000, True, False, False,
@@ -81,6 +96,18 @@ ANSWER = {
 # The first open on a new stack: Bedrock's list not read yet (the update helper reads it in the background), so the
 # answer has only the catalog's models, without a vendor; PENDING["until"] says how long the stub answers so
 PENDING = {"until": 0.0, "helper": True}   # helper: False, no update helper to read it (the list says so)
+# A key that may not list Bedrock's inference profiles (JON-823): no application profile, the profile ids guessed
+DENIED = {"on": False}
+GUESSED = "Not confirmed: your AWS key may not list inference profiles, so this is the profile's usual id."
+
+
+def denied_answer() -> dict:
+    a = json.loads(json.dumps(ANSWER))
+    br = a["providers"]["bedrock"]
+    br.update(profiles="denied", apps="denied",
+              rows=[dict(r, guessed=True, note=GUESSED) if r["source_id"].startswith("us.") and not r["builtin"] else r
+                    for r in br["rows"] if r["kind"] != "app-profile"])
+    return a
 
 
 def pending_answer() -> dict:
@@ -88,7 +115,7 @@ def pending_answer() -> dict:
     br = a["providers"]["bedrock"]
     if PENDING.get("explabs_off"):   # a provider without a key: its line says so, with "Add a key"
         a["providers"]["explabs"].update(on=False, rows=[], at=None)
-    br.update(at=None, stale=True, reading=PENDING["helper"], status=None, profiles=PENDING.get("profiles"),
+    br.update(at=None, stale=True, reading=PENDING["helper"], status=None, profiles=PENDING.get("profiles"), regions={}, left_out={},
               rows=[dict(r, vendor="", **{"in": None, "out": None}) for r in br["rows"] if r["builtin"]])
     return a
 
@@ -118,7 +145,8 @@ class Stub(http.server.BaseHTTPRequestHandler):
             page = (STATIC / "index.html").read_text(encoding="utf-8")
             return self.send(200, page.replace("</head>", APPS_META + "\n</head>", 1), "text/html; charset=utf-8")
         if path == "/api/models/browse":
-            return self.send(200, json.dumps(pending_answer() if time.time() < PENDING["until"] else ANSWER), "application/json")
+            answer = pending_answer() if time.time() < PENDING["until"] else denied_answer() if DENIED["on"] else ANSWER
+            return self.send(200, json.dumps(answer), "application/json")
         if path == "/api/admin/status":
             return self.send(200, json.dumps({"running": True, "allowed": True, "job": None, "in_progress": False}), "application/json")
         if path.startswith("/static/"):
@@ -210,6 +238,66 @@ def menus(pw, result):
     browser.close()
     result["menus"] = out
     result["menus_ok"] = all(v for k, v in out.items() if k not in ("right_click_items",))
+
+
+def every_model(pw, result):
+    """JON-823 on a phone and a desktop: Bedrock's line counts the other regions' models and the regions read; the Not
+    listed sentences; Region › other regions shows only rows marked with a region; your profile is found by name; nothing
+    wider than the screen. Then a key that may not list profiles: the guessed ids marked Not confirmed, and counted."""
+    out, ok = {}, True
+    browser = pw.chromium.launch()
+    for w in (390, 1280):
+        page = browser.new_page(viewport={"width": w, "height": 900})
+        errors = []
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        page.goto(f"{BASE}/#modelbrowser", wait_until="domcontentloaded")
+        page.wait_for_selector("#modelbrowser:not([hidden]) .mb-row", timeout=20000)
+        src = page.inner_text('#modelbrowser .mb-source[data-provider="bedrock"]')
+        left = [page.locator(f'#modelbrowser [data-testid="mb-left-out-{k}"]').count() for k in ("bedrock", "openrouter")]
+        page.select_option("#mb-region", "other")
+        page.wait_for_timeout(200)
+        n_other = page.locator("#modelbrowser .mb-row").count()
+        page.locator("#modelbrowser .mb-row").first.scroll_into_view_if_needed()
+        plain = page.locator("#modelbrowser .mb-row:not(:has(.mb-region))").count()
+        wide = page.evaluate("() => document.documentElement.scrollWidth - window.innerWidth")
+        page.screenshot(path=str(OUT / f"model-browser-regions-{w}.png"))
+        result["shots"].append(f"model-browser-regions-{w}.png")
+        page.select_option("#mb-region", "")
+        page.fill("#mb-search", "team-claude")
+        page.wait_for_timeout(200)
+        mine = page.locator("#modelbrowser .mb-row", has_text="Your profile").count()
+        page.locator("#modelbrowser .mb-row").first.scroll_into_view_if_needed()
+        page.screenshot(path=str(OUT / f"model-browser-your-profile-{w}.png"))
+        result["shots"].append(f"model-browser-your-profile-{w}.png")
+        good = ("2 more that only other regions offer" in src and "5 regions read, 2 not turned on for your account, 1 not answering" in src
+                and left == [1, 1] and n_other == 2 and plain == 0 and mine == 1 and wide <= 0 and not errors)
+        out[w] = {"source": src, "left_out": left, "other": n_other, "plain": plain, "your_profile": mine, "wider": wide,
+                  "errors": errors, "ok": good}
+        ok = ok and good
+        page.close()
+    DENIED["on"] = True
+    try:
+        page = browser.new_page(viewport={"width": 390, "height": 900})
+        page.goto(f"{BASE}/#modelbrowser", wait_until="domcontentloaded")
+        page.wait_for_selector('#modelbrowser [data-testid="mb-profiles-note"]', timeout=20000)
+        note = page.inner_text('#modelbrowser [data-testid="mb-profiles-note"]')
+        page.fill("#mb-search", "not confirmed")
+        page.wait_for_timeout(200)
+        n = page.locator("#modelbrowser .mb-row").count()
+        badged = page.locator("#modelbrowser .mb-row .mb-guessed").count()
+        page.locator("#modelbrowser .mb-row").first.scroll_into_view_if_needed()
+        wide = page.evaluate("() => document.documentElement.scrollWidth - window.innerWidth")
+        page.screenshot(path=str(OUT / "model-browser-not-confirmed-390.png"))
+        result["shots"].append("model-browser-not-confirmed-390.png")
+        good = (n == 2 and badged == 2 and "2 marked Not confirmed" in note and "application inference profiles are not listed" in note
+                and wide <= 0)
+        out["denied"] = {"note": note, "rows": n, "badged": badged, "wider": wide, "ok": good}
+        ok = ok and good
+    finally:
+        DENIED["on"] = False
+        browser.close()
+    result["every_model"] = out
+    result["every_model_ok"] = ok
 
 
 def main() -> int:
@@ -314,7 +402,8 @@ def main() -> int:
             result["errors"] += errors
             browser.close()
             menus(pw, result)
-        result["ok"] = (result.get("menus_ok") and result["rows"] >= 5 and result.get("narrow_ok") and result.get("filter_ok") and result.get("first_open_ok")
+            every_model(pw, result)
+        result["ok"] = (result.get("menus_ok") and result.get("every_model_ok") and result["rows"] >= 5 and result.get("narrow_ok") and result.get("filter_ok") and result.get("first_open_ok")
                         and result.get("no_helper_ok") and result.get("profiles_note_ok") and result.get("targets_ok")
                         and not result["errors"])
     except Exception as e:  # noqa: BLE001
