@@ -1374,7 +1374,12 @@ def ui_plan(ctx):
     ask(page, f"Plan this, then do it once I approve: create the file {target} containing exactly the word planned. "
               "Keep the plan to one or two lines and present it for my approval with ExitPlanMode.")
     card = page.locator("[data-testid=permission]:has([data-testid=plan-approve-edits])")
-    see(card.or_(page.get_by_test_id("turn-end"))).to_have_count(1, timeout=150000)
+    # in Plan, Haiku may look around first: a read-only command (ls) asks — allowed once (the plan card has no Allow once)
+    t0 = time.time()
+    while time.time() - t0 < 150 and not card.count() and not page.get_by_test_id("turn-end").count():
+        if page.get_by_test_id("perm-once").count():
+            page.get_by_test_id("perm-once").click()
+        page.wait_for_timeout(1000)
     if not card.count():
         csp_clean(page, rec)
         raise Skip("Haiku ended the turn without presenting a plan (no ExitPlanMode this time)")

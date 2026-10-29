@@ -3478,10 +3478,13 @@ def settings_providers(ctx):
 # {left, top, right, bottom, width}; null for a piece it does not have
 NARROW_ROWS = """(sec) => { const box = (e) => { if (!e || !e.getClientRects().length) return null; const r = e.getBoundingClientRect();
     return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, max: parseFloat(getComputedStyle(e).maxWidth) || 1e6 }; };
+  // the inline size its @container set-dep query sees (a setting in a column of a wide card: its content box)
+  const cw = (c) => { if (!c) return null; const s = getComputedStyle(c); return c.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight); };
   return [...document.querySelectorAll(sec + ' .set-row')].filter((r) => r.getClientRects().length).map((r) => {
     const a = r.querySelector(':scope > .set-actions');
     return [r.dataset.key || r.dataset.own, box(r), box(r.querySelector('.set-label')), a && a.children.length ? box(a) : null,
-            box(r.querySelector('.set-sum')), box(r.querySelector('.set-ws-info:not([hidden])')), box(r.querySelector('.set-prov-adds'))]; })
+            box(r.querySelector('.set-sum')), box(r.querySelector('.set-ws-info:not([hidden])')), box(r.querySelector('.set-prov-adds')),
+            cw(r.closest('.set-rows > .set-dep'))]; })
     .filter((x) => x[3]); }"""
 
 
@@ -3489,7 +3492,9 @@ NARROW_ROWS = """(sec) => { const box = (e) => { if (!e || !e.getClientRects().l
 def settings_narrow_cards(ctx):
     """Settings' cards on a phone and a tablet: each setting's control (a switch, Change, Add key, Set the gateway) under
     its name line, and its words the card's full width — not squeezed beside the control; on a desktop the control
-    stays beside them. Models & providers (the built-in SearXNG's info open) and Claude Code (its switches)."""
+    stays beside them, except in a column under 520 px (a wide card's tabs, two or three across: @container set-dep),
+    where it goes under the name as on a phone. Models & providers (the built-in SearXNG's info open) and Claude Code
+    (its switches)."""
     said = []
     for device, narrow in (("phone", True), ("tablet", True), ("desktop", False)):
         page, rec = ctx.page(f"settings-narrow-{device}", device=device)
@@ -3519,8 +3524,11 @@ def settings_narrow_cards(ctx):
                 shot(page, f"17c-settings-narrow-{device}-{sec}" + (f"-{g.replace(' ', '-')}" if g else ""))
         expect(len(rows) >= 8, f"{device}: only {len(rows)} rows with a control")
         bad = []
-        for key, row, label, act, summ, info, adds in rows:
-            if narrow:
+        cols = 0
+        for key, row, label, act, summ, info, adds, cw in rows:
+            stack = narrow or (cw is not None and cw < 520)
+            cols += not narrow and stack
+            if stack:
                 # under the name line, at the row's left; every piece of text as wide as the row (within 2 px)
                 if not (label and act["top"] >= label["bottom"] - 1 and abs(act["left"] - row["left"]) < 2):
                     bad.append(f"{key}: control {act} not under its name {label}")
@@ -3538,7 +3546,8 @@ def settings_narrow_cards(ctx):
         rec.save()
         expect(not probs, f"{device}: errors {probs[:6]}")
         said.append(f"{device}: {len(rows)} rows, the control {'under the name, the words full width' if narrow else 'beside them'}"
-                    f" (the built-in SearXNG's row {w:.0f} px)")
+                    + (f" ({cols} in a column under 520 px: under the name)" if cols else "")
+                    + f" (the built-in SearXNG's row {w:.0f} px)")
     return "; ".join(said)
 
 
