@@ -4120,9 +4120,16 @@ def export_to_files(ctx):
         expect(gitp["files"] > len(EXPORT_DEFAULT), f"with .git: {gitp}")
         # a path of another folder, a bad id and no project: refused
         expect(api("GET", "/api/projects/p_00000000/export?dry=1")["status"] == 404, "an unknown project")
-        # the page: Projects tab › the project's menu › Export to Files…
+        # the page: Projects tab › the project's menu › Export to Files… (opened again: the page reads its projects when
+        # it opens, and this one was made through the API since)
+        page.reload()
+        page.locator(".tab[data-tab=code][aria-current=page]").wait_for(timeout=20000)
+        f = code_frame(page)
+        f.wait_for_function("() => document.querySelector('meta[name=bn-csp-nonce]') !== null", timeout=30000)
+        f.evaluate(CLIENT_JS)   # (the reload took the in-page client along)
         f.get_by_test_id("side-sessions").click()
         row = f.locator(f"[data-testid=project][data-project='{pid}']")
+        see(row).to_be_visible(timeout=30000)
         row.get_by_test_id("project-menu").click()
         f.get_by_test_id("project-menu-export").click()
         dlg = f.get_by_test_id("export-dialog")
