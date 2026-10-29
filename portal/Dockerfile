@@ -47,6 +47,7 @@ COPY --from=repo catalo[g]/settings*.tsv catalo[g]/ai-tools.tsv catalo[g]/setup-
 COPY --from=repo README.m[d] /repo/
 COPY --from=repo doc[s]/*.md /repo/docs/
 COPY --from=repo .githu[b]/ISSUE_TEMPLATE/*.yml /repo/.github/ISSUE_TEMPLATE/
+COPY --from=repo li[b]/health.s[h] /repo/lib/
 ENV BN_REPO_DIR=/repo
 RUN python -m pytest -q tests
 

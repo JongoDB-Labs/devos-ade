@@ -323,7 +323,8 @@ def test_the_event_schema_contract_names_the_kinds_activity_shows_and_pins_the_s
     """docs/event-schema.md (G5): spec only; the shared JON-169 rules are pinned by hash, never reimplemented here."""
     import os
     import re
-    f = Path(os.environ.get("BN_REPO_DIR") or Path(__file__).resolve().parents[2]) / "docs" / "event-schema.md"
+    repo = Path(os.environ.get("BN_REPO_DIR") or Path(__file__).resolve().parents[2])
+    f = repo / "docs" / "event-schema.md"
     if not f.is_file():
         pytest.skip("the repository's docs are not here: portal/test.sh passes them to the test image")
     doc = f.read_text()
@@ -334,7 +335,7 @@ def test_the_event_schema_contract_names_the_kinds_activity_shows_and_pins_the_s
     assert hashes == ["fcfe40e7cf9553eef07157683e64ff479cdfeae2c23c0cf6d7036402d640aa20",
                       "5eac13df0b72ecb53b9cf506cccc6735736a195428037c3a33de7edf2d428836"]
     assert "companion/v0.24.2" in doc and "Redact(s, len(s)) != s" in doc
-    sh = (Path(__file__).resolve().parents[2] / "lib" / "health.sh").read_text()
+    sh = (repo / "lib" / "health.sh").read_text()
     listed = re.search(r'^HEALTH_SERVICES="([^"]+)"', sh, re.M).group(1).split()
     assert sorted(listed + ["other"]) == sorted(activity.SERVICES)
     assert "does **not** have its own redaction" in doc
