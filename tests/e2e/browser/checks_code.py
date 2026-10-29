@@ -4190,7 +4190,10 @@ def export_to_files(ctx):
         z2 = zipfile.ZipFile(io.BytesIO(Path(dl2.value.path()).read_bytes()))
         expect({n: z2.read(n).decode() for n in z2.namelist()} == want, "the browser's own download differs from the one in Files")
         see(top.get_by_test_id("export-saved")).to_be_visible()
-        probs = rec.problems(allow=LOCKED_OK + [r"401 GET .*/rustfs/admin/v3/.*", r"400 GET .*\?(retention|legal-hold)=$"])
+        # (its own 404s allowed: clearing a folder left by no earlier run, and the unknown project it asks for above)
+        probs = rec.problems(allow=LOCKED_OK + [r"401 GET .*/rustfs/admin/v3/.*", r"400 GET .*\?(retention|legal-hold)=$",
+                                                r"^404 DELETE .*/api/fs\?path=" + re.escape(EXPORT_DIR) + "$",
+                                                r"^404 GET .*/api/projects/p_00000000/export\?dry=1$"])
         probs += trec.problems(allow=LOCKED_OK)
         rec.save()
         trec.save()
