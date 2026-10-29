@@ -894,6 +894,8 @@ export interface GitHostView {
   claude: boolean;
   claudeSince: number | null;
   createdAt: number | null;
+  /** 'localgit': the built-in git server's host, made by ./stack (lib/localgit.sh) — there by itself, not one you connected */
+  builtin: 'localgit' | null;
 }
 /** A use of a Git host (Activity): an operation of yours, or Claude's own git getting a credential. */
 export interface GitEvent {

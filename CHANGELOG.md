@@ -17,7 +17,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   publish (a push creates a missing repository, private) and *Open a pull request* work as with GitHub — also with the
   sandbox's internet off or direct: an egress carve-out like LiteLLM's, a TLS listener on the terminal's gateway
   (`https://gateway:8093`) that forwards only git's smart-HTTP paths to Forgejo, over an internal network no other
-  service shares.
+  service shares. The walkthrough's *Connect a git host* step counts only the hosts you connect, not this one.
 - **The portal signs you in to the git server, and it can mirror to GitHub or GitLab (JON-810).** Opening the git server's web
   UI with your portal session signs you in as the owner through Forgejo's reverse-proxy authentication (Caddy sets a header with a
   secret random name after the portal's check, on that site only, so no other container can forge it; the sandbox's gateway
@@ -28,6 +28,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   and the Code page's Git hosts dialog show the last sync and any error (the repository's Settings in the web UI too). The
   git server has no way out to the internet until a mirror exists; while one does, a network of its own, limited to the
   mirrors' host names. What it does, the token handed to Forgejo and the force-update are said and confirmed first.
+
+### Fixed
+
+- **A project's name is no longer cut beside its folder in the Code page's Projects list.** The folder gives way first,
+  and at the list's usual width it is left to the row's tooltip (a wider list shows it again).
 
 ## [0.38.0] - 2026-10-28
 

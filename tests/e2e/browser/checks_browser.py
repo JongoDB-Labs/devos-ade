@@ -185,18 +185,22 @@ def home(ctx):
     page.click(".health-line")
     page.wait_for_selector("#services li")
     summary = page.evaluate("""() => fetch('/api/summary', {headers: {'X-Requested-With': 'bedrock-now'}}).then(r => r.json())""")
-    # 5, plus the speech-to-text container while Bedrock speech-to-text is on, and the built-in SearXNG while it is on (its
-    # state and health from ./stack's record: .state/status/services.json)
+    # 5, plus the speech-to-text container while Bedrock speech-to-text is on, the built-in SearXNG and the built-in git
+    # server (Forgejo) while each is on (their state and health from ./stack's record: .state/status/services.json)
     want_svc = len(summary["services"])
     sx_on = (ENV.get("WEBSEARCH_SEARXNG_BUILTIN") or "on").lower() not in ("off", "false", "no", "0")
-    expect(want_svc == 5 + (1 if summary["voice"]["on"] and summary["voice"]["provider"] == "bedrock" else 0) + sx_on,
-           f"/api/summary lists {want_svc} services")
+    lg_on = (ENV.get("LOCALGIT") or "on").lower() not in ("off", "false", "no", "0")
+    expect(want_svc == 5 + (1 if summary["voice"]["on"] and summary["voice"]["provider"] == "bedrock" else 0) + sx_on + lg_on,
+           f"/api/summary lists {want_svc} services (built-in SearXNG {sx_on}, git server {lg_on})")
     up = page.locator("#services li.up").count()
     total = page.locator("#services li").count()
     expect(total == want_svc and up == want_svc, f"services {up}/{total} up: {page.inner_text('#services')}")
-    if sx_on:
-        sx = page.inner_text("#services li:last-child")
-        expect("SearXNG" in sx and "web search (built-in)" in sx and "ready" in sx, f"the built-in SearXNG's row: {sx!r}")
+    for on, name, role in ((sx_on, "SearXNG", "web search (built-in)"), (lg_on, "Forgejo", "git server (built-in)")):
+        if on:
+            row = page.locator("#services li", has_text=name)
+            expect(row.count() == 1, f"{row.count()} rows for {name}: {page.inner_text('#services')!r}")
+            txt = row.inner_text()
+            expect(role in txt and "ready" in txt, f"the built-in {name}'s row: {txt!r}")
     # (each key named for where its spend comes from: devos-claude in your terminal, Chat, setup, the Code page and
     # the browser terminal)
     labels = ("devos-claude (your terminal)", "Open WebUI", "Setup") + (("Code page & browser terminal",) if ENV.get("LITELLM_KEY_TERMINAL") else ())
@@ -2929,7 +2933,8 @@ def walkthrough_git_hosts(ctx):
     dlg.wait_for(timeout=30000)
     expect("git=" not in f.url, f"the deep link stayed in the frame's address: {f.url}")
     # the frame reported its count (a number only): no host is connected in this throwaway (the git server's checks,
-    # which add and remove some, run later), and the step says so
+    # which add and remove some, run later; the built-in git server's own host is not one you connected), and the step
+    # says so
     page.wait_for_function("() => window.bnCode && window.bnCode.gitHosts() !== null", timeout=20000)
     n = page.evaluate("() => window.bnCode.gitHosts()")
     expect(n == 0, f"the Code page reports {n!r} Git hosts")

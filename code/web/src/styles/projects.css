@@ -12,7 +12,12 @@
 .proj-name { -webkit-tap-highlight-color: transparent; }
 .proj-name .ic { flex: none; color: var(--muted); }
 .proj-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.proj-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11.5px; }
+/* (a project's name keeps its words before its folder: the folder gives way first, on one line, and goes when the row is
+   narrow, as at the Projects list's usual width — the row's tooltip says where it is; both cut, "Export …" beside
+   "e2e-expo…" said neither) */
+.proj-head { container: projhead / inline-size; }
+.proj-path { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11.5px; }
+@container projhead (max-width: 289.98px) { .proj-path { display: none; } }
 .proj-tag { flex: none; display: inline-grid; place-items: center; width: 18px; color: var(--muted); }
 .proj-rename { flex: 1; min-width: 0; }
 .proj-rename input { width: 100%; height: 26px; padding: 0 6px; border: 1px solid var(--accent); border-radius: 6px; background: var(--surface); }

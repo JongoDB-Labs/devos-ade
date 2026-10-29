@@ -1779,12 +1779,19 @@ def _gitsrv_https_host(page, token, ca, https_url):
     page.get_by_test_id("git-host-port").fill("8443")
     page.get_by_test_id("git-host-ca").fill(ca)
     page.get_by_test_id("git-host-save").click()
-    tok = dlg.get_by_test_id("git-host").filter(has_text="HTTPS access token")
+    tok = dlg.locator("[data-testid=git-host][data-host=gitsrv]").filter(has_text="HTTPS access token")
     see(tok).to_contain_text("A token is set", timeout=30000)
     tok.get_by_test_id("git-host-test-url").fill(https_url)
     tok.get_by_test_id("git-host-test").click()
     see(tok.get_by_test_id("git-host-test-result")).to_contain_text("It works", timeout=90000)
     return dlg
+
+
+def _drop_hosts(c):
+    """Every Git host but the built-in git server's (./stack makes that one: it is there by itself, and stays)."""
+    for h in (c.api("GET", "/api/git/hosts")["json"] or {}).get("hosts", []):
+        if not h.get("builtin"):
+            c.api("DELETE", f"/api/git/hosts/{h['id']}")
 
 
 def _drop_projects(c, roots):
@@ -1830,7 +1837,7 @@ def ui_git_remotes(ctx):
     page.get_by_test_id("git-host-form").locator("details summary").click()
     page.get_by_test_id("git-host-port").fill("2222")
     page.get_by_test_id("git-host-save").click()
-    key = dlg.get_by_test_id("git-host").filter(has_text="SSH key")
+    key = dlg.locator("[data-testid=git-host][data-host=gitsrv]").filter(has_text="SSH key")
     see(key.get_by_test_id("git-host-pubkey")).to_have_value(re.compile(r"^ssh-ed25519 AAAA"), timeout=30000)
     key.get_by_test_id("git-host-test-url").fill(ssh_url)
     key.get_by_test_id("git-host-test").click()
@@ -1938,8 +1945,7 @@ def ui_git_remotes(ctx):
     # teardown, not part of the flow — so it is not counted.
     csp_clean(page, rec, [r"^400 POST .*/api/git/", r"console.error Failed to load resource.*400"])
     # clean up: the hosts, the clones and their project records
-    for h in c.api("GET", "/api/git/hosts")["json"]["hosts"]:
-        c.api("DELETE", f"/api/git/hosts/{h['id']}")
+    _drop_hosts(c)
     page.get_by_test_id("git-repo").select_option("")
     _drop_projects(c, (a, b))
     for d in (a, b):
@@ -1972,13 +1978,12 @@ def claude_git_access(ctx):
     _drop_projects(c, (folder,))
     if folder in {e["name"] for e in (c.api("GET", "/api/fs?path=.")["json"] or {}).get("entries", [])}:
         c.api("DELETE", f"/api/fs?path={folder}")
-    for h in c.api("GET", "/api/git/hosts")["json"]["hosts"]:
-        c.api("DELETE", f"/api/git/hosts/{h['id']}")
+    _drop_hosts(c)
     try:
         page.keyboard.press("Control+Shift+G")
         see(page.get_by_test_id("git-panel")).to_be_visible(timeout=30000)
         dlg = _gitsrv_https_host(page, token, ca, https_url)
-        tok = dlg.get_by_test_id("git-host").filter(has_text="HTTPS access token")
+        tok = dlg.locator("[data-testid=git-host][data-host=gitsrv]").filter(has_text="HTTPS access token")
         see(tok.get_by_test_id("git-host-claude")).to_have_attribute("aria-checked", "false")
         tok.get_by_test_id("git-host-claude").click()
         see(page.get_by_test_id("git-claude-gh-none")).to_contain_text("gh in the sandbox gets no login for this host from here", timeout=10000)
@@ -2026,8 +2031,7 @@ def claude_git_access(ctx):
                 f"through the broker (Activity: {used[0]['target']}); gh 2.102.0 there, with its one line for a host not GitHub's own; "
                 f"a Haiku session asked which Git hosts it may use: {answer!r}; the token in no output or event")
     finally:
-        for h in c.api("GET", "/api/git/hosts")["json"]["hosts"]:
-            c.api("DELETE", f"/api/git/hosts/{h['id']}")
+        _drop_hosts(c)
         _drop_projects(c, (folder,))
         c.api("DELETE", f"/api/fs?path={folder}")
 
@@ -2066,8 +2070,7 @@ def ui_git_oauth(ctx):
     page, rec = ui_page(ctx, "code-ui-git-oauth")
     c = Code.on(page, rec, goto=False)
     d = "e2e-oauth"
-    for h in c.api("GET", "/api/git/hosts")["json"]["hosts"]:
-        c.api("DELETE", f"/api/git/hosts/{h['id']}")
+    _drop_hosts(c)
     _drop_projects(c, (d,))
     if d in {e["name"] for e in (c.api("GET", "/api/fs?path=.")["json"] or {}).get("entries", [])}:
         c.api("DELETE", f"/api/fs?path={d}")
@@ -2158,7 +2161,7 @@ def ui_git_oauth(ctx):
     events = c.api("GET", "/api/git/hosts")["json"]["events"]
     expect(any(e["text"] == "its sign-in renewed" for e in events), f"events: {[e['text'] for e in events][:8]}")
     # clean up: the host (GitLab's sign-in revoked there too), the clone
-    r = c.api("DELETE", f"/api/git/hosts/{c.api('GET', '/api/git/hosts')['json']['hosts'][0]['id']}")
+    r = c.api("DELETE", f"/api/git/hosts/{next(h['id'] for h in c.api('GET', '/api/git/hosts')['json']['hosts'] if not h.get('builtin'))}")
     expect(r["json"]["revoked"] is True, f"Remove: {r['json']}")
     expect(git_admin("/_e2e/log")["revokes"] == log3["revokes"] + 1, "no revocation sent")
     page.get_by_test_id("git-repo").select_option("")
@@ -2382,8 +2385,7 @@ def ui_projects(ctx):
                 page.keyboard.press("Enter")
             if sid:
                 c.api("DELETE", f"/api/sessions/{sid}")
-            for h in (c.api("GET", "/api/git/hosts")["json"] or {}).get("hosts", []):
-                c.api("DELETE", f"/api/git/hosts/{h['id']}")
+            _drop_hosts(c)
             _drop_projects(c, (PROJ_NEW, PROJ_CLONE))
             for d in (PROJ_NEW, PROJ_CLONE):
                 c.api("DELETE", f"/api/fs?path={d}")

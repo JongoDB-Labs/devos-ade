@@ -18,6 +18,10 @@ test('a host: only what the page may show (a token or private key sent by mistak
   assert.equal(normGitHost({ ...host(), id: '../x' }), null);
   assert.equal(normGitHost({ ...host(), publicKey: 'ssh-rsa AAAA evil' })?.publicKey, null);
   assert.equal(normGitHost({ ...host(), kind: '<script>' })?.kind, 'other');
+  // the built-in git server's host is marked (the walkthrough does not count it as one you connected); nothing else is
+  assert.equal(h.builtin, null);
+  assert.equal(normGitHost({ ...host(), builtin: 'localgit' })?.builtin, 'localgit');
+  assert.equal(normGitHost({ ...host(), builtin: 'github' })?.builtin, null);
   assert.equal(normGitEvent({ id: 'abcdef012345', at: 5, who: 'root', action: 'push', host: 'h', target: 't' })?.who, 'you');
   assert.equal(normGitEvent({ id: 'x', at: 5 }), null);
 });

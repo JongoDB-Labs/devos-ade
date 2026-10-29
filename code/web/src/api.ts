@@ -1447,6 +1447,7 @@ export function normGitHost(v: unknown): GitHostView | null {
     oauth: authOf(o.auth) === 'oauth' ? normOAuth(o.oauth) : null, publicKey: pub, fingerprint: o.fingerprint ? label(o.fingerprint, 80) : null, keySetAt: msTime(o.keySetAt),
     knownHosts: arr(o.knownHosts, 32).map(obj).filter((x): x is Obj => x !== null).map((x) => ({ host: label(x.host, 260), type: label(x.type, 60), fingerprint: label(x.fingerprint, 80) })),
     builtinHostKeys: o.builtinHostKeys === true, ca: o.ca === true, claude: o.claude === true, claudeSince: msTime(o.claudeSince), createdAt: msTime(o.createdAt),
+    builtin: o.builtin === 'localgit' ? 'localgit' : null,
   };
 }
 export function normGitEvent(v: unknown): GitEvent | null {

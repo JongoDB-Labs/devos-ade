@@ -1005,10 +1005,10 @@ function announce(): void {
   const origin = s.server?.portalOrigin;
   if (origin && window.parent !== window) {
     try {
-      // (hosts: how many Git hosts are connected — a number only, for the walkthrough's "Connect a git host" step;
-      // null until this page has asked)
+      // (hosts: how many Git hosts you connected — a number only, for the walkthrough's "Connect a git host" step; the
+      // built-in git server's, there by itself, is not one; null until this page has asked)
       window.parent.postMessage({ type: 'bn-code-status', pending, busy, bypass, waiting: waitingSessions(s.views, s.pendingTotal), sessions: portalSessions(s), git: portalGitEvents(s),
-        hosts: s.git.hosts ? s.git.hosts.hosts.length : null }, new URL(origin).origin);
+        hosts: s.git.hosts ? s.git.hosts.hosts.filter((h) => !h.builtin).length : null }, new URL(origin).origin);
     } catch {
       /* not framed by the portal */
     }
