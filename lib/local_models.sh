@@ -162,13 +162,14 @@ local_mlx_uninstall() {
 }
 # the repo check before a download: config.json's model_file/auto_map and any .py file refuse it. Prints ONE line: "sha <40 hex>"
 # (the commit that was checked: the download is pinned to it, so a push after the check is never fetched) or "no <why>".
-_local_mlx_vet() {  # _local_mlx_vet REPO  (HF_TOKEN in the environment)
+# MANIFEST gets that commit's files (path, size, SHA-256 of a large file, git blob id): lib/hf_fetch.py downloads and checks them.
+_local_mlx_vet() {  # _local_mlx_vet REPO MANIFEST  (HF_TOKEN in the environment)
   local d; d="$(local_mlx_dir)"
   HF_HOME="$d/hf" HF_HUB_DISABLE_TELEMETRY=1 "$d/venv/bin/python" -I -c '
 import json, sys
 from huggingface_hub import HfApi, hf_hub_download
 repo = sys.argv[1]
-info = HfApi().model_info(repo, files_metadata=False)
+info = HfApi().model_info(repo, files_metadata=True)
 sha = info.sha
 files = [s.rfilename for s in info.siblings]
 py = [f for f in files if f.endswith(".py")]
@@ -177,8 +178,11 @@ if "config.json" not in files: print("no it has no config.json: not an MLX model
 cfg = json.load(open(hf_hub_download(repo, "config.json", revision=sha)))
 bad = [k for k in ("model_file", "auto_map") if k in cfg]
 if bad: print("no its config.json asks to run custom code (%s)" % ", ".join(bad)); sys.exit(0)
+with open(sys.argv[2], "w") as m:
+    for s in info.siblings:
+        m.write("%s\t%s\t%s\t%s\n" % (s.rfilename, s.size, (s.lfs or {}).get("sha256") or "", s.blob_id or ""))
 print("sha " + sha)
-' "$1" 2>&1 | tail -n 1 | cut -c1-300
+' "$1" "$2" 2>&1 | tail -n 1 | cut -c1-300
 }
 # _local_mlx_recheck REPO SHA -> why the DOWNLOADED snapshot may not be used (nothing: it is fine). The same config.json
 # rule, on the files on disk, so what is served is what was checked, whatever the Hub answered at download time.
@@ -201,14 +205,15 @@ if bad: print("its config.json asks to run custom code (%s)" % ", ".join(bad))
 }
 # _local_pull_mlx REPO BYTES TOOLS CTX PM LIC — install (once), vet, download, serve, register
 _local_pull_mlx() {
-  local repo="$1" bytes="$2" tools="$3" ctx="$4" pm="$5" lic="$6" quant=mlx d logf pid why done_b rc=0 id sha=''
+  local repo="$1" bytes="$2" tools="$3" ctx="$4" pm="$5" lic="$6" quant=mlx d logf pid why done_b=0 rc=0 id sha='' man stop
   d="$(local_mlx_dir)"
   if [ ! -x "$d/venv/bin/mlx_lm.server" ]; then
     _local_job pulling "$repo" "$quant" 0 "$bytes" "Setting up MLX (one time, about a minute): mlx-lm into this stack's own Python environment"
     local_mlx_install || { _local_job failed "$repo" "$quant" 0 "$bytes" "Could not set up MLX (uv pip install of the locked mlx-lm failed: offline, or no Python 3.12?)."; die "mlx-lm setup failed"; }
   fi
   _local_job pulling "$repo" "$quant" 0 "$bytes" "Checking $repo is safe to run (no custom code)"
-  why="$(HF_TOKEN="$(get_env HF_TOKEN)" _local_mlx_vet "$repo")"
+  man="$(local_dir)/manifest.tsv"; : > "$man"; chmod 600 "$man"
+  why="$(HF_TOKEN="$(get_env HF_TOKEN)" _local_mlx_vet "$repo" "$man")"
   case "$why" in "sha "*) sha="${why#sha }"; why='' ;; "no "*) why="${why#no }" ;; *) why="${why:-the check gave no answer}" ;; esac
   [ -n "$why" ] || [[ $sha =~ ^[0-9a-f]{40}$ ]] || why="the check did not give a revision to download"
   if [ -n "$why" ]; then
@@ -216,18 +221,28 @@ _local_pull_mlx() {
     _local_job failed "$repo" "$quant" 0 "$bytes" "Not downloaded: $why. DevOS ADE never runs a model's own code."
     die "refused: $why"
   fi
+  stop="$(_local_stop_asked)"
+  if [ -n "$stop" ]; then _local_stopped "$stop" mlx "$repo" "$quant" 0 "$bytes"; return 0; fi
   logf="$(local_dir)/pull.log"; : > "$logf"; chmod 600 "$logf"
-  ( HF_HOME="$d/hf" HF_HUB_DISABLE_TELEMETRY=1 HF_TOKEN="$(get_env HF_TOKEN)" "$d/venv/bin/hf" download "$repo" --revision "$sha" --exclude '*.py' ) </dev/null > "$logf" 2>&1 &
-  pid=$!
+  # lib/hf_fetch.py, not `hf download` (which deletes a file's unfinished part when it stops): each file downloads into a
+  # part of its own that a stopped download continues from, and is checked against the hash the Hub gives for it
+  ( export HF_TOKEN; HF_TOKEN="$(get_env HF_TOKEN)"; exec "$d/venv/bin/python" -I "$STACK_DIR/lib/hf_fetch.py" "$repo" "$sha" "$(local_mlx_hub)" "$man" ) </dev/null > "$logf" 2>&1 &
+  pid=$!; printf '%s\n' "$pid" > "$(local_dl_pid_file)"
+  _local_speed_reset
   while kill -0 "$pid" 2>/dev/null; do
     done_b="$({ du -sk "$(local_mlx_repo_dir "$repo")" 2>/dev/null || true; } | awk '{ print $1 * 1024 }')"
     case "$done_b" in '' | *[!0-9]*) done_b=0 ;; esac
-    _local_job pulling "$repo" "$quant" "$done_b" "$bytes" "Downloading $repo"
+    _local_speed "$done_b" "$bytes"
+    _local_job pulling "$repo" "$quant" "$done_b" "$bytes" "$(_local_dl_message "$repo")" "$_LS_RATE" "$_LS_ETA" "$_LS_STALLED"
     sleep "${LOCAL_POLL_S:-1}"
   done
   wait "$pid" || rc=$?
+  rm -f "$(local_dl_pid_file)"
+  stop="$(_local_stop_asked)"
+  if [ "$stop" = cancel ] || { [ "$stop" = pause ] && [ "$rc" -ne 0 ]; }; then _local_stopped "$stop" mlx "$repo" "$quant" "$done_b" "$bytes"; return 0; fi
+  rm -f "$(local_stop_file)"
   if [ "$rc" -ne 0 ]; then
-    _local_job failed "$repo" "$quant" 0 "$bytes" "The download failed ($(tail -n 2 "$logf" | LC_ALL=C tr -cd ' -~\n' | tr '\n' ' ' | cut -c1-200)). A gated model needs a Hugging Face token (Settings › Models & providers) and its license accepted on huggingface.co."
+    _local_job failed "$repo" "$quant" "$done_b" "$bytes" "The download stopped ($(tail -n 2 "$logf" | LC_ALL=C tr -cd ' -~\n' | tr '\n' ' ' | cut -c1-200)). What arrived is kept: Resume continues from it, Cancel deletes it. A gated model needs a Hugging Face token (Settings › Models & providers) and its license accepted on huggingface.co."
     die "the download failed"
   fi
   why="$(_local_mlx_recheck "$repo" "$sha")"
@@ -843,10 +858,13 @@ local_models_tick() {
 }
 
 # --- the job ---
-_local_job() { # _local_job STATE REPO QUANT DONE TOTAL MESSAGE — job.json (and the portal's file)
+# _local_job STATE REPO QUANT DONE TOTAL MESSAGE [RATE ETA STALLED] — job.json (and the portal's file). STATE: pulling,
+# registering, removing, done, failed, paused or cancelled; RATE bytes a second, ETA seconds left (-1: not known), STALLED
+# seconds since anything arrived
+_local_job() {
   local m; m="$(_local_q "$6" 300)"
-  printf '{"state":"%s","repo":%s,"quant":%s,"done_bytes":%s,"total_bytes":%s,"message":%s,"at":%s}\n' \
-    "$1" "$(_local_q "$2" 200)" "$(_local_q "$3" 64)" "${4:-0}" "${5:-0}" "$m" "$(date +%s)" > "$(local_job_file).tmp" 2>/dev/null &&
+  printf '{"state":"%s","repo":%s,"quant":%s,"done_bytes":%s,"total_bytes":%s,"rate":%s,"eta":%s,"stalled":%s,"message":%s,"at":%s}\n' \
+    "$1" "$(_local_q "$2" 200)" "$(_local_q "$3" 64)" "${4:-0}" "${5:-0}" "${7:-0}" "${8:--1}" "${9:-0}" "$m" "$(date +%s)" > "$(local_job_file).tmp" 2>/dev/null &&
     mv -f "$(local_job_file).tmp" "$(local_job_file)" 2>/dev/null || true
   local_status_write "$(cat "$(local_job_file)" 2>/dev/null)" 2>/dev/null || true
 }
@@ -855,6 +873,105 @@ local_job_running() {
   local pid; pid="$(cat "$(local_dir)/job.pid" 2>/dev/null || true)"
   case "$pid" in '' | *[!0-9]*) return 1 ;; esac
   kill -0 "$pid" 2>/dev/null && grep -qE '"state":"(pulling|removing|registering)"' "$(local_job_file)" 2>/dev/null
+}
+
+local_stop_file() { printf '%s/stop\n' "$(local_dir)"; }
+local_dl_pid_file() { printf '%s/dl.pid\n' "$(local_dir)"; }
+_local_json_num() { printf '%s' "$1" | sed -n "s/.*\"$2\":\(-\{0,1\}[0-9][0-9]*\).*/\\1/p" | head -n 1; }
+_local_size() { awk -v b="${1:-0}" 'BEGIN { if (b >= 10737418240) printf "%.0f GB", b / 1073741824; else if (b >= 1073741824) printf "%.1f GB", b / 1073741824; else printf "%d MB", b / 1048576 }'; }   # (as the page rounds)
+
+# a download's speed and time left: bytes a second over about the last ten seconds, and the seconds since it last grew.
+# _local_speed DONE TOTAL sets _LS_RATE, _LS_ETA (-1: not known) and _LS_STALLED; _local_speed_reset before each download
+_local_speed_reset() { _LS_T=(); _LS_B=(); _LS_LAST=-1; _LS_GREW="$(date +%s)"; _LS_RATE=0; _LS_ETA=-1; _LS_STALLED=0; }
+_local_speed() {
+  local now; now="$(date +%s)"
+  [ "$1" -le "$_LS_LAST" ] || { _LS_LAST="$1"; _LS_GREW="$now"; }
+  _LS_T+=("$now"); _LS_B+=("$1")
+  while [ "${#_LS_T[@]}" -gt 2 ] && [ $((now - _LS_T[0])) -gt 10 ]; do _LS_T=("${_LS_T[@]:1}"); _LS_B=("${_LS_B[@]:1}"); done
+  _LS_RATE=0; [ $((now - _LS_T[0])) -le 0 ] || _LS_RATE=$(( ($1 - _LS_B[0]) / (now - _LS_T[0]) ))
+  [ "$_LS_RATE" -ge 0 ] || _LS_RATE=0
+  _LS_ETA=-1; [ "$_LS_RATE" -le 0 ] || [ "${2:-0}" -le "$1" ] || _LS_ETA=$(( ($2 - $1) / _LS_RATE ))
+  _LS_STALLED=$((now - _LS_GREW))
+}
+# _local_dl_message NAME -> the progress line; after two minutes with nothing new (LOCAL_STALL_S), what is going on and what to do
+_local_dl_message() {
+  if [ "$_LS_STALLED" -ge "${LOCAL_STALL_S:-120}" ]; then
+    printf 'Nothing has arrived for %s: Hugging Face or the connection is slow, and it keeps trying. Pause, then Resume, starts the connections again.' \
+      "$([ "$_LS_STALLED" -ge 120 ] && echo "$((_LS_STALLED / 60)) minutes" || echo "$_LS_STALLED seconds")"
+  else printf 'Downloading %s' "$1"; fi
+}
+
+# --- Pause, Resume and Cancel ---
+# ./stack local-models pause|cancel writes the stop file and stops the downloader (dl.pid); the download's own process then
+# writes paused or cancelled (_local_stopped). _local_stop_asked -> pause or cancel when one was asked (nothing otherwise).
+_local_stop_asked() { local s; s="$(cat "$(local_stop_file)" 2>/dev/null || true)"; case "$s" in pause | cancel) printf '%s\n' "$s" ;; esac; }
+# _local_kill_tree PID SIGNAL — PID's children first (a runtime's client under its subshell), then PID
+_local_kill_tree() {
+  case "$1" in '' | *[!0-9]*) return 0 ;; esac
+  pkill "-$2" -P "$1" 2>/dev/null || true; kill "-$2" "$1" 2>/dev/null || true
+}
+# _local_discard RUNTIME REPO — an unfinished MLX download's files deleted: never a model this stack has whole (that is
+# Remove's). Docker Model Runner and Ollama keep their own unfinished parts.
+_local_discard() {
+  [ "$1" = mlx ] && valid_hf_repo "$2" || return 0
+  [ -z "$(local_registry_rows | awk -F'\t' -v r="$2" '$1 == "mlx" && tolower($3) == tolower(r)')" ] || return 0
+  local d; d="$(local_mlx_repo_dir "$2")"
+  rm -rf -- "$d"
+}
+# _local_stopped pause|cancel RUNTIME REPO QUANT DONE TOTAL — the download stopped as asked. Paused keeps what arrived (Resume,
+# or the same download again, continues from it); Cancelled deletes it.
+_local_stopped() {
+  local op="$1" rt="$2" repo="$3" quant="$4" done_b="${5:-0}" total="${6:-0}"
+  rm -f "$(local_stop_file)" "$(local_dl_pid_file)"
+  if [ "$op" = pause ]; then
+    _local_job paused "$repo" "$quant" "$done_b" "$total" "Paused at $(_local_size "$done_b")$([ "$total" -gt 0 ] 2>/dev/null && echo " of $(_local_size "$total")"). Resume continues from there."
+  else
+    _local_discard "$rt" "$repo"
+    _local_job cancelled "$repo" "$quant" 0 "$total" "Cancelled$([ "$rt" = mlx ] && echo ": what had arrived was deleted")."
+  fi
+  rm -f "$(local_dir)/job.pid"
+}
+# local_stop pause|cancel — the running download stopped: pause keeps what arrived, cancel deletes it. Cancel also deletes a
+# paused or failed download's part. Waits (seconds) until the download's process says so; one that does not is stopped here.
+local_stop() {
+  local op="${1:-}" j st repo quant n=0
+  case "$op" in pause | cancel) ;; *) die "usage: ./stack local-models pause | cancel" ;; esac
+  j="$(cat "$(local_job_file)" 2>/dev/null || true)"; st="$(_local_json_str "$j" state)"
+  repo="$(_local_json_str "$j" repo)"; quant="$(_local_json_str "$j" quant)"
+  if local_job_running; then
+    [ "$st" = pulling ] || die "it is ${st}, which takes seconds and is not stopped halfway"
+    printf '%s\n' "$op" > "$(local_stop_file)"
+    _local_kill_tree "$(cat "$(local_dl_pid_file)" 2>/dev/null || true)" TERM
+    while local_job_running && [ "$n" -lt "${LOCAL_STOP_WAIT:-40}" ]; do sleep 0.5; n=$((n + 1)); done
+    if local_job_running; then
+      _local_kill_tree "$(cat "$(local_dir)/job.pid" 2>/dev/null || true)" TERM
+      _local_kill_tree "$(cat "$(local_dl_pid_file)" 2>/dev/null || true)" KILL
+      _local_stopped "$op" "$([ "$quant" = mlx ] && echo mlx || echo other)" "$repo" "$quant" "$(_local_json_num "$j" done_bytes)" "$(_local_json_num "$j" total_bytes)"
+    fi
+    log "$([ "$op" = pause ] && echo Paused || echo Cancelled): $repo"
+  elif [ "$op" = cancel ] && [ -n "$repo" ] && { [ "$st" = paused ] || [ "$st" = failed ]; }; then
+    _local_stopped cancel "$([ "$quant" = mlx ] && echo mlx || echo other)" "$repo" "$quant" 0 "$(_local_json_num "$j" total_bytes)"
+    log "Cancelled: $repo"
+  else
+    log "No download is running"
+  fi
+}
+# local_resume — the paused (or stopped) download again, with what it was started with: it continues from what arrived
+local_resume() {
+  local st a=(); st="$(_local_json_str "$(cat "$(local_job_file)" 2>/dev/null || true)" state)"
+  case "$st" in paused | failed) ;; *) die "no paused download (./stack local-models status)" ;; esac
+  read -r -a a < "$(local_dir)/job.args" 2>/dev/null && [ "${#a[@]}" -ge 2 ] || die "what it was started with is gone: download it again from Settings › Local models"
+  local_pull "${a[@]}"
+}
+# _local_job_line -> the download, for ./stack local-models status (nothing when there is none)
+_local_job_line() {
+  local j st r e; j="$(cat "$(local_job_file)" 2>/dev/null || true)"; st="$(_local_json_str "$j" state)"
+  case "$st" in '' | idle) return 0 ;; esac
+  r="$(_local_json_num "$j" rate)"; e="$(_local_json_num "$j" eta)"
+  printf 'Download:   %s %s:%s, %s of %s%s%s\n            %s\n' "$st" "$(_local_json_str "$j" repo)" "$(_local_json_str "$j" quant)" \
+    "$(_local_size "$(_local_json_num "$j" done_bytes)")" "$(_local_size "$(_local_json_num "$j" total_bytes)")" \
+    "$([ "$st" = pulling ] && [ "${r:-0}" -gt 0 ] && echo ", $(_local_size "$r")/s")" "$([ "$st" = pulling ] && [ "${e:--1}" -ge 0 ] && echo ", $((e / 60)) min left")" \
+    "$(_local_json_str "$j" message)"
 }
 
 # _local_progress_bytes FILE -> the bytes a runtime's pull log says are done: the last "<n> <unit>" figure (a "x / y" pair's
@@ -868,7 +985,7 @@ _local_progress_bytes() {
 
 # local_pull REPO QUANT [--bytes N] [--tools yes|no|unknown] [--context N] [--params-m N] [--license L]
 local_pull() {
-  local repo="${1:-}" quant="${2:-}" bytes=0 tools=unknown ctx=- pm=- lic=- ref rt id rc=0 logf pid done_b val cur
+  local repo="${1:-}" quant="${2:-}" bytes=0 tools=unknown ctx=- pm=- lic=- ref rt id rc=0 logf pid done_b=0 val cur stop
   shift 2 2>/dev/null || true
   while [ $# -gt 0 ]; do
     val="${2:-}"
@@ -886,7 +1003,13 @@ local_pull() {
   valid_hf_quant "$quant" || die "not a quantization name: $quant"
   mkdir -p "$(local_dir)" && chmod 700 "$(local_dir)"
   ! local_job_running || die "another download is running (./stack local-models status)"
-  printf '%s\n' "$$" > "$(local_dir)/job.pid"
+  val="$(cat "$(local_job_file)" 2>/dev/null || true)"
+  if [ "$(_local_json_str "$val" state)" = paused ] && [ "$(printf '%s:%s' "$(_local_json_str "$val" repo)" "$(_local_json_str "$val" quant)" | tr 'A-Z' 'a-z')" != "$(printf '%s:%s' "$repo" "$quant" | tr 'A-Z' 'a-z')" ]; then
+    die "$(_local_json_str "$val" repo) is paused: resume it (./stack local-models resume) or cancel it (./stack local-models cancel) first"
+  fi
+  printf '%s\n' "${BASHPID:-$$}" > "$(local_dir)/job.pid"   # (this process, also in a subshell: a forced stop kills only it)
+  rm -f "$(local_stop_file)" "$(local_dl_pid_file)"
+  printf '%s %s --bytes %s --tools %s --context %s --params-m %s --license %s\n' "$repo" "$quant" "$bytes" "$tools" "$ctx" "$pm" "$lic" > "$(local_dir)/job.args"
   ref="hf.co/$repo:$quant"
   _LOCAL_FAST=0; _LOCAL_D=''
   rt="$(local_runtime)"
@@ -907,7 +1030,8 @@ local_pull() {
   else
     ( curl -sS -N -X POST "$(_local_ollama_url)/api/pull" -H 'Content-Type: application/json' -d "{\"model\":\"$ref\",\"stream\":true}" ) </dev/null > "$logf" 2>&1 &
   fi
-  pid=$!
+  pid=$!; printf '%s\n' "$pid" > "$(local_dl_pid_file)"
+  _local_speed_reset
   while kill -0 "$pid" 2>/dev/null; do
     if [ "$rt" = dmr ]; then done_b="$(_local_progress_bytes "$logf")"
     else
@@ -916,11 +1040,16 @@ local_pull() {
       done_b="${cur#* }"; val="${cur%% *}"; [ "${val:-0}" -le "$bytes" ] 2>/dev/null || bytes="$val"
     fi
     case "$done_b" in '' | *[!0-9]*) done_b=0 ;; esac
-    _local_job pulling "$repo" "$quant" "$done_b" "$bytes" "Downloading $ref"
+    _local_speed "$done_b" "$bytes"
+    _local_job pulling "$repo" "$quant" "$done_b" "$bytes" "$(_local_dl_message "$ref")" "$_LS_RATE" "$_LS_ETA" "$_LS_STALLED"
     sleep "${LOCAL_POLL_S:-1}"
   done
   wait "$pid" || rc=$?
+  rm -f "$(local_dl_pid_file)"
   _LOCAL_FAST=0
+  stop="$(_local_stop_asked)"
+  if [ "$stop" = cancel ] || { [ "$stop" = pause ] && [ "$rc" -ne 0 ]; }; then _local_stopped "$stop" "$rt" "$repo" "$quant" "$done_b" "$bytes"; return 0; fi
+  rm -f "$(local_stop_file)"
   if [ "$rt" = ollama ] && grep -q '"error"' "$logf" 2>/dev/null; then rc=1; fi
   if [ "$rc" -ne 0 ]; then
     cur="$(tr '\r' '\n' < "$logf" | tail -n 3 | LC_ALL=C tr -cd ' -~\n' | tr '\n' ' ' | cut -c1-200)"
@@ -955,7 +1084,7 @@ local_rm() {
   [ -n "$row" ] || die "$repo:$quant is not a model this stack downloaded"
   IFS=$'\t' read -r rt id _ <<< "$row"; e="$rt:$id"
   ! local_job_running || die "a download is running: wait for it"
-  mkdir -p "$(local_dir)"; printf '%s\n' "$$" > "$(local_dir)/job.pid"
+  mkdir -p "$(local_dir)"; printf '%s\n' "${BASHPID:-$$}" > "$(local_dir)/job.pid"
   _local_job removing "$repo" "$quant" 0 0 "Removing it from the model gateway"
   local_register_apply remove "$e" || { _local_job failed "$repo" "$quant" 0 0 "The model gateway did not let it go: ./stack local-models status"; die "unregister failed"; }
   _local_job removing "$repo" "$quant" 0 0 "Deleting the files"
@@ -1003,7 +1132,7 @@ cmd_local_models() {
     status) local_status_write; printf 'Runtime:    %s\n' "$(local_runtime)"; [ "$(local_runtime)" != none ] || printf '            %s\n' "$(local_how_text)"
             printf 'This computer: %s bytes of memory, GPU: %s\n' "$(local_memory_bytes)" "$(local_gpu)"
             printf 'Downloaded:\n'; local_registry_rows | awk -F'\t' '{ printf "  %s  (%s, %s, %s bytes)\n", $2, $1, $4, $5 }'
-            printf 'Registered: %s\n' "$(get_env LOCAL_MODELS)" ;;
+            printf 'Registered: %s\n' "$(get_env LOCAL_MODELS)"; _local_job_line ;;
     server)
       local ssub="${1:-list}"; [ $# -eq 0 ] || shift
       case "$ssub" in
@@ -1021,6 +1150,8 @@ cmd_local_models() {
     pull) [ -f "$ENV_FILE" ] || die "run ./stack setup first"; guard_project; local_pull "$@" ;;
     rm) [ -f "$ENV_FILE" ] || die "run ./stack setup first"; guard_project; local_rm "$@" ;;
     enable) local_models_enable ;;
-    *) die "usage: ./stack local-models [status | pull ORG/REPO [QUANT] | rm ORG/REPO [QUANT] | enable | uninstall [--models]]" ;;
+    pause | cancel) local_stop "$sub" ;;
+    resume) [ -f "$ENV_FILE" ] || die "run ./stack setup first"; guard_project; local_resume ;;
+    *) die "usage: ./stack local-models [status | pull ORG/REPO [QUANT] | pause | resume | cancel | rm ORG/REPO [QUANT] | enable | uninstall [--models]]" ;;
   esac
 }

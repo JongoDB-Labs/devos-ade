@@ -292,6 +292,17 @@ test_the_form_check_is_read_only_so_it_carries_no_password_and_nothing_else_may_
     ! act_check_request "$TMP/act-$n.json" "act-$n.json" >/dev/null 2>&1
   done
   case " $LOCAL_HELPER_ACTIONS " in *" local-probe "*) ;; *) return 1 ;; esac
+  # local-stop (Pause / Cancel): no password either, just the op; the op comes out in project's place
+  for op in pause cancel; do
+    mk "{\"action\":\"local-stop\",\"requested_at\":$now,\"nonce\":\"$n\",\"op\":\"$op\"}"
+    out="$(act_check_request "$TMP/act-$n.json" "act-$n.json" 2>&1)" || { echo "$out" >&2; return 1; }
+    assert_eq "$out" "local-stop $n - - $op - -"
+  done
+  for bad in "\"op\":\"delete\"" "\"op\":\"pause\",\"repo\":\"a/b\"" "\"auth\":\"$auth\",\"op\":\"pause\"" "\"op\":\"pause; rm -rf /\""; do
+    mk "{\"action\":\"local-stop\",\"requested_at\":$now,\"nonce\":\"$n\",$bad}"
+    ! act_check_request "$TMP/act-$n.json" "act-$n.json" >/dev/null 2>&1
+  done
+  case " $LOCAL_HELPER_ACTIONS " in *" local-stop "*) ;; *) return 1 ;; esac
 }
 
 test_a_check_without_a_password_still_refuses_metadata_and_link_local_targets_and_never_saves_anything() {
@@ -357,6 +368,28 @@ test_the_helper_starts_a_server_request_through_a_private_file_and_the_key_is_ne
   assert_contains "$(cat "$TMP/stack.req")" "key=c2VjcmV0a2V5"
 }
 
+test_a_pause_or_cancel_from_the_portal_runs_without_the_password_while_the_download_runs() {
+  . "$STACK_DIR/lib/helper.sh"; . "$STACK_DIR/lib/settings_helper.sh"
+  _lm_env; mkdir -p "$STATE_DIR/helper" "$(local_dir)"
+  STACK_DIR="$TMP/fakestack"; mkdir -p "$STACK_DIR"
+  printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s/stack.args"\n' "$TMP" > "$STACK_DIR/stack"; chmod +x "$STACK_DIR/stack"
+  printf '%s\n' "$$" > "$(local_dir)/job.pid"                                # (a download is running: a pull would be refused now)
+  printf '{"state":"pulling","repo":"org/name","quant":"mlx","done_bytes":5,"total_bytes":10}\n' > "$(local_job_file)"
+  local_job_running
+  local n now; now="$(date +%s)"; n="$(printf 'ef%.0s' $(seq 16))"
+  printf '{"action":"local-stop","requested_at":%s,"nonce":"%s","op":"pause"}' "$now" "$n" > "$(request_dir)/act-$n.json"
+  settings_poll_once 2>/dev/null
+  _wait_for '[ -s "$TMP/stack.args" ]'
+  assert_eq "$(cat "$TMP/stack.args")" "local-models pause"
+  assert_contains "$(cat "$STATE_DIR/helper/stop-jobs")" local-stop             # (counted on its own, not as a download)
+  [ ! -e "$STATE_DIR/helper/local-jobs" ]
+  # with a password field it is not a stop request at all (nothing else rides on one)
+  n="$(printf 'fe%.0s' $(seq 16))"
+  printf '{"action":"local-stop","requested_at":%s,"nonce":"%s","auth":"eA==","op":"cancel"}' "$now" "$n" > "$(request_dir)/act-$n.json"
+  ! settings_poll_once 2>/dev/null
+  assert_eq "$(grep -c . "$TMP/stack.args")" 1
+}
+
 test_settings_know_the_local_models_and_the_token() {
   [ "$(setting_field LOCAL_MODELS 5)" = local_models ]
   [ "$(setting_field LOCAL_MODELS 6)" = litellm-cfg ]
@@ -372,7 +405,8 @@ test_the_stack_command_is_in_help() {
 
 # --- MLX (Apple silicon's primary runtime): a fake uv, launchctl and venv; nothing real runs ---
 SHA_A="$(printf 'a%.0s' $(seq 40))"; SHA_B="$(printf 'b%.0s' $(seq 40))"   # (two commits of the same repo)
-_fake_mlx() {   # _fake_mlx — VET_REASON / VET_SHA (set before) say what the vet answers; FAKE_DL_SHA / FAKE_CFG what the download writes
+_fake_mlx() {   # _fake_mlx — VET_REASON / VET_SHA (set before) say what the vet answers; FAKE_DL_SHA / FAKE_CFG what the download
+  # writes (lib/hf_fetch.py's stand-in); FAKE_DL_SLOW: it keeps adding to a part until it is stopped
   local b; unset LOCAL_MLX; export LOCAL_MLX=force; mkdir -p "$TMP/home"; HOME="$TMP/home"; export HOME
   uname() { case "$1" in -s) echo Darwin ;; -m) echo arm64 ;; *) command uname "$@" ;; esac; }
   command() { if [ "$1" = -v ] && [ "$2" = uv ]; then return 0; fi; builtin command "$@"; }
@@ -381,15 +415,19 @@ _fake_mlx() {   # _fake_mlx — VET_REASON / VET_SHA (set before) say what the v
     case "$1" in
       venv) local d; for d in "$@"; do :; done; mkdir -p "$d/bin"
         printf '#!/bin/sh\nexit 0\n' > "$d/bin/mlx_lm.server"
-        # the vet prints "sha <commit>" or "no <why>"; the fake hf writes the snapshot of $FAKE_DL_SHA (default: the revision it was asked for)
-        printf '#!/bin/sh\nif [ -n "%s" ]; then echo "no %s"; else echo "sha %s"; fi\n' "$VET_REASON" "$VET_REASON" "${VET_SHA:-$SHA_A}" > "$d/bin/python"
-        cat > "$d/bin/hf" <<'EOS'
+        # the vet (python -I -c CODE REPO MANIFEST) prints "sha <commit>" or "no <why>" and writes the file list; the fetch
+        # (python -I lib/hf_fetch.py REPO SHA HUB MANIFEST) writes the snapshot of $FAKE_DL_SHA (default: the commit it was given)
+        { printf '#!/bin/sh\ncase "$2" in *hf_fetch.py) exec "%s" "$@" ;; esac\n' "$d/bin/fetch"
+          printf '[ -z "$5" ] || printf "config.json\\t22\\t\\t%s\\n" > "$5"\n' "$(printf 'c%.0s' $(seq 40))"
+          printf 'if [ -n "%s" ]; then echo "no %s"; else echo "sha %s"; fi\n' "$VET_REASON" "$VET_REASON" "${VET_SHA:-$SHA_A}"; } > "$d/bin/python"
+        cat > "$d/bin/fetch" <<'EOS'
 #!/bin/sh
-rev=''; prev=''; for a in "$@"; do [ "$prev" = --revision ] && rev="$a"; prev="$a"; done
-mkdir -p "$HF_HOME"; echo "$*" > "$HF_HOME/hf-args"; echo "$HF_TOKEN" > "$HF_HOME/token-seen"
-case "$*" in *"--exclude *.py"*) echo excluded > "$HF_HOME/excl";; esac
-sha="${FAKE_DL_SHA:-$rev}"; r="$HF_HOME/hub/models--mlx-community--Tiny-4bit"
-mkdir -p "$r/blobs" "$r/snapshots/$sha"; head -c 2000000 /dev/zero > "$r/blobs/w"
+rev="$4"; hub="$5"; h="$hub/.."; mkdir -p "$hub"
+echo "$*" > "$h/fetch-args"; echo "$HF_TOKEN" > "$h/token-seen"; [ -s "$6" ] && cp "$6" "$h/fetch-manifest"
+sha="${FAKE_DL_SHA:-$rev}"; r="$hub/models--mlx-community--Tiny-4bit"
+mkdir -p "$r/blobs" "$r/snapshots/$sha"
+if [ -n "$FAKE_DL_SLOW" ]; then trap 'exit 143' TERM; i=0; while [ $i -lt 300 ]; do head -c 100000 /dev/zero >> "$r/blobs/w.part"; sleep 0.1; i=$((i + 1)); done; exit 1; fi
+head -c 2000000 /dev/zero > "$r/blobs/w"; rm -f "$r/blobs/w.part"
 if [ -n "$FAKE_CFG" ]; then printf '%s' "$FAKE_CFG" > "$r/snapshots/$sha/config.json"; else printf '{"model_type":"llama"}' > "$r/snapshots/$sha/config.json"; fi
 EOS
         chmod +x "$d/bin/"*; return 0 ;;
@@ -414,8 +452,10 @@ test_mlx_is_the_runtime_on_apple_silicon_and_a_pull_installs_vets_downloads_serv
   assert_not_contains "$(cat "$HOME/Library/LaunchAgents/"dev.devos.ade.mlx.*.plist)" "trust-remote-code"
   assert_not_contains "$(cat "$HOME/Library/LaunchAgents/"dev.devos.ade.mlx.*.plist)" "$TOKEN_FAKE"   # the token never reaches the server
   assert_contains "$(cat "$HOME/Library/LaunchAgents/"dev.devos.ade.mlx.*.plist)" "HF_HUB_OFFLINE"
-  assert_eq "$(cat "$STATE_DIR/mlx/hf/excl")" excluded                   # no .py file is ever fetched
-  assert_contains "$(cat "$STATE_DIR/mlx/hf/hf-args")" "--revision $SHA_A"   # the download is pinned to the commit that was vetted
+  assert_contains "$(cat "$STATE_DIR/mlx/hf/fetch-args")" "hf_fetch.py mlx-community/Tiny-4bit $SHA_A "   # pinned to the commit that was vetted
+  assert_contains "$(cat "$STATE_DIR/mlx/hf/fetch-manifest")" "config.json"   # with the vet's file list (each file checked against its hash)
+  assert_eq "$(cat "$STATE_DIR/mlx/hf/token-seen")" "$TOKEN_FAKE"           # the token in its environment (never an argument)
+  assert_not_contains "$(cat "$STATE_DIR/mlx/hf/fetch-args")" "$TOKEN_FAKE"
   assert_contains "$(local_registry_rows)" "$SHA_A"                         # and the registry keeps it
   # the server loads it by name offline, through the cache's refs/main (a pinned download writes none): the vetted commit
   assert_eq "$(cat "$STATE_DIR/mlx/hf/hub/models--mlx-community--Tiny-4bit/refs/main")" "$SHA_A"
@@ -773,18 +813,199 @@ test_a_download_is_pinned_to_the_vetted_commit_and_a_different_one_at_download_t
   launchctl() { echo "$*" >> "$TMP/launchctl.log"; MLX_UP=1; return 0; }
   # the Hub answers another commit than the one that was checked (a push in between, or anything else): refused, not served
   ! ( local_pull mlx-community/Tiny-4bit mlx --bytes 2000000 ) >/dev/null 2>&1
-  assert_contains "$(cat "$STATE_DIR/mlx/hf/hf-args")" "--revision $SHA_A"
+  assert_contains "$(cat "$STATE_DIR/mlx/hf/fetch-args")" " $SHA_A "
   assert_contains "$(cat "$(local_job_file)")" '"state":"failed"'
   assert_contains "$(cat "$(local_job_file)")" "not the revision that was checked"
   [ ! -d "$STATE_DIR/mlx/hf/hub/models--mlx-community--Tiny-4bit" ]
   assert_eq "$(get_env LOCAL_MODELS)" ""; assert_eq "$(local_registry_rows)" ""
   # a vet that gives no commit at all downloads nothing
-  unset FAKE_DL_SHA; rm -f "$STATE_DIR/mlx/hf/hf-args"
+  unset FAKE_DL_SHA; rm -f "$STATE_DIR/mlx/hf/fetch-args"
   printf '#!/bin/sh\necho garbage\n' > "$STATE_DIR/mlx/venv/bin/python"; chmod +x "$STATE_DIR/mlx/venv/bin/python"
   ! ( local_pull mlx-community/Tiny-4bit mlx --bytes 2000000 ) >/dev/null 2>&1
-  [ ! -e "$STATE_DIR/mlx/hf/hf-args" ]
+  [ ! -e "$STATE_DIR/mlx/hf/fetch-args" ]
   assert_eq "$(get_env LOCAL_MODELS)" ""
 }
+# --- Pause, Resume and Cancel (JON-828): a stopped download keeps its part, Cancel deletes it, never a whole model ---
+_wait_for() { local n=0; until eval "$1"; do sleep 0.1; n=$((n + 1)); [ "$n" -lt 150 ] || { echo "timed out waiting for: $1" >&2; return 1; }; done; }
+TINY="$STATE_DIR/mlx/hf/hub/models--mlx-community--Tiny-4bit"
+test_pause_keeps_an_mlx_download_s_part_and_resume_continues_it_with_what_it_was_started_with() {
+  _lm_env; _fake_apply; VET_REASON=''; unset FAKE_DL_SHA FAKE_CFG; _fake_mlx
+  launchctl() { echo "$*" >> "$TMP/launchctl.log"; MLX_UP=1; return 0; }
+  export FAKE_DL_SLOW=1
+  ( local_pull mlx-community/Tiny-4bit mlx --bytes 2000000 --tools yes --context 8192 --license mit ) >/dev/null 2>&1 &
+  local bg=$!
+  _wait_for '[ -s "$(local_dl_pid_file)" ] && [ -s "$TINY/blobs/w.part" ]'
+  assert_contains "$(cat "$(local_job_file)")" '"state":"pulling"'
+  assert_contains "$(cat "$(local_job_file)")" '"rate":'                     # (speed and time left are in every progress write)
+  local_stop pause >/dev/null 2>&1
+  wait "$bg"
+  assert_contains "$(cat "$(local_job_file)")" '"state":"paused"'
+  assert_contains "$(cat "$(local_job_file)")" "Resume continues from there"
+  [ -s "$TINY/blobs/w.part" ]                                                # what arrived is kept
+  [ ! -e "$(local_dl_pid_file)" ] && [ ! -e "$(local_stop_file)" ] && [ ! -e "$(local_dir)/job.pid" ]
+  ! local_job_running
+  assert_eq "$(get_env LOCAL_MODELS)" ""
+  # another download waits for the paused one (its part would be left on disk unseen)
+  local out; out="$( ( local_pull other-org/Other-4bit mlx ) 2>&1)" && { echo "a second download started" >&2; return 1; }
+  assert_contains "$out" "mlx-community/Tiny-4bit is paused"
+  # Resume: the same arguments it was started with; it finishes and registers
+  unset FAKE_DL_SLOW
+  local_resume >/dev/null 2>&1
+  assert_contains "$(cat "$(local_job_file)")" '"state":"done"'
+  assert_eq "$(get_env LOCAL_MODELS)" "mlx:mlx-community/Tiny-4bit"
+  assert_contains "$(local_registry_rows)" "$(printf 'mit\t1\t8192')"
+  # nothing to resume now
+  ! ( local_resume ) >/dev/null 2>&1
+}
+test_cancel_deletes_an_unfinished_mlx_download_running_or_paused_but_never_a_whole_model() {
+  _lm_env; _fake_apply; VET_REASON=''; unset FAKE_DL_SHA FAKE_CFG; _fake_mlx
+  export FAKE_DL_SLOW=1
+  ( local_pull mlx-community/Tiny-4bit mlx --bytes 2000000 ) >/dev/null 2>&1 &
+  local bg=$!
+  _wait_for '[ -s "$(local_dl_pid_file)" ] && [ -s "$TINY/blobs/w.part" ]'
+  local_stop cancel >/dev/null 2>&1
+  wait "$bg"
+  assert_contains "$(cat "$(local_job_file)")" '"state":"cancelled"'
+  assert_contains "$(cat "$(local_job_file)")" "what had arrived was deleted"
+  [ ! -d "$TINY" ]
+  ! local_job_running
+  # paused, then cancelled: the part goes too
+  ( local_pull mlx-community/Tiny-4bit mlx --bytes 2000000 ) >/dev/null 2>&1 &
+  bg=$!
+  _wait_for '[ -s "$(local_dl_pid_file)" ] && [ -s "$TINY/blobs/w.part" ]'
+  local_stop pause >/dev/null 2>&1; wait "$bg"
+  assert_contains "$(cat "$(local_job_file)")" '"state":"paused"'
+  local_stop cancel >/dev/null 2>&1
+  assert_contains "$(cat "$(local_job_file)")" '"state":"cancelled"'
+  [ ! -d "$TINY" ]
+  # a model this stack has whole is never deleted by a cancel (that is Remove's)
+  mkdir -p "$TINY/blobs"; : > "$TINY/blobs/w"
+  local_registry_put mlx mlx-community/Tiny-4bit mlx-community/Tiny-4bit mlx 2000000 - - - -
+  _local_discard mlx mlx-community/Tiny-4bit
+  [ -e "$TINY/blobs/w" ]
+  # nothing running: pause says so and changes nothing
+  assert_contains "$(local_stop pause 2>&1)" "No download is running"
+  ! ( local_stop stop ) >/dev/null 2>&1
+}
+test_a_stop_asked_before_the_download_starts_stops_it_there() {
+  _lm_env; _fake_apply; VET_REASON=''; unset FAKE_DL_SHA FAKE_CFG FAKE_DL_SLOW; _fake_mlx
+  launchctl() { echo "$*" >> "$TMP/launchctl.log"; MLX_UP=1; return 0; }
+  mkdir -p "$(local_dir)"; printf 'pause\n' > "$(local_stop_file)"          # (an earlier download's stop file is cleared at the start)
+  local_pull mlx-community/Tiny-4bit mlx --bytes 2000000 >/dev/null 2>&1
+  assert_contains "$(cat "$(local_job_file)")" '"state":"done"'
+  # asked while the repo is being checked: it stops there, before anything is downloaded
+  local_registry_drop mlx mlx-community/Tiny-4bit; rm -rf "$TINY" "$STATE_DIR/mlx/hf/fetch-args"
+  { printf '#!/bin/sh\ncase "$2" in *hf_fetch.py) exec "%s" "$@" ;; esac\n' "$STATE_DIR/mlx/venv/bin/fetch"
+    printf 'echo pause > "%s"; echo "sha %s"\n' "$(local_stop_file)" "$SHA_A"; } > "$STATE_DIR/mlx/venv/bin/python"
+  local_pull mlx-community/Tiny-4bit mlx --bytes 2000000 >/dev/null 2>&1
+  assert_contains "$(cat "$(local_job_file)")" '"state":"paused"'
+  [ ! -e "$STATE_DIR/mlx/hf/fetch-args" ]
+  [ ! -e "$(local_stop_file)" ]
+}
+test_the_speed_and_time_left_are_measured_and_a_stalled_download_is_said() {
+  local t=1000
+  date() { if [ "${1:-}" = +%s ]; then echo "$t"; else command date "$@"; fi; }
+  _local_speed_reset
+  _local_speed 0 1000000; t=1001; _local_speed 100000 1000000; t=1002; _local_speed 200000 1000000
+  assert_eq "$_LS_RATE" 100000; assert_eq "$_LS_ETA" 8; assert_eq "$_LS_STALLED" 0
+  assert_eq "$(_local_dl_message org/name)" "Downloading org/name"
+  t=1200; _local_speed 200000 1000000
+  assert_eq "$_LS_RATE" 0; assert_eq "$_LS_ETA" -1; assert_eq "$_LS_STALLED" 198
+  assert_contains "$(_local_dl_message org/name)" "Nothing has arrived for 3 minutes"
+  # the window is about ten seconds: an old burst does not hold the speed up
+  t=1201; _local_speed 300000 1000000; t=1215; _local_speed 310000 1000000
+  [ "$_LS_RATE" -lt 10000 ]
+  unset -f date
+  # job.json carries them; the size reads as people do
+  _lm_env; mkdir -p "$(local_dir)"; local_status_write() { :; }
+  _local_job pulling org/name Q4 5 10 "x" 7 3 0
+  assert_contains "$(cat "$(local_job_file)")" '"rate":7,"eta":3,"stalled":0'
+  _local_job done org/name Q4 10 10 "x"
+  assert_contains "$(cat "$(local_job_file)")" '"rate":0,"eta":-1,"stalled":0'
+  assert_eq "$(_local_size 1610612736)" "1.5 GB"; assert_eq "$(_local_size 5242880)" "5 MB"; assert_eq "$(_local_size 13958643712)" "13 GB"
+}
+
+# --- lib/hf_fetch.py for real: python3 and curl against a stand-in Hub (tests/fixtures/hf_hub_server.py) on 127.0.0.1 ---
+_hub() {   # _hub — files in $TMP/hub-files, the Hub at HF_ENDPOINT, its request log at $TMP/hub.log; MAN: their manifest
+  mkdir -p "$TMP/hub-files/sub"; rm -f "$TMP/hub.port" "$TMP/hub.log" "$TMP/hub-files/.slow"
+  head -c 300000 /dev/urandom > "$TMP/hub-files/model.safetensors"
+  printf '{"model_type":"llama"}' > "$TMP/hub-files/config.json"; printf '{"t":1}' > "$TMP/hub-files/sub/tokenizer.json"
+  python3 -I "$STACK_DIR/tests/fixtures/hf_hub_server.py" "$TMP/hub-files" "$TMP/hub.port" "$TMP/hub.log" </dev/null >/dev/null 2>&1 &
+  HUB_PID=$!
+  _wait_for '[ -s "$TMP/hub.port" ]'
+  export HF_ENDPOINT="http://127.0.0.1:$(cat "$TMP/hub.port")"
+  MAN="$TMP/manifest.tsv"
+  python3 -I -c '
+import hashlib, os, sys
+root = sys.argv[1]
+for p, lfs in (("model.safetensors", 1), ("config.json", 0), ("sub/tokenizer.json", 0)):
+    b = open(os.path.join(root, p), "rb").read()
+    sha = hashlib.sha256(b).hexdigest() if lfs else ""
+    blob = hashlib.sha1(b"blob %d\0" % len(b) + b).hexdigest()
+    print("%s\t%d\t%s\t%s" % (p, len(b), sha, blob))' "$TMP/hub-files" > "$MAN"
+  BIG="$(awk -F'\t' '$1 == "model.safetensors" { print $3 }' "$MAN")"
+  HUBDIR="$TMP/hub"; SNAP="$HUBDIR/models--org--Tiny/snapshots/$SHA_A"; BLOBS="$HUBDIR/models--org--Tiny/blobs"
+}
+# (the real curl: the shim refuses this computer's addresses to guard a live DevOS ADE, and this is the test's own server, on a port of its own)
+_fetch() {
+  mkdir -p "$TMP/realbin"; ln -sf "${BN_REAL_CURL:?}" "$TMP/realbin/curl"
+  PATH="$TMP/realbin:$PATH" HF_TOKEN="$TOKEN_FAKE" exec python3 -I "$STACK_DIR/lib/hf_fetch.py" org/Tiny "$SHA_A" "$HUBDIR" "${1:-$MAN}"
+}
+test_hf_fetch_downloads_every_file_checked_into_the_cache_and_never_sends_the_token_past_the_hub() {
+  _hub
+  ( _fetch ) 2>"$TMP/fetch.err" || { kill "$HUB_PID"; cat "$TMP/fetch.err" >&2; return 1; }
+  cmp -s "$SNAP/model.safetensors" "$TMP/hub-files/model.safetensors"
+  cmp -s "$SNAP/config.json" "$TMP/hub-files/config.json"
+  cmp -s "$SNAP/sub/tokenizer.json" "$TMP/hub-files/sub/tokenizer.json"
+  [ -L "$SNAP/model.safetensors" ] && [ -f "$BLOBS/$BIG" ]                 # (huggingface_hub's layout: a link to the blob)
+  assert_eq "$(find "$BLOBS" -name '*.part' | wc -l | tr -d ' ')" 0
+  # the Hub gets the token; the host it redirects to never does
+  assert_eq "$(awk -F'\t' '$1 ~ /\/resolve\// && $2 == "Bearer '"$TOKEN_FAKE"'"' "$TMP/hub.log" | wc -l | tr -d ' ')" 3
+  assert_eq "$(awk -F'\t' '$1 ~ /^\/cdn\// && $2 != "-"' "$TMP/hub.log" | wc -l | tr -d ' ')" 0
+  # done files are not fetched again
+  : > "$TMP/hub.log"; ( _fetch ) 2>/dev/null
+  [ ! -s "$TMP/hub.log" ]
+  kill "$HUB_PID"
+}
+test_hf_fetch_continues_a_part_and_deletes_a_file_that_does_not_match_its_hash() {
+  _hub
+  mkdir -p "$BLOBS"; head -c 100000 "$TMP/hub-files/model.safetensors" > "$BLOBS/$BIG.part"
+  ( _fetch ) 2>/dev/null || { kill "$HUB_PID"; return 1; }
+  assert_contains "$(grep '^/cdn/model.safetensors' "$TMP/hub.log")" "bytes=100000-"   # resumed where the part ended
+  cmp -s "$SNAP/model.safetensors" "$TMP/hub-files/model.safetensors"
+  # a file that is not what the Hub's hash says is deleted, and the download fails saying so
+  rm -rf "$HUBDIR"
+  sed "s/$BIG/$(printf 'e%.0s' $(seq 64))/" "$MAN" > "$TMP/bad.tsv"
+  local rc=0; ( _fetch "$TMP/bad.tsv" ) 2>"$TMP/fetch.err" || rc=$?
+  assert_eq "$rc" 1
+  assert_contains "$(tail -n 1 "$TMP/fetch.err")" "does not match the hash"
+  assert_eq "$(find "$BLOBS" -name 'eeee*' | wc -l | tr -d ' ')" 0
+  # a path that would leave the snapshot refuses the list
+  printf '../escape\t3\t\t%s\n' "$(printf 'a%.0s' $(seq 40))" > "$TMP/bad.tsv"
+  rc=0; ( _fetch "$TMP/bad.tsv" ) 2>"$TMP/fetch.err" || rc=$?
+  assert_eq "$rc" 1; assert_contains "$(cat "$TMP/fetch.err")" "not allowed"
+  [ ! -e "$HUBDIR/models--org--Tiny/escape" ] && [ ! -e "$HUBDIR/escape" ]
+  kill "$HUB_PID"
+}
+test_hf_fetch_stops_at_once_on_term_keeping_the_part_and_the_next_run_continues_it() {
+  _hub
+  echo 50000 > "$TMP/hub-files/.slow"                                      # (about six seconds for the big file)
+  ( _fetch ) 2>/dev/null & local fp=$!                                    # (exec: $! is the downloader itself)
+  _wait_for '[ "$(cat "$BLOBS/$BIG.part" 2>/dev/null | wc -c)" -gt 20000 ]'
+  local t0; t0="$(date +%s)"; kill -TERM "$fp"
+  local rc=0; wait "$fp" || rc=$?
+  assert_eq "$rc" 143
+  [ $(($(date +%s) - t0)) -le 3 ]                                          # (at once: curl is stopped with it)
+  local had; had="$(wc -c < "$BLOBS/$BIG.part" | tr -d ' ')"
+  [ "$had" -gt 0 ] && [ "$had" -lt 300000 ]
+  ! pgrep -f "$BLOBS/$BIG.part" >/dev/null                                 # (no curl left behind)
+  rm -f "$TMP/hub-files/.slow"; : > "$TMP/hub.log"
+  ( _fetch ) 2>/dev/null || { kill "$HUB_PID"; return 1; }
+  assert_contains "$(grep '^/cdn/model.safetensors' "$TMP/hub.log")" "bytes=$had-"
+  cmp -s "$SNAP/model.safetensors" "$TMP/hub-files/model.safetensors"
+  kill "$HUB_PID"
+}
+
 test_a_config_that_fails_the_check_after_the_download_is_deleted_and_never_registered() {
   _lm_env; _fake_apply; VET_REASON=''; VET_SHA="$SHA_A"; unset FAKE_DL_SHA; export FAKE_CFG='{"model_type":"llama","auto_map":{"AutoModel":"x.Y"}}'; _fake_mlx
   launchctl() { echo "$*" >> "$TMP/launchctl.log"; MLX_UP=1; return 0; }

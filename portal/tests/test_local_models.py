@@ -189,8 +189,8 @@ def test_the_status_file_is_read_field_by_field(tmp_path):
     s = lm.read_status(tmp_path)
     assert s["known"] and not s["stale"] and s["runtime"]["kind"] == "dmr" and s["memory"] == 16 * GB and s["disk"] == 105_454_432
     assert len(s["installed"]) == 1 and s["installed"][0]["tools"] == "no" and s["installed"][0]["registered"] is True   # the bad repo is dropped
-    assert s["job"] == {"state": "pulling", "repo": "a/b", "quant": "Q4_K_M", "done_bytes": 50, "total_bytes": 100,
-                        "message": "Downloading hf.co/a/b:Q4_K_M", "at": s["job"]["at"]}
+    assert s["job"] == {"state": "pulling", "repo": "a/b", "quant": "Q4_K_M", "done_bytes": 50, "total_bytes": 100, "rate": 0, "eta": None,
+                        "stalled": 0, "resumable": False, "message": "Downloading hf.co/a/b:Q4_K_M", "at": s["job"]["at"]}
     # no file, a stale one, and nonsense
     assert lm.read_status(tmp_path / "nowhere")["known"] is False and lm.read_status(tmp_path / "nowhere")["runtime"]["kind"] == "none"
     _status(tmp_path, at=int(time.time()) - 600)
@@ -210,7 +210,7 @@ def app(settings, tmp_path):
     sd, rq = tmp_path / "status", tmp_path / "requests"
     sd.mkdir(); rq.mkdir()
     (sd / "helper.json").write_text(json.dumps({"heartbeat": int(time.time()), "pid": 1, "version": "v0.3.0", "rollback": {"available": False}}))
-    (sd / "helper-settings.json").write_text(json.dumps({"settings": 1, "diagnostics": list(st.DIAG_ACTIONS), "local": list(st.LOCAL_ACTIONS) + ["local-server", "local-probe"],
+    (sd / "helper-settings.json").write_text(json.dumps({"settings": 1, "diagnostics": list(st.DIAG_ACTIONS), "local": list(st.LOCAL_ACTIONS) + ["local-server", "local-probe", "local-stop"],
                                                           "written_at": int(time.time())}))
     s = replace(settings, status_dir=sd, request_dir=rq, shared_mcp_token="mcp-token-0123456789abcdef")
     c = TestClient(create_app(s, transport=httpx.MockTransport(hf)), follow_redirects=False, base_url="http://bedrock-now.localhost")
@@ -600,3 +600,93 @@ def test_the_form_answer_is_read_from_the_status_matched_by_its_ref_and_has_no_k
     d["result"] = {"ref": "not hex"}
     (sd / "local-models.json").write_text(json.dumps(d))
     assert c.get("/api/local-models", headers=API).json()["result"] is None
+
+
+# --- Pause, Resume and Cancel (JON-828) ---
+
+def test_a_download_s_speed_time_left_and_whether_it_can_resume_are_read_field_by_field(tmp_path):
+    _status(tmp_path, job={"state": "pulling", "repo": "a/b", "quant": "mlx", "done_bytes": 50, "total_bytes": 100, "rate": 9_800_000, "eta": 6420,
+                           "stalled": 3, "message": "Downloading a/b"})
+    j = lm.read_status(tmp_path)["job"]
+    assert (j["rate"], j["eta"], j["stalled"], j["resumable"]) == (9_800_000, 6420, 3, False)
+    _status(tmp_path, job={"state": "pulling", "repo": "a/b", "quant": "mlx", "done_bytes": 50, "total_bytes": 100, "rate": -5, "eta": -1, "stalled": "x"})
+    j = lm.read_status(tmp_path)["job"]
+    assert (j["rate"], j["eta"], j["stalled"]) == (0, None, 0)                  # (time left not known: none said)
+    for state, done, can in (("paused", 50, True), ("paused", 0, True), ("failed", 50, True), ("failed", 0, False), ("cancelled", 0, False), ("done", 100, False)):
+        _status(tmp_path, job={"state": state, "repo": "a/b", "quant": "mlx", "done_bytes": done, "total_bytes": 100})
+        j = lm.read_status(tmp_path)["job"]
+        assert j["state"] == state and j["resumable"] is can, (state, done)
+
+
+def _stop(c, op, **kw):
+    return c.post("/api/local-models/stop", headers=H, content=json.dumps({"op": op, **kw}))
+
+
+def test_pause_and_cancel_need_no_password_and_write_a_request_with_the_op_alone(app):
+    c, sd, rq = app
+    _status(sd, job={"state": "pulling", "repo": "a/b", "quant": "mlx", "done_bytes": 50, "total_bytes": 100})
+    assert c.get("/api/local-models", headers=API).json()["can_stop"] is True
+    r = _stop(c, "pause")
+    assert r.status_code == 202 and set(r.json()) == {"id", "op"}
+    b = _body(rq)
+    assert set(b) == {"action", "requested_at", "nonce", "op"} and b["action"] == "local-stop" and b["op"] == "pause"
+    for f in rq.glob("act-*.json"):
+        f.unlink()
+    time.sleep(1.05)
+    assert _stop(c, "cancel", password="ignored").status_code == 202            # (a password sent along is not used, nor written)
+    b = _body(rq)
+    assert b["op"] == "cancel" and "auth" not in b and "password" not in json.dumps(b)
+
+
+def test_pause_is_for_a_running_download_and_cancel_also_for_a_paused_or_stopped_one(app):
+    c, sd, rq = app
+    _status(sd, job={"state": "idle"})
+    assert _stop(c, "pause").status_code == 409 and _stop(c, "cancel").status_code == 409
+    _status(sd, job={"state": "registering", "repo": "a/b", "quant": "mlx"})
+    assert _stop(c, "pause").status_code == 409                                  # (registering takes seconds and is not stopped halfway)
+    _status(sd, job={"state": "paused", "repo": "a/b", "quant": "mlx", "done_bytes": 5, "total_bytes": 10})
+    assert _stop(c, "pause").status_code == 409
+    assert _stop(c, "cancel").status_code == 202
+    assert not [f for f in rq.glob("act-*.json") if json.loads(f.read_text())["op"] != "cancel"]
+    for bad in ("stop", "delete", "", None, 5, "pause; rm"):
+        assert _stop(c, bad).status_code == 400
+    assert c.post("/api/local-models/stop", headers=H, content="[1]").status_code == 400
+
+
+def test_pause_keeps_the_session_the_header_the_origin_the_remote_rule_and_a_helper_that_does_it(app, settings, monkeypatch):
+    c, sd, rq = app
+    _status(sd, job={"state": "pulling", "repo": "a/b", "quant": "mlx"})
+    body = json.dumps({"op": "pause"})
+    assert c.post("/api/local-models/stop", headers={**ORIGIN, "Content-Type": "application/json"}, content=body).status_code in (400, 403)
+    assert c.post("/api/local-models/stop", headers={**API, "Origin": "http://evil.example", "Content-Type": "application/json"}, content=body).status_code == 403
+    with TestClient(create_app(replace(settings, status_dir=sd, request_dir=rq), transport=httpx.MockTransport(hf)), follow_redirects=False,
+                    base_url="http://bedrock-now.localhost") as anon:
+        assert anon.post("/api/local-models/stop", headers=H, content=body).status_code in (401, 403)
+    assert not list(rq.glob("act-*.json"))
+    (sd / "helper-settings.json").write_text(json.dumps({"settings": 1, "local": list(st.LOCAL_ACTIONS) + ["local-server", "local-probe"], "written_at": int(time.time())}))
+    r = _stop(c, "pause")
+    assert r.status_code == 503 and "helper install" in r.json()["error"]           # an older helper: told to refresh it
+    assert c.get("/api/local-models", headers=API).json()["can_stop"] is False
+    assert not list(rq.glob("act-*.json"))
+
+
+def test_while_a_download_is_paused_only_it_may_be_resumed(app):
+    c, sd, rq = app
+    _status(sd, runtime={"kind": "dmr", "how": ""}, job={"state": "paused", "repo": "bartowski/SmolLM2-135M-Instruct-GGUF", "quant": "Q8_0", "done_bytes": 5, "total_bytes": 10})
+    pull = {"password": PW, "action": "local-pull", "repo": "bartowski/SmolLM2-135M-Instruct-GGUF", "quant": "Q4_K_M"}
+    r = c.post("/api/local-models/change", headers=H, content=json.dumps(pull))
+    assert r.status_code == 409 and "is paused: Resume or Cancel it first" in r.json()["error"]
+    r = c.post("/api/local-models/change", headers=H, content=json.dumps({**pull, "quant": "q8_0"}))   # Resume: the same download again
+    assert r.status_code == 202 and _body(rq)["quant"] == "Q8_0"
+
+
+def test_the_stop_request_writer_takes_the_op_and_nothing_else(tmp_path):
+    n = st.write_local_stop_action(tmp_path, "pause", now=1000)
+    b = json.loads((tmp_path / f"act-{n}.json").read_text())
+    assert b == {"action": "local-stop", "requested_at": 1000, "nonce": n, "op": "pause"}
+    for bad in ("delete", "", "pause ", None):
+        with pytest.raises(ValueError):
+            st.write_local_stop_action(tmp_path, bad)
+    d = tmp_path / "s"; d.mkdir()
+    (d / "helper-settings.json").write_text(json.dumps({"settings": 1, "local": ["local-pull", "local-stop", "local-evil"], "written_at": int(time.time())}))
+    assert st.capability(d)["local"] == ["local-pull", "local-stop"]

@@ -662,7 +662,7 @@ def routes(ctx: Ctx) -> list[Route]:
         if (deny := ctx.api_guard(request)) is not None:
             return deny
         data = lm.read_status(s.status_dir)
-        job_live = data["job"]["state"] in ("pulling", "registering", "removing")
+        job_live = data["job"]["state"] in lm.LIVE
         if (data["stale"] or request.query_params.get("refresh") == "1") and not job_live and admin.helper_state(s.status_dir)["running"]:
             try:
                 (s.request_dir / lm.WANTED).write_text("", encoding="utf-8")
@@ -670,7 +670,7 @@ def routes(ctx: Ctx) -> list[Route]:
                 pass
         ok, why = _local_can(request)
         rows = st.by_key(st.snapshot(s.status_dir))
-        return _no_store(JSONResponse({**data, "can_change": ok, "why_not": why,
+        return _no_store(JSONResponse({**data, "can_change": ok, "why_not": why, "can_stop": ok and "local-stop" in st.capability(s.status_dir)["local"],
                                        "hf_token_set": bool((rows.get("HF_TOKEN") or {}).get("set")),
                                        "wait": data["stale"] and not data["known"]}))
 
@@ -711,8 +711,11 @@ def routes(ctx: Ctx) -> list[Route]:
         if admin.job_in_progress(admin.helper_state(s.status_dir)) and act == "local-pull":
             return err(409, "Another action is still running.")
         status = lm.read_status(s.status_dir)
-        if status["job"]["state"] in ("pulling", "registering", "removing"):
+        if status["job"]["state"] in lm.LIVE:
             return err(409, "A download or a removal is still running.")
+        j = status["job"]
+        if act == "local-pull" and j["state"] == "paused" and (j["repo"].lower(), j["quant"].lower()) != (repo.lower(), quant.lower()):
+            return err(409, f"{j['repo']} is paused: Resume or Cancel it first.")
         fields: dict = {}
         if act == "local-pull":
             if status["runtime"]["kind"] == "none":
@@ -744,6 +747,48 @@ def routes(ctx: Ctx) -> list[Route]:
         log.warning("local models: %s %s:%s%s", act, repo, quant, " (remote)" if is_remote(request) else "")
         return _no_store(JSONResponse({"id": nonce, "action": act}, status_code=202))
 
+
+    stop_rate = RateLimit(1, 120)
+
+    async def local_models_stop(request: Request) -> Response:
+        """Pause or Cancel the running download (Cancel also deletes a paused or stopped one's part). No password: it only
+        ever stops something and spends nothing; otherwise the same door as every other change (session, X-Requested-With,
+        same Origin, the remote rule, a bounded JSON body). The helper stops it within seconds; the page reads the outcome
+        from the status (paused or cancelled)."""
+        if (deny := ctx.api_guard(request)) is not None:
+            return deny
+        if not same_origin(request.headers, s):
+            return err(403, "cross-site request refused")
+        if not allowed(request):
+            return err(403, "Settings changes are off for remote access (REMOTE_ADMIN_ACTIONS in .env).")
+        length = request.headers.get("content-length", "")
+        if not length.isdigit() or not length.isascii() or int(length) > st.MAX_BODY:
+            return err(411 if not length.isdigit() else 413, "Content-Length required" if not length.isdigit() else "request too large")
+        try:
+            data = json.loads(await request.body())
+        except ValueError:
+            return err(400, "not JSON")
+        op = data.get("op") if isinstance(data, dict) else None
+        if op not in ("pause", "cancel"):
+            return err(400, "bad request")
+        ok, why = _local_can(request)
+        if ok and "local-stop" not in st.capability(s.status_dir)["local"]:
+            ok, why = False, "This update helper cannot pause or cancel yet: ./stack helper install refreshes it."
+        if not ok:
+            return err(403 if not allowed(request) else 503, why)
+        j = lm.read_status(s.status_dir)["job"]
+        if not (j["state"] == "pulling" or op == "cancel" and j["state"] in ("paused", "failed") and j["repo"]):
+            return err(409, "No download is running." if op == "pause" else "There is no download to cancel.")
+        if wait := stop_rate.retry_after():
+            return err(429, f"Please wait {wait} s.", wait)
+        try:
+            nonce = st.write_local_stop_action(s.request_dir, op)
+        except OSError as e:
+            log.warning("cannot write the download %s request to %s (%s)", op, s.request_dir, e)
+            return err(500, "Could not hand the request to the helper (see ./stack logs portal).")
+        stop_rate.hit()
+        log.warning("local models: %s %s:%s%s", op, j["repo"], j["quant"], " (remote)" if is_remote(request) else "")
+        return _no_store(JSONResponse({"id": nonce, "op": op}, status_code=202))
 
     server_rate = RateLimit(1, 300)
 
@@ -847,6 +892,7 @@ def routes(ctx: Ctx) -> list[Route]:
         Route("/api/local-models/change", local_models_change, methods=["POST"]),
         Route("/api/local-models/server", local_models_server, methods=["POST"]),
         Route("/api/local-models/probe", local_models_probe, methods=["POST"]),
+        Route("/api/local-models/stop", local_models_stop, methods=["POST"]),
         Route("/api/models/browse", models_browse, methods=["GET"]),
         Route("/api/models/browse/plan", models_plan, methods=["POST"]),
         Route("/api/models/try", models_try, methods=["POST"]),

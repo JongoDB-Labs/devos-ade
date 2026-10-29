@@ -261,7 +261,7 @@
   // the two entry points for models you run yourself, and the flow they open (localmodels.js draws it here)
   function ownLine() {
     const sum = L() && L().summary();
-    if (sum && sum.job) return `Downloading ${sum.job.repo}${sum.job.quant ? `:${sum.job.quant}` : ""}: ${sum.job.message || sum.job.state}${sum.job.pct != null ? ` (${sum.job.pct}%)` : ""}`;
+    if (sum && sum.job) return `${sum.job.state === "paused" ? "Paused" : "Downloading"} ${sum.job.repo}${sum.job.quant ? `:${sum.job.quant}` : ""}: ${sum.job.message || sum.job.state}${sum.job.pct != null ? ` (${sum.job.pct}%)` : ""}`;
     return sum && sum.known ? `${sum.downloaded} downloaded to this computer · ${sum.servers} model server${sum.servers === 1 ? "" : "s"} added. Their models are in the list below, free.` : "Models that run on your own hardware cost nothing and stay on your network.";
   }
   function ownCard() {

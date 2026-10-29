@@ -25,15 +25,34 @@
   const askPw = (...a) => ((helpers && helpers.askPassword) || window.bnAskPassword)(...a);
 
   const live = () => state && state.job && ["pulling", "registering", "removing"].includes(state.job.state);
+  // a paused download waits for Resume or Cancel: no other download starts meanwhile (its part would be left on disk unseen)
+  const pausedOther = (repo, quant) => state && state.job && state.job.state === "paused" && `${state.job.repo}:${state.job.quant}`.toLowerCase() !== `${repo}:${quant}`.toLowerCase();
+  // Pause / Cancel sent and not yet done ({ op, from: the job's state then, at }); confirm: Cancel's "delete what arrived?" shown
+  let stopping = null, confirmCancel = false, stopNote = "";
 
   async function load(refresh = false) {
     try { state = await api(`/api/local-models${refresh ? "?refresh=1" : ""}`); } catch (e) { if (e.message === "signed out") return; state = { error: e.message }; }
+    if (stopping && (!state.job || state.job.state !== stopping.from || Date.now() - stopping.at > 30000)) stopping = null;
     render();
     for (const fn of listeners) { try { fn(); } catch (_) { /* a listener's own trouble */ } }
     clearTimeout(timer);
-    // quickly while a download runs, or until the first file is there; otherwise only when the section is looked at again
-    if (live()) timer = setTimeout(load, 1000);
+    // quickly while a download runs (or is being stopped), or until the first file is there; otherwise only when looked at again
+    if (live() || stopping) timer = setTimeout(load, 1000);
     else if (state && state.wait) timer = setTimeout(load, 2000);
+  }
+
+  // Pause keeps what arrived (Resume continues from it); Cancel deletes it. No password: they only stop something (the portal's
+  // session, CSRF and origin checks still apply). The helper stops it within seconds; the status then says paused or cancelled.
+  async function stop(op) {
+    stopping = { op, from: state.job.state, at: Date.now() }; confirmCancel = false; stopNote = ""; render();
+    try {
+      const r = await fetch("/api/local-models/stop", { method: "POST", credentials: "same-origin", cache: "no-store",
+        headers: { ...API_HEADERS, "Content-Type": "application/json" }, body: JSON.stringify({ op }) });
+      const d = await r.json().catch(() => ({}));
+      if (r.status === 401) { location.assign("/login"); return; }
+      if (!r.ok) { stopping = null; stopNote = d.error || `That did not work (HTTP ${r.status}).`; render(); return; }
+    } catch (e) { stopping = null; stopNote = `Could not reach the portal (${e.message}).`; render(); return; }
+    clearTimeout(timer); timer = setTimeout(load, 1000);
   }
 
   async function find(q) {
@@ -69,17 +88,43 @@
     return el("p", { class: "lm-runtime" }, el("b", { text: RUNTIME[rt.kind] }), ` · ${GPU(state.gpu, state.memory)}`);
   }
 
+  const speed = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(n >= 100 * 1048576 ? 0 : 1)} MB/s` : `${Math.max(1, Math.round(n / 1024))} KB/s`);
+  const dur = (t) => (t >= 3600 ? `${Math.floor(t / 3600)}\u00a0h\u00a0${Math.round((t % 3600) / 60)}\u00a0min` : t >= 60 ? `${Math.round(t / 60)}\u00a0min` : `${Math.max(1, t)}\u00a0s`);
+  const button = (act, text, cls, fn) => { const b = el("button", { type: "button", class: `action ${cls}`, "data-act": act, text }); b.addEventListener("click", fn); return b; };
+
   function job() {
     const j = state.job;
     if (!j || j.state === "idle") return null;
     const pct = j.total_bytes ? Math.min(100, Math.round((100 * j.done_bytes) / j.total_bytes)) : null;
-    const wrap = el("div", { class: `lm-job ${j.state === "failed" ? "bad" : j.state === "done" ? "good" : ""}`, role: "status", "aria-live": "polite" });
-    wrap.append(el("p", {}, el("b", { text: `${j.repo}${j.quant ? `:${j.quant}` : ""} ` }), j.message));
-    if (j.state === "pulling") {
+    const slow = j.state === "pulling" && j.stalled >= 120;
+    const tone = j.state === "failed" ? "bad" : j.state === "done" ? "good" : slow || j.state === "paused" ? "warn" : "";
+    const wrap = el("div", { class: `lm-job ${tone}`, id: "lm-job", "data-state": j.state, role: "status", "aria-live": "polite" });
+    wrap.append(el("p", {}, el("b", { text: `${j.repo}${j.quant && j.quant !== "mlx" ? `:${j.quant}` : ""} ` }), j.message));
+    if (j.state === "pulling" || j.state === "paused") {
       const p = el("progress", { max: "100", "aria-label": "Download progress" });
       if (pct != null) p.value = pct;
-      wrap.append(p, el("span", { class: "note", text: ` ${j.total_bytes ? `${size(j.done_bytes)} of ${size(j.total_bytes)}` : size(j.done_bytes)}${pct != null ? ` · ${pct}%` : ""}` }));
+      const going = j.state === "pulling";
+      wrap.append(p, el("span", { class: "note", id: "lm-job-progress", text: ` ${j.total_bytes ? `${size(j.done_bytes)} of ${size(j.total_bytes)}` : size(j.done_bytes)}${pct != null ? ` · ${pct}%` : ""}${going && j.rate ? ` · ${speed(j.rate)}` : ""}${going && j.eta != null ? ` · about ${dur(j.eta)} left` : ""}` }));
     } else if (j.state === "registering" || j.state === "removing") wrap.append(el("progress", { "aria-label": "Working" }));
+    // Pause and Cancel while it downloads; Resume (Try again, after a failure) and Cancel once it stopped with a part kept
+    const acts = el("div", { class: "lm-job-acts" });
+    const cancel = () => { if (j.done_bytes > 0) { confirmCancel = true; render(); } else stop("cancel"); };
+    if (stopping) acts.append(el("span", { class: "note", text: stopping.op === "pause" ? "Pausing…" : "Cancelling…" }));
+    else if (confirmCancel && (j.state === "pulling" || j.resumable)) {
+      acts.append(el("span", { text: `Cancel and delete the ${size(j.done_bytes)} downloaded so far? ` }),
+        button("local-cancel-yes", "Cancel download", "danger", () => stop("cancel")),
+        button("local-cancel-no", j.state === "pulling" ? "Keep downloading" : "Keep it", "quiet", () => { confirmCancel = false; render(); }));
+    } else if (j.state === "pulling" && state.can_stop) {
+      acts.append(button("local-pause", "Pause", "", () => stop("pause")), button("local-cancel", "Cancel", "quiet", cancel));
+    } else if (j.resumable && state.can_change && state.can_stop) {
+      acts.append(button("local-resume", j.state === "paused" ? "Resume" : "Try again", "primary", () => askPw({ kind: "local", action: "local-pull", repo: j.repo, quant: j.quant },
+        `Resume ${j.repo}${j.quant === "mlx" ? "" : `:${j.quant}`}?`, `It continues from the ${size(j.done_bytes)} already downloaded.`, "Resume")),
+        button("local-cancel", j.state === "paused" ? "Cancel" : "Discard", "quiet", cancel));
+    } else if ((j.state === "pulling" || j.resumable) && state.can_change && !state.can_stop) {
+      acts.append(el("span", { class: "note", text: "To pause or cancel it: ./stack local-models pause (or cancel) in a terminal, or ./stack helper install to get the buttons." }));
+    }
+    if (acts.childNodes.length) wrap.append(acts);
+    if (stopNote) wrap.append(el("p", { class: "error", role: "alert", text: stopNote }));
     return wrap;
   }
 
@@ -102,11 +147,12 @@
   function quantRow(repo, q) {
     const fit = q.fits || {};
     const dl = el("button", { type: "button", class: "action primary", "data-act": "local-pull", text: q.installed ? "Downloaded" : "Download" });
-    dl.disabled = !state.can_change || live() || q.installed || state.runtime.kind === "none" || !!repo.blocked;
+    dl.disabled = !state.can_change || live() || q.installed || state.runtime.kind === "none" || !!repo.blocked || pausedOther(repo.repo, q.quant);
     dl.addEventListener("click", () => askPw({ kind: "local", action: "local-pull", repo: repo.repo, quant: q.quant },
       `Download ${repo.repo}${q.quant === "mlx" ? "" : `:${q.quant}`}?`,
       `${size(q.size)} from huggingface.co (license: ${repo.license || "not stated"}) to this computer's model runner, then served by the model gateway in every picker, free. ${fit.fit === "no" ? "It probably does not fit this computer's memory." : ""}`, "Download"));
-    const why = repo.blocked ? repo.blocked : !state.can_change ? state.why_not : state.runtime.kind === "none" ? "No model runner is running." : "";
+    const why = repo.blocked ? repo.blocked : !state.can_change ? state.why_not : state.runtime.kind === "none" ? "No model runner is running."
+      : pausedOther(repo.repo, q.quant) ? `${state.job.repo} is paused: Resume or Cancel it first.` : "";
     return el("li", { class: "lm-quant" },
       el("span", { class: "lm-q", text: q.quant === "mlx" ? "whole model" : q.quant }), el("span", { class: "lm-size", text: size(q.size) }),
       el("span", { class: `lm-fit lm-fit-${fit.fit || "unknown"}`, title: fit.text || "" }, fit.fit === "yes" ? "fits" : fit.fit === "tight" ? "tight fit" : fit.fit === "no" ? "too big" : "fit unknown"),
@@ -455,12 +501,12 @@
       if (!state || state.error) return null;
       const j = state.job, pct = j && j.total_bytes ? Math.min(100, Math.round((100 * j.done_bytes) / j.total_bytes)) : null;
       return { known: state.known, downloaded: (state.installed || []).length, servers: (state.servers || []).length, runtime: state.runtime,
-        job: live() ? { repo: j.repo, quant: j.quant, state: j.state, message: j.message, pct } : null };
+        job: live() || (j && j.state === "paused") ? { repo: j.repo, quant: j.quant, state: j.state, message: j.message, pct, rate: j.rate, eta: j.eta } : null };
     },
     onChange(fn) { listeners.push(fn); },
     // settings.js: the update helper took a download or a removal: watch its progress here
     // settings.js: a model-server request went to the update helper (what: the form's request, d: the portal's answer)
     serverSent(what, d) { if (what.key) what.key = ""; waitFor(d.ref, what.op, what.name || ""); },
-    started() { state = state && { ...state, job: { ...(state.job || {}), state: "registering", message: "Waiting for the update helper…", repo: "", quant: "" } }; render(); clearTimeout(timer); timer = setTimeout(load, 1000); },
+    started() { confirmCancel = false; stopNote = ""; state = state && { ...state, job: { ...(state.job || {}), state: "registering", message: "Waiting for the update helper…", repo: "", quant: "", resumable: false } }; render(); clearTimeout(timer); timer = setTimeout(load, 1000); },
   };
 })();

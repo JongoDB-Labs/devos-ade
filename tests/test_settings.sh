@@ -1207,7 +1207,13 @@ test_helper_without_a_screen_says_so_and_tells_the_portal() {
   assert_contains "$(cat "$(helper_status_file)")" "No dialog can be shown on this computer (no screen, or no folder chooser): in a terminal there, ./stack project add DIR"
   [ ! -e "$CALLS" ]
   rm -f "$(settings_capability_file)"; settings_helper_tick || true
-  assert_contains "$(cat "$(settings_capability_file)")" '"projects": ["project-pick","project-remove","project-mode-ro"], "sessions": ["sessions-revoke","sessions-scan","sessions-fetch","sessions-suggest","sessions-copy","setup-scan","setup-fetch","setup-copy"], "subscriptions": ["subscriptions-check","subscriptions-signout","subscriptions-check-chat","subscriptions-signout-chat"], "local": ["local-pull","local-remove","local-server","local-probe"], "screen": false'
+  assert_contains "$(cat "$(settings_capability_file)")" '"projects": ["project-pick","project-remove","project-mode-ro"], "sessions": ["sessions-revoke","sessions-scan","sessions-fetch","sessions-suggest","sessions-copy","setup-scan","setup-fetch","setup-copy"], "subscriptions": ["subscriptions-check","subscriptions-signout","subscriptions-check-chat","subscriptions-signout-chat"], "local": ["local-pull","local-remove","local-server","local-probe","local-stop"], "screen": false'
+  # a helper that offers something new says so at once, not up to ten minutes later (a helper restarted after an update)
+  local at; at="$(sed -n 's/.*"written_at": \([0-9]*\).*/\1/p' "$(settings_capability_file)")"
+  settings_helper_tick || true
+  assert_contains "$(cat "$(settings_capability_file)")" "\"written_at\": $at}"   # (nothing changed: not written again)
+  LOCAL_HELPER_ACTIONS="$LOCAL_HELPER_ACTIONS local-next"; settings_helper_tick || true
+  assert_contains "$(cat "$(settings_capability_file)")" '"local-stop","local-next"]'
 }
 
 test_helper_rechecks_models_at_most_hourly() {

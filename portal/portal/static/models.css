@@ -107,6 +107,8 @@
 .lm-job progress { width: min(100%, 24rem); vertical-align: middle; }
 .lm-job.good { background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .lm-job.bad { background: color-mix(in srgb, var(--bad) 12%, transparent); color: var(--bad); }
+.lm-job.warn { background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.lm-job-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 6px; }
 /* model servers: one card whose list scrolls inside it (the page does not grow) */
 .lm-servers { padding: 8px 12px; }
 .lm-h { margin: 8px 0 4px; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: none; }

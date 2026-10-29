@@ -262,7 +262,7 @@ def capability(status_dir: Path, now: float | None = None) -> dict:
     projects = [a for a in d.get("projects") or [] if a in PROJECT_ACTIONS] if ok else []
     sessions = [a for a in d.get("sessions") or [] if a in SESSIONS_ACTIONS + SESSIONS_REQUESTS] if ok else []
     subs = [a for a in d.get("subscriptions") or [] if a in SUBS_ACTIONS] if ok else []
-    local = [a for a in d.get("local") or [] if a in LOCAL_ACTIONS + ("local-server", "local-probe")] if ok else []
+    local = [a for a in d.get("local") or [] if a in LOCAL_ACTIONS + ("local-server", "local-probe", "local-stop")] if ok else []
     return {"settings": ok, "diagnostics": acts, "projects": projects, "sessions": sessions, "subscriptions": subs, "local": local,
             "screen": ok and d.get("screen") is True}
 
@@ -871,6 +871,19 @@ def write_local_action(request_dir: Path, password: str, action: str, repo: str,
     raw = json.dumps(body, separators=(",", ":")).encode("ascii")
     if len(raw) > 1280:   # (the helper's limit: lib/settings_helper.sh ACT_MAX_BYTES)
         raise ValueError("too large")
+    _write_atomic(request_dir, "act", f"act-{nonce}.json", raw)
+    return nonce
+
+
+def write_local_stop_action(request_dir: Path, op: str, now: float | None = None) -> str:
+    """REQUEST_DIR/act-<nonce>.json: Pause or Cancel of the running local-model download (cancel also deletes a paused or
+    stopped one's part). No password: it only ever stops something and spends nothing; the portal writes it behind its
+    session, CSRF and origin checks, and the helper rate-limits it. -> nonce"""
+    if op not in ("pause", "cancel"):
+        raise ValueError("bad request")
+    nonce = secrets.token_hex(16)
+    raw = json.dumps({"action": "local-stop", "requested_at": int(time.time() if now is None else now), "nonce": nonce, "op": op},
+                     separators=(",", ":")).encode("ascii")
     _write_atomic(request_dir, "act", f"act-{nonce}.json", raw)
     return nonce
 

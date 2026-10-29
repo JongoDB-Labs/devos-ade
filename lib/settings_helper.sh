@@ -33,6 +33,9 @@
 #                                                      the form's "Check server" of THIS computer (localhost, 127.x, ::1): read-only, NO
 #                                                      "auth" (the portal writes it behind its session, CSRF and origin checks); the probe
 #                                                      refuses any address but loopback, judged on the pinned address (lib/msrv_target.py)
+#                                        local-stop   {…,"op":"pause|cancel"}  ./stack local-models pause|cancel: the running
+#                                                      download stopped (cancel also deletes a paused one's part). NO "auth":
+#                                                      it only ever stops something and spends nothing (session, CSRF, origin)
 #                                        subscriptions-check {…}  ./stack subscriptions status (lib/subscriptions.sh)
 #                                        subscriptions-signout {…,"tool":"claude|codex|cursor|grok"}  that tool's own
 #                                                        sign-out in the sandbox (narrowing)
@@ -59,7 +62,7 @@ PICK_MAX_PER_DAY="${PICK_MAX_PER_DAY:-10}"
 ACT_MAX_BYTES=3072   # (a project action carries a few more fields than a diagnostic; a local-model download a few more: its facts)
 # Local models (lib/local_models.sh): a download or a removal, started in the background (no stack lock while it downloads);
 # its progress is in .state/status/local-models.json. Every field fixed: a Hugging Face repo and quant name, never a path or URL.
-LOCAL_HELPER_ACTIONS="local-pull local-remove local-server local-probe"
+LOCAL_HELPER_ACTIONS="local-pull local-remove local-server local-probe local-stop"
 LOCAL_MIN_INTERVAL_S="${LOCAL_MIN_INTERVAL_S:-5}"
 LOCAL_MAX_PER_DAY="${LOCAL_MAX_PER_DAY:-200}"
 settings_capability_file() { printf '%s/helper-settings.json\n' "$(status_dir)"; }
@@ -343,6 +346,9 @@ act_check_request() {
     action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="-"
     project="probe-local||${BASH_REMATCH[4]}|${BASH_REMATCH[5]}|${BASH_REMATCH[6]}||${BASH_REMATCH[7]}"
     [ "${#BASH_REMATCH[4]}" -le 200 ] && [ "${#BASH_REMATCH[6]}" -le 280 ] || { echo "a field is too long" >&2; return 1; }
+  # (Pause or Cancel of the running download: no password either — it stops, and spends nothing; the op in project's place)
+  elif _sv_re "$body" '^\{"action":"(local-stop)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","op":"(pause|cancel)"\}$'; then
+    action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="-"; project="${BASH_REMATCH[4]}"
   # (what DevOS ADE may read of your sessions here: taken back by the project's id, or all — the tool in mode's place)
   # (setup-*: what may be read of your setup — Bring your setup, lib/sessions_config.sh —, by tool, with project all)
   elif _sv_re "$body" '^\{"action":"(sessions-revoke)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})","project":"(p_[0-9a-f]{8}|all)","tool":"(claude|claude-bedrock|both|suggest|setup-claude|setup-claude-bedrock|setup-git|setup-all)"\}$'; then
@@ -402,6 +408,7 @@ helper_pick_folder() {
 _act_limits() {
   case "$1" in
     project-pick) _kind_limits pick-jobs "$(_helper_num "$PICK_MIN_INTERVAL_S" 60)" "$(_helper_num "$PICK_MAX_PER_DAY" 10)" ;;
+    local-stop) _kind_limits stop-jobs 1 "$(_helper_num "$LOCAL_MAX_PER_DAY" 200)" ;;
     local-server | local-probe) _kind_limits server-jobs "$(_helper_num "$LOCAL_SERVER_MIN_INTERVAL_S" 1)" "$(_helper_num "$LOCAL_SERVER_MAX_PER_DAY" 600)" ;;
     local-*) _kind_limits local-jobs "$(_helper_num "$LOCAL_MIN_INTERVAL_S" 5)" "$(_helper_num "$LOCAL_MAX_PER_DAY" 200)" ;;
     *) _diag_limits "$1" ;;
@@ -625,6 +632,11 @@ helper_run_diag() {
 local_helper_start() {
   local action="$1" f="$2" nonce="$3" repo quant bytes tools ctx pm lic logf
   if [ "$action" = local-server ] || [ "$action" = local-probe ]; then _kind_count server-jobs "$action"; local_server_start "$f"; return 0; fi
+  if [ "$action" = local-stop ]; then   # (while the download runs: f is pause or cancel)
+    _kind_count stop-jobs "$action"
+    ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" local-models "$f" ) </dev/null > "$(helper_dir)/local-stop.log" 2>&1 &
+    return 0
+  fi
   IFS='|' read -r repo quant bytes tools ctx pm lic <<< "$f"
   _kind_count local-jobs "$action"
   if local_job_running; then _refuse_diag "a download is already running (Settings › Models & providers › Local models shows it)" "$nonce"; return 0; fi
@@ -681,8 +693,8 @@ settings_poll_once() {
           rm -rf "$box"
           read -r action res auth when project mode hide <<< "$res"   # res: the nonce from here on
           _remember_nonce "$res"
-          # (local-probe is the one request with no password: read-only, and still rate-limited like the rest)
-          if { [ "$action" = local-probe ] && [ "$auth" = - ] || reason="$(_auth_ok "$auth" 2>&1)"; } && reason="$(_act_limits "$action" 2>&1)"; then
+          # (local-probe and local-stop are the requests with no password: read-only, or a stop; rate-limited like the rest)
+          if { { [ "$action" = local-probe ] || [ "$action" = local-stop ]; } && [ "$auth" = - ] || reason="$(_auth_ok "$auth" 2>&1)"; } && reason="$(_act_limits "$action" 2>&1)"; then
             auth=''
             case "$action" in
               local-*) local_helper_start "$action" "$project" "$res"; return 0 ;;   # (in the background: no lock, no job slot)
@@ -825,14 +837,15 @@ settings_helper_tick() {
     write_backups_json 2>/dev/null && printf '%s' "$l" > "$seen" || true
   fi
   ! backup_nightly_tick || ran=0
-  if [ ! -f "$f" ] || [ -n "$(find "$f" -mmin +10 2>/dev/null)" ]; then
-    printf '{"settings": 1, "diagnostics": [%s], "projects": [%s], "sessions": [%s], "subscriptions": [%s], "local": [%s], "screen": %s, "written_at": %s}\n' \
+  # (every 10 minutes, and at once when what it says changed: a helper restarted with new actions offers them straight away)
+  l="$(printf '{"settings": 1, "diagnostics": [%s], "projects": [%s], "sessions": [%s], "subscriptions": [%s], "local": [%s], "screen": %s' \
       "$(for a in $DIAG_ACTIONS; do printf '"%s",' "$a"; done | sed 's/,$//')" \
       "$(for a in $PROJECT_ACTIONS; do printf '"%s",' "$a"; done | sed 's/,$//')" \
       "$(for a in $SESSIONS_REVOKE_ACTIONS ${SESSIONS_ACTIONS:-}; do printf '"%s",' "$a"; done | sed 's/,$//')" \
       "$(for a in $SUBS_HELPER_ACTIONS; do printf '"%s",' "$a"; done | sed 's/,$//')" \
-      "$(for a in $LOCAL_HELPER_ACTIONS; do printf '"%s",' "$a"; done | sed 's/,$//')" "$(helper_screen && echo true || echo false)" "$(date +%s)" > "$f.tmp" 2>/dev/null &&
-      chmod 644 "$f.tmp" && mv "$f.tmp" "$f"
+      "$(for a in $LOCAL_HELPER_ACTIONS; do printf '"%s",' "$a"; done | sed 's/,$//')" "$(helper_screen && echo true || echo false)")"
+  if [ ! -f "$f" ] || [ -n "$(find "$f" -mmin +10 2>/dev/null)" ] || [ "$(sed 's/, "written_at": [0-9]*}$//' "$f" 2>/dev/null)" != "$l" ]; then
+    printf '%s, "written_at": %s}\n' "$l" "$(date +%s)" > "$f.tmp" 2>/dev/null && chmod 644 "$f.tmp" && mv "$f.tmp" "$f"
   fi
   return "$ran"
 }

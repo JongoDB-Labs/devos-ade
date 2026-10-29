@@ -271,10 +271,19 @@ def annotate(row: dict, memory: int | None, gpu: str, installed: list[dict]) -> 
 
 # --- what ./stack wrote ---
 
+JOB_STATES = ("idle", "pulling", "registering", "removing", "done", "failed", "paused", "cancelled")
+LIVE = ("pulling", "registering", "removing")
+
+
 def _clean_job(j: dict) -> dict:
-    st = j.get("state") if j.get("state") in ("idle", "pulling", "registering", "removing", "done", "failed") else "idle"
+    """job.json's download or removal (lib/local_models.sh _local_job): rate in bytes a second, eta in seconds (None: not
+    known), stalled: seconds since anything arrived. A paused or stopped download keeps a part (resumable) when bytes arrived."""
+    st = j.get("state") if j.get("state") in JOB_STATES else "idle"
+    eta = _int(j.get("eta"))
     return {"state": st, "repo": _text(j.get("repo"), 200), "quant": _text(j.get("quant"), 64),
             "done_bytes": _int(j.get("done_bytes")) or 0, "total_bytes": _int(j.get("total_bytes")) or 0,
+            "rate": _int(j.get("rate")) or 0, "eta": eta if eta is not None and eta >= 0 else None, "stalled": _int(j.get("stalled")) or 0,
+            "resumable": st == "paused" or (st == "failed" and (_int(j.get("done_bytes")) or 0) > 0),
             "message": _text(j.get("message"), 300), "at": _int(j.get("at"))}
 
 

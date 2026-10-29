@@ -65,7 +65,7 @@ Usage: ./stack <command> [--yes]
   websearch    Claude Code's WebSearch on every model (LiteLLM runs the search): status | check
                (~$0.007 at most) | aws-setup (AgentCore Web Search's one-time AWS setup, for your admin)
   local-models Models downloaded from Hugging Face and run on this computer (Docker Model Runner, else Ollama):
-               status | pull ORG/REPO [QUANT] | rm ORG/REPO [QUANT] | enable | uninstall [--models]
+               status | pull ORG/REPO [QUANT] | pause | resume | cancel | rm ORG/REPO [QUANT] | enable | uninstall [--models]
                server list|add NAME URL [--trust]|key NAME|enable NAME ID|disable NAME ID|rm NAME   (any OpenAI-compatible server)
                (Settings › Models & providers › Local models; Apple silicon runs models with MLX, else Docker Model Runner, else Ollama)
   terminal     Claude Code in the browser: a Terminal tab, a sandbox that sees only one folder of yours
