@@ -291,3 +291,9 @@ model_server_keys	0	ok	lab=abc123.-_
 model_server_keys	0	bad	lab
 model_server_models	0	ok	lab:*,lab:qwen/Qwen3-8B:latest
 model_server_models	0	bad	lab:
+local_runtime	0	ok	
+local_runtime	0	ok	auto
+local_runtime	0	ok	ollama
+local_runtime	0	ok	llamacpp
+local_runtime	0	bad	llama.cpp
+local_runtime	0	bad	lmstudio
