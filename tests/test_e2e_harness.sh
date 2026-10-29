@@ -765,7 +765,7 @@ EOF
   assert_contains "$r" '{ cat "$HERE/rebind-try.sh"; cat <<'"'"'SH'"'"'; } | docker exec -i'
   assert_contains "$r" 'rebind_steady rebind_try'
   assert_contains "$r" '*0*|"") bad="$bad proxy-rebind:$rb$REBIND_BAD"'
-  assert_contains "$r" 'case "$rb" in 1*) printf '"'"'%s\n'"'"' "$elog" | grep -q '"'"'"address":"127.0.0.1".*resolves to 127.0.0.1'"'"' || bad="$bad egress-log-no-rebind" ;; esac'
+  assert_contains "$r" 'case "$rb" in 1*) printf '"'"'%s\n'"'"' "$elog" | grep '"'"'"address":"127.0.0.1".*resolves to 127.0.0.1'"'"' >/dev/null || bad="$bad egress-log-no-rebind" ;; esac'
 }
 
 # --- the suite's image cache (tests/e2e/docker-reuse/docker, for the throwaway's ./stack setup): a stand-in for the

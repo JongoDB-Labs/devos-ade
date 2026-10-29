@@ -657,7 +657,7 @@ rebind_steady() {
   local probe="$1" state next url cls code u0 line round=0 na='' strict='' host
   REBIND_LOG="$2"; REBIND_RB=''; REBIND_BAD=''; REBIND_NOTE=''
   state="$(printf '%s\n' "$2" | _rebind_state)"
-  while printf '%s\n' "$state" | grep -q ' noanswer ' && [ "$round" -lt "${E2E_REBIND_RETRIES:-3}" ]; do
+  while printf '%s\n' "$state" | grep ' noanswer ' >/dev/null && [ "$round" -lt "${E2E_REBIND_RETRIES:-3}" ]; do
     round=$((round + 1))
     sleep "${E2E_REBIND_GAP_S:-10}"
     next=''

@@ -304,8 +304,8 @@ valid_msrv_list() {
   while IFS= read -r e; do e="$(printf '%s' "$e" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"; valid_msrv_entry "$e" || return 1; n=$((n + 1)); done < <(printf '%s\n' "$v" | tr ',' '\n')
   [ "$n" -le 8 ]
 }
-valid_msrv_keys() { [ -z "$1" ] && return 0; ! printf '%s' "$1" | tr ',' '\n' | grep -qvE '^[a-z0-9][a-z0-9-]{0,23}=([0-9a-f]{16}:)?[A-Za-z0-9._~+/=-]{1,200}$'; }
-valid_msrv_models() { [ -z "$1" ] || ! printf '%s' "$1" | tr ',' '\n' | grep -qvE '^[a-z0-9][a-z0-9-]{0,23}:(\*|[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127})$'; }
+valid_msrv_keys() { [ -z "$1" ] && return 0; ! printf '%s' "$1" | tr ',' '\n' | grep -vE '^[a-z0-9][a-z0-9-]{0,23}=([0-9a-f]{16}:)?[A-Za-z0-9._~+/=-]{1,200}$' >/dev/null; }
+valid_msrv_models() { [ -z "$1" ] || ! printf '%s' "$1" | tr ',' '\n' | grep -vE '^[a-z0-9][a-z0-9-]{0,23}:(\*|[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127})$' >/dev/null; }
 
 # msrv_norm_url URL -> the stored form (scheme://host[:port][/path], no /v1, no trailing slash), or fails: userinfo, query and
 # fragments are refused (a key in a URL would be logged)
@@ -683,7 +683,7 @@ local_how_text() {
   [ "$(local_mlx_state)" != no-uv ] || { echo "On Apple silicon the models run with MLX, which needs uv: brew install uv (or https://docs.astral.sh/uv/), then download again. Docker Model Runner (Docker Desktop 4.71 or newer) also works."; return 0; }
   case "$d" in
     not-enabled)
-      if docker info --format '{{.OperatingSystem}}' 2>/dev/null | grep -q "Docker Desktop"; then
+      if docker info --format '{{.OperatingSystem}}' 2>/dev/null | grep "Docker Desktop" >/dev/null; then
         echo "Docker Model Runner is built into Docker Desktop but switched off: turn it on in Docker Desktop › Settings › AI, or run ./stack local-models enable."
       else echo "Docker Model Runner is not running: ./stack local-models enable starts it (docker model install-runner)."; fi ;;
     plugin-missing)
@@ -856,11 +856,11 @@ local_status_write() {
     present=true
     if [ "${_LOCAL_FAST:-0}" != 1 ] && { { [ "$r" = dmr ] && [ "$d" = ready ]; } || { [ "$r" = ollama ] && [ "$o" = ready ]; } || [ "$r" = mlx ]; }; then
       ids="$(local_runner_ids "$r" || true)"
-      printf '%s\n' "$ids" | grep -qxF "$id" || present=false
+      printf '%s\n' "$ids" | grep -xF "$id" >/dev/null || present=false
     fi
     case "$bytes" in '' | *[!0-9]*) bytes=0 ;; esac
     total=$((total + bytes))
-    inst="$inst$sep{\"runtime\":$(_local_q "$r" 20),\"id\":$(_local_q "$id"),\"name\":$(_local_q "$(local_model_name "$r:$id")"),\"repo\":$(_local_q "$repo" 200),\"quant\":$(_local_q "$quant" 64),\"bytes\":$bytes,\"license\":$(_local_q "$lic" 60),\"tools\":$(_local_q "$tools" 4),\"context\":$(_local_q "$ctx" 12),\"params_m\":$(_local_q "$pm" 12),\"present\":$present,\"registered\":$(local_models_wanted | grep -qxF "$r:$id" && echo true || echo false),\"added\":$(_local_q "${added:-0}" 12),\"revision\":$(_local_q "$([[ ${rev:-} =~ ^[0-9a-f]{40}$ ]] && echo "$rev")" 40)}"
+    inst="$inst$sep{\"runtime\":$(_local_q "$r" 20),\"id\":$(_local_q "$id"),\"name\":$(_local_q "$(local_model_name "$r:$id")"),\"repo\":$(_local_q "$repo" 200),\"quant\":$(_local_q "$quant" 64),\"bytes\":$bytes,\"license\":$(_local_q "$lic" 60),\"tools\":$(_local_q "$tools" 4),\"context\":$(_local_q "$ctx" 12),\"params_m\":$(_local_q "$pm" 12),\"present\":$present,\"registered\":$(local_models_wanted | grep -xF "$r:$id" >/dev/null && echo true || echo false),\"added\":$(_local_q "${added:-0}" 12),\"revision\":$(_local_q "$([[ ${rev:-} =~ ^[0-9a-f]{40}$ ]] && echo "$rev")" 40)}"
     sep=','
   done < <(local_registry_rows)
   local sv='' ssep='' n u tr_ st
@@ -1146,7 +1146,7 @@ local_models_enable() {
         *) die "this Docker has no model runner: update Docker Desktop (https://docs.docker.com/ai/model-runner/)" ;;
       esac ;;
   esac
-  if docker info --format '{{.OperatingSystem}}' 2>/dev/null | grep -q "Docker Desktop"; then
+  if docker info --format '{{.OperatingSystem}}' 2>/dev/null | grep "Docker Desktop" >/dev/null; then
     confirm "Turn on Docker Desktop's Model Runner (docker desktop enable model-runner --tcp 12434)? This changes a Docker Desktop setting." || die "left off"
     docker desktop enable model-runner --tcp 12434
   else

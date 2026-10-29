@@ -562,7 +562,7 @@ proxy-rebind	$REBIND_RB"
     bad=''; dns_note=''
     for k in portal:8000 open-webui:8080 postgres:5432 rustfs:9000 litellm:4000 shared-mcp:8000 stt:8000 caddy:8080 searxng:8080 \
              gateway:8080 gateway:8090 gateway:8081 gateway:7681 gateway:7682 gateway:80; do
-      printf '%s\n' "$probe" | grep -q "^$k	closed" || bad="$bad $k-reachable"
+      printf '%s\n' "$probe" | grep "^$k	closed" >/dev/null || bad="$bad $k-reachable"
     done
     for kv in gateway-litellm=200 gateway-mcp-no-token=401 gateway-mcp-tools=1 gateway-key=200 gateway-models=200 gateway-count-tokens=200 gateway-ui=404 \
               gateway-key-generate=404 gateway-bedrock=404 gateway-spend-logs=404 gateway-chat-completions=404 \
@@ -572,7 +572,7 @@ proxy-rebind	$REBIND_RB"
               egress-env="http://egress:3128 1 1" dns-outside=none direct-internet=000 direct-host="000 000" \
               proxy-host="403 403 403 403 403 403 403 403 " proxy-private="403 403 403 403 403 403 403 403 403 " \
               proxy-host-ssh=403 proxy-tls-private="403 403 403 " proxy-port=403; do
-      printf '%s\n' "$probe" | grep -q "^${kv%%=*}	${kv#*=}\$" || bad="$bad ${kv%%=*}:$(printf '%s\n' "$probe" | awk -F'\t' -v k="${kv%%=*}" '$1 == k { print $2 }')"
+      printf '%s\n' "$probe" | grep "^${kv%%=*}	${kv#*=}\$" >/dev/null || bad="$bad ${kv%%=*}:$(printf '%s\n' "$probe" | awk -F'\t' -v k="${kv%%=*}" '$1 == k { print $2 }')"
     done
     # the public side (E2E_PUBLIC_EXPECT): as its last try said; when it failed while this computer's DNS answered a
     # public name with a private address, the detail says so first — still a FAIL: nothing here passes unproven
@@ -600,14 +600,14 @@ proxy-rebind	$REBIND_RB"
     # 403 off its routes (and 404 for a ../ path, which LiteLLM routes nowhere)
     lbr="$(printf '%s\n' "$probe" | awk -F'\t' '$1 == "loopback-litellm" { print $2 }')"
     case "$(uname -s):$lbr" in *:"403 403 403 403 403") ;; *) bad="$bad loopback-litellm:$lbr" ;; esac
-    printf '%s\n' "$probe" | grep -q '^claude	[0-9.]* (Claude Code)' || bad="$bad no-claude"
-    printf '%s\n' "$probe" | grep -q '^make	GNU Make [0-9]' || bad="$bad no-make"
+    printf '%s\n' "$probe" | grep '^claude	[0-9.]* (Claude Code)' >/dev/null || bad="$bad no-claude"
+    printf '%s\n' "$probe" | grep '^make	GNU Make [0-9]' >/dev/null || bad="$bad no-make"
     # the proxy's log: each refusal, with the address and why — never a path
     elog="$(docker logs "$eg" 2>&1)"; printf '%s\n' "$elog" > "$LOGS/terminal-egress.log"
-    printf '%s\n' "$elog" | grep -q '"event":"refused".*"host":"169.254.169.254".*"why":"link-local' || bad="$bad egress-log-no-refusal"
-    printf '%s\n' "$elog" | grep -q 'meta-data' && bad="$bad egress-log-has-a-path"
-    case "$rb" in 1*) printf '%s\n' "$elog" | grep -q '"address":"127.0.0.1".*resolves to 127.0.0.1' || bad="$bad egress-log-no-rebind" ;; esac
-    printf '%s\n' "$elog" | grep -q "\"port\":22,\"address\":\"$hg\",\"status\":403" || bad="$bad egress-log-no-host-gateway"
+    printf '%s\n' "$elog" | grep '"event":"refused".*"host":"169.254.169.254".*"why":"link-local' >/dev/null || bad="$bad egress-log-no-refusal"
+    printf '%s\n' "$elog" | grep 'meta-data' >/dev/null && bad="$bad egress-log-has-a-path"
+    case "$rb" in 1*) printf '%s\n' "$elog" | grep '"address":"127.0.0.1".*resolves to 127.0.0.1' >/dev/null || bad="$bad egress-log-no-rebind" ;; esac
+    printf '%s\n' "$elog" | grep "\"port\":22,\"address\":\"$hg\",\"status\":403" >/dev/null || bad="$bad egress-log-no-host-gateway"
     [ "$(docker inspect -f '{{.Config.User}} {{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}}' "$eg" 2>/dev/null)" = "65534:65534 true [ALL]" ] ||
       bad="$bad egress-not-hardened"
     # Its key is its own (claude-code-terminal), never the claude-code key of devos-claude on this computer
@@ -621,7 +621,7 @@ proxy-rebind	$REBIND_RB"
     case "$out" in *"bad address"*407* | *"resolve"*407*) ;; *) bad="$bad main-caddy:$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-80)" ;; esac
     # The gateway's own neighbours: LiteLLM (and shared-mcp, the main Caddy), never the portal, Open WebUI or the data
     tgw="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=terminal-gateway)"
-    out="$(docker exec "$tgw" sh -c 'for h in portal:8000 open-webui:8080 postgres:5432 rustfs:9000 stt:8000; do wget -q -T 3 -O /dev/null "http://$h/" 2>&1 | head -n 1 | grep -q "bad address" || echo "$h"; done; wget -q -T 5 -O /dev/null http://litellm:4000/health/liveliness || echo litellm-unreachable' 2>&1)"
+    out="$(docker exec "$tgw" sh -c 'for h in portal:8000 open-webui:8080 postgres:5432 rustfs:9000 stt:8000; do wget -q -T 3 -O /dev/null "http://$h/" 2>&1 | head -n 1 | grep "bad address" >/dev/null || echo "$h"; done; wget -q -T 5 -O /dev/null http://litellm:4000/health/liveliness || echo litellm-unreachable' 2>&1)"
     [ -z "$out" ] || bad="$bad gateway-neighbours:$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-80)"
     if [ -z "$bad" ]; then
       steady=''; [ "$PUBLIC_TRIES" -le 1 ] || steady="(the public probes passed at try $PUBLIC_TRIES; at first ${PUBLIC_DNS_SEEN:-they failed}) "
@@ -720,12 +720,12 @@ if [ "$CODE" = 1 ]; then
     # with it — Chat's models are reached through the main Caddy's internal site)
     for k in litellm:4000 portal:8000 open-webui:8080 postgres:5432 rustfs:9000 shared-mcp:8000 stt:8000 searxng:8080 terminal:7681 gateway:8091 \
              terminal-upstream:7681 1.1.1.1:443 host.docker.internal:80; do
-      printf '%s\n' "$probe" | grep -q "^$k	closed" || bad="$bad $k-reachable"
+      printf '%s\n' "$probe" | grep "^$k	closed" >/dev/null || bad="$bad $k-reachable"
     done
     for kv in caddy:8080=open secrets-in-env=CODE_CHAT_KEY,CODE_PROXY_SECRET workspace=absent \
               mounts=/etc/bn-code/projects,/run/bn-chat,/run/bn-code,/run/bn-import-stage,/tmp,/usr/sbin/docker-init,/var/lib/bn-code rootfs-writable=no \
               socket-dir-writable=no claude-binary=absent; do
-      printf '%s\n' "$probe" | grep -q "^${kv%%=*}	${kv#*=}\$" || bad="$bad ${kv%%=*}:$(printf '%s\n' "$probe" | awk -F'\t' -v k="${kv%%=*}" '$1 == k { print $2 }')"
+      printf '%s\n' "$probe" | grep "^${kv%%=*}	${kv#*=}\$" >/dev/null || bad="$bad ${kv%%=*}:$(printf '%s\n' "$probe" | awk -F'\t' -v k="${kv%%=*}" '$1 == k { print $2 }')"
     done
     [ "$(printf '%s\n' "$probe" | awk -F'\t' '$1 == "uid" { print $2 }')" = "$(id -u)" ] || bad="$bad not-your-uid"
     case "$(printf '%s\n' "$probe" | awk -F'\t' '$1 == "forged-signin" { print $2 }')" in 302 | 401 | 403) ;; *) bad="$bad forged-signin:$(printf '%s\n' "$probe" | awk -F'\t' '$1 == "forged-signin" { print $2 }')" ;; esac
@@ -965,7 +965,7 @@ if ! part_on cli; then record cli read-only SKIP 0 "--only $ONLY"; else
   cli test 0 'all checks passed' test
   for s in portal caddy litellm; do follow_logs "logs-$s" "$s"; done
   imgs_before="$(docker image ls -q --no-trunc | sort)"
-  if st clean --help 2>&1 | grep -q -- '--dry-run'; then
+  if st clean --help 2>&1 | grep -- '--dry-run' >/dev/null; then
     cli clean-dry-run 0 'nothing to clean|Would remove' clean --dry-run
     if [ "$(docker image ls -q --no-trunc | sort)" = "$imgs_before" ]; then record cli clean-dry-run-removes-nothing PASS 0 "image list unchanged"
     else record cli clean-dry-run-removes-nothing FAIL 0 "images changed during clean --dry-run"; fi
@@ -982,7 +982,7 @@ if ! part_on cli; then record cli read-only SKIP 0 "--only $ONLY"; else
   cli websearch-aws-setup 0 'aws bedrock-agentcore-control create-gateway --region ' websearch aws-setup
   cli serve-stop 0 'is not running' serve --stop
   cli ssh-info 0 'Claude Code \(devos-claude\) from your phone' ssh-info
-  if st help 2>&1 | grep -qE '^  password'; then
+  if st help 2>&1 | grep -E '^  password' >/dev/null; then
     cli password 0 'PORTAL_PASSWORD in .*\.env' password
     # --show prints only to a terminal: here (none) it must refuse, and the output must not hold the password
     t0="$(now)"; raw="$(st password --show 2>&1)"; rc=$?
@@ -994,7 +994,7 @@ if ! part_on cli; then record cli read-only SKIP 0 "--only $ONLY"; else
   # --help for every command (never runs the command itself)
   t0="$(now)"; bad=''
   for c in $(st help 2>/dev/null | awk '/^  [a-z]/ { print $1 }') down; do
-    out="$(st "$c" --help 2>&1)" && printf '%s' "$out" | grep -q "Usage: ./stack $c" || bad="$bad $c"
+    out="$(st "$c" --help 2>&1)" && printf '%s' "$out" | grep "Usage: ./stack $c" >/dev/null || bad="$bad $c"
   done
   if [ -z "$bad" ]; then record cli help-every-command PASS "$(( $(now) - t0 ))" "every ./stack <command> --help prints its usage"
   else record cli help-every-command FAIL "$(( $(now) - t0 ))" "no usage from --help:$bad"; fi
@@ -1018,7 +1018,7 @@ git_server_start() {
   docker run -d --name "$PROJECT-gitsrv" --label "io.bedrock-now.e2e=$PROJECT" --network "$n" --network-alias gitsrv -p 127.0.0.1::8443 \
     -e GITSRV_TOKEN="$E2E_GIT_TOKEN" "$PROJECT/e2e-gitsrv:local" > /dev/null 2>> "$LOGS/gitsrv-build.log" ||
     { record git git-server FAIL 0 "docker run failed ($LOGS/gitsrv-build.log)"; return 1; }
-  for i in $(seq 1 60); do docker logs "$PROJECT-gitsrv" 2>&1 | grep -q '^https on' && { ok=1; break; }; sleep 1; done
+  for i in $(seq 1 60); do docker logs "$PROJECT-gitsrv" 2>&1 | grep '^https on' >/dev/null && { ok=1; break; }; sleep 1; done
   E2E_GIT_ADMIN_PORT="$(docker port "$PROJECT-gitsrv" 8443/tcp 2>/dev/null | sed -n 's/^127\.0\.0\.1:\([0-9]*\)$/\1/p' | head -n 1)"
   if [ "$ok" = 1 ] && [ -n "$E2E_GIT_ADMIN_PORT" ] && E2E_GIT_CA_B64="$(docker exec "$PROJECT-gitsrv" sh -c 'base64 -w0 /srv/ca.pem')" && [ -n "$E2E_GIT_CA_B64" ]; then
     export E2E_GIT_SERVER=1 E2E_GIT_TOKEN E2E_GIT_CA_B64 E2E_GIT_ADMIN_PORT
@@ -1175,14 +1175,14 @@ elif [ "$HOST_FOLDERS" = 1 ]; then
   t0="$(now)"; tc="$(svc_id terminal)"; cc="$(svc_id code)"
   probe="$(host_probe "$tc" "$HF/app" "$HF/notes" "$HOME")"; printf '%s\n' "$probe" > "$LOGS/host-folders-probe.log"
   rel="${HF#"$HOME"/}"; first="${rel%%/*}"; bad=''
-  for k in app-read app-write notes-read notes-read-only notes-host-path-absent home-ssh-absent; do printf '%s\n' "$probe" | grep -qx "$k" || bad="$bad $k"; done
-  case "$HF" in "$HOME"/*) printf '%s\n' "$probe" | grep -qx "home-entries $first " || bad="$bad home:$(printf '%s\n' "$probe" | sed -n 's/^home-entries //p')" ;; esac
-  printf '%s\n' "$probe" | grep -qF "roots [\"$HF/app\",\"/projects/e2e-host-notes\"]" || bad="$bad roots:$(printf '%s\n' "$probe" | sed -n 's/^roots //p')"
+  for k in app-read app-write notes-read notes-read-only notes-host-path-absent home-ssh-absent; do printf '%s\n' "$probe" | grep -x "$k" >/dev/null || bad="$bad $k"; done
+  case "$HF" in "$HOME"/*) printf '%s\n' "$probe" | grep -x "home-entries $first " >/dev/null || bad="$bad home:$(printf '%s\n' "$probe" | sed -n 's/^home-entries //p')" ;; esac
+  printf '%s\n' "$probe" | grep -F "roots [\"$HF/app\",\"/projects/e2e-host-notes\"]" >/dev/null || bad="$bad roots:$(printf '%s\n' "$probe" | sed -n 's/^roots //p')"
   [ -n "$tc" ] && [ "$tc" != "$tc0" ] || bad="$bad sandbox-not-recreated"
   roots="$(docker exec "$cc" cat /etc/bn-code/projects/roots.json 2>&1)"
   case "$roots" in *"\"path\":\"$HF/app\",\"mode\":\"rw\",\"hidden\":false"*"\"path\":\"/projects/e2e-host-notes\",\"mode\":\"ro\",\"hidden\":true"*) ;; *) bad="$bad code-roots:${roots:0:200}" ;; esac
   # (the code container mounts no folder of yours: only the list)
-  docker exec "$cc" sh -c 'cat /proc/self/mounts' 2>/dev/null | awk '{ print $2 }' | grep -qF "$HF" && bad="$bad code-container-mounts-a-folder"
+  docker exec "$cc" sh -c 'cat /proc/self/mounts' 2>/dev/null | awk '{ print $2 }' | grep -F "$HF" >/dev/null && bad="$bad code-container-mounts-a-folder"
   if [ -z "$bad" ]; then
     record projects host-folders-sandbox PASS "$(( $(now) - t0 ))" "the sandbox restarted; it sees the read-write folder at its own path (read, write) and the read-only one only at /projects/e2e-host-notes (writes refused); of your home folder only the way to the folder (${first:-—}), no .ssh; BN_CODE_ROOTS and the code container's roots.json list both; the code container mounts neither"
   else record projects host-folders-sandbox FAIL "$(( $(now) - t0 ))" "unexpected:$bad (log $LOGS/host-folders-probe.log)"; fi
@@ -1341,7 +1341,7 @@ elif [ "$HOST_SESSIONS" = 1 ]; then
   else record projects host-sessions-copied-redacted FAIL "$(( $(now) - t0 ))" "fake secrets found in ${leak:-?} file(s) of the sandbox's store; $copied copied; stores unchanged: $([ "$(hs_sum)" = "$hs_before" ] && echo yes || echo no)"; fi
   BN_SESSIONS_HOME="$HS/home" cli sessions-revoke 0 'no longer reads' sessions consent --project e2e-sessions-app --revoke
   t0="$(now)"
-  if docker exec "$cc_id" sh -c 'ls /var/lib/bn-code/imports/' 2>/dev/null | grep -q '^index-'; then
+  if docker exec "$cc_id" sh -c 'ls /var/lib/bn-code/imports/' 2>/dev/null | grep '^index-' >/dev/null; then
     record projects host-sessions-forgotten FAIL 0 "the code container still has a list after the consent was taken back"
   else record projects host-sessions-forgotten PASS "$(( $(now) - t0 ))" "taken back: the code container's list is forgotten (the copies in the sandbox stay)"; fi
   BN_SESSIONS_HOME="$HS/home" cli sessions-fetch-after-revoke 1 'no list of this project|that list is gone|not allowed' sessions fetch --project e2e-sessions-app --all
@@ -1410,7 +1410,7 @@ elif [ "$HOST_CONFIG" = 1 ]; then
   else record projects host-config-in-the-sandbox FAIL "$(( $(now) - t0 ))" "leak=$leak kept=$kept skill=$skill name=$([ "$gname" = "$HC_NAME" ] && echo ok || echo no) email=$([ "$gmail" = "$HC_EMAIL" ] && echo ok || echo no) never=$never home unchanged: $([ "$(hc_sum)" = "$hc_before" ] && echo yes || echo no)"; fi
   BN_SESSIONS_HOME="$HC/home" cli setup-revoke 0 'no longer reads your' sessions config consent --revoke
   t0="$(now)"
-  if docker exec "$cc_id" sh -c 'ls /var/lib/bn-code/imports/' 2>/dev/null | grep -q '^setup-index'; then
+  if docker exec "$cc_id" sh -c 'ls /var/lib/bn-code/imports/' 2>/dev/null | grep '^setup-index' >/dev/null; then
     record projects host-config-forgotten FAIL 0 "the code container still has the look after the consent was taken back"
   else record projects host-config-forgotten PASS "$(( $(now) - t0 ))" "taken back: the code container's look is forgotten (what was copied stays in the sandbox)"; fi
   BN_SESSIONS_HOME="$HC/home" cli setup-open-after-revoke 1 'no look at your setup|that look is gone|not allowed' sessions config open --all
@@ -1458,7 +1458,7 @@ elif [ "$SUBSCRIPTIONS" = 1 ]; then
               'grok|x\.ai/oauth2/device' 'claude|claude\.(com|ai)/.*oauth/authorize'; do
     t="${spec%%|*}"; pat="${spec#*|}"; t0="$(now)"
     out="$(docker exec "$tc" timeout 40 script -qec "subscriptions login $t" /dev/null </dev/null 2>&1 | tr -d '\r' | head -c 20000)"
-    if printf '%s' "$out" | grep -Eq "$pat"; then record subscriptions "signin-$t" PASS "$(( $(now) - t0 ))" "its own sign-in printed its link in the sandbox; ended there, never completed"
+    if printf '%s' "$out" | grep -E "$pat" >/dev/null; then record subscriptions "signin-$t" PASS "$(( $(now) - t0 ))" "its own sign-in printed its link in the sandbox; ended there, never completed"
     else record subscriptions "signin-$t" FAIL "$(( $(now) - t0 ))" "no /$pat/ in: $(printf '%s' "$out" | sed -E 's/\x1b\[[0-9;?]*[A-Za-z]//g' | tr '\n' ' ' | tail -c 300)"; fi
   done
   # Gemini CLI signs in inside its own screen: its trust question answered "Don't trust", then its Google link
@@ -1466,7 +1466,7 @@ elif [ "$SUBSCRIPTIONS" = 1 ]; then
   out="$(docker exec -e TERM=xterm-256color "$tc" sh -c 'tmux -L e2e-gemini -f /dev/null new-session -d -s g -x 200 -y 60 gemini; sleep 12
     tmux -L e2e-gemini send-keys -t g 3; sleep 1; tmux -L e2e-gemini send-keys -t g Enter; sleep 8
     tmux -L e2e-gemini capture-pane -p -J -t g; tmux -L e2e-gemini kill-server' 2>/dev/null)"
-  if printf '%s' "$out" | grep -q 'accounts.google.com/o/oauth2'; then record subscriptions signin-gemini PASS "$(( $(now) - t0 ))" "its own sign-in (Login with Google, NO_BROWSER) printed its link; ended there, never completed"
+  if printf '%s' "$out" | grep 'accounts.google.com/o/oauth2' >/dev/null; then record subscriptions signin-gemini PASS "$(( $(now) - t0 ))" "its own sign-in (Login with Google, NO_BROWSER) printed its link; ended there, never completed"
   else record subscriptions signin-gemini FAIL "$(( $(now) - t0 ))" "no Google link in: $(printf '%s' "$out" | tr '\n' ' ' | tail -c 300)"; fi
   # what the tools run is the image's, root's alone: Copilot's own package unpacked at build (nothing of it in the home
   # after its sign-in ran), Cursor without a compile cache there, every file of theirs root's and not writable by others
@@ -1502,8 +1502,8 @@ SH
     ask="$(docker exec -e K="$ck" "$ow" sh -c 'curl -s -m 120 -w "\n%{http_code}" -H "Authorization: Bearer $K" -H "Content-Type: application/json" -d "{\"model\":\"plan-copilot\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}" http://caddy:8098/v1/chat/completions' 2>/dev/null)"
     off="$(docker exec -e K="$ck" "$ow" sh -c 'curl -s -m 60 -w "\n%{http_code}" -H "Authorization: Bearer $K" -H "Content-Type: application/json" -d "{\"model\":\"plan-claude\",\"messages\":[{\"role\":\"user\",\"content\":\"x\"}]}" http://caddy:8098/v1/chat/completions' 2>/dev/null)"
     sees="$(docker exec "$ow" sh -c 'for h in code code-upstream code-chat; do getent hosts "$h" >/dev/null 2>&1 && printf "%s " "$h"; done; true' 2>&1)"
-    if printf '%s' "$models" | grep -q '"id":"plan-copilot"' && ! printf '%s' "$models" | grep -Eq 'plan-(codex|cursor|grok|claude)' && [ "$nokey" = 401 ] && [ "$other" = 404 ] \
-      && [ "$(printf '%s' "$ask" | tail -n 1)" = 409 ] && printf '%s' "$ask" | grep -q 'GitHub Copilot is not signed in' \
+    if printf '%s' "$models" | grep '"id":"plan-copilot"' >/dev/null && ! printf '%s' "$models" | grep -E 'plan-(codex|cursor|grok|claude)' >/dev/null && [ "$nokey" = 401 ] && [ "$other" = 404 ] \
+      && [ "$(printf '%s' "$ask" | tail -n 1)" = 409 ] && printf '%s' "$ask" | grep 'GitHub Copilot is not signed in' >/dev/null \
       && [ "$(printf '%s' "$off" | tail -n 1)" = 403 ] && [ -z "$sees" ]; then
       record subscriptions chat-models PASS "$(( $(now) - t0 ))" "Open WebUI's connection through caddy:8098: plan-copilot listed (others not signed in), its real ACP agent answered \"not signed in\" (409); no key 401; another path 404; Claude on your plan off (403); Open WebUI cannot resolve the code container"
     else record subscriptions chat-models FAIL "$(( $(now) - t0 ))" "models: $(printf '%s' "$models" | head -c 200); no key: $nokey; other: $other; ask: $(printf '%s' "$ask" | tr '\n' ' ' | tail -c 200); claude: $(printf '%s' "$off" | tail -n 1); resolves: ${sees:-none}"; fi
@@ -1554,9 +1554,9 @@ setTimeout(() => { console.log('timeout'); p.kill(); process.exit(0); }, 30000);
 JS
 )"
     if [ "$(printf '%s' "$mounts" | tr -d ' ')" = 00 ] && [ -z "$names" ] && [ -z "$homes" ] && [ "$own" = "$uid:700 $uid:700 $uid:700 $uid:700 " ] \
-      && printf '%s' "$chat_refuses" | grep -q "not in Chat's sandbox" \
-      && printf '%s' "$term_refuses" | grep -q "run in their own sandbox" \
-      && printf '%s' "$codex_cfg" | grep -q '"shell":false,"exec":false,"web":"disabled","mcp":{},"apps":false,"plugins":false'; then
+      && printf '%s' "$chat_refuses" | grep "not in Chat's sandbox" >/dev/null \
+      && printf '%s' "$term_refuses" | grep "run in their own sandbox" >/dev/null \
+      && printf '%s' "$codex_cfg" | grep '"shell":false,"exec":false,"web":"disabled","mcp":{},"apps":false,"plugins":false' >/dev/null; then
       record subscriptions chat-sandbox PASS "$(( $(now) - t0 ))" "Chat's sandbox: no workspace, a home of its own and sign-in folders of its own (yours, 700; nothing crosses to or from the terminal's), none of the stack's names; it refuses the workspace's ops and the workspace refuses Chat's; Codex there: shell, web search, MCP, apps, plugins off"
     else record subscriptions chat-sandbox FAIL "$(( $(now) - t0 ))" "mounts: $mounts; names: ${names:-none}; homes: ${homes:-none}; own: $own; chat: $(printf '%s' "$chat_refuses" | tail -c 150); terminal: $(printf '%s' "$term_refuses" | tail -c 150); codex: $(printf '%s' "$codex_cfg" | tail -c 200)"; fi
     # Chat's own sign-ins: ./stack subscriptions status --chat says them (not the terminal's), Cursor is not a Chat model,
@@ -1565,7 +1565,7 @@ JS
     cli subscriptions-chat-not-cursor 1 'Cursor CLI is not a Chat model' subscriptions login cursor --chat
     t0="$(now)"
     out="$(docker exec "$sc" timeout 40 script -qec "subscriptions login codex" /dev/null </dev/null 2>&1 | tr -d '\r' | head -c 20000)"
-    if printf '%s' "$out" | grep -Eq 'auth\.openai\.com/codex/device'; then record subscriptions signin-codex-chat PASS "$(( $(now) - t0 ))" "Codex's own sign-in, for Chat, in Chat's sandbox: printed its link; ended there, never completed"
+    if printf '%s' "$out" | grep -E 'auth\.openai\.com/codex/device' >/dev/null; then record subscriptions signin-codex-chat PASS "$(( $(now) - t0 ))" "Codex's own sign-in, for Chat, in Chat's sandbox: printed its link; ended there, never completed"
     else record subscriptions signin-codex-chat FAIL "$(( $(now) - t0 ))" "no device link in: $(printf '%s' "$out" | sed -E 's/\x1b\[[0-9;?]*[A-Za-z]//g' | tr '\n' ' ' | tail -c 300)"; fi
   else record subscriptions chat-sandbox SKIP 0 "needs the Code page (Chat's sandbox)"; fi
   # claude-sub: the image's claude without the stack's variables (a stand-in in the workspace prints its environment)
@@ -1574,15 +1574,20 @@ JS
   out="$(docker exec "$tc" env BN_CLAUDE_BIN=/workspace/.e2e-envstub claude-sub 2>/dev/null)"
   inside="$(docker exec "$tc" sh -c 'env | grep -c "^ANTHROPIC_"' 2>/dev/null)"
   rm -f "$ws/.e2e-envstub"
-  if ! printf '%s' "$out" | grep -q '^ANTHROPIC_' && printf '%s' "$out" | grep -qx 'CLAUDE_CONFIG_DIR=/home/claude/.claude-subscription' && [ "${inside:-0}" -gt 0 ]; then
+  if ! printf '%s' "$out" | grep '^ANTHROPIC_' >/dev/null && printf '%s' "$out" | grep -x 'CLAUDE_CONFIG_DIR=/home/claude/.claude-subscription' >/dev/null && [ "${inside:-0}" -gt 0 ]; then
     record subscriptions claude-sub-env PASS "$(( $(now) - t0 ))" "claude-sub: none of the sandbox's $inside ANTHROPIC_* variables, its own config folder"
   else record subscriptions claude-sub-env FAIL "$(( $(now) - t0 ))" "$(printf '%s' "$out" | grep -E '^(ANTHROPIC_|CLAUDE_CONFIG_DIR)' | cut -d= -f1 | tr '\n' ' ')"; fi
   if part_on browser; then
     E2E_SUBSCRIPTIONS=1 browser_run "your AI subscriptions: the pickers" 'browser/subscriptions-(terminal-open|chat-embed|code-harness)$' subs runner-subs
-    wins="$(docker exec "$tc" tmux list-windows -a -F '#{session_name}:#{window_name}' 2>/dev/null | tr '\n' ' ')"
-    case " $wins " in *" claude:codex "*) case " $wins " in *" chat-grok:grok "*) wins="ok $wins" ;; esac ;; esac
-    case "$wins" in ok*) record subscriptions picker-windows PASS 0 "tmux: ${wins#ok }" ;;
-      *) record subscriptions picker-windows FAIL 0 "tmux: $wins (want claude:codex and chat-grok:grok)" ;; esac
+    # (the windows the pickers opened: none when E2E_CHECKS left the pickers' checks out)
+    if ! grep -E "^browser	subscriptions-(terminal-open|chat-embed)@subs	" "$RESULTS" >/dev/null 2>&1; then
+      record subscriptions picker-windows SKIP 0 "the pickers' checks did not run (E2E_CHECKS)"
+    else
+      wins="$(docker exec "$tc" tmux list-windows -a -F '#{session_name}:#{window_name}' 2>/dev/null | tr '\n' ' ')"
+      case " $wins " in *" claude:codex "*) case " $wins " in *" chat-grok:grok "*) wins="ok $wins" ;; esac ;; esac
+      case "$wins" in ok*) record subscriptions picker-windows PASS 0 "tmux: ${wins#ok }" ;;
+        *) record subscriptions picker-windows FAIL 0 "tmux: $wins (want claude:codex and chat-grok:grok)" ;; esac
+    fi
   fi
 fi
 
@@ -1708,11 +1713,11 @@ else
     probe="$(stt_probe "$sttc" 2>&1)"; printf '%s\n' "$probe" > "$LOGS/voice-stt-isolation.log"
     bad=''
     for k in open-webui portal internet-ip internet-dns postgres rustfs; do
-      printf '%s\n' "$probe" | grep -q "^$k	closed" || bad="$bad $k:$(printf '%s\n' "$probe" | awk -F'\t' -v k="$k" '$1 == k { print $2 }')"
+      printf '%s\n' "$probe" | grep "^$k	closed" >/dev/null || bad="$bad $k:$(printf '%s\n' "$probe" | awk -F'\t' -v k="$k" '$1 == k { print $2 }')"
     done
-    printf '%s\n' "$probe" | grep -q '^litellm	open' || bad="$bad litellm-not-reachable"
+    printf '%s\n' "$probe" | grep '^litellm	open' >/dev/null || bad="$bad litellm-not-reachable"
     for kv in /healthz=200 /v1/audio/transcriptions=405 /v1/models=404 /=404 /api/v1/auths/=404; do
-      printf '%s\n' "$probe" | grep -q "^caddy8090${kv%%=*}	${kv#*=}\$" || bad="$bad caddy:8090${kv%%=*}:$(printf '%s\n' "$probe" | awk -F'\t' -v k="caddy8090${kv%%=*}" '$1 == k { print $2 }')"
+      printf '%s\n' "$probe" | grep "^caddy8090${kv%%=*}	${kv#*=}\$" >/dev/null || bad="$bad caddy:8090${kv%%=*}:$(printf '%s\n' "$probe" | awk -F'\t' -v k="caddy8090${kv%%=*}" '$1 == k { print $2 }')"
     done
     # Open WebUI reaches it only through Caddy's :8090 (it is not on the stt network)
     ow="$(docker exec "$owc" sh -c 'curl -s -m 5 -o /dev/null -w "%{http_code}" http://caddy:8090/healthz; echo " $(curl -s -m 3 -o /dev/null -w "%{http_code}" http://stt:8000/healthz || echo unreachable)"' 2>&1)"
@@ -1749,7 +1754,7 @@ else
     record claude devos-claude PASS "$(( $(now) - t0 ))" "answered ok via $haiku; cost line shown; lean config folder (700)"
   else record claude devos-claude FAIL "$(( $(now) - t0 ))" "exit $rc: $(tail -n 3 "$log" | tr '\n' ' ')"; fi
   t0="$(now)"; out="$( (clean_env; cd "$OUT/claude-cwd" && exec "$NOTTY" "$STACK/bin/devos-claude" --help) 2>&1 </dev/null)"
-  if printf '%s' "$out" | grep -q 'devos-claude: Claude Code on AWS Bedrock via DevOS ADE'; then
+  if printf '%s' "$out" | grep 'devos-claude: Claude Code on AWS Bedrock via DevOS ADE' >/dev/null; then
     record claude devos-claude-help PASS "$(( $(now) - t0 ))" "wrapper header + claude --help"
   else record claude devos-claude-help FAIL "$(( $(now) - t0 ))" "no wrapper header"; fi
   # claude-bedrock, the old name: a shim that runs devos-claude with the same arguments (the same output, nothing of

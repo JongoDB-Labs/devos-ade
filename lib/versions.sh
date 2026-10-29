@@ -77,7 +77,7 @@ _svc_matches() {
   want="$(ref_digest "$pinned")"
   img="$(_svc_image_id "$cid")"; [ -n "$img" ] || return 1
   if [ -n "$want" ] && have="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$img" 2>/dev/null)"; then
-    printf '%s\n' "$have" | grep -q "@$want\$" && return 0
+    printf '%s\n' "$have" | grep "@$want\$" >/dev/null && return 0
   elif [ -n "$want" ]; then
     # an image that cannot be read: only a local build may still say what it is (its container's label, above)
     case "$(docker inspect --format '{{.Config.Image}}' "$cid" 2>/dev/null)" in *:local | *:previous) ;; *) return 1 ;; esac

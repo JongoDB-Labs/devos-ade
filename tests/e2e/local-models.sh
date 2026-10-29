@@ -102,7 +102,7 @@ if [ -n "$ROWS" ] && [ "$(printf '%s' "$ROWS" | cut -f3)" = Local ] && printf '%
 
 say "removing it"
 local_rm "$REPO" "$QUANT" >"$WORK/rm.log" 2>&1 && [ -z "$(get_env LOCAL_MODELS)" ] && [ -z "$(local_registry_rows)" ] || fail "7 removal: $(tail -n 3 "$WORK/rm.log" | tr '\n' ' ')"
-if [ "$RT" = dmr ]; then GONE=1; docker model list --openai 2>/dev/null | grep -qi "$(printf '%s' "$QUANT")" && grep -qi "$REPO" <(docker model list --openai 2>/dev/null) && GONE=0
-else GONE=1; curl -fsS -m 10 "$(_local_ollama_url)/api/tags" 2>/dev/null | grep -qi "$REPO" && GONE=0; fi
+if [ "$RT" = dmr ]; then GONE=1; docker model list --openai 2>/dev/null | grep -i "$(printf '%s' "$QUANT")" >/dev/null && grep -qi "$REPO" <(docker model list --openai 2>/dev/null) && GONE=0
+else GONE=1; curl -fsS -m 10 "$(_local_ollama_url)/api/tags" 2>/dev/null | grep -i "$REPO" >/dev/null && GONE=0; fi
 [ "${GONE:-0}" = 1 ] && ok "7 removed: unregistered and the runtime no longer has it" || fail "7 the runtime still lists $REPO"
 [ "$FAILS" -eq 0 ] && { echo "local models: all checks passed" >&2; exit 0; } || exit 1

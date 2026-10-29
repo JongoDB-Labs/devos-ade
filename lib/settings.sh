@@ -381,23 +381,23 @@ settings_check_batch() {
      cfg_has CLAUDE_MODEL_HAIKU || cfg_has MODELS_HIDDEN; then chat="$(settings_chat_models)"; else chat=''; fi
   for k in CHAT_DEFAULT_MODEL CHAT_TASK_MODEL CLAUDE_MODEL_OPUS CLAUDE_MODEL_SONNET CLAUDE_MODEL_HAIKU; do
     cfg_has "$k" && [ -n "$(cfg_new "$k")" ] || continue
-    printf '%s\n' "$chat" | grep -qxF "$(cfg_new "$k")" || die "$k: $(cfg_new "$k") is not a chat model your AWS key can use (./stack models)"
+    printf '%s\n' "$chat" | grep -xF "$(cfg_new "$k")" >/dev/null || die "$k: $(cfg_new "$k") is not a chat model your AWS key can use (./stack models)"
     case "$k:$(cfg_new "$k")" in CLAUDE_MODEL_*:claude-*) ;; CLAUDE_MODEL_*) die "$k must be a Claude model (Claude Code speaks Anthropic's API)" ;; esac
   done
   if cfg_has MODELS_HIDDEN; then
     for p in $(cfg_new MODELS_HIDDEN | tr ',' ' '); do
-      printf '%s\n' "$chat" | grep -qxF "$p" || die "MODELS_HIDDEN: $p is not a chat model your AWS key can use (./stack models)"
+      printf '%s\n' "$chat" | grep -xF "$p" >/dev/null || die "MODELS_HIDDEN: $p is not a chat model your AWS key can use (./stack models)"
     done
   fi
   # Settings › Claude Code › Models: models the stack serves (litellm/code-models.tsv; not checked before it exists)
   code=''; if cfg_has CODE_DEFAULT_MODEL || cfg_has CODE_MODELS; then code="$(_code_rows 2>/dev/null | cut -f1)"; fi
   if [ -n "$code" ] && cfg_has CODE_DEFAULT_MODEL && [ -n "$(cfg_new CODE_DEFAULT_MODEL)" ]; then
-    printf '%s\n' "$code" | grep -qxF "$(cfg_new CODE_DEFAULT_MODEL)" || die "CODE_DEFAULT_MODEL: $(cfg_new CODE_DEFAULT_MODEL) is not a chat model this stack serves (devos-claude --models all)"
+    printf '%s\n' "$code" | grep -xF "$(cfg_new CODE_DEFAULT_MODEL)" >/dev/null || die "CODE_DEFAULT_MODEL: $(cfg_new CODE_DEFAULT_MODEL) is not a chat model this stack serves (devos-claude --models all)"
   fi
   if [ -n "$code" ] && cfg_has CODE_MODELS; then
     case "$(cfg_new CODE_MODELS)" in '' | all | anthropic) ;; *)
       for p in $(cfg_new CODE_MODELS | tr ',' ' '); do
-        printf '%s\n' "$code" | grep -qxF "$p" || die "CODE_MODELS: $p is not a chat model this stack serves (devos-claude --models all)"
+        printf '%s\n' "$code" | grep -xF "$p" >/dev/null || die "CODE_MODELS: $p is not a chat model this stack serves (devos-claude --models all)"
       done ;;
     esac
   fi
@@ -572,7 +572,7 @@ settings_snapshot_write() {
 settings_snapshot_refresh() {
   local f; f="$(settings_snapshot_file)"
   [ -f "$ENV_FILE" ] || return 0
-  if [ -f "$f" ] && head -c 300 "$f" | grep -q "\"base\": \"$(env_sha256)\", \"facts\": \"$(_settings_facts)\""; then return 0; fi
+  if [ -f "$f" ] && head -c 300 "$f" | grep "\"base\": \"$(env_sha256)\", \"facts\": \"$(_settings_facts)\"" >/dev/null; then return 0; fi
   settings_snapshot_write
 }
 
@@ -1226,7 +1226,7 @@ _rustfs_pair_works() {
 # _mcp_token_works — shared-mcp lists its tools with SHARED_MCP_TOKEN from .env
 _mcp_token_works() {
   curl_auth "$(get_env SHARED_MCP_TOKEN)" -s -m 30 -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
-    -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' "http://127.0.0.1:$(get_env SHARED_MCP_PORT)/mcp" 2>/dev/null | grep -q '"search_knowledge"'
+    -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' "http://127.0.0.1:$(get_env SHARED_MCP_PORT)/mcp" 2>/dev/null | grep '"search_knowledge"' >/dev/null
 }
 
 # _cfg_rollback WHAT WHY — old values back in .env, pre-steps reversed, restarted with them, a terminal that turning

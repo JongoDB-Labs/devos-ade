@@ -501,7 +501,7 @@ websearch_classify() {
   text="$(_ws_redact "$text")"   # (kept as the reason: never what the backend was sent)
   lower="$(printf '%s' "$text" | tr '[:upper:]' '[:lower:]')"
   case "$code" in
-    200) if printf '%s' "$text" | grep -qE 'results ?: ?\[ ?\{|results ?: ?\[[^]]'; then printf 'ok\t\n'
+    200) if printf '%s' "$text" | grep -E 'results ?: ?\[ ?\{|results ?: ?\[[^]]' >/dev/null; then printf 'ok\t\n'
          elif [ "$b" = builtin ]; then printf 'failed\tits search engines answered nothing (they may be refusing this computer'"'"'s address for now)\n'
          else printf 'failed\tno results: %s\n' "$(printf '%s' "$text" | cut -c1-160)"; fi
          return 0 ;;

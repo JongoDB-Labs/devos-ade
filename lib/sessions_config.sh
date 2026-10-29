@@ -210,7 +210,7 @@ sessions_config_scan() {
   if [ "${#SC_INS[@]}" -eq 0 ] && [ "${#links[@]}" -eq 0 ]; then
     printf '{"t":"head","v":1,"tools":{}}\n{"t":"end","rows":0}\n' > "$tmp"
   elif ! SS_READER_SCRIPT=server/harness/claude-config.mjs _ss_reader "$tmp" scan ${SC_INS[@]+"${SC_INS[@]}"} ${links[@]+"${links[@]}"} \
-      $([ "$host" = - ] || printf -- '--project %s' "$(_ss_b64 "$host")") || ! head -n 1 "$tmp" | grep -q '^{"t":"head"'; then
+      $([ "$host" = - ] || printf -- '--project %s' "$(_ss_b64 "$host")") || ! head -n 1 "$tmp" | grep '^{"t":"head"' >/dev/null; then
     local why; why="$(plain_text "$(tail -n 1 "$tmp.err" 2>/dev/null | head -c 200)")"
     rm -f "$tmp" "$tmp.err"; _ss_fail reader "the reader could not read your setup ($why)"
   fi

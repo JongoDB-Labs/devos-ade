@@ -32,6 +32,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   403. The Mac's archive is refused whole if it holds anything but plain files, folders and links beside them
   (docs/security.md, Local models).
 
+### Fixed
+- **Checks that could fail at random:** a check that piped a command into `grep -q` could fail now and then (grep stops
+  at its first match, and the command still writing into it is then ended with SIGPIPE, which the stack's `pipefail`
+  counts as a failure): port, Docker, settings, model and session checks among them. Each such grep now reads to the
+  end, and a test keeps it so.
+
 ## [0.40.1] - 2026-10-29
 
 ### Fixed

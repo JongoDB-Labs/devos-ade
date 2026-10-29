@@ -910,7 +910,7 @@ _xl_pid_of() {
   read -r p st < "$f" 2>/dev/null || true
   case "$p" in '' | *[!0-9]*) return 0 ;; esac
   kill -0 "$p" 2>/dev/null || return 0
-  _xl_cmd_of "$p" | grep -qiE 'stack|bash' || return 0
+  _xl_cmd_of "$p" | grep -iE 'stack|bash' >/dev/null || return 0
   now="$(_xl_start_of "$p")"
   if [ -n "$now" ] || [ -n "$st" ]; then [ "$now" = "$st" ] || return 0; fi
   printf '%s\n' "$p"

@@ -103,7 +103,7 @@ settings_check_request() {
   [ "${#nonce}" = 32 ] || { echo "bad nonce in the file name" >&2; return 1; }
   body="$(_req_read "$f" "$SETTINGS_REQ_MAX_BYTES")" || return 1
   case "$body" in *$'\r'*) echo "not a valid settings request (CR)" >&2; return 1 ;; esac
-  ! printf '%s' "$body" | tr -d '\n' | grep -q '[^ -~]' || { echo "not a valid settings request (characters)" >&2; return 1; }
+  ! printf '%s' "$body" | tr -d '\n' | grep '[^ -~]' >/dev/null || { echo "not a valid settings request (characters)" >&2; return 1; }
   rest="$body"
   while [ -n "$rest" ]; do   # split in memory: a here-document would put the request in a temp file
     line="${rest%%$'\n'*}"; if [ "$line" = "$rest" ]; then rest=''; else rest="${rest#*$'\n'}"; fi

@@ -15,7 +15,7 @@ lock_dir() { printf '%s/lock\n' "$STATE_DIR"; }
 # _lock_pid_alive PID -> 0 when PID runs and is a ./stack process (a reused pid of something else is stale)
 _lock_pid_alive() {
   kill -0 "$1" 2>/dev/null || return 1
-  ps -p "$1" -o command= 2>/dev/null | grep -qi 'stack'
+  ps -p "$1" -o command= 2>/dev/null | grep -i 'stack' >/dev/null
 }
 
 # stack_lock_holder -> "PID COMMAND" of a live lock owner ("" when free or stale)

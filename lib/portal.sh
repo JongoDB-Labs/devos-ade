@@ -207,7 +207,7 @@ _port80_usable() {
   ! _docker_rootless || return 1
   ! port_taken_by_other PORTAL_PORT 80 || return 1
   port_in_use 80 || return 0
-  dc port caddy 8080 2>/dev/null | grep -q ':80$'
+  dc port caddy 8080 2>/dev/null | grep ':80$' >/dev/null
 }
 
 # resolve_portal_port — PORTAL_PORT: 80 when usable (URLs need no port), else 8800 or the next port that is free at

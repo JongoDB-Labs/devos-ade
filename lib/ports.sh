@@ -5,10 +5,10 @@ port_in_use() {
   local p="$1"
   if command -v lsof >/dev/null 2>&1; then
     # Match the output, not the exit code: BusyBox lsof ignores these flags and exits 0.
-    lsof -nP -iTCP:"$p" -sTCP:LISTEN 2>/dev/null | grep -Fq ":$p (LISTEN)" && return 0
+    lsof -nP -iTCP:"$p" -sTCP:LISTEN 2>/dev/null | grep -F ":$p (LISTEN)" >/dev/null && return 0
   fi
   if command -v ss >/dev/null 2>&1; then
-    ss -ltn 2>/dev/null | awk '{ print $4 }' | grep -Eq "[:.]$p\$" && return 0
+    ss -ltn 2>/dev/null | awk '{ print $4 }' | grep -E "[:.]$p\$" >/dev/null && return 0
   fi
   # Last resort (also catches sockets lsof can't see without root on Linux).
   (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null && return 0
@@ -81,7 +81,7 @@ resolve_port() {
   why=''
   if port_taken_by_other "$key" "$cur"; then
     why="port $cur ($key) is already assigned to another service in $ENV_FILE"; short="already assigned to another service in .env"
-  elif port_in_use "$cur" && ! dc port "$svc" "$cport" 2>/dev/null | grep -q ":$cur\$"; then
+  elif port_in_use "$cur" && ! dc port "$svc" "$cport" 2>/dev/null | grep ":$cur\$" >/dev/null; then
     why="port $cur ($key) is already in use on this machine"; short="in use"
   fi
   if [ -n "$why" ]; then

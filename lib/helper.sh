@@ -552,7 +552,7 @@ helper_check_request() {
   [ "${#body}" -le "$HELPER_MAX_BYTES" ] || { echo "larger than $HELPER_MAX_BYTES bytes" >&2; return 1; }
   body="${body%"$nl"}"
   case "$body" in *"$nl"*) echo "more than one line" >&2; return 1 ;; esac
-  printf '%s\n' "$body" | grep -Eq '^\{"action":"(update|rollback|clean|auto-on|auto-off)","requested_at":[0-9]{1,12},"nonce":"[0-9a-f]{32}"\}$' ||
+  printf '%s\n' "$body" | grep -E '^\{"action":"(update|rollback|clean|auto-on|auto-off)","requested_at":[0-9]{1,12},"nonce":"[0-9a-f]{32}"\}$' >/dev/null ||
     { echo "not a valid request" >&2; return 1; }
   action="$(printf '%s\n' "$body" | sed 's/^{"action":"\([a-z-]*\)".*/\1/')"
   ts="$(printf '%s\n' "$body" | sed 's/.*"requested_at":\([0-9]*\).*/\1/')"

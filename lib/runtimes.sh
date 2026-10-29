@@ -308,7 +308,7 @@ _rt_install_ollama_mac() {
 _rt_install_ollama_linux() {
   local id=ollama d; d="$(rt_dir "$id")"
   # (the GPU is decided once, here: dc() must not ask Docker on every call)
-  if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q '"nvidia"'; then echo nvidia > "$d/gpu"; else rm -f "$d/gpu"; fi
+  if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep '"nvidia"' >/dev/null; then echo nvidia > "$d/gpu"; else rm -f "$d/gpu"; fi
   _rt_job running "$id" install 0 0 "Downloading Ollama's image ($(rt_size "$id"))"
   _RT_PROFILE=1 dc pull -q ollama </dev/null > "$d/install.log" 2>&1 || _rt_fail "$id" install "Docker could not download Ollama's image: $(tail -n 2 "$d/install.log" | LC_ALL=C tr -cd ' -~\n' | tr '\n' ' ' | cut -c1-200)"
   if [ -f "$(_rt_cancel_file)" ]; then rm -f "$(_rt_cancel_file)" "$(rt_root)/job.pid"; _rt_job cancelled "$id" install 0 0 "Cancelled."; return 0; fi

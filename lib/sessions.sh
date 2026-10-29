@@ -342,7 +342,7 @@ _ss_image() { printf '%s/code:local\n' "$(project_name)"; }
 # _ss_reader_user DIR -> the user the reader runs as: you (rootless Docker: its root, which is you); never root
 _ss_reader_user() {
   local u g
-  if docker info -f '{{.SecurityOptions}}' 2>/dev/null | grep -q rootless; then echo 0:0; return 0; fi
+  if docker info -f '{{.SecurityOptions}}' 2>/dev/null | grep rootless >/dev/null; then echo 0:0; return 0; fi
   u="$(id -u)"; g="$(id -g)"
   if [ "$u" = 0 ]; then u="$(_file_uid "$1")"; g="$(stat -c %g "$1" 2>/dev/null || stat -f %g "$1" 2>/dev/null)"; fi
   case "$u:$g" in 0:* | :* | *:) return 1 ;; esac
@@ -374,7 +374,7 @@ _ss_reader() {
 # here; anything else: the reader's own function, in its container (no folder mounted)
 _ss_store_name() {
   local n out f
-  if ! printf '%s' "$1" | LC_ALL=C grep -q '[^ -~]'; then
+  if ! printf '%s' "$1" | LC_ALL=C grep '[^ -~]' >/dev/null; then
     n="$(printf '%s' "$1" | LC_ALL=C sed 's/[^A-Za-z0-9]/-/g')"
     if [ "${#n}" -le 200 ]; then printf '%s -\n' "$n"; return 0; fi
   fi
@@ -458,7 +458,7 @@ sessions_scan() {
   chmod 600 "$tmp"
   if [ "${#ins[@]}" -eq 0 ]; then
     printf '{"t":"head","v":1,"tested":"2.1","tools":{}}\n{"t":"end","rows":0}\n' > "$tmp"
-  elif ! _ss_reader "$tmp" index --path "$(_ss_b64 "$SS_HOST")" "${ins[@]}" || ! head -n 1 "$tmp" | grep -q '^{"t":"head"'; then
+  elif ! _ss_reader "$tmp" index --path "$(_ss_b64 "$SS_HOST")" "${ins[@]}" || ! head -n 1 "$tmp" | grep '^{"t":"head"' >/dev/null; then
     local why; why="$(plain_text "$(tail -n 1 "$tmp.err" 2>/dev/null | head -c 200)")"
     rm -f "$tmp" "$tmp.err"; _ss_fail reader "the reader could not read the store ($why)"
   fi
@@ -503,7 +503,7 @@ _ss_last_scan() {
 # _ss_rows "1,3-5" MAX -> the numbers, one a line (at most SESSIONS_ROWS_MAX; anything else fails)
 _ss_rows() {
   local part a b n=0
-  printf '%s' "$1" | grep -Eq '^[0-9]{1,5}(-[0-9]{1,5})?(,[0-9]{1,5}(-[0-9]{1,5})?)*$' || return 1
+  printf '%s' "$1" | grep -E '^[0-9]{1,5}(-[0-9]{1,5})?(,[0-9]{1,5}(-[0-9]{1,5})?)*$' >/dev/null || return 1
   for part in $(printf '%s' "$1" | tr ',' ' '); do
     a="${part%-*}"; b="${part#*-}"
     a=$((10#$a)); b=$((10#$b))

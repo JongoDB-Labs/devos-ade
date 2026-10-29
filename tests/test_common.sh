@@ -101,6 +101,17 @@ test_piped_awk_lookups_never_exit_early() {
   ( set -o pipefail; v="$(seq 1 200000 | awk '!f && $1 == 3 { print; f = 1 }')"; [ "$v" = 3 ] )
 }
 
+# The same with grep -q, which ends at its first match: an e2e check failed that way once (its probe's claude line
+# matched, then the writer got SIGPIPE). A piped grep reads to the end ('grep PAT >/dev/null'); grep -f - reads its
+# patterns to the end.
+test_piped_greps_never_end_early() {
+  local hits
+  hits="$(grep -nE '(^|[^|])\|[[:space:]]*([A-Z_]+=[^ ]* +)*grep( +-[a-zA-Z]+)* +-[a-zA-Z]*q' "$T_ROOT"/lib/*.sh "$T_ROOT/stack" \
+    "$T_ROOT/setup.sh" "$T_ROOT"/tests/e2e/*.sh 2>/dev/null | grep -v -- ' -f - ' || true)"
+  assert_eq "$hits" ""
+  ( set -o pipefail; seq 1 200000 | grep -x 3 >/dev/null )
+}
+
 test_every_test_runs_with_a_home_of_its_own() {
   # tests/run.sh: setup (the Code page's ~/bedrock-now-workspace) or devos-claude (~/.claude-bedrock) run by a test
   # must never reach your real home folder

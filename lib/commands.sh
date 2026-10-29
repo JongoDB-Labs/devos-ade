@@ -160,7 +160,7 @@ check_docker_engine() { # Linux: Docker Engine < 28 can expose 127.0.0.1-publish
   [ "$major" -ge 28 ] || warn "Docker Engine $ver: versions before 28.0 can let other machines on your local network reach ports published on 127.0.0.1 — please update Docker Engine (https://docs.docker.com/engine/install/)"
 }
 
-_docker_rootless() { docker info --format '{{json .SecurityOptions}}' 2>/dev/null | grep -q rootless; }
+_docker_rootless() { docker info --format '{{json .SecurityOptions}}' 2>/dev/null | grep rootless >/dev/null; }
 
 # --- quiet, phased bring-up (BEDROCK_NOW_VERBOSE=1 shows all compose output) ---
 
@@ -974,7 +974,7 @@ _build_and_up_front() {
   # Only a refused port 80 (rootless/unprivileged engines) moves the portal — Caddy not running then, its port refused;
   # any other failure is reported.
   [ "$(portal_port)" = 80 ] && [ -z "$(dc ps -q --status running caddy 2>/dev/null)" ] &&
-    printf '%s\n' "$out" | grep -qiE 'bind|privileged|port is already allocated|ports are not available' || return 1
+    printf '%s\n' "$out" | grep -iE 'bind|privileged|port is already allocated|ports are not available' >/dev/null || return 1
   PORTAL_PORT_FELL_BACK=1
   set_env PORTAL_PORT "$PORTAL_FALLBACK_PORT"
   resolve_port PORTAL_PORT "$PORTAL_FALLBACK_PORT" caddy 8080
@@ -1534,7 +1534,7 @@ cmd_status() {
   ps="$(dc ps -a --format '{{.Service}}	{{.State}}	{{.Health}}	{{.ExitCode}}' 2>/dev/null || true)"
   printf '%s\n' "$ps" | status_table
   services_status_write "$ps"   # (the same answer, for Home's Services)
-  if ! printf '%s\n' "$ps" | grep -q '	running	'; then
+  if ! printf '%s\n' "$ps" | grep '	running	' >/dev/null; then
     printf '\n  The stack is not running — start it with ./stack up\n'
   else
     printf '\n  Open %s (one login: PORTAL_PASSWORD in .env)   LiteLLM API: http://127.0.0.1:%s\n' "$(portal_url)" "$(get_env LITELLM_PORT)"

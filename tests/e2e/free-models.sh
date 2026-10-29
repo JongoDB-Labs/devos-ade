@@ -158,7 +158,7 @@ EXPLABS_API_KEY="$XLKEY" LITELLM_MASTER_KEY="$MASTER" docker run -d --name "$LL"
 up=0
 for _ in $(seq 1 120); do
   [ "$(curl -s -m 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$LPORT/health/readiness" 2>/dev/null)" = 200 ] && { up=1; break; }
-  docker container inspect -f '{{.State.Running}}' "$LL" 2>/dev/null | grep -q true || break
+  docker container inspect -f '{{.State.Running}}' "$LL" 2>/dev/null | grep true >/dev/null || break
   sleep 2
 done
 [ "$up" = 1 ] || { docker logs --tail 30 "$LL" 2>&1 | sed "s/$MASTER/[master]/g" >&2; stop "LiteLLM did not come up"; }
@@ -222,7 +222,7 @@ docker run -d --name "$OW" --label "$LABEL" --network "$NET" -p "127.0.0.1:$OPOR
 up=0
 for _ in $(seq 1 120); do
   [ "$(curl -s -m 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$OPORT/health" 2>/dev/null)" = 200 ] && { up=1; break; }
-  docker container inspect -f '{{.State.Running}}' "$OW" 2>/dev/null | grep -q true || break
+  docker container inspect -f '{{.State.Running}}' "$OW" 2>/dev/null | grep true >/dev/null || break
   sleep 2
 done
 if [ "$up" != 1 ]; then fail "Open WebUI did not come up: $(docker logs --tail 15 "$OW" 2>&1 | tail -c 600)"

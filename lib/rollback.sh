@@ -156,12 +156,12 @@ cmd_rollback() {
   # A version from before the built-in SearXNG (no searxng service in its compose.yaml): its container goes now (that
   # version would never stop it), its networks after the up (lib/websearch.sh).
   no_searxng=0
-  if declare -F websearch_rollback_cleanup >/dev/null && ! git -C "$STACK_DIR" show "$from:compose.yaml" 2>/dev/null | grep -q '^  searxng:'; then
+  if declare -F websearch_rollback_cleanup >/dev/null && ! git -C "$STACK_DIR" show "$from:compose.yaml" 2>/dev/null | grep '^  searxng:' >/dev/null; then
     no_searxng=1; websearch_rollback_cleanup
   fi
   # A version from before the built-in git server (no forgejo service in its compose.yaml): its container goes now, the
   # repositories' volume stays (lib/localgit.sh); its network after the up.
-  if declare -F localgit_rollback_cleanup >/dev/null && ! git -C "$STACK_DIR" show "$from:compose.yaml" 2>/dev/null | grep -q '^  forgejo:'; then
+  if declare -F localgit_rollback_cleanup >/dev/null && ! git -C "$STACK_DIR" show "$from:compose.yaml" 2>/dev/null | grep '^  forgejo:' >/dev/null; then
     no_localgit=1; localgit_rollback_cleanup
   fi
   # A version from before the browser terminal, while it is on: its container goes (lib/terminal.sh); its networks
@@ -186,7 +186,7 @@ cmd_rollback() {
   # terminal's is the direct one), while the Code page is on: its container goes now (that version's compose does not
   # know it; Chat's sandbox is on no network there with host), its networks after the up.
   if declare -F chat_proxy_rm >/dev/null && declare -F code_on >/dev/null && code_on &&
-     ! git -C "$STACK_DIR" show "$from:compose.code-egress.yaml" 2>/dev/null | grep -q '^  chat-egress:'; then
+     ! git -C "$STACK_DIR" show "$from:compose.code-egress.yaml" 2>/dev/null | grep '^  chat-egress:' >/dev/null; then
     no_chat_proxy=1; chat_proxy_rm
   fi
   # A version from before the Code page, while it is on: its container goes (lib/code.sh); its network and volume

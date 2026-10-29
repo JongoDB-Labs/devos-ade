@@ -222,7 +222,7 @@ fi
 up=0
 for _ in $(seq 1 90); do
   if [ "$(curl -s -m 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/health/liveliness" 2>/dev/null)" = 200 ]; then up=1; break; fi
-  docker container inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null | grep -q true || break
+  docker container inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null | grep true >/dev/null || break
   sleep 2
 done
 if [ "$up" != 1 ]; then
@@ -275,7 +275,7 @@ assert "frequency_penalty" not in b and "max_tokens" not in b and b.get("max_com
     ok "the stand-in got only what qwen3.8-27b takes, the cap as max_completion_tokens" || fail "what the stand-in got: $(head -c 400 "$WORK/reqs.jsonl")"
   printf '%s' '{"model":"xl/byok-model","messages":[{"role":"user","content":"hi"}]}' > "$WORK/byok.req"
   _call /v1/chat/completions "$WORK/byok.req" "$WORK/byok" >/dev/null
-  if r="$(_check_cost "$WORK/byok" byok)" && printf '%s' "$r" | grep -q '"booked": 0.0'; then ok "a call on your own provider key is booked at \$0"; else fail "BYOK: $r"; fi
+  if r="$(_check_cost "$WORK/byok" byok)" && printf '%s' "$r" | grep '"booked": 0.0' >/dev/null; then ok "a call on your own provider key is booked at \$0"; else fail "BYOK: $r"; fi
   results+=("$r")
   printf '%s' '{"model":"xl/qwen3.8-27b","stream":true,"stream_options":{"include_usage":true},"messages":[{"role":"user","content":"hi"}]}' > "$WORK/stream.req"
   _call /v1/chat/completions "$WORK/stream.req" "$WORK/stream" >/dev/null
@@ -286,8 +286,8 @@ assert "frequency_penalty" not in b and "max_tokens" not in b and b.get("max_com
   # (its x-litellm-response-cost header is LiteLLM's own estimate for the Anthropic-shaped answer; what LiteLLM books
   # for it is the gateway's figure, as for the completion above — tests/test_explabs.sh and the hook's tests)
   docker exec "$NAME" cat /tmp/reqs.jsonl > "$WORK/reqs.jsonl" 2>/dev/null || : > "$WORK/reqs.jsonl"
-  [ "$code" = 200 ] && grep -q 'test OK' "$WORK/msg.json" && tail -n 1 "$WORK/reqs.jsonl" | grep -q '"path": "/v1/chat/completions"' &&
-    tail -n 1 "$WORK/reqs.jsonl" | grep -q '"max_completion_tokens": 32000' &&
+  [ "$code" = 200 ] && grep -q 'test OK' "$WORK/msg.json" && tail -n 1 "$WORK/reqs.jsonl" | grep '"path": "/v1/chat/completions"' >/dev/null &&
+    tail -n 1 "$WORK/reqs.jsonl" | grep '"max_completion_tokens": 32000' >/dev/null &&
     ok "Claude Code's /v1/messages: answered through the gateway's Chat Completions, its cap as max_completion_tokens" ||
     fail "/v1/messages (HTTP $code): $(head -c 300 "$WORK/msg.json" | _mask) — the gateway got: $(tail -n 1 "$WORK/reqs.jsonl" | head -c 300)"
   # a model that takes max_tokens under an o-series or GPT-5 name: LiteLLM would rename the cap max_completion_tokens

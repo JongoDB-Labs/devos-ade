@@ -290,7 +290,7 @@ serve_stop() {
   fi
 }
 
-on_battery() { pmset -g batt 2>/dev/null | head -n 1 | grep -q "Battery Power"; }
+on_battery() { pmset -g batt 2>/dev/null | head -n 1 | grep "Battery Power" >/dev/null; }
 
 # docker_autostart_off — macOS: 0 when Docker Desktop's "Start when you sign in" is explicitly off, read (never
 # edited) from its settings (settings-store.json "AutoStart"; older versions: settings.json "autoStart")
@@ -431,7 +431,7 @@ _tcp22_open() { (exec 3<>/dev/tcp/127.0.0.1/22) 2>/dev/null; }
 # ssh_server_up -> 0 when something listens on port 22 (nc, else ss, else bash's /dev/tcp)
 ssh_server_up() {
   if have_cmd nc; then nc -z -w 1 127.0.0.1 22 >/dev/null 2>&1
-  elif have_cmd ss; then ss -ltn 2>/dev/null | awk '{ print $4 }' | grep -Eq '[:.]22$'
+  elif have_cmd ss; then ss -ltn 2>/dev/null | awk '{ print $4 }' | grep -E '[:.]22$' >/dev/null
   else _tcp22_open; fi
 }
 

@@ -98,7 +98,7 @@ _mac_app_present() { [ -d "/Applications/$1.app" ] || [ -d "$HOME/Applications/$
 
 # _mac_bundle_found BUNDLE_ID -> 0 if Spotlight knows an app with that bundle id anywhere on disk
 # (read-only lookup; `open -Ra` would reveal the app in Finder).
-_mac_bundle_found() { mdfind "kMDItemCFBundleIdentifier == '$1'" 2>/dev/null | grep -q .; }
+_mac_bundle_found() { mdfind "kMDItemCFBundleIdentifier == '$1'" 2>/dev/null | grep . >/dev/null; }
 
 # _launch_detached CMD ARGS... — start a browser that outlives this shell (own session via setsid when
 # available, immune to hangups via nohup). Fails if it exits non-zero within OPEN_CHECK_DELAY seconds

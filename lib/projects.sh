@@ -196,7 +196,7 @@ _project_secrets() {
   done <<< "$hit"
   if [ -z "${_PC_RECHECK:-}" ]; then
     for k in .npmrc .pypirc; do
-      if [ ! -L "$1/$k" ] && [ -f "$1/$k" ] && head -c 65536 "$1/$k" 2>/dev/null | grep -qE '_authToken|_auth[[:space:]]*=|password'; then
+      if [ ! -L "$1/$k" ] && [ -f "$1/$k" ] && head -c 65536 "$1/$k" 2>/dev/null | grep -E '_authToken|_auth[[:space:]]*=|password' >/dev/null; then
         echo "$k (a token or password in it)"; return 0
       fi
     done
@@ -301,7 +301,7 @@ project_check() {
   case "$dir" in
     *[\"\'\$\`\\]*) echo "its path contains a quote, \$, a backtick or a backslash"; return 1 ;;
   esac
-  ! printf '%s' "$dir" | LC_ALL=C grep -q '[[:cntrl:]]' || { echo "its path contains a control character"; return 1; }
+  ! printf '%s' "$dir" | LC_ALL=C grep '[[:cntrl:]]' >/dev/null || { echo "its path contains a control character"; return 1; }
   real="$(terminal_workspace_check "$dir")" || { echo "$real"; return 1; }
   why="$(_project_path_rules "$real")" || { echo "$why"; return 1; }
   _pj_path_ok "$real" || { echo "its path cannot be written into the sandbox's settings as it is"; return 1; }

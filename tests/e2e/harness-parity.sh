@@ -439,7 +439,7 @@ if [ "$REUSE" = 0 ]; then
   up=0
   for _ in $(seq 1 90); do
     if [ "$(curl -s -m 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/health/liveliness" 2>/dev/null)" = 200 ]; then up=1; break; fi
-    docker container inspect -f '{{.State.Running}}' "$NAME-litellm" 2>/dev/null | grep -q true || break
+    docker container inspect -f '{{.State.Running}}' "$NAME-litellm" 2>/dev/null | grep true >/dev/null || break
     sleep 2
   done
   [ "$up" = 1 ] || { docker logs --tail 40 "$NAME-litellm" 2>&1 | tail -n 40 >&2; teardown; die "LiteLLM did not come up"; }
