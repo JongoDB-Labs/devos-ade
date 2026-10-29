@@ -75,7 +75,7 @@ test_config_sums_cover_each_file_read_at_start() {
   : > "$ENV_FILE"
   local a b
   a="$(config_sums)"
-  assert_eq "$(printf '%s\n' "$a" | cut -d= -f1 | tr '\n' ' ')" "BN_LITELLM_CONFIG_SUM BN_CADDY_CONFIG_SUM BN_GATEWAY_CONFIG_SUM BN_SEARXNG_SETTINGS_SUM BN_TERMINAL_POLICY_SUM BN_CHAT_POLICY_SUM "
+  assert_eq "$(printf '%s\n' "$a" | cut -d= -f1 | tr '\n' ' ')" "BN_LITELLM_CONFIG_SUM BN_CADDY_CONFIG_SUM BN_GATEWAY_CONFIG_SUM BN_OLLAMA_GATE_CONFIG_SUM BN_SEARXNG_SETTINGS_SUM BN_TERMINAL_POLICY_SUM BN_CHAT_POLICY_SUM "
   assert_eq "$(printf '%s\n' "$a" | cut -d= -f2 | tr -d '\n')" ""   # no file yet: no checksum
   printf 'a\n' > "$STACK_DIR/caddy/Caddyfile"; printf 'b\n' > "$STACK_DIR/terminal/managed/off.json"; printf 'c\n' > "$STACK_DIR/terminal/managed/on.json"
   a="$(config_sums)"
@@ -89,7 +89,7 @@ test_config_sums_cover_each_file_read_at_start() {
   # every dc call passes them (so no call sees a configuration without them, which would recreate a service)
   docker() { env | grep '^BN_.*_SUM=' | sort > "$TMP/env"; }
   dc ps
-  assert_eq "$(cut -d= -f1 "$TMP/env" | tr '\n' ' ')" "BN_CADDY_CONFIG_SUM BN_CHAT_POLICY_SUM BN_GATEWAY_CONFIG_SUM BN_LITELLM_CONFIG_SUM BN_SEARXNG_SETTINGS_SUM BN_TERMINAL_POLICY_SUM "
+  assert_eq "$(cut -d= -f1 "$TMP/env" | tr '\n' ' ')" "BN_CADDY_CONFIG_SUM BN_CHAT_POLICY_SUM BN_GATEWAY_CONFIG_SUM BN_LITELLM_CONFIG_SUM BN_OLLAMA_GATE_CONFIG_SUM BN_SEARXNG_SETTINGS_SUM BN_TERMINAL_POLICY_SUM "
   assert_contains "$(cat "$TMP/env")" "BN_CADDY_CONFIG_SUM=$(files_sum "$STACK_DIR/caddy" Caddyfile x.caddy)"
 }
 

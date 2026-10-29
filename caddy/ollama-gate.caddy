@@ -1,0 +1,34 @@
+# DevOS ADE's Ollama's gate (compose.yaml, service ollama-gate; Linux, while ./stack runtimes installed Ollama): the
+# one way to Ollama's API from this computer, published on 127.0.0.1:11434 alone. Not imported by the Caddyfile; no
+# admin API.
+#
+# A native Ollama that listens on loopback answers only a request whose Host is a loopback name: a web page that points
+# a name of its own at 127.0.0.1 (DNS rebinding) is refused. In its container Ollama listens on all of the container's
+# addresses (the model gateway reaches it on the internal "ollama" network), and then it checks no Host at all. This
+# gate makes the same check in front of it. (Cross-origin requests are Ollama's own CORS check, which it still makes:
+# the Origin header goes through unchanged.)
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+http://:11434 {
+	@loopback host 127.0.0.1 localhost
+	handle @loopback {
+		reverse_proxy ollama:11434 {
+			# a pull streams its progress, a chat its tokens: each line as Ollama sends it
+			flush_interval -1
+		}
+	}
+	handle {
+		respond "Forbidden: this Ollama answers only requests for 127.0.0.1 or localhost" 403
+	}
+}
+
+# Its healthcheck (inside the container: not published; it does not depend on Ollama, which lib/health.sh watches itself)
+http://127.0.0.1:11435 {
+	bind 127.0.0.1
+	respond /health "ok" 200
+	respond 404
+}

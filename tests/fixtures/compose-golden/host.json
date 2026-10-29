@@ -21,6 +21,10 @@
    "external": false,
    "name": "bedrock-now_localgit"
   },
+  "ollama": {
+   "external": false,
+   "name": "bedrock-now_ollama"
+  },
   "remote": {
    "external": false,
    "name": "bedrock-now_remote"
@@ -152,6 +156,7 @@
    "labels": {},
    "networks": [
     "default",
+    "ollama",
     "stt",
     "terminal-link",
     "websearch"

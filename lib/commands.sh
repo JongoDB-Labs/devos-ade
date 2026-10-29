@@ -1451,6 +1451,8 @@ status_url() { # status_url SERVICE -> where to open it (browser UIs: through th
     code) echo "$(portal_url code)   (the Code tab; ./stack code status)" ;;
     searxng) echo "- (the built-in web search, LiteLLM's alone)" ;;
     forgejo) echo "$(portal_url git)   (the built-in git server)" ;;
+    ollama) echo "- (local models: LiteLLM's alone; ./stack runtimes status)" ;;
+    ollama-gate) echo "http://127.0.0.1:11434   (Ollama's API, for this computer's loopback names only)" ;;
     *) echo "- (internal only)" ;;
   esac
 }

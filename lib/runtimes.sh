@@ -10,9 +10,11 @@
 #           while it should run (install, start, ./stack up): Stop and ./stack down remove it, so a login does not start
 #           it again. launchd starts it again when it ends by itself; the update helper notices (Activity).
 #   Linux   Ollama's image (compose.yaml, pinned by digest) as the stack's "ollama" service, in the "ollama" profile while
-#           it is installed: on the stack's network (the model gateway reaches it as ollama:11434), its port published on
-#           127.0.0.1 only, its models in the ollama-models volume. compose.ollama-gpu.yaml gives it the NVIDIA GPUs
-#           when Docker had the NVIDIA runtime at install. Container health (lib/health.sh) watches it like the others.
+#           it is installed: on an internal network with the model gateway alone (which reaches it as ollama:11434),
+#           its models in the ollama-models volume. Its gate, "ollama-gate" (caddy/ollama-gate.caddy), publishes it on
+#           127.0.0.1:11434 alone and lets only loopback names through, as a native Ollama does. compose.ollama-gpu.yaml
+#           gives it the NVIDIA GPUs when Docker had the NVIDIA runtime at install. Container health (lib/health.sh)
+#           watches both like the others.
 #
 # An Ollama that already answers on 127.0.0.1:11434 and is not this stack's is "yours": downloads can go to it as they
 # did before (LOCAL_RUNTIME), and it is never installed over, stopped or removed.
@@ -142,8 +144,10 @@ _rt_agent_down() {
 # --- Linux: the compose service ---
 # rt_compose_on ID -> 0 while its container is part of the stack (installed here, on Linux): dc() adds its profile
 rt_compose_on() { [ "$(rt_os)" = linux ] && rt_installed "$1"; }
+# rt_services ID -> its compose services (Linux): Ollama and its gate
+rt_services() { case "$1" in ollama) echo "ollama ollama-gate" ;; esac; }
 # runtime_services -> the runtime containers ./stack up starts (lib/commands.sh optional_services)
-runtime_services() { local id out=''; for id in $RUNTIME_IDS; do ! rt_compose_on "$id" || out="$out${out:+ }$id"; done; printf '%s\n' "$out"; }
+runtime_services() { local id out=''; for id in $RUNTIME_IDS; do ! rt_compose_on "$id" || out="$out${out:+ }$(rt_services "$id")"; done; printf '%s\n' "$out"; }
 # runtime_overlays -> the compose files of their GPUs (lib/common.sh compose_overlays)
 runtime_overlays() { ! rt_compose_on ollama || [ "$(cat "$(rt_dir ollama)/gpu" 2>/dev/null)" != nvidia ] || echo compose.ollama-gpu.yaml; }
 _rt_container_state() { dc ps -a --format '{{.State}}' "$1" 2>/dev/null | head -n 1 | LC_ALL=C tr -cd 'a-z' | cut -c1-20; }
@@ -334,7 +338,8 @@ _rt_start_now() {
     [ -z "$(_rt_ollama_version)" ] || _rt_agent_loaded "$id" || return 1   # (another Ollama holds the port)
     _rt_agent_up "$id" || return 1
   else
-    dc up -d ollama </dev/null >/dev/null 2>&1 || return 1
+    # shellcheck disable=SC2046
+    dc up -d $(rt_services "$id") </dev/null >/dev/null 2>&1 || return 1
   fi
   while [ "$n" -lt "${RT_START_WAIT:-60}" ]; do [ -z "$(_rt_ollama_version)" ] || return 0; sleep 1; n=$((n + 1)); done
   return 1
@@ -359,7 +364,8 @@ rt_stop() {
   rt_installed "$id" || die "$(rt_name "$id") is not installed by DevOS ADE (one of yours is never stopped from here)"
   _rt_begin "$id"
   _rt_job running "$id" stop 0 0 "Stopping $(rt_name "$id")"
-  if [ "$(rt_kind "$id")" = agent ]; then _rt_agent_down "$id"; else dc stop ollama </dev/null >/dev/null 2>&1 || true; fi
+  # shellcheck disable=SC2046
+  if [ "$(rt_kind "$id")" = agent ]; then _rt_agent_down "$id"; else dc stop $(rt_services "$id") </dev/null >/dev/null 2>&1 || true; fi
   _rt_watch_mark "$id"; _rt_event "$id" stopped "$(rt_name "$id") was stopped"
   _rt_end "$id" stop "$(rt_name "$id") is stopped: its models are not served until it starts again"
   log "$(rt_name "$id") is stopped"
@@ -408,7 +414,8 @@ rt_uninstall() {
   if [ "$(rt_kind "$id")" = agent ]; then
     _rt_agent_down "$id"
   else
-    _RT_PROFILE=1 dc rm -sf ollama </dev/null >/dev/null 2>&1 || true
+    # shellcheck disable=SC2046
+    _RT_PROFILE=1 dc rm -sf $(rt_services "$id") </dev/null >/dev/null 2>&1 || true
     docker volume rm "$(project_name)_ollama-models" >/dev/null 2>&1 || true
   fi
   rm -rf "$d"

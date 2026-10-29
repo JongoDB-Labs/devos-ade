@@ -69,8 +69,8 @@ A `subject` is never a pattern. Anything that is not in the kind's set below is 
 **on the install, before the event is recorded**: a service a person added to the Compose project, or a step this
 version does not know, never leaves the computer by name, and a local record never holds it.
 
-**Services** (`container.*`): the 19 services the stack's own Compose files define (`compose.yaml` and its overlays:
-terminal, code, Tailscale, the egress proxies, Ollama on Linux), plus `other`.
+**Services** (`container.*`): the 20 services the stack's own Compose files define (`compose.yaml` and its overlays:
+terminal, code, Tailscale, the egress proxies, Ollama and its gate on Linux), plus `other`.
 
 - `caddy`
 - `chat-egress`
@@ -78,6 +78,7 @@ terminal, code, Tailscale, the egress proxies, Ollama on Linux), plus `other`.
 - `forgejo`
 - `litellm`
 - `ollama`
+- `ollama-gate`
 - `open-webui`
 - `portal`
 - `postgres`

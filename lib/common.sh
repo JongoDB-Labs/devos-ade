@@ -378,6 +378,7 @@ SUMS
 #   BN_CADDY_CONFIG_SUM      caddy             caddy/Caddyfile and the caddy/*.caddy it imports (Caddy's admin API is off:
 #                                              it reads them only at start)
 #   BN_GATEWAY_CONFIG_SUM    terminal-gateway  caddy/terminal-gateway.caddy and the localgit-gateway-*.caddy it imports
+#   BN_OLLAMA_GATE_CONFIG_SUM  ollama-gate     caddy/ollama-gate.caddy (Linux, while DevOS ADE's Ollama is installed)
 #   BN_SEARXNG_SETTINGS_SUM  searxng           searxng/settings.yml (the built-in web search)
 #   BN_TERMINAL_POLICY_SUM   terminal          terminal/managed/<policy>.json, Claude Code's managed settings (a mount of
 #                                              one file: once git replaced it, a running container no longer sees it)
@@ -388,10 +389,11 @@ SUMS
 config_sums() {
   local policy="${1:-}" c=() g
   [ -n "$policy" ] || policy="$(claude_policy)"
-  for g in "$STACK_DIR"/caddy/*.caddy; do case "${g##*/}" in terminal-gateway.caddy | localgit-gateway-*.caddy) ;; *) c+=("${g##*/}") ;; esac; done
+  for g in "$STACK_DIR"/caddy/*.caddy; do case "${g##*/}" in terminal-gateway.caddy | localgit-gateway-*.caddy | ollama-gate.caddy) ;; *) c+=("${g##*/}") ;; esac; done
   printf 'BN_LITELLM_CONFIG_SUM=%s\n' "$(litellm_compose_sum)"
   printf 'BN_CADDY_CONFIG_SUM=%s\n' "$(files_sum "$STACK_DIR/caddy" Caddyfile ${c[@]+"${c[@]}"})"
   printf 'BN_GATEWAY_CONFIG_SUM=%s\n' "$(files_sum "$STACK_DIR/caddy" terminal-gateway.caddy localgit-gateway-on.caddy localgit-gateway-off.caddy)"
+  printf 'BN_OLLAMA_GATE_CONFIG_SUM=%s\n' "$(files_sum "$STACK_DIR/caddy" ollama-gate.caddy)"
   # (as v0.31.0 gave it: the checksum alone, so an update to this version leaves an unchanged SearXNG running)
   g=''; [ ! -f "$STACK_DIR/searxng/settings.yml" ] || g="$(cksum < "$STACK_DIR/searxng/settings.yml" | awk '{ print $1 }')"
   printf 'BN_SEARXNG_SETTINGS_SUM=%s\n' "$g"

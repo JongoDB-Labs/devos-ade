@@ -68,14 +68,60 @@ test_the_pins_are_a_version_and_a_sha256_and_linux_pins_the_same_version_by_dige
   assert_eq "$(rt_pinned_version ollama)" "$(rt_pin OLLAMA_VERSION)"
 }
 
-test_the_container_is_on_loopback_only_and_drops_its_privileges() {
-  local svc; svc="$(awk '/^  ollama:/{s=1;print;next} s&&/^  [a-z]/{exit} s' "$STACK_DIR/compose.yaml")"
+# Linux: Ollama publishes nothing and shares an internal network with LiteLLM alone; its gate publishes 127.0.0.1:11434
+# alone (and lets only loopback names through: tests/caddy-validate.sh runs it), both hardened like the others
+test_the_container_is_reached_through_its_gate_on_loopback_only_and_drops_its_privileges() {
+  local svc gate
+  svc="$(awk '/^  ollama:/{s=1;print;next} s&&/^  [a-z]/{exit} s' "$STACK_DIR/compose.yaml")"
+  gate="$(awk '/^  ollama-gate:/{s=1;print;next} s&&/^  [a-z]/{exit} s' "$STACK_DIR/compose.yaml")"
   assert_contains "$svc" 'profiles: ["ollama"]'
-  assert_contains "$svc" '"127.0.0.1:11434:11434"'
+  assert_not_contains "$svc" "ports:"
+  assert_contains "$svc" "networks: [ollama, ollama-out]"
   assert_contains "$svc" "cap_drop: [ALL]"
   assert_contains "$svc" "no-new-privileges"
   assert_contains "$svc" 'OLLAMA_NO_CLOUD: "1"'
-  assert_not_contains "$svc" "0.0.0.0:11434:"
+  assert_contains "$gate" 'profiles: ["ollama"]'
+  assert_contains "$gate" '"127.0.0.1:11434:11434"'
+  assert_contains "$gate" "networks: [ollama-out]"
+  assert_contains "$gate" '"/etc/caddy/ollama-gate.caddy"'
+  assert_contains "$gate" "read_only: true"
+  assert_contains "$gate" "cap_drop: [ALL]"
+  assert_contains "$gate" "no-new-privileges"
+  assert_contains "$gate" 'BN_CONFIG_SUM: ${BN_OLLAMA_GATE_CONFIG_SUM:-}'
+  assert_contains "$(status_url ollama-gate)" "http://127.0.0.1:11434"
+  assert_contains "$(status_url ollama)" "LiteLLM's alone"
+  # its gate checks the Host; nothing in the main Caddy names Ollama (the gate's file is not imported there)
+  local g; g="$(grep -v '^[[:space:]]*#' "$STACK_DIR/caddy/ollama-gate.caddy" | tr -d '\t')"
+  assert_contains "$g" "@loopback host 127.0.0.1 localhost"
+  assert_contains "$g" "reverse_proxy ollama:11434"
+  assert_contains "$g" "respond \"Forbidden: this Ollama answers only requests for 127.0.0.1 or localhost\" 403"
+  for g in "$STACK_DIR"/caddy/Caddyfile "$STACK_DIR"/caddy/*.caddy; do
+    [ "${g##*/}" = ollama-gate.caddy ] || assert_not_contains "$(cat "$g")" "ollama"
+  done
+}
+
+# compose.yaml as Docker Compose renders it with the profile (no daemon): who is on Ollama's networks, and what is published
+test_compose_renders_ollama_isolated_behind_its_gate() {
+  [ -n "${BN_REAL_DOCKER:-}" ] && "$BN_REAL_DOCKER" compose version >/dev/null 2>&1 || { echo "no docker compose" >&2; return 77; }
+  docker() { case "$*" in *" config --format json") "$BN_REAL_DOCKER" "$@" ;; *) echo "unexpected docker $*" >&2; return 97 ;; esac; }
+  printf 'POSTGRES_PASSWORD=p\nRUSTFS_ACCESS_KEY=a\nRUSTFS_SECRET_KEY=s\nLITELLM_MASTER_KEY=m\nLITELLM_SALT_KEY=s\nLITELLM_UI_PASSWORD=u\nWEBUI_SECRET_KEY=w\nOPENWEBUI_ADMIN_EMAIL=a@b.c\nOPENWEBUI_ADMIN_PASSWORD=p\nSHARED_MCP_TOKEN=t\nSTT_PROVIDER=bedrock\n' > "$ENV_FILE"
+  local out; out="$(_RT_PROFILE=1 dc config --format json 2>&1)" || { echo "$out" >&2; return 1; }
+  printf '%s' "$out" | python3 -I -c '
+import json, sys
+d = json.load(sys.stdin); s = d["services"]
+on = lambda n: sorted(k for k, v in s.items() if n in (v.get("networks") or {}))
+assert on("ollama") == ["litellm", "ollama"], on("ollama")
+assert on("ollama-out") == ["ollama", "ollama-gate"], on("ollama-out")
+assert d["networks"]["ollama"]["internal"] is True and not d["networks"]["ollama-out"].get("internal"), d["networks"]
+assert "ports" not in s["ollama"], s["ollama"].get("ports")
+assert [(p["host_ip"], str(p["published"]), p["target"]) for p in s["ollama-gate"]["ports"]] == [("127.0.0.1", "11434", 11434)], s["ollama-gate"]["ports"]
+assert s["ollama-gate"]["user"] == "65534:65534" and s["ollama-gate"]["read_only"] is True and s["ollama-gate"]["cap_drop"] == ["ALL"], s["ollama-gate"]
+# published on 11434: no other service
+assert not [k for k, v in s.items() if k != "ollama-gate" and any(str(p.get("published")) == "11434" for p in v.get("ports") or [])]
+'
+  # without the profile: neither service (and nothing on 11434)
+  out="$(dc config --format json 2>&1)" || { echo "$out" >&2; return 1; }
+  printf '%s' "$out" | python3 -I -c 'import json, sys; d = json.load(sys.stdin); assert not {"ollama", "ollama-gate"} & set(d["services"]), sorted(d["services"])'
 }
 
 # --- macOS: install, the agent, stop, start, the watch ---
@@ -283,12 +329,15 @@ test_on_linux_it_is_a_profile_container_with_its_gpu_and_the_gateway_reaches_it_
   mkdir -p "$(rt_dir ollama)"; echo 0.40.11 > "$(rt_dir ollama)/installed"
   : > "$TMP/docker"; dc ps >/dev/null
   assert_contains "$(cat "$TMP/docker")" "--profile ollama"
-  assert_contains " $(optional_services) " " ollama "
+  assert_contains " $(optional_services) " " ollama ollama-gate "
   assert_eq "$(local_ollama_base)" "http://ollama:11434"
   assert_not_contains "$(compose_overlays | tr '\n' ' ')" "compose.ollama-gpu.yaml"
   echo nvidia > "$(rt_dir ollama)/gpu"
   assert_contains "$(compose_overlays | tr '\n' ' ')" "compose.ollama-gpu.yaml"
   assert_eq "$(rt_kind ollama)" container
+  # Stop stops Ollama and its gate (nothing answers on 11434 then)
+  : > "$TMP/docker"; rt_stop ollama > /dev/null 2>&1
+  assert_contains "$(cat "$TMP/docker")" " stop ollama ollama-gate"
   # (a Mac never has the profile, whatever is in the folder)
   FAKE_OS=Darwin; : > "$TMP/docker"; dc ps >/dev/null
   assert_not_contains "$(cat "$TMP/docker")" "--profile ollama"

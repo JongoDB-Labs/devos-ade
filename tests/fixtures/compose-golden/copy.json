@@ -13,6 +13,10 @@
    "external": false,
    "name": "bn-two_localgit"
   },
+  "ollama": {
+   "external": false,
+   "name": "bn-two_ollama"
+  },
   "remote": {
    "external": false,
    "name": "bn-two_remote"
@@ -137,6 +141,7 @@
    "labels": {},
    "networks": [
     "default",
+    "ollama",
     "stt",
     "terminal-link",
     "websearch"

@@ -9,7 +9,10 @@
 #
 # Combinations: remote off / tailscale / domain (× REMOTE_PREVIEW_SITE off / own) × the terminal off/on × the Code
 # page (and its previews) off/on (the Code page only with the terminal) × the remote preview host set or not × the
-# built-in git server's site off/on; then terminal-gateway.caddy without and with the git server's TLS listener. Exit 0 when every one validates.
+# built-in git server's site off/on; then terminal-gateway.caddy without and with the git server's TLS listener; then
+# ollama-gate.caddy, validated and run: in front of a stub Ollama (on a network of this script's own, removed after), a
+# request for 127.0.0.1 or localhost goes through and one for another name (DNS rebinding) is 403. Exit 0 when every one
+# passes.
 set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE="caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f"
@@ -92,5 +95,34 @@ else
   fails=$((fails + 1)); printf 'FAIL terminal-gateway.caddy with the git server\n%s\n' "$out" | tail -n 3
 fi
 rm -rf "$tls"
+# Ollama's gate (Linux): validated, then run as compose runs it (unprivileged, read-only) with a stub "ollama" behind it
+n=$((n + 1))
+if out="$(docker run --rm --network none -v "$here/caddy:/etc/caddy:ro" --entrypoint caddy "$IMAGE" validate --config /etc/caddy/ollama-gate.caddy --adapter caddyfile 2>&1)"; then
+  printf 'ok   ollama-gate.caddy\n'
+else
+  fails=$((fails + 1)); printf 'FAIL ollama-gate.caddy\n%s\n' "$out" | tail -n 3
+fi
+n=$((n + 1)); net="bn-gate-check-$$"; gate=''; why=''
+if docker network create "$net" >/dev/null &&
+   docker run -d --rm --name "$net-ollama" --network "$net" --network-alias ollama --entrypoint caddy "$IMAGE" respond --listen :11434 'Ollama is running' >/dev/null &&
+   gate="$(docker run -d --rm --name "$net-gate" --network "$net" -p 127.0.0.1::11434 --user 65534:65534 --read-only --cap-drop ALL --cap-add NET_BIND_SERVICE \
+             --security-opt no-new-privileges:true --tmpfs /data:uid=65534,gid=65534,mode=0700 --tmpfs /config:uid=65534,gid=65534,mode=0700 \
+             -v "$here/caddy:/etc/caddy:ro" "$IMAGE" caddy run --config /etc/caddy/ollama-gate.caddy --adapter caddyfile)"; then
+  port="$(docker port "$gate" 11434/tcp | head -n 1 | sed 's/.*://')"
+  for _ in $(seq 1 30); do docker exec "$gate" wget -q -O /dev/null http://127.0.0.1:11435/health 2>/dev/null && break; sleep 1; done
+  code() { curl -s -o /dev/null -w '%{http_code}' --max-time 5 -H "Host: $1" "http://127.0.0.1:$port/"; }
+  [ "$(curl -s --max-time 5 "http://127.0.0.1:$port/")" = 'Ollama is running' ] || why="$why 127.0.0.1 did not reach it;"
+  [ "$(code "localhost:11434")" = 200 ] || why="$why localhost was not let through;"
+  [ "$(code "127.0.0.1")" = 200 ] || why="$why 127.0.0.1 (no port) was not let through;"
+  for h in rebind.example:11434 rebind.example 127.0.0.1.nip.io:11434 ollama:11434 192.168.1.10:11434; do
+    [ "$(code "$h")" = 403 ] || why="$why $h was not refused;"
+  done
+  [ "$(docker exec "$gate" wget -q -O - http://127.0.0.1:11435/health 2>/dev/null)" = ok ] || why="$why its health check failed;"
+else
+  why=" it did not start"
+fi
+docker rm -f "$net-gate" "$net-ollama" >/dev/null 2>&1; docker network rm "$net" >/dev/null 2>&1
+if [ -z "$why" ]; then printf 'ok   ollama-gate.caddy: loopback names reach Ollama, any other name is 403\n'
+else fails=$((fails + 1)); printf 'FAIL ollama-gate.caddy:%s\n' "$why"; fi
 printf '\n%d of %d combinations validate\n' "$((n - fails))" "$n"
 [ "$fails" -eq 0 ]

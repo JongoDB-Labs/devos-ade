@@ -9,6 +9,10 @@
    "external": false,
    "name": "bedrock-now_localgit"
   },
+  "ollama": {
+   "external": false,
+   "name": "bedrock-now_ollama"
+  },
   "stt": {
    "external": false,
    "name": "bedrock-now_stt"
@@ -71,6 +75,7 @@
    "labels": {},
    "networks": [
     "default",
+    "ollama",
     "stt",
     "websearch"
    ],
