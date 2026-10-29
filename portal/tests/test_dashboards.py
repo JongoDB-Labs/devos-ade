@@ -47,9 +47,10 @@ def test_settings_providers_are_tabs_and_long_lists_fold():
     js, css = read("settings.js"), read("settings.css")
     assert "function showGroup(" in js and 'body.classList.add("set-tabbed")' in js
     assert 'tab) showGroup(' in js.replace("if (tab) ", "tab) ")   # an address opens its tab
-    for g in ("keys", "subscriptions", "search"):
-        assert f'.set-tabbed[data-group="{g}"]' in css
-    assert "#settings:not(.set-finding)" in css                  # a search shows every tab
+    # one group at a time, whatever the groups are called (Local models had no rule while each was hidden by name)
+    assert 'classList.toggle("set-tab-off", ch.dataset.group !== name)' in js
+    assert "#settings:not(.set-finding) .set-tabbed > .set-tab-off { display: none; }" in css   # a search shows every tab
+    assert '.set-tabbed[data-group="' not in css
     assert '"set-more set-fold"' in js                           # the rest of Advanced / About: More settings' rule (a search opens it)
 
 

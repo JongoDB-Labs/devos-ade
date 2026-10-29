@@ -365,6 +365,12 @@ def walk(page, failures, label):
         for t in range(max(tabs.count(), 1)):
             if tabs.count():
                 tabs.nth(t).click()
+                # one group at a time: no block of another group shows under this tab
+                g = tabs.nth(t).get_attribute("data-group")
+                others = page.evaluate("""([sid, g]) => [...document.querySelectorAll(`#set-${sid} .set-tabbed > [data-group]`)]
+                  .filter((e) => e.dataset.group !== g && e.getClientRects().length).map((e) => e.dataset.key || e.dataset.group)""", [sid, g])
+                if others:
+                    failures.append(f"{label}: the {g} tab of {sid} also shows {others[:6]}")
             for o in page.evaluate(COLLECT, f"#set-{sid} .set-row[data-key], #set-{sid} .set-adv-item[data-key], #set-{sid} .set-row[data-own], "
                                             f"#set-{sid} .set-row[data-own] [data-for]"):
                 if o["visible"]:

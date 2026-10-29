@@ -361,11 +361,10 @@
   .set-row > :is(.set-cli, .set-remote, .set-backups) { margin-top: 10px; }
   .set-row > .set-form { margin-top: 14px; }
 }
-/* Models & providers: Keys · Subscriptions · Search, one at a time (settings.js showGroup); the head each tab replaces is
-   hidden, and a search or "Changed from default" looks through all three */
-#settings:not(.set-finding) .set-tabbed[data-group="keys"] > [data-group]:not([data-group="keys"]),
-#settings:not(.set-finding) .set-tabbed[data-group="subscriptions"] > [data-group]:not([data-group="subscriptions"]),
-#settings:not(.set-finding) .set-tabbed[data-group="search"] > [data-group]:not([data-group="search"]) { display: none; }
+/* Models & providers: Keys · Subscriptions · Local models · Search, one at a time (settings.js showGroup marks the other
+   groups' blocks set-tab-off); the head each tab replaces is hidden, and a search or "Changed from default" looks through
+   them all */
+#settings:not(.set-finding) .set-tabbed > .set-tab-off { display: none; }
 .set-tabbed > .set-group-head { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); margin: 0; }
 .set-finding .set-tabbed > .set-group-head { position: static; width: auto; height: auto; clip-path: none; margin: 18px 0 8px; }
 .set-minnav { position: static; margin: 12px 0 8px; padding: 0 0 10px; }

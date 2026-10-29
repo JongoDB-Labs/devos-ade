@@ -3505,10 +3505,16 @@ def settings_narrow_cards(ctx):
                 if g:
                     page.click(f'#set-{sec} .set-minnav .chip[data-group="{g}"]')
                     page.wait_for_selector(f'#set-{sec} .set-tabbed[data-group="{g}"]')
+                    # one group at a time: no block of another group shows under this tab
+                    others = page.evaluate("""([sec, g]) => [...document.querySelectorAll(`#set-${sec} .set-tabbed > [data-group]`)]
+                      .filter((e) => e.dataset.group !== g && e.getClientRects().length).map((e) => e.dataset.key || e.dataset.group)""", [sec, g])
+                    expect(not others, f"{device}: the {g} tab also shows {others[:6]}")
                 info = page.locator(f"#set-{sec} .set-row[data-key=WEBSEARCH_SEARXNG_BUILTIN] .set-info-btn")
-                if sec == "providers" and info.count() and info.first.is_visible():
+                panel = "#set-providers .set-row[data-key=WEBSEARCH_SEARXNG_BUILTIN] .set-ws-info"
+                # (its info open once: the button toggles it, so not pressed again where it is open already)
+                if sec == "providers" and info.count() and info.first.is_visible() and page.locator(f"{panel}[hidden]").count():
                     info.first.click()
-                    page.wait_for_selector("#set-providers .set-row[data-key=WEBSEARCH_SEARXNG_BUILTIN] .set-ws-info:not([hidden])")
+                    page.wait_for_selector(f"{panel}:not([hidden])")
                 rows += page.evaluate(NARROW_ROWS, f"#set-{sec}")
                 shot(page, f"17c-settings-narrow-{device}-{sec}" + (f"-{g.replace(' ', '-')}" if g else ""))
         expect(len(rows) >= 8, f"{device}: only {len(rows)} rows with a control")

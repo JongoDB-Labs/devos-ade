@@ -514,14 +514,13 @@
       let g = names[0];
       for (const ch of body.children) { if (ch.matches(".set-group-head")) g = ch.textContent.toLowerCase(); ch.dataset.group = g; }
       body.classList.add("set-tabbed");
-      body.dataset.group = names[0];
       for (const h of heads) {
         const b = el("button", { type: "button", class: "chip", "data-group": h.textContent.toLowerCase(), "aria-pressed": "false", text: h.textContent });
         b.addEventListener("click", () => showGroup(body, b.dataset.group));
         bar.append(b);
       }
-      bar.querySelector(".chip").setAttribute("aria-pressed", "true");
       c.append(bar);
+      showGroup(body, names[0], bar);
     }
     c.append(body);
     if (fold) c.append(fold);
@@ -542,11 +541,13 @@
     return c;
   }
 
-  // showGroup BODY NAME — the tab NAME of a tabbed section (Models & providers), its chip pressed
-  function showGroup(body, name) {
+  // showGroup BODY NAME [BAR] — the tab NAME of a tabbed section (Models & providers), its chip pressed: the other groups'
+  // blocks marked set-tab-off (hidden unless a search looks through them all), whatever the groups are called
+  function showGroup(body, name, bar) {
     if (!body || !body.classList.contains("set-tabbed")) return;
     body.dataset.group = name;
-    const bar = body.closest(".set-card").querySelector(".set-minnav");
+    for (const ch of body.children) ch.classList.toggle("set-tab-off", ch.dataset.group !== name);
+    bar = bar || (body.closest(".set-card") && body.closest(".set-card").querySelector(".set-minnav"));
     if (bar) for (const b of bar.querySelectorAll(".chip")) b.setAttribute("aria-pressed", String(b.dataset.group === name));
   }
 
