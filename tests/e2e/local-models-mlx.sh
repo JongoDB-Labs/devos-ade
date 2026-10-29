@@ -4,7 +4,8 @@
 # (catalog/mlx-requirements.lock) into its own venv, one small mlx-community model (Qwen2.5-0.5B-Instruct-4bit, about
 # 280 MB) is vetted (no custom code) and downloaded into the scratch HF_HOME, mlx_lm.server runs as a launchd user agent on
 # 127.0.0.1 (a random port), and one throwaway LiteLLM container (compose.yaml's image, named bne2e-mlx-litellm, removed
-# afterwards) serves the rendered config. Checks: 1 runtime is mlx; 2 downloaded, registered; 3 LiteLLM entry is $0, no
+# afterwards) serves the rendered config. Checks: 1 runtime is mlx; 1b Pause part way keeps the part and stops every
+# transfer; 1c Resume finishes it; 2 downloaded, registered; 3 LiteLLM entry is $0, no
 # key; 4 a chat completion goes container -> host.docker.internal -> the server; 5 a tool call comes back as tool_calls;
 # 6 booked at $0; 7 the Code page rows say Local, free; 8 removal deletes the files and unregisters; 9 uninstall removes
 # the agent, the venv and the models. Needs: Apple silicon, uv, Docker, outbound access to huggingface.co and PyPI,
@@ -65,9 +66,27 @@ if [ "$RT" = none ]; then
 fi
 [ "$RT" = mlx ] && ok "1 the runtime is MLX" || { fail "1 the runtime is $RT, not mlx"; exit 1; }
 
-say "pulling hf.co/$REPO:$QUANT with $RT"
+say "pulling hf.co/$REPO:$QUANT with $RT, pausing it part way and resuming it"
 # (a subshell: local_pull exits on some failures, which would end this script before it says why)
-( LOCAL_POLL_S=2 local_pull "$REPO" "$QUANT" --tools yes --params-m 494 --context 32768 --license apache-2.0 ) >"$WORK/pull.log" 2>&1 || { fail "2 the download failed: $(tail -n 3 "$WORK/pull.log" | tr '\n' ' ')"; exit 1; }
+( LOCAL_POLL_S=1 local_pull "$REPO" "$QUANT" --tools yes --params-m 494 --context 32768 --license apache-2.0 ) >"$WORK/pull.log" 2>&1 &
+PB=$!
+for _ in $(seq 1 900); do   # (until the model's weights have a part of a few MB, or the download ended)
+  kill -0 "$PB" 2>/dev/null || break
+  [ -z "$(find "$(local_mlx_repo_dir "$REPO")/blobs" -name '*.part' -size +4000k 2>/dev/null | head -n 1)" ] || break
+  sleep 0.2
+done
+if kill -0 "$PB" 2>/dev/null; then
+  ( local_stop pause ) >"$WORK/pause.log" 2>&1; wait "$PB" || true
+  PART="$(find "$(local_mlx_repo_dir "$REPO")/blobs" -name '*.part' 2>/dev/null | head -n 1)"; HAD="$(wc -c < "${PART:-/dev/null}" | tr -d ' ')"
+  if grep -q '"state":"paused"' "$(local_job_file)" && [ "${HAD:-0}" -gt 0 ] && ! pgrep -f "hf_fetch.py $REPO" >/dev/null && ! pgrep -f "$PART" >/dev/null; then
+    ok "1b Pause stopped it part way: ${HAD} bytes kept, nothing left downloading"
+  else fail "1b Pause: $(cat "$(local_job_file)") part=${HAD:-none} $(pgrep -fl "hf_fetch.py $REPO")"; fi
+  ( LOCAL_POLL_S=2 local_resume ) >>"$WORK/pull.log" 2>&1 || { fail "2 Resume failed: $(tail -n 3 "$WORK/pull.log" | tr '\n' ' ')"; exit 1; }
+  ok "1c Resume continued it to the end (every file checked against its hash)"
+else
+  wait "$PB" || { fail "2 the download failed: $(tail -n 3 "$WORK/pull.log" | tr '\n' ' ')"; exit 1; }
+  ok "1b (the download finished before it could be paused: nothing to check)"
+fi
 ENTRY="$(get_env LOCAL_MODELS)"; NAME="$(local_model_name "${ENTRY%%,*}")"
 case "$ENTRY" in mlx:*) ok "2 downloaded and registered: LOCAL_MODELS=$ENTRY" ;; *) fail "2 LOCAL_MODELS is '$ENTRY'" ;; esac
 

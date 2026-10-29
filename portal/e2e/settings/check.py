@@ -228,6 +228,16 @@ class Stub(http.server.BaseHTTPRequestHandler):
             if body.get("action") == "local-remove":
                 LM["installed"] = [i for i in LM["installed"] if i["repo"] != body.get("repo")]
             return self.send(202, json.dumps({"id": "e2e-lc", "action": body.get("action")}), "application/json")
+        if path == "/api/local-models/stop":   # (Pause / Cancel: no password; the helper then says paused or cancelled)
+            LM["stops"].append(body)
+            j = LM["job"] or IDLE_JOB
+            if body.get("op") == "pause" and j["state"] == "pulling":
+                LM["job"] = {**j, "state": "paused", "rate": 0, "eta": None, "resumable": True, "message": "Paused at 12.0 GB of 63.0 GB. Resume continues from there."}
+            elif body.get("op") == "cancel" and (j["state"] == "pulling" or j.get("resumable")):
+                LM["job"] = {**j, "state": "cancelled", "done_bytes": 0, "resumable": False, "message": "Cancelled: what had arrived was deleted."}
+            else:
+                return self.send(409, json.dumps({"error": "No download is running."}), "application/json")
+            return self.send(202, json.dumps({"id": "e2e-stop", "op": body.get("op")}), "application/json")
         if path == "/api/local-models/server":
             LM["posts"].append(body)
             if not body.get("password"):
@@ -239,7 +249,8 @@ class Stub(http.server.BaseHTTPRequestHandler):
 # The model-server form's other side: what the portal answers (GET /api/local-models) and what the update helper makes of a
 # request (lib/local_models.sh msrv_apply), simplified: a fake network where 10.0.0.5 serves two models, 203.0.113.9 is
 # plain http to a public address, "down" in the address is refused, 169.254 is blocked. The key is never in any answer.
-LM = {"servers": [], "result": None, "posts": [], "gets": [], "probes": [], "changes": [], "installed": []}
+LM = {"servers": [], "result": None, "posts": [], "gets": [], "probes": [], "changes": [], "installed": [], "stops": [], "job": None, "can_stop": True}
+IDLE_JOB = {"state": "idle", "repo": "", "quant": "", "done_bytes": 0, "total_bytes": 0, "rate": 0, "eta": None, "stalled": 0, "resumable": False, "message": "", "at": None}
 # GET /api/models/browse (the shape portal/model_browser.py produces; two built-in Bedrock models and nothing more)
 BROWSE = {"providers": {"bedrock": {"on": True, "key": "BEDROCK_MODELS", "value": "", "at": int(time.time()) - 300, "stale": False, "error": None, "status": "ok", "region": "us-east-1", "rows": [
     {"provider": "bedrock", "id": "claude-haiku-5-5", "source_id": "us.anthropic.claude-haiku-5-5", "name": "Claude Haiku 5.5", "vendor": "Anthropic", "free": False, "in": 0.8, "out": 4.0,
@@ -254,7 +265,7 @@ def lm_state():
     return {"known": True, "at": int(time.time()), "stale": False, "wait": False, "can_change": True, "why_not": "", "hf_token_set": False,
             "runtime": {"kind": "none", "how": "No model runner is running on this computer.", "command": "./stack local-models enable", "dmr": "", "ollama": ""},
             "gpu": "none", "memory": 16 * 1024 ** 3, "disk": sum(i["bytes"] for i in LM["installed"]), "installed": LM["installed"], "servers": LM["servers"], "result": LM["result"],
-            "job": {"state": "idle", "repo": "", "quant": "", "done_bytes": 0, "total_bytes": 0, "message": "", "at": None}}
+            "can_stop": LM["can_stop"], "job": LM["job"] or IDLE_JOB}
 
 
 def lm_helper(b):
@@ -833,6 +844,102 @@ def check_servers(page, failures, label):
     page.set_viewport_size({"width": 1280, "height": 900})
 
 
+def check_downloads(page, failures, label):
+    """A download's controls (JON-828): its speed and time left while it runs; Pause and Cancel with no password, Cancel asking
+    first once something arrived; Resume (the same download) asking for it; a stalled download marked; an older helper says how
+    from a terminal; and on a phone nothing is wider than the screen."""
+    gb, pw = 1024 ** 3, "correct horse"
+    running = {"state": "pulling", "repo": "nightmedia/big-mlx", "quant": "mlx", "done_bytes": 12 * gb, "total_bytes": 63 * gb, "rate": int(9.8 * 1048576),
+               "eta": 5340, "stalled": 0, "resumable": False, "message": "Downloading nightmedia/big-mlx", "at": int(time.time())}
+
+    def open_local(job, can_stop=True):
+        LM.update(job=dict(job), can_stop=can_stop)
+        page.goto(BASE + "/#settings")
+        page.reload()
+        page.wait_for_selector("#settings .set-card:not([hidden])", timeout=20000)
+        page.click(".set-nav-item[data-section='providers']")
+        page.click("#set-providers .set-minnav .chip[data-group='local models']")
+        page.wait_for_selector(f"#lm-job[data-state={job['state']}]", timeout=10000)
+
+    def no_dialog(what):
+        page.wait_for_timeout(250)
+        if page.locator("#set-confirm[open]").count():
+            failures.append(f"{label}: {what} opened the password dialog")
+            page.keyboard.press("Escape")
+
+    try:
+        open_local(running)
+        page.locator("#lm-job").screenshot(path=str(OUT / "settings-download-running.png"))
+        txt = page.inner_text("#lm-job-progress")
+        if not all(w in txt for w in ("12 GB of 63 GB", "19%", "9.8 MB/s", "about 1\u00a0h\u00a029\u00a0min left")):
+            failures.append(f"{label}: a running download does not say its progress, speed and time left: {txt!r}")
+        if page.locator("#lm-job [data-act=local-resume]").count():
+            failures.append(f"{label}: a running download offers Resume")
+        # Pause: no password, and the panel then says paused, with Resume and Cancel
+        page.click("#lm-job [data-act=local-pause]")
+        no_dialog("Pause")
+        page.wait_for_selector("#lm-job[data-state=paused]", timeout=10000)
+        page.locator("#lm-job").screenshot(path=str(OUT / "settings-download-paused.png"))
+        if LM["stops"] != [{"op": "pause"}]:
+            failures.append(f"{label}: Pause sent {LM['stops']}")
+        if "MB/s" in page.inner_text("#lm-job-progress") or "left" in page.inner_text("#lm-job-progress"):
+            failures.append(f"{label}: a paused download still shows a speed: {page.inner_text('#lm-job-progress')!r}")
+        if not page.locator("#lm-job.warn").count():
+            failures.append(f"{label}: a paused download is not marked")
+        # Resume asks for the password and asks for the same download again
+        page.click("#lm-job [data-act=local-resume]")
+        page.wait_for_selector("#set-confirm[open]", timeout=5000)
+        page.fill("#set-confirm-password", pw)
+        page.click("#set-confirm-ok")
+        page.wait_for_function("() => !document.querySelector('#set-confirm[open]')", timeout=10000)
+        last = LM["changes"][-1] if LM["changes"] else {}
+        if (last.get("action"), last.get("repo"), last.get("quant"), last.get("password")) != ("local-pull", "nightmedia/big-mlx", "mlx", pw):
+            failures.append(f"{label}: Resume sent {({k: v for k, v in last.items() if k != 'password'})}")
+        # Cancel asks first, since 12 GB arrived; "Keep it" keeps it; then Cancel download deletes it, with no password
+        open_local(LM["job"] if LM["job"]["state"] == "paused" else {**running, "state": "paused", "resumable": True, "rate": 0, "eta": None})
+        page.click("#lm-job [data-act=local-cancel]")
+        page.wait_for_selector("#lm-job [data-act=local-cancel-yes]", timeout=5000)
+        page.locator("#lm-job").screenshot(path=str(OUT / "settings-download-cancel.png"))
+        if "12 GB" not in page.inner_text("#lm-job .lm-job-acts"):
+            failures.append(f"{label}: Cancel does not say what it deletes: {page.inner_text('#lm-job .lm-job-acts')!r}")
+        page.click("#lm-job [data-act=local-cancel-no]")
+        if len(LM["stops"]) != 1 or not page.locator("#lm-job [data-act=local-resume]").count():
+            failures.append(f"{label}: Keep it did not keep the paused download ({LM['stops']})")
+        page.click("#lm-job [data-act=local-cancel]")
+        page.click("#lm-job [data-act=local-cancel-yes]")
+        no_dialog("Cancel")
+        page.wait_for_selector("#lm-job[data-state=cancelled]", timeout=10000)
+        if LM["stops"][-1:] != [{"op": "cancel"}]:
+            failures.append(f"{label}: Cancel sent {LM['stops']}")
+        # a download that stopped with a part kept: Try again and Discard
+        open_local({**running, "state": "failed", "resumable": True, "rate": 0, "eta": None, "message": "The download stopped (connection reset). What arrived is kept."})
+        acts = page.inner_text("#lm-job .lm-job-acts")
+        if "Try again" not in acts or "Discard" not in acts:
+            failures.append(f"{label}: a stopped download with a part kept offers {acts!r}")
+        # nothing for two minutes: marked, and the message says what to do
+        open_local({**running, "stalled": 300, "rate": 0, "eta": None, "message": "Nothing has arrived for 5 minutes: Hugging Face or the connection is slow, and it keeps trying."})
+        if not page.locator("#lm-job.warn").count():
+            failures.append(f"{label}: a stalled download is not marked")
+        # a helper from before Pause: no buttons that cannot work, the terminal command instead
+        open_local(running, can_stop=False)
+        if page.locator("#lm-job [data-act=local-pause]").count() or "./stack local-models pause" not in page.inner_text("#lm-job"):
+            failures.append(f"{label}: with an older helper the panel shows {page.inner_text('#lm-job')!r}")
+        # a phone: the controls wrap, nothing is wider than the screen
+        open_local(running)
+        page.set_viewport_size({"width": 390, "height": 844})   # (Settings' phone nav is another control: opened wide, then narrowed)
+        page.wait_for_timeout(300)
+        wide = page.evaluate("""() => { const w = document.documentElement.clientWidth; const j = document.querySelector('#lm-job').getBoundingClientRect();
+            return {page: document.documentElement.scrollWidth - w, job: Math.round(j.right - w)}; }""")
+        if wide["page"] > 0 or wide["job"] > 0:
+            failures.append(f"{label}: at 390 px the download panel is wider than the screen: {wide}")
+        page.locator("#lm-job").screenshot(path=str(OUT / "settings-download-390.png"))
+        if not page.locator("#lm-job [data-act=local-pause]").is_visible():
+            failures.append(f"{label}: at 390 px Pause is not visible ({page.evaluate('() => JSON.stringify(document.querySelector(\'#lm-job [data-act=local-pause]\').getBoundingClientRect())')})")
+    finally:
+        page.set_viewport_size({"width": 1280, "height": 900})
+        LM.update(job=None, can_stop=True)
+
+
 def check_browse(page, failures, label):
     """Browse models with the models you run yourself (JON-816): the two entry points, a downloaded model and each saved
     server's models listed next to the providers' with Add / Remove, Download from Hugging Face and Add a model server
@@ -1033,6 +1140,7 @@ def main():
                     check_code_models(page, failures, label)
                     check_services(page, failures, label)
                     check_servers(page, failures, label)
+                    check_downloads(page, failures, label)
                     check_browse(page, failures, label)
                     check_menus(page, failures, label)
                 if layout and state == "on" and not remote:   # (every key set: Replace key, and Remove the key)
