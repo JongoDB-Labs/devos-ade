@@ -12,7 +12,10 @@ curl does the transfers: the system's TLS and certificates, a resume at the part
 a minute dropped and tried again. The token (HF_TOKEN) reaches curl on stdin as a header, never on a command line, and curl
 never sends it on to the host a download redirects to (the Hub's CDN). HF_ENDPOINT (default https://huggingface.co) is the
 Hub, as for huggingface_hub; HF_FETCH_WORKERS files at a time (default 4). Standard library only: run with python3 -I.
-Exit: 0 done, 1 failed (why: the last line on stderr), 143 stopped by SIGTERM or SIGINT (the parts are kept).
+A dropped connection is tried again by itself, from where it stopped; a refusal (HTTP 401 or 403: a gated or private
+model, and no token that can see it) or a file the commit no longer has (404) is not, as trying again cannot change it.
+Exit: 0 done, 1 failed, 3 Hugging Face refused a file (why: the last line on stderr, either), 143 stopped by SIGTERM or
+SIGINT (the parts are kept).
 """
 
 from __future__ import annotations
@@ -32,6 +35,9 @@ ENDPOINT = (os.environ.get("HF_ENDPOINT") or "https://huggingface.co").rstrip("/
 WORKERS = max(1, min(8, int(os.environ.get("HF_FETCH_WORKERS") or 4)))
 TRIES = 8              # attempts in a row that add nothing before a file's download fails
 SPARE = 512 * 1024**2  # free disk kept beyond what the download still needs
+WHY = {6: "the Hub's name did not resolve: is this computer online?", 7: "could not connect to the Hub",
+       18: "the connection kept dropping", 28: "the connection timed out", 35: "the secure connection failed",
+       56: "the connection kept dropping", 92: "the connection kept dropping"}   # (curl's exit codes, in words)
 ETAG = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 REPO = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}")
 
@@ -41,6 +47,10 @@ _lock = threading.Lock()
 
 
 class Failed(Exception):
+    pass
+
+
+class Refused(Failed):
     pass
 
 
@@ -108,26 +118,28 @@ def link(snap: str, name: str, dest: str) -> None:
     os.replace(tmp, path)
 
 
-def curl(url: str, part: str, have: int, token: str) -> int:
+def curl(url: str, part: str, have: int, token: str) -> tuple:
+    """-> (curl's exit code, the HTTP status of the last answer, 0 for none)"""
     args = ["curl", "-q", "-sS", "-f", "-L", "--max-redirs", "5", "--connect-timeout", "30",
-            "--speed-limit", "1024", "--speed-time", "60", "-H", "@-", "-o", part]
+            "--speed-limit", "1024", "--speed-time", "60", "-H", "@-", "-o", part, "-w", "%{http_code}"]
     if url.startswith("https://"):
         args[1:1] = ["--proto", "=https", "--proto-redir", "=https"]
     if have:
         args += ["-C", str(have)]
-    p = subprocess.Popen(args + [url], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    p = subprocess.Popen(args + [url], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     with _lock:
         _procs.add(p)
     if stopping.is_set():
         p.terminate()
     try:
-        _, err = p.communicate((f"Authorization: Bearer {token}\n" if token else "").encode())
+        out, err = p.communicate((f"Authorization: Bearer {token}\n" if token else "").encode())
     finally:
         with _lock:
             _procs.discard(p)
     if p.returncode and not stopping.is_set():
         sys.stderr.write(err.decode("utf-8", "replace")[-300:])
-    return p.returncode
+    code = out.decode("ascii", "replace").strip()[-3:]
+    return p.returncode, int(code) if code.isdigit() else 0
 
 
 def fetch(repo: str, sha: str, blobs: str, snap: str, row: tuple, token: str) -> None:
@@ -138,7 +150,7 @@ def fetch(repo: str, sha: str, blobs: str, snap: str, row: tuple, token: str) ->
         return
     part = dest + ".part"
     url = f"{ENDPOINT}/{repo}/resolve/{sha}/{urllib.parse.quote(name)}"
-    idle, rc = 0, 0
+    idle, rc, code = 0, 0, 0
     while True:
         if stopping.is_set():
             return
@@ -150,7 +162,11 @@ def fetch(repo: str, sha: str, blobs: str, snap: str, row: tuple, token: str) ->
             if size == 0:
                 open(part, "wb").close()
             else:
-                rc = curl(url, part, have, token)
+                rc, code = curl(url, part, have, token)
+                if code in (401, 403):
+                    raise Refused(f"Hugging Face refused {name} (HTTP {code})")
+                if code == 404:
+                    raise Failed(f"Hugging Face no longer has {name} at the commit that was checked (HTTP 404)")
                 if rc == 33:                   # (the server would not resume: start the file again)
                     os.remove(part)
         if stopping.is_set():
@@ -160,7 +176,8 @@ def fetch(repo: str, sha: str, blobs: str, snap: str, row: tuple, token: str) ->
             break
         idle = 0 if now > have else idle + 1
         if idle >= TRIES:
-            raise Failed(f"{name}: no progress after {TRIES} tries (curl exit {rc})")
+            why = f"Hugging Face answered HTTP {code}" if rc == 22 and code else WHY.get(rc)
+            raise Failed(f"{name}: no progress after {TRIES} tries ({why + ', ' if why else ''}curl exit {rc})")
         for _ in range(min(30, 2 ** idle) * 10):
             if stopping.is_set():
                 return
@@ -209,7 +226,7 @@ def main(argv: list) -> int:
             return 143
     except Failed as e:
         sys.stderr.write(f"\n{e}\n")
-        return 143 if str(e) == "stopped" else 1
+        return 143 if str(e) == "stopped" else 3 if isinstance(e, Refused) else 1
     except OSError as e:
         sys.stderr.write(f"\n{e.strerror or e}\n")
         return 1

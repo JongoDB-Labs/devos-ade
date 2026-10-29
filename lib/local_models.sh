@@ -208,20 +208,28 @@ _local_mlx_vet() {  # _local_mlx_vet REPO MANIFEST  (HF_TOKEN in the environment
 import json, sys
 from huggingface_hub import HfApi, hf_hub_download
 repo = sys.argv[1]
-info = HfApi().model_info(repo, files_metadata=True)
+def hub(call, *a, **k):   # (the Hub refusing: what a gated or private model needs, as for a GGUF one)
+    try:
+        return call(*a, **k)
+    except Exception as e:
+        code = getattr(getattr(e, "response", None), "status_code", None)
+        if code in (401, 403): print("no Hugging Face does not let this computer see it: a gated or private model needs a Hugging Face token (Settings › Models & providers) and its license accepted on huggingface.co"); sys.exit(0)
+        if code == 404: print("no Hugging Face has no model %s" % repo); sys.exit(0)
+        raise
+info = hub(HfApi().model_info, repo, files_metadata=True)
 sha = info.sha
 files = [s.rfilename for s in info.siblings]
 py = [f for f in files if f.endswith(".py")]
 if py: print("no it ships Python files (%s): running them is how this kind of model runs code on your computer" % ", ".join(py[:3])); sys.exit(0)
 if "config.json" not in files: print("no it has no config.json: not an MLX model"); sys.exit(0)
-cfg = json.load(open(hf_hub_download(repo, "config.json", revision=sha)))
+cfg = json.load(open(hub(hf_hub_download, repo, "config.json", revision=sha)))
 bad = [k for k in ("model_file", "auto_map") if k in cfg]
 if bad: print("no its config.json asks to run custom code (%s)" % ", ".join(bad)); sys.exit(0)
 with open(sys.argv[2], "w") as m:
     for s in info.siblings:
         m.write("%s\t%s\t%s\t%s\n" % (s.rfilename, s.size, (s.lfs or {}).get("sha256") or "", s.blob_id or ""))
 print("sha " + sha)
-' "$1" "$2" 2>&1 | tail -n 1 | cut -c1-300
+' "$1" "$2" 2>&1 | tail -n 1 | cut -c1-300 || true   # (a check that did not finish says its last words, not ends the pull)
 }
 # _local_mlx_recheck REPO SHA -> why the DOWNLOADED snapshot may not be used (nothing: it is fine). The same config.json
 # rule, on the files on disk, so what is served is what was checked, whatever the Hub answered at download time.
@@ -242,6 +250,20 @@ bad = [k for k in ("model_file", "auto_map") if k in c]
 if bad: print("its config.json asks to run custom code (%s)" % ", ".join(bad))
 ' "$snap" 2>/dev/null | head -n 1 | cut -c1-300 || true
 }
+# _local_fetch_failed LOG RC -> what a download by lib/hf_fetch.py that failed says: its last words, and only when Hugging
+# Face refused a file (exit 3: HTTP 401 or 403) what a gated model needs; a dropped connection is not that
+_local_fetch_failed() {
+  local why; why="$(tail -n 2 "$1" | LC_ALL=C tr -cd ' -~\n' | tr '\n' ' ' | sed 's/^ *//; s/ *$//' | cut -c1-200)"
+  if [ "$2" = 3 ]; then
+    printf '%s' "${why:0:90}: a gated or private model needs a Hugging Face token that can see it (Settings › Models & providers), and its license accepted on huggingface.co. What arrived is kept for Resume; Cancel deletes it."
+  else
+    printf '%s' "The download stopped ($why). What arrived is kept: Resume continues from it, Cancel deletes it."
+  fi
+}
+# _local_refused TEXT -> 0 when a runtime's pull says Hugging Face refused it (a gated or private model): HTTP 401 or 403
+_local_refused() {
+  grep -qiE '(^|[^0-9])40[13]([^0-9]|$)|unauthori[sz]ed|forbidden|gated' <<< "$1"
+}
 # _local_pull_mlx REPO BYTES TOOLS CTX PM LIC — install (once), vet, download, serve, register
 _local_pull_mlx() {
   local repo="$1" bytes="$2" tools="$3" ctx="$4" pm="$5" lic="$6" quant=mlx d logf pid why done_b=0 rc=0 id sha='' man stop
@@ -253,11 +275,16 @@ _local_pull_mlx() {
   _local_job pulling "$repo" "$quant" 0 "$bytes" "Checking $repo is safe to run (no custom code)"
   man="$(local_dir)/manifest.tsv"; : > "$man"; chmod 600 "$man"
   why="$(HF_TOKEN="$(get_env HF_TOKEN)" _local_mlx_vet "$repo" "$man")"
-  case "$why" in "sha "*) sha="${why#sha }"; why='' ;; "no "*) why="${why#no }" ;; *) why="${why:-the check gave no answer}" ;; esac
+  case "$why" in "sha "*) sha="${why#sha }"; why='' ;; "no "*) why="${why#no }" ;; *) why="${why:-no answer}"; why="the check did not finish (${why:0:200}): try again" ;; esac
   [ -n "$why" ] || [[ $sha =~ ^[0-9a-f]{40}$ ]] || why="the check did not give a revision to download"
   if [ -n "$why" ]; then
-    local rd; rd="$(local_mlx_repo_dir "$repo")"; rm -rf -- "$rd"
-    _local_job failed "$repo" "$quant" 0 "$bytes" "Not downloaded: $why. DevOS ADE never runs a model's own code."
+    # (a model refused for what it is leaves nothing behind; a refusal by Hugging Face, or a check that did not finish,
+    # keeps what an earlier try of this download fetched: Resume, or the same download again, continues from it)
+    local more='' rd; rd="$(local_mlx_repo_dir "$repo")"
+    case "$why" in *"Python files"* | *"custom code"* | *"not an MLX model"*) rm -rf -- "$rd"; more=" DevOS ADE never runs a model's own code." ;; esac
+    done_b="$({ du -sk "$rd" 2>/dev/null || true; } | awk '{ print $1 * 1024 }')"
+    case "$done_b" in '' | *[!0-9]*) done_b=0 ;; esac
+    _local_job failed "$repo" "$quant" "$done_b" "$bytes" "Not downloaded: $why.$more"
     die "refused: $why"
   fi
   stop="$(_local_stop_asked)"
@@ -281,7 +308,7 @@ _local_pull_mlx() {
   if [ "$stop" = cancel ] || { [ "$stop" = pause ] && [ "$rc" -ne 0 ]; }; then _local_stopped "$stop" mlx "$repo" "$quant" "$done_b" "$bytes"; return 0; fi
   rm -f "$(local_stop_file)"
   if [ "$rc" -ne 0 ]; then
-    _local_job failed "$repo" "$quant" "$done_b" "$bytes" "The download stopped ($(tail -n 2 "$logf" | LC_ALL=C tr -cd ' -~\n' | tr '\n' ' ' | cut -c1-200)). What arrived is kept: Resume continues from it, Cancel deletes it. A gated model needs a Hugging Face token (Settings › Models & providers) and its license accepted on huggingface.co."
+    _local_job failed "$repo" "$quant" "$done_b" "$bytes" "$(_local_fetch_failed "$logf" "$rc")"
     die "the download failed"
   fi
   why="$(_local_mlx_recheck "$repo" "$sha")"
@@ -487,7 +514,7 @@ _local_pull_hub() {
   if [ "$stop" = cancel ] || { [ "$stop" = pause ] && [ "$rc" -ne 0 ]; }; then _local_stopped "$stop" "$rt" "$repo" "$quant" "$done_b" "$bytes"; return 0; fi
   rm -f "$(local_stop_file)"
   if [ "$rc" -ne 0 ]; then
-    _local_job failed "$repo" "$quant" "$done_b" "$bytes" "The download stopped ($(tail -n 2 "$logf" | LC_ALL=C tr -cd ' -~\n' | tr '\n' ' ' | cut -c1-200)). What arrived is kept: Resume continues from it, Cancel deletes it. A gated model needs a Hugging Face token (Settings › Models & providers) and its license accepted on huggingface.co."
+    _local_job failed "$repo" "$quant" "$done_b" "$bytes" "$(_local_fetch_failed "$logf" "$rc")"
     die "the download failed"
   fi
   [ -f "$rd/snapshots/$sha/$first" ] || { _local_job failed "$repo" "$quant" "$done_b" "$bytes" "The download has no $first."; die "the download is incomplete"; }
@@ -1330,7 +1357,7 @@ _local_progress_bytes() {
 
 # local_pull REPO QUANT [--bytes N] [--tools yes|no|unknown] [--context N] [--params-m N] [--license L]
 local_pull() {
-  local repo="${1:-}" quant="${2:-}" bytes=0 tools=unknown ctx=- pm=- lic=- ref rt id rc=0 logf pid done_b=0 val cur stop
+  local repo="${1:-}" quant="${2:-}" bytes=0 tools=unknown ctx=- pm=- lic=- ref rt id rc=0 logf pid done_b=0 val cur stop more=''
   shift 2 2>/dev/null || true
   while [ $# -gt 0 ]; do
     val="${2:-}"
@@ -1401,7 +1428,8 @@ local_pull() {
   if [ "$rt" = ollama ] && grep -q '"error"' "$logf" 2>/dev/null; then rc=1; fi
   if [ "$rc" -ne 0 ]; then
     cur="$(tr '\r' '\n' < "$logf" | tail -n 3 | LC_ALL=C tr -cd ' -~\n' | tr '\n' ' ' | cut -c1-200)"
-    _local_job failed "$repo" "$quant" 0 "$bytes" "The download failed ($cur). A gated model needs a Hugging Face token (Settings › Models & providers) and its license accepted on huggingface.co."
+    ! _local_refused "$cur" || { cur="${cur:0:100}"; more=" A gated or private model needs a Hugging Face token that can see it (Settings › Models & providers), and its license accepted on huggingface.co."; }
+    _local_job failed "$repo" "$quant" 0 "$bytes" "The download failed ($cur).$more"
     die "the download failed"
   fi
   id="$(local_resolve_id "$rt" "$repo" "$quant")"

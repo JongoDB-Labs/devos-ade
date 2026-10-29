@@ -1,7 +1,9 @@
 """tests/fixtures/hf_hub_server.py ROOT PORTFILE LOG — a stand-in Hugging Face Hub for lib/hf_fetch.py's tests, on 127.0.0.1
 (a free port, written to PORTFILE). GET /<org>/<name>/resolve/<sha>/<path> answers 302 to http://localhost:<port>/cdn/<path>
 (another host name, as the Hub's CDN is: the token must not follow), and /cdn/<path> serves ROOT/<path>, with Range.
-ROOT/.slow holds bytes a second to send at (absent: all at once). GET /api/models/<org>/<name>/revision/main answers
+ROOT/.slow holds bytes a second to send at (absent: all at once); ROOT/.drop a number of bytes after which an answer from
+/cdn/ ends its connection, short of the length it said (a dropped connection); ROOT/.resolve.code a status (401, 403,
+404) that /resolve/ answers instead of the redirect (the Hub refusing a gated file). GET /api/models/<org>/<name>/revision/main answers
 ROOT/.api.json (the model's info, as the Hub's API gives it with ?blobs=true), or the status code ROOT/.api.code holds. Every request's path, Authorization header and Range header go
 to LOG, one line each, tab-separated ("-" for a header that was not sent). It ends by itself when the test that started it
 does (its parent process changes), and after two minutes in any case: a failed test never leaves it behind."""
@@ -36,6 +38,13 @@ class Hub(http.server.BaseHTTPRequestHandler):
             self.wfile.write(data)
             return
         if "/resolve/" in self.path:
+            try:
+                code = int(open(os.path.join(ROOT, ".resolve.code")).read().strip())
+            except (OSError, ValueError):
+                code = 0
+            if code:
+                self.send_error(code)
+                return
             rest = self.path.split("/resolve/", 1)[1].split("/", 1)[1]
             self.send_response(302)
             self.send_header("Location", f"http://localhost:{self.server.server_port}/cdn/{rest}")
@@ -65,6 +74,11 @@ class Hub(http.server.BaseHTTPRequestHandler):
         except (OSError, ValueError):
             bps = 0
         body = data[start:]
+        try:
+            body = body[:int(open(os.path.join(ROOT, ".drop")).read().strip())]
+            self.close_connection = True
+        except (OSError, ValueError):
+            pass
         step = max(1, bps // 20) if bps else len(body)
         try:
             for i in range(0, len(body), step or 1):

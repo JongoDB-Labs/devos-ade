@@ -6,6 +6,16 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Fixed
+- **A failed model download names the Hugging Face token only when Hugging Face refused it (JON-832).** Every failure said
+  a gated model needs a token, a dropped connection too, which pointed to the wrong fix; and the page cut the message off
+  at 300 characters. A refusal (HTTP 401 or 403) now says so at once, rather than after eight tries; a file that stops
+  getting anywhere says why in words (no connection, timed out, the connection kept dropping, or Hugging Face's answer);
+  and every message fits what the page shows.
+- **An MLX download whose safety check could not finish says so** ("try again"), rather than ending with no word while
+  the page still said *Checking …*. A gated MLX model is named as one there. Such a check also keeps what an earlier try
+  of the download fetched, for Resume: only a model refused for what it is (code of its own) is deleted.
+
 ## [0.44.0] - 2026-10-29
 
 ### Added

@@ -217,6 +217,12 @@ test_a_failing_download_says_why_and_registers_nothing() {
   j="$(cat "$STATE_DIR/local-models/job.json")"
   assert_contains "$j" '"state":"failed"'
   assert_contains "$j" 'Hugging Face token'
+  # a dropped connection is not called a gated model
+  docker() { case "$*" in "info "*) echo "Docker Desktop" ;; "model version"*) return 0 ;; "model status"*) echo '{"running":true}' ;; "model pull"*) echo "Error: read tcp 10.0.0.2:50012->10.9.8.7:443: connection reset by peer" >&2; return 1 ;; esac; }
+  ( local_pull a/b-GGUF Q4_K_M --bytes 1000 ) 2>/dev/null && return 1
+  j="$(cat "$STATE_DIR/local-models/job.json")"
+  assert_contains "$j" "connection reset by peer"
+  assert_not_contains "$j" 'Hugging Face token'
 }
 
 test_only_hf_repos_and_quant_names_reach_a_pull() {
@@ -477,6 +483,74 @@ test_mlx_refuses_a_repo_that_runs_custom_code_and_deletes_what_it_fetched() {
   assert_contains "$(cat "$(local_job_file)")" "never runs a model"
   [ ! -d "$STATE_DIR/mlx/hf/hub/models--evil--Model" ]
   assert_eq "$(get_env LOCAL_MODELS)" ""
+}
+test_mlx_refused_by_hugging_face_says_what_a_gated_model_needs_not_what_its_code_would_do() {
+  _lm_env; _fake_apply; _fake_mlx
+  VET_REASON="Hugging Face does not let this computer see it: a gated or private model needs a Hugging Face token (Settings > Models & providers) and its license accepted on huggingface.co"
+  ! ( local_pull org/Gated mlx ) >/dev/null 2>&1
+  local j; j="$(cat "$(local_job_file)")"
+  assert_contains "$j" '"state":"failed"'
+  assert_contains "$j" "Not downloaded: Hugging Face does not let this computer see it: a gated or private model needs a Hugging Face token"
+  assert_not_contains "$j" "never runs a model"
+}
+# the vet's own code, run by a Python of its own with a stand-in huggingface_hub: nothing reaches Hugging Face. STUB_INFO and
+# STUB_DOWNLOAD: the HTTP status model_info and hf_hub_download answer (200 by default)
+_stub_hub() {
+  local v="$STATE_DIR/mlx/venv" site
+  python3 -m venv --without-pip "$v" >/dev/null 2>&1 || return 1
+  site="$("$v/bin/python" -I -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
+  mkdir -p "$site/huggingface_hub"
+  cat > "$site/huggingface_hub/__init__.py" <<'EOS'
+import os
+from types import SimpleNamespace as NS
+class HfHubHTTPError(Exception):   # (as huggingface_hub's: the answer on .response)
+    def __init__(self, code):
+        super().__init__(f"{code} Client Error")
+        self.response = NS(status_code=code)
+def _answer(var):
+    code = int(os.environ.get(var) or 200)
+    if code != 200:
+        raise HfHubHTTPError(code)
+class HfApi:
+    def model_info(self, repo, files_metadata=False):
+        _answer("STUB_INFO")
+        return NS(sha="a" * 40, siblings=[NS(rfilename="config.json", size=22, lfs=None, blob_id="c" * 40)])
+def hf_hub_download(repo, name, revision=None):
+    _answer("STUB_DOWNLOAD")
+    p = os.path.join(os.path.dirname(__file__), name)
+    open(p, "w").write('{"model_type":"llama"}')
+    return p
+EOS
+}
+test_the_mlx_check_says_what_a_gated_model_needs_when_hugging_face_refuses_it() {
+  _lm_env; _stub_hub || { echo "python3 -m venv failed" >&2; return 1; }
+  assert_eq "$(_local_mlx_vet org/Tiny "$TMP/man")" "sha $SHA_A"
+  assert_contains "$(STUB_DOWNLOAD=401 _local_mlx_vet org/Gated "$TMP/man")" "no Hugging Face does not let this computer see it: a gated or private model needs a Hugging Face token"
+  assert_contains "$(STUB_DOWNLOAD=403 _local_mlx_vet org/Gated "$TMP/man")" "no Hugging Face does not let this computer see it"
+  assert_eq "$(STUB_INFO=404 _local_mlx_vet org/Nope "$TMP/man")" "no Hugging Face has no model org/Nope"
+  # any other failure is not called a refusal: its own last words
+  local out; out="$(STUB_DOWNLOAD=500 _local_mlx_vet org/Tiny "$TMP/man")"
+  assert_contains "$out" "500 Client Error"; assert_not_contains "$out" "token"
+}
+test_a_pull_whose_check_fails_says_so_and_keeps_what_an_earlier_try_fetched() {
+  _lm_env; _fake_apply; _fake_mlx; _stub_hub || { echo "python3 -m venv failed" >&2; return 1; }
+  printf '#!/bin/sh\nexit 0\n' > "$STATE_DIR/mlx/venv/bin/mlx_lm.server"; chmod +x "$STATE_DIR/mlx/venv/bin/mlx_lm.server"
+  mkdir -p "$TINY/blobs"; head -c 300000 /dev/urandom > "$TINY/blobs/w.part"       # (a paused download's part)
+  # the check did not finish (the Hub answered 500): the pull says so, and ends, rather than stopping with no word
+  local rc=0; ( STUB_INFO=500 local_pull mlx-community/Tiny-4bit mlx --bytes 2000000 ) >/dev/null 2>&1 || rc=$?
+  [ "$rc" -ne 0 ]
+  local j; j="$(cat "$(local_job_file)")"
+  assert_contains "$j" '"state":"failed"'
+  assert_contains "$j" "Not downloaded: the check did not finish ("
+  assert_contains "$j" "500 Client Error): try again."
+  assert_not_contains "$j" "never runs a model"
+  [ -s "$TINY/blobs/w.part" ]                                                # what arrived is kept, and resumable
+  grep -q '"done_bytes":[1-9]' "$(local_job_file)"
+  # Hugging Face refusing it: the same, in words about a token
+  ( STUB_DOWNLOAD=403 local_pull mlx-community/Tiny-4bit mlx --bytes 2000000 ) >/dev/null 2>&1 && return 1
+  assert_contains "$(cat "$(local_job_file)")" "a gated or private model needs a Hugging Face token"
+  [ -s "$TINY/blobs/w.part" ]
+  ! local_job_running
 }
 test_mlx_without_uv_says_how_and_uninstall_removes_the_agent_and_venv() {
   _lm_env; _fake_mlx
@@ -927,7 +1001,7 @@ test_the_speed_and_time_left_are_measured_and_a_stalled_download_is_said() {
 
 # --- lib/hf_fetch.py for real: python3 and curl against a stand-in Hub (tests/fixtures/hf_hub_server.py) on 127.0.0.1 ---
 _hub() {   # _hub — files in $TMP/hub-files, the Hub at HF_ENDPOINT, its request log at $TMP/hub.log; MAN: their manifest
-  mkdir -p "$TMP/hub-files/sub"; rm -f "$TMP/hub.port" "$TMP/hub.log" "$TMP/hub-files/.slow"
+  mkdir -p "$TMP/hub-files/sub"; rm -f "$TMP/hub.port" "$TMP/hub.log" "$TMP/hub-files/.slow" "$TMP/hub-files/.drop" "$TMP/hub-files/.resolve.code"
   head -c 300000 /dev/urandom > "$TMP/hub-files/model.safetensors"
   printf '{"model_type":"llama"}' > "$TMP/hub-files/config.json"; printf '{"t":1}' > "$TMP/hub-files/sub/tokenizer.json"
   python3 -I "$STACK_DIR/tests/fixtures/hf_hub_server.py" "$TMP/hub-files" "$TMP/hub.port" "$TMP/hub.log" </dev/null >/dev/null 2>&1 &
@@ -1006,6 +1080,55 @@ test_hf_fetch_stops_at_once_on_term_keeping_the_part_and_the_next_run_continues_
   kill "$HUB_PID"
 }
 
+test_hf_fetch_tries_a_dropped_connection_again_by_itself_from_where_it_stopped() {
+  _hub
+  echo 100000 > "$TMP/hub-files/.drop"                                     # (every answer ends 100,000 bytes in)
+  ( _fetch ) 2>"$TMP/fetch.err" || { kill "$HUB_PID"; cat "$TMP/fetch.err" >&2; return 1; }
+  cmp -s "$SNAP/model.safetensors" "$TMP/hub-files/model.safetensors"
+  assert_contains "$(grep '^/cdn/model.safetensors' "$TMP/hub.log")" "bytes=100000-"
+  assert_contains "$(grep '^/cdn/model.safetensors' "$TMP/hub.log")" "bytes=200000-"
+  kill "$HUB_PID"
+}
+test_hf_fetch_stops_at_once_when_hugging_face_refuses_a_file_and_says_so() {
+  _hub
+  echo 401 > "$TMP/hub-files/.resolve.code"
+  local rc=0 t0; t0="$(date +%s)"; ( _fetch ) 2>"$TMP/fetch.err" || rc=$?
+  assert_eq "$rc" 3
+  [ $(($(date +%s) - t0)) -le 3 ]                                          # (not tried again: that cannot change a refusal)
+  assert_contains "$(tail -n 1 "$TMP/fetch.err")" "Hugging Face refused "
+  assert_contains "$(tail -n 1 "$TMP/fetch.err")" " (HTTP 401)"
+  echo 403 > "$TMP/hub-files/.resolve.code"
+  rc=0; ( _fetch ) 2>"$TMP/fetch.err" || rc=$?
+  assert_eq "$rc" 3; assert_contains "$(tail -n 1 "$TMP/fetch.err")" " (HTTP 403)"
+  echo 404 > "$TMP/hub-files/.resolve.code"
+  rc=0; ( _fetch ) 2>"$TMP/fetch.err" || rc=$?
+  assert_eq "$rc" 1; assert_contains "$(tail -n 1 "$TMP/fetch.err")" "no longer has"
+  kill "$HUB_PID"
+}
+test_hf_fetch_says_in_words_why_a_file_made_no_progress() {
+  _hub; kill "$HUB_PID"; wait "$HUB_PID" 2>/dev/null || true             # (nothing answers on its port now)
+  mkdir -p "$TMP/realbin" "$BLOBS" "$SNAP"; ln -sf "${BN_REAL_CURL:?}" "$TMP/realbin/curl"
+  local out; out="$(PATH="$TMP/realbin:$PATH" python3 -I -c '
+import sys
+sys.path.insert(0, sys.argv[1])
+import hf_fetch
+hf_fetch.TRIES = 1
+try:
+    hf_fetch.fetch("org/Tiny", sys.argv[2], sys.argv[3], sys.argv[4], ("config.json", 22, "", "c" * 40), "")
+except hf_fetch.Failed as e:
+    print(e)' "$STACK_DIR/lib" "$SHA_A" "$BLOBS" "$SNAP" 2>/dev/null)"
+  assert_eq "$out" "config.json: no progress after 1 tries (could not connect to the Hub, curl exit 7)"
+}
+test_a_failed_download_names_a_hugging_face_token_only_when_hugging_face_refused_it() {
+  _lm_env
+  printf 'curl: (22) The requested URL returned error: 401\n\nHugging Face refused config.json (HTTP 401)\n' > "$TMP/pull.log"
+  local m; m="$(_local_fetch_failed "$TMP/pull.log" 3)"
+  assert_contains "$m" "Hugging Face refused config.json (HTTP 401): a gated or private model needs a Hugging Face token"
+  assert_contains "$m" "What arrived is kept for Resume"
+  printf 'curl: (56) Recv failure: Connection reset by peer\n\nmodel.safetensors: no progress after 8 tries (the connection kept dropping, curl exit 56)\n' > "$TMP/pull.log"
+  m="$(_local_fetch_failed "$TMP/pull.log" 1)"
+  assert_eq "$m" "The download stopped (model.safetensors: no progress after 8 tries (the connection kept dropping, curl exit 56)). What arrived is kept: Resume continues from it, Cancel deletes it."
+}
 test_a_config_that_fails_the_check_after_the_download_is_deleted_and_never_registered() {
   _lm_env; _fake_apply; VET_REASON=''; VET_SHA="$SHA_A"; unset FAKE_DL_SHA; export FAKE_CFG='{"model_type":"llama","auto_map":{"AutoModel":"x.Y"}}'; _fake_mlx
   launchctl() { echo "$*" >> "$TMP/launchctl.log"; MLX_UP=1; return 0; }

@@ -1981,8 +1981,9 @@ Docker Model Runner, Ollama, llama.cpp, LM Studio or vLLM. With none running the
 switches Docker's on after asking. Commands:
 `./stack local-models status` (with the download's progress, speed and time left), `pull ORG/REPO QUANT`, `pause`, `resume`,
 `cancel`, `rm ORG/REPO QUANT`, `enable`. With Docker Model Runner or Ollama, Pause stops the runtime's pull (Ollama continues
-it on Resume) and Cancel leaves its unfinished part to the runtime. A gated model needs a Hugging Face
-token (Settings, optional; never in a URL or log). The runner has no login of its own: keep it and Ollama off the
+it on Resume) and Cancel leaves its unfinished part to the runtime. MLX, llama.cpp, LM Studio and vLLM downloads try a
+dropped connection again by themselves, from where the file stopped. A gated or private model needs a Hugging Face
+token (Settings, optional; never in a URL or log), and a failed download asks for one only when Hugging Face refused it. The runner has no login of its own: keep it and Ollama off the
 network ([docs/security.md](docs/security.md#local-models)).
 
 **Runtimes.** DevOS ADE installs, runs and watches **Ollama**, **llama.cpp**, **LM Studio** and **vLLM** itself, like its own containers: Settings › Models &
