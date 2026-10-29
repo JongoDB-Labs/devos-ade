@@ -545,8 +545,8 @@ def routes(ctx: Ctx) -> list[Route]:
                 p["reading"] = helper_on
                 asked = True
         if (asked or refresh) and helper_on:
-            try:
-                (s.request_dir / mb.WANTED).write_text("", encoding="utf-8")
+            try:   # (Read again: every list read again, not only the stale ones — lib/model_browser.sh model_browser_tick)
+                (s.request_dir / mb.WANTED).write_text("force" if refresh else "", encoding="utf-8")
             except OSError:
                 pass
         state = admin.helper_state(s.status_dir)

@@ -162,6 +162,47 @@ def test_a_key_that_may_not_list_profiles_is_said_with_the_list(tmp_path):
     assert mb.bedrock_rows(tmp_path)[1]["profiles"] is None   # only ok / denied / error
 
 
+def test_bedrock_rows_other_regions_your_profiles_and_guesses(tmp_path):
+    """JON-823: a model only another region offers ("<region>/<id>"), your application inference profile ("app/<id>",
+    never its ARN) and a profile id the key could not confirm, each said on its row; the regions read and what was
+    left out, by reason, in the meta. Anything else in an id (an ARN, a region that is none) is dropped."""
+    d = _mbdir(tmp_path)
+    m = {"vendor": "V", "how": "profile", "lifecycle": "ACTIVE", "prices": None}
+    (d / "bedrock.json").write_text(json.dumps({"provider": "bedrock", "status": "ok", "region": "us-east-1", "at": 2000,
+        "profiles": "denied", "apps": "ok", "regions": {"us-east-1": "ok", "eu-west-1": "ok", "ap-south-2": "off", "<b>": "ok", "us-west-2": "maybe"},
+        "left_out": {"not-text": 3, "embeddings": 2, "variant": 1, "provisioned": 4, "bogus": 9, "cap": True},
+        "models": [
+            {**m, "id": "us.anthropic.claude-haiku-4-5-20251001-v1:0", "model_id": "anthropic.claude-haiku-4-5-20251001-v1:0", "name": "Claude Haiku 4.5",
+             "region": "us-east-1", "kind": "foundation", "guessed": True},
+            {**m, "id": "eu-west-1/mistral.eu-only-v1:0", "model_id": "mistral.eu-only-v1:0", "name": "Mistral EU", "region": "eu-west-1", "how": "on-demand"},
+            {**m, "id": "app/a1b2c3d4e5f6", "model_id": "anthropic.claude-haiku-4-5-20251001-v1:0", "name": "Team Haiku", "region": "us-east-1", "kind": "app-profile"},
+            {**m, "id": "arn:aws:bedrock:us-east-1:111122223333:application-inference-profile/a1", "name": "leak"},
+            {**m, "id": "Nowhere/x.y-v1:0", "name": "bad region"},
+        ]}), encoding="utf-8")
+    rows, meta = mb.bedrock_rows(tmp_path)
+    by = {r["id"]: r for r in rows}
+    assert set(by) == {"us.anthropic.claude-haiku-4-5-20251001-v1:0", "eu-west-1/mistral.eu-only-v1:0", "app/a1b2c3d4e5f6"}
+    g = by["us.anthropic.claude-haiku-4-5-20251001-v1:0"]
+    assert g["guessed"] is True and "Not confirmed" in g["note"] and g["region"] == "us-east-1"
+    e = by["eu-west-1/mistral.eu-only-v1:0"]
+    assert e["region"] == "eu-west-1" and "Only eu-west-1 offers it" in e["note"] and e["guessed"] is False
+    a = by["app/a1b2c3d4e5f6"]
+    assert a["kind"] == "app-profile" and a["name"] == "Team Haiku" and "application inference profile" in a["note"]
+    assert "111122223333" not in json.dumps(rows)
+    assert meta["regions"] == {"us-east-1": "ok", "eu-west-1": "ok", "ap-south-2": "off"}
+    assert meta["left_out"] == {"not-text": 3, "embeddings": 2, "variant": 1, "provisioned": 4}
+    assert meta["apps"] == "ok" and meta["profiles"] == "denied"
+    data = mb.browse(tmp_path, _catalog(tmp_path), tmp_path / "litellm", {"BEDROCK_MODELS": "eu-west-1/mistral.eu-only-v1:0"},
+                     {"bedrock": True}, [], {"at": None, "error": None}, [])
+    br = data["bedrock"]
+    assert br["regions"]["ap-south-2"] == "off" and br["left_out"]["provisioned"] == 4 and br["apps"] == "ok"
+    rows = {r["id"]: r for r in br["rows"]}
+    assert rows["eu-west-1/mistral.eu-only-v1:0"]["can"] == "remove" and rows["app/a1b2c3d4e5f6"]["can"] == "add"
+    # adding either is a plain list change (lib/models.sh renders each form)
+    assert mb.plan("bedrock", "", "app/a1b2c3d4e5f6", True) == ("BEDROCK_MODELS", "app/a1b2c3d4e5f6")
+    assert mb.plan("bedrock", "app/a1b2c3d4e5f6", "eu-west-1/mistral.eu-only-v1:0", True) == ("BEDROCK_MODELS", "app/a1b2c3d4e5f6,eu-west-1/mistral.eu-only-v1:0")
+
+
 # --- the setting change that adds or removes one model ---
 
 def test_plan_experiential_labs_list():

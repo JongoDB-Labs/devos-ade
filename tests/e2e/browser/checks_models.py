@@ -472,3 +472,323 @@ def model_browser_add(ctx):
     expect(gone, f"{mid} was not removed within ~4 min")
     rec.save()
     return f"added {mid} (→ BEDROCK_MODELS, enabled in the pickers), then removed it; only LiteLLM restarted"
+
+
+# --- JON-823: the page against each provider's own list, read in the same run ---
+
+KNOWN_BEDROCK_REGIONS = ("us-east-1", "us-east-2", "us-west-2", "ca-central-1", "sa-east-1", "eu-central-1", "eu-west-1",
+                         "eu-west-2", "eu-west-3", "ap-northeast-1", "ap-south-1", "ap-southeast-1", "ap-southeast-2")
+OR_ID = re.compile(r"[A-Za-z0-9~][A-Za-z0-9._:~-]*/[A-Za-z0-9._/:~-]+")      # portal/portal/model_browser.py OR_ID
+XL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+XL_API = "https://api.experientiallabs.ai"
+PAGE_ROWS = 60                                                                  # models.js PAGE: rows drawn at a time
+
+
+def _browse_q(ctx, q: str) -> tuple[int, dict]:
+    from common import http
+    r = http("GET", None, f"/api/models/browse?{q}", {"X-Requested-With": "bedrock-now"}, cookie=ctx.session())
+    try:
+        return r.status, json.loads(r.body)
+    except ValueError:
+        return r.status, {}
+
+
+def _fresh(ctx, wait_s: int = 480) -> dict:
+    """Read again (?refresh=1, as the page's button): the update helper reads every list again and the portal OpenRouter's
+    (its public list too, without a key). -> the browse answer once each list with a key was read in the last 5 minutes."""
+    t0 = time.time()
+    asked = 0.0
+    while True:
+        if time.time() - asked > 130:      # (the portal takes a Read again every 2 minutes, the helper every minute)
+            _browse_q(ctx, "refresh=1&openrouter=public")
+            asked = time.time()
+        st, d = _browse_q(ctx, "openrouter=public")
+        expect(st == 200, f"/api/models/browse {st}")
+        stale = [k for k, p in d["providers"].items() if (p["on"] or k == "openrouter") and (not p.get("at") or p["at"] < t0 - 300)]
+        if not stale:
+            return d
+        expect(time.time() - t0 < wait_s, f"Read again: not read again in {wait_s} s: {stale}")
+        time.sleep(5)
+
+
+def _url_json(url: str, headers: dict | None = None, timeout: float = 40.0) -> tuple[int, dict]:
+    import urllib.error
+    import urllib.request
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"Accept": "application/json", **(headers or {})}), timeout=timeout) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, {}
+
+
+def _model_of(r: dict) -> str:
+    """The foundation model a Bedrock row is (its model_id; a row of the catalog's, before a list was read, has none)."""
+    return r.get("model_id") or r["source_id"]
+
+
+def _left_out(m: dict) -> str | None:
+    """Why lib/model_browser_bedrock.py leaves a model of ListFoundationModels out (its documented reasons), or None."""
+    mid = m.get("modelId") or ""
+    outs = [x.lower() for x in m.get("outputModalities") or []]
+    ins = [x.lower() for x in m.get("inputModalities") or []]
+    if outs != ["text"] or "text" not in ins:
+        return "not-text"
+    if re.search(r"embed|rerank", mid):
+        return "embeddings"
+    if mid.count(":") > 1:
+        return "variant"
+    kinds = m.get("inferenceTypesSupported") or []
+    if "ON_DEMAND" not in kinds and "INFERENCE_PROFILE" not in kinds:
+        return "provisioned"
+    return None
+
+
+def _profiles(region: str) -> tuple[int, str, set, dict]:
+    """ListInferenceProfiles (system-defined) in REGION: (status, error code, ACTIVE profile ids, model id -> profiles)."""
+    import sigv4
+    ids, serves, token = set(), {}, None
+    for _ in range(10):
+        st, a = sigv4.bedrock(region, "/inference-profiles", {"typeEquals": "SYSTEM_DEFINED", "maxResults": 1000, **({"nextToken": token} if token else {})}, ENV)
+        if st != 200:
+            return st, sigv4.error_code(a), ids, serves
+        for p in a.get("inferenceProfileSummaries") or []:
+            if p.get("status") != "ACTIVE":
+                continue
+            ids.add(p.get("inferenceProfileId"))
+            for m in p.get("models") or []:
+                arn = m.get("modelArn") or ""
+                if "foundation-model/" in arn:
+                    serves.setdefault(arn.rsplit("/", 1)[1], set()).add(p.get("inferenceProfileId"))
+        token = a.get("nextToken")
+        if not token:
+            break
+    return 200, "", ids, serves
+
+
+def _bedrock_complete(br: dict) -> tuple[list[str], str]:
+    """Every text model Bedrock offers this key, in the stack's region and in every other region read, against the page:
+    each listed, or left out for a documented reason. -> (what is wrong, what was compared)"""
+    import sigv4
+    home, bad = br["region"], []
+    st, a = sigv4.bedrock(home, "/foundation-models", {"byOutputModality": "TEXT"}, ENV)
+    expect(st == 200, f"ListFoundationModels in {home}: HTTP {st} {sigv4.error_code(a)}")
+    pst, _, _, serves = _profiles(home)
+    rows = br["rows"]
+    here = {_model_of(r) for r in rows if r.get("kind") != "app-profile" and r.get("region") in (home, "", None)}
+    anywhere = {_model_of(r) for r in rows if r.get("kind") != "app-profile"}
+    counts: dict = {}
+    due_here = set()    # (the models the stack's region should list: checked there, not again per other region)
+    for m in a.get("modelSummaries") or []:
+        mid = m.get("modelId") or ""
+        why = _left_out(m)
+        if why is None and "ON_DEMAND" not in (m.get("inferenceTypesSupported") or []) and pst == 200 and mid not in serves:
+            why = "provisioned"   # (only through a profile, and no profile serves it)
+        if why:
+            counts[why] = counts.get(why, 0) + 1
+            continue
+        due_here.add(mid)
+        if mid not in here:
+            bad.append(f"{home}: {mid} is offered and not listed")
+    raw_ids = {m.get("modelId") for m in a.get("modelSummaries") or []}
+    bad += [f"{home}: {r['source_id']} is listed but Bedrock does not offer {_model_of(r)}" for r in rows
+            if r.get("kind") != "app-profile" and r.get("region") in (home, "", None) and _model_of(r) not in raw_ids]
+    if not (br.get("left_out") or {}).get("cap"):
+        lo = {k: v for k, v in (br.get("left_out") or {}).items() if k != "cap"}
+        if lo != counts:
+            bad.append(f"{home}: the page says it left out {lo}, Bedrock's own list gives {counts}")
+    # every other region the page read: the models it offers that the stack's region does not, each listed once
+    regions = br.get("regions") or {}
+    missing = [r for r in KNOWN_BEDROCK_REGIONS if r not in regions]
+    if missing:
+        bad.append(f"regions never read: {missing} (read: {sorted(regions)})")
+    others = [r for r, s in regions.items() if s == "ok" and r != home]
+    extra, unlisted = 0, {}     # (unlisted: model -> the regions that offer it; one message per model)
+    for region in others:
+        serves_r, profiles_ok = None, False
+        st, a = sigv4.bedrock(region, "/foundation-models", {"byOutputModality": "TEXT"}, ENV)
+        if st != 200:
+            bad.append(f"{region}: the page read it, ListFoundationModels now answers HTTP {st} {sigv4.error_code(a)}")
+            continue
+        for m in a.get("modelSummaries") or []:
+            mid = m.get("modelId") or ""
+            if _left_out(m) or mid in due_here or mid in anywhere:
+                continue
+            if "ON_DEMAND" not in (m.get("inferenceTypesSupported") or []):
+                if serves_r is None:
+                    pst_r, _, _, serves_r = _profiles(region)
+                    profiles_ok = pst_r == 200
+                if profiles_ok and mid not in serves_r:
+                    continue    # (no profile serves it there)
+            unlisted.setdefault(mid, []).append(region)
+        extra += sum(1 for r in rows if r.get("region") == region)
+    bad += [f"{mid} is offered in {', '.join(rs)} (the stack's region does not) and not listed" for mid, rs in unlisted.items()]
+    errs = [r for r, s in regions.items() if s == "error"]
+    said = (f"Bedrock: {home} {len(here)} listed ({sum(counts.values())} left out: {counts}); {len(others)} other regions read"
+            f"{f' ({len(errs)} not answering: {errs})' if errs else ''}, {extra} models only they offer")
+    return bad, said
+
+
+def _openrouter_complete(rows: list[dict], left_out: dict | None = None) -> tuple[list[str], str]:
+    """OpenRouter's public list, read now, against the page: every model listed, or left out for a documented reason
+    (an id the stack cannot use, a :batch variant, not text out, no price); the page's "Not listed" counts (LEFT_OUT)
+    the same as the list gives."""
+    st, raw = _url_json("https://openrouter.ai/api/v1/models")
+    expect(st == 200, f"openrouter.ai/api/v1/models: HTTP {st}")
+    page = {r["source_id"] for r in rows}
+    bad, counts = [], {}
+
+    def price(v):
+        try:
+            return float(v) >= 0 if isinstance(v, (int, float, str)) and str(v).strip() not in ("", "-1") else False
+        except ValueError:
+            return False
+    for m in raw.get("data") or []:
+        mid = m.get("id") or ""
+        arch = m.get("architecture") or {}
+        pr = m.get("pricing") or {}
+        why = ("id" if not OR_ID.fullmatch(mid) or len(mid) > 124 else "batch" if mid.endswith(":batch")
+               else "not-text" if (arch.get("output_modalities") or ["text"]) != ["text"]
+               else "no-price" if not (price(pr.get("prompt")) and price(pr.get("completion"))) else None)
+        if why:
+            counts[why] = counts.get(why, 0) + 1
+        elif mid not in page:
+            bad.append(f"OpenRouter: {mid} is offered and not listed")
+    if len(rows) >= 2000:
+        bad = []   # (the page's limit: said on the page)
+    elif left_out is not None and left_out != counts:
+        bad.append(f"OpenRouter: the page says it left out {left_out}, OpenRouter's own list gives {counts}")
+    return bad, f"OpenRouter: {len(page)} listed of {len(raw.get('data') or [])} ({counts} left out)"
+
+
+def _explabs_complete(rows: list[dict]) -> tuple[list[str], str]:
+    """The ids the Experiential Labs key may call (GET /v1/models with it, now) against the page: each listed, or left
+    out because the gateway's catalog says it does not answer in text."""
+    key = ENV.get("EXPLABS_API_KEY", "")
+    st, raw = _url_json(f"{XL_API}/v1/models", {"Authorization": f"Bearer {key}"})
+    if st in (401, 403):
+        return [], "Experiential Labs: the key is a test key the real gateway does not take (not compared)"
+    expect(st == 200, f"{XL_API}/v1/models: HTTP {st}")
+    page = {r["source_id"] for r in rows}
+    ids = [m.get("id") for m in raw.get("data") or [] if isinstance(m, dict)]
+    bad, left = [], 0
+    for i in ids:
+        if not isinstance(i, str) or not XL_ID.fullmatch(i):
+            left += 1
+            continue
+        if i in page:
+            continue
+        slug = i[: -len(":free")] if i.endswith(":free") else i
+        cst, c = _url_json(f"{XL_API}/api/models/{slug}")
+        outs = ((c.get("model") or c) if isinstance(c, dict) else {}).get("output_modalities") if cst == 200 else None
+        if isinstance(outs, list) and outs and "text" not in outs:
+            left += 1
+            continue
+        bad.append(f"Experiential Labs: {i} may be called with the key and is not listed")
+    return bad, f"Experiential Labs: {len(page)} listed of the key's {len(ids)} ({left} left out: no text out)"
+
+
+@check("settings", "model-browser-complete")
+def model_browser_complete(ctx):
+    """Browse models lists every model each key can use, as the provider's own list says, read in the same run: Bedrock
+    (ListFoundationModels in the stack's region and in every other region the page read, signed with the stack's key),
+    OpenRouter (its public list) and Experiential Labs (the key's /v1/models). A model missing from the page fails unless
+    it is left out for a documented reason (lib/model_browser_bedrock.py: not text in and out, embeddings, a context
+    variant, provisioned throughput only; OpenRouter: :batch, no price, not text out); the page's "Not listed" counts
+    must match. Then the page: the Region filter, Not confirmed, the left-out sentence. Read-only, free calls; no model
+    call."""
+    from common import origin
+    _need_helper(ctx)
+    d = _fresh(ctx)
+    bad, said = [], []
+    br = d["providers"]["bedrock"]
+    if br["on"] and ENV.get("AWS_ACCESS_KEY_ID") and ENV.get("AWS_SECRET_ACCESS_KEY"):
+        expect(br.get("status") == "ok", f"Bedrock's list: {br.get('status')} {br.get('error')}")
+        b, s = _bedrock_complete(br)
+        bad += b; said.append(s)
+    else:
+        said.append("Bedrock: no AWS key in .env (an instance role): not compared")
+    b, s = _openrouter_complete(d["providers"]["openrouter"]["rows"], d["providers"]["openrouter"].get("left_out"))
+    bad += b; said.append(s)
+    if d["providers"]["explabs"]["on"] and ENV.get("EXPLABS_API_KEY"):
+        b, s = _explabs_complete(d["providers"]["explabs"]["rows"])
+        bad += b; said.append(s)
+    else:
+        said.append("Experiential Labs: no key (not compared)")
+    expect(not bad, f"{len(bad)} not as the providers list them: " + "; ".join(bad[:12]))
+    # the page says the same: Bedrock's regions and what it left out, the Region filter, Not confirmed
+    page, rec = ctx.page("model-browser-complete")
+    login(page)
+    page.goto(origin() + "/#modelbrowser")
+    page.wait_for_selector("#modelbrowser:not([hidden]) .mb-row", timeout=30000)
+    page.locator('#modelbrowser [data-prov="bedrock"]').click()
+    src = page.inner_text('#modelbrowser .mb-source[data-provider="bedrock"]')
+    if br.get("left_out"):
+        expect(page.locator('[data-testid="mb-left-out-bedrock"]').count() == 1, f"no Not listed sentence: {src[:300]!r}")
+    other = [r for r in br["rows"] if r.get("region") and r["region"] != br["region"]]
+    if other:
+        expect("only other regions offer" in src, f"the Bedrock line does not count the other regions' models: {src[:300]!r}")
+        page.select_option("#mb-region", "other")
+        page.wait_for_timeout(300)
+        n = page.locator("#modelbrowser .mb-row").count()
+        plain = page.locator("#modelbrowser .mb-row:not(:has(.mb-region))").count()
+        expect(n == min(len(other), PAGE_ROWS) and plain == 0, f"Region › other regions: {n} rows ({plain} without a region), {len(other)} expected")
+        shot(page, "model-browser-other-regions")
+        page.select_option("#mb-region", "")
+    guessed = [r for r in br["rows"] if r.get("guessed")]
+    if guessed:
+        page.fill("#mb-search", "not confirmed")
+        page.wait_for_timeout(300)
+        n = page.locator("#modelbrowser .mb-row").count()
+        expect(n == min(len(guessed), PAGE_ROWS), f"search 'not confirmed': {n} rows, {len(guessed)} guessed")
+        expect(page.locator("#modelbrowser .mb-row .mb-guessed").count() == n, "a guessed row without its Not confirmed badge")
+        page.fill("#mb-search", "")
+    rec.save()
+    return "; ".join(said)
+
+
+@check("settings", "model-browser-bedrock-profiles")
+def model_browser_bedrock_profiles(ctx):
+    """Bedrock's Claude ids are the real inference profiles: with a key that may list them (bedrock:ListInferenceProfiles),
+    every profile id the page offers in the stack's region is an ACTIVE one of that list, Claude's among them, and none
+    is guessed; with a key that may not, the page says so, and each id it could not confirm is marked Not confirmed (the
+    row, its badge, and the line that says how many). Which case this is comes from AWS, asked in the same run."""
+    from common import origin
+    _need_helper(ctx)
+    if not (ENV.get("AWS_ACCESS_KEY_ID") and ENV.get("AWS_SECRET_ACCESS_KEY")):
+        raise Skip("no AWS key in .env (an instance role): AWS cannot be asked from here")
+    d = _fresh(ctx)
+    br = d["providers"]["bedrock"]
+    expect(br["on"] and br.get("status") == "ok", f"Bedrock's list: {br.get('status')} {br.get('error')}")
+    home = br["region"]
+    rows = [r for r in br["rows"] if r.get("kind") != "app-profile" and r.get("region") in (home, "", None)]
+    prof = [r for r in rows if r.get("model_id") and r["source_id"] != r["model_id"]]   # (called through a profile)
+    claude = [r for r in prof if "anthropic." in r["source_id"]]
+    expect(claude, f"no Claude profile id in {home}'s list")
+    st, code, active, _ = _profiles(home)
+    if st == 200:
+        expect(br.get("profiles") == "ok", f"AWS lets the key list profiles; the page says {br.get('profiles')!r}")
+        unknown = [r["source_id"] for r in prof if r["source_id"] not in active]
+        expect(not unknown, f"profile ids that are not ACTIVE profiles in {home}: {unknown[:8]}")
+        guessed = [r["source_id"] for r in br["rows"] if r.get("guessed")]
+        expect(not guessed, f"guessed with a key that may list profiles: {guessed[:8]}")
+        return f"the key may list profiles: {len(prof)} profile ids in {home}, every one ACTIVE in ListInferenceProfiles ({len(claude)} Claude); none guessed"
+    expect(st in (400, 403) and "AccessDenied" in code, f"ListInferenceProfiles in {home}: HTTP {st} {code}")
+    expect(br.get("profiles") == "denied", f"AWS refuses the key ({code}); the page says profiles={br.get('profiles')!r}")
+    guessed = [r for r in prof if r.get("guessed")]
+    expect(all("Not confirmed" in r["note"] for r in guessed), "a guessed row without its Not confirmed note")
+    page, rec = ctx.page("model-browser-bedrock-profiles")
+    login(page)
+    page.goto(origin() + "/#modelbrowser")
+    page.wait_for_selector("#modelbrowser:not([hidden]) .mb-row", timeout=30000)
+    note = page.inner_text('[data-testid="mb-profiles-note"]')
+    expect("may not list inference profiles" in note, f"the profiles note: {note[:300]!r}")
+    if guessed:
+        expect(f"{len([r for r in br['rows'] if r.get('guessed')])} marked Not confirmed" in note, f"the note does not count the guesses: {note[:300]!r}")
+        page.locator('#modelbrowser [data-prov="bedrock"]').click()
+        page.fill("#mb-search", "claude not confirmed")
+        page.wait_for_timeout(300)
+        expect(page.locator("#modelbrowser .mb-row .mb-guessed").count() >= 1, "no Claude row shows Not confirmed")
+        shot(page, "model-browser-not-confirmed")
+    rec.save()
+    return (f"the key may not list profiles ({code}): {len(guessed)} of {len(prof)} profile ids in {home} marked Not confirmed "
+            f"({len(prof) - len(guessed)} confirmed with GetInferenceProfile), and the page says why")

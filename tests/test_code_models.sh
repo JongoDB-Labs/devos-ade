@@ -618,6 +618,35 @@ test_added_bedrock_models_render_and_show_in_the_code_rows() {
   assert_eq "$(bedrock_extra_wanted)" ""
 }
 
+# JON-823: a model of another region ("<region>/<id>") is called in that region; your application inference profile
+# ("app/<id>") by its ARN, read from the browser's private file (never .env), priced as the model it copies and shown
+# by its name; one never read is left out, said
+test_other_region_and_application_profile_models_render_in_their_region_and_by_their_arn() {
+  _cm_env 'BEDROCK_MODELS=us-west-2/writer.palmyra-x5-v1:0,app/a1b2c3d4e5f6,app/zzzzzzzzzzzz'
+  STATE_DIR="$TMP/state"
+  # the forms: a region that is one, an app id of lower-case letters and digits, one slash; never an ARN
+  valid_bedrock_extra_id 'eu-west-1/eu.mistral.pixtral-large-2502-v1:0'; valid_bedrock_extra_id 'app/a1b2c3d4e5f6'
+  ! valid_bedrock_extra_id 'app/A1'; ! valid_bedrock_extra_id 'Us West/x'; ! valid_bedrock_extra_id 'us-west-2/a/b'
+  ! valid_bedrock_extra_id 'us-west-2/'; ! valid_bedrock_extra_id 'arn:aws:bedrock:us-east-1:111122223333:application-inference-profile/a1'
+  # the browser's read keeps the ARN apart, readable by you only
+  local arn="arn:aws:bedrock:us-east-1:111122223333:application-inference-profile/a1b2c3d4e5f6"
+  printf 'ARN\tapp/a1b2c3d4e5f6\t%s\tanthropic.claude-haiku-4-5-20251001-v1:0\tTeam Haiku\nARN\tapp/bad\tarn:aws:s3:::x\tx\ty\n' "$arn" |
+    LC_ALL=C grep -E "$BEDROCK_APP_LINE" | cut -f 2- | _bedrock_app_put
+  assert_eq "$(stat -c %a "$(bedrock_app_profiles_file)" 2>/dev/null || stat -f %Lp "$(bedrock_app_profiles_file)")" 600
+  assert_eq "$(wc -l < "$(bedrock_app_profiles_file)" | tr -d ' ')" 1
+  local yaml; yaml="$(bedrock_extra_yaml us-east-1 2>"$TMP/err")"
+  assert_contains "$yaml" "$(printf '  - model_name: "us-west-2/writer.palmyra-x5-v1:0"\n    litellm_params:\n      model: "bedrock/converse/writer.palmyra-x5-v1:0"\n      aws_region_name: "us-west-2"')"
+  assert_contains "$yaml" "$(printf '  - model_name: "app/a1b2c3d4e5f6"\n    litellm_params:\n      model: "bedrock/converse/anthropic.claude-haiku-4-5-20251001-v1:0"\n      model_id: "%s"\n      aws_region_name: "us-east-1"' "$arn")"
+  assert_not_contains "$yaml" zzzzzzzzzzzz
+  assert_contains "$(cat "$TMP/err")" "app/zzzzzzzzzzzz is not among your application inference profiles"
+  # the pickers: the profile by its name, Anthropic's; the other region's by its id, Writer's
+  printf 'claude-big\n' > "$TMP/en"
+  out="$(code_models_rows "$TMP/en" 2>/dev/null)"
+  assert_eq "$(printf '%s\n' "$out" | _col 2 app/a1b2c3d4e5f6)" "Team Haiku"
+  assert_eq "$(printf '%s\n' "$out" | _col 4 app/a1b2c3d4e5f6)" Anthropic
+  assert_eq "$(printf '%s\n' "$out" | _col 4 us-west-2/writer.palmyra-x5-v1:0)" Writer
+}
+
 # JON-520: adding two Experiential Labs models (EXPLABS_MODELS, as the browser's Add does) shows both in the Code rows
 test_two_added_experiential_models_show_in_the_code_rows() {
   . "$STACK_DIR/lib/explabs.sh" 2>/dev/null || true

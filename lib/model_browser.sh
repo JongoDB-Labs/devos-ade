@@ -3,9 +3,12 @@
 # models each provider with a key could add, read here — never in the browser, never with a key in the portal — and
 # cached in .state/status/model-browser/ for the portal (read-only there):
 #   bedrock.json          lib/model_browser_bedrock.py in a one-off container of LiteLLM's image, with LiteLLM's own AWS
-#                         sign-in: ListFoundationModels and ListInferenceProfiles in AWS_REGION_NAME (read-only, free),
-#                         each model's price, context, tool use and image input from LiteLLM's own price map. A key that
-#                         may not list them: said (status denied), and the browser shows the catalog's models instead.
+#                         sign-in: ListFoundationModels and ListInferenceProfiles in AWS_REGION_NAME, and in every other
+#                         region for the models it does not offer (read-only, free), each model's price, context, tool
+#                         use and image input from LiteLLM's own price map. A key that may not list them: said (status
+#                         denied), and the browser shows the catalog's models instead. Your application inference
+#                         profiles' ARNs (they name the AWS account) go to bedrock_app_profiles_file instead, which the
+#                         portal cannot read: the list names each "app/<profile id>"
 #   explabs-ids.json      the ids the Experiential Labs key may call (GET /v1/models with the key, as lib/explabs.sh
 #                         reads it: curl -K -, never on a command line), and when; without a key, no file
 #   explabs-catalog-N.json   the gateway's public catalog, page N (GET /api/models?limit=500&offset=…, keyless: nothing
@@ -21,9 +24,11 @@ MODEL_BROWSER_CATALOG_PAGES=4          # 500 models a page: the gateway listed 9
 MODEL_BROWSER_PAGE_MAX_BYTES=8000000   # one page was 2.4 MB on 2026-10-26
 model_browser_dir() { printf '%s/model-browser\n' "$(status_dir)"; }
 # (the portal says someone opened the browser while a list is older than an hour: a file of this name in the requests
-# folder, nothing in it — the helper reads the lists again, at most every MODEL_BROWSER_TICK_MIN minutes)
+# folder, nothing in it — the helper reads the lists older than an hour again, at most every MODEL_BROWSER_TICK_MIN
+# minutes; or "force" in it: someone pressed Read again — every list read again, at most every MODEL_BROWSER_FORCE_MIN)
 model_browser_wanted_file() { printf '%s/models-wanted\n' "$(request_dir)"; }
 MODEL_BROWSER_TICK_MIN=10
+MODEL_BROWSER_FORCE_MIN=1
 
 # _mb_fresh FILE MIN -> 0 when FILE was written less than MIN minutes ago
 _mb_fresh() { [ -s "$1" ] && [ -n "$(find "$1" -mmin "-$2" 2>/dev/null)" ]; }
@@ -41,16 +46,21 @@ _mb_json_str() { printf '"%s"' "$(printf '%s' "$1" | LC_ALL=C tr -d '"\\\000-\03
 
 # model_browser_bedrock — bedrock.json: the text models this AWS key could add in its region (or why not)
 model_browser_bedrock() {
-  local out region now; now="$(date +%s)"; region="$(get_env AWS_REGION_NAME)"
+  local out raw region now; now="$(date +%s)"; region="$(get_env AWS_REGION_NAME)"
   if [ -z "$(get_env LITELLM_MASTER_KEY)" ]; then
     printf '{"provider":"bedrock","status":"error","why":%s,"at":%s,"models":[]}\n' "$(_mb_json_str "run ./stack setup first")" "$now" | _mb_put bedrock.json
     return 0
   fi
-  # (the script as an argument: _with_deadline gives the command /dev/null; Bedrock's calls give up after 20 s each)
-  out="$(_with_deadline 120 dc run --rm --no-deps -T --entrypoint python litellm -I -c "$(cat "$STACK_DIR/lib/model_browser_bedrock.py")" \
+  # (the script as an argument: _with_deadline gives the command /dev/null; Bedrock's calls give up after 20 s each, and
+  # the other regions' after 45 s in all)
+  raw="$(_with_deadline 180 dc run --rm --no-deps -T --entrypoint python litellm -I -c "$(cat "$STACK_DIR/lib/model_browser_bedrock.py")" \
     "$region" 2>/dev/null)" || true
   # (its one line: a JSON object it printed, no control character, within 4 MB)
-  out="$(printf '%s\n' "$out" | LC_ALL=C grep -E '^\{"provider":"bedrock",[ -~]*\}$' | tail -n 1 | head -c 4000000 || true)"
+  out="$(printf '%s\n' "$raw" | LC_ALL=C grep -E '^\{"provider":"bedrock",[ -~]*\}$' | tail -n 1 | head -c 4000000 || true)"
+  # your application inference profiles' ARNs, when the list of them was read: kept apart (an empty read empties it)
+  case "$out" in *'"status":"ok"'*'"apps":"ok"'*)
+    printf '%s\n' "$raw" | LC_ALL=C grep -E "$BEDROCK_APP_LINE" | cut -f 2- | head -n 200 | _bedrock_app_put ;;
+  esac
   if [ -z "$out" ]; then
     printf '{"provider":"bedrock","status":"error","why":%s,"at":%s,"models":[]}\n' \
       "$(_mb_json_str "the list was not read (LiteLLM's image could not start a container)")" "$now" | _mb_put bedrock.json
@@ -121,23 +131,25 @@ _mb_count() {
 cmd_models_browse() {
   case "${1:-}" in --refresh) model_browser_refresh --force ;; '') model_browser_refresh ;; *) die "usage: ./stack models browse [--refresh]" ;; esac
   printf 'The model browser (Settings › Models & providers › Browse models) lists:\n'
-  printf '  Bedrock            %s models in %s\n' "$(_mb_count "$(model_browser_dir)/bedrock.json")" "$(get_env AWS_REGION_NAME)"
+  printf '  Bedrock            %s models: %s and the models only other regions offer\n' "$(_mb_count "$(model_browser_dir)/bedrock.json")" "$(get_env AWS_REGION_NAME)"
   if explabs_enabled; then printf '  Experiential Labs  %s models your key may call\n' "$(_mb_count "$(model_browser_dir)/explabs-ids.json" ids)"; fi
   if openrouter_enabled; then printf '  OpenRouter         its public list, read by the portal\n'; fi
 }
 
 # model_browser_tick — the update helper, each loop: when the portal asked (model_browser_wanted_file), or no list was
 # ever read here (the first open of the page then finds them), the lists older than an hour read again, in the
-# background, at most every MODEL_BROWSER_TICK_MIN minutes. While a read runs or the stack is busy, the request waits.
+# background, at most every MODEL_BROWSER_TICK_MIN minutes; asked with "force" (Read again), every list, at most every
+# MODEL_BROWSER_FORCE_MIN. While a read runs or the stack is busy, the request waits.
 model_browser_tick() {
-  local w last pid; w="$(model_browser_wanted_file)"; last="$(helper_dir)/model-browser-last"
+  local w last pid min="$MODEL_BROWSER_TICK_MIN" force=''; w="$(model_browser_wanted_file)"; last="$(helper_dir)/model-browser-last"
   [ -e "$w" ] || [ ! -e "$last" ] || return 0
   pid="$(cat "$(helper_dir)/model-browser.pid" 2>/dev/null || true)"
   case "$pid" in '' | *[!0-9]*) ;; *) ! kill -0 "$pid" 2>/dev/null || return 0 ;; esac
   [ -z "$(stack_lock_holder)" ] || return 0
+  if [ -s "$w" ] && [ "$(head -c 5 "$w" 2>/dev/null)" = force ]; then min="$MODEL_BROWSER_FORCE_MIN"; force=--refresh; fi
   rm -f "$w"
-  ! _mb_fresh "$last" "$MODEL_BROWSER_TICK_MIN" || return 0
+  ! _mb_fresh "$last" "$min" || return 0
   date +%s 2>/dev/null > "$last" || return 0   # (not empty: _mb_fresh counts an empty file as never written; unwritable: never a read every loop)
-  ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper NO_COLOR=1 "$STACK_DIR/stack" models browse ) </dev/null > "$(helper_dir)/model-browser.log" 2>&1 &
+  ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper NO_COLOR=1 "$STACK_DIR/stack" models browse $force ) </dev/null > "$(helper_dir)/model-browser.log" 2>&1 &
   printf '%s\n' "$!" > "$(helper_dir)/model-browser.pid"
 }

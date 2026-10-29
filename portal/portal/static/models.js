@@ -29,7 +29,7 @@
       for (const b of document.querySelectorAll(".mb-provs .chip .count")) { const k = b.parentNode.dataset.prov; if (k) b.textContent = String(k === "all" ? allRows().length : countOf(k)); }
     });
   }
-  const f = { q: "", prov: "all", cost: "any", tools: false, images: false, works: false, mine: false, maxOut: "", minCtx: "" };
+  const f = { q: "", prov: "all", cost: "any", tools: false, images: false, works: false, mine: false, maxOut: "", minCtx: "", region: "" };
   try { Object.assign(f, JSON.parse(localStorage.getItem(MEMO) || "{}"), { q: "" }); } catch (_) { /* storage blocked: fine */ }
   const keep = () => { try { localStorage.setItem(MEMO, JSON.stringify({ ...f, q: "" })); } catch (_) { /* fine */ } };
   const page = () => $("#modelbrowser");
@@ -119,10 +119,15 @@
   }
   const allRows = () => [...Object.values(data.providers || {}).flatMap((p) => p.rows), ...(L() ? L().rows() : [])];
   const countOf = (k) => (k === "local" || k === "server" ? (L() ? L().rows().filter((r) => r.provider === k).length : 0) : ((data.providers || {})[k] || { rows: [] }).rows.length);
+  // Bedrock's own region (the stack's), and whether a row is a model only another region offers
+  const home = () => (((data && data.providers) || {}).bedrock || {}).region || "";
+  const elsewhere = (r) => r.provider === "bedrock" && !!r.region && r.region !== home();
   function matches(r) {
     const words = f.q.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 8);
-    const hay = `${r.id} ${r.source_id} ${r.name} ${r.vendor} ${PROV[r.provider]}${r.free ? " free" : ""}`.toLowerCase();
+    const hay = `${r.id} ${r.source_id} ${r.name} ${r.vendor} ${PROV[r.provider]}${r.free ? " free" : ""}${r.region ? ` ${r.region}` : ""}${r.guessed ? " not confirmed" : ""}`.toLowerCase();
     if (!words.every((w) => hay.includes(w))) return false;
+    if (f.region === "home" && elsewhere(r)) return false;
+    if (f.region === "other" && !elsewhere(r)) return false;
     if (f.cost === "free" && !r.free) return false;
     if (f.cost === "paid" && r.free) return false;
     if (f.tools && r.tools !== true) return false;
@@ -174,6 +179,12 @@
         [["", "any"], ["1", "≤ $1 / 1M"], ["5", "≤ $5 / 1M"], ["15", "≤ $15 / 1M"], ["30", "≤ $30 / 1M"]], (v) => { f.maxOut = v; shown = PAGE; keep(); drawList(); })),
       el("label", { class: "mb-limit" }, el("span", { text: "Context" }), select("mb-minctx", "Smallest context", f.minCtx,
         [["", "any"], ["32000", "32K+"], ["128000", "128K+"], ["200000", "200K+"], ["1000000", "1M+"]], (v) => { f.minCtx = v; shown = PAGE; keep(); drawList(); })));
+    // (Bedrock's models only other regions offer: a filter for them, once there are any)
+    const br = (data.providers || {}).bedrock;
+    if (br && br.rows.some(elsewhere)) {
+      limits.append(el("label", { class: "mb-limit" }, el("span", { text: "Region" }), select("mb-region", "Bedrock region", f.region,
+        [["", "any"], ["home", `${br.region} only`], ["other", "other regions"]], (v) => { f.region = v; shown = PAGE; keep(); drawList(); })));
+    }
     return el("div", { class: "mb-toolbar" }, el("div", { class: "mb-search-row" }, search), provs,
       el("div", { class: "mb-filters" }, cost, toggles, limits));
   }
@@ -190,7 +201,13 @@
       if (!p.on && k === "openrouter") {
         what = p.rows.length ? `its public list (no key: browse only), ${ago(p.at)}` : "no key: ";
       } else if (!p.on) what = "no key: its models are listed once you add one";
-      else what = `${p.rows.length} model${p.rows.length === 1 ? "" : "s"}${k === "bedrock" && p.region ? ` in ${p.region}` : ""}, ${ago(p.at)}`;
+      else if (k === "bedrock" && p.region && p.rows.length) {
+        // its region's models, then the ones only other regions offer, and how many regions were read
+        const other = p.rows.filter((r) => r.region && r.region !== p.region).length, n = p.rows.length - other;
+        const looked = Object.keys(p.regions || {}).length, off = Object.values(p.regions || {}).filter((v) => v === "off").length;
+        what = `${n} model${n === 1 ? "" : "s"} in ${p.region}${other ? `, ${other} more that only other regions offer` : ""}`
+          + `${looked > 1 ? ` (${looked} regions read${off ? `, ${off} not turned on for your account` : ""})` : ""}, ${ago(p.at)}`;
+      } else what = `${p.rows.length} model${p.rows.length === 1 ? "" : "s"}${k === "bedrock" && p.region ? ` in ${p.region}` : ""}, ${ago(p.at)}`;
       // a stale list: being read now, or (no update helper) when it will be; in the same text, so a narrow screen wraps
       // its words rather than starting a line with "·"
       if (p.on && p.stale && p.reading) what += ` · reading it${p.at ? " again" : ""} on this computer…`;
@@ -205,10 +222,25 @@
       if (p.error) li.append(el("span", { class: "mb-source-error", role: "status", text: p.error }));
       // Bedrock's inference profiles not listed (Claude is served only through them): its models show by their usual id
       if (k === "bedrock" && p.on && (p.profiles === "denied" || p.profiles === "error")) {
-        li.append(el("span", { class: "note", "data-testid": "mb-profiles-note", text: p.profiles === "denied"
-          ? "Your AWS key may not list inference profiles (bedrock:ListInferenceProfiles), so models called through one, Claude among them, show by their usual profile id. Allow it for the exact list: it is read-only and free."
-          : "Bedrock's inference profiles could not be read, so models called through one, Claude among them, show by their usual profile id." }));
+        const guessed = p.rows.filter((r) => r.guessed).length;
+        li.append(el("span", { class: "note", "data-testid": "mb-profiles-note", text: (p.profiles === "denied"
+          ? "Your AWS key may not list inference profiles (bedrock:ListInferenceProfiles), so models called through one, Claude among them, show by their usual profile id"
+          : "Bedrock's inference profiles could not be read, so models called through one, Claude among them, show by their usual profile id")
+          + (guessed ? `: ${guessed} marked Not confirmed` : "")
+          + (p.apps === "denied" ? ", and your own application inference profiles are not listed" : "")
+          + (p.profiles === "denied" ? ". Allow it for the exact list: it is read-only and free." : ".") }));
       }
+      // what the provider offers that is not listed here, and why: not chat models this stack can call
+      const lo = (p.rows.length && p.left_out) || {}, parts = [], s = (n) => (n === 1 ? "" : "s");
+      if (lo["not-text"]) parts.push(k === "bedrock" ? `${lo["not-text"]} that do not take and give text (images, video, speech)` : `${lo["not-text"]} that make images or audio`);
+      if (lo.embeddings) parts.push(`${lo.embeddings} embedding or rerank model${s(lo.embeddings)}`);
+      if (lo.variant) parts.push(`${lo.variant} context-length variant${s(lo.variant)} of a listed model`);
+      if (lo.provisioned) parts.push(`${lo.provisioned} only on provisioned throughput`);
+      if (lo.batch) parts.push(`${lo.batch} that only OpenRouter's batch API runs`);
+      if (lo["no-price"]) parts.push(`${lo["no-price"]} without a price (OpenRouter's routers)`);
+      if (lo.id) parts.push(`${lo.id} with an id this stack cannot use`);
+      if (lo.cap) parts.push(`${lo.cap} past the list's limit`);
+      if (parts.length) li.append(el("span", { class: "note", "data-testid": `mb-left-out-${k}`, text: `Not listed: ${parts.join("; ")}.` }));
       box.append(li);
     }
     if (L() && L().summary()) {
@@ -273,6 +305,9 @@
     if (r.images === true) badges.append(el("span", { class: "badge", text: "Images" }));
     badges.append(el("span", { class: `badge mb-compat mb-compat-${r.compat}`, title: r.compat_note || "", text: COMPAT[r.compat] || "Not tested with Claude Code" }));
     if (r.lifecycle === "legacy") badges.append(el("span", { class: "badge", "data-tone": "warn", text: "Legacy" }));
+    if (r.guessed) badges.append(el("span", { class: "badge mb-guessed", "data-tone": "warn", title: "Your AWS key may not list inference profiles: this is the usual id, not confirmed", text: "Not confirmed" }));
+    if (elsewhere(r)) badges.append(el("span", { class: "badge mb-region", title: `Called in ${r.region}`, text: r.region }));
+    if (r.kind === "app-profile") badges.append(el("span", { class: "badge", text: "Your profile" }));
     const state = r.local ? (r.enabled ? "In your pickers" : r.provider === "local" ? "Downloaded · not served" : "Not in your pickers")
       : r.builtin ? (r.enabled ? "Built in · in your pickers" : "Built in · not available")
       : r.enabled ? "In your pickers" : r.chosen ? "Added · applies with the change" : "";

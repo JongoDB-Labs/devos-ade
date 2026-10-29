@@ -79,8 +79,8 @@ code_models_rows() {
   lmf="$(mktemp)" || { rm -f "$orf" "$xlf" "$bxf"; return 1; }
   if declare -F openrouter_enabled >/dev/null && openrouter_enabled; then or_selected > "$orf" 2>/dev/null || :; fi
   if declare -F explabs_enabled >/dev/null && explabs_enabled; then explabs_code_rows > "$xlf" 2>/dev/null || :; fi
-  # extra Bedrock models added beyond the catalog (BEDROCK_MODELS, lib/models.sh): one id per line
-  if declare -F bedrock_extra_wanted >/dev/null; then bedrock_extra_wanted > "$bxf" 2>/dev/null || :; fi
+  # extra Bedrock models added beyond the catalog (BEDROCK_MODELS, lib/models.sh): id, name and the model it is, per line
+  if declare -F bedrock_extra_rows >/dev/null; then bedrock_extra_rows > "$bxf" 2>/dev/null || :; fi
   # local models downloaded from Hugging Face (LOCAL_MODELS, lib/local_models.sh): free ($0, on this computer)
   if declare -F local_models_code_rows >/dev/null; then local_models_code_rows > "$lmf" 2>/dev/null || :; fi
   F_EN="$en" F_DISP="$disp" F_PRICES="${PRICES:-/dev/null}" F_COMPAT="$compat" F_CAT="$CATALOG" F_OR="$orf" F_XL="$xlf" F_BX="$bxf" F_LM="$lmf" \
@@ -103,7 +103,7 @@ code_models_rows() {
       else { cs = "untested"; cn = "Not checked with Claude Code here: tool use, thinking and prompt caching may not work." }
     }
     # an extra Bedrock model vendor, from the id prefix (us.anthropic.… , anthropic.… , meta.llama… , amazon.nova…)
-    function bvendor(id,  v) { v = id; sub(/^(us|eu|apac|global)\./, "", v); sub(/\..*/, "", v)
+    function bvendor(id,  v) { v = id; sub(/^[a-z0-9-]+\//, "", v); sub(/^(us|eu|apac|global)\./, "", v); sub(/\..*/, "", v)
       if (v == "anthropic") return "Anthropic"; if (v == "meta") return "Meta"; if (v == "amazon") return "Amazon"
       if (v == "mistral") return "Mistral"; if (v == "cohere") return "Cohere"; if (v == "ai21") return "AI21"
       if (v == "deepseek") return "DeepSeek"; if (v == "openai") return "OpenAI"; if (v == "xai") return "xAI"
@@ -159,10 +159,11 @@ code_models_rows() {
       next
     }
     FILENAME == ENVIRON["F_BX"] {
-      # one extra Bedrock id per line (BEDROCK_MODELS): priced by LiteLLM, not the catalog — unknown here; compat from
-      # catalog/code-models.tsv (claude-* etc.) or untested
+      # one extra Bedrock model per line (BEDROCK_MODELS): id, name, the model it is (for an application profile, the
+      # model it copies). Priced by LiteLLM, not the catalog — unknown here; compat from catalog/code-models.tsv
+      # (claude-* etc.) or untested
       if ($1 == "" || $1 ~ /^#/) next
-      add($1, $1, "Bedrock", bvendor($1), "-", "-", "-", "-", 0, "", "", "")
+      add($1, ($2 != "" ? $2 : $1), "Bedrock", bvendor($3 != "" ? $3 : $1), "-", "-", "-", "-", 0, "", "", "")
       next
     }
     END {

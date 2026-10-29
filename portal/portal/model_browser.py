@@ -41,7 +41,10 @@ XL_DEFAULT = "qwen3.8-27b"           # lib/explabs.sh EXPLABS_DEFAULT_MODELS: wh
 
 OR_ID = re.compile(r"[A-Za-z0-9~][A-Za-z0-9._:~-]*/[A-Za-z0-9._/:~-]+")
 XL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
-BR_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+BR_ID = re.compile(r"(?:app/[a-z0-9]{1,64}|(?:[a-z]{2}(?:-[a-z]+)+-[0-9]/)?[A-Za-z0-9][A-Za-z0-9._:-]{0,127})")   # lib/models.sh valid_bedrock_extra_id
+FM_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")   # a foundation model's own id (a row's model_id)
+REGION = re.compile(r"[a-z]{2}(-[a-z]+)+-[0-9]")
+LEFT_OUT = ("not-text", "embeddings", "variant", "provisioned", "cap")
 MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}")
 SETTING = {"bedrock": "BEDROCK_MODELS", "openrouter": "OPENROUTER_MODELS", "explabs": "EXPLABS_MODELS"}
 PROVIDER = {"bedrock": "Bedrock", "openrouter": "OpenRouter", "explabs": "Experiential Labs"}
@@ -180,33 +183,48 @@ def plan(provider: str, value: str, model: str, add: bool, *, free: bool | None 
 
 # --- each provider's list, as ./stack read it (or OpenRouter's, read here) ---
 
-def _row(provider, source_id, stack_id, name, vendor, prices, context, tools, images, free=None, note="", lifecycle=""):
+def _row(provider, source_id, stack_id, name, vendor, prices, context, tools, images, free=None, note="", lifecycle="",
+         region="", kind="", guessed=False, model_id=""):
     pin = prices.get("in") if prices else None
     pout = prices.get("out") if prices else None
     if free is None:
         free = pin is not None and pout is not None and pin == 0 and pout == 0
     return {"provider": provider, "id": stack_id, "source_id": source_id, "name": name or source_id, "vendor": vendor or "",
             "free": bool(free), "in": pin, "out": pout, "context": context, "tools": tools, "images": images,
-            "lifecycle": lifecycle, "note": note}
+            "lifecycle": lifecycle, "note": note, "region": region, "kind": kind, "guessed": bool(guessed), "model_id": model_id}
 
 
-def openrouter_rows(doc: dict) -> list[dict]:
+def openrouter_rows(doc: dict, left_out: dict | None = None) -> list[dict]:
     """GET /api/v1/models (OpenRouter's public list) → rows: text-out models with a known price (OpenRouter's routers,
     priced -1, and the :batch variants, which only its batch API runs, left out — lib/openrouter.sh or_classify), their
-    context, tool use (supported_parameters names tools) and image input (architecture.input_modalities)."""
+    context, tool use (supported_parameters names tools) and image input (architecture.input_modalities). LEFT_OUT counts
+    what was left out, by reason: "id" (one the stack cannot use), "batch", "not-text" (makes images or audio), "no-price",
+    "cap" (beyond MAX_ROWS)."""
     out = []
+    lo = left_out if left_out is not None else {}
+
+    def leave(why):
+        lo[why] = lo.get(why, 0) + 1
     for m in (doc.get("data") if isinstance(doc, dict) else None) or []:
-        if not isinstance(m, dict) or not isinstance(m.get("id"), str) or not OR_ID.fullmatch(m["id"]) or len(m["id"]) > 124:
+        if not isinstance(m, dict):
+            continue
+        if not isinstance(m.get("id"), str) or not OR_ID.fullmatch(m["id"]) or len(m["id"]) > 124:
+            leave("id")
             continue
         mid = m["id"]
         arch = m.get("architecture") if isinstance(m.get("architecture"), dict) else {}
         outs = arch.get("output_modalities") if isinstance(arch.get("output_modalities"), list) else ["text"]
         ins = arch.get("input_modalities") if isinstance(arch.get("input_modalities"), list) else []
         if mid.endswith(":batch") or outs != ["text"]:
+            leave("batch" if mid.endswith(":batch") else "not-text")
             continue
         pr = m.get("pricing") if isinstance(m.get("pricing"), dict) else {}
         pin, pout = _per_m(pr.get("prompt")), _per_m(pr.get("completion"))
         if pin is None or pout is None:
+            leave("no-price")
+            continue
+        if len(out) >= MAX_ROWS:
+            leave("cap")
             continue
         name = _text(m.get("name"))
         vendor = name.split(": ", 1)[0] if ": " in name else mid.split("/", 1)[0].lstrip("~")
@@ -215,8 +233,6 @@ def openrouter_rows(doc: dict) -> list[dict]:
         out.append(_row("openrouter", mid, f"or/{mid}", name.split(": ", 1)[-1] or mid, vendor,
                         {"in": pin, "out": pout}, _whole(m.get("context_length")), tools,
                         ("image" in ins) if ins else None, note="alias" if mid.startswith("~") else ""))
-        if len(out) >= MAX_ROWS:
-            break
     return out
 
 
@@ -266,11 +282,17 @@ def explabs_rows(status_dir: Path) -> tuple[list[dict], dict]:
     return out, meta
 
 
+GUESSED = ("Not confirmed: your AWS key may not list inference profiles, so this is the profile's usual id. Try it "
+           "confirms it (add it first).")
+
+
 def bedrock_rows(status_dir: Path) -> tuple[list[dict], dict]:
-    """Bedrock's text models in the region (model-browser/bedrock.json: ListFoundationModels and its inference profiles,
-    with LiteLLM's own prices where it knows them). -> (rows, {at, status, why, region, profiles: whether its profiles could
-    be listed})"""
+    """Bedrock's text models (model-browser/bedrock.json: ListFoundationModels and its inference profiles in the region,
+    your application inference profiles, and the models only other regions offer, with LiteLLM's own prices where it
+    knows them). -> (rows, {at, status, why, region, profiles and apps: whether those could be listed, regions: {region:
+    ok | off | denied | error}, left_out: {reason: how many}})"""
     doc = _read(status_dir / DIR / "bedrock.json", 4 * 1024 * 1024)
+    home = _text(doc.get("region"), 30)
     out = []
     for m in doc.get("models") or []:
         if not isinstance(m, dict) or not isinstance(m.get("id"), str) or not BR_ID.fullmatch(m["id"]):
@@ -279,38 +301,56 @@ def bedrock_rows(status_dir: Path) -> tuple[list[dict], dict]:
         prices = {"in": _num(pr.get("in")), "out": _num(pr.get("out"))} if pr else None
         if prices and (prices["in"] is None or prices["out"] is None):
             prices = None
+        region = m["region"] if isinstance(m.get("region"), str) and REGION.fullmatch(m["region"]) else home
+        kind = "app-profile" if m.get("kind") == "app-profile" and m["id"].startswith("app/") else "foundation"
+        guessed = m.get("guessed") is True
+        mid = m["model_id"] if isinstance(m.get("model_id"), str) and FM_ID.fullmatch(m["model_id"]) else ""
+        notes = []
+        if kind == "app-profile":
+            notes.append(f"Your application inference profile{f', for {mid}' if mid else ''}: billed as that model, under your profile's tags.")
+        if region != home:
+            notes.append(f"Only {region} offers it: your requests go to that region.")
+        if guessed:
+            notes.append(GUESSED)
         out.append(_row("bedrock", m["id"], m["id"], _text(m.get("name")), _text(m.get("vendor"), 40), prices,
                         _whole(m.get("context")), m.get("tools") if isinstance(m.get("tools"), bool) else None,
                         m.get("images") if isinstance(m.get("images"), bool) else None, free=False,
-                        lifecycle="legacy" if m.get("lifecycle") == "LEGACY" else ""))
+                        lifecycle="legacy" if m.get("lifecycle") == "LEGACY" else "", note=" ".join(notes),
+                        region=region, kind=kind, guessed=guessed, model_id=mid))
         if len(out) >= MAX_ROWS:
             break
     status = doc.get("status") if doc.get("status") in ("ok", "denied", "error") else None
+    regions = {r: v for r, v in (doc.get("regions") or {}).items()
+               if isinstance(r, str) and REGION.fullmatch(r) and v in ("ok", "off", "denied", "error")} if isinstance(doc.get("regions"), dict) else {}
+    left = doc.get("left_out") if isinstance(doc.get("left_out"), dict) else {}
     return out, {"at": doc.get("at") if isinstance(doc.get("at"), int) else None, "status": status,
-                 "why": _text(doc.get("why"), 300), "region": _text(doc.get("region"), 30),
-                 "profiles": doc.get("profiles") if doc.get("profiles") in ("ok", "denied", "error") else None}
+                 "why": _text(doc.get("why"), 300), "region": home,
+                 "profiles": doc.get("profiles") if doc.get("profiles") in ("ok", "denied", "error") else None,
+                 "apps": doc.get("apps") if doc.get("apps") in ("ok", "denied", "error") else None,
+                 "regions": regions, "left_out": {k: n for k in LEFT_OUT if (n := _whole(left.get(k)))}}
 
 
 async def openrouter_list(client: httpx.AsyncClient, now: float | None = None, refresh: bool = False) -> tuple[list[dict], dict]:
     """OpenRouter's public list (no key), kept MAX_AGE_S; refresh reads it again when the copy kept is a minute old.
-    -> (rows, {at, error})"""
+    -> (rows, {at, error, left_out: what was not listed, by reason})"""
     now = time.time() if now is None else now
     hit = _or_cache.get("v")
     if hit and now - hit[0] < MAX_AGE_S and not (refresh and now - hit[0] > 60):
-        return hit[1], {"at": int(hit[0]), "error": None}
+        return hit[1], {"at": int(hit[0]), "error": None, "left_out": hit[2]}
     try:
         r = await client.get(OR_API, timeout=OR_TIMEOUT, headers={"Accept": "application/json"})
         if r.status_code != 200:
             raise ValueError(f"openrouter.ai answered HTTP {r.status_code}")
         if len(r.content) > OR_MAX_BYTES:
             raise ValueError("openrouter.ai sent too much")
-        rows = openrouter_rows(r.json())
+        left: dict = {}
+        rows = openrouter_rows(r.json(), left)
     except (httpx.HTTPError, ValueError) as e:
         if hit:
-            return hit[1], {"at": int(hit[0]), "error": f"kept from before: {_text(str(e), 120) or type(e).__name__}"}
+            return hit[1], {"at": int(hit[0]), "error": f"kept from before: {_text(str(e), 120) or type(e).__name__}", "left_out": hit[2]}
         return [], {"at": None, "error": _text(str(e), 160) if isinstance(e, ValueError) else f"openrouter.ai did not answer ({type(e).__name__})"}
-    _or_cache["v"] = (now, rows)
-    return rows, {"at": int(now), "error": None}
+    _or_cache["v"] = (now, rows, left)
+    return rows, {"at": int(now), "error": None, "left_out": left}
 
 
 # --- the stack's own Bedrock catalog: its models are built in (setup checks which the key can use) ---
@@ -396,7 +436,8 @@ def browse(status_dir: Path, catalog_dir: Path, litellm_dir: Path, values: dict,
         out[prov] = {"on": bool(keys_on.get(prov)), "key": SETTING[prov], "value": value, "at": at,
                      "stale": age is None or age > MAX_AGE_S, "error": meta.get("error") or (meta.get("why") if meta.get("status") in ("denied", "error") else None),
                      "status": meta.get("status"), "rows": shown,
-                     **({"region": meta.get("region"), "profiles": meta.get("profiles")} if prov == "bedrock" else {})}
+                     "left_out": meta.get("left_out") or {},
+                     **({k: meta.get(k) for k in ("region", "profiles", "apps", "regions")} if prov == "bedrock" else {})}
     # Bedrock without a list read (or one the key may not read): the catalog's models, so the page still says what it has
     if not out["bedrock"]["rows"]:
         for bid, c in cat.items():

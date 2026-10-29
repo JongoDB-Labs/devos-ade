@@ -1270,6 +1270,10 @@ def test_models_browse_says_reading_only_while_the_helper_runs(make, dirs):
     helper_up(sd)
     br = c.get("/api/models/browse", headers=API).json()["providers"]["bedrock"]
     assert br["reading"] is True and (rd / "models-wanted").exists()
+    assert (rd / "models-wanted").read_text() == ""          # the stale lists only
+    # Read again (JON-823): every list read again, not only the stale ones
+    c.get("/api/models/browse?refresh=1", headers=API)
+    assert (rd / "models-wanted").read_text() == "force"
 
 
 def test_models_plan_route(make, dirs):

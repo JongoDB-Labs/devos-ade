@@ -136,10 +136,19 @@ first_enabled() { # first_enabled ENABLED_FILE PREF... -> first pref present, or
 # --- extra Bedrock models beyond the catalog (BEDROCK_MODELS: the model browser, lib/model_browser.sh) ---
 # A Bedrock foundation-model or inference-profile id, added by hand or from the browser, that catalog/models.tsv does
 # not carry. Rendered as its own model_list entry (bedrock/converse/<id>, the general chat path), priced by LiteLLM's
-# own cost map. Never an ARN (it names the AWS account) and never a catalog id (that would double-render).
+# own cost map. Never an ARN (it names the AWS account) and never a catalog id (that would double-render). Two more
+# forms:
+#   <region>/<id>       a model another region offers (the stack's does not): called in that region
+#   app/<profile id>    your application inference profile: called by its ARN (model_id), priced as the model it
+#                       copies; the ARN is read from bedrock_app_profiles_file (written by the browser's read of
+#                       Bedrock's list), never from .env
 # valid_bedrock_extra_id ID -> 0 when ID is one we can render safely
 valid_bedrock_extra_id() {
-  case "$1" in '' | arn:* | [!A-Za-z0-9]* | *[!A-Za-z0-9._:/-]*) return 1 ;; esac
+  case "$1" in '' | arn:* | [!A-Za-z0-9]* | *[!A-Za-z0-9._:/-]* | */*/* | */) return 1 ;; esac
+  case "$1" in
+    app/*) case "${1#app/}" in *[!a-z0-9]*) return 1 ;; esac ;;
+    */*) valid_region "${1%%/*}" || return 1; case "${1#*/}" in [!A-Za-z0-9]*) return 1 ;; esac ;;
+  esac
   [ "${#1}" -le 160 ]
 }
 # valid_bedrock_models VALUE -> 0 for blank or a comma list of such ids
@@ -164,13 +173,54 @@ bedrock_extra_wanted() {
       $0 != "" && !($0 in have) && !seen[$0]++' |
     while IFS= read -r m; do valid_bedrock_extra_id "$m" && printf '%s\n' "$m"; done
 }
+
+# Your application inference profiles, as the browser last read them: "app/<id><tab><ARN><tab><base model id><tab><name>"
+# per line, in .state (the portal mounts only .state/status, requests and update-check): the ARN names the AWS account.
+bedrock_app_profiles_file() { printf '%s/bedrock/app-profiles.tsv\n' "$STATE_DIR"; }
+BEDROCK_APP_LINE='^ARN	app/[a-z0-9]{1,64}	arn:aws[a-z-]*:bedrock:[a-z0-9-]+:[0-9]{12}:application-inference-profile/[a-z0-9]{1,64}	[A-Za-z0-9][A-Za-z0-9._:-]{0,127}	[ -~]{0,60}$'
+# _bedrock_app_put < lines (the ARN line without its "ARN<tab>") — the file, atomically, readable by you only
+_bedrock_app_put() {
+  local f d tmp; f="$(bedrock_app_profiles_file)"; d="${f%/*}"
+  mkdir -p "$d" 2>/dev/null && chmod 700 "$d" 2>/dev/null || return 0
+  tmp="$(mktemp "$d/.app-profiles.XXXXXX")" || return 0
+  if cat > "$tmp"; then chmod 600 "$tmp"; mv -f "$tmp" "$f"; else rm -f "$tmp"; fi
+}
+# bedrock_app_profile app/ID -> "ARN<tab>base model id<tab>name" as last read, or nothing
+bedrock_app_profile() {
+  local f; f="$(bedrock_app_profiles_file)"; [ -r "$f" ] || return 0
+  K="$1" LC_ALL=C awk -F'\t' -v OFS='\t' '$1 == ENVIRON["K"] && $2 ~ /^arn:aws[a-z-]*:bedrock:[a-z0-9-]+:[0-9]{12}:application-inference-profile\/[a-z0-9]+$/ { print $2, $3, $4; exit }' "$f"
+}
+# bedrock_extra_rows -> "id<tab>name<tab>base model id" per extra model (lib/code_models.sh: the pickers' rows): an
+# application profile by its name and the model it copies; the others by their id
+bedrock_extra_rows() {
+  local id arn base name
+  bedrock_extra_wanted | while IFS= read -r id; do
+    case "$id" in
+      app/*) IFS=$'\t' read -r arn base name <<< "$(bedrock_app_profile "$id")"
+             [ -n "$arn" ] && printf '%s\t%s\t%s\n' "$id" "${name:-$id}" "$base" ;;
+      */*) printf '%s\t%s\t%s\n' "$id" "$id" "${id#*/}" ;;
+      *) printf '%s\t%s\t%s\n' "$id" "$id" "$id" ;;
+    esac
+  done
+}
 # bedrock_extra_yaml REGION -> model_list entries for the extra Bedrock models (same indentation as render); nothing
-# without BEDROCK_MODELS. REGION is the default region (per-model region is not offered for added models).
+# without BEDROCK_MODELS. REGION is the default region; "<region>/<id>" is called in its own. An application profile
+# whose ARN was never read here is left out, said on stderr (./stack models browse reads it).
 bedrock_extra_yaml() {
-  local id region="$1"
+  local id arn base name r
   bedrock_extra_wanted | while IFS= read -r id; do
     [ -n "$id" ] || continue
-    printf '  - model_name: "%s"\n    litellm_params:\n      model: "bedrock/converse/%s"\n      aws_region_name: os.environ/AWS_REGION_NAME\n    model_info:\n      mode: "chat"\n' "$id" "$id"
+    case "$id" in
+      app/*)
+        IFS=$'\t' read -r arn base name <<< "$(bedrock_app_profile "$id")"
+        if [ -z "$arn" ]; then warn "BEDROCK_MODELS: $id is not among your application inference profiles as last read (./stack models browse --refresh): left out"; continue; fi
+        r="$(printf '%s' "$arn" | cut -d: -f4)"
+        printf '  - model_name: "%s"\n    litellm_params:\n      model: "bedrock/converse/%s"\n      model_id: "%s"\n      aws_region_name: "%s"\n    model_info:\n      mode: "chat"\n' "$id" "$base" "$arn" "$r" ;;
+      */*)
+        printf '  - model_name: "%s"\n    litellm_params:\n      model: "bedrock/converse/%s"\n      aws_region_name: "%s"\n    model_info:\n      mode: "chat"\n' "$id" "${id#*/}" "${id%%/*}" ;;
+      *)
+        printf '  - model_name: "%s"\n    litellm_params:\n      model: "bedrock/converse/%s"\n      aws_region_name: os.environ/AWS_REGION_NAME\n    model_info:\n      mode: "chat"\n' "$id" "$id" ;;
+    esac
   done
 }
 
