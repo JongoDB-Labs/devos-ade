@@ -2386,7 +2386,7 @@
       if (what.kind === "reveal") { showRevealed(what.key, d.value, what.show); return; }
       if (what.kind === "signout") { toast("Every other device is signed out"); return; }
       if (what.kind === "server") { toast(what.op === "probe" ? "Checking the server" : "Sent to the update helper"); if (window.bnLocal) window.bnLocal.serverSent(what, d); return; }
-      if (what.kind === "local") { toast(what.action === "local-pull" ? "Download started" : "Removing"); if (window.bnLocal) window.bnLocal.started(); return; }
+      if (what.kind === "local") { toast(what.action === "local-pull" ? (what.serve ? "vLLM is switching to it" : "Download started") : "Removing"); if (window.bnLocal) window.bnLocal.started(); return; }
       if (what.kind === "runtime") { toast({ install: "Installing", start: "Starting", uninstall: "Uninstalling" }[what.op] || "Sent to the update helper"); if (window.bnLocal) window.bnLocal.runtimeSent(what); return; }
       // a form's change: what was typed is kept (in this page's memory only) until the helper's answer — a failure
       // opens the form again with it, the reason under the field (reopen)

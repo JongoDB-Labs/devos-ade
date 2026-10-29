@@ -676,7 +676,7 @@ def routes(ctx: Ctx) -> list[Route]:
                                        "hf_token_set": bool((rows.get("HF_TOKEN") or {}).get("set")),
                                        "wait": data["stale"] and not data["known"],
                                        "runtimes": lm.read_runtimes(s.status_dir), "can_runtime": ok and "local-runtime" in cap,
-                                       "choice": choice if choice in ("auto", "mlx", "dmr", "ollama", "llamacpp", "lmstudio") else "auto"}))
+                                       "choice": choice if choice in ("auto", "mlx", "dmr", "ollama", "llamacpp", "lmstudio", "vllm") else "auto"}))
 
     async def local_models_search(request: Request) -> Response:
         """Hugging Face's GGUF repos for ?q= (public API from here, no key); with ?repo=org/name that repo's quants, each with
@@ -686,14 +686,14 @@ def routes(ctx: Ctx) -> list[Route]:
         data = lm.read_status(s.status_dir)
         repo = request.query_params.get("repo")
         if repo:
-            row, e = await lm.repo_files(request.app.state.http, repo, fmt=("mlx" if data["runtime"]["kind"] == "mlx" else "gguf"))
+            row, e = await lm.repo_files(request.app.state.http, repo, fmt=lm.fmt_of(data["runtime"]["kind"]))
             if e or row is None:
                 return _no_store(JSONResponse({"error": e or "not found"}, status_code=502 if e and "did not answer" in e else 404))
             return _no_store(JSONResponse({"repo": lm.annotate(row, data["memory"], data["gpu"], data["installed"])}))
         if wait := local_search_rate.retry_after():
             return err(429, f"Please wait {wait} s before searching again.", wait)
         local_search_rate.hit()
-        rows, e = await lm.search(request.app.state.http, request.query_params.get("q", ""), fmt=("mlx" if data["runtime"]["kind"] == "mlx" else "gguf"))
+        rows, e = await lm.search(request.app.state.http, request.query_params.get("q", ""), fmt=lm.fmt_of(data["runtime"]["kind"]))
         return _no_store(JSONResponse({"rows": rows, "error": e}))
 
     async def local_models_change(request: Request) -> Response:
@@ -724,7 +724,7 @@ def routes(ctx: Ctx) -> list[Route]:
         if act == "local-pull":
             if status["runtime"]["kind"] == "none":
                 return err(409, f"No model runner is running on this computer. {status['runtime']['how']}")
-            row, e = await lm.repo_files(request.app.state.http, repo, fmt=("mlx" if status["runtime"]["kind"] == "mlx" else "gguf"))
+            row, e = await lm.repo_files(request.app.state.http, repo, fmt=lm.fmt_of(status["runtime"]["kind"]))
             if row is None:
                 return err(502, e or "Hugging Face did not describe that repo.")
             if row.get("blocked"):
@@ -823,7 +823,7 @@ def routes(ctx: Ctx) -> list[Route]:
         cur = next((x for x in r["runtimes"] if x["id"] == rid), None)
         if op == "install" and cur and cur["state"] in ("external", "unsupported"):
             taken = "an Ollama of yours already runs on 127.0.0.1:11434" if rid == "ollama" \
-                else f"something that is not DevOS ADE's already answers on 127.0.0.1:{lm.RUNTIME_PORTS[rid]}, the address it would have"
+                else f"something that is not DevOS ADE's already answers on 127.0.0.1:{lm.RUNTIME_PORTS.get(rid)}, the address it would have"
             return err(409, f"{lm.RUNTIME_NAMES[rid]} cannot be installed here: {cur['why_not'] or taken}.")
         if wait := runtime_rate.retry_after():
             return err(429, f"Please wait {wait} s.", wait)

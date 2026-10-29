@@ -36,9 +36,9 @@
 #                                        local-stop   {…,"op":"pause|cancel"}  ./stack local-models pause|cancel: the running
 #                                                      download stopped (cancel also deletes a paused one's part). NO "auth":
 #                                                      it only ever stops something and spends nothing (session, CSRF, origin)
-#                                        local-runtime {…,"op":"install|start|uninstall","id":"ollama|llamacpp|lmstudio"}  ./stack runtimes OP ID
+#                                        local-runtime {…,"op":"install|start|uninstall","id":"ollama|llamacpp|lmstudio|vllm"}  ./stack runtimes OP ID
 #                                                      (lib/runtimes.sh: a model runtime DevOS ADE installs and runs itself)
-#                                        local-runtime-stop {…,"op":"stop|cancel|logs","id":"ollama|llamacpp|lmstudio"}  ./stack runtimes stop ID,
+#                                        local-runtime-stop {…,"op":"stop|cancel|logs","id":"ollama|llamacpp|lmstudio|vllm"}  ./stack runtimes stop ID,
 #                                                      cancel (the running install), logs ID --portal (its last lines for
 #                                                      Settings). NO "auth": it stops something or reads its log, nothing more
 #                                        subscriptions-check {…}  ./stack subscriptions status (lib/subscriptions.sh)
@@ -355,10 +355,10 @@ act_check_request() {
   elif _sv_re "$body" '^\{"action":"(local-stop)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","op":"(pause|cancel)"\}$'; then
     action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="-"; project="${BASH_REMATCH[4]}"
   # (a model runtime installed, started or removed: with the password; op|id in project's place)
-  elif _sv_re "$body" '^\{"action":"(local-runtime)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})","op":"(install|start|uninstall)","id":"(ollama|llamacpp|lmstudio)"\}$'; then
+  elif _sv_re "$body" '^\{"action":"(local-runtime)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","auth":"([A-Za-z0-9+/]{4,}={0,2})","op":"(install|start|uninstall)","id":"(ollama|llamacpp|lmstudio|vllm)"\}$'; then
     action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="${BASH_REMATCH[4]}"; project="${BASH_REMATCH[5]}|${BASH_REMATCH[6]}"
   # (a runtime stopped, its install cancelled, or its log read: no password — it stops or reads, and spends nothing)
-  elif _sv_re "$body" '^\{"action":"(local-runtime-stop)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","op":"(stop|cancel|logs)","id":"(ollama|llamacpp|lmstudio)"\}$'; then
+  elif _sv_re "$body" '^\{"action":"(local-runtime-stop)","requested_at":([0-9]{1,12}),"nonce":"([0-9a-f]{32})","op":"(stop|cancel|logs)","id":"(ollama|llamacpp|lmstudio|vllm)"\}$'; then
     action="${BASH_REMATCH[1]}"; ts="${BASH_REMATCH[2]}"; n="${BASH_REMATCH[3]}"; auth="-"; project="${BASH_REMATCH[4]}|${BASH_REMATCH[5]}"
   # (what DevOS ADE may read of your sessions here: taken back by the project's id, or all — the tool in mode's place)
   # (setup-*: what may be read of your setup — Bring your setup, lib/sessions_config.sh —, by tool, with project all)

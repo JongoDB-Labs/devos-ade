@@ -400,6 +400,12 @@ test_the_helper_takes_a_runtime_request_field_by_field() {
     assert_contains "$out" "local-runtime $n"
     assert_contains "$out" "$op|ollama"
   done
+  local id
+  for id in llamacpp lmstudio vllm; do
+    mk "{\"action\":\"local-runtime\",\"requested_at\":$now,\"nonce\":\"$n\",\"auth\":\"$auth\",\"op\":\"install\",\"id\":\"$id\"}"
+    out="$(act_check_request "$TMP/act-$n.json" "act-$n.json" 2>&1)" || { echo "$out" >&2; return 1; }
+    assert_contains "$out" "install|$id"
+  done
   for op in stop cancel logs; do
     mk "{\"action\":\"local-runtime-stop\",\"requested_at\":$now,\"nonce\":\"$n\",\"op\":\"$op\",\"id\":\"ollama\"}"
     out="$(act_check_request "$TMP/act-$n.json" "act-$n.json" 2>&1)" || { echo "$out" >&2; return 1; }
@@ -408,7 +414,7 @@ test_the_helper_takes_a_runtime_request_field_by_field() {
   # no password for a change, a password on a stop, another op or id, or anything more: not a request
   for bad in "\"action\":\"local-runtime\",\"requested_at\":$now,\"nonce\":\"$n\",\"op\":\"install\",\"id\":\"ollama\"" \
              "\"action\":\"local-runtime\",\"requested_at\":$now,\"nonce\":\"$n\",\"auth\":\"$auth\",\"op\":\"stop\",\"id\":\"ollama\"" \
-             "\"action\":\"local-runtime\",\"requested_at\":$now,\"nonce\":\"$n\",\"auth\":\"$auth\",\"op\":\"install\",\"id\":\"vllm\"" \
+             "\"action\":\"local-runtime\",\"requested_at\":$now,\"nonce\":\"$n\",\"auth\":\"$auth\",\"op\":\"install\",\"id\":\"localai\"" \
              "\"action\":\"local-runtime\",\"requested_at\":$now,\"nonce\":\"$n\",\"auth\":\"$auth\",\"op\":\"install\",\"id\":\"ollama\",\"url\":\"https://evil\"" \
              "\"action\":\"local-runtime-stop\",\"requested_at\":$now,\"nonce\":\"$n\",\"auth\":\"$auth\",\"op\":\"stop\",\"id\":\"ollama\"" \
              "\"action\":\"local-runtime-stop\",\"requested_at\":$now,\"nonce\":\"$n\",\"op\":\"uninstall\",\"id\":\"ollama\"" \

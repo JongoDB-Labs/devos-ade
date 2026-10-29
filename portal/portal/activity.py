@@ -41,7 +41,7 @@ HEALTH_MAX = 5            # the newest few: a crash loop is one story, not a flo
 # the subjects a health record may name: the stack's own services, else "other" (lib/health.sh HEALTH_SERVICES, the same
 # closed set as docs/event-schema.md; a test keeps the three together)
 SERVICES = frozenset("caddy chat-egress code forgejo litellm llamacpp ollama ollama-gate open-webui portal postgres rustfs rustfs-init searxng shared-mcp stt "
-                     "subs-chat tailscale terminal terminal-egress terminal-gateway other".split())
+                     "subs-chat tailscale terminal terminal-egress terminal-gateway vllm other".split())
 LEVELS = ("info", "good", "warn", "bad")
 ID = re.compile(r"[A-Za-z0-9:._@+-]{1,160}")
 LINK = re.compile(r"#[a-z]+(?:/[A-Za-z0-9_+-]{1,64}){0,2}")

@@ -210,12 +210,12 @@ _sv_code_models() {
 _sv_code_model() { valid_code_model "$1" || { SV_ERR="must be a model id (blank = the main model)"; return 1; }; }
 _sv_local_models() {
   valid_local_models "$1" && [ "${#1}" -le "$SETTINGS_MAX_VALUE" ] ||
-    { SV_ERR="must be a comma list of dmr:, mlx:, ollama:, llamacpp: or lmstudio:<id> (letters, digits, . _ : / and -; at most $LOCAL_MODELS_MAX)"; return 1; }
+    { SV_ERR="must be a comma list of dmr:, mlx:, ollama:, llamacpp:, lmstudio: or vllm:<id> (letters, digits, . _ : / and -; at most $LOCAL_MODELS_MAX)"; return 1; }
 }
 _sv_model_servers() { valid_msrv_list "$1" && [ "${#1}" -le "$SETTINGS_MAX_VALUE" ] || { SV_ERR="must be a comma list of name=http(s)://host[:port] (at most 8; no user:password@)"; return 1; }; }
 _sv_model_server_keys() { valid_msrv_keys "$1" || { SV_ERR="must be name=key pairs"; return 1; }; }
 _sv_model_server_models() { valid_msrv_models "$1" || { SV_ERR="must be name:model-id (or name:* for all) pairs"; return 1; }; }
-_sv_local_runtime() { case "$1" in '' | auto | mlx | dmr | ollama | llamacpp | lmstudio) return 0 ;; esac; SV_ERR="must be auto, mlx, dmr, ollama, llamacpp or lmstudio (blank = auto)"; return 1; }
+_sv_local_runtime() { case "$1" in '' | auto | mlx | dmr | ollama | llamacpp | lmstudio | vllm) return 0 ;; esac; SV_ERR="must be auto, mlx, dmr, ollama, llamacpp, lmstudio or vllm (blank = auto)"; return 1; }
 _sv_hf_token() { valid_hf_token "$1" || { SV_ERR="must be a Hugging Face token (hf_ and letters and digits)"; return 1; }; }
 _sv_bedrock_models() {
   valid_bedrock_models "$1" && [ "${#1}" -le "$SETTINGS_MAX_VALUE" ] ||

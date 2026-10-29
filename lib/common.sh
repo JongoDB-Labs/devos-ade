@@ -363,6 +363,7 @@ SUMS
     LOCALGIT_SSO_HEADER="$(get_env LOCALGIT_SSO_HEADER)" LOCALGIT_SSO_ON="$([ -n "$(get_env LOCALGIT_SSO_HEADER)" ] && echo true || echo false)" \
     BN_LOCALGIT_TLS="$STATE_DIR/localgit/tls" BN_LOCALGIT_MODE="$(flag_off "$(get_env LOCALGIT)" && echo off || echo on)" \
     BN_LLAMACPP_DIR="$STATE_DIR/runtimes/llamacpp" BN_LLAMACPP_USER="$(cat "$STATE_DIR/runtimes/llamacpp/user" 2>/dev/null || echo 65534:65534)" \
+    BN_VLLM_DIR="$STATE_DIR/runtimes/vllm" BN_VLLM_USER="$(cat "$STATE_DIR/runtimes/vllm/user" 2>/dev/null || echo 65534:65534)" \
     BEDROCK_NOW_ENV_DISPLAY="$(env_file_display)" COMPOSE_PROJECT_NAME="$p" docker compose -p "$p" --project-directory "$STACK_DIR" -f "$STACK_DIR/compose.yaml" ${f[@]+"${f[@]}"} \
       --env-file "$ENV_FILE" "$@" )
 }
@@ -584,7 +585,7 @@ compose_overlays() {
   fi
   # (independent of the terminal: the git server alone, while it has a mirror)
   ! localgit_mirror_wanted || echo compose.localgit-mirror.yaml
-  # the runtimes' GPUs (lib/runtimes.sh: Ollama's and llama.cpp's containers with the NVIDIA runtime)
+  # the runtimes' GPUs (lib/runtimes.sh: Ollama's, llama.cpp's and vLLM's containers with the NVIDIA runtime)
   ! declare -F runtime_overlays >/dev/null || runtime_overlays
   return 0
 }

@@ -1,0 +1,13 @@
+# vLLM's container with this computer's NVIDIA GPUs (lib/runtimes.sh runtime_overlays: added while vLLM is installed here
+# and Docker had the NVIDIA runtime when it was installed): the same release's CUDA image, pinned by digest (amd64 and
+# arm64).
+services:
+  vllm:
+    image: vllm/vllm-openai:v0.32.0@sha256:befccf0e7e4089aa23926bb6f887a85c0d46c2a99e6de5c5ffdf5cb7957c5b34
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

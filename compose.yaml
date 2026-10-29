@@ -114,8 +114,9 @@ services:
     ports:
       - "127.0.0.1:${LITELLM_PORT:-4000}:4000"
     # stt: the speech-to-text container's only network (no internet access); websearch: the built-in SearXNG's (LiteLLM
-    # alone reaches it); ollama, llamacpp: DevOS ADE's own Ollama's and llama.cpp's, on Linux (LiteLLM alone reaches them)
-    networks: [default, stt, websearch, ollama, llamacpp]
+    # alone reaches it); ollama, llamacpp, vllm: DevOS ADE's own Ollama's, llama.cpp's and vLLM's, on Linux (LiteLLM alone
+    # reaches them)
+    networks: [default, stt, websearch, ollama, llamacpp, vllm]
     # Local models (lib/local_models.sh): a model runner on this computer — Docker Model Runner's TCP port or a host
     # Ollama — is host.docker.internal. Docker Desktop names it already (this maps it to the same host); Docker Engine
     # on Linux needs the line.
@@ -665,6 +666,57 @@ services:
       start_interval: 2s
     logging: *logging
 
+  # DevOS ADE's own vLLM, on Linux only (lib/runtimes.sh; in the "vllm" profile while it is installed and has a model to
+  # serve): one model at a time, the one Settings › Local models last sent to it — /models/current, a link to its
+  # snapshot (safetensors weights, read-only, checked against the Hub's hashes when they arrived) — with etc/serve.yaml
+  # (its name, context, tool-call parser and API key: every /v1 request needs it). On an internal network with the model
+  # gateway alone: it publishes nothing and reaches nothing (offline: it downloads nothing itself, and never runs a
+  # model's own code). It runs as you (BN_VLLM_USER), read-only but for its compile cache (cache/), with no
+  # capabilities. This is the CPU build (x86-64 with AVX2 or AVX-512); compose.vllm-gpu.yaml swaps in the NVIDIA one when
+  # Docker had the NVIDIA runtime at install.
+  vllm:
+    image: vllm/vllm-openai-cpu:v0.32.0-x86_64@sha256:827ef38187f9b52f2bb838695ef815ec5b65f4bf3e4c061b002b2b0a19cb0701
+    profiles: ["vllm"]
+    restart: unless-stopped
+    user: "${BN_VLLM_USER:-65534:65534}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 4096
+    shm_size: 4gb
+    tmpfs: [/tmp]
+    environment:
+      HOME: /cache
+      USER: devos            # (who Python's getpass says it is: this user has no passwd entry in the image)
+      LOGNAME: devos
+      XDG_CACHE_HOME: /cache
+      VLLM_CACHE_ROOT: /cache/vllm
+      TORCHINDUCTOR_CACHE_DIR: /cache/inductor
+      TRITON_CACHE_DIR: /cache/triton
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      VLLM_NO_USAGE_STATS: "1"
+      DO_NOT_TRACK: "1"
+      VLLM_CPU_KVCACHE_SPACE: "4"          # (the CPU build: GiB for the KV cache)
+      VLLM_CPU_OMP_THREADS_BIND: nobind    # (no NUMA binding: it would need CAP_SYS_NICE and an open seccomp profile)
+    entrypoint: ["vllm", "serve"]
+    command: ["/models/current", "--config", "/etc/vllm/serve.yaml"]
+    volumes:
+      - ${BN_VLLM_DIR:-./.state/runtimes/vllm}/hub:/models:ro,z
+      - ${BN_VLLM_DIR:-./.state/runtimes/vllm}/etc:/etc/vllm:ro,z
+      - ${BN_VLLM_DIR:-./.state/runtimes/vllm}/cache:/cache:z
+    networks: [vllm]
+    # (/health answers once the model is loaded; loading one on a CPU takes minutes)
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30m
+      start_interval: 5s
+    logging: *logging
+
 networks:
   default:
   # Speech-to-text (lib/stt.sh): internal (no internet access); its members are stt, LiteLLM and Caddy only.
@@ -683,6 +735,9 @@ networks:
   ollama-out:
   # DevOS ADE's own llama.cpp, on Linux (lib/runtimes.sh): internal; its members are LiteLLM and llama.cpp only.
   llamacpp:
+    internal: true
+  # DevOS ADE's own vLLM, on Linux (lib/runtimes.sh): internal; its members are LiteLLM and vLLM only.
+  vllm:
     internal: true
   # The built-in git server (lib/localgit.sh): internal; its members are Forgejo, Caddy and (compose.localgit.yaml) the
   # terminal's gateway only.

@@ -189,7 +189,7 @@ test_install_downloads_the_pinned_build_checks_it_and_runs_it_with_its_key_and_n
   assert_eq "$(_job state)" done
   assert_eq "$(_events)" "llamacpp installed llama.cpp 0.8.0 was installed and runs on 127.0.0.1:11438"
   python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); r=d["runtimes"][1]
-assert [x["id"] for x in d["runtimes"]] == ["ollama", "llamacpp", "lmstudio"], d["runtimes"]
+assert [x["id"] for x in d["runtimes"]] == ["ollama", "llamacpp", "lmstudio", "vllm"], d["runtimes"]
 assert (r["name"], r["state"], r["managed"], r["kind"], r["version"], r["pinned"], r["address"], r["size"]) == ("llama.cpp", "running", True, "agent", "0.8.0", "0.8.0", "127.0.0.1:11438", "about 16 MB"), r' "$(rt_status_file)"
   assert_contains "$(cmd_runtimes status)" "llama.cpp   running 0.8.0 on 127.0.0.1:11438 (launchd agent)"
   # the models it has loaded: asked with its key in the header file

@@ -69,8 +69,8 @@ A `subject` is never a pattern. Anything that is not in the kind's set below is 
 **on the install, before the event is recorded**: a service a person added to the Compose project, or a step this
 version does not know, never leaves the computer by name, and a local record never holds it.
 
-**Services** (`container.*`): the 21 services the stack's own Compose files define (`compose.yaml` and its overlays:
-terminal, code, Tailscale, the egress proxies, Ollama and its gate, and llama.cpp, on Linux), plus `other`.
+**Services** (`container.*`): the 22 services the stack's own Compose files define (`compose.yaml` and its overlays:
+terminal, code, Tailscale, the egress proxies, Ollama and its gate, llama.cpp and vLLM, on Linux), plus `other`.
 
 - `caddy`
 - `chat-egress`
@@ -93,6 +93,7 @@ terminal, code, Tailscale, the egress proxies, Ollama and its gate, and llama.cp
 - `terminal`
 - `terminal-egress`
 - `terminal-gateway`
+- `vllm`
 - `other`
 
 (`rustfs-init` is a one-shot that exits when it is done.) `lib/health.sh` holds this list as `HEALTH_SERVICES`, and a

@@ -130,7 +130,7 @@ def repo_row(m: dict, fmt: str = "gguf") -> dict | None:
     if not isinstance(rid, str) or not REPO.fullmatch(rid):
         return None
     g = m.get("gguf") if isinstance(m.get("gguf"), dict) else {}
-    if fmt == "mlx":   # an MLX repo: parameters from the safetensors header, the rest from its config and tokenizer
+    if fmt in ("mlx", "vllm"):   # MLX's, or vLLM's safetensors: parameters from their header, the rest from its config and tokenizer
         cfg = m.get("config") if isinstance(m.get("config"), dict) else {}
         tk = cfg.get("tokenizer_config") if isinstance(cfg.get("tokenizer_config"), dict) else {}
         sf = m.get("safetensors") if isinstance(m.get("safetensors"), dict) else {}
@@ -164,24 +164,34 @@ async def _get(client: httpx.AsyncClient, url: str, params=None) -> tuple[object
 
 EXPAND = ["downloads", "likes", "gated", "tags", "gguf", "private"]
 EXPAND_MLX = ["downloads", "likes", "gated", "tags", "safetensors", "config", "private"]
+# what Browse models looks for, by the runtime a download goes to (lib/local_models.sh local_runtime): MLX repos, a model's
+# own safetensors weights (vLLM: text generation, with transformers), or GGUF files
+FILTERS = {"mlx": ["mlx"], "vllm": ["safetensors", "text-generation", "transformers"], "gguf": ["gguf"]}
+
+
+def fmt_of(kind: str) -> str:
+    """The kind of repo the runtime a download goes to takes: mlx, vllm (safetensors), or gguf (the rest)"""
+    return kind if kind in ("mlx", "vllm") else "gguf"
 
 
 async def search(client: httpx.AsyncClient, query: str, now: float | None = None, fmt: str = "gguf") -> tuple[list[dict], str | None]:
-    """GGUF repos (fmt "mlx": MLX repos, Hugging Face's mlx library) matching QUERY, most downloaded first (a blank query:
-    the most downloaded). -> (rows, error)"""
+    """GGUF repos (fmt "mlx": MLX repos, Hugging Face's mlx library; "vllm": text-generation models with safetensors
+    weights, never an MLX one or one that runs code of its own) matching QUERY, most downloaded first (a blank query: the
+    most downloaded). -> (rows, error)"""
     now = time.time() if now is None else now
     q = _text(query, 80)
     hit = _cache.get(("s", q, fmt))
     if hit and now - hit[0] < CACHE_S:
         return hit[1], None
-    params = [("filter", "mlx" if fmt == "mlx" else "gguf"), ("sort", "downloads"), ("direction", "-1"), ("limit", str(SEARCH_MAX))] \
-        + [("expand[]", e) for e in (EXPAND_MLX if fmt == "mlx" else EXPAND)]
+    params = [("filter", f) for f in FILTERS.get(fmt, FILTERS["gguf"])] + [("sort", "downloads"), ("direction", "-1"), ("limit", str(SEARCH_MAX))] \
+        + [("expand[]", e) for e in (EXPAND_MLX if fmt in ("mlx", "vllm") else EXPAND)]
     if q:
         params.append(("search", q))
     data, err = await _get(client, HF_API, params)
     if err:
         return (hit[1] if hit else []), err
-    rows = [r for r in (repo_row(m, fmt) for m in (data if isinstance(data, list) else [])) if r and not r["private"]]
+    ms = [m for m in (data if isinstance(data, list) else []) if not (fmt == "vllm" and _vllm_unfit(m.get("tags") if isinstance(m, dict) else None))]
+    rows = [r for r in (repo_row(m, fmt) for m in ms) if r and not r["private"]]
     _cache[("s", q, fmt)] = (now, rows)
     if len(_cache) > 200:
         _cache.clear()
@@ -202,6 +212,30 @@ def mlx_of(tree) -> tuple[list[dict], str]:
         return [], "It has no .safetensors weights."
     blocked = f"It ships Python files ({', '.join(_text(x, 40) for x in py[:3])}): DevOS ADE never runs a model's own code." if py else ""
     return [{"quant": "mlx", "size": size, "files": sum(1 for f in files if f["path"].endswith(".safetensors"))}], blocked
+
+
+def _vllm_unfit(tags) -> str:
+    """Why a repo is not one vLLM is given ('' when it is): code of its own (Hugging Face's custom_code tag: vLLM never
+    runs it), or MLX weights (Apple's format)"""
+    tags = [t for t in tags if isinstance(t, str)] if isinstance(tags, list) else []
+    if "custom_code" in tags:
+        return "It asks to run code of its own (custom_code): DevOS ADE never runs a model's own code."
+    if "mlx" in tags:
+        return "It is an MLX model (Apple's format): vLLM needs the original weights."
+    return ""
+
+
+def vllm_of(tree, tags) -> tuple[list[dict], str]:
+    """A model for vLLM is one download, whole: its top-level safetensors weights' size (with its config and tokenizer:
+    lib/local_models.sh _local_st_vet), and why it must be refused ('' when nothing is). -> ([the one "quant"], blocked)"""
+    files = [f for f in tree if isinstance(f, dict) and f.get("type") == "file" and isinstance(f.get("path"), str)] if isinstance(tree, list) else []
+    weights = [f for f in files if "/" not in f["path"] and f["path"].endswith(".safetensors")]
+    size = sum(_int((f.get("lfs") or {}).get("size") if isinstance(f.get("lfs"), dict) else None) or _int(f.get("size")) or 0 for f in weights)
+    if not size:
+        return [], "It has no safetensors weights (a GGUF model goes to llama.cpp)."
+    if not any(f["path"] == "config.json" for f in files):
+        return [], "It has no config.json: not a model vLLM loads."
+    return [{"quant": "safetensors", "size": size, "files": len(weights)}], _vllm_unfit(tags)
 
 
 def quants_of(tree) -> list[dict]:
@@ -239,7 +273,7 @@ async def repo_files(client: httpx.AsyncClient, repo: str, now: float | None = N
     hit = _cache.get(("r", repo.lower(), fmt))
     if hit and now - hit[0] < CACHE_S:
         return hit[1], None
-    info, err = await _get(client, f"{HF_API}/{repo}", [("expand[]", e) for e in (EXPAND_MLX if fmt == "mlx" else EXPAND) + ["cardData"]])
+    info, err = await _get(client, f"{HF_API}/{repo}", [("expand[]", e) for e in (EXPAND_MLX if fmt in ("mlx", "vllm") else EXPAND) + ["cardData"]])
     if err:
         return None, err
     row = repo_row(info if isinstance(info, dict) else {}, fmt)
@@ -251,11 +285,14 @@ async def repo_files(client: httpx.AsyncClient, repo: str, now: float | None = N
     row["blocked"] = ""
     if fmt == "mlx":
         row["quants"], row["blocked"] = mlx_of(tree)
+    elif fmt == "vllm":
+        row["quants"], row["blocked"] = vllm_of(tree, info.get("tags") if isinstance(info, dict) else None)
     else:
         row["quants"] = quants_of(tree)
     row["note"] = tool_note(row["tools"], row["params"])
     if not row["quants"]:
-        return None, "That repo has no MLX weights this runtime can use." if fmt == "mlx" else "That repo has no GGUF files this runtime can pull."
+        return None, {"mlx": "That repo has no MLX weights this runtime can use.", "vllm": row["blocked"] or "That repo has no safetensors weights vLLM can load."}.get(
+            fmt, "That repo has no GGUF files this runtime can pull.")
     _cache[("r", repo.lower(), fmt)] = (now, row)
     return row, None
 
@@ -320,12 +357,12 @@ def read_status(status_dir: Path, now: float | None = None) -> dict:
     d = hostfiles.read_json(status_dir / STATUS_FILE, 256 * 1024)
     at = _int(d.get("at"))
     rt = d.get("runtime") if isinstance(d.get("runtime"), dict) else {}
-    kind = rt.get("kind") if rt.get("kind") in ("mlx", "dmr", "ollama", "llamacpp", "lmstudio", "none") else "none"
+    kind = rt.get("kind") if rt.get("kind") in ("mlx", "dmr", "ollama", "llamacpp", "lmstudio", "vllm", "none") else "none"
     installed = []
     for i in (d.get("installed") if isinstance(d.get("installed"), list) else [])[:200]:
         if not isinstance(i, dict) or not REPO.fullmatch(i.get("repo") or "") or not QUANT.fullmatch(i.get("quant") or ""):
             continue
-        installed.append({"runtime": i.get("runtime") if i.get("runtime") in ("mlx", "dmr", "ollama", "llamacpp", "lmstudio") else "", "id": _text(i.get("id"), 160),
+        installed.append({"runtime": i.get("runtime") if i.get("runtime") in ("mlx", "dmr", "ollama", "llamacpp", "lmstudio", "vllm") else "", "id": _text(i.get("id"), 160),
                           "name": _text(i.get("name"), 160), "repo": i["repo"], "quant": i["quant"], "bytes": _int(i.get("bytes")) or 0,
                           "license": _text(i.get("license"), 40) if LICENSE.fullmatch(_text(i.get("license"), 40) or "-") else "",
                           "tools": {"1": "yes", "0": "no"}.get(str(i.get("tools")), "unknown"),
@@ -350,7 +387,7 @@ def read_status(status_dir: Path, now: float | None = None) -> dict:
     return {"known": at is not None, "at": at, "servers": servers, "result": clean_result(d.get("result")), "stale": at is None or now - at > MAX_AGE_S,
             "runtime": {"kind": kind, "how": _text(rt.get("how"), 400), "command": "./stack local-models enable",
                         "dmr": _text(rt.get("dmr"), 20), "ollama": _text(rt.get("ollama"), 20), "mlx": _text(rt.get("mlx"), 20),
-                        "llamacpp": _text(rt.get("llamacpp"), 20), "lmstudio": _text(rt.get("lmstudio"), 20)},
+                        "llamacpp": _text(rt.get("llamacpp"), 20), "lmstudio": _text(rt.get("lmstudio"), 20), "vllm": _text(rt.get("vllm"), 20)},
             "gpu": _text(d.get("gpu"), 40) or "none", "memory": _int(d.get("memory_bytes")) or 0,
             "disk": _int(d.get("disk_bytes")) or 0, "installed": installed,
             "job": _clean_job(d.get("job") if isinstance(d.get("job"), dict) else {})}
@@ -358,16 +395,17 @@ def read_status(status_dir: Path, now: float | None = None) -> dict:
 
 # --- the model runtimes DevOS ADE installs and runs itself (lib/runtimes.sh: status/runtimes.json) ---
 RUNTIMES_FILE = "runtimes.json"
-RUNTIME_IDS = ("ollama", "llamacpp", "lmstudio")
-RUNTIME_NAMES = {"ollama": "Ollama", "llamacpp": "llama.cpp", "lmstudio": "LM Studio"}
-RUNTIME_PORTS = {"ollama": 11434, "llamacpp": 11438, "lmstudio": 11439}   # (lib/runtimes.sh rt_port)
-RT_STATES = ("installing", "running", "starting", "stopped", "not-installed", "external", "unsupported")
+RUNTIME_IDS = ("ollama", "llamacpp", "lmstudio", "vllm")
+RUNTIME_NAMES = {"ollama": "Ollama", "llamacpp": "llama.cpp", "lmstudio": "LM Studio", "vllm": "vLLM"}
+RUNTIME_PORTS = {"ollama": 11434, "llamacpp": 11438, "lmstudio": 11439}   # (lib/runtimes.sh rt_port; vLLM: none here)
+# (waiting: vLLM installed, with no model to serve yet)
+RT_STATES = ("installing", "running", "starting", "stopped", "waiting", "not-installed", "external", "unsupported")
 RT_JOB_OPS = ("install", "start", "stop", "uninstall")
 RT_JOB_STATES = ("idle", "running", "done", "failed", "cancelled")
 RT_EVENTS = ("installed", "removed", "started", "stopped", "restart", "down", "up", "failed")
 RT_MAX_AGE_S = 180                   # older: the helper is not writing it (it does every minute)
-# (127.0.0.1:<port>, or llama.cpp's container on Linux: no port here, the gateway's network only)
-_ADDRESS = re.compile(r"127\.0\.0\.1:[0-9]{1,5}|llamacpp:8080 \(the model gateway's network only\)")
+# (127.0.0.1:<port>, or llama.cpp's and vLLM's containers on Linux: no port here, the gateway's network only)
+_ADDRESS = re.compile(r"127\.0\.0\.1:[0-9]{1,5}|(?:llamacpp:8080|vllm:8000) \(the model gateway's network only\)")
 _VERSION = re.compile(r"[0-9A-Za-z.+-]{1,40}")
 
 

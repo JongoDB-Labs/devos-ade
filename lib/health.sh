@@ -20,7 +20,7 @@ HEALTH_EVENTS_MAX=50
 # overlays), and nothing else. A container of this project that is not one of them (a service you added to the
 # project yourself) is recorded as "other" and never by name. docs/event-schema.md lists the same set; a test checks
 # both against the compose files.
-HEALTH_SERVICES="caddy chat-egress code forgejo litellm llamacpp ollama ollama-gate open-webui portal postgres rustfs rustfs-init searxng shared-mcp stt subs-chat tailscale terminal terminal-egress terminal-gateway"
+HEALTH_SERVICES="caddy chat-egress code forgejo litellm llamacpp ollama ollama-gate open-webui portal postgres rustfs rustfs-init searxng shared-mcp stt subs-chat tailscale terminal terminal-egress terminal-gateway vllm"
 # An event row is immutable: at (the local clock as it is, never corrected), count and exit_code are fixed when the
 # row is first written and never recomputed (a replayed event must make the same dedupe key). Rows are only ever
 # appended, and the oldest dropped from the front past HEALTH_EVENTS_MAX.

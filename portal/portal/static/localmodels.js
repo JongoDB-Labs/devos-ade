@@ -1,7 +1,7 @@
 // Local models and model servers (Settings › Models & providers › Local models, and the panel on Browse models;
 // portal/portal/local_models.py, lib/local_models.sh): search
-// Hugging Face for MLX (Apple silicon) or GGUF models, see each quant's size, license and whether it fits this computer's memory, download one
-// (with progress), remove one, and see the disk used. The model runs on this computer (MLX, Docker Model Runner, Ollama, llama.cpp or LM Studio)
+// Hugging Face for MLX (Apple silicon), GGUF or (vLLM) safetensors models, see each quant's size, license and whether it fits this computer's memory, download one
+// (with progress), remove one, and see the disk used. The model runs on this computer (MLX, Docker Model Runner, Ollama, llama.cpp, LM Studio or vLLM)
 // and is served by the model gateway: it shows in Chat, the Code page and the terminal marked Local, at $0.
 // Loaded after settings.js, which calls mount(frame, helpers) while it draws the row and handles the password dialog
 // (helpers.askPassword; its submit calls started() once the update helper has the request). models.js (Browse models)
@@ -16,7 +16,7 @@
   const size = (n) => (!n ? "?" : n >= GB ? `${(n / GB).toFixed(n >= 10 * GB ? 0 : 1)} GB` : `${Math.max(1, Math.round(n / 1048576))} MB`);
   const count = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n || 0));
   const ctxk = (n) => (n % 1024 === 0 ? `${n / 1024}k` : count(n));
-  const RUNTIME = { mlx: "MLX (this Mac's GPU)", dmr: "Docker Model Runner", ollama: "Ollama", llamacpp: "llama.cpp", lmstudio: "LM Studio", none: "no model runner" };
+  const RUNTIME = { mlx: "MLX (this Mac's GPU)", dmr: "Docker Model Runner", ollama: "Ollama", llamacpp: "llama.cpp", lmstudio: "LM Studio", vllm: "vLLM", none: "no model runner" };
   const GPU = (g, mem) => (g === "metal" ? `Apple GPU (Metal), ${size(mem)} memory` : g.startsWith("cuda:") ? `NVIDIA GPU (${size(Number(g.slice(5)))}), ${size(mem)} memory` : `CPU only, ${size(mem)} memory`);
   let box = null, helpers = null, state = null, timer = null, query = "", results = null, open = null, detail = null, busy = false, message = "";
   let want = "", openFind = false, part = "";    // part: what the panel on Browse models shows, "download" | "server" | "" (both, and always in Settings)                     // (what an entry point asked to see first: "download" | "server")
@@ -60,11 +60,11 @@
     clearTimeout(timer); timer = setTimeout(load, 1000);
   }
 
-  // --- the runtimes DevOS ADE installs and runs itself (lib/runtimes.sh: Ollama, llama.cpp, LM Studio). Install, Start and Uninstall ask for the
+  // --- the runtimes DevOS ADE installs and runs itself (lib/runtimes.sh: Ollama, llama.cpp, LM Studio, vLLM). Install, Start and Uninstall ask for the
   // password; Stop, Cancel (of an install) and Log do not (they stop something or read its log). ---
   const RT_STATE = { running: ["Running", "on"], starting: ["Starting", ""], stopped: ["Stopped", "warn"], installing: ["Installing", ""],
-    "not-installed": ["Not installed", ""], external: ["Yours", ""], unsupported: ["Not on this computer", ""] };
-  const CHOICE = { auto: "Automatic", mlx: "MLX", dmr: "Docker Model Runner", ollama: "Ollama", llamacpp: "llama.cpp", lmstudio: "LM Studio" };
+    "not-installed": ["Not installed", ""], external: ["Yours", ""], unsupported: ["Not on this computer", ""], waiting: ["No model yet", ""] };
+  const CHOICE = { auto: "Automatic", mlx: "MLX", dmr: "Docker Model Runner", ollama: "Ollama", llamacpp: "llama.cpp", lmstudio: "LM Studio", vllm: "vLLM" };
   // each runtime: where it comes from, where it answers when nothing says, what loads and unloads its models, and what
   // its container is reached by (llama.cpp's on Linux: the model gateway's network only, no port here); the checksum its
   // download is checked against, whether it has a key of its own, and its terms (LM Studio is not open source)
@@ -78,6 +78,9 @@
     lmstudio: { repo: "lmstudio.ai", port: "127.0.0.1:11439", reach: "on 127.0.0.1:11439 only",
       idle: "a model loads on its first request", keep: "", store: "Its models stay in this stack's folder",
       sha: "SHA-512", key: true, terms: " LM Studio is not open source: installing it accepts its terms (lmstudio.ai/app-terms), for personal or your organization's internal use." },
+    vllm: { repo: "github.com/vllm-project/vllm", port: "", reach: "reachable by the model gateway only (no port on this computer), with a key of its own",
+      idle: "it loads its model when it starts", keep: " It serves one model at a time: the last one downloaded to it, or the one you Serve below.", store: "Its models stay in this stack's folder",
+      sha: "", key: true, terms: "" },
   };
   const rtInfo = (id) => RT_INFO[id] || RT_INFO.ollama;
   let rtNote = "", rtLogs = null, rtSending = null, rtOpen = false;   // rtLogs: { id, text, at, asked } while the log is shown
@@ -126,6 +129,8 @@
     if (r.state === "external") note(r.id === "ollama" ? "An Ollama of yours (not DevOS ADE's) answers here: downloads can go to it, and DevOS ADE never stops, updates or removes it."
       : `Something that is not DevOS ADE's answers on ${rtInfo(r.id).port}, the address ${r.name} would have: DevOS ADE does not install ${r.name} while it does, and never stops it.`);
     if (r.state === "unsupported") note(`It does not run here: ${r.why_not}.`);
+    if (r.state === "waiting") note(`Installed. ${r.name} serves one model at a time: download one to it (Downloads go to: ${r.name}, below) and it starts with it. A model's safetensors weights, whole; loading one takes minutes on a CPU.`);
+    if (r.id === "vllm" && r.state === "starting") note(`Loading ${r.loaded.length ? r.loaded[0].name : "its model"}: minutes on a CPU. It answers once the model is loaded.`);
     if (r.state === "not-installed") note(r.kind === "agent" ? `DevOS ADE can install it on this Mac (${r.size}): it runs natively, with the GPU, on 127.0.0.1 only${rtInfo(r.id).key ? ", behind a key of its own" : ""}.${rtInfo(r.id).terms}`
       : `DevOS ADE can run it as a container of the stack (${r.size}), ${r.id === "ollama" ? "reachable on 127.0.0.1 only" : rtInfo(r.id).reach}.`);
     if (r.managed) {
@@ -175,12 +180,12 @@
   function choiceRow() {
     const cur = CHOICE[state.choice] ? state.choice : "auto", rt = state.runtime;
     const own = (id) => (state.runtimes.runtimes || []).find((r) => r.id === id);
-    const ol = own("ollama"), lc = own("llamacpp"), ls = own("lmstudio");
+    const ol = own("ollama"), lc = own("llamacpp"), ls = own("lmstudio"), vl = own("vllm");
     const now = rt.kind === "none" ? "none running now" : `now ${RUNTIME[rt.kind] || rt.kind}`;
-    const has = { auto: true, mlx: ["ready", "stopped", "not-installed"].includes(rt.mlx), dmr: rt.dmr === "ready", ollama: !!ol && (ol.managed || ol.state === "external"), llamacpp: !!lc && lc.managed, lmstudio: !!ls && ls.managed };
+    const has = { auto: true, mlx: ["ready", "stopped", "not-installed"].includes(rt.mlx), dmr: rt.dmr === "ready", ollama: !!ol && (ol.managed || ol.state === "external"), llamacpp: !!lc && lc.managed, lmstudio: !!ls && ls.managed, vllm: !!vl && vl.managed };
     if (!(helpers && helpers.askPassword) || part) return el("p", { class: "note", id: "lm-rt-choice-text", text: `Downloads go to: ${CHOICE[cur]}${cur === "auto" ? ` (${now})` : ""}.` });
     const sel = el("select", { id: "lm-rt-choice", "aria-label": "Downloads go to" });
-    for (const k of ["auto", "mlx", "dmr", "ollama", "llamacpp", "lmstudio"]) {
+    for (const k of ["auto", "mlx", "dmr", "ollama", "llamacpp", "lmstudio", "vllm"]) {
       if (!has[k] && k !== cur) continue;
       const o = el("option", { value: k, text: k === "auto" ? `Automatic (${now})` : CHOICE[k] });
       if (k === cur) o.selected = true;
@@ -191,7 +196,7 @@
       const v = sel.value;
       sel.value = cur;   // (it shows the new one once the change is applied, not before: a cancelled dialog changes nothing)
       askPw({ kind: "apply", values: { LOCAL_RUNTIME: v === "auto" ? "" : v } }, `Send downloads to ${CHOICE[v]}?`,
-        `New downloads go to ${v === "auto" ? "the first runtime found (MLX on Apple silicon, else Docker Model Runner, else Ollama, else llama.cpp, else LM Studio)" : CHOICE[v]}, and Browse lists the models it takes. The models already downloaded stay where they are and keep working.`, "Save");
+        `New downloads go to ${v === "auto" ? "the first runtime found (MLX on Apple silicon, else Docker Model Runner, else Ollama, else llama.cpp, else LM Studio, else vLLM)" : CHOICE[v]}, and Browse lists the models it takes. The models already downloaded stay where they are and keep working.`, "Save");
     });
     return el("label", { class: "lm-rt-choice" }, "Downloads go to ", sel);
   }
@@ -252,6 +257,8 @@
 
   const speed = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(n >= 100 * 1048576 ? 0 : 1)} MB/s` : `${Math.max(1, Math.round(n / 1024))} KB/s`);
   const dur = (t) => (t >= 3600 ? `${Math.floor(t / 3600)}\u00a0h\u00a0${Math.round((t % 3600) / 60)}\u00a0min` : t >= 60 ? `${Math.round(t / 60)}\u00a0min` : `${Math.max(1, t)}\u00a0s`);
+  // a model downloaded whole (MLX's, or vLLM's safetensors weights): no quantization to name
+  const whole = (q) => q === "mlx" || q === "safetensors";
   const button = (act, text, cls, fn) => { const b = el("button", { type: "button", class: `action ${cls}`, "data-act": act, text }); b.addEventListener("click", fn); return b; };
 
   function job() {
@@ -261,7 +268,7 @@
     const slow = j.state === "pulling" && j.stalled >= 120;
     const tone = j.state === "failed" ? "bad" : j.state === "done" ? "good" : slow || j.state === "paused" ? "warn" : "";
     const wrap = el("div", { class: `lm-job ${tone}`, id: "lm-job", "data-state": j.state, role: "status", "aria-live": "polite" });
-    wrap.append(el("p", {}, el("b", { text: `${j.repo}${j.quant && j.quant !== "mlx" ? `:${j.quant}` : ""} ` }), j.message));
+    wrap.append(el("p", {}, el("b", { text: `${j.repo}${j.quant && !whole(j.quant) ? `:${j.quant}` : ""} ` }), j.message));
     if (j.state === "pulling" || j.state === "paused") {
       const p = el("progress", { max: "100", "aria-label": "Download progress" });
       if (pct != null) p.value = pct;
@@ -280,7 +287,7 @@
       acts.append(button("local-pause", "Pause", "", () => stop("pause")), button("local-cancel", "Cancel", "quiet", cancel));
     } else if (j.resumable && state.can_change && state.can_stop) {
       acts.append(button("local-resume", j.state === "paused" ? "Resume" : "Try again", "primary", () => askPw({ kind: "local", action: "local-pull", repo: j.repo, quant: j.quant },
-        `Resume ${j.repo}${j.quant === "mlx" ? "" : `:${j.quant}`}?`, `It continues from the ${size(j.done_bytes)} already downloaded.`, "Resume")),
+        `Resume ${j.repo}${whole(j.quant) ? "" : `:${j.quant}`}?`, `It continues from the ${size(j.done_bytes)} already downloaded.`, "Resume")),
         button("local-cancel", j.state === "paused" ? "Cancel" : "Discard", "quiet", cancel));
     } else if ((j.state === "pulling" || j.resumable) && state.can_change && !state.can_stop) {
       acts.append(el("span", { class: "note", text: "To pause or cancel it: ./stack local-models pause (or cancel) in a terminal, or ./stack helper install to get the buttons." }));
@@ -296,12 +303,16 @@
       const rm = el("button", { type: "button", class: "action", "data-act": "local-remove", text: "Remove" });
       rm.disabled = !state.can_change || live();
       rm.addEventListener("click", () => askPw({ kind: "local", action: "local-remove", repo: i.repo, quant: i.quant },
-        `Remove ${i.repo}:${i.quant}?`, `It leaves Chat, the Code page and the terminal at once, and its ${size(i.bytes)} are deleted from this computer's model runner.`, "Remove"));
+        `Remove ${i.repo}${whole(i.quant) ? "" : `:${i.quant}`}?`, `It leaves Chat, the Code page and the terminal at once, and its ${size(i.bytes)} are deleted from this computer's model runner.`, "Remove"));
+      // (vLLM serves one model at a time: another of its downloads is kept, not served, until Serve switches it back)
+      const serve = i.runtime === "vllm" && i.present && !i.registered ? button("local-serve", "Serve", "", () => askPw({ kind: "local", action: "local-pull", repo: i.repo, quant: i.quant, serve: true },
+        `Serve ${i.repo} with vLLM?`, `vLLM serves one model at a time: it stops serving ${(state.installed.find((x) => x.runtime === "vllm" && x.registered) || {}).repo || "the one it serves now"} and loads this one (its files are checked again; minutes on a CPU).`, "Serve")) : null;
+      if (serve) serve.disabled = !state.can_change || live() || state.runtime.kind !== "vllm" || pausedOther(i.repo, i.quant);
       list.append(el("li", { class: "lm-item" }, el("div", { class: "lm-item-main" },
-        el("p", { class: "lm-name" }, el("b", { text: i.repo }), ` ${i.quant} `, badge("Local", "on"), badge("$0"),
+        el("p", { class: "lm-name" }, el("b", { text: i.repo }), whole(i.quant) ? " " : ` ${i.quant} `, badge("Local", "on"), badge("$0"),
           i.present ? "" : badge("missing from the runtime", "warn", "The runtime no longer lists it: remove it here, or download it again."),
-          i.registered ? "" : badge("not served", "warn")),
-        el("p", { class: "note", text: `${size(i.bytes)} · ${i.license || "license unknown"} · ${RUNTIME[i.runtime] || ""}${i.revision ? ` · revision ${i.revision.slice(0, 12)}` : ""}` })), rm));
+          i.registered ? "" : i.runtime === "vllm" && i.present ? badge("not served", "", "vLLM serves one model at a time: Serve switches it to this one") : badge("not served", "warn")),
+        el("p", { class: "note", text: `${size(i.bytes)} · ${i.license || "license unknown"} · ${RUNTIME[i.runtime] || ""}${i.revision ? ` · revision ${i.revision.slice(0, 12)}` : ""}` })), ...(serve ? [serve] : []), rm));
     }
     return list;
   }
@@ -311,12 +322,12 @@
     const dl = el("button", { type: "button", class: "action primary", "data-act": "local-pull", text: q.installed ? "Downloaded" : "Download" });
     dl.disabled = !state.can_change || live() || q.installed || state.runtime.kind === "none" || !!repo.blocked || pausedOther(repo.repo, q.quant);
     dl.addEventListener("click", () => askPw({ kind: "local", action: "local-pull", repo: repo.repo, quant: q.quant },
-      `Download ${repo.repo}${q.quant === "mlx" ? "" : `:${q.quant}`}?`,
-      `${size(q.size)} from huggingface.co (license: ${repo.license || "not stated"}) to this computer's model runner, then served by the model gateway in every picker, free. ${fit.fit === "no" ? "It probably does not fit this computer's memory." : ""}`, "Download"));
+      `Download ${repo.repo}${whole(q.quant) ? "" : `:${q.quant}`}?`,
+      `${size(q.size)} from huggingface.co (license: ${repo.license || "not stated"}) to this computer's model runner, then served by the model gateway in every picker, free.${state.runtime.kind === "vllm" ? " vLLM serves one model at a time: it switches to this one once it is downloaded (loading takes minutes on a CPU)." : ""} ${fit.fit === "no" ? "It probably does not fit this computer's memory." : ""}`, "Download"));
     const why = repo.blocked ? repo.blocked : !state.can_change ? state.why_not : state.runtime.kind === "none" ? "No model runner is running."
       : pausedOther(repo.repo, q.quant) ? `${state.job.repo} is paused: Resume or Cancel it first.` : "";
     return el("li", { class: "lm-quant" },
-      el("span", { class: "lm-q", text: q.quant === "mlx" ? "whole model" : q.quant }), el("span", { class: "lm-size", text: size(q.size) }),
+      el("span", { class: "lm-q", text: whole(q.quant) ? "whole model" : q.quant }), el("span", { class: "lm-size", text: size(q.size) }),
       el("span", { class: `lm-fit lm-fit-${fit.fit || "unknown"}`, title: fit.text || "" }, fit.fit === "yes" ? "fits" : fit.fit === "tight" ? "tight fit" : fit.fit === "no" ? "too big" : "fit unknown"),
       el("span", { class: "note lm-fit-text", text: fit.text || "" }), dl, why ? el("span", { class: "note lm-why", text: why }) : "");
   }

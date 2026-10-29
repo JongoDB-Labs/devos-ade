@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Model runtimes as core services (JON-829): the local-model runtimes DevOS ADE installs, starts, stops, updates and
 # watches itself, on the same footing as its containers (Settings › Models & providers › Local models › Runtimes, Home,
-# Activity, ./stack runtimes): Ollama, llama.cpp and LM Studio.
+# Activity, ./stack runtimes): Ollama, llama.cpp, LM Studio and vLLM.
 #
 #   macOS   Ollama's own release build (github.com/ollama/ollama, ollama-darwin.tgz: the version and its SHA-256 pinned in
 #           catalog/runtimes.pins, checked before anything is unpacked) in .state/runtimes/ollama/bin, run as a launchd
@@ -39,6 +39,15 @@
 # the key made at install (etc/api-key, as llama.cpp's), the OpenAI-compatible API only. Models downloaded to it (as for llama.cpp, into hub/) are given to it as links (`lms import --symbolic-link`),
 # and models.tsv keeps the key LM Studio serves each one by. Linux: not here (llama.cpp and Ollama serve the same models).
 #
+# vLLM (github.com/vllm-project/vllm), on Linux only: its image (compose.yaml "vllm", pinned by digest: the CPU build for
+# x86-64 with AVX2 or AVX-512; compose.vllm-gpu.yaml's with NVIDIA's libraries when Docker has the NVIDIA runtime) on an
+# internal network with the model gateway alone, which reaches it as vllm:8000. vLLM serves one model at a time: the one
+# a download last sent to it (a model's safetensors weights, whole: lib/local_models.sh), hub/current linking to its
+# snapshot and etc/serve.yaml naming it, with its context, its tool-call parser and the API key every /v1 request needs.
+# Installed with no model yet, it is "waiting" (no container). Another download to it, or Serve on one downloaded before,
+# starts it again with that one; the others stay on disk, not served. It never runs a model's own code (no
+# --trust-remote-code; a model that asks for it is refused) and it is offline.
+#
 #   ./stack runtimes [status]           each runtime: state, version, address, models loaded, memory in use
 #   ./stack runtimes install ID         download it (pinned, hash-checked) and start it (asks first in a terminal)
 #   ./stack runtimes start | stop ID
@@ -50,7 +59,10 @@
 # job.json (the one install, start, stop or uninstall running), events.tsv (what happened, for Activity), and the
 # portal's read-only copy .state/status/runtimes.json (Settings, Home, Activity).
 
-RUNTIME_IDS="ollama llamacpp lmstudio"
+RUNTIME_IDS="ollama llamacpp lmstudio vllm"
+RT_VLLM_WAIT=1800                      # seconds vLLM may take to load a model (minutes on a CPU) before it is given up
+RT_VLLM_CTX_CPU=8192                   # the most context vLLM gives a model on a CPU (its KV cache: VLLM_CPU_KVCACHE_SPACE)
+RT_VLLM_CTX_GPU=32768                  # … and on NVIDIA GPUs
 RT_LLAMACPP_MODELS_MAX=2               # models llama.cpp keeps loaded at once (the oldest is unloaded)
 RT_LLAMACPP_CTX=8192                   # a model's context when its own is not known (at most 32768)
 RT_EVENTS_MAX=30                       # events kept for Activity
@@ -58,7 +70,7 @@ RT_LOG_MAX=$((10 * 1024 * 1024))       # a server log this big is moved aside at
 RT_LOG_LINES=200                       # the lines Logs shows
 
 valid_runtime_id() { case " $RUNTIME_IDS " in *" ${1:-x} "*) return 0 ;; esac; return 1; }
-rt_name() { case "$1" in ollama) echo Ollama ;; llamacpp) echo llama.cpp ;; lmstudio) echo "LM Studio" ;; *) echo "$1" ;; esac; }
+rt_name() { case "$1" in ollama) echo Ollama ;; llamacpp) echo llama.cpp ;; lmstudio) echo "LM Studio" ;; vllm) echo vLLM ;; *) echo "$1" ;; esac; }
 rt_os() { case "$(uname -s)" in Darwin) echo mac ;; Linux) echo linux ;; *) echo other ;; esac; }
 rt_root() { printf '%s/runtimes\n' "$STATE_DIR"; }
 rt_dir() { printf '%s/%s\n' "$(rt_root)" "$1"; }
@@ -76,13 +88,15 @@ rt_pinned_version() {
   case "$1" in
     llamacpp) rt_pin LLAMACPP_VERSION ;;
     lmstudio) rt_pin LMSTUDIO_VERSION ;;
+    vllm) rt_pin VLLM_VERSION ;;
     *) if [ "$(rt_os)" = linux ]; then awk '!f && /^ *image: ollama\/ollama:/ { sub(/.*ollama\/ollama:/, ""); sub(/@.*/, ""); print; f = 1 }' "$STACK_DIR/compose.yaml"
        else rt_pin OLLAMA_VERSION; fi ;;
   esac
 }
-# rt_address ID -> where it answers (llama.cpp on Linux: the model gateway's network only)
+# rt_address ID -> where it answers (llama.cpp on Linux, vLLM: the model gateway's network only)
 rt_address() {
   if [ "$1" = llamacpp ] && [ "$(rt_os)" = linux ]; then echo "llamacpp:8080 (the model gateway's network only)"
+  elif [ "$1" = vllm ]; then echo "vllm:8000 (the model gateway's network only)"
   else printf '127.0.0.1:%s\n' "$(rt_port "$1")"; fi
 }
 # rt_installed ID -> 0 when this stack installed it (and has not removed it)
@@ -90,8 +104,14 @@ rt_installed() { [ -s "$(rt_dir "$1")/installed" ]; }
 rt_installed_version() { [ -s "$(rt_dir "$1")/installed" ] || return 0; head -n 1 "$(rt_dir "$1")/installed" | LC_ALL=C tr -cd '0-9A-Za-z.+-' | cut -c1-40; }
 # _rt_bytes FILE -> its size (0: there is none)
 _rt_bytes() { if [ -f "$1" ]; then wc -c < "$1" | tr -d ' '; else echo 0; fi; }
-# rt_kind ID -> how it runs here: agent (a launchd user agent: macOS), container (compose: Linux), none (LM Studio on Linux)
-rt_kind() { case "$(rt_os):${1:-}" in mac:*) echo agent ;; linux:lmstudio) echo none ;; linux:*) echo container ;; *) echo none ;; esac; }
+# rt_kind ID -> how it runs here: agent (a launchd user agent: macOS), container (compose: Linux), none (LM Studio on
+# Linux, vLLM on a Mac)
+rt_kind() { case "$(rt_os):${1:-}" in mac:vllm) echo none ;; mac:*) echo agent ;; linux:lmstudio) echo none ;; linux:*) echo container ;; *) echo none ;; esac; }
+# _rt_vllm_gpu -> 0 when vLLM runs (or would run) on NVIDIA GPUs: what its install found, else this computer's NVIDIA
+# driver (the install asks Docker itself)
+_rt_vllm_gpu() { if rt_installed vllm; then [ "$(cat "$(rt_dir vllm)/gpu" 2>/dev/null)" = nvidia ]; else [ -e "${RT_NVIDIA_DEV:-/dev/nvidiactl}" ]; fi; }
+# _rt_cpu_flags -> this computer's CPU flags (Linux), one line
+_rt_cpu_flags() { awk '/^flags[[:space:]]*:/ { sub(/^[^:]*:/, ""); print; exit }' "${RT_CPUINFO:-/proc/cpuinfo}" 2>/dev/null || true; }
 # rt_size ID -> what an install downloads, in words (the dialog says it before anything starts)
 rt_size() {
   case "$1:$(rt_os)" in
@@ -99,6 +119,7 @@ rt_size() {
     llamacpp:mac) [ "$(uname -m)" = arm64 ] && echo "about 16 MB" || echo "about 12 MB" ;;
     llamacpp:*) echo "about 290 MB (its image; about 2.4 GB with NVIDIA's libraries)" ;;
     lmstudio:*) echo "about 615 MB (about 2 GB once unpacked)" ;;
+    vllm:*) if _rt_vllm_gpu; then echo "about 9.2 GB (its image, with NVIDIA's libraries)"; else echo "about 1.7 GB (its image)"; fi ;;
     *) case "$(uname -m)" in aarch64 | arm64) echo "about 2.8 GB (its image)" ;; *) echo "about 3.4 GB (its image, with NVIDIA's libraries)" ;; esac ;;
   esac
 }
@@ -111,6 +132,17 @@ rt_why_not() {
       linux:*) echo "DevOS ADE runs LM Studio on Apple-silicon Macs (here, llama.cpp and Ollama serve the same models)"; return 0 ;;
     esac
   fi
+  if [ "$1" = vllm ]; then   # (Linux: NVIDIA GPUs, or the CPU build on x86-64 with AVX2 or AVX-512)
+    case "$(rt_os)" in
+      mac) echo "vLLM runs on Linux (NVIDIA GPUs, or x86-64 processors): on this Mac, MLX, llama.cpp and Ollama serve models on its GPU"; return 0 ;;
+      linux)
+        command -v docker >/dev/null 2>&1 || { echo "it runs as a container here, and Docker is not installed"; return 0; }
+        _rt_vllm_gpu && return 0
+        case "$(uname -m)" in x86_64 | amd64) ;; *) echo "vLLM needs NVIDIA GPUs, or an x86-64 processor (here, llama.cpp and Ollama serve models on this one)"; return 0 ;; esac
+        case " $(_rt_cpu_flags) " in *" avx512f "* | *" avx2 "*) return 0 ;; esac
+        echo "vLLM needs NVIDIA GPUs, or a processor with AVX2 (here, llama.cpp and Ollama serve models on this one)"; return 0 ;;
+    esac
+  fi
   case "$(rt_os)" in
     mac) [ "$(uname -m)" = arm64 ] || [ "$(uname -m)" = x86_64 ] || echo "this Mac's processor is not one $(rt_name "$1") builds for" ;;
     linux) command -v docker >/dev/null 2>&1 || echo "it runs as a container here, and Docker is not installed" ;;
@@ -120,9 +152,9 @@ rt_why_not() {
 
 # --- what answers ---
 # _rt_version ID -> what answers on its address says it is (its version; nothing: nothing answers there)
-_rt_version() { case "$1" in ollama) _rt_ollama_version ;; llamacpp) _rt_llamacpp_version ;; lmstudio) _rt_lmstudio_version ;; esac; }
+_rt_version() { case "$1" in ollama) _rt_ollama_version ;; llamacpp) _rt_llamacpp_version ;; lmstudio) _rt_lmstudio_version ;; vllm) _rt_vllm_version ;; esac; }
 # _rt_ps ID -> the models it has loaded now, one per line: name TAB bytes TAB bytes in GPU memory (0: not known)
-_rt_ps() { case "$1" in ollama) _rt_ollama_ps ;; llamacpp) _rt_llamacpp_ps ;; lmstudio) _rt_lmstudio_ps ;; esac; }
+_rt_ps() { case "$1" in ollama) _rt_ollama_ps ;; llamacpp) _rt_llamacpp_ps ;; lmstudio) _rt_lmstudio_ps ;; vllm) _rt_vllm_ps ;; esac; }
 # _rt_ollama_version -> the version the Ollama on 127.0.0.1:11434 says (nothing: none answers)
 _rt_ollama_version() {
   curl -s -m 3 "$(_local_ollama_url)/api/version" 2>/dev/null | sed -n 's/.*"version" *: *"\([0-9A-Za-z.+-]*\)".*/\1/p' | head -n 1 | cut -c1-40 || true
@@ -204,6 +236,23 @@ for m in ms if isinstance(ms, list) else []:
     n = re.sub(r"[^A-Za-z0-9._:/@+-]", "", str(m.get("id") or m.get("name") or ""))[:160]
     if n:
         print("%s\t0\t0" % n)' 2>/dev/null || true
+}
+
+# _rt_vllm_version -> the version installed, while its container is healthy: vLLM's /health answers once its model is
+# loaded (it publishes nothing to look at from here)
+_rt_vllm_version() {
+  [ "$(rt_os)" = linux ] && rt_installed vllm && rt_vllm_serving >/dev/null || return 0
+  [ "$(dc ps --format '{{.Health}}' vllm 2>/dev/null | head -n 1)" = healthy ] || return 0
+  rt_installed_version vllm
+}
+# _rt_vllm_ps -> the model it serves (loaded whenever it answers), as _rt_ps: its size on disk, and that again as GPU
+# memory on NVIDIA GPUs (the weights; vLLM's KV cache is not counted)
+_rt_vllm_ps() {
+  local id b
+  id="$(rt_vllm_serving)" || return 0
+  b="$(local_registry_rows | awk -F'\t' -v i="$id" '!d && $1 == "vllm" && $2 == i { print $5; d = 1 }')"
+  case "$b" in '' | *[!0-9]*) b=0 ;; esac
+  printf '%s\t%s\t%s\n' "$id" "$b" "$(_rt_vllm_gpu && echo "$b" || echo 0)"
 }
 
 # --- macOS: the launchd user agent ---
@@ -304,9 +353,10 @@ _rt_agent_down() {
 
 # --- Linux: the compose service ---
 # rt_compose_on ID -> 0 while its container is part of the stack (installed here, on Linux): dc() adds its profile
-rt_compose_on() { [ "$(rt_os)" = linux ] && rt_installed "$1"; }
-# rt_services ID -> its compose services (Linux): Ollama and its gate; llama.cpp
-rt_services() { case "$1" in ollama) echo "ollama ollama-gate" ;; llamacpp) echo llamacpp ;; esac; }   # (LM Studio: none)
+# (vLLM: also a model to serve — with none it is "waiting", and no container)
+rt_compose_on() { [ "$(rt_os)" = linux ] && rt_installed "$1" && { [ "$1" != vllm ] || rt_vllm_serving >/dev/null; }; }
+# rt_services ID -> its compose services (Linux): Ollama and its gate; llama.cpp; vLLM
+rt_services() { case "$1" in ollama) echo "ollama ollama-gate" ;; llamacpp) echo llamacpp ;; vllm) echo vllm ;; esac; }   # (LM Studio: none)
 # runtime_services -> the runtime containers ./stack up starts (lib/commands.sh optional_services)
 runtime_services() { local id out=''; for id in $RUNTIME_IDS; do ! rt_compose_on "$id" || out="$out${out:+ }$(rt_services "$id")"; done; printf '%s\n' "$out"; }
 # runtime_profiles -> the compose profiles of the runtime containers (lib/common.sh dc): each installed one's, and the one
@@ -326,7 +376,8 @@ _rt_volumes() { case "$1" in ollama) echo ollama-models ;; esac; }
 _rt_container_state() { dc ps -a --format '{{.State}}' "$1" 2>/dev/null | head -n 1 | LC_ALL=C tr -cd 'a-z' | cut -c1-20; }
 
 # --- the state ---
-# rt_state ID -> installing | running | starting | stopped | not-installed | external (an Ollama of yours) | unsupported
+# rt_state ID -> installing | running | starting | stopped | waiting (vLLM installed, no model to serve yet) | not-installed |
+# external (an Ollama of yours) | unsupported
 rt_state() {
   local id="$1" v j
   [ -z "$(rt_why_not "$id")" ] || { echo unsupported; return 0; }
@@ -334,6 +385,7 @@ rt_state() {
   if rt_job_running && [ "$(_local_json_str "$j" id)" = "$id" ] && [ "$(_local_json_str "$j" op)" = install ]; then echo installing; return 0; fi
   v="$(_rt_version "$id")"
   if ! rt_installed "$id"; then [ -n "$v" ] && echo external || echo not-installed; return 0; fi
+  if [ "$id" = vllm ] && ! rt_vllm_serving >/dev/null; then echo waiting; return 0; fi
   if [ "$(rt_kind "$id")" = agent ]; then
     if [ -n "$v" ] && _rt_agent_loaded "$id"; then echo running
     elif [ -n "$v" ]; then echo external   # (installed, but what answers is another Ollama: ours cannot start)
@@ -604,8 +656,23 @@ _rt_install_llamacpp_linux() {
   if [ -f "$(_rt_cancel_file)" ]; then rm -f "$(_rt_cancel_file)" "$(rt_root)/job.pid"; _rt_job cancelled "$id" install 0 0 "Cancelled."; return 0; fi
   rt_pin LLAMACPP_VERSION > "$d/installed"
 }
-# _rt_llamacpp_user -> who its container runs as: you, so it reads the folders this stack made for it (mode 700); rootless
-# Docker (its root is you) and ./stack run as root: 0:0 — with every capability dropped, it reads only what is its own
+_rt_install_vllm_linux() {
+  local id=vllm d; d="$(rt_dir "$id")"
+  if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep '"nvidia"' >/dev/null; then echo nvidia > "$d/gpu"; else rm -f "$d/gpu"; fi
+  if [ ! -f "$d/gpu" ]; then   # (the CPU build: x86-64 with AVX2 or AVX-512)
+    case "$(uname -m)" in x86_64 | amd64) ;; *) _rt_fail "$id" install "Docker here has no NVIDIA runtime, and vLLM's CPU build needs an x86-64 processor: nothing was installed." ;; esac
+    case " $(_rt_cpu_flags) " in *" avx512f "* | *" avx2 "*) ;; *) _rt_fail "$id" install "Docker here has no NVIDIA runtime, and this processor has no AVX2 for vLLM's CPU build: nothing was installed." ;; esac
+  fi
+  { _rt_llamacpp_user > "$d/user" && _rt_key_make "$id" && mkdir -p "$d/hub" "$d/cache" && chmod 700 "$d/hub" "$d/cache"; } \
+    || _rt_fail "$id" install "Could not write vLLM's settings (.state/runtimes/$id): nothing was installed."
+  _rt_job running "$id" install 0 0 "Downloading vLLM's image ($(rt_size "$id"))"
+  _RT_PROFILE=vllm dc pull -q vllm </dev/null > "$d/install.log" 2>&1 || _rt_fail "$id" install "Docker could not download vLLM's image: $(tail -n 2 "$d/install.log" | LC_ALL=C tr -cd ' -~\n' | tr '\n' ' ' | cut -c1-200)"
+  if [ -f "$(_rt_cancel_file)" ]; then rm -f "$(_rt_cancel_file)" "$(rt_root)/job.pid"; _rt_job cancelled "$id" install 0 0 "Cancelled."; return 0; fi
+  rt_pin VLLM_VERSION > "$d/installed"
+}
+# _rt_llamacpp_user -> who its container (llama.cpp's, vLLM's) runs as: you, so it reads the folders this stack made for it
+# (mode 700); rootless Docker (its root is you) and ./stack run as root: 0:0 — with every capability dropped, it reads
+# only what is its own
 _rt_llamacpp_user() {
   if [ "$(id -u)" = 0 ] || docker info -f '{{.SecurityOptions}}' 2>/dev/null | grep rootless >/dev/null; then echo 0:0; return 0; fi
   printf '%s:%s\n' "$(id -u)" "$(id -g)"
@@ -782,6 +849,125 @@ rt_llamacpp_reload() {
   while [ "$n" -lt "${RT_START_WAIT:-60}" ]; do [ -z "$(_rt_version llamacpp)" ] || { _rt_watch_mark llamacpp; return 0; }; sleep 1; n=$((n + 1)); done
   return 1
 }
+# --- vLLM: the one model it serves ---
+# rt_vllm_serving -> the id of the model vLLM serves (serving: id TAB repo TAB commit, with etc/serve.yaml and hub/current
+# beside it); 1: none
+rt_vllm_serving() {
+  local d id; d="$(rt_dir vllm)"
+  [ -s "$d/etc/serve.yaml" ] && [ -L "$d/hub/current" ] && [ -s "$d/serving" ] || return 1
+  id="$(cut -f1 "$d/serving" | head -n 1)"
+  [[ $id =~ ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,125}$ ]] || return 1
+  printf '%s\n' "$id"
+}
+# _rt_vllm_facts SNAPSHOT -> "PARSER<TAB>CONTEXT": its tool-call parser, from its tokenizer's own tokens (<tool_call>:
+# hermes — Qwen, Hermes and many more; [TOOL_CALLS]: mistral; Llama 3's <|python_tag|>: llama3_json; else none, and vLLM
+# then answers a request with tools with an error), and its context (config.json, or its text_config; 0: not known).
+# Files read as text and JSON only (python3 -I).
+_rt_vllm_facts() {
+  python3 -I -c '
+import json, os, sys
+d = sys.argv[1]
+def text(n):
+    try:
+        with open(os.path.join(d, n), encoding="utf-8", errors="replace") as f:
+            return f.read(64 * 1024 * 1024)
+    except OSError:
+        return ""
+try:
+    c = json.loads(text("config.json"))
+except ValueError:
+    c = {}
+c = c if isinstance(c, dict) else {}
+tc = c.get("text_config") if isinstance(c.get("text_config"), dict) else {}
+ctx = c.get("max_position_embeddings") or tc.get("max_position_embeddings") or 0
+ctx = ctx if isinstance(ctx, int) and not isinstance(ctx, bool) and 0 < ctx < 10**8 else 0
+tok = "".join(text(n) for n in ("tokenizer_config.json", "tokenizer.json", "chat_template.jinja", "chat_template.json"))
+p = "hermes" if "<tool_call>" in tok else "mistral" if "[TOOL_CALLS]" in tok else "llama3_json" if "<|python_tag|>" in tok else "none"
+print("%s\t%d" % (p, ctx))' "$1" 2>/dev/null || printf 'none\t0\n'
+}
+# _rt_vllm_restarts -> how often its container ended and Docker started it again (a model it cannot load)
+_rt_vllm_restarts() {
+  local c; c="$(dc ps -aq vllm 2>/dev/null | head -n 1)"
+  [ -n "$c" ] && docker inspect -f '{{.RestartCount}}' "$c" 2>/dev/null | tr -cd '0-9' || echo 0
+}
+# _rt_vllm_wait [FN] -> 0 once vLLM answers (its model loaded); 1 when its container ends or is started again, or after
+# RT_VLLM_WAIT seconds. FN SECONDS, every 5 s: what the caller says meanwhile
+_rt_vllm_wait() {
+  local n=0 r
+  sleep 1
+  while [ "$n" -lt "$RT_VLLM_WAIT" ]; do
+    [ -z "$(_rt_vllm_version)" ] || return 0
+    case "$(_rt_container_state vllm)" in running | created) ;; *) return 1 ;; esac
+    if [ $((n % 5)) -eq 0 ]; then
+      r="$(_rt_vllm_restarts)"; [ "${r:-0}" -eq 0 ] 2>/dev/null || return 1
+      [ -z "${1:-}" ] || "$1" "$n"
+    fi
+    sleep 1; n=$((n + 1))
+  done
+  return 1
+}
+# _rt_vllm_serve_write ID SNAPSHOT_REL CTX PARSER REPO COMMIT — etc/serve.yaml (600: it holds the API key; vLLM reads it
+# as its command line), hub/current linked to the snapshot (relative: the container sees hub/ as /models), serving
+_rt_vllm_serve_write() {
+  local d e k; d="$(rt_dir vllm)"; e="$d/etc"; k="$(rt_api_key vllm)"
+  [ -n "$k" ] || return 1
+  {
+    printf '# DevOS ADE (lib/runtimes.sh) writes this file: the model vLLM serves (Settings › Local models)\n'
+    printf 'served-model-name: "%s"\nhost: "0.0.0.0"\nport: 8000\napi-key: "%s"\nmax-model-len: %s\n' "$1" "$k" "$3"
+    [ "$4" = none ] || printf 'enable-auto-tool-choice: true\ntool-call-parser: "%s"\n' "$4"
+  } > "$e/serve.yaml.tmp" && chmod 600 "$e/serve.yaml.tmp" && mv -f "$e/serve.yaml.tmp" "$e/serve.yaml" || return 1
+  ln -sfn "$2" "$d/hub/current" || return 1   # (-n: the link itself is replaced, never a folder it points to)
+  printf '%s\t%s\t%s\n' "$1" "$5" "$6" > "$d/serving"
+}
+# rt_vllm_serve ID REPO COMMIT CTX [FN] — vLLM started again serving that downloaded snapshot (its context at most
+# RT_VLLM_CTX_CPU, or RT_VLLM_CTX_GPU on NVIDIA GPUs, and at most its own). 0 once it answers; 1 when it did not (the
+# log says why): it serves the model it served before again, or none ("waiting"). _RT_VLLM_PARSER: the parser chosen.
+# FN SECONDS while it loads (_rt_vllm_wait)
+rt_vllm_serve() {
+  local id="$1" repo="$2" sha="$3" ctx="${4:-}" fn="${5:-}" d rel facts parser mctx cap prev=''
+  d="$(rt_dir vllm)"; rel="models--${repo//\//--}/snapshots/$sha"
+  [[ $id =~ ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,125}$ ]] && [[ $sha =~ ^[0-9a-f]{40}$ ]] && [ -f "$d/hub/$rel/config.json" ] || return 1
+  facts="$(_rt_vllm_facts "$d/hub/$rel")"; parser="${facts%%$'\t'*}"; mctx="${facts#*$'\t'}"
+  case "$parser" in hermes | mistral | llama3_json) ;; *) parser=none ;; esac
+  _RT_VLLM_PARSER="$parser"
+  if _rt_vllm_gpu; then cap="$RT_VLLM_CTX_GPU"; else cap="$RT_VLLM_CTX_CPU"; fi
+  case "$ctx" in '' | *[!0-9]* | 0) ctx="$cap" ;; esac
+  case "$mctx" in '' | *[!0-9]* | 0) ;; *) [ "$mctx" -ge "$ctx" ] || ctx="$mctx" ;; esac
+  [ "$ctx" -le "$cap" ] || ctx="$cap"
+  if rt_vllm_serving >/dev/null; then
+    prev=1; cp -p "$d/etc/serve.yaml" "$d/etc/serve.yaml.prev" && cp -p "$d/serving" "$d/serving.prev" \
+      && printf '%s\n' "$(readlink "$d/hub/current")" > "$d/current.prev" || return 1
+  fi
+  _rt_vllm_serve_write "$id" "$rel" "$ctx" "$parser" "$repo" "$sha" || return 1
+  if dc up -d --force-recreate vllm </dev/null >/dev/null 2>&1 && _rt_vllm_wait "$fn"; then
+    rm -f "$d/etc/serve.yaml.prev" "$d/serving.prev" "$d/current.prev"
+    _rt_watch_mark vllm; _rt_event vllm started "vLLM serves $id"
+    return 0
+  fi
+  _RT_VLLM_HINT="$(_rt_log_hint vllm)"
+  if [ -n "$prev" ] && [ -s "$d/etc/serve.yaml.prev" ]; then   # (back to the one it served before: it loads in the background)
+    mv -f "$d/etc/serve.yaml.prev" "$d/etc/serve.yaml"; mv -f "$d/serving.prev" "$d/serving"
+    ln -sfn "$(cat "$d/current.prev")" "$d/hub/current"; rm -f "$d/current.prev"
+    dc up -d --force-recreate vllm </dev/null >/dev/null 2>&1 || true
+  else
+    _RT_PROFILE=vllm dc rm -sf vllm </dev/null >/dev/null 2>&1 || true
+    rm -f "$d/etc/serve.yaml" "$d/serving" "$d/hub/current"
+  fi
+  _rt_watch_mark vllm
+  return 1
+}
+# rt_vllm_forget ID REPO — a model of vLLM's deleted (its repo's folder: one model per repo); when it is the one served,
+# vLLM is stopped first and waits for another
+rt_vllm_forget() {
+  local d; d="$(rt_dir vllm)"
+  valid_hf_repo "$2" || return 1
+  if [ "$(rt_vllm_serving 2>/dev/null)" = "$1" ]; then
+    _RT_PROFILE=vllm dc rm -sf vllm </dev/null >/dev/null 2>&1 || return 1
+    rm -f "$d/etc/serve.yaml" "$d/serving" "$d/hub/current"
+    _rt_watch_mark vllm; _rt_event vllm stopped "vLLM was stopped: the model it served was removed"
+  fi
+  rm -rf -- "$d/hub/models--${2//\//--}"
+}
 # rt_install ID — download, check and start it (one job; a terminal asks first)
 rt_install() {
   local id="${1:-}" st why
@@ -798,6 +984,13 @@ rt_install() {
   _rt_begin "$id"; rm -f "$(_rt_cancel_file)"
   case "$(rt_os)" in mac) "_rt_install_${id}_mac" ;; linux) "_rt_install_${id}_linux" ;; esac
   rt_installed "$id" || return 0   # (cancelled)
+  if [ "$id" = vllm ] && ! rt_vllm_serving >/dev/null; then   # (no model yet: it starts with the first one downloaded to it)
+    _rt_watch_mark "$id"
+    _rt_event "$id" installed "vLLM $(rt_installed_version "$id") was installed: it starts with the first model downloaded to it"
+    _rt_end "$id" install "vLLM $(rt_installed_version "$id") is installed. It serves one model at a time: download one to it (Downloads go to: vLLM)."
+    log "vLLM $(rt_installed_version "$id") is installed: download a model to it (./stack local-models pull ORG/REPO safetensors)"
+    return 0
+  fi
   _rt_job running "$id" install 0 0 "Starting it"
   _rt_start_now "$id" || _rt_fail "$id" install "$(rt_name "$id") is installed but did not start: $(_rt_log_hint "$id")"
   _rt_watch_mark "$id"
@@ -806,7 +999,7 @@ rt_install() {
   log "$(rt_name "$id") $(rt_installed_version "$id") is running on $(rt_address "$id")"
 }
 
-_rt_source() { case "$1" in ollama) echo github.com/ollama/ollama ;; llamacpp) echo github.com/ggml-org/llama.cpp ;; lmstudio) echo "lmstudio.ai (LM Studio is not open source: installing it accepts its terms, lmstudio.ai/app-terms)" ;; esac; }
+_rt_source() { case "$1" in ollama) echo github.com/ollama/ollama ;; llamacpp) echo github.com/ggml-org/llama.cpp ;; vllm) echo github.com/vllm-project/vllm ;; lmstudio) echo "lmstudio.ai (LM Studio is not open source: installing it accepts its terms, lmstudio.ai/app-terms)" ;; esac; }
 # _rt_external_text ID -> why it is not installed over what already answers on its address
 _rt_external_text() {
   case "$1" in
@@ -816,7 +1009,7 @@ _rt_external_text() {
 }
 
 # --- start, stop ---
-# _rt_start_now ID -> 0 once it answers (60 s at most)
+# _rt_start_now ID -> 0 once it answers (60 s at most; vLLM: once its model is loaded, RT_VLLM_WAIT at most)
 _rt_start_now() {
   local id="$1" n=0
   if [ "$(rt_kind "$id")" = agent ]; then
@@ -827,14 +1020,21 @@ _rt_start_now() {
     # shellcheck disable=SC2046
     dc up -d $(rt_services "$id") </dev/null >/dev/null 2>&1 || return 1
   fi
+  [ "$id" != vllm ] || { _rt_vllm_wait _rt_vllm_starting; return $?; }
   while [ "$n" -lt "${RT_START_WAIT:-60}" ]; do [ -z "$(_rt_version "$id")" ] || return 0; sleep 1; n=$((n + 1)); done
   return 1
 }
-_rt_log_hint() { rt_logs_text "$1" 3 | tr '\n' ' ' | cut -c1-200; }
+_rt_log_hint() { rt_logs_text "$1" 3 | tr '\n' ' ' | sed 's/ *$//' | cut -c1-200; }
+# _rt_vllm_starting SECONDS — the job's message while vLLM loads its model (rt_install, rt_start)
+_rt_vllm_starting() {
+  local j; j="$(cat "$(rt_job_file)" 2>/dev/null || true)"
+  _rt_job running vllm "$(_local_json_str "$j" op)" 0 0 "Starting vLLM: loading $(rt_vllm_serving) ($1 s so far; minutes on a CPU)"
+}
 rt_start() {
   local id="${1:-}"
   valid_runtime_id "$id" || die "not a runtime: $id ($RUNTIME_IDS)"
   rt_installed "$id" || die "$(rt_name "$id") is not installed by DevOS ADE: ./stack runtimes install $id"
+  [ "$id" != vllm ] || rt_vllm_serving >/dev/null || die "vLLM has no model to serve yet: download one to it (Downloads go to: vLLM; ./stack local-models pull ORG/REPO safetensors)"
   [ "$(rt_state "$id")" != running ] || { log "$(rt_name "$id") is running"; return 0; }
   [ "$(rt_state "$id")" != external ] || die "$(_rt_external_text "$id")"
   _rt_begin "$id"
@@ -903,6 +1103,10 @@ rt_uninstall() {
     # shellcheck disable=SC2046
     _RT_PROFILE="$id" dc rm -sf $(rt_services "$id") </dev/null >/dev/null 2>&1 || true
     for v in $(_rt_volumes "$id"); do docker volume rm "$(project_name)_$v" >/dev/null 2>&1 || true; done
+    # vLLM's image too (1.7 GB; 9 GB with NVIDIA's libraries), no other service's: Docker keeps it while a container of
+    # another copy of the stack has it, and a copy that has none pulls it again when it next serves a model
+    # shellcheck disable=SC2046
+    [ "$id" != vllm ] || for v in $(_RT_PROFILE=vllm dc config --images vllm 2>/dev/null); do docker image rm "$v" >/dev/null 2>&1 || true; done
   fi
   rm -rf "$d"
   _rt_event "$id" removed "$(rt_name "$id") was removed with its models"
@@ -942,7 +1146,14 @@ rt_logs_text() {
   case "$n" in '' | *[!0-9]*) n="$RT_LOG_LINES" ;; esac
   [ "$n" -le 2000 ] || n=2000
   if [ "$(rt_kind "$id")" = agent ]; then [ ! -f "$(rt_dir "$id")/server.log" ] || tail -n "$n" "$(rt_dir "$id")/server.log"
-  else _RT_PROFILE="$id" dc logs --no-color --tail "$n" "$(rt_services "$id" | cut -d' ' -f1)" 2>/dev/null || true; fi | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' | LC_ALL=C tr -cd '\t\n -~' | cut -c1-400
+  else _RT_PROFILE="$id" dc logs --no-color --tail "$n" "$(rt_services "$id" | cut -d' ' -f1)" 2>/dev/null || true; fi | rt_key_redact | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' | LC_ALL=C tr -cd '\t\n -~' | cut -c1-400
+}
+# rt_key_redact — a filter: every runtime's API key in what passes through comes out as [its API key] (vLLM's log lists
+# the arguments it was started with, its key among them; a log is shown in Settings, Activity and setup's report)
+rt_key_redact() {
+  local id k e=''
+  for id in $RUNTIME_IDS; do k="$(rt_api_key "$id")"; [ -z "$k" ] || e="$e${e:+;}s/$k/[its API key]/g"; done
+  if [ -n "$e" ]; then sed "$e"; else cat; fi
 }
 # rt_logs_write ID — the portal's copy (status/runtime-logs/ID.txt), when Settings asks for it
 rt_logs_write() {
@@ -993,11 +1204,13 @@ _rt_status_lines() {
     st="$(rt_state "$id")"
     case "$st" in
       running) line="running $(_rt_version "$id") on $(rt_address "$id")$([ "$(rt_kind "$id")" = agent ] && echo " (launchd agent)" || echo " (container)")" ;;
+      starting) line="starting$([ "$id" != vllm ] || echo ": loading $(rt_vllm_serving) (minutes on a CPU)")" ;;
       external) [ "$id" = ollama ] && line="yours: $(rt_name "$id") $(_rt_version "$id") that is not DevOS ADE's answers on $(rt_address "$id")" \
                   || line="its address is taken: something that is not DevOS ADE's answers on $(rt_address "$id")" ;;
       not-installed) line="not installed (./stack runtimes install $id: $(rt_size "$id"))" ;;
       unsupported) line="does not run here: $(rt_why_not "$id")" ;;
       stopped) line="stopped (./stack runtimes start $id)" ;;
+      waiting) line="installed, with no model to serve yet: download one to it (./stack local-models pull ORG/REPO safetensors)" ;;
       installing) line="installing: $(_local_json_str "$(cat "$(rt_job_file)" 2>/dev/null || true)" message)" ;;
       *) line="$st" ;;
     esac

@@ -6,6 +6,33 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-10-29
+
+### Added
+- **vLLM as a core service DevOS ADE installs, runs and watches (JON-829),** beside Ollama, llama.cpp and LM Studio under
+  Settings › Models & providers › Local models › **Runtimes**, on Linux: Install (with progress and Cancel), Stop,
+  Start, Uninstall (its image too), its log, the model it serves, Home's row and Activity's items. On
+  NVIDIA GPUs it is vLLM's CUDA image; else, on an x86-64 processor with AVX2, its CPU image (both pinned by digest).
+  Where it cannot run (a Mac, another processor) the row says why. It runs as a container of the stack that publishes no
+  port. In a terminal: `./stack runtimes install vllm` and the rest.
+- **Downloads go to: vLLM.** vLLM serves one model at a time, the whole model as published (safetensors, not GGUF):
+  installed, it waits for one (**No model yet**). The Download dialog lists the models vLLM can load; a download fetches
+  the weights and the files that load it, each checked against its hash, and vLLM is started again serving it (a context
+  of up to 8k on a CPU, 32k on GPUs; tool calls when its tokenizer has a format vLLM reads), through the model gateway in
+  Chat, the Code page and the terminal at $0. Another download switches it, and the model before stays downloaded with
+  **Serve** to switch back without downloading it again. A model vLLM cannot load leaves the one it served before. In a
+  terminal: `./stack local-models pull ORG/REPO safetensors`.
+
+### Security
+- vLLM needs an API key of its own (made at install, mode 600, read from a mode-600 file, never an argument; the model
+  gateway sends it). Its container publishes no port and shares an internal network with the model gateway alone; it is
+  read-only, drops every capability, runs as your user and is offline: it fetches nothing and loads only the snapshot
+  DevOS ADE downloaded and checked. A model with code of its own (`custom_code`, a `.py` file, `auto_map` or
+  `model_file` in its config) is refused, before the download and again on disk; `trust_remote_code` is never set.
+- **A runtime's key is never in a log DevOS ADE shows.** vLLM's log lists the arguments it started with, its key among
+  them; Settings' log, Activity and setup's report of a service that did not come up now show any runtime's key as
+  `[its API key]`.
+
 ## [0.43.0] - 2026-10-29
 
 ### Added

@@ -49,6 +49,10 @@
    "external": false,
    "name": "bedrock-now_terminal-out"
   },
+  "vllm": {
+   "external": false,
+   "name": "bedrock-now_vllm"
+  },
   "websearch": {
    "external": false,
    "name": "bedrock-now_websearch"
@@ -164,6 +168,7 @@
     "ollama",
     "stt",
     "terminal-link",
+    "vllm",
     "websearch"
    ],
    "ports": [

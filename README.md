@@ -1975,9 +1975,9 @@ unfinished part whenever it stops: each file goes into a part of its own that a 
 continues from, and is checked against the SHA-256 (or git hash) Hugging Face lists for it before it is used. `./stack
 local-models uninstall [--models]` removes it all. Everywhere else it needs a runtime on this computer: **Docker Model Runner** (Docker Desktop 4.71 or newer) first (Docker Desktop: Settings › AI, or `docker desktop
 enable model-runner --tcp 12434`; Linux: `docker-model-plugin` and `docker model install-runner`), **Ollama** second
-(DevOS ADE's own, from **Runtimes** below, or one of yours), **llama.cpp** third and **LM Studio** fourth (DevOS ADE's
-own, from **Runtimes**). **Downloads go to** (`LOCAL_RUNTIME`) picks one instead of that order: MLX, Docker Model
-Runner, Ollama, llama.cpp or LM Studio. With none running the section says so and `./stack local-models enable`
+(DevOS ADE's own, from **Runtimes** below, or one of yours), **llama.cpp** third, **LM Studio** fourth and **vLLM**
+last (DevOS ADE's own, from **Runtimes**). **Downloads go to** (`LOCAL_RUNTIME`) picks one instead of that order: MLX,
+Docker Model Runner, Ollama, llama.cpp, LM Studio or vLLM. With none running the section says so and `./stack local-models enable`
 switches Docker's on after asking. Commands:
 `./stack local-models status` (with the download's progress, speed and time left), `pull ORG/REPO QUANT`, `pause`, `resume`,
 `cancel`, `rm ORG/REPO QUANT`, `enable`. With Docker Model Runner or Ollama, Pause stops the runtime's pull (Ollama continues
@@ -1985,7 +1985,7 @@ it on Resume) and Cancel leaves its unfinished part to the runtime. A gated mode
 token (Settings, optional; never in a URL or log). The runner has no login of its own: keep it and Ollama off the
 network ([docs/security.md](docs/security.md#local-models)).
 
-**Runtimes.** DevOS ADE installs, runs and watches **Ollama**, **llama.cpp** and **LM Studio** itself, like its own containers: Settings › Models &
+**Runtimes.** DevOS ADE installs, runs and watches **Ollama**, **llama.cpp**, **LM Studio** and **vLLM** itself, like its own containers: Settings › Models &
 providers › Local models › **Runtimes** shows each runtime's state (Running, Stopped, Not installed, or **Yours** for an
 Ollama you run yourself), its version, its address, the models it has loaded (and how much of them is on the GPU), how
 many times it ended and was started again, and its log. **Install** (the portal password) downloads the version this
@@ -1998,7 +1998,8 @@ pins a newer Ollama, **Update to …**; **Uninstall** removes it with its models
 (ready, how many models are loaded), and Activity says when it ended and was started again, stopped answering or failed
 to install. An Ollama that already answers on 11434 and is not DevOS ADE's (the Ollama app, or one you started) is never
 installed over, stopped or removed. The same from a terminal: `./stack runtimes [status]`, `install ollama`, `start
-ollama`, `stop ollama`, `uninstall ollama`, `cancel`, `logs ollama [N]` (and the same with `llamacpp` and `lmstudio`).
+ollama`, `stop ollama`, `uninstall ollama`, `cancel`, `logs ollama [N]` (and the same with `llamacpp`, `lmstudio` and
+`vllm`).
 
 **llama.cpp** (`llama-server` in router mode) is the plainest of them: it serves the GGUF files you download, nothing
 else. On a Mac it is llama.cpp's own build from github.com/ggml-org/llama.cpp (the release this one pins, checked
@@ -2023,6 +2024,20 @@ downloads and loads models or reads its log. LM Studio's own server listens on a
 start, without a key (LM Studio makes one only in its app): docs/security.md says what that leaves open. A download with **Downloads go to: LM Studio** is fetched and checked as for llama.cpp,
 then given to LM Studio as a link (`lms import --symbolic-link`, never a second copy), and the model gateway asks for it
 by the name LM Studio gives it; it loads on its first request. Remove unloads it and deletes its files.
+
+**vLLM** runs on Linux: on the NVIDIA GPUs when Docker has them (its CUDA image, about 9.2 GB), else on an x86-64
+processor with AVX2 (its CPU image, about 1.7 GB). On a Mac the row says why not: MLX, llama.cpp and Ollama serve models
+on its GPU. Its image (the release this one pins, by digest) runs as a container of the stack that publishes no port at
+all: only the model gateway reaches it, on a network of their own, with an API key of its own (made at install, mode
+600). vLLM serves one model at a time, the whole model as its authors published it (safetensors weights, not GGUF):
+installed, it waits for one (**No model yet**). **Downloads go to: vLLM** lists the models vLLM can load and fetches a
+model's weights and the files that load it, from the commit DevOS ADE checked, each checked against its hash; vLLM is
+then started again serving it, with a context of up to 8k on a CPU (32k on GPUs) and tool calls when its tokenizer has a
+format vLLM reads (Qwen's and Hermes', Mistral's, Llama 3's). The first answer waits while it loads, a minute or more
+(Home says it is loading its model). Another download switches it: the one before stays downloaded, **not served**, and
+its **Serve** switches back without downloading it again. A model vLLM cannot load leaves the one it served before. A
+model with code of its own, or MLX weights, is refused. Remove deletes its files (and stops vLLM when it was the one
+served); Uninstall deletes vLLM's image too. In a terminal: `./stack local-models pull ORG/REPO safetensors`.
 
 ## Remote access
 

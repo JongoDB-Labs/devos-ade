@@ -274,6 +274,7 @@ local_models	0	bad	dmr:
 local_models	0	bad	dmr:a b
 local_models	0	bad	dmr:a,,ollama:b
 local_models	0	ok	lmstudio:a
+local_models	0	ok	vllm:Qwen/Qwen2.5-0.5B-Instruct
 local_models	0	bad	localai:a
 hf_token	0	ok
 hf_token	0	ok	hf_xxxxxxxxxxxxxxxxxxxxxxxx
@@ -299,3 +300,5 @@ local_runtime	0	ok	llamacpp
 local_runtime	0	bad	llama.cpp
 local_runtime	0	ok	lmstudio
 local_runtime	0	bad	lm-studio
+local_runtime	0	ok	vllm
+local_runtime	0	bad	vLLM

@@ -504,8 +504,8 @@ confirmation.
 ## Local models
 
 Local models (`./stack local-models`, Settings › Models & providers › Local models) download GGUF files from Hugging
-Face and run them in Docker Model Runner, Ollama, llama.cpp or LM Studio on the computer (an Ollama of yours, or DevOS
-ADE's own Ollama, llama.cpp or LM Studio: Runtimes, below).
+Face and run them in Docker Model Runner, Ollama, llama.cpp, LM Studio or vLLM on the computer (an Ollama of yours, or
+DevOS ADE's own Ollama, llama.cpp, LM Studio or vLLM: Runtimes, below).
 
 - **Only Hugging Face.** Repo and quantization names are validated (`org/name`, a quant tag) in the portal, the update
   helper and the CLI before anything runs; a URL or path is refused. The portal works out a download's size, license and
@@ -608,6 +608,28 @@ ADE's own Ollama, llama.cpp or LM Studio: Runtimes, below).
   remove it if that matters more to you than having it. It is given only the files downloaded for it (each checked as
   for llama.cpp, from the commit checked), by link: `lms import --symbolic-link`, each path a snapshot of its own `hub/`
   folder checked to contain no `..`. Uninstall stops it and deletes its folder, its key and every model in it.
+- **vLLM** (`lib/runtimes.sh`, the fourth runtime DevOS ADE installs; Linux only). vLLM's own image pinned by digest
+  (`vllm/vllm-openai-cpu:v<version>-x86_64`, or `vllm/vllm-openai:v<version>` with the NVIDIA GPUs:
+  `compose.vllm-gpu.yaml`), in the "vllm" profile only while it serves a model (installed with none, it has no
+  container), with a read-only root (a tmpfs `/tmp` and its own cache folder are its only writable places), every
+  capability dropped, no-new-privileges, at most 4096 processes, as your user (as llama.cpp), and publishing no port: its
+  only network is "vllm" (internal: the model gateway and it). It is offline (`HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE`)
+  with its usage reports off (`VLLM_NO_USAGE_STATS`, `DO_NOT_TRACK`): it loads `/models/current`, a link the stack
+  points at a snapshot it downloaded and checked, from its `hub/` folder mounted read-only, and fetches nothing. vLLM
+  checks no Host either, so it requires an **API key** for its API (made at install as llama.cpp's: 32 random bytes in
+  `.state/runtimes/vllm/etc`, mode 600, folders mode 700); it reads the key from `etc/serve.yaml` (mode 600, mounted
+  read-only; never an argument), and the model gateway's generated config carries it. vLLM's log lists the arguments it
+  started with, the key among them, so every log DevOS ADE shows (Settings, Activity, setup's report of a service that
+  did not come up) has any runtime's key replaced by `[its API key]`. Its `/health` takes no key and says only whether
+  it is up. **No code of the model's own:** `trust_remote_code` is never set. A repo tagged `custom_code` or `mlx`, or
+  with no `config.json` or no top-level `.safetensors`, is refused before anything is fetched; the download takes only
+  its top-level `.safetensors`, `.json`, `.txt` and `.jinja` files and `tokenizer.model` (never a pickle such as
+  `pytorch_model.bin`, nor a folder of other weights), from the commit checked, each checked against the hash Hugging
+  Face lists; and a snapshot with a `.py` file, or a `config.json` that names code (`auto_map`, `model_file`) or cannot
+  be read, is deleted and never served. **What is left:** safetensors weights are data, not code, but a flaw in the code
+  that reads a model (vLLM's, PyTorch's, the tokenizer's) could still be reached by a crafted one; the container's
+  isolation above bounds what it could reach. Remove deletes the model's folder (stopping vLLM first when it was the one
+  served); Uninstall deletes its folder, its key, every model in it and its image.
 - **Model servers** (any OpenAI-compatible address). The address is validated (no `user:password@`, no query), the API
   key is read from the terminal or Settings, handed to curl on stdin for the probe and written only as that model's
   `api_key` in the gateway's generated config (readable by that config's readers on this computer). Plain http to a public

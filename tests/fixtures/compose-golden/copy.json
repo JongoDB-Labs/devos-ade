@@ -45,6 +45,10 @@
    "external": false,
    "name": "bn-two_terminal-proxy"
   },
+  "vllm": {
+   "external": false,
+   "name": "bn-two_vllm"
+  },
   "websearch": {
    "external": false,
    "name": "bn-two_websearch"
@@ -149,6 +153,7 @@
     "ollama",
     "stt",
     "terminal-link",
+    "vllm",
     "websearch"
    ],
    "ports": [

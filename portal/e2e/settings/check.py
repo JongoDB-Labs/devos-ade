@@ -295,7 +295,7 @@ RT_IDLE = {"id": "", "op": "", "state": "idle", "done_bytes": 0, "total_bytes": 
 
 def lm_state():
     return {"known": True, "at": int(time.time()), "stale": False, "wait": False, "can_change": True, "why_not": "", "hf_token_set": False,
-            "runtime": {"kind": "none", "how": "No model runner is running on this computer.", "command": "./stack local-models enable", "dmr": "", "ollama": ""},
+            "runtime": LM.get("runtime") or {"kind": "none", "how": "No model runner is running on this computer.", "command": "./stack local-models enable", "dmr": "", "ollama": ""},
             "gpu": "none", "memory": 16 * 1024 ** 3, "disk": sum(i["bytes"] for i in LM["installed"]), "installed": LM["installed"], "servers": LM["servers"], "result": LM["result"],
             "can_stop": LM["can_stop"], "job": LM["job"] or IDLE_JOB, "can_runtime": True, "choice": RT["choice"],
             "runtimes": {"known": True, "at": int(time.time()), "stale": False, "os": "mac", "runtimes": ([RT["one"]] if RT["one"] else []) + RT["more"],
@@ -975,13 +975,15 @@ def check_downloads(page, failures, label):
 
 
 def check_runtimes(page, failures, label):
-    """The runtimes DevOS ADE installs and runs (JON-829, Ollama, llama.cpp and LM Studio): Install asks for the password and says what it downloads;
+    """The runtimes DevOS ADE installs and runs (JON-829, Ollama, llama.cpp, LM Studio and vLLM): Install asks for the password and says what it downloads;
     its progress, with Cancel (no password); a running one says what it has loaded and what it uses, Stop and Log with no
     password, Start and Uninstall with it; an Ollama of yours has no button that changes it; Update when this release pins
     another version; "Downloads go to" changes LOCAL_RUNTIME like any setting; llama.cpp beside it, its Install saying where
     it comes from and what reaches it, a downloads choice once it is DevOS ADE's; LM Studio's naming its terms, why it does not
-    run where it does not; nothing wider than a phone."""
+    run where it does not; vLLM waiting for a model, loading one and serving it, and Serve switching it to another
+    downloaded one; nothing wider than a phone."""
     pw, gb = "correct horse", 1024 ** 3
+    lm_was = {"runtime": LM.get("runtime"), "installed": LM["installed"], "changes": LM["changes"]}
     base = {"id": "ollama", "name": "Ollama", "state": "not-installed", "managed": False, "kind": "agent", "version": "", "pinned": "0.40.11",
             "address": "127.0.0.1:11434", "loaded": [], "memory": 0, "gpu_memory": 0, "restarts": None, "last_exit": None, "size": "about 180 MB", "why_not": ""}
     running = {**base, "state": "running", "managed": True, "version": "0.40.11", "loaded": [{"name": "qwen3:8b", "bytes": 6 * gb, "gpu_bytes": 6 * gb}],
@@ -1145,6 +1147,72 @@ def check_runtimes(page, failures, label):
             failures.append(f"{label}: a running LM Studio shows a size it does not know, or an update it does not have: {txt!r}")
         if not page.locator("#lm-rt-choice option[value=lmstudio]").count():
             failures.append(f"{label}: Downloads go to does not offer DevOS ADE's LM Studio")
+        # vLLM (Linux): its Install says it is an image only the model gateway reaches, with a key of its own (Escape: nothing sent)
+        vl = {**base, "id": "vllm", "name": "vLLM", "kind": "container", "pinned": "0.32.0", "address": "vllm:8000 (the model gateway's network only)",
+              "size": "about 1.7 GB (its image)"}
+        open_rt(running, more=[vl])
+        page.wait_for_selector("#lm-rt-vllm[data-state=not-installed]", timeout=10000)
+        if page.locator("#lm-rt-choice option[value=vllm]").count():
+            failures.append(f"{label}: Downloads go to offers a vLLM that is not installed")
+        page.click("#lm-rt-vllm [data-act=rt-install]")
+        text = password(ok=False)
+        if not all(w in text for w in ("1.7 GB", "image", "the model gateway only", "key of its own")):
+            failures.append(f"{label}: vLLM's Install dialog does not say what it does: {text!r}")
+        if [p["op"] for p in RT["posts"]] != ["install", "start"]:
+            failures.append(f"{label}: a dismissed vLLM Install sent something: {RT['posts']}")
+        # installed with no model: says so and how to give it one; no Start or Stop; Downloads go to offers it
+        vw = {**vl, "state": "waiting", "managed": True, "version": "0.32.0"}
+        open_rt(running, more=[vw])
+        page.wait_for_selector("#lm-rt-vllm[data-state=waiting]", timeout=10000)
+        txt = page.inner_text("#lm-rt-vllm")
+        for w in ("No model yet", "serves one model at a time", "Downloads go to: vLLM"):
+            if w not in txt:
+                failures.append(f"{label}: a vLLM with no model does not say {w!r}: {txt!r}")
+        for a in ("rt-start", "rt-stop", "rt-update"):
+            if page.locator(f"#lm-rt-vllm [data-act={a}]").count():
+                failures.append(f"{label}: a vLLM with no model has {a}")
+        if not page.locator("#lm-rt-choice option[value=vllm]").count():
+            failures.append(f"{label}: Downloads go to does not offer DevOS ADE's vLLM while it waits for a model")
+        page.locator("#lm-rt-vllm").screenshot(path=str(OUT / "settings-runtimes-vllm-waiting.png"))
+        # loading its model, then serving it
+        open_rt(running, more=[{**vw, "state": "starting", "loaded": [{"name": "org/A", "bytes": 0, "gpu_bytes": 0}]}])
+        page.wait_for_selector("#lm-rt-vllm[data-state=starting]", timeout=10000)
+        if "Loading org/A" not in page.inner_text("#lm-rt-vllm") or not page.locator("#lm-rt-vllm [data-act=rt-stop]").count():
+            failures.append(f"{label}: a vLLM loading its model does not say so, or has no Stop: {page.inner_text('#lm-rt-vllm')!r}")
+        open_rt(running, more=[{**vw, "state": "running", "loaded": [{"name": "org/A", "bytes": 2 * gb, "gpu_bytes": 0}]}])
+        page.wait_for_selector("#lm-rt-vllm[data-state=running]", timeout=10000)
+        txt = page.inner_text("#lm-rt-vllm")
+        for w in ("vLLM", "0.32.0", "org/A (2.0 GB)", "the model gateway's network only", "It serves one model at a time"):
+            if w not in txt:
+                failures.append(f"{label}: a running vLLM does not say {w!r}: {txt!r}")
+        # a model downloaded to it before, not served now: Serve switches back (the password; nothing downloaded again)
+        st = {"runtime": "vllm", "quant": "safetensors", "bytes": gb, "license": "apache-2.0", "tools": "yes", "present": True}
+        LM.update(runtime={"kind": "vllm", "how": "", "command": "", "dmr": "", "ollama": "", "vllm": "ready"}, changes=[],
+                  installed=[{**st, "id": "org/A", "name": "lm/org/A", "repo": "org/A", "registered": True},
+                             {**st, "id": "org/B", "name": "lm/org/B", "repo": "org/B", "registered": False}])
+        open_rt(running, more=[{**vw, "state": "running", "loaded": [{"name": "org/A", "bytes": 2 * gb, "gpu_bytes": 0}]}])
+        page.wait_for_selector("#lm-installed li", timeout=10000)
+        rows = page.locator("#lm-installed li")
+        a_row, b_row = rows.filter(has_text="org/A"), rows.filter(has_text="org/B")
+        if a_row.locator("[data-act=local-serve]").count() or not b_row.locator("[data-act=local-serve]").count() or "not served" not in b_row.inner_text():
+            failures.append(f"{label}: Serve is not offered on the vLLM model it does not serve, or is on the one it does: {page.inner_text('#lm-installed')!r}")
+        else:
+            b_row.locator("[data-act=local-serve]").click()
+            text = password()
+            if "stops serving org/A" not in text:
+                failures.append(f"{label}: Serve's dialog does not say it stops serving org/A: {text!r}")
+            last = LM["changes"][-1] if LM["changes"] else {}
+            if (last.get("action"), last.get("repo"), last.get("quant"), last.get("password")) != ("local-pull", "org/B", "safetensors", pw):
+                failures.append(f"{label}: Serve sent {[{k: v for k, v in c.items() if k != 'password'} for c in LM['changes']]}")
+            page.wait_for_selector("text=vLLM is switching to it", timeout=5000)
+        page.locator("#lm-installed").screenshot(path=str(OUT / "settings-runtimes-vllm-serve.png"))
+        LM.update(lm_was)
+        # on a Mac: why not, and no Install
+        open_rt(running, more=[{**vl, "state": "unsupported", "kind": "none",
+                                "why_not": "vLLM runs on Linux (NVIDIA GPUs, or x86-64 processors): on this Mac, MLX, llama.cpp and Ollama serve models on its GPU"}])
+        page.wait_for_selector("#lm-rt-vllm[data-state=unsupported]", timeout=10000)
+        if "vLLM runs on Linux" not in page.inner_text("#lm-rt-vllm") or page.locator("#lm-rt-vllm [data-act=rt-install]").count():
+            failures.append(f"{label}: a vLLM that does not run here does not say why, or offers Install: {page.inner_text('#lm-rt-vllm')!r}")
         # a phone's width: nothing wider than the screen
         page.set_viewport_size({"width": 390, "height": 800})
         page.wait_for_timeout(200)
@@ -1154,6 +1222,7 @@ def check_runtimes(page, failures, label):
     finally:
         page.set_viewport_size({"width": 1280, "height": 900})
         RT.update(one=None, more=[], job=None, posts=[], free=[], choice="auto")
+        LM.update(lm_was)
         STUB["job"] = None
 
 

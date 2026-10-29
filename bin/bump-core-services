@@ -703,9 +703,10 @@ HOLDS = {"tailscale": "remote access needs a real tailnet to test; bump it by ha
 # hand), the npm tools' lockfiles (terminal/claude-code, terminal/tools/gemini and grok: npm install in those folders),
 # TTYD_PAGE_SCRIPT_SHA256 (changes only with a new ttyd), llama.cpp (a release names its build only in an asset, nightly-tag.txt:
 # the build's macOS archives and its GHCR images are pinned by hand, together), LM Studio (no release feed: its install
-# script names the version).
+# script names the version), vLLM (two images, its CPU build's tag per architecture: pinned by hand, together).
 NOT_COVERED = ("Cursor CLI, the npm tool lockfiles (terminal/claude-code, terminal/tools/*), llama.cpp (catalog/runtimes.pins "
-               "LLAMACPP_*, its images in compose.yaml and compose.llamacpp-gpu.yaml) and LM Studio (LMSTUDIO_*) are bumped by hand")
+               "LLAMACPP_*, its images in compose.yaml and compose.llamacpp-gpu.yaml), LM Studio (LMSTUDIO_*) and vLLM "
+               "(VLLM_VERSION, its images in compose.yaml and compose.vllm-gpu.yaml) are bumped by hand")
 
 MANIFEST = "catalog/core-services.tsv"
 OVERRIDES = "catalog/core-services-overrides.tsv"

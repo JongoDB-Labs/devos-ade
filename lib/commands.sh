@@ -231,7 +231,7 @@ run_phase() {
   failed="$(_failed_services $svcs)"
   for s in $failed; do
     printf '  --- last 30 log lines of %s ---\n' "$s" >&2
-    dc logs --no-color --tail 30 "$s" 2>&1 | sed 's/^/    /' >&2 || true
+    dc logs --no-color --tail 30 "$s" 2>&1 | { if declare -F rt_key_redact >/dev/null; then rt_key_redact; else cat; fi; } | sed 's/^/    /' >&2 || true
   done
   first="${failed%% *}"
   # (Docker out of address ranges for a new network: said as it is, not as a service's failure)
@@ -1453,7 +1453,7 @@ status_url() { # status_url SERVICE -> where to open it (browser UIs: through th
     forgejo) echo "$(portal_url git)   (the built-in git server)" ;;
     ollama) echo "- (local models: LiteLLM's alone; ./stack runtimes status)" ;;
     ollama-gate) echo "http://127.0.0.1:11434   (Ollama's API, for this computer's loopback names only)" ;;
-    llamacpp) echo "- (local models: LiteLLM's alone; ./stack runtimes status)" ;;
+    llamacpp | vllm) echo "- (local models: LiteLLM's alone; ./stack runtimes status)" ;;
     *) echo "- (internal only)" ;;
   esac
 }

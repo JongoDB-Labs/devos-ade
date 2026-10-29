@@ -61,7 +61,7 @@ def test_the_runtimes_file_is_read_field_by_field(tmp_path):
     assert r["managed"] is False and r["loaded"] == [{"name": "ok:1b", "bytes": 0, "gpu_bytes": 0}] and r["restarts"] is None and r["last_exit"] is None
     assert d["job"]["id"] == "" and d["job"]["op"] == "" and d["job"]["state"] == "running" and len(d["job"]["message"]) <= 400 and d["job"]["done_bytes"] == 0
     assert d["events"] == []
-    _rt(tmp_path, runtimes=[{"id": "vllm", "state": "running"}, "x", None])
+    _rt(tmp_path, runtimes=[{"id": "localai", "state": "running"}, "x", None])
     assert lm.read_runtimes(tmp_path)["runtimes"] == []
 
 
@@ -187,7 +187,7 @@ def test_install_start_and_uninstall_need_the_password_and_write_the_op_and_id_a
     assert set(b) == {"action", "requested_at", "nonce", "auth", "op", "id"} and (b["action"], b["op"], b["id"]) == ("local-runtime", "install", "ollama")
     assert PW not in json.dumps(b)                                                   # (base64, as every helper request carries it)
     assert _pw(c, "start").status_code == 429                                       # (one change at a time from a page)
-    for bad_op, bad_id in (("stop", "ollama"), ("logs", "ollama"), ("rm -rf", "ollama"), ("install", "vllm"), ("install", "../x"), (None, None), ("install", 5)):
+    for bad_op, bad_id in (("stop", "ollama"), ("logs", "ollama"), ("rm -rf", "ollama"), ("install", "localai"), ("install", "../x"), (None, None), ("install", 5)):
         assert _pw(c, bad_op, bad_id).status_code == 400, (bad_op, bad_id)
 
 
@@ -269,7 +269,7 @@ def test_the_request_writer_takes_the_op_and_the_id_and_a_password_only_for_a_ch
     n = st.write_runtime_action(tmp_path, "install", "ollama", PW, now=1000)
     b = json.loads((tmp_path / f"act-{n}.json").read_text())
     assert b["action"] == "local-runtime" and b["auth"] and (b["op"], b["id"]) == ("install", "ollama")
-    for op, rid, pw in (("install", "ollama", ""), ("delete", "ollama", PW), ("stop", "vllm", ""), ("stop ", "ollama", ""), ("install", "ollama", "x" * 5000)):
+    for op, rid, pw in (("install", "ollama", ""), ("delete", "ollama", PW), ("stop", "localai", ""), ("stop ", "ollama", ""), ("install", "ollama", "x" * 5000)):
         with pytest.raises(ValueError):
             st.write_runtime_action(tmp_path, op, rid, pw)
     d = tmp_path / "s"; d.mkdir()
@@ -297,6 +297,23 @@ def test_home_lists_a_runtime_devos_ade_runs_and_never_one_of_yours(settings, tm
     for st_ in ("external", "not-installed", "unsupported"):
         _rt(tmp_path, one={"state": st_, "managed": st_ == "external"})
         assert summary.runtimes(s) == [], st_
+
+
+def test_vllm_is_read_with_its_network_address_and_home_says_when_it_waits_for_a_model_or_loads_one(settings, tmp_path):
+    s = replace(settings, status_dir=tmp_path)
+    vl = {"id": "vllm", "name": "vLLM", "state": "waiting", "managed": True, "kind": "container", "version": "0.32.0", "pinned": "0.32.0",
+          "address": "vllm:8000 (the model gateway's network only)", "loaded": [], "memory_bytes": 0, "gpu_bytes": 0, "restarts": None,
+          "last_exit": None, "size": "about 1.7 GB (its image)", "why_not": ""}
+    _rt(tmp_path, os="linux", runtimes=[vl])
+    (r,) = lm.read_runtimes(tmp_path)["runtimes"]
+    assert (r["name"], r["state"], r["address"]) == ("vLLM", "waiting", "vllm:8000 (the model gateway's network only)")
+    assert summary.runtimes(s) == [{"id": "runtime-vllm", "name": "vLLM", "role": "local models (container)", "ok": True, "detail": "installed · no model to serve yet"}]
+    _rt(tmp_path, os="linux", runtimes=[{**vl, "state": "starting", "loaded": [{"name": "Qwen/Qwen2.5-0.5B-Instruct", "bytes": GB, "gpu_bytes": 0}]}])
+    assert summary.runtimes(s)[0]["ok"] is False and summary.runtimes(s)[0]["detail"] == "loading its model"
+    _rt(tmp_path, os="linux", runtimes=[{**vl, "state": "running", "loaded": [{"name": "Qwen/Qwen2.5-0.5B-Instruct", "bytes": GB, "gpu_bytes": 0}]}])
+    assert summary.runtimes(s)[0]["detail"] == "ready · 1 model loaded"
+    _rt(tmp_path, os="linux", runtimes=[{**vl, "address": "vllm:8000"}])   # (only the address lib/runtimes.sh writes)
+    assert lm.read_runtimes(tmp_path)["runtimes"][0]["address"] == ""
 
 
 def test_activity_says_when_a_runtime_ended_or_stopped_answering_and_lists_your_own_changes_quietly(settings, tmp_path):

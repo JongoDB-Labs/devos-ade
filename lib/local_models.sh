@@ -11,6 +11,8 @@
 # only when named (LOCAL_RUNTIME=llamacpp) or when none of those runs: the GGUF files of the quantization, checked against
 # the Hub's hashes (lib/hf_fetch.py), into its own folder; llama-server serves every one of them (lib/runtimes.sh). LM
 # Studio (DevOS ADE's own, on an Apple-silicon Mac) the same way, last: the same files, which it gets by `lms import`.
+# vLLM (DevOS ADE's own, on Linux) after it: a model's safetensors weights, whole (quantization "safetensors"), checked the
+# same way; it serves one model at a time, so a download to it is the one it serves (the others stay downloaded).
 #
 #   ./stack local-models [status]                 the runtime, what is downloaded, disk used (and writes the portal's file)
 #   ./stack local-models pull REPO QUANT [opts]   download hf.co/REPO:QUANT, then register it (LOCAL_MODELS, applied live)
@@ -45,7 +47,7 @@ valid_hf_repo() { [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-
 valid_hf_quant() { [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]]; }
 # a registered model: "dmr:<id>" or "ollama:<id>"; <id> as valid_code_model_id (a letter or digit, then letters, digits and
 # . _ : / -), at most 126 characters
-valid_local_entry() { [[ $1 =~ ^(dmr|ollama|mlx|llamacpp|lmstudio):[A-Za-z0-9][A-Za-z0-9._:/-]{0,125}$ ]]; }
+valid_local_entry() { [[ $1 =~ ^(dmr|ollama|mlx|llamacpp|lmstudio|vllm):[A-Za-z0-9][A-Za-z0-9._:/-]{0,125}$ ]]; }
 # valid_local_models VALUE -> 0 for blank or a comma list of them (at most LOCAL_MODELS_MAX)
 valid_local_models() {
   local m rest n=0
@@ -97,6 +99,15 @@ local_lmstudio_state() {
   declare -F rt_installed >/dev/null && rt_installed lmstudio || { echo not-installed; return 0; }
   [ "$(rt_state lmstudio)" = running ] && echo ready || echo not-running
 }
+# local_vllm_state -> "ready|not-running|waiting|not-installed": DevOS ADE's own vLLM (lib/runtimes.sh); waiting: installed,
+# with no model to serve yet — it takes a download all the same, and starts with it
+local_vllm_state() {
+  declare -F rt_installed >/dev/null && rt_installed vllm || { echo not-installed; return 0; }
+  rt_vllm_serving >/dev/null || { echo waiting; return 0; }
+  case "$(rt_state vllm)" in running | starting) echo ready ;; *) echo not-running ;; esac
+}
+# local_vllm_base -> where the model gateway reaches it: its container by name, on their network
+local_vllm_base() { echo http://vllm:8000/v1; }
 # local_lmstudio_base -> where the model gateway reaches it: this Mac's agent, as host.docker.internal
 local_lmstudio_base() { printf 'http://host.docker.internal:%s/v1\n' "$(rt_port lmstudio)"; }
 # local_llamacpp_base -> where the model gateway reaches it: its container by name (Linux), this Mac's agent as
@@ -294,6 +305,19 @@ _local_pull_mlx() {
 }
 
 # --- llama.cpp: DevOS ADE's own (lib/runtimes.sh); a model is the GGUF files of one quantization ---
+# _local_hub_info REPO BODY -> 0 with the Hub's answer for its main revision (each file's size and hashes) in BODY; else 1
+# and "no <why>" printed. The token goes in a header curl reads from stdin (HF_TOKEN in the environment)
+_local_hub_info() {
+  local code ep; ep="${HF_ENDPOINT:-https://huggingface.co}"; ep="${ep%/}"
+  code="$({ [ -z "${HF_TOKEN:-}" ] || printf 'Authorization: Bearer %s\n' "$HF_TOKEN"; } | curl -q -sS -m 60 -H @- -o "$2" -w '%{http_code}' "$ep/api/models/$1/revision/main?blobs=true" 2>/dev/null || true)"
+  case "$code" in
+    200) return 0 ;;
+    401 | 403) echo "no Hugging Face does not let this computer see it: a gated or private model needs a Hugging Face token (Settings › Models & providers) and its license accepted on huggingface.co" ;;
+    404) echo "no Hugging Face has no model $1" ;;
+    *) echo "no Hugging Face did not answer (HTTP ${code:-none}): try again" ;;
+  esac
+  rm -f "$2"; return 1
+}
 # _local_gguf_vet REPO QUANT MANIFEST -> ONE line: "sha <40 hex><TAB><its first file><TAB><bytes>" (the commit checked: the
 # download is pinned to it, so a push after the check is never fetched) or "no <why>". MANIFEST gets the quantization's
 # GGUF files at that commit (path, size, SHA-256, git blob id) for lib/hf_fetch.py: one file, or every part of a split
@@ -301,14 +325,8 @@ _local_pull_mlx() {
 # quantization (Q4_K_M matches …-Q4_K_M.gguf and Q4_K_M/…, never …-Q4_K_M_L or IQ4_K_M); of two, the shorter name. The
 # Hub is asked with the token in a header curl reads from stdin (HF_TOKEN in the environment).
 _local_gguf_vet() {
-  local body code ep; body="$(local_dir)/vet.json"; ep="${HF_ENDPOINT:-https://huggingface.co}"; ep="${ep%/}"
-  code="$({ [ -z "${HF_TOKEN:-}" ] || printf 'Authorization: Bearer %s\n' "$HF_TOKEN"; } | curl -q -sS -m 60 -H @- -o "$body" -w '%{http_code}' "$ep/api/models/$1/revision/main?blobs=true" 2>/dev/null || true)"
-  case "$code" in
-    200) ;;
-    401 | 403) rm -f "$body"; echo "no Hugging Face does not let this computer see it: a gated or private model needs a Hugging Face token (Settings › Models & providers) and its license accepted on huggingface.co"; return 0 ;;
-    404) rm -f "$body"; echo "no Hugging Face has no model $1"; return 0 ;;
-    *) rm -f "$body"; echo "no Hugging Face did not answer (HTTP ${code:-none}): try again"; return 0 ;;
-  esac
+  local body; body="$(local_dir)/vet.json"
+  _local_hub_info "$1" "$body" || return 0
   python3 -I -c '
 import json, re, sys
 body, quant, man = sys.argv[1:4]
@@ -349,6 +367,76 @@ print("sha %s\t%s\t%d" % (sha, files[0]["rfilename"], total))
 ' "$body" "$2" "$3" 2>&1 | tail -n 1 | cut -c1-400
   rm -f "$body"
 }
+# --- vLLM: DevOS ADE's own (lib/runtimes.sh, Linux); a model is its safetensors weights, whole ---
+# _local_st_vet REPO MANIFEST -> as _local_gguf_vet: "sha <commit><TAB>config.json<TAB><bytes>" or "no <why>". MANIFEST
+# gets the repo's top-level files that load it: every *.safetensors, *.json (its config, the weights' index, the
+# tokenizer's, the generation config), tokenizer.model, *.txt (merges, vocabularies) and *.jinja (chat templates) — never
+# a subfolder, a pickle (.bin, .pt) or a .py file. Refused: a model that asks to run code of its own (Hugging Face's
+# custom_code tag: vLLM never runs it), an MLX one (Apple's format), one without config.json or safetensors weights.
+_local_st_vet() {
+  local body; body="$(local_dir)/vet.json"
+  _local_hub_info "$1" "$body" || return 0
+  python3 -I -c '
+import json, re, sys
+body, man = sys.argv[1:3]
+try:
+    info = json.load(open(body))
+except Exception:
+    print("no Hugging Face'"'"'s answer could not be read"); sys.exit(0)
+sha = info.get("sha") if isinstance(info, dict) else None
+if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+    print("no Hugging Face gave no commit for it"); sys.exit(0)
+tags = [t for t in info.get("tags") or [] if isinstance(t, str)]
+if "custom_code" in tags:
+    print("no it asks to run code of its own (custom_code), and DevOS ADE never runs a model'"'"'s own code"); sys.exit(0)
+if "mlx" in tags:
+    print("no it is an MLX model (Apple'"'"'s format): vLLM needs the original weights"); sys.exit(0)
+keep = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,199}\.(safetensors|json|txt|jinja)|tokenizer\.model")
+rows, total, weights, names = [], 0, 0, set()
+for f in info.get("siblings") or []:
+    n = f.get("rfilename") if isinstance(f, dict) else None
+    if not isinstance(n, str) or "/" in n or not keep.fullmatch(n):
+        continue
+    lfs = f.get("lfs") if isinstance(f.get("lfs"), dict) else {}
+    size, h, b = lfs.get("size", f.get("size")), str(lfs.get("sha256") or ""), str(f.get("blobId") or "")
+    if size == 0:
+        continue
+    if not isinstance(size, int) or isinstance(size, bool) or size < 0 or not (re.fullmatch(r"[0-9a-f]{64}", h) or (not h and re.fullmatch(r"[0-9a-f]{40}", b))):
+        print("no Hugging Face did not give the size and hash of %s" % n[:80]); sys.exit(0)
+    rows.append("%s\t%d\t%s\t%s\n" % (n, size, h, b)); total += size; names.add(n)
+    if n.endswith(".safetensors"):
+        weights += 1
+if "config.json" not in names:
+    print("no it has no config.json: not a model vLLM loads"); sys.exit(0)
+if not weights:
+    print("no it has no safetensors weights (vLLM takes them; a GGUF model goes to llama.cpp)"); sys.exit(0)
+with open(man, "w") as m:
+    m.writelines(sorted(rows))
+print("sha %s\tconfig.json\t%d" % (sha, total))
+' "$body" "$2" 2>&1 | tail -n 1 | cut -c1-400
+  rm -f "$body"
+}
+# _local_st_recheck SNAPSHOT -> why the DOWNLOADED snapshot may not be served (nothing: it is fine): config.json readable,
+# asking for no code of its own (auto_map, model_file), and no .py file — what vLLM is given is what was checked
+_local_st_recheck() {
+  [ -d "$1" ] || { echo "the download is not the revision that was checked"; return 0; }
+  python3 -I -c '
+import json, os, sys
+snap = sys.argv[1]
+py = [f for _, _, fs in os.walk(snap) for f in fs if f.endswith(".py")]
+if py: print("the download contains Python files (%s)" % ", ".join(py[:3])); sys.exit(0)
+try:
+    c = json.load(open(os.path.join(snap, "config.json")))
+except Exception:
+    print("its config.json could not be read"); sys.exit(0)
+bad = [k for k in ("model_file", "auto_map") if isinstance(c, dict) and k in c]
+if bad: print("its config.json asks to run custom code (%s)" % ", ".join(bad))
+' "$1" 2>/dev/null | head -n 1 | cut -c1-300 || true
+}
+# _local_vllm_loading SECONDS — the download's message while vLLM loads it (rt_vllm_serve)
+_local_vllm_loading() {
+  _local_job registering "$repo" "$quant" "$bytes" "$bytes" "Starting vLLM with it: loading the model ($1 s so far; minutes on a CPU)"
+}
 # _local_manifest_bytes MANIFEST REPO_DIR -> the bytes of its files that arrived (each finished blob, or its part)
 _local_manifest_bytes() {
   local n=0 name size h b f
@@ -358,16 +446,21 @@ _local_manifest_bytes() {
   done < "$1"
   echo "$n"
 }
-# _local_pull_gguf RT REPO QUANT BYTES TOOLS CTX PM LIC — for llama.cpp or LM Studio: vet, download (lib/hf_fetch.py:
+# _local_pull_hub RT REPO QUANT BYTES TOOLS CTX PM LIC — for llama.cpp, LM Studio or vLLM: vet, download (lib/hf_fetch.py:
 # the system's python3 -I, standard library only) into its hub/, add it to the runtime (llama.cpp: models.tsv,
-# presets.ini, started again; LM Studio: lms import, its key), register
-_local_pull_gguf() {
-  local rt="$1" repo="$2" quant="$3" bytes="$4" tools="$5" ctx="$6" pm="$7" lic="$8" hub rd man v why='' sha='' first id logf pid done_b=0 rc=0 stop
+# presets.ini, started again; LM Studio: lms import, its key; vLLM: started again serving it), register
+_local_pull_hub() {
+  local rt="$1" repo="$2" quant="$3" bytes="$4" tools="$5" ctx="$6" pm="$7" lic="$8" hub rd man v why='' sha='' first id logf pid done_b=0 rc=0 stop prev
   hub="$(rt_dir "$rt")/hub"; rd="$hub/models--${repo//\//--}"; id="$repo:$quant"
+  if [ "$rt" = vllm ]; then
+    id="$repo"   # (one model per repo: its weights, whole)
+    [ "$quant" = safetensors ] || { _local_job failed "$repo" "$quant" 0 "$bytes" "vLLM serves a model's safetensors weights, whole: download it as safetensors (./stack local-models pull $repo safetensors)."; die "vLLM takes safetensors: ./stack local-models pull $repo safetensors"; }
+  fi
   valid_local_entry "$rt:$id" || { _local_job failed "$repo" "$quant" 0 "$bytes" "The model name is one this stack cannot serve."; die "unusable model id"; }
   _local_job pulling "$repo" "$quant" 0 "$bytes" "Finding the $quant files of $repo on Hugging Face"
   man="$(local_dir)/manifest.tsv"; : > "$man"; chmod 600 "$man"
-  v="$(HF_TOKEN="$(get_env HF_TOKEN)" _local_gguf_vet "$repo" "$quant" "$man")"
+  if [ "$rt" = vllm ]; then v="$(HF_TOKEN="$(get_env HF_TOKEN)" _local_st_vet "$repo" "$man")"
+  else v="$(HF_TOKEN="$(get_env HF_TOKEN)" _local_gguf_vet "$repo" "$quant" "$man")"; fi
   case "$v" in
     "sha "*) v="${v#sha }"; sha="${v%%$'\t'*}"; v="${v#*$'\t'}"; first="${v%%$'\t'*}"; v="${v#*$'\t'}"; [ "$v" -gt 0 ] 2>/dev/null && bytes="$v" ;;
     "no "*) why="${v#no }" ;;
@@ -399,6 +492,25 @@ _local_pull_gguf() {
   fi
   [ -f "$rd/snapshots/$sha/$first" ] || { _local_job failed "$repo" "$quant" "$done_b" "$bytes" "The download has no $first."; die "the download is incomplete"; }
   _local_job registering "$repo" "$quant" "$bytes" "$bytes" "Adding it to $(rt_name "$rt") and the model gateway (a few seconds)"
+  if [ "$rt" = vllm ]; then
+    why="$(_local_st_recheck "$rd/snapshots/$sha")"
+    if [ -n "$why" ]; then rm -rf -- "$rd"; _local_job failed "$repo" "$quant" 0 "$bytes" "Not served: $why. The download was deleted."; die "not served: $why"; fi
+    # (in the list before vLLM loads it: one it cannot load stays downloaded, for Remove)
+    local_registry_put vllm "$id" "$repo" "$quant" "$bytes" "$lic" "$([ "$tools" = yes ] && echo 1 || { [ "$tools" = no ] && echo 0 || echo -; })" "$ctx" "$pm" "$sha"
+    prev="$(rt_vllm_serving 2>/dev/null || true)"
+    _local_job registering "$repo" "$quant" "$bytes" "$bytes" "Starting vLLM with it: loading the model (minutes on a CPU)"
+    if ! rt_vllm_serve "$id" "$repo" "$sha" "$ctx" _local_vllm_loading; then
+      _local_job failed "$repo" "$quant" "$bytes" "$bytes" "Downloaded, but vLLM could not serve it (${_RT_VLLM_HINT:-./stack runtimes logs vllm}). It stays downloaded (Remove deletes it)$([ -n "$prev" ] && [ "$prev" != "$id" ] && echo "; vLLM serves $prev again")."
+      die "vLLM could not serve it: ./stack runtimes logs vllm"
+    fi
+    # (no tool-call parser for it: vLLM answers a request with tools with an error)
+    [ "$_RT_VLLM_PARSER" != none ] || tools=no
+    local_registry_put vllm "$id" "$repo" "$quant" "$bytes" "$lic" "$([ "$tools" = yes ] && echo 1 || { [ "$tools" = no ] && echo 0 || echo -; })" "$ctx" "$pm" "$sha"
+    local_register_apply serve "vllm:$id" || { _local_job failed "$repo" "$quant" "$bytes" "$bytes" "vLLM serves it, but the model gateway did not take it: ./stack local-models status"; die "registration failed"; }
+    _local_job done "$repo" "$quant" "$bytes" "$bytes" "Ready: $(local_model_name "vllm:$id") is in Chat, the Code page and the terminal$([ -n "$prev" ] && [ "$prev" != "$id" ] && echo ". vLLM serves one model at a time: $prev stays downloaded, not served (Serve switches back)")"
+    rm -f "$(local_dir)/job.pid"
+    return 0
+  fi
   if [ "$rt" = lmstudio ]; then
     rt_lmstudio_model_add "$id" "$repo" "models--${repo//\//--}/snapshots/$sha/$first" "$(cut -f1 "$man" | paste -sd, -)" \
       || { _local_job failed "$repo" "$quant" "$bytes" "$bytes" "Downloaded, but LM Studio did not take it (lms import): ./stack runtimes logs lmstudio. What arrived is kept: download it again to retry."; die "LM Studio did not take it"; }
@@ -794,9 +906,10 @@ msrv_apply_op() {
   esac
 }
 
-# local_runtime -> "mlx", "dmr", "ollama", "llamacpp", "lmstudio" or "none": the one pulls go to. LOCAL_RUNTIME names one
-# (none while it cannot take a download: local_how_text says why); blank or auto: MLX on Apple silicon with uv, else Docker
-# Model Runner, else Ollama, else DevOS ADE's llama.cpp, else its LM Studio
+# local_runtime -> "mlx", "dmr", "ollama", "llamacpp", "lmstudio", "vllm" or "none": the one pulls go to. LOCAL_RUNTIME
+# names one (none while it cannot take a download: local_how_text says why); blank or auto: MLX on Apple silicon with uv,
+# else Docker Model Runner, else Ollama, else DevOS ADE's llama.cpp, else its LM Studio, else its vLLM (also while it
+# waits for its first model: a download starts it)
 local_runtime() {
   case "$(get_env LOCAL_RUNTIME)" in
     mlx) local_mlx_capable && echo mlx || echo none; return 0 ;;
@@ -804,12 +917,14 @@ local_runtime() {
     ollama) [ "$(local_ollama_state)" = ready ] && echo ollama || echo none; return 0 ;;
     llamacpp) [ "$(local_llamacpp_state)" = ready ] && echo llamacpp || echo none; return 0 ;;
     lmstudio) [ "$(local_lmstudio_state)" = ready ] && echo lmstudio || echo none; return 0 ;;
+    vllm) [ "$(local_vllm_state)" != not-installed ] && echo vllm || echo none; return 0 ;;
   esac
   ! local_mlx_capable || { echo mlx; return 0; }
   [ "$(local_dmr_state)" != ready ] || { echo dmr; return 0; }
   [ "$(local_ollama_state)" != ready ] || { echo ollama; return 0; }
   [ "$(local_llamacpp_state)" != ready ] || { echo llamacpp; return 0; }
   [ "$(local_lmstudio_state)" != ready ] || { echo lmstudio; return 0; }
+  case "$(local_vllm_state)" in ready | waiting) echo vllm; return 0 ;; esac
   echo none
 }
 # _local_ollama_how -> how to have an Ollama running (DevOS ADE's own, from Runtimes; or one of yours)
@@ -829,6 +944,7 @@ local_how_text() {
   local d o; d="$(local_dmr_state)"; o="$(local_ollama_state)"
   case "$(get_env LOCAL_RUNTIME)" in
     ollama) [ "$o" = ready ] || { echo "Downloads go to Ollama (Settings › Local models › Runtimes), which is not running: $(_local_ollama_how)"; return 0; } ;;
+    vllm) [ "$(local_vllm_state)" != not-installed ] || { echo "Downloads go to vLLM (Settings › Local models › Runtimes), which is not installed: install it there (./stack runtimes install vllm)."; return 0; } ;;
     llamacpp | lmstudio) [ "$("local_$(get_env LOCAL_RUNTIME)_state")" = ready ] || { echo "Downloads go to $(rt_name "$(get_env LOCAL_RUNTIME)") (Settings › Local models › Runtimes), which is not running: $(_local_own_how "$(get_env LOCAL_RUNTIME)")"; return 0; } ;;
     mlx) local_mlx_capable || { echo "Downloads go to MLX (Settings › Local models › Runtimes), which needs Apple silicon and uv: brew install uv (or https://docs.astral.sh/uv/)."; return 0; } ;;
   esac
@@ -928,7 +1044,7 @@ local_models_code_rows() {
 
 # --- LiteLLM ---
 # local_models_yaml -> model_list entries (render_litellm_config): each a docker_model_runner/…, ollama_chat/… or openai/…
-# (MLX, llama.cpp) deployment (all speak Chat Completions: no Responses API detour), prices 0 (never spend); nothing
+# (MLX, llama.cpp, LM Studio, vLLM) deployment (all speak Chat Completions: no Responses API detour), prices 0 (never spend); nothing
 # without LOCAL_MODELS
 local_models_yaml() {
   local e id name base kind dmr='' ol='' k
@@ -943,6 +1059,11 @@ local_models_yaml() {
         # (its API key: every request to it needs one — lib/runtimes.sh; the generated config's readers can see it)
         printf '  - model_name: "%s"\n    litellm_params:\n      model: "openai/%s"\n      api_base: "%s"\n      api_key: "%s"\n      timeout: 900\n      input_cost_per_token: 0\n      output_cost_per_token: 0\n    model_info:\n      mode: "chat"\n' \
           "$name" "$id" "$(local_llamacpp_base)" "$(rt_llamacpp_key)"; continue ;;
+      vllm:*)
+        # (the one model vLLM serves, by its name, with vLLM's API key — lib/runtimes.sh; the generated config's readers can
+        # see that key)
+        printf '  - model_name: "%s"\n    litellm_params:\n      model: "openai/%s"\n      api_base: "%s"\n      api_key: "%s"\n      timeout: 900\n      input_cost_per_token: 0\n      output_cost_per_token: 0\n    model_info:\n      mode: "chat"\n' \
+          "$name" "$id" "$(local_vllm_base)" "$(rt_api_key vllm)"; continue ;;
       lmstudio:*)
         # (LM Studio serves it by the key it gave it: models.tsv; through its gate, with the API key DevOS ADE made for it —
         # lib/runtimes.sh; the generated config's readers can see that key)
@@ -978,6 +1099,10 @@ local_runner_ids() {
     lmstudio) # (the same, from LM Studio's record)
       declare -F rt_lmstudio_models >/dev/null && [ -f "$(rt_lmstudio_models)" ] || return 0
       local i _k rel _r; while IFS=$'\t' read -r i _k rel _r; do [ ! -f "$(rt_dir lmstudio)/hub/$rel" ] || printf '%s\n' "$i"; done < "$(rt_lmstudio_models)" ;;
+    vllm) # (the models whose snapshot is on disk: downloaded, served or not)
+      local i repo rev; while IFS=$'\t' read -r i repo rev; do
+        [[ $rev =~ ^[0-9a-f]{40}$ ]] && [ -f "$(rt_dir vllm)/hub/models--${repo//\//--}/snapshots/$rev/config.json" ] && printf '%s\n' "$i" || true
+      done < <(local_registry_rows | awk -F'\t' '$1 == "vllm" { print $2 "\t" $3 "\t" $11 }') ;;
     ollama) curl -s -m 8 "$(_local_ollama_url)/api/tags" 2>/dev/null | grep -o '"name" *: *"[^"]*"' | sed 's/^"name" *: *"//; s/"$//' ;;
   esac
 }
@@ -996,15 +1121,15 @@ _local_result_json() {
   case "$r" in '{'*'}') printf '%s' "$r" ;; *) printf 'null' ;; esac
 }
 local_status_write() {
-  local d o m l s rt how gpu mem inst='' sep='' row r id repo quant bytes lic tools ctx pm added present ids total=0 job="${1:-}"
+  local d o m l s v rt how gpu mem inst='' sep='' row r id repo quant bytes lic tools ctx pm added present ids total=0 job="${1:-}"
   # (a download's once-a-second progress writes reuse the first look at the runtime and the machine)
-  if [ "${_LOCAL_FAST:-0}" = 1 ] && [ -n "${_LOCAL_D:-}" ]; then d="$_LOCAL_D"; o="$_LOCAL_O"; m="$_LOCAL_M"; l="$_LOCAL_L"; s="$_LOCAL_S"; gpu="$_LOCAL_GPU"; mem="$_LOCAL_MEM"; how="$_LOCAL_HOW"
+  if [ "${_LOCAL_FAST:-0}" = 1 ] && [ -n "${_LOCAL_D:-}" ]; then d="$_LOCAL_D"; o="$_LOCAL_O"; m="$_LOCAL_M"; l="$_LOCAL_L"; s="$_LOCAL_S"; v="$_LOCAL_V"; gpu="$_LOCAL_GPU"; mem="$_LOCAL_MEM"; how="$_LOCAL_HOW"
   else
-    d="$(local_dmr_state)"; o="$(local_ollama_state)"; m="$(local_mlx_state)"; l="$(local_llamacpp_state)"; s="$(local_lmstudio_state)"
+    d="$(local_dmr_state)"; o="$(local_ollama_state)"; m="$(local_mlx_state)"; l="$(local_llamacpp_state)"; s="$(local_lmstudio_state)"; v="$(local_vllm_state)"
     gpu="$(local_gpu)"; mem="$(local_memory_bytes)"
-    how=''; { [ "$d" = ready ] || [ "$o" = ready ] || [ "$l" = ready ] || [ "$s" = ready ] || local_mlx_capable; } || how="$(local_how_text)"
+    how=''; { [ "$d" = ready ] || [ "$o" = ready ] || [ "$l" = ready ] || [ "$s" = ready ] || [ "$v" = ready ] || [ "$v" = waiting ] || local_mlx_capable; } || how="$(local_how_text)"
     [ "$m" != no-uv ] || how="$(local_how_text)"
-    _LOCAL_M="$m"; _LOCAL_D="$d"; _LOCAL_O="$o"; _LOCAL_L="$l"; _LOCAL_S="$s"; _LOCAL_GPU="$gpu"; _LOCAL_MEM="$mem"; _LOCAL_HOW="$how"
+    _LOCAL_M="$m"; _LOCAL_D="$d"; _LOCAL_O="$o"; _LOCAL_L="$l"; _LOCAL_S="$s"; _LOCAL_V="$v"; _LOCAL_GPU="$gpu"; _LOCAL_MEM="$mem"; _LOCAL_HOW="$how"
   fi
   rt=none   # (as local_runtime, from the states already read)
   case "$(get_env LOCAL_RUNTIME)" in
@@ -1013,12 +1138,14 @@ local_status_write() {
     ollama) [ "$o" != ready ] || rt=ollama ;;
     llamacpp) [ "$l" != ready ] || rt=llamacpp ;;
     lmstudio) [ "$s" != ready ] || rt=lmstudio ;;
+    vllm) [ "$v" = not-installed ] || rt=vllm ;;
     *)
       case "$m" in ready | stopped | not-installed) rt=mlx ;; esac
       [ "$rt" != none ] || [ "$d" != ready ] || rt=dmr
       [ "$rt" != none ] || [ "$o" != ready ] || rt=ollama
       [ "$rt" != none ] || [ "$l" != ready ] || rt=llamacpp
-      [ "$rt" != none ] || [ "$s" != ready ] || rt=lmstudio ;;
+      [ "$rt" != none ] || [ "$s" != ready ] || rt=lmstudio
+      [ "$rt" != none ] || { [ "$v" != ready ] && [ "$v" != waiting ]; } || rt=vllm ;;
   esac
   [ "$rt" != none ] || [ -n "$how" ] || how="$(local_how_text)"
   [ -n "$job" ] || job="$(cat "$(local_job_file)" 2>/dev/null || true)"
@@ -1028,7 +1155,7 @@ local_status_write() {
     [ -n "$row" ] || continue
     IFS=$'\t' read -r r id repo quant bytes lic tools ctx pm added rev <<< "$row"
     present=true
-    if [ "${_LOCAL_FAST:-0}" != 1 ] && { { [ "$r" = dmr ] && [ "$d" = ready ]; } || { [ "$r" = ollama ] && [ "$o" = ready ]; } || [ "$r" = mlx ] || [ "$r" = llamacpp ] || [ "$r" = lmstudio ]; }; then
+    if [ "${_LOCAL_FAST:-0}" != 1 ] && { { [ "$r" = dmr ] && [ "$d" = ready ]; } || { [ "$r" = ollama ] && [ "$o" = ready ]; } || [ "$r" = mlx ] || [ "$r" = llamacpp ] || [ "$r" = lmstudio ] || [ "$r" = vllm ]; }; then
       ids="$(local_runner_ids "$r" || true)"
       printf '%s\n' "$ids" | grep -xF "$id" >/dev/null || present=false
     fi
@@ -1043,8 +1170,8 @@ local_status_write() {
     sv="$sv$ssep{\"name\":$(_local_q "$n" 24),\"url\":$(_local_q "$u" 200),\"reached_as\":$(_local_q "$(msrv_reached_as "$n")" 240),\"trust\":$([ "$tr_" = 1 ] && echo true || echo false),\"key\":$([ -n "$(msrv_key "$n")" ] && echo true || echo false),\"status\":$(_local_q "${st%%$'\t'*}" 8),\"detail\":$(_local_q "${st#*$'\t'}" 2000),\"warning\":$(_local_q "$(msrv_warn "$u" "$tr_" "$(msrv_addr_of "$n")")" 200),\"key_note\":$(_local_q "$(msrv_key_note "$n")" 120),\"enabled\":$(_local_q "$(_msrv_items MODEL_SERVER_MODELS | awk -F: -v n="$n" '$1 == n { sub(/^[^:]*:/, ""); printf "%s%s", s, $0; s = ";" }')" 1500)}"
     ssep=','
   done < <(msrv_rows)
-  printf '{"at":%s,"runtime":{"kind":"%s","dmr":"%s","ollama":"%s","mlx":"%s","llamacpp":"%s","lmstudio":"%s","how":%s,"command":"./stack local-models enable"},"gpu":%s,"memory_bytes":%s,"disk_bytes":%s,"installed":[%s],"servers":[%s],"result":%s,"job":%s}\n' \
-    "$(date +%s)" "$rt" "$d" "$o" "$m" "$l" "$s" "$(_local_q "$how" 400)" "$(_local_q "$gpu" 40)" "$mem" "$total" "$inst" "$sv" "$(_local_result_json)" "$job" | _local_put "$(local_status_file)"
+  printf '{"at":%s,"runtime":{"kind":"%s","dmr":"%s","ollama":"%s","mlx":"%s","llamacpp":"%s","lmstudio":"%s","vllm":"%s","how":%s,"command":"./stack local-models enable"},"gpu":%s,"memory_bytes":%s,"disk_bytes":%s,"installed":[%s],"servers":[%s],"result":%s,"job":%s}\n' \
+    "$(date +%s)" "$rt" "$d" "$o" "$m" "$l" "$s" "$v" "$(_local_q "$how" 400)" "$(_local_q "$gpu" 40)" "$mem" "$total" "$inst" "$sv" "$(_local_result_json)" "$job" | _local_put "$(local_status_file)"
 }
 
 # local_models_tick — the update helper, each loop: when the portal asked (local_wanted_file), the file written again,
@@ -1119,7 +1246,7 @@ _local_kill_tree() {
 # stack has whole (that is Remove's; llama.cpp and LM Studio: another quantization of the same repo keeps its files, only
 # this one's parts go). Docker Model Runner and Ollama keep their own unfinished parts.
 _local_discard() {
-  case "$1" in mlx | llamacpp | lmstudio) valid_hf_repo "$2" || return 0 ;; *) return 0 ;; esac
+  case "$1" in mlx | llamacpp | lmstudio | vllm) valid_hf_repo "$2" || return 0 ;; *) return 0 ;; esac
   local d n h b
   if [ "$1" = mlx ]; then d="$(local_mlx_repo_dir "$2")"; else d="$(rt_dir "$1")/hub/models--${2//\//--}"; fi
   if [ -n "$(local_registry_rows | awk -F'\t' -v r="$2" -v t="$1" '$1 == t && tolower($3) == tolower(r)')" ]; then
@@ -1139,7 +1266,7 @@ _local_stopped() {
   else
     _local_discard "$rt" "$repo"
     local gone=""   # (not a case inside "$(…)": bash 3.2 ends the substitution at a pattern's ")")
-    case "$rt" in mlx | llamacpp | lmstudio) gone=": what had arrived was deleted" ;; esac
+    case "$rt" in mlx | llamacpp | lmstudio | vllm) gone=": what had arrived was deleted" ;; esac
     _local_job cancelled "$repo" "$quant" 0 "$total" "Cancelled$gone."
   fi
   rm -f "$(local_dir)/job.pid"
@@ -1147,7 +1274,7 @@ _local_stopped() {
 # _local_job_runtime QUANT -> the runtime the last download went to (job.rt; an MLX one has no quantization)
 _local_job_runtime() {
   local r; r="$(cat "$(local_dir)/job.rt" 2>/dev/null || true)"
-  case "$r" in mlx | dmr | ollama | llamacpp | lmstudio) echo "$r" ;; *) [ "$1" = mlx ] && echo mlx || echo other ;; esac
+  case "$r" in mlx | dmr | ollama | llamacpp | lmstudio | vllm) echo "$r" ;; *) [ "$1" = mlx ] && echo mlx || echo other ;; esac
 }
 # local_stop pause|cancel — the running download stopped: pause keeps what arrived, cancel deletes it. Cancel also deletes a
 # paused or failed download's part. Waits (seconds) until the download's process says so; one that does not is stopped here.
@@ -1217,6 +1344,7 @@ local_pull() {
     shift 2 || break
   done
   [ -n "$quant" ] || { local_mlx_capable && quant=mlx; }   # (an MLX model is a whole repo: no quantization to pick)
+  [ -n "$quant" ] || { [ "$(local_runtime)" = vllm ] && quant=safetensors; }   # (nor a vLLM one)
   valid_hf_repo "$repo" || die "not a Hugging Face repo (org/name): $repo"
   valid_hf_quant "$quant" || die "not a quantization name: $quant"
   mkdir -p "$(local_dir)" && chmod 700 "$(local_dir)"
@@ -1240,7 +1368,7 @@ local_pull() {
     valid_hf_repo "$repo" || die "not a Hugging Face repo (org/name): $repo"
     _local_pull_mlx "$repo" "$bytes" "$tools" "$ctx" "$pm" "$lic"; return $?
   fi
-  case "$rt" in llamacpp | lmstudio) _local_pull_gguf "$rt" "$repo" "$quant" "$bytes" "$tools" "$ctx" "$pm" "$lic"; return $? ;; esac
+  case "$rt" in llamacpp | lmstudio | vllm) _local_pull_hub "$rt" "$repo" "$quant" "$bytes" "$tools" "$ctx" "$pm" "$lic"; return $? ;; esac
   _local_job pulling "$repo" "$quant" 0 "$bytes" "Downloading $ref with $([ "$rt" = dmr ] && echo "Docker Model Runner" || echo Ollama)"
   _LOCAL_FAST=1   # (the first look is taken: the progress writes reuse it)
   logf="$(local_dir)/pull.log"; : > "$logf"; chmod 600 "$logf"
@@ -1286,12 +1414,17 @@ local_pull() {
   rm -f "$(local_dir)/job.pid"
 }
 
-# local_register_apply add|remove ENTRY — LOCAL_MODELS changed as one settings change (live in LiteLLM: lib/litellm_live.sh)
+# local_register_apply add|remove|serve ENTRY — LOCAL_MODELS changed as one settings change (live in LiteLLM:
+# lib/litellm_live.sh). serve: ENTRY in place of every other of its runtime's (vLLM serves one model at a time)
 local_register_apply() {
   local cur new='' e
   cur="$(get_env LOCAL_MODELS)"
-  while IFS= read -r e; do [ -n "$e" ] && [ "$e" != "$2" ] && new="${new:+$new,}$e"; done < <(printf '%s\n' "$cur" | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-  [ "$1" != add ] || new="${new:+$new,}$2"
+  while IFS= read -r e; do
+    [ -n "$e" ] && [ "$e" != "$2" ] || continue
+    [ "$1" != serve ] || [ "${e%%:*}" != "${2%%:*}" ] || continue
+    new="${new:+$new,}$e"
+  done < <(printf '%s\n' "$cur" | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  [ "$1" = remove ] || new="${new:+$new,}$2"
   [ "$new" != "$cur" ] || return 0
   CFG_ORDER=''; cfg_put LOCAL_MODELS "$new"
   config_apply local cli ''
@@ -1314,10 +1447,11 @@ local_rm() {
     ollama) curl -sS -m 60 -X DELETE "$(_local_ollama_url)/api/delete" -H 'Content-Type: application/json' -d "{\"model\":\"$id\"}" >/dev/null 2>&1 || rc=$? ;;
     llamacpp) rt_llamacpp_forget "$id" || rc=$? ;;
     lmstudio) rt_lmstudio_forget "$id" || rc=$? ;;
+    vllm) rt_vllm_forget "$id" "$repo" || rc=$? ;;
   esac
   if [ "$rc" -ne 0 ]; then
     local how   # (not a case inside "$(…)": bash 3.2 ends the substitution at a pattern's ")")
-    case "$rt" in dmr) how="docker model rm $id" ;; llamacpp | lmstudio) how="./stack runtimes status" ;; *) how="ollama rm $id" ;; esac
+    case "$rt" in dmr) how="docker model rm $id" ;; llamacpp | lmstudio | vllm) how="./stack runtimes status" ;; *) how="ollama rm $id" ;; esac
     _local_job failed "$repo" "$quant" 0 0 "Taken out of the pickers, but the runtime did not delete the files (is it running?): $how"; die "the runtime did not delete it"; fi
   local_registry_drop "$rt" "$id"
   _local_job done "$repo" "$quant" 0 0 "Removed"

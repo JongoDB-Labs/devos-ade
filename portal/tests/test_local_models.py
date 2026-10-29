@@ -382,6 +382,71 @@ def test_a_download_of_an_mlx_repo_with_code_is_refused_and_a_clean_one_is_one_r
     assert r.status_code == 422 and "never runs a model" in r.json()["error"] and not list(rq.glob("act-*.json"))
 
 
+# --- vLLM (Linux): a model's own safetensors weights, whole; never one that asks to run code of its own ---
+
+ST_TREE = [{"type": "file", "path": "config.json", "size": 700}, {"type": "file", "path": "model-00001-of-00002.safetensors", "size": 1, "lfs": {"size": 4_000_000_000}},
+           {"type": "file", "path": "model-00002-of-00002.safetensors", "size": 1, "lfs": {"size": 1_000_000_000}},
+           {"type": "file", "path": "original/consolidated.safetensors", "size": 1, "lfs": {"size": 9_000_000_000}},
+           {"type": "file", "path": "tokenizer.json", "size": 7_000_000}, {"type": "file", "path": "pytorch_model.bin", "size": 1, "lfs": {"size": 5_000_000_000}}]
+
+
+def test_a_vllm_model_is_one_download_of_its_top_level_safetensors():
+    assert lm.fmt_of("vllm") == "vllm" and lm.fmt_of("mlx") == "mlx" and lm.fmt_of("llamacpp") == "gguf" and lm.fmt_of("none") == "gguf"
+    q, blocked = lm.vllm_of(ST_TREE, ["transformers", "safetensors"])
+    assert q == [{"quant": "safetensors", "size": 5_000_000_000, "files": 2}] and blocked == ""   # (not original/, not the pickle)
+    q, blocked = lm.vllm_of(ST_TREE, ["custom_code"])
+    assert q and "code of its own" in blocked and "never runs" in blocked
+    assert "MLX model" in lm.vllm_of(ST_TREE, ["mlx"])[1]
+    assert lm.vllm_of([{"type": "file", "path": "config.json", "size": 5}, {"type": "file", "path": "m.gguf", "size": 5}], []) == ([], "It has no safetensors weights (a GGUF model goes to llama.cpp).")
+    assert lm.vllm_of([{"type": "file", "path": "model.safetensors", "size": 5}], [])[1] == "It has no config.json: not a model vLLM loads."
+
+
+def test_vllm_search_asks_for_text_generation_safetensors_and_leaves_out_mlx_and_custom_code():
+    seen = []
+
+    def handler(request):
+        seen.append(request.url)
+        cfg = {"model_type": "qwen2", "max_position_embeddings": 32768, "tokenizer_config": {"chat_template": TEMPLATE_TOOLS}}
+        return httpx.Response(200, json=[{"id": "Qwen/Qwen2.5-0.5B-Instruct", "downloads": 9, "tags": ["safetensors", "license:apache-2.0"],
+                                          "safetensors": {"total": 494_032_768}, "config": cfg},
+                                         {"id": "mlx-community/Qwen2.5-0.5B-Instruct-4bit", "tags": ["mlx", "safetensors"], "config": cfg},
+                                         {"id": "evil/Coder", "tags": ["custom_code", "safetensors"], "config": cfg}])
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+            return await lm.search(c, "qwen", fmt="vllm")
+    rows, err = run(go())
+    assert err is None and seen[0].params.get_list("filter") == ["safetensors", "text-generation", "transformers"]
+    assert "config" in seen[0].params.get_list("expand[]")
+    assert [r["repo"] for r in rows] == ["Qwen/Qwen2.5-0.5B-Instruct"]
+    assert rows[0]["params"] == 494_032_768 and rows[0]["context"] == 32768 and rows[0]["tools"] == "yes"
+
+
+def test_a_download_for_vllm_is_its_safetensors_and_one_that_runs_its_own_code_is_refused(app):
+    c, sd, rq = app
+    tags = ["transformers", "safetensors", "license:apache-2.0"]
+
+    def handler(request):
+        if request.url.path.endswith("/tree/main"):
+            return httpx.Response(200, json=ST_TREE)
+        return httpx.Response(200, json={"id": "Qwen/Qwen2.5-7B-Instruct", "tags": tags, "safetensors": {"total": 7_615_616_512},
+                                         "config": {"model_type": "qwen2", "tokenizer_config": {"chat_template": TEMPLATE_TOOLS}}})
+    c.app.state.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    _status(sd, job={"state": "idle"}, runtime={"kind": "vllm", "how": "", "command": "./stack local-models enable"})
+    body = {"password": PW, "action": "local-pull", "repo": "Qwen/Qwen2.5-7B-Instruct", "quant": "safetensors"}
+    r = c.post("/api/local-models/change", headers=H, content=json.dumps(body))
+    assert r.status_code == 202, r.text
+    b = _body(rq)
+    assert (b["repo"], b["quant"], b["bytes"], b["tools"], b["params_m"]) == ("Qwen/Qwen2.5-7B-Instruct", "safetensors", 5_000_000_000, "yes", 7615)
+    for f in rq.glob("act-*.json"):
+        f.unlink()
+    lm._cache.clear()
+    tags.append("custom_code")
+    r = c.post("/api/local-models/change", headers=H, content=json.dumps(body))
+    assert r.status_code == 422 and "never runs a model" in r.json()["error"] and not list(rq.glob("act-*.json"))
+    assert lm.read_status(sd)["runtime"]["kind"] == "vllm"
+
+
 def test_model_servers_are_read_field_by_field_with_the_reason_a_down_one_gives(tmp_path):
     _status(tmp_path)
     d = json.loads((tmp_path / "local-models.json").read_text())

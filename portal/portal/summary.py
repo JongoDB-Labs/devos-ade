@@ -203,18 +203,21 @@ def forgejo(s: Settings, now: float | None = None) -> dict | None:
 
 
 def runtimes(s: Settings, now: float | None = None) -> list[dict]:
-    """Home's rows for the model runtimes DevOS ADE installed and runs (lib/runtimes.sh: Ollama, llama.cpp and LM Studio, each a launchd
-    agent on a Mac or a container on Linux), from its record (status/runtimes.json, the update helper's every minute). One that is not
-    DevOS ADE's (an Ollama of yours) has no row: the stack does not run it."""
+    """Home's rows for the model runtimes DevOS ADE installed and runs (lib/runtimes.sh: Ollama, llama.cpp, LM Studio and vLLM,
+    each a launchd agent on a Mac or a container on Linux), from its record (status/runtimes.json, the update helper's every
+    minute). One that is not DevOS ADE's (an Ollama of yours) has no row: the stack does not run it. vLLM installed with no
+    model yet is fine (it starts with the first one); while it loads one it says so."""
     now = datetime.now(timezone.utc).timestamp() if now is None else now
     d = local_models.read_runtimes(s.status_dir, now)
     out = []
     for r in d["runtimes"]:
         if not r["managed"] or r["state"] in ("external", "not-installed", "unsupported"):
             continue
-        ok = r["state"] == "running"
+        ok = r["state"] in ("running", "waiting")
         n = len(r["loaded"])
-        detail = (f"ready · {n} model{'s' if n != 1 else ''} loaded" if n else "ready") if ok else r["state"]
+        detail = "installed · no model to serve yet" if r["state"] == "waiting" \
+            else (f"ready · {n} model{'s' if n != 1 else ''} loaded" if n else "ready") if ok \
+            else "loading its model" if r["id"] == "vllm" and r["state"] == "starting" else r["state"]
         if r["restarts"]:
             detail += f" · restarted {r['restarts']}×"
         if d["stale"] and d["at"] is not None:
