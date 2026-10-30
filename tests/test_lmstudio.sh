@@ -77,8 +77,9 @@ EOF
   chmod +x "$TMP/lms-src"
   # the archive: llmster (bootstrap: as LM Studio's 0.0.25-1, its home pointer, then lms, and llmster where its installer
   # records it with no argument, and with its updates off, nothing more, still exiting 0; TMP/boot-fails: it stops;
-  # TMP/boot-no-lms, TMP/boot-no-record: it leaves that out; TMP/boot-in-place: it records itself where it was unpacked)
-  # and its bundle, with a link that goes up and back into it (as LM Studio's do)
+  # TMP/boot-no-lms, TMP/boot-no-record: it leaves that out; TMP/boot-in-place: it records itself where it was unpacked;
+  # TMP/boot-newer: it installs another version; TMP/boot-odd-path: the path it records holds an ESC) and its bundle, with
+  # a link that goes up and back into it (as LM Studio's do)
   cat > "$TMP/pkg/llmster" <<EOF
 #!/bin/sh
 T="$TMP"
@@ -87,10 +88,12 @@ case "\${1:-}" in
   bootstrap) [ ! -f "\$T/boot-fails" ] || { echo "bootstrap: no space left on device" >&2; exit 1; }
     h="\$HOME/.lmstudio"; v="\$h/llmster/$VER"; printf '%s' "\$h" > "\$HOME/.lmstudio-home-pointer"
     [ "\${LMS_DAEMON_DISABLE_UPDATES:-}" != 1 ] || exit 0
+    [ ! -f "\$T/boot-newer" ] || v="\$h/llmster/0.0.99-1"
     mkdir -p "\$h/bin" "\$h/.internal" "\$v" && cp "\$0" "\$v/llmster" && chmod +x "\$v/llmster"
     [ -f "\$T/boot-no-lms" ] || { cp "\$T/lms-src" "\$h/bin/lms" && chmod +x "\$h/bin/lms"; }
     [ ! -f "\$T/boot-in-place" ] || v="\$(pwd)"
-    [ -f "\$T/boot-no-record" ] || printf '{"path":"%s","argv":[],"cwd":"%s"}' "\$v/llmster" "\$v" > "\$h/.internal/llmster-install-location.json"
+    p="\$v/llmster"; [ ! -f "\$T/boot-odd-path" ] || p="\$v/ll\u001bmster"
+    [ -f "\$T/boot-no-record" ] || printf '{"path":"%s","argv":[],"cwd":"%s"}' "\$p" "\$v" > "\$h/.internal/llmster-install-location.json"
     echo "(node:4242) [DEP0040] DeprecationWarning: The punycode module is deprecated." >&2 ;;
   *) exec sleep 20 ;;
 esac
@@ -165,7 +168,8 @@ test_where_it_does_not_run_it_says_why_and_nothing_is_installed() {
 test_install_downloads_the_pinned_archive_checks_its_sha512_and_its_own_installer_puts_it_in_the_stacks_folder() {
   _ls_env
   assert_eq "$(rt_state lmstudio)" not-installed
-  rt_install lmstudio > "$TMP/out" 2>&1 || { cat "$TMP/out" "$(rt_dir lmstudio)/install.log" >&2; return 1; }
+  # (with LMS_DAEMON_DISABLE_UPDATES=1 of yours in its environment: its installer runs without it)
+  LMS_DAEMON_DISABLE_UPDATES=1 rt_install lmstudio > "$TMP/out" 2>&1 || { cat "$TMP/out" "$(rt_dir lmstudio)/install.log" >&2; return 1; }
   assert_eq "$(rt_state lmstudio)" running
   assert_eq "$(rt_installed_version lmstudio)" "$VER"
   local d h; d="$(rt_dir lmstudio)"; h="$d/home/.lmstudio"
@@ -257,7 +261,7 @@ test_an_installer_that_leaves_out_lms_or_where_llmster_is_says_which() {
   # (each its own try: what an earlier one left in the stack's LM Studio home is cleared first)
   _ls_env
   local d k; d="$(rt_dir lmstudio)"
-  for k in boot-no-lms boot-no-record boot-in-place; do
+  for k in boot-no-lms boot-no-record boot-in-place boot-newer boot-odd-path; do
     rm -rf "$d/home" "$TMP"/boot-*; : > "$TMP/$k"
     ( rt_install lmstudio ) > "$TMP/out.$k" 2>&1 && { echo "$k: installed" >&2; return 1; }
     assert_eq "$(rt_state lmstudio)" not-installed
@@ -266,6 +270,11 @@ test_an_installer_that_leaves_out_lms_or_where_llmster_is_says_which() {
   assert_contains "$(cat "$TMP/out.boot-no-lms")" "LM Studio's installer left no lms in .state/runtimes/lmstudio/home/.lmstudio/bin; .state/runtimes/lmstudio/home/.lmstudio holds .internal, bin, llmster"
   assert_contains "$(cat "$TMP/out.boot-no-record")" "LM Studio's installer left no record of where llmster is (.state/runtimes/lmstudio/home/.lmstudio/.internal/llmster-install-location.json)"
   assert_contains "$(cat "$TMP/out.boot-in-place")" "LM Studio's installer recorded llmster at .state/runtimes/lmstudio/pkg/llmster, outside .state/runtimes/lmstudio/home;"
+  # (a version other than the one pinned: its installer runs with its updates on, so this is checked)
+  assert_contains "$(cat "$TMP/out.boot-newer")" "LM Studio's installer put llmster at .state/runtimes/lmstudio/home/.lmstudio/llmster/0.0.99-1/llmster, not at llmster/$VER, the version pinned: nothing was installed."
+  # (what a record names is shown printable only)
+  assert_contains "$(cat "$TMP/out.boot-odd-path")" "LM Studio's installer recorded llmster at .state/runtimes/lmstudio/home/.lmstudio/llmster/$VER/ll?mster, where there is no program;"
+  assert_eq "$(LC_ALL=C grep -c "$(printf '\033')" "$TMP/out.boot-odd-path")" 0
 }
 
 test_its_bundle_unpacks_with_links_inside_its_own_tree_and_nothing_else() {

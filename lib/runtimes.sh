@@ -613,10 +613,18 @@ _rt_install_lmstudio_mac() {
   _rt_key_make "$id" || _rt_fail "$id" install "Could not make LM Studio's key (.state/runtimes/$id/etc): nothing was installed."
   { [ -x "$h/bin/lms" ] && x="$(_rt_lmstudio_run)" && [ -n "$x" ]; } \
     || { rm -f "$d/llmster.run"; _rt_fail "$id" install "LM Studio's installer $(_rt_lmstudio_left). Its last words: $(tail -n 2 "$d/install.log" | LC_ALL=C tr -cd ' -~\n' | tr '\n' ' ' | cut -c1-160)"; }
+  # (the version pinned and no other: its installer runs with its updates on)
+  [ "${x%%$'\t'*}" = "$(cd "$h/llmster/$ver" 2>/dev/null && pwd -P)/llmster" ] \
+    || { rm -f "$d/llmster.run"; _rt_fail "$id" install "LM Studio's installer put llmster at $(_rt_lmstudio_show "${x%%$'\t'*}"), not at llmster/$ver, the version pinned: nothing was installed."; }
   printf '%s\t%s\n' "$x" "$(_rt_python)" > "$d/llmster.run" && chmod 600 "$d/llmster.run" \
     || { rm -f "$d/llmster.run"; _rt_fail "$id" install "Could not write .state/runtimes/$id/llmster.run: nothing was installed."; }
   rm -f "$d/install.log"
   printf '%s\n' "$ver" > "$d/installed"
+}
+# _rt_lmstudio_show PATH -> PATH as words may show it: inside the stack's LM Studio folder, from .state; printable only
+_rt_lmstudio_show() {
+  local r; r="$(cd "$(rt_dir lmstudio)" 2>/dev/null && pwd -P)"
+  case "$1" in "$r"/*) printf '.state/runtimes/lmstudio/%s' "${1#"$r"/}" ;; *) printf '%s' "$1" ;; esac | LC_ALL=C tr -c ' -~' '?' | cut -c1-200
 }
 _rt_install_lmstudio_linux() { _rt_fail lmstudio install "$(rt_why_not lmstudio)"; }
 # LM Studio's downloads (tests point it at a stand-in on this computer)
@@ -639,7 +647,7 @@ if ok:
 # _rt_lmstudio_left -> why what LM Studio's installer left cannot run, in words: no lms, no record of where llmster is,
 # or the place it records (outside the stack's LM Studio home, no program there, or its folder); then what that home holds
 _rt_lmstudio_left() {
-  python3 -I -c 'import json, os, sys
+  python3 -I -c 'import json, os, re, sys
 d, home, h = (os.path.realpath(x) for x in sys.argv[1:4]); f = os.path.join(h, ".internal", "llmster-install-location.json")
 show = lambda p: ".state/runtimes/lmstudio" + p[len(d):] if p.startswith(d + os.sep) else p
 lms = os.path.join(h, "bin", "lms")
@@ -666,7 +674,7 @@ try:
     why += "; " + show(h) + " holds " + (", ".join(sorted(os.listdir(h))[:12]) or "nothing")
 except OSError:
     why += "; there is no " + show(h)
-print(why[:300])' "$(rt_dir lmstudio)" "$(rt_dir lmstudio)/home" "$(rt_lmstudio_home)" 2>/dev/null || echo "left something DevOS ADE could not read"
+print(re.sub(r"[^ -~]", "?", why[:300]))' "$(rt_dir lmstudio)" "$(rt_dir lmstudio)/home" "$(rt_lmstudio_home)" 2>/dev/null || echo "left something DevOS ADE could not read"   # (printable only: a name may hold anything)
 }
 # _rt_lms ARGS — LM Studio's lms, for the stack's own LM Studio alone (its HOME, and the server it records: never the
 # LM Studio app's, which lms would otherwise find by its ports)
