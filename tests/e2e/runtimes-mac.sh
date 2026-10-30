@@ -54,7 +54,8 @@ agent_pid() { _rt_launchd ollama | awk '$1 == "pid" && $2 == "=" { print $3; exi
 answers() { [ -n "$(_rt_ollama_version)" ]; }
 not() { ! "$@"; }
 wait_for() { local n=0 max="$1"; shift; while [ "$n" -lt "$max" ]; do "$@" && return 0; sleep 1; n=$((n + 1)); done; return 1; }
-status_json() { rt_status_write; python3 -I -c "$1" "$(rt_status_file)"; }
+# status_json PY [ARG...] -> PY run on the status file, then ARGs (sys.argv[2:])
+status_json() { local py="$1"; shift; rt_status_write; python3 -I -c "$py" "$(rt_status_file)" "$@"; }
 
 # --- 0: an Ollama of yours is never installed over ---
 if answers; then

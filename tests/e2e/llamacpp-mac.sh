@@ -54,7 +54,8 @@ agent_pid() { _rt_launchd llamacpp | awk '$1 == "pid" && $2 == "=" { print $3; e
 answers() { [ "$(curl -s -o /dev/null -w '%{http_code}' -m 3 "$API/health")" = 200 ]; }
 not() { ! "$@"; }
 wait_for() { local n=0 max="$1"; shift; while [ "$n" -lt "$max" ]; do "$@" && return 0; sleep 1; n=$((n + 1)); done; return 1; }
-status_json() { rt_status_write; python3 -I -c "$1" "$(rt_status_file)"; }
+# status_json PY [ARG...] -> PY run on the status file, then ARGs (sys.argv[2:])
+status_json() { local py="$1"; shift; rt_status_write; python3 -I -c "$py" "$(rt_status_file)" "$@"; }
 code() { curl -s -o /dev/null -w '%{http_code}' -m 10 "$@"; }
 
 # --- 0: something on its port is never installed over ---

@@ -37,12 +37,23 @@ check() { local what="$1"; shift; if "$@"; then ok "$what"; else fail "$what"; f
 [ "$(uname -s):$(uname -m)" = Darwin:arm64 ] || { echo "this check is for an Apple-silicon Mac (LM Studio has no Intel-Mac build; DevOS ADE does not run it on Linux)" >&2; exit 2; }
 [ "$TERMS" = 1 ] || { echo "LM Studio is not open source: this downloads it, which accepts its terms (lmstudio.ai/app-terms). Run again with --accept-terms." >&2; exit 2; }
 WORK="$ROOT/tests/e2e/work/bne2e-lmstudio"; API=http://127.0.0.1:11439
+# keep — on a failure, what explains it, in OUT: the server's and the installer's logs, what the stack's LM Studio home
+# holds (names only) and where its installer recorded llmster
+keep() {
+  local r="$WORK/state/runtimes/lmstudio"
+  mkdir -p "$OUT" || return 0
+  tail -n 200 "$r/server.log" > "$OUT/lmstudio-mac.log" 2>/dev/null
+  tail -n 200 "$r/install.log" > "$OUT/lmstudio-install.log" 2>/dev/null
+  [ ! -d "$r/home" ] || ( cd "$r" && find home -maxdepth 5 ! -path '*/node_modules/*' ! -path '*/.bundle/bin/*' | head -n 500 ) > "$OUT/lmstudio-home.txt" 2>/dev/null
+  cp "$r/home/.lmstudio/.internal/llmster-install-location.json" "$OUT/" 2>/dev/null
+  return 0
+}
 cleanup() {
   local rc=$?
   if [ -n "${STATE_DIR:-}" ] && declare -F _rt_agent_down >/dev/null; then
     _rt_agent_down lmstudio >/dev/null 2>&1; rm -f "$(rt_plist lmstudio)"
   fi
-  { [ "$rc" = 0 ] && [ "$FAILS" = 0 ]; } || { [ ! -d "$WORK/state/runtimes" ] || { mkdir -p "$OUT" && tail -n 200 "$WORK/state/runtimes/lmstudio/server.log" > "$OUT/lmstudio-mac.log" 2>/dev/null; }; }
+  { [ "$rc" = 0 ] && [ "$FAILS" = 0 ]; } || { [ ! -d "$WORK/state/runtimes" ] || keep; }
   rm -rf "$WORK"
   mkdir -p "$OUT" 2>/dev/null && printf '%s\n' ${CHECKS[@]+"${CHECKS[@]}"} | python3 -I -c 'import json, sys
 print(json.dumps({"failures": int(sys.argv[1]), "checks": [dict(zip(("status", "check"), l.rstrip("\n").split("\t", 1))) for l in sys.stdin if "\t" in l]}, indent=1))' "$FAILS" > "$OUT/lmstudio-mac.json" 2>/dev/null
@@ -63,7 +74,8 @@ tree() { ps -A -o pid=,ppid= | awk -v r="$1" '{ p[$1] = $2 } END { for (x in p) 
 answers() { [ "$(curl -s -o /dev/null -w '%{http_code}' -m 3 -H @"$WORK/state/runtimes/lmstudio/etc/auth.hdr" "$API/v1/models")" = 200 ]; }
 not() { ! "$@"; }
 wait_for() { local n=0 max="$1"; shift; while [ "$n" -lt "$max" ]; do "$@" && return 0; sleep 1; n=$((n + 1)); done; return 1; }
-status_json() { rt_status_write; python3 -I -c "$1" "$(rt_status_file)"; }
+# status_json PY [ARG...] -> PY run on the status file, then ARGs (sys.argv[2:])
+status_json() { local py="$1"; shift; rt_status_write; python3 -I -c "$py" "$(rt_status_file)" "$@"; }
 code() { curl -s -o /dev/null -w '%{http_code}' -m 10 "$@"; }
 WORKR="$(cd "$WORK" && pwd -P)"   # (llmster's recorded place is resolved)
 mine() { pgrep -f "$WORKR/state/runtimes/lmstudio" >/dev/null; }   # (a process of it: its program is in the scratch folder)

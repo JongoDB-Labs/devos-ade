@@ -609,8 +609,10 @@ _rt_install_lmstudio_mac() {
   _rt_lms daemon down >/dev/null 2>&1 || true   # (the bootstrap may have started it: launchd runs it from now on)
   rm -rf "$d/pkg" "$part"
   _rt_key_make "$id" || _rt_fail "$id" install "Could not make LM Studio's key (.state/runtimes/$id/etc): nothing was installed."
-  [ -x "$h/bin/lms" ] && x="$(_rt_lmstudio_run)" && [ -n "$x" ] && printf '%s\t%s\n' "$x" "$(_rt_python)" > "$d/llmster.run" && chmod 600 "$d/llmster.run" \
-    || { rm -f "$d/llmster.run"; _rt_fail "$id" install "LM Studio's installer left no lms or llmster in .state/runtimes/$id/home/.lmstudio: $(tail -n 2 "$d/install.log" | LC_ALL=C tr -cd ' -~\n' | tr '\n' ' ' | cut -c1-200)"; }
+  { [ -x "$h/bin/lms" ] && x="$(_rt_lmstudio_run)" && [ -n "$x" ]; } \
+    || { rm -f "$d/llmster.run"; _rt_fail "$id" install "LM Studio's installer $(_rt_lmstudio_left). Its last words: $(tail -n 2 "$d/install.log" | LC_ALL=C tr -cd ' -~\n' | tr '\n' ' ' | cut -c1-160)"; }
+  printf '%s\t%s\n' "$x" "$(_rt_python)" > "$d/llmster.run" && chmod 600 "$d/llmster.run" \
+    || { rm -f "$d/llmster.run"; _rt_fail "$id" install "Could not write .state/runtimes/$id/llmster.run: nothing was installed."; }
   rm -f "$d/install.log"
   printf '%s\n' "$ver" > "$d/installed"
 }
@@ -631,6 +633,38 @@ a = d.get("argv") if isinstance(d.get("argv"), list) else []
 ok = all(x.startswith(h + os.sep) and "\t" not in x and "\n" not in x for x in (p, c)) and os.path.isfile(p) and os.access(p, os.X_OK) and os.path.isdir(c)
 if ok:
     print("\t".join([p, c, "." if len(a) > 1 and a[1] == "." else "-"]))' "$(rt_lmstudio_home)/.internal/llmster-install-location.json" "$(rt_dir lmstudio)/home" 2>/dev/null || true
+}
+# _rt_lmstudio_left -> why what LM Studio's installer left cannot run, in words: no lms, no record of where llmster is,
+# or the place it records (outside the stack's LM Studio home, no program there, or its folder); then what that home holds
+_rt_lmstudio_left() {
+  python3 -I -c 'import json, os, sys
+d, home, h = (os.path.realpath(x) for x in sys.argv[1:4]); f = os.path.join(h, ".internal", "llmster-install-location.json")
+show = lambda p: ".state/runtimes/lmstudio" + p[len(d):] if p.startswith(d + os.sep) else p
+lms = os.path.join(h, "bin", "lms")
+try:
+    r = json.load(open(f))
+except Exception:
+    r = None
+p = r.get("path") if isinstance(r, dict) and isinstance(r.get("path"), str) and r.get("path") else None
+if not (os.path.isfile(lms) and os.access(lms, os.X_OK)):
+    why = "left no lms in " + show(os.path.dirname(lms))
+elif not os.path.isfile(f):
+    why = "left no record of where llmster is (" + show(f) + ")"
+elif p is None:
+    why = "left a record of where llmster is that names no program (" + show(f) + ")"
+else:
+    q = os.path.realpath(p)
+    if not q.startswith(home + os.sep):
+        why = "recorded llmster at " + show(q) + ", outside " + show(home)
+    elif not (os.path.isfile(q) and os.access(q, os.X_OK)):
+        why = "recorded llmster at " + show(q) + ", where there is no program"
+    else:
+        why = "recorded a folder for llmster outside " + show(home) + ", or none"
+try:
+    why += "; " + show(h) + " holds " + (", ".join(sorted(os.listdir(h))[:12]) or "nothing")
+except OSError:
+    why += "; there is no " + show(h)
+print(why[:300])' "$(rt_dir lmstudio)" "$(rt_dir lmstudio)/home" "$(rt_lmstudio_home)" 2>/dev/null || echo "left something DevOS ADE could not read"
 }
 # _rt_lms ARGS — LM Studio's lms, for the stack's own LM Studio alone (its HOME, and the server it records: never the
 # LM Studio app's, which lms would otherwise find by its ports)

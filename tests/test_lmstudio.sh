@@ -75,8 +75,9 @@ case "\$1" in
 esac
 EOF
   chmod +x "$TMP/lms-src"
-  # the archive: llmster (bootstrap: lms, and llmster where its installer records it; TMP/boot-fails: it stops) and its
-  # bundle, with a link that goes up and back into it (as LM Studio's do)
+  # the archive: llmster (bootstrap: lms, and llmster where its installer records it; TMP/boot-fails: it stops;
+  # TMP/boot-no-lms, TMP/boot-no-record: it leaves that out; TMP/boot-in-place: it records itself where it was unpacked)
+  # and its bundle, with a link that goes up and back into it (as LM Studio's do)
   cat > "$TMP/pkg/llmster" <<EOF
 #!/bin/sh
 T="$TMP"
@@ -84,8 +85,11 @@ printf '%s|HOME=%s|BOOT=%s|NOUPD=%s|PWD=%s\n' "\$*" "\$HOME" "\${LMS_BOOTSTRAP_I
 case "\${1:-}" in
   bootstrap) [ ! -f "\$T/boot-fails" ] || { echo "bootstrap: no space left on device" >&2; exit 1; }
     h="\$HOME/.lmstudio"; v="\$h/llmster/$VER"
-    mkdir -p "\$h/bin" "\$h/.internal" "\$v" && cp "\$T/lms-src" "\$h/bin/lms" && cp "\$0" "\$v/llmster" && chmod +x "\$h/bin/lms" "\$v/llmster"
-    printf '{"path":"%s","argv":["%s","."],"cwd":"%s"}' "\$v/llmster" "\$v/llmster" "\$v" > "\$h/.internal/llmster-install-location.json" ;;
+    mkdir -p "\$h/bin" "\$h/.internal" "\$v" && cp "\$0" "\$v/llmster" && chmod +x "\$v/llmster"
+    [ -f "\$T/boot-no-lms" ] || { cp "\$T/lms-src" "\$h/bin/lms" && chmod +x "\$h/bin/lms"; }
+    [ ! -f "\$T/boot-in-place" ] || v="\$(pwd)"
+    [ -f "\$T/boot-no-record" ] || printf '{"path":"%s","argv":["%s","."],"cwd":"%s"}' "\$v/llmster" "\$v/llmster" "\$v" > "\$h/.internal/llmster-install-location.json"
+    echo "(node:4242) [DEP0040] DeprecationWarning: The punycode module is deprecated." >&2 ;;
   *) exec sleep 20 ;;
 esac
 EOF
@@ -239,6 +243,21 @@ test_an_archive_that_does_not_match_its_sha512_or_whose_installer_fails_installs
   assert_contains "$(cat "$TMP/out")" "LM Studio's installer did not finish: bootstrap: no space left on device"
   assert_eq "$(rt_state lmstudio)" not-installed
   [ ! -e "$d/pkg" ] && [ ! -e "$d/llmster.run" ]
+}
+
+test_an_installer_that_leaves_out_lms_or_where_llmster_is_says_which() {
+  # (each its own try: what an earlier one left in the stack's LM Studio home is cleared first)
+  _ls_env
+  local d k; d="$(rt_dir lmstudio)"
+  for k in boot-no-lms boot-no-record boot-in-place; do
+    rm -rf "$d/home" "$TMP"/boot-*; : > "$TMP/$k"
+    ( rt_install lmstudio ) > "$TMP/out.$k" 2>&1 && { echo "$k: installed" >&2; return 1; }
+    assert_eq "$(rt_state lmstudio)" not-installed
+    [ ! -e "$d/llmster.run" ] && [ ! -e "$d/pkg" ]
+  done
+  assert_contains "$(cat "$TMP/out.boot-no-lms")" "LM Studio's installer left no lms in .state/runtimes/lmstudio/home/.lmstudio/bin; .state/runtimes/lmstudio/home/.lmstudio holds .internal, bin, llmster"
+  assert_contains "$(cat "$TMP/out.boot-no-record")" "LM Studio's installer left no record of where llmster is (.state/runtimes/lmstudio/home/.lmstudio/.internal/llmster-install-location.json)"
+  assert_contains "$(cat "$TMP/out.boot-in-place")" "LM Studio's installer recorded llmster at .state/runtimes/lmstudio/pkg/llmster, outside .state/runtimes/lmstudio/home;"
 }
 
 test_its_bundle_unpacks_with_links_inside_its_own_tree_and_nothing_else() {
