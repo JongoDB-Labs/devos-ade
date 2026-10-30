@@ -198,11 +198,33 @@ e2e_helper_start() {
   HELPER_PID=$!
   for _ in $(seq 1 60); do
     kill -0 "$HELPER_PID" 2>/dev/null || { echo "it stopped by itself (log: $LOGS/helper.log)" >&2; return 1; }
-    hb="$(_helper_beat_at)" && [ "$hb" -ge "$HELPER_T0" ] && grep -q '"settings": 1' "$STACK/.state/status/helper-settings.json" 2>/dev/null && return 0
+    hb="$(_helper_beat_at)" && [ "$hb" -ge "$HELPER_T0" ] && grep -q '"settings": 1' "$STACK/.state/status/helper-settings.json" 2>/dev/null && {
+      _e2e_helper_settle "$hb"; return 0; }
     sleep 1
   done
   echo "no fresh heartbeat with Settings within 60 s (log: $LOGS/helper.log)" >&2
   return 1
+}
+
+# _e2e_helper_settle HEARTBEAT — waits for the helper's next heartbeat (its first loop ran to the end), then, up to
+# 200 s, for the read of the model browser's lists that loop started (lib/model_browser.sh model_browser_tick: Bedrock's
+# in a one-off container of LiteLLM's image, on the stack's network, up to 180 s). That container's start and end each
+# add or remove an interface on the test host, which the Linux browser shares (browser.sh: --network host), and Chromium
+# cancels what it is loading: net::ERR_NETWORK_CHANGED in settings-page, the first check after the helper starts
+# (v0390k, v0420f, v0420g, v0440b). Never fails: the checks start either way.
+_e2e_helper_settle() {
+  local hb pid t0; t0="$(now)"
+  for _ in $(seq 1 20); do hb="$(_helper_beat_at)" && [ "$hb" -gt "$1" ] && break; sleep 1; done
+  pid="$(cat "$STACK/.state/helper/model-browser.pid" 2>/dev/null || true)"
+  case "$pid" in '' | *[!0-9]*) return 0 ;; esac
+  kill -0 "$pid" 2>/dev/null || return 0
+  printf "%s e2e: waiting for the helper's first read of the model browser's lists (pid %s) before the settings checks\n" "$(date '+%F %T')" "$pid" >> "$LOGS/helper.log"
+  while kill -0 "$pid" 2>/dev/null && [ $(( $(now) - t0 )) -lt 200 ]; do sleep 1; done
+  if kill -0 "$pid" 2>/dev/null; then
+    printf "%s e2e: still reading after %s s: the settings checks start anyway\n" "$(date '+%F %T')" "$(( $(now) - t0 ))" >> "$LOGS/helper.log"
+  else
+    printf "%s e2e: that read ended after %s s\n" "$(date '+%F %T')" "$(( $(now) - t0 ))" >> "$LOGS/helper.log"
+  fi
 }
 
 # _e2e_helper_sweep — stops every process group running this checkout's helper (a command line that ends in

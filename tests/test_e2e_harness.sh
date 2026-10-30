@@ -388,13 +388,15 @@ test_e2e_teardown_removes_the_terminal_workspace_only_with_its_marker() {
 
 # _fake_helper DIR — a stand-in for DIR/bin/bedrock-now-helper: prints its environment, starts a child (as a job's
 # ./stack would be), offers Settings and writes a heartbeat every second while $TMP/alive is there (the runner deletes
-# $TMP after each test, so a failed test leaves nothing running for long); FAKE_HELPER_EXIT=N: exits N at once
+# $TMP after each test, so a failed test leaves nothing running for long); FAKE_HELPER_EXIT=N: exits N at once;
+# FAKE_HELPER_READ_S=N: a read of the model browser's lists that takes N s, as its first loop starts it
 _fake_helper() {
   mkdir -p "$1/bin" "$1/.state/status" "$1/.state/requests" "$1/.state/helper"; : > "$TMP/alive"
   { printf '#!/usr/bin/env bash\nalive=%q\n' "$TMP/alive"; cat <<'SH'
 [ -z "${FAKE_HELPER_EXIT:-}" ] || exit "$FAKE_HELPER_EXIT"
 d="$1/.state/status"
 printf 'knob=%s secret=%s\n' "${SETTINGS_MIN_INTERVAL_S:-unset}" "${E2E_FAKE_SECRET:-unset}"
+[ -z "${FAKE_HELPER_READ_S:-}" ] || { sleep "$FAKE_HELPER_READ_S" & echo "$!" > "$1/.state/helper/model-browser.pid"; }
 sleep 60 & echo "child $!"
 printf '{"settings": 1, "written_at": %s}\n' "$(date +%s)" > "$d/helper-settings.json" 2>/dev/null
 while [ -e "$alive" ]; do printf '{"heartbeat": %s, "pid": %s}\n' "$(date +%s)" "$$" > "$d/helper.json" 2>/dev/null; sleep 1; done
@@ -424,6 +426,20 @@ test_e2e_helper_runs_with_its_knobs_only_and_stops_with_its_children() {
   [ -f "$LOGS/helper-last-settings.log" ] || { echo "the helper's last settings log was not kept" >&2; return 1; }
   assert_contains "$(cat "$LOGS/helper.log")" "e2e: helper stopped"
   e2e_helper_stop   # a second stop is harmless
+}
+
+test_e2e_helper_start_waits_for_its_first_read_of_the_model_lists() {
+  # (that read runs a container on the stack's network: the settings checks after it, never during it)
+  command -v perl >/dev/null || { echo "no perl" >&2; return 77; }
+  _fake_docker; NOTTY="$STACK_DIR/tests/e2e/notty"; _fake_helper "$STACK"
+  HELPER_KNOBS="SETTINGS_MIN_INTERVAL_S=5 FAKE_HELPER_READ_S=4"
+  e2e_helper_start
+  read="$(cat "$STACK/.state/helper/model-browser.pid")"
+  rc=0; _alive "$read" || rc=1
+  e2e_helper_stop
+  [ "$rc" = 1 ] || { echo "started the checks while the read (pid $read) still ran" >&2; return 1; }
+  assert_contains "$(cat "$LOGS/helper.log")" "waiting for the helper's first read of the model browser's lists"
+  assert_contains "$(cat "$LOGS/helper.log")" "that read ended after"
 }
 
 test_e2e_helper_that_stops_by_itself_is_reported() {
