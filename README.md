@@ -585,7 +585,10 @@ you let go: tmux hands the selection to the page (OSC 52, `set-clipboard on`), a
 page (`terminal/ttyd-clipboard.js`, allowed by its hash in the terminal host's Content-Security-Policy) writes it
 there; the mouse wheel still scrolls and clicks still pick a pane. Only your own selection reaches the
 clipboard: programs in the terminal cannot set it (tmux passes on only its own copies, and the page accepts one only
-just after your click, touch or key, as plain text), and the Paste button says "Copied N characters" when it does. Paste with `Cmd+V` (`Ctrl+V` on Windows and Linux), or the **Paste** button at the top right
+just after your mouse release or touch end, once, as plain text without a trailing line break), and the Paste button says
+"Copied N characters" when it does. Copying from the keyboard in tmux's copy mode does not reach the clipboard; Shift-drag
+(Option-drag on a Mac) selects in the page instead. A program in the sandbox that drives tmux itself could still time its
+own copy to just after your mouse release; that note is how you would notice. Paste with `Cmd+V` (`Ctrl+V` on Windows and Linux), or the **Paste** button at the top right
 (for a phone, or a browser that keeps the shortcut). `Ctrl+C` is still interrupt, also on a Mac. Shift-drag
 (Option-drag on a Mac) still selects in the page itself, as before.
 

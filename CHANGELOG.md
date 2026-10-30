@@ -14,8 +14,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   in the build and in the terminal host's Content-Security-Policy, as ttyd's own script is) writes it to the
   clipboard. The mouse wheel and pane clicks work as before, and Shift-drag still selects in the page. Only your own
   selection reaches the clipboard: programs in the terminal cannot set it. tmux sends OSC 52 for its own copies only
-  (`set-clipboard external`), and the page honours one only within 1.5 s of your own click, touch or key, as plain text
-  (control characters removed, newlines kept, at most 1 MB), and says "Copied N characters" on the Paste button.
+  (`set-clipboard external`), and the page honours one only within 1.5 s of your own mouse release or touch end, once per gesture, as plain text
+  (control characters and a trailing line break removed, newlines inside kept, at most 1 MB), and says "Copied N
+  characters" on the Paste button. A copy made from the keyboard in tmux's copy mode no longer reaches the clipboard
+  (Shift-drag, or Option-drag on a Mac, still selects in the page). The limit that remains: a program in the sandbox
+  that drives tmux itself could time its own copy to just after your mouse release; the note is how you would notice.
 - **A Paste button.** At the top right of the terminal, for a phone or a browser that keeps `Cmd/Ctrl+V` for itself;
   if the browser refuses to read the clipboard it says so on the button. `Ctrl+C` still interrupts, also on a Mac.
 

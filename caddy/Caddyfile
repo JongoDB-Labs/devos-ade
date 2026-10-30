@@ -420,7 +420,7 @@ http://{$FILES_HOST} {
 	header_down -Reporting-Endpoints
 	header_down -NEL
 	header_down X-Content-Type-Options nosniff
-	header_down Content-Security-Policy "default-src 'none'; script-src 'sha256-qpCL1JTmm6ktW0DnjpSILM7GnS2fO8/e+XjSlYJuQzQ=' 'sha256-HkPmG9hHsZK6lLfsIEyA4QP8JuR3ZxvC7O2sMPRr/0k='; connect-src 'self' ws://{http.request.host}:* wss://{http.request.host}:*; img-src data: blob:; font-src data:; style-src 'unsafe-inline'; form-action {http.request.host}:*/.bn/unlock; base-uri 'none'; object-src 'none'; frame-ancestors {args[0]} {args[1]}"
+	header_down Content-Security-Policy "default-src 'none'; script-src 'sha256-qpCL1JTmm6ktW0DnjpSILM7GnS2fO8/e+XjSlYJuQzQ=' 'sha256-iUPenlnB5SBdRL+lXj0I/ENbfNpYOI7jbZp3sqCZNBs='; connect-src 'self' ws://{http.request.host}:* wss://{http.request.host}:*; img-src data: blob:; font-src data:; style-src 'unsafe-inline'; form-action {http.request.host}:*/.bn/unlock; base-uri 'none'; object-src 'none'; frame-ancestors {args[0]} {args[1]}"
 }
 
 # The Code page (./stack code; code-on.caddy and the remote sites): the same scheme as the terminal's. Its unlock form

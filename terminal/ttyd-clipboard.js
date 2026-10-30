@@ -5,14 +5,17 @@
 // which tmux hands a selection to the browser. This is that handler, and a Paste button for places where
 // Cmd/Ctrl+V does not reach the terminal (a phone, a browser that keeps the shortcut).
 // Anything in the terminal can print an OSC 52, and a program in the sandbox can drive tmux itself, so tmux's own
-// setting (set-clipboard external) is not the boundary: this is. A write is honoured only just after your own click,
-// touch or key, is cut to plain text, and says that it happened.
+// setting (set-clipboard external) is not the boundary: this is. A write is honoured only just after your own mouse
+// release or touch end (not a key: you type all the time, so keys would keep the window open; a copy made from the
+// keyboard in tmux's copy mode does not reach the clipboard, Shift-drag still selects in the page), once per gesture,
+// as plain text without a trailing newline, and says that it happened. What remains: a program that drives tmux
+// itself could time its own copy to just after your release; the note below is how you would see it.
 (function () {
   "use strict";
   var WINDOW_MS = 1500;      // after a gesture (tmux's double-click select waits 0.3 s before it copies)
   var MAX_BASE64 = 1048576;  // 1 MB of base64
   var last = -Infinity, btn = null, label = "Paste";
-  ["mouseup", "touchend", "keydown"].forEach(function (type) {
+  ["mouseup", "touchend"].forEach(function (type) {
     document.addEventListener(type, function (e) { if (e.isTrusted) last = Date.now(); }, true);
   });
 
@@ -44,11 +47,14 @@
     var b64 = i < 0 ? "" : data.slice(i + 1);
     if (!b64 || b64 === "?" || b64.length > MAX_BASE64) return true;
     if (Date.now() - last > WINDOW_MS) return true;
+    last = -Infinity;   // one write per gesture
     try {
       var bin = atob(b64), bytes = new Uint8Array(bin.length);
       for (var k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
       // (control characters out, except tab, CR and LF: a pasted escape sequence or backspace could rewrite a command)
       var text = new TextDecoder().decode(bytes).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, "");
+      // (no trailing line break: a pasted line must not run before you press Enter)
+      text = text.replace(/[\r\n]+$/, "");
       if (!text) return true;
       copy(text);
       say("Copied " + text.length + " characters");

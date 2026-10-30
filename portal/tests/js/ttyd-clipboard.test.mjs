@@ -25,7 +25,7 @@ function page() {
   vm.runInContext(src, ctx);
   timers[0]();   // ttyd's terminal is there: the handler is registered
   return {
-    written, button, osc: (d) => handler(d),
+    written, button, listeners, osc: (d) => handler(d),
     gesture: (type, isTrusted = true) => listeners[type].forEach((f) => f({ isTrusted })),
     advance: (ms) => { now += ms; },
   };
@@ -38,26 +38,26 @@ test("a write with no gesture before it is dropped", () => {
   assert.deepEqual(p.written, []);
 });
 
-test("a write just after your own mouseup, touchend or key reaches the clipboard; later, or after a script's event, it does not", () => {
+test("a write just after your own mouseup or touchend reaches the clipboard; later, or after a script's event, it does not", () => {
   const p = page();
-  for (const type of ["mouseup", "touchend", "keydown"]) {
+  for (const type of ["mouseup", "touchend"]) {
     p.gesture(type); p.advance(400);
     p.osc("c;" + b64(type));
   }
-  assert.deepEqual(p.written, ["mouseup", "touchend", "keydown"]);
+  assert.deepEqual(p.written, ["mouseup", "touchend"]);
   p.advance(1600);
   p.osc("c;" + b64("late"));
   p.gesture("mouseup", false);   // dispatched by a script: not a gesture
   p.osc("c;" + b64("untrusted"));
-  assert.deepEqual(p.written, ["mouseup", "touchend", "keydown"]);
+  assert.deepEqual(p.written, ["mouseup", "touchend"]);
 });
 
 test("control characters go, tabs and newlines stay, and the button says what was copied", () => {
   const p = page();
   p.gesture("mouseup");
-  p.osc("c;" + b64("a\tb\r\nc\x1b[31m\x08\x7f\u0085d\n"));
-  assert.deepEqual(p.written, ["a\tb\r\nc[31md\n"]);
-  assert.equal(p.button.textContent, "Copied 12 characters");
+  p.osc("c;" + b64("a\tb\r\nc\x1b[31m\x08\x7f\u0085d\n\r\n"));
+  assert.deepEqual(p.written, ["a\tb\r\nc[31md"]);
+  assert.equal(p.button.textContent, "Copied 11 characters");
 });
 
 test('"?" is never answered, and an empty or malformed write does nothing', () => {
@@ -74,4 +74,22 @@ test("a payload over 1 MB of base64 is dropped", () => {
   assert.deepEqual(p.written, []);
   p.osc("c;" + b64("ok"));
   assert.deepEqual(p.written, ["ok"]);
+});
+
+test("a key alone opens no window", () => {
+  const p = page();
+  assert.equal(p.listeners.keydown, undefined);
+  p.osc("c;" + b64("typed"));
+  assert.deepEqual(p.written, []);
+});
+
+test("one write per gesture: a second before the next release is dropped", () => {
+  const p = page();
+  p.gesture("mouseup");
+  p.osc("c;" + b64("first"));
+  p.osc("c;" + b64("second"));
+  assert.deepEqual(p.written, ["first"]);
+  p.gesture("touchend");
+  p.osc("c;" + b64("third"));
+  assert.deepEqual(p.written, ["first", "third"]);
 });
