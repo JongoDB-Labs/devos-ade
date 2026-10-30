@@ -290,6 +290,13 @@ def clipboard(ctx):
     page.wait_for_timeout(2500)   # past the page's window after the last gesture
     got = clipboard_read(f)
     expect(got == "jon546-marker", f"step 2 (no copy without a gesture): a printed OSC 52 changed the clipboard to {got!r}")
+    # (and one tmux itself sends, as a program that drives tmux could make it: `set-buffer -w`; tmux's set-clipboard
+    # external lets that through, so only the page's gate stops it)
+    type_line(page, f, "sleep 2; tmux set-buffer -w evil-tmux; echo setbuf-done-$((6*7))")
+    wait_text(f, r"setbuf-done-42$", 15)
+    page.wait_for_timeout(1000)
+    got = clipboard_read(f)
+    expect(got == "jon546-marker", f"step 2 (no copy without a gesture): tmux's own OSC 52 (set-buffer -w) changed the clipboard to {got!r}")
 
     # 3. paste: the Paste button puts the clipboard into the shell
     clipboard_write(f, "echo jon546-paste-check")
