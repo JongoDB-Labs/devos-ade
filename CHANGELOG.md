@@ -6,6 +6,29 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.44.4] - 2026-10-30
+
+### Fixed
+- **LM Studio installs on a Mac (JON-846).** Since v0.43.0, installing LM Studio (Settings › Models & providers › Local
+  models › Runtimes, or `./stack runtimes install lmstudio`) failed on Apple-silicon Macs after its download: DevOS ADE
+  ran LM Studio's own installer with `LMS_DAEMON_DISABLE_UPDATES=1`, to keep it at the version pinned, and with that set
+  llmster 0.0.25-1's installer writes only its home pointer, installs nothing, and still says it succeeded. The
+  installer now runs without it, even one set in your environment; LM Studio's server and `lms` still run with its
+  updates off, and the install takes llmster only at the version this release pins. The unit tests passed because
+  their stand-in for LM Studio's installer ignored the setting: it now does as the real one does. Found by the Mac
+  runtime checks on v0.44.3.
+- **When LM Studio's installer leaves something out, the error says what.** It names what is missing (`lms`, the record
+  of where llmster is, or the program that record names, or a place outside the stack's LM Studio folder) and lists what
+  the installer did leave there, in printable characters only.
+- **`./stack runtimes status` no longer shows "0 MB" for a size a runtime does not give.** llama.cpp's server does not
+  say how much memory a loaded model takes, so its line read "(0 MB, 0 MB on the GPU)". A size that is not known is now
+  left out, as Settings does.
+
+### Changed
+- **The Mac runtime checks** (`tests/e2e/runtimes-mac.sh`, `llamacpp-mac.sh`, `lmstudio-mac.sh`): their status helper
+  passes its extra arguments on (`llamacpp-mac.sh` failed one check on that alone), and `lmstudio-mac.sh` keeps LM
+  Studio's install log, a listing of its folder and its install record when a check fails.
+
 ## [0.44.3] - 2026-10-30
 
 ### Security
