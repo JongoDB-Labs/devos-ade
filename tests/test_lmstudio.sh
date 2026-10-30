@@ -75,7 +75,8 @@ case "\$1" in
 esac
 EOF
   chmod +x "$TMP/lms-src"
-  # the archive: llmster (bootstrap: lms, and llmster where its installer records it; TMP/boot-fails: it stops;
+  # the archive: llmster (bootstrap: as LM Studio's 0.0.25-1, its home pointer, then lms, and llmster where its installer
+  # records it with no argument, and with its updates off, nothing more, still exiting 0; TMP/boot-fails: it stops;
   # TMP/boot-no-lms, TMP/boot-no-record: it leaves that out; TMP/boot-in-place: it records itself where it was unpacked)
   # and its bundle, with a link that goes up and back into it (as LM Studio's do)
   cat > "$TMP/pkg/llmster" <<EOF
@@ -84,11 +85,12 @@ T="$TMP"
 printf '%s|HOME=%s|BOOT=%s|NOUPD=%s|PWD=%s\n' "\$*" "\$HOME" "\${LMS_BOOTSTRAP_INSTALL_SH:-}" "\${LMS_DAEMON_DISABLE_UPDATES:-}" "\$(pwd)" >> "\$T/llmster.args"
 case "\${1:-}" in
   bootstrap) [ ! -f "\$T/boot-fails" ] || { echo "bootstrap: no space left on device" >&2; exit 1; }
-    h="\$HOME/.lmstudio"; v="\$h/llmster/$VER"
+    h="\$HOME/.lmstudio"; v="\$h/llmster/$VER"; printf '%s' "\$h" > "\$HOME/.lmstudio-home-pointer"
+    [ "\${LMS_DAEMON_DISABLE_UPDATES:-}" != 1 ] || exit 0
     mkdir -p "\$h/bin" "\$h/.internal" "\$v" && cp "\$0" "\$v/llmster" && chmod +x "\$v/llmster"
     [ -f "\$T/boot-no-lms" ] || { cp "\$T/lms-src" "\$h/bin/lms" && chmod +x "\$h/bin/lms"; }
     [ ! -f "\$T/boot-in-place" ] || v="\$(pwd)"
-    [ -f "\$T/boot-no-record" ] || printf '{"path":"%s","argv":["%s","."],"cwd":"%s"}' "\$v/llmster" "\$v/llmster" "\$v" > "\$h/.internal/llmster-install-location.json"
+    [ -f "\$T/boot-no-record" ] || printf '{"path":"%s","argv":[],"cwd":"%s"}' "\$v/llmster" "\$v" > "\$h/.internal/llmster-install-location.json"
     echo "(node:4242) [DEP0040] DeprecationWarning: The punycode module is deprecated." >&2 ;;
   *) exec sleep 20 ;;
 esac
@@ -169,15 +171,21 @@ test_install_downloads_the_pinned_archive_checks_its_sha512_and_its_own_installe
   local d h; d="$(rt_dir lmstudio)"; h="$d/home/.lmstudio"
   assert_contains "$(cat "$TMP/curl.args")" "--proto =https --proto-redir =https"
   assert_contains "$(cat "$TMP/curl.args")" "https://llmster.lmstudio.ai/download/$VER-darwin-arm64.full.tar.gz"
-  # its installer: run from the unpacked archive with the stack's HOME and its updates off; what it started, stopped
-  assert_contains "$(cat "$TMP/llmster.args")" "bootstrap|HOME=$d/home|BOOT=1|NOUPD=1|PWD=$d/pkg"
+  # its installer: run from the unpacked archive with the stack's HOME (and not its updates off: with them off, LM
+  # Studio's installer installs nothing; its daemon and lms run with them off); what it started, stopped
+  assert_contains "$(cat "$TMP/llmster.args")" "bootstrap|HOME=$d/home|BOOT=1|NOUPD=|PWD=$d/pkg"
   assert_contains "$(cat "$TMP/lms.args")" "daemon down|HOME=$d/home|INFO=$h/.internal/http-server.json"
   [ -x "$h/bin/lms" ] && [ ! -e "$d/pkg" ] && [ -z "$(find "$d" -maxdepth 1 -name '*.part')" ] && [ ! -e "$d/install.log" ]
-  [ ! -e "$HOME/.lmstudio" ]   # (yours, the LM Studio app's: never touched)
+  [ ! -e "$HOME/.lmstudio" ] && [ ! -e "$HOME/.lmstudio-home-pointer" ]   # (yours, the LM Studio app's: never touched)
   assert_eq "$(perm_of "$d/home")" 700
-  # where llmster is, for its agent: resolved, in the stack's folder; and the python3 its gate runs on
-  assert_eq "$(cat "$d/llmster.run")" "$(printf '%s\t%s\t.\t%s' "$(cd "$h/llmster/$VER" && pwd -P)/llmster" "$(cd "$h/llmster/$VER" && pwd -P)" "$(command -v python3)")"
+  # where llmster is, for its agent: resolved, in the stack's folder, with no argument; and the python3 its gate runs on
+  assert_eq "$(cat "$d/llmster.run")" "$(printf '%s\t%s\t-\t%s' "$(cd "$h/llmster/$VER" && pwd -P)/llmster" "$(cd "$h/llmster/$VER" && pwd -P)" "$(command -v python3)")"
   assert_eq "$(perm_of "$d/llmster.run")" 600
+  # (and "." when its installer records that as llmster's argument)
+  cp "$h/.internal/llmster-install-location.json" "$TMP/rec"
+  python3 -I -c 'import json, sys; d = json.load(open(sys.argv[1])); d["argv"] = [d["path"], "."]; json.dump(d, open(sys.argv[1], "w"))' "$h/.internal/llmster-install-location.json"
+  assert_eq "$(_rt_lmstudio_run | cut -f3)" .
+  cp "$TMP/rec" "$h/.internal/llmster-install-location.json"
   # its gate's key: 32 random bytes in hex, in a folder of its own; ./stack's own looks send it from a header file
   local k; k="$(cat "$d/etc/api-key")"; [[ $k =~ ^[0-9a-f]{64}$ ]]
   assert_eq "$(perm_of "$d/etc")" 700

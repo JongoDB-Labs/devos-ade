@@ -603,7 +603,9 @@ _rt_install_lmstudio_mac() {
   _rt_job running "$id" install "$_RT_TOTAL" "$_RT_TOTAL" "Installing it into the stack's folder"
   ! _rt_agent_loaded "$id" || _rt_agent_down "$id"
   mkdir -p "$d/home" "$d/hub" && chmod 700 "$d/home" "$d/hub"
-  ( cd "$d/pkg" && HOME="$d/home" LMS_BOOTSTRAP_INSTALL_SH=1 LMS_DAEMON_DISABLE_UPDATES=1 exec ./llmster bootstrap ) </dev/null > "$d/install.log" 2>&1 \
+  # (never with LMS_DAEMON_DISABLE_UPDATES, not even one of yours: with it, its installer installs nothing and still exits
+  # 0, as 0.0.25-1 does on a Mac; its daemon and lms run with it, at the version pinned)
+  ( cd "$d/pkg" && unset LMS_DAEMON_DISABLE_UPDATES && HOME="$d/home" LMS_BOOTSTRAP_INSTALL_SH=1 exec ./llmster bootstrap ) </dev/null > "$d/install.log" 2>&1 \
     || { rm -rf "$d/pkg"; _rt_fail "$id" install "LM Studio's installer did not finish: $(tail -n 2 "$d/install.log" | LC_ALL=C tr -cd ' -~\n' | tr '\n' ' ' | cut -c1-200)"; }
   h="$(rt_lmstudio_home)"
   _rt_lms daemon down >/dev/null 2>&1 || true   # (the bootstrap may have started it: launchd runs it from now on)

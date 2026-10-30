@@ -591,7 +591,8 @@ DevOS ADE's own Ollama, llama.cpp, LM Studio or vLLM: Runtimes, below).
   plist, as the user) runs `lib/lmstudio-agent.sh`, which starts llmster from the place its installer recorded (only
   inside that home; resolved at install) and its server with `--bind 127.0.0.1`, without CORS, on a port chosen free at
   each start. `lms` is always pointed at this instance's own server file (`LMS_API_SERVER_INFO_PATH`), never at an LM
-  Studio app on the same Mac. Its updates are off (`LMS_DAEMON_DISABLE_UPDATES`): it runs the version pinned.
+  Studio app on the same Mac. Its updates are off (`LMS_DAEMON_DISABLE_UPDATES`): it runs the version pinned. (Its
+  installer runs without that setting, which would make it install nothing; it installs the archive already checked.)
   **Its gate.** LM Studio's server has no key that can be set from outside its app, it does not check the Host a request
   names, and its API can download a model, load one and read its log, so a web page that points a name of its own at
   this computer (DNS rebinding: the page is then same-origin, and no CORS stops it) could use it. 127.0.0.1:11439, the
