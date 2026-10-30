@@ -583,8 +583,9 @@ keyboard helps a lot on a phone.
 Copy and paste work without a modifier. Drag over text (or double or triple click) and it is on your clipboard when
 you let go: tmux hands the selection to the page (OSC 52, `set-clipboard on`), and a small script in the terminal's
 page (`terminal/ttyd-clipboard.js`, allowed by its hash in the terminal host's Content-Security-Policy) writes it
-there; the mouse wheel still scrolls and clicks still pick a pane. Programs in a pane that copy with OSC 52 reach
-your clipboard too. Paste with `Cmd+V` (`Ctrl+V` on Windows and Linux), or the **Paste** button at the top right
+there; the mouse wheel still scrolls and clicks still pick a pane. Only your own selection reaches the
+clipboard: programs in the terminal cannot set it (tmux passes on only its own copies, and the page accepts one only
+just after your click, touch or key, as plain text), and the Paste button says "Copied N characters" when it does. Paste with `Cmd+V` (`Ctrl+V` on Windows and Linux), or the **Paste** button at the top right
 (for a phone, or a browser that keeps the shortcut). `Ctrl+C` is still interrupt, also on a Mac. Shift-drag
 (Option-drag on a Mac) still selects in the page itself, as before.
 

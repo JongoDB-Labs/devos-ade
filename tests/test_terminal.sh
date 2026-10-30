@@ -911,10 +911,13 @@ test_ttyd_listens_on_a_socket_only_and_checks_the_origin() {
 test_terminal_copy_and_paste() {
   t="$(cat "$STACK_DIR/terminal/tmux.conf")"
   assert_contains "$t" "set -g mouse on"
-  assert_contains "$t" "set -g set-clipboard on"
+  assert_contains "$t" "set -g set-clipboard external"
+  assert_not_contains "$t" "set-clipboard on"
+  assert_contains "$t" "set -g allow-passthrough off"
   assert_contains "$t" "Drag to copy · Cmd/Ctrl+V pastes"
   j="$(cat "$STACK_DIR/terminal/ttyd-clipboard.js")"
   assert_contains "$j" "t.parser.registerOscHandler(52, osc52)"
+  assert_contains "$j" "e.isTrusted"
   assert_contains "$j" "navigator.clipboard.writeText(text)"
   assert_contains "$j" "navigator.clipboard.readText()"
   assert_contains "$j" "window.term.paste(text)"
@@ -929,7 +932,7 @@ test_terminal_copy_and_paste() {
   if command -v tmux >/dev/null 2>&1; then
     sock="bn-t546-$$"
     tmux -L "$sock" -f "$STACK_DIR/terminal/tmux.conf" new-session -d -x 120 -y 20 'sleep 30' || { echo "tmux refused terminal/tmux.conf" >&2; return 1; }
-    assert_eq "$(tmux -L "$sock" show -sv set-clipboard)" on
+    assert_eq "$(tmux -L "$sock" show -sv set-clipboard)" external
     assert_eq "$(tmux -L "$sock" show -gv mouse)" on
     assert_contains "$(tmux -L "$sock" list-keys -T copy-mode)" "MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel"
     tmux -L "$sock" kill-server 2>/dev/null || true

@@ -78,7 +78,7 @@ RUN set -eu; \
 # script (ttyd-clipboard.js, added as a second one) alone (caddy/Caddyfile, terminal_page — the same values), so a new
 # ttyd or a changed clipboard script stops the build until both places are updated.
 ARG TTYD_PAGE_SCRIPT_SHA256=qpCL1JTmm6ktW0DnjpSILM7GnS2fO8/e+XjSlYJuQzQ=
-ARG TTYD_CLIPBOARD_SCRIPT_SHA256=4Kk3uIWAX7Xjhnmadp+5XM966W7TH2cioyu3u1I2HTA=
+ARG TTYD_CLIPBOARD_SCRIPT_SHA256=HkPmG9hHsZK6lLfsIEyA4QP8JuR3ZxvC7O2sMPRr/0k=
 COPY ttyd-page.py ttyd-clipboard.js /tmp/
 RUN set -eu; ttyd -p 7682 -i lo true >/dev/null 2>&1 & pid=$!; \
     for _ in 1 2 3 4 5 6 7 8 9 10; do curl -fsS -o /tmp/ttyd.html http://127.0.0.1:7682/ && break; sleep 0.5; done; \
