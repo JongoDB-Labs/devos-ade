@@ -1267,7 +1267,11 @@ _rt_status_lines() {
     esac
     printf '%-10s  %s\n' "$(rt_name "$id")" "$line"
     if [ "$st" = running ] || [ "$st" = external ]; then
-      _rt_ps "$id" | while IFS=$'\t' read -r n b vb; do printf '            loaded: %s (%s, %s on the GPU)\n' "$n" "$(_local_size "$b")" "$(_local_size "$vb")"; done
+      # (a size of 0 is one the runtime does not give, as _rt_ps says: left out, as Settings does)
+      _rt_ps "$id" | while IFS=$'\t' read -r n b vb; do
+        s=''; [ "${b:-0}" = 0 ] || s=" ($(_local_size "$b")$([ "${vb:-0}" = 0 ] || printf ', %s on the GPU' "$(_local_size "$vb")"))"
+        printf '            loaded: %s%s\n' "$n" "$s"
+      done
     fi
   done
 }

@@ -341,6 +341,10 @@ JSON
   python3 -I -c 'import json,sys; r=json.load(open(sys.argv[1]))["runtimes"][0]
 assert r["loaded"][0] == {"name": "qwen3:8b", "bytes": 6000000000, "gpu_bytes": 5000000000}, r["loaded"]
 assert (r["memory_bytes"], r["gpu_bytes"]) == (6100000000, 5000000000), r' "$(rt_status_file)"
+  # ./stack runtimes status: each with the sizes it has (as Settings shows them: one of 0 is left out, never "0 MB")
+  cmd_runtimes status > "$TMP/out"
+  grep -qx "            loaded: qwen3:8b ($(_local_size 6000000000), $(_local_size 5000000000) on the GPU)" "$TMP/out"
+  grep -qx "            loaded: hf.co/bartowski/SmolLM2-135M-Instruct-GGUF:Q4_K_M31m ($(_local_size 100000000))" "$TMP/out"
   printf 'not json' > "$TMP/ps.json"; assert_eq "$(_rt_ollama_ps)" ""
 }
 

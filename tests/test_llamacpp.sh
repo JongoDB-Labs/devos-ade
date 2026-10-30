@@ -195,6 +195,8 @@ assert (r["name"], r["state"], r["managed"], r["kind"], r["version"], r["pinned"
   # the models it has loaded: asked with its key in the header file
   printf '{"data":[{"id":"org/M-GGUF:Q4_K_M","status":{"value":"loaded"}},{"id":"org/N:Q8_0","status":{"value":"unloaded"}}]}' > "$TMP/lc-models.json"
   assert_eq "$(_rt_ps llamacpp)" "$(printf 'org/M-GGUF:Q4_K_M\t0\t0')"
+  cmd_runtimes status > "$TMP/out"   # (llama.cpp does not give its memory: no size, never "0 MB")
+  grep -qx '            loaded: org/M-GGUF:Q4_K_M' "$TMP/out"
   assert_contains "$(cat "$TMP/curl.args")" "-H @$d/etc/auth.hdr http://127.0.0.1:9/models"
   assert_not_contains "$(cat "$TMP/curl.args")" "$k"
   # again: the same key (the model gateway's config keeps working), still running
