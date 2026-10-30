@@ -266,6 +266,12 @@ def try_twice(run, changed, between) -> tuple[str, str, str, str]:
     raise AssertionError("unreachable")
 
 
+def said_twice(first: str, msg: str) -> str:
+    """The message of a check that took a second try: it quotes the first try's failure, redacted before it is cut (a
+    secret cut in two is no longer the secret, and redact would miss what is left of it)."""
+    return f"on a second try (the first was cut off by the test host's network changing: {redact(first)[:120]}): {msg}"
+
+
 def _tidy(ctx, suite: str, cid: str, ok: bool) -> None:
     for after in AFTER:
         try:
@@ -295,7 +301,7 @@ def run_all(ctx) -> int:
 
         status, msg, tb, first = try_twice(run, lambda: NETWORK_CHANGED[0], between)
         if first:
-            msg = f"on a second try (the first was cut off by the test host's network changing: {first[:120]}): {msg}"
+            msg = said_twice(first, msg)
         if status == "FAIL":
             fails += 1
             (OUT / "tracebacks").mkdir(exist_ok=True)

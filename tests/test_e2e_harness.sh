@@ -1141,3 +1141,34 @@ PY
   python3 -I "$TMP/twice.py" "$STACK_DIR/tests/e2e/browser/common.py" > "$TMP/out" 2>&1 || { cat "$TMP/out" >&2; return 1; }
   assert_contains "$(cat "$TMP/out")" "ok"
 }
+
+test_e2e_a_second_trys_message_redacts_the_first_failure_before_cutting_it() {
+  # A secret cut in two is no longer the secret, and redact would miss what is left of it: the first try's failure is
+  # redacted, then cut. (redact, said_twice and _record, taken out of common.py as above; the secret is a stand-in.)
+  cat > "$TMP/said.py" <<'PY'
+import ast, re, sys
+from pathlib import Path
+src = open(sys.argv[1], encoding="utf-8").read()
+want = {"_AMZ", "_QS", "redact", "said_twice", "_record"}
+nodes = [n for n in ast.parse(src).body if (isinstance(n, ast.FunctionDef) and n.name in want)
+         or (isinstance(n, ast.Assign) and any(getattr(t, "id", "") in want for t in n.targets))]
+secret = "e2e-stand-in-" + "q7" * 12
+ns = {"re": re, "SECRETS": [secret], "RESULTS": Path(sys.argv[2]), "TAG": ""}
+exec(compile(ast.Module(nodes, []), "common.py", "exec"), ns)
+
+def check(cond, what):
+    if not cond:
+        print("FAIL:", what); sys.exit(1)
+
+# the secret starts 10 characters before the cut at 120, so a cut first would leave 10 of its characters
+first = "AssertionError: " + "x" * (110 - 16) + secret + " was in the page"
+check(first.index(secret) == 110, first.index(secret))
+ns["_record"]("settings", "settings-page", "PASS", 4, ns["said_twice"](first, "12 sections"))
+line = Path(sys.argv[2]).read_text(encoding="utf-8")
+check(secret[:8] not in line, f"part of the secret reached the result: {line!r}")
+check("on a second try" in line and "***" in line and line.rstrip("\n").endswith("): 12 sections"), line)
+print("ok")
+PY
+  python3 -I "$TMP/said.py" "$STACK_DIR/tests/e2e/browser/common.py" "$TMP/results.tsv" > "$TMP/out" 2>&1 || { cat "$TMP/out" >&2; return 1; }
+  assert_contains "$(cat "$TMP/out")" "ok"
+}

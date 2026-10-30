@@ -6,6 +6,15 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.44.3] - 2026-10-30
+
+### Security
+- **The end-to-end suite redacts a check's first failure before it shortens it (JON-845).** A browser check that a
+  network change cut off runs a second time, and its result quotes the first try's failure, cut to 120 characters. The
+  cut came before redaction, so a secret across that point lost its tail, and what was left no longer matched the
+  stack's secret and reached the results file. The failure is now redacted first. No run had hit this: v0.44.2's runs
+  needed no second try. Found by an automated security review of v0.44.2's push.
+
 ## [0.44.2] - 2026-10-29
 
 ### Fixed
@@ -3818,7 +3827,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.2...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.3...HEAD
+[0.44.3]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.2...v0.44.3
 [0.44.2]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.1...v0.44.2
 [0.44.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.0...v0.44.1
 [0.44.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.43.0...v0.44.0
