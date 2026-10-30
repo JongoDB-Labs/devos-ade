@@ -13,7 +13,7 @@ from urllib.parse import quote
 
 from playwright.sync_api import Error as PwError
 
-from common import (CHAT_CSP, CHECKS_RE, ENV, HOST, NET, OUT, PORT, SHOTS, Skip, check, csp_differs, expect, host_of, http, need, origin, portal_login,
+from common import (CHAT_CSP, CHECKS_RE, ENV, HOST, NET, NETWORK_CHANGED, OUT, PORT, SHOTS, Skip, check, csp_differs, expect, host_of, http, need, origin, portal_login,
                     real_helper_running, redact, url_path)
 
 STATE = Path("/state")
@@ -37,13 +37,18 @@ class Recorder:
 
     def attach(self, page):
         page.on("response", self._resp)
-        page.on("requestfailed", lambda r: self.events.append(
-            {"t": "failed", "method": r.method, "url": r.url, "error": r.failure or ""}))
+        page.on("requestfailed", self._failed)
         page.on("console", lambda m: self.events.append({"t": "console", "type": m.type, "text": m.text})
                 if m.type in ("error", "warning") else None)
         page.on("pageerror", lambda e: self.events.append({"t": "pageerror", "text": str(e)}))
         page.on("websocket", lambda ws: self.events.append({"t": "ws", "url": ws.url}))
         return page
+
+    def _failed(self, r):
+        err = r.failure or ""
+        if "ERR_NETWORK_CHANGED" in err:
+            NETWORK_CHANGED[0] += 1
+        self.events.append({"t": "failed", "method": r.method, "url": r.url, "error": err})
 
     def _resp(self, r):
         self.events.append({"t": "resp", "status": r.status, "method": r.request.method, "url": r.url,
@@ -1957,6 +1962,12 @@ def files_pages(ctx):
     page.click(".tab[data-tab=files]")
     fl = page.frame_locator("iframe[data-app=files]")
     sso_signed_in(page, fl, rec, "files", "Files tab (portal frame)", "files-pages")
+    # The console still asks for the account (its user policy) after its dashboard shows: a reload in the middle
+    # cancels that, and the console logs "Failed to fetch user policy" (v0.42.0's run). Its first load finishes first.
+    try:
+        frame_of(page, "files").wait_for_load_state("networkidle", timeout=15000)
+    except PwError:
+        pass
     # a reload uses the credentials it has (from this portal session and key pair): no new ones
     mints = len(rec.responses(r"/\.bn/sso\?mint=1&"))
     drop_pass(page)

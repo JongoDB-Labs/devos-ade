@@ -2873,6 +2873,8 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
   who turned it off: its tab's page on how to turn it on (the terminal off too, unless `--terminal`). Its unit tests (frontend and backend) run in its image's test stage: `code/test.sh`
   (needs Docker); the page's browser checks against a mock: `sh code/web/e2e/run.sh`. `--helper` (or `E2E_HELPER=1`)
   also runs the throwaway's update helper in the foreground (never installed as a service) for the Settings checks.
+  On Linux the browser shares the test host's network, so a container starting mid-load can cancel a page
+  (`net::ERR_NETWORK_CHANGED`): a check that fails after that is tried once more, and its result says so.
   What is covered, and what stays manual: [tests/e2e/INVENTORY.md](tests/e2e/INVENTORY.md). Options: `tests/e2e/run.sh
   --help` and [docs/advanced.md](docs/advanced.md#end-to-end-tests).
 - **Experiential Labs** (opt-in, no AWS, about a minute): `E2E_EXPLABS_API_KEY=… tests/e2e/explabs.sh` reads the

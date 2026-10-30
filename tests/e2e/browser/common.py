@@ -218,6 +218,10 @@ RESULTS = OUT / "results.tsv"
 # something on the stack that would fail the checks after it puts it right here (checks_code: the Code page's
 # sessions). What it says is printed under the check's line (run.log); it never changes a result.
 AFTER: list = []
+# On Linux Chromium shares the test host's network (browser.sh: --network host), so a container of the run starting or
+# stopping changes its interfaces, and it cancels what it is loading: net::ERR_NETWORK_CHANGED (v0.39.0's and v0.42.0's
+# settings-page). checks_browser.Recorder counts each; a check that fails after one is tried once more (try_twice).
+NETWORK_CHANGED = [0]
 
 
 def check(suite: str, cid: str):
@@ -243,32 +247,61 @@ def _record(suite: str, cid: str, status: str, secs: float, msg: str) -> None:
     print(f"  {status:<5} {suite}/{cid}: {msg}", flush=True)
 
 
+def try_twice(run, changed, between) -> tuple[str, str, str, str]:
+    """RUN() -> (status, message), raising on a failure. A failure while the test host's network changed (CHANGED():
+    how many times Chromium has said so) is tried once more, after BETWEEN(the first failure). -> (status, message,
+    traceback or "", the first try's failure or "")"""
+    first = ""
+    for attempt in (1, 2):
+        seen = changed()
+        try:
+            status, msg = run()
+            return status, msg, "", first
+        except Exception as e:  # noqa: BLE001 — every failure becomes a FAIL line
+            failed, tb = f"{type(e).__name__}: {e}", traceback.format_exc()
+            if attempt == 2 or changed() == seen:
+                return "FAIL", failed, tb, first
+            first = failed
+            between(first)
+    raise AssertionError("unreachable")
+
+
+def _tidy(ctx, suite: str, cid: str, ok: bool) -> None:
+    for after in AFTER:
+        try:
+            said = after(ctx, ok)
+        except Exception as e:  # noqa: BLE001 — tidying up never changes a result: said, and the next check runs
+            said = f"tidying up failed: {type(e).__name__}: {e}"
+        if said:
+            print(f"  {'tidy':<5} {suite}/{cid}: {redact(said).replace(chr(10), ' ')[:600]}", flush=True)
+
+
 def run_all(ctx) -> int:
     fails = 0
     selected = [c for c in CHECKS if (not FILTER or re.search(FILTER, f"{c[0]}/{c[1]}")) and (not CHECKS_RE or re.search(CHECKS_RE, f"{c[0]}/{c[1]}"))]
     (OUT / "expected.txt").write_text(f"{len(selected)}\n", encoding="ascii")   # run.sh: every check must report
     for suite, cid, fn in selected:
         t0 = time.time()
-        ok = False
-        try:
-            msg = fn(ctx) or "ok"
-            ok = True
-            _record(suite, cid, "PASS", time.time() - t0, msg)
-        except Skip as e:
-            _record(suite, cid, "SKIP", time.time() - t0, str(e))
-        except Exception as e:  # noqa: BLE001 — every failure becomes a FAIL line
+
+        def run(fn=fn):
+            try:
+                return "PASS", fn(ctx) or "ok"
+            except Skip as e:
+                return "SKIP", str(e)
+
+        def between(first, suite=suite, cid=cid):
+            print(f"  {'again':<5} {suite}/{cid}: the test host's network changed during it: {redact(first)[:300]}", flush=True)
+            _tidy(ctx, suite, cid, False)
+
+        status, msg, tb, first = try_twice(run, lambda: NETWORK_CHANGED[0], between)
+        if first:
+            msg = f"on a second try (the first was cut off by the test host's network changing: {first[:120]}): {msg}"
+        if status == "FAIL":
             fails += 1
-            tb = traceback.format_exc()
             (OUT / "tracebacks").mkdir(exist_ok=True)
             (OUT / "tracebacks" / f"{suite}-{cid}.txt").write_text(redact(tb), encoding="utf-8")
-            _record(suite, cid, "FAIL", time.time() - t0, f"{type(e).__name__}: {e}")
-        for after in AFTER:
-            try:
-                said = after(ctx, ok)
-            except Exception as e:  # noqa: BLE001 — tidying up never changes a result: said, and the next check runs
-                said = f"tidying up failed: {type(e).__name__}: {e}"
-            if said:
-                print(f"  {'tidy':<5} {suite}/{cid}: {redact(said).replace(chr(10), ' ')[:600]}", flush=True)
+        _record(suite, cid, status, time.time() - t0, msg)
+        _tidy(ctx, suite, cid, status == "PASS")
     return fails
 
 

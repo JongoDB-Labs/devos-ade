@@ -1077,3 +1077,51 @@ PY
   python3 -I "$TMP/lay.py" "$STACK_DIR/tests/e2e/browser" > "$TMP/out" 2>&1 || { cat "$TMP/out" >&2; return 1; }
   assert_contains "$(cat "$TMP/out")" "ok"
 }
+
+test_e2e_a_check_cut_off_by_a_network_change_is_tried_once_more_and_says_so() {
+  # (common.try_twice, taken out of tests/e2e/browser/common.py: the module itself only imports in the suite's container)
+  cat > "$TMP/twice.py" <<'PY'
+import ast, sys, traceback
+src = open(sys.argv[1], encoding="utf-8").read()
+fn = next(n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == "try_twice")
+ns = {"traceback": traceback}
+exec(compile(ast.Module([fn], []), "common.py", "exec"), ns)
+try_twice = ns["try_twice"]
+
+def check(cond, what):
+    if not cond:
+        print("FAIL:", what); sys.exit(1)
+
+def runner(outcomes, changes):
+    """each try: its outcome (a (status, msg) or an exception to raise), and how many network changes Chromium saw in it"""
+    st = {"tries": 0, "changed": 0, "between": []}
+    def run():
+        i = st["tries"]; st["tries"] += 1
+        st["changed"] += changes[i]
+        if isinstance(outcomes[i], Exception):
+            raise outcomes[i]
+        return outcomes[i]
+    return st, run, (lambda: st["changed"]), (lambda first: st["between"].append(first))
+
+# a failure with no network change: a FAIL at once, tried once
+st, run, changed, between = runner([AssertionError("pages without content")], [0])
+status, msg, tb, first = try_twice(run, changed, between)
+check((status, msg, first, st["tries"], st["between"]) == ("FAIL", "AssertionError: pages without content", "", 1, []), (status, msg, first, st))
+check("AssertionError" in tb, "the traceback is kept")
+# cut off by a network change, then passes: PASS, and the first failure is said
+st, run, changed, between = runner([AssertionError("FAILED GET /static/login.css net::ERR_NETWORK_CHANGED"), ("PASS", "12 sections")], [3, 0])
+status, msg, tb, first = try_twice(run, changed, between)
+check((status, msg, tb, st["tries"]) == ("PASS", "12 sections", "", 2), (status, msg, st))
+check(first == "AssertionError: FAILED GET /static/login.css net::ERR_NETWORK_CHANGED" and st["between"] == [first], (first, st))
+# cut off twice: a FAIL after the second try, never a third
+st, run, changed, between = runner([TimeoutError("timed out"), AssertionError("still")], [1, 1])
+status, msg, tb, first = try_twice(run, changed, between)
+check((status, msg, first, st["tries"]) == ("FAIL", "AssertionError: still", "TimeoutError: timed out", 2), (status, msg, first, st))
+# a skip or a pass is never tried again
+st, run, changed, between = runner([("SKIP", "no helper")], [2])
+check(try_twice(run, changed, between) == ("SKIP", "no helper", "", "") and st["tries"] == 1, st)
+print("ok")
+PY
+  python3 -I "$TMP/twice.py" "$STACK_DIR/tests/e2e/browser/common.py" > "$TMP/out" 2>&1 || { cat "$TMP/out" >&2; return 1; }
+  assert_contains "$(cat "$TMP/out")" "ok"
+}
