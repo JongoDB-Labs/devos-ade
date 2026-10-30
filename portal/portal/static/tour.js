@@ -707,6 +707,8 @@
         list("ul", [
           ["Closing the tab keeps it running: come back later, or from your phone, and it is where you left it."],
           [code("Ctrl-b c"), " opens a shell beside it; ", code("Ctrl-b n"), " goes to the next window."],
+          [b("Copy"), ": drag over the text, and it is on your clipboard. ", b("Paste"), ": ", code("Cmd+V"), " (", code("Ctrl+V"),
+            " on Windows and Linux) or the ", b("Paste"), " button at the top right. ", code("Ctrl+C"), " still interrupts a program."],
           ["The Code page's ", b("Open in the terminal"), " continues one of its sessions here, in a window of its own."]]),
       ],
       actions: () => [openTerminal()],

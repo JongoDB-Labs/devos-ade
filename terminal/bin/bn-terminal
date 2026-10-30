@@ -39,8 +39,9 @@ fi
 # WebSocket whose Origin is not this host (another website cannot drive the terminal with your cookies); -a (URL
 # arguments: ?arg=…) hands the pickers' words to bn-session as its arguments, never through a shell — it checks them
 # against its fixed list and attaches as before otherwise. --index: ttyd's page with a viewport for phones
-# (Dockerfile). The DOM renderer draws crisply at any pixel ratio; with tmux's mouse on, Shift-drag (Option-drag on
-# a Mac) still selects text for the clipboard.
+# (Dockerfile), and the clipboard script (ttyd-clipboard.js): tmux's drag-select reaches the browser's clipboard. The
+# DOM renderer draws crisply at any pixel ratio; Shift-drag (Option-drag on a Mac) still selects in the page, which
+# ttyd copies.
 # The MCP token is left out of the environment of the shells started here: a convenience, not a boundary —
 # anything in the sandbox runs as the same user and can read it (/proc/1/environ, mcp.json); it only opens what the
 # sandbox may use anyway.

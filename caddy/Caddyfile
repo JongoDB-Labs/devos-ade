@@ -400,8 +400,8 @@ http://{$FILES_HOST} {
 }
 
 # From ttyd — or from whatever listens on its socket instead (anything in the sandbox can): this Caddy sets the
-# terminal host's policy, whoever answered. Only ttyd's own script runs (its hash; terminal/Dockerfile stops the build
-# when ttyd's page changes: TTYD_PAGE_SCRIPT_SHA256, the same value), it talks only to this host, forms post only
+# terminal host's policy, whoever answered. Only ttyd's own script and the clipboard script beside it run (their hashes; terminal/Dockerfile stops the
+# build when ttyd's page or that script changes: TTYD_PAGE_SCRIPT_SHA256, TTYD_CLIPBOARD_SCRIPT_SHA256, the same values), it talks only to this host, forms post only
 # to the unlock, and only {args[0]} (the portal) may frame it. Headers that could plant or clear cookies (the
 # portal's too), redirect, preload, widen a service worker, open CORS or send reports go. The unlock page and the
 # unlock itself are the portal's answers (forward_auth, terminal_unlock), with the portal's own headers. The Code page
@@ -420,7 +420,7 @@ http://{$FILES_HOST} {
 	header_down -Reporting-Endpoints
 	header_down -NEL
 	header_down X-Content-Type-Options nosniff
-	header_down Content-Security-Policy "default-src 'none'; script-src 'sha256-qpCL1JTmm6ktW0DnjpSILM7GnS2fO8/e+XjSlYJuQzQ='; connect-src 'self' ws://{http.request.host}:* wss://{http.request.host}:*; img-src data: blob:; font-src data:; style-src 'unsafe-inline'; form-action {http.request.host}:*/.bn/unlock; base-uri 'none'; object-src 'none'; frame-ancestors {args[0]} {args[1]}"
+	header_down Content-Security-Policy "default-src 'none'; script-src 'sha256-qpCL1JTmm6ktW0DnjpSILM7GnS2fO8/e+XjSlYJuQzQ=' 'sha256-4Kk3uIWAX7Xjhnmadp+5XM966W7TH2cioyu3u1I2HTA='; connect-src 'self' ws://{http.request.host}:* wss://{http.request.host}:*; img-src data: blob:; font-src data:; style-src 'unsafe-inline'; form-action {http.request.host}:*/.bn/unlock; base-uri 'none'; object-src 'none'; frame-ancestors {args[0]} {args[1]}"
 }
 
 # The Code page (./stack code; code-on.caddy and the remote sites): the same scheme as the terminal's. Its unlock form

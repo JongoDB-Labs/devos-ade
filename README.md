@@ -577,8 +577,16 @@ the terminal* change under Settings → Claude Code; its other settings are show
 `./stack terminal` or in `.env`).
 Reloading, closing the tab or losing the phone's connection only detaches: the session keeps running and opens
 where you left it (until the container restarts: `./stack update`, a new image or folder at `./stack terminal
-enable`, an *Auto mode* or *Sandbox internet access* change in Settings → Claude Code, a reboot). Hold
-Shift (Option on a Mac) to select text; an external keyboard helps a lot on a phone.
+enable`, an *Auto mode* or *Sandbox internet access* change in Settings → Claude Code, a reboot). An external
+keyboard helps a lot on a phone.
+
+Copy and paste work without a modifier. Drag over text (or double or triple click) and it is on your clipboard when
+you let go: tmux hands the selection to the page (OSC 52, `set-clipboard on`), and a small script in the terminal's
+page (`terminal/ttyd-clipboard.js`, allowed by its hash in the terminal host's Content-Security-Policy) writes it
+there; the mouse wheel still scrolls and clicks still pick a pane. Programs in a pane that copy with OSC 52 reach
+your clipboard too. Paste with `Cmd+V` (`Ctrl+V` on Windows and Linux), or the **Paste** button at the top right
+(for a phone, or a browser that keeps the shortcut). `Ctrl+C` is still interrupt, also on a Mac. Shift-drag
+(Option-drag on a Mac) still selects in the page itself, as before.
 
 It is a sandbox, not a shell on your computer:
 

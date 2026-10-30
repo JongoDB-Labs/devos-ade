@@ -6,6 +6,21 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Fixed
+- **Copy and paste work in the browser terminal without a modifier (JON-546).** With tmux's mouse on, a plain drag
+  selected in tmux, not in the page, so nothing reached your clipboard unless you held Shift (Option on a Mac), which
+  no screen said. Now a drag (or a double or triple click) copies when you let go: tmux sends the selection as OSC 52,
+  which ttyd's page ignored, and a small script added to the page (`terminal/ttyd-clipboard.js`, pinned by its hash
+  in the build and in the terminal host's Content-Security-Policy, as ttyd's own script is) writes it to the
+  clipboard. The mouse wheel and pane clicks work as before, and Shift-drag still selects in the page. A program in a
+  pane that copies with OSC 52 reaches the clipboard too.
+- **A Paste button.** At the top right of the terminal, for a phone or a browser that keeps `Cmd/Ctrl+V` for itself;
+  if the browser refuses to read the clipboard it says so on the button. `Ctrl+C` still interrupts, also on a Mac.
+
+### Changed
+- **The terminal says how to copy and paste.** Its status line ("Drag to copy · Cmd/Ctrl+V pastes", where the window is
+  wide enough) and the walkthrough's browser terminal step.
+
 ## [0.44.4] - 2026-10-30
 
 ### Fixed

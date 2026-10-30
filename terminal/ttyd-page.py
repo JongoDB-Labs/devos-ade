@@ -3,7 +3,9 @@ viewport for phones (without one they lay it out 980 px wide; the on-screen keyb
 covering the prompt), the terminal's background as theme colour, and a DevOS ADE icon instead of ttyd's.
 Then the page's one inline script must hash to SHA256 (the main Caddy's Content-Security-Policy for the terminal
 host allows only that script: caddy/Caddyfile, terminal_page): a new ttyd fails the build here, not in browsers.
-Usage: python3 ttyd-page.py IN OUT SHA256"""
+Usage: python3 ttyd-page.py IN OUT SHA256 CLIPBOARD_JS CLIPBOARD_SHA256
+The clipboard script (ttyd-clipboard.js: tmux's copy reaches the browser's clipboard, a Paste button) goes in as a second
+inline script before </body>, and is pinned the same way: its hash is in the Dockerfile and the Caddyfile too."""
 
 import base64
 import hashlib
@@ -23,14 +25,26 @@ page, n = re.subn(r'<meta charset="UTF-8">', lambda m: m.group(0) + META, page, 
 assert n == 1, "no <meta charset> in ttyd's page"
 page, n = re.subn(r'<link rel="icon"[^>]*>', lambda m: f'<link rel="icon" href="{ICON}">', page, count=1)
 assert n == 1, "no icon link in ttyd's page"
-open(sys.argv[2], "w", encoding="utf-8", newline="").write(page)
+
+def digest(script):
+    return base64.b64encode(hashlib.sha256(script).digest()).decode()
 
 # The hash browsers compute: over the script's text as served (UTF-8, no carriage returns to normalise).
-served = open(sys.argv[2], "rb").read()
-scripts = re.findall(rb"<script\b[^>]*>(.*?)</script>", served, re.S)
+scripts = re.findall(rb"<script\b[^>]*>(.*?)</script>", page.encode(), re.S)
 assert len(scripts) == 1 and b"\r" not in scripts[0], f"ttyd's page has {len(scripts)} inline scripts (or CRs): check its CSP"
-got = base64.b64encode(hashlib.sha256(scripts[0]).digest()).decode()
+got = digest(scripts[0])
 want = sys.argv[3].removeprefix("sha256-")
 if got != want:
     sys.exit(f"ttyd's page script is sha256-{got}, not the pinned sha256-{want}: put the new hash in terminal/Dockerfile "
              "(TTYD_PAGE_SCRIPT_SHA256) and caddy/Caddyfile (terminal_page), after checking what changed")
+
+clip = open(sys.argv[4], "rb").read()
+assert b"\r" not in clip and b"</script" not in clip.lower(), "the clipboard script has a CR or a closing script tag"
+got = digest(clip)
+want = sys.argv[5].removeprefix("sha256-")
+if got != want:
+    sys.exit(f"the clipboard script is sha256-{got}, not the pinned sha256-{want}: put the new hash in terminal/Dockerfile "
+             "(TTYD_CLIPBOARD_SCRIPT_SHA256) and caddy/Caddyfile (terminal_page)")
+page, n = re.subn(r"</body>", lambda m: "<script>" + clip.decode("utf-8") + "</script>" + m.group(0), page, count=1)
+assert n == 1, "no </body> in ttyd's page"
+open(sys.argv[2], "w", encoding="utf-8", newline="").write(page)

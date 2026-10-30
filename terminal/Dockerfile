@@ -74,15 +74,17 @@ RUN set -eu; \
     /usr/local/lib/gh/gh --version | grep -qF "gh version $GH_VERSION "
 
 # ttyd's own page, served with --index: the same page plus a viewport for phones and a DevOS ADE icon (ttyd-page.py).
-# Its inline script must hash to this: the main Caddy's CSP for the terminal host allows that script alone
-# (caddy/Caddyfile, terminal_page — the same value), so a new ttyd stops the build until both are updated.
+# Its inline script must hash to this: the main Caddy's CSP for the terminal host allows that script and the clipboard
+# script (ttyd-clipboard.js, added as a second one) alone (caddy/Caddyfile, terminal_page — the same values), so a new
+# ttyd or a changed clipboard script stops the build until both places are updated.
 ARG TTYD_PAGE_SCRIPT_SHA256=qpCL1JTmm6ktW0DnjpSILM7GnS2fO8/e+XjSlYJuQzQ=
-COPY ttyd-page.py /tmp/ttyd-page.py
+ARG TTYD_CLIPBOARD_SCRIPT_SHA256=4Kk3uIWAX7Xjhnmadp+5XM966W7TH2cioyu3u1I2HTA=
+COPY ttyd-page.py ttyd-clipboard.js /tmp/
 RUN set -eu; ttyd -p 7682 -i lo true >/dev/null 2>&1 & pid=$!; \
     for _ in 1 2 3 4 5 6 7 8 9 10; do curl -fsS -o /tmp/ttyd.html http://127.0.0.1:7682/ && break; sleep 0.5; done; \
     kill "$pid"; mkdir -p /usr/local/share/bedrock-now; \
-    python3 /tmp/ttyd-page.py /tmp/ttyd.html /usr/local/share/bedrock-now/ttyd.html "$TTYD_PAGE_SCRIPT_SHA256"; \
-    rm /tmp/ttyd.html /tmp/ttyd-page.py; chmod 644 /usr/local/share/bedrock-now/ttyd.html
+    python3 /tmp/ttyd-page.py /tmp/ttyd.html /usr/local/share/bedrock-now/ttyd.html "$TTYD_PAGE_SCRIPT_SHA256" /tmp/ttyd-clipboard.js "$TTYD_CLIPBOARD_SCRIPT_SHA256"; \
+    rm /tmp/ttyd.html /tmp/ttyd-page.py /tmp/ttyd-clipboard.js; chmod 644 /usr/local/share/bedrock-now/ttyd.html
 
 # Claude Code: npm ci refuses any tarball whose checksum differs from the lockfile (the platform's native binary
 # included). No auto-update in the container (read-only); ./stack update rebuilds with the next pinned version.

@@ -761,12 +761,14 @@ test_caddy_terminal_site_gateway_and_remote_gating() {
   assert_contains "$cb" "rewrite /auth/terminal-unlock-callback?{query}"
   # framed by the portal, and by the Code page's terminal panel (code.invalid while it is off: serves nothing)
   assert_contains "$site" 'import terminal_page {$PORTAL_ORIGIN} {$CODE_ORIGIN:http://code.invalid}'
-  # the terminal host's policy, whoever answers on ttyd's socket: ttyd's script alone (the hash the image build
-  # checks), this host only, forms only to the unlock, framed by the portal; cookies, Clear-Site-Data and the like go
+  # the terminal host's policy, whoever answers on ttyd's socket: ttyd's script and the clipboard script alone (the
+  # hashes the image build checks), this host only, forms only to the unlock, framed by the portal; cookies, Clear-Site-Data and the like go
   pg="$(awk '/^\(terminal_page\)/,/^}/' "$STACK_DIR/caddy/Caddyfile")"
   h="$(sed -n 's/^ARG TTYD_PAGE_SCRIPT_SHA256=//p' "$STACK_DIR/terminal/Dockerfile")"
   [ "${#h}" = 44 ] || { echo "no TTYD_PAGE_SCRIPT_SHA256 in the Dockerfile" >&2; return 1; }
-  assert_contains "$pg" "header_down Content-Security-Policy \"default-src 'none'; script-src 'sha256-$h'; connect-src 'self' ws://{http.request.host}:* wss://{http.request.host}:*; img-src data: blob:; font-src data:; style-src 'unsafe-inline'; form-action {http.request.host}:*/.bn/unlock; base-uri 'none'; object-src 'none'; frame-ancestors {args[0]} {args[1]}\""
+  hc="$(sed -n 's/^ARG TTYD_CLIPBOARD_SCRIPT_SHA256=//p' "$STACK_DIR/terminal/Dockerfile")"
+  [ "${#hc}" = 44 ] || { echo "no TTYD_CLIPBOARD_SCRIPT_SHA256 in the Dockerfile" >&2; return 1; }
+  assert_contains "$pg" "header_down Content-Security-Policy \"default-src 'none'; script-src 'sha256-$h' 'sha256-$hc'; connect-src 'self' ws://{http.request.host}:* wss://{http.request.host}:*; img-src data: blob:; font-src data:; style-src 'unsafe-inline'; form-action {http.request.host}:*/.bn/unlock; base-uri 'none'; object-src 'none'; frame-ancestors {args[0]} {args[1]}\""
   assert_eq "$(grep -c "sha256-" "$STACK_DIR/caddy/Caddyfile")" 1
   for d in X-Frame-Options Set-Cookie Clear-Site-Data Refresh Link Location Service-Worker-Allowed 'Access-Control-*' \
            Content-Security-Policy-Report-Only Report-To Reporting-Endpoints NEL; do
@@ -875,18 +877,63 @@ test_ttyd_listens_on_a_socket_only_and_checks_the_origin() {
   assert_contains "$(cat "$STACK_DIR/terminal/ttyd-page.py")" '<meta name="viewport" content="width=device-width'
   printf '<html><head><meta charset="UTF-8"><link rel="icon" type="image/png" href="data:image/png;base64,AAA"></head><body><script type="text/javascript">var t="é";</script></body></html>' > "$TMP/in.html"
   h="$(printf 'var t="é";' | python3 -c 'import base64, hashlib, sys; print(base64.b64encode(hashlib.sha256(sys.stdin.buffer.read()).digest()).decode())')"
-  python3 "$STACK_DIR/terminal/ttyd-page.py" "$TMP/in.html" "$TMP/out.html" "$h" || return 1
+  c="$(python3 -c 'import base64, hashlib, sys; print(base64.b64encode(hashlib.sha256(open(sys.argv[1], "rb").read()).digest()).decode())' "$STACK_DIR/terminal/ttyd-clipboard.js")"
+  python3 "$STACK_DIR/terminal/ttyd-page.py" "$TMP/in.html" "$TMP/out.html" "$h" "$STACK_DIR/terminal/ttyd-clipboard.js" "$c" || return 1
   out="$(cat "$TMP/out.html")"
   assert_contains "$out" '<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1'
   assert_contains "$out" '<link rel="icon" href="data:image/svg+xml,'
   assert_not_contains "$out" "image/png"
+  # the clipboard script after ttyd's, as a second inline script, and exactly as pinned
+  assert_contains "$out" '</script><script>// The browser terminal'"'"'s clipboard (JON-546)'
+  assert_contains "$out" 'registerOscHandler(52, osc52)'
+  assert_eq "$(python3 -c 'import re, sys; print(len(re.findall(r"<script\b", open(sys.argv[1], encoding="utf-8").read())))' "$TMP/out.html")" 2
   # another script (a new ttyd) stops the build, naming both places of the hash
-  if err="$(python3 "$STACK_DIR/terminal/ttyd-page.py" "$TMP/in.html" "$TMP/out.html" "sha256-$(printf 'x%.0s' $(seq 1 43))=" 2>&1)"; then
+  if err="$(python3 "$STACK_DIR/terminal/ttyd-page.py" "$TMP/in.html" "$TMP/out2.html" "sha256-$(printf 'x%.0s' $(seq 1 43))=" "$STACK_DIR/terminal/ttyd-clipboard.js" "$c" 2>&1)"; then
     echo "accepted another script" >&2; return 1
   fi
   assert_contains "$err" "ttyd's page script is sha256-$h, not the pinned"
   assert_contains "$err" "TTYD_PAGE_SCRIPT_SHA256"
-  assert_contains "$(cat "$STACK_DIR/terminal/Dockerfile")" 'ttyd-page.py /tmp/ttyd.html /usr/local/share/bedrock-now/ttyd.html "$TTYD_PAGE_SCRIPT_SHA256"' 
+  # a changed clipboard script stops it too
+  if err="$(python3 "$STACK_DIR/terminal/ttyd-page.py" "$TMP/in.html" "$TMP/out2.html" "$h" "$STACK_DIR/terminal/ttyd-clipboard.js" "sha256-$(printf 'x%.0s' $(seq 1 43))=" 2>&1)"; then
+    echo "accepted another clipboard script" >&2; return 1
+  fi
+  assert_contains "$err" "the clipboard script is sha256-$c, not the pinned"
+  assert_contains "$err" "TTYD_CLIPBOARD_SCRIPT_SHA256"
+  d="$(cat "$STACK_DIR/terminal/Dockerfile")"
+  assert_contains "$d" 'ttyd-page.py /tmp/ttyd.html /usr/local/share/bedrock-now/ttyd.html "$TTYD_PAGE_SCRIPT_SHA256" /tmp/ttyd-clipboard.js "$TTYD_CLIPBOARD_SCRIPT_SHA256"'
+  # the pinned hash is the file's, in the Dockerfile and in the terminal host's Content-Security-Policy
+  assert_contains "$d" "ARG TTYD_CLIPBOARD_SCRIPT_SHA256=$c"
+  assert_contains "$(cat "$STACK_DIR/caddy/Caddyfile")" "'sha256-$c'; connect-src"
+}
+
+# JON-546: a plain drag copies. tmux's mouse stays on (wheel scrolling, pane clicks); a selection leaves tmux as OSC 52
+# (set-clipboard), which the page's script (ttyd-clipboard.js) writes to the clipboard; the status line says so.
+test_terminal_copy_and_paste() {
+  t="$(cat "$STACK_DIR/terminal/tmux.conf")"
+  assert_contains "$t" "set -g mouse on"
+  assert_contains "$t" "set -g set-clipboard on"
+  assert_contains "$t" "Drag to copy · Cmd/Ctrl+V pastes"
+  j="$(cat "$STACK_DIR/terminal/ttyd-clipboard.js")"
+  assert_contains "$j" "t.parser.registerOscHandler(52, osc52)"
+  assert_contains "$j" "navigator.clipboard.writeText(text)"
+  assert_contains "$j" "navigator.clipboard.readText()"
+  assert_contains "$j" "window.term.paste(text)"
+  # (the CSP allows only hashed scripts and inline styles: no external script, no eval, no network)
+  for bad in "eval(" "new Function" "fetch(" "XMLHttpRequest" "WebSocket" "innerHTML"; do
+    assert_not_contains "$j" "$bad"
+  done
+  # the walkthrough's browser terminal step and the README say how
+  assert_contains "$(cat "$STACK_DIR/portal/portal/static/tour.js")" 'drag over the text, and it is on your clipboard'
+  assert_contains "$(cat "$STACK_DIR/README.md")" "Copy and paste work without a modifier."
+  # tmux accepts the file, and a program in a pane copying with OSC 52 reaches the client as one (a private server)
+  if command -v tmux >/dev/null 2>&1; then
+    sock="bn-t546-$$"
+    tmux -L "$sock" -f "$STACK_DIR/terminal/tmux.conf" new-session -d -x 120 -y 20 'sleep 30' || { echo "tmux refused terminal/tmux.conf" >&2; return 1; }
+    assert_eq "$(tmux -L "$sock" show -sv set-clipboard)" on
+    assert_eq "$(tmux -L "$sock" show -gv mouse)" on
+    assert_contains "$(tmux -L "$sock" list-keys -T copy-mode)" "MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel"
+    tmux -L "$sock" kill-server 2>/dev/null || true
+  fi
 }
 
 test_image_pins() {
