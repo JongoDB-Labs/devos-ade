@@ -2511,14 +2511,16 @@ def _clipboard_after(page, click_sel: str) -> str:
 def gs_shown(page, timeout=15000):
     """Wait for Home's Get started card; True when all five steps are ticked ('You're set up': the card keeps its head and
     CSS collapses the steps, display:none), False on the first-install state where the steps show. A fresh stack is the
-    second; the full stage, run late, is the first. Either way the step elements exist."""
-    page.locator("#get-started:not([hidden]) .gs-step").first.wait_for(state="attached", timeout=timeout)
-    done = page.evaluate("() => document.querySelector('#get-started').classList.contains('all-done')")
-    if done:
+    second; the full stage, run late, is the first. Either way the step elements exist. Home draws the card before its
+    numbers come in (a step or two not ticked yet) and again after, so one look takes whichever state it shows then: two
+    looks could see steps to do, then wait for steps the second draw had folded away (v0440b's walkthrough)."""
+    state = page.wait_for_function("""() => {
+        const c = document.querySelector('#get-started:not([hidden])'), s = c && c.querySelector('.gs-step');
+        return s ? (c.classList.contains('all-done') ? 'done' : s.checkVisibility() ? 'steps' : '') : '';
+    }""", timeout=timeout).json_value()
+    if state == "done":
         expect("You're set up" in page.text_content("#get-started .gs-head h2"), "all-done but the head does not say You're set up")
-    else:
-        page.locator("#get-started:not([hidden]) .gs-step").first.wait_for(state="visible", timeout=timeout)
-    return done
+    return state == "done"
 
 
 @check("browser", "walkthrough")
