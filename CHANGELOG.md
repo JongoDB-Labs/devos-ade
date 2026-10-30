@@ -6,6 +6,26 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.44.2] - 2026-10-29
+
+### Fixed
+- **Browse models' Read again answers in seconds while openrouter.ai is slow (JON-833).** The portal waited on
+  OpenRouter's public list with a limit on each read but none on the whole, so a slow answer could hold the page past 30
+  seconds. The whole read now ends at 15 seconds: the copy read before stays, said as kept from before, and with none
+  the page says openrouter.ai did not answer.
+
+### Changed
+- **The end-to-end suite's settings checks wait for the update helper's first read of the model lists.** As it
+  starts, the helper reads Bedrock's model list in a one-off container on the stack's network. On Linux the suite's
+  browser shares the test host's network, so that container starting cancelled what the first settings check was
+  loading (`net::ERR_NETWORK_CHANGED`: `settings-page` in v0.39.0's, v0.42.0's and v0.44.0's runs). The suite now
+  waits for that read, up to 200 seconds. A browser check that a network change still cuts off runs a second time,
+  and its result says it did; a failure with no network change is never retried. The RustFS console check lets the console's first load finish before it
+  reloads it (its reload had cancelled the console's own request, which the console logged as an error).
+- **The end-to-end suite's Get started checks take Home's card as it is when they look.** Home draws the card before
+  its numbers come in and again after; a check that saw steps to do then waited for steps the second draw had folded
+  away (v0.44.0's `walkthrough`).
+
 ## [0.44.1] - 2026-10-29
 
 ### Fixed
@@ -3798,7 +3818,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.1...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.2...HEAD
+[0.44.2]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.1...v0.44.2
 [0.44.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.0...v0.44.1
 [0.44.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.43.0...v0.44.0
 [0.43.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.42.0...v0.43.0
