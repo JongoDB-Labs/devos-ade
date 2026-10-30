@@ -218,6 +218,98 @@ def survives(ctx):
     return f"a window made in one browser ({mark}) is still there from the next one: {names[-120:]}"
 
 
+def clipboard_read(frame) -> str:
+    return frame.evaluate("() => navigator.clipboard.readText()")
+
+
+def clipboard_write(frame, text: str):
+    frame.evaluate("t => navigator.clipboard.writeText(t)", text)
+
+
+@check("browser", "terminal-clipboard")
+def clipboard(ctx):
+    """JON-546: a plain drag over terminal output reaches the clipboard (tmux's OSC 52 → ttyd-clipboard.js, which says
+    "Copied N characters" on the Paste button); an OSC 52 the shell prints itself does not (no gesture, and tmux drops
+    it); the Paste button pastes the clipboard into the shell; and the terminal host's Content-Security-Policy refuses
+    none of it."""
+    need_on()
+    page, rec = ctx.page("terminal-clipboard")
+    for o in (TERM, origin()):   # (the frame's origin, and the portal that embeds it)
+        page.context.grant_permissions(["clipboard-read", "clipboard-write"], origin=o)
+    login(page)
+    page.click(".tab[data-tab=terminal]")
+    f = terminal_frame(page)
+    unlock_in(f, ENV["PORTAL_PASSWORD"])
+    f = terminal_frame(page)
+    wait_xterm(f)
+    new_shell_window(page, f)
+    button = f.locator("button[title^='Paste from the clipboard']")
+    try:
+        button.wait_for(timeout=10000)
+    except Exception as e:  # noqa: BLE001
+        raise AssertionError(f"step 0 (setup): no Paste button in the terminal's page: {e}") from None
+    f.locator(".xterm-helper-textarea").focus()
+    try:
+        clipboard_write(f, "jon546-probe")
+        probe = clipboard_read(f)
+    except Exception as e:  # noqa: BLE001
+        raise Skip(f"this headless Chromium gives the page no clipboard even with the permissions granted: {str(e)[:120]}")
+    if probe != "jon546-probe":
+        raise Skip(f"this headless Chromium's clipboard does not read back what the page wrote ({probe!r})")
+
+    # 1. copy: drag over the output line, no modifier
+    type_line(page, f, "printf 'jon546-%s\\n' copy-check")
+    wait_text(f, r"^jon546-copy-check$", 15)
+    pos = f.evaluate("""() => { const t = window.term; const want = 'jon546-copy-check';
+        for (const r of document.querySelectorAll('.xterm-rows > div')) if (r.textContent.trim() === want) {
+          const b = r.getBoundingClientRect(); return {x: b.left, y: b.top + b.height / 2, cw: b.width / t.cols}; } return null; }""")
+    expect(pos, "step 1 (copy): the output line jon546-copy-check is in no row of xterm's DOM")
+    fb = page.locator("iframe[data-app=terminal]").bounding_box()
+    expect(fb, "step 1 (copy): no box for the terminal's frame")
+    x0, x1, y = fb["x"] + pos["x"] + 2, fb["x"] + pos["x"] + pos["cw"] * 20, fb["y"] + pos["y"]
+    page.mouse.move(x0, y)
+    page.mouse.down()
+    page.mouse.move((x0 + x1) / 2, y, steps=8)
+    page.mouse.move(x1, y, steps=8)
+    page.mouse.up()
+    t0, got, said = time.time(), "", ""
+    while time.time() - t0 < 3:
+        said = button.inner_text()
+        got = clipboard_read(f)
+        if "jon546-copy-check" in got and said.startswith("Copied"):
+            break
+        page.wait_for_timeout(150)
+    expect("jon546-copy-check" in got, f"step 1 (copy): after a plain drag the clipboard holds {got!r}")
+    expect(said.startswith("Copied"), f"step 1 (copy): the Paste button says {said!r}, not 'Copied N characters'")
+
+    # 2. no copy without a gesture: the shell prints an OSC 52 itself
+    clipboard_write(f, "jon546-marker")
+    f.locator(".xterm-helper-textarea").focus()
+    type_line(page, f, "printf '\\033]52;c;%s\\a' \"$(printf evil | base64)\"; echo osc-done-$((6*7))")
+    wait_text(f, r"osc-done-42$", 15)
+    page.wait_for_timeout(2500)   # past the page's window after the last gesture
+    got = clipboard_read(f)
+    expect(got == "jon546-marker", f"step 2 (no copy without a gesture): a printed OSC 52 changed the clipboard to {got!r}")
+
+    # 3. paste: the Paste button puts the clipboard into the shell
+    clipboard_write(f, "echo jon546-paste-check")
+    button.click()
+    page.wait_for_timeout(300)
+    page.keyboard.press("Enter")
+    try:
+        wait_text(f, r"^jon546-paste-check$", 10)
+    except AssertionError as e:
+        raise AssertionError(f"step 3 (paste): {e}") from None
+    shot(page, "44-terminal-clipboard")
+
+    # 4. the policy refused nothing
+    csp = [e["text"] for e in rec.events if e["t"] in ("console", "pageerror") and re.search(r"Refused to|Content Security Policy", e["text"])
+           and "directive 'webrtc'" not in e["text"]]
+    rec.save()
+    expect(not csp, f"step 4 (CSP): {csp[:3]}")
+    return "a plain drag copied the output line (Paste button: 'Copied N characters'); a printed OSC 52 left the clipboard alone; Paste pasted; no CSP violation"
+
+
 @check("browser", "terminal-devos-claude-inside")
 def claude_inside(ctx):
     need_on()
