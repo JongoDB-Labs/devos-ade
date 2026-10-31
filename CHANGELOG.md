@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.44.5] - 2026-10-30
+
 ### Fixed
 - **Copy and paste work in the browser terminal without a modifier (JON-546).** With tmux's mouse on, a plain drag
   selected in tmux, not in the page, so nothing reached your clipboard unless you held Shift (Option on a Mac), which
