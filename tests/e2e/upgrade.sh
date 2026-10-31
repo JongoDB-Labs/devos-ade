@@ -134,10 +134,14 @@ _migrate_teardown_project() {
 }
 # migrate_teardown — what the move made: the new project (containers, volumes, images, networks), its folder, the old folder's link
 migrate_teardown() {
-  local nstack="$STACK" nproj="$PROJECT" img
+  local nstack="$STACK" nproj="$PROJECT" img o
   if [ "$ROLLED_BACK" = 1 ]; then   # (rolled back: this suite's install is the old project again; the move's project kept its volumes, unused)
     [ -f "$STACK/.devos-ade-e2e" ] || return 0
-    say "teardown: project $NEWP (the move's, unused since the rollback)"; _migrate_teardown_project "$NEWP"; return 0
+    say "teardown: project $NEWP (the move's, unused since the rollback)"; _migrate_teardown_project "$NEWP"
+    # the old code's owner marker, which the ordinary teardown (the new name only) does not know: only when it names this folder
+    o="$(docker volume inspect --format '{{index .Labels "io.bedrock-now.dir"}}' "${PROJECT}_bedrock-now-owner" 2>/dev/null || true)"
+    [ -z "$o" ] || [ "$(real_dir "$o")" != "$(real_dir "$STACK")" ] || docker volume rm "${PROJECT}_bedrock-now-owner" >/dev/null 2>&1 || true
+    return 0
   fi
   [ "$nproj" = "$NEWP" ] && [ -f "$nstack/.devos-ade-e2e" ] || return 0
   say "teardown: project $nproj (the move's)"
