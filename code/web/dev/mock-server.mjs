@@ -2129,7 +2129,17 @@ async function api(req, res, url) {
     const b = await jsonBody(req);
     const ok = (v) => v === null || v === undefined || (typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:/@[\]-]{0,127}$/.test(v) && !ALIAS.test(v));
     if (!ok(b.model) || !ok(b.settingsDefault)) return json(res, 400, { error: 'model: a model id, not an alias' });
-    userPrefs = { model: b.model ?? null, settingsDefault: b.settingsDefault ?? null, at: Date.now() };
+    if (JSON.stringify(b).length > 4096) return json(res, 413, { error: 'too big' });
+    // (as code/server/userprefs.mjs: a body with a model sets it, one with a layout sets those devices' — null forgets one —
+    // and what it does not name stays; the mock keeps a layout as sent, the backend's checks are tested there)
+    const named = 'model' in b || 'settingsDefault' in b;
+    const layout = { ...(userPrefs.layout ?? {}) };
+    if (b.layout === null) { delete layout.desktop; delete layout.tablet; }
+    else if (b.layout && typeof b.layout === 'object') {
+      for (const d of ['desktop', 'tablet']) if (d in b.layout) { if (b.layout[d] === null) delete layout[d]; else layout[d] = b.layout[d]; }
+    }
+    userPrefs = { model: named ? b.model ?? null : userPrefs.model, settingsDefault: named ? b.settingsDefault ?? null : userPrefs.settingsDefault, at: Date.now(),
+      ...(Object.keys(layout).length ? { layout } : {}) };
     return json(res, 200, { prefs: userPrefs });
   }
   if (p === '/api/harnesses') {

@@ -815,7 +815,9 @@ The **Code** tab sits in the portal directly under Chat (on a phone: in the tab 
 in an IDE-like page instead of a terminal — your projects and an explorer of the shown project's folder on the
 left, an editor (CodeMirror) in the middle, the chat on the right and the sandbox's terminal in a bottom panel
 (`Ctrl+\``); on a tablet the chat and one of explorer/editor, on a phone the chat first with files, editor and diffs
-as sheets. Pane sizes are remembered per browser.
+as sheets. That is the default: every panel is a **widget** you can show, hide, move and resize
+([customize the layout](#customize-the-code-page)), and the layout is kept for your sign-in, one for desktops and one
+for tablets.
 
 In this section: [turning it on and off](#turning-the-code-page-on-and-off) ·
 [chat and sessions](#chat-and-sessions) (with @-mentions of context) · [projects](#projects) ·
@@ -958,6 +960,28 @@ Service to define and approve) or `code.<your domain>` ([Remote access](#remote-
 - **Chat first.** On a desktop, until a file, a diff or a preview opens (and while the terminal is closed), the chat
   has the middle of the page, beside the explorer; the editor and its tabs come in at the first file, with the chat at
   the width you gave it on the right.
+
+#### Customize the Code page
+
+The button in the top bar (the layout icon; the command palette's *Customize the layout…*) turns on **Customize**. The
+panels are widgets: **Explorer**, **Search**, **Git**, **Projects & sessions**, the **Editor**, the **Terminal**, the
+**Chat** and the **status bar**. Each sits in a **dock** — left, right, bottom or the centre — and a dock shows its widgets
+as **tabs** (as the explorer's always did) or **stacked**, one above the other (side by side in the bottom dock) with a
+splitter between them; you pick that per dock. In Customize each widget has a small header with a handle and an eye:
+
+- **Move:** drag the handle onto a dock (a line shows where it lands), or focus the widget and press `Alt+←/→` for the
+  next dock and `Alt+↑/↓` for a place along its dock. The chat can sit in the left dock, the right dock or the centre,
+  and cannot be hidden.
+- **Resize:** the splitters of the docks and between stacked widgets as always, or `Shift+arrows` on a focused widget.
+  Each keeps its minimum (the chat 320 px, the centre 320 px).
+- **Hide:** the eye, or `H`. The **Widgets** tray under the top bar lists what is hidden, each with **Add back**; the
+  terminal and the explorer's shortcuts (`Ctrl+\``, `Ctrl/⌘+B`, `Ctrl/⌘+Shift+F`, `Ctrl/⌘+Shift+G`) still open theirs,
+  and show them again.
+- **Reset to default** and **Done** are in the tray; `Escape` leaves Customize. An `aria-live` line says each change.
+
+The editor still gives way to the chat while no file is open. A tablet has three docks (the files dock and the editor
+take turns beside the chat, the terminal stays its drawer) and a layout of its own; a phone keeps its sheets. Nothing
+changes for a page you never customize.
 
 #### Projects
 

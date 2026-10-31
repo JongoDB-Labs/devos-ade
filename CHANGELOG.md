@@ -6,6 +6,29 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+- **The Code page's panels are widgets you arrange (JON-946).** The **Customize** button in the top bar (or the command
+  palette's *Customize the layout…*) puts a small header on each panel: Explorer, Search, Git, Projects & sessions, the
+  editor, the terminal, the chat and the status bar. Drag one by its handle into the left, right, bottom or centre dock,
+  or focus it and press `Alt+arrows` to move it and `Shift+arrows` to resize its dock; the eye (or `H`) hides it, and the
+  **Widgets** tray lists what is hidden with **Add back**, **Reset to default** and **Done** (`Escape` also leaves).
+  - Each dock shows its widgets as tabs, as the explorer always has, or stacked with a splitter between them: you
+    choose per dock. The chat can move to the left, the right or the centre, and cannot be hidden. The editor still
+    gives way to the chat until a file opens.
+  - Nothing changes until you use it: today's page is the default, and what you saved before (pane sizes, the explorer
+    on or off, the terminal, the tablet's files or editor, the explorer's tab) carries over. `Ctrl/⌘+B`, `Ctrl+\``,
+    `Ctrl/⌘+Shift+F` and `Ctrl/⌘+Shift+G` still open their panel, and show it again if you hid it.
+  - A desktop and a tablet each keep a layout of their own, saved for your sign-in as well as in the browser, so a new
+    browser starts where you left off (a phone keeps its sheets). A screen reader hears each change; every control has a
+    name and the focus shows.
+
+### Tests
+- **Layouts have their own checks.** Unit tests for the layout model (defaults equal today's page, migrating the old
+  prefs, validation and clamping, move, hide and show, tabs and stacked, resize, reset, desktop and tablet apart) and for
+  the backend's layout (known ids only, a size cap, the round trip). The Code page's browser checks customize by mouse
+  and by keyboard alone (move, tabs and stacked, resize, hide and add back, reset, a reload and a second browser, the
+  tablet apart) and fail on anything overlapping, clipped or scrolling.
+
 ## [0.46.0] - 2026-10-31
 
 ### Added

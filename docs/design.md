@@ -243,6 +243,16 @@ stack. The rules, so a new card drops in without a new pattern:
   `.welcome-widgets`, shown when the chat pane is 720 px wide or more and the window 760 px tall or more (a container
   query on `.messages`), each at most 200 px (24vh) tall with its list scrolling inside (`.wlist`); a phone or a narrow
   pane keeps the single welcome column. A new Code widget takes that card and list.
+- **The Code page's panels are widgets in docks** (JON-946; `code/web/src/layout.ts` is the model,
+  `components/Widgets.tsx` the docks and Customize). Today's page is the default, pixel for pixel: the explorer's four
+  tabs on the left, the editor in the centre with the terminal below it, the chat on the right. A new panel is a widget
+  id in `layout.ts` (`WIDGET_INFO`, the same list in `code/server/userprefs.mjs`) and a case in `widgetBody`
+  (`Shell.tsx`); it gets its header, drag handle, eye, keys and tray entry from the docks. Rules: the chat is the only
+  widget that cannot be hidden and has no bottom dock; a dock keeps what must stay mounted (the terminal, the editor,
+  the chat) behind its tabs; the layout is validated and clamped on every read, in the browser and on the backend, and
+  kept per device class (desktop, tablet), never for a phone; a layout equal to the default is not stored. Customize
+  is reachable and usable by keyboard alone (`Alt+arrows` move, `Shift+arrows` resize, `H` hides, `Escape` leaves), says
+  each change in an `aria-live` line, and honours `prefers-reduced-motion`.
 - No horizontal page scroll at any width; the tokens and components are the ones above.
 
 ## Do and don't

@@ -192,6 +192,7 @@ page error or dialog fails a check. Screenshots and `results.json` go to `e2e/ou
 | `src/types.ts` | the page's own model of events, permissions, files, models |
 | `src/session.ts` | the per-session reducer: events → timeline items; replay, gaps, history merge |
 | `src/app.ts` | state and actions (sessions, files, tabs, layout) |
+| `src/layout.ts` | the page's widgets and docks as a pure model: defaults (today's page), migrating the old flat layout, validate/clamp, move, hide/show, tabs or stacked, resize, reset, and `arrange` (what each dock draws, the widths after the 320 px centre rule); desktop and tablet each have one |
 | `src/markdown.ts` | marked lexer → a node tree from fixed tags/attributes |
 | `src/text.ts` | caps, visible bidi/control characters, id and path validation, formatting |
 | `src/editor/` | CodeMirror (lazy chunk): editor, merge view, languages |
@@ -211,6 +212,6 @@ page error or dialog fails a check. Screenshots and `results.json` go to `e2e/ou
 | `src/shortcuts.ts` | every keyboard shortcut, in one list (the shortcut sheet, the empty editor, the palette's hints) |
 | `src/questions.ts` | AskUserQuestion: questions from the tool's input, answers from your picks |
 | `src/forms.ts` | small parsers for the MCP form (KEY=value, Name: value) |
-| `src/components/` | Shell (layouts, top bar, status bar, terminal, global keys), Chat, MessageList, ToolCard, PermissionCard (incl. the question form and plan line comments), Composer (with the comment and @-mention chips), FileTree, EditorArea, Projects (the Projects tab, the project chip, New project, Add to project), Pickers, Plugins (dialog), Mcp (panel), Memory (CLAUDE.md dialog), Review (pane), Search (panel), CommandPalette, Budget (dialog), Permissions (dialog), Guards (the lines above the prompt box) |
+| `src/components/` | Widgets (the docks, Customize's headers, drag and keys, the tray), Shell (layouts, top bar, status bar, terminal, global keys), Chat, MessageList, ToolCard, PermissionCard (incl. the question form and plan line comments), Composer (with the comment and @-mention chips), FileTree, EditorArea, Projects (the Projects tab, the project chip, New project, Add to project), Pickers, Plugins (dialog), Mcp (panel), Memory (CLAUDE.md dialog), Review (pane), Search (panel), CommandPalette, Budget (dialog), Permissions (dialog), Guards (the lines above the prompt box) |
 | `dev/` | the mock backend and `npm run dev`; `preview-fixtures.mjs` (the previews' fixtures, also written to `tests/e2e/browser/fixtures/previews`; `office-fixtures.mjs`: part 2's, made byte by byte) |
 | `e2e/` | the browser checks |

@@ -997,7 +997,7 @@ def layout(browser):
     expect(page.get_by_test_id("conn")).to_have_text("Connected", timeout=10_000)
     # (no file is open after a reload: the chat has the middle again, and the width it gets beside a file is kept)
     expect(page.locator(".main.chat-first")).to_have_count(1)
-    kept = page.evaluate("JSON.parse(localStorage.getItem('bn.code.v1')).layout.right")
+    kept = page.evaluate("JSON.parse(localStorage.getItem('bn.code.v1')).layout.desktop.docks.right.size")
     assert abs(kept - w) < 2, f"chat width not kept: {kept} vs {w}"
     expect(page.locator(".col-left")).to_have_count(0)
     page.keyboard.press("Control+b")
@@ -5752,6 +5752,355 @@ def item_menus(browser):
     row.click(button="right")
     assert menu_in_viewport(page), "the tablet's menu leaves the screen"
     p.shot("item-menu-tablet-light.png")
+    p.assert_clean()
+    p.close()
+
+
+# ---------------------------------------------------------------- widgets: the page's panels shown, hidden, moved and resized (JON-946)
+
+# Nothing overlapping, clipped or spilling: the docks beside each other, every widget header inside its dock, the stacked
+# widgets of a dock apart, the bars inside the window, the page itself not scrolling. Returns what is wrong (none: []).
+LAYOUT_SANE = """() => {
+  const vis = (el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
+  const hit = (a, b) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
+  const out = [];
+  const cols = [...document.querySelectorAll('.main > .col-left, .main > .col-center, .main > .col-right')].filter(vis);
+  for (let i = 0; i < cols.length; i++) for (let j = i + 1; j < cols.length; j++) {
+    if (hit(cols[i].getBoundingClientRect(), cols[j].getBoundingClientRect())) out.push(cols[i].className + ' overlaps ' + cols[j].className);
+  }
+  for (const e of document.querySelectorAll('.topbar, .wd-tray, .main, .statusbar')) {
+    if (!vis(e)) continue;
+    const r = e.getBoundingClientRect();
+    if (r.left < -1 || r.right > innerWidth + 1 || r.bottom > innerHeight + 1) out.push(e.className + ' leaves the window');
+  }
+  for (const h of document.querySelectorAll('.wd-head')) {
+    const d = h.closest('.dock, .wd-status');
+    if (!d || !vis(h)) continue;
+    const a = h.getBoundingClientRect(), b = d.getBoundingClientRect();
+    if (a.left < b.left - 1 || a.right > b.right + 1 || a.top < b.top - 1 || a.bottom > b.bottom + 1) out.push('the header of ' + h.parentElement.dataset.widget + ' is clipped by its dock');
+  }
+  for (const d of document.querySelectorAll('.dock')) {
+    if (!vis(d)) continue;
+    const items = [...d.querySelectorAll(':scope > .dock-body > .dock-item')].filter(vis);
+    const b = d.getBoundingClientRect();
+    for (const it of items) {
+      const a = it.getBoundingClientRect();
+      if (a.right > b.right + 1 || a.bottom > b.bottom + 1) out.push(it.dataset.widget + ' spills out of its dock');
+    }
+    for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+      if (hit(items[i].getBoundingClientRect(), items[j].getBoundingClientRect())) out.push(items[i].dataset.widget + ' overlaps ' + items[j].dataset.widget);
+    }
+  }
+  if (document.documentElement.scrollWidth > innerWidth) out.push('horizontal overflow');
+  if (document.documentElement.scrollHeight > innerHeight) out.push('vertical overflow');
+  return out;
+}"""
+
+
+def sane(page, what=""):
+    bad = page.evaluate(LAYOUT_SANE)
+    assert not bad, f"{what}: {bad}"
+
+
+def drag_to(page, grip, x, y, steps=8):
+    """A pointer drag from a handle to a point (the page drags with pointer events: no HTML5 drag and drop)."""
+    box = grip.bounding_box()
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(x, y, steps=steps)
+    return lambda: page.mouse.up()
+
+
+def centre(loc):
+    b = loc.bounding_box()
+    return b["x"] + b["width"] / 2, b["y"] + b["height"] / 2
+
+
+def saved_layout(page, device="desktop"):
+    return page.evaluate("(d) => JSON.parse(localStorage.getItem('bn.code.v1')).layout[d]", device)
+
+
+def live(page):
+    return page.get_by_test_id("layout-live").inner_text()
+
+
+@check("widgets: customize — move Git to the right dock, tabs and stacked, resize, hide and add back, survive a reload, reset; the tablet stays apart")
+def widgets_customize(browser):
+    post(NORMAL + "/__mock/reset")
+    p = Page(browser, NORMAL, "widgets", **DESKTOP)
+    page = p.open()
+    # nobody who never customizes has anything stored, and the page is as it was: Customize is one button in the top bar
+    page.wait_for_timeout(1200)
+    assert "layout" not in mock_get(NORMAL, "/api/prefs")["prefs"], "a page nobody changed kept a layout"
+    expect(page.get_by_test_id("customize-layout")).to_have_attribute("aria-label", "Customize the layout")
+    expect(page.get_by_test_id("customize-layout")).to_have_attribute("aria-pressed", "false")
+    expect(page.get_by_test_id("widget-tray")).to_have_count(0)
+    expect(page.locator(".wd-head")).to_have_count(0)
+    expect(page.locator("[data-dock=left] [role=tab]")).to_have_count(4)
+    # on: a header with a handle and an eye on each widget, the tray under the top bar
+    page.get_by_test_id("customize-layout").click()
+    expect(page.get_by_test_id("widget-tray")).to_be_visible()
+    expect(page.get_by_test_id("customize-layout")).to_have_attribute("aria-pressed", "true")
+    for w in ("explorer", "editor", "chat"):
+        expect(page.get_by_test_id(f"wd-grip-{w}")).to_be_visible()
+    expect(page.get_by_test_id("wd-hide-chat")).to_have_count(0)   # (the chat cannot be hidden)
+    expect(page.get_by_test_id("tray-add-terminal")).to_be_visible()   # (the terminal is closed: it is in the tray)
+    expect(page.get_by_test_id("wd-grip-explorer")).to_have_attribute("aria-label", re.compile(r"^Move Explorer"))
+    expect(page.get_by_test_id("wd-hide-explorer")).to_have_attribute("aria-label", "Hide Explorer")
+    sane(page, "customizing")
+    p.shot("widgets-customize.png")
+    # drag Git (its tab, then its handle) into the right dock, beside the chat
+    page.get_by_test_id("side-git").click()
+    expect(page.locator("[data-widget=git]")).to_be_visible()
+    target = page.locator("[data-dock=right] .dock-body")
+    x, y = centre(target)
+    release = drag_to(page, page.get_by_test_id("wd-grip-git"), x, y)
+    expect(page.locator("[data-dock=right]")).to_have_class(re.compile(r"drop-over"))   # (lit while the pointer is over it)
+    release()
+    expect(page.locator("[data-dock=left] [data-tab=git]")).to_have_count(0)
+    expect(page.locator("[data-dock=right] [data-tab=git]")).to_have_count(1)
+    expect(page.locator("[data-dock=right] [data-tab=chat]")).to_have_count(1)
+    expect(page.locator("[data-dock=right] [data-tab=git]")).to_have_attribute("aria-selected", "true")
+    expect(page.get_by_test_id("git-panel")).to_be_visible()
+    assert "Git moved to the right dock" in live(page), live(page)
+    sane(page, "Git on the right")
+    # tabs and stacked: the dock shows both, a splitter between them
+    page.get_by_test_id("mode-stack-right").click()
+    expect(page.locator("[data-dock=right] .dock-item:not(.hidden)")).to_have_count(2)
+    expect(page.locator("[data-dock=right] [role=tab]")).to_have_count(0)
+    expect(page.get_by_test_id("split-chat")).to_be_visible()
+    sane(page, "stacked")
+    p.shot("widgets-stacked.png")
+    chat_h = page.locator("[data-widget=chat]").bounding_box()["height"]
+    sb = page.get_by_test_id("split-chat").bounding_box()
+    page.mouse.move(sb["x"] + sb["width"] / 2, sb["y"] + 1)
+    page.mouse.down()
+    page.mouse.move(sb["x"] + sb["width"] / 2, sb["y"] - 90, steps=6)
+    page.mouse.up()
+    now_h = page.locator("[data-widget=chat]").bounding_box()["height"]
+    assert chat_h - now_h > 60, f"the splitter between stacked widgets did not resize ({chat_h} -> {now_h})"
+    assert saved_layout(page)["sizes"].get("chat", 0) >= 80
+    sane(page, "stacked, resized")
+    page.get_by_test_id("mode-tabs-right").click()
+    expect(page.locator("[data-dock=right] [role=tab]")).to_have_count(2)
+    # resize the right dock with its splitter; the minimums hold (the chat 320 px, the centre 320 px)
+    w0 = page.locator(".col-right").bounding_box()["width"]
+    sp = page.get_by_test_id("split-right").bounding_box()
+    page.mouse.move(sp["x"] + 1, sp["y"] + 200)
+    page.mouse.down()
+    page.mouse.move(sp["x"] - 120, sp["y"] + 200, steps=6)
+    page.mouse.up()
+    w1 = page.locator(".col-right").bounding_box()["width"]
+    assert 100 < w1 - w0 < 140, f"the right dock went {w0} -> {w1}"
+    sp = page.get_by_test_id("split-right").bounding_box()
+    page.mouse.move(sp["x"] + 1, sp["y"] + 200)
+    page.mouse.down()
+    page.mouse.move(sp["x"] + 2000, sp["y"] + 200, steps=4)
+    page.mouse.up()
+    assert page.locator(".col-right").bounding_box()["width"] >= 319, "the chat's dock went under 320 px"
+    sp = page.get_by_test_id("split-right").bounding_box()
+    page.mouse.move(sp["x"] + 1, sp["y"] + 200)
+    page.mouse.down()
+    page.mouse.move(sp["x"] - 3000, sp["y"] + 200, steps=4)
+    page.mouse.up()
+    assert page.locator(".col-center").bounding_box()["width"] >= 310, "the centre went under 320 px (its 1 px splitters aside)"
+    sane(page, "resized to the limits")
+    # hide Git with its eye: the tray lists it, Add back puts it where it was (the right dock, after the chat)
+    expect(page.locator("[data-dock=right] [data-tab=git]")).to_have_attribute("aria-selected", "true")
+    page.get_by_test_id("wd-hide-git").click()
+    expect(page.locator("[data-tab=git]")).to_have_count(0)
+    expect(page.get_by_test_id("tray-add-git")).to_be_visible()
+    assert "Git hidden" in live(page), live(page)
+    page.get_by_test_id("tray-add-git").click()
+    expect(page.locator("[data-dock=right] [data-tab=git]")).to_have_count(1)
+    expect(page.get_by_test_id("tray-add-git")).to_have_count(0)
+    # the status bar is a widget too: hidden, the page gives its room back; back, it is where it was
+    page.get_by_test_id("wd-hide-status").click()
+    expect(page.get_by_test_id("statusbar")).to_have_count(0)
+    sane(page, "no status bar")
+    page.get_by_test_id("tray-add-status").click()
+    expect(page.get_by_test_id("statusbar")).to_be_visible()
+    # Done leaves Customize; the layout stays
+    page.get_by_test_id("layout-done").click()
+    expect(page.get_by_test_id("widget-tray")).to_have_count(0)
+    expect(page.locator(".wd-head")).to_have_count(0)
+    expect(page.locator("[data-dock=right] [data-tab=git]")).to_have_count(1)
+    sane(page, "done")
+    # a reload keeps it (this browser first, your sign-in a moment later) ...
+    page.wait_for_timeout(1200)
+    saved = saved_layout(page)
+    assert "git" in saved["place"]["right"] and "git" not in saved["place"]["left"], saved["place"]
+    kept = mock_get(NORMAL, "/api/prefs")["prefs"]["layout"]
+    assert "git" in kept["desktop"]["place"]["right"], kept
+    assert "tablet" not in kept, "the tablet's layout is its own: nothing of it was changed"
+    page.reload()
+    expect(page.get_by_test_id("conn")).to_have_text("Connected", timeout=10_000)
+    expect(page.locator("[data-dock=right] [data-tab=git]")).to_have_count(1)
+    expect(page.locator("[data-dock=left] [role=tab]")).to_have_count(3)
+    p.assert_clean()
+    p.close()
+    # ... and so does a browser that has never been here: the layout is kept for your sign-in
+    q = Page(browser, NORMAL, "widgets-other-browser", **DESKTOP)
+    other = q.open()
+    expect(other.locator("[data-dock=right] [data-tab=git]")).to_have_count(1)
+    q.close()
+    # a tablet has a layout of its own: Git is still in its Files pane
+    t = Page(browser, NORMAL, "widgets-tablet", viewport={"width": 1024, "height": 768}, has_touch=True, color_scheme="light")
+    tab = t.open()
+    expect(tab.locator("[data-dock=left] [data-tab=git]")).to_have_count(1)
+    expect(tab.locator("[data-dock=right] [data-tab=git]")).to_have_count(0)
+    tab.get_by_test_id("customize-layout").click()
+    expect(tab.get_by_test_id("widget-tray")).to_be_visible()
+    sane(tab, "tablet, customizing")
+    # (keyboard: Search to the next dock, then the next — the tablet has three docks, the chat stays right)
+    tab.get_by_test_id("side-search").click()
+    tab.locator("[data-widget=search]").focus()
+    tab.keyboard.press("Alt+ArrowRight")
+    expect(tab.locator("[data-dock=center] [data-widget=search]")).to_have_count(1)
+    expect(tab.locator("[data-widget=search]")).to_be_focused()
+    tab.keyboard.press("Alt+ArrowRight")
+    expect(tab.locator("[data-dock=right] [data-tab=search]")).to_have_count(1)
+    expect(tab.locator("[data-dock=right] [data-tab=chat]")).to_have_count(1)
+    sane(tab, "tablet, Search beside the chat")
+    t.shot("widgets-tablet.png")
+    tab.get_by_test_id("layout-done").click()
+    tab.wait_for_timeout(1200)
+    assert "search" in mock_get(NORMAL, "/api/prefs")["prefs"]["layout"]["tablet"]["place"]["right"]
+    assert "git" in mock_get(NORMAL, "/api/prefs")["prefs"]["layout"]["desktop"]["place"]["right"], "the desktop's stayed"
+    t.assert_clean()
+    t.close()
+    # reset to default: Git is back with the other tabs, and nothing is kept for the desktop any more
+    p = Page(browser, NORMAL, "widgets-reset", **DESKTOP)
+    page = p.open()
+    page.get_by_test_id("customize-layout").click()
+    expect(page.get_by_test_id("layout-reset")).to_be_enabled()
+    page.get_by_test_id("layout-reset").click()
+    expect(page.locator("[data-dock=left] [role=tab]")).to_have_count(4)
+    expect(page.get_by_test_id("side-git")).to_have_count(1)
+    expect(page.get_by_test_id("layout-reset")).to_be_disabled()
+    assert "default" in live(page), live(page)
+    page.get_by_test_id("layout-done").click()
+    page.wait_for_timeout(1200)
+    assert "desktop" not in mock_get(NORMAL, "/api/prefs")["prefs"].get("layout", {}), "a layout back at the default is still kept"
+    p.assert_clean()
+    p.close()
+
+
+@check("widgets: the shortcuts show a hidden widget again; Ctrl+B and Ctrl+` keep working; the old saved sizes and toggles carry over")
+def widgets_shortcuts(browser):
+    post(NORMAL + "/__mock/reset")
+    legacy = "if (!localStorage.getItem('bn.code.v1')) localStorage.setItem('bn.code.v1', JSON.stringify({layout: {left: 320, right: 520, bottom: 200, explorer: true, terminal: true, tabletPane: 'editor', side: 'git'}}));"
+    p = Page(browser, NORMAL, "widgets-legacy", init=legacy, **DESKTOP)
+    page = p.open()
+    # what was saved before widgets: the explorer 320 px wide on its Git tab, the chat 520, the terminal open
+    expect(page.get_by_test_id("side-git")).to_have_attribute("aria-selected", "true")
+    expect(page.get_by_test_id("terminal")).to_be_visible()
+    lw = page.locator(".col-left").bounding_box()["width"]
+    rw = page.locator(".col-right").bounding_box()["width"]
+    assert abs(lw - 320) < 2 and abs(rw - 520) < 2, f"sizes did not carry over: {lw}, {rw}"
+    sane(page, "migrated")
+    # Ctrl+` closes and opens the terminal as before; Ctrl+B the explorer's column
+    page.keyboard.press("Control+Backquote")
+    expect(page.get_by_test_id("terminal")).to_be_hidden()
+    page.keyboard.press("Control+Backquote")
+    expect(page.get_by_test_id("terminal")).to_be_visible()
+    page.keyboard.press("Control+b")
+    expect(page.locator(".col-left")).to_have_count(0)
+    page.keyboard.press("Control+b")
+    expect(page.locator(".col-left")).to_have_count(1)
+    expect(page.get_by_test_id("side-git")).to_have_attribute("aria-selected", "true")   # (on the tab it was on)
+    # hide Search and Git in Customize, close it: Ctrl+Shift+F and Ctrl+Shift+G bring them back and select them
+    page.get_by_test_id("customize-layout").click()
+    page.get_by_test_id("side-search").click()
+    page.get_by_test_id("wd-hide-search").click()
+    page.get_by_test_id("side-git").click()
+    page.get_by_test_id("wd-hide-git").click()
+    expect(page.locator("[data-dock=left] [role=tab]")).to_have_count(2)
+    page.get_by_test_id("layout-done").click()
+    page.keyboard.press("Control+Shift+F")
+    expect(page.get_by_test_id("side-search")).to_have_attribute("aria-selected", "true")
+    page.keyboard.press("Control+Shift+G")
+    expect(page.get_by_test_id("side-git")).to_have_attribute("aria-selected", "true")
+    expect(page.locator("[data-dock=left] [role=tab]")).to_have_count(4)
+    # the explorer hidden: Ctrl+B shows it again (and its column)
+    page.get_by_test_id("customize-layout").click()
+    page.get_by_test_id("side-files").click()
+    page.get_by_test_id("wd-hide-explorer").click()
+    page.get_by_test_id("layout-done").click()
+    expect(page.get_by_test_id("side-files")).to_have_count(0)
+    page.keyboard.press("Control+b")
+    expect(page.get_by_test_id("side-files")).to_have_attribute("aria-selected", "true")
+    p.assert_clean()
+    p.close()
+
+
+@check("widgets: keyboard only — Customize, Alt+arrows move, Shift+arrows resize, H hides, Escape leaves; an aria-live line says each change")
+def widgets_keyboard(browser):
+    post(NORMAL + "/__mock/reset")
+    p = Page(browser, NORMAL, "widgets-keys", **DESKTOP)
+    page = p.open()
+    page.get_by_test_id("customize-layout").focus()
+    page.keyboard.press("Enter")
+    expect(page.get_by_test_id("widget-tray")).to_be_visible()
+    expect(page.get_by_test_id("layout-live")).to_have_attribute("aria-live", "polite")
+    assert "Customizing" in live(page)
+    # the chat moves to the centre and back (Alt+Left / Alt+Right), the focus following it
+    chat = page.locator("[data-widget=chat]")
+    chat.focus()
+    expect(chat).to_have_attribute("aria-label", re.compile(r"Alt plus the arrow keys"))
+    assert page.evaluate("getComputedStyle(document.activeElement).outlineStyle") != "none", "a focused widget shows no focus ring"
+    page.keyboard.press("Alt+ArrowLeft")
+    expect(page.locator("[data-dock=center] [data-widget=chat]")).to_have_count(1)
+    expect(page.locator("[data-widget=chat]")).to_be_focused()
+    assert "Chat moved to the centre" in live(page), live(page)
+    sane(page, "the chat in the centre")
+    page.keyboard.press("Alt+ArrowRight")
+    expect(page.locator("[data-dock=right] [data-widget=chat]")).to_have_count(1)
+    expect(page.locator("[data-widget=chat]")).to_be_focused()
+    # the chat has no bottom dock: Alt+Right from the right goes round to the left, never the bottom
+    page.keyboard.press("Alt+ArrowRight")
+    expect(page.locator("[data-dock=left] [data-widget=chat]")).to_have_count(1)
+    expect(page.locator("[data-widget=chat]")).to_be_focused()
+    page.keyboard.press("Alt+ArrowLeft")
+    expect(page.locator("[data-dock=right] [data-widget=chat]")).to_have_count(1)
+    expect(page.locator("[data-widget=chat]")).to_be_focused()
+    # Shift+arrows size the dock the widget is in: the chat's dock grows to the left
+    w0 = page.locator(".col-right").bounding_box()["width"]
+    page.keyboard.press("Shift+ArrowLeft")
+    page.wait_for_timeout(200)
+    assert abs(page.locator(".col-right").bounding_box()["width"] - w0 - 40) < 2
+    assert "pixels wide" in live(page), live(page)
+    # H on the chat is refused, said
+    page.keyboard.press("h")
+    assert "cannot be hidden" in live(page), live(page)
+    expect(page.locator("[data-widget=chat]")).to_have_count(1)
+    # Alt+Down: a place along the tabs of its dock (Explorer after Search); H hides it, focus goes to its Add back
+    page.locator("[data-widget=explorer]").focus()
+    page.keyboard.press("Alt+ArrowDown")
+    expect(page.locator("[data-dock=left] [role=tab]").first).to_contain_text("Search")
+    assert "position 2 of 4" in live(page), live(page)
+    page.locator("[data-widget=explorer]").focus()
+    page.keyboard.press("h")
+    expect(page.get_by_test_id("tray-add-explorer")).to_be_focused()
+    page.keyboard.press("Enter")
+    expect(page.locator("[data-dock=left] [role=tab]")).to_have_count(4)
+    assert "added back" in live(page), live(page)
+    # the terminal: closed, it is in the tray; Add back opens it in the bottom dock
+    page.get_by_test_id("tray-add-terminal").focus()
+    page.keyboard.press("Enter")
+    expect(page.locator("[data-dock=bottom] [data-widget=terminal]")).to_be_visible()
+    sane(page, "the terminal in the bottom dock")
+    # Escape leaves Customize (from a widget, not a text box)
+    page.locator("[data-widget=editor]").focus()
+    page.keyboard.press("Escape")
+    expect(page.get_by_test_id("widget-tray")).to_have_count(0)
+    expect(page.locator(".wd-head")).to_have_count(0)
+    # every control Customize added has a name
+    page.get_by_test_id("customize-layout").click()
+    unnamed = page.evaluate("""() => [...document.querySelectorAll('.wd-tray button, .wd-head button, .dock-edit button, .dock-strip button')]
+      .filter((b) => !(b.getAttribute('aria-label') || b.textContent || '').trim()).length""")
+    assert unnamed == 0, f"{unnamed} unnamed controls"
+    page.keyboard.press("Escape")
     p.assert_clean()
     p.close()
 
