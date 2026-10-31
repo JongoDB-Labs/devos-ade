@@ -13,18 +13,22 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   helper as running only while its heartbeat is under 30 s old, so it hid **Update now** most of the time and said the
   helper was not running.
   - That record is now written beside the loop, one at a time: the heartbeat and requests no longer wait for Docker.
+    Before a request (or an automatic update) is carried out, the one running ends, so it never writes its older view
+    of the containers or a runtime over what the job does.
   - A helper heard from in the last 10 minutes is shown as late, not gone. **Update now** stays on Home, disabled, with
-    why ("has not answered since … : this computer or Docker is busy") and `./stack update` beside it. Maintenance and
-    Settings say the same, and a refused request says to try again in a minute rather than to install the helper.
+    why ("has not answered since … : this computer or Docker is busy") and `./stack update` beside it. Maintenance,
+    Settings, the Code page and the walkthrough say the same, and a refused request says to try again in a minute
+    rather than to install the helper.
 
 ### Tests
 - **What you can see and click, compared between releases.** The UI sweep records the visible controls of every page
   and state (role, accessible name, enabled), including Home with an update available and the update helper running,
   late or absent. `tests/e2e/ui-sweep.sh --compare vX.Y.Z` sweeps that release's stack and this one with the same script
   and fails when a control of the release is gone, disabled or unnamed (or a whole state is), unless
-  `tests/e2e/browser/ui-removed.json` declares it with why and the release that changed it.
-- The helper's loop keeps its heartbeat and takes a request while a slow status tick runs (unit); Home's late state
-  (unit and browser e2e).
+  `tests/e2e/browser/ui-removed.json` declares it with why and the release that changed it. A control hidden from
+  assistive technology (`aria-hidden`, `inert`) or at opacity 0 counts as gone.
+- The helper's loop keeps its heartbeat and takes a request while a slow status tick runs, a request ends that tick
+  first, and the tick starts again once it finished (unit); Home's late state (unit and browser e2e).
 
 ## [0.45.0] - 2026-10-31
 
