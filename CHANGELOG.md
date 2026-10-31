@@ -40,8 +40,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   reports an update hint that points at a command not on screen.
 - **The move to devos-ade as a default install meets it.** `tests/e2e/upgrade.sh --migrate` (the real names) no longer
   sets the project in the shell during the old release's setup, which wrote it to `.env` and hid JON-945, and checks
-  that `.env` names none. Unit: `./stack update`'s order (the claim, then the move) on such an install, a v0.45.0-stuck
-  install resuming, and another install's marker still refused.
+  that `.env` names none. Its check that no file names the old folder now matches the folder as a whole path (the Code
+  page's workspace beside it keeps its name) and skips the backups and `.env.pre-devos-ade` as it meant to. Unit:
+  `./stack update`'s order (the claim, then the move) on such an install, a v0.45.0-stuck install resuming, and another
+  install's marker still refused.
 
 ## [0.45.0] - 2026-10-31
 

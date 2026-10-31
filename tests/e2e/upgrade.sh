@@ -302,7 +302,9 @@ migrate_checks() {
   check absolute-link-rewritten "$([ "$t" = "$ST/mlx/hf/hub/models--e2e--partial/blobs/bbbb2222" ] && [ -e "$ST/runtimes/lmstudio/home/.lmstudio/models/e2e/m.gguf" ] && echo 0 || echo 1)" "lms import link -> $t"
   check lmstudio-records "$(grep -q "^$STACK/.state/runtimes/lmstudio/home/.lmstudio/llmster/" "$ST/runtimes/lmstudio/llmster.run" && grep -q "$STACK/.state/runtimes/lmstudio/home\"" "$ST/runtimes/lmstudio/home/.lmstudio/.internal/llmster-install-location.json" && [ "$(cat "$ST/runtimes/lmstudio/home/.lmstudio-home-pointer")" = "$STACK/.state/runtimes/lmstudio/home/.lmstudio" ] && echo 0 || echo 1)" "llmster.run, install-location.json and the home pointer name $STACK"
   check session-record "$(grep -q "$STACK/.state/sessions/e2e" "$ST/sessions/e2e.json" && echo 0 || echo 1)" "$(cat "$ST/sessions/e2e.json")"
-  left="$(grep -rIlF -- "$OLD_STACK" "$STACK" --exclude-dir=.git --exclude-dir=backups --exclude-dir=migrate --exclude=.env.pre-devos-ade 2>/dev/null | head -5 | tr '\n' ' ')"
+  # (the old folder as a whole path: the Code page's workspace beside it keeps its name, <old folder>-workspace)
+  left="$(grep -rIlE --exclude-dir=.git --exclude-dir=backups --exclude-dir=migrate --exclude=.env.pre-devos-ade \
+    -- "$(printf '%s' "$OLD_STACK" | sed 's/[][\.*^$+?(){}|]/\\&/g')([^A-Za-z0-9._-]|\$)" "$STACK" 2>/dev/null | head -5 | tr '\n' ' ')"
   while IFS= read -r l; do t="$(readlink "$l")"; case "$t" in "$OLD_STACK" | "$OLD_STACK"/*) left="$left link:$l" ;; esac; done <<EOF
 $(find "$STACK" -path "$STACK/.git" -prune -o -type l -print 2>/dev/null)
 EOF
