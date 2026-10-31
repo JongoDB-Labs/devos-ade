@@ -26,6 +26,11 @@ with its source again and copies afresh any that changed in between. While the m
 `./stack setup` refuse to start anything and name the two ways out: `./stack update` (resumes) and
 `./stack migrate --rollback` (goes back). Your data stays in the old volumes, unchanged, until the move is verified.
 
+**Stopped by v0.45.0 with "project devos-ade already has volumes (devos-ade_devos-ade-owner)".** v0.45.0 itself made that
+volume, an empty marker, a moment before its move checked for one, on an install whose `.env` names no project (the
+default install). Nothing was changed. `./stack update` gets v0.45.1 or later, and that resumes the move. On v0.45.0
+alone: `docker volume rm devos-ade_devos-ade-owner && ./stack migrate --now`, then `cd ~/devos-ade && ./stack update --force`.
+
 ## On the new address
 
 The new hostname is a new browser origin, so once:

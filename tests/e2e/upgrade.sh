@@ -120,7 +120,10 @@ st() { # st [--aws] ARGS... — the throwaway's ./stack, clean environment, no t
   [ "$MIGRATE" != 0 ] || [ "$(get_env COMPOSE_PROJECT_NAME)" = "$PROJECT" ] || { echo "xx  throwaway .env does not name project $PROJECT" >&2; return 99; }
   if [ "${1:-}" = --aws ]; then
     shift
+    # (the real names: no project in the shell either, as a default install was set up — a name from the shell is
+    # written to .env by the first setup, and such an install never meets the new default name's claim: JON-945)
     ( export AWS_REGION_NAME="${AWS_REGION_NAME:-us-east-1}" COMPOSE_PROJECT_NAME="$PROJECT"
+      [ "$MIGRATE" != default ] || unset COMPOSE_PROJECT_NAME
       clean_env AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION_NAME COMPOSE_PROJECT_NAME
       cd "$STACK" && exec "$NOTTY" "$STACK/stack" "$@" </dev/null )
   else ( clean_env ${MIG_ENV:+$(printf '%s\n' $MIG_ENV | sed 's/=.*//')}; [ -z "${MIG_ENV:-}" ] || export $MIG_ENV
@@ -398,6 +401,9 @@ say "setup at $FROM (log: $LOGS/setup.log)"
 st --aws setup --yes > "$LOGS/setup.log" 2>&1; rc=$?; redact "$LOGS/setup.log"
 check setup-before "$rc" "./stack setup at $FROM: exit $rc"
 [ "$rc" = 0 ] || die "setup failed — see $LOGS/setup.log"
+if [ "$MIGRATE" = default ]; then   # the owner's kind of install: its .env names no project (JON-945)
+  check env-names-no-project "$([ -z "$(get_env COMPOSE_PROJECT_NAME)" ] && echo 0 || echo 1)" ".env after setup: COMPOSE_PROJECT_NAME='$(get_env COMPOSE_PROJECT_NAME)'"
+fi
 
 # --- 2. seed ---
 get_env PORTAL_PASSWORD > "$OUT/pw"   # (from a file: never on a command line)

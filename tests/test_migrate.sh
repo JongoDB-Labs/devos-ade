@@ -5,6 +5,7 @@
 # stand-in whose volumes are folders under $TMP/dk (so the copy and its checks really run on files), launchctl,
 # systemctl and the disk checks are stand-ins too. The install is a folder under this test's own HOME.
 . "$STACK_DIR/lib/commands.sh"   # also sources lib/migrate.sh
+. "$STACK_DIR/lib/guard.sh"      # (./stack sources it: the claim every ./stack update makes before the move)
 
 OLDP=bedrock-now; NEWP=devos-ade
 
@@ -16,12 +17,16 @@ _mg_docker() {
     volume) shift
       case "$1" in
         ls) ls "$DK/vol" ;;
-        create) shift; local n=''; while [ $# -gt 0 ]; do case "$1" in --label) shift 2 ;; *) n="$1"; shift ;; esac; done
-          [ ! -f "$DK/failcreate" ] || return 1; mkdir -p "$DK/vol/$n" ;;
-        inspect) local n a; for a in "$@"; do n="$a"; done
+        create) shift; local n='' l=''; while [ $# -gt 0 ]; do case "$1" in --label) l="$l$2
+"; shift 2 ;; *) n="$1"; shift ;; esac; done
+          [ ! -f "$DK/failcreate" ] || return 1
+          [ ! -d "$DK/vol/$n" ] || return 0   # (an existing volume keeps its labels, as with Docker)
+          mkdir -p "$DK/vol/$n"; printf '%s' "$l" > "$DK/lab-$n" ;;
+        inspect) local n a all="$*" k; for a in "$@"; do n="$a"; done
           [ -d "$DK/vol/$n" ] || return 1
-          case "$*" in *io.bedrock-now.dir*) cat "$DK/owner" 2>/dev/null || true ;; esac ;;
-        rm) if [ -f "$DK/rmfail" ] && grep -qx "$2" "$DK/rmfail"; then return 1; fi; rm -rf "$DK/vol/$2" ;;
+          case "$all" in *io.bedrock-now.dir*) cat "$DK/owner" 2>/dev/null || true ;;
+            *'.Labels "'*) k="${all#*.Labels \"}"; k="${k%%\"*}"; sed -n "s|^$k=||p" "$DK/lab-$n" 2>/dev/null || true ;; esac ;;
+        rm) if [ -f "$DK/rmfail" ] && grep -qx "$2" "$DK/rmfail"; then return 1; fi; rm -rf "$DK/vol/$2" "$DK/lab-$2" ;;
       esac ;;
     ps) case "$*" in
           *health=unhealthy*) cat "$DK/unhealthy" 2>/dev/null || true ;;
@@ -227,6 +232,33 @@ test_preflight_refuses_when_the_new_name_already_has_volumes() {
   _mg_env; _mg_vol "${NEWP}_pgdata"; _mg_try
   [ "$MGRC" != 0 ]; assert_contains "$(cat "$TMP/out")" "already has volumes"
   [ -z "$(get_env COMPOSE_PROJECT_NAME)" ] && [ -d "$INST" ] && [ ! -e "$NEW" ]; _mg_old_untouched
+}
+_mg_new_owner() { docker volume inspect --format '{{index .Labels "io.devos-ade.dir"}}' "${NEWP}_${NEWP}-owner"; }
+test_an_install_whose_env_names_no_project_is_moved_by_the_update() {
+  # (JON-945) The owner's install: .env has no COMPOSE_PROJECT_NAME. The re-exec'd ./stack update of the NEW code first
+  # claims the project (the dispatcher's guard_project), whose default is now the NEW name: it writes the new name's owner
+  # marker for this folder, and then the move's preflight ran into it ("already has volumes") on every try.
+  _mg_env
+  [ -z "$(get_env COMPOSE_PROJECT_NAME)" ]; assert_eq "$(project_name)" "$NEWP"
+  printf '#!/bin/sh\npwd -P > "%s/reexec"\n' "$TMP" > "$INST/stack"; chmod +x "$INST/stack"
+  local rc=0; ( guard_project && migrate_update_hook ) > "$TMP/out" 2>&1 || rc=$?   # (./stack update's order)
+  assert_not_contains "$(cat "$TMP/out")" "already has volumes"; assert_eq "$rc" 0
+  assert_eq "$(_st)" moved; assert_eq "$(sed -n 1p "$TMP/reexec")" "$(cd "$NEW" && pwd -P)"
+  assert_eq "$(_mg_new_owner)" "$NEW"   # (made again by the owner step, for the new folder)
+  _mg_old_untouched
+}
+test_an_update_stopped_by_its_own_marker_resumes() {
+  # what v0.45.0 left behind: status failed at preflight, the marker still there; the next ./stack update goes on
+  _mg_env; guard_project 2>/dev/null; assert_eq "$(_mg_new_owner)" "$INST"
+  mg_init; mg_put started 1; mg_put status failed; mg_put failed_step preflight
+  _mg_try; assert_eq "$MGRC" 0; assert_eq "$(_st)" moved; assert_eq "$(_mg_new_owner)" "$NEW"; _mg_old_untouched
+}
+test_preflight_still_refuses_the_new_names_marker_of_another_install() {
+  _mg_env; mkdir -p "$HOME/elsewhere"
+  docker volume create --label "io.devos-ade.dir=$HOME/elsewhere" --label "io.devos-ade.project=$NEWP" "${NEWP}_${NEWP}-owner" >/dev/null
+  _mg_try
+  [ "$MGRC" != 0 ]; assert_contains "$(cat "$TMP/out")" "already has volumes"; assert_contains "$(cat "$TMP/out")" "${NEWP}_${NEWP}-owner"
+  [ -z "$(get_env COMPOSE_PROJECT_NAME)" ] && [ -d "$INST" ] && [ ! -e "$NEW" ]; assert_eq "$(_mg_new_owner)" "$HOME/elsewhere"; _mg_old_untouched
 }
 test_preflight_refuses_without_docker_and_without_the_copy_image() {
   _mg_env; : > "$DK/down"; _mg_try; [ "$MGRC" != 0 ]; assert_contains "$(cat "$TMP/out")" "Docker is not running"

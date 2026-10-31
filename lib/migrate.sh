@@ -131,6 +131,17 @@ mg_status() { mg_get status; }
 # --- docker, small ---
 mg_old_volumes() { [ "${MG_PARTIAL:-0}" != 1 ] || return 0; docker volume ls -q 2>/dev/null | awk -v p="${MG_OLD_PROJECT}_" 'index($0, p) == 1' | grep -v -- '-owner$' || true; }
 mg_new_volumes() { [ "${MG_PARTIAL:-0}" != 1 ] || return 0; docker volume ls -q 2>/dev/null | awk -v p="${MG_NEW_PROJECT}_" 'index($0, p) == 1' || true; }
+# mg_new_clash -> the new project's volumes in the move's way: all of them but THIS install's own owner marker. With no project
+# in .env, the new code's ./stack update claims its default name, the new one, before the move starts (lib/guard.sh, from the
+# dispatcher): that marker names this folder, and the owner step writes it again for the new folder (JON-945).
+mg_new_clash() {
+  local m="${MG_NEW_PROJECT}_${MG_NEW_DIRNAME}-owner" own
+  own="$(docker volume inspect --format "{{index .Labels \"$MG_NEW_OWNER_LABEL\"}}" "$m" 2>/dev/null || true)"
+  case "$own" in /*) own="$(cd "$own" 2>/dev/null && pwd -P || printf '%s' "$own")" ;; *) own='' ;; esac
+  if [ -n "$own" ] && { [ "$own" = "$MG_OLD_DIR" ] || [ "$own" = "$MG_NEW_DIR" ]; }; then
+    mg_new_volumes | grep -vxF -- "$m" || true
+  else mg_new_volumes; fi
+}
 mg_short() { printf '%s\n' "${1#"${MG_OLD_PROJECT}"_}"; }
 mg_is_socket_vol() { case "$1" in *-socket) return 0 ;; esac; return 1; }
 mg_image() {
@@ -194,11 +205,12 @@ mg_fail() { # mg_fail STEP MESSAGE — the marker says where it stopped; the old
 }
 
 mg_step_preflight() {
-  local v k need free ws
+  local v k need free ws clash
   if [ "$MG_PARTIAL" = 1 ]; then mg_step_preflight_partial; return 0; fi
   [ -n "$(mg_old_volumes)" ] || mg_fail preflight "no volumes of project $MG_OLD_PROJECT"
-  if [ -n "$(mg_new_volumes)" ]; then
-    mg_fail preflight "project $MG_NEW_PROJECT already has volumes ($(mg_new_volumes | tr '\n' ' ')), made by an earlier try or another install. Look at them; remove them yourself (docker volume rm …) if they are not wanted. Nothing was changed."
+  clash="$(mg_new_clash)"
+  if [ -n "$clash" ]; then
+    mg_fail preflight "project $MG_NEW_PROJECT already has volumes ($(printf '%s\n' "$clash" | tr '\n' ' ')), made by an earlier try or another install. Look at them; remove them yourself (docker volume rm …) if they are not wanted. Nothing was changed."
   fi
   if [ "$MG_MV" = 1 ] && ! mg_done_p move; then
     [ ! -e "$MG_NEW_DIR" ] && [ ! -L "$MG_NEW_DIR" ] || mg_fail preflight "$MG_NEW_DIR exists already — move it aside, then run ./stack update again. Nothing was changed."
