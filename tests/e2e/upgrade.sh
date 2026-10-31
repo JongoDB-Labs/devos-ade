@@ -512,7 +512,7 @@ elif [ -n "$STUCK_ON" ]; then
   if [ "$n" != 0 ] && grep -q 'already has volumes' "$LOGS/update-stuck.log" && grep -qx 'status=failed' "$MK" 2>/dev/null &&
     grep -qx 'failed_step=preflight' "$MK" 2>/dev/null && grep -qx 'result=running' "$STACK/.state/update/last.env" 2>/dev/null; then stopped=0; fi
   check stuck-at-first-check "$stopped" "./stack update --to $STUCK_ON: exit $n; $(grep -o 'failed at .preflight.*already has volumes ([^)]*)' "$LOGS/update-stuck.log" | head -n 1 | cut -c1-160)"
-  check stuck-old-stack-up "$(docker ps --filter "label=com.docker.compose.project=$PROJECT" --filter status=running -q | grep -q . && echo 0 || echo 1)" "the old project's containers still running"
+  check stuck-old-stack-up "$([ -n "$(docker ps --filter "label=com.docker.compose.project=$PROJECT" --filter status=running -q)" ] && echo 0 || echo 1)" "the old project's containers still running"
   st update --yes > "$LOGS/update-plain.log" 2>&1; n=$?
   check plain-update-still-stuck "$([ "$n" != 0 ] && grep -q 'already has volumes' "$LOGS/update-plain.log" && echo 0 || echo 1)" "a plain ./stack update finishes the unfinished one with $STUCK_ON's code: exit $n"
   if [ "$RESUME" = to ]; then
