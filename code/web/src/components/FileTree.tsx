@@ -375,7 +375,7 @@ export function FileTree({ onOpen }: { onOpen?: () => void }) {
       {confirmDel !== null && (
         <Dialog title="Delete?" onClose={() => setConfirmDel(null)}>
           <p>
-            Move <code>{confirmDel}</code> to <code>{project.path}/.bedrock-now-trash/</code>?
+            Move <code>{confirmDel}</code> to <code>{project.path}/.devos-ade-trash/</code>?
           </p>
           <div class="dlg-buttons">
             <button type="button" class="btn ghost" onClick={() => setConfirmDel(null)}>

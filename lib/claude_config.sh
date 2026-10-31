@@ -188,7 +188,7 @@ claude_config_help() {
 # it may hold things you don't want sent to Bedrock. (The wrapper shows these on a terminal only.)
 claude_config_notes() {
   [ "$CB_CONFIG_MODE" = lean ] || return 0
-  local dir my mark="$CB_CONFIG_DIR/.bedrock-now-claude-md-hint"
+  local dir my mark="$CB_CONFIG_DIR/.devos-ade-claude-md-hint"
   dir="$(claude_config_show "$CB_CONFIG_DIR")"; my="$(claude_config_show "$CB_MY_CONFIG_DIR")"
   if [ "${CB_CONFIG_NEW:-0}" = 1 ]; then
     printf 'config: new folder %s — Claude Code asks its first-run questions (theme, trusting this folder) once more\n' "$dir"

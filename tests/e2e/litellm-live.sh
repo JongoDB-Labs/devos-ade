@@ -66,11 +66,11 @@ api() { curl -s -m 30 -H "Authorization: Bearer $KEY" -H 'Content-Type: applicat
 # the libraries ./stack itself sources, in its order (commands.sh alone lacks common.sh's variables)
 _libs() { local l; for l in common ports portal models commands guard open owui prices; do . "$STACK/lib/$l.sh"; done; }
 # lib/commands.sh in a subshell of its own: the throwaway's ./stack functions, never this shell's environment
-run_stack() { ( export STACK_DIR="$STACK" ENV_FILE="$STACK/.env" STATE_DIR="$STACK/.state" BEDROCK_NOW_NO_OPEN=1
+run_stack() { ( export STACK_DIR="$STACK" ENV_FILE="$STACK/.env" STATE_DIR="$STACK/.state" DEVOS_ADE_NO_OPEN=1
                 cd "$STACK" && _libs && "$@" ); }
 # run_eval CODE [ARGS…] — CODE (shell text) in that same environment, with ARGS as $1…
 run_eval() { local code="$1"; shift
-             ( export STACK_DIR="$STACK" ENV_FILE="$STACK/.env" STATE_DIR="$STACK/.state" BEDROCK_NOW_NO_OPEN=1
+             ( export STACK_DIR="$STACK" ENV_FILE="$STACK/.env" STATE_DIR="$STACK/.state" DEVOS_ADE_NO_OPEN=1
                cd "$STACK" && _libs && eval "$code" ); }
 
 printf '%s\n' claude-haiku-5-5 titan-embed-v2 > "$STACK/.state/enabled-1"

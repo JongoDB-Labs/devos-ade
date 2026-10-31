@@ -21,7 +21,7 @@ services:
       args:
         BN_UID: ${TERMINAL_UID:-10104}
         BN_GID: ${TERMINAL_GID:-10104}
-    image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/terminal:local   # per project, like portal
+    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/terminal:local   # per project, like portal
     restart: unless-stopped
     hostname: terminal
     user: "${TERMINAL_UID:-10104}:${TERMINAL_GID:-10104}"
@@ -53,7 +53,7 @@ services:
       # auto mode off for their sessions unless it is on. A convenience for what is typed here, not a boundary: the
       # read-only managed settings below decide for everything else
       TERMINAL_AUTO_MODE: ${TERMINAL_AUTO_MODE:-false}
-      # The shared MCP server (bn-terminal writes ~/.config/bedrock-now/mcp.json from these).
+      # The shared MCP server (bn-terminal writes ~/.config/devos-ade/mcp.json from these).
       BN_MCP_URL: http://gateway:8091/mcp
       SHARED_MCP_TOKEN: ${SHARED_MCP_TOKEN:-}
       # (the checksum of the managed settings below, from ./stack: a mount of one file no longer shows a file git
@@ -156,7 +156,7 @@ services:
     networks: [default, terminal-link]
     environment:
       TERMINAL_MODE: "on"   # caddy/terminal-on.caddy (terminal-off.caddy otherwise: no terminal site)
-      TERMINAL_HOST: ${TERMINAL_HOST:-terminal.${PORTAL_HOST:-bedrock-now.localhost}}
+      TERMINAL_HOST: ${TERMINAL_HOST:-terminal.${PORTAL_HOST:-devos-ade.localhost}}
       TERMINAL_PROXY_SECRET: ${TERMINAL_PROXY_SECRET:-}
       # Remote access to the terminal (REMOTE_TERMINAL=true and ./stack remote): lib/terminal.sh writes this name;
       # blank, the remote site's terminal block matches nothing.

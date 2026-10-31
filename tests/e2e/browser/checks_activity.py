@@ -293,7 +293,7 @@ def global_search(ctx):
     page, rec = ctx.page("search")
     login(page)
     page.wait_for_selector("#search-btn:not([hidden])")
-    idx = page.evaluate("() => fetch('/api/search/index', {headers: {'X-Requested-With': 'bedrock-now'}}).then(r => r.json())")
+    idx = page.evaluate("() => fetch('/api/search/index', {headers: {'X-Requested-With': 'devos-ade'}}).then(r => r.json())")
     pages = {p["file"]: p for p in idx["docs"]["pages"]}
     expect("README.md" in pages and len(pages["README.md"]["sections"]) >= 20 and "docs/security.md" in pages,
            f"the docs index built into the image: {list(pages)}")

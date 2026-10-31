@@ -19,7 +19,7 @@ _noisy() { local i; for i in 1 2 3; do echo "compose noise $i"; done; echo "comp
 
 test_run_phase_quiet_by_default() {
   _now() { echo 100; }
-  out="$(BEDROCK_NOW_VERBOSE=0 run_phase LiteLLM litellm _noisy 2>&1)"
+  out="$(DEVOS_ADE_VERBOSE=0 run_phase LiteLLM litellm _noisy 2>&1)"
   assert_contains "$out" "LiteLLM ready (0s)"
   assert_not_contains "$out" "compose noise"
   assert_not_contains "$out" "compose err"
@@ -29,19 +29,19 @@ test_run_phase_quiet_by_default() {
 # setup's steps are named; a terminal or any other run prints neither
 test_a_helper_jobs_log_names_each_phase_and_step_as_it_starts() {
   _now() { echo 100; }
-  out="$(BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_VERBOSE=0 run_phase LiteLLM litellm _noisy 2>&1)"
+  out="$(DEVOS_ADE_JOB_ORIGIN=helper DEVOS_ADE_VERBOSE=0 run_phase LiteLLM litellm _noisy 2>&1)"
   assert_eq "$(printf '%s\n' "$out" | grep -c '')" 2
   assert_eq "$(printf '%s\n' "$out" | head -n 1)" "==> LiteLLM: starting…"
   assert_contains "$(printf '%s\n' "$out" | tail -n 1)" "LiteLLM ready (0s)"
-  assert_eq "$(BEDROCK_NOW_JOB_ORIGIN=helper setup_step "checking your AWS key" 2>&1)" "==> doing: checking your AWS key"
-  assert_eq "$(BEDROCK_NOW_JOB_ORIGIN=helper phase_start Terminal 2>&1)" "==> Terminal: starting…"
+  assert_eq "$(DEVOS_ADE_JOB_ORIGIN=helper setup_step "checking your AWS key" 2>&1)" "==> doing: checking your AWS key"
+  assert_eq "$(DEVOS_ADE_JOB_ORIGIN=helper phase_start Terminal 2>&1)" "==> Terminal: starting…"
   # not a helper job: nothing more than before
-  out="$(BEDROCK_NOW_VERBOSE=0 run_phase LiteLLM litellm _noisy 2>&1)"
+  out="$(DEVOS_ADE_VERBOSE=0 run_phase LiteLLM litellm _noisy 2>&1)"
   assert_not_contains "$out" "starting"
   assert_eq "$(setup_step "checking your AWS key" 2>&1)" ""
-  assert_eq "$(BEDROCK_NOW_JOB_ORIGIN=terminal phase_start Terminal 2>&1)" ""
+  assert_eq "$(DEVOS_ADE_JOB_ORIGIN=terminal phase_start Terminal 2>&1)" ""
   # (verbose: run_phase says it already, once)
-  out="$(BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_VERBOSE=1 run_phase LiteLLM litellm _noisy 2>&1)"
+  out="$(DEVOS_ADE_JOB_ORIGIN=helper DEVOS_ADE_VERBOSE=1 run_phase LiteLLM litellm _noisy 2>&1)"
   assert_eq "$(printf '%s\n' "$out" | grep -c 'LiteLLM: starting')" 1
   # the terminal's and the Code page's own phases say it too
   assert_contains "$(sed -n '/^terminal_setup_hook() {/,/^}/p' "$STACK_DIR/lib/terminal.sh")" 'phase_start Terminal'
@@ -49,7 +49,7 @@ test_a_helper_jobs_log_names_each_phase_and_step_as_it_starts() {
 }
 
 test_run_phase_verbose_shows_compose_output() {
-  out="$(BEDROCK_NOW_VERBOSE=1 run_phase LiteLLM litellm _noisy 2>&1)"
+  out="$(DEVOS_ADE_VERBOSE=1 run_phase LiteLLM litellm _noisy 2>&1)"
   assert_contains "$out" "compose noise 2"
   assert_contains "$out" "compose err"
   assert_contains "$out" "LiteLLM ready ("
@@ -65,7 +65,7 @@ test_run_phase_failure_shows_tail_logs_and_hint() {
 "
   assert_contains "$out" "litellm says: bad config"
   assert_contains "$out" "./stack logs litellm"
-  assert_contains "$out" "BEDROCK_NOW_VERBOSE=1"
+  assert_contains "$out" "DEVOS_ADE_VERBOSE=1"
 }
 
 # Docker out of address ranges for a new network: said as it is (how to free some), not as a service that failed
@@ -144,9 +144,9 @@ RUN
 }
 
 test_missing_images_skips_local_builds_and_present_images() {
-  dc() { printf 'pgvector/pgvector:0.8.7-pg17\nghcr.io/berriai/litellm:1.105.0\nbedrock-now/shared-mcp:local\nbedrock-now/open-webui:local\n'; }
+  dc() { printf 'pgvector/pgvector:0.8.7-pg17\nghcr.io/berriai/litellm:1.105.0\ndevos-ade/shared-mcp:local\ndevos-ade/open-webui:local\n'; }
   # (compose.yaml's own references: the bases of its local builds too — Open WebUI's — each once)
-  compose_refs() { printf 'ghcr.io/berriai/litellm:1.105.0\nghcr.io/open-webui/open-webui:v9-slim@sha256:%064d\nbedrock-now/open-webui:local\n' 0; }
+  compose_refs() { printf 'ghcr.io/berriai/litellm:1.105.0\nghcr.io/open-webui/open-webui:v9-slim@sha256:%064d\ndevos-ade/open-webui:local\n' 0; }
   docker() { case "$*" in "image inspect pgvector/pgvector:0.8.7-pg17") return 0 ;; *) return 1 ;; esac; }
   assert_eq "$(missing_images | tr '\n' ' ')" "ghcr.io/berriai/litellm:1.105.0 ghcr.io/open-webui/open-webui:v9-slim@sha256:$(printf '%064d' 0) "
 }

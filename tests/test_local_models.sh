@@ -312,7 +312,7 @@ test_the_form_check_is_read_only_so_it_carries_no_password_and_nothing_else_may_
 }
 
 test_a_check_without_a_password_still_refuses_metadata_and_link_local_targets_and_never_saves_anything() {
-  _lm_env; export BEDROCK_NOW_TESTING=1 MSRV_TEST_RESOLVE=''
+  _lm_env; export DEVOS_ADE_TESTING=1 MSRV_TEST_RESOLVE=''
   local_status_write() { :; }                                               # (the portal's file is not this test's business: no runtime is asked)
   local u rf before
   before="$(cat "$ENV_FILE")"
@@ -569,7 +569,7 @@ test_mlx_without_uv_says_how_and_uninstall_removes_the_agent_and_venv() {
 _fake_srv() {   # _fake_srv RC HTTP BODY — what curl returns for the next probes; records its arguments and its stdin config
   docker() { return 1; }
   _fake_apply
-  export BEDROCK_NOW_TESTING=1 MSRV_TEST_RESOLVE='localhost=127.0.0.1;gpu.example.org=203.0.113.7;nas.lan=203.0.113.8;lab.example.org=203.0.113.7;box.lan=192.168.1.9'   # (no real DNS)
+  export DEVOS_ADE_TESTING=1 MSRV_TEST_RESOLVE='localhost=127.0.0.1;gpu.example.org=203.0.113.7;nas.lan=203.0.113.8;lab.example.org=203.0.113.7;box.lan=192.168.1.9'   # (no real DNS)
   FAKE_RC="$1"; FAKE_HTTP="$2"; FAKE_BODY="${3:-}"
   : > "$TMP/curl.args"; : > "$TMP/curl.stdin"
   curl() {
@@ -673,7 +673,7 @@ test_adding_enabling_and_removing_a_server_apply_live_and_a_removal_takes_its_mo
 _tgt() { msrv_target "$1" | cut -f1; }
 test_every_form_of_a_metadata_or_link_local_address_is_refused_and_loopback_and_private_stay_allowed() {
   local u
-  export BEDROCK_NOW_TESTING=1 MSRV_TEST_RESOLVE=''
+  export DEVOS_ADE_TESTING=1 MSRV_TEST_RESOLVE=''
   for u in http://169.254.169.254 http://169.254.0.1:8080 http://100.100.100.200 http://0.1.2.3 http://224.0.0.1 http://255.255.255.255 http://240.0.0.1 http://0.0.0.0 \
            'http://[fe80::1]' 'http://[febf::1]:80' 'http://[fd00:ec2::254]' 'http://[fd00:0ec2:0:0:0:0:0:254]' 'http://[ff02::1]' 'http://[::]' \
            'http://[::ffff:169.254.169.254]' 'http://[::a9fe:a9fe]' 'http://[64:ff9b::a9fe:a9fe]' 'http://[64:ff9b:1::a9fe:a9fe]' 'http://[2002:a9fe:a9fe::]' \

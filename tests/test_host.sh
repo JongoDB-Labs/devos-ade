@@ -4,7 +4,7 @@
 . "$STACK_DIR/lib/commands.sh"
 
 ACCT=123456789012
-export BEDROCK_NOW_TESTING=1   # honours BEDROCK_NOW_TEST_SYSFS / BEDROCK_NOW_TEST_IMDS_URL below
+export DEVOS_ADE_TESTING=1   # honours DEVOS_ADE_TEST_SYSFS / DEVOS_ADE_TEST_IMDS_URL below
 
 # --- stubs ------------------------------------------------------------------------------------------------------
 
@@ -12,7 +12,7 @@ export BEDROCK_NOW_TESTING=1   # honours BEDROCK_NOW_TEST_SYSFS / BEDROCK_NOW_TE
 _ec2_host() {
   host_os() { echo Linux; }
   mkdir -p "$TMP/sys/devices/virtual/dmi/id"; echo i-0abc > "$TMP/sys/devices/virtual/dmi/id/board_asset_tag"
-  export BEDROCK_NOW_TEST_SYSFS="$TMP/sys"
+  export DEVOS_ADE_TEST_SYSFS="$TMP/sys"
 }
 
 # _imds_ec2 ROLE — an EC2 host whose IMDSv2 answers (token PUT, then GETs with the token from -K stdin).
@@ -37,7 +37,7 @@ _imds_ec2() {
 }
 _imds_none() { curl() { echo "$* " >> "$TMP/curl"; return 28; }; }   # IMDS never answers
 
-# _stub_docker_role — aws-cli in role mode. sts answers with ARN_ROLE (default bedrock-now) in account $ACCT;
+# _stub_docker_role — aws-cli in role mode. sts answers with ARN_ROLE (default devos-ade) in account $ACCT;
 # invoke-model fails with BEDROCK_ERR_<n> for the n-th model tried (default: ValidationException = authorized).
 # Logs "REGION|AWS_ACCESS_KEY_ID-or-unset|args" to $TMP/docker.
 _stub_docker_role() {
@@ -45,7 +45,7 @@ _stub_docker_role() {
     case "$1" in pull) return 0 ;; esac
     printf '%s|%s|%s\n' "$AWS_DEFAULT_REGION" "${AWS_ACCESS_KEY_ID-unset}" "$*" >> "$TMP/docker"
     case " $* " in
-      *" sts get-caller-identity "*) echo "arn:aws:sts::$ACCT:assumed-role/${ARN_ROLE:-bedrock-now}/i-0abc" ;;
+      *" sts get-caller-identity "*) echo "arn:aws:sts::$ACCT:assumed-role/${ARN_ROLE:-devos-ade}/i-0abc" ;;
       *" invoke-model "*)
         n=$(( $(grep -c 'invoke-model' "$TMP/docker") ))
         eval "e=\${BEDROCK_ERR_$n:-}"
@@ -68,7 +68,7 @@ _interactive() {
 # --- EC2 gating -------------------------------------------------------------------------------------------------
 
 test_is_ec2_host_reads_dmi_and_hypervisor_markers() {
-  host_os() { echo Linux; }; export BEDROCK_NOW_TEST_SYSFS="$TMP/sys"; d="$TMP/sys/devices/virtual/dmi/id"; mkdir -p "$d" "$TMP/sys/hypervisor"
+  host_os() { echo Linux; }; export DEVOS_ADE_TEST_SYSFS="$TMP/sys"; d="$TMP/sys/devices/virtual/dmi/id"; mkdir -p "$d" "$TMP/sys/hypervisor"
   if is_ec2_host; then return 1; fi
   echo i-0123abcd > "$d/board_asset_tag"; is_ec2_host
   rm "$d/board_asset_tag"; echo "Amazon EC2" > "$d/sys_vendor"; is_ec2_host
@@ -79,41 +79,41 @@ test_is_ec2_host_reads_dmi_and_hypervisor_markers() {
 }
 
 test_never_ec2_on_macos_even_with_ec2_markers() {
-  _imds_ec2 bedrock-now; host_os() { echo Darwin; }
+  _imds_ec2 devos-ade; host_os() { echo Darwin; }
   if is_ec2_host; then return 1; fi
   if instance_role_name >/dev/null; then return 1; fi
   [ ! -e "$TMP/curl" ]   # IMDS is not even asked: a hotel network could answer 169.254.169.254
 }
 
 test_imds_not_queried_on_linux_outside_ec2() {
-  _imds_ec2 bedrock-now; rm -rf "$TMP/sys"
+  _imds_ec2 devos-ade; rm -rf "$TMP/sys"
   if instance_role_name >/dev/null; then return 1; fi
   [ ! -e "$TMP/curl" ]
 }
 
 test_imds_url_override_only_via_test_variable() {
-  _imds_ec2 bedrock-now
+  _imds_ec2 devos-ade
   IMDS_URL=http://evil.example instance_role_name >/dev/null
   assert_not_contains "$(cat "$TMP/curl")" "evil"
   rm -f "$TMP/curl"
-  BEDROCK_NOW_TEST_IMDS_URL=http://127.0.0.1:9 instance_role_name >/dev/null
+  DEVOS_ADE_TEST_IMDS_URL=http://127.0.0.1:9 instance_role_name >/dev/null
   assert_contains "$(cat "$TMP/curl")" "http://127.0.0.1:9/latest/api/token"
 }
 
-test_test_overrides_need_bedrock_now_testing() {
-  _imds_ec2 bedrock-now
+test_test_overrides_need_devos_ade_testing() {
+  _imds_ec2 devos-ade
   # outside the test suite, the fake sysfs and IMDS URL are ignored: real /sys (no EC2 markers here) decides
-  BEDROCK_NOW_TESTING='' BEDROCK_NOW_TEST_IMDS_URL=http://127.0.0.1:9 _imds_url > "$TMP/url"
+  DEVOS_ADE_TESTING='' DEVOS_ADE_TEST_IMDS_URL=http://127.0.0.1:9 _imds_url > "$TMP/url"
   assert_eq "$(cat "$TMP/url")" "http://169.254.169.254"
-  assert_eq "$(BEDROCK_NOW_TESTING='' _sysfs)" "/sys"
+  assert_eq "$(DEVOS_ADE_TESTING='' _sysfs)" "/sys"
   assert_eq "$(_sysfs)" "$TMP/sys"
 }
 
 # --- IMDS -------------------------------------------------------------------------------------------------------
 
 test_instance_role_name_uses_imdsv2_with_short_timeouts() {
-  _imds_ec2 bedrock-now
-  assert_eq "$(instance_role_name)" "bedrock-now"
+  _imds_ec2 devos-ade
+  assert_eq "$(instance_role_name)" "devos-ade"
   assert_contains "$(cat "$TMP/curl")" "1 http://169.254.169.254/latest/api/token"
   assert_contains "$(cat "$TMP/curl")" "0 http://169.254.169.254/latest/meta-data/iam/security-credentials/"
 }
@@ -144,8 +144,8 @@ test_instance_role_name_rejects_garbage() {
 }
 
 test_imds_can_be_switched_off() {
-  _imds_ec2 bedrock-now
-  if BEDROCK_NOW_NO_IMDS=1 instance_role_name >/dev/null; then return 1; fi
+  _imds_ec2 devos-ade
+  if DEVOS_ADE_NO_IMDS=1 instance_role_name >/dev/null; then return 1; fi
   [ ! -e "$TMP/curl" ]
 }
 
@@ -153,7 +153,7 @@ test_imds_can_be_switched_off() {
 
 test_setup_uses_instance_role_when_no_keys_anywhere() {
   printf 'AWS_ACCESS_KEY_ID=\nAWS_SECRET_ACCESS_KEY=\nAWS_REGION_NAME=\n' > "$ENV_FILE"
-  _imds_ec2 bedrock-now; _stub_docker_role
+  _imds_ec2 devos-ade; _stub_docker_role
   (unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION_NAME AWS_REGION; ASSUME_YES=1 setup_aws_creds) 2> "$TMP/err"
   assert_eq "$(get_env AWS_AUTH)" "instance-role"
   assert_eq "$(get_env AWS_REGION_NAME)" "us-east-2"   # the instance's own region when .env has none
@@ -163,28 +163,28 @@ test_setup_uses_instance_role_when_no_keys_anywhere() {
   assert_contains "$(cat "$TMP/docker")" "sts get-caller-identity"
   # Bedrock access is proven (free: invalid body → ValidationException) on the catalog's Haiku model.
   assert_contains "$(cat "$TMP/docker")" "bedrock-runtime invoke-model --model-id us.anthropic.claude-haiku-5-5 --body e30="
-  assert_contains "$(cat "$TMP/err")" "assumed-role/bedrock-now"
+  assert_contains "$(cat "$TMP/err")" "assumed-role/devos-ade"
   assert_contains "$(cat "$TMP/err")" "$ACCT"
 }
 
 test_setup_role_keeps_region_from_env_file() {
   printf 'AWS_REGION_NAME=us-west-2\n' > "$ENV_FILE"
-  _imds_ec2 bedrock-now; _stub_docker_role
+  _imds_ec2 devos-ade; _stub_docker_role
   (unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION_NAME AWS_REGION; ASSUME_YES=1 setup_aws_creds) 2>/dev/null
   assert_eq "$(get_env AWS_REGION_NAME)" "us-west-2"
 }
 
 test_setup_role_asks_to_confirm_account_and_arn_before_writing() {
-  : > "$ENV_FILE"; _imds_ec2 bedrock-now; _stub_docker_role; _interactive "AWS account"
+  : > "$ENV_FILE"; _imds_ec2 devos-ade; _stub_docker_role; _interactive "AWS account"
   if out="$( (unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION_NAME; setup_aws_creds) 2>&1)"; then return 1; fi
   assert_contains "$(cat "$TMP/asked")" "AWS account $ACCT"
-  assert_contains "$(cat "$TMP/asked")" "arn:aws:sts::$ACCT:assumed-role/bedrock-now/i-0abc"
+  assert_contains "$(cat "$TMP/asked")" "arn:aws:sts::$ACCT:assumed-role/devos-ade/i-0abc"
   assert_eq "$(get_env AWS_AUTH)" ""          # declined: nothing written; the key flow then needs a key
   assert_contains "$out" "AWS credentials are required"
 }
 
 test_setup_role_rejects_credentials_of_another_role() {
-  : > "$ENV_FILE"; _imds_ec2 bedrock-now; _stub_docker_role; ARN_ROLE=someone-else
+  : > "$ENV_FILE"; _imds_ec2 devos-ade; _stub_docker_role; ARN_ROLE=someone-else
   if out="$( (unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; ASSUME_YES=1 setup_aws_creds) 2>&1)"; then return 1; fi
   assert_contains "$out" "not this instance's role"
   assert_eq "$(get_env AWS_AUTH)" ""
@@ -192,7 +192,7 @@ test_setup_role_rejects_credentials_of_another_role() {
 
 test_setup_role_without_bedrock_access_writes_nothing() {
   printf 'AWS_REGION_NAME=us-east-1\n' > "$ENV_FILE"; cp "$ENV_FILE" "$TMP/before"
-  _imds_ec2 bedrock-now; _stub_docker_role
+  _imds_ec2 devos-ade; _stub_docker_role
   BEDROCK_ERR_1="An error occurred (AccessDeniedException): not authorized to perform: bedrock:InvokeModel"
   BEDROCK_ERR_2="$BEDROCK_ERR_1"; BEDROCK_ERR_3="$BEDROCK_ERR_1"
   if out="$( (unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; ASSUME_YES=1 setup_aws_creds) 2>&1)"; then return 1; fi
@@ -203,7 +203,7 @@ test_setup_role_without_bedrock_access_writes_nothing() {
 
 test_setup_role_bedrock_check_tries_the_next_model() {
   printf 'AWS_REGION_NAME=us-east-1\n' > "$ENV_FILE"
-  _imds_ec2 bedrock-now; _stub_docker_role
+  _imds_ec2 devos-ade; _stub_docker_role
   BEDROCK_ERR_1="An error occurred (AccessDeniedException): You don't have access to the model with the specified model ID."
   (unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; ASSUME_YES=1 setup_aws_creds) 2>/dev/null
   assert_eq "$(get_env AWS_AUTH)" "instance-role"
@@ -212,7 +212,7 @@ test_setup_role_bedrock_check_tries_the_next_model() {
 
 test_setup_prefers_keys_already_in_env_file() {
   printf 'AWS_ACCESS_KEY_ID=AKIAOLD\nAWS_SECRET_ACCESS_KEY=old\nAWS_REGION_NAME=us-east-1\n' > "$ENV_FILE"
-  _imds_ec2 bedrock-now
+  _imds_ec2 devos-ade
   docker() { :; }; aws_cli() { echo "arn:aws:iam::1:user/me"; }
   (unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; ASSUME_YES=1 setup_aws_creds) 2>/dev/null
   assert_eq "$(get_env AWS_AUTH)" ""
@@ -222,7 +222,7 @@ test_setup_prefers_keys_already_in_env_file() {
 
 test_setup_prefers_keys_exported_in_shell() {
   : > "$ENV_FILE"
-  _imds_ec2 bedrock-now
+  _imds_ec2 devos-ade
   docker() { :; }; aws_cli() { echo "arn:aws:iam::1:user/me"; }
   (AWS_ACCESS_KEY_ID=AKIASHELL AWS_SECRET_ACCESS_KEY=s ASSUME_YES=1 setup_aws_creds) 2>/dev/null
   assert_eq "$(get_env AWS_AUTH)" ""
@@ -241,7 +241,7 @@ test_setup_off_ec2_still_requires_keys() {
 
 test_setup_role_mode_survives_rerun_and_ignores_shell_keys() {
   printf 'AWS_AUTH=instance-role\nAWS_REGION_NAME=us-east-1\n' > "$ENV_FILE"
-  _imds_ec2 bedrock-now; _stub_docker_role
+  _imds_ec2 devos-ade; _stub_docker_role
   (AWS_ACCESS_KEY_ID=AKIASHELL AWS_SECRET_ACCESS_KEY=s ASSUME_YES=1 setup_aws_creds) 2> "$TMP/err"
   assert_eq "$(get_env AWS_AUTH)" "instance-role"
   assert_eq "$(get_env AWS_ACCESS_KEY_ID)" ""
@@ -251,7 +251,7 @@ test_setup_role_mode_survives_rerun_and_ignores_shell_keys() {
 
 test_setup_role_mode_refused_outside_ec2() {
   printf 'AWS_AUTH=instance-role\nAWS_REGION_NAME=us-east-1\n' > "$ENV_FILE"
-  _imds_ec2 bedrock-now; rm -rf "$TMP/sys"; _stub_docker_role
+  _imds_ec2 devos-ade; rm -rf "$TMP/sys"; _stub_docker_role
   if out="$( (unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; ASSUME_YES=1 setup_aws_creds) 2>&1)"; then return 1; fi
   assert_contains "$out" "doesn't look like an EC2 instance"
   [ ! -e "$TMP/docker" ]
@@ -259,7 +259,7 @@ test_setup_role_mode_refused_outside_ec2() {
 
 test_setup_role_failure_explains_hop_limit_and_writes_nothing() {
   printf 'AWS_REGION_NAME=us-east-1\n' > "$ENV_FILE"
-  _imds_ec2 bedrock-now
+  _imds_ec2 devos-ade
   docker() { case "$1" in pull) return 0 ;; esac; echo "Unable to locate credentials. You can configure credentials by running \"aws configure\"." >&2; return 253; }
   if out="$( (unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; ASSUME_YES=1 setup_aws_creds) 2>&1)"; then return 1; fi
   assert_contains "$out" "hop-limit 2"
@@ -270,7 +270,7 @@ test_setup_role_failure_explains_hop_limit_and_writes_nothing() {
 
 test_setup_switching_from_role_to_a_bad_key_keeps_role_mode() {
   printf 'AWS_AUTH=instance-role\nAWS_REGION_NAME=us-east-1\n' > "$ENV_FILE"; cp "$ENV_FILE" "$TMP/before"
-  _imds_ec2 bedrock-now; _interactive "Keep using"
+  _imds_ec2 devos-ade; _interactive "Keep using"
   aws_run() { echo "An error occurred (InvalidClientTokenId)" >&2; return 254; }
   aws_cli() { echo "aws_cli must not be used to verify the new key" >&2; return 1; }; docker() { :; }
   if out="$( (AWS_ACCESS_KEY_ID=AKIANEW AWS_SECRET_ACCESS_KEY=bad setup_aws_creds) 2>&1)"; then return 1; fi
@@ -280,7 +280,7 @@ test_setup_switching_from_role_to_a_bad_key_keeps_role_mode() {
 
 test_setup_switching_from_role_to_a_good_key() {
   printf 'AWS_AUTH=instance-role\nAWS_REGION_NAME=us-east-1\n' > "$ENV_FILE"
-  _imds_ec2 bedrock-now; _interactive "Keep using"
+  _imds_ec2 devos-ade; _interactive "Keep using"
   aws_run() { printf '%s|%s\n' "$1" "$2" > "$TMP/aws"; echo "arn:aws:iam::1:user/me"; }
   aws_cli() { echo "arn:aws:iam::1:user/me"; }; docker() { :; }
   (AWS_ACCESS_KEY_ID=AKIANEW AWS_SECRET_ACCESS_KEY=good setup_aws_creds) 2>/dev/null
@@ -404,7 +404,7 @@ test_rotate_aws_use_keys_rejected_key_keeps_role_mode() {
 
 test_rotate_aws_use_instance_role_verifies_then_removes_keys() {
   printf 'AWS_ACCESS_KEY_ID=AKIAOLD\nAWS_SECRET_ACCESS_KEY=old\nAWS_REGION_NAME=us-east-1\n' > "$ENV_FILE"
-  _imds_ec2 bedrock-now; _stub_docker_role
+  _imds_ec2 devos-ade; _stub_docker_role
   dc() { echo "dc $*" >> "$TMP/calls"; echo "DC" >> "$TMP/order"; }; cmd_test() { echo test >> "$TMP/calls"; }
   log() { echo "$*" >> "$TMP/order"; }
   ASSUME_YES=1 cmd_rotate_aws --use-instance-role 2> "$TMP/err"
@@ -419,7 +419,7 @@ test_rotate_aws_use_instance_role_verifies_then_removes_keys() {
 
 test_rotate_aws_use_instance_role_restores_keys_when_litellm_fails() {
   printf 'AWS_ACCESS_KEY_ID=AKIAOLD\nAWS_SECRET_ACCESS_KEY=old\nAWS_REGION_NAME=us-east-1\n' > "$ENV_FILE"
-  _imds_ec2 bedrock-now; _stub_docker_role
+  _imds_ec2 devos-ade; _stub_docker_role
   # first `dc up` (with the role) fails; the second one recreates LiteLLM with the restored key
   dc() { printf '%s|%s\n' "$*" "$(get_env AWS_ACCESS_KEY_ID)" >> "$TMP/calls"; [ -n "$(get_env AWS_ACCESS_KEY_ID)" ]; }
   cmd_test() { echo test >> "$TMP/calls"; }
@@ -434,7 +434,7 @@ test_rotate_aws_use_instance_role_restores_keys_when_litellm_fails() {
 
 test_rotate_aws_use_instance_role_restores_keys_when_smoke_test_fails() {
   printf 'AWS_ACCESS_KEY_ID=AKIAOLD\nAWS_SECRET_ACCESS_KEY=old\nAWS_REGION_NAME=us-east-1\n' > "$ENV_FILE"
-  _imds_ec2 bedrock-now; _stub_docker_role
+  _imds_ec2 devos-ade; _stub_docker_role
   dc() { printf '%s|%s\n' "$*" "$(get_env AWS_ACCESS_KEY_ID)" >> "$TMP/calls"; }
   cmd_test() { echo test >> "$TMP/calls"; die "1 check(s) failed"; }   # dies like the real one
   if out="$( (ASSUME_YES=1 cmd_rotate_aws --use-instance-role) 2>&1)"; then return 1; fi
@@ -448,7 +448,7 @@ test_rotate_aws_use_instance_role_restores_keys_when_smoke_test_fails() {
 
 test_rotate_aws_use_instance_role_rerun_in_role_mode_restores_role_mode() {
   printf 'AWS_AUTH=instance-role\nAWS_REGION_NAME=us-east-1\n' > "$ENV_FILE"; cp "$ENV_FILE" "$TMP/before"
-  _imds_ec2 bedrock-now; _stub_docker_role
+  _imds_ec2 devos-ade; _stub_docker_role
   dc() { echo "dc $*" >> "$TMP/calls"; }; cmd_test() { die "1 check(s) failed"; }
   if out="$( (ASSUME_YES=1 cmd_rotate_aws --use-instance-role) 2>&1)"; then return 1; fi
   assert_eq "$(cat "$ENV_FILE")" "$(cat "$TMP/before")"   # AWS_AUTH=instance-role restored, not removed
@@ -457,7 +457,7 @@ test_rotate_aws_use_instance_role_rerun_in_role_mode_restores_role_mode() {
 
 test_rotate_aws_use_instance_role_without_bedrock_access_changes_nothing() {
   printf 'AWS_ACCESS_KEY_ID=AKIAOLD\nAWS_SECRET_ACCESS_KEY=old\nAWS_REGION_NAME=us-east-1\n' > "$ENV_FILE"; cp "$ENV_FILE" "$TMP/before"
-  _imds_ec2 bedrock-now; _stub_docker_role
+  _imds_ec2 devos-ade; _stub_docker_role
   BEDROCK_ERR_1="AccessDeniedException"; BEDROCK_ERR_2="AccessDeniedException"; BEDROCK_ERR_3="AccessDeniedException"
   if out="$( (ASSUME_YES=1 cmd_rotate_aws --use-instance-role) 2>&1)"; then return 1; fi
   assert_contains "$out" ".env was NOT changed"
@@ -494,7 +494,7 @@ test_serve_mac_brings_stack_up_then_holds_caffeinate() {
   _serve_stubs; host_os() { echo Darwin; }
   out="$(cmd_serve 2>&1)"
   assert_eq "$(tr '\n' ';' < "$TMP/calls")" "up;caffeinate -i -s;"
-  assert_contains "$out" "http://bedrock-now.localhost"
+  assert_contains "$out" "http://devos-ade.localhost"
   assert_contains "$out" "Ctrl-C"
 }
 
@@ -614,7 +614,7 @@ test_serve_background_twice_does_not_start_a_second_one() {
 
 test_serve_linux_laptop_uses_systemd_inhibit() {
   _serve_stubs; host_os() { echo Linux; }
-  export BEDROCK_NOW_TEST_SYSFS="$TMP/sys"; mkdir -p "$TMP/sys/class/power_supply/BAT0"
+  export DEVOS_ADE_TEST_SYSFS="$TMP/sys"; mkdir -p "$TMP/sys/class/power_supply/BAT0"
   systemd-inhibit() { echo "inhibit $*" >> "$TMP/calls"; }
   have_cmd() { [ "$1" = systemd-inhibit ]; }
   cmd_serve 2>/dev/null
@@ -624,7 +624,7 @@ test_serve_linux_laptop_uses_systemd_inhibit() {
 
 test_serve_linux_reports_a_failed_inhibitor() {
   _serve_stubs; host_os() { echo Linux; }
-  export BEDROCK_NOW_TEST_SYSFS="$TMP/sys"; mkdir -p "$TMP/sys/class/power_supply/BAT0"
+  export DEVOS_ADE_TEST_SYSFS="$TMP/sys"; mkdir -p "$TMP/sys/class/power_supply/BAT0"
   systemd-inhibit() { echo "Failed to inhibit: Access denied" >&2; return 1; }
   have_cmd() { [ "$1" = systemd-inhibit ]; }
   out="$(cmd_serve 2>&1)"
@@ -633,7 +633,7 @@ test_serve_linux_reports_a_failed_inhibitor() {
 
 test_serve_linux_server_without_battery_is_a_noop_note() {
   _serve_stubs; host_os() { echo Linux; }
-  export BEDROCK_NOW_TEST_SYSFS="$TMP/sys"; mkdir -p "$TMP/sys/class/power_supply"
+  export DEVOS_ADE_TEST_SYSFS="$TMP/sys"; mkdir -p "$TMP/sys/class/power_supply"
   systemd-inhibit() { echo "inhibit $*" >> "$TMP/calls"; }
   have_cmd() { [ "$1" = systemd-inhibit ]; }
   out="$(cmd_serve 2>&1)"
@@ -643,7 +643,7 @@ test_serve_linux_server_without_battery_is_a_noop_note() {
 
 test_serve_linux_laptop_without_inhibit_says_so() {
   _serve_stubs; host_os() { echo Linux; }
-  export BEDROCK_NOW_TEST_SYSFS="$TMP/sys"; mkdir -p "$TMP/sys/class/power_supply/BAT0"
+  export DEVOS_ADE_TEST_SYSFS="$TMP/sys"; mkdir -p "$TMP/sys/class/power_supply/BAT0"
   have_cmd() { return 1; }
   out="$(cmd_serve 2>&1)"
   assert_eq "$(tr '\n' ';' < "$TMP/calls")" "up;"

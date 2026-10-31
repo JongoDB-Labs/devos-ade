@@ -7,8 +7,8 @@ from starlette.testclient import TestClient
 from portal.app import STATIC, create_app
 from portal.security import COOKIE, LoginThrottle
 
-ORIGIN = {"Origin": "http://bedrock-now.localhost"}
-API = {"X-Requested-With": "bedrock-now"}
+ORIGIN = {"Origin": "http://devos-ade.localhost"}
+API = {"X-Requested-With": "devos-ade"}
 
 
 def offline(request):
@@ -18,7 +18,7 @@ def offline(request):
 @pytest.fixture
 def client(settings):
     app = create_app(settings, transport=httpx.MockTransport(offline))
-    with TestClient(app, base_url="http://bedrock-now.localhost", follow_redirects=False) as c:
+    with TestClient(app, base_url="http://devos-ade.localhost", follow_redirects=False) as c:
         yield c
 
 
@@ -42,12 +42,12 @@ def test_login_page_escapes_next(client):
 
 
 def test_login_sets_scoped_session_cookie(client):
-    r = login(client, next_url="http://chat.bedrock-now.localhost/")
+    r = login(client, next_url="http://chat.devos-ade.localhost/")
     assert r.status_code == 303
-    assert r.headers["location"] == "http://chat.bedrock-now.localhost/"
+    assert r.headers["location"] == "http://chat.devos-ade.localhost/"
     c = r.headers["set-cookie"]
     assert c.startswith(f"{COOKIE}=")
-    for part in ("HttpOnly", "SameSite=strict", "Domain=bedrock-now.localhost", "Path=/", "Max-Age=2592000"):
+    for part in ("HttpOnly", "SameSite=strict", "Domain=devos-ade.localhost", "Path=/", "Max-Age=2592000"):
         assert part.lower() in c.lower()
     assert "secure" not in c.lower()
 
@@ -60,8 +60,8 @@ def test_login_refuses_open_redirect(client):
 def test_login_is_post_only_with_same_origin(client):
     assert login(client, headers={"Origin": "http://evil.com"}).status_code == 403
     assert login(client, headers={}).status_code == 403
-    assert login(client, headers={"Origin": "http://chat.bedrock-now.localhost"}).status_code == 403
-    assert login(client, headers={"Referer": "http://bedrock-now.localhost/login"}).status_code == 303
+    assert login(client, headers={"Origin": "http://chat.devos-ade.localhost"}).status_code == 403
+    assert login(client, headers={"Referer": "http://devos-ade.localhost/login"}).status_code == 303
     assert client.put("/login").status_code == 405
 
 
@@ -76,13 +76,13 @@ def test_wrong_password_then_throttled(client):
 
 def test_verify_without_session(client):
     nav = {"Accept": "text/html,application/xhtml+xml", "X-Forwarded-Method": "GET",
-           "X-Forwarded-Host": "chat.bedrock-now.localhost", "X-Forwarded-Uri": "/c/1?x=2"}
+           "X-Forwarded-Host": "chat.devos-ade.localhost", "X-Forwarded-Uri": "/c/1?x=2"}
     r = client.get("/auth/verify", headers=nav)
     assert r.status_code == 302
-    assert r.headers["location"] == "http://bedrock-now.localhost/login?next=http%3A%2F%2Fchat.bedrock-now.localhost%2Fc%2F1%3Fx%3D2"
+    assert r.headers["location"] == "http://devos-ade.localhost/login?next=http%3A%2F%2Fchat.devos-ade.localhost%2Fc%2F1%3Fx%3D2"
     assert "x-portal-user" not in r.headers
     r = client.get("/auth/verify", headers={**nav, "X-Forwarded-Host": "evil.com"})
-    assert r.headers["location"] == "http://bedrock-now.localhost/login"
+    assert r.headers["location"] == "http://devos-ade.localhost/login"
     assert client.get("/auth/verify", headers={"Accept": "application/json"}).status_code == 401
     assert client.get("/auth/verify", headers={**nav, "X-Forwarded-Method": "POST"}).status_code == 401
 
@@ -99,7 +99,7 @@ def test_verify_with_session_names_the_admin(client):
 
 
 def test_forged_cookie_is_rejected(client):
-    client.cookies.set(COOKIE, "eyJ2IjoxfQ.forged.sig", domain="bedrock-now.localhost")
+    client.cookies.set(COOKIE, "eyJ2IjoxfQ.forged.sig", domain="devos-ade.localhost")
     assert client.get("/auth/verify").status_code == 401
 
 
@@ -108,14 +108,14 @@ def test_logout_revokes_sessions(client):
     token = client.cookies.get(COOKIE)
     assert client.post("/logout", headers={"Origin": "http://evil.com"}).status_code == 403
     r = client.post("/logout", headers=ORIGIN)
-    assert r.status_code == 303 and r.headers["location"] == "http://bedrock-now.localhost/login"
-    client.cookies.set(COOKIE, token, domain="bedrock-now.localhost")  # a copied cookie is dead too
+    assert r.status_code == 303 and r.headers["location"] == "http://devos-ade.localhost/login"
+    client.cookies.set(COOKIE, token, domain="devos-ade.localhost")  # a copied cookie is dead too
     assert client.get("/auth/verify").status_code == 401
 
 
 def _app_client(settings):
     return TestClient(create_app(settings, transport=httpx.MockTransport(offline)),
-                      base_url="http://bedrock-now.localhost", follow_redirects=False)
+                      base_url="http://devos-ade.localhost", follow_redirects=False)
 
 
 def test_logout_survives_a_portal_restart(settings, tmp_path):
@@ -126,7 +126,7 @@ def test_logout_survives_a_portal_restart(settings, tmp_path):
         token = c.cookies.get(COOKIE)
         assert c.post("/logout", headers=ORIGIN).status_code == 303
     with _app_client(s) as c:  # a new process: the container restarted
-        c.cookies.set(COOKIE, token, domain="bedrock-now.localhost")
+        c.cookies.set(COOKIE, token, domain="devos-ade.localhost")
         assert c.get("/auth/verify").status_code == 401
         login(c)
         assert c.get("/auth/verify").status_code == 200
@@ -155,12 +155,12 @@ def test_login_refuses_malformed_content_length(client):
 
 def test_index_requires_session(client):
     r = client.get("/")
-    assert r.status_code == 302 and r.headers["location"] == "http://bedrock-now.localhost/login"
+    assert r.status_code == 302 and r.headers["location"] == "http://devos-ade.localhost/login"
     login(client)
     r = client.get("/")
     assert r.status_code == 200 and 'id="home"' in r.text
     csp = r.headers["content-security-policy"]
-    assert "frame-src http://chat.bedrock-now.localhost http://admin.bedrock-now.localhost http://files.bedrock-now.localhost" in csp
+    assert "frame-src http://chat.devos-ade.localhost http://admin.devos-ade.localhost http://files.devos-ade.localhost" in csp
     assert "script-src 'self'" in csp and "unsafe-inline" not in csp
 
 
@@ -197,8 +197,8 @@ def test_api_requires_session_and_header(client):
     r = client.get("/api/logins", headers=API)
     assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
     d = r.json()
-    assert d["admin"] == {"url": "http://admin.bedrock-now.localhost/ui/api-keys/", "username": "admin", "password": "ui-pass",
-                          "manual": "http://admin.bedrock-now.localhost/ui/login/?sso=off"}
+    assert d["admin"] == {"url": "http://admin.devos-ade.localhost/ui/api-keys/", "username": "admin", "password": "ui-pass",
+                          "manual": "http://admin.devos-ade.localhost/ui/login/?sso=off"}
     assert d["files"]["username"] == "bn-access" and d["files"]["password"] == "rustfs-secret"
 
 
@@ -236,7 +236,7 @@ def test_price_update_task_runs_only_when_enabled(settings, monkeypatch):
     monkeypatch.setattr(prices, "daily_loop", fake_loop)
     for enabled in (False, True):
         app = create_app(replace(settings, price_updates=enabled, aws_region="eu-west-1"), transport=httpx.MockTransport(offline))
-        with TestClient(app, base_url="http://bedrock-now.localhost") as c:
+        with TestClient(app, base_url="http://devos-ade.localhost") as c:
             assert c.get("/healthz").text == "ok"
     assert started == [(settings.prices_dir, "eu-west-1")]
 
@@ -245,7 +245,7 @@ def test_price_update_task_runs_only_when_enabled(settings, monkeypatch):
 
 def _where_client(settings, **kw):
     return TestClient(create_app(replace(settings, **kw), transport=httpx.MockTransport(offline)),
-                      base_url="http://bedrock-now.localhost", follow_redirects=False)
+                      base_url="http://devos-ade.localhost", follow_redirects=False)
 
 
 FORGOT = "Forgot it? Run <code>./stack password --show</code> in"
@@ -331,11 +331,11 @@ def test_an_unknown_host_names_the_portal_and_nothing_it_was_asked(settings):
         assert r.status_code == 404
         _strict(r)
         assert "Not an address of DevOS ADE" in r.text and "evil.example" not in r.text
-        assert '<a class="pill-link primary" href="http://bedrock-now.localhost:8800/">Go to DevOS ADE</a>' in r.text
-        assert "On this computer, DevOS ADE is at <code>http://bedrock-now.localhost:8800</code>." in r.text
+        assert '<a class="pill-link primary" href="http://devos-ade.localhost:8800/">Go to DevOS ADE</a>' in r.text
+        assert "On this computer, DevOS ADE is at <code>http://devos-ade.localhost:8800</code>." in r.text
         assert 'href="/static/fonts.css"' in r.text   # (Caddy hands these over under that name too: same origin, the fonts load)
         # the remote site's catch-all names the remote portal, once remote access is on; before, this computer's
-        assert "http://bedrock-now.localhost:8800/" in c.get("/auth/unknown-host?site=remote").text
+        assert "http://devos-ade.localhost:8800/" in c.get("/auth/unknown-host?site=remote").text
         assert c.post("/auth/unknown-host?site=local").status_code == 405
     rs = replace(settings, remote_mode="tailscale", remote_host="bn.tail1234.ts.net")
     with _where_client(rs) as c:
@@ -368,7 +368,7 @@ def test_feedback_links_carry_the_version_os_and_compose_version_only(settings, 
     from urllib.parse import parse_qs, urlsplit
     c = _fb_client(settings, tmp_path, {"version": "v0.32.2", "os": "macOS 15.1", "compose": "2.40.3-desktop.1",
                                         "commit": "abc1234", "branch": "main", "images": ["x/y:1"], "path": "/Users/me/secret-repo"})
-    r = c.get("/api/feedback", headers={"X-Requested-With": "bedrock-now"})
+    r = c.get("/api/feedback", headers={"X-Requested-With": "devos-ade"})
     assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
     d = r.json()
     assert d["facts"] == {"version": "v0.32.2", "os": "macOS 15.1", "compose": "2.40.3-desktop.1"}
@@ -387,11 +387,11 @@ def test_feedback_links_carry_the_version_os_and_compose_version_only(settings, 
 
 def test_feedback_links_never_pass_unchecked_values_or_a_missing_file(settings, tmp_path):
     c = _fb_client(settings, tmp_path, {"version": "v1&labels=x", "os": "a\nb", "compose": 7})
-    d = c.get("/api/feedback", headers={"X-Requested-With": "bedrock-now"}).json()
+    d = c.get("/api/feedback", headers={"X-Requested-With": "devos-ade"}).json()
     assert d["facts"] == {"version": "unknown", "os": "unknown", "compose": "unknown"}
     assert "labels=x" not in d["links"]["bug"]
     (tmp_path / "fbstatus" / "version.json").unlink()
-    assert c.get("/api/feedback", headers={"X-Requested-With": "bedrock-now"}).json()["facts"]["version"] == "unknown"
+    assert c.get("/api/feedback", headers={"X-Requested-With": "devos-ade"}).json()["facts"]["version"] == "unknown"
 
 
 def test_feedback_needs_a_session_and_the_custom_header(settings, tmp_path):
@@ -399,7 +399,7 @@ def test_feedback_needs_a_session_and_the_custom_header(settings, tmp_path):
     assert c.get("/api/feedback").status_code == 400
     with TestClient(create_app(settings, transport=httpx.MockTransport(lambda r: (_ for _ in ()).throw(httpx.ConnectError("x")))),
                     base_url=f"http://{settings.origin()[7:]}") as anon:
-        assert anon.get("/api/feedback", headers={"X-Requested-With": "bedrock-now"}).status_code == 401
+        assert anon.get("/api/feedback", headers={"X-Requested-With": "devos-ade"}).status_code == 401
 
 
 def test_feedback_page_pieces_are_wired_and_the_script_holds_no_tracker_key():

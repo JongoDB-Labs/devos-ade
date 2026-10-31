@@ -7,7 +7,7 @@ workspace's .claude/launch.json (the Ports panel's Start: a window of the termin
     the preview answers with frame-ancestors = the Code page (and the portal) and Referrer-Policy: same-origin; a
     phone viewport, a new tab and the Ports panel are screenshotted; Stop ends it;
   - isolation: from the preview's own origin, fetches to the code, portal, chat and terminal hosts carry no cookie
-    (Sec-Fetch-Site: cross-site), while the Code page's own carry its cookies; Domain= cookies for bedrock-now's hosts
+    (Sec-Fetch-Site: cross-site), while the Code page's own carry its cookies; Domain= cookies for devos-ade's hosts
     are refused; the preview cannot navigate the top window; a missing, forged, expired or other-port capability and
     a foreign Origin get 403;
   - with the sandbox's internet on: Vite installed and started from launch.json, its page in the preview, and a hot
@@ -93,7 +93,7 @@ def self_minted(port: int, iat: float) -> str:
     holding PORTAL_SECRET can make one — the test does, to check expiry and the port binding from outside."""
     secret, cred = ENV["PORTAL_SECRET"], ENV.get("PORTAL_PASSWORD_HASH", "")
     fp = hmac.new(secret.encode(), cred.encode(), hashlib.sha256).hexdigest()[:32]
-    key = hmac.new(secret.encode(), b"bedrock-now.portal.preview", hashlib.sha256).digest()
+    key = hmac.new(secret.encode(), b"devos-ade.portal.preview", hashlib.sha256).digest()
     iat_ms = int(iat * 1000)
     mac = base64.b32encode(hmac.new(key, f"v1|{port}|{iat_ms}|{fp}".encode(), hashlib.sha256).digest()).decode().lower()[:24]
     return f"p{port}-{_b32int(iat_ms, 9)}{mac}"
@@ -117,7 +117,7 @@ def mkdirs(c: Code, path: str):
 
 def launch_json(c: Code, entries: list[dict]):
     mkdirs(c, ".claude")
-    write(c, ".claude/launch.json", "// bedrock-now e2e (checks_preview.py)\n" + json.dumps({"version": "0.0.1", "configurations": entries}, indent=1))
+    write(c, ".claude/launch.json", "// devos-ade e2e (checks_preview.py)\n" + json.dumps({"version": "0.0.1", "configurations": entries}, indent=1))
 
 
 def wait_port(c: Code, port: int, timeout=60, gone=False):
@@ -329,7 +329,7 @@ def preview_headers(ctx):
 
 @check("browser", "code-preview-isolation")
 def isolation(ctx):
-    """From the preview's origin (sandbox content): no bedrock-now cookie on requests to its hosts (cross-site), no
+    """From the preview's origin (sandbox content): no devos-ade cookie on requests to its hosts (cross-site), no
     cookie tossing onto them, no navigating the Code page away."""
     need_preview()
     c = getattr(ctx, "preview_code", None)
@@ -403,7 +403,7 @@ def launch_swap(ctx):
     shown = next(x for x in c.api("GET", "/api/launch")["json"]["configurations"] if x["name"] == "bn-e2e echo")
     cfg = json.loads(c.api("GET", "/api/fs/file?path=.claude/launch.json")["json"]["text"].split("\n", 1)[1])
     cfg["configurations"][0]["env"] = {"NODE_OPTIONS": "--require /workspace/.bn-e2e/not-there.js"}
-    write(c, ".claude/launch.json", "// bedrock-now e2e (checks_preview.py): swapped\n" + json.dumps(cfg, indent=1))
+    write(c, ".claude/launch.json", "// devos-ade e2e (checks_preview.py): swapped\n" + json.dumps(cfg, indent=1))
     r = c.api("POST", "/api/launch/start", {"name": "bn-e2e echo", "digest": shown["digest"]})
     expect(r["status"] == 409 and "review it again" in (r["json"] or {}).get("error", ""), f"a swapped entry: {r['status']} {r['text'][:200]}")
     now = next(x for x in c.api("GET", "/api/launch")["json"]["configurations"] if x["name"] == "bn-e2e echo")
@@ -411,7 +411,7 @@ def launch_swap(ctx):
            f"the entry shown again: {now}")
     # (back to the file the other checks use)
     cfg["configurations"][0].pop("env")
-    write(c, ".claude/launch.json", "// bedrock-now e2e (checks_preview.py)\n" + json.dumps(cfg, indent=1))
+    write(c, ".claude/launch.json", "// devos-ade e2e (checks_preview.py)\n" + json.dumps(cfg, indent=1))
     return "Start with the digest of the entry as shown, after the file changed (NODE_OPTIONS added): 409, nothing started; the entry as it is now has another digest and shows the new variable"
 
 

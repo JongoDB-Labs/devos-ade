@@ -834,7 +834,7 @@ function RemoveProjectDialog({ id, onClose }: { id: string; onClose: () => void 
       </p>
       <label class="gitr-check small">
         <input type="checkbox" checked={trash} onChange={(e) => setTrash((e.currentTarget as HTMLInputElement).checked)} data-testid="remove-project-trash" />
-        Also move its folder to the workspace trash (.bedrock-now-trash)
+        Also move its folder to the workspace trash (.devos-ade-trash)
       </label>
       {trash && (
         <label class="gitr-form small np-confirm">

@@ -2,7 +2,7 @@
 # only the LiteLLM API and the shared MCP server are published directly, for command-line tools.
 # Values come from .env (written by ./stack setup).
 # Vars marked :? are created before the first compose call; the :- ones are filled in later setup steps.
-name: bedrock-now
+name: devos-ade
 
 x-logging: &logging
   driver: json-file
@@ -142,7 +142,7 @@ services:
         # the pinned Open WebUI, by digest: its pyodide-lock.json pins every vendored wheel (open-webui/Dockerfile's
         # default is the same: tests/test_openwebui.sh)
         image: ghcr.io/open-webui/open-webui:v0.12.4-slim@sha256:41812075aede8ada8497cb2b71c76412978633eee72775bb77796f593d03b677
-    image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/open-webui:local   # per project, like portal
+    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/open-webui:local   # per project, like portal
     pull_policy: never
     restart: unless-stopped
     environment:
@@ -256,7 +256,7 @@ services:
 
   shared-mcp:
     build: { context: ./shared-mcp, target: runtime }
-    image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/shared-mcp:local   # per project: a second copy never clobbers it
+    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/shared-mcp:local   # per project: a second copy never clobbers it
     restart: unless-stopped
     environment:
       SHARED_MCP_TOKEN: ${SHARED_MCP_TOKEN:?run ./stack setup}
@@ -279,7 +279,7 @@ services:
   # no published port.
   stt:
     build: { context: ./stt, target: runtime }
-    image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/stt:local   # per project, like portal
+    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/stt:local   # per project, like portal
     profiles: ["stt"]
     restart: unless-stopped
     user: "10103:10103"
@@ -370,8 +370,8 @@ services:
       GITEA_APP_INI: /var/lib/gitea/app.ini
       FORGEJO__security__INSTALL_LOCK: "true"
       FORGEJO__database__DB_TYPE: sqlite3
-      FORGEJO__server__ROOT_URL: ${GIT_ORIGIN:-http://git.bedrock-now.localhost}/
-      FORGEJO__server__DOMAIN: ${GIT_HOST:-git.bedrock-now.localhost}
+      FORGEJO__server__ROOT_URL: ${GIT_ORIGIN:-http://git.devos-ade.localhost}/
+      FORGEJO__server__DOMAIN: ${GIT_HOST:-git.devos-ade.localhost}
       FORGEJO__server__DISABLE_SSH: "true"          # git over https only (the sandbox's; ./stack's Code page host)
       FORGEJO__server__START_SSH_SERVER: "false"
       FORGEJO__server__OFFLINE_MODE: "true"         # no gravatar, no CDN
@@ -423,7 +423,7 @@ services:
   portal:
     # (+ compose.portal-docs.yaml, which ./stack adds where Docker Compose reads it: the search's docs index)
     build: { context: ./portal, target: runtime }
-    image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/portal:local   # per project, like shared-mcp
+    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/portal:local   # per project, like shared-mcp
     restart: unless-stopped
     # User 10102 owns /state (portal-state). Linux: PORTAL_GID (set by ./stack) is your group, so the price
     # update can write litellm/prices/ (setgid, group-writable); macOS needs no group.
@@ -441,10 +441,10 @@ services:
       # Caddy sends it on every request it forwards; without it the portal ignores X-Portal-Remote and
       # Tailscale-User-Login (they could only come from another container talking to portal:8000 directly).
       PORTAL_PROXY_SECRET: ${PORTAL_PROXY_SECRET:-}
-      PORTAL_HOST: ${PORTAL_HOST:-bedrock-now.localhost}
+      PORTAL_HOST: ${PORTAL_HOST:-devos-ade.localhost}
       PORTAL_PORT: ${PORTAL_PORT:-80}
       # Where the password lives, for the login page (set by ./stack; blank = the generic wording).
-      PORTAL_ENV_FILE: ${BEDROCK_NOW_ENV_DISPLAY:-}
+      PORTAL_ENV_FILE: ${DEVOS_ADE_ENV_DISPLAY:-}
       PORTAL_PROJECT: ${COMPOSE_PROJECT_NAME:-}
       PORTAL_USER_EMAIL: ${OPENWEBUI_ADMIN_EMAIL:-}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
@@ -515,13 +515,13 @@ services:
     # Owned by the unprivileged user: Caddy creates /data/caddy and /config/caddy at start.
     tmpfs: ["/data:uid=65534,gid=65534,mode=0700", "/config:uid=65534,gid=65534,mode=0700"]
     environment:
-      PORTAL_HOST: ${PORTAL_HOST:-bedrock-now.localhost}
-      PORTAL_ORIGIN: ${PORTAL_ORIGIN:-http://bedrock-now.localhost}   # written by setup: http://HOST[:PORT]
-      CHAT_HOST: ${CHAT_HOST:-chat.${PORTAL_HOST:-bedrock-now.localhost}}
-      ADMIN_HOST: ${ADMIN_HOST:-admin.${PORTAL_HOST:-bedrock-now.localhost}}
-      FILES_HOST: ${FILES_HOST:-files.${PORTAL_HOST:-bedrock-now.localhost}}
+      PORTAL_HOST: ${PORTAL_HOST:-devos-ade.localhost}
+      PORTAL_ORIGIN: ${PORTAL_ORIGIN:-http://devos-ade.localhost}   # written by setup: http://HOST[:PORT]
+      CHAT_HOST: ${CHAT_HOST:-chat.${PORTAL_HOST:-devos-ade.localhost}}
+      ADMIN_HOST: ${ADMIN_HOST:-admin.${PORTAL_HOST:-devos-ade.localhost}}
+      FILES_HOST: ${FILES_HOST:-files.${PORTAL_HOST:-devos-ade.localhost}}
       # The built-in git server's site (caddy/localgit-on.caddy; lib/localgit.sh: BN_LOCALGIT_MODE is on while LOCALGIT is)
-      GIT_HOST: ${GIT_HOST:-git.${PORTAL_HOST:-bedrock-now.localhost}}
+      GIT_HOST: ${GIT_HOST:-git.${PORTAL_HOST:-devos-ade.localhost}}
       LOCALGIT_MODE: ${BN_LOCALGIT_MODE:-off}
       LOCALGIT_SSO_HEADER: ${LOCALGIT_SSO_HEADER:-}   # the name of the sign-in header Forgejo takes (a secret of ./stack's)
       CADDY_AUTO_HTTPS: "off"   # compose.domain.yaml: disable_redirects (certificates for the remote site)

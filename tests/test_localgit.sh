@@ -199,8 +199,8 @@ test_uninstall_removes_the_volume_even_while_it_is_off() {
   docker() { echo "docker $*" >> "$TMP/calls"; }
   dc() { echo "dc $*" >> "$TMP/calls"; }
   : > "$TMP/calls"; localgit_uninstall_cleanup
-  assert_contains "$(cat "$TMP/calls")" "docker volume rm bedrock-now_gitdata"
-  assert_contains "$(cat "$TMP/calls")" "docker network rm bedrock-now_localgit"
+  assert_contains "$(cat "$TMP/calls")" "docker volume rm devos-ade_gitdata"
+  assert_contains "$(cat "$TMP/calls")" "docker network rm devos-ade_localgit"
   assert_contains "$(sed -n '/^cmd_uninstall() {/,/^}/p' "$T_ROOT/lib/commands.sh")" "localgit_uninstall_cleanup"
 }
 
@@ -270,7 +270,7 @@ test_the_web_site_is_behind_the_portal_and_framed_by_it_only() {
   assert_contains "$(cat "$T_ROOT/caddy/Caddyfile")" 'import localgit-{$LOCALGIT_MODE:off}.caddy'
   # compose: Caddy gets the host and the mode; the gateway's files and the Caddyfile's are in their own checksums
   c="$(cat "$T_ROOT/compose.yaml")"
-  assert_contains "$c" 'GIT_HOST: ${GIT_HOST:-git.${PORTAL_HOST:-bedrock-now.localhost}}'
+  assert_contains "$c" 'GIT_HOST: ${GIT_HOST:-git.${PORTAL_HOST:-devos-ade.localhost}}'
   assert_contains "$c" 'LOCALGIT_MODE: ${BN_LOCALGIT_MODE:-off}'
   mkdir -p "$TMP/co/caddy"; STACK_DIR="$TMP/co"
   for f in Caddyfile terminal-gateway.caddy localgit-on.caddy localgit-off.caddy localgit-gateway-on.caddy localgit-gateway-off.caddy; do echo "$f" > "$TMP/co/caddy/$f"; done

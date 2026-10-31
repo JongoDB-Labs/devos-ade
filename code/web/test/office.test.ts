@@ -468,7 +468,7 @@ test('sniff: Office files by their bytes and name; HTML, Mermaid and notebooks b
 
 test('the artifact viewer\'s address: only http a<capability>.artifact.<domain> origins', () => {
   const cap = 'a' + 'b'.repeat(33);
-  assert.equal(artifactOriginOk(`http://${cap}.artifact.bedrock-now-preview.localhost`), `http://${cap}.artifact.bedrock-now-preview.localhost`);
+  assert.equal(artifactOriginOk(`http://${cap}.artifact.devos-ade-preview.localhost`), `http://${cap}.artifact.devos-ade-preview.localhost`);
   assert.equal(artifactOriginOk(`http://${cap}.artifact.x-preview.localhost:8800`), `http://${cap}.artifact.x-preview.localhost:8800`);
   for (const bad of [`https://${cap}.artifact.x.localhost`, `http://${cap}.artifact.x.localhost/`, `http://${cap}.x.localhost`, `http://p5173-${'b'.repeat(33)}.x.localhost`,
     `http://u:p@${cap}.artifact.x.localhost`, `javascript:alert(1)`, `http://${cap}.artifact.x.localhost/path`, 7, null]) {

@@ -3,7 +3,7 @@
 # A REAL runtime on this machine (Docker Model Runner first, Ollama second) pulls a tiny GGUF from Hugging Face
 # (SmolLM2-135M-Instruct, Q4_K_M, about 105 MB), and this checkout's own lib/local_models.sh registers it. One throwaway
 # LiteLLM container (compose.yaml's image, no database, nothing else; named bne2e-local-litellm, labelled
-# io.bedrock-now.e2e=local-models, removed afterwards by that name) serves this checkout's rendered config. Checks:
+# io.devos-ade.e2e=local-models, removed afterwards by that name) serves this checkout's rendered config. Checks:
 #   1  a runtime answers (else: says how to enable it, and exits 2)       2  the download registers LOCAL_MODELS
 #   3  LiteLLM's config has the model at $0 (input and output cost 0)       4  a chat completion goes through LiteLLM
 #   5  the Code page's rows (lib/code_models.sh) list it as provider Local, free, never priced
@@ -34,17 +34,17 @@ FAILS=0; CHECKS=()
 fail() { printf 'FAIL  %s\n' "$*" >&2; FAILS=$((FAILS + 1)); CHECKS+=("FAIL	$*"); }
 ok() { printf 'ok    %s\n' "$*" >&2; CHECKS+=("ok	$*"); }
 command -v docker >/dev/null 2>&1 || { echo "needs docker" >&2; exit 2; }
-LL=bne2e-local-litellm; LABEL=io.bedrock-now.e2e=local-models
+LL=bne2e-local-litellm; LABEL=io.devos-ade.e2e=local-models
 WORK="$ROOT/tests/e2e/work/bne2e-local"; PORT=""
 cleanup() {
   local rc=$?
-  [ "$(docker container inspect -f '{{index .Config.Labels "io.bedrock-now.e2e"}}' "$LL" 2>/dev/null)" != local-models ] || docker rm -f "$LL" >/dev/null 2>&1
+  [ "$(docker container inspect -f '{{index .Config.Labels "io.devos-ade.e2e"}}' "$LL" 2>/dev/null)" != local-models ] || docker rm -f "$LL" >/dev/null 2>&1
   { [ "$rc" = 0 ] && [ "$FAILS" = 0 ]; } || { [ ! -f "$WORK/pull.log" ] || { mkdir -p "$OUT" && cp "$WORK/pull.log" "$OUT/local-models-pull.log"; }; } 2>/dev/null
   rm -rf "$WORK"
   mkdir -p "$OUT" 2>/dev/null && printf '%s\n' ${CHECKS[@]+"${CHECKS[@]}"} | python3 -I -c 'import json, sys
 print(json.dumps({"failures": int(sys.argv[1]), "checks": [dict(zip(("status", "check"), l.rstrip("\n").split("\t", 1))) for l in sys.stdin if "\t" in l]}, indent=1))' "$FAILS" > "$OUT/local-models.json" 2>/dev/null
 }
-if docker container inspect "$LL" >/dev/null 2>&1 && [ "$(docker container inspect -f '{{index .Config.Labels "io.bedrock-now.e2e"}}' "$LL")" != local-models ]; then echo "a container named $LL exists and is not this check's: not touching it" >&2; exit 2; fi
+if docker container inspect "$LL" >/dev/null 2>&1 && [ "$(docker container inspect -f '{{index .Config.Labels "io.devos-ade.e2e"}}' "$LL")" != local-models ]; then echo "a container named $LL exists and is not this check's: not touching it" >&2; exit 2; fi
 trap cleanup EXIT; trap 'exit 130' INT TERM
 docker rm -f "$LL" >/dev/null 2>&1 || true
 mkdir -p "$WORK/state" "$WORK/litellm" "$OUT"

@@ -442,8 +442,8 @@ test_more_secrets_mean_its_flag_too() {
   d="$TMP/f/py"; mkdir -p "$d"; printf '[pypi]\nusername = me\npassword = %s\n' "$(printf 'y%.0s' 1 2 3 4 5 6)" > "$d/.pypirc"
   why="$(project_check "$d")" && return 1; assert_contains "$why" ".pypirc (a token or password in it)"
   # another DevOS ADE folder (here one made before v0.25.0) down to 3 levels (its .env holds that install's keys); not inside node_modules
-  d="$TMP/f/src"; mkdir -p "$d/old/bedrock-now"; : > "$d/old/bedrock-now/stack"; : > "$d/old/bedrock-now/.env"; : > "$d/old/bedrock-now/compose.yaml"
-  why="$(project_check "$d")" && return 1; assert_contains "$why" "another DevOS ADE folder (old/bedrock-now/.env holds that install's keys)"
+  d="$TMP/f/src"; mkdir -p "$d/old/devos-ade"; : > "$d/old/devos-ade/stack"; : > "$d/old/devos-ade/.env"; : > "$d/old/devos-ade/compose.yaml"
+  why="$(project_check "$d")" && return 1; assert_contains "$why" "another DevOS ADE folder (old/devos-ade/.env holds that install's keys)"
   d="$TMP/f/js"; mkdir -p "$d/node_modules/x"; : > "$d/node_modules/x/stack"; : > "$d/node_modules/x/.env"; : > "$d/node_modules/x/compose.yml"
   project_check "$d" >/dev/null || return 1
   # a Time Machine store in it

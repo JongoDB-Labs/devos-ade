@@ -17,7 +17,7 @@ export function createOAuthMock({ clients = {}, lifetime = 3600, refreshLifetime
   // (noExpiry: tokens without expires_in — a GitHub App with expiring tokens turned off; tokenError: the token endpoint
   // answers this error code instead, for a test of what a provider's own words may become; reuseAccess: a new sign-in
   // hands back the account's current access token — a provider that reuses them)
-  const cfg = { lifetime, refreshLifetime, expiresIn, interval, slowDownOnce: false, noRefresh: false, noExpiry: false, tokenError: '', reuseAccess: false, appSlug: 'bedrock-now-e2e' };
+  const cfg = { lifetime, refreshLifetime, expiresIn, interval, slowDownOnce: false, noRefresh: false, noExpiry: false, tokenError: '', reuseAccess: false, appSlug: 'devos-ade-e2e' };
   const devices = new Map();   // device_code -> {clientId, flavor, userCode, scope, state, account, polls, expiresAt, slowed}
   const access = new Map();    // token -> {account, clientId, expiresAt, void}
   const refresh = new Map();   // token -> {account, clientId, used, void, access}

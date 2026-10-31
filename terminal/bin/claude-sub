@@ -15,7 +15,7 @@ set -euo pipefail
 
 CLAUDE_BIN="${BN_CLAUDE_BIN:-/usr/local/bin/claude}"
 dir="$HOME/.claude-subscription"
-mcp="$HOME/.config/bedrock-now/mcp.json"   # (the stack's shared MCP server: only with CLAUDE_SUB_STACK_MCP=1, below)
+mcp="$HOME/.config/devos-ade/mcp.json"   # (the stack's shared MCP server: only with CLAUDE_SUB_STACK_MCP=1, below)
 
 # What the stack sets for Bedrock, or what would put another credential ahead of your login (Claude Code's own order:
 # a cloud provider switch, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_API_KEY, an OAuth token in the environment — then /login)

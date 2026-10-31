@@ -105,14 +105,14 @@ else
   # shellcheck disable=SC2034  # (OWNED: read by teardown)
   [ "$OWN_STATE" != ours ] || { warn "project $PROJECT: $OWN_WHY — removing those leftovers first"; teardown; OWNED=1; }
   if [ -e "$STACK" ]; then
-    [ -f "$STACK/.bedrock-now-e2e" ] || die "$STACK exists and was not created by this suite — nothing was changed"
+    [ -f "$STACK/.devos-ade-e2e" ] || die "$STACK exists and was not created by this suite — nothing was changed"
     chmod -R u+rwX "$STACK"; rm -rf "$STACK"
   fi
   REV="$(git -C "$SRC" rev-parse HEAD)" || die "$SRC is not a checkout"
   say "staging $SRC at ${REV:0:7} in $STACK"
   ( umask 022; git clone --quiet --no-hardlinks "$SRC" "$STACK" ) || die "git clone failed"
   git -C "$STACK" -c advice.detachedHead=false checkout -q --detach "$REV" || die "cannot check out $REV"
-  : > "$STACK/.bedrock-now-e2e"; printf '/.bedrock-now-e2e\n' >> "$STACK/.git/info/exclude"
+  : > "$STACK/.devos-ade-e2e"; printf '/.devos-ade-e2e\n' >> "$STACK/.git/info/exclude"
   cp "$STACK/.env.example" "$STACK/.env"; chmod 600 "$STACK/.env"
   pick_port P 18780; pick_port L 14780; pick_port M 19165
   set_env COMPOSE_PROJECT_NAME "$PROJECT"; set_env PORTAL_HOST "$HOST"; set_env PORTAL_PORT "$P"
@@ -120,7 +120,7 @@ else
   for kv in $BUDGETS; do set_env "${kv%%=*}" "${kv#*=}"; done
   set_env PORTAL_PASSWORD "$(openssl rand -hex 10)"
   seed_cheap_default   # (new sessions on Haiku: no flow falls back to a dearer model)
-  WS="$(terminal_workspace_dir)"; ( umask 077; mkdir -p "$WS" ) && : > "$WS/.bedrock-now-e2e"; set_env TERMINAL_WORKSPACE "$WS"
+  WS="$(terminal_workspace_dir)"; ( umask 077; mkdir -p "$WS" ) && : > "$WS/.devos-ade-e2e"; set_env TERMINAL_WORKSPACE "$WS"
   ( umask 022; mkdir -p "$STACK/.state/update-check" ); chmod 700 "$STACK/.state"; : > "$STACK/.state/portal-password-shown"
   printf '{"checked_at": "%s", "error": null}\n' "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" > "$STACK/.state/update-check/latest.json"
   chmod 644 "$STACK/.state/update-check/latest.json"

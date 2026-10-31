@@ -9,13 +9,13 @@
 # Run under the DevOS heavy lock (exit 75: busy, retry later):
 #   python3 ~/.claude/skills/apple-app-submission/scripts/heavylock.py run --lock ~/.local/state/devos-heavy/heavy.lock \
 #     --label ade-jon440 --timeout 0 -- tests/e2e/container-health.sh
-# FIXTURE_IMAGE: any local image with /bin/sh (default: bedrock-now/portal:local, else the first local image that works).
+# FIXTURE_IMAGE: any local image with /bin/sh (default: devos-ade/portal:local, else the first local image that works).
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
 ROOT="$PWD"; P="bnhealthfx$$"; TMP="$(mktemp -d)"; fails=0
 cleanup() { docker ps -a -q --filter "label=com.docker.compose.project=$P" | xargs docker rm -f >/dev/null 2>&1 || true; rm -rf "$TMP"; }
 trap cleanup EXIT
-IMG="${FIXTURE_IMAGE:-bedrock-now/portal:local}"
+IMG="${FIXTURE_IMAGE:-devos-ade/portal:local}"
 docker image inspect "$IMG" >/dev/null 2>&1 || { echo "no local image $IMG (set FIXTURE_IMAGE)" >&2; exit 2; }
 ok() { printf '  ok    %s\n' "$1"; }
 bad() { printf '  FAIL  %s\n' "$1"; fails=$((fails + 1)); }
@@ -34,7 +34,7 @@ for _ in $(seq 1 30); do   # until the restarts ran out and the health check had
 done
 
 # lib/health.sh against that project, in a throwaway state folder (never this checkout's .state)
-export STACK_DIR="$ROOT" ENV_FILE="$TMP/.env" STATE_DIR="$TMP/.state" BEDROCK_NOW_NO_OPEN=1
+export STACK_DIR="$ROOT" ENV_FILE="$TMP/.env" STATE_DIR="$TMP/.state" DEVOS_ADE_NO_OPEN=1
 printf 'COMPOSE_PROJECT_NAME=%s\n' "$P" > "$ENV_FILE"; mkdir -p "$STATE_DIR"
 # shellcheck disable=SC1091
 . lib/common.sh; . lib/ports.sh; . lib/portal.sh; . lib/models.sh; . lib/prices.sh

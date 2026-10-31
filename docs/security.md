@@ -223,7 +223,7 @@ The **Settings** tab shows every key of `.env` and changes the ones listed in
   the helper checks it again before anything is saved. Web search keys have no free check (a search costs) and the
   AWS key's needs STS: their forms check the shape only.
 - **The request.** For an allowed change the portal writes `.state/requests/cfg-<nonce>.req`: at most 8 KB of
-  ASCII lines (`bedrock-now-settings 1`, `nonce`, `requested_at`, `base`, `origin local|remote`, `auth`,
+  ASCII lines (`devos-ade-settings 1`, `nonce`, `requested_at`, `base`, `origin local|remote`, `auth`,
   then `set KEY BASE64` or `regen KEY` for 1-20 keys, `end`), mode 640, renamed into place. `regen` asks for a new
   random value that `./stack` makes itself (the RustFS key pair, the shared MCP token): those keys never take a
   value from a request (nor may a request `set` one). `confirm other-aws-account` (the tick in Settings) lets a new
@@ -268,7 +268,7 @@ The **Settings** tab shows every key of `.env` and changes the ones listed in
   on), nightly backups off, fewer backups kept, longer sign-ins (compared as they take effect: a value `.env`
   holds that the stack would not use counts as its default). A new AWS key of another
   AWS account (other models, quotas and bill) needs a tick in Settings, or a yes in the terminal.
-  Read-only, whatever a request says: hosts and ports, `HELPER_*`, `BEDROCK_NOW_*`, `REMOTE_MODE`, the Tailscale
+  Read-only, whatever a request says: hosts and ports, `HELPER_*`, `DEVOS_ADE_*`, `REMOTE_MODE`, the Tailscale
   and Cloudflare keys, and the internal secrets (`PORTAL_SECRET`, `POSTGRES_PASSWORD`, `LITELLM_MASTER_KEY`,
   `LITELLM_SALT_KEY`, `WEBUI_SECRET_KEY`, the LiteLLM keys, `OPENWEBUI_API_KEY`).
 - **A portal password change** sends the new password and the hash the portal computed for it; the helper
@@ -832,7 +832,7 @@ Off by default; `./stack remote enable tailscale` turns it on ([docs/remote.md](
 ## The same-site guard
 
 `SameSite=Strict` keeps a session cookie out of requests from other *sites*, not from other *hosts of the same
-site* — and DevOS ADE's hosts share one: `*.bedrock-now.localhost` here (`localhost` is not on the public suffix
+site* — and DevOS ADE's hosts share one: `*.devos-ade.localhost` here (`localhost` is not on the public suffix
 list, so a `.localhost` name's last two labels are its site), every Service of a tailnet over Tailscale (`ts.net` is on
 it: the whole `<tailnet>.ts.net` is one site, the remote preview host and your other machines' web apps included), and
 everything under your domain in own-domain mode. A page on any of those hosts could send requests to the portal, Chat,
@@ -892,15 +892,15 @@ Remaining risks:
 
 Setup asks *Turn on one-click updates from Home? (Y/n)* (default yes), and so does the next interactive
 `./stack update` of an install without it; a "no" (or `./stack helper uninstall`) is remembered in
-`.state/helper-declined` and not asked again. `--yes` runs install it only with `BEDROCK_NOW_HELPER=1`;
+`.state/helper-declined` and not asked again. `--yes` runs install it only with `DEVOS_ADE_HELPER=1`;
 `./stack helper install` works any time. It gives Home one-click **Update**, **Rollback** and **Clean up**
 buttons, and optional **automatic updates**, without giving the portal Docker access or a shell. The portal
 cannot install it itself (that would need exactly the access it must not have), hence the one terminal step.
 
 **How it works.** The portal stays read-only, with no Docker socket. For a button click it writes one small file,
 `.state/requests/req-<nonce>.json` = `{"action": …, "requested_at": …, "nonce": …}`, into the only folder it may
-write for this purpose (Settings and Diagnostics add `cfg-<nonce>.req` and `act-<nonce>.json`: [Settings](#settings)). The helper is a user-level launchd agent (macOS, `~/Library/LaunchAgents/io.bedrock-now.helper.<project>.plist`)
-or systemd user unit (Linux, `~/.config/systemd/user/bedrock-now-helper-<project>.service`). It runs as you,
+write for this purpose (Settings and Diagnostics add `cfg-<nonce>.req` and `act-<nonce>.json`: [Settings](#settings)). The helper is a user-level launchd agent (macOS, `~/Library/LaunchAgents/io.devos-ade.helper.<project>.plist`)
+or systemd user unit (Linux, `~/.config/systemd/user/devos-ade-helper-<project>.service`). It runs as you,
 outside Docker, polls that folder every 3 seconds, and runs **only** `./stack update --yes`, `./stack rollback
 --yes` or `./stack clean --yes` in its own checkout, or `./stack helper auto on|off` for the automatic-updates
 switch (it writes `AUTO_UPDATE` to `.env`; nothing else). It reports progress in `.state/status/helper-status.json`
@@ -932,7 +932,7 @@ request says beyond the three fields, or run as root.
   uid it maps to (read from `/etc/subuid`); `HELPER_PORTAL_UID` in `.env` overrides both.
 - [x] **No surprises in your checkout.** If tracked files have local changes, the helper refuses (like
   `./stack update` itself) and says so on Home. It refuses an **update** of a checkout that follows a branch
-  (that would install whatever the branch has now, not a release) unless `BEDROCK_NOW_HELPER_ALLOW_BRANCH=1`
+  (that would install whatever the branch has now, not a release) unless `DEVOS_ADE_HELPER_ALLOW_BRANCH=1`
   is in `.env`.
 - [x] **One at a time.** `./stack update`, `rollback`, `clean`, `restore` and `setup` take the lock
   `.state/lock/` (owner pid and command; a lock whose process is gone, or whose pid now belongs to a program other than ./stack, is moved aside and taken over). While a terminal command
@@ -970,7 +970,7 @@ request says beyond the three fields, or run as root.
   When `AUTO_UPDATE=on`, the helper runs the same `./stack update --yes` (backup first) within three hours from
   `AUTO_UPDATE_HOUR` (default 3, this computer's local time), within its own limits (one job a minute, 12 a day),
   and only when all of these hold: this checkout is detached at an exact release tag (as `install.sh` leaves it;
-  never a branch, whatever `BEDROCK_NOW_HELPER_ALLOW_BRANCH` says); the last update finished (an unfinished one waits
+  never a branch, whatever `DEVOS_ADE_HELPER_ALLOW_BRANCH` says); the last update finished (an unfinished one waits
   for Update now or Roll back); the portal's daily check (`latest.txt`, read once per window as above) names a
   release newer than the installed version; and the newest release tag of **origin** after fetching it (this
   project's GitHub repository for an `install.sh` install) is exactly that version. So it fetches only what a manual
@@ -1126,7 +1126,7 @@ reaches is the container — with the three exceptions under *Threat model*.
   alone is also on `terminal-out`, the internet, and listens only on its `terminal-proxy` address (`egress:3128`).
   Every process in the sandbox is told about it: `HTTP_PROXY`/`HTTPS_PROXY` (both spellings; curl, git, npm, pip,
   Python, Go and Claude Code read them), `NODE_USE_ENV_PROXY=1` for Node's `fetch` and `http`, ssh (git over ssh)
-  through `bn-ssh-proxy` (an HTTP CONNECT to port 22; `/etc/ssh/ssh_config.d/bedrock-now.conf`), and bn-coded keeps
+  through `bn-ssh-proxy` (an HTTP CONNECT to port 22; `/etc/ssh/ssh_config.d/devos-ade.conf`), and bn-coded keeps
   them in what Run & test and launch.json's *Start* run with; `NO_PROXY` keeps the gateway (LiteLLM, the shared MCP
   server) and the sandbox's own loopback (dev servers, previews) direct. Anything that ignores them has no route at
   all, and the internal networks resolve no outside names, so there is no way out by DNS either — with Docker Engine
@@ -1296,8 +1296,8 @@ spawn server, Claude Code or any file at will.
   `/workspace` (Node has no `openat`/`RESOLVE_BENEATH`: a check-then-open in the code container would race a sandbox
   that swaps a folder for a symlink; in there, a symlink only leads where the sandbox can go anyway). Reads are
   regular files only (`O_NONBLOCK`, `O_NOFOLLOW`: a FIFO or device cannot hang or feed it), writes go through a
-  temporary file and a rename, deletes move into `/workspace/.bedrock-now-trash/` (in a [project](#projects): its
-  folder's `.bedrock-now-trash/`). The memory editor reaches two fixed files only (the project's `CLAUDE.md` —
+  temporary file and a rename, deletes move into `/workspace/.devos-ade-trash/` (in a [project](#projects): its
+  folder's `.devos-ade-trash/`). The memory editor reaches two fixed files only (the project's `CLAUDE.md` —
   `/workspace/CLAUDE.md` for the Workspace — and the sandbox's own `~/.claude/CLAUDE.md`, never through a link, ≤ 1
   MiB); the `@` search is a bounded walk of `/workspace` or the project's folder (20,000 entries, depth 12, no links
   followed, build and dependency
@@ -1677,7 +1677,7 @@ only (never one of Claude Code's aliases, at most 128 characters), anything else
   another project). The result, resolved by the sandbox's `realpath`, must be in `/workspace`: a link from one
   project into another is followed (the sandbox can go there anyway), a link out of the workspace is refused, as are
   NUL bytes and names over the limits. `/workspace`, a root itself and a trash folder are never deleted or renamed;
-  a delete in a project goes to its folder's `.bedrock-now-trash/`. git runs with the root as its repository (its
+  a delete in a project goes to its folder's `.devos-ade-trash/`. git runs with the root as its repository (its
   parent as `GIT_CEILING_DIRECTORIES`): a repository above the project is not used. Run & test, launch.json and the
   Permissions view read the root's files. Tests: `code/test/bn-coded-projects.test.mjs`.
 - [x] **The watchlist of a session in a project covers both folders**: the workspace's own top folder (its `.git`,
@@ -2671,14 +2671,14 @@ browser ─ http://p5173-<capability>.<PREVIEW_DOMAIN>:<PORTAL_PORT>/   (another
 ```
 
 - [x] **Another site, so no cookie of DevOS ADE reaches a preview.** Browsers count a `.localhost` name's last two
-  labels as its site (`localhost` is not on the public suffix list): a page on `preview.bedrock-now.localhost` would
+  labels as its site (`localhost` is not on the public suffix list): a page on `preview.devos-ade.localhost` would
   be *same-site* with the portal — it would receive the portal's session cookie (`Domain=PORTAL_HOST`) and the code
-  host's `SameSite=Strict` unlock cookie on its requests to them, and could plant `Domain=bedrock-now.localhost`
+  host's `SameSite=Strict` unlock cookie on its requests to them, and could plant `Domain=devos-ade.localhost`
   cookies (verified in Chromium 140). So previews live on a site of their own, `PREVIEW_DOMAIN`, which `lib/code.sh`
-  derives from `PORTAL_HOST` (`bedrock-now.localhost` → `bedrock-now-preview.localhost`). Names on a
+  derives from `PORTAL_HOST` (`devos-ade.localhost` → `devos-ade-preview.localhost`). Names on a
   `*-preview.localhost` site are the previews' alone: `./stack` refuses a `PORTAL_HOST` or an app host (`CHAT_HOST`,
   `CODE_HOST` …) there, a project named `<x>-preview` gets `<x>-preview-portal.localhost` (a second install named
-  `bedrock-now-preview` would otherwise be the first one's previews' site and get their requests with its cookies),
+  `devos-ade-preview` would otherwise be the first one's previews' site and get their requests with its cookies),
   and the portal turns previews off unless `PREVIEW_DOMAIN` is `<name>-preview.localhost` and none of its own hosts is
   on such a site. From a preview, requests to the portal, Chat, Admin, Files, the terminal and the Code page are
   *cross-site*: no cookie goes with them, and `Domain=` cookies for those hosts are refused. The e2e suite checks
@@ -3030,7 +3030,7 @@ It reduces prompts; it does not make anything safe: a model can be wrong either 
   Code there; the terminal's on — nothing set, Claude Code decides as anywhere else (an interactive `claude` starts in
   auto mode, `Shift+Tab` leaves it); only the Code page's on — auto mode stays available (the page needs it, and
   managed settings outrank its own), but the terminal's `claude` starts in *Manual*, its *Plan* asks, and both
-  `devos-claude` there and the `claude` typed in its shells (a shell function in `/etc/bedrock-now.bashrc`) add
+  `devos-claude` there and the `claude` typed in its shells (a shell function in `/etc/devos-ade.bashrc`) add
   Claude Code's flag-tier `disableAutoMode` to their sessions — a convenience for what you type, not a boundary:
   `/usr/local/bin/claude` called directly, or a `--settings` of your own, goes without it, and `Shift+Tab` could then
   reach auto mode. *Allow once*'s approval is not in the sandbox either: it is a hook callback of the Agent SDK in the code
@@ -3613,7 +3613,7 @@ else, says what each item brings before it is copied, and never copies a secret-
   `output-styles/<name>.md`, `skills/<name>/`; no other name passes its pattern), every folder on the way a real
   folder (never a link), the bytes into a temporary file or folder of its own, and puts it in only while the
   destination is still as the page showed it (its SHA-256, the folder's digest, or absent); what it replaces is
-  moved into `~/.claude/.bedrock-now-trash/` first, never deleted. `setup.git` runs `git config --file ~/.gitconfig
+  moved into `~/.claude/.devos-ade-trash/` first, never deleted. `setup.git` runs `git config --file ~/.gitconfig
   user.name|user.email` (fixed arguments, the panel's git environment) only while the sandbox's name and email are
   as shown, never through a link. An MCP server goes in through `claude mcp add-json --scope=user` (bn-coded's
   allowlisted shape); one that replaces the sandbox's own server of that name first has bn-coded copy the sandbox's
@@ -3632,7 +3632,7 @@ else, says what each item brings before it is copied, and never copies a secret-
   | `.state/sessions/setup/<nonce>.tsv`, `.state/sessions/consent.tsv` | ./stack and the helper | them only | none | host-only |
   | `.state/requests/ses-<nonce>.json` (`setup-scan`, `setup-fetch`, `setup-copy`) | the portal (after it checked the password) | the helper (as the sessions' requests) | rw into the portal only | a container writes, the host reads |
   | code-state volume `imports/setup-index.json`, `imports/setup-copied.json`; tmpfs `/run/bn-import-stage/setup/` | the code container (from ./stack's stdin) | the code container | the code container only | the container's own |
-  | the sandbox's `/home/claude/.claude/…` above, `/home/claude/.claude.json` (MCP), `/home/claude/.gitconfig`, `~/.claude/.bedrock-now-trash/` (what a copy replaced: files, folders, `mcp__<name>.json`) | bn-coded (`setup.write`, `setup.git`, `setup.trash`), Claude Code's CLI in the sandbox | the sandbox | the terminal container only | the sandbox's own |
+  | the sandbox's `/home/claude/.claude/…` above, `/home/claude/.claude.json` (MCP), `/home/claude/.gitconfig`, `~/.claude/.devos-ade-trash/` (what a copy replaced: files, folders, `mcp__<name>.json`) | bn-coded (`setup.write`, `setup.git`, `setup.trash`), Claude Code's CLI in the sandbox | the sandbox | the terminal container only | the sandbox's own |
 
   Tests: every flag case and what is never offered, on a fake home only (`code/test/setup-fixtures.mjs`: fake secrets
   made at run time); hostile homes (links, a FIFO, huge, binary and deep files); the reader's mounts and the helper's
@@ -3681,7 +3681,7 @@ never reads, copies, keeps, passes on or relays a login.**
   `GEMINI_API_KEY` …) stays: it is one of that tool's own sign-in methods. `TERMINAL_AI_TOOLS` (`all`, `none` or a
   list) decides which are in the image.
 - [x] **No stack MCP server for your plan.** `claude-sub` does not get the stack's shared MCP server (its token is in
-  `~/.config/bedrock-now/mcp.json`): through it, Chat's knowledge bases and the shared bucket — which it can write —
+  `~/.config/devos-ade/mcp.json`): through it, Chat's knowledge bases and the shared bucket — which it can write —
   would flow to Claude on your plan, under your plan's terms rather than Bedrock's. `CLAUDE_SUB_STACK_MCP=1` in a shell
   gives it for that session, with a warning each time.
 - [x] **Its own sign-in, in the sandbox.** Each signs in there with a flow that needs no callback into the sandbox:
@@ -4053,7 +4053,7 @@ never reads, copies, keeps, passes on or relays a login.**
   revoke it at the provider** (your account's settings at Anthropic, OpenAI, GitHub, Cursor or xAI). The sandbox
   reaches the internet by default. Taking the stack's variables out of the tools' environment is not a boundary
   either: anything there can read the sandbox's first process's environment (`/proc/1/environ`: the LiteLLM key) and
-  `~/.config/bedrock-now/mcp.json` (the shared MCP server's token), and Codex's "untrusted" approvals run a `cat` of
+  `~/.config/devos-ade/mcp.json` (the shared MCP server's token), and Codex's "untrusted" approvals run a `cat` of
   them without a card — they are the sandbox's, as your workspace is. The same holds in Chat's sandbox for Chat's own
   sign-ins (which hold no key or token of the stack's). Sign in only with plans you are comfortable using there; `TERMINAL_AI_TOOLS=none`
   leaves the apps out. Each app also sends its provider what it sends from anywhere, telemetry included: `claude-sub`

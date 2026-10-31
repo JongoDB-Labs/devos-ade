@@ -1,4 +1,4 @@
-"""bedrock-now e2e browser suite: HTTP, LiteLLM, shared-mcp and Chromium checks against a throwaway stack.
+"""devos-ade e2e browser suite: HTTP, LiteLLM, shared-mcp and Chromium checks against a throwaway stack.
 Run by tests/e2e/browser.sh inside the pinned Playwright container; writes /out/results.tsv, screenshots (/out/shots),
 network/console logs (/out/net, redacted) and tracebacks (/out/tracebacks, redacted)."""
 
@@ -57,7 +57,7 @@ class Ctx:
         """The enabled models as the portal reports them ({name, kind, display, …}; kind: chat/embed/rerank/image/stt)."""
         import json
         from common import http
-        r = http("GET", None, "/api/summary", {"X-Requested-With": "bedrock-now"}, cookie=self.session())
+        r = http("GET", None, "/api/summary", {"X-Requested-With": "devos-ade"}, cookie=self.session())
         return [m for m in json.loads(r.body)["models"]["rows"] if m["enabled"]]
 
     def enabled_models(self) -> list[str]:
@@ -89,7 +89,7 @@ def main() -> int:
     RESULTS.write_text("", encoding="utf-8")
     # Settings change credentials (after the rest), sign-out checks revoke every session (last)
     CHECKS.sort(key=lambda c: {"settings": 1, "final": 2}.get(c[0], 0))
-    print(f"bedrock-now e2e: http://{HOST} via {TARGET_IP}, {len(CHECKS)} checks", flush=True)
+    print(f"devos-ade e2e: http://{HOST} via {TARGET_IP}, {len(CHECKS)} checks", flush=True)
     with sync_playwright() as p:
         # *.localhost always means loopback in Chromium: point the throwaway's names at the host instead.
         # A fake microphone (Chromium's test tone, no prompt) so Open WebUI's Call can start without a device.

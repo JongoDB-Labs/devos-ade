@@ -901,7 +901,7 @@ def sweep_errors(browser, width, theme):
         step(name, one)
     # Caddy's refusals (a cross-site request to an app's host): their body text
     for name, url, hdr in (("same-site-guard", origin("chat") + "/api/config", {"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "cors", "Origin": "http://evil.example"}),
-                           ("api-without-session", origin() + "/api/summary", {"X-Requested-With": "bedrock-now"})):
+                           ("api-without-session", origin() + "/api/summary", {"X-Requested-With": "devos-ade"})):
         def one(name=name, url=url, hdr=hdr):
             CUR["state"] = name
             c3 = browser.new_context()
@@ -991,7 +991,7 @@ def sweep_manifest(browser):
 # --- links: internal (answered, as the signed-in browser asks), external (a paced GET), the docs index ---
 
 DOCS_REPO = "https://github.com/JongoDB-Labs/devos-ade/blob/"   # (search.js: REPO)
-GH = re.compile(r"^https://(?:github\.com|raw\.githubusercontent\.com)/JongoDB-Labs/(devos-ade|bedrock-now)\b", re.I)
+GH = re.compile(r"^https://(?:github\.com|raw\.githubusercontent\.com)/JongoDB-Labs/devos-ade\b", re.I)
 
 
 def get(url: str, method="GET"):
@@ -1088,7 +1088,7 @@ def check_links(browser):
     # the docs index the portal's search shows: each file's page once (paced), and each anchor on it
     try:
         # (as search.js builds them: the installed release's tag on GitHub, else main; each file, each section's anchor)
-        idx = c.request.get(origin() + "/api/search/index", headers={"X-Requested-With": "bedrock-now"}).json()
+        idx = c.request.get(origin() + "/api/search/index", headers={"X-Requested-With": "devos-ade"}).json()
         try:
             inst = json.loads((STATE / "status" / "version.json").read_text()).get("version", "")
         except Exception:  # noqa: BLE001
@@ -1147,7 +1147,7 @@ def check_links(browser):
                 find("external link", f"{u} -> {st} (first on {w['where']})")
         elif not anchor_ok:
             pending.append({**rec, "why": f"#{frag} not on GitHub's main yet (pushed with the release?)"})
-        if gh and gh.group(1).lower() == "bedrock-now":
+        if gh and gh.group(1).lower() == "devos-ade":
             find("old repository link", f"{u} -> {st} {final} (first on {w['where']})", severity="info")
     (OUT / "links.json").write_text(json.dumps(results, indent=1))
     (OUT / "links-pending-release.json").write_text(json.dumps(pending, indent=1))

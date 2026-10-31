@@ -90,7 +90,7 @@ MASTER="sk-e2e-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 cleanup() {
   if docker container inspect "$NAME" >/dev/null 2>&1; then
     # (only this script's own container: it carries this label)
-    [ "$(docker container inspect -f '{{index .Config.Labels "io.bedrock-now.e2e"}}' "$NAME" 2>/dev/null)" = explabs ] &&
+    [ "$(docker container inspect -f '{{index .Config.Labels "io.devos-ade.e2e"}}' "$NAME" 2>/dev/null)" = explabs ] &&
       docker rm -f "$NAME" >/dev/null 2>&1
   fi
   rm -rf "$WORK"
@@ -99,7 +99,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 if docker container inspect "$NAME" >/dev/null 2>&1; then
-  if [ "$(docker container inspect -f '{{index .Config.Labels "io.bedrock-now.e2e"}}' "$NAME" 2>/dev/null)" = explabs ]; then
+  if [ "$(docker container inspect -f '{{index .Config.Labels "io.devos-ade.e2e"}}' "$NAME" 2>/dev/null)" = explabs ]; then
     say "removing a $NAME left by an earlier run"; docker rm -f "$NAME" >/dev/null 2>&1
   else
     STOP_REASON="a container named $NAME exists and is not this check's: not touching it"; echo "$STOP_REASON" >&2
@@ -113,7 +113,7 @@ export STACK_DIR ENV_FILE STATE_DIR
 # shellcheck source=/dev/null
 . "$ROOT/lib/common.sh"; . "$ROOT/lib/ports.sh"; . "$ROOT/lib/portal.sh"; . "$ROOT/lib/models.sh"; . "$ROOT/lib/commands.sh"
 # (the stand-in answers on plain http inside the container: lib/explabs.sh takes such an address only while testing)
-[ "$MOCK" = 0 ] || { EXPLABS_API="http://127.0.0.1:$MOCK_PORT/v1"; BEDROCK_NOW_TESTING=1; }
+[ "$MOCK" = 0 ] || { EXPLABS_API="http://127.0.0.1:$MOCK_PORT/v1"; DEVOS_ADE_TESTING=1; }
 get_env() { case "$1" in EXPLABS_API_KEY) printf '%s' "$KEY" ;; EXPLABS_MODELS) printf 'qwen3.8-27b%s' "$([ "$MOCK" = 1 ] && echo ,byok-model,claude-fable-5,gpt-5.1-codex,gpt-5.5)" ;; esac; }
 STACK_DIR="$WORK"; mkdir -p "$WORK/litellm" "$STATE_DIR"
 xl_cache_current() { [ -s "$(xl_cache_tsv)" ]; }   # (no key mark: not even a hash of the key on disk)
@@ -161,7 +161,7 @@ json.dump(v, open(sys.argv[2], "w"))' "$ROOT/tests/fixtures/explabs_v1_models.js
   for _ in $(seq 1 20); do [ "$(curl -s -m 2 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$HPORT/api/models/qwen3.8-27b" 2>/dev/null)" = 200 ] && break; sleep 0.5; done
   (
     EXPLABS_API="http://127.0.0.1:$HPORT/v1"; EXPLABS_CATALOG="http://127.0.0.1:$HPORT/api/models"; XL_HOST="127.0.0.1:$HPORT"
-    BEDROCK_NOW_TESTING=1; XL_MODEL_TIMEOUT=3
+    DEVOS_ADE_TESTING=1; XL_MODEL_TIMEOUT=3
     explabs_refresh 2>/dev/null
     [ "$(xl_selected | awk -F'\t' '$2 == "qwen3.8-27b" { print $1 }')" = details ] || { echo "qwen3.8-27b has no details from the stand-in"; exit 1; }
     printf 'qwen3.8-27b\n' > "$WORK/slow"
@@ -187,7 +187,7 @@ fi
 PORT=18490
 while port_in_use "$PORT" || case "$AVOID_PORTS" in *" $PORT "*) true ;; *) false ;; esac; do PORT=$((PORT + 1)); done
 say "starting $NAME ($IMAGE) on 127.0.0.1:$PORT"
-args=(-d --name "$NAME" --label io.bedrock-now.e2e=explabs -p "127.0.0.1:$PORT:4000" -v "$WORK/litellm:/app/config:ro"
+args=(-d --name "$NAME" --label io.devos-ade.e2e=explabs -p "127.0.0.1:$PORT:4000" -v "$WORK/litellm:/app/config:ro"
       -e EXPLABS_API_KEY -e LITELLM_MASTER_KEY -e LITELLM_LOCAL_MODEL_COST_MAP=True)
 if [ "$MOCK" = 1 ]; then
   # the stand-in first; LiteLLM once the config is there (rendered from what the stand-in answered)

@@ -383,7 +383,7 @@ export function makeGitRemote({ call: sandboxCall, openBroker = null, store = ne
     let p;
     try { p = parseRemoteUrl(b?.url); } catch (e) { throw err(400, e.message); }
     const target = b.target ?? '';
-    if (!repoOk(target) || target.split('/')[0] === '.bedrock-now-trash') throw err(400, 'a new folder of the workspace (a name, or a path in it), or none: the workspace folder itself');
+    if (!repoOk(target) || target.split('/')[0] === '.devos-ade-trash') throw err(400, 'a new folder of the workspace (a name, or a path in it), or none: the workspace folder itself');
     const depth = b.depth === undefined || b.depth === null || b.depth === '' ? null : Number(b.depth);
     if (depth !== null && (!Number.isInteger(depth) || depth < 1 || depth > 1000)) throw err(400, 'depth: 1 to 1000 commits (or none: the whole history)');
     const h = store.match(p);

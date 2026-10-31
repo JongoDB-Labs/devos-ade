@@ -27,7 +27,7 @@ case "$jobs" in '' | *[!0-9]* | 0*) echo "tests/run.sh: -j takes how many tests 
 pattern="${1:-tests/test_*.sh}"
 pass=0; fail=0; skip=0
 
-# Isolation from the real machine (a live bedrock-now may run on 127.0.0.1:80/4000/8765): every test child has
+# Isolation from the real machine (a live devos-ade may run on 127.0.0.1:80/4000/8765): every test child has
 # tests/shims first on PATH. docker, aws, tailscale, gh and glab never run for real; curl does, except towards this
 # computer (only the closed port 9 there). A refused call is logged to $BN_SHIM_LOG (each test's own, gathered into
 # the suite's at the end); any entry fails the suite.
@@ -55,9 +55,9 @@ times_file="$tmp/bn-tests-times.$(printf '%s' "$ROOT" | cksum | awk '{ print $1 
 # shellcheck disable=SC2016,SC2089
 CHILD='
 TMP=$(mktemp -d)
-export STACK_DIR="$T_ROOT" ENV_FILE="$TMP/.env" STATE_DIR="$TMP/.state" BEDROCK_NOW_NO_OPEN=1 PATH="$T_ROOT/tests/shims:$PATH"
+export STACK_DIR="$T_ROOT" ENV_FILE="$TMP/.env" STATE_DIR="$TMP/.state" DEVOS_ADE_NO_OPEN=1 PATH="$T_ROOT/tests/shims:$PATH"
 # dc() never asks the Compose version in a test (a test that stubs docker would see an extra call): the docs overlay off
-export BEDROCK_NOW_COMPOSE_CONTEXTS=0 BEDROCK_NOW_COMPOSE_OVERRIDES=1
+export DEVOS_ADE_COMPOSE_CONTEXTS=0 DEVOS_ADE_COMPOSE_OVERRIDES=1
 export HOME="$TMP/home" DOCKER_CONFIG="$BN_REAL_DOCKER_CONFIG"; mkdir -p "$HOME"
 # an Ollama, llama.cpp or LM Studio this computer may run is never asked (lib/runtimes.sh looks at what answers on 11434, 11438,
 # 11439): the closed port 9

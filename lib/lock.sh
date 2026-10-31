@@ -4,7 +4,7 @@
 #
 # .state/lock/ is created with mkdir (atomic, portable to macOS) and holds the owner's pid and command. A lock
 # whose process is gone is stale and taken over. Child processes (setup run by update, restore run by rollback)
-# and update's re-exec (same pid) inherit it through BEDROCK_NOW_LOCK_HELD.
+# and update's re-exec (same pid) inherit it through DEVOS_ADE_LOCK_HELD.
 #
 # The command that takes the lock, when you typed it in a terminal, also leaves a record for Home (the helper writes
 # its own jobs' status): .state/status/terminal-job.json, "running" when it starts and done/failed when it ends, so
@@ -49,11 +49,11 @@ stack_lock_says() {
 stack_lock() {
   local d holder tries=0
   d="$(lock_dir)"
-  if [ -n "${BEDROCK_NOW_LOCK_HELD:-}" ] && [ "$(head -c 20 "$d/pid" 2>/dev/null)" = "$BEDROCK_NOW_LOCK_HELD" ] &&
-     _lock_pid_alive "$BEDROCK_NOW_LOCK_HELD"; then
+  if [ -n "${DEVOS_ADE_LOCK_HELD:-}" ] && [ "$(head -c 20 "$d/pid" 2>/dev/null)" = "$DEVOS_ADE_LOCK_HELD" ] &&
+     _lock_pid_alive "$DEVOS_ADE_LOCK_HELD"; then
     # ours: a child of the owner, or the owner after `exec` (same pid, a new shell: it releases it then, and ends the
     # terminal job's record the shell before the exec started)
-    if [ "$BEDROCK_NOW_LOCK_HELD" = "$$" ] && [ -z "${_LOCK_LEVEL:-}" ]; then
+    if [ "$DEVOS_ADE_LOCK_HELD" = "$$" ] && [ -z "${_LOCK_LEVEL:-}" ]; then
       _LOCK_LEVEL="$BASH_SUBSHELL"; _terminal_job_start "$1" --continued; on_exit stack_unlock
     fi
     return 0
@@ -67,7 +67,7 @@ stack_lock() {
     mv "$d" "$d.stale.$$" 2>/dev/null && rm -rf "$d.stale.$$"
   done
   printf '%s\n' "$1" > "$d/what"; printf '%s\n' "$$" > "$d/pid"
-  BEDROCK_NOW_LOCK_HELD="$$"; export BEDROCK_NOW_LOCK_HELD
+  DEVOS_ADE_LOCK_HELD="$$"; export DEVOS_ADE_LOCK_HELD
   _LOCK_LEVEL="$BASH_SUBSHELL"   # (a subshell has the same $$: only this level releases it)
   _terminal_job_start "$1"   # (its end hook first: the record is final while the lock is still held)
   on_exit stack_unlock
@@ -89,7 +89,7 @@ stack_lock_ours() { _shell_level; [ "${_LOCK_LEVEL:-x}" = "$_LEVEL" ] && [ "$(he
 # .state/status/terminal-job.json (read-only in the portal, like the helper's helper-status.json):
 #   {"id", "action": the lock's WHAT, "command": "code enable" (the command and its first word; never a value),
 #    "phase": running | done | failed, "message", "started_at", "updated_at", "finished_at", "version", "pid"}
-# Only commands that change the stack, and only when you ran them: the update helper's jobs (BEDROCK_NOW_JOB_ORIGIN=
+# Only commands that change the stack, and only when you ran them: the update helper's jobs (DEVOS_ADE_JOB_ORIGIN=
 # helper, or any ./stack command started while its status shows a job: an older helper does not say so) report in
 # helper-status.json. A record still "running" whose pid is gone was stopped hard: the helper marks it (_terminal_job_sweep).
 TERMINAL_JOB_WHATS=" setup update rollback clean restore config code terminal stt openrouter remote rotate-aws models backup restart "   # (not up: it only starts what is set up, and runs often)
@@ -98,7 +98,7 @@ terminal_job_file() { printf '%s/status/terminal-job.json\n' "$STATE_DIR"; }
 
 _terminal_job_wanted() {
   case "$TERMINAL_JOB_WHATS" in *" $1 "*) ;; *) return 1 ;; esac
-  [ "${BEDROCK_NOW_JOB_ORIGIN:-}" != helper ] || return 1
+  [ "${DEVOS_ADE_JOB_ORIGIN:-}" != helper ] || return 1
   ! { declare -F _status_in_progress >/dev/null && _status_in_progress; } || return 1
   [ -d "$STATE_DIR/status" ]   # (a first setup has none yet: there is no Home to tell)
 }
@@ -110,7 +110,7 @@ _terminal_job_write() {
   case "$1" in done | failed) fin="$now" ;; esac
   tmp="$(mktemp "$d/.terminal-job.XXXXXX" 2>/dev/null)" || return 0
   if printf '{"id": "t-%s-%s", "action": "%s", "command": "%s", "phase": "%s", "message": "%s", "started_at": %s, "updated_at": %s, "finished_at": %s, "version": "%s", "pid": %s}\n' \
-       "$BEDROCK_NOW_JOB_STARTED" "$$" "$TERMINAL_JOB" "$(_terminal_job_cmd)" "$1" "$(_job_json_str "$2")" "$BEDROCK_NOW_JOB_STARTED" \
+       "$DEVOS_ADE_JOB_STARTED" "$$" "$TERMINAL_JOB" "$(_terminal_job_cmd)" "$1" "$(_job_json_str "$2")" "$DEVOS_ADE_JOB_STARTED" \
        "$now" "$fin" "$(_job_json_str "${3:-}")" "$$" > "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$f"; then return 0; fi
   rm -f "$tmp" 2>/dev/null || true
   return 0
@@ -123,12 +123,12 @@ _job_json_str() {
   if declare -F _json_str >/dev/null; then _json_str "$1"; else printf '%s' "$1" | tr -d '"\\' | tr -d '\000-\037' | head -c 300 | LC_ALL=C tr -cd '\040-\176'; fi
 }
 
-# _terminal_job_cmd -> "code enable": BEDROCK_NOW_JOB_CMD (./stack sets it: the command and its first argument when that
+# _terminal_job_cmd -> "code enable": DEVOS_ADE_JOB_CMD (./stack sets it: the command and its first argument when that
 # is a plain word), else the lock's WHAT
 _terminal_job_cmd() {
-  case "${BEDROCK_NOW_JOB_CMD:-}" in
+  case "${DEVOS_ADE_JOB_CMD:-}" in
     '' | *[!a-z\ -]* | ' '* | *' ' | *'  '*) printf '%s' "$TERMINAL_JOB" ;;
-    *) printf '%s' "${BEDROCK_NOW_JOB_CMD:0:49}" ;;
+    *) printf '%s' "${DEVOS_ADE_JOB_CMD:0:49}" ;;
   esac
 }
 
@@ -138,12 +138,12 @@ _terminal_job_start() {
   TERMINAL_JOB=''
   _terminal_job_wanted "$1" || return 0
   TERMINAL_JOB="$1"
-  case "${BEDROCK_NOW_JOB_STARTED:-}" in '' | *[!0-9]*) BEDROCK_NOW_JOB_STARTED='' ;; esac
-  if [ "${2:-}" != --continued ] || [ -z "$BEDROCK_NOW_JOB_STARTED" ]; then
-    BEDROCK_NOW_JOB_STARTED="$(date +%s)"; BEDROCK_NOW_JOB_FROM="$(installed_version 2>/dev/null || true)"
+  case "${DEVOS_ADE_JOB_STARTED:-}" in '' | *[!0-9]*) DEVOS_ADE_JOB_STARTED='' ;; esac
+  if [ "${2:-}" != --continued ] || [ -z "$DEVOS_ADE_JOB_STARTED" ]; then
+    DEVOS_ADE_JOB_STARTED="$(date +%s)"; DEVOS_ADE_JOB_FROM="$(installed_version 2>/dev/null || true)"
   fi
-  export BEDROCK_NOW_JOB_STARTED BEDROCK_NOW_JOB_FROM   # (update's re-exec keeps them)
-  _terminal_job_write running "Running in a terminal" "${BEDROCK_NOW_JOB_FROM:-}"
+  export DEVOS_ADE_JOB_STARTED DEVOS_ADE_JOB_FROM   # (update's re-exec keeps them)
+  _terminal_job_write running "Running in a terminal" "${DEVOS_ADE_JOB_FROM:-}"
   on_exit _terminal_job_end
 }
 
@@ -157,7 +157,7 @@ _terminal_job_end() {
   [ "$rc" != 0 ] || [ "${_BN_CMD_DONE:-0}" = 1 ] || rc=130
   if [ "$rc" = 0 ]; then
     case "$TERMINAL_JOB" in
-      update) if [ -n "$v" ] && [ "$v" != "${BEDROCK_NOW_JOB_FROM:-}" ]; then msg="Updated to $v"; else msg="No new version: still $v"; fi ;;
+      update) if [ -n "$v" ] && [ "$v" != "${DEVOS_ADE_JOB_FROM:-}" ]; then msg="Updated to $v"; else msg="No new version: still $v"; fi ;;
       rollback) msg="Rolled back to $v" ;;
       setup) msg="Setup finished ($v)" ;;
       *) msg='' ;;   # (Home's title says "./stack code enable finished" already)

@@ -36,27 +36,27 @@
 #   explabs_status_line / explabs_summary_line / explabs_costs_section / explabs_models_section
 #   setup_explabs / explabs_up_hook / explabs_after_up   setup, and ./stack up before `compose up` / in its portal session
 
-# Where the key goes. Only the test suite (BEDROCK_NOW_TESTING=1, as lib/host.sh) can point this at another server:
-# BEDROCK_NOW_TEST_EXPLABS_API in a user's shell is ignored, with a warning (as lib/openrouter.sh's and lib/stt.sh's
+# Where the key goes. Only the test suite (DEVOS_ADE_TESTING=1, as lib/host.sh) can point this at another server:
+# DEVOS_ADE_TEST_EXPLABS_API in a user's shell is ignored, with a warning (as lib/openrouter.sh's and lib/stt.sh's
 # test addresses). The catalog lives beside it.
 _xl_api() {
-  if [ -n "${BEDROCK_NOW_TEST_EXPLABS_API:-}" ]; then
-    if [ "${BEDROCK_NOW_TESTING:-}" = 1 ]; then printf '%s\n' "$BEDROCK_NOW_TEST_EXPLABS_API"; return 0; fi
-    test_url_ignored BEDROCK_NOW_TEST_EXPLABS_API "the Experiential Labs key"
+  if [ -n "${DEVOS_ADE_TEST_EXPLABS_API:-}" ]; then
+    if [ "${DEVOS_ADE_TESTING:-}" = 1 ]; then printf '%s\n' "$DEVOS_ADE_TEST_EXPLABS_API"; return 0; fi
+    test_url_ignored DEVOS_ADE_TEST_EXPLABS_API "the Experiential Labs key"
   fi
   printf 'https://api.experientiallabs.ai/v1\n'
 }
 EXPLABS_API="$(_xl_api)"
 # xl_api_ok -> 0 when EXPLABS_API may get the key: https, or any address while testing
-xl_api_ok() { case "$EXPLABS_API" in https://?*) return 0 ;; esac; [ "${BEDROCK_NOW_TESTING:-}" = 1 ]; }
+xl_api_ok() { case "$EXPLABS_API" in https://?*) return 0 ;; esac; [ "${DEVOS_ADE_TESTING:-}" = 1 ]; }
 EXPLABS_CATALOG="${EXPLABS_API%/v1}/api/models"   # one model: $EXPLABS_CATALOG/<id>
 XL_HOST="${EXPLABS_API#*://}"; XL_HOST="${XL_HOST%%/*}"
 XL_LIST_TIMEOUT=30      # s for the key's list (GET /v1/models: ~23 KB)
 XL_MODEL_TIMEOUT=90     # s for one model's details (GET /api/models/<id>: 10-25 KB, 15-25 s on 2026-10-25), all side by side
 XL_REFRESH_BUDGET=100   # s for a whole refresh, both kinds of request: what setup or a Settings change waits at most
 XL_MODEL_MAX=40         # at most this many models' details per refresh (more chosen: those beyond run fail safe, said)
-# curl's --proto: https only, but for the test suite's stand-ins (BEDROCK_NOW_TESTING=1)
-_xl_proto() { if [ "${BEDROCK_NOW_TESTING:-}" = 1 ]; then printf '=http,https\n'; else printf '=https\n'; fi; }
+# curl's --proto: https only, but for the test suite's stand-ins (DEVOS_ADE_TESTING=1)
+_xl_proto() { if [ "${DEVOS_ADE_TESTING:-}" = 1 ]; then printf '=http,https\n'; else printf '=https\n'; fi; }
 EXPLABS_DEFAULT_MODELS=qwen3.8-27b
 EXPLABS_KEYS_URL=https://platform.experientiallabs.ai/settings/api-keys
 # The request parameters the gateway's metadata decides about: each goes only to a model whose metadata says it takes

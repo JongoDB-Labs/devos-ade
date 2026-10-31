@@ -156,7 +156,7 @@ COMPOSE = """services:
     build:
       args:
         image: ghcr.io/open-webui/open-webui:v0.12.0-slim@%s
-    image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/open-webui:local
+    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/open-webui:local
   caddy:
     image: caddy:2.11.7-alpine@%s
 """ % (D(1), D(2))

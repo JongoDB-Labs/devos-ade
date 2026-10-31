@@ -43,7 +43,7 @@ awk -F'\t' -v secs="$secs" '
     if (!($1 in order)) { order[$1] = ++k; name[k] = $1 } }
   END {
     print "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-    printf "<testsuites name=\"bedrock-now-e2e\" time=\"%s\">\n", secs
+    printf "<testsuites name=\"devos-ade-e2e\" time=\"%s\">\n", secs
     for (i = 1; i <= k; i++) {
       su = name[i]
       printf "  <testsuite name=\"%s\" tests=\"%d\" failures=\"%d\" skipped=\"%d\">\n", x(su), n[su], f[su] + 0, s[su] + 0

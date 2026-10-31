@@ -221,8 +221,8 @@
 //   PUT    /api/memory?scope=project|user&project=ID {text, ifMtimeMs?}   {path, size, mtimeMs}; 409 when it changed
 //   POST   /api/fs/mkdir {path}            {path}
 //   POST   /api/fs/rename {from, to}       {path}; 409 when `to` exists
-//   DELETE /api/fs?path=P&ifMtimeMs=N&project=ID   {trash}: moved into /workspace/.bedrock-now-trash/ — a project's
-//                                           own (<its folder>/.bedrock-now-trash/) for a file in it — (which holds a
+//   DELETE /api/fs?path=P&ifMtimeMs=N&project=ID   {trash}: moved into /workspace/.devos-ade-trash/ — a project's
+//                                           own (<its folder>/.devos-ade-trash/) for a file in it — (which holds a
 //                                           .gitignore of "*" so git leaves it alone); ifMtimeMs: only while its
 //                                           modification time is still N (409 otherwise)
 //   GET    /api/plugins                    {installed: [{id, name, marketplace, version, scope, enabled, fromFolder,

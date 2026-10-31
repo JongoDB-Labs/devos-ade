@@ -1,6 +1,6 @@
 # shellcheck shell=bash
-# Task A6: one-line installer (install.sh). Sourced with BEDROCK_NOW_INSTALL_LIB=1 so main does not run.
-BEDROCK_NOW_INSTALL_LIB=1 . "$STACK_DIR/install.sh"
+# Task A6: one-line installer (install.sh). Sourced with DEVOS_ADE_INSTALL_LIB=1 so main does not run.
+DEVOS_ADE_INSTALL_LIB=1 . "$STACK_DIR/install.sh"
 
 test_prereq_hint_per_os() {
   assert_contains "$(prereq_hint docker Darwin)" "Docker Desktop"
@@ -70,11 +70,11 @@ test_pick_ref() {
 
 _installer() { # run main in a subshell: no TTY, prereqs stubbed, local repo as the source
   ( has_tty() { return 1; }; check_prereqs() { :; }
-    BEDROCK_NOW_REPO="$STACK_DIR" BEDROCK_NOW_DIR="$TMP/inst" main )
+    DEVOS_ADE_REPO="$STACK_DIR" DEVOS_ADE_DIR="$TMP/inst" main )
 }
 
 test_main_without_tty_or_creds_clones_and_prints_next_command() {
-  out="$( (unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; BEDROCK_NOW_REF="" _installer) 2>&1)"
+  out="$( (unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; DEVOS_ADE_REF="" _installer) 2>&1)"
   [ -x "$TMP/inst/stack" ] || { echo "not cloned: $out" >&2; return 1; }
   assert_contains "$out" "cd $TMP/inst && ./setup.sh"
   assert_contains "$out" "GB"
@@ -83,7 +83,7 @@ test_main_without_tty_or_creds_clones_and_prints_next_command() {
 
 test_main_honours_ref() {
   ref="$(git -C "$STACK_DIR" rev-parse HEAD~1)"
-  (unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; BEDROCK_NOW_REF="$ref" _installer) > "$TMP/out" 2>&1
+  (unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; DEVOS_ADE_REF="$ref" _installer) > "$TMP/out" 2>&1
   assert_eq "$(git -C "$TMP/inst" rev-parse HEAD)" "$ref"
   assert_contains "$(cat "$TMP/out")" "$ref"
 }
@@ -107,8 +107,8 @@ test_main_existing_checkout_points_to_update() {
 # --- where a new install goes: ~/devos-ade; an install made before v0.25.0 stays in ~/bedrock-now ---
 
 _installer_home() { # main with HOME=$TMP/h and no folder given (as the one-liner runs it)
-  ( has_tty() { return 1; }; check_prereqs() { :; }; unset BEDROCK_NOW_DIR DEVOS_ADE_DIR AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
-    HOME="$TMP/h" BEDROCK_NOW_REPO="$STACK_DIR" BEDROCK_NOW_REF="" main "$@" )
+  ( has_tty() { return 1; }; check_prereqs() { :; }; unset DEVOS_ADE_DIR AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+    HOME="$TMP/h" DEVOS_ADE_REPO="$STACK_DIR" DEVOS_ADE_REF="" main "$@" )
 }
 
 test_main_installs_into_devos_ade_by_default() {
@@ -119,7 +119,7 @@ test_main_installs_into_devos_ade_by_default() {
   assert_contains "$out" "installing DevOS ADE into $TMP/h/devos-ade"
 }
 
-test_main_finds_an_install_in_bedrock_now_and_changes_nothing() {
+test_main_finds_an_install_in_devos_ade_and_changes_nothing() {
   mkdir -p "$TMP/h"; git clone -q "$STACK_DIR" "$TMP/h/bedrock-now"
   git -C "$TMP/h/bedrock-now" remote set-url origin https://github.com/JongoDB-Labs/bedrock-now.git
   printf 'POSTGRES_PASSWORD=mine\n' > "$TMP/h/bedrock-now/.env"
@@ -136,7 +136,7 @@ test_main_finds_an_install_in_bedrock_now_and_changes_nothing() {
   [ ! -e "$TMP/h/devos-ade" ] || return 1
 }
 
-test_main_an_empty_devos_ade_beside_an_install_in_bedrock_now_clones_nothing() {
+test_main_an_empty_devos_ade_beside_an_install_in_devos_ade_clones_nothing() {
   mkdir -p "$TMP/h/devos-ade"; git clone -q "$STACK_DIR" "$TMP/h/bedrock-now"
   git -C "$TMP/h/bedrock-now" remote set-url origin https://github.com/JongoDB-Labs/bedrock-now.git
   out="$(_installer_home 2>&1)"
@@ -144,7 +144,7 @@ test_main_an_empty_devos_ade_beside_an_install_in_bedrock_now_clones_nothing() {
   [ -z "$(ls -A "$TMP/h/devos-ade")" ] || { echo "cloned a second copy into ~/devos-ade" >&2; return 1; }
 }
 
-test_main_a_foreign_devos_ade_beside_an_install_in_bedrock_now_names_that_install() {
+test_main_a_foreign_devos_ade_beside_an_install_in_devos_ade_names_that_install() {
   mkdir -p "$TMP/h/devos-ade"; echo mine > "$TMP/h/devos-ade/notes.txt"; git clone -q "$STACK_DIR" "$TMP/h/bedrock-now"
   git -C "$TMP/h/bedrock-now" remote set-url origin https://github.com/JongoDB-Labs/bedrock-now.git
   if out="$(_installer_home 2>&1)"; then echo "should refuse" >&2; return 1; fi
@@ -154,10 +154,10 @@ test_main_a_foreign_devos_ade_beside_an_install_in_bedrock_now_names_that_instal
   # with no install anywhere: which variable chooses the folder
   rm -rf "$TMP/h/bedrock-now"
   if out="$(_installer_home 2>&1)"; then echo "should refuse" >&2; return 1; fi
-  assert_contains "$out" "choose another folder with DEVOS_ADE_DIR=/path (BEDROCK_NOW_DIR works too; DEVOS_ADE_DIR wins)"
+  assert_contains "$out" "choose another folder with DEVOS_ADE_DIR=/path"
 }
 
-test_main_ignores_a_bedrock_now_folder_that_is_not_an_install() {
+test_main_ignores_a_devos_ade_folder_that_is_not_an_install() {
   mkdir -p "$TMP/h/bedrock-now"; echo keep > "$TMP/h/bedrock-now/notes.txt"
   out="$(_installer_home 2>&1)"
   [ -x "$TMP/h/devos-ade/stack" ] || { echo "not cloned: $out" >&2; return 1; }
@@ -171,19 +171,16 @@ test_main_prefers_an_install_in_devos_ade() {
   assert_contains "$(_installer_home 2>&1)" "already installed in $TMP/h/devos-ade"
 }
 
-test_main_honours_either_folder_variable() {
+test_main_honours_the_folder_variable() {
   mkdir -p "$TMP/h"
   ( has_tty() { return 1; }; check_prereqs() { :; }; unset DEVOS_ADE_DIR AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
-    HOME="$TMP/h" BEDROCK_NOW_REPO="$STACK_DIR" BEDROCK_NOW_REF="" BEDROCK_NOW_DIR="$TMP/a" main ) > /dev/null 2>&1
-  [ -x "$TMP/a/stack" ] || { echo "BEDROCK_NOW_DIR not used" >&2; return 1; }
-  ( has_tty() { return 1; }; check_prereqs() { :; }; unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
-    HOME="$TMP/h" BEDROCK_NOW_REPO="$STACK_DIR" BEDROCK_NOW_REF="" BEDROCK_NOW_DIR="$TMP/c" DEVOS_ADE_DIR="$TMP/b" main ) > /dev/null 2>&1
-  [ -x "$TMP/b/stack" ] && [ ! -e "$TMP/c" ] || { echo "DEVOS_ADE_DIR not used first" >&2; return 1; }
+    HOME="$TMP/h" DEVOS_ADE_REPO="$STACK_DIR" DEVOS_ADE_REF="" DEVOS_ADE_DIR="$TMP/a" main ) > /dev/null 2>&1
+  [ -x "$TMP/a/stack" ] || { echo "DEVOS_ADE_DIR not used" >&2; return 1; }
   [ ! -e "$TMP/h/devos-ade" ] || return 1
 }
 
 test_main_bad_ref_explains_recovery() {
-  if out="$( (unset AWS_ACCESS_KEY_ID; BEDROCK_NOW_REF=no-such-ref _installer) 2>&1)"; then return 1; fi
+  if out="$( (unset AWS_ACCESS_KEY_ID; DEVOS_ADE_REF=no-such-ref _installer) 2>&1)"; then return 1; fi
   assert_contains "$out" "could not check out 'no-such-ref'"
   assert_contains "$out" "rm -rf $TMP/inst"
   assert_contains "$out" "git -C $TMP/inst checkout <ref>"
@@ -192,7 +189,7 @@ test_main_bad_ref_explains_recovery() {
 test_main_without_tty_on_ec2_with_a_role_runs_setup_yes() {
   out="$( (unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
     ec2_role_available() { return 0; }; start_setup() { echo "SETUP $*"; }
-    BEDROCK_NOW_REF="" _installer) 2>&1)"
+    DEVOS_ADE_REF="" _installer) 2>&1)"
   assert_contains "$out" "SETUP --yes"
   assert_contains "$out" "IAM role"
 }
@@ -200,7 +197,7 @@ test_main_without_tty_on_ec2_with_a_role_runs_setup_yes() {
 test_main_without_tty_off_ec2_does_not_run_setup() {
   out="$( (unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
     ec2_role_available() { return 1; }; start_setup() { echo "SETUP $*"; }
-    BEDROCK_NOW_REF="" _installer) 2>&1)"
+    DEVOS_ADE_REF="" _installer) 2>&1)"
   assert_not_contains "$out" "SETUP"
   assert_contains "$out" "./setup.sh"
 }
@@ -211,5 +208,5 @@ test_ec2_role_available_needs_the_checkouts_host_lib() {
 }
 
 test_installer_documents_repo_override() {
-  assert_contains "$(sed -n 1,12p "$STACK_DIR/install.sh")" "BEDROCK_NOW_REPO"
+  assert_contains "$(sed -n 1,12p "$STACK_DIR/install.sh")" "DEVOS_ADE_REPO"
 }

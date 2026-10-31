@@ -97,7 +97,7 @@ const answers = {
   'git.unstage': () => ({ result: { ok: true } }),
   'git.commit': (req) => (req.message === 'nothing' ? Promise.reject(new SandboxError('nothing is staged to commit', 'refused'))
     : req.message === 'hostile' ? Promise.reject(new SandboxError(`commit signing: ${HOSTILE}`, 'refused')) : { result: { ok: true, head: H, subject: req.message.split('\n')[0], author: { name: 'n', email: 'e', from: 'sandbox' } } }),
-  'git.discard': (req) => (req.ifMtimeMs === 1 ? Promise.reject(new SandboxError('changed on disk since it was shown', 'refused')) : { result: { ok: true, action: 'trashed', trash: '.bedrock-now-trash/t/x' } }),
+  'git.discard': (req) => (req.ifMtimeMs === 1 ? Promise.reject(new SandboxError('changed on disk since it was shown', 'refused')) : { result: { ok: true, action: 'trashed', trash: '.devos-ade-trash/t/x' } }),
 };
 const call = async (req, opts) => {
   calls.push([req, opts]);
@@ -156,7 +156,7 @@ test('the routes: reads, changes with checked bodies (nothing else reaches the s
   assert.deepEqual([r.status, r.json], [400, { error: 'nothing is staged to commit' }], 'one of bn-coded\'s fixed refusals: plainly');
   assert.equal((await req('POST', '/api/git/discard', { path: 'x', ifMtimeMs: 1 })).status, 409);
   r = await req('POST', '/api/git/discard', { path: 'x', ifMtimeMs: 1792187714134.0645 });
-  assert.deepEqual(r.json, { ok: true, action: 'trashed', trash: '.bedrock-now-trash/t/x' });
+  assert.deepEqual(r.json, { ok: true, action: 'trashed', trash: '.devos-ade-trash/t/x' });
   assert.equal(calls.at(-1)[0].ifMtimeMs, 1792187714134.0645);
   assert.equal((await req('POST', '/api/git/discard', { path: 'x', ifMtimeMs: 'NaN' })).status, 400);
   // a repository folder of the workspace: checked here, passed on as it is

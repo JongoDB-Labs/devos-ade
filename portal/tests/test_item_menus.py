@@ -17,8 +17,8 @@ from portal.security import COOKIE
 STATIC = Path(__file__).resolve().parents[1] / "portal" / "static"
 
 PW = "correct horse"
-PORTAL = "http://bedrock-now.localhost"
-API = {"X-Requested-With": "bedrock-now"}
+PORTAL = "http://devos-ade.localhost"
+API = {"X-Requested-With": "devos-ade"}
 C1 = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
 C2 = "1a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
 

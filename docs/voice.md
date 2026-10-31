@@ -220,11 +220,11 @@ still come from Bedrock (or OpenRouter, if you use it).
   endpoints (`/v1/audio/transcriptions`); *Models: Read* is optional. Without it the check answers HTTP 403
   "missing scopes": DevOS ADE then accepts the key with a note, and transcription is tested on first use.
 - **Without a terminal:** `STT_PROVIDER=openai STT_API_KEY=… ./stack stt set`, or at setup
-  `BEDROCK_NOW_STT_FROM_ENV=1 STT_PROVIDER=… STT_API_KEY=… ./stack setup --yes`. (`STT_PROVIDER=bedrock` needs
+  `DEVOS_ADE_STT_FROM_ENV=1 STT_PROVIDER=… STT_API_KEY=… ./stack setup --yes`. (`STT_PROVIDER=bedrock` needs
   no key and no opt-in.)
 - **Only `.env` counts.** `STT_*` variables that happen to be in your shell never turn a key provider on:
   `./stack` strips them from what Docker Compose sees, an interactive setup asks before it uses them,
-  `setup --yes` uses them only with `BEDROCK_NOW_STT_FROM_ENV=1`, and `./stack update` ignores them.
+  `setup --yes` uses them only with `DEVOS_ADE_STT_FROM_ENV=1`, and `./stack update` ignores them.
 - The key is stored in `.env` (mode 600) as `STT_API_KEY`; Compose passes it to the LiteLLM container only. It
   is sent with `curl -K -` (never on a command line) and must be letters, digits, `-` and `_`.
   Create keys at https://platform.openai.com/api-keys or https://console.groq.com/keys; a spend limit there

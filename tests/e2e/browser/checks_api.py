@@ -134,7 +134,7 @@ def embeddings(ctx):
     em = ENV.get("OWUI_EMBED_MODEL")
     if not em:
         raise Skip("no embedding model enabled")
-    r = lite("POST", "/v1/embeddings", key=ENV["LITELLM_KEY_OPENWEBUI"], body={"model": em, "input": ["bedrock-now e2e"]})
+    r = lite("POST", "/v1/embeddings", key=ENV["LITELLM_KEY_OPENWEBUI"], body={"model": em, "input": ["devos-ade e2e"]})
     expect(r.status == 200, f"embeddings {r.status} {r.text[:200]}")
     dim = len(r.json()["data"][0]["embedding"])
     msg = f"{em}: {dim}-dim embedding"
@@ -195,11 +195,11 @@ def mcp_tools(ctx):
 @check("mcp", "files-roundtrip")
 def mcp_files(ctx):
     path = f"e2e/{E2E_MARK}.txt"
-    tool("write_file", path=path, content="hello from the bedrock-now e2e suite")
+    tool("write_file", path=path, content="hello from the devos-ade e2e suite")
     listed = json.dumps(tool("list_files", prefix="e2e/"))
     expect(path in listed, f"list_files lacks {path}")
     text = tool("read_file", path=path)
-    expect("hello from the bedrock-now e2e suite" in json.dumps(text), f"read_file: {str(text)[:100]}")
+    expect("hello from the devos-ade e2e suite" in json.dumps(text), f"read_file: {str(text)[:100]}")
     r = mcp("tools/call", {"name": "read_file", "arguments": {"path": "../../etc/passwd"}})
     res = r.json().get("result") or {}
     expect(res.get("isError") or "error" in r.json(), "path traversal not refused")
@@ -212,7 +212,7 @@ def mcp_knowledge(ctx):
         raise Skip("no embedding model: knowledge bases cannot index")
     kb = "e2e-knowledge"
     tool("write_file", path=f"e2e/{E2E_MARK}-kb.md", ingest_to=kb,
-         content="# Codeword\nThe bedrock-now e2e codeword for the knowledge base is TEAL-HERON-7.\n")
+         content="# Codeword\nThe devos-ade e2e codeword for the knowledge base is TEAL-HERON-7.\n")
     kbs = json.dumps(tool("list_knowledge_bases"))
     expect(kb in kbs, f"list_knowledge_bases lacks {kb}")
     hits = json.dumps(tool("search_knowledge", query="What is the e2e codeword?", knowledge_base=kb, k=3))

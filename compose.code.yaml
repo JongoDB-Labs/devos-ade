@@ -18,7 +18,7 @@ services:
   code:
     build:
       context: ./code
-    image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/code:local   # per project, like portal
+    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/code:local   # per project, like portal
     restart: unless-stopped
     user: "${TERMINAL_UID:-10104}:${TERMINAL_GID:-10104}"   # bn-coded's socket folder is that user's alone (mode 700)
     read_only: true
@@ -108,7 +108,7 @@ services:
   subs-chat:
     # the terminal's own image, as the terminal's build made it (./stack builds it for the terminal): never built for
     # this service with other arguments, never pulled
-    image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/terminal:local
+    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/terminal:local
     pull_policy: never
     restart: unless-stopped
     hostname: subs-chat
@@ -172,9 +172,9 @@ services:
     networks: [default, terminal-link, code-link]
     environment:
       CODE_MODE: "on"   # caddy/code-on.caddy (code-off.caddy otherwise: no code site)
-      CODE_HOST: ${CODE_HOST:-code.${PORTAL_HOST:-bedrock-now.localhost}}
+      CODE_HOST: ${CODE_HOST:-code.${PORTAL_HOST:-devos-ade.localhost}}
       # the terminal host may be framed by this origin (the Code page's terminal panel; :80 matches the default port)
-      CODE_ORIGIN: http://${CODE_HOST:-code.${PORTAL_HOST:-bedrock-now.localhost}}:${PORTAL_PORT:-80}
+      CODE_ORIGIN: http://${CODE_HOST:-code.${PORTAL_HOST:-devos-ade.localhost}}:${PORTAL_PORT:-80}
       # the Code page frames the terminal, previews and the artifact viewer on this port only (its CSP's frame-src)
       PORTAL_PORT: ${PORTAL_PORT:-80}
       CODE_PROXY_SECRET: ${CODE_PROXY_SECRET:-}
@@ -185,10 +185,10 @@ services:
       # the Code page is remote and REMOTE_PREVIEW is not false; blank, the remote preview block matches nothing.
       REMOTE_PREVIEW_HOST: ${REMOTE_PREVIEW_HOST:-preview.remote.invalid}
       # Its previews of dev servers in the sandbox (caddy/preview-on.caddy; this computer): their own site,
-      # p<port>-<capability>.PREVIEW_DOMAIN (lib/code.sh derives it from PORTAL_HOST: bedrock-now-preview.localhost), and
+      # p<port>-<capability>.PREVIEW_DOMAIN (lib/code.sh derives it from PORTAL_HOST: devos-ade-preview.localhost), and
       # the header the terminal's gateway requires before bn-preview (new at every ./stack code enable).
       PREVIEW_MODE: "on"
-      PREVIEW_DOMAIN: ${PREVIEW_DOMAIN:-bedrock-now-preview.localhost}
+      PREVIEW_DOMAIN: ${PREVIEW_DOMAIN:-devos-ade-preview.localhost}
       PREVIEW_PROXY_SECRET: ${PREVIEW_PROXY_SECRET:-}
 
   # Open WebUI: a second connection besides LiteLLM — your subscriptions as Chat models (the code container's :8096,
@@ -212,7 +212,7 @@ services:
       # reads a change from Settings in ./stack's snapshot: answers.current_egress)
       TERMINAL_EGRESS: ${TERMINAL_EGRESS:-}
       REMOTE_CODE_HOST: ${REMOTE_CODE_HOST:-}
-      PREVIEW_DOMAIN: ${PREVIEW_DOMAIN:-bedrock-now-preview.localhost}
+      PREVIEW_DOMAIN: ${PREVIEW_DOMAIN:-devos-ade-preview.localhost}
       REMOTE_PREVIEW_HOST: ${REMOTE_PREVIEW_HOST:-}
       REMOTE_PREVIEW: ${REMOTE_PREVIEW:-}
 

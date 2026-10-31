@@ -227,8 +227,8 @@ test('git: not a repository, a repository around the workspace, core.worktree el
   fs.writeFileSync(path.join(WS, 'big.txt'), 'x'.repeat(300 << 10));
   fs.writeFileSync(path.join(WS, 'empty.txt'), '');
   fs.symlinkSync(path.join(OUT), path.join(WS, 'link-out'));
-  fs.mkdirSync(path.join(WS, '.bedrock-now-trash'));
-  fs.writeFileSync(path.join(WS, '.bedrock-now-trash', 'gone.txt'), 'x');
+  fs.mkdirSync(path.join(WS, '.devos-ade-trash'));
+  fs.writeFileSync(path.join(WS, '.devos-ade-trash', 'gone.txt'), 'x');
   fs.writeFileSync(path.join(OUT, 'secret.txt'), 'outside');
   const { r, patch } = await diff();
   assert.equal(r.repo, true);
@@ -354,7 +354,7 @@ test('fs.delete: ifMtimeMs is a precondition', async () => {
   const m = fs.lstatSync(path.join(WS, 'del.txt')).mtimeMs;
   assert.match(result(await talk(SOCK, [open({ op: 'fs.delete', path: 'del.txt', ifMtimeMs: m - 5 })])).error, /changed on disk/);
   assert.ok(fs.existsSync(path.join(WS, 'del.txt')));
-  assert.match(result(await talk(SOCK, [open({ op: 'fs.delete', path: 'del.txt', ifMtimeMs: m })])).trash, /^\.bedrock-now-trash\//);
+  assert.match(result(await talk(SOCK, [open({ op: 'fs.delete', path: 'del.txt', ifMtimeMs: m })])).trash, /^\.devos-ade-trash\//);
   assert.ok(!fs.existsSync(path.join(WS, 'del.txt')));
 });
 
@@ -373,7 +373,7 @@ test('fs.grep: the request is checked; ripgrep\'s arguments are fixed (its own e
     'the skipped folders come last (ripgrep: the last matching glob decides)');
   assert.deepEqual(a.slice(-2), ['--', '.']);
   for (const want of ['--json', '--no-config', '--fixed-strings', '--ignore-case', '--max-count=100', '--max-filesize=1M', '--engine=default', '--glob=!.git',
-    '--glob=!node_modules', '--glob=!.bedrock-now-trash', '--glob=src/**', '--glob=!*.min.js']) assert.ok(a.includes(want), want);
+    '--glob=!node_modules', '--glob=!.devos-ade-trash', '--glob=src/**', '--glob=!*.min.js']) assert.ok(a.includes(want), want);
   assert.ok(!a.some((x) => /^(-P|--pcre2|--engine=(pcre2|auto)|-L|--follow|--pre|--search-zip|-z)$/.test(x) || x.startsWith('--pre=')), a.join(' '));
   const r = coded.rgArgs(coded.checkGrep({ q: 'a.*b', regex: true, caseSensitive: true }));
   assert.ok(r.includes('--no-fixed-strings') && r.includes('--case-sensitive') && !r.includes('--fixed-strings'));
@@ -395,7 +395,7 @@ function grepFixture() {
   fs.writeFileSync(path.join(WS, 'src', 'a.ts'), 'const needle = 1;\nNEEDLE again\n');
   fs.writeFileSync(path.join(WS, 'src', 'deep', 'b.md'), 'a needle in md\n');
   fs.writeFileSync(path.join(WS, 'src', 'app.min.js'), 'needle');
-  for (const d of ['node_modules/p', '.git', '.bedrock-now-trash/x', 'dist', 'target', '.venv/lib', 'ignored-dir']) {
+  for (const d of ['node_modules/p', '.git', '.devos-ade-trash/x', 'dist', 'target', '.venv/lib', 'ignored-dir']) {
     fs.mkdirSync(path.join(WS, d), { recursive: true });
     fs.writeFileSync(path.join(WS, d, 'n.txt'), 'needle\n');
   }

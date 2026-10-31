@@ -209,7 +209,7 @@ let userMemory = null;   // the sandbox's ~/.claude/CLAUDE.md: {data, mtimeMs} o
  *  skipped, as the backend's walk does */
 function find(q, limit) {
   const needle = q.toLowerCase();
-  const skip = (p) => /(^|\/)(\.git|node_modules|\.bedrock-now-trash)(\/|$)/.test(p);
+  const skip = (p) => /(^|\/)(\.git|node_modules|\.devos-ade-trash)(\/|$)/.test(p);
   const all = new Set();
   for (const p of fsState.keys()) {
     if (skip(p) || p.startsWith('/')) continue;
@@ -235,7 +235,7 @@ function writeFile(p, text) {
 
 // ------------------------------------------------------------------ the Git panel (code/server/api.mjs's answers)
 
-const GIT_SKIP = (x) => x.startsWith('/') || /^(\.git|\.bedrock-now-trash|node_modules)(\/|$)/.test(x);
+const GIT_SKIP = (x) => x.startsWith('/') || /^(\.git|\.devos-ade-trash|node_modules)(\/|$)/.test(x);
 const bufEq = (a, b) => (a === undefined || b === undefined ? a === b : a.equals(b));
 const relOk = (x) => typeof x === 'string' && x.length > 0 && x.length <= 4096 && !x.startsWith('/') && !x.includes('\0') && x.split('/').every((y) => y && y !== '.' && y !== '..') && !x.split('/').some((y) => y.toLowerCase() === '.git');
 const watchOf = (x) => (WATCHED.test(x) ? { kind: x === 'package.json' ? 'npm' : x.startsWith('.git/hooks/') ? 'git-hook' : 'other', why: WATCH_WHY(x) } : null);
@@ -479,7 +479,7 @@ async function projectGitPanel(p, m, url, req) {
   if (!repo) return { fallthrough: true, body };
   if (p === '/api/git/repos') return null;
   const g = projectGit.get(repo);
-  const files = [...fsState.keys()].filter((k) => k.startsWith(`${repo}/`) && !k.includes('/.bedrock-now-trash/')).map((k) => k.slice(repo.length + 1));
+  const files = [...fsState.keys()].filter((k) => k.startsWith(`${repo}/`) && !k.includes('/.devos-ade-trash/')).map((k) => k.slice(repo.length + 1));
   if (!g) {
     if (p === '/api/git/status') return [200, { repo: false, reason: 'not a git repository', root: repo, staged: [], unstaged: [], untracked: [], conflicts: [] }];
     if (p === '/api/git/log') return [200, { repo: false, reason: 'not a git repository', commits: [] }];
@@ -597,10 +597,10 @@ async function gitPanel(p, m, url, req) {
     if (b.ifMtimeMs !== undefined && b.ifMtimeMs !== null && (f ? f.mtimeMs : null) !== b.ifMtimeMs) return [409, { error: 'changed on disk since it was shown' }];   // (one of bn-coded's fixed refusals: plainly)
     const stamp = Date.now().toString(36);
     const trash = () => {
-      fsState.set(`.bedrock-now-trash/${stamp}/${x}`, f);
+      fsState.set(`.devos-ade-trash/${stamp}/${x}`, f);
       fsState.delete(x);
-      if (!fsState.has('.bedrock-now-trash/.gitignore')) fsState.set('.bedrock-now-trash/.gitignore', { data: Buffer.from('*\n'), mtimeMs: Date.now(), bin: false });
-      return `.bedrock-now-trash/${stamp}/${x}`;
+      if (!fsState.has('.devos-ade-trash/.gitignore')) fsState.set('.devos-ade-trash/.gitignore', { data: Buffer.from('*\n'), mtimeMs: Date.now(), bin: false });
+      return `.devos-ade-trash/${stamp}/${x}`;
     };
     if (i === undefined) return f ? [200, { ok: true, action: 'trashed', trash: trash() }] : [400, { error: 'no changes to discard (it changed since?)' }];
     if (f && f.data.equals(i)) return [400, { error: 'only staged changes: unstage it first' }];
@@ -1995,7 +1995,7 @@ function setupCopyOne(u, keep, { remote: far = false } = {}) {
   }
   if (pv.action === 'none') { for (const k of u.keys) setupMock.staged.delete(k); return { keys: u.keys, ok: true, nothing: true, kind: pv.kind, name: pv.name, conflict: pv.conflict?.dest ?? null }; }
   for (const k of u.keys) { setupMock.copied.set(k, Date.now()); setupMock.staged.delete(k); }
-  return { keys: u.keys, ok: true, kind: pv.kind, name: pv.name, action: pv.action, trashed: u.conflict === 'replace' ? '.bedrock-now-trash/setup-mock/CLAUDE.md' : null, redacted: pv.findingsTotal, kept: keep.length };
+  return { keys: u.keys, ok: true, kind: pv.kind, name: pv.name, action: pv.action, trashed: u.conflict === 'replace' ? '.devos-ade-trash/setup-mock/CLAUDE.md' : null, redacted: pv.findingsTotal, kept: keep.length };
 }
 async function setupApi(req, res, url, p, m) {
   if (m !== 'GET') { const b = await jsonBody(req); if (b && 'password' in b) importLog.push('password-at-backend'); }
@@ -2409,10 +2409,10 @@ async function api(req, res, url) {
         if (url.searchParams.get('confirm') !== pr.root) return json(res, 400, { error: `to move its folder to the trash too, name it again: ${pr.root}` });
         if ([...sessions.values()].some((x) => x.cwd === absOf(pr.root) || x.cwd?.startsWith(`${absOf(pr.root)}/`))) return json(res, 409, { error: 'a session of this project is open: close it first (its folder would vanish under it)' });
         const stamp = Date.now().toString(36);
-        for (const k of [...fsState.keys()]) if (k.startsWith(`${pr.root}/`)) { fsState.set(`.bedrock-now-trash/${stamp}/${k}`, fsState.get(k)); fsState.delete(k); }
+        for (const k of [...fsState.keys()]) if (k.startsWith(`${pr.root}/`)) { fsState.set(`.devos-ade-trash/${stamp}/${k}`, fsState.get(k)); fsState.delete(k); }
         extraDirs.delete(pr.root);
         projectGit.delete(pr.root);
-        trash = `.bedrock-now-trash/${stamp}/${pr.root.split('/').pop()}`;
+        trash = `.devos-ade-trash/${stamp}/${pr.root.split('/').pop()}`;
       }
       projectsMock = projectsMock.filter((x) => x !== pr);
       for (const [k, v] of [...filedMock]) if (v === id) filedMock.delete(k);
@@ -2447,7 +2447,7 @@ async function api(req, res, url) {
     await sleep(120);
     if (!gitRepo) return json(res, 200, { repo: false, reason: 'not a git repository', head: null, files: [], truncated: false, timedOut: false });
     const files = [];
-    const skip = (x) => x.startsWith('/') || /^(\.git|\.bedrock-now-trash|node_modules)(\/|$)/.test(x);
+    const skip = (x) => x.startsWith('/') || /^(\.git|\.devos-ade-trash|node_modules)(\/|$)/.test(x);
     for (const path of [...new Set([...gitHead.keys(), ...fsState.keys()])].sort()) {
       if (skip(path)) continue;
       const before = gitHead.get(path), now = fsState.get(path);
@@ -2507,7 +2507,7 @@ async function api(req, res, url) {
     if (groot === null) return json(res, 404, { error: 'no such project (it was removed?)' });
     for (const [path, e] of [...fsState].sort(([x], [y]) => (x < y ? -1 : 1))) {
       if ((groot && !path.startsWith(`${groot}/`)) || (!groot && path.startsWith('/'))) continue;
-      if (/(^|\/)(\.git|node_modules|\.bedrock-now-trash|dist|build)(\/|$)/.test(path) || e.bin || e.data.length > 1 << 20) continue;
+      if (/(^|\/)(\.git|node_modules|\.devos-ade-trash|dist|build)(\/|$)/.test(path) || e.bin || e.data.length > 1 << 20) continue;
       if ((inc.length && !inc.some((g) => fits(g, path))) || exc.some((g) => fits(g, path))) continue;
       const hits = [];
       const lines = e.data.toString().split('\n');
@@ -2562,13 +2562,13 @@ async function api(req, res, url) {
     const stamp = Date.now().toString(36);
     for (const k of [...fsState.keys()]) {
       if (k !== d && !k.startsWith(d + '/')) continue;
-      fsState.set(`${home}.bedrock-now-trash/${stamp}/${home ? k.slice(home.length) : k}`, fsState.get(k));
+      fsState.set(`${home}.devos-ade-trash/${stamp}/${home ? k.slice(home.length) : k}`, fsState.get(k));
       fsState.delete(k);
       n++;
     }
-    if (n && !fsState.has(`${home}.bedrock-now-trash/.gitignore`)) fsState.set(`${home}.bedrock-now-trash/.gitignore`, { data: Buffer.from('*\n'), mtimeMs: Date.now(), bin: false });
+    if (n && !fsState.has(`${home}.devos-ade-trash/.gitignore`)) fsState.set(`${home}.devos-ade-trash/.gitignore`, { data: Buffer.from('*\n'), mtimeMs: Date.now(), bin: false });
     const wasDir = extraDirs.delete(d);
-    return n || wasDir ? json(res, 200, { trash: `.bedrock-now-trash/${stamp}/${d.split('/').pop()}` }) : json(res, 404, { error: 'not found' });
+    return n || wasDir ? json(res, 200, { trash: `.devos-ade-trash/${stamp}/${d.split('/').pop()}` }) : json(res, 404, { error: 'not found' });
   }
   if (p === '/api/fs/file' && m === 'GET') {
     const f = clean(url.searchParams.get('path') || '');

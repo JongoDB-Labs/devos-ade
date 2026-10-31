@@ -1,6 +1,6 @@
 """Opt-in end-to-end check of "Install app" (run.sh by hand; not in tests/run.sh or CI), entirely inside one
 throwaway container: the real portal on
-http://bedrock-now.localhost:8000, Chromium on a virtual display with a throwaway profile, driven over CDP.
+http://devos-ade.localhost:8000, Chromium on a virtual display with a throwaway profile, driven over CDP.
 
   1. Chrome finds the portal installable (Page.getInstallabilityErrors) from the login page and from Home.
   2. After sign-in, beforeinstallprompt fires and the sidebar and Home "Install app" buttons appear.
@@ -272,7 +272,7 @@ checks = {
         r["tab: install buttons shown"] == 0 and len(r["tab: open links"]) == 2
         and [st for st, _ in r["tab: states"]] == ["none", "open"],
     "its link uses the site's own scheme, registered with the desktop":
-        all(h.startswith(f"{scheme}://open?tab=chat&n=") for h in r["tab: open links"]) and scheme.startswith("web+bedrocknow")
+        all(h.startswith(f"{scheme}://open?tab=chat&n=") for h in r["tab: open links"]) and scheme.startswith("web+devosade")
         and any(f"x-scheme-handler/{scheme};" in ln for ln in r["desktop entry: MimeType"]),
     "first Open in the app: the browser asks, then the open app window shows the tab's tab and the tab says so":
         r["first click: tab has focus during the browser's question"] is False and r["first click: app window tab"] == "chat"

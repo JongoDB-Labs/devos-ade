@@ -21,7 +21,7 @@ _fixture() { # origin v0.2.1 -> v0.3.0; STACK_DIR = a clone updated to v0.3.0, i
 }
 _write_stack() { # a ./stack that says which version ran which command (and, in $CALLS.env, with which environment)
   printf '#!/bin/sh\necho "%s $*" >> "$CALLS"\necho "%s $* progress=${COMPOSE_PROGRESS:-unset}" >> "$CALLS.env"\n' "$2" "$2" > "$1/stack"
-  printf 'echo "%s $* finishing=${BEDROCK_NOW_UPDATE_FINISHING:-unset} from=${BEDROCK_NOW_UPDATE_FROM:-} backup=${BEDROCK_NOW_UPDATE_BACKUP:-}" >> "$CALLS.update"\n' "$2" >> "$1/stack"
+  printf 'echo "%s $* finishing=${DEVOS_ADE_UPDATE_FINISHING:-unset} from=${DEVOS_ADE_UPDATE_FROM:-} backup=${DEVOS_ADE_UPDATE_BACKUP:-}" >> "$CALLS.update"\n' "$2" >> "$1/stack"
   # like the real setup: a successful one records the commit it ran on (.state/update/setup-commit)
   printf '[ "$1" != setup ] || [ "${FAKE_RC:-0}" != 0 ] || { mkdir -p "$STATE_DIR/update"; git -C "$(dirname "$0")" rev-parse HEAD > "$STATE_DIR/update/setup-commit"; }\n' >> "$1/stack"
   # with MARK set: the backup's bucket files no newer than MARK when its restore starts (into $CALLS.stale)
@@ -71,7 +71,7 @@ test_rollback_restores_code_data_and_local_builds() {
 
 test_status_names_an_unfinished_update() {
   _fixture; _record   # result=running and the code moved on: the update did not finish
-  printf 'LITELLM_PORT=4000\nPORTAL_HOST=bedrock-now.localhost\nPORTAL_PORT=80\n' >> "$ENV_FILE"
+  printf 'LITELLM_PORT=4000\nPORTAL_HOST=devos-ade.localhost\nPORTAL_PORT=80\n' >> "$ENV_FILE"
   dc() { printf 'litellm\trunning\thealthy\t0\n'; }; docker() { :; }; disk_line_cached() { echo "Disk: (stub)"; }
   assert_contains "$(cmd_status 2>&1)" "The last update did not finish — ./stack update finishes it, ./stack rollback goes back"
   update_record_done
@@ -120,7 +120,7 @@ test_rollback_hides_composes_container_progress_lines() {
 
 test_rollback_shows_composes_output_when_verbose() {
   _fixture; _record; update_record_done
-  BEDROCK_NOW_VERBOSE=1 ASSUME_YES=1 cmd_rollback > /dev/null 2>&1
+  DEVOS_ADE_VERBOSE=1 ASSUME_YES=1 cmd_rollback > /dev/null 2>&1
   assert_eq "$(tr '\n' '|' < "$CALLS.env")" "old restore $STACK_DIR/backups/20261012-000000-auto --yes progress=unset|old up --yes progress=unset|"
 }
 
@@ -292,8 +292,8 @@ test_finishing_with_to_moves_on_and_keeps_the_rollback_point() {
   # the new code then finishes without recording or snapshotting again
   : > "$TMP/steps"; : > "$CALLS.update"; before="$(cat "$(update_record_file)")"
   mkdir -p "$STATE_DIR/images"; : > "$STATE_DIR/images/before.tsv"
-  fake_reexec; BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_UPDATE_FINISHING=1 BEDROCK_NOW_UPDATE_FROM="$OLD" \
-    BEDROCK_NOW_UPDATE_BACKUP=backups/20261012-000000-auto cmd_update > /dev/null 2>&1
+  fake_reexec; DEVOS_ADE_CODE_UPDATED=1 DEVOS_ADE_UPDATE_FINISHING=1 DEVOS_ADE_UPDATE_FROM="$OLD" \
+    DEVOS_ADE_UPDATE_BACKUP=backups/20261012-000000-auto cmd_update > /dev/null 2>&1
   assert_eq "$(tr '\n' ';' < "$TMP/steps")" "dc config;dc pull;AFTER;"
   assert_contains "$(cat "$(update_record_file)")" "result=done"
   assert_contains "$(cat "$(update_record_file)")" "$(printf '%s\n' "$before" | grep '^at=')"
@@ -346,26 +346,26 @@ test_re_exec_variables_from_the_environment_are_not_trusted() {
   # Set in the shell (not by ./stack update's own exec): a normal update runs, with backup, record and snapshot.
   _fixture; _record; update_record_done; _newer_release; _finish_stubs; _real_backups
   update_checkout() { git -C "$STACK_DIR" -c advice.detachedHead=false checkout -q v0.4.0; CODE_CHANGED=1; }
-  (BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_UPDATE_FINISHING=1 ASSUME_YES=1 cmd_update) > /dev/null 2> "$TMP/err"
+  (DEVOS_ADE_CODE_UPDATED=1 DEVOS_ADE_UPDATE_FINISHING=1 ASSUME_YES=1 cmd_update) > /dev/null 2> "$TMP/err"
   rm -rf "$STATE_DIR/lock"
-  assert_contains "$(cat "$TMP/err")" "BEDROCK_NOW_CODE_UPDATED=1 in the environment is ignored"
+  assert_contains "$(cat "$TMP/err")" "DEVOS_ADE_CODE_UPDATED=1 in the environment is ignored"
   assert_eq "$(head -n 1 "$TMP/steps")" "BACKUP backups/20261013-000001-auto"
   assert_contains "$(cat "$(update_record_file)")" "from=$NEW"
   assert_eq "$(cat "$CALLS.update")" "newest update --yes finishing=unset from=$NEW backup=backups/20261013-000001-auto"
-  # the new code, really exec'd: BEDROCK_NOW_UPDATE_FINISHING counts only for a record that says running
+  # the new code, really exec'd: DEVOS_ADE_UPDATE_FINISHING counts only for a record that says running
   : > "$TMP/steps"; _record_set result "done"
-  fake_reexec; BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_UPDATE_FINISHING=1 BEDROCK_NOW_UPDATE_FROM="$NEW" \
-    BEDROCK_NOW_UPDATE_BACKUP=backups/20261013-000001-auto cmd_update > /dev/null 2>&1
+  fake_reexec; DEVOS_ADE_CODE_UPDATED=1 DEVOS_ADE_UPDATE_FINISHING=1 DEVOS_ADE_UPDATE_FROM="$NEW" \
+    DEVOS_ADE_UPDATE_BACKUP=backups/20261013-000001-auto cmd_update > /dev/null 2>&1
   assert_eq "$(tr '\n' ';' < "$TMP/steps")" "SNAPSHOT;dc config;dc pull;AFTER;"
   assert_contains "$(cat "$(update_record_file)")" "result=done"
 }
 
 test_the_re_exec_from_a_version_without_the_lock_is_trusted() {
-  # v0.2.1 (no lock) execs the new code with BEDROCK_NOW_CODE_UPDATED=1: a real commit other than HEAD and its fresh
+  # v0.2.1 (no lock) execs the new code with DEVOS_ADE_CODE_UPDATED=1: a real commit other than HEAD and its fresh
   # pre-update backup make it count
   _fixture; _finish_stubs
-  BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_UPDATE_FROM="$OLD" BEDROCK_NOW_UPDATE_BACKUP=backups/20261012-000000-auto \
-    BEDROCK_NOW_UPDATE_BRANCH='' ASSUME_YES=1 cmd_update > /dev/null 2> "$TMP/err"
+  DEVOS_ADE_CODE_UPDATED=1 DEVOS_ADE_UPDATE_FROM="$OLD" DEVOS_ADE_UPDATE_BACKUP=backups/20261012-000000-auto \
+    DEVOS_ADE_UPDATE_BRANCH='' ASSUME_YES=1 cmd_update > /dev/null 2> "$TMP/err"
   assert_not_contains "$(cat "$TMP/err")" "is ignored"
   assert_eq "$(tr '\n' ';' < "$TMP/steps")" "SNAPSHOT;dc config;dc pull;AFTER;"
   assert_contains "$(cat "$(update_record_file)")" "from=$OLD"

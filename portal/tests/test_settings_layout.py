@@ -18,8 +18,8 @@ from portal import settings as st
 from portal.app import STATIC, create_app
 from dataclasses import replace
 
-ORIGIN = {"Origin": "http://bedrock-now.localhost"}
-API = {"X-Requested-With": "bedrock-now"}
+ORIGIN = {"Origin": "http://devos-ade.localhost"}
+API = {"X-Requested-With": "devos-ade"}
 REPO = Path(os.environ.get("BN_REPO_DIR") or Path(__file__).resolve().parents[2])
 REAL = REPO / "catalog" / "settings-layout.tsv"
 TABLE = REPO / "catalog" / "settings.tsv"
@@ -109,7 +109,7 @@ def test_get_settings_carries_the_layout(settings, tmp_path):
     write(settings.catalog_dir, LAYOUT)
     sd = tmp_path / "status"; sd.mkdir()
     with TestClient(create_app(replace(settings, status_dir=sd, request_dir=tmp_path), transport=httpx.MockTransport(offline)),
-                    base_url="http://bedrock-now.localhost", follow_redirects=False) as c:
+                    base_url="http://devos-ade.localhost", follow_redirects=False) as c:
         assert c.get("/api/settings", headers=API).status_code == 401
         assert c.post("/login", data={"password": "correct horse"}, headers=ORIGIN).status_code == 303
         d = c.get("/api/settings", headers=API).json()

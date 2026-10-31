@@ -67,7 +67,7 @@ built in). Over Tailscale, mosh's UDP ports need no firewall changes.
 A sleeping Mac answers no SSH. While you're away, run:
 
 ```bash
-cd ~/devos-ade                 # your checkout (~/bedrock-now if you installed before v0.25.0)
+cd ~/devos-ade                 # your checkout
 ./stack serve                  # brings the stack up and keeps the Mac awake until Ctrl-C
 ./stack serve --background     # the same without a terminal; ./stack serve --stop ends it
 ```

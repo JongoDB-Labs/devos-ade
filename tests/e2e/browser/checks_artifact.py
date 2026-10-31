@@ -32,7 +32,7 @@ def self_minted(iat: float) -> str:
     PreviewCaps.artifact_label): only someone holding PORTAL_SECRET can make one — the test does, to check expiry."""
     secret, cred = ENV["PORTAL_SECRET"], ENV.get("PORTAL_PASSWORD_HASH", "")
     fp = hmac.new(secret.encode(), cred.encode(), hashlib.sha256).hexdigest()[:32]
-    key = hmac.new(secret.encode(), b"bedrock-now.portal.preview", hashlib.sha256).digest()
+    key = hmac.new(secret.encode(), b"devos-ade.portal.preview", hashlib.sha256).digest()
     iat_ms = int(iat * 1000)
     mac = base64.b32encode(hmac.new(key, f"v1|artifact|{iat_ms}|{fp}".encode(), hashlib.sha256).digest()).decode().lower()[:24]
     return f"a{_b32int(iat_ms, 9)}{mac}"

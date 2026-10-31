@@ -74,7 +74,7 @@ class Sessions:
         """credential: PORTAL_PASSWORD_HASH (a new hash means a new password: every session ends); max_age:
         PORTAL_SESSION_DAYS in seconds (a shorter one ends older sessions at once)."""
         self.max_age = max_age
-        self._ser = URLSafeTimedSerializer(secret, salt="bedrock-now.portal.session")
+        self._ser = URLSafeTimedSerializer(secret, salt="devos-ade.portal.session")
         self._fp = hmac.new(secret.encode(), credential.encode(), hashlib.sha256).hexdigest()[:32]
         self._clock = clock
         self._state = state_file
@@ -318,7 +318,7 @@ class Handoff:
 
     TTL = 60
 
-    def __init__(self, secret: str, fingerprint: str, clock=time.time, salt: str = "bedrock-now.portal.handoff"):
+    def __init__(self, secret: str, fingerprint: str, clock=time.time, salt: str = "devos-ade.portal.handoff"):
         """salt: each kind of hand-off signs with its own (a session hand-off never redeems as an unlock hand-off)."""
         self._ser = URLSafeTimedSerializer(secret, salt=salt)
         self._fp = fingerprint
@@ -394,7 +394,7 @@ class TerminalUnlocks:
     and is bound to the Tailscale login where sessions are."""
 
     def __init__(self, secret: str, sessions: Sessions, clock=time.time, app: str = TERMINAL):
-        self._ser = URLSafeTimedSerializer(secret, salt=f"bedrock-now.portal.{app}")
+        self._ser = URLSafeTimedSerializer(secret, salt=f"devos-ade.portal.{app}")
         self._sessions = sessions
         self._clock = clock
 
@@ -492,7 +492,7 @@ class PreviewCaps:
     LABEL = re.compile(r"p([1-9][0-9]{0,4})-([a-z2-7]{9})([a-z2-7]{24})")
 
     def __init__(self, secret: str, sessions: Sessions, clock=time.time):
-        self._key = hmac.new(secret.encode(), b"bedrock-now.portal.preview", hashlib.sha256).digest()
+        self._key = hmac.new(secret.encode(), b"devos-ade.portal.preview", hashlib.sha256).digest()
         self._sessions = sessions
         self._clock = clock
 
@@ -567,7 +567,7 @@ class PreviewCookies:
     app: another preview-like site (its own host, cookie and salt) can use this class with a name of its own."""
 
     def __init__(self, secret: str, sessions: Sessions, clock=time.time, app: str = "preview"):
-        self._ser = URLSafeTimedSerializer(secret, salt=f"bedrock-now.portal.{app}-cookie")
+        self._ser = URLSafeTimedSerializer(secret, salt=f"devos-ade.portal.{app}-cookie")
         self._sessions = sessions
         self._clock = clock
 

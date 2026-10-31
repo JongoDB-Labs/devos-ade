@@ -1,5 +1,5 @@
 {
-  "name": "bedrock-now-terminal-claude-code",
+  "name": "devos-ade-terminal-claude-code",
   "private": true,
   "description": "Claude Code for the DevOS ADE browser terminal, pinned (npm ci checks every tarball against package-lock.json)",
   "dependencies": {

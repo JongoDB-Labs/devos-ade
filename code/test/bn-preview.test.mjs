@@ -107,7 +107,7 @@ test('a request reaches the dev server on its port, with Host as given and the b
 
 test('the dev server never sees hop-by-hop headers, the port header or the proxies\' forwarding headers', async () => {
   seen.length = 0;
-  await req('GET', '/h', { headers: { 'X-Forwarded-Host': 'p5173-cap.bedrock-now-preview.localhost:8800', 'X-Forwarded-For': '1.2.3.4',
+  await req('GET', '/h', { headers: { 'X-Forwarded-Host': 'p5173-cap.devos-ade-preview.localhost:8800', 'X-Forwarded-For': '1.2.3.4',
     'X-Forwarded-Proto': 'http', Forwarded: 'for=1.2.3.4', 'X-Real-Ip': '1.2.3.4', Via: '1.1 Caddy', 'X-Bn-Preview-0abc': '1',
     Connection: 'keep-alive, X-Secret-Hop', 'X-Secret-Hop': 'x', 'Proxy-Authorization': 'Basic x', TE: 'trailers', 'Keep-Alive': 'timeout=5',
     Cookie: 'app=1', 'X-App': 'kept' } });

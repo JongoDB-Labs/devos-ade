@@ -7,7 +7,7 @@ checks everything again — format, the password against its own hash, the allow
 checked against both) so the page can say what is wrong before anything is sent.
 
 Request file REQUEST_DIR/cfg-<nonce>.req (at most 8 KB, ASCII, one item per line):
-    bedrock-now-settings 1 / nonce HEX32 / requested_at EPOCH / base HEX64 / origin local|remote /
+    devos-ade-settings 1 / nonce HEX32 / requested_at EPOCH / base HEX64 / origin local|remote /
     auth BASE64(password) / set KEY BASE64(value) … / end
 Diagnostics: REQUEST_DIR/act-<nonce>.json = {"action","requested_at","nonce"} (like admin.py's req-*.json).
 Project folders (lib/projects.sh): act-<nonce>.json too, every field fixed and none a path — project-pick (a folder
@@ -780,7 +780,7 @@ def _b64(v: str) -> str:
 
 def build_request(nonce: str, base: str, local: bool, password: str, values: dict, now: float | None = None,
                   regen: tuple = (), confirm: tuple = ()) -> bytes:
-    lines = ["bedrock-now-settings 1", f"nonce {nonce}", f"requested_at {int(time.time() if now is None else now)}",
+    lines = ["devos-ade-settings 1", f"nonce {nonce}", f"requested_at {int(time.time() if now is None else now)}",
              f"base {base}", f"origin {'local' if local else 'remote'}", f"auth {_b64(password)}"]
     lines += [f"confirm {c}" for c in confirm if c in CONFIRMS]
     lines += [f"set {k} {_b64(v)}" for k, v in values.items()]

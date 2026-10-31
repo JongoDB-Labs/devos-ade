@@ -118,7 +118,7 @@ class Markers:
     Tailscale login), which credentials (fingerprint) and until when (the LiteLLM session's end minus MARGIN)."""
 
     def __init__(self, secret: str, clock=time.time):
-        self._ser = URLSafeTimedSerializer(secret, salt="bedrock-now.portal.app-sso")
+        self._ser = URLSafeTimedSerializer(secret, salt="devos-ade.portal.app-sso")
         self._clock = clock
 
     def issue(self, app: str, iat: float, fp: str, login: str | None, exp: float) -> str:

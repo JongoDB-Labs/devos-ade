@@ -223,7 +223,7 @@ test('the sandbox\'s words on every route and over the WebSocket: whose they are
 
 test('pull request links the page opens: https pages, or the built-in git server\'s own .localhost address over plain http — nothing else', () => {
   for (const ok of ['https://github.com/o/r/pull/new/feat/x', 'https://gitlab.example:8443/g/r/-/merge_requests/new?merge_request%5Bsource_branch%5D=a',
-    'http://git.bedrock-now.localhost/devos/r/compare/feature/x', 'http://git.bn.localhost:8800/devos/r/compare/main']) assert.equal(isPrLink(ok), true, ok);
+    'http://git.devos-ade.localhost/devos/r/compare/feature/x', 'http://git.bn.localhost:8800/devos/r/compare/main']) assert.equal(isPrLink(ok), true, ok);
   for (const bad of ['http://github.com/o/r/pull/new/x', 'http://git.example.com/devos/r', 'http://evil.example/.localhost/x', 'http://localhost/x', 'javascript:alert(1)',
     'https://x.example/a b', 'http://git.bn.localhost', 'ftp://git.bn.localhost/x', '//git.bn.localhost/x', 'http://git.bn.localhost.evil.example/x', null, 7, undefined]) assert.equal(isPrLink(bad), false, String(bad));
 });

@@ -9,7 +9,7 @@ umask 077
 # main Caddy adds after the portal's check — that secret stays out of this container, and out of every command line.
 sock=/run/bn-ttyd/ttyd.sock
 rm -f "$sock"   # one left by the last run
-conf="$HOME/.config/bedrock-now"
+conf="$HOME/.config/devos-ade"
 mkdir -p "$conf"
 # The shared store and knowledge bases (shared-mcp) through the gateway: rewritten at every start, so a new
 # SHARED_MCP_TOKEN reaches it.
@@ -46,7 +46,7 @@ fi
 # anything in the sandbox runs as the same user and can read it (/proc/1/environ, mcp.json); it only opens what the
 # sandbox may use anyway.
 exec env -u SHARED_MCP_TOKEN ttyd --interface "$sock" --writable --check-origin --url-arg \
-  --ping-interval 20 --index /usr/local/share/bedrock-now/ttyd.html \
+  --ping-interval 20 --index /usr/local/share/devos-ade/ttyd.html \
   -t 'titleFixed=Terminal · DevOS ADE' -t fontSize=14 -t disableLeaveAlert=true -t disableResizeOverlay=true \
   -t rendererType=dom -t macOptionClickForcesSelection=true \
   -t 'fontFamily=ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace' \

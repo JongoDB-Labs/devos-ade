@@ -88,7 +88,7 @@ test('the list: the project\'s sessions newest first, numbered; titles, first pr
   assert.ok(!text.includes('export const main') && !text.includes('Done with step'), text.slice(0, 200));
 });
 
-test('where the session ran: claude-bedrock\'s is \'bedrock-now\' (its stored source); Claude Code\'s Bedrock when every model is Bedrock\'s own id, else Anthropic', () => {
+test('where the session ran: claude-bedrock\'s is \'devos-ade\' (its stored source); Claude Code\'s Bedrock when every model is Bedrock\'s own id, else Anthropic', () => {
   const dir = store('claude-bedrock');
   const a = uuid();
   put(dir, a, session({ id: a, cwd: CWD, model: 'claude-sonnet-4-5' }));

@@ -70,14 +70,14 @@ test_env_file_display_shortens_home() {
 
 test_dc_passes_env_file_location_to_compose() {
   HOME="$TMP"; printf 'COMPOSE_PROJECT_NAME=bn-dev\n' > "$ENV_FILE"
-  docker() { printf '%s|%s\n' "${BEDROCK_NOW_ENV_DISPLAY-unset}" "${COMPOSE_PROJECT_NAME-unset}" > "$TMP/env"; }
+  docker() { printf '%s|%s\n' "${DEVOS_ADE_ENV_DISPLAY-unset}" "${COMPOSE_PROJECT_NAME-unset}" > "$TMP/env"; }
   dc ps
   assert_eq "$(cat "$TMP/env")" "~/.env|bn-dev"
 }
 
 test_compose_gives_the_portal_its_env_file_and_project() {
   local portal; portal="$(sed -n '/^  portal:/,/^  caddy:/p' "$STACK_DIR/compose.yaml")"
-  assert_contains "$portal" 'PORTAL_ENV_FILE: ${BEDROCK_NOW_ENV_DISPLAY:-}'
+  assert_contains "$portal" 'PORTAL_ENV_FILE: ${DEVOS_ADE_ENV_DISPLAY:-}'
   assert_contains "$portal" 'PORTAL_PROJECT: ${COMPOSE_PROJECT_NAME:-}'
 }
 

@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # ./stack open: the installed DevOS ADE app if there is one (Chrome/Edge "Install app": own window, Dock or
 # taskbar icon, Cmd-Tab); otherwise the portal as a tab in your everyday browser, where the sidebar's
-# "Install app" button can install it. BEDROCK_NOW_OPEN_MODE=window keeps the old behaviour: a separate
+# "Install app" button can install it. DEVOS_ADE_OPEN_MODE=window keeps the old behaviour: a separate
 # Chrome-family --app window with its own profile (no Dock icon of its own).
 
 # macOS: "App name=bundle id", in order of preference (browsers that can install web apps first)
@@ -12,12 +12,12 @@ OPEN_LINUX_BINS="google-chrome microsoft-edge brave-browser chromium chromium-br
 
 open_os() { uname -s; }   # overridable in tests
 
-# open_profile_dir -> the browser profile for BEDROCK_NOW_OPEN_MODE=window: one per project, so its logins stay
+# open_profile_dir -> the browser profile for DEVOS_ADE_OPEN_MODE=window: one per project, so its logins stay
 # separate from your everyday browser and from a second copy. The folder keeps its name from before v0.25.0 (an
 # internal name: its sign-ins are there).
 open_profile_dir() {
-  local p name=bedrock-now
-  p="$(project_name)"; [ "$p" = "$DEFAULT_PROJECT" ] || name="bedrock-now-$p"
+  local p name=devos-ade
+  p="$(project_name)"; [ "$p" = "$DEFAULT_PROJECT" ] || name="devos-ade-$p"
   case "$(open_os)" in
     Darwin) printf '%s/Library/Application Support/%s\n' "$HOME" "$name" ;;
     *) printf '%s/%s\n' "${XDG_DATA_HOME:-$HOME/.local/share}" "$name" ;;
@@ -148,7 +148,7 @@ _install_tip() {
   { mkdir -p "$STATE_DIR" && : > "$mark"; } 2>/dev/null || true
 }
 
-# _open_window URL CHOICE DIR — BEDROCK_NOW_OPEN_MODE=window: a separate --app window with its own profile.
+# _open_window URL CHOICE DIR — DEVOS_ADE_OPEN_MODE=window: a separate --app window with its own profile.
 _open_window() {
   local url="$1" choice="$2" dir="$3"
   case "$choice" in
@@ -191,13 +191,13 @@ cmd_open() {
   [ -f "$ENV_FILE" ] || die "run ./stack setup first"
   url="$(portal_url)"
   if open_headless; then log "open $url in a browser on this machine (no display here)"; return 0; fi
-  if [ "${BEDROCK_NOW_OPEN_MODE:-}" != window ] && app="$(open_installed_app)"; then
+  if [ "${DEVOS_ADE_OPEN_MODE:-}" != window ] && app="$(open_installed_app)"; then
     log "opening the installed $(portal_app_name) app"
     _launch_app "$app" && return 0
     warn "the installed app did not start; opening $url in the browser instead"
   fi
   choice="$(open_choose_browser)"
-  if [ "${BEDROCK_NOW_OPEN_MODE:-}" = window ]; then _open_window "$url" "$choice" "$(open_profile_dir)" && return 0
+  if [ "${DEVOS_ADE_OPEN_MODE:-}" = window ]; then _open_window "$url" "$choice" "$(open_profile_dir)" && return 0
   else _open_tab "$url" "$choice" && return 0; fi
   case "$choice" in
     default:*)
@@ -213,10 +213,10 @@ cmd_open() {
   log "open $url in your browser"
 }
 
-# maybe_auto_open — end of setup and ./stack up: open the portal, unless BEDROCK_NOW_NO_OPEN=1 or there is
+# maybe_auto_open — end of setup and ./stack up: open the portal, unless DEVOS_ADE_NO_OPEN=1 or there is
 # no terminal (scripts, CI, `--yes` without a TTY).
 maybe_auto_open() {
-  [ "${BEDROCK_NOW_NO_OPEN:-0}" != 1 ] || return 0
+  [ "${DEVOS_ADE_NO_OPEN:-0}" != 1 ] || return 0
   _have_tty || return 0
   cmd_open || true
 }

@@ -272,7 +272,7 @@ test_budget_banner_thresholds() {
   out="$(printf 'open-webui\t39.9\t50\t2026-11-01\nclaude-code\t10\t200\t2026-11-03\n' | budget_banner_json 1700000000)"
   assert_eq "$out" "[]"
   out="$(printf 'open-webui\t42.10\t50\t2026-11-01\n' | budget_banner_json 1700000000)"
-  assert_contains "$out" '"id":"bedrock-now-budget-open-webui-warning","type":"warning","title":"Budget"'
+  assert_contains "$out" '"id":"devos-ade-budget-open-webui-warning","type":"warning","title":"Budget"'
   assert_contains "$out" 'used 84% of its monthly budget (resets 2026-11-01): $42.10 of $50.00. To raise it: Settings in the portal, or ./stack config set BUDGET_OPENWEBUI'
   assert_contains "$out" '"dismissible":true,"timestamp":1700000000}'
   out="$(printf 'claude-code\t201\t200\t\nopen-webui\t5\t0\t\n' | budget_banner_json 1)"
@@ -294,13 +294,13 @@ test_budget_key_lines_reads_key_info() {
 test_merge_banners_keeps_others_and_timestamps() {
   _need_python || return 77
   _stub_owui
-  new='[{"id":"bedrock-now-budget-open-webui-warning","type":"warning","title":"Budget","content":"c","dismissible":true,"timestamp":2}]'
-  out="$(printf '%s' '[{"id":"mine","type":"info","content":"hi","dismissible":true,"timestamp":1},{"id":"bedrock-now-budget-open-webui-warning","type":"warning","title":"Budget","content":"c","dismissible":true,"timestamp":1}]' | owui_merge_banners "$new")"
+  new='[{"id":"devos-ade-budget-open-webui-warning","type":"warning","title":"Budget","content":"c","dismissible":true,"timestamp":2}]'
+  out="$(printf '%s' '[{"id":"mine","type":"info","content":"hi","dismissible":true,"timestamp":1},{"id":"devos-ade-budget-open-webui-warning","type":"warning","title":"Budget","content":"c","dismissible":true,"timestamp":1}]' | owui_merge_banners "$new")"
   assert_eq "$out" ""   # unchanged (same content keeps its timestamp)
-  out="$(printf '%s' '[{"id":"mine","type":"info","content":"hi","dismissible":true,"timestamp":1},{"id":"bedrock-now-budget-claude-code-error","type":"error","content":"x","dismissible":true,"timestamp":1}]' | owui_merge_banners '[]')"
+  out="$(printf '%s' '[{"id":"mine","type":"info","content":"hi","dismissible":true,"timestamp":1},{"id":"devos-ade-budget-claude-code-error","type":"error","content":"x","dismissible":true,"timestamp":1}]' | owui_merge_banners '[]')"
   assert_eq "$out" '{"banners": [{"id": "mine", "type": "info", "content": "hi", "dismissible": true, "timestamp": 1}]}'
   out="$(printf '%s' 'null' | owui_merge_banners "$new")"
-  assert_contains "$out" '"id": "bedrock-now-budget-open-webui-warning"'
+  assert_contains "$out" '"id": "devos-ade-budget-open-webui-warning"'
 }
 
 test_sync_budget_banner_posts_only_on_change() {
@@ -309,7 +309,7 @@ test_sync_budget_banner_posts_only_on_change() {
   budget_key_lines() { printf 'open-webui\t45\t50\t2026-11-01\n'; }
   get_reply() { echo '200 []'; }
   sync_budget_banner 2> "$TMP/err"
-  assert_contains "$(cat "$TMP/posts")" '/api/v1/configs/banners {"banners": [{"id": "bedrock-now-budget-open-webui-warning"'
+  assert_contains "$(cat "$TMP/posts")" '/api/v1/configs/banners {"banners": [{"id": "devos-ade-budget-open-webui-warning"'
   assert_contains "$(cat "$TMP/err")" "80% or more"
   : > "$TMP/posts"
   budget_key_lines() { :; }
@@ -362,7 +362,7 @@ test_db_admin_four_call_flow() {
   _stub_litellm
   ensure_litellm_db_admin 2> "$TMP/err" || { cat "$TMP/err"; return 1; }
   c="$(cat "$TMP/calls")"
-  assert_contains "$c" 'POST /user/new {"user_id":"bedrock-now-admin","user_email":"me@x.io","user_role":"proxy_admin","auto_create_key":false,"send_invite_email":false}'
+  assert_contains "$c" 'POST /user/new {"user_id":"devos-ade-admin","user_email":"me@x.io","user_role":"proxy_admin","auto_create_key":false,"send_invite_email":false}'
   assert_contains "$c" 'POST /user/update {"user_email":"me@x.io","user_role":"proxy_admin","password":"Tmp-9'
   assert_contains "$c" 'call sk-session POST /user/password/change {"current_password":"Tmp-9'
   assert_contains "$c" '"new_password":"Bn9-0123456789ab"}'
@@ -579,7 +579,7 @@ test_owui_merge_upgrades_our_icons_but_keeps_a_users_own() {
   done
   # a user's own icons (a PNG, a URL, an SVG without being one of ours) -> untouched
   for mine in 'data:image/png;base64,iVBORw0KGgo=' 'https://example.test/me.png' \
-      "data:image/svg+xml;base64,$(printf '<svg id="bedrock-now-icon" v="mine"/>' | openssl base64 -A)"; do
+      "data:image/svg+xml;base64,$(printf '<svg id="devos-ade-icon" v="mine"/>' | openssl base64 -A)"; do
     out="$(printf '{"id":"big","name":"B","meta":{"profile_image_url":"%s","description":"d","tags":[]}}' "$mine" | owui_merge_model B B d '[]' false "$newer" "$hashes")"
     assert_eq "$out" ""   # nothing to change
   done

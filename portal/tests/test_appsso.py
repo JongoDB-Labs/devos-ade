@@ -19,8 +19,8 @@ from portal import appsso
 from portal.app import create_app
 from portal.security import COOKIE, REMOTE_COOKIE, Sessions
 
-PORTAL = "http://bedrock-now.localhost"
-ADMIN, FILES, CHAT = "admin.bedrock-now.localhost", "files.bedrock-now.localhost", "chat.bedrock-now.localhost"
+PORTAL = "http://devos-ade.localhost"
+ADMIN, FILES, CHAT = "admin.devos-ade.localhost", "files.devos-ade.localhost", "chat.devos-ade.localhost"
 NAV = {"Accept": "text/html,application/xhtml+xml", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "iframe",
        "Sec-Fetch-Site": "same-site"}
 UI_KEY = "sk-ui-" + "k" * 22
@@ -163,7 +163,7 @@ def test_admin_page_without_litellm_session_goes_to_sso_first(client):
 
 def test_admin_sign_in_page_is_answered_by_the_portal_unless_asked_not_to(client):
     s = session(client)
-    back = quote("http://admin.bedrock-now.localhost/ui/?page=logs", safe="")
+    back = quote("http://admin.devos-ade.localhost/ui/?page=logs", safe="")
     assert sso_location(verify(client, ADMIN, f"/ui/login/?redirect_to={back}", s, "token=abc")) == "/ui/?page=logs"
     assert sso_location(verify(client, ADMIN, "/ui/login", s)) == "/ui/"
     # a return address on another host, or the sign-in page itself, is not followed
@@ -233,7 +233,7 @@ def test_litellms_own_logout_shows_its_form_even_before_its_ui_knows_where(clien
     lite = cookies(sso(client, ADMIN, "/ui/", s))[appsso.MARK][0]
     signed_in = len(apps.of("/v2/login"))
     own = {"Sec-Fetch-Site": "same-origin"}
-    back = quote("http://admin.bedrock-now.localhost/ui/?page=logs", safe="")
+    back = quote("http://admin.devos-ade.localhost/ui/?page=logs", safe="")
     for uri in ("/ui/", "/ui/?page=api-keys", "/ui/api-keys/", "/ui/login", f"/ui/login/?redirect_to={back}"):
         r = verify(client, ADMIN, uri, s, f"{appsso.MARK}={lite}", headers=own)
         assert r.status_code == 302 and r.headers["location"] == "/ui/login/?sso=off", uri
@@ -267,7 +267,7 @@ def test_near_the_end_of_litellms_session_its_own_page_is_signed_in_again(client
     apps.exp = time.time() + appsso.MARGIN + appsso.LOGOUT_MIN_LEFT - 60
     lite = cookies(sso(client, ADMIN, "/ui/", s))[appsso.MARK][0]
     own = {"Sec-Fetch-Site": "same-origin"}
-    back = quote("http://admin.bedrock-now.localhost/ui/?page=logs", safe="")
+    back = quote("http://admin.devos-ade.localhost/ui/?page=logs", safe="")
     assert sso_location(verify(client, ADMIN, f"/ui/login/?redirect_to={back}", s, f"{appsso.MARK}={lite}", headers=own)) == "/ui/?page=logs"
     assert sso_location(verify(client, ADMIN, "/ui/", s, f"{appsso.MARK}={lite}", headers=own)) == "/ui/"
     # with more than that left: its form (the test above)
@@ -370,7 +370,7 @@ def test_hand_off_only_for_page_loads_from_this_site(client, apps):
     assert not apps.calls
     assert client.post("/auth/app-sso", headers={"Host": ADMIN}).status_code == 405
     assert sso(client, CHAT, "/", s).status_code == 404
-    assert sso(client, "bedrock-now.localhost", "/", s).status_code == 404
+    assert sso(client, "devos-ade.localhost", "/", s).status_code == 404
     assert client.get("/auth/app-sso", headers={**NAV, "Host": ADMIN}).status_code == 401   # no session
     assert not apps.calls
 
@@ -394,7 +394,7 @@ def test_litellm_refusing_the_password_shows_the_way_to_its_own_form(client, app
     s = session(client)
     r = sso(client, ADMIN, "/ui/", s)
     assert r.status_code == 502 and "LITELLM_UI_PASSWORD" in r.text
-    assert 'href="http://admin.bedrock-now.localhost/ui/login/?sso=off"' in r.text and "Sign in with the password instead" in r.text
+    assert 'href="http://admin.devos-ade.localhost/ui/login/?sso=off"' in r.text and "Sign in with the password instead" in r.text
     assert f'href="{PORTAL}/" target="_top"' in r.text
     assert "token" not in cookies(r) and appsso.MARK not in cookies(r)
     assert f"frame-ancestors {PORTAL}" in r.headers["content-security-policy"] and "ui-pass" not in r.text + caplog.text
@@ -529,9 +529,9 @@ def test_sign_out_from_a_session_that_ended_still_ends_admin_sessions(settings, 
 def test_sign_out_other_devices_ends_admin_sessions_too(client, apps):
     s = session(client)
     k = apps.key("default_user_id", age=5)
-    client.cookies.set(COOKIE, s, domain="bedrock-now.localhost")
+    client.cookies.set(COOKIE, s, domain="devos-ade.localhost")
     r = client.post("/api/settings/signout-others", content=json.dumps({"password": "correct horse"}),
-                    headers={"Origin": PORTAL, "X-Requested-With": "bedrock-now", "Content-Type": "application/json"})
+                    headers={"Origin": PORTAL, "X-Requested-With": "devos-ade", "Content-Type": "application/json"})
     assert r.status_code == 200
     assert wait_for(lambda: not any(x["token"] == k for x in apps.keys))
 
@@ -564,10 +564,10 @@ def test_sweep_takes_only_ui_sessions_and_does_nothing_without_a_master_key(sett
 
 
 def test_logins_api_names_each_apps_own_sign_in_form(client):
-    client.cookies.set(COOKIE, session(client), domain="bedrock-now.localhost")
-    d = client.get("/api/logins", headers={"X-Requested-With": "bedrock-now"}).json()
-    assert d["admin"]["manual"] == "http://admin.bedrock-now.localhost/ui/login/?sso=off"
-    assert d["files"]["manual"] == "http://files.bedrock-now.localhost/rustfs/console/auth/login/?sso=off"
+    client.cookies.set(COOKIE, session(client), domain="devos-ade.localhost")
+    d = client.get("/api/logins", headers={"X-Requested-With": "devos-ade"}).json()
+    assert d["admin"]["manual"] == "http://admin.devos-ade.localhost/ui/login/?sso=off"
+    assert d["files"]["manual"] == "http://files.devos-ade.localhost/rustfs/console/auth/login/?sso=off"
 
 
 # --- remote access: the app host's own __Host- cookies, Secure, the Tailscale login ---
@@ -610,7 +610,7 @@ def test_remote_hand_off_uses_host_cookies_and_the_tailscale_login(rs, apps):
         r = c.get("/auth/app-sso?next=%2Fui%2F", headers={**h, "Host": R_ADMIN, "Tailscale-User-Login": "other@example.com"})
         assert r.status_code == 403 and len(apps.calls) == n
         d = c.get("/api/logins", headers={**REMOTE, "Host": f"bn.{TN}", "Cookie": f"{REMOTE_COOKIE}={s}",
-                                          "X-Requested-With": "bedrock-now"}).json()
+                                          "X-Requested-With": "devos-ade"}).json()
         assert d["admin"]["manual"] == f"https://{R_ADMIN}/ui/login/?sso=off"
 
 

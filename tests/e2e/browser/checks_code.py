@@ -839,7 +839,7 @@ def files(ctx):
         r = c.api("GET", f"/api/fs/file?path={bad}")
         expect(r["status"] in (400, 404), f"{bad}: {r['status']}")
     rm = c.api("DELETE", f"/api/fs?path={d}")
-    expect(rm["status"] == 200 and rm["json"]["trash"].startswith(".bedrock-now-trash/"), f"delete {rm}")
+    expect(rm["status"] == 200 and rm["json"]["trash"].startswith(".devos-ade-trash/"), f"delete {rm}")
     c.rec.save()
     return f"mkdir, upload (a second one → '-1'), read, save, stale save → 409, list, rename, download (attachment), ../ refused, delete → {rm['json']['trash'][:50]}"
 
@@ -1012,12 +1012,12 @@ def fixtures(c):
         expect(r["status"] in (200, 400, 409, 502) or "exists" in r["text"], f"mkdir {d}: {r['status']} {r['text'][:100]}")
     files = {
         f"{UI}/edit-me.txt": "value = 1\n",
-        f"{MKT}/.claude-plugin/marketplace.json": json.dumps({"name": MKT, "owner": {"name": "bedrock-now e2e"}, "plugins": [
+        f"{MKT}/.claude-plugin/marketplace.json": json.dumps({"name": MKT, "owner": {"name": "devos-ade e2e"}, "plugins": [
             {"name": "hello-local", "source": "./plugins/hello-local", "description": "A local test plugin with one command", "version": "1.0.0"},
             {"name": "hello-cmd", "source": {"source": "command", "command": f"printf '%s\\n' /workspace/{MKT}/plugins/hello-cmd"},
              "description": "Installed by running a command", "version": "1.0.0"}]}, indent=1),
         f"{MKT}/plugins/hello-local/.claude-plugin/plugin.json": json.dumps({"name": "hello-local", "version": "1.0.0", "description": "e2e"}),
-        f"{MKT}/plugins/hello-local/commands/hello.md": "---\ndescription: Say hello (bedrock-now e2e plugin)\n---\nReply with exactly: hello from the e2e plugin\n",
+        f"{MKT}/plugins/hello-local/commands/hello.md": "---\ndescription: Say hello (devos-ade e2e plugin)\n---\nReply with exactly: hello from the e2e plugin\n",
         f"{MKT}/plugins/hello-cmd/.claude-plugin/plugin.json": json.dumps({"name": "hello-cmd", "version": "1.0.0", "description": "e2e"}),
         f"{MKT}/plugins/hello-cmd/commands/hi.md": "---\ndescription: Say hi (installed by a command)\n---\nReply with exactly: hi\n",
     }
@@ -2954,7 +2954,7 @@ def home_continue(ctx):
     # what the portal kept of the page's report: this session, waiting for you
     d, rep, t0 = {}, {}, time.time()
     while time.time() - t0 < 40:
-        d = home.evaluate("() => fetch('/api/continue', {headers: {'X-Requested-With': 'bedrock-now'}}).then(r => r.json())")
+        d = home.evaluate("() => fetch('/api/continue', {headers: {'X-Requested-With': 'devos-ade'}}).then(r => r.json())")
         rep = (d.get("code") or {}).get("report") or {}
         if any(x["id"] == sid and x["state"] == "waiting" for x in rep.get("sessions", [])):
             break
@@ -2984,7 +2984,7 @@ def home_continue(ctx):
     while time.time() - t0 < 30 and ans.count() != 1:
         home.wait_for_timeout(1000)
     if ans.count() != 1:
-        d = home.evaluate("() => fetch('/api/continue', {headers: {'X-Requested-With': 'bedrock-now'}}).then(r => r.json())")
+        d = home.evaluate("() => fetch('/api/continue', {headers: {'X-Requested-With': 'devos-ade'}}).then(r => r.json())")
         mine = next((x for x in ((d.get("code") or {}).get("report") or {}).get("sessions", []) if x["id"] == sid), None)
         home.screenshot(path=str(SHOTS / "fail-home-continue.png"))
         raise AssertionError(f"Home's Continue has no waiting row for {sid[:8]}: it shows {home.inner_text('#continue')[:300]!r}; "
@@ -3016,7 +3016,7 @@ def home_continue(ctx):
     t0, state = time.time(), "waiting"
     while time.time() - t0 < 40 and state not in ("idle", "closed"):
         home.wait_for_timeout(2000)
-        d = home.evaluate("() => fetch('/api/continue', {headers: {'X-Requested-With': 'bedrock-now'}}).then(r => r.json())")
+        d = home.evaluate("() => fetch('/api/continue', {headers: {'X-Requested-With': 'devos-ade'}}).then(r => r.json())")
         state = next((x["state"] for x in ((d.get("code") or {}).get("report") or {}).get("sessions", []) if x["id"] == sid), "gone")
     expect(state in ("idle", "closed"), f"after the answer the report says {state!r}")
     chat.evaluate("(id) => fetch('/api/v1/chats/' + id, {method: 'DELETE', headers: {Authorization: 'Bearer ' + localStorage.token}})", cid)

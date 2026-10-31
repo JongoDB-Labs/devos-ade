@@ -13,11 +13,11 @@ const store = () => new Projects({ dir: tmp('bnprj'), now: () => 1_700_000_000_0
 
 test('folders and names: what a project may be', () => {
   for (const ok of ['app', 'my-app', 'apps/web', 'a/b/c/d', 'Ünïcode', 'with space', 'x'.repeat(100), 'a'.repeat(100) + '/' + 'b'.repeat(59)]) assert.ok(rootOk(ok), ok);
-  for (const bad of ['', '.', '..', '.git', '.bedrock-now-trash', 'a/.git', 'a/.hidden', '/abs', 'a/', '/a', 'a//b', 'a/../b', 'a\\b', 'a\0b', 'a\nb', 'a‮b',
+  for (const bad of ['', '.', '..', '.git', '.devos-ade-trash', 'a/.git', 'a/.hidden', '/abs', 'a/', '/a', 'a//b', 'a/../b', 'a\\b', 'a\0b', 'a\nb', 'a‮b',
     ' lead', 'trail ', 'x'.repeat(101), 'a/b/c/d/e', 'é'.repeat(81), 7, null, undefined, ['a']]) {
     assert.equal(rootOk(bad), false, JSON.stringify(bad));
   }
-  for (const ok of ['bedrock-now', 'Website (old)', 'x'.repeat(80), '日本']) assert.ok(nameOk(ok), ok);
+  for (const ok of ['devos-ade', 'Website (old)', 'x'.repeat(80), '日本']) assert.ok(nameOk(ok), ok);
   // line and paragraph separators, invisible operators (U+2060–2064), tag characters, C1 controls: in a name or a folder
   for (const odd of ['\u2028', '\u2029', '\u2060', '\u2061', '\u2064', '\u{E0041}', '\u{E007F}', '\u0085', '\u061C', '\uFEFF']) {
     assert.equal(nameOk(`a${odd}b`), false, escape(odd));
@@ -38,7 +38,7 @@ test('records: added (the name from the folder), renamed, one folder one project
   const a = s.add({ root: 'apps/web' });
   assert.match(a.id, /^p_[0-9a-f]{8}$/);
   assert.deepEqual({ ...a, id: 'x' }, { id: 'x', name: 'web', root: 'apps/web', created: 1_700_000_000_000 });
-  const b = s.add({ name: 'Bedrock', root: 'bedrock-now' });
+  const b = s.add({ name: 'Bedrock', root: 'devos-ade' });
   assert.deepEqual(s.list().map((p) => p.name), ['Workspace', 'Bedrock', 'web']);
   assert.deepEqual(s.rootOf(a.id), { id: a.id, rel: 'apps/web', abs: '/workspace/apps/web' });
   assert.deepEqual(s.rootOf('ws'), { id: 'ws', rel: '', abs: '/workspace' });
@@ -48,7 +48,7 @@ test('records: added (the name from the folder), renamed, one folder one project
   assert.throws(() => s.add({ root: '../etc' }), (e) => e.status === 400);
   assert.throws(() => s.add({ root: '' }), (e) => e.status === 400, 'the Workspace is always there: never a record');
   assert.throws(() => s.add({ root: 'ok', name: 'a\nb' }), (e) => e.status === 400);
-  assert.equal(s.rename(b.id, '  bedrock-now  ').name, 'bedrock-now');
+  assert.equal(s.rename(b.id, '  devos-ade  ').name, 'devos-ade');
   assert.throws(() => s.rename('ws', 'Mine'), (e) => e.status === 400);
   assert.throws(() => s.rename('p_00000000', 'x'), (e) => e.status === 404);
   const st = fs.statSync(s.jsonFile);

@@ -1,5 +1,5 @@
 {
-  "name": "bedrock-now-code-web",
+  "name": "devos-ade-code-web",
   "private": true,
   "version": "0.0.0",
   "description": "The Code page's browser UI (Preact + CodeMirror 6), built by esbuild into dist/. Every dependency is pinned exactly; npm ci checks each tarball against package-lock.json.",

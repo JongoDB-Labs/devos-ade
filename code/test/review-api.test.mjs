@@ -105,7 +105,7 @@ const answers = {
     : { result: { engine: 'ripgrep', files: [{ path: 'a.txt', hits: [{ line: 1, text: req.q, col: 0, len: req.q.length }] }], hits: 1 } }),
   'fs.write': (req) => (req.mode === 'create' && req.path === 'exists.txt' ? Promise.reject(new SandboxError('that name exists already', 'refused'))
     : { result: { path: req.path, size: req.size, mtimeMs: 3 } }),
-  'fs.delete': (req) => (req.ifMtimeMs === 1 ? Promise.reject(new SandboxError('changed on disk since it was opened', 'refused')) : { result: { trash: '.bedrock-now-trash/x/a' } }),
+  'fs.delete': (req) => (req.ifMtimeMs === 1 ? Promise.reject(new SandboxError('changed on disk since it was opened', 'refused')) : { result: { trash: '.devos-ade-trash/x/a' } }),
 };
 const call = async (req, opts) => { calls.push([req, opts]); const a = answers[req.op]; if (!a) throw new SandboxError('unknown op', 'refused'); return a(req); };
 let srv, base;

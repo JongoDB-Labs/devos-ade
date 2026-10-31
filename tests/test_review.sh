@@ -144,7 +144,7 @@ test_render_config_is_world_readable_under_strict_umask() {
 test_dc_project_name_dotenv_wins_over_shell() {
   docker() { printf '%s|%s\n' "$*" "${COMPOSE_PROJECT_NAME:-}" > "$TMP/argv"; }
   printf 'X=1\n' > "$ENV_FILE"
-  (unset COMPOSE_PROJECT_NAME; dc ps); assert_contains "$(cat "$TMP/argv")" "compose -p bedrock-now "
+  (unset COMPOSE_PROJECT_NAME; dc ps); assert_contains "$(cat "$TMP/argv")" "compose -p devos-ade "
   printf 'COMPOSE_PROJECT_NAME=bn-two\n' > "$ENV_FILE"
   (unset COMPOSE_PROJECT_NAME; dc ps); assert_contains "$(cat "$TMP/argv")" "compose -p bn-two "
   assert_contains "$(cat "$TMP/argv")" "|bn-two"   # compose interpolation sees the same name
@@ -174,7 +174,7 @@ test_setup_rerun_with_other_project_name_dies_before_touching_anything() {
   setup_aws_creds() { echo touched >> "$TMP/calls"; }; dc() { echo touched >> "$TMP/calls"; }
   STATE_DIR="$TMP/state"
   if out="$( (COMPOSE_PROJECT_NAME=bn-fresh cmd_setup) 2>&1)"; then return 1; fi
-  assert_contains "$out" "this checkout is project 'bedrock-now' but COMPOSE_PROJECT_NAME=bn-fresh is set in your shell — unset it (or use the other checkout). Nothing was changed."
+  assert_contains "$out" "this checkout is project 'devos-ade' but COMPOSE_PROJECT_NAME=bn-fresh is set in your shell — unset it (or use the other checkout). Nothing was changed."
   assert_eq "$(cat "$ENV_FILE")" "$before"
   assert_eq "$(cat "$TMP/calls" 2>/dev/null)" ""
 }
@@ -210,7 +210,7 @@ test_s3_job_drops_user_mapping_on_rootless_docker() {
 
 test_compose_bind_mounts_are_selinux_labelled() {
   assert_eq "$(grep -E '^\s+- \./' "$STACK_DIR/compose.yaml" | grep -vc ':z$\|,z$' || true)" "0"
-  assert_contains "$(cat "$STACK_DIR/compose.yaml")" 'image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/shared-mcp:local'
+  assert_contains "$(cat "$STACK_DIR/compose.yaml")" 'image: ${COMPOSE_PROJECT_NAME:-devos-ade}/shared-mcp:local'
 }
 
 test_claude_bedrock_turns_off_nonessential_traffic() {

@@ -236,9 +236,9 @@ oauth_client_id	0	bad	quote'in
 oauth_client_id	0	bad	slash/in
 oauth_client_id	0	bad	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 app_slug	0	ok	
-app_slug	0	ok	bedrock-now
+app_slug	0	ok	devos-ade
 app_slug	0	ok	a
-app_slug	0	bad	Bedrock-Now
+app_slug	0	bad	DevOS ADE
 app_slug	0	bad	-dash
 app_slug	0	bad	dash-
 app_slug	0	bad	with space

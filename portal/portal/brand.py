@@ -1,7 +1,6 @@
 """The project's names, in one place for the portal: the same values as lib/brand.sh (tests/test_brand.sh checks that
-they agree). Since v0.25.0 the project is DevOS ADE (formerly bedrock-now); its internal names stayed as they were —
-the hosts, cookie names, signing salts, X-Requested-With, the installed app's id and link scheme:
-docs/internal-names.md.
+they agree). The old name (LEGACY_*) is kept only
+where an older install or the update check still names it: docs/internal-names.md.
 
   NAME          the name a person reads (page titles, texts, the installed web app's name: webapp.py)
   SLUG          the name where a space cannot go (user agents)

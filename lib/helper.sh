@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # The host helper: one-click Update / Rollback / Clean from the portal, and automatic nightly updates, without giving
 # the portal Docker or a shell. Sourced by lib/commands.sh (./stack helper install|uninstall|status|auto) and by
-# bin/bedrock-now-helper (the background job itself). Security notes: docs/security.md#the-update-helper.
+# bin/devos-ade-helper (the background job itself). Security notes: docs/security.md#the-update-helper.
 #
 #   portal (container) --writes--> .state/requests/req-<nonce>.json   (its only say; {"action","requested_at","nonce"})
 #   helper (you, outside Docker) --reads, validates, deletes--> runs ONLY ./stack update|rollback|clean --yes,
@@ -10,7 +10,7 @@
 #                      and, once a minute, services.json (the containers' state and health: lib/commands.sh)
 #
 # The helper is a launchd agent (macOS) or a systemd --user unit (Linux), installed by ./stack helper install or by
-# setup / an interactive ./stack update when you say yes (the default); --yes runs only with BEDROCK_NOW_HELPER=1.
+# setup / an interactive ./stack update when you say yes (the default); --yes runs only with DEVOS_ADE_HELPER=1.
 
 HELPER_ACTIONS="update rollback clean auto-on auto-off"
 HELPER_MAX_AGE_S=120     # a request older than this is refused (the portal writes it the moment you confirm)
@@ -38,8 +38,8 @@ ensure_request_dir() {
 }
 
 # --- names ---
-helper_label() { printf 'io.bedrock-now.helper.%s\n' "$(project_name)"; }
-helper_unit()  { printf 'bedrock-now-helper-%s.service\n' "$(project_name)"; }
+helper_label() { printf 'io.devos-ade.helper.%s\n' "$(project_name)"; }
+helper_unit()  { printf 'devos-ade-helper-%s.service\n' "$(project_name)"; }
 _launchagents_dir() { printf '%s\n' "${HELPER_LAUNCHAGENTS_DIR:-$HOME/Library/LaunchAgents}"; }
 _systemd_user_dir() { printf '%s\n' "${HELPER_SYSTEMD_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user}"; }
 _helper_os() { printf '%s\n' "${HELPER_OS:-$(uname -s)}"; }
@@ -73,10 +73,10 @@ helper_path() {
   printf '%s\n' "$out"
 }
 
-# helper_plist_text — the launchd agent: runs bin/bedrock-now-helper for this checkout. It is restarted after a
+# helper_plist_text — the launchd agent: runs bin/devos-ade-helper for this checkout. It is restarted after a
 # clean exit (the helper exits after each job, so it reloads code an update changed) but not after a crash.
 helper_plist_text() {
-  local bin="$STACK_DIR/bin/bedrock-now-helper" logf
+  local bin="$STACK_DIR/bin/devos-ade-helper" logf
   logf="$(helper_dir)/helper.log"
   cat <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -108,7 +108,7 @@ helper_unit_text() {
 Description=$PRODUCT_NAME update helper ($(project_name)): one-click Update/Rollback/Clean from the portal
 
 [Service]
-ExecStart=/bin/bash $(_sd_exec_quote "$STACK_DIR/bin/bedrock-now-helper") $(_sd_exec_quote "$STACK_DIR")
+ExecStart=/bin/bash $(_sd_exec_quote "$STACK_DIR/bin/devos-ade-helper") $(_sd_exec_quote "$STACK_DIR")
 WorkingDirectory=$(printf '%s' "$STACK_DIR" | sed 's/%/%%/g')
 Environment=$(_sd_quote "PATH=$(helper_path)")
 Restart=on-success
@@ -124,7 +124,7 @@ EOF
 helper_install() {
   local f uid
   [ -f "$ENV_FILE" ] || die "run ./stack setup first"
-  [ -x "$STACK_DIR/bin/bedrock-now-helper" ] || die "bin/bedrock-now-helper is missing or not executable"
+  [ -x "$STACK_DIR/bin/devos-ade-helper" ] || die "bin/devos-ade-helper is missing or not executable"
   mkdir -p "$(helper_dir)" && chmod 700 "$(helper_dir)"
   touch "$(helper_dir)/helper.log" && chmod 600 "$(helper_dir)/helper.log"   # launchd/systemd output
   ensure_portal_dirs
@@ -138,7 +138,7 @@ helper_install() {
       log "update helper installed: launchd agent $(helper_label) ($f)" ;;
     Linux)
       if ! command -v systemctl >/dev/null 2>&1 || ! systemctl --user show-environment >/dev/null 2>&1; then
-        die "no systemd user session here, so the helper cannot be installed as a service. You can run it yourself instead (it stops when you log out): nohup /bin/bash $STACK_DIR/bin/bedrock-now-helper $STACK_DIR >/dev/null 2>&1 &   — or keep using ./stack update in a terminal."
+        die "no systemd user session here, so the helper cannot be installed as a service. You can run it yourself instead (it stops when you log out): nohup /bin/bash $STACK_DIR/bin/devos-ade-helper $STACK_DIR >/dev/null 2>&1 &   — or keep using ./stack update in a terminal."
       fi
       case "$STACK_DIR" in *'"'* | *\\* | *[[:cntrl:]]*)
         die "the folder name $STACK_DIR has a quote, backslash or control character, which a systemd unit cannot carry safely — move the checkout to a plainer path" ;;
@@ -228,10 +228,10 @@ _helper_install_soft() {
 # offer_helper [--after-update] — the one-click question at the end of an interactive setup or ./stack update
 # (--after-update: only with a terminal on stdin and stdout, so scripts and the helper's own runs are never asked).
 # Default yes. A "no" is remembered in .state/helper-declined and respected from then on, so an install that said no
-# to the old opt-in question is asked once more, with the new default. --yes installs it only with BEDROCK_NOW_HELPER=1.
+# to the old opt-in question is asked once more, with the new default. --yes installs it only with DEVOS_ADE_HELPER=1.
 offer_helper() {
   helper_installed && return 0
-  if [ "${BEDROCK_NOW_HELPER:-0}" = 1 ]; then _helper_install_soft; return 0; fi
+  if [ "${DEVOS_ADE_HELPER:-0}" = 1 ]; then _helper_install_soft; return 0; fi
   [ "${ASSUME_YES:-0}" != 1 ] && _have_tty || return 0
   if [ "${1:-}" = --after-update ]; then [ -t 0 ] && _stdout_tty || return 0; fi
   [ ! -e "$(helper_declined_file)" ] || return 0
@@ -504,7 +504,7 @@ cmd_helper_auto() {
   esac
 }
 
-# --- the background job (bin/bedrock-now-helper) ---
+# --- the background job (bin/devos-ade-helper) ---
 
 # _json_str TEXT -> safe inside a JSON string: no quotes, backslashes or control characters, at most 300 bytes
 # without cutting a UTF-8 character in half (iconv -c drops an incomplete one)
@@ -845,8 +845,8 @@ _job_refusal() {
   if [ -n "$holder" ]; then echo "Busy: ./stack ${holder#* } is running right now. Try again when it has finished."; return 0; fi
   if [ "$1" = update ]; then
     br="$(git -C "$STACK_DIR" symbolic-ref -q --short HEAD 2>/dev/null || true)"
-    if [ -n "$br" ] && [ "$(get_env BEDROCK_NOW_HELPER_ALLOW_BRANCH)" != 1 ] && [ "${BEDROCK_NOW_HELPER_ALLOW_BRANCH:-0}" != 1 ]; then
-      echo "Refused: this checkout follows branch $br, so an update would install whatever that branch has now. Run ./stack update in a terminal, or set BEDROCK_NOW_HELPER_ALLOW_BRANCH=1 in .env."; return 0
+    if [ -n "$br" ] && [ "$(get_env DEVOS_ADE_HELPER_ALLOW_BRANCH)" != 1 ] && [ "${DEVOS_ADE_HELPER_ALLOW_BRANCH:-0}" != 1 ]; then
+      echo "Refused: this checkout follows branch $br, so an update would install whatever that branch has now. Run ./stack update in a terminal, or set DEVOS_ADE_HELPER_ALLOW_BRANCH=1 in .env."; return 0
     fi
   fi
 }
@@ -872,7 +872,7 @@ _keep_awake() {
 # (_job_stamp); ends with ./stack's exit status, once the last line is written (the stamping is part of this process)
 _job_run() {
   set +e
-  ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" "$1" --yes ) </dev/null 2>&1 | _job_stamp
+  ( cd "$STACK_DIR" && exec env DEVOS_ADE_JOB_ORIGIN=helper DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" "$1" --yes ) </dev/null 2>&1 | _job_stamp
   return "${PIPESTATUS[0]}"
 }
 
@@ -961,7 +961,7 @@ helper_run_toggle() {
   _helper_count "$1"
   logf="$(helper_dir)/last-auto.log"
   { : > "$logf" && chmod 600 "$logf"; } 2>/dev/null || logf=/dev/null
-  ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper NO_COLOR=1 "$STACK_DIR/stack" helper auto "${1#auto-}" --yes ) </dev/null > "$logf" 2>&1 || rc=$?
+  ( cd "$STACK_DIR" && exec env DEVOS_ADE_JOB_ORIGIN=helper NO_COLOR=1 "$STACK_DIR/stack" helper auto "${1#auto-}" --yes ) </dev/null > "$logf" 2>&1 || rc=$?
   if [ "$rc" -ne 0 ]; then
     _switch_record "$2" "$1" failed "$(_last_error "$logf") (full log: .state/helper/last-auto.log)"; return 0
   fi
@@ -1142,7 +1142,7 @@ _rotate_log() {
   rm -f "$t"
 }
 
-# helper_main [--once] — the loop bin/bedrock-now-helper runs. It ends (exit 0: launchd/systemd start it again, with
+# helper_main [--once] — the loop bin/devos-ade-helper runs. It ends (exit 0: launchd/systemd start it again, with
 # the checkout's code) after an update/rollback/clean, and when the checkout moved to another commit under it (a
 # ./stack update in a terminal) once no ./stack command holds the lock.
 helper_main() {

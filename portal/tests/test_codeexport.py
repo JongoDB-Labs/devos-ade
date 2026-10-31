@@ -14,8 +14,8 @@ from portal import codeexport
 from portal.app import create_app
 from portal.security import COOKIE
 
-PORTAL = "http://bedrock-now.localhost"
-GUARD = {"X-Requested-With": "bedrock-now", "Origin": PORTAL}
+PORTAL = "http://devos-ade.localhost"
+GUARD = {"X-Requested-With": "devos-ade", "Origin": PORTAL}
 
 
 def make_zip(n: int = 3) -> bytes:

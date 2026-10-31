@@ -962,7 +962,7 @@ export function makeApi({ call, sessions, projects = null, reloadPollMs = 1000, 
     if (cwd.startsWith(`${WS}/`)) {
       const rel = cwd.slice(WS.length + 1);
       const segs = rel.split('/');
-      if (segs.length > TERM_DEPTH || segs.some((x) => !x || x === '.' || x === '..' || x === '.git' || x.startsWith('.bedrock-now-trash') || /[\x00-\x1f\x7f]/.test(x))) return null;
+      if (segs.length > TERM_DEPTH || segs.some((x) => !x || x === '.' || x === '..' || x === '.git' || x.startsWith('.devos-ade-trash') || /[\x00-\x1f\x7f]/.test(x))) return null;
       return { rel, abs: cwd };
     }
     const top = projects?.hosts().find((h) => cwd === h.path || cwd.startsWith(`${h.path}/`));

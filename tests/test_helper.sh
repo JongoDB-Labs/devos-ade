@@ -25,7 +25,7 @@ esac
 exit 0
 EOS
   chmod +x "$STACK_DIR/stack"
-  printf '#!/bin/sh\n' > "$STACK_DIR/bin/bedrock-now-helper"; chmod +x "$STACK_DIR/bin/bedrock-now-helper"
+  printf '#!/bin/sh\n' > "$STACK_DIR/bin/devos-ade-helper"; chmod +x "$STACK_DIR/bin/devos-ade-helper"
   printf 'POSTGRES_PASSWORD=p\nCOMPOSE_PROJECT_NAME=bn-t\n' > "$ENV_FILE"
   git init -q "$STACK_DIR"; git -C "$STACK_DIR" add stack; git -C "$STACK_DIR" commit -qm one; git -C "$STACK_DIR" tag v0.3.0
   git -C "$STACK_DIR" checkout -q --detach   # a release install (on a branch, the helper refuses updates)
@@ -303,9 +303,9 @@ test_main_once_without_requests_only_beats() {
 }
 
 test_helper_entrypoint_refuses_a_non_checkout() {
-  if out="$("$BASH" "$T_ROOT/bin/bedrock-now-helper" "$TMP" --once 2>&1)"; then return 1; fi
+  if out="$("$BASH" "$T_ROOT/bin/devos-ade-helper" "$TMP" --once 2>&1)"; then return 1; fi
   assert_contains "$out" "not a DevOS ADE checkout"
-  [ -x "$T_ROOT/bin/bedrock-now-helper" ] || { echo "bin/bedrock-now-helper must be executable" >&2; return 1; }
+  [ -x "$T_ROOT/bin/devos-ade-helper" ] || { echo "bin/devos-ade-helper must be executable" >&2; return 1; }
 }
 
 # --- install / uninstall (stubbed launchctl / systemctl; files in $TMP) ---
@@ -320,31 +320,31 @@ _stub_services() {
 test_install_on_macos_writes_a_per_project_launch_agent() {
   _checkout; _stub_services; HELPER_OS=Darwin
   helper_install 2>/dev/null
-  f="$TMP/LaunchAgents/io.bedrock-now.helper.bn-t.plist"
+  f="$TMP/LaunchAgents/io.devos-ade.helper.bn-t.plist"
   [ -f "$f" ] || return 1
-  assert_contains "$(cat "$f")" "<string>/bin/bash</string><string>$STACK_DIR/bin/bedrock-now-helper</string><string>$STACK_DIR</string>"
+  assert_contains "$(cat "$f")" "<string>/bin/bash</string><string>$STACK_DIR/bin/devos-ade-helper</string><string>$STACK_DIR</string>"
   # restarted after a clean exit (the helper exits after each job), not after a crash
   assert_contains "$(cat "$f")" "<key>KeepAlive</key><dict><key>SuccessfulExit</key><true/></dict>"
   assert_contains "$(cat "$TMP/svc")" "launchctl bootstrap gui/$(id -u) $f"
   helper_installed
   helper_uninstall 2>/dev/null
   [ ! -f "$f" ] || return 1
-  assert_contains "$(cat "$TMP/svc")" "launchctl bootout gui/$(id -u)/io.bedrock-now.helper.bn-t"
+  assert_contains "$(cat "$TMP/svc")" "launchctl bootout gui/$(id -u)/io.devos-ade.helper.bn-t"
   if helper_installed; then return 1; fi
 }
 
 test_install_on_linux_writes_a_user_unit() {
   _checkout; _stub_services; HELPER_OS=Linux
   helper_install 2>/dev/null
-  f="$TMP/systemd/bedrock-now-helper-bn-t.service"
-  assert_contains "$(cat "$f")" "ExecStart=/bin/bash \"$STACK_DIR/bin/bedrock-now-helper\" \"$STACK_DIR\""
+  f="$TMP/systemd/devos-ade-helper-bn-t.service"
+  assert_contains "$(cat "$f")" "ExecStart=/bin/bash \"$STACK_DIR/bin/devos-ade-helper\" \"$STACK_DIR\""
   assert_contains "$(cat "$f")" "Restart=on-success"
   assert_contains "$(cat "$f")" "WorkingDirectory=$STACK_DIR
 "
-  assert_contains "$(cat "$TMP/svc")" "systemctl --user enable --now bedrock-now-helper-bn-t.service"
+  assert_contains "$(cat "$TMP/svc")" "systemctl --user enable --now devos-ade-helper-bn-t.service"
   helper_uninstall 2>/dev/null
   [ ! -f "$f" ] || return 1
-  assert_contains "$(cat "$TMP/svc")" "systemctl --user stop bedrock-now-helper-bn-t.service"
+  assert_contains "$(cat "$TMP/svc")" "systemctl --user stop devos-ade-helper-bn-t.service"
 }
 
 test_install_without_systemd_user_session_explains_the_fallback() {
@@ -352,12 +352,12 @@ test_install_without_systemd_user_session_explains_the_fallback() {
   systemctl() { return 1; }
   if out="$( (helper_install) 2>&1)"; then return 1; fi
   assert_contains "$out" "no systemd user session"
-  assert_contains "$out" "nohup /bin/bash $STACK_DIR/bin/bedrock-now-helper"
+  assert_contains "$out" "nohup /bin/bash $STACK_DIR/bin/devos-ade-helper"
 }
 
 test_plist_escapes_xml() {
   _checkout; STACK_DIR="$TMP/a&b<c"
-  assert_contains "$(helper_plist_text)" "$TMP/a&amp;b&lt;c/bin/bedrock-now-helper"
+  assert_contains "$(helper_plist_text)" "$TMP/a&amp;b&lt;c/bin/devos-ade-helper"
 }
 
 _interactive() { # a terminal at the keyboard; ask() answers $ANSWER (else the default) and logs the question
@@ -422,7 +422,7 @@ test_setup_offers_the_helper_but_yes_installs_it_only_when_asked() {
   helper_install() { echo INSTALL >> "$TMP/svc"; }
   ASSUME_YES=1 offer_helper
   [ ! -f "$TMP/svc" ] || { echo "--yes must not install" >&2; return 1; }
-  ASSUME_YES=1 BEDROCK_NOW_HELPER=1 offer_helper
+  ASSUME_YES=1 DEVOS_ADE_HELPER=1 offer_helper
   assert_eq "$(cat "$TMP/svc")" "INSTALL"
   body="$(sed -n '/^_setup_finish() {/,/^}/p; /^cmd_setup() {/,/^}/p' "$T_ROOT/lib/commands.sh")"
   assert_contains "$body" "offer_helper"
@@ -464,7 +464,7 @@ test_helper_status_text_shows_install_and_last_job() {
   assert_contains "$out" "not installed (./stack helper install)"
   helper_install 2>/dev/null; helper_heartbeat; JOB_ID=x; JOB_ACTION=clean; helper_write_status "done" "nothing to free"
   out="$(helper_status_text)"
-  assert_contains "$out" "installed ($TMP/LaunchAgents/io.bedrock-now.helper.bn-t.plist)"
+  assert_contains "$out" "installed ($TMP/LaunchAgents/io.devos-ade.helper.bn-t.plist)"
   assert_contains "$out" "(running)"
   assert_contains "$out" "last job: clean — done: nothing to free"
   assert_eq "$(ls -l "$(helper_dir)/helper.log" | cut -c1-10)" "-rw-------"
@@ -531,7 +531,7 @@ test_busy_lock_and_branch_checkouts_refuse_the_job() {   # I3, I6
   _req update 0 ffffffffffffffffffffffffffffffff; helper_poll_once 2>/dev/null
   assert_contains "$(_status)" "Refused: this checkout follows branch main"
   [ ! -f "$CALLS" ] || return 1
-  printf 'BEDROCK_NOW_HELPER_ALLOW_BRANCH=1\n' >> "$ENV_FILE"
+  printf 'DEVOS_ADE_HELPER_ALLOW_BRANCH=1\n' >> "$ENV_FILE"
   _req update 0 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee; helper_poll_once 2>/dev/null
   assert_eq "$(cat "$CALLS")" "update --yes"
 }
@@ -589,7 +589,7 @@ test_status_text_is_utf8_safe_when_cut() {   # M9
 test_linux_install_refuses_paths_a_unit_cannot_carry() {   # I5
   _checkout; _stub_services; HELPER_OS=Linux
   systemctl() { return 0; }
-  mkdir -p "$TMP/a\"b/bin"; cp "$STACK_DIR/bin/bedrock-now-helper" "$TMP/a\"b/bin/"
+  mkdir -p "$TMP/a\"b/bin"; cp "$STACK_DIR/bin/devos-ade-helper" "$TMP/a\"b/bin/"
   STACK_DIR="$TMP/a\"b"
   if out="$( (helper_install) 2>&1)"; then return 1; fi
   assert_contains "$out" "cannot carry safely"
@@ -599,7 +599,7 @@ test_unit_files_escape_specifiers_and_sanitize_path() {   # I5, M8
   _checkout; STACK_DIR="$TMP/50% \$HOME dir"; mkdir -p "$STACK_DIR" "$TMP/ww"; chmod 777 "$TMP/ww"
   PATH="$TMP/ww::relative/bin:/usr/bin:/bin" t="$(helper_unit_text)"
   assert_contains "$t" "WorkingDirectory=$TMP/50%% \$HOME dir"
-  assert_contains "$t" "ExecStart=/bin/bash \"$TMP/50%% \$\$HOME dir/bin/bedrock-now-helper\""
+  assert_contains "$t" "ExecStart=/bin/bash \"$TMP/50%% \$\$HOME dir/bin/devos-ade-helper\""
   p="$(PATH="$TMP/ww::relative/bin:/usr/bin:/bin" helper_path)"
   assert_not_contains "$p" "$TMP/ww"
   assert_not_contains "$p" "relative"

@@ -22,10 +22,10 @@ from portal.app import create_app
 from portal.security import CODE_COOKIE, COOKIE
 
 PW = "correct horse"
-PORTAL = "http://bedrock-now.localhost"
-TERM_HOST = "terminal.bedrock-now.localhost"
+PORTAL = "http://devos-ade.localhost"
+TERM_HOST = "terminal.devos-ade.localhost"
 TERM = f"http://{TERM_HOST}"
-CODE_HOST = "code.bedrock-now.localhost"
+CODE_HOST = "code.devos-ade.localhost"
 CODE = f"http://{CODE_HOST}"
 # (the repository's, or the copy the image's test stage gets: portal/Dockerfile, BN_REPO_DIR)
 CATALOG = Path(os.environ.get("BN_REPO_DIR") or Path(__file__).resolve().parents[2]) / "catalog" / "ai-tools.tsv"
@@ -33,7 +33,7 @@ SETUP = CATALOG.parent / "setup-links.tsv"
 # The tests that read the real catalog's tools: in a checkout, or in the test image when portal/test.sh passes the
 # repository in (portal/Dockerfile: BN_REPO_DIR); a plain `docker build --target test portal` has none and skips them
 need_catalog = pytest.mark.skipif(not CATALOG.exists(), reason="the repository's catalog/ai-tools.tsv is not here: portal/test.sh passes it")
-H = {"X-Requested-With": "bedrock-now"}
+H = {"X-Requested-With": "devos-ade"}
 
 
 def offline(request):
@@ -374,7 +374,7 @@ def test_the_code_pages_open_menu_goes_through_the_hand_off(s):
         _, link = hand_off({"open": "codex", "dir": "/workspace/app", "launch": other["launch"]})
         assert f"&arg={answers.ASK_TOKEN}&" in link
         # not the panel's own request: refused
-        assert mint({"tool": "codex"}, **{"X-Requested-With": "bedrock-now"}).status_code == 403
+        assert mint({"tool": "codex"}, **{"X-Requested-With": "devos-ade"}).status_code == 403
         assert mint({"tool": "codex"}, Origin=PORTAL).status_code == 403
         assert mint({"tool": "codex"}, **{"Sec-Fetch-Site": "cross-site"}).status_code == 403
         assert c.post("/auth/code-terminal-launch", json={"tool": "codex"}, headers={"Host": CODE_HOST, "Origin": CODE, "X-Requested-With": "bn-code"}).status_code == 401

@@ -9,16 +9,16 @@
 _stubs() {
   export ASSUME_YES=1 HOME="$TMP/home"
   mkdir -p "$HOME"
-  printf 'PORTAL_SECRET=%s\nPORTAL_HOST=bedrock-now.localhost\nPORTAL_PORT=80\n' "$(printf 's%.0s' $(seq 1 40))" > "$ENV_FILE"
+  printf 'PORTAL_SECRET=%s\nPORTAL_HOST=devos-ade.localhost\nPORTAL_PORT=80\n' "$(printf 's%.0s' $(seq 1 40))" > "$ENV_FILE"
 }
 
 test_the_preview_domain_is_another_site_derived_from_the_portal_host() {
   _stubs
-  code_preview_domain; assert_eq "$(get_env PREVIEW_DOMAIN)" bedrock-now-preview.localhost
+  code_preview_domain; assert_eq "$(get_env PREVIEW_DOMAIN)" devos-ade-preview.localhost
   set_env PORTAL_HOST bn-dev.localhost; code_preview_domain; assert_eq "$(get_env PREVIEW_DOMAIN)" bn-dev-preview.localhost
   # browsers count a .localhost name's last two labels as its site: under a.b.localhost the previews go to b-preview
   set_env PORTAL_HOST portal.team.localhost; code_preview_domain; assert_eq "$(get_env PREVIEW_DOMAIN)" team-preview.localhost
-  # a name outside .localhost (BEDROCK_NOW_ALLOW_PUBLIC_HOST): the project's own .localhost name
+  # a name outside .localhost (DEVOS_ADE_ALLOW_PUBLIC_HOST): the project's own .localhost name
   set_env PORTAL_HOST bedrock.lan; set_env COMPOSE_PROJECT_NAME my_proj
   code_preview_domain; assert_eq "$(get_env PREVIEW_DOMAIN)" my-proj-preview.localhost
   # written only when it changes
@@ -32,7 +32,7 @@ test_the_previews_secret_is_made_with_the_code_pages() {
   case "$s1" in *[!0-9a-f]* | '') echo "not hex: $s1" >&2; return 1 ;; esac
   [ "${#s1}" -ge 32 ] || return 1
   [ "$s1" != "$(get_env CODE_PROXY_SECRET)" ] || return 1
-  assert_eq "$(get_env PREVIEW_DOMAIN)" bedrock-now-preview.localhost
+  assert_eq "$(get_env PREVIEW_DOMAIN)" devos-ade-preview.localhost
   code_secrets; assert_eq "$(get_env PREVIEW_PROXY_SECRET)" "$s1"          # ./stack up keeps it
   code_secrets rotate; [ "$(get_env PREVIEW_PROXY_SECRET)" != "$s1" ] || return 1   # every enable makes a new one
   set_env PREVIEW_PROXY_SECRET 'ABC'; code_secrets
@@ -44,7 +44,7 @@ test_compose_render_wires_bn_preview_the_gateway_and_the_preview_site() {
   [ -n "${BN_REAL_DOCKER:-}" ] && "$BN_REAL_DOCKER" compose version >/dev/null 2>&1 || { echo "no docker compose" >&2; return 77; }
   docker() { case "$*" in *" config --format json") "$BN_REAL_DOCKER" "$@" ;; *) echo "unexpected docker $*" >&2; return 97 ;; esac; }
   mkdir -p "$TMP/ws"
-  printf 'POSTGRES_PASSWORD=p\nRUSTFS_ACCESS_KEY=a\nRUSTFS_SECRET_KEY=s\nLITELLM_MASTER_KEY=m\nLITELLM_SALT_KEY=s\nLITELLM_UI_PASSWORD=u\nWEBUI_SECRET_KEY=w\nOPENWEBUI_ADMIN_EMAIL=a@b.c\nOPENWEBUI_ADMIN_PASSWORD=p\nSHARED_MCP_TOKEN=t\nLITELLM_KEY_CLAUDE_CODE=sk-cc\nLITELLM_KEY_TERMINAL=sk-term\nTERMINAL_PROXY_SECRET=0123456789abcdef0123456789abcdef\nTERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=%s\nTERMINAL_UID=501\nTERMINAL_GID=20\nCODE_ENABLED=true\nCODE_PROXY_SECRET=fedcba9876543210fedcba9876543210\nPREVIEW_PROXY_SECRET=00112233445566778899aabbccddeeff\nPREVIEW_DOMAIN=bedrock-now-preview.localhost\n' "$TMP/ws" > "$ENV_FILE"
+  printf 'POSTGRES_PASSWORD=p\nRUSTFS_ACCESS_KEY=a\nRUSTFS_SECRET_KEY=s\nLITELLM_MASTER_KEY=m\nLITELLM_SALT_KEY=s\nLITELLM_UI_PASSWORD=u\nWEBUI_SECRET_KEY=w\nOPENWEBUI_ADMIN_EMAIL=a@b.c\nOPENWEBUI_ADMIN_PASSWORD=p\nSHARED_MCP_TOKEN=t\nLITELLM_KEY_CLAUDE_CODE=sk-cc\nLITELLM_KEY_TERMINAL=sk-term\nTERMINAL_PROXY_SECRET=0123456789abcdef0123456789abcdef\nTERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=%s\nTERMINAL_UID=501\nTERMINAL_GID=20\nCODE_ENABLED=true\nCODE_PROXY_SECRET=fedcba9876543210fedcba9876543210\nPREVIEW_PROXY_SECRET=00112233445566778899aabbccddeeff\nPREVIEW_DOMAIN=devos-ade-preview.localhost\n' "$TMP/ws" > "$ENV_FILE"
   out="$(dc config --format json 2>&1)" || { echo "$out" >&2; return 1; }
   printf '%s' "$out" | python3 -c '
 import json, sys
@@ -59,8 +59,8 @@ assert not any(v.get("source") == "preview-socket" for n, x in s.items() if n no
 assert g["environment"]["PREVIEW_PROXY_SECRET"] == SEC and k["environment"]["PREVIEW_PROXY_SECRET"] == SEC
 for x in (t, c, p):
     assert SEC not in json.dumps(x), x.get("container_name")
-assert k["environment"]["PREVIEW_MODE"] == "on" and k["environment"]["PREVIEW_DOMAIN"] == "bedrock-now-preview.localhost"
-assert p["environment"]["PREVIEW_DOMAIN"] == "bedrock-now-preview.localhost"
+assert k["environment"]["PREVIEW_MODE"] == "on" and k["environment"]["PREVIEW_DOMAIN"] == "devos-ade-preview.localhost"
+assert p["environment"]["PREVIEW_DOMAIN"] == "devos-ade-preview.localhost"
 # nothing new is published: the preview site is on the main Caddy local listener
 assert k["ports"] == [{"mode": "ingress", "host_ip": "127.0.0.1", "target": 8080, "published": "80", "protocol": "tcp"}], k["ports"]
 assert "ports" not in g and "ports" not in t' || return 1
@@ -190,11 +190,11 @@ test_the_remote_preview_host_follows_the_remote_code_page() {
   assert_eq "$(get_env REMOTE_CODE_HOST) [$(get_env REMOTE_PREVIEW_HOST)] [$(get_env REMOTE_PREVIEW_SITE)]" "bedrock-now-code.$TN [] []"
   assert_not_contains "$(ts_service_names) $(ts_serve_config tailscale "$TN")" "preview"
   steps="$(ts_admin_steps tailscale)"
-  assert_contains "$steps" "The Code page's previews over remote access, bedrock-now-preview, are off: read docs/remote.md"
+  assert_contains "$steps" "The Code page's previews over remote access, devos-ade-preview, are off: read docs/remote.md"
   assert_contains "$steps" "define and approve that Service first, then ./stack config set REMOTE_PREVIEW (then: true)"
   note="$(remote_preview_note)"
   assert_contains "$note" "same site as every other app of"
-  assert_contains "$note" "first define the Service bedrock-now-preview (port tcp:443)"
+  assert_contains "$note" "first define the Service devos-ade-preview (port tcp:443)"
   assert_contains "$note" "Off: ./stack config set REMOTE_PREVIEW (then: false)"
   for v in '' false OFF no 0 maybe; do
     set_env REMOTE_PREVIEW "$v"; code_remote_sync; assert_eq "[$(get_env REMOTE_PREVIEW_HOST)]" "[]"
@@ -212,7 +212,7 @@ import json, sys
 p = json.load(sys.stdin)
 assert "svc:bedrock-now-preview" in p["autoApprovers"]["services"] and "svc:bedrock-now-preview" in p["grants"][0]["dst"], p' || return 1
   steps="$(ts_admin_steps tailscale)"
-  assert_contains "$steps" "bedrock-now-preview shows the dev servers running in the sandbox"
+  assert_contains "$steps" "devos-ade-preview shows the dev servers running in the sandbox"
   assert_contains "$steps" "Off: ./stack config set REMOTE_PREVIEW (then: false)"
   assert_eq "$(remote_preview_note)" ""
   assert_contains "$(remote_app_list)" "chat admin files terminal code preview"
@@ -252,7 +252,7 @@ test_status_and_test_name_the_remote_previews() {
   dc() { :; }
   _ts() { case "$1" in status) printf '{"BackendState":"Running","Self":{"Tags":["tag:bedrock-now"]}}\n' ;; esac; }
   set_env_batch CODE_ENABLED true REMOTE_TERMINAL true REMOTE_MODE tailscale TS_TAILNET "$TN" REMOTE_HOST "bedrock-now.$TN" \
-    REMOTE_CHAT_HOST "bedrock-now-chat.$TN" PREVIEW_DOMAIN bedrock-now-preview.localhost
+    REMOTE_CHAT_HOST "bedrock-now-chat.$TN" PREVIEW_DOMAIN devos-ade-preview.localhost
   terminal_remote_sync; code_remote_sync
   assert_contains "$(code_status)" "remote: off (the default; REMOTE_PREVIEW=true turns them on"
   assert_contains "$(remote_status)" "preview  off — the Code page's previews stay on this computer (REMOTE_PREVIEW; docs/remote.md before turning them on)"
@@ -344,21 +344,21 @@ test_uninstall_and_terminal_disable_remove_its_socket_volume() {
   _stubs
   docker() { echo "docker $*" >> "$TMP/docker"; return 0; }
   terminal_uninstall_cleanup
-  assert_contains "$(cat "$TMP/docker")" "bedrock-now_preview-socket"
+  assert_contains "$(cat "$TMP/docker")" "devos-ade_preview-socket"
   assert_contains "$(sed -n '/^terminal_disable() {/,/^}/p' "$STACK_DIR/lib/terminal.sh")" '"$(project_name)_preview-socket"'
 }
 
 test_portal_and_app_hosts_never_on_a_preview_site() {
   _stubs
   # a project named <x>-preview would otherwise get the previews' site of an install at <x>.localhost
-  assert_eq "$(default_portal_host bedrock-now-preview)" bedrock-now-preview-portal.localhost
+  assert_eq "$(default_portal_host devos-ade-preview)" devos-ade-preview-portal.localhost
   assert_eq "$(default_portal_host my_app)" my-app.localhost
-  assert_eq "$(default_portal_host "$DEFAULT_PROJECT")" bedrock-now.localhost
-  for h in bedrock-now-preview.localhost portal.team-preview.localhost; do
+  assert_eq "$(default_portal_host "$DEFAULT_PROJECT")" devos-ade.localhost
+  for h in devos-ade-preview.localhost portal.team-preview.localhost; do
     if out="$( (check_portal_host "$h") 2>&1)"; then echo "accepted $h" >&2; return 1; fi
     assert_contains "$out" "is on a *-preview.localhost site"
   done
-  ( check_portal_host bedrock-now.localhost ) 2>/dev/null || return 1
+  ( check_portal_host devos-ade.localhost ) 2>/dev/null || return 1
   ( check_portal_host preview.localhost ) 2>/dev/null || return 1        # (its site is preview.localhost: not one)
   set_env CODE_HOST code.x-preview.localhost
   if out="$( (check_app_hosts) 2>&1)"; then echo "CODE_HOST on a preview site accepted" >&2; return 1; fi

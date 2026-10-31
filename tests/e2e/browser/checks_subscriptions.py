@@ -22,7 +22,7 @@ from checks_terminal import TERM, LOCKED_OK, terminal_frame, unlock_cookie, unlo
 ON = ENV.get("TERMINAL_ENABLED") == "true"
 FULL = os.environ.get("E2E_SUBSCRIPTIONS") == "1"
 TOOLS = ["claude", "codex", "gemini", "copilot", "cursor", "grok"]
-H = {"X-Requested-With": "bedrock-now"}
+H = {"X-Requested-With": "devos-ade"}
 # the device-code sign-in a tool not signed in starts with (its own text)
 CODEX_SIGNIN = r"auth\.openai\.com/codex/device"
 GROK_SIGNIN = r"x\.ai/oauth2/device"
@@ -253,7 +253,7 @@ def link_alone(ctx):
         expect(ws_status(cookie, path) == 403, f"WebSocket {path}: not refused")
     expect(ws_status(cookie, "/ws") == 101, "the plain WebSocket no longer opens")
     # a token made on a click (the portal's own page): its words open
-    r = http("POST", None, "/api/terminal/launch", {"X-Requested-With": "bedrock-now", "Content-Type": "application/json", "Origin": origin_portal()},
+    r = http("POST", None, "/api/terminal/launch", {"X-Requested-With": "devos-ade", "Content-Type": "application/json", "Origin": origin_portal()},
              json.dumps({"mode": "open", "tool": "shell"}), cookie=sess)
     expect(r.status == 200, f"/api/terminal/launch: HTTP {r.status}")
     url = json.loads(r.body)["url"]

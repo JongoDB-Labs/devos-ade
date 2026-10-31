@@ -15,7 +15,7 @@ const INDEX = {
       { key: "+backups", section: "updates", section_title: "Updates & backups", title: "Backups (Back up now)", summary: "Back up now", parent: "" },
       { key: "lower_case", section: "x", title: "x" }, { key: "A".repeat(50), section: "x", title: "x" }],
   },
-  docs: { pages: [{ file: "README.md", title: "bedrock-now", sections: [{ anchor: "costs--budgets", title: "Costs & budgets", level: 2, parent: "", text: "Every key has a budget." },
+  docs: { pages: [{ file: "README.md", title: "devos-ade", sections: [{ anchor: "costs--budgets", title: "Costs & budgets", level: 2, parent: "", text: "Every key has a budget." },
     { anchor: "bad anchor", title: "x" }] }, { file: "../etc/passwd", title: "x", sections: [] }, { file: "docs/security.md", title: "Security model", sections: [] }] },
 };
 

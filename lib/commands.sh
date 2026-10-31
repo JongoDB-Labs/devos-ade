@@ -26,7 +26,7 @@ Usage: ./stack <command> [--yes]
                --disk measures disk use now (otherwise reused for 5 minutes)
   versions     Each core service: what runs, what this release pins, the newest upstream
   open         The installed DevOS ADE app, else the portal in your browser, where
-               "Install app" installs it (setup and up open it too; BEDROCK_NOW_NO_OPEN=1
+               "Install app" installs it (setup and up open it too; DEVOS_ADE_NO_OPEN=1
                turns that off)
   logs [svc]   Follow logs (litellm, open-webui, rustfs, postgres, shared-mcp, portal, caddy, stt, terminal, code,
                subs-chat, searxng, forgejo)
@@ -103,7 +103,7 @@ Usage: ./stack <command> [--yes]
   Commands without a $ note make no Bedrock calls.  ./stack <command> --help shows one command.
   --yes        Accept defaults (non-interactive). AWS creds can come from
                AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION_NAME.
-  BEDROCK_NOW_VERBOSE=1 ./stack setup   shows the full docker compose output.
+  DEVOS_ADE_VERBOSE=1 ./stack setup   shows the full docker compose output.
   NO_COLOR=1   turns colours off.
 EOF
 }
@@ -162,7 +162,7 @@ check_docker_engine() { # Linux: Docker Engine < 28 can expose 127.0.0.1-publish
 
 _docker_rootless() { docker info --format '{{json .SecurityOptions}}' 2>/dev/null | grep rootless >/dev/null; }
 
-# --- quiet, phased bring-up (BEDROCK_NOW_VERBOSE=1 shows all compose output) ---
+# --- quiet, phased bring-up (DEVOS_ADE_VERBOSE=1 shows all compose output) ---
 
 fmt_elapsed() { # fmt_elapsed SECONDS -> "16s" / "2m05s"
   local s="${1:-0}"
@@ -171,15 +171,15 @@ fmt_elapsed() { # fmt_elapsed SECONDS -> "16s" / "2m05s"
 phase_line() { printf '%s ready (%s)\n' "$1" "$(fmt_elapsed "$2")"; }   # phase_line LABEL SECONDS
 # helper_job — this command runs as a job of the update helper (Home's Update now, the nightly update): its log is what
 # Home's progress card reads (lib/helper.sh _job_steps)
-helper_job() { [ "${BEDROCK_NOW_JOB_ORIGIN:-}" = helper ] && [ ! -t 2 ]; }
+helper_job() { [ "${DEVOS_ADE_JOB_ORIGIN:-}" = helper ] && [ ! -t 2 ]; }
 # phase_start LABEL — in a helper job's log, "==> LABEL: starting…" before a phase whose "LABEL ready (…)" line follows:
 # Home shows the step that runs and for how long (a terminal shows it on its own line instead; run_phase)
 phase_start() { ! helper_job || is_verbose || log "$1: starting…"; }
 _now() { date +%s; }
-is_verbose() { [ "${BEDROCK_NOW_VERBOSE:-0}" = 1 ]; }
+is_verbose() { [ "${DEVOS_ADE_VERBOSE:-0}" = 1 ]; }
 
 # quiet_compose — for the rest of this command, Compose leaves out its per-container progress lines ("Container x
-# Waiting", "… Healthy": dozens per restore) and still prints its errors. BEDROCK_NOW_VERBOSE=1 shows them, and a
+# Waiting", "… Healthy": dozens per restore) and still prints its errors. DEVOS_ADE_VERBOSE=1 shows them, and a
 # COMPOSE_PROGRESS of your own is kept. compose_quiet_env -> the same as an env(1) argument, for child processes.
 quiet_compose() { is_verbose || export COMPOSE_PROGRESS="${COMPOSE_PROGRESS:-quiet}"; }
 compose_quiet_env() { is_verbose || printf 'COMPOSE_PROGRESS=%s\n' "${COMPOSE_PROGRESS:-quiet}"; }
@@ -237,7 +237,7 @@ run_phase() {
   # (Docker out of address ranges for a new network: said as it is, not as a service's failure)
   [ -z "$pools" ] || die "$label did not come up: Docker has no address range left for another network (docker network ls lists them;" \
     "the networks of stacks you no longer run can go with docker network rm NAME, or Docker's default-address-pools setting gives it more)"
-  die "$label did not come up — full logs: ./stack logs ${first:-<service>}   (BEDROCK_NOW_VERBOSE=1 ./stack setup shows all compose output)"
+  die "$label did not come up — full logs: ./stack logs ${first:-<service>}   (DEVOS_ADE_VERBOSE=1 ./stack setup shows all compose output)"
 }
 
 # building WHAT CMD... — CMD, an image build (dc build -q says nothing until it ends). In a run_phase with no terminal
@@ -597,7 +597,7 @@ setup_secrets() {
     src="from OPENWEBUI_ADMIN_EMAIL in .env"
   else
     def="$(git config user.email 2>/dev/null || true)"
-    if [ -n "$def" ]; then src="from git config"; else def=admin@bedrock-now.local; src="default"; fi
+    if [ -n "$def" ]; then src="from git config"; else def=admin@devos-ade.local; src="default"; fi
     if [ "${ASSUME_YES:-0}" != 1 ] && _have_tty; then asked=1; fi
     typed="$(ask "Open WebUI admin email" "$def")"
     # Chat (Open WebUI) keeps every email address in lowercase and ignores the case at sign-in, and the Admin
@@ -653,7 +653,7 @@ _setup_interrupted() {
   fi
   running="$(dc ps --services --status running 2>/dev/null | tr '\n' ' ' | sed -e 's/  */ /g' -e 's/ $//' -e 's/ /, /g' || true)"
   if [ -n "$running" ]; then printf '    Still running: %s.\n' "$running" >&2; else printf '    Nothing of the stack is running.\n' >&2; fi
-  if [ -z "${BEDROCK_NOW_LOCK_HELD:-}" ] || [ "$BEDROCK_NOW_LOCK_HELD" = "$$" ]; then
+  if [ -z "${DEVOS_ADE_LOCK_HELD:-}" ] || [ "$DEVOS_ADE_LOCK_HELD" = "$$" ]; then
     printf '    To go on: ./stack setup — it keeps .env (your AWS key, ports and passwords) and what was set up.\n' >&2
     if [ -n "$running" ]; then
       printf '    To stop instead: ./stack down (keeps the data); ./stack uninstall removes the containers and data too.\n' >&2
@@ -684,7 +684,7 @@ _setup_smoke_test() {
 }
 _setup_finish() {
   offer_symlink
-  offer_helper   # lib/helper.sh: asks once; --yes installs it only with BEDROCK_NOW_HELPER=1
+  offer_helper   # lib/helper.sh: asks once; --yes installs it only with DEVOS_ADE_HELPER=1
   if [ -n "$SETUP_REMOTE_MODE" ]; then remote_enable "$SETUP_REMOTE_MODE"; else remote_up_hook; fi
   record_setup_commit   # lib/rollback.sh: ./stack update calls "nothing new" only for this commit
   services_status_write   # Home's record of the containers, as setup leaves them (the built-in SearXNG's row)
@@ -842,7 +842,7 @@ _restore_litellm_config() {
 # --- the model probe, kept while nothing it depends on changed (an update, a setup again) ---
 # PROBE_REUSE_MAX_S: how long its answers stand at most (a week: a model your AWS admin enables meanwhile shows by then;
 # ./stack models --recheck checks again at once). The mark: .state/models/probe.mark (fingerprint=, at=).
-PROBE_REUSE_MAX_S="${BEDROCK_NOW_PROBE_MAX_AGE_S:-604800}"
+PROBE_REUSE_MAX_S="${DEVOS_ADE_PROBE_MAX_AGE_S:-604800}"
 probe_mark_file() { printf '%s\n' "$STATE_DIR/models/probe.mark"; }
 # probe_fingerprint -> a hash of what the probe's answers depend on: .env's AWS_* lines (the key, its region, how it
 # signs in — hashed, never kept as they are), the model catalog, LiteLLM's image and the probe's own code
@@ -1604,7 +1604,7 @@ _test_portal() {
   _check "portal login (PORTAL_PASSWORD)" 303 303
   code="$(portal_curl '' /login?next=http://evil.example/ -s -m 10 -o /dev/null -D "$hdr" -w '%{http_code}' || true)"
   _check "login refuses a foreign next= (no open redirect)" "$code $(_hdr location < "$hdr")" "303 /"
-  code="$(portal_curl '' /api/summary -s -m 30 -o /dev/null -w '%{http_code}' -H 'X-Requested-With: bedrock-now' || true)"
+  code="$(portal_curl '' /api/summary -s -m 30 -o /dev/null -w '%{http_code}' -H 'X-Requested-With: devos-ade' || true)"
   _check "portal Home data (/api/summary)" "$code" 200
   code="$(portal_curl chat /health -s -m 10 -o /dev/null -w '%{http_code}' || true)"
   _check "open-webui health (chat.)" "$code" 200
@@ -2021,15 +2021,15 @@ update_checkout() {
   CODE_CHANGED=1
 }
 
-# _update_reexec_genuine — BEDROCK_NOW_CODE_UPDATED=1 counts only in the process ./stack update exec'd itself into
-# (exec keeps the pid): it holds the update lock (BEDROCK_NOW_LOCK_HELD = $$). A version from before the lock (v0.2.1
+# _update_reexec_genuine — DEVOS_ADE_CODE_UPDATED=1 counts only in the process ./stack update exec'd itself into
+# (exec keeps the pid): it holds the update lock (DEVOS_ADE_LOCK_HELD = $$). A version from before the lock (v0.2.1
 # and older) passes no lock: then the commit it came from must be a real one other than HEAD, with its complete
 # pre-update backup from the last hour.
 _update_reexec_genuine() {
-  local from="${BEDROCK_NOW_UPDATE_FROM:-}" b="${BEDROCK_NOW_UPDATE_BACKUP:-}"
-  [ "${BEDROCK_NOW_CODE_UPDATED:-0}" = 1 ] || return 1
-  if [ -n "${BEDROCK_NOW_LOCK_HELD:-}" ]; then
-    [ "$BEDROCK_NOW_LOCK_HELD" = "$$" ] && [ "$(head -c 20 "$(lock_dir)/pid" 2>/dev/null)" = "$$" ]
+  local from="${DEVOS_ADE_UPDATE_FROM:-}" b="${DEVOS_ADE_UPDATE_BACKUP:-}"
+  [ "${DEVOS_ADE_CODE_UPDATED:-0}" = 1 ] || return 1
+  if [ -n "${DEVOS_ADE_LOCK_HELD:-}" ]; then
+    [ "$DEVOS_ADE_LOCK_HELD" = "$$" ] && [ "$(head -c 20 "$(lock_dir)/pid" 2>/dev/null)" = "$$" ]
     return
   fi
   case "$from" in '' | *[!0-9a-f]*) return 1 ;; esac
@@ -2040,12 +2040,12 @@ _update_reexec_genuine() {
 }
 
 # ./stack update: 1/4 backup (current code) → 2/4 code → [re-exec new code] → 3/4 images → 4/4 setup.
-# The re-exec gets BEDROCK_NOW_CODE_UPDATED=1, the backup dir, the previous commit and branch, so a later failure
+# The re-exec gets DEVOS_ADE_CODE_UPDATED=1, the backup dir, the previous commit and branch, so a later failure
 # can tell you exactly how to go back. Nothing new (update_nothing_new): it says so and stops before the backup
 # (exit 0); --force runs every step anyway (re-runs setup: model probe, LiteLLM restart, smoke test).
 # An update that moved the code but did not finish (update_unfinished: pull or setup failed, or it was stopped) is
 # finished first: images and setup, with no new backup or snapshot, so ./stack rollback keeps going back to the
-# version and backup it recorded (--to moves the code on first, e.g. to a fix; BEDROCK_NOW_UPDATE_FINISHING=1).
+# version and backup it recorded (--to moves the code on first, e.g. to a fix; DEVOS_ADE_UPDATE_FINISHING=1).
 # The record is written right after the checkout, before the exec, so a stop at any point after it counts as such.
 cmd_update() {
   local to='' backup from='' branch='' hint moved=0 force=0 finishing=0 reexec=0 yes=() pullenv=() usage="usage: ./stack update [--to <tag|branch>] [--force]"
@@ -2060,10 +2060,10 @@ cmd_update() {
   # (this version's compose files need Docker Compose 2.24.4: said before anything changes — after an update from an
   # earlier version, before its setup runs; ./stack update then finishes it once Compose is updated)
   compose_overrides_ok || die "$(compose_too_old)"
-  if [ "${BEDROCK_NOW_CODE_UPDATED:-0}" = 1 ]; then   # before stack_lock, which would take the lock as ours
+  if [ "${DEVOS_ADE_CODE_UPDATED:-0}" = 1 ]; then   # before stack_lock, which would take the lock as ours
     if _update_reexec_genuine; then reexec=1
     else   # e.g. v0.1.1 or a stale v0.2.1 hand-over: the code may have moved, so nothing is skipped
-      warn "BEDROCK_NOW_CODE_UPDATED=1 in the environment is ignored (./stack update sets it only for itself) — running every step"
+      warn "DEVOS_ADE_CODE_UPDATED=1 in the environment is ignored (./stack update sets it only for itself) — running every step"
       force=1
     fi
   fi
@@ -2080,8 +2080,8 @@ cmd_update() {
       log "update: 2/4 code (git)"
       timed_step "New code (git)" update_checkout "$to"
       [ "$CODE_CHANGED" != 1 ] ||
-        exec env BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_UPDATE_FINISHING=1 BEDROCK_NOW_UPDATE_BACKUP="$backup" \
-          BEDROCK_NOW_UPDATE_FROM="$from" BEDROCK_NOW_UPDATE_BRANCH="$branch" "$STACK_DIR/stack" update ${yes[@]+"${yes[@]}"}
+        exec env DEVOS_ADE_CODE_UPDATED=1 DEVOS_ADE_UPDATE_FINISHING=1 DEVOS_ADE_UPDATE_BACKUP="$backup" \
+          DEVOS_ADE_UPDATE_FROM="$from" DEVOS_ADE_UPDATE_BRANCH="$branch" "$STACK_DIR/stack" update ${yes[@]+"${yes[@]}"}
     fi
   elif [ "$reexec" = 0 ]; then
     _require_clean_tree
@@ -2100,15 +2100,15 @@ cmd_update() {
       # What ./stack rollback needs, now that the code moved: a stop before the new code runs is an unfinished update.
       update_record_write "$from" "$branch" "$backup"
       # Continue in a fresh process so images and setup run with the NEW scripts.
-      exec env -u BEDROCK_NOW_UPDATE_FINISHING BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_UPDATE_BACKUP="$backup" \
-        BEDROCK_NOW_UPDATE_FROM="$from" BEDROCK_NOW_UPDATE_BRANCH="$branch" "$STACK_DIR/stack" update ${yes[@]+"${yes[@]}"}
+      exec env -u DEVOS_ADE_UPDATE_FINISHING DEVOS_ADE_CODE_UPDATED=1 DEVOS_ADE_UPDATE_BACKUP="$backup" \
+        DEVOS_ADE_UPDATE_FROM="$from" DEVOS_ADE_UPDATE_BRANCH="$branch" "$STACK_DIR/stack" update ${yes[@]+"${yes[@]}"}
     fi
     hint="./stack update runs it again; your pre-update backup is $backup (./stack restore $backup)"
   else
-    backup="${BEDROCK_NOW_UPDATE_BACKUP:-}"; from="${BEDROCK_NOW_UPDATE_FROM:-}"; branch="${BEDROCK_NOW_UPDATE_BRANCH:-}"
+    backup="${DEVOS_ADE_UPDATE_BACKUP:-}"; from="${DEVOS_ADE_UPDATE_FROM:-}"; branch="${DEVOS_ADE_UPDATE_BRANCH:-}"
     moved=1
     # finishing an unfinished update (set by the exec above): only while the record says so
-    [ "${BEDROCK_NOW_UPDATE_FINISHING:-0}" != 1 ] || [ "$(_record_get result)" != running ] || finishing=1
+    [ "${DEVOS_ADE_UPDATE_FINISHING:-0}" != 1 ] || [ "$(_record_get result)" != running ] || finishing=1
     log "update: 1/4 backup and 2/4 code done (backup: ${backup:-none})"
     hint="./stack update finishes it, or ./stack rollback goes back (by hand: $(_rollback_cmd "$from" "$branch") && ./stack restore $backup)"
   fi
@@ -2136,16 +2136,16 @@ cmd_update() {
       die "image pull failed or was stopped (network/registry?) — $hint"
     }
   fi
-  [ -z "$PULLS_DIR" ] || pullenv=(BEDROCK_NOW_PULLS_DIR="$PULLS_DIR" BEDROCK_NOW_PULLS_PID="$PULLS_PID")
+  [ -z "$PULLS_DIR" ] || pullenv=(DEVOS_ADE_PULLS_DIR="$PULLS_DIR" DEVOS_ADE_PULLS_PID="$PULLS_PID")
   log "update: 4/4 setup (non-interactive; keeps .env, keys and AWS creds)"
   # Separate process (keeps set -e working inside setup); AWS creds and the optional OpenRouter settings come
   # from .env, never from this shell (a removed OpenRouter key stays removed).
   env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN -u AWS_REGION_NAME -u AWS_REGION \
-    -u OPENROUTER_API_KEY -u OPENROUTER_MODELS -u OPENROUTER_MAX_MODELS -u BEDROCK_NOW_OPENROUTER_FROM_ENV \
+    -u OPENROUTER_API_KEY -u OPENROUTER_MODELS -u OPENROUTER_MAX_MODELS -u DEVOS_ADE_OPENROUTER_FROM_ENV \
     -u EXPLABS_API_KEY -u EXPLABS_MODELS \
-    -u STT_PROVIDER -u STT_API_KEY -u STT_MODEL -u BEDROCK_NOW_STT_FROM_ENV \
-    -u COMPOSE_PROJECT_NAME -u BEDROCK_NOW_CODE_UPDATED -u BEDROCK_NOW_UPDATE_BACKUP -u BEDROCK_NOW_UPDATE_FROM -u BEDROCK_NOW_UPDATE_BRANCH \
-    -u BEDROCK_NOW_UPDATE_FINISHING -u BEDROCK_NOW_PULLS_DIR -u BEDROCK_NOW_PULLS_PID \
+    -u STT_PROVIDER -u STT_API_KEY -u STT_MODEL -u DEVOS_ADE_STT_FROM_ENV \
+    -u COMPOSE_PROJECT_NAME -u DEVOS_ADE_CODE_UPDATED -u DEVOS_ADE_UPDATE_BACKUP -u DEVOS_ADE_UPDATE_FROM -u DEVOS_ADE_UPDATE_BRANCH \
+    -u DEVOS_ADE_UPDATE_FINISHING -u DEVOS_ADE_PULLS_DIR -u DEVOS_ADE_PULLS_PID \
     ${pullenv[@]+"${pullenv[@]}"} "$STACK_DIR/stack" setup --yes ||
     die "update: setup failed (see the messages above) — $hint"
   # Every service this update recreated runs the image this release pins (by digest); one that does not fails the update
@@ -2233,8 +2233,8 @@ update_whats_new() {
   remote_on || printf '  Remote access: off — ./stack remote enable tailscale (docs/remote.md)\n'
   if ! helper_installed; then printf '  One-click updates from Home: ./stack helper install\n'
   elif [ -n "$tag" ] && ! auto_on; then printf '  Automatic updates: off — ./stack helper auto on installs new releases at night\n'; fi
-  if [ "${n:-0}" -gt 1 ]; then printf '  Release notes: %s\n' "$BEDROCK_NOW_RELEASES_URL"
-  else case "$tag" in v[0-9]*) case "$tag" in *[!A-Za-z0-9._-]*) ;; *) printf '  Release notes: %s/tag/%s\n' "$BEDROCK_NOW_RELEASES_URL" "$tag" ;; esac ;; esac; fi
+  if [ "${n:-0}" -gt 1 ]; then printf '  Release notes: %s\n' "$DEVOS_ADE_RELEASES_URL"
+  else case "$tag" in v[0-9]*) case "$tag" in *[!A-Za-z0-9._-]*) ;; *) printf '  Release notes: %s/tag/%s\n' "$DEVOS_ADE_RELEASES_URL" "$tag" ;; esac ;; esac; fi
   return 0
 }
 

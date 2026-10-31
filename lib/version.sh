@@ -9,7 +9,7 @@
 
 # The project's GitHub releases (install.sh and portal/portal/updates.py name the same repository)
 # shellcheck disable=SC2034  # used by lib/commands.sh (update_whats_new)
-BEDROCK_NOW_RELEASES_URL="https://github.com/$PRODUCT_REPO/releases"
+DEVOS_ADE_RELEASES_URL="https://github.com/$PRODUCT_REPO/releases"
 
 status_dir()       { printf '%s/status\n' "$STATE_DIR"; }
 update_check_dir() { printf '%s/update-check\n' "$STATE_DIR"; }
@@ -60,7 +60,7 @@ version_newer() {
 # host_facts_label -> "OS<TAB>Compose version" for Send feedback (JON-440 G1): the only two facts of this computer a
 # prefilled public issue carries besides the DevOS ADE version. OS: macOS and its version, or Linux and its
 # distribution; Compose: docker compose version --short (the one already asked this run, if any; none under
-# BEDROCK_NOW_COMPOSE_CONTEXTS, the tests' switch). Plain [A-Za-z0-9._ +-] only; unknown: empty.
+# DEVOS_ADE_COMPOSE_CONTEXTS, the tests' switch). Plain [A-Za-z0-9._ +-] only; unknown: empty.
 host_facts_label() {
   local os='' dist='' cv="${_BN_COMPOSE_VERSION:-}"
   case "$(uname -s 2>/dev/null)" in
@@ -68,7 +68,7 @@ host_facts_label() {
     Linux) dist="$( (. /etc/os-release 2>/dev/null && printf '%s %s' "${ID:-}" "${VERSION_ID:-}") || true)"
       os="Linux${dist:+ $dist}" ;;
   esac
-  [ -n "$cv" ] || [ -n "${BEDROCK_NOW_COMPOSE_CONTEXTS:-}" ] || cv="$(docker compose version --short 2>/dev/null || true)"
+  [ -n "$cv" ] || [ -n "${DEVOS_ADE_COMPOSE_CONTEXTS:-}" ] || cv="$(docker compose version --short 2>/dev/null || true)"
   os="$(printf '%s' "$os" | LC_ALL=C tr -cd 'A-Za-z0-9._ +-' | cut -c1-40)"
   cv="$(printf '%s' "$cv" | LC_ALL=C tr -cd 'A-Za-z0-9._+-' | cut -c1-40)"
   printf '%s\t%s\n' "$os" "$cv"
@@ -104,9 +104,9 @@ EOF
 # read_portal_file FILE MAXBYTES -> the first MAXBYTES of FILE, a file in a folder the portal can write. It never
 # blocks or follows anything: opened with O_NONBLOCK|O_NOFOLLOW and checked to be a regular file on the open handle
 # (perl), so a FIFO, a device or a symlink put there, even swapped in after a check, is refused. Without perl: the
-# same checks by path, and a read that is ended after 2 s (BEDROCK_NOW_NO_PERL=1 forces that, for the tests).
+# same checks by path, and a read that is ended after 2 s (DEVOS_ADE_NO_PERL=1 forces that, for the tests).
 read_portal_file() {
-  if [ -z "${BEDROCK_NOW_NO_PERL:-}" ] && command -v perl >/dev/null 2>&1; then
+  if [ -z "${DEVOS_ADE_NO_PERL:-}" ] && command -v perl >/dev/null 2>&1; then
     perl -e 'use Fcntl; sysopen(my $f, $ARGV[0], O_RDONLY | O_NONBLOCK | O_NOFOLLOW) or exit 1; -f $f or exit 1;
       my $b = ""; sysread($f, $b, $ARGV[1]); print $b' "$1" "$2" 2>/dev/null
     return

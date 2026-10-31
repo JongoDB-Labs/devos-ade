@@ -19,7 +19,7 @@ _stubs() {
   ensure_virtual_key() { echo "key $*" >> "$TMP/keys"; set_env "$1" "sk-$2"; }
   dc() { echo "dc $*" >> "$TMP/dc"; return 0; }
   docker() { echo "docker $*" >> "$TMP/docker"; return 0; }
-  printf 'PORTAL_SECRET=%s\nPORTAL_HOST=bedrock-now.localhost\nPORTAL_PORT=80\nLITELLM_PORT=9\nLITELLM_MASTER_KEY=sk-m\nLITELLM_KEY_CLAUDE_CODE=sk-cc\n' \
+  printf 'PORTAL_SECRET=%s\nPORTAL_HOST=devos-ade.localhost\nPORTAL_PORT=80\nLITELLM_PORT=9\nLITELLM_MASTER_KEY=sk-m\nLITELLM_KEY_CLAUDE_CODE=sk-cc\n' \
     "$(printf 's%.0s' $(seq 1 40))" > "$ENV_FILE"
 }
 
@@ -136,7 +136,7 @@ test_enable_creates_the_default_workspace_its_key_and_secret() {
   # the terminal: one compose call, which recreates only what the overlay changed — nothing forced
   assert_contains "$calls" "dc up -d --wait --no-deps portal caddy litellm shared-mcp open-webui terminal-gateway terminal-egress terminal"
   assert_not_contains "$calls" "force-recreate"
-  assert_contains "$(cat "$TMP/out")" "Terminal: on — http://terminal.bedrock-now.localhost"
+  assert_contains "$(cat "$TMP/out")" "Terminal: on — http://terminal.devos-ade.localhost"
   assert_contains "$(cat "$TMP/out")" "created the workspace folder $ws (mode 700)"
   assert_contains "$(cat "$TMP/out")" "LiteLLM and shared-mcp restart once as they join the terminal's gateway network"
   # ./stack up and setup keep the secret; enabling again makes a new one
@@ -254,14 +254,14 @@ test_disable_removes_containers_and_networks_and_keeps_folder_and_key() {
   assert_eq "$(printf '%s\n' "$calls" | head -n 1)" "dc rm -sf terminal terminal-gateway"   # while compose still knows them
   # (Caddy, LiteLLM and shared-mcp off the gateway's network: compose recreates them, as their configuration changed)
   assert_contains "$calls" "dc up -d --wait --no-deps portal caddy litellm shared-mcp open-webui"
-  assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_terminal"
-  assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_terminal-out"
-  assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_terminal-link"
-  assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_terminal-proxy"
+  assert_contains "$(cat "$TMP/docker")" "docker network rm devos-ade_terminal"
+  assert_contains "$(cat "$TMP/docker")" "docker network rm devos-ade_terminal-out"
+  assert_contains "$(cat "$TMP/docker")" "docker network rm devos-ade_terminal-link"
+  assert_contains "$(cat "$TMP/docker")" "docker network rm devos-ade_terminal-proxy"
   # its egress proxy, by its labels (whatever TERMINAL_EGRESS says now)
-  assert_contains "$(cat "$TMP/docker")" "docker ps -aq --filter label=com.docker.compose.project=bedrock-now --filter label=com.docker.compose.service=terminal-egress"
-  assert_contains "$(cat "$TMP/docker")" "docker volume rm bedrock-now_terminal-socket"
-  assert_contains "$(cat "$TMP/out")" "volume bedrock-now_terminal-home"
+  assert_contains "$(cat "$TMP/docker")" "docker ps -aq --filter label=com.docker.compose.project=devos-ade --filter label=com.docker.compose.service=terminal-egress"
+  assert_contains "$(cat "$TMP/docker")" "docker volume rm devos-ade_terminal-socket"
+  assert_contains "$(cat "$TMP/out")" "volume devos-ade_terminal-home"
   assert_contains "$(cat "$TMP/out")" "LiteLLM and shared-mcp restart once as they leave the terminal's gateway network"
   assert_contains "$(cat "$TMP/out")" "delete it in Admin to revoke it"
   terminal_disable > "$TMP/out" 2>&1 || return 1
@@ -273,7 +273,7 @@ test_status_names_folder_key_address_internet_and_remote() {
   terminal_enable > /dev/null 2>&1 || return 1
   dc() { case "$*" in *"ps -a --format"*) echo "running healthy" ;; esac; }
   out="$(terminal_status)"
-  assert_contains "$out" "Terminal: on — http://terminal.bedrock-now.localhost"
+  assert_contains "$out" "Terminal: on — http://terminal.devos-ade.localhost"
   assert_contains "$out" "Workspace  $(get_env TERMINAL_WORKSPACE) → /workspace"
   assert_contains "$out" "Container  running healthy"
   assert_contains "$out" 'Key        claude-code-terminal, its own monthly budget: $50 (BUDGET_TERMINAL'
@@ -290,9 +290,9 @@ test_status_names_folder_key_address_internet_and_remote() {
   assert_contains "$(terminal_status)" "Internet   on, with this computer's services and your network (TERMINAL_EGRESS=host): any address, any port"
   set_env TERMINAL_EGRESS off
   assert_contains "$(terminal_status)" "Internet   off (TERMINAL_EGRESS=off)"
-  assert_eq "$(status_url terminal)" "http://terminal.bedrock-now.localhost   (the Terminal tab; ./stack terminal status)"
+  assert_eq "$(status_url terminal)" "http://terminal.devos-ade.localhost   (the Terminal tab; ./stack terminal status)"
   assert_contains "$(status_url terminal-gateway)" "the terminal's only way into the stack"
-  assert_contains "$(terminal_summary_line)" "Terminal        http://terminal.bedrock-now.localhost"
+  assert_contains "$(terminal_summary_line)" "Terminal        http://terminal.devos-ade.localhost"
   set_env TERMINAL_HOST shell.localhost
   assert_eq "$(portal_url terminal)" "http://shell.localhost"
 }
@@ -353,22 +353,22 @@ test_up_makes_a_missing_key_and_drops_the_way_out_when_asked() {
   docker() { echo "docker $*" >> "$TMP/docker"; case "$*" in "ps -aq"*terminal-egress) echo c0ffee ;; esac; return 0; }
   : > "$TMP/docker"; terminal_after_up || return 1
   assert_contains "$(cat "$TMP/docker")" "docker rm -f c0ffee"
-  assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_terminal-proxy bedrock-now_terminal-out"
+  assert_contains "$(cat "$TMP/docker")" "docker network rm devos-ade_terminal-proxy devos-ade_terminal-out"
   # host: the sandbox is on terminal-out itself; only the proxy and its network go
   set_env TERMINAL_EGRESS host; : > "$TMP/docker"; terminal_after_up || return 1
   assert_contains "$(cat "$TMP/docker")" "docker rm -f c0ffee"
-  assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_terminal-proxy"
+  assert_contains "$(cat "$TMP/docker")" "docker network rm devos-ade_terminal-proxy"
   assert_not_contains "$(cat "$TMP/docker")" "terminal-out"
   # internet (the default): the terminal's proxy stays; only Chat's own (host's, compose.code-egress.yaml) goes
   set_env TERMINAL_EGRESS ''; : > "$TMP/docker"; terminal_after_up || return 1
   assert_not_contains "$(cat "$TMP/docker")" "terminal-"
   assert_contains "$(cat "$TMP/docker")" "label=com.docker.compose.service=chat-egress"
-  assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_chat-proxy bedrock-now_chat-out"
+  assert_contains "$(cat "$TMP/docker")" "docker network rm devos-ade_chat-proxy devos-ade_chat-out"
   # host with the Code page on: Chat's own proxy stays (its way out); off, it goes
   set_env TERMINAL_EGRESS host; set_env CODE_ENABLED true; : > "$TMP/docker"; terminal_after_up || return 1
   assert_not_contains "$(cat "$TMP/docker")" "chat-"
   set_env CODE_ENABLED false; : > "$TMP/docker"; terminal_after_up || return 1
-  assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_chat-proxy bedrock-now_chat-out"
+  assert_contains "$(cat "$TMP/docker")" "docker network rm devos-ade_chat-proxy devos-ade_chat-out"
   set_env CODE_ENABLED ''
   # ./stack up, before compose: a proxy left from internet goes once the choice is host or off (never an orphan)
   set_env TERMINAL_EGRESS host; : > "$TMP/docker"; terminal_up_hook 2>/dev/null || return 1
@@ -393,7 +393,7 @@ dc up -d --no-deps --wait terminal"
   : > "$TMP/dc"; set_env TERMINAL_EGRESS host
   terminal_egress_apply || return 1
   assert_eq "$(cat "$TMP/dc")" "dc up -d --no-deps --wait terminal"
-  assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_terminal-proxy"
+  assert_contains "$(cat "$TMP/docker")" "docker network rm devos-ade_terminal-proxy"
   # host: no proxy to build at enable or setup
   : > "$TMP/dc"; terminal_build || return 1
   assert_not_contains "$(cat "$TMP/dc")" "egress"
@@ -413,7 +413,7 @@ dc up -d --wait subs-chat"
   assert_eq "$(cat "$TMP/dc")" "dc rm -sf subs-chat
 dc up -d --no-deps --wait terminal
 dc up -d --wait subs-chat"
-  assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_chat-proxy bedrock-now_chat-out"
+  assert_contains "$(cat "$TMP/docker")" "docker network rm devos-ade_chat-proxy devos-ade_chat-out"
   # leaving host (the Code page on): Chat's own proxy goes before anything comes up — an up that fails leaves Chat's
   # sandbox with no way out, never with the one it had (Chat's sandbox's or the terminal's own up failing)
   local failing
@@ -457,15 +457,15 @@ test_an_egress_change_frees_networks_before_it_makes_new_ones() {
   # internet → host: subs-chat gone, the terminal on terminal-out, terminal-proxy gone, then Chat's own proxy's networks
   set_env TERMINAL_EGRESS host; : > "$TMP/order"; terminal_egress_apply || return 1
   [ "$(at "dc rm -sf subs-chat")" -lt "$(at "dc up -d --no-deps --wait terminal")" ] || { cat "$TMP/order" >&2; return 1; }
-  [ "$(at "dc up -d --no-deps --wait terminal")" -lt "$(at "docker network rm bedrock-now_terminal-proxy")" ] || { cat "$TMP/order" >&2; return 1; }
-  [ "$(at "docker network rm bedrock-now_terminal-proxy")" -lt "$(at "dc up -d --wait subs-chat")" ] || { cat "$TMP/order" >&2; return 1; }
+  [ "$(at "dc up -d --no-deps --wait terminal")" -lt "$(at "docker network rm devos-ade_terminal-proxy")" ] || { cat "$TMP/order" >&2; return 1; }
+  [ "$(at "docker network rm devos-ade_terminal-proxy")" -lt "$(at "dc up -d --wait subs-chat")" ] || { cat "$TMP/order" >&2; return 1; }
   # host → internet: subs-chat gone, Chat's proxy's networks gone, then the terminal's proxy (its network) comes
   set_env TERMINAL_EGRESS internet; : > "$TMP/order"; terminal_egress_apply || return 1
   # (Chat's proxy's networks go once nothing holds them: after subs-chat is removed, before the terminal's proxy comes)
   local a c; a="$(at "dc rm -sf subs-chat")"; c="$(at "dc up -d --wait --no-deps terminal-egress")"
-  grep -n -F "docker network rm bedrock-now_chat-proxy bedrock-now_chat-out" "$TMP/order" | cut -d: -f1 |
+  grep -n -F "docker network rm devos-ade_chat-proxy devos-ade_chat-out" "$TMP/order" | cut -d: -f1 |
     awk -v a="$a" -v c="$c" '$1 > a && $1 < c { f = 1 } END { exit !f }' || { cat "$TMP/order" >&2; return 1; }
-  [ "$(at "dc up -d --no-deps --wait terminal")" -lt "$(at "docker network rm bedrock-now_terminal-out")" ] || { cat "$TMP/order" >&2; return 1; }
+  [ "$(at "dc up -d --no-deps --wait terminal")" -lt "$(at "docker network rm devos-ade_terminal-out")" ] || { cat "$TMP/order" >&2; return 1; }
   unset -f code_ready at
 }
 
@@ -485,7 +485,7 @@ import json, sys
 s = json.load(sys.stdin)["Services"]
 assert sorted(s)[-1] == "svc:bedrock-now-terminal", s
 assert s["svc:bedrock-now-terminal"]["Web"] == {"bedrock-now-terminal.tail1234.ts.net:443": {"Handlers": {"/": {"Proxy": "http://caddy:8081"}}}}' || return 1
-  assert_contains "$(ts_admin_steps tailscale)" "bedrock-now-files   bedrock-now-terminal"
+  assert_contains "$(ts_admin_steps tailscale)" "devos-ade-files   devos-ade-terminal"
   assert_eq "$(remote_app_host terminal)" "bedrock-now-terminal.$TN"
   # own domain: terminal.<host> (the wildcard certificate covers it)
   set_env REMOTE_MODE domain; remote_hosts_domain bedrock.example.com
@@ -516,7 +516,7 @@ test_help_and_dispatcher() {
 
 test_missing_images_skips_the_local_terminal_build() {
   # (its egress proxy's too: built here, never pulled — a pull of it would stop setup before the build)
-  dc() { printf 'caddy:2\nbedrock-now/terminal:local\nbedrock-now/terminal-egress:local\n'; }; compose_refs() { :; }   # (compose.yaml's own: test_phases.sh)
+  dc() { printf 'caddy:2\ndevos-ade/terminal:local\ndevos-ade/terminal-egress:local\n'; }; compose_refs() { :; }   # (compose.yaml's own: test_phases.sh)
   docker() { return 1; }
   assert_eq "$(missing_images)" "caddy:2"
 }
@@ -542,12 +542,12 @@ test_restore_brings_the_backups_terminal_key_or_none() {
 
 test_update_keeps_and_rollback_restores_the_terminal_build() {
   printf 'TERMINAL_ENABLED=true\n' > "$ENV_FILE"
-  assert_eq "$(terminal_image_refs | tr '\n' ' ')" "bedrock-now/terminal:local bedrock-now/terminal-egress:local "
+  assert_eq "$(terminal_image_refs | tr '\n' ' ')" "devos-ade/terminal:local devos-ade/terminal-egress:local "
   case " $LOCAL_BUILDS " in *" terminal-egress "*) ;; *) echo "terminal-egress is not a local build" >&2; return 1 ;; esac
   assert_contains "$(sed -n '/^images_snapshot_before() {/,/^}/p' "$STACK_DIR/lib/images.sh")" "terminal_image_refs"
   docker() { echo "docker $*" >> "$TMP/docker"; return 0; }
   _rollback_local_builds
-  assert_contains "$(cat "$TMP/docker")" "docker tag bedrock-now/terminal:previous bedrock-now/terminal:local"
+  assert_contains "$(cat "$TMP/docker")" "docker tag devos-ade/terminal:previous devos-ade/terminal:local"
   printf 'TERMINAL_ENABLED=false\n' > "$ENV_FILE"
   assert_eq "$(terminal_image_refs)" ""
 }
@@ -557,12 +557,12 @@ test_uninstall_removes_the_terminal_even_while_off() {
   docker() { echo "docker $*" >> "$TMP/docker"; return 0; }
   terminal_uninstall_cleanup
   d="$(cat "$TMP/docker")"
-  assert_contains "$d" "docker volume rm bedrock-now_terminal-home bedrock-now_terminal-socket"
-  assert_contains "$d" "docker network rm bedrock-now_terminal"
-  assert_contains "$d" "docker network rm bedrock-now_terminal-link"
-  assert_contains "$d" "docker image rm bedrock-now/terminal:local bedrock-now/terminal:previous"
-  assert_contains "$d" "docker image rm bedrock-now/terminal-egress:local bedrock-now/terminal-egress:previous"
-  assert_contains "$d" "docker network rm bedrock-now_terminal-proxy"
+  assert_contains "$d" "docker volume rm devos-ade_terminal-home devos-ade_terminal-socket"
+  assert_contains "$d" "docker network rm devos-ade_terminal"
+  assert_contains "$d" "docker network rm devos-ade_terminal-link"
+  assert_contains "$d" "docker image rm devos-ade/terminal:local devos-ade/terminal:previous"
+  assert_contains "$d" "docker image rm devos-ade/terminal-egress:local devos-ade/terminal-egress:previous"
+  assert_contains "$d" "docker network rm devos-ade_terminal-proxy"
   assert_contains "$(sed -n '/^cmd_uninstall() {/,/^}/p' "$STACK_DIR/lib/commands.sh")" "terminal_uninstall_cleanup"
 }
 
@@ -636,7 +636,7 @@ test_compose_terminal_is_a_sandbox() {
   # sandbox on internal networks, told about it
   p="$(awk '/^  terminal-egress:$/,/^  terminal:$/' "$STACK_DIR/compose.terminal-proxy.yaml")"
   for want in "read_only: true" "cap_drop: [ALL]" 'security_opt: ["no-new-privileges:true"]' 'user: "65534:65534"' "pids_limit:" "mem_limit:" \
-              "context: ./terminal/egress" 'image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/terminal-egress:local' "aliases: [egress]" "terminal-out: {}" \
+              "context: ./terminal/egress" 'image: ${COMPOSE_PROJECT_NAME:-devos-ade}/terminal-egress:local' "aliases: [egress]" "terminal-out: {}" \
               'TERMINAL_EGRESS_ALLOW: ${TERMINAL_EGRESS_ALLOW:-}' 'TERMINAL_EGRESS_DENY: ${TERMINAL_EGRESS_DENY:-}' "BN_EGRESS_BIND: egress"; do
     assert_contains "$p" "$want"
   done
@@ -851,7 +851,7 @@ test_ttyd_listens_on_a_socket_only_and_checks_the_origin() {
   assert_contains "$f" 'ttyd --interface "$sock"'
   assert_contains "$f" "--check-origin"
   assert_contains "$f" "--writable"
-  assert_contains "$f" "--index /usr/local/share/bedrock-now/ttyd.html"
+  assert_contains "$f" "--index /usr/local/share/devos-ade/ttyd.html"
   # no TCP port, and no secret on its command line (readable by every user of the machine) — or anywhere in here
   cmd="$(sed -n '/^exec env/,/bn-session$/p' "$STACK_DIR/terminal/bin/bn-terminal")"
   assert_contains "$cmd" "ttyd --interface"
@@ -900,7 +900,7 @@ test_ttyd_listens_on_a_socket_only_and_checks_the_origin() {
   assert_contains "$err" "the clipboard script is sha256-$c, not the pinned"
   assert_contains "$err" "TTYD_CLIPBOARD_SCRIPT_SHA256"
   d="$(cat "$STACK_DIR/terminal/Dockerfile")"
-  assert_contains "$d" 'ttyd-page.py /tmp/ttyd.html /usr/local/share/bedrock-now/ttyd.html "$TTYD_PAGE_SCRIPT_SHA256" /tmp/ttyd-clipboard.js "$TTYD_CLIPBOARD_SCRIPT_SHA256"'
+  assert_contains "$d" 'ttyd-page.py /tmp/ttyd.html /usr/local/share/devos-ade/ttyd.html "$TTYD_PAGE_SCRIPT_SHA256" /tmp/ttyd-clipboard.js "$TTYD_CLIPBOARD_SCRIPT_SHA256"'
   # the pinned hash is the file's, in the Dockerfile and in the terminal host's Content-Security-Policy
   assert_contains "$d" "ARG TTYD_CLIPBOARD_SCRIPT_SHA256=$c"
   assert_contains "$(cat "$STACK_DIR/caddy/Caddyfile")" "'sha256-$c'; connect-src"
@@ -1092,8 +1092,8 @@ print(m[0]["source"].rsplit("/", 1)[1])'; }
 # devos-claude in the sandbox: auto mode off in its sessions (Claude Code's flag tier) unless the terminal's switch is
 # on; never for a subcommand (they refuse --settings); the shared MCP server first, then this, then your arguments
 test_claude_bedrock_in_the_sandbox_turns_auto_mode_off_unless_the_terminal_allows_it() {
-  mkdir -p "$TMP/bin" "$TMP/home/.config/bedrock-now"
-  printf '{}\n' > "$TMP/home/.config/bedrock-now/mcp.json"
+  mkdir -p "$TMP/bin" "$TMP/home/.config/devos-ade"
+  printf '{}\n' > "$TMP/home/.config/devos-ade/mcp.json"
   cat > "$TMP/bin/claude" <<'STUB'
 #!/bin/bash
 if [ "${1:-}" = --help ]; then printf 'Usage: claude\nCommands:\n  mcp  Configure MCP servers\n  doctor  Check\n'; exit 0; fi
@@ -1105,7 +1105,7 @@ STUB
     CLAUDE_BEDROCK_OPUS_MODEL=claude-haiku-5-5 CLAUDE_BEDROCK_QUIET=1 "$@"; }
   off='--settings={"disableAutoMode":"disable"}'
   out="$(run TERMINAL_AUTO_MODE=false /bin/bash "$STACK_DIR/terminal/bin/devos-claude" -p hi)" || return 1
-  assert_eq "$(printf '%s\n' "$out" | head -4 | tr '\n' ' ')" "--mcp-config=$TMP/home/.config/bedrock-now/mcp.json $off -p hi "
+  assert_eq "$(printf '%s\n' "$out" | head -4 | tr '\n' ' ')" "--mcp-config=$TMP/home/.config/devos-ade/mcp.json $off -p hi "
   out="$(run /bin/bash "$STACK_DIR/terminal/bin/devos-claude" -p hi)" || return 1
   assert_contains "$out" "$off"
   out="$(run TERMINAL_AUTO_MODE=true /bin/bash "$STACK_DIR/terminal/bin/devos-claude" -p hi)" || return 1
@@ -1143,7 +1143,7 @@ STUB
 # devos-claude in the sandbox: the models come from LiteLLM's /model/info (the bn_* keys ./stack renders) — --models,
 # --model by id or name rewritten to the id, an unknown one refused, the default of Settings, and the /model menu
 test_claude_bedrock_in_the_sandbox_lists_and_checks_the_models_of_model_info() {
-  mkdir -p "$TMP/bin" "$TMP/home/.config/bedrock-now"
+  mkdir -p "$TMP/bin" "$TMP/home/.config/devos-ade"
   cat > "$TMP/bin/claude" <<'STUB'
 #!/bin/bash
 if [ "${1:-}" = --help ]; then printf 'Usage: claude\nCommands:\n  mcp  Configure MCP servers\n'; exit 0; fi

@@ -189,7 +189,7 @@ def home(ctx):
     expect(page.locator("#services").is_hidden(), "the service list is not folded under its line")
     page.click(".health-line")
     page.wait_for_selector("#services li")
-    summary = page.evaluate("""() => fetch('/api/summary', {headers: {'X-Requested-With': 'bedrock-now'}}).then(r => r.json())""")
+    summary = page.evaluate("""() => fetch('/api/summary', {headers: {'X-Requested-With': 'devos-ade'}}).then(r => r.json())""")
     # 5, plus the speech-to-text container while Bedrock speech-to-text is on, the built-in SearXNG and the built-in git
     # server (Forgejo) while each is on (their state and health from ./stack's record: .state/status/services.json)
     want_svc = len(summary["services"])
@@ -346,7 +346,7 @@ def update_card(ctx):
         page.wait_for_selector("#confirm[open]")
         text = page.inner_text("#confirm-text")
         expect(re.match(r"Update to v99\.0\.0 \(the newest release at the last check, [^)]+\): a backup first", text), f"confirm: {text!r}")
-        summary = page.evaluate("""() => fetch('/api/summary', {headers: {'X-Requested-With': 'bedrock-now'}}).then(r => r.json())""")
+        summary = page.evaluate("""() => fetch('/api/summary', {headers: {'X-Requested-With': 'devos-ade'}}).then(r => r.json())""")
         if summary["terminal"]["enabled"]:   # the update recreates the terminal's container: its tmux session ends
             expect("The Terminal's container is recreated: its tmux windows close" in text, f"confirm: {text!r}")
         if summary["code"]["enabled"]:
@@ -404,7 +404,7 @@ def update_check_button(ctx):
     now = datetime.now(timezone.utc)
     iso = lambda t: t.isoformat(timespec="seconds")   # noqa: E731
     fresh = lambda: datetime.now(timezone.utc) + timedelta(seconds=1)   # noqa: E731  (a check after the last one)
-    summary = lambda: page.evaluate("""() => fetch('/api/summary', {headers: {'X-Requested-With': 'bedrock-now'}}).then(r => r.json())""")  # noqa: E731
+    summary = lambda: page.evaluate("""() => fetch('/api/summary', {headers: {'X-Requested-With': 'devos-ade'}}).then(r => r.json())""")  # noqa: E731
     line = page.locator("#release-line")
 
     def state(want, timeout=15000):
@@ -517,7 +517,7 @@ def update_check_button(ctx):
         page.locator("#toast.show", has_text="GitHub's limit for this hour").wait_for(timeout=5000)
         page.wait_for_timeout(500)
         expect(len(rec.responses(r"/api/update/check$")) == seen, "Ctrl+K's Check for updates was sent under GitHub's limit")
-        real = page.evaluate("""() => fetch('/api/update/check', {method: 'POST', headers: {'X-Requested-With': 'bedrock-now'}})
+        real = page.evaluate("""() => fetch('/api/update/check', {method: 'POST', headers: {'X-Requested-With': 'devos-ade'}})
             .then(async (r) => ({status: r.status, retry: r.headers.get('Retry-After'), body: await r.json()}))""")
         b = real["body"]
         expect(real["status"] == 429 and b.get("reason") == "limit" and 600 <= b.get("retry_after", 0) <= 841
@@ -526,7 +526,7 @@ def update_check_button(ctx):
         states.append(f"limit: {text}; the portal: 429 limit, retry in {b['retry_after']} s")
         # 6. the endpoint's door, for real (each refused before anything is asked)
         cookie = portal_login()
-        xrw = {"X-Requested-With": "bedrock-now", "Content-Length": "0"}
+        xrw = {"X-Requested-With": "devos-ade", "Content-Length": "0"}
         door = {
             "signed out": http("POST", None, "/api/update/check", {**xrw, "Origin": origin()}).status,
             "no X-Requested-With": http("POST", None, "/api/update/check", {"Origin": origin(), "Content-Length": "0"}, cookie=cookie).status,
@@ -681,7 +681,7 @@ def update_last_job_and_reconnecting(ctx):
                  ("Image downloads", "25s"), ("Open WebUI image", "1s"), ("LiteLLM config: web search check, default models", "0s"),
                  ("Postgres + RustFS", "8s"), ("LiteLLM (13 models)", "26s"), ("LiteLLM setup key", "1s"), ("Voice", "0s"),
                  ("Web search (the built-in SearXNG)", "5s"), ("Web search check", "6s"), ("LiteLLM keys, Admin sign-in, voice service", "2s"),
-                 ("Open WebUI + portal + shared-mcp (http://bedrock-now.localhost)", "11s"), ("Portal sign-in and Chat's API key", "3s"),
+                 ("Open WebUI + portal + shared-mcp (http://devos-ade.localhost)", "11s"), ("Portal sign-in and Chat's API key", "3s"),
                  ("Open WebUI syncs (models, prices, banner)", "9s"), ("Code page default", "0s"), ("Terminal: its key and project folders", "1s"),
                  ("Subscription tools (installed: codex; kept: copilot cursor gemini grok)", "38s"), ("Image terminal (rebuilt from RUN sh /tmp/tools/install.sh, 38s)", "2m05s"),
                  ("Image code (from Docker's cache)", "3s"), ("Sandbox images", "40s"), ("Terminal", "9s"), ("Code page", "9s"), ("Chat's sandbox", "4s"),
@@ -932,7 +932,7 @@ def pwa_app_states(ctx):
     expect(got["state"] == "app" and got["seen"] == [] and got["mark"] == "1", f"[in the app] {got}")
     scheme = page.evaluate("() => document.querySelector('meta[name=\"bn-app-scheme\"]').content")
     manifest = json.loads(page.evaluate("() => fetch('/manifest.webmanifest').then(r => r.text())"))
-    expect(scheme == manifest["protocol_handlers"][0]["protocol"] and re.fullmatch(r"web\+bedrocknow[a-z]{8}", scheme),
+    expect(scheme == manifest["protocol_handlers"][0]["protocol"] and re.fullmatch(r"web\+devosade[a-z]{8}", scheme),
            f"scheme {scheme!r} (the manifest's, a throwaway's own)")
     # A launch from a tab's Open in the app (cold start): /?open=<link> becomes /#<tab> and the nonce is answered once.
     side = _side(page)
@@ -1560,7 +1560,7 @@ def chat_rag(ctx):
     login(page)
     fl, f = chat_frame(page, f"?models={model}")
     code = f"MAGENTA-OTTER-{int(time.time()) % 1000}"
-    doc = (f"bedrock-now e2e test document.\n\nThe secret codeword for this test is {code}.\n"
+    doc = (f"devos-ade e2e test document.\n\nThe secret codeword for this test is {code}.\n"
            "Nothing else in this file matters.\n").encode()
     fl.locator("input[type=file]:not(#camera-input)").first.set_input_files(
         files=[{"name": "e2e-codeword.txt", "mimeType": "text/plain", "buffer": doc}])
@@ -1835,7 +1835,7 @@ def rshot(page, scope, name: str):
     """A screenshot of the RustFS console with its sign-in hidden: the console shows the access key (user menu) and
     the login form holds both keys — both are masked."""
     return shot(page, name, mask_locators=[scope.get_by_text(ENV["RUSTFS_ACCESS_KEY"]), scope.locator("input")])
-RUSTFS_BODY = b"hello from the bedrock-now e2e suite (rustfs console)"
+RUSTFS_BODY = b"hello from the devos-ade e2e suite (rustfs console)"
 
 
 def rustfs_flow(page, scope, rec, label: str, where: str) -> list[str]:
@@ -2012,7 +2012,7 @@ def files_pages(ctx):
     rshot(page, fl, "files-openwebui-bucket")
     rec.save()
     # Rebalance / Pool Decommission ask /rustfs/admin/v3/rebalance/status, which a single-pool RustFS answers 404
-    # (the pages then say "Unsupported"): upstream behaviour, not a bedrock-now problem.
+    # (the pages then say "Unsupported"): upstream behaviour, not a devos-ade problem.
     # Object details ask for ?retention= and ?legal-hold=, which a bucket without object lock answers 400 (the
     # panel then shows them empty): upstream console behaviour as well.
     probs = rec.problems(host_filter="files.", allow=[r"404 GET .*/rustfs/admin/v3/rebalance/status",
@@ -3054,7 +3054,7 @@ def walkthrough_storage(ctx):
     return "; ".join(out)
 
 
-# --- Settings (with the update helper running: tests/e2e/run.sh --helper runs the throwaway's bin/bedrock-now-helper
+# --- Settings (with the update helper running: tests/e2e/run.sh --helper runs the throwaway's bin/devos-ade-helper
 # in the foreground for them) ---
 # They change real credentials of the throwaway, so they run after the other browser checks (suite "settings") and
 # keep ENV in step themselves: the container's copy of .env is a single-file mount that a rewritten .env never reaches.
@@ -3069,7 +3069,7 @@ OWUI_USERS = "/api/v1/users"   # Open WebUI's account API
 
 def _settings_api(ctx) -> dict:
     from common import http
-    r = http("GET", None, "/api/settings", {"X-Requested-With": "bedrock-now"}, cookie=ctx.session())
+    r = http("GET", None, "/api/settings", {"X-Requested-With": "devos-ade"}, cookie=ctx.session())
     expect(r.status == 200, f"/api/settings {r.status}")
     return json.loads(r.body)
 
@@ -3758,7 +3758,7 @@ def settings_reveal(ctx):
     expect(clip == ENV["SHARED_MCP_TOKEN"], "Reveal did not copy SHARED_MCP_TOKEN")
     page.evaluate("navigator.clipboard.writeText('')")
     from common import http
-    r = http("POST", None, "/api/settings/reveal", {"X-Requested-With": "bedrock-now", "Origin": origin(), "Content-Type": "application/json"},
+    r = http("POST", None, "/api/settings/reveal", {"X-Requested-With": "devos-ade", "Origin": origin(), "Content-Type": "application/json"},
              json.dumps({"key": "AWS_SECRET_ACCESS_KEY", "password": ENV["PORTAL_PASSWORD"]}), cookie=ctx.session())
     expect(r.status == 403, f"AWS_SECRET_ACCESS_KEY revealed? HTTP {r.status}")
     rec.save()
@@ -3831,7 +3831,7 @@ def _cfg_file(lines: list[str], base: str, origin_: str = "local") -> str:
     import secrets as sec
     nonce = sec.token_hex(16)
     b64 = lambda v: base64.b64encode(v.encode()).decode()  # noqa: E731
-    body = "\n".join(["bedrock-now-settings 1", f"nonce {nonce}", f"requested_at {int(time.time())}", f"base {base}",
+    body = "\n".join(["devos-ade-settings 1", f"nonce {nonce}", f"requested_at {int(time.time())}", f"base {base}",
                       f"origin {origin_}", f"auth {b64(ENV['PORTAL_PASSWORD'])}"] + [f"set {k} {b64(v)}" for k, v in lines] + ["end", ""])
     tmp = STATE / "requests" / f".cfg-{nonce}.tmp"
     tmp.write_text(body, encoding="ascii")
@@ -3907,7 +3907,7 @@ def settings_regen_rustfs(ctx):
     up = _owui_upload(f, "e2e-regen-before.txt", text)
     expect(up["status"] == 200, f"upload before: {up['status']} {up['body'][:120]}")
     fid = json.loads(up["body"])["id"]
-    old_access = page.evaluate("fetch('/api/logins', {headers: {'X-Requested-With': 'bedrock-now'}}).then(r => r.json())")["files"]["username"]
+    old_access = page.evaluate("fetch('/api/logins', {headers: {'X-Requested-With': 'devos-ade'}}).then(r => r.json())")["files"]["username"]
     open_settings(page)
     goto_setting(page, "RUSTFS_ACCESS_KEY").locator(".set-actions .action", has_text="Regenerate").click()
     _confirm(page)
@@ -3915,7 +3915,7 @@ def settings_regen_rustfs(ctx):
     expect(ok, f"regenerate failed: {msg}")
     page2, rec2 = ctx.page("settings-regen-after")
     login(page2)
-    new_logins = page2.evaluate("fetch('/api/logins', {headers: {'X-Requested-With': 'bedrock-now'}}).then(r => r.json())")["files"]
+    new_logins = page2.evaluate("fetch('/api/logins', {headers: {'X-Requested-With': 'devos-ade'}}).then(r => r.json())")["files"]
     expect(new_logins["username"] != old_access and new_logins["username"].startswith("bn-"), "Home still shows the old Files sign-in")
     ENV["RUSTFS_ACCESS_KEY"], ENV["RUSTFS_SECRET_KEY"] = new_logins["username"], new_logins["password"]
     fl2, f2 = chat_frame(page2)
@@ -4044,7 +4044,7 @@ def settings_portal_password(ctx):
     names = {c["name"] for c in page.context.cookies()}
     expect("bn_session" in names and "bn_session_next" not in names, f"cookies after the change: {names}")
     from common import http
-    r = http("GET", None, "/api/summary", {"X-Requested-With": "bedrock-now"}, cookie=f"bn_session={old_cookie}")
+    r = http("GET", None, "/api/summary", {"X-Requested-With": "devos-ade"}, cookie=f"bn_session={old_cookie}")
     expect(r.status == 401, f"the other device is still signed in (HTTP {r.status})")
     expect(ctx.session(), "cannot sign in with the new password")
     shot(page, "27-settings-portal-password-kept", mask=[".set-value", ".set-adv-value", ".cred"])

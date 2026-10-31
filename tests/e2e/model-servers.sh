@@ -13,7 +13,7 @@ set -uo pipefail
 umask 077
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; ROOT="$(cd "$HERE/../.." && pwd)"; OUT="$ROOT/tests/e2e/out"
 [ "${1:-}" != --out ] || OUT="${2:?--out DIR}"
-FK=bne2e-msrv-fake; LL=bne2e-msrv-litellm; LABEL=io.bedrock-now.e2e=model-servers
+FK=bne2e-msrv-fake; LL=bne2e-msrv-litellm; LABEL=io.devos-ade.e2e=model-servers
 WORK="$ROOT/tests/e2e/work/bne2e-msrv"; FAILS=0
 ok() { printf 'ok    %s\n' "$*" >&2; }
 fail() { printf 'FAIL  %s\n' "$*" >&2; FAILS=$((FAILS + 1)); }
@@ -21,7 +21,7 @@ command -v docker >/dev/null 2>&1 || { echo "needs docker" >&2; exit 2; }
 [ "$(uname -s)" = Linux ] || { echo "run this on a Linux Docker host (see the header)" >&2; exit 2; }
 cleanup() { docker rm -f "$FK" "$LL" >/dev/null 2>&1 || true; rm -rf "$WORK"; }
 for c in "$FK" "$LL"; do
-  if docker container inspect "$c" >/dev/null 2>&1 && [ "$(docker container inspect -f '{{index .Config.Labels "io.bedrock-now.e2e"}}' "$c")" != model-servers ]; then echo "$c exists and is not this check's" >&2; exit 2; fi
+  if docker container inspect "$c" >/dev/null 2>&1 && [ "$(docker container inspect -f '{{index .Config.Labels "io.devos-ade.e2e"}}' "$c")" != model-servers ]; then echo "$c exists and is not this check's" >&2; exit 2; fi
 done
 trap cleanup EXIT; cleanup; mkdir -p "$WORK/litellm" "$WORK/state" "$OUT"; chmod 755 "$WORK" "$WORK/litellm"
 LIMG="$(sed -n 's/^    image: \(ghcr.io\/berriai\/litellm:[^ ]*\)$/\1/p' "$ROOT/compose.yaml" | head -n 1)"

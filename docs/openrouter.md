@@ -32,7 +32,7 @@ API).
 - **Only `.env` counts.** An `OPENROUTER_API_KEY` that happens to be in your shell never turns OpenRouter on
   by itself: `./stack` strips `OPENROUTER_*` from what Docker Compose sees, an interactive setup asks
   `found OPENROUTER_API_KEY in your environment — use it for DevOS ADE? [y/N]`, and `setup --yes` uses it
-  only with `BEDROCK_NOW_OPENROUTER_FROM_ENV=1`. `./stack update` ignores it, so a removed key stays removed.
+  only with `DEVOS_ADE_OPENROUTER_FROM_ENV=1`. `./stack update` ignores it, so a removed key stays removed.
 - **Off:** `./stack openrouter remove` empties `OPENROUTER_API_KEY=` in `.env` (an empty key is off, like no
   line), deletes the cached model list, restarts LiteLLM with Bedrock only and removes the OpenRouter entries it
   created in Open WebUI. `.env` lines that `./stack` cannot read (`export OPENROUTER_API_KEY=…`, spaces around
@@ -154,7 +154,7 @@ models.
 
 LiteLLM names DevOS ADE to OpenRouter (`X-Title: DevOS ADE` and `HTTP-Referer:
 https://github.com/JongoDB-Labs/devos-ade`, set by `OR_APP_NAME` / `OR_SITE_URL` in `compose.yaml`), so
-OpenRouter's Activity and Logs show the requests as DevOS ADE (as bedrock-now before v0.25.0). They name the project only, nothing about you.
+OpenRouter's Activity and Logs show the requests as DevOS ADE. They name the project only, nothing about you.
 OpenRouter's own *Input & Output Logging* is not needed (Admin's logs record every request) and would store
 your prompts at OpenRouter.
 

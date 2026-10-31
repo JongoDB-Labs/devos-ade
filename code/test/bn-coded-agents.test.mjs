@@ -31,8 +31,8 @@ Object.assign(process.env, { BN_CODE_WORKSPACE: WS, BN_CODE_SOCK_DIR: SOCKDIR, B
   BN_AGENT_BIN_DIR: BIN, BN_SUBS_BIN_PATH: SUBS, SHARED_MCP_TOKEN: 'mcp-secret', BN_MCP_URL: 'http://gateway:8091/mcp',
   ANTHROPIC_BASE_URL: 'http://gateway:8091', ANTHROPIC_AUTH_TOKEN: 'sk-terminal-key', CLAUDE_CODE_USE_BEDROCK: '1', AWS_SECRET_ACCESS_KEY: 'aws', HTTPS_PROXY: 'http://egress:3128' });
 for (const k of Object.keys(process.env)) if (/^(DISABLE_AUTOUPDATER|CLAUDE_CODE_[A-Z_]*|CLAUDECODE|TMUX|TMUX_PANE)$/.test(k)) delete process.env[k];
-fs.mkdirSync(path.join(HOME, '.config/bedrock-now'), { recursive: true });
-fs.writeFileSync(path.join(HOME, '.config/bedrock-now/mcp.json'), '{}');
+fs.mkdirSync(path.join(HOME, '.config/devos-ade'), { recursive: true });
+fs.writeFileSync(path.join(HOME, '.config/devos-ade/mcp.json'), '{}');
 const coded = await import(path.join(TERMINAL_DIR, 'bin/bn-coded.mjs'));
 let server;
 const SOCK = path.join(SOCKDIR, 'coded.sock');

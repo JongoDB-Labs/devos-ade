@@ -34,8 +34,8 @@ test('a zip is whole when it starts with a local header (or is empty) and ends w
 });
 
 test('the portal\'s answer: only the portal that frames this page, only for this request, only a shape the page knows', () => {
-  const portal = 'http://bedrock-now.localhost', parent = {}, id = 'abc123';
-  const ok = { type: 'bn-portal-export', id, ok: true, key: 'a.zip', bucket: 'code-exports', url: 'http://files.bedrock-now.localhost/rustfs/console/browser/code-exports' };
+  const portal = 'http://devos-ade.localhost', parent = {}, id = 'abc123';
+  const ok = { type: 'bn-portal-export', id, ok: true, key: 'a.zip', bucket: 'code-exports', url: 'http://files.devos-ade.localhost/rustfs/console/browser/code-exports' };
   assert.deepEqual(takeExportReply(ok, portal, parent, portal, parent, id), { ok: true, key: 'a.zip', bucket: 'code-exports', url: ok.url });
   assert.equal(takeExportReply({ ...ok, url: 'javascript:alert(1)' }, portal, parent, portal, parent, id)?.ok && (takeExportReply({ ...ok, url: 'javascript:alert(1)' }, portal, parent, portal, parent, id) as { url: string | null }).url, null);
   assert.deepEqual(takeExportReply({ type: 'bn-portal-export', id, ok: false, error: 'RustFS said no\nx' }, portal, parent, portal, parent, id), { ok: false, error: 'RustFS said no x' });
@@ -61,27 +61,27 @@ class Win extends EventTarget {
 test('handing the zip over: posted to the portal\'s origin only; its answer settles it; no portal or no answer says so', async () => {
   const w = new Win();
   const blob = new Blob(['PK']);
-  const p = portalExport(blob, 'a.zip', w as unknown as Window, 'http://bedrock-now.localhost', 5000);
+  const p = portalExport(blob, 'a.zip', w as unknown as Window, 'http://devos-ade.localhost', 5000);
   const [msg, to] = (w.parent.posted[0] as [{ type: string; id: string; name: string; blob: Blob }, string]);
-  assert.equal(to, 'http://bedrock-now.localhost');
+  assert.equal(to, 'http://devos-ade.localhost');
   assert.deepEqual({ type: msg.type, name: msg.name, blob: msg.blob }, { type: 'bn-code-export', name: 'a.zip', blob });
   assert.match(msg.id, /^[0-9a-f]{16}$/);
   // a stranger's answer is ignored, the portal's settles it
   const ev = (origin: string, data: unknown, source: unknown) => Object.assign(new Event('message'), { origin, data, source });
   w.dispatchEvent(ev('http://evil.example', { type: 'bn-portal-export', id: msg.id, ok: true, key: 'a.zip', bucket: 'code-exports' }, w.parent));
-  w.dispatchEvent(ev('http://bedrock-now.localhost', { type: 'bn-portal-export', id: msg.id, ok: true, key: 'a.zip', bucket: 'code-exports', url: 'http://files.bedrock-now.localhost/x' }, w.parent));
-  assert.deepEqual(await p, { key: 'a.zip', bucket: 'code-exports', url: 'http://files.bedrock-now.localhost/x' });
+  w.dispatchEvent(ev('http://devos-ade.localhost', { type: 'bn-portal-export', id: msg.id, ok: true, key: 'a.zip', bucket: 'code-exports', url: 'http://files.devos-ade.localhost/x' }, w.parent));
+  assert.deepEqual(await p, { key: 'a.zip', bucket: 'code-exports', url: 'http://files.devos-ade.localhost/x' });
   // a refusal rejects with the portal's words
   const w2 = new Win();
-  const p2 = portalExport(blob, 'a.zip', w2 as unknown as Window, 'http://bedrock-now.localhost', 5000);
+  const p2 = portalExport(blob, 'a.zip', w2 as unknown as Window, 'http://devos-ade.localhost', 5000);
   const id2 = (w2.parent.posted[0] as [{ id: string }, string])[0].id;
-  w2.dispatchEvent(ev('http://bedrock-now.localhost', { type: 'bn-portal-export', id: id2, ok: false, error: 'Files (RustFS) refused the zip (HTTP 403, AccessDenied).' }, w2.parent));
+  w2.dispatchEvent(ev('http://devos-ade.localhost', { type: 'bn-portal-export', id: id2, ok: false, error: 'Files (RustFS) refused the zip (HTTP 403, AccessDenied).' }, w2.parent));
   await assert.rejects(p2, /AccessDenied/);
   // not framed / no portal known
-  await assert.rejects(portalExport(blob, 'a.zip', new Win(false) as unknown as Window, 'http://bedrock-now.localhost'), /not open in the portal/);
+  await assert.rejects(portalExport(blob, 'a.zip', new Win(false) as unknown as Window, 'http://devos-ade.localhost'), /not open in the portal/);
   await assert.rejects(portalExport(blob, 'a.zip', new Win() as unknown as Window, null), /not open in the portal/);
   // no answer
-  await assert.rejects(portalExport(blob, 'a.zip', new Win() as unknown as Window, 'http://bedrock-now.localhost', 10), /did not answer in time/);
+  await assert.rejects(portalExport(blob, 'a.zip', new Win() as unknown as Window, 'http://devos-ade.localhost', 10), /did not answer in time/);
   assert.equal(exportMessage('x', 'a.zip', blob).type, 'bn-code-export');
 });
 
@@ -129,19 +129,19 @@ test('exportPlan and exportZip: the backend\'s plan; the zip streamed in and che
 test('the portal\'s origin as the page keeps it (/api/state\'s portal_origin read as a URL: "http://host/") still matches its answers', async () => {
   // (the page's store holds URL.href, with a trailing slash; a message's origin never has one: compared as it was, the
   // portal's answer was never taken and Export to Files waited out its ten minutes)
-  const href = new URL('http://bedrock-now.localhost:8080').href, parent = {}, id = 'abc123';
-  assert.equal(href, 'http://bedrock-now.localhost:8080/');
-  assert.equal(originOf(href), 'http://bedrock-now.localhost:8080');
+  const href = new URL('http://devos-ade.localhost:8080').href, parent = {}, id = 'abc123';
+  assert.equal(href, 'http://devos-ade.localhost:8080/');
+  assert.equal(originOf(href), 'http://devos-ade.localhost:8080');
   assert.equal(originOf('nope'), null);
   assert.equal(originOf(null), null);
   const ok = { type: 'bn-portal-export', id, ok: true, key: 'a.zip', bucket: 'code-exports' };
-  assert.deepEqual(takeExportReply(ok, 'http://bedrock-now.localhost:8080', parent, href, parent, id), { ok: true, key: 'a.zip', bucket: 'code-exports', url: null });
-  assert.equal(takeExportReply(ok, 'http://bedrock-now.localhost', parent, href, parent, id), null, 'another port');
+  assert.deepEqual(takeExportReply(ok, 'http://devos-ade.localhost:8080', parent, href, parent, id), { ok: true, key: 'a.zip', bucket: 'code-exports', url: null });
+  assert.equal(takeExportReply(ok, 'http://devos-ade.localhost', parent, href, parent, id), null, 'another port');
   // handed over and answered with that origin
   const w = new Win();
   const p = portalExport(new Blob(['PK']), 'a.zip', w as unknown as Window, href, 5000);
   const [msg, to] = (w.parent.posted[0] as [{ id: string }, string]);
-  assert.equal(to, 'http://bedrock-now.localhost:8080');
-  w.dispatchEvent(Object.assign(new Event('message'), { origin: 'http://bedrock-now.localhost:8080', data: { ...ok, id: msg.id }, source: w.parent }));
+  assert.equal(to, 'http://devos-ade.localhost:8080');
+  w.dispatchEvent(Object.assign(new Event('message'), { origin: 'http://devos-ade.localhost:8080', data: { ...ok, id: msg.id }, source: w.parent }));
   assert.deepEqual(await p, { key: 'a.zip', bucket: 'code-exports', url: null });
 });

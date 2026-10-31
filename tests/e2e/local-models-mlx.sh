@@ -30,18 +30,18 @@ ok() { printf 'ok    %s\n' "$*" >&2; CHECKS+=("ok	$*"); }
 command -v docker >/dev/null 2>&1 || { echo "needs docker" >&2; exit 2; }
 [ "$(uname -s)/$(uname -m)" = Darwin/arm64 ] || { echo "this check is for Apple silicon (the GGUF path: tests/e2e/local-models.sh)" >&2; exit 2; }
 command -v uv >/dev/null 2>&1 || { echo "needs uv (brew install uv)" >&2; exit 2; }
-LL=bne2e-mlx-litellm; LABEL=io.bedrock-now.e2e=local-models
+LL=bne2e-mlx-litellm; LABEL=io.devos-ade.e2e=local-models
 WORK="$ROOT/tests/e2e/work/bne2e-mlx"; PORT=""
 cleanup() {
   local rc=$?
   [ -z "${STATE_DIR:-}" ] || ! declare -F local_mlx_uninstall >/dev/null || local_mlx_uninstall --models >/dev/null 2>&1
-  [ "$(docker container inspect -f '{{index .Config.Labels "io.bedrock-now.e2e"}}' "$LL" 2>/dev/null)" != local-models ] || docker rm -f "$LL" >/dev/null 2>&1
+  [ "$(docker container inspect -f '{{index .Config.Labels "io.devos-ade.e2e"}}' "$LL" 2>/dev/null)" != local-models ] || docker rm -f "$LL" >/dev/null 2>&1
   { [ "$rc" = 0 ] && [ "$FAILS" = 0 ]; } || { [ ! -f "$WORK/pull.log" ] || { mkdir -p "$OUT" && cp "$WORK/pull.log" "$OUT/local-models-mlx-pull.log"; }; } 2>/dev/null
   rm -rf "$WORK"
   mkdir -p "$OUT" 2>/dev/null && printf '%s\n' ${CHECKS[@]+"${CHECKS[@]}"} | python3 -I -c 'import json, sys
 print(json.dumps({"failures": int(sys.argv[1]), "checks": [dict(zip(("status", "check"), l.rstrip("\n").split("\t", 1))) for l in sys.stdin if "\t" in l]}, indent=1))' "$FAILS" > "$OUT/local-models-mlx.json" 2>/dev/null
 }
-if docker container inspect "$LL" >/dev/null 2>&1 && [ "$(docker container inspect -f '{{index .Config.Labels "io.bedrock-now.e2e"}}' "$LL")" != local-models ]; then echo "a container named $LL exists and is not this check's: not touching it" >&2; exit 2; fi
+if docker container inspect "$LL" >/dev/null 2>&1 && [ "$(docker container inspect -f '{{index .Config.Labels "io.devos-ade.e2e"}}' "$LL")" != local-models ]; then echo "a container named $LL exists and is not this check's: not touching it" >&2; exit 2; fi
 trap cleanup EXIT; trap 'exit 130' INT TERM
 docker rm -f "$LL" >/dev/null 2>&1 || true
 mkdir -p "$WORK/state" "$WORK/litellm" "$OUT"

@@ -30,7 +30,7 @@ _stub_docker() {
       info) return 0 ;;
       "ps -aq --no-trunc") [ -z "${CTR_IMAGES:-}" ] || printf '%s\n' "$CTR_IMAGES" | sed 's/^/ctr-/' ;;
       "inspect --format {{.Image}} "*) shift 3; for a in "$@"; do printf '%s\n' "${a#ctr-}"; done ;;
-      "volume ls --filter label=io.bedrock-now.dir "*) [ -z "${OTHER_DIRS:-}" ] || printf '%s\n' "$OTHER_DIRS" ;;
+      "volume ls --filter label=io.devos-ade.dir "*) [ -z "${OTHER_DIRS:-}" ] || printf '%s\n' "$OTHER_DIRS" ;;
       "image ls -q --no-trunc --filter dangling=true --filter label=com.docker.compose.project="*)
         awk -F'\t' -v p="${last#label=com.docker.compose.project=}" '$2 == "<none>" && $4 == p { print $1 }' "$TMP/imgs" ;;
       # Docker 29 (containerd image store): without -a the list leaves untagged images out ("dangling=true" still finds them)
@@ -57,7 +57,7 @@ $last
 
 _compose() { # _compose LITELLM_TAG — this checkout's compose.yaml
   mkdir -p "$STACK_DIR"
-  printf 'services:\n  litellm:\n    image: ghcr.io/berriai/litellm:%s\n  portal:\n    build: { context: ./portal }\n    image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/portal:local   # per project\n  caddy:\n    image: caddy:2.11.7-alpine@sha256:abc\n' "$1" > "$STACK_DIR/compose.yaml"
+  printf 'services:\n  litellm:\n    image: ghcr.io/berriai/litellm:%s\n  portal:\n    build: { context: ./portal }\n    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/portal:local   # per project\n  caddy:\n    image: caddy:2.11.7-alpine@sha256:abc\n' "$1" > "$STACK_DIR/compose.yaml"
 }
 
 _setup() {
@@ -200,7 +200,7 @@ test_current_local_builds_are_never_offered() {
   # own-domain overlay's xcaddy build, a networked rebuild) and stt (off, or not in this version's compose.yaml)
   # must still never be removed or shown as "(previous build)".
   _setup
-  printf 'services:\n  caddy:\n    image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/caddy-dns:local\n' > "$STACK_DIR/compose.domain.yaml"
+  printf 'services:\n  caddy:\n    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/caddy-dns:local\n' > "$STACK_DIR/compose.domain.yaml"
   _store CD1 bn-t/caddy-dns:local 120MB bn-t
   _store S1 bn-t/stt:local 150MB bn-t
   _store X1 bn-t/shared-mcp:old 300MB bn-t
@@ -378,11 +378,11 @@ test_update_snapshots_before_images_and_cleans_only_after_setup_succeeded() {
   images_snapshot_before() { echo "snapshot ${1:-}" >> "$TMP/calls"; }
   images_after_update() { echo "after" >> "$TMP/calls"; }
   update_record_write() { :; }
-  fake_reexec; BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_UPDATE_BACKUP=backups/b BEDROCK_NOW_UPDATE_FROM=abc123 cmd_update 2>/dev/null
+  fake_reexec; DEVOS_ADE_CODE_UPDATED=1 DEVOS_ADE_UPDATE_BACKUP=backups/b DEVOS_ADE_UPDATE_FROM=abc123 cmd_update 2>/dev/null
   # (dc config: the images to download side by side — none listed by this stub, so one compose pull as before)
   assert_eq "$(tr '\n' ';' < "$TMP/calls")" "snapshot abc123;dc config;dc pull;after;"
   : > "$TMP/calls"
-  if (fake_reexec; FAKE_RC=3 BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_UPDATE_FROM=abc123 cmd_update) 2>/dev/null; then return 1; fi
+  if (fake_reexec; FAKE_RC=3 DEVOS_ADE_CODE_UPDATED=1 DEVOS_ADE_UPDATE_FROM=abc123 cmd_update) 2>/dev/null; then return 1; fi
   assert_eq "$(tr '\n' ';' < "$TMP/calls")" "snapshot abc123;dc config;dc pull;"
 }
 

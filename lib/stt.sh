@@ -53,12 +53,12 @@ STT_EST_OUT_TOKENS_PER_MIN=200
 
 stt_catalog() { printf '%s\n' "$STT_CATALOG"; }
 
-# Where the key goes. Only the test suite (BEDROCK_NOW_TESTING=1, as lib/host.sh) can point both key providers at another
-# server; BEDROCK_NOW_TEST_STT_API in a user's shell is ignored, with a warning (no per-provider override either).
+# Where the key goes. Only the test suite (DEVOS_ADE_TESTING=1, as lib/host.sh) can point both key providers at another
+# server; DEVOS_ADE_TEST_STT_API in a user's shell is ignored, with a warning (no per-provider override either).
 stt_api_base() {
-  if [ -n "${BEDROCK_NOW_TEST_STT_API:-}" ]; then
-    if [ "${BEDROCK_NOW_TESTING:-}" = 1 ]; then printf '%s\n' "$BEDROCK_NOW_TEST_STT_API"; return 0; fi
-    test_url_ignored BEDROCK_NOW_TEST_STT_API "the speech-to-text key"
+  if [ -n "${DEVOS_ADE_TEST_STT_API:-}" ]; then
+    if [ "${DEVOS_ADE_TESTING:-}" = 1 ]; then printf '%s\n' "$DEVOS_ADE_TEST_STT_API"; return 0; fi
+    test_url_ignored DEVOS_ADE_TEST_STT_API "the speech-to-text key"
   fi
   case "$1" in openai) echo https://api.openai.com/v1 ;; groq) echo https://api.groq.com/openai/v1 ;; esac
 }
@@ -414,15 +414,15 @@ _stt_store_bedrock() {
 }
 
 # _stt_env_wanted -> 0 if setup may adopt STT_PROVIDER/STT_API_KEY from the shell: interactively only after a "y";
-# non-interactively (--yes) only with BEDROCK_NOW_STT_FROM_ENV=1. Asked once (.state/stt-asked).
+# non-interactively (--yes) only with DEVOS_ADE_STT_FROM_ENV=1. Asked once (.state/stt-asked).
 _stt_env_wanted() {
   if [ "${ASSUME_YES:-0}" != 1 ] && _have_tty && [ ! -e "$STATE_DIR/stt-asked" ]; then
     case "$(ask "found STT_PROVIDER=$1 and STT_API_KEY in your environment — use them for voice calls (your speech goes to $(stt_host "$1"))? [y/N]" "n")" in
       [Yy]*) return 0 ;; *) return 1 ;;
     esac
   fi
-  [ "${BEDROCK_NOW_STT_FROM_ENV:-0}" = 1 ] && return 0
-  log "STT_PROVIDER/STT_API_KEY in your environment are ignored (speech-to-text keys are opt-in: ./stack stt set uses them, or BEDROCK_NOW_STT_FROM_ENV=1)"
+  [ "${DEVOS_ADE_STT_FROM_ENV:-0}" = 1 ] && return 0
+  log "STT_PROVIDER/STT_API_KEY in your environment are ignored (speech-to-text keys are opt-in: ./stack stt set uses them, or DEVOS_ADE_STT_FROM_ENV=1)"
   return 1
 }
 
@@ -443,7 +443,7 @@ _stt_ask_choice() { # -> bedrock|openai|groq|browser|unknown
 # setup_stt — setup step, before the model check. Settings already in .env are kept. Otherwise: STT_PROVIDER=bedrock
 # from the shell is taken as the choice when none is recorded (no key, nothing leaves AWS); an install that answered
 # the older question is offered Bedrock once (interactive only); STT_PROVIDER + STT_API_KEY for openai/groq
-# are adopted only after asking (or with BEDROCK_NOW_STT_FROM_ENV=1 when non-interactive); and an interactive setup
+# are adopted only after asking (or with DEVOS_ADE_STT_FROM_ENV=1 when non-interactive); and an interactive setup
 # asks once: Bedrock (default), OpenAI, Groq (key, hidden) or browser only. Bedrock itself is switched on after the
 # model check (stt_after_probe). Never fatal: a rejected key means browser speech, with a warning.
 setup_stt() {

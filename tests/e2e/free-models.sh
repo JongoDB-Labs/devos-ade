@@ -2,7 +2,7 @@
 # Opt-in end-to-end check that free models book $0 Actual (run by hand; not part of tests/run.sh, CI or
 # tests/e2e/run.sh). No AWS, no real gateway: a stand-in for Experiential Labs (tests/e2e/explabs-mock.py, inside the
 # LiteLLM container on its 127.0.0.1) answers every model call. Throwaway containers, a network and a volume, all named
-# bne2e-free-* and labelled io.bedrock-now.e2e=free-models, removed afterwards by those names (nothing is pruned):
+# bne2e-free-* and labelled io.devos-ade.e2e=free-models, removed afterwards by those names (nothing is pruned):
 #   bne2e-free-pg        Postgres (compose.yaml's image): LiteLLM's keys and spend log
 #   bne2e-free-litellm   LiteLLM (compose.yaml's image) with this checkout's hook and config for Experiential Labs —
 #                        xl/deepseek-v4.1-flash:free (a free tier: the stand-in reports $0) and xl/qwen3.8-27b — plus
@@ -36,7 +36,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 P=bne2e-free
 NET=$P-net; VOL=$P-sock; PG=$P-pg; LL=$P-litellm; TC=$P-term; CC=$P-code; OW=$P-owui
-LABEL=io.bedrock-now.e2e=free-models
+LABEL=io.devos-ade.e2e=free-models
 OUT="$ROOT/tests/e2e/out"; TIMG=''; CIMG=''; OIMG=''
 MODEL=xl/deepseek-v4.1-flash:free
 AVOID_PORTS=" 80 443 3000 3009 4000 8080 8081 8090 8765 8787 8788 8800 "
@@ -76,7 +76,7 @@ checks = [dict(zip(("status", "check"), l.rstrip("\n").split("\t", 1))) for l in
 print(json.dumps({"finished": sys.argv[1] == "1", "failures": int(sys.argv[2]), "images": sys.argv[3].split(","), "checks": checks}, indent=1))' \
     "$1" "$FAILS" "$TIMG,$CIMG,$OIMG,$LIMG,$PIMG" > "$RESULT" 2>/dev/null || true
 }
-ours() { [ "$(docker "$1" inspect -f '{{index .'"$2"' "io.bedrock-now.e2e"}}' "$3" 2>/dev/null)" = free-models ]; }
+ours() { [ "$(docker "$1" inspect -f '{{index .'"$2"' "io.devos-ade.e2e"}}' "$3" 2>/dev/null)" = free-models ]; }
 cleanup() {
   local c
   for c in "$CC" "$OW" "$TC" "$LL" "$PG"; do ! ours container Config.Labels "$c" || docker rm -f "$c" >/dev/null 2>&1; done
@@ -102,7 +102,7 @@ STACK_DIR="$ROOT"; ENV_FILE=/dev/null; STATE_DIR="$WORK/state"
 export STACK_DIR ENV_FILE STATE_DIR
 # shellcheck source=/dev/null
 . "$ROOT/lib/common.sh"; . "$ROOT/lib/ports.sh"; . "$ROOT/lib/portal.sh"; . "$ROOT/lib/models.sh"; . "$ROOT/lib/commands.sh"
-EXPLABS_API="http://127.0.0.1:$MOCK_PORT/v1"; BEDROCK_NOW_TESTING=1
+EXPLABS_API="http://127.0.0.1:$MOCK_PORT/v1"; DEVOS_ADE_TESTING=1
 XLKEY="mock-key-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 get_env() { case "$1" in EXPLABS_API_KEY) printf '%s' "$XLKEY" ;; EXPLABS_MODELS) printf '%s,qwen3.8-27b' "${MODEL#xl/}" ;; esac; }
 STACK_DIR="$WORK"; mkdir -p "$STATE_DIR"

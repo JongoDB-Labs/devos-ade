@@ -140,7 +140,7 @@ BACKUP_KEEP	updates	main	BACKUP_NIGHTLY	How many nightly backups to keep. Yours,
 +backups	updates	main	-	Back up now, and the backups on this computer.
 +services	updates	main	-	What version each core service runs, what this release pins, and the newest upstream.
 UPDATE_REQUIRE_SIGNED_TAGS	updates	more	-	Install only releases whose signature git verifies.
-BEDROCK_NOW_HELPER_ALLOW_BRANCH	updates	more	-	Let the update helper update a checkout that follows a branch (a switch of the helper itself).
+DEVOS_ADE_HELPER_ALLOW_BRANCH	updates	more	-	Let the update helper update a checkout that follows a branch (a switch of the helper itself).
 HELPER_PORTAL_UID	updates	more	-	Linux: the host user that may own the portal's request files (a switch of the helper itself).
 
 @diagnostics	Diagnostics	Checks and restarts, carried out on this computer by the update helper. Each asks for the portal password.	README.md#troubleshooting
@@ -160,7 +160,7 @@ TERMINAL_HOST	advanced	main	-	The Terminal's address (blank: terminal. and the p
 CODE_HOST	advanced	main	-	The Code page's address (blank: code. and the portal's address).
 LITELLM_PORT	advanced	main	-	The port of LiteLLM's API on this computer, for tools like devos-claude.
 SHARED_MCP_PORT	advanced	main	-	The port of the shared file server on this computer.
-BEDROCK_NOW_ALLOW_PUBLIC_HOST	advanced	main	-	Allow a portal address that does not end in .localhost (a security switch).
+DEVOS_ADE_ALLOW_PUBLIC_HOST	advanced	main	-	Allow a portal address that does not end in .localhost (a security switch).
 COMPOSE_PROJECT_NAME	advanced	main	-	This checkout's Docker Compose project; changing it would orphan all data.
 PORTAL_SECRET	advanced	main	-	Signs portal sessions; a new one signs out every device.
 PORTAL_PROXY_SECRET	advanced	main	-	Proves to the portal that a request came through Caddy.

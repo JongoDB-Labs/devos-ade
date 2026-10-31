@@ -5,7 +5,7 @@
 services:
   caddy:
     build: { context: ./caddy }
-    image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/caddy-dns:local   # per project, like portal and shared-mcp
+    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/caddy-dns:local   # per project, like portal and shared-mcp
     environment:
       CADDY_AUTO_HTTPS: disable_redirects          # certificates for the remote site; no HTTP→HTTPS listener
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?run ./stack remote enable domain HOST}

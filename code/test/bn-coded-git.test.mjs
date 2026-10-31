@@ -339,7 +339,7 @@ test('git.discard: tracked → its current version to the trash and the staged o
   assert.equal(read('a.txt'), 'mine\n');
   const a = await coded.gitDiscard({ path: 'a.txt', ifMtimeMs: by['a.txt'].mtimeMs }, O);
   assert.equal(read('a.txt'), 'one\ntwo\nthree\n');
-  assert.match(a.trash, /^\.bedrock-now-trash\/[^/]+\/a\.txt$/);
+  assert.match(a.trash, /^\.devos-ade-trash\/[^/]+\/a\.txt$/);
   assert.equal(fs.readFileSync(path.join(WS, a.trash), 'utf8'), 'mine\n');
   assert.equal((await coded.gitDiscard({ path: 'b.dat' }, O)).action, 'restored');
   assert.equal(read('b.dat'), 'staged\n', 'the staged version, not the commit\'s');
@@ -371,7 +371,7 @@ test('git.discard: tracked → its current version to the trash and the staged o
   await assert.rejects(coded.gitDiscard({ path: 'd.eq' }, O), /only staged changes/);
   for (const bad of ['../x', '/etc/passwd', '.git/config', '', null]) await assert.rejects(coded.gitDiscard({ path: bad }, O), undefined, String(bad));
   // the trash is git's to ignore
-  assert.ok(!(await coded.gitStatus(O)).untracked.some((f) => f.path.startsWith('.bedrock-now-trash')));
+  assert.ok(!(await coded.gitStatus(O)).untracked.some((f) => f.path.startsWith('.devos-ade-trash')));
 });
 
 test('git.status: branch, upstream ahead/behind, detached, no commit yet, conflicts and states; untracked lines; watched files', async () => {

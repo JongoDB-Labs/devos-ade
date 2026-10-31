@@ -4,8 +4,7 @@ Back to the [README](../README.md#advanced).
 
 ## Running a second copy
 
-Each checkout needs its own Docker Compose project name (default `bedrock-now`, as before v0.25.0:
-[internal names](internal-names.md) stay). To try a branch or a fresh clone next to your main stack, give it its
+Each checkout needs its own Docker Compose project name (default `devos-ade`). To try a branch or a fresh clone next to your main stack, give it its
 own name:
 
 ```bash
@@ -28,13 +27,13 @@ only, never to a remote visitor), and `./stack password` in a folder says which 
 ### How copies are kept apart
 
 Two checkouts with the same project name would share containers and data volumes, so every `./stack` command
-refuses when another folder already uses the name (`project 'bedrock-now' is already used by the DevOS ADE
+refuses when another folder already uses the name (`project 'devos-ade' is already used by the DevOS ADE
 install in <dir>…`), and a first setup refuses when data volumes of that name already exist. Nothing is changed
 in either case. `./stack status` only prints the warning and still shows its table.
 
 A stopped install keeps its name too: the first checkout that starts or changes a project (`setup`, `up`,
 `update`, `restore`, `test`, `backup`, `rotate-aws`) records itself in a small, empty Docker volume
-`<project>_bedrock-now-owner` (label `io.bedrock-now.dir`), so another folder can't start on, or
+`<project>_devos-ade-owner` (label `io.devos-ade.dir`), so another folder can't start on, or
 `./stack uninstall`, its data while it is down. `down`, `logs`, `status`, `costs` and `models` only check.
 This also covers volumes created before the record existed: the first checkout to start or change the stack
 after upgrading claims them. If two checkouts claim at the same moment, one wins and the other stops with
@@ -80,12 +79,12 @@ and `./stack clean --dry-run`. `--help` (or `-h`) exits 0 for a known command, w
 ## Portal host name, port and the public-host opt-in
 
 The portal uses port 80 when it is free (so the URLs carry no port); otherwise setup picks 8800 and says so,
-e.g. `port 80 is in use → using 8800 for the portal (PORTAL_PORT): http://bedrock-now.localhost:8800`. Setup
+e.g. `port 80 is in use → using 8800 for the portal (PORTAL_PORT): http://devos-ade.localhost:8800`. Setup
 moves other ports (`LITELLM_PORT`, `SHARED_MCP_PORT`) the same way. `./stack status` always prints the real
 URLs.
 
 You may edit `PORTAL_HOST` / `PORTAL_PORT` in `.env`; `./stack up` picks the change up. A `PORTAL_HOST` that
-does not end in `.localhost` is refused unless you also set `BEDROCK_NOW_ALLOW_PUBLIC_HOST=1`: the portal is
+does not end in `.localhost` is refused unless you also set `DEVOS_ADE_ALLOW_PUBLIC_HOST=1`: the portal is
 plain HTTP, so its session cookie is not `Secure` and goes to that name and all its subdomains. Only use a name
 that resolves to this computer alone.
 
@@ -111,12 +110,12 @@ install it), the first of Google Chrome, Microsoft Edge, Brave and Chromium, and
 first, then asks Spotlight by bundle id (`mdfind`, read-only) for browsers installed elsewhere. Without any of
 them, or if the one found fails to start, it uses your default browser (`open` / `xdg-open`); over SSH it only
 prints the URL. `./stack setup` and `./stack up` open it at the end when
-they run in a terminal. `BEDROCK_NOW_NO_OPEN=1` turns that off; scripts and `--yes` runs without a terminal never
+they run in a terminal. `DEVOS_ADE_NO_OPEN=1` turns that off; scripts and `--yes` runs without a terminal never
 open a window.
 
-`BEDROCK_NOW_OPEN_MODE=window` keeps the earlier behaviour: a Chrome-family window started with `--app=<url>`
-and a separate browser profile per copy (macOS: `~/Library/Application Support/bedrock-now`, Linux:
-`~/.local/share/bedrock-now`; a second copy uses `bedrock-now-<project>`). It shares no logins with your
+`DEVOS_ADE_OPEN_MODE=window` keeps the earlier behaviour: a Chrome-family window started with `--app=<url>`
+and a separate browser profile per copy (macOS: `~/Library/Application Support/devos-ade`, Linux:
+`~/.local/share/devos-ade`; a second copy uses `devos-ade-<project>`). It shares no logins with your
 everyday browser, but has no Dock icon of its own and cannot be installed.
 
 `portal/e2e/install/run.sh` (opt-in, run by hand; not part of `tests/run.sh`) checks the whole flow in a
@@ -137,7 +136,7 @@ by name.
 ## Verbose output
 
 Setup prints one line per phase (`==> LiteLLM ready (16s)`). If a service fails to start, it shows the last
-log lines and the `./stack logs` command to run. `BEDROCK_NOW_VERBOSE=1 ./stack setup` shows the full docker
+log lines and the `./stack logs` command to run. `DEVOS_ADE_VERBOSE=1 ./stack setup` shows the full docker
 compose output. `NO_COLOR=1` turns colours off.
 
 ## What setup and an update restart
@@ -280,7 +279,7 @@ test fails.
   `.claude/settings.json` and `CLAUDE.md` are read in either mode.
 - **What the lean folder leaves out**, and how to bring it back selectively: plugins (`devos-claude plugin
   install …`), user MCP servers (`devos-claude mcp add …`), `CLAUDE.md` (a link or a copy; the wrapper prints how
-  once, at a terminal, remembered by an empty `.bedrock-now-claude-md-hint` in the folder, and never copies it),
+  once, at a terminal, remembered by an empty `.devos-ade-claude-md-hint` in the folder, and never copies it),
   `settings.json` (permissions, `statusLine`, `outputStyle`, `hooks`, `env`: copy only the keys you want — `hooks`
   run commands at every event, and an `env` block can override the wrapper's `ANTHROPIC_*`), `keybindings.json`,
   your own `commands/`, `agents/`, `skills/` and `output-styles/`. The theme and the folders you trusted are asked
@@ -417,7 +416,7 @@ tests/e2e/run.sh --aws-env /path/to/a/file/with/AWS_keys    # or export AWS_ACCE
   endless line, forged control requests) for one more browser check, then gives it back.
 - **The update helper:** the `settings/*` checks (Settings changes through the helper: a budget, the Admin and
   portal passwords, the owner email, a new RustFS key pair, Back up now, nightly backups, the helper's refusals)
-  need it running. `--helper` (or `E2E_HELPER=1`) runs the throwaway's own `bin/bedrock-now-helper` in the
+  need it running. `--helper` (or `E2E_HELPER=1`) runs the throwaway's own `bin/devos-ade-helper` in the
   foreground for them, as a child of the run (never `./stack helper install`: no launchd agent or systemd unit),
   with `SETTINGS_MIN_INTERVAL_S=5`; it is stopped right after them and on any exit, its log in `logs/helper.log`.
   The other browser checks run before it starts (those that fake the helper's heartbeat run for real), the

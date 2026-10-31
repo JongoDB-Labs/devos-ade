@@ -1,5 +1,5 @@
 {
-  "name": "bedrock-now-terminal-grok-build",
+  "name": "devos-ade-terminal-grok-build",
   "private": true,
   "description": "xAI's Grok Build CLI for the DevOS ADE sandbox, pinned (npm ci checks every tarball against package-lock.json)",
   "dependencies": {

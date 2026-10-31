@@ -1031,7 +1031,7 @@ rt_install() {
     external) die "$(_rt_external_text "$id")" ;;
     installing) die "$(rt_name "$id") is being installed" ;;
   esac
-  if [ -t 0 ] && [ "${BEDROCK_NOW_JOB_ORIGIN:-}" != helper ] && [ "${ASSUME_YES:-0}" != 1 ]; then
+  if [ -t 0 ] && [ "${DEVOS_ADE_JOB_ORIGIN:-}" != helper ] && [ "${ASSUME_YES:-0}" != 1 ]; then
     confirm "Install $(rt_name "$id") $(rt_pinned_version "$id") ($(rt_size "$id")$([ "$(rt_os)" = mac ] && echo ", from $(_rt_source "$id"), into .state/runtimes/$id" || echo ", $(rt_name "$id")'s image")), running on $(rt_address "$id") only?" || die "nothing was installed"
   fi
   _rt_begin "$id"; rm -f "$(_rt_cancel_file)"
@@ -1143,7 +1143,7 @@ rt_uninstall() {
   local id="${1:-}" d v
   valid_runtime_id "$id" || die "not a runtime: $id ($RUNTIME_IDS)"
   rt_installed "$id" || [ -e "$(_rt_program "$id")" ] || die "$(rt_name "$id") is not installed by DevOS ADE (one of yours is never removed from here)"
-  if [ -t 0 ] && [ "${BEDROCK_NOW_JOB_ORIGIN:-}" != helper ] && [ "${ASSUME_YES:-0}" != 1 ]; then
+  if [ -t 0 ] && [ "${DEVOS_ADE_JOB_ORIGIN:-}" != helper ] && [ "${ASSUME_YES:-0}" != 1 ]; then
     confirm "Remove $(rt_name "$id") and every model downloaded to it?" || die "nothing was removed"
   fi
   _rt_begin "$id"; d="$(rt_dir "$id")"

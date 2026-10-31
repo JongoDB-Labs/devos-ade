@@ -1,7 +1,7 @@
 // bn-coded's ops for Bring your setup (terminal/bin/bn-coded.mjs): what is in the sandbox's ~/.claude now (a fixed set of
 // destinations only, never through a link), a copy into one of them only while it is as the page showed it (its
 // SHA-256, a skill folder's digest, or absent) — a temporary file or folder renamed into place, what it replaces moved
-// into ~/.claude/.bedrock-now-trash/, never deleted —, the sandbox's own Git name and email (git config --file, only
+// into ~/.claude/.devos-ade-trash/, never deleted —, the sandbox's own Git name and email (git config --file, only
 // while they are as shown), and which programs the sandbox has (looked up, never run).
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,7 +27,7 @@ after(() => { server.close(); fs.rmSync(ROOT, { recursive: true, force: true });
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const call = async (req, data = null) => result(await talk(SOCK, [open(req), ...(data === null ? [] : [frame(T.STDIN, Buffer.from(data)), frame(T.STDIN_END, Buffer.alloc(0))])]));
 const writeFile = (dest, text, ifv) => call({ op: 'setup.write', dest, if: ifv, size: Buffer.byteLength(text) }, text);
-const trash = () => (fs.existsSync(path.join(CONF, '.bedrock-now-trash')) ? fs.readdirSync(path.join(CONF, '.bedrock-now-trash')) : []);
+const trash = () => (fs.existsSync(path.join(CONF, '.devos-ade-trash')) ? fs.readdirSync(path.join(CONF, '.devos-ade-trash')) : []);
 
 test('setup.read: the fixed destinations only — their hash and text, a skill folder\'s files and digest, MCP servers, the Git identity', async () => {
   fs.writeFileSync(path.join(CONF, 'CLAUDE.md'), 'hello\n');
@@ -60,7 +60,7 @@ test('setup.write: a file only while it is as shown — new, or replaced (the ol
   assert.match((await writeFile('agents/rev.md', 'v2', 'absent')).error, /changed in the sandbox/);
   const r2 = await writeFile('agents/rev.md', 'v2', sha('v1'));
   assert.equal(r2.ok, true);
-  assert.match(r2.trashed, /^\.bedrock-now-trash\/setup-[^/]+\/agents__rev\.md$/);
+  assert.match(r2.trashed, /^\.devos-ade-trash\/setup-[^/]+\/agents__rev\.md$/);
   assert.equal(fs.readFileSync(path.join(CONF, r2.trashed), 'utf8'), 'v1');
   assert.equal(fs.readFileSync(path.join(CONF, 'agents', 'rev.md'), 'utf8'), 'v2');
   // a nested command's folders made; a link at the destination or on the way never written through
@@ -78,7 +78,7 @@ test('setup.write: a file only while it is as shown — new, or replaced (the ol
   assert.match((await call({ op: 'setup.write', dest: 'CLAUDE.md', if: 'whatever', size: 1 }, 'x')).error, /bad if/);
   assert.match((await call({ op: 'setup.write', dest: 'CLAUDE.md', if: 'absent', size: 2 << 20 }, 'x')).error, /bad size/);
   // nothing left half-written
-  assert.deepEqual(fs.readdirSync(path.join(CONF, '.bedrock-now-tmp')), []);
+  assert.deepEqual(fs.readdirSync(path.join(CONF, '.devos-ade-tmp')), []);
 });
 
 test('setup.write: a skill folder whole — only while its digest is as shown; the old folder into the trash', async () => {
@@ -132,7 +132,7 @@ test('setup.trash: the sandbox\'s own MCP server definition, read here (never se
   const g = path.join(CONF, '.claude.json');
   fs.writeFileSync(g, JSON.stringify({ mcpServers: { own: { command: 'mine', args: ['--x'] } }, other: 1 }));
   const r = await call({ op: 'setup.trash', mcp: 'own', config: { command: 'not this' } });
-  assert.match(r.trashed, /^\.bedrock-now-trash\/setup-[0-9T-]+Z-[0-9a-f]{6}\/mcp__own\.json$/);
+  assert.match(r.trashed, /^\.devos-ade-trash\/setup-[0-9T-]+Z-[0-9a-f]{6}\/mcp__own\.json$/);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(CONF, r.trashed), 'utf8')), { mcpServers: { own: { command: 'mine', args: ['--x'] } } });
   assert.equal(fs.statSync(path.join(CONF, r.trashed)).mode & 0o777, 0o600);
   assert.equal((await call({ op: 'setup.trash', mcp: 'absent' })).trashed, null);

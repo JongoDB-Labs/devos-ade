@@ -2,7 +2,7 @@
 # Opt-in end-to-end check of how the Experiential Labs gateway's refusals reach you (run by hand; not part of
 # tests/run.sh, CI or tests/e2e/run.sh). No AWS, no real gateway, no model call that costs anything: a stand-in for the
 # gateway (tests/e2e/explabs-mock.py, inside the LiteLLM container on its 127.0.0.1) answers every call. Throwaway
-# containers, all named bne2e-xlref-* and labelled io.bedrock-now.e2e=explabs-refusals, removed afterwards by those names
+# containers, all named bne2e-xlref-* and labelled io.devos-ade.e2e=explabs-refusals, removed afterwards by those names
 # (nothing is pruned), and a volume for the Code page's socket:
 #   bne2e-xlref-litellm   LiteLLM (compose.yaml's image) with this checkout's hook and an Experiential Labs config whose
 #                         key is one of the stand-in's "mock-nofree-" keys: a key whose model list names no free alias
@@ -33,7 +33,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 P=bne2e-xlref
 VOL=$P-sock; LL=$P-litellm; TC=$P-term; CC=$P-code; NET=$P-net
-LABEL=io.bedrock-now.e2e=explabs-refusals
+LABEL=io.devos-ade.e2e=explabs-refusals
 OUT="$ROOT/tests/e2e/out"; TIMG=''; CIMG=''
 REFUSED=xl/deepseek-v4.1-flash:free   # (the free alias the key's list does not name)
 AVOID_PORTS=" 80 443 3000 3009 4000 8080 8081 8090 8765 8787 8788 8800 "
@@ -71,7 +71,7 @@ checks = [dict(zip(("status", "check"), l.rstrip("\n").split("\t", 1))) for l in
 print(json.dumps({"finished": sys.argv[1] == "1", "failures": int(sys.argv[2]), "images": sys.argv[3].split(","), "checks": checks}, indent=1))' \
     "$1" "$FAILS" "$TIMG,$CIMG,$LIMG" > "$RESULT" 2>/dev/null || true
 }
-ours() { [ "$(docker "$1" inspect -f '{{index .'"$2"' "io.bedrock-now.e2e"}}' "$3" 2>/dev/null)" = explabs-refusals ]; }
+ours() { [ "$(docker "$1" inspect -f '{{index .'"$2"' "io.devos-ade.e2e"}}' "$3" 2>/dev/null)" = explabs-refusals ]; }
 cleanup() {
   local c
   for c in "$CC" "$TC" "$LL"; do ! ours container Config.Labels "$c" || docker rm -f "$c" >/dev/null 2>&1; done
@@ -97,7 +97,7 @@ STACK_DIR="$ROOT"; ENV_FILE=/dev/null; STATE_DIR="$WORK/state"
 export STACK_DIR ENV_FILE STATE_DIR
 # shellcheck source=/dev/null
 . "$ROOT/lib/common.sh"; . "$ROOT/lib/ports.sh"; . "$ROOT/lib/portal.sh"; . "$ROOT/lib/models.sh"; . "$ROOT/lib/commands.sh"
-EXPLABS_API="http://127.0.0.1:$MOCK_PORT/v1"; BEDROCK_NOW_TESTING=1
+EXPLABS_API="http://127.0.0.1:$MOCK_PORT/v1"; DEVOS_ADE_TESTING=1
 # (the key LiteLLM sends: one the stand-in lists no free alias for; made here, never a key-like literal)
 XLKEY="mock-nofree-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 get_env() { case "$1" in EXPLABS_API_KEY) printf '%s' "$XLKEY" ;; EXPLABS_MODELS) printf '%s,deepseek-v4.1-flash,qwen3.8-27b,gpt-5-mini' "${REFUSED#xl/}" ;; esac; }

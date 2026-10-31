@@ -17,10 +17,10 @@ from portal.security import COOKIE, CODE_COOKIE, PreviewCaps, PreviewCookies, Se
 
 SECRET = "s" * 64
 PW = "correct horse"
-PORTAL = "http://bedrock-now.localhost"
-CODE_HOST = "code.bedrock-now.localhost"
+PORTAL = "http://devos-ade.localhost"
+CODE_HOST = "code.devos-ade.localhost"
 CODE = f"http://{CODE_HOST}"
-DOMAIN = "bedrock-now-preview.localhost"
+DOMAIN = "devos-ade-preview.localhost"
 SAME = {"Sec-Fetch-Site": "same-origin"}
 TN = "tail1234.ts.net"
 PROXY = "p" * 64
@@ -76,25 +76,25 @@ def check(c, host, origin=None, accept="*/*", method="GET"):
 # --- settings ---
 
 def test_the_preview_domain_comes_with_the_code_page_and_is_another_site():
-    base = {"PORTAL_PASSWORD": "pw", "PORTAL_SECRET": "x" * 40, "PORTAL_HOST": "bedrock-now.localhost", "TERMINAL_ENABLED": "true",
+    base = {"PORTAL_PASSWORD": "pw", "PORTAL_SECRET": "x" * 40, "PORTAL_HOST": "devos-ade.localhost", "TERMINAL_ENABLED": "true",
             "CODE_ENABLED": "true", "PREVIEW_DOMAIN": DOMAIN}
     s = from_env(base)
     assert s.preview_domain == DOMAIN and s.preview_on() and not s.preview_on(remote=True)
     assert not from_env({**base, "CODE_ENABLED": "false"}).preview_on()
     assert not from_env({**base, "PREVIEW_DOMAIN": ""}).preview_on()
     # the portal's own site (or a name under it, or around it) is refused: its cookies would reach the previews
-    for bad in ("bedrock-now.localhost", "p.bedrock-now.localhost", "x-preview.bedrock-now.localhost", "localhost", "a b.localhost", "-x.localhost"):
+    for bad in ("devos-ade.localhost", "p.devos-ade.localhost", "x-preview.devos-ade.localhost", "localhost", "a b.localhost", "-x.localhost"):
         assert from_env({**base, "PREVIEW_DOMAIN": bad}).preview_domain == "", bad
     assert from_env({**base, "PORTAL_HOST": "a.b.localhost", "PREVIEW_DOMAIN": "c.b.localhost"}).preview_domain == ""
     assert from_env({**base, "PORTAL_HOST": "a.b.localhost", "PREVIEW_DOMAIN": "b-preview.localhost"}).preview_domain == "b-preview.localhost"
     # only <name>-preview.localhost (two labels), and never while the portal's own site is one: a second install named
-    # bedrock-now-preview would be the first one's previews' site (lib/portal.sh refuses such a PORTAL_HOST too)
+    # devos-ade-preview would be the first one's previews' site (lib/portal.sh refuses such a PORTAL_HOST too)
     for bad in ("previews.localhost", "a.b-preview.localhost", "b-preview.example.com", f"{'x' * 60}-preview.localhost"):
         assert from_env({**base, "PREVIEW_DOMAIN": bad}).preview_domain == "", bad
-    assert from_env({**base, "PORTAL_HOST": "bedrock-now-preview.localhost", "PREVIEW_DOMAIN": "x-preview.localhost"}).preview_domain == ""
+    assert from_env({**base, "PORTAL_HOST": "devos-ade-preview.localhost", "PREVIEW_DOMAIN": "x-preview.localhost"}).preview_domain == ""
     assert from_env({**base, "PORTAL_HOST": "a.team-preview.localhost", "PREVIEW_DOMAIN": "x-preview.localhost"}).preview_domain == ""
     assert from_env({**base, "CODE_HOST": "code.x-preview.localhost"}).preview_domain == ""
-    assert site_of("p5173-x.bedrock-now-preview.localhost") == DOMAIN and site_of("code.bedrock-now.localhost") == "bedrock-now.localhost"
+    assert site_of("p5173-x.devos-ade-preview.localhost") == DOMAIN and site_of("code.devos-ade.localhost") == "devos-ade.localhost"
 
 
 # --- the capability ---
@@ -201,7 +201,7 @@ def test_minting_needs_the_unlock_the_page_itself_a_port_and_a_path(ps):
         for q in ("port=0", "port=65536", "port=05173", "port=x", "port=", "port=1e3", "port=5173&path=x", "port=5173&path=//evil.example/",
                   "port=5173&path=/a%20b", "port=5173&path=/%5Cx", "port=5173&path=/%0d%0aSet-Cookie:x"):
             assert mint(c, tok, ut, q + "&format=json").status_code == 400, q
-        assert mint(c, tok, ut, host="terminal.bedrock-now.localhost").status_code == 404   # only on the code host
+        assert mint(c, tok, ut, host="terminal.devos-ade.localhost").status_code == 404   # only on the code host
     with _client(replace(ps, preview_domain="")) as c:
         tok, ut = unlocked(c)
         assert mint(c, tok, ut).status_code == 404
@@ -231,7 +231,7 @@ def test_the_preview_site_needs_a_valid_capability_and_its_own_origin(ps):
         # missing, forged, on another domain, or for another port: 403 (a page load gets a page that says why)
         lab = host.split(".", 1)[0]
         forged = lab[:-1] + ("y" if lab.endswith("x") else "x")    # one character changed (a real label may end in x)
-        for h in (DOMAIN, f"x.{DOMAIN}", f"p5173.{DOMAIN}", f"{forged}.{DOMAIN}", f"{lab}.bedrock-now.localhost",
+        for h in (DOMAIN, f"x.{DOMAIN}", f"p5173.{DOMAIN}", f"{forged}.{DOMAIN}", f"{lab}.devos-ade.localhost",
                   f"{lab}.evil.localhost", f"{lab.replace('p5173-', 'p5174-')}.{DOMAIN}", "", f"a.{lab}.{DOMAIN}"):
             r = check(c, h)
             assert r.status_code == 403, h
@@ -311,7 +311,7 @@ def preview_cookie(r):
 
 
 def test_remote_preview_settings_follow_the_remote_code_page():
-    base = {"PORTAL_PASSWORD": "pw", "PORTAL_SECRET": "x" * 40, "PORTAL_HOST": "bedrock-now.localhost", "TERMINAL_ENABLED": "true",
+    base = {"PORTAL_PASSWORD": "pw", "PORTAL_SECRET": "x" * 40, "PORTAL_HOST": "devos-ade.localhost", "TERMINAL_ENABLED": "true",
             "CODE_ENABLED": "true", "PREVIEW_DOMAIN": DOMAIN, "REMOTE_MODE": "tailscale", "REMOTE_HOST": R_PORTAL,
             "REMOTE_TERMINAL": "true", "REMOTE_TERMINAL_HOST": f"bn-terminal.{TN}", "REMOTE_CODE_HOST": R_CODE,
             "REMOTE_PREVIEW_HOST": R_PREVIEW, "REMOTE_PREVIEW": "true"}

@@ -16,8 +16,8 @@ from portal import settings as st
 from portal import summary
 from portal.app import create_app
 
-ORIGIN = {"Origin": "http://bedrock-now.localhost"}
-API = {"X-Requested-With": "bedrock-now"}
+ORIGIN = {"Origin": "http://devos-ade.localhost"}
+API = {"X-Requested-With": "devos-ade"}
 H = {**ORIGIN, **API, "Content-Type": "application/json"}
 PW = "correct horse"
 GB = 1024 ** 3
@@ -87,7 +87,7 @@ def app(settings, tmp_path):
                                                           "written_at": int(time.time())}))
     s = replace(settings, status_dir=sd, request_dir=rq, shared_mcp_token="mcp-token-0123456789abcdef")
     c = TestClient(create_app(s, transport=httpx.MockTransport(lambda r: httpx.Response(404))), follow_redirects=False,
-                   base_url="http://bedrock-now.localhost")
+                   base_url="http://devos-ade.localhost")
     c.__enter__()
     assert c.post("/login", data={"password": PW}, headers=ORIGIN).status_code == 303
     yield c, sd, rq
@@ -243,7 +243,7 @@ def test_the_runtime_routes_keep_the_session_the_header_the_origin_and_a_helper_
     assert c.post("/api/local-models/runtime", headers={**API, "Origin": "http://evil.example", "Content-Type": "application/json"},
                   content=json.dumps({"password": PW, "op": "start", "id": "ollama"})).status_code == 403
     with TestClient(create_app(replace(settings, status_dir=sd, request_dir=rq), transport=httpx.MockTransport(lambda r: httpx.Response(404))),
-                    follow_redirects=False, base_url="http://bedrock-now.localhost") as anon:
+                    follow_redirects=False, base_url="http://devos-ade.localhost") as anon:
         assert anon.post("/api/local-models/runtime-stop", headers=H, content=body).status_code in (401, 403)
         assert anon.get("/api/local-models/runtime-logs?id=ollama", headers=API).status_code in (401, 403)
     assert not _bodies(rq)

@@ -14,7 +14,7 @@ PUBLIC = ["/login", "/healthz", "/favicon.svg", "/static/tokens.css", "/static/f
           "/static/fonts/jetbrains-mono-latin-wght-normal.woff2", "/manifest.webmanifest", "/sw.js"]
 ICONS = ["16", "32", "48", "192", "512", "1024", "maskable-192", "maskable-512", "monochrome-512", "touch-180"]
 HTML = {"Accept": "text/html,application/xhtml+xml"}
-API = {"X-Requested-With": "bedrock-now"}
+API = {"X-Requested-With": "devos-ade"}
 
 
 @check("http", "public-paths-without-session")

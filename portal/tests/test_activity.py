@@ -16,8 +16,8 @@ from starlette.testclient import TestClient
 from portal import activity
 from portal.app import STATIC, create_app
 
-ORIGIN = {"Origin": "http://bedrock-now.localhost"}
-API = {"X-Requested-With": "bedrock-now"}
+ORIGIN = {"Origin": "http://devos-ade.localhost"}
+API = {"X-Requested-With": "devos-ade"}
 
 
 def offline(request):
@@ -33,7 +33,7 @@ def s(settings, tmp_path):
 
 
 def client(s):
-    c = TestClient(create_app(s, transport=httpx.MockTransport(offline)), base_url="http://bedrock-now.localhost", follow_redirects=False)
+    c = TestClient(create_app(s, transport=httpx.MockTransport(offline)), base_url="http://devos-ade.localhost", follow_redirects=False)
     c.__enter__()
     c.post("/login", data={"password": "correct horse"}, headers=ORIGIN)
     return c
@@ -50,7 +50,7 @@ def job(**kw) -> dict:
 
 
 def test_needs_a_session_and_the_custom_header(s):
-    with TestClient(create_app(s, transport=httpx.MockTransport(offline)), base_url="http://bedrock-now.localhost") as c:
+    with TestClient(create_app(s, transport=httpx.MockTransport(offline)), base_url="http://devos-ade.localhost") as c:
         assert c.get("/api/activity", headers=API).status_code == 401
     c = client(s)
     assert c.get("/api/activity").status_code == 400

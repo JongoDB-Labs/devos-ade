@@ -39,7 +39,7 @@ pulls_dir() { printf '%s/update-pulls\n' "$STATE_DIR"; }
 # pulls_start — the update's image downloads, all at once, in the background: N.ref (the image), N.log (its `docker pull`
 # words), N.res ("REF<TAB>SECONDS<TAB>STATUS") when it ended, skipped (the ones pinned by digest that are here), pid
 # (the process that runs them) and done once all ended. PULLS_DIR and PULLS_PID say where and which (setup gets them in
-# its environment: BEDROCK_NOW_PULLS_DIR, BEDROCK_NOW_PULLS_PID). Fails only when the images cannot be listed.
+# its environment: DEVOS_ADE_PULLS_DIR, DEVOS_ADE_PULLS_PID). Fails only when the images cannot be listed.
 PULLS_DIR=''; PULLS_PID=''
 pulls_start() {
   local d ref refs i=0
@@ -68,14 +68,14 @@ pulls_start() {
   log "downloading $i image(s) side by side while setup builds$([ ! -s "$d/skipped" ] || printf ' (%s here already, pinned by digest)' "$(wc -l < "$d/skipped" | tr -d ' ')")"
 }
 
-# pulls_wait — setup run by ./stack update (BEDROCK_NOW_PULLS_DIR): its downloads, before anything starts with an image
+# pulls_wait — setup run by ./stack update (DEVOS_ADE_PULLS_DIR): its downloads, before anything starts with an image
 # of this version. Each one as a step of its own ("Download litellm:1.105.0 ready (1m10s)": its own time, side by side
 # with the others and setup's builds; the caller's step times the wait); one that failed stops setup there, with the
 # image's own last words (nothing runs a new image yet: the update can be finished, or rolled back, as after any setup
 # that stopped). Still waiting, it says so every 2½ minutes (BUILD_TICK_S); a download process that is gone counts as
 # failed for what it had not finished.
 pulls_wait() {
-  local d="${BEDROCK_NOW_PULLS_DIR:-}" pid="${BEDROCK_NOW_PULLS_PID:-}" f r t rc bad='' start next
+  local d="${DEVOS_ADE_PULLS_DIR:-}" pid="${DEVOS_ADE_PULLS_PID:-}" f r t rc bad='' start next
   [ -n "$d" ] && [ -d "$d" ] || return 0
   start="$(_now)"; next=$((SECONDS + BUILD_TICK_S))
   while [ ! -f "$d/done" ]; do

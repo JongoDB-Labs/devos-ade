@@ -18,7 +18,7 @@ _stubs() {
   ensure_virtual_key() { echo "key $*" >> "$TMP/keys"; set_env "$1" "sk-$2"; }
   dc() { echo "dc $*" >> "$TMP/dc"; return 0; }
   docker() { echo "docker $*" >> "$TMP/docker"; return 0; }
-  printf 'PORTAL_SECRET=%s\nPORTAL_HOST=bedrock-now.localhost\nPORTAL_PORT=80\nLITELLM_PORT=9\nLITELLM_MASTER_KEY=sk-m\nLITELLM_KEY_CLAUDE_CODE=sk-cc\n' \
+  printf 'PORTAL_SECRET=%s\nPORTAL_HOST=devos-ade.localhost\nPORTAL_PORT=80\nLITELLM_PORT=9\nLITELLM_MASTER_KEY=sk-m\nLITELLM_KEY_CLAUDE_CODE=sk-cc\n' \
     "$(printf 's%.0s' $(seq 1 40))" > "$ENV_FILE"
 }
 
@@ -139,7 +139,7 @@ test_a_default_that_did_not_come_up_is_off_again_and_tried_next_time() {
   # (in one compose call: recreated only where the overlays' change reaches — Caddy, LiteLLM and shared-mcp off the
   # terminal's network)
   assert_contains "$(cat "$TMP/dc")" "dc up -d --wait --no-deps portal caddy litellm shared-mcp open-webui"
-  assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_code-link"
+  assert_contains "$(cat "$TMP/docker")" "docker network rm devos-ade_code-link"
   assert_contains "$(cat "$TMP/out")" "did not come up"
   assert_contains "$(cat "$TMP/out")" "The next ./stack setup or update tries once more"
   assert_eq "$CODE_DEFAULT_ON" 0
@@ -329,7 +329,7 @@ test_enable_turns_the_terminal_on_first_then_builds_and_starts_the_code_page() {
   assert_not_contains "$calls" "force-recreate"
   out="$(cat "$TMP/out")"
   assert_contains "$out" "turning the terminal on first"
-  assert_contains "$out" "Code page: on — http://code.bedrock-now.localhost"
+  assert_contains "$out" "Code page: on — http://code.devos-ade.localhost"
   assert_contains "$out" "Open the Code tab on Home"
   # ./stack up and setup keep the secret; enable again (the terminal on now) makes a new one and never touches the
   # terminal: it runs the spawn server already (compose.terminal.yaml, bn-terminal)
@@ -380,9 +380,9 @@ test_disable_removes_the_code_page_and_keeps_the_terminal() {
   assert_eq "$(printf '%s\n' "$calls" | head -n 1)" "dc rm -sf code subs-chat"   # while compose still knows it
   assert_not_contains "$calls" "terminal"                                # the terminal (and its tmux session) untouched
   assert_contains "$calls" "dc up -d --wait caddy"   # (compose recreates it: its CODE_MODE and networks changed)
-  assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_code-link bedrock-now_plan-chat"
+  assert_contains "$(cat "$TMP/docker")" "docker network rm devos-ade_code-link devos-ade_plan-chat"
   # (the code-socket volume is the terminal's; Chat's socket volume goes, its Git hosts' volume stays)
-  assert_eq "$(grep 'docker volume rm' "$TMP/docker")" "docker volume rm bedrock-now_chat-socket"
+  assert_eq "$(grep 'docker volume rm' "$TMP/docker")" "docker volume rm devos-ade_chat-socket"
   assert_contains "$(cat "$TMP/out")" "the terminal and its workspace stay"
   code_disable > "$TMP/out" 2>&1 || return 1
   assert_contains "$(cat "$TMP/out")" "already off"
@@ -397,7 +397,7 @@ test_terminal_disable_turns_the_code_page_off_too() {
   assert_eq "$(get_env TERMINAL_ENABLED)" false
   assert_eq "$(head -n 1 "$TMP/dc")" "dc rm -sf code subs-chat"
   assert_contains "$(cat "$TMP/out")" "the Code page is off too"
-  assert_contains "$(cat "$TMP/docker")" "docker volume rm bedrock-now_terminal-socket bedrock-now_code-socket"
+  assert_contains "$(cat "$TMP/docker")" "docker volume rm devos-ade_terminal-socket devos-ade_code-socket"
 }
 
 test_status_names_address_container_sandbox_and_remote() {
@@ -405,14 +405,14 @@ test_status_names_address_container_sandbox_and_remote() {
   code_enable > /dev/null 2>&1 || return 1
   dc() { case "$*" in *"ps -a --format"*) echo "running healthy" ;; esac; }
   out="$(code_status)"
-  assert_contains "$out" "Code page: on — http://code.bedrock-now.localhost (the Code tab"
+  assert_contains "$out" "Code page: on — http://code.devos-ade.localhost (the Code tab"
   assert_contains "$out" "Container  running healthy"
   assert_contains "$out" "Sandbox    the terminal's: $(get_env TERMINAL_WORKSPACE) → /workspace, key claude-code-terminal (budget \$50), internet public addresses only"
   assert_contains "$out" "Remote     off (with the terminal's: REMOTE_TERMINAL=true"
-  assert_contains "$out" "Previews   of servers in the sandbox (Ports, in its status bar), at p<port>-<link>.bedrock-now-preview.localhost"
+  assert_contains "$out" "Previews   of servers in the sandbox (Ports, in its status bar), at p<port>-<link>.devos-ade-preview.localhost"
   assert_not_contains "$out" "remote: "
-  assert_eq "$(status_url code)" "http://code.bedrock-now.localhost   (the Code tab; ./stack code status)"
-  assert_contains "$(code_summary_line)" "Code page       http://code.bedrock-now.localhost"
+  assert_eq "$(status_url code)" "http://code.devos-ade.localhost   (the Code tab; ./stack code status)"
+  assert_contains "$(code_summary_line)" "Code page       http://code.devos-ade.localhost"
   set_env CODE_HOST ide.localhost
   assert_eq "$(portal_url code)" "http://ide.localhost"
   # the terminal's folder gone: the Code page is left out with it, and says so
@@ -488,10 +488,10 @@ test_setup_hook_builds_and_starts_it_and_never_stops_setup() {
 
 test_images_rollback_and_uninstall() {
   printf 'CODE_ENABLED=true\n' > "$ENV_FILE"
-  assert_eq "$(code_image_refs)" "bedrock-now/code:local"
+  assert_eq "$(code_image_refs)" "devos-ade/code:local"
   assert_contains "$(sed -n '/^images_snapshot_before() {/,/^}/p' "$STACK_DIR/lib/images.sh")" "code_image_refs"
   case " $LOCAL_BUILDS " in *" code "*) ;; *) echo "code is not a local build" >&2; return 1 ;; esac
-  dc() { printf 'caddy:2\nbedrock-now/code:local\n'; }; compose_refs() { :; }   # (compose.yaml's own: test_phases.sh)
+  dc() { printf 'caddy:2\ndevos-ade/code:local\n'; }; compose_refs() { :; }   # (compose.yaml's own: test_phases.sh)
   docker() { return 1; }
   assert_eq "$(missing_images)" "caddy:2"
   docker() { echo "docker $*" >> "$TMP/docker"; return 0; }
@@ -503,14 +503,14 @@ test_images_rollback_and_uninstall() {
   printf 'CODE_ENABLED=false\n' > "$ENV_FILE"
   code_uninstall_cleanup
   d="$(cat "$TMP/docker")"
-  assert_contains "$d" "docker network rm bedrock-now_code-link"
+  assert_contains "$d" "docker network rm devos-ade_code-link"
   assert_not_contains "$d" "code-socket"   # (the terminal's volume: terminal_uninstall_cleanup)
   # (Chat's own sign-ins, by their exact names)
-  assert_contains "$d" "docker volume rm bedrock-now_subs-chat-claude bedrock-now_subs-chat-codex bedrock-now_subs-chat-copilot bedrock-now_subs-chat-grok"
-  assert_contains "$d" "docker image rm bedrock-now/code:local bedrock-now/code:previous"
-  assert_contains "$d" "docker volume rm bedrock-now_code-state"   # (Git hosts' tokens and keys go with the install)
+  assert_contains "$d" "docker volume rm devos-ade_subs-chat-claude devos-ade_subs-chat-codex devos-ade_subs-chat-copilot devos-ade_subs-chat-grok"
+  assert_contains "$d" "docker image rm devos-ade/code:local devos-ade/code:previous"
+  assert_contains "$d" "docker volume rm devos-ade_code-state"   # (Git hosts' tokens and keys go with the install)
   : > "$TMP/docker"; terminal_uninstall_cleanup
-  assert_contains "$(cat "$TMP/docker")" "docker volume rm bedrock-now_terminal-home bedrock-now_terminal-socket bedrock-now_code-socket"
+  assert_contains "$(cat "$TMP/docker")" "docker volume rm devos-ade_terminal-home devos-ade_terminal-socket devos-ade_code-socket"
   assert_eq "$(code_image_refs)" ""
 }
 
@@ -565,7 +565,7 @@ test_compose_code_is_a_sandboxed_container_on_its_own_network() {
   # token, not on the terminal's network; its way out only through the overlays (the terminal's own way)
   sc="$(awk '/^  subs-chat:$/,/^  caddy:$/' "$STACK_DIR/compose.code.yaml")"
   for want in "read_only: true" "cap_drop: [ALL]" 'security_opt: ["no-new-privileges:true"]' 'user: "${TERMINAL_UID:-10104}:${TERMINAL_GID:-10104}"' \
-              'image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/terminal:local' "pull_policy: never" 'entrypoint: ["node", "/usr/local/bin/bn-coded.mjs"]' "BN_CODED_ROLE: chat" \
+              'image: ${COMPOSE_PROJECT_NAME:-devos-ade}/terminal:local' "pull_policy: never" 'entrypoint: ["node", "/usr/local/bin/bn-coded.mjs"]' "BN_CODED_ROLE: chat" \
               "BN_CODE_SOCK_DIR: /run/bn-chat" "- chat-socket:/run/bn-chat" "pids_limit:" "mem_limit:" \
               "- /home/claude:size=256m,uid=\${TERMINAL_UID:-10104},gid=\${TERMINAL_GID:-10104},mode=0700" "- subs-chat-codex:/home/claude/.codex" \
               "networks: [subs-chat-internal]"; do
@@ -651,7 +651,7 @@ assert not any(v.get("source") == "code-state" for n, x in s.items() if n != "co
 assert sorted(c["environment"]) == ["CODE_ALLOW_BYPASS", "CODE_AUTO_MODE", "CODE_CHAT_KEY", "CODE_CLAUDE_PLAN", "CODE_PROXY_SECRET", "CODE_WORKSPACE_LABEL",
   "GIT_GITHUB_APP_SLUG", "GIT_GITHUB_CLIENT_ID", "GIT_GITLAB_CLIENT_ID", "HOME", "TERMINAL_EGRESS"], c["environment"]
 assert c["environment"]["CODE_CLAUDE_PLAN"] == "false" and "CODE_CLAUDE_PLAN" not in t["environment"]
-# (Git hosts sign-in: public application IDs, blank by default: the apps of bedrock-now; no network of its own for it)
+# (Git hosts sign-in: public application IDs, blank by default: the apps of devos-ade; no network of its own for it)
 assert c["environment"]["GIT_GITHUB_CLIENT_ID"] == "" and c["environment"]["GIT_GITLAB_CLIENT_ID"] == "" 
 assert c["environment"]["CODE_PROXY_SECRET"] == "fedcba9876543210fedcba9876543210"
 # Bypass permissions: off unless .env allows it; the folder only as a label (no volume of it)
@@ -666,7 +666,7 @@ assert "BN_CODE" not in t["environment"]
 assert ("code-socket", "/run/bn-code", None) in [(v.get("source"), v["target"], v.get("read_only")) for v in t["volumes"]], t["volumes"]
 assert "fedcba9876543210fedcba9876543210" not in json.dumps(t) and "code-link" not in t["networks"]
 assert k["environment"]["CODE_MODE"] == "on" and k["environment"]["CODE_PROXY_SECRET"] == "fedcba9876543210fedcba9876543210"
-assert k["environment"]["CODE_ORIGIN"] == "http://code.bedrock-now.localhost:80", k["environment"]["CODE_ORIGIN"]
+assert k["environment"]["CODE_ORIGIN"] == "http://code.devos-ade.localhost:80", k["environment"]["CODE_ORIGIN"]
 assert "code-link" in k["networks"] and "terminal-link" in k["networks"] and "default" in k["networks"]
 on_link = sorted(n for n, v in s.items() if "code-link" in (v.get("networks") or {}))
 assert on_link == ["caddy", "code"], on_link
@@ -905,7 +905,7 @@ test_test_checks_report_health_unlock_secret_and_isolation() {
       "x code /") printf '<form method="post" action="/.bn/unlock"> 401' ;;
       "x code /ws") printf 403 ;;
       "x code /.bn/unlock") printf 303 ;;
-      "x code /.bn/preview?port=9&format=json") printf '{"url": "http://p9-%s.bedrock-now-preview.localhost/", "port": 9}' "$(printf 'a%.0s' $(seq 1 33))" ;;
+      "x code /.bn/preview?port=9&format=json") printf '{"url": "http://p9-%s.devos-ade-preview.localhost/", "port": 9}' "$(printf 'a%.0s' $(seq 1 33))" ;;
     esac
   }
   curl() {

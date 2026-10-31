@@ -9,7 +9,7 @@ export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT
 
 _repo() { # a checkout tagged v0.2.1, plus one commit after it when $1 = ahead
   STACK_DIR="$TMP/stack"; rm -rf "$STACK_DIR"; mkdir -p "$STACK_DIR"; git init -q "$STACK_DIR"
-  printf 'services:\n  a:\n    image: ghcr.io/berriai/litellm:1.105.0\n  p:\n    image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/portal:local\n' > "$STACK_DIR/compose.yaml"
+  printf 'services:\n  a:\n    image: ghcr.io/berriai/litellm:1.105.0\n  p:\n    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/portal:local\n' > "$STACK_DIR/compose.yaml"
   git -C "$STACK_DIR" add compose.yaml; git -C "$STACK_DIR" commit -qm one; git -C "$STACK_DIR" tag v0.2.1
   [ "${1:-}" != ahead ] || { echo x > "$STACK_DIR/f"; git -C "$STACK_DIR" add f; git -C "$STACK_DIR" commit -qm two; }
 }
@@ -91,7 +91,7 @@ test_update_check_off_or_symlinked_file_says_nothing() {
 
 test_status_mentions_an_available_update() {
   _repo; _seen v0.3.0
-  printf 'LITELLM_PORT=4000\nPORTAL_HOST=bedrock-now.localhost\nPORTAL_PORT=80\n' > "$ENV_FILE"
+  printf 'LITELLM_PORT=4000\nPORTAL_HOST=devos-ade.localhost\nPORTAL_PORT=80\n' > "$ENV_FILE"
   dc() { printf 'litellm\trunning\thealthy\t0\n'; }; check_docker_daemon() { :; }; disk_line() { echo "Disk: x"; }
   out="$(cmd_status 2>&1)"
   assert_contains "$out" "Update available: v0.3.0"
@@ -112,7 +112,7 @@ test_latest_release_is_read_without_ever_blocking() {   # review I4: the portal 
   _repo; printf 'COMPOSE_PROJECT_NAME=bn-t\n' > "$ENV_FILE"
   d="$STATE_DIR/update-check"; mkdir -p "$d"; f="$d/latest.txt"
   for mode in perl no-perl; do
-    [ "$mode" = perl ] && unset BEDROCK_NOW_NO_PERL || export BEDROCK_NOW_NO_PERL=1
+    [ "$mode" = perl ] && unset DEVOS_ADE_NO_PERL || export DEVOS_ADE_NO_PERL=1
     rm -f "$f"; printf 'latest=v0.3.0\nchecked_at=1\n' > "$f"
     assert_eq "$(latest_release_seen)" "v0.3.0"
     rm -f "$f"; mkfifo "$f"   # a reader that opened this normally would wait forever
@@ -131,7 +131,7 @@ test_the_watchdog_ends_a_stuck_read_quietly() {   # re-review N7: no "Terminated
   mkdir -p "$TMP/slowbin"; printf '#!/bin/sh\nexec sleep 30\n' > "$TMP/slowbin/head"; chmod +x "$TMP/slowbin/head"
   printf 'latest=v0.3.0\n' > "$TMP/latest.txt"
   t0="$(date +%s)"
-  out="$( (BEDROCK_NOW_NO_PERL=1 PATH="$TMP/slowbin:$PATH" read_portal_file "$TMP/latest.txt" 256) 2>"$TMP/err" || true)"
+  out="$( (DEVOS_ADE_NO_PERL=1 PATH="$TMP/slowbin:$PATH" read_portal_file "$TMP/latest.txt" 256) 2>"$TMP/err" || true)"
   # the watchdog ends it after 2 s; without one it would take the stub's 30 s. The rest is room for a busy machine.
   [ $(($(date +%s) - t0)) -le 10 ] || { echo "the read was not ended in time ($(($(date +%s) - t0)) s)" >&2; return 1; }
   assert_eq "$out" ""
@@ -142,7 +142,7 @@ test_a_plain_read_without_perl_does_not_wait_for_the_watchdog() {   # verify N7:
   _repo; printf 'COMPOSE_PROJECT_NAME=bn-t\n' > "$ENV_FILE"
   printf 'latest=v0.3.0\n' > "$TMP/latest.txt"
   t0="$(date +%s)"
-  for _ in 1 2 3; do out="$(BEDROCK_NOW_NO_PERL=1 read_portal_file "$TMP/latest.txt" 256)"; done
+  for _ in 1 2 3; do out="$(DEVOS_ADE_NO_PERL=1 read_portal_file "$TMP/latest.txt" 256)"; done
   assert_eq "$out" "latest=v0.3.0"
   # waiting for the watchdog costs 2 s a read (>= 6 s in all); a plain read takes milliseconds. Up to 4 s leaves room
   # for a busy machine (in whole seconds a run within 4 s never measures more than 4, one of 6 s never less than 6).

@@ -3,7 +3,7 @@
 # request checks, nonces and status file it reuses; lib/helper.sh calls settings_poll_once and settings_helper_tick).
 #
 #   .state/requests/cfg-<nonce>.req    a settings change, at most 8 KB, one item per line:
-#                                        bedrock-now-settings 1 / nonce HEX32 / requested_at EPOCH / base HEX64 /
+#                                        devos-ade-settings 1 / nonce HEX32 / requested_at EPOCH / base HEX64 /
 #                                        origin local|remote / auth BASE64 / set KEY BASE64 or regen KEY (1-20) / end
 #                                      Everything is checked again here — format, age, single use, the password
 #                                      (against the helper's own hash, not anything the portal can change), the
@@ -109,7 +109,7 @@ settings_check_request() {
     line="${rest%%$'\n'*}"; if [ "$line" = "$rest" ]; then rest=''; else rest="${rest#*$'\n'}"; fi
     n=$((n + 1))
     case "$state:$n:$line" in
-      head:1:'bedrock-now-settings 1') ;;
+      head:1:'devos-ade-settings 1') ;;
       head:2:'nonce '*) SREQ_NONCE="${line#nonce }" ;;
       head:3:'requested_at '*) SREQ_TS="${line#requested_at }" ;;
       head:4:'base '*) SREQ_BASE="${line#base }" ;;
@@ -285,7 +285,7 @@ helper_run_settings() {
   : > "$logf"; chmod 600 "$logf"; rm -f "$rcf"
   set -m   # (its own process group: _end_job ends all of it)
   # (its exit status through a file: the pipeline's last command is the time stamper)
-  printf '%s' "$SREQ_LINES" | ( r=0; cd "$STACK_DIR" && env BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" config apply --stdin \
+  printf '%s' "$SREQ_LINES" | ( r=0; cd "$STACK_DIR" && env DEVOS_ADE_JOB_ORIGIN=helper DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" config apply --stdin \
     --base "$SREQ_BASE" --origin "$SREQ_ORIGIN" --via portal ${SREQ_CONFIRM:+--confirm "$SREQ_CONFIRM"} --yes || r=$?; echo "$r" > "$rcf" ) 2>&1 | _settings_stamp > "$logf" &
   pid=$!
   set +m
@@ -567,14 +567,14 @@ helper_run_diag() {
   read -r lim idle <<< "$(_job_deadline "$action")"
   if [ "$action" = report ]; then
     set -m   # (each job in a process group of its own: _end_job ends all of it)
-    ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper NO_COLOR=1 "$STACK_DIR/stack" "$@" ) </dev/null > "$logf.out" 2> "$logf" &
+    ( cd "$STACK_DIR" && exec env DEVOS_ADE_JOB_ORIGIN=helper NO_COLOR=1 "$STACK_DIR/stack" "$@" ) </dev/null > "$logf.out" 2> "$logf" &
     pid=$!; set +m
     _wait_beating "$pid" "$lim" "$logf" "$idle" || rc=$?
     if [ "$rc" = 0 ]; then head -c 262144 "$logf.out" > "$(report_file).tmp" && chmod 640 "$(report_file).tmp" && mv "$(report_file).tmp" "$(report_file)"; fi
     rm -f "$logf.out"
   else
     set -m
-    ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" "$@" ) </dev/null > "$logf" 2>&1 &
+    ( cd "$STACK_DIR" && exec env DEVOS_ADE_JOB_ORIGIN=helper DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" "$@" ) </dev/null > "$logf" 2>&1 &
     pid=$!; set +m
     _wait_beating "$pid" "$lim" "$logf" "$idle" || rc=$?
   fi
@@ -645,7 +645,7 @@ local_helper_start() {
   if [ "$action" = local-server ] || [ "$action" = local-probe ]; then _kind_count server-jobs "$action"; local_server_start "$f"; return 0; fi
   if [ "$action" = local-stop ]; then   # (while the download runs: f is pause or cancel)
     _kind_count stop-jobs "$action"
-    ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" local-models "$f" ) </dev/null > "$(helper_dir)/local-stop.log" 2>&1 &
+    ( cd "$STACK_DIR" && exec env DEVOS_ADE_JOB_ORIGIN=helper DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" local-models "$f" ) </dev/null > "$(helper_dir)/local-stop.log" 2>&1 &
     return 0
   fi
   if [ "$action" = local-runtime ] || [ "$action" = local-runtime-stop ]; then runtime_helper_start "$action" "$f" "$nonce"; return 0; fi
@@ -654,10 +654,10 @@ local_helper_start() {
   if local_job_running; then _refuse_diag "a download is already running (Settings › Models & providers › Local models shows it)" "$nonce"; return 0; fi
   logf="$(helper_dir)/local-job.log"; : > "$logf"; chmod 600 "$logf"
   if [ "$action" = local-pull ]; then
-    ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" local-models pull "$repo" "$quant" \
+    ( cd "$STACK_DIR" && exec env DEVOS_ADE_JOB_ORIGIN=helper DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" local-models pull "$repo" "$quant" \
         --bytes "$bytes" --tools "$tools" --context "$ctx" --params-m "$pm" --license "$lic" ) </dev/null > "$logf" 2>&1 &
   else
-    ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" local-models rm "$repo" "$quant" ) </dev/null > "$logf" 2>&1 &
+    ( cd "$STACK_DIR" && exec env DEVOS_ADE_JOB_ORIGIN=helper DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" local-models rm "$repo" "$quant" ) </dev/null > "$logf" 2>&1 &
   fi
   printf '%s\n' "$!" > "$(helper_dir)/local-job.pid"
 }
@@ -669,11 +669,11 @@ runtime_helper_start() {
   IFS='|' read -r op id <<< "$2"
   _kind_count "$([ "$action" = local-runtime ] && echo local-jobs || echo stop-jobs)" "$action"
   case "$op" in
-    logs) ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper NO_COLOR=1 "$STACK_DIR/stack" runtimes logs "$id" --portal ) </dev/null > /dev/null 2>&1 & return 0 ;;
+    logs) ( cd "$STACK_DIR" && exec env DEVOS_ADE_JOB_ORIGIN=helper NO_COLOR=1 "$STACK_DIR/stack" runtimes logs "$id" --portal ) </dev/null > /dev/null 2>&1 & return 0 ;;
     cancel) ;;
     *) if rt_job_running; then _refuse_diag "a runtime job is already running (Settings › Models & providers › Local models › Runtimes shows it)" "$nonce"; return 0; fi ;;
   esac
-  ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" runtimes "$op" ${id:+"$id"} ) </dev/null > "$(helper_dir)/local-runtime.log" 2>&1 &
+  ( cd "$STACK_DIR" && exec env DEVOS_ADE_JOB_ORIGIN=helper DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" runtimes "$op" ${id:+"$id"} ) </dev/null > "$(helper_dir)/local-runtime.log" 2>&1 &
 }
 
 # local_server_start FIELDS — a model-server operation (op|name|url|trust|key_b64|models|ref), in the background: written to a
@@ -683,7 +683,7 @@ local_server_start() {
   IFS='|' read -r op name url trust key models ref <<< "$f"
   rf="$(mktemp "$(helper_dir)/server-req.XXXXXX")" || return 0; chmod 600 "$rf"
   printf 'op=%s\nname=%s\nurl=%s\ntrust=%s\nkey=%s\nmodels=%s\nref=%s\n' "$op" "$name" "$url" "$trust" "$key" "$models" "$ref" > "$rf"
-  ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" local-models server apply "$rf" ) \
+  ( cd "$STACK_DIR" && exec env DEVOS_ADE_JOB_ORIGIN=helper DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" local-models server apply "$rf" ) \
     </dev/null > "$(helper_dir)/local-server.log" 2>&1 &
 }
 

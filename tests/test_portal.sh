@@ -6,24 +6,24 @@
 _docker_rootless() { return 1; }
 
 test_default_portal_host_follows_project() {
-  assert_eq "$(default_portal_host bedrock-now)" "bedrock-now.localhost"
+  assert_eq "$(default_portal_host devos-ade)" "devos-ade.localhost"
   assert_eq "$(default_portal_host bn-dev)" "bn-dev.localhost"
   assert_eq "$(default_portal_host my_copy-)" "my-copy.localhost"
 }
 
 test_valid_hostname() {
-  for h in bedrock-now.localhost bn-dev.localhost a.b x1; do valid_hostname "$h" || { echo "rejected $h" >&2; return 1; }; done
+  for h in devos-ade.localhost bn-dev.localhost a.b x1; do valid_hostname "$h" || { echo "rejected $h" >&2; return 1; }; done
   for h in '' Bn.localhost .x x. a..b -a.b a-.b 'a b' 'a/b' 'a_b'; do
     if valid_hostname "$h"; then echo "accepted '$h'" >&2; return 1; fi
   done
 }
 
 test_portal_url_omits_port_80() {
-  printf 'PORTAL_HOST=bedrock-now.localhost\nPORTAL_PORT=80\n' > "$ENV_FILE"
-  assert_eq "$(portal_url)" "http://bedrock-now.localhost"
-  assert_eq "$(portal_url chat)" "http://chat.bedrock-now.localhost"
+  printf 'PORTAL_HOST=devos-ade.localhost\nPORTAL_PORT=80\n' > "$ENV_FILE"
+  assert_eq "$(portal_url)" "http://devos-ade.localhost"
+  assert_eq "$(portal_url chat)" "http://chat.devos-ade.localhost"
   set_env PORTAL_PORT 8800
-  assert_eq "$(portal_url admin)" "http://admin.bedrock-now.localhost:8800"
+  assert_eq "$(portal_url admin)" "http://admin.devos-ade.localhost:8800"
 }
 
 test_portal_host_defaults_without_env() {
@@ -45,11 +45,11 @@ test_public_portal_host_needs_explicit_opt_in() {
   printf 'PORTAL_HOST=example.test\n' > "$ENV_FILE"
   if out="$(setup_portal_host 2>&1)"; then echo "should refuse a non-.localhost host" >&2; return 1; fi
   assert_contains "$out" "does not end in .localhost"
-  assert_contains "$out" "BEDROCK_NOW_ALLOW_PUBLIC_HOST=1"
+  assert_contains "$out" "DEVOS_ADE_ALLOW_PUBLIC_HOST=1"
   assert_contains "$out" "Secure"
-  out="$(BEDROCK_NOW_ALLOW_PUBLIC_HOST=1 setup_portal_host 2>&1)" || return 1
+  out="$(DEVOS_ADE_ALLOW_PUBLIC_HOST=1 setup_portal_host 2>&1)" || return 1
   assert_contains "$out" "resolve to 127.0.0.1"
-  set_env BEDROCK_NOW_ALLOW_PUBLIC_HOST 1   # the opt-in may also live in .env
+  set_env DEVOS_ADE_ALLOW_PUBLIC_HOST 1   # the opt-in may also live in .env
   setup_portal_host 2>/dev/null || return 1
 }
 
@@ -77,7 +77,7 @@ _stub_up() {
 }
 
 test_up_rewrites_portal_origin() {
-  printf 'PORTAL_HOST=mine.localhost\nPORTAL_PORT=8900\nPORTAL_ORIGIN=http://bedrock-now.localhost\n' > "$ENV_FILE"
+  printf 'PORTAL_HOST=mine.localhost\nPORTAL_PORT=8900\nPORTAL_ORIGIN=http://devos-ade.localhost\n' > "$ENV_FILE"
   _stub_up
   cmd_up 2>/dev/null
   assert_eq "$(get_env PORTAL_ORIGIN)" "http://mine.localhost:8900"
@@ -485,11 +485,11 @@ test_portal_port_falls_back_to_8800_when_80_is_busy() {
 }
 
 test_portal_port_rootless_docker_skips_80() {
-  printf 'PORTAL_HOST=bedrock-now.localhost\n' > "$ENV_FILE"; _stub_ports "8800" 1
+  printf 'PORTAL_HOST=devos-ade.localhost\n' > "$ENV_FILE"; _stub_ports "8800" 1
   ASSUME_YES=1 resolve_portal_port 2> "$TMP/err"
   assert_eq "$(get_env PORTAL_PORT)" 8801
   assert_contains "$(cat "$TMP/err")" "rootless Docker cannot publish port 80 → using 8801 for the portal"
-  assert_contains "$(cat "$TMP/err")" "http://bedrock-now.localhost:8801"
+  assert_contains "$(cat "$TMP/err")" "http://devos-ade.localhost:8801"
 }
 
 # Interactive: port 80 busy → setup says why and which port it suggests (one that is free right now), and asks; a typed
@@ -607,7 +607,7 @@ _fake_caddy() {
 }
 
 test_test_portal_passes_and_deletes_the_session_file() {
-  printf 'PORTAL_HOST=bedrock-now.localhost\nPORTAL_PORT=8800\nCLAUDE_BEDROCK_OPUS_MODEL=o\n' > "$ENV_FILE"; mkdir -p "$STATE_DIR"
+  printf 'PORTAL_HOST=devos-ade.localhost\nPORTAL_PORT=8800\nCLAUDE_BEDROCK_OPUS_MODEL=o\n' > "$ENV_FILE"; mkdir -p "$STATE_DIR"
   _fake_caddy; fails=0
   out="$(_test_portal; echo "fails=$fails")"
   assert_contains "$out" "fails=0"
@@ -617,7 +617,7 @@ test_test_portal_passes_and_deletes_the_session_file() {
 }
 
 test_test_portal_flags_a_frameable_app() {
-  printf 'PORTAL_HOST=bedrock-now.localhost\nPORTAL_PORT=80\n' > "$ENV_FILE"; mkdir -p "$STATE_DIR"
+  printf 'PORTAL_HOST=devos-ade.localhost\nPORTAL_PORT=80\n' > "$ENV_FILE"; mkdir -p "$STATE_DIR"
   _fake_caddy; fails=0; FRAME_CSP="frame-ancestors *"
   out="$(_test_portal; echo "fails=$fails")"
   assert_contains "$out" "FAIL  admin. loads, framable only by the portal"
@@ -647,7 +647,7 @@ test_compose_version_for_override_and_reset_tags() {
   for v in 2.24.4 v2.24.4 2.24.6+ds1-0ubuntu1 2.40.3-desktop.1 2.25 3.0.0; do compose_version_ge "$v" 2 24 4 || { echo "should do: $v" >&2; return 1; }; done
   for v in 2.24.3 2.23.9 v2.17.0 1.29.2 2 '' x.y.z 2.x 2.24.x; do ! compose_version_ge "$v" 2 24 4 || { echo "should not do: $v" >&2; return 1; }; done
   docker() { case "$*" in "compose version --short") echo 2.20.1 ;; *) return 0 ;; esac; }
-  unset BEDROCK_NOW_COMPOSE_OVERRIDES _BN_COMPOSE_VERSION
+  unset DEVOS_ADE_COMPOSE_OVERRIDES _BN_COMPOSE_VERSION
   ! compose_overrides_ok || return 1
   assert_contains "$(compose_too_old)" "Docker Compose 2.20.1 is older than 2.24.4"
   assert_contains "$(sed -n '/^check_prereqs()/,/^}/p' "$STACK_DIR/lib/commands.sh")" 'compose_overrides_ok || die "$(compose_too_old)"'
@@ -657,7 +657,7 @@ test_compose_version_for_override_and_reset_tags() {
 test_dc_adds_the_docs_overlay_only_where_compose_reads_it() {
   docker() { case "$*" in "compose version --short") echo "$VER"; echo asked >> "$TMP/asked" ;; *) printf '%s\n' "$*" >> "$TMP/args" ;; esac; }
   : > "$ENV_FILE"
-  unset BEDROCK_NOW_COMPOSE_CONTEXTS _BN_COMPOSE_CTX _BN_COMPOSE_VERSION
+  unset DEVOS_ADE_COMPOSE_CONTEXTS _BN_COMPOSE_CTX _BN_COMPOSE_VERSION
   VER=2.40.3-desktop.1; dc ps; dc ps
   assert_contains "$(cat "$TMP/args")" "-f $STACK_DIR/compose.yaml -f $STACK_DIR/compose.portal-docs.yaml"
   assert_eq "$(wc -l < "$TMP/asked" | tr -d ' ')" 1   # asked once per command
@@ -666,7 +666,7 @@ test_dc_adds_the_docs_overlay_only_where_compose_reads_it() {
   assert_eq "$_BN_COMPOSE_VERSION" 2.16.2
   : > "$TMP/args"; unset _BN_COMPOSE_CTX; VER=''; dc ps   # (no answer: an older one)
   assert_not_contains "$(cat "$TMP/args")" "compose.portal-docs.yaml"
-  : > "$TMP/args"; : > "$TMP/asked"; BEDROCK_NOW_COMPOSE_CONTEXTS=1 dc ps
+  : > "$TMP/args"; : > "$TMP/asked"; DEVOS_ADE_COMPOSE_CONTEXTS=1 dc ps
   assert_contains "$(cat "$TMP/args")" "compose.portal-docs.yaml"
   assert_eq "$(cat "$TMP/asked")" ""   # the override asks nothing
   # ./stack asks before anything else (once), never for help
@@ -676,11 +676,11 @@ test_dc_adds_the_docs_overlay_only_where_compose_reads_it() {
 test_an_older_compose_builds_the_portal_without_the_docs_index_and_says_so() {
   ensure_portal_password_hash() { :; }
   dc() { echo "dc $*" >> "$TMP/dc"; }
-  BEDROCK_NOW_COMPOSE_CONTEXTS=0; _BN_COMPOSE_VERSION=2.12.2
+  DEVOS_ADE_COMPOSE_CONTEXTS=0; _BN_COMPOSE_VERSION=2.12.2
   out="$(_build_and_up_front open-webui portal caddy 2>&1)"
   assert_contains "$out" "Docker Compose 2.12.2 is older than 2.24.4, which $PRODUCT_NAME needs (./stack setup and ./stack update stop for it): the portal is built without its search's docs index"
   assert_contains "$(cat "$TMP/dc")" "dc build -q portal"   # it still builds and starts
-  : > "$TMP/dc"; BEDROCK_NOW_COMPOSE_CONTEXTS=1
+  : > "$TMP/dc"; DEVOS_ADE_COMPOSE_CONTEXTS=1
   assert_not_contains "$(_build_and_up_front open-webui portal caddy 2>&1)" "older than 2.24.4"
 }
 
@@ -691,10 +691,10 @@ test_compose_renders_the_portals_docs_context_only_with_the_overlay() {
   printf 'POSTGRES_PASSWORD=p\nRUSTFS_ACCESS_KEY=a\nRUSTFS_SECRET_KEY=s\nLITELLM_MASTER_KEY=m\nLITELLM_SALT_KEY=s\nLITELLM_UI_PASSWORD=u\nWEBUI_SECRET_KEY=w\nOPENWEBUI_ADMIN_EMAIL=a@b.c\nOPENWEBUI_ADMIN_PASSWORD=p\nSHARED_MCP_TOKEN=t\n' > "$ENV_FILE"
   _build() { dc config --format json 2>/dev/null | python3 -c 'import json, sys; print(json.dumps(json.load(sys.stdin)["services"]["portal"]["build"], sort_keys=True))'; }
   local b
-  b="$(BEDROCK_NOW_COMPOSE_CONTEXTS=1 _build)"
+  b="$(DEVOS_ADE_COMPOSE_CONTEXTS=1 _build)"
   assert_contains "$b" "\"additional_contexts\": {\"repo\": \"$STACK_DIR\"}"
   assert_contains "$b" "\"context\": \"$STACK_DIR/portal\"" && assert_contains "$b" '"target": "runtime"'
-  b="$(BEDROCK_NOW_COMPOSE_CONTEXTS=0 _build)"
+  b="$(DEVOS_ADE_COMPOSE_CONTEXTS=0 _build)"
   assert_not_contains "$b" "additional_contexts"
   assert_contains "$b" '"target": "runtime"'
   # compose.yaml itself never names it (an older Compose refuses the whole file for an unknown key)

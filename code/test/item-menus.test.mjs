@@ -132,7 +132,7 @@ test('POST /api/fs/terminal: a folder, or the folder a file is in; never .git, "
   r = await req('POST', '/api/fs/terminal', { path: 'README.md' });
   assert.equal(r.status, 200);
   assert.equal(last().root, undefined, 'a file of the workspace\'s top: the workspace');
-  for (const bad of [{ path: '../etc', dir: true }, { path: '.git/hooks', dir: true }, { path: 'a/.bedrock-now-trash/x', dir: true }, { path: 'a/b/c/d/e/f/g/h/i', dir: true }, {}, { path: 7 }]) {
+  for (const bad of [{ path: '../etc', dir: true }, { path: '.git/hooks', dir: true }, { path: 'a/.devos-ade-trash/x', dir: true }, { path: 'a/b/c/d/e/f/g/h/i', dir: true }, {}, { path: 7 }]) {
     r = await req('POST', '/api/fs/terminal', bad);
     assert.ok(r.status === 400, `${JSON.stringify(bad)} is refused (${r.status})`);
   }

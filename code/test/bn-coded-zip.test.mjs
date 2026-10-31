@@ -55,11 +55,11 @@ test('no git: a walk without dependency and build folders, links left out, modes
 });
 
 test('include "all": dependency and build folders too (never the trash, never .git)', async () => {
-  put(P, '.bedrock-now-trash/old.txt', 'x');
+  put(P, '.devos-ade-trash/old.txt', 'x');
   const { bytes } = await zip({ root: P, include: 'all' });
   const names = Object.keys(readZip(bytes));
   assert.ok(names.includes('node_modules/dep/index.js') && names.includes('dist/out.js'));
-  assert.ok(!names.some((n) => n.startsWith('.git/') || n.startsWith('.bedrock-now-trash/')), names.join());
+  assert.ok(!names.some((n) => n.startsWith('.git/') || n.startsWith('.devos-ade-trash/')), names.join());
 });
 
 test('a git repository: what git keeps — .gitignore respected, untracked files in, .git and node_modules out; git: true adds history', async (t) => {

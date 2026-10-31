@@ -305,7 +305,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
 
     handoff = Handoff(settings.secret, sessions.fingerprint)
     # The Code page's terminal panel: its unlock carried over to the terminal host (one password for both; below)
-    unlock_handoff = Handoff(settings.secret, sessions.fingerprint, salt="bedrock-now.portal.code-terminal")
+    unlock_handoff = Handoff(settings.secret, sessions.fingerprint, salt="devos-ade.portal.code-terminal")
     # the password-again cookies of the browser terminal and of the Code page: one each; the terminal's never opens the
     # Code page, the Code page's opens the terminal only through the single-use hand-off (unlock_handoff, above)
     unlocks = {app: TerminalUnlocks(settings.secret, sessions, app=app) for app in (TERMINAL, CODE)}
@@ -320,7 +320,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
     # access a cookie on the one preview host, set through a single-use hand-off of that unlock
     previews = PreviewCaps(settings.secret, sessions)
     preview_cookies = PreviewCookies(settings.secret, sessions)
-    preview_handoff = Handoff(settings.secret, sessions.fingerprint, salt="bedrock-now.portal.preview-handoff")
+    preview_handoff = Handoff(settings.secret, sessions.fingerprint, salt="devos-ade.portal.preview-handoff")
     # the terminal's launch tokens (answers.py): a tool starts there only with one, made on your click
     launches = answers.Launches(settings.secret, sessions.fingerprint)
     # Automatic sign-in to Admin and Files (portal/appsso.py): which LiteLLM sessions came from which portal session,
@@ -1310,7 +1310,7 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         if not authed(request):
             return _no_store(JSONResponse({"error": "login required"}, status_code=401))
         # A custom header can't be sent cross-origin without a CORS preflight, which we never allow.
-        if request.headers.get("x-requested-with") != "bedrock-now":
+        if request.headers.get("x-requested-with") != "devos-ade":
             return _no_store(JSONResponse({"error": "missing X-Requested-With"}, status_code=400))
         return None
 

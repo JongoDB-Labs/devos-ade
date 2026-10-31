@@ -3,10 +3,10 @@
 # Browser UIs are only reachable through Caddy on 127.0.0.1:PORTAL_PORT:
 #   http://PORTAL_HOST (Home)  chat.PORTAL_HOST (Open WebUI)  admin.PORTAL_HOST (LiteLLM)  files.PORTAL_HOST (RustFS)
 
-DEFAULT_PORTAL_HOST=bedrock-now.localhost
+DEFAULT_PORTAL_HOST=devos-ade.localhost
 PORTAL_FALLBACK_PORT=8800
 
-# default_portal_host PROJECT -> bedrock-now.localhost for the default project, else <project>.localhost, so a
+# default_portal_host PROJECT -> devos-ade.localhost for the default project, else <project>.localhost, so a
 # second copy (COMPOSE_PROJECT_NAME=bn-dev → bn-dev.localhost) never shares host names or cookies with the first.
 # A project named <x>-preview gets <x>-preview-portal.localhost: <x>-preview.localhost is the Code page previews' site
 # of an install at <x>.localhost (lib/code.sh), and a portal there would get those previews' requests with its cookies.
@@ -15,7 +15,7 @@ default_portal_host() {
   if [ "$p" = "$DEFAULT_PROJECT" ]; then echo "$DEFAULT_PORTAL_HOST"; return 0; fi
   p="$(printf '%s' "$p" | tr '_' '-' | sed 's/-*$//')"   # "_" is not allowed in host names
   case "$p" in *-preview) p="$p-portal" ;; esac
-  printf '%s.localhost\n' "${p:-bedrock-now-2}"
+  printf '%s.localhost\n' "${p:-devos-ade-2}"
 }
 
 # preview_site HOST -> 0 when HOST is on a site of the Code page's previews (its last two labels: <x>-preview.localhost)
@@ -176,8 +176,8 @@ check_app_hosts() {
     if [ -n "$v" ]; then
       valid_hostname "$v" || die "$k=$v in .env is not a valid host name"
       ! preview_site "$v" || die "$k=$v is on a *-preview.localhost site: those names are the Code page previews' (sandbox content would share a site with it) — pick another name"
-      case "$v" in *.localhost) ;; *) [ "${BEDROCK_NOW_ALLOW_PUBLIC_HOST:-$(get_env BEDROCK_NOW_ALLOW_PUBLIC_HOST)}" = 1 ] ||
-        die "$k=$v does not end in .localhost (same rule as PORTAL_HOST; BEDROCK_NOW_ALLOW_PUBLIC_HOST=1 allows it)" ;; esac
+      case "$v" in *.localhost) ;; *) [ "${DEVOS_ADE_ALLOW_PUBLIC_HOST:-$(get_env DEVOS_ADE_ALLOW_PUBLIC_HOST)}" = 1 ] ||
+        die "$k=$v does not end in .localhost (same rule as PORTAL_HOST; DEVOS_ADE_ALLOW_PUBLIC_HOST=1 allows it)" ;; esac
     fi
     v="$(app_host "$(printf '%s' "${k%_HOST}" | tr '[:upper:]' '[:lower:]')")"
     case "$seen" in *" $v "*) die "$k=$v is the same host name as another app or the portal — each needs its own (their cookies would collide)" ;; esac
@@ -185,20 +185,20 @@ check_app_hosts() {
   done
 }
 
-# check_portal_host HOST — dies unless HOST is a valid name under .localhost, or BEDROCK_NOW_ALLOW_PUBLIC_HOST=1
+# check_portal_host HOST — dies unless HOST is a valid name under .localhost, or DEVOS_ADE_ALLOW_PUBLIC_HOST=1
 # (environment or .env) allows another name. The portal is plain HTTP on 127.0.0.1: its session cookie is not
 # Secure and goes to HOST and all its subdomains, which is only safe for a name nobody else can serve.
 check_portal_host() {
   local h="$1"
-  valid_hostname "$h" || die "PORTAL_HOST=$h in .env is not a valid host name (lowercase letters, digits, dots and dashes, e.g. bedrock-now.localhost)"
+  valid_hostname "$h" || die "PORTAL_HOST=$h in .env is not a valid host name (lowercase letters, digits, dots and dashes, e.g. devos-ade.localhost)"
   # <x>-preview.localhost is where the Code page shows sandbox content (lib/code.sh code_preview_domain): a portal on
   # such a site — this install's or another's — would share a site with those previews, and get their requests with
   # its session cookie
   ! preview_site "$h" || die "PORTAL_HOST=$h is on a *-preview.localhost site: names ending in -preview.localhost are where the Code page shows previews of sandbox content, and a portal there would share a site (and its cookies) with them. Use another name (e.g. ${h%-preview.localhost}-portal.localhost)"
   case "$h" in *.localhost) return 0 ;; esac
-  [ "${BEDROCK_NOW_ALLOW_PUBLIC_HOST:-$(get_env BEDROCK_NOW_ALLOW_PUBLIC_HOST)}" = 1 ] ||
-    die "PORTAL_HOST=$h does not end in .localhost. The portal is plain HTTP, so its session cookie has no Secure flag and is sent to $h and every *.$h — a name anything else can answer for could collect it. Use a name ending in .localhost (e.g. bedrock-now.localhost), or set BEDROCK_NOW_ALLOW_PUBLIC_HOST=1 in .env if $h is yours and resolves only to this machine."
-  warn "PORTAL_HOST=$h does not end in .localhost (allowed by BEDROCK_NOW_ALLOW_PUBLIC_HOST=1) — make sure $h and chat./admin./files.$h resolve to 127.0.0.1 (e.g. in /etc/hosts); the session cookie is not Secure (plain HTTP)"
+  [ "${DEVOS_ADE_ALLOW_PUBLIC_HOST:-$(get_env DEVOS_ADE_ALLOW_PUBLIC_HOST)}" = 1 ] ||
+    die "PORTAL_HOST=$h does not end in .localhost. The portal is plain HTTP, so its session cookie has no Secure flag and is sent to $h and every *.$h — a name anything else can answer for could collect it. Use a name ending in .localhost (e.g. devos-ade.localhost), or set DEVOS_ADE_ALLOW_PUBLIC_HOST=1 in .env if $h is yours and resolves only to this machine."
+  warn "PORTAL_HOST=$h does not end in .localhost (allowed by DEVOS_ADE_ALLOW_PUBLIC_HOST=1) — make sure $h and chat./admin./files.$h resolve to 127.0.0.1 (e.g. in /etc/hosts); the session cookie is not Secure (plain HTTP)"
 }
 
 # _port80_usable -> 0 if the portal can publish 127.0.0.1:80: not rootless Docker (it cannot bind ports

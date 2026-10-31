@@ -14,11 +14,11 @@ _fake_docker() {
     printf 'docker %s\n' "$*" >> "$TMP/docker"
     case "$FAKE_FAIL" in ?*) case "$*" in "$FAKE_FAIL"*) return 1 ;; esac ;; esac
     case "$*" in
-      "volume ls -q") [ -z "$FAKE_OWNER" ] || echo "bne2e_bedrock-now-owner"; echo "unrelated_volume" ;;
+      "volume ls -q") [ -z "$FAKE_OWNER" ] || echo "bne2e_devos-ade-owner"; echo "unrelated_volume" ;;
       "ps -a --filter label=com.docker.compose.project.working_dir="*) [ -z "$FAKE_USERS" ] || printf '%s\n' "$FAKE_USERS" ;;
       "ps -a --filter label=com.docker.compose.project=bne2e --format {{.Label \"com.docker.compose.project.working_dir\"}}")
         [ -z "$FAKE_DIRS" ] || printf '%s\n' "$FAKE_DIRS" ;;
-      "volume inspect --format"*bedrock-now-owner) [ -n "$FAKE_OWNER" ] || return 1; printf '%s\n' "$FAKE_OWNER" ;;
+      "volume inspect --format"*devos-ade-owner) [ -n "$FAKE_OWNER" ] || return 1; printf '%s\n' "$FAKE_OWNER" ;;
       "volume ls -q --filter label=com.docker.compose.project=bne2e") [ -z "$FAKE_VOLS" ] || printf '%s\n' "$FAKE_VOLS" ;;
       "network ls --format {{.Name}} --filter label=com.docker.compose.project=bne2e") [ -z "$FAKE_NETS" ] || printf '%s\n' "$FAKE_NETS" ;;
       "ps -a --filter label=com.docker.compose.project=bne2e --format {{.Label \"com.docker.compose.service\"}}"*)
@@ -31,7 +31,7 @@ _mutating_calls() { grep -E '^docker (compose|volume rm|image rm|rm )' "$TMP/doc
 
 test_e2e_only_suite_project_names_are_accepted() {
   for p in bne2e bne2e-2 bne2e-dev-1; do valid_project "$p" || { echo "refused $p" >&2; return 1; }; done
-  for p in bedrock-now bn-dev bne2 bne2e- bne2e--x bne2e_x Bne2e bne2e-X "" xbne2e; do
+  for p in devos-ade bn-dev bne2 bne2e- bne2e--x bne2e_x Bne2e bne2e-X "" xbne2e; do
     if valid_project "$p"; then echo "accepted $p" >&2; return 1; fi
   done
 }
@@ -57,7 +57,7 @@ test_e2e_docker_errors_fail_closed() {
 }
 
 test_e2e_a_marked_folder_another_project_uses_is_kept() {
-  _fake_docker; mkdir -p "$STACK"; : > "$STACK/.bedrock-now-e2e"; FAKE_DIRS="$STACK"
+  _fake_docker; mkdir -p "$STACK"; : > "$STACK/.devos-ade-e2e"; FAKE_DIRS="$STACK"
   FAKE_USERS="$(printf 'bne2e\nbne2e-other')"
   (teardown_only) 2> "$TMP/err"
   assert_contains "$(cat "$TMP/err")" "containers of project(s) bne2e-other were started from it"
@@ -72,7 +72,7 @@ test_e2e_a_marked_folder_another_project_uses_is_kept() {
 }
 
 test_e2e_teardown_retries_networks_and_says_what_it_left() {
-  _fake_docker; mkdir -p "$STACK"; : > "$STACK/.bedrock-now-e2e"
+  _fake_docker; mkdir -p "$STACK"; : > "$STACK/.devos-ade-e2e"
   sleep() { echo "sleep $*" >> "$TMP/docker"; }
   # a network Docker will not let go (an endpoint of a container already gone): 5 tries, a second apart, then said
   FAKE_FAIL="network rm bne2e_terminal-out"; FAKE_NETS="bne2e_terminal-out"
@@ -233,19 +233,19 @@ test_e2e_teardown_only_refuses_foreign_and_unmarked() {
   # our project, but a checkout folder the suite did not create (no marker): refused, folder kept
   FAKE_DIRS="$STACK"; mkdir -p "$STACK"; : > "$STACK/precious"
   if out="$( (teardown_only) 2>&1)"; then echo "teardown ran" >&2; return 1; fi
-  assert_contains "$out" "no .bedrock-now-e2e marker"
+  assert_contains "$out" "no .devos-ade-e2e marker"
   assert_eq "$(_mutating_calls)" ""
   [ -f "$STACK/precious" ] || return 1
 }
 
 test_e2e_paths_with_spaces_are_one_folder() {
-  STACK="$TMP/my work dir/bne2e"; mkdir -p "$STACK"; : > "$STACK/.bedrock-now-e2e"
+  STACK="$TMP/my work dir/bne2e"; mkdir -p "$STACK"; : > "$STACK/.devos-ade-e2e"
   FAKE_DIRS="$STACK"; FAKE_OWNER="$STACK"; _fake_docker
   project_ownership
   assert_eq "$OWN_STATE" ours
   (teardown_only) 2> "$TMP/err"
   assert_contains "$(_mutating_calls)" "docker compose -p bne2e down -v --remove-orphans"
-  assert_contains "$(_mutating_calls)" "docker volume rm bne2e_bedrock-now-owner"
+  assert_contains "$(_mutating_calls)" "docker volume rm bne2e_devos-ade-owner"
   [ ! -e "$STACK" ] || { echo "marked checkout not removed" >&2; return 1; }
   [ -d "$TMP/my work dir" ] || { echo "the parent folder went too" >&2; return 1; }
 }
@@ -253,7 +253,7 @@ test_e2e_paths_with_spaces_are_one_folder() {
 test_e2e_reuse_needs_marker_project_owner_and_every_service() {
   _fake_docker; mkdir -p "$STACK"
   if out="$( (reuse_check) 2>&1)"; then return 1; fi; assert_contains "$out" "no marker"
-  : > "$STACK/.bedrock-now-e2e"; printf 'COMPOSE_PROJECT_NAME=bne2e-other\n' > "$STACK/.env"
+  : > "$STACK/.devos-ade-e2e"; printf 'COMPOSE_PROJECT_NAME=bne2e-other\n' > "$STACK/.env"
   if out="$( (reuse_check) 2>&1)"; then return 1; fi; assert_contains "$out" "not for project bne2e"
   printf 'COMPOSE_PROJECT_NAME=bne2e\n' > "$STACK/.env"; FAKE_OWNER="$TMP/elsewhere"
   if out="$( (reuse_check) 2>&1)"; then return 1; fi; assert_contains "$out" "not owned by $STACK"
@@ -362,10 +362,10 @@ test_e2e_notty_has_no_terminal_and_passes_status_and_timeout() {
 }
 
 test_e2e_teardown_removes_the_terminal_workspace_only_with_its_marker() {
-  _fake_docker; mkdir -p "$STACK"; : > "$STACK/.bedrock-now-e2e"; FAKE_DIRS="$STACK"
+  _fake_docker; mkdir -p "$STACK"; : > "$STACK/.devos-ade-e2e"; FAKE_DIRS="$STACK"
   ws="$(terminal_workspace_dir)"
   assert_eq "$ws" "$ROOT/tests/e2e/work/bne2e-workspace"
-  mkdir -p "$ws/project"; : > "$ws/.bedrock-now-e2e"
+  mkdir -p "$ws/project"; : > "$ws/.devos-ade-e2e"
   OWNED=1 teardown 2>/dev/null
   [ ! -e "$ws" ] || { echo "marked workspace kept" >&2; return 1; }
   assert_contains "$(_mutating_calls)" "docker volume rm bne2e_terminal-home bne2e_terminal-socket"
@@ -386,7 +386,7 @@ test_e2e_teardown_removes_the_terminal_workspace_only_with_its_marker() {
   assert_contains "$(cat "$TMP/err")" "not deleting $ws"
 }
 
-# _fake_helper DIR — a stand-in for DIR/bin/bedrock-now-helper: prints its environment, starts a child (as a job's
+# _fake_helper DIR — a stand-in for DIR/bin/devos-ade-helper: prints its environment, starts a child (as a job's
 # ./stack would be), offers Settings and writes a heartbeat every second while $TMP/alive is there (the runner deletes
 # $TMP after each test, so a failed test leaves nothing running for long); FAKE_HELPER_EXIT=N: exits N at once;
 # FAKE_HELPER_READ_S=N: a read of the model browser's lists that takes N s, as its first loop starts it
@@ -401,8 +401,8 @@ sleep 60 & echo "child $!"
 printf '{"settings": 1, "written_at": %s}\n' "$(date +%s)" > "$d/helper-settings.json" 2>/dev/null
 while [ -e "$alive" ]; do printf '{"heartbeat": %s, "pid": %s}\n' "$(date +%s)" "$$" > "$d/helper.json" 2>/dev/null; sleep 1; done
 SH
-  } > "$1/bin/bedrock-now-helper"
-  chmod 755 "$1/bin/bedrock-now-helper"
+  } > "$1/bin/devos-ade-helper"
+  chmod 755 "$1/bin/devos-ade-helper"
 }
 _alive() { kill -0 "$1" 2>/dev/null; }
 
@@ -456,10 +456,10 @@ test_e2e_helper_that_stops_by_itself_is_reported() {
 test_e2e_teardown_stops_a_helper_a_killed_run_left_but_no_other_checkouts() {
   command -v perl >/dev/null || { echo "no perl" >&2; return 77; }
   _fake_docker; NOTTY="$STACK_DIR/tests/e2e/notty"
-  _fake_helper "$STACK"; _fake_helper "$STACK-rel"; : > "$STACK/.bedrock-now-e2e"
+  _fake_helper "$STACK"; _fake_helper "$STACK-rel"; : > "$STACK/.devos-ade-e2e"
   # a run killed with -9: its notty is gone, the helper (its own session) still runs; and another checkout's helper
-  "$NOTTY" "$STACK/bin/bedrock-now-helper" "$STACK" > /dev/null 2>&1 & n=$!
-  "$NOTTY" "$STACK-rel/bin/bedrock-now-helper" "$STACK-rel" > /dev/null 2>&1 & other=$!
+  "$NOTTY" "$STACK/bin/devos-ade-helper" "$STACK" > /dev/null 2>&1 & n=$!
+  "$NOTTY" "$STACK-rel/bin/devos-ade-helper" "$STACK-rel" > /dev/null 2>&1 & other=$!
   for _ in $(seq 1 20); do [ -s "$STACK/.state/status/helper.json" ] && [ -s "$STACK-rel/.state/status/helper.json" ] && break; sleep 0.5; done
   kill -KILL "$n"; wait "$n" 2>/dev/null || true
   beat="$(sed -n 's/.*"pid": \([0-9]*\).*/\1/p' "$STACK/.state/status/helper.json")"

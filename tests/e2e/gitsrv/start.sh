@@ -4,7 +4,7 @@ set -eu
 umask 022
 d=/srv/tls
 mkdir -p "$d" /srv/git/e2e /run/sshd
-openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout "$d/ca.key" -out "$d/ca.pem" -days 2 -subj '/CN=bedrock-now e2e git CA' \
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout "$d/ca.key" -out "$d/ca.pem" -days 2 -subj '/CN=devos-ade e2e git CA' \
   -addext 'basicConstraints=critical,CA:TRUE' -addext 'keyUsage=critical,keyCertSign' 2>/dev/null
 openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout "$d/srv.key" -out "$d/srv.csr" -subj '/CN=gitsrv' 2>/dev/null
 printf 'subjectAltName=DNS:gitsrv,DNS:localhost\nbasicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\n' > "$d/ext.cnf"

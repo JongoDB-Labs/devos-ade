@@ -11,7 +11,7 @@ services:
   terminal-egress:
     build:
       context: ./terminal/egress
-    image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/terminal-egress:local   # per project, like the terminal
+    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/terminal-egress:local   # per project, like the terminal
     restart: unless-stopped
     user: "65534:65534"
     read_only: true

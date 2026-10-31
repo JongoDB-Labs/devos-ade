@@ -1012,7 +1012,7 @@ sessions_poll_once() {
     local pid lim idle
     read -r lim idle <<< "$(_job_deadline "$action")"
     set -m
-    ( cd "$STACK_DIR" && exec env BEDROCK_NOW_JOB_ORIGIN=helper BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" "$@" ) </dev/null > "$logf" 2>&1 &
+    ( cd "$STACK_DIR" && exec env DEVOS_ADE_JOB_ORIGIN=helper DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" "$@" ) </dev/null > "$logf" 2>&1 &
     pid=$!; set +m
     rc=0; _wait_beating "$pid" "$lim" "$logf" "$idle" || rc=$?
     if [ "$rc" = 124 ] || [ "$rc" = 125 ]; then _ss_tell_req "$nonce" failed timeout; return 0; fi

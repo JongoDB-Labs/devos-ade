@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { filesOnly, listenPortal, matchSessions, takeRequest } from '../src/portalbridge';
 
-const PORTAL = 'http://bedrock-now.localhost';
+const PORTAL = 'http://devos-ade.localhost';
 const parent = { tag: 'parent' };
 
 test('a request counts only from the portal that frames the page, and only in its shape', () => {

@@ -228,7 +228,7 @@ env | sort
 echo "ARGS: $*"
 EOF
   chmod +x "$stub"
-  mkdir -p "$HOME/.config/bedrock-now"; echo '{}' > "$HOME/.config/bedrock-now/mcp.json"
+  mkdir -p "$HOME/.config/devos-ade"; echo '{}' > "$HOME/.config/devos-ade/mcp.json"
   printf '#!/bin/sh\necho "tmux $*" >> "%s/tmux.log"\n' "$TMP" > "$TMP/tmux-stub"; chmod +x "$TMP/tmux-stub"
   export BN_TMUX_BIN="$TMP/tmux-stub"; unset TMUX TMUX_PANE
   out="$(env ANTHROPIC_BASE_URL=http://gateway:8091 ANTHROPIC_AUTH_TOKEN=sk-terminal ANTHROPIC_MODEL=m ANTHROPIC_DEFAULT_OPUS_MODEL=o \
@@ -251,7 +251,7 @@ EOF
   [ -d "$HOME/.claude-subscription" ] || return 1
   # … unless you ask for it in that shell, said each time
   out="$(CLAUDE_SUB_STACK_MCP=1 BN_CLAUDE_BIN="$stub" bash "$STACK_DIR/terminal/bin/claude-sub" hello 2>&1)"
-  assert_contains "$out" "ARGS: --mcp-config=$HOME/.config/bedrock-now/mcp.json --settings={\"disableAutoMode\":\"disable\"} hello"
+  assert_contains "$out" "ARGS: --mcp-config=$HOME/.config/devos-ade/mcp.json --settings={\"disableAutoMode\":\"disable\"} hello"
   assert_contains "$out" "claude-sub: CLAUDE_SUB_STACK_MCP=1 — the stack's shared MCP server"
   # what it writes (its folder made here) is private
   assert_eq "$(stat -c %a "$HOME/.claude-subscription" 2>/dev/null || stat -f %Lp "$HOME/.claude-subscription")" 700

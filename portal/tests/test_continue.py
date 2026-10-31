@@ -16,10 +16,10 @@ from portal.app import STATIC, create_app
 from portal.security import COOKIE, CODE_COOKIE, REMOTE_CODE_COOKIE
 
 PW = "correct horse"
-PORTAL = "http://bedrock-now.localhost"
-CODE_HOST = "code.bedrock-now.localhost"
+PORTAL = "http://devos-ade.localhost"
+CODE_HOST = "code.devos-ade.localhost"
 CODE = f"http://{CODE_HOST}"
-API = {"X-Requested-With": "bedrock-now"}
+API = {"X-Requested-With": "devos-ade"}
 OWN = {"X-Requested-With": "bn-code", "Sec-Fetch-Site": "same-origin", "Content-Type": "application/json"}
 S1, S2, S3 = "3f2a1b4c-5d6e-4f70-8192-a3b4c5d6e7f8", "4f2a1b4c-5d6e-4f70-8192-a3b4c5d6e7f8", "5f2a1b4c-5d6e-4f70-8192-a3b4c5d6e7f8"
 C1, C2 = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "1a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
@@ -147,10 +147,10 @@ def test_only_the_code_pages_own_script_on_its_host_unlocked_may_report(cs):
         tok, ut = unlocked(c)
         r = c.post("/auth/code-recent", content=json.dumps(GOOD), headers={"Host": CODE_HOST, "Cookie": f"{COOKIE}={tok}", "Origin": CODE, **OWN})
         assert r.status_code == 401                                              # not unlocked
-        assert report(c, GOOD, tok, ut, host="bedrock-now.localhost").status_code == 404
+        assert report(c, GOOD, tok, ut, host="devos-ade.localhost").status_code == 404
         assert report(c, GOOD, tok, ut, origin="http://evil.example").status_code == 403
         assert report(c, GOOD, tok, ut, origin=None).status_code == 403
-        assert report(c, GOOD, tok, ut, headers={**OWN, "X-Requested-With": "bedrock-now"}).status_code == 403
+        assert report(c, GOOD, tok, ut, headers={**OWN, "X-Requested-With": "devos-ade"}).status_code == 403
         assert report(c, GOOD, tok, ut, headers={**OWN, "Sec-Fetch-Site": "same-site"}).status_code == 403
         assert home(c, tok).json()["code"]["report"] is None                     # nothing was taken
         assert report(c, None, tok, ut, raw="{not json").status_code == 400

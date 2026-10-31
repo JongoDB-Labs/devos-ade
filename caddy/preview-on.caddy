@@ -6,7 +6,7 @@
 # previews have a host of their own on the remote sites (remote_preview in Caddyfile, imported by remote-*.caddy).
 #
 # Every preview has a host of its own, p<port>-<capability>.<PREVIEW_DOMAIN>
-# (p5173-<capability>.bedrock-now-preview.localhost): a different *site* from the portal's (bedrock-now.localhost), so a preview — whatever script the sandbox
+# (p5173-<capability>.devos-ade-preview.localhost): a different *site* from the portal's (devos-ade.localhost), so a preview — whatever script the sandbox
 # serves — never receives the portal's cookies (the session's is Domain=PORTAL_HOST), its
 # requests to the portal, Chat, Admin, Files, the terminal or the Code page are cross-site (SameSite=Strict cookies stay
 # home), and it cannot plant cookies on them. lib/code.sh derives PREVIEW_DOMAIN from PORTAL_HOST. (Every app host's

@@ -11,7 +11,7 @@ Standard library only. A host that ipaddress.ip_address() parses strictly is use
 not parse is refused (curl and getaddrinfo would read 0251.0376.0251.0376, 169.254.43518 or 0xa9fea9fe as 169.254.169.254
 while a hand-rolled check sees something else); any other host is resolved with getaddrinfo and EVERY result is checked,
 IPv4 embedded in IPv6 (mapped, compatible, 6to4, Teredo, NAT64) included. Loopback and private addresses are allowed.
-Tests set BEDROCK_NOW_TESTING=1 and MSRV_TEST_RESOLVE="host=addr,addr;host2=addr" for a resolver of their own."""
+Tests set DEVOS_ADE_TESTING=1 and MSRV_TEST_RESOLVE="host=addr,addr;host2=addr" for a resolver of their own."""
 import ipaddress
 import os
 import re
@@ -90,7 +90,7 @@ def strict_ip(h):
 
 
 def resolve(h, port):
-    if os.environ.get("BEDROCK_NOW_TESTING") == "1" and "MSRV_TEST_RESOLVE" in os.environ:
+    if os.environ.get("DEVOS_ADE_TESTING") == "1" and "MSRV_TEST_RESOLVE" in os.environ:
         table = dict(p.split("=", 1) for p in os.environ["MSRV_TEST_RESOLVE"].split(";") if "=" in p)
         return [a for a in table.get(h, "").split(",") if a]
     try:

@@ -266,14 +266,14 @@ is rebuilt **on every container start** (a `docker events` listener), with a 5-m
 run builds a complete new chain, points `DOCKER-USER` at it and only then removes the old one, so there is never a
 moment without a rule. EC2 also offers IMDS over IPv6 (`fd00:ec2::254`) when the instance has
 `HttpProtocolIpv6=enabled`; the script covers it with `ip6tables` when Docker manages an IPv6 `DOCKER-USER` chain.
-If you don't need IPv6 IMDS, keep it disabled (the default). Save as `/usr/local/sbin/bedrock-now-imds-guard`
+If you don't need IPv6 IMDS, keep it disabled (the default). Save as `/usr/local/sbin/devos-ade-imds-guard`
 (mode 755; set `PROJECT` if you use another `COMPOSE_PROJECT_NAME`):
 
 ```sh
 #!/bin/sh
 # Containers may reach EC2's metadata service only from LiteLLM and Docker's default bridge (aws-cli checks).
 set -eu
-PROJECT=bedrock-now
+PROJECT=devos-ade
 cid="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=litellm)"
 v4='' v6=''
 if [ -n "$cid" ]; then
@@ -304,29 +304,29 @@ and run it from systemd — a long-running listener plus a timer:
 
 ```bash
 sudo dnf install -y iptables-nft
-sudo tee /etc/systemd/system/bedrock-now-imds-guard.service >/dev/null <<'EOF'
+sudo tee /etc/systemd/system/devos-ade-imds-guard.service >/dev/null <<'EOF'
 [Unit]
 Description=DevOS ADE: only LiteLLM may reach the EC2 metadata service (on every container start)
 After=docker.service
 Requires=docker.service
 [Service]
 Type=simple
-ExecStartPre=/usr/local/sbin/bedrock-now-imds-guard
-ExecStart=/bin/sh -c 'docker events --filter type=container --filter event=start --format "{{.ID}}" | while read -r _; do /usr/local/sbin/bedrock-now-imds-guard; done'
+ExecStartPre=/usr/local/sbin/devos-ade-imds-guard
+ExecStart=/bin/sh -c 'docker events --filter type=container --filter event=start --format "{{.ID}}" | while read -r _; do /usr/local/sbin/devos-ade-imds-guard; done'
 Restart=always
 RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-sudo tee /etc/systemd/system/bedrock-now-imds-guard-refresh.service >/dev/null <<'EOF'
+sudo tee /etc/systemd/system/devos-ade-imds-guard-refresh.service >/dev/null <<'EOF'
 [Unit]
 Description=DevOS ADE: refresh the metadata-service rule (backstop)
 After=docker.service
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/bedrock-now-imds-guard
+ExecStart=/usr/local/sbin/devos-ade-imds-guard
 EOF
-sudo tee /etc/systemd/system/bedrock-now-imds-guard-refresh.timer >/dev/null <<'EOF'
+sudo tee /etc/systemd/system/devos-ade-imds-guard-refresh.timer >/dev/null <<'EOF'
 [Timer]
 OnBootSec=1min
 OnUnitActiveSec=5min
@@ -334,7 +334,7 @@ OnUnitActiveSec=5min
 WantedBy=timers.target
 EOF
 sudo systemctl daemon-reload
-sudo systemctl enable --now bedrock-now-imds-guard.service bedrock-now-imds-guard-refresh.timer
+sudo systemctl enable --now devos-ade-imds-guard.service devos-ade-imds-guard-refresh.timer
 ```
 
 **Check it** (from `~/devos-ade`). Ask for an IMDSv2 token — the first step of every credential lookup — from

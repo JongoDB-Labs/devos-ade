@@ -56,7 +56,7 @@ test_the_pbkdf2_cache_gives_what_openssl_gives() {   # tests/shims/openssl: cach
 
 test_every_env_key_is_in_the_settings_table_once() {
   local k missing='' dup
-  for k in $(grep -oE '^[A-Z][A-Z0-9_]*=' "$STACK_DIR/.env.example" | tr -d '=') AWS_AUTH COMPOSE_PROJECT_NAME BEDROCK_NOW_ALLOW_PUBLIC_HOST; do
+  for k in $(grep -oE '^[A-Z][A-Z0-9_]*=' "$STACK_DIR/.env.example" | tr -d '=') AWS_AUTH COMPOSE_PROJECT_NAME DEVOS_ADE_ALLOW_PUBLIC_HOST; do
     setting_known "$k" || missing="$missing $k"
   done
   assert_eq "$missing" ""
@@ -184,8 +184,8 @@ test_policy_rules() {
   setting_allowed REMOTE_ADMIN_ACTIONS true local
   setting_allowed UPDATE_REQUIRE_SIGNED_TAGS true remote
   if setting_allowed UPDATE_REQUIRE_SIGNED_TAGS '' local; then return 1; fi
-  for k in PORTAL_SECRET LITELLM_SALT_KEY LITELLM_MASTER_KEY POSTGRES_PASSWORD BEDROCK_NOW_HELPER_ALLOW_BRANCH HELPER_PORTAL_UID \
-           PORTAL_HOST PORTAL_PORT LITELLM_PORT REMOTE_MODE TS_AUTHKEY CLOUDFLARE_API_TOKEN BEDROCK_NOW_ALLOW_PUBLIC_HOST \
+  for k in PORTAL_SECRET LITELLM_SALT_KEY LITELLM_MASTER_KEY POSTGRES_PASSWORD DEVOS_ADE_HELPER_ALLOW_BRANCH HELPER_PORTAL_UID \
+           PORTAL_HOST PORTAL_PORT LITELLM_PORT REMOTE_MODE TS_AUTHKEY CLOUDFLARE_API_TOKEN DEVOS_ADE_ALLOW_PUBLIC_HOST \
            COMPOSE_PROJECT_NAME LITELLM_DB_ADMIN_READY AWS_REGION_NAME LITELLM_KEY_SETUP; do
     if setting_allowed "$k" x local; then echo "$k must be read-only" >&2; return 1; fi
   done
@@ -921,7 +921,7 @@ EOS
 
 _cfg_req() {   # _cfg_req [AGE] [ORIGIN] [PASSWORD] [NONCE] LINES… — a request as the portal writes it
   local age="${1:-0}" origin="${2:-local}" pw="${3:-correct horse battery}" n="${4:-$NONCE}"; shift 4
-  { printf 'bedrock-now-settings 1\nnonce %s\nrequested_at %s\nbase %s\norigin %s\nauth %s\n' "$n" "$(( $(date +%s) - age ))" \
+  { printf 'devos-ade-settings 1\nnonce %s\nrequested_at %s\nbase %s\norigin %s\nauth %s\n' "$n" "$(( $(date +%s) - age ))" \
       "$(env_sha256)" "$origin" "$(printf '%s' "$pw" | openssl base64 -A)"
     for l in "$@"; do printf '%s\n' "$l"; done; printf 'end\n'; } > "$(request_dir)/cfg-$n.req"
 }
@@ -981,7 +981,7 @@ test_helper_applies_its_own_allowlist_and_origin_rules() {
   _cfg_req 0 remote 'correct horse battery' "$NONCE" "$(_lines AWS_ACCESS_KEY_ID=${FAKE_AWS_2})"
   if settings_poll_once 2>/dev/null; then return 1; fi
   assert_contains "$(cat "$(helper_status_file)")" "can only be changed from the computer running DevOS ADE"
-  _cfg_req 0 local 'correct horse battery' 22222222222222222222222222222222 "$(_lines BEDROCK_NOW_HELPER_ALLOW_BRANCH=1)"
+  _cfg_req 0 local 'correct horse battery' 22222222222222222222222222222222 "$(_lines DEVOS_ADE_HELPER_ALLOW_BRANCH=1)"
   if settings_poll_once 2>/dev/null; then return 1; fi
   assert_contains "$(cat "$(helper_status_file)")" "is read-only here"
   _cfg_req 0 local 'correct horse battery' 33333333333333333333333333333333 "$(_lines BUDGET_SETUP=-1)"
@@ -1347,8 +1347,8 @@ test_restart_only_takes_the_allowlist() {
 test_report_scrubs_home_and_secrets() {
   _env
   HOME="$TMP/home"
-  out="$(printf 'in %s/bedrock-now: key sk-master0123456789 pw correct horse battery\n\033[32mok\033[0m\n' "$HOME" | _report_scrub)"
-  assert_eq "$out" "$(printf 'in ~/bedrock-now: key *** pw ***\nok')"
+  out="$(printf 'in %s/devos-ade: key sk-master0123456789 pw correct horse battery\n\033[32mok\033[0m\n' "$HOME" | _report_scrub)"
+  assert_eq "$out" "$(printf 'in ~/devos-ade: key *** pw ***\nok')"
   out="$(printf 'owner John.Doe@Company.com on box.tail1234.ts.net, account 123456789012, at 1792020909123 (id:123456789012)\n' | _report_scrub)"
   assert_eq "$out" "owner <email> on <host>.ts.net, account <account>, at 1792020909123 (id:<account>)"   # (neighbours kept)
 }
@@ -1733,7 +1733,7 @@ test_up_waits_for_a_running_settings_change() {
   ( stack_lock config; i=0; while [ ! -f "$TMP/release" ] && [ "$i" -lt 600 ]; do sleep 0.1; i=$((i + 1)); done ) >/dev/null 2>&1 &
   local holder=$! i=0
   while [ ! -s "$STATE_DIR/lock/pid" ] && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
-  if out="$( (unset BEDROCK_NOW_LOCK_HELD; cmd_up) 2>&1)"; then touch "$TMP/release"; return 1; fi
+  if out="$( (unset DEVOS_ADE_LOCK_HELD; cmd_up) 2>&1)"; then touch "$TMP/release"; return 1; fi
   touch "$TMP/release"; wait "$holder" 2>/dev/null || true
   assert_contains "$out" "a settings change (from the portal or ./stack config) is running"
 }

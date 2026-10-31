@@ -15,10 +15,10 @@ from portal.security import COOKIE, CODE_COOKIE, PreviewCaps, Sessions
 
 SECRET = "s" * 64
 PW = "correct horse"
-PORTAL = "http://bedrock-now.localhost"
-CODE_HOST = "code.bedrock-now.localhost"
+PORTAL = "http://devos-ade.localhost"
+CODE_HOST = "code.devos-ade.localhost"
 CODE = f"http://{CODE_HOST}"
-DOMAIN = "bedrock-now-preview.localhost"
+DOMAIN = "devos-ade-preview.localhost"
 SAME = {"Sec-Fetch-Site": "same-origin"}
 TN = "tail1234.ts.net"
 PROXY = "p" * 64
@@ -104,7 +104,7 @@ def test_the_code_page_gets_the_viewers_address_for_its_unlock(ps):
         for h in ({}, {"Sec-Fetch-Site": "same-site"}, {"Sec-Fetch-Site": "cross-site"}):
             assert mint(c, tok, ut, headers=h).status_code == 403, h
         assert mint(c, tok, "nope").status_code == 401
-        assert mint(c, tok, ut, host="terminal.bedrock-now.localhost").status_code == 404
+        assert mint(c, tok, ut, host="terminal.devos-ade.localhost").status_code == 404
 
 
 def test_the_artifact_site_needs_a_valid_capability_get_and_a_frame(ps):
@@ -120,7 +120,7 @@ def test_the_artifact_site_needs_a_valid_capability_get_and_a_frame(ps):
         forged = lab[:-1] + ("y" if lab.endswith("x") else "x")
         pv = c.get("/auth/code-preview?port=5173&format=json", headers={"Host": CODE_HOST, "Cookie": f"{COOKIE}={tok}; {CODE_COOKIE}={ut}", **SAME})
         pv_label = pv.json()["origin"][len("http://"):].split(".", 1)[0]
-        for h in (f"artifact.{DOMAIN}", f"{forged}.artifact.{DOMAIN}", f"{lab}.{DOMAIN}", f"{lab}.artifact.bedrock-now.localhost",
+        for h in (f"artifact.{DOMAIN}", f"{forged}.artifact.{DOMAIN}", f"{lab}.{DOMAIN}", f"{lab}.artifact.devos-ade.localhost",
                   f"{pv_label}.artifact.{DOMAIN}", f"x.{lab}.artifact.{DOMAIN}", ""):
             assert check(c, h).status_code == 403, h
         # an artifact address is no preview address either

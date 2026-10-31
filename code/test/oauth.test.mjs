@@ -176,7 +176,7 @@ test('GitHub (Enterprise paths): a GitHub App\'s user token — where it is inst
   const { end } = await signIn(g, { provider: 'github', host: 'ghe.test', clientId: GH, ca: CA }, { account: 'octo' });
   assert.equal(end.state, 'done', end.error);
   const o = end.gitHost.oauth;
-  assert.deepEqual([o.account, o.app, o.appSlug, end.gitHost.username], ['octo', 'github-app', 'bedrock-now-e2e', 'x-access-token']);
+  assert.deepEqual([o.account, o.app, o.appSlug, end.gitHost.username], ['octo', 'github-app', 'devos-ade-e2e', 'x-access-token']);
   assert.deepEqual(o.installations, [{ account: 'octo', selection: 'selected' }]);
   assert.ok(mock.log.requests.includes('GET /api/v3/user/installations'));
   assert.equal(revokeAt({ ...end.gitHost, oauth: o }), 'https://ghe.test/settings/apps/authorizations');
@@ -423,7 +423,7 @@ test('the routes: a sign-in only from the computer running DevOS ADE; its status
   const store = new GitHosts({ dir: path.join(ROOT, 'routes'), now });
   const dist = stubDist('bndist');
   const s = createServer({ secret: SECRET, query: fakeQuery(), spawn: () => {}, call: fakeSandbox().call, distDir: dist,
-    versions: {}, logger: () => {}, gitHosts: store, gitConnect: connect, gitApps: { gitlab: { clientId: '' }, github: { clientId: GH, appSlug: 'bedrock-now' } }, gitOAuthDelay: () => sleep(2) });
+    versions: {}, logger: () => {}, gitHosts: store, gitConnect: connect, gitApps: { gitlab: { clientId: '' }, github: { clientId: GH, appSlug: 'devos-ade' } }, gitOAuthDelay: () => sleep(2) });
   await new Promise((r) => s.server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${s.server.address().port}`;
   const req = async (method, p, body, remote = false) => {
@@ -433,7 +433,7 @@ test('the routes: a sign-in only from the computer running DevOS ADE; its status
   };
   try {
     let r = await req('GET', '/api/git/hosts');
-    assert.deepEqual(r.json.signIn, { github: { host: 'github.com', clientId: GH, appSlug: 'bedrock-now', configured: true }, gitlab: { host: 'gitlab.com', clientId: null, configured: false } });
+    assert.deepEqual(r.json.signIn, { github: { host: 'github.com', clientId: GH, appSlug: 'devos-ade', configured: true }, gitlab: { host: 'gitlab.com', clientId: null, configured: false } });
     assert.equal((await req('POST', '/api/git/oauth', { provider: 'gitlab', host: 'gitlab.test', clientId: GL, ca: CA }, true)).status, 403);
     r = await req('POST', '/api/git/oauth', { provider: 'gitlab', host: 'gitlab.test', clientId: GL, ca: CA });
     assert.equal(r.status, 200, JSON.stringify(r.json));
@@ -622,12 +622,12 @@ test('Sign in again: a provider that hands back the same access token — the se
 test('a GitHub App renamed since the sign-in: its slug follows at Test connection and at the next renewal — GitHub\'s answer only', async () => {
   // (last in this file: its renewal counts in the mock's log, which the tests above read from zero)
   const { g, store, fx } = remoteOf('renamed');
-  mock.set({ lifetime: 28800, appSlug: 'bedrock-now-e2e' });
+  mock.set({ lifetime: 28800, appSlug: 'devos-ade-e2e' });
   try {
     const { end } = await signIn(g, { provider: 'github', host: 'ghe.test', clientId: GH, ca: CA }, { account: 'octo' });
     assert.equal(end.state, 'done', end.error);
     const id = end.gitHost.id;
-    assert.equal(store.get(id).oauth.appSlug, 'bedrock-now-e2e');
+    assert.equal(store.get(id).oauth.appSlug, 'devos-ade-e2e');
     // the App renamed on GitHub: Test connection asks GitHub again (the sandbox's answer plays no part)
     mock.set({ appSlug: 'devos-ade-e2e' });
     fx.url = 'https://ghe.test/o/r.git';
@@ -652,5 +652,5 @@ test('a GitHub App renamed since the sign-in: its slug follows at Test connectio
     const { g: g2, store: s2 } = remoteOf('renamed', { connect: () => Promise.reject(new Error('unreachable')) });
     const t2 = await g2.testHost(id, { url: 'https://ghe.test/o/r.git' }, false).catch((e) => e);
     assert.equal(s2.get(id).oauth.appSlug, 'renamed-again', String(t2?.message || ''));
-  } finally { mock.set({ appSlug: 'bedrock-now-e2e' }); fx.asks = []; }
+  } finally { mock.set({ appSlug: 'devos-ade-e2e' }); fx.asks = []; }
 });

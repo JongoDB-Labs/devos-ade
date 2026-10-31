@@ -21,8 +21,8 @@ from portal.app import STATIC, create_app
 from portal.config import ConfigError, from_env
 from portal.security import NEXT_COOKIE, Sessions, hash_password, verify_password
 
-ORIGIN = {"Origin": "http://bedrock-now.localhost"}
-API = {"X-Requested-With": "bedrock-now"}
+ORIGIN = {"Origin": "http://devos-ade.localhost"}
+API = {"X-Requested-With": "devos-ade"}
 H = {**ORIGIN, **API, "Content-Type": "application/json"}
 PROXY = "p" * 64
 REMOTE = {"X-Portal-Remote": "1", "X-Portal-Proxy": PROXY}
@@ -113,7 +113,7 @@ def make(settings, dirs):
                         remote_app_hosts={"chat": "bn-chat.tail1234.ts.net", "admin": "bn-admin.tail1234.ts.net",
                                           "files": "bn-files.tail1234.ts.net"})
         c = TestClient(create_app(s, transport=httpx.MockTransport(offline)), follow_redirects=False,
-                       base_url="https://bn.tail1234.ts.net" if remote else "http://bedrock-now.localhost")
+                       base_url="https://bn.tail1234.ts.net" if remote else "http://devos-ade.localhost")
         c.__enter__()
         if login:
             assert c.post("/login", data={"password": "correct horse"}, headers=ORIGIN).status_code == 303
@@ -267,7 +267,7 @@ def test_apply_needs_session_header_origin_and_password(make, dirs):
     c = make()
     assert apply(c, {"BUDGET_SETUP": "6"}, headers={**ORIGIN, "Content-Type": "application/json"}).status_code == 400
     assert apply(c, {"BUDGET_SETUP": "6"}, headers={**API, "Origin": "http://evil.example"}).status_code == 403
-    assert apply(c, {"BUDGET_SETUP": "6"}, headers={**API, "Origin": "http://chat.bedrock-now.localhost"}).status_code == 403
+    assert apply(c, {"BUDGET_SETUP": "6"}, headers={**API, "Origin": "http://chat.devos-ade.localhost"}).status_code == 403
     r = apply(c, {"BUDGET_SETUP": "6"}, password="wrong")
     assert r.status_code == 403 and "password" in r.json()["error"]
     assert apply(c, {"BUDGET_SETUP": "6"}, password=None).status_code == 403
@@ -309,7 +309,7 @@ def test_a_valid_change_writes_one_request_the_helper_reads(make, dirs):
     assert oct(f.stat().st_mode & 0o777) == "0o640"
     body = f.read_text()
     lines = body.split("\n")
-    assert lines[0] == "bedrock-now-settings 1" and lines[1] == f"nonce {nonce}"
+    assert lines[0] == "devos-ade-settings 1" and lines[1] == f"nonce {nonce}"
     assert re.fullmatch(r"requested_at [0-9]{1,12}", lines[2]) and lines[3] == f"base {BASE}" and lines[4] == "origin local"
     assert base64.b64decode(lines[5].split(" ", 1)[1]).decode() == "correct horse"
     # the line format lib/settings_helper.sh accepts
@@ -588,18 +588,18 @@ def test_password_change_adds_the_hash_and_a_carry_over_cookie(make, dirs, setti
     assert carry
     # the running portal (old hash) refuses the carry-over cookie on its own
     old = TestClient(create_app(replace(settings, status_dir=sd, request_dir=rq), transport=httpx.MockTransport(offline)),
-                     base_url="http://bedrock-now.localhost")
+                     base_url="http://devos-ade.localhost")
     assert old.get("/auth/verify", headers={"Cookie": f"{NEXT_COOKIE}={carry}"}).status_code == 401
     # the portal restarted with the new hash: the old session is gone, the carry-over cookie works and is swapped
     new = TestClient(create_app(replace(settings, password_hash=new_hash, status_dir=sd, request_dir=rq),
-                                transport=httpx.MockTransport(offline)), base_url="http://bedrock-now.localhost",
+                                transport=httpx.MockTransport(offline)), base_url="http://devos-ade.localhost",
                      follow_redirects=False)
     old_cookie = c.cookies.get("bn_session")
     assert new.get("/auth/verify", headers={"Cookie": f"bn_session={old_cookie}"}).status_code == 401
     r = new.get("/api/settings", headers={**API, "Cookie": f"{NEXT_COOKIE}={carry}"})
     assert r.status_code == 200
     set_cookies = r.headers.get_list("set-cookie")
-    assert any(sc.startswith("bn_session=") and "Domain=bedrock-now.localhost" in sc and "HttpOnly" in sc for sc in set_cookies)
+    assert any(sc.startswith("bn_session=") and "Domain=devos-ade.localhost" in sc and "HttpOnly" in sc for sc in set_cookies)
     assert any(sc.startswith(f"{NEXT_COOKIE}=") and "Max-Age=0" in sc for sc in set_cookies)
     fresh = next(sc.split(";", 1)[0].split("=", 1)[1] for sc in set_cookies if sc.startswith("bn_session="))
     assert new.get("/auth/verify", headers={"Cookie": f"bn_session={fresh}"}).status_code == 200
@@ -849,7 +849,7 @@ def test_setup_consent_listed_by_tool_and_taken_back_by_tool_only_for_all(make, 
 def test_sign_out_other_devices_keeps_this_one(settings, dirs):
     sd, rq = dirs
     app = create_app(replace(settings, status_dir=sd, request_dir=rq), transport=httpx.MockTransport(offline))
-    other, c = (TestClient(app, base_url="http://bedrock-now.localhost", follow_redirects=False) for _ in range(2))
+    other, c = (TestClient(app, base_url="http://devos-ade.localhost", follow_redirects=False) for _ in range(2))
     for x in (other, c):
         assert x.post("/login", data={"password": "correct horse"}, headers=ORIGIN).status_code == 303
     assert other.get("/api/settings", headers=API).status_code == 200
@@ -964,7 +964,7 @@ def test_session_length_follows_portal_session_days(settings, dirs):
     assert not Sessions(SECRET, PASSWORD_HASH, clock=lambda: now[0], max_age=2 * 86400).valid(tok)   # shorter: ends at once
     sd, rq = dirs
     c = TestClient(create_app(replace(settings, status_dir=sd, request_dir=rq, session_days=7), transport=httpx.MockTransport(offline)),
-                   base_url="http://bedrock-now.localhost", follow_redirects=False)
+                   base_url="http://devos-ade.localhost", follow_redirects=False)
     assert "signed in for 7 days" in c.get("/login").text
     r = c.post("/login", data={"password": "correct horse"}, headers=ORIGIN)
     assert f"Max-Age={7 * 86400}" in r.headers["set-cookie"]
@@ -975,7 +975,7 @@ def test_alert_threshold_reaches_home(settings, dirs):
     assert from_env({"PORTAL_PASSWORD_HASH": PASSWORD_HASH, "PORTAL_SECRET": "z" * 40, "BUDGET_ALERT_PCT": "90"}).alert_pct == 90
     assert from_env({"PORTAL_PASSWORD_HASH": PASSWORD_HASH, "PORTAL_SECRET": "z" * 40, "BUDGET_ALERT_PCT": "40"}).alert_pct == 80
     with TestClient(create_app(replace(settings, status_dir=sd, request_dir=rq, alert_pct=90), transport=httpx.MockTransport(offline)),
-                    base_url="http://bedrock-now.localhost", follow_redirects=False) as c:
+                    base_url="http://devos-ade.localhost", follow_redirects=False) as c:
         c.post("/login", data={"password": "correct horse"}, headers=ORIGIN)
         assert c.get("/api/summary", headers=API).json()["spend"]["alert_pct"] == 90
     js = (Path(__file__).parent.parent / "portal" / "static" / "app.js").read_text()
@@ -1085,7 +1085,7 @@ def test_a_password_too_long_for_a_request_is_a_clear_413(settings, dirs):
     long_pw = "x" * 301
     app = create_app(replace(settings, status_dir=sd, request_dir=rq, password_hash=hash_password(long_pw)),
                      transport=httpx.MockTransport(offline))
-    c = TestClient(app, base_url="http://bedrock-now.localhost", follow_redirects=False)
+    c = TestClient(app, base_url="http://devos-ade.localhost", follow_redirects=False)
     assert c.post("/login", data={"password": long_pw}, headers=ORIGIN).status_code == 303
     write_snapshot(sd); helper_up(sd)
     r = action(c, "test", password=long_pw)

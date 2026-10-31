@@ -99,7 +99,7 @@ images_used_by_containers() {
 images_of_other_checkouts() {
   local me d dirs
   me="$(cd "$STACK_DIR" 2>/dev/null && pwd -P || printf '%s' "$STACK_DIR")"   # same as _real_dir (lib/guard.sh)
-  dirs="$(docker volume ls --filter label=io.bedrock-now.dir --format '{{.Label "io.bedrock-now.dir"}}' 2>/dev/null)" ||
+  dirs="$(docker volume ls --filter label=io.devos-ade.dir --format '{{.Label "io.devos-ade.dir"}}' 2>/dev/null)" ||
     return 1   # cannot tell: nothing may be removed
   printf '%s\n' "$dirs" | sort -u |
     while IFS= read -r d; do

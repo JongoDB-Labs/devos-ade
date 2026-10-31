@@ -94,9 +94,9 @@ def test_manifest_is_public_installable_and_hardened(client):
         assert need in by
     assert {s["url"] for s in m["shortcuts"]} == {"/#chat", "/#home"}
     # A tab asks the browser whether this very app is installed, and opens it through its own link scheme.
-    assert m["related_applications"] == [{"platform": "webapp", "url": "http://bedrock-now.localhost/manifest.webmanifest",
-                                          "id": "http://bedrock-now.localhost/"}]
-    assert m["protocol_handlers"] == [{"protocol": "web+bedrocknow", "url": "/?open=%s"}]
+    assert m["related_applications"] == [{"platform": "webapp", "url": "http://devos-ade.localhost/manifest.webmanifest",
+                                          "id": "http://devos-ade.localhost/"}]
+    assert m["protocol_handlers"] == [{"protocol": "web+devosade", "url": "/?open=%s"}]
     for icon in m["icons"] + [i for s in m["shortcuts"] for i in s["icons"]]:
         got = client.get(icon["src"])
         assert got.status_code == 200 and got.headers["content-type"] == "image/png", icon["src"]
@@ -105,10 +105,10 @@ def test_manifest_is_public_installable_and_hardened(client):
 
 
 @pytest.mark.parametrize("host,port,name", [
-    ("bedrock-now.localhost", 80, "DevOS ADE"),
+    ("devos-ade.localhost", 80, "DevOS ADE"),
     ("bn-dev.localhost", 80, "DevOS ADE (bn-dev)"),
     ("bn-dev.localhost", 8800, "DevOS ADE (bn-dev, port 8800)"),
-    ("bedrock-now.localhost", 8800, "DevOS ADE (port 8800)"),
+    ("devos-ade.localhost", 8800, "DevOS ADE (port 8800)"),
     ("ai.example.com", 80, "DevOS ADE (ai.example.com)"),
 ])
 def test_app_name_tells_copies_apart(host, port, name):
@@ -140,12 +140,12 @@ def test_each_copy_has_a_link_scheme_of_its_own(settings):
              (replace(settings, remote_mode="tailscale", remote_host="bn.tail1234.ts.net"), True),
              (replace(settings, remote_mode="tailscale", remote_host="bn-dev.tail1234.ts.net"), True)]
     schemes = [webapp.protocol(s, rem) for s, rem in sites]
-    assert schemes[0] == "web+bedrocknow"
+    assert schemes[0] == "web+devosade"
     assert len(set(schemes)) == len(schemes)
     for scheme in schemes:   # the only custom schemes browsers accept: web+ and lowercase ASCII letters
         assert re.fullmatch(r"web\+[a-z]+", scheme), scheme
     assert webapp.protocol(replace(settings, host="bn-dev.localhost")) == schemes[1]   # stable: the same every start
-    assert all(len(sc) == len("web+bedrocknow") + 8 for sc in schemes[1:])
+    assert all(len(sc) == len("web+devosade") + 8 for sc in schemes[1:])
 
 
 # --- the icons -------------------------------------------------------------------------------------------------------
@@ -324,7 +324,7 @@ def test_pages_use_the_versioned_icon_and_logo_addresses(client, settings):
     for needle in want:
         assert needle in login, needle
     assert not UNVERSIONED.search(login), UNVERSIONED.search(login).group(0)
-    client.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://bedrock-now.localhost"})
+    client.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://devos-ade.localhost"})
     home = client.get("/").text
     for needle in (*want, f'src="/icons/app-48.png?v={v["app-48.png"]}"'):
         assert needle in home, needle
@@ -369,7 +369,7 @@ def test_service_worker_is_public_hardened_and_caches_nothing(client):
 def test_shell_links_manifest_icons_and_modules(client):
     login = client.get("/login").text  # public page: "Add to Home Screen" works from here too
     assert 'rel="manifest"' in login and 'rel="apple-touch-icon"' in login and 'href="/icons/app-32.png?v=' in login
-    client.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://bedrock-now.localhost"})
+    client.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://devos-ade.localhost"})
     page = client.get("/").text
     for needle in ('rel="manifest" href="/manifest.webmanifest"', 'rel="apple-touch-icon" href="/icons/app-touch-180.png?v=',
                    'href="/icons/app-32.png?v=', "viewport-fit=cover", 'name="apple-mobile-web-app-capable" content="yes"',
@@ -379,7 +379,7 @@ def test_shell_links_manifest_icons_and_modules(client):
 
 
 def test_install_and_open_buttons_start_hidden_and_install_js_decides(client):
-    client.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://bedrock-now.localhost"})
+    client.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://devos-ade.localhost"})
     page = client.get("/").text
     # Two Install buttons and two "Open in the app" links (sidebar, Home note), all hidden until install.js knows
     # which one applies; both notes too. Nothing can flash before that.
@@ -389,7 +389,7 @@ def test_install_and_open_buttons_start_hidden_and_install_js_decides(client):
             assert " hidden" in tag, tag
     assert 'id="app-note-later"' in page and 'id="app-note-text"' in page
     # The link scheme of this site's app, for install.js to read synchronously (the same as the manifest's).
-    assert '<meta name="bn-app-scheme" content="web+bedrocknow">' in page
+    assert '<meta name="bn-app-scheme" content="web+devosade">' in page
     js = client.get("/static/install.js").text
     assert "beforeinstallprompt" in js and "preventDefault" in js and "appinstalled" in js
     assert "display-mode: ${m}" in js and "standalone" in js  # hidden inside the installed app

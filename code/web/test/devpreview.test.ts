@@ -49,14 +49,14 @@ test('viewports and fitting them into the pane', () => {
 
 test('a preview link from the portal: only http, a p<port>-<capability> host for that port, no credentials', () => {
   const cap = 'a'.repeat(9) + 'b'.repeat(24);
-  const ok = { url: `http://p5173-${cap}.bedrock-now-preview.localhost:8800/`, origin: `http://p5173-${cap}.bedrock-now-preview.localhost:8800`, port: 5173, expires: 1800000000 };
+  const ok = { url: `http://p5173-${cap}.devos-ade-preview.localhost:8800/`, origin: `http://p5173-${cap}.devos-ade-preview.localhost:8800`, port: 5173, expires: 1800000000 };
   assert.deepEqual(previewLinkOk(ok, 5173), { url: ok.url, origin: ok.origin, port: 5173, expires: 1800000000000, handoff: false });
   assert.equal(previewLinkOk(ok, 3000), null);                                                    // another port
   assert.equal(previewLinkOk({ ...ok, url: ok.url.replace('http:', 'https:') }, 5173), null);
   assert.equal(previewLinkOk({ ...ok, origin: 'http://evil.example' }, 5173), null);
   assert.equal(previewLinkOk({ ...ok, url: 'javascript:alert(1)' }, 5173), null);
   assert.equal(previewLinkOk({ ...ok, url: `http://u:p@p5173-${cap}.x.localhost/`, origin: `http://p5173-${cap}.x.localhost` }, 5173), null);
-  assert.equal(previewLinkOk({ ...ok, url: 'http://code.bedrock-now.localhost/', origin: 'http://code.bedrock-now.localhost' }, 5173), null);
+  assert.equal(previewLinkOk({ ...ok, url: 'http://code.devos-ade.localhost/', origin: 'http://code.devos-ade.localhost' }, 5173), null);
   assert.equal(previewLinkOk(null, 5173), null);
   assert.equal(previewLinkOk({ ...ok, handoff: false, url: ok.url.replace('http:', 'https:'), origin: ok.origin.replace('http:', 'https:') }, 5173), null);
   assert.equal(previewTabUrl(5173), '/.bn/preview?port=5173');

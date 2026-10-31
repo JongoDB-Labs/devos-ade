@@ -1677,7 +1677,7 @@ def connection(browser):
     page.reload()
     expect(page.get_by_test_id("conn")).to_have_text("Connected", timeout=10_000)
     expect(page.locator(".tree-row[data-path='logs']")).to_be_visible()
-    expect(page.locator(".tree-row[data-path='.bedrock-now-trash']")).to_have_count(0)
+    expect(page.locator(".tree-row[data-path='.devos-ade-trash']")).to_have_count(0)
     page.locator(".tree-row[data-path='logs']").click()
     expect(page.locator(".tree-row[data-path='logs/run-0001.log']")).to_be_visible(timeout=5000)
     page.locator(".tree-scroll").evaluate("(s) => { s.scrollTop = s.scrollHeight; }")

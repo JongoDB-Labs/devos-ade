@@ -62,7 +62,7 @@ test('a preview: flags, findings and secrets as text by their own ids; writes of
   assert.equal((pv.writes[1] as { text: string }).text, 'a⟨U+202E⟩b\nc');
   await assert.rejects(setupPreview(['../x']), /bad items/);
   // a copy: units by their keys only, nothing kept — the keeps go to the portal with the password
-  answer({ results: [{ keys: [K1], ok: true, kind: 'memory', name: 'CLAUDE.md', trashed: '.bedrock-now-trash/x/CLAUDE.md' },
+  answer({ results: [{ keys: [K1], ok: true, kind: 'memory', name: 'CLAUDE.md', trashed: '.devos-ade-trash/x/CLAUDE.md' },
     { keys: [K2], ok: false, why: 'the sandbox refused it', said: 'Error: \u{202e} nope' }, { keys: ['../x'], ok: true }, { keys: [K1], ok: false, confirm: { id: 'fmt@acme', command: 'npm i', sha256: 'a'.repeat(64), kind: 'command' }, disable: true },
     { keys: [K2], ok: true, note: 'it is installed, but it could not be turned off' }, { keys: [K1], ok: false, password: true, why: 'needs the password' }] });
   const res = await setupCopy([{ keys: [K1, '../x'], mode: 'replace', conflict: 'leave', digest: 'd'.repeat(64) }]);

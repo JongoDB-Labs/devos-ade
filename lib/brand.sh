@@ -2,8 +2,8 @@
 # shellcheck disable=SC2034  # read by the libs that source this
 # The project's names, in one place (sourced by lib/common.sh). Each layer has its own copy of the same values
 # (portal/portal/brand.py, code/server/brand.mjs, code/web/src/brand.ts, install.sh; tests/test_brand.sh checks that
-# they agree). Since v0.25.0 the project is DevOS ADE (formerly bedrock-now); its internal names stayed as they were —
-# the Compose project and volumes, the hosts, BEDROCK_NOW_*, the helper's labels, ./stack: docs/internal-names.md.
+# they agree). The old name (the legacy
+# constants below) is kept only where an older install or the update check still names it: docs/internal-names.md.
 #   PRODUCT_NAME         the name a person reads (the installed web app's name too: portal_app_name, lib/portal.sh)
 #   PRODUCT_SLUG         the name where a space cannot go (a new install's folder, a user agent)
 #   PRODUCT_REPO         the project's GitHub repository

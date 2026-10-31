@@ -68,7 +68,7 @@ test_not_a_git_checkout_skips_code_update() {
 }
 
 _fake_stack() { # $STACK_DIR/stack that logs its args + the re-exec env and exits with $1
-  printf '#!/bin/sh\necho "STACK $* done=${BEDROCK_NOW_CODE_UPDATED:-unset} backup=${BEDROCK_NOW_UPDATE_BACKUP:-unset} from=${BEDROCK_NOW_UPDATE_FROM:-unset}" >> "%s/calls"\nexit %s\n' "$TMP" "${1:-0}" > "$STACK_DIR/stack"
+  printf '#!/bin/sh\necho "STACK $* done=${DEVOS_ADE_CODE_UPDATED:-unset} backup=${DEVOS_ADE_UPDATE_BACKUP:-unset} from=${DEVOS_ADE_UPDATE_FROM:-unset}" >> "%s/calls"\nexit %s\n' "$TMP" "${1:-0}" > "$STACK_DIR/stack"
   chmod +x "$STACK_DIR/stack"
 }
 
@@ -98,7 +98,7 @@ test_cmd_update_reexec_skips_backup_and_checkout() {
   printf 'X=1\n' > "$ENV_FILE"; STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _fake_stack
   update_checkout() { echo CHECKOUT >> "$TMP/calls"; }
   _backup_named() { echo BACKUP >> "$TMP/calls"; }; prune_auto_backups() { :; }; dc() { echo "dc $*" >> "$TMP/calls"; }
-  fake_reexec; BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_UPDATE_BACKUP=backups/b BEDROCK_NOW_UPDATE_FROM=abc123 cmd_update 2> "$TMP/err"
+  fake_reexec; DEVOS_ADE_CODE_UPDATED=1 DEVOS_ADE_UPDATE_BACKUP=backups/b DEVOS_ADE_UPDATE_FROM=abc123 cmd_update 2> "$TMP/err"
   assert_eq "$(tr '\n' ';' < "$TMP/calls")" "dc config --images;dc pull --ignore-buildable;STACK setup --yes done=unset backup=unset from=unset;"
   assert_contains "$(cat "$TMP/err")" "update: 3/4 images"
   assert_contains "$(cat "$TMP/err")" "update: 4/4 setup"
@@ -107,7 +107,7 @@ test_cmd_update_reexec_skips_backup_and_checkout() {
 test_cmd_update_failure_after_code_change_explains_rollback() {
   printf 'X=1\n' > "$ENV_FILE"; STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _fake_stack 3
   dc() { :; }
-  if out="$( (fake_reexec; BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_UPDATE_BACKUP=backups/b BEDROCK_NOW_UPDATE_FROM=abc123 cmd_update) 2>&1)"; then return 1; fi
+  if out="$( (fake_reexec; DEVOS_ADE_CODE_UPDATED=1 DEVOS_ADE_UPDATE_BACKUP=backups/b DEVOS_ADE_UPDATE_FROM=abc123 cmd_update) 2>&1)"; then return 1; fi
   assert_contains "$out" "git -C $STACK_DIR checkout abc123 && ./stack restore backups/b"
 }
 
@@ -135,7 +135,7 @@ test_newest_release_tag_skips_prereleases() {
 
 test_installer_and_stack_agree_on_newest_release_tag() {
   _rc_fixture
-  assert_eq "$(BEDROCK_NOW_INSTALL_LIB=1; . "$T_ROOT/install.sh"; latest_release_tag "$STACK_DIR")" "$(newest_release_tag "$STACK_DIR")"
+  assert_eq "$(DEVOS_ADE_INSTALL_LIB=1; . "$T_ROOT/install.sh"; latest_release_tag "$STACK_DIR")" "$(newest_release_tag "$STACK_DIR")"
 }
 
 test_update_refuses_silent_downgrade() {
@@ -256,7 +256,7 @@ test_update_with_signed_tags_required_and_nothing_new() {
 test_update_failures_say_how_to_finish_or_go_back() {
   printf 'X=1\n' > "$ENV_FILE"; STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _fake_stack 3   # its setup fails
   dc() { return "${FAKE_PULL_RC:-0}"; }
-  _run() { (fake_reexec; BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_UPDATE_BACKUP=backups/b BEDROCK_NOW_UPDATE_FROM=abc123 cmd_update) 2>&1; }
+  _run() { (fake_reexec; DEVOS_ADE_CODE_UPDATED=1 DEVOS_ADE_UPDATE_BACKUP=backups/b DEVOS_ADE_UPDATE_FROM=abc123 cmd_update) 2>&1; }
   if out="$(FAKE_PULL_RC=1 _run)"; then return 1; fi
   assert_contains "$out" "image pull failed or was stopped (network/registry?) — ./stack update finishes it, or ./stack rollback goes back"
   assert_contains "$out" "(by hand: git -C $STACK_DIR checkout abc123 && ./stack restore backups/b)"
@@ -317,14 +317,14 @@ test_setup_records_its_commit_when_it_succeeds_so_the_next_update_is_a_no_op() {
 
 test_an_untrusted_re_exec_runs_every_step() {
   _fixture; git -C "$STACK_DIR" -c advice.detachedHead=false checkout -q v0.2.0; _noop_stubs; record_setup_commit
-  # v0.1.1 checks out the new code itself and execs it with BEDROCK_NOW_CODE_UPDATED=1 alone
-  (BEDROCK_NOW_CODE_UPDATED=1 ASSUME_YES=1 cmd_update) 2> "$TMP/err" || return 1
+  # v0.1.1 checks out the new code itself and execs it with DEVOS_ADE_CODE_UPDATED=1 alone
+  (DEVOS_ADE_CODE_UPDATED=1 ASSUME_YES=1 cmd_update) 2> "$TMP/err" || return 1
   assert_contains "$(cat "$TMP/err")" "is ignored (./stack update sets it only for itself) — running every step"
   assert_eq "$(tr '\n' ';' < "$TMP/calls")" "BACKUP;PRUNE;dc config;dc pull;STACK setup --yes done=unset backup=unset from=unset;"
   # v0.2.1's way, but its backup is older than an hour (e.g. a fetch that hung)
   : > "$TMP/calls"; b=backups/20260101-000000-auto; mkdir -p "$STACK_DIR/$b"; : > "$STACK_DIR/$b/litellm.dump"; : > "$STACK_DIR/$b/openwebui.dump"
   touch -t 202601010000 "$STACK_DIR/$b"
-  (BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_UPDATE_FROM="$(git -C "$STACK_DIR" rev-parse "v0.1.0^{commit}")" BEDROCK_NOW_UPDATE_BACKUP="$b" \
+  (DEVOS_ADE_CODE_UPDATED=1 DEVOS_ADE_UPDATE_FROM="$(git -C "$STACK_DIR" rev-parse "v0.1.0^{commit}")" DEVOS_ADE_UPDATE_BACKUP="$b" \
     ASSUME_YES=1 cmd_update) 2> "$TMP/err" || return 1
   assert_contains "$(cat "$TMP/err")" "running every step"
   assert_eq "$(head -n 1 "$TMP/calls")" "BACKUP"
@@ -414,7 +414,7 @@ test_update_to_a_new_version_ends_with_whats_new_and_a_no_op_does_not() {
   printf 'X=1\n' > "$ENV_FILE"; STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR"; _fake_stack; dc() { :; }
   update_record_write() { :; }; update_record_done() { :; }
   update_whats_new() { echo "WHATS NEW"; }
-  out="$(fake_reexec; BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_UPDATE_BACKUP=backups/b BEDROCK_NOW_UPDATE_FROM=abc123 cmd_update 2>/dev/null)"
+  out="$(fake_reexec; DEVOS_ADE_CODE_UPDATED=1 DEVOS_ADE_UPDATE_BACKUP=backups/b DEVOS_ADE_UPDATE_FROM=abc123 cmd_update 2>/dev/null)"
   assert_eq "$out" "WHATS NEW"
   _backup_named() { LAST_BACKUP=backups/b; }; prune_auto_backups() { :; }
   out="$(cmd_update --force 2>/dev/null)"
@@ -533,8 +533,8 @@ test_origin_moves_only_when_the_new_repository_has_every_tag_at_the_same_commit(
 
 test_forks_mirrors_and_other_spellings_are_never_touched_nor_asked() {
   local url
-  for url in https://github.com/someone/bedrock-now.git git@github.com:someone/bedrock-now.git \
-             https://git.example.com/JongoDB-Labs/bedrock-now.git https://github.com/jongodb-labs/bedrock-now \
+  for url in https://github.com/someone/devos-ade.git git@github.com:someone/devos-ade.git \
+             https://git.example.com/JongoDB-Labs/bedrock-now.git https://github.com/jongodb-labs/devos-ade \
              http://github.com/JongoDB-Labs/bedrock-now https://github.com/JongoDB-Labs/bedrock-now/ \
              https://user@github.com/JongoDB-Labs/bedrock-now.git https://github.com/JongoDB-Labs/bedrock-now-fork \
              "$TMP/origin" https://github.com/JongoDB-Labs/devos-ade.git; do

@@ -1,37 +1,37 @@
 {
- "name": "bedrock-now",
+ "name": "devos-ade",
  "networks": {
   "default": {
    "external": false,
-   "name": "bedrock-now_default"
+   "name": "devos-ade_default"
   },
   "llamacpp": {
    "external": false,
-   "name": "bedrock-now_llamacpp"
+   "name": "devos-ade_llamacpp"
   },
   "localgit": {
    "external": false,
-   "name": "bedrock-now_localgit"
+   "name": "devos-ade_localgit"
   },
   "ollama": {
    "external": false,
-   "name": "bedrock-now_ollama"
+   "name": "devos-ade_ollama"
   },
   "stt": {
    "external": false,
-   "name": "bedrock-now_stt"
+   "name": "devos-ade_stt"
   },
   "vllm": {
    "external": false,
-   "name": "bedrock-now_vllm"
+   "name": "devos-ade_vllm"
   },
   "websearch": {
    "external": false,
-   "name": "bedrock-now_websearch"
+   "name": "devos-ade_websearch"
   },
   "websearch-out": {
    "external": false,
-   "name": "bedrock-now_websearch-out"
+   "name": "devos-ade_websearch-out"
   }
  },
  "services": {
@@ -108,7 +108,7 @@
   },
   "open-webui": {
    "container_name": null,
-   "image": "bedrock-now/open-webui:local",
+   "image": "devos-ade/open-webui:local",
    "labels": {},
    "networks": [
     "default"
@@ -124,7 +124,7 @@
   },
   "portal": {
    "container_name": null,
-   "image": "bedrock-now/portal:local",
+   "image": "devos-ade/portal:local",
    "labels": {},
    "networks": [
     "default"
@@ -239,7 +239,7 @@
   },
   "shared-mcp": {
    "container_name": null,
-   "image": "bedrock-now/shared-mcp:local",
+   "image": "devos-ade/shared-mcp:local",
    "labels": {},
    "networks": [
     "default"
@@ -258,23 +258,23 @@
  "volumes": {
   "gitdata": {
    "external": false,
-   "name": "bedrock-now_gitdata"
+   "name": "devos-ade_gitdata"
   },
   "owui": {
    "external": false,
-   "name": "bedrock-now_owui"
+   "name": "devos-ade_owui"
   },
   "pgdata": {
    "external": false,
-   "name": "bedrock-now_pgdata"
+   "name": "devos-ade_pgdata"
   },
   "portal-state": {
    "external": false,
-   "name": "bedrock-now_portal-state"
+   "name": "devos-ade_portal-state"
   },
   "s3data": {
    "external": false,
-   "name": "bedrock-now_s3data"
+   "name": "devos-ade_s3data"
   }
  }
 }

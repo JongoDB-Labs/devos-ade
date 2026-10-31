@@ -33,7 +33,7 @@ def client(settings):
 
 
 def signed_in(client):
-    r = client.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://bedrock-now.localhost"})
+    r = client.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://devos-ade.localhost"})
     assert r.status_code == 303
 
 

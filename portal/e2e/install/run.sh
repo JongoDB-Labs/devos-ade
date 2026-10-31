@@ -6,7 +6,7 @@
 # Usage: portal/e2e/install/run.sh [OUT_DIR]   (OUT_DIR, if given, receives a screenshot of the installed app)
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"; root="$(cd "$here/../../.." && pwd)"
-BASE=bedrock-now-portal-e2e-base-$$; E2E=bedrock-now-portal-e2e-$$
+BASE=devos-ade-portal-e2e-base-$$; E2E=devos-ade-portal-e2e-$$
 trap 'docker rmi -f "$E2E" "$BASE" >/dev/null 2>&1 || true' EXIT
 # (the test stage with the repository's files its tests check, as portal/test.sh builds it; without them, those tests skip)
 docker build -q --target test --build-context repo="$root" -t "$BASE" "$root/portal" >/dev/null
@@ -15,7 +15,7 @@ out=()
 if [ -n "${1:-}" ]; then mkdir -p "$1"; out=(-v "$(cd "$1" && pwd):/out"); fi
 docker run --rm "${out[@]+"${out[@]}"}" \
   -e PORTAL_PASSWORD="correct horse" -e PORTAL_SECRET="$(printf 's%.0s' $(seq 1 48))" \
-  -e PORTAL_HOST=bedrock-now.localhost -e PORTAL_PORT=8000 -e PRICE_UPDATES=false -e UPDATE_CHECK=false \
+  -e PORTAL_HOST=devos-ade.localhost -e PORTAL_PORT=8000 -e PRICE_UPDATES=false -e UPDATE_CHECK=false \
   -e PORTAL_STATE_DIR=/tmp/state -e PORTAL_CATALOG_DIR=/tmp/catalog -e PORTAL_LITELLM_DIR=/tmp/litellm \
   -v "$root/portal/portal:/app/portal:ro" -v "$root:/stack:ro" \
   "$E2E" python /check.py

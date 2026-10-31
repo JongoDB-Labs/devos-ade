@@ -83,7 +83,7 @@ WEBSEARCH_TOOL=web-search   # the search_tools entry LiteLLM's interception uses
 # Availability): a gateway is looked for, and made, in AWS_REGION_NAME when it is one of them, else in us-east-1
 WEBSEARCH_REGIONS="us-east-1 us-east-2 us-west-2 eu-west-1 ap-southeast-2 ap-northeast-1 us-gov-west-1"
 WEBSEARCH_DEFAULT_TOOL=web-search-tool___WebSearch   # (LiteLLM's default: a target named web-search-tool)
-WEBSEARCH_REUSE_MAX_S="${BEDROCK_NOW_WEBSEARCH_MAX_AGE_S:-604800}"
+WEBSEARCH_REUSE_MAX_S="${DEVOS_ADE_WEBSEARCH_MAX_AGE_S:-604800}"
 # names the one-time AWS setup gives what it makes (./stack websearch aws-setup)
 WEBSEARCH_AWS_ROLE=DevOSADEWebSearchGateway
 WEBSEARCH_AWS_GATEWAY=devos-ade-web-search

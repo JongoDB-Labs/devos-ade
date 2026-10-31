@@ -23,10 +23,10 @@ from portal.security import COOKIE, CODE_COOKIE, REMOTE_CODE_COOKIE, TERMINAL_CO
 
 SECRET = "s" * 64
 PW = "correct horse"
-PORTAL = "http://bedrock-now.localhost"
-CODE_HOST = "code.bedrock-now.localhost"
+PORTAL = "http://devos-ade.localhost"
+CODE_HOST = "code.devos-ade.localhost"
 CODE = f"http://{CODE_HOST}"
-TERM_HOST = "terminal.bedrock-now.localhost"
+TERM_HOST = "terminal.devos-ade.localhost"
 NAV = {"Accept": "text/html,application/xhtml+xml", "X-Forwarded-Method": "GET", "X-Forwarded-Host": CODE_HOST, "X-Forwarded-Uri": "/"}
 API = {"X-Forwarded-Method": "GET", "X-Forwarded-Host": CODE_HOST, "X-Forwarded-Uri": "/api/state"}
 WS = {"X-Forwarded-Method": "GET", "X-Forwarded-Host": CODE_HOST, "X-Forwarded-Uri": "/ws", "Origin": CODE}
@@ -132,7 +132,7 @@ def test_code_page_is_framed_only_when_on(settings, cs):
             assert _meta(r.text, "bn-code") == {"enabled": s.code, "here": want}
             assert 'src="/static/code.js"' in r.text
             assert (CODE in r.headers["content-security-policy"]) is want   # frame-src: the Code tab's frame
-            summary = c.get("/api/summary", headers={"Cookie": f"{COOKIE}={tok}", "X-Requested-With": "bedrock-now"}).json()
+            summary = c.get("/api/summary", headers={"Cookie": f"{COOKIE}={tok}", "X-Requested-With": "devos-ade"}).json()
             assert summary["code"] == {"enabled": s.code, "here": want, "notice": None} and ("code" in summary["apps"]) is want
 
 
@@ -335,7 +335,7 @@ def test_unlock_checks_host_origin_session_and_password(cc):
     assert unlock(cc, tok, origin="http://evil.example").status_code == 403
     # only on the code host itself (the terminal host has its own form, /auth/terminal-unlock)
     assert unlock(cc, tok, host=TERM_HOST, origin=f"http://{TERM_HOST}").status_code == 404
-    assert unlock(cc, tok, host="chat.bedrock-now.localhost").status_code == 404
+    assert unlock(cc, tok, host="chat.devos-ade.localhost").status_code == 404
     r = unlock(cc, tok, password="wrong")
     assert r.status_code == 401 and "not right" in r.text and "Unlock the Code page" in r.text
     r = cc.post("/auth/code-unlock", data={"password": PW}, headers={"Host": CODE_HOST, "Origin": CODE})
@@ -485,7 +485,7 @@ def test_models_and_spend_need_the_code_host_a_session_and_its_unlock(cc):
     tok, ut = unlocked(cc)
     for path in ("/auth/code-models", f"/auth/code-spend?session={SID}"):
         assert cc.get(path, headers={"Host": CODE_HOST, "Cookie": f"{COOKIE}={tok}"}).status_code == 401
-        assert _guarded(cc, path, tok, ut, host="bedrock-now.localhost").status_code == 404
+        assert _guarded(cc, path, tok, ut, host="devos-ade.localhost").status_code == 404
         assert _guarded(cc, path, tok, ut, origin="http://evil.example").status_code == 403
 
 
@@ -823,7 +823,7 @@ def test_the_callback_refuses_bad_foreign_and_unsigned_tokens(cs):
 def test_unlock_hand_off_tokens_expire_are_single_use_and_bound_to_their_host():
     clock = {"t": 1_000_000.0}
     fp = Sessions(SECRET, "pw-hash").fingerprint
-    h = Handoff(SECRET, fp, clock=lambda: clock["t"], salt="bedrock-now.portal.code-terminal")
+    h = Handoff(SECRET, fp, clock=lambda: clock["t"], salt="devos-ade.portal.code-terminal")
     t = h.issue(TERM_HOST, clock["t"] - 10, "me@example.com", s=clock["t"] - 100)
     assert h.redeem(t, CODE_HOST) is None                         # wrong audience
     d = h.redeem(t, TERM_HOST)
@@ -833,9 +833,9 @@ def test_unlock_hand_off_tokens_expire_are_single_use_and_bound_to_their_host():
     clock["t"] += 61
     assert h.redeem(t2, TERM_HOST) is None                        # expired (60 s)
     # another password: void at once; minted before a restart: void
-    assert Handoff(SECRET, "other-fp", clock=lambda: clock["t"], salt="bedrock-now.portal.code-terminal").redeem(
+    assert Handoff(SECRET, "other-fp", clock=lambda: clock["t"], salt="devos-ade.portal.code-terminal").redeem(
         h.issue(TERM_HOST, clock["t"], None), TERM_HOST) is None
-    later = Handoff(SECRET, fp, clock=lambda: clock["t"] + 1, salt="bedrock-now.portal.code-terminal")
+    later = Handoff(SECRET, fp, clock=lambda: clock["t"] + 1, salt="devos-ade.portal.code-terminal")
     assert later.redeem(h.issue(TERM_HOST, clock["t"], None), TERM_HOST) is None
     # the session hand-off's tokens are not these (another salt)
     assert h.redeem(Handoff(SECRET, fp, clock=lambda: clock["t"]).issue(TERM_HOST, clock["t"], None), TERM_HOST) is None
@@ -955,7 +955,7 @@ def test_sessions_requests_need_the_code_host_its_unlock_its_origin_and_the_pass
         body = {"action": "sessions-scan", "project": "p_0000aaaa", "tool": "both", "password": PW}
         r = c.post("/auth/code-sessions", content=json.dumps(body), headers={"Host": CODE_HOST, "Cookie": f"{COOKIE}={tok}", "Origin": CODE})
         assert r.status_code == 401
-        assert _ses(c, body, tok, ut, host="bedrock-now.localhost").status_code == 404
+        assert _ses(c, body, tok, ut, host="devos-ade.localhost").status_code == 404
         assert _ses(c, body, tok, ut, origin="http://evil.example").status_code == 403
         assert _ses(c, body, tok, ut, origin=None).status_code == 403
         assert _ses(c, body, tok, ut, extra={"Sec-Fetch-Site": "cross-site"}).status_code == 403

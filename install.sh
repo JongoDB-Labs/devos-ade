@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# DevOS ADE (formerly bedrock-now) one-line installer:
+# DevOS ADE one-line installer:
 #   curl -fsSL https://raw.githubusercontent.com/JongoDB-Labs/devos-ade/main/install.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/JongoDB-Labs/devos-ade/main/install.sh | bash -s -- --yes
-# Env: BEDROCK_NOW_DIR (or DEVOS_ADE_DIR; default ~/devos-ade — or ~/bedrock-now when an install made before v0.25.0
-#      is there: it is found, never moved), BEDROCK_NOW_REF (tag/branch/commit; default: latest release),
-#      BEDROCK_NOW_REPO (git URL or path to clone from; default the GitHub repo — for forks and tests).
+# Env: DEVOS_ADE_DIR (default ~/devos-ade — or ~/bedrock-now when an install made before v0.25.0
+#      is there: it is found, never moved), DEVOS_ADE_REF (tag/branch/commit; default: latest release),
+#      DEVOS_ADE_REPO (git URL or path to clone from; default the GitHub repo — for forks and tests).
 # Everything is inside functions and main runs on the last line, so a truncated download does nothing.
 set -euo pipefail
 
@@ -100,7 +100,7 @@ pick_ref() {
 }
 
 main() {
-  local dir="${DEVOS_ADE_DIR:-${BEDROCK_NOW_DIR:-}}" repo="${BEDROCK_NOW_REPO:-$BN_REPO_URL}" ref tag qdir found=0
+  local dir="${DEVOS_ADE_DIR:-}" repo="${DEVOS_ADE_REPO:-$BN_REPO_URL}" ref tag qdir found=0
   [ -n "$dir" ] || { dir="$(default_dir)"; [ "$dir" = "$HOME/$PRODUCT_SLUG" ] || found=1; }
   check_prereqs "$(uname -s)"
   qdir="$(printf '%q' "$dir")"
@@ -111,17 +111,17 @@ main() {
   fi
   if [ "$(target_decision "$dir")" != clone ]; then
     # (no folder given, ~/devos-ade something else, and an install in ~/bedrock-now: that one is what to update)
-    if [ -z "${DEVOS_ADE_DIR:-}${BEDROCK_NOW_DIR:-}" ] && legacy_install; then
+    if [ -z "${DEVOS_ADE_DIR:-}" ] && legacy_install; then
       fail "$dir exists and is not a $PRODUCT_NAME checkout; $PRODUCT_NAME is already installed in $HOME/$PRODUCT_LEGACY_NAME — to update it: cd $(printf '%q' "$HOME/$PRODUCT_LEGACY_NAME") && ./stack update (or install another copy with DEVOS_ADE_DIR=/path)"
     fi
-    fail "$dir exists and is not a $PRODUCT_NAME checkout — move it away or choose another folder with DEVOS_ADE_DIR=/path (BEDROCK_NOW_DIR works too; DEVOS_ADE_DIR wins)"
+    fail "$dir exists and is not a $PRODUCT_NAME checkout — move it away or choose another folder with DEVOS_ADE_DIR=/path"
   fi
   say "installing $PRODUCT_NAME into $dir (from $repo)"
   say "setup then downloads ~5 GB of Docker images on the first run (5-15 minutes) and asks for your AWS key"
   git clone --quiet "$repo" "$dir" || fail "git clone of $repo failed (network?)"
   tag="$(latest_release_tag "$dir")"
-  ref="$(pick_ref "${BEDROCK_NOW_REF:-}" "$tag")"
-  [ -n "${BEDROCK_NOW_REF:-}" ] || [ -n "$tag" ] || say "no release tags yet — using main"
+  ref="$(pick_ref "${DEVOS_ADE_REF:-}" "$tag")"
+  [ -n "${DEVOS_ADE_REF:-}" ] || [ -n "$tag" ] || say "no release tags yet — using main"
   git -C "$dir" -c advice.detachedHead=false checkout --quiet "$ref" ||
     fail "could not check out '$ref' (see git's message above). The clone is in $dir: pick another ref with  git -C $qdir checkout <ref>  and run ./setup.sh there, or start over with  rm -rf $qdir"
   say "checked out $ref"
@@ -140,5 +140,5 @@ main() {
   printf '\n    cd %s && ./setup.sh\n\n' "$qdir"
 }
 
-# Tests source this file with BEDROCK_NOW_INSTALL_LIB=1 (BASH_SOURCE is empty when piped into bash).
-if [ "${BEDROCK_NOW_INSTALL_LIB:-0}" != 1 ]; then main "$@"; fi
+# Tests source this file with DEVOS_ADE_INSTALL_LIB=1 (BASH_SOURCE is empty when piped into bash).
+if [ "${DEVOS_ADE_INSTALL_LIB:-0}" != 1 ]; then main "$@"; fi

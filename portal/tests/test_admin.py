@@ -12,8 +12,8 @@ from starlette.testclient import TestClient
 from portal import admin
 from portal.app import create_app
 
-ORIGIN = {"Origin": "http://bedrock-now.localhost"}
-API = {"X-Requested-With": "bedrock-now"}
+ORIGIN = {"Origin": "http://devos-ade.localhost"}
+API = {"X-Requested-With": "devos-ade"}
 H = {**ORIGIN, **API}
 
 
@@ -54,7 +54,7 @@ def make_client(settings, dirs):
         st, rq = dirs
         s = replace(settings, status_dir=st, request_dir=rq, **over)
         app = create_app(s, transport=httpx.MockTransport(offline))
-        c = TestClient(app, base_url="http://bedrock-now.localhost", follow_redirects=False)
+        c = TestClient(app, base_url="http://devos-ade.localhost", follow_redirects=False)
         c.__enter__()
         c.post("/login", data={"password": "correct horse"}, headers=ORIGIN)
         return c
@@ -95,7 +95,7 @@ def test_needs_a_session(settings, dirs):
     st, rq = dirs
     beat(st)
     app = create_app(replace(settings, status_dir=st, request_dir=rq), transport=httpx.MockTransport(offline))
-    with TestClient(app, base_url="http://bedrock-now.localhost") as c:
+    with TestClient(app, base_url="http://devos-ade.localhost") as c:
         assert ask(c).status_code == 401
         assert c.get("/api/admin/status", headers=API).status_code == 401
     assert requests_in(rq) == []
@@ -107,7 +107,7 @@ def test_needs_x_requested_with_and_same_origin(make_client, dirs):
     c = make_client()
     assert ask(c, headers=ORIGIN).status_code == 400
     assert ask(c, headers={**API, "Origin": "http://evil.example"}).status_code == 403
-    assert ask(c, headers={**API, "Origin": "http://chat.bedrock-now.localhost"}).status_code == 403
+    assert ask(c, headers={**API, "Origin": "http://chat.devos-ade.localhost"}).status_code == 403
     assert ask(c, headers=API).status_code == 403  # no Origin, no Referer
     assert requests_in(rq) == []
 

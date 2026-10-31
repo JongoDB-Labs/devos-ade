@@ -420,7 +420,7 @@ def hostile(ctx):
     expect(any("form-action" in m for m in csp), f"no form-action violation in the console: {csp}")
     names = {c["name"] for c in page.context.cookies()}
     expect(not names & {"bn_stub", "bn_stub_wide"}, f"its cookies were set: {sorted(names)}")
-    r = page.request.get(origin() + "/api/summary", headers={"X-Requested-With": "bedrock-now"})
+    r = page.request.get(origin() + "/api/summary", headers={"X-Requested-With": "devos-ade"})
     expect(r.status == 200, f"the portal session after its Clear-Site-Data: HTTP {r.status}")
     shot(page, "47-terminal-stand-in")
     rec.save()

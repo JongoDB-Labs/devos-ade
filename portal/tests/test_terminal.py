@@ -20,8 +20,8 @@ from portal.security import (
 
 SECRET = "s" * 64
 PW = "correct horse"
-PORTAL = "http://bedrock-now.localhost"
-TERM_HOST = "terminal.bedrock-now.localhost"
+PORTAL = "http://devos-ade.localhost"
+TERM_HOST = "terminal.devos-ade.localhost"
 TERM = f"http://{TERM_HOST}"
 NAV = {"Accept": "text/html,application/xhtml+xml", "X-Forwarded-Method": "GET", "X-Forwarded-Host": TERM_HOST,
        "X-Forwarded-Uri": "/"}
@@ -139,7 +139,7 @@ def test_tab_is_offered_only_when_enabled(settings, ts):
             assert 'src="/static/terminal.js"' in page
             csp = c.get("/", headers={"Cookie": f"{COOKIE}={tok}"}).headers["content-security-policy"]
             assert (TERM in csp) is want   # frame-src: the Terminal tab's frame
-            summary = c.get("/api/summary", headers={"Cookie": f"{COOKIE}={tok}", "X-Requested-With": "bedrock-now"}).json()
+            summary = c.get("/api/summary", headers={"Cookie": f"{COOKIE}={tok}", "X-Requested-With": "devos-ade"}).json()
             assert summary["terminal"] == {"enabled": want, "here": want} and ("terminal" in summary["apps"]) is want
 
 
@@ -156,7 +156,7 @@ def test_terminal_host_is_404_while_disabled(settings):
 def test_without_a_session_the_terminal_sends_you_to_the_login(tc):
     r = verify(tc, {})
     assert r.status_code == 302
-    assert r.headers["location"] == "http://bedrock-now.localhost/login?next=http%3A%2F%2Fterminal.bedrock-now.localhost%2F"
+    assert r.headers["location"] == "http://devos-ade.localhost/login?next=http%3A%2F%2Fterminal.devos-ade.localhost%2F"
     assert verify(tc, {}, {**WS}).status_code == 401
 
 
@@ -185,7 +185,7 @@ def test_session_and_unlock_open_the_terminal(tc):
 
 def test_unlock_cookie_is_only_asked_for_on_the_terminal_host(tc):
     tok = session(tc)
-    chat = {**NAV, "X-Forwarded-Host": "chat.bedrock-now.localhost"}
+    chat = {**NAV, "X-Forwarded-Host": "chat.devos-ade.localhost"}
     r = tc.get("/auth/verify", headers={**chat, "Cookie": f"{COOKIE}={tok}"})
     assert r.status_code == 200
     # the terminal's name in X-Forwarded-Host alone (without ?app=terminal) asks for the unlock too
@@ -196,7 +196,7 @@ def test_unlock_cookie_is_only_asked_for_on_the_terminal_host(tc):
 def test_foreign_origin_is_refused_even_when_unlocked(tc):
     tok, ut = unlocked(tc)
     jar = {COOKIE: tok, TERMINAL_COOKIE: ut}
-    for origin in ("http://evil.example", PORTAL, "http://chat.bedrock-now.localhost", "null", f"{TERM}:8080"):
+    for origin in ("http://evil.example", PORTAL, "http://chat.devos-ade.localhost", "null", f"{TERM}:8080"):
         r = verify(tc, jar, {**WS, "Origin": origin})
         assert r.status_code == 403 and "x-portal-user" not in r.headers, origin
     no_origin = {k: v for k, v in WS.items() if k != "Origin"}
@@ -265,9 +265,9 @@ def test_unlock_sets_a_host_only_cookie(tc):
 
 def test_unlock_needs_the_terminal_host_and_its_own_origin(tc, settings):
     tok = session(tc)
-    assert unlock(tc, tok, host="bedrock-now.localhost").status_code == 404     # the portal host: no such thing
-    assert unlock(tc, tok, host="chat.bedrock-now.localhost").status_code == 404
-    for origin in ("http://evil.example", PORTAL, "http://chat.bedrock-now.localhost"):
+    assert unlock(tc, tok, host="devos-ade.localhost").status_code == 404     # the portal host: no such thing
+    assert unlock(tc, tok, host="chat.devos-ade.localhost").status_code == 404
+    for origin in ("http://evil.example", PORTAL, "http://chat.devos-ade.localhost"):
         assert unlock(tc, tok, origin=origin).status_code == 403, origin
     r = tc.post("/auth/terminal-unlock", data={"password": PW}, headers={"Host": TERM_HOST, "Cookie": f"{COOKIE}={tok}"})
     assert r.status_code == 403   # neither Origin nor Referer
@@ -281,7 +281,7 @@ def test_unlock_needs_the_terminal_host_and_its_own_origin(tc, settings):
 
 def test_unlock_needs_a_session(tc):
     r = tc.post("/auth/terminal-unlock", data={"password": PW}, headers={"Host": TERM_HOST, "Origin": TERM})
-    assert r.status_code == 302 and r.headers["location"].startswith("http://bedrock-now.localhost/login?next=")
+    assert r.status_code == 302 and r.headers["location"].startswith("http://devos-ade.localhost/login?next=")
     assert TERMINAL_COOKIE not in r.headers.get("set-cookie", "")
 
 

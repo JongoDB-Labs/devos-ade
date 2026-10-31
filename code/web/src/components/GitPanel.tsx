@@ -402,8 +402,8 @@ function DiscardDialog({ ask, staged, onClose }: { ask: { e: GitEntry; kind: Kin
         {neu ? 'The new file ' : 'The changes to '}
         <code class="gitp-code">{label(e.path, 300)}</code>
         {neu
-          ? ' moves to the workspace trash (.bedrock-now-trash), where you can still find it.'
-          : ` that are not staged are discarded: the file as it is now moves to the workspace trash (.bedrock-now-trash), and ${staged ? 'its staged version' : 'its version of the last commit'} is written back.`}
+          ? ' moves to the workspace trash (.devos-ade-trash), where you can still find it.'
+          : ` that are not staged are discarded: the file as it is now moves to the workspace trash (.devos-ade-trash), and ${staged ? 'its staged version' : 'its version of the last commit'} is written back.`}
       </p>
       {e.watch && <p class="small warn-text">It runs on your computer ({label(e.watch.why, 200)}).</p>}
       <p class="muted small">Only if the file is still as git saw it; otherwise nothing changes.</p>

@@ -317,7 +317,7 @@ def settings_code_models(ctx):
 def _browse(ctx) -> dict:
     """GET /api/models/browse (the model browser's lists), as the page reads it."""
     from common import http
-    r = http("GET", None, "/api/models/browse", {"X-Requested-With": "bedrock-now"}, cookie=ctx.session())
+    r = http("GET", None, "/api/models/browse", {"X-Requested-With": "devos-ade"}, cookie=ctx.session())
     expect(r.status == 200, f"/api/models/browse {r.status} {r.body[:200]}")
     return json.loads(r.body)
 
@@ -450,7 +450,7 @@ def model_browser_add(ctx):
             raise AssertionError(f"the helper refused: {page.inner_text('#mb-job')[:200]}")
     expect(ok, f"{mid} did not become enabled/removable within ~4 min")
     # it is in BEDROCK_MODELS now
-    s = json.loads(http("GET", None, "/api/settings", {"X-Requested-With": "bedrock-now"}, cookie=ctx.session()).body)
+    s = json.loads(http("GET", None, "/api/settings", {"X-Requested-With": "devos-ade"}, cookie=ctx.session()).body)
     bm = next((k.get("value", "") for k in s["snapshot"]["keys"] if k["key"] == "BEDROCK_MODELS"), "")
     expect(mid in bm, f"BEDROCK_MODELS is {bm!r}, not holding {mid}")
     shot(page, "model-browser-added")
@@ -486,7 +486,7 @@ PAGE_ROWS = 60                                                                  
 
 def _browse_q(ctx, q: str) -> tuple[int, dict]:
     from common import http
-    r = http("GET", None, f"/api/models/browse?{q}", {"X-Requested-With": "bedrock-now"}, cookie=ctx.session())
+    r = http("GET", None, f"/api/models/browse?{q}", {"X-Requested-With": "devos-ade"}, cookie=ctx.session())
     try:
         return r.status, json.loads(r.body)
     except ValueError:

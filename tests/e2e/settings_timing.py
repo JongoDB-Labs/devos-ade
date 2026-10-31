@@ -75,7 +75,7 @@ def sign_in() -> str:
 
 
 COOKIE = ""
-API_H = {"X-Requested-With": "bedrock-now", "Origin": ORIGIN}
+API_H = {"X-Requested-With": "devos-ade", "Origin": ORIGIN}
 
 
 def api(method, path, data=None):

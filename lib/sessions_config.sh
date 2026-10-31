@@ -56,7 +56,7 @@ Usage: ./stack sessions config <command>
       --rows 1,3-5 | --all      which items (asked otherwise)
       --memory replace|append   CLAUDE.md: replace the sandbox's, or add yours after it (asked otherwise: replace)
       --replace-changed         replace what the sandbox has of its own there (left as it is otherwise; what is
-                                replaced goes to ~/.claude/.bedrock-now-trash in the sandbox)
+                                replaced goes to ~/.claude/.devos-ade-trash in the sandbox)
       --keep-secrets            copy what looks like a secret as it is (redacted, or left out, otherwise)
   consent [--tool T] --always | --once | --revoke
 

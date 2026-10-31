@@ -247,7 +247,7 @@ test_litellm_ui_user_follows_db_admin_state() {
 
 test_setup_stopped_says_what_was_done_what_runs_and_how_to_go_on() {
   dc() { case "$*" in "ps --services --status running") printf 'postgres\nrustfs\nlitellm\n' ;; esac; }
-  unset BEDROCK_NOW_LOCK_HELD
+  unset DEVOS_ADE_LOCK_HELD
   setup_done "AWS key checked"; setup_done "Postgres + RustFS started"; setup_step "checking which models your AWS key can use"
   if (_setup_interrupted INT) 2> "$TMP/err"; then return 1; else rc=$?; fi
   assert_eq "$rc" 130
@@ -267,7 +267,7 @@ test_setup_stopped_says_what_was_done_what_runs_and_how_to_go_on() {
   assert_contains "$out" "    Nothing of the stack is running."
   assert_contains "$out" "    To start over instead: ./stack uninstall (removes what setup made; keeps .env), then ./stack setup."
   # run by ./stack update (its child, under its lock): the update says how to go on
-  BEDROCK_NOW_LOCK_HELD=1
+  DEVOS_ADE_LOCK_HELD=1
   if (_setup_interrupted INT) 2> "$TMP/err"; then return 1; fi
   assert_not_contains "$(cat "$TMP/err")" "To go on"
 }
@@ -281,7 +281,7 @@ set -euo pipefail
 . "$STACK_DIR/lib/common.sh"; . "$STACK_DIR/lib/ports.sh"; . "$STACK_DIR/lib/portal.sh"; . "$STACK_DIR/lib/models.sh"
 . "$STACK_DIR/lib/commands.sh"
 dc() { case "$*" in "ps --services --status running") echo postgres ;; esac; }
-unset BEDROCK_NOW_LOCK_HELD
+unset DEVOS_ADE_LOCK_HELD
 _SIGNAL_HOOK=_setup_interrupted; _signal_traps_restore
 setup_done "Postgres + RustFS started"; setup_step "starting LiteLLM for the model check"
 run_phase "LiteLLM" litellm "$BASH" -c 'echo $$ > "$MARK.tmp"; mv "$MARK.tmp" "$MARK"; while :; do sleep 0.1; done'
@@ -311,7 +311,7 @@ SH
 # Stopped while the Code page it was turning on by default builds: off again, blank as before (the next setup turns it
 # on; no failure counted), its containers stopped — never left half on
 test_setup_stopped_while_turning_the_code_page_on_by_default_undoes_it() {
-  unset BEDROCK_NOW_LOCK_HELD
+  unset DEVOS_ADE_LOCK_HELD
   dc() { echo "dc $*" >> "$TMP/dc"; case "$*" in "ps --services --status running") printf 'postgres\nlitellm\n' ;; esac; }
   docker() { echo "docker $*" >> "$TMP/docker"; return 0; }
   printf 'CODE_ENABLED=true\nTERMINAL_ENABLED=true\nTERMINAL_WORKSPACE=%s\n' "$TMP/ws" > "$ENV_FILE"
@@ -320,7 +320,7 @@ test_setup_stopped_while_turning_the_code_page_on_by_default_undoes_it() {
   assert_eq "$(get_env CODE_ENABLED)|$(get_env TERMINAL_ENABLED)" "|"
   assert_contains "$(cat "$TMP/dc")" "dc rm -sf code subs-chat terminal terminal-gateway"
   # (Chat's own egress proxy too, were it there: TERMINAL_EGRESS=host)
-  assert_contains "$(cat "$TMP/docker")" "docker network rm bedrock-now_chat-proxy bedrock-now_chat-out"
+  assert_contains "$(cat "$TMP/docker")" "docker network rm devos-ade_chat-proxy devos-ade_chat-out"
   [ ! -e "$STATE_DIR/code-default-failed" ] || { echo "an interrupted default counted as a failure" >&2; return 1; }
   out="$(cat "$TMP/err")"
   assert_contains "$out" "setup stopped (Ctrl-C) while building and starting the browser terminal and the Code page"

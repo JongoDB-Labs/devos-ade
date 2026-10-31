@@ -11,7 +11,7 @@
 
 test_a_timed_step_says_when_it_starts_and_how_long_it_took() {
   _now() { echo 100; }
-  out="$(BEDROCK_NOW_JOB_ORIGIN=helper timed_step "Smoke test" echo "its own words" 2>&1)"
+  out="$(DEVOS_ADE_JOB_ORIGIN=helper timed_step "Smoke test" echo "its own words" 2>&1)"
   assert_eq "$out" "$(printf '==> Smoke test: starting…\nits own words\n==> Smoke test ready (0s)')"
   # not a helper job: its words and its time
   out="$(timed_step "Smoke test" echo "its own words" 2>&1)"
@@ -93,7 +93,7 @@ test_an_update_downloads_side_by_side_and_skips_digest_pins_that_are_here() {
   pulls_start 2> "$TMP/start"
   assert_contains "$(cat "$TMP/start")" "downloading 3 image(s) side by side while setup builds (1 here already, pinned by digest)"
   # setup waits for them, then says each one's time
-  BEDROCK_NOW_PULLS_DIR="$PULLS_DIR" BEDROCK_NOW_PULLS_PID="$PULLS_PID" pulls_wait 2> "$TMP/wait"
+  DEVOS_ADE_PULLS_DIR="$PULLS_DIR" DEVOS_ADE_PULLS_PID="$PULLS_PID" pulls_wait 2> "$TMP/wait"
   assert_eq "$(sort "$TMP/pulls" | tr '\n' ' ')" "pull ghcr.io/berriai/litellm:1.105.0 pull pgvector/pgvector:0.8.7-pg17 pull searxng/searxng:1@sha256:bbbb "
   for want in "Download litellm:1.105.0 ready (" "Download pgvector:0.8.7-pg17 ready (" "Download searxng:1 ready (" \
               "here already, pinned by digest (not asked again): caddy:2.11.7-alpine"; do
@@ -107,7 +107,7 @@ test_an_update_downloads_side_by_side_and_skips_digest_pins_that_are_here() {
 test_a_download_that_fails_stops_setup_before_anything_runs_its_image() {
   _pull_stubs; FAIL="ghcr.io/berriai/litellm:1.105.0"
   pulls_start 2>/dev/null
-  if out="$( (BEDROCK_NOW_PULLS_DIR="$PULLS_DIR" BEDROCK_NOW_PULLS_PID="$PULLS_PID" pulls_wait) 2>&1)"; then echo "a failed download must stop setup" >&2; return 1; fi
+  if out="$( (DEVOS_ADE_PULLS_DIR="$PULLS_DIR" DEVOS_ADE_PULLS_PID="$PULLS_PID" pulls_wait) 2>&1)"; then echo "a failed download must stop setup" >&2; return 1; fi
   assert_contains "$out" "could not download ghcr.io/berriai/litellm:1.105.0 — its last words:"
   assert_contains "$out" "toomanyrequests: rate limit"
   assert_contains "$out" "image download failed (network/registry?): ghcr.io/berriai/litellm:1.105.0 — nothing was started with this version's images yet"
@@ -116,7 +116,7 @@ test_a_download_that_fails_stops_setup_before_anything_runs_its_image() {
   _pull_stubs
   pulls_start 2>/dev/null; wait "$PULLS_PID" 2>/dev/null
   rm -f "$PULLS_DIR/done" "$PULLS_DIR/1.res"
-  if out="$( (BEDROCK_NOW_PULLS_DIR="$PULLS_DIR" BEDROCK_NOW_PULLS_PID=999999 pulls_wait) 2>&1)"; then echo "an unfinished download must stop setup" >&2; return 1; fi
+  if out="$( (DEVOS_ADE_PULLS_DIR="$PULLS_DIR" DEVOS_ADE_PULLS_PID=999999 pulls_wait) 2>&1)"; then echo "an unfinished download must stop setup" >&2; return 1; fi
   assert_contains "$out" "image download failed (network/registry?): ghcr.io/berriai/litellm:1.105.0"
 }
 
@@ -129,8 +129,8 @@ test_setup_waits_for_the_downloads_before_it_starts_anything() {
     { echo "Postgres starts before the downloads are waited for" >&2; return 1; }
   assert_contains "$(sed -n '/^_setup_downloads() /p' "$STACK_DIR/lib/commands.sh")" "pulls_wait; ensure_images"
   c="$(sed -n '/^cmd_update() {/,/^}/p' "$STACK_DIR/lib/commands.sh")"
-  assert_contains "$c" 'pullenv=(BEDROCK_NOW_PULLS_DIR="$PULLS_DIR" BEDROCK_NOW_PULLS_PID="$PULLS_PID")'
-  assert_contains "$c" '-u BEDROCK_NOW_PULLS_DIR -u BEDROCK_NOW_PULLS_PID'
+  assert_contains "$c" 'pullenv=(DEVOS_ADE_PULLS_DIR="$PULLS_DIR" DEVOS_ADE_PULLS_PID="$PULLS_PID")'
+  assert_contains "$c" '-u DEVOS_ADE_PULLS_DIR -u DEVOS_ADE_PULLS_PID'
 }
 
 # --- builds ---

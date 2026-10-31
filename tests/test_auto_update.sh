@@ -46,7 +46,7 @@ case "$1" in
 esac
 exit 0
 EOS
-  chmod +x "$o/stack"; printf '#!/bin/sh\n' > "$o/bin/bedrock-now-helper"; chmod +x "$o/bin/bedrock-now-helper"
+  chmod +x "$o/stack"; printf '#!/bin/sh\n' > "$o/bin/devos-ade-helper"; chmod +x "$o/bin/devos-ade-helper"
   git init -q "$o"; git -C "$o" add stack bin; git -C "$o" commit -qm one; git -C "$o" tag v0.3.0
   echo 2 > "$o/two"; git -C "$o" add two; git -C "$o" commit -qm two; git -C "$o" tag v0.4.0
   git clone -q "$o" "$TMP/stack"; STACK_DIR="$TMP/stack"
@@ -323,7 +323,7 @@ test_an_automatic_update_rolled_back_later_is_not_installed_again() {
 
 test_branch_checkouts_are_never_updated_automatically() {
   _release_checkout; git -C "$STACK_DIR" checkout -q -B main
-  printf 'BEDROCK_NOW_HELPER_ALLOW_BRANCH=1\n' >> "$ENV_FILE"   # that is for Update now only
+  printf 'DEVOS_ADE_HELPER_ALLOW_BRANCH=1\n' >> "$ENV_FILE"   # that is for Update now only
   if helper_auto_tick 2>/dev/null; then return 1; fi
   [ -z "$(_calls)" ] || return 1
   helper_auto_state; assert_eq "$AUTO_STATE" branch

@@ -16,8 +16,8 @@ from starlette.testclient import TestClient
 from portal import chatsearch, searchindex
 from portal.app import STATIC, create_app
 
-ORIGIN = {"Origin": "http://bedrock-now.localhost"}
-API = {"X-Requested-With": "bedrock-now"}
+ORIGIN = {"Origin": "http://devos-ade.localhost"}
+API = {"X-Requested-With": "devos-ade"}
 REPO = Path(os.environ.get("BN_REPO_DIR") or Path(__file__).resolve().parents[2])
 need_repo = pytest.mark.skipif(not ((REPO / "README.md").is_file() and (REPO / "catalog" / "settings-layout.tsv").is_file()),
                                reason="the repository's README/catalog are not here: portal/test.sh passes them to the test image")
@@ -29,7 +29,7 @@ def offline(request):
 
 
 def client(s, transport=None):
-    c = TestClient(create_app(s, transport=transport or httpx.MockTransport(offline)), base_url="http://bedrock-now.localhost",
+    c = TestClient(create_app(s, transport=transport or httpx.MockTransport(offline)), base_url="http://devos-ade.localhost",
                    follow_redirects=False)
     c.__enter__()
     c.post("/login", data={"password": "correct horse"}, headers=ORIGIN)
@@ -52,7 +52,7 @@ def test_index_settings_sections_and_rows_with_their_labels(settings, tmp_path, 
     (settings.catalog_dir / "settings-layout.tsv").write_text(LAYOUT)
     (settings.catalog_dir / "settings.tsv").write_text(TABLE)
     idx = tmp_path / "docs-index.json"
-    idx.write_text(json.dumps({"version": 1, "pages": [{"file": "README.md", "title": "bedrock-now", "sections": [
+    idx.write_text(json.dumps({"version": 1, "pages": [{"file": "README.md", "title": "devos-ade", "sections": [
         {"anchor": "costs--budgets", "title": "Costs & budgets", "level": 2, "parent": "", "text": "Every key has a budget."},
         {"anchor": "bad anchor<", "title": "x"}]}, {"file": "/etc/passwd", "title": "x", "sections": []}]}))
     monkeypatch.setattr(searchindex, "DOCS_INDEX", idx)

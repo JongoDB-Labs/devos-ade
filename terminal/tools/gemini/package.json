@@ -1,5 +1,5 @@
 {
-  "name": "bedrock-now-terminal-gemini-cli",
+  "name": "devos-ade-terminal-gemini-cli",
   "private": true,
   "description": "Google's Gemini CLI for the DevOS ADE sandbox, pinned (npm ci checks every tarball against package-lock.json)",
   "dependencies": {

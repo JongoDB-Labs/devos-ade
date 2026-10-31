@@ -104,7 +104,7 @@ class Stub(http.server.BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         n = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(n) or b"{}")
-        if self.headers.get("X-Requested-With") != "bedrock-now":
+        if self.headers.get("X-Requested-With") != "devos-ade":
             return self.send(403, json.dumps({"error": "missing header"}), "application/json")
         parts = path.strip("/").split("/")
         if len(parts) == 4 and parts[:2] == ["api", "chats"] and parts[3] in ("rename", "archive", "delete"):

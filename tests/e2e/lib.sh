@@ -9,7 +9,7 @@ die()  { printf 'xx  %s\n' "$*" >&2; exit 1; }
 now()  { date +%s; }
 
 # valid_project NAME -> 0 for the suite's own project names only: bne2e or bne2e-<lowercase letters/digits/->.
-# Anything else (bedrock-now — the default Compose project —, another copy's name) could be a real install; teardown deletes volumes by name.
+# Anything else (devos-ade — the default Compose project —, another copy's name) could be a real install; teardown deletes volumes by name.
 valid_project() {
   case "$1" in
     bne2e) return 0 ;;
@@ -37,7 +37,7 @@ clean_env() {
   local v keep
   keep=" $(printf '%s' "$KEEP_VARS $*" | tr '\n' ' ') "
   for v in $(compgen -e); do case "$keep" in *" $v "*) ;; *) unset "$v" 2>/dev/null || true ;; esac; done
-  export SHELL=/bin/bash TERM=dumb NO_COLOR=1 BEDROCK_NOW_NO_OPEN=1 LANG=C
+  export SHELL=/bin/bash TERM=dumb NO_COLOR=1 DEVOS_ADE_NO_OPEN=1 LANG=C
 }
 
 # load_aws_file FILE — exports AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION_NAME (AWS_REGION) found in
@@ -107,8 +107,8 @@ project_ownership() {
     OWN_STATE=foreign; OWN_WHY="Docker did not answer (docker ps / docker volume ls failed), so project $PROJECT's owner is unknown"
     return 0
   fi
-  marker="$(printf '%s\n' "$marker" | grep -xF "${PROJECT}_bedrock-now-owner" || true)"
-  if [ -n "$marker" ] && ! owner="$(docker volume inspect --format '{{index .Labels "io.bedrock-now.dir"}}' "${PROJECT}_bedrock-now-owner")"; then
+  marker="$(printf '%s\n' "$marker" | grep -xF "${PROJECT}_devos-ade-owner" || true)"
+  if [ -n "$marker" ] && ! owner="$(docker volume inspect --format '{{index .Labels "io.devos-ade.dir"}}' "${PROJECT}_devos-ade-owner")"; then
     OWN_STATE=foreign; OWN_WHY="cannot read the owner marker of project $PROJECT"
     return 0
   fi
@@ -159,7 +159,7 @@ $out"
 terminal_workspace_dir() { printf '%s/%s-workspace\n' "$(dirname "$STACK")" "$PROJECT"; }
 
 # --- the throwaway's update helper (run.sh --helper) ---
-# The throwaway's own bin/bedrock-now-helper, run as launchd/systemd would run it after `./stack helper install` —
+# The throwaway's own bin/devos-ade-helper, run as launchd/systemd would run it after `./stack helper install` —
 # but as a child of this run, never as a launchd agent or systemd unit: in its own session (notty: no terminal, and
 # its whole process group stops together), with a clean environment plus HELPER_KNOBS, started again after a clean
 # exit like launchd/systemd do (it exits after an update/rollback/clean), its output appended to $LOGS/helper.log.
@@ -184,17 +184,17 @@ _helper_beat_at() {
 # portal checks before it shows Change). Fails when it did not get there or stopped by itself.
 e2e_helper_start() {
   local kv names='' hb
-  [ -x "$STACK/bin/bedrock-now-helper" ] || { echo "$STACK/bin/bedrock-now-helper is missing" >&2; return 1; }
+  [ -x "$STACK/bin/devos-ade-helper" ] || { echo "$STACK/bin/devos-ade-helper is missing" >&2; return 1; }
   _e2e_helper_sweep   # never two helpers on one checkout (one left by a run that was killed with -9)
   for kv in $HELPER_KNOBS; do names="$names ${kv%%=*}"; done
   HELPER_T0="$(now)"; HELPER_ALIVE=''; HELPER_RC=''
-  printf '%s e2e: starting %s/bin/bedrock-now-helper in the foreground (%s)\n' "$(date '+%F %T')" "$STACK" "$HELPER_KNOBS" >> "$LOGS/helper.log"
+  printf '%s e2e: starting %s/bin/devos-ade-helper in the foreground (%s)\n' "$(date '+%F %T')" "$STACK" "$HELPER_KNOBS" >> "$LOGS/helper.log"
   # shellcheck disable=SC2086,SC2016  # (names: a word list; the loop is the child shell's own script)
   ( for kv in $HELPER_KNOBS; do export "${kv?}"; done
     clean_env $names
-    cd "$STACK" && exec "$NOTTY" /bin/bash -c 'while :; do "$1/bin/bedrock-now-helper" "$1" || exit $?
+    cd "$STACK" && exec "$NOTTY" /bin/bash -c 'while :; do "$1/bin/devos-ade-helper" "$1" || exit $?
         printf "%s e2e: the helper exited cleanly (it does after an update, rollback or clean): started again, as launchd/systemd do\n" "$(date "+%F %T")"
-        sleep 2; done' bedrock-now-e2e-helper "$STACK" ) </dev/null >> "$LOGS/helper.log" 2>&1 &
+        sleep 2; done' devos-ade-e2e-helper "$STACK" ) </dev/null >> "$LOGS/helper.log" 2>&1 &
   HELPER_PID=$!
   for _ in $(seq 1 60); do
     kill -0 "$HELPER_PID" 2>/dev/null || { echo "it stopped by itself (log: $LOGS/helper.log)" >&2; return 1; }
@@ -228,12 +228,12 @@ _e2e_helper_settle() {
 }
 
 # _e2e_helper_sweep — stops every process group running this checkout's helper (a command line that ends in
-# "STACK/bin/bedrock-now-helper STACK"; never this run's own group): what e2e_helper_stop's own child left, or the
+# "STACK/bin/devos-ade-helper STACK"; never this run's own group): what e2e_helper_stop's own child left, or the
 # helper of a run that was killed with -9. (The path goes to awk in the environment: not on a command line it matches.)
 _e2e_helper_sweep() {
   local me groups g
   me="$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')"
-  groups="$(ps -A -ww -o pgid= -o command= 2>/dev/null | M="$STACK/bin/bedrock-now-helper $STACK" awk -v me="$me" '
+  groups="$(ps -A -ww -o pgid= -o command= 2>/dev/null | M="$STACK/bin/devos-ade-helper $STACK" awk -v me="$me" '
     { g = $1; sub(/^ *[0-9]+ /, ""); n = length(ENVIRON["M"]) }
     length($0) >= n && substr($0, length($0) - n + 1) == ENVIRON["M"] && g != me && g > 1 && !s[g]++ { print g }')"
   [ -n "$groups" ] || return 0
@@ -280,7 +280,7 @@ e2e_helper_jobs() { awk -v t="${HELPER_T0:-0}" '$1 + 0 >= t' "$STACK/.state/help
 teardown() {
   local img id left others ws net n
   # the throwaway's update helper (--helper), also one a killed run left: only from a checkout this suite created
-  [ ! -f "$STACK/.bedrock-now-e2e" ] || _e2e_helper_sweep
+  [ ! -f "$STACK/.devos-ade-e2e" ] || _e2e_helper_sweep
   if [ "$OWNED" != 1 ]; then
     warn "teardown: project $PROJECT is not known to be this suite's own — Docker left untouched"
   else
@@ -288,7 +288,7 @@ teardown() {
     # (the suite's git server, --git-server: not compose's; by its name, before its network goes)
     docker rm -f "$PROJECT-gitsrv" >/dev/null 2>&1 || true
     docker compose -p "$PROJECT" down -v --remove-orphans >/dev/null 2>&1 || warn "docker compose -p $PROJECT down failed"
-    docker volume rm "${PROJECT}_bedrock-now-owner" >/dev/null 2>&1 || true
+    docker volume rm "${PROJECT}_devos-ade-owner" >/dev/null 2>&1 || true
     # The browser terminal (--terminal) lives in overlay files that `down` without them does not read: its volume
     # and networks go by name — a network up to 5 times, a second apart (Docker may still hold the endpoint of a
     # container that has just gone; one it never lets go is said below).
@@ -314,17 +314,17 @@ teardown() {
   fi
   # Only a folder this suite created (it carries the marker) is ever deleted — and not while containers of another
   # project were started from it (or Docker cannot say).
-  if [ -f "$STACK/.bedrock-now-e2e" ] && ! others="$(folder_users_other_than_project)"; then
+  if [ -f "$STACK/.devos-ade-e2e" ] && ! others="$(folder_users_other_than_project)"; then
     warn "not deleting $STACK: Docker cannot tell which projects use it"
-  elif [ -f "$STACK/.bedrock-now-e2e" ] && [ -n "$others" ]; then
+  elif [ -f "$STACK/.devos-ade-e2e" ] && [ -n "$others" ]; then
     warn "not deleting $STACK: containers of project(s) $others were started from it"
-  elif [ -f "$STACK/.bedrock-now-e2e" ]; then chmod -R u+rwX "$STACK" 2>/dev/null; rm -rf "$STACK" || warn "could not delete $STACK"
+  elif [ -f "$STACK/.devos-ade-e2e" ]; then chmod -R u+rwX "$STACK" 2>/dev/null; rm -rf "$STACK" || warn "could not delete $STACK"
   elif [ -d "$STACK" ] && [ -z "$(ls -A "$STACK" 2>/dev/null)" ]; then rmdir "$STACK"
-  elif [ -e "$STACK" ]; then warn "not deleting $STACK: it was not created by this suite (no .bedrock-now-e2e marker)"; fi
+  elif [ -e "$STACK" ]; then warn "not deleting $STACK: it was not created by this suite (no .devos-ade-e2e marker)"; fi
   # The terminal's workspace folder next to the checkout: only when this suite created it (its marker).
   ws="$(terminal_workspace_dir)"
-  if [ -f "$ws/.bedrock-now-e2e" ]; then chmod -R u+rwX "$ws" 2>/dev/null; rm -rf "$ws" || warn "could not delete $ws"
-  elif [ -e "$ws" ]; then warn "not deleting $ws: it was not created by this suite (no .bedrock-now-e2e marker)"; fi
+  if [ -f "$ws/.devos-ade-e2e" ]; then chmod -R u+rwX "$ws" 2>/dev/null; rm -rf "$ws" || warn "could not delete $ws"
+  elif [ -e "$ws" ]; then warn "not deleting $ws: it was not created by this suite (no .devos-ade-e2e marker)"; fi
   [ "$OWNED" = 1 ] || return 0
   left="$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT"; docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT"
     docker network ls --format '{{.Name}}' --filter "label=com.docker.compose.project=$PROJECT")"
@@ -337,8 +337,8 @@ teardown() {
 teardown_only() {
   project_ownership
   [ "$OWN_STATE" != foreign ] || die "--teardown: $OWN_WHY — nothing was removed"
-  [ ! -e "$STACK" ] || [ -f "$STACK/.bedrock-now-e2e" ] || [ -z "$(ls -A "$STACK" 2>/dev/null)" ] ||
-    die "--teardown: $STACK was not created by this suite (no .bedrock-now-e2e marker) — nothing was removed"
+  [ ! -e "$STACK" ] || [ -f "$STACK/.devos-ade-e2e" ] || [ -z "$(ls -A "$STACK" 2>/dev/null)" ] ||
+    die "--teardown: $STACK was not created by this suite (no .devos-ade-e2e marker) — nothing was removed"
   OWNED=1
   teardown
 }
@@ -347,9 +347,9 @@ teardown_only() {
 REQUIRED_SERVICES="caddy portal open-webui litellm rustfs shared-mcp postgres"
 reuse_check() {
   local s ps owner
-  [ -f "$STACK/.bedrock-now-e2e" ] || die "--reuse: $STACK is not a kept throwaway of this suite (no marker)"
+  [ -f "$STACK/.devos-ade-e2e" ] || die "--reuse: $STACK is not a kept throwaway of this suite (no marker)"
   [ "$(get_env COMPOSE_PROJECT_NAME)" = "$PROJECT" ] || die "--reuse: $STACK/.env is not for project $PROJECT"
-  owner="$(docker volume inspect --format '{{index .Labels "io.bedrock-now.dir"}}' "${PROJECT}_bedrock-now-owner" 2>/dev/null || true)"
+  owner="$(docker volume inspect --format '{{index .Labels "io.devos-ade.dir"}}' "${PROJECT}_devos-ade-owner" 2>/dev/null || true)"
   [ -n "$owner" ] && [ "$(real_dir "$owner")" = "$(real_dir "$STACK")" ] ||
     die "--reuse: project $PROJECT is not owned by $STACK (owner: ${owner:-none})"
   ps="$(docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --format '{{.Label "com.docker.compose.service"}}	{{.State}}	{{.Status}}' 2>/dev/null)"

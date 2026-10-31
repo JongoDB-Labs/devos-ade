@@ -40,7 +40,7 @@
 #               credits spent on every turn. Never run by default.
 #
 # What runs (docker; on a machine with a shared heavy-job lock, run the whole script inside it): three containers named
-# bne2e-parity-litellm, -gateway and -sandbox (label io.bedrock-now.e2e=parity), networks bne2e-parity-term, -link
+# bne2e-parity-litellm, -gateway and -sandbox (label io.devos-ade.e2e=parity), networks bne2e-parity-term, -link
 # (both internal) and -out — with E2E_WEBSEARCH=builtin also bne2e-parity-searxng and its networks -ws (internal) and
 # -wsout —, all removed afterwards by those names; nothing is pruned. LiteLLM runs this checkout's
 # rendered config (lib/models.sh with its OpenRouter and Experiential Labs entries and the bn_* model info), its hook
@@ -92,7 +92,7 @@ CONTAINERS="$NAME-sandbox $NAME-gateway $NAME-litellm $NAME-searxng"
 # _ours KIND NAME -> 0 when the container or network NAME exists and carries this suite's label
 _ours() {
   local labels=.Labels; [ "$1" = network ] || labels=.Config.Labels
-  [ "$(docker "$1" inspect -f "{{index $labels \"io.bedrock-now.e2e\"}}" "$2" 2>/dev/null)" = parity ]
+  [ "$(docker "$1" inspect -f "{{index $labels \"io.devos-ade.e2e\"}}" "$2" 2>/dev/null)" = parity ]
 }
 _exists() { docker "$1" inspect "$2" >/dev/null 2>&1; }
 teardown() {
@@ -173,7 +173,7 @@ if [ "$REUSE" = 0 ]; then
     STACK_DIR="$ROOT"; ENV_FILE=/dev/null; STATE_DIR="$WORK/state"; export STACK_DIR ENV_FILE STATE_DIR
     # shellcheck source=/dev/null
     . "$ROOT/lib/common.sh"; . "$ROOT/lib/ports.sh"; . "$ROOT/lib/portal.sh"; . "$ROOT/lib/models.sh"; . "$ROOT/lib/commands.sh"
-    [ "$XL_REAL" = 1 ] || { EXPLABS_API="http://127.0.0.1:$XL_PORT/v1"; BEDROCK_NOW_TESTING=1; }
+    [ "$XL_REAL" = 1 ] || { EXPLABS_API="http://127.0.0.1:$XL_PORT/v1"; DEVOS_ADE_TESTING=1; }
     get_env() {
       case "$1" in
         AWS_REGION_NAME) printf '%s' "$AWS_REGION_NAME" ;;
@@ -368,20 +368,20 @@ if [ "$REUSE" = 0 ]; then
   if [ -z "$TIMAGE" ]; then
     TIMAGE="$NAME/terminal:local"
     say "building the terminal image from terminal/ ($TIMAGE)"
-    docker build -q -t "$TIMAGE" --label io.bedrock-now.e2e=parity "$ROOT/terminal" > "$WORK/build.log" 2>&1 ||
+    docker build -q -t "$TIMAGE" --label io.devos-ade.e2e=parity "$ROOT/terminal" > "$WORK/build.log" 2>&1 ||
       { tail -n 30 "$WORK/build.log" >&2; die "the terminal image did not build"; }
   fi
   PORT=18600
   while port_in_use "$PORT" || case "$AVOID_PORTS" in *" $PORT "*) true ;; *) false ;; esac; do PORT=$((PORT + 1)); done
   printf '%s\n' "$PORT" > "$WORK/.port"
-  docker network create --label io.bedrock-now.e2e=parity "$NAME-out" >/dev/null || die "network $NAME-out"
-  docker network create --internal --label io.bedrock-now.e2e=parity "$NAME-link" >/dev/null || die "network $NAME-link"
-  docker network create --internal --label io.bedrock-now.e2e=parity "$NAME-term" >/dev/null || die "network $NAME-term"
+  docker network create --label io.devos-ade.e2e=parity "$NAME-out" >/dev/null || die "network $NAME-out"
+  docker network create --internal --label io.devos-ade.e2e=parity "$NAME-link" >/dev/null || die "network $NAME-link"
+  docker network create --internal --label io.devos-ade.e2e=parity "$NAME-term" >/dev/null || die "network $NAME-term"
 
   say "starting $NAME-litellm ($IMAGE) on 127.0.0.1:$PORT, with the stand-ins inside"
   # the stand-ins first (on the container's 127.0.0.1), then LiteLLM; the stand-ins' relay is LiteLLM itself
   LITELLM_MASTER_KEY="$MASTER" OR_APP_NAME="DevOS ADE" OR_SITE_URL="https://github.com/JongoDB-Labs/devos-ade" \
-  docker run -d --name "$NAME-litellm" --label io.bedrock-now.e2e=parity --network "$NAME-out" -p "127.0.0.1:$PORT:4000" \
+  docker run -d --name "$NAME-litellm" --label io.devos-ade.e2e=parity --network "$NAME-out" -p "127.0.0.1:$PORT:4000" \
     -v "$WORK/litellm:/app/config:ro" -v "$WORK/mock:/mock:ro" \
     -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_SESSION_TOKEN -e AWS_REGION_NAME -e LITELLM_MASTER_KEY \
     -e LITELLM_LOCAL_MODEL_COST_MAP=True -e STORE_MODEL_IN_DB=False -e OPENROUTER_API_KEY -e EXPLABS_API_KEY -e OR_APP_NAME -e OR_SITE_URL \
@@ -399,10 +399,10 @@ if [ "$REUSE" = 0 ]; then
     SXIMAGE="$(sed -n 's/^    image: \(searxng\/searxng:[^ ]*\)$/\1/p' "$ROOT/compose.yaml" | head -n 1)"
     [ -n "$SXIMAGE" ] || die "no searxng image in compose.yaml"
     say "starting $NAME-searxng ($SXIMAGE)"
-    docker network create --internal --label io.bedrock-now.e2e=parity "$NAME-ws" >/dev/null || die "network $NAME-ws"
-    docker network create --label io.bedrock-now.e2e=parity "$NAME-wsout" >/dev/null || die "network $NAME-wsout"
+    docker network create --internal --label io.devos-ade.e2e=parity "$NAME-ws" >/dev/null || die "network $NAME-ws"
+    docker network create --label io.devos-ade.e2e=parity "$NAME-wsout" >/dev/null || die "network $NAME-wsout"
     SEARXNG_SECRET="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')" \
-    docker create --name "$NAME-searxng" --label io.bedrock-now.e2e=parity --network "$NAME-ws" --network-alias searxng \
+    docker create --name "$NAME-searxng" --label io.devos-ade.e2e=parity --network "$NAME-ws" --network-alias searxng \
       --user 977:977 --read-only --cap-drop ALL --security-opt no-new-privileges:true --memory 512m --pids-limit 128 \
       --tmpfs /var/cache/searxng:size=32m,uid=977,gid=977,mode=0700 --tmpfs /tmp:size=32m,mode=1777 \
       --add-host host.docker.internal:192.0.2.1 --add-host gateway.docker.internal:192.0.2.1 \
@@ -414,7 +414,7 @@ if [ "$REUSE" = 0 ]; then
 
   say "starting $NAME-gateway (caddy/terminal-gateway.caddy)"
   # (both networks before it starts: Caddy binds to its name on each)
-  docker create --name "$NAME-gateway" --label io.bedrock-now.e2e=parity --network "$NAME-term" --network-alias gateway \
+  docker create --name "$NAME-gateway" --label io.devos-ade.e2e=parity --network "$NAME-term" --network-alias gateway \
     --read-only --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges:true \
     --tmpfs /data --tmpfs /config -v "$ROOT/caddy:/etc/caddy:ro" \
     "$CADDY" caddy run --config /etc/caddy/terminal-gateway.caddy --adapter caddyfile >/dev/null || die "could not create $NAME-gateway"
@@ -422,7 +422,7 @@ if [ "$REUSE" = 0 ]; then
   docker start "$NAME-gateway" >/dev/null || die "could not start $NAME-gateway"
 
   say "starting $NAME-sandbox ($TIMAGE)"
-  ANTHROPIC_AUTH_TOKEN="$MASTER" docker run -d --name "$NAME-sandbox" --label io.bedrock-now.e2e=parity --network "$NAME-term" \
+  ANTHROPIC_AUTH_TOKEN="$MASTER" docker run -d --name "$NAME-sandbox" --label io.devos-ade.e2e=parity --network "$NAME-term" \
     --user 10104:10104 --read-only --cap-drop ALL --security-opt no-new-privileges:true --init \
     --tmpfs /tmp:size=1g,mode=1777 --tmpfs /home/claude:uid=10104,gid=10104,mode=0700,size=1g \
     --tmpfs /workspace:uid=10104,gid=10104,mode=0755,size=256m \

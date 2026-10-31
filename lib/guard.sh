@@ -4,7 +4,7 @@
 # Two checkouts with the same project name would share containers and data volumes (wrong database password,
 # one checkout recreating or deleting the other's stack). Ownership comes from two places:
 #  - containers: Compose labels each one with the folder it was started from (com.docker.compose.project.working_dir);
-#  - an owner marker: an empty Docker volume "<project>_bedrock-now-owner" labelled io.bedrock-now.dir=<folder>.
+#  - an owner marker: an empty Docker volume "<project>_devos-ade-owner" labelled io.devos-ade.dir=<folder>.
 #    The first checkout that starts or changes the stack writes it and ./stack uninstall removes it, so the claim
 #    holds while the stack is down (no containers) and also covers volumes created before markers existed.
 #    `docker volume create` keeps an existing volume's labels, so of two concurrent claims exactly one wins.
@@ -12,7 +12,7 @@
 # or added label makes it ask "Recreate (data will be lost)?" — `up -y` answers yes and wipes the database.
 
 _real_dir() { (cd "$1" 2>/dev/null && pwd -P) || printf '%s\n' "$1"; }
-owner_marker() { printf '%s_bedrock-now-owner\n' "$1"; }
+owner_marker() { printf '%s_devos-ade-owner\n' "$1"; }
 
 # _project_volumes NAME -> the project's data volumes on one line ("" if none)
 _project_volumes() {
@@ -20,18 +20,17 @@ _project_volumes() {
 }
 # _project_owner NAME -> folder recorded in the owner marker ("" if there is none)
 _project_owner() {
-  docker volume inspect --format '{{index .Labels "io.bedrock-now.dir"}}' "$(owner_marker "$1")" 2>/dev/null || true
+  docker volume inspect --format '{{index .Labels "io.devos-ade.dir"}}' "$(owner_marker "$1")" 2>/dev/null || true
 }
 # _project_container_dirs NAME -> one working_dir per line for the project's containers
 _project_container_dirs() {
   docker ps -a --filter "label=com.docker.compose.project=$1" --format '{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null | sort -u
 }
-# _is_bedrock_now_dir DIR -> 0 for a checkout of this project, under either of its names (its stack file says one:
-# since v0.25.0 "DevOS ADE (formerly bedrock-now)", so a guard of an earlier version still knows it)
-_is_bedrock_now_dir() { [ -f "$1/compose.yaml" ] && [ -f "$1/stack" ] && grep -qE 'bedrock-now|DevOS ADE' "$1/stack" 2>/dev/null; }
+# _is_devos_ade_dir DIR -> 0 for a checkout of this project (its stack file names it: "DevOS ADE CLI")
+_is_devos_ade_dir() { [ -f "$1/compose.yaml" ] && [ -f "$1/stack" ] && grep -q 'DevOS ADE' "$1/stack" 2>/dev/null; }
 _guard_where() { # _guard_where DIR -> how to name what lives in DIR
   if [ ! -e "$1" ]; then printf 'containers started from %s, a folder that no longer exists' "$1"
-  elif _is_bedrock_now_dir "$1"; then printf 'the %s install in %s' "$PRODUCT_NAME" "$1"
+  elif _is_devos_ade_dir "$1"; then printf 'the %s install in %s' "$PRODUCT_NAME" "$1"
   else printf 'another Compose project in %s' "$1"; fi
 }
 
@@ -63,15 +62,15 @@ _guard_advice() {
     [ -n "$(get_env POSTGRES_PASSWORD)" ] || printf ' Or give this copy its own name: COMPOSE_PROJECT_NAME=%s-2 ./setup.sh.' "$name"
     return 0
   fi
-  [ ! -d "$d" ] || [ -e "$d/.env" ] || ! _is_bedrock_now_dir "$d" ||
+  [ ! -d "$d" ] || [ -e "$d/.env" ] || ! _is_devos_ade_dir "$d" ||
     printf "That folder has no .env any more, but its install still owns the data volumes. If it is gone for good, move the folder %s aside (e.g. rename it) or delete it, and re-run. " "$d"
   if [ -z "$(get_env POSTGRES_PASSWORD)" ]; then
-    if _is_bedrock_now_dir "$d"; then
+    if _is_devos_ade_dir "$d"; then
       printf 'Either use that install (cd %s), remove it (cd %s && ./stack uninstall), or give this copy its own name: COMPOSE_PROJECT_NAME=%s-2 ./setup.sh.' "$d" "$d" "$name"
     else
       printf 'Stop that project (cd %s && docker compose down), or give this copy its own name: COMPOSE_PROJECT_NAME=%s-2 ./setup.sh.' "$d" "$name"
     fi
-  elif _is_bedrock_now_dir "$d"; then
+  elif _is_devos_ade_dir "$d"; then
     printf "This checkout (%s) is set up for project '%s' too, so both would use one database and one set of containers. If this folder replaces %s (you moved or copied it with its .env), stop the stack there (cd %s && ./stack down), move %s aside (e.g. rename it) or delete it — it holds its own backups/ and .env — and re-run here; the data volumes are kept. Otherwise keep only one: use that install (cd %s), or remove it with its data (cd %s && ./stack uninstall) and run ./stack setup here. A second copy side by side needs its own fresh checkout (see README: Running a second copy)." \
       "$(_real_dir "$STACK_DIR")" "$name" "$d" "$d" "$d" "$d" "$d"
   else
@@ -116,7 +115,7 @@ claim_project() {
   [ "$owner" != "$me" ] || return 0
   [ -z "$owner" ] || [ "$owner" = "$seen" ] || _claim_lost "$name" "$owner"
   [ -z "$owner" ] || docker volume rm "$m" >/dev/null 2>&1 || true   # labels can't change: replace the marker
-  docker volume create --label "io.bedrock-now.dir=$me" --label "io.bedrock-now.project=$name" "$m" >/dev/null 2>&1 || true
+  docker volume create --label "io.devos-ade.dir=$me" --label "io.devos-ade.project=$name" "$m" >/dev/null 2>&1 || true
   owner="$(_project_owner "$name")"
   [ -z "$owner" ] || [ "$owner" = "$me" ] || _claim_lost "$name" "$owner"
 }

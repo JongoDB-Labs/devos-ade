@@ -72,14 +72,14 @@ def test_throttle_backs_off_and_resets():
 @pytest.mark.parametrize("raw,want", [
     (None, "/"), ("", "/"), ("/", "/"), ("/x?y=1", "/x?y=1"),
     ("//evil.com/", "/"), ("/\\evil.com", "/"),
-    ("http://chat.bedrock-now.localhost/c/1", "http://chat.bedrock-now.localhost/c/1"),
-    ("http://admin.bedrock-now.localhost/ui/", "http://admin.bedrock-now.localhost/ui/"),
-    ("http://bedrock-now.localhost/", "http://bedrock-now.localhost/"),
-    ("http://evil.com/", "/"), ("https://chat.bedrock-now.localhost/", "/"),
-    ("http://evil.bedrock-now.localhost/", "/"), ("http://chat.bedrock-now.localhost.evil.com/", "/"),
-    ("http://chat.bedrock-now.localhost:8800/", "/"), ("http://user@chat.bedrock-now.localhost/", "/"),
-    ("javascript:alert(1)", "/"), ("http://chat.bedrock-now.localhost/\nx", "/"),
-    ("http://chat.bedrock-now.localhost:99999/", "/"),
+    ("http://chat.devos-ade.localhost/c/1", "http://chat.devos-ade.localhost/c/1"),
+    ("http://admin.devos-ade.localhost/ui/", "http://admin.devos-ade.localhost/ui/"),
+    ("http://devos-ade.localhost/", "http://devos-ade.localhost/"),
+    ("http://evil.com/", "/"), ("https://chat.devos-ade.localhost/", "/"),
+    ("http://evil.devos-ade.localhost/", "/"), ("http://chat.devos-ade.localhost.evil.com/", "/"),
+    ("http://chat.devos-ade.localhost:8800/", "/"), ("http://user@chat.devos-ade.localhost/", "/"),
+    ("javascript:alert(1)", "/"), ("http://chat.devos-ade.localhost/\nx", "/"),
+    ("http://chat.devos-ade.localhost:99999/", "/"),
 ])
 def test_safe_next(settings, raw, want):
     assert safe_next(raw, settings) == want
@@ -87,19 +87,19 @@ def test_safe_next(settings, raw, want):
 
 def test_safe_next_checks_port(settings):
     s = replace(settings, port=8800)
-    assert safe_next("http://chat.bedrock-now.localhost:8800/", s) == "http://chat.bedrock-now.localhost:8800/"
-    assert safe_next("http://chat.bedrock-now.localhost/", s) == "/"
+    assert safe_next("http://chat.devos-ade.localhost:8800/", s) == "http://chat.devos-ade.localhost:8800/"
+    assert safe_next("http://chat.devos-ade.localhost/", s) == "/"
 
 
 def test_same_origin(settings):
-    assert same_origin({"origin": "http://bedrock-now.localhost"}, settings)
+    assert same_origin({"origin": "http://devos-ade.localhost"}, settings)
     assert not same_origin({"origin": "http://evil.com"}, settings)
     assert not same_origin({"origin": "null"}, settings)
-    assert not same_origin({"origin": "http://chat.bedrock-now.localhost"}, settings)
-    assert same_origin({"referer": "http://bedrock-now.localhost/login"}, settings)
-    assert not same_origin({"referer": "http://bedrock-now.localhost.evil.com/"}, settings)
+    assert not same_origin({"origin": "http://chat.devos-ade.localhost"}, settings)
+    assert same_origin({"referer": "http://devos-ade.localhost/login"}, settings)
+    assert not same_origin({"referer": "http://devos-ade.localhost.evil.com/"}, settings)
     assert not same_origin({}, settings)
-    assert same_origin({"origin": "http://bedrock-now.localhost:8800"}, replace(settings, port=8800))
+    assert same_origin({"origin": "http://devos-ade.localhost:8800"}, replace(settings, port=8800))
 
 
 def test_from_env_requires_secrets_and_lowercases_email():

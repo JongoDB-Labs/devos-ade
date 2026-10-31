@@ -1,6 +1,6 @@
 # DevOS ADE
 
-DevOS ADE (formerly bedrock-now) is a private, single-user AI workbench for your own Mac or Linux machine: a chat
+DevOS ADE is a private, single-user AI workbench for your own Mac or Linux machine: a chat
 app, Claude Code and a shared file store. Models run on **Amazon Bedrock** in your own AWS account (an IAM user's
 access key, or an EC2 instance role) and are billed there; the only other places a call can go are ones you turn on
 yourself — **OpenRouter** with your own key (billed by OpenRouter; some models are free), the **Experiential Labs**
@@ -73,10 +73,9 @@ less install.sh setup.sh      # optional
 ```
 
 The installer checks the prerequisites and says how to install anything missing, clones the latest release
-into `~/devos-ade` (`BEDROCK_NOW_DIR=/path` — or `DEVOS_ADE_DIR` — for another folder, `BEDROCK_NOW_REF=main` for the
+into `~/devos-ade` (`DEVOS_ADE_DIR=/path` for another folder, `DEVOS_ADE_REF=main` for the
 newest code) and starts setup. It never overwrites an existing folder: for an existing checkout it tells you to run
-`./stack update` — also for an install made before v0.25.0 in `~/bedrock-now`, which it finds there and leaves as it
-is. Arguments go to setup (`… | bash -s -- --yes`). Without a terminal to ask in, it runs
+`./stack update`. Arguments go to setup (`… | bash -s -- --yes`). Without a terminal to ask in, it runs
 `./setup.sh --yes` when `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are exported (or the EC2 instance has an IAM
 role), and otherwise tells you to run `./setup.sh` in the new folder.
 
@@ -114,13 +113,13 @@ Then it:
    (a few minutes the first time) and says so; no question is asked, and `./stack code disable` turns it off;
 5. offers to link `devos-claude` into `~/.local/bin`, with its old name beside it (`~/.local/bin/claude-bedrock`),
    and to turn on one-click updates from Home (the [update helper](#updating), which also makes Settings editable;
-   default yes). Both only in interactive runs; `--yes` installs the helper only with `BEDROCK_NOW_HELPER=1`, and
+   default yes). Both only in interactive runs; `--yes` installs the helper only with `DEVOS_ADE_HELPER=1`, and
    links `devos-claude` only where `~/.local/bin/claude-bedrock` already points into this checkout (an update from
    v0.27.x). It never edits your shell rc files or `~/.claude`.
 
 At the end it prints the portal address, the first time only (and only to a terminal) its password (always in
 `.env` as `PORTAL_PASSWORD`; `./stack password --show` prints it) and a `devos-claude` command to try, and, when
-run in a terminal, opens the portal: the installed app if you have one, else a browser tab (`BEDROCK_NOW_NO_OPEN=1`
+run in a terminal, opens the portal: the installed app if you have one, else a browser tab (`DEVOS_ADE_NO_OPEN=1`
 turns that off). On your first visit Home starts with [Get started](#home-continue-and-get-started): five steps
 that tick themselves off; the full [walkthrough](#walkthrough) is under **Walkthrough**.
 
@@ -162,7 +161,7 @@ is off again, and the next setup turns it on.
 
 ### The portal: one login for everything
 
-Open http://bedrock-now.localhost (or the URL `./stack status` prints) and sign in with `PORTAL_PASSWORD`.
+Open http://devos-ade.localhost (or the URL `./stack status` prints) and sign in with `PORTAL_PASSWORD`.
 `*.localhost` names point at your own computer in every current browser, so there is nothing to configure. You
 stay signed in for 30 days (Settings → Account & security → Session length); **Sign out** at the bottom of the sidebar ends every session at once. `./stack
 open` opens it: the installed app if you have installed it (see [Desktop app](#desktop-app)), otherwise a tab in
@@ -171,11 +170,11 @@ your browser.
 | Tab | What it is | Sign-in |
 |---|---|---|
 | **Home** | First **Continue**: the Code sessions that need you, the recent ones and your newest chats, each a click away, with **New session** and **New chat** — and on a first visit **Get started** ([Home: Continue and Get started](#home-continue-and-get-started)). Under them: spend per key against its budget, the services (one line), the models your key can use (one line, the table with prices under it), the `devos-claude` command. Under the title: *Up to date · checked 12 min ago ·* **Check for updates** ([Updating](#updating)). Refreshes every 30 s; makes no Bedrock calls. Above the tabs: **Search** (Ctrl/⌘+K) and the **Activity** bell ([Activity and search](#activity-and-search)). | the portal |
-| **Chat** | Open WebUI at `chat.bedrock-now.localhost`: chat, documents/knowledge, images (if enabled) | automatic |
-| **Code** | On by default: Claude Code with a chat and your files, at `code.bedrock-now.localhost` ([The Code page](#the-code-page)); while it is off the tab stays, muted, and says how to turn it on | the portal, then the portal password again (12 hours) |
-| **Admin** | LiteLLM's UI at `admin.bedrock-now.localhost/ui`: keys, spend by model and day, logs | automatic |
-| **Files** | The RustFS console at `files.bedrock-now.localhost`: the shared object store | automatic |
-| **Terminal** | While it is on (by default, as the Code page's sandbox): Claude Code in a sandbox, at `terminal.bedrock-now.localhost` ([Claude Code in the browser](#claude-code-in-the-browser)) | the portal, then the portal password again (12 hours) |
+| **Chat** | Open WebUI at `chat.devos-ade.localhost`: chat, documents/knowledge, images (if enabled) | automatic |
+| **Code** | On by default: Claude Code with a chat and your files, at `code.devos-ade.localhost` ([The Code page](#the-code-page)); while it is off the tab stays, muted, and says how to turn it on | the portal, then the portal password again (12 hours) |
+| **Admin** | LiteLLM's UI at `admin.devos-ade.localhost/ui`: keys, spend by model and day, logs | automatic |
+| **Files** | The RustFS console at `files.devos-ade.localhost`: the shared object store | automatic |
+| **Terminal** | While it is on (by default, as the Code page's sandbox): Claude Code in a sandbox, at `terminal.devos-ade.localhost` ([Claude Code in the browser](#claude-code-in-the-browser)) | the portal, then the portal password again (12 hours) |
 | **Settings** | Every setting of `.env`, secrets masked; change passwords, the owner email, the AWS key, budgets, voice, OpenRouter, the Code page, Claude Code's models, the sandbox's internet and updates; backups and diagnostics ([Settings](#settings); changes need the update helper) | the portal (each change asks for the password again) |
 
 One sign-in is all there is: the portal signs you in to every app, in its tab, a pop-out window, on the remote
@@ -201,7 +200,7 @@ the button at the top of the sidebar (or **Ctrl+\\**, **⌘\\** on a Mac, with t
 column of icons, as on a tablet: each icon names itself in a tooltip, Search, the Activity bell and the version stay,
 the walkthrough opens as a card beside the icons, and the apps get the width. The same button (or key) brings the names
 back; the browser remembers which you chose. If port 80
-is taken, the portal is on 8800 (`http://bedrock-now.localhost:8800`) and setup says so. To change the
+is taken, the portal is on 8800 (`http://devos-ade.localhost:8800`) and setup says so. To change the
 password, use **Settings → Account & security** (or `./stack config set PORTAL_PASSWORD`). Setup prints the password once, and only
 in a terminal; piped into a log it prints where it is instead. Tools can use the LiteLLM API at
 `http://127.0.0.1:4000` (`LITELLM_PORT`; OpenAI- and Anthropic-compatible): [the models from your own
@@ -352,7 +351,7 @@ microphone keeps working), kept by your browser.
 - **Once it is installed, a browser tab says so:** instead of **Install app**, the sidebar and Home show **Open
   in the app**, which brings the app forward (or starts it) on the tab you were on; the tab then says you can
   close it. The first time, the browser asks twice: **Open DevOS ADE?** (tick *Always allow…*) and the app's
-  **Allow app to open web+bedrocknow links?** (tick *Remember this choice*); after that it just opens. If
+  **Allow app to open web+devosade links?** (tick *Remember this choice*); after that it just opens. If
   nothing opens, Home lists the other ways in (and Chrome's **Open in app** button in the address bar does the
   same). Google Chrome and Microsoft Edge 140 or newer tell the page that the app is installed; other browsers
   learn it once the app has run, since the app and the browser's tabs share the site's storage. A tab left open
@@ -370,11 +369,11 @@ microphone keeps working), kept by your browser.
   port 80 (an app installed before v0.25.0 is named `bedrock-now` until you accept its new name and icon when the
   browser offers them; `./stack open` finds it under either). If you rename the app in the install dialog,
   `./stack open` will not find it (it opens a tab). Each
-  has its own **Open in the app** link (`web+bedrocknow` for the default copy, `web+bedrocknow` plus eight
+  has its own **Open in the app** link (`web+devosade` for the default copy, `web+devosade` plus eight
   letters for any other copy or the remote address), so one copy's tab never opens another copy's app.
 - **Uninstall:** in the app, **⋮ → Uninstall DevOS ADE** (or chrome://apps → right-click → **Remove from
   Chrome**; Edge: edge://apps). Your data is in the stack, not in the app.
-- `BEDROCK_NOW_OPEN_MODE=window ./stack open` brings back the old separate window (Chrome `--app` with its own
+- `DEVOS_ADE_OPEN_MODE=window ./stack open` brings back the old separate window (Chrome `--app` with its own
   browser profile); it has no Dock icon of its own.
 
 ### Using it on your phone
@@ -1007,7 +1006,7 @@ sessions from before projects are listed under it.
 - **Open a terminal here**: a new window of the terminal panel, in the project's folder.
 - **Remove from Code…** takes the record away; the folder and its sessions stay (listed where their folder is). Tick
   *Also move its folder to the workspace trash* and type the folder's name to move the folder to
-  `.bedrock-now-trash/` too (refused while a session runs there).
+  `.devos-ade-trash/` too (refused while a session runs there).
 - **Command palette and links.** *New session in …*, *Switch project: …*, *New project…*, *Open a terminal in this
   project*. `code.<host>/?project=<id>` shows that project; a link only picks one of the list (an id it does not have
   is said), it never creates one.
@@ -1195,7 +1194,7 @@ email — into the sandbox's own configuration, one way: nothing is ever written
 - **The sandbox's own is kept**: permission rules and hooks are added to its `settings.json` (a later copy replaces
   only what DevOS ADE added from that tool, and lists what it takes out first); any other file, a skill's folder, a server of the same name or a Git name the
   sandbox has of its own is left as it is unless you choose *Replace* — and then it goes to
-  `~/.claude/.bedrock-now-trash/` in the sandbox, never deleted. A copy is refused when what it was checked against
+  `~/.claude/.devos-ade-trash/` in the sandbox, never deleted. A copy is refused when what it was checked against
   changed meanwhile (check it again).
 - What may be read is listed in Settings › Claude Code › *What DevOS ADE may read on this computer* (per tool:
   Claude Code, `devos-claude`, Git), where **Take back** undoes it; `./stack sessions config consent --revoke`.
@@ -1360,7 +1359,7 @@ too.
 
 #### Files, search and previews of files
 
-- **Files.** The shown project's tree (new file/folder, rename, delete into `.bedrock-now-trash/` of its folder,
+- **Files.** The shown project's tree (new file/folder, rename, delete into `.devos-ade-trash/` of its folder,
   upload by drag and drop, download); files open in the editor and save with a "changed on disk" check; Claude's
   edits open as a side-by-side diff, and an open file that Claude changed reloads (or says it changed under your
   unsaved edits).
@@ -1465,7 +1464,7 @@ without GitHub or an off-site GitLab. It is on by default (**Settings › Claude
 SQLite, no SSH, no registration, no mail) with its repositories in a Docker volume of its own (`gitdata`: `./stack
 uninstall` removes it, turning the server off keeps it).
 
-- **Its web UI** is at `git.<your portal host>` (`http://git.bedrock-now.localhost`), behind the portal's sign-in like Admin
+- **Its web UI** is at `git.<your portal host>` (`http://git.devos-ade.localhost`), behind the portal's sign-in like Admin
   and Files. Sign in as `devos` — a site admin made by setup — with the password in `.env` (`LOCALGIT_ADMIN_PASSWORD`;
   `./stack status` says so). Repositories are private by default.
 - **From the Code page** it is a Git host called *Local git server*, connected by setup with a token scoped to repositories
@@ -1645,7 +1644,7 @@ file changed after you looked does not start.
 
 The server must listen on the sandbox's `localhost`, `127.0.0.1` or `0.0.0.0` (no `--host` needed); its own host
 checks pass unchanged (it is asked as `localhost:<port>`), and hot reload works. A preview is **sandbox content** on a
-site of its own (`p<port>-<capability>.bedrock-now-preview.localhost`): it gets none of DevOS ADE's cookies, cannot
+site of its own (`p<port>-<capability>.devos-ade-preview.localhost`): it gets none of DevOS ADE's cookies, cannot
 take the Code page away, and its link (with its capability) works until the Code page's unlock ends — Sign out or a
 new password end it. In the pane it is a frame from another site, so *the app's own* cookies mostly do not work there
 (cookies without `SameSite=None` are not sent to a frame from another site, and Safari or Chrome set to block
@@ -2071,7 +2070,7 @@ keeps working unchanged. One-time steps in the Tailscale admin console (a tag, f
 the browser terminal shared remotely (`REMOTE_TERMINAL=true`), the Code page (with it) and its previews
 (`REMOTE_PREVIEW=true`) —, a policy snippet and an auth key) are printed with your names filled in; when a setting
 adds a Service, `./stack up` says which one to define. The Services are named after `TS_SERVICE` (default
-`bedrock-now`; at most 54 characters). Your own domain instead
+`devos-ade`; at most 54 characters). Your own domain instead
 (`./stack remote enable domain bedrock.example.com`, Let's Encrypt wildcard via Cloudflare DNS), how the
 host-only session cookies work, and Cloudflare Tunnel: [docs/remote.md](docs/remote.md).
 
@@ -2603,15 +2602,10 @@ troubleshooting: [docs/voice.md](docs/voice.md).
 ./stack update --to main       # or any tag / branch
 ```
 
-**Formerly bedrock-now (renamed in v0.25.0).** The project and its repository are now DevOS ADE
-(`github.com/JongoDB-Labs/devos-ade`; GitHub redirects the old address). An install made before keeps its folder
-(`~/bedrock-now`), its addresses (`http://bedrock-now.localhost`), its `.env` and every setting name in it, and its
-data: there is nothing to do. `./stack update` moves the checkout's `origin` to the new address once; an installed
-app asks you to accept its new name and icon (until then it keeps the old ones, and `./stack open` finds it under
-either). An install older than v0.22.1 does not see the new release on Home (*could not check*: its check does not
-follow GitHub's redirect), so it offers no *Update now*, and its nightly automatic update, which waits for that check,
-may not start: run `./stack update` in its folder once — that always works (git follows the redirect). What kept the
-old name, and why: [docs/internal-names.md](docs/internal-names.md).
+**An install older than v0.22.1** does not see new releases on Home (*could not check*: its check does not follow
+GitHub's redirect from the project's earlier repository name), so it offers no *Update now*, and its nightly automatic
+update, which waits for that check, may not start: run `./stack update` in its folder once; that always works (git
+follows the redirect). What keeps an older spelling, and why: [docs/internal-names.md](docs/internal-names.md).
 
 When a newer release is out, Home shows an **update card**: one line for **every release since yours** (an update
 installs the newest, so a jump from v0.4.1 to v0.9.0 lists v0.5.0 to v0.9.0, each with its headline) and their
@@ -2678,7 +2672,7 @@ page turn is running when one is.
 macOS, a systemd user unit on Linux). Setup asks *Turn on one-click updates from Home? (Y/n)*, and so does the
 next interactive `./stack update` of an install that has no helper yet; yes is the default. A "no" is
 remembered and not asked again (an install that said no to the earlier opt-in question is asked once more).
-`./stack setup --yes` installs it only with `BEDROCK_NOW_HELPER=1`, and `./stack helper install` works any
+`./stack setup --yes` installs it only with `DEVOS_ADE_HELPER=1`, and `./stack helper install` works any
 time. The portal cannot install software on your computer by design, so this one step happens in a terminal;
 until then Home shows "One-click updates are off" with that command and a Copy button. With the helper, Home
 shows **Update now** (first in the update card, with `./stack update` folded under *From a terminal instead*),
@@ -2693,7 +2687,7 @@ a terminal"). The portal itself still cannot run anything: it can only leave a r
 that the helper checks strictly. The helper then runs one of those three `./stack` commands, one at a time (a
 terminal `./stack update`, `rollback`, `clean`, `restore` or `setup` makes it answer "Busy"), with its own
 limits (one a minute, 12 a day). It does not update a checkout that follows a branch unless
-`BEDROCK_NOW_HELPER_ALLOW_BRANCH=1` is in `.env`. Details and the security checklist:
+`DEVOS_ADE_HELPER_ALLOW_BRANCH=1` is in `.env`. Details and the security checklist:
 [docs/security.md](docs/security.md#the-update-helper). `./stack helper uninstall` removes it (and setup stops
 offering it). An update that finds nothing new ends as "Already up to date"; neither it nor `--force` touches
 the rollback target or the kept images.
@@ -2705,7 +2699,7 @@ the rollback target or the kept images.
 minutes of downtime, and Home's progress card ("Updated automatically to v0.4.0 at 03:04"). It installs only
 the release Home announced (the portal's daily check, so not with `UPDATE_CHECK=false`) when it is also the newest
 release tag after fetching origin, only on a checkout that is on a release (as `install.sh` leaves it; never a
-branch, whatever `BEDROCK_NOW_HELPER_ALLOW_BRANCH` says), and only while the stack runs. Each release is tried
+branch, whatever `DEVOS_ADE_HELPER_ALLOW_BRANCH` says), and only while the stack runs. Each release is tried
 **once**: if it fails, Home shows the error with **Roll back** right there (when the update had already changed
 the code), and that release is not tried again automatically (Update now tries again; a newer release is tried as
 usual). A release you rolled back, also with `./stack rollback` in a terminal, is not installed again either, and
@@ -2793,7 +2787,7 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
 | A model shows **DISABLED** (no Marketplace access, no model access, access denied), or "no models are usable with this AWS key" | Your AWS account or IAM user can't use it, or the region is wrong. Ask your AWS admin (see [above](#asking-your-aws-admin-for-model-access)), then run `./stack models --recheck`. |
 | A URL from this README doesn't work | Setup moved a port because something else used it (port 80 taken, or rootless Docker → the portal is on 8800). See `./stack status` or `PORTAL_PORT` / `*_PORT` in `.env`. |
 | The portal stopped answering after an update ("This site can't be reached", the smoke test's portal checks `000`) while `./stack status` shows every service healthy | Docker Desktop kept forwarding the port to the Caddy container the update replaced. `./stack restart caddy` mends it, then `./stack update` finishes the update. Since v0.14.1 every update, `./stack up` and restore notice this and recreate Caddy by themselves; if it still does not answer, restart Docker (on a Mac: quit Docker Desktop and open it again), then `./stack up`. |
-| `http://bedrock-now.localhost` doesn't resolve | Use a current Chrome, Edge, Firefox or Safari; they resolve `*.localhost` themselves. Command-line tools may not: `curl --resolve bedrock-now.localhost:80:127.0.0.1 http://bedrock-now.localhost/login`. |
+| `http://devos-ade.localhost` doesn't resolve | Use a current Chrome, Edge, Firefox or Safari; they resolve `*.localhost` themselves. Command-line tools may not: `curl --resolve devos-ade.localhost:80:127.0.0.1 http://devos-ade.localhost/login`. |
 | The portal shows its login page after you followed a link to it from another site | Expected with `SameSite=Strict`: such a visit arrives without the session cookie. Type or bookmark the URL. |
 | Forgot the portal password | Run `./stack password --show` in your DevOS ADE folder: it prints it (it is `PORTAL_PASSWORD` in `.env`; `./stack password` says which file). The sign-in page says the same, with this install's folder and Compose project on this computer (so a second copy is not mixed up; over remote access without the folder), and its **Show** button shows what you typed. After five wrong tries the login waits a few seconds (up to five minutes). |
 | The old Open WebUI address (`127.0.0.1:8080`/`8082`) stopped working after an update | By design: browsers reach every app through the portal now. Open the URL from `./stack status`. |
@@ -2827,7 +2821,7 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
 | LiteLLM's own form refuses `admin` | Once setup has created the database admin, sign in with `OPENWEBUI_ADMIN_EMAIL` / `LITELLM_UI_PASSWORD` (Home → Credentials shows both); the shared `admin` login is off. |
 | Forgot the LiteLLM admin password (you changed it in the LiteLLM UI) | Set a new one in **Settings → Account & security** (or `./stack config set LITELLM_UI_PASSWORD`): it is changed in LiteLLM itself, with the master key when the old one no longer works. Editing `LITELLM_UI_PASSWORD` in `.env` alone does nothing once the admin exists (`./stack up` then warns and repairs it). |
 | Home warns about prices (refused change, stale, LiteLLM/AWS gap) | See [docs/prices.md](docs/prices.md#guards). After checking a refused change: `./stack prices --accept`, then `./stack up`. |
-| A service doesn't come up during setup | Setup prints its last log lines; run `./stack logs <service>`, or re-run with `BEDROCK_NOW_VERBOSE=1 ./stack setup`. |
+| A service doesn't come up during setup | Setup prints its last log lines; run `./stack logs <service>`, or re-run with `DEVOS_ADE_VERBOSE=1 ./stack setup`. |
 | Anything else | `./stack status` and `./stack test`, then `./stack logs litellm` / `./stack logs open-webui`. |
 
 ## Advanced
@@ -2837,9 +2831,9 @@ stops working. Open the portal URL the update prints, sign in with `PORTAL_PASSW
   (`http://bn-test.localhost`). See [docs/advanced.md](docs/advanced.md#running-a-second-copy).
 - **Linux, SELinux, rootless Docker:** supported (Docker Engine 28+; your user in the `docker` group; rootless
   puts the portal on 8800). See [docs/advanced.md](docs/advanced.md#linux-selinux-and-rootless-docker).
-- **A non-`.localhost` portal name** is refused unless you set `BEDROCK_NOW_ALLOW_PUBLIC_HOST=1`: the portal is
+- **A non-`.localhost` portal name** is refused unless you set `DEVOS_ADE_ALLOW_PUBLIC_HOST=1`: the portal is
   plain HTTP. See [docs/advanced.md](docs/advanced.md#portal-host-name-port-and-the-public-host-opt-in).
-- **Verbose output:** `BEDROCK_NOW_VERBOSE=1 ./stack setup` shows the full docker compose output (also for
+- **Verbose output:** `DEVOS_ADE_VERBOSE=1 ./stack setup` shows the full docker compose output (also for
   `restore` and `rollback`, which otherwise leave out Compose's per-container "Waiting / Healthy" lines).
 - **Backups, restore on a new machine, AWS key rotation, adding models, the portal window:**
   [docs/advanced.md](docs/advanced.md).
@@ -2982,7 +2976,7 @@ Details: [docs/security.md](docs/security.md).
 ```
 stack, setup.sh, install.sh   the CLI, setup and the one-line installer
 bin/devos-claude            Claude Code wrapper
-bin/bedrock-now-helper        the update helper: one-click and automatic updates (./stack helper)
+bin/devos-ade-helper        the update helper: one-click and automatic updates (./stack helper)
 compose.yaml                  all services (images pinned)
 compose.tailscale.yaml        remote access: the Tailscale sidecar (only while ./stack remote is on)
 compose.domain.yaml           remote access under your own domain: Caddy with a DNS plugin

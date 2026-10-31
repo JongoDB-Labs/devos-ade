@@ -12,7 +12,7 @@ set -euo pipefail
 die() { printf 'devos-claude: %s\n' "$*" >&2; exit 1; }
 gw="${ANTHROPIC_BASE_URL:-}"
 key="${ANTHROPIC_AUTH_TOKEN:-}"
-mcp="$HOME/.config/bedrock-now/mcp.json"
+mcp="$HOME/.config/devos-ade/mcp.json"
 
 # usd SPEND -> "$12.40"; 4 decimals below $1, "<$0.0001" for a tiny non-zero spend (as on your computer)
 usd() {

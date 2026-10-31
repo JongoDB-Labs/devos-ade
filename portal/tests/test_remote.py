@@ -79,10 +79,10 @@ def callback(c, location, host=CHAT, headers=None):
 
 def test_local_only_settings_are_unchanged(settings):
     assert not settings.remote_on()
-    assert settings.portal_origins() == ["http://bedrock-now.localhost"]
-    assert settings.app_origins() == ["http://chat.bedrock-now.localhost", "http://admin.bedrock-now.localhost",
-                                      "http://files.bedrock-now.localhost"]
-    assert settings.app_urls()["admin"] == "http://admin.bedrock-now.localhost/ui/api-keys/"
+    assert settings.portal_origins() == ["http://devos-ade.localhost"]
+    assert settings.app_origins() == ["http://chat.devos-ade.localhost", "http://admin.devos-ade.localhost",
+                                      "http://files.devos-ade.localhost"]
+    assert settings.app_urls()["admin"] == "http://admin.devos-ade.localhost/ui/api-keys/"
 
 
 def test_per_app_hosts_and_remote_site_from_env():
@@ -107,7 +107,7 @@ def test_remote_is_off_without_a_host_or_mode(rs):
 
 
 def test_cookie_params_per_site(rs):
-    assert cookie_params(rs, False) == {"key": COOKIE, "domain": "bedrock-now.localhost", "secure": False}
+    assert cookie_params(rs, False) == {"key": COOKIE, "domain": "devos-ade.localhost", "secure": False}
     assert cookie_params(rs, True) == {"key": REMOTE_COOKIE, "domain": None, "secure": True}
     assert cookie_params(replace(rs, remote_mode="domain"), True)["domain"] is None
     assert REMOTE_COOKIE.startswith("__Host-")
@@ -121,14 +121,14 @@ def test_safe_next_allows_remote_https_hosts_only(rs, settings):
     assert safe_next(f"http://{CHAT}/", rs) == "/"            # http on a remote name
     assert safe_next(f"https://{CHAT}:8443/", rs) == "/"      # another port
     assert safe_next(f"https://other.{TN}/", rs) == "/"       # another node in the tailnet
-    assert safe_next("https://chat.bedrock-now.localhost/", rs) == "/"  # https on a local name
-    assert safe_next("http://chat.bedrock-now.localhost/", rs) == "http://chat.bedrock-now.localhost/"
+    assert safe_next("https://chat.devos-ade.localhost/", rs) == "/"  # https on a local name
+    assert safe_next("http://chat.devos-ade.localhost/", rs) == "http://chat.devos-ade.localhost/"
     assert safe_next(f"https://{CHAT}/", settings) == "/"     # remote off
 
 
 def test_same_origin_accepts_the_remote_origin_only_while_on(rs, settings):
     assert same_origin({"origin": R_ORIGIN}, rs)
-    assert same_origin({"origin": "http://bedrock-now.localhost"}, rs)
+    assert same_origin({"origin": "http://devos-ade.localhost"}, rs)
     assert same_origin({"referer": R_ORIGIN + "/login"}, rs)
     assert not same_origin({"origin": f"https://{CHAT}"}, rs)
     assert not same_origin({"origin": f"https://evil.{TN}"}, rs)
@@ -181,10 +181,10 @@ def test_remote_login_sets_a_host_only_cookie(rclient):
 
 
 def test_local_login_still_sets_the_local_cookie(rs):
-    with _client(rs, "http://bedrock-now.localhost") as c:
-        r = c.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://bedrock-now.localhost"})
+    with _client(rs, "http://devos-ade.localhost") as c:
+        r = c.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://devos-ade.localhost"})
         assert r.headers["set-cookie"].startswith(f"{COOKIE}=")
-        assert "domain=bedrock-now.localhost" in r.headers["set-cookie"].lower()
+        assert "domain=devos-ade.localhost" in r.headers["set-cookie"].lower()
         assert "secure" not in r.headers["set-cookie"].lower()
 
 
@@ -295,7 +295,7 @@ def test_handoff_without_a_session_goes_to_the_login(rclient):
 
 
 def test_handoff_and_callback_do_not_exist_locally(rs):
-    with _client(rs, "http://bedrock-now.localhost") as c:
+    with _client(rs, "http://devos-ade.localhost") as c:
         assert c.get("/auth/handoff?to=x").status_code == 404
         assert c.get("/auth/callback?t=x", headers={"Host": CHAT}).status_code == 404
 
@@ -351,7 +351,7 @@ def test_a_container_skipping_caddy_cannot_pose_as_remote(rclient):
     r = rclient.get("/login", headers=forged)
     assert r.status_code == 200
     r = rclient.post("/login", data={"password": "correct horse"},
-                     headers={**forged, "Origin": "http://bedrock-now.localhost"})
+                     headers={**forged, "Origin": "http://devos-ade.localhost"})
     assert r.headers["set-cookie"].startswith(f"{COOKIE}=")   # the local cookie, not a remote session
 
 
@@ -395,12 +395,12 @@ def test_home_gets_the_app_urls_of_its_site(rclient):
     urls = json.loads(m.group(1).replace("&quot;", '"'))
     assert urls == {"chat": f"https://{CHAT}/", "admin": f"https://bn-admin.{TN}/ui/api-keys/",
                     "files": f"https://bn-files.{TN}/rustfs/console/"}
-    # The remote app's own link scheme, as in its manifest (not the local copy's web+bedrocknow).
+    # The remote app's own link scheme, as in its manifest (not the local copy's web+devosade).
     scheme = rclient.get("/manifest.webmanifest", headers=REMOTE).json()["protocol_handlers"][0]["protocol"]
-    assert scheme != "web+bedrocknow" and f'<meta name="bn-app-scheme" content="{scheme}">' in r.text
+    assert scheme != "web+devosade" and f'<meta name="bn-app-scheme" content="{scheme}">' in r.text
     assert f"https://{CHAT}" in r.headers["content-security-policy"]
     assert "frame-src 'self' " in r.headers["content-security-policy"]   # the hand-off redirect inside frames
-    r = rclient.get("/api/logins", headers={**REMOTE, "X-Requested-With": "bedrock-now", "Cookie": f"{REMOTE_COOKIE}={tok}"})
+    r = rclient.get("/api/logins", headers={**REMOTE, "X-Requested-With": "devos-ade", "Cookie": f"{REMOTE_COOKIE}={tok}"})
     assert r.json()["admin"]["url"] == f"https://bn-admin.{TN}/ui/api-keys/"
 
 
@@ -408,7 +408,7 @@ def test_home_gets_the_app_urls_of_its_site(rclient):
 
 def test_remote_app_name_rule():
     from portal import webapp
-    assert webapp.app_name("bedrock-now.localhost", 80, remote=True) == "DevOS ADE (remote)"
+    assert webapp.app_name("devos-ade.localhost", 80, remote=True) == "DevOS ADE (remote)"
     assert webapp.app_name("bn-dev.localhost", 8800, remote=True) == "DevOS ADE (bn-dev, remote)"   # port: local only
     assert webapp.app_name("bn-dev.localhost", 8800) == "DevOS ADE (bn-dev, port 8800)"
 
@@ -423,9 +423,9 @@ def test_manifest_sw_and_icons_are_public_on_the_remote_site(rclient):
     assert m["related_applications"] == [{"platform": "webapp", "url": f"{R_ORIGIN}/manifest.webmanifest", "id": f"{R_ORIGIN}/"}]
     local = rclient.get("/manifest.webmanifest").json()
     assert local["name"] == "DevOS ADE"
-    assert local["related_applications"][0]["id"] == "http://bedrock-now.localhost/"
-    assert local["protocol_handlers"][0]["protocol"] == "web+bedrocknow"
-    assert m["protocol_handlers"][0]["protocol"].startswith("web+bedrocknow") and m["protocol_handlers"] != local["protocol_handlers"]
+    assert local["related_applications"][0]["id"] == "http://devos-ade.localhost/"
+    assert local["protocol_handlers"][0]["protocol"] == "web+devosade"
+    assert m["protocol_handlers"][0]["protocol"].startswith("web+devosade") and m["protocol_handlers"] != local["protocol_handlers"]
     assert rclient.get("/sw.js", headers=REMOTE).status_code == 200
     icon = m["icons"][0]["src"]
     assert rclient.get(icon, headers=REMOTE).status_code == 200

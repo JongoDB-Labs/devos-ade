@@ -49,7 +49,7 @@ def client(settings, tmp_path):
                         remote_app_hosts={"chat": "bn-chat.tail1234.ts.net", "admin": "bn-admin.tail1234.ts.net",
                                           "files": "bn-files.tail1234.ts.net"})
         c = TestClient(create_app(s, transport=httpx.MockTransport(provider)), follow_redirects=False,
-                       base_url="https://bn.tail1234.ts.net" if remote else "http://bedrock-now.localhost")
+                       base_url="https://bn.tail1234.ts.net" if remote else "http://devos-ade.localhost")
         c.__enter__()
         head = {**R_ORIGIN, **REMOTE} if remote else ORIGIN
         assert c.post("/login", data={"password": "correct horse"}, headers=head).status_code == 303

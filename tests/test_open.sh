@@ -1,18 +1,18 @@
 # shellcheck shell=bash
-# ./stack open: the installed web app, else a tab in the everyday browser (BEDROCK_NOW_OPEN_MODE=window: the old
+# ./stack open: the installed web app, else a tab in the everyday browser (DEVOS_ADE_OPEN_MODE=window: the old
 # separate --app window), and auto-open after setup / up.
 . "$STACK_DIR/lib/commands.sh"
 . "$STACK_DIR/lib/open.sh"
 
 _mac() { open_os() { echo Darwin; }; unset SSH_CONNECTION SSH_TTY; HOME="$TMP/home"; }
 _linux() { open_os() { echo Linux; }; unset SSH_CONNECTION SSH_TTY XDG_DATA_HOME; HOME="$TMP/home"; }
-_window() { export BEDROCK_NOW_OPEN_MODE=window; }
+_window() { export DEVOS_ADE_OPEN_MODE=window; }
 
 test_portal_url_defaults_and_overrides() {
   : > "$ENV_FILE"
-  assert_eq "$(portal_url)" "http://bedrock-now.localhost"
-  printf 'PORTAL_PORT=80\n' > "$ENV_FILE"; assert_eq "$(portal_url)" "http://bedrock-now.localhost"
-  printf 'PORTAL_PORT=8800\n' > "$ENV_FILE"; assert_eq "$(portal_url)" "http://bedrock-now.localhost:8800"
+  assert_eq "$(portal_url)" "http://devos-ade.localhost"
+  printf 'PORTAL_PORT=80\n' > "$ENV_FILE"; assert_eq "$(portal_url)" "http://devos-ade.localhost"
+  printf 'PORTAL_PORT=8800\n' > "$ENV_FILE"; assert_eq "$(portal_url)" "http://devos-ade.localhost:8800"
   printf 'COMPOSE_PROJECT_NAME=bn-dev\n' > "$ENV_FILE"; assert_eq "$(portal_url)" "http://bn-dev.localhost"
   printf 'COMPOSE_PROJECT_NAME=bn-dev\nPORTAL_HOST=my.localhost\nPORTAL_PORT=8801\n' > "$ENV_FILE"
   assert_eq "$(portal_url)" "http://my.localhost:8801"
@@ -24,11 +24,11 @@ test_portal_url_has_one_definition() { # ./stack open and the portal/status code
 
 test_profile_dir_is_per_project() {
   HOME="$TMP/home"; : > "$ENV_FILE"; _mac; _window
-  assert_eq "$(open_profile_dir)" "$TMP/home/Library/Application Support/bedrock-now"
+  assert_eq "$(open_profile_dir)" "$TMP/home/Library/Application Support/devos-ade"
   printf 'COMPOSE_PROJECT_NAME=bn-dev\n' > "$ENV_FILE"
-  assert_eq "$(open_profile_dir)" "$TMP/home/Library/Application Support/bedrock-now-bn-dev"
+  assert_eq "$(open_profile_dir)" "$TMP/home/Library/Application Support/devos-ade-bn-dev"
   _linux; unset XDG_DATA_HOME
-  assert_eq "$(open_profile_dir)" "$TMP/home/.local/share/bedrock-now-bn-dev"
+  assert_eq "$(open_profile_dir)" "$TMP/home/.local/share/devos-ade-bn-dev"
 }
 
 test_mac_chain_prefers_chrome_then_edge_brave_chromium() {
@@ -65,8 +65,8 @@ test_cmd_open_window_mode_mac_launches_app_window() {
   open_choose_browser() { echo "app:Microsoft Edge"; }
   open() { printf '%s\n' "$@" > "$TMP/args"; }
   cmd_open 2> "$TMP/err"
-  assert_eq "$(tr '\n' '|' < "$TMP/args")" "-na|Microsoft Edge|--args|--app=http://bedrock-now.localhost|--user-data-dir=$TMP/home/Library/Application Support/bedrock-now|--no-first-run|"
-  assert_contains "$(cat "$TMP/err")" "opening http://bedrock-now.localhost in Microsoft Edge"
+  assert_eq "$(tr '\n' '|' < "$TMP/args")" "-na|Microsoft Edge|--args|--app=http://devos-ade.localhost|--user-data-dir=$TMP/home/Library/Application Support/devos-ade|--no-first-run|"
+  assert_contains "$(cat "$TMP/err")" "opening http://devos-ade.localhost in Microsoft Edge"
 }
 
 test_cmd_open_window_mode_linux_launches_binary_detached() {
@@ -75,8 +75,8 @@ test_cmd_open_window_mode_linux_launches_binary_detached() {
   open_choose_browser() { echo "bin:$TMP/bin/chromium"; }
   cmd_open 2>/dev/null
   i=0; while [ ! -s "$TMP/args" ] && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
-  assert_eq "$(tr '\n' '|' < "$TMP/args")" "--app=http://bedrock-now.localhost:8800|--user-data-dir=$TMP/home/.local/share/bedrock-now|--no-first-run|"
-  [ -d "$TMP/home/.local/share/bedrock-now" ] || { echo "profile dir not created" >&2; return 1; }
+  assert_eq "$(tr '\n' '|' < "$TMP/args")" "--app=http://devos-ade.localhost:8800|--user-data-dir=$TMP/home/.local/share/devos-ade|--no-first-run|"
+  [ -d "$TMP/home/.local/share/devos-ade" ] || { echo "profile dir not created" >&2; return 1; }
 }
 
 test_cmd_open_window_mode_linux_browser_that_fails_at_once_falls_back() {
@@ -88,11 +88,11 @@ test_cmd_open_window_mode_linux_browser_that_fails_at_once_falls_back() {
   sleep() { local i=0; while kill -0 "$!" 2>/dev/null && [ "$i" -lt 300 ]; do command sleep 0.1; i=$((i + 1)); done; }
   out="$(PATH="$TMP/bin:/usr/bin:/bin" cmd_open 2>&1)"   # no xdg-open in $TMP/bin; /usr/bin has none on macOS
   assert_contains "$out" "did not start"
-  assert_contains "$out" "http://bedrock-now.localhost:8800"
+  assert_contains "$out" "http://devos-ade.localhost:8800"
   printf '#!/bin/sh\necho "XDG $*" > "%s/xdg"\n' "$TMP" > "$TMP/bin/xdg-open"; chmod +x "$TMP/bin/xdg-open"
   out="$(PATH="$TMP/bin:/usr/bin:/bin" cmd_open 2>&1)"
   assert_contains "$out" "default browser instead"
-  assert_eq "$(cat "$TMP/xdg")" "XDG http://bedrock-now.localhost:8800"
+  assert_eq "$(cat "$TMP/xdg")" "XDG http://devos-ade.localhost:8800"
 }
 
 _stub_mdfind() { # mdfind on PATH that "finds" only the bundle ids in $FOUND; logs every query
@@ -123,7 +123,7 @@ test_cmd_open_window_mode_mac_launches_spotlight_found_browser_by_bundle_id() {
   open_choose_browser() { echo "bundle:com.brave.Browser"; }
   open() { printf '%s\n' "$@" > "$TMP/args"; }
   cmd_open 2>/dev/null
-  assert_eq "$(tr '\n' '|' < "$TMP/args")" "-nb|com.brave.Browser|--args|--app=http://bedrock-now.localhost|--user-data-dir=$TMP/home/Library/Application Support/bedrock-now|--no-first-run|"
+  assert_eq "$(tr '\n' '|' < "$TMP/args")" "-nb|com.brave.Browser|--args|--app=http://devos-ade.localhost|--user-data-dir=$TMP/home/Library/Application Support/devos-ade|--no-first-run|"
 }
 
 test_cmd_open_falls_back_to_default_browser_then_url() {
@@ -131,16 +131,16 @@ test_cmd_open_falls_back_to_default_browser_then_url() {
   open_choose_browser() { echo "default:open"; }
   open() { echo "OPEN $*" > "$TMP/args"; }
   cmd_open 2>/dev/null
-  assert_eq "$(cat "$TMP/args")" "OPEN http://bedrock-now.localhost"
+  assert_eq "$(cat "$TMP/args")" "OPEN http://devos-ade.localhost"
   open_choose_browser() { echo none; }
-  assert_contains "$(cmd_open 2>&1)" "open http://bedrock-now.localhost in your browser"
+  assert_contains "$(cmd_open 2>&1)" "open http://devos-ade.localhost in your browser"
 }
 
 test_cmd_open_headless_prints_url_only() {
   : > "$ENV_FILE"; _linux; unset DISPLAY WAYLAND_DISPLAY
   open_choose_browser() { echo "LAUNCHED" > "$TMP/launched"; echo none; }
   out="$(cmd_open 2>&1)"
-  assert_contains "$out" "http://bedrock-now.localhost"
+  assert_contains "$out" "http://devos-ade.localhost"
   [ ! -f "$TMP/launched" ] || { echo "tried to launch a browser without a display" >&2; return 1; }
   _mac; export SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22"
   out="$(cmd_open 2>&1)"
@@ -151,13 +151,13 @@ test_cmd_open_headless_prints_url_only() {
 test_maybe_auto_open_respects_opt_out_and_tty() {
   cmd_open() { echo OPENED >> "$TMP/calls"; }
   _have_tty() { return 0; }
-  BEDROCK_NOW_NO_OPEN=1 maybe_auto_open
-  [ ! -f "$TMP/calls" ] || { echo "opened despite BEDROCK_NOW_NO_OPEN=1" >&2; return 1; }
+  DEVOS_ADE_NO_OPEN=1 maybe_auto_open
+  [ ! -f "$TMP/calls" ] || { echo "opened despite DEVOS_ADE_NO_OPEN=1" >&2; return 1; }
   _have_tty() { return 1; }
-  BEDROCK_NOW_NO_OPEN=0 ASSUME_YES=1 maybe_auto_open
+  DEVOS_ADE_NO_OPEN=0 ASSUME_YES=1 maybe_auto_open
   [ ! -f "$TMP/calls" ] || { echo "opened without a terminal" >&2; return 1; }
   _have_tty() { return 0; }
-  BEDROCK_NOW_NO_OPEN=0 ASSUME_YES=1 maybe_auto_open
+  DEVOS_ADE_NO_OPEN=0 ASSUME_YES=1 maybe_auto_open
   assert_eq "$(cat "$TMP/calls")" "OPENED"
 }
 
@@ -248,12 +248,12 @@ test_cmd_open_mac_without_app_opens_a_tab_in_the_everyday_profile_and_tips_once(
   open_choose_browser() { echo "app:Google Chrome"; }
   open() { printf '%s\n' "$@" > "$TMP/args"; }
   out="$(cmd_open 2>&1)"
-  assert_eq "$(tr '\n' '|' < "$TMP/args")" "-a|Google Chrome|http://bedrock-now.localhost|"   # no -n, --app or --user-data-dir
+  assert_eq "$(tr '\n' '|' < "$TMP/args")" "-a|Google Chrome|http://devos-ade.localhost|"   # no -n, --app or --user-data-dir
   assert_contains "$out" "Install app"
   assert_not_contains "$(cmd_open 2>&1)" "Install app"   # the tip is shown once
   open_choose_browser() { echo "bundle:com.brave.Browser"; }
   cmd_open 2>/dev/null
-  assert_eq "$(tr '\n' '|' < "$TMP/args")" "-b|com.brave.Browser|http://bedrock-now.localhost|"
+  assert_eq "$(tr '\n' '|' < "$TMP/args")" "-b|com.brave.Browser|http://devos-ade.localhost|"
 }
 
 test_cmd_open_linux_launches_the_installed_app() {
@@ -302,7 +302,7 @@ test_cmd_open_linux_without_app_opens_a_tab() {
   open_choose_browser() { echo "bin:$TMP/bin/chromium"; }
   cmd_open 2>/dev/null
   i=0; while [ ! -s "$TMP/args" ] && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
-  assert_eq "$(tr '\n' '|' < "$TMP/args")" "http://bedrock-now.localhost:8800|"
+  assert_eq "$(tr '\n' '|' < "$TMP/args")" "http://devos-ade.localhost:8800|"
 }
 
 test_window_mode_ignores_the_installed_app_and_profile_dirs_only_in_window_mode() {
@@ -311,7 +311,7 @@ test_window_mode_ignores_the_installed_app_and_profile_dirs_only_in_window_mode(
   open_choose_browser() { echo "app:Google Chrome"; }
   open() { printf '%s\n' "$@" > "$TMP/args"; }
   cmd_open 2>/dev/null
-  assert_contains "$(tr '\n' '|' < "$TMP/args")" "-na|Google Chrome|--args|--app=http://bedrock-now.localhost|"
+  assert_contains "$(tr '\n' '|' < "$TMP/args")" "-na|Google Chrome|--args|--app=http://devos-ade.localhost|"
   # --user-data-dir (a separate profile) appears only in the window-mode launcher
   assert_eq "$(grep -c -- '--user-data-dir' "$STACK_DIR/lib/open.sh")" 3
   assert_eq "$(sed -n '/^_open_window() {/,/^}/p' "$STACK_DIR/lib/open.sh" | grep -c -- '--user-data-dir')" 3
@@ -338,6 +338,6 @@ test_cmd_open_mac_falls_back_to_the_default_browser_when_the_chosen_one_fails() 
   open_choose_browser() { echo "app:Google Chrome"; }
   open() { [ "$1" != -a ] || return 1; echo "OPEN $*" > "$TMP/args"; }
   out="$(cmd_open 2>&1)"
-  assert_eq "$(cat "$TMP/args")" "OPEN http://bedrock-now.localhost"
+  assert_eq "$(cat "$TMP/args")" "OPEN http://devos-ade.localhost"
   assert_contains "$out" "default browser"
 }

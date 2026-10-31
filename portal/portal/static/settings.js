@@ -652,7 +652,7 @@
     AUTO_UPDATE_HOUR: hourRange(3), OPENROUTER_MODELS: "all", OPENROUTER_MAX_MODELS: "1000", EXPLABS_MODELS: "qwen3.8-27b",
     TERMINAL_EGRESS: "Internet only",
     WEBSEARCH_BACKEND: "automatic: the first one you set up, else the built-in SearXNG", TERMINAL_MEM_LIMIT: "4g", TERMINAL_AI_TOOLS: "all", REMOTE_MODE: "off", AWS_AUTH: "an access key", REMOTE_SUBNET: "10.255.255.248/29",
-    PORTAL_HOST: "bedrock-now.localhost", PORTAL_PORT: "80, else 8800", CHAT_HOST: "chat. + the portal's address",
+    PORTAL_HOST: "devos-ade.localhost", PORTAL_PORT: "80, else 8800", CHAT_HOST: "chat. + the portal's address",
     ADMIN_HOST: "admin. + the portal's address", FILES_HOST: "files. + the portal's address",
     TERMINAL_HOST: "terminal. + the portal's address", CODE_HOST: "code. + the portal's address",
     CODE_MODELS: "every enabled model", CODE_DEFAULT_MODEL: "Claude Sonnet (the Sonnet slot)" };

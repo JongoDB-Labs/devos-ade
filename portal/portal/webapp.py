@@ -9,7 +9,7 @@ The remote address (./stack remote: https://<remote host>) is another origin, so
 
 Each app also names itself, so a browser tab can tell whether it is installed and open it (install.js):
 related_applications lists the app itself (navigator.getInstalledRelatedApps), and protocol_handlers gives it a
-link scheme of its own, web+bedrocknow for the default address and web+bedrocknow<8 letters> for any other, so two
+link scheme of its own, web+devosade for the default address and web+devosade<8 letters> for any other, so two
 copies on one computer never open each other's app.
 """
 
@@ -20,9 +20,9 @@ import hashlib
 from . import appicons, brand
 from .config import Settings
 
-DEFAULT_HOST = "bedrock-now.localhost"
+DEFAULT_HOST = "devos-ade.localhost"
 BASE = brand.NAME
-SCHEME = "web+bedrocknow"
+SCHEME = "web+devosade"
 
 
 def app_name(host: str, port: int = 80, remote: bool = False) -> str:
@@ -44,8 +44,8 @@ def app_id(s: Settings, remote: bool = False) -> str:
 
 def protocol(s: Settings, remote: bool = False) -> str:
     """The app's link scheme (protocol_handlers): web+ and lowercase letters only. One per site, because the
-    operating system hands a scheme to one app: web+bedrocknow for the default local portal, otherwise
-    web+bedrocknow + 8 letters from the app id (bn-dev, another port, the remote site)."""
+    operating system hands a scheme to one app: web+devosade for the default local portal, otherwise
+    web+devosade + 8 letters from the app id (bn-dev, another port, the remote site)."""
     ident = app_id(s, remote)
     if ident == f"http://{DEFAULT_HOST}/":
         return SCHEME

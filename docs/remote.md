@@ -2,13 +2,13 @@
 
 Back to the [README](../README.md#remote-access).
 
-By default DevOS ADE is reachable only on the computer it runs on (`http://bedrock-now.localhost`, bound to
+By default DevOS ADE is reachable only on the computer it runs on (`http://devos-ade.localhost`, bound to
 `127.0.0.1`). `./stack remote` adds a second way in for **your own devices**, over HTTPS, without opening any
 port to the internet. The local address keeps working exactly as before.
 
 | Mode | Command | Addresses | Certificate | Who can connect |
 |---|---|---|---|---|
-| off (default) | `./stack remote disable` | `http://bedrock-now.localhost` | none (plain HTTP on 127.0.0.1) | this computer |
+| off (default) | `./stack remote disable` | `http://devos-ade.localhost` | none (plain HTTP on 127.0.0.1) | this computer |
 | **Tailscale** (recommended) | `./stack remote enable tailscale` | `https://bedrock-now.<tailnet>.ts.net` plus `-chat`, `-admin`, `-files` | Tailscale (Let's Encrypt, automatic) | devices in your tailnet that your policy allows, signed in to Tailscale as you; your Tailscale login **and** the portal password |
 | Own domain | `./stack remote enable domain bedrock.example.com` | `https://bedrock.example.com` plus `chat.`, `admin.`, `files.` | Let's Encrypt wildcard via DNS-01 (Cloudflare) | devices in your tailnet that your policy allows; the portal password |
 
@@ -117,7 +117,7 @@ computer running DevOS ADE.
   has not served before. (A
   Service the sidecar advertises before it is defined has not been tried on a real tailnet: define it first.)
 - **One address for every port.** On this computer each preview has a host of its own,
-  `p<port>-<capability>.bedrock-now-preview.localhost`. A Tailscale Service is one host name — no wildcards, and
+  `p<port>-<capability>.devos-ade-preview.localhost`. A Tailscale Service is one host name — no wildcards, and
   every name is in public certificate-transparency logs — so remotely there is one, `https://<base>-preview.<tailnet>.
   ts.net` (`preview.<your domain>` in own-domain mode), and a cookie on it says which port your browser previews:
   `__Host-bn_preview` (host-only, `Secure`, `HttpOnly`, `SameSite=Strict`, signed: the port, the Code page's unlock

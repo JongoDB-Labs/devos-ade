@@ -131,7 +131,7 @@ cmd_rollback() {
     "${at:+ on $(date -r "$at" '+%Y-%m-%d %H:%M' 2>/dev/null || date -d "@$at" '+%Y-%m-%d %H:%M' 2>/dev/null)}"
   printf 'Chats, files and spend recorded since then are replaced (a backup of the current state is taken first).\n'
   # The version rolled back to may predate the update helper: its unit would then start a script that is gone.
-  if declare -F helper_installed >/dev/null && helper_installed && ! git -C "$STACK_DIR" cat-file -e "$from:bin/bedrock-now-helper" 2>/dev/null; then
+  if declare -F helper_installed >/dev/null && helper_installed && ! git -C "$STACK_DIR" cat-file -e "$from:bin/devos-ade-helper" 2>/dev/null; then
     no_helper=1
     warn "${fromv:-$from} has no update helper: it is uninstalled at the end of the rollback (./stack helper install after the next update)"
   fi
@@ -207,10 +207,10 @@ cmd_rollback() {
   # An absolute path: the restored code may be a version whose restore resolves it against the current folder.
   # COMPOSE_PROGRESS=quiet (unless verbose) also reaches the older versions' restore, whose dc() keeps it.
   q="$(compose_quiet_env)"; [ -z "$q" ] || quiet=("$q")
-  env BEDROCK_NOW_NO_OPEN=1 ${quiet[@]+"${quiet[@]}"} "$STACK_DIR/stack" restore "$STACK_DIR/$backup" --yes ||
+  env DEVOS_ADE_NO_OPEN=1 ${quiet[@]+"${quiet[@]}"} "$STACK_DIR/stack" restore "$STACK_DIR/$backup" --yes ||
     die "the code is back at ${fromv:-$from}, but restoring $backup failed (see above) — fix the cause and run ./stack restore $backup"
   log "rollback: 3/3 start (./stack up with the restored code)"
-  env BEDROCK_NOW_NO_OPEN=1 ${quiet[@]+"${quiet[@]}"} "$STACK_DIR/stack" up --yes ||
+  env DEVOS_ADE_NO_OPEN=1 ${quiet[@]+"${quiet[@]}"} "$STACK_DIR/stack" up --yes ||
     die "the code and data are back, but ./stack up failed (see above) — run it again"
   [ "$no_stt" = 0 ] || stt_rollback_network_cleanup
   [ "$no_searxng" = 0 ] || websearch_rollback_network_cleanup

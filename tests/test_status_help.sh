@@ -5,17 +5,17 @@
 # Never touch real Docker images from these tests (lib/images.sh is covered by tests/test_images.sh).
 images_snapshot_before() { :; }; images_after_update() { :; }; disk_line() { echo "Disk: (stub)"; }
 
-_ports_env() { printf 'LITELLM_PORT=4000\nPORTAL_HOST=bedrock-now.localhost\nPORTAL_PORT=80\nSHARED_MCP_PORT=8765\n' > "$ENV_FILE"; }
+_ports_env() { printf 'LITELLM_PORT=4000\nPORTAL_HOST=devos-ade.localhost\nPORTAL_PORT=80\nSHARED_MCP_PORT=8765\n' > "$ENV_FILE"; }
 
 test_status_table_rows_and_urls() {
   _ports_env
   out="$(printf 'litellm\trunning\thealthy\t0\nrustfs\trunning\t\t0\nrustfs-init\texited\t\t0\nopen-webui\trunning\tstarting\t0\n' | status_table)"
   assert_contains "$out" "SERVICE"; assert_contains "$out" "STATE"; assert_contains "$out" "HEALTH"; assert_contains "$out" "URL"
-  assert_contains "$(printf '%s\n' "$out" | grep '^  litellm ')" "http://admin.bedrock-now.localhost/ui"
+  assert_contains "$(printf '%s\n' "$out" | grep '^  litellm ')" "http://admin.devos-ade.localhost/ui"
   assert_contains "$(printf '%s\n' "$out" | grep '^  litellm ')" "healthy"
-  assert_contains "$(printf '%s\n' "$out" | grep '^  open-webui ')" "http://chat.bedrock-now.localhost"
+  assert_contains "$(printf '%s\n' "$out" | grep '^  open-webui ')" "http://chat.devos-ade.localhost"
   assert_contains "$(printf '%s\n' "$out" | grep '^  open-webui ')" "starting"
-  assert_contains "$(printf '%s\n' "$out" | grep '^  rustfs ')" "http://files.bedrock-now.localhost"
+  assert_contains "$(printf '%s\n' "$out" | grep '^  rustfs ')" "http://files.devos-ade.localhost"
   assert_contains "$(printf '%s\n' "$out" | grep '^  shared-mcp ')" "not created"
   assert_contains "$(printf '%s\n' "$out" | grep '^  shared-mcp ')" "http://127.0.0.1:8765/mcp"
   assert_contains "$(printf '%s\n' "$out" | grep '^  postgres ')" "internal"

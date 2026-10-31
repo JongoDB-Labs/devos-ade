@@ -66,9 +66,9 @@ class ConfigError(RuntimeError):
 class Settings:
     password_hash: str = field(repr=False)  # PBKDF2 hash of PORTAL_PASSWORD (security.hash_password); never the password
     secret: str = field(repr=False)
-    host: str = "bedrock-now.localhost"
+    host: str = "devos-ade.localhost"
     port: int = 80
-    user_email: str = "admin@bedrock-now.local"
+    user_email: str = "admin@devos-ade.local"
     litellm_url: str = "http://litellm:4000"
     litellm_master_key: str = ""
     keys: tuple = ()  # ((alias, label, key), ...)
@@ -264,10 +264,10 @@ def from_env(env: dict | None = None) -> Settings:
     if code and remote_terminal and (env.get("REMOTE_CODE_HOST") or "").strip():
         remote_app_hosts[CODE] = env["REMOTE_CODE_HOST"].strip().lower()
     # a preview domain is a site of its own, <name>-preview.localhost, and no portal's site is ever one (lib/portal.sh
-    # refuses such a PORTAL_HOST): browsers count x.bedrock-now.localhost and bedrock-now.localhost as one site, so a
+    # refuses such a PORTAL_HOST): browsers count x.devos-ade.localhost and devos-ade.localhost as one site, so a
     # portal there — this one, or another install's — would get the previews' requests with its cookies
     preview = (env.get("PREVIEW_DOMAIN") or "").strip().lower() if code else ""
-    host = (env.get("PORTAL_HOST") or "bedrock-now.localhost").lower()
+    host = (env.get("PORTAL_HOST") or "devos-ade.localhost").lower()
     if preview and (not _PREVIEW_DOMAIN.fullmatch(preview) or site_of(preview) == site_of(host)
                     or any(site_of(h).endswith(PREVIEW_SITE_SUFFIX) for h in [host, *app_hosts.values()])):
         preview = ""
@@ -280,10 +280,10 @@ def from_env(env: dict | None = None) -> Settings:
     return Settings(
         password_hash=password_hash,
         secret=secret,
-        host=(env.get("PORTAL_HOST") or "bedrock-now.localhost").lower(),
+        host=(env.get("PORTAL_HOST") or "devos-ade.localhost").lower(),
         port=port,
         # Open WebUI matches trusted-header users by lower-cased email.
-        user_email=(env.get("PORTAL_USER_EMAIL") or "admin@bedrock-now.local").strip().lower(),
+        user_email=(env.get("PORTAL_USER_EMAIL") or "admin@devos-ade.local").strip().lower(),
         litellm_url=env.get("LITELLM_URL", "http://litellm:4000"),
         litellm_master_key=env.get("LITELLM_MASTER_KEY", ""),
         keys=keys,

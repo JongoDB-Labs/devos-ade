@@ -47,9 +47,9 @@ _stub_curl_auth() {
 }
 
 # GET /key answers: a free-tier account (no credits ever bought), a paying one, a key whose own limit is used up.
-FREE_KEY_JSON='{"data":{"label":"bedrock-now","limit":null,"limit_remaining":null,"usage":0,"is_free_tier":true,"free_model_daily_requests":{"used":0,"limit":50}}}'
-PAID_KEY_JSON='{"data":{"label":"bedrock-now","limit":null,"limit_remaining":null,"usage":2,"is_free_tier":false}}'
-SPENT_KEY_JSON='{"data":{"label":"bedrock-now","limit":5,"limit_remaining":0,"usage":5,"is_free_tier":false}}'
+FREE_KEY_JSON='{"data":{"label":"devos-ade","limit":null,"limit_remaining":null,"usage":0,"is_free_tier":true,"free_model_daily_requests":{"used":0,"limit":50}}}'
+PAID_KEY_JSON='{"data":{"label":"devos-ade","limit":null,"limit_remaining":null,"usage":2,"is_free_tier":false}}'
+SPENT_KEY_JSON='{"data":{"label":"devos-ade","limit":5,"limit_remaining":0,"usage":5,"is_free_tier":false}}'
 
 KEY_JSON='{"data":{"label":"sk-or-v1-abc...xyz","limit":10,"limit_reset":null,"limit_remaining":8.5,"include_byok_in_limit":false,"budgets":[{"scope":"key_limit","limit_usd":10,"spend_usd":1.5}],"usage":1.5,"usage_daily":0.1,"usage_weekly":0.5,"usage_monthly":1.25,"byok_usage":0,"is_free_tier":false,"free_model_daily_requests":{"used":3,"limit":1000,"remaining":997}}}'
 
@@ -225,7 +225,7 @@ test_dc_strips_openrouter_shell_vars() {
 
 test_update_setup_ignores_shell_openrouter_vars() {
   body="$(sed -n '/^cmd_update() {/,/^}/p' "$STACK_DIR/lib/commands.sh")"
-  assert_contains "$body" "-u OPENROUTER_API_KEY -u OPENROUTER_MODELS -u OPENROUTER_MAX_MODELS -u BEDROCK_NOW_OPENROUTER_FROM_ENV"
+  assert_contains "$body" "-u OPENROUTER_API_KEY -u OPENROUTER_MODELS -u OPENROUTER_MAX_MODELS -u DEVOS_ADE_OPENROUTER_FROM_ENV"
 }
 
 test_owui_models_names_tags_descriptions() {
@@ -636,18 +636,18 @@ test_validate_key_paths() {
   assert_eq "$(cat "$TMP/calls")" ""   # never sent
 }
 
-# Where the key goes: only the test suite (BEDROCK_NOW_TESTING=1) can change it; the test variable alone in a shell is
+# Where the key goes: only the test suite (DEVOS_ADE_TESTING=1) can change it; the test variable alone in a shell is
 # ignored, with a warning
 test_api_base_only_from_test_variable_while_testing() {
   local src='. lib/common.sh; . lib/openrouter.sh; echo "$OPENROUTER_API"'
   assert_eq "$(OPENROUTER_API=http://evil.example "$BASH" -c "$src")" "https://openrouter.ai/api/v1"
-  assert_eq "$(BEDROCK_NOW_TESTING=1 BEDROCK_NOW_TEST_OPENROUTER_API=https://t.example "$BASH" -c "$src")" "https://t.example"
+  assert_eq "$(DEVOS_ADE_TESTING=1 DEVOS_ADE_TEST_OPENROUTER_API=https://t.example "$BASH" -c "$src")" "https://t.example"
   local v
   for v in https://t.example http://127.0.0.1:9/v1; do
-    assert_eq "$(BEDROCK_NOW_TESTING='' BEDROCK_NOW_TEST_OPENROUTER_API="$v" "$BASH" -c "$src" 2> "$TMP/err")" "https://openrouter.ai/api/v1"
-    assert_contains "$(cat "$TMP/err")" "BEDROCK_NOW_TEST_OPENROUTER_API in your shell is ignored: only the test suite (BEDROCK_NOW_TESTING=1) may change where the OpenRouter key goes"
+    assert_eq "$(DEVOS_ADE_TESTING='' DEVOS_ADE_TEST_OPENROUTER_API="$v" "$BASH" -c "$src" 2> "$TMP/err")" "https://openrouter.ai/api/v1"
+    assert_contains "$(cat "$TMP/err")" "DEVOS_ADE_TEST_OPENROUTER_API in your shell is ignored: only the test suite (DEVOS_ADE_TESTING=1) may change where the OpenRouter key goes"
   done
-  assert_eq "$(BEDROCK_NOW_TESTING=1 "$BASH" -c "$src" 2> "$TMP/err")/$(cat "$TMP/err")" "https://openrouter.ai/api/v1/"   # unset: no word
+  assert_eq "$(DEVOS_ADE_TESTING=1 "$BASH" -c "$src" 2> "$TMP/err")/$(cat "$TMP/err")" "https://openrouter.ai/api/v1/"   # unset: no word
 }
 
 test_account_lines_key_and_credits() {
@@ -674,7 +674,7 @@ test_setup_adopts_env_key_only_when_asked_for() {
 
 test_setup_stores_valid_env_key_with_opt_in() {
   STACK_DIR="$TMP"; : > "$ENV_FILE"; _stub_curl_auth; _stub_curl
-  ASSUME_YES=1 BEDROCK_NOW_OPENROUTER_FROM_ENV=1 OPENROUTER_API_KEY=sk-or-v1-new OPENROUTER_MODELS=free setup_openrouter 2>/dev/null
+  ASSUME_YES=1 DEVOS_ADE_OPENROUTER_FROM_ENV=1 OPENROUTER_API_KEY=sk-or-v1-new OPENROUTER_MODELS=free setup_openrouter 2>/dev/null
   assert_eq "$(get_env OPENROUTER_API_KEY)" "sk-or-v1-new"
   assert_eq "$(get_env OPENROUTER_MODELS)" "free"
   assert_contains "$(cat "$TMP/litellm/openrouter-models.json")" '"enabled":4'
@@ -682,7 +682,7 @@ test_setup_stores_valid_env_key_with_opt_in() {
 
 test_setup_rejected_key_is_not_stored() {
   STACK_DIR="$TMP"; : > "$ENV_FILE"; _stub_curl_auth; _stub_curl
-  err="$(ASSUME_YES=1 BEDROCK_NOW_OPENROUTER_FROM_ENV=1 KEY_CODE=401 OPENROUTER_API_KEY=sk-or-v1-bad setup_openrouter 2>&1)"
+  err="$(ASSUME_YES=1 DEVOS_ADE_OPENROUTER_FROM_ENV=1 KEY_CODE=401 OPENROUTER_API_KEY=sk-or-v1-bad setup_openrouter 2>&1)"
   assert_contains "$err" "not stored; continuing with Bedrock only"
   assert_eq "$(get_env OPENROUTER_API_KEY)" ""
   assert_not_contains "$(cat "$TMP/calls")" "api/v1/models"
@@ -690,7 +690,7 @@ test_setup_rejected_key_is_not_stored() {
 
 test_setup_keeps_env_file_key_over_shell_key() {
   _with_cache; _stub_curl_auth; _stub_curl
-  ASSUME_YES=1 BEDROCK_NOW_OPENROUTER_FROM_ENV=1 OPENROUTER_API_KEY=sk-or-v1-other setup_openrouter 2>/dev/null
+  ASSUME_YES=1 DEVOS_ADE_OPENROUTER_FROM_ENV=1 OPENROUTER_API_KEY=sk-or-v1-other setup_openrouter 2>/dev/null
   assert_eq "$(get_env OPENROUTER_API_KEY)" "sk-or-v1-abc"
 }
 
@@ -954,7 +954,7 @@ test_key_with_its_limit_used_up_gets_free_models() {
 
 test_setup_new_key_on_a_free_account_gets_free_models() {
   STACK_DIR="$TMP"; : > "$ENV_FILE"; _stub_curl_auth; _stub_curl
-  out="$(KEY_BODY="$FREE_KEY_JSON" ASSUME_YES=1 BEDROCK_NOW_OPENROUTER_FROM_ENV=1 OPENROUTER_API_KEY=sk-or-v1-new setup_openrouter 2>&1)"
+  out="$(KEY_BODY="$FREE_KEY_JSON" ASSUME_YES=1 DEVOS_ADE_OPENROUTER_FROM_ENV=1 OPENROUTER_API_KEY=sk-or-v1-new setup_openrouter 2>&1)"
   assert_eq "$(get_env OPENROUTER_MODELS)" free
   assert_contains "$out" "so only free models are offered (OPENROUTER_MODELS=free)"
   assert_contains "$(cat "$TMP/litellm/openrouter-models.json")" '"enabled":4'
@@ -1139,7 +1139,7 @@ test_export_or_spaced_key_line_is_named_not_ignored() {
   done
   # setup neither asks for a key nor adopts the shell's while that line is there
   _have_tty() { return 0; }; ask_secret() { echo ASKED >> "$TMP/asked"; echo sk-or-v1-typed; }
-  OPENROUTER_API_KEY=sk-or-v1-shell BEDROCK_NOW_OPENROUTER_FROM_ENV=1 ASSUME_YES=1 setup_openrouter 2>/dev/null
+  OPENROUTER_API_KEY=sk-or-v1-shell DEVOS_ADE_OPENROUTER_FROM_ENV=1 ASSUME_YES=1 setup_openrouter 2>/dev/null
   setup_openrouter 2>/dev/null
   [ ! -e "$TMP/asked" ]
   assert_eq "$(get_env OPENROUTER_API_KEY)" ""
@@ -1151,7 +1151,7 @@ test_set_and_setup_clean_a_pasted_key() {
   OPENROUTER_API_KEY=' "sk-or-v1-q" ' cmd_openrouter set 2>/dev/null
   assert_eq "$(get_env OPENROUTER_API_KEY)" "sk-or-v1-q"
   printf 'X=1\n' > "$ENV_FILE"
-  ASSUME_YES=1 BEDROCK_NOW_OPENROUTER_FROM_ENV=1 OPENROUTER_API_KEY="sk-or-v1-s$(printf '\r')" setup_openrouter 2>/dev/null
+  ASSUME_YES=1 DEVOS_ADE_OPENROUTER_FROM_ENV=1 OPENROUTER_API_KEY="sk-or-v1-s$(printf '\r')" setup_openrouter 2>/dev/null
   assert_eq "$(get_env OPENROUTER_API_KEY)" "sk-or-v1-s"
   # a quoted key already in .env is tidied by setup (no check needed: Compose reads it the same way)
   printf "OPENROUTER_API_KEY='sk-or-v1-t'\n" > "$ENV_FILE"
@@ -1252,7 +1252,7 @@ test_models_from_the_environment_are_the_users_choice() {
   assert_not_contains "$out" "offered again"
   # the same for setup adopting a shell key with OPENROUTER_MODELS
   printf 'X=1\n' > "$ENV_FILE"; mkdir -p "$STATE_DIR"; : > "$STATE_DIR/openrouter-models-auto"
-  KEY_BODY="$PAID_KEY_JSON" ASSUME_YES=1 BEDROCK_NOW_OPENROUTER_FROM_ENV=1 OPENROUTER_API_KEY=sk-or-v1-new OPENROUTER_MODELS=free setup_openrouter 2>/dev/null
+  KEY_BODY="$PAID_KEY_JSON" ASSUME_YES=1 DEVOS_ADE_OPENROUTER_FROM_ENV=1 OPENROUTER_API_KEY=sk-or-v1-new OPENROUTER_MODELS=free setup_openrouter 2>/dev/null
   [ ! -e "$STATE_DIR/openrouter-models-auto" ]
   assert_eq "$(get_env OPENROUTER_MODELS)" free
 }

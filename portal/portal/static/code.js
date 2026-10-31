@@ -172,7 +172,7 @@
       const reply = (m) => { try { f.contentWindow.postMessage({ type: "bn-portal-export", id: d.id, ...m }, codeOrigin); } catch (_) { /* gone */ } };
       if (!(d.blob instanceof Blob) || typeof d.name !== "string" || !EXPORT_NAME.test(d.name) || d.blob.size > EXPORT_MAX) { reply({ ok: false, error: "that is not a zip an export can take" }); return; }
       try {
-        const r = await fetch(`/api/code-export?name=${encodeURIComponent(d.name)}`, { method: "POST", headers: { "X-Requested-With": "bedrock-now" }, body: d.blob, credentials: "same-origin" });
+        const r = await fetch(`/api/code-export?name=${encodeURIComponent(d.name)}`, { method: "POST", headers: { "X-Requested-With": "devos-ade" }, body: d.blob, credentials: "same-origin" });
         let j = {};
         try { j = await r.json(); } catch (_) { /* not JSON */ }
         if (!r.ok || !j.ok) { reply({ ok: false, error: String(j.error || `Files answered HTTP ${r.status}`).slice(0, 300) }); return; }

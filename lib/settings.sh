@@ -1312,11 +1312,11 @@ _cfg_todo_done() {
 _cfg_followup_start() {
   local d p
   [ -s "$(cfg_followup_todo)" ] && [ -x "$STACK_DIR/stack" ] || return 0
-  [ "${BEDROCK_NOW_NO_FOLLOWUP:-0}" != 1 ] || return 0
+  [ "${DEVOS_ADE_NO_FOLLOWUP:-0}" != 1 ] || return 0
   d="$(settings_dir)"
   [ "$(wc -c < "$d/followup.log" 2>/dev/null || echo 0)" -lt 200000 ] || mv -f "$d/followup.log" "$d/followup.log.old" 2>/dev/null || true
   set -m
-  ( trap '' HUP; cd "$STACK_DIR" && exec env BEDROCK_NOW_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" config followup ) </dev/null >> "$d/followup.log" 2>&1 &
+  ( trap '' HUP; cd "$STACK_DIR" && exec env DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" config followup ) </dev/null >> "$d/followup.log" 2>&1 &
   p=$!
   set +m
   ( umask 077; _xl_pid_line "$p" > "$d/followup.pid" )
@@ -1623,7 +1623,7 @@ settings_pending_check() {
   local f h; f="$(settings_dir)/pending.env"
   [ -f "$f" ] || return 0
   h="$(stack_lock_holder)"   # a change still running (not this ./stack up's own lock)
-  [ -z "$h" ] || [ "${h%% *}" = "${BEDROCK_NOW_LOCK_HELD:-}" ] || return 0
+  [ -z "$h" ] || [ "${h%% *}" = "${DEVOS_ADE_LOCK_HELD:-}" ] || return 0
   warn "a settings change ($(ENV_FILE="$f" get_env keys)) did not finish — .env keeps what it had then; checking the Chat and Admin sign-ins against it"
   rm -f "$f"
   SETTINGS_RECONCILE_NEEDED=1

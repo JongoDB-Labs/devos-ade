@@ -15,12 +15,12 @@
 #   openrouter_sync_owui              Open WebUI names/tags/prices, batched (needs a portal session)
 #   openrouter_up_hook / openrouter_after_up   ./stack up, before `compose up` / inside its portal session
 
-# Where the key goes. Only the test suite (BEDROCK_NOW_TESTING=1, as lib/host.sh) can point this at another server;
-# BEDROCK_NOW_TEST_OPENROUTER_API in a user's shell is ignored, with a warning, and so is an OPENROUTER_API there.
+# Where the key goes. Only the test suite (DEVOS_ADE_TESTING=1, as lib/host.sh) can point this at another server;
+# DEVOS_ADE_TEST_OPENROUTER_API in a user's shell is ignored, with a warning, and so is an OPENROUTER_API there.
 _or_api() {
-  if [ -n "${BEDROCK_NOW_TEST_OPENROUTER_API:-}" ]; then
-    if [ "${BEDROCK_NOW_TESTING:-}" = 1 ]; then printf '%s\n' "$BEDROCK_NOW_TEST_OPENROUTER_API"; return 0; fi
-    test_url_ignored BEDROCK_NOW_TEST_OPENROUTER_API "the OpenRouter key"
+  if [ -n "${DEVOS_ADE_TEST_OPENROUTER_API:-}" ]; then
+    if [ "${DEVOS_ADE_TESTING:-}" = 1 ]; then printf '%s\n' "$DEVOS_ADE_TEST_OPENROUTER_API"; return 0; fi
+    test_url_ignored DEVOS_ADE_TEST_OPENROUTER_API "the OpenRouter key"
   fi
   printf 'https://openrouter.ai/api/v1\n'
 }
@@ -825,7 +825,7 @@ or_plan_notes() {
 }
 
 # _or_env_key_wanted -> 0 if setup may adopt the OPENROUTER_API_KEY from the shell: interactively only after a
-# "y"; non-interactively (--yes) only with BEDROCK_NOW_OPENROUTER_FROM_ENV=1.
+# "y"; non-interactively (--yes) only with DEVOS_ADE_OPENROUTER_FROM_ENV=1.
 # Asked once: after the first interactive setup (.state/openrouter-asked) it is not asked again.
 _or_env_key_wanted() {
   if [ "${ASSUME_YES:-0}" != 1 ] && _have_tty && [ ! -e "$STATE_DIR/openrouter-asked" ]; then
@@ -833,14 +833,14 @@ _or_env_key_wanted() {
       [Yy]*) return 0 ;; *) return 1 ;;
     esac
   fi
-  [ "${BEDROCK_NOW_OPENROUTER_FROM_ENV:-0}" = 1 ] && return 0
-  log "OPENROUTER_API_KEY in your environment is ignored (OpenRouter is opt-in: ./stack openrouter set uses it, or BEDROCK_NOW_OPENROUTER_FROM_ENV=1)"
+  [ "${DEVOS_ADE_OPENROUTER_FROM_ENV:-0}" = 1 ] && return 0
+  log "OPENROUTER_API_KEY in your environment is ignored (OpenRouter is opt-in: ./stack openrouter set uses it, or DEVOS_ADE_OPENROUTER_FROM_ENV=1)"
   return 1
 }
 
 # setup_openrouter — setup step. Adds the empty paste-in line to .env if it has no OPENROUTER_API_KEY line. A key
 # already in .env is kept. Otherwise: a key in the shell's environment is adopted only after asking (or with
-# BEDROCK_NOW_OPENROUTER_FROM_ENV=1 when non-interactive), and an interactive setup asks once for an optional key
+# DEVOS_ADE_OPENROUTER_FROM_ENV=1 when non-interactive), and an interactive setup asks once for an optional key
 # (hidden). Never fatal: a rejected key means Bedrock only, with a warning. A newly adopted key, and a key pasted
 # into .env while OPENROUTER_MODELS is unset, get free models only when the account cannot pay (or_plan_models).
 setup_openrouter() {

@@ -72,7 +72,7 @@ test('greyed items: every reason has a target, none dead — a setting of the po
   // the ones this page gives
   for (const r of ['tool-left-out', 'claude-plan-off', 'tool-signin', 'auto-off', 'bypass-off', 'models-scope', 'terminal-remote-off', 'remote-preview', 'folder-read-only']) assert.ok(Object.hasOwn(SETUP_LINKS, r), r);
   // (framed: the reason alone goes to the portal — never a place; a tab of its own: the place's address)
-  assert.deepEqual(settingsRoute('auto-off', 'http://bedrock-now.localhost:80/x?y', true), { post: { type: 'bn-code-setup', reason: 'auto-off' }, to: 'http://bedrock-now.localhost' });
+  assert.deepEqual(settingsRoute('auto-off', 'http://devos-ade.localhost:80/x?y', true), { post: { type: 'bn-code-setup', reason: 'auto-off' }, to: 'http://devos-ade.localhost' });
   assert.deepEqual(settingsRoute('auto-off', 'https://p.example', false), { open: 'https://p.example/#settings/CODE_AUTO_MODE' });
   assert.deepEqual(settingsRoute('folder-read-only', 'https://p.example', false), { open: 'https://p.example/#settings/+project-folders' });
   assert.equal(settingsRoute('tool-signin', 'https://p.example', true), null, 'a sign-in: no Settings place');

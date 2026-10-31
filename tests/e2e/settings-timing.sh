@@ -79,10 +79,10 @@ python3 -I "$HERE/explabs-mock.py" "$XL_PORT" "$MOCK_DIR/reqs.jsonl" "$MOCK_DIR/
   2> "$MOCK_DIR/mock.err" &
 MOCK_PID=$!
 for _ in $(seq 1 20); do [ "$(curl -s -m 2 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$XL_PORT/api/models/qwen3.8-27b" 2>/dev/null)" = 200 ] && break; sleep 0.5; done
-TEST_VARS="BEDROCK_NOW_TESTING BEDROCK_NOW_TEST_EXPLABS_API"
-export BEDROCK_NOW_TESTING=1 BEDROCK_NOW_TEST_EXPLABS_API="http://127.0.0.1:$XL_PORT/v1"
+TEST_VARS="DEVOS_ADE_TESTING DEVOS_ADE_TEST_EXPLABS_API"
+export DEVOS_ADE_TESTING=1 DEVOS_ADE_TEST_EXPLABS_API="http://127.0.0.1:$XL_PORT/v1"
 # shellcheck disable=SC2034  # (lib.sh's helper start reads it)
-HELPER_KNOBS="SETTINGS_MIN_INTERVAL_S=1 BEDROCK_NOW_TESTING=1 BEDROCK_NOW_TEST_EXPLABS_API=http://127.0.0.1:$XL_PORT/v1"
+HELPER_KNOBS="SETTINGS_MIN_INTERVAL_S=1 DEVOS_ADE_TESTING=1 DEVOS_ADE_TEST_EXPLABS_API=http://127.0.0.1:$XL_PORT/v1"
 
 finish() {
   local rc=$?
@@ -119,11 +119,11 @@ stage() {
   claim_project
   [ "$OWN_STATE" != ours ] || { warn "project $PROJECT: $OWN_WHY — removing those leftovers first"; teardown; }
   if [ -e "$STACK" ]; then
-    [ -f "$STACK/.bedrock-now-e2e" ] || [ -z "$(ls -A "$STACK" 2>/dev/null)" ] || die "$STACK was not created by this suite"
+    [ -f "$STACK/.devos-ade-e2e" ] || [ -z "$(ls -A "$STACK" 2>/dev/null)" ] || die "$STACK was not created by this suite"
     chmod -R u+rwX "$STACK" 2>/dev/null; rm -rf "$STACK"
   fi
   ( umask 022; git clone --quiet --no-hardlinks "$ROOT" "$STACK" ) || die "git clone failed"
-  : > "$STACK/.bedrock-now-e2e"; printf '/.bedrock-now-e2e\n' >> "$STACK/.git/info/exclude"
+  : > "$STACK/.devos-ade-e2e"; printf '/.devos-ade-e2e\n' >> "$STACK/.git/info/exclude"
   if [ -n "$REF" ]; then
     git -C "$STACK" -c advice.detachedHead=false checkout -q "$(git -C "$ROOT" rev-parse "$REF^{commit}")" || die "no such ref: $REF"
   else
@@ -135,7 +135,7 @@ stage() {
       ( umask 022; mkdir -p "$STACK/$(dirname "$f")" && cp -p "$ROOT/$f" "$STACK/$f" ) || exit 1
     done || die "could not copy the untracked files"
     git -C "$STACK" add -A
-    git -C "$STACK" -c user.name=bedrock-now-e2e -c user.email=e2e@example.invalid commit -q -m "e2e: working tree" --allow-empty
+    git -C "$STACK" -c user.name=devos-ade-e2e -c user.email=e2e@example.invalid commit -q -m "e2e: working tree" --allow-empty
   fi
   cp "$STACK/.env.example" "$STACK/.env"; chmod 600 "$STACK/.env"
   pick_port pp 18580; pick_port lp 14580; pick_port mp 18965
@@ -147,8 +147,8 @@ stage() {
   seed_cheap_default
   # the terminal on (a terminal setting is one of the kinds), the Code page off (not timed here: its own image)
   tws="$(terminal_workspace_dir)"
-  [ ! -e "$tws" ] || [ -f "$tws/.bedrock-now-e2e" ] || die "$tws exists and was not created by this suite"
-  ( umask 077; mkdir -p "$tws" ) && : > "$tws/.bedrock-now-e2e"
+  [ ! -e "$tws" ] || [ -f "$tws/.devos-ade-e2e" ] || die "$tws exists and was not created by this suite"
+  ( umask 077; mkdir -p "$tws" ) && : > "$tws/.devos-ade-e2e"
   set_env TERMINAL_WORKSPACE "$tws"; set_env CODE_ENABLED false; set_env TERMINAL_ENABLED true
   # the stand-ins' fake keys (made here; the stand-in takes any)
   set_env EXPLABS_API_KEY "xpl_$(openssl rand -hex 20)"; set_env EXPLABS_MODELS qwen3.8-27b

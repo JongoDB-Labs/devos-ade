@@ -4,7 +4,7 @@
 # state dir as Compose project bne2e-vllm (never an installed stack), install vLLM's REAL image (the CPU build on x86-64
 # with AVX2, or the CUDA one when Docker has the NVIDIA runtime) and serve a REAL safetensors model from Hugging Face
 # (SmolLM2-135M-Instruct, about 270 MB). One throwaway LiteLLM container (compose.yaml's image, no database; named
-# bne2e-vllm-litellm, labelled io.bedrock-now.e2e=vllm) joins vLLM's internal network and serves this checkout's rendered
+# bne2e-vllm-litellm, labelled io.devos-ade.e2e=vllm) joins vLLM's internal network and serves this checkout's rendered
 # config. Checks:
 #   1  install pulls the image and waits for a model, with no container
 #   2  the download is served: vLLM loads it and answers its health check
@@ -43,15 +43,15 @@ fail() { printf 'FAIL  %s\n' "$*" >&2; FAILS=$((FAILS + 1)); CHECKS+=("FAIL	$*")
 ok() { printf 'ok    %s\n' "$*" >&2; CHECKS+=("ok	$*"); }
 [ "$(uname -s)" = Linux ] || { echo "vLLM runs on Linux: run this on a Linux host" >&2; exit 2; }
 command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 || { echo "needs docker with compose" >&2; exit 2; }
-P=bne2e-vllm; NET="${P}_vllm"; LL="$P-litellm"; LABEL=io.bedrock-now.e2e=vllm
+P=bne2e-vllm; NET="${P}_vllm"; LL="$P-litellm"; LABEL=io.devos-ade.e2e=vllm
 WORK="$ROOT/tests/e2e/work/$P"
 for c in $(docker ps -aq --filter "label=com.docker.compose.project=$P"); do
   echo "Compose project $P already has containers (an earlier run's?): docker compose -p $P down, then run this again" >&2; exit 2
 done
-if docker container inspect "$LL" >/dev/null 2>&1 && [ "$(docker container inspect -f '{{index .Config.Labels "io.bedrock-now.e2e"}}' "$LL")" != vllm ]; then echo "a container named $LL exists and is not this check's: not touching it" >&2; exit 2; fi
+if docker container inspect "$LL" >/dev/null 2>&1 && [ "$(docker container inspect -f '{{index .Config.Labels "io.devos-ade.e2e"}}' "$LL")" != vllm ]; then echo "a container named $LL exists and is not this check's: not touching it" >&2; exit 2; fi
 cleanup() {
   local rc=$? c
-  [ "$(docker container inspect -f '{{index .Config.Labels "io.bedrock-now.e2e"}}' "$LL" 2>/dev/null)" != vllm ] || docker rm -f "$LL" >/dev/null 2>&1
+  [ "$(docker container inspect -f '{{index .Config.Labels "io.devos-ade.e2e"}}' "$LL" 2>/dev/null)" != vllm ] || docker rm -f "$LL" >/dev/null 2>&1
   for c in $(docker ps -aq --filter "label=com.docker.compose.project=$P"); do docker rm -f "$c" >/dev/null 2>&1; done
   docker network rm "$NET" >/dev/null 2>&1 || true
   { [ "$rc" = 0 ] && [ "$FAILS" = 0 ]; } || for f in install pull rm uninstall failed up; do [ ! -f "$WORK/$f.log" ] || { mkdir -p "$OUT" && cp "$WORK/$f.log" "$OUT/vllm-linux-$f.log"; }; done 2>/dev/null

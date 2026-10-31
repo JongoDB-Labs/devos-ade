@@ -1,6 +1,6 @@
 # DevOS ADE reverse proxy: one login (the portal) in front of every browser UI.
 # Values come from the environment ({$VAR}, set in compose.yaml from .env) — nothing secret lives here.
-#   {$PORTAL_HOST}   portal: login + Home   (default bedrock-now.localhost)
+#   {$PORTAL_HOST}   portal: login + Home   (default devos-ade.localhost)
 #   {$CHAT_HOST}     Open WebUI             (default chat.PORTAL_HOST; logged in via the trusted X-Portal-User header)
 #   {$ADMIN_HOST}    LiteLLM admin UI       (default admin.PORTAL_HOST; signed in by the portal: app_sso below)
 #   {$FILES_HOST}    RustFS console         (default files.PORTAL_HOST; Host passed through unchanged: the console
@@ -16,7 +16,7 @@
 # (forward_auth) whether the bn_session cookie is valid; only the portal's answer can set X-Portal-User.
 # Directives inside `route` run in the order written (outside it, Caddy would run request_header AFTER
 # forward_auth).
-# The three apps may be framed by the portal ({$PORTAL_ORIGIN}, e.g. http://bedrock-now.localhost:8800) and
+# The three apps may be framed by the portal ({$PORTAL_ORIGIN}, e.g. http://devos-ade.localhost:8800) and
 # nothing else; the portal itself refuses all framing (its own CSP: frame-ancestors 'none').
 # Remote access (./stack remote, docs/remote.md) adds a second site from remote-{$REMOTE_MODE}.caddy, imported at
 # the end. Only that site sets X-Portal-Remote: 1; every block here deletes a client-sent one.

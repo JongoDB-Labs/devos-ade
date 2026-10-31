@@ -1,59 +1,59 @@
 {
- "name": "bedrock-now",
+ "name": "devos-ade",
  "networks": {
   "code-link": {
    "external": false,
-   "name": "bedrock-now_code-link"
+   "name": "devos-ade_code-link"
   },
   "default": {
    "external": false,
-   "name": "bedrock-now_default"
+   "name": "devos-ade_default"
   },
   "llamacpp": {
    "external": false,
-   "name": "bedrock-now_llamacpp"
+   "name": "devos-ade_llamacpp"
   },
   "localgit": {
    "external": false,
-   "name": "bedrock-now_localgit"
+   "name": "devos-ade_localgit"
   },
   "ollama": {
    "external": false,
-   "name": "bedrock-now_ollama"
+   "name": "devos-ade_ollama"
   },
   "remote": {
    "external": false,
-   "name": "bedrock-now_remote"
+   "name": "devos-ade_remote"
   },
   "stt": {
    "external": false,
-   "name": "bedrock-now_stt"
+   "name": "devos-ade_stt"
   },
   "terminal": {
    "external": false,
-   "name": "bedrock-now_terminal"
+   "name": "devos-ade_terminal"
   },
   "terminal-link": {
    "external": false,
-   "name": "bedrock-now_terminal-link"
+   "name": "devos-ade_terminal-link"
   },
   "vllm": {
    "external": false,
-   "name": "bedrock-now_vllm"
+   "name": "devos-ade_vllm"
   },
   "websearch": {
    "external": false,
-   "name": "bedrock-now_websearch"
+   "name": "devos-ade_websearch"
   },
   "websearch-out": {
    "external": false,
-   "name": "bedrock-now_websearch-out"
+   "name": "devos-ade_websearch-out"
   }
  },
  "services": {
   "caddy": {
    "container_name": null,
-   "image": "bedrock-now/caddy-dns:local",
+   "image": "devos-ade/caddy-dns:local",
    "labels": {},
    "networks": [
     "code-link",
@@ -87,7 +87,7 @@
   },
   "code": {
    "container_name": null,
-   "image": "bedrock-now/code:local",
+   "image": "devos-ade/code:local",
    "labels": {},
    "networks": [
     "code-link"
@@ -167,7 +167,7 @@
   },
   "open-webui": {
    "container_name": null,
-   "image": "bedrock-now/open-webui:local",
+   "image": "devos-ade/open-webui:local",
    "labels": {},
    "networks": [
     "default"
@@ -183,7 +183,7 @@
   },
   "portal": {
    "container_name": null,
-   "image": "bedrock-now/portal:local",
+   "image": "devos-ade/portal:local",
    "labels": {},
    "networks": [
     "default"
@@ -298,7 +298,7 @@
   },
   "shared-mcp": {
    "container_name": null,
-   "image": "bedrock-now/shared-mcp:local",
+   "image": "devos-ade/shared-mcp:local",
    "labels": {},
    "networks": [
     "default",
@@ -316,7 +316,7 @@
   },
   "stt": {
    "container_name": null,
-   "image": "bedrock-now/stt:local",
+   "image": "devos-ade/stt:local",
    "labels": {},
    "networks": [
     "stt"
@@ -326,7 +326,7 @@
   },
   "subs-chat": {
    "container_name": null,
-   "image": "bedrock-now/terminal:local",
+   "image": "devos-ade/terminal:local",
    "labels": {},
    "networks": [],
    "ports": [],
@@ -388,7 +388,7 @@
   },
   "terminal": {
    "container_name": null,
-   "image": "bedrock-now/terminal:local",
+   "image": "devos-ade/terminal:local",
    "labels": {},
    "networks": [
     "terminal"
@@ -469,71 +469,71 @@
  "volumes": {
   "caddy-data": {
    "external": false,
-   "name": "bedrock-now_caddy-data"
+   "name": "devos-ade_caddy-data"
   },
   "chat-socket": {
    "external": false,
-   "name": "bedrock-now_chat-socket"
+   "name": "devos-ade_chat-socket"
   },
   "code-socket": {
    "external": false,
-   "name": "bedrock-now_code-socket"
+   "name": "devos-ade_code-socket"
   },
   "code-state": {
    "external": false,
-   "name": "bedrock-now_code-state"
+   "name": "devos-ade_code-state"
   },
   "gitdata": {
    "external": false,
-   "name": "bedrock-now_gitdata"
+   "name": "devos-ade_gitdata"
   },
   "owui": {
    "external": false,
-   "name": "bedrock-now_owui"
+   "name": "devos-ade_owui"
   },
   "pgdata": {
    "external": false,
-   "name": "bedrock-now_pgdata"
+   "name": "devos-ade_pgdata"
   },
   "portal-state": {
    "external": false,
-   "name": "bedrock-now_portal-state"
+   "name": "devos-ade_portal-state"
   },
   "preview-socket": {
    "external": false,
-   "name": "bedrock-now_preview-socket"
+   "name": "devos-ade_preview-socket"
   },
   "s3data": {
    "external": false,
-   "name": "bedrock-now_s3data"
+   "name": "devos-ade_s3data"
   },
   "subs-chat-claude": {
    "external": false,
-   "name": "bedrock-now_subs-chat-claude"
+   "name": "devos-ade_subs-chat-claude"
   },
   "subs-chat-codex": {
    "external": false,
-   "name": "bedrock-now_subs-chat-codex"
+   "name": "devos-ade_subs-chat-codex"
   },
   "subs-chat-copilot": {
    "external": false,
-   "name": "bedrock-now_subs-chat-copilot"
+   "name": "devos-ade_subs-chat-copilot"
   },
   "subs-chat-grok": {
    "external": false,
-   "name": "bedrock-now_subs-chat-grok"
+   "name": "devos-ade_subs-chat-grok"
   },
   "tailscale-state": {
    "external": false,
-   "name": "bedrock-now_tailscale-state"
+   "name": "devos-ade_tailscale-state"
   },
   "terminal-home": {
    "external": false,
-   "name": "bedrock-now_terminal-home"
+   "name": "devos-ade_terminal-home"
   },
   "terminal-socket": {
    "external": false,
-   "name": "bedrock-now_terminal-socket"
+   "name": "devos-ade_terminal-socket"
   }
  }
 }

@@ -13,7 +13,7 @@ def settings(tmp_path):
     lit = tmp_path / "litellm"; lit.mkdir()
     cat = tmp_path / "catalog"; cat.mkdir()
     return Settings(
-        password_hash=PASSWORD_HASH, secret=SECRET, host="bedrock-now.localhost", port=80, user_email="admin@example.com",
+        password_hash=PASSWORD_HASH, secret=SECRET, host="devos-ade.localhost", port=80, user_email="admin@example.com",
         litellm_master_key="sk-master",
         keys=(("claude-code", "Claude Code", "sk-cc"), ("open-webui", "Chat (Open WebUI)", "sk-ow"), ("setup", "Setup and tests", "")),
         litellm_ui_password="ui-pass", rustfs_access_key="bn-access", rustfs_secret_key="rustfs-secret",

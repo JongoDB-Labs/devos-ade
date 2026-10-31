@@ -123,7 +123,7 @@ const answers = {
   'project.settings': () => ({ result: { files: [], hash: null, verifiable: true, over: null } }),
   'fs.grep': () => ({ result: { engine: 'ripgrep', files: [{ path: 'src/a.ts', hits: [{ line: 1, text: 'needle', col: 0, len: 6 }] }], hits: 1 } }),
   'fs.list': (req) => ({ result: { path: req.path, entries: [{ name: 'a.ts', type: 'file', size: 1, mtimeMs: 1 }], truncated: false } }),
-  'fs.delete': (req) => ({ result: { trash: '.bedrock-now-trash/t/a.ts' } }),
+  'fs.delete': (req) => ({ result: { trash: '.devos-ade-trash/t/a.ts' } }),
   'git.diff': () => ({ result: { repo: true, head: 'a'.repeat(40), files: [{ path: 'src/a.ts', mtimeMs: 1, size: 3, type: 'file' }], untracked: [] },
     stdout: Buffer.from('diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-a\n+b\n') }),
   'git.status': (req) => ({ result: { repo: true, root: req.repo, branch: 'main', detached: false, head: 'a'.repeat(40), upstream: null, ahead: null, behind: null,

@@ -1,5 +1,5 @@
 # The portal's test image plus Chromium on a virtual display: for check.py only (run.sh), never shipped.
-ARG BASE=bedrock-now-portal-e2e-base
+ARG BASE=devos-ade-portal-e2e-base
 FROM ${BASE}
 USER root
 RUN apt-get -o Acquire::Retries=5 update -qq \

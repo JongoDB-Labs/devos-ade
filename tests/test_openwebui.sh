@@ -329,7 +329,7 @@ test_open_webui_one_pin_everywhere_and_a_local_image_no_pull_replaces() {
   # (the e2e reads it from compose.yaml as before: its tag)
   assert_eq "$(sed -n "s|^[[:space:]]*image:[[:space:]]*[^[:space:]]*open-webui/open-webui:\\([^@[:space:]]*\\).*|\\1|p" "$STACK_DIR/compose.yaml" | head -n 1)" "$tag"
   # a local image of this project, built here, never pulled
-  assert_contains "$svc" 'image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/open-webui:local'
+  assert_contains "$svc" 'image: ${COMPOSE_PROJECT_NAME:-devos-ade}/open-webui:local'
   assert_contains "$svc" 'pull_policy: never'
   assert_contains "$svc" 'context: ./open-webui'
   # no other reference to Open WebUI's registry image anywhere in compose files

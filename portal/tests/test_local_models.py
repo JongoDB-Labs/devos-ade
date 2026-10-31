@@ -15,8 +15,8 @@ from portal import local_models as lm
 from portal import settings as st
 from portal.app import create_app
 
-ORIGIN = {"Origin": "http://bedrock-now.localhost"}
-API = {"X-Requested-With": "bedrock-now"}
+ORIGIN = {"Origin": "http://devos-ade.localhost"}
+API = {"X-Requested-With": "devos-ade"}
 H = {**ORIGIN, **API, "Content-Type": "application/json"}
 GB = 1024 ** 3
 
@@ -213,7 +213,7 @@ def app(settings, tmp_path):
     (sd / "helper-settings.json").write_text(json.dumps({"settings": 1, "diagnostics": list(st.DIAG_ACTIONS), "local": list(st.LOCAL_ACTIONS) + ["local-server", "local-probe", "local-stop"],
                                                           "written_at": int(time.time())}))
     s = replace(settings, status_dir=sd, request_dir=rq, shared_mcp_token="mcp-token-0123456789abcdef")
-    c = TestClient(create_app(s, transport=httpx.MockTransport(hf)), follow_redirects=False, base_url="http://bedrock-now.localhost")
+    c = TestClient(create_app(s, transport=httpx.MockTransport(hf)), follow_redirects=False, base_url="http://devos-ade.localhost")
     c.__enter__()
     assert c.post("/login", data={"password": PW}, headers=ORIGIN).status_code == 303
     yield c, sd, rq
@@ -470,7 +470,7 @@ def test_nothing_without_the_owners_session_and_password_can_add_or_change_a_mod
     sd, rq = tmp_path / "status", tmp_path / "requests"
     sd.mkdir(); rq.mkdir()
     s = replace(settings, status_dir=sd, request_dir=rq, shared_mcp_token="mcp-token-0123456789abcdef")
-    with TestClient(create_app(s, transport=httpx.MockTransport(hf)), follow_redirects=False, base_url="http://bedrock-now.localhost") as c:
+    with TestClient(create_app(s, transport=httpx.MockTransport(hf)), follow_redirects=False, base_url="http://devos-ade.localhost") as c:
         body = json.dumps({"password": PW, "action": "local-pull", "repo": "bartowski/SmolLM2-135M-Instruct-GGUF", "quant": "Q4_K_M"})
         assert c.post("/api/local-models/change", headers=H, content=body).status_code in (401, 403)
         assert c.post("/api/settings/apply", headers=H, content=json.dumps({"password": PW, "base": "0" * 64, "set": {"MODEL_SERVERS": "x=http://10.0.0.5:8000"}})).status_code == 401
@@ -543,7 +543,7 @@ def test_check_server_keeps_the_session_the_header_the_origin_the_helper_and_the
     assert c.post("/api/local-models/probe", headers={**API, "Origin": "http://evil.example", "Content-Type": "application/json"}, content=body).status_code == 403
     assert not list(rq.glob("act-*.json"))
     with TestClient(create_app(replace(settings, status_dir=sd, request_dir=rq), transport=httpx.MockTransport(hf)), follow_redirects=False,
-                    base_url="http://bedrock-now.localhost") as anon:
+                    base_url="http://devos-ade.localhost") as anon:
         assert anon.post("/api/local-models/probe", headers=H, content=body).status_code in (401, 403)     # not signed in: refused, no password needed to say so
     assert not list(rq.glob("act-*.json"))
     assert _probe(c, url="http://127.0.0.1:8000").status_code == 202
@@ -632,7 +632,7 @@ def test_the_form_needs_the_session_the_header_the_origin_and_a_helper_that_does
     assert _srv(c, "probe", url="http://10.0.0.5:8000").status_code == 503                                # an older helper: told to refresh it
     assert not list(rq.glob("act-*.json"))
     with TestClient(create_app(replace(settings, status_dir=sd, request_dir=rq), transport=httpx.MockTransport(hf)), follow_redirects=False,
-                    base_url="http://bedrock-now.localhost") as anon:
+                    base_url="http://devos-ade.localhost") as anon:
         assert anon.post("/api/local-models/server", headers=H, content=body).status_code in (401, 403)
 
 
@@ -725,7 +725,7 @@ def test_pause_keeps_the_session_the_header_the_origin_the_remote_rule_and_a_hel
     assert c.post("/api/local-models/stop", headers={**ORIGIN, "Content-Type": "application/json"}, content=body).status_code in (400, 403)
     assert c.post("/api/local-models/stop", headers={**API, "Origin": "http://evil.example", "Content-Type": "application/json"}, content=body).status_code == 403
     with TestClient(create_app(replace(settings, status_dir=sd, request_dir=rq), transport=httpx.MockTransport(hf)), follow_redirects=False,
-                    base_url="http://bedrock-now.localhost") as anon:
+                    base_url="http://devos-ade.localhost") as anon:
         assert anon.post("/api/local-models/stop", headers=H, content=body).status_code in (401, 403)
     assert not list(rq.glob("act-*.json"))
     (sd / "helper-settings.json").write_text(json.dumps({"settings": 1, "local": list(st.LOCAL_ACTIONS) + ["local-server", "local-probe"], "written_at": int(time.time())}))

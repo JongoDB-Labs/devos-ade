@@ -35,7 +35,7 @@ def block(text, head):
 
 
 def test_home_loads_nav_js_before_the_first_paint_and_has_the_button(client):
-    r = client.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://bedrock-now.localhost"})
+    r = client.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://devos-ade.localhost"})
     assert r.status_code == 303
     page = client.get("/").text
     # not deferred (a collapsed sidebar is collapsed from the first paint), in <head>, before the deferred scripts

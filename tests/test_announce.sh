@@ -80,8 +80,8 @@ test_admin_email_default_without_git() {
   printf 'X=1\n' > "$ENV_FILE"; ASSUME_YES=1
   git() { return 1; }
   setup_secrets 2> "$TMP/err"
-  assert_eq "$(get_env OPENWEBUI_ADMIN_EMAIL)" "admin@bedrock-now.local"
-  assert_contains "$(cat "$TMP/err")" "admin@bedrock-now.local (default; to use another address"
+  assert_eq "$(get_env OPENWEBUI_ADMIN_EMAIL)" "admin@devos-ade.local"
+  assert_contains "$(cat "$TMP/err")" "admin@devos-ade.local (default; to use another address"
 }
 
 test_env_aws_key_prompt_defaults_to_yes_for_long_lived_key() {

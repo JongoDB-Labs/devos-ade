@@ -86,10 +86,10 @@ code_secrets() {
 
 # code_preview_domain — PREVIEW_DOMAIN in .env: the previews' own site, p<port>-<capability>.PREVIEW_DOMAIN, derived
 # from PORTAL_HOST at every enable/up (like PORTAL_ORIGIN): <its site's first label>-preview.localhost —
-# bedrock-now.localhost → bedrock-now-preview.localhost, bn-dev.localhost → bn-dev-preview.localhost. Browsers count
+# devos-ade.localhost → devos-ade-preview.localhost, bn-dev.localhost → bn-dev-preview.localhost. Browsers count
 # a .localhost name's last two labels as its site, so a preview there is another site than the portal's: none of the
 # portal's cookies reach it (docs/security.md "Previews of dev servers"). A PORTAL_HOST outside .localhost
-# (BEDROCK_NOW_ALLOW_PUBLIC_HOST) gets <project>-preview.localhost: this computer's previews are on *.localhost, this computer in every browser
+# (DEVOS_ADE_ALLOW_PUBLIC_HOST) gets <project>-preview.localhost: this computer's previews are on *.localhost, this computer in every browser
 # (over remote access they have a host of their own: code_remote_sync).
 code_preview_domain() {
   local h d

@@ -7,7 +7,7 @@
 // allowlisted thing:
 //   claude          Claude Code in stream-json mode (the Agent SDK's arguments, checked against an allowlist), with
 //                   this container's environment (LiteLLM through the gateway, the terminal key) and the shared MCP
-//                   server (~/.config/bedrock-now/mcp.json, written by bn-terminal)
+//                   server (~/.config/devos-ade/mcp.json, written by bn-terminal)
 //                   — or, plan: true, Claude on your plan: claude-sub's folder and none of the stack's variables (planEnv)
 //   cli             a plugin / marketplace / MCP listing or change (`claude plugin …`, `claude mcp …`: fixed shapes)
 //   agent           a tool of your subscriptions (Codex, Copilot, Cursor, Grok) on its interface for other apps
@@ -25,7 +25,7 @@
 //   fs.list / fs.read / fs.write / fs.mkdir / fs.rename / fs.delete
 //                   files under /workspace (the code container mounts no folder of yours). Paths are resolved here,
 //                   in the sandbox's own view, so a symlink can only lead somewhere this container sees anyway. A
-//                   delete moves into the root's trash (<root>/.bedrock-now-trash)
+//                   delete moves into the root's trash (<root>/.devos-ade-trash)
 //   fs.find         paths under the root whose name matches (a bounded walk: the @-picker over the whole folder)
 //   fs.zip          the root's files as a zip, streamed (Export to Files): what git keeps (or a bounded walk without
 //                   dependency folders), size-capped; dry: only how many files and bytes
@@ -69,7 +69,7 @@
 //                   Bring your setup: items of your Claude Code setup on the computer, checked on the Code page, copied
 //                   into this sandbox's own ~/.claude — a fixed set of destinations (CLAUDE.md, settings.json,
 //                   keybindings.json, agents/, commands/, output-styles/, skills/<name>/), never through a link, only while
-//                   each is as the page showed it, what it replaces moved to ~/.claude/.bedrock-now-trash/; the sandbox's
+//                   each is as the page showed it, what it replaces moved to ~/.claude/.devos-ade-trash/; the sandbox's
 //                   Git name and email; which programs the sandbox has (looked up, never run)
 //   ports.list / ports.stop
 //                   the servers listening on the sandbox's loopback or all addresses (/proc/net/tcp, tcp6) with their
@@ -130,7 +130,7 @@ const CLAUDE = process.env.BN_CLAUDE_BIN || '/usr/local/bin/claude';
 // The PIDs of the claude processes started here (with their start time), so that the next bn-coded can end the ones
 // a killed bn-coded left behind (§ orphans below). In /tmp: a container restart ends them all anyway.
 const CHILDREN = process.env.BN_CODE_CHILDREN || '/tmp/bn-coded/children';
-const MCP_CONFIG = path.join(os.homedir(), '.config/bedrock-now/mcp.json');
+const MCP_CONFIG = path.join(os.homedir(), '.config/devos-ade/mcp.json');
 const CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 // Claude on your plan (Settings › Your AI subscriptions › the switch; the code container asks for it only while the
 // switch is on): Claude Code with claude-sub's folder — its own login, its own transcripts — and none of the stack's
@@ -465,7 +465,7 @@ export function cliEnv(base = process.env) {
 }
 
 const printable = (s, n) => String(s).replace(/[^\x20-\x7e]/g, '?').slice(0, n);
-const TRASH = '.bedrock-now-trash';
+const TRASH = '.devos-ade-trash';
 
 // --- the folders of this computer mounted beside the workspace (./stack project; lib/projects.sh): BN_CODE_ROOTS,
 // --- a JSON list of their paths here, set by the generated compose file — each a top of its own, like /workspace.
@@ -609,7 +609,7 @@ function existing(p, root = WS_ROOT) {
   if (missingInside(p, root)) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
   throw new Error('not in the workspace');
 }
-// trashFor(real, root) -> the trash a deleted entry goes to: its root's (<root>/.bedrock-now-trash) when it is in the
+// trashFor(real, root) -> the trash a deleted entry goes to: its root's (<root>/.devos-ade-trash) when it is in the
 // root, else its top's (the workspace's, or a folder of this computer's)
 const trashFor = (real, root) => path.join(real.startsWith(root.abs + '/') ? root.abs : topOf(real) ?? WORKSPACE, TRASH);
 // newTrashDir(trash) -> a fresh <trash>/<time>-<random> (the trash made with a .gitignore of "*": git leaves it alone)
@@ -952,7 +952,7 @@ export function sessionsExport(send, id, cwd) {
 // --- container decides what a copy says; here only where it goes: a fixed set of destinations in ~/.claude (CLAUDE.md,
 // --- settings.json, keybindings.json, agents/, commands/, output-styles/ and skills/<name>/), never through a link, only
 // --- while the destination is still as the page showed it (its SHA-256, or a folder's digest), a temporary file or
-// --- folder renamed into place — what it replaces moved to ~/.claude/.bedrock-now-trash/ first, never deleted; the
+// --- folder renamed into place — what it replaces moved to ~/.claude/.devos-ade-trash/ first, never deleted; the
 // --- sandbox's Git name and email (git config --file ~/.gitconfig, only while they are as shown); and which programs the
 // --- sandbox has (a name looked up in PATH, a path looked at: nothing is ever run). MCP servers go through the `cli`
 // --- op (claude mcp add-json); plugins through Claude Code's own install. ---
@@ -960,8 +960,8 @@ const SETUP_PLAIN = '[A-Za-z0-9][A-Za-z0-9._-]{0,99}';
 export const SETUP_DEST = new RegExp(`^(CLAUDE\\.md|settings\\.json|keybindings\\.json|(agents|commands)/(${SETUP_PLAIN}/){0,3}${SETUP_PLAIN}\\.md|output-styles/${SETUP_PLAIN}\\.md|skills/${SETUP_PLAIN})$`);
 const SETUP_PART = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,199}$/;
 export const SETUP_LIMITS = Object.freeze({ file: 1 << 20, dirFiles: 300, dirBytes: 8 << 20, depth: 8, dests: 20, which: 50, global: 32 << 20, servers: 200 });
-const SETUP_TMP = () => path.join(CONFIG_DIR, '.bedrock-now-tmp');
-const SETUP_TRASH = () => path.join(CONFIG_DIR, '.bedrock-now-trash');
+const SETUP_TMP = () => path.join(CONFIG_DIR, '.devos-ade-tmp');
+const SETUP_TRASH = () => path.join(CONFIG_DIR, '.devos-ade-trash');
 // the sandbox's global Claude Code configuration (its MCP servers of user scope): as Claude Code finds it
 const GLOBAL_CONFIG = () => (process.env.CLAUDE_CONFIG_DIR ? path.join(CONFIG_DIR, '.claude.json') : path.join(os.homedir(), '.claude.json'));
 const isSkillDest = (d) => d.startsWith('skills/');
@@ -1131,7 +1131,7 @@ export function setupWriteBegin(req) {
   };
 }
 /** setup.trash {mcp: NAME} -> {ok, trashed}: the sandbox's own definition of an MCP server of user scope, read here from
- *  its ~/.claude.json (never one the caller sends), written into ~/.claude/.bedrock-now-trash/setup-<time>-<random>/
+ *  its ~/.claude.json (never one the caller sends), written into ~/.claude/.devos-ade-trash/setup-<time>-<random>/
  *  mcp__NAME.json (mode 600) before a copy replaces it; trashed null when there is none */
 export function setupTrash(req) {
   const name = req?.mcp;
@@ -1215,7 +1215,7 @@ function fsRename(from, to, root = WS_ROOT) {
   return { path: rel(b, root) };
 }
 
-// delete: into the root's trash, <root>/.bedrock-now-trash/<time>-<random>/<name> (an entry outside the root, through a
+// delete: into the root's trash, <root>/.devos-ade-trash/<time>-<random>/<name> (an entry outside the root, through a
 // link: the workspace's) — nothing is removed for good here. ifMtimeMs: only while the entry's modification time is
 // still that (the Review pane's Undo of a new file)
 function fsDelete(p, ifMtimeMs, root = WS_ROOT) {
@@ -2248,7 +2248,7 @@ export async function gitCommit(req, { git = GIT, deadlineMs = GIT_PANEL_DEADLIN
     author: { name: who.name, email: who.email, from: who.from } };
 }
 // trashEntry(rel, home) -> the entry itself (a file, or a link as a link) moved into the trash of `home` (the
-// repository's project folder; none: the workspace) — <home>/.bedrock-now-trash/<time>/ — never through a link on its way
+// repository's project folder; none: the workspace) — <home>/.devos-ade-trash/<time>/ — never through a link on its way
 function trashEntry(rel, home = WORKSPACE) {
   // (any name git can name — a backslash or a newline is part of it —, every folder on the way a real folder)
   const at = pageAbs(rel);
@@ -3544,7 +3544,7 @@ export function pathsPlain(req, { now = Date.now } = {}) {
 }
 // project.trash {root} -> {trash}: Remove from Code with its folder — the project's folder itself (a real folder of
 // the workspace, every part of its path too: never through a link, never the workspace) moved to the workspace's trash
-// (/workspace/.bedrock-now-trash/<time>-<random>/<name>). The entry is moved, not what a link points to.
+// (/workspace/.devos-ade-trash/<time>-<random>/<name>). The entry is moved, not what a link points to.
 export function projectTrash(req) {
   const v = req?.root;
   const r = typeof v === 'string' && v.startsWith(`${WORKSPACE}/`) ? v.slice(WORKSPACE.length + 1) : null;
@@ -3832,9 +3832,8 @@ export async function gitTest(req, { git = GIT, deadlineMs = 60000, ask } = {}) 
 // to it (STDIN_END: its half closed), EXIT when it closed. At most TUNNEL_MAX at once, TUNNEL_BYTES each way, for
 // TUNNEL_MS.
 const TUNNEL_MAX = 4, TUNNEL_BYTES = 2 << 20, TUNNEL_MS = 120000, TUNNEL_CONNECT_MS = 15000;
-// bn-egress's refusals start with its name, taken off here: "DevOS ADE's sandbox proxy: " — or the name before v0.25.0's,
-// from a proxy of an image built before it (the code container and the sandbox may be of two versions for a moment)
-const PROXY_PREFIX = /^(?:DevOS ADE|bedrock-now)'s sandbox proxy: /;
+// bn-egress's refusals start with its name, taken off here: "DevOS ADE's sandbox proxy: "
+const PROXY_PREFIX = /^DevOS ADE's sandbox proxy: /;
 let tunnels = 0;
 // tunnelConnect(host, port) -> a connected socket (after the proxy's 200, when there is one), or throws why not
 export function tunnelConnect(host, port, { proxy = egressProxy(), connectMs = TUNNEL_CONNECT_MS } = {}) {

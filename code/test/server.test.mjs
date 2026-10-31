@@ -32,7 +32,7 @@ const answers = {
       : { result: { size: 5, mtimeMs: 1.5, truncated: false }, stdout: Buffer.from('héllo') }),
   'fs.write': (req) => (req.ifMtimeMs === 1 ? Promise.reject(new SandboxError('changed on disk since it was opened', 'refused'))
     : { result: { path: req.path, size: req.size, mtimeMs: 2 } }),
-  'fs.delete': () => ({ result: { trash: '.bedrock-now-trash/x/a' } }),
+  'fs.delete': () => ({ result: { trash: '.devos-ade-trash/x/a' } }),
   'sessions.title': () => ({ result: { ok: true } }),
   'fs.find': (req) => ({ result: { paths: [`src/${req.q}.ts`, '../../etc/passwd', '/abs', 'a\u0000b', 7, 'src/'], truncated: true } }),
   'memory.read': () => ({ result: { path: '~/.claude/CLAUDE.md', exists: true, size: 6, mtimeMs: 3, truncated: false }, stdout: Buffer.from('# mine') }),
@@ -107,13 +107,13 @@ test('state changes only from the page\'s own Origin', async () => {
 });
 
 test('the page: the build\'s index.html with the CSP nonce and the portal origin as meta tags, nothing else added', async () => {
-  const r = await req('GET', '/', { headers: { 'X-Bn-Csp-Nonce': '0123456789abcdef-0123', 'X-Bn-Portal-Origin': 'http://bedrock-now.localhost:8800' } });
+  const r = await req('GET', '/', { headers: { 'X-Bn-Csp-Nonce': '0123456789abcdef-0123', 'X-Bn-Portal-Origin': 'http://devos-ade.localhost:8800' } });
   assert.equal(r.status, 200);
   assert.match(r.text, /<meta name="bn-csp-nonce" content="0123456789abcdef-0123">/);
   assert.match(r.text, /<meta name="bn-style-nonce" content="0123456789abcdef-0123">/);
   // the build's page as it is, the three meta tags before </head> its only change: no inline script or style, no
   // handler attribute, nothing from elsewhere comes from serving it
-  assert.equal(r.text, withMeta(STUB_INDEX, { nonce: '0123456789abcdef-0123', portal: 'http://bedrock-now.localhost:8800' }));
+  assert.equal(r.text, withMeta(STUB_INDEX, { nonce: '0123456789abcdef-0123', portal: 'http://devos-ade.localhost:8800' }));
   assert.ok(!/<script>|<style|\sstyle=|\son[a-z]+=|https?:\/\//.test(STUB_INDEX));
   assert.equal(r.text.match(/<script\b[^>]*>/g).join(), '<script type="module" src="app.ABCD1234.js">');
   assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
@@ -124,12 +124,12 @@ test('the page: the build\'s index.html with the CSP nonce and the portal origin
   assert.deepEqual([st.json.bypass, st.json.sandbox], [{ allowed: false }, { egress: null, egressHost: null, workspace: null }]);
   assert.deepEqual([st.json.versions.cli, st.json.versions.sdk, st.json.limits.sessions, st.json.limits.upload, st.json.limits.image],
     ['2.1.296', '0.3.296', 4, 25 << 20, 5 << 20]);
-  const local = await req('GET', '/api/state', { headers: { 'X-Bn-Portal-Origin': 'http://bedrock-now.localhost:8800', 'X-Bn-Terminal-Host': 'terminal.bedrock-now.localhost', 'X-Bn-Remote': '0' } });
-  assert.equal(local.json.terminal_url, 'http://terminal.bedrock-now.localhost:8800/');
+  const local = await req('GET', '/api/state', { headers: { 'X-Bn-Portal-Origin': 'http://devos-ade.localhost:8800', 'X-Bn-Terminal-Host': 'terminal.devos-ade.localhost', 'X-Bn-Remote': '0' } });
+  assert.equal(local.json.terminal_url, 'http://terminal.devos-ade.localhost:8800/');
   assert.equal(local.json.remote, false);
   const none = await req('GET', '/api/state', { headers: { 'X-Bn-Portal-Origin': 'https://bn.tail1.ts.net', 'X-Bn-Terminal-Host': 'terminal.remote.invalid' } });
   assert.equal(none.json.terminal_url, null);
-  assert.match(r.text, /<meta name="bn-portal-origin" content="http:\/\/bedrock-now.localhost:8800">/);
+  assert.match(r.text, /<meta name="bn-portal-origin" content="http:\/\/devos-ade.localhost:8800">/);
   assert.equal(r.headers.get('cache-control'), 'no-store');
   const bad = await req('GET', '/', { headers: { 'X-Bn-Csp-Nonce': '"><script>', 'X-Bn-Portal-Origin': 'javascript:alert(1)' } });
   assert.match(bad.text, /bn-csp-nonce" content=""/); assert.match(bad.text, /bn-portal-origin" content=""/);
@@ -333,7 +333,7 @@ test('files: list (bad names dropped, sorted), text vs binary, write with the pr
   assert.deepEqual(r.json, { path: 'sub/ü.txt', size: 5, mtimeMs: 2 });
   assert.deepEqual(calls.at(-1), [{ op: 'fs.write', path: 'sub/ü.txt', size: 5, mode: 'unique' }, 5]);
   assert.equal((await req('POST', '/api/fs/upload', { headers: { Origin: origin, 'X-Filename': '..' }, raw: 'x' })).status, 400);
-  assert.equal((await req('DELETE', '/api/fs?path=a', { headers: { Origin: origin } })).json.trash, '.bedrock-now-trash/x/a');
+  assert.equal((await req('DELETE', '/api/fs?path=a', { headers: { Origin: origin } })).json.trash, '.devos-ade-trash/x/a');
   assert.equal((await req('DELETE', '/api/fs?path=', { headers: { Origin: origin } })).status, 400);
   assert.equal((await req('POST', '/api/fs/mkdir', { body: { path: 'x' } })).status, 400);   // the stand-in has no fs.mkdir: refused
   assert.equal((await req('GET', '/api/nothing')).status, 404);

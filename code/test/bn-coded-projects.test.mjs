@@ -49,7 +49,7 @@ test('roots: a real folder of the workspace, never through a link; anything else
   fs.writeFileSync(path.join(WS, 'a-file'), 'x');
   fs.symlinkSync(P2, path.join(WS, 'link-to-p2'));
   fs.symlinkSync(OUT, path.join(WS, 'link-out'));
-  fs.mkdirSync(path.join(WS, '.bedrock-now-trash/x'), { recursive: true });
+  fs.mkdirSync(path.join(WS, '.devos-ade-trash/x'), { recursive: true });
   fs.mkdirSync(path.join(WS, 'p1/.git'), { recursive: true });
   fs.symlinkSync(P2, path.join(P1, 'into-p2'));
   assert.deepEqual(coded.rootArg(undefined), { abs: WS, rel: '', top: WS });
@@ -58,7 +58,7 @@ test('roots: a real folder of the workspace, never through a link; anything else
   assert.deepEqual(coded.rootArg(P1), { abs: P1, rel: 'p1', top: WS });
   assert.deepEqual(coded.rootArg(`${WS}/p2/deep/er`), { abs: path.join(P2, 'deep/er'), rel: 'p2/deep/er', top: WS });
   for (const v of ['p1', '/p1', `${WS}/`, `${WS}/p1/`, `${WS}//p1`, `${WS}/./p1`, `${WS}/p1/../p2`, `${WS}/../outside`, OUT, '/etc', `${WS}/missing`,
-    `${WS}/a-file`, `${WS}/link-to-p2`, `${WS}/link-out`, `${WS}/link-to-p2/deep`, `${WS}/p1/into-p2`, `${WS}/.bedrock-now-trash`, `${WS}/.bedrock-now-trash/x`,
+    `${WS}/a-file`, `${WS}/link-to-p2`, `${WS}/link-out`, `${WS}/link-to-p2/deep`, `${WS}/p1/into-p2`, `${WS}/.devos-ade-trash`, `${WS}/.devos-ade-trash/x`,
     `${WS}/p1/.git`, `${WS}/p1\0`, `${WS}/${'x'.repeat(2000)}`, `${WS}/${Array(10).fill('d').join('/')}`, 7, {}, ['p1']]) {
     assert.throws(() => coded.rootArg(v), /project folder/, JSON.stringify(String(v)).slice(0, 80));
   }
@@ -98,15 +98,15 @@ test('fs ops in a root: listed, read, written relative to it; deletes into the r
   assert.equal((await call({ op: 'fs.mkdir', path: 'docs', root: P1 })).path, 'docs');
   assert.equal((await call({ op: 'fs.rename', from: 'docs', to: 'doc', root: P1 })).path, 'doc');
   r = await call({ op: 'fs.delete', path: 'src/n.txt', root: P1 });
-  assert.match(r.trash, /^\.bedrock-now-trash\/[^/]+\/n\.txt$/, 'into the root\'s trash');
+  assert.match(r.trash, /^\.devos-ade-trash\/[^/]+\/n\.txt$/, 'into the root\'s trash');
   assert.equal(fs.readFileSync(path.join(P1, r.trash), 'utf8'), 'hi');
-  assert.equal(fs.readFileSync(path.join(P1, '.bedrock-now-trash/.gitignore'), 'utf8'), '*\n');
+  assert.equal(fs.readFileSync(path.join(P1, '.devos-ade-trash/.gitignore'), 'utf8'), '*\n');
   // the same file named from the workspace: the workspace's trash (as before projects)
   fs.writeFileSync(path.join(P1, 'w.txt'), 'w');
   r = await call({ op: 'fs.delete', path: 'p1/w.txt' });
-  assert.match(r.trash, /^\.bedrock-now-trash\/[^/]+\/w\.txt$/);
+  assert.match(r.trash, /^\.devos-ade-trash\/[^/]+\/w\.txt$/);
   assert.ok(fs.existsSync(path.join(WS, r.trash)));
-  for (const req of [{ op: 'fs.delete', path: '', root: P1 }, { op: 'fs.delete', path: '.', root: P1 }, { op: 'fs.delete', path: '.bedrock-now-trash', root: P1 },
+  for (const req of [{ op: 'fs.delete', path: '', root: P1 }, { op: 'fs.delete', path: '.', root: P1 }, { op: 'fs.delete', path: '.devos-ade-trash', root: P1 },
     { op: 'fs.rename', from: 'src', to: '../p1-moved', root: P1 }, { op: 'fs.read', path: 'out/secret.txt', root: P1 }, { op: 'fs.list', path: '../..', root: P1 },
     { op: 'fs.write', path: 'out/x', size: 0, root: P1 }, { op: 'fs.list', path: '', root: `${WS}/link-to-p2` }, { op: 'fs.list', path: '', root: OUT },
     { op: 'fs.list', path: '', root: `${WS}/missing` }, { op: 'fs.list', path: '', root: 'p1' }]) {
@@ -187,7 +187,7 @@ test('the watchlist and permission files of a root: its own .git hooks, package.
   const mcp = (await call({ op: 'ws.sensitive', root: P2 })).files.find((f) => f.path === '.mcp.json');
   r = await call({ op: 'ws.restore', root: P2, path: '.mcp.json', ifSha256: mcp.sha256, data: null });
   assert.equal(r.action, 'trashed');
-  assert.match(r.trash, /^\.bedrock-now-trash\//);
+  assert.match(r.trash, /^\.devos-ade-trash\//);
   assert.ok(fs.existsSync(path.join(P2, r.trash)), 'in the root\'s trash');
   // permission files: the root's .claude
   const perm = await call({ op: 'perm.read', root: P2 });
@@ -273,7 +273,7 @@ test('project.create: a new folder of the workspace, git init without a template
   assert.deepEqual(r, { ok: true, root: 'fresh', git: false });
   assert.ok(fs.statSync(path.join(WS, 'fresh')).isDirectory());
   for (const [root, why] of [[`${WS}/fresh`, /there already/], [`${WS}/nope/deeper`, /parent folder/], [`${WS}/link-to-p2/new`, /parent folder/],
-    [`${WS}/.bedrock-now-trash/new`, /folder name/], ['fresh2', /folder name/], ['/etc/new', /folder name/], [`${WS}/a/../b`, /folder name/], [`${WS}/x\0`, /folder name/],
+    [`${WS}/.devos-ade-trash/new`, /folder name/], ['fresh2', /folder name/], ['/etc/new', /folder name/], [`${WS}/a/../b`, /folder name/], [`${WS}/x\0`, /folder name/],
     [`${WS}/p1/.git/x`, /folder name/], [`${WS}/${'y'.repeat(5000)}`, /folder name/]]) {
     assert.match((await call({ op: 'project.create', root, git: false })).error, why, root.slice(0, 60));
   }
@@ -287,12 +287,12 @@ test('project.create: a new folder of the workspace, git init without a template
   // project.trash: the folder itself into the workspace's trash — never through a link, never the workspace
   fs.mkdirSync(path.join(WS, 'doomed/inner'), { recursive: true });
   fs.symlinkSync(path.join(WS, 'doomed'), path.join(WS, 'doomed-link'));
-  for (const root of [`${WS}/doomed-link`, `${WS}/link-to-p2`, `${WS}/link-out`, `${WS}/a-file`, `${WS}/gone`, WS, `${WS}/`, 'doomed', `${WS}/doomed/../p1`, `${WS}/.bedrock-now-trash`]) {
+  for (const root of [`${WS}/doomed-link`, `${WS}/link-to-p2`, `${WS}/link-out`, `${WS}/a-file`, `${WS}/gone`, WS, `${WS}/`, 'doomed', `${WS}/doomed/../p1`, `${WS}/.devos-ade-trash`]) {
     assert.ok((await call({ op: 'project.trash', root })).error, root);
   }
   assert.ok(fs.existsSync(P2) && fs.existsSync(path.join(OUT, 'secret.txt')) && fs.existsSync(path.join(WS, 'doomed/inner')), 'nothing moved through a link');
   const tr = await call({ op: 'project.trash', root: `${WS}/doomed` });
-  assert.match(tr.trash, /^\.bedrock-now-trash\/[^/]+\/doomed$/);
+  assert.match(tr.trash, /^\.devos-ade-trash\/[^/]+\/doomed$/);
   assert.ok(!fs.existsSync(path.join(WS, 'doomed')) && fs.existsSync(path.join(WS, tr.trash, 'inner')));
   fs.rmSync(path.join(WS, 'doomed-link'));
   if (!GIT) { t.skip('no git'); return; }
@@ -752,7 +752,7 @@ test('a folder of this computer: paths relative to it or absolute in it; links o
   r = await call({ op: 'fs.list', path: `${HOST}/src` });
   assert.equal(r.path, `${HOST}/src`, 'an absolute path in it is answered as such');
   r = await call({ op: 'fs.delete', path: 'src/app.js', root: HOST });
-  assert.match(r.trash, /^\.bedrock-now-trash\/[^/]+\/app\.js$/);
+  assert.match(r.trash, /^\.devos-ade-trash\/[^/]+\/app\.js$/);
   assert.ok(fs.existsSync(path.join(HOST, r.trash)));
   assert.match((await call({ op: 'fs.delete', path: '', root: HOST })).error, /not in the workspace/);
   assert.match((await call({ op: 'fs.delete', path: HOST })).error, /not in the workspace/);

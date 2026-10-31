@@ -217,7 +217,7 @@
     draw();
     let d = {}, status = 0;
     try {
-      const r = await fetch(`/api/search/chats?q=${encodeURIComponent(text)}`, { headers: { "X-Requested-With": "bedrock-now" }, credentials: "same-origin", cache: "no-store" });
+      const r = await fetch(`/api/search/chats?q=${encodeURIComponent(text)}`, { headers: { "X-Requested-With": "devos-ade" }, credentials: "same-origin", cache: "no-store" });
       status = r.status;
       if (r.status === 401) { location.assign("/login"); return; }
       d = await r.json().catch(() => ({}));

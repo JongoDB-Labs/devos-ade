@@ -8,7 +8,7 @@
 DISPLAY_CATALOG="${DISPLAY_CATALOG:-$STACK_DIR/catalog/display.tsv}"
 COST_FILTER_ID=bedrock_cost
 COST_FILTER_FILE="${COST_FILTER_FILE:-$STACK_DIR/owui/functions/bedrock_cost.py}"
-LITELLM_DB_ADMIN_ID=bedrock-now-admin
+LITELLM_DB_ADMIN_ID=devos-ade-admin
 
 
 # --- friendly names and tiers (catalog/display.tsv) ---
@@ -388,7 +388,7 @@ owui_install_cost_filter() {
 
 # --- budget banner in Open WebUI ---
 
-BUDGET_BANNER_PREFIX=bedrock-now-budget
+BUDGET_BANNER_PREFIX=devos-ade-budget
 
 # budget_banner_json NOW_EPOCH < "alias<TAB>spend<TAB>max_budget<TAB>reset_date" lines -> JSON list of
 # Open WebUI banners for keys at >= alert_pct (BUDGET_ALERT_PCT, default 80%) of their budget ("warning"), >= 100% ("error"); [] when none.

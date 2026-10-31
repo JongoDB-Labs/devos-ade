@@ -82,9 +82,9 @@ ARG TTYD_CLIPBOARD_SCRIPT_SHA256=iUPenlnB5SBdRL+lXj0I/ENbfNpYOI7jbZp3sqCZNBs=
 COPY ttyd-page.py ttyd-clipboard.js /tmp/
 RUN set -eu; ttyd -p 7682 -i lo true >/dev/null 2>&1 & pid=$!; \
     for _ in 1 2 3 4 5 6 7 8 9 10; do curl -fsS -o /tmp/ttyd.html http://127.0.0.1:7682/ && break; sleep 0.5; done; \
-    kill "$pid"; mkdir -p /usr/local/share/bedrock-now; \
-    python3 /tmp/ttyd-page.py /tmp/ttyd.html /usr/local/share/bedrock-now/ttyd.html "$TTYD_PAGE_SCRIPT_SHA256" /tmp/ttyd-clipboard.js "$TTYD_CLIPBOARD_SCRIPT_SHA256"; \
-    rm /tmp/ttyd.html /tmp/ttyd-page.py /tmp/ttyd-clipboard.js; chmod 644 /usr/local/share/bedrock-now/ttyd.html
+    kill "$pid"; mkdir -p /usr/local/share/devos-ade; \
+    python3 /tmp/ttyd-page.py /tmp/ttyd.html /usr/local/share/devos-ade/ttyd.html "$TTYD_PAGE_SCRIPT_SHA256" /tmp/ttyd-clipboard.js "$TTYD_CLIPBOARD_SCRIPT_SHA256"; \
+    rm /tmp/ttyd.html /tmp/ttyd-page.py /tmp/ttyd-clipboard.js; chmod 644 /usr/local/share/devos-ade/ttyd.html
 
 # Claude Code: npm ci refuses any tarball whose checksum differs from the lockfile (the platform's native binary
 # included). No auto-update in the container (read-only); ./stack update rebuilds with the next pinned version.
@@ -119,8 +119,8 @@ RUN set -eu; userdel -r node 2>/dev/null || true; \
     chown "$BN_UID:$BN_GID" /home/claude /home/claude/.config /workspace /run/bn-ttyd /run/bn-code /run/bn-preview /run/bn-chat $subs; \
     chmod 700 /home/claude /run/bn-ttyd /run/bn-code /run/bn-preview /run/bn-chat $subs
 COPY tmux.conf /etc/tmux.conf
-COPY bashrc /etc/bedrock-now.bashrc
-COPY ssh_config /etc/ssh/ssh_config.d/bedrock-now.conf
+COPY bashrc /etc/devos-ade.bashrc
+COPY ssh_config /etc/ssh/ssh_config.d/devos-ade.conf
 # git's credential helper for every git here (bin/bn-git-credential: it keeps nothing; it answers only for a git host
 # you let Claude use, through the Code page), and the well-known git hosts' SSH host keys
 COPY gitconfig /etc/gitconfig
@@ -134,7 +134,7 @@ COPY bin/ /usr/local/bin/
 # to its classifier.
 COPY managed/off.json /etc/claude-code/managed-settings.json
 RUN chmod 755 /etc/claude-code && chmod 644 /etc/claude-code/managed-settings.json \
- && chmod 644 /etc/tmux.conf /etc/bedrock-now.bashrc /etc/ssh/ssh_config.d/bedrock-now.conf /etc/gitconfig /etc/ssh/ssh_known_hosts \
+ && chmod 644 /etc/tmux.conf /etc/devos-ade.bashrc /etc/ssh/ssh_config.d/devos-ade.conf /etc/gitconfig /etc/ssh/ssh_known_hosts \
  && chmod 755 /usr/local/bin/devos-claude /usr/local/bin/claude-bedrock /usr/local/bin/bn-terminal \
       /usr/local/bin/bn-session /usr/local/bin/bn-coded.mjs /usr/local/bin/bn-preview.mjs /usr/local/bin/bn-ssh-proxy /usr/local/bin/bn-git-credential \
       /usr/local/bin/bn-gh /usr/local/bin/claude-sub /usr/local/bin/subscriptions /usr/local/bin/codex /usr/local/bin/gemini \
@@ -142,7 +142,7 @@ RUN chmod 755 /etc/claude-code && chmod 644 /etc/claude-code/managed-settings.js
  && chmod 755 /etc/gemini-cli && chmod 644 /etc/gemini-cli/settings.json \
  && ln -s bn-gh /usr/local/bin/gh && gh --version | grep -qF "gh version $GH_VERSION " \
  && make --version >/dev/null && test -x /usr/bin/nc.openbsd \
- && printf '\n# DevOS ADE terminal\n[ -r /etc/bedrock-now.bashrc ] && . /etc/bedrock-now.bashrc\n' >> /etc/bash.bashrc
+ && printf '\n# DevOS ADE terminal\n[ -r /etc/devos-ade.bashrc ] && . /etc/devos-ade.bashrc\n' >> /etc/bash.bashrc
 
 ENV LANG=C.UTF-8 HOME=/home/claude SHELL=/bin/bash NPM_CONFIG_PREFIX=/home/claude/.local \
     PATH=/home/claude/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

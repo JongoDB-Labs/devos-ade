@@ -171,7 +171,7 @@ test_dc_strips_stt_shell_vars() {
 
 test_update_setup_ignores_shell_stt_vars() {
   body="$(sed -n '/^cmd_update() {/,/^}/p' "$STACK_DIR/lib/commands.sh")"
-  assert_contains "$body" "-u STT_PROVIDER -u STT_API_KEY -u STT_MODEL -u BEDROCK_NOW_STT_FROM_ENV"
+  assert_contains "$body" "-u STT_PROVIDER -u STT_API_KEY -u STT_MODEL -u DEVOS_ADE_STT_FROM_ENV"
 }
 
 # --- key checks ---
@@ -194,18 +194,18 @@ test_validate_key_per_provider() {
   assert_eq "$(cat "$TMP/calls")" ""   # never sent
 }
 
-# Where the key goes: only the test suite (BEDROCK_NOW_TESTING=1) can change it; the test variable alone in a shell is
+# Where the key goes: only the test suite (DEVOS_ADE_TESTING=1) can change it; the test variable alone in a shell is
 # ignored, with a warning
 test_api_base_only_from_test_variable_while_testing() {
   local src='. lib/common.sh; . lib/stt.sh; stt_api_base'
   assert_eq "$(STT_API_OPENAI=http://evil.example "$BASH" -c "$src openai")" "https://api.openai.com/v1"
-  assert_eq "$(BEDROCK_NOW_TESTING=1 BEDROCK_NOW_TEST_STT_API=https://t.example "$BASH" -c "$src groq")" "https://t.example"
+  assert_eq "$(DEVOS_ADE_TESTING=1 DEVOS_ADE_TEST_STT_API=https://t.example "$BASH" -c "$src groq")" "https://t.example"
   local v
   for v in https://t.example http://127.0.0.1:9/v1; do
-    assert_eq "$(BEDROCK_NOW_TESTING='' BEDROCK_NOW_TEST_STT_API="$v" "$BASH" -c "$src groq" 2> "$TMP/err")" "https://api.groq.com/openai/v1"
-    assert_contains "$(cat "$TMP/err")" "BEDROCK_NOW_TEST_STT_API in your shell is ignored: only the test suite (BEDROCK_NOW_TESTING=1) may change where the speech-to-text key goes"
+    assert_eq "$(DEVOS_ADE_TESTING='' DEVOS_ADE_TEST_STT_API="$v" "$BASH" -c "$src groq" 2> "$TMP/err")" "https://api.groq.com/openai/v1"
+    assert_contains "$(cat "$TMP/err")" "DEVOS_ADE_TEST_STT_API in your shell is ignored: only the test suite (DEVOS_ADE_TESTING=1) may change where the speech-to-text key goes"
   done
-  assert_eq "$(BEDROCK_NOW_TESTING='' BEDROCK_NOW_TEST_STT_API=https://t.example "$BASH" -c "$src openai" 2>/dev/null)" "https://api.openai.com/v1"
+  assert_eq "$(DEVOS_ADE_TESTING='' DEVOS_ADE_TEST_STT_API=https://t.example "$BASH" -c "$src openai" 2>/dev/null)" "https://api.openai.com/v1"
 }
 
 test_key_never_on_argv() {
@@ -276,7 +276,7 @@ test_setup_non_interactive_ignores_env_without_opt_in() {
 
 test_setup_non_interactive_with_opt_in() {
   STACK_DIR="$TMP"; : > "$ENV_FILE"; _stub_curl_auth
-  ASSUME_YES=1 BEDROCK_NOW_STT_FROM_ENV=1 STT_PROVIDER=groq STT_API_KEY="$GKEY" STT_MODEL=whisper-large-v3 setup_stt 2>/dev/null
+  ASSUME_YES=1 DEVOS_ADE_STT_FROM_ENV=1 STT_PROVIDER=groq STT_API_KEY="$GKEY" STT_MODEL=whisper-large-v3 setup_stt 2>/dev/null
   assert_eq "$(get_env STT_PROVIDER)" groq
   assert_eq "$(get_env STT_API_KEY)" "$GKEY"
   assert_eq "$(get_env STT_MODEL)" whisper-large-v3
@@ -296,7 +296,7 @@ test_setup_interactive_env_needs_a_yes() {
 
 test_setup_rejected_key_is_not_stored() {
   STACK_DIR="$TMP"; : > "$ENV_FILE"; _stub_curl_auth
-  err="$(CODE=401 ASSUME_YES=1 BEDROCK_NOW_STT_FROM_ENV=1 STT_PROVIDER=openai STT_API_KEY="$OKEY" setup_stt 2>&1)"
+  err="$(CODE=401 ASSUME_YES=1 DEVOS_ADE_STT_FROM_ENV=1 STT_PROVIDER=openai STT_API_KEY="$OKEY" setup_stt 2>&1)"
   assert_contains "$err" "not stored"
   assert_eq "$(get_env STT_API_KEY)" ""
   assert_eq "$(get_env OWUI_STT_ENGINE)" ""
@@ -304,7 +304,7 @@ test_setup_rejected_key_is_not_stored() {
 
 test_setup_keeps_env_file_settings_over_shell() {
   STACK_DIR="$TMP"; printf 'STT_PROVIDER=openai\nSTT_API_KEY=%s\n' "$OKEY" > "$ENV_FILE"; _stub_curl_auth
-  ASSUME_YES=1 BEDROCK_NOW_STT_FROM_ENV=1 STT_PROVIDER=groq STT_API_KEY="$GKEY" setup_stt 2>/dev/null
+  ASSUME_YES=1 DEVOS_ADE_STT_FROM_ENV=1 STT_PROVIDER=groq STT_API_KEY="$GKEY" setup_stt 2>/dev/null
   assert_eq "$(get_env STT_PROVIDER)" openai
   assert_eq "$(get_env OWUI_STT_ENGINE)" openai
   [ ! -e "$TMP/calls" ]   # a stored key is not re-checked at every setup
@@ -820,7 +820,7 @@ test_owui_has_no_stt_entry_with_bedrock() {
 test_compose_stt_service_is_locked_down() {
   s="$(sed -n '/^  stt:/,/^  portal:/p' "$STACK_DIR/compose.yaml")"
   assert_contains "$s" 'build: { context: ./stt, target: runtime }'
-  assert_contains "$s" 'image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/stt:local'
+  assert_contains "$s" 'image: ${COMPOSE_PROJECT_NAME:-devos-ade}/stt:local'
   assert_contains "$s" 'profiles: ["stt"]'
   assert_contains "$s" 'user: "10103:10103"'
   assert_contains "$s" 'read_only: true'

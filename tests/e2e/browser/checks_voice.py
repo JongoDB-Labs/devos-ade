@@ -50,7 +50,7 @@ def home_voice(ctx):
         expect(text == f"{REFUSED_NOTICE} {VOICE_SETUP}", f"voice line {text!r}")
         link = note.locator("a[href='#settings/STT_PROVIDER']")
         expect(link.count() == 1 and link.inner_text() == VOICE_SETUP, f"voice line's link: {link.count()}")
-        act = page.evaluate("""async () => { const r = await fetch('/api/activity', {headers: {'X-Requested-With': 'bedrock-now'}});
+        act = page.evaluate("""async () => { const r = await fetch('/api/activity', {headers: {'X-Requested-With': 'devos-ade'}});
             return {status: r.status, body: await r.text()}; }""")
         expect(act["status"] == 200, f"/api/activity {act['status']}")
         items = [i for i in json.loads(act["body"]).get("items") or [] if i.get("kind") == "voice"]

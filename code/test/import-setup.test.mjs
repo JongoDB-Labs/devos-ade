@@ -138,7 +138,7 @@ test('CLAUDE.md: sent with every request (tokens said), its secret redacted, rep
   await openRows([row('memory', 'CLAUDE.md')]);
   o = await copyOne(k, { conflict: 'replace' });
   assert.equal(o.r.ok, true);
-  assert.match(o.r.trashed, /^\.bedrock-now-trash\//);
+  assert.match(o.r.trashed, /^\.devos-ade-trash\//);
   assert.match(fs.readFileSync(path.join(CONF, o.r.trashed), 'utf8'), /my own line/);
   // appended: after what is there; again later, that part is replaced (never twice)
   fs.writeFileSync(path.join(CONF, 'CLAUDE.md'), '# The sandbox\'s memory\n');
@@ -558,7 +558,7 @@ test('L8: a server of the sandbox\'s own replaced goes to its trash first, and c
   const p2 = await setup.preview(k, { conflict: 'replace' });
   const r2 = (await setup.copy([{ keys: k, digest: p2.digest, conflict: 'replace' }]))[0];
   assert.equal(r2.ok, true, r2.why);
-  assert.match(r2.trashed, /^\.bedrock-now-trash\/setup-.*\/mcp__fetch\.json$/);
+  assert.match(r2.trashed, /^\.devos-ade-trash\/setup-.*\/mcp__fetch\.json$/);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(CONF, r2.trashed), 'utf8')), { mcpServers: { fetch: { type: 'stdio', command: 'my-fetch', args: ['--own'] } } });
   assert.equal(fs.statSync(path.join(CONF, r2.trashed)).mode & 0o777, 0o600);
   assert.equal(JSON.parse(fs.readFileSync(g, 'utf8')).mcpServers.fetch.command, 'uvx');

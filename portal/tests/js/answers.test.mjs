@@ -47,8 +47,8 @@ test("the Chat tab: Open WebUI first, the models, your keys next, the tools them
 
 
 test("Open WebUI's address for a new chat with a model", () => {
-  assert.equal(A.chatSrc("http://chat.bedrock-now.localhost/?x=1#y", "or/x:free"), "http://chat.bedrock-now.localhost/?models=or%2Fx%3Afree");
-  assert.equal(A.chatSrc("http://chat.bedrock-now.localhost/", ""), "http://chat.bedrock-now.localhost/");
+  assert.equal(A.chatSrc("http://chat.devos-ade.localhost/?x=1#y", "or/x:free"), "http://chat.devos-ade.localhost/?models=or%2Fx%3Afree");
+  assert.equal(A.chatSrc("http://chat.devos-ade.localhost/", ""), "http://chat.devos-ade.localhost/");
   assert.equal(A.terminalSrc, undefined, "the page never builds the terminal's words itself: the portal does, with a launch token");
 });
 

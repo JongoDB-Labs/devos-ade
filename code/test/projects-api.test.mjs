@@ -55,9 +55,9 @@ const answers = {
     : { result: { roots: req.roots.map((r) => ({ root: r, type: state.folders[r] ?? 'dir', git: r.endsWith('/app'),
       real: state.real[r] ?? ((state.folders[r] ?? 'dir') === 'dir' ? r : null), settings: settingsOf(r).hash ?? null, settingsVerifiable: settingsOf(r).verifiable ?? null })) } }),
   'project.settings': (req) => ({ result: settingsOf(req.root ?? '/workspace', true) }),
-  'project.trash': (req) => ({ result: { trash: `.bedrock-now-trash/t/${path.basename(req.root)}` } }),
+  'project.trash': (req) => ({ result: { trash: `.devos-ade-trash/t/${path.basename(req.root)}` } }),
   'project.create': (req) => ({ result: { ok: true, root: req.root.slice('/workspace/'.length), git: req.git === true } }),
-  'fs.delete': (req) => ({ result: { trash: `.bedrock-now-trash/t/${path.basename(req.path)}` } }),
+  'fs.delete': (req) => ({ result: { trash: `.devos-ade-trash/t/${path.basename(req.path)}` } }),
   'fs.find': () => ({ result: { paths: ['src/a.ts', 'src/', '../escape', '/workspace/other/x', 'a\nb'], truncated: false } }),
   'fs.grep': () => ({ result: { engine: 'ripgrep', files: [{ path: 'src/a.ts', hits: [{ line: 1, text: 'needle', col: 0, len: 6 }] }, { path: '../x', hits: [{ line: 1, text: 'x' }] }], hits: 2 } }),
   'git.diff': () => ({ result: { repo: true, head: 'a'.repeat(40), files: [{ path: 'package.json', mtimeMs: 1, size: 3, type: 'file' }], untracked: [] },
@@ -667,7 +667,7 @@ test('a project\'s terminal, git init; removal: the record only, its folder into
   assert.equal(r.status, 200, JSON.stringify(r.json));
   assert.deepEqual(last('project.trash'), { op: 'project.trash', root: '/workspace/app' }, 'the folder itself, into the workspace\'s trash');
   assert.equal(calls.filter((c) => c.op === 'fs.delete').length, fsDeletes, 'never fs.delete (it follows a link)');
-  assert.equal(r.json.trash, '.bedrock-now-trash/t/app');
+  assert.equal(r.json.trash, '.devos-ade-trash/t/app');
   assert.deepEqual((await req('GET', '/api/projects')).json.projects.map((p) => p.id), ['ws']);
   // its sessions are shown where their folder is: the Workspace
   assert.equal((await req('GET', '/api/sessions')).json.sessions.find((s) => s.id === S.app).project, 'ws');

@@ -258,9 +258,9 @@ test('fs ops over the socket: list, read, write (precondition, unique names), mk
   assert.equal(result(await talk(SOCK, [open({ op: 'fs.rename', from: 'f/hello-1.txt', to: 'f/sub/moved.txt' })])).path, 'f/sub/moved.txt');
   assert.match(result(await talk(SOCK, [open({ op: 'fs.rename', from: 'f/hello.txt', to: 'f/sub/moved.txt' })])).error, /exists already/);
   r = result(await talk(SOCK, [open({ op: 'fs.delete', path: 'f/sub' })]));
-  assert.match(r.trash, /^\.bedrock-now-trash\/.+\/sub$/);
+  assert.match(r.trash, /^\.devos-ade-trash\/.+\/sub$/);
   assert.ok(fs.existsSync(path.join(WS, r.trash, 'moved.txt')));
-  assert.equal(fs.readFileSync(path.join(WS, '.bedrock-now-trash', '.gitignore'), 'utf8'), '*\n', 'git leaves the trash alone');
+  assert.equal(fs.readFileSync(path.join(WS, '.devos-ade-trash', '.gitignore'), 'utf8'), '*\n', 'git leaves the trash alone');
   // a replaced file keeps its mode (a script stays executable); a new one gets the default
   fs.writeFileSync(path.join(WS, 'f/run.sh'), 'echo 1\n', { mode: 0o755 });
   fs.chmodSync(path.join(WS, 'f/run.sh'), 0o750);
@@ -297,7 +297,7 @@ test('fs ops over the socket: list, read, write (precondition, unique names), mk
   assert.ok(result(await talk(SOCK, [open({ op: 'memory.write', size: 1 }), frame(T.STDIN, Buffer.from('x')), frame(T.STDIN_END, Buffer.alloc(0))])).error);
   assert.equal(fs.readFileSync(path.join(ROOT, 'outside', 'secret.txt'), 'utf8'), 'outside');
   fs.rmSync(path.join(HOME, '.claude/CLAUDE.md'));
-  for (const req of [{ op: 'fs.delete', path: '' }, { op: 'fs.delete', path: '.bedrock-now-trash' }, { op: 'fs.read', path: '../outside/secret.txt' },
+  for (const req of [{ op: 'fs.delete', path: '' }, { op: 'fs.delete', path: '.devos-ade-trash' }, { op: 'fs.read', path: '../outside/secret.txt' },
     { op: 'fs.read', path: 'out/secret.txt' }, { op: 'fs.list', path: '/etc' }, { op: 'fs.write', path: 'out/x', size: 0 }, { op: 'fs.mkdir', path: '../x' },
     { op: 'fs.rename', from: 'f/hello.txt', to: '../outside/stolen' }, { op: 'fs.read', path: 'f' }, { op: 'exec', cmd: 'id' }, { op: 'fs.write', path: 'f/y', size: 26 << 20 }]) {
     assert.ok(result(await talk(SOCK, [open(req)])).error, JSON.stringify(req));
@@ -363,8 +363,8 @@ test('sessions: list (titles, prompts, no symlinks, bad names skipped), load, ti
 });
 
 test('claude: runs in the workspace with the checked arguments, the shared MCP config, its environment; stdin, signals, exit', async () => {
-  fs.mkdirSync(path.join(HOME, '.config/bedrock-now'), { recursive: true });
-  fs.writeFileSync(path.join(HOME, '.config/bedrock-now/mcp.json'), '{}');
+  fs.mkdirSync(path.join(HOME, '.config/devos-ade'), { recursive: true });
+  fs.writeFileSync(path.join(HOME, '.config/devos-ade/mcp.json'), '{}');
   const c = net.connect(SOCK);
   const { FrameParser } = await import('../server/frames.mjs');
   const parser = new FrameParser();
@@ -387,7 +387,7 @@ test('claude: runs in the workspace with the checked arguments, the shared MCP c
   await done;
   const out = stdout(got2).toString().split('\n');
   const info = JSON.parse(out[0]);
-  assert.deepEqual(info.args, [...FIXED, `--mcp-config=${path.join(HOME, '.config/bedrock-now/mcp.json')}`, '--model=haiku', `--session-id=${SID}`, `--project-config-root=${WS}`]);
+  assert.deepEqual(info.args, [...FIXED, `--mcp-config=${path.join(HOME, '.config/devos-ade/mcp.json')}`, '--model=haiku', `--session-id=${SID}`, `--project-config-root=${WS}`]);
   assert.equal(info.cwd, WS);
   assert.deepEqual(info.env, { ANTHROPIC_CUSTOM_HEADERS: `x-litellm-session-id: code-${SID}\nx-litellm-tags: claude-bedrock,code`, CLAUDE_CODE_ENTRYPOINT: 'sdk-ts', PATH: 'set' });
   assert.equal(out[1], 'echo:{"type":"user"}');
@@ -702,8 +702,8 @@ test('the watchlist: an includeIf git does not apply cannot steer which hooksPat
   assert.equal(result(await talk(SOCK, [open({ op: 'ws.sensitive' })])).truncated, true);
 });
 
-test('net.tunnel through the egress proxy: its refusal said without its name, of this version or the one before v0.25.0', async () => {
-  for (const name of ['DevOS ADE', 'bedrock-now']) {
+test('net.tunnel through the egress proxy: its refusal said without its name', async () => {
+  for (const name of ['DevOS ADE']) {
     const proxy = net.createServer((c) => c.once('data', () => c.end(`HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\n\r\n${name}'s sandbox proxy: refused — a private address.\n`)));
     await new Promise((r) => proxy.listen(0, '127.0.0.1', r));
     try {

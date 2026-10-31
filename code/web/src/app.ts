@@ -2491,7 +2491,7 @@ export async function connectGitRepo(id: string): Promise<void> {
 // ---------------------------------------------------------------- files
 
 /** The workspace trash (deletes move there): kept out of the tree. */
-export const TRASH = '.bedrock-now-trash';
+export const TRASH = '.devos-ade-trash';
 
 export async function loadDir(path: string): Promise<void> {
   set((s) => ({ ...s, fs: { ...s.fs, dirs: { ...s.fs.dirs, [path]: { entries: s.fs.dirs[path]?.entries ?? [], loading: true, error: null, truncated: s.fs.dirs[path]?.truncated ?? false } } } }));

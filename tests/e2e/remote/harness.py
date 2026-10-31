@@ -438,7 +438,7 @@ def run(b, ctx, page, reqs, resps, by_frame):
         # what reached the dev server: the port, its own Host, none of DevOS ADE's cookies or your Tailscale identity
         info = f.evaluate("async () => (await fetch('/info')).json()")
         hh = info["headers"]
-        check("dev-server-sees-nothing-of-bedrock-now", info["port"] == "5173" and hh.get("host") == "localhost:5173"
+        check("dev-server-sees-nothing-of-devos-ade", info["port"] == "5173" and hh.get("host") == "localhost:5173"
               and not re.search(r"(^|;\s*)(__Host-)?bn_", hh.get("cookie", "")) and not any(k.startswith(("tailscale-", "x-portal-")) for k in hh),
               f"Host {hh.get('host')}, cookie {hh.get('cookie', '')!r}, headers {sorted(k for k in hh if k.startswith(('tailscale', 'x-portal', 'x-bn')))}")
         check("routing-cookie-unreadable-by-script", "__Host-bn_preview" not in f.evaluate("() => document.cookie"),

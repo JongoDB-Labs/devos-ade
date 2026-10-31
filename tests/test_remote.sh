@@ -21,7 +21,7 @@ _stubs() {
     esac
   }
   printf '{"BackendState":"Running","Self":{"Tags":["tag:bedrock-now"]},"MagicDNSSuffix":"%s"}\n' "$TN" > "$TMP/ts-status"
-  printf 'PORTAL_SECRET=%s\nPORTAL_HOST=bedrock-now.localhost\nPORTAL_PORT=80\n' "$(printf 's%.0s' $(seq 1 40))" > "$ENV_FILE"
+  printf 'PORTAL_SECRET=%s\nPORTAL_HOST=devos-ade.localhost\nPORTAL_PORT=80\n' "$(printf 's%.0s' $(seq 1 40))" > "$ENV_FILE"
   TS_POLL_DELAY=0
 }
 
@@ -47,9 +47,9 @@ test_ts_names_are_per_project() {
   : > "$ENV_FILE"
   assert_eq "$(ts_service_names)" "svc:bedrock-now svc:bedrock-now-chat svc:bedrock-now-admin svc:bedrock-now-files"
   assert_eq "$(ts_node_name)" "bedrock-now-node"
-  printf 'COMPOSE_PROJECT_NAME=bn_dev\n' > "$ENV_FILE"; assert_eq "$(ts_base)" "bedrock-now-bn-dev"
+  printf 'COMPOSE_PROJECT_NAME=bn_dev\n' > "$ENV_FILE"; assert_eq "$(ts_base)" "devos-ade-bn-dev"
   printf 'TS_SERVICE=ai\nTS_HOSTNAME=box\n' > "$ENV_FILE"; assert_eq "$(ts_base) $(ts_node_name)" "ai box"
-  valid_ts_label bedrock-now || return 1
+  valid_ts_label devos-ade || return 1
   valid_ts_label "$(printf 'a%.0s' $(seq 1 54))" || return 1   # + -terminal, the longest suffix: 63, a DNS label's most
   for l in '' -a a- A_b "$(printf 'a%.0s' $(seq 1 55))"; do if valid_ts_label "$l"; then echo "accepted '$l'" >&2; return 1; fi; done
 }
@@ -65,7 +65,7 @@ test_validators() {
     if valid_cidr "$c"; then echo "cidr '$c'" >&2; return 1; fi
   done
   valid_ts_tag tag:bedrock-now || return 1
-  for t in bedrock-now tag: tag:Upper 'tag:a b'; do if valid_ts_tag "$t"; then echo "tag '$t'" >&2; return 1; fi; done
+  for t in devos-ade tag: tag:Upper 'tag:a b'; do if valid_ts_tag "$t"; then echo "tag '$t'" >&2; return 1; fi; done
   valid_ts_authkey tskey-auth-kAbC123CNTRL-xyz && valid_ts_authkey 'tskey-client-k1-s2?ephemeral=false&preauthorized=true' || return 1
   for k in '' tskey- sk-123 'tskey-auth-a b' 'tskey-auth-$x'; do if valid_ts_authkey "$k"; then echo "key '$k'" >&2; return 1; fi; done
 }
@@ -128,7 +128,7 @@ test_admin_steps_name_every_console_page() {
   printf 'TAILSCALE_ALLOWED_LOGIN=me@example.com\n' > "$ENV_FILE"
   out="$(ts_admin_steps tailscale)"
   for want in admin/dns "HTTPS Certificates" admin/acls/file admin/settings/keys admin/services "tcp:443" \
-              "bedrock-now-chat" "as me@example.com" "accept-routes" "Tags: tag:bedrock-now"; do
+              "devos-ade-chat" "as me@example.com" "accept-routes" "Tags: tag:bedrock-now"; do
     assert_contains "$out" "$want"
   done
   assert_not_contains "$(ts_admin_steps domain)" "admin/services"
@@ -267,7 +267,7 @@ test_status_summary_and_table_show_remote() {
   printf 'REMOTE_MODE=tailscale\n' >> "$ENV_FILE"; remote_hosts_tailscale "$TN"
   out="$(remote_status)"
   assert_contains "$out" "Portal   https://bedrock-now.$TN"
-  assert_contains "$out" "Local    http://bedrock-now.localhost (unchanged)"
+  assert_contains "$out" "Local    http://devos-ade.localhost (unchanged)"
   assert_contains "$out" "Sidecar  Running"
   assert_contains "$(remote_summary_line)" "https://bedrock-now.$TN"
   assert_contains "$(printf 'tailscale\trunning\thealthy\t\n' | status_table)" "https://bedrock-now.$TN"
@@ -285,10 +285,10 @@ test_setup_asks_once_and_defaults_to_local() {
 }
 
 test_local_site_unchanged_and_app_hosts_configurable() {
-  printf 'PORTAL_HOST=bedrock-now.localhost\nPORTAL_PORT=80\n' > "$ENV_FILE"
-  assert_eq "$(portal_url chat)" "http://chat.bedrock-now.localhost"
+  printf 'PORTAL_HOST=devos-ade.localhost\nPORTAL_PORT=80\n' > "$ENV_FILE"
+  assert_eq "$(portal_url chat)" "http://chat.devos-ade.localhost"
   set_env CHAT_HOST talk.localhost
-  assert_eq "$(portal_url chat) $(portal_url admin)" "http://talk.localhost http://admin.bedrock-now.localhost"
+  assert_eq "$(portal_url chat) $(portal_url admin)" "http://talk.localhost http://admin.devos-ade.localhost"
   check_app_hosts || return 1
   set_env ADMIN_HOST talk.localhost
   if (check_app_hosts) 2>/dev/null; then echo "duplicate host accepted" >&2; return 1; fi
@@ -297,7 +297,7 @@ test_local_site_unchanged_and_app_hosts_configurable() {
 }
 
 test_missing_images_skips_the_local_caddy_build() {
-  dc() { printf 'caddy:2\nbedrock-now/caddy-dns:local\n'; }; compose_refs() { :; }   # (compose.yaml's own: test_phases.sh)
+  dc() { printf 'caddy:2\ndevos-ade/caddy-dns:local\n'; }; compose_refs() { :; }   # (compose.yaml's own: test_phases.sh)
   docker() { return 1; }
   assert_eq "$(missing_images)" "caddy:2"
 }

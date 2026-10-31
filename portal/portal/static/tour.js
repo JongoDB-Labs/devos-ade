@@ -620,7 +620,7 @@
           : p("Claude sees one folder of this computer, its workspace (", code("/workspace"), " in the sandbox; ", code("./stack code status"), " names it) — nothing else of yours."),
         list("ul", [
           [b("Projects"), ": a folder of the workspace each. The project chip at the top switches; ", b("New project"), " makes one (an empty folder with git init, a clone, or a folder already there). New sessions, the explorer, search, Git and Run & test follow it."],
-          ["The explorer: new file or folder, rename, delete (into ", code(".bedrock-now-trash/"), "), drag files in to upload them."],
+          ["The explorer: new file or folder, rename, delete (into ", code(".devos-ade-trash/"), "), drag files in to upload them."],
           [kbd("Ctrl/⌘+P"), " goes to a file, ", kbd("Ctrl/⌘+Shift+F"), " searches in files, ", kbd("Ctrl/⌘+K"), " opens the command palette (every action, session and file)."],
           [b("Preview"), " shows Markdown (with Mermaid diagrams), PDF, Word, Excel, CSV, notebooks, images, and HTML in a sandboxed viewer; ", b("Source"), " is the editor."],
           ["⋯ › ", b("Memory (CLAUDE.md)"), ": the workspace's standing instructions for Claude."]]),

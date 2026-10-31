@@ -3,7 +3,7 @@
 "use strict";
 
 const APPS = { chat: "/", admin: "/ui/api-keys/", files: "/rustfs/console/" };   // (portal/config.py APPS)
-const API_HEADERS = { "X-Requested-With": "bedrock-now" };
+const API_HEADERS = { "X-Requested-With": "devos-ade" };
 const REFRESH_MS = 30000;
 let logins = null;
 let timer = null;

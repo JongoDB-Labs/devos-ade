@@ -377,7 +377,7 @@ function CheckStep({ view, local, onChanged }: { view: SetupView; local: boolean
           {phase && <div class="imp-req small" data-testid="setup-copy-phase"><Spinner size={12} /> {phase}</div>}
           <p class="muted small">
             New sessions start with them (MCP servers and plugins: from the next session; the open one with <b>Restart this session</b>). Copying again later replaces only
-            what {PRODUCT} copied — what the sandbox has of its own is left as it is unless you choose, and then goes to its trash folder (<code>~/.claude/.bedrock-now-trash</code>).
+            what {PRODUCT} copied — what the sandbox has of its own is left as it is unless you choose, and then goes to its trash folder (<code>~/.claude/.devos-ade-trash</code>).
           </p>
         </>
       )}

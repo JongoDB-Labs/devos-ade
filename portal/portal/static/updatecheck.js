@@ -188,7 +188,7 @@
     let r = null, d = {};
     try {
       r = await fetch("/api/update/check", { method: "POST", credentials: "same-origin", cache: "no-store",
-        headers: { "X-Requested-With": "bedrock-now" } });
+        headers: { "X-Requested-With": "devos-ade" } });
       d = await r.json().catch(() => ({}));
     } catch (_) { r = null; }
     busy = false;

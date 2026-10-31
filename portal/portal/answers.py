@@ -353,7 +353,7 @@ class Launches:
     def __init__(self, secret: str, fingerprint: str, clock=None):
         import hashlib
         import time as _time
-        self._key = hashlib.sha256(f"bedrock-now.terminal-launch|{secret}|{fingerprint}".encode()).digest()
+        self._key = hashlib.sha256(f"devos-ade.terminal-launch|{secret}|{fingerprint}".encode()).digest()
         self._clock = clock or _time.time
         self._seen: dict[str, float] = {}
 

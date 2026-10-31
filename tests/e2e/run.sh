@@ -123,7 +123,7 @@
 #                    by Docker's own events — before subs-chat is started again, with no network; the proxy's
 #                    networks gone). terminal-isolation (the terminal's proxy's checks) skips. Run it only when asked.
 #   --helper         also run the throwaway's update helper (E2E_HELPER=1 does the same), so the settings/* checks run:
-#                    its own bin/bedrock-now-helper in the foreground, as a background child of this run (never
+#                    its own bin/devos-ade-helper in the foreground, as a background child of this run (never
 #                    ./stack helper install: no launchd agent, no systemd unit), SETTINGS_MIN_INTERVAL_S=5, log in
 #                    OUT/logs/helper.log. The browser part then runs in three passes: every other check first (those
 #                    that fake the helper or need it absent), settings/* while the helper runs, then final/ (sign-out).
@@ -277,7 +277,7 @@ START_TS="$(now)"
 E2E_REAL_DOCKER="$(command -v docker)"; E2E_IMAGE_TREE=''; E2E_IMAGE_LOG="$LOGS/image-cache.log"
 IMAGE_VARS="E2E_REAL_DOCKER E2E_IMAGE_TREE E2E_IMAGE_LOG"
 st() {
-  # Never let a command default to the bedrock-now project (the default Compose project): the throwaway .env must name ours.
+  # Never let a command default to the devos-ade project (the default Compose project): the throwaway .env must name ours.
   [ "$(get_env COMPOSE_PROJECT_NAME)" = "$PROJECT" ] || { echo "xx  throwaway .env does not name project $PROJECT" >&2; return 99; }
   local cwd="${ST_CWD:-$STACK}" timeout=() images=''   # read before clean_env, which unexports them with everything else
   [ -z "${ST_TIMEOUT:-}" ] || timeout=(--timeout "$ST_TIMEOUT")
@@ -344,14 +344,14 @@ stage() {
   claim_project   # dies on a foreign project before anything is touched; OWNED=1 from here on
   [ "$OWN_STATE" != ours ] || { warn "project $PROJECT: $OWN_WHY — removing those leftovers first"; teardown; }
   if [ -e "$STACK" ]; then
-    [ -f "$STACK/.bedrock-now-e2e" ] || [ -z "$(ls -A "$STACK" 2>/dev/null)" ] ||
+    [ -f "$STACK/.devos-ade-e2e" ] || [ -z "$(ls -A "$STACK" 2>/dev/null)" ] ||
       die "$STACK exists and was not created by this suite — pick another --work (nothing was changed)"
     chmod -R u+rwX "$STACK" 2>/dev/null; rm -rf "$STACK"
   fi
   # A normal checkout's permissions (umask 022): containers read some of these files as other users.
   ( umask 022; git clone --quiet --no-hardlinks "$ROOT" "$STACK" ) || die "git clone failed"
-  : > "$STACK/.bedrock-now-e2e"   # marks the folder as the suite's own (teardown deletes only such a folder)
-  printf '/.bedrock-now-e2e\n' >> "$STACK/.git/info/exclude"
+  : > "$STACK/.devos-ade-e2e"   # marks the folder as the suite's own (teardown deletes only such a folder)
+  printf '/.devos-ade-e2e\n' >> "$STACK/.git/info/exclude"
   if ! (cd "$ROOT" && git diff --quiet HEAD); then
     ( cd "$ROOT" && git diff HEAD --binary ) | ( umask 022; git -C "$STACK" apply --whitespace=nowarn ) ||
       die "the uncommitted changes of $ROOT do not apply to a clean clone of HEAD — commit or stash them first"
@@ -361,7 +361,7 @@ stage() {
     ( umask 022; mkdir -p "$STACK/$(dirname "$f")" && cp -p "$ROOT/$f" "$STACK/$f" ) || exit 1
   done || die "could not copy the untracked files into $STACK"
   git -C "$STACK" add -A
-  git -C "$STACK" -c user.name=bedrock-now-e2e -c user.email=e2e@example.invalid commit -q -m "e2e: working tree" --allow-empty
+  git -C "$STACK" -c user.name=devos-ade-e2e -c user.email=e2e@example.invalid commit -q -m "e2e: working tree" --allow-empty
   # Seed .env: names, ports and small budgets for this throwaway (setup keeps what is set). The portal password is
   # generated here and marked as shown, so setup's summary never prints it.
   cp "$STACK/.env.example" "$STACK/.env"; chmod 600 "$STACK/.env"
@@ -377,8 +377,8 @@ stage() {
   # --terminal, which ./stack terminal enable turns on after setup)
   if [ "$CODE" = 1 ]; then
     tws="$(terminal_workspace_dir)"
-    [ ! -e "$tws" ] || [ -f "$tws/.bedrock-now-e2e" ] || die "$tws exists and was not created by this suite — nothing was changed"
-    ( umask 077; mkdir -p "$tws" ) && : > "$tws/.bedrock-now-e2e"
+    [ ! -e "$tws" ] || [ -f "$tws/.devos-ade-e2e" ] || die "$tws exists and was not created by this suite — nothing was changed"
+    ( umask 077; mkdir -p "$tws" ) && : > "$tws/.devos-ade-e2e"
     set_env TERMINAL_WORKSPACE "$tws"
   else
     set_env CODE_ENABLED false
@@ -528,8 +528,8 @@ SH
 if [ "$TERMINAL" = 1 ]; then
   if [ "$(get_env TERMINAL_ENABLED)" != true ]; then
     tws="$(terminal_workspace_dir)"
-    [ ! -e "$tws" ] || [ -f "$tws/.bedrock-now-e2e" ] || die "$tws exists and was not created by this suite — nothing was changed"
-    ( umask 077; mkdir -p "$tws" ) && : > "$tws/.bedrock-now-e2e"
+    [ ! -e "$tws" ] || [ -f "$tws/.devos-ade-e2e" ] || die "$tws exists and was not created by this suite — nothing was changed"
+    ( umask 077; mkdir -p "$tws" ) && : > "$tws/.devos-ade-e2e"
     say "terminal: ./stack terminal enable (its image is built the first time: a few minutes)"
     cli terminal-enable 0 'Terminal: on' terminal enable --workspace "$tws" || die "terminal enable failed — see $LOGS/cli-terminal-enable.log"
   fi
@@ -1015,7 +1015,7 @@ git_server_start() {
   docker rm -f "$PROJECT-gitsrv" >/dev/null 2>&1 || true
   # (its HTTPS also on a free port of this computer's 127.0.0.1, for the browser suite to play the user at the provider:
   # /_e2e/approve, with this run's token)
-  docker run -d --name "$PROJECT-gitsrv" --label "io.bedrock-now.e2e=$PROJECT" --network "$n" --network-alias gitsrv -p 127.0.0.1::8443 \
+  docker run -d --name "$PROJECT-gitsrv" --label "io.devos-ade.e2e=$PROJECT" --network "$n" --network-alias gitsrv -p 127.0.0.1::8443 \
     -e GITSRV_TOKEN="$E2E_GIT_TOKEN" "$PROJECT/e2e-gitsrv:local" > /dev/null 2>> "$LOGS/gitsrv-build.log" ||
     { record git git-server FAIL 0 "docker run failed ($LOGS/gitsrv-build.log)"; return 1; }
   for i in $(seq 1 60); do docker logs "$PROJECT-gitsrv" 2>&1 | grep '^https on' >/dev/null && { ok=1; break; }; sleep 1; done
@@ -1066,7 +1066,7 @@ else
   # with the real helper; final/ (sign-out revokes every session) last
   say "browser suite (Playwright container): every check but settings/* and final/*"
   browser_run "without settings/* and final/*" '^(?!settings/|final/)'
-  say "update helper: $STACK/bin/bedrock-now-helper in the foreground ($HELPER_KNOBS; log: $LOGS/helper.log)"
+  say "update helper: $STACK/bin/devos-ade-helper in the foreground ($HELPER_KNOBS; log: $LOGS/helper.log)"
   if e2e_helper_start 2> "$LOGS/helper-start.log"; then   # (not in a $( ) subshell: it keeps HELPER_PID)
     say "browser suite: settings/* (the update helper running)"
     HELPER_ON=1 browser_run "settings/* with the update helper" '^settings/' '' runner-settings
@@ -1531,7 +1531,7 @@ setTimeout(() => { console.log("timeout"); process.exit(0); }, 20000);'
     # (its own volumes) are yours, mode 700, writable
     docker exec "$tc" sh -c 'mkdir -p ~/.codex && touch ~/.bn-e2e-home-mark ~/.codex/.bn-e2e-codex-mark' >/dev/null 2>&1
     docker exec "$sc" sh -c 'touch ~/.codex/.bn-e2e-chat-mark' >/dev/null 2>&1
-    homes="$(docker exec "$sc" sh -c 'test -e ~/.bn-e2e-home-mark && echo terminal-home-seen; test -e ~/.codex/.bn-e2e-codex-mark && echo codex-shared; test -e ~/.config/bedrock-now && echo terminal-config-seen; true' 2>&1 | tr '\n' ' ')"
+    homes="$(docker exec "$sc" sh -c 'test -e ~/.bn-e2e-home-mark && echo terminal-home-seen; test -e ~/.codex/.bn-e2e-codex-mark && echo codex-shared; test -e ~/.config/devos-ade && echo terminal-config-seen; true' 2>&1 | tr '\n' ' ')"
     homes="$homes$(docker exec "$tc" sh -c 'test -e ~/.codex/.bn-e2e-chat-mark && echo chat-codex-seen; true' 2>&1 | tr '\n' ' ')"
     own="$(docker exec "$sc" sh -c 'for d in ~/.claude-subscription ~/.codex ~/.copilot ~/.grok; do test -d "$d" -a -w "$d" && stat -c "%u:%a" "$d"; done' 2>&1 | tr '\n' ' ')"
     docker exec "$tc" sh -c 'rm -f ~/.bn-e2e-home-mark ~/.codex/.bn-e2e-codex-mark' >/dev/null 2>&1
@@ -1818,7 +1818,7 @@ else
   cli update-same-version 0 'already on|no new version' update --to "$head" --yes
   cli rollback-nothing 1 'nothing to roll back' rollback --yes
   if [ "$DEEP_UPDATE" = 1 ]; then
-    git -C "$STACK" -c user.name=bedrock-now-e2e -c user.email=e2e@example.invalid commit -q --allow-empty -m "e2e: next version"
+    git -C "$STACK" -c user.name=devos-ade-e2e -c user.email=e2e@example.invalid commit -q --allow-empty -m "e2e: next version"
     next="$(git -C "$STACK" rev-parse HEAD)"; git -C "$STACK" -c advice.detachedHead=false checkout -q "$head"
     cli update-to-next 0 'updated to' update --to "$next" --yes
     # from another folder: rollback hands restore an absolute backup path

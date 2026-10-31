@@ -16,7 +16,7 @@ COMPOSE_NEW = """services:
   open-webui:
     image: ghcr.io/open-webui/open-webui:v0.12.0-slim
   portal:
-    image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/portal:local   # per project
+    image: ${COMPOSE_PROJECT_NAME:-devos-ade}/portal:local   # per project
 """
 
 
@@ -389,9 +389,9 @@ def test_summary_carries_the_update_card(settings, paths):
     run_check(paths, GitHub())
     s = replace(settings, update_check=True, update_dir=paths.update_dir, status_dir=paths.status_dir)
     app = create_app(s, transport=httpx.MockTransport(lambda r: httpx.Response(503)))
-    with TestClient(app, base_url="http://bedrock-now.localhost", follow_redirects=False) as c:
-        c.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://bedrock-now.localhost"})
-        d = c.get("/api/summary", headers={"X-Requested-With": "bedrock-now"}).json()
+    with TestClient(app, base_url="http://devos-ade.localhost", follow_redirects=False) as c:
+        c.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://devos-ade.localhost"})
+        d = c.get("/api/summary", headers={"X-Requested-With": "devos-ade"}).json()
     u = d["update"]
     assert u["enabled"] and u["available"] and u["latest"] == "v0.3.0" and u["installed"] == "v0.2.1"
     assert u["estimate"]["download_mb"] == 1750
@@ -512,9 +512,9 @@ def test_summary_carries_the_version_label_without_the_check(settings, paths):
     paths.version.write_text(json.dumps({"version": "v0.3.0", "commit": "1a2b3c4", "images": []}))
     s = replace(settings, update_check=False, update_dir=paths.update_dir, status_dir=paths.status_dir)
     app = create_app(s, transport=httpx.MockTransport(lambda r: httpx.Response(503)))
-    with TestClient(app, base_url="http://bedrock-now.localhost", follow_redirects=False) as c:
-        c.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://bedrock-now.localhost"})
-        u = c.get("/api/summary", headers={"X-Requested-With": "bedrock-now"}).json()["update"]
+    with TestClient(app, base_url="http://devos-ade.localhost", follow_redirects=False) as c:
+        c.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://devos-ade.localhost"})
+        u = c.get("/api/summary", headers={"X-Requested-With": "devos-ade"}).json()["update"]
     assert u["installed"] == "v0.3.0" and u["available"] is False and u["release_url"].endswith("/releases/tag/v0.3.0")
 
 
@@ -595,7 +595,7 @@ def test_headlines_come_from_the_name_else_the_notes():
     h = updates.headline
     assert h("v0.9.0", "v0.9.0 — Git panel and Run & test", "x") == "Git panel and Run & test"
     assert h("v0.9.0", "DevOS ADE v0.9.0", "") == ""
-    assert h("v0.9.0", "devos-ade v0.9.0", "") == "" and h("v0.9.0", "bedrock-now v0.9.0", "") == ""   # (its names before)
+    assert h("v0.9.0", "devos-ade v0.9.0", "") == "" and h("v0.9.0", "devos-ade v0.9.0", "") == ""   # (its names before)
     assert h("v0.2.1", "v0.2.1", "\n### Changed\n\n- **Real provider logos** instead of badges") == "Real provider logos"
     assert h("v0.2.0", "v0.2.0", "\nOne portal with one login for everything, and `costs` [everywhere](https://x/y).") == \
         "One portal with one login for everything, and costs everywhere."
@@ -691,13 +691,13 @@ def test_home_asks_for_a_check_when_the_last_one_is_old(settings, paths):
     gh = GitHub(rels=releases(), etag=None)
     s = replace(settings, update_check=True, update_dir=paths.update_dir, status_dir=paths.status_dir)
     app = create_app(s, transport=httpx.MockTransport(github_or_503(gh)))
-    with TestClient(app, base_url="http://bedrock-now.localhost", follow_redirects=False) as c:
-        c.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://bedrock-now.localhost"})
-        u = c.get("/api/summary", headers={"X-Requested-With": "bedrock-now"}).json()["update"]
+    with TestClient(app, base_url="http://devos-ade.localhost", follow_redirects=False) as c:
+        c.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://devos-ade.localhost"})
+        u = c.get("/api/summary", headers={"X-Requested-With": "devos-ade"}).json()["update"]
         # what Home shows at once: the old answer (or, on a fast machine, already the new one)
         assert u["latest"] in ("v0.6.0", "v0.9.0")
         for _ in range(50):
-            u = c.get("/api/summary", headers={"X-Requested-With": "bedrock-now"}).json()["update"]
+            u = c.get("/api/summary", headers={"X-Requested-With": "devos-ade"}).json()["update"]
             if not u["checking"]:
                 break
             time.sleep(0.1)
@@ -710,9 +710,9 @@ def test_no_check_from_home_when_the_check_is_off(settings, paths):
     gh = GitHub()
     s = replace(settings, update_check=False, update_dir=paths.update_dir, status_dir=paths.status_dir)
     app = create_app(s, transport=httpx.MockTransport(github_or_503(gh)))
-    with TestClient(app, base_url="http://bedrock-now.localhost", follow_redirects=False) as c:
-        c.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://bedrock-now.localhost"})
-        u = c.get("/api/summary", headers={"X-Requested-With": "bedrock-now"}).json()["update"]
+    with TestClient(app, base_url="http://devos-ade.localhost", follow_redirects=False) as c:
+        c.post("/login", data={"password": "correct horse"}, headers={"Origin": "http://devos-ade.localhost"})
+        u = c.get("/api/summary", headers={"X-Requested-With": "devos-ade"}).json()["update"]
     assert u["checking"] is False and u["latest"] is None and gh.seen == []
 
 
@@ -732,9 +732,9 @@ def test_home_lists_every_release_and_says_when_it_checked():
 
 # --- Check for updates: a click (POST /api/update/check; static/updatecheck.js) ---
 
-XRW = {"X-Requested-With": "bedrock-now"}
-ORIGIN = {"Origin": "http://bedrock-now.localhost"}
-PREVIEW = "bedrock-now-preview.localhost"
+XRW = {"X-Requested-With": "devos-ade"}
+ORIGIN = {"Origin": "http://devos-ade.localhost"}
+PREVIEW = "devos-ade-preview.localhost"
 
 
 class Slow:
@@ -759,7 +759,7 @@ class Slow:
 def portal(settings, paths, gh, check=True, **kw):
     s = replace(settings, update_check=check, update_dir=paths.update_dir, status_dir=paths.status_dir, **kw)
     return TestClient(create_app(s, transport=httpx.MockTransport(github_or_503(gh))),
-                      base_url="http://bedrock-now.localhost", follow_redirects=False)
+                      base_url="http://devos-ade.localhost", follow_redirects=False)
 
 
 def sign_in(c):
@@ -805,10 +805,10 @@ def test_check_for_updates_asks_github_now_and_answers_the_result(settings, path
     ({}, 400),                                                        # no X-Requested-With
     ({**XRW}, 403),                                                   # no Origin, no Referer
     ({**XRW, "Origin": "http://evil.example"}, 403),                  # another site
-    ({**XRW, "Origin": "http://chat.bedrock-now.localhost"}, 403),    # another host of the site (an app's script)
+    ({**XRW, "Origin": "http://chat.devos-ade.localhost"}, 403),    # another host of the site (an app's script)
     ({**XRW, "Origin": f"http://p3000-abc123.{PREVIEW}"}, 403),       # a preview of the sandbox (Caddy refuses it first)
     ({**XRW, "Origin": "null"}, 403),                                 # an opaque origin (a sandboxed frame)
-    ({**XRW, "Referer": "http://evil.example/http://bedrock-now.localhost/"}, 403),
+    ({**XRW, "Referer": "http://evil.example/http://devos-ade.localhost/"}, 403),
 ])
 def test_check_for_updates_needs_the_portals_own_page(settings, paths, headers, status):
     write_version(paths, "v0.4.1")
@@ -1076,7 +1076,7 @@ def test_the_page_offers_check_for_updates_on_home_settings_and_search():
     assert 'id="release-line"' in html and 'src="/static/updatecheck.js"' in html
     assert html.index('src="/static/app.js"') < html.index('src="/static/updatecheck.js"') < html.index('src="/static/search.js"')
     assert '"aria-live": "polite"' in js and "Check for updates" in js
-    assert 'fetch("/api/update/check"' in js and 'method: "POST"' in js and '"X-Requested-With": "bedrock-now"' in js
+    assert 'fetch("/api/update/check"' in js and 'method: "POST"' in js and '"X-Requested-With": "devos-ade"' in js
     for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function"):
         assert sink not in js, sink
     # it sends nothing about this install: GitHub's public release list, the tooltip says so

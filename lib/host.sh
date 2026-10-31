@@ -8,14 +8,14 @@
 host_os() { uname -s; }   # overridable in tests
 have_cmd() { command -v "$1" >/dev/null 2>&1; }
 
-# Only the test suite (BEDROCK_NOW_TESTING=1) can point these at fakes; a stray variable in a user's shell
+# Only the test suite (DEVOS_ADE_TESTING=1) can point these at fakes; a stray variable in a user's shell
 # never changes where credentials come from.
 _sysfs() {
-  if [ "${BEDROCK_NOW_TESTING:-}" = 1 ] && [ -n "${BEDROCK_NOW_TEST_SYSFS:-}" ]; then printf '%s\n' "$BEDROCK_NOW_TEST_SYSFS"
+  if [ "${DEVOS_ADE_TESTING:-}" = 1 ] && [ -n "${DEVOS_ADE_TEST_SYSFS:-}" ]; then printf '%s\n' "$DEVOS_ADE_TEST_SYSFS"
   else printf '/sys\n'; fi
 }
 _imds_url() {
-  if [ "${BEDROCK_NOW_TESTING:-}" = 1 ] && [ -n "${BEDROCK_NOW_TEST_IMDS_URL:-}" ]; then printf '%s\n' "$BEDROCK_NOW_TEST_IMDS_URL"
+  if [ "${DEVOS_ADE_TESTING:-}" = 1 ] && [ -n "${DEVOS_ADE_TEST_IMDS_URL:-}" ]; then printf '%s\n' "$DEVOS_ADE_TEST_IMDS_URL"
   else printf 'http://169.254.169.254\n'; fi
 }
 
@@ -40,10 +40,10 @@ is_ec2_host() {
 }
 
 # imds_get PATH -> a value from EC2's instance metadata service (IMDSv2), only on an EC2 host. Short timeouts;
-# the session token goes to curl on stdin, never on argv. BEDROCK_NOW_NO_IMDS=1 skips it.
+# the session token goes to curl on stdin, never on argv. DEVOS_ADE_NO_IMDS=1 skips it.
 imds_get() {
   local tok url
-  [ "${BEDROCK_NOW_NO_IMDS:-0}" != 1 ] || return 1
+  [ "${DEVOS_ADE_NO_IMDS:-0}" != 1 ] || return 1
   is_ec2_host || return 1
   url="$(_imds_url)"
   tok="$(curl -fsS --connect-timeout 1 -m 2 -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' \
@@ -395,7 +395,7 @@ cmd_serve() {
   if [ -n "$holder" ]; then
     warn "$(stack_lock_says "$holder"): not starting the stack now — it does that itself; keeping the machine awake anyway"
   else
-    BEDROCK_NOW_NO_OPEN=1 cmd_up
+    DEVOS_ADE_NO_OPEN=1 cmd_up
     ! stack_lock_ours || stack_unlock   # (up releases it itself): keeping the machine awake blocks nothing else
   fi
   serve_urls
