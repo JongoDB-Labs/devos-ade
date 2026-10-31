@@ -40,7 +40,7 @@
 # THE MOVE FROM bedrock-now TO devos-ade (JON-807, lib/migrate.sh): the same run, but from an install whose project is the
 # OLD name, in a folder named like the old one, up to this checkout — and the checks are those of the move:
 #
-#   tests/e2e/upgrade.sh --migrate --aws-env FILE [--from v0.44.4 | v0.38.0] [--then rollback | remove-old] [--keep]
+#   tests/e2e/upgrade.sh --migrate --aws-env FILE [--from v0.44.4 | v0.38.0] [--then rollback | next-update] [--keep]
 #       the real names: project bedrock-now, host bedrock-now.localhost, then devos-ade. REFUSES on a host where a live
 #       bedrock-now or devos-ade install exists (containers, volumes, ~/bedrock-now, ~/devos-ade): run it on the Linux test host.
 #   tests/e2e/upgrade.sh --migrate-pair NEWPROJECT --project OLDPROJECT --aws-env FILE ...
@@ -51,10 +51,10 @@
 #   seeded install either way: a partial MLX download (blobs + relative links), LM Studio's records, an `lms import` link,
 #   a Code page session record. Asserted: the seeded data; the new hostname answering and the old one's 308 (GET, HEAD,
 #   POST, PUT, DELETE; path and query kept; sockets refused; no cookie); the old origin refused as an Origin on the new
-#   host; the seeded Open WebUI chat still the user's (same email, no second user); the backup volumes kept and equal;
+#   host; the seeded Open WebUI chat still the user's (same email, no second user); the old volumes and image tags removed by the update once its checks passed;
 #   .env.pre-devos-ade; the folder moved by rename (same inode under .state/mlx/hf), the old name a link; relative links
 #   unchanged, absolute ones rewritten, no old path left; byte-identical sample files; ports unchanged. --then rollback runs
-#   ./stack migrate --rollback and starts the old project from the old code; --then remove-old runs --remove-old --yes.
+#   ./stack migrate --rollback and starts the old project from the old code; --then next-update runs ./stack update --yes again and asserts the leftovers (.env.pre-devos-ade, the link) are removed.
 set -uo pipefail
 umask 077
 
@@ -75,7 +75,7 @@ while [ $# -gt 0 ]; do
     --from) FROM="${2:?}"; FROM_SET=1; shift 2 ;;
     --migrate) MIGRATE=default; shift ;;
     --migrate-pair) MIGRATE=pair; NEWP="${2:?}"; shift 2 ;;
-    --then) THEN="${2:?}"; case "$THEN" in rollback | remove-old) ;; *) echo "--then takes rollback or remove-old" >&2; exit 2 ;; esac; shift 2 ;;
+    --then) THEN="${2:?}"; case "$THEN" in rollback | next-update) ;; *) echo "--then takes rollback or next-update" >&2; exit 2 ;; esac; shift 2 ;;
     --keep) KEEP=1; shift ;;
     --real-github) REAL_GITHUB=1; shift ;;
     --teardown) TEARDOWN_ONLY=1; shift ;;
@@ -258,25 +258,18 @@ migrate_checks() {
   # --- the seeded Open WebUI chat is still the user's: the same email signs in, sees it, and no second account came
   got="$(owui "print([u.get('email') for u in api('GET', '/api/v1/users/all', None, TOKEN).get('users', [])])" 2>/dev/null)"
   check no-second-user "$(case "$got" in *admin@devos-ade.local*) echo 1 ;; *admin@bedrock-now.local*) echo 0 ;; *) echo 1 ;; esac)" "Open WebUI users: $got"
-  # --- the backup: every old volume is still there, untouched, with the marker's word that each copy was verified
-  : > "$OUT/old-volumes-missing"
+  # --- the old copy: removed by the update itself after its checks passed (volumes and image tags), and the marker says so
+  : > "$OUT/old-volumes-left"
   while read -r vol; do
     [ -n "$vol" ] || continue
-    case "$vol" in *-owner) continue ;; esac
-    docker volume inspect "$vol" >/dev/null 2>&1 || echo "$vol" >> "$OUT/old-volumes-missing"
+    docker volume inspect "$vol" >/dev/null 2>&1 && echo "$vol" >> "$OUT/old-volumes-left"
   done < "$OUT/before/volumes"
-  check backup-volumes-kept "$([ ! -s "$OUT/old-volumes-missing" ] && echo 0 || echo 1)" "missing old volumes: $(tr '\n' ' ' < "$OUT/old-volumes-missing")"
-  img="$(docker inspect --format '{{.Config.Image}}' "$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=postgres | head -1)" 2>/dev/null)"
-  a="$(docker run --rm --network none -v "${OLD_PROJECT}_pgdata:/v:ro" --entrypoint cat "$img" /v/PG_VERSION 2>/dev/null)"
-  b="$(docker run --rm --network none -v "${PROJECT}_pgdata:/v:ro" --entrypoint cat "$img" /v/PG_VERSION 2>/dev/null)"
-  check backup-pgdata-equal "$([ -n "$a" ] && [ "$a" = "$b" ] && echo 0 || echo 1)" "PG_VERSION old '$a', new '$b'"
-  a="$(docker run --rm --network none -v "${OLD_PROJECT}_owui:/v:ro" --entrypoint sh "$img" -c 'cd /v && find . -type f -exec sha256sum {} + | sort -k2 | sha256sum')"
-  sleep 3; b="$(docker run --rm --network none -v "${OLD_PROJECT}_owui:/v:ro" --entrypoint sh "$img" -c 'cd /v && find . -type f -exec sha256sum {} + | sort -k2 | sha256sum')"
-  check backup-volume-untouched "$([ -n "$a" ] && [ "$a" = "$b" ] && echo 0 || echo 1)" "the old Open WebUI volume reads the same twice, while the new stack runs: $a / $b"
+  check old-copy-removed "$([ ! -s "$OUT/old-volumes-left" ] && echo 0 || echo 1)" "old volumes still there: $(tr '\n' ' ' < "$OUT/old-volumes-left")"
+  check old-images-removed "$([ -z "$(docker image ls -q "$OLD_PROJECT/portal:local")" ] && [ -n "$(docker image ls -q "$PROJECT/portal:local")" ] && echo 0 || echo 1)" "the old image tags are gone, the new ones are there"
+  check old-copy-marker "$(grep -qx 'old_copy=removed' "$STACK/.state/migrate/marker" && echo 0 || echo 1)" "$(grep -E '^(old_copy|freed_kb|verify_failed)=' "$STACK/.state/migrate/marker" | tr '\n' ' ')"
   check backup-env "$([ -f "$STACK/.env.pre-devos-ade" ] && echo 0 || echo 1)" ".env.pre-devos-ade"
-  check backup-images "$([ -n "$(docker image ls -q "$OLD_PROJECT/portal:local")" ] && echo 0 || echo 1)" "the old images $OLD_PROJECT/portal:local kept"
   st migrate > "$LOGS/migrate-status.log" 2>&1
-  check backup-said "$(grep -q -- '--remove-old' "$LOGS/migrate-status.log" && grep -q "moved to" "$LOGS/migrate-status.log" && echo 0 || echo 1)" "$(tr '\n' ' ' < "$LOGS/migrate-status.log" | cut -c1-200)"
+  check migrate-status-said "$(grep -q "old copy was removed" "$LOGS/migrate-status.log" && grep -q "moved to" "$LOGS/migrate-status.log" && echo 0 || echo 1)" "$(tr '\n' ' ' < "$LOGS/migrate-status.log" | cut -c1-200)"
   check marker-complete "$(grep -qx 'status=complete' "$STACK/.state/migrate/marker" && echo 0 || echo 1)" "$(tr '\n' ' ' < "$STACK/.state/migrate/marker" 2>/dev/null | cut -c1-160)"
   # --- the layout like the owner's: moved by rename, byte-identical, relative links as they were, absolute ones rewritten
   ST="$STACK/.state"
@@ -296,14 +289,14 @@ EOF
   check no-old-path-left "$([ -z "$left" ] && echo 0 || echo 1)" "files or links still naming $OLD_STACK: ${left:-none}"
   # --- then: the way back, or the end of the backup
   case "$THEN" in
-    remove-old)
-      st migrate --remove-old --yes > "$LOGS/remove-old.log" 2>&1
-      check remove-old-lists "$(grep -q "${OLD_PROJECT}_pgdata" "$LOGS/remove-old.log" && echo 0 || echo 1)" "the list names the old volumes"
-      left="$(docker volume ls -q | grep -E "^${OLD_PROJECT}_" | tr '\n' ' ')"
-      check remove-old-removed "$([ -z "$left" ] && [ ! -f "$STACK/.env.pre-devos-ade" ] && echo 0 || echo 1)" "old volumes left: ${left:-none}"
-      check remove-old-keeps-new "$([ -n "$(docker volume ls -q | grep -E "^${PROJECT}_pgdata$")" ] && [ "$(pcurl -o /dev/null -w '%{http_code}' "$(purl /caddy-health)")" != 000 ] && echo 0 || echo 1)" "the new project's volumes and the portal are still there" ;;
+    next-update)
+      st update --yes > "$LOGS/next-update.log" 2>&1; n=$?
+      check next-update-ran "$n" "the next ./stack update: exit $n"
+      check leftovers-removed "$([ ! -f "$STACK/.env.pre-devos-ade" ] && [ ! -L "$OLD_STACK" ] && echo 0 || echo 1)" ".env.pre-devos-ade and the old folder link are gone" ;;
     rollback)
-      pcurl -o /dev/null "$(purl /)" || true
+      # data written after the move must come back with the rollback (the old volumes were removed: they are made again from the new ones)
+      AFTER_CHAT="$(owui "print(api('POST', '/api/v1/chats/new', {'chat': {'title': 'e2e-after-move', 'messages': []}}, TOKEN)['id'])" 2>/dev/null)"
+      check chat-after-move-made "$([ -n "$AFTER_CHAT" ] && echo 0 || echo 1)" "a chat written on the new project: ${AFTER_CHAT:-not made}"
       st migrate --rollback --yes > "$LOGS/rollback.log" 2>&1; n=$?
       check rollback-ran "$n" "./stack migrate --rollback: exit $n"
       check rollback-folder "$([ -f "$OLD_STACK/.env" ] && [ ! -L "$OLD_STACK" ] && [ ! -e "$STACK" ] && echo 0 || echo 1)" "the install is back at $OLD_STACK"
@@ -312,7 +305,9 @@ EOF
       git -C "$STACK" -c advice.detachedHead=false checkout -q "$FROM" 2>/dev/null; st up --yes > "$LOGS/rollback-up.log" 2>&1; n=$?
       check rollback-old-project-runs "$n" "the old code starts the old project again: exit $n"
       got="$(owui "print(api('GET', '/api/v1/chats/$CHAT_ID', None, TOKEN)['title'])" 2>/dev/null)"
-      check rollback-chat-kept "$([ "$got" = e2e-upgrade ] && echo 0 || echo 1)" "the chat on the old project: ${got:-gone}" ;;
+      check rollback-chat-kept "$([ "$got" = e2e-upgrade ] && echo 0 || echo 1)" "the chat on the old project: ${got:-gone}"
+      got="$(owui "print(api('GET', '/api/v1/chats/$AFTER_CHAT', None, TOKEN)['title'])" 2>/dev/null)"
+      check rollback-keeps-data-written-since "$([ "$got" = e2e-after-move ] && echo 0 || echo 1)" "the chat written after the move, on the old project: ${got:-gone}" ;;
   esac
 }
 

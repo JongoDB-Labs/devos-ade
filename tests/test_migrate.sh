@@ -25,8 +25,13 @@ _mg_docker() {
       esac ;;
     ps) case "$*" in
           *health=unhealthy*) cat "$DK/unhealthy" 2>/dev/null || true ;;
+          *status=restarting*) cat "$DK/restarting" 2>/dev/null || true ;;
+          *service=postgres*) local all="$*" p; p="${all#*project=}"; p="${p%% *}"; awk -v p="$p" '$2 == p && $3 == "postgres" { print $1 }' "$DK/containers" ;;
           *) local all="$*" p; p="${all#*project=}"; p="${p%% *}"; awk -v p="$p" '$2 == p { print $1 }' "$DK/containers" ;;
         esac ;;
+    exec) local cid="$2" proj last; proj="$(awk -v c="$cid" '$1 == c { print $2 }' "$DK/containers")"
+      case "$*" in *datname*) cat "$DK/pgdbs-$proj" 2>/dev/null || return 1 ;;
+        *) for last; do :; done; cat "$DK/pg-$proj-$last" 2>/dev/null || return 1 ;; esac ;;
     stop) : ;;
     rm) grep -v "^$2 " "$DK/containers" > "$DK/c.new" || true; mv "$DK/c.new" "$DK/containers" ;;
     network) case "$2" in
@@ -90,7 +95,7 @@ _mg_env() {
   echo '{}' > "$DK/vol/${OLDP}_terminal-home/.config/$OLDP/mcp.json"; echo t > "$DK/vol/${OLDP}_terminal-home/.$OLDP-trash/x/f"
   _mg_vol "${OLDP}_terminal-socket"; _mg_vol "${OLDP}_portal-state"; echo '{"s":1}' > "$DK/vol/${OLDP}_portal-state/sessions.json"
   _mg_vol "${OLDP}_${OLDP}-owner"; echo "$INST" > "$DK/owner"
-  printf 'c1 %s\nc2 %s\n' "$OLDP" "$OLDP" > "$DK/containers"; printf 'n1 %s\n' "$OLDP" > "$DK/networks"
+  printf 'c1 %s postgres\nc2 %s\n' "$OLDP" "$OLDP" > "$DK/containers"; printf 'n1 %s\n' "$OLDP" > "$DK/networks"
   printf '%s/portal:local\n%s/shared-mcp:local\nfake/image:1\n' "$OLDP" "$OLDP" > "$DK/images"
   # other projects and other products' files that must never be touched
   _mg_vol "bn-dev_pgdata"; echo keep > "$DK/vol/bn-dev_pgdata/f"; _mg_vol "${OLDP}-2_pgdata"
@@ -168,7 +173,7 @@ test_the_allowed_list_names_only_this_installs_own_things() {
   mg_allowed bin "$HOME/.local/bin/devos-claude"; mg_allowed bin "$HOME/.local/bin/claude-bedrock"; ! mg_allowed bin "$HOME/.local/bin/xirp"
   mg_allowed config ".config/$NEWP"; ! mg_allowed config ".config/devos-heavy"; ! mg_allowed config ".ssh"
   mg_allowed systemd "$(mg_systemd_dir)/$OLDP-helper-$OLDP.service"; ! mg_allowed systemd "$(mg_systemd_dir)/xirp.service"
-  assert_eq "$MG_ALLOWED_KINDS" "dir volume image network container launchd systemd bin config"
+  assert_eq "$MG_ALLOWED_KINDS" "dir volume image network container launchd systemd bin config host"
   local out rc=0; out="$( (mg_guard volume bn-dev_pgdata) 2>&1)" || rc=$?
   [ "$rc" != 0 ]; assert_contains "$out" "refusing to change volume 'bn-dev_pgdata'"; assert_contains "$out" "devos-heavy"
   out="$( (mg_guard dir "$HOME/.local/state/devos-heavy") 2>&1)" && return 1
@@ -482,7 +487,7 @@ test_rollback_returns_the_old_project_folder_env_and_labels_with_the_data_and_ke
   [ -d "$INST/.state" ] && [ ! -L "$INST" ] && [ ! -e "$NEW" ]
   assert_eq "$(get_env PORTAL_HOST)" "$OLDP.localhost"; assert_eq "$(get_env BEDROCK_NOW_RELEASES_URL)" "https://example.invalid/releases"
   assert_eq "$(get_env COMPOSE_PROJECT_NAME)" "$OLDP"        # the checked-out code must keep running the old project
-  assert_eq "$(get_env NEWDATA)" ""; [ -f "$INST/.env.devos-ade-rolled-back" ]
+  assert_eq "$(get_env NEWDATA)" 1; [ -f "$INST/.env.devos-ade-rolled-back" ]   # (settings changed since the move survive)
   assert_contains "$(cat "$INST/.state/runtimes/lmstudio/llmster.run")" "$INST/.state/runtimes/lmstudio/home"
   assert_eq "$(readlink "$INST/.state/runtimes/lmstudio/home/.lmstudio/models/org/m.gguf")" "$INST/.state/mlx/hf/hub/models--a--b/blobs/abc123.incomplete"
   assert_eq "$(readlink "$INST/.state/mlx/hf/hub/models--a--b/snapshots/rev1/model.safetensors")" "../../blobs/abc123.incomplete"
@@ -494,14 +499,225 @@ test_rollback_returns_the_old_project_folder_env_and_labels_with_the_data_and_ke
   _mg_old_untouched
   assert_eq "$(cksum < "$INST/.state/mlx/hf/hub/models--a--b/blobs/abc123.incomplete")" "$SAMPLE_BLOB"
 }
-test_rollback_works_from_a_move_that_stopped_halfway_and_refuses_after_remove_old() {
+test_rollback_works_from_a_move_that_stopped_halfway_and_after_remove_old() {
   _mg_env; : > "$DK/corrupt"; _mg_try; [ "$MGRC" != 0 ]
   mg_init; migrate_rollback 2>/dev/null; assert_eq "$(_st)" rolled-back; assert_eq "$(get_env COMPOSE_PROJECT_NAME)" "$OLDP"; _mg_old_untouched
   _mg_env; _mg_run 2>/dev/null; printf 'd1 %s\n' "$NEWP" >> "$DK/containers"; migrate_update_finish 2>/dev/null; migrate_remove_old >/dev/null 2>&1
-  ( migrate_rollback ) > "$TMP/out" 2>&1 && return 1; assert_contains "$(cat "$TMP/out")" "backup was removed"
+  migrate_rollback > "$TMP/out" 2>&1; assert_eq "$(_st)" rolled-back   # (the old copy having been removed does not stop a rollback)
 }
 test_rollback_with_nothing_to_go_back_from_says_so() {
   _mg_env; mg_init; ( migrate_rollback ) > "$TMP/out" 2>&1 && return 1; assert_contains "$(cat "$TMP/out")" "nothing to go back from"
+}
+
+# --- round 2: the way back keeps what was written since; ./stack rollback; other projects; host names; the owner marker ---
+_mg_after_move() { _mg_run 2>/dev/null; printf 'd1 %s\n' "$NEWP" >> "$DK/containers"; migrate_update_finish 2>/dev/null; }
+test_rollback_copies_the_data_written_since_the_move_back_and_keeps_the_new_volumes_untouched() {
+  _mg_env; _mg_after_move
+  head -c 4000 /dev/urandom > "$DK/vol/${NEWP}_owui/chat-since-the-move.db"; echo 'row-since' >> "$DK/vol/${NEWP}_pgdata/base/1/1259"
+  local want_chat want_pg; want_chat="$(cksum < "$DK/vol/${NEWP}_owui/chat-since-the-move.db")"; want_pg="$(cksum < "$DK/vol/${NEWP}_pgdata/base/1/1259")"
+  migrate_rollback 2>/dev/null
+  assert_eq "$(cksum < "$DK/vol/${OLDP}_owui/chat-since-the-move.db")" "$want_chat"
+  assert_eq "$(cksum < "$DK/vol/${OLDP}_pgdata/base/1/1259")" "$want_pg"
+  assert_eq "$(cksum < "$DK/vol/${NEWP}_owui/chat-since-the-move.db")" "$want_chat"     # the new volumes: untouched, kept
+  [ -f "$DK/vol/${OLDP}_owui/webui.db" ]
+  ! grep -E "^volume rm " "$DK/log" | grep -v "${NEWP}_${NEWP}-owner" | grep -q .      # nothing deleted
+  [ -f "$DK/vol/${OLDP}_terminal-home/.config/$OLDP/mcp.json" ] && [ ! -e "$DK/vol/${OLDP}_terminal-home/.config/$NEWP" ]
+  assert_eq "$(_st)" rolled-back
+}
+test_rollback_reverses_the_current_env_not_the_backup() {
+  _mg_env; _mg_after_move
+  set_env PORTAL_PORT 8899; set_env DEVOS_ADE_NEWKEY yes; set_env LITELLM_PORT 4999
+  migrate_rollback 2>/dev/null
+  assert_eq "$(get_env PORTAL_PORT)" 8899; assert_eq "$(get_env BEDROCK_NOW_NEWKEY)" yes; assert_eq "$(get_env DEVOS_ADE_NEWKEY)" ""
+  assert_eq "$(get_env PORTAL_HOST)" "$OLDP.localhost"; assert_eq "$(get_env COMPOSE_PROJECT_NAME)" "$OLDP"
+  assert_eq "$(get_env BEDROCK_NOW_RELEASES_URL)" "https://example.invalid/releases"
+  # a PORTAL_HOST the person chose is not touched
+  _mg_env; set_env PORTAL_HOST ade.example.test; _mg_after_move; migrate_rollback 2>/dev/null
+  assert_eq "$(get_env PORTAL_HOST)" ade.example.test
+}
+test_a_rollback_copy_that_does_not_verify_stops_with_the_new_volumes_intact_and_resumes() {
+  _mg_env; _mg_after_move; echo more >> "$DK/vol/${NEWP}_owui/webui.db"
+  : > "$DK/corrupt"; ( migrate_rollback ) > "$TMP/out" 2>&1 && return 1
+  assert_contains "$(cat "$TMP/out")" "does not match"; assert_contains "$(cat "$TMP/out")" "untouched"
+  assert_eq "$(_st)" complete; [ -d "$NEW" ] && [ -L "$INST" ]            # nothing else moved
+  rm -f "$DK/corrupt"; migrate_rollback 2>/dev/null; assert_eq "$(_st)" rolled-back
+  assert_eq "$(tail -c 5 "$DK/vol/${OLDP}_owui/webui.db")" "more"
+}
+test_stack_rollback_after_a_move_undoes_the_move_first_then_runs_in_the_old_folder() {
+  _mg_env; _mg_after_move
+  printf '#!/bin/sh\necho "OLD-STACK $*" > "%s/ran"\n' "$TMP" > "$NEW/stack"; chmod +x "$NEW/stack"
+  ( migrate_rollback_first ) > "$TMP/out" 2>&1 || { cat "$TMP/out" >&2; return 1; }
+  assert_eq "$(cat "$TMP/ran")" "OLD-STACK rollback"; [ -d "$INST/.state" ] && [ ! -L "$INST" ]
+  assert_eq "$(cat "$INST/.state/migrate/marker.rolled-back-"* | grep -c status=complete)" 1
+  # not moved: nothing happens
+  _mg_env; mg_init; ( migrate_rollback_first ) > "$TMP/out" 2>&1; assert_eq "$(cat "$TMP/out")" ""
+}
+test_stack_rollback_refuses_with_the_exact_command_when_the_move_cannot_be_undone() {
+  _mg_env; _mg_after_move; printf '#!/bin/sh\ntouch "%s/ran"\n' "$TMP" > "$NEW/stack"; chmod +x "$NEW/stack"
+  : > "$DK/corrupt"; ( migrate_rollback_first ) > "$TMP/out" 2>&1 && return 1
+  assert_contains "$(cat "$TMP/out")" "./stack migrate --rollback"; assert_contains "$(cat "$TMP/out")" "Nothing of the code was changed"; [ ! -e "$TMP/ran" ]
+  rm -f "$DK/corrupt"; migrate_remove_old >/dev/null 2>&1
+  ( migrate_rollback_first ) > "$TMP/out" 2>&1; [ -e "$TMP/ran" ]                   # the old copy having gone does not stop it
+}
+test_the_owner_marker_is_made_again_for_the_new_code_and_not_copied() {
+  _mg_env; _mg_after_move
+  [ -d "$DK/vol/${NEWP}_${NEWP}-owner" ]; grep -q "volume create --label io.devos-ade.dir=$NEW --label io.devos-ade.project=$NEWP ${NEWP}_${NEWP}-owner" "$DK/log"
+  [ ! -d "$DK/vol/${NEWP}_${OLDP}-owner" ]
+}
+_mg_other_project() { # the install of project bn-dev: it has its own volumes, helper and old env keys
+  _mg_env; P2=bn-dev
+  set_env COMPOSE_PROJECT_NAME "$P2"
+  _mg_vol "${P2}_terminal-home"; mkdir -p "$DK/vol/${P2}_terminal-home/.config/$OLDP"; echo '{}' > "$DK/vol/${P2}_terminal-home/.config/$OLDP/mcp.json"
+  sed "s/helper\.$OLDP/helper.$P2/g" "$HOME/Library/LaunchAgents/io.$OLDP.helper.$OLDP.plist" > "$HOME/Library/LaunchAgents/io.$OLDP.helper.$P2.plist"
+  rm -f "$HOME/Library/LaunchAgents/io.$OLDP.helper.$OLDP.plist"
+  printf 'OTHER %s\n' x > /dev/null
+}
+test_an_install_of_another_project_gets_a_partial_move_names_only() {
+  _mg_other_project
+  # another install's agent on the same Mac, which must not be touched
+  printf '<plist>other</plist>\n' > "$HOME/Library/LaunchAgents/io.$OLDP.helper.zzz.plist"
+  _mg_run 2>/dev/null
+  assert_eq "$(_get mode)" partial; assert_eq "$(_st)" moved
+  assert_eq "$(get_env COMPOSE_PROJECT_NAME)" bn-dev; assert_eq "$(get_env PORTAL_HOST)" "$OLDP.localhost"
+  assert_eq "$(get_env DEVOS_ADE_RELEASES_URL)" "https://example.invalid/releases"; assert_eq "$(get_env BEDROCK_NOW_RELEASES_URL)" ""
+  [ -f "$NEW/.env.pre-devos-ade" ] && [ -L "$INST" ]                                      # its folder is ~/bedrock-now: it moves
+  local la="$HOME/Library/LaunchAgents"
+  [ -f "$la/io.$NEWP.helper.bn-dev.plist" ] && [ -f "$la/io.$OLDP.helper.bn-dev.plist.pre-devos-ade" ]
+  grep -q "<string>io.$NEWP.helper.bn-dev</string>" "$la/io.$NEWP.helper.bn-dev.plist"
+  [ -f "$la/io.$OLDP.helper.zzz.plist" ] && [ ! -f "$la/io.$NEWP.helper.zzz.plist" ]       # another install's agent: untouched
+  [ -d "$DK/vol/bn-dev_terminal-home/.config/$NEWP" ] && [ ! -e "$DK/vol/bn-dev_terminal-home/.config/$OLDP" ]
+  ! grep -E "volume (create|rm)|^tag |^rmi |^run .*mg-copy" "$DK/log" | grep -v "devos-ade-owner" | grep -q .   # no volume copy, no image change
+  [ -d "$DK/vol/${OLDP}_pgdata" ] && [ ! -d "$DK/vol/${NEWP}_pgdata" ]
+  migrate_update_finish 2>/dev/null; assert_eq "$(_st)" complete
+  assert_contains "$(migrate_backup_line)" ".env.pre-devos-ade"
+}
+test_a_partial_move_in_a_folder_of_another_name_moves_no_folder_and_a_rollback_undoes_it() {
+  _mg_other_project; mkdir -p "$HOME/second"; mv "$INST" "$HOME/second/stack"; INST="$HOME/second/stack"; STACK_DIR="$INST"; ENV_FILE="$INST/.env"; STATE_DIR="$INST/.state"
+  _mg_run 2>/dev/null; assert_eq "$(_st)" moved; [ -d "$INST" ] && [ ! -L "$INST" ] && [ ! -e "$HOME/second/devos-ade" ]
+  migrate_update_finish 2>/dev/null; set_env DEVOS_ADE_LATER 1
+  migrate_rollback 2>/dev/null
+  assert_eq "$(get_env BEDROCK_NOW_RELEASES_URL)" "https://example.invalid/releases"; assert_eq "$(get_env BEDROCK_NOW_LATER)" 1
+  assert_eq "$(get_env COMPOSE_PROJECT_NAME)" bn-dev
+  local la="$HOME/Library/LaunchAgents"; [ -f "$la/io.$OLDP.helper.bn-dev.plist" ] && [ ! -f "$la/io.$NEWP.helper.bn-dev.plist" ]
+  [ -d "$DK/vol/bn-dev_terminal-home/.config/$OLDP" ] && [ ! -d "$DK/vol/${NEWP}_pgdata" ]
+}
+test_a_full_move_leaves_the_helper_agent_of_another_project_alone() {
+  _mg_env; printf '<plist>other</plist>\n' > "$HOME/Library/LaunchAgents/io.$OLDP.helper.bn-dev.plist"
+  _mg_run 2>/dev/null
+  [ -f "$HOME/Library/LaunchAgents/io.$OLDP.helper.bn-dev.plist" ] && [ ! -f "$HOME/Library/LaunchAgents/io.$NEWP.helper.bn-dev.plist" ]
+  [ -f "$HOME/Library/LaunchAgents/io.$NEWP.helper.$NEWP.plist" ]
+}
+test_the_workspace_trash_the_open_profile_and_the_hint_file_are_renamed_inside_the_list_only() {
+  _mg_env; mg_init; local ws="$HOME/$OLDP-workspace" cfg="$HOME/.claude-bedrock" prof="$HOME/Library/Application Support"
+  mkdir -p "$ws/$MG_OLD_TRASH/a" "$ws/p1/$MG_OLD_TRASH/b" "$ws/p1/src" "$prof/$OLDP" "$cfg" "$ws/deep/er/$MG_OLD_TRASH"
+  : > "$cfg/$MG_OLD_HINT"; echo keep > "$ws/p1/$MG_OLD_TRASH/b/f"; mkdir -p "$ws/deep"
+  mg_allowed host "$ws/$MG_OLD_TRASH"; mg_allowed host "$ws/p1/$MG_NEW_TRASH"; mg_allowed host "$cfg/$MG_OLD_HINT"
+  ! mg_allowed host "$ws/deep/er/$MG_OLD_TRASH"; ! mg_allowed host "$HOME/.ssh"; ! mg_allowed host "$HOME/.local/state/devos-heavy"
+  _mg_run 2>/dev/null
+  [ -d "$ws/$MG_NEW_TRASH/a" ] && [ ! -e "$ws/$MG_OLD_TRASH" ]; assert_eq "$(cat "$ws/p1/$MG_NEW_TRASH/b/f")" keep
+  [ -d "$prof/$NEWP" ] && [ ! -e "$prof/$OLDP" ]; [ -f "$cfg/$MG_NEW_HINT" ] && [ ! -e "$cfg/$MG_OLD_HINT" ]
+  [ -d "$ws/deep/er/$MG_OLD_TRASH" ]                                                  # two levels down: not the stack's to rename
+  migrate_rollback 2>/dev/null
+  [ -d "$ws/$MG_OLD_TRASH/a" ] && [ -f "$cfg/$MG_OLD_HINT" ] && [ -d "$prof/$OLDP" ] && [ -f "$ws/p1/$MG_OLD_TRASH/b/f" ]
+}
+test_tailscale_defaults_are_pinned_for_a_default_and_for_another_project() {
+  _mg_env; set_env REMOTE_MODE tailscale; _mg_run 2>/dev/null
+  assert_eq "$(get_env TS_SERVICE)" bedrock-now; assert_eq "$(get_env TS_HOSTNAME)" bedrock-now-node; assert_eq "$(get_env TS_TAG)" tag:bedrock-now
+  _mg_other_project; set_env REMOTE_MODE tailscale; set_env TS_TAG tag:mine; _mg_run 2>/dev/null
+  assert_eq "$(get_env TS_SERVICE)" bedrock-now-bn-dev; assert_eq "$(get_env TS_TAG)" tag:mine
+}
+test_the_helper_shim_hands_over_once_and_starts_the_renamed_helper() {
+  _mg_env; MG_NEW_DIR="$NEW"; mkdir -p "$TMP/shimdir/bin"; MG_OLD_UNIT_SAVE="$MG_OLD_UNIT"
+  mg_init; mkdir -p "$NEW/bin"; : > "$NEW/bin/$MG_NEW_UNIT"; rm -f "$NEW/bin/$MG_OLD_UNIT"
+  printf '#!/bin/sh\necho "NEW-HELPER $*" > "%s/h"\n' "$TMP" > "$NEW/bin/$MG_NEW_UNIT"
+  printf '#!/bin/sh\necho "$*" >> "%s/fh"\n' "$TMP" > "$NEW/stack"; chmod +x "$NEW/stack"
+  mg_helper_shim
+  /bin/bash "$NEW/bin/$MG_OLD_UNIT" "$NEW"
+  assert_eq "$(cat "$TMP/fh")" "migrate --finish-helper"; assert_eq "$(cat "$TMP/h")" "NEW-HELPER $NEW"
+}
+
+# --- round 3: the old copy goes by itself once the cutover is verified (owner decision) ---
+_mg_pg_setup() { # the old databases are counted while the old stack runs; the new stack holds the same rows after the copy
+  printf 'openwebui\nlitellm\n' > "$DK/pgdbs-$OLDP"; cp "$DK/pgdbs-$OLDP" "$DK/pgdbs-$NEWP"
+  printf 'user\t2\nchat\t5\n' > "$DK/pg-$OLDP-openwebui"; printf 'spend\t10\n' > "$DK/pg-$OLDP-litellm"
+  cp "$DK/pg-$OLDP-openwebui" "$DK/pg-$NEWP-openwebui"; cp "$DK/pg-$OLDP-litellm" "$DK/pg-$NEWP-litellm"
+  _mg_vol "${OLDP}_gitdata"; mkdir -p "$DK/vol/${OLDP}_gitdata/repositories/u/a.git" "$DK/vol/${OLDP}_gitdata/repositories/u/b.git"; echo ref > "$DK/vol/${OLDP}_gitdata/repositories/u/a.git/HEAD"
+  mkdir -p "$DK/vol/${OLDP}_terminal-home/.config/$OLDP"; echo '{"k":1}' > "$DK/vol/${OLDP}_terminal-home/.config/$OLDP/settings.json"
+}
+_mg_up_on_new() { printf 'd1 %s postgres\n' "$NEWP" >> "$DK/containers"; migrate_update_finish 2>/dev/null; }
+_mg_moved_and_verified() { _mg_env; _mg_pg_setup; _mg_run 2>/dev/null; _mg_up_on_new; }
+test_the_old_copy_is_removed_after_every_check_passes_and_the_small_leftovers_wait_for_the_next_update() {
+  _mg_env; _mg_pg_setup; local out; _mg_run 2>/dev/null; printf 'd1 %s postgres\n' "$NEWP" >> "$DK/containers"
+  out="$(migrate_update_finish 2>&1)"
+  assert_contains "$out" "the old copy is removed"; assert_contains "$out" "freed"; assert_contains "$out" "2 user(s), 5 chat(s)"
+  assert_eq "$(_st)" complete; assert_eq "$(_get old_copy)" removed
+  ! ls "$DK/vol" | grep -q "^${OLDP}_"; ! grep -q "^$OLDP/" "$DK/images"; grep -q "^$NEWP/portal:local" "$DK/images"
+  [ -d "$DK/vol/${NEWP}_pgdata" ] && [ -d "$DK/vol/bn-dev_pgdata" ] && [ -d "$DK/vol/${OLDP}-2_pgdata" ]       # the new data and others' volumes stay
+  [ -f "$NEW/.env.pre-devos-ade" ] && [ -L "$INST" ]                                                        # these wait
+  assert_contains "$(migrate_backup_line)" ".env.pre-devos-ade and the old folder link go with the next update"
+  assert_not_contains "$(migrate_backup_line)" "delete"
+  # the next update
+  mg_init; migrate_update_hook 2>/dev/null
+  [ ! -f "$NEW/.env.pre-devos-ade" ] && [ ! -L "$INST" ] && [ ! -e "$HOME/Library/LaunchAgents/io.$OLDP.helper.$OLDP.plist.pre-devos-ade" ]
+  [ -f "$HOME/Library/LaunchAgents/io.$NEWP.helper.$NEWP.plist" ] && [ -f "$HOME/.local/state/devos-heavy/heavy.lock" ]
+  assert_eq "$(migrate_backup_line)" ""
+}
+test_each_failed_check_keeps_the_old_copy_and_says_why() {
+  local case why
+  for case in rows unhealthy restarting uncounted repos sample runtime copy gone; do
+    _mg_env; _mg_pg_setup
+    case "$case" in
+      uncounted) rm -f "$DK/pgdbs-$OLDP" ;;
+      copy) : ;;
+    esac
+    _mg_run 2>/dev/null; printf 'd1 %s postgres\n' "$NEWP" >> "$DK/containers"
+    case "$case" in
+      rows) printf 'user\t2\nchat\t4\n' > "$DK/pg-$NEWP-openwebui"; why="chat has 4 rows" ;;
+      unhealthy) echo d1 > "$DK/unhealthy"; why=unhealthy ;;
+      restarting) echo d1 > "$DK/restarting"; why=restarting ;;
+      uncounted) why="not counted" ;;
+      repos) rm -rf "$DK/vol/${NEWP}_gitdata/repositories/u/b.git"; why="lists 1 repositories" ;;
+      sample) echo changed > "$DK/vol/${NEWP}_terminal-home/.config/$NEWP/settings.json"; why="sample files" ;;
+      runtime) printf '/x/bin/llmster\t%s/nowhere\t.\n' "$NEW" > "$NEW/.state/runtimes/lmstudio/llmster.run"; why="not there" ;;
+      copy) mg_init; mg_put "vol.pgdata" copying; why="not marked verified" ;;
+      gone) : > /dev/null; docker volume rm "${NEWP}_terminal-home" >/dev/null; rm -rf "$DK/vol/${NEWP}_pgdata"; why="" ;;
+    esac
+    [ "$case" != gone ] || continue
+    migrate_update_finish > "$TMP/out" 2>&1
+    assert_contains "$(cat "$TMP/out")" "KEPT"; assert_contains "$(cat "$TMP/out")" "$why"
+    [ -d "$DK/vol/${OLDP}_pgdata" ] && [ -d "$DK/vol/${OLDP}_owui" ] && grep -q "^$OLDP/portal:local" "$DK/images" || { echo "$case: the old copy was touched" >&2; return 1; }
+    assert_eq "$(_get old_copy)" kept
+    ! grep -E "^volume rm ${OLDP}_|^rmi " "$DK/log" || { echo "$case: something was deleted" >&2; return 1; }
+    assert_contains "$(migrate_backup_line)" "KEPT"
+  done
+}
+test_verify_tries_again_and_removes_the_old_copy_once_the_check_passes() {
+  _mg_env; _mg_pg_setup; _mg_run 2>/dev/null; printf 'd1 %s postgres\n' "$NEWP" >> "$DK/containers"; echo d1 > "$DK/unhealthy"
+  migrate_update_finish 2>/dev/null; [ -d "$DK/vol/${OLDP}_pgdata" ]
+  rm -f "$DK/unhealthy"; ( cmd_migrate --verify ) > "$TMP/out" 2>&1
+  ! ls "$DK/vol" | grep -q "^${OLDP}_"; assert_eq "$(_get old_copy)" removed
+}
+test_a_rollback_after_the_old_copy_was_removed_brings_the_data_back_from_the_new_volumes() {
+  _mg_moved_and_verified; mg_init; migrate_update_hook 2>/dev/null          # the old copy AND the leftovers are gone now
+  head -c 3000 /dev/urandom > "$DK/vol/${NEWP}_owui/after.db"; local want; want="$(cksum < "$DK/vol/${NEWP}_owui/after.db")"
+  echo 'NEWKEY=1' >> "$ENV_FILE"
+  ! ls "$DK/vol" | grep -q "^${OLDP}_"
+  migrate_rollback 2>/dev/null
+  assert_eq "$(_st)" rolled-back
+  assert_eq "$(cksum < "$DK/vol/${OLDP}_owui/after.db")" "$want"; assert_eq "$(cksum < "$DK/vol/${OLDP}_pgdata/base/1/1259")" "$SAMPLE_PG"
+  [ -f "$DK/vol/${OLDP}_pgdata/PG_VERSION" ] && [ -d "$DK/vol/${NEWP}_owui" ]
+  [ -d "$INST/.state" ] && [ ! -L "$INST" ] && assert_eq "$(get_env NEWKEY)" 1 && assert_eq "$(get_env COMPOSE_PROJECT_NAME)" "$OLDP"
+  local la="$HOME/Library/LaunchAgents"; [ -f "$la/io.$OLDP.helper.$OLDP.plist" ] && [ ! -f "$la/io.$NEWP.helper.$NEWP.plist" ]   # made again from the new one
+  grep -q "<string>io.$OLDP.helper.$OLDP</string>" "$la/io.$OLDP.helper.$OLDP.plist"; ! grep -q "$NEW" "$la/io.$OLDP.helper.$OLDP.plist"
+  [ -d "$DK/vol/${OLDP}_terminal-home/.config/$OLDP" ] && [ ! -d "$DK/vol/${OLDP}_terminal-home/.config/$NEWP" ]
+}
+test_no_message_tells_the_person_to_delete_anything_or_that_disk_use_grows() {
+  local f
+  for f in "$STACK_DIR/docs/upgrade-to-0.45.md"; do
+    ! grep -qiE "disk use (grows|doubles)|you (must|need to|have to) (delete|remove)|delete (it|them) yourself|remove it when you are sure" "$f"
+  done
+  _mg_moved_and_verified; ! migrate_backup_line | grep -qiE "must|have to|delete it yourself|yourself"
+  ! migrate_status | grep -qiE "must|yourself"
 }
 
 # --- the command and the hosts ---

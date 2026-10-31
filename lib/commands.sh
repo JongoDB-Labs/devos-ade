@@ -1543,6 +1543,7 @@ cmd_status() {
     ! remote_on || printf '  Remote: %s   (./stack remote status)\n' "$(remote_url || true)"
   fi
   printf '  %s\n' "$(disk_line_cached $fresh)"   # names ./stack clean when it would free something
+  ! declare -F migrate_backup_line >/dev/null || migrate_backup_line | sed 's/^/  /'   # (lib/migrate.sh: the backup kept from the move to the new name)
   if update_unfinished; then   # lib/rollback.sh: its pull or setup failed, or it was stopped
     printf '  %sThe last update did not finish — ./stack update finishes it, ./stack rollback goes back%s\n' "$O_YEL" "$O_OFF"
   elif upd="$(update_available)"; then

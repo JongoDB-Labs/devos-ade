@@ -39,6 +39,9 @@ MG_OLD_OWNER_LABEL=io.bedrock-now.dir  # the owner marker volume's label (lib/gu
 MG_OLD_CONF=bedrock-now;               MG_NEW_CONF=devos-ade            # ~/.config/<name> inside terminal-home
 MG_OLD_TRASH=.bedrock-now-trash;       MG_NEW_TRASH=.devos-ade-trash
 MG_OLD_TMP=.bedrock-now-tmp;           MG_NEW_TMP=.devos-ade-tmp
+MG_NEW_OWNER_LABEL=io.devos-ade.dir; MG_NEW_OWNER_PROJ_LABEL=io.devos-ade.project   # the owner marker the new code looks for: <project>_devos-ade-owner
+MG_OLD_HINT=.bedrock-now-claude-md-hint; MG_NEW_HINT=.devos-ade-claude-md-hint        # in ~/.claude-bedrock (and the same folder in terminal-home)
+MG_OLD_OPEN=bedrock-now;               MG_NEW_OPEN=devos-ade           # the ./stack open window profile: <this>[-<project>] beside Application Support / ~/.local/share
 MG_OLD_TS=bedrock-now                                                   # Tailscale: Service base, node (-node), tag (tag:)
 # The test suites' name pair (a throwaway beside a live install): only with the testing switch on
 if [ "${DEVOS_ADE_TESTING:-${BEDROCK_NOW_TESTING:-}}" = 1 ] && [ -n "${MG_TEST_OLD_PROJECT:-}" ] && [ -n "${MG_TEST_NEW_PROJECT:-}" ]; then
@@ -59,7 +62,9 @@ MG_IMAGE_CPS=100000000   # bytes per second a volume copy is expected to run at 
 #   systemd  bedrock-now-helper-* / devos-ade-helper-* units in the user's unit folder
 #   bin      ~/.local/bin/devos-claude and claude-bedrock, only while they link into the install folder
 #   config   ~/.config/devos-ade (and the old name) INSIDE the terminal-home volume, never on this computer
-MG_ALLOWED_KINDS="dir volume image network container launchd systemd bin config"
+#   host     the workspace's and its project folders' trash/tmp folders (TERMINAL_WORKSPACE and one level below), the ./stack open
+#            window profile folder, and ~/.claude-bedrock's claude-md-hint marker: exactly the pairs mg_host_targets lists
+MG_ALLOWED_KINDS="dir volume image network container launchd systemd bin config host"
 MG_FORBIDDEN_NOTE="never: devos-heavy, Companion, Mobile, xirp, other Docker projects"
 
 # mg_allowed KIND VALUE -> 0 when this migration may change VALUE
@@ -67,10 +72,12 @@ mg_allowed() {
   local kind="$1" v="$2" b
   case "$kind" in
     dir) [ "$v" = "$MG_OLD_DIR" ] || [ "$v" = "$MG_NEW_DIR" ] || [ "$v" = "${MG_OLD_DIR%/*}/$MG_OLD_DIRNAME" ]; return ;;
-    volume) case "$v" in "$MG_OLD_PROJECT"_* | "$MG_NEW_PROJECT"_*) return 0 ;; esac; return 1 ;;
+    volume) case "$v" in "$MG_OLD_PROJECT"_* | "$MG_NEW_PROJECT"_*) return 0 ;; esac
+      [ "${MG_PARTIAL:-0}" = 1 ] && [ -n "${MG_PROJ:-}" ] && case "$v" in "$MG_PROJ"_*) return 0 ;; esac; return 1 ;;
+    host) mg_host_targets | awk -F'\t' -v v="$v" '$1 == v || $2 == v { f = 1 } END { exit !f }'; return ;;
     image) case "$v" in "$MG_OLD_PROJECT"/* | "$MG_NEW_PROJECT"/*) return 0 ;; esac; return 1 ;;
     network | container) case "$v" in "$MG_OLD_PROJECT" | "$MG_NEW_PROJECT") return 0 ;; esac; return 1 ;;
-    launchd) b="${v##*/}"; b="${b%.plist}"; b="${b%.pre-devos-ade}"
+    launchd) b="${v##*/}"; b="${b%.plist}"; b="${b%.pre-devos-ade}"; b="${b%.rolled-back}"
       case "$b" in "$MG_OLD_LABEL"* | "$MG_NEW_LABEL"* | dev.devos.ade.*.[0-9]*) ;; *) return 1 ;; esac
       case "$v" in "$(mg_launchagents_dir)"/*) return 0 ;; esac; return 1 ;;
     systemd) b="${v##*/}"; case "$b" in "$MG_OLD_UNIT"-*.service* | "$MG_NEW_UNIT"-*.service*) ;; *) return 1 ;; esac
@@ -91,6 +98,7 @@ mg_os() { printf '%s\n' "${MG_OS:-$(uname -s)}"; }
 # mg_init — MG_OLD_DIR (this install's folder, resolved), MG_NEW_DIR (its folder under the new name; the same when its
 # name is not the old one), MG_MV (1 when it has to move), MG_DIR (where it is now: the marker's folder)
 mg_init() {
+  MG_IN_INIT=1
   MG_OLD_DIR="$(cd "$STACK_DIR" && pwd -P)"
   MG_LOGICAL_DIR="$(cd "$STACK_DIR" && pwd)"
   if [ "${MG_OLD_DIR##*/}" = "$MG_OLD_DIRNAME" ]; then MG_NEW_DIR="${MG_OLD_DIR%/*}/$MG_NEW_DIRNAME"; MG_MV=1
@@ -99,10 +107,17 @@ mg_init() {
     MG_NEW_DIR="$MG_OLD_DIR"; MG_OLD_DIR="${MG_OLD_DIR%/*}/$MG_OLD_DIRNAME"; MG_MV=1
   else MG_NEW_DIR="$MG_OLD_DIR"; MG_MV=0; fi
   MG_DIR="$MG_OLD_DIR"; [ -d "$MG_OLD_DIR" ] && [ ! -L "$MG_OLD_DIR" ] || MG_DIR="$MG_NEW_DIR"
-  [ -f "$MG_DIR/.env" ] || MG_DIR="$(cd "$STACK_DIR" && pwd -P)"
+  [ -f "$MG_DIR/.env" ] || MG_DIR="$(cd "$STACK_DIR" 2>/dev/null && pwd -P || printf '%s' "$STACK_DIR")"
+  # An install of another project (a second copy, bn-dev …) keeps its project, volumes and hostname: a PARTIAL move (names only)
+  local cur; cur="$(ENV_FILE="$MG_DIR/.env" get_env COMPOSE_PROJECT_NAME 2>/dev/null || true)"
+  MG_PARTIAL=0; MG_PROJ="$MG_OLD_PROJECT"; MG_NEWPROJ="$MG_NEW_PROJECT"
+  if [ "$(mg_get mode)" = partial ] || { [ -z "$(mg_get mode)" ] && [ -n "$cur" ] && [ "$cur" != "$MG_OLD_PROJECT" ] && [ "$cur" != "$MG_NEW_PROJECT" ]; }; then
+    MG_PARTIAL=1; MG_PROJ="${cur:-$(mg_get project)}"; MG_NEWPROJ="$MG_PROJ"
+  fi
+  MG_IN_INIT=
 }
 mg_marker_file_at() { printf '%s/.state/migrate/marker\n' "$1"; }
-mg_marker() { [ -n "${MG_DIR:-}" ] || mg_init; mg_marker_file_at "$MG_DIR"; }
+mg_marker() { [ -n "${MG_DIR:-}" ] || [ -n "${MG_IN_INIT:-}" ] || mg_init; mg_marker_file_at "$MG_DIR"; }
 mg_get() { [ -f "$(mg_marker)" ] || return 0; K="$1" awk -F= '$1 == ENVIRON["K"] { v = substr($0, length($1) + 2) } END { printf "%s", v }' "$(mg_marker)"; }
 mg_put() {
   local f tmp; f="$(mg_marker)"; mkdir -p "${f%/*}" && chmod 700 "${f%/*}"
@@ -114,8 +129,8 @@ mg_step_done() { mg_put "step.$1" "$(date +%s)"; }
 mg_status() { mg_get status; }
 
 # --- docker, small ---
-mg_old_volumes() { docker volume ls -q 2>/dev/null | awk -v p="${MG_OLD_PROJECT}_" 'index($0, p) == 1' | grep -v -- '-owner$' || true; }
-mg_new_volumes() { docker volume ls -q 2>/dev/null | awk -v p="${MG_NEW_PROJECT}_" 'index($0, p) == 1' || true; }
+mg_old_volumes() { [ "${MG_PARTIAL:-0}" != 1 ] || return 0; docker volume ls -q 2>/dev/null | awk -v p="${MG_OLD_PROJECT}_" 'index($0, p) == 1' | grep -v -- '-owner$' || true; }
+mg_new_volumes() { [ "${MG_PARTIAL:-0}" != 1 ] || return 0; docker volume ls -q 2>/dev/null | awk -v p="${MG_NEW_PROJECT}_" 'index($0, p) == 1' || true; }
 mg_short() { printf '%s\n' "${1#"${MG_OLD_PROJECT}"_}"; }
 mg_is_socket_vol() { case "$1" in *-socket) return 0 ;; esac; return 1; }
 mg_image() {
@@ -139,9 +154,11 @@ printf "count=%s bytes=%s meta=%s sum=%s\n" "$n" "$b" "$m" "$c"; done'
 MG_COPY_SH='cp -a "$1"/. "$2"/'
 MG_DU_SH='du -sk "$1" | cut -f1'
 MG_DF_SH='df -Pk "$1" | awk "NR==2{print \$4}"'
+MG_RBCOPY_SH='find "$2" -mindepth 1 -delete && cp -a "$1"/. "$2"/'
 MG_RENAME_SH='cd "$1" || exit 0
 ren() { if [ -e "$1" ] && [ ! -e "$2" ]; then mv "$1" "$2"; fi; }
-ren ".config/$2" ".config/$3"; for d in . .claude .config; do ren "$d/$4" "$d/$5"; ren "$d/$6" "$d/$7"; done'
+ren ".config/$2" ".config/$3"; for d in . .claude .config; do ren "$d/$4" "$d/$5"; ren "$d/$6" "$d/$7"; done
+ren ".claude-bedrock/$8" ".claude-bedrock/$9"'
 
 mg_vol_kb() { MG_MOUNTS="-v $1:/v:ro" MG_SCRIPT="$MG_DU_SH" mg_run_in "${MG_IMG:-$(mg_image)}" mg-du /v 2>/dev/null | tail -n 1; }
 mg_total_kb() {
@@ -160,6 +177,7 @@ mg_fail() { # mg_fail STEP MESSAGE — the marker says where it stopped; the old
 
 mg_step_preflight() {
   local v k need free ws
+  if [ "$MG_PARTIAL" = 1 ]; then mg_step_preflight_partial; return 0; fi
   [ -n "$(mg_old_volumes)" ] || mg_fail preflight "no volumes of project $MG_OLD_PROJECT"
   if [ -n "$(mg_new_volumes)" ]; then
     mg_fail preflight "project $MG_NEW_PROJECT already has volumes ($(mg_new_volumes | tr '\n' ' ')), made by an earlier try or another install. Look at them; remove them yourself (docker volume rm …) if they are not wanted. Nothing was changed."
@@ -180,10 +198,22 @@ mg_step_preflight() {
   log "migration: $MG_OLD_PROJECT → $MG_NEW_PROJECT. Copying $(mg_fmt_kb "$k") of volumes ($(mg_eta "$k")); the folder and ${ws:+its $(mg_fmt_kb "$ws") of }models move by rename, with no copy. Disk free: $(mg_fmt_kb "$free")."
   mg_step_done preflight
 }
+# a partial move changes names only: no volume copy, so no disk check; the folder move (only when it is ~/bedrock-now) is checked as in the full one
+mg_step_preflight_partial() {
+  mg_put mode partial; mg_put project "$MG_PROJ"
+  if [ "$MG_MV" = 1 ] && ! mg_done_p move; then
+    [ ! -e "$MG_NEW_DIR" ] && [ ! -L "$MG_NEW_DIR" ] || mg_fail preflight "$MG_NEW_DIR exists already — move it aside, then run ./stack update again. Nothing was changed."
+    [ "$(mg_dev "$MG_OLD_DIR")" = "$(mg_dev "${MG_NEW_DIR%/*}")" ] || mg_fail preflight "$MG_NEW_DIR would be on another file system than $MG_OLD_DIR. Nothing was changed."
+  fi
+  if [ ! -f "$MG_DIR/.env.pre-devos-ade" ]; then cp -p "$ENV_FILE" "$MG_DIR/.env.pre-devos-ade" && chmod 600 "$MG_DIR/.env.pre-devos-ade" || mg_fail preflight "cannot back .env up"; fi
+  log "migration: renaming this install's own names (project $MG_PROJ keeps its volumes, ports and hostname)."
+  mg_step_done preflight
+}
 mg_dev() { stat -c %d "$1" 2>/dev/null || stat -f %d "$1" 2>/dev/null; }
 
 mg_step_stop() {
   local c n cur
+  if [ "$MG_PARTIAL" = 1 ]; then mg_step_done stop; return 0; fi
   cur="$(get_env COMPOSE_PROJECT_NAME)"
   if [ -z "$cur" ]; then mg_put pinned 1; elif [ "$cur" = "$MG_OLD_PROJECT" ]; then mg_put explicit 1; fi
   [ "$cur" = "$MG_OLD_PROJECT" ] || set_env COMPOSE_PROJECT_NAME "$MG_OLD_PROJECT"   # the old project stays the one ./stack runs until the copy is verified
@@ -196,9 +226,11 @@ mg_step_stop() {
   mg_step_done stop
 }
 
+# mg_alive PID -> 0 while the process runs (a finished child nobody has waited for yet is a zombie: kill -0 still answers for it)
+mg_alive() { local st; st="$(ps -o stat= -p "$1" 2>/dev/null | tr -d ' ')"; [ -n "$st" ] && [ "${st#Z}" = "$st" ]; }
 mg_progress() { # mg_progress PID NEWVOL TOTAL_KB — a line of progress every few seconds while the copy runs
   local pid="$1" nv="$2" tot="$3" k pct
-  while kill -0 "$pid" 2>/dev/null; do
+  while mg_alive "$pid"; do
     sleep "${MG_POLL_S:-3}"
     k="$(MG_MOUNTS="-v $nv:/v:ro" MG_SCRIPT="$MG_DU_SH" mg_run_in "$MG_IMG" mg-du /v 2>/dev/null | tail -n 1)"
     case "$k" in '' | *[!0-9]*) continue ;; esac
@@ -238,49 +270,107 @@ mg_copy_one() { # mg_copy_one OLDVOL
   mg_put "vol.$s" verified
   log "  $s: verified ($(printf '%s' "$a" | sed 's/ meta=.*//'))"
 }
-mg_step_copy() { local v; for v in $(mg_old_volumes); do mg_copy_one "$v"; done; mg_step_done copy; }
+mg_step_copy() { local v; if [ "$MG_PARTIAL" = 1 ]; then mg_step_done copy; return 0; fi; for v in $(mg_old_volumes); do mg_copy_one "$v"; done; mg_step_done copy; }
 
 mg_step_inner() { # names inside the NEW terminal-home (never on this computer)
-  local nv="${MG_NEW_PROJECT}_terminal-home"
+  local nv="${MG_NEWPROJ}_terminal-home"
   docker volume inspect "$nv" >/dev/null 2>&1 || { mg_step_done inner; return 0; }
   mg_allowed config ".config/$MG_NEW_CONF" || die "migration: internal list error"
-  MG_MOUNTS="-v $nv:/h" MG_SCRIPT="$MG_RENAME_SH" mg_run_in "${MG_IMG:-$(mg_image)}" mg-rename /h "$MG_OLD_CONF" "$MG_NEW_CONF" "$MG_OLD_TRASH" "$MG_NEW_TRASH" "$MG_OLD_TMP" "$MG_NEW_TMP" >/dev/null 2>&1 || mg_fail inner "could not rename the sandbox's own folders in $nv"
-  # the workspace's and projects' trash folders (bind mounts of this computer: a rename inside folders that are the sandbox's own)
+  mg_guard volume "$nv"
+  MG_MOUNTS="-v $nv:/h" MG_SCRIPT="$MG_RENAME_SH" mg_run_in "${MG_IMG:-$(mg_image)}" mg-rename /h "$MG_OLD_CONF" "$MG_NEW_CONF" "$MG_OLD_TRASH" "$MG_NEW_TRASH" "$MG_OLD_TMP" "$MG_NEW_TMP" "$MG_OLD_HINT" "$MG_NEW_HINT" >/dev/null 2>&1 || mg_fail inner "could not rename the sandbox's own folders in $nv"
   mg_step_done inner
 }
 
-# mg_env_rewrite — .env: keys, host, project, pins. The backup is made once (the first one stands).
-mg_step_env() {
-  local bak="$MG_DIR/.env.pre-devos-ade" tmp ph oldp k v
-  [ -f "$ENV_FILE" ] || mg_fail env "no .env"
-  if [ ! -f "$bak" ]; then cp -p "$ENV_FILE" "$bak" && chmod 600 "$bak" || mg_fail env "cannot back .env up"; fi   # (made at preflight; here only if that was skipped)
-  ph="$(get_env PORTAL_HOST)"; oldp=0
-  { [ -z "$ph" ] || [ "$ph" = "$MG_OLD_HOST" ]; } && oldp=1
-  tmp="$(mktemp "$ENV_FILE.XXXXXX")" || mg_fail env "cannot write .env"
-  OP="$MG_OLD_ENV_PREFIX" NP="$MG_NEW_ENV_PREFIX" OLDP="$oldp" OH="$MG_OLD_HOST" NH="$MG_NEW_HOST" OV="$MG_OLD_PREVIEW" NV="$MG_NEW_PREVIEW" awk '
+# mg_host_targets -> OLD<TAB>NEW pairs on this computer that this install owns (the enumerated 'host' list): the trash/tmp folders of the
+# workspace and of the project folders directly in it (the Code page's roots), the ./stack open window profile, the claude-md-hint marker
+mg_host_targets() {
+  local ws d k base name cfg proj="${MG_PROJ:-$MG_OLD_PROJECT}"
+  ws="$(ENV_FILE="${MG_DIR:-$STACK_DIR}/.env" get_env TERMINAL_WORKSPACE 2>/dev/null || true)"
+  if [ -n "$ws" ] && [ -d "$ws" ] && [ ! -L "$ws" ]; then
+    for k in TRASH TMP; do
+      eval "printf '%s\t%s\n' \"\$ws/\$MG_OLD_$k\" \"\$ws/\$MG_NEW_$k\""
+    done
+    for d in "$ws"/*/; do
+      d="${d%/}"; [ -d "$d" ] && [ ! -L "$d" ] || continue
+      for k in TRASH TMP; do eval "printf '%s\t%s\n' \"\$d/\$MG_OLD_$k\" \"\$d/\$MG_NEW_$k\""; done
+    done
+  fi
+  case "$(mg_os)" in Darwin) base="$HOME/Library/Application Support" ;; *) base="${XDG_DATA_HOME:-$HOME/.local/share}" ;; esac
+  if [ "$proj" = "$MG_OLD_PROJECT" ] || [ "$proj" = "$MG_NEW_PROJECT" ]; then printf '%s\t%s\n' "$base/$MG_OLD_OPEN" "$base/$MG_NEW_OPEN"
+  else printf '%s\t%s\n' "$base/$MG_OLD_OPEN-$proj" "$base/$MG_NEW_OPEN-$proj"; fi
+  cfg="${CLAUDE_BEDROCK_CONFIG_DIR:-$HOME/.claude-bedrock}"
+  printf '%s\t%s\n' "$cfg/$MG_OLD_HINT" "$cfg/$MG_NEW_HINT"
+}
+# mg_host_rename [back] — renames each pair whose old name exists and new one does not (back: the other way)
+mg_host_rename() {
+  local a b t
+  while IFS="$(printf '\t')" read -r a b; do
+    [ -n "$a" ] || continue
+    if [ "${1:-}" = back ]; then t="$a"; a="$b"; b="$t"; fi
+    if { [ -e "$a" ] || [ -L "$a" ]; } && [ ! -e "$b" ] && [ ! -L "$b" ]; then mg_guard host "$a"; mg_guard host "$b"; mv "$a" "$b" || warn "migration: could not rename $a"; fi
+  done <<EOF
+$(mg_host_targets)
+EOF
+}
+mg_step_host() { mg_host_rename; mg_step_done host; }
+# the owner marker the new code looks for (<project>_devos-ade-owner, label io.devos-ade.dir = the folder): made again, not copied
+mg_step_owner() {
+  local m="${MG_NEWPROJ}_${MG_NEW_DIRNAME}-owner" cur
+  mg_guard volume "$m"
+  cur="$(docker volume inspect --format "{{index .Labels \"$MG_NEW_OWNER_LABEL\"}}" "$m" 2>/dev/null || true)"
+  if [ "$cur" != "$MG_NEW_DIR" ]; then
+    ! docker volume inspect "$m" >/dev/null 2>&1 || docker volume rm "$m" >/dev/null 2>&1 || true
+    docker volume create --label "$MG_NEW_OWNER_LABEL=$MG_NEW_DIR" --label "$MG_NEW_OWNER_PROJ_LABEL=$MG_NEWPROJ" "$m" >/dev/null 2>&1 || warn "migration: could not make the owner marker $m (./stack up makes it)"
+  fi
+  mg_step_done owner
+}
+
+# mg_env_xlate FROMPFX TOPFX DOHOST FROMHOST TOHOST FROMPREV TOPREV REVERSE — .env: the prefix of the keys and, when asked, the host names in values.
+# REVERSE=1: a key that exists under both spellings keeps the value of the one being renamed (the current one).
+mg_env_xlate() {
+  local tmp; tmp="$(mktemp "$ENV_FILE.XXXXXX")" || return 1
+  OP="$1" NP="$2" DOH="$3" OH="$4" NH="$5" OV="$6" NV="$7" REV="$8" awk '
     BEGIN { op = ENVIRON["OP"]; np = ENVIRON["NP"] }
-    { lines[NR] = $0; i = index($0, "="); if (i > 0) have[substr($0, 1, i - 1)] = 1 }
+    { lines[NR] = $0; i = index($0, "="); if (i > 0) { k0 = substr($0, 1, i - 1); have[k0] = 1; if (index(k0, op) == 1) ren[np substr(k0, length(op) + 1)] = 1 } }
     END {
       for (n = 1; n <= NR; n++) {
         l = lines[n]; i = index(l, "="); k = (i > 0) ? substr(l, 1, i - 1) : ""; v = (i > 0) ? substr(l, i + 1) : l
-        if (k != "" && index(k, op) == 1) { nk = np substr(k, length(op) + 1); if (nk in have) continue; k = nk }
-        if (ENVIRON["OLDP"] == "1" && k != "") {
+        if (k != "" && ENVIRON["REV"] == "1" && (k in ren)) continue
+        if (k != "" && index(k, op) == 1) { nk = np substr(k, length(op) + 1); if (ENVIRON["REV"] != "1" && (nk in have)) continue; k = nk }
+        if (ENVIRON["DOH"] == "1" && k != "") {
           while ((p = index(v, ENVIRON["OV"])) > 0) v = substr(v, 1, p - 1) ENVIRON["NV"] substr(v, p + length(ENVIRON["OV"]))
           while ((p = index(v, ENVIRON["OH"])) > 0) v = substr(v, 1, p - 1) ENVIRON["NH"] substr(v, p + length(ENVIRON["OH"]))
         }
         if (k != "") print k "=" v; else print l
       }
-    }' "$ENV_FILE" > "$tmp" && chmod 600 "$tmp" && mv "$tmp" "$ENV_FILE" || { rm -f "$tmp"; mg_fail env "cannot rewrite .env"; }
-  # The pin made at 'stop' goes now: the copy is verified. An explicit old project name becomes the new one.
-  if [ "$(mg_get pinned)" = 1 ]; then unset_env COMPOSE_PROJECT_NAME
-  elif [ "$(get_env COMPOSE_PROJECT_NAME)" = "$MG_OLD_PROJECT" ]; then set_env COMPOSE_PROJECT_NAME "$MG_NEW_PROJECT"; fi
+    }' "$ENV_FILE" > "$tmp" && chmod 600 "$tmp" && mv "$tmp" "$ENV_FILE" || { rm -f "$tmp"; return 1; }
+}
+# mg_ts_base -> the Tailscale Service base this install had (lib/remote.sh ts_base before the rename)
+mg_ts_base() {
+  if [ "$MG_PARTIAL" = 1 ]; then printf '%s-%s\n' "$MG_OLD_TS" "$(printf '%s' "$MG_PROJ" | tr '_' '-' | sed 's/-*$//')"; else printf '%s\n' "$MG_OLD_TS"; fi
+}
+mg_step_env() {
+  local bak="$MG_DIR/.env.pre-devos-ade" ph oldp=0 tsb
+  [ -f "$ENV_FILE" ] || mg_fail env "no .env"
+  if [ ! -f "$bak" ]; then cp -p "$ENV_FILE" "$bak" && chmod 600 "$bak" || mg_fail env "cannot back .env up"; fi   # (made at preflight; here only if that was skipped)
+  ph="$(get_env PORTAL_HOST)"
+  # (a partial move keeps its hostname: its project name is in it)
+  if [ "$MG_PARTIAL" != 1 ]; then { [ -z "$ph" ] || [ "$ph" = "$MG_OLD_HOST" ]; } && oldp=1; fi
+  mg_env_xlate "$MG_OLD_ENV_PREFIX" "$MG_NEW_ENV_PREFIX" "$oldp" "$MG_OLD_HOST" "$MG_NEW_HOST" "$MG_OLD_PREVIEW" "$MG_NEW_PREVIEW" 0 || mg_fail env "cannot rewrite .env"
+  if [ "$MG_PARTIAL" != 1 ]; then
+    # The pin made at 'stop' goes now: the copy is verified. An explicit old project name becomes the new one.
+    if [ "$(mg_get pinned)" = 1 ]; then unset_env COMPOSE_PROJECT_NAME
+    elif [ "$(get_env COMPOSE_PROJECT_NAME)" = "$MG_OLD_PROJECT" ]; then set_env COMPOSE_PROJECT_NAME "$MG_NEW_PROJECT"; fi
+  fi
   # The email every store is keyed by: setup wrote it to .env at the first setup (OPENWEBUI_ADMIN_EMAIL), and Open WebUI, LiteLLM and the
   # git server read it from there, so nothing in them changes. A .env without it is pinned to the old default.
   if [ -z "$(get_env OPENWEBUI_ADMIN_EMAIL)" ]; then set_env OPENWEBUI_ADMIN_EMAIL "$MG_OLD_EMAIL"; mg_put email_pinned "$MG_OLD_EMAIL"; fi
-  # Tailscale: the Service names, the node and the tag are tailnet-side names (policy, approvals): not renamed here
+  # Tailscale: the Service names, the node and the tag are tailnet-side names (policy, approvals): not renamed here. New installs default to
+  # the new names, so an install that had the old defaults must pin them or its remote URL would change.
   if [ "$(get_env REMOTE_MODE)" = tailscale ]; then
-    [ -n "$(get_env TS_SERVICE)" ] || { set_env TS_SERVICE "$MG_OLD_TS"; mg_put ts_pinned 1; }
-    [ -n "$(get_env TS_HOSTNAME)" ] || set_env TS_HOSTNAME "$MG_OLD_TS-node"
+    tsb="$(mg_ts_base)"
+    [ -n "$(get_env TS_SERVICE)" ] || { set_env TS_SERVICE "$tsb"; mg_put ts_pinned 1; }
+    [ -n "$(get_env TS_HOSTNAME)" ] || set_env TS_HOSTNAME "$tsb-node"
     [ -n "$(get_env TS_TAG)" ] || set_env TS_TAG "tag:$MG_OLD_TS"
   fi
   mg_put host_moved "$oldp"
@@ -289,6 +379,8 @@ mg_step_env() {
 
 mg_step_images() {
   local r t
+  # (a partial move keeps its images: they are named <project>/<service>:local, and the project does not change)
+  if [ "$MG_PARTIAL" = 1 ]; then mg_step_done images; return 0; fi
   while IFS= read -r r; do
     [ -n "$r" ] || continue; mg_guard image "$r"
     t="${MG_NEW_PROJECT}/${r#*/}"; docker image inspect "$t" >/dev/null 2>&1 || docker tag "$r" "$t" >/dev/null 2>&1 || true
@@ -375,22 +467,31 @@ mg_new_plist_text() {
   if [ -f "$hb" ]; then sed "s|/bin/$MG_OLD_UNIT|/bin/$MG_NEW_UNIT|g" "$tmp"; else cat "$tmp"; fi
   rm -f "$tmp"
 }
+# mg_map_label OLDLABEL -> the new label (io.bedrock-now.helper.<project> -> io.devos-ade.helper.<project>; the project changes only in a full move)
+mg_map_label() {
+  local r="${1#"$MG_OLD_LABEL"}"
+  if [ "$MG_PARTIAL" != 1 ] && [ "${r%."$MG_OLD_PROJECT"}" != "$r" ]; then r="${r%."$MG_OLD_PROJECT"}.$MG_NEW_PROJECT"; fi
+  printf '%s%s\n' "$MG_NEW_LABEL" "$r"
+}
 mg_step_launchd() {
   local la f base ol nl nf uid osum nsum helperp=0 t
   la="$(mg_launchagents_dir)"; uid="$(id -u)"
   osum="$(mg_sum "$MG_OLD_DIR/.state")"; nsum="$(mg_sum "$MG_NEW_DIR/.state")"
   if [ "$(mg_os)" = Darwin ] && [ -d "$la" ]; then
-    for f in "$la"/${MG_OLD_LABEL}*.plist "$la"/dev.devos.ade.*."$osum".plist; do
+    # this install's own agents only: its helper (the project is in its label) and the runtimes' (the folder's sum is in theirs).
+    # io.bedrock-now.helper.<another project> belongs to another install and is never touched.
+    for f in "$la/${MG_OLD_LABEL}"*."$MG_PROJ".plist "$la"/dev.devos.ade.*."$osum".plist; do
       [ -f "$f" ] || continue
       mg_guard launchd "$f"
       base="${f##*/}"; ol="${base%.plist}"
-      case "$ol" in "$MG_OLD_LABEL"*) nl="${MG_NEW_LABEL}${ol#"$MG_OLD_LABEL"}"; nl="${nl%."$MG_OLD_PROJECT"}.${MG_NEW_PROJECT}" ;; *) nl="${ol%."$osum"}.$nsum" ;; esac
+      case "$ol" in "$MG_OLD_LABEL"*) nl="$(mg_map_label "$ol")" ;; *) [ "$osum" != "$nsum" ] || continue; nl="${ol%."$osum"}.$nsum" ;; esac
       case "$ol" in "$MG_OLD_LABEL"helper.*) helperp=1 ;; *) helperp=0 ;; esac
       nf="$la/$nl.plist"; mg_guard launchd "$nf"
       if [ ! -f "$nf" ]; then
         t="$(mg_new_plist_text "$f" "$ol" "$nl" "$osum" "$nsum")" || mg_fail launchd "cannot read $f"
         printf '%s\n' "$t" > "$nf.tmp" && chmod 644 "$nf.tmp" && mv "$nf.tmp" "$nf" || mg_fail launchd "cannot write $nf"
       fi
+      mg_put "lc.$ol" "$nl"
       if [ "$helperp" = 1 ] && mg_under_helper; then
         mg_put helper pending; mg_put helper_old_label "$ol"; mg_put helper_new_label "$nl"
         mg_helper_shim; continue
@@ -414,7 +515,7 @@ mg_helper_shim() {
 D=$(printf '%q' "$MG_NEW_DIR")
 [ ! -x "\$D/stack" ] || "\$D/stack" migrate --finish-helper >/dev/null 2>&1 || true
 h="\$D/bin/$MG_NEW_UNIT"; [ -f "\$h" ] || h="\$D/bin/$MG_OLD_UNIT.real"
-[ -f "\$h" ] && exec /bin/bash "\$h" "\$D" "\$@"
+[ -f "\$h" ] && exec /bin/bash "\$h" "\${@:-\$D}"
 exit 0
 EOF
   chmod 755 "$s"
@@ -424,12 +525,12 @@ EOF
 mg_systemd_helper() {
   local d f nf ol nl
   d="$(mg_systemd_dir)"; [ -d "$d" ] || return 0
-  for f in "$d/$MG_OLD_UNIT"-*.service; do
+  for f in "$d/$MG_OLD_UNIT-$MG_PROJ.service"; do
     [ -f "$f" ] || continue
     mg_guard systemd "$f"
-    ol="${f##*/}"; nl="$MG_NEW_UNIT-${MG_NEW_PROJECT}.service"; nf="$d/$nl"; mg_guard systemd "$nf"
+    ol="${f##*/}"; nl="$MG_NEW_UNIT-${MG_NEWPROJ}.service"; nf="$d/$nl"; mg_guard systemd "$nf"
     if [ ! -f "$nf" ]; then
-      mg_new_plist_text "$f" x x 0 0 | sed "s|$MG_OLD_UNIT-$MG_OLD_PROJECT|$MG_NEW_UNIT-$MG_NEW_PROJECT|g" > "$nf.tmp" && chmod 644 "$nf.tmp" && mv "$nf.tmp" "$nf"
+      mg_new_plist_text "$f" x x 0 0 | sed "s|$MG_OLD_UNIT-$MG_PROJ|$MG_NEW_UNIT-$MG_NEWPROJ|g" > "$nf.tmp" && chmod 644 "$nf.tmp" && mv "$nf.tmp" "$nf"
     fi
     if mg_under_helper; then mg_put helper pending; mg_put helper_old_label "$ol"; mg_put helper_new_label "$nl"; mg_helper_shim; continue; fi
     mg_systemd_switch "$ol" "$nl" "$f"
@@ -458,9 +559,26 @@ migrate_finish_helper() {
 }
 
 # --- the whole of phase A, and the update's two hooks ---
+# mg_partial_needed -> 0 when an install of another project still has old names of its own: .env keys, a launchd agent or systemd unit of its
+# project, a folder named like the old install's, or the host folders/files of the old names
+mg_partial_needed() {
+  local la a b
+  grep -q "^$MG_OLD_ENV_PREFIX" "$MG_DIR/.env" 2>/dev/null && return 0
+  [ "$MG_MV" = 1 ] && [ "$MG_OLD_DIR" != "$MG_NEW_DIR" ] && return 0
+  la="$(mg_launchagents_dir)"; [ ! -f "$la/${MG_OLD_LABEL}helper.$MG_PROJ.plist" ] || return 0
+  [ ! -f "$(mg_systemd_dir)/$MG_OLD_UNIT-$MG_PROJ.service" ] || return 0
+  while IFS="$(printf '\t')" read -r a b; do
+    [ -z "$a" ] || { { [ -e "$a" ] || [ -L "$a" ]; } && [ ! -e "$b" ] && return 0; }
+  done <<EOF
+$(mg_host_targets)
+EOF
+  return 1
+}
 mg_needed() {
   local st cur own; st="$(mg_status)"
   case "$st" in complete | moved) return 1 ;; running | failed) return 0 ;; esac
+  [ -f "$MG_DIR/.env" ] || return 1   # (an install has its .env in its folder)
+  [ "$MG_PARTIAL" != 1 ] || { mg_partial_needed && docker info >/dev/null 2>&1; return; }
   cur="$(get_env COMPOSE_PROJECT_NAME)"; { [ -z "$cur" ] || [ "$cur" = "$MG_OLD_PROJECT" ]; } || return 1
   docker info >/dev/null 2>&1 || return 1
   [ -n "$(mg_old_volumes)" ] || return 1
@@ -474,7 +592,7 @@ mg_phase_a() {
   local s
   docker info >/dev/null 2>&1 || mg_fail preflight "Docker is not running"
   MG_IMG="$(mg_image)" || mg_fail preflight "no image to copy with"
-  for s in preflight stop copy inner env images move paths launchd; do
+  for s in preflight record stop copy inner host env images move owner paths launchd; do
     mg_done_p "$s" || "mg_step_$s"
   done
   mg_put status moved
@@ -483,8 +601,10 @@ mg_phase_a() {
 # migrate_update_hook — in ./stack update, with the new code checked out, before images and setup
 migrate_update_hook() {
   mg_init
+  mg_remove_leftovers
   mg_needed || return 0
-  log "update: moving this install from the name $MG_OLD_PROJECT to $MG_NEW_PROJECT (your data is copied, the old copy is kept)"
+  if [ "$MG_PARTIAL" = 1 ]; then log "update: renaming this install's own names to devos-ade (project $MG_PROJ, its volumes and address stay)"
+  else log "update: moving this install from the name $MG_OLD_PROJECT to $MG_NEW_PROJECT (your data is copied, the old copy is kept)"; fi
   mg_phase_a
   if [ "$MG_MV" = 1 ] && [ "$MG_NEW_DIR" != "$MG_OLD_DIR" ]; then
     log "update: continuing from $MG_NEW_DIR"
@@ -499,11 +619,13 @@ migrate_update_finish() {
   mg_init
   [ "$(mg_status)" = moved ] || return 0
   local bad
+  if [ "$MG_PARTIAL" = 1 ]; then mg_put status complete; mg_put finished "$(date +%s)"; log "This install now uses the DevOS ADE names (project $MG_PROJ and its address are unchanged). Its old .env is kept as .env.pre-devos-ade."; return 0; fi
   bad="$(docker ps -q --filter "label=com.docker.compose.project=$MG_NEW_PROJECT" --filter health=unhealthy 2>/dev/null || true)"
   [ -z "$bad" ] || warn "migration: a container of $MG_NEW_PROJECT is unhealthy (./stack status); the old copy of your data is kept (./stack migrate --rollback goes back)"
   [ -n "$(docker ps -q --filter "label=com.docker.compose.project=$MG_NEW_PROJECT" 2>/dev/null || true)" ] || { warn "migration: nothing of $MG_NEW_PROJECT runs yet — ./stack up; the migration is finished when it does (./stack migrate)"; return 0; }
   mg_put status complete; mg_put finished "$(date +%s)"
   log "DevOS ADE now lives at http://$(portal_host) (the old address forwards there). Sign in again once there, and install the app again from the new address."
+  mg_verify_and_clean
   migrate_backup_line | sed 's/^/    /' >&2
   return 0
 }
@@ -513,18 +635,163 @@ migrate_backup_line() {
   mg_init
   case "$(mg_status)" in complete | moved) ;; *) return 0 ;; esac
   [ -z "$(mg_get old_removed)" ] || return 0
-  printf 'Backup of the install before the move to %s: the %s_* volumes (%s), .env.pre-devos-ade, the old folder link and images. Remove it when you are sure: ./stack migrate --remove-old\n' \
-    "$MG_NEW_PROJECT" "$MG_OLD_PROJECT" "$(mg_fmt_kb "$(mg_get kb_total)")"
+  if [ "$MG_PARTIAL" = 1 ]; then printf 'This install now uses the DevOS ADE names; the old .env is kept as .env.pre-devos-ade until the next update removes it.\n'; return 0; fi
+  case "$(mg_get old_copy)" in
+    removed) [ -z "$(mg_get leftovers_removed)" ] || return 0
+      printf 'The move to %s was verified and the old copy was removed (%s freed). .env.pre-devos-ade and the old folder link go with the next update.\n' "$MG_NEW_PROJECT" "$(mg_fmt_kb "$(mg_get freed_kb)")" ;;
+    kept) printf 'The old copy of the install (the %s_* volumes, %s) was KEPT because a check failed: %s. ./stack migrate --verify tries again; ./stack migrate --rollback goes back; ./stack migrate --remove-old removes it.\n' "$MG_OLD_PROJECT" "$(mg_fmt_kb "$(mg_get kb_total)")" "$(mg_get verify_failed)" ;;
+    *) printf 'The move to %s is not verified yet; the old copy (%s) is removed once it is: ./stack migrate --verify\n' "$MG_NEW_PROJECT" "$(mg_fmt_kb "$(mg_get kb_total)")" ;;
+  esac
+}
+
+# --- the old copy is removed by itself once the cutover is verified (owner decision, JON-807 item 11) ---
+# Row counts of every table of every database of the OLD Postgres, read while the old stack still runs (before it is stopped)
+MG_PGQ_SH=$(cat <<'EOS'
+psql -U "${POSTGRES_USER:-postgres}" -d "$1" -Atc "select table_name || E'\t' || (xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I.%I', table_schema, table_name), false, true, '')))[1]::text from information_schema.tables where table_schema = 'public' and table_type = 'BASE TABLE' order by 1"
+EOS
+)
+MG_PGDB_SH=$(cat <<'EOS'
+psql -U "${POSTGRES_USER:-postgres}" -d postgres -Atc "select datname from pg_database where not datistemplate and datname <> 'postgres' order by 1"
+EOS
+)
+MG_REPOS_SH='find "$1" -type d -name "*.git" -prune | wc -l | tr -d " "'
+MG_SAMPLE_SH='cd "$1/$2" 2>/dev/null || { echo none; exit 0; }
+find . -type f | LC_ALL=C sort | head -n 20 | while IFS= read -r f; do cksum < "$f"; done | cksum'
+
+mg_pg_container() { docker ps -q --filter "label=com.docker.compose.project=$1" --filter "label=com.docker.compose.service=postgres" 2>/dev/null | head -n 1; }
+# mg_pg_counts PROJECT DB -> "table<TAB>rows" lines (empty and failing when the database cannot be read)
+mg_pg_counts() {
+  local c; c="$(mg_pg_container "$1")"; [ -n "$c" ] || return 1
+  docker exec "$c" sh -c "$MG_PGQ_SH" sh "$2" 2>/dev/null
+}
+mg_pg_dbs() { local c; c="$(mg_pg_container "$1")"; [ -n "$c" ] || return 1; docker exec "$c" sh -c "$MG_PGDB_SH" 2>/dev/null; }
+mg_rec_dir() { printf '%s/.state/migrate\n' "$MG_DIR"; }
+
+# step 'record': before the old stack stops, what its databases hold (the new stack is compared with it). A stack that is not running
+# cannot be counted: nothing is deleted then (the old copy stays; ./stack migrate says so).
+mg_step_record() {
+  local db out dir n=0
+  if [ "$MG_PARTIAL" = 1 ]; then mg_step_done record; return 0; fi
+  dir="$(mg_rec_dir)"; mkdir -p "$dir"
+  for db in $(mg_pg_dbs "$MG_OLD_PROJECT"); do
+    out="$(mg_pg_counts "$MG_OLD_PROJECT" "$db")" && [ -n "$out" ] || { n=-1; break; }
+    printf '%s\n' "$out" > "$dir/pgrows-$db.tsv"; n=$((n + 1))
+  done
+  if [ "$n" -gt 0 ]; then mg_put pg_recorded 1; log "  recorded the row counts of $n database(s) of $MG_OLD_PROJECT (checked after the move, before the old copy is removed)"
+  else mg_put pg_recorded 0; log "  the old databases could not be counted (is the stack running?): the old copy will be kept, not removed"; fi
+  mg_step_done record
+}
+
+# mg_verify_cutover -> 0 when everything is as before; else MG_VERIFY_WHY says what failed (nothing is deleted then)
+mg_verify_cutover() {
+  local s st f db new old t n o ids bad r cwd img oldrepos newrepos a b rec users_old users_new chats_old chats_new
+  MG_VERIFY_WHY=''; MG_VERIFY_NOTE=''
+  [ "$MG_PARTIAL" != 1 ] || { MG_VERIFY_WHY="a partial move has no old volumes"; return 1; }
+  # 1. every copy matched
+  for s in $(mg_old_volumes); do
+    st="$(mg_get "vol.$(mg_short "$s")")"; [ "$st" = verified ] || { MG_VERIFY_WHY="the copy of ${s#"${MG_OLD_PROJECT}"_} is not marked verified ($st)"; return 1; }
+  done
+  # 2. every service healthy on the new project
+  ids="$(docker ps -q --filter "label=com.docker.compose.project=$MG_NEW_PROJECT" 2>/dev/null || true)"
+  [ -n "$ids" ] || { MG_VERIFY_WHY="nothing of $MG_NEW_PROJECT is running"; return 1; }
+  bad="$(docker ps -q --filter "label=com.docker.compose.project=$MG_NEW_PROJECT" --filter health=unhealthy 2>/dev/null || true)"
+  [ -z "$bad" ] || { MG_VERIFY_WHY="a service of $MG_NEW_PROJECT is unhealthy"; return 1; }
+  bad="$(docker ps -q --filter "label=com.docker.compose.project=$MG_NEW_PROJECT" --filter status=restarting 2>/dev/null || true)"
+  [ -z "$bad" ] || { MG_VERIFY_WHY="a service of $MG_NEW_PROJECT keeps restarting"; return 1; }
+  # 3. the databases on the running stack hold at least the rows the old ones held (nothing is missing)
+  [ "$(mg_get pg_recorded)" = 1 ] || { MG_VERIFY_WHY="the old databases were not counted before the move (the stack was not running)"; return 1; }
+  rec="$(mg_rec_dir)"; users_old=''; chats_old=''
+  for f in "$rec"/pgrows-*.tsv; do
+    [ -f "$f" ] || continue; db="${f##*/pgrows-}"; db="${db%.tsv}"
+    new="$(mg_pg_counts "$MG_NEW_PROJECT" "$db")" && [ -n "$new" ] || { MG_VERIFY_WHY="the database $db cannot be read on $MG_NEW_PROJECT"; return 1; }
+    while IFS="$(printf '\t')" read -r t o; do
+      [ -n "$t" ] || continue
+      n="$(printf '%s\n' "$new" | awk -F'\t' -v t="$t" '$1 == t { print $2 }')"
+      case "$n" in '' | *[!0-9]*) MG_VERIFY_WHY="table $db.$t is missing on $MG_NEW_PROJECT"; return 1 ;; esac
+      [ "$n" -ge "$o" ] || { MG_VERIFY_WHY="table $db.$t has $n rows on $MG_NEW_PROJECT, the old one had $o"; return 1; }
+      if [ "$db" = openwebui ]; then case "$t" in user) users_old="$o"; users_new="$n" ;; chat) chats_old="$o"; chats_new="$n" ;; esac; fi
+    done < "$f"
+  done
+  [ -z "$users_old" ] || MG_VERIFY_NOTE="Open WebUI: $users_new user(s), $chats_new chat(s) (before: $users_old, $chats_old)"
+  # 4. the git server's repositories are all listed
+  img="${MG_IMG:-$(mg_image)}"
+  oldrepos="$(MG_MOUNTS="-v ${MG_OLD_PROJECT}_gitdata:/v:ro" MG_SCRIPT="$MG_REPOS_SH" mg_run_in "$img" mg-repos /v 2>/dev/null | tail -n 1)"
+  newrepos="$(MG_MOUNTS="-v ${MG_NEW_PROJECT}_gitdata:/v:ro" MG_SCRIPT="$MG_REPOS_SH" mg_run_in "$img" mg-repos /v 2>/dev/null | tail -n 1)"
+  if docker volume inspect "${MG_NEW_PROJECT}_gitdata" >/dev/null 2>&1 && docker volume inspect "${MG_OLD_PROJECT}_gitdata" >/dev/null 2>&1; then
+    case "$oldrepos$newrepos" in '' | *[!0-9]*) MG_VERIFY_WHY="the git server's repositories cannot be counted"; return 1 ;; esac
+    [ "$newrepos" -ge "$oldrepos" ] || { MG_VERIFY_WHY="the git server lists $newrepos repositories, the old one had $oldrepos"; return 1; }
+  fi
+  # 5. sample files of the sandbox's home match (the old .config/<old name> against the new one)
+  if docker volume inspect "${MG_NEW_PROJECT}_terminal-home" >/dev/null 2>&1; then
+    a="$(MG_MOUNTS="-v ${MG_OLD_PROJECT}_terminal-home:/v:ro" MG_SCRIPT="$MG_SAMPLE_SH" mg_run_in "$img" mg-sample /v ".config/$MG_OLD_CONF" 2>/dev/null | tail -n 1)"
+    b="$(MG_MOUNTS="-v ${MG_NEW_PROJECT}_terminal-home:/v:ro" MG_SCRIPT="$MG_SAMPLE_SH" mg_run_in "$img" mg-sample /v ".config/$MG_NEW_CONF" 2>/dev/null | tail -n 1)"
+    [ -n "$a" ] && [ "$a" = "$b" ] || { MG_VERIFY_WHY="sample files of the sandbox's home differ (old '$a', new '$b')"; return 1; }
+  fi
+  # 6. the runtimes' records name places that exist in the moved folder
+  for f in "$MG_DIR"/.state/runtimes/*/llmster.run; do
+    [ -f "$f" ] || continue
+    cwd="$(awk -F'\t' 'NR == 1 { print $2 }' "$f")"
+    [ -z "$cwd" ] || [ -d "$cwd" ] || { MG_VERIFY_WHY="a runtime's record ($f) names $cwd, which is not there"; return 1; }
+    ! grep -qF -- "$MG_OLD_DIR/" "$f" || [ "$MG_OLD_DIR" = "$MG_NEW_DIR" ] || { MG_VERIFY_WHY="a runtime's record ($f) still names the old folder"; return 1; }
+  done
+  for f in "$MG_DIR"/.state/runtimes/*/home/.lmstudio-home-pointer; do
+    [ -f "$f" ] || continue; [ -d "$(head -n 1 "$f")" ] || { MG_VERIFY_WHY="LM Studio's home pointer names a folder that is not there"; return 1; }
+  done
+  return 0
+}
+
+# mg_delete_old_copy — the old project's volumes and the old image tags, after mg_verify_cutover passed. The launchd/systemd leftovers,
+# .env.pre-devos-ade and the old folder link wait for the next update (migrate_update_hook).
+mg_delete_old_copy() {
+  local list kind name kb tot=0 nv=0 ni=0
+  list="$(mg_remove_list | awk -F'\t' '$1 == "volume" || $1 == "image"')"
+  while IFS="$(printf '\t')" read -r kind name kb; do
+    [ -n "$kind" ] || continue
+    case "$kind" in
+      volume) mg_guard volume "$name"; docker volume rm "$name" >/dev/null 2>&1 && { nv=$((nv + 1)); tot=$((tot + ${kb:-0})); } || warn "migration: could not remove volume $name" ;;
+      image) mg_guard image "$name"; docker rmi "$name" >/dev/null 2>&1 && ni=$((ni + 1)) ;;
+    esac
+  done <<EOF
+$list
+EOF
+  mg_put old_copy removed; mg_put old_volumes_removed "$nv"; mg_put freed_kb "$tot"
+  log "the move to $MG_NEW_PROJECT is verified; the old copy is removed: $nv volume(s) and $ni image tag(s), $(mg_fmt_kb "$tot") freed${MG_VERIFY_NOTE:+ ($MG_VERIFY_NOTE)}"
+}
+
+# mg_verify_and_clean — migrate_update_finish and ./stack migrate --verify
+mg_verify_and_clean() {
+  [ "$(mg_get old_copy)" != removed ] || return 0
+  if mg_verify_cutover; then mg_delete_old_copy; mg_put verify_failed ''
+  else
+    mg_put old_copy kept; mg_put verify_failed "$MG_VERIFY_WHY"
+    warn "migration: the old copy is KEPT, nothing was deleted: $MG_VERIFY_WHY. Your data is in the $MG_NEW_PROJECT volumes. ./stack migrate --verify tries the checks again; ./stack migrate --rollback goes back; ./stack migrate --remove-old deletes the old copy once you are satisfied."
+  fi
+}
+
+# the leftovers of the move go with the NEXT update (the update that finished the move has status 'complete' only at its end)
+mg_remove_leftovers() {
+  local f la
+  [ "$(mg_status)" = complete ] && [ -z "$(mg_get leftovers_removed)" ] || return 0
+  [ "$(mg_get old_copy)" = removed ] || return 0
+  [ ! -f "$MG_DIR/.env.pre-devos-ade" ] || rm -f "${MG_DIR:?}/.env.pre-devos-ade"
+  if [ -L "$MG_OLD_DIR" ] && [ "$MG_OLD_DIR" != "$MG_NEW_DIR" ]; then mg_guard dir "$MG_OLD_DIR"; rm -f "${MG_OLD_DIR:?}"; fi
+  la="$(mg_launchagents_dir)"
+  for f in "$la"/*.pre-devos-ade "$(mg_systemd_dir)"/*.pre-devos-ade; do
+    [ -f "$f" ] || continue; mg_guard launchd "$f" 2>/dev/null || mg_guard systemd "$f"; rm -f "${f:?}"
+  done
+  mg_put leftovers_removed "$(date +%s)"
+  log "update: removed the leftovers of the move to $MG_NEW_PROJECT (.env.pre-devos-ade, the old folder link, the old launchd files)"
 }
 
 # --- ./stack migrate ---
 migrate_usage() {
   cat <<EOF
-usage: ./stack migrate [--now | --rollback | --remove-old [--yes] | --finish-helper]
-  (none)         the state of the move from $MG_OLD_PROJECT to $MG_NEW_PROJECT, and what is kept as the backup
+usage: ./stack migrate [--now | --verify | --rollback | --remove-old [--yes] | --finish-helper]
+  (none)         the state of the move from $MG_OLD_PROJECT to $MG_NEW_PROJECT
   --now          run (or resume) the move by hand; ./stack update does this by itself
-  --rollback     go back to $MG_OLD_PROJECT: its folder, .env, launchd names and volumes (the new volumes stay, unused)
-  --remove-old   delete the backup: the old volumes, .env.pre-devos-ade, the old folder link, images (lists and asks)
+  --verify       check the moved install again and, when everything matches, remove the old copy (the update does this by itself)
+  --rollback     go back to $MG_OLD_PROJECT: its folder, .env, launchd names; the current data is copied back (the $MG_NEW_PROJECT volumes stay, unused)
+  --remove-old   remove the old copy now, even when a check failed (lists it, asks)
 EOF
 }
 migrate_status() {
@@ -580,44 +847,110 @@ EOF
   log "the backup is removed (about $(mg_fmt_kb "$tot") freed)"
 }
 
+# mg_rb_copy_one NEWVOL — the way back for one volume: the CURRENT data of the new volume is copied over the old one and checked as on the way
+# forward. The new volume is not touched (it stays as the aside copy). Resumable: a volume the marker calls verified is not copied again.
+mg_rb_copy_one() {
+  local nv="$1" s ov out a b rc=0
+  s="${nv#"${MG_NEW_PROJECT}_"}"; ov="${MG_OLD_PROJECT}_$s"
+  mg_guard volume "$nv"; mg_guard volume "$ov"
+  [ "$(mg_get "rb.$s")" != verified ] || { log "  $s: copied back and verified before"; return 0; }
+  docker volume inspect "$ov" >/dev/null 2>&1 || docker volume create --label "com.docker.compose.project=$MG_OLD_PROJECT" --label "com.docker.compose.volume=$s" "$ov" >/dev/null || die "migration: cannot create $ov. Nothing else was changed."
+  if mg_is_socket_vol "$s"; then mg_put "rb.$s" verified; return 0; fi
+  log "  $s: copying the current data back"
+  MG_MOUNTS="-v $nv:/from:ro -v $ov:/to" MG_SCRIPT="$MG_RBCOPY_SH" mg_run_in "$MG_IMG" mg-copy /from /to || rc=$?
+  [ "$rc" = 0 ] || die "migration: copying $s back failed (status $rc). The $MG_NEW_PROJECT volumes are untouched; run ./stack migrate --rollback again."
+  out="$(MG_MOUNTS="-v $nv:/from:ro -v $ov:/to:ro" MG_SCRIPT="$MG_SUM_SH" mg_run_in "$MG_IMG" mg-sum /from /to 2>&1)" || die "migration: could not read $s back to check it. The $MG_NEW_PROJECT volumes are untouched; run ./stack migrate --rollback again."
+  a="$(printf '%s\n' "$out" | sed -n 1p)"; b="$(printf '%s\n' "$out" | sed -n 2p)"
+  [ -n "$a" ] && [ "$a" = "$b" ] || die "migration: the copy of $s back does not match the current data (current: ${a:-none}; copy: ${b:-none}). The $MG_NEW_PROJECT volumes are untouched and hold everything; run ./stack migrate --rollback again."
+  mg_put "rb.$s" verified
+  log "  $s: verified ($(printf '%s' "$a" | sed 's/ meta=.*//'))"
+}
+
 migrate_rollback() {
   mg_init
   case "$(mg_status)" in complete | moved | failed | running) ;; *) die "./stack migrate --rollback: nothing to go back from (./stack migrate says where things are)" ;; esac
-  [ -z "$(mg_get old_removed)" ] || die "./stack migrate --rollback: the backup was removed (--remove-old); there is nothing to go back to"
-  log "migration: going back to $MG_OLD_PROJECT (the $MG_NEW_PROJECT volumes are kept, unused)"
-  local c n f la uid osum nsum ol nl b
+  if [ "$MG_PARTIAL" = 1 ]; then log "migration: going back to the old names of this install"
+  else log "migration: going back to $MG_OLD_PROJECT (the data written since the move is copied back; the $MG_NEW_PROJECT volumes are kept, unused)"; fi
+  local c n f la uid osum nsum ol nl b v h
   uid="$(id -u)"
-  for c in $(docker ps -aq --filter "label=com.docker.compose.project=$MG_NEW_PROJECT" 2>/dev/null); do mg_guard container "$MG_NEW_PROJECT"; docker stop "$c" >/dev/null 2>&1 || true; docker rm "$c" >/dev/null 2>&1 || true; done
-  for n in $(docker network ls -q --filter "label=com.docker.compose.project=$MG_NEW_PROJECT" 2>/dev/null); do docker network rm "$n" >/dev/null 2>&1 || true; done
+  if [ "$MG_PARTIAL" != 1 ]; then
+    for c in $(docker ps -aq --filter "label=com.docker.compose.project=$MG_NEW_PROJECT" 2>/dev/null); do mg_guard container "$MG_NEW_PROJECT"; docker stop "$c" >/dev/null 2>&1 || true; docker rm "$c" >/dev/null 2>&1 || true; done
+    for n in $(docker network ls -q --filter "label=com.docker.compose.project=$MG_NEW_PROJECT" 2>/dev/null); do docker network rm "$n" >/dev/null 2>&1 || true; done
+    MG_IMG="${MG_IMG:-$(mg_image)}"
+    for v in $(mg_new_volumes | grep -v -- '-owner$'); do mg_rb_copy_one "$v"; done
+  fi
   la="$(mg_launchagents_dir)"; osum="$(mg_sum "$MG_OLD_DIR/.state")"; nsum="$(mg_sum "$MG_NEW_DIR/.state")"
-  if [ "$(mg_os)" = Darwin ]; then
-    for f in "$la"/${MG_NEW_LABEL}*.plist "$la"/dev.devos.ade.*."$nsum".plist; do
-      [ -f "$f" ] || continue; mg_guard launchd "$f"
-      nl="${f##*/}"; nl="${nl%.plist}"; launchctl bootout "gui/$uid/$nl" >/dev/null 2>&1 || true; rm -f "$f"
-    done
+  if [ "$(mg_os)" = Darwin ] && [ -d "$la" ]; then
+    # only what this migration made: the new plist of each old one kept aside (and the helper's pending one), then the old ones back
     for f in "$la"/*.pre-devos-ade; do
-      [ -f "$f" ] || continue; mg_guard launchd "$f"; mv "$f" "${f%.pre-devos-ade}"
-      launchctl bootstrap "gui/$uid" "${f%.pre-devos-ade}" >/dev/null 2>&1 || true
+      [ -f "$f" ] || continue; mg_guard launchd "$f"
+      ol="${f##*/}"; ol="${ol%.plist.pre-devos-ade}"
+      case "$ol" in "$MG_OLD_LABEL"*) nl="$(mg_map_label "$ol")" ;; *) nl="${ol%."$osum"}.$nsum" ;; esac
+      launchctl bootout "gui/$uid/$nl" >/dev/null 2>&1 || true; rm -f "${la:?}/${nl:?}.plist"
+      mv "$f" "${f%.pre-devos-ade}"; launchctl bootstrap "gui/$uid" "${f%.pre-devos-ade}" >/dev/null 2>&1 || true
     done
+    # the old files are gone once the next update removed the leftovers: made again from the new ones
+    for f in $(grep '^lc\.' "$(mg_marker)" 2>/dev/null | cut -d= -f1); do
+      ol="${f#lc.}"; nl="$(mg_get "$f")"
+      if [ ! -f "$la/$ol.plist" ] && [ -f "$la/$nl.plist" ]; then
+        mg_guard launchd "$la/$ol.plist"; sed -e "s|<string>$nl</string>|<string>$ol</string>|g" -e "s|/bin/$MG_NEW_UNIT|/bin/$MG_OLD_UNIT|g" "$la/$nl.plist" > "$la/$ol.plist.tmp" &&
+          mv "$la/$ol.plist.tmp" "$la/$ol.plist"; mg_rewrite_text "$la/$ol.plist" "$MG_NEW_DIR" "$MG_OLD_DIR"
+        launchctl bootout "gui/$uid/$nl" >/dev/null 2>&1 || true; rm -f "${la:?}/${nl:?}.plist"
+        launchctl bootstrap "gui/$uid" "$la/$ol.plist" >/dev/null 2>&1 || true
+      fi
+    done
+    nl="$(mg_get helper_new_label)"
+    if [ -n "$nl" ] && [ -f "$la/$nl.plist" ]; then mg_guard launchd "$la/$nl.plist"; launchctl bootout "gui/$uid/$nl" >/dev/null 2>&1 || true; rm -f "${la:?}/${nl:?}.plist"; fi
+  elif [ "$(mg_os)" = Linux ]; then
+    h="$(mg_systemd_dir)"; nl="$(mg_get helper_new_label)"; [ -n "$nl" ] || nl="$MG_NEW_UNIT-$MG_NEWPROJ.service"
+    ol="$MG_OLD_UNIT-$MG_PROJ.service"
+    if [ -f "$h/$nl" ]; then
+      mg_guard systemd "$h/$nl"; systemctl --user disable --now "$nl" >/dev/null 2>&1 || true; rm -f "${h:?}/${nl:?}"
+      [ ! -f "$h/$ol.pre-devos-ade" ] || { mg_guard systemd "$h/$ol"; mv "$h/$ol.pre-devos-ade" "$h/$ol"; }
+      systemctl --user daemon-reload >/dev/null 2>&1 || true; systemctl --user enable --now "$ol" >/dev/null 2>&1 || true
+    fi
   fi
   if [ "$MG_MV" = 1 ] && [ "$MG_NEW_DIR" != "$MG_OLD_DIR" ] && [ -d "$MG_NEW_DIR" ]; then
     mg_rewrite_tree "$MG_NEW_DIR" "$MG_NEW_DIR" "$MG_OLD_DIR"; mg_relink_tree "$MG_NEW_DIR" "$MG_NEW_DIR" "$MG_OLD_DIR"
     for b in devos-claude claude-bedrock; do
       [ "$(readlink "$HOME/.local/bin/$b" 2>/dev/null)" = "$MG_NEW_DIR/bin/$b" ] && { mg_guard bin "$HOME/.local/bin/$b"; ln -sfn "$MG_OLD_DIR/bin/$b" "$HOME/.local/bin/$b"; }
     done
-    [ ! -L "$MG_OLD_DIR" ] || rm -f "$MG_OLD_DIR"
+    [ ! -L "$MG_OLD_DIR" ] || rm -f "${MG_OLD_DIR:?}"
     mg_guard dir "$MG_NEW_DIR"; mv "$MG_NEW_DIR" "$MG_OLD_DIR" || die "migration: could not move $MG_NEW_DIR back to $MG_OLD_DIR"
-    rm -f "$MG_OLD_DIR/bin/$MG_OLD_UNIT" 2>/dev/null || true
+    rm -f "${MG_OLD_DIR:?}/bin/$MG_OLD_UNIT" 2>/dev/null || true
     MG_DIR="$MG_OLD_DIR"; STACK_DIR="$MG_OLD_DIR"; ENV_FILE="$MG_OLD_DIR/.env"; STATE_DIR="$MG_OLD_DIR/.state"
   fi
-  if [ -f "$MG_DIR/.env.pre-devos-ade" ]; then
-    cp -p "$ENV_FILE" "$MG_DIR/.env.devos-ade-rolled-back" 2>/dev/null || true
-    cp -p "$MG_DIR/.env.pre-devos-ade" "$ENV_FILE"
+  # .env: reversed from the CURRENT file (what was changed since the move stays); the one from before the move is kept as it was
+  cp -p "$ENV_FILE" "$MG_DIR/.env.devos-ade-rolled-back" 2>/dev/null || true
+  if [ "$MG_PARTIAL" = 1 ]; then mg_env_xlate "$MG_NEW_ENV_PREFIX" "$MG_OLD_ENV_PREFIX" 0 x x x x 1
+  else
+    h=0; [ "$(get_env PORTAL_HOST)" != "$MG_NEW_HOST" ] || h=1
+    mg_env_xlate "$MG_NEW_ENV_PREFIX" "$MG_OLD_ENV_PREFIX" "$h" "$MG_NEW_HOST" "$MG_OLD_HOST" "$MG_NEW_PREVIEW" "$MG_OLD_PREVIEW" 1
+    set_env COMPOSE_PROJECT_NAME "$MG_OLD_PROJECT"   # the checked-out code would otherwise start the new name; ./stack rollback goes back to the old code
   fi
-  set_env COMPOSE_PROJECT_NAME "$MG_OLD_PROJECT"   # the checked-out code would otherwise start the new name; ./stack rollback goes back to the old code
+  # names inside the volume of terminal-home and on this computer, back
+  v="${MG_PROJ}_terminal-home"
+  if docker volume inspect "$v" >/dev/null 2>&1; then
+    mg_guard volume "$v"
+    MG_MOUNTS="-v $v:/h" MG_SCRIPT="$MG_RENAME_SH" mg_run_in "${MG_IMG:-$(mg_image)}" mg-rename /h "$MG_NEW_CONF" "$MG_OLD_CONF" "$MG_NEW_TRASH" "$MG_OLD_TRASH" "$MG_NEW_TMP" "$MG_OLD_TMP" "$MG_NEW_HINT" "$MG_OLD_HINT" >/dev/null 2>&1 || warn "migration: could not rename the sandbox's folders back in $v"
+  fi
+  mg_host_rename back
   mv "$(mg_marker)" "$(mg_marker).rolled-back-$(date +%s)" 2>/dev/null || true   # a new try starts from the beginning
   mg_put status rolled-back
-  log "back to $MG_OLD_PROJECT in $MG_DIR (.env restored; the one from before is .env.devos-ade-rolled-back). Unused volumes of $MG_NEW_PROJECT: $(mg_new_volumes | tr '\n' ' ')— kept; docker volume rm them yourself if you want. Next: ./stack rollback goes back to the earlier code."
+  if [ "$MG_PARTIAL" = 1 ]; then log "back to the old names in $MG_DIR (.env reversed from the current one; the one from before is .env.pre-devos-ade). Next: ./stack rollback goes back to the earlier code."
+  else log "back to $MG_OLD_PROJECT in $MG_DIR, with the data written since the move (.env reversed from the current one; the one from before the move is .env.pre-devos-ade). The $MG_NEW_PROJECT volumes are left as they were ($(mg_new_volumes | tr '\n' ' ')). Next: ./stack rollback goes back to the earlier code."; fi
+}
+
+# migrate_rollback_first — ./stack rollback of the code, when the install was moved to the new name: the old code knows only the old names, so
+# the move is undone first (migrate_rollback), then ./stack rollback starts again from the old folder. Refuses with the exact command otherwise.
+migrate_rollback_first() {
+  local old
+  mg_init
+  case "$(mg_status)" in complete | moved) ;; *) return 0 ;; esac
+  log "rollback: this install was moved to the new name; undoing that first (./stack migrate --rollback)"
+  old="$MG_OLD_DIR"   # (the folder this install goes back to; the one we may be standing in is gone afterwards)
+  ( migrate_rollback ) || die "./stack rollback: the move to the new name could not be undone (see above). Nothing of the code was changed. Fix that, then run: ./stack migrate --rollback   and after it: ./stack rollback"
+  cd "$old" && exec "$old/stack" rollback
 }
 
 cmd_migrate() {
@@ -626,6 +959,7 @@ cmd_migrate() {
     --now) mg_init; mg_needed || { migrate_status; return 0; }; stack_lock migrate; mg_phase_a
       log "moved. The rest of the update: cd $MG_NEW_DIR && ./stack update --force" ;;
     --rollback) stack_lock migrate; migrate_rollback ;;
+    --verify) stack_lock migrate; mg_init; case "$(mg_status)" in complete) mg_verify_and_clean; migrate_backup_line ;; *) die "./stack migrate --verify: the move has not finished (./stack migrate says where it is)" ;; esac ;;
     --remove-old) migrate_remove_old ;;
     --finish-helper) migrate_finish_helper ;;
     -h | --help) migrate_usage ;;
