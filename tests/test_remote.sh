@@ -47,7 +47,7 @@ test_ts_names_are_per_project() {
   : > "$ENV_FILE"
   assert_eq "$(ts_service_names)" "svc:bedrock-now svc:bedrock-now-chat svc:bedrock-now-admin svc:bedrock-now-files"
   assert_eq "$(ts_node_name)" "bedrock-now-node"
-  printf 'COMPOSE_PROJECT_NAME=bn_dev\n' > "$ENV_FILE"; assert_eq "$(ts_base)" "devos-ade-bn-dev"
+  printf 'COMPOSE_PROJECT_NAME=bn_dev\n' > "$ENV_FILE"; assert_eq "$(ts_base)" "bedrock-now-bn-dev"
   printf 'TS_SERVICE=ai\nTS_HOSTNAME=box\n' > "$ENV_FILE"; assert_eq "$(ts_base) $(ts_node_name)" "ai box"
   valid_ts_label devos-ade || return 1
   valid_ts_label "$(printf 'a%.0s' $(seq 1 54))" || return 1   # + -terminal, the longest suffix: 63, a DNS label's most
@@ -128,7 +128,7 @@ test_admin_steps_name_every_console_page() {
   printf 'TAILSCALE_ALLOWED_LOGIN=me@example.com\n' > "$ENV_FILE"
   out="$(ts_admin_steps tailscale)"
   for want in admin/dns "HTTPS Certificates" admin/acls/file admin/settings/keys admin/services "tcp:443" \
-              "devos-ade-chat" "as me@example.com" "accept-routes" "Tags: tag:bedrock-now"; do
+              "bedrock-now-chat" "as me@example.com" "accept-routes" "Tags: tag:bedrock-now"; do
     assert_contains "$out" "$want"
   done
   assert_not_contains "$(ts_admin_steps domain)" "admin/services"

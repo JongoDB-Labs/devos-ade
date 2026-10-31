@@ -35,6 +35,8 @@ made before the rename, or an identifier that data on disk or in someone else's 
 - **Data written under the old name:**
   - the Open WebUI model records' `meta.bedrock_now` and `meta.bedrock_now_hidden` (which models the stack added or
     hid), stored in the Open WebUI database;
+  - LiteLLM's admin user id `bedrock-now-admin` and the id prefix `bedrock-now-budget` of the budget banners in Open
+    WebUI's settings;
   - the import source `'bedrock-now'` stored with a copied devos-claude session, in the Code page's records.
 - **A byte-exact fixture:** `tests/fixtures/legacy-icons/openai.svg` is a generic badge older installs stored in Open
   WebUI; the stack recognises it by its hash, so its text cannot change.
@@ -64,7 +66,8 @@ check too, unless none of its files exist (the migration's, before they are merg
 | The installed app's old name | `named \x60bedrock-now\x60` | README.md | the browser keeps an installed app's name until you accept the new one |
 | The workspace folder | `bedrock-now[\w<>%${}:-]*?-workspace` | * | an install that has it keeps it |
 | Tailscale names | `(?:svc:\|tag:)bedrock-now(?:-[\w<>]+)*\|bedrock-now-node\b\|bedrock-now(?:-(?:chat\|admin\|files\|terminal\|code\|preview))?(?=\.(?:\$TN\|<tailnet>\|tail1234\|[\w-]+\.ts\.net))` | * | the tailnet's policy and the remote addresses |
-| Tailscale Service names, in prose and code | `bedrock-now(?:-(?:chat\|admin\|files\|terminal\|code\|preview\|<project>))?(?![\w-]\|\.localhost)\|bedrock-now-(?=\$\()` | docs/remote.md, lib/remote.sh, .env.example | the Service base name |
+| Tailscale Service names, in prose and code | `bedrock-now(?:-(?:chat\|admin\|files\|terminal\|code\|preview\|<project>\|bn-dev))?(?![\w-]\|\.localhost)\|bedrock-now-(?=\$\()` | docs/remote.md, lib/remote.sh, .env.example, tests/test_preview.sh, tests/test_remote.sh, tests/test_terminal.sh | the Service base name |
+| LiteLLM's admin user and Open WebUI's budget banners | `bedrock-now-(?:admin\|budget)\b` | lib/owui.sh, tests/test_owui.sh | their ids are stored in LiteLLM's and Open WebUI's databases |
 | Open WebUI metadata keys | `(?<![\w])bedrock_now(?:_hidden)?(?![\w])` | lib/openrouter.sh, lib/owui.sh, tests/test_explabs.sh, tests/test_openrouter.sh, tests/test_settings.sh | stored with your models |
 | The stored import source | `'bedrock-now'` | code/server/harness/claude.mjs, code/server/import-plan.mjs, code/server/import-sessions.mjs, code/test/harness-claude.test.mjs, code/web/dev/mock-server.mjs, code/web/src/api.ts, code/web/src/types.ts | stored with a copied session |
 | The byte-exact fixture | `bedrock-now-icon` | tests/fixtures/legacy-icons/openai.svg | recognised by its hash |

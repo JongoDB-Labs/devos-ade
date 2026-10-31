@@ -485,7 +485,7 @@ import json, sys
 s = json.load(sys.stdin)["Services"]
 assert sorted(s)[-1] == "svc:bedrock-now-terminal", s
 assert s["svc:bedrock-now-terminal"]["Web"] == {"bedrock-now-terminal.tail1234.ts.net:443": {"Handlers": {"/": {"Proxy": "http://caddy:8081"}}}}' || return 1
-  assert_contains "$(ts_admin_steps tailscale)" "devos-ade-files   devos-ade-terminal"
+  assert_contains "$(ts_admin_steps tailscale)" "bedrock-now-files   bedrock-now-terminal"
   assert_eq "$(remote_app_host terminal)" "bedrock-now-terminal.$TN"
   # own domain: terminal.<host> (the wildcard certificate covers it)
   set_env REMOTE_MODE domain; remote_hosts_domain bedrock.example.com

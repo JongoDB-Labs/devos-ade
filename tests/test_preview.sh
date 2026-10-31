@@ -190,11 +190,11 @@ test_the_remote_preview_host_follows_the_remote_code_page() {
   assert_eq "$(get_env REMOTE_CODE_HOST) [$(get_env REMOTE_PREVIEW_HOST)] [$(get_env REMOTE_PREVIEW_SITE)]" "bedrock-now-code.$TN [] []"
   assert_not_contains "$(ts_service_names) $(ts_serve_config tailscale "$TN")" "preview"
   steps="$(ts_admin_steps tailscale)"
-  assert_contains "$steps" "The Code page's previews over remote access, devos-ade-preview, are off: read docs/remote.md"
+  assert_contains "$steps" "The Code page's previews over remote access, bedrock-now-preview, are off: read docs/remote.md"
   assert_contains "$steps" "define and approve that Service first, then ./stack config set REMOTE_PREVIEW (then: true)"
   note="$(remote_preview_note)"
   assert_contains "$note" "same site as every other app of"
-  assert_contains "$note" "first define the Service devos-ade-preview (port tcp:443)"
+  assert_contains "$note" "first define the Service bedrock-now-preview (port tcp:443)"
   assert_contains "$note" "Off: ./stack config set REMOTE_PREVIEW (then: false)"
   for v in '' false OFF no 0 maybe; do
     set_env REMOTE_PREVIEW "$v"; code_remote_sync; assert_eq "[$(get_env REMOTE_PREVIEW_HOST)]" "[]"
@@ -212,7 +212,7 @@ import json, sys
 p = json.load(sys.stdin)
 assert "svc:bedrock-now-preview" in p["autoApprovers"]["services"] and "svc:bedrock-now-preview" in p["grants"][0]["dst"], p' || return 1
   steps="$(ts_admin_steps tailscale)"
-  assert_contains "$steps" "devos-ade-preview shows the dev servers running in the sandbox"
+  assert_contains "$steps" "bedrock-now-preview shows the dev servers running in the sandbox"
   assert_contains "$steps" "Off: ./stack config set REMOTE_PREVIEW (then: false)"
   assert_eq "$(remote_preview_note)" ""
   assert_contains "$(remote_app_list)" "chat admin files terminal code preview"

@@ -5,7 +5,7 @@
 . "$STACK_DIR/lib/guard.sh"
 
 # _mk_install DIR — a folder that looks like a devos-ade checkout
-_mk_install() { mkdir -p "$1"; : > "$1/compose.yaml"; printf '#!/usr/bin/env bash\n# devos-ade CLI\n' > "$1/stack"; }
+_mk_install() { mkdir -p "$1"; : > "$1/compose.yaml"; printf '#!/usr/bin/env bash\n# DevOS ADE CLI\n' > "$1/stack"; }
 
 _stub_docker() {
   docker() {
