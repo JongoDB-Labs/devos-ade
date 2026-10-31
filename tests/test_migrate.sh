@@ -871,7 +871,8 @@ test_sqlite_rewrite_has_a_left_boundary_handles_json_and_wal_and_reports_failure
   python3 -I -c 'import sqlite3,sys; o=sys.argv[2]; c=sqlite3.connect(sys.argv[1]); c.execute("create table s(cwd text)")
 for v in (o+"/w", "x"+o+"/w", "{\"p\":\""+o+"\"}", "a="+o+"/z", "/other"+o+"/q", o+"-two/w"): c.execute("insert into s values (?)", (v,))
 c.commit()' "$INST/.state/a.db" "$INST"
-  printf 'not a database %s\n' "$INST" | tr -d '\n' > "$INST/.state/bad.db"; head -c 20 /dev/urandom >> "$INST/.state/bad.db"
+  # a damaged sqlite file: its header (with the NUL every sqlite file has, so no text rewrite reads it), then the old path
+  printf 'SQLite format 3\000%s/' "$INST" > "$INST/.state/bad.db"; head -c 20 /dev/urandom >> "$INST/.state/bad.db"
   _mg_run > "$TMP/out" 2>&1
   assert_contains "$(cat "$TMP/out")" "NOT rewritten"; assert_contains "$(cat "$TMP/out")" "bad.db"
   assert_eq "$(python3 -I -c 'import sqlite3,sys; print("|".join(r[0] for r in sqlite3.connect(sys.argv[1]).execute("select cwd from s order by rowid")))' "$NEW/.state/a.db")" "$NEW/w|x$INST/w|{\"p\":\"$NEW\"}|a=$NEW/z|/other$INST/q|$INST-two/w"
