@@ -113,7 +113,6 @@ cmd_rollback() {
   [ $# -eq 0 ] || die "usage: ./stack rollback [--yes]   (goes back to the version before the last ./stack update)"
   [ -f "$ENV_FILE" ] || die "run ./stack setup first"
   stack_lock rollback
-  ! declare -F migrate_rollback_first >/dev/null || migrate_rollback_first   # (lib/migrate.sh: an install moved to the new name goes back to the old one first)
   ! declare -F xl_bg_stop >/dev/null || xl_bg_stop   # (lib/explabs.sh: a background read of the model details)
   from="$(_record_get from)"; branch="$(_record_get branch)"; fromv="$(_record_get from_version)"
   backup="$(_record_get backup)"; result="$(_record_get result)"; at="$(_record_get at)"
@@ -138,6 +137,9 @@ cmd_rollback() {
   fi
   [ "${ASSUME_YES:-0}" = 1 ] || _have_tty || die "re-run with --yes to roll back non-interactively — nothing was changed"
   confirm "Roll back now?" || die "aborted — nothing was changed"
+  # (lib/migrate.sh: an install moved to the new name goes back to the old one first; only now, after the checks above and the answer, so that no
+  # earlier "nothing was changed" can be wrong. It continues in the old folder, which asks nothing again.)
+  ! declare -F migrate_rollback_first >/dev/null || migrate_rollback_first
   d="$(images_dir)"; mkdir -p "$d"
   now_imgs="$(project_refs | snapshot_refs)"
   # the version gone back from: automatic updates never install it again (lib/helper.sh), whatever happens next

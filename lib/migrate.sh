@@ -141,14 +141,20 @@ mg_image() {
 }
 # mg_run_in IMAGE OP ARGS... (volume mounts in MG_MOUNTS) — a throwaway container, no network, root, the script in $MG_SCRIPT
 mg_run_in() {
-  local img="$1"; shift
+  local img="$1" w; shift
+  # Docker makes a named volume that is not there (empty): a copy of "nothing" must never pass for a copy of the data
+  for w in $MG_MOUNTS; do
+    [ "$w" != -v ] || continue
+    case "${w%%:*}" in /* | */*) continue ;; esac   # (a folder of this computer, not a volume)
+    docker volume inspect "${w%%:*}" >/dev/null 2>&1 || { warn "migration: the volume ${w%%:*} is not there"; return 1; }
+  done
   # shellcheck disable=SC2086  # MG_MOUNTS: -v options, one word each
   docker run --rm --user 0 --network none --entrypoint sh $MG_MOUNTS "$img" -c "$MG_SCRIPT" "$@"   # ($0 is the op name)
 }
 MG_SUM_SH='for d in "$1" "$2"; do cd "$d" || exit 1
 n=$(find . -mindepth 1 | wc -l | tr -d " ")
 b=$(find . -type f -exec stat -c %s {} + | awk "{s+=\$1} END{print s+0}")
-m=$(find . -mindepth 1 -printf "%p %m %U %G %y\n" | LC_ALL=C sort | sha256sum | cut -d" " -f1)
+m=$(find . -mindepth 1 -printf "%p %m %U %G %y %l\n" | LC_ALL=C sort | sha256sum | cut -d" " -f1)
 c=$(find . -type f -exec sha256sum {} + | LC_ALL=C sort -k2 | sha256sum | cut -d" " -f1)
 printf "count=%s bytes=%s meta=%s sum=%s\n" "$n" "$b" "$m" "$c"; done'
 MG_COPY_SH='cp -a "$1"/. "$2"/'
@@ -278,7 +284,16 @@ mg_step_inner() { # names inside the NEW terminal-home (never on this computer)
   mg_allowed config ".config/$MG_NEW_CONF" || die "migration: internal list error"
   mg_guard volume "$nv"
   MG_MOUNTS="-v $nv:/h" MG_SCRIPT="$MG_RENAME_SH" mg_run_in "${MG_IMG:-$(mg_image)}" mg-rename /h "$MG_OLD_CONF" "$MG_NEW_CONF" "$MG_OLD_TRASH" "$MG_NEW_TRASH" "$MG_OLD_TMP" "$MG_NEW_TMP" "$MG_OLD_HINT" "$MG_NEW_HINT" >/dev/null 2>&1 || mg_fail inner "could not rename the sandbox's own folders in $nv"
+  mg_sample_check "$nv"
   mg_step_done inner
+}
+# mg_sample_check NEWVOL — the sandbox home's sample files, the old .config/<old name> (source) against the new one (copy), WHILE the stack is
+# down and nothing writes to either; the result is kept in the marker (verify does not look at live files)
+mg_sample_check() {
+  local a b img="${MG_IMG:-$(mg_image)}"
+  a="$(MG_MOUNTS="-v ${MG_OLD_PROJECT}_terminal-home:/v:ro" MG_SCRIPT="$MG_SAMPLE_SH" mg_run_in "$img" mg-sample /v ".config/$MG_OLD_CONF" 2>/dev/null | tail -n 1)"
+  b="$(MG_MOUNTS="-v $1:/v:ro" MG_SCRIPT="$MG_SAMPLE_SH" mg_run_in "$img" mg-sample /v ".config/$MG_NEW_CONF" 2>/dev/null | tail -n 1)"
+  if [ -n "$a" ] && [ "$a" = "$b" ]; then mg_put sample ok; else mg_put sample "differs (old '$a', new '$b')"; fi
 }
 
 # mg_host_targets -> OLD<TAB>NEW pairs on this computer that this install owns (the enumerated 'host' list): the trash/tmp folders of the
@@ -390,10 +405,12 @@ mg_step_images() {
   if [ "$MG_PARTIAL" = 1 ]; then mg_step_done images; return 0; fi
   while IFS= read -r r; do
     [ -n "$r" ] || continue; mg_guard image "$r"
+    # (every tag, :previous too: the images ./stack rollback goes back to, the same image IDs, offline)
     t="${MG_NEW_PROJECT}/${r#*/}"; docker image inspect "$t" >/dev/null 2>&1 || docker tag "$r" "$t" >/dev/null 2>&1 || true
   done <<EOF
 $(docker image ls --format '{{.Repository}}:{{.Tag}}' --filter "reference=$MG_OLD_PROJECT/*" 2>/dev/null)
 EOF
+  mg_record_delete_list
   mg_step_done images
 }
 
@@ -445,6 +462,47 @@ mg_relink_tree() {
 $(find "$root" -path "$root/.git" -prune -o -path "$root/backups" -prune -o -type l -print 2>/dev/null)
 EOF
 }
+# mg_skipped_with_path ROOT OLD — files the rewrite does not read (over 2 MB, or binary) that still hold OLD as a path
+mg_skipped_with_path() {
+  local root="$1" old="$2" f
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    if [ -n "$(find "$f" -size +2047k 2>/dev/null)" ] || ! grep -Iq . "$f" 2>/dev/null; then
+      LC_ALL=C grep -aqE -- "$(mg_path_re "$old")(\$|[^A-Za-z0-9._-])" "$f" 2>/dev/null && printf '%s\n' "$f"
+    fi
+  done <<EOF
+$(find "$root/.state" "$root/litellm" "$root/searxng" "$root/tailscale" \( -path '*/mlx/hf' -o -name blobs -o -name .git -o -name node_modules \) -prune -o -type f -print 2>/dev/null)
+EOF
+  return 0
+}
+# mg_sqlite_rewrite FILE OLD NEW — the text columns of a sqlite file (the Code page's records) that name OLD/… or OLD; one transaction
+mg_sqlite_rewrite() {
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 -I - "$1" "$2" "$3" <<'PY' >/dev/null 2>&1
+import sqlite3, sys
+f, o, n = sys.argv[1:4]
+c = sqlite3.connect(f)
+try:
+    for (t,) in c.execute("select name from sqlite_master where type='table' and name not like 'sqlite_%'").fetchall():
+        for col in [r[1] for r in c.execute('pragma table_info("%s")' % t.replace('"', '""')).fetchall()]:
+            q = '"%s"' % col.replace('"', '""'); tt = '"%s"' % t.replace('"', '""')
+            c.execute("update %s set %s = replace(%s, ?, ?) where typeof(%s) = 'text' and instr(%s, ?) > 0" % (tt, q, q, q, q), (o + "/", n + "/", o + "/"))
+            c.execute("update %s set %s = ? where %s = ?" % (tt, q, q), (n, o))
+    c.commit()
+finally:
+    c.close()
+PY
+}
+# mg_paths_left_behind ROOT OLD NEW — after the rewrite: sqlite files are rewritten; any other skipped file still naming OLD is listed (a warning, and a file in the marker's folder)
+mg_paths_left_behind() {
+  local root="$1" old="$2" new="$3" f left='' n=0 list
+  for f in $(mg_skipped_with_path "$root" "$old" | grep -E '\.(db|sqlite|sqlite3)$' || true); do mg_sqlite_rewrite "$f" "$old" "$new" || true; done
+  list="$(mg_skipped_with_path "$root" "$old")"
+  mkdir -p "$(mg_rec_dir)"; printf '%s\n' "$list" | sed '/^$/d' > "$(mg_rec_dir)/paths-left-behind.txt"
+  n="$(grep -c . "$(mg_rec_dir)/paths-left-behind.txt" 2>/dev/null || true)"; n="${n:-0}"
+  mg_put paths_left_behind "$n"
+  [ "$n" -eq 0 ] || warn "migration: $n file(s) too big or binary to rewrite still name the old folder $old (list: $(mg_rec_dir)/paths-left-behind.txt): $(head -n 5 "$(mg_rec_dir)/paths-left-behind.txt" | tr '\n' ' ')$([ "$n" -le 5 ] || printf '…')"
+}
 mg_step_paths() {
   local o="$MG_OLD_DIR" n="$MG_NEW_DIR" b
   if [ "$o" != "$n" ]; then
@@ -452,6 +510,7 @@ mg_step_paths() {
     [ "$MG_LOGICAL_DIR" = "$o" ] || mg_rewrite_tree "$n" "$MG_LOGICAL_DIR" "$n"
     mg_relink_tree "$n" "$o" "$n"
     [ "$MG_LOGICAL_DIR" = "$o" ] || mg_relink_tree "$n" "$MG_LOGICAL_DIR" "$n"
+    mg_paths_left_behind "$n" "$o" "$n"
     for b in devos-claude claude-bedrock; do
       if [ "$(readlink "$HOME/.local/bin/$b" 2>/dev/null)" = "$o/bin/$b" ] && [ -e "$n/bin/$b" ]; then
         mg_guard bin "$HOME/.local/bin/$b"; ln -sfn "$n/bin/$b" "$HOME/.local/bin/$b"
@@ -673,6 +732,7 @@ migrate_backup_line() {
     removed) [ -z "$(mg_get leftovers_removed)" ] || return 0
       printf 'The move to %s was verified and the old copy was removed (%s freed). .env.pre-devos-ade and the old folder link go with the next update.\n' "$MG_NEW_PROJECT" "$(mg_fmt_kb "$(mg_get freed_kb)")" ;;
     kept) printf 'The old copy of the install (the %s_* volumes, %s) was KEPT because a check failed: %s. ./stack migrate --verify tries again; ./stack migrate --rollback goes back; ./stack migrate --remove-old removes it.\n' "$MG_OLD_PROJECT" "$(mg_fmt_kb "$(mg_get kb_total)")" "$(mg_get verify_failed)" ;;
+    removing) printf 'Removing the old copy (%s_*) stopped before it was done; what is left is on a list. ./stack migrate --verify continues.\n' "$MG_OLD_PROJECT" ;;
     *) printf 'The move to %s is not verified yet; the old copy (%s) is removed once it is: ./stack migrate --verify\n' "$MG_NEW_PROJECT" "$(mg_fmt_kb "$(mg_get kb_total)")" ;;
   esac
 }
@@ -688,6 +748,10 @@ psql -U "${POSTGRES_USER:-postgres}" -d postgres -Atc "select datname from pg_da
 EOS
 )
 MG_REPOS_SH='find "$1" -type d -name "*.git" -prune | wc -l | tr -d " "'
+MG_FSCK_SH='find "$1" -type d -name "*.git" -prune | { n=0; bad=0; while IFS= read -r r; do n=$((n + 1))
+if [ -f "$r/HEAD" ] && [ -d "$r/objects" ]; then
+if command -v git >/dev/null 2>&1; then git -c safe.directory="*" --git-dir="$r" fsck --connectivity-only >/dev/null 2>&1 || bad=$((bad + 1)); fi
+else bad=$((bad + 1)); fi; done; echo "$n $bad"; }'
 MG_SAMPLE_SH='cd "$1/$2" 2>/dev/null || { echo none; exit 0; }
 find . -type f | LC_ALL=C sort | head -n 20 | while IFS= read -r f; do cksum < "$f"; done | cksum'
 
@@ -706,6 +770,9 @@ mg_step_record() {
   local db out dir n=0
   if [ "$MG_PARTIAL" = 1 ]; then mg_step_done record; return 0; fi
   dir="$(mg_rec_dir)"; mkdir -p "$dir"
+  if declare -F rt_state >/dev/null; then
+    for db in $(ls "$MG_DIR/.state/runtimes" 2>/dev/null); do [ "$(rt_state "$db" 2>/dev/null)" != running ] || mg_put "rt.$db" running; done
+  fi
   for db in $(mg_pg_dbs "$MG_OLD_PROJECT"); do
     out="$(mg_pg_counts "$MG_OLD_PROJECT" "$db")" && [ -n "$out" ] || { n=-1; break; }
     printf '%s\n' "$out" > "$dir/pgrows-$db.tsv"; n=$((n + 1))
@@ -716,6 +783,38 @@ mg_step_record() {
 }
 
 # mg_verify_cutover -> 0 when everything is as before; else MG_VERIFY_WHY says what failed (nothing is deleted then)
+# mg_rt_bin ID DIR — the program of an installed runtime (empty when this kind has none to run)
+mg_rt_bin() {
+  case "$1" in
+    lmstudio) awk -F'\t' 'NR == 1 { print $1 }' "$2/llmster.run" 2>/dev/null ;;
+    llamacpp) for b in "$2/bin/llama-server" "$2/llama-server"; do [ -e "$b" ] && { printf '%s\n' "$b"; break; }; done ;;
+    vllm) [ ! -e "$2/venv/bin/python" ] || printf '%s\n' "$2/venv/bin/python" ;;
+  esac
+}
+# mg_run_limited SECONDS CMD… — a version command must not hang the update
+mg_run_limited() {
+  local t="$1" pid i=0; shift
+  "$@" >/dev/null 2>&1 & pid=$!
+  while mg_alive "$pid"; do [ "$i" -lt "$((t * 5))" ] || { kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; return 1; }; sleep 0.2; i=$((i + 1)); done
+  wait "$pid"
+}
+# mg_check_runtimes — each installed runtime's program runs from the moved folder (its version command), and a runtime that was running before the
+# update is running after it
+mg_check_runtimes() {
+  local d id bin k
+  for d in "$MG_DIR"/.state/runtimes/*/; do
+    [ -d "$d" ] || continue; d="${d%/}"; id="${d##*/}"; bin="$(mg_rt_bin "$id" "$d")"
+    [ -n "$bin" ] || continue
+    [ -x "$bin" ] || { MG_VERIFY_WHY="runtime $id: its program $bin is not there or cannot run"; return 1; }
+    mg_run_limited 20 "$bin" --version || { MG_VERIFY_WHY="runtime $id: $bin --version does not run from the moved folder"; return 1; }
+  done
+  for k in $(grep '^rt\.' "$(mg_marker)" 2>/dev/null | cut -d= -f1); do
+    id="${k#rt.}"
+    [ "$(mg_get "$k")" = running ] || continue
+    ! declare -F rt_state >/dev/null || [ "$(rt_state "$id")" = running ] || { MG_VERIFY_WHY="runtime $id was running before the update and is not running after it"; return 1; }
+  done
+  return 0
+}
 mg_verify_cutover() {
   local s st f db new old t n o ids bad r cwd img oldrepos newrepos a b rec users_old users_new chats_old chats_new
   MG_VERIFY_WHY=''; MG_VERIFY_NOTE=''
@@ -753,12 +852,13 @@ mg_verify_cutover() {
   if docker volume inspect "${MG_NEW_PROJECT}_gitdata" >/dev/null 2>&1 && docker volume inspect "${MG_OLD_PROJECT}_gitdata" >/dev/null 2>&1; then
     case "$oldrepos$newrepos" in '' | *[!0-9]*) MG_VERIFY_WHY="the git server's repositories cannot be counted"; return 1 ;; esac
     [ "$newrepos" -ge "$oldrepos" ] || { MG_VERIFY_WHY="the git server lists $newrepos repositories, the old one had $oldrepos"; return 1; }
+    a="$(MG_MOUNTS="-v ${MG_NEW_PROJECT}_gitdata:/v:ro" MG_SCRIPT="$MG_FSCK_SH" mg_run_in "$img" mg-fsck /v 2>/dev/null | tail -n 1)"
+    case "$a" in *" 0") ;; *) MG_VERIFY_WHY="git fsck on the moved repositories: ${a:-no answer} (repositories, damaged)"; return 1 ;; esac
   fi
   # 5. sample files of the sandbox's home match (the old .config/<old name> against the new one)
+  # (compared at the inner step, with the stack down: mg_sample_check)
   if docker volume inspect "${MG_NEW_PROJECT}_terminal-home" >/dev/null 2>&1; then
-    a="$(MG_MOUNTS="-v ${MG_OLD_PROJECT}_terminal-home:/v:ro" MG_SCRIPT="$MG_SAMPLE_SH" mg_run_in "$img" mg-sample /v ".config/$MG_OLD_CONF" 2>/dev/null | tail -n 1)"
-    b="$(MG_MOUNTS="-v ${MG_NEW_PROJECT}_terminal-home:/v:ro" MG_SCRIPT="$MG_SAMPLE_SH" mg_run_in "$img" mg-sample /v ".config/$MG_NEW_CONF" 2>/dev/null | tail -n 1)"
-    [ -n "$a" ] && [ "$a" = "$b" ] || { MG_VERIFY_WHY="sample files of the sandbox's home differ (old '$a', new '$b')"; return 1; }
+    [ "$(mg_get sample)" = ok ] || { MG_VERIFY_WHY="sample files of the sandbox's home did not match when they were copied: $(mg_get sample)"; return 1; }
   fi
   # 6. the runtimes' records name places that exist in the moved folder
   for f in "$MG_DIR"/.state/runtimes/*/llmster.run; do
@@ -767,51 +867,97 @@ mg_verify_cutover() {
     [ -z "$cwd" ] || [ -d "$cwd" ] || { MG_VERIFY_WHY="a runtime's record ($f) names $cwd, which is not there"; return 1; }
     ! grep -qF -- "$MG_OLD_DIR/" "$f" || [ "$MG_OLD_DIR" = "$MG_NEW_DIR" ] || { MG_VERIFY_WHY="a runtime's record ($f) still names the old folder"; return 1; }
   done
+  mg_check_runtimes || return 1
   for f in "$MG_DIR"/.state/runtimes/*/home/.lmstudio-home-pointer; do
     [ -f "$f" ] || continue; [ -d "$(head -n 1 "$f")" ] || { MG_VERIFY_WHY="LM Studio's home pointer names a folder that is not there"; return 1; }
   done
   return 0
 }
 
-# mg_delete_old_copy — the old project's volumes and the old image tags, after mg_verify_cutover passed. The launchd/systemd leftovers,
-# .env.pre-devos-ade and the old folder link wait for the next update (migrate_update_hook).
-mg_delete_old_copy() {
-  local list kind name kb tot=0 nv=0 ni=0
+# mg_sync — the marker and its folder reach the disk (a power cut after the first removal must find "verified" there)
+mg_sync() { sync 2>/dev/null || true; }
+# mg_record_delete_list — the exact list that may be deleted (volumes with their sizes, image tags), written once, at the end of the copy work:
+# del.N=KIND|KB|NAME. Nothing outside it is ever removed by the automatic clean-up.
+mg_record_delete_list() {
+  local kind name kb n=0 list
+  [ "$MG_PARTIAL" != 1 ] || return 0
+  [ -z "$(mg_get del.n)" ] || return 0
   list="$(mg_remove_list | awk -F'\t' '$1 == "volume" || $1 == "image"')"
   while IFS="$(printf '\t')" read -r kind name kb; do
-    [ -n "$kind" ] || continue
-    case "$kind" in
-      volume) mg_guard volume "$name"; docker volume rm "$name" >/dev/null 2>&1 && { nv=$((nv + 1)); tot=$((tot + ${kb:-0})); } || warn "migration: could not remove volume $name" ;;
-      image) mg_guard image "$name"; docker rmi "$name" >/dev/null 2>&1 && ni=$((ni + 1)) ;;
-    esac
+    [ -n "$kind" ] || continue; n=$((n + 1)); mg_put "del.$n" "$kind|${kb:-0}|$name"
   done <<EOF
 $list
 EOF
-  mg_put old_copy removed; mg_put old_volumes_removed "$nv"; mg_put freed_kb "$tot"
-  log "the move to $MG_NEW_PROJECT is verified; the old copy is removed: $nv volume(s) and $ni image tag(s), $(mg_fmt_kb "$tot") freed${MG_VERIFY_NOTE:+ ($MG_VERIFY_NOTE)}"
+  mg_put del.n "$n"
+}
+# mg_delete_old_copy — the old project's volumes and the old image tags, after mg_verify_cutover passed. The launchd/systemd leftovers,
+# .env.pre-devos-ade and the old folder link wait for the next update (migrate_update_hook).
+mg_delete_old_copy() {
+  local n i v kind rest kb name tot=0 nv=0 ni=0 failed=0
+  [ -n "$(mg_get del.n)" ] || mg_record_delete_list
+  n="$(mg_get del.n)"; n="${n:-0}"; i=0
+  while [ "$i" -lt "$n" ]; do
+    i=$((i + 1)); v="$(mg_get "del.$i")"; [ -n "$v" ] || continue
+    [ "$(mg_get "delok.$i")" != 1 ] || continue
+    kind="${v%%|*}"; rest="${v#*|}"; kb="${rest%%|*}"; name="${rest#*|}"
+    case "$kind" in
+      volume) mg_guard volume "$name"
+        if ! docker volume inspect "$name" >/dev/null 2>&1 || docker volume rm "$name" >/dev/null 2>&1; then
+          mg_put "delok.$i" 1; log "  removed volume $name ($i of $n)"
+        else warn "migration: could not remove volume $name (it stays on the list)"; failed=$((failed + 1)); fi ;;
+      image) mg_guard image "$name"
+        if ! docker image inspect "$name" >/dev/null 2>&1 || docker rmi "$name" >/dev/null 2>&1; then
+          mg_put "delok.$i" 1; log "  removed image tag $name ($i of $n)"
+        else warn "migration: could not remove image tag $name (it stays on the list)"; failed=$((failed + 1)); fi ;;
+    esac
+  done
+  i=0
+  while [ "$i" -lt "$n" ]; do
+    i=$((i + 1)); [ "$(mg_get "delok.$i")" = 1 ] || continue; v="$(mg_get "del.$i")"; kind="${v%%|*}"; rest="${v#*|}"; kb="${rest%%|*}"
+    case "$kind" in volume) nv=$((nv + 1)); tot=$((tot + ${kb:-0})) ;; image) ni=$((ni + 1)) ;; esac
+  done
+  mg_put old_volumes_removed "$nv"; mg_put freed_kb "$tot"
+  if [ "$failed" = 0 ]; then
+    mg_put old_copy removed
+    log "the move to $MG_NEW_PROJECT is verified; the old copy is removed: $nv volume(s) and $ni image tag(s), $(mg_fmt_kb "$tot") freed${MG_VERIFY_NOTE:+ ($MG_VERIFY_NOTE)}"
+  else
+    mg_put old_copy removing
+    warn "migration: $failed item(s) of the old copy could not be removed and are still on the list; ./stack migrate --verify continues"
+  fi
 }
 
 # mg_verify_and_clean — migrate_update_finish and ./stack migrate --verify
 mg_verify_and_clean() {
+  local i
   [ "$(mg_get old_copy)" != removed ] || return 0
-  if mg_verify_cutover; then mg_delete_old_copy; mg_put verify_failed ''
+  # Once the checks are written down as passed, deleting has started or may start: no check is run again, a resume only continues the deletes
+  if [ "$(mg_get verified)" = 1 ]; then mg_delete_old_copy; return 0; fi
+  if mg_verify_cutover; then
+    for i in 1 2 3 4 5 6; do mg_put "chk.$i" ok; done
+    mg_put verify_failed ''; mg_put verify_note "$MG_VERIFY_NOTE"
+    mg_record_delete_list
+    mg_put verified 1; mg_sync                       # (written to the disk BEFORE the first removal)
+    mg_delete_old_copy
   else
     mg_put old_copy kept; mg_put verify_failed "$MG_VERIFY_WHY"
-    warn "migration: the old copy is KEPT, nothing was deleted: $MG_VERIFY_WHY. Your data is in the $MG_NEW_PROJECT volumes. ./stack migrate --verify tries the checks again; ./stack migrate --rollback goes back; ./stack migrate --remove-old deletes the old copy once you are satisfied."
+    warn "migration: the old copy is KEPT, nothing was deleted: $MG_VERIFY_WHY. Your data is in the $MG_NEW_PROJECT volumes. ./stack migrate --verify tries the checks again; ./stack migrate --rollback goes back; ./stack migrate --remove-old deletes the old copy even so."
   fi
 }
 
 # the leftovers of the move go with the NEXT update (the update that finished the move has status 'complete' only at its end)
 mg_remove_leftovers() {
-  local f la
+  local f
   [ "$(mg_status)" = complete ] && [ -z "$(mg_get leftovers_removed)" ] || return 0
   [ "$(mg_get old_copy)" = removed ] || return 0
   [ ! -f "$MG_DIR/.env.pre-devos-ade" ] || rm -f "${MG_DIR:?}/.env.pre-devos-ade"
-  if [ -L "$MG_OLD_DIR" ] && [ "$MG_OLD_DIR" != "$MG_NEW_DIR" ]; then mg_guard dir "$MG_OLD_DIR"; rm -f "${MG_OLD_DIR:?}"; fi
-  la="$(mg_launchagents_dir)"
-  for f in "$la"/*.pre-devos-ade "$(mg_systemd_dir)"/*.pre-devos-ade; do
-    [ -f "$f" ] || continue; mg_guard launchd "$f" 2>/dev/null || mg_guard systemd "$f"; rm -f "${f:?}"
-  done
+  # (the old folder's link stays while the helper's shim still points through it: migrate --finish-helper has not run yet)
+  if [ -L "$MG_OLD_DIR" ] && [ "$MG_OLD_DIR" != "$MG_NEW_DIR" ] && [ "$(mg_get helper)" != pending ]; then mg_guard dir "$MG_OLD_DIR"; rm -f "${MG_OLD_DIR:?}"; fi
+  while IFS= read -r f; do
+    [ -n "$f" ] && [ -f "$f" ] || continue; mg_guard launchd "$f" 2>/dev/null || mg_guard systemd "$f"; rm -f "${f:?}"
+  done <<EOF
+$(mg_pre_files)
+EOF
+  if [ "$(mg_get helper)" = pending ]; then log "update: removed the leftovers of the move to $MG_NEW_PROJECT except the old folder's link (the update helper still needs it; the next update removes it)"; return 0; fi
   mg_put leftovers_removed "$(date +%s)"
   log "update: removed the leftovers of the move to $MG_NEW_PROJECT (.env.pre-devos-ade, the old folder link, the old launchd files)"
 }
@@ -838,8 +984,17 @@ migrate_status() {
   esac
 }
 
+# mg_pre_files — the .pre-devos-ade files THIS install made (its own labels, from the marker; its own systemd unit): never another install's
+mg_pre_files() {
+  local la k f; la="$(mg_launchagents_dir)"
+  for k in $(grep '^lc\.' "$(mg_marker)" 2>/dev/null | cut -d= -f1); do
+    f="$la/${k#lc.}.plist.pre-devos-ade"; [ ! -f "$f" ] || printf '%s\n' "$f"
+  done
+  f="$(mg_systemd_dir)/$MG_OLD_UNIT-$MG_PROJ.service.pre-devos-ade"; [ ! -f "$f" ] || printf '%s\n' "$f"
+  return 0
+}
 mg_remove_list() { # the backup's contents, one per line: KIND<TAB>NAME<TAB>KB
-  local v la f k
+  local v f k
   for v in $(mg_old_volumes) "${MG_OLD_PROJECT}_${MG_OLD_DIRNAME}-owner"; do
     docker volume inspect "$v" >/dev/null 2>&1 || continue
     k=0; case "$v" in *-owner) ;; *) k="$(MG_IMG="${MG_IMG:-$(mg_image)}" mg_vol_kb "$v")" ;; esac
@@ -847,16 +1002,17 @@ mg_remove_list() { # the backup's contents, one per line: KIND<TAB>NAME<TAB>KB
   done
   docker image ls --format '{{.Repository}}:{{.Tag}}' --filter "reference=$MG_OLD_PROJECT/*" 2>/dev/null | while IFS= read -r v; do [ -z "$v" ] || printf 'image\t%s\t0\n' "$v"; done
   [ ! -f "$MG_DIR/.env.pre-devos-ade" ] || printf 'file\t%s\t0\n' "$MG_DIR/.env.pre-devos-ade"
-  [ ! -L "$MG_OLD_DIR" ] || [ "$MG_OLD_DIR" = "$MG_NEW_DIR" ] || printf 'link\t%s\t0\n' "$MG_OLD_DIR"
-  la="$(mg_launchagents_dir)"
-  for f in "$la"/*.pre-devos-ade "$(mg_systemd_dir)"/*.pre-devos-ade; do [ -f "$f" ] && printf 'file\t%s\t0\n' "$f"; done
+  [ ! -L "$MG_OLD_DIR" ] || [ "$MG_OLD_DIR" = "$MG_NEW_DIR" ] || [ "$(mg_get helper)" = pending ] || printf 'link\t%s\t0\n' "$MG_OLD_DIR"
+  while IFS= read -r f; do [ -z "$f" ] || printf 'file\t%s\t0\n' "$f"; done <<EOF
+$(mg_pre_files)
+EOF
   return 0
 }
 migrate_remove_old() {
   mg_init
   case "$(mg_status)" in complete) ;; *) die "./stack migrate --remove-old: the move has not finished (./stack migrate says where it is). Nothing was removed." ;; esac
   [ -z "$(mg_get old_removed)" ] || { log "the backup was removed before"; return 0; }
-  local list kind name kb tot=0
+  local list kind name kb tot=0 failed=0
   list="$(mg_remove_list)"
   [ -n "$list" ] || { log "no backup left to remove"; mg_put old_removed "$(date +%s)"; return 0; }
   printf 'This deletes the backup of your install from before the move:\n'
@@ -868,14 +1024,15 @@ EOF
   if [ "${ASSUME_YES:-0}" != 1 ]; then confirm "Remove it for good?" || die "aborted — nothing was removed"; fi
   while IFS="$(printf '\t')" read -r kind name kb; do
     case "$kind" in
-      volume) mg_guard volume "$name"; docker volume rm "$name" >/dev/null 2>&1 || warn "could not remove volume $name" ;;
-      image) mg_guard image "$name"; docker rmi "$name" >/dev/null 2>&1 || true ;;
+      volume) mg_guard volume "$name"; docker volume rm "$name" >/dev/null 2>&1 || { warn "could not remove volume $name (it is still there)"; failed=$((failed + 1)); } ;;
+      image) mg_guard image "$name"; docker rmi "$name" >/dev/null 2>&1 || { warn "could not remove image tag $name (it is still there)"; failed=$((failed + 1)); } ;;
       file) case "$name" in */.env.pre-devos-ade) rm -f "$name" ;; *) mg_guard launchd "$name" 2>/dev/null || mg_guard systemd "$name"; rm -f "$name" ;; esac ;;
       link) mg_guard dir "$name"; rm -f "$name" ;;
     esac
   done <<EOF
 $list
 EOF
+  if [ "$failed" -gt 0 ]; then warn "$failed item(s) could not be removed and are still there: run ./stack migrate --remove-old again"; return 0; fi
   mg_put old_removed "$(date +%s)"
   log "the backup is removed (about $(mg_fmt_kb "$tot") freed)"
 }
@@ -912,10 +1069,19 @@ migrate_rollback() {
     MG_IMG="${MG_IMG:-$(mg_image)}"
     for v in $(mg_new_volumes | grep -v -- '-owner$'); do mg_rb_copy_one "$v"; done
   fi
+  if [ "$MG_PARTIAL" != 1 ]; then
+    # the build ./stack rollback goes back to: <new>/<service>:previous gets its old name again (a tag only: the same image, offline)
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue; nl="${MG_OLD_PROJECT}/${f#*/}"
+      docker image inspect "$nl" >/dev/null 2>&1 || { mg_guard image "$nl"; docker tag "$f" "$nl" >/dev/null 2>&1 || warn "migration: could not name $nl again"; }
+    done <<EOF
+$(docker image ls --format '{{.Repository}}:{{.Tag}}' --filter "reference=$MG_NEW_PROJECT/*" 2>/dev/null | grep ':previous$' || true)
+EOF
+  fi
   la="$(mg_launchagents_dir)"; osum="$(mg_sum "$MG_OLD_DIR/.state")"; nsum="$(mg_sum "$MG_NEW_DIR/.state")"
   if [ "$(mg_os)" = Darwin ] && [ -d "$la" ]; then
     # only what this migration made: the new plist of each old one kept aside (and the helper's pending one), then the old ones back
-    for f in "$la"/*.pre-devos-ade; do
+    for f in $(mg_pre_files); do
       [ -f "$f" ] || continue; mg_guard launchd "$f"
       ol="${f##*/}"; ol="${ol%.plist.pre-devos-ade}"
       case "$ol" in "$MG_OLD_LABEL"*) nl="$(mg_map_label "$ol")" ;; *) nl="${ol%."$osum"}.$nsum" ;; esac
@@ -980,11 +1146,11 @@ migrate_rollback() {
 migrate_rollback_first() {
   local old
   mg_init
-  case "$(mg_status)" in complete | moved) ;; *) return 0 ;; esac
+  case "$(mg_status)" in complete | moved) ;; failed | running) mg_done_p env || return 0 ;; *) return 0 ;; esac
   log "rollback: this install was moved to the new name; undoing that first (./stack migrate --rollback)"
   old="$MG_OLD_DIR"   # (the folder this install goes back to; the one we may be standing in is gone afterwards)
   ( migrate_rollback ) || die "./stack rollback: the move to the new name could not be undone (see above). Nothing of the code was changed. Fix that, then run: ./stack migrate --rollback   and after it: ./stack rollback"
-  cd "$old" && exec "$old/stack" rollback
+  cd "$old" && ASSUME_YES=1 exec "$old/stack" rollback   # (confirmed already: it asks once)
 }
 
 cmd_migrate() {

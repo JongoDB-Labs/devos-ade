@@ -71,3 +71,16 @@ itself, then goes back to the earlier version; if the move cannot be undone it s
 The Tailscale Service base, node name and tag are pinned in `.env` at the old values when remote access is on, so the
 remote URL does not change. Renaming them is a tailnet admin change (the Service and tag are defined in your tailnet
 policy); do it there and then change the matching `DEVOS_ADE_TAILSCALE_*` keys.
+
+## Details of the checks
+
+- The checks before the old copy is removed are written to disk first; the exact list of volumes and image tags that
+  may be deleted is recorded when the copy is made, and nothing else is ever removed. A volume Docker cannot remove
+  stays on the list and is reported; `./stack migrate --verify` continues, without running the checks again.
+- Checked besides the data: every repository of the git server passes `git fsck --connectivity-only`, each installed
+  runtime's program runs from the moved folder, a runtime that was running is running after the update, and the
+  sandbox's sample files matched while the stack was down.
+- Files too big or binary to rewrite that still name the old folder are listed in
+  `.state/migrate/paths-left-behind.txt` and in a warning; sqlite files are rewritten.
+- The old `X-Requested-With: bedrock-now` header value of scripts is accepted for this one release.
+

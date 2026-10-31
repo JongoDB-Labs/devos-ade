@@ -21,7 +21,7 @@ _mg_docker() {
         inspect) local n a; for a in "$@"; do n="$a"; done
           [ -d "$DK/vol/$n" ] || return 1
           case "$*" in *io.bedrock-now.dir*) cat "$DK/owner" 2>/dev/null || true ;; esac ;;
-        rm) rm -rf "$DK/vol/$2" ;;
+        rm) if [ -f "$DK/rmfail" ] && grep -qx "$2" "$DK/rmfail"; then return 1; fi; rm -rf "$DK/vol/$2" ;;
       esac ;;
     ps) case "$*" in
           *health=unhealthy*) cat "$DK/unhealthy" 2>/dev/null || true ;;
@@ -60,6 +60,7 @@ _mg_docker() {
           sh -c "$script" "$op" "${args[@]}" || return 1
           if [ -f "$DK/corrupt" ] && [ -f "${args[1]}/PG_VERSION" ]; then echo x >> "${args[1]}/PG_VERSION"; fi ;;
         mg-sum) _mg_sum "${args[0]}"; _mg_sum "${args[1]}" ;;
+        mg-fsck) sh -c "git() { [ ! -f \"$DK/fsckfail\" ]; }; $script" "$op" "${args[@]}" ;;
         *) sh -c "$script" "$op" "${args[@]}" ;;
       esac ;;
   esac
@@ -118,6 +119,7 @@ EOF
   mkdir -p "$INST/.state/runtimes/lmstudio/home/.lmstudio/.internal" "$INST/.state/runtimes/lmstudio/home/.lmstudio/models/org" \
     "$INST/.state/mlx/hf/hub/models--a--b/blobs" "$INST/.state/mlx/hf/hub/models--a--b/snapshots/rev1" "$INST/.state/projects" "$INST/.state/sessions"
   printf '%s/.state/runtimes/lmstudio/home/.lmstudio/llmster/0.0.25-1/bin/llmster\t%s/.state/runtimes/lmstudio/home\t.\n' "$INST" "$INST" > "$INST/.state/runtimes/lmstudio/llmster.run"
+  mkdir -p "$INST/.state/runtimes/lmstudio/home/.lmstudio/llmster/0.0.25-1/bin"; printf "#!/bin/sh\necho llmster 0.0.25\n" > "$INST/.state/runtimes/lmstudio/home/.lmstudio/llmster/0.0.25-1/bin/llmster"; chmod +x "$INST/.state/runtimes/lmstudio/home/.lmstudio/llmster/0.0.25-1/bin/llmster"
   printf '{"path":"%s/.state/runtimes/lmstudio/home/.lmstudio/llmster/x/bin/llmster","cwd":"%s/.state/runtimes/lmstudio/home"}\n' "$INST" "$INST" > "$INST/.state/runtimes/lmstudio/home/.lmstudio/.internal/llmster-install-location.json"
   printf '%s/.state/runtimes/lmstudio/home/.lmstudio\n' "$INST" > "$INST/.state/runtimes/lmstudio/home/.lmstudio-home-pointer"
   head -c 4000 /dev/urandom > "$INST/.state/mlx/hf/hub/models--a--b/blobs/abc123.incomplete"
@@ -641,7 +643,8 @@ _mg_pg_setup() { # the old databases are counted while the old stack runs; the n
   printf 'openwebui\nlitellm\n' > "$DK/pgdbs-$OLDP"; cp "$DK/pgdbs-$OLDP" "$DK/pgdbs-$NEWP"
   printf 'user\t2\nchat\t5\n' > "$DK/pg-$OLDP-openwebui"; printf 'spend\t10\n' > "$DK/pg-$OLDP-litellm"
   cp "$DK/pg-$OLDP-openwebui" "$DK/pg-$NEWP-openwebui"; cp "$DK/pg-$OLDP-litellm" "$DK/pg-$NEWP-litellm"
-  _mg_vol "${OLDP}_gitdata"; mkdir -p "$DK/vol/${OLDP}_gitdata/repositories/u/a.git" "$DK/vol/${OLDP}_gitdata/repositories/u/b.git"; echo ref > "$DK/vol/${OLDP}_gitdata/repositories/u/a.git/HEAD"
+  _mg_vol "${OLDP}_gitdata"; mkdir -p "$DK/vol/${OLDP}_gitdata/repositories/u/a.git/objects" "$DK/vol/${OLDP}_gitdata/repositories/u/b.git/objects"
+  echo ref > "$DK/vol/${OLDP}_gitdata/repositories/u/a.git/HEAD"; echo ref > "$DK/vol/${OLDP}_gitdata/repositories/u/b.git/HEAD"
   mkdir -p "$DK/vol/${OLDP}_terminal-home/.config/$OLDP"; echo '{"k":1}' > "$DK/vol/${OLDP}_terminal-home/.config/$OLDP/settings.json"
 }
 _mg_up_on_new() { printf 'd1 %s postgres\n' "$NEWP" >> "$DK/containers"; migrate_update_finish 2>/dev/null; }
@@ -664,7 +667,7 @@ test_the_old_copy_is_removed_after_every_check_passes_and_the_small_leftovers_wa
 }
 test_each_failed_check_keeps_the_old_copy_and_says_why() {
   local case why
-  for case in rows unhealthy restarting uncounted repos sample runtime copy gone; do
+  for case in rows unhealthy restarting uncounted repos fsck sample runtime runtimever copy gone; do
     _mg_env; _mg_pg_setup
     case "$case" in
       uncounted) rm -f "$DK/pgdbs-$OLDP" ;;
@@ -677,7 +680,9 @@ test_each_failed_check_keeps_the_old_copy_and_says_why() {
       restarting) echo d1 > "$DK/restarting"; why=restarting ;;
       uncounted) why="not counted" ;;
       repos) rm -rf "$DK/vol/${NEWP}_gitdata/repositories/u/b.git"; why="lists 1 repositories" ;;
-      sample) echo changed > "$DK/vol/${NEWP}_terminal-home/.config/$NEWP/settings.json"; why="sample files" ;;
+      fsck) : > "$DK/fsckfail"; why="git fsck" ;;
+      sample) mg_init; mg_put sample "differs (old 'a', new 'b')"; why="sample files" ;;
+      runtimever) mkdir -p "$NEW/.state/runtimes/llamacpp/bin"; printf '#!/bin/sh\nexit 3\n' > "$NEW/.state/runtimes/llamacpp/bin/llama-server"; chmod +x "$NEW/.state/runtimes/llamacpp/bin/llama-server"; why="--version does not run" ;;
       runtime) printf '/x/bin/llmster\t%s/nowhere\t.\n' "$NEW" > "$NEW/.state/runtimes/lmstudio/llmster.run"; why="not there" ;;
       copy) mg_init; mg_put "vol.pgdata" copying; why="not marked verified" ;;
       gone) : > /dev/null; docker volume rm "${NEWP}_terminal-home" >/dev/null; rm -rf "$DK/vol/${NEWP}_pgdata"; why="" ;;
@@ -744,6 +749,86 @@ test_a_resume_copies_again_a_volume_that_changed_since_it_was_copied_and_up_refu
   assert_contains "$(cat "$TMP/out")" "changed since it was copied"
   assert_eq "$(cksum < "$DK/vol/${NEWP}_owui/webui.db")" "$(cksum < "$DK/vol/${OLDP}_owui/webui.db")"
   assert_eq "$(_st)" moved; ( migrate_refuse_up ) > /dev/null 2>&1   # moved: up is allowed
+}
+
+test_the_deletes_come_from_a_recorded_list_after_the_checks_are_on_disk_and_a_failed_one_stays_on_it() {
+  _mg_env; _mg_pg_setup; _mg_run 2>/dev/null; mg_init
+  [ "$(mg_get del.n)" -ge 4 ] || { echo "no delete list at copy time" >&2; return 1; }              # volumes and image tags
+  grep -q "^del\.[0-9]*=volume|[0-9]*|${OLDP}_pgdata$" "$(mg_marker)" && grep -q "^del\.[0-9]*=image|0|$OLDP/portal:local$" "$(mg_marker)"
+  printf 'd1 %s postgres\n' "$NEWP" >> "$DK/containers"
+  printf '%s_owui\n' "$OLDP" > "$DK/rmfail"                                                   # one volume cannot be removed
+  migrate_update_finish > "$TMP/out" 2>&1
+  assert_contains "$(cat "$TMP/out")" "could not remove volume ${OLDP}_owui"
+  assert_eq "$(_get verified)" 1; assert_eq "$(_get chk.6)" ok; assert_eq "$(_get old_copy)" removing
+  [ -d "$DK/vol/${OLDP}_owui" ] && [ ! -d "$DK/vol/${OLDP}_pgdata" ]                           # reported, not "removed"; the rest went
+  assert_contains "$(migrate_backup_line)" "stopped before it was done"
+  # a resume continues the deletes and never runs a check: break one the checks would catch
+  echo d1 > "$DK/unhealthy"; rm -f "$DK/rmfail"; : > "$DK/log"
+  ( cmd_migrate --verify ) > "$TMP/out" 2>&1
+  ! ls "$DK/vol" | grep -q "^${OLDP}_"; assert_eq "$(_get old_copy)" removed
+  ! grep -q "^ps " "$DK/log" || { echo "a check ran during the resume" >&2; return 1; }
+}
+test_a_volume_that_is_missing_is_never_made_by_a_helper_container() {
+  _mg_env; MG_IMG=fake/image:1; MG_MOUNTS="-v ${OLDP}_nowhere:/from:ro"; MG_SCRIPT=true
+  ! mg_run_in "$MG_IMG" mg-sum /from /from 2>"$TMP/err"; assert_contains "$(cat "$TMP/err")" "${OLDP}_nowhere is not there"
+  ! grep -q "^run " "$DK/log"; [ ! -d "$DK/vol/${OLDP}_nowhere" ]
+}
+test_only_this_installs_launchd_files_are_cleaned_and_rolled_back_beside_a_migrated_other_install() {
+  _mg_moved_and_verified
+  local la="$HOME/Library/LaunchAgents" f
+  # another install (bn-dev), already migrated: its kept-aside files carry its own labels
+  printf '<plist>other helper</plist>\n' > "$la/io.$OLDP.helper.bn-dev.plist.pre-devos-ade"
+  printf '<plist>other rt</plist>\n' > "$la/dev.devos.ade.lmstudio.4242424242.plist.pre-devos-ade"
+  ( mg_init; mg_pre_files ) > "$TMP/mine"
+  ! grep -q "bn-dev\|4242424242" "$TMP/mine"; grep -q "helper\.$OLDP\.plist\.pre-devos-ade" "$TMP/mine"
+  mg_init; ( mg_remove_list ) > "$TMP/list"; ! grep -q "bn-dev\|4242424242" "$TMP/list"
+  migrate_update_hook 2>/dev/null                                                              # the leftovers of THIS install go
+  [ -f "$la/io.$OLDP.helper.bn-dev.plist.pre-devos-ade" ] && [ -f "$la/dev.devos.ade.lmstudio.4242424242.plist.pre-devos-ade" ]
+  [ ! -e "$la/io.$OLDP.helper.$OLDP.plist.pre-devos-ade" ]
+  migrate_rollback 2>/dev/null
+  [ -f "$la/io.$OLDP.helper.bn-dev.plist.pre-devos-ade" ] && [ -f "$la/dev.devos.ade.lmstudio.4242424242.plist.pre-devos-ade" ] && [ ! -f "$la/io.$OLDP.helper.bn-dev.plist" ]
+}
+test_the_old_folder_link_stays_while_the_helper_is_pending_and_the_leftovers_finish_after() {
+  _mg_moved_and_verified; mg_init; mg_put helper pending
+  migrate_update_hook 2>"$TMP/err" >"$TMP/out"
+  [ -L "$INST" ] && [ ! -f "$NEW/.env.pre-devos-ade" ]; assert_eq "$(_get leftovers_removed)" ""
+  mg_put helper done; migrate_update_hook 2>/dev/null >&2
+  [ ! -L "$INST" ]; [ -n "$(_get leftovers_removed)" ]
+}
+test_the_previous_build_images_carry_over_under_the_new_name_and_come_back_on_rollback() {
+  _mg_env; printf '%s/portal:previous\n' "$OLDP" >> "$DK/images"; _mg_pg_setup; _mg_run 2>/dev/null
+  grep -qx "$NEWP/portal:previous" "$DK/images"; printf 'd1 %s postgres\n' "$NEWP" >> "$DK/containers"; migrate_update_finish 2>/dev/null
+  ! grep -q "^$OLDP/" "$DK/images"                                                               # the old tags went
+  migrate_rollback 2>/dev/null
+  grep -qx "$OLDP/portal:previous" "$DK/images"; grep -qx "$NEWP/portal:previous" "$DK/images"   # the same image, named for the old code again
+}
+test_a_stack_rollback_of_a_half_finished_move_undoes_it_after_the_env_step_and_only_then() {
+  _mg_env; : > "$DK/corrupt"; _mg_try; [ "$MGRC" != 0 ]; mg_init                              # failed at copy: env step not done
+  ( migrate_rollback_first ) > "$TMP/out" 2>&1; assert_eq "$(cat "$TMP/out")" ""             # nothing to undo yet: the code rollback goes on
+  _mg_env; mg_init; for s in preflight record stop copy inner host env; do mg_step_done "$s"; done; mg_put status failed; mg_put failed_step images
+  printf '#!/bin/sh\ntouch %s/ran\n' "$TMP" > "$INST/stack"; chmod +x "$INST/stack"
+  ( migrate_rollback_first ) > "$TMP/out" 2>&1 || { cat "$TMP/out" >&2; return 1; }
+  assert_contains "$(cat "$TMP/out")" "undoing that first"; assert_eq "$(_st)" rolled-back
+}
+test_the_checks_name_the_symlink_targets_and_the_runtime_that_stopped() {
+  assert_contains "$MG_SUM_SH" '%p %m %U %G %y %l'
+  _mg_moved_and_verified
+  mg_init; mg_put rt.lmstudio running; rt_state() { echo stopped; }
+  mg_put old_copy ''; mg_put verified ''; mg_put status complete
+  ( mg_verify_cutover ) > /dev/null 2>&1 && return 1
+  mg_verify_cutover || true; assert_contains "$MG_VERIFY_WHY" "was running before the update and is not running after it"
+  rt_state() { echo running; }; mg_verify_cutover || { echo "WHY: $MG_VERIFY_WHY" >&2; return 1; }
+}
+test_files_the_rewrite_cannot_read_that_still_name_the_old_folder_are_listed_and_a_sqlite_file_is_rewritten() {
+  _mg_env
+  head -c 3000000 /dev/zero | tr '\0' 'a' > "$INST/.state/big.log"; printf '%s/x\n' "$INST" >> "$INST/.state/big.log"
+  printf 'bin\000\001%s/y\000' "$INST" > "$INST/.state/blob.dat"
+  mkdir -p "$INST/.state/code"
+  python3 -I -c 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute("create table s(id integer, cwd text)"); c.execute("insert into s values (1, ?)", (sys.argv[2]+"/work",)); c.execute("insert into s values (2, ?)", (sys.argv[2]+"-other/work",)); c.commit()' "$INST/.state/code/sessions.db" "$INST"
+  _mg_run > "$TMP/out" 2>&1
+  assert_contains "$(cat "$TMP/out")" "too big or binary to rewrite"; assert_eq "$(_get paths_left_behind)" 2
+  grep -q "big.log" "$NEW/.state/migrate/paths-left-behind.txt" && grep -q "blob.dat" "$NEW/.state/migrate/paths-left-behind.txt"
+  assert_eq "$(python3 -I -c 'import sqlite3,sys; print(";".join(r[0] for r in sqlite3.connect(sys.argv[1]).execute("select cwd from s order by id")))' "$NEW/.state/code/sessions.db")" "$NEW/work;$INST-other/work"
 }
 
 # --- the command and the hosts ---
