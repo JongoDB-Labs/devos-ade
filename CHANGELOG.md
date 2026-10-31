@@ -27,7 +27,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   prefs, validation and clamping, move, hide and show, tabs and stacked, resize, reset, desktop and tablet apart) and for
   the backend's layout (known ids only, a size cap, the round trip). The Code page's browser checks customize by mouse
   and by keyboard alone (move, tabs and stacked, resize, hide and add back, reset, a reload and a second browser, the
-  tablet apart) and fail on anything overlapping, clipped or scrolling.
+  tablet apart) and fail on anything overlapping, clipped or scrolling. A reset on one browser must hold: another one
+  open with the old layout follows it after a reconnect and a reload instead of sending its own back. And a check that
+  fails no longer leaves its pages open to act on the next one.
 
 ## [0.46.0] - 2026-10-31
 

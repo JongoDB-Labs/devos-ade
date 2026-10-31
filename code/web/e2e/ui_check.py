@@ -5879,7 +5879,8 @@ def widgets_customize(browser):
     page.mouse.up()
     now_h = page.locator("[data-widget=chat]").bounding_box()["height"]
     assert chat_h - now_h > 60, f"the splitter between stacked widgets did not resize ({chat_h} -> {now_h})"
-    assert saved_layout(page)["sizes"].get("chat", 0) >= 80
+    # (this browser keeps it a moment later: prefs.ts writes 250 ms after the last change)
+    page.wait_for_function("() => (JSON.parse(localStorage.getItem('bn.code.v1')).layout.desktop.sizes.chat || 0) >= 80", timeout=5_000)
     sane(page, "stacked, resized")
     page.get_by_test_id("mode-tabs-right").click()
     expect(page.locator("[data-dock=right] [role=tab]")).to_have_count(2)
@@ -6105,6 +6106,46 @@ def widgets_keyboard(browser):
     p.close()
 
 
+@check("widgets: Reset to default on one browser holds — another one open with the old layout follows it after a reconnect and a reload, never sending its own back")
+def widgets_reset_elsewhere(browser):
+    post(NORMAL + "/__mock/reset")
+    a = Page(browser, NORMAL, "widgets-a", **DESKTOP)
+    pa = a.open()
+    # browser A hides Search: kept for your sign-in
+    pa.get_by_test_id("customize-layout").click()
+    pa.get_by_test_id("side-search").click()   # (a dock of tabs draws the header of the tab shown)
+    pa.get_by_test_id("wd-hide-search").click()
+    pa.get_by_test_id("layout-done").click()
+    pa.wait_for_timeout(1200)
+    assert "search" in mock_get(NORMAL, "/api/prefs")["prefs"]["layout"]["desktop"]["hidden"]
+    # browser B opens with it, then puts the default back
+    b = Page(browser, NORMAL, "widgets-b", **DESKTOP)
+    pb = b.open()
+    expect(pb.get_by_test_id("side-search")).to_have_count(0)
+    pb.get_by_test_id("customize-layout").click()
+    pb.get_by_test_id("layout-reset").click()
+    pb.get_by_test_id("layout-done").click()
+    pb.wait_for_timeout(1200)
+    assert "desktop" not in mock_get(NORMAL, "/api/prefs")["prefs"].get("layout", {})
+    # A reconnects: it follows the reset and sends nothing back ...
+    post(NORMAL + "/__mock/drop")
+    expect(pa.get_by_test_id("conn")).not_to_have_text("Connected", timeout=5000)
+    expect(pa.get_by_test_id("conn")).to_have_text("Connected", timeout=20_000)
+    expect(pa.get_by_test_id("side-search")).to_have_count(1)
+    pa.wait_for_timeout(1200)
+    assert "desktop" not in mock_get(NORMAL, "/api/prefs")["prefs"].get("layout", {}), "a browser that reconnected sent back the layout reset elsewhere"
+    # ... nor after a reload
+    pa.reload()
+    expect(pa.get_by_test_id("conn")).to_have_text("Connected", timeout=10_000)
+    expect(pa.get_by_test_id("side-search")).to_have_count(1)
+    pa.wait_for_timeout(1200)
+    assert "desktop" not in mock_get(NORMAL, "/api/prefs")["prefs"].get("layout", {}), "a reloaded browser sent back the layout reset elsewhere"
+    a.assert_clean()
+    b.assert_clean()
+    a.close()
+    b.close()
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     procs = start_mocks()
@@ -6113,6 +6154,9 @@ def main():
             browser = pw.chromium.launch()
             for c in CHECKS:
                 c(browser)
+                # (a check that failed leaves its pages open: closed here, so they cannot act on the next check's mock)
+                for ctx in list(browser.contexts):
+                    ctx.close()
             browser.close()
     finally:
         for pr in procs:

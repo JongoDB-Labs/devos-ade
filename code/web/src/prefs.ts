@@ -7,7 +7,7 @@ import type { Mode } from './types';
 import { MODES } from './types';
 import { remembered } from './modes';
 import { isUuid } from './text';
-import { BOUNDS, defaultLayoutPrefs, parseLayoutPrefs, type LayoutPrefs } from './layout';
+import { BOUNDS, defaultLayoutPrefs, parseLayoutPrefs, type Device, type LayoutPrefs } from './layout';
 
 export { BOUNDS };
 
@@ -16,6 +16,9 @@ const KEY = 'bn.code.v1';
 export interface Prefs {
   /** the page's widgets: which are shown, in which dock, how big — per device (layout.ts) */
   layout: LayoutPrefs;
+  /** the devices whose layout your sign-in kept, as this browser last heard: one it keeps no more was put back to the
+   *  default on another device, and this browser follows instead of sending its own again (app.ts takeLayout) */
+  layoutKept: Device[];
   model: string;
   /** Settings' default for new sessions when `model` was picked (null: none then; undefined: not known — a pick from
    *  before this was kept): a default set or changed since wins over the pick (models.ts startModel) */
@@ -39,6 +42,7 @@ const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/@[\]-]{0,127}$/;
 
 export const DEFAULT_PREFS: Prefs = {
   layout: defaultLayoutPrefs(),
+  layoutKept: [],
   model: '',
   mode: 'default',
   effort: null,
@@ -56,6 +60,7 @@ export function parsePrefs(raw: unknown): Prefs {
   return {
     // (the flat layout of before widgets is migrated: layout.ts)
     layout: parseLayoutPrefs(o.layout),
+    layoutKept: Array.isArray(o.layoutKept) ? (['desktop', 'tablet'] as const).filter((d) => (o.layoutKept as unknown[]).includes(d)) : [],
     model: typeof o.model === 'string' && MODEL_ID.test(o.model) ? o.model : d.model,
     ...(o.modelSetting === null || (typeof o.modelSetting === 'string' && MODEL_ID.test(o.modelSetting)) ? { modelSetting: o.modelSetting as string | null } : {}),
     // (the former "Don't ask" is Read only; Plan and Bypass are never remembered; Auto is, and a session starts in it only

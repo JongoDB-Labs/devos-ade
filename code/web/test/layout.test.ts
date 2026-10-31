@@ -142,6 +142,21 @@ test('shift and next dock: one place along its dock (hidden ones skipped), round
   assert.equal(nextDock(defaultLayout('tablet'), 'tablet', 'chat', 1), 'right', 'and the chat stays');
 });
 
+test('the tab shown stays put: reordering tabs never changes it, and a widget that leaves its dock hands it on', () => {
+  const d = defaultLayout('desktop');
+  // Explorer one place along: still the tab shown (it is the one being moved, so it must stay mounted and focused)
+  assert.equal(activeIn(shiftWidget(d, 'explorer', 1), 'left'), 'explorer');
+  // Git shown, Explorer moved past it: Git still shown
+  assert.equal(activeIn(shiftWidget(setActive(d, 'left', 'git'), 'explorer', 1), 'left'), 'git');
+  // the chat through the left dock and back: the left dock shows Explorer again, and moving Explorer keeps it shown
+  const back = moveWidget(moveWidget(d, 'desktop', 'chat', 'left'), 'desktop', 'chat', 'right');
+  assert.equal(activeIn(back, 'left'), 'explorer');
+  assert.equal(activeIn(shiftWidget(back, 'explorer', 1), 'left'), 'explorer');
+  // Git, the tab shown, leaves for the right dock: the left dock shows one of its own, never a widget it does not have
+  const gone = moveWidget(setActive(d, 'left', 'git'), 'desktop', 'git', 'right');
+  assert.ok(gone.place.left.includes(gone.docks.left.active as WidgetId), `left dock's tab is ${gone.docks.left.active}`);
+});
+
 test('hide and show: every widget but the chat; one added back sits where it was; a shortcut shows it again', () => {
   const d = defaultLayout('desktop');
   assert.equal(setHidden(d, 'chat', true), d, 'the chat cannot be hidden');

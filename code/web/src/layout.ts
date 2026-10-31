@@ -228,7 +228,8 @@ const withDock = (l: DeviceLayout, dock: DockId, patch: Partial<DockState>): Dev
   return { ...l, docks: { ...l.docks, [dock]: { ...cur, ...patch } } };
 };
 
-/** Move a widget into a dock, before another widget of it (null: at the end); it becomes that dock's tab shown. */
+/** Move a widget into a dock, before another widget of it (null: at the end); it becomes that dock's tab shown, and the
+ *  dock it left shows the tab it showed (another of its own when that was this one). */
 export function moveWidget(l: DeviceLayout, device: Device, id: WidgetId, dock: DockId, before: WidgetId | null = null): DeviceLayout {
   if (!allowedDocks(device, id).includes(dock)) return l;
   const from = dockOf(l, id);
@@ -238,7 +239,9 @@ export function moveWidget(l: DeviceLayout, device: Device, id: WidgetId, dock: 
   const at = before && before !== id ? list.indexOf(before) : -1;
   place[dock] = at < 0 ? [...list, id] : [...list.slice(0, at), id, ...list.slice(at)];
   if (from === dock && place[dock].join() === l.place[dock].join()) return l;
-  const next: DeviceLayout = { ...l, place, docks: { ...l.docks, [dock]: { ...l.docks[dock], active: id } } };
+  const docks = { ...l.docks, [dock]: { ...l.docks[dock], active: id } };
+  if (from && from !== dock) docks[from] = { ...l.docks[from], active: activeIn({ ...l, place }, from) };
+  const next: DeviceLayout = { ...l, place, docks };
   return device === 'tablet' && (dock === 'left' || dock === 'center') ? { ...next, pane: dock } : next;
 }
 
@@ -249,7 +252,8 @@ export function nextDock(l: DeviceLayout, device: Device, id: WidgetId, dir: 1 |
   return ring[(at + dir + ring.length) % ring.length] ?? ring[0];
 }
 
-/** One place up or down among the shown widgets of its dock (a tab left or right). */
+/** One place up or down among the shown widgets of its dock (a tab left or right); the tab shown stays the one shown (it
+ *  is the first only by default: the order changing must not change it). */
 export function shiftWidget(l: DeviceLayout, id: WidgetId, dir: -1 | 1): DeviceLayout {
   const dock = dockOf(l, id);
   if (!dock) return l;
@@ -260,7 +264,7 @@ export function shiftWidget(l: DeviceLayout, id: WidgetId, dir: -1 | 1): DeviceL
   const next = [...list];
   next[next.indexOf(id)] = list[j];
   next[j] = id;
-  return { ...l, place: { ...l.place, [dock]: next } };
+  return { ...l, place: { ...l.place, [dock]: next }, docks: { ...l.docks, [dock]: { ...l.docks[dock], active: activeIn(l, dock) } } };
 }
 
 /** Hide a widget (the chat cannot be) or show it again where it was. */

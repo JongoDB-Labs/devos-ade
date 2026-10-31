@@ -500,7 +500,16 @@ function sendLayouts(leaving: boolean): void {
   layoutDirty.clear();
   if (!devices.length) return;
   const l = get().prefs.layout;
-  void api.putLayout(Object.fromEntries(devices.map((d) => [d, lay.isDefault(l[d], d) ? null : l[d]])), leaving).catch(() => undefined);
+  const body = Object.fromEntries(devices.map((d) => [d, lay.isDefault(l[d], d) ? null : l[d]]));
+  void api.putLayout(body, leaving).then(
+    () => { for (const d of devices) keptLayout(d, body[d] !== null); },
+    // (not kept: it goes again with the next change or reconnect — unless the backend refused it, which it would again)
+    (e) => { if (!(e instanceof api.ApiError && e.status >= 400 && e.status < 500)) for (const d of devices) layoutDirty.add(d); },
+  );
+}
+/** Whether your sign-in keeps this device's layout, as this browser last heard (prefs.layoutKept). */
+function keptLayout(device: Device, kept: boolean): void {
+  setPrefs((p) => (p.layoutKept.includes(device) === kept ? p : { ...p, layoutKept: kept ? [...p.layoutKept, device] : p.layoutKept.filter((d) => d !== device) }));
 }
 // (a change made just before the page goes away still reaches your sign-in)
 if (typeof addEventListener === 'function') addEventListener('pagehide', () => sendLayouts(true));
@@ -616,11 +625,18 @@ function takeLayout(kept: UserPrefs['layout']): void {
     const theirs = kept?.[device];
     if (theirs) {
       if (!lay.sameLayout(mine, theirs)) setPrefs((p) => ({ ...p, layout: { ...p.layout, [device]: theirs } }));
+      keptLayout(device, true);
+    } else if (get().prefs.layoutKept.includes(device)) {
+      // (kept before, and not now: Reset to default on another device — this browser follows, never sending its old one back)
+      if (!lay.isDefault(mine, device)) setPrefs((p) => ({ ...p, layout: { ...p.layout, [device]: lay.defaultLayout(device) } }));
+      keptLayout(device, false);
     } else if (!lay.isDefault(mine, device)) {
       // (a layout from before the backend kept them, or set up here first: it goes to your sign-in)
-      void api.putLayout({ [device]: mine }).catch(() => undefined);
+      pushLayout(device);
     }
   }
+  // (one not kept yet, as the backend was away: it goes again now)
+  if (layoutDirty.size && !layoutTimer) layoutTimer = setTimeout(() => sendLayouts(false), 600);
 }
 
 /** Settings › Claude Code allows Auto mode (CODE_AUTO_MODE) — the code container says so in /api/state */
