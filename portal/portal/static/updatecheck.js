@@ -154,6 +154,7 @@
   function scrollCard() {
     requestAnimationFrame(() => {
       const card = $("#update-card");
+      if (card && !card.hidden && window.bnWidgets && window.bnWidgets.peek) window.bnWidgets.peek("update-card");   // (widgets.js: one the person hid shows for now)
       if (card && !card.hidden) card.scrollIntoView({ block: "start", behavior: REDUCED.matches ? "auto" : "smooth" });
     });
   }

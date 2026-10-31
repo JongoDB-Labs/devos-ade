@@ -25,6 +25,7 @@
 <link rel="stylesheet" href="/static/models.css">
 <link rel="stylesheet" href="/static/activity.css">
 <link rel="stylesheet" href="/static/ctxmenu.css">
+<link rel="stylesheet" href="/static/widgets.css">
 <!-- (not deferred: a sidebar collapsed in this browser is collapsed from the first paint) -->
 <script src="/static/nav.js"></script>
 <script src="/static/app.js" defer></script>
@@ -37,6 +38,7 @@
 <script src="/static/code.js" defer></script>
 <script src="/static/home.js" defer></script>
 <script src="/static/feedback.js" defer></script>
+<script src="/static/widgets.js" defer></script>
 <script src="/static/tour.js" defer></script>
 <script src="/static/settings.js" defer></script>
 <script src="/static/models.js" defer></script>
@@ -110,7 +112,7 @@
     <header class="home-head">
       <p class="eyebrow" aria-hidden="true">DevOS ADE · Home</p>
       <h1 id="home-title">Home</h1>
-      <p class="updated"><a class="version-label home-version" id="home-version" target="_blank" rel="noopener noreferrer" hidden></a> <span id="updated">Loading…</span> <button type="button" id="refresh" class="quiet">Refresh</button></p>
+      <p class="updated"><a class="version-label home-version" id="home-version" target="_blank" rel="noopener noreferrer" hidden></a> <span id="updated">Loading…</span> <button type="button" id="refresh" class="quiet">Refresh</button> <button type="button" id="customize" class="quiet" aria-controls="widget-tray" aria-expanded="false">Customize</button></p>
       <div class="release-line" id="release-line" data-where="home" hidden></div>
     </header>
     <p id="load-error" class="banner" hidden></p>
@@ -133,14 +135,31 @@
         <button type="button" class="quiet" id="app-note-later">Not now</button></p>
     </section>
 
+    <!-- Customize (widgets.js): the tray of hidden widgets, Reset and Done; the bars over the widgets are made by the script -->
+    <section id="widget-tray" class="wg-tray" aria-labelledby="wg-tray-title" hidden>
+      <div class="wg-tray-head">
+        <h2 id="wg-tray-title" tabindex="-1">Customize Home</h2>
+        <p class="wg-tray-actions"><button type="button" class="quiet" id="wg-reset" aria-describedby="wg-help">Reset to default</button>
+          <button type="button" class="action primary" id="wg-done">Done</button></p>
+      </div>
+      <p class="note" id="wg-help">Drag a widget by its handle to move it, and drag its right or bottom edge to resize it. With the keyboard, focus a handle: the arrow keys move the widget, Shift with the arrows resizes it, H hides it. Escape or Done leaves this. Get started, Maintenance and Update show only when they have something to show.</p>
+      <h3 class="wg-tray-sub" id="wg-hidden-title">Hidden widgets</h3>
+      <ul id="wg-hidden" class="wg-hidden" aria-labelledby="wg-hidden-title"></ul>
+      <p class="note" id="wg-none">Nothing is hidden.</p>
+      <p class="wg-status" id="wg-live" role="status" aria-live="polite"></p>
+      <p class="note wg-saved" id="wg-saved"></p>
+    </section>
+
     <!-- Get started (a first run's five steps) and Continue (what to pick up again): home.js -->
     <!-- (.home-top: the two side by side from 1100 px, each alone as wide as the page; see docs/design.md, Dashboards) -->
+    <!-- (#widgets: the widgets' one grid once a person customizes Home, widgets.js; until then these wrappers lay them out as they always did) -->
+    <div id="widgets" class="wgrid">
     <div class="home-top">
-      <section id="get-started" class="gs-card" aria-labelledby="gs-title" hidden></section>
-      <section id="continue" class="continue" aria-labelledby="continue-title" hidden></section>
+      <section id="get-started" class="gs-card" data-widget="get-started" aria-labelledby="gs-title" hidden></section>
+      <section id="continue" class="continue" data-widget="continue" aria-labelledby="continue-title" hidden></section>
     </div>
 
-    <section id="update-card" class="update-card" aria-labelledby="update-title" hidden>
+    <section id="update-card" class="update-card" data-widget="update-card" aria-labelledby="update-title" hidden>
       <div class="update-main">
       <div class="update-head">
         <h2 id="update-title">Update available</h2>
@@ -187,7 +206,7 @@
 
     <div class="grid">
       <div class="col">
-      <section class="spend" aria-labelledby="spend-title">
+      <section class="spend" data-widget="spend" aria-labelledby="spend-title">
         <div class="spend-head">
           <h2 id="spend-title">Bedrock spend</h2>
           <div id="cost-view" class="chips seg" role="group" aria-label="Cost view" hidden>
@@ -203,7 +222,7 @@
         <p class="note">Each key has a monthly budget that resets on the date shown. Change budgets in <a href="#settings/spending">Settings → Spending &amp; budgets</a> (or <code>./stack config set BUDGET_…</code>).</p>
       </section>
 
-      <section class="models" aria-labelledby="models-title">
+      <section class="models" data-widget="models" aria-labelledby="models-title">
         <h2 id="models-title">Models your AWS key can use</h2>
         <p class="models-line" id="models-line"></p>
         <details class="models-more" id="models-more">
@@ -231,12 +250,12 @@
       </section>
       </div>
       <div class="col">
-      <section class="services" aria-labelledby="svc-title">
+      <section class="services" data-widget="services" aria-labelledby="svc-title">
         <h2 id="svc-title">Services</h2>
         <ul id="services" class="svc-list"></ul>
       </section>
 
-      <section class="logins" aria-labelledby="logins-title">
+      <section class="logins" data-widget="logins" aria-labelledby="logins-title">
         <h2 id="logins-title">Admin and Files sign you in automatically</h2>
         <p class="note">Opening Admin or Files signs you in to LiteLLM and RustFS with your portal session: no second password. Sign out ends it.</p>
         <details class="logins-more" id="logins-more">
@@ -249,7 +268,7 @@
         </details>
       </section>
 
-      <section class="maint" id="maint" aria-labelledby="maint-title" hidden>
+      <section class="maint" id="maint" data-widget="maint" aria-labelledby="maint-title" hidden>
         <h2 id="maint-title">Maintenance</h2>
         <div id="maint-helper-slot">
           <div id="helper-off" class="helper-off" hidden>
@@ -274,14 +293,15 @@
         <p class="note" id="maint-note">Each action asks for the portal password and is carried out on this computer by the update helper (<code>./stack helper status</code>).</p>
       </section>
 
-      <section class="claude" aria-labelledby="claude-title">
+      <section class="claude" data-widget="claude" aria-labelledby="claude-title">
         <h2 id="claude-title">Claude Code in your terminal</h2>
         <p class="cmdline"><code id="claude-cmd">devos-claude</code> <button type="button" class="copy" id="copy-claude">Copy</button></p>
         <p class="note">Runs Claude Code against Bedrock through this stack; plain <code>claude</code> is unchanged. Its spend shows in Bedrock spend, under devos-claude (your terminal).</p>
       </section>
 
-      <div id="feedback"></div>
+      <div id="feedback" data-widget="feedback"></div>
       </div>
+    </div>
     </div>
   </section>
   <section id="settings" class="settings-page" aria-labelledby="settings-title" hidden></section>

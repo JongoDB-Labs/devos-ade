@@ -6,6 +6,25 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+- **Home's cards are widgets you can show, hide, move and resize (JON-946).** **Customize**, in Home's header, turns on
+  edit mode: each card gets a handle to drag it by, an eye to hide it, **Auto / S / M / L** for its height (a tall card
+  scrolls inside, as Continue and the models table do) and an edge or corner to drag to resize it, snapping to whole
+  columns (12 on a desktop, 6 on a tablet). A **Widgets** tray lists what you hid, each with **Add back**, and has
+  **Reset to default** and **Done**; Escape also leaves. Get started, Continue, the Update card, Bedrock spend, Models,
+  Services, Sign-ins, Maintenance, Claude Code in your terminal and Send feedback are all widgets; the header, the
+  banners and the sidebar stay where they are.
+  - **Nothing changes until you do it.** Home is laid out exactly as before for anyone who never customizes.
+  - **A layout for each kind of screen.** What you arrange on a desktop, a tablet and a phone is kept separately, in
+    the portal (so it follows you to another browser on the same kind of screen); a phone's one column has show/hide,
+    **Move up** and **Move down**, and no resizing.
+  - **With the keyboard alone:** Tab to a widget's handle, then the arrow keys move it, Shift with the arrows resizes it
+    and H hides it; each change is announced ("Models moved after Services", "Spend is 8 of 12 columns wide").
+    Controls are 44 px on a touch screen and motion follows your system's reduced-motion setting.
+  - **A card that hides itself still does.** Get started after the first run, Maintenance and the Update card show only
+    when they have something; a card you hid stays hidden even when it has news. With the Update card hidden, Home's
+    header still says an update is available, and following that link shows the card for now.
+
 ## [0.45.1] - 2026-10-31
 
 ### Fixed

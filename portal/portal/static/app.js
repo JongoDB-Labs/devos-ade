@@ -515,6 +515,7 @@ function openVersion(ev) {
   if (!(lastUpdate && lastUpdate.available)) return;
   ev.preventDefault();
   showTab("home");
+  if (window.bnWidgets && window.bnWidgets.peek) window.bnWidgets.peek("update-card");   // (a card the person hid is shown for now)
   $(".update-notes").open = true;
   $("#update-card").scrollIntoView({ block: "start" });
 }

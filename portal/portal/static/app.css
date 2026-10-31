@@ -113,8 +113,8 @@ html.nav-collapsed .nav-chev { transform: scaleX(-1); }   /* « collapses, » ex
   .grid { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 0.9fr);
     grid-template-areas: "spend svc claude" "spend models claude" "spend logins fb" "spend maint fb"; }
 }
-.col > section { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-xl); padding: 20px 24px; box-shadow: var(--card-edge); }
-.grid h2 { margin: 0 0 12px; font-size: var(--t-1); line-height: 1.2; }
+.col > section, .wg-custom > section:where(.spend, .models, .services, .logins, .maint, .claude, .feedback) { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-xl); padding: 20px 24px; box-shadow: var(--card-edge); }
+.grid h2, .wg-custom > :where(.spend, .models, .services, .logins, .maint, .claude, .feedback) h2 { margin: 0 0 12px; font-size: var(--t-1); line-height: 1.2; }
 .note { color: var(--muted); font-size: 13px; margin: 12px 0 0; max-width: 70ch; }
 
 /* The memorable part: spend reads like a meter, not a stat tile. */

@@ -243,7 +243,9 @@ Home before Get started existed does not see it.
 
 On a wide window Home is a dashboard, not one long page: Get started and Continue side by side, the update card in two
 columns, then spend, services, models, sign-ins and the terminal's `devos-claude` in three; a long list scrolls inside its
-card. Settings' **Models & providers** is four tabs (**Keys**, **Subscriptions**, **Local models**, **Search**), and **Browse models** a grid.
+card. **Customize**, in Home's header, makes each card a widget you can hide, move and resize (drag, or the keyboard:
+arrows move, Shift with the arrows resizes, H hides); a tray brings hidden ones back and **Reset to default** returns Home to
+this layout. Your arrangement is kept in the portal for each kind of screen (desktop, tablet, phone). Settings' **Models & providers** is four tabs (**Keys**, **Subscriptions**, **Local models**, **Search**), and **Browse models** a grid.
 A phone keeps one column.
 
 ### Send feedback

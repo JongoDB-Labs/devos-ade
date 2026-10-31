@@ -70,5 +70,9 @@
 
   window.bnFeedback = { card, _pure: { safeLink, factsLine, WORDS, KINDS, PREFIX, FALLBACK } };
   const home = document.getElementById("feedback");
-  if (home) home.replaceWith(card("feedback-home"));
+  if (home) {
+    const c = card("feedback-home");
+    c.dataset.widget = "feedback";   // (widgets.js: Home's widgets are found by this)
+    home.replaceWith(c);
+  }
 })();

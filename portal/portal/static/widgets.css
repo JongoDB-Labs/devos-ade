@@ -1,0 +1,96 @@
+/* Widgets (widgets.js; JON-946): Home's cards a person shows, hides, moves and resizes. Until Home is customized none of
+   this applies: #widgets is a plain block and the wrappers in it (.home-top, .grid) lay the cards out as app.css and
+   mobile.css say. Customized (or in edit mode) widgets.js moves the cards into #widgets as one grid — 12 columns on a
+   desktop, 6 on a tablet, one on a phone (the same breakpoints as mobile.css) — and gives each its columns and height.
+   Rows are 4 px: a card spans as many as it is tall, so a short card sits under a short one beside a tall one. Tokens:
+   tokens.css; no colours of its own. */
+
+/* ---------- Customize, in the header ---------- */
+#customize[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+
+/* ---------- the tray: hidden widgets, Reset, Done (edit mode only) ---------- */
+.wg-tray { position: sticky; top: 0; z-index: 8; max-width: 1760px; margin-top: 16px; padding: 14px 20px 12px; background: var(--surface);
+  border: 1px solid var(--accent); border-radius: var(--r-xl); box-shadow: var(--card-edge), 0 6px 20px color-mix(in srgb, var(--ink) 10%, transparent); }
+.wg-tray-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.wg-tray h2 { margin: 0; font-size: var(--t-1); line-height: 1.2; }
+.wg-tray-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
+.wg-tray .note { margin: 8px 0 0; }
+.wg-tray-sub { margin: 12px 0 6px; font-size: 14px; font-weight: 600; }
+.wg-hidden { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.wg-hidden li { display: inline-flex; align-items: center; gap: 10px; padding: 3px 4px 3px 14px; border: 1px solid var(--line); border-radius: var(--r-pill); }
+.wg-status { margin: 8px 0 0; min-height: 1.4em; font-size: 13px; }
+.wg-saved { color: var(--warn); }
+.wg-saved:empty { display: none; }
+
+/* ---------- the grid ---------- */
+#widgets.wg-custom { position: relative; display: grid; max-width: 1760px; margin-top: 20px; column-gap: 24px; row-gap: 0;
+  grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: 4px; grid-auto-flow: row dense; align-items: start; }
+#widgets.wg-tablet { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+#widgets.wg-phone { grid-template-columns: minmax(0, 1fr); grid-auto-rows: auto; grid-auto-flow: row; row-gap: 14px; margin-top: 14px; }
+/* (the wrappers are empty: every card is a child of #widgets now) */
+#widgets.wg-custom > .home-top, #widgets.wg-custom > .grid { display: none; }
+/* a card here is placed by its columns (widgets.js), not by the page's old names and orders */
+#widgets.wg-custom > [data-widget], #widgets.wg-custom > .job { grid-area: auto; order: 0; margin: 0; max-width: none; min-width: 0; }
+#widgets.wg-custom > .job { grid-column: 1 / -1; }
+/* a card the person hid; one they hid and then followed the header's "Update available" to is shown until the page reloads */
+#widgets .wg-off:not(.wg-peek) { display: none !important; }
+/* the update card's two columns, by the card's own width (widgets.js sets data-wide from 720 px), not the page's */
+#widgets.wg-custom > .update-card:not([data-wide]) { display: block; }
+#widgets.wg-custom > .update-card:not([data-wide]) .update-side > .update-sub:first-child { margin-top: 14px; }
+#widgets.wg-custom > .update-card[data-wide] { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 0 32px; align-items: start; }
+
+/* ---------- edit mode: a bar and edge handles over each card ---------- */
+.wg-ov { position: absolute; z-index: 3; box-sizing: border-box; border: 2px dashed var(--line-strong); border-radius: var(--r-xl); pointer-events: none; }
+.wg-ov:focus-within { border: 2px solid var(--accent); }
+.wg-bar { position: absolute; top: 6px; left: 8px; right: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; pointer-events: auto; }
+.wg-name { flex: 1 1 5ch; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.wg-size { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wg-btn { display: inline-grid; place-items: center; min-width: 32px; min-height: 32px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--r-m);
+  background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; line-height: 1; cursor: pointer; }
+.wg-btn:hover { border-color: var(--ink); }
+.wg-btn:focus-visible, .wg-hidden .quiet:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wg-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.wg-grip { padding: 0; cursor: grab; touch-action: none; }
+.wg-grip svg { stroke-width: 3; }
+.wg-heights { display: inline-flex; }
+.wg-h { border-radius: 0; margin-left: -1px; padding: 0 6px; }
+.wg-h:first-child { border-radius: var(--r-m) 0 0 var(--r-m); margin-left: 0; }
+.wg-h:last-child { border-radius: 0 var(--r-m) var(--r-m) 0; }
+.wg-h[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); position: relative; }
+.wg-move { display: none; }
+.wg-rz { position: absolute; pointer-events: auto; touch-action: none; }
+.wg-rz::after { content: ""; position: absolute; background: var(--accent); opacity: .55; border-radius: 3px; }
+.wg-rz:hover::after { opacity: 1; }
+.wg-rz-e { top: 56px; bottom: 20px; right: -8px; width: 16px; cursor: ew-resize; }
+.wg-rz-e::after { top: calc(50% - 18px); height: 36px; left: 5px; width: 6px; }
+.wg-rz-s { left: 20px; right: 20px; bottom: -8px; height: 16px; cursor: ns-resize; }
+.wg-rz-s::after { left: calc(50% - 18px); width: 36px; top: 5px; height: 6px; }
+.wg-rz-se { right: -8px; bottom: -8px; width: 20px; height: 20px; cursor: nwse-resize; }
+.wg-rz-se::after { inset: 5px; border-radius: 50%; }
+.wg-dragging { opacity: .55; }
+.wg-gesture, .wg-gesture * { user-select: none; }
+.wg-gesture { cursor: grabbing; }
+
+/* ---------- a phone: one column, show/hide and order only (no drag, no resize) ---------- */
+#widgets.wg-phone .wg-grip, #widgets.wg-phone .wg-size, #widgets.wg-phone .wg-rz { display: none; }
+#widgets.wg-phone .wg-move { display: inline-grid; }
+
+/* ---------- touch: 44 px targets, and edges you can catch with a finger ---------- */
+@media (pointer: coarse), (max-width: 767.98px) {
+  .wg-btn { min-width: 44px; min-height: 44px; }
+  .wg-rz-e { width: 44px; right: -22px; }
+  .wg-rz-e::after { left: 19px; }
+  .wg-rz-s { height: 44px; bottom: -22px; }
+  .wg-rz-s::after { top: 19px; }
+  .wg-rz-se { width: 44px; height: 44px; right: -22px; bottom: -22px; }
+  .wg-rz-se::after { inset: 15px; }
+  .wg-hidden li { padding: 3px 4px 3px 14px; }
+}
+@media (max-width: 767.98px) {
+  .wg-tray { padding: 12px 16px; }
+  .wg-tray .wg-tray-actions { flex: 1 1 100%; }
+  .wg-tray .wg-tray-actions > * { flex: 1 1 auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wg-ov, .wg-btn, .wg-dragging { transition: none; }
+}

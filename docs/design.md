@@ -203,6 +203,30 @@ stack. The rules, so a new card drops in without a new pattern:
   `grid-template-areas` of the three widths, in app.css. **Service versions (JON-815)** go inside the update card's
   *What's new* (`#update-releases`, which scrolls inside at 11 rem, 8.5 rem on a phone, so more lines never lengthen the
   page).
+- **Widgets are the person's to arrange (JON-946; `static/widgets.js`, `widgets.css`).** Every card of Home carries
+  `data-widget="<id>"` (get-started, continue, update-card, spend, models, services, logins, maint, claude, feedback);
+  the header, the banners and the sidebar are not widgets. **Customize** (Home's header) turns on edit mode: the tray
+  (`#widget-tray`: hidden widgets with *Add back*, *Reset to default*, *Done*), a bar on each card (a handle, its name, its
+  width, *Auto / S / M / L*, *Hide*; *Move up / down* on a phone) and edge handles; the cards' contents are `inert` while
+  editing. **Today's layout is the default and is left alone:** with no saved layout (or one equal to the default) the
+  markup above lays Home out and the script moves nothing. A saved layout, or edit mode, moves the cards into `#widgets` as one
+  grid in layout order (`.wg-custom`): 12 columns from 1100 px, 6 from 768 px, one under it (the breakpoints of
+  mobile.css); a card spans whole columns (never fewer than its minimum), and rows are 4 px so a card spans as many as
+  it is tall and short cards stack beside a tall one. Reset, or a layout equal to the default, puts every card back in the
+  markup. **Two kinds of hidden stay apart:** a card that hides itself (Get started after the first run, Maintenance, the
+  Update card without an update) uses its own `hidden` attribute, which the script never touches; the person's choice is the
+  class `wg-off`. A card the person hid stays hidden with news to show; one they show still hides itself when empty. The
+  header's version and release line (`#home-version`, `#release-line`) say an update is available whether or not the Update
+  card is shown; following them shows a hidden card for now (`bnWidgets.peek`, not saved). **The layout is kept per kind of
+  screen** (desktop, tablet, phone) in one file of the portal's state dir (`ui-layout.json`, mode 600, written atomically, at
+  most 16 KB) through `GET` and `PUT /api/ui/layout` (portal/uilayout.py: the session and `X-Requested-With`; unknown pages,
+  screens and widgets refused or dropped, spans and heights clamped; a `PUT` replaces only the screens it names, `null`
+  puts one back to the default). localStorage `bn.layout` is only a cache, read before the portal answers so the page does not
+  flash. The model (defaults, merge with what was saved, clamp, move, resize, hide, reset, the sentences announced) is plain
+  functions in widgets.js, apart from the DOM, so the Code and Terminal pages can take the same engine with their own
+  widget table; a widget a later release adds is appended to a saved layout with its default. Keyboard: a handle takes
+  the arrows (move), Shift+arrows (resize), H (hide); changes are announced in an `aria-live` region; the checks are
+  tests/e2e/browser/checks_widgets.py and the sweep's *home-customize* states.
 - **A widget has a height of its own.** A list that can be long scrolls inside its card (`max-height` and
   `overflow-y: auto`: Continue's lists, the models table, What's new); a detail folds under a `<details>` (the
   *Details* of a setting, the models table, the credentials, *Show the rest* under the long read-only lists).

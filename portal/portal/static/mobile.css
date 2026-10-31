@@ -9,7 +9,7 @@
 /* Home's Services: one line that opens the full list (mobile.js healthLine), on every screen — the card's heading is
    for screen readers; the line says it */
 .services h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.col > section.services { padding: 0; }
+.col > section.services, .wg-custom > section.services { padding: 0; }
 .health-line { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 0 20px; border: 0;
   background: none; color: var(--ink); text-align: left; font: inherit; font-weight: 500; border-radius: var(--r-xl); }
 .health-line:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
@@ -164,7 +164,7 @@
   .code-off-lede { font-size: 15px; }
   .grid { display: flex; flex-direction: column; align-items: stretch; gap: 14px; margin-top: 16px; }
   .col { display: contents; }
-  .col > section { padding: 16px; border-radius: var(--r-xl); }
+  .col > section, .wg-custom > section:where(.spend, .models, .services, .logins, .maint, .claude, .feedback) { padding: 16px; border-radius: var(--r-xl); }
   .spend { order: 1; } .services { order: 2; } .models { order: 3; } .logins { order: 4; } .maint { order: 5; }
 
   /* Update card and progress, compact: the release and the button (if this device may use it); the step list
