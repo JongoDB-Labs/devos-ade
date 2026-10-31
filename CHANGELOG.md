@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.45.1] - 2026-10-31
+
 ### Fixed
 - **The update to devos-ade no longer stops at its first check on a default install (JON-945).** On an install whose
   `.env` names no project, v0.45.0's `./stack update` stopped with "project devos-ade already has volumes
@@ -3954,7 +3956,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.45.0...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.45.1...HEAD
+[0.45.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.45.0...v0.45.1
 [0.45.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.5...v0.45.0
 [0.44.5]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.4...v0.44.5
 [0.44.4]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.3...v0.44.4
