@@ -36,6 +36,25 @@
 #    scheme as before (the same installed app); ./stack test passes; with --real-github, origin moved to the new name
 #    and the update check answering.
 # Results: tests/e2e/out/upgrade/results.tsv (and logs/). The throwaway is removed at the end unless --keep.
+#
+# THE MOVE FROM bedrock-now TO devos-ade (JON-807, lib/migrate.sh): the same run, but from an install whose project is the
+# OLD name, in a folder named like the old one, up to this checkout — and the checks are those of the move:
+#
+#   tests/e2e/upgrade.sh --migrate --aws-env FILE [--from v0.44.4 | v0.38.0] [--then rollback | remove-old] [--keep]
+#       the real names: project bedrock-now, host bedrock-now.localhost, then devos-ade. REFUSES on a host where a live
+#       bedrock-now or devos-ade install exists (containers, volumes, ~/bedrock-now, ~/devos-ade): run it on the Linux test host.
+#   tests/e2e/upgrade.sh --migrate-pair NEWPROJECT --project OLDPROJECT --aws-env FILE ...
+#       the test-only name pair (bne2e-…; default bne2e-mig-old -> bne2e-mig-new): lib/migrate.sh takes the pair from
+#       MG_TEST_OLD_PROJECT / MG_TEST_NEW_PROJECT with the testing switch on, so it runs beside a live install. The old
+#       HOST names (the 308 checks) are the real ones either way: Caddy answers them for any Host header.
+#   Run it for --from v0.44.4 AND --from v0.38.0 (the owner's version); a hand-built layout like the owner's is added to the
+#   seeded install either way: a partial MLX download (blobs + relative links), LM Studio's records, an `lms import` link,
+#   a Code page session record. Asserted: the seeded data; the new hostname answering and the old one's 308 (GET, HEAD,
+#   POST, PUT, DELETE; path and query kept; sockets refused; no cookie); the old origin refused as an Origin on the new
+#   host; the seeded Open WebUI chat still the user's (same email, no second user); the backup volumes kept and equal;
+#   .env.pre-devos-ade; the folder moved by rename (same inode under .state/mlx/hf), the old name a link; relative links
+#   unchanged, absolute ones rewritten, no old path left; byte-identical sample files; ports unchanged. --then rollback runs
+#   ./stack migrate --rollback and starts the old project from the old code; --then remove-old runs --remove-old --yes.
 set -uo pipefail
 umask 077
 
@@ -48,11 +67,15 @@ NOTTY="$HERE/notty"
 OLD_URL="https://github.com/JongoDB-Labs/bedrock-now.git"
 NEW_URL="https://github.com/JongoDB-Labs/devos-ade.git"
 PROJECT=bne2e-rebrand-up; FROM=v0.24.0; AWS_ENV_FILE=''; KEEP=0; REAL_GITHUB=0; TEARDOWN_ONLY=0
+MIGRATE=0; NEWP=''; THEN=''; FROM_SET=0; PROJECT_SET=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --aws-env) AWS_ENV_FILE="${2:?}"; shift 2 ;;
-    --project) PROJECT="${2:?}"; shift 2 ;;
-    --from) FROM="${2:?}"; shift 2 ;;
+    --project) PROJECT="${2:?}"; PROJECT_SET=1; shift 2 ;;
+    --from) FROM="${2:?}"; FROM_SET=1; shift 2 ;;
+    --migrate) MIGRATE=default; shift ;;
+    --migrate-pair) MIGRATE=pair; NEWP="${2:?}"; shift 2 ;;
+    --then) THEN="${2:?}"; case "$THEN" in rollback | remove-old) ;; *) echo "--then takes rollback or remove-old" >&2; exit 2 ;; esac; shift 2 ;;
     --keep) KEEP=1; shift ;;
     --real-github) REAL_GITHUB=1; shift ;;
     --teardown) TEARDOWN_ONLY=1; shift ;;
@@ -63,11 +86,27 @@ done
 
 . "$HERE/lib.sh"
 . "$ROOT/lib/ports.sh"   # port_in_use
+OLDHOST_LEGACY=bedrock-now.localhost   # the old default host: what lib/migrate.sh and caddy/legacy-hosts.caddy move away from
+if [ "$MIGRATE" != 0 ]; then
+  [ "$FROM_SET" = 1 ] || FROM=v0.44.4
+  if [ "$MIGRATE" = default ]; then
+    PROJECT=bedrock-now; NEWP=devos-ade; HOST="$OLDHOST_LEGACY"; NEWHOST=devos-ade.localhost
+    valid_project() { [ "$1" = bedrock-now ]; }   # (this mode alone may name the real project)
+  else
+    [ "$PROJECT_SET" = 1 ] || PROJECT=bne2e-mig-old
+    [ -n "$NEWP" ] && [ "$NEWP" != "$PROJECT" ] && valid_project "$NEWP" || die "--migrate-pair NEW: bne2e-<letters, digits, -> and not the old project (never a real install's)"
+    HOST="$PROJECT.localhost"; NEWHOST="$NEWP.localhost"
+    HELPER_KNOBS="$HELPER_KNOBS DEVOS_ADE_TESTING=1 BEDROCK_NOW_TESTING=1 MG_TEST_OLD_PROJECT=$PROJECT MG_TEST_NEW_PROJECT=$NEWP"
+    MIG_ENV="DEVOS_ADE_TESTING=1 BEDROCK_NOW_TESTING=1 MG_TEST_OLD_PROJECT=$PROJECT MG_TEST_NEW_PROJECT=$NEWP"
+  fi
+fi
 valid_project "$PROJECT" || die "--project must be bne2e or bne2e-<letters, digits, ->: $PROJECT (never a real install's)"
 OUT="$ROOT/tests/e2e/out/upgrade"; LOGS="$OUT/logs"; RESULTS="$OUT/results.tsv"
-WORK="$ROOT/tests/e2e/work/$PROJECT"; mkdir -p "$(dirname "$WORK")" "$LOGS"
+WORK="$ROOT/tests/e2e/work/$PROJECT"
+[ "$MIGRATE" = 0 ] || WORK="$ROOT/tests/e2e/work/$PROJECT-mig/bedrock-now"   # (the folder is named like an old install's: the move renames it)
+mkdir -p "$(dirname "$WORK")" "$LOGS"
 STACK="$(cd "$(dirname "$WORK")" && pwd -P)/$(basename "$WORK")"
-HOST="$PROJECT.localhost"
+[ "$MIGRATE" != 0 ] || HOST="$PROJECT.localhost"
 command -v docker >/dev/null && docker info >/dev/null 2>&1 || die "Docker is required, and its daemon running"
 if [ "$TEARDOWN_ONLY" = 1 ]; then teardown_only; exit 0; fi
 [ -n "$AWS_ENV_FILE" ] || die "--aws-env FILE is required (only its AWS_* lines are read)"
@@ -77,13 +116,27 @@ git -C "$ROOT" rev-parse -q --verify "refs/tags/$FROM" >/dev/null || die "no tag
 : > "$RESULTS"; START_TS="$(now)"; HELPER_PID=''
 
 st() { # st [--aws] ARGS... — the throwaway's ./stack, clean environment, no terminal
-  [ "$(get_env COMPOSE_PROJECT_NAME)" = "$PROJECT" ] || { echo "xx  throwaway .env does not name project $PROJECT" >&2; return 99; }
+  [ "$MIGRATE" != 0 ] || [ "$(get_env COMPOSE_PROJECT_NAME)" = "$PROJECT" ] || { echo "xx  throwaway .env does not name project $PROJECT" >&2; return 99; }
   if [ "${1:-}" = --aws ]; then
     shift
     ( export AWS_REGION_NAME="${AWS_REGION_NAME:-us-east-1}" COMPOSE_PROJECT_NAME="$PROJECT"
       clean_env AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION_NAME COMPOSE_PROJECT_NAME
       cd "$STACK" && exec "$NOTTY" "$STACK/stack" "$@" </dev/null )
-  else ( clean_env; cd "$STACK" && exec "$NOTTY" "$STACK/stack" "$@" </dev/null ); fi
+  else ( clean_env ${MIG_ENV:+$(printf '%s\n' $MIG_ENV | sed 's/=.*//')}; [ -z "${MIG_ENV:-}" ] || export $MIG_ENV
+         cd "$STACK" && exec "$NOTTY" "$STACK/stack" "$@" </dev/null ); fi
+}
+# migrate_teardown — what the move made: the new project (containers, volumes, images, networks), its folder, the old folder's link
+migrate_teardown() {
+  local nstack="$STACK" nproj="$PROJECT" img
+  [ "$nproj" = "$NEWP" ] && [ -f "$nstack/.bedrock-now-e2e" ] || return 0
+  say "teardown: project $nproj (the move's)"
+  ( cd "$nstack" && docker compose -p "$nproj" down -v --remove-orphans >/dev/null 2>&1 ) || true
+  docker volume ls -q | grep -E "^${nproj}_" | xargs -r docker volume rm >/dev/null 2>&1 || true
+  docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E "^${nproj}/" | xargs -r docker image rm >/dev/null 2>&1 || true
+  docker network ls --format '{{.Name}}' | grep -E "^${nproj}_" | xargs -r docker network rm >/dev/null 2>&1 || true
+  [ ! -L "$OLD_STACK" ] || rm -f "$OLD_STACK"
+  chmod -R u+rwX "$nstack" 2>/dev/null; rm -rf "$nstack"
+  STACK="$OLD_STACK"; PROJECT="$OLD_PROJECT"   # (the ordinary teardown now removes the backup volumes of the old project)
 }
 check() { # check ID OK MESSAGE — records PASS when OK is 0
   if [ "$2" = 0 ]; then record upgrade "$1" PASS "$(( $(now) - START_TS ))" "$3"; else record upgrade "$1" FAIL "$(( $(now) - START_TS ))" "$3"; fi
@@ -92,6 +145,7 @@ finish() {
   local rc=$?
   trap - EXIT INT TERM HUP
   [ -z "$HELPER_PID" ] || e2e_helper_stop
+  if [ "$KEEP" = 0 ] && [ "$MIGRATE" != 0 ] && [ -n "${OLD_STACK:-}" ]; then migrate_teardown; fi
   if [ "$KEEP" = 0 ]; then teardown; else say "kept: tests/e2e/upgrade.sh --teardown --project $PROJECT removes it"; fi
   awk -F'\t' '$3 == "FAIL" { f++ } END { printf "%d checks, %d failed (%s)\n", NR, f + 0, FILENAME }' "$RESULTS" >&2
   exit "$rc"
@@ -165,7 +219,110 @@ snapshot() { # snapshot DIR — what must survive the update
   git -C "$STACK" describe --tags --always > "$d/version" 2>/dev/null || true
 }
 
+
+# old_req METHOD HOST PATH [HEADER...] -> "CODE LOCATION SETCOOKIE-COUNT" of the throwaway's Caddy asked for HOST (any Host header
+# is answered by the same listener; the body is sent as it would be, nothing is followed)
+old_req() {
+  local m="$1" h="$2" path="$3" hdr="$OUT/old-req.hdr" code; shift 3
+  local args=(); [ "$m" != HEAD ] || args=(-I)
+  [ "$m" = HEAD ] || args+=(-X "$m")
+  case "$m" in POST | PUT | DELETE) args+=(--data 'k=v') ;; esac
+  code="$(curl -sS -m 20 -o /dev/null -D "$hdr" -w '%{http_code}' --resolve "$h:$(pp):127.0.0.1" "${args[@]}" "$@" "http://$h:$(pp)$path" 2>/dev/null || echo 000)"
+  printf '%s %s %s\n' "$code" "$(tr -d '\r' < "$hdr" | sed -n 's/^[Ll]ocation: //p' | head -1)" "$(grep -ci '^set-cookie:' "$hdr" || true)"
+}
+migrate_checks() {
+  local m r want h sub vol n k ok left l t a b
+  # --- the old hostname: 308 for every method, path and query kept, no cookie
+  for m in GET HEAD POST PUT DELETE; do
+    r="$(old_req "$m" "$OLDHOST_LEGACY" "/some/path?a=1&b=two")"
+    want="308 http://$NEWHOST:$(pp)/some/path?a=1&b=two 0"
+    check "old-host-$m" "$([ "$r" = "$want" ] && echo 0 || echo 1)" "$m $OLDHOST_LEGACY -> '$r' (want '$want')"
+  done
+  for sub in chat admin files code terminal git; do
+    r="$(old_req GET "$sub.$OLDHOST_LEGACY" "/x?y=1")"; want="308 http://$sub.$NEWHOST:$(pp)/x?y=1 0"
+    check "old-host-$sub" "$([ "$r" = "$want" ] && echo 0 || echo 1)" "$sub.$OLDHOST_LEGACY -> '$r'"
+  done
+  r="$(old_req POST "chat.$OLDHOST_LEGACY" "/api/v1/chats/new" -H 'Content-Type: application/json')"
+  check old-host-api-post-keeps-method "$([ "${r%% *}" = 308 ] && echo 0 || echo 1)" "POST to an old API path: $r"
+  # --- WebSockets to the old terminal and code hosts: refused, never upgraded or redirected
+  for sub in terminal code; do
+    r="$(old_req GET "$sub.$OLDHOST_LEGACY" "/ws" -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==')"
+    check "old-host-websocket-$sub" "$([ "${r%% *}" = 426 ] && ! grep -qi '^sec-websocket-accept' "$OUT/old-req.hdr" && [ "${r##* }" = 0 ] && echo 0 || echo 1)" "$sub upgrade on the old host: $r"
+  done
+  # --- the old origin is never an acceptable Origin on the new host (a state-changing request)
+  for m in POST PUT DELETE; do
+    code="$(curl -sS -m 20 -o /dev/null -w '%{http_code}' --resolve "$HOST:$(pp):127.0.0.1" -X "$m" -H "Origin: http://$OLDHOST_LEGACY:$(pp)" \
+      -H 'X-Requested-With: devos-ade' -b "$OUT/jar" --data '{}' "http://$HOST:$(pp)/api/update/check" 2>/dev/null || echo 000)"
+    check "old-origin-refused-$m" "$(case "$code" in 400 | 403) echo 0 ;; *) echo 1 ;; esac)" "$m on the new host with Origin http://$OLDHOST_LEGACY: $code (want 400 or 403)"
+  done
+  # --- the seeded Open WebUI chat is still the user's: the same email signs in, sees it, and no second account came
+  got="$(owui "print([u.get('email') for u in api('GET', '/api/v1/users/all', None, TOKEN).get('users', [])])" 2>/dev/null)"
+  check no-second-user "$(case "$got" in *admin@devos-ade.local*) echo 1 ;; *admin@bedrock-now.local*) echo 0 ;; *) echo 1 ;; esac)" "Open WebUI users: $got"
+  # --- the backup: every old volume is still there, untouched, with the marker's word that each copy was verified
+  : > "$OUT/old-volumes-missing"
+  while read -r vol; do
+    [ -n "$vol" ] || continue
+    case "$vol" in *-owner) continue ;; esac
+    docker volume inspect "$vol" >/dev/null 2>&1 || echo "$vol" >> "$OUT/old-volumes-missing"
+  done < "$OUT/before/volumes"
+  check backup-volumes-kept "$([ ! -s "$OUT/old-volumes-missing" ] && echo 0 || echo 1)" "missing old volumes: $(tr '\n' ' ' < "$OUT/old-volumes-missing")"
+  img="$(docker inspect --format '{{.Config.Image}}' "$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=postgres | head -1)" 2>/dev/null)"
+  a="$(docker run --rm --network none -v "${OLD_PROJECT}_pgdata:/v:ro" --entrypoint cat "$img" /v/PG_VERSION 2>/dev/null)"
+  b="$(docker run --rm --network none -v "${PROJECT}_pgdata:/v:ro" --entrypoint cat "$img" /v/PG_VERSION 2>/dev/null)"
+  check backup-pgdata-equal "$([ -n "$a" ] && [ "$a" = "$b" ] && echo 0 || echo 1)" "PG_VERSION old '$a', new '$b'"
+  a="$(docker run --rm --network none -v "${OLD_PROJECT}_owui:/v:ro" --entrypoint sh "$img" -c 'cd /v && find . -type f -exec sha256sum {} + | sort -k2 | sha256sum')"
+  sleep 3; b="$(docker run --rm --network none -v "${OLD_PROJECT}_owui:/v:ro" --entrypoint sh "$img" -c 'cd /v && find . -type f -exec sha256sum {} + | sort -k2 | sha256sum')"
+  check backup-volume-untouched "$([ -n "$a" ] && [ "$a" = "$b" ] && echo 0 || echo 1)" "the old Open WebUI volume reads the same twice, while the new stack runs: $a / $b"
+  check backup-env "$([ -f "$STACK/.env.pre-devos-ade" ] && echo 0 || echo 1)" ".env.pre-devos-ade"
+  check backup-images "$([ -n "$(docker image ls -q "$OLD_PROJECT/portal:local")" ] && echo 0 || echo 1)" "the old images $OLD_PROJECT/portal:local kept"
+  st migrate > "$LOGS/migrate-status.log" 2>&1
+  check backup-said "$(grep -q -- '--remove-old' "$LOGS/migrate-status.log" && grep -q "moved to" "$LOGS/migrate-status.log" && echo 0 || echo 1)" "$(tr '\n' ' ' < "$LOGS/migrate-status.log" | cut -c1-200)"
+  check marker-complete "$(grep -qx 'status=complete' "$STACK/.state/migrate/marker" && echo 0 || echo 1)" "$(tr '\n' ' ' < "$STACK/.state/migrate/marker" 2>/dev/null | cut -c1-160)"
+  # --- the layout like the owner's: moved by rename, byte-identical, relative links as they were, absolute ones rewritten
+  ST="$STACK/.state"
+  check mlx-moved-not-copied "$([ "$(ls -di "$ST/mlx/hf" | cut -d' ' -f1)" = "$(cat "$OUT/inode-before")" ] && echo 0 || echo 1)" "inode of .state/mlx/hf: before $(cat "$OUT/inode-before"), after $(ls -di "$ST/mlx/hf" | cut -d' ' -f1)"
+  ( cd "$ST" && find mlx/hf -type f -exec cksum {} + | LC_ALL=C sort -k3 ) > "$OUT/layout-after.cksum"
+  check sample-files-identical "$(cmp -s "$OUT/layout-before.cksum" "$OUT/layout-after.cksum" && echo 0 || echo 1)" "$(wc -l < "$OUT/layout-after.cksum" | tr -d ' ') files under .state/mlx/hf"
+  ( cd "$ST/mlx/hf/hub/models--e2e--partial/snapshots/rev1" && readlink config.json model.safetensors ) > "$OUT/links-after"
+  check relative-links-unchanged "$(cmp -s "$OUT/links-before" "$OUT/links-after" && echo 0 || echo 1)" "$(tr '\n' ' ' < "$OUT/links-after")"
+  t="$(readlink "$ST/runtimes/lmstudio/home/.lmstudio/models/e2e/m.gguf")"
+  check absolute-link-rewritten "$([ "$t" = "$ST/mlx/hf/hub/models--e2e--partial/blobs/bbbb2222" ] && [ -e "$ST/runtimes/lmstudio/home/.lmstudio/models/e2e/m.gguf" ] && echo 0 || echo 1)" "lms import link -> $t"
+  check lmstudio-records "$(grep -q "^$STACK/.state/runtimes/lmstudio/home/.lmstudio/llmster/" "$ST/runtimes/lmstudio/llmster.run" && grep -q "$STACK/.state/runtimes/lmstudio/home\"" "$ST/runtimes/lmstudio/home/.lmstudio/.internal/llmster-install-location.json" && [ "$(cat "$ST/runtimes/lmstudio/home/.lmstudio-home-pointer")" = "$STACK/.state/runtimes/lmstudio/home/.lmstudio" ] && echo 0 || echo 1)" "llmster.run, install-location.json and the home pointer name $STACK"
+  check session-record "$(grep -q "$STACK/.state/sessions/e2e" "$ST/sessions/e2e.json" && echo 0 || echo 1)" "$(cat "$ST/sessions/e2e.json")"
+  left="$(grep -rIlF -- "$OLD_STACK" "$STACK" --exclude-dir=.git --exclude-dir=backups --exclude-dir=migrate --exclude=.env.pre-devos-ade 2>/dev/null | head -5 | tr '\n' ' ')"
+  while IFS= read -r l; do t="$(readlink "$l")"; case "$t" in "$OLD_STACK" | "$OLD_STACK"/*) left="$left link:$l" ;; esac; done <<EOF
+$(find "$STACK" -path "$STACK/.git" -prune -o -type l -print 2>/dev/null)
+EOF
+  check no-old-path-left "$([ -z "$left" ] && echo 0 || echo 1)" "files or links still naming $OLD_STACK: ${left:-none}"
+  # --- then: the way back, or the end of the backup
+  case "$THEN" in
+    remove-old)
+      st migrate --remove-old --yes > "$LOGS/remove-old.log" 2>&1
+      check remove-old-lists "$(grep -q "${OLD_PROJECT}_pgdata" "$LOGS/remove-old.log" && echo 0 || echo 1)" "the list names the old volumes"
+      left="$(docker volume ls -q | grep -E "^${OLD_PROJECT}_" | tr '\n' ' ')"
+      check remove-old-removed "$([ -z "$left" ] && [ ! -f "$STACK/.env.pre-devos-ade" ] && echo 0 || echo 1)" "old volumes left: ${left:-none}"
+      check remove-old-keeps-new "$([ -n "$(docker volume ls -q | grep -E "^${PROJECT}_pgdata$")" ] && [ "$(pcurl -o /dev/null -w '%{http_code}' "$(purl /caddy-health)")" != 000 ] && echo 0 || echo 1)" "the new project's volumes and the portal are still there" ;;
+    rollback)
+      pcurl -o /dev/null "$(purl /)" || true
+      st migrate --rollback --yes > "$LOGS/rollback.log" 2>&1; n=$?
+      check rollback-ran "$n" "./stack migrate --rollback: exit $n"
+      check rollback-folder "$([ -f "$OLD_STACK/.env" ] && [ ! -L "$OLD_STACK" ] && [ ! -e "$STACK" ] && echo 0 || echo 1)" "the install is back at $OLD_STACK"
+      STACK="$OLD_STACK"; PROJECT="$OLD_PROJECT"; HOST="$OLD_HOST"
+      check rollback-volumes "$([ -z "$(comm -23 <(sort "$OUT/before/volumes") <(docker volume ls -q | sort))" ] && echo 0 || echo 1)" "every old volume still there"
+      git -C "$STACK" -c advice.detachedHead=false checkout -q "$FROM" 2>/dev/null; st up --yes > "$LOGS/rollback-up.log" 2>&1; n=$?
+      check rollback-old-project-runs "$n" "the old code starts the old project again: exit $n"
+      got="$(owui "print(api('GET', '/api/v1/chats/$CHAT_ID', None, TOKEN)['title'])" 2>/dev/null)"
+      check rollback-chat-kept "$([ "$got" = e2e-upgrade ] && echo 0 || echo 1)" "the chat on the old project: ${got:-gone}" ;;
+  esac
+}
+
 # --- 1. stage and set up the release before ---
+if [ "$MIGRATE" = default ]; then   # the real names: never beside a live install of either
+  live="$( { docker ps -aq --filter label=com.docker.compose.project=bedrock-now; docker ps -aq --filter label=com.docker.compose.project=devos-ade
+             docker volume ls -q | grep -E '^(bedrock-now|devos-ade)_' || true
+             ls -d "$HOME/bedrock-now" "$HOME/devos-ade" 2>/dev/null || true; } | tr '\n' ' ')"
+  [ -z "$live" ] || die "--migrate refuses: a live install of bedrock-now or devos-ade is here ($live). Run it on a host without one (the Linux test host), or use --migrate-pair for the test-only name pair. Nothing was changed."
+fi
 claim_project
 # shellcheck disable=SC2034  # (OWNED: read by teardown)
 [ "$OWN_STATE" != ours ] || { warn "project $PROJECT: $OWN_WHY — removing those leftovers first"; teardown; OWNED=1; }
@@ -201,8 +358,11 @@ git -C "$STACK" -c advice.detachedHead=false checkout -q "$FROM" || die "cannot 
 : > "$STACK/.bedrock-now-e2e"; printf '/.bedrock-now-e2e\n' >> "$STACK/.git/info/exclude"
 cp "$STACK/.env.example" "$STACK/.env"; chmod 600 "$STACK/.env"
 pick_port P 18580; pick_port L 14580; pick_port M 18965
-set_env COMPOSE_PROJECT_NAME "$PROJECT"; set_env PORTAL_HOST "$HOST"; set_env PORTAL_PORT "$P"
-set_env LITELLM_PORT "$L"; set_env SHARED_MCP_PORT "$M"; set_env OPENWEBUI_ADMIN_EMAIL "e2e-admin@example.com"
+if [ "$MIGRATE" = default ]; then : ; else set_env COMPOSE_PROJECT_NAME "$PROJECT"; set_env PORTAL_HOST "$HOST"; fi   # (the old default: neither is in .env)
+set_env PORTAL_PORT "$P"
+set_env LITELLM_PORT "$L"; set_env SHARED_MCP_PORT "$M"
+# the email: the owner's own default in the move (every store is keyed by it); an address of the suite otherwise
+if [ "$MIGRATE" != 0 ]; then set_env OPENWEBUI_ADMIN_EMAIL "admin@bedrock-now.local"; else set_env OPENWEBUI_ADMIN_EMAIL "e2e-admin@example.com"; fi
 for kv in $BUDGETS; do set_env "${kv%%=*}" "${kv#*=}"; done
 set_env PORTAL_PASSWORD "$(openssl rand -hex 10)"
 seed_cheap_default   # (new sessions on Haiku: no flow falls back to a dearer model — the no-opus-spend check)
@@ -247,6 +407,23 @@ check code-project-made "$(grep -q '"state": "trusted"' "$OUT/code-project-befor
 HOME_V="kept-$(openssl rand -hex 4)"
 cexec terminal sh -c 'printf %s "$1" > "$HOME/.e2e-upgrade-home"' sh "$HOME_V" 2>> "$LOGS/code-seed.log"
 check home-file-made "$([ "$(cexec terminal cat /home/claude/.e2e-upgrade-home 2>/dev/null)" = "$HOME_V" ] && echo 0 || echo 1)" "a file in the sandbox's home"
+# the owner's kind of layout (the move only): a partial MLX download with relative links, LM Studio's records, an `lms import`
+# link, a Code page session record — all under .state, with absolute paths into this folder where the real ones have them
+if [ "$MIGRATE" != 0 ]; then
+  ST="$STACK/.state"; HF="$ST/mlx/hf/hub/models--e2e--partial"
+  mkdir -p "$HF/blobs" "$HF/snapshots/rev1" "$ST/runtimes/lmstudio/home/.lmstudio/.internal" "$ST/runtimes/lmstudio/home/.lmstudio/models/e2e" "$ST/sessions"
+  head -c 300000 /dev/urandom > "$HF/blobs/aaaa1111.incomplete"; head -c 5000 /dev/urandom > "$HF/blobs/bbbb2222"
+  ln -s ../../blobs/bbbb2222 "$HF/snapshots/rev1/config.json"; ln -s ../../blobs/aaaa1111.incomplete "$HF/snapshots/rev1/model.safetensors"
+  printf '%s/.state/runtimes/lmstudio/home/.lmstudio/llmster/0.0.25-1/bin/llmster\t%s/.state/runtimes/lmstudio/home\t.\n' "$STACK" "$STACK" > "$ST/runtimes/lmstudio/llmster.run"
+  printf '{"path":"%s/.state/runtimes/lmstudio/home/.lmstudio/llmster/0.0.25-1/bin/llmster","cwd":"%s/.state/runtimes/lmstudio/home"}\n' "$STACK" "$STACK" > "$ST/runtimes/lmstudio/home/.lmstudio/.internal/llmster-install-location.json"
+  printf '%s/.state/runtimes/lmstudio/home/.lmstudio\n' "$STACK" > "$ST/runtimes/lmstudio/home/.lmstudio-home-pointer"
+  ln -s "$HF/blobs/bbbb2222" "$ST/runtimes/lmstudio/home/.lmstudio/models/e2e/m.gguf"
+  printf '{"cwd":"%s/.state/sessions/e2e","project":"e2e-upgrade-project"}\n' "$STACK" > "$ST/sessions/e2e.json"
+  ( cd "$ST" && find mlx/hf -type f -exec cksum {} + | LC_ALL=C sort -k3 ) > "$OUT/layout-before.cksum"
+  ( cd "$ST/mlx/hf/hub/models--e2e--partial/snapshots/rev1" && readlink config.json model.safetensors ) > "$OUT/links-before"
+  ls -di "$ST/mlx/hf" | cut -d' ' -f1 > "$OUT/inode-before"
+  for k in postgres; do :; done
+fi
 sleep 15   # (LiteLLM writes spend rows in batches)
 snapshot "$OUT/before"
 
@@ -300,15 +477,33 @@ PY
 check home-card-steps "$?" "$(tail -n 1 "$OUT/steps.check")"
 
 # --- 4. after ---
+if [ "$MIGRATE" != 0 ]; then   # from here on it is the new project, in the new folder, on the new host (the old folder is a link)
+  OLD_STACK="$STACK"; OLD_PROJECT="$PROJECT"; OLD_HOST="$HOST"
+  STACK="$(dirname "$OLD_STACK")/devos-ade"; PROJECT="$NEWP"; HOST="$NEWHOST"
+fi
 snapshot "$OUT/after"
 check version "$(grep -qx "$TO" "$OUT/after/version" && echo 0 || echo 1)" "installed $(cat "$OUT/after/version"), want $TO"
-check same-folder "$([ "$(real_dir "$STACK")" = "$(cd "$WORK" && pwd -P)" ] && [ -f "$STACK/.env" ] && echo 0 || echo 1)" "still in $STACK"
+if [ "$MIGRATE" = 0 ]; then
+  check same-folder "$([ "$(real_dir "$STACK")" = "$(cd "$WORK" && pwd -P)" ] && [ -f "$STACK/.env" ] && echo 0 || echo 1)" "still in $STACK"
+else
+  check folder-moved "$([ -f "$STACK/.env" ] && [ -L "$OLD_STACK" ] && [ "$(real_dir "$OLD_STACK")" = "$(real_dir "$STACK")" ] && echo 0 || echo 1)" "$OLD_STACK is a link to $STACK"
+fi
 # (the services: none lost; one the new release adds — v0.31.0's built-in SearXNG — is said)
 lost="$(comm -23 "$OUT/before/services" "$OUT/after/services" | tr '\n' ' ')"; new="$(comm -13 "$OUT/before/services" "$OUT/after/services" | tr '\n' ' ')"
 check same-services "$([ -z "$lost" ] && echo 0 || echo 1)" "lost: ${lost:-none}; added by the new release: ${new:-none}"
+if [ "$MIGRATE" = 0 ]; then
 for f in volumes mounts addresses; do
   check "same-$f" "$(cmp -s "$OUT/before/$f" "$OUT/after/$f" && echo 0 || echo 1)" "$(diff "$OUT/before/$f" "$OUT/after/$f" | head -5 | tr '\n' ' ')"
 done
+else
+  # the volumes carry the new project's name (the sockets' and the owner marker's too); the mount points follow; the ports stay
+  norm() { sed "s/^${OLD_PROJECT}_/${PROJECT}_/; s#/${OLD_PROJECT}_#/${PROJECT}_#g; s/bedrock-now-owner/devos-ade-owner/" "$1" | LC_ALL=C sort; }
+  lostv="$(comm -23 <(norm "$OUT/before/volumes" | grep -v -- '-owner$') <(norm "$OUT/after/volumes" | grep -v -- '-owner$') | tr '\n' ' ')"
+  check volumes-copied "$([ -z "$lostv" ] && echo 0 || echo 1)" "a volume of the old name without its new one: ${lostv:-none}"
+  grep -E '^(PORTAL_PORT|LITELLM_PORT|SHARED_MCP_PORT|TERMINAL_WORKSPACE)=' "$OUT/before/addresses" > "$OUT/ports-before"
+  grep -E '^(PORTAL_PORT|LITELLM_PORT|SHARED_MCP_PORT|TERMINAL_WORKSPACE)=' "$OUT/after/addresses" > "$OUT/ports-after"
+  check ports-unchanged "$(cmp -s "$OUT/ports-before" "$OUT/ports-after" && echo 0 || echo 1)" "$(diff "$OUT/ports-before" "$OUT/ports-after" | head -3 | tr '\n' ' ')"
+fi
 for k in $KEYS; do
   f="keys-${k//:/-}"; n="$(wc -l < "$OUT/before/$f" | tr -d ' ')"
   gone="$(comm -23 "$OUT/before/$f" "$OUT/after/$f" | wc -l | tr -d ' ')"
@@ -316,9 +511,35 @@ for k in $KEYS; do
 done
 removed="$(comm -23 "$OUT/before/env" "$OUT/after/env" | sed 's/=.*//' | tr '\n' ' ')"
 added="$(comm -13 "$OUT/before/env" "$OUT/after/env" | sed 's/=.*//' | tr '\n' ' ')"
+if [ "$MIGRATE" = 0 ]; then
 check env-kept "$([ -z "$removed" ] && echo 0 || echo 1)" "removed or changed: ${removed:-none}; added: ${added:-none}"
 code="$(pcurl -o /dev/null -w '%{http_code}' -H 'X-Requested-With: bedrock-now' "$(purl /api/summary)")"
 check still-signed-in "$([ "$code" = 200 ] && echo 0 || echo 1)" "the session from before: /api/summary $code"
+else
+  # .env: the backup is the .env from before; nothing is lost but renamed keys and the old default host; the email is unchanged
+  python3 - "$OUT/before/env" "$STACK/.env" "$STACK/.env.pre-devos-ade" > "$OUT/env.check" 2>&1 <<'PY'
+import sys
+def load(p): return dict(l.rstrip("\n").split("=", 1) for l in open(p) if "=" in l and not l.startswith("#"))
+before, after, backup = load(sys.argv[1]), load(sys.argv[2]), load(sys.argv[3])
+assert backup == before, "the backup is not the .env from before: " + str(sorted(set(backup.items()) ^ set(before.items()))[:4])
+lost = []
+for k, v in before.items():
+    nk = "DEVOS_ADE_" + k[len("BEDROCK_NOW_"):] if k.startswith("BEDROCK_NOW_") else k
+    if nk not in after: lost.append(k)
+assert not lost or lost == ["COMPOSE_PROJECT_NAME"], f"keys lost: {lost}"
+assert after["OPENWEBUI_ADMIN_EMAIL"] == before["OPENWEBUI_ADMIN_EMAIL"] == "admin@bedrock-now.local", "the owner email changed"
+print("backup equals the .env before; no key lost but the renamed; owner email kept")
+PY
+  check env-migrated "$?" "$(tail -n 1 "$OUT/env.check")"
+  check port-host-new "$([ "$(get_env PORTAL_HOST)" = "$HOST" ] || [ -z "$(get_env PORTAL_HOST)" ] && echo 0 || echo 1)" "PORTAL_HOST $(get_env PORTAL_HOST), want $HOST"
+  # the new origin is a new site: everyone signs in once there (the old session is not honoured), and signing in works
+  code="$(pcurl -o /dev/null -w '%{http_code}' -H 'X-Requested-With: devos-ade' "$(purl /api/summary)")"
+  check new-origin-needs-sign-in "$([ "$code" != 200 ] && echo 0 || echo 1)" "/api/summary on the new host with the old session's jar: $code"
+  get_env PORTAL_PASSWORD > "$OUT/pw"
+  code="$(pcurl -o /dev/null -w '%{http_code}' -H "Origin: $(purl '')" --data-urlencode "password@$OUT/pw" "$(purl /login)")"; rm -f "$OUT/pw"
+  check new-origin-signs-in "$([ "$code" = 303 ] && echo 0 || echo 1)" "sign-in on the new host: $code"
+  migrate_checks
+fi
 got="$(owui "print(api('GET', '/api/v1/chats/$CHAT_ID', None, TOKEN)['title'])" 2>/dev/null)"
 check chat-kept "$([ "$got" = e2e-upgrade ] && echo 0 || echo 1)" "the chat: ${got:-gone}"
 got="$( ( clean_env; cd "$STACK" && docker compose -p "$PROJECT" -f compose.yaml run --rm --no-deps -T --entrypoint /bin/sh rustfs-init -c \
@@ -344,7 +565,7 @@ print(t.replace(s, "STACK").replace("~" + s[len(h):] if s.startswith(h + "/") el
   ok=1; case "$t" in *"DevOS ADE"*) [ "$rc" = 0 ] && ok=0 ;; esac
   check "page-$pg" "$ok" "title '$t'${left:+; old name: $(printf '%s' "$left" | head -3 | tr '\n' ' ')}"
 done
-python3 - "$OUT/before/manifest.json" "$OUT/after/manifest.json" "$PROJECT" "$(pp)" > "$OUT/manifest.check" 2>&1 <<'PY'
+[ "$MIGRATE" = 0 ] && python3 - "$OUT/before/manifest.json" "$OUT/after/manifest.json" "$PROJECT" "$(pp)" > "$OUT/manifest.check" 2>&1 <<'PY'
 import json, sys
 a, b = (json.load(open(p)) for p in sys.argv[1:3])
 want = f"DevOS ADE ({sys.argv[3]}, port {sys.argv[4]})"
@@ -353,7 +574,7 @@ assert b["id"] == a["id"] == "/", f"id {a['id']!r} -> {b['id']!r}"
 assert b["protocol_handlers"] == a["protocol_handlers"], f"link scheme {a['protocol_handlers']} -> {b['protocol_handlers']}"
 print(f"name {a['name']!r} -> {b['name']!r}; id and link scheme kept")
 PY
-check manifest "$?" "$(tail -n 1 "$OUT/manifest.check")"
+[ "$MIGRATE" != 0 ] || check manifest "$?" "$(tail -n 1 "$OUT/manifest.check")"
 st test > "$LOGS/test-after.log" 2>&1; rc=$?; redact "$LOGS/test-after.log"
 check stack-test-after "$([ "$rc" = 0 ] && grep -q 'all checks passed' "$LOGS/test-after.log" && echo 0 || echo 1)" "./stack test: exit $rc"
 if [ "$REAL_GITHUB" = 1 ]; then
