@@ -150,6 +150,18 @@ TOK = "1792760000-0123456789abcdef-" + "0" * 32   # a launch token's form (not a
     (["open", "codex", TOK, "/workspace/a\u202egnp.exe"], False),
     (["open", "codex", TOK, "/workspace/a\u200bb"], False),
     (["open", "codex", TOK, "/workspace/a\ud800"], False),
+    # the Terminal tab's views: N 2 to 4 in the tool's place, no folder
+    (["view", "2", TOK], True),
+    (["view", "3", TOK], True),
+    (["view", "4", TOK], True),
+    (["view", "1", TOK], False),
+    (["view", "5", TOK], False),
+    (["view", "0", TOK], False),
+    (["view", "22", TOK], False),
+    (["view", "codex", TOK], False),
+    (["view", "2", TOK, "/workspace/app"], False),
+    (["open", "2", TOK], False),
+    (["chat", "3", TOK], False),
     (["run", "codex", TOK], False),
     (["open", "evil", TOK], False),
     (["open", "codex", "0123456789abcdef"], False),
@@ -166,6 +178,18 @@ def test_the_terminals_words_follow_bn_sessions_rules(words, ok):
     except UnicodeEncodeError:   # (a lone surrogate: no address can carry it)
         return
     assert (answers.terminal_next(link) is not None) is ok
+
+
+def test_a_view_is_words_like_the_others_with_a_token_made_on_the_click():
+    assert answers.terminal_link(answers.terminal_args("view", "3", TOK)) == f"/?arg=view&arg=3&arg={TOK}"
+    got = answers.parse_terminal_uri(f"/?arg=view&arg=3&arg={TOK}")
+    assert got == ("/", ["view", "3", TOK])
+    assert answers.parse_terminal_uri(f"/ws?arg=view&arg=5&arg={TOK}") == ("/ws", None)
+    # (the token is for exactly those words: a view 2's is no view 3's, nor a shell's)
+    L = answers.Launches("s" * 64, "fp", clock=lambda: 1_792_760_000.0)
+    t = L.issue("me@example.com", ["view", "2"])
+    assert L.valid(t, "me@example.com", ["view", "2"])
+    assert not L.valid(t, "me@example.com", ["view", "3"]) and not L.valid(t, "me@example.com", ["open", "shell"])
 
 
 def test_a_project_folder_of_this_computer_is_one_the_pickers_may_name():
@@ -301,6 +325,17 @@ def test_the_portals_own_page_gets_a_token_on_a_click(s):
         url = r.json()["url"]
         assert url.startswith(f"{TERM}/?arg=chat&arg=grok&arg=") and url.endswith("&arg=%2Fworkspace%2Fapp")
         assert _verify(c, tok, ut, url[len(TERM):]).status_code == 200
+        # a view of the Terminal tab (2 to 4): a token of its own, the page asks for a new one on a reload
+        r = post({"mode": "view", "tool": "3"})
+        assert r.status_code == 200 and r.json()["url"].startswith(f"{TERM}/?arg=view&arg=3&arg=")
+        v = r.json()["url"]
+        assert _verify(c, tok, ut, v[len(TERM):]).status_code == 200
+        assert _verify(c, tok, ut, "/ws" + v[len(TERM) + 1:], ws=True).status_code == 200
+        assert _verify(c, tok, ut, v[len(TERM):].replace("arg=3", "arg=2")).status_code == 403
+        assert _verify(c, tok, ut, v[len(TERM):].replace("arg=3", "arg=5")).status_code == 303   # (words that are none: the plain terminal)
+        assert post({"mode": "view", "tool": "5"}).status_code == 400
+        assert post({"mode": "view", "tool": "1"}).status_code == 400
+        assert post({"mode": "view", "tool": "2", "folder": "/workspace/app"}).status_code == 400
         # the token is for exactly those words: another tool or folder with it starts nothing
         t = url.split("&arg=")[2]
         assert _verify(c, tok, ut, f"/?arg=chat&arg=codex&arg={t}&arg=%2Fworkspace%2Fapp").status_code == 403

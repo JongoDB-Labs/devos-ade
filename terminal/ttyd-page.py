@@ -3,9 +3,11 @@ viewport for phones (without one they lay it out 980 px wide; the on-screen keyb
 covering the prompt), the terminal's background as theme colour, and a DevOS ADE icon instead of ttyd's.
 Then the page's one inline script must hash to SHA256 (the main Caddy's Content-Security-Policy for the terminal
 host allows only that script: caddy/Caddyfile, terminal_page): a new ttyd fails the build here, not in browsers.
-Usage: python3 ttyd-page.py IN OUT SHA256 CLIPBOARD_JS CLIPBOARD_SHA256
+Usage: python3 ttyd-page.py IN OUT SHA256 CLIPBOARD_JS CLIPBOARD_SHA256 KEYS_JS KEYS_SHA256
 The clipboard script (ttyd-clipboard.js: tmux's copy reaches the browser's clipboard, a Paste button) goes in as a second
-inline script before </body>, and is pinned the same way: its hash is in the Dockerfile and the Caddyfile too."""
+inline script before </body>, and is pinned the same way: its hash is in the Dockerfile and the Caddyfile too. So is the
+third, the keys script (ttyd-keys.js: the Terminal tab's key bar and quick commands reach the terminal as messages from the
+page that frames it)."""
 
 import base64
 import hashlib
@@ -38,13 +40,19 @@ if got != want:
     sys.exit(f"ttyd's page script is sha256-{got}, not the pinned sha256-{want}: put the new hash in terminal/Dockerfile "
              "(TTYD_PAGE_SCRIPT_SHA256) and caddy/Caddyfile (terminal_page), after checking what changed")
 
-clip = open(sys.argv[4], "rb").read()
-assert b"\r" not in clip and b"</script" not in clip.lower(), "the clipboard script has a CR or a closing script tag"
-got = digest(clip)
-want = sys.argv[5].removeprefix("sha256-")
-if got != want:
-    sys.exit(f"the clipboard script is sha256-{got}, not the pinned sha256-{want}: put the new hash in terminal/Dockerfile "
-             "(TTYD_CLIPBOARD_SCRIPT_SHA256) and caddy/Caddyfile (terminal_page)")
-page, n = re.subn(r"</body>", lambda m: "<script>" + clip.decode("utf-8") + "</script>" + m.group(0), page, count=1)
+def inject(path, want, what, var):
+    """The script at PATH as pinned (its hash is WANT): -> its text, or the build stops naming both places of the hash."""
+    script = open(path, "rb").read()
+    assert b"\r" not in script and b"</script" not in script.lower(), f"the {what} script has a CR or a closing script tag"
+    got = digest(script)
+    want = want.removeprefix("sha256-")
+    if got != want:
+        sys.exit(f"the {what} script is sha256-{got}, not the pinned sha256-{want}: put the new hash in terminal/Dockerfile "
+                 f"({var}) and caddy/Caddyfile (terminal_page)")
+    return script.decode("utf-8")
+
+extra = inject(sys.argv[4], sys.argv[5], "clipboard", "TTYD_CLIPBOARD_SCRIPT_SHA256") + "</script><script>" + \
+    inject(sys.argv[6], sys.argv[7], "keys", "TTYD_KEYS_SCRIPT_SHA256")
+page, n = re.subn(r"</body>", lambda m: "<script>" + extra + "</script>" + m.group(0), page, count=1)
 assert n == 1, "no </body> in ttyd's page"
 open(sys.argv[2], "w", encoding="utf-8", newline="").write(page)

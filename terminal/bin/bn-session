@@ -10,6 +10,10 @@
 #                           there already
 #   chat TOOL TOKEN [DIR]   the same window, shown alone in a session of its own grouped with "claude" (chat-TOOL…:
 #                           the Chat tab's embedded tool; "claude"'s current window stays what it was)
+#   view N TOKEN            the Terminal tab's Nth view (N 2 to 4; the first is "claude" itself): a session of its own
+#                           grouped with "claude", view-N — the same windows, its own current one — with a new shell window
+#                           made current in it when it is made. Closing a view only detaches it; the next TOKEN (the page
+#                           asks for a fresh one on a reload) attaches to what is there.
 # TOOL: bedrock (devos-claude), claude (claude-sub, your Claude plan), codex, gemini, copilot, cursor, grok, shell.
 # TOKEN: a launch token, <iat>-<16 hex>-<32 hex> — the portal makes one only on your click (in its own page, the Code
 # page's hand-off, or the terminal host's own "Open … here?" page) and lets no request to the terminal carry words
@@ -26,8 +30,31 @@ WS="${BN_CODE_WORKSPACE:-/workspace}"
 plain() { exec tmux new-session -A -s "$S" -n claude -c "$WS" "devos-claude; exec bash"; }
 ensure() { tmux has-session -t "=$S" 2>/dev/null || tmux new-session -d -s "$S" -n claude -c "$WS" "devos-claude; exec bash"; }
 
+# take TOKEN: fresh=1 when it was made at most 10 minutes ago (not ahead of this clock by more than 30 s) and nothing has
+# used it yet — a token acts once
+fresh=0
+take() {
+  local iat="${1%%-*}" now; now="$(date +%s)"
+  if [ $((now - 10#$iat)) -le 600 ] && [ $((10#$iat - now)) -le 30 ]; then
+    mkdir -p "$STATE" 2>/dev/null && chmod 700 "$STATE" 2>/dev/null && mkdir "$STATE/$1" 2>/dev/null && fresh=1
+  fi
+}
+
 [ $# -ge 3 ] && [ $# -le 4 ] || plain
 mode="$1" tool="$2" token="$3" dir="${4:-$WS}"
+if [ "$mode" = view ]; then
+  [ $# -eq 3 ] && [[ $tool =~ ^[2-4]$ ]] && [[ $token =~ ^[0-9]{10}-[0-9a-f]{16}-[0-9a-f]{32}$ ]] || plain
+  view="view-$tool"
+  take "$token"
+  ensure
+  if ! tmux has-session -t "=$view" 2>/dev/null; then
+    # (made only for a token that has not acted: a view closed with exit, reconnecting on its old token, is the plain attach)
+    [ "$fresh" = 1 ] || plain
+    tmux new-session -d -t "=$S" -s "$view" 2>/dev/null || plain
+    tmux new-window -t "=$view:" -n shell -c "$WS" "exec bash" 2>/dev/null || true
+  fi
+  exec tmux attach-session -t "=$view"
+fi
 case "$mode" in open | chat) ;; *) plain ;; esac
 case "$tool" in bedrock | claude | codex | gemini | copilot | cursor | grok | shell) ;; *) plain ;; esac
 [[ $token =~ ^[0-9]{10}-[0-9a-f]{16}-[0-9a-f]{32}$ ]] || plain
@@ -52,11 +79,7 @@ if [ "$real" != "$WS" ]; then
   name="$name-$(printf '%s' "${real##*/}" | LC_ALL=C tr -c 'A-Za-z0-9_-' '-' | cut -c1-20)-$(printf '%s' "$real" | sha256sum | cut -c1-6)"
 fi
 # a token acts once, and only while fresh (made at most 10 minutes ago, not ahead of this clock by more than 30 s)
-fresh=0
-iat="${token%%-*}" now="$(date +%s)"
-if [ $((now - 10#$iat)) -le 600 ] && [ $((10#$iat - now)) -le 30 ]; then
-  mkdir -p "$STATE" 2>/dev/null && chmod 700 "$STATE" 2>/dev/null && mkdir "$STATE/$token" 2>/dev/null && fresh=1
-fi
+take "$token"
 ensure
 if [ "$fresh" = 1 ]; then
   # (-S: the window of that name if there is one; the command is fixed words — TOOL is one of the list above — and the

@@ -320,7 +320,8 @@ test_bn_session_takes_only_its_words() {
   mkdir -p "$b" "$ws/sub" "$proj/inner" "$TMP/elsewhere"
   ws="$(cd "$ws" && pwd -P)"; proj="$(cd "$proj" && pwd -P)"
   # tmux: records what it was asked; "claude" exists once made
-  printf '#!/bin/sh\necho "tmux $*" >> "%s/tmux"\ncase "$1" in has-session) [ "$3" = =claude ] && [ -f "%s/made" ]; exit $? ;; new-session) [ "$2" = -d ] && touch "%s/made"; exit 0 ;; esac\nexit 0\n' "$TMP" "$TMP" "$TMP" > "$b/tmux"
+  # (and the sessions made: -d with -s NAME, as ensure and the grouped sessions make them)
+  printf '#!/bin/sh\necho "tmux $*" >> "%s/tmux"\ncase "$1" in has-session) [ -f "%s/made.${3#=}" ]; exit $? ;; new-session) if [ "$2" = -d ]; then n=; for a in "$@"; do [ "$p" = -s ] && n="$a"; p="$a"; done; touch "%s/made.$n"; fi; exit 0 ;; esac\nexit 0\n' "$TMP" "$TMP" "$TMP" > "$b/tmux"
   chmod +x "$b/tmux"
   # (the sandbox's sha256sum; here whichever this computer has)
   local real_sum; real_sum="$(command -v sha256sum || true)"
@@ -377,6 +378,48 @@ test_bn_session_takes_only_its_words() {
   assert_contains "$out" "tmux set-option -t =chat-gemini-sub-$h: status off"
   assert_contains "$out" "tmux select-window -t =chat-gemini-sub-$h:=gemini-sub-$h"
   assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux attach-session -t =chat-gemini-sub-$h"
+  # view N (the Terminal tab's views 2 to 4): a session grouped with "claude" (its status line kept: it is the view's tab
+  # strip), a new shell window made current in it, then the attach
+  local V1="$now-aaaaaaaaaaaaaaaa-$M" V2="$now-bbbbbbbbbbbbbbbb-$M" V3="$now-cccccccccccccccc-$M" V4="$now-dddddddddddddddd-$M"
+  out="$(_run view 2 "$V1")"
+  assert_contains "$out" "tmux new-session -d -t =claude -s view-2"
+  assert_contains "$out" "tmux new-window -t =view-2: -n shell -c $ws exec bash"
+  assert_not_contains "$out" "status off"
+  assert_not_contains "$out" "select-window"
+  assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux attach-session -t =view-2"
+  # a reconnect (the same token, or a fresh one on a reload) only attaches to what is there
+  for tok in "$V1" "$V2"; do
+    out="$(_run view 2 "$tok")"
+    assert_not_contains "$out" "new-window"
+    assert_not_contains "$out" "new-session -d -t"
+    assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux attach-session -t =view-2"
+  done
+  # the other views are sessions of their own
+  out="$(_run view 4 "$V3")"
+  assert_contains "$out" "tmux new-session -d -t =claude -s view-4"
+  assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux attach-session -t =view-4"
+  # a token acts once: a view that is gone does not come back on its old token (the plain attach), a new one makes it
+  rm -f "$TMP/made.view-4"
+  out="$(_run view 4 "$V3")"
+  assert_not_contains "$out" "new-window"
+  assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux new-session -A -s claude -n claude -c $ws devos-claude; exec bash"
+  out="$(_run view 4 "$V4")"
+  assert_contains "$out" "tmux new-session -d -t =claude -s view-4"
+  # N out of range, not a number, a folder or a fourth word, a token of the wrong form or too old, a view with no TOKEN: the
+  # plain attach, nothing made
+  rm -f "$TMP/made.view-"*
+  for args in "view 1 $N1" "view 5 $N1" "view 0 $N1" "view 22 $N1" "view x $N1" "view - $N1" "view 2 nothex" "view 2 $OLD" "view 2 $AHEAD" "view 2" "view 2 $N1 $ws" \
+    "view 2 $N1 extra"; do
+    # shellcheck disable=SC2086
+    out="$(_run $args)"
+    assert_not_contains "$out" "new-window"
+    assert_not_contains "$out" "-s view-"
+    assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux new-session -A -s claude -n claude -c $ws devos-claude; exec bash"
+  done
+  # (the words refused before the token is looked at: it is not used up)
+  local VX="$now-eeeeeeeeeeeeeeee-$M"
+  _run view 5 "$VX" > /dev/null; _run view 1 "$VX" > /dev/null
+  [ ! -d "$TMP/state/$VX" ] || { echo "a refused view used its nonce" >&2; return 1; }
 }
 
 test_the_helper_takes_check_and_sign_out_by_tool_never_more() {

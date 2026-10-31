@@ -247,7 +247,10 @@ def _launch_page(s: Settings, rem: bool, mode: str, tool: str, folder: str) -> H
     names.update({b["id"]: {**b, "provider": "", "plan": ""} for b in answers.BASICS})
     t = names.get(tool) or {"name": tool, "provider": "", "plan": "", "command": tool}
     name = t["name"]
-    if tool in ("bedrock", "shell"):
+    if mode == "view":
+        name = f"view {tool}"
+        what = f"Another view of this terminal (view {tool}): the same windows, with a window of its own in front, in the sandbox"
+    elif tool in ("bedrock", "shell"):
         what = f"{name} in a window of its own in this terminal (the sandbox)"
     else:
         what = (f"{name} ({t['provider']}) on {t['plan']}, in a window of its own in this terminal (the sandbox) — its own "

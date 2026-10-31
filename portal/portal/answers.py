@@ -240,7 +240,8 @@ def build(s, remote: bool, models: dict | None = None) -> dict:
             "folders": folders(s.status_dir), "openrouter": bool(getattr(s, "openrouter_api_key", "")), "setup": links}
 
 
-# --- the terminal's words: what the pickers add to its address (?arg=MODE&arg=TOOL&arg=TOKEN[&arg=FOLDER]), which ttyd
+# --- the terminal's words: what the pickers add to its address (?arg=MODE&arg=TOOL&arg=TOKEN[&arg=FOLDER]) — and the
+# --- Terminal tab's views (?arg=view&arg=N&arg=TOKEN: N, 2 to 4, in TOOL's place; no folder) — which ttyd
 # --- hands to bn-session as its arguments. Nothing starts from an address alone: TOKEN is a launch token that only the
 # --- portal makes, on your click in its own page (POST /api/terminal/launch, same origin, X-Requested-With), in the
 # --- Code page's same-origin hand-off, or on the terminal host's own "Open … here?" page (POST /.bn/launch from that
@@ -248,6 +249,7 @@ def build(s, remote: bool, models: dict | None = None) -> dict:
 # --- words and this login (app.py launch_gate). bn-session checks the words again (the folder as it resolves) and acts
 # --- once per token.
 TERMINAL_TOOLS = ("bedrock", "claude", "codex", "gemini", "copilot", "cursor", "grok", "shell")
+VIEWS = ("2", "3", "4")   # the Terminal tab's other views (the first is "claude" itself): sessions view-2 … view-4
 TOKEN = re.compile(r"([0-9]{10})-([0-9a-f]{16})-([0-9a-f]{32})")
 # never valid (made at 0, before any Sign out): the words with it lead to the terminal's own "Open … here?" page
 ASK_TOKEN = "0000000000-" + "0" * 16 + "-" + "0" * 32
@@ -279,7 +281,10 @@ def folder_ok(folder, roots=()) -> bool:
 
 
 def terminal_words(mode: str, tool: str, folder: str | None = None, roots=()) -> list[str] | None:
-    """[MODE, TOOL(, FOLDER)] when each word passes bn-session's rules and FOLDER is one the pickers may name, else None."""
+    """[MODE, TOOL(, FOLDER)] when each word passes bn-session's rules and FOLDER is one the pickers may name, else None.
+    A view (MODE view, TOOL 2 to 4) takes no folder."""
+    if mode == "view":
+        return [mode, tool] if tool in VIEWS and folder in (None, "") else None
     if mode not in ("open", "chat") or tool not in TERMINAL_TOOLS:
         return None
     words = [mode, tool]
