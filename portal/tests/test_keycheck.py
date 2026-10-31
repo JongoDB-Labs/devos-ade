@@ -156,6 +156,15 @@ def test_only_provider_keys_and_only_through_the_front_door(client):
     assert check(c, "OPENROUTER_API_KEY", OR_KEY).status_code == 401
 
 
+def test_the_old_api_header_value_is_accepted_for_one_release_and_no_other(client):
+    p = Provider()
+    c = client(p)
+    old = {"Origin": ORIGIN["Origin"], "X-Requested-With": "bedrock-now"}
+    assert check(c, "OPENROUTER_API_KEY", OR_KEY, headers=old).status_code != 400
+    other = {"Origin": ORIGIN["Origin"], "X-Requested-With": "something-else"}
+    assert check(c, "OPENROUTER_API_KEY", OR_KEY, headers=other).json()["error"] == "missing X-Requested-With"
+
+
 def test_one_check_a_second(client):
     p = Provider()
     c = client(p)

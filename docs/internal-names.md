@@ -56,6 +56,8 @@ check too, unless none of its files exist (the migration's, before they are merg
 |---|---|---|---|
 | The migration | `(?i:.*bedrock[-_ ]?now.*)` | lib/migrate.sh, tests/test_migrate.sh, caddy/legacy-on.caddy, caddy/legacy-off.caddy, tests/e2e/upgrade.sh, docs/upgrade-to-0.45.md | it moves an install of the old name |
 | The old address check | `(?:\*\.)?bedrock-now(?:-preview)?\.localhost` | lib/common.sh | legacy_hosts_mode: Caddy forwards the old address only while the stack does not serve it itself |
+| The old API header value | `request\.headers\.get\("x-requested-with"\) != "bedrock-now"` | portal/portal/app.py | one release: pages and scripts from before the move still send it |
+| The old API header value, tested | `"X-Requested-With": "bedrock-now"` | portal/tests/test_keycheck.py | the test that the old value is still accepted for one release |
 | The old environment names | `\bBEDROCK_NOW\w*` | lib/common.sh, stack, tests/test_common.sh | the one-release fallback |
 | The legacy constants | `(?:PRODUCT_)?LEGACY_(?:NAME\|REPO)(?:=\| = )"[^"]*bedrock-now"` | lib/brand.sh, portal/portal/brand.py, install.sh | the old name and repository, read by the update check, the installer, `./stack open` and uninstall |
 | The old repository | `JongoDB-Labs/bedrock-now[\w.\/-]*` | install.sh, portal/tests/test_updates.py, tests/test_update_git.sh, tests/test_install.sh | GitHub redirects it; installs from before the rename have it as `origin` |

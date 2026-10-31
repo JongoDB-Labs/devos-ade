@@ -1310,7 +1310,8 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         if not authed(request):
             return _no_store(JSONResponse({"error": "login required"}, status_code=401))
         # A custom header can't be sent cross-origin without a CORS preflight, which we never allow.
-        if request.headers.get("x-requested-with") != "devos-ade":
+        # (one release: a page opened before the move to the new name, or a script written for it, still sends the old value)
+        if request.headers.get("x-requested-with") != "devos-ade" and request.headers.get("x-requested-with") != "bedrock-now":
             return _no_store(JSONResponse({"error": "missing X-Requested-With"}, status_code=400))
         return None
 
