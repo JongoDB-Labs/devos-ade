@@ -23,6 +23,7 @@ import checks_run  # noqa: F401
 import checks_subscriptions  # noqa: F401
 import checks_terminal  # noqa: F401
 import checks_voice  # noqa: F401
+import checks_widgets  # noqa: F401
 from common import CHECKS, ENV, HOST, RESULTS, TARGET_IP, origin, portal_login, run_all
 from checks_browser import Recorder
 

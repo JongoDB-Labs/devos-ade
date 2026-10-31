@@ -498,6 +498,26 @@ def sweep_portal(browser, width, theme):
             p.locator("#logins-more").scroll_into_view_if_needed()
         capture(p, "home-details")
     step("home-details", home_details)
+
+    def home_customize():   # edit mode (widgets.js): the tray, a bar and edge handles on each card; then a card hidden (it is in the tray)
+        p.evaluate("() => { try { localStorage.removeItem('bn.layout'); } catch (e) {} }")
+        p.click("#customize")
+        p.wait_for_selector("#widget-tray:not([hidden]) ~ #widgets .wg-ov:not([hidden])")
+        p.evaluate("() => { document.getElementById('home').scrollTop = 0; }")
+        capture(p, "home-customize")
+        p.locator(".wg-ov[data-for=models] [data-act=hide]").click()
+        p.wait_for_selector("#wg-hidden [data-id=models]")
+        capture(p, "home-customize-hidden")
+        # the keyboard's focus ring on a handle
+        p.locator(".wg-ov[data-for=spend] .wg-grip").focus()
+        capture(p, "home-customize-focus")
+        # Reset and Done: Home as it was, with nothing saved
+        p.click("#wg-reset")
+        p.click("#wg-done")
+        p.wait_for_selector("#widget-tray", state="hidden")
+        p.evaluate("""async () => { await fetch('/api/ui/layout', {method: 'PUT', credentials: 'same-origin', headers: {'X-Requested-With': 'devos-ade', 'Content-Type': 'application/json'},
+            body: JSON.stringify({version: 1, pages: {home: {desktop: null, tablet: null, phone: null}}})}); try { localStorage.removeItem('bn.layout'); } catch (e) {} }""")
+    step("home-customize", home_customize)
     # the update card's states (the update check's answer file, put back afterwards)
     up = STATE / "update-check" / "latest.json"
     saved = up.read_bytes() if up.exists() else None

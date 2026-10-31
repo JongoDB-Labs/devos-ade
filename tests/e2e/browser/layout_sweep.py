@@ -435,6 +435,22 @@ def st_home(S, p, device):
     yield "home-details-open", "#home"
 
 
+def st_home_customize(S, p, device):
+    """Home in edit mode (widgets.js): the tray, a bar and edge handles on every card, then one card hidden. Nothing is
+    kept: Reset and Done, and the layout cache cleared, before the next state."""
+    home(S, p, device)
+    p.click("#customize")
+    p.wait_for_selector("#widget-tray:not([hidden]) ~ #widgets .wg-ov:not([hidden])")
+    yield "home-customize", "#home"
+    p.locator(".wg-ov[data-for=models] [data-act=hide]").click()
+    p.wait_for_selector("#wg-hidden [data-id=models]")
+    yield "home-customize-hidden", "#home"
+    p.click("#wg-reset")
+    p.click("#wg-done")
+    p.evaluate("""async () => { await fetch('/api/ui/layout', {method: 'PUT', credentials: 'same-origin', headers: {'X-Requested-With': 'devos-ade', 'Content-Type': 'application/json'},
+        body: JSON.stringify({version: 1, pages: {home: {desktop: null, tablet: null, phone: null}}})}); try { localStorage.removeItem('bn.layout'); } catch (e) {} }""")
+
+
 def st_home_collapsed(S, p, device):
     p.add_init_script("try { localStorage.setItem('bn.nav', 'collapsed'); } catch (e) {}")
     home(S, p, device)
@@ -776,6 +792,7 @@ def mock_session(S, p, device):
 STATES = [
     State("signin", st_signin, needs="portal"),
     State("home", st_home),
+    State("home-customize", st_home_customize),
     State("home-sidebar-collapsed", st_home_collapsed, devices=("desktop",), min_w=1100),
     State("home-update-available", st_update, needs="stack", fast=False),
     State("more-sheet", st_more, devices=("phone",)),
