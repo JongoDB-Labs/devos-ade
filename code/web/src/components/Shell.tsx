@@ -1,6 +1,7 @@
-// The page frame: top bar, the three panes + bottom terminal on desktops, chat + one of explorer/editor and a
-// terminal drawer on tablets (700–1100 px), chat-first with sheets on phones. Pane sizes and open panels are
-// remembered per browser (prefs.ts).
+// The page frame: top bar, the widgets in their docks on desktops (the explorer's panels on the left, the editor in the
+// centre with the terminal below it, the chat on the right: the default), chat + one of two docks and a terminal drawer
+// on tablets (700–1100 px), chat-first with sheets on phones. Each person's layout is remembered (layout.ts, prefs.ts);
+// Customize changes it (Widgets.tsx).
 import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { useSel } from '../store';
@@ -11,7 +12,12 @@ import {
   newSession,
   reloadPlugins,
   setDialog,
-  setLayout,
+  revealWidget,
+  setTabletPane,
+  resizeDock,
+  toggleLayoutEdit,
+  setLayoutEdit,
+  setDrag,
   setSheet,
   terminalUrl,
   exportTranscript,
@@ -20,6 +26,7 @@ import {
   toggleTerminal,
   socket,
   defaultModel,
+  deviceNow,
   dismissToast,
   openModeMenu,
   openPalette,
@@ -38,8 +45,10 @@ import {
 } from '../app';
 import { SETUP_LINKS, type SetupReason } from '../setuplinks';
 import { GitPanel } from './GitPanel';
+import * as lay from '../layout';
+import type { DockId, WidgetId } from '../layout';
+import { Dock, StatusFrame, WidgetTray } from './Widgets';
 import { SandboxSaid } from './Said';
-import { changedCount } from '../git';
 import { stateChip } from '../groups';
 import { BudgetDialog } from './Budget';
 import { PermissionsDialog } from './Permissions';
@@ -47,7 +56,6 @@ import { SearchPanel } from './Search';
 import { CommandPalette, openPaletteFromMenu } from './CommandPalette';
 import { useReviewList } from './Review';
 import { shortcuts, keysFor } from '../shortcuts';
-import { BOUNDS } from '../prefs';
 import { getAnswers, terminalLaunch, type BnAnswers, type BnTool } from '../api';
 import { basename, label, perMtok } from '../text';
 import { modeName } from '../permission';
@@ -201,12 +209,16 @@ function ReviewButton() {
 }
 
 function TopBar({ tablet }: { tablet?: boolean }) {
-  const layout = useSel(store, (s) => s.prefs.layout);
+  const layout = useSel(store, (s) => s.prefs.layout[tablet ? 'tablet' : 'desktop']);
+  const editing = useSel(store, (s) => s.layoutUi.edit);
+  const explorerOn = lay.explorerOpen(layout);
+  const terminalOn = lay.shown(layout, 'terminal');
+  const panes = lay.tabletPane(layout, editing);
   return (
     <header class="topbar" data-testid="topbar">
       <div class="tb-left">
         {!tablet && (
-          <button type="button" class={`icon-btn${layout.explorer ? ' on' : ''}`} title={`Explorer (${MOD}+B)`} aria-label="Toggle explorer" aria-pressed={layout.explorer} onClick={toggleExplorer}>
+          <button type="button" class={`icon-btn${explorerOn ? ' on' : ''}`} title={`Explorer (${MOD}+B)`} aria-label="Toggle explorer" aria-pressed={explorerOn} onClick={toggleExplorer}>
             <Icon name="sidebar" />
           </button>
         )}
@@ -214,8 +226,7 @@ function TopBar({ tablet }: { tablet?: boolean }) {
         <ProjectChip compact={tablet} />
         <SessionTitle
           onClick={() => {
-            if (tablet) setLayout({ tabletPane: 'files', side: 'sessions' });
-            else setLayout({ explorer: true, side: 'sessions' });
+            revealWidget('sessions');
           }}
         />
       </div>
@@ -227,49 +238,25 @@ function TopBar({ tablet }: { tablet?: boolean }) {
         <ReviewButton />
         <CostMeter />
         <ContextMeter />
-        {tablet && (
+        {tablet && panes.both && (
           <div class="seg" role="group" aria-label="Left pane">
-            <button type="button" aria-pressed={layout.tabletPane === 'files'} aria-label="Files" title="Files" onClick={() => setLayout({ tabletPane: 'files' })}>
+            <button type="button" aria-pressed={panes.pane === 'left'} aria-label="Files" title="Files" onClick={() => setTabletPane('left')}>
               <Icon name="files" size={15} /> <span class="seg-label">Files</span>
             </button>
-            <button type="button" aria-pressed={layout.tabletPane === 'editor'} aria-label="Editor" title="Editor" onClick={() => setLayout({ tabletPane: 'editor' })}>
+            <button type="button" aria-pressed={panes.pane === 'center'} aria-label="Editor" title="Editor" onClick={() => setTabletPane('center')}>
               <Icon name="code" size={15} /> <span class="seg-label">Editor</span>
             </button>
           </div>
         )}
-        <button type="button" class={`icon-btn${layout.terminal ? ' on' : ''}`} title="Terminal (Ctrl+`)" aria-label="Toggle terminal" aria-pressed={layout.terminal} onClick={toggleTerminal} data-testid="toggle-terminal">
+        <button type="button" class={`icon-btn${terminalOn ? ' on' : ''}`} title="Terminal (Ctrl+`)" aria-label="Toggle terminal" aria-pressed={terminalOn} onClick={toggleTerminal} data-testid="toggle-terminal">
           <Icon name="terminal" />
+        </button>
+        <button type="button" class={`icon-btn${editing ? ' on' : ''}`} title="Customize the layout: move, resize and hide the widgets" aria-label="Customize the layout" aria-pressed={editing} onClick={toggleLayoutEdit} data-testid="customize-layout">
+          <Icon name="layout" />
         </button>
         <MoreMenu />
       </div>
     </header>
-  );
-}
-
-function SidePanel({ onOpenFile }: { onOpenFile?: () => void }) {
-  const side = useSel(store, (s) => s.prefs.layout.side);
-  const pending = useSel(store, (s) => Object.values(s.views).reduce((n, v) => n + v.permissions.length, 0));
-  const changes = useSel(store, (s) => changedCount(s.git.status));
-  return (
-    <aside class="side" aria-label="Explorer and sessions">
-      <div class="side-tabs" role="tablist">
-        <button type="button" role="tab" aria-selected={side === 'files'} onClick={() => setLayout({ side: 'files' })} title="Explorer" data-testid="side-files">
-          <Icon name="files" size={15} /> <span class="st-label">Explorer</span>
-        </button>
-        <button type="button" role="tab" aria-selected={side === 'search'} onClick={() => showSearch()} title={`Search in files (${MOD}+Shift+F)`} data-testid="side-search">
-          <Icon name="search" size={15} /> <span class="st-label">Search</span>
-        </button>
-        <button type="button" role="tab" aria-selected={side === 'git'} onClick={() => showGit()} title={`Git (${MOD}+Shift+G)`} data-testid="side-git">
-          <Icon name="branch" size={15} /> <span class="st-label">Git</span>
-          {changes > 0 && <span class="badge" data-testid="git-count">{changes > 999 ? '999+' : changes}</span>}
-        </button>
-        <button type="button" role="tab" aria-selected={side === 'sessions'} onClick={() => setLayout({ side: 'sessions' })} title="Projects and their sessions" data-testid="side-sessions">
-          <Icon name="folder" size={15} /> <span class="st-label">Projects</span>
-          {pending > 0 && <span class="badge warn">{pending}</span>}
-        </button>
-      </div>
-      {side === 'files' ? <FileTree onOpen={onOpenFile} /> : side === 'search' ? <SearchPanel onOpen={onOpenFile} /> : side === 'git' ? <GitPanel /> : <ProjectsPanel />}
-    </aside>
   );
 }
 
@@ -355,8 +342,7 @@ function ToolMenu({ onOpen }: { onOpen: (src: string) => void }) {
   );
 }
 
-function TerminalPanel({ drawer }: { drawer?: boolean }) {
-  const open = useSel(store, (s) => s.prefs.layout.terminal);
+function TerminalPanel({ drawer, open }: { drawer?: boolean; open: boolean }) {
   const base = useSel(store, (s) => terminalUrl(s));
   const [src, setSrc] = useState<string | null>(null);
   // (a tool opened here from elsewhere — a greyed item's sign-in: app.ts openToolInTerminal)
@@ -508,7 +494,7 @@ function KeysAction() {
 }
 
 function TerminalAction() {
-  const open = useSel(store, (s) => s.prefs.layout.terminal);
+  const open = useSel(store, (s) => lay.shown(s.prefs.layout[deviceNow()], 'terminal'));
   return (
     <SbAction id="terminal" icon="terminal" label="Terminal" class="sb-opt" pressed={open} keys={keysFor('terminal')}
       tip={open ? 'Hide the terminal: the sandbox’s shell, with devos-claude and your workspace' : 'Show the terminal: the sandbox’s shell, with devos-claude and your workspace'}
@@ -713,6 +699,11 @@ function useGlobalKeys() {
         // CodeMirror saves itself when it has focus; elsewhere, keep the browser's "save page" away and save the tab
         e.preventDefault();
         saveActiveTab();
+      } else if (e.key === 'Escape' && !e.defaultPrevented && store.get().layoutUi.edit && !store.get().dialog && !store.get().palette) {
+        // Customize: Escape drops a widget being dragged, else leaves it
+        e.preventDefault();
+        if (store.get().layoutUi.drag) setDrag(null);
+        else setLayoutEdit(false);
       } else if (e.key === 'Escape' && !e.defaultPrevented && document.activeElement === document.body && !store.get().dialog) {
         if (activeView()?.state === 'busy') interrupt();
       }
@@ -738,72 +729,126 @@ const size = (prop: 'width' | 'height', px: number) => (el: HTMLElement | null) 
 
 // ---------------------------------------------------------------- layouts
 
+/** One widget's body. A tablet opens the editor beside the chat when a file is picked in the explorer or a search. */
+function widgetBody(id: WidgetId, device: 'desktop' | 'tablet', terminalOn: boolean): ComponentChildren {
+  const opened = device === 'tablet' ? () => revealWidget('editor') : undefined;
+  switch (id) {
+    case 'explorer': return <FileTree onOpen={opened} />;
+    case 'search': return <SearchPanel onOpen={opened} />;
+    case 'git': return <GitPanel />;
+    case 'sessions': return <ProjectsPanel />;
+    case 'editor':
+      return (
+        <div class="editor">
+          <EditorTabs />
+          <EditorPanes />
+        </div>
+      );
+    case 'terminal': return <TerminalPanel open={terminalOn} />;
+    case 'chat': return <ChatPane />;
+    default: return null;
+  }
+}
+
+/** The label of a dock's splitter: what is in it (the names it had before docks). */
+function resizeLabel(layout: lay.DeviceLayout, dock: DockId): string {
+  const has = (id: WidgetId) => layout.place[dock].includes(id);
+  return has('chat') ? 'Resize chat' : has('explorer') ? 'Resize explorer' : has('terminal') ? 'Resize terminal' : `Resize the ${lay.DOCK_LABEL[dock].toLowerCase()}`;
+}
+
 function Desktop() {
-  const layout = useSel(store, (s) => s.prefs.layout);
+  const layout = useSel(store, (s) => s.prefs.layout.desktop);
+  const editing = useSel(store, (s) => s.layoutUi.edit);
+  const dragging = useSel(store, (s) => s.layoutUi.drag !== null);
+  const conn = useSel(store, (s) => s.conn);
   // Chat first: until a file, a diff or a preview opens (and while the terminal is closed) the chat takes the middle —
   // it is where you start — instead of an empty editor; the keys the empty editor listed are the status bar's Keys
-  const chatFirst = useSel(store, (s) => s.tabs.length === 0) && !layout.terminal;
+  const noTabs = useSel(store, (s) => s.tabs.length === 0);
   const vw = useViewportWidth();
-  // keep at least 320 px for the editor column
-  const left = layout.explorer ? Math.min(layout.left, Math.max(BOUNDS.left[0], vw - layout.right - 320)) : 0;
-  const right = Math.min(layout.right, Math.max(BOUNDS.right[0], vw - left - 320));
+  // (the docks keep at least 320 px for the centre: layout.ts arrange)
+  const a = lay.arrange(layout, 'desktop', { vw, noTabs, editing });
+  const terminalOn = lay.shown(layout, 'terminal');
+  const dock = (id: DockId, hidden?: boolean) => <Dock dock={id} layout={layout} device="desktop" shown={a.shown[id]} hidden={hidden} render={(w) => widgetBody(w, 'desktop', terminalOn)} />;
+  // (a status bar that is hidden still comes back while the connection is not open: it is where that is said)
+  const status = lay.shown(layout, 'status') || conn !== 'open';
+  const width = (px: number | null, fill: boolean) => (el: HTMLElement | null) => {
+    if (el) el.style.width = fill || px === null ? '' : `${px}px`;
+  };
   return (
-    <div class="app desktop">
+    <div class={`app desktop${editing ? ' editing' : ''}${dragging ? ' dragging' : ''}${status ? '' : ' no-status'}`}>
       <TopBar />
-      <div class={`main${chatFirst ? ' chat-first' : ''}`}>
-        {layout.explorer && (
+      {editing && <WidgetTray device="desktop" />}
+      <div class={`main${a.chatFirst ? ' chat-first' : ''}`}>
+        {a.left !== null && (
           <>
-            <div class="col-left" ref={size('width', left)}>
-              <SidePanel />
+            <div class={`col-left${a.fill === 'left' ? ' col-fill' : ''}`} ref={width(a.left, a.fill === 'left')}>
+              {dock('left')}
             </div>
-            <Splitter axis="x" value={left} min={BOUNDS.left[0]} max={BOUNDS.left[1]} onChange={(v) => setLayout({ left: v })} label="Resize explorer" testid="split-left" />
+            {a.fill !== 'left' && (
+              <Splitter axis="x" value={a.left} min={lay.dockBounds(layout, 'left')[0]} max={lay.dockBounds(layout, 'left')[1]} onChange={(v) => resizeDock('left', v)} label={resizeLabel(layout, 'left')} testid="split-left" />
+            )}
           </>
         )}
-        <div class={`col-center${chatFirst ? ' hidden' : ''}`}>
-          <div class="editor">
-            <EditorTabs />
-            <EditorPanes />
-          </div>
-          {layout.terminal && <Splitter axis="y" sign={-1} value={layout.bottom} min={BOUNDS.bottom[0]} max={BOUNDS.bottom[1]} onChange={(v) => setLayout({ bottom: v })} label="Resize terminal" />}
-          <div class={`col-bottom${layout.terminal ? '' : ' hidden'}`} ref={size('height', layout.bottom)}>
-            <TerminalPanel />
+        <div class={`col-center${a.fill !== 'center' ? ' hidden' : ''}`}>
+          {dock('center', a.bottomFill)}
+          {a.bottom !== null && !a.bottomFill && (
+            <Splitter axis="y" sign={-1} value={a.bottom} min={lay.BOUNDS.bottom[0]} max={lay.BOUNDS.bottom[1]} onChange={(v) => resizeDock('bottom', v)} label={resizeLabel(layout, 'bottom')} testid="split-bottom" />
+          )}
+          <div
+            class={`col-bottom${a.bottom === null ? ' hidden' : ''}${a.bottomFill ? ' col-fill' : ''}`}
+            ref={(el) => { if (el) el.style.height = a.bottomFill ? '' : `${a.bottom ?? layout.docks.bottom.size}px`; }}
+          >
+            {dock('bottom')}
           </div>
         </div>
-        {!chatFirst && <Splitter axis="x" sign={-1} value={right} min={BOUNDS.right[0]} max={BOUNDS.right[1]} onChange={(v) => setLayout({ right: v })} label="Resize chat" testid="split-right" />}
-        <div class="col-right" ref={(el) => { if (el) el.style.width = chatFirst ? '' : `${right}px`; }}>
-          <ChatPane />
-        </div>
+        {a.right !== null && (
+          <>
+            {a.fill !== 'right' && (
+              <Splitter axis="x" sign={-1} value={a.right} min={lay.dockBounds(layout, 'right')[0]} max={lay.dockBounds(layout, 'right')[1]} onChange={(v) => resizeDock('right', v)} label={resizeLabel(layout, 'right')} testid="split-right" />
+            )}
+            <div class={`col-right${a.fill === 'right' ? ' col-fill' : ''}`} ref={width(a.right, a.fill === 'right')}>
+              {dock('right')}
+            </div>
+          </>
+        )}
       </div>
-      <StatusBar />
+      {status && (
+        <StatusFrame>
+          <StatusBar />
+        </StatusFrame>
+      )}
     </div>
   );
 }
 
 function Tablet() {
-  const layout = useSel(store, (s) => s.prefs.layout);
+  const layout = useSel(store, (s) => s.prefs.layout.tablet);
+  const editing = useSel(store, (s) => s.layoutUi.edit);
+  const dragging = useSel(store, (s) => s.layoutUi.drag !== null);
+  const conn = useSel(store, (s) => s.conn);
   const vw = useViewportWidth();
-  const right = Math.min(Math.max(layout.right, Math.round(vw * 0.45)), vw - 300);
+  const a = lay.arrange(layout, 'tablet', { vw, noTabs: false, editing });
+  const terminalOn = lay.shown(layout, 'terminal');
+  const dock = (id: DockId) => <Dock key={id} dock={id} layout={layout} device="tablet" shown={a.shown[id]} render={(w) => widgetBody(w, 'tablet', terminalOn)} />;
+  const status = lay.shown(layout, 'status') || conn !== 'open';
+  const right = a.right ?? layout.docks.right.size;
   return (
-    <div class="app tablet">
+    <div class={`app tablet${editing ? ' editing' : ''}${dragging ? ' dragging' : ''}${status ? '' : ' no-status'}`}>
       <TopBar tablet />
+      {editing && <WidgetTray device="tablet" />}
       <div class="main">
-        <div class="col-center">
-          {layout.tabletPane === 'files' ? (
-            <SidePanel onOpenFile={() => setLayout({ tabletPane: 'editor' })} />
-          ) : (
-            <div class="editor">
-              <EditorTabs />
-              <EditorPanes />
-            </div>
-          )}
-        </div>
-        <Splitter axis="x" sign={-1} value={right} min={BOUNDS.right[0]} max={vw - 300} onChange={(v) => setLayout({ right: v })} label="Resize chat" />
+        <div class="col-center">{dock(a.pane)}</div>
+        <Splitter axis="x" sign={-1} value={right} min={lay.BOUNDS.right[0]} max={vw - 300} onChange={(v) => resizeDock('right', v)} label="Resize chat" testid="split-right" />
         <div class="col-right" ref={size('width', right)}>
-          <ChatPane />
+          {dock('right')}
         </div>
       </div>
-      <TerminalPanel drawer />
-      <StatusBar />
+      <TerminalPanel drawer open={terminalOn} />
+      {status && (
+        <StatusFrame>
+          <StatusBar />
+        </StatusFrame>
+      )}
     </div>
   );
 }

@@ -24,6 +24,7 @@ import type { GitMirrorView, GitMirrorsView, Harness, HarnessInfo, PlanUsage, Av
   ImportPreview, ImportResult, ImportRequest, ImportCounts, ProjectSuggestion, SetupTool, SetupKind, SetupRow, SetupView, SetupCounts, SetupPreview, SetupFlag, SetupWrite,
   SetupSecret, SetupFinding, SetupResult } from './types';
 import { MODES, COMPATS, HARNESS_IDS } from './types';
+import { parseLayout, type DeviceLayout } from './layout';
 import { normBudget, type Budget as SessionBudget } from './budget';
 import { promptTitle } from './mentions';
 import type { RecentReport } from './recent';
@@ -560,8 +561,9 @@ export function writable(...paths: (string | null | undefined)[]): void {
   }
 }
 
-async function request(method: string, url: string, body?: unknown, headers: Record<string, string> = {}): Promise<Obj> {
+async function request(method: string, url: string, body?: unknown, headers: Record<string, string> = {}, keepalive = false): Promise<Obj> {
   const init: RequestInit = { method, credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json', ...headers } };
+  if (keepalive) init.keepalive = true;   // (a request as the page goes away)
   if (body instanceof Blob || body instanceof ArrayBuffer) init.body = body;
   else if (body !== undefined) {
     init.body = JSON.stringify(body);
@@ -673,7 +675,15 @@ export async function getState(): Promise<ServerState> {
 export function normUserPrefs(v: unknown): UserPrefs {
   const o = obj(v) ?? {};
   const id = (x: unknown) => (typeof x === 'string' && MODEL_ID.test(x) && !/^(haiku|sonnet|opus|fable|opusplan|best|default)(\[1m\])?$/i.test(x) ? x : null);
-  return { model: id(o.model), settingsDefault: id(o.settingsDefault) };
+  const l = obj(o.layout);
+  const layout = l && (l.desktop !== undefined || l.tablet !== undefined)
+    ? { ...(l.desktop !== undefined ? { desktop: parseLayout(l.desktop, 'desktop') } : {}), ...(l.tablet !== undefined ? { tablet: parseLayout(l.tablet, 'tablet') } : {}) }
+    : undefined;
+  return { model: id(o.model), settingsDefault: id(o.settingsDefault), ...(layout ? { layout } : {}) };
+}
+/** Keep the page's widget layout for your sign-in (a device's, or null to forget it) — the other choices stay as they are. */
+export async function putLayout(layout: { desktop?: DeviceLayout | null; tablet?: DeviceLayout | null }, leaving = false): Promise<UserPrefs> {
+  return normUserPrefs(obj(await request('PUT', '/api/prefs', { layout }, {}, leaving))?.prefs);
 }
 /** Keep your choices for new sessions for your sign-in (every browser and device starts a session alike). */
 export async function putPrefs(p: UserPrefs): Promise<UserPrefs> {

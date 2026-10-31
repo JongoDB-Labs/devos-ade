@@ -2,6 +2,7 @@
 // shapes, validating ids and capping strings on the way; nothing else in the page reads raw server JSON.
 import type { Budget } from './budget';
 import type { SessionSettings } from './projects';
+import type { DeviceLayout } from './layout';
 
 /** The page's permission modes (modes.ts names them; code/server/modes.mjs maps them to Claude Code's). */
 export type Mode = 'readOnly' | 'plan' | 'default' | 'acceptEdits' | 'auto' | 'bypassPermissions';
@@ -520,10 +521,13 @@ export interface ServerState {
 }
 
 /** What the backend keeps for your sign-in (GET/PUT /api/prefs): the model you picked last (a full id, or null) and
- *  Settings' default for new sessions as it was then (null: none) — a default set in Settings since wins over the pick. */
+ *  Settings' default for new sessions as it was then (null: none) — a default set in Settings since wins over the pick —
+ *  and the layout of the page's widgets. */
 export interface UserPrefs {
   model: string | null;
   settingsDefault: string | null;
+  /** the page's widget layout per device, where one was kept (layout.ts; the backend checks it too) */
+  layout?: { desktop?: DeviceLayout; tablet?: DeviceLayout };
 }
 
 export interface FsEntry {

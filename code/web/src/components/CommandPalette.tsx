@@ -34,6 +34,9 @@ import {
   showSessions,
   toggleExplorer,
   toggleTerminal,
+  toggleLayoutEdit,
+  resetWidgets,
+  layoutNow,
   setProject,
   openProjectDialog,
   connectGitRepo,
@@ -42,6 +45,7 @@ import {
   sessionProject,
   type AppState,
 } from '../app';
+import * as lay from '../layout';
 import { fsFind } from '../api';
 import { rank } from '../fuzzy';
 import { keysFor } from '../shortcuts';
@@ -104,8 +108,10 @@ function actions(s: AppState): Item[] {
     a('project-git', 'Connect a git repository', () => void connectGitRepo(currentProject(s).id), 'branch', `${label(currentProject(s).name, 60)}: git init, its remote`),
     a('project-terminal', 'Open a terminal in this project', () => void openProjectTerminal(currentProject(s).id), 'terminal', label(currentProject(s).path, 120)),
     a('project-export', 'Export this project to Files…', () => openProjectDialog({ kind: 'export', id: currentProject(s).id }), 'upload', `${label(currentProject(s).name, 60)}: a zip in the Files app`),
-    a('terminal', s.prefs.layout.terminal ? 'Hide the terminal' : 'Show the terminal', toggleTerminal, 'terminal', '', keysFor('terminal')),
-    a('explorer', s.prefs.layout.explorer ? 'Hide the explorer' : 'Show the explorer', toggleExplorer, 'sidebar', '', keysFor('explorer')),
+    a('terminal', lay.shown(layoutNow(s), 'terminal') ? 'Hide the terminal' : 'Show the terminal', toggleTerminal, 'terminal', '', keysFor('terminal')),
+    a('explorer', lay.explorerOpen(layoutNow(s)) ? 'Hide the explorer' : 'Show the explorer', toggleExplorer, 'sidebar', '', keysFor('explorer')),
+    a('customize', 'Customize the layout…', toggleLayoutEdit, 'layout', 'move, resize and hide the panels: the explorer, editor, terminal, chat and status bar'),
+    a('layout-reset', 'Reset the layout to the default', resetWidgets, 'layout'),
     a('ports', 'Ports & previews…', () => setDialog('ports'), 'port', '', keysFor('ports')),
     a('run', 'Run & test…', openRun, 'play', "the workspace's scripts, make targets and entry points; Problems", keysFor('run')),
     a('memory', 'Memory (CLAUDE.md)…', () => setDialog('memory'), 'book'),

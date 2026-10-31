@@ -10,10 +10,12 @@ import { fullModel, modelCommand, startModel } from './models';
 import { sentence } from './permission';
 import { remembered, startMode } from './modes';
 import { SETUP_LINKS, settingsRoute, setupTarget, type SetupReason } from './setuplinks';
-import type { Ev, FsEntry, Harness, HarnessInfo, Hunk, ImageBlock, KeyBudget, LaunchEntry, LaunchList, Mode, PortInfo, PreviewInfo, PreviewLink, RunList, RunResult, RunTask, ServerMsg, ServerState, SessionInfo } from './types';
+import type { Ev, FsEntry, Harness, HarnessInfo, Hunk, ImageBlock, KeyBudget, LaunchEntry, LaunchList, Mode, PortInfo, PreviewInfo, PreviewLink, RunList, RunResult, RunTask, ServerMsg, ServerState, SessionInfo, UserPrefs } from './types';
 import { approveRun, approvedRun, askDraft, outcome, outcomeText, plainCommand } from './run';
 import { approveLaunch, approvedLaunch, switchedAway, type Viewport } from './devpreview';
-import { loadPrefs, savePrefs, type Layout, type Prefs } from './prefs';
+import { loadPrefs, savePrefs, type Prefs } from './prefs';
+import * as lay from './layout';
+import type { DeviceLayout, Device, DockId, WidgetId } from './layout';
 import { applyHunks } from './diff';
 import type { SessionAction } from './portalbridge';
 import { basename, cleanPath, dirname, isUuid, joinPath, label, money, setHostTops } from './text';
@@ -286,6 +288,8 @@ export interface AppState {
   active: string | null;
   opening: boolean;
   prefs: Prefs;
+  /** Customize (the widget layout): on, the widget being dragged and over what, what a screen reader is told */
+  layoutUi: { edit: boolean; drag: { id: WidgetId; over: { dock: DockId; before: WidgetId | null } | null } | null; say: string };
   fs: FsState;
   tabs: Tab[];
   activeTab: string | null;
@@ -377,6 +381,7 @@ export const store: Store<AppState> = createStore<AppState>({
   active: null,
   opening: false,
   prefs: loadPrefs(),
+  layoutUi: { edit: false, drag: null, say: '' },
   fs: { dirs: {}, expanded: { '': true }, selected: null },
   tabs: [],
   activeTab: null,
@@ -471,8 +476,151 @@ export function setPrefs(fn: (p: Prefs) => Prefs): void {
     return { ...s, prefs };
   });
 }
-export function setLayout(patch: Partial<Layout>): void {
-  setPrefs((p) => ({ ...p, layout: { ...p.layout, ...patch } }));
+// ---------------------------------------------------------------- the page's widgets (layout.ts)
+
+const tabletNow = () => typeof matchMedia === 'function' && !isPhone() && matchMedia('(max-width: 1099.98px)').matches;
+/** The layout this page is drawn with: a desktop's or a tablet's (a phone has sheets, no layout). */
+export const deviceNow = (): Device => (tabletNow() ? 'tablet' : 'desktop');
+/** The layout in use (a phone, with no layout of its own, has the desktop's). */
+export const layoutNow = (s: AppState = get()): DeviceLayout => s.prefs.layout[deviceNow()];
+
+const layoutDirty = new Set<Device>();
+let layoutTimer: ReturnType<typeof setTimeout> | null = null;
+/** Keep a device's layout for your sign-in a moment after the last change (dragging a splitter changes it on every
+ *  pixel). A layout back at the default is forgotten there: nothing was customized. */
+function pushLayout(device: Device): void {
+  layoutDirty.add(device);
+  if (layoutTimer) clearTimeout(layoutTimer);
+  layoutTimer = setTimeout(() => sendLayouts(false), 600);
+}
+function sendLayouts(leaving: boolean): void {
+  if (layoutTimer) clearTimeout(layoutTimer);
+  layoutTimer = null;
+  const devices = [...layoutDirty];
+  layoutDirty.clear();
+  if (!devices.length) return;
+  const l = get().prefs.layout;
+  void api.putLayout(Object.fromEntries(devices.map((d) => [d, lay.isDefault(l[d], d) ? null : l[d]])), leaving).catch(() => undefined);
+}
+// (a change made just before the page goes away still reaches your sign-in)
+if (typeof addEventListener === 'function') addEventListener('pagehide', () => sendLayouts(true));
+
+/** Change the layout of the device this page is drawn for: kept in this browser at once, for your sign-in a moment
+ *  later; `say` is what a screen reader is told when something changed. */
+export function editLayout(fn: (l: DeviceLayout, device: Device) => DeviceLayout, say?: string | (() => string)): void {
+  if (isPhone()) return;
+  const device = deviceNow();
+  const before = get().prefs.layout[device];
+  setPrefs((p) => {
+    const next = fn(p.layout[device], device);
+    return next === p.layout[device] ? p : { ...p, layout: { ...p.layout, [device]: next } };
+  });
+  if (get().prefs.layout[device] === before) return;
+  pushLayout(device);
+  if (say) sayLayout(typeof say === 'function' ? say() : say);
+}
+/** What a screen reader hears of a change to the layout (an aria-live region while customizing). */
+export function sayLayout(text: string): void {
+  set((s) => ({ ...s, layoutUi: { ...s.layoutUi, say: text } }));
+}
+
+/** Bring a widget to the screen: shown, its dock open and its tab selected. (A phone has sheets: nothing to do.) */
+export function revealWidget(id: WidgetId): void {
+  editLayout((l, d) => lay.reveal(l, d, id));
+}
+/** The editor is what a tablet shows beside the chat once a file, a diff or a preview opens. */
+const editorOnTablet = (p: Prefs): Prefs => {
+  if (!tabletNow()) return p;
+  const next = lay.reveal(p.layout.tablet, 'tablet', 'editor');
+  return next === p.layout.tablet ? p : { ...p, layout: { ...p.layout, tablet: next } };
+};
+export function toggleTerminal(): void {
+  editLayout((l, d) => (lay.shown(l, 'terminal') ? lay.setHidden(l, 'terminal', true) : lay.reveal(l, d, 'terminal')));
+}
+export function toggleExplorer(): void {
+  editLayout((l, d) => lay.toggleExplorer(l, d));
+}
+export function setTabletPane(pane: 'left' | 'center'): void {
+  editLayout((l) => lay.setPane(l, pane));
+}
+export function pickTab(dock: DockId, id: WidgetId): void {
+  editLayout((l) => lay.setActive(l, dock, id));
+}
+export function resizeDock(dock: DockId, px: number): void {
+  editLayout((l) => lay.setDockSize(l, dock, px));
+}
+export function resizeWidget(id: WidgetId, px: number): void {
+  editLayout((l) => lay.setWidgetSize(l, id, px));
+}
+
+const wname = (id: WidgetId) => lay.WIDGET_INFO[id].label;
+export function setLayoutEdit(on: boolean): void {
+  if (isPhone() && on) return;
+  set((s) => (s.layoutUi.edit === on ? s : { ...s, layoutUi: { edit: on, drag: null, say: on ? 'Customizing the layout. Drag a widget by its handle, or focus it and use Alt+arrows to move it, Shift+arrows to resize it, H to hide it. Escape is done.' : 'Layout saved.' } }));
+}
+export const toggleLayoutEdit = (): void => setLayoutEdit(!get().layoutUi.edit);
+export function setDrag(drag: AppState['layoutUi']['drag']): void {
+  set((s) => ({ ...s, layoutUi: { ...s.layoutUi, drag } }));
+}
+/** Drop a widget in a dock, before another of it (null: at the end). */
+export function moveWidgetTo(id: WidgetId, dock: DockId, before: WidgetId | null = null): void {
+  editLayout((l, d) => lay.moveWidget(l, d, id, dock, before), () => {
+    const l = get().prefs.layout[deviceNow()];
+    const list = lay.visibleIn(l, dock);
+    return `${wname(id)} moved to the ${lay.DOCK_LABEL[dock].toLowerCase()}${list.length > 1 ? `, position ${list.indexOf(id) + 1} of ${list.length}` : ''}.`;
+  });
+}
+export function nextDockOf(id: WidgetId, dir: 1 | -1): void {
+  const l = get().prefs.layout[deviceNow()];
+  if (isPhone()) return;
+  moveWidgetTo(id, lay.nextDock(l, deviceNow(), id, dir));
+}
+export function shiftWidgetBy(id: WidgetId, dir: -1 | 1): void {
+  editLayout((l) => lay.shiftWidget(l, id, dir), () => {
+    const l = get().prefs.layout[deviceNow()];
+    const dock = lay.dockOf(l, id);
+    const list = dock ? lay.visibleIn(l, dock) : [];
+    return `${wname(id)} moved ${dir < 0 ? 'up' : 'down'}, position ${list.indexOf(id) + 1} of ${list.length}.`;
+  });
+}
+export function growWidgetBy(id: WidgetId, key: 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown'): void {
+  editLayout((l) => lay.growWidget(l, id, key), () => {
+    const l = get().prefs.layout[deviceNow()];
+    const dock = lay.dockOf(l, id);
+    return dock && dock !== 'center' && l.docks[dock].size ? `The ${lay.DOCK_LABEL[dock].toLowerCase()} is ${l.docks[dock].size} pixels ${dock === 'bottom' ? 'tall' : 'wide'}.` : `${wname(id)} resized.`;
+  });
+}
+export function hideWidget(id: WidgetId): void {
+  if (!lay.WIDGET_INFO[id].hideable) return sayLayout(`${wname(id)} cannot be hidden.`);
+  editLayout((l) => lay.setHidden(l, id, true), `${wname(id)} hidden. Add it back from the Widgets tray.`);
+}
+export function addWidgetBack(id: WidgetId): void {
+  editLayout((l, d) => lay.reveal(l, d, id), () => {
+    const l = get().prefs.layout[deviceNow()];
+    const dock = lay.dockOf(l, id);
+    return `${wname(id)} added back${dock ? ` in the ${lay.DOCK_LABEL[dock].toLowerCase()}` : ''}.`;
+  });
+}
+export function setDockMode(dock: DockId, mode: 'tabs' | 'stack'): void {
+  editLayout((l) => lay.setMode(l, dock, mode), `The ${lay.DOCK_LABEL[dock].toLowerCase()} shows its widgets ${mode === 'tabs' ? 'as tabs' : 'stacked'}.`);
+}
+export function resetWidgets(): void {
+  editLayout((_l, d) => lay.resetLayout(d), 'The layout is back to the default.');
+}
+/** The layouts the backend keeps for your sign-in, taken over by this browser (at the start and after a reconnect): a change
+ *  made on another device wins, unless this browser has one of its own not sent yet. */
+function takeLayout(kept: UserPrefs['layout']): void {
+  for (const device of ['desktop', 'tablet'] as const) {
+    if (layoutDirty.has(device)) continue;   // (a change of this browser's not kept yet wins)
+    const mine = get().prefs.layout[device];
+    const theirs = kept?.[device];
+    if (theirs) {
+      if (!lay.sameLayout(mine, theirs)) setPrefs((p) => ({ ...p, layout: { ...p.layout, [device]: theirs } }));
+    } else if (!lay.isDefault(mine, device)) {
+      // (a layout from before the backend kept them, or set up here first: it goes to your sign-in)
+      void api.putLayout({ [device]: mine }).catch(() => undefined);
+    }
+  }
 }
 
 /** Settings › Claude Code allows Auto mode (CODE_AUTO_MODE) — the code container says so in /api/state */
@@ -503,6 +651,7 @@ function rememberModel(model: string): void {
 function takePrefs(server: ServerState): void {
   const kept = server.prefs;
   if (!kept) return;
+  takeLayout(kept.layout);
   if (kept.model) {
     setPrefs((p) => (p.model === kept.model && p.modelSetting === kept.settingsDefault ? p : { ...p, model: kept.model as string, modelSetting: kept.settingsDefault }));
     return;
@@ -1634,7 +1783,7 @@ export async function openInTerminal(id: string): Promise<void> {
     // (a phone: the terminal in a tab of its own — opened by your tap, which no popup blocker stops)
     if (isPhone()) toast(text, 'ok', { label: 'Open the terminal', run: () => void window.open(terminalUrl() ?? '/.bn/terminal', '_blank', 'noopener,noreferrer') });
     else {
-      setLayout({ terminal: true });
+      revealWidget('terminal');
       toast(text, 'ok');
     }
     announce();
@@ -1706,7 +1855,7 @@ export async function deleteSessionById(id: string): Promise<boolean> {
 
 /** The terminal opened (a tab of its own on a phone), then a message about the window it made. */
 function terminalShown(where: string, window: string | null): void {
-  if (!isPhone()) setLayout({ terminal: true });
+  if (!isPhone()) revealWidget('terminal');
   toast(`A terminal window in ${where}${window ? ` (${window})` : ''}.`, 'ok');
 }
 /** A new terminal window in the folder a session works in. */
@@ -1805,8 +1954,7 @@ const RESUME = /^\/resume(\s.*)?$/s;
 /** The Sessions list: the side panel (desktop, tablet) or its sheet (phone). */
 export function showSessions(): void {
   if (isPhone()) setSheet('sessions');
-  else if (typeof matchMedia === 'function' && matchMedia('(max-width: 1099.98px)').matches) setLayout({ tabletPane: 'files', side: 'sessions' });
-  else setLayout({ explorer: true, side: 'sessions' });
+  else revealWidget('sessions');
 }
 
 export async function sendPrompt(text: string, images: ImageBlock[]): Promise<boolean> {
@@ -2447,7 +2595,7 @@ export async function openToolInTerminal(tool: string): Promise<void> {
     return;
   }
   set((s) => ({ ...s, terminalLink: { src: `${url}&t=${Date.now()}`, at: Date.now() } }));
-  setLayout({ terminal: true });
+  revealWidget('terminal');
 }
 
 /** The terminal panel took what it was to load (openToolInTerminal): gone, so a panel drawn again never loads it again. */
@@ -2461,7 +2609,7 @@ export async function openProjectTerminal(id: string): Promise<void> {
   if (isPhone()) window.open(terminalUrl() ?? '/.bn/terminal', '_blank', 'noopener,noreferrer');
   try {
     const r = await api.projectTerminal(id);
-    if (!isPhone()) setLayout({ terminal: true });
+    if (!isPhone()) revealWidget('terminal');
     toast(`A terminal window in ${get().projects.find((p) => p.id === id)?.path ?? 'the project'}${r.window ? ` (${r.window})` : ''}.`, 'ok');
   } catch (e) {
     toast(`No terminal window: ${errText(e)}`, 'error');
@@ -2565,7 +2713,7 @@ export async function openFile(path: string, view?: FileView): Promise<void> {
     activeTab: key,
     sheet: isPhone() ? 'editor' : s.sheet,
     fs: { ...s.fs, selected: p },
-    prefs: s.prefs.layout.tabletPane === 'editor' ? s.prefs : { ...s.prefs, layout: { ...s.prefs.layout, tabletPane: 'editor' } },
+    prefs: editorOnTablet(s.prefs),
   }));
   savePrefs(get().prefs);
   if (existing && (existing.kind !== 'file' || !existing.error)) return;
@@ -2657,7 +2805,7 @@ export async function openPreview(port: number, path = '/'): Promise<void> {
       : [...s.tabs, { kind: 'devserver', key, path: `localhost:${port}`, port, link: null, at: path, n: 0, viewport: 'fill', error: null }],
     activeTab: key,
     sheet: isPhone() ? 'editor' : s.sheet,
-    prefs: s.prefs.layout.tabletPane === 'editor' ? s.prefs : { ...s.prefs, layout: { ...s.prefs.layout, tabletPane: 'editor' } },
+    prefs: editorOnTablet(s.prefs),
   }));
   savePrefs(get().prefs);
   // (over remote access the preview host's cookie may name another port by now: a new hand-off for every opening)
@@ -2757,7 +2905,7 @@ export async function startLaunchEntry(e: LaunchEntry): Promise<void> {
     const r = await api.startLaunch(e.name, e.digest);
     if (r.port) awaited = { port: r.port, until: Date.now() + 120_000 };
     const msg = `Started "${label(e.name, 60)}" in the terminal${r.window ? ` (window ${r.window})` : ''}${r.port ? `: its preview opens once :${r.port} listens` : ''}.`;
-    toast(msg, 'ok', isPhone() ? undefined : { label: 'Show the terminal', run: () => setLayout({ terminal: true }) });
+    toast(msg, 'ok', isPhone() ? undefined : { label: 'Show the terminal', run: () => revealWidget('terminal') });
   } catch (err) {
     if (err instanceof api.ApiError && err.status === 409) {
       toast(`.claude/launch.json changed since it was shown: "${label(e.name, 60)}" did not start. Look at it again (Ports).`, 'error');
@@ -2845,7 +2993,7 @@ export async function startRunTask(t: RunTask): Promise<void> {
     const r = await api.startRun(t);
     if (r.id) myRuns.add(r.id);
     const msg = `Running ${plainCommand(t)} in the terminal${r.window ? ` (window ${r.window})` : ''}: its result goes to Problems.`;
-    toast(msg, 'ok', isPhone() ? undefined : { label: 'Show the terminal', run: () => setLayout({ terminal: true }) });
+    toast(msg, 'ok', isPhone() ? undefined : { label: 'Show the terminal', run: () => revealWidget('terminal') });
   } catch (err) {
     if (err instanceof api.ApiError && err.status === 409) {
       toast(`"${label(t.name, 60)}" changed since it was shown: it did not run. Look at it again (Run).`, 'error');
@@ -2869,7 +3017,7 @@ export async function showRunWindow(r: RunResult): Promise<void> {
   }
   if (!isPhone()) {
     set((s) => ({ ...s, dialog: s.dialog === 'run' ? null : s.dialog }));
-    setLayout({ terminal: true });
+    revealWidget('terminal');
   }
 }
 
@@ -2982,7 +3130,7 @@ export function openDiff(tool: string, path: string, original: string | null, hu
     tabs: s.tabs.some((t) => t.key === key) ? s.tabs : [...s.tabs, { kind: 'diff', key, path, original: orig, modified, hunks, tool }],
     activeTab: key,
     sheet: isPhone() ? 'editor' : s.sheet,
-    prefs: { ...s.prefs, layout: { ...s.prefs.layout, tabletPane: 'editor' } },
+    prefs: editorOnTablet(s.prefs),
   }));
 }
 
@@ -3080,12 +3228,6 @@ export function setDialog(dialog: Dialog): void {
 }
 export function setCursor(cursor: AppState['cursor']): void {
   set((s) => (s.cursor?.line === cursor?.line && s.cursor?.col === cursor?.col && s.cursor?.lang === cursor?.lang ? s : { ...s, cursor }));
-}
-export function toggleTerminal(): void {
-  setLayout({ terminal: !get().prefs.layout.terminal });
-}
-export function toggleExplorer(): void {
-  setLayout({ explorer: !get().prefs.layout.explorer });
 }
 
 /** The terminal, through the code host's hand-off: /.bn/terminal unlocks the terminal host with this page's own
@@ -3245,7 +3387,7 @@ export function openReview(): void {
     activeTab: 'review',
     sheet: isPhone() ? 'editor' : s.sheet,
     palette: null,
-    prefs: s.prefs.layout.tabletPane === 'editor' ? s.prefs : { ...s.prefs, layout: { ...s.prefs.layout, tabletPane: 'editor' } },
+    prefs: editorOnTablet(s.prefs),
     review: { ...s.review, engaged: true, filter: sessionStart(activeView(s)) === null ? 'all' : s.review.filter },
   }));
   savePrefs(get().prefs);
@@ -3518,8 +3660,7 @@ export function repoFile(path: string, repo = get().git.repo): string {
 export function showGit(focusMessage = false): void {
   set((s) => ({ ...s, palette: null, git: { ...s.git, engaged: true, focus: focusMessage ? s.git.focus + 1 : s.git.focus } }));
   if (isPhone()) setSheet('git');
-  else if (typeof matchMedia === 'function' && matchMedia('(max-width: 1099.98px)').matches) setLayout({ tabletPane: 'files', side: 'git' });
-  else setLayout({ explorer: true, side: 'git' });
+  else revealWidget('git');
   void refreshGit(true);
 }
 /** The panel shows another project's repository (the repository picker is the project chip's list: the panel follows the
@@ -3830,7 +3971,7 @@ export function openGitDiff(path: string, scope: GitScope): void {
     tabs: s.tabs.some((t) => t.key === key) ? s.tabs : [...s.tabs, { kind: 'gitdiff', key, path, repo, scope, loading: true, error: null, file: null, n: 0 }],
     activeTab: key,
     sheet: isPhone() ? 'editor' : s.sheet,
-    prefs: s.prefs.layout.tabletPane === 'editor' ? s.prefs : { ...s.prefs, layout: { ...s.prefs.layout, tabletPane: 'editor' } },
+    prefs: editorOnTablet(s.prefs),
   }));
   savePrefs(get().prefs);
   void loadGitDiff(key);
@@ -3857,8 +3998,7 @@ export function setSearch(patch: Partial<SearchState>): void {
 export function showSearch(): void {
   set((s) => ({ ...s, palette: null, search: { ...s.search, focus: s.search.focus + 1 } }));
   if (isPhone()) setSheet('search');
-  else if (typeof matchMedia === 'function' && matchMedia('(max-width: 1099.98px)').matches) setLayout({ tabletPane: 'files', side: 'search' });
-  else setLayout({ explorer: true, side: 'search' });
+  else revealWidget('search');
 }
 let searchSeq = 0;
 export async function runSearch(): Promise<void> {

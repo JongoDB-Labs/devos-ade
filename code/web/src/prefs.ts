@@ -1,31 +1,21 @@
-// Per-browser conveniences in localStorage (pane sizes, open panels, the model/mode for new sessions, the last
-// session, notifications on or off) — the model also kept for your sign-in by the backend (GET/PUT /api/prefs), which
-// wins: a new browser or a phone starts where you left off. Every read is validated and clamped and every access guarded: storage can be missing, full, blocked,
-// or hold anything (another tab, an older version); the page must work the same without it.
+// Per-browser conveniences in localStorage (the page's widget layout, the model/mode for new sessions, the last
+// session, notifications on or off) — the model and the layout also kept for your sign-in by the backend (GET/PUT
+// /api/prefs), which wins: a new browser or a phone starts where you left off. Every read is validated and clamped and
+// every access guarded: storage can be missing, full, blocked, or hold anything (another tab, an older version); the
+// page must work the same without it.
 import type { Mode } from './types';
 import { MODES } from './types';
 import { remembered } from './modes';
 import { isUuid } from './text';
+import { BOUNDS, defaultLayoutPrefs, parseLayoutPrefs, type LayoutPrefs } from './layout';
+
+export { BOUNDS };
 
 const KEY = 'bn.code.v1';
 
-export interface Layout {
-  /** explorer width (px) */
-  left: number;
-  /** chat width (px) */
-  right: number;
-  /** terminal height (px) */
-  bottom: number;
-  explorer: boolean;
-  terminal: boolean;
-  /** tablet: what the left column shows */
-  tabletPane: 'files' | 'editor';
-  /** explorer sidebar view */
-  side: 'files' | 'search' | 'git' | 'sessions';
-}
-
 export interface Prefs {
-  layout: Layout;
+  /** the page's widgets: which are shown, in which dock, how big — per device (layout.ts) */
+  layout: LayoutPrefs;
   model: string;
   /** Settings' default for new sessions when `model` was picked (null: none then; undefined: not known — a pick from
    *  before this was kept): a default set or changed since wins over the pick (models.ts startModel) */
@@ -48,7 +38,7 @@ export const STARRED_MAX = 50;
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/@[\]-]{0,127}$/;
 
 export const DEFAULT_PREFS: Prefs = {
-  layout: { left: 260, right: 440, bottom: 240, explorer: true, terminal: false, tabletPane: 'files', side: 'files' },
+  layout: defaultLayoutPrefs(),
   model: '',
   mode: 'default',
   effort: null,
@@ -59,30 +49,13 @@ export const DEFAULT_PREFS: Prefs = {
   allModels: false,
 };
 
-export const BOUNDS = {
-  left: [160, 560],
-  right: [320, 900],
-  bottom: [120, 720],
-} as const;
-
-const clamp = (v: unknown, [lo, hi]: readonly [number, number], d: number) =>
-  typeof v === 'number' && Number.isFinite(v) ? Math.round(Math.min(hi, Math.max(lo, v))) : d;
-
 /** Validate whatever was stored; unknown or broken fields fall back to defaults. */
 export function parsePrefs(raw: unknown): Prefs {
   const d = DEFAULT_PREFS;
   const o = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
-  const l = o.layout && typeof o.layout === 'object' ? (o.layout as Record<string, unknown>) : {};
   return {
-    layout: {
-      left: clamp(l.left, BOUNDS.left, d.layout.left),
-      right: clamp(l.right, BOUNDS.right, d.layout.right),
-      bottom: clamp(l.bottom, BOUNDS.bottom, d.layout.bottom),
-      explorer: typeof l.explorer === 'boolean' ? l.explorer : d.layout.explorer,
-      terminal: typeof l.terminal === 'boolean' ? l.terminal : d.layout.terminal,
-      tabletPane: l.tabletPane === 'editor' ? 'editor' : 'files',
-      side: l.side === 'sessions' || l.side === 'search' || l.side === 'git' ? l.side : 'files',
-    },
+    // (the flat layout of before widgets is migrated: layout.ts)
+    layout: parseLayoutPrefs(o.layout),
     model: typeof o.model === 'string' && MODEL_ID.test(o.model) ? o.model : d.model,
     ...(o.modelSetting === null || (typeof o.modelSetting === 'string' && MODEL_ID.test(o.modelSetting)) ? { modelSetting: o.modelSetting as string | null } : {}),
     // (the former "Don't ask" is Read only; Plan and Bypass are never remembered; Auto is, and a session starts in it only

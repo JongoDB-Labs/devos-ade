@@ -67,6 +67,9 @@ const P: Record<string, string> = {
   // the Git panel: a branch, and minus (unstage)
   branch: 'M6 3.5v13M6 16.5a1.75 1.75 0 1 0 0 .01M14 3.5a1.75 1.75 0 1 0 0 .01M14 5.25c0 5-8 3.5-8 8.75',
   minus: 'M4 10h12',
+  // Customize: the layout, a widget's drag handle
+  layout: 'M3 4h14v12H3zM3 8.5h14M8.5 8.5V16',
+  grip: 'M7.5 5h.01M12.5 5h.01M7.5 10h.01M12.5 10h.01M7.5 15h.01M12.5 15h.01',
   // the model picker's favourites
   star: 'M10 2.8l2.2 4.6 5 .7-3.6 3.5.9 5L10 14.3l-4.5 2.3.9-5L2.8 8.1l5-.7z',
 };

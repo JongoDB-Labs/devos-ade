@@ -139,11 +139,12 @@ test('prefs: anything stored is validated and clamped', () => {
   assert.equal(parsePrefs({ notify: 'yes' }).notify, false);
   assert.equal(parsePrefs({ notify: true }).notify, true);
   const p = parsePrefs({ layout: { left: -5, right: 99999, bottom: 'x', explorer: 'yes', side: 'sessions' }, model: '<img>', mode: 'bypassPermissions', effort: 'max', lastSession: '../x' });
-  assert.equal(p.layout.left, 160);
-  assert.equal(p.layout.right, 900);
-  assert.equal(p.layout.bottom, DEFAULT_PREFS.layout.bottom);
-  assert.equal(p.layout.explorer, true);
-  assert.equal(p.layout.side, 'sessions');
+  // (the flat layout of before widgets is migrated: test/layout.test.ts)
+  assert.equal(p.layout.desktop.docks.left.size, 160);
+  assert.equal(p.layout.desktop.docks.right.size, 900);
+  assert.equal(p.layout.desktop.docks.bottom.size, DEFAULT_PREFS.layout.desktop.docks.bottom.size);
+  assert.equal(p.layout.desktop.docks.left.open, true);
+  assert.equal(p.layout.desktop.docks.left.active, 'sessions');
   assert.equal(p.model, '');
   assert.equal(p.mode, 'default');
   assert.equal(p.effort, 'max');
