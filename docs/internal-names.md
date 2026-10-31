@@ -1,66 +1,73 @@
 # Internal names
 
-DevOS ADE was called bedrock-now until v0.25.0. Every name you read changed with it; the names below did not. They
-are identifiers that data, links, sign-ins, installed apps and running services depend on, so they keep the old name
-on every install, new ones too:
+DevOS ADE was called bedrock-now until v0.45.0 (and before v0.25.0 the repository, the folder and the installed app
+were too). Since v0.45.0 every name you read, and every name the stack uses (the Docker Compose project and its
+volumes, images and networks, the hosts, the `.env` settings, the launchd labels, the signing salts, the installed
+app's id and link scheme), is `devos-ade`. An existing install is moved over by `./stack update` (see
+[upgrading to 0.45](upgrade-to-0.45.md)); the old address forwards to the new one for one release.
 
-- **Your data:** the Docker Compose project `bedrock-now` (a second copy: its own `COMPOSE_PROJECT_NAME`), so its
-  volumes (`bedrock-now_postgres-data`, …), networks and images (`bedrock-now/portal:local`, …) keep their names. A
-  renamed project would start with empty volumes.
-- **Your addresses:** `bedrock-now.localhost` and its `chat.`, `admin.`, `files.`, `code.` and `terminal.` hosts,
-  `bedrock-now-preview.localhost`, and remote access's Tailscale names (the Services `bedrock-now`,
-  `bedrock-now-chat`, …, the tag `tag:bedrock-now`, the node `bedrock-now-node`): bookmarks, an installed app,
-  certificates and your tailnet's policy point at them.
-- **Your settings and commands:** `BEDROCK_NOW_*` in `.env` and the environment, `./stack`, `bin/bedrock-now-helper`
-  and its launchd and systemd units (`io.bedrock-now.helper.<project>`, `bedrock-now-helper-<project>.service`).
-- **Your sign-in:** the portal's cookie names, the salts that sign its sessions and links, the `X-Requested-With`
-  value its pages send, and the default sign-in email `admin@bedrock-now.local` — a new value would sign everyone out,
-  void every link in flight, or sign Chat in as another user.
-- **The installed app:** its id (`/`) and its link scheme `web+bedrocknow` — a new one would be a second app and break
-  *Open in the app*. Only its name and icon change (your browser asks before it renames an installed app).
-- **Folders:** an install's own folder (`~/bedrock-now` for one made before v0.25.0; new installs go to `~/devos-ade`),
-  the workspace `~/bedrock-now-workspace` (new installs: `~/devos-ade-workspace`), the trash and temporary folders
-  `.bedrock-now-trash` and `.bedrock-now-tmp` in your workspace and projects, the sandbox's own files
-  (`/etc/bedrock-now.bashrc`, `~/.config/bedrock-now/`).
-- **The GitHub App** was renamed with the project; its client ID did not change, so sign-ins and installs already
-  connected keep working. Its slug (its address, `github.com/apps/<slug>`) is written in one place:
-  `GITHUB_APP_SLUG` in `code/server/oauth.mjs` (`devos-ade`). A host signed in before stores the old slug until its
-  next token renewal or *Test connection*, when GitHub's own answer replaces it.
+The spellings below are the only ones left in the tree. Each is either history, a compatibility path for installs
+made before the rename, or an identifier that data on disk or in someone else's system depends on.
+
+## What keeps the old spelling
+
+- **History:** `CHANGELOG.md` (what each release was called then), and git history.
+- **The migration** (`lib/migrate.sh`, `tests/test_migrate.sh`, `tests/e2e/upgrade.sh`, `caddy/legacy-hosts.caddy`,
+  `docs/upgrade-to-0.45.md`): they move an install named `bedrock-now` to `devos-ade`, and forward the old address.
+- **One release of the old environment names:** `env_fallback_old_names` (`lib/common.sh`, called first by `./stack`)
+  turns `BEDROCK_NOW_X` into `DEVOS_ADE_X` when that is unset. An update started by an older `./stack` hands its state
+  to the new code that way. Removed in the next minor release.
+- **The old repository name:** `JongoDB-Labs/bedrock-now` is accepted by the update check (`portal/portal/updates.py`
+  reads `LEGACY_REPO`) and by `lib/repo_rename.sh`, because GitHub redirects it, and an install from before the
+  repository was renamed still has it as its `origin`. The constants `PRODUCT_LEGACY_NAME` / `PRODUCT_LEGACY_REPO`
+  (`lib/brand.sh`, `portal/portal/brand.py`, `install.sh`) hold it.
+- **Installs and apps from before v0.25.0:** the installer finds an install in `~/bedrock-now` and leaves it
+  (`install.sh`); `./stack open` finds a browser app installed under the name `bedrock-now`; `./stack uninstall` takes
+  that name as its confirmation.
+- **The workspace folder:** an install that already has `~/bedrock-now-workspace` (or
+  `~/bedrock-now-<project>-workspace`) keeps using it. Your files are in it; a new install gets
+  `~/devos-ade-workspace`.
+- **Tailscale:** the Services `svc:bedrock-now`, `-chat`, `-admin`, `-files`, `-terminal`, `-code`, `-preview`
+  (`bedrock-now-<project>` for a second copy), the tag `tag:bedrock-now`, the node `bedrock-now-node` and the
+  addresses made from them. They are defined in your tailnet's policy and admin console, which this software cannot
+  edit, and your phone's saved addresses and installed remote app point at them. Renaming them is a deliberate step
+  of its own (`TS_SERVICE`, `TS_HOSTNAME` and `TS_TAG` in `.env` already override them).
+- **Data written under the old name:**
+  - the Open WebUI model records' `meta.bedrock_now` and `meta.bedrock_now_hidden` (which models the stack added or
+    hid), stored in the Open WebUI database;
+  - the import source `'bedrock-now'` stored with a copied devos-claude session, in the Code page's records.
+- **A byte-exact fixture:** `tests/fixtures/legacy-icons/openai.svg` is a generic badge older installs stored in Open
+  WebUI; the stack recognises it by its hash, so its text cannot change.
+
+Kept for a different reason, and not the product's name: the abbreviation `bn` where it is an identifier (`BN_*`,
+`bn-*` binaries and services, `bn-dev`, `bne2e-*`, `bn-csp-nonce`, `X-Bn-*`, `bn.*` in localStorage, `window.bn*`),
+`claude-bedrock`, `~/.claude-bedrock` and `devos-claude` (they name Claude on AWS Bedrock), and the DevOS heavy lock
+(`~/.local/state/devos-heavy`, `heavylock.py`, `ADE_UNDER_HEAVYLOCK`).
 
 ## The allowlist
 
-`tests/brand_check.py` (run by `tests/test_brand.sh`) fails on any `bedrock-now` (or `bedrock now`, `bedrock_now`,
-`BEDROCK_NOW`, in any case) outside the tests and the CHANGELOG's entries before v0.25.0 — unless a pattern below
+`tests/brand_check.py` (run by `tests/test_brand.sh`) reads every file git tracks (the tests too) and fails on any
+`bedrock-now` (or `bedrock now`, `bedrock_now`, `bedrocknow`, `BEDROCK_NOW`, in any case) unless a pattern below
 matches it in a file the row names, or `tests/fixtures/brand-allow.txt` names that file and that text, with why it
-stays. Each pattern is a Python regular expression, and the old name must lie inside what it matches; *Files* are
-globs (`*`: any file). A pattern or an exemption that no longer matches anything fails the check too.
+stays. `CHANGELOG.md` is history and is not read for it. Each pattern is a Python regular expression, and the old name
+must lie inside what it matches; *Files* are globs (`*`: any file). A pattern that no longer matches anything fails the
+check too, unless none of its files exist (the migration's, before they are merged).
 
 | Name | Pattern | Files | Why it stays |
 |---|---|---|---|
-| Environment and `.env` names | `\bBEDROCK_NOW_(?:[A-Z0-9_]*[A-Z0-9]\b\|\*)` | * | settings and scripts read them |
-| Identifiers in code | `\b_is_bedrock_now_dir\b\|\bmeta\.bedrock_now(?:_hidden)?\b\|["']bedrock_now(?:_hidden)?["']` | lib/guard.sh, lib/openrouter.sh, lib/owui.sh | a shell function; Open WebUI metadata keys stored with your models |
-| The portal's hosts | `(?:[\w*${}<>:-]+\.)*bedrock-now(?:-preview)?\.localhost` | * | bookmarks, the installed app, cookies |
-| Remote access's host names | `bedrock-now(?:-preview)?\.(?:<tailnet>\|[\w-]+)\.ts\.net` | * | certificates, the installed remote app |
-| Tailscale Services and tag | `(?:svc:\|tag:)bedrock-now(?:-(?:chat\|admin\|files\|terminal\|code\|preview\|<project>))?\b` | * | your tailnet's policy and remote addresses |
-| Tailscale's node name | `TS_HOSTNAME:-bedrock-now-node\b` | compose.tailscale.yaml | the node's name in your tailnet |
-| The default sign-in email | `admin@bedrock-now\.local\b` | * | Chat's admin user |
-| Trash, temporary and test folders | `\.bedrock-now-(?:trash\|tmp\|e2e)\b` | * | in your workspace and projects |
-| Workspace folders, named with the new one | `^(?=.*devos-ade(?:-[\w<>%${}:-]+)?-workspace)(?:(?!bedrock-now(?!(?:-[\w<>%${}:-]+)?-workspace\b)).)*` | * | an install made before v0.25.0 keeps its folder: a line that names it names the new one too |
-| The update helper | `bedrock-now-helper\b` | * | its file and its systemd units |
-| launchd labels, Docker labels | `io\.bedrock-now\.[\w.%<>-]+` | * | the helper's units; the labels on the stack's containers |
-| The sandbox's own files | `(?:/etc/bedrock-now\.bashrc\|ssh_config\.d/bedrock-now\.conf\|/usr/local/share/bedrock-now\|\.config/bedrock-now)\b` | * | inside the sandbox's image |
-| `./stack open`'s browser profile | `(?:\.local/share\|Application Support)/bedrock-now\b` | docs/*.md | its sign-ins |
-| The EC2 metadata guard | `bedrock-now-imds-guard[\w.-]*` | docs/cloud-vm.md | a systemd unit on the instance |
-| Package names | `"name": "bedrock-now-(?:code(?:-web)?\|terminal-[\w-]+)"` | *package.json, *package-lock.json | npm packages of the images (never published) |
-| The Compose project | `^name: bedrock-now$` | compose.yaml | the data volumes |
-| The Compose project, where it is read | `COMPOSE_PROJECT_NAME:-bedrock-now\b` | compose*.yaml | images and hosts are named by it |
-| The Compose project's default | `^DEFAULT_PROJECT=bedrock-now\b` | lib/common.sh | = `name:` in compose.yaml |
-| Stack-owned names | `bedrock-now-(?:owner\|admin\|budget)\b` | lib/*.sh, docs/*.md | the owner marker volume, LiteLLM's admin, the budget banners |
-| Signing salts | `bedrock-now\.(?:portal\.[\w{}.-]+\|terminal-launch)` | portal/portal/*.py | a new salt signs everyone out |
-| The settings request | `bedrock-now-settings 1\b` | lib/settings_helper.sh, portal/portal/settings.py, docs/security.md | the portal and the helper speak it |
-| The installed app's link scheme | `web\+bedrocknow\w*` | * | *Open in the app* (a page's meta tag names it too) |
-| The pages' `X-Requested-With` | `[Xx]-[Rr]equested-[Ww]ith[^\n]{0,24}?bedrock-now` | * | the portal checks it |
-| The old name, said as such | `(?i:formerly) bedrock-now` | * | so people can find it |
+| The migration | `(?i:.*bedrock[-_ ]?now.*)` | lib/migrate.sh, tests/test_migrate.sh, caddy/legacy-hosts.caddy, tests/e2e/upgrade.sh, docs/upgrade-to-0.45.md | it moves an install of the old name |
+| The old environment names | `\bBEDROCK_NOW\w*` | lib/common.sh, stack, tests/test_common.sh | the one-release fallback |
+| The legacy constants | `(?:PRODUCT_)?LEGACY_(?:NAME\|REPO)(?:=\| = )"[^"]*bedrock-now"` | lib/brand.sh, portal/portal/brand.py, install.sh | the old name and repository, read by the update check, the installer, `./stack open` and uninstall |
+| The old repository | `JongoDB-Labs/bedrock-now[\w.\/-]*` | install.sh, portal/tests/test_updates.py, tests/test_update_git.sh, tests/test_install.sh | GitHub redirects it; installs from before the rename have it as `origin` |
+| An install in the old folder | `(?:~\|\$HOME\|\$TMP/h)/bedrock-now\b` | install.sh, tests/test_install.sh | the installer finds and keeps it |
+| An app or install named for the old name | `bedrock-now` | tests/test_open.sh, tests/test_lifecycle.sh | `./stack open` finds the app, uninstall takes the name |
+| The installed app's old name | `named \x60bedrock-now\x60` | README.md | the browser keeps an installed app's name until you accept the new one |
+| The workspace folder | `bedrock-now[\w<>%${}:-]*?-workspace` | * | an install that has it keeps it |
+| Tailscale names | `(?:svc:\|tag:)bedrock-now(?:-[\w<>]+)*\|bedrock-now-node\b\|bedrock-now(?:-(?:chat\|admin\|files\|terminal\|code\|preview))?(?=\.(?:\$TN\|<tailnet>\|tail1234\|[\w-]+\.ts\.net))` | * | the tailnet's policy and the remote addresses |
+| Tailscale Service names, in prose and code | `bedrock-now(?:-(?:chat\|admin\|files\|terminal\|code\|preview\|<project>))?(?![\w-]\|\.localhost)\|bedrock-now-(?=\$\()` | docs/remote.md, lib/remote.sh, .env.example | the Service base name |
+| Open WebUI metadata keys | `(?<![\w])bedrock_now(?:_hidden)?(?![\w])` | lib/openrouter.sh, lib/owui.sh, tests/test_explabs.sh, tests/test_openrouter.sh, tests/test_settings.sh | stored with your models |
+| The stored import source | `'bedrock-now'` | code/server/harness/claude.mjs, code/server/import-plan.mjs, code/server/import-sessions.mjs, code/test/harness-claude.test.mjs, code/web/dev/mock-server.mjs, code/web/src/api.ts, code/web/src/types.ts | stored with a copied session |
+| The byte-exact fixture | `bedrock-now-icon` | tests/fixtures/legacy-icons/openai.svg | recognised by its hash |
 
 ## devos-claude's old name
 

@@ -26,10 +26,16 @@ import subprocess
 import sys
 from pathlib import Path
 
-# The tests: their fixtures are internal names, and what they assert is checked where it is shown.
-SKIP = ("tests/", "portal/tests/", "code/test/", "code/web/test/", "code/web/e2e/", "portal/e2e/")
+# The guard's own files name the old spellings on purpose (the allowlist, the exemptions, the check, its test); the
+# tests are read like any other file: what they assert is what ships.
 DOC = "docs/internal-names.md"
 ALLOW = "tests/fixtures/brand-allow.txt"
+SELF = (DOC, ALLOW, "tests/brand_check.py", "tests/test_brand.sh", "tests/fixtures/internal-names.tsv")
+# CHANGELOG.md is history for the product's old name (its entries name it as it was called); the Claude Code
+# command's old name is read from v0.28.0 on, as before
+HISTORY = {"bedrock-now": "CHANGELOG.md"}
+# The Claude Code command's old name (claude-bedrock) is not read in the tests: their fixtures use it as an internal name
+SKIP_CLAUDE = ("tests/", "portal/tests/", "code/test/", "code/web/test/", "code/web/e2e/", "portal/e2e/")
 # A row of the allowlist table: | name | `pattern` | files | why | — files: globs (`lib/*.sh`, `compose*.yaml`, a
 # comma between), or `*` for any file; a "|" of the pattern is written \| in the table
 ROW = re.compile(r"^\|[^|]*\|\s*`((?:[^`\\]|\\.)+)`\s*\|\s*([^|]+?)\s*\|")
@@ -132,7 +138,7 @@ def check(root: Path, prefixes: list[str]) -> tuple[list[str], list[str]]:
     used = [False] * len(allow)
     left = []
     for path in files(root):
-        if path.startswith(SKIP) or path == DOC or (prefixes and not path.startswith(tuple(prefixes))):
+        if path in SELF or (prefixes and not path.startswith(tuple(prefixes))):
             continue
         try:
             data = (root / path).read_bytes()
@@ -142,6 +148,8 @@ def check(root: Path, prefixes: list[str]) -> tuple[list[str], list[str]]:
             continue   # binary
         text = data.decode("utf-8", "replace").splitlines()
         for name in NAMES:
+            if HISTORY.get(name.label) == path or (name.label == "claude-bedrock" and path.startswith(SKIP_CLAUDE)):
+                continue
             lines = changelog_lines(text, name.since) if path == "CHANGELOG.md" else text
             mine = [(i, a) for i, a in enumerate(allow) if a[0] == path and name.rx.search(a[1])]
             here = [p for p in pats[name.label] if p.applies(path)]
@@ -158,7 +166,10 @@ def check(root: Path, prefixes: list[str]) -> tuple[list[str], list[str]]:
                     left.append(f"{path}:{n}: {line.strip()[:200]}")
     stale = [f"{ALLOW}: {p}\t{t}" for (p, t, _), u in zip(allow, used) if not u and (not prefixes or p.startswith(tuple(prefixes)))]
     if not prefixes:
-        stale += [f"{DOC}: the pattern `{p.text}`" for n in NAMES for p in pats[n.label] if not p.used]
+        # (a pattern for files that are not in the tree — another branch's, not merged yet — cannot be stale)
+        tree = files(root)
+        stale += [f"{DOC}: the pattern `{p.text}`" for n in NAMES for p in pats[n.label]
+                  if not p.used and any(p.applies(f) for f in tree)]
     return sorted(set(left), key=left.index), stale
 
 

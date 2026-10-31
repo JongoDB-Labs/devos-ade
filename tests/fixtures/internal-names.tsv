@@ -1,40 +1,41 @@
-# Internal names that keep the old name on every install (docs/internal-names.md): PATH<TAB>TEXT that must stay in it.
-# tests/test_brand.sh fails when one is gone — data, links, sign-ins or installed apps would break. Taken at v0.24.0.
-compose.yaml	name: bedrock-now
-lib/common.sh	DEFAULT_PROJECT=bedrock-now
-lib/portal.sh	DEFAULT_PORTAL_HOST=bedrock-now.localhost
-compose.yaml	${PORTAL_HOST:-bedrock-now.localhost}
-compose.code.yaml	PREVIEW_DOMAIN: ${PREVIEW_DOMAIN:-bedrock-now-preview.localhost}
-compose.code.yaml	image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/code:local
-compose.yaml	image: ${COMPOSE_PROJECT_NAME:-bedrock-now}/portal:local
-lib/guard.sh	owner_marker() { printf '%s_bedrock-now-owner\n' "$1"; }
-lib/guard.sh	--label "io.bedrock-now.dir=$me" --label "io.bedrock-now.project=$name"
-lib/helper.sh	helper_label() { printf 'io.bedrock-now.helper.%s\n' "$(project_name)"; }
-lib/helper.sh	helper_unit()  { printf 'bedrock-now-helper-%s.service\n' "$(project_name)"; }
-lib/helper.sh	local bin="$STACK_DIR/bin/bedrock-now-helper"
-lib/owui.sh	LITELLM_DB_ADMIN_ID=bedrock-now-admin
-lib/owui.sh	BUDGET_BANNER_PREFIX=bedrock-now-budget
+# Internal names that must stay as they are (docs/internal-names.md): PATH<TAB>TEXT that must stay in it. The Tailscale
+# and stored-source rows keep the old spelling on purpose; the others are the v0.45.0 names (devos-ade).
+# tests/test_brand.sh fails when one is gone — data, links, sign-ins or installed apps would break.
+compose.yaml	name: devos-ade
+lib/common.sh	DEFAULT_PROJECT=devos-ade
+lib/portal.sh	DEFAULT_PORTAL_HOST=devos-ade.localhost
+compose.yaml	${PORTAL_HOST:-devos-ade.localhost}
+compose.code.yaml	PREVIEW_DOMAIN: ${PREVIEW_DOMAIN:-devos-ade-preview.localhost}
+compose.code.yaml	image: ${COMPOSE_PROJECT_NAME:-devos-ade}/code:local
+compose.yaml	image: ${COMPOSE_PROJECT_NAME:-devos-ade}/portal:local
+lib/guard.sh	owner_marker() { printf '%s_devos-ade-owner\n' "$1"; }
+lib/guard.sh	--label "io.devos-ade.dir=$me" --label "io.devos-ade.project=$name"
+lib/helper.sh	helper_label() { printf 'io.devos-ade.helper.%s\n' "$(project_name)"; }
+lib/helper.sh	helper_unit()  { printf 'devos-ade-helper-%s.service\n' "$(project_name)"; }
+lib/helper.sh	local bin="$STACK_DIR/bin/devos-ade-helper"
+lib/owui.sh	LITELLM_DB_ADMIN_ID=devos-ade-admin
+lib/owui.sh	BUDGET_BANNER_PREFIX=devos-ade-budget
 lib/remote.sh	TS_TAG_DEFAULT="tag:bedrock-now"
 lib/remote.sh	if [ "$p" = "$DEFAULT_PROJECT" ]; then b=bedrock-now
 compose.tailscale.yaml	${TS_HOSTNAME:-bedrock-now-node}
-lib/settings_helper.sh	head:1:'bedrock-now-settings 1'
-lib/commands.sh	def=admin@bedrock-now.local
-lib/commands.sh	-H 'X-Requested-With: bedrock-now'
-portal/portal/config.py	user_email: str = "admin@bedrock-now.local"
-portal/portal/webapp.py	DEFAULT_HOST = "bedrock-now.localhost"
-portal/portal/webapp.py	SCHEME = "web+bedrocknow"
+lib/settings_helper.sh	head:1:'devos-ade-settings 1'
+lib/commands.sh	def=admin@devos-ade.local
+lib/commands.sh	-H 'X-Requested-With: devos-ade'
+portal/portal/config.py	user_email: str = "admin@devos-ade.local"
+portal/portal/webapp.py	DEFAULT_HOST = "devos-ade.localhost"
+portal/portal/webapp.py	SCHEME = "web+devosade"
 portal/portal/webapp.py	"id": "/",
 portal/portal/security.py	COOKIE = "bn_session"
-portal/portal/security.py	salt="bedrock-now.portal.session"
-portal/portal/appsso.py	salt="bedrock-now.portal.app-sso"
-portal/portal/app.py	salt="bedrock-now.portal.code-terminal"
-portal/portal/app.py	salt="bedrock-now.portal.preview-handoff"
-portal/portal/app.py	request.headers.get("x-requested-with") != "bedrock-now"
-portal/portal/answers.py	bedrock-now.terminal-launch
-portal/portal/static/app.js	const API_HEADERS = { "X-Requested-With": "bedrock-now" };
-portal/portal/static/updatecheck.js	headers: { "X-Requested-With": "bedrock-now" }
-code/web/src/app.ts	export const TRASH = '.bedrock-now-trash';
-terminal/bin/bn-coded.mjs	const TRASH = '.bedrock-now-trash';
-terminal/bin/bn-coded.mjs	const MCP_CONFIG = path.join(os.homedir(), '.config/bedrock-now/mcp.json');
-terminal/Dockerfile	COPY bashrc /etc/bedrock-now.bashrc
+portal/portal/security.py	salt="devos-ade.portal.session"
+portal/portal/appsso.py	salt="devos-ade.portal.app-sso"
+portal/portal/app.py	salt="devos-ade.portal.code-terminal"
+portal/portal/app.py	salt="devos-ade.portal.preview-handoff"
+portal/portal/app.py	request.headers.get("x-requested-with") != "devos-ade"
+portal/portal/answers.py	devos-ade.terminal-launch
+portal/portal/static/app.js	const API_HEADERS = { "X-Requested-With": "devos-ade" };
+portal/portal/static/updatecheck.js	headers: { "X-Requested-With": "devos-ade" }
+code/web/src/app.ts	export const TRASH = '.devos-ade-trash';
+terminal/bin/bn-coded.mjs	const TRASH = '.devos-ade-trash';
+terminal/bin/bn-coded.mjs	const MCP_CONFIG = path.join(os.homedir(), '.config/devos-ade/mcp.json');
+terminal/Dockerfile	COPY bashrc /etc/devos-ade.bashrc
 code/server/import-sessions.mjs	source: ['bedrock-now', 'bedrock', 'anthropic', 'unknown'].includes(r.source) ? r.source : 'unknown',

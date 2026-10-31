@@ -18,14 +18,15 @@ test_the_brand_check_finds_an_old_name_and_takes_the_allowed_ones() {
   printf 'lib/x.sh\tkeep bedrock-now here\twhy\n' > "$r/tests/fixtures/brand-allow.txt"
   printf 'log "DevOS ADE is up"\nhost=bedrock-now.localhost v=$BEDROCK_NOW_DIR\n# keep bedrock-now here\n' > "$r/lib/x.sh"
   printf '## [Unreleased]\n- DevOS ADE\n## [0.24.0]\n- bedrock-now did\n' > "$r/CHANGELOG.md"
-  printf 'echo bedrock-now\n' > "$r/tests/t.sh"   # the tests are not read
   python3 "$T_ROOT/tests/brand_check.py" --root "$r" > "$TMP/out" 2>&1 || { cat "$TMP/out" >&2; return 1; }
   # a pattern applies only in its files: BEDROCK_NOW_DIR in a doc is left
   printf 'set BEDROCK_NOW_DIR\n' > "$r/README.md"
+  printf 'echo bedrock-now\n' > "$r/tests/t.sh"   # the tests are read like any file
   printf 'echo "Bedrock Now is up"\n' > "$r/lib/y.sh"; printf '## [0.25.0]\n- bedrock-now here\n' >> "$r/CHANGELOG.md"
   if python3 "$T_ROOT/tests/brand_check.py" --root "$r" > "$TMP/out" 2>&1; then echo "missed an old name" >&2; return 1; fi
   assert_contains "$(cat "$TMP/out")" "lib/y.sh:1: echo \"Bedrock Now is up\""
   assert_contains "$(cat "$TMP/out")" "README.md:1: set BEDROCK_NOW_DIR"
+  assert_contains "$(cat "$TMP/out")" "tests/t.sh:1: echo bedrock-now"
   assert_not_contains "$(cat "$TMP/out")" "0.24.0"
   # an exemption or a pattern that matches nothing any more fails too
   rm "$r/lib/y.sh" "$r/README.md"; printf '## [0.24.0]\n' > "$r/CHANGELOG.md"; printf 'log ok\n' > "$r/lib/x.sh"
@@ -64,7 +65,7 @@ code/server/p.mjs	const t = `Bedrock Now says ${x}`
 code/server/p2.mjs	export const GITHUB_APP_SLUG = 'bedrock-now';
 terminal/bin/p	echo "BedrockNow"
 README.md	Install bedrock-now with one command
-README.md	the default `~/bedrock-now-workspace` for a new install
+README.md	the default `~/bedrock-now` folder for a new install
 README.md	https://github.com/JongoDB-Labs/bedrock-now
 docs/p.md	bedrock now runs on your Mac
 docs/p.md	the `bedrock-now-chat` Service
@@ -74,25 +75,23 @@ compose.p.yaml	OR_APP_NAME: bedrock-now
 compose.p.yaml	name: bedrock-now
 caddy/Caddyfile	respond "bedrock-now's guard" 403
 owui/functions/p.py	author: bedrock-now
-.env.example	# the bedrock-now folder
+.env.example	# bedrock-now.localhost is the address
 install.sh	say "installing bedrock-now into $dir"
-CHANGELOG.md	## [Unreleased]
-CHANGELOG.md	- bedrock-now did a thing
 PROBES
   # controls: internal names, each in a file its row names
-  printf 'name: bedrock-now\n' > "$r/compose.yaml"
-  printf 'h=bedrock-now.localhost v=$BEDROCK_NOW_DIR\n# DevOS ADE (formerly bedrock-now)\nx=~/devos-ade-workspace, or ~/bedrock-now-workspace\n' > "$r/lib/c.sh"
+  mkdir -p "$r/docs"; printf 'one Service: svc:bedrock-now-chat, tag:bedrock-now\n' > "$r/docs/remote.md"
+  printf 'x=~/devos-ade-workspace, or ~/bedrock-now-workspace\n' > "$r/lib/c.sh"
   out="$(python3 "$T_ROOT/tests/brand_check.py" --root "$r" 2>&1)" || true
   for f in lib/p.sh:1 lib/p.sh:2 lib/p.sh:3 lib/p.sh:4 lib/p.sh:5 lib/p.sh:6 portal/portal/p.py:1 portal/portal/p.py:2 \
            portal/portal/static/p.js:1 portal/portal/static/p.html:1 code/web/src/p.ts:1 code/web/src/p.tsx:1 \
            code/server/p.mjs:1 code/server/p2.mjs:1 terminal/bin/p:1 README.md:1 README.md:2 README.md:3 docs/p.md:1 \
            docs/p.md:2 docs/p.md:3 catalog/settings.tsv:1 compose.p.yaml:1 compose.p.yaml:2 caddy/Caddyfile:1 \
-           owui/functions/p.py:1 .env.example:1 install.sh:1 CHANGELOG.md:2; do
+           owui/functions/p.py:1 .env.example:1 install.sh:1; do
     n=$((n + 1))
     grep -q "^$f: " <<< "$out" || { echo "probe $f was not caught" >&2; return 1; }
   done
-  assert_eq "$n" 29
-  for f in compose.yaml lib/c.sh; do
+  assert_eq "$n" 28
+  for f in docs/remote.md lib/c.sh; do
     if grep -q "^$f:" <<< "$out"; then echo "a control line was taken for the old name: $(printf '%s\n' "$out" | grep "^$f:")" >&2; return 1; fi
   done
 }
@@ -158,7 +157,7 @@ test_the_names_agree_in_every_layer() {
   assert_eq "$(_js_const "$T_ROOT/code/server/brand.mjs" PRODUCT)|$(_js_const "$T_ROOT/code/server/brand.mjs" PRODUCT_SLUG)" "$PRODUCT_NAME|$PRODUCT_SLUG"
   assert_eq "$(_js_const "$T_ROOT/code/web/src/brand.ts" PRODUCT)" "$PRODUCT_NAME"
   # install.sh's own copy (it runs before there is a checkout)
-  assert_eq "$(BEDROCK_NOW_INSTALL_LIB=1 bash -c '. "$1"; printf "%s|%s|%s|%s|%s|%s" "$PRODUCT_NAME" "$PRODUCT_SLUG" "$PRODUCT_REPO" "$PRODUCT_LEGACY_NAME" "$PRODUCT_LEGACY_REPO" "$BN_REPO_URL"' _ "$T_ROOT/install.sh")" \
+  assert_eq "$(DEVOS_ADE_INSTALL_LIB=1 bash -c '. "$1"; printf "%s|%s|%s|%s|%s|%s" "$PRODUCT_NAME" "$PRODUCT_SLUG" "$PRODUCT_REPO" "$PRODUCT_LEGACY_NAME" "$PRODUCT_LEGACY_REPO" "$BN_REPO_URL"' _ "$T_ROOT/install.sh")" \
     "$PRODUCT_NAME|$PRODUCT_SLUG|$PRODUCT_REPO|$PRODUCT_LEGACY_NAME|$PRODUCT_LEGACY_REPO|https://github.com/$PRODUCT_REPO"
   # the users of the portal's: the update check and the installed app's name
   assert_contains "$(cat "$T_ROOT/portal/portal/updates.py")" "REPO = brand.REPO"
@@ -190,10 +189,10 @@ test_internal_names_are_as_they_were() {
   $f: $t"
   done < "$T_ROOT/tests/fixtures/internal-names.tsv"
   [ -z "$miss" ] || { echo "an internal name changed — data, links or sign-ins would break:$miss" >&2; return 1; }
-  [ -x "$T_ROOT/bin/bedrock-now-helper" ] || { echo "bin/bedrock-now-helper is gone" >&2; return 1; }
-  # every BEDROCK_NOW_* name of v0.24.0 is still read
+  [ -x "$T_ROOT/bin/devos-ade-helper" ] || { echo "bin/devos-ade-helper is gone" >&2; return 1; }
+  # every DEVOS_ADE_* name of the list is still read
   local n src
-  src="$(cd "$T_ROOT" && git grep -hoE 'BEDROCK_NOW_[A-Z0-9_]*' -- . ':!tests' ':!portal/tests' ':!code/test' ':!code/web/test' ':!code/web/e2e' ':!portal/e2e' ':!CHANGELOG.md' ':!README.md' ':!docs' | sort -u)"
+  src="$(cd "$T_ROOT" && git grep -hoE 'DEVOS_ADE_[A-Z0-9_]*' -- . ':!tests' ':!portal/tests' ':!code/test' ':!code/web/test' ':!code/web/e2e' ':!portal/e2e' ':!CHANGELOG.md' ':!README.md' ':!docs' | sort -u)"
   while read -r n; do
     case "$n" in '#'* | '') continue ;; esac
     grep -q "^$n" <<< "$src" || miss="$miss $n"
