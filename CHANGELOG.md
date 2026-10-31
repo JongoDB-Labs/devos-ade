@@ -26,8 +26,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 - **The old copy is removed once the new install checks out.** The update checks the running stack: every service is
   healthy, Postgres holds at least the rows it held (table by table), Open WebUI shows the same users and chats, every
   git repository passes `git fsck --connectivity-only`, sample files of the sandbox's home match, and each installed
-  runtime runs from the moved folder. Only when all pass does it remove the old volumes and images, and only those it
-  recorded when it made the copy; it says what it removed and how much space that freed. If a check fails, nothing is
+  runtime that ran before the move runs from the moved folder (one that did not run before is named, not counted).
+  Only when all pass does it remove the old volumes and images, and only those it recorded when it made the copy; it
+  says what it removed and how much space that freed. If a check fails, nothing is
   removed and it names the check; `./stack migrate --verify` runs the checks again, and `./stack migrate --remove-old`
   removes the old copy at once after listing it and asking.
 - **Going back:** `./stack migrate --rollback` (and `./stack rollback`, which runs it first) returns to the old project,

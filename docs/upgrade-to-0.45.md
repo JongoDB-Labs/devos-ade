@@ -78,7 +78,9 @@ policy); do it there and then change the matching `DEVOS_ADE_TAILSCALE_*` keys.
   may be deleted is recorded when the copy is made, and nothing else is ever removed. A volume Docker cannot remove
   stays on the list and is reported; `./stack migrate --verify` continues, without running the checks again.
 - Checked besides the data: every repository of the git server passes `git fsck --connectivity-only`, each installed
-  runtime's program runs from the moved folder, a runtime that was running is running after the update, and the
+  runtime's program that ran before the move runs from the moved folder (one that did not run before, such as a
+  half-finished install, is named in a note and does not keep the old copy), a runtime that was running is running
+  after the update, and the
   sandbox's sample files matched while the stack was down.
 - Files too big or binary to rewrite that still name the old folder are listed in
   `.state/migrate/paths-left-behind.txt` and in a warning; sqlite files are rewritten.
