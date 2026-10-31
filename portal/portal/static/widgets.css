@@ -38,12 +38,24 @@
 #widgets.wg-custom > .update-card:not([data-wide]) { display: block; }
 #widgets.wg-custom > .update-card:not([data-wide]) .update-side > .update-sub:first-child { margin-top: 14px; }
 #widgets.wg-custom > .update-card[data-wide] { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 0 32px; align-items: start; }
+/* Continue made narrow (a few columns of a tablet's six): each row's title across the row and its verb under it, as on a
+   phone (mobile.css), by the card's own width — beside the icon and Resume it was a sliver */
+#widgets.wg-custom > .continue { container: wg-continue / inline-size; }
+@container wg-continue (max-width: 479.98px) {
+  .cont-row { grid-template-columns: 32px minmax(0, 1fr) auto; grid-template-rows: auto auto; row-gap: 2px; align-items: start; }
+  .cont-main { display: contents; }
+  .cont-icon { grid-row: 1 / 3; align-self: center; }
+  .cont-title { grid-column: 2 / 4; -webkit-line-clamp: 3; }
+  .cont-meta { grid-column: 2; grid-row: 2; align-self: center; }
+  .cont-verb { grid-column: 3; grid-row: 2; }
+}
 
 /* ---------- edit mode: a bar and edge handles over each card ---------- */
 .wg-ov { position: absolute; z-index: 3; box-sizing: border-box; border: 2px dashed var(--line-strong); border-radius: var(--r-xl); pointer-events: none; }
 .wg-ov:focus-within { border: 2px solid var(--accent); }
 .wg-bar { position: absolute; top: 6px; left: 8px; right: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; pointer-events: auto; }
-.wg-name { flex: 1 1 5ch; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+/* (the name whole; the controls wrap under it when the card is narrow — cut short only where it is wider than the card) */
+.wg-name { flex: 1 0 auto; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
 .wg-size { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .wg-btn { display: inline-grid; place-items: center; min-width: 32px; min-height: 32px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--r-m);
   background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; line-height: 1; cursor: pointer; }
