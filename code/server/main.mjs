@@ -332,7 +332,8 @@ export function createServer({ secret, query, spawn, call, distDir = path.join(H
         prefs: prefs().read(),
       });
     }
-    // your choices for new sessions: the model picked last, with Settings' default as it was then (userprefs.mjs)
+    // your choices for new sessions: the model picked last, with Settings' default as it was then, and the layout of the
+    // page's widgets per device (userprefs.mjs; 4 KB is room for both layouts and the model: a layout that fits is under 1 KB)
     if (p === '/api/prefs' && m === 'GET') return send(res, 200, { prefs: prefs().read() });
     if (p === '/api/prefs' && m === 'PUT') return send(res, 200, { prefs: prefs().set(await readJson(req, 4 << 10)) });
     // who may answer a new session: Claude Code on Bedrock, and each of your subscriptions — there, signed in, allowed
