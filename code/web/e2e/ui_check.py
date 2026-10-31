@@ -5820,10 +5820,6 @@ def saved_layout(page, device="desktop"):
     return page.evaluate("(d) => JSON.parse(localStorage.getItem('bn.code.v1')).layout[d]", device)
 
 
-def live(page):
-    return page.get_by_test_id("layout-live").inner_text()
-
-
 @check("widgets: customize — move Git to the right dock, tabs and stacked, resize, hide and add back, survive a reload, reset; the tablet stays apart")
 def widgets_customize(browser):
     post(NORMAL + "/__mock/reset")
@@ -5862,7 +5858,7 @@ def widgets_customize(browser):
     expect(page.locator("[data-dock=right] [data-tab=chat]")).to_have_count(1)
     expect(page.locator("[data-dock=right] [data-tab=git]")).to_have_attribute("aria-selected", "true")
     expect(page.get_by_test_id("git-panel")).to_be_visible()
-    assert "Git moved to the right dock" in live(page), live(page)
+    expect(page.get_by_test_id("layout-live")).to_contain_text("Git moved to the right dock")
     sane(page, "Git on the right")
     # tabs and stacked: the dock shows both, a splitter between them
     page.get_by_test_id("mode-stack-right").click()
@@ -5911,7 +5907,7 @@ def widgets_customize(browser):
     page.get_by_test_id("wd-hide-git").click()
     expect(page.locator("[data-tab=git]")).to_have_count(0)
     expect(page.get_by_test_id("tray-add-git")).to_be_visible()
-    assert "Git hidden" in live(page), live(page)
+    expect(page.get_by_test_id("layout-live")).to_contain_text("Git hidden")
     page.get_by_test_id("tray-add-git").click()
     expect(page.locator("[data-dock=right] [data-tab=git]")).to_have_count(1)
     expect(page.get_by_test_id("tray-add-git")).to_have_count(0)
@@ -5979,7 +5975,7 @@ def widgets_customize(browser):
     expect(page.locator("[data-dock=left] [role=tab]")).to_have_count(4)
     expect(page.get_by_test_id("side-git")).to_have_count(1)
     expect(page.get_by_test_id("layout-reset")).to_be_disabled()
-    assert "default" in live(page), live(page)
+    expect(page.get_by_test_id("layout-live")).to_contain_text("default")
     page.get_by_test_id("layout-done").click()
     page.wait_for_timeout(1200)
     assert "desktop" not in mock_get(NORMAL, "/api/prefs")["prefs"].get("layout", {}), "a layout back at the default is still kept"
@@ -6044,7 +6040,7 @@ def widgets_keyboard(browser):
     page.keyboard.press("Enter")
     expect(page.get_by_test_id("widget-tray")).to_be_visible()
     expect(page.get_by_test_id("layout-live")).to_have_attribute("aria-live", "polite")
-    assert "Customizing" in live(page)
+    expect(page.get_by_test_id("layout-live")).to_contain_text("Customizing")
     # the chat moves to the centre and back (Alt+Left / Alt+Right), the focus following it
     chat = page.locator("[data-widget=chat]")
     chat.focus()
@@ -6053,7 +6049,7 @@ def widgets_keyboard(browser):
     page.keyboard.press("Alt+ArrowLeft")
     expect(page.locator("[data-dock=center] [data-widget=chat]")).to_have_count(1)
     expect(page.locator("[data-widget=chat]")).to_be_focused()
-    assert "Chat moved to the centre" in live(page), live(page)
+    expect(page.get_by_test_id("layout-live")).to_contain_text("Chat moved to the centre")
     sane(page, "the chat in the centre")
     page.keyboard.press("Alt+ArrowRight")
     expect(page.locator("[data-dock=right] [data-widget=chat]")).to_have_count(1)
@@ -6070,22 +6066,22 @@ def widgets_keyboard(browser):
     page.keyboard.press("Shift+ArrowLeft")
     page.wait_for_timeout(200)
     assert abs(page.locator(".col-right").bounding_box()["width"] - w0 - 40) < 2
-    assert "pixels wide" in live(page), live(page)
+    expect(page.get_by_test_id("layout-live")).to_contain_text("pixels wide")
     # H on the chat is refused, said
     page.keyboard.press("h")
-    assert "cannot be hidden" in live(page), live(page)
+    expect(page.get_by_test_id("layout-live")).to_contain_text("cannot be hidden")
     expect(page.locator("[data-widget=chat]")).to_have_count(1)
     # Alt+Down: a place along the tabs of its dock (Explorer after Search); H hides it, focus goes to its Add back
     page.locator("[data-widget=explorer]").focus()
     page.keyboard.press("Alt+ArrowDown")
     expect(page.locator("[data-dock=left] [role=tab]").first).to_contain_text("Search")
-    assert "position 2 of 4" in live(page), live(page)
+    expect(page.get_by_test_id("layout-live")).to_contain_text("position 2 of 4")
     page.locator("[data-widget=explorer]").focus()
     page.keyboard.press("h")
     expect(page.get_by_test_id("tray-add-explorer")).to_be_focused()
     page.keyboard.press("Enter")
     expect(page.locator("[data-dock=left] [role=tab]")).to_have_count(4)
-    assert "added back" in live(page), live(page)
+    expect(page.get_by_test_id("layout-live")).to_contain_text("added back")
     # the terminal: closed, it is in the tray; Add back opens it in the bottom dock
     page.get_by_test_id("tray-add-terminal").focus()
     page.keyboard.press("Enter")
