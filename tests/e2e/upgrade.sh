@@ -55,6 +55,12 @@
 #   .env.pre-devos-ade; the folder moved by rename (same inode under .state/mlx/hf), the old name a link; relative links
 #   unchanged, absolute ones rewritten, no old path left; byte-identical sample files; ports unchanged. --then rollback runs
 #   ./stack migrate --rollback and starts the old project from the old code; --then next-update runs ./stack update --yes again and asserts the leftovers (.env.pre-devos-ade, the link) are removed.
+#   --stuck-on TAG [--resume to | by-hand]: the way out for an install that TAG's update stopped (JON-945: v0.45.0, on a
+#       default install, stopped at the move's first check on its own owner marker). From --from, ./stack update --to TAG in
+#       a terminal, as the owner ran it, must stop there (the update record left unfinished, the old stack still up), and a
+#       plain ./stack update must stop the same way: it finishes that update with TAG's code and fetches nothing. Then
+#       --resume to (the default): ./stack update --to <this checkout's release>; --resume by-hand: the marker removed,
+#       ./stack migrate --now, ./stack update --force in the new folder (TAG's code: the checks after expect TAG).
 set -uo pipefail
 umask 077
 
@@ -67,7 +73,7 @@ NOTTY="$HERE/notty"
 OLD_URL="https://github.com/JongoDB-Labs/bedrock-now.git"
 NEW_URL="https://github.com/JongoDB-Labs/devos-ade.git"
 PROJECT=bne2e-rebrand-up; FROM=v0.24.0; AWS_ENV_FILE=''; KEEP=0; REAL_GITHUB=0; TEARDOWN_ONLY=0
-MIGRATE=0; NEWP=''; THEN=''; FROM_SET=0; PROJECT_SET=0; INTERRUPT=0; ROLLED_BACK=0
+MIGRATE=0; NEWP=''; THEN=''; FROM_SET=0; PROJECT_SET=0; INTERRUPT=0; ROLLED_BACK=0; STUCK_ON=''; RESUME=to
 while [ $# -gt 0 ]; do
   case "$1" in
     --aws-env) AWS_ENV_FILE="${2:?}"; shift 2 ;;
@@ -75,6 +81,8 @@ while [ $# -gt 0 ]; do
     --from) FROM="${2:?}"; FROM_SET=1; shift 2 ;;
     --migrate) MIGRATE=default; shift ;;
     --interrupt) INTERRUPT=1; shift ;;
+    --stuck-on) STUCK_ON="${2:?}"; shift 2 ;;
+    --resume) RESUME="${2:?}"; case "$RESUME" in to | by-hand) ;; *) echo "--resume takes to or by-hand" >&2; exit 2 ;; esac; shift 2 ;;
     --migrate-pair) MIGRATE=pair; NEWP="${2:?}"; shift 2 ;;
     --then) THEN="${2:?}"; case "$THEN" in rollback | next-update) ;; *) echo "--then takes rollback or next-update" >&2; exit 2 ;; esac; shift 2 ;;
     --keep) KEEP=1; shift ;;
@@ -114,6 +122,10 @@ if [ "$TEARDOWN_ONLY" = 1 ]; then teardown_only; exit 0; fi
 load_aws_file "$AWS_ENV_FILE"
 [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ] || die "no AWS key in $AWS_ENV_FILE"
 git -C "$ROOT" rev-parse -q --verify "refs/tags/$FROM" >/dev/null || die "no tag $FROM in this checkout"
+if [ -n "$STUCK_ON" ]; then
+  [ "$MIGRATE" != 0 ] && [ "$INTERRUPT" = 0 ] || die "--stuck-on goes with --migrate or --migrate-pair, not --interrupt"
+  git -C "$ROOT" rev-parse -q --verify "refs/tags/$STUCK_ON" >/dev/null || die "no tag $STUCK_ON in this checkout"
+fi
 : > "$RESULTS"; START_TS="$(now)"; HELPER_PID=''
 
 st() { # st [--aws] ARGS... — the throwaway's ./stack, clean environment, no terminal
@@ -491,6 +503,32 @@ if [ "$INTERRUPT" = 1 ]; then
   check update-after-resume "$n" "./stack update --force --yes in the new folder: exit $n"
   after="$( ( PROJECT="$NEWP"; cexec terminal sha256sum /home/claude/.e2e-big ) 2>/dev/null)"
   check big-file-identical "$([ -n "$after" ] && [ "$after" = "$(cat "$OUT/big-before.sum")" ] && echo 0 || echo 1)" "terminal-home 400 MB file after: $(printf '%s' "$after" | cut -c1-16)"
+elif [ -n "$STUCK_ON" ]; then
+  # --stuck-on: the update to STUCK_ON stops at the move's first check; the way out (JON-945)
+  NSTACK="$(dirname "$STACK")/devos-ade"; MK="$STACK/.state/migrate/marker"
+  say "stuck: ./stack update --to $STUCK_ON in a terminal (must stop at the move's first check)"
+  st update --to "$STUCK_ON" --yes > "$LOGS/update-stuck.log" 2>&1; n=$?
+  stopped=1
+  if [ "$n" != 0 ] && grep -q 'already has volumes' "$LOGS/update-stuck.log" && grep -qx 'status=failed' "$MK" 2>/dev/null &&
+    grep -qx 'failed_step=preflight' "$MK" 2>/dev/null && grep -qx 'result=running' "$STACK/.state/update/last.env" 2>/dev/null; then stopped=0; fi
+  check stuck-at-first-check "$stopped" "./stack update --to $STUCK_ON: exit $n; $(grep -o 'failed at .preflight.*already has volumes ([^)]*)' "$LOGS/update-stuck.log" | head -n 1 | cut -c1-160)"
+  check stuck-old-stack-up "$(docker ps --filter "label=com.docker.compose.project=$PROJECT" --filter status=running -q | grep -q . && echo 0 || echo 1)" "the old project's containers still running"
+  st update --yes > "$LOGS/update-plain.log" 2>&1; n=$?
+  check plain-update-still-stuck "$([ "$n" != 0 ] && grep -q 'already has volumes' "$LOGS/update-plain.log" && echo 0 || echo 1)" "a plain ./stack update finishes the unfinished one with $STUCK_ON's code: exit $n"
+  if [ "$RESUME" = to ]; then
+    say "the way out: ./stack update --to $TO"
+    st update --to "$TO" --yes > "$LOGS/update-way-out.log" 2>&1; n=$?
+    check way-out-update-to "$n" "./stack update --to $TO: exit $n"
+  else
+    say "the way out by hand: the marker removed, ./stack migrate --now, ./stack update --force in the new folder"
+    docker volume rm "${NEWP}_${NEWP}-owner" > "$LOGS/way-out-marker.log" 2>&1; n=$?
+    check way-out-marker-removed "$n" "docker volume rm ${NEWP}_${NEWP}-owner: exit $n"
+    st migrate --now --yes > "$LOGS/way-out-migrate.log" 2>&1; n=$?
+    check way-out-migrate "$n" "./stack migrate --now: exit $n"
+    ( STACK="$NSTACK"; PROJECT="$NEWP"; HOST="$NEWHOST"; st update --force --yes > "$LOGS/way-out-update.log" 2>&1 ); n=$?
+    check way-out-update-force "$n" "./stack update --force --yes in the new folder: exit $n"
+    TO="$STUCK_ON"   # (the checks after: the move done by STUCK_ON's code)
+  fi
 else
 # --- 3. Update now: a request for the throwaway's own update helper ---
 nonce="$(openssl rand -hex 16)"

@@ -12,8 +12,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   (devos-ade_devos-ade-owner)", on every try: the new code marks the project it runs as its own before anything else,
   and its default project is now devos-ade, so that empty marker was made a moment before the move checked for one.
   The check now leaves out this install's own marker (the move writes it again for the new folder); another install's
-  still stops the move. An install stuck there resumes with `./stack update`. Nothing was changed by the stop: the old
-  volumes were only read and the old containers kept running.
+  still stops the move. Nothing was changed by the stop: the old volumes were only read and the old containers kept
+  running. An install stuck there resumes with `./stack update --to v0.45.1`: a plain `./stack update` (and Update now)
+  finishes the stopped update with the v0.45.0 code it has, fetches nothing, and stops again.
 - **Update now no longer disappears when the computer is busy (JON-869).** The update helper wrote its heartbeat once a
   loop, and each loop also waited for Home's record of the containers and local-model runtimes (`docker compose ps`,
   `docker inspect`): about 10 s a Docker call on a Mac under heavy load, so a loop took about 4 minutes. Home counts the
@@ -40,7 +41,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   reports an update hint that points at a command not on screen.
 - **The move to devos-ade as a default install meets it.** `tests/e2e/upgrade.sh --migrate` (the real names) no longer
   sets the project in the shell during the old release's setup, which wrote it to `.env` and hid JON-945, and checks
-  that `.env` names none. Its check that no file names the old folder now matches the folder as a whole path (the Code
+  that `.env` names none. `--stuck-on v0.45.0` runs your way there and out: the update to v0.45.0 stops, a plain
+  `./stack update` stops again, and `--resume to` (`./stack update --to` the fix) or `--resume by-hand` (the marker
+  removed, `./stack migrate --now`, `./stack update --force`) completes the move. Its check that no file names the old folder now matches the folder as a whole path (the Code
   page's workspace beside it keeps its name) and skips the backups and `.env.pre-devos-ade` as it meant to. Unit:
   `./stack update`'s order (the claim, then the move) on such an install, a v0.45.0-stuck install resuming, and another
   install's marker still refused.

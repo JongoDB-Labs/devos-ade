@@ -28,8 +28,15 @@ with its source again and copies afresh any that changed in between. While the m
 
 **Stopped by v0.45.0 with "project devos-ade already has volumes (devos-ade_devos-ade-owner)".** v0.45.0 itself made that
 volume, an empty marker, a moment before its move checked for one, on an install whose `.env` names no project (the
-default install). Nothing was changed. `./stack update` gets v0.45.1 or later, and that resumes the move. On v0.45.0
-alone: `docker volume rm devos-ade_devos-ade-owner && ./stack migrate --now`, then `cd ~/devos-ade && ./stack update --force`.
+default install). Nothing was changed. A plain `./stack update`, and **Update now**, which runs it, stops the same way: it
+finishes the stopped update with the v0.45.0 code it has and fetches nothing. Name the release with the fix instead:
+
+```
+./stack update --to v0.45.1
+```
+
+(or a later release) resumes the move. Or by hand, on v0.45.0: `docker volume rm devos-ade_devos-ade-owner && ./stack
+migrate --now`, then `cd ~/devos-ade && ./stack update --force`; a later `./stack update` brings the fix.
 
 ## On the new address
 
