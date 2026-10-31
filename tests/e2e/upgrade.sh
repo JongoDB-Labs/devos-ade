@@ -67,7 +67,7 @@ NOTTY="$HERE/notty"
 OLD_URL="https://github.com/JongoDB-Labs/bedrock-now.git"
 NEW_URL="https://github.com/JongoDB-Labs/devos-ade.git"
 PROJECT=bne2e-rebrand-up; FROM=v0.24.0; AWS_ENV_FILE=''; KEEP=0; REAL_GITHUB=0; TEARDOWN_ONLY=0
-MIGRATE=0; NEWP=''; THEN=''; FROM_SET=0; PROJECT_SET=0; INTERRUPT=0
+MIGRATE=0; NEWP=''; THEN=''; FROM_SET=0; PROJECT_SET=0; INTERRUPT=0; ROLLED_BACK=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --aws-env) AWS_ENV_FILE="${2:?}"; shift 2 ;;
@@ -126,15 +126,23 @@ st() { # st [--aws] ARGS... — the throwaway's ./stack, clean environment, no t
   else ( clean_env ${MIG_ENV:+$(printf '%s\n' $MIG_ENV | sed 's/=.*//')}; [ -z "${MIG_ENV:-}" ] || export $MIG_ENV
          cd "$STACK" && exec "$NOTTY" "$STACK/stack" "$@" </dev/null ); fi
 }
+# _migrate_teardown_project P — the volumes, images and networks of the move's project P
+_migrate_teardown_project() {
+  docker volume ls -q | grep -E "^${1}_" | xargs -r docker volume rm >/dev/null 2>&1 || true
+  docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E "^${1}/" | xargs -r docker image rm >/dev/null 2>&1 || true
+  docker network ls --format '{{.Name}}' | grep -E "^${1}_" | xargs -r docker network rm >/dev/null 2>&1 || true
+}
 # migrate_teardown — what the move made: the new project (containers, volumes, images, networks), its folder, the old folder's link
 migrate_teardown() {
   local nstack="$STACK" nproj="$PROJECT" img
+  if [ "$ROLLED_BACK" = 1 ]; then   # (rolled back: this suite's install is the old project again; the move's project kept its volumes, unused)
+    [ -f "$STACK/.devos-ade-e2e" ] || return 0
+    say "teardown: project $NEWP (the move's, unused since the rollback)"; _migrate_teardown_project "$NEWP"; return 0
+  fi
   [ "$nproj" = "$NEWP" ] && [ -f "$nstack/.devos-ade-e2e" ] || return 0
   say "teardown: project $nproj (the move's)"
   ( cd "$nstack" && docker compose -p "$nproj" down -v --remove-orphans >/dev/null 2>&1 ) || true
-  docker volume ls -q | grep -E "^${nproj}_" | xargs -r docker volume rm >/dev/null 2>&1 || true
-  docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E "^${nproj}/" | xargs -r docker image rm >/dev/null 2>&1 || true
-  docker network ls --format '{{.Name}}' | grep -E "^${nproj}_" | xargs -r docker network rm >/dev/null 2>&1 || true
+  _migrate_teardown_project "$nproj"
   [ ! -L "$OLD_STACK" ] || rm -f "$OLD_STACK"
   chmod -R u+rwX "$nstack" 2>/dev/null; rm -rf "$nstack"
   STACK="$OLD_STACK"; PROJECT="$OLD_PROJECT"   # (the ordinary teardown now removes the backup volumes of the old project)
@@ -306,8 +314,7 @@ EOF
       st migrate --rollback --yes > "$LOGS/rollback.log" 2>&1; n=$?
       check rollback-ran "$n" "./stack migrate --rollback: exit $n"
       check rollback-folder "$([ -f "$OLD_STACK/.env" ] && [ ! -L "$OLD_STACK" ] && [ ! -e "$STACK" ] && echo 0 || echo 1)" "the install is back at $OLD_STACK"
-      STACK="$OLD_STACK"; PROJECT="$OLD_PROJECT"; HOST="$OLD_HOST"
-      check rollback-volumes "$([ -z "$(comm -23 <(sort "$OUT/before/volumes") <(docker volume ls -q | sort))" ] && echo 0 || echo 1)" "every old volume still there"
+      STACK="$OLD_STACK"; PROJECT="$OLD_PROJECT"; HOST="$OLD_HOST"; ROLLED_BACK=1
       # (a normal checkout's permissions, umask 022, as the clone's: containers read some of these files as other users)
       ( umask 022; git -C "$STACK" -c advice.detachedHead=false checkout -q "$FROM" 2>/dev/null ); st up --yes > "$LOGS/rollback-up.log" 2>&1; n=$?
       if [ "$n" != 0 ]; then   # what the old code's start left, for the report
@@ -317,6 +324,10 @@ EOF
           ls -la "$STACK/caddy" | head -n 20; } > "$LOGS/rollback-diag.txt" 2>&1; redact "$LOGS/rollback-diag.txt"
       fi
       check rollback-old-project-runs "$n" "the old code starts the old project again: exit $n"
+      # every volume of the old project is there again: those with data copied back by the rollback, the socket folders
+      # and the owner volume (never copied: empty by design) made by the old code's start
+      gone="$(comm -23 <(sort "$OUT/before/volumes") <(docker volume ls -q | sort) | tr '\n' ' ')"
+      check rollback-volumes "$([ -z "$gone" ] && echo 0 || echo 1)" "every volume of the old project is there after its start${gone:+; missing: $gone}"
       got="$(owui "print(api('GET', '/api/v1/chats/$CHAT_ID', None, TOKEN)['title'])" 2>/dev/null)"
       check rollback-chat-kept "$([ "$got" = e2e-upgrade ] && echo 0 || echo 1)" "the chat on the old project: ${got:-gone}"
       got="$(owui "print(api('GET', '/api/v1/chats/$AFTER_CHAT', None, TOKEN)['title'])" 2>/dev/null)"
@@ -607,7 +618,8 @@ for pg in login home; do
   rc=0
   STACK="$STACK" python3 -c 'import os, sys; t = sys.stdin.read(); s = os.environ["STACK"]; h = os.path.expanduser("~")
 print(t.replace(s, "STACK").replace("~" + s[len(h):] if s.startswith(h + "/") else s, "STACK"))' < "$OUT/$pg.html" > "$OUT/$pg.txt" || rc=3
-  left=''; [ "$rc" != 0 ] || { left="$(python3 "$ROOT/tests/brand_check.py" --stdin "$pg" < "$OUT/$pg.txt")" || rc=$?; }
+  # (after --then rollback the old release serves the pages: its internal names are its own, only the title is checked)
+  left=''; [ "$rc" != 0 ] || [ "$ROLLED_BACK" = 1 ] || { left="$(python3 "$ROOT/tests/brand_check.py" --stdin "$pg" < "$OUT/$pg.txt")" || rc=$?; }
   case "$rc" in 0 | 1) ;; *) left="the page check itself failed (exit $rc)" ;; esac
   ok=1; case "$t" in *"DevOS ADE"*) [ "$rc" = 0 ] && ok=0 ;; esac
   check "page-$pg" "$ok" "title '$t'${left:+; old name: $(printf '%s' "$left" | head -3 | tr '\n' ' ')}"
