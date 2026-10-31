@@ -6,6 +6,43 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Changed
+- **The name devos-ade everywhere, address included (JON-807).** The stack answers at `http://devos-ade.localhost`
+  (and `code.`, `chat.`, `admin.`, `terminal.`, `files.`), its Compose project and volumes are `devos-ade_*`, its folder
+  is `~/devos-ade`, its `.env` keys are `DEVOS_ADE_*` and its launchd labels (systemd unit on Linux) are `io.devos-ade.*`.
+  Ports do not change. A second copy of the stack keeps its own project, volumes and address.
+- **The update moves an install of the old name by itself** (Home's **Update now**, or `./stack update`):
+  - it says how long it expects to take and checks free disk (the volumes plus 10%) before it stops anything; if a
+    check fails, nothing is changed;
+  - the folder is renamed in place (`~/bedrock-now` stays as a link), so the model files under `.state` move with it
+    and are never copied or deleted; absolute paths naming the old folder (runtime records, launchd plists,
+    `lms import` links, session and Code page records, sqlite files) are rewritten, and any file it cannot rewrite is
+    listed in `.state/migrate/paths-left-behind.txt`;
+  - the volumes are copied, each copy checked by file count, bytes and checksums; the old `.env` is kept as
+    `.env.pre-devos-ade`; your account email in Open WebUI is kept, so chats, spend and git history stay yours;
+  - it can be interrupted and run again: it resumes, and copies afresh any volume that changed in between. While the
+    move is half done, `./stack up` and `./stack setup` refuse and name `./stack update` (resume) and
+    `./stack migrate --rollback` (go back).
+- **The old copy is removed once the new install checks out.** The update checks the running stack: every service is
+  healthy, Postgres holds at least the rows it held (table by table), Open WebUI shows the same users and chats, every
+  git repository passes `git fsck --connectivity-only`, sample files of the sandbox's home match, and each installed
+  runtime runs from the moved folder. Only when all pass does it remove the old volumes and images, and only those it
+  recorded when it made the copy; it says what it removed and how much space that freed. If a check fails, nothing is
+  removed and it names the check; `./stack migrate --verify` runs the checks again, and `./stack migrate --remove-old`
+  removes the old copy at once after listing it and asking.
+- **Going back:** `./stack migrate --rollback` (and `./stack rollback`, which runs it first) returns to the old project,
+  folder, labels and `.env`, copying the new volumes' current data back and checking it, whether or not the old copy
+  was removed. Settings changed since the move are kept.
+- **Once, on the new address:** sign in to the portal again, unlock Code and Terminal again, and install the browser
+  app again from `http://devos-ade.localhost` (remove the old one). See `docs/upgrade-to-0.45.md`.
+
+### Deprecated (removed in the next minor release)
+- `bedrock-now.localhost` and its subdomains answer with a 308 redirect to the same path and query on the new name;
+  they never set a cookie, are never accepted as an Origin, and refuse WebSockets (426).
+- The `X-Requested-With: bedrock-now` header value, the update helper's old path `bin/bedrock-now-helper` (a shim that
+  hands the helper to its new launchd label or unit), and a settings request queued under the old header are still
+  accepted.
+
 ## [0.44.5] - 2026-10-30
 
 ### Fixed
