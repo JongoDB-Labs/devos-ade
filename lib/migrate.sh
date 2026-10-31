@@ -66,7 +66,7 @@ MG_FORBIDDEN_NOTE="never: devos-heavy, Companion, Mobile, xirp, other Docker pro
 mg_allowed() {
   local kind="$1" v="$2" b
   case "$kind" in
-    dir) [ "$v" = "$MG_OLD_DIR" ] || [ "$v" = "$MG_NEW_DIR" ] || [ "$v" = "${MG_OLD_DIR%/*}/$MG_OLD_DIRNAME" ] ;;
+    dir) [ "$v" = "$MG_OLD_DIR" ] || [ "$v" = "$MG_NEW_DIR" ] || [ "$v" = "${MG_OLD_DIR%/*}/$MG_OLD_DIRNAME" ]; return ;;
     volume) case "$v" in "$MG_OLD_PROJECT"_* | "$MG_NEW_PROJECT"_*) return 0 ;; esac; return 1 ;;
     image) case "$v" in "$MG_OLD_PROJECT"/* | "$MG_NEW_PROJECT"/*) return 0 ;; esac; return 1 ;;
     network | container) case "$v" in "$MG_OLD_PROJECT" | "$MG_NEW_PROJECT") return 0 ;; esac; return 1 ;;
@@ -102,7 +102,7 @@ mg_init() {
   [ -f "$MG_DIR/.env" ] || MG_DIR="$(cd "$STACK_DIR" && pwd -P)"
 }
 mg_marker_file_at() { printf '%s/.state/migrate/marker\n' "$1"; }
-mg_marker() { mg_marker_file_at "$MG_DIR"; }
+mg_marker() { [ -n "${MG_DIR:-}" ] || mg_init; mg_marker_file_at "$MG_DIR"; }
 mg_get() { [ -f "$(mg_marker)" ] || return 0; K="$1" awk -F= '$1 == ENVIRON["K"] { v = substr($0, length($1) + 2) } END { printf "%s", v }' "$(mg_marker)"; }
 mg_put() {
   local f tmp; f="$(mg_marker)"; mkdir -p "${f%/*}" && chmod 700 "${f%/*}"
@@ -161,7 +161,7 @@ mg_fail() { # mg_fail STEP MESSAGE — the marker says where it stopped; the old
 mg_step_preflight() {
   local v k need free ws
   [ -n "$(mg_old_volumes)" ] || mg_fail preflight "no volumes of project $MG_OLD_PROJECT"
-  if [ -n "$(mg_new_volumes)" ] && [ "$(mg_status)" != running ] && [ "$(mg_status)" != failed ]; then
+  if [ -n "$(mg_new_volumes)" ]; then
     mg_fail preflight "project $MG_NEW_PROJECT already has volumes ($(mg_new_volumes | tr '\n' ' ')), made by an earlier try or another install. Look at them; remove them yourself (docker volume rm …) if they are not wanted. Nothing was changed."
   fi
   if [ "$MG_MV" = 1 ] && ! mg_done_p move; then
@@ -175,6 +175,8 @@ mg_step_preflight() {
   [ "$free" -ge "$need" ] || mg_fail preflight "not enough disk space: the copy needs $(mg_fmt_kb "$need") (the old volumes $(mg_fmt_kb "$k") plus 10%) and Docker has $(mg_fmt_kb "$free") free. Free some space (./stack clean), then run ./stack update again. Nothing was changed."
   ws="$(du -sk "$MG_DIR/.state" 2>/dev/null | cut -f1 || true)"
   mg_put kb_total "$k"
+  # .env as the person had it, before this migration touches it (the first backup stands)
+  if [ ! -f "$MG_DIR/.env.pre-devos-ade" ]; then cp -p "$ENV_FILE" "$MG_DIR/.env.pre-devos-ade" && chmod 600 "$MG_DIR/.env.pre-devos-ade" || mg_fail preflight "cannot back .env up"; fi
   log "migration: $MG_OLD_PROJECT → $MG_NEW_PROJECT. Copying $(mg_fmt_kb "$k") of volumes ($(mg_eta "$k")); the folder and ${ws:+its $(mg_fmt_kb "$ws") of }models move by rename, with no copy. Disk free: $(mg_fmt_kb "$free")."
   mg_step_done preflight
 }
@@ -251,7 +253,7 @@ mg_step_inner() { # names inside the NEW terminal-home (never on this computer)
 mg_step_env() {
   local bak="$MG_DIR/.env.pre-devos-ade" tmp ph oldp k v
   [ -f "$ENV_FILE" ] || mg_fail env "no .env"
-  if [ ! -f "$bak" ]; then cp -p "$ENV_FILE" "$bak" && chmod 600 "$bak" || mg_fail env "cannot back .env up"; fi
+  if [ ! -f "$bak" ]; then cp -p "$ENV_FILE" "$bak" && chmod 600 "$bak" || mg_fail env "cannot back .env up"; fi   # (made at preflight; here only if that was skipped)
   ph="$(get_env PORTAL_HOST)"; oldp=0
   { [ -z "$ph" ] || [ "$ph" = "$MG_OLD_HOST" ]; } && oldp=1
   tmp="$(mktemp "$ENV_FILE.XXXXXX")" || mg_fail env "cannot write .env"
@@ -350,6 +352,7 @@ mg_step_paths() {
     mg_rewrite_tree "$n" "$o" "$n"
     [ "$MG_LOGICAL_DIR" = "$o" ] || mg_rewrite_tree "$n" "$MG_LOGICAL_DIR" "$n"
     mg_relink_tree "$n" "$o" "$n"
+    [ "$MG_LOGICAL_DIR" = "$o" ] || mg_relink_tree "$n" "$MG_LOGICAL_DIR" "$n"
     for b in devos-claude claude-bedrock; do
       if [ "$(readlink "$HOME/.local/bin/$b" 2>/dev/null)" = "$o/bin/$b" ] && [ -e "$n/bin/$b" ]; then
         mg_guard bin "$HOME/.local/bin/$b"; ln -sfn "$n/bin/$b" "$HOME/.local/bin/$b"
@@ -612,6 +615,7 @@ migrate_rollback() {
     cp -p "$MG_DIR/.env.pre-devos-ade" "$ENV_FILE"
   fi
   set_env COMPOSE_PROJECT_NAME "$MG_OLD_PROJECT"   # the checked-out code would otherwise start the new name; ./stack rollback goes back to the old code
+  mv "$(mg_marker)" "$(mg_marker).rolled-back-$(date +%s)" 2>/dev/null || true   # a new try starts from the beginning
   mg_put status rolled-back
   log "back to $MG_OLD_PROJECT in $MG_DIR (.env restored; the one from before is .env.devos-ade-rolled-back). Unused volumes of $MG_NEW_PROJECT: $(mg_new_volumes | tr '\n' ' ')— kept; docker volume rm them yourself if you want. Next: ./stack rollback goes back to the earlier code."
 }

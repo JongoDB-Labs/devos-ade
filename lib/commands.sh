@@ -2381,7 +2381,7 @@ cmd_uninstall() {
 . "$STACK_DIR/lib/githost.sh"
 # Your AI subscriptions' own tools in the sandbox (./stack subscriptions): what each says of its own login.
 . "$STACK_DIR/lib/subscriptions.sh"
-# The move from the name bedrock-now to devos-ade (./stack update runs it once; ./stack migrate).
+# The move from the old name to devos-ade (./stack update runs it once; ./stack migrate).
 . "$STACK_DIR/lib/migrate.sh"
 # devos-claude's own Claude Code config folder (./stack uninstall names it; bin/devos-claude uses it).
 . "$STACK_DIR/lib/claude_config.sh"
