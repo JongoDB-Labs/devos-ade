@@ -7,6 +7,13 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 ## [Unreleased]
 
 ### Fixed
+- **The update to devos-ade no longer stops at its first check on a default install (JON-945).** On an install whose
+  `.env` names no project, v0.45.0's `./stack update` stopped with "project devos-ade already has volumes
+  (devos-ade_devos-ade-owner)", on every try: the new code marks the project it runs as its own before anything else,
+  and its default project is now devos-ade, so that empty marker was made a moment before the move checked for one.
+  The check now leaves out this install's own marker (the move writes it again for the new folder); another install's
+  still stops the move. An install stuck there resumes with `./stack update`. Nothing was changed by the stop: the old
+  volumes were only read and the old containers kept running.
 - **Update now no longer disappears when the computer is busy (JON-869).** The update helper wrote its heartbeat once a
   loop, and each loop also waited for Home's record of the containers and local-model runtimes (`docker compose ps`,
   `docker inspect`): about 10 s a Docker call on a Mac under heavy load, so a loop took about 4 minutes. Home counts the
@@ -18,7 +25,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   - A helper heard from in the last 10 minutes is shown as late, not gone. **Update now** stays on Home, disabled, with
     why ("has not answered since … : this computer or Docker is busy") and `./stack update` beside it. Maintenance,
     Settings, the Code page and the walkthrough say the same, and a refused request says to try again in a minute
-    rather than to install the helper.
+    rather than to install the helper. On a phone, where the command line is hidden, the hint names `./stack update`
+    itself.
 
 ### Tests
 - **What you can see and click, compared between releases.** The UI sweep records the visible controls of every page
@@ -28,7 +36,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   `tests/e2e/browser/ui-removed.json` declares it with why and the release that changed it. A control hidden from
   assistive technology (`aria-hidden`, `inert`) or at opacity 0 counts as gone.
 - The helper's loop keeps its heartbeat and takes a request while a slow status tick runs, a request ends that tick
-  first, and the tick starts again once it finished (unit); Home's late state (unit and browser e2e).
+  first, and the tick starts again once it finished (unit); Home's late state (unit and browser e2e). The sweep also
+  reports an update hint that points at a command not on screen.
+- **The move to devos-ade as a default install meets it.** `tests/e2e/upgrade.sh --migrate` (the real names) no longer
+  sets the project in the shell during the old release's setup, which wrote it to `.env` and hid JON-945, and checks
+  that `.env` names none. Unit: `./stack update`'s order (the claim, then the move) on such an install, a v0.45.0-stuck
+  install resuming, and another install's marker still refused.
 
 ## [0.45.0] - 2026-10-31
 

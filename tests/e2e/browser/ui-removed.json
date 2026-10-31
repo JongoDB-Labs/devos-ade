@@ -1,1 +1,8 @@
-[]
+[
+ {
+  "state": "portal-home-update-helper-late-*",
+  "control": "#copy-helper",
+  "why": "A late update helper is installed and busy, not missing: Home no longer offers ./stack helper install (and its Copy) for it. Update now stays in sight, disabled, with ./stack update beside it; on a phone, where the command line is hidden, the hint names ./stack update.",
+  "changelog": "v0.45.1"
+ }
+]

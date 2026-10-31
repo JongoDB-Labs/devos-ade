@@ -157,8 +157,10 @@
   function phoneWording(a) {
     const usable = Boolean((a.running || a.late) && a.allowed);   // (late: in sight, disabled — app.js says why)
     document.body.classList.toggle("admin-off", !usable);
-    if (!PHONE.matches || usable) return;
+    if (!PHONE.matches || (a.running && a.allowed)) return;
     const where = "on the computer running DevOS ADE";
+    // (a phone hides the command line and its Copy, mobile.css: these lines say the command itself)
+    if (usable) { $("#update-hint").textContent = `${lateText(a)}: Update now comes back when it answers. Or run ./stack update ${where}.`; return; }
     if (a.running) $("#maint-state").textContent = `Update, Rollback and Clean are off on this device: use a desktop browser ${where}.`;
     $("#update-hint").textContent = `To update, run ./stack update ${where}, or use Home in a desktop browser there.`;
   }

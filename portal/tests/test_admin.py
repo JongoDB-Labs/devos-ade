@@ -198,6 +198,18 @@ def test_the_way_on_while_the_helper_does_not_answer(dirs):
     assert "helper install" not in f"{admin.not_running(late)}. {admin.way_on(late, 'x')}."
 
 
+def test_a_phone_names_the_command_while_the_helper_is_late():
+    # A phone hides the command line and its Copy (mobile.css), so while the helper is late (Update now in sight, disabled)
+    # the phone's hint says the command itself: app.js's "Or run it in your DevOS ADE folder." points at nothing there
+    mobile = open("portal/static/mobile.js", encoding="utf-8").read()
+    fn = mobile[mobile.index("function phoneWording(a)"):mobile.index("// Rotating or resizing")]
+    assert "if (!PHONE.matches || (a.running && a.allowed)) return;" in fn
+    late = next(line for line in fn.splitlines() if line.strip().startswith("if (usable)"))
+    assert "lateText(a)" in late and "./stack update" in late and "Update now comes back when it answers" in late
+    css = open("portal/static/mobile.css", encoding="utf-8").read()
+    assert "#copy-update" in css and "#update-card .cmdline code" in css   # (why: hidden on a phone)
+
+
 def test_a_heartbeat_a_little_ahead_of_dockers_clock_counts(dirs):
     st, _ = dirs
     beat(st, age=0)
