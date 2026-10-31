@@ -3,8 +3,9 @@ turns on edit mode (a tray, a bar and edge handles on each card); hide and Add b
 drag; resize by Shift+arrows and by dragging an edge; the height control; Reset to default; Done and Escape; a reload
 keeps the layout (read first from this browser's cache, then from the portal's own copy); a phone's layout and a desktop's
 stay apart; a card the person hid stays hidden with news to show, and the header still says an update is available when
-the Update card is hidden; the whole flow with the keyboard alone. Each check puts the saved layout back to the
-default first and afterwards. No Bedrock calls. Screenshots: desktop, phone."""
+the Update card is hidden; the whole flow with the keyboard alone; at every width from 768 px up, no widget on top of
+another. Each check puts the saved layout back to the default first and afterwards. No Bedrock calls. Screenshots:
+desktop, phone."""
 
 from __future__ import annotations
 
@@ -108,6 +109,25 @@ def widgets_default(ctx):
     expect(not page.evaluate("() => document.getElementById('widgets').classList.contains('wg-custom')"), "Done without a change left the grid on")
     expect(page.evaluate("() => !!document.querySelector('.grid > .col > .spend')"), "Done without a change did not put the widgets back")
     expect(saved(page, "desktop") is None, f"a layout was saved by looking: {saved(page, 'desktop')}")
+    # at every width the widgets sit apart: none on top of another (768-960 px put them all in one cell up to 0.45.1)
+    for w in (768, 820, 900, 960, 961, 1280, 1440):
+        page.set_viewport_size({"width": w, "height": 900})
+        page.wait_for_timeout(150)
+        on_top = page.evaluate(APART)
+        expect(not on_top, f"widgets on top of each other at {w} px: {', '.join(on_top)}")
+
+
+# the pairs of shown widgets whose boxes overlap (by more than 2 px each way)
+APART = """() => {
+  const r = [...document.querySelectorAll('#widgets [data-widget]')].filter((e) => e.offsetParent)
+    .map((e) => [e.dataset.widget, e.getBoundingClientRect()]).filter(([, q]) => q.width > 0 && q.height > 0);
+  const out = [];
+  for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) {
+    const [a, p] = r[i], [b, q] = r[j];
+    if (Math.min(p.right, q.right) - Math.max(p.left, q.left) > 2 && Math.min(p.bottom, q.bottom) - Math.max(p.top, q.top) > 2) out.push(`${a}/${b}`);
+  }
+  return out;
+}"""
 
 
 @check("browser", "widgets-customize-desktop")

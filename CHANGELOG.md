@@ -25,6 +25,13 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
     when they have something; a card you hid stays hidden even when it has news. With the Update card hidden, Home's
     header still says an update is available, and following that link shows the card for now.
 
+### Fixed
+- **Home's cards no longer pile on top of each other in a window 768–960 px wide.** An iPad held upright, or a desktop
+  browser in a narrow window, showed one card (Send feedback) with the others under it. Each card was given a place by
+  name (spend, models, …) on every screen, but only the two- and three-column layouts from 961 px have those names,
+  and a name the grid does not have puts every card in the same spot. Under 961 px the cards are now one column, in the
+  page's order. Phones (mobile.css) were not affected.
+
 ## [0.45.1] - 2026-10-31
 
 ### Fixed
