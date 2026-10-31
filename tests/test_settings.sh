@@ -941,6 +941,16 @@ test_helper_runs_a_valid_settings_request_with_values_on_stdin() {
   assert_contains "$(cat "$(helper_status_file)")" '"message": "Not saved: replayed'
 }
 
+test_helper_runs_a_settings_request_queued_before_the_name_change() {   # JON-807: the old header, for one release
+  _checkout
+  _cfg_req 0 local 'correct horse battery' "$NONCE" "$(_lines BUDGET_SETUP=6)"
+  sed -i.bak '1s/^devos-ade-settings 1$/bedrock-now-settings 1/' "$(request_dir)/cfg-$NONCE.req" && rm -f "$(request_dir)/cfg-$NONCE.req.bak"
+  assert_eq "$(head -1 "$(request_dir)/cfg-$NONCE.req")" "bedrock-now-settings 1"
+  settings_poll_once 2>/dev/null
+  assert_eq "$(cat "$CALLS")" "config apply --stdin --base $(env_sha256) --origin local --via portal --yes"
+  assert_contains "$(cat "$(helper_status_file)")" '"action": "settings", "phase": "done", "message": "Saved: BUDGET_SETUP"'
+}
+
 test_helper_reports_a_failed_change() {
   _checkout
   _cfg_req 0 local 'correct horse battery' "$NONCE" "$(_lines BUDGET_SETUP=6)"

@@ -109,7 +109,7 @@ settings_check_request() {
     line="${rest%%$'\n'*}"; if [ "$line" = "$rest" ]; then rest=''; else rest="${rest#*$'\n'}"; fi
     n=$((n + 1))
     case "$state:$n:$line" in
-      head:1:'devos-ade-settings 1') ;;
+      head:1:'devos-ade-settings 1' | head:1:'bedrock-now-settings 1') ;;   # (the old header: one release, a request queued across the update to v0.45.0)
       head:2:'nonce '*) SREQ_NONCE="${line#nonce }" ;;
       head:3:'requested_at '*) SREQ_TS="${line#requested_at }" ;;
       head:4:'base '*) SREQ_BASE="${line#base }" ;;

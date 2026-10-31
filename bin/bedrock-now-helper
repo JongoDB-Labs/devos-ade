@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# One-release shim (JON-807, v0.45.0; removed in the next minor): the launchd plists and systemd units of installs from
+# before v0.45.0 start the update helper at this path, also while an update to v0.45.0 runs and before its move to the
+# new name has finished. It hands the helper to its new unit once that move is done (./stack migrate --finish-helper),
+# then runs the helper under its new name.
+D="$(cd "$(dirname "$0")/.." && pwd -P)"
+[ ! -x "$D/stack" ] || "$D/stack" migrate --finish-helper >/dev/null 2>&1 || true
+exec /bin/bash "$D/bin/devos-ade-helper" "${@:-$D}"

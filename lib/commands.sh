@@ -1543,6 +1543,7 @@ cmd_status() {
     ! remote_on || printf '  Remote: %s   (./stack remote status)\n' "$(remote_url || true)"
   fi
   printf '  %s\n' "$(disk_line_cached $fresh)"   # names ./stack clean when it would free something
+  ! declare -F migrate_backup_line >/dev/null || migrate_backup_line | sed 's/^/  /'   # (lib/migrate.sh: the backup kept from the move to the new name)
   if update_unfinished; then   # lib/rollback.sh: its pull or setup failed, or it was stopped
     printf '  %sThe last update did not finish — ./stack update finishes it, ./stack rollback goes back%s\n' "$O_YEL" "$O_OFF"
   elif upd="$(update_available)"; then
@@ -2112,6 +2113,7 @@ cmd_update() {
     log "update: 1/4 backup and 2/4 code done (backup: ${backup:-none})"
     hint="./stack update finishes it, or ./stack rollback goes back (by hand: $(_rollback_cmd "$from" "$branch") && ./stack restore $backup)"
   fi
+  migrate_update_hook || die "update: the move to the new name did not finish (./stack migrate says where; ./stack migrate --rollback goes back) — $hint"   # lib/migrate.sh (JON-807): the name change; may re-exec from the new folder
   # Only an update that moved the code is a new version: an update with nothing new keeps the rollback record
   # and the previous version's images exactly as they are. Finishing an update: its record and snapshot stand.
   if [ "$moved" = 1 ] && [ "$finishing" = 0 ]; then
@@ -2160,6 +2162,7 @@ cmd_update() {
   # Only now that the new version runs: remove what the update before this one replaced (keeps one previous).
   timed_step "Old images cleaned up" _update_cleanup
   [ -z "$from" ] || log "updated to $(installed_version). Something wrong? ./stack rollback goes back (code, data and images)"
+  migrate_update_finish   # lib/migrate.sh: the end of the name change, if this update made it
   timed_step "What's new" update_whats_new "$from"
   offer_helper --after-update   # lib/helper.sh: asks (default yes) unless declined before
 }
@@ -2379,5 +2382,7 @@ cmd_uninstall() {
 . "$STACK_DIR/lib/githost.sh"
 # Your AI subscriptions' own tools in the sandbox (./stack subscriptions): what each says of its own login.
 . "$STACK_DIR/lib/subscriptions.sh"
+# The move from the old name to devos-ade (./stack update runs it once; ./stack migrate).
+. "$STACK_DIR/lib/migrate.sh"
 # devos-claude's own Claude Code config folder (./stack uninstall names it; bin/devos-claude uses it).
 . "$STACK_DIR/lib/claude_config.sh"

@@ -66,7 +66,7 @@ check too, unless none of its files exist (the migration's, before they are merg
 | Open WebUI metadata keys | `(?<![\w])bedrock_now(?:_hidden)?(?![\w])` | lib/openrouter.sh, lib/owui.sh, tests/test_explabs.sh, tests/test_openrouter.sh, tests/test_settings.sh | stored with your models |
 | The stored import source | `'bedrock-now'` | code/server/harness/claude.mjs, code/server/import-plan.mjs, code/server/import-sessions.mjs, code/test/harness-claude.test.mjs, code/web/dev/mock-server.mjs, code/web/src/api.ts, code/web/src/types.ts | stored with a copied session |
 | The old Tailscale names, as documented | `bedrock-now(?:-node\|-chat)?\b\|tag:bedrock-now` | docs/remote.md | installs from before v0.45.0 keep them: the page says how to switch |
-| The update helper's shim | `bedrock-now-helper` | bin/bedrock-now-helper | one-release shim: launchd plists of existing installs point at it |
+| The settings request's old header | `bedrock-now-settings 1` | lib/settings_helper.sh, tests/test_settings.sh | one release: a settings change queued by the portal just before the update to v0.45.0 still runs |
 | The byte-exact fixture | `bedrock-now-icon` | tests/fixtures/legacy-icons/openai.svg | recognised by its hash |
 
 ## devos-claude's old name
@@ -111,6 +111,7 @@ matches it in a file the row names, or `tests/fixtures/brand-allow.txt` names th
 |---|---|---|---|
 | The shim | `claude-bedrock` | bin/claude-bedrock, terminal/bin/claude-bedrock | the old command, for scripts and habits |
 | The shim's file and links | `(?:\.local/bin\|/usr/local/bin\|STACK_DIR/bin\|\bbin)/claude-bedrock\b` | lib/commands.sh, terminal/Dockerfile, README.md, docs/*.md, CHANGELOG.md | setup, update and uninstall look for them |
+| The migration's links | `claude-bedrock` | lib/migrate.sh | moving an install moves the old command's link with it (`~/.local/bin/claude-bedrock`) |
 | The old name, said as such | `(?i:formerly) \x60?claude-bedrock\b\|\bclaude-bedrock\x60?,? \(?(?:its\|devos-claude's) (?:old name\|name before v0\.28\.0)` | * | so people can find it |
 | Its Claude Code folder | `\.claude-bedrock\b` | * | your sign-in and session history |
 | Environment and `.env` names | `\bCLAUDE_BEDROCK_` | * | your shell, scripts and `.env` set them |

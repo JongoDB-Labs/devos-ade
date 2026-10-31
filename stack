@@ -43,6 +43,7 @@ if [ "$want_help" = 1 ]; then
     git-server) localgit_mirror_usage; exit 0 ;;
     sessions) sessions_usage; exit 0 ;;
     websearch) websearch_usage; exit 0 ;;
+    migrate) migrate_usage; exit 0 ;;
     subscriptions) subscriptions_usage; exit 0 ;;
     *) cmd_help_for "$cmd" || die "unknown command: $cmd (try ./stack help)"; exit 0 ;;
   esac
@@ -92,6 +93,7 @@ case "$cmd" in
   git-host) [ ! -f "$ENV_FILE" ] || guard_project --no-claim; cmd_git_host "$@" ;;   # (no Compose change: an exec)
   sessions) [ ! -f "$ENV_FILE" ] || guard_project --no-claim; cmd_sessions "$@" ;;   # (no Compose change: a reader container and an exec)
   subscriptions) [ ! -f "$ENV_FILE" ] || guard_project --no-claim; cmd_subscriptions "$@" ;;   # (no Compose change: an exec)
+  migrate) cmd_migrate "$@" ;;   # (the move to the new name: lib/migrate.sh; it takes the lock and checks Docker itself)
   password) cmd_password "$@" ;;
   config) cmd_config "$@" ;;   # guards the project itself before a change (set, apply)
   restart) [ ! -f "$ENV_FILE" ] || guard_project; cmd_restart "$@" ;;

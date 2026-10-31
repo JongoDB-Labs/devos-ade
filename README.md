@@ -36,6 +36,8 @@ disable` the Code page alone; either stays off across updates).
 | [**Costs & budgets**](#costs--budgets) | a monthly budget per key, prices updated daily, `./stack costs` | on | Settings → Spending & budgets |
 | [**Updates**](#updating) | `./stack update` with a backup and `./stack rollback`; one-click on Home; automatic at night | one-click: setup asks; automatic: off | `./stack helper install`; `./stack helper auto on` / `off` |
 
+
+Upgrading from the old name (bedrock-now)? See [docs/upgrade-to-0.45.md](docs/upgrade-to-0.45.md).
 ## Quickstart
 
 **Prerequisites**

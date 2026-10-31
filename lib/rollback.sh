@@ -113,6 +113,7 @@ cmd_rollback() {
   [ $# -eq 0 ] || die "usage: ./stack rollback [--yes]   (goes back to the version before the last ./stack update)"
   [ -f "$ENV_FILE" ] || die "run ./stack setup first"
   stack_lock rollback
+  ! declare -F migrate_rollback_first >/dev/null || migrate_rollback_first   # (lib/migrate.sh: an install moved to the new name goes back to the old one first)
   ! declare -F xl_bg_stop >/dev/null || xl_bg_stop   # (lib/explabs.sh: a background read of the model details)
   from="$(_record_get from)"; branch="$(_record_get branch)"; fromv="$(_record_get from_version)"
   backup="$(_record_get backup)"; result="$(_record_get result)"; at="$(_record_get at)"

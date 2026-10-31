@@ -1,4 +1,4 @@
 # Lines that keep the product's old name, which no pattern of docs/internal-names.md covers: PATH<TAB>TEXT<TAB>WHY.
 # TEXT is the part of a line of PATH (the old name inside it) that stays; tests/brand_check.py fails on an entry
 # that no longer matches anything.
-# No exemptions at v0.45.0: every spelling that stays is a pattern of docs/internal-names.md.
+README.md	Upgrading from the old name (bedrock-now)?	points installs of the old name to docs/upgrade-to-0.45.md
