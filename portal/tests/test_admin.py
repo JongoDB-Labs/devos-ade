@@ -187,6 +187,17 @@ def test_a_late_heartbeat_is_late_not_gone(make_client, dirs):
     assert requests_in(rq) == []
 
 
+def test_the_way_on_while_the_helper_does_not_answer(dirs):
+    st, _ = dirs
+    beat(st, age=240)
+    late = admin.helper_state(st)
+    assert admin.way_on(late, "./stack config set in a terminal") == "Try again in a minute, or ./stack config set in a terminal"
+    beat(st, age=admin.HEARTBEAT_LATE_S + 60)
+    gone = admin.helper_state(st)
+    assert admin.way_on(gone, "./stack config set in a terminal") == "./stack helper install, or ./stack config set in a terminal"
+    assert "helper install" not in f"{admin.not_running(late)}. {admin.way_on(late, 'x')}."
+
+
 def test_a_heartbeat_a_little_ahead_of_dockers_clock_counts(dirs):
     st, _ = dirs
     beat(st, age=0)

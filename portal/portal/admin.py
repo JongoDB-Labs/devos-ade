@@ -244,6 +244,12 @@ def not_running(state: dict, now: float | None = None) -> str:
     return f"The update helper is not running: it was last seen {_span(age)} ago (./stack helper status says more)"
 
 
+def way_on(state: dict, terminal: str) -> str:
+    """After not_running(state): what to do meanwhile — late, try again in a minute (never "install it"); else
+    ./stack helper install. Either way TERMINAL ("./stack config set in a terminal", ...)."""
+    return f"Try again in a minute, or {terminal}" if state.get("late") else f"./stack helper install, or {terminal}"
+
+
 def job_in_progress(state: dict, now: float | None = None) -> bool:
     job = state.get("job")
     if not job or job.get("phase") in TERMINAL or not job.get("phase"):

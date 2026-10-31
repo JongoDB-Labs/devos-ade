@@ -762,6 +762,8 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
                                      "screen (or ./stack sessions config import in a terminal there).")
         state = admin.helper_state(settings.status_dir)
         if not state["running"]:
+            if state["late"]:   # (busy, not gone: JON-869)
+                return sessions_err(503, f"{admin.not_running(state)}. Try again in a minute, or in a terminal there, ./stack sessions.")
             return sessions_err(503, "The update helper is not running on the computer: in a terminal there, ./stack sessions "
                                      "(./stack helper install keeps it running).")
         cap = settings_mod.capability(settings.status_dir)

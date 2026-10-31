@@ -6,7 +6,8 @@ from __future__ import annotations
 import re
 
 # Visible interactive controls of a document (run in the page, one frame at a time) -> {visible: [...], hidden: [...]}.
-# Visible: rendered with a box, not visibility:hidden, not in [hidden] or a closed <details> (its summary excepted).
+# Visible: rendered with a box, not visibility:hidden, not in [hidden] or a closed <details> (its summary excepted), and
+# not taken from assistive technology or the pointer either: not inside [inert] or [aria-hidden=true], not at opacity 0.
 # hidden: controls with an id that are in the document but not visible (a control that went away without leaving).
 COLLECT_CONTROLS = r"""() => {
   const SEL = 'button, a[href], input:not([type=hidden]), select, textarea, summary, ' +
@@ -52,8 +53,10 @@ COLLECT_CONTROLS = r"""() => {
     if (r.width <= 0 || r.height <= 0) return false;
     const cs = getComputedStyle(el);
     if (cs.visibility === 'hidden' || cs.display === 'none') return false;
+    if (el.closest('[inert], [aria-hidden="true"]')) return false;
     for (let a = el; a; a = a.parentElement) {
       if (a.hidden) return false;
+      if (parseFloat(getComputedStyle(a).opacity) === 0) return false;
       const p = a.parentElement;
       if (p && p.tagName === 'DETAILS' && !p.open && !(a.tagName === 'SUMMARY' && p.querySelector(':scope > summary') === a)) return false;
     }

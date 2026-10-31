@@ -121,6 +121,10 @@
 
   const page = () => $("#settings");
   const hasHelper = () => Boolean(data && data.helper.running && data.helper.settings);
+  // what needs the update helper says while it does not answer: late (heard from minutes ago: busy, JON-869) or off
+  const needsHelper = (what) => data.helper.late
+    ? `${what} needs the update helper, which has not answered since ${new Date(data.helper.heartbeat_at * 1000).toLocaleTimeString()}: this computer or Docker is busy. Try again in a minute.`
+    : `${what} needs the update helper (./stack helper install).`;
   const canChange = () => hasHelper() && data.here.allowed;
   const pad2 = (n) => String(n).padStart(2, "0");
   const lower = (x) => String(x || "").trim().toLowerCase();
@@ -1881,7 +1885,7 @@
         hide, " Hide its path (/projects/<name> in the sandbox)"), " ", pick);
     rw._main.append(add);
     const why = !local ? "Adding a folder works only on the computer running DevOS ADE (its folder chooser opens on that screen)."
-      : !data.helper.running ? "Choose on this computer… needs the update helper (./stack helper install)."
+      : !data.helper.running ? needsHelper("Choose on this computer…")
         : !(data.helper.projects || []).includes("project-pick") ? "This update helper does not offer project folders yet: ./stack helper install refreshes it."
           : !data.helper.screen ? "The update helper cannot show a dialog on this computer's screen: add a folder in a terminal there." : "";
     if (why) rw._main.append(el("p", { class: "note set-extra", text: why }));
@@ -1947,7 +1951,7 @@
     }
     rw._main.append(el("p", { class: "note set-extra", text: "Only on the computer running DevOS ADE is anything allowed: the Code page asks in a dialog on its screen (Allow once, or Always). Nothing is ever written back to ~/.claude, ~/.claude-bedrock or ~/.gitconfig; logins, credentials and env settings there are never read — your setup (memory, skills, MCP servers, plugins …) only under Bring your setup's own consent, above." }));
     if (!can && (sc.folders.length || sc.suggest.length || setup.length)) {
-      rw._main.append(el("p", { class: "note set-extra", text: !data.helper.running ? "Taking back from here needs the update helper (./stack helper install)." : "Taking back from here needs a newer update helper: ./stack helper install refreshes it." }));
+      rw._main.append(el("p", { class: "note set-extra", text: !data.helper.running ? needsHelper("Taking back from here") : "Taking back from here needs a newer update helper: ./stack helper install refreshes it." }));
     }
     rw._main.append(el("p", { class: "set-cli" }, el("span", { class: "note", text: "In a terminal on this computer: " }), el("code", { text: "./stack sessions consent --revoke-all" }), " ",
       copyButton("./stack sessions consent --revoke-all")));
@@ -2138,7 +2142,7 @@
     }
     rw._main.append(el("p", { class: "note set-extra", text: "Each sign-in is the tool's own, and stays in its own file in that sandbox (Chat's apart from the terminal's): DevOS ADE never opens it, backups leave it out. Anything in that sandbox can read it — Sign out, and revoke it at the provider, if that worries you." }));
     if (!can("subscriptions-check")) {
-      rw._main.append(!data.helper.running ? el("p", { class: "note set-extra", text: "Check again and Sign out need the update helper (./stack helper install)." })
+      rw._main.append(!data.helper.running ? el("p", { class: "note set-extra", text: needsHelper("Check again and Sign out").replace(" needs ", " need ") })
         : !canChange() ? el("p", { class: "note set-extra" }, "Settings changes are off for remote access: ",
           el("a", { href: "#settings/REMOTE_ADMIN_ACTIONS", "data-setup": "remote-admin-off", text: "Remote access › Update, settings and diagnostics from your devices" }), ".")
           : el("p", { class: "note set-extra", text: "This update helper does not offer them yet: ./stack helper install refreshes it." }));

@@ -556,7 +556,7 @@ def routes(ctx: Ctx) -> list[Route]:
         can_change = state["running"] and cap["settings"] and allowed(request)
         why_not = "" if can_change else (
             "Settings changes are off for remote access (REMOTE_ADMIN_ACTIONS in .env)." if not allowed(request)
-            else f"{admin.not_running(state)}. ./stack helper install, or ./stack config set in a terminal.")
+            else f"{admin.not_running(state)}. {admin.way_on(state, './stack config set in a terminal')}.")
         return _no_store(JSONResponse({
             "providers": data, "base": snap["base"], "can_change": bool(can_change), "why_not": why_not,
             "try": bool(_setup_key()) and allowed(request) and state["running"],
@@ -652,7 +652,7 @@ def routes(ctx: Ctx) -> list[Route]:
         if not allowed(request):
             return False, "Settings changes are off for remote access (REMOTE_ADMIN_ACTIONS in .env)."
         if not state["running"]:
-            return False, f"{admin.not_running(state)}. ./stack helper install, or ./stack local-models pull ORG/REPO QUANT in a terminal."
+            return False, f"{admin.not_running(state)}. {admin.way_on(state, './stack local-models pull ORG/REPO QUANT in a terminal')}."
         if "local-pull" not in cap["local"]:
             return False, "This update helper does not do local models yet: ./stack helper install refreshes it."
         return True, ""

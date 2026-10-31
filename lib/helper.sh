@@ -880,6 +880,7 @@ _job_run() {
 # automatic update of JOB_TARGET (its own record and wording; one that cannot start is "skipped", not "failed")
 helper_run_job() {
   local action="$1" logf pid rc=0 ph at freed summary why msg
+  _status_tick_stop   # (an automatic update comes here without a request: helper_auto_tick)
   JOB_ID="$2"; JOB_ACTION="$action"; JOB_TRIGGER="${3:-}"; JOB_STARTED="$(date +%s)"; JOB_FINISHED=''; JOB_FREED=''; JOB_VERSION=''
   JOB_RESULT=''; JOB_MESSAGE=''
   why="$(_job_refusal "$action")"
@@ -1101,6 +1102,8 @@ helper_poll_once() {
   rq="$(request_dir)"; inbox="$(helper_dir)/inbox"
   [ -d "$inbox" ] || { mkdir -p "$inbox" && chmod 700 "$(helper_dir)" "$inbox"; } 2>/dev/null || return 1
   _sweep_requests
+  # a request to carry out: the status tick ends first (_status_tick_stop; the next loop starts a fresh one)
+  for f in "$rq"/cfg-*.req "$rq"/act-*.json "$rq"/req-*.json "$rq"/ses-*.json; do [ -e "$f" ] && { _status_tick_stop; break; }; done
   # lib/settings_helper.sh: settings and diagnostics, in a subshell (nothing in it can end the helper); after one ran,
   # this loop's heartbeat is out of date
   if ( settings_poll_once ); then AUTO_FRESH=0; fi
@@ -1144,24 +1147,43 @@ _rotate_log() {
 
 # _status_tick_bg — lib/commands.sh services_status_tick (docker compose and docker inspect: about 10 s a call on a busy
 # computer) runs beside the loop, one at a time, so the heartbeat and the requests never wait for Docker (JON-869: a
-# heartbeat minutes old, and Home hid Update now). One still running when the helper ends goes with its launchd job or
-# systemd unit; what it writes is replaced atomically. _status_tick_wait: --once waits for it.
+# heartbeat minutes old, and Home hid Update now). Never waited for here: a finished one is reaped by bash.
+# _status_tick_stop: before a request is carried out (helper_poll_once) and when the loop ends, the tick ends first, so
+# it never writes Home's record or a runtime's watch state from before the request over what the request does (its
+# files are replaced atomically; its Docker calls end with it). _status_tick_wait: --once waits for it instead.
 HELPER_TICK_PID=''
+_status_tick_running() {
+  [ -n "$HELPER_TICK_PID" ] || return 1
+  case " $(jobs -pr | tr '\n' ' ') " in *" $HELPER_TICK_PID "*) return 0 ;; esac
+  return 1
+}
 _status_tick_bg() {
   declare -F services_status_tick >/dev/null || return 0
-  if [ -n "$HELPER_TICK_PID" ]; then
-    case " $(jobs -pr | tr '\n' ' ') " in *" $HELPER_TICK_PID "*) return 0 ;; esac
-    wait "$HELPER_TICK_PID" 2>/dev/null || true   # (reaped; how it ended is its own business: never fatal)
-  fi
+  ! _status_tick_running || return 0
   ( services_status_tick ) </dev/null &
   HELPER_TICK_PID=$!
 }
-_status_tick_wait() { [ -z "$HELPER_TICK_PID" ] || wait "$HELPER_TICK_PID" 2>/dev/null || true; HELPER_TICK_PID=''; }
+_status_tick_tree() { local c; printf '%s\n' "$1"; for c in $(pgrep -P "$1" 2>/dev/null); do _status_tick_tree "$c"; done; }
+_status_tick_stop() {
+  local p
+  if _status_tick_running; then   # (the subshell first, so it starts nothing more; then what it started)
+    for p in $(_status_tick_tree "$HELPER_TICK_PID"); do kill "$p" 2>/dev/null || true; done
+    wait "$HELPER_TICK_PID" 2>/dev/null || true
+  fi
+  HELPER_TICK_PID=''
+}
+_status_tick_wait() { ! _status_tick_running || wait "$HELPER_TICK_PID" 2>/dev/null || true; HELPER_TICK_PID=''; }
 
 # helper_main [--once] — the loop bin/devos-ade-helper runs. It ends (exit 0: launchd/systemd start it again, with
 # the checkout's code) after an update/rollback/clean, and when the checkout moved to another commit under it (a
-# ./stack update in a terminal) once no ./stack command holds the lock.
+# ./stack update in a terminal) once no ./stack command holds the lock. The status tick ends with it (--once: waited for).
 helper_main() {
+  local rc=0
+  _helper_loop "$@" || rc=$?
+  if [ "${1:-}" = --once ]; then _status_tick_wait; else _status_tick_stop; fi
+  return "$rc"
+}
+_helper_loop() {
   local start_head gone=0
   [ -f "$ENV_FILE" ] || die "$STACK_DIR is not set up (no .env)"
   # Nothing in the loop may end it with an error: launchd/systemd restart the helper only after a clean exit.
@@ -1192,7 +1214,7 @@ helper_main() {
     _status_tick_bg || true   # Home's record of the containers and runtimes, every minute: beside the loop
     if helper_poll_once; then helper_heartbeat || true; return 0; fi
     if helper_auto_tick; then helper_heartbeat || true; return 0; fi
-    [ "${1:-}" != --once ] || { _status_tick_wait; return 0; }
+    [ "${1:-}" != --once ] || return 0
     # (a request that comes meanwhile is taken at once: lib/settings_helper.sh helper_nap)
     if helper_nap "$HELPER_POLL_S" && helper_poll_once; then helper_heartbeat || true; return 0; fi
   done

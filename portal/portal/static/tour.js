@@ -105,7 +105,7 @@
       // (blank, and the old on values, read as internet, as ./stack reads them)
       egress: egress === null ? null : ["host", "off"].includes(egress) ? egress : ["false", "0", "no"].includes(egress) ? "off"
         : ["", "internet", "true", "1", "yes", "on"].includes(egress) ? "internet" : null,
-      helper: Boolean(d && d.helper && d.helper.running === true),
+      helper: Boolean(d && d.helper && (d.helper.running === true || d.helper.late === true)),   // (late: there, busy)
       auto: keys.AUTO_UPDATE === "on",
       nightly: keys.BACKUP_NIGHTLY === "on",
     };
