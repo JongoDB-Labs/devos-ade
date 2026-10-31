@@ -21,6 +21,18 @@ CATALOG="${CATALOG:-$STACK_DIR/catalog/models.tsv}"
 # The project's names (PRODUCT_NAME, PRODUCT_SLUG, PRODUCT_REPO, and its names before v0.25.0).
 . "$STACK_DIR/lib/brand.sh"
 # shellcheck disable=SC2034  # used by lib/commands.sh
+# env_fallback_old_names — one release of compatibility with the product's old name (removed in the next minor): every
+# BEDROCK_NOW_X in the environment with DEVOS_ADE_X unset is exported as DEVOS_ADE_X, and the old name is dropped. ./stack calls it at its start,
+# so an update run by an older ./stack (which hands BEDROCK_NOW_CODE_UPDATED, BEDROCK_NOW_LOCK_HELD, … to the new code)
+# and a shell or a script that still sets BEDROCK_NOW_* keep working. The old name is not read anywhere else.
+env_fallback_old_names() {
+  local old new
+  for old in $(compgen -e | grep '^BEDROCK_NOW_[A-Za-z0-9_]*$' || true); do
+    new="DEVOS_ADE_${old#BEDROCK_NOW_}"
+    if [ -z "${!new+x}" ]; then export "$new=${!old}"; fi
+    unset "$old"   # (the one name left: a child `env -u DEVOS_ADE_X` must not see the old one come back)
+  done
+}
 AWS_CLI_IMAGE="amazon/aws-cli:2.37.12"
 
 # color_on FD -> 0 if output on FD should be coloured: a TTY, and NO_COLOR (https://no-color.org) unset/empty.
@@ -91,10 +103,10 @@ off_exit() {
 
 log()  { printf '%s==>%s %s\n' "$C_GRN" "$C_OFF" "$*" >&2; }
 warn() { printf '%s!!%s  %s\n' "$C_YEL" "$C_OFF" "$*" >&2; }
-# test_url_ignored NAME WHAT — a test suite's address (BEDROCK_NOW_TEST_OPENROUTER_API, BEDROCK_NOW_TEST_STT_API,
-# BEDROCK_NOW_TEST_EXPLABS_API) found without BEDROCK_NOW_TESTING=1: not used, and said (lib/openrouter.sh, lib/stt.sh,
+# test_url_ignored NAME WHAT — a test suite's address (DEVOS_ADE_TEST_OPENROUTER_API, DEVOS_ADE_TEST_STT_API,
+# DEVOS_ADE_TEST_EXPLABS_API) found without DEVOS_ADE_TESTING=1: not used, and said (lib/openrouter.sh, lib/stt.sh,
 # lib/explabs.sh: only the test suite may change where WHAT, a key, goes)
-test_url_ignored() { warn "$1 in your shell is ignored: only the test suite (BEDROCK_NOW_TESTING=1) may change where $2 goes"; }
+test_url_ignored() { warn "$1 in your shell is ignored: only the test suite (DEVOS_ADE_TESTING=1) may change where $2 goes"; }
 die()  { _BN_DIE_MSG="$*"; printf '%sxx%s  %s\n' "$C_RED" "$C_OFF" "$*" >&2; exit 1; }   # (the message: for Home, lib/lock.sh)
 
 require_cmd() { command -v "$1" >/dev/null 2>&1 || die "missing required command: $1${2:+ — $2}"; }
@@ -289,7 +301,7 @@ confirm() { # confirm "Question?" -> 0 yes / 1 no (default yes)
 }
 
 # --- docker compose wrapper pinned to this checkout ---
-DEFAULT_PROJECT=bedrock-now   # = `name:` in compose.yaml
+DEFAULT_PROJECT=devos-ade   # = `name:` in compose.yaml
 
 # project_name -> this checkout's Compose project: COMPOSE_PROJECT_NAME from .env (setup stores it there for a
 # second copy), else the default. A shell COMPOSE_PROJECT_NAME never repoints an existing checkout.
@@ -364,7 +376,7 @@ SUMS
     BN_LOCALGIT_TLS="$STATE_DIR/localgit/tls" BN_LOCALGIT_MODE="$(flag_off "$(get_env LOCALGIT)" && echo off || echo on)" \
     BN_LLAMACPP_DIR="$STATE_DIR/runtimes/llamacpp" BN_LLAMACPP_USER="$(cat "$STATE_DIR/runtimes/llamacpp/user" 2>/dev/null || echo 65534:65534)" \
     BN_VLLM_DIR="$STATE_DIR/runtimes/vllm" BN_VLLM_USER="$(cat "$STATE_DIR/runtimes/vllm/user" 2>/dev/null || echo 65534:65534)" \
-    BEDROCK_NOW_ENV_DISPLAY="$(env_file_display)" COMPOSE_PROJECT_NAME="$p" docker compose -p "$p" --project-directory "$STACK_DIR" -f "$STACK_DIR/compose.yaml" ${f[@]+"${f[@]}"} \
+    DEVOS_ADE_ENV_DISPLAY="$(env_file_display)" COMPOSE_PROJECT_NAME="$p" docker compose -p "$p" --project-directory "$STACK_DIR" -f "$STACK_DIR/compose.yaml" ${f[@]+"${f[@]}"} \
       --env-file "$ENV_FILE" "$@" )
 }
 
@@ -472,10 +484,10 @@ compose_version_ge() {
 }
 
 # compose_overrides_ok -> 0 when this machine's Docker Compose reads the !override and !reset tags of the compose files
-# (2.24.4 or newer: Chat's sandbox's network, remote access under your own domain); BEDROCK_NOW_COMPOSE_OVERRIDES=1|0
+# (2.24.4 or newer: Chat's sandbox's network, remote access under your own domain); DEVOS_ADE_COMPOSE_OVERRIDES=1|0
 # decides instead (tests/run.sh sets 1). _BN_COMPOSE_VERSION keeps the version for the message.
 compose_overrides_ok() {
-  case "${BEDROCK_NOW_COMPOSE_OVERRIDES:-}" in 0) return 1 ;; 1) return 0 ;; esac
+  case "${DEVOS_ADE_COMPOSE_OVERRIDES:-}" in 0) return 1 ;; 1) return 0 ;; esac
   [ -n "${_BN_COMPOSE_VERSION:-}" ] || _BN_COMPOSE_VERSION="$(docker compose version --short 2>/dev/null || true)"
   compose_version_ge "$_BN_COMPOSE_VERSION" 2 24 4
 }
@@ -486,10 +498,10 @@ compose_too_old() {
 
 # compose_reads_contexts -> 0 when this machine's Docker Compose reads build.additional_contexts, which the portal's
 # docs index needs (compose.portal-docs.yaml). Asked once per command (./stack asks before anything else; the answer
-# is exported to the commands it runs); BEDROCK_NOW_COMPOSE_CONTEXTS=1|0 decides instead (tests/run.sh sets 0).
+# is exported to the commands it runs); DEVOS_ADE_COMPOSE_CONTEXTS=1|0 decides instead (tests/run.sh sets 0).
 # _BN_COMPOSE_VERSION keeps the version for the message of an older one.
 compose_reads_contexts() {
-  case "${BEDROCK_NOW_COMPOSE_CONTEXTS:-}" in 0) return 1 ;; 1) return 0 ;; esac
+  case "${DEVOS_ADE_COMPOSE_CONTEXTS:-}" in 0) return 1 ;; 1) return 0 ;; esac
   if [ -z "${_BN_COMPOSE_CTX:-}" ]; then
     _BN_COMPOSE_VERSION="$(docker compose version --short 2>/dev/null || true)"
     _BN_COMPOSE_CTX=no

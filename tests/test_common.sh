@@ -222,3 +222,26 @@ test_no_rm_takes_an_unquoted_expansion() {
   [ "${#files[@]}" -gt 30 ]
   out="$(python3 -I "$T_ROOT/tests/rm_scan.py" "${files[@]}")" || { printf 'rm with an unquoted expansion:\n%s\n' "$out" >&2; return 1; }
 }
+
+# --- the old name's environment, for one release: BEDROCK_NOW_X becomes DEVOS_ADE_X when that is unset ---
+
+test_env_fallback_takes_the_old_name_when_the_new_one_is_unset() {
+  local out
+  # (the vars are set in the subshell's environment with export, then the function runs)
+  out="$( (unset DEVOS_ADE_CODE_UPDATED DEVOS_ADE_LOCK_HELD
+    export BEDROCK_NOW_CODE_UPDATED=1 BEDROCK_NOW_LOCK_HELD=4242; env_fallback_old_names
+    printf '%s|%s|%s' "${DEVOS_ADE_CODE_UPDATED-unset}" "${DEVOS_ADE_LOCK_HELD-unset}" "${BEDROCK_NOW_LOCK_HELD-gone}") )"
+  assert_eq "$out" "1|4242|gone"
+  # exported: a child process sees it
+  assert_eq "$( (export BEDROCK_NOW_VERBOSE=1; unset DEVOS_ADE_VERBOSE; env_fallback_old_names; env | grep '^DEVOS_ADE_VERBOSE=') )" "DEVOS_ADE_VERBOSE=1"
+}
+
+test_env_fallback_never_overrides_a_new_name_even_an_empty_one() {
+  assert_eq "$( (export BEDROCK_NOW_NO_OPEN=1 DEVOS_ADE_NO_OPEN=0; env_fallback_old_names; printf '%s' "$DEVOS_ADE_NO_OPEN") )" "0"
+  assert_eq "$( (export BEDROCK_NOW_NO_OPEN=1 DEVOS_ADE_NO_OPEN=; env_fallback_old_names; printf '[%s]' "$DEVOS_ADE_NO_OPEN") )" "[]"
+}
+
+test_env_fallback_leaves_other_names_and_runs_in_stack_first() {
+  assert_eq "$( (export BEDROCK_NOWHERE=1 BEDROCK_NOW=2; unset DEVOS_ADE_WHERE; env_fallback_old_names; printf '%s|%s' "${DEVOS_ADE_WHERE-unset}" "${BEDROCK_NOWHERE-gone}") )" "unset|1"
+  assert_contains "$(cat "$T_ROOT/stack")" "env_fallback_old_names"
+}

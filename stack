@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# DevOS ADE CLI (formerly bedrock-now: lib/guard.sh of an install of either name looks for that). Run `./stack help`.
+# DevOS ADE CLI. Run `./stack help`.
 set -euo pipefail
 STACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export STACK_DIR
 . "$STACK_DIR/lib/common.sh"
+env_fallback_old_names   # (BEDROCK_NOW_X -> DEVOS_ADE_X for one release)
 . "$STACK_DIR/lib/ports.sh"
 . "$STACK_DIR/lib/portal.sh"
 . "$STACK_DIR/lib/models.sh"
@@ -25,8 +26,8 @@ set -- ${args[@]+"${args[@]}"}
 cmd="${1:-help}"; [ $# -gt 0 ] && shift
 # For Home's record of a command run in a terminal (lib/lock.sh): the command and its first argument when that is a
 # plain word ("code enable", "config set"), never a value
-BEDROCK_NOW_JOB_CMD="$cmd"
-case "${1:-}" in [a-z]*) case "$1" in *[!a-z-]*) ;; *) BEDROCK_NOW_JOB_CMD="$cmd $1" ;; esac ;; esac
+DEVOS_ADE_JOB_CMD="$cmd"
+case "${1:-}" in [a-z]*) case "$1" in *[!a-z-]*) ;; *) DEVOS_ADE_JOB_CMD="$cmd $1" ;; esac ;; esac
 # -h/--help anywhere after the command (no real value is ever that): that command's part of ./stack help, before
 # any check or change (exit 0). `./stack stt set openai --help` must never store "--help" as a model.
 want_help=0
