@@ -1473,6 +1473,8 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             throttle.success()
         st = admin.helper_state(settings.status_dir)
         if not st["running"]:
+            if st["late"]:   # (busy, not gone: JON-869)
+                return err(503, f"{admin.not_running(st)}. Try again in a minute, or run {admin.CLI[action]} in a terminal.")
             return err(503, f"{admin.not_running(st)}. Start it with ./stack helper install, or run "
                             f"{admin.CLI[action]} in a terminal.")
         if action in admin.AUTO_ACTIONS and not st["auto"]["supported"]:

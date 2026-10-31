@@ -365,6 +365,23 @@ def update_card(ctx):
         for f in new:
             f.unlink()
         states.append("helper request")
+        # 2b. the helper late (its heartbeat 4 min old: the computer or Docker busy, JON-869): Update now stays in sight,
+        # disabled and described by why; the command beside it; never "One-click updates are off … helper install"
+        _write_json(beat, {"heartbeat": int(time.time()) - 240, "version": "e2e", "rollback": {"available": False}})
+        page.reload()
+        page.wait_for_selector("#update-now:not([hidden])", timeout=15000)
+        now_btn = page.locator("#update-now")
+        hint = page.inner_text("#update-hint")
+        expect(now_btn.is_visible() and now_btn.is_disabled(), "Update now not in sight (disabled) while the helper is late")
+        expect(now_btn.get_attribute("aria-describedby") == "update-hint", "Update now is not described by the hint")
+        expect(hint.startswith("The update helper has not answered since 4 min ago: this computer or Docker is busy")
+               and "Update now comes back when it answers" in hint, f"late hint {hint!r}")
+        expect(page.locator("#update-cmd").is_visible() and page.locator("#update-cli").is_hidden(), "the command, unfolded, beside it")
+        expect(page.locator("#helper-off").is_hidden(), "'One-click updates are off' shown for a late helper")
+        expect(page.locator("#maint").is_visible() and "has not answered since" in page.inner_text("#maint-state"),
+               f"Maintenance: {page.inner_text('#maint-state')!r}")
+        shot(page, "05b-home-update-helper-late")
+        states.append("helper late: Update now disabled, said why")
         # 3. the check failed / the latest release is the installed one: no card
         beat.unlink()
         _write_json(up, {"tag": "v0.0.1", "checked_at": now, "error": "e2e: GitHub did not answer", "error_at": now})

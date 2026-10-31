@@ -131,6 +131,8 @@ def routes(ctx: Ctx) -> list[Route]:
     def helper_ready() -> Response | None:
         state = admin.helper_state(s.status_dir)
         if not state["running"]:
+            if state["late"]:   # (busy, not gone: JON-869)
+                return err(503, f"{admin.not_running(state)}. Try again in a minute, or use ./stack config set KEY in a terminal.")
             return err(503, f"{admin.not_running(state)}. Nothing can be applied from here until it runs: ./stack helper "
                             "install starts it, or use ./stack config set KEY in a terminal.")
         if not st.capability(s.status_dir)["settings"]:
@@ -149,7 +151,7 @@ def routes(ctx: Ctx) -> list[Route]:
         snap = st.snapshot(s.status_dir)
         return _no_store(JSONResponse({
             "available": snap is not None, "snapshot": snap, "layout": st.layout(s.catalog_dir),
-            "helper": {"running": state["running"], "heartbeat_at": state["heartbeat_at"], "settings": cap["settings"],
+            "helper": {"running": state["running"], "late": state["late"], "heartbeat_at": state["heartbeat_at"], "settings": cap["settings"],
                        "diagnostics": cap["diagnostics"], "projects": cap["projects"], "sessions": cap["sessions"],
                        "subscriptions": cap["subscriptions"], "screen": cap["screen"],
                        "in_progress": admin.job_in_progress(state), "job": state["job"]},

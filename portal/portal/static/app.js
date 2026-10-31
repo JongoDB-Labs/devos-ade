@@ -677,16 +677,17 @@ function sinceText(t) {
 }
 
 // Without the helper (and when this device may use it): how to turn it on, in the update card while an update is
-// available, else in Maintenance. Remote viewers keep the remote wording instead.
+// available, else in Maintenance. Remote viewers keep the remote wording instead. A late helper (heard from minutes
+// ago: the computer or Docker busy) is not off: Update now stays in sight, disabled, and says so (JON-869).
 function placeHelperOff() {
   const a = adminState;
   if (!a) return;
-  const off = !a.running && a.allowed;
+  const off = !a.running && !a.late && a.allowed;
   const inUpdate = off && Boolean(lastUpdate && lastUpdate.available);
   const box = $("#helper-off");
   box.hidden = !off;
   (inUpdate ? $("#update-helper-slot") : $("#maint-helper-slot")).append(box);
-  $("#maint").hidden = !(a.running || (off && !inUpdate));
+  $("#maint").hidden = !(a.running || (a.late && a.allowed) || (off && !inUpdate));
   $("#helper-off-title").textContent = a.heartbeat_at
     ? `One-click updates are off: the update helper is not running (last seen ${sinceText(a.heartbeat_at)})` : "One-click updates are off";
 }
@@ -694,7 +695,7 @@ function placeHelperOff() {
 function renderAuto(a, usable) {
   const auto = a.auto || {};
   const row = $("#auto-row");
-  row.hidden = !(a.running && auto.supported);
+  row.hidden = !((a.running || a.late) && auto.supported);
   if (row.hidden) return;
   $("#auto-window").textContent = autoWindow(a).join("–");
   const changing = Boolean(awaiting && awaiting.toggle);
@@ -714,6 +715,7 @@ function renderAuto(a, usable) {
 // window, so Home combines what the helper says (switch, state, what it tried) with the release this card shows.
 function updateHint(a, usable) {
   if (!a.allowed) return `Run it in your DevOS ADE folder. ${REMOTE_OFF}`;
+  if (!usable && a.late) return `${lateText(a)}: Update now comes back when it answers. Or run it in your DevOS ADE folder.`;
   if (!usable) return "Run it in your DevOS ADE folder.";
   const auto = a.auto || {}, latest = lastUpdate && lastUpdate.latest, last = auto.last || {};
   // while a job runs, the update it is doing looks "unfinished" to the helper: the progress card speaks then
@@ -734,31 +736,35 @@ function updateHint(a, usable) {
 }
 
 // The update card's one action first: with the update helper usable here, Update now, and the terminal command folded
-// under it ("From a terminal instead"); without it, the command itself (UX-20)
-function placeUpdateCli(usable) {
+// under it ("From a terminal instead"); without it, the command itself (UX-20); with it late, both: Update now
+// (disabled until it answers) and the command
+function placeUpdateCli(usable, late) {
   const line = $("#update-cli-line");
   if (!line) return;
   (usable ? $("#update-cli-fold") : $("#update-cli-plain")).append(line);
   $("#update-cli").hidden = !usable;
-  $("#update-go").hidden = !usable;
+  $("#update-go").hidden = !(usable || late);
 }
+
+function lateText(a) { return `The update helper has not answered since ${sinceText(a.heartbeat_at)}: this computer or Docker is busy`; }
 
 function renderAdmin(a) {
   adminState = a;
-  const usable = a.running && a.allowed;
+  const usable = a.running && a.allowed, late = !a.running && a.late && a.allowed;
   // (off for remote access: where that is turned on — catalog/setup-links.tsv remote-admin-off)
   if (!a.allowed) {
     $("#maint-state").replaceChildren(`${REMOTE_OFF} `, el("a", { href: "#settings/REMOTE_ADMIN_ACTIONS", "data-setup": "remote-admin-off",
       text: "Settings › Remote access › Update, settings and diagnostics from your devices" }));
-  } else $("#maint-state").textContent = `The update helper is running on this computer${a.version ? ` (installed version ${a.version})` : ""}.`;
-  $("#maint-state").hidden = $("#maint-actions").hidden = $("#maint-note").hidden = !a.running;
+  } else if (late) $("#maint-state").textContent = `${lateText(a)}. Update, Roll back and Clean up come back when it answers.`;
+  else $("#maint-state").textContent = `The update helper is running on this computer${a.version ? ` (installed version ${a.version})` : ""}.`;
+  $("#maint-state").hidden = $("#maint-actions").hidden = $("#maint-note").hidden = !(a.running || late);
   for (const b of document.querySelectorAll("button.action[data-action]")) b.disabled = !usable || a.in_progress;
   const rb = $("#rollback-now");
   rb.hidden = !(a.rollback && a.rollback.available);
   rb.textContent = a.rollback && a.rollback.to ? `Roll back to ${a.rollback.to}` : "Roll back";
   $("#job-rollback").textContent = rb.textContent;
-  $("#update-now").hidden = !usable;
-  placeUpdateCli(usable);
+  $("#update-now").hidden = !(usable || late);
+  placeUpdateCli(usable, late);
   renderAuto(a, usable);
   placeHelperOff();
   $("#update-hint").textContent = updateHint(a, usable);

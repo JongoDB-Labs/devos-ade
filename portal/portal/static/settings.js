@@ -467,6 +467,12 @@
       box.hidden = true;
       return box;
     }
+    if (!data.helper.running && data.helper.late) {   // heard from minutes ago: busy, not gone (JON-869)
+      box.classList.add("helper-off");
+      box.append(el("p", { class: "helper-off-title", text: `The update helper has not answered since ${new Date(data.helper.heartbeat_at * 1000).toLocaleTimeString()}: this computer or Docker is busy` }),
+        el("p", { class: "note", text: "Changes can be made here again once it answers. Or change a setting in a terminal: each one's Details has its command." }));
+      return box;
+    }
     const cmd = "./stack helper install";
     const seen = data.helper.heartbeat_at ? ` (last seen ${new Date(data.helper.heartbeat_at * 1000).toLocaleString()})` : "";
     const title = data.helper.running ? "The update helper needs a refresh to change settings" : `One-click updates are off${seen}`;

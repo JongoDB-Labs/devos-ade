@@ -152,12 +152,38 @@ def test_the_refusal_says_whether_the_helper_was_ever_seen(make_client, dirs):
     st, rq = dirs
     c = make_client()
     assert ask(c).json()["error"].startswith("The update helper is not running. Start it with ./stack helper install")
-    beat(st, age=admin.HEARTBEAT_MAX_AGE_S + 600)
+    beat(st, age=admin.HEARTBEAT_LATE_S + 300)
     e = ask(c).json()["error"]
-    assert "last seen 10 min ago" in e and "./stack helper install" in e and "./stack clean" in e
+    assert "last seen 15 min ago" in e and "./stack helper install" in e and "./stack clean" in e
     beat(st, age=-(admin.HEARTBEAT_SKEW_S + 50))   # dated a minute ahead: Docker's clock is behind
     e = ask(c).json()["error"]
     assert re.search(r"heartbeat is (59|60) s ahead of the portal's clock", e) and "restarting Docker Desktop" in e
+    assert requests_in(rq) == []
+
+
+# JON-869: a helper heard from minutes ago is late (busy, or Docker slow to answer under load), not gone: the refusal
+# says so and never asks to install it; Home keeps Update now in sight (disabled)
+def test_a_late_heartbeat_is_late_not_gone(make_client, dirs):
+    st, rq = dirs
+    assert admin.helper_state(st)["late"] is False   # never seen
+    beat(st, age=admin.HEARTBEAT_MAX_AGE_S + 5)
+    s = admin.helper_state(st)
+    assert s["running"] is False and s["late"] is True
+    beat(st, age=admin.HEARTBEAT_LATE_S - 5)
+    assert admin.helper_state(st)["late"] is True
+    beat(st, age=admin.HEARTBEAT_LATE_S + 5)
+    assert admin.helper_state(st)["late"] is False
+    beat(st, age=1)
+    assert admin.helper_state(st)["late"] is False   # running
+    beat(st, age=-(admin.HEARTBEAT_SKEW_S + 50))
+    assert admin.helper_state(st)["late"] is False   # from the future: Docker's clock, said as such
+    beat(st, age=240)
+    c = make_client()
+    e = ask(c, "update").json()["error"]
+    assert e.startswith("The update helper has not answered for 4 min: this computer or Docker is busy. Try again in a minute") and "./stack update" in e
+    assert "helper install" not in e and "not running" not in e
+    s = c.get("/api/admin/status", headers=API).json()
+    assert s["running"] is False and s["late"] is True
     assert requests_in(rq) == []
 
 

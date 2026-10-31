@@ -1142,6 +1142,22 @@ _rotate_log() {
   rm -f "$t"
 }
 
+# _status_tick_bg — lib/commands.sh services_status_tick (docker compose and docker inspect: about 10 s a call on a busy
+# computer) runs beside the loop, one at a time, so the heartbeat and the requests never wait for Docker (JON-869: a
+# heartbeat minutes old, and Home hid Update now). One still running when the helper ends goes with its launchd job or
+# systemd unit; what it writes is replaced atomically. _status_tick_wait: --once waits for it.
+HELPER_TICK_PID=''
+_status_tick_bg() {
+  declare -F services_status_tick >/dev/null || return 0
+  if [ -n "$HELPER_TICK_PID" ]; then
+    case " $(jobs -pr | tr '\n' ' ') " in *" $HELPER_TICK_PID "*) return 0 ;; esac
+    wait "$HELPER_TICK_PID" 2>/dev/null || true   # (reaped; how it ended is its own business: never fatal)
+  fi
+  ( services_status_tick ) </dev/null &
+  HELPER_TICK_PID=$!
+}
+_status_tick_wait() { [ -z "$HELPER_TICK_PID" ] || wait "$HELPER_TICK_PID" 2>/dev/null || true; HELPER_TICK_PID=''; }
+
 # helper_main [--once] — the loop bin/devos-ade-helper runs. It ends (exit 0: launchd/systemd start it again, with
 # the checkout's code) after an update/rollback/clean, and when the checkout moved to another commit under it (a
 # ./stack update in a terminal) once no ./stack command holds the lock.
@@ -1173,10 +1189,10 @@ helper_main() {
     # lib/settings_helper.sh: the settings snapshot, the helper's password hash, nightly backups (as above)
     if ( settings_helper_tick ); then AUTO_FRESH=0; fi
     ! declare -F sessions_helper_tick >/dev/null || ( sessions_helper_tick ) || true   # lib/sessions.sh: what it offers the Code page
-    ! declare -F services_status_tick >/dev/null || ( services_status_tick ) || true   # lib/commands.sh: Home's record of the containers, every minute
+    _status_tick_bg || true   # Home's record of the containers and runtimes, every minute: beside the loop
     if helper_poll_once; then helper_heartbeat || true; return 0; fi
     if helper_auto_tick; then helper_heartbeat || true; return 0; fi
-    [ "${1:-}" != --once ] || return 0
+    [ "${1:-}" != --once ] || { _status_tick_wait; return 0; }
     # (a request that comes meanwhile is taken at once: lib/settings_helper.sh helper_nap)
     if helper_nap "$HELPER_POLL_S" && helper_poll_once; then helper_heartbeat || true; return 0; fi
   done

@@ -248,7 +248,7 @@ def test_get_settings_needs_a_session_and_shows_the_snapshot(make, dirs):
     assert c.get("/api/settings").status_code == 400            # no X-Requested-With
     d = c.get("/api/settings", headers=API).json()
     assert d["available"] and d["snapshot"]["base"] == BASE
-    assert d["helper"] == {"running": False, "heartbeat_at": None, "settings": False, "diagnostics": [], "projects": [], "sessions": [], "subscriptions": [],
+    assert d["helper"] == {"running": False, "late": False, "heartbeat_at": None, "settings": False, "diagnostics": [], "projects": [], "sessions": [], "subscriptions": [],
                            "screen": False, "in_progress": False, "job": None}
     assert d["projects"] == {"written_at": None, "max": 16, "folders": [], "leaving": [], "running": False}
     assert d["here"] == {"remote": False, "allowed": True}
@@ -445,10 +445,17 @@ def test_a_helper_that_stopped_is_named_with_when_it_was_last_seen(make, dirs):
     sd, rq = dirs
     write_snapshot(sd); helper_up(sd)
     beat = json.loads((sd / "helper.json").read_text())
-    beat["heartbeat"] -= 150
+    beat["heartbeat"] -= 150   # late (JON-869): busy, not gone — never "install it"
     (sd / "helper.json").write_text(json.dumps(beat))
-    e = apply(make(), {"BUDGET_SETUP": "6"}).json()["error"]
-    assert e.startswith("The update helper is not running: it was last seen 2 min ago")
+    c = make()
+    e = apply(c, {"BUDGET_SETUP": "6"}).json()["error"]
+    assert e.startswith("The update helper has not answered for 2 min: this computer or Docker is busy. Try again in a minute")
+    assert "helper install" not in e and "./stack config set KEY" in e and files(rq) == []
+    assert c.get("/api/settings", headers=API).json()["helper"]["late"] is True
+    beat["heartbeat"] -= 1200
+    (sd / "helper.json").write_text(json.dumps(beat))
+    e = apply(c, {"BUDGET_SETUP": "6"}).json()["error"]
+    assert e.startswith("The update helper is not running: it was last seen 22 min ago")
     assert "./stack helper install starts it" in e and "./stack config set KEY" in e and files(rq) == []
 
 

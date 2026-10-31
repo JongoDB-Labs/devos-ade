@@ -155,7 +155,7 @@
   let lastAdmin = null;
   document.addEventListener("bn:admin", (e) => { lastAdmin = e.detail || {}; phoneWording(lastAdmin); });
   function phoneWording(a) {
-    const usable = Boolean(a.running && a.allowed);
+    const usable = Boolean((a.running || a.late) && a.allowed);   // (late: in sight, disabled — app.js says why)
     document.body.classList.toggle("admin-off", !usable);
     if (!PHONE.matches || usable) return;
     const where = "on the computer running DevOS ADE";

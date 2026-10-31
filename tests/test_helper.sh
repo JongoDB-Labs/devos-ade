@@ -302,6 +302,33 @@ test_main_once_without_requests_only_beats() {
   [ ! -f "$CALLS" ] || return 1
 }
 
+_beat() { sed -n 's/.*"heartbeat": \([0-9]*\).*/\1/p' "$(helper_beat_file)" 2>/dev/null | head -n 1; }
+# JON-869: Home's record of the containers (docker compose and docker inspect: about 10 s a call on a busy Mac) held up
+# the loop for minutes, so the heartbeat went stale and Home hid Update now. A tick that takes 6 s here: the heartbeat
+# moves on and a request is taken meanwhile, and a second tick never starts beside the first.
+test_heartbeat_and_requests_never_wait_for_the_status_tick() {
+  local pid b1 b2 i=0
+  _checkout; HELPER_POLL_S=1
+  services_status_tick() { echo start >> "$TMP/ticks"; sleep 6; echo end >> "$TMP/ticks"; }
+  helper_main 2>"$TMP/helper.err" &
+  pid=$!
+  while ! grep -q start "$TMP/ticks" 2>/dev/null && [ "$i" -lt 40 ]; do sleep 0.25; i=$((i + 1)); done
+  b1="$(_beat)"; sleep 2.5; b2="$(_beat)"
+  [ -n "$b1" ] && [ "$b2" -gt "$b1" ] || { echo "heartbeat stuck at $b1 -> $b2 while the tick runs" >&2; kill "$pid"; return 1; }
+  _req clean; i=0
+  while [ ! -s "$CALLS" ] && [ "$i" -lt 16 ]; do sleep 0.25; i=$((i + 1)); done
+  assert_eq "$(cat "$CALLS" 2>/dev/null)" "clean --yes" || { kill "$pid"; return 1; }
+  wait "$pid" || true   # (the loop ends after a job: launchd/systemd start it again)
+  assert_eq "$(grep -c start "$TMP/ticks")" "1"
+}
+
+test_main_once_waits_for_its_status_tick() {
+  _checkout
+  services_status_tick() { sleep 1; echo end >> "$TMP/ticks"; }
+  helper_main --once
+  assert_eq "$(cat "$TMP/ticks" 2>/dev/null)" "end"
+}
+
 test_helper_entrypoint_refuses_a_non_checkout() {
   if out="$("$BASH" "$T_ROOT/bin/devos-ade-helper" "$TMP" --once 2>&1)"; then return 1; fi
   assert_contains "$out" "not a DevOS ADE checkout"

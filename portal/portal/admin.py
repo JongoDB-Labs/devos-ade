@@ -37,6 +37,9 @@ CLI = {"update": "./stack update", "rollback": "./stack rollback", "clean": "./s
        "auto-on": "./stack helper auto on", "auto-off": "./stack helper auto off"}
 TERMINAL = ("done", "failed", "skipped")   # skipped: an automatic update that did not start
 HEARTBEAT_MAX_AGE_S = 30          # the helper writes one every few seconds (also while a job runs)
+# Silent for longer than that but no longer than this: late (the computer busy, Docker slow to answer), not gone —
+# Home keeps Update now in sight, disabled, and says so instead of "not running ... ./stack helper install" (JON-869)
+HEARTBEAT_LATE_S = 10 * 60
 # The heartbeat is the host's clock, the check this container's: a heartbeat up to this far "ahead" still counts.
 # Docker Desktop's VM clock can trail the computer's (just after it wakes from sleep, until it syncs), and with the
 # two clocks 1 s apart, about one check in six used to call a running helper stopped.
@@ -197,7 +200,7 @@ def finished_jobs(status_dir: Path) -> list[dict]:
 
 
 def helper_state(status_dir: Path, now: float | None = None) -> dict:
-    """{running, heartbeat_at, rollback, auto, job, finished}: what Home needs, every field type-checked (files come
+    """{running, late, heartbeat_at, rollback, auto, job, finished}: what Home needs, every field type-checked (files come
     from the host). job: the newest of the helper's last job and the last ./stack command run in a terminal (its
     "origin" says which); finished: the helper's last finished jobs (finished_jobs), for a page waiting on one of them."""
     now = time.time() if now is None else now
@@ -208,6 +211,7 @@ def helper_state(status_dir: Path, now: float | None = None) -> dict:
                      _job(_read(status_dir / "terminal-job.json"), "terminal"), now)
     return {
         "running": hb is not None and -HEARTBEAT_SKEW_S <= now - hb <= HEARTBEAT_MAX_AGE_S,
+        "late": hb is not None and HEARTBEAT_MAX_AGE_S < now - hb <= HEARTBEAT_LATE_S,
         "heartbeat_at": hb,
         "version": _str(beat.get("version"), 80),
         "branch": _str(beat.get("branch"), 100),
@@ -226,7 +230,8 @@ def _span(s: float) -> str:
 
 def not_running(state: dict, now: float | None = None) -> str:
     """Why helper_state says it is not running, for the refusal: never seen (not installed, or not started since it
-    was), silent for how long, or a heartbeat from the future (Docker's clock is behind this computer's)."""
+    was), late (HEARTBEAT_LATE_S: the caller says to try again soon, never to install it), silent for how long, or a
+    heartbeat from the future (Docker's clock is behind this computer's)."""
     hb = state.get("heartbeat_at")
     if hb is None:
         return "The update helper is not running"
@@ -234,6 +239,8 @@ def not_running(state: dict, now: float | None = None) -> str:
     if age < 0:
         return (f"The update helper's heartbeat is {_span(-age)} ahead of the portal's clock: Docker's clock is behind "
                 "this computer's (restarting Docker Desktop sets it right)")
+    if age <= HEARTBEAT_LATE_S:
+        return f"The update helper has not answered for {_span(age)}: this computer or Docker is busy"
     return f"The update helper is not running: it was last seen {_span(age)} ago (./stack helper status says more)"
 
 

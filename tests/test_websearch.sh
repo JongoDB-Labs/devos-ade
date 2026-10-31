@@ -696,7 +696,8 @@ assert r == {"service": "searxng", "state": "running", "health": "healthynx"}, r
   : > "$TMP/docker"; services_status_tick; assert_eq "$(cat "$TMP/docker")" ""
   sed -i.bak "s/\"written_at\": [0-9]*/\"written_at\": $(( $(date +%s) - 61 ))/" "$f"
   services_status_tick; assert_contains "$(cat "$TMP/docker")" "ps -a --format"
-  assert_contains "$(sed -n '/^helper_main()/,/^}/p' "$T_ROOT/lib/helper.sh")" "( services_status_tick )"
+  assert_contains "$(sed -n '/^helper_main()/,/^}/p' "$T_ROOT/lib/helper.sh")" "_status_tick_bg"   # (beside the loop: JON-869)
+  assert_contains "$(sed -n '/^_status_tick_bg()/,/^}/p' "$T_ROOT/lib/helper.sh")" "( services_status_tick ) </dev/null &"
   # ./stack restart searxng: recreated with the searxng profile on, then the record written again
   stack_lock() { :; }; quiet_compose() { :; }; run_phase() { shift 2; "$@"; }; portal_session_end() { :; }
   : > "$TMP/docker"; cmd_restart searxng
