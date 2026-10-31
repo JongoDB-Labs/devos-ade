@@ -689,3 +689,6 @@ import artifact-{$PREVIEW_MODE:off}.caddy
 
 # Remote access: remote-off.caddy (nothing), remote-tailscale.caddy or remote-domain.caddy.
 import remote-{$REMOTE_MODE}.caddy
+
+# The old address, forwarded for one release (JON-807): caddy/legacy-hosts.caddy.
+import legacy-hosts.caddy
