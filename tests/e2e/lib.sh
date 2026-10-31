@@ -293,6 +293,8 @@ teardown() {
     docker rm -f "$PROJECT-gitsrv" >/dev/null 2>&1 || true
     docker compose -p "$PROJECT" down -v --remove-orphans >/dev/null 2>&1 || warn "docker compose -p $PROJECT down failed"
     docker volume rm "${PROJECT}_devos-ade-owner" >/dev/null 2>&1 || true
+    # (and the marker a release before v0.45.0 made: ui-sweep.sh --compare's reference, upgrade.sh's from-release)
+    docker volume rm "${PROJECT}_bedrock-now-owner" >/dev/null 2>&1 || true
     # The browser terminal (--terminal) lives in overlay files that `down` without them does not read: its volume
     # and networks go by name — a network up to 5 times, a second apart (Docker may still hold the endpoint of a
     # container that has just gone; one it never lets go is said below).

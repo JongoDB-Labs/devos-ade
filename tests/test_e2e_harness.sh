@@ -246,6 +246,7 @@ test_e2e_paths_with_spaces_are_one_folder() {
   (teardown_only) 2> "$TMP/err"
   assert_contains "$(_mutating_calls)" "docker compose -p bne2e down -v --remove-orphans"
   assert_contains "$(_mutating_calls)" "docker volume rm bne2e_devos-ade-owner"
+  assert_contains "$(_mutating_calls)" "docker volume rm bne2e_bedrock-now-owner"   # (a reference release's marker)
   [ ! -e "$STACK" ] || { echo "marked checkout not removed" >&2; return 1; }
   [ -d "$TMP/my work dir" ] || { echo "the parent folder went too" >&2; return 1; }
 }

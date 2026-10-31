@@ -54,6 +54,7 @@ COLLECT_CONTROLS = r"""() => {
     const cs = getComputedStyle(el);
     if (cs.visibility === 'hidden' || cs.display === 'none') return false;
     if (el.closest('[inert], [aria-hidden="true"]')) return false;
+    if (el.closest('[data-sonner-toast]')) return false;   // (Open WebUI's toasts: there for a few seconds, not a control)
     for (let a = el; a; a = a.parentElement) {
       if (a.hidden) return false;
       if (parseFloat(getComputedStyle(a).opacity) === 0) return false;
@@ -72,7 +73,8 @@ COLLECT_CONTROLS = r"""() => {
   return { visible, hidden };
 }"""
 
-_RULES = (   # (pattern, replacement), in this order: ids and versions before times before bare numbers
+_RULES = (   # (pattern, replacement), in this order: key tails, ids and versions before times before bare numbers
+    (re.compile(r"\bsk-(?:\.\.\.|\u2026)[0-9A-Za-z_-]+"), "sk-…<key>"),   # a key shown by its last characters: each stack's own
     (re.compile(r"\bv\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.]+)?"), "<ver>"),
     (re.compile(r"\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?"), "<time>"),
     (re.compile(r"\b\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp][Mm])?"), "<time>"),
@@ -83,8 +85,8 @@ _RULES = (   # (pattern, replacement), in this order: ids and versions before ti
 
 
 def normalize_name(name: str) -> str:
-    """An accessible name without its volatile parts: versions -> <ver>, dates and times -> <time>, hex ids -> <id>, other
-    numbers -> #; whitespace collapsed."""
+    """An accessible name without its volatile parts: a key's tail (sk-...1SuA) -> sk-…<key>, versions -> <ver>, dates and
+    times -> <time>, hex ids -> <id>, other numbers -> #; whitespace collapsed."""
     s = " ".join((name or "").split())
     for pat, rep in _RULES:
         s = pat.sub(rep, s)

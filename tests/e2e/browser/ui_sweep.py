@@ -457,7 +457,13 @@ def sweep_signin(browser, width, theme):
 
 
 def home_ready(p):
-    p.goto(origin() + "/#home")
+    url = origin() + "/#home"
+    # (a goto that changes only the #hash loads nothing: Home would show what it fetched before, the update helper's
+    # state too, until its next poll; so the same page is loaded again)
+    same = p.url.split("#")[0] == url.split("#")[0]
+    p.goto(url)
+    if same:
+        p.reload()
     p.wait_for_selector("#home:not([hidden])")
     p.wait_for_timeout(2500)
 

@@ -35,6 +35,10 @@ class Normalize(unittest.TestCase):
         self.assertEqual(n("Oct 31, 2026"), "<time>")
         self.assertEqual(n("session 3fa9c21b0d"), "session <id>")
         self.assertEqual(n("$1,234.50 spent"), "$# spent")
+        # a key row shows the key's last characters: each stack's own, so two stacks' rows match
+        self.assertEqual(n("claude-code-terminal sk-...1SuA Active"), "claude-code-terminal sk-…<key> Active")
+        self.assertEqual(n("setup sk-...b-fQ Active"), n("setup sk-...s-2g Active"))
+        self.assertEqual(n("open-webui sk-\u2026sDwQ Active"), "open-webui sk-…<key> Active")
 
     def test_words_and_spacing_survive(self):
         self.assertEqual(n := inv.normalize_name("  Update   now \n"), "Update now")
