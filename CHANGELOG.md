@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.45.0] - 2026-10-31
+
 ### Changed
 - **The name devos-ade everywhere, address included (JON-807).** The stack answers at `http://devos-ade.localhost`
   (and `code.`, `chat.`, `admin.`, `terminal.`, `files.`), its Compose project and volumes are `devos-ade_*`, its folder
@@ -3910,7 +3912,10 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.3...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.45.0...HEAD
+[0.45.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.5...v0.45.0
+[0.44.5]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.4...v0.44.5
+[0.44.4]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.3...v0.44.4
 [0.44.3]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.2...v0.44.3
 [0.44.2]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.1...v0.44.2
 [0.44.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.44.0...v0.44.1
