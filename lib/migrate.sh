@@ -176,6 +176,18 @@ mg_eta() { local s=$(($1 * 1024 / MG_IMAGE_CPS + 20)); if [ "$s" -ge 90 ]; then 
 mg_fmt_kb() { fmt_bytes $(($1 * 1024)); }
 
 # --- the steps ---
+MG_STEPS='preflight record stop copy inner host env images move owner paths launchd'   # (in order; each step.X is set when done)
+# mg_stopped_at — where a move that is not finished stopped: its first step not done (failed or interrupted alike; a failed_step
+# of an earlier try that was resumed is past), and for the copy the volume it was copying
+mg_stopped_at() {
+  local s v
+  for s in $MG_STEPS; do
+    mg_done_p "$s" && continue
+    v=''; [ "$s" != copy ] || v="$(awk -F= '$1 ~ /^vol\./ && $2 == "copying" { print substr($1, 5); exit }' "$(mg_marker)" 2>/dev/null)"
+    printf '%s%s' "$s" "${v:+ ($v)}"; return 0
+  done
+  printf 'its last step'
+}
 mg_fail() { # mg_fail STEP MESSAGE — the marker says where it stopped; the old project stays runnable
   mg_put status failed; mg_put failed_step "$1"
   die "migration to $MG_NEW_PROJECT failed at '$1': $2 — your data is untouched (the old volumes were only read). Run ./stack update (or ./stack migrate --now) to resume, or ./stack migrate --rollback to go back. Until then ./stack up refuses to start anything (a half-moved install must not run): the two ways out are ./stack update (it resumes) and ./stack migrate --rollback (it goes back). Your data stays in the old volumes (${MG_OLD_PROJECT}_*), unchanged."
@@ -697,7 +709,7 @@ mg_phase_a() {
   docker info >/dev/null 2>&1 || mg_fail preflight "Docker is not running"
   MG_IMG="$(mg_image)" || mg_fail preflight "no image to copy with"
   [ "$resumed" = 0 ] || [ "$MG_PARTIAL" = 1 ] || mg_done_p env || mg_reverify
-  for s in preflight record stop copy inner host env images move owner paths launchd; do
+  for s in $MG_STEPS; do
     mg_done_p "$s" || "mg_step_$s"
   done
   mg_put status moved
@@ -708,7 +720,7 @@ mg_phase_a() {
 migrate_refuse_up() {
   mg_init
   case "$(mg_status)" in running | failed) ;; *) return 0 ;; esac
-  die "the move to the name $MG_NEW_PROJECT is not finished (stopped at: $(mg_get failed_step)), so nothing is started. Either: ./stack update   (resumes it), or: ./stack migrate --rollback   (goes back)."
+  die "the move to the name $MG_NEW_PROJECT is not finished (stopped at: $(mg_stopped_at)), so nothing is started. Either: ./stack update   (resumes it), or: ./stack migrate --rollback   (goes back)."
 }
 
 # migrate_unfinished -> 0 while a move is started and not complete (./stack update has it to finish, also with no new version)
@@ -1034,7 +1046,7 @@ migrate_status() {
   mg_init
   case "$(mg_status)" in
     '') if mg_needed; then echo "not moved yet: this install is still the project $MG_OLD_PROJECT. ./stack update moves it ($(mg_eta "$(mg_total_kb 2>/dev/null || echo 0)"))."; else echo "nothing to move: this install is not under the old name $MG_OLD_PROJECT."; fi ;;
-    running | failed) echo "the move is not finished (stopped at: $(mg_get failed_step)). ./stack update or ./stack migrate --now resumes it; ./stack migrate --rollback goes back." ;;
+    running | failed) echo "the move is not finished (stopped at: $(mg_stopped_at)). ./stack update or ./stack migrate --now resumes it; ./stack migrate --rollback goes back." ;;
     moved) echo "moved to $MG_NEW_PROJECT; the update that started it has not finished (./stack update)." ;;
     rolled-back) echo "rolled back to $MG_OLD_PROJECT. The unused $MG_NEW_PROJECT volumes are still there." ;;
     complete) echo "moved to $MG_NEW_PROJECT on $(date -r "$(mg_get finished)" '+%F %T' 2>/dev/null || date -d "@$(mg_get finished)" '+%F %T' 2>/dev/null)."; migrate_backup_line ;;

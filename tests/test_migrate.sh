@@ -748,6 +748,7 @@ test_a_resume_copies_again_a_volume_that_changed_since_it_was_copied_and_up_refu
   _mg_env; : > "$DK/corrupt"; _mg_try; [ "$MGRC" != 0 ]; rm -f "$DK/corrupt"
   mg_init; ( migrate_refuse_up ) > "$TMP/out" 2>&1 && return 1
   assert_contains "$(cat "$TMP/out")" "./stack update"; assert_contains "$(cat "$TMP/out")" "./stack migrate --rollback"
+  assert_contains "$(cat "$TMP/out")" "(stopped at: copy"
   # the copy of owui was verified before the failure at pgdata: now the old owui changes
   [ "$(mg_get "vol.owui")" = verified ] || { echo "owui not verified" >&2; return 1; }
   printf 'newer' >> "$DK/vol/${OLDP}_owui/webui.db"
@@ -755,6 +756,18 @@ test_a_resume_copies_again_a_volume_that_changed_since_it_was_copied_and_up_refu
   assert_contains "$(cat "$TMP/out")" "changed since it was copied"
   assert_eq "$(cksum < "$DK/vol/${NEWP}_owui/webui.db")" "$(cksum < "$DK/vol/${OLDP}_owui/webui.db")"
   assert_eq "$(_st)" moved; ( migrate_refuse_up ) > /dev/null 2>&1   # moved: up is allowed
+}
+
+test_a_move_that_was_killed_says_the_step_and_volume_it_stopped_at() {
+  # (killed during the copy: no failed_step is written; one of an earlier try that was resumed is past)
+  _mg_env; mg_init
+  mg_put status running; mg_put failed_step preflight; mg_put step.preflight 1; mg_put step.record 1; mg_put step.stop 1
+  mg_put vol.owui verified; mg_put vol.terminal-home copying
+  ( migrate_refuse_up ) > "$TMP/out" 2>&1 && return 1
+  assert_contains "$(cat "$TMP/out")" "(stopped at: copy (terminal-home))"
+  mg_put step.copy 1; mg_put vol.terminal-home verified
+  ( migrate_refuse_up ) > "$TMP/out" 2>&1 && return 1
+  assert_contains "$(cat "$TMP/out")" "(stopped at: inner)"
 }
 
 test_the_deletes_come_from_a_recorded_list_after_the_checks_are_on_disk_and_a_failed_one_stays_on_it() {
@@ -911,7 +924,7 @@ c.commit()' "$INST/.state/a.db" "$INST"
 test_the_status_says_what_is_going_on_in_each_state() {
   _mg_env; assert_contains "$(migrate_status)" "not moved yet"
   rm -rf "$DK/vol/${OLDP}_"*; assert_contains "$(migrate_status)" "nothing to move"
-  _mg_env; _mg_try; mg_init; mg_put status failed; mg_put failed_step copy; assert_contains "$(migrate_status)" "stopped at: copy"
+  _mg_env; : > "$DK/corrupt"; _mg_try; [ "$MGRC" != 0 ]; rm -f "$DK/corrupt"; mg_init; assert_contains "$(migrate_status)" "stopped at: copy"
   assert_contains "$(migrate_usage)" "--rollback"; assert_contains "$(migrate_usage)" "--remove-old"
   ( cmd_migrate --nonsense ) > "$TMP/out" 2>&1 && return 1; assert_contains "$(cat "$TMP/out")" "usage: ./stack migrate"
 }
