@@ -51,3 +51,111 @@ lib/remote.sh	and bedrock-now-<project> for a second copy	the Tailscale Service 
 install.sh	when ~/bedrock-now holds an install made before v0.25.0	the folder of installs made before v0.25.0, found and kept
 install.sh	# ~/bedrock-now holds an install made before v0.25.0	the folder of installs made before v0.25.0, found and kept
 install.sh	and an install in ~/bedrock-now: that one	the folder of installs made before v0.25.0, found and kept
+lib/migrate.sh	"bedrock-now"	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	~/.config/bedrock-now	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	.bedrock-now-*	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	MG_OLD_PROJECT=bedrock-now;	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	MG_OLD_HOST=bedrock-now.localhost;	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	MG_OLD_PREVIEW=bedrock-now-preview.localhost;	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	MG_OLD_DIRNAME=bedrock-now;	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	MG_OLD_ENV_PREFIX=BEDROCK_NOW_;	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	MG_OLD_LABEL=io.bedrock-now.;	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	MG_OLD_UNIT=bedrock-now-helper;	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	MG_OLD_EMAIL=admin@bedrock-now.local	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	MG_OLD_OWNER_LABEL=io.bedrock-now.dir	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	MG_OLD_CONF=bedrock-now;	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	MG_OLD_TRASH=.bedrock-now-trash;	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	MG_OLD_TMP=.bedrock-now-tmp;	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	MG_OLD_TS=bedrock-now	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	"${DEVOS_ADE_TESTING:-${BEDROCK_NOW_TESTING:-}}"	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	"bedrock-now-2_x"	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	io.bedrock-now.*	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	bedrock-now-helper-*	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	claude-bedrock,	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	"$HOME/.local/bin/claude-bedrock")	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	".../bedrock-now-workspace")	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	claude-bedrock;	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+lib/migrate.sh	"${DEVOS_ADE_JOB_ORIGIN:-${BEDROCK_NOW_JOB_ORIGIN:-}}"	the migration from the old name: its constants and what it renames (lib/migrate.sh)
+caddy/legacy-hosts.caddy	bedrock-now.localhost,	the old hostnames that redirect to the new ones for one release
+caddy/legacy-hosts.caddy	bedrock-now-preview.localhost	the old hostnames that redirect to the new ones for one release
+caddy/legacy-hosts.caddy	http://bedrock-now.localhost	the old hostnames that redirect to the new ones for one release
+caddy/legacy-hosts.caddy	http://*.bedrock-now.localhost	the old hostnames that redirect to the new ones for one release
+caddy/legacy-hosts.caddy	http://bedrock-now-preview.localhost,	the old hostnames that redirect to the new ones for one release
+caddy/legacy-hosts.caddy	http://*.bedrock-now-preview.localhost	the old hostnames that redirect to the new ones for one release
+lib/commands.sh	BEDROCK_NOW_NO_OPEN=1	the migration hook
+lib/commands.sh	BEDROCK_NOW_VERBOSE=1	the migration hook
+lib/commands.sh	(BEDROCK_NOW_VERBOSE=1	the migration hook
+lib/commands.sh	"${BEDROCK_NOW_JOB_ORIGIN:-}"	the migration hook
+lib/commands.sh	"${BEDROCK_NOW_VERBOSE:-0}"	the migration hook
+lib/commands.sh	def=admin@bedrock-now.local;	the migration hook
+lib/commands.sh	"${BEDROCK_NOW_LOCK_HELD:-}"	the migration hook
+lib/commands.sh	"$BEDROCK_NOW_LOCK_HELD"	the migration hook
+lib/commands.sh	BEDROCK_NOW_HELPER=1	the migration hook
+lib/commands.sh	CLAUDE_BEDROCK_OPUS_MODEL	the migration hook
+lib/commands.sh	CLAUDE_BEDROCK_SONNET_MODEL	the migration hook
+lib/commands.sh	CLAUDE_BEDROCK_HAIKU_MODEL	the migration hook
+lib/commands.sh	CLAUDE_BEDROCK_OPUS_MODEL)"	the migration hook
+lib/commands.sh	PROBE_REUSE_MAX_S="${BEDROCK_NOW_PROBE_MAX_AGE_S:-604800}"	the migration hook
+lib/commands.sh	CLAUDE_BEDROCK_HAIKU_MODEL)"	the migration hook
+lib/commands.sh	CLAUDE_BEDROCK_MODEL=%s	the migration hook
+lib/commands.sh	~/.local/bin/claude-bedrock	the migration hook
+lib/commands.sh	(claude-bedrock,	the migration hook
+lib/commands.sh	bin/claude-bedrock,	the migration hook
+lib/commands.sh	"$HOME/.local/bin/claude-bedrock"	the migration hook
+lib/commands.sh	"$STACK_DIR/bin/claude-bedrock"	the migration hook
+lib/commands.sh	claude-bedrock,	the migration hook
+lib/commands.sh	~/.local/bin/claude-bedrock,	the migration hook
+lib/commands.sh	(bin/claude-bedrock),	the migration hook
+lib/commands.sh	old="$HOME/.local/bin/claude-bedrock"	the migration hook
+lib/commands.sh	shim="$STACK_DIR/bin/claude-bedrock"	the migration hook
+lib/commands.sh	bin/claude-bedrock	the migration hook
+lib/commands.sh	*/bin/claude-bedrock)	the migration hook
+lib/commands.sh	CLAUDE_BEDROCK_OPUS_MODEL)";	the migration hook
+lib/commands.sh	bedrock-now'	the migration hook
+lib/commands.sh	CLAUDE_BEDROCK_HAIKU_MODEL)";	the migration hook
+lib/commands.sh	BEDROCK_NOW_CODE_UPDATED=1	the migration hook
+lib/commands.sh	(BEDROCK_NOW_LOCK_HELD	the migration hook
+lib/commands.sh	from="${BEDROCK_NOW_UPDATE_FROM:-}"	the migration hook
+lib/commands.sh	b="${BEDROCK_NOW_UPDATE_BACKUP:-}"	the migration hook
+lib/commands.sh	"${BEDROCK_NOW_CODE_UPDATED:-0}"	the migration hook
+lib/commands.sh	BEDROCK_NOW_CODE_UPDATED=1,	the migration hook
+lib/commands.sh	BEDROCK_NOW_UPDATE_FINISHING=1).	the migration hook
+lib/commands.sh	"BEDROCK_NOW_CODE_UPDATED=1	the migration hook
+lib/commands.sh	BEDROCK_NOW_UPDATE_FINISHING=1	the migration hook
+lib/commands.sh	BEDROCK_NOW_UPDATE_BACKUP="$backup"	the migration hook
+lib/commands.sh	BEDROCK_NOW_UPDATE_FROM="$from"	the migration hook
+lib/commands.sh	BEDROCK_NOW_UPDATE_BRANCH="$branch"	the migration hook
+lib/commands.sh	BEDROCK_NOW_UPDATE_FINISHING	the migration hook
+lib/commands.sh	backup="${BEDROCK_NOW_UPDATE_BACKUP:-}";	the migration hook
+lib/commands.sh	from="${BEDROCK_NOW_UPDATE_FROM:-}";	the migration hook
+lib/commands.sh	branch="${BEDROCK_NOW_UPDATE_BRANCH:-}"	the migration hook
+lib/commands.sh	"${BEDROCK_NOW_UPDATE_FINISHING:-0}"	the migration hook
+lib/commands.sh	pullenv=(BEDROCK_NOW_PULLS_DIR="$PULLS_DIR"	the migration hook
+lib/commands.sh	BEDROCK_NOW_PULLS_PID="$PULLS_PID")	the migration hook
+lib/commands.sh	BEDROCK_NOW_OPENROUTER_FROM_ENV	the migration hook
+lib/commands.sh	BEDROCK_NOW_STT_FROM_ENV	the migration hook
+lib/commands.sh	BEDROCK_NOW_CODE_UPDATED	the migration hook
+lib/commands.sh	BEDROCK_NOW_UPDATE_BACKUP	the migration hook
+lib/commands.sh	BEDROCK_NOW_UPDATE_FROM	the migration hook
+lib/commands.sh	BEDROCK_NOW_UPDATE_BRANCH	the migration hook
+lib/commands.sh	BEDROCK_NOW_PULLS_DIR	the migration hook
+lib/commands.sh	BEDROCK_NOW_PULLS_PID	the migration hook
+lib/commands.sh	"$BEDROCK_NOW_RELEASES_URL"	the migration hook
+lib/commands.sh	(bin/claude-bedrock);	the migration hook
+lib/commands.sh	target="$HOME/.local/bin/claude-bedrock"	the migration hook
+lib/commands.sh	CLAUDE_BEDROCK_CONFIG_DIR	the migration hook
+lib/commands.sh	"${CLAUDE_BEDROCK_CONFIG_DIR:-}"	the migration hook
+lib/commands.sh	cb_dir="$(CLAUDE_BEDROCK_USE_MY_CONFIG=0	the migration hook
+lib/commands.sh	CLAUDE_BEDROCK_CONFIG_DIR="$cb_env"	the migration hook
+stack	bedrock-now:	the migration dispatch
+stack	BEDROCK_NOW_JOB_CMD="$cmd"	the migration dispatch
+stack	BEDROCK_NOW_JOB_CMD="$cmd	the migration dispatch
+docs/upgrade-to-0.45.md	`bedrock-now`)	the upgrade note names the old spelling it moves from
+docs/upgrade-to-0.45.md	`~/bedrock-now`	the upgrade note names the old spelling it moves from
+docs/upgrade-to-0.45.md	`bedrock-now_*`	the upgrade note names the old spelling it moves from
+docs/upgrade-to-0.45.md	`http://bedrock-now.localhost`	the upgrade note names the old spelling it moves from
+docs/upgrade-to-0.45.md	`BEDROCK_NOW_*`	the upgrade note names the old spelling it moves from
+docs/upgrade-to-0.45.md	`io.bedrock-now.*`	the upgrade note names the old spelling it moves from
+docs/upgrade-to-0.45.md	`~/.config/bedrock-now`	the upgrade note names the old spelling it moves from
+docs/upgrade-to-0.45.md	`bedrock-now.localhost`	the upgrade note names the old spelling it moves from
+README.md	(bedrock-now)?	the link to the upgrade note
