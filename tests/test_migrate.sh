@@ -60,7 +60,8 @@ _mg_docker() {
           sh -c "$script" "$op" "${args[@]}" || return 1
           if [ -f "$DK/corrupt" ] && [ -f "${args[1]}/PG_VERSION" ]; then echo x >> "${args[1]}/PG_VERSION"; fi ;;
         mg-sum) _mg_sum "${args[0]}"; _mg_sum "${args[1]}" ;;
-        mg-fsck) sh -c "git() { [ ! -f \"$DK/fsckfail\" ]; }; $script" "$op" "${args[@]}" ;;
+        mg-fsck) [ ! -f "$DK/nogit" ] || { echo nogit; return 0; }
+          sh -c "git() { [ ! -f \"$DK/fsckfail\" ]; }; $script" "$op" "${args[@]}" ;;
         *) sh -c "$script" "$op" "${args[@]}" ;;
       esac ;;
   esac
@@ -98,6 +99,8 @@ _mg_env() {
   _mg_vol "${OLDP}_${OLDP}-owner"; echo "$INST" > "$DK/owner"
   printf 'c1 %s postgres\nc2 %s\n' "$OLDP" "$OLDP" > "$DK/containers"; printf 'n1 %s\n' "$OLDP" > "$DK/networks"
   printf '%s/portal:local\n%s/shared-mcp:local\nfake/image:1\n' "$OLDP" "$OLDP" > "$DK/images"
+  FORGEJO=codeberg.org/forgejo/forgejo:17.0.1-rootless@sha256:abc; echo "$FORGEJO" >> "$DK/images"
+  printf 'services:\n  forgejo:\n    image: %s\n    profiles: ["forgejo"]\n' "$FORGEJO" > "$INST/compose.yaml"
   # other projects and other products' files that must never be touched
   _mg_vol "bn-dev_pgdata"; echo keep > "$DK/vol/bn-dev_pgdata/f"; _mg_vol "${OLDP}-2_pgdata"
   mkdir -p "$HOME/.local/state/devos-heavy"; echo lock > "$HOME/.local/state/devos-heavy/heavy.lock"
@@ -667,7 +670,7 @@ test_the_old_copy_is_removed_after_every_check_passes_and_the_small_leftovers_wa
 }
 test_each_failed_check_keeps_the_old_copy_and_says_why() {
   local case why
-  for case in rows unhealthy restarting uncounted repos fsck sample runtime runtimever copy gone; do
+  for case in rows unhealthy restarting uncounted repos fsck nogit noimage sample runtime runtimever copy gone; do
     _mg_env; _mg_pg_setup
     case "$case" in
       uncounted) rm -f "$DK/pgdbs-$OLDP" ;;
@@ -681,6 +684,8 @@ test_each_failed_check_keeps_the_old_copy_and_says_why() {
       uncounted) why="not counted" ;;
       repos) rm -rf "$DK/vol/${NEWP}_gitdata/repositories/u/b.git"; why="lists 1 repositories" ;;
       fsck) : > "$DK/fsckfail"; why="git fsck" ;;
+      nogit) : > "$DK/nogit"; why="no git in" ;;
+      noimage) grep -v forgejo "$DK/images" > "$DK/i.new"; mv "$DK/i.new" "$DK/images"; why="is not on this computer" ;;
       sample) mg_init; mg_put sample "differs (old 'a', new 'b')"; why="sample files" ;;
       runtimever) mkdir -p "$NEW/.state/runtimes/llamacpp/bin"; printf '#!/bin/sh\nexit 3\n' > "$NEW/.state/runtimes/llamacpp/bin/llama-server"; chmod +x "$NEW/.state/runtimes/llamacpp/bin/llama-server"; why="--version does not run" ;;
       runtime) printf '/x/bin/llmster\t%s/nowhere\t.\n' "$NEW" > "$NEW/.state/runtimes/lmstudio/llmster.run"; why="not there" ;;
@@ -826,9 +831,50 @@ test_files_the_rewrite_cannot_read_that_still_name_the_old_folder_are_listed_and
   mkdir -p "$INST/.state/code"
   python3 -I -c 'import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute("create table s(id integer, cwd text)"); c.execute("insert into s values (1, ?)", (sys.argv[2]+"/work",)); c.execute("insert into s values (2, ?)", (sys.argv[2]+"-other/work",)); c.commit()' "$INST/.state/code/sessions.db" "$INST"
   _mg_run > "$TMP/out" 2>&1
-  assert_contains "$(cat "$TMP/out")" "too big or binary to rewrite"; assert_eq "$(_get paths_left_behind)" 2
+  assert_contains "$(cat "$TMP/out")" "too big, binary or not rewritable"; assert_eq "$(_get paths_left_behind)" 2
   grep -q "big.log" "$NEW/.state/migrate/paths-left-behind.txt" && grep -q "blob.dat" "$NEW/.state/migrate/paths-left-behind.txt"
   assert_eq "$(python3 -I -c 'import sqlite3,sys; print(";".join(r[0] for r in sqlite3.connect(sys.argv[1]).execute("select cwd from s order by id")))' "$NEW/.state/code/sessions.db")" "$NEW/work;$INST-other/work"
+}
+
+test_an_mlx_venv_keeps_working_after_the_move_and_the_link_is_gone() {
+  _mg_env
+  local v="$INST/.state/mlx/venv"
+  mkdir -p "$v/bin" "$v/lib/python3.12/site-packages" "$INST/.state/mlx/hf/hub/models--a--b/blobs"
+  printf 'home = /opt/py/bin\nuv = 0.9\nprompt = %s/.state/mlx/venv\n' "$INST" > "$v/pyvenv.cfg"
+  printf '#!%s/.state/mlx/venv/bin/python\nprint(1)\n' "$INST" > "$v/bin/mlx_lm.server"; chmod +x "$v/bin/mlx_lm.server"
+  printf '#!/bin/sh\nexit 3\n' > "$v/bin/python-real"; chmod +x "$v/bin/python-real"; ln -s "$INST/.state/mlx/venv/bin/python-real" "$v/bin/python"
+  printf '%s/src\n' "$INST" > "$v/lib/python3.12/site-packages/x.pth"
+  head -c 100 /dev/urandom > "$INST/.state/mlx/hf/hub/models--a--b/blobs/w.safetensors"; printf '%s/' "$INST" >> "$INST/.state/mlx/hf/hub/models--a--b/blobs/w.safetensors"
+  local lbl; lbl="dev.devos.ade.mlx.$(mg_sum "$INST/.state")"
+  printf '<plist><string>%s</string><string>%s/.state/mlx/venv/bin/mlx_lm.server</string><string>%s/.state/mlx/hf</string></plist>\n' "$lbl" "$INST" "$INST" > "$HOME/Library/LaunchAgents/$lbl.plist"
+  _mg_run > "$TMP/out" 2>&1; assert_eq "$(_st)" moved
+  rm -f "$INST"                                                                   # the next update removes the link
+  head -n 1 "$NEW/.state/mlx/venv/bin/mlx_lm.server" | grep -qx "#!$NEW/.state/mlx/venv/bin/python"
+  grep -q "$NEW/.state/mlx/venv" "$NEW/.state/mlx/venv/pyvenv.cfg"; grep -q "^$NEW/src$" "$NEW/.state/mlx/venv/lib/python3.12/site-packages/x.pth"
+  assert_eq "$(readlink "$NEW/.state/mlx/venv/bin/python")" "$NEW/.state/mlx/venv/bin/python-real"
+  local nl; nl="$(mg_get "lc.$lbl")"; [ -n "$nl" ] || nl="$(grep "^lc\.$lbl=" "$NEW/.state/migrate/marker" | cut -d= -f2)"
+  grep -q "$NEW/.state/mlx/venv/bin/mlx_lm.server" "$HOME/Library/LaunchAgents/$nl.plist"; grep -q "$NEW/.state/mlx/hf" "$HOME/Library/LaunchAgents/$nl.plist"
+  ! grep -q "$INST" "$HOME/Library/LaunchAgents/$nl.plist"
+  # models are not read by the left-behind scan
+  assert_eq "$(_get paths_left_behind)" 0
+  # the check runs the venv's python with the import; a venv whose python fails keeps the old copy
+  mg_init; MG_DIR="$NEW"; MG_VERIFY_WHY=''; ! mg_check_runtimes 2>/dev/null
+  assert_contains "$MG_VERIFY_WHY" "cannot import mlx_lm"
+  printf '#!/bin/sh\nexit 0\n' > "$NEW/.state/mlx/venv/bin/python-real"; mg_check_runtimes
+}
+test_a_runtime_whose_program_cannot_be_found_is_said_not_counted_as_checked() {
+  _mg_moved_and_verified; mkdir -p "$NEW/.state/runtimes/llamacpp"; echo x > "$NEW/.state/runtimes/llamacpp/note"
+  mg_init; MG_VERIFY_NOTE=''; mg_check_runtimes 2> "$TMP/err" || true; assert_contains "$(cat "$TMP/err")" "runtime llamacpp: its program was not found, so it was not checked"
+}
+test_sqlite_rewrite_has_a_left_boundary_handles_json_and_wal_and_reports_failures_by_name() {
+  _mg_env
+  python3 -I -c 'import sqlite3,sys; o=sys.argv[2]; c=sqlite3.connect(sys.argv[1]); c.execute("create table s(cwd text)")
+for v in (o+"/w", "x"+o+"/w", "{\"p\":\""+o+"\"}", "a="+o+"/z", "/other"+o+"/q", o+"-two/w"): c.execute("insert into s values (?)", (v,))
+c.commit()' "$INST/.state/a.db" "$INST"
+  printf 'not a database %s\n' "$INST" | tr -d '\n' > "$INST/.state/bad.db"; head -c 20 /dev/urandom >> "$INST/.state/bad.db"
+  _mg_run > "$TMP/out" 2>&1
+  assert_contains "$(cat "$TMP/out")" "NOT rewritten"; assert_contains "$(cat "$TMP/out")" "bad.db"
+  assert_eq "$(python3 -I -c 'import sqlite3,sys; print("|".join(r[0] for r in sqlite3.connect(sys.argv[1]).execute("select cwd from s order by rowid")))' "$NEW/.state/a.db")" "$NEW/w|x$INST/w|{\"p\":\"$NEW\"}|a=$NEW/z|/other$INST/q|$INST-two/w"
 }
 
 # --- the command and the hosts ---

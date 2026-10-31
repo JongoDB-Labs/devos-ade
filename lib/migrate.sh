@@ -464,14 +464,15 @@ EOF
 }
 # mg_skipped_with_path ROOT OLD — files the rewrite does not read (over 2 MB, or binary) that still hold OLD as a path
 mg_skipped_with_path() {
-  local root="$1" old="$2" f
+  local root="$1" old="$2" f big
   while IFS= read -r f; do
     [ -n "$f" ] || continue
-    if [ -n "$(find "$f" -size +2047k 2>/dev/null)" ] || ! grep -Iq . "$f" 2>/dev/null; then
+    case "$f" in *.db | *.sqlite | *.sqlite3) big=1 ;; *) big=0 ;; esac
+    if [ "$big" = 1 ] || [ -n "$(find "$f" -size +2047k 2>/dev/null)" ] || ! grep -Iq . "$f" 2>/dev/null; then
       LC_ALL=C grep -aqE -- "$(mg_path_re "$old")(\$|[^A-Za-z0-9._-])" "$f" 2>/dev/null && printf '%s\n' "$f"
     fi
   done <<EOF
-$(find "$root/.state" "$root/litellm" "$root/searxng" "$root/tailscale" \( -path '*/mlx/hf' -o -name blobs -o -name .git -o -name node_modules \) -prune -o -type f -print 2>/dev/null)
+$(find "$root/.state" "$root/litellm" "$root/searxng" "$root/tailscale" \( -path '*/mlx/hf' -o -path '*/hf/hub' -o -path '*/.lmstudio/models' -o -path '*/.lmstudio/.internal' -o -path '*/runtimes/llamacpp/models' -o -path '*/runtimes/vllm/models' -o -path '*/runtimes/*/models' -o -path '*/runtimes/*/hf' -o -name blobs -o -name models -o -name .git -o -name node_modules \) -prune -o -type f ! \( -name '*.gguf' -o -name '*.safetensors' -o -name '*.bin' -o -name '*.npz' -o -name '*.mlx' \) -print 2>/dev/null)
 EOF
   return 0
 }
@@ -479,29 +480,49 @@ EOF
 mg_sqlite_rewrite() {
   command -v python3 >/dev/null 2>&1 || return 1
   python3 -I - "$1" "$2" "$3" <<'PY' >/dev/null 2>&1
-import sqlite3, sys
+import re, sqlite3, sys
 f, o, n = sys.argv[1:4]
-c = sqlite3.connect(f)
+# the old path must start the cell or follow a non-path character, and end the cell or be followed by "/" , a quote or another non-path character
+pat = re.compile(r"(?<![A-Za-z0-9._/-])" + re.escape(o) + r"(?![A-Za-z0-9._-])")
+c = sqlite3.connect(f, isolation_level=None)
 try:
+    c.execute("pragma wal_checkpoint(TRUNCATE)")
+    c.execute("begin immediate")
     for (t,) in c.execute("select name from sqlite_master where type='table' and name not like 'sqlite_%'").fetchall():
-        for col in [r[1] for r in c.execute('pragma table_info("%s")' % t.replace('"', '""')).fetchall()]:
-            q = '"%s"' % col.replace('"', '""'); tt = '"%s"' % t.replace('"', '""')
-            c.execute("update %s set %s = replace(%s, ?, ?) where typeof(%s) = 'text' and instr(%s, ?) > 0" % (tt, q, q, q, q), (o + "/", n + "/", o + "/"))
-            c.execute("update %s set %s = ? where %s = ?" % (tt, q, q), (n, o))
-    c.commit()
+        tt = '"%s"' % t.replace('"', '""')
+        for col in [r[1] for r in c.execute("pragma table_info(%s)" % tt).fetchall()]:
+            q = '"%s"' % col.replace('"', '""')
+            for rid, v in c.execute("select rowid, %s from %s where typeof(%s) = 'text' and instr(%s, ?) > 0" % (q, tt, q, q), (o,)).fetchall():
+                nv = pat.sub(lambda m: n, v)
+                if nv != v:
+                    c.execute("update %s set %s = ? where rowid = ?" % (tt, q), (nv, rid))
+    c.execute("commit")
+except Exception:
+    try: c.execute("rollback")
+    except Exception: pass
+    sys.exit(1)
 finally:
     c.close()
+if __import__("os").path.exists(f + "-wal") and __import__("os").path.getsize(f + "-wal") > 0:
+    sys.exit(2)
 PY
 }
 # mg_paths_left_behind ROOT OLD NEW — after the rewrite: sqlite files are rewritten; any other skipped file still naming OLD is listed (a warning, and a file in the marker's folder)
 mg_paths_left_behind() {
-  local root="$1" old="$2" new="$3" f left='' n=0 list
-  for f in $(mg_skipped_with_path "$root" "$old" | grep -E '\.(db|sqlite|sqlite3)$' || true); do mg_sqlite_rewrite "$f" "$old" "$new" || true; done
-  list="$(mg_skipped_with_path "$root" "$old")"
-  mkdir -p "$(mg_rec_dir)"; printf '%s\n' "$list" | sed '/^$/d' > "$(mg_rec_dir)/paths-left-behind.txt"
+  local root="$1" old="$2" new="$3" f list n=0 failed=''
+  list="$(mg_skipped_with_path "$root" "$old")"                                       # (once: the models are never read)
+  while IFS= read -r f; do
+    case "$f" in *.db | *.sqlite | *.sqlite3) mg_sqlite_rewrite "$f" "$old" "$new" || failed="$failed $f" ;; *) continue ;; esac
+  done <<EOF
+$list
+EOF
+  mkdir -p "$(mg_rec_dir)"
+  # what is still named afterwards: the files the rewrite cannot read, and the sqlite files that were not rewritten
+  { printf '%s\n' "$list" | grep -vE '\.(db|sqlite|sqlite3)$' || true; for f in $failed; do printf '%s\n' "$f"; done; } | sed '/^$/d' > "$(mg_rec_dir)/paths-left-behind.txt"
   n="$(grep -c . "$(mg_rec_dir)/paths-left-behind.txt" 2>/dev/null || true)"; n="${n:-0}"
   mg_put paths_left_behind "$n"
-  [ "$n" -eq 0 ] || warn "migration: $n file(s) too big or binary to rewrite still name the old folder $old (list: $(mg_rec_dir)/paths-left-behind.txt): $(head -n 5 "$(mg_rec_dir)/paths-left-behind.txt" | tr '\n' ' ')$([ "$n" -le 5 ] || printf '…')"
+  [ -z "$failed" ] || warn "migration: sqlite file(s) NOT rewritten (the old folder is still named in them):$failed"
+  [ "$n" -eq 0 ] || warn "migration: $n file(s) too big, binary or not rewritable still name the old folder $old (list: $(mg_rec_dir)/paths-left-behind.txt): $(head -n 5 "$(mg_rec_dir)/paths-left-behind.txt" | tr '\n' ' ')$([ "$n" -le 5 ] || printf '…')"
 }
 mg_step_paths() {
   local o="$MG_OLD_DIR" n="$MG_NEW_DIR" b
@@ -748,9 +769,9 @@ psql -U "${POSTGRES_USER:-postgres}" -d postgres -Atc "select datname from pg_da
 EOS
 )
 MG_REPOS_SH='find "$1" -type d -name "*.git" -prune | wc -l | tr -d " "'
-MG_FSCK_SH='find "$1" -type d -name "*.git" -prune | { n=0; bad=0; while IFS= read -r r; do n=$((n + 1))
-if [ -f "$r/HEAD" ] && [ -d "$r/objects" ]; then
-if command -v git >/dev/null 2>&1; then git -c safe.directory="*" --git-dir="$r" fsck --connectivity-only >/dev/null 2>&1 || bad=$((bad + 1)); fi
+MG_FSCK_SH='command -v git >/dev/null 2>&1 || { echo nogit; exit 0; }
+find "$1" -type d -name "*.git" -prune | { n=0; bad=0; while IFS= read -r r; do n=$((n + 1))
+if [ -f "$r/HEAD" ] && [ -d "$r/objects" ]; then git -c safe.directory="*" --git-dir="$r" fsck --connectivity-only >/dev/null 2>&1 || bad=$((bad + 1))
 else bad=$((bad + 1)); fi; done; echo "$n $bad"; }'
 MG_SAMPLE_SH='cd "$1/$2" 2>/dev/null || { echo none; exit 0; }
 find . -type f | LC_ALL=C sort | head -n 20 | while IFS= read -r f; do cksum < "$f"; done | cksum'
@@ -789,6 +810,7 @@ mg_rt_bin() {
     lmstudio) awk -F'\t' 'NR == 1 { print $1 }' "$2/llmster.run" 2>/dev/null ;;
     llamacpp) for b in "$2/bin/llama-server" "$2/llama-server"; do [ -e "$b" ] && { printf '%s\n' "$b"; break; }; done ;;
     vllm) [ ! -e "$2/venv/bin/python" ] || printf '%s\n' "$2/venv/bin/python" ;;
+    mlx) [ ! -e "$2/venv/bin/python" ] || printf '%s\n' "$2/venv/bin/python" ;;
   esac
 }
 # mg_run_limited SECONDS CMD… — a version command must not hang the update
@@ -802,10 +824,19 @@ mg_run_limited() {
 # update is running after it
 mg_check_runtimes() {
   local d id bin k
-  for d in "$MG_DIR"/.state/runtimes/*/; do
+  for d in "$MG_DIR"/.state/runtimes/*/ "$MG_DIR/.state/mlx/"; do
     [ -d "$d" ] || continue; d="${d%/}"; id="${d##*/}"; bin="$(mg_rt_bin "$id" "$d")"
-    [ -n "$bin" ] || continue
+    [ "$id" != mlx ] || [ -e "$d/venv/bin/python" ] || continue
+    if [ -z "$bin" ]; then
+      # (nothing was checked: said, never counted as checked; an empty folder of a runtime that is not installed is nothing)
+      [ -n "$(ls -A "$d" 2>/dev/null)" ] && { MG_VERIFY_NOTE="${MG_VERIFY_NOTE:+$MG_VERIFY_NOTE; }runtime $id: its program was not found, so it was not checked"; warn "migration: runtime $id: its program was not found, so it was not checked"; }
+      continue
+    fi
     [ -x "$bin" ] || { MG_VERIFY_WHY="runtime $id: its program $bin is not there or cannot run"; return 1; }
+    if [ "$id" = mlx ]; then
+      mg_run_limited 20 "$bin" -I -c 'import mlx_lm' || { MG_VERIFY_WHY="runtime mlx: $bin cannot import mlx_lm from the moved folder"; return 1; }
+      continue
+    fi
     mg_run_limited 20 "$bin" --version || { MG_VERIFY_WHY="runtime $id: $bin --version does not run from the moved folder"; return 1; }
   done
   for k in $(grep '^rt\.' "$(mg_marker)" 2>/dev/null | cut -d= -f1); do
@@ -816,7 +847,7 @@ mg_check_runtimes() {
   return 0
 }
 mg_verify_cutover() {
-  local s st f db new old t n o ids bad r cwd img oldrepos newrepos a b rec users_old users_new chats_old chats_new
+  local s st f db new old t n o ids bad r cwd img gimg oldrepos newrepos a b rec users_old users_new chats_old chats_new
   MG_VERIFY_WHY=''; MG_VERIFY_NOTE=''
   [ "$MG_PARTIAL" != 1 ] || { MG_VERIFY_WHY="a partial move has no old volumes"; return 1; }
   # 1. every copy matched
@@ -852,8 +883,11 @@ mg_verify_cutover() {
   if docker volume inspect "${MG_NEW_PROJECT}_gitdata" >/dev/null 2>&1 && docker volume inspect "${MG_OLD_PROJECT}_gitdata" >/dev/null 2>&1; then
     case "$oldrepos$newrepos" in '' | *[!0-9]*) MG_VERIFY_WHY="the git server's repositories cannot be counted"; return 1 ;; esac
     [ "$newrepos" -ge "$oldrepos" ] || { MG_VERIFY_WHY="the git server lists $newrepos repositories, the old one had $oldrepos"; return 1; }
-    a="$(MG_MOUNTS="-v ${MG_NEW_PROJECT}_gitdata:/v:ro" MG_SCRIPT="$MG_FSCK_SH" mg_run_in "$img" mg-fsck /v 2>/dev/null | tail -n 1)"
-    case "$a" in *" 0") ;; *) MG_VERIFY_WHY="git fsck on the moved repositories: ${a:-no answer} (repositories, damaged)"; return 1 ;; esac
+    # (run in the git server's own image, which has git; none here, or no git in it: the check FAILS and the old copy is kept)
+    gimg="$(sed -n 's/^[[:space:]]*image:[[:space:]]*\(codeberg.org\/forgejo\/forgejo[^[:space:]#]*\).*/\1/p' "$MG_DIR/compose.yaml" 2>/dev/null | head -n 1)"
+    [ -n "$gimg" ] && docker image inspect "$gimg" >/dev/null 2>&1 || { MG_VERIFY_WHY="git fsck cannot run: the git server's image (${gimg:-not named in compose.yaml}) is not on this computer"; return 1; }
+    a="$(MG_MOUNTS="-v ${MG_NEW_PROJECT}_gitdata:/v:ro" MG_SCRIPT="$MG_FSCK_SH" mg_run_in "$gimg" mg-fsck /v 2>/dev/null | tail -n 1)"
+    case "$a" in nogit) MG_VERIFY_WHY="git fsck cannot run: no git in $gimg"; return 1 ;; *" 0") ;; *) MG_VERIFY_WHY="git fsck on the moved repositories: ${a:-no answer} (repositories, damaged)"; return 1 ;; esac
   fi
   # 5. sample files of the sandbox's home match (the old .config/<old name> against the new one)
   # (compared at the inner step, with the stack down: mg_sample_check)

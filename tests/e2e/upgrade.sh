@@ -253,11 +253,14 @@ migrate_checks() {
   for m in POST PUT DELETE; do
     code="$(curl -sS -m 20 -o /dev/null -w '%{http_code}' --resolve "$HOST:$(pp):127.0.0.1" -X "$m" -H "Origin: http://$OLDHOST_LEGACY:$(pp)" \
       -H 'X-Requested-With: devos-ade' -b "$OUT/jar" --data '{}' "http://$HOST:$(pp)/api/update/check" 2>/dev/null || echo 000)"
-    check "old-origin-refused-$m" "$(case "$code" in 400 | 403) echo 0 ;; *) echo 1 ;; esac)" "$m on the new host with Origin http://$OLDHOST_LEGACY: $code (want 400 or 403)"
+    rc=1; [ "$code" = 400 ] || [ "$code" = 403 ] && rc=0
+    check "old-origin-refused-$m" "$rc" "$m on the new host with Origin http://$OLDHOST_LEGACY: $code (want 400 or 403)"
   done
   # --- the seeded Open WebUI chat is still the user's: the same email signs in, sees it, and no second account came
   got="$(owui "print([u.get('email') for u in api('GET', '/api/v1/users/all', None, TOKEN).get('users', [])])" 2>/dev/null)"
-  check no-second-user "$(case "$got" in *admin@devos-ade.local*) echo 1 ;; *admin@bedrock-now.local*) echo 0 ;; *) echo 1 ;; esac)" "Open WebUI users: $got"
+  rc=1
+  if [[ "$got" == *admin@devos-ade.local* ]]; then rc=1; elif [[ "$got" == *admin@bedrock-now.local* ]]; then rc=0; fi
+  check no-second-user "$rc" "Open WebUI users: $got"
   # --- the old copy: removed by the update itself after its checks passed (volumes and image tags), and the marker says so
   : > "$OUT/old-volumes-left"
   while read -r vol; do
