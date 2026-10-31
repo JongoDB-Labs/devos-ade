@@ -2088,7 +2088,8 @@ cmd_update() {
     fi
   elif [ "$reexec" = 0 ]; then
     _require_clean_tree
-    if [ "$force" = 0 ] && update_nothing_new "$to"; then
+    # (a move to the new name that is not finished — ./stack migrate --now, or an update stopped during it — is something to do)
+    if [ "$force" = 0 ] && ! migrate_unfinished && update_nothing_new "$to"; then
       log "already on $(installed_version) — nothing to update (./stack update --force re-runs setup)"
       offer_helper --after-update   # lib/helper.sh: one-click updates, so this needs no terminal next time
       return 0
@@ -2157,6 +2158,7 @@ cmd_update() {
   timed_step "Services run the pinned images" update_verify_images ||
     die "update: a service is not running the image this release pins (see above) — $hint"
   if [ "$moved" != 1 ]; then
+    migrate_update_finish   # lib/migrate.sh: a move made without a new version (./stack migrate --now, then this update) ends here too
     log "update: done (no new version; ./stack rollback still goes back to the version before the last real update)"
     offer_helper --after-update; return 0
   fi

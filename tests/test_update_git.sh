@@ -231,6 +231,23 @@ test_update_force_reruns_setup_when_nothing_is_new() {
   assert_eq "$(cat "$TMP/calls")" ""   # refused before anything ran
 }
 
+test_an_unfinished_move_to_the_new_name_is_finished_also_with_nothing_new() {   # JON-807
+  _fixture; git -C "$STACK_DIR" -c advice.detachedHead=false checkout -q v0.2.0; _noop_stubs; record_setup_commit
+  # ./stack migrate --now moved the install; then ./stack update (what it says to run), with or without --force
+  migrate_unfinished() { return 0; }
+  migrate_update_finish() { echo "MIGRATE FINISH" >> "$TMP/calls"; }
+  (ASSUME_YES=1 cmd_update) 2> "$TMP/err" || return 1
+  assert_not_contains "$(cat "$TMP/err")" "nothing to update"
+  assert_eq "$(tail -n 1 "$TMP/calls")" "MIGRATE FINISH"
+  : > "$TMP/calls"; (ASSUME_YES=1 cmd_update --force) 2> "$TMP/err" || return 1
+  assert_eq "$(tail -n 1 "$TMP/calls")" "MIGRATE FINISH"
+  # no move under way: nothing new is still nothing to do
+  migrate_unfinished() { return 1; }
+  : > "$TMP/calls"; (ASSUME_YES=1 cmd_update) 2> "$TMP/err" || return 1
+  assert_contains "$(cat "$TMP/err")" "nothing to update"
+  assert_eq "$(cat "$TMP/calls" 2>/dev/null)" ""
+}
+
 test_update_cannot_tell_so_it_runs_as_before() {
   # no network / no origin: the code step decides (and says why it stops), as before
   _fixture; git -C "$STACK_DIR" -c advice.detachedHead=false checkout -q v0.2.0; _noop_stubs
