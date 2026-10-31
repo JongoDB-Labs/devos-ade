@@ -801,10 +801,11 @@ mg_step_record() {
   if declare -F rt_state >/dev/null; then
     for db in $(ls "$MG_DIR/.state/runtimes" 2>/dev/null); do [ "$(rt_state "$db" 2>/dev/null)" != running ] || mg_put "rt.$db" running; done
   fi
-  # which installed runtimes' programs run now: after the move only those must (one that did not run before is not the move's doing)
+  # which installed runtimes' programs run now (rtok.ID 1 or 0): after the move a 0 is said, not counted — one that did not
+  # run before is not the move's doing. Only a recorded 0 relaxes the check: no rtok.ID (a marker of an earlier build) is strict.
   for db in "$MG_DIR"/.state/runtimes/*/ "$MG_DIR/.state/mlx/"; do
     [ -d "$db" ] || continue; db="${db%/}"
-    ! mg_rt_ok "${db##*/}" "$db" || mg_put "rtok.${db##*/}" 1
+    if mg_rt_ok "${db##*/}" "$db"; then mg_put "rtok.${db##*/}" 1; else mg_put "rtok.${db##*/}" 0; fi
   done
   for db in $(mg_pg_dbs "$MG_OLD_PROJECT"); do
     out="$(mg_pg_counts "$MG_OLD_PROJECT" "$db")" && [ -n "$out" ] || { n=-1; break; }
@@ -856,7 +857,7 @@ mg_check_runtimes() {
     case "$r" in
       2) # (nothing was checked: said, never counted as checked; an empty folder of a runtime that is not installed is nothing)
         [ -n "$(ls -A "$d" 2>/dev/null)" ] && { MG_VERIFY_NOTE="${MG_VERIFY_NOTE:+$MG_VERIFY_NOTE; }runtime $id: its program was not found, so it was not checked"; warn "migration: runtime $id: its program was not found, so it was not checked"; } ;;
-      1) [ "$(mg_get "rtok.$id")" != 1 ] || { MG_VERIFY_WHY="$MG_RT_WHY"; return 1; }
+      1) [ "$(mg_get "rtok.$id")" = 0 ] || { MG_VERIFY_WHY="$MG_RT_WHY"; return 1; }
         MG_VERIFY_NOTE="${MG_VERIFY_NOTE:+$MG_VERIFY_NOTE; }$MG_RT_WHY (it did not run before the update either)"
         warn "migration: $MG_RT_WHY — it did not run before the update either, so the move is not why" ;;
     esac

@@ -873,7 +873,7 @@ test_a_runtime_that_did_not_run_before_the_move_is_said_and_never_keeps_the_old_
   _mg_env; _mg_pg_setup
   rm -f "$INST/.state/runtimes/lmstudio/home/.lmstudio/llmster/0.0.25-1/bin/llmster"
   _mg_run 2>/dev/null; printf 'd1 %s postgres\n' "$NEWP" >> "$DK/containers"
-  assert_eq "$(_get rtok.lmstudio)" ""
+  assert_eq "$(_get rtok.lmstudio)" 0
   migrate_update_finish > "$TMP/out" 2>&1
   assert_eq "$(_get old_copy)" removed
   assert_contains "$(cat "$TMP/out")" "runtime lmstudio: its program $NEW/.state/runtimes/lmstudio/home/.lmstudio/llmster/0.0.25-1/bin/llmster is not there or cannot run — it did not run before the update either"
@@ -881,6 +881,15 @@ test_a_runtime_that_did_not_run_before_the_move_is_said_and_never_keeps_the_old_
 test_a_runtime_that_ran_before_the_move_is_recorded_and_must_run_after_it() {
   _mg_env; _mg_pg_setup; _mg_run 2>/dev/null
   assert_eq "$(_get rtok.lmstudio)" 1
+}
+test_a_marker_that_does_not_say_whether_a_runtime_ran_before_keeps_the_old_copy_when_it_fails() {
+  # (a move started by an earlier build of the migrator has no rtok.ID: a runtime that fails after it is counted)
+  _mg_env; _mg_pg_setup; _mg_run 2>/dev/null; printf 'd1 %s postgres\n' "$NEWP" >> "$DK/containers"
+  grep -v '^rtok\.' "$NEW/.state/migrate/marker" > "$TMP/m"; cat "$TMP/m" > "$NEW/.state/migrate/marker"
+  rm -f "$NEW/.state/runtimes/lmstudio/home/.lmstudio/llmster/0.0.25-1/bin/llmster"
+  migrate_update_finish > "$TMP/out" 2>&1
+  assert_contains "$(cat "$TMP/out")" "KEPT"; assert_contains "$(cat "$TMP/out")" "runtime lmstudio"
+  assert_eq "$(_get old_copy)" kept
 }
 test_a_runtime_whose_program_cannot_be_found_is_said_not_counted_as_checked() {
   _mg_moved_and_verified; mkdir -p "$NEW/.state/runtimes/llamacpp"; echo x > "$NEW/.state/runtimes/llamacpp/note"
