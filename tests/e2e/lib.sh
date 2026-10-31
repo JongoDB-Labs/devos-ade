@@ -184,17 +184,20 @@ _helper_beat_at() {
 # portal checks before it shows Change). Fails when it did not get there or stopped by itself.
 e2e_helper_start() {
   local kv names='' hb
-  [ -x "$STACK/bin/devos-ade-helper" ] || { echo "$STACK/bin/devos-ade-helper is missing" >&2; return 1; }
+  # bin/devos-ade-helper, or bin/bedrock-now-helper in an install of a release before 0.45 (upgrade.sh starts from one): the
+  # same path runs again after an update, as its launchd plist or systemd unit runs it — there the old name's shim hands over
+  HELPER_BIN=devos-ade-helper; [ -x "$STACK/bin/$HELPER_BIN" ] || HELPER_BIN=bedrock-now-helper
+  [ -x "$STACK/bin/$HELPER_BIN" ] || { echo "$STACK/bin/devos-ade-helper is missing" >&2; return 1; }
   _e2e_helper_sweep   # never two helpers on one checkout (one left by a run that was killed with -9)
   for kv in $HELPER_KNOBS; do names="$names ${kv%%=*}"; done
   HELPER_T0="$(now)"; HELPER_ALIVE=''; HELPER_RC=''
-  printf '%s e2e: starting %s/bin/devos-ade-helper in the foreground (%s)\n' "$(date '+%F %T')" "$STACK" "$HELPER_KNOBS" >> "$LOGS/helper.log"
+  printf '%s e2e: starting %s/bin/%s in the foreground (%s)\n' "$(date '+%F %T')" "$STACK" "$HELPER_BIN" "$HELPER_KNOBS" >> "$LOGS/helper.log"
   # shellcheck disable=SC2086,SC2016  # (names: a word list; the loop is the child shell's own script)
   ( for kv in $HELPER_KNOBS; do export "${kv?}"; done
     clean_env $names
-    cd "$STACK" && exec "$NOTTY" /bin/bash -c 'while :; do "$1/bin/devos-ade-helper" "$1" || exit $?
+    cd "$STACK" && exec "$NOTTY" /bin/bash -c 'while :; do "$1/bin/$2" "$1" || exit $?
         printf "%s e2e: the helper exited cleanly (it does after an update, rollback or clean): started again, as launchd/systemd do\n" "$(date "+%F %T")"
-        sleep 2; done' devos-ade-e2e-helper "$STACK" ) </dev/null >> "$LOGS/helper.log" 2>&1 &
+        sleep 2; done' devos-ade-e2e-helper "$STACK" "$HELPER_BIN" ) </dev/null >> "$LOGS/helper.log" 2>&1 &
   HELPER_PID=$!
   for _ in $(seq 1 60); do
     kill -0 "$HELPER_PID" 2>/dev/null || { echo "it stopped by itself (log: $LOGS/helper.log)" >&2; return 1; }
@@ -228,14 +231,15 @@ _e2e_helper_settle() {
 }
 
 # _e2e_helper_sweep — stops every process group running this checkout's helper (a command line that ends in
-# "STACK/bin/devos-ade-helper STACK"; never this run's own group): what e2e_helper_stop's own child left, or the
+# "STACK/bin/devos-ade-helper STACK", or bedrock-now-helper, its name before 0.45; never this run's own group): what e2e_helper_stop's own child left, or the
 # helper of a run that was killed with -9. (The path goes to awk in the environment: not on a command line it matches.)
 _e2e_helper_sweep() {
   local me groups g
   me="$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')"
-  groups="$(ps -A -ww -o pgid= -o command= 2>/dev/null | M="$STACK/bin/devos-ade-helper $STACK" awk -v me="$me" '
-    { g = $1; sub(/^ *[0-9]+ /, ""); n = length(ENVIRON["M"]) }
-    length($0) >= n && substr($0, length($0) - n + 1) == ENVIRON["M"] && g != me && g > 1 && !s[g]++ { print g }')"
+  groups="$(ps -A -ww -o pgid= -o command= 2>/dev/null | M="$STACK/bin/devos-ade-helper $STACK" O="$STACK/bin/bedrock-now-helper $STACK" awk -v me="$me" '
+    function ends(t) { return length($0) >= length(t) && substr($0, length($0) - length(t) + 1) == t }
+    { g = $1; sub(/^ *[0-9]+ /, "") }
+    (ends(ENVIRON["M"]) || ends(ENVIRON["O"])) && g != me && g > 1 && !s[g]++ { print g }')"
   [ -n "$groups" ] || return 0
   for g in $groups; do kill -TERM -- "-$g" 2>/dev/null || true; done
   for _ in 1 2 3 4 5 6 7 8 9 10; do

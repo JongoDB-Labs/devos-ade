@@ -55,6 +55,7 @@ check too, unless none of its files exist (the migration's, before they are merg
 | Name | Pattern | Files | Why it stays |
 |---|---|---|---|
 | The migration | `(?i:.*bedrock[-_ ]?now.*)` | lib/migrate.sh, tests/test_migrate.sh, caddy/legacy-on.caddy, caddy/legacy-off.caddy, tests/e2e/upgrade.sh, docs/upgrade-to-0.45.md | it moves an install of the old name |
+| The update helper's old path in the e2e harness | `.*bedrock-now-helper.*` | tests/e2e/lib.sh | the upgrade e2e starts from releases before 0.45, whose helper has that name (and after the update, the shim of that name) |
 | The old address check | `(?:\*\.)?bedrock-now(?:-preview)?\.localhost` | lib/common.sh | legacy_hosts_mode: Caddy forwards the old address only while the stack does not serve it itself |
 | The old API header value | `request\.headers\.get\("x-requested-with"\) != "bedrock-now"` | portal/portal/app.py | one release: pages and scripts from before the move still send it |
 | The old API header value, tested | `"X-Requested-With": "bedrock-now"` | portal/tests/test_keycheck.py | the test that the old value is still accepted for one release |

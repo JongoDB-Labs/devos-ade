@@ -67,13 +67,14 @@ NOTTY="$HERE/notty"
 OLD_URL="https://github.com/JongoDB-Labs/bedrock-now.git"
 NEW_URL="https://github.com/JongoDB-Labs/devos-ade.git"
 PROJECT=bne2e-rebrand-up; FROM=v0.24.0; AWS_ENV_FILE=''; KEEP=0; REAL_GITHUB=0; TEARDOWN_ONLY=0
-MIGRATE=0; NEWP=''; THEN=''; FROM_SET=0; PROJECT_SET=0
+MIGRATE=0; NEWP=''; THEN=''; FROM_SET=0; PROJECT_SET=0; INTERRUPT=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --aws-env) AWS_ENV_FILE="${2:?}"; shift 2 ;;
     --project) PROJECT="${2:?}"; PROJECT_SET=1; shift 2 ;;
     --from) FROM="${2:?}"; FROM_SET=1; shift 2 ;;
     --migrate) MIGRATE=default; shift ;;
+    --interrupt) INTERRUPT=1; shift ;;
     --migrate-pair) MIGRATE=pair; NEWP="${2:?}"; shift 2 ;;
     --then) THEN="${2:?}"; case "$THEN" in rollback | next-update) ;; *) echo "--then takes rollback or next-update" >&2; exit 2 ;; esac; shift 2 ;;
     --keep) KEEP=1; shift ;;
@@ -128,7 +129,7 @@ st() { # st [--aws] ARGS... — the throwaway's ./stack, clean environment, no t
 # migrate_teardown — what the move made: the new project (containers, volumes, images, networks), its folder, the old folder's link
 migrate_teardown() {
   local nstack="$STACK" nproj="$PROJECT" img
-  [ "$nproj" = "$NEWP" ] && [ -f "$nstack/.bedrock-now-e2e" ] || return 0
+  [ "$nproj" = "$NEWP" ] && [ -f "$nstack/.devos-ade-e2e" ] || return 0
   say "teardown: project $nproj (the move's)"
   ( cd "$nstack" && docker compose -p "$nproj" down -v --remove-orphans >/dev/null 2>&1 ) || true
   docker volume ls -q | grep -E "^${nproj}_" | xargs -r docker volume rm >/dev/null 2>&1 || true
@@ -253,8 +254,9 @@ migrate_checks() {
   for m in POST PUT DELETE; do
     code="$(curl -sS -m 20 -o /dev/null -w '%{http_code}' --resolve "$HOST:$(pp):127.0.0.1" -X "$m" -H "Origin: http://$OLDHOST_LEGACY:$(pp)" \
       -H 'X-Requested-With: devos-ade' -b "$OUT/jar" --data '{}' "http://$HOST:$(pp)/api/update/check" 2>/dev/null || echo 000)"
-    rc=1; [ "$code" = 400 ] || [ "$code" = 403 ] && rc=0
-    check "old-origin-refused-$m" "$rc" "$m on the new host with Origin http://$OLDHOST_LEGACY: $code (want 400 or 403)"
+    # (no route of the portal takes PUT or DELETE: those are refused before any handler, 405 — no state can change either way)
+    rc=1; case "$m:$code" in *:400 | *:403 | PUT:405 | DELETE:405) rc=0 ;; esac
+    check "old-origin-refused-$m" "$rc" "$m on the new host with Origin http://$OLDHOST_LEGACY: $code (want 400 or 403; 405 for a method no route takes)"
   done
   # --- the seeded Open WebUI chat is still the user's: the same email signs in, sees it, and no second account came
   got="$(owui "print([u.get('email') for u in api('GET', '/api/v1/users/all', None, TOKEN).get('users', [])])" 2>/dev/null)"
@@ -293,7 +295,8 @@ EOF
   # --- then: the way back, or the end of the backup
   case "$THEN" in
     next-update)
-      st update --yes > "$LOGS/next-update.log" 2>&1; n=$?
+      # (no newer release exists here: --force runs every step an update to the next release runs, the move's cleanup too)
+      st update --force --yes > "$LOGS/next-update.log" 2>&1; n=$?
       check next-update-ran "$n" "the next ./stack update: exit $n"
       check leftovers-removed "$([ ! -f "$STACK/.env.pre-devos-ade" ] && [ ! -L "$OLD_STACK" ] && echo 0 || echo 1)" ".env.pre-devos-ade and the old folder link are gone" ;;
     rollback)
@@ -305,7 +308,14 @@ EOF
       check rollback-folder "$([ -f "$OLD_STACK/.env" ] && [ ! -L "$OLD_STACK" ] && [ ! -e "$STACK" ] && echo 0 || echo 1)" "the install is back at $OLD_STACK"
       STACK="$OLD_STACK"; PROJECT="$OLD_PROJECT"; HOST="$OLD_HOST"
       check rollback-volumes "$([ -z "$(comm -23 <(sort "$OUT/before/volumes") <(docker volume ls -q | sort))" ] && echo 0 || echo 1)" "every old volume still there"
-      git -C "$STACK" -c advice.detachedHead=false checkout -q "$FROM" 2>/dev/null; st up --yes > "$LOGS/rollback-up.log" 2>&1; n=$?
+      # (a normal checkout's permissions, umask 022, as the clone's: containers read some of these files as other users)
+      ( umask 022; git -C "$STACK" -c advice.detachedHead=false checkout -q "$FROM" 2>/dev/null ); st up --yes > "$LOGS/rollback-up.log" 2>&1; n=$?
+      if [ "$n" != 0 ]; then   # what the old code's start left, for the report
+        { docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --format '{{.Names}} {{.Status}}'
+          c="$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT" --filter health=unhealthy | head -n 1)"
+          [ -z "$c" ] || { docker inspect --format '{{json .State.Health}}' "$c"; docker logs --tail 60 "$c" 2>&1; }
+          ls -la "$STACK/caddy" | head -n 20; } > "$LOGS/rollback-diag.txt" 2>&1; redact "$LOGS/rollback-diag.txt"
+      fi
       check rollback-old-project-runs "$n" "the old code starts the old project again: exit $n"
       got="$(owui "print(api('GET', '/api/v1/chats/$CHAT_ID', None, TOKEN)['title'])" 2>/dev/null)"
       check rollback-chat-kept "$([ "$got" = e2e-upgrade ] && echo 0 || echo 1)" "the chat on the old project: ${got:-gone}"
@@ -325,7 +335,7 @@ claim_project
 # shellcheck disable=SC2034  # (OWNED: read by teardown)
 [ "$OWN_STATE" != ours ] || { warn "project $PROJECT: $OWN_WHY — removing those leftovers first"; teardown; OWNED=1; }
 if [ -e "$STACK" ]; then
-  [ -f "$STACK/.bedrock-now-e2e" ] || die "$STACK exists and was not created by this suite — nothing was changed"
+  [ -f "$STACK/.devos-ade-e2e" ] || die "$STACK exists and was not created by this suite — nothing was changed"
   chmod -R u+rwX "$STACK"; rm -rf "$STACK"
 fi
 say "staging $FROM in $STACK"
@@ -353,7 +363,7 @@ else
 fi
 [ -n "$TO" ] || die "no release to update to"
 git -C "$STACK" -c advice.detachedHead=false checkout -q "$FROM" || die "cannot check out $FROM"
-: > "$STACK/.bedrock-now-e2e"; printf '/.bedrock-now-e2e\n' >> "$STACK/.git/info/exclude"
+: > "$STACK/.devos-ade-e2e"; printf '/.devos-ade-e2e\n' >> "$STACK/.git/info/exclude"   # (the marker lib.sh's teardown reads)
 cp "$STACK/.env.example" "$STACK/.env"; chmod 600 "$STACK/.env"
 pick_port P 18580; pick_port L 14580; pick_port M 18965
 if [ "$MIGRATE" = default ]; then : ; else set_env COMPOSE_PROJECT_NAME "$PROJECT"; set_env PORTAL_HOST "$HOST"; fi   # (the old default: neither is in .env)
@@ -364,7 +374,7 @@ if [ "$MIGRATE" != 0 ]; then set_env OPENWEBUI_ADMIN_EMAIL "admin@bedrock-now.lo
 for kv in $BUDGETS; do set_env "${kv%%=*}" "${kv#*=}"; done
 set_env PORTAL_PASSWORD "$(openssl rand -hex 10)"
 seed_cheap_default   # (new sessions on Haiku: no flow falls back to a dearer model — the no-opus-spend check)
-WS="$(terminal_workspace_dir)"; ( umask 077; mkdir -p "$WS" ) && : > "$WS/.bedrock-now-e2e"; set_env TERMINAL_WORKSPACE "$WS"
+WS="$(terminal_workspace_dir)"; ( umask 077; mkdir -p "$WS" ) && : > "$WS/.devos-ade-e2e"; set_env TERMINAL_WORKSPACE "$WS"
 ( umask 022; mkdir -p "$STACK/.state/update-check" ); chmod 700 "$STACK/.state"; : > "$STACK/.state/portal-password-shown"
 # no GitHub call from the portal before the update (its check counts as done; --real-github asks for one at the end)
 printf '{"checked_at": "%s", "error": null}\n' "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" > "$STACK/.state/update-check/latest.json"
@@ -405,6 +415,10 @@ check code-project-made "$(grep -q '"state": "trusted"' "$OUT/code-project-befor
 HOME_V="kept-$(openssl rand -hex 4)"
 cexec terminal sh -c 'printf %s "$1" > "$HOME/.e2e-upgrade-home"' sh "$HOME_V" 2>> "$LOGS/code-seed.log"
 check home-file-made "$([ "$(cexec terminal cat /home/claude/.e2e-upgrade-home 2>/dev/null)" = "$HOME_V" ] && echo 0 || echo 1)" "a file in the sandbox's home"
+if [ "$INTERRUPT" = 1 ]; then
+  cexec terminal sh -c 'head -c 400000000 /dev/urandom > "$HOME/.e2e-big" && sha256sum "$HOME/.e2e-big"' > "$OUT/big-before.sum" 2>> "$LOGS/code-seed.log"
+  check big-file-made "$([ -s "$OUT/big-before.sum" ] && echo 0 || echo 1)" "400 MB in terminal-home: $(cut -c1-16 "$OUT/big-before.sum")"
+fi
 # the owner's kind of layout (the move only): a partial MLX download with relative links, LM Studio's records, an `lms import`
 # link, a Code page session record — all under .state, with absolute paths into this folder where the real ones have them
 if [ "$MIGRATE" != 0 ]; then
@@ -425,6 +439,36 @@ fi
 sleep 15   # (LiteLLM writes spend rows in batches)
 snapshot "$OUT/before"
 
+if [ "$INTERRUPT" = 1 ]; then
+  # --interrupt: ./stack migrate --now killed while terminal-home is being copied, then resumed; the update goes on from the new folder
+  git -C "$STACK" -c advice.detachedHead=false checkout -q "$TO" || die "cannot check out $TO"
+  NSTACK="$(dirname "$STACK")/devos-ade"; MK="$STACK/.state/migrate/marker"
+  say "interrupt: ./stack migrate --now, killed while vol.terminal-home=copying"
+  st migrate --now --yes > "$LOGS/migrate-run1.log" 2>&1 &
+  RUN1=$!
+  for _ in $(seq 1 3000); do grep -qx 'vol.terminal-home=copying' "$MK" 2>/dev/null && break; sleep 0.1; done
+  grep -qx 'vol.terminal-home=copying' "$MK" 2>/dev/null; caught=$?
+  pkill -KILL -f "$STACK/stack migrate" 2>/dev/null
+  kill -KILL "$RUN1" 2>/dev/null
+  docker ps -q --filter "volume=${NEWP}_terminal-home" | xargs -r docker kill >/dev/null 2>&1
+  wait "$RUN1" 2>/dev/null
+  cp "$MK" "$LOGS/marker-after-kill" 2>/dev/null
+  check interrupted-mid-copy "$caught" "killed with the marker at: $(grep -E '^(status|vol\.terminal-home|step\.[a-z]+)=' "$MK" 2>/dev/null | tr '\n' ' ')"
+  mst="$(grep -E '^status=' "$MK" | tail -n 1)"
+  check status-unfinished "$([ "$mst" = status=running ] && echo 0 || echo 1)" "marker $mst"
+  out="$(st up --yes 2>&1)"; n=$?
+  printf '%s\n' "$out" > "$LOGS/up-while-half-done.log"
+  refused=1; if [ "$n" != 0 ]; then case "$out" in *'not finished'*) refused=0 ;; esac; fi
+  check up-refused-half-done "$refused" "./stack up: exit $n; $(printf '%s' "$out" | tail -n 1 | cut -c1-160)"
+  st migrate --now --yes > "$LOGS/migrate-run2.log" 2>&1; n=$?
+  check resume-ran "$n" "./stack migrate --now again: exit $n"
+  NMK="$NSTACK/.state/migrate/marker"
+  check resume-copy-verified "$(grep -qx 'vol.terminal-home=verified' "$NMK" 2>/dev/null && grep -qx 'status=moved' "$NMK" 2>/dev/null && echo 0 || echo 1)" "$(grep -E '^(status|vol\.terminal-home)=' "$NMK" 2>/dev/null | tr '\n' ' ')"
+  ( STACK="$NSTACK"; PROJECT="$NEWP"; HOST="$NEWHOST"; st update --force --yes > "$LOGS/update-after-resume.log" 2>&1 ); n=$?
+  check update-after-resume "$n" "./stack update --force --yes in the new folder: exit $n"
+  after="$( ( PROJECT="$NEWP"; cexec terminal sha256sum /home/claude/.e2e-big ) 2>/dev/null)"
+  check big-file-identical "$([ -n "$after" ] && [ "$after" = "$(cat "$OUT/big-before.sum")" ] && echo 0 || echo 1)" "terminal-home 400 MB file after: $(printf '%s' "$after" | cut -c1-16)"
+else
 # --- 3. Update now: a request for the throwaway's own update helper ---
 nonce="$(openssl rand -hex 16)"
 mkdir -p "$STACK/.state/requests"
@@ -457,7 +501,10 @@ if stamped:
     start, cap = -1, 80
 else:
     start, cap = max([i for i, l in enumerate(lines) if re.match(r"^==> (update: [1-4]/4|rollback: [1-3]/3)", l)], default=-1), 40
-want = [(m.group(1), m.group(2)) for m in (re.match(r"^==> (.*) ready \((.*)\)$", l) for l in lines[start + 1:]) if m][:cap]
+# (the helper writes each label through _json_str, lib/helper.sh: no " or \\ or control characters, at most 300 bytes)
+def js(t):
+    return re.sub(r'["\\\x00-\x1f]', "", t).encode()[:300].decode("utf-8", "ignore")
+want = [(js(m.group(1)), js(m.group(2))) for m in (re.match(r"^==> (.*) ready \((.*)\)$", l) for l in lines[start + 1:]) if m][:cap]
 st = json.load(open(sys.argv[2]))
 got = [(s["label"], s["took"]) for s in st.get("steps") or []]
 assert want, "the update's log names no step"
@@ -473,6 +520,8 @@ with open(sys.argv[3], "w") as f:
 print(f"{len(got)} steps on Home's card ({'the whole job, a stamped log' if stamped else 'after the last update: N/4 line, an older helper'}), each with its time: " + ", ".join(f"{l} {t}" for l, t in got))
 PY
 check home-card-steps "$?" "$(tail -n 1 "$OUT/steps.check")"
+
+fi
 
 # --- 4. after ---
 if [ "$MIGRATE" != 0 ]; then   # from here on it is the new project, in the new folder, on the new host (the old folder is a link)
