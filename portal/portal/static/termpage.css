@@ -1,0 +1,103 @@
+/* The Terminal tab as a page of widgets (termpage.js; JON-946). Until it is customized none of this applies: #term-page stays
+   hidden and the tab is the one frame under Who answers' bar. Customized, #term-page covers the stage under that bar and the
+   frames of the terminals (kept in #frames, never moved) are placed over the empty slots in it. The widgets sit in a grid of
+   12 columns (6 on a tablet, one on a phone: the same breakpoints as widgets.css) and take widgets.css's buttons, tray and
+   bars. Tokens: tokens.css; no colours of its own except the terminal's own Ink, as the frame has. */
+.tp { position: absolute; inset: var(--answers-h) 0 0 0; overflow: auto; padding: 14px clamp(10px, 2vw, 24px) 28px; background: var(--bg); }
+.tp[hidden] { display: none; }
+.tp-tray { margin-top: 0; margin-bottom: 14px; max-width: none; }
+.tp-live { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+body.tp-dragging, body.tp-dragging * { user-select: none; cursor: col-resize; }
+.tp-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px 20px; align-items: start; max-width: 1760px; }
+.tp-grid.tp-tablet { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.tp-grid.tp-phone { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.tp-widget { min-width: 0; padding: 12px 14px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-xl); box-shadow: var(--card-edge); }
+.tp-widget[hidden], .tp-wbar[hidden] { display: none; }
+.tp-widget[data-widget="terminals"] { padding: 8px; background: #14110e; border-color: var(--line-strong); }
+.tp-title { margin: 0 0 8px; font-size: var(--t-0); line-height: 1.2; }
+.tp-editing .tp-widget { outline: 2px dashed var(--line-strong); outline-offset: 3px; }
+.tp-editing .tp-widget:focus-within { outline: 2px solid var(--accent); }
+
+/* ---------- a widget's bar (edit mode): move, narrower, wider, height, hide ---------- */
+.tp-wbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 0 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.tp-widget[data-widget="terminals"] .tp-wbar { color: #f4ecdf; border-color: #3a3128; }
+.tp-widget[data-widget="terminals"] .tp-wbar .wg-name { color: #f4ecdf; }
+.tp-grid.tp-phone .tp-wide, .tp-grid.tp-phone .tp-size { display: none; }
+
+/* ---------- the terminals ---------- */
+.tp-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; }
+.tp-tools[hidden], .tp-split[hidden] { display: none; }
+.tp-tools .quiet { color: #f4ecdf; border-color: #806f5f; }
+.tp-tools .quiet:disabled { opacity: .5; }
+.tp-split { display: inline-flex; }
+.tp-split-b { border-radius: 0; margin-left: -1px; background: transparent; color: #f4ecdf; border-color: #806f5f; padding: 0 12px; }
+.tp-split-b:first-child { border-radius: var(--r-m) 0 0 var(--r-m); margin-left: 0; }
+.tp-split-b:last-child { border-radius: 0 var(--r-m) var(--r-m) 0; }
+.tp-split-b[aria-checked="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); position: relative; }
+.tp-views { position: relative; display: grid; gap: 6px; height: max(300px, calc(100dvh - var(--answers-h) - 150px)); min-height: 200px; }
+.tp-pane { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid #3a3128; border-radius: var(--r-m); overflow: hidden; background: #14110e; }
+.tp-pane.tp-focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.tp-pane-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; padding: 0 6px 0 10px; background: #221c17; color: #b3a394; font-size: 12px; }
+.tp-pane-bar:has(.tp-close[hidden]) { display: none; }
+.tp-pane.tp-focus .tp-pane-bar { color: #f4ecdf; }
+.tp-close { min-height: 24px; min-width: 24px; padding: 0 8px; font-size: 12px; }
+.tp-slot { flex: 1 1 auto; min-height: 0; background: #14110e; }
+/* a divider between two terminals: a wide target around a thin line */
+.tp-div { position: absolute; z-index: 3; touch-action: none; }
+.tp-div::after { content: ""; position: absolute; background: var(--accent); opacity: .5; border-radius: 3px; }
+.tp-div:hover::after, .tp-div:focus-visible::after { opacity: 1; }
+.tp-div:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; border-radius: 4px; }
+.tp-div-v { top: 0; bottom: 0; width: 22px; cursor: col-resize; }
+.tp-div-v::after { top: calc(50% - 22px); height: 44px; left: 8px; width: 6px; }
+.tp-div-h { left: 0; right: 0; height: 22px; cursor: row-resize; }
+.tp-div-h::after { left: calc(50% - 22px); width: 44px; top: 8px; height: 6px; }
+
+/* ---------- the key bar ---------- */
+.tp-keys { display: flex; flex-wrap: wrap; gap: 6px; }
+.tp-key { min-width: 44px; min-height: 40px; font-family: var(--font-mono); font-size: 14px; touch-action: manipulation; }
+.tp-key[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.tp-grid.tp-phone .tp-keys { gap: 5px; }
+.tp-grid.tp-phone .tp-key { flex: 1 1 calc(25% - 5px); }
+
+/* ---------- quick commands ---------- */
+.tp-cmds { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 6px; }
+.tp-cmds[hidden], .tp-none[hidden] { display: none; }
+.tp-cmd-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tp-cmd { flex: 1 1 8ch; min-width: 0; justify-content: flex-start; padding: 0 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 13px; }
+.tp-run { color: var(--accent); }
+.tp-form { display: grid; gap: 4px; margin-top: 10px; }
+.tp-form[hidden] { display: none; }
+.tp-form input[type="text"] { min-height: 36px; padding: 4px 10px; border: 1px solid var(--line-strong); border-radius: var(--r-m); background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; }
+.tp-form input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tp-check { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.tp-form-msg { margin: 4px 0 0; color: var(--bad); font-size: 13px; }
+.tp-form-actions { display: flex; gap: 8px; margin: 6px 0 0; }
+
+/* ---------- projects ---------- */
+.tp-projects { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.tp-projects[hidden] { display: none; }
+.tp-proj { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding: 6px 0; border-top: 1px solid var(--line); }
+.tp-proj:first-child { border-top: 0; }
+.tp-proj-name { display: grid; min-width: 0; }
+.tp-proj-name strong { overflow: hidden; text-overflow: ellipsis; }
+.tp-proj-name small { color: var(--muted); overflow-wrap: anywhere; }
+
+.tp .quiet:focus-visible, .tp .wg-btn:focus-visible, .tp .action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- a phone: one column and one terminal, the page scrolls under the on-screen keyboard ---------- */
+@media (max-width: 767.98px) {
+  .tp { padding: 10px max(10px, env(safe-area-inset-right)) 20px max(10px, env(safe-area-inset-left)); }
+  .tp-views { height: max(240px, calc(var(--app-h, 100dvh) - var(--answers-h) - 190px)); }
+}
+/* touch: 44 px targets */
+@media (pointer: coarse), (max-width: 767.98px) {
+  .tp-key, .tp-cmd, .tp-tools .quiet, .tp .tp-edit, .tp .tp-remove, .tp .tp-open-shell, .tp .tp-add, .tp-split-b, .tp-cmd-row .quiet { min-height: 44px; }
+  .tp-close { min-height: 44px; min-width: 44px; }
+  .tp-pane-bar { min-height: 44px; }
+  .tp-div-v { width: 44px; } .tp-div-v::after { left: 19px; }
+  .tp-div-h { height: 44px; } .tp-div-h::after { top: 19px; }
+  .tp-form input[type="text"] { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tp-key, .tp-pane, .tp-div::after { transition: none; }
+}

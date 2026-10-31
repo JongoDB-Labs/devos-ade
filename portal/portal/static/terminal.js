@@ -31,12 +31,14 @@
         title: "Open Terminal in its own window", "aria-label": "Open Terminal in its own window" }, icon(POPOUT))));
   }
 
-  // Phone: under More, full screen in a new tab (an on-screen keyboard leaves little room for a terminal).
+  // Phone: under More. The Terminal tab here (termpage.js: one terminal and a key bar for Esc, Tab, Ctrl and the arrows); the
+  // terminal itself, full screen in a new tab, with the other apps that open that way.
   function addSheetLink() {
-    const list = $("#more-sheet .sheet-links");
-    if (!list) return;
-    list.append(el("li", {}, el("a", { class: "sheet-link", "data-app": "terminal", href: appUrl("terminal"), target: "_blank",
-      rel: "noopener" }, "Terminal", el("span", { text: "Claude Code, full screen. An external keyboard helps; closing it keeps your session." }))));
+    const tools = $("#more-sheet .sheet-tools"), list = $("#more-sheet .sheet-links");
+    if (tools) tools.prepend(el("li", {}, el("a", { class: "sheet-link", href: "#terminal", id: "more-terminal" }, "Terminal",
+      el("span", { text: "Claude Code with a key bar: Esc, Tab, Ctrl and the arrows. Closing it keeps your session." }))));
+    if (list) list.append(el("li", {}, el("a", { class: "sheet-link", "data-app": "terminal", href: appUrl("terminal"), target: "_blank",
+      rel: "noopener" }, "Terminal, full screen", el("span", { text: "Without the key bar. An external keyboard helps." }))));
   }
 
   // Home's "Claude Code in your terminal" card: where else it runs.

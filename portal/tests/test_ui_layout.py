@@ -339,3 +339,19 @@ def test_the_most_a_person_can_keep_fits_the_file(client, state):
                                     "terminal": {**screens, "phone": {"widgets": [trow("terminals", 1)]}, "commands": pad}}}
     assert client.put("/api/ui/layout", json=body, headers=API).status_code == 200
     assert (state / "ui-layout.json").stat().st_size < uilayout.MAX_BYTES
+
+
+def test_the_terminal_page_loads_after_the_engine_and_its_widgets_are_built_by_the_script():
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    order = [html.index(f'src="/static/{f}"') for f in ("answers.js", "widgets.js", "termpage.js")]
+    assert order == sorted(order)
+    assert 'href="/static/termpage.css"' in html
+    # (the markup has none of its widgets: the script builds them, so Home's one-table check of data-widget stays Home's)
+    assert not set(uilayout.PAGES["terminal"]) & set(re.findall(r'data-widget="([a-z-]+)"', html))
+    js = (STATIC / "termpage.js").read_text(encoding="utf-8")
+    for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function"):
+        assert sink not in js, sink
+    # nothing it sends to a terminal frame but the four messages ttyd-keys.js reads, and only to the terminal host's origin
+    assert sorted(set(re.findall(r'post\((?:paneFrame\(\)|f), \{ type: "([a-z]+)"', js))) == ["focus", "key", "mods", "text"]
+    assert "postMessage(msg, termOrigin)" in js and 'postMessage(msg, "*")' not in js
+    assert 'launch("view", String(n), "")' in js

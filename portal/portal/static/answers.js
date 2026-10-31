@@ -169,6 +169,7 @@
   }
   const failed = (e) => { if (e.message !== "signed out") toast(`Could not open it: ${e.message}`); };
   root.bnAnswers.launch = launch;
+  root.bnAnswers.load = (force) => load(force);   // (the Terminal page's Projects: the folders the pickers know)
 
   async function load(force) {
     if (!force && data && Date.now() - loadedAt < 30000) return data;

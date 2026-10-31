@@ -389,3 +389,13 @@ test("the terminal page's limits are the server's", () => {
   assert.deepEqual(plain([W.VIEWS_MAX, W.COMMANDS_MAX, W.COMMAND_LABEL_MAX, W.COMMAND_TEXT_MAX]), [4, 20, 40, 200]);
   assert.deepEqual(plain(W.SPLITS), ["cols", "rows", "grid"]);
 });
+
+test("the Terminal page's script keeps within the portal's rules and sends only what ttyd-keys.js reads", () => {
+  const src = source("termpage.js");
+  for (const sink of ["innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function", "new RegExp"]) assert.ok(!src.includes(sink), sink);
+  assert.ok(src.includes("postMessage(msg, termOrigin)") && !src.includes('postMessage(msg, "*")'), "a message goes to the terminal host's origin only");
+  const sent = new Set([...src.matchAll(/post\((?:paneFrame\(\)|f), \{ type: "([a-z]+)"/g)].map((m) => m[1]));
+  assert.deepEqual([...sent].sort(), ["focus", "key", "mods", "text"]);
+  const keys = readFileSync(fileURLToPath(new URL("../../../terminal/ttyd-keys.js", import.meta.url)), "utf8");
+  for (const t of sent) assert.ok(keys.includes(`d.type === "${t}"`), `ttyd-keys.js reads ${t}`);
+});

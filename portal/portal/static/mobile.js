@@ -6,7 +6,7 @@
 
 (() => {
   const PHONE = window.matchMedia("(max-width: 767.98px)");
-  const DESKTOP_ONLY = new Set(["admin", "files", "terminal"]);   // terminal: More → full screen (terminal.js)
+  const DESKTOP_ONLY = new Set(["admin", "files"]);   // (the Terminal is a page of the portal here too, from More: terminal.js, termpage.js)
   const HINT_KEY = "bn.voiceHint";
   let current = null;
 
@@ -20,7 +20,7 @@
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
   window.bnMobile = {
-    // Admin, Files and the Terminal are desktop apps: on a phone they open from the More sheet in a new tab instead. Code
+    // Admin and Files are desktop apps: on a phone they open from the More sheet in a new tab instead (the Terminal is a tab of the portal: its key bar is for a phone). Code
     // is a tab of the bar, framed like Chat (its own phone layout: chat first, sheets for the rest; code.js). A page of
     // the portal shows on a phone too (app.js PAGES: the Code tab's explanation while the Code page is off).
     allowTab: (tab) => (PHONE.matches && DESKTOP_ONLY.has(tab) && !PAGES.includes(tab) ? "chat" : tab),
@@ -52,7 +52,7 @@
     window.addEventListener("resize", () => { if (Math.round(vv.height) === window.innerHeight) { fullHeight = 0; fit(); } });
   }
 
-  // --- the More sheet (phones): Settings, Activity, Search and the walkthrough; Admin, Files (and the Terminal) in a
+  // --- the More sheet (phones): Settings, Activity, Search, the walkthrough and the Terminal; Admin and Files in a
   // new tab; Sign out.
   function sheet() {
     const box = $("#more-sheet"), btn = $("#more-btn");
