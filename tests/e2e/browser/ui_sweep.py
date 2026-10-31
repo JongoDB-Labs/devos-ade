@@ -3,10 +3,12 @@ and state of the portal, Chat, the Code page and the terminal, at three widths a
 what is broken: console errors and warnings, failed or refused requests and CSP violations, broken images and icons,
 the logo (the mark this checkout ships), visible text naming the old product name, layout (sideways scroll, controls
 cut off or covered, empty cards, unnamed controls), and every link (internal: answered; in-page: there; external: a GET,
-paced). Writes /out/sweep: shots/<page>-<state>-<width>-<theme>.png, findings.json, findings.tsv, summary.txt.
+paced). Writes /out/sweep: shots/<page>-<state>-<width>-<theme>.png, findings.json, findings.tsv, summary.txt, and
+controls.json (the visible controls of each state, for the diff between releases: ui_inventory.py).
 
 Reads only; the states it fakes are the browser's own (a rewritten page, a dispatched event) or the update check's
-answer file (/state/update-check/latest.json, put back afterwards)."""
+answer file (/state/update-check/latest.json) and the update helper's heartbeat file (/state/status/helper.json), both put back
+afterwards."""
 
 from __future__ import annotations
 
@@ -29,6 +31,7 @@ from playwright.sync_api import sync_playwright
 from common import ENV, HOST, PORT, TARGET_IP, origin, redact
 
 sys.path.insert(0, "/repo/tests")
+import ui_inventory  # noqa: E402 — the control inventory (controls.json), diffed between releases by tests/e2e/ui_inventory_diff.py
 import brand_check  # noqa: E402 — the repository's allowlist of internal names (docs/internal-names.md)
 
 OUT = Path("/out/sweep")
@@ -129,6 +132,7 @@ LINKS: dict[str, dict] = {}       # url -> {where, text}
 IMAGES: dict[str, dict] = {}      # url -> {where}
 CUR = {"page": "-", "state": "-", "width": "-", "theme": "-"}
 COUNTS: dict[str, int] = {}
+CONTROLS: dict[str, dict] = {}   # state key -> {visible, hidden_ids}: written as controls.json
 
 
 def where() -> str:
@@ -269,6 +273,13 @@ def capture(page, state: str, full: bool = True, frame_hosts: tuple[str, ...] = 
             find("collect", f"{f.url[:120]}: {str(e)[:200]}")
             continue
         top = f is page.main_frame
+        try:   # the control inventory: every visible control, and the hidden ones with an id (see ui_inventory.py)
+            raw = f.evaluate(ui_inventory.COLLECT_CONTROLS)
+            ui_inventory.merge_state(CONTROLS, f"{CUR['page']}-{state}-{CUR['width']}-{CUR['theme']}".replace("/", "_"),
+                                     *ui_inventory.normalize_controls(raw, "" if top else urlsplit(d["url"]).hostname or ""))
+            count("controls recorded", len(raw["visible"]))
+        except PwError as e:
+            find("collect", f"controls of {f.url[:120]}: {str(e)[:200]}")
         label = f"{CUR['page']}/{state}" + ("" if top else f" (frame {urlsplit(d['url']).hostname})")
         count("documents checked")
         # visible text naming the old product name (beyond the internal names the allowlist names)
@@ -459,6 +470,14 @@ def write_latest(rec):
     tmp.replace(path)
 
 
+def write_latest_beat(rec):   # the update helper's heartbeat file, as checks_browser.py fakes it
+    path = STATE / "status" / "helper.json"
+    tmp = path.with_name(".helper.json.sweep")
+    tmp.write_text(json.dumps(rec))
+    tmp.chmod(0o644)
+    tmp.replace(path)
+
+
 def sweep_portal(browser, width, theme):
     c, p = new_ctx(browser, width, theme)
     CUR["page"] = "portal"
@@ -476,6 +495,8 @@ def sweep_portal(browser, width, theme):
     # the update card's states (the update check's answer file, put back afterwards)
     up = STATE / "update-check" / "latest.json"
     saved = up.read_bytes() if up.exists() else None
+    beat = STATE / "status" / "helper.json"
+    saved_beat = beat.read_bytes() if beat.exists() else None
     now = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime())
     try:
         inst = json.loads((STATE / "status" / "version.json").read_text()).get("version", "v0.0.0")
@@ -504,11 +525,31 @@ def sweep_portal(browser, width, theme):
                     p.locator("#update-card").scroll_into_view_if_needed()
                 capture(p, name)
             step(name, one)
+        # Home with an update available, and the update helper running / late / absent (a faked heartbeat file, put back
+        # afterwards): the only states with Update now on screen, so the inventory sees it go (JON-869)
+        for name, age in (("home-update-helper-running", 0), ("home-update-helper-late", 240), ("home-update-no-helper", None)):
+            def helper_state(name=name, age=age):
+                write_latest(states["update-available"])
+                if age is None:
+                    beat.unlink(missing_ok=True)
+                else:
+                    write_latest_beat({"heartbeat": int(time.time()) - age, "version": "sweep", "rollback": {"available": False}})
+                home_ready(p)
+                if age == 0:
+                    p.locator("#update-now:not([hidden])").wait_for(timeout=15000)
+                p.locator("#update-card:not([hidden])").wait_for(timeout=15000)
+                p.locator("#update-card").scroll_into_view_if_needed()
+                capture(p, name)
+            step(name, helper_state)
     finally:
         if saved is None:
             up.unlink(missing_ok=True)
         else:
             up.write_bytes(saved)
+        if saved_beat is None:
+            beat.unlink(missing_ok=True)
+        else:
+            beat.write_bytes(saved_beat)
     # Install app offered (what Chrome does when the app becomes installable)
     def install():
         home_ready(p)
@@ -1229,6 +1270,7 @@ def main() -> int:
             find("state not reached", f"links: {type(e).__name__}: {e}")
             (OUT / "tracebacks.txt").open("a").write(f"--- links\n{traceback.format_exc()}\n")
         browser.close()
+    (OUT / "controls.json").write_text(json.dumps(CONTROLS, indent=1, sort_keys=True))
     (OUT / "findings.json").write_text(json.dumps(FINDINGS, indent=1))
     (OUT / "aborted.json").write_text(json.dumps(ABORTED, indent=1))
     (OUT / "known-upstream.json").write_text(json.dumps(KNOWN_SEEN, indent=1))

@@ -20,6 +20,18 @@
 #               LAYOUT_ONLY=REGEX (state names); LAYOUT_MINUTES=N stops measuring after N minutes. Exit 1 when a finding
 #               is not in tests/e2e/browser/layout-allowlist.json.
 #
+#   --compare REF (a tag such as v0.44.3; with --aws-env, and --src/--project/--out/--long-path as above) the UI control
+#               inventory across releases: sweeps a detached worktree of REF, then the candidate (--src, default this
+#               checkout), with the same widths and themes, and diffs what a user could see and click (JON-869). Both
+#               stacks are swept by THIS checkout's ui_sweep.py (an older one does not record controls); only the stack
+#               under test comes from REF. Results: OUT/compare/{ref,candidate}/ (as a plain run: run/sweep/controls.json,
+#               ...), OUT/compare/inventory-diff.json and the summary on stdout. Exit 1 when a control of REF is gone,
+#               disabled or unnamed in the candidate (or a whole state is) unless tests/e2e/browser/ui-removed.json
+#               declares it: [{"state": glob of <page>-<state>-<width>-<theme>, "control": "role:name" or "#id" or "*",
+#               "why": "...", "changelog": "vX.Y.Z"}] — an entry without why or changelog is rejected. Names are
+#               normalized (numbers, times, versions, ids). The Home states with an update available and the update
+#               helper running, late or absent are swept for this. tests/e2e/ui_inventory_diff.py OLD NEW is the diff alone.
+#
 #   --src DIR   the checkout to set up, at its HEAD (default: this one) — e.g. a detached worktree of a release
 #   --out DIR   results (default tests/e2e/out/ui-sweep): sweep/shots/<page>-<state>-<width>-<theme>.png,
 #               sweep/findings.tsv and .json, sweep/summary.txt, sweep/links.json, sweep/links-pending-release.json
@@ -37,7 +49,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 AVOID_PORTS=" 80 443 3000 3009 4000 8080 8081 8090 8765 8800 "
 BUDGETS="BUDGET_CLAUDE_CODE=0.04 BUDGET_OPENWEBUI=0.04 BUDGET_SETUP=0.02"
 NOTTY="$HERE/notty"
-PROJECT=bne2e-uisweep; SRC="$ROOT"; AWS_ENV_FILE=''; KEEP=0; TEARDOWN_ONLY=0; OUT_DIR=''; REUSE=0; LONG=0; LAYOUT=''
+PROJECT=bne2e-uisweep; SRC="$ROOT"; AWS_ENV_FILE=''; KEEP=0; TEARDOWN_ONLY=0; OUT_DIR=''; REUSE=0; LONG=0; LAYOUT=''; COMPARE=''
 while [ $# -gt 0 ]; do
   case "$1" in
     --aws-env) AWS_ENV_FILE="${2:?}"; shift 2 ;;
@@ -48,6 +60,7 @@ while [ $# -gt 0 ]; do
     --reuse) REUSE=1; shift ;;
     --long-path) LONG=1; shift ;;
     --layout) LAYOUT="${2:?}"; case "$LAYOUT" in fast | full) ;; *) echo "--layout takes fast or full" >&2; exit 2 ;; esac; shift 2 ;;
+    --compare) COMPARE="${2:?}"; shift 2 ;;
     --teardown) TEARDOWN_ONLY=1; shift ;;
     -h | --help) sed -n '2,/^set -uo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1 (--help)" >&2; exit 2 ;;
@@ -56,6 +69,24 @@ done
 
 . "$HERE/lib.sh"
 . "$ROOT/lib/ports.sh"   # port_in_use
+if [ -n "$COMPARE" ]; then   # the sweep twice (REF, then the candidate) and the diff; each run is this script, as a plain run
+  { [ -z "$LAYOUT" ] && [ "$REUSE$TEARDOWN_ONLY" = 00 ]; } || die "--compare does not combine with --layout, --reuse or --teardown"
+  [ -n "$AWS_ENV_FILE" ] || die "--aws-env FILE is required"
+  git -C "$ROOT" rev-parse --verify -q "$COMPARE^{commit}" >/dev/null || die "--compare: no such tag or commit: $COMPARE"
+  CMP="${OUT_DIR:-$ROOT/tests/e2e/out/ui-sweep}/compare"; mkdir -p "$CMP"; CMP="$(cd "$CMP" && pwd -P)"
+  REFWT="$ROOT/tests/e2e/work/compare-ref-$$"; mkdir -p "$(dirname "$REFWT")"
+  trap 'git -C "$ROOT" worktree remove --force "$REFWT" >/dev/null 2>&1; rm -rf "$REFWT"' EXIT
+  git -C "$ROOT" worktree add -q --detach "$REFWT" "$COMPARE" || die "cannot make a worktree of $COMPARE"
+  rm -rf "$CMP/ref" "$CMP/candidate" "$CMP/inventory-diff.json"
+  more=(); [ "$LONG" = 0 ] || more=(--long-path)
+  say "compare: sweeping $COMPARE ($(git -C "$REFWT" rev-parse --short HEAD))"
+  "$HERE/ui-sweep.sh" --aws-env "$AWS_ENV_FILE" --src "$REFWT" --project "$PROJECT" --out "$CMP/ref" ${more[@]+"${more[@]}"}
+  say "compare: sweeping the candidate ($(git -C "$SRC" rev-parse --short HEAD))"
+  "$HERE/ui-sweep.sh" --aws-env "$AWS_ENV_FILE" --src "$SRC" --project "$PROJECT" --out "$CMP/candidate" ${more[@]+"${more[@]}"}
+  for w in ref candidate; do [ -s "$CMP/$w/run/sweep/controls.json" ] || die "the $w sweep wrote no controls.json (see $CMP/$w/logs and run/sweep.log)"; done
+  python3 "$HERE/ui_inventory_diff.py" "$CMP/ref/run/sweep/controls.json" "$CMP/candidate/run/sweep/controls.json" --out "$CMP"
+  exit $?
+fi
 valid_project "$PROJECT" || die "--project must be bne2e or bne2e-<letters, digits, ->: $PROJECT (never a real install's)"
 OUT="${OUT_DIR:-$ROOT/tests/e2e/out/ui-sweep}"; mkdir -p "$OUT"; OUT="$(cd "$OUT" && pwd -P)"
 LOGS="$OUT/logs"; RESULTS="$OUT/results.tsv"; mkdir -p "$LOGS"; : > "$RESULTS"
@@ -179,7 +210,7 @@ docker run --rm --name "$PROJECT-playwright" --init --shm-size=1g "${opts[@]}" \
   -e SWEEP_WIDTHS="${SWEEP_WIDTHS:-desktop,tablet,phone}" -e SWEEP_THEMES="${SWEEP_THEMES:-light,dark}" -e SWEEP_ONLY="${SWEEP_ONLY:-}" -e SWEEP_SIZES="${SWEEP_SIZES:-}" \
   -e SWEEP_NEW_LOGO_SHA="$NEW_LOGO" -e SWEEP_OLD_LOGO_SHA="$OLD_LOGO" -e SWEEP_STACK_PATH="$STACK" -e SWEEP_HOME="$HOME" \
   -v "$STACK/.env:/run/e2e/env:ro" -v "$HERE/browser:/suite:ro" -v "$OUT/run:/out" \
-  -v "$STACK/.state/status:/state/status:ro" -v "$STACK/.state/update-check:/state/update-check" \
+  -v "$STACK/.state/status:/state/status" -v "$STACK/.state/update-check:/state/update-check" \
   -v "$ROOT:/repo:ro" -v "$STACK:/stack:ro" \
   "$PROJECT/e2e-playwright:local" python3 -u /suite/ui_sweep.py > "$OUT/run/sweep.log" 2>&1
 rc=$?
