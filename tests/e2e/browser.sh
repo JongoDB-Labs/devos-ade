@@ -48,6 +48,7 @@ docker run --rm --name "$project-playwright" --init --shm-size=1g "${opts[@]}" \
   -e E2E_CLAUDE_CODE_VERSION="$(sed -n 's/.*"@anthropic-ai\/claude-code": "\([^"]*\)".*/\1/p' "$stack/terminal/claude-code/package.json" | head -n 1)" \
   -v "$stack/.env:/run/e2e/env:ro" \
   -v "$here/browser:/suite:ro" \
+  -v "$stack/terminal:/terminal-src:ro" \
   -v "$out/browser:/out" \
   -v "$stack/.state/status:/state/status" \
   -v "$stack/.state/update-check:/state/update-check" \

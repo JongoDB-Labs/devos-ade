@@ -9,10 +9,12 @@ checked against it. Every check but the first skips while it is off."""
 from __future__ import annotations
 
 import base64
+import hashlib
 import os
 import re
 import socket
 import time
+from pathlib import Path
 from urllib.parse import urlencode
 
 from common import ENV, HOST, PORT, TARGET_IP, Skip, check, expect, http, origin
@@ -46,9 +48,33 @@ def unlock_cookie(session: str) -> str:
     return c
 
 
+# The stack's terminal/ folder, read-only (tests/e2e/browser.sh mounts it): the pinned hashes come from the repo, so a
+# changed script or a new ttyd shows here as well as in the build.
+TERMINAL_SRC = Path("/terminal-src")
+
+
+def expected_script_hashes() -> list[str]:
+    """The two script hashes the terminal host's policy allows, as 'sha256-…' sources: ttyd's inline page script (the
+    Dockerfile's TTYD_PAGE_SCRIPT_SHA256) and ttyd-clipboard.js (its own sha256, which the Dockerfile's
+    TTYD_CLIPBOARD_SCRIPT_SHA256 must equal)."""
+    try:
+        dockerfile = (TERMINAL_SRC / "Dockerfile").read_text()
+        clip = (TERMINAL_SRC / "ttyd-clipboard.js").read_bytes()
+    except OSError as e:
+        raise AssertionError(f"cannot read the repo's terminal/ files at {TERMINAL_SRC} (browser.sh mounts them): {e}") from None
+    args = {m.group(1): m.group(2) for m in re.finditer(r"^ARG (TTYD_PAGE_SCRIPT_SHA256|TTYD_CLIPBOARD_SCRIPT_SHA256)=(\S+)$",
+                                                          dockerfile, re.M)}
+    expect(len(args) == 2, f"terminal/Dockerfile pins {sorted(args)}, not both script hashes")
+    clip_hash = base64.b64encode(hashlib.sha256(clip).digest()).decode()
+    expect(args["TTYD_CLIPBOARD_SCRIPT_SHA256"] == clip_hash,
+           f"terminal/Dockerfile pins the clipboard script as {args['TTYD_CLIPBOARD_SCRIPT_SHA256']}, its file hashes to {clip_hash}")
+    return [f"sha256-{args['TTYD_PAGE_SCRIPT_SHA256']}", f"sha256-{clip_hash}"]
+
+
 def page_policy_problems(csp: str) -> list[str]:
     """What the terminal host's Content-Security-Policy (the main Caddy's terminal_page) lacks: [] when all is there —
-    ttyd's script by its hash alone, this host only, forms only to the unlock, framed by the portal only."""
+    ttyd's script and the clipboard script by their hashes and nothing else (no 'unsafe-inline', no host), this host
+    only, forms only to the unlock, framed by the portal only."""
     host = f"terminal.{HOST}"
     want = ["default-src 'none'", f"connect-src 'self' ws://{host}:* wss://{host}:*", "style-src 'unsafe-inline'",
             f"form-action {host}:*/.bn/unlock", "base-uri 'none'", "object-src 'none'",
@@ -56,8 +82,10 @@ def page_policy_problems(csp: str) -> list[str]:
             f"frame-ancestors {origin()} {origin('code') if ENV.get('CODE_ENABLED') == 'true' else 'http://code.invalid'}"]
     parts = [p.strip() for p in csp.split(";")]
     probs = [w for w in want if w not in parts]
-    if not any(re.fullmatch(r"script-src 'sha256-[A-Za-z0-9+/]{43}='", p) for p in parts):
-        probs.append("script-src: not one hash alone")
+    scripts = [p.split() for p in parts if p.split()[:1] == ["script-src"]]
+    want_hashes = sorted(f"'{h}'" for h in expected_script_hashes())
+    if len(scripts) != 1 or sorted(scripts[0][1:]) != want_hashes:
+        probs.append(f"script-src: not exactly {' '.join(want_hashes)} (got {scripts})")
     return probs
 
 
@@ -91,6 +119,20 @@ def term_text(frame) -> str:
     return frame.evaluate("""() => { const b = window.term && window.term.buffer.active; if (!b) return '';
         const out = []; for (let i = b.viewportY; i < b.viewportY + window.term.rows; i++) {
           const l = b.getLine(i); out.push(l ? l.translateToString(true) : ''); } return out.join('\\n'); }""")
+
+
+def locate_line(frame, want: str):
+    """Where the screen's row that reads exactly `want` is, from xterm's buffer (the renderer draws no text we could
+    find in the DOM): {row (0 = top of the screen), cols, left, top, cw, ch} in the frame's CSS pixels, or None. The
+    last such row; the cell size is the screen element's box over rows and columns, so it holds for any renderer, and
+    tmux's status line (the bottom row) or a scrolled view only change `row`."""
+    return frame.evaluate("""(want) => { const t = window.term; if (!t) return null; const b = t.buffer.active;
+        let row = -1; for (let i = 0; i < t.rows; i++) { const l = b.getLine(b.viewportY + i);
+          if (l && l.translateToString(true).trim() === want) row = i; }
+        if (row < 0) return null;
+        const s = t.element && t.element.querySelector('.xterm-screen'); if (!s) return null;
+        const r = s.getBoundingClientRect(); if (!r.width || !r.height) return null;
+        return {row, cols: t.cols, left: r.left, top: r.top, cw: r.width / t.cols, ch: r.height / t.rows}; }""", want)
 
 
 def wait_text(frame, pattern: str, timeout: float = 30) -> str:
@@ -260,13 +302,13 @@ def clipboard(ctx):
     # 1. copy: drag over the output line, no modifier
     type_line(page, f, "printf 'jon546-%s\\n' copy-check")
     wait_text(f, r"^jon546-copy-check$", 15)
-    pos = f.evaluate("""() => { const t = window.term; const want = 'jon546-copy-check';
-        for (const r of document.querySelectorAll('.xterm-rows > div')) if (r.textContent.trim() === want) {
-          const b = r.getBoundingClientRect(); return {x: b.left, y: b.top + b.height / 2, cw: b.width / t.cols}; } return null; }""")
-    expect(pos, "step 1 (copy): the output line jon546-copy-check is in no row of xterm's DOM")
+    pos = locate_line(f, "jon546-copy-check")
+    expect(pos, "step 1 (copy): the output line jon546-copy-check is in no row of xterm's buffer (the screen)")
     fb = page.locator("iframe[data-app=terminal]").bounding_box()
     expect(fb, "step 1 (copy): no box for the terminal's frame")
-    x0, x1, y = fb["x"] + pos["x"] + 2, fb["x"] + pos["x"] + pos["cw"] * 20, fb["y"] + pos["y"]
+    x0 = fb["x"] + pos["left"] + pos["cw"] * 0.5
+    x1 = fb["x"] + pos["left"] + pos["cw"] * min(len("jon546-copy-check") + 3, pos["cols"]) - pos["cw"] * 0.5
+    y = fb["y"] + pos["top"] + pos["ch"] * (pos["row"] + 0.5)
     page.mouse.move(x0, y)
     page.mouse.down()
     page.mouse.move((x0 + x1) / 2, y, steps=8)
@@ -390,7 +432,7 @@ def enforced(ctx):
     expect(ws_handshake(c.split(";", 1)[0], TERM) == 401, "unlock cookie without a session")
     return ("no session → login; session only → unlock form (401, framed by the portal only), WebSocket 401; unlock refuses "
             "foreign/portal/app/no Origin and 20 KB; cookie host-only HttpOnly Strict 12 h; unlocked: ttyd's page with the "
-            "terminal host's CSP (its script's hash only), WebSocket 101 from the terminal's own Origin, 403 from another "
+            "terminal host's CSP (its two scripts' hashes only), WebSocket 101 from the terminal's own Origin, 403 from another "
             "site, the portal or none")
 
 
