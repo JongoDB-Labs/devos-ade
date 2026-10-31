@@ -627,6 +627,9 @@
     } catch (_) { /* the cache stands */ }
   })();
 
+  // what the page holds, for the browser suite (tests/e2e/browser/checks_terminal.py) to read
+  window.bnTermPage = { screen: () => screen, commands: () => commands, views: () => panes.map((p) => p.n), focused: () => (panes[focused] ? panes[focused].n : 0), on: () => on };
+
   // the tab may already be showing (this script runs after app.js showed it)
   if (location.hash.replace(/^#/, "").split("/")[0] === "terminal") onTab("terminal");
   placeButton();

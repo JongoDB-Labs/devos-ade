@@ -700,6 +700,22 @@ def sweep_portal(browser, width, theme):
         f.locator(".xterm").wait_for(timeout=40000)
         p.wait_for_timeout(3000)
         capture(p, "terminal", full=False, frame_hosts=(f"terminal.{HOST}",))
+        # the Terminal as a page of widgets (termpage.js): Customize, a second terminal, the key bar, quick commands; nothing is kept
+        p.evaluate("() => { try { localStorage.removeItem('bn.layout.terminal'); } catch (e) {} }")
+        p.click("#term-customize")
+        p.wait_for_selector("#term-tray:not([hidden])")
+        p.click("#term-hidden [data-id=keys]")
+        p.click("#term-hidden [data-id=commands]")
+        p.click("#term-add")
+        p.wait_for_selector(".tp-pane[data-view='2']")
+        p.wait_for_timeout(4000)
+        capture(p, "terminal-customize", full=False, frame_hosts=(f"terminal.{HOST}",))
+        p.locator("#term-add").focus()
+        capture(p, "terminal-customize-focus", full=False, frame_hosts=(f"terminal.{HOST}",))
+        p.click("#term-reset")
+        p.click("#term-done")
+        p.evaluate("""async () => { await fetch('/api/ui/layout', {method: 'PUT', credentials: 'same-origin', headers: {'X-Requested-With': 'devos-ade', 'Content-Type': 'application/json'},
+            body: JSON.stringify({version: 1, pages: {terminal: {desktop: null, tablet: null, phone: null, commands: null}}})}); try { localStorage.removeItem('bn.layout.terminal'); } catch (e) {} }""")
     step("terminal", terminal)
 
     def code_tab():

@@ -595,6 +595,13 @@ own copy to just after your mouse release; that note is how you would notice. Pa
 (for a phone, or a browser that keeps the shortcut). `Ctrl+C` is still interrupt, also on a Mac. Shift-drag
 (Option-drag on a Mac) still selects in the page itself, as before.
 
+**Customize the tab.** The **Customize** button in Who answers' bar turns the Terminal tab into a page of widgets: up to four
+terminals in a split (**Add a terminal**; the extra views are tmux sessions grouped with `claude`, and **Close** only
+detaches), a **key bar** (Esc, Tab, Ctrl, Alt, arrows, Home, End, PgUp, PgDn, Ctrl-C, Ctrl-b: on by default on a phone and a
+tablet) that sends to the terminal you used last, up to 20 **quick commands** (a click types it; Enter only if you marked it
+Run) and your **projects** (**Open a shell here**). A small script in the terminal's page (`terminal/ttyd-keys.js`, allowed
+by its hash) takes these from the portal page alone. Until you customize, the tab is one terminal as before.
+
 It is a sandbox, not a shell on your computer:
 
 - Claude Code and the shell run in their own container, built on your machine from `terminal/` (Claude Code

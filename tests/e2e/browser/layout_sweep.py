@@ -630,6 +630,35 @@ def st_frame(tab):
     return fn
 
 
+def st_terminal_customize(S, p, device):
+    """The Terminal as a page of widgets (termpage.js): Customize with the key bar, quick commands and projects added back
+    and a second terminal (a phone keeps one), then the quick command form open. Nothing is kept: Reset and Done, and the
+    layout cache cleared, before the next state."""
+    S.login(p)
+    p.goto(S.cfg.origin + "/#terminal")
+    p.wait_for_selector("iframe[data-app=terminal]", state="attached", timeout=20000)
+    p.wait_for_timeout(1500)
+    p.evaluate("() => { try { localStorage.removeItem('bn.layout.terminal'); } catch (e) {} }")
+    p.click("#term-customize")
+    p.wait_for_selector("#term-tray:not([hidden])")
+    for wid in ("keys", "commands", "projects"):
+        if p.locator(f"#term-hidden [data-id={wid}]").count():
+            p.locator(f"#term-hidden [data-id={wid}]").click()
+    if device != "phone":
+        p.click("#term-add")
+        p.wait_for_selector(".tp-pane[data-view='2']")
+    p.wait_for_timeout(1200)
+    yield "terminal-customize", "#term-page"
+    p.click("#tp-cmd-add")
+    p.wait_for_selector("#tp-cmd-form:not([hidden])")
+    yield "terminal-customize-form", "#term-page"
+    p.click("#tp-cmd-cancel")
+    p.click("#term-reset")
+    p.click("#term-done")
+    p.evaluate("""async () => { await fetch('/api/ui/layout', {method: 'PUT', credentials: 'same-origin', headers: {'X-Requested-With': 'devos-ade', 'Content-Type': 'application/json'},
+        body: JSON.stringify({version: 1, pages: {terminal: {desktop: null, tablet: null, phone: null, commands: null}}})}); try { localStorage.removeItem('bn.layout.terminal'); } catch (e) {} }""")
+
+
 # --- the Code page on the stack (its own host, unlocked) ---
 
 # The Code page's layout is kept for the sign-in, which every page of the sweep shares: each Code page starts from the
@@ -849,6 +878,7 @@ STATES = [
     State("walkthrough-sidebar-collapsed", st_walkthrough_collapsed, devices=("desktop",), tour=True, min_w=1100),
     State("chat-frame", st_frame("chat")),
     State("terminal-frame", st_frame("terminal"), devices=("tablet", "desktop")),
+    State("terminal-customize", st_terminal_customize),
     State("code-frame", st_frame("code"), devices=("tablet", "desktop"), fast=False),
     # (a phone's Code tab: a tab of its bottom bar, framed — the bar with Code current, in the fast run too)
     State("code-tab-phone", st_frame("code"), devices=("phone",), needs="code"),

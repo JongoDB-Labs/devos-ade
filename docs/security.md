@@ -1205,7 +1205,9 @@ reaches is the container — with the three exceptions under *Threat model*.
   ttyd's user and could replace the listener on ttyd's socket; the gateway would pass it the unlocked browser's
   requests. So every answer from there gets the main Caddy's headers (`terminal_page` in `caddy/Caddyfile`): a
   `Content-Security-Policy` that runs only ttyd's own script (by its SHA-256; the image build stops when ttyd's
-  page changes, `TTYD_PAGE_SCRIPT_SHA256` in `terminal/Dockerfile`, the same value), talks only to the terminal
+  page changes, `TTYD_PAGE_SCRIPT_SHA256` in `terminal/Dockerfile`, the same value) and the clipboard and keys scripts
+  (`ttyd-clipboard.js`, `ttyd-keys.js`: each pinned the same way; the keys script reads a message only from the window that
+  frames the page, from its origin, and acts on a fixed table of keys or up to 4 KB of printable text), talks only to the terminal
   host, posts forms only to its unlock, loads nothing else (`default-src 'none'`, `base-uri 'none'`,
   `object-src 'none'`) and is framed only by the portal; and none of the upstream's `Set-Cookie`,
   `Clear-Site-Data`, `Refresh`, `Link`, `Location`, `Service-Worker-Allowed`, CORS or reporting headers. A page

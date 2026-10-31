@@ -227,6 +227,13 @@ stack. The rules, so a new card drops in without a new pattern:
   widget table; a widget a later release adds is appended to a saved layout with its default. Keyboard: a handle takes
   the arrows (move), Shift+arrows (resize), H (hide); changes are announced in an `aria-live` region; the checks are
   tests/e2e/browser/checks_widgets.py and the sweep's *home-customize* states.
+- **The Terminal tab is the same engine (JON-946).** static/termpage.js builds `#term-page` under the frames from widgets.js's
+  terminal table (Terminals fixed, key bar, quick commands, projects). The frames live in `#frames` and are never moved (a
+  moved frame reloads): while the page is on, each is positioned over its slot. Views 2 to 4 are `terminal-N` frames opened
+  with `bnAnswers.launch("view", N)`, so every address carries the launch gate's one-time token and a reload makes fresh ones.
+  The layout is per screen under `pages.terminal` (strict schema in uilayout.py; quick commands are page-level). The key bar
+  and quick commands reach a view by `postMessage` to terminal/ttyd-keys.js only. Controls keep the terminal's focus
+  (pointer-down is not defaulted away), are 44 px on touch, and changes are announced in `#term-live`.
 - **A widget has a height of its own.** A list that can be long scrolls inside its card (`max-height` and
   `overflow-y: auto`: Continue's lists, the models table, What's new); a detail folds under a `<details>` (the
   *Details* of a setting, the models table, the credentials, *Show the rest* under the long read-only lists).

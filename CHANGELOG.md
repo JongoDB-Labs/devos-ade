@@ -6,6 +6,37 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+- **The Terminal tab can be a page of widgets (JON-946).** **Customize**, in Who answers' bar on the Terminal tab, turns on
+  a page under the terminal: **Terminals** (always there), a **key bar**, your **quick commands** and your **projects**,
+  each shown, hidden, moved and resized as Home's cards are, with a bar of buttons.
+  - **Up to four terminals.** **Add a terminal** puts another view in a split (side by side, stacked or 2 by 2; the dividers
+    move by pointer or the arrow keys); **Close** only detaches, so its windows and programs stay. View 1 is the usual
+    `claude` tmux session; views 2 to 4 attach sessions grouped with it (`view-2` to `view-4`), each with its own current
+    window, and tmux's status bar is each view's tab strip.
+  - **A key bar** for a phone's on-screen keyboard: Esc, Tab, Ctrl and Alt (held for the next key), the arrows, Home, End,
+    PgUp, PgDn, Ctrl-C and Ctrl-b. It is on by default on a phone and a tablet, off on a desktop, and sends to the terminal
+    you used last; its buttons do not take the keyboard from the terminal.
+  - **Quick commands:** add, edit and remove up to 20 (a name up to 40 characters, a command up to 200, printable only,
+    checked by the portal). A click types the command into the terminal you used last; Enter is pressed only for one you
+    marked **Run**.
+  - **Projects:** your project folders, each with **Open a shell here**.
+  - **Nothing changes until you do it.** The tab is one terminal with its Paste button, as before; the arrangement is kept
+    for each kind of screen in the portal's layout file. A phone shows one terminal and the key bar. The Terminal is a tab
+    of the portal on a phone now (More, then Terminal; the full-screen window is still there).
+  - **How it is kept safe.** A third small script in the terminal's page (`terminal/ttyd-keys.js`, allowed by its hash like the
+    clipboard script) accepts messages only from the portal page that frames it and only a fixed table of keys or up to 4 KB
+    of printable text; a view's address carries a one-time token, so a view can only be opened by the portal.
+
+### Tests
+- **The Terminal's views and key bar.** Shell tests for `bn-session view N` (created once, reconnects only attach, the
+  token acts once, out of range gives the plain attach); Python tests for the launch words, the strict layout schema (views,
+  split, weights, quick commands, 32 KB) and the three pinned script hashes; JS tests for `ttyd-keys.js` (who may send,
+  the key table, control characters, 4 KB) and the terminal model in widgets.js; browser checks (`checks_terminal.py`:
+  defaults unchanged, four views each with its own shell and surviving a reload, the key bar reaching only the focused view,
+  quick commands, messages from other windows ignored, a shell in a project, keyboard only, no overlap, phone) and
+  `terminal-customize` states in the UI and layout sweeps.
+
 ## [0.47.0] - 2026-11-01
 
 ### Added

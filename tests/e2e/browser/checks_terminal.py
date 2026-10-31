@@ -54,26 +54,29 @@ TERMINAL_SRC = Path("/terminal-src")
 
 
 def expected_script_hashes() -> list[str]:
-    """The two script hashes the terminal host's policy allows, as 'sha256-…' sources: ttyd's inline page script (the
-    Dockerfile's TTYD_PAGE_SCRIPT_SHA256) and ttyd-clipboard.js (its own sha256, which the Dockerfile's
-    TTYD_CLIPBOARD_SCRIPT_SHA256 must equal)."""
+    """The three script hashes the terminal host's policy allows, as 'sha256-…' sources: ttyd's inline page script (the
+    Dockerfile's TTYD_PAGE_SCRIPT_SHA256), ttyd-clipboard.js and ttyd-keys.js (each its own sha256, which the Dockerfile's
+    TTYD_CLIPBOARD_SCRIPT_SHA256 and TTYD_KEYS_SCRIPT_SHA256 must equal)."""
     try:
         dockerfile = (TERMINAL_SRC / "Dockerfile").read_text()
-        clip = (TERMINAL_SRC / "ttyd-clipboard.js").read_bytes()
+        own = {"TTYD_CLIPBOARD_SCRIPT_SHA256": (TERMINAL_SRC / "ttyd-clipboard.js").read_bytes(),
+               "TTYD_KEYS_SCRIPT_SHA256": (TERMINAL_SRC / "ttyd-keys.js").read_bytes()}
     except OSError as e:
         raise AssertionError(f"cannot read the repo's terminal/ files at {TERMINAL_SRC} (browser.sh mounts them): {e}") from None
-    args = {m.group(1): m.group(2) for m in re.finditer(r"^ARG (TTYD_PAGE_SCRIPT_SHA256|TTYD_CLIPBOARD_SCRIPT_SHA256)=(\S+)$",
-                                                          dockerfile, re.M)}
-    expect(len(args) == 2, f"terminal/Dockerfile pins {sorted(args)}, not both script hashes")
-    clip_hash = base64.b64encode(hashlib.sha256(clip).digest()).decode()
-    expect(args["TTYD_CLIPBOARD_SCRIPT_SHA256"] == clip_hash,
-           f"terminal/Dockerfile pins the clipboard script as {args['TTYD_CLIPBOARD_SCRIPT_SHA256']}, its file hashes to {clip_hash}")
-    return [f"sha256-{args['TTYD_PAGE_SCRIPT_SHA256']}", f"sha256-{clip_hash}"]
+    args = {m.group(1): m.group(2) for m in re.finditer(
+        r"^ARG (TTYD_PAGE_SCRIPT_SHA256|TTYD_CLIPBOARD_SCRIPT_SHA256|TTYD_KEYS_SCRIPT_SHA256)=(\S+)$", dockerfile, re.M)}
+    expect(len(args) == 3, f"terminal/Dockerfile pins {sorted(args)}, not all three script hashes")
+    hashes = [f"sha256-{args['TTYD_PAGE_SCRIPT_SHA256']}"]
+    for name, script in own.items():
+        h = base64.b64encode(hashlib.sha256(script).digest()).decode()
+        expect(args[name] == h, f"terminal/Dockerfile pins {name} as {args[name]}, its file hashes to {h}")
+        hashes.append(f"sha256-{h}")
+    return hashes
 
 
 def page_policy_problems(csp: str) -> list[str]:
     """What the terminal host's Content-Security-Policy (the main Caddy's terminal_page) lacks: [] when all is there —
-    ttyd's script and the clipboard script by their hashes and nothing else (no 'unsafe-inline', no host), this host
+    ttyd's script, the clipboard script and the keys script by their hashes and nothing else (no 'unsafe-inline', no host), this host
     only, forms only to the unlock, framed by the portal only."""
     host = f"terminal.{HOST}"
     want = ["default-src 'none'", f"connect-src 'self' ws://{host}:* wss://{host}:*", "style-src 'unsafe-inline'",
@@ -509,6 +512,523 @@ def phone(ctx):
     shot(t, "46-phone-terminal")
     rec.save()
     return f"phone: not in the bottom bar; More → Terminal opens it full screen → unlock → xterm ({cols} columns); a shell window runs commands"
+
+
+# --- the Terminal tab as a page of widgets (JON-946; static/termpage.js, terminal/ttyd-keys.js) ---
+# Each check starts from no saved layout (the portal's copy and this browser's cache) and puts it back afterwards. No
+# Bedrock calls: the shells are plain bash windows, and view 1's window (Claude Code) is never typed into.
+
+CLEAR_LAYOUT = """async () => {
+  const r = await fetch('/api/ui/layout', {method: 'PUT', credentials: 'same-origin', headers: {'X-Requested-With': 'devos-ade', 'Content-Type': 'application/json'},
+    body: JSON.stringify({version: 1, pages: {terminal: {desktop: null, tablet: null, phone: null, commands: null}}})});
+  try { localStorage.removeItem('bn.layout.terminal'); } catch (e) {}
+  return r.status;
+}"""
+SAVED_LAYOUT = """async () => (await fetch('/api/ui/layout', {credentials: 'same-origin', headers: {'X-Requested-With': 'devos-ade'}})).json()"""
+BOXES = """() => [...document.querySelectorAll('.tp-pane')].map((p) => {
+  const s = p.querySelector('.tp-slot').getBoundingClientRect(), f = document.querySelector(p.dataset.view === '1' ? 'iframe[data-app=terminal]' : `iframe[data-app=terminal-${p.dataset.view}]`);
+  const r = f ? f.getBoundingClientRect() : null;
+  return {view: p.dataset.view, slot: [s.left, s.top, s.width, s.height], frame: r && [r.left, r.top, r.width, r.height], hidden: f ? f.hidden : null};
+})"""
+
+
+def reset_layout(page):
+    expect(page.evaluate(CLEAR_LAYOUT) == 200, "the Terminal page's layout could not be cleared")
+
+
+def saved_terminal(page) -> dict:
+    return page.evaluate(SAVED_LAYOUT)["pages"].get("terminal", {})
+
+
+def view_frame(page, n: int, timeout=40):
+    """The Frame of the Nth terminal view (1: the Terminal tab's own frame), once it is on the terminal host."""
+    sel = "iframe[data-app=terminal]" if n == 1 else f"iframe[data-app=terminal-{n}]"
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if page.locator(sel).count():
+            f = page.locator(sel).first.element_handle().content_frame()
+            if f and f.url.startswith(TERM):
+                return f
+        page.wait_for_timeout(250)
+    raise AssertionError(f"no frame for terminal view {n}")
+
+
+def open_terminal(ctx, name: str, device: str = "desktop"):
+    """A new browser, signed in, no saved layout, the Terminal tab unlocked and showing tmux (a phone gets there from
+    More)."""
+    page, rec = ctx.page(name, device)
+    login(page)
+    reset_layout(page)
+    page.reload()
+    page.wait_for_selector(".sidebar")
+    if device == "phone":
+        page.click("#more-btn")
+        page.click("#more-terminal")
+    else:
+        page.click(".tab[data-tab=terminal]")
+    page.wait_for_selector("iframe[data-app=terminal]", state="attached")
+    unlock_in(terminal_frame(page), ENV["PORTAL_PASSWORD"])
+    wait_xterm(terminal_frame(page))
+    return page, rec
+
+
+def customize(page):
+    page.click("#term-customize")
+    page.wait_for_selector("#term-tray:not([hidden])")
+
+
+def add_back(page, wid: str):
+    page.click(f"#term-hidden [data-id={wid}]")
+    page.wait_for_selector(f"[data-widget={wid}]:not([hidden])")
+
+
+def add_terminal(page, n: int):
+    """Add a terminal and wait until view N shows tmux, in a window of its own."""
+    page.click("#term-add")
+    page.wait_for_selector(f".tp-pane[data-view='{n}']")
+    f = view_frame(page, n)
+    wait_xterm(f)
+    return f
+
+
+def focus_view(page, n: int):
+    """A real click in the view's terminal: it has the keyboard, and the page knows which one."""
+    f = view_frame(page, n)
+    f.locator(".xterm-screen").click()
+    page.wait_for_function("(n) => window.bnTermPage.focused() === n", arg=n, timeout=10000)
+    return f
+
+
+def run_in(page, n: int, line: str):
+    f = focus_view(page, n)
+    f.locator(".xterm-helper-textarea").focus()
+    page.keyboard.type(line, delay=15)
+    page.keyboard.press("Enter")
+    return f
+
+
+def say_live(page) -> str:
+    return page.evaluate("() => document.getElementById('term-live').textContent").replace("\u00a0", " ").strip()
+
+
+@check("browser", "terminal-widgets-default-is-todays-tab")
+def widgets_default(ctx):
+    need_on()
+    page, rec = open_terminal(ctx, "terminal-widgets-default")
+    try:
+        expect(page.locator("#term-page").is_hidden(), "the widget page is on without anyone customizing")
+        expect(page.locator("#term-customize").is_visible(), "no Customize in Who answers' bar")
+        bar_h = page.locator("#answers-bar").bounding_box()["height"]
+        stage = page.locator(".stage").bounding_box()
+        box = page.locator("iframe[data-app=terminal]").bounding_box()
+        expect(abs(box["x"] - stage["x"]) < 1 and abs(box["width"] - stage["width"]) < 1 and abs(box["y"] - (stage["y"] + bar_h)) < 2
+               and abs(box["height"] - (stage["height"] - bar_h)) < 2, f"the terminal frame is {box}, not the stage under the bar ({stage}, bar {bar_h})")
+        f = terminal_frame(page)
+        expect(f.get_by_role("button", name="Paste").is_visible(), "no Paste button in the terminal (today's tab)")
+        expect(page.locator("iframe[data-app^=terminal-]").count() == 0, "a second terminal frame without anyone adding one")
+        # Customize and Done with no change: the page appears and goes away again, nothing is saved, the frame is not reloaded
+        src = page.locator("iframe[data-app=terminal]").get_attribute("src")
+        customize(page)
+        expect(page.locator("#term-page").is_visible() and page.locator("[data-widget=terminals]").is_visible(), "Customize shows no page")
+        expect(page.locator("[data-widget=keys]").is_hidden(), "the key bar is on by default on a desktop")
+        page.click("#term-done")
+        page.wait_for_selector("#term-page", state="hidden")
+        page.wait_for_timeout(1000)
+        expect(page.locator("iframe[data-app=terminal]").get_attribute("src") == src, "the terminal frame was reloaded")
+        expect(not saved_terminal(page), f"a layout was saved without a change: {saved_terminal(page)}")
+        rec.save()
+    finally:
+        reset_layout(page)
+    return "default: no widget page, the one frame under Who answers' bar with its Paste button; Customize then Done saves nothing and does not reload it"
+
+
+@check("browser", "terminal-widgets-views-and-sessions")
+def widgets_views(ctx):
+    need_on()
+    page, rec = open_terminal(ctx, "terminal-widgets-views")
+    try:
+        customize(page)
+        frames = {n: add_terminal(page, n) for n in (2, 3, 4)}
+        expect(page.locator(".tp-pane").count() == 4, "four terminals expected")
+        expect(page.locator("#term-add").is_disabled(), "Add a terminal while there are four")
+        shot(page, "terminal-widgets-4-views")
+        # each view is a session of its own, grouped with claude: its name, and a shell window made current in it
+        sessions = {}
+        for n in (2, 3, 4):
+            run_in(page, n, "echo sess=$(tmux display-message -p '#S') win=$(tmux display-message -p '#W')")
+            out = wait_text(frames[n], r"sess=view-\d win=\w+")
+            sessions[n] = re.search(r"sess=(view-\d) win=(\w+)", out).groups()
+            expect(sessions[n][0] == f"view-{n}", f"view {n} is in session {sessions[n][0]}")
+        expect(len({s[1] for s in sessions.values()}) == 1 and sessions[2][1] == "shell", f"the windows made current: {sessions}")
+        # a marker typed in view 2 is not in view 3's or view 4's current window (nor in view 1's): each has its own shell
+        mark = f"m{os.getpid()}x{int(time.time()) % 10000}"
+        run_in(page, 2, f"echo {mark}")
+        wait_text(frames[2], rf"^{mark}$")
+        page.wait_for_timeout(800)
+        for n in (3, 4):
+            expect(mark not in term_text(frames[n]), f"the marker typed in view 2 shows in view {n}")
+        expect(mark not in term_text(view_frame(page, 1)), "the marker typed in view 2 shows in view 1")
+        # ... but the windows are shared: a window made from view 3 is listed from view 2
+        run_in(page, 3, f"tmux new-window -d -n w{mark}")
+        run_in(page, 2, "tmux list-windows -F '#W' | tr '\\n' ' '; echo")
+        wait_text(frames[2], rf"w{mark}", 20)
+        # a split that changes: stacked, then 2 by 2; the frames stay over their slots, the terminals refit
+        page.click("[data-split=rows]")
+        page.wait_for_timeout(600)
+        page.click("[data-split=grid]")
+        page.wait_for_timeout(600)
+        for b in page.evaluate(BOXES):
+            expect(b["frame"] and all(abs(a - c) <= 2 for a, c in zip(b["slot"], b["frame"])), f"view {b['view']}'s frame is not over its slot: {b}")
+        # a resize: the window made smaller, every frame follows its slot and xterm fits the new size
+        cols = {n: frames[n].evaluate("() => window.term.cols") for n in (2, 3, 4)}
+        page.set_viewport_size({"width": 1000, "height": 700})
+        page.wait_for_timeout(1200)
+        for b in page.evaluate(BOXES):
+            expect(b["frame"] and all(abs(a - c) <= 2 for a, c in zip(b["slot"], b["frame"])), f"after the resize view {b['view']}'s frame is not over its slot: {b}")
+        for n in (2, 3, 4):
+            c2 = frames[n].evaluate("() => window.term.cols")
+            expect(c2 < cols[n], f"view {n} still has {c2} columns after the window got narrower (was {cols[n]})")
+        shot(page, "terminal-widgets-grid-resized")
+        # closing a view only detaches it: its session and the windows stay
+        page.click(".tp-pane[data-view='4'] .tp-close")
+        page.wait_for_selector("iframe[data-app=terminal-4]", state="detached")
+        run_in(page, 2, "tmux list-sessions -F 'S:#S' | tr '\\n' ' '; echo")
+        out = wait_text(frames[2], r"S:view-2")
+        expect("S:view-4" in out and "S:claude" in out, f"closing view 4 ended its session: {out[-200:]!r}")
+        expect(page.locator(".tp-pane").count() == 3 and not page.locator("#term-add").is_disabled(), "three terminals and Add a terminal again")
+        # the layout is kept, and a reload brings the views back with fresh tokens, each in its own session and window
+        got = None
+        for _ in range(40):
+            got = saved_terminal(page).get("desktop")
+            if got and got["views"] == 3 and got["split"] == "grid":
+                break
+            page.wait_for_timeout(250)
+        expect(got and got["views"] == 3 and got["split"] == "grid", f"the portal's copy: {got}")
+        page.reload()
+        page.wait_for_selector(".tp-pane[data-view='3']")
+        f2 = view_frame(page, 2)
+        wait_xterm(f2)
+        expect(page.locator(".tp-pane").count() == 3, "three terminals after a reload")
+        tokens = [page.locator(f"iframe[data-app=terminal-{n}]").get_attribute("src") for n in (2, 3)]
+        expect(all(re.search(rf"\?arg=view&arg={n}&arg=\d{{10}}-[0-9a-f]{{16}}-[0-9a-f]{{32}}$", t or "") for n, t in zip((2, 3), tokens)), f"the views' addresses: {tokens}")
+        wait_text(f2, rf"^{mark}$", 20)
+        expect(mark not in term_text(view_frame(page, 3)), "after the reload the marker shows in view 3")
+        rec.save()
+    finally:
+        reset_layout(page)
+    return "4 views: view-2…4 sessions with a shell window each, a marker typed in one is not in the others, windows shared; split and resize keep every frame over its slot; Close detaches (session stays); the layout and the shells survive a reload"
+
+
+@check("browser", "terminal-widgets-key-bar-reaches-the-focused-view-only")
+def widgets_key_bar(ctx):
+    need_on()
+    page, rec = open_terminal(ctx, "terminal-widgets-keys")
+    try:
+        customize(page)
+        add_back(page, "keys")
+        f2, f3 = add_terminal(page, 2), add_terminal(page, 3)
+        for n in (2, 3):
+            run_in(page, n, "cat -v")   # prints what it is sent: Esc as ^[, Up as ^[[A, Tab as ^I
+        page.wait_for_timeout(500)
+        # a click on a key button leaves the keyboard in the terminal (the page's active element is its frame)
+        focus_view(page, 2)
+        page.click("[data-key=esc]")
+        wait_text(f2, r"\^\[")
+        expect(page.evaluate("() => document.activeElement.tagName") == "IFRAME", "the key button took the keyboard from the terminal")
+        page.click("[data-key=tab]")
+        wait_text(f2, r"\^I")
+        page.wait_for_timeout(600)
+        expect("^[" not in term_text(f3) and "^I" not in term_text(f3), "view 3 got the keys sent to view 2")
+        focus_view(page, 3)
+        page.click("[data-key=up]")
+        wait_text(f3, r"\^\[\[A")
+        page.wait_for_timeout(400)
+        expect("^[[A" not in term_text(f2), "view 2 got the key sent to view 3")
+        # Ctrl is held for the next key only
+        page.click("[data-mod=ctrl]")
+        expect(page.get_attribute("[data-mod=ctrl]", "aria-pressed") == "true", "Ctrl does not show as held")
+        page.click("[data-key=up]")
+        wait_text(f3, r"\^\[\[1;5A")
+        page.wait_for_function("() => document.querySelector('[data-mod=ctrl]').getAttribute('aria-pressed') === 'false'", timeout=5000)
+        # Ctrl-b is tmux's prefix: with c it makes a window, in that view's session only (its status line lists it)
+        page.click("[data-key=ctrl-c]")   # ends cat -v in view 3
+        wait_text(f3, r"\^C|\$ $", 10)
+        page.click("[data-key=ctrl-b]")
+        f3.locator(".xterm-helper-textarea").focus()
+        page.keyboard.press("c")
+        wait_text(f3, r"^terminal /workspace \$", 15)
+        # every button has a name, and a touch target of 44 px where the screen is a touch one (the check on a phone)
+        unnamed = page.eval_on_selector_all("[data-widget=keys] button", "els => els.filter((b) => !(b.getAttribute('aria-label') || b.textContent.trim())).length")
+        expect(unnamed == 0, f"{unnamed} key bar buttons without a name")
+        shot(page, "terminal-widgets-key-bar")
+        rec.save()
+    finally:
+        reset_layout(page)
+    return "key bar: Esc, Tab, Up reach only the view that has the keyboard; the keyboard stays in the terminal after a click; Ctrl is held for one key (^[[1;5A) and lets go; Ctrl-C and Ctrl-b work"
+
+
+@check("browser", "terminal-widgets-quick-commands")
+def widgets_commands(ctx):
+    need_on()
+    page, rec = open_terminal(ctx, "terminal-widgets-commands")
+    try:
+        customize(page)
+        add_back(page, "commands")
+        f2 = add_terminal(page, 2)
+        # a command that is not one: refused, in words, nothing saved
+        page.click("#tp-cmd-add")
+        page.click("#tp-cmd-form button[type=submit]")
+        expect(page.locator(".tp-form-msg").inner_text() == "Give it a name", f"the form says {page.locator('.tp-form-msg').inner_text()!r}")
+        page.fill("#tp-cmd-label", "Type only")
+        page.fill("#tp-cmd-text", "echo qt-$((6*7))")
+        page.click("#tp-cmd-form button[type=submit]")
+        page.click("#tp-cmd-add")
+        page.fill("#tp-cmd-label", "Run it")
+        page.fill("#tp-cmd-text", "echo qr-$((6*7))")
+        page.check("#tp-cmd-run")
+        page.click("#tp-cmd-form button[type=submit]")
+        expect(page.locator(".tp-cmd").count() == 2, "two commands expected")
+        expect(page.locator(".tp-cmd .tp-run").count() == 1, "only the command marked Run shows the Enter mark")
+        # a click types into the view that has the keyboard; Enter only for the one marked Run
+        focus_view(page, 2)
+        page.click(".tp-cmd >> nth=0")
+        wait_text(f2, r"echo qt-\$\(\(6\*7\)\)")
+        page.wait_for_timeout(500)
+        expect(not re.search(r"^qt-42$", term_text(f2), re.M), "a command not marked Run was run")
+        f2.locator(".xterm-helper-textarea").focus()
+        page.keyboard.press("Control+u")   # the person clears the line; the next command is typed and run by itself
+        focus_view(page, 2)
+        page.click(".tp-cmd >> nth=1")
+        wait_text(f2, r"^qr-42$")
+        # the commands are kept with the layout: the portal's copy, and after a reload
+        got = None
+        for _ in range(40):
+            got = saved_terminal(page).get("commands")
+            if got and len(got) == 2:
+                break
+            page.wait_for_timeout(250)
+        expect(got == [{"label": "Type only", "text": "echo qt-$((6*7))", "run": False}, {"label": "Run it", "text": "echo qr-$((6*7))", "run": True}], f"saved: {got}")
+        page.reload()
+        page.wait_for_selector(".tp-cmd >> nth=1")
+        # edit, then remove
+        page.click(".tp-edit >> nth=0")
+        expect(page.input_value("#tp-cmd-label") == "Type only", "the form does not hold the command to edit")
+        page.fill("#tp-cmd-label", "Typed only")
+        page.click("#tp-cmd-form button[type=submit]")
+        expect(page.locator(".tp-cmd >> nth=0").inner_text().startswith("Typed only"), "the edit was not kept")
+        page.click(".tp-remove >> nth=0")
+        expect(page.locator(".tp-cmd").count() == 1 and "removed" in say_live(page), f"remove: {say_live(page)!r}")
+        # at most 20
+        for i in range(19):
+            page.click("#tp-cmd-add")
+            page.fill("#tp-cmd-label", f"c{i}")
+            page.fill("#tp-cmd-text", f"echo {i}")
+            page.click("#tp-cmd-form button[type=submit]")
+        expect(page.locator(".tp-cmd").count() == 20 and page.locator("#tp-cmd-add").is_disabled(), "the 20th command does not close Add a command")
+        shot(page, "terminal-widgets-commands")
+        rec.save()
+    finally:
+        reset_layout(page)
+    return "quick commands: refused without a name; a click types into the focused view, Enter only for Run; kept with the layout across a reload; edit, remove, and at most 20"
+
+
+@check("browser", "terminal-widgets-ignore-messages-from-other-windows")
+def widgets_messages(ctx):
+    need_on()
+    page, rec = open_terminal(ctx, "terminal-widgets-messages")
+    try:
+        customize(page)
+        f2 = add_terminal(page, 2)
+        run_in(page, 2, "cat -v")
+        page.wait_for_timeout(500)
+        # the terminal's own window, and a sibling frame of the portal that reaches it through window.frames, are not its parent
+        f2.evaluate("() => window.postMessage({type: 'text', text: 'HACK-self', run: true}, '*')")
+        page.evaluate("""() => {
+          const target = document.querySelector('iframe[data-app=terminal-2]').contentWindow;
+          const s = document.createElement('iframe');
+          s.id = 'sibling'; s.srcdoc = '<script>parent.document.querySelector("iframe[data-app=terminal-2]").contentWindow.postMessage({type: "text", text: "HACK-sibling", run: true}, "*")<\\/script>';
+          s.hidden = true; document.body.append(s);
+        }""")
+        page.wait_for_timeout(1500)
+        page.evaluate("() => { const s = document.getElementById('sibling'); if (s) s.remove(); }")
+        out = term_text(f2)
+        expect("HACK" not in out, f"a message from another window reached the terminal: {out[-200:]!r}")
+        # the portal's own, from the page that frames it, does (a quick command and a key)
+        page.evaluate("() => document.querySelector('iframe[data-app=terminal-2]').contentWindow.postMessage({type: 'text', text: 'FROM-PARENT'}, new URL(document.querySelector('iframe[data-app=terminal-2]').src).origin)")
+        wait_text(f2, r"FROM-PARENT")
+        # what is not in the table, or has a control character, is ignored even from the parent
+        page.evaluate("""() => { const w = document.querySelector('iframe[data-app=terminal-2]').contentWindow, o = new URL(document.querySelector('iframe[data-app=terminal-2]').src).origin;
+          w.postMessage({type: 'key', key: 'enter'}, o); w.postMessage({type: 'key', key: '\\u001b[2J'}, o);
+          w.postMessage({type: 'text', text: 'CTRL\\u001b[31m'}, o); w.postMessage({type: 'text', text: 'NEWLINE\\nrm'}, o); w.postMessage({type: 'text', text: 'x'.repeat(4097)}, o); }""")
+        page.wait_for_timeout(1000)
+        out = term_text(f2)
+        expect("CTRL" not in out and "NEWLINE" not in out and "xxxxxxxx" not in out, f"a refused message reached the terminal: {out[-200:]!r}")
+        rec.save()
+    finally:
+        reset_layout(page)
+    return "ttyd-keys.js ignores the terminal's own window and a sibling frame of the portal; takes the portal's text; ignores unknown keys, control characters and 4 KB+ from the parent too"
+
+
+@check("browser", "terminal-widgets-open-a-shell-in-a-project")
+def widgets_projects(ctx):
+    need_on()
+    page, rec = open_terminal(ctx, "terminal-widgets-projects")
+    try:
+        customize(page)
+        add_back(page, "projects")
+        page.wait_for_selector(".tp-proj")
+        names = page.eval_on_selector_all(".tp-proj", "els => els.map((e) => e.dataset.path)")
+        expect(names and names[0] == "/workspace", f"the project list {names}")
+        every = page.eval_on_selector_all(".tp-open-shell", "els => els.map((b) => [b.getAttribute('aria-label'), b.getBoundingClientRect().height])")
+        expect(all(a and a.startswith("Open a shell in ") for a, _ in every), f"unnamed buttons {every}")
+        target = names[1] if len(names) > 1 else names[0]
+        page.click(f".tp-open-shell[data-path='{target}']")
+        page.wait_for_function("(p) => /arg=open&arg=shell&arg=/.test(document.querySelector('iframe[data-app=terminal]').src) && (p === '/workspace' || document.querySelector('iframe[data-app=terminal]').src.endsWith(encodeURIComponent(p)))",
+                               arg=target, timeout=15000)
+        f = view_frame(page, 1)
+        wait_xterm(f)
+        run_in(page, 1, "echo cwd=$(pwd)")
+        wait_text(f, rf"^cwd={re.escape(target)}$", 20)
+        shot(page, "terminal-widgets-projects")
+        rec.save()
+    finally:
+        reset_layout(page)
+    return f"projects: the workspace and the known project folders listed; Open a shell here ({target}) opens a shell window there in view 1"
+
+
+@check("browser", "terminal-widgets-keyboard-only")
+def widgets_keyboard(ctx):
+    need_on()
+    page, rec = open_terminal(ctx, "terminal-widgets-kbd")
+    try:
+        page.focus("#term-customize")
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#term-tray:not([hidden])")
+        expect(page.evaluate("() => document.activeElement.id") == "term-tray-title", "the tray's title does not take the focus")
+        # Add back the key bar from the tray with the keyboard, move it above the terminals, hide it again
+        page.focus("#term-hidden [data-id=keys]")
+        page.keyboard.press("Enter")
+        page.wait_for_selector("[data-widget=keys]:not([hidden])")
+        expect("added back" in say_live(page), f"live region: {say_live(page)!r}")
+        page.focus("[data-widget=keys] [data-act=up]")
+        page.keyboard.press("Enter")
+        expect("moved" in say_live(page), f"live region: {say_live(page)!r}")
+        expect(page.evaluate("() => document.activeElement.getAttribute('data-act')") == "up", "the focus left the Move up button")
+        order = page.eval_on_selector_all("#term-grid > [data-widget]", "els => els.map((e) => e.dataset.widget)")
+        expect(order[0] == "keys", f"the order {order}")
+        # a visible focus ring on a bar button (outline), and every control of the bars has a name
+        ring = page.evaluate("() => { const s = getComputedStyle(document.activeElement); return [s.outlineStyle, s.outlineWidth]; }")
+        expect(ring[0] != "none" and ring[1] != "0px", f"no focus ring on a focused bar button: {ring}")
+        unnamed = page.eval_on_selector_all("#term-page button, #term-page [role=separator]", "els => els.filter((b) => !(b.getAttribute('aria-label') || b.textContent.trim())).map((b) => b.className)")
+        expect(not unnamed, f"controls without a name: {unnamed}")
+        # a divider between two terminals moves with the arrow keys
+        page.focus("#term-add")
+        page.keyboard.press("Enter")
+        page.wait_for_selector(".tp-div")
+        page.focus(".tp-div")
+        before = int(page.get_attribute(".tp-div", "aria-valuenow"))
+        page.keyboard.press("ArrowRight")
+        after = int(page.get_attribute(".tp-div", "aria-valuenow"))
+        expect(after == before + 5, f"the divider went {before} → {after}")
+        expect(page.evaluate("() => document.activeElement.classList.contains('tp-div')"), "the divider lost the focus when it moved")
+        # a key button used with the keyboard keeps the focus on the button (a keyboard user is not shut in the terminal)
+        page.focus("[data-key=esc]")
+        page.keyboard.press("Enter")
+        expect(page.evaluate("() => document.activeElement.getAttribute('data-key')") == "esc", "the Esc button gave the focus away")
+        # Escape leaves Customize and gives the focus back to its button
+        page.focus("#term-done")
+        page.keyboard.press("Escape")
+        page.wait_for_selector("#term-tray", state="hidden")
+        expect(page.evaluate("() => document.activeElement.id") == "term-customize", "the focus did not return to Customize")
+        rec.save()
+    finally:
+        reset_layout(page)
+    return "keyboard alone: Customize with Enter, Add back, Move up (announced), divider arrows, key buttons keep the focus, Escape returns it; every control named; visible focus ring"
+
+
+@check("browser", "terminal-widgets-nothing-overlaps-or-is-clipped")
+def widgets_layout(ctx):
+    need_on()
+    page, rec = open_terminal(ctx, "terminal-widgets-layout")
+    try:
+        customize(page)
+        for wid in ("keys", "commands", "projects"):
+            add_back(page, wid)
+        for n in (2, 3, 4):
+            add_terminal(page, n)
+        page.click("[data-split=grid]")
+        for width, height in ((1440, 900), (1100, 800), (900, 800)):
+            page.set_viewport_size({"width": width, "height": height})
+            page.wait_for_timeout(900)
+            boxes = page.evaluate(BOXES)
+            for b in boxes:
+                expect(b["frame"] and all(abs(a - c) <= 2 for a, c in zip(b["slot"], b["frame"])), f"{width}: view {b['view']}'s frame is off its slot: {b}")
+            for i, a in enumerate(boxes):
+                for b in boxes[i + 1:]:
+                    ax, ay, aw, ah = a["frame"]; bx, by, bw, bh = b["frame"]
+                    expect(ax + aw <= bx + 1 or bx + bw <= ax + 1 or ay + ah <= by + 1 or by + bh <= ay + 1, f"{width}: frames {a['view']} and {b['view']} overlap")
+            # a widget never overlaps another one or the terminals' frames, nothing is wider than the page
+            rects = page.evaluate("""() => [...document.querySelectorAll('#term-grid > [data-widget]')].filter((w) => !w.hidden).map((w) => {
+              const r = w.getBoundingClientRect(); return {id: w.dataset.widget, box: [r.left, r.top, r.width, r.height], over: w.scrollWidth > w.clientWidth + 1};
+            })""")
+            for i, a in enumerate(rects):
+                expect(not a["over"], f"{width}: {a['id']} is wider than its box (clipped)")
+                for b in rects[i + 1:]:
+                    ax, ay, aw, ah = a["box"]; bx, by, bw, bh = b["box"]
+                    expect(ax + aw <= bx + 1 or bx + bw <= ax + 1 or ay + ah <= by + 1 or by + bh <= ay + 1, f"{width}: {a['id']} and {b['id']} overlap")
+            expect(page.evaluate("() => document.documentElement.scrollWidth <= innerWidth + 1 && document.querySelector('#term-page').scrollWidth <= document.querySelector('#term-page').clientWidth + 1"),
+                   f"{width}: the page scrolls sideways")
+            shot(page, f"terminal-widgets-layout-{width}")
+        rec.save()
+    finally:
+        page.set_viewport_size({"width": 1280, "height": 800})
+        reset_layout(page)
+    return "all widgets and four terminals at 1440, 1100 and 900 px: every frame over its slot, no two frames or widgets overlap, nothing clipped, no sideways scroll"
+
+
+@check("browser", "terminal-widgets-phone-and-desktop-stay-apart")
+def widgets_phone(ctx):
+    need_on()
+    page, rec = open_terminal(ctx, "terminal-widgets-phone", "phone")
+    try:
+        # a phone reaches the Terminal from More, as a tab of the portal: one terminal, the key bar on, one column
+        expect(page.locator("#term-page").is_visible(), "no widget page on a phone (the key bar is on by default)")
+        expect(page.locator("[data-widget=keys]").is_visible() and page.locator("[data-widget=commands]").is_hidden(), "a phone starts with the terminal and the key bar")
+        expect(page.locator("#term-add").is_hidden() or page.locator("#term-add").is_disabled(), "Add a terminal on a phone")
+        expect(page.locator(".tp-pane").count() == 1, "more than one terminal on a phone")
+        frame = page.locator("iframe[data-app=terminal]").bounding_box()
+        stage = page.locator(".stage").bounding_box()
+        expect(frame["width"] >= stage["width"] - 24 and frame["y"] + frame["height"] <= stage["y"] + stage["height"] + 1, f"the terminal frame is {frame} in the stage {stage}")
+        keys = page.eval_on_selector_all("[data-widget=keys] .tp-key", "els => els.map((b) => { const r = b.getBoundingClientRect(); return [r.width, r.height]; })")
+        expect(all(w >= 44 and h >= 44 for w, h in keys), f"key bar targets under 44 px: {[k for k in keys if k[0] < 44 or k[1] < 44]}")
+        expect(page.evaluate("() => document.documentElement.scrollWidth <= innerWidth + 1"), "the phone's page scrolls sideways")
+        shot(page, "terminal-widgets-phone")
+        # a key button reaches the terminal (the first window is Claude Code's: Ctrl-b c makes a shell window)
+        f = terminal_frame(page)
+        page.click("[data-key=ctrl-b]")
+        f.locator(".xterm-helper-textarea").focus()
+        page.keyboard.press("c")
+        wait_text(f, r"^terminal /workspace \$", 15)
+        # customize with Move up / Move down at 44 px (no resize edge, no width buttons), hide the key bar: kept for the phone only
+        customize(page)
+        for sel in ("[data-widget=keys] [data-act=up]", "[data-widget=keys] [data-act=down]", "[data-widget=keys] [data-act=hide]"):
+            b = page.locator(sel).bounding_box()
+            expect(b and b["width"] >= 44 and b["height"] >= 44, f"{sel} is {b}")
+        expect(page.locator("[data-widget=keys] [data-act=wide]").is_hidden(), "width buttons on a phone")
+        page.click("[data-widget=keys] [data-act=hide]")
+        page.wait_for_selector("[data-widget=keys]", state="hidden")
+        got = None
+        for _ in range(40):
+            got = saved_terminal(page).get("phone")
+            if got and any(e["id"] == "keys" and e["hidden"] for e in got["widgets"]):
+                break
+            page.wait_for_timeout(250)
+        expect(got and got["views"] == 1, f"the phone's layout was not kept: {got}")
+        expect("desktop" not in saved_terminal(page) and "tablet" not in saved_terminal(page), f"the phone's save touched another screen: {saved_terminal(page)}")
+        rec.save()
+    finally:
+        reset_layout(page)
+    return "phone: More → Terminal; one terminal and the key bar on, one column, 44 px targets, a key reaches the terminal; hiding the key bar is kept for the phone alone"
 
 
 @check("final", "terminal-locked-after-sign-out")
