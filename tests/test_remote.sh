@@ -17,10 +17,10 @@ _stubs() {
     case "$1" in
       status) cat "$TMP/ts-status" 2>/dev/null ;;
       ip) echo 100.101.102.103 ;;
-      serve) echo '{"Services":{"svc:bedrock-now":{}}}' ;;
+      serve) echo '{"Services":{"svc:devos-ade":{}}}' ;;
     esac
   }
-  printf '{"BackendState":"Running","Self":{"Tags":["tag:bedrock-now"]},"MagicDNSSuffix":"%s"}\n' "$TN" > "$TMP/ts-status"
+  printf '{"BackendState":"Running","Self":{"Tags":["tag:devos-ade"]},"MagicDNSSuffix":"%s"}\n' "$TN" > "$TMP/ts-status"
   printf 'PORTAL_SECRET=%s\nPORTAL_HOST=devos-ade.localhost\nPORTAL_PORT=80\n' "$(printf 's%.0s' $(seq 1 40))" > "$ENV_FILE"
   TS_POLL_DELAY=0
 }
@@ -45,9 +45,9 @@ test_compose_overlays_follow_the_mode() {
 
 test_ts_names_are_per_project() {
   : > "$ENV_FILE"
-  assert_eq "$(ts_service_names)" "svc:bedrock-now svc:bedrock-now-chat svc:bedrock-now-admin svc:bedrock-now-files"
-  assert_eq "$(ts_node_name)" "bedrock-now-node"
-  printf 'COMPOSE_PROJECT_NAME=bn_dev\n' > "$ENV_FILE"; assert_eq "$(ts_base)" "bedrock-now-bn-dev"
+  assert_eq "$(ts_service_names)" "svc:devos-ade svc:devos-ade-chat svc:devos-ade-admin svc:devos-ade-files"
+  assert_eq "$(ts_node_name)" "devos-ade-node"
+  printf 'COMPOSE_PROJECT_NAME=bn_dev\n' > "$ENV_FILE"; assert_eq "$(ts_base)" "devos-ade-bn-dev"
   printf 'TS_SERVICE=ai\nTS_HOSTNAME=box\n' > "$ENV_FILE"; assert_eq "$(ts_base) $(ts_node_name)" "ai box"
   valid_ts_label devos-ade || return 1
   valid_ts_label "$(printf 'a%.0s' $(seq 1 54))" || return 1   # + -terminal, the longest suffix: 63, a DNS label's most
@@ -64,7 +64,7 @@ test_validators() {
            10.255.255.249/29 10.0.0.0/16 10.0.0.0/30 10.99.0.1/24 10.0.0.0/8; do
     if valid_cidr "$c"; then echo "cidr '$c'" >&2; return 1; fi
   done
-  valid_ts_tag tag:bedrock-now || return 1
+  valid_ts_tag tag:devos-ade || return 1
   for t in devos-ade tag: tag:Upper 'tag:a b'; do if valid_ts_tag "$t"; then echo "tag '$t'" >&2; return 1; fi; done
   valid_ts_authkey tskey-auth-kAbC123CNTRL-xyz && valid_ts_authkey 'tskey-client-k1-s2?ephemeral=false&preauthorized=true' || return 1
   for k in '' tskey- sk-123 'tskey-auth-a b' 'tskey-auth-$x'; do if valid_ts_authkey "$k"; then echo "key '$k'" >&2; return 1; fi; done
@@ -83,7 +83,7 @@ test_serve_config_tailscale_is_valid_json_with_four_https_services() {
 import json, sys
 c = json.load(sys.stdin)
 s = c["Services"]
-assert sorted(s) == ["svc:bedrock-now", "svc:bedrock-now-admin", "svc:bedrock-now-chat", "svc:bedrock-now-files"], s
+assert sorted(s) == ["svc:devos-ade", "svc:devos-ade-admin", "svc:devos-ade-chat", "svc:devos-ade-files"], s
 for name, v in s.items():
     assert v["TCP"] == {"443": {"HTTPS": True}}, v
     assert v["Web"] == {name[4:] + ".tail1234.ts.net:443": {"Handlers": {"/": {"Proxy": "http://caddy:8081"}}}}, v
@@ -104,14 +104,14 @@ test_policy_snippet_is_valid_json() {
 import json, sys
 p = json.load(sys.stdin)
 mode = sys.argv[1]
-assert p["tagOwners"] == {"tag:bedrock-now": ["autogroup:admin"]}
+assert p["tagOwners"] == {"tag:devos-ade": ["autogroup:admin"]}
 g = p["grants"][0]
 assert g["src"] == ["me@example.com"] and g["ip"] == ["443"], g
 if mode == "tailscale":
     assert len(p["autoApprovers"]["services"]) == 4
-    assert g["dst"] == ["svc:bedrock-now", "svc:bedrock-now-chat", "svc:bedrock-now-admin", "svc:bedrock-now-files"]
+    assert g["dst"] == ["svc:devos-ade", "svc:devos-ade-chat", "svc:devos-ade-admin", "svc:devos-ade-files"]
 else:
-    assert g["dst"] == ["tag:bedrock-now"] and "autoApprovers" not in p
+    assert g["dst"] == ["tag:devos-ade"] and "autoApprovers" not in p
 ' "$m" || return 1
   done
   : > "$ENV_FILE"
@@ -128,7 +128,7 @@ test_admin_steps_name_every_console_page() {
   printf 'TAILSCALE_ALLOWED_LOGIN=me@example.com\n' > "$ENV_FILE"
   out="$(ts_admin_steps tailscale)"
   for want in admin/dns "HTTPS Certificates" admin/acls/file admin/settings/keys admin/services "tcp:443" \
-              "bedrock-now-chat" "as me@example.com" "accept-routes" "Tags: tag:bedrock-now"; do
+              "devos-ade-chat" "as me@example.com" "accept-routes" "Tags: tag:devos-ade"; do
     assert_contains "$out" "$want"
   done
   assert_not_contains "$(ts_admin_steps domain)" "admin/services"
@@ -138,8 +138,8 @@ test_hosts_tailscale_and_domain() {
   : > "$ENV_FILE"
   remote_hosts_tailscale "$TN"
   assert_eq "$(get_env REMOTE_HOST) $(get_env REMOTE_CHAT_HOST) $(get_env REMOTE_FILES_HOST)" \
-    "bedrock-now.$TN bedrock-now-chat.$TN bedrock-now-files.$TN"
-  assert_eq "$(get_env REMOTE_ORIGIN)" "https://bedrock-now.$TN"
+    "devos-ade.$TN devos-ade-chat.$TN devos-ade-files.$TN"
+  assert_eq "$(get_env REMOTE_ORIGIN)" "https://devos-ade.$TN"
   remote_hosts_domain bedrock.example.com
   assert_eq "$(get_env REMOTE_ADMIN_HOST)" "admin.bedrock.example.com"
   set_env REMOTE_MODE domain
@@ -160,7 +160,7 @@ test_enable_tailscale_end_to_end_with_stubs() {
   out="$(TS_AUTHKEY=tskey-auth-abc TAILSCALE_ALLOWED_LOGIN=Me@Example.com remote_enable tailscale 2>&1)" || { echo "$out" >&2; return 1; }
   assert_eq "$(get_env REMOTE_MODE)" tailscale
   assert_eq "$(get_env TS_TAILNET)" "$TN"
-  assert_eq "$(get_env REMOTE_HOST)" "bedrock-now.$TN"
+  assert_eq "$(get_env REMOTE_HOST)" "devos-ade.$TN"
   assert_eq "$(get_env TAILSCALE_ALLOWED_LOGIN)" "me@example.com"
   assert_eq "$(grep -c '^TS_AUTHKEY=' "$ENV_FILE")" 0   # gone once logged in …
   assert_contains "$(cat "$TMP/dc")" "up -d --no-deps --force-recreate tailscale"   # … and from the container
@@ -266,11 +266,11 @@ test_status_summary_and_table_show_remote() {
   assert_eq "$(remote_summary_line)" ""
   printf 'REMOTE_MODE=tailscale\n' >> "$ENV_FILE"; remote_hosts_tailscale "$TN"
   out="$(remote_status)"
-  assert_contains "$out" "Portal   https://bedrock-now.$TN"
+  assert_contains "$out" "Portal   https://devos-ade.$TN"
   assert_contains "$out" "Local    http://devos-ade.localhost (unchanged)"
   assert_contains "$out" "Sidecar  Running"
-  assert_contains "$(remote_summary_line)" "https://bedrock-now.$TN"
-  assert_contains "$(printf 'tailscale\trunning\thealthy\t\n' | status_table)" "https://bedrock-now.$TN"
+  assert_contains "$(remote_summary_line)" "https://devos-ade.$TN"
+  assert_contains "$(printf 'tailscale\trunning\thealthy\t\n' | status_table)" "https://devos-ade.$TN"
 }
 
 test_setup_asks_once_and_defaults_to_local() {

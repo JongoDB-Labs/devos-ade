@@ -9,7 +9,7 @@ port to the internet. The local address keeps working exactly as before.
 | Mode | Command | Addresses | Certificate | Who can connect |
 |---|---|---|---|---|
 | off (default) | `./stack remote disable` | `http://devos-ade.localhost` | none (plain HTTP on 127.0.0.1) | this computer |
-| **Tailscale** (recommended) | `./stack remote enable tailscale` | `https://bedrock-now.<tailnet>.ts.net` plus `-chat`, `-admin`, `-files` | Tailscale (Let's Encrypt, automatic) | devices in your tailnet that your policy allows, signed in to Tailscale as you; your Tailscale login **and** the portal password |
+| **Tailscale** (recommended) | `./stack remote enable tailscale` | `https://devos-ade.<tailnet>.ts.net` plus `-chat`, `-admin`, `-files` | Tailscale (Let's Encrypt, automatic) | devices in your tailnet that your policy allows, signed in to Tailscale as you; your Tailscale login **and** the portal password |
 | Own domain | `./stack remote enable domain bedrock.example.com` | `https://bedrock.example.com` plus `chat.`, `admin.`, `files.` | Let's Encrypt wildcard via DNS-01 (Cloudflare) | devices in your tailnet that your policy allows; the portal password |
 
 Setup asks once: *only this computer, or also your phone/laptop through Tailscale?* (default: only this
@@ -19,8 +19,8 @@ remote address too. `./stack open` always opens the local one.
 ## How it works
 
 ```
-phone (Tailscale) ──HTTPS──▶ Tailscale Service svc:bedrock-now[-chat|-admin|-files]
-                             │  tailscale sidecar container (userspace networking, tag:bedrock-now)
+phone (Tailscale) ──HTTPS──▶ Tailscale Service svc:devos-ade[-chat|-admin|-files]
+                             │  tailscale sidecar container (userspace networking, tag:devos-ade)
                              │  terminates TLS, deletes client Tailscale-User-* headers, adds
                              │  Tailscale-User-Login + X-Forwarded-Proto: https
                              ▼
@@ -34,7 +34,7 @@ phone (Tailscale) ──HTTPS──▶ Tailscale Service svc:bedrock-now[-chat|-
 ```
 
 - A `tailscale/tailscale` container (`compose.tailscale.yaml`, pinned by version and digest) joins your
-  tailnet as its own machine, `bedrock-now-node`, with **outbound** connections only. It needs no
+  tailnet as its own machine, `devos-ade-node`, with **outbound** connections only. It needs no
   `/dev/net/tun` and no capabilities (`cap_drop: ALL`), runs read-only with memory and process limits, and
   its login lives in the `tailscale-state` volume. It shares a small Docker network of its own (`remote`,
   `REMOTE_SUBNET`, default `10.255.255.248/29` — outside Docker's default pools) with Caddy only, at a fixed
@@ -199,29 +199,29 @@ Requirements (checked against Tailscale's documentation, October 2026):
    narrow that rule, or this snippet adds access without limiting anything.
 
    ```json
-   "tagOwners": { "tag:bedrock-now": ["autogroup:admin"] },
+   "tagOwners": { "tag:devos-ade": ["autogroup:admin"] },
    "autoApprovers": {
      "services": {
-       "svc:bedrock-now": ["tag:bedrock-now"],
-       "svc:bedrock-now-chat": ["tag:bedrock-now"],
-       "svc:bedrock-now-admin": ["tag:bedrock-now"],
-       "svc:bedrock-now-files": ["tag:bedrock-now"]
+       "svc:devos-ade": ["tag:devos-ade"],
+       "svc:devos-ade-chat": ["tag:devos-ade"],
+       "svc:devos-ade-admin": ["tag:devos-ade"],
+       "svc:devos-ade-files": ["tag:devos-ade"]
      }
    },
    "grants": [
      { "src": ["you@example.com"],
-       "dst": ["svc:bedrock-now", "svc:bedrock-now-chat", "svc:bedrock-now-admin", "svc:bedrock-now-files"],
+       "dst": ["svc:devos-ade", "svc:devos-ade-chat", "svc:devos-ade-admin", "svc:devos-ade-files"],
        "ip": ["443"] }
    ]
    ```
 
-3. **Keys**: a **one-off** auth key — not reusable, not ephemeral, pre-approved, tag `tag:bedrock-now`, short
+3. **Keys**: a **one-off** auth key — not reusable, not ephemeral, pre-approved, tag `tag:devos-ade`, short
    expiry. (An OAuth client with the `auth_keys` scope and that tag also works — `./stack` appends
    `?ephemeral=false` to its secret — but it can mint further keys at any time: revoke or rotate it once the
    sidecar is enrolled; `enable` reminds you.)
-4. **Services**: *Advertise → Define a Service* four times — `bedrock-now`, `bedrock-now-chat`,
-   `bedrock-now-admin`, `bedrock-now-files` — each with port `tcp:443`. With the browser terminal and the Code page
-   shared (`REMOTE_TERMINAL=true`) also `bedrock-now-terminal` and `bedrock-now-code`, and `bedrock-now-preview` once
+4. **Services**: *Advertise → Define a Service* four times — `devos-ade`, `devos-ade-chat`,
+   `devos-ade-admin`, `devos-ade-files` — each with port `tcp:443`. With the browser terminal and the Code page
+   shared (`REMOTE_TERMINAL=true`) also `devos-ade-terminal` and `devos-ade-code`, and `devos-ade-preview` once
    you decide to turn the Code page's previews on ([above](#previews-of-dev-servers-over-remote-access)) — the printed
    snippet and steps list them.
 5. Then run `./stack remote enable tailscale`, paste the key (hidden) and your login. As soon as the sidecar
@@ -232,8 +232,15 @@ Requirements (checked against Tailscale's documentation, October 2026):
    cut off, and that requests without (or with another) Tailscale login are refused — and prints a checklist
    for your phone.
 
-A second copy of DevOS ADE (another `COMPOSE_PROJECT_NAME`) uses `bedrock-now-<project>` names, so both can be
+A second copy of DevOS ADE (another `COMPOSE_PROJECT_NAME`) uses `devos-ade-<project>` names, so both can be
 in one tailnet. `TS_SERVICE`, `TS_HOSTNAME` and `TS_TAG` in `.env` override the names.
+
+**Installs from before v0.45.0 keep their Tailscale names** (the Services `bedrock-now`, `bedrock-now-chat`, … the node
+`bedrock-now-node` and the tag `tag:bedrock-now`): the update pins them in `.env` as `TS_SERVICE`, `TS_HOSTNAME` and
+`TS_TAG`, so your tailnet policy and your phone's saved addresses keep working. To move to the `devos-ade` names:
+edit your tailnet policy first (the tag, its `tagOwners`, the Services and their grants, as in the example above, with
+`devos-ade`), then clear the three keys (`./stack config set TS_SERVICE ''`, and the same for `TS_HOSTNAME` and
+`TS_TAG`) and run `./stack remote enable tailscale` again. The remote addresses change with them.
 
 ## Own-domain mode
 
@@ -267,7 +274,7 @@ in one tailnet. `TS_SERVICE`, `TS_HOSTNAME` and `TS_TAG` in `.env` override the 
   module at a pinned version, the `dns` line in `caddy/remote-domain.caddy`, and the token variable in
   `compose.domain.yaml`.
 - Tailscale cannot see inside this TLS, so there is no `Tailscale-User-Login` (Caddy deletes client copies) and
-  no binding to your login: access is your tailnet grant (to `tag:bedrock-now`, port 443) plus the portal
+  no binding to your login: access is your tailnet grant (to `tag:devos-ade`, port 443) plus the portal
   password. Cookies are host-only, as above.
 
 ## Cloudflare Tunnel + Access (documentation only)
@@ -300,7 +307,7 @@ and Open WebUI. The sidecar's login stays in the `tailscale-state` volume for a 
 | Symptom | Check |
 |---|---|
 | `enable` waits, then "did not log in" | the auth key (tagged? expired? already used?), `./stack logs tailscale` |
-| Status shows `!! not tagged` | the key must carry `tag:bedrock-now`, and `tagOwners` must allow it |
+| Status shows `!! not tagged` | the key must carry `tag:devos-ade`, and `tagOwners` must allow it |
 | Phone: name does not resolve | MagicDNS on; the Service defined; the host approved (Services page) |
 | Phone: connection refused/times out | the grant (step 2); Linux clients ≤ v1.93: `--accept-routes` |
 | Certificate warning | HTTPS Certificates enabled (DNS page); own domain: `./stack logs caddy` (DNS-01) |

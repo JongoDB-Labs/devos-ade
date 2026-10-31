@@ -16,7 +16,7 @@
 # names (REMOTE_*), served by Caddy with X-Portal-Remote: 1 so the portal knows which cookie/origin to use.
 # Nothing here listens on a public interface.
 
-TS_TAG_DEFAULT="tag:bedrock-now"
+TS_TAG_DEFAULT="tag:devos-ade"
 REMOTE_APPS="chat admin files"
 
 # remote_mode -> off | tailscale | domain (REMOTE_MODE in .env; blank or anything else = off)
@@ -25,16 +25,16 @@ remote_mode() {
 }
 remote_on() { [ "$(remote_mode)" != off ]; }
 
-# ts_base -> the Tailscale Service base label: TS_SERVICE in .env, else svc:bedrock-now's label for the default project
-# and bedrock-now-<project> for a second copy (so two copies never advertise the same Services). Internal names, kept
-# from before v0.25.0: the remote addresses are made from them (docs/internal-names.md).
+# ts_base -> the Tailscale Service base label: TS_SERVICE in .env, else svc:devos-ade's label for the default project
+# and devos-ade-<project> for a second copy (so two copies never advertise the same Services). Internal names:
+# the remote addresses are made from them. An install from before v0.45.0 has its old names pinned in .env.
 ts_base() {
   local b p
   b="$(get_env TS_SERVICE)"
   if [ -z "$b" ]; then
     p="$(project_name)"
-    if [ "$p" = "$DEFAULT_PROJECT" ]; then b=bedrock-now
-    else b="bedrock-now-$(printf '%s' "$p" | tr '_' '-' | sed 's/-*$//')"; fi
+    if [ "$p" = "$DEFAULT_PROJECT" ]; then b=devos-ade
+    else b="devos-ade-$(printf '%s' "$p" | tr '_' '-' | sed 's/-*$//')"; fi
   fi
   printf '%s\n' "$b"
 }
@@ -463,7 +463,7 @@ remote_enable() {
   stack_lock remote   # lib/lock.sh (already ours when setup calls this)
   check_prereqs
   [ "$mode" != domain ] || check_remote_domain "$host"
-  tag="$(ts_tag)"; valid_ts_tag "$tag" || die "TS_TAG=$tag in .env is not a tag (e.g. tag:bedrock-now)"
+  tag="$(ts_tag)"; valid_ts_tag "$tag" || die "TS_TAG=$tag in .env is not a tag (e.g. tag:devos-ade)"
   valid_ts_label "$(ts_base)" || die "TS_SERVICE=$(ts_base) is not a valid Service name (lowercase letters, digits, dashes; at most 54)"
   why="$(remote_net_ok)" || die "$why"
   set_env REMOTE_SIDECAR_IP "$(remote_sidecar_ip "$(remote_subnet)")"

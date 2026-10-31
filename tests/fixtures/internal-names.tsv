@@ -15,9 +15,9 @@ lib/helper.sh	helper_unit()  { printf 'devos-ade-helper-%s.service\n' "$(project
 lib/helper.sh	local bin="$STACK_DIR/bin/devos-ade-helper"
 lib/owui.sh	LITELLM_DB_ADMIN_ID=bedrock-now-admin
 lib/owui.sh	BUDGET_BANNER_PREFIX=bedrock-now-budget
-lib/remote.sh	TS_TAG_DEFAULT="tag:bedrock-now"
-lib/remote.sh	if [ "$p" = "$DEFAULT_PROJECT" ]; then b=bedrock-now
-compose.tailscale.yaml	${TS_HOSTNAME:-bedrock-now-node}
+lib/remote.sh	TS_TAG_DEFAULT="tag:devos-ade"
+lib/remote.sh	if [ "$p" = "$DEFAULT_PROJECT" ]; then b=devos-ade
+compose.tailscale.yaml	${TS_HOSTNAME:-devos-ade-node}
 lib/settings_helper.sh	head:1:'devos-ade-settings 1'
 lib/commands.sh	def=admin@devos-ade.local
 lib/commands.sh	-H 'X-Requested-With: devos-ade'

@@ -93,8 +93,8 @@ test_open_webui_answers_cross_origin_requests_from_chat_only() {
   printf 'POSTGRES_PASSWORD=p\nRUSTFS_ACCESS_KEY=a\nRUSTFS_SECRET_KEY=s\nLITELLM_MASTER_KEY=m\nLITELLM_SALT_KEY=s\nLITELLM_UI_PASSWORD=u\nWEBUI_SECRET_KEY=w\nOPENWEBUI_ADMIN_EMAIL=a@b.c\nOPENWEBUI_ADMIN_PASSWORD=p\nSHARED_MCP_TOKEN=t\nCHAT_ORIGIN=http://chat.mine.localhost:8900\n' > "$ENV_FILE"
   _cors() { dc config --format json 2>/dev/null | python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["open-webui"]["environment"]["CORS_ALLOW_ORIGIN"])'; }
   assert_eq "$(_cors)" "http://chat.mine.localhost:8900"
-  printf 'REMOTE_CHAT_HOST=bedrock-now-chat.tail1234.ts.net\n' >> "$ENV_FILE"
-  assert_eq "$(_cors)" "http://chat.mine.localhost:8900;https://bedrock-now-chat.tail1234.ts.net"
+  printf 'REMOTE_CHAT_HOST=devos-ade-chat.tail1234.ts.net\n' >> "$ENV_FILE"
+  assert_eq "$(_cors)" "http://chat.mine.localhost:8900;https://devos-ade-chat.tail1234.ts.net"
   # before ./stack up has written CHAT_ORIGIN: Open WebUI's own default, never an origin that is not Chat's
   printf 'CHAT_ORIGIN=\n' >> "$ENV_FILE"
   assert_eq "$(_cors)" "*"

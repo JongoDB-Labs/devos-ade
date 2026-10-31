@@ -13,7 +13,7 @@ services:
   tailscale:
     image: tailscale/tailscale:v1.102.5@sha256:c507f3a2a6ab1cabd8d809b98edeb41edbd5c3fb6ad9632ffd098b4c7d0b4065
     restart: unless-stopped
-    hostname: ${TS_HOSTNAME:-bedrock-now-node}
+    hostname: ${TS_HOSTNAME:-devos-ade-node}
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
@@ -24,9 +24,9 @@ services:
       # is not left in `docker inspect`; the node key then lives in the tailscale-state volume.
       TS_AUTHKEY: ${TS_AUTHKEY:-}
       TS_AUTH_ONCE: "true"
-      TS_HOSTNAME: ${TS_HOSTNAME:-bedrock-now-node}
+      TS_HOSTNAME: ${TS_HOSTNAME:-devos-ade-node}
       # Tailscale Services need a tagged host (https://tailscale.com/kb/1552/tailscale-services).
-      TS_EXTRA_ARGS: --advertise-tags=${TS_TAG:-tag:bedrock-now}
+      TS_EXTRA_ARGS: --advertise-tags=${TS_TAG:-tag:devos-ade}
       TS_STATE_DIR: /var/lib/tailscale
       TS_USERSPACE: "true"
       TS_ACCEPT_DNS: "false"

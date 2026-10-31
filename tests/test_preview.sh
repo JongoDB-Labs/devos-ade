@@ -184,39 +184,39 @@ test_the_remote_preview_host_follows_the_remote_code_page() {
   _stubs
   TN=tail1234.ts.net
   terminal_on() { return 0; }; terminal_ready() { return 0; }
-  set_env_batch CODE_ENABLED true REMOTE_TERMINAL true REMOTE_MODE tailscale TS_TAILNET "$TN" REMOTE_HOST "bedrock-now.$TN"
+  set_env_batch CODE_ENABLED true REMOTE_TERMINAL true REMOTE_MODE tailscale TS_TAILNET "$TN" REMOTE_HOST "devos-ade.$TN"
   terminal_remote_sync; code_remote_sync
   # off by default: the preview host would be the same site as every other app of the tailnet
-  assert_eq "$(get_env REMOTE_CODE_HOST) [$(get_env REMOTE_PREVIEW_HOST)] [$(get_env REMOTE_PREVIEW_SITE)]" "bedrock-now-code.$TN [] []"
+  assert_eq "$(get_env REMOTE_CODE_HOST) [$(get_env REMOTE_PREVIEW_HOST)] [$(get_env REMOTE_PREVIEW_SITE)]" "devos-ade-code.$TN [] []"
   assert_not_contains "$(ts_service_names) $(ts_serve_config tailscale "$TN")" "preview"
   steps="$(ts_admin_steps tailscale)"
-  assert_contains "$steps" "The Code page's previews over remote access, bedrock-now-preview, are off: read docs/remote.md"
+  assert_contains "$steps" "The Code page's previews over remote access, devos-ade-preview, are off: read docs/remote.md"
   assert_contains "$steps" "define and approve that Service first, then ./stack config set REMOTE_PREVIEW (then: true)"
   note="$(remote_preview_note)"
   assert_contains "$note" "same site as every other app of"
-  assert_contains "$note" "first define the Service bedrock-now-preview (port tcp:443)"
+  assert_contains "$note" "first define the Service devos-ade-preview (port tcp:443)"
   assert_contains "$note" "Off: ./stack config set REMOTE_PREVIEW (then: false)"
   for v in '' false OFF no 0 maybe; do
     set_env REMOTE_PREVIEW "$v"; code_remote_sync; assert_eq "[$(get_env REMOTE_PREVIEW_HOST)]" "[]"
   done
   # on: one more Service, in the serve config, the policy snippet and the steps
   set_env REMOTE_PREVIEW true; code_remote_sync
-  assert_eq "$(get_env REMOTE_PREVIEW_HOST) [$(get_env REMOTE_PREVIEW_SITE)]" "bedrock-now-preview.$TN []"
-  assert_eq "$(ts_service_names)" "svc:bedrock-now svc:bedrock-now-chat svc:bedrock-now-admin svc:bedrock-now-files svc:bedrock-now-terminal svc:bedrock-now-code svc:bedrock-now-preview"
+  assert_eq "$(get_env REMOTE_PREVIEW_HOST) [$(get_env REMOTE_PREVIEW_SITE)]" "devos-ade-preview.$TN []"
+  assert_eq "$(ts_service_names)" "svc:devos-ade svc:devos-ade-chat svc:devos-ade-admin svc:devos-ade-files svc:devos-ade-terminal svc:devos-ade-code svc:devos-ade-preview"
   ts_serve_config tailscale "$TN" | python3 -c '
 import json, sys
 s = json.load(sys.stdin)["Services"]
-assert len(s) == 7 and s["svc:bedrock-now-preview"] == {"TCP": {"443": {"HTTPS": True}}, "Web": {"bedrock-now-preview.tail1234.ts.net:443": {"Handlers": {"/": {"Proxy": "http://caddy:8081"}}}}}, s' || return 1
+assert len(s) == 7 and s["svc:devos-ade-preview"] == {"TCP": {"443": {"HTTPS": True}}, "Web": {"devos-ade-preview.tail1234.ts.net:443": {"Handlers": {"/": {"Proxy": "http://caddy:8081"}}}}}, s' || return 1
   printf '{\n%s\n}\n' "$(ts_policy_snippet tailscale)" | python3 -c '
 import json, sys
 p = json.load(sys.stdin)
-assert "svc:bedrock-now-preview" in p["autoApprovers"]["services"] and "svc:bedrock-now-preview" in p["grants"][0]["dst"], p' || return 1
+assert "svc:devos-ade-preview" in p["autoApprovers"]["services"] and "svc:devos-ade-preview" in p["grants"][0]["dst"], p' || return 1
   steps="$(ts_admin_steps tailscale)"
-  assert_contains "$steps" "bedrock-now-preview shows the dev servers running in the sandbox"
+  assert_contains "$steps" "devos-ade-preview shows the dev servers running in the sandbox"
   assert_contains "$steps" "Off: ./stack config set REMOTE_PREVIEW (then: false)"
   assert_eq "$(remote_preview_note)" ""
   assert_contains "$(remote_app_list)" "chat admin files terminal code preview"
-  set_env REMOTE_PREVIEW yes; code_remote_sync; assert_eq "$(get_env REMOTE_PREVIEW_HOST)" "bedrock-now-preview.$TN"
+  set_env REMOTE_PREVIEW yes; code_remote_sync; assert_eq "$(get_env REMOTE_PREVIEW_HOST)" "devos-ade-preview.$TN"
   # own domain: preview.<it> once on; a REMOTE_PREVIEW_DOMAIN of its own (another site) is on unless false
   set_env_batch REMOTE_MODE domain REMOTE_HOST bn.example.com REMOTE_PREVIEW ''
   code_remote_sync
@@ -250,21 +250,21 @@ test_status_and_test_name_the_remote_previews() {
   TN=tail1234.ts.net
   terminal_on() { return 0; }; terminal_ready() { return 0; }; terminal_egress_on() { return 0; }
   dc() { :; }
-  _ts() { case "$1" in status) printf '{"BackendState":"Running","Self":{"Tags":["tag:bedrock-now"]}}\n' ;; esac; }
-  set_env_batch CODE_ENABLED true REMOTE_TERMINAL true REMOTE_MODE tailscale TS_TAILNET "$TN" REMOTE_HOST "bedrock-now.$TN" \
-    REMOTE_CHAT_HOST "bedrock-now-chat.$TN" PREVIEW_DOMAIN devos-ade-preview.localhost
+  _ts() { case "$1" in status) printf '{"BackendState":"Running","Self":{"Tags":["tag:devos-ade"]}}\n' ;; esac; }
+  set_env_batch CODE_ENABLED true REMOTE_TERMINAL true REMOTE_MODE tailscale TS_TAILNET "$TN" REMOTE_HOST "devos-ade.$TN" \
+    REMOTE_CHAT_HOST "devos-ade-chat.$TN" PREVIEW_DOMAIN devos-ade-preview.localhost
   terminal_remote_sync; code_remote_sync
   assert_contains "$(code_status)" "remote: off (the default; REMOTE_PREVIEW=true turns them on"
   assert_contains "$(remote_status)" "preview  off — the Code page's previews stay on this computer (REMOTE_PREVIEW; docs/remote.md before turning them on)"
   set_env REMOTE_PREVIEW true; code_remote_sync
-  assert_contains "$(code_status)" "remote: https://bedrock-now-preview.$TN (one port at a time per browser; off: ./stack config set REMOTE_PREVIEW (then: false))"
-  assert_contains "$(remote_status)" "preview  https://bedrock-now-preview.$TN   (dev servers in the sandbox, opened from the Code page)"
+  assert_contains "$(code_status)" "remote: https://devos-ade-preview.$TN (one port at a time per browser; off: ./stack config set REMOTE_PREVIEW (then: false))"
+  assert_contains "$(remote_status)" "preview  https://devos-ade-preview.$TN   (dev servers in the sandbox, opened from the Code page)"
   # ./stack remote test: the preview host without its cookie, and a request from its origin to the portal — refused
   _caddy_remote_get() { echo "$*" >> "$TMP/gets"; echo "403|"; }
   _check() { echo "$1 = $2 (want $3)" >> "$TMP/checks"; }
   remote_test > "$TMP/out" 2>&1 || true
-  assert_contains "$(cat "$TMP/gets")" "tailscale bedrock-now-preview.$TN /"
-  assert_contains "$(cat "$TMP/gets")" "tailscale bedrock-now.$TN /login Origin: https://bedrock-now-preview.$TN"
+  assert_contains "$(cat "$TMP/gets")" "tailscale devos-ade-preview.$TN /"
+  assert_contains "$(cat "$TMP/gets")" "tailscale devos-ade.$TN /login Origin: https://devos-ade-preview.$TN"
   assert_contains "$(cat "$TMP/checks")" "remote previews without their cookie (no hand-off from the Code page) → refused = 403 (want 403)"
   assert_contains "$(cat "$TMP/out")" "a dev server's Preview (Ports, in its status bar) loads — in a new tab on a phone"
 }
@@ -274,15 +274,15 @@ test_a_new_service_is_announced_once() {
   TN=tail1234.ts.net
   export TS_SERVE_DIR="$TMP/ts"
   terminal_on() { return 0; }
-  set_env_batch REMOTE_MODE tailscale TS_TAILNET "$TN" REMOTE_HOST "bedrock-now.$TN" REMOTE_TERMINAL true REMOTE_PREVIEW true
+  set_env_batch REMOTE_MODE tailscale TS_TAILNET "$TN" REMOTE_HOST "devos-ade.$TN" REMOTE_TERMINAL true REMOTE_PREVIEW true
   remote_serve_sync 2> "$TMP/err1"                  # the first config: nothing to compare with
   set_env CODE_ENABLED true; code_remote_sync
   remote_serve_sync 2> "$TMP/err2"
   remote_serve_sync 2> "$TMP/err3"
   assert_eq "$(cat "$TMP/err1")" ""
-  assert_contains "$(cat "$TMP/err2")" "new Tailscale Service: svc:bedrock-now-code svc:bedrock-now-preview — define it in the admin console"
+  assert_contains "$(cat "$TMP/err2")" "new Tailscale Service: svc:devos-ade-code svc:devos-ade-preview — define it in the admin console"
   assert_eq "$(cat "$TMP/err3")" ""
-  assert_contains "$(cat "$TS_SERVE_DIR/serve.json")" '"svc:bedrock-now-preview"'
+  assert_contains "$(cat "$TS_SERVE_DIR/serve.json")" '"svc:devos-ade-preview"'
   # an install upgraded with the Code page remote and previews left as they are (blank): no new Service at all
   set_env REMOTE_PREVIEW ''; code_remote_sync
   remote_serve_sync 2> "$TMP/err4"

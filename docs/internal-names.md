@@ -27,12 +27,9 @@ made before the rename, or an identifier that data on disk or in someone else's 
 - **The workspace folder:** an install that already has `~/bedrock-now-workspace` (or
   `~/bedrock-now-<project>-workspace`) keeps using it. Your files are in it; a new install gets
   `~/devos-ade-workspace`.
-- **Tailscale:** the Services `svc:bedrock-now`, `-chat`, `-admin`, `-files`, `-terminal`, `-code`, `-preview`
-  (`bedrock-now-<project>` for a second copy), the tag `tag:bedrock-now`, the node `bedrock-now-node` and the
-  addresses made from them. They are defined in your tailnet's policy and admin console, which this software cannot
-  edit, and your phone's saved addresses and installed remote app point at them. Renaming them is a deliberate step
-  of its own (`TS_SERVICE`, `TS_HOSTNAME` and `TS_TAG` in `.env` already override them).
-- **Data written under the old name:**
+- **The update helper's shim:** `bin/bedrock-now-helper` is a one-release shim: the launchd plists of existing
+  installs point at it.
+- **Stored ids, kept for v0.45.0 (a follow-up is planned to migrate them):**
   - the Open WebUI model records' `meta.bedrock_now` and `meta.bedrock_now_hidden` (which models the stack added or
     hid), stored in the Open WebUI database;
   - LiteLLM's admin user id `bedrock-now-admin` and the id prefix `bedrock-now-budget` of the budget banners in Open
@@ -65,11 +62,11 @@ check too, unless none of its files exist (the migration's, before they are merg
 | An app or install named for the old name | `bedrock-now` | tests/test_open.sh, tests/test_lifecycle.sh | `./stack open` finds the app, uninstall takes the name |
 | The installed app's old name | `named \x60bedrock-now\x60` | README.md | the browser keeps an installed app's name until you accept the new one |
 | The workspace folder | `bedrock-now[\w<>%${}:-]*?-workspace` | * | an install that has it keeps it |
-| Tailscale names | `(?:svc:\|tag:)bedrock-now(?:-[\w<>]+)*\|bedrock-now-node\b\|bedrock-now(?:-(?:chat\|admin\|files\|terminal\|code\|preview))?(?=\.(?:\$TN\|<tailnet>\|tail1234\|[\w-]+\.ts\.net))` | * | the tailnet's policy and the remote addresses |
-| Tailscale Service names, in prose and code | `bedrock-now(?:-(?:chat\|admin\|files\|terminal\|code\|preview\|<project>\|bn-dev))?(?![\w-]\|\.localhost)\|bedrock-now-(?=\$\()` | docs/remote.md, lib/remote.sh, .env.example, tests/test_preview.sh, tests/test_remote.sh, tests/test_terminal.sh | the Service base name |
 | LiteLLM's admin user and Open WebUI's budget banners | `bedrock-now-(?:admin\|budget)\b` | lib/owui.sh, tests/test_owui.sh | their ids are stored in LiteLLM's and Open WebUI's databases |
 | Open WebUI metadata keys | `(?<![\w])bedrock_now(?:_hidden)?(?![\w])` | lib/openrouter.sh, lib/owui.sh, tests/test_explabs.sh, tests/test_openrouter.sh, tests/test_settings.sh | stored with your models |
 | The stored import source | `'bedrock-now'` | code/server/harness/claude.mjs, code/server/import-plan.mjs, code/server/import-sessions.mjs, code/test/harness-claude.test.mjs, code/web/dev/mock-server.mjs, code/web/src/api.ts, code/web/src/types.ts | stored with a copied session |
+| The old Tailscale names, as documented | `bedrock-now(?:-node\|-chat)?\b\|tag:bedrock-now` | docs/remote.md | installs from before v0.45.0 keep them: the page says how to switch |
+| The update helper's shim | `bedrock-now-helper` | bin/bedrock-now-helper | one-release shim: launchd plists of existing installs point at it |
 | The byte-exact fixture | `bedrock-now-icon` | tests/fixtures/legacy-icons/openai.svg | recognised by its hash |
 
 ## devos-claude's old name

@@ -1654,7 +1654,7 @@ the app's page (`fetch('http://localhost:3000')`) reach your computer, not the s
 **Over remote access** previews are **off unless you turn them on** (`./stack config set REMOTE_PREVIEW`, then
 `true`, or Settings › Remote access, on this computer; the Code page must be remote too). Read
 [docs/remote.md](docs/remote.md#previews-of-dev-servers-over-remote-access) first: their one address —
-`https://bedrock-now-preview.<tailnet>.ts.net`, one more Tailscale Service to define and approve *before* you turn
+`https://devos-ade-preview.<tailnet>.ts.net`, one more Tailscale Service to define and approve *before* you turn
 them on, or `preview.<your domain>` — is on the same *site* as every other app of your tailnet or domain, so a page
 your sandbox serves could send those apps requests with their cookies. DevOS ADE's own hosts refuse them (the
 [same-site guard](docs/security.md#the-same-site-guard)); your other apps may not. In own-domain mode
@@ -2057,7 +2057,7 @@ served); Uninstall deletes vLLM's image too. In a terminal: `./stack local-model
 The portal from your phone or laptop, over HTTPS, without opening a port to the internet:
 
 ```bash
-./stack remote enable tailscale      # https://bedrock-now.<tailnet>.ts.net (+ -chat, -admin, -files)
+./stack remote enable tailscale      # https://devos-ade.<tailnet>.ts.net (+ -chat, -admin, -files)
 ./stack remote status                # URLs, the Tailscale sidecar, whether your Tailscale login is checked
 ./stack remote test                  # checks from here, then a checklist for your phone
 ./stack remote disable               # back to this computer only

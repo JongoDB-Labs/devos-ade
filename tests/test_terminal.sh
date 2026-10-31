@@ -475,18 +475,18 @@ test_remote_terminal_only_with_remote_terminal_on() {
   set_env REMOTE_MODE tailscale; set_env TS_TAILNET "$TN"
   remote_hosts_tailscale "$TN"
   assert_eq "$(get_env REMOTE_TERMINAL_HOST)" ""
-  assert_eq "$(ts_service_names)" "svc:bedrock-now svc:bedrock-now-chat svc:bedrock-now-admin svc:bedrock-now-files"
+  assert_eq "$(ts_service_names)" "svc:devos-ade svc:devos-ade-chat svc:devos-ade-admin svc:devos-ade-files"
   set_env REMOTE_TERMINAL yes   # read like the portal reads it
   remote_hosts_tailscale "$TN"
-  assert_eq "$(get_env REMOTE_TERMINAL_HOST)" "bedrock-now-terminal.$TN"
-  assert_eq "$(ts_service_names)" "svc:bedrock-now svc:bedrock-now-chat svc:bedrock-now-admin svc:bedrock-now-files svc:bedrock-now-terminal"
+  assert_eq "$(get_env REMOTE_TERMINAL_HOST)" "devos-ade-terminal.$TN"
+  assert_eq "$(ts_service_names)" "svc:devos-ade svc:devos-ade-chat svc:devos-ade-admin svc:devos-ade-files svc:devos-ade-terminal"
   ts_serve_config tailscale "$TN" | python3 -c '
 import json, sys
 s = json.load(sys.stdin)["Services"]
-assert sorted(s)[-1] == "svc:bedrock-now-terminal", s
-assert s["svc:bedrock-now-terminal"]["Web"] == {"bedrock-now-terminal.tail1234.ts.net:443": {"Handlers": {"/": {"Proxy": "http://caddy:8081"}}}}' || return 1
-  assert_contains "$(ts_admin_steps tailscale)" "bedrock-now-files   bedrock-now-terminal"
-  assert_eq "$(remote_app_host terminal)" "bedrock-now-terminal.$TN"
+assert sorted(s)[-1] == "svc:devos-ade-terminal", s
+assert s["svc:devos-ade-terminal"]["Web"] == {"devos-ade-terminal.tail1234.ts.net:443": {"Handlers": {"/": {"Proxy": "http://caddy:8081"}}}}' || return 1
+  assert_contains "$(ts_admin_steps tailscale)" "devos-ade-files   devos-ade-terminal"
+  assert_eq "$(remote_app_host terminal)" "devos-ade-terminal.$TN"
   # own domain: terminal.<host> (the wildcard certificate covers it)
   set_env REMOTE_MODE domain; remote_hosts_domain bedrock.example.com
   assert_eq "$(get_env REMOTE_TERMINAL_HOST)" terminal.bedrock.example.com

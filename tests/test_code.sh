@@ -432,13 +432,13 @@ test_remote_code_with_the_terminals_switch() {
   assert_eq "$(get_env REMOTE_CODE_HOST)" ""
   set_env REMOTE_TERMINAL true
   remote_hosts_tailscale "$TN"
-  assert_eq "$(get_env REMOTE_CODE_HOST)" "bedrock-now-code.$TN"
-  assert_eq "$(ts_service_names)" "svc:bedrock-now svc:bedrock-now-chat svc:bedrock-now-admin svc:bedrock-now-files svc:bedrock-now-terminal svc:bedrock-now-code"   # (its previews: opt-in)
+  assert_eq "$(get_env REMOTE_CODE_HOST)" "devos-ade-code.$TN"
+  assert_eq "$(ts_service_names)" "svc:devos-ade svc:devos-ade-chat svc:devos-ade-admin svc:devos-ade-files svc:devos-ade-terminal svc:devos-ade-code"   # (its previews: opt-in)
   ts_serve_config tailscale "$TN" | python3 -c '
 import json, sys
 s = json.load(sys.stdin)["Services"]
-assert s["svc:bedrock-now-code"]["Web"] == {"bedrock-now-code.tail1234.ts.net:443": {"Handlers": {"/": {"Proxy": "http://caddy:8081"}}}}, s' || return 1
-  assert_eq "$(remote_app_host code)" "bedrock-now-code.$TN"
+assert s["svc:devos-ade-code"]["Web"] == {"devos-ade-code.tail1234.ts.net:443": {"Handlers": {"/": {"Proxy": "http://caddy:8081"}}}}, s' || return 1
+  assert_eq "$(remote_app_host code)" "devos-ade-code.$TN"
   set_env REMOTE_MODE domain; remote_hosts_domain bedrock.example.com
   assert_eq "$(get_env REMOTE_CODE_HOST)" code.bedrock.example.com
   set_env REMOTE_TERMINAL false; code_remote_sync; assert_eq "$(get_env REMOTE_CODE_HOST)" ""
