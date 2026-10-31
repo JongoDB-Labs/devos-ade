@@ -3,6 +3,8 @@
 // the grid) needs a browser: tests/e2e/browser/checks_widgets.py.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { load, plain, source } from "./load.mjs";
 
 const W = load("widgets.js").bnWidgets._pure;
@@ -202,8 +204,188 @@ test("rows: a card spans as many 4 px rows as it is tall plus the 20 px gap", ()
   assert.equal(W.rowSpan(101), 31);
 });
 
-test("the script keeps within the portal's rules: no inline HTML, no regular expression built at run time, a 16 KB cap like the server", () => {
+test("the script keeps within the portal's rules: no inline HTML, no regular expression built at run time, a 32 KB cap like the server", () => {
   const src = source("widgets.js");
   for (const sink of ["innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function", "new RegExp"]) assert.ok(!src.includes(sink), sink);
-  assert.equal(W.MAX_BYTES, 16 * 1024);
+  assert.equal(W.MAX_BYTES, 32 * 1024);
+});
+
+// ---------- the Terminal page ----------
+
+const T = "terminal";
+
+test("the Terminal page: the terminals always, the key bar on a tablet and a phone, the rest when asked for", () => {
+  for (const d of ["desktop", "tablet", "phone"]) {
+    const l = W.defaults(T, d);
+    assert.deepEqual(plain(ids(l)), ["terminals", "keys", "commands", "projects"]);
+    assert.equal(by(l, "terminals").hidden, false);
+    assert.equal(by(l, "commands").hidden, true);
+    assert.equal(by(l, "projects").hidden, true);
+  }
+  assert.equal(by(W.defaults(T, "desktop"), "keys").hidden, true, "a desktop has a keyboard");
+  assert.equal(by(W.defaults(T, "tablet"), "keys").hidden, false);
+  assert.equal(by(W.defaults(T, "phone"), "keys").hidden, false);
+  assert.deepEqual(plain(W.shown(W.defaults(T, "desktop")).map((e) => e.id)), ["terminals"], "today's Terminal tab: the terminal alone");
+  assert.equal(by(W.defaults(T, "desktop"), "terminals").span, 12);
+  assert.equal(by(W.defaults(T, "tablet"), "terminals").span, 6);
+  assert.deepEqual(plain(W.defaults(T, "phone").map((e) => e.span)), [1, 1, 1, 1]);
+});
+
+test("the terminals cannot be hidden, even by a saved layout; the others can", () => {
+  const l = W.defaults(T, "desktop");
+  const r = W.hide(T, l, "terminals");
+  assert.equal(r.changed, false);
+  assert.equal(r.message, "Terminals always show");
+  assert.equal(W.hide(T, W.show(T, l, "keys").list, "keys").changed, true);
+  const saved = [{ id: "terminals", span: 12, height: "auto", hidden: true }, { id: "projects", span: 6, hidden: false }];
+  const n = W.normalize(T, "desktop", saved);
+  assert.equal(by(n, "terminals").hidden, false);
+  assert.deepEqual(plain(ids(n)), ["terminals", "projects", "keys", "commands"], "what was saved first, the rest after with their defaults");
+  assert.equal(by(n, "keys").hidden, true);
+  assert.equal(by(n, "projects").hidden, false);
+  assert.equal(W.reset(T, "desktop").message, "The Terminal page is back to its default layout");
+});
+
+test("the terminal widgets move and resize like Home's", () => {
+  let l = W.show(T, W.defaults(T, "desktop"), "keys").list;
+  l = W.show(T, l, "commands").list;
+  const m = W.moveBy(T, l, "commands", -1);
+  assert.deepEqual(plain(ids(m.list).slice(0, 3)), ["terminals", "commands", "keys"]);
+  assert.equal(m.message, "Quick commands moved after Terminals");
+  assert.equal(W.setSpan(T, "desktop", l, "commands", 1).list.find((e) => e.id === "commands").span, 3, "no narrower than 3");
+  assert.equal(W.setSpan(T, "desktop", l, "terminals", 1).list.find((e) => e.id === "terminals").span, 4);
+  assert.equal(W.setSpan(T, "tablet", W.defaults(T, "tablet"), "terminals", 1).list.find((e) => e.id === "terminals").span, 3);
+});
+
+test("a terminal screen: nothing saved is the default, and a screen equal to it counts as the default", () => {
+  for (const d of ["desktop", "tablet", "phone"]) {
+    assert.deepEqual(plain(W.normalizeScreen(d, null)), plain(W.screenDefaults(d)));
+    assert.deepEqual(plain(W.normalizeScreen(d, "junk")), plain(W.screenDefaults(d)));
+    assert.deepEqual(plain(W.normalizeScreen(d, [])), plain(W.screenDefaults(d)));
+    assert.equal(W.isDefaultScreen(d, W.normalizeScreen(d, {})), true);
+  }
+  assert.equal(W.screenDefaults("desktop").views, 1);
+  assert.equal(W.screenDefaults("desktop").split, "cols");
+  assert.deepEqual(plain(W.savePatchScreen("desktop", W.screenDefaults("desktop"))), { version: 1, pages: { terminal: { desktop: null } } });
+  const two = W.addView("desktop", W.screenDefaults("desktop")).screen;
+  assert.deepEqual(plain(W.savePatchScreen("desktop", two)), { version: 1, pages: { terminal: { desktop: plain(two) } } });
+});
+
+test("a terminal screen is clamped: views 1 to 4 (one on a phone), a known split, weights 1 to 100 for as many views", () => {
+  const n = (d, s) => plain(W.normalizeScreen(d, s));
+  assert.equal(n("desktop", { views: 9 }).views, 4);
+  assert.equal(n("desktop", { views: 0 }).views, 1);
+  assert.equal(n("desktop", { views: "3" }).views, 1, "a number only");
+  assert.equal(n("desktop", { views: 2.6 }).views, 3);
+  assert.equal(n("desktop", { views: true }).views, 1);
+  assert.equal(n("phone", { views: 3 }).views, 1);
+  assert.equal(n("desktop", { split: "rows" }).split, "rows");
+  assert.equal(n("desktop", { split: "diagonal" }).split, "cols");
+  assert.deepEqual(n("desktop", { views: 2, weights: [0, 500] }).weights, [1, 100]);
+  assert.deepEqual(n("desktop", { views: 2, weights: [60] }).weights, [], "not one for each view: equal shares");
+  assert.deepEqual(n("desktop", { views: 3, weights: [30, "x", 20] }).weights, [30, 50, 20]);
+});
+
+test("add a terminal and close one: 2 to 4 on a big screen, one on a phone, the last never closes", () => {
+  let s = W.screenDefaults("desktop");
+  for (const want of [2, 3, 4]) {
+    const r = W.addView("desktop", s);
+    assert.equal(r.changed, true); assert.equal(r.screen.views, want); assert.equal(r.message, `Terminal ${want} added`);
+    s = r.screen;
+  }
+  const full = W.addView("desktop", s);
+  assert.equal(full.changed, false); assert.equal(full.message, "At most 4 terminals");
+  const less = W.closeView("desktop", s, 1);
+  assert.equal(less.screen.views, 3); assert.equal(less.message, "Terminal 2 closed; its windows stay in the others");
+  assert.deepEqual(plain(W.closeView("desktop", W.screenDefaults("desktop"), 0)), { screen: plain(W.screenDefaults("desktop")), message: "The last terminal cannot be closed", changed: false });
+  assert.equal(W.addView("phone", W.screenDefaults("phone")).changed, false);
+  assert.equal(W.addView("phone", W.screenDefaults("phone")).message, "A phone shows one terminal");
+  assert.equal(W.closeView("desktop", s, 7).changed, false);
+});
+
+test("the split: side by side, stacked or 2 by 2, and the dividers move the shares of the two views beside them", () => {
+  let s = W.addView("desktop", W.screenDefaults("desktop")).screen;
+  const r = W.setSplit(s, "rows");
+  assert.equal(r.screen.split, "rows"); assert.equal(r.message, "The terminals are now stacked");
+  assert.equal(W.setSplit(s, "rows").changed, true);
+  assert.equal(W.setSplit(r.screen, "rows").changed, false);
+  assert.equal(W.setSplit(s, "sideways").changed, false);
+  const d = W.dragWeights(s, 0, 20);
+  assert.deepEqual(plain(d.screen.weights), [70, 30]); assert.equal(d.message, "Terminal 1 is 70 percent");
+  assert.deepEqual(plain(W.dragWeights(d.screen, 0, 500).screen.weights), [90, 10], "neither under 10");
+  assert.deepEqual(plain(W.dragWeights(d.screen, 0, -500).screen.weights), [10, 90]);
+  assert.equal(W.dragWeights(s, 1, 5).changed, false, "no divider after the last view");
+  assert.equal(W.dragWeights(W.setSplit(s, "grid").screen, 0, 5).changed, false, "a grid is even");
+  const three = W.addView("desktop", d.screen).screen;
+  assert.deepEqual(plain(three.weights), [], "a new view: equal shares again");
+});
+
+test("arrange: where each view sits for each split", () => {
+  const a = (v, s, w = []) => plain(W.arrange(v, s, w));
+  assert.deepEqual(a(1, "cols"), { cols: "1fr", rows: "1fr", cells: [{ col: "1", row: "1" }] });
+  assert.deepEqual(a(2, "cols"), { cols: "50fr 50fr", rows: "1fr", cells: [{ col: "1", row: "1" }, { col: "2", row: "1" }] });
+  assert.deepEqual(a(2, "cols", [70, 30]).cols, "70fr 30fr");
+  assert.deepEqual(a(3, "rows", [20, 30, 50]), { cols: "1fr", rows: "20fr 30fr 50fr", cells: [{ col: "1", row: "1" }, { col: "1", row: "2" }, { col: "1", row: "3" }] });
+  assert.deepEqual(a(4, "grid").cells, [{ col: "1", row: "1" }, { col: "2", row: "1" }, { col: "1", row: "2" }, { col: "2", row: "2" }]);
+  assert.deepEqual(a(3, "grid").cells[2], { col: "1 / 3", row: "2" }, "the third spans the bottom");
+  assert.deepEqual(a(2, "grid"), a(2, "cols"), "two in a grid are side by side");
+  assert.deepEqual(a(2, "cols", [70]).cols, "50fr 50fr", "weights for another number of views: equal shares");
+});
+
+test("quick commands: a name of up to 40 characters, one printable line of up to 200, at most 20, run only when marked", () => {
+  const ok = { label: "Tests", text: "npm test", run: true };
+  assert.equal(W.commandProblem(ok), "");
+  assert.equal(W.commandProblem({ label: " ", text: "x" }), "Give it a name");
+  assert.equal(W.commandProblem({ label: "a", text: "  " }), "Type the command");
+  assert.equal(W.commandProblem({ label: "a".repeat(41), text: "x" }), "A name is at most 40 characters");
+  assert.equal(W.commandProblem({ label: "a".repeat(40), text: "x".repeat(200) }), "");
+  assert.equal(W.commandProblem({ label: "a", text: "x".repeat(201) }), "A command is at most 200 characters");
+  for (const text of ["ls\n", "a\x1b[0m", "a\tb", "x\u0085", "a\u2028b", "x\x00"]) assert.equal(W.commandProblem({ label: "a", text }), "A command is one line of printable characters", text);
+  assert.equal(W.commandProblem({ label: 5, text: "x" }), "Give it a name");
+  assert.equal(W.commandProblem(null), "Give it a name");
+  let l = [];
+  const added = W.saveCommand(l, { label: "  Tests ", text: "npm test", run: "yes" });
+  assert.deepEqual(plain(added.list), [{ label: "Tests", text: "npm test", run: false }], "run is true or false; the name trimmed");
+  assert.equal(added.message, "Tests added");
+  l = W.saveCommand(added.list, ok).list;
+  assert.equal(W.saveCommand(l, { label: "Tests2", text: "npm test:2" }, 0).message, "Tests2 saved");
+  assert.deepEqual(plain(W.saveCommand(l, { label: "Tests2", text: "npm test:2" }, 0).list[0]), { label: "Tests2", text: "npm test:2", run: false });
+  assert.equal(W.saveCommand(l, { label: "", text: "x" }).changed, false);
+  assert.equal(W.removeCommand(l, 0).message, "Tests removed");
+  assert.equal(W.removeCommand(l, 0).list.length, 1);
+  assert.equal(W.removeCommand(l, 9).changed, false);
+  for (let i = l.length; i < 20; i++) l = W.saveCommand(l, { label: `c${i}`, text: `echo ${i}` }).list;
+  assert.equal(l.length, 20);
+  const more = W.saveCommand(l, { label: "one more", text: "x" });
+  assert.equal(more.changed, false); assert.equal(more.message, "At most 20 quick commands");
+  assert.equal(W.saveCommand(l, { label: "edit", text: "x" }, 3).changed, true, "an edit is not one more");
+});
+
+test("quick commands from the cache or the server: the usable ones, no more than 20", () => {
+  const many = Array.from({ length: 30 }, (_, i) => ({ label: `c${i}`, text: `echo ${i}`, run: i % 2 === 0 }));
+  assert.equal(W.normalizeCommands(many).length, 20);
+  assert.deepEqual(plain(W.normalizeCommands([{ label: "a", text: "b" }, { label: "", text: "b" }, null, "x", { label: "c", text: "d\ne" }])), [{ label: "a", text: "b", run: false }]);
+  assert.deepEqual(plain(W.normalizeCommands("junk")), []);
+  const doc = { version: 1, pages: { terminal: { commands: [{ label: "a", text: "b", run: true }], desktop: { views: 2 } } } };
+  assert.deepEqual(plain(W.commandsEntry(doc)), [{ label: "a", text: "b", run: true }]);
+  assert.deepEqual(plain(W.commandsEntry(null)), []);
+  assert.deepEqual(plain(W.commandsEntry({ version: 2, pages: doc.pages })), []);
+  assert.deepEqual(plain(W.screenEntry(doc, T, "desktop")), { views: 2 });
+  assert.equal(W.screenEntry(doc, T, "phone"), null);
+  assert.equal(W.screenEntry(doc, T, "commands"), null, "the commands are no screen");
+  assert.deepEqual(plain(W.savePatchCommands([{ label: "a", text: "b", run: false }])), { version: 1, pages: { terminal: { commands: [{ label: "a", text: "b", run: false }] } } });
+  assert.deepEqual(plain(W.savePatchCommands([])), { version: 1, pages: { terminal: { commands: null } } }, "none is saved as none");
+});
+
+test("the key bar offers exactly the names ttyd-keys.js knows", () => {
+  const keys = readFileSync(fileURLToPath(new URL("../../../terminal/ttyd-keys.js", import.meta.url)), "utf8");
+  const table = keys.slice(keys.indexOf("var KEYS = {"), keys.indexOf("};", keys.indexOf("var KEYS = {")));
+  const known = [...table.matchAll(/(?:^|[\s,{])"?([a-z][a-z-]*)"?: \[/g)].map((m) => m[1]).sort();
+  assert.deepEqual(plain(W.KEYS.map((k) => k[0]).sort()), known);
+  assert.equal(W.KEYS.every((k) => typeof k[1] === "string" && k[1]), true);
+});
+
+test("the terminal page's limits are the server's", () => {
+  assert.deepEqual(plain([W.VIEWS_MAX, W.COMMANDS_MAX, W.COMMAND_LABEL_MAX, W.COMMAND_TEXT_MAX]), [4, 20, 40, 200]);
+  assert.deepEqual(plain(W.SPLITS), ["cols", "rows", "grid"]);
 });

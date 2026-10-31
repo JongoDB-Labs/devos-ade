@@ -1,5 +1,5 @@
-// Widgets (JON-946): a page's cards that each person can show, hide, move and resize. Home first; the Code and Terminal
-// pages take the same engine. Two halves in one file:
+// Widgets (JON-946): a page's cards that each person can show, hide, move and resize. Home first; the Terminal page
+// (termpage.js, which uses this file's model) and the Code page take the same engine. Two halves in one file:
 //   1. the layout model — pure functions on plain data (a layout is a list of {id, span, height, hidden}, in order):
 //      defaults, merge with what was saved, clamping, move, resize, hide, reset, and the sentences that announce each
 //      change. No document needed; portal/tests/js/widgets.test.mjs runs them.
@@ -20,7 +20,7 @@
   "use strict";
 
   const VERSION = 1;
-  const MAX_BYTES = 16 * 1024;
+  const MAX_BYTES = 32 * 1024;
   const CACHE = "bn.layout";
   const COLS = { desktop: 12, tablet: 6, phone: 1 };
   const HEIGHTS = ["auto", "s", "m", "l"];
@@ -44,6 +44,20 @@
     { id: "claude", title: "Claude Code in your terminal", min: [3, 2], span: [3, 3], phone: false },
     { id: "feedback", title: "Send feedback", min: [3, 2], span: [3, 3] },
   ];
+  // The Terminal page's: the terminals (always there), the key bar (on a phone and a tablet, off on a desktop, where there
+  // is a keyboard), the person's quick commands and the project folders (off until asked for). fixed: cannot be hidden;
+  // off: the screens where the widget starts hidden.
+  const TERMINAL = [
+    { id: "terminals", title: "Terminals", min: [4, 3], span: [12, 6], fixed: true },
+    { id: "keys", title: "Key bar", min: [4, 3], span: [12, 6], off: ["desktop"] },
+    { id: "commands", title: "Quick commands", min: [3, 2], span: [6, 3], off: ["desktop", "tablet", "phone"] },
+    { id: "projects", title: "Projects", min: [3, 2], span: [6, 3], off: ["desktop", "tablet", "phone"] },
+  ];
+  const VIEWS_MAX = 4;
+  const SPLITS = ["cols", "rows", "grid"];
+  const SPLIT_WORD = { cols: "side by side", rows: "stacked", grid: "in a 2 by 2 grid" };
+  const COMMANDS_MAX = 20, COMMAND_LABEL_MAX = 40, COMMAND_TEXT_MAX = 200;
+  const NAMES = { home: "Home", terminal: "The Terminal page" };
   // the default order on each kind of screen: today's Home (Get started and Continue, the update, then Bedrock spend
   // beside the short cards, Claude Code and Send feedback at the far side)
   const PAGES = {
@@ -54,6 +68,10 @@
         tablet: ["get-started", "continue", "update-card", "spend", "services", "models", "logins", "maint", "claude", "feedback"],
         phone: ["get-started", "continue", "update-card", "spend", "services", "models", "logins", "maint", "feedback"],
       },
+    },
+    terminal: {
+      widgets: TERMINAL,
+      order: { desktop: ["terminals", "keys", "commands", "projects"], tablet: ["terminals", "keys", "commands", "projects"], phone: ["terminals", "keys", "commands", "projects"] },
     },
   };
 
@@ -70,7 +88,7 @@
     n = Number.isFinite(Number(n)) ? Math.round(Number(n)) : maxSpan(device);
     return Math.max(minSpan(w, device), Math.min(maxSpan(device), n));
   };
-  const defaultEntry = (w, device) => ({ id: w.id, span: device === "phone" ? 1 : clampSpan(w, device, w.span[DEVICE_INDEX[device]]), height: "auto", hidden: false });
+  const defaultEntry = (w, device) => ({ id: w.id, span: device === "phone" ? 1 : clampSpan(w, device, w.span[DEVICE_INDEX[device]]), height: "auto", hidden: Boolean(w.off && w.off.includes(device)) });
   const defaults = (page, device) => {
     const have = new Map(available(page, device).map((w) => [w.id, w]));
     const ids = PAGES[page].order[device].filter((id) => have.has(id));
@@ -88,7 +106,7 @@
         const w = e && typeof e === "object" ? have.get(e.id) : null;
         if (!w || seen.has(w.id)) continue;
         seen.add(w.id);
-        out.push({ id: w.id, span: device === "phone" ? 1 : clampSpan(w, device, e.span), height: HEIGHTS.includes(e.height) ? e.height : "auto", hidden: e.hidden === true });
+        out.push({ id: w.id, span: device === "phone" ? 1 : clampSpan(w, device, e.span), height: HEIGHTS.includes(e.height) ? e.height : "auto", hidden: e.hidden === true && !w.fixed });
       }
     }
     for (const d of defaults(page, device)) if (!seen.has(d.id)) out.push(d);
@@ -150,6 +168,7 @@
   }
   function hide(page, list, id) {
     const e = get(list, id);
+    if (e && find(page, id).fixed) return nothing(list, `${titleOf(page, id)} always show`);
     return !e || e.hidden ? nothing(list, "") : { list: change(list, id, { hidden: true }), message: `${titleOf(page, id)} hidden`, changed: true };
   }
   // show(page, list, id): add back, where it was in the order
@@ -157,7 +176,7 @@
     const e = get(list, id);
     return !e || !e.hidden ? nothing(list, "") : { list: change(list, id, { hidden: false }), message: `${titleOf(page, id)} added back`, changed: true };
   }
-  const reset = (page, device) => ({ list: defaults(page, device), message: "Home is back to its default layout", changed: true });
+  const reset = (page, device) => ({ list: defaults(page, device), message: `${NAMES[page] || "The page"} is back to its default layout`, changed: true });
 
   // the layout a document holds for a page and screen ({version, pages: {page: {device: [...]}}}); null: none kept
   function entry(doc, page, device) {
@@ -178,8 +197,108 @@
   const styleFor = (e, device) => ({ columns: device === "phone" ? "" : `span ${e.span}`, maxHeight: e.height === "auto" ? "" : `${HEIGHT_REM[e.height]}rem` });
   const rowSpan = (px) => Math.max(1, Math.ceil((px + GAP_Y) / ROW));
 
-  const pure = { VERSION, MAX_BYTES, CACHE, COLS, HEIGHTS, HEIGHT_REM, HOME, PAGES, available, minSpan, clampSpan, defaults, normalize,
-    isDefault, shown, moveBy, moveBefore, setSpan, resizeBy, setHeight, heightStep, hide, show, reset, entry, parseDoc, savePatch, styleFor, rowSpan, titleOf };
+  // ---------- the Terminal page: widgets, and the views in the Terminals widget ----------
+  // A terminal screen is {widgets, views, split, weights}: the widgets as above, how many terminals (1 to 4; a phone has one),
+  // how they are split (cols: side by side, rows: stacked, grid: 2 by 2) and their weights (1 to 100: shares of the width
+  // or height). The quick commands belong to the person, not the screen: [{label, text, run}], on every screen.
+  const equalWeights = (n) => Array(n).fill(50);
+  const screenDefaults = (device) => ({ widgets: defaults("terminal", device), views: 1, split: "cols", weights: [] });
+  const whole = (n, low, high, other) => (typeof n === "number" && Number.isFinite(n) ? Math.max(low, Math.min(high, Math.round(n))) : other);
+  // normalizeScreen(device, saved) -> a clean screen from whatever was kept (anything unusable: the default)
+  function normalizeScreen(device, saved) {
+    const s = saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
+    const views = device === "phone" ? 1 : whole(s.views, 1, VIEWS_MAX, 1);
+    const weights = Array.isArray(s.weights) ? s.weights.slice(0, VIEWS_MAX).map((w) => whole(w, 1, 100, 50)) : [];
+    return { widgets: normalize("terminal", device, s.widgets), views, split: SPLITS.includes(s.split) ? s.split : "cols", weights: weights.length === views ? weights : [] };
+  }
+  const isDefaultScreen = (device, s) => same(s, screenDefaults(device));
+  const withViews = (s, views, weights, message) => ({ screen: { ...s, views, weights }, message, changed: true });
+  const stay = (s, message) => ({ screen: s, message, changed: false });
+  // addView(device, screen) / closeView(device, screen, index): one more terminal (a phone keeps one), or one fewer (the
+  // first view cannot close while it is the only one); weights go back to equal shares
+  function addView(device, s) {
+    if (device === "phone") return stay(s, "A phone shows one terminal");
+    if (s.views >= VIEWS_MAX) return stay(s, `At most ${VIEWS_MAX} terminals`);
+    return withViews(s, s.views + 1, [], `Terminal ${s.views + 1} added`);
+  }
+  function closeView(device, s, index) {
+    if (s.views <= 1 || index < 0 || index >= s.views) return stay(s, "The last terminal cannot be closed");
+    return withViews(s, s.views - 1, [], `Terminal ${index + 1} closed; its windows stay in the others`);
+  }
+  function setSplit(s, split) {
+    if (!SPLITS.includes(split)) return stay(s, "");
+    return split === s.split ? stay(s, `The terminals are ${SPLIT_WORD[split]}`) : { screen: { ...s, split, weights: [] }, message: `The terminals are now ${SPLIT_WORD[split]}`, changed: true };
+  }
+  // dragWeights(s, i, delta): the divider after view i moves delta (in weight points); the two beside it keep their sum, and
+  // neither goes under 10
+  function dragWeights(s, i, delta) {
+    if (i < 0 || i >= s.views - 1 || s.split === "grid") return stay(s, "");
+    const w = s.weights.length === s.views ? s.weights.slice() : equalWeights(s.views);
+    const sum = w[i] + w[i + 1], a = Math.max(10, Math.min(sum - 10, w[i] + Math.round(delta)));
+    if (a === w[i]) return stay(s, "");
+    w[i] = a; w[i + 1] = sum - a;
+    return { screen: { ...s, weights: w }, message: `Terminal ${i + 1} is ${Math.round((100 * a) / w.reduce((x, y) => x + y, 0))} percent`, changed: true };
+  }
+  // arrange(views, split, weights) -> the grid the views sit in: the tracks (CSS grid templates) and each view's cell
+  function arrange(views, split, weights) {
+    const w = weights.length === views ? weights : equalWeights(views);
+    const fr = (l) => l.map((x) => `${x}fr`).join(" ");
+    if (views === 1) return { cols: "1fr", rows: "1fr", cells: [{ col: "1", row: "1" }] };
+    if (split === "rows") return { cols: "1fr", rows: fr(w), cells: w.map((_, i) => ({ col: "1", row: String(i + 1) })) };
+    if (split === "grid" && views > 2) {
+      const cells = [{ col: "1", row: "1" }, { col: "2", row: "1" }, { col: views === 3 ? "1 / 3" : "1", row: "2" }, { col: "2", row: "2" }].slice(0, views);
+      return { cols: "1fr 1fr", rows: "1fr 1fr", cells };
+    }
+    return { cols: fr(w), rows: "1fr", cells: w.map((_, i) => ({ col: String(i + 1), row: "1" })) };
+  }
+  // a quick command that is not one yet: what is wrong, in words, or "" — the server's limits (uilayout.py commands)
+  const printable = (t) => !/[\u0000-\u001F\u007F-\u009F\u2028\u2029]/.test(t);
+  function commandProblem(c) {
+    const label = c && typeof c.label === "string" ? c.label.trim() : "", text = c && typeof c.text === "string" ? c.text : "";
+    if (!label) return "Give it a name";
+    if (label.length > COMMAND_LABEL_MAX || !printable(label)) return `A name is at most ${COMMAND_LABEL_MAX} characters`;
+    if (!text.trim()) return "Type the command";
+    if (text.length > COMMAND_TEXT_MAX) return `A command is at most ${COMMAND_TEXT_MAX} characters`;
+    if (!printable(text)) return "A command is one line of printable characters";
+    return "";
+  }
+  const cleanCommand = (c) => ({ label: c.label.trim(), text: c.text, run: c.run === true });
+  // normalizeCommands(saved) -> the usable ones, at most COMMANDS_MAX
+  const normalizeCommands = (saved) => (Array.isArray(saved) ? saved.filter((c) => c && typeof c === "object" && !commandProblem(c)).slice(0, COMMANDS_MAX).map(cleanCommand) : []);
+  function saveCommand(list, c, index) {
+    const bad = commandProblem(c);
+    if (bad) return { list, message: bad, changed: false };
+    if (index == null && list.length >= COMMANDS_MAX) return { list, message: `At most ${COMMANDS_MAX} quick commands`, changed: false };
+    const out = list.slice(), one = cleanCommand(c);
+    if (index == null) out.push(one); else out[index] = one;
+    return { list: out, message: index == null ? `${one.label} added` : `${one.label} saved`, changed: true };
+  }
+  function removeCommand(list, index) {
+    if (index < 0 || index >= list.length) return { list, message: "", changed: false };
+    return { list: list.filter((_, i) => i !== index), message: `${list[index].label} removed`, changed: true };
+  }
+  // the object the document holds for a page and screen ({widgets, views, ...}), and the page's quick commands; null: none kept
+  function screenEntry(doc, page, device) {
+    const p = doc && typeof doc === "object" && doc.version === VERSION && doc.pages && typeof doc.pages === "object" ? doc.pages[page] : null;
+    return p && typeof p === "object" && p[device] && typeof p[device] === "object" && !Array.isArray(p[device]) ? p[device] : null;
+  }
+  const commandsEntry = (doc) => {
+    const p = doc && typeof doc === "object" && doc.version === VERSION && doc.pages && typeof doc.pages === "object" ? doc.pages.terminal : null;
+    return p && typeof p === "object" ? normalizeCommands(p.commands) : [];
+  };
+  // the bodies of a save: this screen (or null: back to the default), and the quick commands (or null: none)
+  const savePatchScreen = (device, s) => ({ version: VERSION, pages: { terminal: { [device]: isDefaultScreen(device, s) ? null : s } } });
+  const savePatchCommands = (list) => ({ version: VERSION, pages: { terminal: { commands: list.length ? list : null } } });
+  // what the key bar sends: the names ttyd-keys.js knows (terminal/ttyd-keys.js has the same table)
+  const KEYS = [["esc", "Esc"], ["tab", "Tab"], ["up", "Up"], ["down", "Down"], ["left", "Left"], ["right", "Right"], ["home", "Home"], ["end", "End"],
+    ["pgup", "PgUp"], ["pgdn", "PgDn"], ["ctrl-c", "Ctrl-C"], ["ctrl-b", "Ctrl-b"]];
+  // the terminals' height in px on the page (Auto: most of the screen, in vh, set by the CSS)
+  const TERMINAL_PX = { s: 280, m: 420, l: 640 };
+
+  const pure = { VERSION, MAX_BYTES, CACHE, COLS, HEIGHTS, HEIGHT_REM, HOME, TERMINAL, PAGES, available, minSpan, clampSpan, defaults, normalize,
+    isDefault, shown, moveBy, moveBefore, setSpan, resizeBy, setHeight, heightStep, hide, show, reset, entry, parseDoc, savePatch, styleFor, rowSpan, titleOf,
+    VIEWS_MAX, SPLITS, COMMANDS_MAX, COMMAND_LABEL_MAX, COMMAND_TEXT_MAX, KEYS, TERMINAL_PX, screenDefaults, normalizeScreen, isDefaultScreen, addView, closeView,
+    setSplit, dragWeights, arrange, commandProblem, normalizeCommands, saveCommand, removeCommand, screenEntry, commandsEntry, savePatchScreen, savePatchCommands };
   root.bnWidgets = { _pure: pure };
   if (typeof document === "undefined" || typeof document.querySelector !== "function") return;
 

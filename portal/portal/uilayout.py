@@ -5,11 +5,17 @@ never changes the desktop's.
 One JSON file in the portal's state dir, written whole and atomically, mode 600:
   {"version": 1, "pages": {"home": {"desktop": [{"id": "spend", "span": 5, "height": "auto", "hidden": false}, ...], ...}}}
 A kind of screen with no entry shows the page's default layout (the page decides it; nothing is stored for it).
+The Terminal page (JON-946) keeps more than its widgets for a kind of screen, so its screen is an object, and the person's
+quick commands are the page's, the same on every screen:
+  "terminal": {"desktop": {"widgets": [...], "views": 2, "split": "cols", "weights": [60, 40]}, "commands": [{"label": "Tests",
+  "text": "npm test", "run": true}, ...]}
 
 Strict on the way in: a page or a kind of screen the portal does not know is refused; an entry that is not an object of
 the right types is refused; a widget id the page does not have is dropped (an older page, a newer script); a span is
-clamped to the widget's minimum and the screen's columns, a height outside Auto, S, M, L is Auto. Never HTML, never
-more than MAX_BYTES, never more than MAX_ENTRIES widgets a layout. The widget table below is the same as static/widgets.js's
+clamped to the widget's minimum and the screen's columns, a height outside Auto, S, M, L is Auto. A terminal screen has
+the fields above and no others (views 1 to 4, one on a phone; split cols, rows or grid; at most four weights of 1 to 100);
+a quick command is a label of at most 40 and a text of at most 200 printable characters, at most 20 commands. Never HTML,
+never more than MAX_BYTES, never more than MAX_ENTRIES widgets a layout. The widget table below is the same as static/widgets.js's
 (portal/tests/test_ui_layout.py compares them)."""
 
 from __future__ import annotations
@@ -20,7 +26,7 @@ import tempfile
 from pathlib import Path
 
 VERSION = 1
-MAX_BYTES = 16 * 1024
+MAX_BYTES = 32 * 1024
 MAX_ENTRIES = 32
 DEVICES = {"desktop": 12, "tablet": 6, "phone": 1}   # columns of the grid on each kind of screen
 HEIGHTS = ("auto", "s", "m", "l")
@@ -30,7 +36,13 @@ PAGES: dict[str, dict[str, tuple[int, int]]] = {
         "get-started": (4, 3), "continue": (4, 3), "update-card": (6, 4), "spend": (4, 3), "models": (4, 3),
         "services": (3, 2), "logins": (3, 2), "maint": (3, 2), "claude": (3, 2), "feedback": (3, 2),
     },
+    "terminal": {"terminals": (4, 3), "keys": (4, 3), "commands": (3, 2), "projects": (3, 2)},
 }
+FIXED = {"terminal": ("terminals",)}   # a widget the person cannot hide: the terminals
+OBJECT_PAGES = ("terminal",)           # pages whose screen is an object (the widgets and more), not a list of widgets
+VIEWS_MAX = 4
+SPLITS = ("cols", "rows", "grid")
+COMMANDS_MAX, COMMAND_LABEL_MAX, COMMAND_TEXT_MAX = 20, 40, 200
 
 
 class LayoutError(ValueError):
@@ -57,7 +69,8 @@ def _entry(raw, page: str, device: str) -> dict | None:
         return None   # (a widget this portal does not have: dropped, the rest kept)
     cols = DEVICES[device]
     low = 1 if cols == 1 else PAGES[page][wid][0 if device == "desktop" else 1]
-    return {"id": wid, "span": max(low, min(cols, span)), "height": height if height in HEIGHTS else "auto", "hidden": hidden}
+    return {"id": wid, "span": max(low, min(cols, span)), "height": height if height in HEIGHTS else "auto",
+            "hidden": hidden and wid not in FIXED.get(page, ())}
 
 
 def entries(raw, page: str, device: str) -> list[dict]:
@@ -69,6 +82,50 @@ def entries(raw, page: str, device: str) -> list[dict]:
         e = _entry(r, page, device)
         if e and e["id"] not in seen:
             seen.add(e["id"]); out.append(e)
+    return out
+
+
+def _int(raw, what: str, low: int, high: int) -> int:
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise LayoutError(f"{what} is a whole number")
+    return max(low, min(high, raw))
+
+
+def screen(raw, page: str, device: str):
+    """A kind of screen as the page sends it: a list of widgets, or (the Terminal page) an object with its widgets and
+    the number of views, how they are split and their weights -> the cleaned one (LayoutError when it is not one)."""
+    if page not in OBJECT_PAGES:
+        return entries(raw, page, device)
+    if not isinstance(raw, dict) or set(raw) - {"widgets", "views", "split", "weights"}:
+        raise LayoutError("a terminal screen is an object of widgets, views, split and weights")
+    weights = raw.get("weights", [])
+    if not isinstance(weights, list) or len(weights) > VIEWS_MAX:
+        raise LayoutError(f"weights are a list of at most {VIEWS_MAX} numbers")
+    split = raw.get("split", "cols")
+    if not isinstance(split, str):
+        raise LayoutError("split is cols, rows or grid")
+    return {"widgets": entries(raw.get("widgets", []), page, device),
+            "views": 1 if device == "phone" else _int(raw.get("views", 1), "views", 1, VIEWS_MAX),
+            "split": split if split in SPLITS else "cols",
+            "weights": [_int(w, "a weight", 1, 100) for w in weights]}
+
+
+def commands(raw) -> list[dict]:
+    """The quick commands as the page sends them -> the cleaned list: at most COMMANDS_MAX of {label, text, run}."""
+    if not isinstance(raw, list) or len(raw) > COMMANDS_MAX:
+        raise LayoutError(f"quick commands are a list of at most {COMMANDS_MAX}")
+    out = []
+    for c in raw:
+        if not isinstance(c, dict) or set(c) - {"label", "text", "run"}:
+            raise LayoutError("a quick command is an object: label, text, run")
+        label, text, run = c.get("label"), c.get("text"), c.get("run", False)
+        if not isinstance(label, str) or not isinstance(text, str) or not isinstance(run, bool):
+            raise LayoutError("a quick command has a label and a text (words) and run (true or false)")
+        if not 0 < len(label) <= COMMAND_LABEL_MAX or not label.isprintable():
+            raise LayoutError(f"a label is 1 to {COMMAND_LABEL_MAX} printable characters")
+        if not 0 < len(text) <= COMMAND_TEXT_MAX or not text.isprintable():
+            raise LayoutError(f"a command is 1 to {COMMAND_TEXT_MAX} printable characters (one line)")
+        out.append({"label": label, "text": text, "run": run})
     return out
 
 
@@ -87,12 +144,21 @@ def merge(stored: dict, change) -> dict:
         if not isinstance(devices, dict):
             raise LayoutError("a page is an object of screens: desktop, tablet, phone")
         for device, raw in devices.items():
+            if device == "commands" and page in OBJECT_PAGES:   # (the person's, not a screen's)
+                if raw is None:
+                    out["pages"].get(page, {}).pop(device, None)
+                else:
+                    out["pages"].setdefault(page, {})[device] = commands(raw)
+                continue
             if device not in DEVICES:
                 raise LayoutError(f"no screen called {device[:40]!r}: desktop, tablet or phone")
             if raw is None:
                 out["pages"].get(page, {}).pop(device, None)
             else:
-                out["pages"].setdefault(page, {})[device] = entries(raw, page, device)
+                out["pages"].setdefault(page, {})[device] = screen(raw, page, device)
+    for p in OBJECT_PAGES:   # (no commands: nothing kept)
+        if p in out["pages"] and not out["pages"][p].get("commands", True):
+            del out["pages"][p]["commands"]
     out["pages"] = {p: d for p, d in out["pages"].items() if d}
     return out
 

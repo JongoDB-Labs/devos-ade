@@ -1,4 +1,4 @@
-"""Each person's layout of Home (GET and PUT /api/ui/layout, portal/uilayout.py, static/widgets.js): behind the session and
+"""Each person's layout of Home and the Terminal page (GET and PUT /api/ui/layout, portal/uilayout.py, static/widgets.js): behind the session and
 the custom header, validated strictly, kept in one file in the state dir (atomic, mode 600), per kind of screen."""
 
 import json
@@ -140,7 +140,7 @@ def test_a_body_over_the_cap_is_refused_before_it_is_read_whole(client, state):
     big = json.dumps({"version": 1, "pages": {"home": {"desktop": [], "pad": "x" * (uilayout.MAX_BYTES + 10)}}})
     r = client.put("/api/ui/layout", content=big.encode(), headers={**API, "Content-Type": "application/json"})
     assert r.status_code == 413 and not (state / "ui-layout.json").exists()
-    assert uilayout.MAX_BYTES == 16 * 1024
+    assert uilayout.MAX_BYTES == 32 * 1024
 
 
 def test_the_file_is_written_whole_with_mode_600_and_no_temp_file_is_left(client, state):
@@ -187,13 +187,18 @@ def test_without_a_state_dir_it_reads_empty_and_says_a_save_is_not_kept(settings
 
 def test_the_widget_table_is_the_scripts():
     js = (STATIC / "widgets.js").read_text(encoding="utf-8")
-    home = js[js.index("const HOME = ["):]
-    home = home[:home.index("];")]
-    rows = re.findall(r'id: "([a-z-]+)", title: "[^"]*", min: \[(\d+), (\d+)\]', home)
-    assert {i: (int(a), int(b)) for i, a, b in rows} == uilayout.PAGES["home"]
+    for const, page in (("HOME", "home"), ("TERMINAL", "terminal")):
+        table = js[js.index(f"const {const} = ["):]
+        table = table[:table.index("];")]
+        rows = re.findall(r'id: "([a-z-]+)", title: "[^"]*", min: \[(\d+), (\d+)\]', table)
+        assert {i: (int(a), int(b)) for i, a, b in rows} == uilayout.PAGES[page], page
+    assert 'fixed: true' in js[js.index("const TERMINAL = ["):].split("];")[0] and uilayout.FIXED == {"terminal": ("terminals",)}
+    assert re.search(r"VIEWS_MAX = 4", js) and uilayout.VIEWS_MAX == 4 and re.search(r'SPLITS = \["cols", "rows", "grid"\]', js) and uilayout.SPLITS == ("cols", "rows", "grid")
+    assert re.search(r"COMMANDS_MAX = 20, COMMAND_LABEL_MAX = 40, COMMAND_TEXT_MAX = 200", js)
+    assert (uilayout.COMMANDS_MAX, uilayout.COMMAND_LABEL_MAX, uilayout.COMMAND_TEXT_MAX) == (20, 40, 200)
     assert re.search(r"const COLS = \{ desktop: 12, tablet: 6, phone: 1 \}", js) and uilayout.DEVICES == {"desktop": 12, "tablet": 6, "phone": 1}
     assert re.search(r'const HEIGHTS = \["auto", "s", "m", "l"\]', js) and uilayout.HEIGHTS == ("auto", "s", "m", "l")
-    assert re.search(r"const MAX_BYTES = 16 \* 1024", js)
+    assert re.search(r"const MAX_BYTES = 32 \* 1024", js)
 
 
 def test_the_page_loads_the_engine_after_home_and_feedback_and_keeps_the_csp_clean():
@@ -219,3 +224,118 @@ def test_every_widget_is_marked_in_homes_markup_and_the_old_wrappers_stay():
     assert inner.index('class="home-top"') < inner.index('id="update-card"') < inner.index('id="job"') < inner.index('class="grid"')
     feedback = (STATIC / "feedback.js").read_text(encoding="utf-8")
     assert 'dataset.widget = "feedback"' in feedback   # (Send feedback's card replaces its placeholder)
+
+
+# --- the Terminal page (JON-946): its screens are objects, and the quick commands are the person's on every screen ---
+
+def tdoc(**kw):
+    return {"version": 1, "pages": {"terminal": kw}}
+
+
+def trow(wid, span=12, height="auto", hidden=False):
+    return row(wid, span, height, hidden)
+
+
+def test_a_terminal_screen_round_trips_with_its_views_split_weights_and_the_commands(client):
+    body = tdoc(desktop={"widgets": [trow("terminals"), trow("keys", 6), trow("commands", 6, "m"), trow("projects", 6, hidden=True)],
+                         "views": 3, "split": "grid", "weights": [60, 40]},
+                phone={"widgets": [trow("terminals", 1), trow("keys", 1)], "views": 1},
+                commands=[{"label": "Tests", "text": "npm test", "run": True}, {"label": "Status", "text": "git status", "run": False}])
+    r = client.put("/api/ui/layout", json=body, headers=API)
+    assert r.status_code == 200
+    got = client.get("/api/ui/layout", headers=API).json()["pages"]["terminal"]
+    assert got["desktop"] == {"widgets": [trow("terminals"), trow("keys", 6), trow("commands", 6, "m"), trow("projects", 6, hidden=True)],
+                              "views": 3, "split": "grid", "weights": [60, 40]}
+    assert got["phone"] == {"widgets": [trow("terminals", 1), trow("keys", 1)], "views": 1, "split": "cols", "weights": []}
+    assert got["commands"] == body["pages"]["terminal"]["commands"]
+    # a screen saved alone leaves the others and the commands as they were; null puts one back to the default
+    client.put("/api/ui/layout", json=tdoc(tablet={"views": 2}), headers=API)
+    got = client.get("/api/ui/layout", headers=API).json()["pages"]["terminal"]
+    assert set(got) == {"desktop", "phone", "tablet", "commands"} and got["tablet"]["views"] == 2 and got["tablet"]["widgets"] == []
+    client.put("/api/ui/layout", json=tdoc(desktop=None, commands=None), headers=API)
+    assert set(client.get("/api/ui/layout", headers=API).json()["pages"]["terminal"]) == {"phone", "tablet"}
+
+
+def test_the_terminals_widget_cannot_be_hidden_and_the_numbers_are_clamped(client):
+    body = tdoc(desktop={"widgets": [trow("terminals", 2, hidden=True), trow("nonsense"), trow("keys", 99)], "views": 9, "split": "diagonal",
+                         "weights": [0, 500, 50]},
+                phone={"views": 4})
+    client.put("/api/ui/layout", json=body, headers=API)
+    got = client.get("/api/ui/layout", headers=API).json()["pages"]["terminal"]
+    assert got["desktop"] == {"widgets": [trow("terminals", 4), trow("keys", 12)], "views": 4, "split": "cols", "weights": [1, 100, 50]}
+    assert got["phone"]["views"] == 1   # (a phone has one view)
+    client.put("/api/ui/layout", json=tdoc(desktop={"views": -3}), headers=API)
+    assert client.get("/api/ui/layout", headers=API).json()["pages"]["terminal"]["desktop"]["views"] == 1
+
+
+@pytest.mark.parametrize("screen", [
+    [trow("terminals")],                                   # (the Terminal page's screen is an object)
+    "views",
+    {"views": "2"}, {"views": 2.5}, {"views": True}, {"views": None},
+    {"split": 3}, {"split": ["cols"]},
+    {"weights": "50"}, {"weights": [50] * 5}, {"weights": ["a"]}, {"weights": [True]}, {"weights": [1.5]},
+    {"widgets": "terminals"}, {"widgets": [trow("terminals")] * 40}, {"widgets": [7]},
+    {"widgets": [], "extra": 1}, {"commands": []},          # (the commands are the page's, not a screen's)
+])
+def test_a_terminal_screen_that_is_anything_else_is_refused(client, state, screen):
+    r = client.put("/api/ui/layout", json=tdoc(desktop=screen), headers=API)
+    assert r.status_code == 400 and "error" in r.json()
+    assert not (state / "ui-layout.json").exists()
+
+
+def cmd(label="Tests", text="npm test", run=False):
+    return {"label": label, "text": text, "run": run}
+
+
+def test_quick_commands_are_kept_within_their_limits(client, state):
+    ok = [cmd("a" * 40, "x" * 200, True), cmd("é 日本", "echo é 日本 😀"), cmd("x", "y")] + [cmd(f"c{i}", f"echo {i}") for i in range(17)]
+    assert len(ok) == 20
+    assert client.put("/api/ui/layout", json=tdoc(commands=ok), headers=API).status_code == 200
+    assert client.get("/api/ui/layout", headers=API).json()["pages"]["terminal"]["commands"] == ok
+    # an empty list is none kept
+    client.put("/api/ui/layout", json=tdoc(commands=[]), headers=API)
+    assert "terminal" not in client.get("/api/ui/layout", headers=API).json()["pages"]
+
+
+@pytest.mark.parametrize("commands", [
+    [cmd()] * 21,
+    [cmd("a" * 41)], [cmd("")], [cmd(text="x" * 201)], [cmd(text="")],
+    [cmd(text="ls\n")], [cmd(text="a\nb")], [cmd(text="\x1b[31m")], [cmd(text="a\tb")], [cmd(text="x\x00")], [cmd(text="a\u2028b")], [cmd(text="a\u200bb")],
+    [cmd("a\nb")], [cmd("\x07")],
+    [{"label": "a", "text": "b", "run": "true"}], [{"label": "a", "text": "b", "run": 1}], [{"label": "a", "text": "b", "extra": 1}],
+    [{"label": "a"}], [{"text": "b"}], [{"label": 1, "text": "b"}], [{"label": "a", "text": ["b"]}],
+    ["npm test"], [None], "npm test", {"label": "a", "text": "b"}, 7,
+])
+def test_a_quick_command_that_is_not_one_is_refused(client, state, commands):
+    r = client.put("/api/ui/layout", json=tdoc(commands=commands), headers=API)
+    assert r.status_code == 400 and "error" in r.json()
+    assert not (state / "ui-layout.json").exists()
+
+
+def test_a_run_flag_is_optional_and_false_without_it(client):
+    client.put("/api/ui/layout", json=tdoc(commands=[{"label": "a", "text": "b"}]), headers=API)
+    assert client.get("/api/ui/layout", headers=API).json()["pages"]["terminal"]["commands"] == [cmd("a", "b", False)]
+
+
+def test_commands_belong_to_the_terminal_page_alone(client, state):
+    r = client.put("/api/ui/layout", json=doc(commands=[row("spend")]), headers=API)
+    assert r.status_code == 400 and not (state / "ui-layout.json").exists()
+    r = client.put("/api/ui/layout", json={"version": 1, "pages": {"code": {"desktop": []}}}, headers=API)
+    assert r.status_code == 400
+
+
+def test_a_damaged_terminal_entry_in_the_file_is_the_defaults_not_an_error(client, state):
+    (state / "ui-layout.json").write_text(json.dumps(tdoc(desktop={"views": "many"})))
+    assert client.get("/api/ui/layout", headers=API).json() == {"version": 1, "pages": {}}
+    (state / "ui-layout.json").write_text(json.dumps(tdoc(commands=[cmd(text="a\nb")])))
+    assert client.get("/api/ui/layout", headers=API).json() == {"version": 1, "pages": {}}
+
+
+def test_the_most_a_person_can_keep_fits_the_file(client, state):
+    pad = [cmd("l" * 40, "t" * 200, True) for _ in range(20)]
+    screens = {d: {"widgets": [trow("terminals"), trow("keys"), trow("commands"), trow("projects")], "views": 4, "split": "grid", "weights": [25] * 4}
+               for d in ("desktop", "tablet")}
+    body = {"version": 1, "pages": {"home": {d: [row(w) for w in uilayout.PAGES["home"]] for d in ("desktop", "tablet", "phone")},
+                                    "terminal": {**screens, "phone": {"widgets": [trow("terminals", 1)]}, "commands": pad}}}
+    assert client.put("/api/ui/layout", json=body, headers=API).status_code == 200
+    assert (state / "ui-layout.json").stat().st_size < uilayout.MAX_BYTES
