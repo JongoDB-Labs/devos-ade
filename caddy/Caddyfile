@@ -690,5 +690,6 @@ import artifact-{$PREVIEW_MODE:off}.caddy
 # Remote access: remote-off.caddy (nothing), remote-tailscale.caddy or remote-domain.caddy.
 import remote-{$REMOTE_MODE}.caddy
 
-# The old address, forwarded for one release (JON-807): caddy/legacy-hosts.caddy.
-import legacy-hosts.caddy
+# The old address, forwarded for one release (JON-807): caddy/legacy-on.caddy (legacy-off.caddy, empty, while the stack serves an old name itself).
+# (legacy-on.caddy while LEGACY_HOSTS=on; legacy-off.caddy, empty, while PORTAL_HOST/PREVIEW_DOMAIN still carry the old name: lib/common.sh)
+import legacy-{$LEGACY_HOSTS:off}.caddy

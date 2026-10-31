@@ -307,7 +307,7 @@ test_env_keys_hosts_and_pins_are_rewritten_and_the_email_stays() {
 test_a_custom_portal_host_is_kept_with_every_value_that_follows_it() {
   _mg_env; set_env PORTAL_HOST my.localhost; set_env PORTAL_ORIGIN http://my.localhost:8800; _mg_run 2>/dev/null
   assert_eq "$(get_env PORTAL_HOST)" my.localhost; assert_eq "$(get_env PORTAL_ORIGIN)" "http://my.localhost:8800"
-  assert_eq "$(get_env PREVIEW_DOMAIN)" "$OLDP-preview.localhost"   # (a custom host: nothing else is guessed)
+  assert_eq "$(get_env PREVIEW_DOMAIN)" "$NEWP-preview.localhost"   # (the preview domain moves on its own; any other value is kept)
   assert_eq "$(get_env DEVOS_ADE_RELEASES_URL)" "https://example.invalid/releases"
 }
 test_env_is_backed_up_once_before_it_is_rewritten() {
@@ -334,7 +334,7 @@ test_the_old_project_stays_the_one_that_runs_until_the_copy_is_verified() {
 test_a_copy_that_does_not_match_is_removed_and_everything_else_is_as_it_was() {
   _mg_env; : > "$DK/corrupt"; _mg_try
   [ "$MGRC" != 0 ]; assert_contains "$(cat "$TMP/out")" "does not match the original"; assert_contains "$(cat "$TMP/out")" "your data is untouched"
-  assert_contains "$(cat "$TMP/out")" "starts the old project"
+  assert_contains "$(cat "$TMP/out")" "refuses to start anything"
   assert_eq "$(_st)" failed; assert_eq "$(_get failed_step)" copy
   [ ! -d "$DK/vol/${NEWP}_pgdata" ]; [ -d "$INST" ] && [ ! -L "$INST" ] && [ ! -e "$NEW" ]
   assert_eq "$(get_env PORTAL_HOST)" "$OLDP.localhost"; [ -f "$INST/.env.pre-devos-ade" ]; _mg_old_untouched
@@ -720,6 +720,32 @@ test_no_message_tells_the_person_to_delete_anything_or_that_disk_use_grows() {
   ! migrate_status | grep -qiE "must|yourself"
 }
 
+# --- round 4 ---
+test_the_old_address_is_forwarded_only_while_the_stack_does_not_serve_it_itself() {
+  _mg_env; assert_eq "$(legacy_hosts_mode)" off                                    # the old host is the stack's own: Caddy must not define it twice
+  : > "$DK/corrupt"; _mg_try; [ "$MGRC" != 0 ]; assert_eq "$(legacy_hosts_mode)" off  # a failure before the env step: still the old host
+  rm -f "$DK/corrupt"; _mg_env; _mg_after_move; assert_eq "$(legacy_hosts_mode)" on
+  assert_eq "$(get_env PORTAL_HOST)" "$NEWP.localhost"; assert_eq "$(get_env PREVIEW_DOMAIN)" "$NEWP-preview.localhost"
+  migrate_rollback 2>/dev/null; assert_eq "$(legacy_hosts_mode)" off; assert_eq "$(get_env PREVIEW_DOMAIN)" "$OLDP-preview.localhost"
+  _mg_env; set_env PORTAL_HOST ade.example.test; set_env PREVIEW_DOMAIN mine-preview.localhost; _mg_run 2>/dev/null
+  assert_eq "$(get_env PREVIEW_DOMAIN)" mine-preview.localhost; assert_eq "$(legacy_hosts_mode)" on
+  _mg_env; set_env PORTAL_HOST ade.example.test; set_env PREVIEW_DOMAIN "$OLDP-preview.localhost"; _mg_run 2>/dev/null   # the preview alone was the old one
+  assert_eq "$(get_env PREVIEW_DOMAIN)" "$NEWP-preview.localhost"; assert_eq "$(get_env PORTAL_HOST)" ade.example.test
+}
+
+test_a_resume_copies_again_a_volume_that_changed_since_it_was_copied_and_up_refuses_meanwhile() {
+  _mg_env; : > "$DK/corrupt"; _mg_try; [ "$MGRC" != 0 ]; rm -f "$DK/corrupt"
+  mg_init; ( migrate_refuse_up ) > "$TMP/out" 2>&1 && return 1
+  assert_contains "$(cat "$TMP/out")" "./stack update"; assert_contains "$(cat "$TMP/out")" "./stack migrate --rollback"
+  # the copy of owui was verified before the failure at pgdata: now the old owui changes
+  [ "$(mg_get "vol.owui")" = verified ] || { echo "owui not verified" >&2; return 1; }
+  printf 'newer' >> "$DK/vol/${OLDP}_owui/webui.db"
+  _mg_run > "$TMP/out" 2>&1
+  assert_contains "$(cat "$TMP/out")" "changed since it was copied"
+  assert_eq "$(cksum < "$DK/vol/${NEWP}_owui/webui.db")" "$(cksum < "$DK/vol/${OLDP}_owui/webui.db")"
+  assert_eq "$(_st)" moved; ( migrate_refuse_up ) > /dev/null 2>&1   # moved: up is allowed
+}
+
 # --- the command and the hosts ---
 test_the_status_says_what_is_going_on_in_each_state() {
   _mg_env; assert_contains "$(migrate_status)" "not moved yet"
@@ -729,13 +755,14 @@ test_the_status_says_what_is_going_on_in_each_state() {
   ( cmd_migrate --nonsense ) > "$TMP/out" 2>&1 && return 1; assert_contains "$(cat "$TMP/out")" "usage: ./stack migrate"
 }
 test_the_old_hostname_answers_with_a_308_for_every_method_refuses_sockets_and_sets_no_cookie() {
-  local f; f="$(cat "$STACK_DIR/caddy/legacy-hosts.caddy")"
+  local f; f="$(cat "$STACK_DIR/caddy/legacy-on.caddy")"
   assert_contains "$f" "http://bedrock-now.localhost {"; assert_contains "$f" "http://*.bedrock-now.localhost {"
-  assert_contains "$f" "http://bedrock-now-preview.localhost, http://*.bedrock-now-preview.localhost {"
-  assert_eq "$(grep -c 'redir .* 308$' "$STACK_DIR/caddy/legacy-hosts.caddy")" 3
+  assert_contains "$f" "http://bedrock-now-preview.localhost {"; assert_contains "$f" "http://*.bedrock-now-preview.localhost {"
+  assert_contains "$f" "redir http://{\$PREVIEW_DOMAIN:preview.invalid}:{\$PORTAL_PORT:80}{uri} 308"      # the apex has no subdomain label
+  assert_eq "$(grep -c 'redir .* 308$' "$STACK_DIR/caddy/legacy-on.caddy")" 4
   assert_contains "$f" "{http.request.host.labels.2}.{\$PORTAL_HOST}:{\$PORTAL_PORT:80}{uri} 308"   # path and query kept
   assert_contains "$f" "header -Set-Cookie"; assert_contains "$f" "(?i)^websocket\$"; assert_contains "$f" " 426"
   assert_not_contains "$f" "reverse_proxy"; assert_not_contains "$f" "header_up"
-  assert_eq "$(grep -c '^import legacy-hosts.caddy$' "$STACK_DIR/caddy/Caddyfile")" 1
-  ! grep -qE '^[[:space:]]*(@[a-z_]+ )?method ' "$STACK_DIR/caddy/legacy-hosts.caddy"   # no method matcher: GET, HEAD, POST, PUT, DELETE alike
+  assert_eq "$(grep -c '^import legacy-{\$LEGACY_HOSTS:off}.caddy$' "$STACK_DIR/caddy/Caddyfile")" 1
+  ! grep -qE '^[[:space:]]*(@[a-z_]+ )?method ' "$STACK_DIR/caddy/legacy-on.caddy"   # no method matcher: GET, HEAD, POST, PUT, DELETE alike
 }

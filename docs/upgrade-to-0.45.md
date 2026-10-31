@@ -21,8 +21,10 @@ session and Code page records) are rewritten, relative links are left as they ar
 is kept as it was, so chats, spend and git history stay yours. The update needs free disk for the copy of the
 volumes plus 10% and says how long it expects to take before it stops anything. If a check fails nothing is changed.
 
-The update can be interrupted and run again: it resumes. Until the last step succeeds, the old project stays the one
-that `./stack up` starts.
+The update can be interrupted and run again: it resumes, and on a resume it compares every volume it had already copied
+with its source again and copies afresh any that changed in between. While the move is half done `./stack up` and
+`./stack setup` refuse to start anything and name the two ways out: `./stack update` (resumes) and
+`./stack migrate --rollback` (goes back). Your data stays in the old volumes, unchanged, until the move is verified.
 
 ## On the new address
 

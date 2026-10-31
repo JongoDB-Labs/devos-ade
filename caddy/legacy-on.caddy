@@ -31,7 +31,13 @@ http://*.bedrock-now.localhost {
 	}
 }
 
-http://bedrock-now-preview.localhost, http://*.bedrock-now-preview.localhost {
+http://bedrock-now-preview.localhost {
+	import legacy_redirect {
+		redir http://{$PREVIEW_DOMAIN:preview.invalid}:{$PORTAL_PORT:80}{uri} 308
+	}
+}
+
+http://*.bedrock-now-preview.localhost {
 	import legacy_redirect {
 		redir http://{http.request.host.labels.2}.{$PREVIEW_DOMAIN:preview.invalid}:{$PORTAL_PORT:80}{uri} 308
 	}

@@ -324,6 +324,14 @@ localgit_sso_ensure() {
 
 # dc ARGS... — docker compose for this checkout. -p and the COMPOSE_PROJECT_NAME seen by compose's own
 # interpolation are both forced to project_name, so a stray shell value is ignored (with one warning).
+# legacy_hosts_mode -> on while Caddy may forward the old address (bedrock-now.localhost …) to the new one, off while the stack itself
+# serves an old name (PORTAL_HOST / PREVIEW_DOMAIN in .env still carry it: a move that has not reached .env, or was rolled back)
+legacy_hosts_mode() {
+  local h p; h="$(get_env PORTAL_HOST)"; p="$(get_env PREVIEW_DOMAIN)"
+  case "$h" in bedrock-now.localhost | *.bedrock-now.localhost) echo off; return ;; esac
+  case "$p" in bedrock-now-preview.localhost | *.bedrock-now-preview.localhost) echo off; return ;; esac
+  echo on
+}
 dc() {
   local p; p="$(project_name)"
   localgit_sso_ensure 2>/dev/null || true
@@ -360,7 +368,7 @@ dc() {
   # The browser terminal too: an exported TERMINAL_WORKSPACE must never decide what the container sees.
   ( unset OPENROUTER_API_KEY OPENROUTER_MODELS OPENROUTER_MAX_MODELS EXPLABS_API_KEY EXPLABS_MODELS STT_PROVIDER STT_API_KEY STT_MODEL OWUI_STT_ENGINE \
       WEBSEARCH_TAVILY_API_KEY WEBSEARCH_BRAVE_API_KEY WEBSEARCH_PERPLEXITY_API_KEY WEBSEARCH_SEARXNG_SECRET WEBSEARCH_SEARXNG_BUILTIN \
-      LOCALGIT LOCALGIT_ADMIN_PASSWORD LOCALGIT_SSO_HEADER LOCALGIT_SSO_ON LOCALGIT_MIRROR_EGRESS LOCALGIT_MIRROR_HOSTS GIT_HOST GIT_ORIGIN BN_LOCALGIT_MODE BN_LOCALGIT_TLS \
+      LOCALGIT LOCALGIT_ADMIN_PASSWORD LOCALGIT_SSO_HEADER LOCALGIT_SSO_ON LOCALGIT_MIRROR_EGRESS LOCALGIT_MIRROR_HOSTS GIT_HOST GIT_ORIGIN BN_LOCALGIT_MODE BN_LOCALGIT_TLS BN_LEGACY_HOSTS \
       OWUI_STT_BASE_URL STT_BEDROCK_MODEL COMPOSE_PROFILES \
       AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_REGION_NAME \
       TERMINAL_ENABLED TERMINAL_WORKSPACE TERMINAL_EGRESS TERMINAL_EGRESS_ALLOW TERMINAL_EGRESS_DENY TERMINAL_HOST TERMINAL_UID TERMINAL_GID TERMINAL_MEM_LIMIT \
@@ -373,7 +381,7 @@ SUMS
     # which of terminal/managed/*.json the sandbox gets as Claude Code's managed settings (read-only): from .env alone
     TERMINAL_CLAUDE_POLICY="$policy" BN_PROJECTS_PUBLIC="$STATE_DIR/projects/public" \
     LOCALGIT_SSO_HEADER="$(get_env LOCALGIT_SSO_HEADER)" LOCALGIT_SSO_ON="$([ -n "$(get_env LOCALGIT_SSO_HEADER)" ] && echo true || echo false)" \
-    BN_LOCALGIT_TLS="$STATE_DIR/localgit/tls" BN_LOCALGIT_MODE="$(flag_off "$(get_env LOCALGIT)" && echo off || echo on)" \
+    BN_LOCALGIT_TLS="$STATE_DIR/localgit/tls" BN_LOCALGIT_MODE="$(flag_off "$(get_env LOCALGIT)" && echo off || echo on)" BN_LEGACY_HOSTS="$(legacy_hosts_mode)" \
     BN_LLAMACPP_DIR="$STATE_DIR/runtimes/llamacpp" BN_LLAMACPP_USER="$(cat "$STATE_DIR/runtimes/llamacpp/user" 2>/dev/null || echo 65534:65534)" \
     BN_VLLM_DIR="$STATE_DIR/runtimes/vllm" BN_VLLM_USER="$(cat "$STATE_DIR/runtimes/vllm/user" 2>/dev/null || echo 65534:65534)" \
     DEVOS_ADE_ENV_DISPLAY="$(env_file_display)" COMPOSE_PROJECT_NAME="$p" docker compose -p "$p" --project-directory "$STACK_DIR" -f "$STACK_DIR/compose.yaml" ${f[@]+"${f[@]}"} \

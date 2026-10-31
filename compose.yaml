@@ -523,6 +523,7 @@ services:
       # The built-in git server's site (caddy/localgit-on.caddy; lib/localgit.sh: BN_LOCALGIT_MODE is on while LOCALGIT is)
       GIT_HOST: ${GIT_HOST:-git.${PORTAL_HOST:-devos-ade.localhost}}
       LOCALGIT_MODE: ${BN_LOCALGIT_MODE:-off}
+      LEGACY_HOSTS: ${BN_LEGACY_HOSTS:-off}   # on: caddy/legacy-on.caddy forwards the old address (lib/common.sh legacy_hosts_mode)
       LOCALGIT_SSO_HEADER: ${LOCALGIT_SSO_HEADER:-}   # the name of the sign-in header Forgejo takes (a secret of ./stack's)
       CADDY_AUTO_HTTPS: "off"   # compose.domain.yaml: disable_redirects (certificates for the remote site)
       # Remote site (caddy/remote-<mode>.caddy; ./stack remote). The .invalid names only keep the file valid

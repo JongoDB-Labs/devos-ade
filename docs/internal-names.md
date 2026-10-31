@@ -12,7 +12,7 @@ made before the rename, or an identifier that data on disk or in someone else's 
 ## What keeps the old spelling
 
 - **History:** `CHANGELOG.md` (what each release was called then), and git history.
-- **The migration** (`lib/migrate.sh`, `tests/test_migrate.sh`, `tests/e2e/upgrade.sh`, `caddy/legacy-hosts.caddy`,
+- **The migration** (`lib/migrate.sh`, `tests/test_migrate.sh`, `tests/e2e/upgrade.sh`, `caddy/legacy-on.caddy`,
   `docs/upgrade-to-0.45.md`): they move an install named `bedrock-now` to `devos-ade`, and forward the old address.
 - **One release of the old environment names:** `env_fallback_old_names` (`lib/common.sh`, called first by `./stack`)
   turns `BEDROCK_NOW_X` into `DEVOS_ADE_X` when that is unset. An update started by an older `./stack` hands its state
@@ -54,7 +54,8 @@ check too, unless none of its files exist (the migration's, before they are merg
 
 | Name | Pattern | Files | Why it stays |
 |---|---|---|---|
-| The migration | `(?i:.*bedrock[-_ ]?now.*)` | lib/migrate.sh, tests/test_migrate.sh, caddy/legacy-hosts.caddy, tests/e2e/upgrade.sh, docs/upgrade-to-0.45.md | it moves an install of the old name |
+| The migration | `(?i:.*bedrock[-_ ]?now.*)` | lib/migrate.sh, tests/test_migrate.sh, caddy/legacy-on.caddy, caddy/legacy-off.caddy, tests/e2e/upgrade.sh, docs/upgrade-to-0.45.md | it moves an install of the old name |
+| The old address check | `(?:\*\.)?bedrock-now(?:-preview)?\.localhost` | lib/common.sh | legacy_hosts_mode: Caddy forwards the old address only while the stack does not serve it itself |
 | The old environment names | `\bBEDROCK_NOW\w*` | lib/common.sh, stack, tests/test_common.sh | the one-release fallback |
 | The legacy constants | `(?:PRODUCT_)?LEGACY_(?:NAME\|REPO)(?:=\| = )"[^"]*bedrock-now"` | lib/brand.sh, portal/portal/brand.py, install.sh | the old name and repository, read by the update check, the installer, `./stack open` and uninstall |
 | The old repository | `JongoDB-Labs/bedrock-now[\w.\/-]*` | install.sh, portal/tests/test_updates.py, tests/test_update_git.sh, tests/test_install.sh | GitHub redirects it; installs from before the rename have it as `origin` |

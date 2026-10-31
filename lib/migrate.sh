@@ -10,7 +10,7 @@
 # stop at any point is resumed by the next `./stack update` or `./stack migrate --now`):
 #   preflight  disk (the old volumes + 10%), the target folder, same file system, no clash with the new name; says the time
 #   stop       the old project's containers and networks go (volumes stay); .env pins COMPOSE_PROJECT_NAME to the old
-#              name until the copy is verified, so a failure leaves "./stack up" starting the OLD project with its data
+#              name until the copy is verified; ./stack up refuses while the move is half done (migrate_refuse_up)
 #   copy       each old volume to its new name in a throwaway container (cp -a: owners, modes, xattrs); verified by file
 #              count, bytes, a metadata list and a checksum list; the old volumes are only ever read (:ro)
 #   inner      terminal-home: ~/.config/bedrock-now and the .bedrock-now-* folders become the new names (new volume only)
@@ -172,7 +172,7 @@ mg_fmt_kb() { fmt_bytes $(($1 * 1024)); }
 # --- the steps ---
 mg_fail() { # mg_fail STEP MESSAGE — the marker says where it stopped; the old project stays runnable
   mg_put status failed; mg_put failed_step "$1"
-  die "migration to $MG_NEW_PROJECT failed at '$1': $2 — your data is untouched (the old volumes were only read). Run ./stack update (or ./stack migrate --now) to resume, or ./stack migrate --rollback to go back. Until then ./stack up starts the old project ($MG_OLD_PROJECT) as before."
+  die "migration to $MG_NEW_PROJECT failed at '$1': $2 — your data is untouched (the old volumes were only read). Run ./stack update (or ./stack migrate --now) to resume, or ./stack migrate --rollback to go back. Until then ./stack up refuses to start anything (a half-moved install must not run): the two ways out are ./stack update (it resumes) and ./stack migrate --rollback (it goes back). Your data stays in the old volumes (${MG_OLD_PROJECT}_*), unchanged."
 }
 
 mg_step_preflight() {
@@ -248,7 +248,7 @@ mg_copy_one() { # mg_copy_one OLDVOL
   [ "$st" != verified ] || { log "  $s: copied and verified before"; return 0; }
   if docker volume inspect "$nv" >/dev/null 2>&1; then
     # ours only (the marker says copying/failed): a partial copy of an interrupted run is made again from the start
-    case "$st" in copying | failed) docker volume rm "$nv" >/dev/null 2>&1 || mg_fail copy "cannot remove the partial $nv" ;;
+    case "$st" in copying | failed | stale) docker volume rm "$nv" >/dev/null 2>&1 || mg_fail copy "cannot remove the partial $nv" ;;
       *) mg_fail copy "volume $nv exists and is not from this migration" ;; esac
   fi
   mg_put "vol.$s" copying
@@ -267,7 +267,7 @@ mg_copy_one() { # mg_copy_one OLDVOL
     mg_put "vol.$s" failed; docker volume rm "$nv" >/dev/null 2>&1 || true
     mg_fail copy "the copy of $s does not match the original (original: ${a:-none}; copy: ${b:-none}); the copy was removed"
   fi
-  mg_put "vol.$s" verified
+  mg_put "vol.$s.sum" "$a"; mg_put "vol.$s" verified
   log "  $s: verified ($(printf '%s' "$a" | sed 's/ meta=.*//'))"
 }
 mg_step_copy() { local v; if [ "$MG_PARTIAL" = 1 ]; then mg_step_done copy; return 0; fi; for v in $(mg_old_volumes); do mg_copy_one "$v"; done; mg_step_done copy; }
@@ -329,7 +329,7 @@ mg_step_owner() {
 # REVERSE=1: a key that exists under both spellings keeps the value of the one being renamed (the current one).
 mg_env_xlate() {
   local tmp; tmp="$(mktemp "$ENV_FILE.XXXXXX")" || return 1
-  OP="$1" NP="$2" DOH="$3" OH="$4" NH="$5" OV="$6" NV="$7" REV="$8" awk '
+  OP="$1" NP="$2" DOH="$3" OH="$4" NH="$5" OV="$6" NV="$7" REV="$8" DOV="${9:-$3}" awk '
     BEGIN { op = ENVIRON["OP"]; np = ENVIRON["NP"] }
     { lines[NR] = $0; i = index($0, "="); if (i > 0) { k0 = substr($0, 1, i - 1); have[k0] = 1; if (index(k0, op) == 1) ren[np substr(k0, length(op) + 1)] = 1 } }
     END {
@@ -337,8 +337,10 @@ mg_env_xlate() {
         l = lines[n]; i = index(l, "="); k = (i > 0) ? substr(l, 1, i - 1) : ""; v = (i > 0) ? substr(l, i + 1) : l
         if (k != "" && ENVIRON["REV"] == "1" && (k in ren)) continue
         if (k != "" && index(k, op) == 1) { nk = np substr(k, length(op) + 1); if (ENVIRON["REV"] != "1" && (nk in have)) continue; k = nk }
-        if (ENVIRON["DOH"] == "1" && k != "") {
+        if (ENVIRON["DOV"] == "1" && k != "") {
           while ((p = index(v, ENVIRON["OV"])) > 0) v = substr(v, 1, p - 1) ENVIRON["NV"] substr(v, p + length(ENVIRON["OV"]))
+        }
+        if (ENVIRON["DOH"] == "1" && k != "") {
           while ((p = index(v, ENVIRON["OH"])) > 0) v = substr(v, 1, p - 1) ENVIRON["NH"] substr(v, p + length(ENVIRON["OH"]))
         }
         if (k != "") print k "=" v; else print l
@@ -350,13 +352,18 @@ mg_ts_base() {
   if [ "$MG_PARTIAL" = 1 ]; then printf '%s-%s\n' "$MG_OLD_TS" "$(printf '%s' "$MG_PROJ" | tr '_' '-' | sed 's/-*$//')"; else printf '%s\n' "$MG_OLD_TS"; fi
 }
 mg_step_env() {
-  local bak="$MG_DIR/.env.pre-devos-ade" ph oldp=0 tsb
+  local bak="$MG_DIR/.env.pre-devos-ade" ph pd oldp=0 oldv=0 tsb
   [ -f "$ENV_FILE" ] || mg_fail env "no .env"
   if [ ! -f "$bak" ]; then cp -p "$ENV_FILE" "$bak" && chmod 600 "$bak" || mg_fail env "cannot back .env up"; fi   # (made at preflight; here only if that was skipped)
   ph="$(get_env PORTAL_HOST)"
   # (a partial move keeps its hostname: its project name is in it)
-  if [ "$MG_PARTIAL" != 1 ]; then { [ -z "$ph" ] || [ "$ph" = "$MG_OLD_HOST" ]; } && oldp=1; fi
-  mg_env_xlate "$MG_OLD_ENV_PREFIX" "$MG_NEW_ENV_PREFIX" "$oldp" "$MG_OLD_HOST" "$MG_NEW_HOST" "$MG_OLD_PREVIEW" "$MG_NEW_PREVIEW" 0 || mg_fail env "cannot rewrite .env"
+  pd="$(get_env PREVIEW_DOMAIN)"
+  # (the host and the preview domain are moved each on its own: any other value is kept)
+  if [ "$MG_PARTIAL" != 1 ]; then
+    { [ -z "$ph" ] || [ "$ph" = "$MG_OLD_HOST" ]; } && oldp=1
+    { [ "$pd" = "$MG_OLD_PREVIEW" ] || { [ -z "$pd" ] && [ "$oldp" = 1 ]; }; } && oldv=1
+  fi
+  mg_env_xlate "$MG_OLD_ENV_PREFIX" "$MG_NEW_ENV_PREFIX" "$oldp" "$MG_OLD_HOST" "$MG_NEW_HOST" "$MG_OLD_PREVIEW" "$MG_NEW_PREVIEW" 0 "$oldv" || mg_fail env "cannot rewrite .env"
   if [ "$MG_PARTIAL" != 1 ]; then
     # The pin made at 'stop' goes now: the copy is verified. An explicit old project name becomes the new one.
     if [ "$(mg_get pinned)" = 1 ]; then unset_env COMPOSE_PROJECT_NAME
@@ -586,16 +593,42 @@ mg_needed() {
   own="$(docker volume inspect --format "{{index .Labels \"$MG_OLD_OWNER_LABEL\"}}" "${MG_OLD_PROJECT}_${MG_OLD_DIRNAME}-owner" 2>/dev/null || true)"
   [ -z "$own" ] || [ "$own" = "<no value>" ] || [ "$(cd "$own" 2>/dev/null && pwd -P || printf '%s' "$own")" = "$MG_OLD_DIR" ] || return 1
 }
+# mg_reverify — a RESUME: whatever the old project did since an earlier try copied a volume (the old stack may have run again) is not in that
+# copy. Each volume that was copied is compared with its source again; one that differs is copied afresh, which redoes stop, record and copy.
+mg_reverify() {
+  local ov s nv out a b stale=0 st
+  for ov in $(mg_old_volumes); do
+    s="$(mg_short "$ov")"; nv="${MG_NEW_PROJECT}_$s"
+    [ "$(mg_get "vol.$s")" = verified ] || continue
+    mg_is_socket_vol "$s" && continue
+    if ! docker volume inspect "$nv" >/dev/null 2>&1; then mg_put "vol.$s" stale; stale=1; continue; fi
+    # (the copy itself may have been changed on purpose since, by the inner step: the SOURCE is compared with what it was when it was copied)
+    out="$(MG_MOUNTS="-v $ov:/from:ro" MG_SCRIPT="$MG_SUM_SH" mg_run_in "$MG_IMG" mg-sum /from /from 2>&1)" || out=''
+    a="$(printf '%s\n' "$out" | sed -n 1p)"; b="$(mg_get "vol.$s.sum")"
+    if [ -z "$a" ] || [ "$a" != "$b" ]; then mg_put "vol.$s" stale; stale=1; log "  $s: changed since it was copied — it is copied again"; fi
+  done
+  [ "$stale" = 0 ] || for st in record stop copy inner; do mg_put "step.$st" ""; done   # (record counts again what it can: a stopped database is not counted, and then the old copy is kept)
+}
 mg_phase_a() {
+  local resumed=0; [ -z "$(mg_get started)" ] || resumed=1
   [ -n "$(mg_get started)" ] || mg_put started "$(date +%s)"
   mg_put status running; mg_put from_dir "$MG_OLD_DIR"; mg_put to_dir "$MG_NEW_DIR"
   local s
   docker info >/dev/null 2>&1 || mg_fail preflight "Docker is not running"
   MG_IMG="$(mg_image)" || mg_fail preflight "no image to copy with"
+  [ "$resumed" = 0 ] || [ "$MG_PARTIAL" = 1 ] || mg_done_p env || mg_reverify
   for s in preflight record stop copy inner host env images move owner paths launchd; do
     mg_done_p "$s" || "mg_step_$s"
   done
   mg_put status moved
+}
+
+# migrate_refuse_up — ./stack up / setup while the move is half done: the old project must not run on volumes that are being copied, nor the
+# new one on a copy that is not complete. Two ways out are named.
+migrate_refuse_up() {
+  mg_init
+  case "$(mg_status)" in running | failed) ;; *) return 0 ;; esac
+  die "the move to the name $MG_NEW_PROJECT is not finished (stopped at: $(mg_get failed_step)), so nothing is started. Either: ./stack update   (resumes it), or: ./stack migrate --rollback   (goes back)."
 }
 
 # migrate_update_hook — in ./stack update, with the new code checked out, before images and setup
@@ -925,7 +958,8 @@ migrate_rollback() {
   if [ "$MG_PARTIAL" = 1 ]; then mg_env_xlate "$MG_NEW_ENV_PREFIX" "$MG_OLD_ENV_PREFIX" 0 x x x x 1
   else
     h=0; [ "$(get_env PORTAL_HOST)" != "$MG_NEW_HOST" ] || h=1
-    mg_env_xlate "$MG_NEW_ENV_PREFIX" "$MG_OLD_ENV_PREFIX" "$h" "$MG_NEW_HOST" "$MG_OLD_HOST" "$MG_NEW_PREVIEW" "$MG_OLD_PREVIEW" 1
+    v=0; [ "$(get_env PREVIEW_DOMAIN)" != "$MG_NEW_PREVIEW" ] || v=1
+    mg_env_xlate "$MG_NEW_ENV_PREFIX" "$MG_OLD_ENV_PREFIX" "$h" "$MG_NEW_HOST" "$MG_OLD_HOST" "$MG_NEW_PREVIEW" "$MG_OLD_PREVIEW" 1 "$v"
     set_env COMPOSE_PROJECT_NAME "$MG_OLD_PROJECT"   # the checked-out code would otherwise start the new name; ./stack rollback goes back to the old code
   fi
   # names inside the volume of terminal-home and on this computer, back

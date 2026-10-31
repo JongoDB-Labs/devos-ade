@@ -693,6 +693,7 @@ _setup_finish() {
 }
 
 cmd_setup() {
+  ! declare -F migrate_refuse_up >/dev/null || migrate_refuse_up
   check_prereqs
   _SIGNAL_HOOK=_setup_interrupted; _signal_traps_restore   # Ctrl-C: what was done, and how to go on
   SUBS_REFRESH_BG=1   # (lib/subscriptions.sh: what the tools say is asked in the background, while setup goes on)
@@ -1333,6 +1334,7 @@ _link_old_name() {
 
 cmd_up() {
   local repriced=0 restart=0 before own=1
+  ! declare -F migrate_refuse_up >/dev/null || migrate_refuse_up   # (lib/migrate.sh: not while the move to the new name is half done)
   local extra; extra="$(optional_services)"
   local STACK_SERVICES="$STACK_BASE_SERVICES${extra:+ $extra}"   # + stt / terminal while .env turns them on
   [ -f "$ENV_FILE" ] || die "run ./stack setup first"

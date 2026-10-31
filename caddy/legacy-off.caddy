@@ -1,0 +1,2 @@
+# The old address is not forwarded here: the stack itself serves it (PORTAL_HOST / PREVIEW_DOMAIN still carry the old name),
+# or the forwarding is over. See legacy-on.caddy.
