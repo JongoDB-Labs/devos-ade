@@ -184,5 +184,5 @@ test_the_helper_ends_a_record_whose_command_is_gone() {
   printf '{"id": "t-1-%s", "action": "update", "command": "update", "phase": "running", "message": "m", "started_at": 1, "updated_at": 1, "finished_at": null, "version": "v", "pid": %s}\n' "$$" "$$" > "$f"
   before="$(cat "$f")"; _terminal_job_sweep
   assert_eq "$(cat "$f")" "$before"
-  assert_contains "$(sed -n '/^helper_main() {/,/^}/p' "$STACK_DIR/lib/helper.sh")" "_terminal_job_sweep"
+  assert_contains "$(sed -n '/^_helper_loop() {/,/^}/p' "$STACK_DIR/lib/helper.sh")" "_terminal_job_sweep"
 }
