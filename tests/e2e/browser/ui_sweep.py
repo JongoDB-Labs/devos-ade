@@ -547,9 +547,12 @@ def sweep_portal(browser, width, theme):
                 p.locator("#update-card").scroll_into_view_if_needed()
                 capture(p, name)
                 # "run it" needs the command in sight: a phone hides the command line (mobile.css), so there the hint says it
+                # (only a hint that tells you to run something: "the update helper runs it" names no command)
                 hint = p.locator("#update-hint")
-                if hint.is_visible() and not p.locator("#update-cmd").is_visible() and "./stack update" not in hint.inner_text():
-                    find("command not shown", f"the update hint points at a command that is not on screen: {hint.inner_text()!r}")
+                if hint.is_visible() and not p.locator("#update-cmd").is_visible():
+                    t = hint.inner_text()
+                    if re.search(r"\brun (it|this|that)\b", t, re.I) and "./stack update" not in t:
+                        find("command not shown", f"the update hint points at a command that is not on screen: {t!r}")
             step(name, helper_state)
     finally:
         if saved is None:
