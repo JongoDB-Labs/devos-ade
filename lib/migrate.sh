@@ -711,6 +711,13 @@ migrate_refuse_up() {
   die "the move to the name $MG_NEW_PROJECT is not finished (stopped at: $(mg_get failed_step)), so nothing is started. Either: ./stack update   (resumes it), or: ./stack migrate --rollback   (goes back)."
 }
 
+# migrate_unfinished -> 0 while a move is started and not complete (./stack update has it to finish, also with no new version)
+migrate_unfinished() {
+  mg_init
+  case "$(mg_status)" in running | failed | moved) return 0 ;; esac
+  return 1
+}
+
 # migrate_update_hook — in ./stack update, with the new code checked out, before images and setup
 migrate_update_hook() {
   mg_init
@@ -794,6 +801,11 @@ mg_step_record() {
   if declare -F rt_state >/dev/null; then
     for db in $(ls "$MG_DIR/.state/runtimes" 2>/dev/null); do [ "$(rt_state "$db" 2>/dev/null)" != running ] || mg_put "rt.$db" running; done
   fi
+  # which installed runtimes' programs run now: after the move only those must (one that did not run before is not the move's doing)
+  for db in "$MG_DIR"/.state/runtimes/*/ "$MG_DIR/.state/mlx/"; do
+    [ -d "$db" ] || continue; db="${db%/}"
+    ! mg_rt_ok "${db##*/}" "$db" || mg_put "rtok.${db##*/}" 1
+  done
   for db in $(mg_pg_dbs "$MG_OLD_PROJECT"); do
     out="$(mg_pg_counts "$MG_OLD_PROJECT" "$db")" && [ -n "$out" ] || { n=-1; break; }
     printf '%s\n' "$out" > "$dir/pgrows-$db.tsv"; n=$((n + 1))
@@ -820,24 +832,34 @@ mg_run_limited() {
   while mg_alive "$pid"; do [ "$i" -lt "$((t * 5))" ] || { kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; return 1; }; sleep 0.2; i=$((i + 1)); done
   wait "$pid"
 }
-# mg_check_runtimes — each installed runtime's program runs from the moved folder (its version command), and a runtime that was running before the
-# update is running after it
+# mg_rt_ok ID DIR -> 0 when the runtime's program runs from DIR (its version command; MLX: mlx_lm imports), 1 when not
+# (MG_RT_WHY says why), 2 when there is nothing to run (no program found)
+mg_rt_ok() {
+  local id="$1" d="$2" bin
+  bin="$(mg_rt_bin "$id" "$d")"; MG_RT_WHY=''
+  [ -n "$bin" ] || return 2
+  [ -x "$bin" ] || { MG_RT_WHY="runtime $id: its program $bin is not there or cannot run"; return 1; }
+  if [ "$id" = mlx ]; then
+    mg_run_limited 20 "$bin" -I -c 'import mlx_lm' || { MG_RT_WHY="runtime mlx: $bin cannot import mlx_lm from the moved folder"; return 1; }
+    return 0
+  fi
+  mg_run_limited 20 "$bin" --version || { MG_RT_WHY="runtime $id: $bin --version does not run from the moved folder"; return 1; }
+}
+# mg_check_runtimes — each installed runtime's program that ran before the update (rtok.ID, step 'record') runs from the moved
+# folder, and a runtime that was running before the update is running after it. One that did not run before is said, not counted.
 mg_check_runtimes() {
-  local d id bin k
+  local d id k r
   for d in "$MG_DIR"/.state/runtimes/*/ "$MG_DIR/.state/mlx/"; do
-    [ -d "$d" ] || continue; d="${d%/}"; id="${d##*/}"; bin="$(mg_rt_bin "$id" "$d")"
+    [ -d "$d" ] || continue; d="${d%/}"; id="${d##*/}"
     [ "$id" != mlx ] || [ -e "$d/venv/bin/python" ] || continue
-    if [ -z "$bin" ]; then
-      # (nothing was checked: said, never counted as checked; an empty folder of a runtime that is not installed is nothing)
-      [ -n "$(ls -A "$d" 2>/dev/null)" ] && { MG_VERIFY_NOTE="${MG_VERIFY_NOTE:+$MG_VERIFY_NOTE; }runtime $id: its program was not found, so it was not checked"; warn "migration: runtime $id: its program was not found, so it was not checked"; }
-      continue
-    fi
-    [ -x "$bin" ] || { MG_VERIFY_WHY="runtime $id: its program $bin is not there or cannot run"; return 1; }
-    if [ "$id" = mlx ]; then
-      mg_run_limited 20 "$bin" -I -c 'import mlx_lm' || { MG_VERIFY_WHY="runtime mlx: $bin cannot import mlx_lm from the moved folder"; return 1; }
-      continue
-    fi
-    mg_run_limited 20 "$bin" --version || { MG_VERIFY_WHY="runtime $id: $bin --version does not run from the moved folder"; return 1; }
+    r=0; mg_rt_ok "$id" "$d" || r=$?
+    case "$r" in
+      2) # (nothing was checked: said, never counted as checked; an empty folder of a runtime that is not installed is nothing)
+        [ -n "$(ls -A "$d" 2>/dev/null)" ] && { MG_VERIFY_NOTE="${MG_VERIFY_NOTE:+$MG_VERIFY_NOTE; }runtime $id: its program was not found, so it was not checked"; warn "migration: runtime $id: its program was not found, so it was not checked"; } ;;
+      1) [ "$(mg_get "rtok.$id")" != 1 ] || { MG_VERIFY_WHY="$MG_RT_WHY"; return 1; }
+        MG_VERIFY_NOTE="${MG_VERIFY_NOTE:+$MG_VERIFY_NOTE; }$MG_RT_WHY (it did not run before the update either)"
+        warn "migration: $MG_RT_WHY — it did not run before the update either, so the move is not why" ;;
+    esac
   done
   for k in $(grep '^rt\.' "$(mg_marker)" 2>/dev/null | cut -d= -f1); do
     id="${k#rt.}"

@@ -675,6 +675,7 @@ test_each_failed_check_keeps_the_old_copy_and_says_why() {
     case "$case" in
       uncounted) rm -f "$DK/pgdbs-$OLDP" ;;
       copy) : ;;
+      runtimever) mkdir -p "$INST/.state/runtimes/llamacpp/bin"; printf '#!/bin/sh\nexit 0\n' > "$INST/.state/runtimes/llamacpp/bin/llama-server"; chmod +x "$INST/.state/runtimes/llamacpp/bin/llama-server" ;;   # (runs before the move)
     esac
     _mg_run 2>/dev/null; printf 'd1 %s postgres\n' "$NEWP" >> "$DK/containers"
     case "$case" in
@@ -842,7 +843,7 @@ test_an_mlx_venv_keeps_working_after_the_move_and_the_link_is_gone() {
   mkdir -p "$v/bin" "$v/lib/python3.12/site-packages" "$INST/.state/mlx/hf/hub/models--a--b/blobs"
   printf 'home = /opt/py/bin\nuv = 0.9\nprompt = %s/.state/mlx/venv\n' "$INST" > "$v/pyvenv.cfg"
   printf '#!%s/.state/mlx/venv/bin/python\nprint(1)\n' "$INST" > "$v/bin/mlx_lm.server"; chmod +x "$v/bin/mlx_lm.server"
-  printf '#!/bin/sh\nexit 3\n' > "$v/bin/python-real"; chmod +x "$v/bin/python-real"; ln -s "$INST/.state/mlx/venv/bin/python-real" "$v/bin/python"
+  printf '#!/bin/sh\nexit 0\n' > "$v/bin/python-real"; chmod +x "$v/bin/python-real"; ln -s "$INST/.state/mlx/venv/bin/python-real" "$v/bin/python"
   printf '%s/src\n' "$INST" > "$v/lib/python3.12/site-packages/x.pth"
   head -c 100 /dev/urandom > "$INST/.state/mlx/hf/hub/models--a--b/blobs/w.safetensors"; printf '%s/' "$INST" >> "$INST/.state/mlx/hf/hub/models--a--b/blobs/w.safetensors"
   local lbl; lbl="dev.devos.ade.mlx.$(mg_sum "$INST/.state")"
@@ -857,10 +858,29 @@ test_an_mlx_venv_keeps_working_after_the_move_and_the_link_is_gone() {
   ! grep -q "$INST" "$HOME/Library/LaunchAgents/$nl.plist"
   # models are not read by the left-behind scan
   assert_eq "$(_get paths_left_behind)" 0
-  # the check runs the venv's python with the import; a venv whose python fails keeps the old copy
+  # the check runs the venv's python with the import: it ran before the move, so one that fails now keeps the old copy
+  assert_eq "$(_get rtok.mlx)" 1
+  printf '#!/bin/sh\nexit 3\n' > "$NEW/.state/mlx/venv/bin/python-real"
   mg_init; MG_DIR="$NEW"; MG_VERIFY_WHY=''; ! mg_check_runtimes 2>/dev/null
   assert_contains "$MG_VERIFY_WHY" "cannot import mlx_lm"
   printf '#!/bin/sh\nexit 0\n' > "$NEW/.state/mlx/venv/bin/python-real"; mg_check_runtimes
+  # one that did not run before the move either is said, not a reason to keep it
+  printf '#!/bin/sh\nexit 3\n' > "$NEW/.state/mlx/venv/bin/python-real"; mg_put rtok.mlx 0
+  MG_VERIFY_NOTE=''; mg_check_runtimes 2>/dev/null; assert_contains "$MG_VERIFY_NOTE" "it did not run before the update either"
+}
+test_a_runtime_that_did_not_run_before_the_move_is_said_and_never_keeps_the_old_copy() {
+  # (an LM Studio install left half done before the update: its record names a program that was never there)
+  _mg_env; _mg_pg_setup
+  rm -f "$INST/.state/runtimes/lmstudio/home/.lmstudio/llmster/0.0.25-1/bin/llmster"
+  _mg_run 2>/dev/null; printf 'd1 %s postgres\n' "$NEWP" >> "$DK/containers"
+  assert_eq "$(_get rtok.lmstudio)" ""
+  migrate_update_finish > "$TMP/out" 2>&1
+  assert_eq "$(_get old_copy)" removed
+  assert_contains "$(cat "$TMP/out")" "runtime lmstudio: its program $NEW/.state/runtimes/lmstudio/home/.lmstudio/llmster/0.0.25-1/bin/llmster is not there or cannot run — it did not run before the update either"
+}
+test_a_runtime_that_ran_before_the_move_is_recorded_and_must_run_after_it() {
+  _mg_env; _mg_pg_setup; _mg_run 2>/dev/null
+  assert_eq "$(_get rtok.lmstudio)" 1
 }
 test_a_runtime_whose_program_cannot_be_found_is_said_not_counted_as_checked() {
   _mg_moved_and_verified; mkdir -p "$NEW/.state/runtimes/llamacpp"; echo x > "$NEW/.state/runtimes/llamacpp/note"
