@@ -23,7 +23,7 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainT
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import activity, admin, answers, appicons, appsso, brand, chatsearch, codeexport, feedback, icons, prices, recent, searchindex, settings_api, summary, updates, webapp
+from . import activity, admin, answers, appicons, appsso, brand, chatsearch, codeexport, feedback, icons, prices, recent, searchindex, settings_api, summary, uilayout, updates, webapp
 from . import code as codepage
 from . import settings as settings_mod
 from .config import CODE, TERMINAL, Settings
@@ -1631,6 +1631,35 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
         return _no_store(JSONResponse({"code": code, "chats": await recent_chats.get(request.app.state.http),
                                        "now": int(time.time())}))
 
+    # --- each person's layout of Home (static/widgets.js, portal/uilayout.py): which widgets show, in what order and how
+    # --- big, per kind of screen. One file in the state dir; the session and X-Requested-With like every change.
+    async def api_ui_layout_get(request: Request) -> Response:
+        if (deny := api_guard(request)) is not None:
+            return deny
+        return _no_store(JSONResponse(uilayout.load(settings.state_dir)))
+
+    async def api_ui_layout_put(request: Request) -> Response:
+        if (deny := api_guard(request)) is not None:
+            return deny
+        if settings.state_dir is None:
+            return _no_store(JSONResponse({"error": "this install keeps no state, so the layout is not saved"}, status_code=503))
+        body = b""
+        async for chunk in request.stream():
+            body += chunk
+            if len(body) > uilayout.MAX_BYTES:
+                return _no_store(JSONResponse({"error": "that layout is too big"}, status_code=413))
+        try:
+            doc = uilayout.merge(uilayout.load(settings.state_dir), json.loads(body or b"null"))
+            uilayout.save(settings.state_dir, doc)
+        except uilayout.LayoutError as e:
+            return _no_store(JSONResponse({"error": str(e)}, status_code=400))
+        except ValueError:
+            return _no_store(JSONResponse({"error": "bad request"}, status_code=400))
+        except OSError as e:
+            log.warning("ui layout: not saved: %s", e)
+            return _no_store(JSONResponse({"error": "the layout could not be saved on this computer"}, status_code=503))
+        return _no_store(JSONResponse(doc))
+
     versions = appicons.versions()   # (read once: a new icon after an update is a new ?v= and a new ETag)
 
     def brand_file(request: Request, path, media_type: str, version: str) -> Response:
@@ -1754,6 +1783,8 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
             Route("/api/search/index", api_search_index, methods=["GET"]),
             Route("/api/search/chats", api_search_chats, methods=["GET"]),
             Route("/api/continue", api_continue, methods=["GET"]),
+            Route("/api/ui/layout", api_ui_layout_get, methods=["GET"]),
+            Route("/api/ui/layout", api_ui_layout_put, methods=["PUT"]),
             Route("/api/chats/{cid}/rename", api_chat_rename, methods=["POST"]),
             Route("/api/chats/{cid}/archive", api_chat_archive, methods=["POST"]),
             Route("/api/chats/{cid}/delete", api_chat_delete, methods=["POST"]),
