@@ -434,15 +434,15 @@ upd_hash() {
 # What made a step run: the diff of trace.prev/NAME.note (or .same, when it was skipped) and trace/NAME.same.
 upd_trace_on() { [ -n "${DEVOS_ADE_UPD_TRACE:-}" ] || [ -f "$STATE_DIR/update/trace-on" ]; }
 _upd_trace() {   # ROLE NAME FILE
-  local d="$STATE_DIR/update/trace" line
+  local d="$STATE_DIR/update/trace"
   mkdir -p "$d" 2>/dev/null && chmod 700 "$d" 2>/dev/null || return 0
-  while IFS= read -r line; do
-    case "$line" in
-      '#'*) printf '# %s\n' "$(printf '%s' "$line" | cksum | awk '{ print $1 }')" ;;
-      [A-Za-z_]*=*) printf '%s=%s\n' "${line%%=*}" "$(printf '%s' "${line#*=}" | cksum | awk '{ print $1 }')" ;;
-      *) printf '%s\n' "$line" ;;
-    esac
-  done < "$3" > "$d/$2.$1" 2>/dev/null || true
+  # (one awk for the whole file, its own checksum of each value: a process for each line made a traced setup half a minute
+  # slower, and the profile beside it wrong)
+  LC_ALL=C awk 'BEGIN { for (i = 1; i < 256; i++) ord[sprintf("%c", i)] = i }
+    function sum(s,   h, i) { h = 7; for (i = 1; i <= length(s); i++) h = (h * 31 + ord[substr(s, i, 1)]) % 2147483647; return h }
+    /^#/ { print "# " sum($0); next }
+    /^[A-Za-z_][^=]*=/ { e = index($0, "="); print substr($0, 1, e - 1) "=" sum(substr($0, e + 1)); next }
+    { print }' "$3" > "$d/$2.$1" 2>/dev/null || true
   chmod 600 "$d/$2.$1" 2>/dev/null || true
 }
 # With the trace on, the setup's calls too: each docker, curl and sleep, one line each in trace/calls.tsv — its milliseconds,
