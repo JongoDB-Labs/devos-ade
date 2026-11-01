@@ -733,7 +733,8 @@ def widgets_views(ctx):
         tokens = [page.locator(f"iframe[data-app=terminal-{n}]").get_attribute("src") for n in (2, 3)]
         expect(all(re.search(rf"\?arg=view&arg={n}&arg=\d{{10}}-[0-9a-f]{{16}}-[0-9a-f]{{32}}$", t or "") for n, t in zip((2, 3), tokens)), f"the views' addresses: {tokens}")
         wait_text(f2, rf"^{mark}$", 20)
-        expect(mark not in term_text(view_frame(page, 3)), "after the reload the marker shows in view 3")
+        # (its output line: view 3 made the window w<marker> since, so the name is on its screen and in tmux's status line)
+        expect(not re.search(rf"^{mark}$", term_text(view_frame(page, 3)), re.M), "after the reload the marker's output shows in view 3")
         rec.save()
     finally:
         reset_layout(page)
