@@ -125,6 +125,26 @@ test_the_trace_says_which_input_changed_and_never_writes_a_value() {
   [ "$(stat -c %a "$STATE_DIR/update/trace" 2>/dev/null || stat -f %Lp "$STATE_DIR/update/trace")" = 700 ] || { echo "trace folder not private" >&2; return 1; }
 }
 
+test_the_call_profile_times_each_docker_curl_and_sleep_by_its_callers_and_keeps_no_argument() {
+  _um_setup
+  curl() { return 7; }; sleep() { :; }   # (the stubs stay what is called: the profile only times them)
+  upd_begin
+  [ ! -e "$STATE_DIR/update/trace/calls.tsv" ] || { echo "a profile without the switch" >&2; return 1; }
+  mkdir -p "$STATE_DIR/update"; : > "$STATE_DIR/update/trace-on"
+  upd_begin; upd_begin   # (a second begin wraps nothing twice)
+  um_starts() { docker compose -p proj-x -f "$STACK_DIR/compose.yaml" --profile p up -d portal 2> /dev/null; }
+  assert_eq "$(docker inspect --format '{{.Name}}' c1 c2)" "$(printf '%s\n%s' "$LITELLM_CTR" "$OWUI_CTR")"
+  rc=0; um_starts || rc=$?; assert_eq "$rc" "1"
+  rc=0; curl -H "Authorization: Bearer sk-secret" http://x/ || rc=$?; assert_eq "$rc" "7"
+  sleep 2
+  p="$(cat "$STATE_DIR/update/trace/calls.tsv")"
+  assert_eq "$(printf '%s\n' "$p" | wc -l | tr -d ' ')" "4"
+  assert_contains "$p" "	docker inspect	"; assert_contains "$p" "	docker compose.up	um_starts<"; assert_contains "$p" "	curl	"; assert_contains "$p" "	sleep	"
+  for v in sk-secret Authorization proj-x compose.yaml portal '{{' c1 http; do assert_not_contains "$p" "$v"; done
+  printf '%s\n' "$p" | awk -F '\t' '$1 !~ /^[0-9]+$/ { bad = 1 } END { exit bad }' || { echo "a time that is not milliseconds" >&2; return 1; }
+  [ "$(stat -c %a "$STATE_DIR/update/trace/calls.tsv" 2>/dev/null || stat -f %Lp "$STATE_DIR/update/trace/calls.tsv")" = 600 ] || { echo "profile not private" >&2; return 1; }
+}
+
 test_the_models_recheck_and_a_setup_without_begin_note_nothing() {
   _um_setup; UPD_RECORD=0; UPD_NOW=''
   upd_gate keys "keys" "w" true

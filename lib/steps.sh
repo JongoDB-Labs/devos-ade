@@ -261,6 +261,7 @@ upd_begin() {
   if [ -f "$f" ] && [ ! -L "$f" ]; then UPD_PREV="$(cat "$f" 2>/dev/null || true)"; fi
   rm -f "$f" 2>/dev/null || true
   if upd_trace_on; then rm -rf "${f%/*}/trace.prev"; mv "${f%/*}/trace" "${f%/*}/trace.prev" 2>/dev/null || true; fi
+  upd_prof_begin
 }
 upd_forget() { rm -f "$(upd_file)" 2>/dev/null || true; }
 # upd_commit — the setup succeeded: its digests become the state the next update compares with. A mark of the commit is
@@ -443,6 +444,46 @@ _upd_trace() {   # ROLE NAME FILE
     esac
   done < "$3" > "$d/$2.$1" 2>/dev/null || true
   chmod 600 "$d/$2.$1" 2>/dev/null || true
+}
+# With the trace on, the setup's calls too: each docker, curl and sleep, one line each in trace/calls.tsv — its milliseconds,
+# the command (docker's subcommand, compose's after it) and the four functions it was called from; never an argument, so never
+# a value. Where the steps that always run spend their time (JON-972: an update in 30 s), measured rather than guessed.
+# What is called stays what it was (a function of that name — a test's stub — or the program): it is only timed.
+_UPD_PROF=''
+upd_prof_begin() {
+  local d="$STATE_DIR/update/trace" n
+  upd_trace_on || return 0
+  mkdir -p "$d" 2>/dev/null && chmod 700 "$d" 2>/dev/null || return 0
+  : > "$d/calls.tsv" 2>/dev/null && chmod 600 "$d/calls.tsv" 2>/dev/null || return 0
+  [ -z "$_UPD_PROF" ] || { _UPD_PROF="$d/calls.tsv"; return 0; }   # (wrapped once: a wrapper of the wrapper would call itself)
+  _UPD_PROF="$d/calls.tsv"
+  for n in docker curl sleep; do
+    if [ "$(type -t "$n")" = function ]; then eval "_upd_prof_was_$n$(declare -f "$n" | sed '1s/^[^ (]*//')"
+    elif type -P "$n" > /dev/null 2>&1; then eval "_upd_prof_was_$n() { command $n \"\$@\"; }"
+    else continue; fi
+    eval "$n() { local _t _rc=0; _t=\"\$(_ms_now)\"; _upd_prof_was_$n \"\$@\" || _rc=\$?; _upd_prof \"\$_t\" $n \"\$@\"; return \"\$_rc\"; }"
+  done
+}
+_upd_prof() {   # START_MS NAME ARGS... — the line of one call
+  local t="$1" w="$2" pre="docker " a skip='' now
+  shift 2
+  if [ "$w" = docker ]; then
+    w="docker ?"
+    for a in "$@"; do
+      if [ -n "$skip" ]; then skip=''; continue; fi
+      case "$a" in
+        -f | -p | --file | --project-name | --profile | --env-file | --project-directory | --progress | --ansi | -H | --host | --context | --config | --log-level) skip=1 ;;
+        -*) ;;
+        compose) pre="docker compose."; w="${pre}?" ;;
+        up | down | ps | config | build | pull | push | exec | run | logs | images | create | start | stop | restart | rm | kill | port | top | version | ls | cp | wait | events | inspect | image | network | volume | container | info | buildx | builder | tag | save | load | system | context)
+          w="$pre$a"; break ;;
+        *) w="${pre}other"; break ;;
+      esac
+    done
+  fi
+  now="$(_ms_now)"
+  case "$t$now" in '' | *[!0-9]*) return 0 ;; esac
+  printf '%s\t%s\t%s<%s<%s<%s\n' "$((now - t))" "$w" "${FUNCNAME[2]:-main}" "${FUNCNAME[3]:-main}" "${FUNCNAME[4]:-main}" "${FUNCNAME[5]:-main}" >> "$_UPD_PROF" 2>/dev/null || true
 }
 upd_in_defaults() { upd_in_litellm_config; }
 upd_in_setupkey() { upd_in_keys; }

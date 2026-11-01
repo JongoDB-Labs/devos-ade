@@ -779,6 +779,13 @@ if [ "$MIGRATE" = 0 ] && [ "$FAST_CHECK" = 1 ]; then
     fi
     check "fast-apply-skips-$(printf '%s' "$want" | tr -c 'A-Za-z0-9' '-' | cut -c1-24)" "$([ -z "$why" ] && echo 0 || echo 1)" "$want: not run (nothing it reads changed)$why"
   done
+  # (where the time went: the apply's docker, curl and sleep calls, summed by command and the functions they came from — calls.tsv)
+  if [ -f "$tdir/trace/calls.tsv" ]; then
+    cp "$tdir/trace/calls.tsv" "$OUT/calls.tsv"
+    awk -F '\t' '{ k = $2 "\t" $3; ms[k] += $1; n[k]++; all += $1 } END { for (k in ms) printf "%d\t%d\t%s\n", ms[k], n[k], k; printf "%d\t%d\tall\n", all, NR }' \
+      "$OUT/calls.tsv" | sort -rn > "$OUT/calls-summary.tsv"
+    head -n 15 "$OUT/calls-summary.tsv" | while IFS= read -r l; do say "fast apply calls (ms, count, what, callers): $l"; done
+  fi
   check fast-apply-one-up "$([ "$(grep -c '^==> Services ([0-9]*).*ready' "$LOGS/fast-apply.log")" = 1 ] && echo 0 || echo 1)" "the services started in one phase"
   # the backup through docker exec: seconds, the same files
   T0="$(now)"; st backup > "$LOGS/fast-backup.log" 2>&1; n=$?; T1="$(now)"
