@@ -80,7 +80,7 @@ RUN set -eu; \
 # stops the build until both places are updated.
 ARG TTYD_PAGE_SCRIPT_SHA256=qpCL1JTmm6ktW0DnjpSILM7GnS2fO8/e+XjSlYJuQzQ=
 ARG TTYD_CLIPBOARD_SCRIPT_SHA256=iUPenlnB5SBdRL+lXj0I/ENbfNpYOI7jbZp3sqCZNBs=
-ARG TTYD_KEYS_SCRIPT_SHA256=vRmyI+NqAAFFXPOrz9EP1x+9WNz3WHdV1lyJpTKarl4=
+ARG TTYD_KEYS_SCRIPT_SHA256=xUpyd96j5++2gJNL9u5DQJCLG1XK9ba9GnT48oL2KXg=
 COPY ttyd-page.py ttyd-clipboard.js ttyd-keys.js /tmp/
 RUN set -eu; ttyd -p 7682 -i lo true >/dev/null 2>&1 & pid=$!; \
     for _ in 1 2 3 4 5 6 7 8 9 10; do curl -fsS -o /tmp/ttyd.html http://127.0.0.1:7682/ && break; sleep 0.5; done; \

@@ -13,14 +13,16 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   - **Up to four terminals.** **Add a terminal** puts another view in a split (side by side, stacked or 2 by 2; the dividers
     move by pointer or the arrow keys); **Close** only detaches, so its windows and programs stay. View 1 is the usual
     `claude` tmux session; views 2 to 4 attach sessions grouped with it (`view-2` to `view-4`), each with its own current
-    window, and tmux's status bar is each view's tab strip.
+    window (a shell, `shell-2` to `shell-4`, made when the view is), and tmux's status bar is each view's tab strip. A
+    terminal that connects — a view just added, or one reconnecting — leaves the keyboard where it was: on the page's
+    buttons, a divider or the commands' form, or in the terminal you were using.
   - **A key bar** for a phone's on-screen keyboard: Esc, Tab, Ctrl and Alt (held for the next key), the arrows, Home, End,
     PgUp, PgDn, Ctrl-C and Ctrl-b. It is on by default on a phone and a tablet, off on a desktop, and sends to the terminal
-    you used last; its buttons do not take the keyboard from the terminal.
+    you used last; its buttons do not take the keyboard from the terminal, and its Esc reaches a program as Esc.
   - **Quick commands:** add, edit and remove up to 20 (a name up to 40 characters, a command up to 200, printable only,
     checked by the portal). A click types the command into the terminal you used last; Enter is pressed only for one you
-    marked **Run**.
-  - **Projects:** your project folders, each with **Open a shell here**.
+    marked **Run**. At 20, Add a command is closed until one is removed.
+  - **Projects:** your project folders, each with **Open a shell here**: the folder's shell window, made the first time.
   - **Nothing changes until you do it.** The tab is one terminal with its Paste button, as before; the arrangement is kept
     for each kind of screen in the portal's layout file. A phone shows one terminal, as wide as the screen, and the key
     bar. The Terminal is a tab of the portal on a phone now (More, then Terminal; the full-screen window is still there),
@@ -37,7 +39,13 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   defaults unchanged, four views each with its own shell and surviving a reload, the key bar reaching only the focused view,
   quick commands, messages from other windows ignored, a shell in a project, keyboard only, no overlap, phone) and
   `terminal-customize` states in the UI and layout sweeps. A view's session outlives the check that opened it, so each
-  check starts its views at a clean prompt.
+  check starts its views at a clean prompt. The browser checks also catch, each with a check that fails without its fix: the
+  key bar's Esc reaching tmux as Alt with nothing (the terminal's report that it had the focus back came right after the
+  Esc: the bar now gives the terminal the keyboard before the key), a new view taking the keyboard from Add a terminal as
+  it connected (ttyd focuses its terminal each time it connects), Add a command left open at 20 commands, Open a shell
+  in the workspace doing nothing once two views had made shell windows of that name (`tmux new-window -S`: "multiple
+  windows named shell"), and the frames off their slots after a click in a terminal past the stage's bottom had scrolled
+  the stage (overflow: hidden scrolls; it is overflow: clip now).
 
 ## [0.47.0] - 2026-11-01
 

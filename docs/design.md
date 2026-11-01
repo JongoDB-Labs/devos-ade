@@ -233,7 +233,12 @@ stack. The rules, so a new card drops in without a new pattern:
   with `bnAnswers.launch("view", N)`, so every address carries the launch gate's one-time token and a reload makes fresh ones.
   The layout is per screen under `pages.terminal` (strict schema in uilayout.py; quick commands are page-level). The key bar
   and quick commands reach a view by `postMessage` to terminal/ttyd-keys.js only. Controls keep the terminal's focus
-  (pointer-down is not defaulted away), are 44 px on touch, and changes are announced in `#term-live`.
+  (their pointer-down's default is prevented; a click gives the terminal the keyboard back before its key, or the focus report that
+  follows would make tmux read an Esc as Alt), are 44 px on touch, and changes are announced in `#term-live`. ttyd focuses
+  its terminal each time it connects; ttyd-keys.js says whether a person's own click, tap or key put the focus there
+  (`navigator.userActivation`), and the page gives the keyboard back to its owner otherwise (a control of the page, or the
+  terminal a person or the page chose). The stage is `overflow: clip`: a hidden box still scrolls to show a clicked
+  terminal, and the frames, placed from the stage's corner, would be off their slots.
 - **A widget has a height of its own.** A list that can be long scrolls inside its card (`max-height` and
   `overflow-y: auto`: Continue's lists, the models table, What's new); a detail folds under a `<details>` (the
   *Details* of a setting, the models table, the credentials, *Show the rest* under the long read-only lists).

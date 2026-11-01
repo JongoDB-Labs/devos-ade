@@ -165,15 +165,20 @@
       h("button", { type: "button", class: "wg-btn tp-split-b", role: "radio", "data-split": k, "aria-checked": "false", text: t })));
   const termTools = h("div", { class: "tp-tools" }, addBtn, splitBox);
   const dividers = [];
+  function paintFocus() {
+    panes.forEach((p, i) => {
+      p.el.classList.toggle("tp-focus", i === focused && panes.length > 1);
+      if (i === focused) p.el.setAttribute("aria-current", "true"); else p.el.removeAttribute("aria-current");
+    });
+  }
   function paintViews() {
     const a = W.arrange(screen.views, screen.split, screen.weights);
     viewsBox.style.gridTemplateColumns = a.cols; viewsBox.style.gridTemplateRows = a.rows;
     panes.forEach((p, i) => {
       p.el.style.gridColumn = a.cells[i].col; p.el.style.gridRow = a.cells[i].row;
       p.close.hidden = panes.length < 2;
-      p.el.classList.toggle("tp-focus", i === focused && panes.length > 1);
-      if (i === focused) p.el.setAttribute("aria-current", "true"); else p.el.removeAttribute("aria-current");
     });
+    paintFocus();
     viewsBox.replaceChildren(...panes.map((p) => p.el));
     // dividers between two views (side by side or stacked): moved by dragging or the arrow keys
     dividers.length = 0;
@@ -250,6 +255,7 @@
   function back() {
     const f = paneFrame();
     if (!f) return;
+    owner = f;
     f.focus({ preventScroll: true });
     post(f, { type: "focus" });
   }
@@ -261,6 +267,10 @@
   keybar.addEventListener("click", (ev) => {
     const b = ev.target.closest("button");
     if (!b) return;
+    // (a pointer: the terminal has the keyboard again, before the key — after it, the terminal's report that it has the
+    // focus back would follow an Esc at once, and tmux reads the two as one key, Alt with nothing: ESC NUL. The keyboard's
+    // own Enter stays on its button)
+    if (ev.detail > 0) back();
     if (b.dataset.mod) {
       if (b.dataset.mod === "ctrl") ctrl = !ctrl; else alt = !alt;
       sendMods();
@@ -268,22 +278,37 @@
       post(paneFrame(), { type: "key", key: b.dataset.key });
       ctrl = alt = false; paintMods();
     }
-    if (ev.detail > 0) back();   // (a pointer: the terminal has the keyboard again; the keyboard's own Enter stays on its button)
   });
   function setFocus(i) {
     if (i < 0 || i >= panes.length || i === focused) return;
     if (ctrl || alt) { post(paneFrame(), { type: "mods", ctrl: false, alt: false }); ctrl = alt = false; paintMods(); }
     focused = i;
-    paintViews();
+    paintFocus();
+  }
+  // Who has the keyboard: a control of this page, or the terminal a person clicked, tapped or tabbed into, or the page gave
+  // it to (back(), Open a shell here). ttyd focuses its terminal each time it connects — a view just added, a reconnect —
+  // and that must not take the keyboard from its owner (keys typed in the commands' form would reach a shell): a terminal
+  // that says it has the focus without the person's own click, tap or key in it gives it back. With no owner (the tab
+  // just opened, the keyboard outside this page) it keeps it, as the plain tab's terminal always has.
+  let owner = null, heard = false;
+  document.addEventListener("focusin", (ev) => { owner = page.contains(ev.target) ? ev.target : null; }, true);
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Tab") owner = null; }, true);
+  function took(i, user) {
+    const f = panes[i].frame;
+    if (user || !owner || owner === f || !owner.isConnected || document.activeElement !== f) { owner = f; setFocus(i); return; }
+    const o = owner, j = panes.findIndex((p) => p.frame === o);
+    o.focus({ preventScroll: true });
+    if (j >= 0) post(o, { type: "focus" });
+    if (document.activeElement !== o) { owner = f; setFocus(i); }   // (its owner can no longer take it: hidden since)
   }
   window.addEventListener("message", (ev) => {
     const i = panes.findIndex((p) => p.frame.contentWindow === ev.source);
     if (i < 0 || ev.origin !== termOrigin || !ev.data || typeof ev.data !== "object") return;
-    if (ev.data.type === "focused") setFocus(i);
+    if (ev.data.type === "focused") { heard = true; took(i, ev.data.user !== false); }
     else if (ev.data.type === "mods" && i === focused) { ctrl = ev.data.ctrl === true; alt = ev.data.alt === true; paintMods(); }
   });
   // (a browser that does not say from inside the frame: the portal window loses the focus to the frame)
-  window.addEventListener("blur", () => setTimeout(() => setFocus(panes.findIndex((p) => p.frame === document.activeElement)), 0));
+  window.addEventListener("blur", () => setTimeout(() => { if (!heard) setFocus(panes.findIndex((p) => p.frame === document.activeElement)); }, 0));
 
   // --- quick commands ---
   const cmdList = h("ul", { class: "tp-cmds", "aria-label": "Quick commands" });
@@ -309,7 +334,9 @@
   }
   function closeForm(refocus) {
     form.hidden = true; cmdAdd.hidden = false; formIndex = null;
-    if (refocus) cmdAdd.focus();
+    cmdAdd.disabled = commands.length >= W.COMMANDS_MAX;
+    // (Add a command closed at the most commands: the focus goes to the last one)
+    if (refocus) (cmdAdd.disabled ? cmdList.querySelector("li:last-child .tp-cmd") : cmdAdd).focus();
   }
   cmdAdd.addEventListener("click", () => openForm(null));
   $q("#tp-cmd-cancel", form).addEventListener("click", () => closeForm(true));
@@ -338,7 +365,7 @@
     if (!b) return;
     const i = Number(b.dataset.index), c = commands[i];
     if (!c) return;
-    if (b.classList.contains("tp-cmd")) { post(paneFrame(), { type: "text", text: c.text, run: c.run === true }); if (ev.detail > 0) back(); }
+    if (b.classList.contains("tp-cmd")) { if (ev.detail > 0) back(); post(paneFrame(), { type: "text", text: c.text, run: c.run === true }); }
     else if (b.classList.contains("tp-edit")) openForm(i);
     else if (b.classList.contains("tp-remove")) {
       const r = W.removeCommand(commands, i);
@@ -372,7 +399,7 @@
     b.disabled = true;
     window.bnAnswers.launch("open", "shell", b.dataset.path === "/workspace" ? "" : b.dataset.path).then((url) => {
       const first = panes.find((p) => p.n === 1) || panes[0];
-      if (first) { first.frame.src = url; setFocus(panes.indexOf(first)); first.frame.focus(); }
+      if (first) { first.frame.src = url; setFocus(panes.indexOf(first)); owner = first.frame; first.frame.focus(); }
       say(`A shell opened in ${b.dataset.path}`);
     }, (e) => { if (e.message !== "signed out") toast(`Could not open it: ${e.message}`); }).finally(() => { b.disabled = false; });
   });
@@ -525,10 +552,11 @@
   const later = () => { if (placeQ) return; placeQ = true; requestAnimationFrame(() => { placeQ = false; place(); }); };
   function place() {
     if (!current || !on) return;
-    const box = stage.getBoundingClientRect();
+    // (the frames sit in the stage: from its top left corner, and where it is scrolled to — a browser without overflow: clip)
+    const box = stage.getBoundingClientRect(), y = stage.scrollTop, x = stage.scrollLeft;
     for (const p of panes) {
       const r = p.slot.getBoundingClientRect(), f = p.frame, s = f.style;
-      s.top = `${Math.round(r.top - box.top)}px`; s.left = `${Math.round(r.left - box.left)}px`;
+      s.top = `${Math.round(r.top - box.top + y)}px`; s.left = `${Math.round(r.left - box.left + x)}px`;
       s.width = `${Math.round(r.width)}px`; s.height = `${Math.round(r.height)}px`; s.right = "auto"; s.bottom = "auto";
       f.hidden = r.width < 2 || r.height < 2;
     }

@@ -11,8 +11,9 @@
 #   chat TOOL TOKEN [DIR]   the same window, shown alone in a session of its own grouped with "claude" (chat-TOOL…:
 #                           the Chat tab's embedded tool; "claude"'s current window stays what it was)
 #   view N TOKEN            the Terminal tab's Nth view (N 2 to 4; the first is "claude" itself): a session of its own
-#                           grouped with "claude", view-N — the same windows, its own current one — with a new shell window
-#                           made current in it when it is made. Closing a view only detaches it; the next TOKEN (the page
+#                           grouped with "claude", view-N — the same windows, its own current one — with a new shell window,
+#                           shell-N, made current in it when it is made (not "shell": that is the workspace's own, which
+#                           Open a shell here finds by its name). Closing a view only detaches it; the next TOKEN (the page
 #                           asks for a fresh one on a reload) attaches to what is there.
 # TOOL: bedrock (devos-claude), claude (claude-sub, your Claude plan), codex, gemini, copilot, cursor, grok, shell.
 # TOKEN: a launch token, <iat>-<16 hex>-<32 hex> — the portal makes one only on your click (in its own page, the Code
@@ -51,7 +52,7 @@ if [ "$mode" = view ]; then
     # (made only for a token that has not acted: a view closed with exit, reconnecting on its old token, is the plain attach)
     [ "$fresh" = 1 ] || plain
     tmux new-session -d -t "=$S" -s "$view" 2>/dev/null || plain
-    tmux new-window -t "=$view:" -n shell -c "$WS" "exec bash" 2>/dev/null || true
+    tmux new-window -t "=$view:" -n "shell-$tool" -c "$WS" "exec bash" 2>/dev/null || true
   fi
   exec tmux attach-session -t "=$view"
 fi

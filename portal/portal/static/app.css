@@ -40,7 +40,9 @@ html.nav-collapsed .nav-chev { transform: scaleX(-1); }   /* « collapses, » ex
   .nav-toggle { position: static; width: 100%; height: 40px; margin-top: -10px; }
 }
 
-.stage { position: relative; min-width: 0; height: 100vh; overflow: hidden; }
+/* (clip, not only hidden: a hidden box still scrolls — to show a focused or clicked terminal that runs past its bottom —
+   and that moves Who answers' bar and leaves the Terminal page's frames off their slots; hidden for a browser without clip) */
+.stage { position: relative; min-width: 0; height: 100vh; overflow: hidden; overflow: clip; }
 .frames iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--surface); }
 .frames iframe[data-app="terminal"] { background: #14110e; }   /* the terminal is Ink in both themes (terminal/bin/bn-terminal) */
 /* Who answers (answers.js): one bar above the Terminal tab and the Chat tab; their frames start below it. */

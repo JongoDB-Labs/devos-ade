@@ -379,11 +379,12 @@ test_bn_session_takes_only_its_words() {
   assert_contains "$out" "tmux select-window -t =chat-gemini-sub-$h:=gemini-sub-$h"
   assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux attach-session -t =chat-gemini-sub-$h"
   # view N (the Terminal tab's views 2 to 4): a session grouped with "claude" (its status line kept: it is the view's tab
-  # strip), a new shell window made current in it, then the attach
+  # strip), a new shell window made current in it — shell-N, not the workspace's "shell" that Open a shell here finds by
+  # its name — then the attach
   local V1="$now-aaaaaaaaaaaaaaaa-$M" V2="$now-bbbbbbbbbbbbbbbb-$M" V3="$now-cccccccccccccccc-$M" V4="$now-dddddddddddddddd-$M"
   out="$(_run view 2 "$V1")"
   assert_contains "$out" "tmux new-session -d -t =claude -s view-2"
-  assert_contains "$out" "tmux new-window -t =view-2: -n shell -c $ws exec bash"
+  assert_contains "$out" "tmux new-window -t =view-2: -n shell-2 -c $ws exec bash"
   assert_not_contains "$out" "status off"
   assert_not_contains "$out" "select-window"
   assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux attach-session -t =view-2"
@@ -397,6 +398,7 @@ test_bn_session_takes_only_its_words() {
   # the other views are sessions of their own
   out="$(_run view 4 "$V3")"
   assert_contains "$out" "tmux new-session -d -t =claude -s view-4"
+  assert_contains "$out" "tmux new-window -t =view-4: -n shell-4 -c $ws exec bash"
   assert_eq "$(printf '%s\n' "$out" | tail -n 1)" "tmux attach-session -t =view-4"
   # a token acts once: a view that is gone does not come back on its old token (the plain attach), a new one makes it
   rm -f "$TMP/made.view-4"
