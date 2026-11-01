@@ -88,6 +88,11 @@
   }
 
   window.addEventListener("message", onMessage);
+  // ttyd's "Close terminal?" prompt, off from the start. ttyd adds its beforeunload listener when its terminal opens and takes
+  // it away only once the server's settings arrive (disableLeaveAlert=true: bin/bn-terminal); a page that frames this one and
+  // reloads in between (the portal, the Code page) had Chrome block that prompt, with an error in the console. At the window
+  // a listener of the capture phase runs before ttyd's, whichever came first, and keeps ttyd's from running at all.
+  window.addEventListener("beforeunload", function (e) { e.stopImmediatePropagation(); }, true);
   var pressed = -Infinity;   // (when a person last pressed a pointer in this page: the click or tap that gives it the focus)
   document.addEventListener("pointerdown", function (e) { if (e.isTrusted) pressed = Date.now(); }, true);
   window.addEventListener("focus", function () { tell({ type: "focused", user: Date.now() - pressed < 1500 }); });

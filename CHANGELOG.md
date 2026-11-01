@@ -13,6 +13,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   default** and **Done**; the help text waits until you are back at the top, and the status line is still read out), and
   while you customize the page keeps room for it, so Tab and scrolling to a handle land below the tray. Home and the
   Terminal page.
+- **Reloading a page with a terminal in it no longer trips ttyd's leave prompt.** ttyd asks "Close terminal?" before a page
+  is left until the server tells it not to (it always does here); a reload of the portal or the Code page in that first
+  moment had Chrome block the prompt and log an error. The terminal's page now turns the prompt off from the start.
 
 ## [0.48.0] - 2026-11-01
 

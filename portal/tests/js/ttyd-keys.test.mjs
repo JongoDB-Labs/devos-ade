@@ -11,18 +11,18 @@ const src = readFileSync(fileURLToPath(new URL("../../../terminal/ttyd-keys.js",
 const ORIGIN = "https://devos-ade.example";
 
 function page({ ancestors = [ORIGIN], ready = true, now } = {}) {
-  const sent = [], told = [], listeners = {}, docListeners = {};
+  const sent = [], told = [], listeners = {}, docListeners = {}, captured = {};
   const parent = { postMessage: (m, o) => told.push([JSON.parse(JSON.stringify(m)), o]) };
   const term = { input: (d) => sent.push(["input", d]), paste: (t) => sent.push(["paste", t]), focus: () => sent.push(["focus"]) };
   const window = {
     parent, location: { ancestorOrigins: ancestors },
-    addEventListener: (t, f) => { (listeners[t] ||= []).push(f); },
+    addEventListener: (t, f, capture) => { (listeners[t] ||= []).push(f); if (capture === true) (captured[t] ||= []).push(f); },
   };
   if (ready) window.term = term;
   const document = { addEventListener: (t, f, capture) => { assert.equal(capture, true); (docListeners[t] ||= []).push(f); } };
   vm.runInContext(src, vm.createContext({ window, document, Object, Date: now ? { now } : Date }));
   return {
-    sent, told, parent, window,
+    sent, told, parent, window, listeners, captured,
     say: (data, source = parent, origin = ORIGIN) => listeners.message.forEach((f) => f({ data, source, origin })),
     focus: () => listeners.focus.forEach((f) => f({})),
     pointerdown: (e) => docListeners.pointerdown.forEach((f) => f(e)),
@@ -185,4 +185,13 @@ test("it cannot do more than the table: no eval, no network, no markup, no stora
   for (const bad of ["eval(", "new Function", "fetch(", "XMLHttpRequest", "WebSocket", "innerHTML", "document.write", "localStorage", "cookie", "</script"])
     assert.ok(!src.includes(bad), bad);
   assert.ok(!src.includes("\r"), "no carriage returns: the pinned hash is over the text as served");
+});
+
+test("ttyd's leave prompt never runs: a capturing beforeunload listener stops the event before ttyd's own", () => {
+  const p = page();
+  assert.equal((p.captured.beforeunload || []).length, 1);
+  const ev = { prevented: false, cut: false, preventDefault() { this.prevented = true; }, stopImmediatePropagation() { this.cut = true; } };
+  p.captured.beforeunload[0](ev);
+  assert.equal(ev.cut, true);          // (ttyd's listener, of the bubble phase, is not called after this)
+  assert.equal(ev.prevented, false);   // (and it asks for no prompt itself)
 });
