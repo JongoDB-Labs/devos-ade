@@ -4090,10 +4090,11 @@ def ui_cost_and_state(ctx):
     see(page.locator("[data-testid=git-file][data-path='j512-change.txt']")).to_have_count(1, timeout=30000)
     shot(page, "j512-git-above-desktop")
     page.get_by_test_id("git-repo").select_option("")
+    csp_clean(page, rec)
+    # (then the clean-up: the page, still open, may list a folder again as it goes — a 404 of the check's own making)
     _drop_projects(c, (outer, sub))
     c.api("DELETE", f"/api/fs?path={outer}")
     c.api("DELETE", f"/api/fs?path={J512}")
-    csp_clean(page, rec)
     return (f"default {HAIKU} (Settings'), never Opus; a pick ({sonnet or 'none'}) kept for the sign-in and taken by a second browser; "
             f"waiting for you while a card waits (chip, prompt box, title; the card focused, in view) on a desktop and a phone; "
             f"the turn cost {live['turn']} live and after a reload; the picker's models first; the Git panel's repository inside and around a folder")
