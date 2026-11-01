@@ -24,7 +24,7 @@ const DOCKS = ['left', 'center', 'right', 'bottom'];
 const PLACED = ['explorer', 'search', 'git', 'sessions', 'editor', 'terminal', 'chat'];
 const WIDGETS = [...PLACED, 'status'];
 const SIZE = { left: [160, 900], center: [0, 0], right: [160, 900], bottom: [120, 720] };
-const STACK = [80, 2000];
+const STACK = [120, 2000];
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const only = (o, keys, what) => {
   for (const k of Object.keys(o)) if (!keys.includes(k)) throw new PrefsError(400, `${what}: unknown field ${JSON.stringify(k.slice(0, 40))}`);

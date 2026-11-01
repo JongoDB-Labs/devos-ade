@@ -7,8 +7,13 @@
 .dock-body { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .dock-body.across { flex-direction: row; }
 .dock-item { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative; }
-.dock-body.stacked > .dock-item { min-height: 80px; }
-.dock-body.stacked.across > .dock-item { min-height: 0; min-width: 80px; }
+/* stacked: a widget keeps what it shows inside its box (its body scrolls) and is never squeezed under 120 px; when the
+   widgets need more than the dock has, the dock scrolls (they once spilled into each other and over the status bar) */
+.dock-body.stacked { overflow-y: auto; }
+.dock-body.stacked > .dock-item { min-height: 120px; overflow: hidden; }
+.dock-body.stacked > .dock-item > .wd-body { overflow: auto; }
+.dock-body.stacked.across { overflow-y: hidden; overflow-x: auto; }
+.dock-body.stacked.across > .dock-item { min-height: 0; min-width: 120px; }
 .wd-body { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .col-bottom.col-fill { flex: 1; }
 .wd-status { flex: none; min-width: 0; display: flex; flex-direction: column; }
@@ -50,4 +55,9 @@
 .dock-body.across > .wd.drop-after::after { top: 0; bottom: 0; right: 0; width: 3px; }
 .side-tabs button.drop-before { box-shadow: inset 3px 0 0 var(--accent); }
 .side-tabs button.drop-after { box-shadow: inset -3px 0 0 var(--accent); }
+/* touch: the header as tall as its 36 px buttons and a grip you can catch (a 28 px header let them poke into the widget above) */
+@media (pointer: coarse) {
+  .wd-head { height: 44px; }
+  .wd-grip { width: 40px; height: 40px; }
+}
 @media (prefers-reduced-motion: reduce) { .wd-dragging, .wd-grip, .wd-edit { transition: none; } }

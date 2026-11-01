@@ -973,7 +973,8 @@ splitter between them; you pick that per dock. In Customize each widget has a sm
   next dock and `Alt+↑/↓` for a place along its dock. The chat can sit in the left dock, the right dock or the centre,
   and cannot be hidden.
 - **Resize:** the splitters of the docks and between stacked widgets as always, or `Shift+arrows` on a focused widget.
-  Each keeps its minimum (the chat 320 px, the centre 320 px).
+  Each keeps its minimum (the chat 320 px, the centre 320 px, a stacked widget 120 px, which scrolls what it holds); a
+  dock whose stacked widgets need more than the window has scrolls.
 - **Hide:** the eye, or `H`. The **Widgets** tray under the top bar lists what is hidden, each with **Add back**; the
   terminal and the explorer's shortcuts (`Ctrl+\``, `Ctrl/⌘+B`, `Ctrl/⌘+Shift+F`, `Ctrl/⌘+Shift+G`) still open theirs,
   and show them again.

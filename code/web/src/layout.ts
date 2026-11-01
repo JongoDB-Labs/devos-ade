@@ -45,7 +45,7 @@ export const BOUNDS = {
 /** The widest a side dock may be saved (the chat in it needs more than an explorer: dockBounds). */
 const SIDE_RANGE = [160, 900] as const;
 /** A stacked widget's own height (width, in the bottom dock). */
-export const STACK_BOUNDS = [80, 2000] as const;
+export const STACK_BOUNDS = [120, 2000] as const;
 export const STACK_DEFAULT = 240;
 /** The centre column keeps at least this much (the editor rule) when it is drawn. */
 export const CENTER_MIN = 320;

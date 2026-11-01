@@ -90,7 +90,7 @@ test('layout: known widgets and docks only, every widget once, the chat never hi
   assert.deepEqual(layoutOf({ desktop: layoutOne(), tablet: null }), { desktop: layoutOne(), tablet: null });
   assert.deepEqual(layoutOf(null), { desktop: null, tablet: null });
   assert.deepEqual(layoutOf({}), {});
-  // sizes are clamped, not refused: a dock to what it may be, a stacked widget to 80 to 2000 px
+  // sizes are clamped, not refused: a dock to what it may be, a stacked widget to 120 to 2000 px
   const big = deviceLayoutOf(layoutOne({
     docks: { ...layoutOne().docks, left: { mode: 'stack', size: 99999, open: false, active: null }, bottom: { mode: 'tabs', size: 3, open: true, active: 'terminal' }, center: { mode: 'tabs', size: 500, open: true, active: 'editor' } },
     sizes: { git: 5, search: 99999.4 },
@@ -98,7 +98,7 @@ test('layout: known widgets and docks only, every widget once, the chat never hi
   assert.equal(big.docks.left.size, 900);
   assert.equal(big.docks.bottom.size, 120);
   assert.equal(big.docks.center.size, 0, 'the centre takes what is left');
-  assert.deepEqual(big.sizes, { git: 80, search: 2000 });
+  assert.deepEqual(big.sizes, { git: 120, search: 2000 });
   const dock = (d, v) => ({ ...layoutOne().docks, [d]: { ...layoutOne().docks[d], ...v } });
   const bad = [
     null, [], 'x', 5, {},

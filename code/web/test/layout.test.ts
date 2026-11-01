@@ -91,7 +91,7 @@ test('validation: unknown ids, docks and modes are dropped, sizes clamped, a wid
   assert.equal(l.docks.right.open, false);
   assert.deepEqual(l.hidden.sort(), ['git', 'status']);
   assert.ok(!l.hidden.includes('chat'));
-  assert.deepEqual(l.sizes, { git: 2000, search: 80, chat: 120 });
+  assert.deepEqual(l.sizes, { git: 2000, search: 120, chat: 120 });
   assert.equal(l.pane, 'left');
   // it is a fixed point: what was healed reads back the same, through JSON too
   assert.deepEqual(parseLayout(JSON.parse(JSON.stringify(l)), 'desktop'), l);
@@ -209,7 +209,7 @@ test('tabs or stacked: per dock; stacked widgets all show, tabs show the one sel
   assert.equal(s.docks.left.mode, 'stack');
   assert.equal(setMode(s, 'left', 'stack'), s);
   assert.deepEqual(arrange(s, 'desktop', { vw: 1440, noTabs: false, editing: false }).shown.left, ['explorer', 'search', 'git', 'sessions']);
-  assert.equal(setWidgetSize(s, 'explorer', 5).sizes.explorer, 80);
+  assert.equal(setWidgetSize(s, 'explorer', 5).sizes.explorer, 120);
   assert.equal(setWidgetSize(s, 'explorer', 99999).sizes.explorer, 2000);
   assert.equal(setWidgetSize(s, 'explorer', 300).sizes.explorer, 300);
   assert.equal(setWidgetSize(setWidgetSize(s, 'explorer', 300), 'explorer', 300).sizes.explorer, 300);
