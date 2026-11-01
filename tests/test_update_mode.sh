@@ -10,6 +10,7 @@ _um_setup() {
   printf 'big\n' > "$STACK_DIR/litellm/enabled-models.txt"; printf 'big\tchat\tENABLED\n' > "$STACK_DIR/litellm/probe-results.tsv"
   printf 'LITELLM_PORT=4000\nAWS_REGION_NAME=us-east-1\nPORTAL_PASSWORD=pw\nLITELLM_KEY_SETUP=sk-a\nLITELLM_KEY_CLAUDE_CODE=sk-b\nLITELLM_KEY_OPENWEBUI=sk-c\nOPENWEBUI_API_KEY=sk-d\nLITELLM_DB_ADMIN_READY=true\n' > "$ENV_FILE"
   PRICES_DIR="$TMP/prices"; mkdir -p "$PRICES_DIR"; : > "$PRICES_DIR/prices.meta.json"
+  cp "$T_ROOT/tests/fixtures/prices.tsv" "$STACK_DIR/catalog/prices.tsv"; PRICES_CATALOG="$STACK_DIR/catalog/prices.tsv"; use_best_prices   # (as the prices step leaves them)
   LITELLM_CTR="/p-litellm-1 L1 2026-11-01T10:00:00Z"; OWUI_CTR="/p-open-webui-1 O1 2026-11-01T10:00:00Z"; PORTAL_ID=P1
   dc() { case "$*" in "ps -q litellm open-webui") printf 'c1\nc2\n' ;; esac; return 0; }
   docker() { case "$1 $2" in "inspect --format") printf '%s\n%s\n' "$LITELLM_CTR" "$OWUI_CTR" ;; *) echo "unexpected docker $*" >&2; return 1 ;; esac; }
@@ -106,4 +107,40 @@ test_the_models_recheck_and_a_setup_without_begin_note_nothing() {
   _um_setup; UPD_RECORD=0; UPD_NOW=''
   upd_gate keys "keys" "w" true
   assert_eq "$UPD_NOW" ""
+}
+
+# The start: an update whose settings, keys and voice did not change starts the services with ONE compose up; otherwise the
+# phases in their order (Postgres + RustFS, then LiteLLM). Compose's depends_on keeps Postgres before the LiteLLM migrations.
+_um_bringup() { # _um_bringup [update] -> the calls setup_bringup_and_probe made
+  _um_setup
+  local en="$STACK_DIR/litellm/enabled-models.txt"
+  ensure_prices_dir() { :; }; setup_build_images() { :; }; _setup_prices() { :; }; render_config() { echo RENDER >> "$TMP/calls"; }
+  _setup_downloads() { :; }; _setup_owui_image() { :; }; _setup_websearch_render() { :; }; ensure_portal_reachable() { :; }
+  probe_reusable() { echo "1 min"; }; ensure_virtual_key() { echo "KEY $2" >> "$TMP/calls"; }
+  run_phase() { echo "PHASE $1" >> "$TMP/calls"; "${@:3}" > /dev/null 2>&1 || true; }
+  up_front() { echo "UP $*" >> "$TMP/calls"; }; up_services() { echo "UPSVC $*" >> "$TMP/calls"; }; _up_data_services() { echo DATA >> "$TMP/calls"; }
+  websearch_builtin_on() { return 1; }; localgit_on() { return 1; }
+  _GATES="$_GATES setupkey"; _um_run > /dev/null   # (a setup that ran every step: the digests the update compares with; the stubs are part of them)
+  [ -z "${2:-}" ] || printf '%s\n' "$2" >> "$ENV_FILE"
+  : > "$TMP/calls"; : > "$TMP/ran"
+  upd_begin; UPD_MODE=0; [ "${1:-}" != update ] || { UPD_MODE=1; UPD_SETTINGS_SKIPPED=1; }
+  setup_bringup_and_probe 2> "$TMP/err"; : "$en"
+  tr '\n' ';' < "$TMP/calls"
+}
+test_an_update_with_nothing_changed_starts_the_services_with_one_compose_up() {
+  out="$(_um_bringup update)"
+  assert_contains "$out" "UP postgres rustfs litellm open-webui shared-mcp portal caddy;"
+  assert_eq "$(printf '%s' "$out" | grep -o 'UP ' | wc -l | tr -d ' ')" "1"
+  assert_not_contains "$out" "PHASE Postgres + RustFS"
+  assert_not_contains "$out" "UPSVC"
+  assert_not_contains "$out" "RENDER"                     # the config was not rendered again either
+  assert_not_contains "$out" "KEY setup"                  # nor the setup key checked
+  assert_contains "$(cat "$TMP/err")" "LiteLLM setup key: not run"
+}
+test_setup_by_itself_and_an_update_with_a_changed_key_start_the_services_in_phases() {
+  out="$(_um_bringup)"
+  assert_contains "$out" "PHASE Postgres + RustFS"; assert_not_contains "$out" "UP postgres"
+  # a changed budget (the keys' inputs): the phases, so the key is made before Open WebUI starts with it
+  out="$(_um_bringup update BUDGET_SETUP=9)"
+  assert_not_contains "$out" "UP postgres"
 }

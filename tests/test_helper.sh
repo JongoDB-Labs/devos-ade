@@ -673,3 +673,15 @@ test_helper_limits_ignore_non_numeric_settings() {
   for i in 1 2 3 4 5 6 7 8 9 10 11 12; do printf '%s clean\n' $((now - 100 * i)) >> "$(helper_dir)/jobs"; done
   assert_contains "$(helper_limits clean 2>&1 || true)" "limit of 12 actions a day"
 }
+
+# a step setup's update mode did not run is a step of its own on the card, with "skipped" for its time (lib/steps.sh upd_gate)
+test_job_steps_show_a_skipped_step_with_skipped_as_its_time() {
+  JOB_ID=j3; JOB_STEPS_ID=''; JOB_STEPS_SIZE=''
+  printf '%s\n' '==> update: 4/4 setup (non-interactive; keeps .env, keys and AWS creds; runs only the steps whose inputs changed)' \
+    '==> Prices: not run — the prices were checked in the last 12 hours and the portal image did not change' '==> Prices ready (skipped)' \
+    '==> Services (8): starting…' > "$TMP/log"
+  _job_steps "$TMP/log"
+  assert_eq "$JOB_STEPS_JSON" '[{"label": "Prices", "took": "skipped"}]'
+  assert_eq "$JOB_STEP" "Services (8)"
+  assert_eq "$(_phase_of "$TMP/log" | cut -f1)" "restarting"
+}
