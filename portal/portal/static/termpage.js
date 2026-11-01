@@ -480,7 +480,8 @@
       if (bar) bar.hidden = !editing;
       nodes.push(w);
     }
-    grid.replaceChildren(...nodes);
+    // (put back only when the order changed: a widget taken out and put back loses the keyboard — Add a terminal pressed)
+    if (nodes.length !== grid.children.length || nodes.some((n, i) => grid.children[i] !== n)) grid.replaceChildren(...nodes);
   }
   function paintTray() {
     tray.hidden = !editing;

@@ -702,7 +702,7 @@ def widgets_views(ctx):
             expect(b["frame"] and all(abs(a - c) <= 2 for a, c in zip(b["slot"], b["frame"])), f"view {b['view']}'s frame is not over its slot: {b}")
         # a resize: the window made smaller, every frame follows its slot and xterm fits the new size
         cols = {n: frames[n].evaluate("() => window.term.cols") for n in (2, 3, 4)}
-        page.set_viewport_size({"width": 1000, "height": 700})
+        page.set_viewport_size({"width": 1100, "height": 700})   # (still a desktop: under 1100 px the tablet's own arrangement)
         page.wait_for_timeout(1200)
         for b in page.evaluate(BOXES):
             expect(b["frame"] and all(abs(a - c) <= 2 for a, c in zip(b["slot"], b["frame"])), f"after the resize view {b['view']}'s frame is not over its slot: {b}")
@@ -759,6 +759,9 @@ def widgets_key_bar(ctx):
         # (the terminal echoes Esc as ^[ but a Tab as spacing: cat shows ^I once Enter sends it the line). Esc arrives alone:
         # the terminal's report that it has the focus back came after it once, and tmux read the two as Alt with nothing (^[^@)
         page.click("[data-key=tab]")
+        # (the Tab is a message to the frame and the Enter a key: the browser may take the key first, so Enter waits for the
+        # Tab's echo — the cursor at the next tab stop)
+        f2.wait_for_function("() => window.term.buffer.active.cursorX >= 8", timeout=5000)
         page.keyboard.press("Enter")
         wait_text(f2, r"^\^\[\^I$")
         page.wait_for_timeout(600)
@@ -1019,7 +1022,7 @@ def widgets_layout(ctx):
     finally:
         page.set_viewport_size({"width": 1280, "height": 800})
         reset_layout(page)
-    return "all widgets and four terminals at 1440, 1100 and 900 px: every frame over its slot, no two frames or widgets overlap, nothing clipped, no sideways scroll"
+    return "all widgets and four terminals at 1440 and 1100 px, the tablet's own arrangement at 900: every frame over its slot, no two frames or widgets overlap, nothing clipped, no sideways scroll, the stage never scrolled"
 
 
 @check("browser", "terminal-widgets-phone-and-desktop-stay-apart")

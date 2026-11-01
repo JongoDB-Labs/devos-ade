@@ -10,21 +10,22 @@ import { fileURLToPath } from "node:url";
 const src = readFileSync(fileURLToPath(new URL("../../../terminal/ttyd-keys.js", import.meta.url)), "utf8");
 const ORIGIN = "https://devos-ade.example";
 
-function page({ ancestors = [ORIGIN], ready = true, activation } = {}) {
+function page({ ancestors = [ORIGIN], ready = true, now } = {}) {
   const sent = [], told = [], listeners = {}, docListeners = {};
   const parent = { postMessage: (m, o) => told.push([JSON.parse(JSON.stringify(m)), o]) };
   const term = { input: (d) => sent.push(["input", d]), paste: (t) => sent.push(["paste", t]), focus: () => sent.push(["focus"]) };
   const window = {
-    parent, location: { ancestorOrigins: ancestors }, navigator: activation ? { userActivation: activation } : {},
+    parent, location: { ancestorOrigins: ancestors },
     addEventListener: (t, f) => { (listeners[t] ||= []).push(f); },
   };
   if (ready) window.term = term;
   const document = { addEventListener: (t, f, capture) => { assert.equal(capture, true); (docListeners[t] ||= []).push(f); } };
-  vm.runInContext(src, vm.createContext({ window, document, Object }));
+  vm.runInContext(src, vm.createContext({ window, document, Object, Date: now ? { now } : Date }));
   return {
     sent, told, parent, window,
     say: (data, source = parent, origin = ORIGIN) => listeners.message.forEach((f) => f({ data, source, origin })),
     focus: () => listeners.focus.forEach((f) => f({})),
+    pointerdown: (e) => docListeners.pointerdown.forEach((f) => f(e)),
     keydown: (e) => { const ev = { isTrusted: true, isComposing: false, preventDefault() { ev.stopped = true; }, stopImmediatePropagation() { ev.cut = true; }, ...e }; docListeners.keydown.forEach((f) => f(ev)); return ev; },
   };
 }
@@ -158,20 +159,26 @@ test("Ctrl held, then a letter typed in the terminal: that Ctrl-letter, once", (
 test("it says to the frame that it has the focus, to the frame's origin only", () => {
   const p = page();
   p.focus();
-  assert.deepEqual(p.told, [[{ type: "focused", user: true }, ORIGIN]]);
+  assert.deepEqual(p.told, [[{ type: "focused", user: false }, ORIGIN]]);
   const q = page({ ancestors: [] });
   q.focus();
   assert.deepEqual(q.told, []);
 });
 
-test("it says whether the person's own click, tap or key put the focus there", () => {
+test("it says whether a person's click or tap in the terminal put the focus there", () => {
   // (ttyd focuses its terminal as it connects, without anyone: the frame gives the keyboard back to where it was)
-  const p = page({ activation: { isActive: false } });
+  const p = page();
+  p.pointerdown({ isTrusted: true });
   p.focus();
-  assert.deepEqual(p.told, [[{ type: "focused", user: false }, ORIGIN]]);
-  const q = page({ activation: { isActive: true } });
+  assert.deepEqual(p.told, [[{ type: "focused", user: true }, ORIGIN]]);
+  // not a script's pointer event, nor a press long before
+  const q = page();
+  q.pointerdown({ isTrusted: false });
   q.focus();
-  assert.deepEqual(q.told, [[{ type: "focused", user: true }, ORIGIN]]);
+  const r = page({ now: () => r.t });
+  r.t = 1000; r.pointerdown({ isTrusted: true });
+  r.t = 2600; r.focus();
+  assert.deepEqual([...q.told, ...r.told].map(([m]) => m.user), [false, false]);
 });
 
 test("it cannot do more than the table: no eval, no network, no markup, no storage", () => {

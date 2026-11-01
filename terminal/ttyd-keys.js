@@ -12,9 +12,10 @@
 //   {type: "text", text, run}      up to 4 KB of printable characters and tabs, pasted as the Paste button does; Enter
 //                                  after it only when run is true. No escape, no newline, no other control character.
 //   {type: "focus"}                the terminal takes the keyboard back (a button was pressed)
-// Anything else is ignored without a word. It says back to the frame only that this terminal has the focus — and whether the
-// person's own click, tap or key in it put it there (user: false is ttyd focusing its terminal as it connects, or the
-// frame giving it the focus) — and that Ctrl and Alt were used up.
+// Anything else is ignored without a word. It says back to the frame only that this terminal has the focus — and whether a
+// person's click or tap in it put it there (user: false is ttyd focusing its terminal as it connects, or the frame giving
+// it the focus; navigator.userActivation cannot tell: a key pressed in the portal a moment before counts in here too) —
+// and that Ctrl and Alt were used up.
 (function () {
   "use strict";
   var MAX_TEXT = 4096;
@@ -87,9 +88,8 @@
   }
 
   window.addEventListener("message", onMessage);
-  window.addEventListener("focus", function () {
-    var a = window.navigator && window.navigator.userActivation;   // (a browser without it: as if the person did)
-    tell({ type: "focused", user: a ? a.isActive === true : true });
-  });
+  var pressed = -Infinity;   // (when a person last pressed a pointer in this page: the click or tap that gives it the focus)
+  document.addEventListener("pointerdown", function (e) { if (e.isTrusted) pressed = Date.now(); }, true);
+  window.addEventListener("focus", function () { tell({ type: "focused", user: Date.now() - pressed < 1500 }); });
   document.addEventListener("keydown", typed, true);
 })();
