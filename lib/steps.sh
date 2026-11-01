@@ -428,7 +428,7 @@ upd_in_setupkey() { upd_in_keys; }
 upd_same() {
   local prev now
   [ "$UPD_MODE" = 1 ] || return 1
-  prev="$(printf '%s\n' "$UPD_PREV" | awk -F'\t' -v n="$1" '$1 == n { print $2; exit }')"
+  prev="$(printf '%s\n' "$UPD_PREV" | awk -F'\t' -v n="$1" '!f && $1 == n { print $2; f = 1 }')"
   [ -n "$prev" ] || return 1
   UPD_H="$(upd_hash "$1")"
   [ -n "$UPD_H" ] && [ "$UPD_H" = "$prev" ]

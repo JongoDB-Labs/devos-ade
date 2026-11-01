@@ -772,7 +772,9 @@ test_every_caddy_up_checks_the_port_forward() {
   for f in _terminal_front _terminal_up; do
     assert_contains "$(sed -n "/^$f() {/,/^}/p" "$T_ROOT/lib/terminal.sh")" "ensure_portal_reachable"
   done
-  assert_contains "$(sed -n '/^setup_keys_and_ui() {/,/^}/p' "$T_ROOT/lib/commands.sh" | grep -A1 'up_front open-webui portal caddy shared-mcp')" "_setup_portal_signin"
+  assert_contains "$(sed -n '/^setup_keys_and_ui() {/,/^}/p' "$T_ROOT/lib/commands.sh" | grep -A8 'up_front open-webui portal caddy shared-mcp')" "_setup_portal_signin"
+  # (an update that starts everything at once checks the forward right after that start)
+  assert_contains "$(sed -n '/^_setup_start_all() {/,/^}/p' "$T_ROOT/lib/commands.sh")" "ensure_portal_reachable"
   assert_eq "$(sed -n '/^_setup_portal_signin() {/,/^}/p' "$T_ROOT/lib/commands.sh" | sed -n 2p | awk '{ print $1 }')" "ensure_portal_reachable"
   # a Settings change that restarts Caddy, and ./stack restart caddy, check it before the portal is used
   assert_contains "$(sed -n '/^_cfg_post() {/,/^}/p' "$T_ROOT/lib/settings.sh")" '*" caddy "*) ensure_portal_reachable'

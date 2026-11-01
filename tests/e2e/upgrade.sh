@@ -730,7 +730,8 @@ if [ "$MIGRATE" = 0 ] && [ "$FAST_CHECK" = 1 ]; then
   check fast-rollback-ran "$n" "./stack rollback after the fast apply: exit $n"
   check fast-rollback-code "$([ "$(git -C "$STACK" describe --tags --always 2>/dev/null)" = "$(cat "$OUT/before/version")" ] && echo 0 || echo 1)" "code: $(git -C "$STACK" describe --tags --always 2>/dev/null), before the update $(cat "$OUT/before/version" 2>/dev/null)"
   titles="$(owui "print([c['title'] for c in api('GET', '/api/v1/chats/', None, TOKEN)])" 2>/dev/null)"
-  check fast-rollback-data "$(case "$titles" in *e2e-upgrade*) case "$titles" in *e2e-after-fast*) echo 1 ;; *) echo 0 ;; esac ;; *) echo 1 ;; esac)" "chats after the rollback: ${titles:-none} (the seeded one back, the one written after the update gone)"
+  dok=1; case "$titles" in *e2e-upgrade*) case "$titles" in *e2e-after-fast*) ;; *) dok=0 ;; esac ;; esac
+  check fast-rollback-data "$dok" "chats after the rollback: ${titles:-none} (the seeded one back, the one written after the update gone)"
   check fast-rollback-images "$([ -n "$(cat "$OUT/portal-id-before")" ] && [ "$(docker image inspect --format '{{.Id}}' "$PROJECT/portal:local" 2>/dev/null)" = "$(cat "$OUT/portal-id-before")" ] && echo 0 || echo 1)" "the portal image is the one from before the update ($(cut -c1-19 "$OUT/portal-id-before"))"
 fi
 if [ "$REAL_GITHUB" = 1 ]; then

@@ -1881,8 +1881,8 @@ _backup_buckets_exec() {
   fi
   if [ -z "$why" ]; then
     lst="$(tar -tf "$f" 2>&1)" || why="the archive cannot be listed"
-    if [ -z "$why" ] && { printf '%s\n' "$lst" | grep -vE '^(openwebui|shared)(/[^/]+)*/?$' | grep -q . ||
-         printf '%s\n' "$lst" | grep -qE '(^|/)\.\.(/|$)'; }; then why="it holds a name outside openwebui/ and shared/ or with .."; fi
+    if [ -z "$why" ] && { printf '%s\n' "$lst" | grep -vE '^(openwebui|shared)(/[^/]+)*/?$' | grep . >/dev/null ||
+         printf '%s\n' "$lst" | grep -E '(^|/)\.\.(/|$)' >/dev/null; }; then why="it holds a name outside openwebui/ and shared/ or with .."; fi
   fi
   if [ -z "$why" ]; then
     lst="$( (umask 077; tar -xf "$f" -C "$1" --no-same-owner) 2>&1)" || why="extracting failed ($(printf '%s' "$lst" | head -n 1 | cut -c1-80))"
@@ -1890,7 +1890,7 @@ _backup_buckets_exec() {
   rm -f "$f"
   if [ -z "$why" ]; then
     [ -d "$1/openwebui" ] && [ -d "$1/shared" ] || why="a bucket folder is missing"
-    [ -n "$why" ] || ! find "$1/openwebui" "$1/shared" ! -type f ! -type d 2>/dev/null | grep -q . || why="extracted entries that are not plain files or folders"
+    [ -n "$why" ] || ! find "$1/openwebui" "$1/shared" ! -type f ! -type d 2>/dev/null | grep . >/dev/null || why="extracted entries that are not plain files or folders"
   fi
   [ -z "$why" ] && return 0
   warn "backup: the copy of the buckets through Open WebUI was refused ($why) — using a container of its own instead"

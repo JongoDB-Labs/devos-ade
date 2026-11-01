@@ -112,7 +112,7 @@ test_the_subject_set_is_the_compose_files_services() {
   # the contract lists the same set and the same step names (lib/*.sh timed_step literals)
   local svc step doc="$STACK_DIR/docs/event-schema.md"
   for svc in $HEALTH_SERVICES other; do assert_contains "$(cat "$doc")" "\`$svc\`"; done
-  grep -ho 'timed_step "[^"]*"' "$STACK_DIR"/lib/*.sh | sed 's/^timed_step "//; s/"$//' | sort -u > "$TMP/steps"
+  grep -ho 'timed_step "[^"]*"' "$STACK_DIR"/lib/*.sh | sed 's/^timed_step "//; s/"$//' | grep -v '^\$' | sort -u > "$TMP/steps"  # (a label in a variable, as upd_gate's, is the step's own)
   while IFS= read -r step; do assert_contains "$(cat "$doc")" "\`$step\`"; done < "$TMP/steps"
 }
 

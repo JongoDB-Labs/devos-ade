@@ -156,7 +156,7 @@ test_cmd_update_runs_the_check_after_setup_and_before_the_update_counts_as_done(
   local body
   body="$(sed -n '/^cmd_update() {/,/^}/p' "$STACK_DIR/lib/commands.sh")"
   assert_contains "$(printf '%s\n' "$body" | grep -n 'stack" setup --yes\|update_verify_images\|update_record_done' | cut -d: -f2- | tr -s ' ' | tr '\n' '|')" \
-    ' ${pullenv[@]+"${pullenv[@]}"} "$STACK_DIR/stack" setup --yes ||| timed_step "Services run the pinned images" update_verify_images ||| update_record_done|'
+    ' ${pullenv[@]+"${pullenv[@]}"} "$STACK_DIR/stack" setup --yes ${setupargs[@]+"${setupargs[@]}"} ||| timed_step "Services run the pinned images" update_verify_images ||| update_record_done|'
 }
 
 test_versions_rows_and_the_plain_sentences() {
