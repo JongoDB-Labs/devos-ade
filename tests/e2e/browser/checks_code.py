@@ -4037,7 +4037,10 @@ def ui_cost_and_state(ctx):
     page, rec = ui_page(ctx, "code-ui-j512-phone", device="phone", session=sid)
     if page.get_by_test_id("sheet-sessions").count() and page.get_by_test_id("sheet-sessions").is_visible():
         page.keyboard.press("Escape")
-    ask(page, f"Use the Bash tool to run exactly this command, then reply with the word done: echo j512 > {J512}/denied-phone.txt")
+    # (a request of its own, outside the folder whose write was just declined: asked for another write there, Claude may
+    # decline it itself as a way around that answer, and then there is no card — w948f, Haiku 5.5)
+    ask(page, f"A new request from my phone, not about the file I declined: use the Bash tool to run exactly this command, "
+              f"then reply with the word done. I will answer the permission card myself. echo j512 > {J512}-phone.txt")
     _card_says_waiting(page, "phone-session-state", "phone")
     shot(page, "j512-waiting-phone")
     page.get_by_test_id("perm-deny").click()
@@ -4050,13 +4053,13 @@ def ui_cost_and_state(ctx):
     shot(page, "j512-picker-phone")
     page.keyboard.press("Escape")
     c = Code.on(page, rec, goto=False)
-    for f in ("denied.txt", "denied-phone.txt"):
-        expect(c.api("GET", f"/api/fs/file?path={J512}/{f}")["status"] == 404, f"{f} was written: the card was denied")
+    for f in (f"{J512}/denied.txt", f"{J512}-phone.txt"):
+        expect(c.api("GET", f"/api/fs/file?path={f}")["status"] == 404, f"{f} was written: the card was denied")
     # (a short title for what it leaves in the Projects list: its first prompt is long)
     c.api("POST", f"/api/sessions/{sid}/title", {"title": "e2e j512"})
     c.api("DELETE", f"/api/sessions/{sid}")
     # (the denied files' 404s are this check's own reads)
-    csp_clean(page, rec, [r"^404 GET .*/api/fs/file\?path=" + re.escape(J512) + "/denied", r"console.error Failed to load resource.*404"])
+    csp_clean(page, rec, [r"^404 GET .*/api/fs/file\?path=" + re.escape(J512) + r"(/denied|-phone\.txt)", r"console.error Failed to load resource.*404"])
     # the Git panel: a project folder that is no repository shows the repository inside it; one inside a repository, that
     # repository (no turn: the folders and git init through the projects' own API)
     page, rec = ui_page(ctx, "code-ui-j512-git")
