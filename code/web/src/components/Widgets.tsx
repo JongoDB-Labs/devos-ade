@@ -43,12 +43,22 @@ const TAB_TITLE: Partial<Record<WidgetId, string>> = {
 const tabTestId = (id: WidgetId) => (id === 'explorer' ? 'side-files' : lay.SIDE.includes(id) ? `side-${id}` : `dock-tab-${id}`);
 
 /** The Git tab's count of changed files, the Projects tab's count of sessions waiting for you. */
+/** The tabs with a count. A narrow dock hides an unselected tab's word, which left the count as the tab's whole name
+ *  ("3, tab"): these are named by their word, and the count, in words, is the tab's description. */
+const COUNTED: ReadonlySet<WidgetId> = new Set<WidgetId>(['git', 'sessions']);
+
 function TabBadge({ id }: { id: WidgetId }) {
   const pending = useSel(store, (s) => (id === 'sessions' ? Object.values(s.views).reduce((n, v) => n + v.permissions.length, 0) : 0));
   const changes = useSel(store, (s) => (id === 'git' ? changedCount(s.git.status) : 0));
-  if (id === 'git' && changes > 0) return <span class="badge" data-testid="git-count">{changes > 999 ? '999+' : changes}</span>;
-  if (id === 'sessions' && pending > 0) return <span class="badge warn">{pending}</span>;
-  return null;
+  const says = id === 'git' && changes > 0 ? `${changes} changed ${changes === 1 ? 'file' : 'files'}`
+    : id === 'sessions' && pending > 0 ? `${pending} waiting for your permission` : '';
+  return (
+    <>
+      {id === 'git' && changes > 0 && <span class="badge" data-testid="git-count">{changes > 999 ? '999+' : changes}</span>}
+      {id === 'sessions' && pending > 0 && <span class="badge warn">{pending}</span>}
+      {COUNTED.has(id) && <span hidden id={`tab-count-${id}`}>{says}</span>}
+    </>
+  );
 }
 
 // ---------------------------------------------------------------- drag and drop
@@ -266,6 +276,8 @@ export function Dock(p: DockProps) {
                 aria-selected={id === active}
                 data-tab={id}
                 title={TAB_TITLE[id] ?? lay.WIDGET_INFO[id].label}
+                aria-label={COUNTED.has(id) ? lay.WIDGET_INFO[id].tab : undefined}
+                aria-describedby={COUNTED.has(id) ? `tab-count-${id}` : undefined}
                 data-testid={tabTestId(id)}
                 onClick={() => (!editing && id === 'search' ? showSearch() : !editing && id === 'git' ? showGit() : pickTab(dock, id))}
               >

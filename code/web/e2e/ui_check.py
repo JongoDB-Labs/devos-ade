@@ -3426,6 +3426,13 @@ def git_panel(browser):
         expect(git_row(page, f, "unstaged")).to_have_count(1, timeout=10_000)
     expect(git_row(page, "NOTES.md", "untracked")).to_have_count(1)
     expect(page.get_by_test_id("git-count")).to_have_text("4")
+    # (another tab shown, the narrow dock hides Git's word: the tab is still named Git, its count its description —
+    # it was named "4")
+    page.get_by_test_id("side-files").click()
+    expect(page.get_by_test_id("side-git")).to_have_accessible_name("Git")
+    expect(page.get_by_test_id("side-git")).to_have_accessible_description("4 changed files")
+    page.keyboard.press("Control+Shift+G")
+    expect(panel).to_be_visible()
     expect(page.get_by_test_id("git-branch")).to_have_text("main")
     expect(git_row(page, "package.json").get_by_test_id("git-watch")).to_be_visible()
     expect(git_row(page, "src/utils/format.ts").get_by_test_id("git-watch")).to_have_count(0)

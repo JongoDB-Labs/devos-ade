@@ -23,6 +23,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
     browser starts where you left off (a phone keeps its sheets). A screen reader hears each change; every control has a
     name and the focus shows.
 
+### Fixed
+- **A screen reader hears "Git" for the Code page's Git tab again, not just its count.** With another tab shown, the
+  narrow left dock hides the Git tab's word, and its badge's number ("4") became the tab's whole name. The Git and
+  Projects tabs are now always named by their word, and their count is the tab's description ("4 changed files",
+  "2 waiting for your permission"). Since before this release.
+
 ### Tests
 - **Layouts have their own checks.** Unit tests for the layout model (defaults equal today's page, migrating the old
   prefs, validation and clamping, move, hide and show, tabs and stacked, resize, reset, desktop and tablet apart) and for
