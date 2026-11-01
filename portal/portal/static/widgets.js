@@ -30,11 +30,12 @@
   const ROW = 4, GAP_Y = 20;               // the grid's rows are 4 px; a widget spans as many as its height and the gap need
 
   // The widgets of each page: id (the data-widget of its element), the name it goes by, its narrowest span on a
-  // (desktop, tablet) screen and its default span there. phone: false is a widget that screen does not show.
+  // (desktop, tablet) screen and its default span there. phone: false is a widget that screen does not show. pair: the
+  // widget it shares a row with; while that one is not showing, this one (at its default span) fills the row, as the page's own CSS does.
   // portal/uilayout.py has the same table (a test compares them).
   const HOME = [
-    { id: "get-started", title: "Get started", min: [4, 3], span: [6, 3] },
-    { id: "continue", title: "Continue", min: [4, 3], span: [6, 3] },
+    { id: "get-started", title: "Get started", min: [4, 3], span: [6, 3], pair: "continue" },
+    { id: "continue", title: "Continue", min: [4, 3], span: [6, 3], pair: "get-started" },
     { id: "update-card", title: "Update", min: [6, 4], span: [12, 6] },
     { id: "spend", title: "Bedrock spend", min: [4, 3], span: [5, 3] },
     { id: "models", title: "Models", min: [4, 3], span: [4, 3] },
@@ -111,6 +112,19 @@
     }
     for (const d of defaults(page, device)) if (!seen.has(d.id)) out.push(d);
     return out;
+  }
+  // usedSpan(page, device, list, id, gone): the span a widget is laid out with. Its own, except that a widget with a pair
+  // that is still at its default span fills the row (all the columns) while the pair is not showing: hidden by the person
+  // or in `gone` (ids that hide themselves, e.g. Get started after the first run). A span the person set is kept.
+  function usedSpan(page, device, list, id, gone) {
+    const e = get(list, id), w = find(page, id);
+    if (!e || !w) return 0;
+    if (device === "phone") return 1;
+    if (w.pair && e.span === defaultEntry(w, device).span) {
+      const p = get(list, w.pair);
+      if (!p || p.hidden || (gone && gone.includes(w.pair))) return COLS[device];
+    }
+    return e.span;
   }
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   const isDefault = (page, device, list) => same(list, defaults(page, device));
@@ -194,7 +208,7 @@
     return { version: VERSION, pages: { [page]: { [device]: isDefault(page, device, list) ? null : list } } };
   }
   // what the grid needs of a widget: columns, a height cap, how many 4 px rows it spans for a height in px
-  const styleFor = (e, device) => ({ columns: device === "phone" ? "" : `span ${e.span}`, maxHeight: e.height === "auto" ? "" : `${HEIGHT_REM[e.height]}rem` });
+  const styleFor = (e, device, span = e.span) => ({ columns: device === "phone" ? "" : `span ${span}`, maxHeight: e.height === "auto" ? "" : `${HEIGHT_REM[e.height]}rem` });
   const rowSpan = (px) => Math.max(1, Math.ceil((px + GAP_Y) / ROW));
 
   // ---------- the Terminal page: widgets, and the views in the Terminals widget ----------
@@ -296,7 +310,7 @@
   const TERMINAL_PX = { s: 280, m: 420, l: 640 };
 
   const pure = { VERSION, MAX_BYTES, CACHE, COLS, HEIGHTS, HEIGHT_REM, HOME, TERMINAL, PAGES, available, minSpan, clampSpan, defaults, normalize,
-    isDefault, shown, moveBy, moveBefore, setSpan, resizeBy, setHeight, heightStep, hide, show, reset, entry, parseDoc, savePatch, styleFor, rowSpan, titleOf,
+    isDefault, usedSpan, shown, moveBy, moveBefore, setSpan, resizeBy, setHeight, heightStep, hide, show, reset, entry, parseDoc, savePatch, styleFor, rowSpan, titleOf,
     VIEWS_MAX, SPLITS, COMMANDS_MAX, COMMAND_LABEL_MAX, COMMAND_TEXT_MAX, KEYS, TERMINAL_PX, screenDefaults, normalizeScreen, isDefaultScreen, addView, closeView,
     setSplit, dragWeights, arrange, commandProblem, normalizeCommands, saveCommand, removeCommand, screenEntry, commandsEntry, savePatchScreen, savePatchCommands };
   root.bnWidgets = { _pure: pure };
@@ -400,13 +414,19 @@
   const ro = typeof ResizeObserver === "function" ? new ResizeObserver(() => later()) : null;
   let laterQ = false;
   function later() { if (laterQ) return; laterQ = true; requestAnimationFrame(() => { laterQ = false; measure(); }); }
+  // the span a widget is laid out with now (see usedSpan): the widgets that hide themselves are the ones with a `hidden` attribute
+  const gone = () => widgetEls().filter((w) => w.hidden).map((w) => w.dataset.widget);
+  const spanOf = (id) => usedSpan(PAGE, device, list, id, gone());
   // the rows each widget spans, and the edit bars where the widgets are (after any resize)
   function measure() {
     if (!custom) return;
     const phone = device === "phone";
+    const away = gone();
     for (const e of list) {
       const w = elOf(e.id);
       if (!w) continue;
+      const cols = styleFor(e, device, usedSpan(PAGE, device, list, e.id, away)).columns;
+      if (w.style.gridColumn !== cols) w.style.gridColumn = cols;
       const ov = overlays.get(e.id);
       if (ov) ov.hidden = e.hidden || w.offsetParent === null;
       // (room at the top of the card for its bar)
@@ -425,7 +445,7 @@
       if (!w || !ov || ov.hidden) continue;
       ov.style.left = `${w.offsetLeft}px`; ov.style.top = `${w.offsetTop}px`; ov.style.width = `${w.offsetWidth}px`; ov.style.height = `${w.offsetHeight}px`;
       const size = $q(".wg-size", ov);
-      if (size) size.textContent = `${e.span} / ${COLS[device]}`;
+      if (size) size.textContent = `${usedSpan(PAGE, device, list, e.id, away)} / ${COLS[device]}`;
     }
   }
   // the hosts' children in layout order, moving only what is out of place
@@ -456,7 +476,7 @@
     for (const e of list) {
       const w = elOf(e.id);
       if (!w) continue;
-      const s = styleFor(e, device);
+      const s = styleFor(e, device, usedSpan(PAGE, device, list, e.id, gone()));
       w.style.gridColumn = s.columns; w.style.maxHeight = s.maxHeight; w.style.overflowY = s.maxHeight ? "auto" : "";
       w.classList.toggle("wg-off", e.hidden);
       w.dataset.wgHeight = e.height;
@@ -563,8 +583,8 @@
       if (ev.altKey || ev.ctrlKey || ev.metaKey || device === "phone") return;
       const k = ev.key, s = ev.shiftKey;
       let r = null;
-      if (k === "ArrowLeft" || k === "ArrowUp") r = s ? (k === "ArrowLeft" ? resizeBy(PAGE, device, list, id, -1) : heightStep(PAGE, list, id, -1)) : moveBy(PAGE, list, id, -1);
-      else if (k === "ArrowRight" || k === "ArrowDown") r = s ? (k === "ArrowRight" ? resizeBy(PAGE, device, list, id, 1) : heightStep(PAGE, list, id, 1)) : moveBy(PAGE, list, id, 1);
+      if (k === "ArrowLeft" || k === "ArrowUp") r = s ? (k === "ArrowLeft" ? setSpan(PAGE, device, list, id, spanOf(id) - 1) : heightStep(PAGE, list, id, -1)) : moveBy(PAGE, list, id, -1);
+      else if (k === "ArrowRight" || k === "ArrowDown") r = s ? (k === "ArrowRight" ? setSpan(PAGE, device, list, id, spanOf(id) + 1) : heightStep(PAGE, list, id, 1)) : moveBy(PAGE, list, id, 1);
       else if ((k === "h" || k === "H") && !s) { ev.preventDefault(); $q('[data-act="hide"]', ov).click(); return; }
       else return;
       ev.preventDefault();
@@ -629,13 +649,13 @@
     });
   }
   function resize(ev, id, edge) {
-    const start = list, w = elOf(id), e0 = get(list, id), x0 = ev.clientX, y0 = ev.clientY, h0 = w.offsetHeight;
+    const start = list, w = elOf(id), span0 = spanOf(id), x0 = ev.clientX, y0 = ev.clientY, h0 = w.offsetHeight;
     const gap = 24, pitch = (host.clientWidth + gap) / COLS[device];
     const natural = (() => { const was = w.style.maxHeight; w.style.maxHeight = ""; const n = w.scrollHeight; w.style.maxHeight = was; return n; })();
     const px = { s: HEIGHT_REM.s * 16, m: HEIGHT_REM.m * 16, l: HEIGHT_REM.l * 16, auto: Math.max(natural, HEIGHT_REM.l * 16 + 1) };
     track(ev, host, (m) => {
       let r = { list: start };
-      if (edge.includes("e")) r = setSpan(PAGE, device, r.list, id, e0.span + Math.round((m.clientX - x0) / pitch));
+      if (edge.includes("e")) r = setSpan(PAGE, device, r.list, id, span0 + Math.round((m.clientX - x0) / pitch));
       if (edge.includes("s")) {
         const want = h0 + (m.clientY - y0);
         const best = HEIGHTS.slice().sort((a, b) => Math.abs(px[a] - want) - Math.abs(px[b] - want))[0];

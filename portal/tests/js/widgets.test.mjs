@@ -164,6 +164,26 @@ test("reset: the default for this screen, whatever was done", () => {
   assert.equal(r.message, "Home is back to its default layout");
 });
 
+test("a widget that shares its row fills it while its pair is not showing, at the default span only", () => {
+  for (const [d, full, def] of [["desktop", 12, 6], ["tablet", 6, 3]]) {
+    const l = W.defaults(P, d);
+    assert.equal(W.usedSpan(P, d, l, "continue", []), def, `${d}: both showing, side by side`);
+    assert.equal(W.usedSpan(P, d, l, "continue", ["get-started"]), full, `${d}: Get started hides itself`);
+    assert.equal(W.usedSpan(P, d, l, "get-started", ["continue"]), full, `${d}: and the other way round`);
+    const hid = W.hide(P, l, "get-started").list;
+    assert.equal(W.usedSpan(P, d, hid, "continue", []), full, `${d}: the person hid it`);
+    assert.equal(W.usedSpan(P, d, W.show(P, hid, "get-started").list, "continue", []), def, `${d}: shown again, the default is back`);
+    assert.equal(W.usedSpan(P, d, l, "continue", []), def, "(the list was not changed)");
+    assert.equal(by(hid, "continue").span, def, "the kept span stays the default");
+  }
+  const sized = W.setSpan(P, "desktop", W.defaults(P, "desktop"), "continue", 8).list;
+  assert.equal(W.usedSpan(P, "desktop", sized, "continue", ["get-started"]), 8, "a span the person set is kept");
+  assert.equal(W.usedSpan(P, "tablet", W.setSpan(P, "tablet", W.defaults(P, "tablet"), "continue", 4).list, "continue", ["get-started"]), 4);
+  assert.equal(W.usedSpan(P, "desktop", W.defaults(P, "desktop"), "spend", ["get-started"]), 5, "widgets without a pair are untouched");
+  assert.equal(W.usedSpan(P, "phone", W.defaults(P, "phone"), "continue", ["get-started"]), 1);
+  assert.equal(W.usedSpan(P, "desktop", W.defaults(P, "desktop"), "nope", []), 0);
+});
+
 test("the phone: one column, so no widths; order, hide and height only; Claude Code is not offered", () => {
   const l = W.defaults(P, "phone");
   assert.equal(W.setSpan(P, "phone", l, "spend", 4).changed, false);

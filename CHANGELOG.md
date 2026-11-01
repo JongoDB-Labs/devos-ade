@@ -31,6 +31,14 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
     clipboard script) accepts messages only from the portal page that frames it and only a fixed table of keys or up to 4 KB
     of printable text; a view's address carries a one-time token, so a view can only be opened by the portal.
 
+### Fixed
+- **Customizing Home no longer shrinks Continue to half its width.** Once Get started had hidden itself (after your first
+  run), Continue filled the row; since v0.46.0, pressing Customize, or changing anything such as hiding Models, left it at 6
+  of 12 columns with the next card beside it. While Get started is not showing, Continue (or Get started, if Continue is
+  the one away) now keeps the whole row until you resize it yourself, and the size shown in Customize is the one in use.
+- **The Code page's Customize button says "Customize".** Since v0.47.0 it was a grid icon with no word, and people did not
+  find it. It now shows the word beside the icon, as Review does, and keeps the icon alone on a narrower window.
+
 ### Tests
 - **The Terminal's views and key bar.** Shell tests for `bn-session view N` (created once, reconnects only attach, the
   token acts once, out of range gives the plain attach); Python tests for the launch words, the strict layout schema (views,

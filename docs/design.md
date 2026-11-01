@@ -212,7 +212,10 @@ stack. The rules, so a new card drops in without a new pattern:
   markup above lays Home out and the script moves nothing. A saved layout, or edit mode, moves the cards into `#widgets` as one
   grid in layout order (`.wg-custom`): 12 columns from 1100 px, 6 from 768 px, one under it (the breakpoints of
   mobile.css); a card spans whole columns (never fewer than its minimum), and rows are 4 px so a card spans as many as
-  it is tall and short cards stack beside a tall one. Reset, or a layout equal to the default, puts every card back in the
+  it is tall and short cards stack beside a tall one. **Get started and Continue are a pair** (`pair` in the model; `usedSpan`):
+  while one is not showing (hidden by the person, or by itself with its own `hidden`), the other at its default span fills the
+  row (12 columns, 6 on a tablet) as the page's own CSS does; a span the person set is kept, and the size label, the keys
+  and the edge drag start from the span shown. Reset, or a layout equal to the default, puts every card back in the
   markup. **Two kinds of hidden stay apart:** a card that hides itself (Get started after the first run, Maintenance, the
   Update card without an update) uses its own `hidden` attribute, which the script never touches; the person's choice is the
   class `wg-off`. A card the person hid stays hidden with news to show; one they show still hides itself when empty. The
