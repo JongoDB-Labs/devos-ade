@@ -5846,6 +5846,7 @@ def widgets_customize(browser):
     page.wait_for_timeout(1200)
     assert "layout" not in mock_get(NORMAL, "/api/prefs")["prefs"], "a page nobody changed kept a layout"
     expect(page.get_by_test_id("customize-layout")).to_have_attribute("aria-label", "Customize the layout")
+    expect(page.get_by_test_id("customize-layout")).to_have_text("Customize")   # (the word beside the icon, like Review)
     expect(page.get_by_test_id("customize-layout")).to_have_attribute("aria-pressed", "false")
     expect(page.get_by_test_id("widget-tray")).to_have_count(0)
     expect(page.locator(".wd-head")).to_have_count(0)

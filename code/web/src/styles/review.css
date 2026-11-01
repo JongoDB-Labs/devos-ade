@@ -4,6 +4,7 @@
 .tb-review { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); font-size: 12.5px; }
 .tb-review:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
 .tb-review .chg { font-size: 12px; }
+.tb-review.on { background: var(--active); }   /* (Customize, while editing the layout) */
 @media (max-width: 1099.98px) { .tb-review-label { display: none; } }
 
 /* --- Review pane --- */
