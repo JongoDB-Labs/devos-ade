@@ -6,6 +6,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-11-01
+
 ### Added
 - **The Terminal tab can be a page of widgets (JON-946).** **Customize**, in Who answers' bar on the Terminal tab, turns on
   a page under the terminal: **Terminals** (always there), a **key bar**, your **quick commands** and your **projects**,
@@ -4102,7 +4104,8 @@ Initial public release.
 - `bin/claude-bedrock`: runs Claude Code against Bedrock through LiteLLM without touching plain `claude`.
 - Cost transparency: Bedrock prices in `./stack costs` and the Open WebUI model picker, spend per key.
 
-[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.47.0...HEAD
+[Unreleased]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.48.0...HEAD
+[0.48.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.47.0...v0.48.0
 [0.47.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.46.0...v0.47.0
 [0.46.0]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.45.1...v0.46.0
 [0.45.1]: https://github.com/JongoDB-Labs/devos-ade/compare/v0.45.0...v0.45.1
