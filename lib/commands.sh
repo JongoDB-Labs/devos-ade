@@ -168,13 +168,13 @@ fmt_elapsed() { # fmt_elapsed SECONDS -> "16s" / "2m05s"
   local s="${1:-0}"
   if [ "$s" -lt 60 ]; then printf '%ss\n' "$s"; else printf '%dm%02ds\n' $((s / 60)) $((s % 60)); fi
 }
-phase_line() { printf '%s ready (%s)\n' "$1" "$(fmt_elapsed "$2")"; }   # phase_line LABEL SECONDS
+phase_line() { [ -z "${_UPD_PROF:-}" ] || upd_prof_mark end "$1"; printf '%s ready (%s)\n' "$1" "$(fmt_elapsed "$2")"; }   # phase_line LABEL SECONDS
 # helper_job — this command runs as a job of the update helper (Home's Update now, the nightly update): its log is what
 # Home's progress card reads (lib/helper.sh _job_steps)
 helper_job() { [ "${DEVOS_ADE_JOB_ORIGIN:-}" = helper ] && [ ! -t 2 ]; }
 # phase_start LABEL — in a helper job's log, "==> LABEL: starting…" before a phase whose "LABEL ready (…)" line follows:
 # Home shows the step that runs and for how long (a terminal shows it on its own line instead; run_phase)
-phase_start() { ! helper_job || is_verbose || log "$1: starting…"; }
+phase_start() { [ -z "${_UPD_PROF:-}" ] || upd_prof_mark begin "$1"; ! helper_job || is_verbose || log "$1: starting…"; }
 _now() { date +%s; }
 is_verbose() { [ "${DEVOS_ADE_VERBOSE:-0}" = 1 ]; }
 

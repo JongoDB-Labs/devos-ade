@@ -446,15 +446,18 @@ _upd_trace() {   # ROLE NAME FILE
   chmod 600 "$d/$2.$1" 2>/dev/null || true
 }
 # With the trace on, the setup's calls too: each docker, curl and sleep, one line each in trace/calls.tsv — its milliseconds,
-# the command (docker's subcommand, compose's after it) and the four functions it was called from; never an argument, so never
-# a value. Where the steps that always run spend their time (JON-972: an update in 30 s), measured rather than guessed.
-# What is called stays what it was (a function of that name — a test's stub — or the program): it is only timed.
-_UPD_PROF=''
+# the command (docker's subcommand, compose's after it), the four functions it was called from and when it started (ms since
+# the setup began); never an argument, so never a value. Each step's start and end are lines too ("0 step begin|end LABEL"),
+# so the time between calls is placed. Where the steps that always run spend their time (JON-972: an update in 30 s),
+# measured rather than guessed. What is called stays what it was (a function of that name — a test's stub — or the
+# program): it is only timed.
+_UPD_PROF=''; _UPD_PROF_T0=0
 upd_prof_begin() {
   local d="$STATE_DIR/update/trace" n
   upd_trace_on || return 0
   mkdir -p "$d" 2>/dev/null && chmod 700 "$d" 2>/dev/null || return 0
   : > "$d/calls.tsv" 2>/dev/null && chmod 600 "$d/calls.tsv" 2>/dev/null || return 0
+  _UPD_PROF_T0="$(_ms_now)"; case "$_UPD_PROF_T0" in '' | *[!0-9]*) _UPD_PROF_T0=0 ;; esac
   [ -z "$_UPD_PROF" ] || { _UPD_PROF="$d/calls.tsv"; return 0; }   # (wrapped once: a wrapper of the wrapper would call itself)
   _UPD_PROF="$d/calls.tsv"
   for n in docker curl sleep; do
@@ -483,7 +486,15 @@ _upd_prof() {   # START_MS NAME ARGS... — the line of one call
   fi
   now="$(_ms_now)"
   case "$t$now" in '' | *[!0-9]*) return 0 ;; esac
-  printf '%s\t%s\t%s<%s<%s<%s\n' "$((now - t))" "$w" "${FUNCNAME[2]:-main}" "${FUNCNAME[3]:-main}" "${FUNCNAME[4]:-main}" "${FUNCNAME[5]:-main}" >> "$_UPD_PROF" 2>/dev/null || true
+  printf '%s\t%s\t%s<%s<%s<%s\t%s\n' "$((now - t))" "$w" "${FUNCNAME[2]:-main}" "${FUNCNAME[3]:-main}" "${FUNCNAME[4]:-main}" "${FUNCNAME[5]:-main}" \
+    "$((t - _UPD_PROF_T0))" >> "$_UPD_PROF" 2>/dev/null || true
+}
+# upd_prof_mark begin|end LABEL — a step's start or end in the profile (phase_start, phase_line); nothing without one
+upd_prof_mark() {
+  local now
+  [ -n "$_UPD_PROF" ] || return 0
+  now="$(_ms_now)"; case "$now" in '' | *[!0-9]*) return 0 ;; esac
+  printf '0\tstep\t%s %s\t%s\n' "$1" "$(printf '%s' "$2" | LC_ALL=C tr -c ' -~' ' ' | cut -c1-80)" "$((now - _UPD_PROF_T0))" >> "$_UPD_PROF" 2>/dev/null || true
 }
 upd_in_defaults() { upd_in_litellm_config; }
 upd_in_setupkey() { upd_in_keys; }

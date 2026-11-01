@@ -137,11 +137,15 @@ test_the_call_profile_times_each_docker_curl_and_sleep_by_its_callers_and_keeps_
   rc=0; um_starts || rc=$?; assert_eq "$rc" "1"
   rc=0; curl -H "Authorization: Bearer sk-secret" http://x/ || rc=$?; assert_eq "$rc" "7"
   sleep 2
+  phase_start "Images"; phase_line "Images" 3 > /dev/null   # (a step's start and end: lines of their own)
   p="$(cat "$STATE_DIR/update/trace/calls.tsv")"
-  assert_eq "$(printf '%s\n' "$p" | wc -l | tr -d ' ')" "4"
+  assert_eq "$(printf '%s\n' "$p" | wc -l | tr -d ' ')" "6"
   assert_contains "$p" "	docker inspect	"; assert_contains "$p" "	docker compose.up	um_starts<"; assert_contains "$p" "	curl	"; assert_contains "$p" "	sleep	"
+  assert_contains "$p" "0	step	begin Images	"; assert_contains "$p" "0	step	end Images	"
   for v in sk-secret Authorization proj-x compose.yaml portal '{{' c1 http; do assert_not_contains "$p" "$v"; done
-  printf '%s\n' "$p" | awk -F '\t' '$1 !~ /^[0-9]+$/ { bad = 1 } END { exit bad }' || { echo "a time that is not milliseconds" >&2; return 1; }
+  # (milliseconds, and when each started: since the setup began, in order)
+  printf '%s\n' "$p" | awk -F '\t' 'NF != 4 || $1 !~ /^[0-9]+$/ || $4 !~ /^[0-9]+$/ || $4 < last { bad = 1 } { last = $4 } END { exit bad }' ||
+    { echo "a time that is not milliseconds, or out of order: $p" >&2; return 1; }
   [ "$(stat -c %a "$STATE_DIR/update/trace/calls.tsv" 2>/dev/null || stat -f %Lp "$STATE_DIR/update/trace/calls.tsv")" = 600 ] || { echo "profile not private" >&2; return 1; }
 }
 

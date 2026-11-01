@@ -782,8 +782,12 @@ if [ "$MIGRATE" = 0 ] && [ "$FAST_CHECK" = 1 ]; then
   # (where the time went: the apply's docker, curl and sleep calls, summed by command and the functions they came from — calls.tsv)
   if [ -f "$tdir/trace/calls.tsv" ]; then
     cp "$tdir/trace/calls.tsv" "$OUT/calls.tsv"
-    awk -F '\t' '{ k = $2 "\t" $3; ms[k] += $1; n[k]++; all += $1 } END { for (k in ms) printf "%d\t%d\t%s\n", ms[k], n[k], k; printf "%d\t%d\tall\n", all, NR }' \
+    awk -F '\t' '$2 != "step" { k = $2 "\t" $3; ms[k] += $1; n[k]++; all += $1; c++ } END { for (k in ms) printf "%d\t%d\t%s\n", ms[k], n[k], k; printf "%d\t%d\tall\n", all, c }' \
       "$OUT/calls.tsv" | sort -rn > "$OUT/calls-summary.tsv"
+    # (each step's time outside docker, curl and sleep: its end less its start less its calls' — where to look next)
+    awk -F '\t' '$2 == "step" { split($3, w, " "); l = substr($3, length(w[1]) + 2); if (w[1] == "begin") { at[l] = $4; open[l] = 1; spent[l] = 0 } else if (open[l]) { printf "%d\t%d\t%s\n", $4 - at[l] - spent[l], $4 - at[l], l; open[l] = 0 }; next }
+      { for (l in open) if (open[l]) spent[l] += $1 }' "$OUT/calls.tsv" | sort -rn > "$OUT/calls-steps.tsv"
+    head -n 8 "$OUT/calls-steps.tsv" | while IFS= read -r l; do say "fast apply step time outside calls (ms, step ms, step): $l"; done
     head -n 15 "$OUT/calls-summary.tsv" | while IFS= read -r l; do say "fast apply calls (ms, count, what, callers): $l"; done
   fi
   check fast-apply-one-up "$([ "$(grep -c '^==> Services ([0-9]*).*ready' "$LOGS/fast-apply.log")" = 1 ] && echo 0 || echo 1)" "the services started in one phase"
