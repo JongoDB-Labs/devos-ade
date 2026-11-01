@@ -6,6 +6,39 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Changed
+- **Update now is much faster (JON-972).** An update used to run all of setup again after the new code was in: every step
+  took minutes on a busy Docker Desktop (53 minutes on one Mac, nearly all of it steps with nothing to do). Now each step
+  of the update's setup runs only if what it reads changed since the last successful setup, and the card says so for the
+  others ("Prices: not run — the prices were checked in the last 12 hours and the portal image did not change", with
+  "skipped" for its time):
+  - **Skipped when unchanged:** the AWS key check (at least once a day), ports and settings in `.env`, prices, LiteLLM's
+    config and the default models, voice, the built-in SearXNG, the web search check, the git server and its account, the
+    Code page default, LiteLLM's keys, the portal sign-in, the Open WebUI syncs and the smoke test. "Changed" means `.env`,
+    the model catalog and the models found, the prices, the compose files, the images this checkout builds, the LiteLLM and
+    Open WebUI containers (a recreated or restarted one is not the same), and the step's own code. When in doubt a step runs.
+  - **One start.** When the settings, the keys and the voice settings did not change, Postgres, RustFS, LiteLLM, Open WebUI,
+    shared-mcp, the portal and Caddy (with SearXNG and the git server) start with a single `docker compose up`, waited for
+    together; Compose recreates only those whose image or settings changed. Otherwise they start in groups as before.
+  - **The backup takes seconds:** the buckets are copied through the Open WebUI that is already running (the archive is
+    checked before anything is written; the old way, a container of its own, is the fallback). Same files, so
+    `./stack restore` and `./stack rollback` read it as before. The images' snapshot for rollback, the download list and
+    the missing-image check ask Docker once for all the images instead of once each.
+  - **Asking which containers run takes milliseconds.** The stack asks Docker for its containers directly, in one call,
+    instead of through Compose, which reads every compose file first (about 0.3 s each time, and setup asks dozens of
+    times). The answers are the same. `DEVOS_ADE_PS_VIA_COMPOSE=1` asks Compose, as before.
+  - **No `docker compose up` that would change nothing.** Before bringing up a group of services, setup asks Docker
+    whether anything would change: each of them (and, unless the call is for those services alone, the whole stack) runs
+    and is healthy, with the settings and the image Compose would give it now, under the same networks as at their last
+    start. Then there is no Compose call (each took 1 to 5 s, and an update makes several). Anything else, or anything it
+    cannot read, and Compose decides as before. `DEVOS_ADE_UP_ALWAYS=1` makes the call every time.
+  - **The core services' versions in three Docker calls.** The end of every setup and update writes Settings' Core services
+    table, and the update's last check compares each service's image with its pin: each asked Docker four or five times a
+    service (about 1.5 s). They read every container and image at once now; `./stack versions` and `./stack status` too.
+  - **`./stack update --force` runs every step, and so does `./stack setup`** by itself. The first update after this one has
+    no earlier setup to compare with, so it still runs every step once. A setup that stops halfway leaves nothing to compare
+    with, so the next update runs every step. Rollback, restore and uninstall also start from every step.
+
 ## [0.48.2] - 2026-11-02
 
 ### Fixed
@@ -24,6 +57,12 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   local runtime's program still runs from the moved folder took the shell's `wait` as the program's answer; under load,
   bash 3.2 once answered 0 for a program that exited 3, and the old copy was removed. The check now reads the status the
   program's own subshell writes down; nothing written in time is a failure.
+- **An image that did not change keeps its ID, so its service is not restarted.** With Docker's containerd image store
+  (recent Docker Desktop and Docker Engine 29 use it by default), each build added a provenance attestation stamped with
+  the build's time. A build that came entirely from Docker's cache was therefore a new image. Every setup and update then
+  recreated the portal, Open WebUI and the sandboxes' containers, and ran again every step that reads the images. The
+  stack's own builds now leave that attestation out (`BUILDX_NO_DEFAULT_ATTESTATIONS=1`, for its Compose calls only; a
+  value of your own in the shell is kept). These images are built on your computer and never pushed.
 
 ### Tests
 - **The layout sweep knows a bar held at the bottom.** A sticky bar at the bottom of its scrolling box (the walkthrough's
@@ -46,6 +85,17 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 ### Tests
 - **The Code page's cost-and-state check** reads the page's errors before it deletes its test folders: the page, still
   open, could list one again as it went, and that 404 counted as the page's own.
+- **Setup's update mode (JON-972).** Shell tests: an update with nothing changed runs none of the gated steps and starts the
+  services with one compose up; each input changing runs exactly its steps; a failed setup writes no digests; `--force` and a
+  plain setup run everything; the backup through `docker exec` has the same files as the old path, falls back to it when
+  Open WebUI is not running, and refuses a crafted archive (links, devices, `..`, absolute names); the snapshot asks Docker
+  once. `tests/e2e/upgrade.sh` bounds the update's time on the Linux host, prints each step's time and checks a rollback
+  after the fast apply. A group of services brought up again with nothing changed makes no Compose call, and each change
+  makes one: a service's settings, a rebuilt or missing image, a container starting, stopped, gone or doubled, a failed
+  one-shot, the networks' settings, a network made again, an unknown option; the checksum of the settings other than the
+  services', with the real Compose, changes for a network and not for a service. The versions table reads Docker in three
+  calls and the update's check in six, with the same rows and verdicts as service by service (an unreadable image, another
+  digest).
 
 ## [0.48.0] - 2026-11-01
 
