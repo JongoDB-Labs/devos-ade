@@ -313,7 +313,36 @@
   // the terminals' height in px on the page (Auto: most of the screen, in vh, set by the CSS)
   const TERMINAL_PX = { s: 280, m: 420, l: 640 };
 
-  const pure = { VERSION, MAX_BYTES, CACHE, COLS, HEIGHTS, HEIGHT_REM, HOME, TERMINAL, PAGES, available, minSpan, clampSpan, defaults, normalize,
+  // --- the Customize tray stays at the top while the page scrolls under it (JON-974) ---
+  // Stuck = the 0 px sentinel right before the tray has scrolled out of the top of the scrolling element (a zero-height
+  // empty block takes no room and its margins collapse through it, so adding it moves nothing). The tray then compacts to
+  // one row (widgets.css, .wg-stuck), and the scroller's scroll-padding-top is the tray's height + a gap, so a handle
+  // focused by Tab (or scrolled to) lands below the tray, not under it (WCAG 2.2 SC 2.4.11 Focus Not Obscured).
+  const TRAY_GAP = 8;
+  const scrollPad = (trayHeight) => (Number.isFinite(trayHeight) && trayHeight > 0 ? Math.ceil(trayHeight) + TRAY_GAP : 0);
+  // an observer entry for the sentinel: gone past the top edge (not below the bottom, not merely hidden with the tray)
+  const stuckFrom = (e) => !!e && !e.isIntersecting && !!e.rootBounds && !!e.boundingClientRect && e.boundingClientRect.top < e.rootBounds.top;
+  // (the Terminal page's tray is the same class and calls this too: scroller is .tp there, #home here; returns the stop)
+  function stickTray(tray, scroller) {
+    const sentinel = document.createElement("div");
+    sentinel.className = "wg-sentinel"; sentinel.setAttribute("aria-hidden", "true");
+    tray.before(sentinel);
+    const pad = () => { const v = scrollPad(tray.getBoundingClientRect().height); scroller.style.scrollPaddingTop = v ? `${v}px` : ""; };
+    let io = null, ro = null;
+    if (typeof IntersectionObserver === "function") {
+      io = new IntersectionObserver((es) => { for (const e of es) tray.classList.toggle("wg-stuck", stuckFrom(e)); }, { root: scroller, threshold: [0, 1] });
+      io.observe(sentinel);
+    }
+    if (typeof ResizeObserver === "function") { ro = new ResizeObserver(pad); ro.observe(tray); }
+    pad();
+    return function stop() {
+      if (io) io.disconnect();
+      if (ro) ro.disconnect();
+      sentinel.remove(); tray.classList.remove("wg-stuck"); scroller.style.scrollPaddingTop = "";
+    };
+  }
+
+  const pure = { TRAY_GAP, scrollPad, stuckFrom, stickTray, VERSION, MAX_BYTES, CACHE, COLS, HEIGHTS, HEIGHT_REM, HOME, TERMINAL, PAGES, available, minSpan, clampSpan, defaults, normalize,
     isDefault, usedSpan, shown, moveBy, moveBefore, setSpan, resizeBy, setHeight, heightStep, hide, show, reset, entry, parseDoc, savePatch, styleFor, rowSpan, titleOf,
     VIEWS_MAX, SPLITS, COMMANDS_MAX, COMMAND_LABEL_MAX, COMMAND_TEXT_MAX, KEYS, TERMINAL_PX, screenDefaults, normalizeScreen, isDefaultScreen, addView, closeView,
     setSplit, dragWeights, arrange, commandProblem, normalizeCommands, saveCommand, removeCommand, screenEntry, commandsEntry, savePatchScreen, savePatchCommands };
@@ -501,6 +530,7 @@
     for (const o of origin.slice(1)) o.parent.replaceChildren(...o.kids.map((k) => (k.id ? elOf(k.id) : k)).filter(Boolean));
     host.replaceChildren(...origin[0].kids.map((k) => (k.id ? elOf(k.id) : k)).filter(Boolean));
   }
+  let stopStick = null;
   // the layout on screen: the page's own, or the grid
   function apply() {
     const want = editing || kept;
@@ -509,6 +539,9 @@
     custom = want;
     home.classList.toggle("wg-editing", editing);
     tray.hidden = !editing;
+    // (the sentinel is watched only while the tray shows: a hidden one never intersects and would read as stuck)
+    if (editing && !stopStick) stopStick = pure.stickTray(tray, home);
+    else if (!editing && stopStick) { stopStick(); stopStick = null; }
     openBtn.setAttribute("aria-expanded", String(editing));
     if (custom) {
       enterGrid();

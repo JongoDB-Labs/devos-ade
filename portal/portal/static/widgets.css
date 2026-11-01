@@ -20,6 +20,18 @@
 .wg-hidden li { display: inline-flex; align-items: center; gap: 10px; padding: 3px 4px 3px 14px; border: 1px solid var(--line); border-radius: var(--r-pill); }
 .wg-status { margin: 8px 0 0; min-height: 1.4em; font-size: 13px; }
 .wg-saved { color: var(--warn); }
+/* stuck to the top of the scrolling page (widgets.js stickTray, JON-974): one row, the title, the hidden widgets' chips,
+   Reset and Done. The help, the subheading and the empty note go; the status line stays for screen readers, out of sight.
+   The head's box dissolves so its two children sit in the row; no animation (an instant change, at every width). */
+.wg-sentinel { height: 0; margin: 0; padding: 0; pointer-events: none; }
+.wg-tray.wg-stuck { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding-block: 8px; }
+.wg-tray.wg-stuck .wg-tray-head { display: contents; }
+.wg-tray.wg-stuck h2 { order: 0; }
+.wg-tray.wg-stuck .wg-hidden { order: 1; flex: 1 1 0; min-width: 0; flex-wrap: nowrap; overflow-x: auto; }
+.wg-tray.wg-stuck .wg-hidden li { flex: none; }
+.wg-tray.wg-stuck .wg-tray-actions { order: 2; margin-left: auto; }
+.wg-tray.wg-stuck .note:not(.wg-saved), .wg-tray.wg-stuck .wg-tray-sub { display: none; }
+.wg-tray.wg-stuck .wg-status { position: absolute; width: 1px; height: 1px; margin: 0; min-height: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .wg-saved:empty { display: none; }
 
 /* ---------- the grid ---------- */

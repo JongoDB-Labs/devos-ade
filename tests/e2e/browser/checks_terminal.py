@@ -662,6 +662,36 @@ def widgets_default(ctx):
     return "default: no widget page, the one frame under Who answers' bar with its Paste button; Customize then Done saves nothing and does not reload it"
 
 
+@check("browser", "terminal-widgets-tray-compacts-when-stuck")
+def widgets_tray_sticky(ctx):
+    """JON-974: the Terminal page's tray is the Home tray's class: stuck to the top it is one row, and the page (.tp) keeps
+    scroll-padding for it; both go on Done."""
+    need_on()
+    page, rec = open_terminal(ctx, "terminal-widgets-tray-sticky")
+    try:
+        page.set_viewport_size({"width": 1400, "height": 600})   # (short, so the page under the tray scrolls)
+        customize(page)
+        page.wait_for_timeout(300)
+        top = page.evaluate("() => document.getElementById('term-tray').getBoundingClientRect().height")
+        room = page.evaluate("() => { const p = document.getElementById('term-page'); return p.scrollHeight - p.clientHeight; }")
+        expect(room > 60, f"the Terminal page cannot scroll ({room} px of room) to test the tray")
+        page.evaluate("() => { const p = document.getElementById('term-page'); p.scrollTop = p.scrollHeight; }")
+        page.wait_for_function("() => document.getElementById('term-tray').classList.contains('wg-stuck')", timeout=5000)
+        page.wait_for_timeout(200)
+        stuck = page.evaluate("() => document.getElementById('term-tray').getBoundingClientRect().height")
+        expect(stuck <= 90 and stuck < top, f"the stuck tray is {stuck:.0f} px tall (at the top: {top:.0f})")
+        expect(page.locator("#term-help").is_hidden() and page.locator("#term-done").is_visible(), "the stuck tray hides the wrong parts")
+        pad = page.evaluate("() => parseFloat(document.getElementById('term-page').style.scrollPaddingTop)")
+        expect(pad >= stuck + 8 - 1, f"scroll-padding-top is {pad}, the tray is {stuck:.0f} px")
+        page.keyboard.press("Escape")
+        page.wait_for_selector("#term-page", state="hidden")
+        expect(page.locator(".wg-sentinel").count() == 0, "the sentinel was left behind")
+        rec.save()
+    finally:
+        reset_layout(page)
+    return f"stuck tray {stuck:.0f} px (at the top {top:.0f}), scroll-padding {pad:.0f}; gone with Done"
+
+
 @check("browser", "terminal-widgets-views-and-sessions")
 def widgets_views(ctx):
     need_on()

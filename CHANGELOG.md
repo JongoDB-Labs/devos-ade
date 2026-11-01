@@ -6,6 +6,14 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Fixed
+- **Customize's tray no longer covers the handles (JON-974).** The tray sticks to the top while the page scrolls, and at
+  about 240 px it hid the handles and resize edges that scrolled under it (and a handle reached with the keyboard could end
+  up entirely behind it). Scrolled away from the top, it now shrinks to one row (the title, the hidden widgets, **Reset to
+  default** and **Done**; the help text waits until you are back at the top, and the status line is still read out), and
+  while you customize the page keeps room for it, so Tab and scrolling to a handle land below the tray. Home and the
+  Terminal page.
+
 ## [0.48.0] - 2026-11-01
 
 ### Added

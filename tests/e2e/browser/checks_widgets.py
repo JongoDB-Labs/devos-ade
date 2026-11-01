@@ -352,6 +352,58 @@ def widgets_keyboard_only(ctx):
         page.evaluate(CLEAR)
 
 
+UNDER = """() => {
+  const a = document.activeElement, r = a.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  return {grip: a.classList.contains('wg-grip'), top: r.top, onIt: !!(hit && hit.closest('.wg-grip') === a), hit: hit ? hit.tagName.toLowerCase() + (hit.id ? '#' + hit.id : '') : null,
+    tray: document.getElementById('widget-tray').getBoundingClientRect().bottom};
+}"""
+
+
+@check("browser", "widgets-tray-compacts-and-never-covers-a-handle")
+def widgets_tray_sticky(ctx):
+    """JON-974: the Customize tray sticks to the top; once stuck it is one row (<= 90 px, not ~240), the scroller keeps
+    scroll-padding for it, and every handle reached backwards with Shift+Tab (it scrolls in from above) lands below it."""
+    page, rec = ctx.page("widgets-tray-sticky")
+    try:
+        start(page)
+        customize(page)
+        top = page.evaluate("() => document.getElementById('widget-tray').getBoundingClientRect().height")
+        expect(not page.evaluate("() => document.getElementById('widget-tray').classList.contains('wg-stuck')"), "the tray is compact at the top of the page")
+        page.evaluate("() => { const h = document.getElementById('home'); h.scrollTop = 700; }")
+        page.wait_for_function("() => document.getElementById('widget-tray').classList.contains('wg-stuck')", timeout=5000)
+        page.wait_for_timeout(200)
+        stuck = page.evaluate("() => document.getElementById('widget-tray').getBoundingClientRect().height")
+        expect(stuck <= 90 and stuck < top, f"the stuck tray is {stuck:.0f} px tall (at the top: {top:.0f}), not one row")
+        expect(page.locator("#wg-help").is_hidden() and page.locator("#wg-tray-title").is_visible() and page.locator("#wg-done").is_visible(),
+               "the stuck tray hides the wrong parts")
+        pad = page.evaluate("() => parseFloat(document.getElementById('home').style.scrollPaddingTop)")
+        expect(pad >= stuck + 8 - 1, f"scroll-padding-top is {pad}, the tray is {stuck:.0f} px")
+        # the status line is still there for a screen reader
+        expect(page.evaluate("() => getComputedStyle(document.getElementById('wg-live')).display") != "none", "the live region was taken out")
+        # backwards from the bottom: each handle that scrolls in from above has to be pressable
+        page.evaluate("() => { const h = document.getElementById('home'); h.scrollTop = h.scrollHeight; const g = [...document.querySelectorAll('.wg-grip')]; g[g.length - 1].focus(); }")
+        page.wait_for_timeout(300)
+        seen = 0
+        for _ in range(80):
+            page.keyboard.press("Shift+Tab")
+            page.wait_for_timeout(60)
+            got = page.evaluate(UNDER)
+            if not got["grip"]:
+                continue
+            seen += 1
+            expect(got["onIt"] and got["top"] >= got["tray"] - 1, f"a focused handle is under the tray: {got}")
+        expect(seen >= 4, f"only {seen} handles were reached with Shift+Tab")
+        # Done (the tray goes away): the padding and the sentinel go with it
+        page.click("#wg-done")
+        page.wait_for_selector("#widget-tray", state="hidden")
+        left = page.evaluate("() => [document.getElementById('home').style.scrollPaddingTop, document.querySelectorAll('.wg-sentinel').length]")
+        expect(left == ["", 0], f"left behind after Done: {left}")
+        rec.save()
+    finally:
+        page.evaluate(CLEAR)
+    return f"stuck tray {stuck:.0f} px (at the top {top:.0f}), scroll-padding {pad:.0f}, {seen} handles reached backwards, none under it"
+
+
 @check("browser", "widgets-phone-and-desktop-stay-apart")
 def widgets_phone_apart(ctx):
     page, rec = ctx.page("widgets-phone", "phone")

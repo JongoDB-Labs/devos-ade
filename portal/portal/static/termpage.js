@@ -601,10 +601,14 @@
     openBtn.setAttribute("aria-expanded", String(editing));
     if (on && current) later();
   }
+  let stopStick = null;
   function edit(next) {
     if (next === editing) return;
     editing = next;
     apply();
+    // (the tray compacts once it sticks, and scroll-padding keeps a focused handle below it: widgets.js stickTray; the page, .tp, scrolls here)
+    if (editing && !stopStick && W.stickTray) stopStick = W.stickTray(tray, page);
+    else if (!editing && stopStick) { stopStick(); stopStick = null; }
     if (editing) { $q("#term-tray-title").focus(); say("Customizing the Terminal. Each widget has a bar of buttons: move, narrower, wider, height, hide."); }
     else { say("Done customizing the Terminal"); openBtn.focus({ preventScroll: true }); }
   }
@@ -626,7 +630,7 @@
   function onTab(tab) {
     current = tab === "terminal";
     placeButton();
-    if (!current) { if (editing) { editing = false; } page.hidden = true; return; }
+    if (!current) { if (editing) { editing = false; if (stopStick) { stopStick(); stopStick = null; } } page.hidden = true; return; }
     if (!built) { built = true; buildTray(); loadFolders(); }
     if (engaged()) { appFrame("terminal"); }
     apply();

@@ -444,3 +444,27 @@ test("the Terminal page's script keeps within the portal's rules and sends only 
   const keys = readFileSync(fileURLToPath(new URL("../../../terminal/ttyd-keys.js", import.meta.url)), "utf8");
   for (const t of sent) assert.ok(keys.includes(`d.type === "${t}"`), `ttyd-keys.js reads ${t}`);
 });
+
+test("the tray's scroll-padding is its height plus a gap, rounded up, and nothing when it has no height", () => {
+  assert.equal(W.TRAY_GAP, 8);
+  assert.equal(W.scrollPad(240), 248);
+  assert.equal(W.scrollPad(61.2), 70, "rounded up so a fraction never leaves a sliver under the tray");
+  for (const bad of [0, -5, NaN, undefined, null, Infinity]) assert.equal(W.scrollPad(bad), 0, String(bad));
+});
+
+test("the tray is stuck only when its sentinel has gone out of the top of the scroller", () => {
+  const root = { top: 100, bottom: 800 };
+  const e = (isIntersecting, top) => ({ isIntersecting, rootBounds: root, boundingClientRect: { top } });
+  assert.equal(W.stuckFrom(e(true, 300)), false, "in view: the top of the page");
+  assert.equal(W.stuckFrom(e(false, 60)), true, "scrolled past the top edge");
+  assert.equal(W.stuckFrom(e(false, 900)), false, "below the bottom edge is not stuck");
+  assert.equal(W.stuckFrom({ isIntersecting: false, rootBounds: null, boundingClientRect: { top: 0 } }), false, "hidden with the tray: no root bounds, no verdict");
+  assert.equal(W.stuckFrom(null), false);
+});
+
+test("the compact tray keeps the status line announced and the help in the page (widgets.css)", () => {
+  const css = source("widgets.css");
+  assert.match(css, /\.wg-tray\.wg-stuck \.note:not\(\.wg-saved\), \.wg-tray\.wg-stuck \.wg-tray-sub \{ display: none; \}/);
+  assert.doesNotMatch(css, /\.wg-stuck [^{]*\.wg-status[^{]*\{[^}]*display: none/, "display none would silence the live region");
+  assert.doesNotMatch(css, /\.wg-stuck[^{]*\{[^}]*transition/, "no animation of the compaction");
+});

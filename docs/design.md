@@ -206,7 +206,7 @@ stack. The rules, so a new card drops in without a new pattern:
 - **Widgets are the person's to arrange (JON-946; `static/widgets.js`, `widgets.css`).** Every card of Home carries
   `data-widget="<id>"` (get-started, continue, update-card, spend, models, services, logins, maint, claude, feedback);
   the header, the banners and the sidebar are not widgets. **Customize** (Home's header) turns on edit mode: the tray
-  (`#widget-tray`: hidden widgets with *Add back*, *Reset to default*, *Done*), a bar on each card (a handle, its name, its
+  (`#widget-tray`: hidden widgets with *Add back*, *Reset to default*, *Done*; it sticks to the top, and once the page has scrolled past its place it is one row, `.wg-stuck`, found by a 0 px sentinel and an IntersectionObserver on the scrolling element, `#home` or the Terminal's `.tp`, which also gets `scroll-padding-top` = the tray's height + 8 px while editing, JON-974), a bar on each card (a handle, its name, its
   width, *Auto / S / M / L*, *Hide*; *Move up / down* on a phone) and edge handles; the cards' contents are `inert` while
   editing. **Today's layout is the default and is left alone:** with no saved layout (or one equal to the default) the
   markup above lays Home out and the script moves nothing. A saved layout, or edit mode, moves the cards into `#widgets` as one
