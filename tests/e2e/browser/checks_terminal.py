@@ -583,11 +583,18 @@ def add_back(page, wid: str):
 
 
 def add_terminal(page, n: int):
-    """Add a terminal and wait until view N shows tmux, in a window of its own."""
+    """Add a terminal and wait until view N shows tmux, in a window of its own, at a clean prompt: a view's session
+    outlives the check that made it (Close only detaches), so what an earlier check left running there (cat -v) is
+    ended and the screen cleared."""
     page.click("#term-add")
     page.wait_for_selector(f".tp-pane[data-view='{n}']")
     f = view_frame(page, n)
     wait_xterm(f)
+    focus_view(page, n)
+    f.locator(".xterm-helper-textarea").focus()
+    page.keyboard.press("Control+c")
+    page.keyboard.press("Control+l")
+    wait_text(f, r"\$$", 15)   # (the prompt; term_text trims the space after it)
     return f
 
 
@@ -735,8 +742,10 @@ def widgets_key_bar(ctx):
         page.click("[data-key=esc]")
         wait_text(f2, r"\^\[")
         expect(page.evaluate("() => document.activeElement.tagName") == "IFRAME", "the key button took the keyboard from the terminal")
+        # (the terminal echoes Esc as ^[ but a Tab as spacing: cat -v shows ^I once Enter sends it the line)
         page.click("[data-key=tab]")
-        wait_text(f2, r"\^I")
+        page.keyboard.press("Enter")
+        wait_text(f2, r"^\^\[\^I$")
         page.wait_for_timeout(600)
         expect("^[" not in term_text(f3) and "^I" not in term_text(f3), "view 3 got the keys sent to view 2")
         focus_view(page, 3)

@@ -4,5 +4,17 @@
   "control": "#copy-helper",
   "why": "A late update helper is installed and busy, not missing: Home no longer offers ./stack helper install (and its Copy) for it. Update now stays in sight, disabled, with ./stack update beside it; on a phone, where the command line is hidden, the hint names ./stack update.",
   "changelog": "v0.45.1"
+ },
+ {
+  "state": "portal-terminal-off-phone-*",
+  "control": "*",
+  "why": "On a phone #terminal now opens the Terminal tab, as on a desktop (the tab with Who answers' Open, Customize, the key bar and the terminal); up to 0.47 a phone had no Terminal tab and #terminal showed Chat, whose controls were this state's.",
+  "changelog": "v0.48.0"
+ },
+ {
+  "state": "portal-more-sheet-phone-*",
+  "control": "link:Terminal Claude Code, full screen. An external keyboard helps; closing it keeps your session.",
+  "why": "More now opens the Terminal as a tab of the portal (with the key bar); its entry for the terminal alone in its own window is named 'Terminal, full screen' and says it has no key bar.",
+  "changelog": "v0.48.0"
  }
 ]

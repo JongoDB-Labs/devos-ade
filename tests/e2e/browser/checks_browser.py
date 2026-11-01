@@ -2268,7 +2268,7 @@ def phone(ctx):
     # Chat's Who answers: a visible label, the choice's name whole ("Open WebUI ▾"), every choice in full in the menu
     page.wait_for_function("() => document.querySelectorAll('#answers-chat option').length > 0", timeout=20000)
     expect(page.locator("label[for=answers-chat]").is_visible() and page.inner_text("label[for=answers-chat]") == "Who answers", "no visible Who answers label")
-    pick = page.eval_on_selector(".answers-pick-text", "e => [e.textContent, e.scrollWidth <= e.clientWidth, e.getBoundingClientRect().right <= innerWidth]")
+    pick = page.eval_on_selector(".answers-chat .answers-pick-text", "e => [e.textContent, e.scrollWidth <= e.clientWidth, e.getBoundingClientRect().right <= innerWidth]")
     expect(pick == ["Open WebUI", True, True], f"the phone's Chat menu shows {pick}")
     expect(page.eval_on_selector("#answers-chat option[value=owui]", "o => o.textContent") == "Open WebUI — its own model menu", "the menu's option is not whole")
     shot(page, "14b-phone-chat-who-answers")

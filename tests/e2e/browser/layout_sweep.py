@@ -642,13 +642,18 @@ def st_terminal_customize(S, p, device):
     p.click("#term-customize")
     p.wait_for_selector("#term-tray:not([hidden])")
     for wid in ("keys", "commands", "projects"):
-        if p.locator(f"#term-hidden [data-id={wid}]").count():
+        if not p.locator(f"[data-widget={wid}]").is_visible():
             p.locator(f"#term-hidden [data-id={wid}]").click()
+            p.wait_for_selector(f"[data-widget={wid}]:not([hidden])")
     if device != "phone":
         p.click("#term-add")
         p.wait_for_selector(".tp-pane[data-view='2']")
     p.wait_for_timeout(1200)
     yield "terminal-customize", "#term-page"
+    # (a desktop window narrowed under 1100 px is a tablet's screen, with its own layout: Quick commands hidden there)
+    if not p.locator("[data-widget=commands]").is_visible():
+        p.locator("#term-hidden [data-id=commands]").click()
+        p.wait_for_selector("[data-widget=commands]:not([hidden])")
     p.click("#tp-cmd-add")
     p.wait_for_selector("#tp-cmd-form:not([hidden])")
     yield "terminal-customize-form", "#term-page"
