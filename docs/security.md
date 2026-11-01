@@ -964,6 +964,17 @@ request says beyond the three fields, or run as root.
   checks by path and a read ended after 2 seconds), so a FIFO, device or symlink put there, even swapped in after a
   check, cannot stall or redirect the helper. The helper reads it only inside the automatic-update window, once per
   window, and only with automatic updates on.
+- [x] **Preparing a release ahead (`UPDATE_PREPARE`, on by default) changes nothing the running stack uses.** The helper's
+  prepare (`lib/prepare.sh`) fetches origin's release tags as the automatic update does (ssh in batch mode, a time limit),
+  makes the checks `./stack update` makes (the newest release tag, not behind HEAD, `git verify-tag` when
+  `UPDATE_REQUIRE_SIGNED_TAGS=true`), unpacks the commit with `git archive` into `.state/update/prepare/src` (HEAD and the
+  working tree stay; the folder and a private copy of `.env`, mode 600, are removed when the run ends), and builds its images
+  from there under the Compose project `<project>-prep` and downloads the images its compose files pin by digest. It runs the
+  checkout's own scripts over the new release's files as data; no script of the new release runs (building its Dockerfiles is
+  what the update does). It never creates, moves or removes a `<project>/…:local` or `:previous` name, starts or stops a
+  container, writes `.env` or the update record, or takes the stack lock; it ends when another `./stack` command takes it.
+  Clean-up removes only names of `<project>-prep` and downloads it made that no container, other checkout or snapshot uses
+  (never forced). One release at a time, one image at a time, only while the load is not above twice the CPU count.
 - [x] **Automatic updates: off by default, releases only, once each.** The switch on Home is a request like the
   others (password again, `REMOTE_ADMIN_ACTIONS`, both sets of rate limits, refused while `.state/lock/` is held,
   since setup writes `.env` too); its result is reported with the switch and never replaces the last job on Home.

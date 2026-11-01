@@ -16,6 +16,7 @@
 #                    run.sh stages it), in the throwaway only: v0.25.0, or, once that release exists, the patch after
 #                    the newest release here (a tag the update's fetch never meets).
 #   --no-fast-check  skip the fast-apply block at the end (JON-972; see below)
+#   --no-prepare-check  do not prepare TO ahead of the Update now request, and keep the cold bound only (JON-972 phase B; below)
 #   --setup-stopped TAG [--resume to | plain]
 #                    the way out of an update that stopped in its setup (2026-11-01: an owner's 0.45.1 -> 0.47.0 update,
 #                    whose smoke test timed out on a loaded Mac): from --from, ./stack update --to TAG in a terminal, killed
@@ -53,6 +54,14 @@
 #    - ./stack backup takes seconds through docker exec (UPGRADE_BACKUP_MAX_S, default 60 s), with the same files;
 #    - ./stack rollback right after still restores the code (the version before), the data (the seeded chat; a chat written
 #      after the update is gone) and the images (the portal image is the one from before the update, by ID).
+# 7. prepared ahead (JON-972 phase B; not with --migrate; only when the release updated FROM already has lib/prepare.sh — an
+#    older one cannot prepare, and then this block says so and the cold bound above is all there is): before the Update now
+#    request, latest.txt names TO and the throwaway's helper (started first) prepares it on its own, and the run waits for
+#    that (UPGRADE_PREPARE_WAIT_S, default 1800 s). Checked: the preparation finished; the <project>/portal:local image is the
+#    one it was (nothing the running stack uses moved); the images are there under <project>-prep. Then the request is
+#    sent, and after the update: the job's log says the release was prepared ahead and has no "Prepare:" step of its own, the
+#    prepared names and the record are gone, and the whole Update now is within UPGRADE_PREPARED_MAX_S (default 90 s: the
+#    builds are cache hits, the downloads done, setup runs in update mode — the ticket's target is about 30 s on an idle host).
 # Results: tests/e2e/out/upgrade/results.tsv (and logs/). The throwaway is removed at the end unless --keep.
 #
 # THE MOVE FROM bedrock-now TO devos-ade (JON-807, lib/migrate.sh): the same run, but from an install whose project is the
@@ -90,7 +99,8 @@ BUDGETS="BUDGET_CLAUDE_CODE=0.04 BUDGET_OPENWEBUI=0.04 BUDGET_SETUP=0.02"
 NOTTY="$HERE/notty"
 OLD_URL="https://github.com/JongoDB-Labs/bedrock-now.git"
 NEW_URL="https://github.com/JongoDB-Labs/devos-ade.git"
-PROJECT=bne2e-rebrand-up; FROM=v0.24.0; AWS_ENV_FILE=''; KEEP=0; REAL_GITHUB=0; TEARDOWN_ONLY=0; FAST_CHECK=1
+PROJECT=bne2e-rebrand-up; FROM=v0.24.0; AWS_ENV_FILE=''; KEEP=0; REAL_GITHUB=0; TEARDOWN_ONLY=0; FAST_CHECK=1; PREPARE_CHECK=1
+UPGRADE_PREPARED_MAX_S="${UPGRADE_PREPARED_MAX_S:-90}"; UPGRADE_PREPARE_WAIT_S="${UPGRADE_PREPARE_WAIT_S:-1800}"
 UPGRADE_COLD_MAX_S="${UPGRADE_COLD_MAX_S:-1500}"; UPGRADE_APPLY_MAX_S="${UPGRADE_APPLY_MAX_S:-150}"; UPGRADE_BACKUP_MAX_S="${UPGRADE_BACKUP_MAX_S:-60}"
 MIGRATE=0; NEWP=''; THEN=''; FROM_SET=0; PROJECT_SET=0; INTERRUPT=0; ROLLED_BACK=0; STUCK_ON=''; RESUME=to; SETUP_STOPPED=''
 while [ $# -gt 0 ]; do
@@ -106,6 +116,7 @@ while [ $# -gt 0 ]; do
     --migrate-pair) MIGRATE=pair; NEWP="${2:?}"; shift 2 ;;
     --then) THEN="${2:?}"; case "$THEN" in rollback | next-update) ;; *) echo "--then takes rollback or next-update" >&2; exit 2 ;; esac; shift 2 ;;
     --no-fast-check) FAST_CHECK=0; shift ;;
+    --no-prepare-check) PREPARE_CHECK=0; shift ;;
     --keep) KEEP=1; shift ;;
     --real-github) REAL_GITHUB=1; shift ;;
     --teardown) TEARDOWN_ONLY=1; shift ;;
@@ -597,12 +608,36 @@ else
 docker image inspect --format '{{.Id}}' "$PROJECT/portal:local" > "$OUT/portal-id-before" 2>/dev/null || : > "$OUT/portal-id-before"
 # (the update's setup keeps each step's inputs, values as checksums: the fast apply below says what made a step run)
 [ "$FAST_CHECK" != 1 ] || { mkdir -p "$STACK/.state/update" && : > "$STACK/.state/update/trace-on"; }
+PREPARED=0
+if [ "$MIGRATE" = 0 ] && [ "$PREPARE_CHECK" = 1 ] && [ -f "$STACK/lib/prepare.sh" ]; then
+  # the release updated FROM prepares ahead (JON-972 phase B): the portal's check names TO, and the helper, started first,
+  # prepares it before any click; the request comes after that
+  say "prepare ahead: $TO named in latest.txt; the helper prepares it before the request (waits up to ${UPGRADE_PREPARE_WAIT_S}s)"
+  printf 'latest=%s\nchecked_at=%s\n' "$TO" "$(date +%s)" > "$STACK/.state/update-check/latest.txt"; chmod 644 "$STACK/.state/update-check/latest.txt"
+  e2e_helper_start 2> "$LOGS/helper-start.log" || { check helper-started 1 "$(tail -n 2 "$LOGS/helper-start.log" | tr '\n' ' ')"; exit 1; }
+  PREP_T0="$(now)"; PST=''
+  for _ in $(seq 1 "$UPGRADE_PREPARE_WAIT_S"); do
+    PST="$(sed -n 's/^state=//p' "$STACK/.state/update/prepare/state" 2>/dev/null)"
+    case "$PST" in ready | failed) break ;; esac
+    sleep 1
+  done
+  cp "$STACK/.state/helper/prepare.log" "$LOGS/prepare.log" 2>/dev/null; redact "$LOGS/prepare.log"
+  check prepared-ahead "$([ "$PST" = ready ] && echo 0 || echo 1)" "prepared $TO in $(( $(now) - PREP_T0 ))s: state ${PST:-none} $(sed -n 's/^reason=//p' "$STACK/.state/update/prepare/state" 2>/dev/null)"
+  grep -E '^==> .* ready \(' "$LOGS/prepare.log" | sed 's/^==> //' | while IFS= read -r l; do say "prepare step: $l"; done
+  check prepare-left-stack-alone "$([ -n "$(cat "$OUT/portal-id-before")" ] && [ "$(docker image inspect --format '{{.Id}}' "$PROJECT/portal:local" 2>/dev/null)" = "$(cat "$OUT/portal-id-before")" ] && [ "$(git -C "$STACK" describe --tags --always 2>/dev/null)" = "$FROM" ] && echo 0 || echo 1)" "the portal image and the code are still $FROM's; ${PROJECT}-prep names: $(docker image ls --format '{{.Repository}}' "${PROJECT}-prep/*" 2>/dev/null | tr '\n' ' ')"
+  check prepare-built-under-its-own-name "$(docker image inspect "${PROJECT}-prep/portal:local" >/dev/null 2>&1 && echo 0 || echo 1)" "${PROJECT}-prep/portal:local exists"
+  [ "$PST" != ready ] || PREPARED=1
+elif [ "$MIGRATE" = 0 ] && [ "$PREPARE_CHECK" = 1 ]; then
+  say "prepare ahead: skipped — $FROM has no lib/prepare.sh, so its helper cannot prepare (the cold bound is all there is)"
+fi
 UPD_T0="$(now)"
 nonce="$(openssl rand -hex 16)"
 mkdir -p "$STACK/.state/requests"
 printf '{"action":"update","requested_at":%s,"nonce":"%s"}\n' "$(date +%s)" "$nonce" > "$STACK/.state/requests/req-$nonce.json"
 say "Update now ($FROM -> $TO) through the update helper (log: $LOGS/helper.log)"
-e2e_helper_start 2> "$LOGS/helper-start.log" || { check helper-started 1 "$(tail -n 2 "$LOGS/helper-start.log" | tr '\n' ' ')"; exit 1; }
+if [ "$PREPARED" = 0 ]; then
+  e2e_helper_start 2> "$LOGS/helper-start.log" || { check helper-started 1 "$(tail -n 2 "$LOGS/helper-start.log" | tr '\n' ' ')"; exit 1; }
+fi
 for _ in $(seq 1 1800); do   # an update takes minutes (images are rebuilt); at most 30
   s="$(cat "$STACK/.state/status/helper-status.json" 2>/dev/null)"
   case "$s" in *'"action": "update"'*'"finished_at": '[0-9]*) break ;; esac
@@ -653,6 +688,13 @@ check home-card-steps "$?" "$(tail -n 1 "$OUT/steps.check")"
 while IFS="$(printf '\t')" read -r l t; do say "step  ${t:-?}  $l"; done < "$OUT/steps.tsv"
 UPD_S=$((UPD_T1 - UPD_T0))
 check update-time-bound "$([ "$UPD_S" -le "$UPGRADE_COLD_MAX_S" ] && echo 0 || echo 1)" "Update now took ${UPD_S}s from the request to the helper's end (bound ${UPGRADE_COLD_MAX_S}s; the first update to this code runs every step)"
+if [ "$PREPARED" = 1 ]; then
+  # an Update now on a release prepared ahead: the tighter bound, the job says so, and what was prepared is cleaned up
+  check prepared-update-time-bound "$([ "$UPD_S" -le "$UPGRADE_PREPARED_MAX_S" ] && echo 0 || echo 1)" "Update now on a prepared release took ${UPD_S}s (bound ${UPGRADE_PREPARED_MAX_S}s)"
+  check prepared-apply-said "$(grep -q 'update: prepared ahead' "$LOGS/update-job.log" && echo 0 || echo 1)" "the job's log says the release was prepared ahead"
+  check prepared-no-prepare-steps "$(grep -q '==> Prepare: ' "$LOGS/update-job.log" && echo 1 || echo 0)" "no Prepare step in the job: it was done before the click"
+  check prepared-cleaned-up "$([ ! -f "$STACK/.state/update/prepare/state" ] && ! docker image inspect "${PROJECT}-prep/portal:local" >/dev/null 2>&1 && echo 0 || echo 1)" "the record and the ${PROJECT}-prep names are gone after the update"
+fi
 
 fi
 

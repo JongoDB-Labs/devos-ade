@@ -6,6 +6,37 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 
 ## [Unreleased]
 
+### Added
+- **A new release is prepared before you click Update now (JON-972).** Once Home's daily check names a release newer than
+  yours, the update helper fetches it, builds its images and downloads the ones it pins, in the background. Home's update card
+  then says **Ready: v0.x.y is downloaded and built. Update now takes about half a minute**; while it works the card says
+  "Preparing v0.x.y in the background: build portal", and if it fails it says so plainly with the reason (Update now still
+  works; it does that work itself). Update now on a release that is not prepared yet prepares it first, and the progress
+  card lists those steps with their times ("Prepare: build portal · 1m10s") before the backup.
+  - **Nothing on your install changes meanwhile.** The images are built under a name of their own (`<project>-prep`), so the
+    images your running version uses, and the ones **Roll back** restores, are never touched; no container starts or stops,
+    `.env` and the checkout stay as they are (the release is read with `git archive` into a folder that is removed
+    afterwards), and no update is recorded. It checks the release the way `./stack update` does, including
+    `UPDATE_REQUIRE_SIGNED_TAGS`, and runs no script of the new release: building its Dockerfiles is what the update does.
+    Only images pinned by a digest are downloaded ahead.
+  - **It waits for you and for a busy computer.** It stops the moment an update, setup, rollback or restore starts and goes on
+    later from Docker's cache, builds one image at a time, does not start while the computer's load is more than twice its
+    CPU count, prepares a release once, and stays under about 8 GB of images and 10 GB of free disk. A prepared release's
+    builds go when it is installed or a newer release replaces it; its downloads go too when nothing uses them.
+  - **On by default.** Settings › Updates & backups › More settings › **Prepare updates ahead** (`UPDATE_PREPARE=false`)
+    turns it off. A checkout that follows a branch is not prepared.
+
+### Tests
+- **Preparing a release ahead (JON-972).** Shell tests (`tests/test_prepare.sh`, a real git origin and a stubbed Docker): the
+  decision (off, branch, nothing newer, rolled back, prepared already, failed within the hour, lock held, load too high,
+  superseded); a prepare builds only under `<project>-prep` and downloads only digests, and leaves the `:local` and
+  `:previous` names, `.env`, HEAD, the working tree, the update record and the lock as they were; a lock taken mid-build ends
+  it and a later run goes on; failed builds, a release not signed when signatures are required, an origin that cannot be
+  reached, too little disk and too many images are reported with their reason; the update says it was prepared ahead and
+  removes only the `-prep` names; clean-up never removes a name outside the prep project or an image a container uses;
+  Update now prepares first with its steps in the job's log, and goes on when the prepare fails. Portal and JS tests for the
+  status and the card's states.
+
 ## [0.49.0] - 2026-11-02
 
 ### Changed

@@ -2728,6 +2728,17 @@ limits (one a minute, 12 a day). It does not update a checkout that follows a br
 offering it). An update that finds nothing new ends as "Already up to date"; neither it nor `--force` touches
 the rollback target or the kept images.
 
+**Prepared ahead (on by default):** once the portal's daily check names a release newer than yours, the helper fetches it,
+builds its images and downloads the ones it pins, in the background, so Update now only has the switch to make (about half a
+minute). Home's update card says *Preparing v0.x.y in the background: build portal*, then *Ready: v0.x.y is downloaded and
+built*, or why it failed (Update now then does that work itself, as before). The images are built as `<project>-prep/<service>`,
+never as the names your running version or **Roll back** uses; no container, `.env` or file of the checkout changes, and no
+script of the new release runs. It builds one image at a time, not while the computer's load is above twice its CPU count,
+stops the moment an update, setup, rollback or restore starts, and uses up to about 8 GB until you update (or a newer release
+replaces it). Update now on a release that is not prepared yet prepares it first, its steps shown with their times.
+Settings › Updates & backups › More settings › *Prepare updates ahead* (`UPDATE_PREPARE=false`) turns it off. A checkout that
+follows a branch is not prepared.
+
 **Automatic updates (off by default):** in Home → Maintenance, *Automatic updates: Off | Nightly (03:00–06:00)*
 (asks for the portal password), or `./stack helper auto on [--hour N]` / `off` / `status` (`AUTO_UPDATE` and
 `AUTO_UPDATE_HOUR` in `.env`). When on, the helper installs a new **release** by itself between `N:00` and
