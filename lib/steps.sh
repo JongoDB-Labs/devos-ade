@@ -358,9 +358,10 @@ upd_in_stt_service() {
   _upd_fn stt_setup_service _stt_build_and_up _stt_build
 }
 # LiteLLM's virtual keys and its admin account (kept in its database): the budgets (.env), the keys as they are now, LiteLLM's
-# image (the compose files) and the code
+# image (the compose files), the database's volume (one made again holds no key) and the code
 upd_in_keys() {
   _upd_env; _upd_keys; _upd_compose
+  printf 'pgdata=%s\n' "$(docker volume inspect --format '{{.CreatedAt}}' "$(project_name)_pgdata" 2>/dev/null || echo missing)"
   _upd_fn _setup_litellm_keys ensure_virtual_key setup_litellm_admin ensure_litellm_db_admin alert_pct_mark
 }
 # The portal sign-in and Chat's API key, and the Open WebUI syncs (models, prices, banner; the banner lives in Open WebUI's

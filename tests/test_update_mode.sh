@@ -13,7 +13,8 @@ _um_setup() {
   cp "$T_ROOT/tests/fixtures/prices.tsv" "$STACK_DIR/catalog/prices.tsv"; PRICES_CATALOG="$STACK_DIR/catalog/prices.tsv"; use_best_prices   # (as the prices step leaves them)
   LITELLM_CTR="/p-litellm-1 L1 2026-11-01T10:00:00Z"; OWUI_CTR="/p-open-webui-1 O1 2026-11-01T10:00:00Z"; PORTAL_ID=P1
   dc() { case "$*" in "ps -q litellm open-webui") printf 'c1\nc2\n' ;; esac; return 0; }
-  docker() { case "$1 $2" in "inspect --format") printf '%s\n%s\n' "$LITELLM_CTR" "$OWUI_CTR" ;; *) echo "unexpected docker $*" >&2; return 1 ;; esac; }
+  PGDATA_AT=2026-10-01T09:00:00Z
+  docker() { case "$1 $2" in "inspect --format") printf '%s\n%s\n' "$LITELLM_CTR" "$OWUI_CTR" ;; "volume inspect") echo "$PGDATA_AT" ;; *) echo "unexpected docker $*" >&2; return 1 ;; esac; }
   snapshot_refs() { printf '%s\t%s\n' "$PORTAL_ID" "$(project_name)/portal:local"; }
   remote_on() { return 1; }
   websearch_backend() { echo builtin; }
@@ -56,6 +57,8 @@ test_each_input_changing_runs_exactly_its_steps() {
   OWUI_CTR="/p-open-webui-1 O2 2026-11-01T11:00:00Z"; assert_eq "$(_um_run update)" "signin syncs"
   # the portal image rebuilt: prices (the updater runs in it), the sign-in, the git account
   PORTAL_ID=P2; assert_eq "$(_um_run update)" "prices gitafter signin"
+  # Postgres's volume made again (it held LiteLLM's keys): the keys
+  PGDATA_AT=2026-11-01T12:00:00Z; assert_eq "$(_um_run update)" "keys"
   # a model in the catalog: the config and the syncs
   printf 'small\tchat\tbedrock/y\t-\t-\n' >> "$CATALOG"; assert_eq "$(_um_run update)" "litellm_config syncs"
   # the models found
