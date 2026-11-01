@@ -4,6 +4,8 @@ never changes the desktop's.
 
 One JSON file in the portal's state dir, written whole and atomically, mode 600:
   {"version": 1, "pages": {"home": {"desktop": [{"id": "spend", "span": 5, "height": "auto", "hidden": false}, ...], ...}}}
+A widget that shares its row (Home's Get started and Continue) may carry "sized": true once the person set its width: at
+its default span without it, it fills the row while the other is not showing (static/widgets.js usedSpan).
 A kind of screen with no entry shows the page's default layout (the page decides it; nothing is stored for it).
 The Terminal page (JON-946) keeps more than its widgets for a kind of screen, so its screen is an object, and the person's
 quick commands are the page's, the same on every screen:
@@ -57,6 +59,7 @@ def _entry(raw, page: str, device: str) -> dict | None:
     if not isinstance(raw, dict):
         raise LayoutError("each widget is an object: id, span, height, hidden")
     wid, span, height, hidden = raw.get("id"), raw.get("span"), raw.get("height", "auto"), raw.get("hidden", False)
+    sized = raw.get("sized", False)
     if not isinstance(wid, str):
         raise LayoutError("a widget's id is text")
     if isinstance(span, bool) or not isinstance(span, int):
@@ -65,12 +68,14 @@ def _entry(raw, page: str, device: str) -> dict | None:
         raise LayoutError("a widget's height is auto, s, m or l")
     if not isinstance(hidden, bool):
         raise LayoutError("hidden is true or false")
+    if not isinstance(sized, bool):
+        raise LayoutError("sized is true or false")
     if wid not in PAGES[page]:
         return None   # (a widget this portal does not have: dropped, the rest kept)
     cols = DEVICES[device]
     low = 1 if cols == 1 else PAGES[page][wid][0 if device == "desktop" else 1]
     return {"id": wid, "span": max(low, min(cols, span)), "height": height if height in HEIGHTS else "auto",
-            "hidden": hidden and wid not in FIXED.get(page, ())}
+            "hidden": hidden and wid not in FIXED.get(page, ()), **({"sized": True} if sized and cols > 1 else {})}
 
 
 def entries(raw, page: str, device: str) -> list[dict]:

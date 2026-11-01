@@ -36,6 +36,7 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   run), Continue filled the row; since v0.46.0, pressing Customize, or changing anything such as hiding Models, left it at 6
   of 12 columns with the next card beside it. While Get started is not showing, Continue (or Get started, if Continue is
   the one away) now keeps the whole row until you resize it yourself, and the size shown in Customize is the one in use.
+  A width you set is kept as yours, 6 columns included.
 - **The Code page's Customize button says "Customize".** Since v0.47.0 it was a grid icon with no word, and people did not
   find it. It now shows the word beside the icon, as Review does, and keeps the icon alone on a narrower window.
 

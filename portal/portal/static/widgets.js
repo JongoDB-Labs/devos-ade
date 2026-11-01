@@ -107,7 +107,8 @@
         const w = e && typeof e === "object" ? have.get(e.id) : null;
         if (!w || seen.has(w.id)) continue;
         seen.add(w.id);
-        out.push({ id: w.id, span: device === "phone" ? 1 : clampSpan(w, device, e.span), height: HEIGHTS.includes(e.height) ? e.height : "auto", hidden: e.hidden === true && !w.fixed });
+        out.push({ id: w.id, span: device === "phone" ? 1 : clampSpan(w, device, e.span), height: HEIGHTS.includes(e.height) ? e.height : "auto", hidden: e.hidden === true && !w.fixed,
+          ...(e.sized === true && w.pair && device !== "phone" ? { sized: true } : {}) });
       }
     }
     for (const d of defaults(page, device)) if (!seen.has(d.id)) out.push(d);
@@ -115,12 +116,12 @@
   }
   // usedSpan(page, device, list, id, gone): the span a widget is laid out with. Its own, except that a widget with a pair
   // that is still at its default span fills the row (all the columns) while the pair is not showing: hidden by the person
-  // or in `gone` (ids that hide themselves, e.g. Get started after the first run). A span the person set is kept.
+  // or in `gone` (ids that hide themselves, e.g. Get started after the first run). A span the person set (`sized`) is kept.
   function usedSpan(page, device, list, id, gone) {
     const e = get(list, id), w = find(page, id);
     if (!e || !w) return 0;
     if (device === "phone") return 1;
-    if (w.pair && e.span === defaultEntry(w, device).span) {
+    if (w.pair && !e.sized && e.span === defaultEntry(w, device).span) {
       const p = get(list, w.pair);
       if (!p || p.hidden || (gone && gone.includes(w.pair))) return COLS[device];
     }
@@ -158,13 +159,16 @@
     const out = rest.slice(0, at).concat(moving, rest.slice(at));
     return same(out, list) ? nothing(list, "") : { list: out, message: placed(page, out, id), changed: true };
   }
-  // setSpan(page, device, list, id, span): whole columns, clamped; a phone has one column and nothing to resize
-  function setSpan(page, device, list, id, span) {
+  // setSpan(page, device, list, id, span, from): whole columns, clamped; a phone has one column and nothing to resize.
+  // FROM is the span it is shown at (usedSpan; default its own). A widget with a pair keeps `sized` once the person sets
+  // its width, so a width equal to the default is kept as theirs and does not fill the row again.
+  function setSpan(page, device, list, id, span, from) {
     const e = get(list, id), w = find(page, id);
     if (!e || !w || device === "phone") return nothing(list, "");
     const n = clampSpan(w, device, span);
     const msg = `${titleOf(page, id)} is ${n} of ${COLS[device]} columns wide`;
-    return n === e.span ? nothing(list, msg) : { list: change(list, id, { span: n }), message: msg, changed: true };
+    if (n === (from === undefined ? e.span : from) && (n === e.span || !w.pair)) return nothing(list, msg);
+    return { list: change(list, id, w.pair ? { span: n, sized: true } : { span: n }), message: msg, changed: true };
   }
   const resizeBy = (page, device, list, id, delta) => { const e = get(list, id); return e ? setSpan(page, device, list, id, e.span + delta) : nothing(list, ""); };
   function setHeight(page, list, id, height) {
@@ -583,8 +587,8 @@
       if (ev.altKey || ev.ctrlKey || ev.metaKey || device === "phone") return;
       const k = ev.key, s = ev.shiftKey;
       let r = null;
-      if (k === "ArrowLeft" || k === "ArrowUp") r = s ? (k === "ArrowLeft" ? setSpan(PAGE, device, list, id, spanOf(id) - 1) : heightStep(PAGE, list, id, -1)) : moveBy(PAGE, list, id, -1);
-      else if (k === "ArrowRight" || k === "ArrowDown") r = s ? (k === "ArrowRight" ? setSpan(PAGE, device, list, id, spanOf(id) + 1) : heightStep(PAGE, list, id, 1)) : moveBy(PAGE, list, id, 1);
+      if (k === "ArrowLeft" || k === "ArrowUp") r = s ? (k === "ArrowLeft" ? setSpan(PAGE, device, list, id, spanOf(id) - 1, spanOf(id)) : heightStep(PAGE, list, id, -1)) : moveBy(PAGE, list, id, -1);
+      else if (k === "ArrowRight" || k === "ArrowDown") r = s ? (k === "ArrowRight" ? setSpan(PAGE, device, list, id, spanOf(id) + 1, spanOf(id)) : heightStep(PAGE, list, id, 1)) : moveBy(PAGE, list, id, 1);
       else if ((k === "h" || k === "H") && !s) { ev.preventDefault(); $q('[data-act="hide"]', ov).click(); return; }
       else return;
       ev.preventDefault();
@@ -655,7 +659,7 @@
     const px = { s: HEIGHT_REM.s * 16, m: HEIGHT_REM.m * 16, l: HEIGHT_REM.l * 16, auto: Math.max(natural, HEIGHT_REM.l * 16 + 1) };
     track(ev, host, (m) => {
       let r = { list: start };
-      if (edge.includes("e")) r = setSpan(PAGE, device, r.list, id, span0 + Math.round((m.clientX - x0) / pitch));
+      if (edge.includes("e")) r = setSpan(PAGE, device, r.list, id, span0 + Math.round((m.clientX - x0) / pitch), span0);
       if (edge.includes("s")) {
         const want = h0 + (m.clientY - y0);
         const best = HEIGHTS.slice().sort((a, b) => Math.abs(px[a] - want) - Math.abs(px[b] - want))[0];

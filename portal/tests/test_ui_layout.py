@@ -103,6 +103,14 @@ def test_spans_are_clamped_to_the_widgets_minimum_and_the_screens_columns(client
     assert [e["span"] for e in h["phone"]] == [1]              # one column: nothing to resize
 
 
+def test_sized_is_kept_as_true_only_and_never_on_a_phone(client):
+    r = client.put("/api/ui/layout", json=doc(desktop=[{**row("continue", 6), "sized": True}, {**row("spend", 5), "sized": False}],
+                                              phone=[{**row("continue", 1), "sized": True}]), headers=API)
+    h = r.json()["pages"]["home"]
+    assert h["desktop"][0]["sized"] is True and "sized" not in h["desktop"][1]
+    assert "sized" not in h["phone"][0]                        # one column: no width was chosen
+
+
 def test_a_height_outside_auto_s_m_l_is_auto(client):
     r = client.put("/api/ui/layout", json=doc(desktop=[row("spend", 5, "xl"), row("models", 4, "L"), row("services", 3, "l")]), headers=API)
     assert [e["height"] for e in r.json()["pages"]["home"]["desktop"]] == ["auto", "auto", "l"]
@@ -123,6 +131,7 @@ def test_a_height_outside_auto_s_m_l_is_auto(client):
     {"version": 1, "pages": {"home": {"desktop": [{"id": "spend", "span": 4, "hidden": "yes"}]}}},
     {"version": 1, "pages": {"home": {"desktop": [{"id": "spend", "span": 4, "hidden": 1}]}}},
     {"version": 1, "pages": {"home": {"desktop": [{"id": "spend", "span": 4, "height": 3}]}}},
+    {"version": 1, "pages": {"home": {"desktop": [{"id": "continue", "span": 6, "sized": "yes"}]}}},
     {"version": 1, "pages": {"home": {"desktop": [row("spend")] * 40}}},
 ])
 def test_anything_else_is_refused_and_nothing_is_written(client, state, body):

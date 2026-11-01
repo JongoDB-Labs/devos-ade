@@ -195,23 +195,22 @@ CONTINUE_BOX = """() => {
 @check("browser", "widgets-continue-fills-the-row-when-alone")
 def widgets_continue_alone(ctx):
     page, rec = ctx.page("widgets-alone")
+    size = lambda: page.locator(bar("continue", ".wg-size")).inner_text().strip()
+    def hide_get_started():   # its own Hide (kept in this browser, as a person's is): it hides itself from then on
+        if page.locator("[data-widget=get-started]").is_visible():
+            page.click("[data-widget=get-started] .gs-hide")
+        page.wait_for_selector("[data-widget=get-started]", state="hidden")
     try:
         start(page)
-        # past the first run Get started hides itself (its own `hidden`); make sure it is so on this stack
-        page.evaluate("() => { document.querySelector('[data-widget=get-started]').hidden = true; }")
+        hide_get_started()
         page.wait_for_selector("[data-widget=continue]", state="visible")
         before = page.evaluate(CONTINUE_BOX)
         expect(abs(before["width"] - before["row"]) <= 2, f"the default Home does not give Continue the row: {before}")
-        # Customize moves the cards into the 12-column grid; Continue (default span 6) must keep the whole row, labelled 12 / 12
+        # Customize moves the cards into the 12-column grid; Continue (default span 6) keeps the whole row, labelled 12 / 12
         customize(page)
         in_edit = page.evaluate(CONTINUE_BOX)
         expect(abs(in_edit["width"] - in_edit["row"]) <= 2, f"Continue shrank in Customize: {in_edit}")
-        expect(page.locator(bar("continue", ".wg-size")).inner_text().strip() == "12 / 12", f"size label {page.locator(bar('continue', '.wg-size')).inner_text()!r}")
-        # Get started showing itself while the page is open shares the row again, with no reload; hiding itself again gives it back
-        page.evaluate("() => { document.querySelector('[data-widget=get-started]').hidden = false; }")
-        page.wait_for_function("() => document.querySelector('.wg-ov[data-for=continue] .wg-size').textContent.trim() === '6 / 12'", timeout=5000)
-        page.evaluate("() => { document.querySelector('[data-widget=get-started]').hidden = true; }")
-        page.wait_for_function("() => document.querySelector('.wg-ov[data-for=continue] .wg-size').textContent.trim() === '12 / 12'", timeout=5000)
+        expect(size() == "12 / 12", f"size label {size()!r}")
         # another change (hide Models) and Done: Continue is still the whole row, and has not moved from the default page
         page.click(bar("models", "[data-act=hide]"))
         page.click("#wg-done")
@@ -220,11 +219,23 @@ def widgets_continue_alone(ctx):
         after = page.evaluate(CONTINUE_BOX)
         expect(abs(after["width"] - after["row"]) <= 2, f"Continue is not the whole row after a change: {after}")
         expect(abs(after["top"] - before["top"]) <= 3 and abs(after["left"] - before["left"]) <= 3, f"Continue moved from the default page: {before} -> {after}")
-        # a width the person set is kept: Shift+Left from the span shown (12) gives 11, not 5
+        # Get started brought back while the page is open (the walkthrough's way): the two share the row again, no reload
         customize(page)
+        page.evaluate("() => window.bnGetStarted.open()")
+        page.wait_for_function("() => document.querySelector('.wg-ov[data-for=continue] .wg-size').textContent.trim() === '6 / 12'", timeout=5000)
+        page.click("#wg-done")
+        hide_get_started()
+        # a width the person sets is kept, from the span shown: Shift+Left from 12 down to 6, the default, stays at 6
+        customize(page)
+        page.wait_for_function("() => document.querySelector('.wg-ov[data-for=continue] .wg-size').textContent.trim() === '12 / 12'", timeout=5000)
         page.focus(bar("continue", ".wg-grip"))
         page.keyboard.press("Shift+ArrowLeft")
         expect(entry(page, "continue")["span"] == 11, f"resize did not start from the span shown: {entry(page, 'continue')}")
+        for _ in range(5):
+            page.keyboard.press("Shift+ArrowLeft")
+        got = entry(page, "continue")
+        expect(got["span"] == 6 and got.get("sized") is True, f"Shift+Left down to the default width: {got}")
+        expect(size() == "6 / 12", f"Continue set to 6 fills the row again: {size()!r}")
     finally:
         page.evaluate(CLEAR)
 

@@ -184,6 +184,31 @@ test("a widget that shares its row fills it while its pair is not showing, at th
   assert.equal(W.usedSpan(P, "desktop", W.defaults(P, "desktop"), "nope", []), 0);
 });
 
+test("a width the person sets on a widget that fills its row is kept, the default's too", () => {
+  // Continue alone fills the row (12); Shift+Left from what is shown down to 6, the default, must stop at 6 and stay
+  let l = W.defaults(P, "desktop");
+  const shown = () => W.usedSpan(P, "desktop", l, "continue", ["get-started"]);
+  const seen = [];
+  for (let i = 0; i < 8; i++) { const r = W.setSpan(P, "desktop", l, "continue", shown() - 1, shown()); l = r.list; seen.push(shown()); }
+  assert.deepEqual(seen, [11, 10, 9, 8, 7, 6, 5, 4]);
+  assert.equal(by(l, "continue").sized, true);
+  // a drag from the full row straight to the default width: kept, not filling again
+  const dragged = W.setSpan(P, "desktop", W.defaults(P, "desktop"), "continue", 6, 12);
+  assert.ok(dragged.changed);
+  assert.equal(W.usedSpan(P, "desktop", dragged.list, "continue", ["get-started"]), 6);
+  assert.ok(!W.isDefault(P, "desktop", dragged.list), "a width the person chose is a layout to keep");
+  // no change where nothing moved: the default shown at the default, and a widget without a pair (no sized either)
+  assert.ok(!W.setSpan(P, "desktop", W.defaults(P, "desktop"), "continue", 6, 6).changed);
+  const spend = W.setSpan(P, "desktop", W.defaults(P, "desktop"), "spend", 6);
+  assert.equal(by(spend.list, "spend").sized, undefined);
+  assert.ok(W.isDefault(P, "desktop", W.setSpan(P, "desktop", spend.list, "spend", 5).list), "spend back at 5 is the default again");
+  // kept through what is saved: sized survives normalize for a widget with a pair, and is dropped for any other
+  const back = W.normalize(P, "desktop", [{ id: "continue", span: 6, sized: true }, { id: "spend", span: 5, sized: true }]);
+  assert.equal(by(back, "continue").sized, true);
+  assert.equal(by(back, "spend").sized, undefined);
+  assert.equal(W.normalize(P, "phone", [{ id: "continue", span: 1, sized: true }]).find((e) => e.id === "continue").sized, undefined);
+});
+
 test("the phone: one column, so no widths; order, hide and height only; Claude Code is not offered", () => {
   const l = W.defaults(P, "phone");
   assert.equal(W.setSpan(P, "phone", l, "spend", 4).changed, false);
