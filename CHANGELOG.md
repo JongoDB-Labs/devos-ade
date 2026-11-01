@@ -17,6 +17,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   is left until the server tells it not to (it always does here); a reload of the portal or the Code page in that first
   moment had Chrome block the prompt and log an error. The terminal's page now turns the prompt off from the start.
 
+### Tests
+- **The Code page's cost-and-state check** reads the page's errors before it deletes its test folders: the page, still
+  open, could list one again as it went, and that 404 counted as the page's own.
+
 ## [0.48.0] - 2026-11-01
 
 ### Added
