@@ -38,7 +38,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   the one away) now keeps the whole row until you resize it yourself, and the size shown in Customize is the one in use.
   A width you set is kept as yours, 6 columns included.
 - **The Code page's Customize button says "Customize".** Since v0.47.0 it was a grid icon with no word, and people did not
-  find it. It now shows the word beside the icon, as Review does, and keeps the icon alone on a narrower window.
+  find it. It now shows the word beside the icon, as Review does, and keeps the icon alone in a top bar narrower than
+  1200 px (Review keeps its word down to 1100 px: at 1100 px, beside Review's word, the meters and a long model name, the
+  word left the session switch no room and the model picker ran over it).
 
 ### Tests
 - **The Terminal's views and key bar.** Shell tests for `bn-session view N` (created once, reconnects only attach, the
@@ -58,6 +60,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
 - **Home's widgets.** A browser check (`widgets-continue-fills-the-row-when-alone`) hides Get started with its own Hide and
   brings it back as the walkthrough does, and checks Continue keeps the whole row in Customize and after another change,
   and that a width set with the keys, down to 6, is kept. JS and portal tests cover the rule and the saved `sized` mark.
+  With Continue on its own row, Services and Bedrock spend are higher on the page, and the drag check's handle ended up
+  under the Customize panel (it stays at the top while the page scrolls): the check now puts the handle mid-window and
+  says what is over a handle it cannot reach. The Continue check measures from the grid, not the window, as the page
+  scrolls when Models is hidden.
 - **The cost check's phone part** asks for a write of its own, outside the folder whose write it had just declined: asked
   for another write there, Haiku declined it itself, so no permission card came.
 - **Claude's own git check runs again.** `code-claude-git-access` asked for gh 2.102.0, but v0.33.0's core-service bump

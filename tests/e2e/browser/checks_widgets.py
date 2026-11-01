@@ -185,10 +185,10 @@ def widgets_customize_desktop(ctx):
         page.evaluate(CLEAR)
 
 
-# Continue's box and the content width of Home's grid (the row it may fill)
+# Continue's box, from the top left of Home's grid (the page may have scrolled), and the grid's content width (the row it may fill)
 CONTINUE_BOX = """() => {
-  const b = document.querySelector('[data-widget=continue]').getBoundingClientRect(), h = document.getElementById('widgets'), cs = getComputedStyle(h);
-  return {top: b.top, left: b.left, width: b.width, row: h.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)};
+  const b = document.querySelector('[data-widget=continue]').getBoundingClientRect(), h = document.getElementById('widgets'), cs = getComputedStyle(h), g = h.getBoundingClientRect();
+  return {top: b.top - g.top, left: b.left - g.left, width: b.width, row: h.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)};
 }"""
 
 
@@ -266,17 +266,22 @@ def widgets_move_resize_height(ctx):
         expect(col == f"span {entry(page, 'spend')['span']}", f"the grid says {col!r}")
         page.keyboard.press("Shift+ArrowLeft"); page.keyboard.press("Shift+ArrowLeft")
         expect(entry(page, "spend")["span"] == before, "Shift+ArrowLeft did not narrow it")
-        # a drag on the handle: Services goes before Bedrock spend (to the upper left half of it)
-        scroll_to(page, "spend")
+        # a drag on the handle: Services goes before Bedrock spend (to the upper left half of it). Services' handle is put
+        # mid-window: near the top, the tray (sticky while the page scrolls) is over it. Spend is found again once the drag runs
+        scroll_to(page, "services")
         sx, sy = centre(page, bar("services", ".wg-grip"))
-        b = page.locator("[data-widget=spend]").bounding_box()
+        top = page.evaluate("([x, y]) => { const e = document.elementFromPoint(x, y); return e && e.closest('.wg-grip') ? 'grip' : (e ? e.id || e.className : 'nothing'); }", [sx, sy])
+        expect(top == "grip", f"Services' handle is under {top!r} at {sx:.0f},{sy:.0f}")
         page.mouse.move(sx, sy)
         page.mouse.down()
         page.mouse.move(sx - 40, sy + 10, steps=6)
+        b = page.locator("[data-widget=spend]").bounding_box()
         page.mouse.move(b["x"] + b["width"] * 0.25, b["y"] + b["height"] * 0.2, steps=12)
         page.mouse.up()
         now = order(page)
-        expect(now.index("services") < now.index("spend"), f"the drag did not move Services before spend: {now}")
+        vh = page.evaluate("() => innerHeight")
+        expect(now.index("services") < now.index("spend"), f"the drag did not move Services before spend: {now} "
+               f"(handle at {sx:.0f},{sy:.0f}; spend {b}; window height {vh})")
         expect("Services moved" in say(page), f"announced {say(page)!r}")
         wait_saved(page, "desktop", lambda d: d and [e["id"] for e in d].index("services") < [e["id"] for e in d].index("spend"), "the dragged order")
         # resizing by its right edge: two columns wider, snapped to whole columns
