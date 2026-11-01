@@ -94,14 +94,15 @@ images_snapshot_before() {
     ! declare -F code_image_refs >/dev/null || code_image_refs; } |
     snapshot_refs > "$d/before.tsv.new" 2>/dev/null || true
   mv "$d/before.tsv.new" "$d/before.tsv" 2>/dev/null || true
-  # (tags only — the images stay where they are; the tags run side by side: each docker call waits on a busy Docker)
-  while IFS= read -r ref; do
-    _local_build "$ref" || continue
-    docker tag "$ref" "${ref%:local}:previous" >/dev/null 2>&1 &
-  done <<EOF
+  # (tags only — the images stay where they are; the tags run side by side: each docker call waits on a busy Docker. In a
+  # subshell, so its wait is for these tags only, never for a job the caller has in the background)
+  ( while IFS= read -r ref; do
+      _local_build "$ref" || continue
+      docker tag "$ref" "${ref%:local}:previous" >/dev/null 2>&1 &
+    done <<EOF
 $(cut -f2 "$d/before.tsv" 2>/dev/null)
 EOF
-  wait || true
+    wait ) || true
 }
 
 # _ids FILE... -> the IDs (first column) of snapshot files that exist
