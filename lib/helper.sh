@@ -194,6 +194,12 @@ helper_status_text() {
   if [ -n "$beat" ]; then age=$((now - beat)); printf '  last seen %ss ago%s\n' "$age" "$([ "$age" -le 30 ] && echo ' (running)' || echo ' (not running?)')"; fi
   [ ! -f "$(helper_status_file)" ] || printf '  last job: %s\n' "$(sed -n 's/.*"action": "\([a-z-]*\)".*"phase": "\([a-z-]*\)".*"message": "\([^"]*\)".*/\1 — \2: \3/p' "$(helper_status_file)" | head -n 1)"
   helper_auto_status_text | sed 's/^  \([^ ]\)/    \1/; s/^Automatic updates:/  automatic updates:/'
+  if declare -F _prep_read >/dev/null; then   # lib/prepare.sh
+    _prep_read
+    if ! prepare_enabled; then echo "  preparing updates ahead: off (UPDATE_PREPARE=false)"
+    elif [ -n "$PS_state" ]; then printf '  prepared ahead: %s %s%s\n' "$PS_version" "$PS_state" "${PS_reason:+ ($PS_reason)}"
+    else echo "  preparing updates ahead: on (a newer release is prepared in the background)"; fi
+  fi
 }
 
 # helper_status_line -> one line for ./stack status: how updates happen on this install
@@ -271,14 +277,14 @@ _kv_read() {
   done < "$f"
 }
 
-# _auto_env — AUTO_UPDATE, AUTO_UPDATE_HOUR and UPDATE_CHECK from .env in one pass, in bash (the last line wins, as in
-# get_env) -> AE_AUTO_UPDATE, AE_AUTO_UPDATE_HOUR, AE_UPDATE_CHECK
+# _auto_env — AUTO_UPDATE, AUTO_UPDATE_HOUR, UPDATE_CHECK and UPDATE_PREPARE from .env in one pass, in bash (the last line
+# wins, as in get_env) -> AE_AUTO_UPDATE, AE_AUTO_UPDATE_HOUR, AE_UPDATE_CHECK, AE_UPDATE_PREPARE
 _auto_env() {
   local k v
-  AE_AUTO_UPDATE=''; AE_AUTO_UPDATE_HOUR=''; AE_UPDATE_CHECK=''
+  AE_AUTO_UPDATE=''; AE_AUTO_UPDATE_HOUR=''; AE_UPDATE_CHECK=''; AE_UPDATE_PREPARE=''
   [ -f "$ENV_FILE" ] || return 0
   while IFS='=' read -r k v || [ -n "$k" ]; do   # (also a last line without a newline, as get_env reads it)
-    case "$k" in AUTO_UPDATE) AE_AUTO_UPDATE="$v" ;; AUTO_UPDATE_HOUR) AE_AUTO_UPDATE_HOUR="$v" ;; UPDATE_CHECK) AE_UPDATE_CHECK="$v" ;; esac
+    case "$k" in AUTO_UPDATE) AE_AUTO_UPDATE="$v" ;; AUTO_UPDATE_HOUR) AE_AUTO_UPDATE_HOUR="$v" ;; UPDATE_CHECK) AE_UPDATE_CHECK="$v" ;; UPDATE_PREPARE) AE_UPDATE_PREPARE="$v" ;; esac
   done < "$ENV_FILE"
 }
 
@@ -721,7 +727,7 @@ _jword() { case "$1" in *[!A-Za-z0-9._/:+-]*) JS='' ;; *) JS="${1:0:120}" ;; esa
 # Runs every 3 s: bash only, apart from the clock and one atomic rename (the checkout's facts are cached: helper_facts).
 # shellcheck disable=SC2154  # PREFIX_KEY variables come from _kv_read
 helper_heartbeat() {
-  local d f av=false un=false aon=false aun=false rto rbk ver br st tg rs lv lr la rb skw skr ska si sa sr sm sat nw out part
+  local d f av=false un=false aon=false aun=false rto rbk ver br st tg rs lv lr la rb skw skr ska si sa sr sm sat nw out part pen=true pst pv pstep prs pat
   d="$(status_dir)"; [ -d "$d" ] || mkdir -p "$d" 2>/dev/null || return 0
   f="$(helper_beat_file)"
   _kv_read "$(update_record_file)" HR from result from_version backup
@@ -743,8 +749,14 @@ helper_heartbeat() {
   printf -v part '"auto": {"on": %s, "hour": %s, "state": "%s", "target": "%s", "reason": "%s", "next_window": %s, "last": {"version": "%s", "result": "%s", "at": %s}, "rolled_back": "%s", "unfinished": %s, ' \
     "$aon" "$AUTO_HOUR" "$st" "$tg" "$rs" "$nw" "$lv" "$lr" "$la" "$rb" "$aun"
   out="$out$part"
-  printf -v part '"skipped": {"window": "%s", "reason": "%s", "at": %s}, "switch": {"id": "%s", "action": "%s", "result": "%s", "message": "%s", "at": %s}}}' \
+  printf -v part '"skipped": {"window": "%s", "reason": "%s", "at": %s}, "switch": {"id": "%s", "action": "%s", "result": "%s", "message": "%s", "at": %s}}, ' \
     "$skw" "$skr" "$ska" "$si" "$sa" "$sr" "$sm" "$sat"
+  out="$out$part"
+  # what is prepared ahead (lib/prepare.sh): the record, read as it is (a few lines of a file)
+  case "$AE_UPDATE_PREPARE" in false | FALSE | False | off | OFF | Off | 0 | no | NO | No) pen=false ;; esac
+  _kv_read "$(prepare_state_file)" PS version commit state step reason at
+  _jword "$PS_state"; pst="$JS"; _jword "$PS_version"; pv="$JS"; _jsafe "$PS_step"; pstep="$JS"; _jsafe "$PS_reason"; prs="$JS"; _jnum "$PS_at"; pat="$JN"
+  printf -v part '"prepare": {"enabled": %s, "state": "%s", "version": "%s", "step": "%s", "reason": "%s", "at": %s}}' "$pen" "$pst" "$pv" "$pstep" "$prs" "$pat"
   printf '%s%s\n' "$out" "$part" > "$d/.helper.json.next" 2>/dev/null || return 0
   chmod 644 "$d/.helper.json.next" 2>/dev/null && mv -f "$d/.helper.json.next" "$f" 2>/dev/null || true
 }
@@ -872,7 +884,12 @@ _keep_awake() {
 # (_job_stamp); ends with ./stack's exit status, once the last line is written (the stamping is part of this process)
 _job_run() {
   set +e
-  ( cd "$STACK_DIR" && exec env DEVOS_ADE_JOB_ORIGIN=helper DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" "$1" --yes ) </dev/null 2>&1 | _job_stamp
+  {
+    # Update now on a release not prepared ahead yet prepares it first, its steps in this log (lib/prepare.sh); one that
+    # is prepared, or any other job, starts at once
+    if [ "$1" = update ] && declare -F prepare_update_now_phase >/dev/null; then prepare_update_now_phase; fi
+    ( cd "$STACK_DIR" && exec env DEVOS_ADE_JOB_ORIGIN=helper DEVOS_ADE_NO_OPEN=1 NO_COLOR=1 "$STACK_DIR/stack" "$1" --yes ) </dev/null
+  } 2>&1 | _job_stamp
   return "${PIPESTATUS[0]}"
 }
 
@@ -881,6 +898,7 @@ _job_run() {
 helper_run_job() {
   local action="$1" logf pid rc=0 ph at freed summary why msg
   _status_tick_stop   # (an automatic update comes here without a request: helper_auto_tick)
+  _prepare_stop       # (a prepare in the background ends first: the job's own steps prepare what is left)
   JOB_ID="$2"; JOB_ACTION="$action"; JOB_TRIGGER="${3:-}"; JOB_STARTED="$(date +%s)"; JOB_FINISHED=''; JOB_FREED=''; JOB_VERSION=''
   JOB_RESULT=''; JOB_MESSAGE=''
   why="$(_job_refusal "$action")"
@@ -903,7 +921,10 @@ helper_run_job() {
   case "$action" in
     clean) helper_write_status cleaning "Removing old images" ;;
     rollback) helper_write_status restoring "Going back to the previous version" ;;
-    update) helper_write_status backing-up "Backing up your data" ;;
+    update)
+      if declare -F prepare_update_now_target >/dev/null && prepare_update_now_target >/dev/null 2>&1; then
+        helper_write_status preparing "Preparing the new release first (it was not prepared ahead): downloading and building it"
+      else helper_write_status backing-up "Backing up your data"; fi ;;
   esac
   _job_run "$action" > "$logf" 2>&1 &
   pid=$!
@@ -1005,7 +1026,7 @@ _auto_fetch() {
   while kill -0 "$pid" 2>/dev/null; do
     if [ "$n" -ge "$limit" ]; then kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null || true; return 1; fi
     sleep 1; n=$((n + 1))
-    [ $((n % 3)) != 0 ] || helper_heartbeat
+    [ $((n % 3)) != 0 ] || [ "${PREPARE_NO_BEAT:-0}" = 1 ] || helper_heartbeat   # (the background prepare is not the loop: it leaves the heartbeat to it)
   done
   wait "$pid" 2>/dev/null
 }
@@ -1103,7 +1124,7 @@ helper_poll_once() {
   [ -d "$inbox" ] || { mkdir -p "$inbox" && chmod 700 "$(helper_dir)" "$inbox"; } 2>/dev/null || return 1
   _sweep_requests
   # a request to carry out: the status tick ends first (_status_tick_stop; the next loop starts a fresh one)
-  for f in "$rq"/cfg-*.req "$rq"/act-*.json "$rq"/req-*.json "$rq"/ses-*.json; do [ -e "$f" ] && { _status_tick_stop; break; }; done
+  for f in "$rq"/cfg-*.req "$rq"/act-*.json "$rq"/req-*.json "$rq"/ses-*.json; do [ -e "$f" ] && { _status_tick_stop; _prepare_stop; break; }; done
   # lib/settings_helper.sh: settings and diagnostics, in a subshell (nothing in it can end the helper); after one ran,
   # this loop's heartbeat is out of date
   if ( settings_poll_once ); then AUTO_FRESH=0; fi
@@ -1174,6 +1195,34 @@ _status_tick_stop() {
 }
 _status_tick_wait() { ! _status_tick_running || wait "$HELPER_TICK_PID" 2>/dev/null || true; HELPER_TICK_PID=''; }
 
+# _prepare_bg — lib/prepare.sh, every PREPARE_CHECK_S (60 s), beside the loop like the status tick: a newer release named by the
+# portal's check is prepared in the background (fetched, built as <project>-prep, its images downloaded), one run at a time.
+# _prepare_stop: before a request is carried out, a job starts or the loop ends the run ends first (it also ends by itself the
+# moment a ./stack command takes the lock); its record then says "yielded", and the next run goes on from Docker's cache.
+HELPER_PREP_PID=''; HELPER_PREP_AT=-100000
+_prepare_running() {
+  [ -n "$HELPER_PREP_PID" ] || return 1
+  case " $(jobs -pr | tr '\n' ' ') " in *" $HELPER_PREP_PID "*) return 0 ;; esac
+  return 1
+}
+_prepare_bg() {
+  declare -F prepare_tick >/dev/null || return 0
+  ! _prepare_running || return 0
+  [ $((SECONDS - HELPER_PREP_AT)) -ge "$(_helper_num "${PREPARE_CHECK_S:-}" 60)" ] || return 0
+  HELPER_PREP_AT=$SECONDS
+  ( prepare_tick ) </dev/null >/dev/null 2>&1 &
+  HELPER_PREP_PID=$!
+}
+_prepare_stop() {
+  local p
+  if _prepare_running; then
+    for p in $(_status_tick_tree "$HELPER_PREP_PID"); do kill "$p" 2>/dev/null || true; done
+    wait "$HELPER_PREP_PID" 2>/dev/null || true
+    prepare_recover || true   # (its record said "preparing": now it is stopped)
+  fi
+  HELPER_PREP_PID=''
+}
+
 # helper_main [--once] — the loop bin/devos-ade-helper runs. It ends (exit 0: launchd/systemd start it again, with
 # the checkout's code) after an update/rollback/clean, and when the checkout moved to another commit under it (a
 # ./stack update in a terminal) once no ./stack command holds the lock. The status tick ends with it (--once: waited for).
@@ -1181,6 +1230,7 @@ helper_main() {
   local rc=0
   _helper_loop "$@" || rc=$?
   if [ "${1:-}" = --once ]; then _status_tick_wait; else _status_tick_stop; fi
+  _prepare_stop
   return "$rc"
 }
 _helper_loop() {
@@ -1192,6 +1242,7 @@ _helper_loop() {
   # (each step runs as a condition, where set -e does not end it; poll and tick run inside if anyway)
   HELPER_CACHE=1; helper_facts force || true; start_head="$HF_HEAD"
   _helper_recover || true
+  ! declare -F prepare_recover >/dev/null || prepare_recover || true   # (a run its record says goes on is not: nothing survived)
   while :; do
     # The checkout deleted (or moved away): stop for good — a non-zero exit is not restarted. Three loops in a row,
     # so a git checkout replacing ./stack, or an atomic .env rewrite, is never mistaken for it.
@@ -1212,6 +1263,7 @@ _helper_loop() {
     if ( settings_helper_tick ); then AUTO_FRESH=0; fi
     ! declare -F sessions_helper_tick >/dev/null || ( sessions_helper_tick ) || true   # lib/sessions.sh: what it offers the Code page
     _status_tick_bg || true   # Home's record of the containers and runtimes, every minute: beside the loop
+    [ "${1:-}" = --once ] || _prepare_bg || true   # lib/prepare.sh: the next release, prepared ahead, beside the loop
     if helper_poll_once; then helper_heartbeat || true; return 0; fi
     if helper_auto_tick; then helper_heartbeat || true; return 0; fi
     [ "${1:-}" != --once ] || return 0

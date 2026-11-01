@@ -51,7 +51,7 @@ EOS
   echo 2 > "$o/two"; git -C "$o" add two; git -C "$o" commit -qm two; git -C "$o" tag v0.4.0
   git clone -q "$o" "$TMP/stack"; STACK_DIR="$TMP/stack"
   git -C "$STACK_DIR" -c advice.detachedHead=false checkout -q v0.3.0
-  printf 'POSTGRES_PASSWORD=p\nCOMPOSE_PROJECT_NAME=bn-t\nAUTO_UPDATE=on\n' > "$ENV_FILE"
+  printf 'POSTGRES_PASSWORD=p\nCOMPOSE_PROJECT_NAME=bn-t\nAUTO_UPDATE=on\nUPDATE_PREPARE=false\n' > "$ENV_FILE"   # (tests/test_prepare.sh: preparing ahead has its own tests)
   mkdir -p "$STATE_DIR/images" "$(request_dir)" "$(helper_dir)" "$(update_check_dir)"
   date +%s > "$(helper_dir)/model-browser-last"   # the model browser's lists already read (tests/test_model_browser.sh)
   _seen v0.4.0

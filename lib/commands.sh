@@ -2296,6 +2296,7 @@ cmd_update() {
   # The images compose.yaml pins: all at once, in the background (lib/steps.sh pulls_start), while setup builds; setup
   # waits for them before it starts anything with them (pulls_wait), and a download that fails stops it there. When
   # the list cannot be read, one compose call here as before.
+  prepare_apply_note   # lib/prepare.sh: says so when the helper prepared this release ahead (its builds are cache hits)
   log "update: 3/4 images (downloading the versions pinned in compose.yaml, side by side, while setup builds)"
   PULLS_DIR=''; PULLS_PID=''
   if ! timed_step "Image downloads started" pulls_start; then
@@ -2331,6 +2332,7 @@ cmd_update() {
   update_record_done
   # Only now that the new version runs: remove what the update before this one replaced (keeps one previous).
   timed_step "Old images cleaned up" _update_cleanup
+  prepare_after_update || true   # lib/prepare.sh: the <project>-prep names of the release just installed go; its downloads are the installed version's now
   [ -z "$from" ] || log "updated to $(installed_version). Something wrong? ./stack rollback goes back (code, data and images)"
   migrate_update_finish   # lib/migrate.sh: the end of the name change, if this update made it
   timed_step "What's new" update_whats_new "$from"
@@ -2518,6 +2520,8 @@ cmd_uninstall() {
 . "$STACK_DIR/lib/versions.sh"
 # The slow parts of setup and an update, side by side and timed: image downloads, builds, the sandboxes' images.
 . "$STACK_DIR/lib/steps.sh"
+# The next release prepared ahead of Update now: built as <project>-prep, its images downloaded (JON-972 phase B).
+. "$STACK_DIR/lib/prepare.sh"
 # Installed version, the portal's release check, and the .state folders the portal mounts.
 . "$STACK_DIR/lib/version.sh"
 # origin follows the project's repository to its new name on GitHub (./stack update, once).

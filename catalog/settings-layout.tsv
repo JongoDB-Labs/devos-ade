@@ -134,6 +134,7 @@ REMOTE_SUBNET	remote	more	REMOTE_MODE	The sidecar's small Docker network; change
 UPDATE_CHECK	updates	main	-	Ask GitHub once a day whether a newer DevOS ADE exists (nothing about you is sent).
 AUTO_UPDATE	updates	main	-	Install a new release by itself at night, after a backup.
 AUTO_UPDATE_HOUR	updates	main	AUTO_UPDATE	When the three-hour nightly window starts (this computer's time).
+UPDATE_PREPARE	updates	more	-	Download and build a new release in the background, so Update now is quick.
 BACKUP_NIGHTLY	updates	main	-	Back up every night, keeping the newest few.
 BACKUP_HOUR	updates	main	BACKUP_NIGHTLY	When the three-hour backup window starts (this computer's time).
 BACKUP_KEEP	updates	main	BACKUP_NIGHTLY	How many nightly backups to keep. Yours, and the one a rollback needs, are never removed.
