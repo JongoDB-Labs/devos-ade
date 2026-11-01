@@ -2044,7 +2044,9 @@ def claude_git_access(ctx):
             page.wait_for_timeout(1000)
         tail = (run or {}).get("tail", "")
         expect(run and run.get("exitCode") == 0 and re.search(r"[0-9a-f]{40}\s+refs/heads/main", tail), f"git ls-remote through the broker: {run and run.get('exitCode')} {tail[-600:]}")
-        expect("gh version 2.102.0" in tail, f"gh in the image: {tail[-600:]}")
+        # (the pinned version itself is checked by terminal/Dockerfile's build; core-service bumps move it)
+        ghv = re.search(r"^gh version (\d+\.\d+\.\d+) ", tail, re.M)
+        expect(ghv, f"gh in the image: {tail[-600:]}")
         expect("gh: DevOS ADE gives gh a login for github.com and *.ghe.com only, not for gitsrv" in tail, f"gh's one line: {tail[-600:]}")
         expect(token not in tail, "the token in the run's output")
         events = c.api("GET", "/api/git/hosts")["json"]["events"]
@@ -2059,7 +2061,7 @@ def claude_git_access(ctx):
         expect("gitsrv" in answer.lower(), f"the session's answer: {answer!r}")
         csp_clean(page, rec)
         return (f"Let Claude use this host on for gitsrv (its warning: no gh login for it); the sandbox's own git listed {https_url}'s main "
-                f"through the broker (Activity: {used[0]['target']}); gh 2.102.0 there, with its one line for a host not GitHub's own; "
+                f"through the broker (Activity: {used[0]['target']}); gh {ghv.group(1)} there, with its one line for a host not GitHub's own; "
                 f"a Haiku session asked which Git hosts it may use: {answer!r}; the token in no output or event")
     finally:
         _drop_hosts(c)
