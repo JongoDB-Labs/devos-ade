@@ -29,6 +29,11 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   Projects tabs are now always named by their word, and their count is the tab's description ("4 changed files",
   "2 waiting for your permission"). Since before this release.
 
+- **Bring your setup no longer flashes "not waiting to be copied" under something it has just copied.** After a copy,
+  the copied items stayed in the list until it was read again, with their choices cleared: CLAUDE.md set to Append
+  went back to Replace and asked for a preview of an item already copied, which was refused. Copied items now leave
+  the list at once. Since before this release; seen only when the list came back late.
+
 ### Tests
 - **Layouts have their own checks.** Unit tests for the layout model (defaults equal today's page, migrating the old
   prefs, validation and clamping, move, hide and show, tabs and stacked, resize, reset, desktop and tablet apart) and for

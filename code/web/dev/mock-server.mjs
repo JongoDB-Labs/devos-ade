@@ -153,7 +153,7 @@ const importMock = new Map();   // project id -> {index, staged: Map(id -> previ
 // (setup-fetch) asked of the "portal" as the Import sheet's are; staged items' previews made here; a copy writes nothing
 // but a log line (GET /__mock/import-log: "setup-copy <keys> keep=N mode=… conflict=…"). Hostile mode: 6,000 rows with
 // markup and direction marks in their names, a skill whose text says to run things.
-const setupMock = { index: null, staged: new Map(), copied: new Map() };
+const setupMock = { index: null, staged: new Map(), copied: new Map(), listMs: 0 };   // (listMs: GET /api/setup answers that late)
 const importRequests = new Map();
 let importHelper = true;
 let suggestionsMock = null;
@@ -2000,6 +2000,7 @@ function setupCopyOne(u, keep, { remote: far = false } = {}) {
 async function setupApi(req, res, url, p, m) {
   if (m !== 'GET') { const b = await jsonBody(req); if (b && 'password' in b) importLog.push('password-at-backend'); }
   if (p === '/api/setup' && m === 'GET') {
+    if (setupMock.listMs) await new Promise((r) => setTimeout(r, setupMock.listMs));   // (not sleep: --fast would cut it)
     const ix = setupMock.index;
     return json(res, 200, { local: !remote, helper: { running: importHelper, actions: ['sessions-scan', 'sessions-fetch', 'setup-scan', 'setup-fetch', 'setup-copy'], screen: true },
       index: ix,
@@ -3221,11 +3222,12 @@ const server = http.createServer(async (req, res) => {
       }
       if (url.pathname === '/__mock/imports') {
         if (url.searchParams.has('helper')) importHelper = url.searchParams.get('helper') === '1';
+        if (url.searchParams.has('setup-list-ms')) setupMock.listMs = Math.min(10_000, Math.max(0, Number(url.searchParams.get('setup-list-ms')) || 0));
         return json(res, 200, { ok: true });
       }
       if (url.pathname === '/__mock/reset') {
         importMock.clear(); importRequests.clear(); importLog.length = 0; importHelper = true; suggestionsMock = null;
-        setupMock.index = null; setupMock.staged.clear(); setupMock.copied.clear();
+        setupMock.index = null; setupMock.staged.clear(); setupMock.copied.clear(); setupMock.listMs = 0;
         projectsMock = [];
         for (const k of [...fsState.keys()]) if (k.startsWith('/')) fsState.delete(k);
         for (const h of hostMock) for (const [k, v] of [...saved]) if (v.cwd === h.root || v.cwd?.startsWith(`${h.root}/`)) saved.delete(k);

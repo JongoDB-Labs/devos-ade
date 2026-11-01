@@ -280,7 +280,10 @@ async function follow(id: string) {
  *  checked: when what it depends on changes, it is checked again. Through the portal, with the password: a unit that
  *  keeps a possible secret — and, from another device, one that lets Claude act without asking (its grants). */
 function CheckStep({ view, local, onChanged }: { view: SetupView; local: boolean; onChanged: () => void }) {
-  const units = useMemo(() => unitsOf(view.staged), [view.staged]);
+  // (what a copy took leaves the list at once, until the list is read again: its item is gone from the backend, and
+  // its preview, asked again as its choices were cleared, was refused — a 404 in the console)
+  const [taken, setTaken] = useState<{ staged: SetupView['staged']; keys: ReadonlySet<string> } | null>(null);
+  const units = useMemo(() => unitsOf(view.staged).filter((k) => !(taken?.staged === view.staged && k.some((x) => taken.keys.has(x)))), [view.staged, taken]);
   const [choices, setChoices] = useState<Record<string, Choice>>({});
   const [previews, setPreviews] = useState<Record<string, SetupPreview | null>>({});
   const [results, setResults] = useState<SetupResult[] | null>(null);
@@ -319,6 +322,7 @@ function CheckStep({ view, local, onChanged }: { view: SetupView; local: boolean
       }
       setPw('');
       setResults(out);
+      setTaken({ staged: view.staged, keys: new Set(out.filter((r) => r.ok).flatMap((r) => r.keys)) });
       setChoices({});
       onChanged();
     } catch (e) {

@@ -5483,10 +5483,18 @@ def setup_sheet(browser):
     expect(page.get_by_test_id("setup-keep-note")).to_contain_text("needs the portal password")
     expect(page.get_by_test_id("setup-copy")).to_be_disabled()
     page.get_by_test_id("setup-password-3").fill("correct horse")
+    # (the list read again late: a copied unit stayed with its choices cleared, and its preview — asked again for an
+    # item gone from the backend — was refused; the check passed only when the list came back first)
+    post(NORMAL + "/__mock/imports?setup-list-ms=1500")
+    n0 = len(p.requests)
     page.get_by_test_id("setup-copy").click()
     res = page.get_by_test_id("setup-result")
     expect(res).to_have_count(7, timeout=20_000)
     expect(page.get_by_test_id("setup-confirm")).to_be_visible()
+    expect(page.get_by_test_id("setup-unit")).to_have_count(1)   # (the plugin, its command not yet accepted)
+    page.wait_for_timeout(2000)
+    again = [u for u in p.requests[n0:] if "/api/setup/preview" in u]
+    assert not again, f"previews asked after the copy: {again}"
     log = mock_get(NORMAL, "/__mock/import-log")["log"]
     assert any(x.startswith("setup-copy ") and "keep=1" in x for x in log), log
     assert any(x.startswith("setup-copy ") and "mode=append" in x for x in log), log
