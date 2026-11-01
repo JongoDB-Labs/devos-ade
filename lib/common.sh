@@ -379,11 +379,15 @@ dc() {
 $sums
 SUMS
     # which of terminal/managed/*.json the sandbox gets as Claude Code's managed settings (read-only): from .env alone
+    # Builds without the default provenance attestation (unless your shell says otherwise): with Docker's containerd image
+    # store it carries the build's time, so a build all from the cache gave a new image ID — and compose recreated that
+    # service, and every step that reads the images ran again, on every update. Images built here are never pushed.
     TERMINAL_CLAUDE_POLICY="$policy" BN_PROJECTS_PUBLIC="$STATE_DIR/projects/public" \
     LOCALGIT_SSO_HEADER="$(get_env LOCALGIT_SSO_HEADER)" LOCALGIT_SSO_ON="$([ -n "$(get_env LOCALGIT_SSO_HEADER)" ] && echo true || echo false)" \
     BN_LOCALGIT_TLS="$STATE_DIR/localgit/tls" BN_LOCALGIT_MODE="$(flag_off "$(get_env LOCALGIT)" && echo off || echo on)" BN_LEGACY_HOSTS="$(legacy_hosts_mode)" \
     BN_LLAMACPP_DIR="$STATE_DIR/runtimes/llamacpp" BN_LLAMACPP_USER="$(cat "$STATE_DIR/runtimes/llamacpp/user" 2>/dev/null || echo 65534:65534)" \
     BN_VLLM_DIR="$STATE_DIR/runtimes/vllm" BN_VLLM_USER="$(cat "$STATE_DIR/runtimes/vllm/user" 2>/dev/null || echo 65534:65534)" \
+    BUILDX_NO_DEFAULT_ATTESTATIONS="${BUILDX_NO_DEFAULT_ATTESTATIONS:-1}" \
     DEVOS_ADE_ENV_DISPLAY="$(env_file_display)" COMPOSE_PROJECT_NAME="$p" docker compose -p "$p" --project-directory "$STACK_DIR" -f "$STACK_DIR/compose.yaml" ${f[@]+"${f[@]}"} \
       --env-file "$ENV_FILE" "$@" )
 }

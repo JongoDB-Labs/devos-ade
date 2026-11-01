@@ -204,6 +204,16 @@ test_dc_passes_compose_progress_on_to_compose() {
   assert_eq "$(COMPOSE_PROGRESS=quiet dc ps)" "progress=quiet"
 }
 
+test_dc_builds_without_default_attestations_so_an_unchanged_image_keeps_its_id() {
+  # (Docker's containerd image store: a build's default provenance carries its time, so a build all from the cache was a
+  # new image — and compose recreated its container on every update)
+  printf 'X=1\n' > "$ENV_FILE"
+  docker() { echo "attest=${BUILDX_NO_DEFAULT_ATTESTATIONS:-unset}"; }
+  assert_eq "$(unset BUILDX_NO_DEFAULT_ATTESTATIONS; dc build portal)" "attest=1"
+  assert_eq "$(BUILDX_NO_DEFAULT_ATTESTATIONS=0 dc build portal)" "attest=0"   # your own choice is kept
+  assert_eq "${BUILDX_NO_DEFAULT_ATTESTATIONS:-unset}" "unset"                  # (compose's alone: not this shell's, nor a program's it starts)
+}
+
 test_rotate_aws_rejected_key_leaves_env_untouched() {
   printf 'AWS_ACCESS_KEY_ID=AKIAOLD\nAWS_SECRET_ACCESS_KEY=oldsecret\nAWS_REGION_NAME=us-east-1\n' > "$ENV_FILE"
   before="$(cat "$ENV_FILE")"; _stub_dc
