@@ -6,6 +6,9 @@
 .tb-review .chg { font-size: 12px; }
 .tb-review.on { background: var(--active); }   /* (Customize, while editing the layout) */
 @media (max-width: 1099.98px) { .tb-review-label { display: none; } }
+/* Customize's word goes first: at 1100 px, beside Review's word, the meters and a long model name, it left the session
+   switch no room (squeezed under the model picker) */
+@container topbar (max-width: 1199.98px) { .tb-customize .tb-review-label { display: none; } }
 
 /* --- Review pane --- */
 .rv { display: flex; flex-direction: column; min-height: 0; }

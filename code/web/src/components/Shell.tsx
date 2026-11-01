@@ -251,7 +251,7 @@ function TopBar({ tablet }: { tablet?: boolean }) {
         <button type="button" class={`icon-btn${terminalOn ? ' on' : ''}`} title="Terminal (Ctrl+`)" aria-label="Toggle terminal" aria-pressed={terminalOn} onClick={toggleTerminal} data-testid="toggle-terminal">
           <Icon name="terminal" />
         </button>
-        <button type="button" class={`tb-review${editing ? ' on' : ''}`} title="Customize the layout: move, resize and hide the widgets" aria-label="Customize the layout" aria-pressed={editing} onClick={toggleLayoutEdit} data-testid="customize-layout">
+        <button type="button" class={`tb-review tb-customize${editing ? ' on' : ''}`} title="Customize the layout: move, resize and hide the widgets" aria-label="Customize the layout" aria-pressed={editing} onClick={toggleLayoutEdit} data-testid="customize-layout">
           <Icon name="layout" size={14} />
           <span class="tb-review-label">Customize</span>
         </button>
