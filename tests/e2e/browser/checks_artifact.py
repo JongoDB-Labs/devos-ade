@@ -21,7 +21,8 @@ import time
 
 from common import ENV, PORT, check, expect, http, origin
 from checks_browser import login, shot
-from checks_code import ARTIFACT_FILE, CODE, CSP_GUARD, LOCKED_OK, Code, code_frame, open_preview, outside, put_previews, saved, tree_click, ui_page, unlock_page, csp_clean
+from checks_code import (ARTIFACT_FILE, CODE, CSP_GUARD, LOCKED_OK, Code, code_frame, default_layout, open_preview, outside, put_previews, saved,
+                         tree_click, ui_page, unlock_page, csp_clean)
 from checks_preview import DOMAIN, _b32int, need_preview
 
 from playwright.sync_api import expect as see
@@ -198,6 +199,7 @@ def ui_artifacts_in_portal(ctx):
     unlock_page(f)
     f = code_frame(page)
     f.wait_for_function("() => document.querySelector('[data-testid=conn]')?.textContent === 'Connected'", timeout=30000)
+    default_layout(f)
     name = f"e2e-artifact-portal-{int(time.time())}.html"
     r = f.evaluate("""async ([p, t]) => (await fetch('/api/fs/file?path=' + encodeURIComponent(p), { method: 'PUT',
         headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: t }) })).status""",

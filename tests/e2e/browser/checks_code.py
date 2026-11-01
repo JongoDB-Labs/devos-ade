@@ -80,6 +80,34 @@ def unlock_page(page):
     page.click("form[action='/.bn/unlock'] button[type=submit]")
 
 
+# The Code page's layout is kept for the sign-in (one for desktops, one for tablets), and every check signs in as the same
+# person: a tab one check picked, the terminal it opened or a Customize it left would greet the next one's fresh browser.
+DEFAULT_LAYOUT = """async () => {
+  const p = await fetch('/api/prefs', { credentials: 'same-origin', cache: 'no-store' }).then((r) => r.json()).catch(() => null);
+  const l = p && p.prefs && p.prefs.layout;
+  if (!l || (!l.desktop && !l.tablet)) return 0;
+  const r = await fetch('/api/prefs', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ layout: { desktop: null, tablet: null } }) });
+  return r.status;
+}"""
+
+
+def default_layout(page):
+    """A connected Code page with the default layout, as a fresh browser had when the layout was kept per browser (up to
+    0.46): the sign-in's is forgotten and the page loaded again — only when there was one. `page` may be the frame of the
+    portal's Code tab."""
+    st = page.evaluate(DEFAULT_LAYOUT)
+    if not st:
+        return
+    expect(st == 200, f"PUT /api/prefs (back to the default layout): {st}")
+    if hasattr(page, "reload"):
+        page.reload()
+    else:
+        page.goto(page.url)
+    page.wait_for_load_state("domcontentloaded")
+    see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+
+
 def code_frame(page, timeout=30):
     t0 = time.time()
     while time.time() - t0 < timeout:
@@ -891,6 +919,7 @@ def ui_page(ctx, name, device="desktop", session=None):
     unlock_page(page)
     page.wait_for_load_state("domcontentloaded")
     see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+    default_layout(page)
     if session:
         # its transcript merges in after the live replay (an ended one shows only the transcript): let it settle
         see(page.get_by_test_id("msg-user").first).to_be_visible(timeout=30000)
@@ -3096,6 +3125,7 @@ def hostile(ctx):
     # every field, a "command" to confirm whose hash is not one)
     page.reload()
     see(page.get_by_test_id("conn")).to_have_text("Connected", timeout=30000)
+    default_layout(page)
     page.get_by_test_id("side-sessions").click()
     page.wait_for_timeout(1500)
     page.get_by_test_id("side-files").click()
@@ -4125,7 +4155,8 @@ def export_to_files(ctx):
         # a path of another folder, a bad id and no project: refused
         expect(api("GET", "/api/projects/p_00000000/export?dry=1")["status"] == 404, "an unknown project")
         # the page: Projects tab › the project's menu › Export to Files… (opened again: the page reads its projects when
-        # it opens, and this one was made through the API since)
+        # it opens, and this one was made through the API since), with the default layout (default_layout)
+        expect(f.evaluate(DEFAULT_LAYOUT) in (0, 200), "back to the default layout")
         page.reload()
         page.locator(".tab[data-tab=code][aria-current=page]").wait_for(timeout=20000)
         f = code_frame(page)

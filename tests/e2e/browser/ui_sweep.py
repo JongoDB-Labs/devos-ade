@@ -771,6 +771,19 @@ def sweep_walkthrough(browser, width, theme):
 
 # --- the Code page (its own host, unlocked) ---
 
+# The Code page's layout is kept for the sign-in, which every page of the sweep shares: each Code page starts from the
+# default (as a fresh browser did up to 0.46), not from what a state before it left (checks_code.default_layout).
+DEFAULT_LAYOUT = """async () => {
+  const p = await fetch('/api/prefs', { credentials: 'same-origin', cache: 'no-store' }).then((r) => r.json()).catch(() => null);
+  const l = p && p.prefs && p.prefs.layout;
+  if (!l || (!l.desktop && !l.tablet)) return 0;
+  const r = await fetch('/api/prefs', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ layout: { desktop: null, tablet: null } }) });
+  return r.status;
+}"""
+
+
+
 def code_open(browser, width, theme, shoot=True):
     c, p = new_ctx(browser, width, theme)
     login(p)
@@ -781,8 +794,12 @@ def code_open(browser, width, theme, shoot=True):
         capture(p, "unlock")
     p.fill("#password", ENV["PORTAL_PASSWORD"])
     p.click("form[action='/.bn/unlock'] button[type=submit]")
+    connected = "() => { const c = document.querySelector('[data-testid=conn]'); return c && /Connected/.test(c.textContent) }"
     p.get_by_test_id("conn").wait_for(timeout=30000)
-    p.wait_for_function("() => { const c = document.querySelector('[data-testid=conn]'); return c && /Connected/.test(c.textContent) }", timeout=40000)
+    p.wait_for_function(connected, timeout=40000)
+    if p.evaluate(DEFAULT_LAYOUT):
+        p.reload()
+        p.wait_for_function(connected, timeout=40000)
     p.wait_for_timeout(1500)
     return c, p
 
@@ -941,6 +958,14 @@ def sweep_code(browser, width, theme):
         capture(p, "model-picker")
     step("model-picker", model)
 
+
+    for item in ("palette", "new-project", "review", "run", "ports", "budget", "permissions", "memory", "mcp", "plugins", "setup", "notify", "export"):
+        def one(item=item):
+            code_fresh(p)
+            if menu(p, width, item):
+                capture(p, f"menu-{item}")
+        step(f"menu-{item}", one)
+    # (last: its Reset to default puts back the Explorer and closes the terminal, which the states above keep open)
     def customize():   # edit mode (JON-946): a handle and an eye on each widget, the tray; the left dock stacked; Explorer hidden
         if width == "phone":   # (phones keep their sheets: no Customize)
             return
@@ -960,13 +985,6 @@ def sweep_code(browser, width, theme):
         p.get_by_test_id("layout-done").click()
         p.get_by_test_id("widget-tray").wait_for(state="hidden")
     step("customize", customize)
-
-    for item in ("palette", "new-project", "review", "run", "ports", "budget", "permissions", "memory", "mcp", "plugins", "setup", "notify", "export"):
-        def one(item=item):
-            code_fresh(p)
-            if menu(p, width, item):
-                capture(p, f"menu-{item}")
-        step(f"menu-{item}", one)
     c.close()
 
 

@@ -13,8 +13,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   or focus it and press `Alt+arrows` to move it and `Shift+arrows` to resize its dock; the eye (or `H`) hides it, and the
   **Widgets** tray lists what is hidden with **Add back**, **Reset to default** and **Done** (`Escape` also leaves).
   - Each dock shows its widgets as tabs, as the explorer always has, or stacked with a splitter between them: you
-    choose per dock. The chat can move to the left, the right or the centre, and cannot be hidden. The editor still
-    gives way to the chat until a file opens.
+    choose per dock. A stacked widget is at least 120 px and scrolls what it holds; a dock whose widgets need more than
+    the window has scrolls. The chat can move to the left, the right or the centre, and cannot be hidden. The editor
+    still gives way to the chat until a file opens.
   - Nothing changes until you use it: today's page is the default, and what you saved before (pane sizes, the explorer
     on or off, the terminal, the tablet's files or editor, the explorer's tab) carries over. `Ctrl/⌘+B`, `Ctrl+\``,
     `Ctrl/⌘+Shift+F` and `Ctrl/⌘+Shift+G` still open their panel, and show it again if you hid it.
@@ -30,6 +31,10 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   tablet apart) and fail on anything overlapping, clipped or scrolling. A reset on one browser must hold: another one
   open with the old layout follows it after a reconnect and a reload instead of sending its own back. And a check that
   fails no longer leaves its pages open to act on the next one.
+- **Each check starts from the default Code layout.** The layout is kept for the sign-in that every check shares, so a
+  tab one check picked (Git), its terminal or a Customize it left showed up in the next one's new browser; the Code
+  checks and both sweeps now forget it first. The UI sweep's Customize step runs after the menus, whose states keep the
+  Git tab and the terminal open as before.
 
 ## [0.46.0] - 2026-10-31
 

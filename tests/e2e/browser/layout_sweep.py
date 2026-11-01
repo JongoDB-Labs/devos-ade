@@ -632,6 +632,19 @@ def st_frame(tab):
 
 # --- the Code page on the stack (its own host, unlocked) ---
 
+# The Code page's layout is kept for the sign-in, which every page of the sweep shares: each Code page starts from the
+# default (as a fresh browser did up to 0.46), not from what a state before it left (checks_code.default_layout).
+DEFAULT_LAYOUT = """async () => {
+  const p = await fetch('/api/prefs', { credentials: 'same-origin', cache: 'no-store' }).then((r) => r.json()).catch(() => null);
+  const l = p && p.prefs && p.prefs.layout;
+  if (!l || (!l.desktop && !l.tablet)) return 0;
+  const r = await fetch('/api/prefs', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ layout: { desktop: null, tablet: null } }) });
+  return r.status;
+}"""
+
+
+
 def code_open(S, p, device):
     S.login(p)
     p.goto(S.cfg.code + "/")
@@ -641,9 +654,12 @@ def code_open(S, p, device):
     code_ready(p)
 
 
-def code_ready(p):
+def code_ready(p, fresh=True):
     p.get_by_test_id("conn").wait_for(timeout=30000)
     p.wait_for_function("() => { const c = document.querySelector('[data-testid=conn]'); return c && /Connected/.test(c.textContent) }", timeout=40000)
+    if fresh and p.evaluate(DEFAULT_LAYOUT):
+        p.reload()
+        return code_ready(p, fresh=False)
     p.wait_for_timeout(1000)
 
 
