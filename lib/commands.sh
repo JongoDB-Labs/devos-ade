@@ -1745,6 +1745,49 @@ _backup_space_check() {
     die "not enough free disk space for a backup: $((free / 1024)) MB free, and one needs about $((kb / 1024 + 1)) MB (twice that is kept free) — delete old backups in backups/ first"
 }
 
+# _BACKUP_S3_PY — runs inside the running Open WebUI container (its S3_* settings are RustFS's root key; boto3 is there for
+# its S3 storage): both buckets as a tar stream on stdout, the object keys as paths under <bucket>/ (what `aws s3 sync`
+# writes), a key ending in "/" as a folder, a key that would leave the folder skipped. Exit 3: no boto3 here.
+_BACKUP_S3_PY='import os, sys, tarfile, time
+try:
+    import boto3
+    from botocore.config import Config
+except Exception:
+    sys.exit(3)
+e = os.environ
+s3 = boto3.client("s3", endpoint_url=e["S3_ENDPOINT_URL"], aws_access_key_id=e["S3_ACCESS_KEY_ID"],
+                  aws_secret_access_key=e["S3_SECRET_ACCESS_KEY"], region_name=e.get("S3_REGION_NAME") or "us-east-1",
+                  config=Config(s3={"addressing_style": "path"}))
+tf = tarfile.open(fileobj=sys.stdout.buffer, mode="w|")
+for b in ("openwebui", "shared"):
+    d = tarfile.TarInfo(b); d.type = tarfile.DIRTYPE; d.mode = 0o755; d.mtime = int(time.time()); tf.addfile(d)
+    for page in s3.get_paginator("list_objects_v2").paginate(Bucket=b):
+        for o in page.get("Contents", []):
+            k = o["Key"]
+            if k.startswith("/") or ".." in k.split("/") or k.strip("/") == "":
+                continue
+            t = tarfile.TarInfo(b + "/" + k.rstrip("/")); t.mtime = int(o["LastModified"].timestamp())
+            if k.endswith("/"):
+                t.type = tarfile.DIRTYPE; t.mode = 0o755; tf.addfile(t); continue
+            r = s3.get_object(Bucket=b, Key=k)
+            t.size = o["Size"]; t.mode = 0o644
+            tf.addfile(t, r["Body"])
+tf.close()
+'
+
+# _backup_buckets_exec S3DIR — both buckets into S3DIR/openwebui and S3DIR/shared through docker exec into the running Open
+# WebUI. Fails (nothing kept for the caller to trust) when it is not running, has no boto3, or the copy breaks: the caller
+# then uses the old path (s3_job: a new aws-cli container).
+_backup_buckets_exec() {
+  local id
+  id="$(dc ps -q --status running open-webui 2>/dev/null | head -n 1 || true)"
+  [ -n "$id" ] || return 1
+  rm -rf "${1:?}/openwebui" "${1:?}/shared"
+  # (a tar stream, read by tar as it comes; set -o pipefail is in force in ./stack)
+  dc exec -T open-webui python -c "$_BACKUP_S3_PY" 2>/dev/null | tar -xf - -C "$1" 2>/dev/null || return 1
+  [ -d "$1/openwebui" ] && [ -d "$1/shared" ]
+}
+
 # _backup_named SUFFIX — writes backups/<ts>[-SUFFIX]/ and sets LAST_BACKUP (backups/<ts>…) for callers
 # that want to name it in messages. ./stack update uses SUFFIX=auto so it can prune its own backups.
 _backup_named() {
@@ -1761,8 +1804,13 @@ _backup_named() {
     fi
   done
   mkdir -p "$tmp/s3/openwebui" "$tmp/s3/shared"
-  s3_job "$tmp" "" 'set -e; for b in openwebui shared; do aws --endpoint-url http://rustfs:9000 s3 sync --only-show-errors s3://$b /backup/s3/$b; done' ||
-    die "could not copy the object-store buckets — the incomplete backup was removed; see ./stack logs rustfs"
+  # (the running Open WebUI reads both buckets through the container that is up already — seconds; a new container
+  # for aws-cli (compose run) took minutes on a busy Docker Desktop. Same files in the same places either way.)
+  if ! _backup_buckets_exec "$tmp/s3"; then
+    rm -rf "$tmp/s3"; mkdir -p "$tmp/s3/openwebui" "$tmp/s3/shared"
+    s3_job "$tmp" "" 'set -e; for b in openwebui shared; do aws --endpoint-url http://rustfs:9000 s3 sync --only-show-errors s3://$b /backup/s3/$b; done' ||
+      die "could not copy the object-store buckets — the incomplete backup was removed; see ./stack logs rustfs"
+  fi
   cp "$ENV_FILE" "$tmp/.env"   # encrypted DB fields need the same secrets
   # the project folders of this computer (lib/projects.sh: the list, not the folders themselves)
   [ ! -f "$(projects_file)" ] || cp "$(projects_file)" "$tmp/project-folders.tsv"

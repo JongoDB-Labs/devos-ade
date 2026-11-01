@@ -463,6 +463,56 @@ test_backup_named_suffix() {
   if (cmd_backup extra) 2>/dev/null; then return 1; fi
 }
 
+# The backup through docker exec into the running Open WebUI (JON-972): the same files in the same places as the old
+# path (s3_job: a new aws-cli container), and the old path when Open WebUI does not run or cannot do it.
+_stub_dc_exec_s3() { # the stub dc of _stub_dc, plus a running open-webui that answers `exec … python` with a tar of $TMP/objs
+  _stub_dc
+  local base; base="$(declare -f dc)"
+  eval "_dc_base${base#dc }"
+  dc() {
+    case "$*" in
+      "ps -q --status running open-webui") [ "${OWUI_DOWN:-0}" = 1 ] || echo abc123 ;;
+      "exec -T open-webui python"*) echo "dc $*" >> "$TMP/calls"
+        [ "${EXEC_FAIL:-0}" != 1 ] || return 3
+        tar -cf - -C "$TMP/objs" openwebui shared ;;
+      *) _dc_base "$@" ;;
+    esac
+  }
+}
+_backup_listing() { (cd "$1" && find . -type f -o -type d | LC_ALL=C sort | grep -v '^\.$'); }
+
+test_backup_through_exec_has_the_same_files_as_the_old_path() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR" "$TMP/objs/openwebui/uploads" "$TMP/objs/shared"
+  printf 'chat file' > "$TMP/objs/openwebui/uploads/a.txt"; printf 'shared doc' > "$TMP/objs/shared/b.md"
+  printf 'LITELLM_SALT_KEY=sk-salt\n' > "$ENV_FILE"
+  # the old path: s3_job stands in for aws s3 sync (the same objects as files)
+  _stub_dc_exec_s3; OWUI_DOWN=1
+  s3_job() { echo "s3 $*" >> "$TMP/calls"; mkdir -p "$1/s3"; cp -R "$TMP/objs/openwebui" "$TMP/objs/shared" "$1/s3/"; }
+  _backup_named old 2>/dev/null; old="$STACK_DIR/$LAST_BACKUP"
+  assert_eq "$(grep -c '^s3 /' "$TMP/calls")" "1"
+  : > "$TMP/calls"; OWUI_DOWN=0
+  _backup_named fast 2>/dev/null; fast="$STACK_DIR/$LAST_BACKUP"
+  assert_eq "$(grep -c '^s3 /' "$TMP/calls" || true)" "0"            # no new container
+  assert_contains "$(cat "$TMP/calls")" "exec -T open-webui python"
+  assert_eq "$(_backup_listing "$fast")" "$(_backup_listing "$old")"
+  assert_eq "$(cat "$fast/s3/openwebui/uploads/a.txt")" "chat file"
+  assert_eq "$(cat "$fast/s3/shared/b.md")" "shared doc"
+  assert_eq "$(cat "$fast/litellm.dump")" "$(cat "$old/litellm.dump")"
+  assert_eq "$(ls -l "$fast/.env" | cut -c1-10)" "-rw-------"
+  assert_eq "$(ls -ld "$fast/s3/shared" | cut -c1-10)" "drwx------"
+}
+
+test_backup_falls_back_to_the_old_path_when_the_exec_cannot_do_it() {
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR" "$TMP/objs/openwebui" "$TMP/objs/shared"
+  printf 'X=1\n' > "$ENV_FILE"; _stub_dc_exec_s3
+  s3_job() { echo "s3 $1" >> "$TMP/calls"; mkdir -p "$1/s3/openwebui" "$1/s3/shared"; }
+  OWUI_DOWN=1; _backup_named auto 2>/dev/null                    # Open WebUI is not running
+  assert_eq "$(grep -c '^s3 /' "$TMP/calls")" "1"
+  : > "$TMP/calls"; OWUI_DOWN=0; EXEC_FAIL=1; _backup_named auto 2>/dev/null   # it is, but the copy fails
+  assert_eq "$(grep -c '^s3 /' "$TMP/calls")" "1"
+  [ -d "$STACK_DIR/$LAST_BACKUP/s3/shared" ] && [ -f "$STACK_DIR/$LAST_BACKUP/litellm.dump" ]
+}
+
 test_write_mcp_config_refuses_empty_token() {
   printf 'SHARED_MCP_PORT=8765\n' > "$ENV_FILE"
   if out="$( (write_mcp_config) 2>&1)"; then return 1; fi
