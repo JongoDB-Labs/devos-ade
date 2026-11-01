@@ -89,6 +89,10 @@ body.tp-dragging, body.tp-dragging * { user-select: none; cursor: col-resize; }
   .tp { padding: 10px max(10px, env(safe-area-inset-right)) 20px max(10px, env(safe-area-inset-left)); }
   .tp-views { height: max(240px, calc(var(--app-h, 100dvh) - var(--answers-h) - 190px)); }
 }
+/* (the terminal as wide as a phone allows: the card's padding and border would take two or three columns from it) */
+.tp-grid.tp-phone .tp-widget[data-widget="terminals"] { padding: 0; border: 0; }
+.tp-grid.tp-phone .tp-widget[data-widget="terminals"] .tp-wbar { margin: 0; padding: 8px; }
+.tp-grid.tp-phone .tp-widget[data-widget="terminals"] .tp-tools { margin: 0; padding: 8px; }
 /* touch: 44 px targets */
 @media (pointer: coarse), (max-width: 767.98px) {
   .tp-key, .tp-cmd, .tp-tools .quiet, .tp .tp-edit, .tp .tp-remove, .tp .tp-open-shell, .tp .tp-add, .tp-split-b, .tp-cmd-row .quiet { min-height: 44px; }

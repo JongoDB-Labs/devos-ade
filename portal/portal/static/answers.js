@@ -203,7 +203,11 @@
   const tSelect = el("select", { id: "answers-terminal", "aria-label": "What to open in the terminal" });
   const tOpen = el("button", { type: "button", class: "action", id: "answers-terminal-open", text: "Open" });
   const tNote = el("span", { class: "answers-note", text: "A window of its own; each tool signs in with its own flow there." });
-  const tWrap = el("span", { class: "answers-group" }, el("label", { for: "answers-terminal", text: "Open" }), tSelect, tOpen, tNote);
+  // (on a phone, as Chat's: the choice's name with a chevron, the menu over it — with Customize beside Open there is no
+  // room for the menu's own width)
+  const tPickText = el("span", { class: "answers-pick-text", "aria-hidden": "true" });
+  const tPick = el("span", { class: "answers-pick" }, tPickText, tSelect);
+  const tWrap = el("span", { class: "answers-group answers-term" }, el("label", { for: "answers-terminal", text: "Open" }), tPick, tOpen, tNote);
   // goSetup(VALUE) — a greyed item's button pressed (setup:REASON:TOOL): where it is turned on (Settings at that row;
   // Chat's sign-in row with its Sign in open; the tool itself in the terminal). -> whether it was one
   // goLabel(VALUE) -> the button's words for a greyed item (or a sign-in for Chat), "" for any other choice
@@ -241,9 +245,11 @@
     if (go) tOpen.setAttribute("aria-label", goName(tSelect.value) || go); else tOpen.removeAttribute("aria-label");
     return go;
   };
-  tSelect.addEventListener("change", () => { if (!tLabel()) tLast = tSelect.value; });
+  // (a phone's closed menu: the choice's name, whole in its title)
+  const tPickSync = () => { const o = tSelect.selectedOptions[0]; tPickText.textContent = o ? shortLabel(o.textContent) : ""; tPick.title = o ? o.textContent : ""; };
+  tSelect.addEventListener("change", () => { tPickSync(); if (!tLabel()) tLast = tSelect.value; });
   tOpen.addEventListener("click", () => {
-    if (goSetup(tSelect.value)) { tSelect.value = tLast; tLabel(); return; }
+    if (goSetup(tSelect.value)) { tSelect.value = tLast; tLabel(); tPickSync(); return; }
     const f = document.querySelector('#frames iframe[data-app="terminal"]');
     if (!f || !tSelect.value || tSelect.selectedOptions[0]?.disabled) return;
     tOpen.disabled = true;
@@ -377,6 +383,7 @@
     if (tab === "terminal") {
       fill(tSelect, terminalOptions(d), tLast);
       tLabel();   // (its words and its name: a greyed item's "Go to …", else Open — never one left from before)
+      tPickSync();
     } else {
       fill(cSelect, chatOptions(d), saved.chat);
       goHide();

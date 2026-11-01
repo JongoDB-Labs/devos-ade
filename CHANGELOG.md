@@ -22,8 +22,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
     marked **Run**.
   - **Projects:** your project folders, each with **Open a shell here**.
   - **Nothing changes until you do it.** The tab is one terminal with its Paste button, as before; the arrangement is kept
-    for each kind of screen in the portal's layout file. A phone shows one terminal and the key bar. The Terminal is a tab
-    of the portal on a phone now (More, then Terminal; the full-screen window is still there).
+    for each kind of screen in the portal's layout file. A phone shows one terminal, as wide as the screen, and the key
+    bar. The Terminal is a tab of the portal on a phone now (More, then Terminal; the full-screen window is still there),
+    and its Who answers menu shows the choice's name, as Chat's does there.
   - **How it is kept safe.** A third small script in the terminal's page (`terminal/ttyd-keys.js`, allowed by its hash like the
     clipboard script) accepts messages only from the portal page that frames it and only a fixed table of keys or up to 4 KB
     of printable text; a view's address carries a one-time token, so a view can only be opened by the portal.
@@ -35,7 +36,8 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   the key table, control characters, 4 KB) and the terminal model in widgets.js; browser checks (`checks_terminal.py`:
   defaults unchanged, four views each with its own shell and surviving a reload, the key bar reaching only the focused view,
   quick commands, messages from other windows ignored, a shell in a project, keyboard only, no overlap, phone) and
-  `terminal-customize` states in the UI and layout sweeps.
+  `terminal-customize` states in the UI and layout sweeps. A view's session outlives the check that opened it, so each
+  check starts its views at a clean prompt.
 
 ## [0.47.0] - 2026-11-01
 

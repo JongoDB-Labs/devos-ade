@@ -559,7 +559,12 @@
         const main = appFrame("terminal");
         if (main.src === "about:blank" || !main.src) main.src = appUrl("terminal");
         main.hidden = !current;
-      } else if (ro) { ro.disconnect(); ro.observe(page); ro.observe(viewsBox); }
+      } else if (ro) {
+        // (the frames follow their slots: what is above the views — the tray, a widget whose list loaded — moves them
+        // without resizing them, so the tray and every widget are watched as well as the page and the views)
+        ro.disconnect();
+        for (const el of [page, viewsBox, tray, grid, ...grid.children]) ro.observe(el);
+      }
     }
     page.hidden = !(on && current);
     page.classList.toggle("tp-editing", editing);
