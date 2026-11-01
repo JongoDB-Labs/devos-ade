@@ -339,6 +339,7 @@ dc() {
     warn "COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT_NAME in your shell is ignored: this checkout is project '$p' (from .env or the default)"
     _DC_PROJECT_WARNED=1
   fi
+  if [ "${1:-}" = ps ] && [ "${DEVOS_ADE_PS_VIA_COMPOSE:-0}" != 1 ] && _dc_ps_form "$@"; then _dc_ps_fast "$p" "$@"; return; fi
   # Compose lets shell variables beat --env-file: OpenRouter, Experiential Labs, speech-to-text and the search keys are
   # opt-in via .env only, so an OPENROUTER_*, EXPLABS_*, STT_* or WEBSEARCH_* in your shell never switches them on (or
   # keeps them on after a remove).
@@ -390,6 +391,69 @@ SUMS
     BUILDX_NO_DEFAULT_ATTESTATIONS="${BUILDX_NO_DEFAULT_ATTESTATIONS:-1}" \
     DEVOS_ADE_ENV_DISPLAY="$(env_file_display)" COMPOSE_PROJECT_NAME="$p" docker compose -p "$p" --project-directory "$STACK_DIR" -f "$STACK_DIR/compose.yaml" ${f[@]+"${f[@]}"} \
       --env-file "$ENV_FILE" "$@" )
+}
+
+# `dc ps` without Compose (JON-972). Compose reads and checks every compose file before it answers (about 0.3 s a call, and a
+# setup or an update asks dozens of times); Docker lists the project's containers by the labels Compose gave them, in two
+# calls of a few milliseconds. The forms this code uses are answered as Compose prints them: the IDs (-q), the services
+# (--services), a --format of .Service, .State, .Health, .ExitCode, .Name and .ID; -a, --status running and service names
+# (one-off containers left out, sorted by name). Any other form — or DEVOS_ADE_PS_VIA_COMPOSE=1 — asks Compose. A service
+# with no container gives nothing, whether it is stopped or not in this stack (where Compose said "no such service").
+# (Checked against Compose on a live stack of 15 containers, healthy, starting, exited and without a health check: the same.)
+_dc_ps_form() {   # ps ARGS... -> 0 when _dc_ps_fast answers it as Compose would
+  local out='' rest t
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -a | --all) ;;
+      -q | --quiet | -aq | -qa | --services) out=1 ;;
+      --status) [ "${2:-}" = running ] || return 1; shift ;;
+      --format)
+        case "${2:-}" in *'{{'*) ;; *) return 1 ;; esac
+        case "$2" in table* | json* | *'\'* | *'|'*) return 1 ;; esac
+        rest="$2"; for t in Service State Health ExitCode Name ID; do rest="${rest//"{{.$t}}"/}"; done
+        case "$rest" in *'{{'* | *'}}'*) return 1 ;; esac
+        out=1; shift ;;
+      -*) return 1 ;;
+      *) case "$1" in '' | *[!a-z0-9_-]*) return 1 ;; esac ;;
+    esac
+    shift
+  done
+  [ -n "$out" ]
+}
+_dc_ps_fast() {   # PROJECT ps ARGS... (a form _dc_ps_form took)
+  local p="$1" all='' quiet='' services='' running='' fmt='' svcs=' ' rows name id svc state status health code line
+  shift 2
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -a | --all) all=1 ;; -q | --quiet) quiet=1 ;; -aq | -qa) all=1; quiet=1 ;; --services) services=1 ;;
+      --status) running=1; shift ;; --format) fmt="$2"; shift ;;
+      *) svcs="$svcs$1 " ;;
+    esac
+    shift
+  done
+  # (one call: the health and the exit code are in Docker's status, "Up 2 minutes (healthy)", "Exited (137) 5 seconds ago")
+  rows="$(docker ps -a --no-trunc --filter "label=com.docker.compose.project=$p" --filter label=com.docker.compose.oneoff=False \
+    --format '{{.Names}}|{{.ID}}|{{.Label "com.docker.compose.service"}}|{{.State}}|{{.Status}}')" || return 1
+  [ -n "$rows" ] || return 0
+  while IFS='|' read -r name id svc state status; do
+    [ -n "$id" ] || continue
+    case "$status" in *'(healthy)'*) health=healthy ;; *'(unhealthy)'*) health=unhealthy ;; *'(health: starting)'*) health=starting ;; *) health='' ;; esac
+    case "$status" in 'Exited ('* | 'Restarting ('*) code="${status#*(}"; code="${code%%)*}" ;; *) code=0 ;; esac
+    case "$code" in '' | *[!0-9-]*) code=0 ;; esac
+    [ "$svcs" = ' ' ] || case "$svcs" in *" $svc "*) ;; *) continue ;; esac
+    if [ -n "$running" ]; then [ "$state" = running ] || continue
+    elif [ -z "$all" ]; then case "$state" in running | restarting | paused) ;; *) continue ;; esac; fi
+    if [ -n "$services" ]; then printf '%s\n' "$svc"
+    elif [ -n "$quiet" ]; then printf '%s\n' "$id"
+    else
+      line="${fmt//"{{.Service}}"/$svc}"; line="${line//"{{.State}}"/$state}"; line="${line//"{{.Health}}"/$health}"
+      line="${line//"{{.ExitCode}}"/$code}"; line="${line//"{{.Name}}"/${name#/}}"; line="${line//"{{.ID}}"/$id}"
+      printf '%s\n' "$line"
+    fi
+  done <<ROWS | { if [ -n "$services" ]; then awk '!seen[$0]++'; else cat; fi; }
+$(printf '%s\n' "$rows" | LC_ALL=C sort)
+ROWS
 }
 
 # --- configuration files read at a service's start: their checksums, for compose's own change detection ---

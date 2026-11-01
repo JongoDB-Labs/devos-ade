@@ -58,6 +58,8 @@ TMP=$(mktemp -d)
 export STACK_DIR="$T_ROOT" ENV_FILE="$TMP/.env" STATE_DIR="$TMP/.state" DEVOS_ADE_NO_OPEN=1 PATH="$T_ROOT/tests/shims:$PATH"
 # dc() never asks the Compose version in a test (a test that stubs docker would see an extra call): the docs overlay off
 export DEVOS_ADE_COMPOSE_CONTEXTS=0 DEVOS_ADE_COMPOSE_OVERRIDES=1
+# `dc ps` through Compose, as the docker stubs of the tests answer it (lib/common.sh _dc_ps_fast: its own tests unset this)
+export DEVOS_ADE_PS_VIA_COMPOSE=1
 export HOME="$TMP/home" DOCKER_CONFIG="$BN_REAL_DOCKER_CONFIG"; mkdir -p "$HOME"
 # an Ollama, llama.cpp or LM Studio this computer may run is never asked (lib/runtimes.sh looks at what answers on 11434, 11438,
 # 11439): the closed port 9

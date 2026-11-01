@@ -214,6 +214,56 @@ test_dc_builds_without_default_attestations_so_an_unchanged_image_keeps_its_id()
   assert_eq "${BUILDX_NO_DEFAULT_ATTESTATIONS:-unset}" "unset"                  # (compose's alone: not this shell's, nor a program's it starts)
 }
 
+# `dc ps` from Docker's own list (two docker calls) in the forms this code uses, as Compose prints them; any other form asks
+# Compose. (tests/run.sh sets DEVOS_ADE_PS_VIA_COMPOSE=1 for the other tests' docker stubs; these unset it.)
+_ps_docker() {   # a project of four containers: a one-off and another project's are left out by Docker's filters, as asked
+  unset DEVOS_ADE_PS_VIA_COMPOSE
+  printf 'X=1\n' > "$ENV_FILE"
+  docker() {
+    local all="$*"
+    echo "docker $*" >> "$TMP/calls"
+    case "$1 $2" in
+      "ps -a") [ "${all% --format *}" = "ps -a --no-trunc --filter label=com.docker.compose.project=$(project_name) --filter label=com.docker.compose.oneoff=False" ] || return 9
+        [ -z "${PS_DOWN:-}" ] || return 1
+        printf '%s\n' "p-terminal-1|i3|terminal|exited|Exited (137) 5 seconds ago" "p-litellm-1|i1|litellm|running|Up 2 minutes (healthy)" \
+          "p-code-1|i4|code|restarting|Restarting (1) 2 seconds ago" "p-portal-1|i2|portal|running|Up 2 minutes" ;;
+      compose*) echo "COMPOSE" ;;
+    esac
+  }
+  : > "$TMP/calls"
+}
+test_dc_ps_answers_the_ids_and_services_from_dockers_list() {
+  _ps_docker
+  assert_eq "$(dc ps -q litellm portal)" "$(printf 'i1\ni2')"
+  assert_eq "$(dc ps -q)" "$(printf 'i4\ni1\ni2')"                         # running, restarting, paused: as `docker ps`
+  assert_eq "$(dc ps -q --status running)" "$(printf 'i1\ni2')"
+  assert_eq "$(dc ps -aq terminal)" "i3"; assert_eq "$(dc ps -a -q terminal)" "i3"
+  assert_eq "$(dc ps --services --status running)" "$(printf 'litellm\nportal')"
+  assert_eq "$(dc ps -q forgejo; echo "rc=$?")" "rc=0"                     # (no container: nothing, as a stopped one)
+  assert_not_contains "$(cat "$TMP/calls")" "docker compose"
+}
+test_dc_ps_formats_as_compose_does_with_an_empty_health_kept_in_its_column() {
+  _ps_docker
+  assert_eq "$(dc ps -a --format '{{.Service}}	{{.State}}	{{.Health}}	{{.ExitCode}}')" \
+    "$(printf 'code\trestarting\t\t1\nlitellm\trunning\thealthy\t0\nportal\trunning\t\t0\nterminal\texited\t\t137')"
+  assert_eq "$(dc ps --format '{{.Health}}' litellm)" "healthy"
+  assert_eq "$(dc ps -a --format '{{.State}} {{.Health}}' terminal)" "exited "
+  assert_eq "$(dc ps --format '{{.Name}} {{.ID}}' portal)" "p-portal-1 i2"
+}
+test_dc_ps_asks_compose_for_any_other_form_or_when_told_to() {
+  _ps_docker
+  for f in "ps" "ps --format json" "ps --format table" "ps --format {{.Ports}}" "ps --format {{.Service}}\\t" "ps --status exited -q" "ps --filter status=running -q" "ps -q Bad/name"; do
+    # shellcheck disable=SC2086  # the form, a word an argument
+    assert_eq "$(dc $f)" "COMPOSE"
+  done
+  assert_eq "$(DEVOS_ADE_PS_VIA_COMPOSE=1 dc ps -q)" "COMPOSE"
+}
+test_dc_ps_fails_when_docker_cannot_be_asked() {
+  _ps_docker
+  if out="$(PS_DOWN=1 dc ps -q --status running terminal)"; then echo "a docker that failed answered: $out" >&2; return 1; fi
+  assert_eq "$out" ""
+}
+
 test_rotate_aws_rejected_key_leaves_env_untouched() {
   printf 'AWS_ACCESS_KEY_ID=AKIAOLD\nAWS_SECRET_ACCESS_KEY=oldsecret\nAWS_REGION_NAME=us-east-1\n' > "$ENV_FILE"
   before="$(cat "$ENV_FILE")"; _stub_dc
