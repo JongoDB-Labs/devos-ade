@@ -106,6 +106,25 @@ test_remote_access_on_always_runs_the_settings_step() {
   assert_contains "$(_um_run update)" "settings"
 }
 
+# The trace (DEVOS_ADE_UPD_TRACE=1 or .state/update/trace-on: the e2e upgrade test): what made a step run, never a key's value
+test_the_trace_says_which_input_changed_and_never_writes_a_value() {
+  _um_setup; _um_run > /dev/null
+  [ ! -e "$STATE_DIR/update/trace" ] || { echo "a trace without the switch" >&2; return 1; }
+  mkdir -p "$STATE_DIR/update"; : > "$STATE_DIR/update/trace-on"
+  _um_run > /dev/null
+  [ -s "$STATE_DIR/update/trace/signin.note" ] || { echo "no trace written" >&2; return 1; }
+  all="$(cat "$STATE_DIR"/update/trace/*)"
+  assert_not_contains "$all" "sk-a"; assert_not_contains "$all" "sk-d"; assert_not_contains "$all" "=pw"
+  assert_contains "$all" "LITELLM_KEY_SETUP="
+  OWUI_CTR="/p-open-webui-1 O2 2026-11-01T11:00:00Z"; assert_eq "$(_um_run update)" "signin syncs"
+  d="$(diff "$STATE_DIR/update/trace.prev/signin.note" "$STATE_DIR/update/trace/signin.same" || true)"   # (diff: 1 when they differ)
+  assert_contains "$d" "< /p-open-webui-1 O1"; assert_contains "$d" "> /p-open-webui-1 O2"
+  assert_eq "$(printf '%s\n' "$d" | grep -c '^[<>]')" "2"
+  # (a skipped step's digest: .same only)
+  [ -s "$STATE_DIR/update/trace/keys.same" ] && [ ! -e "$STATE_DIR/update/trace/keys.note" ] || { echo "skipped step traced wrong" >&2; return 1; }
+  [ "$(stat -c %a "$STATE_DIR/update/trace" 2>/dev/null || stat -f %Lp "$STATE_DIR/update/trace")" = 700 ] || { echo "trace folder not private" >&2; return 1; }
+}
+
 test_the_models_recheck_and_a_setup_without_begin_note_nothing() {
   _um_setup; UPD_RECORD=0; UPD_NOW=''
   upd_gate keys "keys" "w" true

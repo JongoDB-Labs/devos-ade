@@ -595,6 +595,8 @@ elif [ -n "$SETUP_STOPPED" ]; then
 else
 # --- 3. Update now: a request for the throwaway's own update helper ---
 docker image inspect --format '{{.Id}}' "$PROJECT/portal:local" > "$OUT/portal-id-before" 2>/dev/null || : > "$OUT/portal-id-before"
+# (the update's setup keeps each step's inputs, values as checksums: the fast apply below says what made a step run)
+[ "$FAST_CHECK" != 1 ] || { mkdir -p "$STACK/.state/update" && : > "$STACK/.state/update/trace-on"; }
 UPD_T0="$(now)"
 nonce="$(openssl rand -hex 16)"
 mkdir -p "$STACK/.state/requests"
@@ -744,7 +746,8 @@ print(t.replace(s, "STACK").replace("~" + s[len(h):] if s.startswith(h + "/") el
   ok=1; case "$t" in *"DevOS ADE"*) [ "$rc" = 0 ] && ok=0 ;; esac
   check "page-$pg" "$ok" "title '$t'${left:+; old name: $(printf '%s' "$left" | head -3 | tr '\n' ' ')}"
 done
-[ "$MIGRATE" = 0 ] && python3 - "$OUT/before/manifest.json" "$OUT/after/manifest.json" "$PROJECT" "$(pp)" > "$OUT/manifest.check" 2>&1 <<'PY'
+mrc=0
+[ "$MIGRATE" != 0 ] || python3 - "$OUT/before/manifest.json" "$OUT/after/manifest.json" "$PROJECT" "$(pp)" > "$OUT/manifest.check" 2>&1 <<'PY' || mrc=$?
 import json, sys
 a, b = (json.load(open(p)) for p in sys.argv[1:3])
 want = f"DevOS ADE ({sys.argv[3]}, port {sys.argv[4]})"
@@ -753,7 +756,7 @@ assert b["id"] == a["id"] == "/", f"id {a['id']!r} -> {b['id']!r}"
 assert b["protocol_handlers"] == a["protocol_handlers"], f"link scheme {a['protocol_handlers']} -> {b['protocol_handlers']}"
 print(f"name {a['name']!r} -> {b['name']!r}; id and link scheme kept")
 PY
-[ "$MIGRATE" != 0 ] || check manifest "$?" "$(tail -n 1 "$OUT/manifest.check")"
+[ "$MIGRATE" != 0 ] || check manifest "$mrc" "$(tail -n 1 "$OUT/manifest.check")"
 st test > "$LOGS/test-after.log" 2>&1; rc=$?; redact "$LOGS/test-after.log"
 check stack-test-after "$([ "$rc" = 0 ] && grep -q 'all checks passed' "$LOGS/test-after.log" && echo 0 || echo 1)" "./stack test: exit $rc"
 # --- 6. fast apply: nothing changed, the backup through exec, and a rollback after it (JON-972) ---
@@ -764,8 +767,17 @@ if [ "$MIGRATE" = 0 ] && [ "$FAST_CHECK" = 1 ]; then
   FAST_S=$((T1 - T0))
   check fast-apply-time "$([ "$FAST_S" -le "$UPGRADE_APPLY_MAX_S" ] && echo 0 || echo 1)" "the apply took ${FAST_S}s (bound ${UPGRADE_APPLY_MAX_S}s on an idle host)"
   grep -E '^==> .* ready \(' "$LOGS/fast-apply.log" | sed 's/^==> //' | while IFS= read -r l; do say "fast apply step: $l"; done
-  for want in "Prices" "LiteLLM keys, Admin sign-in" "Portal sign-in and Chat" "Open WebUI syncs" "Smoke test" "Ports and settings in .env"; do
-    check "fast-apply-skips-$(printf '%s' "$want" | tr -c 'A-Za-z0-9' '-' | cut -c1-24)" "$(grep -q "^==> $want.*: not run" "$LOGS/fast-apply.log" && echo 0 || echo 1)" "$want: not run (nothing it reads changed)"
+  # (a step that ran: what changed in its inputs, from the trace the stack keeps — .state/update/trace-on, set before Update now)
+  tdir="$STACK/.state/update"
+  for pair in "Prices|prices" "LiteLLM keys, Admin sign-in|keys" "Portal sign-in and Chat|signin" "Open WebUI syncs|syncs" \
+    "Git server account|gitafter" "Smoke test|smoke" "Ports and settings in .env|settings"; do
+    want="${pair%|*}"; name="${pair#*|}"; why=''
+    if ! grep -q "^==> $want.*: not run" "$LOGS/fast-apply.log"; then
+      p="$tdir/trace.prev/$name.note"; [ -f "$p" ] || p="$tdir/trace.prev/$name.same"
+      diff "$p" "$tdir/trace/$name.same" > "$OUT/trace-$name.diff" 2>&1; redact "$OUT/trace-$name.diff"
+      why="; what changed: $(grep '^[<>]' "$OUT/trace-$name.diff" | head -n 8 | tr '\n' ' ' | cut -c1-600)"
+    fi
+    check "fast-apply-skips-$(printf '%s' "$want" | tr -c 'A-Za-z0-9' '-' | cut -c1-24)" "$([ -z "$why" ] && echo 0 || echo 1)" "$want: not run (nothing it reads changed)$why"
   done
   check fast-apply-one-up "$([ "$(grep -c '^==> Services ([0-9]*).*ready' "$LOGS/fast-apply.log")" = 1 ] && echo 0 || echo 1)" "the services started in one phase"
   # the backup through docker exec: seconds, the same files

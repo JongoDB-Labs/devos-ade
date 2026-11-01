@@ -260,6 +260,7 @@ upd_begin() {
   UPD_RECORD=1   # (only a command that begins one — ./stack setup — notes digests: models --recheck runs the steps without)
   if [ -f "$f" ] && [ ! -L "$f" ]; then UPD_PREV="$(cat "$f" 2>/dev/null || true)"; fi
   rm -f "$f" 2>/dev/null || true
+  if upd_trace_on; then rm -rf "${f%/*}/trace.prev"; mv "${f%/*}/trace" "${f%/*}/trace.prev" 2>/dev/null || true; fi
 }
 upd_forget() { rm -f "$(upd_file)" 2>/dev/null || true; }
 # upd_commit — the setup succeeded: its digests become the state the next update compares with. A mark of the commit is
@@ -284,7 +285,8 @@ _upd_env() { grep -vE "${1:-$UPD_ENV_DERIVED}" "$ENV_FILE" 2>/dev/null | LC_ALL=
 _upd_env_settings() { _upd_env '^(LITELLM_KEY_[A-Z_]*|OPENWEBUI_API_KEY|LITELLM_UI_USER|LITELLM_DB_ADMIN_READY|OWUI_[A-Z_]*|STT_PROVIDER|STT_MODEL|STT_BEDROCK_MODEL|CLAUDE_BEDROCK_[A-Z_]*|PORTAL_GID|REMOTE_SIDECAR_IP)='; }
 _upd_keys() { local k; for k in LITELLM_KEY_CLAUDE_CODE LITELLM_KEY_OPENWEBUI LITELLM_KEY_SETUP OPENWEBUI_API_KEY LITELLM_DB_ADMIN_READY; do printf '%s=%s\n' "$k" "$(get_env "$k")"; done; }
 _upd_compose() { { cat "$STACK_DIR"/compose*.yaml 2>/dev/null; compose_overlays 2>/dev/null; project_name; } | cksum; }
-# _upd_local_ids -> the IDs of the images this checkout builds (portal, shared-mcp, Open WebUI, stt), one docker call, kept
+# _upd_local_ids -> the IDs of the images this checkout builds (portal, shared-mcp, Open WebUI, stt), one docker call, kept for
+# the rest of one digest (upd_hash runs in a subshell: each digest asks Docker again — never an ID from before a build)
 _upd_local_ids() {
   if [ "$UPD_IDS_SET" = 0 ]; then
     local p; p="$(project_name)"
@@ -294,7 +296,7 @@ _upd_local_ids() {
   printf '%s\n' "$UPD_IDS"
 }
 # _upd_containers -> the identity of the LiteLLM and Open WebUI containers (id and when each started), two docker calls, kept
-# until upd_forget_containers: a recreated or restarted one is not the one an earlier step saw
+# for the rest of one digest, like the IDs (a recreated or restarted one is not the one an earlier step saw)
 _upd_containers() {
   if [ "$UPD_CTR_SET" = 0 ]; then
     local ids
@@ -414,14 +416,33 @@ upd_in_codedefault() {
 }
 
 # upd_hash NAME -> the digest of the step's inputs now
-# (in this shell, through a file: what the inputs keep — the images' IDs, the containers — is kept for the next digest; a grep
-# that finds nothing is not a failure)
+# (through a file, so a grep that finds nothing is not a failure; called as $(upd_hash …), a subshell: what an input keeps — the
+# images' IDs, the containers — is gone with it, and the next digest asks Docker again)
 upd_hash() {
   local t h
   t="$(mktemp)" || return 1
   { printf 'v1 %s %s\n' "$(project_name)" "$STACK_DIR"; "upd_in_$1" || true; } > "$t" 2>/dev/null
-  h="$(_upd_sum < "$t")"; rm -f "$t"
+  h="$(_upd_sum < "$t")"
+  ! upd_trace_on || _upd_trace "${UPD_TRACE_ROLE:-note}" "$1" "$t"
+  rm -f "$t"
   printf '%s\n' "$h"
+}
+# DEVOS_ADE_UPD_TRACE=1, or a file .state/update/trace-on (the e2e upgrade test's stack): each digest's inputs are also kept
+# as text in .state/update/trace/ (NAME.same: compared before the step; NAME.note: noted after it; the setup before's in
+# trace.prev/), the value of every NAME=VALUE line and every comment as its checksum — .env and the keys are never written.
+# What made a step run: the diff of trace.prev/NAME.note (or .same, when it was skipped) and trace/NAME.same.
+upd_trace_on() { [ -n "${DEVOS_ADE_UPD_TRACE:-}" ] || [ -f "$STATE_DIR/update/trace-on" ]; }
+_upd_trace() {   # ROLE NAME FILE
+  local d="$STATE_DIR/update/trace" line
+  mkdir -p "$d" 2>/dev/null && chmod 700 "$d" 2>/dev/null || return 0
+  while IFS= read -r line; do
+    case "$line" in
+      '#'*) printf '# %s\n' "$(printf '%s' "$line" | cksum | awk '{ print $1 }')" ;;
+      [A-Za-z_]*=*) printf '%s=%s\n' "${line%%=*}" "$(printf '%s' "${line#*=}" | cksum | awk '{ print $1 }')" ;;
+      *) printf '%s\n' "$line" ;;
+    esac
+  done < "$3" > "$d/$2.$1" 2>/dev/null || true
+  chmod 600 "$d/$2.$1" 2>/dev/null || true
 }
 upd_in_defaults() { upd_in_litellm_config; }
 upd_in_setupkey() { upd_in_keys; }
@@ -431,7 +452,7 @@ upd_same() {
   [ "$UPD_MODE" = 1 ] || return 1
   prev="$(printf '%s\n' "$UPD_PREV" | awk -F'\t' -v n="$1" '!f && $1 == n { print $2; f = 1 }')"
   [ -n "$prev" ] || return 1
-  UPD_H="$(upd_hash "$1")"
+  UPD_H="$(UPD_TRACE_ROLE=same upd_hash "$1")"
   [ -n "$UPD_H" ] && [ "$UPD_H" = "$prev" ]
 }
 UPD_H=''
