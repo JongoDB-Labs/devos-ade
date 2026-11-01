@@ -99,7 +99,7 @@ test_cmd_update_reexec_skips_backup_and_checkout() {
   update_checkout() { echo CHECKOUT >> "$TMP/calls"; }
   _backup_named() { echo BACKUP >> "$TMP/calls"; }; prune_auto_backups() { :; }; dc() { echo "dc $*" >> "$TMP/calls"; }
   fake_reexec; DEVOS_ADE_CODE_UPDATED=1 DEVOS_ADE_UPDATE_BACKUP=backups/b DEVOS_ADE_UPDATE_FROM=abc123 cmd_update 2> "$TMP/err"
-  assert_eq "$(tr '\n' ';' < "$TMP/calls")" "dc config --images;dc pull --ignore-buildable;STACK setup --yes done=unset backup=unset from=unset;"
+  assert_eq "$(tr '\n' ';' < "$TMP/calls")" "dc config --images;dc pull --ignore-buildable;STACK setup --yes --update-mode done=unset backup=unset from=unset;"
   assert_contains "$(cat "$TMP/err")" "update: 3/4 images"
   assert_contains "$(cat "$TMP/err")" "update: 4/4 setup"
 }
@@ -312,6 +312,7 @@ _setup_stubs() { # every step of cmd_setup stubbed: only its own order and the r
     eval "$f() { :; }"
   done
   cmd_test() { [ -z "${FAKE_TEST_FAIL:-}" ] || die "1 check(s) failed"; }
+  upd_hash() { echo stub; }   # (the step digests ask Docker: tests/test_update_mode.sh)
   SETUP_REMOTE_MODE=''
 }
 

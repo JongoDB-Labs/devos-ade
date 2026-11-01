@@ -33,18 +33,19 @@ test_a_timed_step_says_when_it_starts_and_how_long_it_took() {
 test_setup_and_update_time_each_of_their_stretches() {
   local c
   c="$(sed -n '/^cmd_setup() {/,/^}/p' "$STACK_DIR/lib/commands.sh")"
-  for want in 'timed_step "AWS key check" setup_aws_creds' 'timed_step "Ports and settings in .env" _setup_settings' \
-              'timed_step "Voice" stt_after_probe' 'timed_step "Web search check" websearch_after_start' \
-              'timed_step "Code page default" code_default_on' 'timed_step "Smoke test" _setup_smoke_test' 'timed_step "Finishing" _setup_finish'; do
+  for want in 'timed_step "AWS key check" setup_aws_creds' 'upd_gate settings "Ports and settings in .env"' \
+              'upd_gate voice "Voice"' 'upd_gate websearch "Web search check"' \
+              'upd_gate codedefault "Code page default"' 'upd_gate smoke "Smoke test" ' 'timed_step "Finishing" _setup_finish'; do
     assert_contains "$c" "$want"
   done
   c="$(sed -n '/^setup_bringup_and_probe() {/,/^}/p' "$STACK_DIR/lib/commands.sh")"
-  for want in 'timed_step "Prices" _setup_prices' 'timed_step "Image downloads" _setup_downloads' 'timed_step "Open WebUI image" _setup_owui_image' \
-              'timed_step "LiteLLM config: web search check, default models"' 'timed_step "LiteLLM setup key"' 'timed_step "Model check" _setup_model_check'; do
+  for want in 'upd_gate prices "Prices"' 'timed_step "Image downloads" _setup_downloads' 'timed_step "Open WebUI image" _setup_owui_image' \
+              'timed_step "LiteLLM config: web search check, default models"' 'upd_gate setupkey "LiteLLM setup key"' 'timed_step "Model check" _setup_model_check' \
+              'upd_gate litellm_config "LiteLLM config (model check kept)"'; do
     assert_contains "$c" "$want"
   done
   c="$(sed -n '/^setup_keys_and_ui() {/,/^}/p' "$STACK_DIR/lib/commands.sh")"
-  for want in 'timed_step "LiteLLM keys, Admin sign-in, voice service"' 'timed_step "Portal sign-in and Chat'"'"'s API key"' 'timed_step "Open WebUI syncs (models, prices, banner)"'; do
+  for want in 'upd_gate keys "LiteLLM keys, Admin sign-in"' 'upd_gate -s stt_service "Voice service"' 'upd_gate signin "Portal sign-in and Chat'"'"'s API key"' 'upd_gate syncs "Open WebUI syncs (models, prices, banner)"'; do
     assert_contains "$c" "$want"
   done
   c="$(sed -n '/^cmd_update() {/,/^}/p' "$STACK_DIR/lib/commands.sh")"

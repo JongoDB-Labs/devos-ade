@@ -348,7 +348,11 @@ test_update_runs_setup_as_separate_process_without_aws_env() {
   prune_auto_backups() { echo "PRUNE $1" >> "$TMP/calls"; }
   AWS_ACCESS_KEY_ID=AKIASHELL AWS_SESSION_TOKEN=t AWS_REGION=x COMPOSE_PROJECT_NAME=stray cmd_update 2>/dev/null
   # (dc config --images: the images to download side by side, none in this stub — so one compose pull, as before)
-  assert_eq "$(tr '\n' ';' < "$TMP/calls")" "BACKUP auto;PRUNE 5;dc config --images;dc pull --ignore-buildable;STACK setup --yes id=unset tok=unset r=unset p=unset;"
+  assert_eq "$(tr '\n' ';' < "$TMP/calls")" "BACKUP auto;PRUNE 5;dc config --images;dc pull --ignore-buildable;STACK setup --yes --update-mode id=unset tok=unset r=unset p=unset;"
+  # --force runs every step: setup is not given the update mode
+  : > "$TMP/calls"; cmd_update --force 2>/dev/null
+  assert_contains "$(cat "$TMP/calls")" "STACK setup --yes id="
+  assert_not_contains "$(cat "$TMP/calls")" "--update-mode"
   if out="$( (FAKE_RC=3 cmd_update) 2>&1)"; then return 1; fi
   assert_contains "$out" "your pre-update backup is backups/20260101-000000-auto"
 }

@@ -299,12 +299,8 @@ image_size_mb() { # rough on-disk size of a pinned image, for the first-run down
 # missing_images -> compose images not present locally (locally built ones excluded; the bases compose.yaml pins for
 # them — Open WebUI's — included: lib/images.sh compose_refs)
 missing_images() {
-  local img
-  local all here
-  all="$({ dc config --images 2>/dev/null; compose_refs < "$STACK_DIR/compose.yaml" 2>/dev/null; } | awk '!seen[$0]++' | while IFS= read -r img; do
-    case "$img" in '' | */shared-mcp:local | */portal:local | */stt:local | */caddy-dns:local | */terminal:local | */terminal-egress:local | */code:local | */open-webui:local) continue ;; esac
-    printf '%s\n' "$img"
-  done)"
+  local img all here
+  all="$(_missing_candidates)"
   [ -n "$all" ] || return 0
   here="$(printf '%s\n' "$all" | snapshot_refs | cut -f2)"   # (one docker call for all: lib/images.sh)
   printf '%s\n' "$all" | while IFS= read -r img; do
@@ -313,6 +309,12 @@ $here
 " in *"
 $img
 "*) ;; *) printf '%s\n' "$img" ;; esac
+  done
+}
+_missing_candidates() {
+  { dc config --images 2>/dev/null; compose_refs < "$STACK_DIR/compose.yaml" 2>/dev/null; } | awk '!seen[$0]++' | while IFS= read -r img; do
+    case "$img" in '' | */shared-mcp:local | */portal:local | */stt:local | */caddy-dns:local | */terminal:local | */terminal-egress:local | */code:local | */open-webui:local) continue ;; esac
+    printf '%s\n' "$img"
   done
 }
 
@@ -703,12 +705,19 @@ _setup_finish() {
 }
 
 cmd_setup() {
+  # --update-mode: only ./stack update passes it (lib/steps.sh: each gated step runs only when its inputs changed); nothing
+  # infers it, and ./stack update --force and a plain ./stack setup run every step
+  UPD_MODE=0
+  while [ $# -gt 0 ]; do
+    case "$1" in --update-mode) UPD_MODE=1; shift ;; *) shift ;; esac
+  done
   ! declare -F migrate_refuse_up >/dev/null || migrate_refuse_up
   check_prereqs
   _SIGNAL_HOOK=_setup_interrupted; _signal_traps_restore   # Ctrl-C: what was done, and how to go on
   SUBS_REFRESH_BG=1   # (lib/subscriptions.sh: what the tools say is asked in the background, while setup goes on)
   [ ! -f "$ENV_FILE" ] || stack_lock setup
   forget_setup_commit   # lib/rollback.sh: written again only if this setup succeeds
+  upd_begin             # lib/steps.sh: the step digests of the last successful setup are read, and removed: written again only if this one succeeds
   [ -f "$ENV_FILE" ] || { cp "$STACK_DIR/.env.example" "$ENV_FILE"; chmod 600 "$ENV_FILE"; }
   # Never share a Compose project (or its volumes) with another checkout. On a first setup the name may still
   # come from the shell, so check that name before persist_project_name saves it.
@@ -723,31 +732,45 @@ cmd_setup() {
   setup_step "checking your AWS key"
   timed_step "AWS key check" setup_aws_creds
   setup_done "AWS key checked"; setup_step "choosing ports"
-  timed_step "Ports and settings in .env" _setup_settings
+  # Safe to skip: it only writes .env (ports, generated secrets, the optional services' settings) from .env itself; with every
+  # .env key it reads unchanged (and remote access off, which it checks the network for) it would write what is there.
+  upd_gate settings "Ports and settings in .env" "no setting changed since the last setup" _setup_settings
+  UPD_SETTINGS_SKIPPED="$UPD_SKIPPED"
   setup_done "passwords and settings in .env"
   setup_bringup_and_probe --sandboxes   # (the terminal's and the Code page's images too, in the background meanwhile)
-  timed_step "Voice" stt_after_probe    # lib/stt.sh: Bedrock speech-to-text on by default when Voxtral is usable
-  websearch_builtin_up    # lib/websearch.sh: the built-in SearXNG up (on by default) or gone (off); never fatal
-  timed_step "Web search check" websearch_after_start   # lib/websearch.sh: one search with the backend in use (on the setup key), or why there is none
-  timed_step "Git server" localgit_start               # lib/localgit.sh: the built-in git server up (on by default) or gone (off); never fatal
+  # Voice: only reads the models found and .env, and writes the voice settings back to .env — the same answer from the same inputs
+  upd_gate voice "Voice" "the models found and the voice settings did not change" stt_after_probe    # lib/stt.sh: Bedrock speech-to-text on by default when Voxtral is usable
+  # SearXNG, the search check, the git server: a running container is left to compose (it recreates one whose image or settings
+  # changed — config_sums); their steps only start or remove it, so with the same settings and compose files there is nothing to do
+  upd_gate -s searxng "Web search (the built-in SearXNG)" "its settings and image did not change" websearch_builtin_up    # lib/websearch.sh: the built-in SearXNG up (on by default) or gone (off); never fatal
+  # (a search through LiteLLM: only worth asking again when LiteLLM, its config, its models or the backend changed)
+  upd_gate websearch "Web search check" "LiteLLM and the search backend did not change" websearch_after_start   # lib/websearch.sh: one search with the backend in use (on the setup key), or why there is none
+  upd_gate -s gitserver "Local git server (Forgejo)" "its settings and image did not change" localgit_start               # lib/localgit.sh: the built-in git server up (on by default) or gone (off); never fatal
   setup_step "creating keys and starting Open WebUI, the portal and the MCP server"
   setup_keys_and_ui
   write_mcp_config
   setup_done "keys created; Open WebUI, the portal and the MCP server started"
   setup_step "turning on the Code page and its terminal (on by default, unless turned off)"
-  timed_step "Code page default" code_default_on   # lib/code.sh: the Code page and its sandbox (the terminal) on by default, unless turned off
+  # Safe to skip: it decides from .env and its failure mark whether to turn the Code page on by default; with both unchanged
+  # (and the workspace folder there) it would decide what was decided: nothing to turn on (CODE_DEFAULT_ON=0)
+  CODE_DEFAULT_ON=0
+  upd_gate codedefault "Code page default" "the Code and terminal settings did not change" code_default_on   # lib/code.sh: the Code page and its sandbox (the terminal) on by default, unless turned off
   SETUP_CODE_DEFAULT="$CODE_DEFAULT_ON"   # until it settles: a Ctrl-C undoes it (_setup_interrupted)
   setup_step "building and starting the browser terminal and the Code page (the first time about 1.6 GB, a few minutes)"
   terminal_setup_hook   # lib/terminal.sh: the browser terminal, when on — rebuilt with the current keys; never fatal
   code_setup_hook       # lib/code.sh: the Code page, when on (after the terminal: its sandbox) — rebuilt; never fatal
   code_default_settle   # lib/code.sh: a default that did not come up is off again (said); the next setup tries again
-  localgit_after_up     # lib/localgit.sh: the git server's owner account and the Code page's host for it, now that both run; never fatal
+  upd_forget_containers   # (the hooks above may have recreated Open WebUI)
+  upd_gate gitafter "Git server account" "the git server and the Code page did not change" localgit_after_up     # lib/localgit.sh: the git server's owner account and the Code page's host for it, now that both run; never fatal
   SETUP_CODE_DEFAULT=0  # (settled: a Ctrl-C from here on leaves the Code page as it is)
   ! code_ready || setup_done "the terminal and the Code page started"
   setup_step "running the smoke test"
-  timed_step "Smoke test" _setup_smoke_test
+  # Safe to skip: it only checks. With LiteLLM's container, config, models and keys what they were when it last passed, the
+  # same checks would pass; a LiteLLM that was recreated or restarted, or a new config, runs it
+  upd_gate smoke "Smoke test" "LiteLLM and its config did not change" _setup_smoke_test
   setup_done "smoke test passed"; setup_step "finishing (devos-claude link, one-click updates, remote access)"
   timed_step "Finishing" _setup_finish
+  upd_commit   # lib/steps.sh: setup succeeded — the step digests the next update compares with
   _SIGNAL_HOOK=''; _signal_traps_restore   # done: Ctrl-C from here on only skips the summary or the browser
   print_summary
   [ "$(host_os)" != Darwin ] || docker_autostart_hint_weekly   # lib/host.sh: read-only check, at most weekly
@@ -892,24 +915,42 @@ setup_bringup_and_probe() {
   ensure_prices_dir
   setup_step "building the images"
   setup_build_images "$@"
-  timed_step "Prices" _setup_prices
+  # Safe to skip: it asks the price sources through the portal image and keeps the answer in litellm/prices/. With the portal
+  # image unchanged, PRICE_UPDATES the same and the file written in the last 12 hours, the answer would be "fresh" (the
+  # portal asks again every 24 h by itself). The prices in use are chosen from the files all the same.
+  upd_gate prices "Prices" "the prices were checked in the last 12 hours and the portal image did not change" _setup_prices
+  [ "$UPD_SKIPPED" = 0 ] || use_best_prices
   # Nothing the probe depends on changed since it last answered (SETUP_REPROBE=1: ./stack models --recheck asks
   # again): LiteLLM starts once, with the models it found, instead of twice around a new probe
   if [ "${SETUP_REPROBE:-0}" != 1 ] && age="$(probe_reusable)"; then
     log "model check: not run again — nothing it depends on changed (the same AWS key, region, model catalog and LiteLLM; the last check $age ago). ./stack models --recheck checks again"
-    timed_step "LiteLLM config (model check kept)" render_config "$en"
+    # Safe to skip: render_config is a function of the inputs hashed in upd_in_litellm_config (it also checks that the files it
+    # wrote are as it left them); the same inputs give the same files.
+    upd_gate litellm_config "LiteLLM config (model check kept)" "nothing it is made from changed (.env, catalog, models found, prices, templates)" render_config "$en"
     setup_step "downloading images"
     timed_step "Image downloads" _setup_downloads
     timed_step "Open WebUI image" _setup_owui_image
     # lib/websearch.sh: AgentCore Web Search's check (free; in LiteLLM's image) when its last answer no longer stands:
     # the config follows the new one
     timed_step "LiteLLM config: web search check, default models" _setup_websearch_render "$en"
+    if upd_start_all_ok; then
+      # One `compose up` for every service, with the new images: compose recreates only those whose image or settings changed
+      # (config_sums) and waits for all of them together. Postgres before the LiteLLM migrations, LiteLLM before Open WebUI and the
+      # buckets before Open WebUI are compose's own depends_on (service_healthy / completed_successfully), so no order is kept here.
+      # Only an update whose settings, keys and voice settings did not change comes here: nothing waits for a key to be made.
+      setup_step "starting the services (one compose up)"
+      _setup_start_all
+      setup_done "services started"
+      upd_gate -s setupkey "LiteLLM setup key" "the keys and LiteLLM did not change" ensure_virtual_key LITELLM_KEY_SETUP setup "$(get_env BUDGET_SETUP)"
+      setup_done "model check kept"
+      return 0
+    fi
     setup_step "starting Postgres + RustFS"
     run_phase "Postgres + RustFS" "postgres rustfs" _up_data_services
     setup_done "Postgres + RustFS started"
     setup_step "starting LiteLLM with the models your key can use"
     run_phase "LiteLLM ($(wc -l < "$en" | tr -d ' ') models)" litellm up_services --no-deps litellm
-    timed_step "LiteLLM setup key" ensure_virtual_key LITELLM_KEY_SETUP setup "$(get_env BUDGET_SETUP)"
+    upd_gate setupkey "LiteLLM setup key" "the keys and LiteLLM did not change" ensure_virtual_key LITELLM_KEY_SETUP setup "$(get_env BUDGET_SETUP)"
     setup_done "model check kept"
     return 0
   fi
@@ -944,7 +985,11 @@ _setup_owui_image() {
   owui_build || die "could not build Open WebUI's image (./stack logs is empty for a build: run ./stack setup again and read its output)"
 }
 # (the default models from the models found: .env only — before Postgres starts, nothing reads them)
-_setup_websearch_render() { if websearch_before_render; then render_config "$1"; fi; choose_defaults; }
+_setup_websearch_render() {
+  if websearch_before_render; then render_config "$1"; fi
+  # Safe to skip: it only derives .env's default models from the models found and the pins; same inputs, same values
+  upd_gate -s defaults "Default models" "the models found and the pins did not change" choose_defaults
+}
 _setup_model_check() {
   local en="$1"
   ensure_virtual_key LITELLM_KEY_SETUP setup "$(get_env BUDGET_SETUP)"
@@ -996,8 +1041,8 @@ _build_and_up_front() {
 # up_front SERVICE... — the portal phase of setup: Open WebUI, the portal and Caddy (and shared-mcp, when listed) with
 # their new code, settings and Caddyfile, in one phase (Home's progress card: one step)
 up_front() {
-  local label="Open WebUI + portal" s
-  for s in "$@"; do [ "$s" != shared-mcp ] || label="$label + shared-mcp"; done
+  local label="${UP_FRONT_LABEL:-Open WebUI + portal}" s
+  if [ -z "${UP_FRONT_LABEL:-}" ]; then for s in "$@"; do [ "$s" != shared-mcp ] || label="$label + shared-mcp"; done; fi
   PORTAL_PORT_FELL_BACK=0
   run_phase "$label ($(portal_url))" "$*" _build_and_up_front "$@"
   [ "$PORTAL_PORT_FELL_BACK" = 0 ] || warn "Docker could not publish port 80 → using $(portal_port) for the portal (PORTAL_PORT): $(portal_url)"
@@ -1069,15 +1114,27 @@ ensure_openwebui_api_key() {
 
 setup_keys_and_ui() {
   local mcp_key
-  timed_step "LiteLLM keys, Admin sign-in, voice service" _setup_litellm_keys
+  # Safe to skip (keys): the virtual keys live in LiteLLM's database and in .env; with .env's budgets and keys, LiteLLM's image
+  # and the code the same, checking them again would find them valid (a key that LiteLLM no longer knows comes with a restore,
+  # which brings the keys back from its backup's .env, so they differ then).
+  upd_gate keys "LiteLLM keys, Admin sign-in" "the keys, budgets and LiteLLM did not change" _setup_litellm_keys
+  # The speech-to-text container (before Open WebUI): its image is built again only when its sources or the week changed
+  upd_gate -s stt_service "Voice service" "its sources, settings and image did not change" stt_setup_service   # lib/stt.sh: the stt container (Bedrock speech-to-text) before Open WebUI; never fatal
   # Open WebUI, the portal and Caddy in one compose call, and shared-mcp with them once it has Open WebUI's API key (setup
-  # again, an update): compose starts each as soon as what it depends on is up — Open WebUI and the portal side by side
+  # again, an update): compose starts each as soon as what it depends on is up — Open WebUI and the portal side by side.
+  # (Already started by the update's one compose up: _setup_start_all.)
   mcp_key="$(get_env OPENWEBUI_API_KEY)"
-  if [ -n "$mcp_key" ]; then up_front open-webui portal caddy shared-mcp; else up_front open-webui portal caddy; fi
-  timed_step "Portal sign-in and Chat's API key" _setup_portal_signin
+  if [ "$UPD_STARTED_ALL" = 1 ]; then :
+  elif [ -n "$mcp_key" ]; then up_front open-webui portal caddy shared-mcp; else up_front open-webui portal caddy; fi
+  upd_forget_containers
+  # Safe to skip (sign-in, Open WebUI syncs): they write into Open WebUI (its API key, model names and prices, the cost filter,
+  # the budget banner — the banner lives in its memory). The same Open WebUI container (id and start time), keys, catalog,
+  # prices, enabled models and code leave nothing to write; a recreated or restarted one runs them.
+  upd_gate signin "Portal sign-in and Chat's API key" "Open WebUI, the keys and the owner did not change" _setup_portal_signin
   # shared-mcp on its own when it had no key (a first setup), or its key was just made anew (its environment changed)
   [ -n "$mcp_key" ] && [ "$(get_env OPENWEBUI_API_KEY)" = "$mcp_key" ] || run_phase "shared-mcp" shared-mcp _build_and_up_mcp
-  timed_step "Open WebUI syncs (models, prices, banner)" _setup_owui_syncs
+  upd_gate syncs "Open WebUI syncs (models, prices, banner)" "Open WebUI, the models and the prices did not change" _setup_owui_syncs
+  [ -z "${PORTAL_JAR:-}" ] || portal_session_end   # (a sign-in whose syncs were not needed)
 }
 # setup_keys_and_ui's own steps, each timed as one
 _setup_litellm_keys() {
@@ -1086,7 +1143,6 @@ _setup_litellm_keys() {
   ensure_virtual_key LITELLM_KEY_OPENWEBUI open-webui "$(get_env BUDGET_OPENWEBUI)"
   alert_pct_mark || true   # lib/settings.sh: all three keys alert at BUDGET_ALERT_PCT now
   setup_litellm_admin
-  stt_setup_service   # lib/stt.sh: the stt container (Bedrock speech-to-text) before Open WebUI; never fatal
 }
 _setup_portal_signin() {
   ensure_portal_reachable   # lib/portal.sh: Docker Desktop forwarding the portal's port to the Caddy it replaced
@@ -1095,6 +1151,7 @@ _setup_portal_signin() {
   ensure_openwebui_api_key
 }
 _setup_owui_syncs() {
+  [ -n "${PORTAL_JAR:-}" ] || portal_session_or_die   # (the sign-in was not needed: the syncs still are)
   sync_openwebui_models
   openrouter_sync_owui   # optional; lib/openrouter.sh
   explabs_sync_owui      # optional; lib/explabs.sh
@@ -1102,6 +1159,19 @@ _setup_owui_syncs() {
   owui_install_cost_filter
   sync_budget_banner
   portal_session_end
+}
+
+# _setup_start_all — an update's one `compose up -d --wait` for the stack's own services (see setup_bringup_and_probe):
+# Postgres, RustFS, LiteLLM, Open WebUI, shared-mcp, the portal and Caddy, with the built-in SearXNG and the git server while
+# they are on and their files are there. The speech-to-text container, the sandboxes and the remote-access services keep their
+# own steps. up_front: the portal's image built if setup did not, Caddy's port 80 fallback, the sign-in cookie of the portal.
+_setup_start_all() {
+  local svcs=(postgres rustfs litellm open-webui shared-mcp portal caddy)
+  if websearch_builtin_on && [ -f "$STACK_DIR/searxng/settings.yml" ]; then svcs+=(searxng); fi
+  if localgit_on && [ -n "$(ls "$STATE_DIR/localgit/tls" 2>/dev/null)" ]; then svcs+=(forgejo); fi
+  UP_FRONT_LABEL="Services (${#svcs[@]})" up_front "${svcs[@]}"
+  UPD_STARTED_ALL=1; upd_forget_containers
+  ensure_portal_reachable
 }
 
 # --- ./stack models ---
@@ -1923,6 +1993,7 @@ cmd_restore() {
     die "usage: ./stack restore backups/<timestamp>   (a directory written by ./stack backup)"
   [ -f "$ENV_FILE" ] || die "run ./stack setup first (on a new machine: copy the backup's .env to ./.env, run ./stack setup, then restore)"
   stack_lock restore
+  upd_forget   # lib/steps.sh: the data changes under the steps — the next update's setup runs every step
   ! declare -F xl_bg_stop >/dev/null || xl_bg_stop   # (lib/explabs.sh: its background read would write a list the restore replaces)
   quiet_compose
   dir="$(cd "$dir" && pwd -P)"
@@ -2139,7 +2210,7 @@ _update_reexec_genuine() {
 # version and backup it recorded (--to moves the code on first, e.g. to a fix; DEVOS_ADE_UPDATE_FINISHING=1).
 # The record is written right after the checkout, before the exec, so a stop at any point after it counts as such.
 cmd_update() {
-  local to='' backup from='' branch='' hint moved=0 force=0 finishing=0 reexec=0 yes=() pullenv=() usage="usage: ./stack update [--to <tag|branch>] [--force]"
+  local to='' backup from='' branch='' hint moved=0 force=0 finishing=0 reexec=0 yes=() pullenv=() setupargs=() usage="usage: ./stack update [--to <tag|branch>] [--force]"
   while [ $# -gt 0 ]; do
     case "$1" in
       --to) case "${2:-}" in '' | -*) die "$usage" ;; esac; to="$2"; shift 2 ;;
@@ -2171,7 +2242,7 @@ cmd_update() {
       log "update: 2/4 code (git)"
       timed_step "New code (git)" update_checkout "$to"
       [ "$CODE_CHANGED" != 1 ] ||
-        exec env DEVOS_ADE_CODE_UPDATED=1 DEVOS_ADE_UPDATE_FINISHING=1 DEVOS_ADE_UPDATE_BACKUP="$backup" \
+        exec env DEVOS_ADE_CODE_UPDATED=1 DEVOS_ADE_UPDATE_FINISHING=1 DEVOS_ADE_UPDATE_FORCE="$force" DEVOS_ADE_UPDATE_BACKUP="$backup" \
           DEVOS_ADE_UPDATE_FROM="$from" DEVOS_ADE_UPDATE_BRANCH="$branch" "$STACK_DIR/stack" update ${yes[@]+"${yes[@]}"}
     fi
   elif [ "$reexec" = 0 ]; then
@@ -2192,12 +2263,13 @@ cmd_update() {
       # What ./stack rollback needs, now that the code moved: a stop before the new code runs is an unfinished update.
       update_record_write "$from" "$branch" "$backup"
       # Continue in a fresh process so images and setup run with the NEW scripts.
-      exec env -u DEVOS_ADE_UPDATE_FINISHING DEVOS_ADE_CODE_UPDATED=1 DEVOS_ADE_UPDATE_BACKUP="$backup" \
+      exec env -u DEVOS_ADE_UPDATE_FINISHING DEVOS_ADE_CODE_UPDATED=1 DEVOS_ADE_UPDATE_FORCE="$force" DEVOS_ADE_UPDATE_BACKUP="$backup" \
         DEVOS_ADE_UPDATE_FROM="$from" DEVOS_ADE_UPDATE_BRANCH="$branch" "$STACK_DIR/stack" update ${yes[@]+"${yes[@]}"}
     fi
     hint="./stack update runs it again; your pre-update backup is $backup (./stack restore $backup)"
   else
     backup="${DEVOS_ADE_UPDATE_BACKUP:-}"; from="${DEVOS_ADE_UPDATE_FROM:-}"; branch="${DEVOS_ADE_UPDATE_BRANCH:-}"
+    [ "${DEVOS_ADE_UPDATE_FORCE:-0}" != 1 ] || force=1   # (--force was given to the process that exec'd into this one)
     moved=1
     # finishing an unfinished update (set by the exec above): only while the record says so
     [ "${DEVOS_ADE_UPDATE_FINISHING:-0}" != 1 ] || [ "$(_record_get result)" != running ] || finishing=1
@@ -2230,7 +2302,9 @@ cmd_update() {
     }
   fi
   [ -z "$PULLS_DIR" ] || pullenv=(DEVOS_ADE_PULLS_DIR="$PULLS_DIR" DEVOS_ADE_PULLS_PID="$PULLS_PID")
-  log "update: 4/4 setup (non-interactive; keeps .env, keys and AWS creds)"
+  # Setup's update mode (lib/steps.sh): each step runs only if its inputs changed since the last successful setup; --force runs every one
+  [ "$force" = 1 ] || setupargs=(--update-mode)
+  log "update: 4/4 setup (non-interactive; keeps .env, keys and AWS creds$([ "$force" = 1 ] && echo '; --force: every step runs' || echo '; runs only the steps whose inputs changed'))"
   # Separate process (keeps set -e working inside setup); AWS creds and the optional OpenRouter settings come
   # from .env, never from this shell (a removed OpenRouter key stays removed).
   env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN -u AWS_REGION_NAME -u AWS_REGION \
@@ -2238,8 +2312,8 @@ cmd_update() {
     -u EXPLABS_API_KEY -u EXPLABS_MODELS \
     -u STT_PROVIDER -u STT_API_KEY -u STT_MODEL -u DEVOS_ADE_STT_FROM_ENV \
     -u COMPOSE_PROJECT_NAME -u DEVOS_ADE_CODE_UPDATED -u DEVOS_ADE_UPDATE_BACKUP -u DEVOS_ADE_UPDATE_FROM -u DEVOS_ADE_UPDATE_BRANCH \
-    -u DEVOS_ADE_UPDATE_FINISHING -u DEVOS_ADE_PULLS_DIR -u DEVOS_ADE_PULLS_PID \
-    ${pullenv[@]+"${pullenv[@]}"} "$STACK_DIR/stack" setup --yes ||
+    -u DEVOS_ADE_UPDATE_FINISHING -u DEVOS_ADE_UPDATE_FORCE -u DEVOS_ADE_PULLS_DIR -u DEVOS_ADE_PULLS_PID \
+    ${pullenv[@]+"${pullenv[@]}"} "$STACK_DIR/stack" setup --yes ${setupargs[@]+"${setupargs[@]}"} ||
     die "update: setup failed (see the messages above) — $hint"
   # Every service this update recreated runs the image this release pins (by digest); one that does not fails the update
   # the way a failed setup does: the record stays "running", so ./stack rollback goes back (lib/versions.sh)
@@ -2386,6 +2460,7 @@ cmd_uninstall() {
   if confirm "Take a backup first?"; then cmd_backup; fi
   ! declare -F xl_bg_stop >/dev/null || xl_bg_stop   # (lib/explabs.sh: a background read of the model details)
   dc down -v --remove-orphans
+  upd_forget   # lib/steps.sh
   localgit_uninstall_cleanup   # lib/localgit.sh: its repositories' volume, also while it is off (compose does not see it then)
   code_uninstall_cleanup       # lib/code.sh: its network, socket volume and image (before the terminal's)
   terminal_uninstall_cleanup   # lib/terminal.sh: its volume, networks and image, also while it is off

@@ -260,7 +260,7 @@ test_rerunning_an_unfinished_update_finishes_it() {
   ASSUME_YES=1 cmd_update > /dev/null 2> "$TMP/err"
   # no new backup (it would be of the half-updated state) and no new snapshot: rollback keeps its target
   assert_eq "$(tr '\n' ';' < "$TMP/steps")" "dc config;dc pull;AFTER;"
-  assert_eq "$(cat "$CALLS")" "new setup --yes"
+  assert_eq "$(cat "$CALLS")" "new setup --yes --update-mode"
   assert_contains "$(cat "$TMP/err")" "the last update (from v0.2.1) did not finish — finishing it"
   assert_contains "$(cat "$TMP/err")" "backups/20261012-000000-auto"
   assert_not_contains "$(cat "$TMP/err")" "nothing to update"
@@ -297,7 +297,7 @@ test_finishing_with_to_moves_on_and_keeps_the_rollback_point() {
   assert_eq "$(tr '\n' ';' < "$TMP/steps")" "dc config;dc pull;AFTER;"
   assert_contains "$(cat "$(update_record_file)")" "result=done"
   assert_contains "$(cat "$(update_record_file)")" "$(printf '%s\n' "$before" | grep '^at=')"
-  assert_eq "$(cat "$CALLS.update")" "new setup --yes finishing=unset from= backup="   # never passed on to setup
+  assert_eq "$(cat "$CALLS.update")" "new setup --yes --update-mode finishing=unset from= backup="   # never passed on to setup
 }
 
 _newer_release() { # origin gets v0.4.0 (its ./stack logs as "newest"); the checkout knows it
@@ -327,7 +327,7 @@ test_an_update_stopped_right_after_the_checkout_is_finished_and_rolls_back_right
   ASSUME_YES=1 cmd_update > /dev/null 2> "$TMP/err"
   assert_contains "$(cat "$TMP/err")" "did not finish — finishing it"
   assert_eq "$(tr '\n' ';' < "$TMP/steps")" "SNAPSHOT;dc config;dc pull;AFTER;"
-  assert_eq "$(cat "$CALLS")" "newest setup --yes"
+  assert_eq "$(cat "$CALLS")" "newest setup --yes --update-mode"
   # and rollback goes back to v0.3.0 with that update's own backup
   : > "$CALLS"
   ASSUME_YES=1 cmd_rollback > /dev/null 2>&1
