@@ -379,10 +379,10 @@ dc() {
     while IFS='=' read -r o p_sum; do [ -z "$o" ] || export "$o=$p_sum"; done <<SUMS
 $sums
 SUMS
-    # which of terminal/managed/*.json the sandbox gets as Claude Code's managed settings (read-only): from .env alone
     # Builds without the default provenance attestation (unless your shell says otherwise): with Docker's containerd image
     # store it carries the build's time, so a build all from the cache gave a new image ID — and compose recreated that
     # service, and every step that reads the images ran again, on every update. Images built here are never pushed.
+    # which of terminal/managed/*.json the sandbox gets as Claude Code's managed settings (read-only): from .env alone
     TERMINAL_CLAUDE_POLICY="$policy" BN_PROJECTS_PUBLIC="$STATE_DIR/projects/public" \
     LOCALGIT_SSO_HEADER="$(get_env LOCALGIT_SSO_HEADER)" LOCALGIT_SSO_ON="$([ -n "$(get_env LOCALGIT_SSO_HEADER)" ] && echo true || echo false)" \
     BN_LOCALGIT_TLS="$STATE_DIR/localgit/tls" BN_LOCALGIT_MODE="$(flag_off "$(get_env LOCALGIT)" && echo off || echo on)" BN_LEGACY_HOSTS="$(legacy_hosts_mode)" \
@@ -524,13 +524,102 @@ built_now() { case "$SETUP_BUILT" in *" $1 "*) return 0 ;; esac; return 1; }
 # its image or its configuration changed — with config_sums (above), the files it reads at its start too. The
 # others keep running, untouched. setup and ./stack update bring the stack up through here, never with --force-recreate.
 # One exception: a listed container that runs unhealthy is recreated all the same (up --wait would only wait on it).
+# And when that call would change nothing (_up_unchanged), there is none: compose takes 1 to 5 s to find that out — it
+# reads every compose file and asks Docker about each service — and an update makes several of these calls (JON-972).
+# DEVOS_ADE_UP_ALWAYS=1 makes the call every time.
 up_services() {
   local a opts=() svcs=() sick
   for a in "$@"; do case "$a" in -*) opts+=("$a") ;; *) svcs+=("$a") ;; esac; done
   sick="$(dc ps --format '{{.Service}} {{.Health}}' "${svcs[@]}" 2>/dev/null | awk '$2 == "unhealthy" { printf "%s ", $1 }' || true)"
   # shellcheck disable=SC2086  # (a service a word)
   [ -z "$sick" ] || dc up -d --no-deps --force-recreate $sick || return
-  dc up -d --wait ${opts[@]+"${opts[@]}"} "${svcs[@]}"
+  if [ "${DEVOS_ADE_UP_ALWAYS:-0}" = 1 ]; then dc up -d --wait ${opts[@]+"${opts[@]}"} "${svcs[@]}"; return; fi
+  _UP_MODEL=''   # (the configuration's checksum _up_unchanged found, for _up_converged)
+  if [ -z "$sick" ] && _up_unchanged "$@"; then return 0; fi
+  dc up -d --wait ${opts[@]+"${opts[@]}"} "${svcs[@]}" || return
+  _up_converged "$*"
+}
+
+# _up_unchanged [--no-deps] SERVICE... -> 0 when `dc up -d --wait` of them would change nothing, by compose's own
+# comparisons, from what Docker and compose's configuration say now:
+#   each SERVICE has one container, running, and not unhealthy or still starting (what --wait waits for); without
+#     --no-deps (compose would bring up what they depend on too), every service of the stack — or, for one not listed,
+#     exited 0 (a one-shot, rustfs-init). (Compose's com.docker.compose.depends_on label cannot say which: a container
+#     created with --no-deps has it empty.)
+#   their configuration's hash is the one their container has (`dc config --hash`: what `up` compares to its
+#     com.docker.compose.config-hash label), and their image the one their image's name gives now (a rebuilt one: a new ID);
+#   the rest of the configuration (networks, volumes…: _up_model) and the stack's networks are the ones the last `up` of
+#     these same arguments went through with (_up_converged). A network compose made again since has a new ID.
+# Anything else, or anything it cannot read: 1, and compose decides. It leaves _UP_MODEL for _up_converged.
+_up_unchanged() {
+  local a nodeps='' listed=' ' key="$*" rec="$STATE_DIR/up-converged" p rows ids t hashes imgs now
+  _UP_MODEL=''
+  for a in "$@"; do case "$a" in --no-deps) nodeps=1 ;; -*) return 1 ;; *) listed="$listed$a " ;; esac; done
+  [ "$listed" != ' ' ] && grep -qxF -- "$key" "$rec" 2>/dev/null || return 1
+  p="$(project_name)"
+  rows="$(docker ps -a --no-trunc --filter "label=com.docker.compose.project=$p" --filter label=com.docker.compose.oneoff=False \
+    --format '{{.Label "com.docker.compose.service"}}|{{.ID}}|{{.State}}|{{.Status}}|{{.Label "com.docker.compose.config-hash"}}')" || return 1
+  # what runs (the IDs of the containers whose images to compare)
+  ids="$(ROWS="$rows" LISTED="$listed" NODEPS="$nodeps" awk 'BEGIN {
+    n = split(ENVIRON["ROWS"], r, "\n")
+    for (i = 1; i <= n; i++) {
+      if (split(r[i], f, "|") < 5) continue
+      s = f[1]; count[s]++; mine = index(ENVIRON["LISTED"], " " s " ") > 0
+      up = f[3] == "running" && f[4] !~ /\((unhealthy|health: starting)\)/
+      if (mine && !up) exit 1
+      if (ENVIRON["NODEPS"] == "") { if (!up && !(f[3] == "exited" && f[4] ~ /^Exited \(0\)/)) exit 1 } else if (!mine) continue
+      print f[2]
+    }
+    n = split(ENVIRON["LISTED"], l, " ")
+    for (i = 1; i <= n; i++) if (count[l[i]] != 1) exit 1
+  }')" || return 1
+  # the configuration: its services' hashes, and the rest of it, side by side (each reads every compose file)
+  t="$(mktemp "${TMPDIR:-/tmp}/bn-up.XXXXXX")" || return 1
+  _up_model > "$t" 2>/dev/null & a=$!
+  hashes="$(dc config --hash '*' 2>/dev/null)" || hashes=''
+  if wait "$a"; then _UP_MODEL="$(cat "$t")"; fi
+  rm -f "$t"
+  [ -n "$hashes" ] && [ -n "$_UP_MODEL" ] || return 1
+  HASHES="$hashes" ROWS="$rows" LISTED="$listed" NODEPS="$nodeps" awk 'BEGIN {
+    n = split(ENVIRON["HASHES"], h, "\n")
+    for (i = 1; i <= n; i++) if (split(h[i], f, " ") == 2) want[f[1]] = f[2]
+    n = split(ENVIRON["ROWS"], r, "\n")
+    for (i = 1; i <= n; i++) if (split(r[i], f, "|") >= 5) { count[f[1]]++; have[f[1]] = f[5] }
+    n = split(ENVIRON["LISTED"], l, " ")
+    for (i = 1; i <= n; i++) if (!(l[i] in want) || want[l[i]] != have[l[i]]) exit 1
+    if (ENVIRON["NODEPS"] == "") for (s in want) if (count[s] != 1 || want[s] != have[s]) exit 1
+  }' || return 1
+  [ "$(head -n 1 "$rec")" = "$_UP_MODEL $(_up_nets "$p")" ] || return 1
+  # the images: each container's, and the one its image's name gives now
+  # shellcheck disable=SC2086  # (IDs: a word each)
+  imgs="$(docker container inspect --format '{{.Image}} {{.Config.Image}}' $ids)" && [ -n "$imgs" ] || return 1
+  # shellcheck disable=SC2046  # (image names: a word each)
+  now="$(docker image inspect --format '{{.Id}}' $(printf '%s\n' "$imgs" | awk '!seen[$2]++ { print $2 }'))" || return 1
+  IMGS="$imgs" NOW="$now" awk 'BEGIN {
+    n = split(ENVIRON["IMGS"], c, "\n"); split(ENVIRON["NOW"], d, "\n"); k = 0
+    for (i = 1; i <= n; i++) { split(c[i], f, " "); if (!(f[2] in id)) id[f[2]] = d[++k] }
+    for (i = 1; i <= n; i++) { split(c[i], f, " "); if (f[1] == "" || f[1] != id[f[2]]) exit 1 }
+  }'
+}
+# _up_model -> a checksum of the stack's compose configuration other than its services (networks, volumes…: what a
+# service's hash leaves out), as `dc config` gives it
+_up_model() {
+  local m
+  m="$(dc config 2>/dev/null)" && [ -n "$m" ] || return 1
+  printf '%s\n' "$m" | awk '/^[^ ]/ { s = $0 == "services:" } !s' | cksum | awk '{ print $1 "-" $2 }'
+}
+# _up_nets PROJECT -> a checksum of the IDs of the stack's networks
+_up_nets() { docker network ls -q --no-trunc --filter "label=com.docker.compose.project=$1" | LC_ALL=C sort | cksum | awk '{ print $1 "-" $2 }'; }
+# _up_converged KEY — a `dc up` of up_services' arguments KEY went through: KEY in $STATE_DIR/up-converged, under the
+# configuration (_up_model) and the networks it went through with. Another configuration or other networks: KEY alone.
+_up_converged() {
+  local rec="$STATE_DIR/up-converged" head t
+  [ -n "${_UP_MODEL:-}" ] || _UP_MODEL="$(_up_model)" || return 0
+  head="$_UP_MODEL $(_up_nets "$(project_name)")"
+  mkdir -p "$STATE_DIR" && t="$(mktemp "$rec.XXXXXX")" || return 0
+  if { echo "$head"; if [ "$(head -n 1 "$rec" 2>/dev/null)" = "$head" ]; then tail -n +2 "$rec" | grep -vxF -- "$1"; fi; echo "$1"; } > "$t"; then
+    mv -f "$t" "$rec"
+  else rm -f "$t"; fi
 }
 
 # compose_contexts_ok VERSION -> 0 for a Docker Compose version (2.40.3-desktop.1, v2.17.0) that reads a service's

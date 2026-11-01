@@ -108,6 +108,131 @@ dc up -d --wait --no-deps portal caddy open-webui"
 dc up -d --wait litellm"
 }
 
+# When the up would change nothing, there is none (JON-972): each service it would bring up runs, healthy, with the
+# configuration hash and the image compose would give it now, under the same networks' configuration and networks as
+# the last up of the same services. (tests/run.sh sets DEVOS_ADE_UP_ALWAYS=1 for the other tests; these unset it.)
+# _up_stack: a stack of four — portal and caddy (with health checks), litellm (none), rustfs-init (a one-shot, done)
+_up_stack() {
+  unset DEVOS_ADE_UP_ALWAYS
+  ROWS='portal|c1|running|Up 2 minutes (healthy)|hp
+caddy|c2|running|Up 2 minutes (healthy)|hc
+litellm|c3|running|Up 3 minutes|hl
+rustfs-init|c4|exited|Exited (0) 3 minutes ago|hr'
+  HASHES='caddy hc
+litellm hl
+portal hp
+rustfs-init hr'
+  NETDEF='  default:
+    name: p_default'
+  NETS='n1'
+  CI='c1 sha256:i1 p/portal:local
+c2 sha256:i2 caddy:2
+c3 sha256:i3 litellm:1
+c4 sha256:i4 aws:2'
+  II='p/portal:local sha256:i1
+caddy:2 sha256:i2
+litellm:1 sha256:i3
+aws:2 sha256:i4'
+  # (the services: section of its configuration differs each time: what their hashes are for)
+  dc() {
+    echo "dc $*" >> "$TMP/dc"
+    case "$*" in
+      "ps --format"*) shift 3; local s; for s in "$@"; do printf '%s\n' "$ROWS" | awk -F'|' -v s="$s" '$1 == s { print $1, ($4 ~ /\(unhealthy\)/ ? "unhealthy" : $4 ~ /\(healthy\)/ ? "healthy" : "") }'; done ;;
+      "config --hash *") printf '%s\n' "$HASHES" ;;
+      config) printf 'name: p\nservices:\n  portal:\n    image: p/portal:local %s\nnetworks:\n%s\n' "$RANDOM" "$NETDEF" ;;
+    esac
+    return 0
+  }
+  docker() {
+    local a
+    case "$1 $2" in
+      "ps -a") printf '%s\n' "$ROWS" ;;
+      "network ls") printf '%s\n' $NETS ;;
+      "container inspect") shift 4; for a in "$@"; do printf '%s\n' "$CI" | awk -v c="$a" '$1 == c { print $2, $3 }'; done ;;
+      "image inspect") shift 4; for a in "$@"; do printf '%s\n' "$II" | awk -v t="$a" '$1 == t { print $2; f = 1 } END { exit !f }' || return 1; done ;;
+      *) echo "unexpected docker $*" >&2; return 97 ;;
+    esac
+  }
+}
+# _ups ARG... -> how many `dc up` up_services made (it passes)
+_ups() { : > "$TMP/dc"; up_services "$@" >/dev/null || { echo "up_services $* failed" >&2; return 1; }; grep -c '^dc up' "$TMP/dc" || true; }
+
+test_up_services_makes_no_compose_call_when_nothing_would_change() {
+  _up_stack
+  # the first up of these services: compose's (nothing recorded yet); the next, none — Docker's answers alone
+  assert_eq "$(_ups --no-deps portal caddy)" 1
+  assert_eq "$(head -n 1 "$STATE_DIR/up-converged" | wc -w | tr -d ' ')" 2
+  assert_eq "$(_ups --no-deps portal caddy)" 0
+  assert_eq "$(grep -c '^dc up\|^dc config' "$TMP/dc")" 2
+  # other services, or the same in another call: compose's, the first time
+  assert_eq "$(_ups --no-deps litellm)" 1; assert_eq "$(_ups --no-deps litellm)" 0; assert_eq "$(_ups --no-deps portal caddy)" 0
+  # a configuration that changed: compose's (for the services it is about only)
+  HASHES="${HASHES/caddy hc/caddy hc2}"
+  assert_eq "$(_ups --no-deps portal caddy)" 1; assert_eq "$(_ups --no-deps litellm)" 0
+  HASHES="${HASHES/caddy hc2/caddy hc}"
+  # a rebuilt image (its name gives another ID now), and one gone: compose's
+  II="${II/sha256:i1/sha256:i1b}"; assert_eq "$(_ups --no-deps portal caddy)" 1
+  II="${II/p\/portal:local sha256:i1b/}"; assert_eq "$(_ups --no-deps portal caddy)" 1
+  II="p/portal:local sha256:i1
+$II"
+  assert_eq "$(_ups --no-deps portal caddy)" 0
+  # a container still starting, stopped or gone, two of one service: compose's
+  ROWS="${ROWS/Up 2 minutes (healthy)|hp/Up 2 seconds (health: starting)|hp}"; assert_eq "$(_ups --no-deps portal caddy)" 1
+  ROWS="${ROWS/c1|running|Up 2 seconds (health: starting)/c1|exited|Exited (0) 1 second ago}"; assert_eq "$(_ups --no-deps portal caddy)" 1
+  ROWS="${ROWS/portal|c1|exited|Exited (0) 1 second ago|hp/}"; assert_eq "$(_ups --no-deps portal caddy)" 1
+  ROWS="portal|c1|running|Up 2 minutes (healthy)|hp
+portal|c9|running|Up 2 minutes (healthy)|hp
+$ROWS"
+  assert_eq "$(_ups --no-deps portal caddy)" 1
+  ROWS="${ROWS/portal|c9|running|Up 2 minutes (healthy)|hp/}"; assert_eq "$(_ups --no-deps portal caddy)" 0
+  # the networks' configuration changed, or a network was made again: compose's, then none again
+  NETDEF="$NETDEF
+    internal: true"
+  assert_eq "$(_ups --no-deps portal caddy)" 1; assert_eq "$(_ups --no-deps portal caddy)" 0
+  NETS='n1b'; assert_eq "$(_ups --no-deps portal caddy)" 1; assert_eq "$(_ups --no-deps portal caddy)" 0
+  # (litellm's last up was with the networks before: compose's for it too)
+  assert_eq "$(_ups --no-deps litellm)" 1
+  # an option it does not know, or DEVOS_ADE_UP_ALWAYS=1: compose's, every time
+  assert_eq "$(_ups --no-deps --force-recreate caddy)" 1; assert_eq "$(_ups --no-deps --force-recreate caddy)" 1
+  DEVOS_ADE_UP_ALWAYS=1; assert_eq "$(_ups --no-deps portal caddy)" 1; unset DEVOS_ADE_UP_ALWAYS
+}
+
+test_up_services_without_no_deps_needs_the_whole_stack_unchanged() {
+  _up_stack
+  assert_eq "$(_ups caddy)" 1; assert_eq "$(_ups caddy)" 0
+  # a one-shot of the stack that is done counts as up; one that failed, or a service with no container: compose's
+  ROWS="${ROWS/Exited (0)/Exited (1)}"; assert_eq "$(_ups caddy)" 1
+  ROWS="${ROWS/Exited (1)/Exited (0)}"; assert_eq "$(_ups caddy)" 0
+  HASHES="$HASHES
+searxng hs"
+  assert_eq "$(_ups caddy)" 1
+  HASHES="${HASHES%$'\n'searxng hs}"; assert_eq "$(_ups caddy)" 0
+  # another service's configuration changed (compose would recreate it, if caddy depends on it): compose's
+  HASHES="${HASHES/litellm hl/litellm hl2}"; assert_eq "$(_ups caddy)" 1
+  HASHES="${HASHES/litellm hl2/litellm hl}"; assert_eq "$(_ups caddy)" 0
+  # a one-shot listed (compose would run it again): compose's
+  assert_eq "$(_ups rustfs-init)" 1; assert_eq "$(_ups rustfs-init)" 1
+  # one listed runs unhealthy: recreated, as before
+  ROWS="${ROWS/caddy|c2|running|Up 2 minutes (healthy)/caddy|c2|running|Up 2 minutes (unhealthy)}"
+  assert_eq "$(_ups caddy)" 2
+}
+
+# _up_model: the configuration other than the services (the networks, the volumes: what a service's hash leaves out),
+# and only that. With the real docker compose (config only).
+test_the_configurations_checksum_reads_all_but_its_services() {
+  _hash_stack || return
+  docker() { case "$*" in *" config"*) "$BN_REAL_DOCKER" "$@" ;; *) echo "unexpected docker $*" >&2; return 97 ;; esac; }
+  local m
+  m="$(_up_model)"; [ -n "$m" ] || { echo "no checksum" >&2; return 1; }
+  assert_eq "$(_up_model)" "$m"
+  # a service's configuration changed (its hash tells): the same
+  printf 'model_list: [x]\n' > "$STACK_DIR/litellm/config.yaml"; assert_eq "$(_up_model)" "$m"
+  # a network's: another
+  awk '{ print } /^  websearch-out:$/ { print "    internal: true" }' "$STACK_DIR/compose.yaml" > "$TMP/compose.yaml"
+  mv "$TMP/compose.yaml" "$STACK_DIR/compose.yaml"
+  [ "$(_up_model)" != "$m" ] || { echo "a network's change left the checksum the same" >&2; return 1; }
+}
+
 # Setup's and update's bring-up: nothing forced. Each group of services in one compose call: LiteLLM; Open WebUI, the
 # portal, Caddy and shared-mcp; the terminal with what fronts it; the gateway and the Code page.
 test_setups_bring_up_never_forces_a_recreate() {

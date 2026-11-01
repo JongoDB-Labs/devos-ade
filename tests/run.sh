@@ -60,6 +60,8 @@ export STACK_DIR="$T_ROOT" ENV_FILE="$TMP/.env" STATE_DIR="$TMP/.state" DEVOS_AD
 export DEVOS_ADE_COMPOSE_CONTEXTS=0 DEVOS_ADE_COMPOSE_OVERRIDES=1
 # `dc ps` through Compose, as the docker stubs of the tests answer it (lib/common.sh _dc_ps_fast: its own tests unset this)
 export DEVOS_ADE_PS_VIA_COMPOSE=1
+# and every up_services makes its compose call (lib/common.sh _up_unchanged: its own tests unset this)
+export DEVOS_ADE_UP_ALWAYS=1
 export HOME="$TMP/home" DOCKER_CONFIG="$BN_REAL_DOCKER_CONFIG"; mkdir -p "$HOME"
 # an Ollama, llama.cpp or LM Studio this computer may run is never asked (lib/runtimes.sh looks at what answers on 11434, 11438,
 # 11439): the closed port 9
