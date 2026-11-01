@@ -46,13 +46,50 @@ ref_version() {
 # version_gt A B -> 0 when A is a newer release than B (sort -V; equal or unreadable: no)
 version_gt() { [ -n "$1" ] && [ -n "$2" ] && [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n 1)" = "$1" ]; }
 
+# _SVC_SNAP — while set (core_versions_table and update_verify_images set it for their run: _svc_snapshot), the helpers
+# below read this project's containers and their images from it instead of asking Docker: three docker calls for all the
+# services instead of four or five each (JON-972: the end of every setup and update writes the table). A "#" line, then a
+# line a container, newest first (Docker's order): service|container id|image id|image name|base-image label|the image's
+# repo digests, space-separated ("?": the image cannot be read). Unset (or a snapshot that failed): each asks Docker.
+_SVC_SNAP=''
+_svc_snapshot() {
+  local ids info digs
+  ids="$(docker ps -a -q --no-trunc --filter "label=com.docker.compose.project=$(project_name)" 2>/dev/null)" || return 1
+  _SVC_SNAP='#'
+  [ -n "$ids" ] || return 0
+  # shellcheck disable=SC2086  # (IDs: a word each)
+  info="$(docker container inspect --format "{{index .Config.Labels \"com.docker.compose.service\"}}|{{.Id}}|{{.Image}}|{{.Config.Image}}|{{index .Config.Labels \"$BN_BASE_LABEL\"}}" $ids 2>/dev/null)" ||
+    { _SVC_SNAP=''; return 1; }
+  # (an image that cannot be read is not in the answer, and docker says so: "?" below)
+  # shellcheck disable=SC2046
+  digs="$(docker image inspect --format '{{.Id}}|{{range .RepoDigests}}{{.}} {{end}}' $(printf '%s\n' "$info" | awk -F'|' '$3 != "" && !seen[$3]++ { print $3 }') 2>/dev/null || true)"
+  _SVC_SNAP="#
+$(INFO="$info" DIGS="$digs" awk 'BEGIN {
+    n = split(ENVIRON["DIGS"], d, "\n"); for (i = 1; i <= n; i++) { j = index(d[i], "|"); if (j) dg[substr(d[i], 1, j - 1)] = substr(d[i], j + 1) }
+    n = split(ENVIRON["INFO"], r, "\n")
+    for (i = 1; i <= n; i++) if (r[i] != "") { split(r[i], f, "|"); print r[i] "|" ((f[3] in dg) ? dg[f[3]] : "?") }
+  }')"
+}
+# _snap KEY_FIELD KEY FIELD -> FIELD of the first line of _SVC_SNAP whose KEY_FIELD is KEY
+_snap() { printf '%s\n' "$_SVC_SNAP" | awk -F'|' -v kc="$1" -v k="$2" -v f="$3" '$kc == k { print $f; exit }'; }
+
 # _svc_container SERVICE -> the id of this project's container of SERVICE (any state), "" when there is none
 _svc_container() {
+  if [ -n "$_SVC_SNAP" ]; then _snap 1 "$1" 2; return 0; fi
   docker ps -a -q --no-trunc --filter "label=com.docker.compose.project=$(project_name)" \
     --filter "label=com.docker.compose.service=$1" 2>/dev/null | head -n 1
 }
 # _svc_image_id CID -> the image id the container was created from
-_svc_image_id() { docker inspect --format '{{.Image}}' "$1" 2>/dev/null; }
+_svc_image_id() { if [ -n "$_SVC_SNAP" ]; then _snap 2 "$1" 3; return 0; fi; docker inspect --format '{{.Image}}' "$1" 2>/dev/null; }
+# _svc_config_image CID -> the image name the container was created with
+_svc_config_image() { if [ -n "$_SVC_SNAP" ]; then _snap 2 "$1" 4; return 0; fi; docker inspect --format '{{.Config.Image}}' "$1" 2>/dev/null; }
+# _svc_digests IMAGE_ID CID -> the image's repo digests, a line each; 1 when the image cannot be read
+_svc_digests() {
+  local d
+  if [ -z "$_SVC_SNAP" ]; then docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$1" 2>/dev/null; return; fi
+  d="$(_snap 2 "$2" 6)"; [ "$d" != '?' ] || return 1
+  printf '%s\n' "$d" | tr ' ' '\n'
+}
 
 # _svc_running_ref SERVICE CID PINNED -> the reference the container runs: its image's tag, or for Open WebUI's local
 # build the base image it says it was built on (the label). The label is read from the container, which Docker gives a
@@ -60,10 +97,11 @@ _svc_image_id() { docker inspect --format '{{.Image}}' "$1" 2>/dev/null; }
 # cache gets a new id (its provenance attestation is new), the old image is gone, and Compose rightly keeps the container.
 _svc_running_ref() {
   local cfg lab
-  cfg="$(docker inspect --format '{{.Config.Image}}' "$2" 2>/dev/null)" || return 0
+  cfg="$(_svc_config_image "$2")" || return 0
   case "$cfg" in
     *:local | *:previous | '')
-      lab="$(docker inspect --format "{{index .Config.Labels \"$BN_BASE_LABEL\"}}" "$2" 2>/dev/null || true)"
+      if [ -n "$_SVC_SNAP" ]; then lab="$(_snap 2 "$2" 5)"
+      else lab="$(docker inspect --format "{{index .Config.Labels \"$BN_BASE_LABEL\"}}" "$2" 2>/dev/null || true)"; fi
       case "$lab" in '<no value>') lab='' ;; esac
       printf '%s\n' "$lab" ;;
     *) printf '%s\n' "$cfg" ;;
@@ -76,11 +114,11 @@ _svc_matches() {
   local pinned="$2" cid="$3" want img have
   want="$(ref_digest "$pinned")"
   img="$(_svc_image_id "$cid")"; [ -n "$img" ] || return 1
-  if [ -n "$want" ] && have="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$img" 2>/dev/null)"; then
+  if [ -n "$want" ] && have="$(_svc_digests "$img" "$cid")"; then
     printf '%s\n' "$have" | grep "@$want\$" >/dev/null && return 0
   elif [ -n "$want" ]; then
     # an image that cannot be read: only a local build may still say what it is (its container's label, above)
-    case "$(docker inspect --format '{{.Config.Image}}' "$cid" 2>/dev/null)" in *:local | *:previous) ;; *) return 1 ;; esac
+    case "$(_svc_config_image "$cid")" in *:local | *:previous) ;; *) return 1 ;; esac
   fi
   # a local build (Open WebUI): it says which pinned image it was built on
   [ "$(_svc_running_ref "$1" "$cid" "$pinned")" = "$pinned" ]
@@ -128,7 +166,11 @@ versions_say() {
 }
 
 # core_versions_table -> every row of versions_row, one per core service
-core_versions_table() { local id; for id in $(core_service_ids); do versions_row "$id"; done; }
+core_versions_table() {
+  local id _SVC_SNAP=''
+  _svc_snapshot || _SVC_SNAP=''   # (Docker's answers, read once: _SVC_SNAP)
+  for id in $(core_service_ids); do versions_row "$id"; done
+}
 
 # write_versions_json — .state/status/versions.json for Settings (the same rows). Never fatal.
 write_versions_json() {
@@ -189,8 +231,9 @@ EOF
 # the portal, shared-mcp and stt). Prints each mismatch; 0 when all match, 1 otherwise. A service with no container
 # (an optional one that is off) is skipped; one whose image cannot be read fails.
 update_verify_images() {
-  local id pinned cid bad=0 p
+  local id pinned cid bad=0 p _SVC_SNAP=''
   p="$(project_name)"
+  _svc_snapshot || _SVC_SNAP=''   # (Docker's answers, read once: _SVC_SNAP)
   for id in $(core_service_ids); do
     pinned="$(compose_service_image "$id")"; [ -n "$pinned" ] || continue
     cid="$(_svc_container "$id")"; [ -n "$cid" ] || continue

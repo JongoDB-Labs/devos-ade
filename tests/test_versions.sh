@@ -12,8 +12,28 @@ _built() { mkdir -p "$TMP/ref"; printf '%s\n' "$2" > "$TMP/ref/$(printf '%s' "$1
 _stub_docker() {
   printf 'COMPOSE_PROJECT_NAME=bn-t\n' > "$ENV_FILE"
   docker() {
-    local last="${*: -1}" svc cid
+    local last="${*: -1}" svc cid f img d rc=0
+    [ -z "${DOCKER_LOG:-}" ] || echo "docker $1 $2" >> "$DOCKER_LOG"
     case "$*" in
+      # (the snapshot: every container of the project, then all of them, then all their images, in one call each)
+      "ps -a -q --no-trunc --filter label=com.docker.compose.project=bn-t")
+        for f in "$TMP/ctr"/*; do [ -f "$f" ] || continue; case "${f##*/}" in *.*) ;; *) echo "cid-${f##*/}" ;; esac; done ;;
+      'container inspect --format {{index .Config.Labels "com.docker.compose.service"}}|{{.Id}}|{{.Image}}|{{.Config.Image}}|{{index .Config.Labels "dev.devos-ade.base-image"}} '*)
+        [ ! -f "$TMP/no-snapshot" ] || return 1
+        shift 4
+        for cid in "$@"; do
+          svc="${cid#cid-}"; [ -f "$TMP/ctr/$svc" ] || { echo "Error: No such container: $cid" >&2; return 1; }
+          img="$(cut -d'|' -f1 "$TMP/ctr/$svc")"
+          printf '%s|%s|%s|%s|%s\n' "$svc" "$cid" "$img" "$(cut -d'|' -f2 "$TMP/ctr/$svc")" \
+            "$(cat "$TMP/ctr/$svc.label" 2>/dev/null || cat "$TMP/img/$img.label" 2>/dev/null)"
+        done ;;
+      "image inspect --format {{.Id}}|{{range .RepoDigests}}{{.}} {{end}} "*)
+        shift 4
+        for img in "$@"; do
+          if [ -f "$TMP/img/$img.digest" ]; then d="$(cat "$TMP/img/$img.digest")"; printf '%s|%s\n' "$img" "${d:+$d }"
+          else echo "Error: No such image: $img" >&2; rc=1; fi
+        done
+        return "$rc" ;;
       "ps -a -q --no-trunc --filter label=com.docker.compose.project=bn-t --filter label=com.docker.compose.service="*)
         svc="${last#label=com.docker.compose.service=}"; [ ! -f "$TMP/ctr/$svc" ] || echo "cid-$svc" ;;
       "inspect --format {{.Image}} cid-"*) cut -d'|' -f1 "$TMP/ctr/${last#cid-}" ;;
@@ -175,6 +195,29 @@ test_versions_rows_and_the_plain_sentences() {
   # no container: not running
   rm "$TMP/ctr/rustfs"
   assert_eq "$(versions_row rustfs | cut -f3,6)" "	stopped"
+}
+
+# The table and the update's check read Docker once (JON-972): three calls for every service together (its containers,
+# their images, the images' digests) — the check one more per local build — and the same answers as service by service
+test_the_table_and_the_check_ask_docker_once_for_every_service() {
+  _stub_docker; _all_match
+  local snap each
+  DOCKER_LOG="$TMP/calls"; : > "$DOCKER_LOG"
+  snap="$(core_versions_table)"
+  assert_eq "$(sort "$DOCKER_LOG" | uniq -c | awk '{ print $1, $2, $3 }' | tr '\n' ',')" "1 docker container,1 docker image,1 docker ps,"
+  : > "$DOCKER_LOG"; update_verify_images || return 1
+  assert_eq "$(wc -l < "$DOCKER_LOG" | tr -d ' ')" 6
+  # a snapshot Docker would not give (a container gone between the two calls): service by service, the same rows
+  touch "$TMP/no-snapshot"; : > "$DOCKER_LOG"
+  each="$(core_versions_table)"
+  assert_eq "$each" "$snap"
+  [ "$(wc -l < "$DOCKER_LOG")" -gt 10 ] || { echo "the rows did not ask service by service" >&2; return 1; }
+  # and the check's answers too: an image that cannot be read, another digest
+  rm "$TMP/no-snapshot"; rm "$TMP/img/img-rustfs.digest"
+  if update_verify_images 2> "$TMP/err"; then echo "an unreadable image passed" >&2; return 1; fi
+  assert_contains "$(cat "$TMP/err")" "rustfs runs"
+  assert_eq "$(core_versions_table | awk -F'\t' '$1 == "rustfs" { print $6 }')" pending
+  touch "$TMP/no-snapshot"; assert_eq "$(core_versions_table | awk -F'\t' '$1 == "rustfs" { print $6 }')" pending
 }
 
 test_cmd_versions_lists_every_core_service_plainly() {
