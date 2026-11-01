@@ -300,9 +300,19 @@ image_size_mb() { # rough on-disk size of a pinned image, for the first-run down
 # them — Open WebUI's — included: lib/images.sh compose_refs)
 missing_images() {
   local img
-  { dc config --images 2>/dev/null; compose_refs < "$STACK_DIR/compose.yaml" 2>/dev/null; } | awk '!seen[$0]++' | while IFS= read -r img; do
+  local all here
+  all="$({ dc config --images 2>/dev/null; compose_refs < "$STACK_DIR/compose.yaml" 2>/dev/null; } | awk '!seen[$0]++' | while IFS= read -r img; do
     case "$img" in '' | */shared-mcp:local | */portal:local | */stt:local | */caddy-dns:local | */terminal:local | */terminal-egress:local | */code:local | */open-webui:local) continue ;; esac
-    docker image inspect "$img" >/dev/null 2>&1 || printf '%s\n' "$img"
+    printf '%s\n' "$img"
+  done)"
+  [ -n "$all" ] || return 0
+  here="$(printf '%s\n' "$all" | snapshot_refs | cut -f2)"   # (one docker call for all: lib/images.sh)
+  printf '%s\n' "$all" | while IFS= read -r img; do
+    case "
+$here
+" in *"
+$img
+"*) ;; *) printf '%s\n' "$img" ;; esac
   done
 }
 
@@ -1776,16 +1786,46 @@ tf.close()
 '
 
 # _backup_buckets_exec S3DIR — both buckets into S3DIR/openwebui and S3DIR/shared through docker exec into the running Open
-# WebUI. Fails (nothing kept for the caller to trust) when it is not running, has no boto3, or the copy breaks: the caller
-# then uses the old path (s3_job: a new aws-cli container).
+# WebUI. Fails (the caller then uses the old path, s3_job: a new aws-cli container) when it is not running, has no boto3, the
+# copy breaks, or the archive is not what it should be.
+# TRUST BOUNDARY: the tar stream comes out of a container that runs third-party code and holds user content, so it is
+# untrusted. The old path extracted in a throwaway container that saw only the backup folder; here nothing is extracted before
+# it is checked: the stream goes to a file (mode 600, inside the backup's .partial folder), its listing must hold only plain
+# files and folders (no link, device or fifo) under openwebui/ and shared/ with no "..", absolute or empty path part, it is
+# extracted without ownership under umask 077, and afterwards nothing but files and folders may be there. A later
+# ./stack restore follows no link a container made.
 _backup_buckets_exec() {
-  local id
+  local id f lst why='' bad
   id="$(dc ps -q --status running open-webui 2>/dev/null | head -n 1 || true)"
   [ -n "$id" ] || return 1
   rm -rf "${1:?}/openwebui" "${1:?}/shared"
-  # (a tar stream, read by tar as it comes; set -o pipefail is in force in ./stack)
-  dc exec -T open-webui python -c "$_BACKUP_S3_PY" 2>/dev/null | tar -xf - -C "$1" 2>/dev/null || return 1
-  [ -d "$1/openwebui" ] && [ -d "$1/shared" ]
+  f="$(dirname "$1")/.s3.tar"
+  ( umask 077; : > "$f" ) || return 1
+  if ! dc exec -T open-webui python -c "$_BACKUP_S3_PY" > "$f" 2>/dev/null; then
+    rm -f "$f"; return 1
+  fi
+  lst="$(tar -tvf "$f" 2>&1)" || why="the archive cannot be listed ($(printf '%s' "$lst" | head -n 1 | cut -c1-80))"
+  if [ -z "$why" ]; then
+    bad="$(printf '%s\n' "$lst" | cut -c1 | grep -v '^[-d]$' | head -n 1 || true)"
+    [ -z "$bad" ] || why="it holds an entry that is not a plain file or folder (type '$bad')"
+  fi
+  if [ -z "$why" ]; then
+    lst="$(tar -tf "$f" 2>&1)" || why="the archive cannot be listed"
+    if [ -z "$why" ] && { printf '%s\n' "$lst" | grep -vE '^(openwebui|shared)(/[^/]+)*/?$' | grep -q . ||
+         printf '%s\n' "$lst" | grep -qE '(^|/)\.\.(/|$)'; }; then why="it holds a name outside openwebui/ and shared/ or with .."; fi
+  fi
+  if [ -z "$why" ]; then
+    lst="$( (umask 077; tar -xf "$f" -C "$1" --no-same-owner) 2>&1)" || why="extracting failed ($(printf '%s' "$lst" | head -n 1 | cut -c1-80))"
+  fi
+  rm -f "$f"
+  if [ -z "$why" ]; then
+    [ -d "$1/openwebui" ] && [ -d "$1/shared" ] || why="a bucket folder is missing"
+    [ -n "$why" ] || ! find "$1/openwebui" "$1/shared" ! -type f ! -type d 2>/dev/null | grep -q . || why="extracted entries that are not plain files or folders"
+  fi
+  [ -z "$why" ] && return 0
+  warn "backup: the copy of the buckets through Open WebUI was refused ($why) — using a container of its own instead"
+  rm -rf "${1:?}/openwebui" "${1:?}/shared"
+  return 1
 }
 
 # _backup_named SUFFIX — writes backups/<ts>[-SUFFIX]/ and sets LAST_BACKUP (backups/<ts>…) for callers

@@ -474,7 +474,7 @@ _stub_dc_exec_s3() { # the stub dc of _stub_dc, plus a running open-webui that a
       "ps -q --status running open-webui") [ "${OWUI_DOWN:-0}" = 1 ] || echo abc123 ;;
       "exec -T open-webui python"*) echo "dc $*" >> "$TMP/calls"
         [ "${EXEC_FAIL:-0}" != 1 ] || return 3
-        tar -cf - -C "$TMP/objs" openwebui shared ;;
+        if [ -n "${CRAFTED_TAR:-}" ]; then cat "$CRAFTED_TAR"; else tar -cf - -C "$TMP/objs" openwebui shared; fi ;;
       *) _dc_base "$@" ;;
     esac
   }
@@ -511,6 +511,41 @@ test_backup_falls_back_to_the_old_path_when_the_exec_cannot_do_it() {
   : > "$TMP/calls"; OWUI_DOWN=0; EXEC_FAIL=1; _backup_named auto 2>/dev/null   # it is, but the copy fails
   assert_eq "$(grep -c '^s3 /' "$TMP/calls")" "1"
   [ -d "$STACK_DIR/$LAST_BACKUP/s3/shared" ] && [ -f "$STACK_DIR/$LAST_BACKUP/litellm.dump" ]
+}
+
+# The stream out of Open WebUI is untrusted (a container with third-party code): a link, a device or a name that leaves the
+# two bucket folders is refused before anything is written, and the old path takes over.
+_crafted_tar() { # _crafted_tar KIND -> $TMP/crafted.tar with a good file and one bad entry of KIND
+  python3 - "$1" "$TMP/crafted.tar" <<'PYEOF'
+import sys, tarfile, io
+kind, out = sys.argv[1:3]
+tf = tarfile.open(out, "w")
+for d in ("openwebui", "shared"):
+    t = tarfile.TarInfo(d); t.type = tarfile.DIRTYPE; t.mode = 0o755; tf.addfile(t)
+t = tarfile.TarInfo("shared/ok.txt"); t.size = 2; tf.addfile(t, io.BytesIO(b"ok"))
+bad = {"symlink": ("openwebui/ln", tarfile.SYMTYPE, "/etc/passwd"), "hardlink": ("openwebui/hl", tarfile.LNKTYPE, "shared/ok.txt"),
+       "dotdot": ("../x", None, ""), "abs": ("/abs", None, ""), "inner": ("openwebui/../../x", None, ""),
+       "outside": ("other/x", None, ""), "device": ("openwebui/dev", tarfile.CHRTYPE, "")}[kind]
+t = tarfile.TarInfo(bad[0])
+if bad[1] is None: t.size = 1; tf.addfile(t, io.BytesIO(b"x"))
+else: t.type = bad[1]; t.linkname = bad[2]; tf.addfile(t)
+tf.close()
+PYEOF
+}
+test_backup_refuses_a_crafted_archive_from_the_container() {
+  local kind
+  STACK_DIR="$TMP/stack"; mkdir -p "$STACK_DIR" "$TMP/objs/openwebui" "$TMP/objs/shared"
+  printf 'X=1\n' > "$ENV_FILE"; _stub_dc_exec_s3
+  s3_job() { echo "s3 $1" >> "$TMP/calls"; mkdir -p "$1/s3/openwebui" "$1/s3/shared"; }
+  for kind in symlink hardlink dotdot abs inner outside device; do
+    : > "$TMP/calls"; _crafted_tar "$kind"; rm -rf "$STACK_DIR/backups"
+    CRAFTED_TAR="$TMP/crafted.tar" _backup_named "x$kind" 2> "$TMP/err"
+    assert_eq "$(grep -c '^s3 /' "$TMP/calls")" "1"            # the old path was taken
+    assert_contains "$(cat "$TMP/err")" "was refused"
+    assert_eq "$(find "$STACK_DIR/$LAST_BACKUP/s3" -type f | wc -l | tr -d ' ')" "0"   # nothing of the archive stayed
+    [ ! -e "$STACK_DIR/x" ] && [ ! -e "$TMP/x" ] && [ ! -e /abs ] && [ ! -e "$STACK_DIR/backups/x" ] || { echo "$kind wrote outside" >&2; return 1; }
+    [ ! -e "$STACK_DIR/$LAST_BACKUP/s3/openwebui/ln" ] && [ ! -e "$STACK_DIR/$LAST_BACKUP/.s3.tar" ] || return 1
+  done
 }
 
 test_write_mcp_config_refuses_empty_token() {
