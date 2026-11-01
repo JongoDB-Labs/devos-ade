@@ -15,6 +15,7 @@
 #                    this checkout, and the release to update to is a local tag on its HEAD plus its working tree (as
 #                    run.sh stages it), in the throwaway only: v0.25.0, or, once that release exists, the patch after
 #                    the newest release here (a tag the update's fetch never meets).
+#   --no-fast-check  skip the fast-apply block at the end (JON-972; see below)
 #   --keep           leave the throwaway running (tests/e2e/upgrade.sh --teardown --project NAME removes it)
 #
 # 1. stage: a clone of this checkout in tests/e2e/work/PROJECT at --from; .env seeded with the project, free ports
@@ -35,6 +36,16 @@
 #    and have no bedrock-now outside the internal names (tests/brand_check.py --stdin); the manifest's id and link
 #    scheme as before (the same installed app); ./stack test passes; with --real-github, origin moved to the new name
 #    and the update check answering.
+# 6. fast apply (JON-972; not with --migrate): right after that update, on the idle Linux test host —
+#    - the Update now job's wall-clock time is bounded (UPGRADE_COLD_MAX_S, default 1500 s: the first update to this code
+#      has no earlier setup to compare with, so it runs every step and rebuilds the images), and each step's time is printed;
+#    - ./stack setup --yes --update-mode with nothing changed (what an update's setup is, minus the backup, the checkout and
+#      the images' pulls) is bounded (UPGRADE_APPLY_MAX_S, default 150 s: AWS key check ~5 s, six cached image builds ~20 s,
+#      one compose up with nothing to recreate ~10 s, the Terminal and Code page hooks ~40 s, the rest skipped) and must say
+#      "not run" for the prices, keys, sign-in, syncs and smoke test, with each step's time printed;
+#    - ./stack backup takes seconds through docker exec (UPGRADE_BACKUP_MAX_S, default 60 s), with the same files;
+#    - ./stack rollback right after still restores the code (the version before), the data (the seeded chat; a chat written
+#      after the update is gone) and the images (the portal image is the one from before the update, by ID).
 # Results: tests/e2e/out/upgrade/results.tsv (and logs/). The throwaway is removed at the end unless --keep.
 #
 # THE MOVE FROM bedrock-now TO devos-ade (JON-807, lib/migrate.sh): the same run, but from an install whose project is the
@@ -72,7 +83,8 @@ BUDGETS="BUDGET_CLAUDE_CODE=0.04 BUDGET_OPENWEBUI=0.04 BUDGET_SETUP=0.02"
 NOTTY="$HERE/notty"
 OLD_URL="https://github.com/JongoDB-Labs/bedrock-now.git"
 NEW_URL="https://github.com/JongoDB-Labs/devos-ade.git"
-PROJECT=bne2e-rebrand-up; FROM=v0.24.0; AWS_ENV_FILE=''; KEEP=0; REAL_GITHUB=0; TEARDOWN_ONLY=0
+PROJECT=bne2e-rebrand-up; FROM=v0.24.0; AWS_ENV_FILE=''; KEEP=0; REAL_GITHUB=0; TEARDOWN_ONLY=0; FAST_CHECK=1
+UPGRADE_COLD_MAX_S="${UPGRADE_COLD_MAX_S:-1500}"; UPGRADE_APPLY_MAX_S="${UPGRADE_APPLY_MAX_S:-150}"; UPGRADE_BACKUP_MAX_S="${UPGRADE_BACKUP_MAX_S:-60}"
 MIGRATE=0; NEWP=''; THEN=''; FROM_SET=0; PROJECT_SET=0; INTERRUPT=0; ROLLED_BACK=0; STUCK_ON=''; RESUME=to
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -85,6 +97,7 @@ while [ $# -gt 0 ]; do
     --resume) RESUME="${2:?}"; case "$RESUME" in to | by-hand) ;; *) echo "--resume takes to or by-hand" >&2; exit 2 ;; esac; shift 2 ;;
     --migrate-pair) MIGRATE=pair; NEWP="${2:?}"; shift 2 ;;
     --then) THEN="${2:?}"; case "$THEN" in rollback | next-update) ;; *) echo "--then takes rollback or next-update" >&2; exit 2 ;; esac; shift 2 ;;
+    --no-fast-check) FAST_CHECK=0; shift ;;
     --keep) KEEP=1; shift ;;
     --real-github) REAL_GITHUB=1; shift ;;
     --teardown) TEARDOWN_ONLY=1; shift ;;
@@ -531,6 +544,8 @@ elif [ -n "$STUCK_ON" ]; then
   fi
 else
 # --- 3. Update now: a request for the throwaway's own update helper ---
+docker image inspect --format '{{.Id}}' "$PROJECT/portal:local" > "$OUT/portal-id-before" 2>/dev/null || : > "$OUT/portal-id-before"
+UPD_T0="$(now)"
 nonce="$(openssl rand -hex 16)"
 mkdir -p "$STACK/.state/requests"
 printf '{"action":"update","requested_at":%s,"nonce":"%s"}\n' "$(date +%s)" "$nonce" > "$STACK/.state/requests/req-$nonce.json"
@@ -542,6 +557,7 @@ for _ in $(seq 1 1800); do   # an update takes minutes (images are rebuilt); at 
   sleep 1
 done
 e2e_helper_stop
+UPD_T1="$(now)"
 cp "$STACK/.state/status/helper-status.json" "$LOGS/helper-status.json" 2>/dev/null || true
 s="$(cat "$LOGS/helper-status.json" 2>/dev/null)"
 case "$s" in *'"phase": "done"'*) check update-now 0 "the helper's update finished: $(printf '%s' "$s" | sed -n 's/.*"message": "\([^"]*\)".*/\1/p')" ;;
@@ -571,7 +587,7 @@ got = [(s["label"], s["took"]) for s in st.get("steps") or []]
 assert want, "the update's log names no step"
 assert got == want, f"Home lists {got}, the log says {want}"
 assert not st.get("step"), f"a step left running: {st.get('step')}"
-untimed = [l for l, t in got if not re.fullmatch(r"[0-9]{1,4}m[0-9]{2}s|[0-9]{1,4}s", t or "")]
+untimed = [l for l, t in got if not re.fullmatch(r"[0-9]{1,4}m[0-9]{2}s|[0-9]{1,4}s|skipped", t or "")]
 assert not untimed, f"steps without their time: {untimed}"
 if stamped:
     assert any(l == "Backup" for l, _ in got) and any(l.startswith("Smoke test") for l, _ in got), "the whole job's steps (the backup, the smoke test)"
@@ -581,6 +597,10 @@ with open(sys.argv[3], "w") as f:
 print(f"{len(got)} steps on Home's card ({'the whole job, a stamped log' if stamped else 'after the last update: N/4 line, an older helper'}), each with its time: " + ", ".join(f"{l} {t}" for l, t in got))
 PY
 check home-card-steps "$?" "$(tail -n 1 "$OUT/steps.check")"
+# each step's time, one line each (and the whole job's wall-clock time, bounded)
+while IFS="$(printf '\t')" read -r l t; do say "step  ${t:-?}  $l"; done < "$OUT/steps.tsv"
+UPD_S=$((UPD_T1 - UPD_T0))
+check update-time-bound "$([ "$UPD_S" -le "$UPGRADE_COLD_MAX_S" ] && echo 0 || echo 1)" "Update now took ${UPD_S}s from the request to the helper's end (bound ${UPGRADE_COLD_MAX_S}s; the first update to this code runs every step)"
 
 fi
 
@@ -686,6 +706,33 @@ PY
 [ "$MIGRATE" != 0 ] || check manifest "$?" "$(tail -n 1 "$OUT/manifest.check")"
 st test > "$LOGS/test-after.log" 2>&1; rc=$?; redact "$LOGS/test-after.log"
 check stack-test-after "$([ "$rc" = 0 ] && grep -q 'all checks passed' "$LOGS/test-after.log" && echo 0 || echo 1)" "./stack test: exit $rc"
+# --- 6. fast apply: nothing changed, the backup through exec, and a rollback after it (JON-972) ---
+if [ "$MIGRATE" = 0 ] && [ "$FAST_CHECK" = 1 ]; then
+  # an unchanged update's setup: every gated step says it did not run, and the whole takes seconds
+  T0="$(now)"; st setup --yes --update-mode > "$LOGS/fast-apply.log" 2>&1; n=$?; T1="$(now)"; redact "$LOGS/fast-apply.log"
+  check fast-apply-ran "$n" "./stack setup --yes --update-mode with nothing changed: exit $n"
+  FAST_S=$((T1 - T0))
+  check fast-apply-time "$([ "$FAST_S" -le "$UPGRADE_APPLY_MAX_S" ] && echo 0 || echo 1)" "the apply took ${FAST_S}s (bound ${UPGRADE_APPLY_MAX_S}s on an idle host)"
+  grep -E '^==> .* ready \(' "$LOGS/fast-apply.log" | sed 's/^==> //' | while IFS= read -r l; do say "fast apply step: $l"; done
+  for want in "Prices" "LiteLLM keys, Admin sign-in" "Portal sign-in and Chat" "Open WebUI syncs" "Smoke test" "Ports and settings in .env"; do
+    check "fast-apply-skips-$(printf '%s' "$want" | tr -c 'A-Za-z0-9' '-' | cut -c1-24)" "$(grep -q "^==> $want.*: not run" "$LOGS/fast-apply.log" && echo 0 || echo 1)" "$want: not run (nothing it reads changed)"
+  done
+  check fast-apply-one-up "$([ "$(grep -c '^==> Services ([0-9]*).*ready' "$LOGS/fast-apply.log")" = 1 ] && echo 0 || echo 1)" "the services started in one phase"
+  # the backup through docker exec: seconds, the same files
+  T0="$(now)"; st backup > "$LOGS/fast-backup.log" 2>&1; n=$?; T1="$(now)"
+  bdir="$STACK/$(sed -n 's/.*backup written to \(backups\/[0-9-]*\).*/\1/p' "$LOGS/fast-backup.log" | tail -n 1)"
+  check fast-backup-ran "$n" "./stack backup: exit $n"
+  check fast-backup-time "$([ $((T1 - T0)) -le "$UPGRADE_BACKUP_MAX_S" ] && echo 0 || echo 1)" "the backup took $((T1 - T0))s (bound ${UPGRADE_BACKUP_MAX_S}s)"
+  check fast-backup-files "$([ -f "$bdir/litellm.dump" ] && [ -f "$bdir/openwebui.dump" ] && [ -d "$bdir/s3/openwebui" ] && [ -d "$bdir/s3/shared" ] && [ -f "$bdir/s3/$CANARY" ] && echo 0 || echo 1)" "dumps, both bucket folders and the canary file in ${bdir#"$STACK"/}"
+  # a chat written after the update, then the rollback: code, data and images as they were before the update
+  owui "print(api('POST', '/api/v1/chats/new', {'chat': {'title': 'e2e-after-fast', 'messages': []}}, TOKEN)['id'])" > /dev/null 2>&1
+  st rollback --yes > "$LOGS/fast-rollback.log" 2>&1; n=$?; redact "$LOGS/fast-rollback.log"
+  check fast-rollback-ran "$n" "./stack rollback after the fast apply: exit $n"
+  check fast-rollback-code "$([ "$(git -C "$STACK" describe --tags --always 2>/dev/null)" = "$(cat "$OUT/before/version")" ] && echo 0 || echo 1)" "code: $(git -C "$STACK" describe --tags --always 2>/dev/null), before the update $(cat "$OUT/before/version" 2>/dev/null)"
+  titles="$(owui "print([c['title'] for c in api('GET', '/api/v1/chats/', None, TOKEN)])" 2>/dev/null)"
+  check fast-rollback-data "$(case "$titles" in *e2e-upgrade*) case "$titles" in *e2e-after-fast*) echo 1 ;; *) echo 0 ;; esac ;; *) echo 1 ;; esac)" "chats after the rollback: ${titles:-none} (the seeded one back, the one written after the update gone)"
+  check fast-rollback-images "$([ -n "$(cat "$OUT/portal-id-before")" ] && [ "$(docker image inspect --format '{{.Id}}' "$PROJECT/portal:local" 2>/dev/null)" = "$(cat "$OUT/portal-id-before")" ] && echo 0 || echo 1)" "the portal image is the one from before the update ($(cut -c1-19 "$OUT/portal-id-before"))"
+fi
 if [ "$REAL_GITHUB" = 1 ]; then
   o="$(git -C "$STACK" remote get-url origin)"
   check origin-moved "$([ "$o" = "$NEW_URL" ] && echo 0 || echo 1)" "origin is $o (want $NEW_URL)"
