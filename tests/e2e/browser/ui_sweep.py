@@ -941,6 +941,26 @@ def sweep_code(browser, width, theme):
         capture(p, "model-picker")
     step("model-picker", model)
 
+    def customize():   # edit mode (JON-946): a handle and an eye on each widget, the tray; the left dock stacked; Explorer hidden
+        if width == "phone":   # (phones keep their sheets: no Customize)
+            return
+        code_fresh(p)
+        p.get_by_test_id("customize-layout").click()
+        p.get_by_test_id("widget-tray").wait_for(timeout=10000)
+        p.wait_for_timeout(400)
+        capture(p, "customize")
+        p.get_by_test_id("mode-stack-left").click()
+        p.wait_for_timeout(400)
+        capture(p, "customize-stacked")
+        p.get_by_test_id("wd-hide-explorer").click()
+        p.wait_for_timeout(400)
+        capture(p, "customize-hidden")
+        # Reset and Done: the page as it was, with nothing saved
+        p.get_by_test_id("layout-reset").click()
+        p.get_by_test_id("layout-done").click()
+        p.get_by_test_id("widget-tray").wait_for(state="hidden")
+    step("customize", customize)
+
     for item in ("palette", "new-project", "review", "run", "ports", "budget", "permissions", "memory", "mcp", "plugins", "setup", "notify", "export"):
         def one(item=item):
             code_fresh(p)

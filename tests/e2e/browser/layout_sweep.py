@@ -751,6 +751,33 @@ def code_states(prefix):
             t.first.click()
             p.wait_for_timeout(2500)
             yield f"{prefix}-terminal-panel", "[data-testid=terminal]"
+        # Customize (JON-946): a header with a handle and an eye on every widget, the tray under the top bar; then the
+        # left dock stacked; then Explorer hidden (in the tray). Reset and Done afterwards: nothing is kept
+        c = p.get_by_test_id("customize-layout")
+        if device != "phone" and c.count() and c.first.is_visible():
+            def editing():
+                esc(p)
+                if c.first.get_attribute("aria-pressed") != "true":
+                    c.first.click()
+                p.get_by_test_id("widget-tray").wait_for(timeout=10000)
+                p.wait_for_timeout(400)
+            editing()
+            yield f"{prefix}-customize", "[data-testid=widget-tray]", editing
+            stack = p.get_by_test_id("mode-stack-left")
+            if stack.count() and stack.first.is_visible():
+                stack.first.click()
+                p.wait_for_timeout(400)
+                yield f"{prefix}-customize-stacked", "[data-testid=widget-tray]", editing
+            hide = p.get_by_test_id("wd-hide-explorer")
+            if hide.count() and hide.first.is_visible():
+                hide.first.click()
+                p.wait_for_timeout(400)
+                yield f"{prefix}-customize-hidden", "[data-testid=widget-tray]", editing
+            editing()
+            reset = p.get_by_test_id("layout-reset")
+            if reset.count() and reset.first.is_enabled():
+                reset.first.click()
+            p.get_by_test_id("layout-done").click()
     return fn
 
 
