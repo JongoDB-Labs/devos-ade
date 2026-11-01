@@ -16,6 +16,13 @@
 #                    run.sh stages it), in the throwaway only: v0.25.0, or, once that release exists, the patch after
 #                    the newest release here (a tag the update's fetch never meets).
 #   --no-fast-check  skip the fast-apply block at the end (JON-972; see below)
+#   --setup-stopped TAG [--resume to | plain]
+#                    the way out of an update that stopped in its setup (2026-11-01: an owner's 0.45.1 -> 0.47.0 update,
+#                    whose smoke test timed out on a loaded Mac): from --from, ./stack update --to TAG in a terminal, killed
+#                    as its smoke test starts — the update record left "running", the code at TAG. Then --resume to (the
+#                    default): ./stack update --to <this checkout's release> finishes it there, with the first update's
+#                    backup and rollback point; --resume plain: ./stack update --yes, as Home's Update now runs it,
+#                    finishes it with TAG's code (and no fast-apply block: TAG's setup has no --update-mode).
 #   --keep           leave the throwaway running (tests/e2e/upgrade.sh --teardown --project NAME removes it)
 #
 # 1. stage: a clone of this checkout in tests/e2e/work/PROJECT at --from; .env seeded with the project, free ports
@@ -85,7 +92,7 @@ OLD_URL="https://github.com/JongoDB-Labs/bedrock-now.git"
 NEW_URL="https://github.com/JongoDB-Labs/devos-ade.git"
 PROJECT=bne2e-rebrand-up; FROM=v0.24.0; AWS_ENV_FILE=''; KEEP=0; REAL_GITHUB=0; TEARDOWN_ONLY=0; FAST_CHECK=1
 UPGRADE_COLD_MAX_S="${UPGRADE_COLD_MAX_S:-1500}"; UPGRADE_APPLY_MAX_S="${UPGRADE_APPLY_MAX_S:-150}"; UPGRADE_BACKUP_MAX_S="${UPGRADE_BACKUP_MAX_S:-60}"
-MIGRATE=0; NEWP=''; THEN=''; FROM_SET=0; PROJECT_SET=0; INTERRUPT=0; ROLLED_BACK=0; STUCK_ON=''; RESUME=to
+MIGRATE=0; NEWP=''; THEN=''; FROM_SET=0; PROJECT_SET=0; INTERRUPT=0; ROLLED_BACK=0; STUCK_ON=''; RESUME=to; SETUP_STOPPED=''
 while [ $# -gt 0 ]; do
   case "$1" in
     --aws-env) AWS_ENV_FILE="${2:?}"; shift 2 ;;
@@ -94,7 +101,8 @@ while [ $# -gt 0 ]; do
     --migrate) MIGRATE=default; shift ;;
     --interrupt) INTERRUPT=1; shift ;;
     --stuck-on) STUCK_ON="${2:?}"; shift 2 ;;
-    --resume) RESUME="${2:?}"; case "$RESUME" in to | by-hand) ;; *) echo "--resume takes to or by-hand" >&2; exit 2 ;; esac; shift 2 ;;
+    --setup-stopped) SETUP_STOPPED="${2:?}"; shift 2 ;;
+    --resume) RESUME="${2:?}"; case "$RESUME" in to | by-hand | plain) ;; *) echo "--resume takes to, by-hand or plain" >&2; exit 2 ;; esac; shift 2 ;;
     --migrate-pair) MIGRATE=pair; NEWP="${2:?}"; shift 2 ;;
     --then) THEN="${2:?}"; case "$THEN" in rollback | next-update) ;; *) echo "--then takes rollback or next-update" >&2; exit 2 ;; esac; shift 2 ;;
     --no-fast-check) FAST_CHECK=0; shift ;;
@@ -138,6 +146,12 @@ git -C "$ROOT" rev-parse -q --verify "refs/tags/$FROM" >/dev/null || die "no tag
 if [ -n "$STUCK_ON" ]; then
   [ "$MIGRATE" != 0 ] && [ "$INTERRUPT" = 0 ] || die "--stuck-on goes with --migrate or --migrate-pair, not --interrupt"
   git -C "$ROOT" rev-parse -q --verify "refs/tags/$STUCK_ON" >/dev/null || die "no tag $STUCK_ON in this checkout"
+fi
+if [ -n "$SETUP_STOPPED" ]; then
+  [ "$MIGRATE" = 0 ] && [ "$INTERRUPT" = 0 ] && [ -z "$STUCK_ON" ] || die "--setup-stopped goes without --migrate, --interrupt and --stuck-on"
+  git -C "$ROOT" rev-parse -q --verify "refs/tags/$SETUP_STOPPED" >/dev/null || die "no tag $SETUP_STOPPED in this checkout"
+  case "$RESUME" in to) ;; plain) FAST_CHECK=0 ;; *) die "--setup-stopped resumes with --resume to or plain" ;; esac
+elif [ "$RESUME" = plain ]; then die "--resume plain goes with --setup-stopped"
 fi
 : > "$RESULTS"; START_TS="$(now)"; HELPER_PID=''
 
@@ -542,6 +556,42 @@ elif [ -n "$STUCK_ON" ]; then
     check way-out-update-force "$n" "./stack update --force --yes in the new folder: exit $n"
     TO="$STUCK_ON"   # (the checks after: the move done by STUCK_ON's code)
   fi
+elif [ -n "$SETUP_STOPPED" ]; then
+  # --setup-stopped: the update to SETUP_STOPPED killed as its setup's smoke test starts (its first check's line), as an
+  # owner's stopped there (its checks timed out on a loaded Mac): the record stays "running"; then the way out
+  docker image inspect --format '{{.Id}}' "$PROJECT/portal:local" > "$OUT/portal-id-before" 2>/dev/null || : > "$OUT/portal-id-before"
+  REC="$STACK/.state/update/last.env"
+  say "stopped: ./stack update --to $SETUP_STOPPED in a terminal, killed as its smoke test starts"
+  st update --to "$SETUP_STOPPED" --yes > "$LOGS/update-stopped.log" 2>&1 &
+  RUN1=$!
+  for _ in $(seq 1 2400); do   # (from --from to the smoke test: images, setup; at most 40 minutes)
+    grep -qE '^  (ok|FAIL) +litellm alive' "$LOGS/update-stopped.log" 2>/dev/null && break
+    kill -0 "$RUN1" 2>/dev/null || break
+    sleep 1
+  done
+  grep -qE '^  (ok|FAIL) +litellm alive' "$LOGS/update-stopped.log" 2>/dev/null; caught=$?
+  pkill -KILL -f "$STACK/stack" 2>/dev/null
+  kill -KILL "$RUN1" 2>/dev/null; wait "$RUN1" 2>/dev/null
+  redact "$LOGS/update-stopped.log"; cp "$REC" "$LOGS/record-after-stop" 2>/dev/null
+  check stopped-at-smoke-test "$caught" "./stack update --to $SETUP_STOPPED killed at: $(grep -E '^  (ok|FAIL) +litellm alive|==> .* ready' "$LOGS/update-stopped.log" | tail -n 2 | tr '\n' ' ' | cut -c1-200)"
+  check stopped-record-running "$(grep -qx 'result=running' "$REC" 2>/dev/null && grep -qx "from_version=$FROM" "$REC" 2>/dev/null && echo 0 || echo 1)" "the record: $(grep -E '^(result|from_version)=' "$REC" 2>/dev/null | tr '\n' ' ')"
+  check stopped-code-at-tag "$([ "$(git -C "$STACK" describe --tags --always 2>/dev/null)" = "$SETUP_STOPPED" ] && echo 0 || echo 1)" "the code at $(git -C "$STACK" describe --tags --always 2>/dev/null)"
+  BK1="$(sed -n 's/^backup=//p' "$REC" 2>/dev/null)"
+  if [ "$RESUME" = plain ]; then
+    say "the way out as Home's Update now: ./stack update --yes finishes it with $SETUP_STOPPED's code"
+    T0="$(now)"; st update --yes > "$LOGS/update-way-out.log" 2>&1; n=$?; T1="$(now)"
+    TO="$SETUP_STOPPED"   # (the checks after: the update finished by SETUP_STOPPED's code)
+  else
+    say "the way out: ./stack update --to $TO"
+    T0="$(now)"; st update --to "$TO" --yes > "$LOGS/update-way-out.log" 2>&1; n=$?; T1="$(now)"
+  fi
+  redact "$LOGS/update-way-out.log"
+  check way-out-update "$n" "./stack update$([ "$RESUME" = plain ] || printf ' --to %s' "$TO"): exit $n after $((T1 - T0))s"
+  grep -E '^==> .* ready \(' "$LOGS/update-way-out.log" | sed 's/^==> //' | while IFS= read -r l; do say "way-out step: $l"; done
+  check way-out-said-finishing "$(grep -q 'did not finish — finishing it' "$LOGS/update-way-out.log" && echo 0 || echo 1)" "it said it finishes the unfinished update (no new backup)"
+  check way-out-done "$(grep -qx 'result=done' "$REC" 2>/dev/null && echo 0 || echo 1)" "the record: $(grep -E '^(result|to_version)=' "$REC" 2>/dev/null | tr '\n' ' ')"
+  check way-out-first-backup "$([ -n "$BK1" ] && grep -qx "backup=$BK1" "$REC" 2>/dev/null && grep -qx "from_version=$FROM" "$REC" 2>/dev/null && echo 0 || echo 1)" "./stack rollback still goes back to $FROM with ${BK1:-no backup}"
+  check way-out-time-bound "$([ $((T1 - T0)) -le "$UPGRADE_COLD_MAX_S" ] && echo 0 || echo 1)" "the way out took $((T1 - T0))s (bound ${UPGRADE_COLD_MAX_S}s)"
 else
 # --- 3. Update now: a request for the throwaway's own update helper ---
 docker image inspect --format '{{.Id}}' "$PROJECT/portal:local" > "$OUT/portal-id-before" 2>/dev/null || : > "$OUT/portal-id-before"
