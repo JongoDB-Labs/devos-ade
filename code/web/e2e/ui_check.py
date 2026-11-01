@@ -1012,8 +1012,10 @@ def layout(browser):
 
 @check("empty chat as widgets (JON-812): wide pane shows Pick up / Projects cards that scroll inside themselves, the page fits the viewport, a phone shows none")
 def welcome_widgets(browser):
-    post(NORMAL + "/__mock/reset")
     for w, h, mob in ((1440, 900, False), (2560, 1440, False), (390, 844, True)):
+        # (an empty chat at each width: a new browser opens on the session picked up at 1440, and its cards were gone a
+        # moment after the page connected — the check only passed when it measured first)
+        post(NORMAL + "/__mock/reset")
         p = Page(browser, NORMAL, f"widgets-{w}", viewport={"width": w, "height": h}, is_mobile=mob, has_touch=mob, color_scheme="light")
         page = p.open()
         assert page.evaluate("document.documentElement.scrollHeight <= innerHeight"), f"the page is taller than the window at {w}"

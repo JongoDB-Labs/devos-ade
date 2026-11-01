@@ -37,6 +37,9 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   tablet apart) and fail on anything overlapping, clipped or scrolling. A reset on one browser must hold: another one
   open with the old layout follows it after a reconnect and a reload instead of sending its own back. And a check that
   fails no longer leaves its pages open to act on the next one.
+- **The empty-chat widgets check opens an empty chat at each width.** A new browser opens on the session the check
+  picked up at the previous width, and the cards left a moment after the page connected: the check passed only when it
+  measured first (failed once on the test host; the same on v0.46.0's page).
 - **Each check starts from the default Code layout.** The layout is kept for the sign-in that every check shares, so a
   tab one check picked (Git), its terminal or a Customize it left showed up in the next one's new browser; the Code
   checks and both sweeps now forget it first. The UI sweep's Customize step runs after the menus, whose states keep the
