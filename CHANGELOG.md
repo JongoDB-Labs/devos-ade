@@ -55,6 +55,14 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   in the workspace doing nothing once two views had made shell windows of that name (`tmux new-window -S`: "multiple
   windows named shell"), and the frames off their slots after a click in a terminal past the stage's bottom had scrolled
   the stage (overflow: hidden scrolls; it is overflow: clip now).
+- **Home's widgets.** A browser check (`widgets-continue-fills-the-row-when-alone`) hides Get started with its own Hide and
+  brings it back as the walkthrough does, and checks Continue keeps the whole row in Customize and after another change,
+  and that a width set with the keys, down to 6, is kept. JS and portal tests cover the rule and the saved `sized` mark.
+- **The cost check's phone part** asks for a write of its own, outside the folder whose write it had just declined: asked
+  for another write there, Haiku declined it itself, so no permission card came.
+- **Claude's own git check runs again.** `code-claude-git-access` asked for gh 2.102.0, but v0.33.0's core-service bump
+  moved gh to 2.103.2; no default stage runs that check, so it went unseen. It now takes whatever version the image pins
+  (the build checks the pin itself).
 
 ## [0.47.0] - 2026-11-01
 
