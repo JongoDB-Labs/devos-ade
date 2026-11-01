@@ -33,7 +33,7 @@ test_a_timed_step_says_when_it_starts_and_how_long_it_took() {
 test_setup_and_update_time_each_of_their_stretches() {
   local c
   c="$(sed -n '/^cmd_setup() {/,/^}/p' "$STACK_DIR/lib/commands.sh")"
-  for want in 'timed_step "AWS key check" setup_aws_creds' 'upd_gate settings "Ports and settings in .env"' \
+  for want in 'upd_gate aws "AWS key check"' 'upd_gate settings "Ports and settings in .env"' \
               'upd_gate voice "Voice"' 'upd_gate websearch "Web search check"' \
               'upd_gate codedefault "Code page default"' 'upd_gate smoke "Smoke test" ' 'timed_step "Finishing" _setup_finish'; do
     assert_contains "$c" "$want"

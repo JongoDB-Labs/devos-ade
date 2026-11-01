@@ -167,9 +167,10 @@ versions_say() {
 
 # core_versions_table -> every row of versions_row, one per core service
 core_versions_table() {
-  local id _SVC_SNAP=''
+  local id ids _SVC_SNAP=''
+  ids="$(core_service_ids || true)"; [ -n "$ids" ] || return 0   # (no list: no rows, and no question to Docker)
   _svc_snapshot || _SVC_SNAP=''   # (Docker's answers, read once: _SVC_SNAP)
-  for id in $(core_service_ids); do versions_row "$id"; done
+  for id in $ids; do versions_row "$id"; done
 }
 
 # write_versions_json — .state/status/versions.json for Settings (the same rows). Never fatal.
