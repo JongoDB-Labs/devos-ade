@@ -32,6 +32,14 @@ All notable changes to DevOS ADE (formerly bedrock-now) are documented here. The
   and a name the grid does not have puts every card in the same spot. Under 961 px the cards are now one column, in the
   page's order. Phones (mobile.css) were not affected.
 
+### Tests
+- **Home's widgets in the browser suite, the UI sweep and the layout sweep (JON-946):** the default is today's Home,
+  customizing by mouse and by keyboard alone, a reload keeping the layout, phone and desktop apart, the hidden Update
+  card still announced, and no card on top of another at any width from 768 px up.
+- The phone's "needs you" check excuses what its own reload cuts off in the Chat frame (Chat's `Failed to load models:
+  TypeError: Failed to fetch` when the reload lands while Chat is still loading), only during that reload, as the
+  other checks that reload do; it failed on that line when the reload was quick.
+
 ## [0.45.1] - 2026-10-31
 
 ### Fixed

@@ -37,7 +37,8 @@ from playwright.sync_api import expect as see
 
 import code_tidy
 from common import CLAUDE_CODE_VERSION, ENV, HOST, PORT, SHOTS, Skip, after_check, check, expect, http, origin
-from checks_browser import Recorder, _confirm, _need_helper, _switch, _wait_job, goto_setting, login, open_settings, rshot, shot, sso_signed_in
+from checks_browser import (Recorder, _confirm, _need_helper, _problems_outside_reloads, _reload, _switch, _wait_job, goto_setting, login,
+                            open_settings, rshot, shot, sso_signed_in)
 
 ON = ENV.get("CODE_ENABLED") == "true" and ENV.get("TERMINAL_ENABLED") == "true"
 HOSTILE = os.environ.get("E2E_CODE_HOSTILE") == "1"
@@ -616,8 +617,9 @@ def phone_needs_you(ctx):
     page.locator("#needs-you:not([hidden]) .needs-answer").tap(timeout=20000)
     page.locator(".tab[data-tab=code][aria-current=page]").wait_for(timeout=10000)
     _card_in_view(page, f, "the banner's Answer")
-    # 3. opening Code afresh while it waits (the UX audit's case: the Projects sheet used to cover the card)
-    page.reload()
+    # 3. opening Code afresh while it waits (the UX audit's case: the Projects sheet used to cover the card). The reload
+    # cuts off what the Chat frame (opened in 2.) still has in flight: excused during the reload only
+    _reload(page, rec)
     page.locator(".tab[data-tab=code][aria-current=page]").wait_for(timeout=20000)
     f = code_frame(page)
     f.wait_for_function("() => document.querySelector('meta[name=bn-csp-nonce]') !== null", timeout=30000)
@@ -627,7 +629,7 @@ def phone_needs_you(ctx):
     deny.tap()
     f.get_by_test_id("perm-deny-send").tap()
     see(f.get_by_test_id("permission")).to_have_count(0, timeout=15000)
-    probs = rec.problems(allow=LOCKED_OK)
+    probs = _problems_outside_reloads(rec, LOCKED_OK)
     rec.save()
     expect(not probs, f"errors (CSP violations included): {probs}")
     ctx.code_phone_sessions = [sid1, sid2]

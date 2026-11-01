@@ -54,8 +54,9 @@
 .wg-ov { position: absolute; z-index: 3; box-sizing: border-box; border: 2px dashed var(--line-strong); border-radius: var(--r-xl); pointer-events: none; }
 .wg-ov:focus-within { border: 2px solid var(--accent); }
 .wg-bar { position: absolute; top: 6px; left: 8px; right: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; pointer-events: auto; }
-/* (the name whole; the controls wrap under it when the card is narrow — cut short only where it is wider than the card) */
-.wg-name { flex: 1 0 auto; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+/* (the name whole: the controls wrap under it when the card is narrow, and a name wider than the card takes two lines;
+   the card makes room for a taller bar) */
+.wg-name { flex: 1 0 auto; max-width: 100%; overflow-wrap: anywhere; font-size: 13px; font-weight: 600; line-height: 1.3; }
 .wg-size { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .wg-btn { display: inline-grid; place-items: center; min-width: 32px; min-height: 32px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--r-m);
   background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; line-height: 1; cursor: pointer; }
