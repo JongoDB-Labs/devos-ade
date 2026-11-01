@@ -179,6 +179,22 @@ hash of their pins (version and checksums, or lockfile, platform and Node): an e
 of its npm flags makes Docker run the stage again, which then copies the tools whose pins stayed instead of
 downloading them, and installs the rest side by side.
 
+**An update's setup runs only what changed.** `./stack update` runs `./stack setup --yes --update-mode`; nothing else turns
+the mode on (`./stack update --force` and a plain `./stack setup` run every step). Each of these steps has a digest of
+what it reads: ports and settings in `.env`, prices, LiteLLM's config and the default models, voice and its container,
+SearXNG, the web search check, the git server and its account, the Code page default, LiteLLM's keys, the portal sign-in,
+the Open WebUI syncs and the smoke test. Its inputs are the `.env` keys it reads, the model catalog and the models found,
+the prices in use, the compose files, the ID of the images this checkout builds, the identity of the LiteLLM and Open WebUI
+containers (a recreated or restarted one is not the same: the banner Open WebUI shows lives in its memory), the price
+file's age (12 hours) and the step's own code. The digests of the last *successful* setup are in
+`.state/update/step-inputs.tsv` (hashes, never values); a setup removes the file when it starts and writes it when it ends,
+so one that stops halfway leaves none, and rollback, restore and uninstall remove it too. A skipped step is said in the
+log (`==> Prices: not run — …`, then `==> Prices ready (skipped)`) and shows on Home's update card with "skipped" for its
+time. With the settings, keys and voice unchanged, the services start with one `docker compose up` (Postgres before the
+LiteLLM migrations, LiteLLM before Open WebUI, and the buckets before Open WebUI are Compose's own `depends_on`).
+`./stack backup` copies the buckets through the Open WebUI that is running, and the images' list for a rollback is one
+Docker call.
+
 Every stretch of setup and of an update is a step of its own on Home's update card, with how long it took: the backup,
 the new code, each image's download, each image's build (from Docker's cache, or what step was built again), your
 subscriptions' tools (installed or kept), each group of services, the key and settings steps, the Open WebUI syncs,
