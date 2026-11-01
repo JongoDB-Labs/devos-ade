@@ -525,6 +525,17 @@ CLEAR_LAYOUT = """async () => {
   return r.status;
 }"""
 SAVED_LAYOUT = """async () => (await fetch('/api/ui/layout', {credentials: 'same-origin', headers: {'X-Requested-With': 'devos-ade'}})).json()"""
+# Where the focus goes from here on, kept in the page (a check that loses the focus says where it went)
+FOCUS_LOG = """() => { const t0 = performance.now();
+  const d = (e) => !e ? 'null' : e.id ? '#' + e.id : e.tagName.toLowerCase() + (typeof e.className === 'string' && e.className.trim() ? '.' + e.className.trim().split(/\\s+/).join('.') : '') + (e.dataset && e.dataset.app ? `[data-app=${e.dataset.app}]` : '');
+  const log = (k, e) => window.__focusLog.push(`${Math.round(performance.now() - t0)}ms ${k} ${d(e)}`);
+  window.__focusLog = []; window.__focusSays = d;
+  document.addEventListener('focusin', (ev) => log('in', ev.target), true);
+  document.addEventListener('focusout', (ev) => log('out', ev.target), true);
+  window.addEventListener('blur', () => log('window blur; active', document.activeElement)); }"""
+FOCUS_SEEN = "() => `active ${window.__focusSays(document.activeElement)}; ${window.__focusLog.slice(-12).join(', ')}`"
+
+
 BOXES = """() => [...document.querySelectorAll('.tp-pane')].map((p) => {
   const s = p.querySelector('.tp-slot').getBoundingClientRect(), f = document.querySelector(p.dataset.view === '1' ? 'iframe[data-app=terminal]' : `iframe[data-app=terminal-${p.dataset.view}]`);
   const r = f ? f.getBoundingClientRect() : null;
@@ -594,7 +605,7 @@ def add_terminal(page, n: int):
     f.locator(".xterm-helper-textarea").focus()
     page.keyboard.press("Control+c")
     page.keyboard.press("Control+l")
-    wait_text(f, r"\$$", 15)   # (the prompt; term_text trims the space after it)
+    wait_text(f, r"\$ ?$", 15)   # (the prompt: the space after it is there, or not when tmux redrew the line)
     return f
 
 
@@ -931,6 +942,7 @@ def widgets_keyboard(ctx):
         unnamed = page.eval_on_selector_all("#term-page button, #term-page [role=separator]", "els => els.filter((b) => !(b.getAttribute('aria-label') || b.textContent.trim())).map((b) => b.className)")
         expect(not unnamed, f"controls without a name: {unnamed}")
         # a divider between two terminals moves with the arrow keys
+        page.evaluate(FOCUS_LOG)
         page.focus("#term-add")
         page.keyboard.press("Enter")
         page.wait_for_selector(".tp-div")
@@ -939,7 +951,7 @@ def widgets_keyboard(ctx):
         page.keyboard.press("ArrowRight")
         after = int(page.get_attribute(".tp-div", "aria-valuenow"))
         expect(after == before + 5, f"the divider went {before} → {after}")
-        expect(page.evaluate("() => document.activeElement.classList.contains('tp-div')"), "the divider lost the focus when it moved")
+        expect(page.evaluate("() => document.activeElement.classList.contains('tp-div')"), f"the divider lost the focus when it moved: {page.evaluate(FOCUS_SEEN)}")
         # a key button used with the keyboard keeps the focus on the button (a keyboard user is not shut in the terminal)
         page.focus("[data-key=esc]")
         page.keyboard.press("Enter")
