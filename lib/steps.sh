@@ -42,14 +42,22 @@ pulls_dir() { printf '%s/update-pulls\n' "$STATE_DIR"; }
 # its environment: DEVOS_ADE_PULLS_DIR, DEVOS_ADE_PULLS_PID). Fails only when the images cannot be listed.
 PULLS_DIR=''; PULLS_PID=''
 pulls_start() {
-  local d ref refs i=0
+  local d ref refs here i=0
   d="$(pulls_dir)"
   rm -rf "$d"; mkdir -p "$d" || return 1
   refs="$(update_pull_refs)" || return 1
   [ -n "$refs" ] || return 1
+  # (which of them are here: one docker call for all — snapshot_refs, lib/images.sh — not one for each digest-pinned image)
+  here="$(printf '%s\n' "$refs" | snapshot_refs | cut -f2)"
   for ref in $refs; do
-    if pull_needed "$ref"; then i=$((i + 1)); printf '%s\n' "$ref" > "$d/$i.ref"
-    else printf '%s\n' "$ref" >> "$d/skipped"; fi
+    case "$ref" in
+      *@sha256:*) case "
+$here
+" in *"
+$ref
+"*) printf '%s\n' "$ref" >> "$d/skipped"; continue ;; esac ;;
+    esac
+    i=$((i + 1)); printf '%s\n' "$ref" > "$d/$i.ref"
   done
   # (no terminal and no lock of its own: this command's lock covers it, and setup waits for it)
   ( trap - EXIT

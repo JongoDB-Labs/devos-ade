@@ -46,12 +46,37 @@ project_refs() {
 
 _image_id() { docker image inspect --format '{{.Id}}' "$1" 2>/dev/null || true; }
 
-# snapshot_refs < refs -> "ID<TAB>REF" for each reference present locally
+# snapshot_refs < refs -> "ID<TAB>REF" for each reference present locally. ONE docker call for all of them (each call is
+# 10-60 s on a busy Docker Desktop): `docker image inspect` prints the images it found, in the order asked, and names each
+# one it did not find on stderr ("No such image: REF"); the found refs and the printed IDs are then paired in order. Any
+# answer that does not add up (a Docker that words its error otherwise, a daemon that is down) is asked again one ref at a
+# time, as before.
 snapshot_refs() {
-  local ref id
-  while IFS= read -r ref; do
-    [ -n "$ref" ] || continue
-    id="$(_image_id "$ref")"; [ -z "$id" ] || printf '%s\t%s\n' "$id" "$ref"
+  local refs=() ref errf out line i=0 n=0 gone found=() ids=()
+  while IFS= read -r ref; do [ -z "$ref" ] || refs+=("$ref"); done
+  [ ${#refs[@]} -gt 0 ] || return 0
+  errf="$(mktemp)" || errf=''
+  if [ -n "$errf" ]; then
+    out="$(docker image inspect --format '{{.Id}}' "${refs[@]}" 2>"$errf" || true)"
+    gone="$(sed -n 's/^.*[Nn]o such image: *//p' "$errf" | tr -d '\r')"
+    rm -f "$errf"
+    for ref in "${refs[@]}"; do
+      case "
+$gone
+" in *"
+$ref
+"*) ;; *) found+=("$ref") ;; esac
+    done
+    while IFS= read -r line; do [ -z "$line" ] || { ids+=("$line"); n=$((n + 1)); }; done <<EOF
+$out
+EOF
+    if [ "$n" -eq ${#found[@]} ] && { [ "$n" -gt 0 ] || [ -n "$gone" ]; }; then
+      for ref in ${found[@]+"${found[@]}"}; do printf '%s\t%s\n' "${ids[$i]}" "$ref"; i=$((i + 1)); done
+      return 0
+    fi
+  fi
+  for ref in "${refs[@]}"; do
+    out="$(_image_id "$ref")"; [ -z "$out" ] || printf '%s\t%s\n' "$out" "$ref"
   done
 }
 
@@ -69,12 +94,14 @@ images_snapshot_before() {
     ! declare -F code_image_refs >/dev/null || code_image_refs; } |
     snapshot_refs > "$d/before.tsv.new" 2>/dev/null || true
   mv "$d/before.tsv.new" "$d/before.tsv" 2>/dev/null || true
+  # (tags only — the images stay where they are; the tags run side by side: each docker call waits on a busy Docker)
   while IFS= read -r ref; do
     _local_build "$ref" || continue
-    docker tag "$ref" "${ref%:local}:previous" >/dev/null 2>&1 || true
+    docker tag "$ref" "${ref%:local}:previous" >/dev/null 2>&1 &
   done <<EOF
 $(cut -f2 "$d/before.tsv" 2>/dev/null)
 EOF
+  wait || true
 }
 
 # _ids FILE... -> the IDs (first column) of snapshot files that exist

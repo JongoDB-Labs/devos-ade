@@ -64,7 +64,10 @@ _pull_stubs() {
   export PRESENT=" pgvector/pgvector:0.8.7-pg17 caddy:2.11.7-alpine@sha256:aaaa " FAIL=''
   docker() {
     case "$1 $2" in
-      "image inspect") case "$PRESENT" in *" $3 "*) return 0 ;; esac; return 1 ;;
+      "image inspect")   # like the real one: the ID of each ref found (in order), "No such image: REF" on stderr for the others
+        local r bad=0; shift 2; [ "$1" != --format ] || shift 2
+        for r in "$@"; do case "$PRESENT" in *" $r "*) echo "sha256:id-$r" ;; *) echo "Error response from daemon: No such image: $r" >&2; bad=1 ;; esac; done
+        return "$bad" ;;
     esac
     case "$1" in
       pull) echo "pull $2" >> "$TMP/pulls"; case " $FAIL " in *" $2 "*) echo "toomanyrequests: rate limit"; return 1 ;; esac; echo "Status: Downloaded newer image for $2" ;;

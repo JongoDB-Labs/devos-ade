@@ -16,7 +16,11 @@ _stub_docker() {
     local a last; for a in "$@"; do last="$a"; done
     case "$*" in
       "image inspect --format {{join .RepoTags \" \"}} "*) _refs_of "$last" | tr '\n' ' ' ;;
-      "image inspect --format {{.Id}} "*) awk -F'\t' -v r="$last" '$2 == r { print $1; f = 1; exit } END { exit !f }' "$TMP/imgs" ;;
+      "image inspect --format {{.Id}} "*)
+        # one or many refs, as the real one: the IDs of those found in the order asked, "No such image: REF" on stderr for the others
+        local r bad=0; echo "inspect $#" >> "$TMP/dcalls.inspect"; shift 3
+        for r in "$@"; do awk -F'\t' -v r="$r" '$2 == r { print $1; f = 1; exit } END { exit !f }' "$TMP/imgs" || { echo "Error response from daemon: No such image: $r" >&2; bad=1; }; done
+        return "$bad" ;;
       "tag "*)
         local id; id="$(awk -F'\t' -v r="$2" '$2 == r { print $1; exit }' "$TMP/imgs")"; [ -n "$id" ] || return 1
         echo "tag $2 $3" >> "$TMP/dcalls"
@@ -426,4 +430,21 @@ test_other_checkout_markers_must_be_absolute_paths() {   # M3
 test_dispatcher_guards_clean_like_update() {
   d="$(sed -n '/^case "\$cmd" in/,/^esac/p' "$T_ROOT/stack")"
   assert_contains "$(printf '%s\n' "$d" | grep -A1 'update | clean | rollback)')" 'guard_project'
+}
+
+# JON-972: the snapshot asks Docker once for all the images (each call is 10-60 s on a busy Docker Desktop), pairs the
+# IDs with the refs it found, and asks one at a time only when that answer does not add up
+test_snapshot_refs_asks_docker_once_for_all_the_images() {
+  _setup; : > "$TMP/dcalls.inspect"
+  out="$(printf '%s\n' ghcr.io/berriai/litellm:1 gone/one:1 bn-t/portal:local caddy:2.11.7-alpine@sha256:abc gone/two:2 | snapshot_refs)"
+  assert_eq "$out" "L1	ghcr.io/berriai/litellm:1
+P1	bn-t/portal:local
+C1	caddy:2.11.7-alpine@sha256:abc"
+  assert_eq "$(wc -l < "$TMP/dcalls.inspect" | tr -d ' ')" "1"
+  # a Docker whose words we do not know: every ref asked again alone, the same answer
+  _inspect_odd() { docker() { case "$*" in "image inspect --format {{.Id}} "*" "*) echo "odd failure" >&2; return 1 ;; *) _stub_docker_real "$@" ;; esac; }; }
+  eval "_stub_docker_real$(declare -f docker | sed '1s/^docker//')"; _inspect_odd
+  out="$(printf '%s\n' ghcr.io/berriai/litellm:1 bn-t/portal:local | snapshot_refs)"
+  assert_eq "$out" "L1	ghcr.io/berriai/litellm:1
+P1	bn-t/portal:local"
 }
