@@ -92,7 +92,30 @@
     return !isNaN(tb) && !(ta >= tb) ? answered.u : u;
   }
 
-  root.bnUpdateCheck = { _pure: { describe, ago, clock, fresher, statusKey } };
+  // Home's update card, a line about the release the helper prepares ahead (lib/prepare.sh; the heartbeat's "prepare" as
+  // /api/admin/status gives it, LATEST the release the check names). "" says nothing: preparing is off, nothing is newer,
+  // or the record is about a release that is no longer the newest.
+  function prepareLine(p, latest) {
+    if (!p || typeof p !== "object" || !p.supported || p.enabled === false || !p.state) return "";
+    const v = typeof p.version === "string" ? p.version : "";
+    if (!/^v\d+\.\d+\.\d+$/.test(v) || (latest && latest !== v)) return "";
+    const step = typeof p.step === "string" ? p.step.replace(/^Prepare: /, "") : "";
+    const why = typeof p.reason === "string" ? p.reason.replace(/[\s.]+$/, "") : "";
+    switch (p.state) {
+      case "ready": return `Ready: ${v} is downloaded and built. Update now takes about half a minute.`;
+      case "preparing": return `Preparing ${v} in the background${step ? `: ${step}` : ""}. Nothing changes on your install until you update.`;
+      case "failed": return `Preparing ${v} failed${why ? `: ${why}` : ""}. Update now still works; it does that work itself.`;
+      case "yielded": return `Preparing ${v} is paused${why ? ` (${why})` : ""}. It goes on by itself; Update now also does it.`;
+      default: return "";
+    }
+  }
+  // Update now's own steps: the job's step list shows a "Prepare" stage only for an update that prepared first
+  function preparedFirst(job) {
+    if (!job || job.action !== "update") return false;
+    return job.phase === "preparing" || (Array.isArray(job.steps) ? job.steps : []).some((x) => x && /^Prepare: /.test(x.label || "")) || /^Prepare: /.test(job.step || "");
+  }
+
+  root.bnUpdateCheck = { _pure: { describe, ago, clock, fresher, statusKey, prepareLine, preparedFirst } };
   if (typeof document === "undefined") return;
 
   let last = null;          // the last update status seen (Home's summary, or a click's answer)

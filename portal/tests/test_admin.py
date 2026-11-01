@@ -648,3 +648,38 @@ def test_a_changes_result_is_found_after_the_helper_started_another_job(dirs, ma
     job(st, "running", id="nightly-1", action="backup-nightly", updated_at=now)
     s = c.get("/api/admin/status", headers=API).json()
     assert s["job"]["id"] == "nightly-1" and [j["id"] for j in s["finished"]] == ["abc"] and s["finished"][0]["phase"] == "done"
+
+
+# --- prepared ahead of Update now (lib/prepare.sh): the heartbeat's "prepare", every field type-checked ---
+
+def test_status_reports_what_the_helper_prepared_with_types_checked(make_client, dirs):
+    st, rq = dirs
+    c = make_client()
+    beat(st, prepare={"enabled": True, "state": "ready", "version": "v0.4.0", "step": "", "reason": "", "at": 1800000300})
+    s = c.get("/api/admin/status", headers=API).json()
+    assert s["prepare"] == {"supported": True, "enabled": True, "state": "ready", "version": "v0.4.0", "step": "", "reason": "", "at": 1800000300}
+    beat(st, prepare={"enabled": True, "state": "preparing", "version": "v0.4.0", "step": "Prepare: build portal", "reason": "", "at": 1})
+    p = c.get("/api/admin/status", headers=API).json()["prepare"]
+    assert p["state"] == "preparing" and p["step"] == "Prepare: build portal"
+    beat(st, prepare={"enabled": True, "state": "failed", "version": "v0.4.0", "step": "x", "reason": "Prepare: build portal failed: boom", "at": 2})
+    p = c.get("/api/admin/status", headers=API).json()["prepare"]
+    assert p["state"] == "failed" and p["reason"] == "Prepare: build portal failed: boom"
+    # turned off (UPDATE_PREPARE=false)
+    beat(st, prepare={"enabled": False, "state": "", "version": "", "step": "", "reason": "", "at": None})
+    p = c.get("/api/admin/status", headers=API).json()["prepare"]
+    assert p["supported"] is True and p["enabled"] is False and p["state"] == ""
+    # nonsense from the host is never passed on
+    beat(st, prepare={"enabled": "yes", "state": "<script>", "version": ["v"], "step": 5, "reason": {"a": 1}, "at": "soon"})
+    p = c.get("/api/admin/status", headers=API).json()["prepare"]
+    assert p == {"supported": True, "enabled": True, "state": "", "version": "", "step": "", "reason": "", "at": None}
+    beat(st, prepare="x")
+    assert c.get("/api/admin/status", headers=API).json()["prepare"]["supported"] is False
+    # a helper from before it
+    beat(st)
+    p = c.get("/api/admin/status", headers=API).json()["prepare"]
+    assert p["supported"] is False and p["enabled"] is False and p["state"] == ""
+    # an Update now that prepared first: its steps carry the Prepare stage and their times
+    beat(st)
+    job(st, "preparing", action="update", step="Prepare: build portal", steps=[{"label": "Prepare: fetch v0.4.0", "took": "2s"}])
+    j = c.get("/api/admin/status", headers=API).json()["job"]
+    assert j["phase"] == "preparing" and j["steps"] == [{"label": "Prepare: fetch v0.4.0", "took": "2s"}]

@@ -590,7 +590,10 @@ const ACTION_TEXT = {
     // (the update installs the newest release there is when it runs: the check may be a few hours old)
     const target = onBranch ? `the tip of branch ${a.branch || u.branch} (not a release)`
       : u.latest ? `${u.latest}${u.checked_at ? ` (the newest release at the last check, ${checked(u.checked_at)})` : ""}` : "the newest release";
-    return `Update to ${target}: a backup first, then the new code and images; Chat, Admin and Files are down for a few minutes while the services restart.${endsNote()} This page reconnects by itself.`;
+    const p = a.prepare || {}, ready = !onBranch && p.state === "ready" && p.version && (!u.latest || p.version === u.latest);
+    const what = ready ? "the new code (its images are already downloaded and built)" : "the new code and images";
+    const down = ready ? "about half a minute" : "a few minutes";
+    return `Update to ${target}: a backup first, then ${what}; Chat, Admin and Files are down for ${down} while the services restart.${endsNote()} This page reconnects by itself.`;
   },
   rollback: (a) => `Go back to ${a.rollback.to ? (/-\d+-g[0-9a-f]+$/.test(a.rollback.to) ? `${a.rollback.to} (a commit after the release ${a.rollback.to.replace(/-\d+-g[0-9a-f]+$/, "")})` : a.rollback.to) : "the previous version"}: its code, its images and the data from ${a.rollback.backup || "the pre-update backup"}. Chats, files and spend recorded since the update are replaced (a backup of the current state is taken first).${endsNote()} This page reconnects by itself.`,
   clean: () => "Remove this install's old images. The ones in use and one previous version (for rollback) stay.",
@@ -718,6 +721,11 @@ function renderAuto(a, usable) {
 // The update card's line while automatic updates are on. The helper reads the portal's release check only inside its
 // window, so Home combines what the helper says (switch, state, what it tried) with the release this card shows.
 function updateHint(a, usable) {
+  const base = updateHintBase(a, usable);
+  const line = usable && window.bnUpdateCheck && window.bnUpdateCheck._pure ? window.bnUpdateCheck._pure.prepareLine(a.prepare, lastUpdate && lastUpdate.latest) : "";
+  return line ? `${line} ${base}` : base;
+}
+function updateHintBase(a, usable) {
   if (!a.allowed) return `Run it in your DevOS ADE folder. ${REMOTE_OFF}`;
   if (!usable && a.late) return `${lateText(a)}: Update now comes back when it answers. Or run it in your DevOS ADE folder.`;
   if (!usable) return "Run it in your DevOS ADE folder.";
@@ -785,7 +793,9 @@ function renderJob(job, inProgress) {
   if (box.hidden) return;
   // a ./stack command typed in a terminal (lib/lock.sh records it) or a job of the update helper: Home shows the newest
   const term = job.origin === "terminal";
-  const steps = term ? [] : PHASES[job.action] || [];
+  let steps = term ? [] : PHASES[job.action] || [];
+  // an Update now on a release not prepared ahead prepares it first (lib/prepare.sh): that stage comes before the backup
+  if (!term && window.bnUpdateCheck && window.bnUpdateCheck._pure.preparedFirst(job)) steps = [["preparing", "Prepare (download and build)"], ...steps];
   const at = steps.findIndex(([p]) => p === job.phase);
   const auto = job.trigger === "auto";
   const name = term ? `./stack ${job.command || job.action}` : auto ? "Automatic update" : { update: "Update", rollback: "Rollback", clean: "Clean-up", settings: "Settings change",

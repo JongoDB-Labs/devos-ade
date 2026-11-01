@@ -121,6 +121,21 @@ def _auto(beat: dict) -> dict:
     }
 
 
+PREPARE_STATES = ("preparing", "ready", "failed", "yielded")
+
+
+def _prepare(beat: dict) -> dict:
+    """What the helper has prepared ahead of Update now (lib/prepare.sh), from the heartbeat: {supported, enabled, state:
+    "" | preparing | ready | failed | yielded, version, step, reason, at}. "supported": False for a helper without it."""
+    p = beat.get("prepare") if isinstance(beat.get("prepare"), dict) else None
+    supported = p is not None
+    p = p or {}
+    state = p.get("state") if p.get("state") in PREPARE_STATES else ""
+    return {"supported": supported, "enabled": p.get("enabled") is not False and supported,
+            "state": state, "version": _str(p.get("version"), 80), "step": _str(p.get("step"), 160),
+            "reason": _str(p.get("reason")), "at": _int(p.get("at"))}
+
+
 COMMAND = re.compile(r"[a-z][a-z-]{0,23}(?: [a-z][a-z-]{0,23})?")
 
 
@@ -200,7 +215,7 @@ def finished_jobs(status_dir: Path) -> list[dict]:
 
 
 def helper_state(status_dir: Path, now: float | None = None) -> dict:
-    """{running, late, heartbeat_at, rollback, auto, job, finished}: what Home needs, every field type-checked (files come
+    """{running, late, heartbeat_at, rollback, auto, prepare, job, finished}: what Home needs, every field type-checked (files come
     from the host). job: the newest of the helper's last job and the last ./stack command run in a terminal (its
     "origin" says which); finished: the helper's last finished jobs (finished_jobs), for a page waiting on one of them."""
     now = time.time() if now is None else now
@@ -218,6 +233,7 @@ def helper_state(status_dir: Path, now: float | None = None) -> dict:
         "rollback": {"available": rb.get("available") is True, "to": _str(rb.get("to"), 80),
                      "backup": _str(rb.get("backup"), 120), "unfinished": rb.get("unfinished") is True},
         "auto": _auto(beat),
+        "prepare": _prepare(beat),
         "job": job,
         "finished": finished_jobs(status_dir),
     }
